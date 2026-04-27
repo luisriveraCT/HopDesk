@@ -367,6 +367,7 @@ vencidosServer <- function(id, shared) {
         Fecha      = format(df[["Fecha"]], "%d/%m/%Y"),
         Parte      = df[["Parte"]] %||% "",
         Documento  = df[["Documento"]] %||% "",
+        Codigo     = if ("Codigo" %in% names(df)) df[["Codigo"]] %||% "" else "",
         Referencia = {
           fac <- if ("Factura" %in% names(df)) df[["Factura"]] else NA_character_
           replace(fac, is.na(fac), "")
@@ -482,6 +483,7 @@ vencidosServer <- function(id, shared) {
             ' data-documento="', htmltools::htmlEscape(row[["Documento"]]),          '"',
             ' data-source="',    htmltools::htmlEscape(row[["source"]]),             '"',
             ' data-invid="',     htmltools::htmlEscape(row[["inv_id"]]),             '"',
+            ' data-codigo="',    htmltools::htmlEscape(row[["Codigo"]] %||% ""),    '"',
             ' data-tagweight="', as.character(row[["tag_weight"]]),                  '"',
             if (nzchar(full_style)) paste0(' style="', full_style, '"') else "",
             '>',

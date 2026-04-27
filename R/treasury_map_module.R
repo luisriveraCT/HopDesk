@@ -829,6 +829,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
           Moneda    = x$Moneda,
           Documento = x$Documento,
           Parte     = x$to_full,     # the RECIPIENT (creditor, "to" node)
+          Codigo    = trimws(as.character(x$Codigo %||% "")),
           Importe   = x$Importe %||% 0,
           FechaVenc = tryCatch(as.Date(x$FechaVenc), error = function(e) Sys.Date()),
           staged_by = user_id,
@@ -837,7 +838,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
         )
       }))
 
-      combined <- dplyr::bind_rows(ph, new_rows) |> dplyr::distinct(id, .keep_all = TRUE)
+      combined <- upsert_pagar_hoy(ph, new_rows)
       shared$pagar_hoy_db(combined)
       tryCatch(save_pagar_hoy(combined), error = function(e) NULL)
       payment_plan(list())

@@ -70,7 +70,7 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
 
     keep <- intersect(
       c("Ledger","Tipo","Empresa","Fecha","Parte","Documento","Factura",
-        "Moneda","Importe","Etiqueta","source","id",
+        "Moneda","Importe","Etiqueta","source","id","Codigo",
         "FechaVenc_Original","FechaVenc_Proyectada"),
       names(df)
     )
@@ -105,6 +105,7 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
     Fecha      = format(all_df[["Fecha"]], "%d/%m/%Y"),
     Parte      = all_df[["Parte"]],
     Documento  = all_df[["Documento"]] %||% "",
+    Codigo     = if ("Codigo" %in% names(all_df)) all_df[["Codigo"]] %||% "" else "",
     Referencia = if ("Factura" %in% names(all_df)) all_df[["Factura"]] %||% "" else "",
     Moneda     = all_df[["Moneda"]],
     Importe    = all_df[["Importe"]],
@@ -377,6 +378,7 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
                 ' data-documento="', htmltools::htmlEscape(row[["Documento"]]),      '"',
                 ' data-source="',    htmltools::htmlEscape(row[["source"]]),         '"',
                 ' data-invid="',     htmltools::htmlEscape(row[["inv_id"]]),         '"',
+                ' data-codigo="',    htmltools::htmlEscape(row[["Codigo"]] %||% ""), '"',
                 ' data-tagweight="', as.character(row[["tag_weight"]]),              '"',
                 if (nzchar(row_bg)) paste0(' style="', row_bg, '"') else "",
                 '>',
@@ -470,6 +472,7 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
                   source   : r.dataset.source,
                   inv_id   : r.dataset.invid,
                   parte    : r.dataset.parte,
+                  codigo   : r.dataset.codigo || '',
                   importe  : parseFloat(r.dataset.importe),
                   fecha    : r.dataset.fecha,
                   tipo     : r.dataset.tipo
@@ -491,6 +494,7 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
                   source   : r.dataset.source,
                   inv_id   : r.dataset.invid,
                   parte    : r.dataset.parte,
+                  codigo   : r.dataset.codigo || '',
                   importe  : parseFloat(r.dataset.importe),
                   fecha    : r.dataset.fecha,
                   tipo     : r.dataset.tipo
@@ -704,6 +708,7 @@ handle_invoice_action <- function(payload, shared) {
     source    = vapply(rows, `[[`, character(1), "source"),
     inv_id    = vapply(rows, `[[`, character(1), "inv_id"),
     Parte     = vapply(rows, `[[`, character(1), "parte"),
+    Codigo    = vapply(rows, function(r) r[["codigo"]] %||% "", character(1)),
     Importe   = vapply(rows, `[[`, numeric(1),   "importe"),
     Fecha     = vapply(rows, `[[`, character(1), "fecha"),
     tipo      = vapply(rows, function(r) r[["tipo"]] %||% "", character(1)),
@@ -833,12 +838,11 @@ handle_invoice_action <- function(payload, shared) {
     new_rows <- data.frame(
       id        = vapply(seq_len(nrow(keys_df)), function(x) uuid::UUIDgenerate(), character(1)),
       ledger    = keys_df$ledger,
-      tipo      = ifelse(nzchar(keys_df$tipo), keys_df$tipo,
-                         ifelse(keys_df$ledger == "AR", "cobro", "pago")),
       Empresa   = keys_df$Empresa,
       Moneda    = keys_df$Moneda,
       Documento = keys_df$Documento,
       Parte     = keys_df$Parte,
+      Codigo    = trimws(keys_df$Codigo %||% ""),
       Importe   = keys_df$Importe,
       FechaVenc = as.Date(vapply(keys_df$Fecha, parse_fecha, numeric(1)),
                           origin = "1970-01-01"),

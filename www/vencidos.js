@@ -26,6 +26,7 @@
       source   : r.dataset.source,
       inv_id   : r.dataset.invid    || '',
       parte    : r.dataset.parteraw || r.dataset.parte,
+      codigo   : r.dataset.codigo   || '',
       importe  : parseFloat(r.dataset.importe),
       fecha    : r.dataset.fecha,
       tipo     : r.dataset.tipo

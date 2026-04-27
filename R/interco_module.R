@@ -344,6 +344,15 @@ intercoServer <- function(id, shared) {
                         error = function(e) tryCatch(as.character(r[["Factura"]][1]),
                                                      error = function(e) ""))
         mon <- tryCatch(as.character(r[["Moneda"]][1]), error = function(e) "MXN")
+        # IC table data comes from raw SAP snapshots — read codigo from whichever
+        # column name is present (harmonized or original SAP name).
+        codigo_val <- tryCatch({
+          cc <- if ("Codigo" %in% names(r)) r[["Codigo"]][1]
+                else if ("Código de proveedor" %in% names(r)) r[["Código de proveedor"]][1]
+                else if ("Código de cliente"   %in% names(r)) r[["Código de cliente"]][1]
+                else ""
+          trimws(as.character(cc %||% ""))
+        }, error = function(e) "")
         tibble::tibble(
           id        = paste0("IC_", pair$ini, "_", doc, "_", as.integer(Sys.time()) + i),
           ledger    = pair$ledger,
@@ -351,6 +360,7 @@ intercoServer <- function(id, shared) {
           Moneda    = mon,
           Documento = doc,
           Parte     = pair$counterpart,
+          Codigo    = codigo_val,
           Importe   = as.numeric(r[[amt_col]][1] %||% 0),
           FechaVenc = tryCatch(as.Date(r[[due_col]][1]), error = function(e) Sys.Date()),
           staged_by = user_id,
@@ -359,7 +369,7 @@ intercoServer <- function(id, shared) {
         )
       }))
 
-      combined <- dplyr::bind_rows(ph, new_rows) |> dplyr::distinct(id, .keep_all = TRUE)
+      combined <- upsert_pagar_hoy(ph, new_rows)
       shared$pagar_hoy_db(combined)
       tryCatch(save_pagar_hoy(combined), error = function(e) NULL)
       nrow(new_rows)

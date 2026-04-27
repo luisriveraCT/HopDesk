@@ -192,6 +192,27 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
     df <- bind_rows(df, manual_sub)
   }
 
+  # Harmonize Codigo across SAP and manual rows. SAP carries CardCode under
+  # `Código de proveedor` (AP) or `Código de cliente` (AR); manual carries it
+  # as `Codigo`. Coalesce into a single canonical `Codigo` column so every
+  # downstream slice (keep lists, .fresh_lu, vencidos disp_df, search keep)
+  # picks it up uniformly.
+  if (!"Codigo" %in% names(df)) df[["Codigo"]] <- NA_character_
+  if ("Código de proveedor" %in% names(df)) {
+    df[["Codigo"]] <- dplyr::coalesce(
+      as.character(df[["Codigo"]]),
+      as.character(df[["Código de proveedor"]])
+    )
+  }
+  if ("Código de cliente" %in% names(df)) {
+    df[["Codigo"]] <- dplyr::coalesce(
+      as.character(df[["Codigo"]]),
+      as.character(df[["Código de cliente"]])
+    )
+  }
+  df[["Codigo"]] <- trimws(df[["Codigo"]] %||% "")
+  df[["Codigo"]][df[["Codigo"]] == ""] <- NA_character_
+
   # Nothing at all — return NULL
   if (!nrow(df)) return(NULL)
 

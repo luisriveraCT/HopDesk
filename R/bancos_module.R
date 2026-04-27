@@ -2783,11 +2783,11 @@ bancosServer <- function(id, shared) {
       new_ph_row <- tibble::tibble(
         id        = uuid::UUIDgenerate(),
         ledger    = ph_ledger,
-        tipo      = as.character(row$tipo),
         Empresa   = as.character(row$empresa),
         Moneda    = as.character(row$moneda),
         Documento = as.character(row$documento),
         Parte     = as.character(row$parte),
+        Codigo    = trimws(as.character(row$codigo %||% "")),
         Importe   = as.numeric(row$importe),
         FechaVenc = as.Date(row$fecha),
         staged_by = shared$current_user(),

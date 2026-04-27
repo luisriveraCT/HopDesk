@@ -58,6 +58,7 @@
   empresa         = character(),
   parte           = character(),
   documento       = character(),   # SAP document number
+  codigo          = character(),   # SAP CardCode (for round-trip to calendar)
   importe         = numeric(),
   moneda          = character(),
   cuenta_id       = character(),   # which bank account was used
