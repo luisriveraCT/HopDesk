@@ -1,12 +1,9 @@
 # =============================================================================
 # R/manual_entry_handlers.R
-# manual_entry_handlers() just shows the entry form modal.
-# All save/cancel observers are in app.R where input is always in scope.
 # =============================================================================
 
 # Returns the UI content (form rows + JS) for the manual-entry tab.
-# Used by both manual_entry_handlers() (standalone modal) and the
-# combined tabbed modal in staging_browse_module.R ("Manual" tab).
+# Used by the combined tabbed modal in staging_browse_module.R ("Manual" tab).
 manual_entry_tab_content <- function(ledger, empresas) {
   party_lbl <- if (ledger == "AR") "Cliente" else "Proveedor"
   tagList(
@@ -140,34 +137,5 @@ manual_edit_handlers <- function(input, output, session,
       tags$span(class = "badge bg-info text-dark", "\u270e Editando entrada manual"),
       tags$small(class = "text-muted ms-2", "Solo visible en esta app.")
     )
-  ))
-}
-
-# Shows the new-entry form as a standalone modal.
-# For the combined tabbed modal (Buscar en rango + Manual), see
-# show_combined_entry_modal() in staging_browse_module.R.
-manual_entry_handlers <- function(input, output, session,
-                                   sap_data, manual_inv, current_user,
-                                   active_entry_ledger) {
-  ledger    <- active_entry_ledger()
-  if (is.null(ledger)) return()
-
-  ar        <- sap_data()$AR
-  ap        <- sap_data()$AP
-  empresas  <- sort(unique(c(
-    if (!is.null(ar) && "Empresa" %in% names(ar)) ar$Empresa else character(),
-    if (!is.null(ap) && "Empresa" %in% names(ap)) ap$Empresa else character(),
-    unname(COMPANY_MAP)
-  )))
-
-  showModal(modalDialog(
-    title     = paste("Nueva entrada \u2013", ledger),
-    size      = "l",
-    easyClose = TRUE,
-    footer = tagList(
-      actionButton("me_cancel", "Cancelar", class = "btn btn-secondary"),
-      actionButton("me_save",   "Guardar",  class = "btn btn-primary")
-    ),
-    manual_entry_tab_content(ledger, empresas)
   ))
 }
