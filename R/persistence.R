@@ -245,8 +245,9 @@ load_moves <- function() {
 }
 
 save_moves <- function(df) {
-  .s3_write(.normalize(df, .schema_moves), S3_KEYS$moves)
-  if (exists(".cache_set", mode = "function")) .cache_set("moves", .normalize(df, .schema_moves))
+  norm <- .normalize(df, .schema_moves)
+  .s3_write(norm, S3_KEYS$moves)
+  if (exists(".cache_set", mode = "function")) .cache_set("moves", norm)
 }
 
 # Upsert rows into moves table (matched on Empresa + Moneda + Documento + ledger)
@@ -282,8 +283,9 @@ load_notes <- function() {
 }
 
 save_notes <- function(df) {
-  .s3_write(.normalize(df, .schema_notes), S3_KEYS$notes)
-  if (exists(".cache_set", mode = "function")) .cache_set("notes", df)
+  norm <- .normalize(df, .schema_notes)
+  .s3_write(norm, S3_KEYS$notes)
+  if (exists(".cache_set", mode = "function")) .cache_set("notes", norm)
 }
 
 # ── Invoice tags ───────────────────────────────────────────────────────────────
@@ -294,8 +296,9 @@ load_tags <- function() {
 }
 
 save_tags <- function(df) {
-  .s3_write(.normalize(df, .schema_tags), S3_KEYS$tags)
-  if (exists(".cache_set", mode = "function")) .cache_set("tags", df)
+  norm <- .normalize(df, .schema_tags)
+  .s3_write(norm, S3_KEYS$tags)
+  if (exists(".cache_set", mode = "function")) .cache_set("tags", norm)
 }
 
 # Set tags for one invoice (replaces all existing tags for that invoice)
@@ -352,8 +355,9 @@ load_manual <- function() {
 }
 
 save_manual <- function(df) {
-  .s3_write(.normalize(df, .schema_manual), S3_KEYS$manual)
-  if (exists(".cache_set", mode = "function")) .cache_set("manual", df)
+  norm <- .normalize(df, .schema_manual)
+  .s3_write(norm, S3_KEYS$manual)
+  if (exists(".cache_set", mode = "function")) .cache_set("manual", norm)
 }
 
 upsert_manual <- function(df, new_row) {
@@ -390,8 +394,9 @@ load_papelera <- function() {
 }
 
 save_papelera <- function(df) {
-  .s3_write(.normalize(df, .schema_papelera), S3_KEYS$papelera)
-  if (exists(".cache_set", mode = "function")) .cache_set("papelera", df)
+  norm <- .normalize(df, .schema_papelera)
+  .s3_write(norm, S3_KEYS$papelera)
+  if (exists(".cache_set", mode = "function")) .cache_set("papelera", norm)
 }
 
 # Add rows to papelera. detail_rows is a plain data.frame of invoice rows.
@@ -504,13 +509,15 @@ save_interco_v2 <- function(registry) {
 )
 
 load_pagar_hoy <- function() {
-  .normalize(.s3_read(S3_KEYS$pagar_hoy), .schema_pagar_hoy) |>
-    dplyr::filter(status %in% c("pending", "confirmed", "cancelled"))
+  df <- .normalize(.s3_read(S3_KEYS$pagar_hoy), .schema_pagar_hoy)
+  df$status[is.na(df$status) | !nzchar(trimws(df$status))] <- "pending"
+  dplyr::filter(df, status %in% c("pending", "confirmed", "cancelled"))
 }
 
 save_pagar_hoy <- function(df) {
-  .s3_write(.normalize(df, .schema_pagar_hoy), S3_KEYS$pagar_hoy)
-  if (exists(".cache_set", mode = "function")) .cache_set("pagar_hoy", df)
+  norm <- .normalize(df, .schema_pagar_hoy)
+  .s3_write(norm, S3_KEYS$pagar_hoy)
+  if (exists(".cache_set", mode = "function")) .cache_set("pagar_hoy", norm)
 }
 
 # Add or update rows.
@@ -525,10 +532,10 @@ upsert_pagar_hoy <- function(db, new_rows,
 }
 
 # Remove specific invoices from the queue entirely
-unstage_pagar_hoy <- function(db, keys_df) {
+unstage_pagar_hoy <- function(db, keys_df,
+                              keys = c("ledger", "Empresa", "Moneda", "Documento")) {
   if (!nrow(keys_df)) return(db)
-  dplyr::anti_join(db, keys_df,
-                   by = c("ledger", "Empresa", "Moneda", "Documento"))
+  dplyr::anti_join(db, keys_df, by = keys)
 }
 
 # ── SAP data snapshots (outage resilience + rotation) ─────────────────────────

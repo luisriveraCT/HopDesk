@@ -412,12 +412,12 @@ to_calendar_data <- function(df, amount_col = "Saldo vencido") {
     df <- df[is.na(df[["confirmed"]]) | !df[["confirmed"]], , drop = FALSE]
 
   # ── Column audit ────────────────────────────────────────────────────────────
-  required_cols <- c("FechaEff", "Moneda", "Parte", amount_col)
+  required_cols <- c("Empresa", "FechaEff", "Moneda", "Parte", amount_col)
   missing_cols  <- setdiff(required_cols, names(df))
   if (length(missing_cols)) {
     warning("[to_calendar_data] Missing columns: ", paste(missing_cols, collapse=", "),
             " — available: ", paste(names(df), collapse=", "))
-    return(tibble(Fecha=as.Date(NA_character_), Moneda=NA_character_,
+    return(tibble(Empresa=character(), Fecha=as.Date(NA_character_), Moneda=NA_character_,
                   Parte=NA_character_, Importe=NA_real_)[0, ])
   }
 
@@ -436,7 +436,7 @@ to_calendar_data <- function(df, amount_col = "Saldo vencido") {
       has_abono      = replace_na(has_abono,      FALSE)
     ) |>
     filter(!is.na(Fecha)) |>
-    group_by(Fecha, Moneda, Parte) |>
+    group_by(Empresa, Fecha, Moneda, Parte) |>
     summarise(
       Importe        = sum(Importe,        na.rm = TRUE),
       abono_total    = sum(abono_total,    na.rm = TRUE),

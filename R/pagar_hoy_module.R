@@ -141,7 +141,7 @@ pagarHoyServer <- function(id, shared) {
                               clabe_dest = NA_character_, medio_pago = NA_character_))
       }
 
-      ini          <- names(COMPANY_MAP)[unname(COMPANY_MAP) == empresa]
+      ini          <- names(isolate(shared$company_map()))[unname(isolate(shared$company_map())) == empresa]
       empresa_keys <- c(empresa, ini)
       emp_provs <- provs |>
         dplyr::filter(is.na(Empresa) | Empresa == "" | Empresa %in% empresa_keys) |>
@@ -964,7 +964,7 @@ pagarHoyServer <- function(id, shared) {
           error = function(e) NULL
         )
         if (is.null(cts_raw) || !nrow(cts_raw)) return(c("Sin cuenta registrada" = ""))
-        ini      <- names(COMPANY_MAP)[unname(COMPANY_MAP) == emp_name]
+        ini      <- names(shared$company_map())[unname(shared$company_map()) == emp_name]
         emp_keys <- unique(c(emp_name, ini))
         act <- dplyr::filter(cts_raw, activa == TRUE,
                              Empresa %in% emp_keys,
@@ -1583,7 +1583,10 @@ pagarHoyServer <- function(id, shared) {
         else load_parte_alias_map(),
         error = function(e) load_parte_alias_map()
       )
-      am <- am[!(toupper(trimws(am$Parte)) == toupper(parte)), , drop = FALSE]
+      am <- am[!(toupper(trimws(am$Parte)) == toupper(parte) &
+                 (am$Empresa == emp |
+                  (emp == "" & (is.na(am$Empresa) | am$Empresa == "")))),
+               , drop = FALSE]
 
       save_parte_alias_map(am)
       if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db(am)
@@ -1790,9 +1793,10 @@ pagarHoyServer <- function(id, shared) {
         emp_raw <- trimws(ct$Empresa %||% "")
         # ctas_cuentas stores initials (e.g. "NCS") — resolve to full name
         # COMPANY_MAP: c(NCS = "Networks Crossdocking Services", ...)
-        emp <- if (emp_raw %in% names(COMPANY_MAP)) {
-          COMPANY_MAP[[emp_raw]]
-        } else if (emp_raw %in% unname(COMPANY_MAP)) {
+        cmap_load <- tryCatch(shared$company_map(), error = function(e) COMPANY_MAP)
+        emp <- if (emp_raw %in% names(cmap_load)) {
+          cmap_load[[emp_raw]]
+        } else if (emp_raw %in% unname(cmap_load)) {
           emp_raw  # already a full name
         } else {
           ""  # unrecognised — skip
