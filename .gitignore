@@ -1,0 +1,13 @@
+# R environment & secrets — never commit
+.Renviron
+.Rhistory
+.RData
+**/.Rhistory
+**/.RData
+
+# R temp files
+.Rproj.user/
+
+# OS
+.DS_Store
+Thumbs.db
