@@ -843,6 +843,7 @@ handle_invoice_action <- function(payload, shared) {
       Documento = keys_df$Documento,
       Parte     = keys_df$Parte,
       Codigo    = trimws(keys_df$Codigo %||% ""),
+      tipo_item = "factura",
       Importe   = keys_df$Importe,
       FechaVenc = as.Date(vapply(keys_df$Fecha, parse_fecha, numeric(1)),
                           origin = "1970-01-01"),

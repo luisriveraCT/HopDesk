@@ -367,6 +367,7 @@ intercoServer <- function(id, shared) {
           Documento = doc,
           Parte     = pair$counterpart,
           Codigo    = codigo_val,
+          tipo_item = "factura",
           Importe   = as.numeric(r[[amt_col]][1] %||% 0),
           FechaVenc = tryCatch(as.Date(r[[due_col]][1]), error = function(e) Sys.Date()),
           staged_by = user_id,

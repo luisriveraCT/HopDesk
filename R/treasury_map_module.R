@@ -846,6 +846,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
           Documento = x$Documento,
           Parte     = x$to_full,     # the RECIPIENT (creditor, "to" node)
           Codigo    = trimws(as.character(x$Codigo %||% "")),
+          tipo_item = "factura",
           Importe   = x$Importe %||% 0,
           FechaVenc = tryCatch(as.Date(x$FechaVenc), error = function(e) Sys.Date()),
           staged_by = user_id,

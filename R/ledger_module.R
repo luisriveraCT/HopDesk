@@ -562,12 +562,13 @@ ledgerModuleServer <- function(id, config, shared) {
       new_rows <- merge(inv_keys, detail_lu, by = c("Empresa","Moneda","Documento"))
       new_rows[["id"]]        <- vapply(seq_len(nrow(new_rows)), function(x) uuid::UUIDgenerate(), character(1))
       new_rows[["ledger"]]    <- ledger
+      new_rows[["tipo_item"]] <- "factura"
       new_rows[["FechaVenc"]] <- as.Date(new_rows[["FechaEff"]])
       new_rows[["staged_by"]] <- shared$current_user()
       new_rows[["staged_at"]] <- Sys.time()
       new_rows[["status"]]    <- "pending"
       new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
-                                "Parte","Codigo","Importe","FechaVenc","staged_by","staged_at","status"), drop = FALSE]
+                                "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status"), drop = FALSE]
       updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(), new_rows)
       shared$pagar_hoy_db(updated)
       save_pagar_hoy(updated)
@@ -607,12 +608,13 @@ ledgerModuleServer <- function(id, config, shared) {
       new_rows  <- merge(keys, detail_lu, by = c("Empresa","Moneda","Documento"))
       new_rows[["id"]]        <- vapply(seq_len(nrow(new_rows)), function(x) uuid::UUIDgenerate(), character(1))
       new_rows[["ledger"]]    <- ledger
+      new_rows[["tipo_item"]] <- "factura"
       new_rows[["FechaVenc"]] <- as.Date(new_rows[["FechaEff"]])
       new_rows[["staged_by"]] <- shared$current_user()
       new_rows[["staged_at"]] <- Sys.time()
       new_rows[["status"]]    <- "pending"
       new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
-                                "Parte","Codigo","Importe","FechaVenc","staged_by","staged_at","status"), drop = FALSE]
+                                "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status"), drop = FALSE]
       updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(), new_rows)
       shared$pagar_hoy_db(updated)
       save_pagar_hoy(updated)
@@ -737,12 +739,13 @@ ledgerModuleServer <- function(id, config, shared) {
           new_rows  <- merge(inv_keys, detail_lu, by = c("Empresa","Moneda","Documento"))
           new_rows[["id"]]        <- vapply(seq_len(nrow(new_rows)), function(x) uuid::UUIDgenerate(), character(1))
           new_rows[["ledger"]]    <- ledger
+          new_rows[["tipo_item"]] <- "factura"
           new_rows[["FechaVenc"]] <- as.Date(new_rows[["FechaEff"]])
           new_rows[["staged_by"]] <- shared$current_user()
           new_rows[["staged_at"]] <- Sys.time()
           new_rows[["status"]]    <- "pending"
           new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
-                                    "Parte","Codigo","Importe","FechaVenc","staged_by","staged_at","status"), drop = FALSE]
+                                    "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status"), drop = FALSE]
           updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(), new_rows)
           shared$pagar_hoy_db(updated); save_pagar_hoy(updated)
           lbl_agenda <- if (ledger == "AR") "Agenda del d\u00eda (Cobros)" else "Agenda del d\u00eda (Pagos)"
@@ -817,6 +820,7 @@ ledgerModuleServer <- function(id, config, shared) {
           Documento  = one[["Documento"]],
           Parte      = one[["Parte"]],
           Codigo     = one[["Codigo"]] %||% NA_character_,
+          tipo_item  = "factura",
           Importe    = one[["Importe"]],
           FechaVenc  = as.Date(one[["FechaEff"]]),
           staged_by  = shared$current_user(),

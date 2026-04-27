@@ -2788,6 +2788,7 @@ bancosServer <- function(id, shared) {
         Documento = as.character(row$documento),
         Parte     = as.character(row$parte),
         Codigo    = trimws(as.character(row$codigo %||% "")),
+        tipo_item = "factura",
         Importe   = as.numeric(row$importe),
         FechaVenc = as.Date(row$fecha),
         staged_by = shared$current_user(),

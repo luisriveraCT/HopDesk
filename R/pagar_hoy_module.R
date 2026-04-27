@@ -620,7 +620,8 @@ pagarHoyServer <- function(id, shared) {
         sess_ovr <- tryCatch(.session_alias_overrides(), error = function(e) list())
         ann <- .annotate_ap_cached(s_cur, emp) |>
           dplyr::arrange(FechaVenc)
-        if (!"Codigo" %in% names(ann)) ann[["Codigo"]] <- NA_character_
+        if (!"Codigo"     %in% names(ann)) ann[["Codigo"]]     <- NA_character_
+        if (!"tipo_item" %in% names(ann)) ann[["tipo_item"]] <- NA_character_
         ann <- ann |> dplyr::mutate(
             # live_alias: session override wins over annotation result.
             # This ensures the badge always reflects the true current alias even when
@@ -643,9 +644,15 @@ pagarHoyServer <- function(id, shared) {
               ref <- if (length(ref_lkup_tbl)) trimws(ref_lkup_tbl[doc] %||% "") else ""
               dplyr::if_else(nzchar(ref) & !is.na(ref), ref, Documento)
             },
+            abono_pfx = dplyr::if_else(
+              !is.na(tipo_item) & tipo_item == "abono",
+              '<span class="badge bg-warning text-dark me-1" style="font-size:0.65em;">ABONO</span>',
+              ''
+            ),
             # Build Proveedor cell with colored dot + alias badge if found
             Proveedor = dplyr::case_when(
               ppl_status == "ok" ~ paste0(
+                abono_pfx,
                 '<span class="ph-dot ph-dot-ok" title="Incluido en BanBajío"></span>',
                 htmltools::htmlEscape(Parte),
                 ' <button class="btn btn-xs btn-link p-0 ms-1 ph-cycle-alias-btn badge bg-success-subtle text-success border border-success-subtle" ',
@@ -654,9 +661,14 @@ pagarHoyServer <- function(id, shared) {
                 'data-current-alias="', htmltools::htmlEscape(live_alias), '" ',
                 'data-current-clabe="', ifelse(!is.na(clabe_dest), htmltools::htmlEscape(clabe_dest), ""), '" ',
                 'title="Clic para cambiar cuenta bancaria" style="cursor:pointer;">',
-                htmltools::htmlEscape(live_alias), ' \u21d5</button>'
+                htmltools::htmlEscape(live_alias), ' \u21d5</button>',
+                ' <button class="btn btn-xs btn-link p-0 ms-1 ph-lookup-btn text-secondary" ',
+                'data-parte="', htmltools::htmlEscape(Parte), '" ',
+                'data-codigo="', htmltools::htmlEscape(Codigo %||% ""), '" ',
+                'title="Editar v\u00ednculo" style="font-size:0.8rem;line-height:1;">&#x270e;</button>'
               ),
               ppl_status == "no_clabe" ~ paste0(
+                abono_pfx,
                 '<span class="ph-dot ph-dot-partial" title="Sin CLABE en catálogo"></span>',
                 htmltools::htmlEscape(Parte),
                 ' <button class="btn btn-xs btn-link p-0 ms-1 ph-cycle-alias-btn badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" ',
@@ -665,9 +677,14 @@ pagarHoyServer <- function(id, shared) {
                 'data-current-alias="', htmltools::htmlEscape(live_alias), '" ',
                 'data-current-clabe="', ifelse(!is.na(clabe_dest), htmltools::htmlEscape(clabe_dest), ""), '" ',
                 'title="Clic para cambiar cuenta bancaria" style="cursor:pointer;">',
-                htmltools::htmlEscape(live_alias), ' \u21d5 \u2014 sin CLABE</button>'
+                htmltools::htmlEscape(live_alias), ' \u21d5 \u2014 sin CLABE</button>',
+                ' <button class="btn btn-xs btn-link p-0 ms-1 ph-lookup-btn text-secondary" ',
+                'data-parte="', htmltools::htmlEscape(Parte), '" ',
+                'data-codigo="', htmltools::htmlEscape(Codigo %||% ""), '" ',
+                'title="Editar v\u00ednculo" style="font-size:0.8rem;line-height:1;">&#x270e;</button>'
               ),
               TRUE ~ paste0(
+                abono_pfx,
                 '<span class="ph-dot ph-dot-nomatch" title="No encontrado en catálogo"></span>',
                 htmltools::htmlEscape(Parte),
                 ' <button class="btn btn-xs btn-link p-0 ms-1 ph-lookup-btn" ',
@@ -1810,7 +1827,7 @@ pagarHoyServer <- function(id, shared) {
           TRUE                                                  ~ "MXN"
         )
 
-        if (nzchar(emp) && emp %in% all_companies) {
+        if (nzchar(emp) && emp %in% all_companies_rv()) {
           key <- paste0(emp, "_", mon)
           saldos_por_cuenta[[key]] <- (saldos_por_cuenta[[key]] %||% 0) + saldo
         }
@@ -1819,7 +1836,7 @@ pagarHoyServer <- function(id, shared) {
       # Write into saldos_apertura
       sa        <- saldos_apertura()
       n_updated <- 0L
-      for (emp in all_companies) {
+      for (emp in all_companies_rv()) {
         for (mon in c("MXN", "USD")) {
           key <- paste0(emp, "_", mon)
           if (!is.null(saldos_por_cuenta[[key]])) {
@@ -1831,7 +1848,7 @@ pagarHoyServer <- function(id, shared) {
       saldos_apertura(sa)
 
       # Refresh visible numericInputs
-      for (emp in all_companies) {
+      for (emp in all_companies_rv()) {
         cur <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         updateNumericInput(session, paste0("bal_", emp),
                            value = sa[[emp]][[cur]] %||% 0)

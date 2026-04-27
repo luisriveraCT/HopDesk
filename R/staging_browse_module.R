@@ -315,6 +315,7 @@ setup_staging_browse <- function(input, output, session,
         Documento = r$documento %||% "",
         Parte     = r$parte     %||% "",
         Codigo    = trimws(r$codigo %||% ""),
+        tipo_item = "factura",
         Importe   = as.numeric(r$importe %||% 0),
         FechaVenc = tryCatch(as.Date(r$fecha_venc), error = function(e) Sys.Date()),
         staged_by = current_user(),
@@ -493,7 +494,7 @@ show_abono_modal <- function(sap_data, session) {
 
 # ── Server-side setup — call ONCE inside server() ────────────────────────────
 setup_abono_browse <- function(input, output, session,
-                                sap_data, abonos_db, current_user) {
+                                sap_data, abonos_db, pagar_hoy_db, current_user) {
 
   output$ab_table <- renderUI({
     ledger <- input$ab_ledger
@@ -543,14 +544,15 @@ setup_abono_browse <- function(input, output, session,
     )
   })
 
-  # Save abono records
+  # Save abono records and stage to pagar_hoy
   observeEvent(input$ab_rows, {
     rows_data <- input$ab_rows
     if (!is.list(rows_data) || length(rows_data) == 0) return()
 
     ledger <- input$ab_ledger %||% "AR"
 
-    new_rows_df <- dplyr::bind_rows(lapply(rows_data, function(r) {
+    # ── 1. Save abono records (calendar balance reduction) ───────────────────
+    abono_rows_df <- dplyr::bind_rows(lapply(rows_data, function(r) {
       tibble::tibble(
         id          = uuid::UUIDgenerate(),
         ledger      = ledger,
@@ -567,18 +569,58 @@ setup_abono_browse <- function(input, output, session,
       )
     }))
 
-    ab_updated <- upsert_abono(abonos_db() %||% load_abonos(), new_rows_df)
+    ab_updated <- upsert_abono(abonos_db() %||% load_abonos(), abono_rows_df)
     abonos_db(ab_updated)
-    tryCatch(
-      save_abonos(ab_updated),
-      error = function(e) showNotification(
-        paste("No se pudo guardar el abono:", e$message), type = "warning"
-      )
-    )
+    tryCatch(save_abonos(ab_updated),
+             error = function(e) showNotification(
+               paste("No se pudo guardar el abono:", e$message), type = "warning"))
 
-    n <- nrow(new_rows_df)
+    # ── 2. Stage to pagar_hoy — modify pending parent or insert abono row ───
+    ph <- pagar_hoy_db() %||% load_pagar_hoy()
+
+    for (i in seq_len(nrow(abono_rows_df))) {
+      ar     <- abono_rows_df[i, ]
+      r_raw  <- rows_data[[i]]
+
+      parent_mask <- ph$ledger   == ledger       &
+                     ph$Empresa  == ar$Empresa   &
+                     ph$Moneda   == ar$Moneda    &
+                     ph$Documento== ar$Documento &
+                     ph$status   == "pending"    &
+                     (is.na(ph$tipo_item) | ph$tipo_item == "factura")
+
+      if (any(parent_mask)) {
+        idx <- which(parent_mask)[1]
+        ph$Importe[idx] <- pmax(0, ph$Importe[idx] - ar$importe)
+      } else {
+        new_row <- tibble::tibble(
+          id        = uuid::UUIDgenerate(),
+          ledger    = ledger,
+          Empresa   = ar$Empresa,
+          Moneda    = ar$Moneda,
+          Documento = ar$Documento,
+          Parte     = ar$Parte,
+          Codigo    = trimws(as.character(r_raw$codigo %||% "")),
+          tipo_item = "abono",
+          Importe   = ar$importe,
+          FechaVenc = Sys.Date(),
+          staged_by = current_user(),
+          staged_at = Sys.time(),
+          status    = "pending"
+        )
+        ph <- upsert_pagar_hoy(ph, new_row, keys = "id")
+      }
+    }
+
+    pagar_hoy_db(ph)
+    tryCatch(save_pagar_hoy(ph),
+             error = function(e) showNotification(
+               paste("No se pudo guardar en Agenda:", e$message), type = "warning"))
+
+    n <- nrow(abono_rows_df)
     showNotification(
-      paste0(n, if (n == 1L) " abono registrado." else " abonos registrados."),
+      paste0(n, if (n == 1L) " abono registrado" else " abonos registrados",
+             " y enviado(s) a Agenda de hoy."),
       type = "message", duration = 3
     )
     removeModal()

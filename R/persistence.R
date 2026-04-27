@@ -501,6 +501,7 @@ save_interco_v2 <- function(registry) {
   Documento  = character(),
   Parte      = character(),
   Codigo     = character(),
+  tipo_item  = character(),   # "factura" (default) | "abono"
   Importe    = numeric(),
   FechaVenc  = as.Date(character()),
   staged_by  = character(),

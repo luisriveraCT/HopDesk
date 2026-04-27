@@ -59,12 +59,20 @@ ui <- bslib::page_navbar(
     ")),
     tags$script(HTML("
       Shiny.addCustomMessageHandler('updateTabLabel', function(msg) {
-        var tabs = document.querySelectorAll('#' + msg.tabsetId + ' > li > a');
-        tabs.forEach(function(tab) {
-          if (tab.getAttribute('data-value') === msg.value) {
-            tab.textContent = msg.label;
+        var attempts = 0;
+        function tryUpdate() {
+          var all = document.querySelectorAll('#' + msg.tabsetId + ' [data-value]');
+          var found = false;
+          for (var i = 0; i < all.length; i++) {
+            if (all[i].getAttribute('data-value') === msg.value) {
+              all[i].textContent = msg.label;
+              found = true;
+              break;
+            }
           }
-        });
+          if (!found && attempts < 10) { attempts++; setTimeout(tryUpdate, 150); }
+        }
+        tryUpdate();
       });
     ")),
     tags$script(HTML("
@@ -94,6 +102,9 @@ ui <- bslib::page_navbar(
           syncBar(e.target.getAttribute('data-value') || '');
         });
         setTimeout(syncBar, 200);
+        // shiny:idle fires after Shiny finishes initial processing — reliably
+        // catches the case where 200ms wasn't enough on slow connections.
+        $(document).one('shiny:idle', function() { syncBar(); });
       });
     ")),
     tags$script(HTML("
@@ -725,7 +736,7 @@ server <- function(input, output, session) {
                        active_entry_ledger, sap_data,
                        pagar_hoy_db, current_user)
   setup_abono_browse(input, output, session,
-                     sap_data, abonos_db, current_user)
+                     sap_data, abonos_db, pagar_hoy_db, current_user)
 
   # ── Show GRUPO menu and control per-panel visibility ─────────────────────────
   # GRUPO toggle is hidden by default via CSS (display:none!important).
@@ -1337,8 +1348,9 @@ server <- function(input, output, session) {
       title = "¿Qué tipo de entrada?", size = "s", easyClose = TRUE,
       footer = tagList(
         modalButton("Cancelar"),
-        actionButton("pick_ar", "Cobro \u2014 CxC", class = "btn btn-primary"),
-        actionButton("pick_ap", "Pago \u2014 CxP",  class = "btn btn-success")
+        actionButton("pick_ar",    "Cobro \u2014 CxC",  class = "btn btn-primary"),
+        actionButton("pick_ap",    "Pago \u2014 CxP",   class = "btn btn-success"),
+        actionButton("pick_abono", "Abono parcial",      class = "btn btn-warning")
       )
     ))
   })
@@ -1353,6 +1365,11 @@ server <- function(input, output, session) {
     active_entry_ledger("AP"); removeModal()
     show_combined_entry_modal("AP", sap_data, session,
                               empresa_vals = empresa_sel_rv())
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$pick_abono, {
+    removeModal()
+    show_abono_modal(sap_data, session)
   }, ignoreInit = TRUE)
 
   observeEvent(input$me_save, {
@@ -1439,6 +1456,7 @@ server <- function(input, output, session) {
           Documento = doc,
           Parte     = trimws(input$me_parte    %||% ""),
           Codigo    = trimws(input$me_codigo   %||% ""),
+          tipo_item = "factura",
           Importe   = input$me_importe         %||% 0,
           FechaVenc = as.Date(input$me_fecha),
           staged_by = current_user(),
