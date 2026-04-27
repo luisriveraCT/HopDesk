@@ -1275,11 +1275,85 @@ pagarHoyServer <- function(id, shared) {
       .render_lookup_modal(q_parte, "")
     }, ignoreInit = TRUE)
 
-    # Re-render modal when search text changes
+    # Update search rv — results are rendered by output$ph_lookup_results (renderUI).
+    # Never call showModal() here: recreating the modal on every keystroke causes
+    # Shiny to re-initialize the textInput, which fires this observer again → loop.
     observeEvent(input$ph_lookup_search, {
       lookup_search_rv(trimws(input$ph_lookup_search %||% ""))
-      .render_lookup_modal(lookup_parte_rv(), lookup_search_rv())
     }, ignoreInit = TRUE)
+
+    # Reactive search results — rendered inside the modal without rebuilding it.
+    output$ph_lookup_results <- renderUI({
+      search_txt <- lookup_search_rv()
+      q_parte    <- lookup_parte_rv()
+      if (!nzchar(q_parte) || !nzchar(search_txt)) return(NULL)
+
+      can_link <- .can_link()
+      provs <- tryCatch(
+        if (!is.null(shared$proveedores_db)) shared$proveedores_db()
+        else load_proveedores(),
+        error = function(e) NULL
+      )
+      if (is.null(provs)) return(NULL)
+
+      s   <- tolower(search_txt)
+      act <- provs[!is.na(provs$activo) & provs$activo == TRUE, ]
+      hits <- act[
+        grepl(s, tolower(act$nombre    %||% ""), fixed = TRUE) |
+        grepl(s, tolower(act$alias     %||% ""), fixed = TRUE) |
+        grepl(s, tolower(act$rfc       %||% ""), fixed = TRUE) |
+        grepl(s, tolower(act$no_cuenta %||% ""), fixed = TRUE),
+      ]
+
+      if (nrow(hits) == 0)
+        return(tags$p(class = "small text-muted fst-italic", "Sin resultados."))
+
+      mk_link_btn <- function(prov_row, is_linked = FALSE) {
+        ali <- prov_row$alias %||% ""
+        if (can_link) {
+          if (is_linked)
+            tags$button(class = "btn btn-sm btn-outline-danger ph-unlink-btn ms-auto",
+                        `data-parte` = q_parte, `data-emp` = "", "Desvincular")
+          else
+            tags$button(class = "btn btn-sm btn-success ph-link-btn ms-auto",
+                        `data-parte` = q_parte, `data-alias` = ali, `data-emp` = "",
+                        "Vincular")
+        } else {
+          tags$span(class = "text-muted small ms-auto fst-italic", "Solo lectura")
+        }
+      }
+
+      tagList(
+        tags$p(class = "small text-muted mb-2",
+               paste0(nrow(hits), " resultado(s):")),
+        lapply(seq_len(min(nrow(hits), 8L)), function(i) {
+          pr    <- hits[i, ]
+          nom   <- pr$nombre    %||% ""
+          ali   <- pr$alias     %||% ""
+          rfc   <- pr$rfc       %||% "—"
+          banco <- pr$banco %||% pr$banco_destino %||% "—"
+          nc    <- pr$no_cuenta %||% pr$clabe %||% "—"
+          div(class = "border rounded p-2 mb-2 bg-light",
+            div(class = "d-flex align-items-start gap-2",
+              div(class = "flex-grow-1",
+                div(class = "fw-semibold small", nom,
+                  if (nzchar(ali))
+                    tags$span(class = "badge bg-secondary ms-1 fw-normal", ali)
+                  else NULL
+                ),
+                div(class = "text-muted small",
+                  paste0("RFC: ", rfc, "  •  Banco: ", banco),
+                  if (nzchar(trimws(nc)) && nc != "—")
+                    paste0("  •  Cta: ", nc)
+                  else NULL
+                )
+              ),
+              mk_link_btn(pr)
+            )
+          )
+        })
+      )
+    })
 
     # Helper: build and show the lookup modal
     .render_lookup_modal <- function(q_parte, search_txt) {
@@ -1316,17 +1390,7 @@ pagarHoyServer <- function(id, shared) {
         )
       } else NULL
 
-      # Search results (free-text search over active suppliers)
-      search_results <- if (nzchar(search_txt) && !is.null(provs)) {
-        s   <- tolower(search_txt)
-        act <- provs[!is.na(provs$activo) & provs$activo == TRUE, ]
-        act[
-          grepl(s, tolower(act$nombre   %||% ""), fixed = TRUE) |
-          grepl(s, tolower(act$alias    %||% ""), fixed = TRUE) |
-          grepl(s, tolower(act$rfc      %||% ""), fixed = TRUE) |
-          grepl(s, tolower(act$no_cuenta %||% ""), fixed = TRUE),
-        ]
-      } else NULL
+      # Search results are rendered reactively by output$ph_lookup_results.
 
       # Helper: build one result card
       .result_card <- function(prov_row, score = NA, is_linked = FALSE) {
@@ -1421,20 +1485,10 @@ pagarHoyServer <- function(id, shared) {
                 tagList(icon("magnifying-glass"), " Buscar en catálogo activo")),
         textInput(NS(id, "ph_lookup_search"),
                   NULL,
-                  value       = search_txt,
+                  value       = "",
                   placeholder = "Nombre, alias, RFC, No. Cuenta...",
                   width       = "100%"),
-        if (!is.null(search_results) && nrow(search_results) > 0) {
-          tagList(
-            tags$p(class = "small text-muted mb-2",
-                   paste0(nrow(search_results), " resultado(s):")),
-            lapply(seq_len(min(nrow(search_results), 8L)), function(i) {
-              .result_card(search_results[i, ])
-            })
-          )
-        } else if (nzchar(search_txt)) {
-          tags$p(class = "small text-muted fst-italic", "Sin resultados.")
-        } else NULL
+        uiOutput(NS(id, "ph_lookup_results"))
       )
 
       tier_note <- if (!can_link) {
