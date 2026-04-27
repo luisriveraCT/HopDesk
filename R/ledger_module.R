@@ -75,15 +75,16 @@ ledgerModuleServer <- function(id, config, shared) {
 
       if (length(emp) && "Empresa" %in% names(df)) {
         df_filtered <- dplyr::filter(df, Empresa %in% emp)
-        # Fallback: if empresa filter removes ALL rows (empresa-name mismatch between
-        # static COMPANY_MAP used in snapshot and the dynamic map from empresas.rds),
-        # keep unfiltered data so the calendar still shows something.
-        if (nrow(df_filtered) > 0 || nrow(df) == 0) {
-          df <- df_filtered
-        } else {
-          message("[DF_COMBINED] empresa filter removed all ", nrow(df),
-                  " rows — empresa_sel may mismatch snapshot Empresa names; showing all")
+        if (nrow(df_filtered) == 0 && nrow(df) > 0) {
+          # Filter eliminates everything — empresa name in snapshot doesn't match
+          # the filter list. Show nothing rather than silently showing all data.
+          warning("[DF_COMBINED] empresa filter ", paste(emp, collapse = ","),
+                  " matched 0 of ", nrow(df), " rows — check empresas.rds vs snapshot")
+          showNotification(
+            "El filtro de Empresa no coincide con los datos cargados. Verifica la lista de empresas.",
+            type = "warning", duration = 5)
         }
+        df <- df_filtered
       }
 
       # ── Mark confirmed invoices ─────────────────────────────────────────────
@@ -113,11 +114,13 @@ ledgerModuleServer <- function(id, config, shared) {
         conf_active <- conf_db[!isTRUE(conf_db[["eliminado"]]) &
                                conf_db[["tipo"]] == tipo_val, , drop = FALSE]
         if (nrow(conf_active)) {
-          bc_keys <- unique(conf_active[, c("empresa","parte","documento","moneda"),
+          bc_keys <- unique(conf_active[, c("empresa","documento","moneda"),
                                         drop = FALSE])
-          # bancos_confirmados uses lowercase column names — normalize to match df
-          match_key <- paste(df[["Empresa"]], df[["Documento"]])
-          conf_key  <- paste(bc_keys[["empresa"]], bc_keys[["documento"]])
+          # bancos_confirmados uses lowercase column names — normalize to match df.
+          # Include Moneda so a USD manual entry is not falsely matched to an MXN
+          # bancos_confirmados row sharing only Empresa+Documento.
+          match_key <- paste(df[["Empresa"]], df[["Documento"]], df[["Moneda"]])
+          conf_key  <- paste(bc_keys[["empresa"]], bc_keys[["documento"]], bc_keys[["moneda"]])
           df[["confirmed"]] <- df[["confirmed"]] | (match_key %in% conf_key)
         }
       }

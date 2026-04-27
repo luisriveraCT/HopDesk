@@ -637,12 +637,21 @@ server <- function(input, output, session) {
   # Initialises with COMPANY_MAP; refreshes to full selection when empresas loads.
   empresa_sel_rv <- reactiveVal(unname(COMPANY_MAP))
 
-  # When empresas data arrives, refresh selection and keep COMPANY_MAP in sync.
-  # Syncing COMPANY_MAP means all settings_module dropdowns (opened on demand)
-  # automatically pick up new/renamed companies without any other code changes.
+  # When empresas data arrives, keep COMPANY_MAP in sync and preserve the user's
+  # current filter — only auto-add empresas they haven't seen before.
   observeEvent(empresas_db(), {
-    cmap <- company_map_rv()
-    empresa_sel_rv(unname(cmap))
+    cmap     <- company_map_rv()
+    all_now  <- unname(cmap)
+    cur_sel  <- empresa_sel_rv()
+    # Track which full names were present last time so we can detect new arrivals.
+    prev       <- isolate(.GlobalEnv$.prev_company_names %||% character(0))
+    new_cos    <- setdiff(all_now, prev)
+    keep_sel   <- intersect(cur_sel, all_now)
+    # If the user had a non-empty selection, preserve it and append any new empresas.
+    # If somehow empty (first load or all empresas removed), default to all.
+    new_sel    <- if (length(keep_sel)) union(keep_sel, new_cos) else all_now
+    empresa_sel_rv(new_sel)
+    assign(".prev_company_names", all_now, envir = .GlobalEnv)
     # Keep global COMPANY_MAP in sync so modules that read it statically
     # (settings forms, reports, etc.) see the latest companies when they render.
     assign("COMPANY_MAP", cmap, envir = .GlobalEnv)
