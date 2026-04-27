@@ -16,44 +16,7 @@
 # =============================================================================
 
 pagarHoyUI <- function(id) {
-  ns      <- NS(id)
-  all_cos <- sort(unname(COMPANY_MAP))
-
-  panels <- lapply(all_cos, function(emp) {
-    tabPanel(
-      title = emp,
-      value = emp,
-      div(class = "ph-company-panel p-3",
-        div(class = "d-flex align-items-center gap-4 mb-3 px-3 py-2 rounded bg-light border",
-          div(class = "d-flex gap-3 align-items-center",
-            div(
-              tags$label("Moneda", class = "form-label small text-muted mb-1"),
-              selectInput(ns(paste0("bal_cur_", emp)), NULL,
-                          choices = c("MXN","USD"), width = "100px")
-            ),
-            div(
-              tags$label("Saldo apertura", class = "form-label small text-muted mb-1"),
-              numericInput(ns(paste0("bal_", emp)), NULL,
-                           value = 0, min = 0, step = 1000, width = "180px")
-            )
-          ),
-          tags$div(class = "vr", style = "height:48px;"),
-          uiOutput(ns(paste0("calc_", emp)))
-        ),
-        div(class = "ph-section mb-3",
-          uiOutput(ns(paste0("hdr_ap_", emp))),
-          # Legend for color coding
-          uiOutput(ns(paste0("legend_", emp))),
-          DT::dataTableOutput(ns(paste0("tbl_ap_", emp)))
-        ),
-        div(class = "ph-section",
-          uiOutput(ns(paste0("hdr_ar_", emp))),
-          DT::dataTableOutput(ns(paste0("tbl_ar_", emp)))
-        )
-      )
-    )
-  })
-
+  ns <- NS(id)
   tagList(
   tags$script(HTML(sprintf("
     $(document).off('click.phlookup').on('click.phlookup', '.ph-lookup-btn', function(e) {
@@ -113,23 +76,32 @@ pagarHoyUI <- function(id) {
                      class = "btn btn-sm btn-outline-danger")
       )
     ),
-    do.call(tabsetPanel, c(panels, list(id = ns("company_tab"))))
+    uiOutput(ns("ph_panels_ui"))
   )
   ) # end tagList
 }
 
 pagarHoyServer <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
-    ns            <- session$ns
-    all_companies <- sort(unname(COMPANY_MAP))
+    ns <- session$ns
+
+    # Reactive company list — sourced from shared$company_map() so adding a new
+    # empresa via the Empresas panel updates the tabs without app restart.
+    all_companies_rv <- reactive({
+      cmap <- shared$company_map()
+      sort(unname(cmap))
+    })
 
     # ── Opening balance store: per-company, per-currency ────────────────────
-    saldos_apertura <- reactiveVal(
-      setNames(
-        lapply(all_companies, function(e) list(MXN = 0, USD = 0)),
-        all_companies
-      )
-    )
+    saldos_apertura <- reactiveVal(setNames(list(), character()))
+
+    observe({
+      cur <- saldos_apertura()
+      for (e in all_companies_rv()) {
+        if (is.null(cur[[e]])) cur[[e]] <- list(MXN = 0, USD = 0)
+      }
+      saldos_apertura(cur)
+    })
 
     # ── Staged queue ────────────────────────────────────────────────────────
     staged <- reactive({
@@ -374,7 +346,7 @@ pagarHoyServer <- function(id, shared) {
     # ── Currency choices update ──────────────────────────────────────────────
     observe({
       s <- staged()
-      lapply(all_companies, function(emp) {
+      lapply(all_companies_rv(), function(emp) {
         choices <- sort(unique(dplyr::filter(s, Empresa == emp)$Moneda))
         if (!length(choices)) choices <- c("MXN","USD")
         updateSelectInput(session, paste0("bal_cur_", emp),
@@ -412,7 +384,7 @@ pagarHoyServer <- function(id, shared) {
     # ── Tab labels via JS ────────────────────────────────────────────────────
     observe({
       s <- staged()
-      lapply(all_companies, function(emp) {
+      lapply(all_companies_rv(), function(emp) {
         n <- nrow(dplyr::filter(s, Empresa == emp))
         lbl <- if (n > 0) paste0(emp, " (", n, ")") else emp
         session$sendCustomMessage("updateTabLabel", list(
@@ -420,8 +392,53 @@ pagarHoyServer <- function(id, shared) {
       })
     })
 
-    # ── Per-company panels ───────────────────────────────────────────────────
-    lapply(all_companies, function(emp) {
+    # ── Company tab panels — rebuilt reactively when company list changes ────
+    output$ph_panels_ui <- renderUI({
+      all_cos <- all_companies_rv()
+      panels <- lapply(all_cos, function(emp) {
+        tabPanel(
+          title = emp,
+          value = emp,
+          div(class = "ph-company-panel p-3",
+            div(class = "d-flex align-items-center gap-4 mb-3 px-3 py-2 rounded bg-light border",
+              div(class = "d-flex gap-3 align-items-center",
+                div(
+                  tags$label("Moneda", class = "form-label small text-muted mb-1"),
+                  selectInput(ns(paste0("bal_cur_", emp)), NULL,
+                              choices = c("MXN","USD"), width = "100px")
+                ),
+                div(
+                  tags$label("Saldo apertura", class = "form-label small text-muted mb-1"),
+                  numericInput(ns(paste0("bal_", emp)), NULL,
+                               value = 0, min = 0, step = 1000, width = "180px")
+                )
+              ),
+              tags$div(class = "vr", style = "height:48px;"),
+              uiOutput(ns(paste0("calc_", emp)))
+            ),
+            div(class = "ph-section mb-3",
+              uiOutput(ns(paste0("hdr_ap_", emp))),
+              uiOutput(ns(paste0("legend_", emp))),
+              DT::dataTableOutput(ns(paste0("tbl_ap_", emp)))
+            ),
+            div(class = "ph-section",
+              uiOutput(ns(paste0("hdr_ar_", emp))),
+              DT::dataTableOutput(ns(paste0("tbl_ar_", emp)))
+            )
+          )
+        )
+      })
+      do.call(tabsetPanel, c(panels, list(id = ns("company_tab"))))
+    })
+
+    # ── Per-company outputs and observers — registered once per empresa ──────
+    observe({
+      for (emp in all_companies_rv()) {
+        if (isTRUE(session$userData[[paste0("ph_obs_", emp)]])) next
+        session$userData[[paste0("ph_obs_", emp)]] <- TRUE
+
+        local({
+          emp <- emp  # capture loop variable
 
       # Balance calc strip
       output[[paste0("calc_", emp)]] <- renderUI({
@@ -1230,7 +1247,8 @@ pagarHoyServer <- function(id, shared) {
 
       # ── Interco map button ────────────────────────────────────────────────────
       observeEvent(input[[paste0("open_icmap_", emp)]], {
-        ini <- names(COMPANY_MAP)[COMPANY_MAP == emp]
+        cmap <- shared$company_map()
+        ini  <- names(cmap)[cmap == emp]
         if (length(ini) && !is.null(shared$ic_map_target)) {
           shared$ic_map_target(list(ini = ini[1], nonce = as.numeric(Sys.time())))
         }
@@ -1240,7 +1258,9 @@ pagarHoyServer <- function(id, shared) {
         ")
       }, ignoreInit = TRUE)
 
-    }) # end lapply companies
+        }) # end local
+      }   # end for
+    })    # end observe (per-empresa guard)
 
     # ── Supplier lookup & link modal ─────────────────────────────────────────
     # ── TIER GATE ────────────────────────────────────────────────────────────

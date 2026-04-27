@@ -843,7 +843,7 @@ server <- function(input, output, session) {
     })
 
     load_ledger <- function(ledger_name) {
-      result <- tryCatch(fetch_all_companies(ledger_name), error = function(e) {
+      result <- tryCatch(fetch_all_companies(ledger_name, isolate(company_map_rv())), error = function(e) {
         showNotification(paste("SAP", ledger_name, ":", e$message), type = "warning")
         NULL
       })

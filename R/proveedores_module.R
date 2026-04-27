@@ -156,6 +156,13 @@ proveedoresServer <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    observe({
+      cmap <- shared$company_map()
+      updateSelectInput(session, "excel_empresa",
+                        choices = c("Todos (todas las empresas)" = "TODOS",
+                                    setNames(names(cmap), unname(cmap))))
+    })
+
     # ── Helpers ────────────────────────────────────────────────────────────
     get_provs <- function() {
       tryCatch(
@@ -350,7 +357,7 @@ proveedoresServer <- function(id, shared) {
           div(class = "col-md-12",
             tags$label("Empresas", class = "form-label small fw-semibold"),
             checkboxGroupInput(ns("prov_empresas"), NULL,
-                               choices  = names(COMPANY_MAP),
+                               choices  = names(shared$company_map()),
                                selected = emp_val,
                                inline   = TRUE)
           ),

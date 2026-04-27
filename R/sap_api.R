@@ -313,16 +313,16 @@ fetch_ap <- function(initials) {
 # Returns NULL if ALL companies fail (caller shows an error); partial failures
 # are logged and skipped.
 
-fetch_all_companies <- function(ledger = c("AR","AP")) {
+fetch_all_companies <- function(ledger = c("AR","AP"), cmap = COMPANY_MAP) {
   ledger <- match.arg(ledger)
   fetcher <- if (ledger == "AR") fetch_ar else fetch_ap
 
   # Track per-company outcome for the snapshot-content audit log below.
   # Each entry is: list(initials, rows, status)  where status ∈ "ok"|"zero"|"failed"|"skipped"
-  outcomes <- vector("list", length(COMPANY_MAP))
-  names(outcomes) <- names(COMPANY_MAP)
+  outcomes <- vector("list", length(cmap))
+  names(outcomes) <- names(cmap)
 
-  results <- lapply(names(COMPANY_MAP), function(initials) {
+  results <- lapply(names(cmap), function(initials) {
     tryCatch({
       # Skip companies whose URL is still a placeholder
       url <- Sys.getenv(paste0("SAP_", toupper(initials), "_URL"))
@@ -337,9 +337,9 @@ fetch_all_companies <- function(ledger = c("AR","AP")) {
       elapsed_co <- round((proc.time() - t0_co)[["elapsed"]], 1)
       if (nrow(df)) {
         message("[SAP] ", initials, " (", ledger, ") — ", nrow(df), " rows in ",
-                elapsed_co, "s, Empresa=", COMPANY_MAP[[initials]])
+                elapsed_co, "s, Empresa=", cmap[[initials]])
         outcomes[[initials]] <<- list(initials = initials, rows = nrow(df), status = "ok")
-        df |> mutate(Empresa = COMPANY_MAP[[initials]])
+        df |> mutate(Empresa = cmap[[initials]])
       } else {
         # SAP responded but returned 0 open invoices — all invoices for this
         # company are either paid or there are genuinely none outstanding.
@@ -391,8 +391,8 @@ fetch_all_companies <- function(ledger = c("AR","AP")) {
 # ── Availability check ─────────────────────────────────────────────────────────
 # Returns a named logical vector: which companies have credentials configured
 
-sap_companies_available <- function() {
-  sapply(names(COMPANY_MAP), function(i) {
+sap_companies_available <- function(cmap = COMPANY_MAP) {
+  sapply(names(cmap), function(i) {
     all(nzchar(c(
       Sys.getenv(paste0("SAP_", i, "_URL")),
       Sys.getenv(paste0("SAP_", i, "_COMPANY")),

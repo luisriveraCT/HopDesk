@@ -41,8 +41,11 @@ intercoUI <- function(id) {
 
 intercoServer <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
-    ns      <- session$ns
-    inv_map <- setNames(names(COMPANY_MAP), unname(COMPANY_MAP))
+    ns         <- session$ns
+    inv_map_rv <- reactive({
+      cmap <- shared$company_map()
+      setNames(names(cmap), unname(cmap))
+    })
 
     # ── State ──────────────────────────────────────────────────────────────
     ic_invoices   <- reactiveVal(NULL)   # list(ar = df | NULL, ap = df | NULL)
@@ -88,17 +91,20 @@ intercoServer <- function(id, shared) {
       reg      <- isolate(shared$interco_v2())
       if (is.null(reg) || !length(reg$companies)) return(NULL)
 
+      cmap    <- isolate(shared$company_map())
+      inv_map <- setNames(names(cmap), unname(cmap))
+
       ar_pre   <- toupper(reg$ar_prefix %||% "C")
       ap_pre   <- toupper(reg$ap_prefix %||% "P")
 
       # Full CardCode sets per empresa, per ledger
-      ic_codes <- lapply(names(COMPANY_MAP), function(ini) {
+      ic_codes <- lapply(names(cmap), function(ini) {
         list(
           ar = paste0(ar_pre, reg$companies[[ini]]$ar %||% character()),
           ap = paste0(ap_pre, reg$companies[[ini]]$ap %||% character())
         )
       })
-      names(ic_codes) <- names(COMPANY_MAP)
+      names(ic_codes) <- names(cmap)
 
       snap_ar <- tryCatch(load_sap_snapshot("AR")$data, error = function(e) NULL)
       snap_ap <- tryCatch(load_sap_snapshot("AP")$data, error = function(e) NULL)

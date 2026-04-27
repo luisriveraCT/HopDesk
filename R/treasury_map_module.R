@@ -10,8 +10,8 @@
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 # Match SAP Parte display names → company initials (case-insensitive, partial).
-.tm_parte_to_ini <- function(parte_vec) {
-  inv_map <- setNames(names(COMPANY_MAP), unname(COMPANY_MAP))
+.tm_parte_to_ini <- function(parte_vec, cmap = COMPANY_MAP) {
+  inv_map <- setNames(names(cmap), unname(cmap))
   lc_keys <- tolower(names(inv_map))
 
   vapply(parte_vec, function(p) {
@@ -28,9 +28,10 @@
 # Bank balance per company per currency.
 # Returns named list: result[[ini]][[currency]] = numeric (NA if no data).
 .tm_bank_balances <- function(shared) {
+  cmap   <- tryCatch(shared$company_map(), error = function(e) COMPANY_MAP)
   result <- setNames(
-    lapply(names(COMPANY_MAP), function(ini) list(MXN = NA_real_, USD = NA_real_)),
-    names(COMPANY_MAP)
+    lapply(names(cmap), function(ini) list(MXN = NA_real_, USD = NA_real_)),
+    names(cmap)
   )
 
   ctas <- tryCatch(
@@ -48,8 +49,8 @@
     ct <- cts_active[i, ]
 
     emp_raw <- trimws(ct$Empresa %||% "")
-    ini <- if (emp_raw %in% names(COMPANY_MAP)) emp_raw
-           else if (emp_raw %in% unname(COMPANY_MAP)) names(COMPANY_MAP)[COMPANY_MAP == emp_raw][1]
+    ini <- if (emp_raw %in% names(cmap)) emp_raw
+           else if (emp_raw %in% unname(cmap)) names(cmap)[cmap == emp_raw][1]
            else NA_character_
     if (is.na(ini)) next
 
@@ -397,6 +398,18 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    inv_map_rv <- reactive({
+      cmap <- shared$company_map()
+      setNames(names(cmap), unname(cmap))
+    })
+
+    observe({
+      cmap <- shared$company_map()
+      updateSelectInput(session, "target_co",
+                        choices  = setNames(names(cmap), unname(cmap)),
+                        selected = isolate(input$target_co) %||% names(cmap)[1])
+    })
+
     # ── State ──────────────────────────────────────────────────────────────────
     payment_plan  <- reactiveVal(list())
     selected_edge <- reactiveVal(NULL)   # list(from_ini, to_ini) or NULL
@@ -412,7 +425,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       ar_c    <- ar[!is.na(ar$Moneda) & ar$Moneda == cur, , drop = FALSE]
       if (!nrow(ar_c)) return(NULL)
 
-      ar_c$from_ini <- .tm_parte_to_ini(ar_c$Parte)
+      ar_c$from_ini <- .tm_parte_to_ini(ar_c$Parte, shared$company_map())
       ar_c$to_ini   <- ar_c$.ini
       ar_c <- ar_c[!is.na(ar_c$from_ini) & !is.na(ar_c$to_ini) &
                     ar_c$from_ini != ar_c$to_ini, , drop = FALSE]
@@ -435,14 +448,15 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
 
     # ── visNetwork data ────────────────────────────────────────────────────────
     map_data <- reactive({
+      cmap   <- shared$company_map()
       cur    <- input$map_cur %||% "MXN"
-      target <- input$target_co %||% names(COMPANY_MAP)[1]
+      target <- input$target_co %||% names(cmap)[1]
       bal    <- bank_balances()
       esum   <- edges_summary()
 
       # Nodes — SVG image nodes with gradient fill
-      nodes <- do.call(rbind, lapply(names(COMPANY_MAP), function(ini) {
-        full    <- COMPANY_MAP[[ini]]
+      nodes <- do.call(rbind, lapply(names(cmap), function(ini) {
+        full    <- cmap[[ini]]
         bv      <- bal[[ini]][[cur]] %||% NA_real_
         is_tgt  <- identical(ini, target)
         bal_lbl <- if (!is.na(bv)) .tm_fmt(bv, cur) else "sin datos"
@@ -556,7 +570,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
 
       if (length(click$nodes) > 0) {
         node_id <- as.character(click$nodes[[1]])
-        if (node_id %in% names(COMPANY_MAP))
+        if (node_id %in% names(shared$company_map()))
           updateSelectInput(session, "target_co", selected = node_id)
         selected_edge(NULL)
 
@@ -576,7 +590,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
 
     # ── BFS routes panel ──────────────────────────────────────────────────────
     output$bfs_routes_ui <- renderUI({
-      target <- input$target_co %||% names(COMPANY_MAP)[1]
+      target <- input$target_co %||% names(shared$company_map())[1]
       esum   <- edges_summary()
       if (is.null(esum) || !nrow(esum))
         return(tags$p(class = "tm-empty", "No hay saldos IC para esta moneda."))
@@ -637,11 +651,12 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
 
       cur      <- input$map_cur %||% "MXN"
       sub      <- ar[ar$.ini == edge$to_ini & !is.na(ar$Moneda) & ar$Moneda == cur, , drop = FALSE]
-      sub$from_ini <- .tm_parte_to_ini(sub$Parte)
+      cmap <- shared$company_map()
+      sub$from_ini <- .tm_parte_to_ini(sub$Parte, cmap)
       sub <- sub[!is.na(sub$from_ini) & sub$from_ini == edge$from_ini, , drop = FALSE]
 
-      from_full <- COMPANY_MAP[[edge$from_ini]] %||% edge$from_ini
-      to_full   <- COMPANY_MAP[[edge$to_ini]]   %||% edge$to_ini
+      from_full <- cmap[[edge$from_ini]] %||% edge$from_ini
+      to_full   <- cmap[[edge$to_ini]]   %||% edge$to_ini
 
       div(class = "tm-edge-panel",
         div(class = "tm-edge-panel-header",
@@ -741,8 +756,9 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       amt_col <- if ("Saldo vencido" %in% names(ar)) "Saldo vencido" else "DocTotal"
       due_col <- "Fecha de vencimiento"
 
+      cmap <- shared$company_map()
       sub <- ar[ar$.ini == edge$to_ini & !is.na(ar$Moneda) & ar$Moneda == cur, , drop = FALSE]
-      sub$from_ini <- .tm_parte_to_ini(sub$Parte)
+      sub$from_ini <- .tm_parte_to_ini(sub$Parte, cmap)
       sub <- sub[!is.na(sub$from_ini) & sub$from_ini == edge$from_ini, , drop = FALSE]
       req(nrow(sub) > 0)
 
@@ -754,8 +770,8 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
         list(
           from_ini  = edge$from_ini,
           to_ini    = edge$to_ini,
-          from_full = COMPANY_MAP[[edge$from_ini]] %||% edge$from_ini,
-          to_full   = COMPANY_MAP[[edge$to_ini]]   %||% edge$to_ini,
+          from_full = cmap[[edge$from_ini]] %||% edge$from_ini,
+          to_full   = cmap[[edge$to_ini]]   %||% edge$to_ini,
           Documento = doc,
           Importe   = as.numeric(row[[amt_col]][1] %||% 0),
           FechaVenc = tryCatch(as.character(as.Date(row[[due_col]][1])),
@@ -851,7 +867,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       req(!is.null(shared$ic_map_target))
       tgt <- shared$ic_map_target()
       req(!is.null(tgt), nzchar(tgt$ini %||% ""))
-      if (tgt$ini %in% names(COMPANY_MAP))
+      if (tgt$ini %in% names(shared$company_map()))
         updateSelectInput(session, "target_co", selected = tgt$ini)
     })
   })

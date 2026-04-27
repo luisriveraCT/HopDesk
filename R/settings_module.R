@@ -749,7 +749,7 @@ settings_observers <- function(input, output, session, shared) {
       return()
     }
 
-    candidates <- scan_ic_candidates(sap_ar, sap_ap, shared$interco_v2())
+    candidates <- scan_ic_candidates(sap_ar, sap_ap, shared$interco_v2(), shared$company_map())
 
     if (!nrow(candidates)) {
       showNotification("No se encontraron c\u00f3digos en las facturas cargadas.",
@@ -933,7 +933,7 @@ settings_observers <- function(input, output, session, shared) {
       sap_ar  <- snap_ar$data
       sap_ap  <- snap_ap$data
       if (!is.null(sap_ar) || !is.null(sap_ap)) {
-        cands <- scan_ic_candidates(sap_ar, sap_ap, isolate(shared$interco_v2()))
+        cands <- scan_ic_candidates(sap_ar, sap_ap, isolate(shared$interco_v2()), isolate(shared$company_map()))
         bp_candidates(cands)
       }
     }
@@ -1020,7 +1020,7 @@ settings_observers <- function(input, output, session, shared) {
     new_cands <- tryCatch({
       sap_ar <- tryCatch(load_sap_snapshot("AR")$data, error = function(e) NULL)
       sap_ap <- tryCatch(load_sap_snapshot("AP")$data, error = function(e) NULL)
-      scan_ic_candidates(sap_ar, sap_ap, new_registry)
+      scan_ic_candidates(sap_ar, sap_ap, new_registry, isolate(shared$company_map()))
     }, error = function(e) NULL)
     if (!is.null(new_cands) && nrow(new_cands)) bp_candidates(new_cands)
 
