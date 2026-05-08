@@ -11,6 +11,15 @@ source("R/tiers_module.R")
 source("R/empresas_module.R")
 source("R/interco_module.R")
 source("R/staging_browse_module.R")
+source("R/pasivos_table_pivot.R")
+source("R/pasivos_table_styles.R")
+source("R/pasivos_rates.R")
+source("R/pasivos_wizard_validate.R")
+source("R/pasivos_wizard_steps.R")
+source("R/pasivos_wizard_module.R")
+source("R/pasivos_edit_confirm_module.R")
+source("R/pasivos_list_module.R")
+source("R/pasivos_table_module.R")
 # bancos_parser.R / bancos_persistence.R / bancos_module.R sourced in global.R
 
 AR_CONFIG <- list(
@@ -96,10 +105,13 @@ ui <- bslib::page_navbar(
           if (rptWrap) rptWrap.style.display = (val === 'RPT') ? 'block' : 'none';
           if (rptFab)  rptFab.style.display  = (val === 'RPT') ? 'flex'  : 'none';
         }
-        // Pass the clicked tab's data-value directly — avoids reading the wrong
-        // active element when navigating to a nav_menu dropdown panel.
+        // Only react to outer navbar tab switches — inner tabsets (e.g., company
+        // tabs inside Agenda de Hoy) also fire shown.bs.tab and would incorrectly
+        // un-hide the control bar with their company-name data-values.
         $(document).on('shown.bs.tab', function(e) {
-          syncBar(e.target.getAttribute('data-value') || '');
+          if ($(e.target).closest('nav.navbar').length) {
+            syncBar(e.target.getAttribute('data-value') || '');
+          }
         });
         setTimeout(syncBar, 200);
         // shiny:idle fires after Shiny finishes initial processing — reliably
@@ -255,6 +267,13 @@ ui <- bslib::page_navbar(
     value = "IC",
     div(class = "h-100 overflow-auto p-0",
       intercoUI("ic")
+    )
+  ),
+  bslib::nav_panel(
+    title = tagList(icon("calendar-check"), " Pasivos"),
+    value = "PSV",
+    div(class = "h-100 overflow-auto",
+      pasivos_table_module_ui("pt")
     )
   ),
   bslib::nav_panel(
@@ -593,10 +612,15 @@ server <- function(input, output, session) {
   # All auxiliary objects are pre-loaded in global.R at process start.
   # Reading from .app_data_cache is instant (in-memory) vs ~400ms per S3 call.
   sap_data          <- reactiveVal(list(AR = NULL, AP = NULL))
-  moves_db          <- reactiveVal(NULL)
+  moves_db              <- reactiveVal(NULL)
+  policy_moves_db       <- reactiveVal(NULL)
+  policy_catalog_db     <- reactiveVal(NULL)
+  partner_policies_db   <- reactiveVal(NULL)
+  holiday_overrides_db  <- reactiveVal(NULL)
   notes_df          <- reactiveVal(NULL)
   tags_db           <- reactiveVal(NULL)
   manual_inv        <- reactiveVal(NULL)
+  sap_ov_db         <- reactiveVal(NULL)
   interco_v2        <- reactiveVal(list(ar_prefix = "C", ap_prefix = "P", companies = list()))
   pagar_hoy_db      <- reactiveVal(NULL)
   abonos_db         <- reactiveVal(NULL)
@@ -687,13 +711,26 @@ server <- function(input, output, session) {
 
   ic_map_target <- reactiveVal(NULL)
 
+  pasivos_provisions_db <- reactiveVal(
+    tryCatch(load_pasivos_provisions(), error = function(e) .schema_pasivos_provision())
+  )
+
+  pasivos_liabilities_db <- reactiveVal(
+    tryCatch(load_pasivos_liabilities(), error = function(e) .schema_pasivos_liability())
+  )
+
   shared <- list(
     sap_data          = sap_data,
     sap_loading       = sap_loading,
-    moves_db          = moves_db,
+    moves_db             = moves_db,
+    policy_moves_db      = policy_moves_db,
+    policy_catalog_db    = policy_catalog_db,
+    partner_policies_db  = partner_policies_db,
+    holiday_overrides_db = holiday_overrides_db,
     notes_df          = notes_df,
     tags_db           = tags_db,
     manual_inv        = manual_inv,
+    sap_ov_db         = sap_ov_db,
     interco_v2        = interco_v2,
     pagar_hoy_db      = pagar_hoy_db,
     abonos_db         = abonos_db,
@@ -715,6 +752,8 @@ server <- function(input, output, session) {
     bancos_cuentas         = bancos_cuentas_db,
     bancos_confirmados     = bancos_confirmados_db,
     conciliacion_rv        = conciliacion_rv,
+    pasivos_provisions_db  = pasivos_provisions_db,
+    pasivos_liabilities_db = pasivos_liabilities_db,
     ic_map_target          = ic_map_target,
     currency_choices  = currency_choices,
     month_val         = list(
@@ -731,12 +770,39 @@ server <- function(input, output, session) {
     )
   )
 
-  # ── Staging browse (Buscar en rango) + Abono parcial ─────────────────────────
-  setup_staging_browse(input, output, session,
-                       active_entry_ledger, sap_data,
-                       pagar_hoy_db, current_user)
+  # ── Real-time agenda sync polling ────────────────────────────────────────────
+  # Checks .GlobalEnv$.agenda_sync$version every 3 s; if changed, pulls updated
+  # data into this session's pagar_hoy_db without hitting S3.
+  .sync_clock  <- reactiveTimer(3000)
+  .sync_ver_rv <- reactiveVal(NA_character_)
+
+  observe({
+    .sync_clock()
+    if (!isTRUE(.GlobalEnv$.agenda_sync$is_on)) return()
+    v <- tryCatch(.GlobalEnv$.agenda_sync$version, error = function(e) NA_character_)
+    if (isTRUE(identical(v, .sync_ver_rv()))) return()
+    d <- tryCatch(.GlobalEnv$.agenda_sync$data, error = function(e) NULL)
+    if (!is.null(d)) {
+      pagar_hoy_db(d)
+      # Also refresh bancos_confirmados so the Pasivos observer wakes up cross-session
+      bc <- tryCatch(load_bancos_confirmados(), error = function(e) NULL)
+      if (!is.null(bc)) bancos_confirmados_db(bc)
+      .sync_ver_rv(v)
+    }
+  })
+
+  # ── Abono parcial ─────────────────────────────────────────────────────────────
   setup_abono_browse(input, output, session,
                      sap_data, abonos_db, pagar_hoy_db, current_user)
+
+  # ── Pasivos lifecycle observers and module ────────────────────────────────────
+  setup_pasivos_observers(input, output, session, shared)
+  setup_pasivos_module(input, output, session, shared)
+  pasivos_table_module_server("pt", shared)
+
+  # ── Stage 4: wizard, edit-confirm ─────────────────────────────────────────
+  setup_pasivos_wizard(input, output, session, shared)
+  setup_pasivos_edit_confirm(input, output, session, shared)
 
   # ── Show GRUPO menu and control per-panel visibility ─────────────────────────
   # GRUPO toggle is hidden by default via CSS (display:none!important).
@@ -873,7 +939,7 @@ server <- function(input, output, session) {
       # Nothing seeded yet — last resort S3 read
       snap <- tryCatch(load_sap_snapshot(ledger_name), error = function(e) NULL)
       if (!is.null(snap)) {
-        lbl <- format(snap$saved_at, "%d %b %Y %H:%M")
+        lbl <- format(snap$saved_at, "%d %b %Y %H:%M", tz = (input$client_tz %||% "America/Mexico_City"))
         showNotification(
           paste0("SAP no disponible — ", ledger_name, " mostrando datos del ", lbl),
           type = "warning", duration = 8
@@ -1032,17 +1098,81 @@ server <- function(input, output, session) {
       # Load aux objects with per-item timing (all guaranteed cache hits above)
       t1 <- proc.time(); moves_db(tryCatch(load_moves(), error = function(e) NULL))
       message(sprintf("[LOAD]   moves            %.1fs", (proc.time() - t1)[["elapsed"]]))
+      t1 <- proc.time(); policy_moves_db(tryCatch(load_policy_moves(), error = function(e) NULL))
+      message(sprintf("[LOAD]   policy_moves     %.1fs", (proc.time() - t1)[["elapsed"]]))
+      t1 <- proc.time(); policy_catalog_db(tryCatch(load_policy_catalog(), error = function(e) NULL))
+      message(sprintf("[LOAD]   policy_catalog   %.1fs", (proc.time() - t1)[["elapsed"]]))
+      t1 <- proc.time(); partner_policies_db(tryCatch(load_partner_policies(), error = function(e) NULL))
+      message(sprintf("[LOAD]   partner_policies %.1fs", (proc.time() - t1)[["elapsed"]]))
+      t1 <- proc.time(); holiday_overrides_db(tryCatch(load_holiday_overrides(), error = function(e) NULL))
+      message(sprintf("[LOAD]   holiday_overrides %.1fs", (proc.time() - t1)[["elapsed"]]))
       t1 <- proc.time(); notes_df(tryCatch(load_notes(), error = function(e) NULL))
       message(sprintf("[LOAD]   notes            %.1fs", (proc.time() - t1)[["elapsed"]]))
       t1 <- proc.time(); tags_db(tryCatch(load_tags(), error = function(e) NULL))
       message(sprintf("[LOAD]   tags             %.1fs", (proc.time() - t1)[["elapsed"]]))
       t1 <- proc.time(); manual_inv(tryCatch(load_manual(), error = function(e) NULL))
       message(sprintf("[LOAD]   manual           %.1fs", (proc.time() - t1)[["elapsed"]]))
+      t1 <- proc.time(); sap_ov_db(tryCatch(load_sap_overrides(), error = function(e) NULL))
+      message(sprintf("[LOAD]   sap_overrides    %.1fs", (proc.time() - t1)[["elapsed"]]))
       t1 <- proc.time()
       interco_v2(tryCatch(load_interco_v2(), error = function(e) NULL) %||%
                    list(ar_prefix = "C", ap_prefix = "P", companies = list()))
       message(sprintf("[LOAD]   interco_v2       %.1fs", (proc.time() - t1)[["elapsed"]]))
-      t1 <- proc.time(); pagar_hoy_db(tryCatch(load_pagar_hoy(), error = function(e) NULL))
+      t1 <- proc.time()
+      local({
+        cfg <- tryCatch(load_agenda_sync_config(),
+                        error = function(e) list(is_enabled = FALSE, .missing = TRUE))
+
+        # Helper: merge any items the user added before Phase 2 finished loading
+        # (e.g., from Agregar immediately after login). Takes the S3 data as
+        # canonical and appends any in-memory-only rows not yet in S3 (by id).
+        .merge_early_adds <- function(s3_ph) {
+          early <- tryCatch(pagar_hoy_db(), error = function(e) NULL)
+          if (is.null(early) || !nrow(early)) return(s3_ph)
+          extra <- dplyr::anti_join(early, s3_ph, by = "id")
+          if (nrow(extra)) {
+            message(sprintf("[LOAD] pagar_hoy: merging %d item(s) added before Phase 2", nrow(extra)))
+            dplyr::bind_rows(s3_ph, extra)
+          } else s3_ph
+        }
+
+        if (isTRUE(cfg$.missing)) {
+          # First deploy: migrate existing shared pagar_hoy.rds → sync file, enable sync
+          message("[LOAD] agenda_sync: first run — migrating pagar_hoy.rds to sync")
+          ph <- tryCatch(load_pagar_hoy(), error = function(e) .schema_pagar_hoy())
+          ph <- .merge_early_adds(ph)
+          tryCatch(save_pagar_hoy_sync(ph), error = function(e)
+            message("[LOAD] agenda_sync migrate write failed: ", e$message))
+          tryCatch(save_agenda_sync_config(TRUE, "system"), error = function(e) NULL)
+          .GlobalEnv$.agenda_sync$is_on   <- TRUE
+          .GlobalEnv$.agenda_sync$data    <- ph
+          .GlobalEnv$.agenda_sync$version <- as.character(Sys.time())
+          pagar_hoy_db(ph)
+        } else if (isTRUE(cfg$is_enabled)) {
+          .GlobalEnv$.agenda_sync$is_on <- TRUE
+          ph <- if (!is.null(.GlobalEnv$.agenda_sync$data)) {
+            .GlobalEnv$.agenda_sync$data
+          } else {
+            d <- tryCatch(load_pagar_hoy_sync(), error = function(e) .schema_pagar_hoy())
+            .GlobalEnv$.agenda_sync$data    <- d
+            .GlobalEnv$.agenda_sync$version <- as.character(Sys.time())
+            d
+          }
+          ph <- .merge_early_adds(ph)
+          if (!identical(ph, .GlobalEnv$.agenda_sync$data)) {
+            # Early-add items were merged in — persist immediately
+            tryCatch(save_pagar_hoy(ph, current_user()), error = function(e) NULL)
+          }
+          pagar_hoy_db(ph)
+        } else {
+          .GlobalEnv$.agenda_sync$is_on <- FALSE
+          ph <- tryCatch(
+            load_pagar_hoy_user(current_user()),
+            error = function(e) tryCatch(load_pagar_hoy(), error = function(e2) NULL))
+          ph <- .merge_early_adds(ph %||% .schema_pagar_hoy())
+          pagar_hoy_db(ph)
+        }
+      })
       message(sprintf("[LOAD]   pagar_hoy        %.1fs", (proc.time() - t1)[["elapsed"]]))
       t1 <- proc.time(); abonos_db(tryCatch(load_abonos(), error = function(e) NULL))
       message(sprintf("[LOAD]   abonos           %.1fs", (proc.time() - t1)[["elapsed"]]))
@@ -1073,6 +1203,7 @@ server <- function(input, output, session) {
       .cache_set("notes",        notes_df())
       .cache_set("tags",         tags_db())
       .cache_set("manual",       manual_inv())
+      .cache_set("sap_overrides", sap_ov_db())
       .cache_set("interco_v2",   interco_v2())
       .cache_set("pagar_hoy",    pagar_hoy_db())
       .cache_set("abonos",       abonos_db())
@@ -1161,8 +1292,30 @@ server <- function(input, output, session) {
     isolate(.dispatch_sap())
   }, once = TRUE, ignoreInit = TRUE, priority = -1)
 
+  # Fetch current SOFR and TIIE28 and write them to the forecasting store.
+  # Called on startup and on every manual refresh so provision interest calculations
+  # always reflect the latest published rates.
+  .refresh_variable_rates <- function() {
+    jobs <- list(list(fn = .fetch_sofr,   metric = "sofr"),
+                 list(fn = .fetch_tiie28, metric = "tiie28"))
+    for (job in jobs) {
+      res <- tryCatch(job$fn(), error = function(e) list(error = conditionMessage(e)))
+      rate <- res$today %||% NA_real_
+      if (!is.null(res$error) || is.na(rate)) next
+      tryCatch(
+        forecasting_set_estimate(job$metric, Sys.Date(), rate,
+                                 source_method = "auto_refresh"),
+        error = function(e) NULL
+      )
+    }
+  }
+
+  # Fire once after first render so startup rate fetch doesn't block the UI
+  session$onFlushed(function() .refresh_variable_rates(), once = TRUE)
+
   observeEvent(input$btn_refresh, {
     removeModal()
+    .refresh_variable_rates()
     load_sap_data(force = TRUE)
   })
   autoInvalidate <- reactiveTimer(30 * 60 * 1000)
@@ -1246,7 +1399,8 @@ server <- function(input, output, session) {
       dates <- Filter(Negate(is.null), list(AR = ts_ar, AP = ts_ap))
       if (!length(dates)) return(NULL)
       latest <- max(unlist(lapply(dates, as.numeric)))
-      format(as.POSIXct(latest, origin = "1970-01-01"), "%d/%m/%Y %H:%M")
+      format(as.POSIXct(latest, origin = "1970-01-01", tz = "UTC"), "%d/%m/%Y %H:%M",
+             tz = (input$client_tz %||% "America/Mexico_City"))
     }
 
     cmap <- company_map_rv()
@@ -1405,7 +1559,7 @@ server <- function(input, output, session) {
       manual_inv(df)
       tryCatch(save_manual(df),
                error = function(e) showNotification(
-                 paste("No se pudo guardar en S3:", e$message), type = "warning"))
+                 "No se pudieron guardar los cambios.", type = "warning"))
       .sync_staged(
         data.frame(Empresa   = input$me_empresa,
                    Moneda    = toupper(trimws(input$me_moneda)),
@@ -1443,7 +1597,7 @@ server <- function(input, output, session) {
       manual_inv(df)
       tryCatch(save_manual(df),
                error = function(e) showNotification(
-                 paste("No se pudo guardar en S3:", e$message), type = "warning"))
+                 "No se pudieron guardar los cambios.", type = "warning"))
 
       # ── Stage to Agenda de hoy if toggle is active ───────────────────────
       send_to_agenda <- isTRUE(input$me_agenda_active)
@@ -1463,9 +1617,11 @@ server <- function(input, output, session) {
           staged_at = Sys.time(),
           status    = "pending"
         )
-        ph_updated <- upsert_pagar_hoy(pagar_hoy_db() %||% load_pagar_hoy(), ph_row, keys = "id")
+        ph_updated <- upsert_pagar_hoy(
+          pagar_hoy_db() %||% safe_load_pagar_hoy(current_user()),
+          ph_row, keys = "id")
         pagar_hoy_db(ph_updated)
-        tryCatch(save_pagar_hoy(ph_updated),
+        tryCatch(save_pagar_hoy(ph_updated, current_user()),
                  error = function(e) showNotification(
                    paste("No se pudo guardar en Agenda:", e$message), type = "warning"))
       }
@@ -1591,6 +1747,9 @@ server <- function(input, output, session) {
   settings_cancel_edit_observer(input, output, session)
   settings_cuentas_observer(input, output, session, shared)
   settings_usuarios_observer(input, output, session, shared)
+  settings_sincro_observer(input, output, session, shared, pagar_hoy_db)
+  settings_policies_observer(input, output, session, shared)
+  settings_companies_observer(input, output, session, shared)
 
   # ── Grupo modules (Usuarios + Empresas) ───────────────────────────────────────
   tiersServer("trs",    shared = shared)

@@ -139,6 +139,25 @@ manual_entry_modal <- function(ledger, empresas, row = NULL, token = NULL) {
 app_styles <- function() {
   tags$style(HTML("
 
+    /* ── Navbar — compact height ─────────────────────────────────────────── */
+    nav.navbar {
+      min-height: unset !important;
+      padding-top: 3px !important;
+      padding-bottom: 3px !important;
+    }
+    nav.navbar .navbar-brand {
+      font-size: 0.95rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding-top: 2px;
+      padding-bottom: 2px;
+    }
+    nav.navbar .nav-link {
+      padding-top: 5px !important;
+      padding-bottom: 5px !important;
+    }
+
     /* ── Control bar ─────────────────────────────────────────────────────── */
     .control-bar {
       border-bottom: 1px solid #dee2e6;
@@ -459,6 +478,8 @@ app_styles <- function() {
       text-align: right;
     }
     .cart-btn { min-width: 90px; flex-shrink: 0; }
+    .cart-btn-provision { min-width: 90px; flex-shrink: 0; transition: background-color 0.15s, border-color 0.15s, color 0.15s; }
+    .cart-btn-provision:hover { background-color: #6d28d9 !important; border-color: #6d28d9 !important; color: white !important; }
     .cart-expand-btn { line-height: 1.2 !important; font-size: 0.75rem !important; color: #1a6cc4 !important; }
     .cart-expand-btn:hover { color: #0a3d7a !important; }
     .cart-expand-lbl { font-size: 0.72rem; color: #1a6cc4; }
@@ -556,6 +577,53 @@ app_styles <- function() {
     .ph-partial { background-color: #ffc107; }
     .ph-nomatch { background-color: #dc3545; }
 
+    /* ── Agenda de Hoy — company tab badges ─────────────────────────────── */
+
+    .ph-tab-ini {
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .ph-tab-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      margin-left: 5px;
+      vertical-align: middle;
+    }
+
+    .ph-ctr-pill {
+      display: inline-block;
+      font-size: 0.58em;
+      font-weight: 700;
+      line-height: 1;
+      padding: 2px 5px;
+      border-radius: 6px;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+
+    /* MXN = terracotta, USD = navy — same palette as Bancos card borders */
+    .ph-ctr-mxn {
+      background: #C0674A;
+      color: #fff;
+    }
+
+    .ph-ctr-usd {
+      background: #185FA5;
+      color: #fff;
+    }
+
+    .ph-ctr-cur {
+      font-size: 0.82em;
+      font-weight: 500;
+      opacity: 0.88;
+    }
+
+    /* active tab: slightly deeper shade to keep contrast on lighter button bg */
+    .nav-tabs .nav-link.active .ph-ctr-mxn { background: #a8513a; }
+    .nav-tabs .nav-link.active .ph-ctr-usd { background: #134e8a; }
+
     /* ── Settings hub ────────────────────────────────────────────────────── */
 
     .settings-hub { min-height: 420px; }
@@ -624,6 +692,33 @@ app_styles <- function() {
     .tiers-cfg-body .form-group { margin-bottom: 0 !important; }
     .tiers-cfg-body .checkbox    { margin: 0 !important; padding: 0 !important; }
 
+    /* ── Pasivos provisions ──────────────────────────────────────────────── */
+    .pasivos-provision {
+      border: 2px dashed #6b7280;
+      opacity: 0.78;
+      background-color: #f9fafb;
+      position: relative;
+    }
+    .pasivos-provision::before {
+      content: 'P';
+      position: absolute;
+      top: 2px; left: 4px;
+      font-size: 10px; font-weight: 700;
+      color: #6b7280;
+      background: white;
+      border: 1px solid #6b7280;
+      border-radius: 50%;
+      width: 14px; height: 14px;
+      text-align: center; line-height: 12px;
+    }
+    .pasivos-convert-btn {
+      background-color: #7c3aed;
+      color: white; border: none;
+      border-radius: 4px;
+      padding: 2px 6px; font-size: 11px; cursor: pointer;
+    }
+    .pasivos-convert-btn:hover { background-color: #6d28d9; }
+
   "))
 }
 
@@ -631,6 +726,9 @@ app_styles <- function() {
 # Cal tiles use data-bs-toggle="tooltip" for the abono breakdown.
 app_scripts <- function() {
   tags$script(HTML("
+    $(document).on('shiny:connected', function() {
+      Shiny.setInputValue('client_tz', Intl.DateTimeFormat().resolvedOptions().timeZone);
+    });
     $(document).on('shiny:value', function() {
       requestAnimationFrame(function() {
         document.querySelectorAll('[data-bs-toggle=\"tooltip\"]:not(.tt-init)')

@@ -157,7 +157,8 @@ dedupe_invoices <- function(df) {
 # Returns a clean data frame ready for the calendar reactive.
 
 build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
-                            abonos_df = NULL) {
+                            abonos_df = NULL, policy_moves_df = NULL, sap_ov = NULL,
+                            provs_df = NULL, company_map = NULL) {
   ledger <- toupper(ledger)
 
   # Build SAP portion (may be empty)
@@ -192,6 +193,31 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
     df <- bind_rows(df, manual_sub)
   }
 
+  # Merge provisions — AP only; provisional provisions appear in the ledger
+  # as placeholder rows until converted to real manual_inv items.
+  # provs_df is passed from a reactive so df_combined() re-fires on provision saves.
+  if (identical(ledger, "AP")) {
+    provs <- if (!is.null(provs_df)) provs_df
+             else tryCatch(load_pasivos_provisions(), error = function(e) NULL)
+    liabs <- tryCatch(load_pasivos_liabilities(), error = function(e) NULL)
+    if (!is.null(provs) && nrow(provs)) {
+      prov_rows <- pasivos_provisions_as_ledger_rows(provs, liabs, ledger = "AP")
+      if (nrow(prov_rows)) {
+        # Provisions store empresa as a company initial (e.g. "NG"); the empresa
+        # filter in df_combined() uses full names from the Empresas module.
+        # Translate here so provisions survive the filter.
+        if (!is.null(company_map) && length(company_map)) {
+          prov_rows[["Empresa"]] <- vapply(
+            prov_rows[["Empresa"]],
+            function(e) company_map[[e %||% ""]] %||% e %||% NA_character_,
+            character(1)
+          )
+        }
+        df <- bind_rows(df, prov_rows)
+      }
+    }
+  }
+
   # Harmonize Codigo across SAP and manual rows. SAP carries CardCode under
   # `Código de proveedor` (AP) or `Código de cliente` (AR); manual carries it
   # as `Codigo`. Coalesce into a single canonical `Codigo` column so every
@@ -216,6 +242,11 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
   # Nothing at all — return NULL
   if (!nrow(df)) return(NULL)
 
+  # Guarantee FechaEff exists before the left_join+mutate pipeline.
+  # Provision rows already carry it (set by pasivos_calendar_glue); SAP/manual
+  # rows do not — add an NA column so .data$FechaEff is always resolvable.
+  if (!"FechaEff" %in% names(df)) df[["FechaEff"]] <- as.Date(NA_character_)
+
   # Apply date moves (moves_df may be NULL if .data_loaded hasn't completed yet)
   ledger_moves <- if (!is.null(moves_df) && nrow(moves_df) > 0) {
     moves_df |>
@@ -233,11 +264,39 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
            notas = character())
   }
 
+  # Prepare policy moves (same dedup pattern as ledger_moves)
+  ledger_policy_moves <- if (!is.null(policy_moves_df) && nrow(policy_moves_df) > 0) {
+    policy_moves_df |>
+      dplyr::filter(.data$ledger == !!ledger) |>
+      dplyr::select(Empresa, Moneda, Documento, FechaVenc_Politica) |>
+      dplyr::arrange(dplyr::desc(FechaVenc_Politica)) |>
+      dplyr::distinct(Empresa, Moneda, Documento, .keep_all = TRUE)
+  } else {
+    tibble(Empresa = character(), Moneda = character(),
+           Documento = character(), FechaVenc_Politica = as.Date(character()))
+  }
+
   result <- df |>
-    left_join(ledger_moves, by = c("Empresa","Moneda","Documento")) |>
+    # na_matches = "never": provisions often have Documento = NA (no template);
+    # without this, dplyr treats NA == NA and accidentally joins all such rows to
+    # any moves/policy entry that also has Documento = NA, displacing their dates.
+    left_join(ledger_moves,        by = c("Empresa","Moneda","Documento"),
+              na_matches = "never") |>
+    left_join(ledger_policy_moves, by = c("Empresa","Moneda","Documento"),
+              na_matches = "never") |>
     mutate(
       FechaVenc_Proyectada = as.Date(FechaVenc_Proyectada),
-      FechaEff             = coalesce(FechaVenc_Proyectada, FechaVenc_Original),
+      FechaVenc_Politica   = as.Date(FechaVenc_Politica),
+      # .data$FechaEff carries the policy-adjusted date already set by
+      # pasivos_calendar_glue for provision rows; fall back to it before
+      # FechaVenc_Original so that policy adjustments are preserved.
+      FechaEff             = dplyr::coalesce(FechaVenc_Proyectada, FechaVenc_Politica,
+                                             .data$FechaEff, FechaVenc_Original),
+      Movida               = dplyr::case_when(
+        !is.na(FechaVenc_Proyectada) ~ "Manual",
+        !is.na(FechaVenc_Politica)   ~ "Políticas",
+        TRUE                         ~ "Falso"
+      ),
       .row_id              = row_number()
     )
   if (!"notas" %in% names(result)) result[["notas"]] <- NA_character_
@@ -268,6 +327,51 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
         has_abono      = FALSE
       )
   }
+
+  # ── Apply SAP field overrides (Parte, Codigo, Factura, Notas) ───────────────
+  # Overrides paint on top of SAP data for UI display only.
+  # The underlying sap_data() snapshot and dedup keys are never touched.
+  if (!is.null(sap_ov) && is.data.frame(sap_ov) && nrow(sap_ov)) {
+    if (!"Factura" %in% names(result)) result[["Factura"]] <- NA_character_
+    ov_filt <- sap_ov |>
+      dplyr::filter(.data$ledger == !!ledger) |>
+      dplyr::select(Empresa, Moneda, Documento,
+                    Parte_override, Codigo_override, Factura_override, Notas_override,
+                    Moneda_override, Importe_override)
+    if (nrow(ov_filt)) {
+      result <- dplyr::left_join(result, ov_filt,
+                                 by = c("Empresa", "Moneda", "Documento")) |>
+        dplyr::mutate(
+          has_sap_override = source == "sap" & (
+            !is.na(Parte_override) | !is.na(Codigo_override) |
+            !is.na(Factura_override) | !is.na(Notas_override) |
+            !is.na(Moneda_override) | !is.na(Importe_override)),
+          Parte   = dplyr::if_else(source == "sap" & !is.na(Parte_override),
+                                   Parte_override,   Parte),
+          Codigo  = dplyr::if_else(source == "sap" & !is.na(Codigo_override),
+                                   Codigo_override,  Codigo),
+          Factura = dplyr::if_else(source == "sap" & !is.na(Factura_override),
+                                   Factura_override, Factura),
+          notas   = dplyr::if_else(source == "sap" & !is.na(Notas_override),
+                                   Notas_override,   notas),
+          Moneda  = dplyr::if_else(source == "sap" & !is.na(Moneda_override),
+                                   Moneda_override,  Moneda),
+          Importe = dplyr::if_else(source == "sap" & !is.na(Importe_override),
+                                   dplyr::if_else(Importe < 0,
+                                                  -abs(Importe_override),
+                                                  abs(Importe_override)),
+                                   Importe)
+        ) |>
+        dplyr::select(-Parte_override, -Codigo_override,
+                      -Factura_override, -Notas_override,
+                      -Moneda_override, -Importe_override)
+    } else {
+      result[["has_sap_override"]] <- FALSE
+    }
+  } else {
+    result[["has_sap_override"]] <- FALSE
+  }
+
   result
 }
 
