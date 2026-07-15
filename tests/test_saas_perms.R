@@ -91,4 +91,55 @@ lp <- auth_resolve_perms("principal", locked_override)
 .chk(isTRUE(auth_resolve_perms("finance",  "{}")$can_view_tiers), FALSE, "finance cannot view tiers")
 .chk(isTRUE(auth_resolve_perms("analysis", "{}")$can_view_tiers), FALSE, "analysis cannot view tiers")
 
+# ── E. TIER_REGISTRY — single source of truth for staff vs. client tiers ─────
+# Stage 1: tesoreria routing bug + dev-tier jump security hole.
+
+staff_tiers  <- names(Filter(function(e) isTRUE(e$internal_only), TIER_REGISTRY))
+client_tiers <- names(Filter(function(e) !isTRUE(e$internal_only), TIER_REGISTRY))
+.chk(sort(staff_tiers),  sort(c("principal", "hopdesk")),
+     "TIER_REGISTRY: internal_only==TRUE is exactly {principal, hopdesk}")
+.chk(sort(client_tiers), sort(c("dev", "admin", "finance", "analysis")),
+     "TIER_REGISTRY: internal_only==FALSE is exactly {dev, admin, finance, analysis}")
+
+# ── F. is_staff derivation — the mechanism current_user_info()$is_staff uses ─
+
+.chk(is_staff_tier("finance"),   FALSE, "is_staff_tier('finance') == FALSE")
+.chk(is_staff_tier("dev"),       FALSE, "is_staff_tier('dev') == FALSE (client's own IT dept, not staff)")
+.chk(is_staff_tier("admin"),     FALSE, "is_staff_tier('admin') == FALSE")
+.chk(is_staff_tier("analysis"),  FALSE, "is_staff_tier('analysis') == FALSE")
+.chk(is_staff_tier("hopdesk"),   TRUE,  "is_staff_tier('hopdesk') == TRUE")
+.chk(is_staff_tier("principal"), TRUE,  "is_staff_tier('principal') == TRUE")
+
+# ── G. dev-tier jump prevention — the cross-tenant security hole ─────────────
+# The context-switcher's req()/dropdown-population/confirm-switch/grant-exemption
+# guards all now read isTRUE(current_user_info()$is_staff), which is FALSE for
+# dev. This is the exact boolean those req() calls at tiers_module.R:480/544
+# (and the panel-visibility / grant-request guards at :2675/:3016) depend on —
+# verifying it here proves a dev session can never pass those gates.
+.chk(isTRUE(is_staff_tier("dev")), FALSE,
+     "dev session cannot pass is_staff gate: cannot open context-switcher modal")
+.chk(isTRUE(is_staff_tier("dev")), FALSE,
+     "dev session cannot pass is_staff gate: confirm-switch to a foreign client_id is rejected")
+
+# ── H. Server-side tier-assignment enforcement (tier_assignment_allowed()) ───
+# tiers_module.R's create-user and edit-user handlers both call this directly;
+# testing it here tests the actual enforcement, not a re-implementation.
+
+.chk(tier_assignment_allowed("hopdesk", "finance", FALSE), FALSE,
+     "finance session cannot be granted tier='hopdesk' (server-side, not just hidden from dropdown)")
+.chk(tier_assignment_allowed("hopdesk", "dev", FALSE), FALSE,
+     "dev session cannot be granted tier='hopdesk' (server-side, not just hidden from dropdown)")
+.chk(tier_assignment_allowed("principal", "hopdesk", TRUE), FALSE,
+     "hopdesk session cannot assign tier='principal'")
+.chk(tier_assignment_allowed("hopdesk", "principal", TRUE), TRUE,
+     "principal session can assign tier='hopdesk'")
+.chk(tier_assignment_allowed("dev", "dev", FALSE), TRUE,
+     "dev session can assign tier='dev' within its own client")
+.chk(tier_assignment_allowed("admin", "dev", FALSE), TRUE,
+     "dev session can assign tier='admin' within its own client")
+.chk(tier_assignment_allowed("finance", "dev", FALSE), TRUE,
+     "dev session can assign tier='finance' within its own client")
+.chk(tier_assignment_allowed("analysis", "dev", FALSE), TRUE,
+     "dev session can assign tier='analysis' within its own client")
+
 cat("\n")
