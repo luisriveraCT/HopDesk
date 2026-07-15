@@ -95,6 +95,7 @@ S3_KEYS <- list(
 
 source("R/persistence.R",    local = FALSE)
 source("R/tier_registry.R",  local = FALSE)
+source("R/sap_cache.R",      local = FALSE)
 source("R/auth.R",           local = FALSE)
 source("R/app_audit.R",      local = FALSE)
 source("R/email_service.R",  local = FALSE)
@@ -162,6 +163,7 @@ cat("====================================================\n\n")
 
 .run_module("tests/test_saas_isolation.R")
 .run_module("tests/test_saas_perms.R")
+.run_module("tests/test_saas_sap_cache.R")
 .run_module("tests/test_saas_invites.R")
 .run_module("tests/test_saas_audit.R")
 .run_module("tests/test_saas_notifications.R")

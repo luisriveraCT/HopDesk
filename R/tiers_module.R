@@ -779,7 +779,7 @@ tiersServer <- function(id, shared) {
         return()
       }
       tryCatch(
-        register_username(username, Sys.getenv("CLIENT_ID"), new_row$account_code),
+        register_username(username, current_client_id(), new_row$account_code),
         error = function(e) message("[TIERS] username_index register failed: ", e$message)
       )
       tryCatch(
@@ -1330,7 +1330,7 @@ tiersServer <- function(id, shared) {
     # ── New-user button: dynamic based on client's remaining user slots ────────
     output$new_user_btn_ui <- renderUI({
       ns <- session$ns
-      cid <- Sys.getenv("CLIENT_ID")
+      cid <- current_client_id()
 
       # hd-admin has no user-limit concept — always show normal button
       if (!nzchar(cid) || cid == "hd-admin") {
@@ -1383,7 +1383,7 @@ tiersServer <- function(id, shared) {
     })
 
     observeEvent(input$btn_solicitar_usuarios, {
-      cid <- Sys.getenv("CLIENT_ID")
+      cid <- current_client_id()
       req(nzchar(cid), cid != "hd-admin")
       req(!isTRUE(solicitar_usuarios_sent()))
 
@@ -1449,8 +1449,7 @@ tiersServer <- function(id, shared) {
       registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
       requests <- tryCatch(read_client_requests(),  error = function(e) .schema_client_requests())
 
-      ns  <- session$ns
-      cid <- Sys.getenv("CLIENT_ID")
+      ns <- session$ns
 
       pending <- requests[!is.na(requests$status) & requests$status == "pending", , drop = FALSE]
 

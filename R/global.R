@@ -53,6 +53,7 @@ source("R/persistence.R")
 source("R/email_service.R")
 source("R/policy_engine.R")
 source("R/tier_registry.R")
+source("R/sap_cache.R")
 source("R/auth.R")
 source("R/data_pipeline.R")
 source("R/sap_api.R")
@@ -213,8 +214,10 @@ s3_init()
 # Cross-session SAP cache — populated after first live fetch, consumed by the
 # subsequent app session to avoid the double SAP fetch that shinymanager causes
 # by calling server() twice (auth session + app session after login redirect).
-# Reset on every runApp() so development restarts always get a fresh fetch.
-.GlobalEnv$.sap_global_cache <- list(AR = NULL, AP = NULL, fetched_at = NULL)
+# Keyed by client id (see R/sap_cache.R) so one client's session can never seed
+# a different client's session with its data. Reset on every runApp() so
+# development restarts always get a fresh fetch.
+.GlobalEnv$.sap_global_cache <- list()
 .GlobalEnv$.session_count    <- 0L
 
 # ── S3 pre-load (runs once at startup, before any session connects) ─────────────

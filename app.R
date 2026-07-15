@@ -1498,12 +1498,10 @@ server <- function(input, output, session) {
     # Always cache at process level — even when data didn't change.
     # This is the only way session #2 knows session #1 already ran the fetch.
     # ar/ap here are either live data or the fallback snapshot — either way
-    # session #2 should use them rather than re-fetching.
-    .GlobalEnv$.sap_global_cache <- list(
-      AR         = ar,
-      AP         = ap,
-      fetched_at = Sys.time()
-    )
+    # session #2 should use them rather than re-fetching, but ONLY a session
+    # in the same client context — keyed by client id so this can never seed
+    # a different client's (or a staff-at-home session's) sap_data().
+    .sap_cache_set(session_client_id(), ar, ap)
     message(sprintf("[SAP] Cross-session cache written at t+%.1fs (session #%d)",
                     (proc.time() - .t_session)[["elapsed"]], .sn))
   }
@@ -1933,11 +1931,12 @@ server <- function(input, output, session) {
       AR = if (!is.null(snap_ar)) list(ts = snap_ar$saved_at, is_live = FALSE) else NULL,
       AP = if (!is.null(snap_ap)) list(ts = snap_ap$saved_at, is_live = FALSE) else NULL
     ))
-    # Seed the cross-session SAP cache so subsequent sessions on the same R process
-    # get the client's snapshot immediately in Phase 1 without waiting for this observer.
+    # Seed the cross-session SAP cache so subsequent sessions on the same R
+    # process AND ON THE SAME CLIENT get the client's snapshot immediately —
+    # keyed by effective_cid so this can never seed a different client's (or
+    # a staff-at-home session's) lookup.
     if (!is.null(new_snap$AR) || !is.null(new_snap$AP))
-      .GlobalEnv$.sap_global_cache <- list(AR = new_snap$AR, AP = new_snap$AP,
-                                            fetched_at = Sys.time())
+      .sap_cache_set(effective_cid, new_snap$AR, new_snap$AP)
     message(sprintf("[CTX]   sap_data OK (AR=%d AP=%d rows)",
                     nrow(new_snap$AR %||% data.frame()), nrow(new_snap$AP %||% data.frame())))
 
@@ -2033,12 +2032,12 @@ server <- function(input, output, session) {
     .sap_triggered <<- TRUE
     message(sprintf("[SAP] sap_trigger fired at t+%.1fs (session #%d)",
                     (proc.time() - .t_session)[["elapsed"]], .sn))
-    cache <- .GlobalEnv$.sap_global_cache
-    age   <- if (!is.null(cache$fetched_at))
-               as.numeric(difftime(Sys.time(), cache$fetched_at, units = "secs"))
-             else Inf
-    if (age < 300 && (!is.null(cache$AR) || !is.null(cache$AP))) {
-      message("[SAP] Cross-session cache hit (", round(age), "s old) — skipping live fetch")
+    # Keyed by this session's own client id — never reads any other client's
+    # entry, so a staff-at-home session can never inherit a client's data and
+    # vice versa.
+    cache <- .sap_cache_get(session_client_id())
+    if (.sap_cache_fresh(cache)) {
+      message("[SAP] Cross-session cache hit for '", session_client_id(), "' — skipping live fetch")
       if (!identical(sap_data()$AR, cache$AR) || !identical(sap_data()$AP, cache$AP))
         sap_data(list(AR = cache$AR, AP = cache$AP))
       .sap_ever_done <<- TRUE
