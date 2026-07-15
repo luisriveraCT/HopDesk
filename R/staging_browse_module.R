@@ -1,27 +1,20 @@
 # =============================================================================
 # R/staging_browse_module.R
-# Combined entry modal: "Buscar en rango" tab (SAP invoice browser) +
-# "Manual" tab (existing blank-form flow).
-#
+# Manual entry modal for Cobro (CxC) and Pago (CxP).
 # Also contains the Abono Parcial modal (partial payment recording).
 #
 # Public API:
 #   show_combined_entry_modal(ledger, sap_data, session)
 #     — call from pick_ar / pick_ap observers in app.R (after removeModal())
 #
-#   setup_staging_browse(input, output, session,
-#                        active_entry_ledger, sap_data,
-#                        pagar_hoy_db, current_user)
-#     — call ONCE inside the server function, at startup
-#
 #   show_abono_modal(sap_data, session)
 #     — call from pick_abono observer in app.R (after removeModal())
 #
-#   setup_abono_browse(input, output, session, sap_data, abonos_db, current_user)
+#   setup_abono_browse(input, output, session, sap_data, abonos_db, pagar_hoy_db, current_user, client_id = NULL)
 #     — call ONCE inside the server function, at startup
 # =============================================================================
 
-# ── Internal CSS ──────────────────────────────────────────────────────────────
+# ── Internal CSS (shared by manual entry and abono modals) ────────────────────
 .sb_css <- "
 .sb-tbl  { font-size: 0.875em; }
 .sb-row  { display: flex; align-items: flex-start; gap: 8px;
@@ -48,391 +41,276 @@
             text-align: center; }
 "
 
-# ── JS: collect checked rows → Shiny.setInputValue('sb_rows', ...) ───────────
-.sb_js <- "
-$(document).off('change.sbcheck').on('change.sbcheck', '.sb-check', function() {
-  var idx  = $(this).data('idx');
-  var $amt = $('.sb-amt[data-idx=\"' + idx + '\"]');
-  if (this.checked) {
-    $amt.prop('disabled', false);
-  } else {
-    $amt.prop('disabled', true).removeClass('sb-warn');
-  }
-});
-
-$(document).off('input.sbamt').on('input.sbamt', '.sb-amt', function() {
-  var max = parseFloat($(this).data('max')) || 0;
-  var val = parseFloat($(this).val())       || 0;
-  $(this).toggleClass('sb-warn', val > max);
-});
-
-$(document).off('click.sbstage').on('click.sbstage', '#sb_stage', function() {
-  var rows = [];
-  $('.sb-check:checked').each(function() {
-    var idx = $(this).data('idx');
-    rows.push({
-      idx:        String(idx),
-      empresa:    String($(this).data('empresa')),
-      moneda:     String($(this).data('moneda')),
-      documento:  String($(this).data('documento')),
-      parte:      String($(this).data('parte')),
-      codigo:     String($(this).data('codigo')),
-      fecha_venc: String($(this).data('fecha-venc')),
-      saldo:      parseFloat($(this).data('saldo')) || 0,
-      importe:    parseFloat($('.sb-amt[data-idx=\"' + idx + '\"]').val()) || 0
-    });
-  });
-  if (rows.length === 0) {
-    alert('Selecciona al menos una factura.');
-    return;
-  }
-  Shiny.setInputValue('sb_rows', rows, {priority: 'event'});
-});
-
-// Show Guardar button only when Manual tab is active
-$(document).off('shown.bs.tab.sbmod').on('shown.bs.tab.sbmod',
-    '#sbTabNav button[data-bs-toggle=\"tab\"]', function(e) {
-  var isManual = ($(e.target).data('bs-target') === '#sb-pane-manual');
-  $('#me_save').toggle(isManual);
-});
-$('#me_save').hide();
-"
-
-# ── Build one invoice row for the browse table ───────────────────────────────
-.sb_row_html <- function(i, row, ledger) {
-  codigo_col <- if (ledger == "AR") "C\u00f3digo de cliente" else "C\u00f3digo de proveedor"
-  codigo_v   <- if (codigo_col %in% names(row)) row[[codigo_col]] %||% "" else ""
-  saldo_val  <- row[["Saldo vencido"]]
-  fecha_str  <- format(row[["Fecha de vencimiento"]], "%d/%m/%y")
-  saldo_fmt  <- formatC(saldo_val, format = "f", digits = 0, big.mark = ",")
-  mon        <- row$Moneda %||% ""
-
-  div(class = "sb-row",
-    tags$input(
-      type             = "checkbox",
-      class            = "sb-check",
-      `data-idx`       = i,
-      `data-empresa`   = row$Empresa   %||% "",
-      `data-moneda`    = mon,
-      `data-documento` = row$Documento %||% "",
-      `data-parte`     = row$Parte     %||% "",
-      `data-codigo`    = codigo_v,
-      `data-fecha-venc` = as.character(row[["Fecha de vencimiento"]]),
-      `data-saldo`     = saldo_val
-    ),
-    tags$span(class = "sb-empresa", row$Empresa %||% ""),
-    div(class = "sb-parte",
-      div(class = "sb-parte-nm", row$Parte %||% ""),
-      div(class = "sb-doc", paste0("Doc ", row$Documento %||% ""))
-    ),
-    tags$span(class = "sb-fecha", fecha_str),
-    tags$span(class = "sb-saldo", paste0(mon, "\u00a0", saldo_fmt)),
-    div(class = "sb-amt-wrap",
-      tags$input(
-        type       = "number",
-        class      = "form-control form-control-sm sb-amt",
-        `data-idx` = i,
-        `data-max` = saldo_val,
-        value      = saldo_val,
-        min        = 0,
-        step       = "0.01",
-        disabled   = NA    # renders as disabled="disabled"
-      ),
-      div(class = "sb-warn-msg",
-          paste0("Mayor al saldo (", mon, "\u00a0", saldo_fmt, ")"))
-    )
-  )
-}
-
-# ── Show the combined tabbed modal ────────────────────────────────────────────
+# ── Show the manual entry modal ───────────────────────────────────────────────
 show_combined_entry_modal <- function(ledger, sap_data, session,
                                       empresa_vals = unname(COMPANY_MAP)) {
-  ar    <- sap_data()$AR
-  ap    <- sap_data()$AP
-  ldf   <- if (ledger == "AR") ar else ap
-
   # Use empresa_vals (from empresa_sel_rv) as the authoritative source.
   # This prevents stale SAP snapshot Empresa names (generated with an older COMPANY_MAP)
   # from appearing as choices; picking a stale name would cause the manual entry to be
   # silently filtered out by the empresa toggle in the calendar.
-  empresas_browse <- sort(unique(c(empresa_vals)))
-  empresas_manual <- sort(unique(c(empresa_vals)))
-
-  today     <- Sys.Date()
-  lbl_title <- if (ledger == "AR") "Cobro \u2014 CxC" else "Pago \u2014 CxP"
+  empresas  <- sort(unique(c(empresa_vals)))
+  lbl_title <- if (ledger == "AR") "Cobro — CxC" else "Pago — CxP"
 
   showModal(modalDialog(
     title     = lbl_title,
-    size      = "xl",
+    size      = "l",
     easyClose = TRUE,
     footer    = tagList(
       actionButton("me_cancel", "Cancelar", class = "btn btn-secondary"),
-      # Guardar is hidden by default (browse tab active); .sb_js shows it on Manual tab
-      actionButton("me_save", "Guardar", class = "btn btn-primary", style = "display:none;")
+      actionButton("me_save",   "Guardar",  class = "btn btn-primary"),
+      if (ledger == "AP")
+        actionButton("me_save_as_provision", "Guardar como provisión",
+                     style = "background-color:#7c3aed;color:white;border:none;")
+      else NULL
     ),
 
     tags$style(HTML(.sb_css)),
 
-    # ── Tab navigation ──────────────────────────────────────────────────────
-    tags$ul(
-      class = "nav nav-tabs", id = "sbTabNav", role = "tablist",
-      tags$li(class = "nav-item",
-        tags$button(
-          class = "nav-link active", id = "sb-tab-browse",
-          `data-bs-toggle` = "tab", `data-bs-target` = "#sb-pane-browse",
-          type = "button", role = "tab",
-          icon("magnifying-glass"), " Buscar en rango"
-        )
-      ),
-      tags$li(class = "nav-item",
-        tags$button(
-          class = "nav-link", id = "sb-tab-manual",
-          `data-bs-toggle` = "tab", `data-bs-target` = "#sb-pane-manual",
-          type = "button", role = "tab",
-          icon("pen-to-square"), " Manual"
-        )
-      )
-    ),
-
-    # ── Tab content ─────────────────────────────────────────────────────────
-    div(class = "tab-content mt-2",
-
-      # Tab A: Buscar en rango (default)
-      div(class = "tab-pane show active", id = "sb-pane-browse",
-        div(class = "d-flex flex-wrap gap-2 align-items-end mb-2",
-          div(
-            tags$label("Desde", class = "form-label small text-muted mb-1"),
-            dateInput("sb_desde", NULL, value = today - 15,
-                      weekstart = 1, language = "es", width = "140px")
-          ),
-          div(
-            tags$label("Hasta", class = "form-label small text-muted mb-1"),
-            dateInput("sb_hasta", NULL, value = today + 15,
-                      weekstart = 1, language = "es", width = "140px")
-          ),
-          div(
-            tags$label("Empresa", class = "form-label small text-muted mb-1"),
-            selectInput("sb_empresa", NULL,
-                        choices  = c("(Todas)" = "", empresas_browse),
-                        selected = "", width = "170px")
-          ),
-          div(
-            tags$label("Moneda", class = "form-label small text-muted mb-1"),
-            selectInput("sb_moneda", NULL,
-                        choices  = c("(Todas)" = "", CURRENCIES),
-                        selected = "", width = "110px")
-          )
-        ),
-        div(class = "sb-tbl mt-2", uiOutput("sb_table")),
-        div(class = "mt-2 d-flex justify-content-between align-items-center",
-          div(
-            tags$span(class = "badge bg-info text-dark", "\u2295 Buscar en rango"),
-            tags$small(class = "text-muted ms-2",
-                       "Selecciona facturas para agregar a Agenda de hoy.")
-          ),
-          actionButton("sb_stage", "+ Agregar selecci\u00f3n",
-                       class = "btn btn-success")
-        )
-      ),
-
-      # Tab B: Manual entry form
-      div(class = "tab-pane", id = "sb-pane-manual",
-        manual_entry_tab_content(ledger, empresas_manual)
-      )
-    ),
-
-    tags$script(HTML(.sb_js))
+    manual_entry_tab_content(ledger, empresas)
   ))
-}
-
-# ── Server-side setup — call ONCE inside server() ─────────────────────────────
-setup_staging_browse <- function(input, output, session,
-                                  active_entry_ledger, sap_data,
-                                  pagar_hoy_db, current_user) {
-
-  # Render the filtered invoice table
-  output$sb_table <- renderUI({
-    ledger <- active_entry_ledger()
-    if (is.null(ledger)) return(NULL)
-
-    desde <- input$sb_desde
-    hasta <- input$sb_hasta
-    if (is.null(desde) || is.null(hasta)) return(NULL)
-
-    df_src <- if (ledger == "AR") sap_data()$AR else sap_data()$AP
-    if (is.null(df_src) || !nrow(df_src))
-      return(div(class = "sb-empty", "Sin datos SAP. Usa la pesta\u00f1a Manual."))
-
-    df <- df_src |>
-      dplyr::filter(
-        `Fecha de vencimiento` >= as.Date(desde),
-        `Fecha de vencimiento` <= as.Date(hasta)
-      )
-
-    if (!is.null(input$sb_empresa) && nzchar(input$sb_empresa))
-      df <- df |> dplyr::filter(Empresa == input$sb_empresa)
-    if (!is.null(input$sb_moneda) && nzchar(input$sb_moneda))
-      df <- df |> dplyr::filter(Moneda == input$sb_moneda)
-
-    df <- df |> dplyr::arrange(`Fecha de vencimiento`)
-
-    if (!nrow(df))
-      return(div(class = "sb-empty", "Sin facturas en ese rango."))
-
-    header <- div(class = "sb-row sb-hdr",
-      tags$span(style = "width:18px; flex-shrink:0;", ""),
-      tags$span(class = "sb-empresa", "Empresa"),
-      tags$span(class = "sb-parte",   "Parte / Documento"),
-      tags$span(class = "sb-fecha",   "Vence"),
-      tags$span(class = "sb-saldo",   "Saldo"),
-      tags$span(class = "sb-amt-wrap", "Importe")
-    )
-
-    rows_ui <- lapply(seq_len(nrow(df)), function(i)
-      .sb_row_html(i, df[i, ], ledger))
-
-    tagList(
-      header,
-      div(style = "max-height: 360px; overflow-y: auto;",
-          do.call(tagList, rows_ui))
-    )
-  })
-
-  # Stage selected rows → pagar_hoy
-  observeEvent(input$sb_rows, {
-    rows_data <- input$sb_rows
-    if (!is.list(rows_data) || length(rows_data) == 0) return()
-
-    ledger <- active_entry_ledger()
-    if (is.null(ledger)) return()
-
-    new_rows_df <- dplyr::bind_rows(lapply(rows_data, function(r) {
-      tibble::tibble(
-        id        = uuid::UUIDgenerate(),
-        ledger    = ledger,
-        Empresa   = r$empresa   %||% "",
-        Moneda    = r$moneda    %||% "MXN",
-        Documento = r$documento %||% "",
-        Parte     = r$parte     %||% "",
-        Codigo    = trimws(r$codigo %||% ""),
-        tipo_item = "factura",
-        Importe   = as.numeric(r$importe %||% 0),
-        FechaVenc = tryCatch(as.Date(r$fecha_venc), error = function(e) Sys.Date()),
-        staged_by = current_user(),
-        staged_at = Sys.time(),
-        status    = "pending"
-      )
-    }))
-
-    ph_updated <- upsert_pagar_hoy(pagar_hoy_db() %||% load_pagar_hoy(), new_rows_df)
-    pagar_hoy_db(ph_updated)
-    tryCatch(
-      save_pagar_hoy(ph_updated),
-      error = function(e) showNotification(
-        paste("No se pudo guardar en Agenda:", e$message), type = "warning"
-      )
-    )
-
-    n <- nrow(new_rows_df)
-    showNotification(
-      paste0(n, if (n == 1L) " factura agregada" else " facturas agregadas",
-             " a Agenda de hoy."),
-      type = "message", duration = 3
-    )
-    removeModal()
-  }, ignoreInit = TRUE)
 }
 
 # =============================================================================
 # Abono Parcial — partial payment recording
+# Rows are staged to Agenda de Hoy (pagar_hoy) as tipo_item="abono"/status="pending".
+# Calendar balance deduction only takes effect after explicit "Confirmar pagos"
+# in Agenda de Hoy, which writes confirmed rows to abonos_db with status="active".
 # =============================================================================
 
-# JS for the abono modal: checkbox enables amount input, warn if > max,
-# collect rows on "Registrar abono" click → Shiny.setInputValue('ab_rows', ...)
-.ab_js <- "
-$(document).off('change.abcheck').on('change.abcheck', '.ab-check', function() {
-  var idx  = $(this).data('idx');
-  var $amt = $('.ab-amt[data-idx=\"' + idx + '\"]');
-  if (this.checked) {
-    $amt.prop('disabled', false);
-  } else {
-    $amt.prop('disabled', true).removeClass('sb-warn');
-  }
-});
-
-$(document).off('input.abamt').on('input.abamt', '.ab-amt', function() {
-  var max = parseFloat($(this).data('max')) || 0;
-  var val = parseFloat($(this).val())       || 0;
-  $(this).toggleClass('sb-warn', val > max);
-});
-
-$(document).off('click.abstage').on('click.abstage', '#ab_stage', function() {
-  var rows = [];
-  $('.ab-check:checked').each(function() {
-    var idx = $(this).data('idx');
-    rows.push({
-      idx:        String(idx),
-      empresa:    String($(this).data('empresa')),
-      moneda:     String($(this).data('moneda')),
-      documento:  String($(this).data('documento')),
-      parte:      String($(this).data('parte')),
-      codigo:     String($(this).data('codigo')),
-      fecha_venc: String($(this).data('fecha-venc')),
-      saldo:      parseFloat($(this).data('saldo')) || 0,
-      importe:    parseFloat($('.ab-amt[data-idx=\"' + idx + '\"]').val()) || 0
-    });
-  });
-  if (rows.length === 0) {
-    alert('Selecciona al menos una factura.');
-    return;
-  }
-  Shiny.setInputValue('ab_rows', rows, {priority: 'event'});
-});
+.ab_css <- "
+.ab-group-row       { cursor:pointer; background:#f0f4fa; }
+.ab-group-row:hover { background:#e8eef8 !important; }
+.ab-expand-btn  { background:none; border:none; cursor:pointer; padding:0 4px;
+                  font-size:0.68rem; color:#6c757d; line-height:1; vertical-align:middle; }
+.ab-expand-btn:hover { color:#0a58ca; }
+.ab-ref  { font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:280px; }
+.ab-doc  { font-size:0.78rem; color:#6c757d; margin-top:1px; }
+.ab-amt  { text-align:right; }
+.ab-amt.ab-warn { border-color:#ffc107 !important; background:#fffbf0 !important; }
+.ab-amt:disabled { background:#f8f9fa !important; color:#adb5bd; cursor:not-allowed; }
+.ab-warn-msg { font-size:0.72em; color:#856404; margin-top:2px; display:none; }
+.ab-amt.ab-warn ~ .ab-warn-msg { display:block; }
+.ab-empty { color:#6c757d; font-style:italic; padding:20px 0; text-align:center; }
 "
 
-# Build one invoice row for the abono table (reuses sb-* CSS classes)
-.ab_row_html <- function(i, row, ledger) {
-  codigo_col <- if (ledger == "AR") "C\u00f3digo de cliente" else "C\u00f3digo de proveedor"
-  codigo_v   <- if (codigo_col %in% names(row)) row[[codigo_col]] %||% "" else ""
+.ab_js <- "
+(function() {
+  function abMatchesSearch(tr) {
+    var q = ((document.getElementById('ab_search') || {}).value || '').toLowerCase().trim();
+    if (!q) return true;
+    var d = tr.dataset;
+    return (d.parte || '').includes(q) ||
+           (d.ref   || '').includes(q) ||
+           (d.doc   || '').includes(q);
+  }
+
+  function abApplySearch() {
+    var groupHasMatch = {};
+    document.querySelectorAll('.ab-subrow').forEach(function(r) {
+      var gid = r.dataset.gid;
+      var gr  = gid ? document.querySelector('.ab-group-row[data-gid=\"' + gid + '\"]') : null;
+      var m   = abMatchesSearch(r);
+      if (gid) { if (!groupHasMatch[gid]) groupHasMatch[gid] = false; if (m) groupHasMatch[gid] = true; }
+      r.style.display = (m && gr && gr.dataset.expanded === 'true') ? '' : 'none';
+    });
+    document.querySelectorAll('.ab-group-row').forEach(function(gr) {
+      gr.style.display = groupHasMatch[gr.dataset.gid] ? '' : 'none';
+    });
+    document.querySelectorAll('.ab-standalone').forEach(function(r) {
+      r.style.display = abMatchesSearch(r) ? '' : 'none';
+    });
+  }
+
+  $(document).off('input.absearch').on('input.absearch', '#ab_search', abApplySearch);
+
+  window.abExpandGroup = function(gid) {
+    gid = String(gid);
+    var gr = document.querySelector('.ab-group-row[data-gid=\"' + gid + '\"]');
+    if (!gr) return;
+    var exp = gr.dataset.expanded === 'true';
+    gr.dataset.expanded = String(!exp);
+    var btn = gr.querySelector('.ab-expand-btn');
+    if (btn) btn.innerHTML = !exp ? '&#9650;' : '&#9660;';
+    document.querySelectorAll('.ab-subrow[data-gid=\"' + gid + '\"]').forEach(function(r) {
+      r.style.display = (!exp && abMatchesSearch(r)) ? '' : 'none';
+    });
+  };
+
+  var _abAllExp = true;
+  window.abToggleAllGroups = function() {
+    _abAllExp = !_abAllExp;
+    document.querySelectorAll('.ab-group-row').forEach(function(gr) {
+      gr.dataset.expanded = String(_abAllExp);
+      var btn = gr.querySelector('.ab-expand-btn');
+      if (btn) btn.innerHTML = _abAllExp ? '&#9650;' : '&#9660;';
+      var gid = gr.dataset.gid;
+      document.querySelectorAll('.ab-subrow[data-gid=\"' + gid + '\"]').forEach(function(r) {
+        r.style.display = (_abAllExp && abMatchesSearch(r)) ? '' : 'none';
+      });
+    });
+    var b = document.getElementById('ab_toggle_btn');
+    if (b) b.textContent = _abAllExp ? '▲▲ Colapsar' : '▼▼ Expandir';
+  };
+
+  $(document).off('change.abgroupcheck').on('change.abgroupcheck', '.ab-group-check', function() {
+    var gid = String($(this).data('gid'));
+    var chk = this.checked;
+    $('.ab-check[data-gid=\"' + gid + '\"]').each(function() {
+      this.checked = chk;
+      var idx = $(this).data('idx');
+      var $a  = $('.ab-amt[data-idx=\"' + idx + '\"]');
+      chk ? $a.prop('disabled', false) : $a.prop('disabled', true).removeClass('ab-warn');
+    });
+  });
+
+  $(document).off('change.abcheck').on('change.abcheck', '.ab-check', function() {
+    var idx = $(this).data('idx');
+    var $a  = $('.ab-amt[data-idx=\"' + idx + '\"]');
+    this.checked ? $a.prop('disabled', false) : $a.prop('disabled', true).removeClass('ab-warn');
+    var gid = $(this).data('gid');
+    if (gid !== undefined && gid !== '') {
+      var checks = $('.ab-check[data-gid=\"' + gid + '\"]');
+      var all = checks.toArray().every(function(c) { return c.checked; });
+      var any = checks.toArray().some(function(c) { return c.checked; });
+      var gc  = $('.ab-group-check[data-gid=\"' + gid + '\"]')[0];
+      if (gc) { gc.checked = all; gc.indeterminate = !all && any; }
+    }
+  });
+
+  $(document).off('input.abamt').on('input.abamt', '.ab-amt', function() {
+    var max = parseFloat($(this).data('max')) || 0;
+    var val = parseFloat($(this).val())       || 0;
+    $(this).toggleClass('ab-warn', val > max);
+  });
+
+  $(document).off('click.abstage').on('click.abstage', '#ab_stage', function() {
+    var rows = [];
+    $('.ab-check:checked').each(function() {
+      var idx = $(this).data('idx');
+      rows.push({
+        idx:        String(idx),
+        empresa:    String($(this).data('empresa')),
+        moneda:     String($(this).data('moneda')),
+        documento:  String($(this).data('documento')),
+        parte:      String($(this).data('parte')),
+        codigo:     String($(this).data('codigo')),
+        referencia: String($(this).data('ref') || ''),
+        fecha_venc: String($(this).data('fecha-venc')),
+        saldo:      parseFloat($(this).data('saldo')) || 0,
+        importe:    parseFloat($('.ab-amt[data-idx=\"' + idx + '\"]').val()) || 0
+      });
+    });
+    if (!rows.length) { alert('Selecciona al menos una factura.'); return; }
+    Shiny.setInputValue('ab_rows', rows, {priority: 'event'});
+  });
+})();
+"
+
+# Build a group header <tr>
+.ab_group_tr <- function(gid, grp_df) {
+  n       <- nrow(grp_df)
+  parte   <- grp_df$Parte[1]   %||% ""
+  empresa <- grp_df$Empresa[1] %||% ""
+  moneda  <- grp_df$Moneda[1]  %||% ""
+  total   <- sum(grp_df[["Saldo vencido"]], na.rm = TRUE)
+  total_f <- formatC(total, format = "f", digits = 0, big.mark = ",")
+
+  paste0(
+    '<tr class="ab-group-row" data-gid="', gid, '" data-expanded="true">',
+    '<td style="width:28px;vertical-align:middle;">',
+      '<input type="checkbox" class="ab-group-check form-check-input" data-gid="', gid, '">',
+    '</td>',
+    '<td style="vertical-align:middle;" colspan="2">',
+      '<button class="ab-expand-btn" onclick="event.stopPropagation();abExpandGroup(',
+        gid, ')" title="Expandir/colapsar">&#9650;</button>',
+      ' <strong style="font-size:0.9rem;">', htmltools::htmlEscape(parte), '</strong>',
+      ' <span class="badge bg-secondary ms-1" style="font-size:0.65rem;">', n, '</span>',
+      if (nzchar(empresa))
+        paste0(' <span class="badge bg-light text-dark border ms-1" style="font-size:0.65rem;">',
+               htmltools::htmlEscape(empresa), '</span>')
+      else '',
+    '</td>',
+    '<td class="text-end text-muted small" style="vertical-align:middle;white-space:nowrap;">',
+      htmltools::htmlEscape(moneda), '&nbsp;', htmltools::htmlEscape(total_f),
+    '</td>',
+    '<td></td>',
+    '</tr>'
+  )
+}
+
+# Build one invoice <tr> — grouped (hidden subrow) or standalone (visible)
+.ab_row_tr <- function(i, row, ledger, gid = NULL) {
+  codigo_col <- if (ledger == "AR") "Código de cliente" else "Código de proveedor"
+  codigo_v   <- if (codigo_col %in% names(row)) as.character(row[[codigo_col]] %||% "") else ""
   saldo_val  <- row[["Saldo vencido"]]
   fecha_str  <- format(row[["Fecha de vencimiento"]], "%d/%m/%y")
   saldo_fmt  <- formatC(saldo_val, format = "f", digits = 0, big.mark = ",")
-  mon        <- row$Moneda %||% ""
+  mon        <- as.character(row$Moneda    %||% "")
+  parte_raw  <- as.character(row$Parte     %||% "")
+  empresa_v  <- as.character(row$Empresa   %||% "")
+  doc_val    <- as.character(row$Documento %||% "")
+  ref_val    <- if ("Factura" %in% names(row)) as.character(row$Factura %||% "") else ""
+  if (!nzchar(ref_val)) ref_val <- doc_val
 
-  div(class = "sb-row",
-    tags$input(
-      type              = "checkbox",
-      class             = "ab-check",
-      `data-idx`        = i,
-      `data-empresa`    = row$Empresa   %||% "",
-      `data-moneda`     = mon,
-      `data-documento`  = row$Documento %||% "",
-      `data-parte`      = row$Parte     %||% "",
-      `data-codigo`     = codigo_v,
-      `data-fecha-venc` = as.character(row[["Fecha de vencimiento"]]),
-      `data-saldo`      = saldo_val
-    ),
-    tags$span(class = "sb-empresa", row$Empresa %||% ""),
-    div(class = "sb-parte",
-      div(class = "sb-parte-nm", row$Parte     %||% ""),
-      div(class = "sb-doc",      paste0("Doc ", row$Documento %||% ""))
-    ),
-    tags$span(class = "sb-fecha", fecha_str),
-    tags$span(class = "sb-saldo", paste0(mon, "\u00a0", saldo_fmt)),
-    div(class = "sb-amt-wrap",
-      tags$input(
-        type       = "number",
-        class      = "form-control form-control-sm ab-amt sb-amt",
-        `data-idx` = i,
-        `data-max` = saldo_val,
-        value      = saldo_val,
-        min        = 0,
-        step       = "0.01",
-        disabled   = NA
-      ),
-      div(class = "sb-warn-msg",
-          paste0("Mayor al saldo (", mon, "\u00a0", saldo_fmt, ")"))
-    )
+  is_grouped <- !is.null(gid)
+  row_class  <- if (is_grouped) "ab-subrow" else "ab-standalone"
+  gid_attr   <- if (is_grouped) paste0(' data-gid="', gid, '"') else ""
+  hidden_sty <- ""
+
+  paste0(
+    '<tr class="', row_class, '"',
+    gid_attr,
+    ' data-idx="',   i,                                          '"',
+    ' data-parte="', htmltools::htmlEscape(tolower(parte_raw)),  '"',
+    ' data-ref="',   htmltools::htmlEscape(tolower(ref_val)),    '"',
+    ' data-doc="',   htmltools::htmlEscape(tolower(doc_val)),    '"',
+    hidden_sty, '>',
+    # Checkbox
+    '<td style="width:28px;vertical-align:middle;">',
+      '<input type="checkbox" class="ab-check form-check-input"',
+      ' data-idx="',        i,                                              '"',
+      if (is_grouped) paste0(' data-gid="', gid, '"') else '',
+      ' data-empresa="',    htmltools::htmlEscape(empresa_v),               '"',
+      ' data-moneda="',     htmltools::htmlEscape(mon),                     '"',
+      ' data-documento="',  htmltools::htmlEscape(doc_val),                 '"',
+      ' data-parte="',      htmltools::htmlEscape(parte_raw),               '"',
+      ' data-codigo="',     htmltools::htmlEscape(codigo_v),                '"',
+      ' data-fecha-venc="', as.character(row[["Fecha de vencimiento"]]),    '"',
+      ' data-saldo="',      saldo_val,                                      '"',
+      ' data-ref="',        htmltools::htmlEscape(ref_val),                 '"',
+      '>',
+    '</td>',
+    # Referencia / Documento
+    '<td style="vertical-align:middle;max-width:300px;">',
+      '<div class="ab-ref">', htmltools::htmlEscape(ref_val), '</div>',
+      if (ref_val != doc_val)
+        paste0('<div class="ab-doc">Doc&nbsp;', htmltools::htmlEscape(doc_val), '</div>')
+      else '',
+      if (!is_grouped && nzchar(empresa_v))
+        paste0('<div class="ab-doc">', htmltools::htmlEscape(empresa_v), '</div>')
+      else '',
+    '</td>',
+    # Vence
+    '<td class="text-nowrap text-muted small" style="width:65px;vertical-align:middle;">',
+      htmltools::htmlEscape(fecha_str),
+    '</td>',
+    # Saldo
+    '<td class="text-end" style="width:110px;vertical-align:middle;white-space:nowrap;">',
+      '<span class="text-muted small">', htmltools::htmlEscape(mon), '&nbsp;</span>',
+      '<strong style="font-variant-numeric:tabular-nums;">',
+        htmltools::htmlEscape(saldo_fmt),
+      '</strong>',
+    '</td>',
+    # Amount input
+    '<td style="width:130px;vertical-align:middle;">',
+      '<input type="number" class="form-control form-control-sm ab-amt"',
+      ' data-idx="', i,         '"',
+      ' data-max="', saldo_val, '"',
+      ' value="',    saldo_val, '"',
+      ' min="0" step="0.01">',
+      '<div class="ab-warn-msg">Mayor al saldo (', htmltools::htmlEscape(saldo_fmt), ')</div>',
+    '</td>',
+    '</tr>'
   )
 }
 
@@ -446,45 +324,69 @@ show_abono_modal <- function(sap_data, session) {
     easyClose = TRUE,
     footer    = modalButton("Cerrar"),
 
-    tags$style(HTML(.sb_css)),
+    tags$style(HTML(paste0(.sb_css, .ab_css))),
 
-    fluidRow(
-      column(3,
-        selectInput("ab_ledger", "Tipo",
-                    choices  = c("CxC (AR)" = "AR", "CxP (AP)" = "AP"),
-                    selected = "AR")
+    # ── Filter bar ─────────────────────────────────────────────────────────
+    div(class = "d-flex flex-wrap gap-2 mb-2 align-items-end",
+      div(style = "min-width:200px; flex:1;",
+        tags$label("Buscar (parte, referencia, documento)",
+                   class = "form-label mb-0 small text-muted"),
+        tags$input(id = "ab_search", type = "text",
+                   class = "form-control form-control-sm",
+                   placeholder = "Escribe para filtrar...")
       ),
-      column(2,
-        dateInput("ab_desde", "Desde",
-                  value = today - 15, weekstart = 1, language = "es")
+      div(
+        tags$label("Tipo", class = "form-label mb-0 small text-muted"),
+        selectInput("ab_ledger", NULL,
+                    choices  = c("CxP (AP)" = "AP", "CxC (AR)" = "AR"),
+                    selected = "AP", width = "115px")
       ),
-      column(2,
-        dateInput("ab_hasta", "Hasta",
-                  value = today + 15, weekstart = 1, language = "es")
+      div(
+        tags$label("Desde", class = "form-label mb-0 small text-muted"),
+        dateInput("ab_desde", NULL,
+                  value = today - 15, weekstart = 1, language = "es",
+                  width = "130px")
       ),
-      column(3,
-        selectInput("ab_empresa", "Empresa",
+      div(
+        tags$label("Hasta", class = "form-label mb-0 small text-muted"),
+        dateInput("ab_hasta", NULL,
+                  value = today + 15, weekstart = 1, language = "es",
+                  width = "130px")
+      ),
+      div(
+        tags$label("Empresa", class = "form-label mb-0 small text-muted"),
+        selectInput("ab_empresa", NULL,
                     choices  = c("(Todas)" = "",
                                  sort(unique(unname(COMPANY_MAP)))),
-                    selected = "")
+                    selected = "", width = "200px")
       ),
-      column(2,
-        selectInput("ab_moneda", "Moneda",
+      div(
+        tags$label("Moneda", class = "form-label mb-0 small text-muted"),
+        selectInput("ab_moneda", NULL,
                     choices  = c("(Todas)" = "", CURRENCIES),
-                    selected = "")
+                    selected = "", width = "100px")
+      ),
+      tags$button(
+        id      = "ab_toggle_btn",
+        class   = "btn btn-outline-secondary btn-sm align-self-end",
+        onclick = "abToggleAllGroups()",
+        "▲▲ Colapsar"
       )
     ),
 
-    div(class = "sb-tbl mt-2", uiOutput("ab_table")),
+    # ── Table ───────────────────────────────────────────────────────────────
+    div(style = "overflow-x:auto; max-height:430px; overflow-y:auto;",
+      uiOutput("ab_table")
+    ),
 
+    # ── Footer ──────────────────────────────────────────────────────────────
     div(class = "mt-3 d-flex justify-content-between align-items-center",
       div(
-        tags$span(class = "badge bg-warning text-dark",
-                  "\u2296 Abono parcial"),
+        tags$span(class = "badge bg-warning text-dark", "⊟ Abono parcial"),
         tags$small(class = "text-muted ms-2",
-                   "Reduce el saldo mostrado en el calendario.")
+                   "Se envía a Agenda de hoy. El saldo se reduce al confirmar.")
       ),
-      actionButton("ab_stage", "Registrar abono",
+      actionButton("ab_stage", "Enviar a Agenda",
                    class = "btn btn-primary")
     ),
 
@@ -494,20 +396,19 @@ show_abono_modal <- function(sap_data, session) {
 
 # ── Server-side setup — call ONCE inside server() ────────────────────────────
 setup_abono_browse <- function(input, output, session,
-                                sap_data, abonos_db, pagar_hoy_db, current_user) {
+                                sap_data, abonos_db, pagar_hoy_db, current_user,
+                                client_id = NULL) {
 
   output$ab_table <- renderUI({
     ledger <- input$ab_ledger
     if (is.null(ledger)) return(NULL)
-
     desde <- input$ab_desde
     hasta <- input$ab_hasta
     if (is.null(desde) || is.null(hasta)) return(NULL)
 
     df_src <- if (ledger == "AR") sap_data()$AR else sap_data()$AP
     if (is.null(df_src) || !nrow(df_src))
-      return(div(class = "sb-empty",
-                 "Sin datos SAP para este tipo de ledger."))
+      return(div(class = "ab-empty", "Sin datos SAP para este tipo de ledger."))
 
     df <- df_src |>
       dplyr::filter(
@@ -523,105 +424,92 @@ setup_abono_browse <- function(input, output, session,
     df <- df |> dplyr::arrange(`Fecha de vencimiento`)
 
     if (!nrow(df))
-      return(div(class = "sb-empty", "Sin facturas en ese rango."))
+      return(div(class = "ab-empty", "Sin facturas en ese rango."))
 
-    header <- div(class = "sb-row sb-hdr",
-      tags$span(style = "width:18px; flex-shrink:0;", ""),
-      tags$span(class = "sb-empresa", "Empresa"),
-      tags$span(class = "sb-parte",   "Parte / Documento"),
-      tags$span(class = "sb-fecha",   "Vence"),
-      tags$span(class = "sb-saldo",   "Saldo"),
-      tags$span(class = "sb-amt-wrap", "Importe abono")
-    )
+    # ── Group by Parte + Empresa + Moneda ─────────────────────────────────
+    df[["group_key"]] <- paste(df$Parte %||% "", df$Empresa %||% "",
+                               df$Moneda %||% "", sep = "\x1f")
+    gk_sizes <- table(df[["group_key"]])
+    gk_ids   <- match(df[["group_key"]], unique(df[["group_key"]]))
 
-    rows_ui <- lapply(seq_len(nrow(df)), function(i)
-      .ab_row_html(i, df[i, ], ledger))
+    rows_html       <- character(0)
+    seen_group_keys <- character(0)
 
-    tagList(
-      header,
-      div(style = "max-height: 360px; overflow-y: auto;",
-          do.call(tagList, rows_ui))
-    )
+    for (i in seq_len(nrow(df))) {
+      row <- df[i, ]
+      gk  <- row[["group_key"]]
+      gid <- gk_ids[i]
+
+      if (gk_sizes[[gk]] >= 2L) {
+        if (!(gk %in% seen_group_keys)) {
+          seen_group_keys <- c(seen_group_keys, gk)
+          grp_idx  <- which(df[["group_key"]] == gk)
+          grp_rows <- df[grp_idx, ]
+          rows_html <- c(rows_html, .ab_group_tr(gid, grp_rows))
+          for (j in seq_along(grp_idx)) {
+            rows_html <- c(rows_html,
+              .ab_row_tr(grp_idx[j], grp_rows[j, ], ledger, gid = gid))
+          }
+        }
+      } else {
+        rows_html <- c(rows_html, .ab_row_tr(i, row, ledger, gid = NULL))
+      }
+    }
+
+    HTML(paste0(
+      '<table class="table table-sm table-hover mb-0">',
+      '<thead><tr>',
+        '<th style="width:28px;"></th>',
+        '<th>Referencia / Documento</th>',
+        '<th style="width:65px;">Vence</th>',
+        '<th class="text-end" style="width:110px;">Saldo</th>',
+        '<th style="width:130px;">Importe abono</th>',
+      '</tr></thead>',
+      '<tbody>', paste(rows_html, collapse = "\n"), '</tbody>',
+      '</table>'
+    ))
   })
 
-  # Save abono records and stage to pagar_hoy
+  # Stage abono rows to pagar_hoy ONLY — no immediate abonos_db write.
+  # Calendar reduction takes effect only when "Confirmar pagos" in Agenda de Hoy
+  # writes confirmed rows to abonos_db with status = "active".
   observeEvent(input$ab_rows, {
     rows_data <- input$ab_rows
     if (!is.list(rows_data) || length(rows_data) == 0) return()
 
-    ledger <- input$ab_ledger %||% "AR"
+    ledger <- input$ab_ledger %||% "AP"
+    ph     <- pagar_hoy_db() %||% load_pagar_hoy()
 
-    # ── 1. Save abono records (calendar balance reduction) ───────────────────
-    abono_rows_df <- dplyr::bind_rows(lapply(rows_data, function(r) {
-      tibble::tibble(
-        id          = uuid::UUIDgenerate(),
-        ledger      = ledger,
-        Empresa     = r$empresa    %||% "",
-        Moneda      = r$moneda     %||% "MXN",
-        Documento   = r$documento  %||% "",
-        Parte       = r$parte      %||% "",
-        importe     = as.numeric(r$importe %||% 0),
-        fecha_abono = Sys.Date(),
-        notas       = "",
-        created_by  = current_user(),
-        created_at  = Sys.time(),
-        status      = "active"
+    for (r_raw in rows_data) {
+      new_row <- tibble::tibble(
+        id        = uuid::UUIDgenerate(),
+        ledger    = ledger,
+        Empresa   = as.character(r_raw$empresa   %||% ""),
+        Moneda    = as.character(r_raw$moneda    %||% "MXN"),
+        Documento = as.character(r_raw$documento %||% ""),
+        Parte     = as.character(r_raw$parte     %||% ""),
+        Codigo    = trimws(as.character(r_raw$codigo %||% "")),
+        tipo_item = "abono",
+        Importe   = as.numeric(r_raw$importe %||% 0),
+        FechaVenc = Sys.Date(),
+        staged_by = current_user(),
+        staged_at = Sys.time(),
+        status    = "pending",
+        source    = "manual"
       )
-    }))
-
-    ab_updated <- upsert_abono(abonos_db() %||% load_abonos(), abono_rows_df)
-    abonos_db(ab_updated)
-    tryCatch(save_abonos(ab_updated),
-             error = function(e) showNotification(
-               paste("No se pudo guardar el abono:", e$message), type = "warning"))
-
-    # ── 2. Stage to pagar_hoy — modify pending parent or insert abono row ───
-    ph <- pagar_hoy_db() %||% load_pagar_hoy()
-
-    for (i in seq_len(nrow(abono_rows_df))) {
-      ar     <- abono_rows_df[i, ]
-      r_raw  <- rows_data[[i]]
-
-      parent_mask <- ph$ledger   == ledger       &
-                     ph$Empresa  == ar$Empresa   &
-                     ph$Moneda   == ar$Moneda    &
-                     ph$Documento== ar$Documento &
-                     ph$status   == "pending"    &
-                     (is.na(ph$tipo_item) | ph$tipo_item == "factura")
-
-      if (any(parent_mask)) {
-        idx <- which(parent_mask)[1]
-        ph$Importe[idx] <- pmax(0, ph$Importe[idx] - ar$importe)
-      } else {
-        new_row <- tibble::tibble(
-          id        = uuid::UUIDgenerate(),
-          ledger    = ledger,
-          Empresa   = ar$Empresa,
-          Moneda    = ar$Moneda,
-          Documento = ar$Documento,
-          Parte     = ar$Parte,
-          Codigo    = trimws(as.character(r_raw$codigo %||% "")),
-          tipo_item = "abono",
-          Importe   = ar$importe,
-          FechaVenc = Sys.Date(),
-          staged_by = current_user(),
-          staged_at = Sys.time(),
-          status    = "pending"
-        )
-        ph <- upsert_pagar_hoy(ph, new_row, keys = "id")
-      }
+      ph <- upsert_pagar_hoy(ph, new_row, keys = "id")
     }
 
     pagar_hoy_db(ph)
-    tryCatch(save_pagar_hoy(ph),
+    tryCatch(save_pagar_hoy(ph, current_user(), client_id = client_id()),
              error = function(e) showNotification(
                paste("No se pudo guardar en Agenda:", e$message), type = "warning"))
 
-    n <- nrow(abono_rows_df)
+    n <- length(rows_data)
     showNotification(
-      paste0(n, if (n == 1L) " abono registrado" else " abonos registrados",
-             " y enviado(s) a Agenda de hoy."),
-      type = "message", duration = 3
+      paste0(n, if (n == 1L) " abono enviado" else " abonos enviados",
+             " a Agenda de hoy. Confirma para aplicar al saldo."),
+      type = "message", duration = 4
     )
     removeModal()
   }, ignoreInit = TRUE)

@@ -1,0 +1,1 @@
+source('tests/test_cart_inv_sel.R', local=FALSE)

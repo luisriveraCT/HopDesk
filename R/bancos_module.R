@@ -42,24 +42,30 @@
 }
 
 .PERIODO_CHOICES <- c(
-  "Mes actual"       = "mes_actual",
-  "Mes anterior"     = "mes_anterior",
-  "Últimos 3 meses"  = "ultimos_3m",
-  "Todo el historial"= "todo"
+  "Mes actual"        = "mes_actual",
+  "Mes anterior"      = "mes_anterior",
+  "Últimos 3 meses"   = "ultimos_3m",
+  "Todo el historial" = "todo",
+  "Rango..."          = "personalizado"
 )
 
 # Filter movements by period
-.filter_periodo <- function(df, periodo) {
+.filter_periodo <- function(df, periodo, desde = NULL, hasta = NULL) {
   hoy <- Sys.Date()
   ms  <- function(d) as.Date(format(d, "%Y-%m-01"))
   switch(periodo,
-    mes_actual  = dplyr::filter(df, fecha >= ms(hoy), fecha <= hoy),
-    mes_anterior= {
+    mes_actual   = dplyr::filter(df, fecha >= ms(hoy), fecha <= hoy),
+    mes_anterior = {
       inicio <- ms(hoy - 32)
       fin    <- ms(hoy) - 1
       dplyr::filter(df, fecha >= inicio, fecha <= fin)
     },
-    ultimos_3m  = dplyr::filter(df, fecha >= ms(hoy - 90)),
+    ultimos_3m   = dplyr::filter(df, fecha >= ms(hoy - 90)),
+    personalizado = {
+      if (!is.null(desde) && !is.null(hasta))
+        dplyr::filter(df, fecha >= as.Date(desde), fecha <= as.Date(hasta))
+      else df
+    },
     df  # todo
   )
 }
@@ -124,10 +130,40 @@ bancos_styles <- function() {
       border-color:#ffc107; color:#856404; background:#fffbf0;
     }
     .bnc-btn-xs--undo:hover { background:#fff3cd; }
-    /* ── Row selection ──────────────────────────────────────── */
+    /* ── Day group banding (very subtle — must not look like selection) ─── */
+    tr.bnc-day-alt:not(.bnc-row-selected) td { background:#f8f9fa; }
+    /* ── Row selection (clearly distinct blue) ──────────────────────────── */
     .bnc-libro-wrap tbody tr { cursor:pointer; user-select:none; }
-    tr.bnc-row-selected td  { background:#EBF4FF !important; }
-    tr.bnc-row-selected { outline:2px solid #0A58CA; outline-offset:-1px; }
+    tr.bnc-row-selected td  { background:#cfe2ff !important; }
+    tr.bnc-row-selected td:first-child { border-left:3px solid #0d6efd !important; }
+    /* ── Compact libro table ─────────────────────────────────────────────── */
+    .bnc-libro-wrap table.dataTable { font-size:.76rem; }
+    .bnc-libro-wrap table.dataTable.compact thead th,
+    .bnc-libro-wrap table.dataTable.compact tbody td { padding:3px 7px !important; line-height:1.3; }
+    /* ── Slim toolbar ────────────────────────────────────────────────────── */
+    .bnc-toolbar { border-bottom:1px solid #e9ecef; padding-bottom:6px; margin-bottom:8px; }
+    .bnc-toolbar .form-group { margin-bottom:0 !important; }
+    .bnc-toolbar .selectize-control { margin-bottom:0 !important; }
+    .bnc-toolbar .selectize-input,
+    .bnc-toolbar .selectize-input.input-active {
+      min-height:28px !important; height:28px !important;
+      padding:3px 30px 3px 8px !important; font-size:.82rem !important; line-height:1.35 !important;
+      white-space:nowrap !important; overflow:hidden !important; text-overflow:ellipsis !important;
+      flex-wrap:nowrap !important;
+    }
+    .bnc-toolbar .selectize-input > * { white-space:nowrap !important; overflow:hidden !important; text-overflow:ellipsis !important; }
+    .bnc-toolbar .selectize-dropdown { font-size:.82rem; }
+    .bnc-toolbar-sep { width:1px; height:20px; background:#dee2e6; flex-shrink:0; align-self:center; }
+    /* Flujo button states — shows current active filter */
+    .bnc-flujo-todos    { background:transparent !important; border-color:#fd7e14 !important; color:#fd7e14 !important; font-weight:600; }
+    .bnc-flujo-todos:hover { background:#fd7e14 !important; color:#fff !important; }
+    .bnc-flujo-egresos  { background:#dc3545 !important; border-color:#dc3545 !important; color:#fff !important; font-weight:600; }
+    .bnc-flujo-ingresos { background:#198754 !important; border-color:#198754 !important; color:#fff !important; font-weight:600; }
+    /* Comisiones visible */
+    .bnc-com-active { background:#fd7e14 !important; border-color:#fd7e14 !important; color:#fff !important; font-weight:600; }
+    /* Trash enabled: fill red */
+    .bnc-btn-trash:not([disabled]) { background:#dc3545 !important; color:#fff !important; border-color:#dc3545 !important; }
+    .bnc-btn-trash:not([disabled]):hover { background:#bb2d3b !important; border-color:#b02a37 !important; }
     /* ── Selection pill ─────────────────────────────────────── */
     .bnc-sel-pill {
       display:inline-flex; align-items:center; gap:6px;
@@ -181,6 +217,7 @@ bancos_styles <- function() {
       gap: 10px;
       padding: 7px 18px;
       border-right: 1px solid #1e2733;
+      border-bottom: 1px solid #1e2733;
       flex: 1 1 auto;
       min-width: 160px;
     }
@@ -227,9 +264,13 @@ bancos_libro_js <- function(id) {
   "use strict";
   var NS      = "%s";
   var sel     = [];
-  var lastIdx = null;
-  var vinMode = false;
-  var _vinBtnOrigHtml = null;  /* cached original btn innerHTML */
+  var _lastRow        = null;   /* last-clicked TR for shift-range */
+  var vinMode         = false;
+  var _vinBtnOrigHtml = null;
+  var _flujoIdx       = 0;      /* 0=todos 1=egresos 2=ingresos */
+  var _flujoStates    = ["todos","egresos","ingresos"];
+  var _flujoLabels    = ["Todos","Egresos","Ingresos"];
+  var _comVisible     = false;
 
   /* Inject namespaced crosshair CSS so it scopes to this module instance */
   (function() {
@@ -256,12 +297,18 @@ bancos_libro_js <- function(id) {
   }
 
   function clearAll() {
-    sel = []; lastIdx = null;
+    sel = []; _lastRow = null;
     $("#" + NS + "libro_tbl tbody tr").removeClass("bnc-row-selected");
     updatePill();
   }
 
-  function getRowId(tr) { return $(tr).find("td:eq(0)").text().trim(); }
+  /* Use data-id (set by createdRow) — avoids reading td:eq(0) which
+     resolves to the first VISIBLE cell (Fecha) when the id column is
+     hidden, causing all rows with the same date to share one apparent ID. */
+  function getRowId(tr) {
+    return (tr.getAttribute && tr.getAttribute("data-id")) ||
+           $(tr).find("td").eq(0).text().trim();
+  }
 
   function highlightVisible() {
     $("#" + NS + "libro_tbl tbody tr").each(function() {
@@ -272,28 +319,36 @@ bancos_libro_js <- function(id) {
   /* ── Row clicks ─────────────────────────────────────────── */
   $(document).on("click", "#" + NS + "libro_tbl tbody tr", function(e) {
     if (vinMode) {
-      /* Prefer data-id set by DT createdRow callback; fall back to hidden cell text */
-      var rid = this.getAttribute("data-id") || getRowId(this);
+      var rid = getRowId(this);
       if (rid) Shiny.setInputValue(NS + "vincular_row_id",
         { id: rid, nonce: Math.random() }, { priority: "event" });
       return;
     }
     var rid = getRowId(this);
     if (!rid) return;
-    var rows   = $("#" + NS + "libro_tbl tbody tr").toArray();
-    var curIdx = rows.indexOf(this);
-    if (e.shiftKey && lastIdx !== null) {
-      var lo = Math.min(lastIdx, curIdx), hi = Math.max(lastIdx, curIdx);
-      for (var i = lo; i <= hi; i++) {
-        var r = getRowId(rows[i]);
-        if (r && sel.indexOf(r) < 0) sel.push(r);
+
+    if (e.shiftKey && _lastRow && _lastRow !== this) {
+      var rows = $("#" + NS + "libro_tbl tbody tr").toArray();
+      var i1   = rows.indexOf(_lastRow), i2 = rows.indexOf(this);
+      if (i1 >= 0 && i2 >= 0) {
+        var lo  = Math.min(i1, i2), hi = Math.max(i1, i2);
+        var add = sel.indexOf(rid) < 0;   /* match target row state */
+        for (var k = lo; k <= hi; k++) {
+          var r = getRowId(rows[k]);
+          if (!r) continue;
+          var p = sel.indexOf(r);
+          if (add  && p < 0) sel.push(r);
+          if (!add && p >= 0) sel.splice(p, 1);
+        }
+      } else {
+        var pos = sel.indexOf(rid);
+        if (pos >= 0) sel.splice(pos, 1); else sel.push(rid);
       }
-      lastIdx = curIdx;
     } else {
       var pos = sel.indexOf(rid);
-      if (pos >= 0) { sel.splice(pos, 1); lastIdx = null; }
-      else          { sel.push(rid);      lastIdx = curIdx; }
+      if (pos >= 0) sel.splice(pos, 1); else sel.push(rid);
     }
+    _lastRow = this;
     highlightVisible(); updatePill();
   });
 
@@ -314,12 +369,30 @@ bancos_libro_js <- function(id) {
       { ids: sel.slice(), nonce: Math.random() }, { priority: "event" });
   });
 
+  /* ── Flujo cycling button ───────────────────────────────── */
+  var _flujoClasses = ["bnc-flujo-todos","bnc-flujo-egresos","bnc-flujo-ingresos"];
+  $(document).on("click", "#" + NS + "btn_flujo_cycle", function() {
+    _flujoIdx = (_flujoIdx + 1) %% 3;
+    this.textContent = _flujoLabels[_flujoIdx];
+    $(this).removeClass("bnc-flujo-todos bnc-flujo-egresos bnc-flujo-ingresos")
+           .addClass(_flujoClasses[_flujoIdx]);
+    Shiny.setInputValue(NS + "flujo_filter", _flujoStates[_flujoIdx], { priority: "event" });
+  });
+
+  /* ── Comisiones toggle button ───────────────────────────── */
+  $(document).on("click", "#" + NS + "btn_comisiones_toggle", function() {
+    _comVisible = !_comVisible;
+    this.textContent = _comVisible ? "Con comisiones" : "Sin comisiones";
+    $(this).toggleClass("bnc-com-active", _comVisible);
+    Shiny.setInputValue(NS + "mostrar_comisiones", _comVisible, { priority: "event" });
+  });
+
   /* ── Vincular button ────────────────────────────────────── */
   function deactivateVin() {
     vinMode = false;
     var b = $id("btn_vincular");
     if (b) {
-      $(b).removeClass("btn-warning").addClass("btn-outline-primary border-0");
+      $(b).removeClass("btn-warning").addClass("btn-outline-primary");
       if (_vinBtnOrigHtml) b.innerHTML = _vinBtnOrigHtml;
     }
     $("body").removeClass("bnc-vincular-mode");
@@ -329,7 +402,7 @@ bancos_libro_js <- function(id) {
     if (vinMode) { deactivateVin(); return; }
     if (!_vinBtnOrigHtml) _vinBtnOrigHtml = this.innerHTML;
     vinMode = true;
-    $(this).removeClass("btn-outline-primary border-0").addClass("btn-warning")
+    $(this).removeClass("btn-outline-primary").addClass("btn-warning")
            .html("\\u2715 Cancelar");
     $("body").addClass("bnc-vincular-mode");
   });
@@ -339,13 +412,15 @@ bancos_libro_js <- function(id) {
     if (e.key === "Escape" && vinMode) deactivateVin();
   });
 
-  /* ── Conciliar button ───────────────────────────────────── */
+  /* ── Conciliar button (REMOVED — code preserved for future use) ──────────
   $(document).on("click", "#" + NS + "btn_sugerencias", function() {
     Shiny.setInputValue(NS + "open_sugerencias", Math.random(), { priority: "event" });
   });
+  ── END CONCILIAR_REMOVED ─────────────────────────────────────────────── */
 
-  /* ── Re-highlight after DT redraw ───────────────────────── */
+  /* ── Re-highlight after DT redraw; reset last-row anchor ── */
   $(document).on("draw.dt", "#" + NS + "libro_tbl table", function() {
+    _lastRow = null;   /* stale DOM ref after redraw */
     highlightVisible();
   });
 
@@ -355,12 +430,13 @@ bancos_libro_js <- function(id) {
   /* Custom message handlers — namespaced to avoid collisions across instances */
   Shiny.addCustomMessageHandler(NS + "clear_selection", function(x) { clearAll(); });
   Shiny.addCustomMessageHandler(NS + "deactivate_vin",  function(x) { deactivateVin(); });
+  /* sug_badge handler (REMOVED with Conciliar feature):
   Shiny.addCustomMessageHandler(NS + "sug_badge", function(n) {
     var b = $id("sug_badge");
     if (!b) return;
     if (n > 0) { b.textContent = n; b.style.display = ""; }
     else        { b.style.display = "none"; }
-  });
+  }); */
 })();', pfx)
   tags$script(HTML(js))
 }
@@ -419,20 +495,18 @@ score_vincular_match <- function(item, candidate) {
 }
 
 # ── Helper: account choices vector ───────────────────────────────────────────
-.cuenta_choices <- function(cuentas_df, include_sin_cuenta = TRUE) {
+.cuenta_choices <- function(cuentas_df, include_sin_cuenta = TRUE, include_todas = FALSE) {
   if (is.null(cuentas_df) || !nrow(cuentas_df)) {
     choices <- if (include_sin_cuenta) c("Ingresos sin cuenta" = "__sin_cuenta__") else character(0)
+    if (include_todas) choices <- c("Todas las cuentas" = "__todas__", choices)
     return(choices)
   }
   act <- dplyr::filter(cuentas_df, activa == TRUE)
   named <- setNames(act$cuenta_id,
     paste0(act$empresa, " \u2014 ", act$banco, " ", act$moneda,
            " (", act$alias, ")"))
-  if (include_sin_cuenta) {
-    c(named, "Ingresos sin cuenta" = "__sin_cuenta__")
-  } else {
-    named
-  }
+  result <- if (include_sin_cuenta) c(named, "Ingresos sin cuenta" = "__sin_cuenta__") else named
+  if (include_todas) c("Todas las cuentas" = "__todas__", result) else result
 }
 
 # ── Translate ctas_cuentas + ctas_bancos → bancos_cuentas format ─────────────
@@ -508,69 +582,83 @@ bancosUI <- function(id) {
           # Dashboard cards
           uiOutput(ns("dashboard_cards")),
           tags$hr(),
-          # Controls row
-          div(class = "d-flex flex-wrap gap-2 align-items-end mb-2",
-            div(
-              tags$label("Cuenta", class = "form-label small text-muted mb-1"),
+          # \u2500\u2500 Slim toolbar (one bar, no labels) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+          div(class = "d-flex align-items-center gap-2 bnc-toolbar",
+            div(style = "flex-shrink:0;",
               selectInput(ns("libro_cuenta"), NULL,
-                          choices = c("Cargando..." = ""), width = "280px")
+                          choices  = c("Todas las cuentas" = "__todas__"),
+                          selected = "__todas__", width = "210px")
             ),
-            div(
-              tags$label("Per\u00edodo", class = "form-label small text-muted mb-1"),
+            div(style = "flex-shrink:0;",
               selectInput(ns("libro_periodo"), NULL,
-                          choices = .PERIODO_CHOICES, width = "180px")
+                          choices = .PERIODO_CHOICES, width = "148px")
             ),
-            div(class = "ms-auto d-flex flex-wrap gap-2 align-items-center",
-              checkboxInput(ns("mostrar_comisiones"),
-                            "Mostrar comisiones", value = FALSE),
-              # ── Action toolbar ───────────────────────────────────────────
-              tags$button(
-                id = ns("btn_eliminar"), type = "button",
-                class = "btn btn-sm btn-outline-danger",
-                disabled = "disabled",
-                "Eliminar"
-              ),
-              # Vincular + Conciliar fused button group
-              tags$div(
-                class = "btn-group me-1", role = "group",
-                style = "border:1.5px solid #0d6efd; border-radius:6px; overflow:hidden;",
-                tags$button(
-                  id = ns("btn_vincular"), type = "button",
-                  class = "btn btn-sm btn-outline-primary border-0",
-                  HTML('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-1px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Vincular')
-                ),
-                tags$div(
-                  style = "width:1px; background:#0d6efd; opacity:0.3; margin:4px 0;"
-                ),
-                tags$button(
-                  id = ns("btn_sugerencias"), type = "button",
-                  class = "btn btn-sm btn-outline-info border-0",
-                  "Conciliar ",
-                  tags$span(
-                    id = ns("sug_badge"),
-                    class = "badge bg-info text-dark",
-                    style = "display:none; font-size:.7rem;",
-                    "0"
-                  )
+            conditionalPanel(
+              condition = "input.libro_periodo === 'personalizado'",
+              ns = ns,
+              div(style = "flex-shrink:0;",
+                shinyWidgets::airDatepickerInput(
+                  inputId    = ns("libro_rango"),
+                  label      = NULL,
+                  value      = c(Sys.Date() - 30, Sys.Date()),
+                  range      = TRUE,
+                  dateFormat = "dd-M-yyyy",
+                  separator  = " — ",
+                  width      = "225px",
+                  placeholder = "Inicio — Fin"
                 )
-              ),
-              actionButton(ns("add_mov_manual"), icon("plus"),
-                           label = " Agregar movimiento",
-                           class = "btn btn-sm btn-outline-primary"),
-              downloadButton(
-                ns("download_libro"),
-                label = HTML(paste0(
-                  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" ',
-                  'stroke="currentColor" stroke-width="2" stroke-linecap="round" ',
-                  'stroke-linejoin="round" style="margin-right:4px;vertical-align:-1px">',
-                  '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>',
-                  '<polyline points="14 2 14 8 20 8"/>',
-                  '<line x1="16" y1="13" x2="8" y2="13"/>',
-                  '<line x1="16" y1="17" x2="8" y2="17"/>',
-                  '<polyline points="10 9 9 9 8 9"/>',
-                  '</svg>Exportar')),
-                class = "btn btn-sm btn-outline-secondary"
               )
+            ),
+            tags$div(class = "bnc-toolbar-sep"),
+            tags$button(
+              id = ns("btn_flujo_cycle"), type = "button",
+              class = "btn btn-sm btn-outline-secondary bnc-flujo-todos",
+              style = "white-space:nowrap; font-size:.78rem; padding:3px 9px;",
+              "Todos"
+            ),
+            tags$button(
+              id = ns("btn_comisiones_toggle"), type = "button",
+              class = "btn btn-sm btn-outline-secondary",
+              style = "white-space:nowrap; font-size:.78rem; padding:3px 9px;",
+              "Sin comisiones"
+            ),
+            tags$div(class = "flex-grow-1"),
+            tags$div(class = "bnc-toolbar-sep"),
+            # Trash icon only (enabled = fills red via .bnc-btn-trash CSS)
+            tags$button(
+              id = ns("btn_eliminar"), type = "button",
+              class = "btn btn-sm btn-outline-danger bnc-btn-trash",
+              disabled = "disabled",
+              title = "Eliminar seleccionados",
+              HTML('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>')
+            ),
+            # Vincular
+            tags$button(
+              id = ns("btn_vincular"), type = "button",
+              class = "btn btn-sm btn-outline-primary",
+              style = "font-size:.78rem; padding:3px 9px; white-space:nowrap;",
+              HTML('<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:3px;vertical-align:-1px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Vincular')
+            ),
+            # CONCILIAR_REMOVED: Conciliar button was here; code preserved in
+            # if(FALSE) blocks — see bancos_libro_js() and server section.
+            actionButton(ns("add_mov_manual"), icon("plus"),
+                         label = " Agregar",
+                         class  = "btn btn-sm btn-outline-primary",
+                         style  = "font-size:.78rem; padding:3px 9px; white-space:nowrap;"),
+            downloadButton(
+              ns("download_libro"),
+              label = HTML(paste0(
+                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" ',
+                'stroke="currentColor" stroke-width="2" stroke-linecap="round" ',
+                'stroke-linejoin="round" style="margin-right:3px;vertical-align:-1px">',
+                '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>',
+                '<polyline points="14 2 14 8 20 8"/>',
+                '<line x1="16" y1="13" x2="8" y2="13"/>',
+                '<line x1="16" y1="17" x2="8" y2="17"/>',
+                '<polyline points="10 9 9 9 8 9"/>',
+                '</svg>Exportar')),
+              class = "btn btn-sm btn-outline-secondary",
+              style = "font-size:.78rem; padding:3px 9px; white-space:nowrap;"
             )
           ),
           # ── Selection pill ───────────────────────────────────────────────
@@ -632,7 +720,7 @@ bancosUI <- function(id) {
           bslib::nav_panel(
             "Historial de confirmaciones",
             div(class = "p-3",
-              div(class = "d-flex gap-2 mb-2",
+              div(class = "d-flex gap-2 mb-2 flex-wrap",
                 selectInput(ns("hist_empresa_filter"), NULL,
                             choices = c("Todas las empresas" = ""),
                             width = "200px"),
@@ -640,7 +728,10 @@ bancosUI <- function(id) {
                             choices = c("Pagos y cobros" = "",
                                         "Solo pagos" = "pago",
                                         "Solo cobros" = "cobro"),
-                            width = "180px")
+                            width = "180px"),
+                textInput(ns("hist_search"), NULL,
+                          placeholder = "Buscar parte, documento…",
+                          width = "250px")
               ),
               DT::dataTableOutput(ns("historial_tbl"))
             )
@@ -695,13 +786,21 @@ bancosUI <- function(id) {
                 div(class = "mb-2",
                   DT::dataTableOutput(ns("reasig_preview_tbl"))
                 ),
-                uiOutput(ns("reasig_btn_ui"))
+                div(class = "d-flex justify-content-between align-items-center",
+                  uiOutput(ns("delete_sesion_btn_ui")),
+                  uiOutput(ns("reasig_btn_ui"))
+                )
               ),
               # ── Papelera info alert ──────────────────────────────────────────
               div(class = "alert alert-secondary small",
                 icon("info-circle"),
-                " Los elementos en papelera se conservan permanentemente en S3 ",
+                " Los elementos en papelera se conservan permanentemente",
                 "para auditor\u00eda, pero nunca se muestran en otras vistas."
+              ),
+              div(class = "mb-2",
+                textInput(ns("papelera_search"), NULL,
+                          placeholder = "Buscar parte, documento\u2026",
+                          width = "250px")
               ),
               DT::dataTableOutput(ns("papelera_tbl"))
             )
@@ -752,13 +851,18 @@ bancosServer <- function(id, shared) {
     observe({
       if (is.null(shared$bancos_movimientos())) {
         shared$bancos_movimientos(tryCatch(
-          load_bancos_movimientos(include_deleted = TRUE),
+          load_bancos_movimientos(include_deleted = TRUE, client_id = shared$active_client_id()),
           error = function(e) .schema_bancos_movimientos()
         ))
       }
       if (is.null(shared$bancos_confirmados())) {
         shared$bancos_confirmados(tryCatch(
-          load_bancos_confirmados(), error = function(e) .schema_bancos_confirmados()
+          load_bancos_confirmados(client_id = shared$active_client_id()), error = function(e) .schema_bancos_confirmados()
+        ))
+      }
+      if (is.null(shared$conciliacion_rv())) {
+        shared$conciliacion_rv(tryCatch(
+          load_conciliacion(client_id = shared$active_client_id()), error = function(e) .schema_conciliacion()
         ))
       }
     })
@@ -786,12 +890,14 @@ bancosServer <- function(id, shared) {
         }
         message(sprintf("[BANCOS] cleanup: soft-deleting %d fuente='agenda' ghost row(s)",
                         length(ghost_idx)))
-        movs$eliminado[ghost_idx] <- TRUE
+        movs$eliminado[ghost_idx]    <- TRUE
+        movs$eliminado_at[ghost_idx] <- Sys.time()
         shared$bancos_movimientos(movs)
-        tryCatch(
-          save_bancos_movimientos(movs),
-          error = function(e)
-            message("[BANCOS] cleanup save error: ", e$message)
+        tryCatch({
+          save_bancos_movimientos(movs, client_id = shared$active_client_id())
+          bump_sync_version("bancos_movimientos_db")
+        }, error = function(e)
+          message("[BANCOS] cleanup save error: ", e$message)
         )
         message("[BANCOS] cleanup: done — ghost rows marked eliminado=TRUE in S3")
       })
@@ -800,11 +906,14 @@ bancosServer <- function(id, shared) {
     # ctas_bancos loaded once for bank-name resolution (not in shared)
     ctas_bancos_rv <- reactiveVal(NULL)
     observe({
-      if (is.null(ctas_bancos_rv())) {
-        ctas_bancos_rv(tryCatch(
-          load_ctas_bancos(), error = function(e) .schema_ctas_bancos()
-        ))
-      }
+      # Always establish a reactive dep on active_client_id so ctas_bancos
+      # reloads when the session context switches (client_id changes after login).
+      # Without this, the NULL-guard fires once before login (wrong prefix) and
+      # never re-fires, leaving all banco names as "—".
+      cid <- tryCatch(shared$active_client_id(), error = function(e) NULL)
+      ctas_bancos_rv(tryCatch(
+        load_ctas_bancos(client_id = cid), error = function(e) .schema_ctas_bancos()
+      ))
     })
 
     # ── Convenience accessors ────────────────────────────────────────────────
@@ -813,14 +922,35 @@ bancosServer <- function(id, shared) {
     cuentas <- reactive({
       raw_cts <- tryCatch(
         if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas()
-        else load_ctas_cuentas(),
+        else load_ctas_cuentas(client_id = shared$active_client_id()),
         error = function(e) NULL
       )
-      .ctas_to_bancos_cuentas(raw_cts, ctas_bancos_rv())
+      df      <- .ctas_to_bancos_cuentas(raw_cts, ctas_bancos_rv())
+      allowed <- tryCatch(shared$visible_initials(), error = function(e) NULL)
+      if (!is.null(allowed) && "empresa" %in% names(df) && nrow(df) > 0)
+        df <- df[df$empresa %in% allowed, , drop = FALSE]
+      df
     })
 
     movs_all   <- reactive({ shared$bancos_movimientos() %||% .schema_bancos_movimientos() })
     confirmados<- reactive({ shared$bancos_confirmados() %||% .schema_bancos_confirmados() })
+
+    # ── CONCILIAR_REMOVED: sug_scoped_data (preserved, not active) ───────────
+    if (FALSE) {
+    sug_scoped_data <- reactive({
+      cuenta_sel <- input$libro_cuenta %||% ""
+      m <- movs_all()
+      c <- confirmados()
+      if (nzchar(cuenta_sel) && cuenta_sel != "__sin_cuenta__") {
+        m <- dplyr::filter(m, cuenta_id == cuenta_sel)
+        c <- dplyr::filter(c, cuenta_id == cuenta_sel)
+      } else if (cuenta_sel == "__sin_cuenta__") {
+        m <- dplyr::filter(m, is.na(cuenta_id) | cuenta_id == "")
+        c <- dplyr::filter(c, is.na(cuenta_id) | cuenta_id == "")
+      }
+      list(movs = m, conf = c)
+    })
+    } # END CONCILIAR_REMOVED
 
     # Active movements for Libro de Banco calculations and display.
     # Excludes:
@@ -835,9 +965,13 @@ bancosServer <- function(id, shared) {
 
     # ── Update account selectors when cuentas change ─────────────────────────
     observe({
-      ch_full  <- .cuenta_choices(cuentas(), include_sin_cuenta = TRUE)
+      ch_full  <- .cuenta_choices(cuentas(), include_sin_cuenta = TRUE, include_todas = TRUE)
       ch_import<- .cuenta_choices(cuentas(), include_sin_cuenta = FALSE)
-      updateSelectInput(session, "libro_cuenta",  choices = ch_full)
+      cur_sel  <- isolate(input$libro_cuenta) %||% "__todas__"
+      updateSelectInput(session, "libro_cuenta",
+        choices  = ch_full,
+        selected = if (cur_sel %in% names(ch_full) || cur_sel %in% ch_full) cur_sel else "__todas__"
+      )
       updateSelectInput(session, "import_cuenta", choices = ch_import)
     })
 
@@ -1058,146 +1192,318 @@ bancosServer <- function(id, shared) {
 
     # ── Tab 1: Movement table ─────────────────────────────────────────────────
     output$libro_tbl <- DT::renderDataTable({
-      cuenta_sel <- input$libro_cuenta %||% ""
+      cuenta_sel <- input$libro_cuenta %||% "__todas__"
       periodo    <- input$libro_periodo %||% "mes_actual"
       show_com   <- isTRUE(input$mostrar_comisiones)
+      flujo      <- input$flujo_filter  %||% "todos"
+      rango      <- input$libro_rango
 
       movs <- movs_active()
 
-      # Filter by account
-      if (nzchar(cuenta_sel) && cuenta_sel != "__sin_cuenta__") {
-        movs <- dplyr::filter(movs, cuenta_id == cuenta_sel)
-      } else if (cuenta_sel == "__sin_cuenta__") {
+      # Filter by account (__todas__ = no filter)
+      if (cuenta_sel == "__sin_cuenta__") {
         movs <- dplyr::filter(movs, is.na(cuenta_id) | cuenta_id == "")
+      } else if (nzchar(cuenta_sel) && cuenta_sel != "__todas__") {
+        movs <- dplyr::filter(movs, cuenta_id == cuenta_sel)
       }
 
-      movs <- .filter_periodo(movs, periodo)
+      movs <- .filter_periodo(movs, periodo,
+        desde = if (length(rango) >= 1) rango[1] else NULL,
+        hasta = if (length(rango) >= 2) rango[2] else NULL
+      )
       movs <- dplyr::arrange(movs, dplyr::desc(fecha), dplyr::desc(hora))
 
       if (!show_com) {
         movs <- dplyr::filter(movs, tipo != "comision")
       }
 
-      # Always hide rows where both cargo and abono are zero — informational
-      # rows (IVA notices, zero-value acknowledgements) with no ledger value
-      movs <- dplyr::filter(movs, cargo > 0 | abono > 0)
+      # Flow filter (replaces the blanket cargo>0|abono>0 baseline)
+      movs <- switch(flujo,
+        "egresos"  = dplyr::filter(movs, cargo > 0),
+        "ingresos" = dplyr::filter(movs, abono > 0),
+        dplyr::filter(movs, cargo > 0 | abono > 0)
+      )
+
+      # Join cuentas for empresa + moneda (alias used as fallback when empresa is blank)
+      cts_disp <- dplyr::select(cuentas(), cuenta_id, empresa, alias, moneda)
+      movs     <- dplyr::left_join(movs, cts_disp, by = "cuenta_id")
+
+      todas <- cuenta_sel == "__todas__"
 
       if (!nrow(movs)) {
+        empty_df <- data.frame(
+          id = character(), Empresa = character(),
+          `Fecha y Hora` = character(), Moneda = character(),
+          `Descripcion` = character(),
+          Cargo = character(), Abono = character(), Saldo = character(),
+          check.names = FALSE
+        )
+        col_defs <- list(
+          list(visible = FALSE, targets = 0),
+          if (!todas) list(visible = FALSE, targets = 1) else NULL
+        )
+        col_defs <- Filter(Negate(is.null), col_defs)
         return(DT::datatable(
-          data.frame(
-            id = character(), Fecha = character(), Parte = character(),
-            Concepto = character(), Cargo = character(), Abono = character(),
-            Saldo = character(), Tipo = character()
-          ),
-          escape = FALSE, rownames = FALSE,
+          empty_df, escape = FALSE, rownames = FALSE, class = "display compact",
           options = list(
-            dom = "t",
-            columnDefs = list(list(visible = FALSE, targets = 0)),
-            language   = list(emptyTable = "Sin movimientos en este per\u00edodo")
+            dom = "t", columnDefs = col_defs,
+            language = list(emptyTable = "Sin movimientos en este per\u00edodo")
           )
         ))
       }
 
       tbl <- movs |>
         dplyr::mutate(
-          .row_class = dplyr::case_when(
-            tipo == "comision"  ~ "bnc-row-comision",
-            conciliado == TRUE  ~ "bnc-row-conciliado",
-            TRUE                ~ ""
+          .row_class  = dplyr::case_when(
+            tipo == "comision" ~ "bnc-row-comision",
+            conciliado == TRUE ~ "bnc-row-conciliado",
+            TRUE               ~ ""
           ),
-          Fecha    = format(fecha, "%d/%m/%Y"),
-          Parte    = htmltools::htmlEscape(parte %||% ""),
-          Concepto = htmltools::htmlEscape(
+          Empresa       = {
+            ini <- dplyr::na_if(trimws(dplyr::coalesce(empresa, "")), "")
+            nm  <- COMPANY_MAP[dplyr::coalesce(ini, "")]
             dplyr::coalesce(
-              dplyr::na_if(trimws(concepto        %||% ""), ""),
-              dplyr::na_if(trimws(descripcion_raw %||% ""), ""),
-              "\u2014"
+              ifelse(!is.na(nm), unname(nm), NA_character_),
+              ini,
+              alias
             )
+          },
+          `Fecha y Hora` = paste(format(fecha, "%d/%m/%Y"), hora),
+          Moneda        = toupper(trimws(moneda %||% "")),
+          `Descripcion` = htmltools::htmlEscape(
+            dplyr::coalesce(dplyr::na_if(trimws(descripcion_raw %||% ""), ""), "\u2014")
           ),
-          Cargo    = dplyr::if_else(cargo > 0,
+          Cargo         = dplyr::if_else(cargo > 0,
             sprintf('<span class="bnc-row-cargo">%s</span>', fmt_money(cargo)), ""),
-          Abono    = dplyr::if_else(abono > 0,
+          Abono         = dplyr::if_else(abono > 0,
             sprintf('<span class="bnc-row-abono">%s</span>', fmt_money(abono)), ""),
-          Saldo    = dplyr::if_else(!is.na(saldo_banco),
-            fmt_money(saldo_banco), "<span class='text-muted'>\u2014</span>"),
-          Tipo     = vapply(tipo, .tipo_badge, character(1))
+          Saldo         = dplyr::if_else(!is.na(saldo_banco),
+            fmt_money(saldo_banco), "<span class='text-muted'>\u2014</span>")
         )
 
       row_classes <- tbl$.row_class
-      # id column goes first (hidden via columnDefs)
-      disp <- dplyr::select(tbl, id, Fecha, Parte, Concepto, Cargo, Abono, Saldo, Tipo)
+
+      date_group_idx <- {
+        d <- tbl$fecha
+        cumsum(c(TRUE, d[-1] != d[-length(d)])) %% 2L
+      }
+
+      # id(0,hidden), Empresa(1,conditional), FechaHora(2), Moneda(3), Desc(4), Cargo(5), Abono(6), Saldo(7)
+      disp <- dplyr::select(tbl, id, Empresa, `Fecha y Hora`, Moneda,
+                            `Descripcion`, Cargo, Abono, Saldo)
+
+      col_defs <- list(
+        list(visible = FALSE, targets = 0),
+        list(className = "dt-center", targets = 3),
+        list(className = "dt-right",  targets = c(5, 6, 7)),
+        list(width = "90px",  targets = 2),
+        list(width = "50px",  targets = 3),
+        list(width = "80px",  targets = c(5, 6, 7)),
+        list(targets = 4, className = "dt-left")
+      )
+      if (!todas) col_defs <- c(col_defs, list(list(visible = FALSE, targets = 1)))
 
       DT::datatable(
         disp,
         escape    = FALSE,
         rownames  = FALSE,
         selection = "none",
+        class     = "display compact",
         options   = list(
           pageLength  = 50,
           dom         = "lfrtip",
-          scrollX     = TRUE,
+          scrollX     = FALSE,
+          autoWidth   = FALSE,
           order       = list(),
-          columnDefs  = list(list(visible = FALSE, targets = 0)),
+          columnDefs  = col_defs,
           language    = list(emptyTable = "Sin movimientos"),
           createdRow  = DT::JS("function(row, data) { $(row).attr('data-id', data[0]); }"),
           rowCallback = DT::JS(sprintf(
             "function(row, data, index) {
               var cls = %s;
               if (index < cls.length && cls[index]) $(row).addClass(cls[index]);
+              var dg = %s;
+              if (index < dg.length && dg[index] === 1) $(row).addClass('bnc-day-alt');
             }",
-            jsonlite::toJSON(row_classes)
+            jsonlite::toJSON(row_classes),
+            jsonlite::toJSON(date_group_idx)
           ))
         )
       )
     }, server = TRUE)
 
-    # ── Exportar CSV ──────────────────────────────────────────────────────────
+    # ── Exportar Excel ────────────────────────────────────────────────────────
     output$download_libro <- downloadHandler(
       filename = function() {
-        cuenta_sel <- input$libro_cuenta %||% ""
+        cuenta_sel <- input$libro_cuenta %||% "__todas__"
         cts        <- cuentas()
-        alias_str  <- if (nzchar(cuenta_sel) && cuenta_sel != "__sin_cuenta__") {
+        alias_str  <- if (cuenta_sel == "__todas__") {
+          "todas"
+        } else if (nzchar(cuenta_sel) && cuenta_sel != "__sin_cuenta__") {
           row <- dplyr::filter(cts, cuenta_id == cuenta_sel)
           if (nrow(row)) gsub("[^A-Za-z0-9_-]", "_", row$alias[1]) else "banco"
         } else "banco"
-        paste0("movimientos_", alias_str, "_", format(Sys.Date(), "%Y%m%d"), ".csv")
+        paste0("movimientos_", alias_str, "_", format(Sys.Date(), "%Y%m%d"), ".xlsx")
       },
       content = function(file) {
-        cuenta_sel <- input$libro_cuenta %||% ""
+        cuenta_sel <- input$libro_cuenta %||% "__todas__"
         periodo    <- input$libro_periodo %||% "mes_actual"
         show_com   <- isTRUE(input$mostrar_comisiones)
+        flujo      <- input$flujo_filter  %||% "todos"
+        rango      <- input$libro_rango
 
         movs <- movs_active()
 
-        if (nzchar(cuenta_sel) && cuenta_sel != "__sin_cuenta__") {
-          movs <- dplyr::filter(movs, cuenta_id == cuenta_sel)
-        } else if (cuenta_sel == "__sin_cuenta__") {
+        if (cuenta_sel == "__sin_cuenta__") {
           movs <- dplyr::filter(movs, is.na(cuenta_id) | cuenta_id == "")
+        } else if (nzchar(cuenta_sel) && cuenta_sel != "__todas__") {
+          movs <- dplyr::filter(movs, cuenta_id == cuenta_sel)
         }
 
-        movs <- .filter_periodo(movs, periodo)
+        movs <- .filter_periodo(movs, periodo,
+          desde = if (length(rango) >= 1) rango[1] else NULL,
+          hasta = if (length(rango) >= 2) rango[2] else NULL
+        )
         movs <- dplyr::arrange(movs, dplyr::desc(fecha), dplyr::desc(hora))
         if (!show_com) movs <- dplyr::filter(movs, tipo != "comision")
-        movs <- dplyr::filter(movs, cargo > 0 | abono > 0)
+        movs <- switch(flujo,
+          "egresos"  = dplyr::filter(movs, cargo > 0),
+          "ingresos" = dplyr::filter(movs, abono > 0),
+          dplyr::filter(movs, cargo > 0 | abono > 0)
+        )
 
-        export <- dplyr::select(movs, fecha, hora, recibo, tipo, parte, rfc,
-                                referencia, clave_rastreo, concepto,
-                                cargo, abono, saldo_banco,
-                                conciliado, fuente, notas)
-        write.csv(export, file, row.names = FALSE)
+        todas_exp <- cuenta_sel == "__todas__"
+        cts_exp   <- dplyr::select(cuentas(), cuenta_id, empresa, alias, moneda)
+        movs      <- dplyr::left_join(movs, cts_exp, by = "cuenta_id")
+
+        base_exp <- dplyr::transmute(movs,
+          `Fecha Movimiento` = format(as.Date(fecha), "%d-%b-%Y"),
+          Hora               = as.character(hora),
+          Recibo             = as.character(recibo),
+          `Descripcion`      = descripcion_raw,
+          Cargos             = cargo,
+          Abonos             = abono,
+          Saldo              = saldo_banco,
+          .empresa           = {
+            ini <- dplyr::na_if(trimws(dplyr::coalesce(empresa, "")), "")
+            nm  <- COMPANY_MAP[dplyr::coalesce(ini, "")]
+            dplyr::coalesce(
+              ifelse(!is.na(nm), unname(nm), NA_character_),  # full name from map
+              ini,                                              # raw initials if not in map
+              alias                                             # account alias when empresa is unset
+            )
+          },
+          .moneda            = toupper(trimws(moneda %||% ""))
+        )
+
+        if (todas_exp) {
+          export <- dplyr::transmute(base_exp,
+            Empresa            = .empresa,
+            `Fecha Movimiento` = `Fecha Movimiento`,
+            Hora               = Hora,
+            Recibo             = Recibo,
+            `Descripcion`      = `Descripcion`,
+            Cargos             = Cargos,
+            Abonos             = Abonos,
+            Saldo              = Saldo,
+            Moneda             = .moneda
+          )
+          # col layout: Empresa(1),Fecha(2),Hora(3),Recibo(4),Desc(5),Cargos(6),Abonos(7),Saldo(8),Moneda(9)
+          txt_cols   <- 1:5
+          col_cargo  <- 6L; col_abono <- 7L; col_saldo <- 8L; col_moneda <- 9L
+          col_widths <- c(30, 16, 10, 16, 55, 14, 14, 14, 10)
+        } else {
+          export <- dplyr::select(base_exp, -`.empresa`, -`.moneda`)
+          # col layout: Fecha(1),Hora(2),Recibo(3),Desc(4),Cargos(5),Abonos(6),Saldo(7)
+          txt_cols   <- 1:4
+          col_cargo  <- 5L; col_abono <- 6L; col_saldo <- 7L; col_moneda <- NULL
+          col_widths <- c(16, 10, 16, 55, 14, 14, 14)
+        }
+
+        wb <- openxlsx::createWorkbook()
+        ws <- "Movimientos"
+        openxlsx::addWorksheet(wb, ws)
+        openxlsx::modifyBaseFont(wb, fontName = "Calibri", fontSize = 10)
+        openxlsx::freezePane(wb, ws, firstRow = TRUE)
+
+        mxn <- '$#,##0.00'
+
+        st_hdr <- openxlsx::createStyle(
+          fgFill = "#1E3A5F", fontColour = "#FFFFFF",
+          fontName = "Calibri", fontSize = 10, textDecoration = "bold",
+          halign = "center", valign = "center",
+          border = "TopBottomLeftRight", borderColour = "#4A7DB5", borderStyle = "thin"
+        )
+        st_txt <- openxlsx::createStyle(
+          fontName = "Calibri", fontSize = 10, halign = "left", valign = "center",
+          border = "TopBottomLeftRight", borderColour = "#CCCCCC", borderStyle = "thin"
+        )
+        st_num <- openxlsx::createStyle(
+          fontName = "Calibri", fontSize = 10, halign = "right", valign = "center",
+          numFmt = mxn,
+          border = "TopBottomLeftRight", borderColour = "#CCCCCC", borderStyle = "thin"
+        )
+        st_cargo <- openxlsx::createStyle(
+          fontName = "Calibri", fontSize = 10, fontColour = "#C0392B",
+          halign = "right", valign = "center", numFmt = mxn,
+          border = "TopBottomLeftRight", borderColour = "#CCCCCC", borderStyle = "thin"
+        )
+        st_abono <- openxlsx::createStyle(
+          fontName = "Calibri", fontSize = 10, fontColour = "#1A7A3A",
+          halign = "right", valign = "center", numFmt = mxn,
+          border = "TopBottomLeftRight", borderColour = "#CCCCCC", borderStyle = "thin"
+        )
+
+        openxlsx::writeData(wb, ws, export, startRow = 1, startCol = 1,
+                            headerStyle = st_hdr)
+
+        nr <- nrow(export)
+        if (nr > 0) {
+          data_rows <- seq(2L, nr + 1L)
+
+          openxlsx::addStyle(wb, ws, st_txt, rows = data_rows, cols = txt_cols,  gridExpand = TRUE)
+          openxlsx::addStyle(wb, ws, st_num, rows = data_rows, cols = col_saldo, gridExpand = TRUE)
+          if (!is.null(col_moneda))
+            openxlsx::addStyle(wb, ws, st_txt, rows = data_rows, cols = col_moneda, gridExpand = TRUE)
+
+          cargo_vals <- export$Cargos
+          rows_cargo_red   <- which(!is.na(cargo_vals) & cargo_vals > 0) + 1L
+          rows_cargo_plain <- setdiff(data_rows, rows_cargo_red)
+          if (length(rows_cargo_red)   > 0)
+            openxlsx::addStyle(wb, ws, st_cargo, rows = rows_cargo_red,   cols = col_cargo, gridExpand = TRUE)
+          if (length(rows_cargo_plain) > 0)
+            openxlsx::addStyle(wb, ws, st_num,   rows = rows_cargo_plain, cols = col_cargo, gridExpand = TRUE)
+
+          abono_vals <- export$Abonos
+          rows_abono_grn   <- which(!is.na(abono_vals) & abono_vals > 0) + 1L
+          rows_abono_plain <- setdiff(data_rows, rows_abono_grn)
+          if (length(rows_abono_grn)   > 0)
+            openxlsx::addStyle(wb, ws, st_abono, rows = rows_abono_grn,   cols = col_abono, gridExpand = TRUE)
+          if (length(rows_abono_plain) > 0)
+            openxlsx::addStyle(wb, ws, st_num,   rows = rows_abono_plain, cols = col_abono, gridExpand = TRUE)
+        }
+
+        openxlsx::setColWidths(wb, ws, cols = seq_along(col_widths), widths = col_widths)
+        openxlsx::setRowHeights(wb, ws, rows = 1, heights = 20)
+
+        openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
       }
     )
 
     # ── Reactive state for Vincular / Sugerencias modals ─────────────────────
     vincular_item_rv  <- reactiveVal(NULL)   # chosen movement row
     vin_confirm_rv    <- reactiveVal(NULL)   # NULL=search, list=confirm panel data
+    # ── CONCILIAR_REMOVED: Sugerencias reactive state (preserved, not active) ─
+    if (FALSE) {
     sug_state_rv      <- reactiveVal("list") # "list" | "confirm"
     sug_confirm_rv    <- reactiveVal(NULL)   # confirm data for sugerencias
     sug_left_rv       <- reactiveVal(NULL)   # selected left-panel item id
     sug_right_rv      <- reactiveVal(NULL)   # selected right-panel item id
+    } # END CONCILIAR_REMOVED
 
     # ── Reasignar cuenta reactives ────────────────────────────────────────────
-    reasig_confirm_data_rv <- reactiveVal(NULL)
+    reasig_confirm_data_rv    <- reactiveVal(NULL)
+    delete_sesion_confirm_rv  <- reactiveVal(NULL)
 
     # ── Import reactives ──────────────────────────────────────────────────────
     txt_empresa_rv       <- reactiveVal("")
@@ -1261,16 +1567,24 @@ bancosServer <- function(id, shared) {
       idx  <- which(movs$id %in% ids)
       if (!length(idx)) { removeModal(); return() }
 
-      movs$eliminado[idx] <- TRUE
+      movs$eliminado[idx]    <- TRUE
+      movs$eliminado_at[idx] <- Sys.time()
       shared$bancos_movimientos(movs)
-      tryCatch(save_bancos_movimientos(movs),
+      tryCatch({ save_bancos_movimientos(movs, client_id = shared$active_client_id()); bump_sync_version("bancos_movimientos_db") },
                error = function(e)
-                 showNotification(paste("Error S3:", e$message), type = "warning"))
+                 showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
       removeModal()
       n <- length(idx)
       showNotification(
         sprintf("%d movimiento%s eliminado%s.", n, if (n==1)"" else "s", if (n==1)"" else "s"),
         type = "message", duration = 3
+      )
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "bancos",
+        action      = "eliminar_movimientos",
+        description = paste0(n, " movimiento(s) enviado(s) a papelera"),
+        metadata    = list(n = n)
       )
       # Clear JS selection
       session$sendCustomMessage(paste0(id, "-clear_selection"), TRUE)
@@ -1492,7 +1806,7 @@ bancosServer <- function(id, shared) {
     output$vin_candidates_list <- renderUI({
       item <- vincular_item_rv()
       req(item)
-      search_txt <- tolower(trimws(input$vin_search %||% ""))
+      search_txt <- strip_accents(tolower(trimws(input$vin_search %||% "")))
       use_search <- nzchar(search_txt)
 
       movs   <- movs_all()
@@ -1506,7 +1820,7 @@ bancosServer <- function(id, shared) {
 
       if (use_search) {
         cands <- Filter(function(c) {
-          txt <- tolower(paste(c$parte, c$documento, c$empresa, sep = " "))
+          txt <- strip_accents(tolower(paste(c$parte, c$documento, c$empresa, sep = " ")))
           grepl(search_txt, txt, fixed = TRUE)
         }, cands)
       } else {
@@ -1619,11 +1933,11 @@ bancosServer <- function(id, shared) {
         # SAP items don't live in our tables; just mark the bank row as conciliado
       } else if (discard_source == "confirmado") {
         idx_d <- which(conf$confirmacion_id == discard_id)
-        if (length(idx_d)) conf$eliminado[idx_d] <- TRUE
+        if (length(idx_d)) { conf$eliminado[idx_d] <- TRUE; conf$eliminado_at[idx_d] <- Sys.time() }
       } else {
         # mov_txt or other bancos_movimientos source
         idx_d <- which(movs$id == discard_id)
-        if (length(idx_d)) movs$eliminado[idx_d] <- TRUE
+        if (length(idx_d)) { movs$eliminado[idx_d] <- TRUE; movs$eliminado_at[idx_d] <- Sys.time() }
       }
       list(movs = movs, conf = conf)
     }
@@ -1640,13 +1954,17 @@ bancosServer <- function(id, shared) {
       ca_id     <- as.character(ca$id)[1L]     %||% ""
       ca_source <- as.character(ca$source)[1L] %||% ""
       result <- .do_vinculation(item, ca_id, ca_source, movs, conf)
-      shared$bancos_movimientos(result$movs)
-      shared$bancos_confirmados(result$conf)
+      isolate({
+        shared$bancos_movimientos(result$movs)
+        shared$bancos_confirmados(result$conf)
+      })
       tryCatch({
-        save_bancos_movimientos(result$movs)
-        save_bancos_confirmados(result$conf)
+        save_bancos_movimientos(result$movs, client_id = shared$active_client_id())
+        save_bancos_confirmados(result$conf, client_id = shared$active_client_id())
+        bump_sync_version("bancos_movimientos_db")
+        bump_sync_version("bancos_confirmados_db")
       }, error = function(e)
-        showNotification(paste("Error S3:", e$message), type = "warning"))
+        showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
 
       removeModal()
       vin_confirm_rv(NULL)
@@ -1671,7 +1989,7 @@ bancosServer <- function(id, shared) {
 
       # Mark original item as eliminated
       idx_item <- which(movs$id == item_id)
-      if (length(idx_item)) movs$eliminado[idx_item] <- TRUE
+      if (length(idx_item)) { movs$eliminado[idx_item] <- TRUE; movs$eliminado_at[idx_item] <- Sys.time() }
 
       # Mark candidate as conciliado if it's in movimentos
       if (ca_source == "mov_txt") {
@@ -1684,13 +2002,17 @@ bancosServer <- function(id, shared) {
         # confirmado is the winner; bank movement eliminated above
       }
 
-      shared$bancos_movimientos(movs)
-      shared$bancos_confirmados(conf)
+      isolate({
+        shared$bancos_movimientos(movs)
+        shared$bancos_confirmados(conf)
+      })
       tryCatch({
-        save_bancos_movimientos(movs)
-        save_bancos_confirmados(conf)
+        save_bancos_movimientos(movs, client_id = shared$active_client_id())
+        save_bancos_confirmados(conf, client_id = shared$active_client_id())
+        bump_sync_version("bancos_movimientos_db")
+        bump_sync_version("bancos_confirmados_db")
       }, error = function(e)
-        showNotification(paste("Error S3:", e$message), type = "warning"))
+        showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
 
       removeModal()
       vin_confirm_rv(NULL)
@@ -1792,14 +2114,15 @@ bancosServer <- function(id, shared) {
 
       movs <- dplyr::bind_rows(movs_all(), new_mov)
       shared$bancos_movimientos(movs)
-      tryCatch(save_bancos_movimientos(movs),
+      tryCatch({ save_bancos_movimientos(movs, client_id = shared$active_client_id()); bump_sync_version("bancos_movimientos_db") },
                error = function(e)
-                 showNotification(paste("Error S3:", e$message), type = "warning"))
+                 showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
       removeModal()
       showNotification("Movimiento manual guardado.", type = "message", duration = 2)
     }, ignoreInit = TRUE)
 
-    # ── Sugerencias modal ─────────────────────────────────────────────────────
+    # ── CONCILIAR_REMOVED: Sugerencias modal logic (preserved, not active) ────
+    if (FALSE) {
     # Helper: compute all unmatched pairs scored ≥25
     .compute_sug_pairs <- function(movs, conf) {
       # Right panel: bank movements (fuente="txt", conciliado=FALSE, eliminado=FALSE)
@@ -1809,13 +2132,30 @@ bancosServer <- function(id, shared) {
       left_conf <- dplyr::filter(conf, !eliminado)
       left_man  <- dplyr::filter(movs, fuente == "manual", !conciliado, !eliminado)
 
+      # Pre-compute candidate amounts once (vectorized, outside the loop)
+      conf_amts <- left_conf$importe %||% NA_real_
+      man_amts  <- pmax(left_man$cargo %||% 0, left_man$abono %||% 0, na.rm = TRUE)
+
       pairs <- list()
       # Score each bank movement against each left item
       for (bi in seq_len(nrow(bank))) {
-        b <- bank[bi, ]
+        b     <- bank[bi, ]
+        b_amt <- max(b$cargo, b$abono, na.rm = TRUE)
+
+        # Amount pre-screen: only score candidates within 20% of bank amount
+        if (!is.na(b_amt) && b_amt > 0) {
+          keep_conf <- !is.na(conf_amts) & abs(conf_amts - b_amt) / b_amt <= 0.20
+          keep_man  <- !is.na(man_amts)  & abs(man_amts  - b_amt) / b_amt <= 0.20
+          sub_conf  <- left_conf[keep_conf, , drop = FALSE]
+          sub_man   <- left_man[keep_man,   , drop = FALSE]
+        } else {
+          sub_conf <- left_conf
+          sub_man  <- left_man
+        }
+
         # vs confirmados
-        for (ci in seq_len(nrow(left_conf))) {
-          lc <- left_conf[ci, ]
+        for (ci in seq_len(nrow(sub_conf))) {
+          lc <- sub_conf[ci, ]
           sc <- score_vincular_match(b, list(
             rfc = NA_character_, importe = lc$importe,
             fecha = lc$fecha, parte = lc$parte %||% "",
@@ -1826,7 +2166,7 @@ bancosServer <- function(id, shared) {
             left_id  = lc$confirmacion_id, left_src = "confirmado",
             score = sc,
             right = list(id=b$id, source="mov_txt",
-                         parte=b$parte%||%"", importe=max(b$cargo,b$abono,na.rm=TRUE),
+                         parte=b$parte%||%"", importe=b_amt,
                          fecha=b$fecha, documento=b$referencia%||%"",
                          tipo=b$tipo%||%""),
             left  = list(id=lc$confirmacion_id, source="confirmado",
@@ -1836,8 +2176,8 @@ bancosServer <- function(id, shared) {
           )
         }
         # vs manual movements
-        for (mi in seq_len(nrow(left_man))) {
-          lm <- left_man[mi, ]
+        for (mi in seq_len(nrow(sub_man))) {
+          lm <- sub_man[mi, ]
           sc <- score_vincular_match(b, list(
             rfc = lm$rfc %||% NA_character_,
             importe = max(lm$cargo, lm$abono, na.rm=TRUE),
@@ -1849,7 +2189,7 @@ bancosServer <- function(id, shared) {
             left_id  = lm$id, left_src  = "manual",
             score = sc,
             right = list(id=b$id, source="mov_txt",
-                         parte=b$parte%||%"", importe=max(b$cargo,b$abono,na.rm=TRUE),
+                         parte=b$parte%||%"", importe=b_amt,
                          fecha=b$fecha, documento=b$referencia%||%"",
                          tipo=b$tipo%||%""),
             left  = list(id=lm$id, source="manual",
@@ -1867,8 +2207,9 @@ bancosServer <- function(id, shared) {
     output$sug_modal_content <- renderUI({
       state   <- sug_state_rv()
       confirm <- sug_confirm_rv()
-      movs    <- movs_all()
-      conf    <- confirmados()
+      scoped  <- sug_scoped_data()
+      movs    <- scoped$movs
+      conf    <- scoped$conf
 
       if (state == "confirm" && !is.null(confirm)) {
         # ── Confirm panel (same layout as Vincular) ────────────────────────
@@ -2034,7 +2375,7 @@ bancosServer <- function(id, shared) {
       sug_right_rv(NULL)
       showModal(modalDialog(
         title = "Conciliar movimientos",
-        size  = "xl", easyClose = TRUE,
+        size  = "xl", easyClose = FALSE,
         uiOutput(ns("sug_modal_content")),
         footer = modalButton("Cerrar")
       ))
@@ -2068,9 +2409,8 @@ bancosServer <- function(id, shared) {
 
       # If both sides selected → open confirm panel
       if (!is.null(sug_left_rv()) && !is.null(sug_right_rv())) {
-        movs <- movs_all()
-        conf <- confirmados()
-        pairs <- .compute_sug_pairs(movs, conf)
+        scoped <- sug_scoped_data()
+        pairs  <- .compute_sug_pairs(scoped$movs, scoped$conf)
         match_pair <- Filter(function(p)
           p$left_id == sug_left_rv() && p$right_id == sug_right_rv(), pairs)
         if (length(match_pair)) {
@@ -2100,7 +2440,7 @@ bancosServer <- function(id, shared) {
 
       # Eliminate bank movement
       idx_r <- which(movs$id == ca$id)
-      if (length(idx_r)) movs$eliminado[idx_r] <- TRUE
+      if (length(idx_r)) { movs$eliminado[idx_r] <- TRUE; movs$eliminado_at[idx_r] <- Sys.time() }
 
       # Mark left as conciliado if it's a manual movement
       if (it$source == "manual") {
@@ -2114,9 +2454,11 @@ bancosServer <- function(id, shared) {
 
       shared$bancos_movimientos(movs)
       shared$bancos_confirmados(conf)
-      tryCatch({ save_bancos_movimientos(movs); save_bancos_confirmados(conf) },
-               error = function(e)
-                 showNotification(paste("Error S3:", e$message), type = "warning"))
+      tryCatch({
+        save_bancos_movimientos(movs, client_id = shared$active_client_id()); save_bancos_confirmados(conf, client_id = shared$active_client_id())
+        bump_sync_version("bancos_movimientos_db"); bump_sync_version("bancos_confirmados_db")
+      }, error = function(e)
+        showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
       sug_state_rv("list"); sug_confirm_rv(NULL)
       sug_left_rv(NULL); sug_right_rv(NULL)
       showNotification("Vinculaci\u00f3n completada.", type = "message", duration = 3)
@@ -2141,21 +2483,24 @@ bancosServer <- function(id, shared) {
       # Eliminate left item
       if (it$source == "manual") {
         idx_l <- which(movs$id == it$id)
-        if (length(idx_l)) movs$eliminado[idx_l] <- TRUE
+        if (length(idx_l)) { movs$eliminado[idx_l] <- TRUE; movs$eliminado_at[idx_l] <- Sys.time() }
       } else if (it$source == "confirmado") {
         idx_l <- which(conf$confirmacion_id == it$id)
-        if (length(idx_l)) conf$eliminado[idx_l] <- TRUE
+        if (length(idx_l)) { conf$eliminado[idx_l] <- TRUE; conf$eliminado_at[idx_l] <- Sys.time() }
       }
 
       shared$bancos_movimientos(movs)
       shared$bancos_confirmados(conf)
-      tryCatch({ save_bancos_movimientos(movs); save_bancos_confirmados(conf) },
-               error = function(e)
-                 showNotification(paste("Error S3:", e$message), type = "warning"))
+      tryCatch({
+        save_bancos_movimientos(movs, client_id = shared$active_client_id()); save_bancos_confirmados(conf, client_id = shared$active_client_id())
+        bump_sync_version("bancos_movimientos_db"); bump_sync_version("bancos_confirmados_db")
+      }, error = function(e)
+        showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
       sug_state_rv("list"); sug_confirm_rv(NULL)
       sug_left_rv(NULL); sug_right_rv(NULL)
       showNotification("Vinculaci\u00f3n completada.", type = "message", duration = 3)
     }, ignoreInit = TRUE)
+    } # END CONCILIAR_REMOVED
 
     # ── Tab 3: Reasignar cuenta (Papelera panel) ─────────────────────────────
     output$reasig_cuenta_actual <- renderText({
@@ -2243,12 +2588,10 @@ bancosServer <- function(id, shared) {
       btn <- actionButton(ns("btn_reasignar"),
         label = paste0("Reasignar ", n, " movimientos \u2192"),
         class = "btn btn-primary btn-sm")
-      div(class = "d-flex justify-content-end mt-2",
-        if (btn_disabled)
-          div(style = "pointer-events:none; opacity:.65; display:inline-block;", btn)
-        else
-          btn
-      )
+      if (btn_disabled)
+        div(style = "pointer-events:none; opacity:.65; display:inline-block;", btn)
+      else
+        btn
     })
 
     observeEvent(input$btn_reasignar, {
@@ -2328,13 +2671,14 @@ bancosServer <- function(id, shared) {
       dup_ids          <- setdiff(batch_ids, dedup_res$nuevos$id)
       n_deduped        <- length(dup_ids)
       if (n_deduped > 0) {
-        movs$eliminado[movs$id %in% dup_ids] <- TRUE
+        movs$eliminado[movs$id %in% dup_ids]    <- TRUE
+        movs$eliminado_at[movs$id %in% dup_ids] <- Sys.time()
       }
 
       shared$bancos_movimientos(movs)
-      tryCatch(save_bancos_movimientos(movs),
+      tryCatch({ save_bancos_movimientos(movs, client_id = shared$active_client_id()); bump_sync_version("bancos_movimientos_db") },
                error = function(e)
-                 showNotification(paste("Error S3:", e$message), type = "warning"))
+                 showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
       reasig_confirm_data_rv(NULL)
       removeModal()
       session$sendCustomMessage("bnc_collapse_reasignar",
@@ -2348,6 +2692,100 @@ bancosServer <- function(id, shared) {
                       if (n_deduped == 1) "" else "s", " eliminado",
                       if (n_deduped == 1) "" else "s", ".)")
       showNotification(msg, type = "message", duration = 5)
+    }, ignoreInit = TRUE)
+
+    # ── Eliminar sesión de importación ────────────────────────────────────────
+    output$delete_sesion_btn_ui <- renderUI({
+      sesion_key <- input$reasig_sesion %||% ""
+      if (!nzchar(sesion_key)) return(NULL)
+      movs <- movs_all()
+      mask <- !is.na(movs$importado_at) &
+              as.character(movs$importado_at) == sesion_key &
+              !is.na(movs$eliminado) & movs$eliminado == FALSE
+      n <- sum(mask)
+      if (n == 0) return(NULL)
+      actionButton(ns("btn_eliminar_sesion"),
+        label = tagList(icon("trash"), paste0(" Eliminar sesión (", n, " mov.)")),
+        class = "btn btn-outline-danger btn-sm")
+    })
+
+    observeEvent(input$btn_eliminar_sesion, {
+      sesion_key <- input$reasig_sesion %||% ""
+      req(nzchar(sesion_key))
+      movs <- movs_all()
+      mask <- !is.na(movs$importado_at) &
+              as.character(movs$importado_at) == sesion_key &
+              !is.na(movs$eliminado) & movs$eliminado == FALSE
+      n <- sum(mask)
+      if (n == 0) return()
+      cts <- cuentas()
+      cid <- movs$cuenta_id[mask][1]
+      row <- dplyr::filter(cts, cuenta_id == cid)
+      sesion_label <- if (nrow(row))
+        paste0(row$empresa[1], " — ", row$banco[1], " ",
+               row$moneda[1], " (", row$alias[1], ")")
+      else cid %||% "desconocida"
+      delete_sesion_confirm_rv(list(sesion_key = sesion_key, n = n,
+                                    sesion_label = sesion_label))
+      showModal(modalDialog(
+        title = "¿Eliminar sesión de importación?",
+        size  = "m", easyClose = TRUE,
+        div(
+          div(class = "alert alert-danger d-flex align-items-center gap-2 mb-3",
+            icon("triangle-exclamation"),
+            tags$strong("Esta acción envía los movimientos a la papelera.")
+          ),
+          p(class = "mb-1",
+            tags$strong(n), " movimiento", if (n == 1) "" else "s",
+            " de la cuenta ", tags$strong(sesion_label),
+            " serán marcados como eliminados."
+          ),
+          p(class = "text-muted small mb-0",
+            "Los registros se conservan en papelera para auditoría."
+          )
+        ),
+        footer = tagList(
+          modalButton("Cancelar"),
+          actionButton(ns("do_eliminar_sesion_confirm"),
+            paste0("Eliminar ", n, " movimiento", if (n == 1) "" else "s"),
+            class = "btn btn-danger")
+        )
+      ))
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$do_eliminar_sesion_confirm, {
+      data <- delete_sesion_confirm_rv()
+      req(data)
+      sesion_key <- data$sesion_key
+      user <- tryCatch(shared$current_user(), error = function(e) "system")
+      movs <- movs_all()
+      mask <- !is.na(movs$importado_at) &
+              as.character(movs$importado_at) == sesion_key &
+              !is.na(movs$eliminado) & movs$eliminado == FALSE
+      actual_n <- sum(mask)
+      if (actual_n == 0) { removeModal(); return() }
+      movs$eliminado[mask]     <- TRUE
+      movs$eliminado_at[mask]  <- Sys.time()
+      movs$eliminado_por[mask] <- user
+      shared$bancos_movimientos(movs)
+      tryCatch({ save_bancos_movimientos(movs, client_id = shared$active_client_id()); bump_sync_version("bancos_movimientos_db") },
+               error = function(e)
+                 showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
+      delete_sesion_confirm_rv(NULL)
+      removeModal()
+      session$sendCustomMessage("bnc_collapse_reasignar",
+        list(target = ns("reasignar_panel")))
+      showNotification(
+        paste0(actual_n, " movimiento", if (actual_n == 1) "" else "s",
+               " enviado", if (actual_n == 1) "" else "s", " a papelera."),
+        type = "message", duration = 5)
+      log_action(
+        user        = user,
+        module      = "bancos",
+        action      = "eliminar_sesion",
+        description = paste0(actual_n, " movimiento(s) de sesión eliminados"),
+        metadata    = list(n = actual_n, sesion_key = sesion_key)
+      )
     }, ignoreInit = TRUE)
 
     # ── Tab 2: Import TXT ─────────────────────────────────────────────────────
@@ -2501,6 +2939,9 @@ bancosServer <- function(id, shared) {
       pv <- parsed_preview()
       if (is.null(pv)) return(NULL)
 
+      cid_final <- input$import_cuenta %||% ""
+      if (nzchar(cid_final)) pv$cuenta_id <- cid_final
+
       existentes <- movs_all()
       dedup_res  <- dedup_movimientos(pv, existentes)
       nuevos     <- dedup_res$nuevos
@@ -2583,6 +3024,9 @@ bancosServer <- function(id, shared) {
         options = list(dom = "t", language = list(emptyTable = ""))
       ))
 
+      cid_final <- input$import_cuenta %||% ""
+      if (nzchar(cid_final)) pv$cuenta_id <- cid_final
+
       existentes <- movs_all()
       nuevos     <- dedup_movimientos(pv, existentes)$nuevos
 
@@ -2605,6 +3049,8 @@ bancosServer <- function(id, shared) {
     output$import_btn_ui <- renderUI({
       pv <- parsed_preview()
       if (is.null(pv)) return(NULL)
+      cid_final <- input$import_cuenta %||% ""
+      if (nzchar(cid_final)) pv$cuenta_id <- cid_final
       existentes <- movs_all()
       n_new      <- nrow(dedup_movimientos(pv, existentes)$nuevos)
       if (n_new == 0) return(NULL)
@@ -2616,6 +3062,13 @@ bancosServer <- function(id, shared) {
     observeEvent(input$do_import, {
       pv        <- parsed_preview()
       req(pv, nrow(pv) > 0)
+
+      # Always use the currently selected account — the parsed_preview carries a
+      # cuenta_id stamped at parse time, which can be stale if the user changed
+      # the account selector after the file was uploaded (or if import_cuenta was
+      # empty at parse time due to the reactive init order).
+      cid_final <- input$import_cuenta %||% ""
+      if (nzchar(cid_final)) pv$cuenta_id <- cid_final
 
       existentes <- movs_all()
       dedup_res  <- dedup_movimientos(pv, existentes)
@@ -2645,9 +3098,9 @@ bancosServer <- function(id, shared) {
 
       movs_new <- dplyr::bind_rows(existentes, nuevos)
       shared$bancos_movimientos(movs_new)
-      tryCatch(save_bancos_movimientos(movs_new),
+      tryCatch({ save_bancos_movimientos(movs_new, client_id = shared$active_client_id()); bump_sync_version("bancos_movimientos_db") },
                error = function(e)
-                 showNotification(paste("Error S3:", e$message), type = "error"))
+                 showNotification("Error al guardar. Intenta de nuevo.", type = "error"))
 
       n_auto  <- sum(nuevos$conciliado, na.rm = TRUE)
       msg     <- paste0(nrow(nuevos), " movimiento(s) importado(s).")
@@ -2660,19 +3113,53 @@ bancosServer <- function(id, shared) {
 
     # ── Tab 3: Historial ─────────────────────────────────────────────────────
     output$historial_tbl <- DT::renderDataTable({
-      conf <- dplyr::filter(confirmados(), !eliminado)
+      # Primary source: bancos_confirmados (active, not deleted)
+      conf <- dplyr::filter(confirmados(), !is.na(eliminado) & !eliminado) |>
+        dplyr::mutate(.legacy = FALSE)
 
-      emp_f  <- input$hist_empresa_filter %||% ""
-      tipo_f <- input$hist_tipo_filter    %||% ""
-      if (nzchar(emp_f))  conf <- dplyr::filter(conf, empresa == emp_f)
-      if (nzchar(tipo_f)) conf <- dplyr::filter(conf, tipo    == tipo_f)
+      # Secondary source: conciliacion_rv (legacy path — items confirmed before
+      # bancos_confirmados existed). Deduplicate by empresa + documento pair.
+      conc_raw <- tryCatch(shared$conciliacion_rv(), error = function(e) NULL)
+      if (!is.null(conc_raw) && nrow(conc_raw) > 0) {
+        bc_keys <- paste(tolower(trimws(conf$empresa)),
+                         tolower(trimws(conf$documento)), sep = "|")
+        conc_norm <- dplyr::transmute(conc_raw,
+          confirmacion_id = id,
+          empresa         = tolower(trimws(Empresa)),
+          parte           = tolower(trimws(Parte)),
+          documento       = tolower(trimws(Documento)),
+          moneda          = Moneda,
+          importe         = Importe,
+          fecha           = FechaPago,
+          tipo            = tipo,
+          confirmado_at   = created_at,
+          .legacy         = TRUE
+        )
+        conc_norm <- dplyr::filter(conc_norm,
+          !paste(empresa, documento, sep = "|") %in% bc_keys)
+        if (nrow(conc_norm)) conf <- dplyr::bind_rows(conf, conc_norm)
+      }
+
+      # Filters: empresa, tipo, free-text search
+      emp_f    <- input$hist_empresa_filter %||% ""
+      tipo_f   <- input$hist_tipo_filter    %||% ""
+      search_q <- trimws(input$hist_search  %||% "")
+      if (nzchar(emp_f))  conf <- dplyr::filter(conf, tolower(empresa) == tolower(emp_f))
+      if (nzchar(tipo_f)) conf <- dplyr::filter(conf, tipo == tipo_f)
+      if (nzchar(search_q)) {
+        q <- tolower(search_q)
+        conf <- dplyr::filter(conf,
+          grepl(q, tolower(parte      %||% ""), fixed = TRUE) |
+          grepl(q, tolower(documento  %||% ""), fixed = TRUE) |
+          grepl(q, tolower(empresa    %||% ""), fixed = TRUE)
+        )
+      }
 
       if (!nrow(conf)) {
         return(DT::datatable(
           data.frame(Fecha=character(), Empresa=character(), Parte=character(),
                      Documento=character(), Importe=character(),
-                     Moneda=character(), Tipo=character(),
-                     Deshacer=character(), Eliminar=character()),
+                     Moneda=character(), Tipo=character(), Acciones=character()),
           escape = FALSE, rownames = FALSE,
           options = list(dom = "t",
                          language = list(emptyTable = "Sin confirmaciones"))
@@ -2682,26 +3169,28 @@ bancosServer <- function(id, shared) {
       tbl <- conf |>
         dplyr::arrange(dplyr::desc(confirmado_at)) |>
         dplyr::mutate(
-          Fecha    = format(fecha, "%d/%m/%Y"),
-          Empresa  = htmltools::htmlEscape(empresa),
-          Parte    = htmltools::htmlEscape(parte),
-          Documento= htmltools::htmlEscape(documento),
-          Importe  = fmt_money(importe),
-          Moneda   = moneda,
-          Tipo     = dplyr::if_else(tipo == "pago",
+          Fecha     = format(as.Date(fecha), "%d/%m/%Y"),
+          Empresa   = htmltools::htmlEscape(empresa   %||% ""),
+          Parte     = htmltools::htmlEscape(parte     %||% ""),
+          Documento = htmltools::htmlEscape(documento %||% ""),
+          Importe   = fmt_money(importe),
+          Moneda    = moneda %||% "",
+          Tipo      = ifelse(tipo == "pago",
             '<span class="badge bg-danger">Pago</span>',
             '<span class="badge bg-success">Cobro</span>'),
-          Deshacer = sprintf(
+          Acciones  = ifelse(
+            .legacy,
+            '<span class="badge bg-secondary" title="Confirmado por la ruta anterior">Legado</span>',
+            paste0(
+              sprintf(
             '<button class="bnc-btn-xs bnc-btn-xs--undo" title="Deshacer confirmaci\u00f3n y devolver al calendario" onclick="Shiny.setInputValue(\'%s\', {id:\'%s\', nonce:Math.random()}, {priority:\'event\'})">&#8630;</button>',
-            ns("undo_conf"), confirmacion_id
-          ),
-          Eliminar = sprintf(
-            '<button class="bnc-btn-xs" onclick="Shiny.setInputValue(\'%s\', {id:\'%s\', nonce:Math.random()}, {priority:\'event\'})">&#128465;</button>',
-            ns("delete_conf"), confirmacion_id
+                ns("undo_conf"), confirmacion_id),
+              sprintf('<button class="bnc-btn-xs" onclick="Shiny.setInputValue(\'%s\', {id:\'%s\', nonce:Math.random()}, {priority:\'event\'})">&#128465;</button>',
+                ns("delete_conf"), confirmacion_id)
+            )
           )
         ) |>
-        dplyr::select(Fecha, Empresa, Parte, Documento, Importe, Moneda,
-                      Tipo, Deshacer, Eliminar)
+        dplyr::select(Fecha, Empresa, Parte, Documento, Importe, Moneda, Tipo, Acciones)
 
       DT::datatable(tbl, escape = FALSE, rownames = FALSE, selection = "none",
         options = list(pageLength = 25, scrollX = TRUE, dom = "lrtip"))
@@ -2713,34 +3202,78 @@ bancosServer <- function(id, shared) {
       idx_c   <- which(conf$confirmacion_id == conf_id)
       if (!length(idx_c)) return()
 
-      mov_id_linked <- conf$mov_id[idx_c]
-      conf$eliminado[idx_c] <- TRUE
+      row <- conf[idx_c, , drop = FALSE]
+      session$userData[[paste0(ns("pending_delete_conf_id"))]] <- conf_id
 
-      # Only touch movimientos if this confirmation has a linked mov_id
-      # (older confirmations created before the wire-cut may have one;
-      #  new ones have mov_id = NA and no movimientos row was created).
+      showModal(modalDialog(
+        title = "\u00bfEliminar esta confirmaci\u00f3n?",
+        tagList(
+          tags$p("Esta acci\u00f3n mover\u00e1 la confirmaci\u00f3n a la papelera."),
+          tags$ul(
+            tags$li(paste("Parte:", row$parte)),
+            tags$li(paste("Importe:", fmt_money(row$importe))),
+            tags$li(paste("Fecha:", format(as.Date(row$fecha), "%d/%m/%Y")))
+          ),
+          if (!is.na(row$mov_id) && nzchar(row$mov_id %||% ""))
+            tags$p(class = "text-muted small",
+                   "El movimiento bancario vinculado tambi\u00e9n se eliminar\u00e1.")
+          else NULL
+        ),
+        footer = tagList(
+          modalButton("Cancelar"),
+          actionButton(ns("do_delete_conf_confirm"), "Eliminar",
+                       class = "btn-danger btn-sm", icon = icon("trash"))
+        ),
+        easyClose = TRUE
+      ))
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$do_delete_conf_confirm, {
+      conf_id <- session$userData[[paste0(ns("pending_delete_conf_id"))]]
+      session$userData[[paste0(ns("pending_delete_conf_id"))]] <- NULL
+      req(conf_id)
+
+      conf    <- confirmados()
+      idx_c   <- which(conf$confirmacion_id == conf_id)
+      if (!length(idx_c)) { removeModal(); return() }
+
+      mov_id_linked <- conf$mov_id[idx_c]
+      conf$eliminado[idx_c]    <- TRUE
+      conf$eliminado_at[idx_c] <- Sys.time()
+
       if (!is.null(mov_id_linked) && !is.na(mov_id_linked) && nzchar(mov_id_linked)) {
         movs <- movs_all()
         idx_m <- which(movs$id == mov_id_linked)
         if (length(idx_m)) {
-          movs$eliminado[idx_m] <- TRUE
+          movs$eliminado[idx_m]    <- TRUE
+          movs$eliminado_at[idx_m] <- Sys.time()
           shared$bancos_movimientos(movs)
-          tryCatch(
-            save_bancos_movimientos(movs),
-            error = function(e)
-              showNotification(paste("Error S3:", e$message), type = "warning")
+          tryCatch({
+            save_bancos_movimientos(movs, client_id = shared$active_client_id())
+            bump_sync_version("bancos_movimientos_db")
+          }, error = function(e)
+            showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
           )
         }
       }
 
       shared$bancos_confirmados(conf)
-      tryCatch(
-        save_bancos_confirmados(conf),
-        error = function(e)
-          showNotification(paste("Error S3:", e$message), type = "warning")
+      tryCatch({
+        save_bancos_confirmados(conf, client_id = shared$active_client_id())
+        bump_sync_version("bancos_confirmados_db")
+      }, error = function(e)
+        showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
       )
 
+      removeModal()
       showNotification("Confirmaci\u00f3n movida a papelera.", type = "message", duration = 2)
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "bancos",
+        action      = "eliminar_confirmacion",
+        description = "Confirmaci\u00f3n bancaria movida a papelera",
+        target_id   = conf_id
+      )
     }, ignoreInit = TRUE)
 
     # ── Deshacer confirmación — restore to calendar as pending ───────────────
@@ -2754,63 +3287,99 @@ bancosServer <- function(id, shared) {
 
       # Soft-delete the confirmation
       mov_id_linked <- conf$mov_id[idx_c]
-      conf$eliminado[idx_c] <- TRUE
+      conf$eliminado[idx_c]    <- TRUE
+      conf$eliminado_at[idx_c] <- Sys.time()
 
       # Also soft-delete the linked movimiento if present
       if (!is.null(mov_id_linked) && !is.na(mov_id_linked) && nzchar(mov_id_linked)) {
         movs  <- movs_all()
         idx_m <- which(movs$id == mov_id_linked)
         if (length(idx_m)) {
-          movs$eliminado[idx_m] <- TRUE
+          movs$eliminado[idx_m]    <- TRUE
+          movs$eliminado_at[idx_m] <- Sys.time()
           shared$bancos_movimientos(movs)
-          tryCatch(
-            save_bancos_movimientos(movs),
-            error = function(e)
-              showNotification(paste("Error S3:", e$message), type = "warning")
+          tryCatch({
+            save_bancos_movimientos(movs, client_id = shared$active_client_id())
+            bump_sync_version("bancos_movimientos_db")
+          }, error = function(e)
+            showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
           )
         }
       }
 
       shared$bancos_confirmados(conf)
-      tryCatch(
-        save_bancos_confirmados(conf),
-        error = function(e)
-          showNotification(paste("Error S3:", e$message), type = "warning")
+      tryCatch({
+        save_bancos_confirmados(conf, client_id = shared$active_client_id())
+        bump_sync_version("bancos_confirmados_db")
+      }, error = function(e)
+        showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
       )
 
-      # Re-stage into pagar_hoy so item reappears on calendar
-      ph_ledger <- if (isTRUE(row$tipo == "cobro")) "AR" else "AP"
-      new_ph_row <- tibble::tibble(
-        id        = uuid::UUIDgenerate(),
-        ledger    = ph_ledger,
-        Empresa   = as.character(row$empresa),
-        Moneda    = as.character(row$moneda),
-        Documento = as.character(row$documento),
-        Parte     = as.character(row$parte),
-        Codigo    = trimws(as.character(row$codigo %||% "")),
-        tipo_item = "factura",
-        Importe   = as.numeric(row$importe),
-        FechaVenc = as.Date(row$fecha),
-        staged_by = shared$current_user(),
-        staged_at = Sys.time(),
-        status    = "pending"
-      )
+      # Re-stage into pagar_hoy so item reappears on calendar.
+      # Primary path: restore the ORIGINAL pagar_hoy row in-place via agenda_item_id.
+      # This preserves the original FechaVenc (not the payment date) and exact
+      # Empresa/Moneda casing so the item lands on the correct calendar day and
+      # appears under the right company tab in Agenda.
+      ph_ledger  <- if (isTRUE(row$tipo == "cobro")) "AR" else "AP"
       ph_current <- shared$pagar_hoy_db() %||% load_pagar_hoy()
-      ph_updated <- upsert_pagar_hoy(ph_current, new_ph_row)
+      orig_id    <- as.character(row$agenda_item_id %||% "")
+      orig_idx   <- if (nzchar(orig_id)) which(ph_current$id == orig_id) else integer(0)
+
+      if (length(orig_idx) > 0) {
+        # Restore in-place — keeps original FechaVenc, Empresa casing, all fields
+        ph_current$status[orig_idx]       <- "pending"
+        ph_current$confirmed_at[orig_idx] <- as.POSIXct(NA)
+        ph_updated <- ph_current
+      } else {
+        # Original row gone (e.g., manual item that was physically deleted);
+        # synthesize from bancos_confirmados data — FechaVenc falls back to
+        # the payment date, which is the best available approximation.
+        new_ph_row <- tibble::tibble(
+          id           = uuid::UUIDgenerate(),
+          ledger       = ph_ledger,
+          Empresa      = as.character(row$empresa),
+          Moneda       = as.character(row$moneda),
+          Documento    = as.character(row$documento),
+          Parte        = as.character(row$parte),
+          Codigo       = trimws(as.character(row$codigo %||% "")),
+          tipo_item    = "factura",
+          Importe      = as.numeric(row$importe),
+          FechaVenc    = as.Date(row$fecha),
+          staged_by    = shared$current_user(),
+          staged_at    = Sys.time(),
+          status       = "pending",
+          provision_id = if ("provision_id" %in% names(row)) as.character(row$provision_id) else NA_character_,
+          liability_id = if ("liability_id" %in% names(row)) as.character(row$liability_id) else NA_character_
+        )
+        ph_updated <- upsert_pagar_hoy(ph_current, new_ph_row)
+      }
+
       shared$pagar_hoy_db(ph_updated)
       tryCatch(
-        save_pagar_hoy(ph_updated),
+        save_pagar_hoy(ph_updated, shared$current_user(), client_id = shared$active_client_id()),
         error = function(e)
-          showNotification(paste("Error S3 agenda:", e$message), type = "warning")
+          showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
       )
 
+      # Notification date: prefer restored row's FechaVenc, fall back to bancos fecha
+      restored_fecha <- if (length(orig_idx) > 0 && "FechaVenc" %in% names(ph_updated))
+        ph_updated$FechaVenc[orig_idx] else as.Date(row$fecha)
       cal_label <- if (isTRUE(row$tipo == "cobro")) "CxC" else "CxP"
-      fecha_fmt <- format(as.Date(row$fecha), "%d/%m/%Y")
+      fecha_fmt <- format(restored_fecha, "%d/%m/%Y")
       showNotification(
         paste0("\u21a9 ", if (isTRUE(row$tipo == "cobro")) "Cobro" else "Pago",
                " devuelto al calendario ",
                cal_label, " \u2014 para el ", fecha_fmt),
         type = "message", duration = 5
+      )
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "bancos",
+        action      = "revertir_confirmacion",
+        description = paste0("Confirmaci\u00f3n revertida: ",
+                             if (isTRUE(row$tipo == "cobro")) "Cobro" else "Pago",
+                             " ", fecha_fmt),
+        target_id   = conf_id
       )
     }, ignoreInit = TRUE)
 
@@ -2823,11 +3392,49 @@ bancosServer <- function(id, shared) {
                                 conciliado == TRUE,
                                 !is.na(doc_vinculado) & nzchar(doc_vinculado))
 
-      if (!nrow(movs_del) && !nrow(conf_del) && !nrow(movs_vin)) {
+      # ── Unified ledger papelera (SAP ghosts, deleted manual/provision rows) ──
+      ledger_pap <- if (!is.null(shared$papelera_rv)) {
+        tryCatch(shared$papelera_rv(), error = function(e) NULL)
+      } else NULL
+      rows_ledger <- if (!is.null(ledger_pap) && nrow(ledger_pap)) {
+        src_badge <- function(s) {
+          # switch(NA, ...) returns NULL in R (not the default value),
+          # which breaks vapply. Normalise to "sap" for unknown/missing sources.
+          s <- if (is.null(s) || is.na(s) || !nzchar(s)) "sap" else s
+          switch(s,
+            "sap"       = '<span class="badge bg-secondary">SAP</span>',
+            "manual"    = '<span class="badge bg-info text-dark">Manual</span>',
+            "provision" = '<span class="badge bg-warning text-dark">Provisión</span>',
+            '<span class="badge bg-secondary">ERP</span>'
+          )
+        }
+        ledger_pap |>
+          dplyr::transmute(
+            Origen          = vapply(source %||% "sap", src_badge, character(1)),
+            Fecha           = dplyr::if_else(
+              !is.na(FechaEff),
+              format(as.Date(FechaEff), "%d/%m/%Y"),
+              format(as.Date(deleted_at), "%d/%m/%Y")
+            ),
+            Parte           = htmltools::htmlEscape(Parte %||% Empresa %||% ""),
+            Importe         = fmt_money(Importe %||% 0),
+            Tipo            = htmltools::htmlEscape(Documento %||% ""),
+            `Doc. vinculado` = htmltools::htmlEscape(Empresa %||% ""),
+            `Eliminado el`  = dplyr::if_else(
+              !is.na(deleted_at),
+              format(as.POSIXct(deleted_at), "%d/%m/%Y %H:%M"),
+              "\u2014"
+            )
+          )
+      } else NULL
+
+      if (!nrow(movs_del) && !nrow(conf_del) && !nrow(movs_vin) &&
+          (is.null(rows_ledger) || !nrow(rows_ledger))) {
         return(DT::datatable(
           data.frame(Origen=character(), Fecha=character(), Parte=character(),
                      Importe=character(), Tipo=character(),
-                     `Doc. vinculado`=character(), check.names=FALSE),
+                     `Doc. vinculado`=character(),
+                     `Eliminado el`=character(), check.names=FALSE),
           escape = FALSE, rownames = FALSE,
           options = list(dom = "t", language = list(emptyTable = "Papelera vac\u00eda"))
         ))
@@ -2841,7 +3448,8 @@ bancosServer <- function(id, shared) {
             Parte           = htmltools::htmlEscape(parte %||% ""),
             Importe         = dplyr::if_else(cargo > 0, fmt_money(cargo), fmt_money(abono)),
             Tipo            = vapply(tipo, .tipo_badge, character(1)),
-            `Doc. vinculado` = ""
+            `Doc. vinculado` = "",
+            `Eliminado el`  = dplyr::if_else(!is.na(eliminado_at), format(eliminado_at, "%d/%m/%Y %H:%M"), "\u2014")
           )
       } else NULL
 
@@ -2855,7 +3463,8 @@ bancosServer <- function(id, shared) {
             Tipo            = dplyr::if_else(tipo == "pago",
               '<span class="badge bg-danger">Pago</span>',
               '<span class="badge bg-success">Cobro</span>'),
-            `Doc. vinculado` = ""
+            `Doc. vinculado` = "",
+            `Eliminado el`  = dplyr::if_else(!is.na(eliminado_at), format(eliminado_at, "%d/%m/%Y %H:%M"), "\u2014")
           )
       } else NULL
 
@@ -2867,11 +3476,22 @@ bancosServer <- function(id, shared) {
             Parte           = htmltools::htmlEscape(parte %||% ""),
             Importe         = dplyr::if_else(cargo > 0, fmt_money(cargo), fmt_money(abono)),
             Tipo            = vapply(tipo, .tipo_badge, character(1)),
-            `Doc. vinculado` = htmltools::htmlEscape(doc_vinculado %||% "")
+            `Doc. vinculado` = htmltools::htmlEscape(doc_vinculado %||% ""),
+            `Eliminado el`  = "\u2014"
           )
       } else NULL
 
-      tbl <- dplyr::bind_rows(rows_mov, rows_conf, rows_vin)
+      tbl <- dplyr::bind_rows(rows_mov, rows_conf, rows_vin, rows_ledger)
+
+      pap_q <- trimws(input$papelera_search %||% "")
+      if (nzchar(pap_q) && nrow(tbl)) {
+        q <- tolower(pap_q)
+        tbl <- dplyr::filter(tbl,
+          grepl(q, tolower(Parte              %||% ""), fixed = TRUE) |
+          grepl(q, tolower(`Doc. vinculado`   %||% ""), fixed = TRUE)
+        )
+      }
+
       DT::datatable(tbl, escape = FALSE, rownames = FALSE, selection = "none",
         options = list(pageLength = 25, scrollX = TRUE, dom = "lrtip",
                        language = list(emptyTable = "Papelera vac\u00eda")))
@@ -2908,6 +3528,5 @@ bancosServer <- function(id, shared) {
       DT::datatable(tbl, escape = FALSE, rownames = FALSE, selection = "none",
         options = list(pageLength = 25, dom = "lrtip", scrollX = TRUE))
     }, server = FALSE)
-
   }) # end moduleServer
 }

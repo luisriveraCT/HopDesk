@@ -8,10 +8,11 @@
 
 show_search_modal <- function(input, output, session, shared, search_raw_data = NULL) {
 
-  month_start <- tryCatch(
-    lubridate::floor_date(as.Date(input$month_sel), "month"),
-    error = function(e) lubridate::floor_date(Sys.Date(), "month")
-  )
+  month_start <- tryCatch({
+    ms <- lubridate::floor_date(as.Date(input$month_sel %||% Sys.Date()), "month")
+    if (!length(ms)) stop("zero-length date")
+    ms
+  }, error = function(e) lubridate::floor_date(Sys.Date(), "month"))
   month_end  <- as.Date(lubridate::ceiling_date(month_start, "month") - lubridate::days(1))
   nav_months <- {
     yr <- as.integer(format(month_start, "%Y"))
@@ -22,26 +23,30 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
   range_start <- nav_months[1]
   range_end   <- as.Date(lubridate::ceiling_date(nav_months[5], "month") - lubridate::days(1))
 
-  build_ledger_table <- function(ledger_name) {
-    raw    <- shared$sap_data()[[ledger_name]]
-    manual <- shared$manual_inv()
-    moves  <- shared$moves_db()
-    emp    <- shared$empresa_sel()
+  # Navigation pool: 12 months before current through 12 after = 25 total
+  sm_pool <- {
+    yr0 <- as.integer(format(month_start, "%Y"))
+    mo0 <- as.integer(format(month_start, "%m")) - 12L
+    while (mo0 <= 0L) { mo0 <- mo0 + 12L; yr0 <- yr0 - 1L }
+    seq.Date(as.Date(sprintf("%04d-%02d-01", yr0, mo0)), by = "month", length.out = 25)
+  }
+  sm_vals        <- format(sm_pool, "%Y-%m")
+  sm_labels      <- format(sm_pool, "%b %Y")
+  sm_win_start   <- which(sm_vals == format(nav_months[1], "%Y-%m")) - 1L  # 0-based for JS
+  sm_cur         <- format(month_start, "%Y-%m")
+  sm_vals_json   <- paste0('["', paste(sm_vals,   collapse = '","'), '"]')
+  sm_labels_json <- paste0('["', paste(sm_labels, collapse = '","'), '"]')
 
-    df <- build_ledger_df(
-      raw_df    = raw,
-      ledger    = ledger_name,
-      empresa   = NULL,
-      moves_df  = moves,
-      manual_df = manual,
-      abonos_df = shared$abonos_db()
+  build_ledger_table <- function(ledger_name) {
+    # Pull from the same df_combined() the calendar uses — empresa filter,
+    # papelera, and confirmed marks are already applied there.
+    df <- tryCatch(
+      if (ledger_name == "AR") shared$df_combined_AR() else shared$df_combined_AP(),
+      error = function(e) NULL
     )
     if (is.null(df) || !nrow(df)) return(NULL)
 
-    if (length(emp) && "Empresa" %in% names(df))
-      df <- dplyr::filter(df, Empresa %in% emp)
-
-    # Apply intercompany filter — mirrors what df_calendar() does in ledger_module
+    # IC filter — same logic and same code_col as df_calendar() in ledger_module
     ic_mode_val  <- tryCatch(shared$ic_mode[[ledger_name]](), error = function(e) "exclude")
     ic_codes_val <- tryCatch(build_ic_fullcodes(shared$interco_v2(), ledger_name), error = function(e) character())
     ic_rfcs_val  <- tryCatch({
@@ -54,7 +59,8 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
 
     amt <- shared$amount_col()
     df <- df |>
-      dplyr::filter(as.Date(FechaEff) >= range_start,
+      dplyr::filter(!is.na(FechaEff),
+                    as.Date(FechaEff) >= range_start,
                     as.Date(FechaEff) <= range_end) |>
       dplyr::mutate(
         Importe = abs(tidyr::replace_na(
@@ -70,8 +76,8 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
 
     keep <- intersect(
       c("Ledger","Tipo","Empresa","Fecha","Parte","Documento","Factura",
-        "Moneda","Importe","Etiqueta","source","id","Codigo",
-        "FechaVenc_Original","FechaVenc_Proyectada"),
+        "Moneda","Importe","Etiqueta","source","id","Codigo","confirmed",
+        "FechaVenc_Original","FechaVenc_Proyectada","provision_id"),
       names(df)
     )
     as.data.frame(df)[, keep, drop = FALSE]
@@ -80,6 +86,9 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
   ar_df  <- tryCatch(build_ledger_table("AR"), error = function(e) NULL)
   ap_df  <- tryCatch(build_ledger_table("AP"), error = function(e) NULL)
   all_df <- dplyr::bind_rows(ar_df, ap_df)
+
+  # Papelera and empresa filters are already applied inside df_combined() —
+  # no need to re-apply them here.
 
   if (is.null(all_df) || !nrow(all_df)) {
     showModal(modalDialog(
@@ -97,12 +106,18 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
     TRUE                                             ~ 4L
   )
 
+  .fecha_orig <- if ("FechaVenc_Original" %in% names(all_df)) {
+    orig <- suppressWarnings(as.Date(all_df[["FechaVenc_Original"]]))
+    ifelse(!is.na(orig), format(orig, "%d/%m/%Y"), format(all_df[["Fecha"]], "%d/%m/%Y"))
+  } else format(all_df[["Fecha"]], "%d/%m/%Y")
+
   disp_df <- data.frame(
     row_id     = seq_len(nrow(all_df)),
     Ledger     = all_df[["Ledger"]],
     Tipo       = all_df[["Tipo"]],
     Empresa    = all_df[["Empresa"]],
     Fecha      = format(all_df[["Fecha"]], "%d/%m/%Y"),
+    FechaOrig  = .fecha_orig,
     Parte      = all_df[["Parte"]],
     Documento  = all_df[["Documento"]] %||% "",
     Codigo     = if ("Codigo" %in% names(all_df)) all_df[["Codigo"]] %||% "" else "",
@@ -112,8 +127,9 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
     Etiqueta   = all_df[["Etiqueta"]],
     Month      = format(all_df[["Fecha"]], "%Y-%m"),
     tag_weight = all_df[["tag_weight"]],
-    source     = all_df[["source"]] %||% "sap",
-    inv_id     = if ("id" %in% names(all_df)) all_df[["id"]] %||% "" else "",
+    source       = all_df[["source"]] %||% "sap",
+    inv_id       = if ("id" %in% names(all_df)) all_df[["id"]] %||% "" else "",
+    provision_id = if ("provision_id" %in% names(all_df)) all_df[["provision_id"]] %||% "" else "",
     stringsAsFactors = FALSE
   )
   disp_df <- disp_df[order(disp_df[["tag_weight"]], -disp_df[["Importe"]]), ]
@@ -143,7 +159,47 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
   }
 
   showModal(modalDialog(
-    title     = paste0("Facturas — ", format(month_start, "%B %Y")),
+    title     = tagList(
+      tags$span(paste0("Facturas — ", format(month_start, "%B %Y")),
+                style = "margin-right: 10px;"),
+      tags$span(
+        style = "display:inline-flex; align-items:center; gap:4px; vertical-align:middle;",
+        tags$button(
+          id      = "search-month-prev",
+          class   = "search-month-arrow",
+          onclick = "searchMonthShift(-1)",
+          HTML("&#10094;")
+        ),
+        tags$span(
+          id    = "search-month-nav",
+          class = "search-month-nav",
+          style = "display:inline-flex; gap:4px;",
+          lapply(seq_along(nav_months), function(i) {
+            val    <- format(nav_months[[i]], "%Y-%m")
+            lbl    <- format(nav_months[[i]], "%b %Y")
+            is_cur <- val == format(month_start, "%Y-%m")
+            tags$button(
+              class        = paste0("btn btn-sm ", if (is_cur) "btn-primary" else "btn-outline-secondary"),
+              `data-month` = val,
+              onclick      = paste0("searchSetMonth('", val, "', this)"),
+              lbl
+            )
+          })
+        ),
+        tags$button(
+          id      = "search-month-next",
+          class   = "search-month-arrow",
+          onclick = "searchMonthShift(1)",
+          HTML("&#10095;")
+        ),
+        tags$script(HTML(paste0(
+          "window._smPool=",    sm_vals_json,   ";",
+          "window._smLabels=",  sm_labels_json, ";",
+          "window._smWin=",     sm_win_start,   ";",
+          "window._smCur='",    sm_cur,         "';"
+        )))
+      )
+    ),
     size      = "xl",
     easyClose = TRUE,
     footer    = tagList(
@@ -169,29 +225,44 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
     ),
 
     tagList(
+      tags$script(src = "search.js?v=3"),
       tags$style(HTML("
+        .modal-xl { max-width: 1400px; }
         .search-row { cursor: pointer; user-select: none; }
         .search-row.search-row-selected > td { background-color: rgba(59,130,246,0.13) !important; }
         .search-row.search-row-selected > td:first-child { box-shadow: inset 3px 0 0 #3b82f6; }
         .srb-cobro { color:#1a6cc4; font-weight:600; }
         .srb-pago  { color:#16803c; font-weight:600; }
         .srb-sep   { color:#9ca3af; }
+        .pasivos-provision { border: 1.5px dashed #a78bfa !important; background: #faf5ff !important; }
+        .pasivos-tag-provision { background-color: #7c3aed; color: white; border-radius: 12px;
+          padding: 2px 10px; font-size: 12px; font-weight: 500; display: inline-block; }
+        .pasivos-convert-btn { background: none; border: none; cursor: pointer; padding: 0 3px;
+          font-size: 1rem; line-height: 1; vertical-align: middle; opacity: 0.85; }
+        .pasivos-convert-btn:hover { opacity: 1; }
+        .search-row-deleting { opacity: 0.2 !important; transition: opacity 0.3s; pointer-events: none; }
+        .srb-staged { color: #16a34a; font-weight: 700; font-size: 0.8em; margin-left: 4px; }
+        .search-th-sort { cursor: pointer; user-select: none; white-space: nowrap; }
+        .search-th-sort:hover { background: #f0f5ff; }
+        .search-sort-arrow { color: #adb5bd; font-size: .75rem; margin-left: 3px; }
+        .search-sort-arrow.active { color: #0a58ca; }
+        .modal-title { display: flex !important; align-items: center; flex-wrap: wrap; }
+        .search-month-arrow {
+          background: none; border: none; cursor: pointer;
+          color: #9ca3af; font-size: 1.15rem; line-height: 1;
+          padding: 4px 9px; border-radius: 6px; transition: color .15s, background .15s;
+        }
+        .search-month-arrow:hover { color: #0a58ca; background: #eff6ff; }
+        .search-month-arrow:disabled { color: #e2e8f0; cursor: default; background: none; }
+        @keyframes smOutL { from { opacity:1; transform:translateX(0);      } to { opacity:0; transform:translateX(-14px); } }
+        @keyframes smOutR { from { opacity:1; transform:translateX(0);      } to { opacity:0; transform:translateX( 14px); } }
+        @keyframes smInR  { from { opacity:0; transform:translateX( 14px); } to { opacity:1; transform:translateX(0);      } }
+        @keyframes smInL  { from { opacity:0; transform:translateX(-14px); } to { opacity:1; transform:translateX(0);      } }
+        .search-month-nav.sm-out-l { animation: smOutL 0.13s ease forwards; }
+        .search-month-nav.sm-out-r { animation: smOutR 0.13s ease forwards; }
+        .search-month-nav.sm-in-r  { animation: smInR  0.13s ease both; }
+        .search-month-nav.sm-in-l  { animation: smInL  0.13s ease both; }
       ")),
-
-      # ── Month nav ─────────────────────────────────────────────────────────
-      div(class = "search-month-nav d-flex gap-1 mb-2 flex-wrap",
-        lapply(seq_along(nav_months), function(i) {
-          val    <- format(nav_months[[i]], "%Y-%m")
-          lbl    <- format(nav_months[[i]], "%b %Y")
-          is_cur <- val == format(month_start, "%Y-%m")
-          tags$button(
-            class        = paste0("btn btn-sm ", if (is_cur) "btn-primary" else "btn-outline-secondary"),
-            `data-month` = val,
-            onclick      = paste0("searchSetMonth('", val, "', this)"),
-            lbl
-          )
-        })
-      ),
 
       # ── Search + filter bar ───────────────────────────────────────────────
       div(class = "search-bar-row d-flex flex-wrap gap-2 mb-3 align-items-end",
@@ -215,17 +286,6 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
                       tags$option(value = "", "Todas"),
                       lapply(sort(unique(disp_df[["Moneda"]])), function(m)
                         tags$option(value = m, m)))
-        ),
-        div(
-          tags$label("Ordenar", class = "form-label mb-0 small text-muted"),
-          tags$select(id = "search_sort", class = "form-select form-select-sm",
-                      style = "min-width:160px;",
-                      tags$option(value = "tag_amount",  "Etiqueta \u2192 Importe \u2193"),
-                      tags$option(value = "amount_desc", "Importe \u2193"),
-                      tags$option(value = "amount_asc",  "Importe \u2191"),
-                      tags$option(value = "date_asc",    "Fecha \u2191"),
-                      tags$option(value = "date_desc",   "Fecha \u2193"),
-                      tags$option(value = "parte_az",    "Parte A\u2192Z"))
         ),
         div(
           tags$label("Etiqueta", class = "form-label mb-0 small text-muted"),
@@ -258,11 +318,12 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
 
       # ── Selection sum bar ────────────────────────────────────────────────
       div(id    = "search_sum_bar",
-          class = "d-flex align-items-center gap-3 px-3 py-2 mb-2 rounded",
-          style = "display:none; background:#eff6ff; border:1px solid #bfdbfe;",
+          class = "align-items-center gap-3 px-3 py-2 mb-2 rounded",
+          style = "display:none; flex-wrap:wrap; background:#eff6ff; border:1px solid #bfdbfe;",
         tags$span(id = "search_sum_count", class = "fw-bold small text-primary"),
         tags$span(id = "search_sum_detail", class = "small flex-grow-1"),
         tags$button(
+          type    = "button",
           class   = "btn btn-sm btn-link p-0 ms-auto text-muted text-decoration-none",
           onclick = "searchSelectNone()",
           style   = "font-size:1.2rem; line-height:1;",
@@ -341,14 +402,33 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
           class = "table table-sm table-hover search-table",
           tags$thead(
             tags$tr(
-              tags$th("Tipo"),
-              tags$th("Empresa"),
-              tags$th("Fecha"),
-              tags$th("Parte"),
-              tags$th("Referencia"),
-              tags$th("Moneda"),
-              tags$th(class = "text-end", "Importe"),
-              tags$th("Etiqueta")
+              tags$th(class = "search-th-sort", `data-col` = "tipo",
+                      onclick = "searchSortByCol('tipo')",
+                      "Tipo", tags$span(class = "search-sort-arrow", "↕")),
+              tags$th(class = "search-th-sort", `data-col` = "empresa",
+                      onclick = "searchSortByCol('empresa')",
+                      "Empresa", tags$span(class = "search-sort-arrow", "↕")),
+              tags$th(class = "search-th-sort", `data-col` = "fecha",
+                      onclick = "searchSortByCol('fecha')",
+                      "Fecha", tags$span(class = "search-sort-arrow", "↕")),
+              tags$th(class = "search-th-sort", `data-col` = "parte",
+                      onclick = "searchSortByCol('parte')",
+                      "Parte", tags$span(class = "search-sort-arrow", "↕")),
+              tags$th(class = "search-th-sort", `data-col` = "referencia",
+                      onclick = "searchSortByCol('referencia')",
+                      "Referencia", tags$span(class = "search-sort-arrow", "↕")),
+              tags$th(class = "search-th-sort", `data-col` = "documento",
+                      onclick = "searchSortByCol('documento')",
+                      "Documento", tags$span(class = "search-sort-arrow", "↕")),
+              tags$th(class = "search-th-sort", `data-col` = "moneda",
+                      onclick = "searchSortByCol('moneda')",
+                      "Moneda", tags$span(class = "search-sort-arrow", "↕")),
+              tags$th(class = "search-th-sort text-end", `data-col` = "importe",
+                      onclick = "searchSortByCol('importe')",
+                      "Importe", tags$span(class = "search-sort-arrow", "↕")),
+              tags$th(class = "search-th-sort", `data-col` = "etiqueta",
+                      onclick = "searchSortByCol('etiqueta')",
+                      "Etiqueta", tags$span(class = "search-sort-arrow", "↕"))
             )
           ),
           tags$tbody(
@@ -361,34 +441,48 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
                 "\U0001f7e0 Ambas"      = "background:#fff3e6;",
                 ""
               )
-              tipo_badge_class <- if (row[["Tipo"]] == "Cobro") "badge bg-primary" else "badge bg-success"
+              is_provision     <- identical(row[["source"]], "provision")
+              prov_id_val      <- row[["provision_id"]] %||% ""
+              tipo_badge_class <- if (is_provision) "pasivos-tag-provision"
+                                  else if (row[["Tipo"]] == "Cobro") "badge bg-primary"
+                                  else "badge bg-success"
+              tipo_label       <- if (is_provision) "Provisión" else htmltools::htmlEscape(row[["Tipo"]])
+              row_extra_cls    <- if (is_provision) " pasivos-provision" else ""
               etiqueta_html    <- if (nzchar(row[["Etiqueta"]])) htmltools::htmlEscape(row[["Etiqueta"]]) else ""
               paste0(
-                '<tr class="search-row"',
-                ' data-tipo="',      htmltools::htmlEscape(row[["Tipo"]]),           '"',
-                ' data-ledger="',    htmltools::htmlEscape(row[["Ledger"]]),         '"',
-                ' data-month="',     htmltools::htmlEscape(row[["Month"]]),          '"',
-                ' data-moneda="',    htmltools::htmlEscape(row[["Moneda"]]),         '"',
-                ' data-tag="',       htmltools::htmlEscape(row[["Etiqueta"]]),       '"',
-                ' data-importe="',   as.character(row[["Importe"]]),                 '"',
-                ' data-fecha="',     htmltools::htmlEscape(row[["Fecha"]]),          '"',
-                ' data-parte="',     htmltools::htmlEscape(tolower(row[["Parte"]])), '"',
-                ' data-doc="',       htmltools::htmlEscape(tolower(row[["Documento"]])), '"',
-                ' data-empresa="',   htmltools::htmlEscape(row[["Empresa"]]),        '"',
-                ' data-documento="', htmltools::htmlEscape(row[["Documento"]]),      '"',
-                ' data-source="',    htmltools::htmlEscape(row[["source"]]),         '"',
-                ' data-invid="',     htmltools::htmlEscape(row[["inv_id"]]),         '"',
-                ' data-codigo="',    htmltools::htmlEscape(row[["Codigo"]] %||% ""), '"',
-                ' data-tagweight="', as.character(row[["tag_weight"]]),              '"',
+                '<tr class="search-row', row_extra_cls, '"',
+                ' data-tipo="',        htmltools::htmlEscape(row[["Tipo"]]),           '"',
+                ' data-ledger="',      htmltools::htmlEscape(row[["Ledger"]]),         '"',
+                ' data-month="',       htmltools::htmlEscape(row[["Month"]]),          '"',
+                ' data-moneda="',      htmltools::htmlEscape(row[["Moneda"]]),         '"',
+                ' data-tag="',         htmltools::htmlEscape(row[["Etiqueta"]]),       '"',
+                ' data-importe="',     as.character(row[["Importe"]]),                 '"',
+                ' data-fecha="',       htmltools::htmlEscape(row[["Fecha"]]),          '"',
+                ' data-fecha-orig="',  htmltools::htmlEscape(row[["FechaOrig"]] %||% row[["Fecha"]]), '"',
+                ' data-parte="',       htmltools::htmlEscape(tolower(row[["Parte"]])), '"',
+                ' data-ref="',         htmltools::htmlEscape(tolower(row[["Referencia"]])), '"',
+                ' data-doc="',         htmltools::htmlEscape(tolower(row[["Documento"]])), '"',
+                ' data-empresa="',     htmltools::htmlEscape(row[["Empresa"]]),        '"',
+                ' data-documento="',   htmltools::htmlEscape(row[["Documento"]]),      '"',
+                ' data-source="',      htmltools::htmlEscape(row[["source"]]),         '"',
+                ' data-invid="',       htmltools::htmlEscape(row[["inv_id"]]),         '"',
+                ' data-provisionid="', htmltools::htmlEscape(prov_id_val),             '"',
+                ' data-codigo="',      htmltools::htmlEscape(row[["Codigo"]] %||% ""), '"',
+                ' data-tagweight="',   as.character(row[["tag_weight"]]),              '"',
                 if (nzchar(row_bg)) paste0(' style="', row_bg, '"') else "",
                 '>',
-                '<td><span class="', tipo_badge_class, '">', htmltools::htmlEscape(row[["Tipo"]]), '</span></td>',
+                if (is_provision && nzchar(prov_id_val))
+                  sprintf('<td><span class="pasivos-tag-provision" style="cursor:pointer;" onclick="event.stopPropagation();Shiny.setInputValue(\'pasivos_convert_request\',\'%s\',{priority:\'event\'})" title="Convertir a comprobante">Provisión</span></td>',
+                          htmltools::htmlEscape(prov_id_val))
+                else
+                  paste0('<td><span class="', tipo_badge_class, '">', tipo_label, '</span></td>'),
                 '<td><span class="cart-empresa-badge">', htmltools::htmlEscape(row[["Empresa"]]), '</span></td>',
                 '<td>', htmltools::htmlEscape(row[["Fecha"]]), '</td>',
                 '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">',
                   htmltools::htmlEscape(row[["Parte"]]),
                 '</td>',
                 '<td class="text-muted">', htmltools::htmlEscape(row[["Referencia"]]), '</td>',
+                '<td class="text-muted small">', htmltools::htmlEscape(row[["Documento"]]), '</td>',
                 '<td>', htmltools::htmlEscape(row[["Moneda"]]), '</td>',
                 '<td class="text-end fw-bold" style="color:#1a6cc4;font-variant-numeric:tabular-nums;">',
                   fmt_money(row[["Importe"]]),
@@ -409,7 +503,6 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
             var text   = (document.getElementById('search_text')   || {}).value || '';
             var tipo   = (document.getElementById('search_tipo')   || {}).value || '';
             var moneda = (document.getElementById('search_moneda') || {}).value || '';
-            var sort   = (document.getElementById('search_sort')   || {}).value || 'tag_amount';
             var tag    = (document.getElementById('search_tag')    || {}).value || '';
             var q      = text.toLowerCase();
             var rows   = Array.from(document.querySelectorAll('#search_results_tbl .search-row'));
@@ -420,7 +513,7 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
               if (mFilter && r.dataset.month !== mFilter)                     return false;
               if (tipo   && r.dataset.tipo   !== tipo)                        return false;
               if (moneda && r.dataset.moneda !== moneda)                      return false;
-              if (q && !(r.dataset.parte.includes(q) || r.dataset.doc.includes(q))) return false;
+              if (q && !(r.dataset.parte.includes(q) || r.dataset.doc.includes(q) || (r.dataset.ref || '').includes(q) || (r.dataset.importe || '').includes(q))) return false;
               if (tag === 'tagged'    && !r.dataset.tag)                         return false;
               if (tag === 'urgent'    && r.dataset.tag.indexOf('Urgente')    < 0) return false;
               if (tag === 'important' && r.dataset.tag.indexOf('Importante') < 0) return false;
@@ -430,15 +523,22 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
 
             rows.forEach(function(r) { r.style.display = 'none'; });
             visible.sort(function(a, b) {
-              if (sort === 'amount_desc') return parseFloat(b.dataset.importe) - parseFloat(a.dataset.importe);
-              if (sort === 'amount_asc')  return parseFloat(a.dataset.importe) - parseFloat(b.dataset.importe);
-              if (sort === 'date_asc')    return a.dataset.fecha.localeCompare(b.dataset.fecha);
-              if (sort === 'date_desc')   return b.dataset.fecha.localeCompare(a.dataset.fecha);
-              if (sort === 'parte_az')    return a.dataset.parte.localeCompare(b.dataset.parte);
-              var wa = parseInt(a.dataset.tagweight || '4');
-              var wb = parseInt(b.dataset.tagweight || '4');
-              if (wa !== wb) return wa - wb;
-              return parseFloat(b.dataset.importe) - parseFloat(a.dataset.importe);
+              var col = window._searchSortCol;
+              var dir = window._searchSortDir === 'asc' ? 1 : -1;
+              if (!col) {
+                var wa = parseInt(a.dataset.tagweight || '4');
+                var wb = parseInt(b.dataset.tagweight || '4');
+                if (wa !== wb) return wa - wb;
+                return parseFloat(b.dataset.importe) - parseFloat(a.dataset.importe);
+              }
+              if (col === 'importe') return dir * (parseFloat(a.dataset.importe) - parseFloat(b.dataset.importe));
+              if (col === 'fecha') {
+                var toYMD = function(s) { return s ? s.substring(6) + s.substring(3, 5) + s.substring(0, 2) : ''; };
+                return dir * toYMD(a.dataset.fecha).localeCompare(toYMD(b.dataset.fecha));
+              }
+              var km = {tipo:'tipo',empresa:'empresa',parte:'parte',documento:'doc',referencia:'ref',etiqueta:'tag',moneda:'moneda'};
+              var key = km[col] || col;
+              return dir * (a.dataset[key]||'').toLowerCase().localeCompare((b.dataset[key]||'').toLowerCase());
             });
             var tbody = document.getElementById('search_tbody');
             visible.forEach(function(r) { r.style.display = ''; tbody.appendChild(r); });
@@ -463,21 +563,20 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
           window.getCheckedRows = function getCheckedRows() {
             var out = [];
             document.querySelectorAll('.search-row.search-row-selected').forEach(function(r) {
-              if (r.style.display !== 'none') {
-                out.push({
-                  ledger   : r.dataset.ledger,
-                  empresa  : r.dataset.empresa,
-                  moneda   : r.dataset.moneda,
-                  documento: r.dataset.documento,
-                  source   : r.dataset.source,
-                  inv_id   : r.dataset.invid,
-                  parte    : r.dataset.parte,
-                  codigo   : r.dataset.codigo || '',
-                  importe  : parseFloat(r.dataset.importe),
-                  fecha    : r.dataset.fecha,
-                  tipo     : r.dataset.tipo
-                });
-              }
+              out.push({
+                ledger   : r.dataset.ledger,
+                empresa  : r.dataset.empresa,
+                moneda   : r.dataset.moneda,
+                documento: r.dataset.documento,
+                source      : r.dataset.source,
+                inv_id      : r.dataset.invid,
+                provision_id: r.dataset.provisionid || '',
+                parte    : r.dataset.parte,
+                codigo   : r.dataset.codigo || '',
+                importe  : parseFloat(r.dataset.importe),
+                fecha    : r.dataset.fecha,
+                tipo     : r.dataset.tipo
+              });
             });
             return out;
           }
@@ -491,8 +590,9 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
                   empresa  : r.dataset.empresa,
                   moneda   : r.dataset.moneda,
                   documento: r.dataset.documento,
-                  source   : r.dataset.source,
-                  inv_id   : r.dataset.invid,
+                  source      : r.dataset.source,
+                  inv_id      : r.dataset.invid,
+                  provision_id: r.dataset.provisionid || '',
                   parte    : r.dataset.parte,
                   codigo   : r.dataset.codigo || '',
                   importe  : parseFloat(r.dataset.importe),
@@ -507,7 +607,7 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
           // ── Agregar todo ─────────────────────────────────────────────────────
           window.searchStage = function(mode) {
             var rows = getAllVisibleRows();
-            if (!rows.length) { alert('No hay facturas visibles.'); return; }
+            if (!rows.length) { Shiny.setInputValue('search_stage_toast', { msg: 'No hay facturas visibles.', type: 'warning', nonce: Math.random() }, { priority: 'event' }); return; }
             var bar = document.getElementById('search_stage_confirm_bar');
             var msg = document.getElementById('search_stage_confirm_msg');
             if (!bar || !msg) return;
@@ -534,22 +634,38 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
 
           window.searchAction = function(action) {
             var rows = getCheckedRows();
-            if (!rows.length) { alert('Selecciona al menos una factura.'); return; }
+            if (!rows.length) {
+              Shiny.setInputValue('search_stage_toast',
+                { msg: 'Selecciona al menos una factura.', type: 'warning', nonce: Math.random() },
+                { priority: 'event' });
+              return;
+            }
             if (action === 'delete') {
-              if (!confirm('\\u00bfEliminar ' + rows.length + ' factura(s)?\\n\\nSe guardar\\u00e1n en la papelera.')) return;
+              var payload = { action: 'delete', rows: rows, nonce: Math.random() };
+              Shiny.setInputValue('search_action', payload, { priority: 'event' });
+              if (window.searchApplyUpdate) window.searchApplyUpdate('delete', payload, searchSelectedRows());
+              return;
             }
             var payload = { action: action, rows: rows, nonce: Math.random() };
             if (action === 'move') {
               var d = document.getElementById('search_move_date');
               payload.move_to = d ? d.value : '';
-              if (!payload.move_to) { alert('Elige una fecha para mover.'); return; }
+              if (!payload.move_to) {
+                Shiny.setInputValue('search_stage_toast',
+                  { msg: 'Elige una fecha para mover.', type: 'warning', nonce: Math.random() },
+                  { priority: 'event' });
+                return;
+              }
             }
             Shiny.setInputValue('search_action', payload, { priority: 'event' });
+            if (window.searchApplyUpdate) window.searchApplyUpdate(action, payload, searchSelectedRows());
           };
 
           window.searchFilterAndSort = filterAndSort;
           setTimeout(function() {
-            ['search_text','search_tipo','search_moneda','search_sort','search_tag'].forEach(function(id) {
+            window._searchSortCol = null;
+            window._searchSortDir = 'asc';
+            ['search_text','search_tipo','search_moneda','search_tag'].forEach(function(id) {
               var el = document.getElementById(id);
               if (el) el.addEventListener('input', filterAndSort);
             });
@@ -573,8 +689,9 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
             empresa  : r.dataset.empresa,
             moneda   : r.dataset.moneda,
             documento: r.dataset.documento,
-            source   : r.dataset.source,
-            inv_id   : r.dataset.invid || '',
+            source      : r.dataset.source,
+            inv_id      : r.dataset.invid || '',
+            provision_id: r.dataset.provisionid || '',
             parte    : r.dataset.parte,
             importe  : parseFloat(r.dataset.importe),
             fecha    : r.dataset.fecha,
@@ -584,16 +701,16 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
 
         // -- Sync selection UI (mirrors venSyncSelButtons) ---------------------
         window.searchSyncSelButtons = function() {
-          var n       = searchSelectedRows().filter(function(r){ return r.style.display !== 'none'; }).length;
+          var nTotal  = searchSelectedRows().length;
           var noneBtn = document.getElementById('search_sel_none_btn');
           var allBtn  = document.getElementById('search_sel_all_btn');
-          if (noneBtn) noneBtn.style.display = n > 0 ? '' : 'none';
-          if (allBtn)  allBtn.style.display  = n > 0 ? 'none' : '';
+          if (noneBtn) noneBtn.style.display = nTotal > 0 ? '' : 'none';
+          if (allBtn)  allBtn.style.display  = nTotal > 0 ? 'none' : '';
           updateSearchSumBar();
         };
 
         window.updateSearchSumBar = function() {
-          var selected = searchSelectedRows().filter(function(r) { return r.style.display !== 'none'; });
+          var selected = searchSelectedRows();
           var bar = document.getElementById('search_sum_bar');
           if (!bar) return;
           if (!selected.length) { bar.style.display = 'none'; return; }
@@ -660,26 +777,84 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
           });
         }
 
-        // -- Month nav ---------------------------------------------------------
-        window.searchSetMonth = function(month, btn) {
-          document.querySelectorAll('.search-month-nav .btn').forEach(function(b) {
-            b.classList.remove('btn-primary');
-            b.classList.add('btn-outline-secondary');
-          });
-          btn.classList.remove('btn-outline-secondary');
-          btn.classList.add('btn-primary');
-          searchSelectNone();
-          window.searchFilterAndSort();
-        };
+        // -- Init arrow state (runs after pool data script in modal title) ------
+        (function() {
+          var prev = document.getElementById('search-month-prev');
+          var next = document.getElementById('search-month-next');
+          var win  = window._smWin || 0;
+          var len  = (window._smPool || []).length;
+          if (prev) prev.disabled = win <= 0;
+          if (next) next.disabled = win + 5 >= len;
+        })();
 
-        // -- Stage selected (immediate, then clear) ----------------------------
+        // -- Stage selected ---------------------------------------------------
         window.searchStageSelected = function() {
-          var rows = searchSelectedRows().filter(function(r){ return r.style.display !== 'none'; });
-          if (!rows.length) { alert('Selecciona al menos una factura.'); return; }
+          var rows = searchSelectedRows();
+          if (!rows.length) { Shiny.setInputValue('search_stage_toast', { msg: 'Selecciona al menos una factura.', type: 'warning', nonce: Math.random() }, { priority: 'event' }); return; }
           Shiny.setInputValue('search_action',
             { action: 'stage_all', rows: rows.map(searchRowPayload), nonce: Math.random() },
             { priority: 'event' });
-          searchSelectNone();
+          rows.forEach(function(r) {
+            var td0 = r.querySelector('td:first-child');
+            if (td0 && !td0.querySelector('.srb-staged')) {
+              var chip = document.createElement('span');
+              chip.className = 'srb-staged';
+              chip.title = 'Agregada a Agenda del día';
+              chip.textContent = ' ✓';
+              td0.appendChild(chip);
+            }
+          });
+        };
+
+        // -- Optimistic DOM patch after every toolbar action ------------------
+        window.searchApplyUpdate = function(action, payload, selRows) {
+          if (!selRows || !selRows.length) return;
+          var TAG = {
+            tag_urgent:    { label: '🔴 Urgente',    bg: '#fff0f0', tag: '🔴 Urgente',    w: '2' },
+            tag_important: { label: '🟡 Importante', bg: '#fffbe6', tag: '🟡 Importante', w: '3' },
+            tag_both:      { label: '🟠 Ambas',      bg: '#fff3e6', tag: '🟠 Ambas',      w: '1' },
+            tag_clear:     { label: '',                        bg: '',        tag: '',           w: '4' }
+          };
+          if (TAG[action]) {
+            var t = TAG[action];
+            selRows.forEach(function(r) {
+              r.dataset.tag       = t.tag;
+              r.dataset.tagweight = t.w;
+              r.style.background  = t.bg;
+              var tds = r.querySelectorAll('td');
+              if (tds.length) tds[tds.length - 1].textContent = t.label;
+            });
+            searchSyncSelButtons();
+          } else if (action === 'move') {
+            var mv  = payload.move_to;
+            var pts = mv.split('-');
+            var disp = pts[2] + '/' + pts[1] + '/' + pts[0];
+            var mon  = mv.substring(0, 7);
+            selRows.forEach(function(r) {
+              r.dataset.fecha = disp;
+              r.dataset.month = mon;
+              var tds = r.querySelectorAll('td');
+              if (tds.length >= 3) tds[2].textContent = disp;
+            });
+            window.searchFilterAndSort();
+          } else if (action === 'restore') {
+            selRows.forEach(function(r) {
+              var orig = r.dataset.fechaOrig || r.dataset.fecha;
+              var p    = orig.split('/');
+              var mon  = p.length === 3 ? p[2] + '-' + p[1] : r.dataset.month;
+              r.dataset.fecha = orig;
+              r.dataset.month = mon;
+              var tds = r.querySelectorAll('td');
+              if (tds.length >= 3) tds[2].textContent = orig;
+            });
+            window.searchFilterAndSort();
+          } else if (action === 'delete') {
+            selRows.forEach(function(r) { r.classList.add('search-row-deleting'); });
+            setTimeout(function() {
+              selRows.forEach(function(r) { if (r.parentNode) r.parentNode.removeChild(r); });
+              window.searchFilterAndSort();
+            }, 320);
+          }
         };
       ")),
 
@@ -706,7 +881,8 @@ handle_invoice_action <- function(payload, shared) {
     Moneda    = vapply(rows, `[[`, character(1), "moneda"),
     Documento = vapply(rows, `[[`, character(1), "documento"),
     source    = vapply(rows, `[[`, character(1), "source"),
-    inv_id    = vapply(rows, `[[`, character(1), "inv_id"),
+    inv_id       = vapply(rows, `[[`, character(1), "inv_id"),
+    provision_id = vapply(rows, function(r) r[["provision_id"]] %||% "", character(1)),
     Parte     = vapply(rows, `[[`, character(1), "parte"),
     Codigo    = vapply(rows, function(r) r[["codigo"]] %||% "", character(1)),
     Importe   = vapply(rows, `[[`, numeric(1),   "importe"),
@@ -755,7 +931,7 @@ handle_invoice_action <- function(payload, shared) {
                tagged_by = current_user)
     }
     shared$tags_db(tdb)
-    tryCatch(save_tags(tdb), error = function(e)
+    tryCatch({ save_tags(tdb, client_id = shared$active_client_id()); bump_sync_version("tags_db") }, error = function(e)
       showNotification(paste("Error guardando etiquetas:", e$message), type = "warning"))
     showNotification(paste0(nrow(keys_df), " factura(s) etiquetadas."),
                      type = "message", duration = 2)
@@ -779,8 +955,7 @@ handle_invoice_action <- function(payload, shared) {
     )
     updated <- upsert_moves(shared$moves_db(), new_rows)
     shared$moves_db(updated)
-    tryCatch(save_moves(updated), error = function(e)
-      showNotification(paste("Error guardando movimientos:", e$message), type = "warning"))
+    .save_moves_deferred(updated, client_id = shared$active_client_id())
     showNotification(
       paste0(nrow(keys_df), " factura(s) movidas a ", format(new_date, "%d/%m/%Y"), "."),
       type = "message", duration = 2)
@@ -797,37 +972,72 @@ handle_invoice_action <- function(payload, shared) {
     updated <- dplyr::anti_join(shared$moves_db(), restore_keys,
                                 by = c("ledger","Empresa","Moneda","Documento"))
     shared$moves_db(updated)
-    tryCatch(save_moves(updated), error = function(e)
-      showNotification(paste("Error guardando movimientos:", e$message), type = "warning"))
+    .save_moves_deferred(updated, client_id = shared$active_client_id())
     showNotification(
       paste0(nrow(keys_df), " factura(s) restauradas a fecha original."),
       type = "message", duration = 2)
 
   } else if (action == "delete") {
-    papelera_df <- tryCatch(load_papelera(), error = function(e) tibble::tibble())
-    archive      <- keys_df
-    archive$FechaEff   <- as.Date(NA)
-    archive$deleted_by <- current_user
-    archive$deleted_at <- Sys.time()
-    papelera_df <- add_to_papelera(papelera_df, archive,
-                                    ledger = "MIXED", deleted_by = current_user)
-    tryCatch(save_papelera(papelera_df), error = function(e)
-      showNotification(paste("Error guardando papelera:", e$message), type = "warning"))
-    # Update shared reactive so calendars refresh without extra S3 read
-    if (!is.null(shared$papelera_rv)) shared$papelera_rv(papelera_df)
+    # Provisions use lifecycle close, not papelera
+    prov_rows <- keys_df[keys_df$source == "provision" & nzchar(keys_df$provision_id), ]
+    item_rows <- keys_df[!(keys_df$source == "provision" & nzchar(keys_df$provision_id)), ]
 
-    manual_rows <- keys_df[keys_df$source == "manual" & nzchar(keys_df$inv_id), ]
-    if (nrow(manual_rows)) {
-      m <- shared$manual_inv()
-      for (mid in manual_rows$inv_id) m <- delete_manual(m, mid)
-      shared$manual_inv(m)
-      tryCatch(save_manual(m), error = function(e)
-        showNotification(paste("Error actualizando manual:", e$message), type = "warning"))
+    if (nrow(prov_rows)) {
+      pids_cancel <- unique(prov_rows$provision_id)
+      for (pid in pids_cancel) {
+        tryCatch(pasivos_provision_cancel(provision_id = pid, user = current_user,
+                                          client_id = shared$active_client_id()),
+                 error = function(e) NULL)
+      }
+      provs_db <- tryCatch(shared$pasivos_provisions_db(), error = function(e) NULL)
+      tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
+      if (!is.null(provs_db) && "id" %in% names(provs_db)) {
+        mask <- !is.na(provs_db$id) & provs_db$id %in% pids_cancel
+        if (any(mask)) provs_db$estado[mask] <- "closed"
+        tryCatch(shared$pasivos_provisions_db(provs_db), error = function(e) NULL)
+        tryCatch(bump_sync_version("pasivos_provisions_db"), error = function(e) NULL)
+      } else {
+        tryCatch({ shared$pasivos_provisions_db(load_pasivos_provisions()) }, error = function(e) NULL)
+      }
+      showNotification(paste0(nrow(prov_rows), " provisión(es) cerrada(s)."),
+                       type = "message", duration = 3)
     }
-    showNotification(paste0(nrow(keys_df), " factura(s) enviadas a la papelera."),
-                     type = "message", duration = 3)
+
+    if (nrow(item_rows)) {
+      cid         <- tryCatch(shared$active_client_id(), error = function(e) NULL)
+      papelera_df <- tryCatch(load_papelera(client_id = cid), error = function(e) tibble::tibble())
+      archive      <- item_rows
+      archive$FechaEff   <- as.Date(NA)
+      archive$deleted_by <- current_user
+      archive$deleted_at <- Sys.time()
+      papelera_df <- add_to_papelera(papelera_df, archive,
+                                      ledger = "MIXED", deleted_by = current_user)
+      tryCatch(save_papelera(papelera_df, client_id = shared$active_client_id()), error = function(e)
+        showNotification(paste("Error guardando papelera:", e$message), type = "warning"))
+      # Update shared reactive so calendars refresh without extra S3 read
+      if (!is.null(shared$papelera_rv)) shared$papelera_rv(papelera_df)
+
+      manual_rows <- item_rows[item_rows$source == "manual" & nzchar(item_rows$inv_id), ]
+      if (nrow(manual_rows)) {
+        m <- shared$manual_inv()
+        for (mid in manual_rows$inv_id) m <- delete_manual(m, mid)
+        shared$manual_inv(m)
+        tryCatch(save_manual(m, client_id = shared$active_client_id()), error = function(e)
+          showNotification(paste("Error actualizando manual:", e$message), type = "warning"))
+      }
+      showNotification(paste0(nrow(item_rows), " factura(s) enviadas a la papelera."),
+                       type = "message", duration = 3)
+    }
 
   } else if (action %in% c("stage_all", "stage_selected")) {
+    # Silently exclude provision rows — they cannot be staged as regular items.
+    keys_df <- pasivos_filter_out_provisions(keys_df)
+    if (!nrow(keys_df)) {
+      showNotification("No hay facturas válidas para agregar (se excluyeron provisiones).",
+                       type = "warning", duration = 3)
+      return()
+    }
+
     # Parse fecha from dd/mm/yyyy string
     parse_fecha <- function(s) {
       d <- tryCatch(as.Date(s, "%d/%m/%Y"), error = function(e) NA_real_)
@@ -860,7 +1070,7 @@ handle_invoice_action <- function(payload, shared) {
     }
     updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(), new_rows)
     shared$pagar_hoy_db(updated)
-    tryCatch(save_pagar_hoy(updated), error = function(e)
+    tryCatch(save_pagar_hoy(updated, shared$current_user(), client_id = shared$active_client_id()), error = function(e)
       showNotification(paste("Error guardando agenda:", e$message), type = "warning"))
     # Build a descriptive notification: count, companies, ledger type, total amount
     emp_str  <- paste(unique(new_rows$Empresa), collapse = ", ")

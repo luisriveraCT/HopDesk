@@ -181,12 +181,13 @@ proveedoresServer <- function(id, shared) {
     }
 
     set_provs <- function(df) {
-      save_proveedores(df)
+      save_proveedores(df, client_id = shared$active_client_id())
+      bump_sync_version("proveedores_db")
       if (!is.null(shared$proveedores_db)) shared$proveedores_db(df)
     }
 
     set_inac <- function(df) {
-      save_proveedores_inactivos(df)
+      save_proveedores_inactivos(df, client_id = shared$active_client_id())
       if (!is.null(shared$proveedores_inactivos_db)) shared$proveedores_inactivos_db(df)
     }
 
@@ -197,16 +198,16 @@ proveedoresServer <- function(id, shared) {
       provs <- provs[!is.na(provs$activo) & provs$activo == TRUE, ]
 
       if (nzchar(trimws(search_txt))) {
-        s <- tolower(trimws(search_txt))
+        s <- strip_accents(tolower(trimws(search_txt)))
         provs <- provs[
-          grepl(s, tolower(provs$nombre   %||% ""), fixed = TRUE) |
-          grepl(s, tolower(provs$alias    %||% ""), fixed = TRUE) |
-          grepl(s, tolower(provs$rfc      %||% ""), fixed = TRUE) |
-          grepl(s, tolower(provs$no_cuenta %||% ""), fixed = TRUE),
+          grepl(s, strip_accents(tolower(provs$nombre    %||% "")), fixed = TRUE) |
+          grepl(s, strip_accents(tolower(provs$alias     %||% "")), fixed = TRUE) |
+          grepl(s, strip_accents(tolower(provs$rfc       %||% "")), fixed = TRUE) |
+          grepl(s, strip_accents(tolower(provs$no_cuenta %||% "")), fixed = TRUE),
         ]
       }
 
-      if (!nrow(provs)) {
+      if (is.null(provs) || !nrow(provs)) {
         return(DT::datatable(
           data.frame(Info = "Sin proveedores activos."),
           options = list(dom = "t"), rownames = FALSE
@@ -290,11 +291,35 @@ proveedoresServer <- function(id, shared) {
       nom_val <- if (!is_new) row$nombre      %||% "" else ""
       ali_val <- if (!is_new) row$alias       %||% "" else ""
       rfc_val <- if (!is_new) row$rfc         %||% "" else ""
-      nc_val  <- if (!is_new) row$no_cuenta   %||% "" else ""
-      ban_val <- if (!is_new) row$banco       %||% "" else ""
-      tc_val  <- if (!is_new) row$tipo_cuenta %||% "" else ""
-      cor_val <- if (!is_new) row$correo      %||% "" else ""
-      mon_val <- if (!is_new) row$moneda      %||% "Pesos" else "Pesos"
+      nc_val  <- if (!is_new) row$no_cuenta %||% "" else ""
+      # Normalize stored banco (3-digit clave or "Nombre|CLAVE") → matching choice value
+      ban_raw <- if (!is_new) row$banco %||% "" else ""
+      ban_val <- {
+        if (!nzchar(ban_raw)) "" else {
+          clave <- if (grepl("^[0-9]{3}$", trimws(ban_raw))) {
+            trimws(ban_raw)
+          } else if (grepl("\\|", ban_raw)) {
+            tail(strsplit(ban_raw, "\\|")[[1]], 1)
+          } else {
+            m <- regmatches(ban_raw, regexpr("[0-9]{3}", ban_raw))
+            if (length(m)) m[1] else ""
+          }
+          hit <- grep(paste0("\\|", trimws(clave), "$"), .BANCOS_MX_CHOICES, value = TRUE)
+          if (length(hit)) hit[1] else ""
+        }
+      }
+      cor_val <- if (!is_new) row$correo %||% "" else ""
+      # Normalize stored moneda: legacy Spanish labels → ISO codes
+      mon_raw <- if (!is_new) row$moneda %||% "MXN" else "MXN"
+      mon_val <- if (mon_raw %in% CURRENCIES) {
+        mon_raw
+      } else if (grepl("^peso", mon_raw, ignore.case = TRUE)) {
+        "MXN"
+      } else if (grepl("^d.lar", mon_raw, ignore.case = TRUE)) {
+        "USD"
+      } else {
+        "MXN"
+      }
       tr_val  <- if (!is_new) row$tipo_relacion %||% "" else ""
       emp_val <- if (!is_new) {
         emps <- strsplit(row$empresas %||% row$Empresa %||% "", ",")[[1]]
@@ -335,20 +360,18 @@ proveedoresServer <- function(id, shared) {
           ),
           div(class = "col-md-4",
             tags$label("Banco", class = "form-label small fw-semibold"),
-            textInput(ns("prov_banco"), NULL, value = ban_val, width = "100%")
+            selectInput(ns("prov_banco"), NULL,
+                        choices  = c("— Sin banco —" = "", .BANCOS_MX_CHOICES[-1]),
+                        selected = ban_val, width = "100%")
           ),
-          div(class = "col-md-3",
-            tags$label("Tipo Cuenta", class = "form-label small fw-semibold"),
-            textInput(ns("prov_tipo_cuenta"), NULL, value = tc_val, width = "100%")
-          ),
-          div(class = "col-md-5",
+          div(class = "col-md-8",
             tags$label("Correo (separados por coma)", class = "form-label small fw-semibold"),
             textInput(ns("prov_correo"), NULL, value = cor_val, width = "100%")
           ),
           div(class = "col-md-4",
             tags$label("Moneda", class = "form-label small fw-semibold"),
             selectInput(ns("prov_moneda"), NULL,
-                        choices = c("Pesos", "Dólares"), selected = mon_val, width = "100%")
+                        choices = CURRENCIES, selected = mon_val, width = "100%")
           ),
           div(class = "col-md-12",
             tags$label("Tipo de Relación", class = "form-label small fw-semibold"),
@@ -502,9 +525,16 @@ proveedoresServer <- function(id, shared) {
       rfc  <- trimws(input$prov_rfc       %||% "")
       nc   <- trimws(input$prov_no_cuenta %||% "")
       ban  <- trimws(input$prov_banco     %||% "")
-      tc   <- trimws(input$prov_tipo_cuenta %||% "")
       cor  <- trimws(input$prov_correo    %||% "")
-      mon  <- input$prov_moneda           %||% "Pesos"
+      mon  <- input$prov_moneda           %||% "MXN"
+      # Extract 3-digit CECOBAN clave from "Nombre|CLAVE" choice value
+      ban_clave <- if (nzchar(ban) && grepl("\\|", ban)) {
+        tail(strsplit(ban, "\\|")[[1]], 1)
+      } else ban
+      # Derive transaction type from currency + destination bank
+      derived_medio_pago <- if (mon == "USD")                       "SPD"
+                       else if (mon == "MXN" && ban_clave == "030") "BCO"
+                       else                                         "SPI"
       tr   <- trimws(input$prov_tipo_relacion %||% "")
       emps <- paste(input$prov_empresas %||% character(0), collapse = ",")
       ah_sel <- input$prov_activo_hasta_sel %||% "indefinido"
@@ -518,8 +548,8 @@ proveedoresServer <- function(id, shared) {
         showNotification("El Nombre es obligatorio.", type = "warning"); return()
       }
 
-      # Determine status
-      st <- if (nzchar(nom) && nzchar(mon) && nzchar(ban) && nzchar(nc))
+      # Determine status (use ban_clave so empty-bank counts as incomplete)
+      st <- if (nzchar(nom) && nzchar(mon) && nzchar(ban_clave) && nzchar(nc))
               "completo" else "incompleto"
 
       eid   <- editing_id_cat()
@@ -533,14 +563,13 @@ proveedoresServer <- function(id, shared) {
         nombre        = nom,
         alias         = ali,
         clabe         = nc,  # keep clabe = no_cuenta for PPL compatibility
-        medio_pago    = "SPI",
+        medio_pago    = derived_medio_pago,
         rfc           = rfc,
         tipo          = "012",
-        banco_destino = ban,
+        banco_destino = ban_clave,
         activo        = TRUE,
         no_cuenta     = nc,
-        banco         = ban,
-        tipo_cuenta   = tc,
+        banco         = ban_clave,
         correo        = cor,
         moneda        = mon,
         tipo_relacion = tr,
@@ -877,7 +906,7 @@ proveedoresServer <- function(id, shared) {
             paste0('<span class="badge bg-danger">\U0001f534 Dup. fila ',
                    .row_num, '</span>'),
           grepl("^conflicto", .clasificacion) ~
-            '<span class="badge bg-warning text-dark">\U0001f7e1 Conflicto S3</span>',
+            '<span class="badge bg-warning text-dark">\U0001f7e1 Conflicto</span>',
           TRUE ~ .clasificacion
         ),
         Quitar = paste0('<button class="btn btn-xs btn-outline-danger prov-upload-del-btn"',
@@ -953,11 +982,11 @@ proveedoresServer <- function(id, shared) {
       if (conf_row$.clasificacion == "conflicto_s3_activo") {
         provs_now <- get_provs()
         s3_row    <- provs_now[.nc_key(provs_now) == nc, , drop = FALSE][1, ]
-        src_lbl   <- "EN S3 (activo)"
+        src_lbl   <- "Guardado (activo)"
       } else {
         inac_now <- get_inac()
         s3_row   <- inac_now[.nc_key(inac_now) == nc, , drop = FALSE][1, ]
-        src_lbl  <- "EN S3 (inactivo)"
+        src_lbl  <- "Guardado (inactivo)"
       }
 
       tagList(
@@ -1184,7 +1213,11 @@ proveedoresServer <- function(id, shared) {
         nombre        = nombre,
         alias         = alias %||% NA_character_,
         clabe         = no_cuenta,  # PPL compatibility
-        medio_pago    = "SPI",
+        medio_pago    = dplyr::case_when(
+          grepl("USD|DOLAR|DOLLAR", toupper(trimws(dplyr::coalesce(moneda, "")))) ~ "SPD",
+          grepl("^030$|BAJIO",      toupper(trimws(dplyr::coalesce(banco,  "")))) ~ "BCO",
+          TRUE                                                                    ~ "SPI"
+        ),
         rfc           = rfc %||% NA_character_,
         tipo          = "012",
         banco_destino = banco %||% NA_character_,
@@ -1244,15 +1277,16 @@ proveedoresServer <- function(id, shared) {
 
     .render_inactivos <- function(search_txt = "") {
       inac <- get_inac()
+      if (is.null(inac)) inac <- data.frame()
       inac <- inac[!is.na(inac$activo) & inac$activo == FALSE, ]
 
       if (nzchar(trimws(search_txt))) {
-        s <- tolower(trimws(search_txt))
+        s <- strip_accents(tolower(trimws(search_txt)))
         inac <- inac[
-          grepl(s, tolower(inac$nombre   %||% ""), fixed = TRUE) |
-          grepl(s, tolower(inac$alias    %||% ""), fixed = TRUE) |
-          grepl(s, tolower(inac$rfc      %||% ""), fixed = TRUE) |
-          grepl(s, tolower(inac$no_cuenta %||% ""), fixed = TRUE),
+          grepl(s, strip_accents(tolower(inac$nombre    %||% "")), fixed = TRUE) |
+          grepl(s, strip_accents(tolower(inac$alias     %||% "")), fixed = TRUE) |
+          grepl(s, strip_accents(tolower(inac$rfc       %||% "")), fixed = TRUE) |
+          grepl(s, strip_accents(tolower(inac$no_cuenta %||% "")), fixed = TRUE),
         ]
       }
 

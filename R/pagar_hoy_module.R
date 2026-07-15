@@ -18,6 +18,21 @@
 pagarHoyUI <- function(id) {
   ns <- NS(id)
   tagList(
+  tags$script(HTML("
+    Shiny.addCustomMessageHandler('ph_update_badge', function(msg) {
+      var attempts = 0;
+      function tryUpdate() {
+        var el = document.getElementById(msg.id);
+        if (el) {
+          el.innerHTML = msg.html;
+        } else if (attempts < 12) {
+          attempts++;
+          setTimeout(tryUpdate, 150);
+        }
+      }
+      tryUpdate();
+    });
+  ")),
   tags$script(HTML(sprintf("
     $(document).off('click.phlookup').on('click.phlookup', '.ph-lookup-btn', function(e) {
       e.stopPropagation();
@@ -70,8 +85,8 @@ pagarHoyUI <- function(id) {
         class = "btn btn-sm btn-outline-info"
       ),
       div(class = "ms-auto d-flex gap-2",
-        downloadButton(ns("download_all"), "\u2b07 Descargar todos (.zip)",
-                       class = "btn btn-sm btn-outline-primary"),
+        actionButton(ns("preview_all"), tagList(icon("file-zipper"), " Descargar todos (.zip)"),
+                     class = "btn btn-sm btn-outline-primary"),
         actionButton(ns("clear_all"), "\U0001f5d1 Vaciar agenda",
                      class = "btn btn-sm btn-outline-danger")
       )
@@ -92,18 +107,65 @@ pagarHoyServer <- function(id, shared) {
       sort(unname(cmap))
     })
 
+    # Reverse map: full name → initials  (e.g. "Networks Trucking Services" → "NTS")
+    ini_map_rv <- reactive({
+      cmap <- shared$company_map()   # named: initials → nombre_corto
+      setNames(names(cmap), unname(cmap))
+    })
+
+    # Build the inner HTML for one tab's currency counter badges.
+    .ph_badge_html <- function(counts) {
+      if (!length(counts)) return("")
+      css_class <- function(cur) switch(toupper(cur),
+        MXN = "ph-ctr-mxn", USD = "ph-ctr-usd", "ph-ctr-other")
+      parts <- vapply(names(counts), function(cur) {
+        n <- as.integer(counts[[cur]])
+        if (n <= 0L) return("")
+        paste0('<span class="ph-ctr-pill ', css_class(cur), '">', n,
+               ' <span class="ph-ctr-cur">', cur, '</span></span>')
+      }, character(1))
+      paste(parts[nzchar(parts)], collapse = "")
+    }
+
     # ── Opening balance store: per-company, per-currency ────────────────────
     saldos_apertura <- reactiveVal(setNames(list(), character()))
 
+    # Seed empty slots when new companies appear
     observe({
       cur <- saldos_apertura()
       for (e in all_companies_rv()) {
-        if (is.null(cur[[e]])) cur[[e]] <- list(MXN = 0, USD = 0)
+        if (is.null(cur[[e]])) cur[[e]] <- list()
       }
       saldos_apertura(cur)
     })
 
+    # Load persisted values from S3 once the session user is known
+    local({
+      loaded <- FALSE
+      observe({
+        if (loaded) return()
+        user <- tryCatch(shared$current_user(), error = function(e) NULL)
+        if (!nzchar(user %||% "")) return()
+        loaded <<- TRUE
+        stored <- tryCatch(
+          load_saldos_apertura_user(user, client_id = shared$active_client_id()),
+          error = function(e) list()
+        )
+        if (length(stored)) {
+          cur <- saldos_apertura()
+          for (emp in names(stored)) {
+            if (is.list(stored[[emp]])) cur[[emp]] <- stored[[emp]]
+          }
+          saldos_apertura(cur)
+        }
+      })
+    })
+
     # ── Staged queue ────────────────────────────────────────────────────────
+    # staged() = pending only. Confirmed items are cleared from the agenda
+    # immediately upon confirmation — they appear in Bancos > Historial instead.
+    # SAP confirmed items remain in pagar_hoy_db with status="confirmed" for
+    # audit / sync-bus propagation, but are never shown in the agenda UI.
     staged <- reactive({
       ph <- shared$pagar_hoy_db()
       if (is.null(ph) || !nrow(ph)) return(tibble::tibble(
@@ -111,9 +173,13 @@ pagarHoyServer <- function(id, shared) {
         Moneda=character(), Documento=character(), Parte=character(),
         Importe=numeric(), FechaVenc=as.Date(character()),
         staged_by=character(), staged_at=as.POSIXct(character()),
-        status=character()
+        status=character(), source=character(), confirmed_at=as.POSIXct(character())
       ))
       ph |> dplyr::filter(status == "pending")
+    })
+
+    active_staged <- reactive({
+      staged()
     })
 
     # ── Supplier catalog (reactive, reloads when bancos module changes it) ──
@@ -122,7 +188,7 @@ pagarHoyServer <- function(id, shared) {
       if (!is.null(shared$proveedores_db)) {
         shared$proveedores_db()
       } else {
-        tryCatch(load_proveedores(), error = function(e) .schema_proveedores())
+        tryCatch(load_proveedores(client_id = shared$active_client_id()), error = function(e) .schema_proveedores())
       }
     })
 
@@ -167,7 +233,7 @@ pagarHoyServer <- function(id, shared) {
       # fuzzy matching. Empresa "" means "applies to all companies".
       override_map <- tryCatch(
         if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db()
-        else load_parte_alias_map(),
+        else load_parte_alias_map(client_id = shared$active_client_id()),
         error = function(e) NULL
       )
 
@@ -343,21 +409,11 @@ pagarHoyServer <- function(id, shared) {
       result
     }
 
-    # ── Currency choices update ──────────────────────────────────────────────
-    observe({
-      s <- staged()
-      lapply(all_companies_rv(), function(emp) {
-        choices <- sort(unique(dplyr::filter(s, Empresa == emp)$Moneda))
-        if (!length(choices)) choices <- c("MXN","USD")
-        updateSelectInput(session, paste0("bal_cur_", emp),
-          choices  = choices,
-          selected = isolate(input[[paste0("bal_cur_", emp)]]) %||% choices[1])
-      })
-    })
+    # Currency selectors are now live renderUI outputs — see per-company loop.
 
     # ── Global totals bar ────────────────────────────────────────────────────
     output$global_total_ui <- renderUI({
-      s <- staged()
+      s <- active_staged()   # pending-only for position calculation
       if (!nrow(s)) return(tags$span(class = "text-muted small", "Sin elementos en agenda"))
       ap <- s |> dplyr::filter(ledger == "AP") |>
         dplyr::group_by(Moneda) |> dplyr::summarise(t = sum(Importe, na.rm = TRUE), .groups = "drop")
@@ -381,31 +437,32 @@ pagarHoyServer <- function(id, shared) {
         tags$span(class = "text-muted small me-1", "Posici\u00f3n neta:"), !!!pills)
     })
 
-    # ── Tab labels via JS ────────────────────────────────────────────────────
-    observe({
-      s <- staged()
-      lapply(all_companies_rv(), function(emp) {
-        n <- nrow(dplyr::filter(s, Empresa == emp))
-        lbl <- if (n > 0) paste0(emp, " (", n, ")") else emp
-        session$sendCustomMessage("updateTabLabel", list(
-          tabsetId = ns("company_tab"), value = emp, label = lbl))
-      })
-    })
-
-    # ── Company tab panels — rebuilt reactively when company list changes ────
+    # ── Company tab panels — rebuilt when company list changes.
+    #    isolate(staged()) pre-fills badge counts at render time so badges show
+    #    immediately; the separate observer keeps them live on subsequent changes.
     output$ph_panels_ui <- renderUI({
-      all_cos <- all_companies_rv()
+      all_cos  <- all_companies_rv()
+      ini_map  <- ini_map_rv()
+      s_snap   <- isolate(active_staged())  # badges show pending-only count
       panels <- lapply(all_cos, function(emp) {
+        ini        <- ini_map[[emp]] %||% emp
+        badge_id   <- ns(paste0("ph_badge_", make.names(emp, unique = FALSE)))
+        emp_snap   <- dplyr::filter(s_snap, Empresa == emp)
+        cur_counts <- if (nrow(emp_snap)) table(emp_snap$Moneda) else integer(0)
         tabPanel(
-          title = emp,
+          title = HTML(paste0(
+            '<span class="ph-tab-ini">', htmltools::htmlEscape(ini), '</span>',
+            '<span id="', badge_id, '" class="ph-tab-badge">',
+            .ph_badge_html(cur_counts),
+            '</span>'
+          )),
           value = emp,
           div(class = "ph-company-panel p-3",
             div(class = "d-flex align-items-center gap-4 mb-3 px-3 py-2 rounded bg-light border",
               div(class = "d-flex gap-3 align-items-center",
                 div(
                   tags$label("Moneda", class = "form-label small text-muted mb-1"),
-                  selectInput(ns(paste0("bal_cur_", emp)), NULL,
-                              choices = c("MXN","USD"), width = "100px")
+                  uiOutput(ns(paste0("cur_sel_", emp)))
                 ),
                 div(
                   tags$label("Saldo apertura", class = "form-label small text-muted mb-1"),
@@ -431,6 +488,19 @@ pagarHoyServer <- function(id, shared) {
       do.call(tabsetPanel, c(panels, list(id = ns("company_tab"))))
     })
 
+    # ── Tab badge live-updater — pending-only counts (badges = items needing action)
+    observe({
+      s   <- active_staged()
+      cos <- isolate(all_companies_rv())
+      for (emp in cos) {
+        badge_id   <- ns(paste0("ph_badge_", make.names(emp, unique = FALSE)))
+        emp_s      <- dplyr::filter(s, Empresa == emp)
+        cur_counts <- if (nrow(emp_s)) table(emp_s$Moneda) else integer(0)
+        session$sendCustomMessage("ph_update_badge",
+          list(id = badge_id, html = .ph_badge_html(cur_counts)))
+      }
+    })
+
     # ── Per-company outputs and observers — registered once per empresa ──────
     observe({
       for (emp in all_companies_rv()) {
@@ -440,9 +510,20 @@ pagarHoyServer <- function(id, shared) {
         local({
           emp <- emp  # capture loop variable
 
-      # Balance calc strip
+      # Currency selector — reactive so new currencies appear the instant invoices arrive
+      output[[paste0("cur_sel_", emp)]] <- renderUI({
+        s    <- staged()
+        curs <- sort(unique(dplyr::filter(s, Empresa == emp)$Moneda))
+        if (!length(curs)) curs <- c("MXN", "USD")
+        cur_val <- isolate(input[[paste0("bal_cur_", emp)]])
+        sel     <- if (!is.null(cur_val) && cur_val %in% curs) cur_val else curs[1]
+        selectInput(ns(paste0("bal_cur_", emp)), NULL,
+                    choices = curs, selected = sel, width = "100px")
+      })
+
+      # Balance calc strip — pending-only so confirmed items don't distort position
       output[[paste0("calc_", emp)]] <- renderUI({
-        s_emp   <- staged() |> dplyr::filter(Empresa == emp)
+        s_emp   <- active_staged() |> dplyr::filter(Empresa == emp)
         cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         bal_val <- saldos_apertura()[[emp]][[cur_sel]] %||% 0
         s_ap    <- s_emp |> dplyr::filter(ledger == "AP", Moneda == cur_sel)
@@ -492,6 +573,11 @@ pagarHoyServer <- function(id, shared) {
         sa <- saldos_apertura()
         sa[[emp]][[cur]] <- new_val
         saldos_apertura(sa)
+        tryCatch(
+          save_saldos_apertura_user(sa, shared$current_user(),
+                                    client_id = shared$active_client_id()),
+          error = function(e) NULL
+        )
       }, ignoreInit = TRUE)
 
       # ── Legend for color codes ──────────────────────────────────────────────
@@ -507,7 +593,7 @@ pagarHoyServer <- function(id, shared) {
         n_no  <- sum(ann$ppl_status == "no_match")
 
         div(class = "d-flex gap-3 align-items-center mb-2 px-1",
-          tags$span(class = "small text-muted", "Estado BanBajío:"),
+          tags$span(class = "small text-muted", "Archivo de pagos:"),
           tags$span(class = "ph-legend-dot ph-ok"),
           tags$span(class = "small", paste0(n_ok, " incluido(s)")),
           if (n_par > 0) tagList(
@@ -526,31 +612,45 @@ pagarHoyServer <- function(id, shared) {
         s_emp   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
         cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur   <- s_emp |> dplyr::filter(Moneda == cur_sel)
-        tp      <- sum(s_cur$Importe, na.rm = TRUE)
+        s_pend  <- s_cur |> dplyr::filter(status == "pending")
+        s_conf  <- s_cur |> dplyr::filter(status == "confirmed")
+        tp      <- sum(s_pend$Importe, na.rm = TRUE)
 
-        # Count matchable rows for button label
-        n_ok <- if (nrow(s_cur)) {
-          ann <- .annotate_ap_cached(s_cur, emp)
-          sum(ann$ppl_status == "ok")
+        # BanBajio count - pending rows only (confirmed are already paid) — selection-aware so it matches modal
+        n_ok <- if (nrow(s_pend)) {
+          ann_s   <- .annotate_ap_cached(s_pend, emp) |> dplyr::arrange(FechaVenc)
+          sel_hdr <- input[[paste0("tbl_ap_", emp, "_rows_selected")]]
+          ann_s2  <- if (length(sel_hdr)) {
+            valid <- sel_hdr[sel_hdr >= 1L & sel_hdr <= nrow(ann_s)]
+            if (length(valid)) ann_s[valid, , drop = FALSE] else ann_s
+          } else ann_s
+          sum(ann_s2$ppl_status == "ok", na.rm = TRUE)
         } else 0L
+
+        conf_pill <- if (nrow(s_conf) > 0)
+          tags$span(class = "badge bg-secondary ms-1",
+            title = "Pagos ya confirmados - tachados en tabla, esperando cierre SAP",
+            paste0(nrow(s_conf), " confirmado(s)"))
+        else NULL
 
         div(class = "ph-section-header d-flex align-items-center gap-2 mb-1",
           tags$span(class = "badge bg-danger", "\u2193 Pagos"),
           tags$span(class = "text-muted small",
-            if (nrow(s_cur))
-              paste0(nrow(s_cur), " factura(s) \u2014 ", cur_sel, " ", fmt_money(tp))
-            else paste0("Sin pagos para ", cur_sel)),
+            if (nrow(s_pend))
+              paste0(nrow(s_pend), " pendiente(s) \u2014 ", cur_sel, " ", fmt_money(tp))
+            else paste0("Sin pagos pendientes para ", cur_sel)),
+          conf_pill,
           if (nrow(s_cur))
             div(class = "ms-auto d-flex gap-2",
               actionButton(ns(paste0("remove_ap_", emp)), "\u2715 Quitar",
                            class = "btn btn-sm btn-outline-secondary"),
               actionButton(ns(paste0("dl_preview_", emp)),
                            tagList(icon("file-arrow-down"),
-                             paste0(" BanBajío (", n_ok, ")")),
+                             paste0(" Archivo de pagos (", n_ok, ")")),
                            class = if (n_ok > 0) "btn btn-sm btn-outline-primary"
                                    else "btn btn-sm btn-outline-secondary disabled",
-                           title = if (n_ok < nrow(s_cur))
-                             paste0(nrow(s_cur) - n_ok, " proveedor(es) sin alias en catálogo")
+                           title = if (n_ok < nrow(s_pend))
+                             paste0(nrow(s_pend) - n_ok, " proveedor(es) sin alias en catálogo")
                            else "Todos los proveedores encontrados"),
               actionButton(ns(paste0("confirm_ap_", emp)), "\u2713 Confirmar pagos",
                            class = "btn btn-sm btn-success")
@@ -563,13 +663,22 @@ pagarHoyServer <- function(id, shared) {
         s_emp   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
         cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur   <- s_emp |> dplyr::filter(Moneda == cur_sel)
-        tc      <- sum(s_cur$Importe, na.rm = TRUE)
+        s_pend  <- s_cur |> dplyr::filter(status == "pending")
+        s_conf  <- s_cur |> dplyr::filter(status == "confirmed")
+        tc      <- sum(s_pend$Importe, na.rm = TRUE)
+        conf_pill <- if (nrow(s_conf) > 0)
+          tags$span(class = "badge bg-secondary ms-1",
+            title = "Cobros ya confirmados - tachados en tabla, esperando cierre SAP",
+            paste0(nrow(s_conf), " confirmado(s)"))
+        else NULL
+
         div(class = "ph-section-header d-flex align-items-center gap-2 mb-1",
           tags$span(class = "badge bg-success", "\u2191 Cobros esperados"),
           tags$span(class = "text-muted small",
-            if (nrow(s_cur))
-              paste0(nrow(s_cur), " factura(s) \u2014 ", cur_sel, " ", fmt_money(tc))
-            else paste0("Sin cobros para ", cur_sel)),
+            if (nrow(s_pend))
+              paste0(nrow(s_pend), " pendiente(s) \u2014 ", cur_sel, " ", fmt_money(tc))
+            else paste0("Sin cobros pendientes para ", cur_sel)),
+          conf_pill,
           if (nrow(s_cur))
             div(class = "ms-auto d-flex gap-2",
               actionButton(ns(paste0("remove_ar_", emp)), "\u2715 Quitar",
@@ -597,7 +706,7 @@ pagarHoyServer <- function(id, shared) {
           ))
         }
 
-        # Referencia lookup: Documento → Factura, SAP rows first, manual entries overlay
+        # Referencia lookup: Documento → Factura, SAP rows first, SAP overrides, then manual entries
         sap_ap_tbl <- tryCatch(shared$sap_data()[["AP"]], error = function(e) NULL)
         ref_lkup_tbl <- if (!is.null(sap_ap_tbl) &&
                              "Factura"   %in% names(sap_ap_tbl) &&
@@ -605,6 +714,19 @@ pagarHoyServer <- function(id, shared) {
           setNames(trimws(as.character(sap_ap_tbl[["Factura"]]   %||% "")),
                    trimws(as.character(sap_ap_tbl[["Documento"]])))
         } else character(0)
+        # Apply SAP field overrides (Factura_override) on top of raw SAP lookup
+        sap_ov_tbl <- tryCatch(shared$sap_ov_db(), error = function(e) NULL)
+        if (!is.null(sap_ov_tbl) && nrow(sap_ov_tbl) &&
+            all(c("ledger", "Documento", "Factura_override") %in% names(sap_ov_tbl))) {
+          ov_ap <- sap_ov_tbl[sap_ov_tbl[["ledger"]] == "AP" &
+                                !is.na(sap_ov_tbl[["Factura_override"]]), , drop = FALSE]
+          if (nrow(ov_ap)) {
+            ov_lkup <- setNames(trimws(as.character(ov_ap[["Factura_override"]])),
+                                trimws(as.character(ov_ap[["Documento"]])))
+            ov_lkup <- ov_lkup[nzchar(names(ov_lkup))]
+            ref_lkup_tbl[names(ov_lkup)] <- ov_lkup
+          }
+        }
         man_inv_tbl <- tryCatch(shared$manual_inv(), error = function(e) NULL)
         if (!is.null(man_inv_tbl) && nrow(man_inv_tbl) &&
             all(c("Documento", "Factura", "ledger") %in% names(man_inv_tbl))) {
@@ -653,7 +775,7 @@ pagarHoyServer <- function(id, shared) {
             Proveedor = dplyr::case_when(
               ppl_status == "ok" ~ paste0(
                 abono_pfx,
-                '<span class="ph-dot ph-dot-ok" title="Incluido en BanBajío"></span>',
+                '<span class="ph-dot ph-dot-ok" title="Listo para archivo de pagos"></span>',
                 htmltools::htmlEscape(Parte),
                 ' <button class="btn btn-xs btn-link p-0 ms-1 ph-cycle-alias-btn badge bg-success-subtle text-success border border-success-subtle" ',
                 'data-parte="', htmltools::htmlEscape(Parte), '" ',
@@ -695,11 +817,14 @@ pagarHoyServer <- function(id, shared) {
             ),
             Vencimiento = format(FechaVenc, "%d/%m/%Y"),
             Importe_fmt = fmt_money(Importe),
-            row_bg = dplyr::case_when(
+            row_bg_base = dplyr::case_when(
               ppl_status == "ok"       ~ "ph-row-ok",
               ppl_status == "no_clabe" ~ "ph-row-partial",
               TRUE                     ~ "ph-row-nomatch"
-            )
+            ),
+            row_bg = dplyr::if_else(!is.na(status) & status == "confirmed",
+                                     paste(row_bg_base, "ph-row-confirmed"),
+                                     row_bg_base)
           )
 
         tbl <- ann |> dplyr::select(Proveedor, Referencia, Vencimiento, Importe = Importe_fmt)
@@ -712,6 +837,7 @@ pagarHoyServer <- function(id, shared) {
           selection = list(mode = "multiple"),
           options   = list(
             pageLength = 50, dom = "t", scrollX = TRUE, scrollY = "200px",
+            destroy    = TRUE,
             language   = list(emptyTable = "Sin pagos en cola"),
             rowCallback = DT::JS(sprintf(
               "function(row, data, index) {
@@ -732,19 +858,36 @@ pagarHoyServer <- function(id, shared) {
         s_emp   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
         cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur   <- s_emp |> dplyr::filter(Moneda == cur_sel)
-        tbl <- if (nrow(s_cur)) {
-          s_cur |> dplyr::arrange(FechaVenc) |>
-            dplyr::transmute(Cliente = Parte, Documento,
-                             Vencimiento = format(FechaVenc, "%d/%m/%Y"),
-                             Importe = fmt_money(Importe))
-        } else {
-          data.frame(Cliente = character(), Documento = character(),
-                     Vencimiento = character(), Importe = character())
+        if (!nrow(s_cur)) {
+          return(DT::datatable(
+            data.frame(Cliente = character(), Documento = character(),
+                       Vencimiento = character(), Importe = character()),
+            escape = FALSE, rownames = FALSE,
+            options = list(pageLength = 50, dom = "t", scrollX = TRUE, scrollY = "180px",
+                           destroy = TRUE,
+                           language = list(emptyTable = "Sin cobros esperados"))))
         }
+        s_sorted    <- s_cur |> dplyr::arrange(FechaVenc)
+        row_classes <- dplyr::if_else(!is.na(s_sorted$status) & s_sorted$status == "confirmed",
+                                       "ph-row-confirmed", "")
+        tbl <- s_sorted |>
+          dplyr::transmute(Cliente = Parte, Documento,
+                           Vencimiento = format(FechaVenc, "%d/%m/%Y"),
+                           Importe = fmt_money(Importe))
         DT::datatable(tbl, escape = FALSE, rownames = FALSE,
           selection = list(mode = "multiple"),
           options   = list(pageLength = 50, dom = "t", scrollX = TRUE, scrollY = "180px",
-                           language = list(emptyTable = "Sin cobros esperados")))
+                           destroy = TRUE,
+                           language = list(emptyTable = "Sin cobros esperados"),
+                           rowCallback = DT::JS(sprintf(
+                             "function(row, data, index) {
+                               var classes = %s;
+                               if (index < classes.length && classes[index] !== '') {
+                                 $(row).addClass(classes[index]);
+                               }
+                             }",
+                             jsonlite::toJSON(row_classes)
+                           ))))
       }, server = FALSE)
 
       # ── PPL preview + download flow ──────────────────────────────────────
@@ -752,14 +895,22 @@ pagarHoyServer <- function(id, shared) {
       observeEvent(input[[paste0("dl_preview_", emp)]], {
         s_emp   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
         cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        if (!toupper(cur_sel) %in% c("MXN", "USD")) {
+          showNotification(
+            paste0("Solo MXN y USD están soportados para el archivo de pagos. Moneda: ", cur_sel, "."),
+            type = "error", duration = 6)
+          return()
+        }
         s_cur   <- s_emp |> dplyr::filter(Moneda == cur_sel)
-        sel     <- input[[paste0("tbl_ap_", emp, "_rows_selected")]] %||% seq_len(nrow(s_cur))
-        rows    <- s_cur[sel, ]
-        if (!nrow(rows)) {
+        ann_all <- .annotate_ap_cached(s_cur, emp) |> dplyr::arrange(FechaVenc)
+        raw_sel <- input[[paste0("tbl_ap_", emp, "_rows_selected")]]
+        sel     <- if (length(raw_sel)) raw_sel[raw_sel >= 1L & raw_sel <= nrow(ann_all)]
+        if (!length(sel)) sel <- seq_len(nrow(ann_all))
+        ann     <- ann_all[sel, , drop = FALSE]
+        if (!nrow(ann)) {
           showNotification("Selecciona facturas primero.", type = "warning"); return()
         }
 
-        ann  <- .annotate_ap_cached(rows, emp)
         ok   <- ann |> dplyr::filter(ppl_status == "ok")
         skip <- ann |> dplyr::filter(ppl_status != "ok")
 
@@ -793,12 +944,12 @@ pagarHoyServer <- function(id, shared) {
           if (nzchar(r)) r else d
         }
 
-        # Origin account from bancos catalog
-        cuenta_origen <- get_cuenta_ppl(emp, cur_sel, shared)
+        # Origin accounts for selector
+        cuenta_data <- get_cuentas_ppl_data(emp, cur_sel, shared)
 
         showModal(modalDialog(
           title = tagList(icon("file-arrow-down"),
-                          paste0(" BanBajío PPL — ", emp, " ", cur_sel)),
+                          paste0(" Archivo de pagos — ", emp, " ", cur_sel)),
           size  = "m",
           easyClose = TRUE,
 
@@ -847,14 +998,56 @@ pagarHoyServer <- function(id, shared) {
                      "Agrega estos proveedores al Catálogo (módulo Bancos) para incluirlos.")
             ) else NULL,
 
-            if (!nzchar(cuenta_origen))
-              tags$div(class = "alert alert-warning small",
+            if (toupper(cur_sel) != "MXN" &&
+                !is.null(cuenta_data) && nrow(cuenta_data) > 0 &&
+                any(grepl("(?i)baj.o", cuenta_data$banco, perl = TRUE)))
+              tags$div(class = "alert alert-info small mb-2",
+                icon("circle-info"),
+                " BanBajío requiere introducir Clasificación de transacción al cargar el archivo en su plataforma.")
+            else NULL,
+
+            if (is.null(cuenta_data) || !nrow(cuenta_data))
+              tags$div(class = "alert alert-warning small mb-0",
                 icon("triangle-exclamation"),
                 " Cuenta origen no configurada. Ve a Bancos → Cuentas para registrar la cuenta de ",
-                emp, ".")
-            else
-              tags$p(class = "small text-muted",
-                "Cuenta origen: ", tags$code(cuenta_origen))
+                emp, " (", cur_sel, ").")
+            else if (nrow(cuenta_data) == 1L) {
+              cd <- cuenta_data[1L, ]
+              tags$div(class = "border rounded px-3 py-2 small d-flex align-items-center gap-2",
+                icon("building-columns"),
+                tags$div(
+                  tags$span(class = "fw-semibold",
+                            if (nzchar(cd$banco)) cd$banco else cd$cuenta),
+                  if (nzchar(cd$alias))
+                    tags$span(class = "badge bg-secondary ms-2 fw-normal", cd$alias),
+                  tags$span(class = "text-muted ms-2", cd$cuenta)
+                )
+              )
+            } else
+              radioButtons(
+                ns(paste0("ppl_cuenta_", emp)), "Cuenta origen:",
+                choiceNames = lapply(seq_len(nrow(cuenta_data)), function(i) {
+                  cd <- cuenta_data[i, ]
+                  div(class = "d-flex align-items-center gap-2 py-1",
+                    div(
+                      div(class = "fw-semibold lh-sm",
+                          if (nzchar(cd$banco)) cd$banco else cd$cuenta),
+                      div(class = "text-muted small",
+                          cd$cuenta,
+                          if (nzchar(cd$alias))
+                            tags$span(class = "badge bg-secondary ms-1 fw-normal", cd$alias),
+                          if (isTRUE(cd$is_ppl_default))
+                            tags$span(class = "badge bg-primary-subtle border border-primary-subtle text-primary ms-1 fw-normal",
+                                      "predeterminado"))
+                    )
+                  )
+                }),
+                choiceValues = cuenta_data$cuenta,
+                selected = {
+                  def <- cuenta_data$cuenta[cuenta_data$is_ppl_default]
+                  if (length(def)) def[1L] else cuenta_data$cuenta[1L]
+                }
+              )
           ),
 
           footer = tagList(
@@ -877,16 +1070,29 @@ pagarHoyServer <- function(id, shared) {
           s_emp   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
           cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
           s_cur   <- s_emp |> dplyr::filter(Moneda == cur_sel)
-          sel     <- input[[paste0("tbl_ap_", emp, "_rows_selected")]] %||% seq_len(nrow(s_cur))
-          rows    <- s_cur[sel, ]
-          ann     <- .annotate_ap_cached(rows, emp) |> dplyr::filter(ppl_status == "ok")
+          ann_all  <- .annotate_ap_cached(s_cur, emp) |> dplyr::arrange(FechaVenc)
+          raw_sel  <- input[[paste0("tbl_ap_", emp, "_rows_selected")]]
+          sel      <- if (length(raw_sel)) raw_sel[raw_sel >= 1L & raw_sel <= nrow(ann_all)]
+          if (!length(sel)) sel <- seq_len(nrow(ann_all))
+          ann      <- ann_all[sel, , drop = FALSE] |> dplyr::filter(ppl_status == "ok")
 
           if (!nrow(ann)) {
             writeLines("# No hay proveedores con alias en catálogo", file)
             return()
           }
 
-          cuenta_origen <- get_cuenta_ppl(emp, cur_sel, shared)
+          cuenta_origen <- {
+            sel_cta <- input[[paste0("ppl_cuenta_", emp)]] %||% ""
+            if (nzchar(sel_cta)) {
+              sel_cta
+            } else {
+              cd <- get_cuentas_ppl_data(emp, cur_sel, shared)
+              if (!is.null(cd) && nrow(cd)) {
+                def <- cd$cuenta[cd$is_ppl_default]
+                if (length(def)) def[1L] else cd$cuenta[1L]
+              } else get_cuenta_ppl(emp, cur_sel, shared)
+            }
+          }
           # Look up Factura (Referencia) from live SAP data to use as concepto.
           # Falls back to Documento if Factura is missing or blank.
           sap_ap   <- tryCatch(shared$sap_data()[["AP"]], error = function(e) NULL)
@@ -914,7 +1120,14 @@ pagarHoyServer <- function(id, shared) {
               alias      = alias,
               clabe_dest = clabe_dest,
               banco_dest = banco_dest,
-              medio_pago = medio_pago,
+              medio_pago = {
+                is_bajio <- grepl("^030$", trimws(banco_dest))
+                dplyr::case_when(
+                  toupper(cur_sel) == "USD"            ~ "SPD",
+                  toupper(cur_sel) == "MXN" & is_bajio ~ "BCO",
+                  TRUE                                 ~ "SPI"
+                )
+              },
               importe    = Importe,
               concepto   = {
                 doc <- trimws(as.character(Documento))
@@ -942,11 +1155,52 @@ pagarHoyServer <- function(id, shared) {
             type = "warning", duration = 3)
           return()
         }
-        rows  <- s_cur[sel, ]
+        rows  <- (s_cur |> dplyr::arrange(FechaVenc))[sel, , drop = FALSE]
         if (!nrow(rows)) return()
+        sap_conf <- rows |> dplyr::filter(
+          !is.na(status) & status == "confirmed" &
+          (is.na(source) | source == "sap"))
+        if (nrow(sap_conf)) {
+          showNotification(
+            paste0(nrow(sap_conf), " pago(s) confirmado(s) de SAP no se pueden quitar. ",
+                   "Solo SAP puede cerrarlos."),
+            type = "warning", duration = 4)
+          rows <- dplyr::anti_join(rows, sap_conf, by = "id")
+          if (!nrow(rows)) return()
+        }
         ph <- unstage_pagar_hoy(shared$pagar_hoy_db(),
-               dplyr::mutate(rows, ledger = "AP") |> dplyr::select(ledger, Empresa, Moneda, Documento))
-        shared$pagar_hoy_db(ph); save_pagar_hoy(ph)
+               rows |> dplyr::select(id), keys = "id")
+        shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$active_client_id())
+
+        # Revert any pasivos provisions linked to the removed rows
+        prov_ids <- rows$provision_id[!is.na(rows$provision_id) &
+                                        nzchar(rows$provision_id %||% "")]
+        if (length(prov_ids)) {
+          provs <- tryCatch(shared$pasivos_provisions_db(), error = function(e) NULL)
+          if (!is.null(provs) && nrow(provs)) {
+            idx_p <- which(provs$id %in% prov_ids)
+            if (length(idx_p)) {
+              manual_ids <- provs$manual_inv_id[idx_p]
+              manual_ids <- manual_ids[!is.na(manual_ids) & nzchar(manual_ids %||% "")]
+              provs$estado[idx_p]        <- "provisional"
+              provs$manual_inv_id[idx_p] <- NA_character_
+              provs$pagar_hoy_id[idx_p]  <- NA_character_
+              tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
+              shared$pasivos_provisions_db(provs)
+              tryCatch({ save_pasivos_provisions(provs, client_id = shared$active_client_id()); bump_sync_version("pasivos_provisions_db") },
+                       error = function(e) NULL)
+              if (length(manual_ids)) {
+                mi <- tryCatch(shared$manual_inv(), error = function(e) NULL)
+                if (!is.null(mi) && nrow(mi)) {
+                  mi <- mi[!mi$id %in% manual_ids, , drop = FALSE]
+                  shared$manual_inv(mi)
+                  tryCatch(save_manual(mi, client_id = shared$active_client_id()), error = function(e) NULL)
+                }
+              }
+            }
+          }
+        }
+
         showNotification(paste0(nrow(rows), " pago(s) quitado(s)."), type = "message", duration = 2)
       }, ignoreInit = TRUE)
 
@@ -962,11 +1216,22 @@ pagarHoyServer <- function(id, shared) {
             type = "warning", duration = 3)
           return()
         }
-        rows  <- s_cur[sel, ]
+        rows  <- (s_cur |> dplyr::arrange(FechaVenc))[sel, , drop = FALSE]
         if (!nrow(rows)) return()
+        sap_conf <- rows |> dplyr::filter(
+          !is.na(status) & status == "confirmed" &
+          (is.na(source) | source == "sap"))
+        if (nrow(sap_conf)) {
+          showNotification(
+            paste0(nrow(sap_conf), " cobro(s) confirmado(s) de SAP no se pueden quitar. ",
+                   "Solo SAP puede cerrarlos."),
+            type = "warning", duration = 4)
+          rows <- dplyr::anti_join(rows, sap_conf, by = "id")
+          if (!nrow(rows)) return()
+        }
         ph <- unstage_pagar_hoy(shared$pagar_hoy_db(),
-               dplyr::mutate(rows, ledger = "AR") |> dplyr::select(ledger, Empresa, Moneda, Documento))
-        shared$pagar_hoy_db(ph); save_pagar_hoy(ph)
+               rows |> dplyr::select(id), keys = "id")
+        shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$active_client_id())
         showNotification(paste0(nrow(rows), " cobro(s) quitado(s)."), type = "message", duration = 2)
       }, ignoreInit = TRUE)
 
@@ -977,7 +1242,7 @@ pagarHoyServer <- function(id, shared) {
       .bancos_cuenta_choices_for <- function(emp_name, moneda) {
         cts_raw <- tryCatch(
           if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas()
-          else load_ctas_cuentas(),
+          else load_ctas_cuentas(client_id = shared$active_client_id()),
           error = function(e) NULL
         )
         if (is.null(cts_raw) || !nrow(cts_raw)) return(c("Sin cuenta registrada" = ""))
@@ -1002,7 +1267,7 @@ pagarHoyServer <- function(id, shared) {
 
         if (!nrow(act)) return(c("Sin cuenta registrada" = ""))
         # Resolve bank names for readable labels
-        bnk     <- tryCatch(load_ctas_bancos(), error = function(e) .schema_ctas_bancos())
+        bnk     <- tryCatch(load_ctas_bancos(client_id = shared$active_client_id()), error = function(e) .schema_ctas_bancos())
         bnk_map <- setNames(bnk$nombre, bnk$id)
         setNames(act$id,
                  paste0(act$alias, " \u2014 ",
@@ -1013,25 +1278,40 @@ pagarHoyServer <- function(id, shared) {
         s_emp <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
         cur   <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur <- s_emp |> dplyr::filter(Moneda == cur)
-        sel   <- input[[paste0("tbl_ap_", emp, "_rows_selected")]] %||% seq_len(nrow(s_cur))
-        rows  <- s_cur[sel, ]
+        s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
+        sel      <- input[[paste0("tbl_ap_", emp, "_rows_selected")]] %||% seq_len(nrow(s_sorted))
+        rows     <- s_sorted[sel, , drop = FALSE]
         if (!nrow(rows)) { showNotification("Selecciona facturas.", type = "warning"); return() }
 
         cuenta_choices <- .bancos_cuenta_choices_for(emp, cur)
 
+        no_cta_ap <- all(unname(cuenta_choices) == "")
         showModal(modalDialog(
           title = paste0("Confirmar pagos \u2014 ", emp), size = "m", easyClose = TRUE,
           footer = tagList(modalButton("Cancelar"),
-            actionButton(ns(paste0("do_confirm_ap_", emp)),
-              paste0("\u2713 Confirmar ", nrow(rows), " pago(s)"),
-              class = "btn btn-success")),
+            tags$button(
+              type    = "button",
+              class   = "btn btn-success",
+              onclick = sprintf(
+                "Shiny.setInputValue('%s', {nonce: Math.random()}, {priority:'event'})",
+                ns(paste0("do_confirm_ap_", emp))
+              ),
+              paste0("\u2713 Confirmar ", nrow(rows), " pago(s)")
+            )),
+          div(class = "mb-2 p-2 bg-light rounded border-start border-3 border-success",
+            tags$span(class = "fw-semibold", emp),
+            tags$span(class = "badge bg-secondary ms-2", cur)
+          ),
           p(paste0(nrow(rows), " factura(s) \u2014 ", cur, " ",
                    fmt_money(sum(rows$Importe, na.rm = TRUE)))),
           div(class = "row g-2 mb-2",
             div(class = "col-md-7",
               tags$label("Cuenta bancaria", class = "form-label small"),
               selectInput(ns(paste0("conf_cuenta_ap_", emp)), NULL,
-                          choices = cuenta_choices, width = "100%")
+                          choices = cuenta_choices, width = "100%", selectize = FALSE),
+              if (no_cta_ap) tags$small(class = "text-warning d-block mt-1",
+                paste0("Sin cuentas ", cur, " registradas para ", emp,
+                       ". Se confirmar\u00e1 sin cuenta bancaria.")) else NULL
             ),
             div(class = "col-md-5",
               tags$label("Fecha de pago", class = "form-label small"),
@@ -1041,88 +1321,156 @@ pagarHoyServer <- function(id, shared) {
             )
           ),
           tags$ul(lapply(seq_len(min(nrow(rows), 8)), function(i)
-            tags$li(paste0(rows$Parte[i], " \u2014 ", fmt_money(rows$Importe[i])))))
+            tags$li(paste0("[", rows$Empresa[i], "] ", rows$Parte[i],
+                           " \u2014 ", fmt_money(rows$Importe[i])))))
         ))
       }, ignoreInit = TRUE)
 
       observeEvent(input[[paste0("do_confirm_ap_", emp)]], {
-        s_emp      <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
-        cur        <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
-        s_cur      <- s_emp |> dplyr::filter(Moneda == cur)
-        sel        <- input[[paste0("tbl_ap_", emp, "_rows_selected")]] %||% seq_len(nrow(s_cur))
-        rows       <- s_cur[sel, ]; if (!nrow(rows)) return()
-        cuenta_sel <- input[[paste0("conf_cuenta_ap_", emp)]] %||% NA_character_
+        s_emp    <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
+        cur      <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
+        s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
+        raw_sel  <- input[[paste0("tbl_ap_", emp, "_rows_selected")]]
+        sel      <- if (length(raw_sel))
+          raw_sel[raw_sel >= 1L & raw_sel <= nrow(s_sorted)]
+        else
+          seq_len(nrow(s_sorted))
+        if (!length(sel)) sel <- seq_len(nrow(s_sorted))
+        rows <- s_sorted[sel, , drop = FALSE]
+        if (!nrow(rows)) return()
+        cuenta_sel_raw <- input[[paste0("conf_cuenta_ap_", emp)]]
+        cuenta_sel <- if (!is.null(cuenta_sel_raw) && nzchar(trimws(as.character(cuenta_sel_raw)))) cuenta_sel_raw else NA_character_
         fecha_pago <- tryCatch(as.Date(input[[paste0("conf_fecha_ap_", emp)]]),
                                error = function(e) Sys.Date())
 
-        # Remove from staged queue (mark "confirmed" by unstaging)
-        ph <- unstage_pagar_hoy(shared$pagar_hoy_db(),
-                dplyr::mutate(rows, ledger = "AP") |>
-                  dplyr::select(ledger, Empresa, Moneda, Documento))
-        shared$pagar_hoy_db(ph); save_pagar_hoy(ph)
+        # Split: abono rows go to abonos_db; invoice rows go through normal path
+        abono_rows   <- rows |> dplyr::filter(!is.na(tipo_item) & tipo_item == "abono")
+        factura_rows <- rows |> dplyr::filter(is.na(tipo_item)  | tipo_item != "abono")
 
-        # Write to bancos_confirmados only (Historial de confirmaciones)
-        # Does NOT write to bancos_movimientos — confirmed items must not
-        # affect Libro de Banco balance calculations.
-        if (!is.null(shared$bancos_confirmados)) {
+        # Write invoice rows to bancos_confirmados BEFORE unstaging from pagar_hoy.
+        # save_pagar_hoy() bumps the cross-session sync version which triggers the poll
+        # observer to reload bancos_confirmados from S3. Writing to S3 first ensures
+        # the poll reads the updated state rather than the pre-confirmation snapshot.
+        if (nrow(factura_rows) && !is.null(shared$bancos_confirmados)) {
           conf_db <- shared$bancos_confirmados() %||%
             .schema_bancos_confirmados()
 
-          for (i in seq_len(nrow(rows))) {
+          for (i in seq_len(nrow(factura_rows))) {
             new_conf <- tibble::tibble(
               confirmacion_id = uuid::UUIDgenerate(),
-              agenda_item_id  = as.character(rows$id[i]),
+              agenda_item_id  = as.character(factura_rows$id[i]),
               empresa         = as.character(emp),
-              parte           = as.character(rows$Parte[i]),
-              documento       = as.character(rows$Documento[i]),
-              codigo          = as.character(rows$Codigo[i] %||% NA_character_),
-              importe         = rows$Importe[i],
+              parte           = as.character(factura_rows$Parte[i]),
+              documento       = as.character(factura_rows$Documento[i]),
+              codigo          = as.character(factura_rows$Codigo[i] %||% NA_character_),
+              importe         = factura_rows$Importe[i],
               moneda          = as.character(cur),
               cuenta_id       = as.character(cuenta_sel %||% NA_character_),
               fecha           = as.Date(fecha_pago),
               tipo            = "pago",
               mov_id          = NA_character_,
               confirmado_at   = Sys.time(),
-              eliminado       = FALSE
+              eliminado       = FALSE,
+              provision_id    = as.character(factura_rows$provision_id[i] %||% NA_character_)
             )
             conf_db <- dplyr::bind_rows(conf_db, new_conf)
           }
 
           shared$bancos_confirmados(conf_db)
-          tryCatch(
-            save_bancos_confirmados(conf_db),
-            error = function(e)
-              showNotification(paste("Error S3 bancos:", e$message), type = "warning")
+          tryCatch({
+            save_bancos_confirmados(conf_db, client_id = shared$active_client_id())
+            bump_sync_version("bancos_confirmados_db")
+          }, error = function(e)
+            showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
           )
         }
 
-        # Also record in conciliacion for backward compat
-        conc <- rows |> dplyr::mutate(
-          id = purrr::map_chr(seq_len(dplyr::n()), ~uuid::UUIDgenerate()),
-          tipo = "pago", FechaPago = fecha_pago,
-          FechaContabilizacion = Sys.Date(),
-          FechaVencimiento = FechaVenc,
-          cuenta_id = cuenta_sel %||% NA_character_,
-          comision = 0,
-          notas = NA_character_,
-          created_by = shared$current_user(), created_at = Sys.time()
-        ) |> dplyr::select(id, tipo, Empresa, Parte, Documento, Moneda, Importe,
-                            comision, FechaPago, FechaContabilizacion,
-                            FechaVencimiento, cuenta_id, notas, created_by, created_at)
-        new_conc <- dplyr::bind_rows(load_conciliacion(), conc)
-        save_conciliacion(new_conc)
-        if (!is.null(shared$conciliacion_rv))
-          shared$conciliacion_rv(new_conc)
+        # SAP-sourced rows: mark confirmed but keep visible until SAP closes them.
+        # Manual/provision rows and all abono rows: physically remove from queue.
+        ph  <- shared$pagar_hoy_db()
+        now <- Sys.time()
+        sap_fact_ids <- factura_rows$id[
+          is.na(factura_rows$source) | factura_rows$source == "sap"
+        ]
+        man_fact_ids <- factura_rows$id[
+          !is.na(factura_rows$source) & factura_rows$source != "sap"
+        ]
+        if (length(sap_fact_ids)) {
+          idx_ph <- which(ph$id %in% sap_fact_ids)
+          if (length(idx_ph)) {
+            ph$status[idx_ph]       <- "confirmed"
+            ph$confirmed_at[idx_ph] <- now
+          }
+        }
+        rm_ids <- c(man_fact_ids, abono_rows$id)
+        if (length(rm_ids)) {
+          ph <- unstage_pagar_hoy(ph, tibble::tibble(id = rm_ids), keys = "id")
+        }
+        shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$active_client_id())
 
-        # Remove confirmed manual entries from calendar (manual_inv)
+        # Activate abonos: write to abonos_db so calendar balance deduction takes effect
+        if (nrow(abono_rows) && !is.null(shared$abonos_db)) {
+          ab_new <- tibble::tibble(
+            id          = purrr::map_chr(seq_len(nrow(abono_rows)), ~uuid::UUIDgenerate()),
+            ledger      = abono_rows$ledger,
+            Empresa     = abono_rows$Empresa,
+            Moneda      = abono_rows$Moneda,
+            Documento   = abono_rows$Documento,
+            Parte       = abono_rows$Parte,
+            importe     = abono_rows$Importe,
+            fecha_abono = as.Date(fecha_pago),
+            notas       = "",
+            created_by  = shared$current_user(),
+            created_at  = Sys.time(),
+            status      = "active"
+          )
+          ab_updated <- upsert_abono(shared$abonos_db() %||% load_abonos(), ab_new)
+          shared$abonos_db(ab_updated)
+          tryCatch(save_abonos(ab_updated, client_id = shared$active_client_id()),
+                   error = function(e) showNotification(
+                     paste("Error al guardar abono:", e$message), type = "warning"))
+        }
+
+        # Also record invoice rows in conciliacion for backward compat
+        if (nrow(factura_rows)) {
+          conc <- factura_rows |> dplyr::mutate(
+            id = purrr::map_chr(seq_len(dplyr::n()), ~uuid::UUIDgenerate()),
+            tipo = "pago", FechaPago = fecha_pago,
+            FechaContabilizacion = Sys.Date(),
+            FechaVencimiento = FechaVenc,
+            cuenta_id = cuenta_sel %||% NA_character_,
+            comision = 0,
+            notas = NA_character_,
+            created_by = shared$current_user(), created_at = Sys.time()
+          ) |> dplyr::select(id, tipo, Empresa, Parte, Documento, Moneda, Importe,
+                              comision, FechaPago, FechaContabilizacion,
+                              FechaVencimiento, cuenta_id, notas, created_by, created_at)
+          tryCatch({
+            new_conc <- dplyr::bind_rows(load_conciliacion(client_id = shared$active_client_id()), conc)
+            save_conciliacion(new_conc, client_id = shared$active_client_id())
+            if (!is.null(shared$conciliacion_rv))
+              shared$conciliacion_rv(new_conc)
+          }, error = function(e)
+            showNotification(paste("Error al guardar conciliación:", e$message),
+                             type = "warning"))
+        }
+
+        # Remove confirmed provision-derived manual entries from the calendar.
+        # Provision-converted items use separate UUIDs in pagar_hoy and manual_inv,
+        # so match via provision_id FK. Fall back to direct id match for non-provision items.
         if (!is.null(shared$manual_inv)) {
           mi <- shared$manual_inv()
           if (!is.null(mi) && nrow(mi) && "id" %in% names(mi)) {
-            manual_ids <- rows$id[rows$id %in% mi$id]
+            prov_ids_to_remove <- factura_rows$provision_id[!is.na(factura_rows$provision_id)]
+            manual_ids <- if (length(prov_ids_to_remove) && "provision_id" %in% names(mi))
+              mi$id[!is.na(mi$provision_id) & mi$provision_id %in% prov_ids_to_remove]
+            else
+              factura_rows$id[factura_rows$id %in% mi$id]
             if (length(manual_ids)) {
               mi_updated <- mi[!mi$id %in% manual_ids, , drop = FALSE]
               shared$manual_inv(mi_updated)
-              tryCatch(save_manual(mi_updated),
+              tryCatch(save_manual(mi_updated, client_id = shared$active_client_id()),
                        error = function(e) showNotification(
                          paste("Error al eliminar entrada manual:", e$message), type = "warning"))
             }
@@ -1131,35 +1479,65 @@ pagarHoyServer <- function(id, shared) {
 
         .link_counter(.link_counter() + 1L)
         removeModal()
-        showNotification(
-          paste0(nrow(rows), " pago(s) confirmados."),
-          type = "message", duration = 3)
+        {
+          n_pago  <- nrow(factura_rows)
+          n_abono <- nrow(abono_rows)
+          msg <- character(0)
+          if (n_pago  > 0) msg <- c(msg, paste0(n_pago,  " pago(s) confirmado(s)"))
+          if (n_abono > 0) msg <- c(msg, paste0(n_abono, " abono(s) aplicado(s) al saldo"))
+          showNotification(paste(msg, collapse = " · "), type = "message", duration = 3)
+          log_action(shared$current_user(), "pagar_hoy", "confirmar_pago",
+                     paste(msg, collapse = " · "),
+                     target_id = emp,
+                     metadata = list(empresa = emp, n_pago = n_pago, n_abono = n_abono,
+                                     sap_ids = sap_fact_ids, man_ids = man_fact_ids))
+        }
       }, ignoreInit = TRUE)
 
       # ── Confirm AR ─────────────────────────────────────────────────────────
       observeEvent(input[[paste0("confirm_ar_", emp)]], {
-        s_emp <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
-        cur   <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
-        s_cur <- s_emp |> dplyr::filter(Moneda == cur)
-        sel   <- input[[paste0("tbl_ar_", emp, "_rows_selected")]] %||% seq_len(nrow(s_cur))
-        rows  <- s_cur[sel, ]
+        s_emp    <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
+        cur      <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
+        s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
+        raw_sel  <- input[[paste0("tbl_ar_", emp, "_rows_selected")]]
+        sel      <- if (length(raw_sel))
+          raw_sel[raw_sel >= 1L & raw_sel <= nrow(s_sorted)]
+        else
+          seq_len(nrow(s_sorted))
+        if (!length(sel)) sel <- seq_len(nrow(s_sorted))
+        rows  <- s_sorted[sel, , drop = FALSE]
         if (!nrow(rows)) { showNotification("Selecciona facturas.", type = "warning"); return() }
 
         cuenta_choices <- .bancos_cuenta_choices_for(emp, cur)
 
+        no_cta_ar <- all(unname(cuenta_choices) == "")
         showModal(modalDialog(
           title = paste0("Confirmar cobros \u2014 ", emp), size = "m", easyClose = TRUE,
           footer = tagList(modalButton("Cancelar"),
-            actionButton(ns(paste0("do_confirm_ar_", emp)),
-              paste0("\u2713 Confirmar ", nrow(rows), " cobro(s)"),
-              class = "btn btn-primary")),
+            tags$button(
+              type    = "button",
+              class   = "btn btn-primary",
+              onclick = sprintf(
+                "Shiny.setInputValue('%s', {nonce: Math.random()}, {priority:'event'})",
+                ns(paste0("do_confirm_ar_", emp))
+              ),
+              paste0("\u2713 Confirmar ", nrow(rows), " cobro(s)")
+            )),
+          div(class = "mb-2 p-2 bg-light rounded border-start border-3 border-primary",
+            tags$span(class = "fw-semibold", emp),
+            tags$span(class = "badge bg-secondary ms-2", cur)
+          ),
           p(paste0(nrow(rows), " factura(s) \u2014 ", cur, " ",
                    fmt_money(sum(rows$Importe, na.rm = TRUE)))),
           div(class = "row g-2 mb-2",
             div(class = "col-md-7",
               tags$label("Cuenta bancaria", class = "form-label small"),
               selectInput(ns(paste0("conf_cuenta_ar_", emp)), NULL,
-                          choices = cuenta_choices, width = "100%")
+                          choices = cuenta_choices, width = "100%", selectize = FALSE),
+              if (no_cta_ar) tags$small(class = "text-warning d-block mt-1",
+                paste0("Sin cuentas ", cur, " registradas para ", emp,
+                       ". Se confirmar\u00e1 sin cuenta bancaria.")) else NULL
             ),
             div(class = "col-md-5",
               tags$label("Fecha de cobro", class = "form-label small"),
@@ -1169,41 +1547,50 @@ pagarHoyServer <- function(id, shared) {
             )
           ),
           tags$ul(lapply(seq_len(min(nrow(rows), 8)), function(i)
-            tags$li(paste0(rows$Parte[i], " \u2014 ", fmt_money(rows$Importe[i])))))
+            tags$li(paste0("[", rows$Empresa[i], "] ", rows$Parte[i],
+                           " \u2014 ", fmt_money(rows$Importe[i])))))
         ))
       }, ignoreInit = TRUE)
 
       observeEvent(input[[paste0("do_confirm_ar_", emp)]], {
-        s_emp      <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
-        cur        <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
-        s_cur      <- s_emp |> dplyr::filter(Moneda == cur)
-        sel        <- input[[paste0("tbl_ar_", emp, "_rows_selected")]] %||% seq_len(nrow(s_cur))
-        rows       <- s_cur[sel, ]; if (!nrow(rows)) return()
-        cuenta_sel <- input[[paste0("conf_cuenta_ar_", emp)]] %||% NA_character_
+        s_emp    <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
+        cur      <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
+        s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
+        raw_sel  <- input[[paste0("tbl_ar_", emp, "_rows_selected")]]
+        sel      <- if (length(raw_sel))
+          raw_sel[raw_sel >= 1L & raw_sel <= nrow(s_sorted)]
+        else
+          seq_len(nrow(s_sorted))
+        if (!length(sel)) sel <- seq_len(nrow(s_sorted))
+        rows <- s_sorted[sel, , drop = FALSE]
+        if (!nrow(rows)) return()
+        cuenta_sel_raw <- input[[paste0("conf_cuenta_ar_", emp)]]
+        cuenta_sel <- if (!is.null(cuenta_sel_raw) && nzchar(trimws(as.character(cuenta_sel_raw)))) cuenta_sel_raw else NA_character_
         fecha_cobro<- tryCatch(as.Date(input[[paste0("conf_fecha_ar_", emp)]]),
                                error = function(e) Sys.Date())
 
-        ph <- unstage_pagar_hoy(shared$pagar_hoy_db(),
-                dplyr::mutate(rows, ledger = "AR") |>
-                  dplyr::select(ledger, Empresa, Moneda, Documento))
-        shared$pagar_hoy_db(ph); save_pagar_hoy(ph)
+        # Split: abono rows go to abonos_db; invoice rows go through normal path
+        abono_rows   <- rows |> dplyr::filter(!is.na(tipo_item) & tipo_item == "abono")
+        factura_rows <- rows |> dplyr::filter(is.na(tipo_item)  | tipo_item != "abono")
 
-        # Write to bancos_confirmados only (Historial de confirmaciones)
-        # Does NOT write to bancos_movimientos — confirmed items must not
-        # affect Libro de Banco balance calculations.
-        if (!is.null(shared$bancos_confirmados)) {
+        # Write invoice rows to bancos_confirmados BEFORE unstaging from pagar_hoy.
+        # save_pagar_hoy() bumps the cross-session sync version which triggers the poll
+        # observer to reload bancos_confirmados from S3. Writing to S3 first ensures
+        # the poll reads the updated state rather than the pre-confirmation snapshot.
+        if (nrow(factura_rows) && !is.null(shared$bancos_confirmados)) {
           conf_db <- shared$bancos_confirmados() %||%
             .schema_bancos_confirmados()
 
-          for (i in seq_len(nrow(rows))) {
+          for (i in seq_len(nrow(factura_rows))) {
             new_conf <- tibble::tibble(
               confirmacion_id = uuid::UUIDgenerate(),
-              agenda_item_id  = as.character(rows$id[i]),
+              agenda_item_id  = as.character(factura_rows$id[i]),
               empresa         = as.character(emp),
-              parte           = as.character(rows$Parte[i]),
-              documento       = as.character(rows$Documento[i]),
-              codigo          = as.character(rows$Codigo[i] %||% NA_character_),
-              importe         = rows$Importe[i],
+              parte           = as.character(factura_rows$Parte[i]),
+              documento       = as.character(factura_rows$Documento[i]),
+              codigo          = as.character(factura_rows$Codigo[i] %||% NA_character_),
+              importe         = factura_rows$Importe[i],
               moneda          = as.character(cur),
               cuenta_id       = as.character(cuenta_sel %||% NA_character_),
               fecha           = as.Date(fecha_cobro),
@@ -1216,39 +1603,98 @@ pagarHoyServer <- function(id, shared) {
           }
 
           shared$bancos_confirmados(conf_db)
-          tryCatch(
-            save_bancos_confirmados(conf_db),
-            error = function(e)
-              showNotification(paste("Error S3 bancos:", e$message), type = "warning")
+          tryCatch({
+            save_bancos_confirmados(conf_db, client_id = shared$active_client_id())
+            bump_sync_version("bancos_confirmados_db")
+          }, error = function(e)
+            showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
           )
         }
 
-        conc <- rows |> dplyr::mutate(
-          id = purrr::map_chr(seq_len(dplyr::n()), ~uuid::UUIDgenerate()),
-          tipo = "cobro", FechaPago = fecha_cobro,
-          FechaContabilizacion = Sys.Date(),
-          FechaVencimiento = FechaVenc,
-          cuenta_id = cuenta_sel %||% NA_character_,
-          comision = 0,
-          notas = NA_character_,
-          created_by = shared$current_user(), created_at = Sys.time()
-        ) |> dplyr::select(id, tipo, Empresa, Parte, Documento, Moneda, Importe,
-                            comision, FechaPago, FechaContabilizacion,
-                            FechaVencimiento, cuenta_id, notas, created_by, created_at)
-        new_conc <- dplyr::bind_rows(load_conciliacion(), conc)
-        save_conciliacion(new_conc)
-        if (!is.null(shared$conciliacion_rv))
-          shared$conciliacion_rv(new_conc)
+        # SAP-sourced rows: mark confirmed but keep visible until SAP closes them.
+        # Manual/provision rows and all abono rows: physically remove from queue.
+        ph  <- shared$pagar_hoy_db()
+        now <- Sys.time()
+        sap_fact_ids <- factura_rows$id[
+          is.na(factura_rows$source) | factura_rows$source == "sap"
+        ]
+        man_fact_ids <- factura_rows$id[
+          !is.na(factura_rows$source) & factura_rows$source != "sap"
+        ]
+        if (length(sap_fact_ids)) {
+          idx_ph <- which(ph$id %in% sap_fact_ids)
+          if (length(idx_ph)) {
+            ph$status[idx_ph]       <- "confirmed"
+            ph$confirmed_at[idx_ph] <- now
+          }
+        }
+        rm_ids <- c(man_fact_ids, abono_rows$id)
+        if (length(rm_ids)) {
+          ph <- unstage_pagar_hoy(ph, tibble::tibble(id = rm_ids), keys = "id")
+        }
+        shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$active_client_id())
 
-        # Remove confirmed manual entries from calendar (manual_inv)
+        # Activate abonos: write to abonos_db so calendar balance deduction takes effect
+        if (nrow(abono_rows) && !is.null(shared$abonos_db)) {
+          ab_new <- tibble::tibble(
+            id          = purrr::map_chr(seq_len(nrow(abono_rows)), ~uuid::UUIDgenerate()),
+            ledger      = abono_rows$ledger,
+            Empresa     = abono_rows$Empresa,
+            Moneda      = abono_rows$Moneda,
+            Documento   = abono_rows$Documento,
+            Parte       = abono_rows$Parte,
+            importe     = abono_rows$Importe,
+            fecha_abono = as.Date(fecha_cobro),
+            notas       = "",
+            created_by  = shared$current_user(),
+            created_at  = Sys.time(),
+            status      = "active"
+          )
+          ab_updated <- upsert_abono(shared$abonos_db() %||% load_abonos(), ab_new)
+          shared$abonos_db(ab_updated)
+          tryCatch(save_abonos(ab_updated, client_id = shared$active_client_id()),
+                   error = function(e) showNotification(
+                     paste("Error al guardar abono:", e$message), type = "warning"))
+        }
+
+        if (nrow(factura_rows)) {
+          conc <- factura_rows |> dplyr::mutate(
+            id = purrr::map_chr(seq_len(dplyr::n()), ~uuid::UUIDgenerate()),
+            tipo = "cobro", FechaPago = fecha_cobro,
+            FechaContabilizacion = Sys.Date(),
+            FechaVencimiento = FechaVenc,
+            cuenta_id = cuenta_sel %||% NA_character_,
+            comision = 0,
+            notas = NA_character_,
+            created_by = shared$current_user(), created_at = Sys.time()
+          ) |> dplyr::select(id, tipo, Empresa, Parte, Documento, Moneda, Importe,
+                              comision, FechaPago, FechaContabilizacion,
+                              FechaVencimiento, cuenta_id, notas, created_by, created_at)
+          tryCatch({
+            new_conc <- dplyr::bind_rows(load_conciliacion(client_id = shared$active_client_id()), conc)
+            save_conciliacion(new_conc, client_id = shared$active_client_id())
+            if (!is.null(shared$conciliacion_rv))
+              shared$conciliacion_rv(new_conc)
+          }, error = function(e)
+            showNotification(paste("Error al guardar conciliación:", e$message),
+                             type = "warning"))
+        }
+
+        # Remove confirmed provision-derived manual entries from the calendar.
+        # Provision-converted items use separate UUIDs in pagar_hoy and manual_inv,
+        # so match via provision_id FK. Fall back to direct id match for non-provision items.
         if (!is.null(shared$manual_inv)) {
           mi <- shared$manual_inv()
           if (!is.null(mi) && nrow(mi) && "id" %in% names(mi)) {
-            manual_ids <- rows$id[rows$id %in% mi$id]
+            prov_ids_to_remove <- factura_rows$provision_id[!is.na(factura_rows$provision_id)]
+            manual_ids <- if (length(prov_ids_to_remove) && "provision_id" %in% names(mi))
+              mi$id[!is.na(mi$provision_id) & mi$provision_id %in% prov_ids_to_remove]
+            else
+              factura_rows$id[factura_rows$id %in% mi$id]
             if (length(manual_ids)) {
               mi_updated <- mi[!mi$id %in% manual_ids, , drop = FALSE]
               shared$manual_inv(mi_updated)
-              tryCatch(save_manual(mi_updated),
+              tryCatch(save_manual(mi_updated, client_id = shared$active_client_id()),
                        error = function(e) showNotification(
                          paste("Error al eliminar entrada manual:", e$message), type = "warning"))
             }
@@ -1257,9 +1703,19 @@ pagarHoyServer <- function(id, shared) {
 
         .link_counter(.link_counter() + 1L)
         removeModal()
-        showNotification(
-          paste0(nrow(rows), " cobro(s) confirmados."),
-          type = "message", duration = 3)
+        {
+          n_cobro <- nrow(factura_rows)
+          n_abono <- nrow(abono_rows)
+          msg <- character(0)
+          if (n_cobro  > 0) msg <- c(msg, paste0(n_cobro,  " cobro(s) confirmado(s)"))
+          if (n_abono  > 0) msg <- c(msg, paste0(n_abono,  " abono(s) aplicado(s) al saldo"))
+          showNotification(paste(msg, collapse = " · "), type = "message", duration = 3)
+          log_action(shared$current_user(), "pagar_hoy", "confirmar_cobro",
+                     paste(msg, collapse = " · "),
+                     target_id = emp,
+                     metadata = list(empresa = emp, n_cobro = n_cobro, n_abono = n_abono,
+                                     sap_ids = sap_fact_ids, man_ids = man_fact_ids))
+        }
       }, ignoreInit = TRUE)
 
       # ── Interco map button ────────────────────────────────────────────────────
@@ -1328,18 +1784,18 @@ pagarHoyServer <- function(id, shared) {
       can_link <- .can_link()
       provs <- tryCatch(
         if (!is.null(shared$proveedores_db)) shared$proveedores_db()
-        else load_proveedores(),
+        else load_proveedores(client_id = shared$active_client_id()),
         error = function(e) NULL
       )
       if (is.null(provs)) return(NULL)
 
-      s   <- tolower(search_txt)
+      s   <- strip_accents(tolower(search_txt))
       act <- provs[!is.na(provs$activo) & provs$activo == TRUE, ]
       hits <- act[
-        grepl(s, tolower(act$nombre    %||% ""), fixed = TRUE) |
-        grepl(s, tolower(act$alias     %||% ""), fixed = TRUE) |
-        grepl(s, tolower(act$rfc       %||% ""), fixed = TRUE) |
-        grepl(s, tolower(act$no_cuenta %||% ""), fixed = TRUE),
+        grepl(s, strip_accents(tolower(act$nombre    %||% "")), fixed = TRUE) |
+        grepl(s, strip_accents(tolower(act$alias     %||% "")), fixed = TRUE) |
+        grepl(s, strip_accents(tolower(act$rfc       %||% "")), fixed = TRUE) |
+        grepl(s, strip_accents(tolower(act$no_cuenta %||% "")), fixed = TRUE),
       ]
 
       if (nrow(hits) == 0)
@@ -1397,12 +1853,12 @@ pagarHoyServer <- function(id, shared) {
       can_link  <- .can_link()
       provs     <- tryCatch(
         if (!is.null(shared$proveedores_db)) shared$proveedores_db()
-        else load_proveedores(),
+        else load_proveedores(client_id = shared$active_client_id()),
         error = function(e) NULL
       )
       override_map <- tryCatch(
         if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db()
-        else load_parte_alias_map(),
+        else load_parte_alias_map(client_id = shared$active_client_id()),
         error = function(e) NULL
       )
 
@@ -1558,8 +2014,8 @@ pagarHoyServer <- function(id, shared) {
 
       am  <- tryCatch(
         if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db()
-        else load_parte_alias_map(),
-        error = function(e) load_parte_alias_map()
+        else load_parte_alias_map(client_id = shared$active_client_id()),
+        error = function(e) load_parte_alias_map(client_id = shared$active_client_id())
       )
 
       # Upsert: remove existing entry for this Parte+Empresa, add new one
@@ -1574,7 +2030,7 @@ pagarHoyServer <- function(id, shared) {
         linked_at = as.character(Sys.time())
       ))
 
-      save_parte_alias_map(am)
+      save_parte_alias_map(am, client_id = shared$active_client_id())
       if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db(am)
 
       # Invalidate annotation cache for this parte so it re-annotates immediately
@@ -1597,15 +2053,15 @@ pagarHoyServer <- function(id, shared) {
 
       am <- tryCatch(
         if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db()
-        else load_parte_alias_map(),
-        error = function(e) load_parte_alias_map()
+        else load_parte_alias_map(client_id = shared$active_client_id()),
+        error = function(e) load_parte_alias_map(client_id = shared$active_client_id())
       )
       am <- am[!(toupper(trimws(am$Parte)) == toupper(parte) &
                  (am$Empresa == emp |
                   (emp == "" & (is.na(am$Empresa) | am$Empresa == "")))),
                , drop = FALSE]
 
-      save_parte_alias_map(am)
+      save_parte_alias_map(am, client_id = shared$active_client_id())
       if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db(am)
       rm(list = ls(.annot_cache), envir = .annot_cache)
       .link_counter(.link_counter() + 1L)
@@ -1686,7 +2142,106 @@ pagarHoyServer <- function(id, shared) {
       )
     }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
-    # ── Download all ZIP ─────────────────────────────────────────────────────
+    # ── Download all — Step 1: preview modal ─────────────────────────────────
+    observeEvent(input$preview_all, {
+      s <- staged() |> dplyr::filter(ledger == "AP")
+      if (!nrow(s)) {
+        showNotification("No hay pagos en la agenda.", type = "warning"); return()
+      }
+
+      # Build Referencia lookup (Documento → Factura) same as download content fn
+      sap_ap_pv <- tryCatch(shared$sap_data()[["AP"]], error = function(e) NULL)
+      ref_lkup_pv <- if (!is.null(sap_ap_pv) &&
+                         "Factura"   %in% names(sap_ap_pv) &&
+                         "Documento" %in% names(sap_ap_pv)) {
+        setNames(trimws(as.character(sap_ap_pv[["Factura"]] %||% "")),
+                 trimws(as.character(sap_ap_pv[["Documento"]])))
+      } else character(0)
+      man_inv_pv <- tryCatch(shared$manual_inv(), error = function(e) NULL)
+      if (!is.null(man_inv_pv) && nrow(man_inv_pv) &&
+          all(c("Documento","Factura","ledger") %in% names(man_inv_pv))) {
+        man_ap_pv <- man_inv_pv[man_inv_pv$ledger == "AP", , drop = FALSE]
+        if (nrow(man_ap_pv)) {
+          man_lk <- setNames(trimws(as.character(man_ap_pv[["Factura"]] %||% "")),
+                             trimws(as.character(man_ap_pv[["Documento"]])))
+          man_lk <- man_lk[nzchar(names(man_lk))]
+          ref_lkup_pv[names(man_lk)] <- man_lk
+        }
+      }
+      .ref_pv <- function(doc) {
+        d <- trimws(as.character(doc))
+        r <- if (length(ref_lkup_pv)) { rv <- ref_lkup_pv[d]; if (is.na(rv)) "" else as.character(rv) } else ""
+        if (nzchar(r)) r else d
+      }
+
+      # Summary table: one row per AP item, sorted by Empresa then FechaVenc
+      tbl <- s |>
+        dplyr::arrange(Empresa, Moneda, FechaVenc) |>
+        dplyr::transmute(
+          Empresa    = Empresa,
+          Moneda     = Moneda,
+          Parte      = Parte,
+          Referencia = vapply(Documento, .ref_pv, character(1)),
+          Importe    = fmt_money(Importe)
+        )
+
+      # Totals by currency
+      totals <- s |>
+        dplyr::group_by(Moneda) |>
+        dplyr::summarise(total = sum(Importe, na.rm = TRUE), n = dplyr::n(), .groups = "drop")
+      total_pills <- lapply(seq_len(nrow(totals)), function(i)
+        tags$span(class = "badge bg-secondary me-1",
+          paste0(totals$n[i], " pago(s) ", totals$Moneda[i],
+                 " ", fmt_money(totals$total[i])))
+      )
+
+      # Build a plain HTML table — DT::renderDataTable can't be used inline in showModal
+      tbl_rows <- lapply(seq_len(nrow(tbl)), function(i)
+        tags$tr(
+          tags$td(tbl$Empresa[i]),
+          tags$td(class = "text-center",
+            tags$span(class = if (tbl$Moneda[i] == "MXN") "ph-ctr-pill ph-ctr-mxn"
+                               else "ph-ctr-pill ph-ctr-usd",
+              tbl$Moneda[i])),
+          tags$td(tbl$Parte[i]),
+          tags$td(class = "text-muted small", tbl$Referencia[i]),
+          tags$td(class = "text-end fw-semibold", tbl$Importe[i])
+        )
+      )
+
+      showModal(modalDialog(
+        title = tagList(icon("file-zipper"), " Descargar todos los pagos"),
+        size  = "l",
+        easyClose = TRUE,
+        div(class = "d-flex align-items-center gap-2 mb-3",
+          tags$span(class = "fw-semibold small text-muted", "Resumen:"),
+          !!!total_pills
+        ),
+        div(style = "max-height:420px; overflow-y:auto;",
+          tags$table(class = "table table-sm table-hover small mb-0",
+            tags$thead(class = "table-light",
+              tags$tr(
+                tags$th("Empresa"), tags$th(""), tags$th("Parte"),
+                tags$th("Referencia"), tags$th(class = "text-end", "Importe")
+              )
+            ),
+            tags$tbody(!!!tbl_rows)
+          )
+        ),
+        tags$p(class = "small text-muted mt-2 mb-0",
+          icon("circle-info"),
+          " Solo se incluyen proveedores con alias en el catálogo de Bancos.",
+          " Los demás se omiten del ZIP."),
+        footer = tagList(
+          modalButton("Cancelar"),
+          downloadButton(ns("download_all"),
+            tagList(icon("file-zipper"), paste0(" Descargar ZIP (", nrow(s), " pagos)")),
+            class = "btn btn-primary")
+        )
+      ))
+    }, ignoreInit = TRUE)
+
+    # ── Download all — Step 2: ZIP content ───────────────────────────────────
     output$download_all <- downloadHandler(
       filename = function() paste0("pagos_todos_", format(Sys.Date(), "%d%m%Y"), ".zip"),
       content  = function(file) {
@@ -1723,7 +2278,15 @@ pagarHoyServer <- function(id, shared) {
             ppl_rows <- ann |> dplyr::transmute(
               alias = alias, clabe_dest = clabe_dest,
               banco_dest = banco_dest,
-              medio_pago = medio_pago, importe = Importe,
+              medio_pago = {
+                is_bajio <- grepl("^030$", trimws(banco_dest))
+                dplyr::case_when(
+                  toupper(cur) == "USD"            ~ "SPD",
+                  toupper(cur) == "MXN" & is_bajio ~ "BCO",
+                  TRUE                             ~ "SPI"
+                )
+              },
+              importe = Importe,
               concepto = {
                 doc <- trimws(as.character(Documento))
                 ref <- if (length(ref_lkup_z)) as.character(ref_lkup_z[doc]) else rep("", length(doc))
@@ -1752,10 +2315,23 @@ pagarHoyServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$do_clear_all, {
-      ph <- shared$pagar_hoy_db() |> dplyr::filter(status != "pending")
-      shared$pagar_hoy_db(ph); save_pagar_hoy(ph)
-      removeModal()
-      showNotification("Agenda vaciada.", type = "message", duration = 2)
+      ph      <- shared$pagar_hoy_db() |> dplyr::filter(status != "pending")
+      saved   <- tryCatch({
+        save_pagar_hoy(ph, shared$current_user(), client_id = shared$active_client_id())
+        TRUE
+      }, error = function(e) {
+        message("[AGENDA] do_clear_all save failed: ", e$message)
+        FALSE
+      })
+      if (isTRUE(saved)) {
+        shared$pagar_hoy_db(ph)
+        removeModal()
+        showNotification("Agenda vaciada.", type = "message", duration = 2)
+      } else {
+        removeModal()
+        showNotification("No se pudo guardar. Verifica la conexión e intenta de nuevo.",
+                         type = "error", duration = 6)
+      }
     }, ignoreInit = TRUE)
 
     # ── Load opening balances from Bancos module ─────────────────────────────
@@ -1767,7 +2343,7 @@ pagarHoyServer <- function(id, shared) {
       # Movements: cuenta_id maps to ctas_cuentas$id.
       ctas <- tryCatch(
         if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas()
-        else load_ctas_cuentas(),
+        else load_ctas_cuentas(client_id = shared$active_client_id()),
         error = function(e) NULL
       )
       movs <- tryCatch(shared$bancos_movimientos(), error = function(e) NULL)
@@ -1823,7 +2399,7 @@ pagarHoyServer <- function(id, shared) {
         mon <- dplyr::case_when(
           grepl("peso",  mon, ignore.case = TRUE)              ~ "MXN",
           grepl("d.lar", mon, ignore.case = TRUE, perl = TRUE) ~ "USD",
-          mon %in% c("MXN", "USD")                             ~ mon,
+          mon %in% CURRENCIES                                   ~ mon,
           TRUE                                                  ~ "MXN"
         )
 
@@ -1837,7 +2413,7 @@ pagarHoyServer <- function(id, shared) {
       sa        <- saldos_apertura()
       n_updated <- 0L
       for (emp in all_companies_rv()) {
-        for (mon in c("MXN", "USD")) {
+        for (mon in CURRENCIES) {
           key <- paste0(emp, "_", mon)
           if (!is.null(saldos_por_cuenta[[key]])) {
             sa[[emp]][[mon]] <- saldos_por_cuenta[[key]]
@@ -1846,6 +2422,9 @@ pagarHoyServer <- function(id, shared) {
         }
       }
       saldos_apertura(sa)
+      tryCatch(
+        save_saldos_apertura_user(sa, shared$current_user(), client_id = shared$active_client_id()),
+        error = function(e) NULL)
 
       # Refresh visible numericInputs
       for (emp in all_companies_rv()) {

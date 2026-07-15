@@ -1,0 +1,103 @@
+{
+  "_comment_instructions": [
+    "Replace BUCKET_NAME with your S3 bucket name (e.g. antiguedad-rds-prod).",
+    "Replace CLIENT_ID with the client slug (e.g. networks, hopdesk).",
+    "Remove all '_comment_*' keys before pasting into AWS — JSON doesn't support comments.",
+    "Attach one copy of this policy to each client's IAM user."
+  ],
+
+  "Version": "2012-10-17",
+  "Statement": [
+
+    {
+      "_comment_1": "Allow object-level read + write ONLY within this client's prefix.",
+      "Sid": "ClientPrefixObjectAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:GetObjectVersion",
+        "s3:ListMultipartUploadParts"
+      ],
+      "Resource": "arn:aws:s3:::BUCKET_NAME/CLIENT_ID/*"
+    },
+
+    {
+      "_comment_2": [
+        "Allow ListBucket ONLY when the prefix is scoped to this client's folder.",
+        "Without this, aws.s3::s3readRDS() fails even with GetObject granted — the SDK",
+        "does a HeadObject which internally uses a list call.",
+        "The Condition block means: ListBucket is only permitted when the request's",
+        "s3:prefix starts with CLIENT_ID/ (i.e. cannot enumerate root or other folders)."
+      ],
+      "Sid": "ClientPrefixListOnly",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::BUCKET_NAME",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": "CLIENT_ID/*"
+        }
+      }
+    },
+
+    {
+      "_comment_3": [
+        "Allow read access to hd-admin/ prefix.",
+        "Required for: emergency_lock.rds check (every login), username_index collision check",
+        "  (every user creation), client_registry read (context switcher, invite flow).",
+        "This is deliberately read-only — clients never write to hd-admin/.",
+        "Future IAM hardening: replace this with a dedicated cross-account role assumption",
+        "  so client keys cannot even read hd-admin/ — only an explicit STS AssumeRole call",
+        "  from a specific lambda or the hd-admin app would have access."
+      ],
+      "Sid": "HdAdminReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectVersion"
+      ],
+      "Resource": "arn:aws:s3:::BUCKET_NAME/hd-admin/*"
+    },
+
+    {
+      "_comment_4": [
+        "Allow ListBucket on hd-admin/ prefix (same reason as ClientPrefixListOnly).",
+        "Scoped only to hd-admin/ so a client key cannot enumerate the bucket root."
+      ],
+      "Sid": "HdAdminListOnly",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::BUCKET_NAME",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": "hd-admin/*"
+        }
+      }
+    },
+
+    {
+      "_comment_5": [
+        "Explicitly DENY bucket-root listing.",
+        "This is the critical control: without this deny, a user with s3:ListBucket on the",
+        "  bucket ARN (from statements above) could enumerate the bucket root and discover",
+        "  other clients' folder names.",
+        "Explicit Deny overrides any Allow — even policies attached to the same user."
+      ],
+      "Sid": "DenyBucketRootList",
+      "Effect": "Deny",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::BUCKET_NAME",
+      "Condition": {
+        "StringNotLike": {
+          "s3:prefix": [
+            "CLIENT_ID/*",
+            "hd-admin/*"
+          ]
+        }
+      }
+    }
+
+  ]
+}

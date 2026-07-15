@@ -4,6 +4,17 @@
 # No reactives, no server logic, no side effects beyond data loading.
 # =============================================================================
 
+# Load project .Renviron before anything else — ensures CLIENT_ID, S3_BUCKET, and
+# AWS_* vars are set even when R is started outside the project directory.
+if (file.exists(".Renviron")) readRenviron(".Renviron")
+
+IS_ADMIN_DEPLOYMENT <- tolower(trimws(Sys.getenv("CLIENT_ID"))) == "hd-admin"
+
+# Reset the S3 preload guard on re-source so a fresh global.R source always
+# re-runs the preload with the correct CLIENT_ID (needed after .Renviron changes).
+if (exists(".s3_preload_done", envir = .GlobalEnv))
+  suppressWarnings(rm(".s3_preload_done", envir = .GlobalEnv))
+
 # ── Libraries ─────────────────────────────────────────────────────────────────
 library(shiny)
 library(shinyjs)
@@ -21,11 +32,26 @@ library(httr)       # SAP Service Layer API calls
 library(jsonlite)   # SAP response parsing
 library(uuid)       # note / manual entry IDs
 library(readxl)     # Excel import in proveedores module
+library(openxlsx)   # Excel export in cashflow report
 library(shinymanager)
+library(callr)
 # htmltools loaded transitively by Shiny; htmltools::HTML() used directly in calendar_html()
+
+# ── Early utility definitions ─────────────────────────────────────────────────
+`%||%` <- function(x, y) {
+  if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
+}
+
+strip_accents <- function(x) {
+  stringi::stri_trans_general(x %||% "", "Latin-ASCII")
+}
+
+CURRENCIES <- c("MXN","USD","EUR","GBP","CAD","JPY","CHF","AUD","CNY","BRL")
 
 # ── Source modules ────────────────────────────────────────────────────────────
 source("R/persistence.R")
+source("R/email_service.R")
+source("R/policy_engine.R")
 source("R/auth.R")
 source("R/data_pipeline.R")
 source("R/sap_api.R")
@@ -33,18 +59,47 @@ source("R/ledger_module.R")
 source("R/ui_components.R")
 source("R/notes_handlers.R")
 source("R/manual_entry_handlers.R")
-source("R/settings_module.R")
+# Settings — split across R/settings/ for session efficiency.
+# MUST use local=TRUE so these files execute in sharedEnv (same as global.R).
+# Without it they land in .GlobalEnv whose closure chain cannot reach S3_KEYS,
+# strip_accents, or any symbol defined directly in global.R.
+source("R/settings/settings_helpers.R",   local = TRUE)
+source("R/settings/settings_bp.R",        local = TRUE)
+source("R/settings/settings_proveedores.R", local = TRUE)
+source("R/settings/settings_cuentas.R",   local = TRUE)
+source("R/settings/settings_sincro.R",    local = TRUE)
+source("R/settings/settings_policies.R",  local = TRUE)
+source("R/settings/settings_companies.R", local = TRUE)
+source("R/settings/settings_hub.R",       local = TRUE)
 source("R/ppl_generator.R")
 source("R/bancos_parser.R")
 source("R/bancos_persistence.R")
 source("R/bancos_module.R")
 source("R/proveedores_match.R")
 source("R/proveedores_module.R")
+source("R/pasivos_schemas.R")
+source("R/pasivos_persistence.R")
+source("R/pasivos_capabilities.R")
+source("R/pasivos_audit.R")
+source("R/app_audit.R")
+source("R/forecasting_schemas.R")
+source("R/forecasting_persistence.R")
+source("R/forecasting_metric_registry.R")
+source("R/forecasting_sources.R")
+source("R/forecasting_source_banxico.R")
+source("R/forecasting_source_yahoo.R")
+source("R/forecasting_source_fred.R")
+source("R/forecasting_methods.R")
+source("R/forecasting_indicators.R")
+source("R/forecasting_resolve.R")
+source("R/forecasting_module.R")
+source("R/pasivos_calendar_glue.R")
+source("R/pasivos_observers.R")
+source("R/pasivos_module.R")
+source("R/sync_bus.R")
+source("R/cashflow_export_module.R")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-
-# Supported currencies (formatter-ready)
-CURRENCIES <- c("MXN","USD","EUR","GBP","CAD","JPY","CHF","AUD","CNY","BRL")
 
 # Fallback company registry — used only on fresh deployments (before empresas.rds
 # exists) and as the seed for load_empresas(). In all normal sessions this is
@@ -92,28 +147,54 @@ S3_KEYS <- list(
   bancos_papelera       = "bancos_papelera.rds",
   usuarios              = "usuarios.rds",
   empresas              = "empresas.rds",
-  parte_alias_map       = "parte_alias_map.rds"   # Parte → alias overrides for AP matching
+  parte_alias_map       = "parte_alias_map.rds",  # Parte → alias overrides for AP matching
+  pagar_hoy_sync        = "pagar_hoy_sync.rds",    # shared agenda when sync is ON
+  agenda_sync_config    = "agenda_sync_config.rds", # sync enabled/disabled + metadata
+  policy_catalog        = "policy_catalog.rds",    # payment policy definitions
+  partner_policies      = "partner_policies.rds",  # parte → policy assignments
+  policy_moves          = "policy_moves.rds",       # computed FechaVenc_Politica per invoice
+  holiday_overrides     = "holiday_overrides.rds",  # add/remove specific holiday dates
+  sap_overrides         = "sap_overrides.rds",       # field-level overrides for SAP invoices (Parte, Codigo, Factura, Notas)
+  pasivos_liabilities   = "pasivos_liabilities.rds",
+  pasivos_provisions    = "pasivos_provisions.rds",
+  pasivos_modifiers     = "pasivos_modifiers.rds",
+  pasivos_estimates     = "pasivos_estimates.rds",
+  pasivos_card_expenses = "pasivos_card_expenses.rds",
+  pasivos_audit         = "pasivos_audit.rds",
+  app_audit             = "app_audit.rds",
+  # Forecasting module (Stage 6.1)
+  forecasting_series_observations = "forecasting_series_observations.rds",
+  forecasting_metrics             = "forecasting_metrics.rds",
+  forecasting_sources             = "forecasting_sources.rds",
+  forecasting_methods             = "forecasting_methods.rds",
+  forecasting_indicators          = "forecasting_indicators.rds",
+  forecasting_subscriptions       = "forecasting_subscriptions.rds",
+  forecasting_manual_curves       = "forecasting_manual_curves.rds",
+  forecasting_fetch_log           = "forecasting_fetch_log.rds",
+  group_config                    = "group_config.rds",
+  # Multi-tenant: conglomerate / client groups — see R/persistence.R
+  grupos                          = "grupos.rds",
+  # Cross-process sync bus: tiny named-integer list written on every bump so
+  # other R workers can detect version changes even across process boundaries.
+  sync_versions                   = "sync_versions.rds",
+  # Tier display configuration (labels, colors) — kept in S3_KEYS so the missing-key
+  # cache does not blacklist it after the first failed read per session.
+  tiers_config                    = "tiers_config.rds"
 )
 
 # Validate required env vars and configure AWS credentials at startup.
 # CLIENT_ID drives all credential lookups — see R/persistence.R for full convention.
 .check_env_vars <- function() {
-  # Step 1 — CLIENT_ID must always be present
-  cid <- Sys.getenv("CLIENT_ID")
-  if (!nzchar(cid)) {
+  # CLIENT_ID must be present — it is the only deployment-specific variable
+  if (!nzchar(Sys.getenv("CLIENT_ID"))) {
     warning("CLIENT_ID is not set. S3 persistence will not work.\n",
-            "Add CLIENT_ID=<slug> to your .Renviron (e.g. CLIENT_ID=acme).",
+            "Add CLIENT_ID=<slug> to your .Renviron (e.g. CLIENT_ID=networks).",
             call. = FALSE)
     return(invisible(FALSE))
   }
 
-  cid <- toupper(trimws(cid))
-
-  # Step 2 — check for the four client-scoped AWS vars
-  required <- paste0(cid, c("_S3_BUCKET",
-                             "_AWS_ACCESS_KEY_ID",
-                             "_AWS_SECRET_ACCESS_KEY",
-                             "_AWS_DEFAULT_REGION"))
+  required <- c("S3_BUCKET", "AWS_ACCESS_KEY_ID",
+                "AWS_SECRET_ACCESS_KEY", "AWS_DEFAULT_REGION")
   missing  <- required[!nzchar(Sys.getenv(required))]
   if (length(missing))
     warning("Missing env vars: ", paste(missing, collapse = ", "),
@@ -147,7 +228,7 @@ if (!exists(".s3_preload_done", envir = globalenv())) {
     t0     <- proc.time()
     keys   <- unlist(S3_KEYS_CRITICAL, use.names = TRUE)
     cid_lo <- tolower(toupper(trimws(Sys.getenv("CLIENT_ID"))))
-    bucket <- Sys.getenv(paste0(toupper(trimws(Sys.getenv("CLIENT_ID"))), "_S3_BUCKET"))
+    bucket <- Sys.getenv("S3_BUCKET")
 
     reader <- function(key_suffix) {
       tryCatch({
@@ -183,18 +264,22 @@ if (!exists(".s3_preload_done", envir = globalenv())) {
 # the live registry rather than the hardcoded seed above.
 local({
   df <- tryCatch(.s3_preload_cache[["empresas.rds"]], error = function(e) NULL)
-  if (!is.null(df) && is.data.frame(df) && nrow(df) > 0 &&
-      all(c("initials", "nombre_corto", "activa", "deleted") %in% names(df))) {
-    active <- df[
-      (is.na(df$deleted) | df$deleted != TRUE) &
-      (is.na(df$activa)  | df$activa  == TRUE),  , drop = FALSE]
-    if (nrow(active) > 0) {
-      cmap <- setNames(active$nombre_corto, active$initials)
-      assign("COMPANY_MAP", cmap, envir = .GlobalEnv)
-      message("[LOAD] COMPANY_MAP: ", length(cmap), " companies from empresas.rds (",
-              paste(names(cmap), collapse = ", "), ")")
-    }
+  # Always rebuild COMPANY_MAP from empresas.rds — even if absent or zero rows.
+  # A NULL df means a fresh client with no empresas.rds yet; set empty map so
+  # the hardcoded Networks Group fallback above is never inherited by other clients.
+  if (is.null(df) || !is.data.frame(df) ||
+      !all(c("initials", "nombre_corto", "activa", "deleted") %in% names(df))) {
+    assign("COMPANY_MAP", c(), envir = .GlobalEnv)
+    message("[LOAD] COMPANY_MAP: no empresas.rds — empty map")
+    return(invisible(NULL))
   }
+  active <- df[
+    (is.na(df$deleted) | df$deleted != TRUE) &
+    (is.na(df$activa)  | df$activa  == TRUE),  , drop = FALSE]
+  cmap <- if (nrow(active) > 0) setNames(active$nombre_corto, active$initials) else c()
+  assign("COMPANY_MAP", cmap, envir = .GlobalEnv)
+  message("[LOAD] COMPANY_MAP: ", length(cmap), " companies from empresas.rds (",
+          paste(names(cmap), collapse = ", "), ")")
 })
 
 # ── Runtime cache (populated on first session, shared across all sessions) ──────
@@ -229,12 +314,6 @@ CALENDAR_THEME <- list(
   tag_both_bg    = "#FFE0CC",
   tag_both_border= "#FF6B35"
 )
-
-# ── Infix helpers ──────────────────────────────────────────────────────────────
-
-`%||%` <- function(x, y) {
-  if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
-}
 
 # ── Formatting helpers ─────────────────────────────────────────────────────────
 
@@ -324,12 +403,22 @@ calendar_html <- function(
     max_rows     = 4,
     tags_day     = list(),     # named list: "2026-02-14" -> "urgent"|"important"|"both"
     staged_keys  = NULL,       # data.frame with cols Empresa, Moneda, Documento — staged invoices
-    party_tags   = list()      # named list: "2026-02-14|Parte" -> "urgent"|"important"|"both"|""
+    party_tags          = list(),     # named list: "2026-02-14|Parte" -> "urgent"|"important"|"both"|""
+    available_currencies = character(0) # currencies active this month for inline selector
 ) {
 
   ms    <- as.Date(floor_date(as.Date(month_start), "month"))
   me    <- as.Date(ceiling_date(ms, "month") - days(1))
-  cur   <- toupper(trimws(currency))
+  cur      <- toupper(trimws(currency))
+  # Currency-specific color for the badge
+  cur_col  <- tryCatch(.currency_color(cur), error = function(e) "#5F5E5A")
+  cur_tint <- local({
+    h <- gsub("^#", "", cur_col)
+    r <- strtoi(substr(h, 1, 2), 16L)
+    g <- strtoi(substr(h, 3, 4), 16L)
+    b <- strtoi(substr(h, 5, 6), 16L)
+    sprintf("rgba(%d,%d,%d,0.13)", r, g, b)
+  })
   today <- Sys.Date()
   fmt   <- function(x) formatC(round(x), format = "f", digits = 0, big.mark = ",")
 
@@ -370,10 +459,15 @@ calendar_html <- function(
       select(-.tag_key, -.tag_weight)
   }
 
-  # Urgent/important tags per day from tags_day argument
-  # tags_day is a named list; we also accept a data.frame with Fecha+Etiqueta
+  # Urgent/important tags per day from tags_day argument.
+  # Guard: only emit a tag badge when the day actually has visible items in the
+  # current currency view.  tags_day_map_rv is currency-agnostic by design (to
+  # avoid re-running on currency switches), so without this check a tagged item
+  # in USD would leave a badge on an otherwise-empty day of the MXN calendar,
+  # and moved/deleted items whose day became empty would still show a badge.
   tag_for_day <- function(d) {
     key <- as.character(d)
+    if (!key %in% names(day_parties)) return("")
     tags_day[[key]] %||% ""
   }
 
@@ -559,15 +653,88 @@ calendar_html <- function(
              "julio","agosto","septiembre","octubre","noviembre","diciembre")
   month_label <- paste0(meses[month(ms)], " ", year(ms))
 
-  ledger_label <- if (ledger == "AR") "Cuentas por Cobrar" else "Cuentas por Pagar"
+  toggle_onclick_ar <- "Shiny.setInputValue('cal_ledger_toggle','AR',{priority:'event'})"
+  toggle_onclick_ap <- "Shiny.setInputValue('cal_ledger_toggle','AP',{priority:'event'})"
+
+  # Build interactive month picker label
+  picker_id <- paste0("cal-mpicker-", ledger)
+  yr_opts   <- (year(ms) - 2):(year(ms) + 2)
+  yr_btns <- paste0(
+    vapply(yr_opts, function(y)
+      paste0('<button class="cal-mpy-btn', if (y == year(ms)) " cal-mpy-sel" else "",
+             '" onclick="hopMPickYear(\'', picker_id, '\',', y, ');">',
+             y, '</button>'),
+      character(1)),
+    collapse = "")
+  mon_btns <- paste0(
+    vapply(seq_along(meses), function(i) {
+      paste0('<button class="cal-mpm-btn', if (i == month(ms)) " cal-mpm-sel" else "",
+             '" onclick="hopMPickSel(\'', picker_id, '\',', i, ');">',
+             substr(meses[i], 1, 3), '</button>')
+    }, character(1)),
+    collapse = "")
+  period_label_html <- paste0(
+    '<span class="cal-period-label" onclick="hopMPick(this)" title="Cambiar mes">',
+    month_label,
+    '<svg class="cal-pick-arr" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>',
+    '<div class="cal-mpicker" id="', picker_id, '" data-sel-year="', year(ms), '" onclick="event.stopPropagation()">',
+    '<div class="cal-mp-nav">',
+    '<button class="cal-mp-navbtn" onclick="hopMPickNav(\'', picker_id, '\',-1)">&#8249;</button>',
+    '<span class="cal-mp-navlbl">', year(ms), '</span>',
+    '<button class="cal-mp-navbtn" onclick="hopMPickNav(\'', picker_id, '\',1)">&#8250;</button>',
+    '</div>',
+    '<div class="cal-mp-months">', mon_btns, '</div>',
+    '<div class="cal-mp-years">', yr_btns, '</div>',
+    '</div>',
+    '</span>')
+
+  # Build interactive currency badge
+  if (length(available_currencies) > 0) {
+    cur_opts_html <- paste0(
+      vapply(available_currencies, function(c_opt)
+        paste0('<button class="cal-cur-opt', if (c_opt == cur) " cal-cur-sel" else "",
+               '" onclick="hopCurPick(\'', ledger, '\',\'', c_opt, '\');">', c_opt, '</button>'),
+        character(1)),
+      collapse = "")
+    cur_badge_html <- paste0(
+      '<span class="cal-currency-badge cal-currency-interactive"',
+      ' style="background:', cur_tint, ';color:', cur_col, ';"',
+      ' onclick="hopCurPick(\'', ledger, '\',null,this)" title="Cambiar moneda">',
+      cur,
+      '<svg class="cal-pick-arr" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>',
+      '<div class="cal-cur-picker" id="cal-curpicker-', ledger, '" onclick="event.stopPropagation()">',
+      cur_opts_html,
+      '</div>',
+      '</span>')
+  } else {
+    cur_badge_html <- paste0('<span class="cal-currency-badge" style="background:', cur_tint, ';color:', cur_col, ';">', cur, '</span>')
+  }
+
+  # Preview arrow fires btn_preview_open via Shiny.setInputValue so the server
+  # observer in app.R (observeEvent(input$btn_preview_open, ...)) can toggle
+  # cf_preview_open without the button needing to be a Shiny actionButton.
+  preview_arrow_html <- paste0(
+    '<button class="cf-preview-toggle-btn" ',
+    'onclick="Shiny.setInputValue(\'btn_preview_open\',Math.random(),{priority:\'event\'})" ',
+    'title="Ver flujo de caja" aria-label="Abrir vista de flujo de caja">',
+    '&#8250;',   # \u203a right-pointing angle quotation \u2014 matches the chevron in the spec
+    '</button>'
+  )
 
   title_bar_html <- paste0(
     '<div class="cal-title-bar">',
-      '<div class="cal-title-left">',
-        '<span class="cal-ledger-badge">', if (ledger == "AR") "CxC" else "CxP", '</span>',
-        '<h2 class="cal-title">', title_prefix, ' \u2014 ', month_label, ' \u2014 ', cur, '</h2>',
-      '</div>',
-      '<div class="cal-title-hint">Haz clic en un d\u00eda para ver el detalle</div>',
+    '<div class="cal-title-left">',
+    '<div class="cal-ledger-toggle" role="group">',
+    '<button class="cal-toggle-btn', if (ledger == "AR") " cal-toggle-active" else "", '"',
+    ' onclick="', toggle_onclick_ar, '">Cobros</button>',
+    '<button class="cal-toggle-btn', if (ledger == "AP") " cal-toggle-active" else "", '"',
+    ' onclick="', toggle_onclick_ap, '">Pagos</button>',
+    '</div>',
+    period_label_html,
+    cur_badge_html,
+    preview_arrow_html,
+    '</div>',
+    '<div class="cal-title-hint">Haz clic en un d\u00eda para ver el detalle</div>',
     '</div>'
   )
 
@@ -582,73 +749,29 @@ calendar_html <- function(
     '</div>'
   )
 
+  theme_class <- paste0("cal-theme-", tolower(ledger))
   htmltools::HTML(paste0(
+    '<div class="', theme_class, '">',
     title_bar_html,
     '<div class="cal-grid-wrapper">',
       dow_row_html,
       '<div class="cal-grid">', paste(week_rows_html, collapse = ""), '</div>',
+    '</div>',
     '</div>'
   ))
 }
 
-# ── Bootstrap: ensure "dev" account exists ───────────────────────────────────
-local({
-  tryCatch({
-    df <- auth_load_usuarios()
-    exists <- any(tolower(trimws(df$username)) == "dev")
-    if (!exists) {
-      new_user <- data.frame(
-        id            = uuid::UUIDgenerate(),
-        username      = "dev",
-        password_hash = "Antiguedad2026!",
-        display_name  = "Developer",
-        tier          = "dev",
-        client_id     = tolower(Sys.getenv("CLIENT_ID")),
-        permisos      = "{}",
-        activo        = TRUE,
-        created_at    = as.character(Sys.time()),
-        last_login    = NA_character_,
-        stringsAsFactors = FALSE
-      )
-      updated <- dplyr::bind_rows(df, new_user)
-      auth_save_usuarios(updated)
-      message("[AUTH] Bootstrap: 'dev' account created.")
-    } else {
-      message("[AUTH] Bootstrap: 'dev' account already exists — skipped.")
-    }
-  }, error = function(e) {
-    message("[AUTH] Bootstrap warning: could not seed dev account: ", e$message)
-  })
-})
+# Bootstrap blocks removed — auto-seeding eliminated per CLAUDIO_SPEC Stage 0.
+# Accounts are created via scripts/seed_hd_admin.R (admin) or the invite flow.
 
-# ── Bootstrap: ensure "tesoreria" account exists ─────────────────────────────
-# Runs once at startup. Safe to re-run — skips if already present.
-# To change password or add more accounts, follow this same pattern.
-local({
-  tryCatch({
-    df <- auth_load_usuarios()
-    exists <- any(tolower(trimws(df$username)) == "tesoreria")
-    if (!exists) {
-      new_user <- data.frame(
-        id            = uuid::UUIDgenerate(),
-        username      = "tesoreria",          # always lowercase
-        password_hash = "NWStesoreria26",     # plain text — see auth.R NOTE
-        display_name  = "Tesorería",
-        tier          = "finance",
-        client_id     = tolower(Sys.getenv("CLIENT_ID")),
-        permisos      = "{}",
-        activo        = TRUE,
-        created_at    = as.character(Sys.time()),
-        last_login    = NA_character_,
-        stringsAsFactors = FALSE
-      )
-      updated <- dplyr::bind_rows(df, new_user)
-      auth_save_usuarios(updated)
-      message("[AUTH] Bootstrap: 'tesoreria' account created.")
-    } else {
-      message("[AUTH] Bootstrap: 'tesoreria' account already exists — skipped.")
-    }
-  }, error = function(e) {
-    message("[AUTH] Bootstrap warning: could not seed tesoreria account: ", e$message)
-  })
-})
+# ── Cross-session agenda sync state (single-process ShinyApps.io) ─────────────
+# Sessions share this in-memory state to propagate changes without re-reading S3.
+# .agenda_sync$version bumps on every write — polling observers detect the change.
+if (!exists(".agenda_sync", envir = .GlobalEnv)) {
+  assign(".agenda_sync", list(
+    is_on   = FALSE,
+    data    = NULL,
+    version = as.character(proc.time()[["elapsed"]])
+  ), envir = .GlobalEnv)
+}
+

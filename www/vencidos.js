@@ -1,5 +1,5 @@
 (function() {
-  console.info('[VEN] vencidos.js v6 loaded');
+  console.info('[VEN] vencidos.js v8 loaded');
 
   // -- State -----------------------------------------------------------------
   var _venSortCol        = null;
@@ -7,6 +7,7 @@
   var _venLastRow        = null;
   var _venGroupsExpanded = false;
   var _venDocShown       = false;
+  var _venOrigShown      = false;
 
   // -- Row helpers -----------------------------------------------------------
   function venAllRows()  { return Array.from(document.querySelectorAll('.ven-row')); }
@@ -19,17 +20,18 @@
 
   function venRowPayload(r) {
     return {
-      ledger   : r.dataset.ledger,
-      empresa  : r.dataset.empresa,
-      moneda   : r.dataset.moneda,
-      documento: r.dataset.documento,
-      source   : r.dataset.source,
-      inv_id   : r.dataset.invid    || '',
-      parte    : r.dataset.parteraw || r.dataset.parte,
-      codigo   : r.dataset.codigo   || '',
-      importe  : parseFloat(r.dataset.importe),
-      fecha    : r.dataset.fecha,
-      tipo     : r.dataset.tipo
+      ledger      : r.dataset.ledger,
+      empresa     : r.dataset.empresa,
+      moneda      : r.dataset.moneda,
+      documento   : r.dataset.documento,
+      source      : r.dataset.source,
+      inv_id      : r.dataset.invid       || '',
+      provision_id: r.dataset.provisionid || '',
+      parte       : r.dataset.parteraw || r.dataset.parte,
+      codigo      : r.dataset.codigo   || '',
+      importe     : parseFloat(r.dataset.importe),
+      fecha       : r.dataset.fecha,
+      tipo        : r.dataset.tipo
     };
   }
 
@@ -216,6 +218,20 @@
     }
   };
 
+  // -- Origen column toggle --------------------------------------------------
+  window.venToggleOrig = function() {
+    _venOrigShown = !_venOrigShown;
+    var disp = _venOrigShown ? '' : 'none';
+    document.querySelectorAll('.ven-orig-cell, .ven-orig-th').forEach(function(el) {
+      el.style.display = disp;
+    });
+    var btn = document.getElementById('ven_orig_toggle_btn');
+    if (btn) {
+      btn.classList.toggle('btn-secondary',         _venOrigShown);
+      btn.classList.toggle('btn-outline-secondary', !_venOrigShown);
+    }
+  };
+
   // -- Column sort -----------------------------------------------------------
   window.venSortByCol = function(col) {
     if (_venSortCol === col) {
@@ -340,15 +356,32 @@
   // -- Actions (incl. hidden sub-rows of collapsed groups) -------------------
   window.venAction = function(action) {
     var rows = venSelectedRows();
-    if (!rows.length) { alert('Selecciona al menos una factura (haz clic en filas para seleccionar).'); return; }
+    if (!rows.length) {
+      Shiny.setInputValue('search_stage_toast',
+        { msg: 'Selecciona al menos una factura (haz clic en filas para seleccionar).', type: 'warning', nonce: Math.random() },
+        { priority: 'event' });
+      return;
+    }
     if (action === 'delete') {
-      if (!confirm('\u00bfEliminar ' + rows.length + ' factura(s)?\n\nSe guardar\u00e1n en la papelera.')) return;
+      var dbar = document.getElementById('ven_delete_confirm_bar');
+      var dmsg = document.getElementById('ven_delete_confirm_msg');
+      if (dbar && dmsg) {
+        dmsg.textContent = '\u00bfEliminar ' + rows.length + ' factura(s)? Se guardar\u00e1n en la papelera.';
+        dbar.style.display = 'flex';
+        dbar.dataset.pendingRows = JSON.stringify(rows.map(venRowPayload));
+      }
+      return;
     }
     var payload = { action: action, rows: rows.map(venRowPayload), nonce: Math.random() };
     if (action === 'move') {
       var d = document.getElementById('ven_move_date');
       payload.move_to = d ? d.value : '';
-      if (!payload.move_to) { alert('Elige una fecha para mover.'); return; }
+      if (!payload.move_to) {
+        Shiny.setInputValue('search_stage_toast',
+          { msg: 'Elige una fecha para mover.', type: 'warning', nonce: Math.random() },
+          { priority: 'event' });
+        return;
+      }
     }
     Shiny.setInputValue('vencidos_action', payload, { priority: 'event' });
     venSelectNone();
@@ -357,7 +390,12 @@
   // -- Stage: Agregar todo ---------------------------------------------------
   window.venStageAll = function() {
     var rows = venAllRows().filter(venMatchesFilter);
-    if (!rows.length) { alert('No hay facturas.'); return; }
+    if (!rows.length) {
+      Shiny.setInputValue('search_stage_toast',
+        { msg: 'No hay facturas.', type: 'warning', nonce: Math.random() },
+        { priority: 'event' });
+      return;
+    }
     var bar = document.getElementById('ven_stage_confirm_bar');
     var msg = document.getElementById('ven_stage_confirm_msg');
     if (!bar || !msg) return;
@@ -369,13 +407,35 @@
   // -- Stage: Agregar seleccion ----------------------------------------------
   window.venStageSelected = function() {
     var rows = venSelectedRows();
-    if (!rows.length) { alert('Selecciona al menos una factura.'); return; }
+    if (!rows.length) {
+      Shiny.setInputValue('search_stage_toast',
+        { msg: 'Selecciona al menos una factura.', type: 'warning', nonce: Math.random() },
+        { priority: 'event' });
+      return;
+    }
     var bar = document.getElementById('ven_stage_confirm_bar');
     var msg = document.getElementById('ven_stage_confirm_msg');
     if (!bar || !msg) return;
     msg.textContent = '\u00bfAgregar ' + rows.length + ' factura(s) seleccionadas a la Agenda del d\u00eda?';
     bar.style.display = 'flex';
     bar.dataset.pendingRows = JSON.stringify(rows.map(venRowPayload));
+  };
+
+  // -- Delete confirmation handlers ------------------------------------------
+  window.venConfirmDelete = function() {
+    var bar = document.getElementById('ven_delete_confirm_bar');
+    if (!bar) return;
+    var rows = JSON.parse(bar.dataset.pendingRows || '[]');
+    bar.style.display = 'none';
+    if (!rows.length) return;
+    venSelectNone();
+    Shiny.setInputValue('vencidos_action',
+      { action: 'delete', rows: rows, nonce: Math.random() },
+      { priority: 'event' });
+  };
+  window.venCancelDelete = function() {
+    var bar = document.getElementById('ven_delete_confirm_bar');
+    if (bar) bar.style.display = 'none';
   };
 
   window.venConfirmStage = function() {
@@ -393,6 +453,50 @@
     var bar = document.getElementById('ven_stage_confirm_bar');
     if (bar) bar.style.display = 'none';
   };
+
+  // -- Restore column/expand state after Shiny re-renders the table ----------
+  function venRestoreState() {
+    // Expand all groups if the global flag says expanded
+    if (_venGroupsExpanded) {
+      document.querySelectorAll('.ven-group-row').forEach(function(gr) {
+        gr.dataset.expanded = 'true';
+        var btn = gr.querySelector('.ven-expand-btn');
+        if (btn) btn.innerHTML = '&#9650;';
+        var gidStr = gr.dataset.groupId;
+        document.querySelectorAll('.ven-row.ven-subrow[data-group-id="' + gidStr + '"]')
+          .forEach(function(r) {
+            var matches = true;
+            try { matches = venMatchesFilter(r); } catch(e) {}
+            r.style.display = matches ? '' : 'none';
+          });
+      });
+      var gb = document.getElementById('ven_groups_btn');
+      if (gb) gb.innerHTML = '&#9650;&#9650;';
+    }
+    // Restore Documento column
+    if (_venDocShown) {
+      document.querySelectorAll('.ven-doc-cell, .ven-doc-th').forEach(function(el) {
+        el.style.display = '';
+      });
+      var db = document.getElementById('ven_doc_toggle_btn');
+      if (db) { db.classList.add('btn-secondary'); db.classList.remove('btn-outline-secondary'); }
+    }
+    // Restore Origen column
+    if (_venOrigShown) {
+      document.querySelectorAll('.ven-orig-cell, .ven-orig-th').forEach(function(el) {
+        el.style.display = '';
+      });
+      var ob = document.getElementById('ven_orig_toggle_btn');
+      if (ob) { ob.classList.add('btn-secondary'); ob.classList.remove('btn-outline-secondary'); }
+    }
+  }
+
+  // Re-apply state whenever Shiny replaces the table body
+  $(document).on('shiny:value', function(e) {
+    if (e.name && e.name.indexOf('ven_table_ui') >= 0) {
+      setTimeout(venRestoreState, 20);
+    }
+  });
 
   // -- Badge -----------------------------------------------------------------
   $(document).on('shiny:connected', function() {

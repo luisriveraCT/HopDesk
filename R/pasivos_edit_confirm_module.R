@@ -172,7 +172,7 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
 
 # ── Apply decisions ────────────────────────────────────────────────────────────
 .pec_apply_decisions <- function(conflicts, replacement, decisions, shared, user) {
-  provs <- tryCatch(load_pasivos_provisions(),
+  provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()),
                     error = function(e) .schema_pasivos_provision())
 
   for (i in seq_len(nrow(conflicts))) {
@@ -206,15 +206,18 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
     # "mantener" → do nothing (keep existing override)
   }
 
-  tryCatch(save_pasivos_provisions(provs), error = function(e) NULL)
+  tryCatch(save_pasivos_provisions(provs, client_id = shared$active_client_id()), error = function(e) NULL)
+  tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
   shared$pasivos_provisions_db(provs)
+  bump_sync_version("pasivos_provisions_db")
 
   tryCatch(pasivos_log_audit(
     action_type = "bulk.aplicar_pagos_futuros",
     user        = user,
     target_kind = "bulk",
     target_id   = .pec_state$liability_id %||% NA_character_,
-    notes       = sprintf("Edit-confirm: %d conflicts resolved", nrow(conflicts))
+    notes       = sprintf("Edit-confirm: %d conflicts resolved", nrow(conflicts)),
+    client_id   = shared$active_client_id()
   ), error = function(e) NULL)
 }
 

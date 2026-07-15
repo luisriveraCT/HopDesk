@@ -1,0 +1,471 @@
+/* =============================================================================
+   cashflow_preview.css
+   Slide animation for the Calendar ↔ Cash Flow Preview panel transition,
+   plus table styles added in later stages.
+   ============================================================================= */
+
+/* ── Slide wrapper ────────────────────────────────────────────────────────── */
+
+/*
+  Both panels (.cf-panel-calendar and .cf-panel-preview) sit side-by-side
+  inside this flex container.  Overflow is clipped so only the left-most
+  panel is visible.  Toggling .cf-preview-active slides both panels left by
+  100% of the wrapper width, revealing the preview and hiding the calendar.
+*/
+.cf-slide-wrapper {
+  display: flex;
+  overflow: hidden;
+  position: relative;
+  height: 100%;
+}
+
+.cf-panel {
+  flex: 0 0 100%;
+  width: 100%;
+  min-width: 0;
+  transition: transform 300ms ease-in-out;
+  will-change: transform;
+}
+
+/* State B: slide both panels 100% to the left */
+.cf-slide-wrapper.cf-preview-active .cf-panel {
+  transform: translateX(-100%);
+}
+
+/* ── Preview-open toggle arrow button ────────────────────────────────────── */
+
+/* Hide the [›] forward arrow while preview is open */
+body.cf-preview-open .cf-preview-toggle-btn {
+  display: none !important;
+}
+
+/* The arrow itself — compact navy chevron that sits inline in the cal-title-bar */
+.cf-preview-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #1E3A5F;
+  font-size: 1.55rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 8px;
+  margin-left: 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+  vertical-align: middle;
+}
+.cf-preview-toggle-btn:hover {
+  color: #2563a8;
+  background: rgba(30, 58, 95, 0.07);
+}
+
+/* ── Preview toolbar ──────────────────────────────────────────────────────── */
+
+.cf-preview-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #fff;
+  border-bottom: 1px solid #e5e9ef;
+  flex-shrink: 0;
+  min-height: 44px;
+}
+
+/* Compact control wrapper — normalises height across different widget types */
+.cf-ctrl { flex-shrink: 0; }
+
+/* Shrink the airDatepicker input to match button height */
+.cf-ctrl-date .shiny-input-container { margin: 0; }
+.cf-ctrl-date .datepicker-here,
+.cf-ctrl-date .datepicker {
+  font-size: 0.82rem;
+}
+.cf-ctrl-date input.form-control {
+  height: 30px !important;
+  font-size: 0.82rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Grouping and currency mode buttons */
+.cf-grp-btn, .cf-cur-btn {
+  white-space: nowrap;
+  min-width: 72px;
+  font-size: 0.8rem;
+}
+
+/* Back arrow — no background in any state; only color change on hover/focus */
+.cf-back-arrow,
+.cf-back-arrow:hover,
+.cf-back-arrow:focus,
+.cf-back-arrow:active,
+.cf-back-arrow:focus-visible,
+.cf-back-arrow.focus,
+.btn-link.cf-back-arrow,
+.btn-link.cf-back-arrow:hover,
+.btn-link.cf-back-arrow:focus,
+.btn-link.cf-back-arrow:active {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+}
+.cf-back-arrow:hover  { color: #2563a8 !important; }
+.cf-back-arrow:focus-visible {
+  outline: 2px solid #1E3A5F;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── FX sub-row ───────────────────────────────────────────────────────────── */
+
+.cf-fx-section {
+  background: #f8fafc;
+  border-bottom: 1px solid #e5e9ef;
+  flex-shrink: 0;
+  font-size: 0.82rem;
+}
+
+.cf-fx-section .shiny-input-container { margin: 0; }
+.cf-fx-section input.form-control,
+.cf-fx-section select.form-control,
+.cf-fx-section select.form-select {
+  height: 28px !important;
+  font-size: 0.8rem;
+  padding: 2px 6px;
+}
+
+/* Live pill */
+.cf-fx-mode-btn {
+  height: 26px;
+  padding: 1px 8px;
+  font-size: 0.75rem;
+  border-radius: 12px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.cf-fx-live {
+  background: #1E3A5F;
+  color: #fff;
+  border-color: #1E3A5F;
+}
+.cf-fx-live:hover { background: #2a5080; border-color: #2a5080; color: #fff; }
+
+/* Date chip — outlined style */
+.cf-fx-date {
+  background: #fff;
+  color: #1E3A5F;
+  border-color: #1E3A5F;
+}
+.cf-fx-date:hover { background: #f0f4fa; }
+
+/* Compact date picker inside FX row */
+.cf-fx-section .shiny-date-input input.form-control {
+  height: 28px !important;
+  font-size: 0.78rem;
+  width: 110px;
+}
+
+/* ── Stage 4: table styles ────────────────────────────────────────────────── */
+
+/* Scroll container — fills the preview body flex slot */
+.cf-table-wrap {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 8px;
+  box-sizing: border-box;
+}
+
+/* Base table */
+.cf-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-size: 0.8rem;
+  color: #0d1b2a;          /* darker base text for readability */
+  table-layout: auto;
+}
+
+/* ── Sticky header row ──────────────────────────────────────────────────────── */
+
+.cf-thead-row {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #1E3A5F;
+  color: #fff;
+}
+
+.cf-th {
+  padding: 6px 10px;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  border-bottom: 2px solid #163050;
+}
+
+.cf-th-name {
+  text-align: left;
+  min-width: 160px;
+  max-width: 220px;
+  position: sticky;
+  left: 0;
+  z-index: 4;            /* above other sticky header cells */
+  background: #1E3A5F;
+}
+
+.cf-th-bkt {
+  text-align: right;
+  min-width: 72px;
+}
+
+.cf-th-total {
+  text-align: right;
+  min-width: 88px;
+  border-left: 1px solid rgba(255,255,255,0.15);
+}
+
+/* ── Sticky first column (Contraparte) ──────────────────────────────────────── */
+
+.sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: inherit;   /* inherits from row so section headers match */
+  border-right: 1px solid #dde4ed;
+}
+
+/* ── Currency spacer row ────────────────────────────────────────────────────── */
+
+.cf-cur-spacer td {
+  height: 8px;
+  background: #f0f4f8;
+  border-top: 2px solid #dde4ed;
+  border-bottom: 2px solid #dde4ed;
+}
+
+/* ── Section header rows (COBROS / PAGOS) ───────────────────────────────────── */
+
+/* Not sticky — only the column header thead sticks */
+.cf-sec-hdr { }
+
+.cf-sec-name {
+  padding: 5px 10px;
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #fff;
+}
+
+/* Color every cell in the section header so the row looks solid */
+.cf-ar-hdr td { background: #1E3A5F; }
+.cf-ap-hdr td { background: #3a1e5f; }
+
+/* ── Counterparty rows ──────────────────────────────────────────────────────── */
+
+.cf-parte-row td {
+  padding: 4px 10px;
+  border-bottom: 1px solid #e8ecf2;
+  background: #fff;
+  color: #0d1b2a;
+}
+
+.cf-row-alt td {
+  background: #f2f5f9;    /* slightly more contrast than before */
+  color: #0d1b2a;
+}
+
+.cf-prov-row td {
+  font-style: italic;
+  color: #374b5f;          /* darker than before (#6b7e93) — still muted but readable */
+}
+
+/* ── Subtotal rows ──────────────────────────────────────────────────────────── */
+
+.cf-subtot-row td {
+  padding: 5px 10px;
+  background: #d8e6f5;     /* more distinct from body rows */
+  border-top: 1px solid #b0c6de;
+  border-bottom: 2px solid #b0c6de;
+  color: #0d2240;
+}
+
+.cf-subtot-name {
+  font-weight: 700;
+  font-size: 0.75rem;
+  color: #0d2240;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.cf-subtot-num {
+  font-weight: 600;
+  color: #0d2240;
+}
+
+/* ── Net flow row ───────────────────────────────────────────────────────────── */
+
+.cf-net-row td {
+  padding: 6px 10px;
+  background: #162d4a;     /* slightly lighter than pure navy so colored text stands out */
+  border-top: 2px solid #0e1e30;
+  border-bottom: 3px solid #0e1e30;
+}
+
+.cf-net-name {
+  font-weight: 700;
+  font-size: 0.75rem;
+  color: #e8eef5 !important;   /* off-white — softer on eyes than pure white */
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cf-net-cell {
+  font-size: 0.8rem;
+}
+
+/* ── Cumulative position row ─────────────────────────────────────────────────── */
+
+.cf-cum-row td {
+  padding: 4px 10px;
+  background: #112338;
+  border-bottom: 2px solid #0e1e30;
+}
+
+.cf-cum-name {
+  font-weight: 600;
+  font-size: 0.72rem;
+  color: #b0c4de !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-style: italic;
+}
+
+.cf-cum-cell {
+  font-size: 0.78rem;
+  font-style: italic;
+}
+
+/* ── Numeric cells ──────────────────────────────────────────────────────────── */
+
+.cf-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  padding-right: 10px;
+  white-space: nowrap;
+}
+
+.cf-total-cell {
+  border-left: 1px solid #dde4ed;
+  font-weight: 600;
+}
+
+/* ── Tag badges ─────────────────────────────────────────────────────────────── */
+
+.cf-tag-u {
+  color: #C62828;
+  font-size: 0.55rem;
+  margin-left: 3px;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+.cf-tag-i {
+  color: #E65100;
+  font-size: 0.65rem;
+  margin-left: 2px;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+/* ── Day 0 column ─────────────────────────────────────────────────────────────── */
+
+.cf-th-day0 {
+  text-align: center;
+  font-size: 0.72rem;
+  color: #b0c4de;
+  border-right: 1px dashed rgba(255,255,255,0.15);
+  min-width: 70px;
+}
+
+.cf-day0-cell {
+  cursor: pointer;
+  text-align: right;
+  border-right: 1px dashed rgba(255,255,255,0.15);
+  transition: background 0.15s;
+}
+
+.cf-day0-cell:hover {
+  background: rgba(255,255,255,0.06) !important;
+}
+
+.cf-day0-empty {
+  border-right: 1px dashed rgba(255,255,255,0.1);
+}
+
+/* ── Day 0 dialog ─────────────────────────────────────────────────────────────── */
+
+#cf-day0-dlg {
+  background: #1c2e42;
+  border: 1px solid #2e4a6e;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.45);
+  padding: 12px 14px;
+  min-width: 240px;
+}
+
+.cf-day0-dlg-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.cf-day0-dlg-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #c8d8ea;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cf-day0-input {
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 5px;
+  border: 1px solid #3a5a80;
+  background: #0d1e30;
+  color: #e8eef5;
+  font-size: 0.85rem;
+  font-family: monospace;
+  box-sizing: border-box;
+  margin-bottom: 4px;
+}
+
+.cf-day0-input:focus {
+  outline: none;
+  border-color: #4a88c7;
+  box-shadow: 0 0 0 2px rgba(74,136,199,0.3);
+}
+
+.cf-day0-dlg-hint {
+  font-size: 0.68rem;
+  color: #7b9ab8;
+  margin-bottom: 10px;
+}
+
+.cf-day0-dlg-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

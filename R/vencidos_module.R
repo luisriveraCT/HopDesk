@@ -39,6 +39,9 @@ vencidosUI <- function(id) {
       .ven-expand-btn { background:none; border:none; cursor:pointer; padding:0 3px;
                         font-size:0.68rem; color:#6c757d; line-height:1; vertical-align:middle; }
       .ven-expand-btn:hover { color:#0a58ca; }
+      /* Confirmed (ghost) rows — SAP items already paid; greyed, struck-through, not selectable */
+      .ven-confirmed-ghost { pointer-events: none; cursor: default; }
+      .ven-confirmed-ghost td { opacity: 0.38; text-decoration: line-through; color: #6c757d !important; font-weight: normal !important; }
       /* Selection bubble */
       #ven_sel_bubble {
         position: fixed; bottom: 22px; right: 22px; z-index: 9999;
@@ -61,6 +64,17 @@ vencidosUI <- function(id) {
         letter-spacing: .05em; margin-top: 5px; margin-bottom: 1px;
       }
       .ven-bubble-sep { border-top: 1px solid #dee2e6; margin: 5px 0 2px; }
+      /* Pasivos provision rows */
+      .pasivos-provision { border: 1.5px dashed #a78bfa !important; background: #faf5ff !important; }
+      .pasivos-provision::before { content: 'P'; display: inline-flex; align-items: center;
+        justify-content: center; width: 16px; height: 16px; border-radius: 50%;
+        background: #7c3aed; color: #fff; font-size: 10px; font-weight: 700;
+        margin-right: 4px; vertical-align: middle; }
+      .pasivos-tag-provision { background-color: #7c3aed; color: white; border-radius: 12px;
+        padding: 2px 10px; font-size: 12px; font-weight: 500; display: inline-block; }
+      .pasivos-convert-btn { background: none; border: none; cursor: pointer; padding: 0 3px;
+        font-size: 1rem; line-height: 1; vertical-align: middle; opacity: 0.85; }
+      .pasivos-convert-btn:hover { opacity: 1; }
     ")),
 
     # Fixed selection bubble (shown whenever rows are selected)
@@ -68,8 +82,12 @@ vencidosUI <- function(id) {
 
     div(class = "vencidos-wrap p-3",
 
-      # ── Top action + filter bar ──────────────────────────────────────────
-      div(class = "d-flex flex-wrap gap-2 mb-2 align-items-end",
+      div(
+        id    = "ven_sticky_header",
+        style = "position:sticky; top:56px; z-index:200; background:#fff; margin:-1rem -1rem 0; padding:0.75rem 1rem 0.5rem; border-bottom:1px solid #dee2e6;",
+
+        # ── Top action + filter bar ──────────────────────────────────────────
+        div(class = "d-flex flex-wrap gap-2 mb-2 align-items-end",
         tags$button(
           id      = "ven_edit_toggle",
           class   = "btn btn-outline-secondary btn-sm",
@@ -145,6 +163,14 @@ vencidosUI <- function(id) {
               onclick = "venToggleDoc()",
               title   = "Mostrar / ocultar columna Documento",
               "Documento"
+            ),
+            tags$button(
+              id      = "ven_orig_toggle_btn",
+              class   = "btn btn-outline-secondary btn-sm",
+              style   = "padding:2px 6px; font-size:0.7rem; line-height:1.5;",
+              onclick = "venToggleOrig()",
+              title   = "Mostrar / ocultar columna Origen",
+              "Origen"
             )
           )
         )
@@ -191,7 +217,9 @@ vencidosUI <- function(id) {
                       onclick = "venAction('delete')",
                       "\U0001f5d1 Eliminar")
         )
-      ),
+      )  # /ven_edit_toolbar
+
+      ),  # /ven_sticky_header
 
       # ── Stage confirmation bar ───────────────────────────────────────────
       # NOTE: no d-flex in class — Bootstrap d-flex uses !important and overrides
@@ -208,13 +236,27 @@ vencidosUI <- function(id) {
                     "Cancelar")
       ),
 
+      # ── Delete confirmation bar (replaces window.confirm for delete) ─────
+      # NOTE: no d-flex in class — set display:flex via JS when showing.
+      div(id    = "ven_delete_confirm_bar",
+          class = "alert alert-danger align-items-center gap-3 py-2 px-3 mb-2",
+          style = "display:none;",
+        tags$span(id = "ven_delete_confirm_msg", class = "flex-grow-1 small fw-bold"),
+        tags$button(class = "btn btn-sm btn-danger",
+                    onclick = "venConfirmDelete()",
+                    "\u2713 S\u00ed, eliminar"),
+        tags$button(class = "btn btn-sm btn-outline-secondary",
+                    onclick = "venCancelDelete()",
+                    "Cancelar")
+      ),
+
       # ── Dynamic table content ────────────────────────────────────────────
       uiOutput(ns("ven_table_ui"))
     ),
 
     # -- JavaScript (loaded from www/vencidos.js) -------------------------
     # ?v= query string forces browsers to reload after each edit.
-    tags$script(src = "vencidos.js?v=6")
+    tags$script(src = "vencidos.js?v=8")
   )
 }
 
@@ -225,72 +267,27 @@ vencidosServer <- function(id, shared) {
 
     # ── Build overdue data ─────────────────────────────────────────────────
     vencidos_df <- reactive({
-      emp    <- shared$empresa_sel()
-      raw    <- shared$sap_data()
-      moves  <- shared$moves_db()
-      manual <- shared$manual_inv()
-      ic_reg <- shared$interco_v2()   # reactive dep — re-fires when IC codes load
-      tags   <- shared$tags_db()
-      today  <- Sys.Date()
+      # Consume the same df_combined() the calendar uses — empresa filter,
+      # papelera, confirmed marks, and provisions are already applied there.
+      ic_reg     <- shared$interco_v2()
+      tags       <- shared$tags_db()
+      ic_mode_ar <- tryCatch(shared$ic_mode[["AR"]](), error = function(e) "exclude")
+      ic_mode_ap <- tryCatch(shared$ic_mode[["AP"]](), error = function(e) "exclude")
+      today      <- Sys.Date()
 
-      build_one <- function(ledger_name) {
+      build_one <- function(ledger_name, ic_mode_val = "exclude") {
         df <- tryCatch(
-          build_ledger_df(
-            raw_df    = raw[[ledger_name]],
-            ledger    = ledger_name,
-            empresa   = NULL,
-            moves_df  = moves,
-            manual_df = manual,
-            abonos_df = shared$abonos_db()
-          ),
+          if (ledger_name == "AR") shared$df_combined_AR() else shared$df_combined_AP(),
           error = function(e) NULL
         )
         if (is.null(df) || !nrow(df)) return(NULL)
-
-        # Empresa filter
-        if (length(emp) && "Empresa" %in% names(df)) {
-          df <- dplyr::filter(df, Empresa %in% emp)
-          if (!nrow(df)) return(NULL)
-        }
-
-        # Mark confirmed (same two-source logic as ledger_module.R)
-        tipo_val          <- if (ledger_name == "AR") "cobro" else "pago"
-        df[["confirmed"]] <- FALSE
-
-        conc_rv <- tryCatch(shared$conciliacion_rv(), error = function(e) NULL)
-        if (!is.null(conc_rv) && nrow(conc_rv)) {
-          ck <- unique(conc_rv[conc_rv[["tipo"]] == tipo_val,
-                               c("Empresa","Moneda","Documento"), drop = FALSE])
-          if (nrow(ck)) {
-            mk <- paste(df[["Empresa"]], df[["Moneda"]], df[["Documento"]])
-            df[["confirmed"]] <- df[["confirmed"]] | (mk %in% paste(ck$Empresa, ck$Moneda, ck$Documento))
-          }
-        }
-
-        conf_db <- tryCatch(shared$bancos_confirmados(), error = function(e) NULL)
-        if (!is.null(conf_db) && nrow(conf_db)) {
-          ca <- conf_db[!isTRUE(conf_db[["eliminado"]]) & conf_db[["tipo"]] == tipo_val, , drop = FALSE]
-          if (nrow(ca)) {
-            bk <- unique(ca[, c("empresa","documento"), drop = FALSE])
-            mk <- paste(df[["Empresa"]], df[["Documento"]])
-            df[["confirmed"]] <- df[["confirmed"]] | (mk %in% paste(bk$empresa, bk$documento))
-          }
-        }
-
-        # Drop confirmed entries
-        if ("source" %in% names(df) && any(df[["confirmed"]] & df[["source"]] == "manual"))
-          df <- df[!(df[["confirmed"]] & df[["source"]] == "manual"), , drop = FALSE]
-        df <- df[!df[["confirmed"]], , drop = FALSE]
-        if (!nrow(df)) return(NULL)
-
         # ── IC filter (two layers for robustness) ──────────────────────────
-
         # Layer 1: code-based filter (from registered interco_v2 registry)
         codes    <- build_ic_fullcodes(ic_reg, ledger_name)
         ic_rfcs  <- unique(toupper(trimws(unname(ic_reg$rfcs %||% character()))))
         ic_rfcs  <- ic_rfcs[nzchar(ic_rfcs)]
         code_col <- if (ledger_name == "AR") "C\u00f3digo de cliente" else "C\u00f3digo de proveedor"
-        df <- apply_ic_filter(df, mode = "exclude",
+        df <- apply_ic_filter(df, mode = ic_mode_val,
                               code_col = code_col,
                               ic_codes = codes,
                               ic_rfcs  = ic_rfcs)
@@ -302,9 +299,17 @@ vencidosServer <- function(id, shared) {
           company_names_up <- toupper(unname(COMPANY_MAP))
           is_ic_by_name    <- toupper(trimws(df[["Parte"]])) %in% company_names_up
           if (any(is_ic_by_name)) {
-            df <- df[!is_ic_by_name, , drop = FALSE]
-            message("[VEN] IC-by-name filter removed ", sum(is_ic_by_name),
-                    " rows for ledger=", ledger_name)
+            if (ic_mode_val == "exclude") {
+              df <- df[!is_ic_by_name, , drop = FALSE]
+              message("[VEN] IC-by-name filter removed ", sum(is_ic_by_name),
+                      " rows for ledger=", ledger_name)
+            } else if (ic_mode_val == "only") {
+              df <- df[is_ic_by_name, , drop = FALSE]
+            }
+            # "include" → keep everything, no change needed
+          } else if (ic_mode_val == "only") {
+            # No name-matches found but mode is "only" → nothing to show
+            df <- df[FALSE, , drop = FALSE]
           }
         }
         if (is.null(df) || !nrow(df)) return(NULL)
@@ -323,16 +328,44 @@ vencidosServer <- function(id, shared) {
         df
       }
 
-      ar <- tryCatch(build_one("AR"), error = function(e) { message("[VEN] AR error: ", e$message); NULL })
-      ap <- tryCatch(build_one("AP"), error = function(e) { message("[VEN] AP error: ", e$message); NULL })
+      ar <- tryCatch(build_one("AR", ic_mode_ar), error = function(e) { message("[VEN] AR error: ", e$message); NULL })
+      ap <- tryCatch(build_one("AP", ic_mode_ap), error = function(e) { message("[VEN] AP error: ", e$message); NULL })
+      # Papelera, empresa, and confirmed filters already applied in df_combined().
       dplyr::bind_rows(ar, ap)
     })
 
     # ── Badge ──────────────────────────────────────────────────────────────
+    # Count only unconfirmed rows — confirmed SAP ghosts are shown but not counted.
     observe({
-      df <- vencidos_df()
-      n  <- if (!is.null(df) && nrow(df)) nrow(df) else 0L
-      session$sendCustomMessage("vencidosBadge", list(count = n))
+      df      <- vencidos_df()
+      if (is.null(df) || !nrow(df)) {
+        session$sendCustomMessage("vencidosBadge", list(count = 0L)); return()
+      }
+      # Mark confirmed using same two-source logic as renderUI.
+      conf_db  <- tryCatch(shared$bancos_confirmados(), error = function(e) NULL)
+      conc_rv  <- tryCatch(shared$conciliacion_rv(),    error = function(e) NULL)
+      confirmed <- rep(FALSE, nrow(df))
+      if (!is.null(conc_rv) && nrow(conc_rv)) {
+        for (tipo_val in c("cobro", "pago")) {
+          ck <- unique(conc_rv[conc_rv[["tipo"]] == tipo_val, c("Empresa","Moneda","Documento"), drop = FALSE])
+          if (nrow(ck)) {
+            mk <- paste(df[["Empresa"]], df[["Moneda"]], df[["Documento"]])
+            confirmed <- confirmed | (mk %in% paste(ck$Empresa, ck$Moneda, ck$Documento))
+          }
+        }
+      }
+      if (!is.null(conf_db) && nrow(conf_db)) {
+        for (tipo_val in c("cobro", "pago")) {
+          ca <- conf_db[!(conf_db[["eliminado"]] %in% TRUE) & conf_db[["tipo"]] == tipo_val, , drop = FALSE]
+          if (nrow(ca)) {
+            bk <- unique(ca[, c("empresa","documento"), drop = FALSE])
+            mk <- paste(df[["Empresa"]], df[["Documento"]])
+            confirmed <- confirmed | (mk %in% paste(bk$empresa, bk$documento))
+          }
+        }
+      }
+      # Manual confirmed disappear; SAP confirmed become ghosts — both excluded from badge.
+      session$sendCustomMessage("vencidosBadge", list(count = sum(!confirmed)))
     })
 
     # ── Render table ───────────────────────────────────────────────────────
@@ -376,8 +409,10 @@ vencidosServer <- function(id, shared) {
         Importe    = df[["Importe"]],
         Etiqueta   = df[["Etiqueta"]],
         tag_weight = df[["tag_weight"]],
-        source     = df[["source"]] %||% "sap",
-        inv_id     = if ("id" %in% names(df)) df[["id"]] %||% "" else "",
+        source       = df[["source"]] %||% "sap",
+        confirmed    = if ("confirmed" %in% names(df)) df[["confirmed"]] %||% FALSE else FALSE,
+        inv_id       = if ("id" %in% names(df)) df[["id"]] %||% "" else "",
+        provision_id = if ("provision_id" %in% names(df)) df[["provision_id"]] %||% "" else "",
         stringsAsFactors = FALSE
       )
 
@@ -448,7 +483,8 @@ vencidosServer <- function(id, shared) {
 
       make_table_section <- function(rows, ledger_name, tipo_label, cur) {
         if (!nrow(rows)) return(NULL)
-        total     <- sum(rows[["Importe"]], na.rm = TRUE)
+        is_ghost  <- rows[["confirmed"]] %||% FALSE
+        total     <- sum(rows[["Importe"]][!is_ghost], na.rm = TRUE)
         badge_cls <- if (ledger_name == "AR") "badge bg-primary" else "badge bg-success"
         border_c  <- if (ledger_name == "AR") "#0a58ca" else "#198754"
         tbody_id  <- paste0("ven_tbody_", ledger_name, "_", cur)
@@ -466,8 +502,18 @@ vencidosServer <- function(id, shared) {
           ref_val     <- row[["Referencia"]] %||% ""
           empresa_val <- { ev <- row[["Empresa"]] %||% ""; if (is.na(ev)) "" else ev }
 
+          is_provision  <- identical(row[["source"]], "provision")
+          is_ghost_row  <- isTRUE(row[["confirmed"]])
+          row_badge_cls  <- if (is_provision) "pasivos-tag-provision" else badge_cls
+          row_tipo_label <- if (is_provision) "Provisión" else htmltools::htmlEscape(row[["Tipo"]])
+          prov_id_val    <- row[["provision_id"]] %||% ""
+          row_extra_cls  <- paste0(
+            if (is_provision) " pasivos-provision" else "",
+            if (is_ghost_row) " ven-confirmed-ghost" else ""
+          )
+
           paste0(
-            '<tr class="ven-row', if (nzchar(extra_class)) paste0(" ", extra_class) else "", '"',
+            '<tr class="ven-row', if (nzchar(extra_class)) paste0(" ", extra_class) else "", row_extra_cls, '"',
             if (nzchar(group_id_val)) paste0(' data-group-id="', group_id_val, '"') else "",
             ' data-tipo="',      htmltools::htmlEscape(row[["Tipo"]]),               '"',
             ' data-ledger="',    htmltools::htmlEscape(row[["Ledger"]]),             '"',
@@ -483,11 +529,17 @@ vencidosServer <- function(id, shared) {
             ' data-documento="', htmltools::htmlEscape(row[["Documento"]]),          '"',
             ' data-source="',    htmltools::htmlEscape(row[["source"]]),             '"',
             ' data-invid="',     htmltools::htmlEscape(row[["inv_id"]]),             '"',
+            ' data-provisionid="', htmltools::htmlEscape(prov_id_val),              '"',
             ' data-codigo="',    htmltools::htmlEscape(row[["Codigo"]] %||% ""),    '"',
             ' data-tagweight="', as.character(row[["tag_weight"]]),                  '"',
             if (nzchar(full_style)) paste0(' style="', full_style, '"') else "",
             '>',
-            '<td><span class="', badge_cls, '">', htmltools::htmlEscape(row[["Tipo"]]), '</span></td>',
+            '<td><span class="', row_badge_cls, '">', row_tipo_label, '</span>',
+            if (is_provision && nzchar(prov_id_val)) sprintf(
+              ' <button class="pasivos-convert-btn" onclick="event.stopPropagation();Shiny.setInputValue(\'pasivos_convert_request\',\'%s\',{priority:\'event\'})" title="Convertir a comprobante">⚡</button>',
+              htmltools::htmlEscape(prov_id_val)
+            ) else "",
+            '</td>',
             '<td>', if (nzchar(empresa_val)) paste0('<span class="cart-empresa-badge">', htmltools::htmlEscape(empresa_val), '</span>') else "", '</td>',
             '<td style="white-space:nowrap;">', htmltools::htmlEscape(row[["Fecha"]]), '</td>',
             '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">',
@@ -496,6 +548,13 @@ vencidosServer <- function(id, shared) {
             '<td class="text-muted small">', htmltools::htmlEscape(ref_val), '</td>',
             '<td class="text-muted small ven-doc-cell" style="display:none;">',
               htmltools::htmlEscape(row[["Documento"]]),
+            '</td>',
+            '<td class="text-muted small ven-orig-cell" style="display:none;">',
+              switch(row[["source"]] %||% "sap",
+                "sap"       = "SAP",
+                "manual"    = "Manual",
+                "provision" = "Provisión",
+                "SAP"),
             '</td>',
             '<td class="text-end fw-bold" style="color:#1a6cc4;font-variant-numeric:tabular-nums;">',
               fmt_money(row[["Importe"]]),
@@ -507,7 +566,8 @@ vencidosServer <- function(id, shared) {
 
         # ── Group summary row ────────────────────────────────────────────────
         make_group_tr <- function(grp_rows, gid) {
-          g_importe   <- sum(grp_rows[["Importe"]], na.rm = TRUE)
+          g_ghost     <- grp_rows[["confirmed"]] %||% FALSE
+          g_importe   <- sum(grp_rows[["Importe"]][!g_ghost], na.rm = TRUE)
           g_tagweight <- min(grp_rows[["tag_weight"]], na.rm = TRUE)
           g_etiqueta  <- dplyr::case_when(
             g_tagweight == 1L ~ "\U0001f7e0 Ambas",
@@ -521,7 +581,7 @@ vencidosServer <- function(id, shared) {
             "\U0001f7e0 Ambas"      = "background:#fff3e6;",
             "background:#f0f4fa;"
           )
-          n_inv    <- nrow(grp_rows)
+          n_inv    <- sum(!(grp_rows[["confirmed"]] %||% FALSE))
           g_tipo   <- grp_rows[["Tipo"]][1]
           g_fecha  <- grp_rows[["Fecha"]][1]
           g_parte  <- grp_rows[["Parte"]][1]
@@ -560,6 +620,7 @@ vencidosServer <- function(id, shared) {
             '</td>',
             '<td class="text-muted small"></td>',
             '<td class="text-muted small ven-doc-cell" style="display:none;"></td>',
+            '<td class="text-muted small ven-orig-cell" style="display:none;"></td>',
             '<td class="text-end fw-bold" style="color:#1a6cc4;font-variant-numeric:tabular-nums;">',
               fmt_money(g_importe),
             '</td>',
@@ -605,7 +666,7 @@ vencidosServer <- function(id, shared) {
                              "; border-radius:0 4px 4px 0;"),
             tags$span(class = badge_cls, tipo_label),
             tags$span(class = "small text-muted",
-                      paste(nrow(rows), "factura", if (nrow(rows) != 1) "s" else "")),
+                      paste(sum(!is_ghost), "factura", if (sum(!is_ghost) != 1) "s" else "")),
             tags$span(class = "ms-auto fw-semibold",
                       style = "font-size:.9rem; color:#0B2038;",
                       fmt_money(total), " ", cur)
@@ -626,6 +687,11 @@ vencidosServer <- function(id, shared) {
                   style      = "display:none;",
                   "Documento ", tags$span(class = "ven-sort-arrow", "\u2195")
                 ),
+                tags$th(
+                  class = "ven-orig-th",
+                  style = "display:none;",
+                  "Origen"
+                ),
                 tags$th(class = "ven-th-sort text-end", `data-col` = "importe",
                         onclick = "venSortByCol('importe')",
                         "Importe ", tags$span(class = "ven-sort-arrow", "\u2195")),
@@ -645,8 +711,9 @@ vencidosServer <- function(id, shared) {
         cur_df    <- disp_df[disp_df[["Moneda"]] == cur, ]
         ar_rows   <- cur_df[cur_df[["Ledger"]] == "AR", ]
         ap_rows   <- cur_df[cur_df[["Ledger"]] == "AP", ]
-        cur_total <- sum(cur_df[["Importe"]], na.rm = TRUE)
-        cur_n     <- nrow(cur_df)
+        cur_ghost <- cur_df[["confirmed"]] %||% FALSE
+        cur_total <- sum(cur_df[["Importe"]][!cur_ghost], na.rm = TRUE)
+        cur_n     <- sum(!cur_ghost)
 
         div(class = "ven-cur-section mb-2", `data-moneda` = cur,
           div(class = "ven-currency-header d-flex align-items-center gap-2 mb-2",
@@ -662,7 +729,7 @@ vencidosServer <- function(id, shared) {
         )
       })
 
-      total_n <- nrow(disp_df)
+      total_n <- sum(!(disp_df[["confirmed"]] %||% FALSE))
       tagList(
         div(id    = "ven_count",
             class = "small text-muted mb-3",

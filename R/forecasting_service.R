@@ -16,8 +16,8 @@
 # @param fecha   Date: the date this estimate applies to
 # @param method  character or NULL: method override; ignored in Stage 0 stub
 # @return numeric scalar; NA_real_ if no estimate available
-forecasting_get_estimate <- function(metric, fecha, method = NULL) {
-  est <- tryCatch(load_pasivos_estimates(), error = function(e) NULL)
+forecasting_get_estimate <- function(metric, fecha, method = NULL, client_id = NULL) {
+  est <- tryCatch(load_pasivos_estimates(client_id = client_id), error = function(e) NULL)
   if (is.null(est) || !nrow(est)) return(NA_real_)
 
   matches <- est[est$metric == metric, , drop = FALSE]
@@ -53,9 +53,10 @@ forecasting_get_estimate <- function(metric, fecha, method = NULL) {
 forecasting_set_estimate <- function(metric, fecha, value,
                                       source_method = "manual",
                                       is_frozen     = FALSE,
-                                      user          = "system") {
+                                      user          = "system",
+                                      client_id     = NULL) {
   fecha   <- as.Date(fecha)
-  current <- tryCatch(load_pasivos_estimates(), error = function(e) .schema_pasivos_estimates())
+  current <- tryCatch(load_pasivos_estimates(client_id = client_id), error = function(e) .schema_pasivos_estimates())
 
   existing_idx <- which(current$metric == metric & !is.na(current$fecha) &
                           current$fecha == fecha)
@@ -77,7 +78,7 @@ forecasting_set_estimate <- function(metric, fecha, value,
     updated <- dplyr::bind_rows(current, new_row)
   }
 
-  save_pasivos_estimates(updated)
+  save_pasivos_estimates(updated, client_id = client_id)
 
   pasivos_log_audit(
     action_type = "estimate.changed",
@@ -86,7 +87,8 @@ forecasting_set_estimate <- function(metric, fecha, value,
     target_id   = paste0(metric, "@", as.character(fecha)),
     after       = list(metric = metric, fecha = as.character(fecha),
                        value = value, source_method = source_method,
-                       is_frozen = is_frozen)
+                       is_frozen = is_frozen),
+    client_id   = client_id
   )
 
   invisible(TRUE)
@@ -96,8 +98,8 @@ forecasting_set_estimate <- function(metric, fecha, value,
 # @param metric  character
 # @param value   numeric
 # @param user    character
-forecasting_freeze_metric <- function(metric, value, user = "system") {
-  current <- tryCatch(load_pasivos_estimates(), error = function(e) .schema_pasivos_estimates())
+forecasting_freeze_metric <- function(metric, value, user = "system", client_id = NULL) {
+  current <- tryCatch(load_pasivos_estimates(client_id = client_id), error = function(e) .schema_pasivos_estimates())
 
   # Unfreeze any existing rows for this metric, then insert a synthetic frozen row.
   current$is_frozen[current$metric == metric] <- FALSE
@@ -112,14 +114,15 @@ forecasting_freeze_metric <- function(metric, value, user = "system") {
     updated_at    = Sys.time()
   )
   updated <- dplyr::bind_rows(current, frozen_row)
-  save_pasivos_estimates(updated)
+  save_pasivos_estimates(updated, client_id = client_id)
 
   pasivos_log_audit(
     action_type = "estimate.frozen",
     user        = user,
     target_kind = "estimate",
     target_id   = metric,
-    after       = list(metric = metric, frozen_value = value)
+    after       = list(metric = metric, frozen_value = value),
+    client_id   = client_id
   )
 
   invisible(TRUE)
@@ -128,17 +131,18 @@ forecasting_freeze_metric <- function(metric, value, user = "system") {
 # Remove the freeze on a metric so live/interpolated values are used again.
 # @param metric  character
 # @param user    character
-forecasting_unfreeze_metric <- function(metric, user = "system") {
-  current <- tryCatch(load_pasivos_estimates(), error = function(e) .schema_pasivos_estimates())
+forecasting_unfreeze_metric <- function(metric, user = "system", client_id = NULL) {
+  current <- tryCatch(load_pasivos_estimates(client_id = client_id), error = function(e) .schema_pasivos_estimates())
 
   current$is_frozen[current$metric == metric] <- FALSE
-  save_pasivos_estimates(current)
+  save_pasivos_estimates(current, client_id = client_id)
 
   pasivos_log_audit(
     action_type = "estimate.unfrozen",
     user        = user,
     target_kind = "estimate",
-    target_id   = metric
+    target_id   = metric,
+    client_id   = client_id
   )
 
   invisible(TRUE)
@@ -146,8 +150,8 @@ forecasting_unfreeze_metric <- function(metric, user = "system") {
 
 # List all known metrics in the estimates store.
 # @return character vector (may be empty)
-forecasting_list_metrics <- function() {
-  est <- tryCatch(load_pasivos_estimates(), error = function(e) NULL)
+forecasting_list_metrics <- function(client_id = NULL) {
+  est <- tryCatch(load_pasivos_estimates(client_id = client_id), error = function(e) NULL)
   if (is.null(est) || !nrow(est)) return(character(0))
   unique(est$metric)
 }

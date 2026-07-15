@@ -1,0 +1,1 @@
+source('tests/test_tag_for_day.R', local=FALSE)

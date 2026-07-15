@@ -26,7 +26,8 @@ pasivos_log_audit <- function(action_type,
                                before         = NULL,
                                after          = NULL,
                                session_id     = NA_character_,
-                               notes          = NA_character_) {
+                               notes          = NA_character_,
+                               client_id      = NULL) {
   if (!action_type %in% PASIVOS_ACTION_TYPES) {
     warning("[pasivos] unknown action_type: ", action_type)
   }
@@ -57,8 +58,8 @@ pasivos_log_audit <- function(action_type,
     notes          = as.character(notes %||% NA_character_)
   )
 
-  existing <- tryCatch(load_pasivos_audit(), error = function(e) .schema_pasivos_audit())
-  save_pasivos_audit(dplyr::bind_rows(existing, new_row))
+  existing <- tryCatch(load_pasivos_audit(client_id = client_id), error = function(e) .schema_pasivos_audit())
+  save_pasivos_audit(dplyr::bind_rows(existing, new_row), client_id = client_id)
 
   invisible(row_id)
 }

@@ -1,0 +1,85 @@
+# =============================================================================
+# nginx.conf.template — HopDesk Reverse Proxy
+#
+# STATUS: Blueprint only. Activate when self-hosting on a domain with SSL.
+#
+# HOW TO USE:
+#   1. Get SSL certs via certbot:
+#        certbot certonly --standalone -d networks.hopdesk.com -d admin.hopdesk.com
+#   2. Copy this file → nginx.conf (drop .template suffix)
+#   3. Replace all REPLACE_* placeholders with actual values
+#   4. Uncomment the nginx service in docker-compose.yml
+#   5. docker-compose up -d nginx
+#
+# ADDING A NEW CLIENT:
+#   Copy the "networks.hopdesk.com" server block, change server_name and proxy_pass port.
+#   The container port must match what you set in docker-compose.yml for that client.
+#
+# PLACEHOLDER LEGEND:
+#   REPLACE_NETWORKS_DOMAIN  — e.g. networks.hopdesk.com
+#   REPLACE_ADMIN_DOMAIN     — e.g. admin.hopdesk.com
+#   REPLACE_CERT_DIR         — e.g. /etc/letsencrypt/live/networks.hopdesk.com
+# =============================================================================
+
+worker_processes auto;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    sendfile           on;
+    keepalive_timeout  65;
+    client_max_body_size 50M;   # allow large file uploads (Excel, PDF)
+
+    # Shared proxy settings — applied via include in each location block
+    proxy_http_version     1.1;
+    proxy_set_header       Upgrade $http_upgrade;
+    proxy_set_header       Connection "upgrade";  # WebSocket support for Shiny
+    proxy_set_header       Host $host;
+    proxy_set_header       X-Real-IP $remote_addr;
+    proxy_set_header       X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header       X-Forwarded-Proto $scheme;
+    proxy_read_timeout     3600s;   # long-running Shiny sessions
+    proxy_send_timeout     3600s;
+
+    # ── HTTP → HTTPS redirect (all vhosts) ──────────────────────────────────────
+    server {
+        listen 80;
+        server_name REPLACE_NETWORKS_DOMAIN REPLACE_ADMIN_DOMAIN;
+        return 301 https://$host$request_uri;
+    }
+
+    # ── Networks Group client ────────────────────────────────────────────────────
+    server {
+        listen 443 ssl;
+        server_name REPLACE_NETWORKS_DOMAIN;
+
+        ssl_certificate     REPLACE_CERT_DIR/fullchain.pem;
+        ssl_certificate_key REPLACE_CERT_DIR/privkey.pem;
+        ssl_protocols       TLSv1.2 TLSv1.3;
+        ssl_ciphers         HIGH:!aNULL:!MD5;
+
+        location / {
+            proxy_pass http://networks-client:3838;
+        }
+    }
+
+    # ── HopDesk admin deployment ─────────────────────────────────────────────────
+    server {
+        listen 443 ssl;
+        server_name REPLACE_ADMIN_DOMAIN;
+
+        ssl_certificate     REPLACE_CERT_DIR/fullchain.pem;
+        ssl_certificate_key REPLACE_CERT_DIR/privkey.pem;
+        ssl_protocols       TLSv1.2 TLSv1.3;
+        ssl_ciphers         HIGH:!aNULL:!MD5;
+
+        location / {
+            proxy_pass http://hd-admin:3838;
+        }
+    }
+}

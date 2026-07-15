@@ -25,9 +25,10 @@ score_proveedor_match <- function(query, candidate) {
     score <- score + 40L
 
   # 3. Name matching — compare query$parte against nombre, alias (+30 max)
-  q_name <- tolower(trimws(query$parte %||% query$nombre %||% ""))
-  c_nombre <- tolower(trimws(candidate$nombre %||% ""))
-  c_alias  <- tolower(trimws(candidate$alias  %||% ""))
+  # Strip accents so "García" matches "garcia", etc.
+  q_name   <- strip_accents(tolower(trimws(query$parte %||% query$nombre %||% "")))
+  c_nombre <- strip_accents(tolower(trimws(candidate$nombre %||% "")))
+  c_alias  <- strip_accents(tolower(trimws(candidate$alias  %||% "")))
   if (nzchar(q_name)) {
     # Exact name match
     if (q_name == c_nombre || q_name == c_alias)

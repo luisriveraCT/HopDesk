@@ -49,7 +49,6 @@ intercoServer <- function(id, shared) {
 
     # ── State ──────────────────────────────────────────────────────────────
     ic_invoices   <- reactiveVal(NULL)   # list(ar = df | NULL, ap = df | NULL)
-    ic_auto_done  <- reactiveVal(FALSE)  # load once on init
     selected_pair <- reactiveVal(NULL)   # list(ini, empresa, counterpart, ledger)
     ic_view_mode  <- reactiveVal("table")
 
@@ -89,9 +88,10 @@ intercoServer <- function(id, shared) {
     # ── IC filter logic ────────────────────────────────────────────────────
     .load_ic_data <- function() {
       reg      <- isolate(shared$interco_v2())
-      if (is.null(reg) || !length(reg$companies)) return(NULL)
+      if (is.null(reg)) return(NULL)
 
       cmap    <- isolate(shared$company_map())
+      if (!length(cmap)) return(NULL)
       inv_map <- setNames(names(cmap), unname(cmap))
 
       ar_pre   <- toupper(reg$ar_prefix %||% "C")
@@ -106,8 +106,12 @@ intercoServer <- function(id, shared) {
       })
       names(ic_codes) <- names(cmap)
 
-      snap_ar <- tryCatch(load_sap_snapshot("AR")$data, error = function(e) NULL)
-      snap_ap <- tryCatch(load_sap_snapshot("AP")$data, error = function(e) NULL)
+      # Use sap_data() from shared — it is updated by the context-switch observer
+      # when a staff member jumps to a client, so it always reflects the active context.
+      # load_sap_snapshot() reads from the native CLIENT_ID prefix and would return
+      # hd-admin's empty snapshot even when jumped into a client's context.
+      snap_ar <- isolate(shared$sap_data()$AR)
+      snap_ap <- isolate(shared$sap_data()$AP)
 
       .filter_ic <- function(df, ledger) {
         if (is.null(df) || !is.data.frame(df) || nrow(df) == 0) return(NULL)
@@ -117,10 +121,26 @@ intercoServer <- function(id, shared) {
         slot    <- if (ledger == "AR") "ar" else "ap"
         df$.ini <- inv_map[df$Empresa]
 
-        keep <- mapply(function(ini, code) {
-          if (is.na(ini) || !nzchar(ini %||% "")) return(FALSE)
-          toupper(trimws(code %||% "")) %in% (ic_codes[[ini]][[slot]] %||% character())
-        }, df$.ini, df[[code_col]])
+        has_any_codes <- length(ic_codes) > 0 && any(vapply(names(cmap), function(ini) {
+          length(ic_codes[[ini]][[slot]] %||% character()) > 0
+        }, logical(1)))
+
+        if (has_any_codes) {
+          keep <- mapply(function(ini, code) {
+            if (is.na(ini) || !nzchar(ini %||% "")) return(FALSE)
+            toupper(trimws(code %||% "")) %in% (ic_codes[[ini]][[slot]] %||% character())
+          }, df$.ini, df[[code_col]])
+        } else if ("Parte" %in% names(df)) {
+          # Fallback: name-based detection when no CardCodes are configured.
+          # Matches Parte column against COMPANY_MAP display names.
+          company_names_up <- toupper(unname(cmap))
+          keep             <- toupper(trimws(df[["Parte"]])) %in% company_names_up
+          keep[is.na(keep)] <- FALSE
+          message("[IC_MODULE] name-fallback ledger=", ledger,
+                  " rows_in=", nrow(df), " rows_ic=", sum(keep))
+        } else {
+          keep <- rep(FALSE, nrow(df))
+        }
 
         out <- df[keep, , drop = FALSE]
         if (nrow(out) == 0) return(NULL)
@@ -135,13 +155,21 @@ intercoServer <- function(id, shared) {
       )
     }
 
-    # ── Auto-load once when registry is ready ──────────────────────────────
+    # ── Auto-load: re-runs whenever registry, companies, or SAP data changes ──
+    # Reacts to interco_v2, company_map, AND sap_data — so context switches and
+    # live SAP refreshes all update the IC view automatically without a flag.
+    # IMPORTANT: do NOT use req() here. req() silently aborts without clearing
+    # ic_invoices, so jumping to a client with no SAP data leaves stale IC rows
+    # from the previous context visible. Explicit clearing is required.
     observe({
-      req(!ic_auto_done())
-      reg <- shared$interco_v2()
-      req(!is.null(reg), length(reg$companies) > 0)
+      reg  <- shared$interco_v2()
+      cmap <- shared$company_map()
+      sd   <- shared$sap_data()
+      if (is.null(reg) || length(cmap) == 0 || (is.null(sd$AR) && is.null(sd$AP))) {
+        ic_invoices(NULL)
+        return()
+      }
       ic_invoices(.load_ic_data())
-      ic_auto_done(TRUE)
     })
 
     observeEvent(input$ic_refresh, {
@@ -206,7 +234,7 @@ intercoServer <- function(id, shared) {
           column(5,
             div(class = "border rounded p-3 mb-3 bg-primary-subtle",
               tags$p(class = "small fw-semibold mb-1 text-primary-emphasis",
-                     tagList(icon("arrow-down-to-line"), " CxC Intercompany (cobros)")),
+                     tagList(icon("arrow-circle-down"), " CxC Intercompany (cobros)")),
               tags$p(class = "fw-bold mb-0 fs-6", .fmt_totals(dat$ar)),
               tags$small(class = "text-muted",
                          sprintf("%d factura%s", n_ar, if (n_ar == 1) "" else "s"))
@@ -215,7 +243,7 @@ intercoServer <- function(id, shared) {
           column(5,
             div(class = "border rounded p-3 mb-3 bg-danger-subtle",
               tags$p(class = "small fw-semibold mb-1 text-danger-emphasis",
-                     tagList(icon("arrow-up-from-line"), " CxP Intercompany (pagos)")),
+                     tagList(icon("arrow-circle-up"), " CxP Intercompany (pagos)")),
               tags$p(class = "fw-bold mb-0 fs-6", .fmt_totals(dat$ap)),
               tags$small(class = "text-muted",
                          sprintf("%d factura%s", n_ap, if (n_ap == 1) "" else "s"))
@@ -378,7 +406,7 @@ intercoServer <- function(id, shared) {
 
       combined <- upsert_pagar_hoy(ph, new_rows)
       shared$pagar_hoy_db(combined)
-      tryCatch(save_pagar_hoy(combined), error = function(e) NULL)
+      tryCatch(save_pagar_hoy(combined, shared$current_user(), client_id = shared$active_client_id()), error = function(e) NULL)
       nrow(new_rows)
     }
 

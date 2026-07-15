@@ -123,7 +123,9 @@ empresasUI <- function(id) {
         "Puedes modificarlas desde el panel de edición — el cambio se propagará automáticamente ",
         "a cuentas bancarias, proveedores y mapas de intercompañía. ",
         "Una empresa desactivada queda oculta, pero sus datos históricos se conservan para auditoría."
-      )
+      ),
+
+      uiOutput(ns("group_config_section"))
     )
   )
 }
@@ -232,7 +234,7 @@ empresasServer <- function(id, shared) {
       # Check per-user permission override
       info <- tryCatch(shared$current_user_info(), error = function(e) NULL)
       if (is.null(info)) return(FALSE)
-      all_u <- tryCatch(auth_load_usuarios(), error = function(e) NULL)
+      all_u <- tryCatch(auth_load_usuarios(client_id = shared$active_client_id()), error = function(e) NULL)
       if (is.null(all_u) || !nrow(all_u)) return(FALSE)
       row <- all_u[tolower(all_u$username) == tolower(info$user %||% ""), ]
       if (!nrow(row)) return(FALSE)
@@ -254,28 +256,32 @@ empresasServer <- function(id, shared) {
       ovr <- .empresas_local()
       if (!is.null(ovr)) return(ovr)
       req(req_authorized())
-      df <- load_empresas()
-      # Broadcast to shared so company_map_rv and empresa buttons update
-      if (!is.null(shared$empresas_db) && is.function(shared$empresas_db))
-        shared$empresas_db(df)
-      df
+      # Consume shared$empresas_db — populated by the context-switch observer.
+      # Never read from S3 directly here: that would bypass the active client
+      # context and always read from the env-var prefix (hd-admin).
+      shared$empresas_db()
     })
 
     # Helper: save + update local cache + broadcast to shared
     .save_and_broadcast <- function(df) {
-      save_empresas(df)                         # throws on S3 failure
+      save_empresas(df, client_id = shared$active_client_id())                         # throws on S3 failure
+      bump_sync_version("empresas_db")
       .empresas_local(df)
       if (!is.null(shared$empresas_db) && is.function(shared$empresas_db))
         shared$empresas_db(df)
       invisible(TRUE)
     }
 
-    # Visible (non-deleted) companies
+    # Visible (non-deleted) companies, filtered to the user's allowed initials.
     empresas_rv <- reactive({
       df <- all_empresas_rv()
-      req(!is.null(df))
+      if (is.null(df)) return(.schema_empresas())
       if (nrow(df) > 0 && "deleted" %in% names(df))
         df <- df[is.na(df$deleted) | df$deleted != TRUE, , drop = FALSE]
+      # Respect group-based company visibility (NULL = no filter; character(0) = none)
+      allowed <- tryCatch(shared$visible_initials(), error = function(e) NULL)
+      if (!is.null(allowed) && nrow(df) > 0 && "initials" %in% names(df))
+        df <- df[df$initials %in% allowed, , drop = FALSE]
       df
     })
 
@@ -283,7 +289,7 @@ empresasServer <- function(id, shared) {
     output$empresas_tbl <- DT::renderDataTable({
       req(req_authorized())
       empresas <- empresas_rv()
-      req(!is.null(empresas) && nrow(empresas) > 0)
+      req(!is.null(empresas))
 
       edit_id <- ns("trs_edit_click")
       del_id  <- ns("trs_del_click")
@@ -293,7 +299,7 @@ empresasServer <- function(id, shared) {
         Iniciales      = empresas$initials,
         `Razón Social` = empresas$razon_social,
         RFC            = empresas$rfc,
-        Estado         = ifelse(isTRUE(empresas$activa) | empresas$activa == TRUE,
+        Estado         = ifelse(!is.na(empresas$activa) & empresas$activa == TRUE,
                                 "Activa", "Inactiva"),
         Editar = vapply(seq_len(nrow(empresas)), function(i)
           sprintf(
@@ -425,7 +431,7 @@ empresasServer <- function(id, shared) {
           showNotification("Ya existe otra empresa con esas iniciales.", type = "error")
           return()
         }
-        cascade_err <- tryCatch({ rename_empresa_initials(old_ini, new_ini); NULL },
+        cascade_err <- tryCatch({ rename_empresa_initials(old_ini, new_ini, client_id = shared$active_client_id()); NULL },
                                 error = function(e) e$message)
         if (!is.null(cascade_err)) {
           showNotification(paste0("Error actualizando tablas relacionadas: ", cascade_err),
@@ -459,25 +465,25 @@ empresasServer <- function(id, shared) {
       if (new_ini != old_ini) {
         tryCatch(
           if (!is.null(shared$ctas_cuentas) && is.function(shared$ctas_cuentas))
-            shared$ctas_cuentas(load_ctas_cuentas()),
+            shared$ctas_cuentas(load_ctas_cuentas(client_id = shared$active_client_id())),
           error = function(e) message("[EMP rename] reload ctas_cuentas: ", e$message)
         )
         tryCatch(
           if (!is.null(shared$interco_v2) && is.function(shared$interco_v2))
             shared$interco_v2(
-              load_interco_v2() %||%
+              load_interco_v2(client_id = shared$active_client_id()) %||%
                 list(ar_prefix = "C", ap_prefix = "P", companies = list())
             ),
           error = function(e) message("[EMP rename] reload interco_v2: ", e$message)
         )
         tryCatch(
           if (!is.null(shared$proveedores_db) && is.function(shared$proveedores_db))
-            shared$proveedores_db(load_proveedores()),
+            shared$proveedores_db(load_proveedores(client_id = shared$active_client_id())),
           error = function(e) message("[EMP rename] reload proveedores: ", e$message)
         )
         tryCatch(
           if (!is.null(shared$parte_alias_map_db) && is.function(shared$parte_alias_map_db))
-            shared$parte_alias_map_db(load_parte_alias_map()),
+            shared$parte_alias_map_db(load_parte_alias_map(client_id = shared$active_client_id())),
           error = function(e) message("[EMP rename] reload parte_alias_map: ", e$message)
         )
       }
@@ -558,6 +564,107 @@ empresasServer <- function(id, shared) {
       selected_idx(NULL)
       showNotification(paste0("Empresa '", target_initials, "' desactivada."),
                        type = "message", duration = 4)
+    })
+
+    # ── Group configuration section (dev only) ────────────────────────────────
+
+    output$group_config_section <- renderUI({
+      req(req_authorized())
+      if (!identical(current_tier(), "dev")) return(NULL)
+
+      cfg <- tryCatch(shared$group_config(), error = function(e) NULL) %||%
+             list(group_name = "Networks Group", logo_raw = NULL, logo_ext = "png")
+      has_logo <- !is.null(cfg$logo_raw) && length(cfg$logo_raw) > 0
+
+      tagList(
+        tags$hr(class = "mt-4"),
+        div(
+          class = "card border-0 shadow-sm mt-3",
+          div(
+            class = "card-header bg-white py-2 d-flex align-items-center gap-2",
+            icon("gear", class = "text-primary"),
+            tags$span(class = "fw-semibold", "Configuración del Grupo"),
+            tags$span(class = "badge bg-primary ms-1 small", "DEV")
+          ),
+          div(
+            class = "card-body",
+            fluidRow(
+              column(8,
+                tags$label("Nombre del grupo", class = "form-label small fw-semibold"),
+                tags$p(class = "text-muted small mb-1",
+                       "Aparece en la portada del reporte Word y como prefijo del nombre de archivo."),
+                textInput(ns("group_name_input"), NULL,
+                          value = cfg$group_name %||% "Networks Group",
+                          placeholder = "Ej: Networks Group",
+                          width = "100%")
+              )
+            ),
+            fluidRow(
+              column(8,
+                tags$label("Logo del grupo", class = "form-label small fw-semibold"),
+                tags$p(class = "text-muted small mb-1",
+                       "PNG o JPG, máx. 2 MB. Aparece en la portada del reporte Word."),
+                fileInput(ns("group_logo_upload"), NULL,
+                          accept = c("image/png", "image/jpeg", ".png", ".jpg", ".jpeg"),
+                          buttonLabel = "Elegir imagen…",
+                          width = "100%")
+              ),
+              if (has_logo) {
+                column(4,
+                  div(class = "mt-4 pt-2",
+                      icon("circle-check", class = "text-success"),
+                      tags$span(class = "small text-muted ms-1", "Logo guardado"))
+              ) } else NULL
+            ),
+            actionButton(ns("btn_save_group_config"),
+                         tagList(icon("floppy-disk"), " Guardar configuración"),
+                         class = "btn btn-sm btn-primary mt-2")
+          )
+        )
+      )
+    })
+
+    observeEvent(input$btn_save_group_config, {
+      name <- trimws(input$group_name_input %||% "")
+      if (!nzchar(name)) {
+        showNotification("El nombre del grupo no puede estar vacío.", type = "warning")
+        return()
+      }
+      if (nchar(name) > 100) {
+        showNotification("El nombre del grupo no puede superar 100 caracteres.", type = "warning")
+        return()
+      }
+
+      cfg <- tryCatch(shared$group_config(), error = function(e) NULL) %||%
+             list(group_name = "Networks Group", logo_raw = NULL, logo_ext = "png")
+      cfg$group_name <- name
+
+      logo_file <- input$group_logo_upload
+      if (!is.null(logo_file) && file.exists(logo_file$datapath)) {
+        ext <- tolower(tools::file_ext(logo_file$name))
+        if (!ext %in% c("png", "jpg", "jpeg")) {
+          showNotification("Formato inválido. Usa PNG o JPG.", type = "error")
+          return()
+        }
+        size_mb <- file.size(logo_file$datapath) / 1024 / 1024
+        if (size_mb > 2) {
+          showNotification("El logo supera 2 MB. Usa una imagen más pequeña.", type = "error")
+          return()
+        }
+        cfg$logo_raw <- readBin(logo_file$datapath, "raw",
+                                n = file.size(logo_file$datapath))
+        cfg$logo_ext <- if (ext == "jpeg") "jpg" else ext
+      }
+
+      tryCatch({
+        save_group_config(cfg, client_id = shared$active_client_id())
+        shared$group_config(cfg)
+        showNotification("Configuración del grupo guardada correctamente.",
+                         type = "message", duration = 4)
+      }, error = function(e) {
+        showNotification(paste("Error al guardar:", conditionMessage(e)),
+                         type = "error", duration = 6)
+      })
     })
 
   })

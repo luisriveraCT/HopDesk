@@ -2,6 +2,12 @@
 # app.R
 # =============================================================================
 
+# Bootstrap: source global.R if it hasn't been loaded yet in this R session.
+# Covers the "Run App" button workflow where the user hasn't manually sourced
+# global.R first. The guard avoids double-sourcing in the normal dev workflow
+# (source("R/global.R") then runApp()).
+if (!exists("S3_KEYS", envir = .GlobalEnv)) source("R/global.R")
+
 source("R/pagar_hoy_module.R")
 source("R/search_module.R")
 source("R/vencidos_module.R")
@@ -20,6 +26,7 @@ source("R/pasivos_wizard_module.R")
 source("R/pasivos_edit_confirm_module.R")
 source("R/pasivos_list_module.R")
 source("R/pasivos_table_module.R")
+source("R/cashflow_preview_module.R")
 # bancos_parser.R / bancos_persistence.R / bancos_module.R sourced in global.R
 
 AR_CONFIG <- list(
@@ -47,14 +54,28 @@ ui <- bslib::page_navbar(
                               primary = "#0A58CA"),
   fillable = TRUE,
   id       = "nav",
+  selected = if (IS_ADMIN_DEPLOYMENT) "TIERS" else "CAL",
   header   = tagList(
     shinyjs::useShinyjs(),
     app_styles(),
     app_scripts(),
+    tags$link(rel = "stylesheet", type = "text/css", href = "cashflow_preview.css?v=6"),
     # Hide shinymanager's default floating session/logout widget (uses .mfb-* classes)
     tags$style(HTML("[id*=shinymanager],[class*=shinymanager],[class*=mfb-]{display:none!important}")),
     # Hide GRUPO menu by default — server shows it only for dev / admin tier
     tags$style(HTML(".navbar .nav-link[data-value='GRUPO']{display:none!important}")),
+    # In admin deployment: hide all financial tabs until a client context is jumped into
+    if (IS_ADMIN_DEPLOYMENT) tags$style(HTML(paste0(
+      ".navbar .nav-link[data-value='CAL'],",
+      ".navbar .nav-link[data-value='VEN'],",
+      ".navbar .nav-link[data-value='PH'],",
+      ".navbar .nav-link[data-value='BNC'],",
+      ".navbar .nav-link[data-value='IC'],",
+      ".navbar .nav-link[data-value='PSV'],",
+      ".navbar .nav-link[data-value='FC'],",
+      ".navbar .nav-link[data-value='RPT']",
+      "{display:none!important}"
+    ))),
     tags$script(HTML("
       $(document).on('shiny:connected', function() {
         function hideSmWidgets() {
@@ -99,8 +120,9 @@ ui <- bslib::page_navbar(
           var navbar  = document.querySelector('nav.navbar');
           var rptWrap = document.getElementById('rpt-rpt_main_wrap');
           var rptFab  = document.getElementById('rpt-fab_root');
-          var noBar   = val === 'PH' || val === 'RPT' || val === 'TIERS' || val === 'EMP';
+          var noBar   = val === 'RPT' || val === 'TIERS' || val === 'EMP';
           if (bar)     bar.style.display    = noBar ? 'none' : '';
+          if (bar)     bar.classList.toggle('cb-mode-cal', val === 'CAL');
           if (navbar)  navbar.style.display = (val === 'RPT') ? 'none' : '';
           if (rptWrap) rptWrap.style.display = (val === 'RPT') ? 'block' : 'none';
           if (rptFab)  rptFab.style.display  = (val === 'RPT') ? 'flex'  : 'none';
@@ -167,71 +189,79 @@ ui <- bslib::page_navbar(
       });
     ")),
     div(
-      class = "control-bar border-bottom bg-white",
+      class = "control-bar bg-white",
       div(
-        class = "px-3 pt-2 pb-1 d-flex align-items-center gap-2",
-        tags$span(class = "small text-muted flex-shrink-0", "Empresa:"),
-        uiOutput("empresa_ui")
-      ),
-      tags$hr(class = "my-0 mx-3"),
-      div(
-        class = "px-3 pt-1 pb-2 d-flex flex-wrap gap-3 align-items-end",
-        div(class = "control-item",
-          tags$label("Mes", class = "form-label mb-0 small text-muted"),
-          uiOutput("month_ui")
+        class = "cb-row",
+        # Left zone — company pills (scrollable)
+        div(class = "cb-zone-emp",
+          div(class = "emp-strip-outer",
+            div(class = "emp-strip", id = "emp-strip",
+              uiOutput("empresa_ui")
+            )
+          )
         ),
-        div(class = "control-item",
-          tags$label("Moneda", class = "form-label mb-0 small text-muted"),
-          uiOutput("currency_ui")
-        ),
-        div(class = "control-item",
-          tags$label("Intercompany", class = "form-label mb-0 small text-muted"),
+        # Center zone — controls grouped in a card
+        div(class = "cb-zone-controls",
+          div(class = "cb-field cb-month",
+            uiOutput("month_ui")
+          ),
+          div(class = "cb-field cb-currency",
+            uiOutput("currency_ui")
+          ),
           shinyWidgets::radioGroupButtons(
             inputId  = "ic_mode", label = NULL,
-            choices  = c("Excluir" = "exclude", "Incluir" = "include", "Sólo IC" = "only"),
+            choices  = c("Sin IC" = "exclude", "Con IC" = "include", "Sólo IC" = "only"),
             selected = "exclude", size = "sm", status = "outline-secondary"
           )
         ),
-        div(class = "ms-auto d-flex gap-2 align-items-end",
-          actionButton("btn_refresh",  icon("rotate"), label = NULL,
-                       class = "btn btn-outline-secondary btn-sm",
-                       title = "Actualizar datos de SAP"),
+        # Right zone — action buttons
+        div(class = "cb-zone-actions d-flex align-items-center gap-2",
+          actionButton("btn_export",    icon("file-export"),       label = NULL,
+                       class = "btn btn-outline-secondary btn-sm cb-act",
+                       title = "Exportar Flujo de Caja"),
+          actionButton("btn_refresh",   icon("rotate"),           label = NULL,
+                       class = "btn btn-outline-secondary btn-sm cb-act",
+                       title = "Actualizar datos de ERP"),
           actionButton("btn_search",    icon("magnifying-glass"), label = NULL,
-                       class = "btn btn-outline-secondary btn-sm",
+                       class = "btn btn-outline-secondary btn-sm cb-act",
                        title = "Buscar facturas del mes"),
-          actionButton("btn_settings", icon("gear"), label = NULL,
-             class = "btn btn-outline-secondary btn-sm",
-             title = "Configuración"),
-          actionButton("btn_add_entry", icon("plus"),   label = "Agregar",
-                       class = "btn btn-outline-primary btn-sm")
+          actionButton("btn_settings",  icon("gear"),             label = NULL,
+                       class = "btn btn-outline-secondary btn-sm cb-act",
+                       title = "Configuración"),
+          actionButton("btn_add_entry", icon("plus"), label = " Agregar",
+                       class = "btn btn-primary btn-sm")
         )
       )
-    )
+    ),
+    # Notes bars + panels live here (top-level DOM) so position:fixed isn't
+    # clipped by bslib's tab-content overflow container.
+    div(id = "notes_bar", class = "notes-toggle-bar",
+      actionButton("toggle_notes",
+                   tagList(icon("sticky-note"), " Notas del mes"),
+                   class = "notes-bar-btn")
+    ),
+    uiOutput("notes_panel")
   ),
 
   bslib::nav_panel(
-    title = "Cobros (CxC)", value = "AR",
-    div(class = "h-100 position-relative",
-      ledgerModuleUI("ar"),
-      div(class = "notes-toggle-bar",
-        actionLink("toggle_notes_ar",
-                   tagList(icon("sticky-note"), " Notas del mes"),
-                   class = "text-muted small")
+    title = tagList(icon("calendar"), " Calendario"), value = "CAL",
+    # cf-slide-wrapper clips overflow so only the visible panel shows.
+    # .cf-preview-active (toggled by cashflowPreviewServer) slides both
+    # panels left by 100%, revealing the preview and hiding the calendar.
+    div(class = "h-100 cf-slide-wrapper",
+      # Panel A — Calendar
+      div(id = "cf-panel-calendar", class = "cf-panel cf-panel-calendar h-100",
+        div(id = "cal_ar_wrapper", class = "h-100 position-relative",
+          ledgerModuleUI("ar")
+        ),
+        shinyjs::hidden(
+          div(id = "cal_ap_wrapper", class = "h-100 position-relative",
+            ledgerModuleUI("ap")
+          )
+        )
       ),
-      uiOutput("notes_panel_ar")
-    )
-  ),
-
-  bslib::nav_panel(
-    title = "Pagos (CxP)", value = "AP",
-    div(class = "h-100 position-relative",
-      ledgerModuleUI("ap"),
-      div(class = "notes-toggle-bar",
-        actionLink("toggle_notes_ap",
-                   tagList(icon("sticky-note"), " Notas del mes"),
-                   class = "text-muted small")
-      ),
-      uiOutput("notes_panel_ap")
+      # Panel B — Cash Flow Preview (Stage 1: placeholder; content added in later stages)
+      cashflowPreviewUI("cfp")
     )
   ),
 
@@ -274,6 +304,13 @@ ui <- bslib::page_navbar(
     value = "PSV",
     div(class = "h-100 overflow-auto",
       pasivos_table_module_ui("pt")
+    )
+  ),
+  bslib::nav_panel(
+    title = tagList(icon("chart-line"), " Forecasting"),
+    value = "FC",
+    div(class = "h-100 overflow-auto",
+      forecastingUI("fc")
     )
   ),
   bslib::nav_panel(
@@ -421,6 +458,10 @@ ui <- shinymanager::secure_app(
         }, 200);
       });
     ")),
+
+    # ── Loading overlay (www/overlay_init.js) ────────────────────────────────
+    tags$script(src = "overlay_init.js?v=6"),
+
     tags$div(
       style = "text-align:center; padding: 2px 0 4px;",
 
@@ -558,6 +599,27 @@ ui <- shinymanager::secure_app(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA")
 )
 
+# ── IMPORTANT: Shiny global reactive environment is a process-level singleton ──
+# shiny:::.getReactiveEnvironment() is ONE object shared across ALL runApp()
+# calls in the same R session.  Its internal priority queue (.priorities vector
+# + .itemsByPriority fastmap) can be left corrupted when an app run crashes
+# mid-flush: .priorities still contains entries whose map keys were already
+# consumed, so every subsequent runApp() in THAT session immediately fails with:
+#   "Error in ctx$executeFlushCallbacks() : attempt to apply non-function"
+# (dequeue returns NULL because the map has no item for the stale priority).
+#
+# The fix is ALWAYS to restart R before re-running after a crash.
+# Do NOT try to debug by re-sourcing in the same session — the patches
+# themselves corrupt the queue further (environment(fn)<-foreign_env severs
+# the closure, making orig_fn unfindable and producing silent infinite
+# recursion).  If you must diagnose in-session, reset the queue first:
+#
+#   re  <- shiny:::.getReactiveEnvironment()
+#   pf  <- get(".pendingFlush", envir = environment(get("flush", envir = re)))
+#   env <- environment(get("dequeue", envir = pf))
+#   assign(".priorities",      numeric(0),            envir = env)
+#   assign(".itemsByPriority", shiny:::Map$new(),      envir = env)
+#
 # ── Server ─────────────────────────────────────────────────────────────────────
 server <- function(input, output, session) {
 
@@ -567,6 +629,16 @@ server <- function(input, output, session) {
   .sn <- .GlobalEnv$.session_count
   message(sprintf("[SESSION] server() #%d started at %s  (1=auth gate, 2=real app)",
                   .sn, format(Sys.time(), "%H:%M:%S")))
+
+  # Tell the browser to show (or keep showing) the loading overlay the instant
+  # session #2 connects.  Priority 10 fires before Phase 1 (priority 0) so the
+  # message is queued in the very first flush — covering the shinymanager
+  # session-swap gap where the overlay could have been lost.
+  if (.sn >= 2L) {
+    observe({
+      session$sendCustomMessage("showOverlay", list())
+    }, priority = 10)
+  }
 
   # Keep-alive — absorbs the JS heartbeat ping with zero side effects
   observeEvent(input[[".__keepalive__"]], {}, ignoreInit = TRUE)
@@ -581,9 +653,6 @@ server <- function(input, output, session) {
     ")
   }, ignoreInit = TRUE)
 
-  # Match Shiny's own session idle timeout to the instance and auth timeouts
-  shiny::shinyOptions(idletimeout = 4000)   # ← Shiny session timeout in seconds
-
   # ── Authentication gate ──────────────────────────────────────────────────────
   res_auth <- shinymanager::secure_server(
     check_credentials = auth_check_credentials()
@@ -596,21 +665,245 @@ server <- function(input, output, session) {
   # reactive trigger and data source. This is more reliable than get_session_info
   # which has no reactive dependency and only reflects static session state.
   current_user_info <- reactive({
-    user_val <- tryCatch(res_auth$user, error = function(e) NULL)
-    tier_val <- tryCatch(res_auth$tier, error = function(e) NULL)
-    name_val <- tryCatch(res_auth$name, error = function(e) NULL)
+    user_val  <- tryCatch(res_auth$user,            error = function(e) NULL)
+    tier_val  <- tryCatch(res_auth$tier,            error = function(e) NULL)
+    name_val  <- tryCatch(res_auth$name,            error = function(e) NULL)
+    code_val  <- tryCatch(res_auth$account_code,    error = function(e) NULL)
+    gids_val  <- tryCatch(res_auth$group_ids,       error = function(e) NULL)
+    cid_val   <- tryCatch(res_auth$client_id,       error = function(e) NULL)
+    ac_val    <- tryCatch(res_auth$allowed_clients, error = function(e) NULL)
+    .cid <- function(v) if (!is.null(v) && nzchar(v %||% "")) v else tolower(Sys.getenv("CLIENT_ID"))
     if (is.null(user_val) || !nzchar(user_val %||% ""))
-      return(list(user = "unknown", name = "unknown", tier = "finance"))
+      return(list(user = "unknown", name = "unknown", tier = "finance",
+                  account_code = "", group_ids = "[]",
+                  client_id = tolower(Sys.getenv("CLIENT_ID")),
+                  allowed_clients = "[]"))
     list(
-      user = user_val %||% "unknown",
-      name = name_val %||% user_val %||% "unknown",
-      tier = tier_val %||% "finance"
+      user            = user_val %||% "unknown",
+      name            = name_val %||% user_val %||% "unknown",
+      tier            = tier_val %||% "finance",
+      account_code    = code_val %||% "",
+      group_ids       = gids_val %||% "[]",
+      client_id       = .cid(cid_val),
+      allowed_clients = ac_val   %||% "[]"
     )
   })
+
+  # ── Emergency lock: terminate active sessions of locked accounts ─────────────
+  # Runs once on session init. If the just-authenticated user appears in the
+  # emergency lock file, reload the session immediately — this handles the case
+  # where an account is locked while already logged in.
+  observeEvent(current_user_info(), {
+    info <- current_user_info()
+    req(!is.null(info$user) && nzchar(info$user) && info$user != "unknown")
+    lock <- tryCatch(read_emergency_lock(), error = function(e) NULL)
+    if (is.data.frame(lock) && nrow(lock) > 0 &&
+        any(tolower(lock$username) == tolower(info$user))) {
+      message("[SECURITY] Active session terminated — account locked: ", info$user)
+      session$reload()
+    }
+  }, once = TRUE, ignoreNULL = TRUE)
+
+  # ── First-login password change gate ─────────────────────────────────────────
+  # Accounts created via direct script (not the invite flow) have
+  # requires_password_change = TRUE. If set, intercept navigation here and show
+  # only the password-change UI — no modules are accessible until the password is set.
+  observeEvent(current_user_info(), {
+    info <- current_user_info()
+    req(!is.null(info$user) && nzchar(info$user) && info$user != "unknown")
+    usuarios <- tryCatch(auth_load_usuarios(), error = function(e) NULL)
+    if (is.null(usuarios) || !nrow(usuarios)) return()
+    row <- usuarios[tolower(usuarios$username) == tolower(info$user), , drop = FALSE]
+    if (!nrow(row)) return()
+    needs_change <- isTRUE(row$requires_password_change[1])
+    if (needs_change) {
+      showModal(modalDialog(
+        title   = tagList(icon("lock"), " Cambio de contraseña requerido"),
+        footer  = NULL,
+        easyClose = FALSE,
+        size    = "s",
+        tags$p(class = "text-muted small",
+               "Tu contraseña fue asignada por el administrador. Debes establecer una nueva antes de continuar."),
+        passwordInput("force_pw_new",  "Nueva contraseña", width = "100%"),
+        passwordInput("force_pw_conf", "Confirmar contraseña", width = "100%"),
+        uiOutput("force_pw_error"),
+        actionButton("force_pw_submit", "Confirmar contraseña",
+                     class = "btn btn-primary w-100 mt-2")
+      ))
+    }
+  }, once = TRUE, ignoreNULL = TRUE)
+
+  # ── Stage 4: set active_client_id from user record at login ──────────────────
+  # Fires once per session after authentication. Sets the S3 prefix for all
+  # data loads. Staff (client_id = "hd-admin") reload native data; client users
+  # are locked to their own prefix and have no context switcher.
+  observeEvent(current_user_info(), {
+    info <- current_user_info()
+    req(!is.null(info$user) && nzchar(info$user) && info$user != "unknown")
+    cid <- info$client_id
+    if (!is.null(cid) && nzchar(cid)) active_client_id(cid)
+  }, once = TRUE, ignoreNULL = TRUE)
+
+  output$force_pw_error <- renderUI(NULL)
+
+  observeEvent(input$force_pw_submit, {
+    pw1 <- input$force_pw_new
+    pw2 <- input$force_pw_conf
+    if (!nzchar(pw1) || nchar(pw1) < 6 ||
+        !grepl("[0-9]", pw1) || !grepl("[^A-Za-z0-9]", pw1)) {
+      output$force_pw_error <- renderUI(
+        tags$p(class = "text-danger small mt-1",
+               "La contraseña debe tener al menos 6 caracteres, un número y un símbolo.")
+      )
+      return()
+    }
+    if (pw1 != pw2) {
+      output$force_pw_error <- renderUI(
+        tags$p(class = "text-danger small mt-1", "Las contraseñas no coinciden.")
+      )
+      return()
+    }
+    info     <- current_user_info()
+    usuarios <- tryCatch(auth_load_usuarios(), error = function(e) NULL)
+    if (is.null(usuarios)) return()
+    idx <- which(tolower(usuarios$username) == tolower(info$user))
+    if (!length(idx)) return()
+    usuarios$password_hash[idx]            <- pw1
+    usuarios$requires_password_change[idx] <- FALSE
+    tryCatch({
+      auth_save_usuarios(usuarios)
+      removeModal()
+      showNotification("Contraseña actualizada. Bienvenido.", type = "message", duration = 4)
+    }, error = function(e) {
+      output$force_pw_error <- renderUI(
+        tags$p(class = "text-danger small mt-1", paste("Error al guardar:", e$message))
+      )
+    })
+  }, ignoreInit = TRUE)
+
+  # ── Invite token interceptor ─────────────────────────────────────────────────
+  # If the URL contains ?invite=<token>, intercept before the user reaches any
+  # module, resolve the token, and show a one-time account-setup modal.
+  # The token is single-use: marked "accepted" after the account is created.
+  invite_token_rv <- reactive({
+    qs <- session$clientData$url_search
+    if (!nzchar(qs %||% "")) return(NULL)
+    params <- tryCatch({
+      pairs <- strsplit(sub("^\\?", "", qs), "&")[[1]]
+      kv <- strsplit(pairs, "=")
+      setNames(lapply(kv, `[[`, 2), sapply(kv, `[[`, 1))
+    }, error = function(e) list())
+    params[["invite"]] %||% NULL
+  })
+
+  observeEvent(invite_token_rv(), {
+    token <- invite_token_rv()
+    req(nzchar(token %||% ""))
+    invite <- tryCatch(resolve_invite(token), error = function(e) NULL)
+    if (is.null(invite)) {
+      showModal(modalDialog(
+        title = "Enlace no válido",
+        tags$p("Este enlace de invitación ha expirado o ya fue utilizado."),
+        footer = modalButton("Cerrar"), easyClose = TRUE
+      ))
+      return()
+    }
+    showModal(modalDialog(
+      title = tagList(icon("user-plus"), " Activar cuenta"),
+      tags$p("Bienvenido a HopDesk. Crea tu contraseña para activar la cuenta ",
+             tags$strong(invite$email), "."),
+      passwordInput("invite_pw_new",  "Nueva contraseña"),
+      passwordInput("invite_pw_conf", "Confirmar contraseña"),
+      uiOutput("invite_pw_error"),
+      footer = tagList(
+        modalButton("Cancelar"),
+        actionButton("invite_pw_submit", "Activar cuenta",
+                     class = "btn btn-primary")
+      ),
+      easyClose = FALSE
+    ))
+  }, ignoreNULL = TRUE, once = TRUE)
+
+  output$invite_pw_error <- renderUI(NULL)
+
+  observeEvent(input$invite_pw_submit, {
+    token <- invite_token_rv()
+    req(nzchar(token %||% ""))
+    pw1 <- input$invite_pw_new
+    pw2 <- input$invite_pw_conf
+    if (!nzchar(pw1) || nchar(pw1) < 6 ||
+        !grepl("[0-9]", pw1) || !grepl("[^A-Za-z0-9]", pw1)) {
+      output$invite_pw_error <- renderUI(
+        tags$p(class = "text-danger small mt-1",
+               "La contraseña debe tener al menos 6 caracteres, un número y un símbolo.")
+      )
+      return()
+    }
+    if (pw1 != pw2) {
+      output$invite_pw_error <- renderUI(
+        tags$p(class = "text-danger small mt-1", "Las contraseñas no coinciden.")
+      )
+      return()
+    }
+    invite <- tryCatch(resolve_invite(token), error = function(e) NULL)
+    if (is.null(invite)) {
+      output$invite_pw_error <- renderUI(
+        tags$p(class = "text-danger small mt-1",
+               "El enlace ya no es válido. Solicita una nueva invitación.")
+      )
+      return()
+    }
+    # Create the user account in the target client's folder
+    tryCatch({
+      usuarios <- auth_load_usuarios(client_id = invite$client_id)
+      username <- tolower(gsub("[^a-z0-9]", "", invite$display_name))
+      # Ensure unique username
+      if (username %in% tolower(usuarios$username)) {
+        username <- paste0(username, substr(token, 1, 4))
+      }
+      new_user <- data.frame(
+        id                       = paste0("u_", format(Sys.time(), "%Y%m%d%H%M%S")),
+        account_code             = sprintf("U%04d", nrow(usuarios) + 1L),
+        username                 = username,
+        password_hash            = pw1,
+        display_name             = invite$display_name,
+        tier                     = invite$tier,
+        client_id                = invite$client_id,
+        permisos                 = "{}",
+        group_ids                = "[]",
+        allowed_clients          = "[]",
+        email                    = invite$email,
+        requires_password_change = FALSE,
+        activo                   = TRUE,
+        created_at               = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+        last_login               = NA_character_,
+        deleted                  = FALSE,
+        deleted_at               = NA_character_,
+        stringsAsFactors = FALSE
+      )
+      auth_save_usuarios(rbind(usuarios, new_user), client_id = invite$client_id)
+      accept_invite(token)
+      register_username(username, invite$client_id, new_user$account_code)
+      update_client_user_count(invite$client_id)
+      tryCatch(notify_user_limit(invite$client_id),
+               error = function(e) message("[INVITE] notify_user_limit failed: ", e$message))
+      removeModal()
+      showNotification(
+        paste0("Cuenta activada. Inicia sesión como '", username, "'."),
+        type = "message", duration = 6
+      )
+    }, error = function(e) {
+      output$invite_pw_error <- renderUI(
+        tags$p(class = "text-danger small mt-1", paste("Error:", e$message))
+      )
+    })
+  }, ignoreInit = TRUE)
 
   # ── Shared state ────────────────────────────────────────────────────────────
   # All auxiliary objects are pre-loaded in global.R at process start.
   # Reading from .app_data_cache is instant (in-memory) vs ~400ms per S3 call.
+  cf_preview_open   <- reactiveVal(FALSE)   # TRUE = preview panel visible
+  cf_preview_prefill <- reactiveVal(NULL)   # Stage 5: export modal pre-fill payload
   sap_data          <- reactiveVal(list(AR = NULL, AP = NULL))
   moves_db              <- reactiveVal(NULL)
   policy_moves_db       <- reactiveVal(NULL)
@@ -624,13 +917,9 @@ server <- function(input, output, session) {
   interco_v2        <- reactiveVal(list(ar_prefix = "C", ap_prefix = "P", companies = list()))
   pagar_hoy_db      <- reactiveVal(NULL)
   abonos_db         <- reactiveVal(NULL)
-  proveedores_db    <- reactiveVal(NULL)
-  parte_alias_map_db <- reactiveVal(
-    tryCatch(load_parte_alias_map(), error = function(e) tibble::tibble(
-      Parte = character(), Empresa = character(), alias = character(),
-      linked_by = character(), linked_at = character()
-    ))
-  )
+  proveedores_db     <- reactiveVal(NULL)
+  parte_alias_map_db <- reactiveVal(NULL)   # populated in Phase 2 via register_synced
+  conciliacion_rv    <- reactiveVal(NULL)   # populated in Phase 2 via register_synced
   proveedores_inactivos_db <- reactiveVal(NULL)
   papelera_rv           <- reactiveVal(NULL)
   audit_mode            <- reactiveVal(FALSE)
@@ -639,8 +928,12 @@ server <- function(input, output, session) {
   sap_snapshot_info <- reactiveVal(list(AR = NULL, AP = NULL))
   search_raw_data   <- reactiveVal(NULL)
   current_user      <- reactive({
-    info <- tryCatch(shinymanager::get_session_info(session), error = function(e) NULL)
-    if (!is.null(info) && nzchar(info$user %||% "")) info$user
+    # Prefer res_auth-driven current_user_info (reliable across overlay logins)
+    ci <- tryCatch(current_user_info(), error = function(e) NULL)
+    if (!is.null(ci) && nzchar(ci$user %||% "") && ci$user != "unknown") return(ci$user)
+    # Fallback: shinymanager session cookie
+    sm <- tryCatch(shinymanager::get_session_info(session), error = function(e) NULL)
+    if (!is.null(sm) && nzchar(sm$user %||% "")) sm$user
     else session$user %||% "anon"
   })
   ctas_cuentas      <- reactiveVal(NULL)
@@ -648,7 +941,6 @@ server <- function(input, output, session) {
   bancos_movimientos_db <- reactiveVal(NULL)
   bancos_cuentas_db     <- reactiveVal(NULL)
   bancos_confirmados_db <- reactiveVal(NULL)
-  conciliacion_rv       <- reactiveVal(NULL)
   .s3_load_complete     <- reactiveVal(FALSE)
   .phase1_done          <- reactiveVal(FALSE)
 
@@ -656,16 +948,36 @@ server <- function(input, output, session) {
   # Populated by empresasServer after load/save; falls back to static COMPANY_MAP.
   empresas_db <- reactiveVal(NULL)
 
+  # ── Grupos data — conglomerate / client-group registry ───────────────────────
+  grupos_db        <- reactiveVal(NULL)
+  active_client_id <- reactiveVal(NULL)   # NULL until login; hopdesk can switch this to any client slug
+  hop_grants_db    <- reactiveVal(.schema_hop_grants())
+
+  # S3-folder isolation is the real fence: CLIENT_ID prefix in .s3_key() ensures
+  # every deployment reads only its own folder (e.g. networks/ or hopdesk/).
+  # No in-app filtering by visible_initials needed — stub returns NULL (= no filter).
+  visible_initials <- reactive({ NULL })
+
   # Named vector: initials → nombre_corto for active, non-deleted companies.
-  # Falls back to the static COMPANY_MAP until empresas.rds loads.
+  # Falls back to the static COMPANY_MAP only while empresas_db is NULL (loading).
+  # An empty data.frame means the client has no companies — return c(), never the
+  # hardcoded Networks fallback. This prevents cross-client data leakage when
+  # switching from a populated client (e.g. networks) to an empty one (e.g. hopdesk).
   company_map_rv <- reactive({
+    # Admin deployment: company pills only make sense in a jumped client context.
+    # hd-admin's own S3 prefix may contain stale or seeded empresa data — ignore it
+    # here so staff never see it as a filter (it has no financial data to filter).
+    if (IS_ADMIN_DEPLOYMENT) {
+      cid  <- tryCatch(active_client_id(), error = function(e) NULL)
+      home <- tolower(Sys.getenv("CLIENT_ID"))
+      if (is.null(cid) || !nzchar(cid) || tolower(cid) == home) return(c())
+    }
     df <- empresas_db()
-    if (is.null(df) || !nrow(df)) return(COMPANY_MAP)
+    if (is.null(df)) return(COMPANY_MAP)  # NULL = still loading; keep static seed
     active <- df[
       (is.na(df$deleted) | df$deleted != TRUE) &
       (isTRUE(df$activa) | df$activa == TRUE), , drop = FALSE]
-    if (!nrow(active)) return(COMPANY_MAP)
-    setNames(active$nombre_corto, active$initials)
+    if (!nrow(active)) c() else setNames(active$nombre_corto, active$initials)
   })
 
   # ── Empresa toggle state ─────────────────────────────────────────────────────
@@ -685,7 +997,7 @@ server <- function(input, output, session) {
     # If the user had a non-empty selection, preserve it and append any new empresas.
     # If somehow empty (first load or all empresas removed), default to all.
     new_sel    <- if (length(keep_sel)) union(keep_sel, new_cos) else all_now
-    empresa_sel_rv(new_sel)
+    if (!identical(new_sel, cur_sel)) empresa_sel_rv(new_sel)
     assign(".prev_company_names", all_now, envir = .GlobalEnv)
     # Keep global COMPANY_MAP in sync so modules that read it statically
     # (settings forms, reports, etc.) see the latest companies when they render.
@@ -711,12 +1023,26 @@ server <- function(input, output, session) {
 
   ic_map_target <- reactiveVal(NULL)
 
-  pasivos_provisions_db <- reactiveVal(
-    tryCatch(load_pasivos_provisions(), error = function(e) .schema_pasivos_provision())
-  )
+  # Initialize empty; populated in Phase 2 alongside the other deferred keys.
+  # Avoids two synchronous S3 reads blocking the server() body at startup.
+  pasivos_provisions_db        <- reactiveVal(.schema_pasivos_provision())
+  pasivos_liabilities_db       <- reactiveVal(.schema_pasivos_liability())
+  # One-shot flag: set TRUE by PPM save handlers before they update
+  # pasivos_provisions_db so the ledger auto-refresh observer skips re-opening
+  # the calendar modal after an external provision add.
+  suppress_ledger_prov_refresh <- reactiveVal(FALSE)
 
-  pasivos_liabilities_db <- reactiveVal(
-    tryCatch(load_pasivos_liabilities(), error = function(e) .schema_pasivos_liability())
+  # Forecasting reactiveVals — populated in Phase 2.
+  forecasting_series_observations_db <- reactiveVal(.schema_forecasting_series_observations())
+  forecasting_metrics_db             <- reactiveVal(.schema_forecasting_metrics())
+  forecasting_subscriptions_db       <- reactiveVal(.schema_forecasting_subscriptions())
+  forecasting_manual_curves_db       <- reactiveVal(.schema_forecasting_manual_curves())
+  active_cal_ledger                  <- reactiveVal("AR")
+  # .cal_fade_pending     <- reactiveVal(FALSE)  # OVERLAY FADE — abandoned (see observer below)
+  # .ar_post_phase2_count <- reactiveVal(0L)     # OVERLAY FADE — abandoned (see observer below)
+  group_config_rv <- reactiveVal(
+    tryCatch(load_group_config(),
+             error = function(e) list(group_name = "", logo_raw = NULL, logo_ext = "png"))
   )
 
   shared <- list(
@@ -740,20 +1066,32 @@ server <- function(input, output, session) {
     papelera_rv       = papelera_rv,
     sap_snapshot_info = sap_snapshot_info,
     audit_mode          = audit_mode,
+    active_cal_ledger   = active_cal_ledger,
     active_entry_ledger = active_entry_ledger,
     current_user        = current_user,
     current_user_info   = current_user_info,
     amount_col        = reactive("Saldo vencido"),
     empresa_sel       = empresa_sel_rv,
     empresas_db       = empresas_db,
+    grupos_db         = grupos_db,
+    active_client_id  = active_client_id,
+    hop_grants_db     = hop_grants_db,
+    visible_initials  = visible_initials,
     company_map       = company_map_rv,
     ctas_cuentas           = ctas_cuentas,
     bancos_movimientos     = bancos_movimientos_db,
+    bancos_movimientos_db  = bancos_movimientos_db,   # alias: sync_bus uses this name
     bancos_cuentas         = bancos_cuentas_db,
     bancos_confirmados     = bancos_confirmados_db,
+    bancos_confirmados_db  = bancos_confirmados_db,   # alias: sync_bus uses this name
     conciliacion_rv        = conciliacion_rv,
-    pasivos_provisions_db  = pasivos_provisions_db,
-    pasivos_liabilities_db = pasivos_liabilities_db,
+    pasivos_provisions_db        = pasivos_provisions_db,
+    pasivos_liabilities_db       = pasivos_liabilities_db,
+    suppress_ledger_prov_refresh = suppress_ledger_prov_refresh,
+    forecasting_series_observations_db = forecasting_series_observations_db,
+    forecasting_metrics_db             = forecasting_metrics_db,
+    forecasting_subscriptions_db       = forecasting_subscriptions_db,
+    forecasting_manual_curves_db       = forecasting_manual_curves_db,
     ic_map_target          = ic_map_target,
     currency_choices  = currency_choices,
     month_val         = list(
@@ -767,33 +1105,115 @@ server <- function(input, output, session) {
     ic_mode = list(
       AR = reactive(input$ic_mode %||% "exclude"),
       AP = reactive(input$ic_mode %||% "exclude")
-    )
+    ),
+    group_config   = group_config_rv,
+    group_name     = reactive({ group_config_rv()$group_name %||% "" }),
+    group_logo_raw = reactive({ group_config_rv()$logo_raw }),
+    group_logo_ext = reactive({ group_config_rv()$logo_ext %||% "png" }),
+    cf_preview_open   = cf_preview_open,
+    cf_preview_prefill = cf_preview_prefill
   )
 
-  # ── Real-time agenda sync polling ────────────────────────────────────────────
-  # Checks .GlobalEnv$.agenda_sync$version every 3 s; if changed, pulls updated
-  # data into this session's pagar_hoy_db without hitting S3.
-  .sync_clock  <- reactiveTimer(3000)
-  .sync_ver_rv <- reactiveVal(NA_character_)
+  # ── Cash Flow Preview toggle ─────────────────────────────────────────────────
+  observeEvent(input$btn_preview_open, {
+    cf_preview_open(!cf_preview_open())
+  }, ignoreInit = TRUE)
 
-  observe({
-    .sync_clock()
-    if (!isTRUE(.GlobalEnv$.agenda_sync$is_on)) return()
-    v <- tryCatch(.GlobalEnv$.agenda_sync$version, error = function(e) NA_character_)
-    if (isTRUE(identical(v, .sync_ver_rv()))) return()
-    d <- tryCatch(.GlobalEnv$.agenda_sync$data, error = function(e) NULL)
-    if (!is.null(d)) {
-      pagar_hoy_db(d)
-      # Also refresh bancos_confirmados so the Pasivos observer wakes up cross-session
-      bc <- tryCatch(load_bancos_confirmados(), error = function(e) NULL)
-      if (!is.null(bc)) bancos_confirmados_db(bc)
-      .sync_ver_rv(v)
+  # ── Calendar ledger toggle (Cobros / Pagos pill) ────────────────────────────
+  observeEvent(input$cal_ledger_toggle, {
+    ledger <- input$cal_ledger_toggle
+    if (!ledger %in% c("AR", "AP")) return()
+    active_cal_ledger(ledger)
+    if (ledger == "AR") {
+      shinyjs::show("cal_ar_wrapper"); shinyjs::hide("cal_ap_wrapper")
+    } else {
+      shinyjs::hide("cal_ar_wrapper"); shinyjs::show("cal_ap_wrapper")
     }
+  }, ignoreNULL = TRUE, ignoreInit = TRUE)
+
+  # ── Cross-session sync bus ───────────────────────────────────────────────────
+  # Registry-based: every shared reactiveVal declared here propagates to other
+  # sessions within 3s of its save_*() call bumping the version.
+  # pagar_hoy_db uses the in-memory .agenda_sync$data slot (no S3 hit);
+  # all other keys re-read from S3 only when their version changes.
+  # All loaders accept client_id = NULL so setup_sync_bus() can pass the active
+  # client context through to each S3 read when a staff member has jumped contexts.
+  register_synced(
+    "pagar_hoy_db",
+    S3_KEYS$pagar_hoy_sync,
+    # Global loader: returns shared data when sync is ON (all sessions see same data)
+    function(client_id = NULL) {
+      if (isTRUE(tryCatch(.GlobalEnv$.agenda_sync$is_on, error = function(e) FALSE)))
+        .GlobalEnv$.agenda_sync$data
+      else
+        NULL  # per_session_loader handles sync-OFF case
+    },
+    # Per-session loader: returns the cached per-user data after a per-user save
+    # or after sync is deactivated and per-user files have been written.
+    per_session_loader = function(shared) {
+      sync_on <- isTRUE(tryCatch(.GlobalEnv$.agenda_sync$is_on, error = function(e) FALSE))
+      if (sync_on) return(NULL)
+      ukey  <- tolower(trimws(tryCatch(shared$current_user(), error = function(e) "")))
+      if (!nzchar(ukey)) return(NULL)
+      cache <- tryCatch(.GlobalEnv$.agenda_user_cache, error = function(e) NULL)
+      if (!is.list(cache)) return(NULL)
+      cache[[ukey]]
+    }
+  )
+  register_synced("bancos_confirmados_db", S3_KEYS$bancos_confirmados,
+                  load_bancos_confirmados)
+  register_synced("bancos_movimientos_db", S3_KEYS$bancos_movimientos,
+                  function(client_id = NULL)
+                    load_bancos_movimientos(include_deleted = TRUE,
+                                            client_id       = client_id))
+  register_synced("ctas_cuentas",          S3_KEYS$ctas_cuentas,
+                  load_ctas_cuentas)
+  register_synced("proveedores_db",        S3_KEYS$proveedores,
+                  load_proveedores)
+  register_synced("empresas_db",           S3_KEYS$empresas,
+                  load_empresas)
+  register_synced("grupos_db",             S3_KEYS$grupos,
+                  load_grupos)
+  register_synced("pasivos_provisions_db",  S3_KEYS$pasivos_provisions,
+                  load_pasivos_provisions)
+  register_synced("pasivos_liabilities_db", S3_KEYS$pasivos_liabilities,
+                  load_pasivos_liabilities)
+  register_synced("papelera_rv", S3_KEYS$papelera,        load_papelera)
+  register_synced("notes_df",   S3_KEYS$notes,          load_notes)
+  register_synced("tags_db",    S3_KEYS$tags,            load_tags)
+  register_synced("moves_db",   S3_KEYS$moves,           load_moves)
+  register_synced("policy_catalog_db", S3_KEYS$policy_catalog, load_policy_catalog)
+  register_synced("forecasting_series_observations_db",
+                  S3_KEYS$forecasting_series_observations,
+                  load_forecasting_series_observations)
+  register_synced("forecasting_metrics_db",
+                  S3_KEYS$forecasting_metrics,
+                  load_forecasting_metrics)
+  register_synced("forecasting_subscriptions_db",
+                  S3_KEYS$forecasting_subscriptions,
+                  load_forecasting_subscriptions)
+  register_synced("forecasting_manual_curves_db",
+                  S3_KEYS$forecasting_manual_curves,
+                  load_forecasting_manual_curves)
+  register_synced("conciliacion_rv",    S3_KEYS$conciliacion,    load_conciliacion)
+  register_synced("parte_alias_map_db", S3_KEYS$parte_alias_map, load_parte_alias_map)
+
+  # session_client_id: the authoritative client context for this session.
+  # Returns the jumped-to client slug when staff has switched context,
+  # otherwise returns the env-var CLIENT_ID (the native deployment context).
+  session_client_id <- reactive({
+    active <- tryCatch(active_client_id(), error = function(e) NULL)
+    if (!is.null(active) && nzchar(active)) active
+    else tolower(Sys.getenv("CLIENT_ID"))
   })
+
+  setup_sync_bus(session, shared, poll_ms = 8000,
+                 active_client_rv = session_client_id)
 
   # ── Abono parcial ─────────────────────────────────────────────────────────────
   setup_abono_browse(input, output, session,
-                     sap_data, abonos_db, pagar_hoy_db, current_user)
+                     sap_data, abonos_db, pagar_hoy_db, current_user,
+                     client_id = shared$active_client_id)
 
   # ── Pasivos lifecycle observers and module ────────────────────────────────────
   setup_pasivos_observers(input, output, session, shared)
@@ -804,13 +1224,16 @@ server <- function(input, output, session) {
   setup_pasivos_wizard(input, output, session, shared)
   setup_pasivos_edit_confirm(input, output, session, shared)
 
+  # ── Stage 6.1: Forecasting module ─────────────────────────────────────────
+  forecastingServer("fc", shared)
+
   # ── Show GRUPO menu and control per-panel visibility ─────────────────────────
   # GRUPO toggle is hidden by default via CSS (display:none!important).
   # Empresas  → dev + admin  (can_manage_empresas permission, TRUE for both by default).
   # Usuarios  → dev only; hidden from admin's dropdown so they don't see the option.
   observeEvent(shared$current_user_info(), {
     tier <- tryCatch(shared$current_user_info()$tier, error = function(e) "")
-    if (!tier %in% c("dev", "admin")) return()
+    if (!tier %in% c("principal", "hopdesk", "dev", "admin")) return()
 
     # Reveal the GRUPO dropdown toggle (overrides CSS !important)
     shinyjs::runjs("
@@ -822,8 +1245,8 @@ server <- function(input, output, session) {
         });
     ")
 
-    if (tier == "dev") {
-      # Dev sees both dropdown items — ensure Usuarios item is visible
+    if (tier %in% c("principal", "hopdesk", "dev")) {
+      # Principal, Hopdesk and Dev see both dropdown items — ensure Usuarios item is visible
       shinyjs::runjs("
         document.querySelectorAll('.dropdown-menu a[data-value=\"TIERS\"]')
           .forEach(function(el) {
@@ -845,30 +1268,106 @@ server <- function(input, output, session) {
     }
   }, ignoreInit = FALSE)
 
+  # ── Admin deployment: hide financial tabs until a client context is active ────
+  # Uses runjs with setProperty(...,'important') to override the initial CSS rule
+  # that also uses !important — shinyjs::show/hide cannot beat !important stylesheets.
+  if (IS_ADMIN_DEPLOYMENT) {
+    FINANCIAL_TABS <- c("CAL", "VEN", "PH", "BNC", "IC", "PSV", "FC", "RPT")
+
+    observe({
+      tier    <- tryCatch(shared$current_user_info()$tier, error = function(e) "")
+      cid     <- tryCatch(active_client_id(), error = function(e) NULL)
+      env_cid <- tolower(Sys.getenv("CLIENT_ID"))
+      # Hopdesk staff (hopdesk / principal tier) only see financial modules when
+      # jumped into a client context. All other tiers are clients and always see them.
+      is_staff      <- nzchar(tier) && tier %in% c("hopdesk", "principal")
+      in_client_ctx <- !is.null(cid) && nzchar(cid) && tolower(cid) != env_cid
+      show_tabs     <- if (is_staff) in_client_ctx else nzchar(tier)
+
+      lapply(FINANCIAL_TABS, function(tab) {
+        if (show_tabs) {
+          shinyjs::runjs(sprintf("
+            document.querySelectorAll('.navbar .nav-link[data-value=\"%s\"]').forEach(function(el) {
+              el.style.setProperty('display', 'flex', 'important');
+              var li = el.closest('li');
+              if (li) li.style.removeProperty('display');
+            });
+          ", tab))
+        } else {
+          shinyjs::runjs(sprintf("
+            document.querySelectorAll('.navbar .nav-link[data-value=\"%s\"]').forEach(function(el) {
+              el.style.setProperty('display', 'none', 'important');
+              var li = el.closest('li');
+              if (li) li.style.setProperty('display', 'none', 'important');
+            });
+          ", tab))
+        }
+      })
+    })
+
+    # After login: redirect client users to Calendario.
+    # Hopdesk staff (hopdesk / principal tier) stay on the TIERS management view.
+    # Every other tier is a client and goes straight to CAL regardless of client_id.
+    observeEvent(current_user_info(), {
+      info <- current_user_info()
+      req(!is.null(info$user) && nzchar(info$user) && info$user != "unknown")
+      if (!info$tier %in% c("hopdesk", "principal")) {
+        updateNavbarPage(session, "nav", selected = "CAL")
+      }
+    }, once = TRUE, ignoreNULL = TRUE, priority = -1)
+
+    # Load hop grants once after login — needed immediately for context-jump checks.
+    observeEvent(current_user_info(), {
+      info <- current_user_info()
+      req(!is.null(info$user) && nzchar(info$user) && info$user != "unknown")
+      hg <- tryCatch(load_hop_grants(), error = function(e) NULL)
+      if (!is.null(hg)) hop_grants_db(hg)
+    }, once = TRUE, ignoreNULL = TRUE, priority = -2)
+  }
+
   # ── Username badge in navbar ──────────────────────────────────────────────────
   output$navbar_user_badge <- renderUI({
-    info <- shared$current_user_info()
-    user <- info$user %||% ""
+    active_client_id()  # explicit dep — badge re-renders on every context switch
+    info  <- shared$current_user_info()
+    user  <- info$user %||% ""
     if (!nzchar(user) || user == "unknown") return(NULL)
-    tier <- info$tier %||% "finance"
+    name  <- info$name %||% user
+    tier  <- info$tier %||% "finance"
+    # session_client_id() returns env CLIENT_ID when no jump is active (NULL or home),
+    # so comparing against home correctly yields in_jump=FALSE in the home context.
+    cid     <- tryCatch(session_client_id(), error = function(e) NULL)
+    home    <- tolower(Sys.getenv("CLIENT_ID"))
+    in_jump <- !is.null(cid) && nzchar(cid) && tolower(cid) != home
+
     tier_color <- switch(tier,
-      dev      = "#0d1b3e",
-      admin    = "#6610f2",
-      finance  = "#0a58ca",
-      analysis = "#6c757d",
+      principal = "#7b1fa2",
+      hopdesk   = "#c2185b",
+      dev       = "#0d1b3e",
+      admin     = "#6610f2",
+      finance   = "#0a58ca",
+      analysis  = "#6c757d",
       "#6c757d"
     )
+
+    client_pill <- if (in_jump)
+      tags$span(
+        toupper(cid),
+        style = "font-size:.65rem; font-weight:700; letter-spacing:1px; text-transform:uppercase;
+                 background:#e65100; border:1px solid rgba(255,255,255,.35);
+                 padding:2px 7px; border-radius:20px; margin-left:4px;"
+      )
+    else NULL
+
     tags$span(
       style = "display:flex; align-items:center; gap:6px; margin:4px 4px 4px 0; font-size:.8rem; opacity:.9; color:#fff;",
       icon("user-circle"),
-      tags$span(user),
-      tags$span(
-        tier,
-        style = sprintf(
-          "font-size:.65rem; font-weight:700; letter-spacing:1px; text-transform:uppercase; background:%s; border:1px solid rgba(255,255,255,.35); padding:2px 7px; border-radius:20px;",
-          tier_color
-        )
-      )
+      tags$span(name),
+      tags$span(tier, style = sprintf(
+        "font-size:.65rem; font-weight:700; letter-spacing:1px; text-transform:uppercase;
+         background:%s; border:1px solid rgba(255,255,255,.35); padding:2px 7px; border-radius:20px;",
+        tier_color
+      )),
+      client_pill
     )
   })
 
@@ -887,7 +1386,7 @@ server <- function(input, output, session) {
       sprintf("  [+%.1fs since %s handoff]",
               (t_now - prev_hoff$t)[["elapsed"]], prev_hoff$ledger)
     else ""
-    message(sprintf("[SAP_DATA] written at t+%.1fs — AR=%d rows  AP=%d rows (session #%d)%s%s",
+    message(sprintf("[ERP_DATA] written at t+%.1fs — AR=%d rows  AP=%d rows (session #%d)%s%s",
                     (t_now - .t_session)[["elapsed"]], ar_rows, ap_rows, .sn,
                     since_armed, since_handoff))
     # Stamp so CAL_HTML can report how long it took from this write to render.
@@ -904,29 +1403,39 @@ server <- function(input, output, session) {
   .sap_triggered  <- FALSE
 
   load_sap_data <- function(force = FALSE) {
-    message(sprintf("[SAP] load_sap_data() starting at t+%.1fs (session #%d)",
+    message(sprintf("[ERP] load_erp_data() starting at t+%.1fs (session #%d)",
                     (proc.time() - .t_session)[["elapsed"]], .sn))
     if (.sap_running)               return(invisible(NULL))
     if (.sap_ever_done && !force)   return(invisible(NULL))
 
     .sap_running <<- TRUE
     sap_loading(TRUE)
-    showNotification("Conectando a SAP…", id = "sap_load",
+    session$sendCustomMessage("refresh_start", list())
+    showNotification("Conectando al ERP…", id = "erp_load",
                      duration = NULL, type = "message")
     on.exit({
       .sap_running   <<- FALSE
       sap_loading(FALSE)
-      removeNotification("sap_load")
+      session$sendCustomMessage("refresh_end", list())
+      removeNotification("erp_load")
     })
 
     load_ledger <- function(ledger_name) {
-      result <- tryCatch(fetch_all_companies(ledger_name, isolate(company_map_rv())), error = function(e) {
-        showNotification(paste("SAP", ledger_name, ":", e$message), type = "warning")
-        NULL
-      })
+      result <- tryCatch(
+        fetch_all_companies(ledger_name, isolate(company_map_rv())),
+        sap_no_connection = function(e) {
+          # Transport failure (VPN/network) — fall through to snapshot silently;
+          # the snapshot block below shows the dated "SAP no disponible" notification.
+          NULL
+        },
+        error = function(e) {
+          showNotification(paste("SAP", ledger_name, ":", e$message), type = "warning")
+          NULL
+        }
+      )
       if (!is.null(result)) {
         info <- sap_snapshot_info()
-        info[[ledger_name]] <- NULL
+        info[[ledger_name]] <- list(ts = Sys.time(), is_live = TRUE)
         sap_snapshot_info(info)
         return(result)
       }
@@ -945,7 +1454,7 @@ server <- function(input, output, session) {
           type = "warning", duration = 8
         )
         info <- sap_snapshot_info()
-        info[[ledger_name]] <- snap$saved_at
+        info[[ledger_name]] <- list(ts = snap$saved_at, is_live = FALSE)
         sap_snapshot_info(info)
         return(snap$data)
       }
@@ -953,14 +1462,14 @@ server <- function(input, output, session) {
     }
 
     t0_ar <- proc.time()
-    message(sprintf("[SAP] Fetching AR from SAP at t+%.1fs (session #%d)",
+    message(sprintf("[ERP] Fetching AR from ERP at t+%.1fs (session #%d)",
                     (proc.time() - .t_session)[["elapsed"]], .sn))
     ar <- load_ledger("AR")
-    message(sprintf("[SAP] AR done in %.1fs — starting AP (session #%d)",
+    message(sprintf("[ERP] AR done in %.1fs — starting AP (session #%d)",
                     (proc.time() - t0_ar)[["elapsed"]], .sn))
     t0_ap <- proc.time()
     ap <- load_ledger("AP")
-    message(sprintf("[SAP] AP done in %.1fs — total fetch %.1fs (session #%d)",
+    message(sprintf("[ERP] AP done in %.1fs — total fetch %.1fs (session #%d)",
                     (proc.time() - t0_ap)[["elapsed"]],
                     (proc.time() - t0_ar)[["elapsed"]], .sn))
     .sap_ever_done <<- TRUE
@@ -1016,12 +1525,16 @@ server <- function(input, output, session) {
       message(sprintf("[LOAD] Phase 1 start at t+%.1fs (session #%d)",
                       (proc.time() - .t_session)[["elapsed"]], .sn))
 
-      # Load only the two SAP snapshot files — typically < 2s each
+      # Load SAP snapshots + policy_moves together so the first calendar render
+      # already uses policy-adjusted dates for all previously-seen invoices.
       t0_snap <- proc.time()
       ar_snap <- tryCatch(load_sap_snapshot("AR"), error = function(e) NULL)
       ap_snap <- tryCatch(load_sap_snapshot("AP"), error = function(e) NULL)
-      message(sprintf("[LOAD] SAP snapshots fetched in %.1fs",
+      pm_snap <- tryCatch(load_policy_moves(),     error = function(e) NULL)
+      message(sprintf("[LOAD] SAP snapshots + policy_moves fetched in %.1fs",
                       (proc.time() - t0_snap)[["elapsed"]]))
+
+      if (!is.null(pm_snap)) policy_moves_db(pm_snap)
 
       if (!is.null(ar_snap) || !is.null(ap_snap)) {
         sap_data(list(
@@ -1029,8 +1542,8 @@ server <- function(input, output, session) {
           AP = if (!is.null(ap_snap)) ap_snap$data else NULL
         ))
         sap_snapshot_info(list(
-          AR = if (!is.null(ar_snap)) ar_snap$saved_at else NULL,
-          AP = if (!is.null(ap_snap)) ap_snap$saved_at else NULL
+          AR = if (!is.null(ar_snap)) list(ts = ar_snap$saved_at, is_live = FALSE) else NULL,
+          AP = if (!is.null(ap_snap)) list(ts = ap_snap$saved_at, is_live = FALSE) else NULL
         ))
       }
 
@@ -1040,6 +1553,7 @@ server <- function(input, output, session) {
       ))
       .s3_load_complete(TRUE)
       .phase1_done(TRUE)
+      session$sendCustomMessage("loadingProgress", list(pct = 45))
     })
   })
 
@@ -1051,9 +1565,13 @@ server <- function(input, output, session) {
   observe({
     req(.phase1_done())
     isolate({
-      t0 <- proc.time()
-      message(sprintf("[LOAD] Phase 2 start at t+%.1fs (session #%d)",
-                      (proc.time() - .t_session)[["elapsed"]], .sn))
+      t0     <- proc.time()
+      # Resolve the active client prefix from the login hook (set before Phase 1).
+      # Inside isolate() this reads the current value without creating a reactive
+      # dependency — Phase 2 will not re-fire when active_client_id changes later.
+      cid_lo <- tolower(active_client_id() %||% Sys.getenv("CLIENT_ID"))
+      message(sprintf("[LOAD] Phase 2 start at t+%.1fs (session #%d) [cid=%s]",
+                      (proc.time() - .t_session)[["elapsed"]], .sn, cid_lo))
 
       # Batch-fetch all deferred S3 keys not already in the preload cache
       local({
@@ -1061,13 +1579,20 @@ server <- function(input, output, session) {
         message("[LOAD] Fetching deferred S3 objects...")
         # keys_needed: logical names whose file-suffix keys are not yet in cache.
         # Cache keyed by file suffix (e.g. "interco_v2.rds") to match .s3_read().
+        # "notes" and "sync_versions" are intentionally excluded from the preload
+        # cache so every load_notes() call (Phase 2, sync bus, panel toggle) always
+        # hits S3 directly.  This ensures one session's Phase-2 cache hit can never
+        # serve stale data to another session that started before a note was saved.
+        SKIP_PRELOAD <- c("sync_versions", "notes")
+        # Check for already-cached full-prefix keys (e.g. "networks/movimientos.rds")
+        # set by a previous session for the same client.
         keys_needed <- names(S3_KEYS)[
-          !vapply(unname(S3_KEYS), exists,
-                  logical(1), envir = .s3_preload_cache, inherits = FALSE)
+          !vapply(paste0(cid_lo, "/", unname(S3_KEYS)), exists,
+                  logical(1), envir = .s3_preload_cache, inherits = FALSE) &
+          !names(S3_KEYS) %in% SKIP_PRELOAD
         ]
         if (length(keys_needed)) {
-          cid_lo <- tolower(Sys.getenv("CLIENT_ID"))
-          bucket  <- Sys.getenv(paste0(toupper(Sys.getenv("CLIENT_ID")), "_S3_BUCKET"))
+          bucket <- .s3_bucket()
           raw <- lapply(S3_KEYS[keys_needed], function(key_suffix) {
             tryCatch({
               out <- NULL
@@ -1084,8 +1609,10 @@ server <- function(input, output, session) {
             }, error = function(e) NULL)
           })
           for (i in seq_along(keys_needed)) {
-            # Store under file suffix so .s3_read() gets a cache hit
-            assign(S3_KEYS[[keys_needed[i]]], raw[[i]], envir = .s3_preload_cache)
+            # Store under full prefix key so .s3_read_with() gets a cache hit
+            # without cross-client collisions in the shared global cache.
+            full_key <- paste0(cid_lo, "/", S3_KEYS[[keys_needed[i]]])
+            assign(full_key, raw[[i]], envir = .s3_preload_cache)
           }
           message(sprintf("[LOAD] %d deferred objects fetched in %.1fs",
                           length(keys_needed),
@@ -1096,31 +1623,35 @@ server <- function(input, output, session) {
       })
 
       # Load aux objects with per-item timing (all guaranteed cache hits above)
-      t1 <- proc.time(); moves_db(tryCatch(load_moves(), error = function(e) NULL))
+      t1 <- proc.time(); moves_db(tryCatch(load_moves(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   moves            %.1fs", (proc.time() - t1)[["elapsed"]]))
-      t1 <- proc.time(); policy_moves_db(tryCatch(load_policy_moves(), error = function(e) NULL))
+      # policy_moves_db is loaded in Phase 1 so the first calendar render already
+      # has policy-adjusted dates. Only load here as a fallback when Phase 1 failed.
+      t1 <- proc.time()
+      if (is.null(policy_moves_db()))
+        policy_moves_db(tryCatch(load_policy_moves(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   policy_moves     %.1fs", (proc.time() - t1)[["elapsed"]]))
-      t1 <- proc.time(); policy_catalog_db(tryCatch(load_policy_catalog(), error = function(e) NULL))
+      t1 <- proc.time(); policy_catalog_db(tryCatch(load_policy_catalog(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   policy_catalog   %.1fs", (proc.time() - t1)[["elapsed"]]))
-      t1 <- proc.time(); partner_policies_db(tryCatch(load_partner_policies(), error = function(e) NULL))
+      t1 <- proc.time(); partner_policies_db(tryCatch(load_partner_policies(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   partner_policies %.1fs", (proc.time() - t1)[["elapsed"]]))
-      t1 <- proc.time(); holiday_overrides_db(tryCatch(load_holiday_overrides(), error = function(e) NULL))
+      t1 <- proc.time(); holiday_overrides_db(tryCatch(load_holiday_overrides(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   holiday_overrides %.1fs", (proc.time() - t1)[["elapsed"]]))
-      t1 <- proc.time(); notes_df(tryCatch(load_notes(), error = function(e) NULL))
+      t1 <- proc.time(); notes_df(tryCatch(load_notes(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   notes            %.1fs", (proc.time() - t1)[["elapsed"]]))
-      t1 <- proc.time(); tags_db(tryCatch(load_tags(), error = function(e) NULL))
+      t1 <- proc.time(); tags_db(tryCatch(load_tags(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   tags             %.1fs", (proc.time() - t1)[["elapsed"]]))
-      t1 <- proc.time(); manual_inv(tryCatch(load_manual(), error = function(e) NULL))
+      t1 <- proc.time(); manual_inv(tryCatch(load_manual(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   manual           %.1fs", (proc.time() - t1)[["elapsed"]]))
-      t1 <- proc.time(); sap_ov_db(tryCatch(load_sap_overrides(), error = function(e) NULL))
+      t1 <- proc.time(); sap_ov_db(tryCatch(load_sap_overrides(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   sap_overrides    %.1fs", (proc.time() - t1)[["elapsed"]]))
       t1 <- proc.time()
-      interco_v2(tryCatch(load_interco_v2(), error = function(e) NULL) %||%
+      interco_v2(tryCatch(load_interco_v2(client_id = cid_lo), error = function(e) NULL) %||%
                    list(ar_prefix = "C", ap_prefix = "P", companies = list()))
       message(sprintf("[LOAD]   interco_v2       %.1fs", (proc.time() - t1)[["elapsed"]]))
       t1 <- proc.time()
       local({
-        cfg <- tryCatch(load_agenda_sync_config(),
+        cfg <- tryCatch(load_agenda_sync_config(client_id = cid_lo),
                         error = function(e) list(is_enabled = FALSE, .missing = TRUE))
 
         # Helper: merge any items the user added before Phase 2 finished loading
@@ -1139,64 +1670,118 @@ server <- function(input, output, session) {
         if (isTRUE(cfg$.missing)) {
           # First deploy: migrate existing shared pagar_hoy.rds → sync file, enable sync
           message("[LOAD] agenda_sync: first run — migrating pagar_hoy.rds to sync")
-          ph <- tryCatch(load_pagar_hoy(), error = function(e) .schema_pagar_hoy())
+          ph <- tryCatch(load_pagar_hoy(client_id = cid_lo), error = function(e) .schema_pagar_hoy())
           ph <- .merge_early_adds(ph)
-          tryCatch(save_pagar_hoy_sync(ph), error = function(e)
+          tryCatch(save_pagar_hoy_sync(ph, client_id = cid_lo), error = function(e)
             message("[LOAD] agenda_sync migrate write failed: ", e$message))
-          tryCatch(save_agenda_sync_config(TRUE, "system"), error = function(e) NULL)
+          tryCatch(save_agenda_sync_config(TRUE, "system", client_id = cid_lo), error = function(e) NULL)
           .GlobalEnv$.agenda_sync$is_on   <- TRUE
           .GlobalEnv$.agenda_sync$data    <- ph
           .GlobalEnv$.agenda_sync$version <- as.character(Sys.time())
           pagar_hoy_db(ph)
         } else if (isTRUE(cfg$is_enabled)) {
           .GlobalEnv$.agenda_sync$is_on <- TRUE
-          ph <- if (!is.null(.GlobalEnv$.agenda_sync$data)) {
-            .GlobalEnv$.agenda_sync$data
-          } else {
-            d <- tryCatch(load_pagar_hoy_sync(), error = function(e) .schema_pagar_hoy())
-            .GlobalEnv$.agenda_sync$data    <- d
-            .GlobalEnv$.agenda_sync$version <- as.character(Sys.time())
-            d
-          }
-          ph <- .merge_early_adds(ph)
-          if (!identical(ph, .GlobalEnv$.agenda_sync$data)) {
+          # Always read from S3 (via preload cache — already fetched in batch above)
+          # on every new session login.  The in-memory $data was intentionally NOT
+          # used as the load source here: it persists across sessions in the same
+          # R process, so a week-old value would silently shadow every new login
+          # even after the user cleared the agenda and the S3 file was updated.
+          # $data is refreshed below and remains available for save_pagar_hoy /
+          # the poll observer to provide real-time cross-session sync.
+          d <- tryCatch(load_pagar_hoy_sync(client_id = cid_lo), error = function(e) .schema_pagar_hoy())
+          .GlobalEnv$.agenda_sync$data    <- d
+          .GlobalEnv$.agenda_sync$version <- as.character(Sys.time())
+          ph <- .merge_early_adds(d)
+          if (!identical(ph, d)) {
             # Early-add items were merged in — persist immediately
-            tryCatch(save_pagar_hoy(ph, current_user()), error = function(e) NULL)
+            tryCatch(save_pagar_hoy(ph, current_user(), client_id = cid_lo), error = function(e) NULL)
           }
           pagar_hoy_db(ph)
         } else {
           .GlobalEnv$.agenda_sync$is_on <- FALSE
           ph <- tryCatch(
-            load_pagar_hoy_user(current_user()),
-            error = function(e) tryCatch(load_pagar_hoy(), error = function(e2) NULL))
+            load_pagar_hoy_user(current_user(), client_id = cid_lo),
+            error = function(e) tryCatch(load_pagar_hoy(client_id = cid_lo), error = function(e2) NULL))
           ph <- .merge_early_adds(ph %||% .schema_pagar_hoy())
           pagar_hoy_db(ph)
         }
       })
       message(sprintf("[LOAD]   pagar_hoy        %.1fs", (proc.time() - t1)[["elapsed"]]))
-      t1 <- proc.time(); abonos_db(tryCatch(load_abonos(), error = function(e) NULL))
+      t1 <- proc.time(); abonos_db(tryCatch(load_abonos(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   abonos           %.1fs", (proc.time() - t1)[["elapsed"]]))
-      t1 <- proc.time(); papelera_rv(tryCatch(load_papelera(), error = function(e) NULL))
+      t1 <- proc.time(); papelera_rv(tryCatch(load_papelera(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   papelera         %.1fs", (proc.time() - t1)[["elapsed"]]))
-      t1 <- proc.time(); proveedores_db(tryCatch(load_proveedores(), error = function(e) NULL))
+      t1 <- proc.time(); proveedores_db(tryCatch(load_proveedores(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   proveedores      %.1fs", (proc.time() - t1)[["elapsed"]]))
       t1 <- proc.time()
-      proveedores_inactivos_db(tryCatch(load_proveedores_inactivos(), error = function(e) NULL))
+      proveedores_inactivos_db(tryCatch(load_proveedores_inactivos(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   prov_inactivos   %.1fs", (proc.time() - t1)[["elapsed"]]))
-      t1 <- proc.time(); ctas_cuentas(tryCatch(load_ctas_cuentas(), error = function(e) NULL))
+      t1 <- proc.time(); ctas_cuentas(tryCatch(load_ctas_cuentas(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   ctas_cuentas     %.1fs", (proc.time() - t1)[["elapsed"]]))
       t1 <- proc.time()
-      bancos_cuentas_db(tryCatch(load_bancos_cuentas(), error = function(e) NULL))
+      bancos_cuentas_db(tryCatch(load_bancos_cuentas(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   bancos_cuentas   %.1fs", (proc.time() - t1)[["elapsed"]]))
       t1 <- proc.time()
       bancos_movimientos_db(tryCatch(
-        load_bancos_movimientos(include_deleted = TRUE), error = function(e) NULL))
+        load_bancos_movimientos(include_deleted = TRUE, client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   bancos_movs      %.1fs", (proc.time() - t1)[["elapsed"]]))
       t1 <- proc.time()
-      bancos_confirmados_db(tryCatch(load_bancos_confirmados(), error = function(e) NULL))
+      bancos_confirmados_db(tryCatch(load_bancos_confirmados(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   bancos_confirm   %.1fs", (proc.time() - t1)[["elapsed"]]))
-      t1 <- proc.time(); conciliacion_rv(tryCatch(load_conciliacion(), error = function(e) NULL))
+      t1 <- proc.time(); conciliacion_rv(tryCatch(load_conciliacion(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   conciliacion     %.1fs", (proc.time() - t1)[["elapsed"]]))
+      t1 <- proc.time(); parte_alias_map_db(tryCatch(load_parte_alias_map(client_id = cid_lo), error = function(e) NULL))
+      message(sprintf("[LOAD]   parte_alias_map  %.1fs", (proc.time() - t1)[["elapsed"]]))
+      t1 <- proc.time()
+      local({
+        provs <- tryCatch(load_pasivos_provisions(client_id = cid_lo), error = function(e) NULL)
+        if (!is.null(provs)) pasivos_provisions_db(provs)
+      })
+      message(sprintf("[LOAD]   pasivos_provs    %.1fs", (proc.time() - t1)[["elapsed"]]))
+      t1 <- proc.time()
+      local({
+        liabs <- tryCatch(load_pasivos_liabilities(client_id = cid_lo), error = function(e) NULL)
+        if (!is.null(liabs)) pasivos_liabilities_db(liabs)
+      })
+      message(sprintf("[LOAD]   pasivos_liabs    %.1fs", (proc.time() - t1)[["elapsed"]]))
+      t1 <- proc.time()
+      local({
+        obs <- tryCatch(load_forecasting_series_observations(client_id = cid_lo), error = function(e) NULL)
+        if (!is.null(obs)) forecasting_series_observations_db(obs)
+      })
+      message(sprintf("[LOAD]   fc_observations  %.1fs", (proc.time() - t1)[["elapsed"]]))
+      t1 <- proc.time()
+      local({
+        mt <- tryCatch(load_forecasting_metrics(client_id = cid_lo), error = function(e) NULL)
+        if (!is.null(mt)) forecasting_metrics_db(mt)
+      })
+      message(sprintf("[LOAD]   fc_metrics       %.1fs", (proc.time() - t1)[["elapsed"]]))
+      t1 <- proc.time()
+      local({
+        sb <- tryCatch(load_forecasting_subscriptions(client_id = cid_lo), error = function(e) NULL)
+        if (!is.null(sb)) forecasting_subscriptions_db(sb)
+      })
+      message(sprintf("[LOAD]   fc_subscriptions %.1fs", (proc.time() - t1)[["elapsed"]]))
+      # Seed catalogs on first run (idempotent — no-op if already populated).
+      tryCatch(forecasting_seed_if_empty(), error = function(e)
+        warning("[LOAD] forecasting_seed_if_empty: ", conditionMessage(e)))
+
+      t1 <- proc.time()
+      local({
+        grp <- tryCatch(load_grupos(client_id = cid_lo), error = function(e) NULL)
+        if (!is.null(grp)) grupos_db(grp)
+      })
+      message(sprintf("[LOAD]   grupos           %.1fs", (proc.time() - t1)[["elapsed"]]))
+
+      # empresas_db is not handled by the context-switch observer for the initial
+      # login event (ignoreInit = TRUE suppresses the first non-NULL active_client_id
+      # fire). Load it here in Phase 2 so it is always available after startup.
+      t1 <- proc.time()
+      local({
+        emp <- tryCatch(load_empresas(client_id = cid_lo), error = function(e) NULL)
+        if (!is.null(emp)) empresas_db(emp)
+      })
+      message(sprintf("[LOAD]   empresas         %.1fs", (proc.time() - t1)[["elapsed"]]))
 
       # Populate global cache so save_*() callbacks update it
       .cache_set("moves",        moves_db())
@@ -1215,8 +1800,202 @@ server <- function(input, output, session) {
       message(sprintf("[LOAD] Phase 2 done in %.1fs at t+%.1fs (session #%d)",
                       (proc.time() - t0)[["elapsed"]],
                       (proc.time() - .t_session)[["elapsed"]], .sn))
+      session$sendCustomMessage("loadingProgress", list(pct = 100))
+      # .cal_fade_pending(TRUE)  # OVERLAY FADE — abandoned; see observer below
     })
   }, priority = -2)
+
+  # Reads a SAP snapshot from an arbitrary client prefix, bypassing .s3_key()
+  # (which always reads from the native CLIENT_ID folder).
+  .load_sap_snapshot_for_client <- function(ledger, client_id) {
+    key      <- if (toupper(ledger) == "AR") S3_KEYS_CRITICAL$sap_snap_ar else S3_KEYS_CRITICAL$sap_snap_ap
+    full_key <- paste0(tolower(client_id), "/", key)
+    tryCatch(
+      aws.s3::s3readRDS(object = full_key, bucket = .s3_bucket()),
+      error = function(e) NULL
+    )
+  }
+
+  # ── Stage 4.4: context-switch reload ──────────────────────────────────────────
+  # When a HopDesk staff member switches to another client context via the
+  # context switcher, reload all financial reactiveVals from that client's S3 prefix.
+  # This observer runs AFTER Phase 2 (priority -3) and ignores the initial NULL value.
+  #
+  # SAP/calendar data is NOT re-loaded — it comes from a per-client SAP source that
+  # is unavailable in the hd-admin deployment; the calendar stays empty for jumped
+  # contexts, which is the correct behaviour for an admin-only view.
+  observeEvent(active_client_id(), {
+    cid <- active_client_id()
+    env_cid <- tolower(Sys.getenv("CLIENT_ID"))
+    # When jumping back to home context (NULL or same as CLIENT_ID), reload
+    # from the native prefix so the app shows correct home data.
+    effective_cid <- if (is.null(cid) || !nzchar(cid) || tolower(cid) == env_cid)
+                       env_cid
+                     else
+                       tolower(cid)
+
+    message(sprintf("[CTX] Switching to client context '%s'", effective_cid))
+
+    .ctx_load <- function(fn, rv, label) {
+      errored <- FALSE
+      result  <- tryCatch(fn(client_id = effective_cid), error = function(e) {
+        message(sprintf("[CTX]   %s WARN: %s", label, e$message))
+        errored <<- TRUE
+        NULL
+      })
+      if (!errored) {
+        rv(result)   # NULL = client has no data — clears previous client's reactive
+        message(sprintf("[CTX]   %s OK", label))
+      }
+    }
+
+    .ctx_load(load_bancos_confirmados,            bancos_confirmados_db,               "bancos_confirmados")
+    .ctx_load(load_ctas_cuentas,                  ctas_cuentas,                        "ctas_cuentas")
+    .ctx_load(function(client_id) load_bancos_movimientos(include_deleted = TRUE, client_id = client_id),
+                                                  bancos_movimientos_db,               "bancos_movimientos")
+    .ctx_load(load_proveedores,                   proveedores_db,                      "proveedores")
+    .ctx_load(load_empresas,                      empresas_db,                         "empresas")
+    .ctx_load(load_grupos,                        grupos_db,                           "grupos")
+    .ctx_load(load_pasivos_provisions,            pasivos_provisions_db,               "pasivos_provisions")
+    .ctx_load(load_pasivos_liabilities,           pasivos_liabilities_db,              "pasivos_liabilities")
+    .ctx_load(load_papelera,                      papelera_rv,                         "papelera")
+    .ctx_load(load_notes,                         notes_df,                            "notes")
+    .ctx_load(load_tags,                          tags_db,                             "tags")
+    .ctx_load(load_moves,                         moves_db,                            "moves")
+    .ctx_load(load_policy_catalog,                policy_catalog_db,                   "policy_catalog")
+    .ctx_load(load_forecasting_series_observations, forecasting_series_observations_db,"forecasting_obs")
+    .ctx_load(load_forecasting_metrics,           forecasting_metrics_db,              "forecasting_metrics")
+    .ctx_load(load_forecasting_subscriptions,     forecasting_subscriptions_db,        "forecasting_subs")
+    .ctx_load(load_forecasting_manual_curves,     forecasting_manual_curves_db,        "forecasting_curves")
+    .ctx_load(load_conciliacion,                  conciliacion_rv,                     "conciliacion")
+    .ctx_load(load_parte_alias_map,               parte_alias_map_db,                  "parte_alias_map")
+    .ctx_load(load_manual,                        manual_inv,                          "manual_inv")
+    .ctx_load(load_abonos,                        abonos_db,                           "abonos")
+    .ctx_load(load_sap_overrides,                 sap_ov_db,                           "sap_overrides")
+    # Reactives that Phase 2 loads from the env-var prefix but the context switch
+    # must reload from the active client's prefix.
+    .ctx_load(load_bancos_cuentas,        bancos_cuentas_db,        "bancos_cuentas")
+    .ctx_load(load_partner_policies,      partner_policies_db,      "partner_policies")
+    .ctx_load(load_holiday_overrides,     holiday_overrides_db,     "holiday_overrides")
+    .ctx_load(load_policy_moves,          policy_moves_db,          "policy_moves")
+    .ctx_load(load_proveedores_inactivos, proveedores_inactivos_db, "prov_inactivos")
+    local({
+      cfg_ctx <- tryCatch(load_agenda_sync_config(client_id = effective_cid),
+                          error = function(e) list(is_enabled = FALSE))
+      if (isTRUE(cfg_ctx$is_enabled)) {
+        ph <- tryCatch(load_pagar_hoy_sync(client_id = effective_cid),
+                       error = function(e) NULL)
+        if (!is.null(ph)) {
+          .GlobalEnv$.agenda_sync$is_on   <- TRUE
+          .GlobalEnv$.agenda_sync$data    <- ph
+          .GlobalEnv$.agenda_sync$version <- as.character(Sys.time())
+        }
+      } else {
+        .GlobalEnv$.agenda_sync$is_on <- FALSE
+        ph <- tryCatch(
+          load_pagar_hoy_user(current_user(), client_id = effective_cid),
+          error = function(e) tryCatch(
+            load_pagar_hoy(client_id = effective_cid),
+            error = function(e2) NULL))
+      }
+      if (!is.null(ph)) { pagar_hoy_db(ph); message("[CTX]   pagar_hoy OK") }
+    })
+    # interco_v2 uses a cache keyed to the native deployment — bypass it with client_id.
+    # Wrap result so NULL (no IC config for this client) becomes the empty struct.
+    local({
+      result <- tryCatch(load_interco_v2(client_id = effective_cid), error = function(e) {
+        message(sprintf("[CTX]   interco_v2 WARN: %s", e$message)); NULL
+      })
+      interco_v2(result %||% list(ar_prefix = "C", ap_prefix = "P", rfcs = character(), companies = list()))
+      message("[CTX]   interco_v2 OK")
+    })
+    .ctx_load(load_group_config,                  group_config_rv,                     "group_config")
+
+    # Load SAP snapshots from jumped client — always overwrite so jumping to an
+    # empty client clears the calendar (no guard: NULL = no data for this client).
+    snap_ar  <- .load_sap_snapshot_for_client("AR", effective_cid)
+    snap_ap  <- .load_sap_snapshot_for_client("AP", effective_cid)
+    new_snap <- list(
+      AR = if (!is.null(snap_ar)) snap_ar$data else NULL,
+      AP = if (!is.null(snap_ap)) snap_ap$data else NULL
+    )
+    sap_data(new_snap)
+    # Update snapshot info so the orange pill indicator reflects the jumped client.
+    # is_live is always FALSE for context-jump data (we never hit live SAP for jumped clients).
+    sap_snapshot_info(list(
+      AR = if (!is.null(snap_ar)) list(ts = snap_ar$saved_at, is_live = FALSE) else NULL,
+      AP = if (!is.null(snap_ap)) list(ts = snap_ap$saved_at, is_live = FALSE) else NULL
+    ))
+    # Seed the cross-session SAP cache so subsequent sessions on the same R process
+    # get the client's snapshot immediately in Phase 1 without waiting for this observer.
+    if (!is.null(new_snap$AR) || !is.null(new_snap$AP))
+      .GlobalEnv$.sap_global_cache <- list(AR = new_snap$AR, AP = new_snap$AP,
+                                            fetched_at = Sys.time())
+    message(sprintf("[CTX]   sap_data OK (AR=%d AP=%d rows)",
+                    nrow(new_snap$AR %||% data.frame()), nrow(new_snap$AP %||% data.frame())))
+
+    # Dual audit log — only when jumping TO another client, not when resetting home
+    if (effective_cid != env_cid) {
+      log_action(user        = current_user() %||% "unknown",
+                 module      = "clientes",
+                 action      = "client_access",
+                 description = sprintf("Staff switched active context to '%s'", effective_cid),
+                 target_id   = effective_cid,
+                 s3_key      = NA_character_,
+                 client_id   = "hd-admin")
+      log_action(user        = current_user() %||% "unknown",
+                 module      = "clientes",
+                 action      = "external_access",
+                 description = "HopDesk staff accessed this client's data (session context switch)",
+                 target_id   = effective_cid,
+                 s3_key      = NA_character_,
+                 client_id   = effective_cid)
+    }
+
+    message(sprintf("[CTX] Context switch to '%s' complete", effective_cid))
+  }, ignoreInit = TRUE, priority = -3)
+
+  # ── OVERLAY FADE TIMING — ALL APPROACHES ABANDONED ──────────────────────────
+  #
+  # Goal: send session$sendCustomMessage("calFadeNow", list()) at the exact moment
+  # the AR calendar is fully settled so the loading screen fades cleanly.
+  # The JS calFadeNow handler in overlay_init.js section 9 does a double-rAF fade.
+  # The 30 s fallback in section 8 (loadingProgress handler) is now the only thing
+  # that actually fades the overlay.
+  #
+  # WHAT WE TRIED (in order):
+  #
+  # 1. shinyjs::delay(2000) after Phase 2
+  #    observeEvent(.cal_fade_pending(), {
+  #      if (!isTRUE(.cal_fade_pending())) return()
+  #      .cal_fade_pending(FALSE)
+  #      shinyjs::delay(2000, { session$sendCustomMessage("calFadeNow", list()) })
+  #    }, ignoreInit = TRUE)
+  #    FAILED: 2 s was too short.  Phase 2 triggers CUR_CHOICES → AR render #1,
+  #    then a second cascade fires ~8–10 s later (empresa/IC).  calFadeNow arrived
+  #    before the cascade, overlay faded, cascade blanked the calendar.
+  #
+  # 2. MutationObserver in JS (2 s DOM-quiet + .cal-outer present)
+  #    calFadeNow handler watched #ar-calendar via MutationObserver and faded only
+  #    after 2 s of quiet.  Still failed: when calFadeNow arrived just after render
+  #    #1, the observer saw 2 s of quiet (render #1 looked settled) and faded before
+  #    render #2 arrived and blanked the calendar.
+  #
+  # 3. Server-side render counter via Shiny.setInputValue('cal_ar_rendered', ...)
+  #    Added the setInputValue call to the AR renderUI script in ledger_module.R and
+  #    counted arrivals in an observer here.
+  #    n >= 2: a second AR render never arrived in practice — the console stopped at
+  #            [OVERLAY] cal_ar_rendered #1 — so the 30 s fallback was the only fade.
+  #    n >= 1: overlay was already hidden before the browser round-trip completed;
+  #            something in the JS was hiding it even earlier (root cause unconfirmed).
+  #
+  # Nothing left to try that isn't just a longer timer in disguise.
+  # The overlay_init.js 30 s fallback is now the active fade mechanism.
+  # Do NOT add code here without first understanding why the browser-side hides
+  # the overlay before server-side signals even arrive.
+  #
+  # Reactive vals that supported this (.cal_fade_pending, .ar_post_phase2_count)
+  # are commented out above.  The setInputValue call in ledger_module.R is also gone.
 
   .t_sap_armed <- proc.time()   # used by SAP_DATA observer to report the gap
   if (.sn <= 1L) {
@@ -1316,10 +2095,25 @@ server <- function(input, output, session) {
   observeEvent(input$btn_refresh, {
     removeModal()
     .refresh_variable_rates()
+
+    # Force-reload S3 bancos data unconditionally so any edits made by other
+    # concurrent users are visible immediately — independent of ERP connectivity.
+    tryCatch({
+      shared$bancos_movimientos_db(load_bancos_movimientos(include_deleted = TRUE))
+      shared$bancos_confirmados_db(load_bancos_confirmados())
+      shared$conciliacion_rv(load_conciliacion())
+    }, error = function(e)
+      showNotification(paste0("Error al leer desde S3: ", e$message),
+                       type = "warning", duration = 6)
+    )
+
     load_sap_data(force = TRUE)
   })
   autoInvalidate <- reactiveTimer(30 * 60 * 1000)
   observeEvent(autoInvalidate(), { load_sap_data() })
+
+  # ── Cash Flow Word export ─────────────────────────────────────────────────
+  setup_cashflow_export_server(input, output, session, shared)
 
   # ── Search modal ─────────────────────────────────────────────────────────────
   observeEvent(input$btn_search, {
@@ -1391,27 +2185,27 @@ server <- function(input, output, session) {
     sel      <- empresa_sel_rv()
     snap_inf <- sap_snapshot_info()
 
-    # Returns a formatted datetime string when data is from a snapshot,
-    # NULL when data is live (sap_snapshot_info cleared on successful fetch).
-    company_snap_lbl <- function(initials) {
-      ts_ar <- snap_inf$AR
-      ts_ap <- snap_inf$AP
-      dates <- Filter(Negate(is.null), list(AR = ts_ar, AP = ts_ap))
-      if (!length(dates)) return(NULL)
-      latest <- max(unlist(lapply(dates, as.numeric)))
-      format(as.POSIXct(latest, origin = "1970-01-01", tz = "UTC"), "%d/%m/%Y %H:%M",
-             tz = (input$client_tz %||% "America/Mexico_City"))
+    # Returns list(dt, is_live) using the latest of AR/AP timestamps, or NULL.
+    company_snap_lbl <- function() {
+      entries <- Filter(Negate(is.null), list(snap_inf$AR, snap_inf$AP))
+      if (!length(entries)) return(NULL)
+      latest <- entries[[which.max(sapply(entries, function(x) as.numeric(x$ts)))]]
+      list(
+        dt      = format(latest$ts, "%d/%m/%Y %H:%M",
+                         tz = (input$client_tz %||% "America/Mexico_City")),
+        is_live = isTRUE(latest$is_live)
+      )
     }
 
-    cmap <- company_map_rv()
+    cmap    <- company_map_rv()
+    tip_inf <- company_snap_lbl()   # shared across all pills (same SAP timestamp)
 
     out <- div(
-      class = "d-flex flex-wrap gap-1 align-items-center",
+      class = "d-flex gap-1 align-items-center",
       lapply(names(cmap), function(initials) {
         nombre   <- cmap[[initials]]
         active   <- nombre %in% sel
-        snap_dt  <- company_snap_lbl(initials)
-        is_snap  <- !is.null(snap_dt)
+        is_snap  <- !is.null(tip_inf) && !tip_inf$is_live
         snap_cls <- if (active && is_snap) " snapshot" else ""
 
         btn <- tags$button(
@@ -1425,12 +2219,13 @@ server <- function(input, output, session) {
           initials
         )
 
-        if (active && is_snap) {
+        if (!is.null(tip_inf)) {
           div(class = "emp-tooltip-wrap",
             btn,
             tags$div(class = "emp-tooltip",
-              tags$div(style = "font-weight:700; margin-bottom:2px;", "Snapshot"),
-              tags$div(paste0("\u00daltima actualizaci\u00f3n: ", snap_dt))
+              if (!tip_inf$is_live)
+                tags$div(style = "font-weight:700; margin-bottom:2px;", "Snapshot"),
+              tags$div(paste0("\u00daltima actualizaci\u00f3n: ", tip_inf$dt))
             )
           )
         } else {
@@ -1444,13 +2239,14 @@ server <- function(input, output, session) {
 
   output$month_ui <- renderUI({
     shinyWidgets::airMonthpickerInput("month_sel", NULL,
-                                      value = Sys.Date(), autoClose = TRUE)
+                                      value = Sys.Date(), autoClose = TRUE,
+                                      addon = "none")
   })
 
   output$currency_ui <- renderUI({
     t0_cur_ui  <- proc.time()
-    tab        <- input$nav %||% "AR"
-    ledger_tab <- if (tab %in% c("AR", "AP")) tab else "AR"
+    tab        <- input$nav %||% "CAL"
+    ledger_tab <- if (tab == "CAL") active_cal_ledger() else "AR"
     result <- if (ledger_tab == "AR") {
       choices <- currency_choices$AR()
       if (!length(choices)) choices <- c("MXN", "USD")
@@ -1471,11 +2267,16 @@ server <- function(input, output, session) {
 
   # ── Modules ──────────────────────────────────────────────────────────────────
   t0_mod <- proc.time()
-  ledgerModuleServer("ar", config = AR_CONFIG, shared = shared)
+  ar_state <- ledgerModuleServer("ar", config = AR_CONFIG, shared = shared)
   message(sprintf("[SERVER] ledger AR registered in %.2fs (session #%d)",
                   (proc.time() - t0_mod)[["elapsed"]], .sn))
   t0_mod <- proc.time()
-  ledgerModuleServer("ap", config = AP_CONFIG, shared = shared)
+  ap_state <- ledgerModuleServer("ap", config = AP_CONFIG, shared = shared)
+  # Expose the fully-filtered, pre-month-filter data to Search and Vencidos so
+  # they are guaranteed to show exactly what the calendar knows about.
+  shared$df_combined_AR <- ar_state$df_combined
+  shared$df_combined_AP <- ap_state$df_combined
+  cashflowPreviewServer("cfp", shared = shared)
   message(sprintf("[SERVER] ledger AP registered in %.2fs (session #%d)",
                   (proc.time() - t0_mod)[["elapsed"]], .sn))
   t0_mod <- proc.time()
@@ -1615,13 +2416,14 @@ server <- function(input, output, session) {
           FechaVenc = as.Date(input$me_fecha),
           staged_by = current_user(),
           staged_at = Sys.time(),
-          status    = "pending"
+          status    = "pending",
+          source    = "manual"
         )
         ph_updated <- upsert_pagar_hoy(
-          pagar_hoy_db() %||% safe_load_pagar_hoy(current_user()),
+          pagar_hoy_db() %||% safe_load_pagar_hoy(current_user(), client_id = active_client_id()),
           ph_row, keys = "id")
         pagar_hoy_db(ph_updated)
-        tryCatch(save_pagar_hoy(ph_updated, current_user()),
+        tryCatch(save_pagar_hoy(ph_updated, current_user(), client_id = active_client_id()),
                  error = function(e) showNotification(
                    paste("No se pudo guardar en Agenda:", e$message), type = "warning"))
       }
@@ -1640,89 +2442,131 @@ server <- function(input, output, session) {
     removeModal(); active_entry_ledger(NULL)
   }, ignoreInit = TRUE)
 
-  # ── Supplier suggestions in Nueva entrada – AP modal ──────────────────────────
+  # ── Business partner suggestions in Nueva entrada modal (AP and AR) ───────────
   me_prov_query   <- reactive({ input$me_parte %||% "" })
   me_prov_query_d <- debounce(me_prov_query, 300)
 
   output$me_prov_suggestions <- renderUI({
-    req(isTRUE(active_entry_ledger() == "AP"))
+    ldr <- active_entry_ledger()
+    req(ldr %in% c("AP", "AR"))
     q <- trimws(me_prov_query_d())
     if (nchar(q) < 2) return(NULL)
 
-    provs <- shared$proveedores_db() %||% data.frame()
-    if (!nrow(provs)) return(NULL)
+    if (ldr == "AP") {
+      # ── AP: fuzzy match against proveedores catalog with IC badges ─────────
+      provs <- shared$proveedores_db() %||% data.frame()
+      if (!nrow(provs)) return(NULL)
 
-    matches <- tryCatch(
-      find_proveedor_matches(
-        query          = list(parte = q, rfc = "", no_cuenta = "", nombre = q, alias = ""),
-        proveedores_df = provs,
-        threshold      = 15L,
-        top_n          = 8L
-      ),
-      error = function(e) NULL
-    )
-    if (is.null(matches) || !nrow(matches)) return(NULL)
+      matches <- tryCatch(
+        find_proveedor_matches(
+          query          = list(parte = q, rfc = "", no_cuenta = "", nombre = q, alias = ""),
+          proveedores_df = provs,
+          threshold      = 15L,
+          top_n          = 8L
+        ),
+        error = function(e) NULL
+      )
+      if (is.null(matches) || !nrow(matches)) return(NULL)
 
-    # Build IC detection sets for the currently selected empresa (AP context)
-    empresa_full <- input$me_empresa %||% ""
-    empresa_init <- names(company_map_rv())[company_map_rv() == empresa_full][1] %||% NA_character_
-    registry     <- shared$interco_v2()
-    ap_ic_codes  <- if (!is.null(registry) && !is.na(empresa_init) &&
-                        !is.null(registry$companies[[empresa_init]])) {
-      prefix <- registry$ap_prefix %||% "P"
-      toupper(paste0(prefix, registry$companies[[empresa_init]]$ap %||% character()))
-    } else character()
-    # IC RFCs: use the GLOBAL set of all known IC company RFCs (not filtered by
-    # empresa).  The rfcs dict accumulates RFCs from every scanner run, so even
-    # when NL/NCS/NRS have no open IC invoices today, the RFCs of their IC partners
-    # (scanned from NTS/NG data) are still available for badge detection.
-    ap_ic_rfcs <- if (!is.null(registry$rfcs) && length(registry$rfcs)) {
-      unique(toupper(trimws(unname(registry$rfcs))))
-    } else character()
-    ap_ic_rfcs <- ap_ic_rfcs[nzchar(ap_ic_rfcs)]
+      empresa_full <- input$me_empresa %||% ""
+      empresa_init <- names(company_map_rv())[company_map_rv() == empresa_full][1] %||% NA_character_
+      registry     <- shared$interco_v2()
+      ap_ic_codes  <- if (!is.null(registry) && !is.na(empresa_init) &&
+                          !is.null(registry$companies[[empresa_init]])) {
+        prefix <- registry$ap_prefix %||% "P"
+        toupper(paste0(prefix, registry$companies[[empresa_init]]$ap %||% character()))
+      } else character()
+      # IC RFCs: use the GLOBAL set of all known IC company RFCs (not filtered by
+      # empresa).  The rfcs dict accumulates RFCs from every scanner run, so even
+      # when NL/NCS/NRS have no open IC invoices today, the RFCs of their IC partners
+      # (scanned from NTS/NG data) are still available for badge detection.
+      ap_ic_rfcs <- if (!is.null(registry$rfcs) && length(registry$rfcs)) {
+        unique(toupper(trimws(unname(registry$rfcs))))
+      } else character()
+      ap_ic_rfcs <- ap_ic_rfcs[nzchar(ap_ic_rfcs)]
 
-    div(class = "prov-suggest-box",
-      style = "border:1px solid #dee2e6; border-radius:6px; margin-top:-8px; margin-bottom:8px; overflow:hidden;",
-      lapply(seq_len(nrow(matches)), function(i) {
-        m         <- matches[i, ]
-        score_pct <- paste0(min(m$.score, 100L), "%")
-        payload   <- jsonlite::toJSON(
-          list(nombre = m$nombre %||% "", alias = m$alias %||% "", moneda = m$moneda %||% ""),
-          auto_unbox = TRUE
-        )
-        # Match by CardCode OR by RFC (catálogo codigo field is often unpopulated)
-        is_ic_sug <- length(ap_ic_codes) > 0 && (
-          (nzchar(m$codigo %||% "") && toupper(m$codigo %||% "") %in% ap_ic_codes) ||
-          (nzchar(m$rfc    %||% "") && toupper(m$rfc    %||% "") %in% ap_ic_rfcs)
-        )
-
-        tags$div(
-          class       = "prov-suggest-item d-flex align-items-center gap-2 px-3 py-2",
-          style       = if (is_ic_sug)
-            "cursor:pointer; border-bottom:1px solid #f0f0f0; background:#f0f4ff; transition:background 0.1s;"
-          else
-            "cursor:pointer; border-bottom:1px solid #f0f0f0; transition:background 0.1s;",
-          onmouseover = "this.style.background='#e8eef8'",
-          onmouseout  = if (is_ic_sug) "this.style.background='#f0f4ff'"
-                        else           "this.style.background=''",
-          onclick     = paste0(
-            "Shiny.setInputValue('me_prov_pick', ", payload, ", {priority:'event'})"
-          ),
-          tags$span(class = "fw-semibold flex-grow-1 small", m$nombre %||% ""),
-          if (is_ic_sug) tags$span(
-            class = "badge",
-            style = "background:#0d6efd; color:#fff; font-size:0.65em; white-space:nowrap;",
-            "Intercompany"
-          ) else NULL,
-          tags$span(class = "text-muted small", m$alias %||% ""),
-          tags$span(
-            class = "badge ms-auto",
-            style = "background:#e9ecef; color:#495057; font-size:0.7em;",
-            score_pct
+      div(class = "prov-suggest-box",
+        style = "border:1px solid #dee2e6; border-radius:6px; margin-top:-8px; margin-bottom:8px; overflow:hidden;",
+        lapply(seq_len(nrow(matches)), function(i) {
+          m         <- matches[i, ]
+          score_pct <- paste0(min(m$.score, 100L), "%")
+          payload   <- jsonlite::toJSON(
+            list(nombre = m$nombre %||% "", alias = m$alias %||% "", moneda = m$moneda %||% ""),
+            auto_unbox = TRUE
           )
-        )
-      })
-    )
+          is_ic_sug <- length(ap_ic_codes) > 0 && (
+            (nzchar(m$codigo %||% "") && toupper(m$codigo %||% "") %in% ap_ic_codes) ||
+            (nzchar(m$rfc    %||% "") && toupper(m$rfc    %||% "") %in% ap_ic_rfcs)
+          )
+          tags$div(
+            class       = "prov-suggest-item d-flex align-items-center gap-2 px-3 py-2",
+            style       = if (is_ic_sug)
+              "cursor:pointer; border-bottom:1px solid #f0f0f0; background:#f0f4ff; transition:background 0.1s;"
+            else
+              "cursor:pointer; border-bottom:1px solid #f0f0f0; transition:background 0.1s;",
+            onmouseover = "this.style.background='#e8eef8'",
+            onmouseout  = if (is_ic_sug) "this.style.background='#f0f4ff'"
+                          else           "this.style.background=''",
+            onclick     = paste0(
+              "Shiny.setInputValue('me_prov_pick', ", payload, ", {priority:'event'})"
+            ),
+            tags$span(class = "fw-semibold flex-grow-1 small", m$nombre %||% ""),
+            if (is_ic_sug) tags$span(
+              class = "badge",
+              style = "background:#0d6efd; color:#fff; font-size:0.65em; white-space:nowrap;",
+              "Intercompany"
+            ) else NULL,
+            tags$span(class = "text-muted small", m$alias %||% ""),
+            tags$span(
+              class = "badge ms-auto",
+              style = "background:#e9ecef; color:#495057; font-size:0.7em;",
+              score_pct
+            )
+          )
+        })
+      )
+
+    } else {
+      # ── AR: match against the same all-partes pool used by payment policies ─
+      sap_d    <- tryCatch(shared$sap_data(),               error = function(e) list())
+      pp_db    <- tryCatch(shared$partner_policies_db(),    error = function(e) NULL)
+      pasiv_db <- tryCatch(shared$pasivos_liabilities_db(), error = function(e) NULL)
+
+      from_sap <- c(
+        if (!is.null(sap_d$AR) && "Parte" %in% names(sap_d$AR)) unique(sap_d$AR$Parte) else character(),
+        if (!is.null(sap_d$AP) && "Parte" %in% names(sap_d$AP)) unique(sap_d$AP$Parte) else character()
+      )
+      from_pp <- if (!is.null(pp_db) && nrow(pp_db)) pp_db$parte else character()
+      from_pasivos <- if (!is.null(pasiv_db) && nrow(pasiv_db) && "parte" %in% names(pasiv_db))
+        unique(pasiv_db$parte[pasiv_db$estado %in% c("active", "paused") & nzchar(pasiv_db$parte %||% "")])
+      else character()
+
+      all_p   <- sort(unique(c(from_sap, from_pp, from_pasivos)))
+      all_p   <- all_p[nzchar(trimws(all_p))]
+      q_norm  <- strip_accents(tolower(q))
+      matches <- head(all_p[grepl(q_norm, strip_accents(tolower(all_p)), fixed = TRUE)], 8L)
+      if (!length(matches)) return(NULL)
+
+      div(class = "prov-suggest-box",
+        style = "border:1px solid #dee2e6; border-radius:6px; margin-top:-8px; margin-bottom:8px; overflow:hidden;",
+        lapply(matches, function(nombre) {
+          payload <- jsonlite::toJSON(
+            list(nombre = nombre, alias = "", moneda = ""),
+            auto_unbox = TRUE
+          )
+          tags$div(
+            class       = "prov-suggest-item d-flex align-items-center gap-2 px-3 py-2",
+            style       = "cursor:pointer; border-bottom:1px solid #f0f0f0; transition:background 0.1s;",
+            onmouseover = "this.style.background='#e8eef8'",
+            onmouseout  = "this.style.background=''",
+            onclick     = paste0(
+              "Shiny.setInputValue('me_prov_pick', ", payload, ", {priority:'event'})"
+            ),
+            tags$span(class = "fw-semibold flex-grow-1 small", nombre)
+          )
+        })
+      )
+    }
   })
 
   observeEvent(input$me_prov_pick, {
@@ -1746,7 +2590,6 @@ server <- function(input, output, session) {
   settings_alias_counter(input, output, session)
   settings_cancel_edit_observer(input, output, session)
   settings_cuentas_observer(input, output, session, shared)
-  settings_usuarios_observer(input, output, session, shared)
   settings_sincro_observer(input, output, session, shared, pagar_hoy_db)
   settings_policies_observer(input, output, session, shared)
   settings_companies_observer(input, output, session, shared)

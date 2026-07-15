@@ -1,0 +1,13 @@
+library(dplyr, warn.conflicts = FALSE)
+library(tibble)
+S3_KEYS <- list(papelera = "p.rds")
+.s3_read  <- function(k) NULL
+.s3_write <- function(o, k) invisible(NULL)
+.normalize <- function(df, fn) {
+  s <- fn()
+  for (col in names(s)) if (!col %in% names(df)) df[[col]] <- s[[col]][NA_integer_]
+  df
+}
+`%||%` <- function(a, b) if (!is.null(a)) a else b
+source("R/persistence.R", local = FALSE)
+source("tests/test_delete_consistency.R", local = FALSE)

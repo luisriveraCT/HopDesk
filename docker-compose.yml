@@ -1,0 +1,113 @@
+# =============================================================================
+# docker-compose.yml — HopDesk Multi-Tenant Deployment
+#
+# STATUS: Blueprint only. Not yet active in deployment.
+#         ShinyApps.io is the current deployment target.
+#
+# WHEN TO USE THIS:
+#   - When self-hosting on Networks infrastructure or any Linux VPS
+#   - Each client = one service block using the SAME image, different env file
+#   - Add one service block per new client (copy the "networks-client" block,
+#     change the service name, env_file, and container_name)
+#
+# ADDING A NEW CLIENT:
+#   1. Create .env.newclient with CLIENT_ID=newclient (all other vars identical)
+#   2. Copy the "networks-client" service block below
+#   3. Change: service name, container_name, env_file, and the nginx location block
+#   4. docker-compose up -d newclient-client
+#
+# AWS CREDENTIAL SECURITY:
+#   - Credentials live ONLY in .env files, never in this file or the image
+#   - .env files must be in .gitignore (never commit them)
+#   - For production, use Docker secrets or AWS IAM instance roles instead of .env files
+# =============================================================================
+
+version: "3.8"
+
+services:
+
+  # ── Networks Group client ────────────────────────────────────────────────────
+  networks-client:
+    image: hopdesk-app:latest       # built from Dockerfile in this repo
+    container_name: hopdesk-networks
+    env_file: .env.networks         # contains CLIENT_ID=networks + shared AWS vars
+    restart: unless-stopped
+    ports:
+      - "3838:3838"                 # only needed if NOT using nginx below
+                                    # comment out when nginx is enabled
+    volumes:
+      - shiny-logs-networks:/var/log/shiny-server  # persist logs across restarts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3838/hopdesk/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ── HopDesk admin deployment ─────────────────────────────────────────────────
+  # Accessible to HopDesk staff only. Uses CLIENT_ID=hd-admin.
+  # Staff jump to client contexts from within this deployment.
+  hd-admin:
+    image: hopdesk-app:latest
+    container_name: hopdesk-admin
+    env_file: .env.hd-admin         # contains CLIENT_ID=hd-admin + shared AWS vars
+    restart: unless-stopped
+    ports:
+      - "3839:3838"                 # different host port — nginx routes by domain
+    volumes:
+      - shiny-logs-admin:/var/log/shiny-server
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3838/hopdesk/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ── nginx reverse proxy ──────────────────────────────────────────────────────
+  # Uncomment this block when you have a domain and SSL certificate.
+  # Routes: networks.hopdesk.com → networks-client:3838
+  #         admin.hopdesk.com    → hd-admin:3838
+  #
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: hopdesk-nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro   # see nginx.conf.template in this repo
+  #     - /etc/letsencrypt:/etc/letsencrypt:ro     # certbot SSL certificates
+  #   depends_on:
+  #     - networks-client
+  #     - hd-admin
+  #
+  # nginx.conf routing sketch (see nginx.conf.template for full config):
+  #   server { server_name networks.hopdesk.com; location / { proxy_pass http://networks-client:3838; } }
+  #   server { server_name admin.hopdesk.com;    location / { proxy_pass http://hd-admin:3838; } }
+
+volumes:
+  shiny-logs-networks:
+  shiny-logs-admin:
+
+# =============================================================================
+# .env file format (create one per client — never commit to git):
+#
+#   .env.networks:
+#     CLIENT_ID=networks
+#     S3_BUCKET=antiguedad-rds-prod
+#     AWS_ACCESS_KEY_ID=AKIA...
+#     AWS_SECRET_ACCESS_KEY=...
+#     AWS_DEFAULT_REGION=us-east-1
+#     RESEND_API_KEY=re_...
+#     RESEND_FROM_EMAIL=noreply@hopdesk.com
+#
+#   .env.hd-admin:
+#     CLIENT_ID=hd-admin
+#     S3_BUCKET=antiguedad-rds-prod
+#     AWS_ACCESS_KEY_ID=AKIA...       (same key until per-client IAM keys)
+#     AWS_SECRET_ACCESS_KEY=...
+#     AWS_DEFAULT_REGION=us-east-1
+#     RESEND_API_KEY=re_...
+#     RESEND_FROM_EMAIL=noreply@hopdesk.com
+# =============================================================================

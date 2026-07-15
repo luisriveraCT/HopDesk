@@ -1,0 +1,109 @@
+{
+  "_comment_instructions": [
+    "This policy is for the hd-admin deployment IAM user ONLY.",
+    "Replace BUCKET_NAME with your S3 bucket name (e.g. antiguedad-rds-prod).",
+    "Replace with a comma-separated list any additional client prefixes as the platform grows.",
+    "Remove all '_comment_*' keys before pasting into AWS."
+  ],
+
+  "Version": "2012-10-17",
+  "Statement": [
+
+    {
+      "_comment_1": [
+        "Full read+write on hd-admin/ prefix.",
+        "This is the global admin namespace: client_registry, username_index,",
+        "  pending_invites, emergency_lock, notifications, email_queue, incident_reports."
+      ],
+      "Sid": "HdAdminFullAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:GetObjectVersion",
+        "s3:ListMultipartUploadParts"
+      ],
+      "Resource": "arn:aws:s3:::BUCKET_NAME/hd-admin/*"
+    },
+
+    {
+      "_comment_2": [
+        "Read-only access to ALL client prefixes.",
+        "Required for: client-jump context (hopdesk staff browsing client data),",
+        "  global audit log reads (can_view_global_audit), user limit checks.",
+        "Write access to client prefixes is granted separately — only for specific",
+        "  admin operations (user deactivation, limit enforcement) via the app.",
+        "Note: this grants read on ALL prefixes under the bucket. With per-client IAM",
+        "  hardening this would be replaced by explicit prefix list + STS role assumption."
+      ],
+      "Sid": "AllClientPrefixesReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectVersion"
+      ],
+      "Resource": "arn:aws:s3:::BUCKET_NAME/*"
+    },
+
+    {
+      "_comment_3": [
+        "Write access to specific client objects that hd-admin needs to modify:",
+        "  - usuarios.rds: user deactivation during limit enforcement",
+        "  - app_audit.rds: dual audit log writes (hd-admin + client side)",
+        "  - sync_versions.rds: sync bus entries",
+        "We deliberately do NOT grant blanket PutObject on all client prefixes here.",
+        "The resource ARNs below enumerate specific file patterns.",
+        "Add additional patterns if the admin flow requires writing other files."
+      ],
+      "Sid": "AdminWriteToClientFiles",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::BUCKET_NAME/*/usuarios.rds",
+        "arn:aws:s3:::BUCKET_NAME/*/app_audit.rds",
+        "arn:aws:s3:::BUCKET_NAME/*/app_audit_*.rds",
+        "arn:aws:s3:::BUCKET_NAME/*/sync_versions.rds"
+      ]
+    },
+
+    {
+      "_comment_4": [
+        "Allow ListBucket scoped to hd-admin/ and any client prefix.",
+        "The hd-admin app needs to list chunk files (app_audit_001.rds, etc.)."
+      ],
+      "Sid": "HdAdminListBucket",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::BUCKET_NAME",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "hd-admin/*",
+            "*"
+          ]
+        }
+      }
+    },
+
+    {
+      "_comment_5": [
+        "Allow versioning-related actions needed by emergency_rewind.R.",
+        "These are bucket-level actions, not object-level.",
+        "GetBucketVersioning: startup check in emergency_rewind.R.",
+        "ListBucketVersions: enumerating object versions for targeted key restore."
+      ],
+      "Sid": "VersioningReadForRewind",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketVersioning",
+        "s3:ListBucketVersions"
+      ],
+      "Resource": "arn:aws:s3:::BUCKET_NAME"
+    }
+
+  ]
+}

@@ -12,7 +12,8 @@
 #   manual_items       : manual_inv tibble filtered to ledger == "AP"
 #   bancos_confirmados : bancos_confirmados tibble (eliminado=FALSE pre-filtered by caller)
 #   liabilities        : tibble matching .schema_pasivos_liability()
-#   filters            : list(empresa, categorias, subcategorias, currency, search, granularity)
+#   filters            : list(empresa, categorias, subcategorias, currency, search, granularity,
+#                             provision_type) — "todas" | "programadas" | "manuales"
 #
 # Returns: tibble with one row per (liability + date) combination.
 pasivos_table_build_long <- function(provisions, manual_items,
@@ -32,9 +33,9 @@ pasivos_table_build_long <- function(provisions, manual_items,
     liabs_in_scope <- liabs_in_scope[liabs_in_scope$subcategoria %in% filters$subcategorias, , drop = FALSE]
   }
   if (!is.null(filters$search) && nzchar(trimws(filters$search))) {
-    pat <- trimws(filters$search)
-    nm_hit   <- grepl(pat, liabs_in_scope$nombre, ignore.case = TRUE)
-    parte_hit <- grepl(pat, liabs_in_scope$parte,  ignore.case = TRUE)
+    pat <- strip_accents(tolower(trimws(filters$search)))
+    nm_hit    <- grepl(pat, strip_accents(tolower(liabs_in_scope$nombre %||% "")), fixed = TRUE)
+    parte_hit <- grepl(pat, strip_accents(tolower(liabs_in_scope$parte  %||% "")), fixed = TRUE)
     liabs_in_scope <- liabs_in_scope[nm_hit | parte_hit, , drop = FALSE]
   }
 
@@ -51,7 +52,18 @@ pasivos_table_build_long <- function(provisions, manual_items,
     provisions_in <- provisions[integer(0), , drop = FALSE]
   }
 
-  # ── 2b. Warn on unknown estados; keep only active lifecycle rows ─────────────
+  # ── 2b. Filter by provision type (todas / programadas / manuales) ────────────
+  ptype <- filters$provision_type %||% "todas"
+  if (ptype != "todas" && nrow(provisions_in)) {
+    is_linked <- !is.na(provisions_in$liability_id) & nzchar(provisions_in$liability_id %||% "")
+    if (ptype == "programadas") {
+      provisions_in <- provisions_in[is_linked, , drop = FALSE]
+    } else if (ptype == "manuales") {
+      provisions_in <- provisions_in[!is_linked, , drop = FALSE]
+    }
+  }
+
+  # ── 2c. Warn on unknown estados; keep only active lifecycle rows ─────────────
   known_estados <- c("provisional", "converted", "item_confirmed", "closed", "deleted")
   if (nrow(provisions_in)) {
     unknown <- setdiff(unique(provisions_in$estado), c(known_estados, NA_character_))

@@ -49,6 +49,8 @@
   importado_at    = as.POSIXct(character()),
   fuente          = character(),   # "txt" | "manual" | "agenda"
   eliminado       = logical(),     # TRUE = soft-deleted; never physically removed
+  eliminado_por   = character(),   # username who sent to papelera (audit)
+  eliminado_at    = as.POSIXct(character()),  # timestamp of soft-delete
   notas           = character()
 )
 
@@ -66,7 +68,9 @@
   tipo            = character(),   # "pago" | "cobro"
   mov_id          = character(),   # FK to bancos_movimientos$id
   confirmado_at   = as.POSIXct(character()),
-  eliminado       = logical()
+  eliminado       = logical(),
+  eliminado_at    = as.POSIXct(character()),  # timestamp of soft-delete
+  provision_id    = character()    # mirrored from pagar_hoy at confirmation; NA otherwise
 )
 
 # ── Shared normalizer (reuses persistence.R's .normalize) ────────────────────
@@ -74,8 +78,8 @@
 
 # ── bancos_cuentas ────────────────────────────────────────────────────────────
 
-load_bancos_cuentas <- function() {
-  raw <- .s3_read(S3_KEYS$bancos_cuentas)
+load_bancos_cuentas <- function(client_id = NULL) {
+  raw <- .s3_read_with(S3_KEYS$bancos_cuentas, client_id = client_id)
   df  <- .normalize(raw, .schema_bancos_cuentas)
   # Default NAs
   df$saldo_inicial     <- ifelse(is.na(df$saldo_inicial),     0, df$saldo_inicial)
@@ -84,15 +88,15 @@ load_bancos_cuentas <- function() {
   df
 }
 
-save_bancos_cuentas <- function(df) {
-  .s3_write(.normalize(df, .schema_bancos_cuentas), S3_KEYS$bancos_cuentas)
+save_bancos_cuentas <- function(df, client_id = NULL) {
+  .s3_write(.normalize(df, .schema_bancos_cuentas), S3_KEYS$bancos_cuentas, client_id = client_id)
 }
 
 # ── bancos_movimientos ────────────────────────────────────────────────────────
 
 #' @param include_deleted If FALSE (default), filter out rows where eliminado=TRUE.
-load_bancos_movimientos <- function(include_deleted = FALSE) {
-  raw <- .s3_read(S3_KEYS$bancos_movimientos)
+load_bancos_movimientos <- function(include_deleted = FALSE, client_id = NULL) {
+  raw <- .s3_read_with(S3_KEYS$bancos_movimientos, client_id = client_id)
   df  <- .normalize(raw, .schema_bancos_movimientos)
   # Ensure numeric cols never have NA (spec: "NA not permitted — use 0")
   df$cargo  <- ifelse(is.na(df$cargo),  0, df$cargo)
@@ -104,21 +108,21 @@ load_bancos_movimientos <- function(include_deleted = FALSE) {
 }
 
 #' Always saves the COMPLETE dataframe (eliminado rows included) for audit trail.
-save_bancos_movimientos <- function(df) {
-  .s3_write(.normalize(df, .schema_bancos_movimientos), S3_KEYS$bancos_movimientos)
+save_bancos_movimientos <- function(df, client_id = NULL) {
+  .s3_write(.normalize(df, .schema_bancos_movimientos), S3_KEYS$bancos_movimientos, client_id = client_id)
 }
 
 # ── bancos_confirmados ────────────────────────────────────────────────────────
 
-load_bancos_confirmados <- function() {
-  raw <- .s3_read(S3_KEYS$bancos_confirmados)
+load_bancos_confirmados <- function(client_id = NULL) {
+  raw <- .s3_read_with(S3_KEYS$bancos_confirmados, client_id = client_id)
   df  <- .normalize(raw, .schema_bancos_confirmados)
   df$eliminado <- ifelse(is.na(df$eliminado), FALSE, df$eliminado)
   df
 }
 
-save_bancos_confirmados <- function(df) {
-  .s3_write(.normalize(df, .schema_bancos_confirmados), S3_KEYS$bancos_confirmados)
+save_bancos_confirmados <- function(df, client_id = NULL) {
+  .s3_write(.normalize(df, .schema_bancos_confirmados), S3_KEYS$bancos_confirmados, client_id = client_id)
 }
 
 # ── Helper: add movement + confirmation row atomically ───────────────────────

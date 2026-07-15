@@ -8,6 +8,15 @@
 # R temp files
 .Rproj.user/
 
+# Docker env files — contain AWS credentials and API keys
+.env
+.env.*
+.env.*.local
+
+# One-time ephemeral scripts (may contain inline credentials)
+scripts/register_*.R
+scripts/seed_*.R
+
 # OS
 .DS_Store
 Thumbs.db

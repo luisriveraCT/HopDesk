@@ -84,12 +84,26 @@ pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = c
   )
 }
 
+# ── Manage-converted modal UI ─────────────────────────────────────────────────
+
+# Returns a modalDialog for a provision that is already converted.
+# The body is a uiOutput that the server renders reactively (inline confirm).
+pasivos_manage_converted_modal_ui <- function() {
+  shiny::modalDialog(
+    title     = "Gestionar comprobante de provisión",
+    size      = "s",
+    easyClose = TRUE,
+    shiny::uiOutput("pcm_conv_body"),
+    footer    = shiny::modalButton("Cerrar")
+  )
+}
+
 # ── Shared conversion logic ────────────────────────────────────────────────────
 
 # Creates manual_inv row + optional pagar_hoy row + flips provision state.
 # Returns list(ok, msg, manual_id, pagar_hoy_id).
 .pasivos_perform_conversion <- function(input, shared, prov_id, stage_to_agenda, user) {
-  provs <- tryCatch(load_pasivos_provisions(), error = function(e) NULL)
+  provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()), error = function(e) NULL)
   if (is.null(provs)) return(list(ok = FALSE, msg = "No se pudo cargar la tabla de provisiones."))
 
   prov <- provs[provs$id == prov_id, , drop = FALSE]
@@ -101,12 +115,30 @@ pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = c
   new_manual_id <- uuid::UUIDgenerate()
   now           <- Sys.time()
 
+  # Provisions store empresa as initials (e.g. "NCS"); pagar_hoy and manual_inv
+  # must store full company names so pagar_hoy_module and build_ledger_df match them.
+  cmap         <- tryCatch(isolate(shared$company_map()), error = function(e) NULL)
+  full_empresa <- {
+    key <- input$pcm_empresa %||% ""
+    if (!is.null(cmap) && length(cmap) && nzchar(key)) {
+      # cmap is a named character vector (initials → full name).
+      # Single [ never throws for missing keys; [[ throws "subscript out of bounds".
+      looked_up <- unname(cmap[key])
+      if (!is.na(looked_up)) looked_up else key
+    } else {
+      key
+    }
+  }
+
   new_manual <- tibble::tibble(
     id                     = new_manual_id,
     ledger                 = "AP",
-    Empresa                = input$pcm_empresa,
+    Empresa                = full_empresa,
     Moneda                 = input$pcm_moneda,
-    Documento              = input$pcm_documento,
+    Documento              = {
+      doc_raw <- trimws(input$pcm_documento %||% "")
+      if (nzchar(doc_raw)) doc_raw else paste0("CONV_", prov_id)
+    },
     Factura                = input$pcm_factura,
     Parte                  = input$pcm_parte,
     Codigo                 = input$pcm_codigo,
@@ -125,7 +157,7 @@ pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = c
   manual_df <- shared$manual_inv()
   manual_df <- dplyr::bind_rows(manual_df, new_manual)
   shared$manual_inv(manual_df)
-  tryCatch(save_manual(manual_df), error = function(e)
+  tryCatch(save_manual(manual_df, client_id = shared$active_client_id()), error = function(e)
     warning("[pasivos] save_manual failed: ", conditionMessage(e)))
 
   # 2. Optional: stage to pagar_hoy
@@ -135,9 +167,12 @@ pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = c
     new_ph_row <- tibble::tibble(
       id           = new_pagar_hoy_id,
       ledger       = "AP",
-      Empresa      = input$pcm_empresa,
+      Empresa      = full_empresa,
       Moneda       = input$pcm_moneda,
-      Documento    = input$pcm_documento,
+      Documento    = {
+        doc_raw <- trimws(input$pcm_documento %||% "")
+        if (nzchar(doc_raw)) doc_raw else paste0("CONV_", prov_id)
+      },
       Parte        = input$pcm_parte,
       Codigo       = input$pcm_codigo,
       tipo_item    = "factura",
@@ -147,12 +182,16 @@ pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = c
       staged_at    = now,
       status       = "pending",
       provision_id = prov_id,
-      liability_id = prov$liability_id[1]
+      liability_id = prov$liability_id[1],
+      source       = "provision"
     )
-    ph_df <- shared$pagar_hoy_db()
-    ph_df <- dplyr::bind_rows(ph_df, new_ph_row)
+    ph_df <- upsert_pagar_hoy(
+      shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$active_client_id()),
+      new_ph_row,
+      keys = c("ledger", "Empresa", "Moneda", "Documento")
+    )
     shared$pagar_hoy_db(ph_df)
-    tryCatch(save_pagar_hoy(ph_df, user), error = function(e)
+    tryCatch(save_pagar_hoy(ph_df, user, client_id = shared$active_client_id()), error = function(e)
       warning("[pasivos] save_pagar_hoy failed: ", conditionMessage(e)))
   }
 
@@ -162,7 +201,8 @@ pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = c
       provision_id  = prov_id,
       manual_inv_id = new_manual_id,
       pagar_hoy_id  = new_pagar_hoy_id,
-      user          = user
+      user          = user,
+      client_id     = shared$active_client_id()
     ),
     error = function(e) e
   )
@@ -183,7 +223,11 @@ pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = c
 # Call once from app.R server.
 setup_pasivos_module <- function(input, output, session, shared) {
 
-  rv <- shiny::reactiveValues(pending_provision_id = NULL)
+  rv <- shiny::reactiveValues(
+    pending_provision_id = NULL,
+    conv_prov_id         = NULL,   # provision id being managed in convert-mgmt modal
+    conv_mgmt_view       = "main"  # "main" | "confirm_undo" | "confirm_delete"
+  )
 
   # ── Lightning-bolt click → open convert modal ─────────────────────────────
   shiny::observeEvent(input$pasivos_convert_request, ignoreInit = TRUE, {
@@ -198,12 +242,13 @@ setup_pasivos_module <- function(input, output, session, shared) {
         action_type = "capability.denied",
         user        = user,
         target_kind = "provision", target_id = prov_id,
-        notes       = "convert_to_item"
+        notes       = "convert_to_item",
+        client_id   = shared$active_client_id()
       ), error = function(e) NULL)
       return()
     }
 
-    provs <- tryCatch(load_pasivos_provisions(), error = function(e) NULL)
+    provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()), error = function(e) NULL)
     if (is.null(provs)) {
       shiny::showNotification("Error cargando provisiones.", type = "error")
       return()
@@ -211,6 +256,12 @@ setup_pasivos_module <- function(input, output, session, shared) {
     prov <- provs[provs$id == prov_id, , drop = FALSE]
     if (!nrow(prov)) {
       shiny::showNotification("Provisión no encontrada.", type = "error")
+      return()
+    }
+    if (prov$estado[1] %in% c("converted", "item_confirmed")) {
+      rv$conv_prov_id   <- prov_id
+      rv$conv_mgmt_view <- "main"
+      shiny::showModal(pasivos_manage_converted_modal_ui())
       return()
     }
     if (prov$estado[1] != "provisional") {
@@ -221,7 +272,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     rv$pending_provision_id <- prov_id
 
-    liabs          <- tryCatch(load_pasivos_liabilities(), error = function(e) NULL)
+    liabs          <- tryCatch(load_pasivos_liabilities(client_id = shared$active_client_id()), error = function(e) NULL)
     empresa_choices <- tryCatch(sort(names(shared$company_map())),
                                 error = function(e) sort(names(COMPANY_MAP)))
 
@@ -251,7 +302,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     if (is.null(prov_id)) return()
     user <- tryCatch(shared$current_user(), error = function(e) "system")
 
-    provs <- tryCatch(load_pasivos_provisions(), error = function(e) NULL)
+    provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()), error = function(e) NULL)
     if (is.null(provs)) {
       shiny::showNotification("Error cargando provisiones.", type = "error"); return()
     }
@@ -276,17 +327,19 @@ setup_pasivos_module <- function(input, output, session, shared) {
     provs$last_edited_by[idx]  <- user
     provs$last_edited_at[idx]  <- now
 
-    ok <- tryCatch({ save_pasivos_provisions(provs); TRUE },
+    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$active_client_id()); TRUE },
                    error = function(e) {
                      shiny::showNotification(paste0("Error: ", conditionMessage(e)),
                                              type = "error"); FALSE
                    })
     if (!ok) return()
+    tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
     shared$pasivos_provisions_db(provs)
+    bump_sync_version("pasivos_provisions_db")
 
     # Archive a copy to the unified papelera (same S3 store used by all modules)
     tryCatch({
-      papelera_df <- tryCatch(load_papelera(), error = function(e) .schema_papelera())
+      papelera_df <- tryCatch(load_papelera(client_id = shared$active_client_id()), error = function(e) .schema_papelera())
       papelera_detail <- data.frame(
         id       = prov_row$id[1],
         source   = "provision",
@@ -300,7 +353,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       )
       papelera_df <- add_to_papelera(papelera_df, papelera_detail,
                                      ledger = "AP", deleted_by = user)
-      save_papelera(papelera_df)
+      save_papelera(papelera_df, client_id = shared$active_client_id())
       if (!is.null(shared$papelera_rv)) shared$papelera_rv(papelera_df)
     }, error = function(e)
       message("[pasivos] papelera write failed: ", conditionMessage(e)))
@@ -309,7 +362,8 @@ setup_pasivos_module <- function(input, output, session, shared) {
       action_type = "provision.deleted",
       user        = user,
       target_kind = "provision", target_id = prov_id,
-      notes       = "soft-deleted via convert modal; archived to papelera"
+      notes       = "soft-deleted via convert modal; archived to papelera",
+      client_id   = shared$active_client_id()
     ), error = function(e) NULL)
 
     rv$pending_provision_id <- NULL
@@ -323,7 +377,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     if (is.null(prov_id)) return()
     user <- tryCatch(shared$current_user(), error = function(e) "system")
 
-    provs <- tryCatch(load_pasivos_provisions(), error = function(e) NULL)
+    provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()), error = function(e) NULL)
     if (is.null(provs)) {
       shiny::showNotification("Error cargando provisiones.", type = "error"); return()
     }
@@ -352,14 +406,16 @@ setup_pasivos_module <- function(input, output, session, shared) {
     provs$last_edited_by[idx] <- user
     provs$last_edited_at[idx] <- now
 
-    ok <- tryCatch({ save_pasivos_provisions(provs); TRUE },
+    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$active_client_id()); TRUE },
                    error = function(e) {
                      shiny::showNotification(paste0("Error: ", conditionMessage(e)),
                                              type = "error"); FALSE
                    })
     if (!ok) return()
 
+    tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
     shared$pasivos_provisions_db(provs)
+    bump_sync_version("pasivos_provisions_db")
     tryCatch(pasivos_log_audit(
       action_type = "provision.edited",
       user        = user,
@@ -367,7 +423,8 @@ setup_pasivos_module <- function(input, output, session, shared) {
       after       = list(parte = input$pcm_parte %||% "",
                          importe = new_imp,
                          fecha = as.character(new_fecha)),
-      notes       = "inline provision edit via convert modal"
+      notes       = "inline provision edit via convert modal",
+      client_id   = shared$active_client_id()
     ), error = function(e) NULL)
 
     rv$pending_provision_id <- NULL
@@ -391,8 +448,9 @@ setup_pasivos_module <- function(input, output, session, shared) {
       shiny::showNotification(res$msg, type = "error"); return()
     }
     rv$pending_provision_id <- NULL
+    tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
     tryCatch({
-      shared$pasivos_provisions_db(load_pasivos_provisions())
+      shared$pasivos_provisions_db(load_pasivos_provisions(client_id = shared$active_client_id()))
     }, error = function(e) NULL)
     shiny::removeModal()
     shiny::showNotification("Provisión convertida a comprobante.", type = "message")
@@ -414,8 +472,9 @@ setup_pasivos_module <- function(input, output, session, shared) {
       shiny::showNotification(res$msg, type = "error"); return()
     }
     rv$pending_provision_id <- NULL
+    tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
     tryCatch({
-      shared$pasivos_provisions_db(load_pasivos_provisions())
+      shared$pasivos_provisions_db(load_pasivos_provisions(client_id = shared$active_client_id()))
     }, error = function(e) NULL)
     shiny::removeModal()
     shiny::showNotification(
@@ -430,6 +489,9 @@ setup_pasivos_module <- function(input, output, session, shared) {
       shiny::showNotification("No tienes permiso para crear provisiones.", type = "error")
       return()
     }
+
+    shinyjs::disable("me_save_as_provision")
+    on.exit(shinyjs::enable("me_save_as_provision"), add = TRUE)
 
     new_id  <- uuid::UUIDgenerate()
     now     <- Sys.time()
@@ -472,10 +534,14 @@ setup_pasivos_module <- function(input, output, session, shared) {
       last_edited_at           = now
     )
 
-    provs <- tryCatch(load_pasivos_provisions(), error = function(e) .schema_pasivos_provision())
-    provs <- dplyr::bind_rows(provs, new_prov)
+    existing <- tryCatch(shared$pasivos_provisions_db(),
+                         error = function(e) .schema_pasivos_provision())
+    if (is.null(existing) || !is.data.frame(existing))
+      existing <- .schema_pasivos_provision()
+
+    provs <- dplyr::bind_rows(existing, new_prov)
     save_ok <- tryCatch({
-      save_pasivos_provisions(provs)
+      save_pasivos_provisions(provs, client_id = shared$active_client_id())
       TRUE
     }, error = function(e) {
       shiny::showNotification(
@@ -498,11 +564,14 @@ setup_pasivos_module <- function(input, output, session, shared) {
         amount_pago = input$me_importe %||% 0,
         fecha_efectiva = as.character(input$me_fecha)
       ),
-      notes = "manual orphan provision via Agregar modal"
+      notes     = "manual orphan provision via Agregar modal",
+      client_id = shared$active_client_id()
     ), error = function(e) NULL)
 
     # Refresh the shared reactive so the AP calendar picks up the new provision.
+    tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
     tryCatch(shared$pasivos_provisions_db(provs), error = function(e) NULL)
+    bump_sync_version("pasivos_provisions_db")
 
     shiny::removeModal()
     shiny::showNotification("Provisión manual creada.", type = "message")
@@ -517,7 +586,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     user <- tryCatch(shared$current_user(), error = function(e) "")
 
-    provs <- tryCatch(load_pasivos_provisions(), error = function(e) NULL)
+    provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()), error = function(e) NULL)
     if (is.null(provs)) {
       shiny::showNotification("Error cargando provisiones.", type = "error"); return()
     }
@@ -525,18 +594,313 @@ setup_pasivos_module <- function(input, output, session, shared) {
     if (!nrow(prov)) {
       shiny::showNotification("Provisión no encontrada.", type = "error"); return()
     }
+    if (prov$estado[1] %in% c("converted", "item_confirmed")) {
+      rv$conv_prov_id   <- prov_id
+      rv$conv_mgmt_view <- "main"
+      shiny::showModal(pasivos_manage_converted_modal_ui())
+      return()
+    }
     if (!prov$estado[1] %in% c("provisional")) {
       shiny::showNotification(
-        "Esta provisión ya fue convertida o eliminada.", type = "warning"); return()
+        "Esta provisión ya no está disponible para conversión.", type = "warning"); return()
+    }
+
+    if (!has_capability(user, "pasivos.convert_to_item")) {
+      shiny::showNotification("No tienes permiso para convertir provisiones.", type = "error")
+      return()
     }
 
     rv$pending_provision_id <- prov_id
 
-    liabs           <- tryCatch(load_pasivos_liabilities(), error = function(e) NULL)
+    liabs           <- tryCatch(load_pasivos_liabilities(client_id = shared$active_client_id()), error = function(e) NULL)
     empresa_choices <- tryCatch(sort(names(shared$company_map())),
                                 error = function(e) sort(names(COMPANY_MAP)))
 
     shiny::showModal(pasivos_convert_modal_ui(prov, liabs, empresa_choices))
+  })
+
+  # ── Manage-converted modal body (rendered reactively inside the open modal) ──
+  output$pcm_conv_body <- shiny::renderUI({
+    prov_id <- rv$conv_prov_id
+    if (is.null(prov_id)) return(NULL)
+    view <- rv$conv_mgmt_view %||% "main"
+
+    provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()), error = function(e) NULL)
+    if (is.null(provs)) return(shiny::p(class = "text-danger", "Error cargando datos."))
+    prov <- provs[provs$id == prov_id, , drop = FALSE]
+    if (!nrow(prov)) return(shiny::p(class = "text-warning", "Provisión no encontrada."))
+
+    amount   <- if (!is.na(prov$amount_pago_override[1])) prov$amount_pago_override[1] else prov$amount_pago[1]
+    moneda   <- prov$moneda_pago[1] %||% "MXN"
+    estado   <- prov$estado[1]
+    is_conf  <- estado == "item_confirmed"
+
+    manual_df <- tryCatch(load_manual(client_id = shared$active_client_id()), error = function(e) NULL)
+    man_row <- if (!is.null(manual_df) && "provision_id" %in% names(manual_df))
+      manual_df[!is.na(manual_df$provision_id) & manual_df$provision_id == prov_id, , drop = FALSE]
+    else data.frame()
+
+    if (view == "main") {
+      shiny::tagList(
+        shiny::div(class = "mb-3 p-2 bg-light rounded border-start border-3 border-warning",
+          shiny::tags$dl(class = "row mb-0 small",
+            shiny::tags$dt(class = "col-5", "Empresa"),
+            shiny::tags$dd(class = "col-7 mb-0", prov$empresa[1] %||% "—"),
+            shiny::tags$dt(class = "col-5", "Parte"),
+            shiny::tags$dd(class = "col-7 mb-0", prov$parte[1] %||% "—"),
+            shiny::tags$dt(class = "col-5", "Importe"),
+            shiny::tags$dd(class = "col-7 mb-0", paste(moneda, fmt_money(amount))),
+            shiny::tags$dt(class = "col-5", "Fecha"),
+            shiny::tags$dd(class = "col-7 mb-0", format(as.Date(prov$fecha_efectiva[1]), "%d/%m/%Y")),
+            if (nrow(man_row)) shiny::tagList(
+              shiny::tags$dt(class = "col-5", "Documento"),
+              shiny::tags$dd(class = "col-7 mb-0", man_row$Documento[1] %||% "—")
+            )
+          )
+        ),
+        if (is_conf)
+          shiny::div(class = "alert alert-warning small py-2",
+            "⚠ Este comprobante ya fue confirmado en Bancos. Solo se puede eliminar.")
+        else NULL,
+        shiny::div(class = "d-flex gap-2 mt-2",
+          if (!is_conf)
+            shiny::actionButton("pcm_conv_want_undo",
+                                "↩ Deshacer conversión",
+                                class = "btn btn-sm btn-outline-secondary")
+          else NULL,
+          shiny::actionButton("pcm_conv_want_delete",
+                              "\U0001f5d1 Eliminar definitivamente",
+                              class = "btn btn-sm btn-outline-danger")
+        )
+      )
+
+    } else if (view == "confirm_undo") {
+      shiny::tagList(
+        shiny::div(class = "alert alert-warning",
+          shiny::tags$strong("⚠ ¿Deshacer la conversión?"),
+          shiny::tags$p(class = "mb-0 mt-1 small",
+            "El comprobante se eliminará del calendario y la Agenda de hoy. ",
+            "La provisión volverá a su estado original (pendiente de convertir).")
+        ),
+        shiny::div(class = "d-flex gap-2",
+          shiny::actionButton("pcm_conv_cancel_action", "Cancelar",
+                              class = "btn btn-sm btn-outline-secondary"),
+          shiny::actionButton("pcm_do_undo_conversion", "✓ Confirmar",
+                              class = "btn btn-sm btn-warning")
+        )
+      )
+
+    } else if (view == "confirm_delete") {
+      shiny::tagList(
+        shiny::div(class = "alert alert-danger",
+          shiny::tags$strong("⚠ ¿Eliminar definitivamente?"),
+          shiny::tags$p(class = "mb-0 mt-1 small",
+            "Esta acción eliminará el comprobante ",
+            if (estado == "item_confirmed") "y el registro de Bancos " else "",
+            "y la provisión de forma permanente. Se archivará en la papelera.")
+        ),
+        shiny::div(class = "d-flex gap-2",
+          shiny::actionButton("pcm_conv_cancel_action", "Cancelar",
+                              class = "btn btn-sm btn-outline-secondary"),
+          shiny::actionButton("pcm_do_delete_converted", "\U0001f5d1 Eliminar",
+                              class = "btn btn-sm btn-danger")
+        )
+      )
+    }
+  })
+
+  # ── Inline-confirm state transitions ──────────────────────────────────────────
+  shiny::observeEvent(input$pcm_conv_want_undo,   { rv$conv_mgmt_view <- "confirm_undo"   }, ignoreInit = TRUE)
+  shiny::observeEvent(input$pcm_conv_want_delete, { rv$conv_mgmt_view <- "confirm_delete" }, ignoreInit = TRUE)
+  shiny::observeEvent(input$pcm_conv_cancel_action, { rv$conv_mgmt_view <- "main"         }, ignoreInit = TRUE)
+
+  # ── pcm_do_undo_conversion: revert converted provision ────────────────────────
+  shiny::observeEvent(input$pcm_do_undo_conversion, ignoreInit = TRUE, {
+    prov_id <- rv$conv_prov_id
+    if (is.null(prov_id)) return()
+    user <- tryCatch(shared$current_user(), error = function(e) "system")
+    now  <- Sys.time()
+
+    provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()), error = function(e) NULL)
+    if (is.null(provs)) { shiny::showNotification("Error cargando provisiones.", type = "error"); return() }
+    idx <- which(provs$id == prov_id)
+    if (!length(idx)) { shiny::showNotification("Provisión no encontrada.", type = "error"); return() }
+    if (!provs$estado[idx[1]] %in% c("converted", "item_confirmed")) {
+      shiny::showNotification("La provisión no puede ser revertida en este estado.", type = "warning")
+      shiny::removeModal(); return()
+    }
+
+    manual_inv_id <- provs$manual_inv_id[idx[1]]
+    pagar_hoy_id  <- provs$pagar_hoy_id[idx[1]]
+
+    # 1. Remove manual_inv entry — capture details first for pagar_hoy cleanup below
+    mi <- tryCatch(load_manual(client_id = shared$active_client_id()), error = function(e) NULL)
+    mi_details <- NULL
+    if (!is.null(mi) && "id" %in% names(mi) && !is.na(manual_inv_id) && nzchar(manual_inv_id %||% "")) {
+      mi_details <- mi[!is.na(mi$id) & mi$id == manual_inv_id, , drop = FALSE]
+      if (!nrow(mi_details)) mi_details <- NULL
+      mi_new <- mi[!(!is.na(mi$id) & mi$id == manual_inv_id), , drop = FALSE]
+      tryCatch(save_manual(mi_new, client_id = shared$active_client_id()), error = function(e)
+        shiny::showNotification(paste("Error al guardar manual_inv:", e$message), type = "warning"))
+      if (!is.null(shared$manual_inv)) shared$manual_inv(mi_new)
+    }
+
+    # 2. Remove pagar_hoy (pending only) — by FK id, by provision_id, and by
+    #    business key so calendar-staged rows (no FK) are also cleaned up.
+    ph <- if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db() else
+          tryCatch(load_pagar_hoy(client_id = shared$active_client_id()), error = function(e) NULL)
+    if (!is.null(ph) && nrow(ph) > 0) {
+      rm_mask <- rep(FALSE, nrow(ph))
+      if (!is.na(pagar_hoy_id) && nzchar(pagar_hoy_id %||% ""))
+        rm_mask <- rm_mask | (!is.na(ph$id) & ph$id == pagar_hoy_id)
+      if ("provision_id" %in% names(ph))
+        rm_mask <- rm_mask | (!is.na(ph$provision_id) & ph$provision_id == prov_id)
+      if (!is.null(mi_details)) {
+        emp_k <- mi_details$Empresa[1] %||% ""
+        mon_k <- mi_details$Moneda[1]  %||% ""
+        doc_k <- mi_details$Documento[1] %||% ""
+        if (nzchar(emp_k) && nzchar(mon_k) && nzchar(doc_k))
+          rm_mask <- rm_mask | (
+            !is.na(ph$ledger)    & ph$ledger    == "AP" &
+            !is.na(ph$Empresa)   & ph$Empresa   == emp_k &
+            !is.na(ph$Moneda)    & ph$Moneda    == mon_k &
+            !is.na(ph$Documento) & ph$Documento == doc_k)
+      }
+      rm_mask <- rm_mask & (is.na(ph$status) | ph$status != "confirmed")
+      if (any(rm_mask)) {
+        ph_new <- ph[!rm_mask, , drop = FALSE]
+        tryCatch(save_pagar_hoy(ph_new, user, client_id = shared$active_client_id()), error = function(e)
+          shiny::showNotification(paste("Error al guardar agenda:", e$message), type = "warning"))
+        if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db(ph_new)
+      }
+    }
+
+    # 3. Revert provision estado to "provisional"
+    provs$estado[idx]          <- "provisional"
+    provs$manual_inv_id[idx]   <- NA_character_
+    provs$pagar_hoy_id[idx]    <- NA_character_
+    provs$bancos_conf_id[idx]  <- NA_character_
+    provs$reverted_count[idx]  <- (as.integer(provs$reverted_count[idx[1]]) %||% 0L) + 1L
+    provs$last_edited_by[idx]  <- user
+    provs$last_edited_at[idx]  <- now
+
+    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$active_client_id()); TRUE }, error = function(e) {
+      shiny::showNotification(paste("Error:", e$message), type = "error"); FALSE })
+    if (!ok) return()
+    tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
+    shared$pasivos_provisions_db(provs)
+    bump_sync_version("pasivos_provisions_db")
+
+    tryCatch(pasivos_log_audit(
+      action_type = "provision.revived",
+      user = user, target_kind = "provision", target_id = prov_id,
+      notes     = "reverted from converted to provisional via UI",
+      client_id = shared$active_client_id()
+    ), error = function(e) NULL)
+
+    rv$conv_prov_id   <- NULL
+    rv$conv_mgmt_view <- "main"
+    shiny::removeModal()
+    shiny::showNotification("Conversión deshecha. La provisión fue restaurada.", type = "message", duration = 4)
+  })
+
+  # ── pcm_do_delete_converted: fully delete a converted provision ───────────────
+  shiny::observeEvent(input$pcm_do_delete_converted, ignoreInit = TRUE, {
+    prov_id <- rv$conv_prov_id
+    if (is.null(prov_id)) return()
+    user <- tryCatch(shared$current_user(), error = function(e) "system")
+    now  <- Sys.time()
+
+    provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()), error = function(e) NULL)
+    if (is.null(provs)) { shiny::showNotification("Error cargando provisiones.", type = "error"); return() }
+    idx <- which(provs$id == prov_id)
+    if (!length(idx)) { shiny::showNotification("Provisión no encontrada.", type = "error"); return() }
+
+    manual_inv_id <- provs$manual_inv_id[idx[1]]
+    pagar_hoy_id  <- provs$pagar_hoy_id[idx[1]]
+    prov_row      <- provs[idx[1], , drop = FALSE]
+    amount_del    <- if (!is.na(prov_row$amount_pago_override[1])) prov_row$amount_pago_override[1] else prov_row$amount_pago[1]
+
+    # 1. Remove manual_inv entry — capture details first for pagar_hoy cleanup below
+    mi <- tryCatch(load_manual(client_id = shared$active_client_id()), error = function(e) NULL)
+    mi_details <- NULL
+    if (!is.null(mi) && "id" %in% names(mi) && !is.na(manual_inv_id) && nzchar(manual_inv_id %||% "")) {
+      mi_details <- mi[!is.na(mi$id) & mi$id == manual_inv_id, , drop = FALSE]
+      if (!nrow(mi_details)) mi_details <- NULL
+      mi_new <- mi[!(!is.na(mi$id) & mi$id == manual_inv_id), , drop = FALSE]
+      tryCatch(save_manual(mi_new, client_id = shared$active_client_id()), error = function(e)
+        shiny::showNotification(paste("Error al guardar manual_inv:", e$message), type = "warning"))
+      if (!is.null(shared$manual_inv)) shared$manual_inv(mi_new)
+    }
+
+    # 2. Remove pagar_hoy (pending only) — by FK id, by provision_id, and by
+    #    business key so calendar-staged rows (no FK) are also cleaned up.
+    ph <- if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db() else
+          tryCatch(load_pagar_hoy(client_id = shared$active_client_id()), error = function(e) NULL)
+    if (!is.null(ph) && nrow(ph) > 0) {
+      rm_mask <- rep(FALSE, nrow(ph))
+      if (!is.na(pagar_hoy_id) && nzchar(pagar_hoy_id %||% ""))
+        rm_mask <- rm_mask | (!is.na(ph$id) & ph$id == pagar_hoy_id)
+      if ("provision_id" %in% names(ph))
+        rm_mask <- rm_mask | (!is.na(ph$provision_id) & ph$provision_id == prov_id)
+      if (!is.null(mi_details)) {
+        emp_k <- mi_details$Empresa[1] %||% ""
+        mon_k <- mi_details$Moneda[1]  %||% ""
+        doc_k <- mi_details$Documento[1] %||% ""
+        if (nzchar(emp_k) && nzchar(mon_k) && nzchar(doc_k))
+          rm_mask <- rm_mask | (
+            !is.na(ph$ledger)    & ph$ledger    == "AP" &
+            !is.na(ph$Empresa)   & ph$Empresa   == emp_k &
+            !is.na(ph$Moneda)    & ph$Moneda    == mon_k &
+            !is.na(ph$Documento) & ph$Documento == doc_k)
+      }
+      rm_mask <- rm_mask & (is.na(ph$status) | ph$status != "confirmed")
+      if (any(rm_mask)) {
+        ph_new <- ph[!rm_mask, , drop = FALSE]
+        tryCatch(save_pagar_hoy(ph_new, user, client_id = shared$active_client_id()), error = function(e)
+          shiny::showNotification(paste("Error al guardar agenda:", e$message), type = "warning"))
+        if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db(ph_new)
+      }
+    }
+
+    # 3. Soft-delete provision
+    provs$estado[idx]         <- "deleted"
+    provs$last_edited_by[idx] <- user
+    provs$last_edited_at[idx] <- now
+
+    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$active_client_id()); TRUE }, error = function(e) {
+      shiny::showNotification(paste("Error:", e$message), type = "error"); FALSE })
+    if (!ok) return()
+    tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
+    shared$pasivos_provisions_db(provs)
+    bump_sync_version("pasivos_provisions_db")
+
+    # 4. Archive to papelera
+    tryCatch({
+      pap <- tryCatch(load_papelera(client_id = shared$active_client_id()), error = function(e) .schema_papelera())
+      pap_detail <- data.frame(
+        id = prov_row$id[1], source = "provision",
+        Empresa = prov_row$empresa[1] %||% "", Moneda = prov_row$moneda_pago[1] %||% "MXN",
+        Documento = prov_row$documento[1] %||% "", Parte = prov_row$parte[1] %||% "",
+        Importe = amount_del %||% 0, FechaEff = prov_row$fecha_efectiva[1],
+        stringsAsFactors = FALSE
+      )
+      pap <- add_to_papelera(pap, pap_detail, ledger = "AP", deleted_by = user)
+      save_papelera(pap, client_id = shared$active_client_id())
+      if (!is.null(shared$papelera_rv)) shared$papelera_rv(pap)
+    }, error = function(e) message("[pasivos] papelera write failed: ", e$message))
+
+    tryCatch(pasivos_log_audit(
+      action_type = "provision.deleted",
+      user = user, target_kind = "provision", target_id = prov_id,
+      notes     = "hard-deleted converted provision via manage-converted UI",
+      client_id = shared$active_client_id()
+    ), error = function(e) NULL)
+
+    rv$conv_prov_id   <- NULL
+    rv$conv_mgmt_view <- "main"
+    shiny::removeModal()
+    shiny::showNotification("Provisión y comprobante eliminados.", type = "message", duration = 4)
   })
 
   invisible(NULL)
@@ -560,8 +924,8 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
 # Returns a tibble summarising the current pasivos_provisions store by estado.
 # Read-only — does not modify.
-pasivos_admin_inventory <- function() {
-  provs <- load_pasivos_provisions()
+pasivos_admin_inventory <- function(client_id = NULL) {
+  provs <- load_pasivos_provisions(client_id = client_id)
   if (!nrow(provs)) {
     message("pasivos_provisions store is empty.")
     return(invisible(NULL))
@@ -584,8 +948,9 @@ pasivos_admin_inventory <- function() {
 # IMPORTANT: this is destructive. The backup is the only recovery path.
 pasivos_admin_purge_closed <- function(drop_estados = "closed",
                                        user = "system",
-                                       dry_run = TRUE) {
-  provs <- load_pasivos_provisions()
+                                       dry_run = TRUE,
+                                       client_id = NULL) {
+  provs <- load_pasivos_provisions(client_id = client_id)
   if (!nrow(provs)) {
     message("Nothing to purge.")
     return(invisible(0L))
@@ -617,7 +982,8 @@ pasivos_admin_purge_closed <- function(drop_estados = "closed",
   })
 
   cleaned <- provs[!to_drop, , drop = FALSE]
-  save_pasivos_provisions(cleaned)
+  save_pasivos_provisions(cleaned, client_id = client_id)
+  bump_sync_version("pasivos_provisions_db")
 
   tryCatch(pasivos_log_audit(
     action_type = "bulk.purge_closed_provisions",
@@ -625,7 +991,8 @@ pasivos_admin_purge_closed <- function(drop_estados = "closed",
     target_kind = "bulk",
     target_id   = NA_character_,
     notes       = sprintf("Purged %d rows with estado in {%s}; backup at %s",
-                          n_drop, paste(drop_estados, collapse = ", "), backup_key)
+                          n_drop, paste(drop_estados, collapse = ", "), backup_key),
+    client_id   = client_id
   ), error = function(e) NULL)
 
   message(sprintf("Purged %d row(s). Backup: %s", n_drop, backup_key))

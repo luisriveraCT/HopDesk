@@ -223,13 +223,14 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
   }
   liabs <- dplyr::bind_rows(liabs, liab_row)
   save_ok <- tryCatch({
-    save_pasivos_liabilities(liabs); TRUE
+    save_pasivos_liabilities(liabs, client_id = shared$active_client_id()); TRUE
   }, error = function(e) {
     message("[wizard] save_pasivos_liabilities failed: ", conditionMessage(e))
     FALSE
   })
   if (!save_ok) return(list(ok = FALSE, msg = "Error al guardar el pasivo en S3. Intenta de nuevo."))
   shared$pasivos_liabilities_db(liabs)
+  bump_sync_version("pasivos_liabilities_db")
 
   # Record current fetched base rate in the forecasting store so provisions use it
   if (startsWith(liab_row$tasa_tipo %||% "fija", "variable_") &&
@@ -239,7 +240,8 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
     if (!is.null(fc_metric))
       tryCatch(
         forecasting_set_estimate(fc_metric, Sys.Date(), liab_row$tasa_actual,
-                                 source_method = "wizard_save", user = user),
+                                 source_method = "wizard_save", user = user,
+                                 client_id = shared$active_client_id()),
         error = function(e) warning("[wizard] forecasting_set_estimate failed: ", conditionMessage(e))
       )
   }
@@ -293,10 +295,12 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
     , drop = FALSE
   ]
   new_provs <- dplyr::bind_rows(others, result$keep, result$update, result$insert)
-  tryCatch(save_pasivos_provisions(new_provs),
+  tryCatch(save_pasivos_provisions(new_provs, client_id = shared$active_client_id()),
            error = function(e) warning("[wizard] save_pasivos_provisions failed: ",
                                        conditionMessage(e)))
+  tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
   shared$pasivos_provisions_db(new_provs)
+  bump_sync_version("pasivos_provisions_db")
 
   # Audit
   tryCatch(pasivos_log_audit(
@@ -308,7 +312,8 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
     after       = as.list(liab_row[, c("id","categoria","nombre","empresa","estado")]),
     notes       = sprintf("Generated %d, updated %d, conflicts %d",
                           nrow(result$insert), nrow(result$update),
-                          nrow(result$conflicts))
+                          nrow(result$conflicts)),
+    client_id   = shared$active_client_id()
   ), error = function(e) NULL)
 
   shiny::removeModal()
@@ -839,7 +844,14 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     shiny::div(
       class = "alert alert-secondary py-2 px-3 small mt-2",
       .rate_row(rates$yesterday, rates$date_yesterday, "ayer"),
-      .rate_row(rates$today,     rates$date_today,     "hoy")
+      .rate_row(rates$today,     rates$date_today,     "hoy"),
+      shiny::tags$small(
+        class = "text-muted d-block mt-1",
+        if (identical(tipo, "variable_tiie28"))
+          "Fuente: Banco de México — SIE API (serie SF43783). Uso conforme a los términos de uso de Banxico."
+        else
+          "Fuente: Federal Reserve Bank of St. Louis — FRED® API (serie SOFR). Uso conforme a FRED Terms of Use."
+      )
     )
   })
 
@@ -1196,7 +1208,8 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     mon_pag <- input$pwiz_moneda_pago %||% "MXN"
     if (!nzchar(cot_en)) return(NULL)
     metric <- paste0("fx_", tolower(cot_en), "_", tolower(mon_pag))
-    rate <- tryCatch(forecasting_get_estimate(metric, Sys.Date()),
+    rate <- tryCatch(forecasting_get_estimate(metric, Sys.Date(),
+                                              client_id = shared$active_client_id()),
                      error = function(e) NA_real_)
     shiny::tags$small(class = "text-muted",
       if (!is.na(rate)) sprintf("FX usado: %.4f  (estimación: spot)", rate)
@@ -1318,6 +1331,9 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
   })
 
   shiny::observeEvent(input$pwiz_save, ignoreInit = TRUE, {
+    shinyjs::disable("pwiz_save")
+    on.exit(shinyjs::enable("pwiz_save"), add = TRUE)
+
     wiz$draft <- .wiz_collect_step(input, wiz$step_id, wiz)
     user <- tryCatch(shared$current_user(), error = function(e) "system")
     res <- tryCatch(

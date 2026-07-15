@@ -336,8 +336,11 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     # ── Empresa checkboxes (derived from ctas_cuentas) ───────────────────────
     all_empresas <- reactive({
       cts <- tryCatch(shared$ctas_cuentas(), error = function(e) NULL)
-      if (is.null(cts) || !nrow(cts)) return(sort(names(COMPANY_MAP)))
-      sort(unique(trimws(cts$Empresa)))
+      emps <- if (is.null(cts) || !nrow(cts)) sort(names(COMPANY_MAP))
+              else sort(unique(trimws(cts$Empresa)))
+      allowed <- tryCatch(shared$visible_initials(), error = function(e) NULL)
+      if (!is.null(allowed)) emps <- intersect(emps, allowed)
+      emps
     })
 
     output$empresa_checks <- renderUI({

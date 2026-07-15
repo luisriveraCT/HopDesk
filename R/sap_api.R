@@ -53,19 +53,27 @@
 sap_login <- function(initials) {
   creds <- .sap_creds(initials)
 
-  resp <- httr::POST(
-    url    = paste0(creds$url, "/Login"),
-    httr::content_type_json(),
-    httr::timeout(2),   # total timeout 2s (kept for when SAP is reachable)
-    httr::config(
-      ssl_verifypeer   = creds$ssl_verify,
-      connecttimeout   = 0.8   # TCP connect: fail fast when host is unreachable
+  resp <- tryCatch(
+    httr::POST(
+      url    = paste0(creds$url, "/Login"),
+      httr::content_type_json(),
+      httr::timeout(2),   # total timeout 2s (kept for when SAP is reachable)
+      httr::config(
+        ssl_verifypeer   = creds$ssl_verify,
+        connecttimeout   = 0.8   # TCP connect: fail fast when host is unreachable
+      ),
+      body   = jsonlite::toJSON(list(
+        CompanyDB = creds$company,
+        UserName  = creds$user,
+        Password  = creds$password
+      ), auto_unbox = TRUE)
     ),
-    body   = jsonlite::toJSON(list(
-      CompanyDB = creds$company,
-      UserName  = creds$user,
-      Password  = creds$password
-    ), auto_unbox = TRUE)
+    error = function(e) {
+      stop(structure(
+        list(message = e$message, call = NULL),
+        class = c("sap_connection_error", "error", "condition")
+      ))
+    }
   )
 
   if (httr::http_error(resp)) {
@@ -110,15 +118,24 @@ sap_logout <- function(initials) {
   .ensure_session(initials)
   s <- .sap_sessions[[initials]]
 
-  # Single GET attempt — returns parsed body or stops
+  # Single GET attempt — returns parsed body or stops.
+  # Transport failures (timeout, DNS, refused) are re-thrown as sap_connection_error.
   .do_get <- function(session, query) {
-    r <- httr::GET(
-      url   = paste0(session$base_url, "/", endpoint),
-      query = query,
-      httr::timeout(8),   # 8s total per page
-      httr::add_headers(Cookie = session$cookie, `B1S-CaseInsensitive` = "true"),
-      httr::config(ssl_verifypeer = session$ssl_verify,
-                   connecttimeout = 3L)   # TCP connect within 3s
+    r <- tryCatch(
+      httr::GET(
+        url   = paste0(session$base_url, "/", endpoint),
+        query = query,
+        httr::timeout(8),   # 8s total per page
+        httr::add_headers(Cookie = session$cookie, `B1S-CaseInsensitive` = "true"),
+        httr::config(ssl_verifypeer = session$ssl_verify,
+                     connecttimeout = 3L)   # TCP connect within 3s
+      ),
+      error = function(e) {
+        stop(structure(
+          list(message = e$message, call = NULL),
+          class = c("sap_connection_error", "error", "condition")
+        ))
+      }
     )
     if (httr::http_error(r))
       stop("HTTP ", httr::status_code(r), ": ", httr::http_status(r)$message)
@@ -142,6 +159,7 @@ sap_logout <- function(initials) {
     t0_page <- proc.time()
     body <- tryCatch(
       .do_get(s, query),
+      sap_connection_error = function(e) stop(e),   # propagate immediately, no retry
       error = function(e) {
         # One re-auth retry — no sleep, dead hosts should already be timing out fast
         sap_login(initials)
@@ -318,45 +336,64 @@ fetch_all_companies <- function(ledger = c("AR","AP"), cmap = COMPANY_MAP) {
   fetcher <- if (ledger == "AR") fetch_ar else fetch_ap
 
   # Track per-company outcome for the snapshot-content audit log below.
-  # Each entry is: list(initials, rows, status)  where status ∈ "ok"|"zero"|"failed"|"skipped"
-  outcomes <- vector("list", length(cmap))
-  names(outcomes) <- names(cmap)
+  # Each entry is: list(initials, rows, status)  where status ∈ "ok"|"zero"|"failed"|"skipped"|"conn_failed"|"skipped_no_conn"
+  outcomes          <- vector("list", length(cmap))
+  names(outcomes)   <- names(cmap)
+  results           <- vector("list", length(cmap))
+  names(results)    <- names(cmap)
+  connection_failed <- FALSE   # circuit breaker: first sap_connection_error opens it
 
-  results <- lapply(names(cmap), function(initials) {
+  for (initials in names(cmap)) {
+    # Circuit open — skip remaining companies without attempting any network I/O
+    if (connection_failed) {
+      outcomes[[initials]] <- list(initials = initials, rows = 0L, status = "skipped_no_conn")
+      next
+    }
     tryCatch({
-      # Skip companies whose URL is still a placeholder
       url <- Sys.getenv(paste0("SAP_", toupper(initials), "_URL"))
       if (grepl("\\[your-", url, ignore.case = TRUE) || !nzchar(url)) {
         message("[SAP] Skipping ", initials, " (", ledger, ") — URL not configured")
-        outcomes[[initials]] <<- list(initials = initials, rows = 0L, status = "skipped")
-        return(NULL)
-      }
-      message("[SAP] Fetching ", initials, " (", ledger, ") from SAP...")
-      t0_co <- proc.time()
-      df <- fetcher(initials)
-      elapsed_co <- round((proc.time() - t0_co)[["elapsed"]], 1)
-      if (nrow(df)) {
-        message("[SAP] ", initials, " (", ledger, ") — ", nrow(df), " rows in ",
-                elapsed_co, "s, Empresa=", cmap[[initials]])
-        outcomes[[initials]] <<- list(initials = initials, rows = nrow(df), status = "ok")
-        df |> mutate(Empresa = cmap[[initials]])
+        outcomes[[initials]] <- list(initials = initials, rows = 0L, status = "skipped")
       } else {
-        # SAP responded but returned 0 open invoices — all invoices for this
-        # company are either paid or there are genuinely none outstanding.
-        # These rows are intentionally excluded from the snapshot so stale
-        # data from a previous snapshot cannot bleed into the calendar.
-        message("[SAP] ", initials, " (", ledger, ") — 0 open invoices in ",
-                elapsed_co, "s (all paid or none outstanding) — excluded from snapshot")
-        outcomes[[initials]] <<- list(initials = initials, rows = 0L, status = "zero")
-        NULL
+        message("[SAP] Fetching ", initials, " (", ledger, ") from SAP...")
+        t0_co <- proc.time()
+        df <- fetcher(initials)
+        elapsed_co <- round((proc.time() - t0_co)[["elapsed"]], 1)
+        if (nrow(df)) {
+          message("[SAP] ", initials, " (", ledger, ") — ", nrow(df), " rows in ",
+                  elapsed_co, "s, Empresa=", cmap[[initials]])
+          outcomes[[initials]] <- list(initials = initials, rows = nrow(df), status = "ok")
+          results[[initials]]  <- df |> mutate(Empresa = cmap[[initials]])
+        } else {
+          # SAP responded but returned 0 open invoices — all invoices for this
+          # company are either paid or there are genuinely none outstanding.
+          message("[SAP] ", initials, " (", ledger, ") — 0 open invoices in ",
+                  elapsed_co, "s (all paid or none outstanding) — excluded from snapshot")
+          outcomes[[initials]] <- list(initials = initials, rows = 0L, status = "zero")
+        }
       }
+    }, sap_connection_error = function(e) {
+      # Transport-level failure (TCP timeout, DNS, refused) — open the circuit.
+      # Remaining companies are skipped; caller receives sap_no_connection.
+      message("[SAP] ", initials, " (", ledger, ") connection failed — circuit open: ", e$message)
+      outcomes[[initials]] <<- list(initials = initials, rows = 0L, status = "conn_failed")
+      connection_failed    <<- TRUE
     }, error = function(e) {
+      # HTTP or parsing error for this specific company — log and continue
       message("[SAP] ", initials, " (", ledger, ") FAILED: ", e$message)
       warning("[SAP] ", initials, " (", ledger, ") failed: ", e$message)
       outcomes[[initials]] <<- list(initials = initials, rows = 0L, status = "failed")
-      NULL
     })
-  })
+  }
+
+  # Circuit was opened — throw sap_no_connection so load_ledger() can fall back
+  # to the snapshot without retrying any remaining companies or showing generic errors.
+  if (connection_failed) {
+    stop(structure(
+      list(message = paste("SAP connection unavailable for", ledger), call = NULL),
+      class = c("sap_no_connection", "error", "condition")
+    ))
+  }
 
   combined <- bind_rows(Filter(Negate(is.null), results))
 
@@ -384,7 +421,7 @@ fetch_all_companies <- function(ledger = c("AR","AP"), cmap = COMPANY_MAP) {
   # Save snapshot for outage resilience — rotates prev1/prev2 before writing.
   # The new snapshot contains ONLY the invoices returned by THIS fetch —
   # no data from any prior snapshot is carried forward.
-  save_sap_snapshot(combined, ledger)
+  save_sap_snapshot(combined, ledger, client_id = NULL)
   combined
 }
 

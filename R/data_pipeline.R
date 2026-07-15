@@ -158,7 +158,7 @@ dedupe_invoices <- function(df) {
 
 build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
                             abonos_df = NULL, policy_moves_df = NULL, sap_ov = NULL,
-                            provs_df = NULL, company_map = NULL) {
+                            provs_df = NULL, company_map = NULL, liabs_df = NULL) {
   ledger <- toupper(ledger)
 
   # Build SAP portion (may be empty)
@@ -190,6 +190,16 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
         Parte              = Parte %||% "",
         `Saldo vencido`    = Importe   # manual schema stores this as Importe
       )
+    # Translate empresa initials to full names (manual items from provision
+    # conversion may store initials; the empresa filter in df_combined() uses
+    # full names — same translation already done below for provision rows).
+    if (nrow(manual_sub) && !is.null(company_map) && length(company_map)) {
+      manual_sub[["Empresa"]] <- vapply(
+        manual_sub[["Empresa"]],
+        function(e) company_map[[e %||% ""]] %||% e %||% NA_character_,
+        character(1)
+      )
+    }
     df <- bind_rows(df, manual_sub)
   }
 
@@ -199,7 +209,7 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
   if (identical(ledger, "AP")) {
     provs <- if (!is.null(provs_df)) provs_df
              else tryCatch(load_pasivos_provisions(), error = function(e) NULL)
-    liabs <- tryCatch(load_pasivos_liabilities(), error = function(e) NULL)
+    liabs <- liabs_df
     if (!is.null(provs) && nrow(provs)) {
       prov_rows <- pasivos_provisions_as_ledger_rows(provs, liabs, ledger = "AP")
       if (nrow(prov_rows)) {
@@ -385,6 +395,21 @@ apply_ic_filter <- function(df, mode, code_col, ic_codes, ic_rfcs = character())
   has_rfcs  <- length(ic_rfcs) > 0 && "RFC" %in% names(df)
 
   if (!has_codes && !has_rfcs) {
+    # Fallback: when no CardCodes or RFCs are registered, detect IC by matching
+    # the Parte column against company display names from COMPANY_MAP.
+    # This is the same Layer-2 mechanism used by the Vencidos module.
+    if ("Parte" %in% names(df)) {
+      cmap <- tryCatch(get("COMPANY_MAP", envir = .GlobalEnv, inherits = FALSE),
+                       error = function(e) list())
+      if (length(cmap)) {
+        company_names_up <- toupper(unname(cmap))
+        is_ic_by_name    <- toupper(trimws(df[["Parte"]])) %in% company_names_up
+        n_ic <- sum(is_ic_by_name, na.rm = TRUE)
+        message("[IC_FILTER] mode=", mode, " name-fallback rows_in=", nrow(df), " rows_ic=", n_ic)
+        if (mode == "exclude") return(df[!is_ic_by_name | is.na(is_ic_by_name), , drop = FALSE])
+        else                   return(df[ is_ic_by_name & !is.na(is_ic_by_name), , drop = FALSE])
+      }
+    }
     message("[IC_FILTER] mode=", mode, " — ic_codes and ic_rfcs both empty, no filter applied")
     return(df)
   }
@@ -511,9 +536,11 @@ scan_ic_candidates <- function(sap_ar, sap_ap, registry, cmap = COMPANY_MAP) {
 # which is exactly what calendar_plot() needs.
 
 to_calendar_data <- function(df, amount_col = "Saldo vencido") {
-  # Exclude confirmed payments from the calendar heat-map
+  # Exclude confirmed payments AND soft-deleted ghosts from the calendar heat-map
   if ("confirmed" %in% names(df))
     df <- df[is.na(df[["confirmed"]]) | !df[["confirmed"]], , drop = FALSE]
+  if ("is_ghost" %in% names(df))
+    df <- df[is.na(df[["is_ghost"]]) | !df[["is_ghost"]], , drop = FALSE]
 
   # ── Column audit ────────────────────────────────────────────────────────────
   required_cols <- c("Empresa", "FechaEff", "Moneda", "Parte", amount_col)

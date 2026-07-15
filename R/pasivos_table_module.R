@@ -33,39 +33,72 @@ pasivos_table_module_ui <- function(id) {
       shiny::tabPanel(
         "Tabla", value = "tabla",
         shiny::div(
-          # Filters bar
+          # Filters bar — single compact row
           shiny::div(
-            class = "d-flex flex-wrap gap-2 align-items-end px-3 py-2 border-bottom bg-white",
+            class = "d-flex flex-nowrap gap-3 align-items-end px-3 py-2 border-bottom bg-white",
+            style = "overflow-x: auto;",
             shiny::div(class = "flex-shrink-0",
-              shiny::selectizeInput(ns("empresa_sel"), "Empresa",
-                choices  = character(0), multiple = TRUE,
-                options  = list(placeholder = "Todas las empresas"), width = "200px")
+              shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Empresa"),
+              shiny::selectizeInput(ns("empresa_sel"), label = NULL,
+                choices = character(0), multiple = TRUE,
+                options = list(placeholder = "Todas"), width = "160px")
             ),
             shiny::div(class = "flex-shrink-0",
-              shiny::checkboxGroupInput(ns("categoria_sel"), "Categoría",
-                choices  = c("Pago regular" = "regular",
-                             "Pasivo financiero" = "financiero",
-                             "Tarjeta" = "tarjeta"),
-                selected = c("regular", "financiero", "tarjeta"), inline = TRUE)
+              shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Categoría"),
+              shinyWidgets::checkboxGroupButtons(
+                inputId      = ns("categoria_sel"), label = NULL,
+                choiceValues = c("regular", "financiero", "tarjeta"),
+                choiceNames  = list(
+                  shiny::tags$span("Regular",    title = "Pagos recurrentes: servicios, suscripciones y arrendamientos operativos"),
+                  shiny::tags$span("Financiero", title = "Créditos, arrendamientos financieros y líneas de crédito"),
+                  shiny::tags$span("Tarjeta",    title = "Liquidaciones de tarjeta corporativa")
+                ),
+                selected = c("regular", "financiero", "tarjeta"),
+                size = "sm", status = "outline-secondary"
+              )
             ),
             shiny::div(class = "flex-shrink-0",
-              shiny::selectizeInput(ns("subcategoria_sel"), "Sub-categoría",
-                choices  = character(0), multiple = TRUE,
-                options  = list(placeholder = "Todas"), width = "160px")
+              shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Sub-categoría"),
+              shiny::selectizeInput(ns("subcategoria_sel"), label = NULL,
+                choices = character(0), multiple = TRUE,
+                options = list(placeholder = "Todas"), width = "130px")
             ),
             shiny::div(class = "flex-shrink-0",
-              shiny::selectInput(ns("currency_sel"), "Moneda",
-                choices  = c("All", "MXN", "USD"), selected = "All", width = "90px")
+              shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Moneda"),
+              shiny::selectInput(ns("currency_sel"), label = NULL,
+                choices = c("All", "MXN", "USD"), selected = "All", width = "80px")
             ),
             shiny::div(class = "flex-shrink-0",
-              shiny::radioButtons(ns("granularity"), "Granularidad",
-                choices  = c("Día" = "day", "Semana" = "week",
-                             "Mes" = "month", "Año" = "year"),
-                selected = "day", inline = TRUE)
+              shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Granularidad"),
+              shinyWidgets::radioGroupButtons(
+                inputId      = ns("granularity"), label = NULL,
+                choiceValues = c("day", "week", "month", "year"),
+                choiceNames  = list(
+                  shiny::tags$span("Día",    title = "Ver cada provisión en su fecha exacta"),
+                  shiny::tags$span("Semana", title = "Agrupar provisiones por semana"),
+                  shiny::tags$span("Mes",    title = "Agrupar provisiones por mes"),
+                  shiny::tags$span("Año",    title = "Agrupar provisiones por año")
+                ),
+                selected = "day", size = "sm", status = "outline-secondary"
+              )
+            ),
+            shiny::div(class = "flex-shrink-0",
+              shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Provisiones"),
+              shinyWidgets::radioGroupButtons(
+                inputId      = ns("provision_type"), label = NULL,
+                choiceValues = c("todas", "programadas", "manuales"),
+                choiceNames  = list(
+                  shiny::tags$span("Todas",       title = "Mostrar todas las provisiones"),
+                  shiny::tags$span("Programadas", title = "Solo provisiones generadas desde un pasivo configurado (+ Agregar pasivo)"),
+                  shiny::tags$span("Manuales",    title = "Solo provisiones creadas individualmente (+ Provisión manual)")
+                ),
+                selected = "todas", size = "sm", status = "outline-secondary"
+              )
             ),
             shiny::div(class = "flex-grow-1",
-              shiny::textInput(ns("search_text"), "Buscar",
-                placeholder = "Nombre o Parte...", width = "220px")
+              shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Buscar"),
+              shiny::textInput(ns("search_text"), label = NULL,
+                placeholder = "Nombre o Parte...", width = "100%")
             )
           ),
 
@@ -80,11 +113,51 @@ pasivos_table_module_ui <- function(id) {
             class = "d-flex align-items-start gap-1 px-2 py-1",
             shiny::actionButton(ns("extend_left"), "← 60 días",
                                 class = "btn btn-outline-secondary btn-sm pasivos-extend-btn"),
-            shiny::div(class = "flex-grow-1 pasivos-table-wrap",
-                       shiny::uiOutput(ns("pasivos_table"))),
+            shiny::div(
+              class = "flex-grow-1 pasivos-tbl-col",
+              shiny::div(class = "pasivos-table-wrap",
+                         id    = ns("pasivos_tbl_wrap"),
+                         shiny::uiOutput(ns("pasivos_table"))),
+              shiny::div(class = "pasivos-scroll-bar",
+                         id    = ns("pasivos_scroll_bar"),
+                         shiny::div(class = "pasivos-scroll-bar-inner",
+                                    id    = ns("pasivos_scroll_bar_inner")))
+            ),
             shiny::actionButton(ns("extend_right"), "60 días →",
                                 class = "btn btn-outline-secondary btn-sm pasivos-extend-btn")
-          )
+          ),
+          shiny::tags$script(shiny::HTML(sprintf("
+(function() {
+  var wId = '%s', bId = '%s', iId = '%s';
+  function init() {
+    var wrap  = document.getElementById(wId);
+    var bar   = document.getElementById(bId);
+    var inner = document.getElementById(iId);
+    if (!wrap || !bar || !inner) { setTimeout(init, 300); return; }
+    function syncWidth() {
+      var tbl = wrap.querySelector('table');
+      inner.style.width = (tbl ? tbl.scrollWidth : wrap.scrollWidth) + 'px';
+    }
+    syncWidth();
+    new MutationObserver(syncWidth).observe(wrap, { childList: true, subtree: true });
+    var busy = false;
+    bar.addEventListener('scroll', function() {
+      if (!busy) { busy = true; wrap.scrollLeft = bar.scrollLeft; busy = false; }
+    });
+    wrap.addEventListener('scroll', function() {
+      if (!busy) { busy = true; bar.scrollLeft = wrap.scrollLeft; busy = false; }
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+  $(document).on('shiny:value', function(e) {
+    if (e.name && e.name.indexOf('pasivos_table') !== -1) setTimeout(init, 200);
+  });
+})();
+", ns("pasivos_tbl_wrap"), ns("pasivos_scroll_bar"), ns("pasivos_scroll_bar_inner"))))
         )
       ),
 
@@ -111,8 +184,10 @@ pasivos_table_module_server <- function(id, shared) {
 
     # ── Action: + Provisión manual ──────────────────────────────────────────
     shiny::observeEvent(input$btn_add_provision_manual, ignoreInit = TRUE, {
-      empresa_choices <- tryCatch(sort(names(shared$company_map())),
-                                  error = function(e) sort(names(COMPANY_MAP)))
+      # Use full names (same as show_combined_entry_modal) so stored empresa matches
+      # the full-name empresa_sel_rv filter in df_combined → Calendario picks it up.
+      empresa_choices <- tryCatch(sort(unique(shared$empresa_sel())),
+                                  error = function(e) sort(unique(unname(COMPANY_MAP))))
       shiny::showModal(.ppm_modal_ui(empresa_choices, ns = ns))
     })
 
@@ -175,18 +250,10 @@ pasivos_table_module_server <- function(id, shared) {
       shiny::updateTextInput(session, "ppm_codigo", value = cod)
     })
 
-    # Save orphan provision from the manual modal
-    shiny::observeEvent(input$ppm_save, ignoreInit = TRUE, {
-      user    <- tryCatch(shared$current_user(), error = function(e) "")
-      empresa <- input$ppm_empresa %||% ""
-
-      if (!has_capability(user, "pasivos.create_provision_manual")) {
-        shiny::showNotification("Sin permiso.", type = "error"); return()
-      }
-
-      new_id <- uuid::UUIDgenerate()
-      now    <- Sys.time()
-      new_prov <- tibble::tibble(
+    # ── Helper: build a new orphan provision tibble from modal inputs ──────────
+    .ppm_build_new_prov <- function(new_id, now, user, empresa,
+                                    pagar_hoy_id = NA_character_) {
+      tibble::tibble(
         id                       = new_id,
         liability_id             = NA_character_,
         origin                   = "manual",
@@ -214,7 +281,7 @@ pasivos_table_module_server <- function(id, shared) {
         referencia               = input$ppm_referencia  %||% "",
         notas                    = input$ppm_notas       %||% "",
         manual_inv_id            = NA_character_,
-        pagar_hoy_id             = NA_character_,
+        pagar_hoy_id             = pagar_hoy_id,
         bancos_conf_id           = NA_character_,
         reverted_count           = 0L,
         generated_by             = user,
@@ -222,24 +289,147 @@ pasivos_table_module_server <- function(id, shared) {
         last_edited_by           = user,
         last_edited_at           = now
       )
+    }
 
-      provs <- tryCatch(load_pasivos_provisions(),
-                        error = function(e) .schema_pasivos_provision())
-      provs <- dplyr::bind_rows(provs, new_prov)
-      ok <- tryCatch({ save_pasivos_provisions(provs); TRUE },
-                     error = function(e) { shiny::showNotification(
-                       paste0("Error: ", conditionMessage(e)), type = "error"); FALSE })
+    # Button 1 — Agregar a calendario: save provision; calendar updates in real time
+    shiny::observeEvent(input$ppm_save, ignoreInit = TRUE, {
+      user    <- tryCatch(shared$current_user(), error = function(e) "")
+      empresa <- input$ppm_empresa %||% ""
+
+      if (!has_capability(user, "pasivos.create_provision_manual")) {
+        shiny::showNotification("Sin permiso.", type = "error"); return()
+      }
+
+      shinyjs::disable("ppm_save")
+      shinyjs::disable("ppm_save_and_stage")
+      on.exit({ shinyjs::enable("ppm_save"); shinyjs::enable("ppm_save_and_stage") }, add = TRUE)
+
+      new_id   <- uuid::UUIDgenerate()
+      now      <- Sys.time()
+      new_prov <- .ppm_build_new_prov(new_id, now, user, empresa)
+
+      # Read from the in-memory reactiveVal (same pattern as wizard) so we merge
+      # with the most current state, not a potentially stale S3 snapshot.
+      existing <- tryCatch(shared$pasivos_provisions_db(),
+                           error = function(e) .schema_pasivos_provision())
+      if (is.null(existing) || !is.data.frame(existing))
+        existing <- .schema_pasivos_provision()
+
+      new_all <- dplyr::bind_rows(existing, new_prov)
+
+      ok <- tryCatch({ save_pasivos_provisions(new_all, client_id = shared$active_client_id()); TRUE },
+                     error = function(e) {
+                       shiny::showNotification(
+                         paste0("Error al guardar: ", conditionMessage(e)),
+                         type = "error"); FALSE })
       if (!ok) return()
-      shared$pasivos_provisions_db(provs)
+
+      # Push to in-memory reactiveVal first so Calendario / Vencidos re-render
+      # immediately — same pattern the wizard uses.
+      # Flag prevents the ledger auto-refresh observer from re-opening the
+      # calendar day modal after this external save.
+      tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
+      shared$pasivos_provisions_db(new_all)
+      bump_sync_version("pasivos_provisions_db")
+
       tryCatch(pasivos_log_audit(
         action_type = "provision.generated", user = user,
         empresa = empresa, target_kind = "provision", target_id = new_id,
         after = list(id = new_id, origin = "manual", estado = "provisional"),
-        notes = "manual orphan provision via Pasivos tab"
+        notes = "manual orphan provision via Pasivos tab",
+        client_id = shared$active_client_id()
       ), error = function(e) NULL)
 
       shiny::removeModal()
       shiny::showNotification("Provisión manual creada.", type = "message", duration = 3)
+    })
+
+    # Button 2 — Agregar a calendario y Agenda de hoy: save provision first, then
+    # stage to pagar_hoy; both calendar and Agenda update in real time.
+    shiny::observeEvent(input$ppm_save_and_stage, ignoreInit = TRUE, {
+      user    <- tryCatch(shared$current_user(), error = function(e) "")
+      empresa <- input$ppm_empresa %||% ""
+
+      if (!has_capability(user, "pasivos.create_provision_manual")) {
+        shiny::showNotification("Sin permiso.", type = "error"); return()
+      }
+
+      shinyjs::disable("ppm_save")
+      shinyjs::disable("ppm_save_and_stage")
+      on.exit({ shinyjs::enable("ppm_save"); shinyjs::enable("ppm_save_and_stage") }, add = TRUE)
+
+      new_id    <- uuid::UUIDgenerate()
+      now       <- Sys.time()
+      new_ph_id <- uuid::UUIDgenerate()
+
+      # empresa is already a full name (dropdown shows unname(company_map))
+      # so no translation needed for pagar_hoy.
+      doc_val <- trimws(input$ppm_documento %||% "")
+      if (!nzchar(doc_val)) doc_val <- paste0("PROV_", new_id)
+
+      # ── Step 1: calendar provision (always first; this is the source of truth) ─
+      new_prov <- .ppm_build_new_prov(new_id, now, user, empresa,
+                                      pagar_hoy_id = new_ph_id)
+
+      existing <- tryCatch(shared$pasivos_provisions_db(),
+                           error = function(e) .schema_pasivos_provision())
+      if (is.null(existing) || !is.data.frame(existing))
+        existing <- .schema_pasivos_provision()
+
+      new_all <- dplyr::bind_rows(existing, new_prov)
+
+      prov_ok <- tryCatch({ save_pasivos_provisions(new_all, client_id = shared$active_client_id()); TRUE },
+                          error = function(e) {
+                            shiny::showNotification(
+                              paste0("Error al guardar provisión: ", conditionMessage(e)),
+                              type = "error"); FALSE })
+      if (!prov_ok) return()
+
+      tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
+      shared$pasivos_provisions_db(new_all)
+      bump_sync_version("pasivos_provisions_db")
+
+      tryCatch(pasivos_log_audit(
+        action_type = "provision.generated", user = user,
+        empresa = empresa, target_kind = "provision", target_id = new_id,
+        after = list(id = new_id, origin = "manual", estado = "provisional"),
+        notes = "manual orphan provision via Pasivos tab (with agenda staging)",
+        client_id = shared$active_client_id()
+      ), error = function(e) NULL)
+
+      # ── Step 2: stage to Agenda de hoy ─────────────────────────────────────
+      new_ph_row <- tibble::tibble(
+        id           = new_ph_id,
+        ledger       = "AP",
+        Empresa      = empresa,
+        Moneda       = input$ppm_moneda %||% "MXN",
+        Documento    = doc_val,
+        Parte        = input$ppm_parte  %||% "",
+        Codigo       = input$ppm_codigo %||% "",
+        tipo_item    = "factura",
+        Importe      = as.numeric(input$ppm_importe %||% 0),
+        FechaVenc    = as.Date(input$ppm_fecha %||% Sys.Date()),
+        staged_by    = user,
+        staged_at    = now,
+        status       = "pending",
+        provision_id = new_id,
+        liability_id = NA_character_,
+        source       = "provision"
+      )
+
+      ph_existing <- tryCatch(shared$pagar_hoy_db(),
+                              error = function(e) NULL) %||% load_pagar_hoy(client_id = shared$active_client_id())
+      ph_new <- upsert_pagar_hoy(ph_existing, new_ph_row,
+                                 keys = c("ledger", "Empresa", "Moneda", "Documento"))
+
+      shared$pagar_hoy_db(ph_new)
+      tryCatch(save_pagar_hoy(ph_new, user, client_id = shared$active_client_id()), error = function(e)
+        warning("[pasivos] save_pagar_hoy failed: ", conditionMessage(e)))
+
+      shiny::removeModal()
+      shiny::showNotification(
+        "Provisión manual creada e ingresada a Agenda de hoy.",
+        type = "message", duration = 4)
     })
 
     # ── Visible window ──────────────────────────────────────────────────────
@@ -257,7 +447,10 @@ pasivos_table_module_server <- function(id, shared) {
 
     # ── Populate choices ────────────────────────────────────────────────────
     shiny::observe({
-      liabs <- tryCatch(shared$pasivos_liabilities_db(), error = function(e) NULL)
+      liabs   <- tryCatch(shared$pasivos_liabilities_db(), error = function(e) NULL)
+      allowed <- tryCatch(shared$visible_initials(), error = function(e) NULL)
+      if (!is.null(allowed) && !is.null(liabs) && nrow(liabs) && "empresa" %in% names(liabs))
+        liabs <- liabs[liabs$empresa %in% allowed, , drop = FALSE]
       emps <- if (!is.null(liabs) && nrow(liabs) && "empresa" %in% names(liabs))
         sort(unique(liabs$empresa[!is.na(liabs$empresa)])) else character(0)
       shiny::updateSelectizeInput(session, "empresa_sel", choices = emps)
@@ -274,12 +467,13 @@ pasivos_table_module_server <- function(id, shared) {
     # ── Filters ─────────────────────────────────────────────────────────────
     filters <- shiny::reactive({
       list(
-        empresa       = input$empresa_sel       %||% character(0),
-        categorias    = input$categoria_sel     %||% c("regular", "financiero", "tarjeta"),
-        subcategorias = input$subcategoria_sel  %||% character(0),
-        currency      = input$currency_sel      %||% "All",
-        search        = input$search_text       %||% "",
-        granularity   = input$granularity       %||% "day"
+        empresa        = input$empresa_sel       %||% character(0),
+        categorias     = input$categoria_sel     %||% c("regular", "financiero", "tarjeta"),
+        subcategorias  = input$subcategoria_sel  %||% character(0),
+        currency       = input$currency_sel      %||% "All",
+        search         = input$search_text       %||% "",
+        granularity    = input$granularity       %||% "day",
+        provision_type = input$provision_type    %||% "todas"
       )
     })
 
@@ -294,6 +488,17 @@ pasivos_table_module_server <- function(id, shared) {
       if (is.null(liabs)) liabs <- .schema_pasivos_liability()
       if (is.null(mi))    mi    <- data.frame()
       if (is.null(bc))    bc    <- data.frame()
+
+      # Respect group-based company visibility (NULL = no filter; character(0) = none)
+      allowed <- tryCatch(shared$visible_initials(), error = function(e) NULL)
+      if (!is.null(allowed)) {
+        if (nrow(liabs) && "empresa" %in% names(liabs))
+          liabs <- liabs[liabs$empresa %in% allowed, , drop = FALSE]
+        if (nrow(provs) && "empresa" %in% names(provs))
+          provs <- provs[provs$empresa %in% allowed, , drop = FALSE]
+        if (nrow(mi) && "empresa" %in% names(mi))
+          mi    <- mi[mi$empresa %in% allowed, , drop = FALSE]
+      }
 
       mi_ap <- if (nrow(mi) && "ledger" %in% names(mi))
         mi[mi$ledger == "AP", , drop = FALSE] else mi
@@ -340,10 +545,17 @@ pasivos_table_module_server <- function(id, shared) {
       if (!nrow(ldf))
         return(shiny::tags$span(class = "text-muted", "Sin datos para los filtros seleccionados."))
 
-      n_liabs <- length(unique(ldf$row_id))
+      ptype   <- filters()$provision_type %||% "todas"
       n_provs <- sum(ldf$cell_kind %in% c("provision", "overdue_provision"), na.rm = TRUE)
       n_items <- sum(ldf$cell_kind %in%
                        c("manual_item", "confirmed_item", "overdue_manual"), na.rm = TRUE)
+
+      summary_text <- if (ptype == "manuales") {
+        sprintf("Mostrando %d provisiones manuales · %d items", n_provs, n_items)
+      } else {
+        n_liabs <- length(unique(ldf$row_id))
+        sprintf("Mostrando %d pasivos · %d provisiones · %d items", n_liabs, n_provs, n_items)
+      }
 
       # Per-currency badges: provisions due in the next 7 natural days
       today <- Sys.Date()
@@ -367,10 +579,7 @@ pasivos_table_module_server <- function(id, shared) {
       })
 
       shiny::tagList(
-        shiny::tags$span(
-          class = "text-muted",
-          sprintf("Mostrando %d pasivos · %d provisiones · %d items", n_liabs, n_provs, n_items)
-        ),
+        shiny::tags$span(class = "text-muted", summary_text),
         badges
       )
     })
@@ -422,7 +631,10 @@ pasivos_table_module_server <- function(id, shared) {
     ),
     footer = shiny::tagList(
       shiny::modalButton("Cancelar"),
-      shiny::actionButton(ns("ppm_save"), "Guardar", class = "btn btn-primary")
+      shiny::actionButton(ns("ppm_save"),           "Agregar a calendario",
+                          class = "btn btn-outline-secondary"),
+      shiny::actionButton(ns("ppm_save_and_stage"), "Agregar a calendario y Agenda de hoy",
+                          class = "btn btn-primary")
     )
   )
 }
@@ -490,14 +702,17 @@ pasivos_render_table <- function(wide, today = Sys.Date(), ns = identity,
       shiny::tags$tr(
         class = "pasivos-currency-group-row",
         shiny::tags$td(
-          colspan = length(dcols) + 1L,
-          class   = "pasivos-currency-group-cell",
-          style   = sprintf("border-left: 3px solid %s;", col),
+          class = "pasivos-currency-group-cell pasivos-meta-col",
+          style = sprintf("border-left: 3px solid %s;", col),
           shiny::tags$span(
             style = sprintf("color:%s; font-size:11px; font-weight:600; letter-spacing:.5px;",
                             col),
             row_cur
           )
+        ),
+        shiny::tags$td(
+          colspan = length(dcols),
+          class   = "pasivos-currency-group-cell"
         )
       )
     } else NULL
@@ -606,8 +821,26 @@ pasivos_render_table <- function(wide, today = Sys.Date(), ns = identity,
         htmltools::htmlEscape(cell$cell_provision_id %||% "", attribute = TRUE)
       ))
     ),
-    manual_item    = shiny::tagList(shiny::tags$span(style = "margin-right:3px;", "◷"), amt_fmt),
-    overdue_manual = shiny::tagList(shiny::tags$span(style = "margin-right:3px;", "!"), amt_fmt),
+    manual_item = {
+      prov_id_m <- cell$cell_provision_id %||% ""
+      shiny::tagList(
+        shiny::tags$span(style = "margin-right:3px;", "◷"), amt_fmt, " ",
+        if (nzchar(prov_id_m)) shiny::HTML(sprintf(
+          '<button class="pasivos-convert-btn" title="Gestionar comprobante" style="font-size:0.75em;" onclick="event.stopPropagation();Shiny.setInputValue(\'pasivos_convert_request\',\'%s\',{priority:\'event\'})">&#x21A9;</button>',
+          htmltools::htmlEscape(prov_id_m, attribute = TRUE)
+        )) else NULL
+      )
+    },
+    overdue_manual = {
+      prov_id_o <- cell$cell_provision_id %||% ""
+      shiny::tagList(
+        shiny::tags$span(style = "margin-right:3px;color:#c00;", "!"), amt_fmt, " ",
+        if (nzchar(prov_id_o)) shiny::HTML(sprintf(
+          '<button class="pasivos-convert-btn" title="Gestionar comprobante (vencido)" style="font-size:0.75em;" onclick="event.stopPropagation();Shiny.setInputValue(\'pasivos_convert_request\',\'%s\',{priority:\'event\'})">&#x21A9;</button>',
+          htmltools::htmlEscape(prov_id_o, attribute = TRUE)
+        )) else NULL
+      )
+    },
     confirmed_item = shiny::tagList(shiny::tags$span(style = "margin-right:3px;", "✓"), amt_fmt),
     amt_fmt
   )

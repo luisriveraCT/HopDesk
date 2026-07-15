@@ -851,27 +851,29 @@ pasivos_reconcile_provisions <- function(existing, generated, mode = "regenerate
 # Helpers that load/mutate/save/audit a single provision by id.
 # All functions return the updated provision row invisibly.
 
-.load_provision <- function(provision_id) {
-  all_provs <- load_pasivos_provisions()
+.load_provision <- function(provision_id, client_id = NULL) {
+  all_provs <- load_pasivos_provisions(client_id = client_id)
   row <- all_provs[all_provs$id == provision_id, , drop = FALSE]
   if (!nrow(row)) stop("[pasivos] provision not found: ", provision_id)
   row[1L, , drop = FALSE]  # guard against duplicate ids
 }
 
-.save_provision_row <- function(row) {
-  all_provs <- load_pasivos_provisions()
+.save_provision_row <- function(row, client_id = NULL) {
+  all_provs <- load_pasivos_provisions(client_id = client_id)
   idx <- which(all_provs$id == row$id)
   if (length(idx)) {
     all_provs[idx, ] <- row
   } else {
     all_provs <- dplyr::bind_rows(all_provs, row)
   }
-  save_pasivos_provisions(all_provs)
+  save_pasivos_provisions(all_provs, client_id = client_id)
+  bump_sync_version("pasivos_provisions_db")
   invisible(TRUE)
 }
 
-pasivos_provision_convert <- function(provision_id, manual_inv_id, pagar_hoy_id, user) {
-  row <- .load_provision(provision_id)
+pasivos_provision_convert <- function(provision_id, manual_inv_id, pagar_hoy_id, user,
+                                       client_id = NULL) {
+  row <- .load_provision(provision_id, client_id = client_id)
   if (row$estado != "provisional")
     stop("[pasivos] cannot convert provision with estado=", row$estado,
          "; must be 'provisional'")
@@ -879,46 +881,49 @@ pasivos_provision_convert <- function(provision_id, manual_inv_id, pagar_hoy_id,
   row$estado        <- "converted"
   row$manual_inv_id <- as.character(manual_inv_id)
   row$pagar_hoy_id  <- as.character(pagar_hoy_id)
-  .save_provision_row(row)
+  .save_provision_row(row, client_id = client_id)
   pasivos_log_audit(
     action_type = "provision.converted_to_item",
     user        = user,
     target_kind = "provision",
     target_id   = provision_id,
     before      = before,
-    after       = as.list(row)
+    after       = as.list(row),
+    client_id   = client_id
   )
   invisible(row)
 }
 
-pasivos_provision_item_confirmed <- function(provision_id, bancos_conf_id, user) {
-  row <- .load_provision(provision_id)
+pasivos_provision_item_confirmed <- function(provision_id, bancos_conf_id, user,
+                                              client_id = NULL) {
+  row <- .load_provision(provision_id, client_id = client_id)
   if (row$estado != "converted")
     stop("[pasivos] cannot confirm provision with estado=", row$estado,
          "; must be 'converted'")
   before <- as.list(row)
   row$estado         <- "item_confirmed"
   row$bancos_conf_id <- as.character(bancos_conf_id)
-  .save_provision_row(row)
+  .save_provision_row(row, client_id = client_id)
   pasivos_log_audit(
     action_type = "provision.item_confirmed",
     user        = user,
     target_kind = "provision",
     target_id   = provision_id,
     before      = before,
-    after       = as.list(row)
+    after       = as.list(row),
+    client_id   = client_id
   )
   invisible(row)
 }
 
-pasivos_provision_close <- function(provision_id, user) {
-  row <- .load_provision(provision_id)
+pasivos_provision_close <- function(provision_id, user, client_id = NULL) {
+  row <- .load_provision(provision_id, client_id = client_id)
   if (row$estado != "item_confirmed")
     stop("[pasivos] cannot close provision with estado=", row$estado,
          "; must be 'item_confirmed'")
   before <- as.list(row)
   row$estado <- "closed"
-  .save_provision_row(row)
+  .save_provision_row(row, client_id = client_id)
   pasivos_log_audit(
     action_type = "provision.item_confirmed",  # reuse closest available action
     user        = user,
@@ -926,31 +931,33 @@ pasivos_provision_close <- function(provision_id, user) {
     target_id   = provision_id,
     before      = before,
     after       = as.list(row),
-    notes       = "closed"
+    notes       = "closed",
+    client_id   = client_id
   )
   invisible(row)
 }
 
-pasivos_provision_cancel <- function(provision_id, user) {
-  row <- .load_provision(provision_id)
+pasivos_provision_cancel <- function(provision_id, user, client_id = NULL) {
+  row <- .load_provision(provision_id, client_id = client_id)
   if (row$estado == "closed")
     return(invisible(row))  # already closed, no-op
   before <- as.list(row)
   row$estado <- "closed"
-  .save_provision_row(row)
+  .save_provision_row(row, client_id = client_id)
   pasivos_log_audit(
     action_type = "provision.cancelled",
     user        = user,
     target_kind = "provision",
     target_id   = provision_id,
     before      = before,
-    after       = as.list(row)
+    after       = as.list(row),
+    client_id   = client_id
   )
   invisible(row)
 }
 
-pasivos_provision_revive <- function(provision_id, user) {
-  row <- .load_provision(provision_id)
+pasivos_provision_revive <- function(provision_id, user, client_id = NULL) {
+  row <- .load_provision(provision_id, client_id = client_id)
   if (row$estado == "provisional") {
     warning("[pasivos] provision ", provision_id, " is already provisional — no-op")
     return(invisible(row))
@@ -963,14 +970,15 @@ pasivos_provision_revive <- function(provision_id, user) {
   row$pagar_hoy_id   <- NA_character_
   row$bancos_conf_id <- NA_character_
   row$reverted_count <- as.integer(row$reverted_count) + 1L
-  .save_provision_row(row)
+  .save_provision_row(row, client_id = client_id)
   pasivos_log_audit(
     action_type = "provision.revived",
     user        = user,
     target_kind = "provision",
     target_id   = provision_id,
     before      = before,
-    after       = as.list(row)
+    after       = as.list(row),
+    client_id   = client_id
   )
   invisible(row)
 }

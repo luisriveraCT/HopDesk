@@ -76,7 +76,8 @@ setup_pasivos_observers <- function(input, output, session, shared) {
           pasivos_provision_item_confirmed(
             provision_id   = prov_id,
             bancos_conf_id = bc_id,
-            user           = user
+            user           = user,
+            client_id      = shared$active_client_id()
           ),
           error = function(e) {
             warning("[pasivos] failed to mark provision confirmed: ", conditionMessage(e))
@@ -85,8 +86,9 @@ setup_pasivos_observers <- function(input, output, session, shared) {
       }
       rv$confirmed_seen <- c(rv$confirmed_seen, new_confirms$confirmacion_id)
       # Fix 3A: refresh reactive so calendar reflects item_confirmed state change.
+      tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
       tryCatch({
-        shared$pasivos_provisions_db(load_pasivos_provisions())
+        shared$pasivos_provisions_db(load_pasivos_provisions(client_id = shared$active_client_id()))
       }, error = function(e) NULL)
     }
 
@@ -105,15 +107,17 @@ setup_pasivos_observers <- function(input, output, session, shared) {
 
         tryCatch({
           # Read manual_inv_id from the provision BEFORE reviving clears FK fields.
-          provs    <- load_pasivos_provisions()
+          provs    <- load_pasivos_provisions(client_id = shared$active_client_id())
           prov_row <- provs[provs$id == prov_id, , drop = FALSE]
           mi_id    <- if (nrow(prov_row)) prov_row$manual_inv_id[1] else NA_character_
 
-          pasivos_provision_revive(provision_id = prov_id, user = user)
+          pasivos_provision_revive(provision_id = prov_id, user = user,
+                                   client_id = shared$active_client_id())
 
           # Refresh provision reactive so the AP calendar shows the revived item.
+          tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
           tryCatch({
-            shared$pasivos_provisions_db(load_pasivos_provisions())
+            shared$pasivos_provisions_db(load_pasivos_provisions(client_id = shared$active_client_id()))
           }, error = function(e) NULL)
 
           # Remove the orphaned manual_inv row so the calendar doesn't show both
@@ -122,7 +126,7 @@ setup_pasivos_observers <- function(input, output, session, shared) {
             mi <- shared$manual_inv()
             mi <- mi[mi$id != mi_id, , drop = FALSE]
             shared$manual_inv(mi)
-            save_manual(mi)
+            save_manual(mi, client_id = shared$active_client_id())
           }
         }, error = function(e) {
           warning("[pasivos] failed to revive provision: ", conditionMessage(e))

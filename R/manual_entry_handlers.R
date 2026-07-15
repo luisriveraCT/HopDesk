@@ -2,8 +2,8 @@
 # R/manual_entry_handlers.R
 # =============================================================================
 
-# Returns the UI content (form rows + JS) for the manual-entry tab.
-# Used by the combined tabbed modal in staging_browse_module.R ("Manual" tab).
+# Returns the UI content (form rows + JS) for the manual entry modal.
+# Used by show_combined_entry_modal() in staging_browse_module.R.
 manual_entry_tab_content <- function(ledger, empresas) {
   party_lbl <- if (ledger == "AR") "Cliente" else "Proveedor"
   tagList(
@@ -18,7 +18,7 @@ manual_entry_tab_content <- function(ledger, empresas) {
       ),
       column(6,
         textInput("me_parte",      party_lbl,                     value = ""),
-        if (ledger == "AP") uiOutput("me_prov_suggestions") else NULL,
+        uiOutput("me_prov_suggestions"),
         textInput("me_codigo",     paste("C\u00f3digo de", party_lbl), value = ""),
         numericInput("me_importe", "Importe", value = 0, min = 0)
       )
@@ -113,7 +113,7 @@ manual_edit_handlers <- function(input, output, session,
       column(6,
         textInput("me_parte",  party_lbl,
                   value = existing_row$Parte %||% ""),
-        if (ledger == "AP") uiOutput("me_prov_suggestions") else NULL,
+        uiOutput("me_prov_suggestions"),
         textInput("me_codigo", paste("C\u00f3digo de", party_lbl),
                   value = existing_row$Codigo %||% ""),
         numericInput("me_importe", "Importe",

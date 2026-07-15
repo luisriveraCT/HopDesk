@@ -14,62 +14,109 @@
 # Returns a data.frame in the exact format shinymanager expects:
 # columns: user, password, admin (logical), name, tier
 # On first run (no S3 record), seeds a default Dev account.
-.load_or_init_credentials <- function() {
-  raw <- tryCatch(
-    suppressMessages(.s3_read(S3_KEYS$usuarios)),
-    error = function(e) NULL
-  )
-
-  if (!is.null(raw) && nrow(raw) > 0) {
-    # Exclude soft-deleted accounts — they cannot log in
-    if ("deleted" %in% names(raw))
-      raw <- raw[is.na(raw$deleted) | raw$deleted != TRUE, , drop = FALSE]
-    # Normalize to shinymanager format
-    return(data.frame(
-      user     = tolower(trimws(raw$username)),  # always lowercase for case-insensitive login
-      password = raw$password_hash,
-      admin    = raw$tier == "dev",
-      name     = raw$display_name,
-      tier     = raw$tier,
-      stringsAsFactors = FALSE
-    ))
-  }
-
-  # First run — seed Dev account with a default password
-  # IMPORTANT: change this password immediately after first login
-  message("[AUTH] No credentials found in S3. Seeding default Dev account.")
-  message("[AUTH] Default login: user='dev'  password='Antiguedad2026!'")
-  message("[AUTH] Change this password immediately via the Usuarios panel.")
-
-  default <- data.frame(
-    id            = uuid::UUIDgenerate(),
-    account_code  = "U0001",
-    username      = "dev",
-    password_hash = "Antiguedad2026!",   # plain text — see NOTE above
-    display_name  = "Developer",
-    tier          = "dev",
-    client_id     = tolower(Sys.getenv("CLIENT_ID")),
-    permisos      = "{}",
-    activo        = TRUE,
-    created_at    = as.character(Sys.time()),
-    last_login    = NA_character_,
-    deleted       = FALSE,
-    deleted_at    = NA_character_,
+.normalize_credentials <- function(raw, default_client_id) {
+  if ("deleted" %in% names(raw))
+    raw <- raw[is.na(raw$deleted) | raw$deleted != TRUE, , drop = FALSE]
+  if (!nrow(raw)) return(NULL)
+  data.frame(
+    user            = tolower(trimws(raw$username)),
+    password        = raw$password_hash,
+    admin           = raw$tier == "dev",
+    name            = raw$display_name,
+    tier            = raw$tier,
+    account_code    = raw$account_code    %||% NA_character_,
+    group_ids       = raw$group_ids       %||% "[]",
+    client_id       = {
+      cid_raw <- raw$client_id %||% default_client_id
+      ifelse(is.na(cid_raw) | !nzchar(trimws(as.character(cid_raw))),
+             default_client_id, cid_raw)
+    },
+    allowed_clients = raw$allowed_clients %||% "[]",
     stringsAsFactors = FALSE
   )
+}
 
-  # Save to S3 immediately
-  tryCatch(
-    .s3_write(default, S3_KEYS$usuarios),
-    error = function(e) message("[AUTH] Warning: could not save default credentials to S3: ", e$message)
-  )
+.load_or_init_credentials <- function() {
+  cid <- tolower(Sys.getenv("CLIENT_ID"))
 
+  # Primary: this deployment's own users.
+  # Use direct S3 read (not .s3_read) to bypass the missing-key blacklist and
+  # avoid the CLIENT_ID env-var dependency inside .s3_key() — the same pattern
+  # used for the hd-admin staff overlay below.
+  raw <- if (nzchar(cid)) {
+    tryCatch(
+      suppressMessages(suppressWarnings(
+        aws.s3::s3readRDS(
+          object = paste0(cid, "/", S3_KEYS$usuarios),
+          bucket = .s3_bucket()
+        )
+      )),
+      error = function(e) {
+        message("[AUTH] Could not read client usuarios.rds: ", e$message)
+        NULL
+      }
+    )
+  } else {
+    message("[AUTH] CLIENT_ID not set — skipping client credential load")
+    NULL
+  }
+  client_creds <- if (!is.null(raw) && nrow(raw) > 0)
+    .normalize_credentials(raw, cid) else NULL
+
+  # Staff overlay: when running as a client deployment (not hd-admin itself),
+  # also load hd-admin principal + hopdesk accounts so they can log in here.
+  # Stage 4 will formalize cross-client access; this is the credential layer.
+  staff_creds <- NULL
+  if (cid != "hd-admin") {
+    hd_raw <- tryCatch(
+      aws.s3::s3readRDS(object = "hd-admin/usuarios.rds", bucket = .s3_bucket()),
+      error = function(e) NULL
+    )
+    if (!is.null(hd_raw) && is.data.frame(hd_raw) && nrow(hd_raw)) {
+      hd_staff <- hd_raw[hd_raw$tier %in% c("principal", "hopdesk"), , drop = FALSE]
+      if (nrow(hd_staff))
+        staff_creds <- .normalize_credentials(hd_staff, "hd-admin")
+    }
+  }
+
+  merged <- do.call(rbind, Filter(Negate(is.null), list(client_creds, staff_creds)))
+
+  # Stage 4: when running as the shared hd-admin deployment, also load credentials
+  # from every active client folder so client users can log in here.
+  if (cid == "hd-admin") {
+    registry <- tryCatch(read_client_registry(), error = function(e) NULL)
+    if (!is.null(registry) && nrow(registry)) {
+      active_clients <- registry[registry$status == "active", , drop = FALSE]
+      client_creds_list <- lapply(active_clients$client_id, function(ccid) {
+        raw_c <- tryCatch(
+          aws.s3::s3readRDS(object = paste0(ccid, "/usuarios.rds"), bucket = .s3_bucket()),
+          error = function(e) NULL
+        )
+        if (is.null(raw_c) || !nrow(raw_c)) return(NULL)
+        raw_c <- raw_c[!raw_c$tier %in% c("principal", "hopdesk"), , drop = FALSE]
+        if (!nrow(raw_c)) return(NULL)
+        .normalize_credentials(raw_c, ccid)
+      })
+      client_creds_list <- Filter(Negate(is.null), client_creds_list)
+      if (length(client_creds_list))
+        merged <- do.call(rbind, c(list(merged), client_creds_list))
+    }
+  }
+
+  if (!is.null(merged) && nrow(merged) > 0) {
+    message(sprintf("[AUTH] Credentials loaded: %d client, %d staff",
+                    nrow(client_creds %||% data.frame()),
+                    nrow(staff_creds  %||% data.frame())))
+    return(merged)
+  }
+
+  message("[AUTH] No credentials found in S3. Login will be rejected until accounts are created.")
   data.frame(
-    user     = "dev",
-    password = "Antiguedad2026!",
-    admin    = TRUE,
-    name     = "Developer",
-    tier     = "dev",
+    user     = character(),
+    password = character(),
+    admin    = logical(),
+    name     = character(),
+    tier     = character(),
     stringsAsFactors = FALSE
   )
 }
@@ -96,27 +143,40 @@ auth_invalidate_credentials <- function() {
   .auth_credentials <<- NULL
 }
 
-# Load raw usuarios.rds as a data.frame (all columns, not shinymanager format)
-auth_load_usuarios <- function() {
+# Load raw usuarios.rds as a data.frame (all columns, not shinymanager format).
+# client_id: explicit S3 folder slug (e.g. "networks", "hd-admin"). Defaults to
+# Sys.getenv("CLIENT_ID") for backwards compatibility. Passing this explicitly
+# is the Stage 4 mechanism for reading another client's folder without mutating
+# the global env var (which would affect all concurrent sessions).
+auth_load_usuarios <- function(client_id = NULL) {
+  cid <- tolower(trimws(client_id %||% Sys.getenv("CLIENT_ID")))
+  key <- paste0(cid, "/usuarios.rds")
+
   raw <- tryCatch(
-    suppressMessages(.s3_read(S3_KEYS$usuarios)),
+    suppressMessages(suppressWarnings(
+      aws.s3::s3readRDS(object = key, bucket = .s3_bucket())
+    )),
     error = function(e) NULL
   )
   if (is.null(raw) || !is.data.frame(raw) || !nrow(raw)) {
     return(data.frame(
-      id            = character(),
-      account_code  = character(),
-      username      = character(),
-      password_hash = character(),
-      display_name  = character(),
-      tier          = character(),
-      client_id     = character(),
-      permisos      = character(),
-      activo        = logical(),
-      created_at    = character(),
-      last_login    = character(),
-      deleted       = logical(),
-      deleted_at    = character(),
+      id                       = character(),
+      account_code             = character(),
+      username                 = character(),
+      password_hash            = character(),
+      display_name             = character(),
+      tier                     = character(),
+      client_id                = character(),
+      permisos                 = character(),
+      group_ids                = character(),
+      allowed_clients          = character(),
+      email                    = character(),
+      requires_password_change = logical(),
+      activo                   = logical(),
+      created_at               = character(),
+      last_login               = character(),
+      deleted                  = logical(),
+      deleted_at               = character(),
       stringsAsFactors = FALSE
     ))
   }
@@ -124,12 +184,13 @@ auth_load_usuarios <- function() {
   defaults <- list(permisos = "{}", activo = TRUE,
                    last_login = NA_character_, client_id = "",
                    deleted = FALSE, deleted_at = NA_character_,
-                   account_code = NA_character_)
+                   account_code = NA_character_, group_ids = "[]",
+                   allowed_clients = "[]",
+                   email = NA_character_, requires_password_change = FALSE)
   for (col in names(defaults))
     if (!col %in% names(raw)) raw[[col]] <- defaults[[col]]
 
   # Back-fill account_code for accounts created before this field existed.
-  # Assigns sequential codes (U0001, U0002, ...) and persists them once.
   needs_code <- is.na(raw$account_code) | !nzchar(trimws(raw$account_code))
   if (any(needs_code)) {
     existing_nums <- suppressWarnings(as.integer(
@@ -141,53 +202,107 @@ auth_load_usuarios <- function() {
       next_n <- next_n + 1L
     }
     tryCatch(
-      .s3_write(raw, S3_KEYS$usuarios),
+      aws.s3::s3saveRDS(raw, object = key, bucket = .s3_bucket()),
       error = function(e) message("[AUTH] account_code backfill save failed: ", e$message)
     )
+  }
+
+  # Back-fill client_id for accounts that predate the multi-tenant model.
+  needs_cid <- is.na(raw$client_id) | !nzchar(trimws(raw$client_id %||% ""))
+  if (any(needs_cid)) {
+    raw$client_id[needs_cid] <- cid
+    tryCatch(
+      aws.s3::s3saveRDS(raw, object = key, bucket = .s3_bucket()),
+      error = function(e) message("[AUTH] client_id backfill save failed: ", e$message)
+    )
+    message(sprintf("[AUTH] client_id backfilled for %d user(s) → %s", sum(needs_cid), cid))
   }
 
   raw
 }
 
 # Save usuarios data.frame to S3 and invalidate the login cache.
+# client_id: explicit folder slug — same Stage 4 override as auth_load_usuarios().
 # Throws on failure — callers must wrap in tryCatch and surface the error to the user.
-auth_save_usuarios <- function(df) {
-  .s3_write(df, S3_KEYS$usuarios)   # throws on any S3 error
-  auth_invalidate_credentials()     # force reload on next login attempt
+auth_save_usuarios <- function(df, client_id = NULL) {
+  cid <- tolower(trimws(client_id %||% Sys.getenv("CLIENT_ID")))
+  key <- paste0(cid, "/usuarios.rds")
+  aws.s3::s3saveRDS(df, object = key, bucket = .s3_bucket())
+  auth_invalidate_credentials()
   invisible(TRUE)
 }
 
 # Resolve effective permissions for a user by combining tier defaults + JSON overrides.
 # Returns a named list of booleans for all 12 permission keys.
+# Tier hierarchy (highest to lowest): principal > hopdesk > dev > admin > finance > analysis
+#
+# Locked permissions (can_approve_clients, can_manage_hopdesk_perms):
+#   - Always TRUE for principal tier; cannot be toggled via UI by anyone.
+#   - Overrides in permisos JSON are ignored for these two keys on principal accounts.
 auth_resolve_perms <- function(tier, permisos_json) {
+  # Existing 13 keys + 5 new SaaS keys
   defaults <- list(
+    principal = list(
+      # All operational permissions — full access
+      can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
+      can_view_bancos = TRUE, can_view_reportes = TRUE, can_edit_invoices = TRUE,
+      can_move_invoices = TRUE, can_manage_tags = TRUE, can_export_pdf = TRUE,
+      can_manage_providers = TRUE, can_manage_users = TRUE, can_view_tiers = TRUE,
+      can_manage_empresas = TRUE,
+      # SaaS admin permissions — locked TRUE for principal
+      can_approve_clients      = TRUE,
+      can_manage_hopdesk_perms = TRUE,
+      can_jump_clients         = TRUE,
+      can_manage_invites       = TRUE,
+      can_view_global_audit    = TRUE
+    ),
+    hopdesk = list(
+      can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
+      can_view_bancos = TRUE, can_view_reportes = TRUE, can_edit_invoices = TRUE,
+      can_move_invoices = TRUE, can_manage_tags = TRUE, can_export_pdf = TRUE,
+      can_manage_providers = TRUE, can_manage_users = TRUE, can_view_tiers = TRUE,
+      can_manage_empresas = TRUE,
+      can_approve_clients      = FALSE,
+      can_manage_hopdesk_perms = FALSE,
+      can_jump_clients         = FALSE,
+      can_manage_invites       = TRUE,
+      can_view_global_audit    = FALSE
+    ),
     dev = list(
       can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
       can_view_bancos = TRUE, can_view_reportes = TRUE, can_edit_invoices = TRUE,
       can_move_invoices = TRUE, can_manage_tags = TRUE, can_export_pdf = TRUE,
       can_manage_providers = TRUE, can_manage_users = TRUE, can_view_tiers = TRUE,
-      can_manage_empresas = TRUE
+      can_manage_empresas = TRUE,
+      can_approve_clients = FALSE, can_manage_hopdesk_perms = FALSE,
+      can_jump_clients = FALSE, can_manage_invites = FALSE, can_view_global_audit = FALSE
     ),
     admin = list(
       can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
       can_view_bancos = TRUE, can_view_reportes = TRUE, can_edit_invoices = TRUE,
       can_move_invoices = TRUE, can_manage_tags = TRUE, can_export_pdf = TRUE,
       can_manage_providers = TRUE, can_manage_users = TRUE, can_view_tiers = FALSE,
-      can_manage_empresas = TRUE
+      can_manage_empresas = TRUE,
+      can_approve_clients = FALSE, can_manage_hopdesk_perms = FALSE,
+      can_jump_clients = FALSE, can_manage_invites = FALSE, can_view_global_audit = FALSE
     ),
     finance = list(
       can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
       can_view_bancos = TRUE, can_view_reportes = TRUE, can_edit_invoices = TRUE,
       can_move_invoices = TRUE, can_manage_tags = TRUE, can_export_pdf = TRUE,
       can_manage_providers = FALSE, can_manage_users = FALSE, can_view_tiers = FALSE,
-      can_manage_empresas = FALSE
+      can_manage_empresas = FALSE,
+      can_approve_clients = FALSE, can_manage_hopdesk_perms = FALSE,
+      can_jump_clients = FALSE, can_manage_invites = FALSE, can_view_global_audit = FALSE
     ),
     analysis = list(
       can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
       can_view_bancos = FALSE, can_view_reportes = TRUE, can_edit_invoices = FALSE,
       can_move_invoices = FALSE, can_manage_tags = FALSE, can_export_pdf = TRUE,
       can_manage_providers = FALSE, can_manage_users = FALSE, can_view_tiers = FALSE,
-      can_manage_empresas = FALSE
+      can_manage_empresas = FALSE,
+      can_approve_clients = FALSE, can_manage_hopdesk_perms = FALSE,
+      can_jump_clients = FALSE, can_manage_invites = FALSE, can_view_global_audit = FALSE
     )
   )
 
@@ -198,8 +313,13 @@ auth_resolve_perms <- function(tier, permisos_json) {
     error = function(e) list()
   )
 
-  for (k in names(overrides))
-    if (k %in% names(base)) base[[k]] <- isTRUE(overrides[[k]])
+  # Apply overrides — but locked keys on principal accounts are immune
+  locked_principal_keys <- c("can_approve_clients", "can_manage_hopdesk_perms")
+  for (k in names(overrides)) {
+    if (!k %in% names(base)) next
+    if (identical(tier, "principal") && k %in% locked_principal_keys) next
+    base[[k]] <- isTRUE(overrides[[k]])
+  }
 
   base
 }
@@ -209,8 +329,28 @@ auth_resolve_perms <- function(tier, permisos_json) {
 # the running session are immediately usable without a server restart.
 auth_check_credentials <- function() {
   function(user, password) {
-    creds <- auth_get_credentials()   # uses in-memory cache; re-reads S3 only after invalidation
+    creds <- auth_get_credentials()
     inner <- shinymanager::check_credentials(creds)
-    inner(tolower(trimws(user)), password)
+    res   <- inner(tolower(trimws(user)), password)
+
+    # Emergency lock check — runs only after a successful credential match.
+    # The lock file is cached for 60s; a compromised active session is terminated
+    # separately via the app.R session observer.
+    if (isTRUE(res$result)) {
+      lock <- tryCatch(read_emergency_lock(), error = function(e) NULL)
+      if (is.data.frame(lock) && nrow(lock) > 0 &&
+          any(tolower(lock$username) == tolower(trimws(user)))) {
+        message("[AUTH] Login blocked by emergency lock: ", user)
+        return(list(
+          result    = FALSE,
+          user_info = list(
+            user    = user,
+            message = "Esta cuenta ha sido bloqueada. Contacta a tu administrador."
+          )
+        ))
+      }
+    }
+
+    res
   }
 }

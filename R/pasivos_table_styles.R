@@ -47,10 +47,29 @@ pasivos_cell_classes <- function(cell_payload, today = Sys.Date()) {
 pasivos_table_css <- function() {
   shiny::tags$style(shiny::HTML("
 /* ── Pasivos table container ── */
-.pasivos-table-wrap {
-  overflow: auto;
+.pasivos-tbl-col {
+  display: flex;
+  flex-direction: column;
   max-height: calc(100vh - 220px);
+  overflow: hidden;
 }
+.pasivos-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: scroll;
+  overflow-y: auto;
+}
+/* Hide native horizontal scrollbar — the .pasivos-scroll-bar below replaces it */
+.pasivos-table-wrap::-webkit-scrollbar:horizontal { height: 0; }
+.pasivos-scroll-bar {
+  flex: 0 0 auto;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  height: 14px;
+  background: #f8fafc;
+  border-top: 1px solid #e5e7eb;
+}
+.pasivos-scroll-bar-inner { height: 1px; }
 .pasivos-table {
   border-collapse: separate;
   border-spacing: 0;
@@ -84,7 +103,7 @@ pasivos_table_css <- function() {
 }
 .pasivos-table tr.has-overdue td.pasivos-meta-col {
   border-left: 4px solid #dc2626;
-  background-color: rgba(220, 38, 38, 0.06);
+  background-color: #fdf2f2;
 }
 
 /* ── Row highlight for due-soon rows (due within 3–7 days) ── */
@@ -93,7 +112,7 @@ pasivos_table_css <- function() {
 }
 .pasivos-table tr.has-due-soon td.pasivos-meta-col {
   border-left: 4px solid #f59e0b;
-  background-color: rgba(245, 158, 11, 0.07);
+  background-color: #fef9f0;
 }
 
 /* ── Row highlight for very-soon rows (due today, tomorrow, or day-after) ── */
@@ -102,7 +121,7 @@ pasivos_table_css <- function() {
 }
 .pasivos-table tr.has-very-soon td.pasivos-meta-col {
   border-left: 4px solid #d97706;
-  background-color: rgba(245, 158, 11, 0.18);
+  background-color: #fdf3dc;
 }
 
 /* ── Cell base ── */

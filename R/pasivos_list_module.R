@@ -13,39 +13,47 @@ pasivos_list_module_ui <- function(id) {
   shiny::div(
     class = "pasivos-list-module p-2",
 
-    # Filters bar (mirrors Tabla view)
+    # Filters bar — single compact row
     shiny::div(
-      class = "d-flex flex-wrap gap-2 align-items-end py-2 border-bottom mb-2",
+      class = "d-flex flex-nowrap gap-3 align-items-end py-2 border-bottom mb-2",
+      style = "overflow-x: auto;",
       shiny::div(class = "flex-shrink-0",
-        shiny::selectizeInput(ns("empresa_sel"), "Empresa",
-                              choices  = character(0), multiple = TRUE,
-                              options  = list(placeholder = "Todas"),
-                              width    = "180px")
+        shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Empresa"),
+        shiny::selectizeInput(ns("empresa_sel"), label = NULL,
+          choices = character(0), multiple = TRUE,
+          options = list(placeholder = "Todas"), width = "160px")
       ),
       shiny::div(class = "flex-shrink-0",
-        shiny::checkboxGroupInput(ns("categoria_sel"), "Categoría",
-          choices  = c("Pago regular" = "regular",
-                       "Pasivo financiero" = "financiero",
-                       "Tarjeta" = "tarjeta"),
+        shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Categoría"),
+        shinyWidgets::checkboxGroupButtons(
+          inputId      = ns("categoria_sel"), label = NULL,
+          choiceValues = c("regular", "financiero", "tarjeta"),
+          choiceNames  = list(
+            shiny::tags$span("Regular",    title = "Pagos recurrentes: servicios, suscripciones y arrendamientos operativos"),
+            shiny::tags$span("Financiero", title = "Créditos, arrendamientos financieros y líneas de crédito"),
+            shiny::tags$span("Tarjeta",    title = "Liquidaciones de tarjeta corporativa")
+          ),
           selected = c("regular", "financiero", "tarjeta"),
-          inline   = TRUE)
+          size = "sm", status = "outline-secondary"
+        )
       ),
       shiny::div(class = "flex-shrink-0",
-        shiny::selectizeInput(ns("subcategoria_sel"), "Sub-categoría",
-                              choices  = character(0), multiple = TRUE,
-                              options  = list(placeholder = "Todas"),
-                              width    = "140px")
+        shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Sub-categoría"),
+        shiny::selectizeInput(ns("subcategoria_sel"), label = NULL,
+          choices = character(0), multiple = TRUE,
+          options = list(placeholder = "Todas"), width = "130px")
       ),
       shiny::div(class = "flex-shrink-0",
-        shiny::selectInput(ns("currency_sel"), "Moneda",
-                           choices  = c("All", CURRENCIES),
-                           selected = "All", width = "90px")
+        shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Moneda"),
+        shiny::selectInput(ns("currency_sel"), label = NULL,
+          choices = c("All", CURRENCIES), selected = "All", width = "80px")
       ),
       shiny::div(class = "flex-grow-1",
-        shiny::textInput(ns("search_text"), "Buscar",
-                         placeholder = "Nombre, Parte...", width = "200px")
+        shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Buscar"),
+        shiny::textInput(ns("search_text"), label = NULL,
+          placeholder = "Nombre, Parte...", width = "100%")
       ),
-      shiny::div(class = "flex-shrink-0 align-self-end",
+      shiny::div(class = "flex-shrink-0 align-self-end pb-1",
         shiny::checkboxInput(ns("show_archived"), "Mostrar archivados", value = FALSE)
       )
     ),
@@ -73,8 +81,11 @@ pasivos_list_module_server <- function(id, shared) {
 
     # ── Populate choices ────────────────────────────────────────────────────
     shiny::observe({
-      liabs <- tryCatch(shared$pasivos_liabilities_db(), error = function(e) NULL)
+      liabs   <- tryCatch(shared$pasivos_liabilities_db(), error = function(e) NULL)
       if (is.null(liabs) || !nrow(liabs)) return()
+      allowed <- tryCatch(shared$visible_initials(), error = function(e) NULL)
+      if (!is.null(allowed) && "empresa" %in% names(liabs))
+        liabs <- liabs[liabs$empresa %in% allowed, , drop = FALSE]
       emps <- sort(unique(liabs$empresa[!is.na(liabs$empresa)]))
       shiny::updateSelectizeInput(session, "empresa_sel", choices = emps)
       subs <- sort(unique(liabs$subcategoria[
@@ -87,6 +98,11 @@ pasivos_list_module_server <- function(id, shared) {
       liabs <- tryCatch(shared$pasivos_liabilities_db(),
                         error = function(e) .schema_pasivos_liability())
       if (!nrow(liabs)) return(liabs)
+
+      # Respect group-based company visibility (NULL = no filter; character(0) = none)
+      allowed <- tryCatch(shared$visible_initials(), error = function(e) NULL)
+      if (!is.null(allowed) && "empresa" %in% names(liabs))
+        liabs <- liabs[liabs$empresa %in% allowed, , drop = FALSE]
 
       # Estado filter
       if (!isTRUE(input$show_archived)) {
@@ -109,11 +125,11 @@ pasivos_list_module_server <- function(id, shared) {
       cur <- input$currency_sel %||% "All"
       if (!identical(cur, "All")) liabs <- liabs[liabs$moneda_pago == cur, , drop = FALSE]
 
-      # Search
-      q <- trimws(input$search_text %||% "")
+      # Search (accent-insensitive: strip diacritics from both sides)
+      q <- strip_accents(tolower(trimws(input$search_text %||% "")))
       if (nzchar(q)) {
-        mask <- grepl(q, liabs$nombre %||% "", ignore.case = TRUE) |
-                grepl(q, liabs$parte  %||% "", ignore.case = TRUE)
+        mask <- grepl(q, strip_accents(tolower(liabs$nombre %||% "")), fixed = TRUE) |
+                grepl(q, strip_accents(tolower(liabs$parte  %||% "")), fixed = TRUE)
         liabs <- liabs[mask, , drop = FALSE]
       }
 
@@ -287,8 +303,9 @@ pasivos_list_module_server <- function(id, shared) {
       liabs$estado[idx[1]] <- new_estado
       liabs$updated_at[idx[1]] <- Sys.time()
       liabs$updated_by[idx[1]] <- user
-      tryCatch(save_pasivos_liabilities(liabs), error = function(e) NULL)
+      tryCatch(save_pasivos_liabilities(liabs, client_id = shared$active_client_id()), error = function(e) NULL)
       shared$pasivos_liabilities_db(liabs)
+      bump_sync_version("pasivos_liabilities_db")
 
       if (identical(new_estado, "paused")) {
         # Remove future provisional provisions
@@ -300,8 +317,10 @@ pasivos_list_module_server <- function(id, shared) {
                       provs$fecha_efectiva >= Sys.Date()
         if (any(!is.na(provs_drop) & provs_drop)) {
           provs <- provs[!(!is.na(provs_drop) & provs_drop), , drop = FALSE]
-          tryCatch(save_pasivos_provisions(provs), error = function(e) NULL)
+          tryCatch(save_pasivos_provisions(provs, client_id = shared$active_client_id()), error = function(e) NULL)
+          tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
           shared$pasivos_provisions_db(provs)
+          bump_sync_version("pasivos_provisions_db")
         }
         shiny::showNotification("Pasivo pausado. Provisiones futuras eliminadas.",
                                 type = "message", duration = 3)
@@ -317,7 +336,8 @@ pasivos_list_module_server <- function(id, shared) {
         empresa     = liabs$empresa[idx[1]],
         target_kind = "liability",
         target_id   = lid,
-        notes       = sprintf("estado changed to %s", new_estado)
+        notes       = sprintf("estado changed to %s", new_estado),
+        client_id   = shared$active_client_id()
       ), error = function(e) NULL)
     })
 
@@ -352,8 +372,9 @@ pasivos_list_module_server <- function(id, shared) {
       liabs$estado[idx[1]]     <- "deleted"
       liabs$updated_at[idx[1]] <- Sys.time()
       liabs$updated_by[idx[1]] <- user
-      tryCatch(save_pasivos_liabilities(liabs), error = function(e) NULL)
+      tryCatch(save_pasivos_liabilities(liabs, client_id = shared$active_client_id()), error = function(e) NULL)
       shared$pasivos_liabilities_db(liabs)
+      bump_sync_version("pasivos_liabilities_db")
 
       # Remove future provisions
       provs <- tryCatch(shared$pasivos_provisions_db(),
@@ -364,15 +385,18 @@ pasivos_list_module_server <- function(id, shared) {
                 provs$fecha_efectiva >= Sys.Date())
       keep[is.na(keep)] <- TRUE
       provs <- provs[keep, , drop = FALSE]
-      tryCatch(save_pasivos_provisions(provs), error = function(e) NULL)
+      tryCatch(save_pasivos_provisions(provs, client_id = shared$active_client_id()), error = function(e) NULL)
+      tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
       shared$pasivos_provisions_db(provs)
+      bump_sync_version("pasivos_provisions_db")
 
       tryCatch(pasivos_log_audit(
         action_type = "liability.deleted",
         user        = user,
         empresa     = liabs$empresa[idx[1]],
         target_kind = "liability",
-        target_id   = lid
+        target_id   = lid,
+        client_id   = shared$active_client_id()
       ), error = function(e) NULL)
 
       shiny::removeModal()

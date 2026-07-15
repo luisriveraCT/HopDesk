@@ -13,8 +13,8 @@
 # because methods::as() coerces lists to character. This helper applies the same
 # fix as load_policy_catalog(): rebuild non-list cols via schema[NA] coercion,
 # then ensure list cols are actual lists.
-.pasivos_load_with_list_cols <- function(key, schema_fn, list_col_names) {
-  obj <- tryCatch(.s3_read(key), error = function(e) NULL)
+.pasivos_load_with_list_cols <- function(key, schema_fn, list_col_names, client_id = NULL) {
+  obj <- tryCatch(.s3_read_with(key, client_id = client_id), error = function(e) NULL)
   if (is.null(obj) || !is.data.frame(obj) || !nrow(obj)) return(schema_fn())
 
   schema <- schema_fn()
@@ -47,11 +47,12 @@
   "cargos_iniciales", "valor_residual", "modifier_ids"
 )
 
-load_pasivos_liabilities <- function() {
+load_pasivos_liabilities <- function(client_id = NULL) {
   df <- .pasivos_load_with_list_cols(
     S3_KEYS$pasivos_liabilities,
     .schema_pasivos_liability,
-    .PASIVOS_LIABILITY_LIST_COLS
+    .PASIVOS_LIABILITY_LIST_COLS,
+    client_id = client_id
   )
   # Backward-compat: pre-frecuencia_pago records load as NA → default to mensual
   if ("frecuencia_pago" %in% names(df))
@@ -59,53 +60,53 @@ load_pasivos_liabilities <- function() {
   df
 }
 
-save_pasivos_liabilities <- function(df) {
-  .s3_write(df, S3_KEYS$pasivos_liabilities)
+save_pasivos_liabilities <- function(df, client_id = NULL) {
+  .s3_write(df, S3_KEYS$pasivos_liabilities, client_id = client_id)
   invisible(TRUE)
 }
 
 # ── pasivos_provisions ────────────────────────────────────────────────────────
 
-load_pasivos_provisions <- function() {
-  .normalize(.s3_read(S3_KEYS$pasivos_provisions), .schema_pasivos_provision)
+load_pasivos_provisions <- function(client_id = NULL) {
+  .normalize(.s3_read_with(S3_KEYS$pasivos_provisions, client_id = client_id), .schema_pasivos_provision)
 }
 
-save_pasivos_provisions <- function(df) {
-  .s3_write(.normalize(df, .schema_pasivos_provision), S3_KEYS$pasivos_provisions)
+save_pasivos_provisions <- function(df, client_id = NULL) {
+  .s3_write(.normalize(df, .schema_pasivos_provision), S3_KEYS$pasivos_provisions, client_id = client_id)
   invisible(TRUE)
 }
 
 # ── pasivos_modifiers ─────────────────────────────────────────────────────────
 # No list columns — standard normalize works.
 
-load_pasivos_modifiers <- function() {
-  .normalize(.s3_read(S3_KEYS$pasivos_modifiers), .schema_pasivos_modifier)
+load_pasivos_modifiers <- function(client_id = NULL) {
+  .normalize(.s3_read_with(S3_KEYS$pasivos_modifiers, client_id = client_id), .schema_pasivos_modifier)
 }
 
-save_pasivos_modifiers <- function(df) {
-  .s3_write(.normalize(df, .schema_pasivos_modifier), S3_KEYS$pasivos_modifiers)
+save_pasivos_modifiers <- function(df, client_id = NULL) {
+  .s3_write(.normalize(df, .schema_pasivos_modifier), S3_KEYS$pasivos_modifiers, client_id = client_id)
   invisible(TRUE)
 }
 
 # ── pasivos_estimates ─────────────────────────────────────────────────────────
 
-load_pasivos_estimates <- function() {
-  .normalize(.s3_read(S3_KEYS$pasivos_estimates), .schema_pasivos_estimates)
+load_pasivos_estimates <- function(client_id = NULL) {
+  .normalize(.s3_read_with(S3_KEYS$pasivos_estimates, client_id = client_id), .schema_pasivos_estimates)
 }
 
-save_pasivos_estimates <- function(df) {
-  .s3_write(.normalize(df, .schema_pasivos_estimates), S3_KEYS$pasivos_estimates)
+save_pasivos_estimates <- function(df, client_id = NULL) {
+  .s3_write(.normalize(df, .schema_pasivos_estimates), S3_KEYS$pasivos_estimates, client_id = client_id)
   invisible(TRUE)
 }
 
 # ── pasivos_card_expenses ─────────────────────────────────────────────────────
 
-load_pasivos_card_expenses <- function() {
-  .normalize(.s3_read(S3_KEYS$pasivos_card_expenses), .schema_pasivos_card_expense)
+load_pasivos_card_expenses <- function(client_id = NULL) {
+  .normalize(.s3_read_with(S3_KEYS$pasivos_card_expenses, client_id = client_id), .schema_pasivos_card_expense)
 }
 
-save_pasivos_card_expenses <- function(df) {
-  .s3_write(.normalize(df, .schema_pasivos_card_expense), S3_KEYS$pasivos_card_expenses)
+save_pasivos_card_expenses <- function(df, client_id = NULL) {
+  .s3_write(.normalize(df, .schema_pasivos_card_expense), S3_KEYS$pasivos_card_expenses, client_id = client_id)
   invisible(TRUE)
 }
 
@@ -113,11 +114,11 @@ save_pasivos_card_expenses <- function(df) {
 # Append-only logically: load → bind_rows → save_pasivos_audit.
 # The loader never deletes rows.
 
-load_pasivos_audit <- function() {
-  .normalize(.s3_read(S3_KEYS$pasivos_audit), .schema_pasivos_audit)
+load_pasivos_audit <- function(client_id = NULL) {
+  .normalize(.s3_read_with(S3_KEYS$pasivos_audit, client_id = client_id), .schema_pasivos_audit)
 }
 
-save_pasivos_audit <- function(df) {
-  .s3_write(.normalize(df, .schema_pasivos_audit), S3_KEYS$pasivos_audit)
+save_pasivos_audit <- function(df, client_id = NULL) {
+  .s3_write(.normalize(df, .schema_pasivos_audit), S3_KEYS$pasivos_audit, client_id = client_id)
   invisible(TRUE)
 }
