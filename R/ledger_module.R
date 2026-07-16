@@ -1830,7 +1830,9 @@ ledgerModuleServer <- function(id, config, shared) {
         metadata    = list(
           n      = n_del,
           source = unique(rows_to_delete[["source"]] %||% "sap")
-        )
+        ),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
       # Restore the day pane instead of closing everything.
       # Updating modal_ctx re-shows the day pane with fresh data.
@@ -2966,7 +2968,22 @@ ledgerModuleServer <- function(id, config, shared) {
     )
   updated <- upsert_moves(moves, new_rows)
   shared$moves_db(updated)
-  .save_moves_deferred(updated, client_id = shared$effective_client_id())
+  cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
+  .save_moves_deferred(updated, client_id = cid)
+  tryCatch(
+    log_action(
+      user        = tryCatch(shared$current_user(), error = function(e) "system"),
+      module      = paste0("ledger_", ledger),
+      action      = "mover_fecha",
+      description = sprintf("%d factura(s) movida(s) a %s",
+                            nrow(keys), format(as.Date(new_date), "%d/%m/%Y")),
+      target_id   = paste(keys[["Documento"]][seq_len(min(5, nrow(keys)))], collapse = ", "),
+      metadata    = list(n = nrow(keys)),
+      client_id             = cid,
+      viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
+    ),
+    error = function(e) message("[LEDGER] log_action failed (mover_fecha): ", e$message)
+  )
 }
 
 .clear_moves <- function(keys, ledger, shared) {
@@ -2977,7 +2994,21 @@ ledgerModuleServer <- function(id, config, shared) {
     by = c("ledger","Empresa","Moneda","Documento")
   )
   shared$moves_db(updated)
-  .save_moves_deferred(updated, client_id = shared$effective_client_id())
+  cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
+  .save_moves_deferred(updated, client_id = cid)
+  tryCatch(
+    log_action(
+      user        = tryCatch(shared$current_user(), error = function(e) "system"),
+      module      = paste0("ledger_", ledger),
+      action      = "restaurar_fecha",
+      description = sprintf("%d factura(s) restaurada(s) a su fecha original", nrow(keys)),
+      target_id   = paste(keys[["Documento"]][seq_len(min(5, nrow(keys)))], collapse = ", "),
+      metadata    = list(n = nrow(keys)),
+      client_id             = cid,
+      viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
+    ),
+    error = function(e) message("[LEDGER] log_action failed (restaurar_fecha): ", e$message)
+  )
 }
 
 # ── Sync pagar_hoy after a date-move, restore, or manual edit ─────────────────

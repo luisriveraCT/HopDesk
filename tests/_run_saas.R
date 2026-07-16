@@ -186,6 +186,7 @@ cat("====================================================\n\n")
 .run_module("tests/test_saas_invites.R")
 .run_module("tests/test_saas_audit.R")
 .run_module("tests/test_saas_audit_viewer.R")
+.run_module("tests/test_saas_log_action_scoping.R")
 .run_module("tests/test_saas_notifications.R")
 .run_module("tests/test_saas_limit_change.R")
 

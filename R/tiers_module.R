@@ -826,7 +826,8 @@ tiersServer <- function(id, shared) {
         description = paste0("Cuenta '", username, "' creada (tier: ", tier, ")"),
         target_id   = new_row$account_code,
         s3_key      = paste0(current_client_id(), "/usuarios.rds"),
-        client_id   = current_client_id(),
+        client_id             = current_client_id(),
+        viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL),
         metadata    = list(tier = tier, display_name = display_name)
       )
       activity_refresh(activity_refresh() + 1L)
@@ -977,7 +978,8 @@ tiersServer <- function(id, shared) {
         description = paste0("Cuenta '", target_user, "' eliminada (tier: ", target_tier, ")"),
         target_id   = target_user,
         s3_key      = paste0(current_client_id(), "/usuarios.rds"),
-        client_id   = current_client_id(),
+        client_id             = current_client_id(),
+        viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL),
         metadata    = list(tier = target_tier)
       )
       activity_refresh(activity_refresh() + 1L)
@@ -1116,7 +1118,8 @@ tiersServer <- function(id, shared) {
         description = paste0("Permisos/tier de '", target_user, "' actualizados"),
         target_id   = target_user,
         s3_key      = paste0(current_client_id(), "/usuarios.rds"),
-        client_id   = current_client_id(),
+        client_id             = current_client_id(),
+        viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL),
         metadata    = list(tier = new_tier, overrides_count = length(overrides))
       )
       activity_refresh(activity_refresh() + 1L)
@@ -1310,7 +1313,8 @@ tiersServer <- function(id, shared) {
                    description = paste0("Lock applied to '", username, "' — reason: ", reason),
                    target_id   = username,
                    s3_key      = "hd-admin/emergency_lock.rds",
-                   client_id   = "hd-admin")
+                   client_id             = "hd-admin",
+                   viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
         activity_refresh(activity_refresh() + 1L)
       }, error = function(e) {
         showNotification(paste0("Error al bloquear: ", e$message), type = "error")
@@ -1336,7 +1340,8 @@ tiersServer <- function(id, shared) {
                    description = paste0("Lock removed from '", username, "' by ", current_viewer),
                    target_id   = username,
                    s3_key      = "hd-admin/emergency_lock.rds",
-                   client_id   = "hd-admin")
+                   client_id             = "hd-admin",
+                   viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
         activity_refresh(activity_refresh() + 1L)
       }, error = function(e) {
         showNotification(paste0("Error al desbloquear: ", e$message), type = "error")
@@ -1455,7 +1460,8 @@ tiersServer <- function(id, shared) {
         description = sprintf("'%s' solicitó aumento de límite (%d/%d)", dname, cur, max),
         target_id   = cid,
         s3_key      = paste0(cid, "/app_audit.rds"),
-        client_id   = cid
+        client_id             = cid,
+        viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
       )
       activity_refresh(activity_refresh() + 1L)
     }, ignoreInit = TRUE)
@@ -1717,7 +1723,8 @@ tiersServer <- function(id, shared) {
                  description = paste0("Solicitud para '", cid_prop, "' (", dname, ")"),
                  target_id   = cid_prop,
                  s3_key      = "hd-admin/client_requests.rds",
-                 client_id   = "hd-admin")
+                 client_id             = "hd-admin",
+                 viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
       activity_refresh(activity_refresh() + 1L)
     }, ignoreInit = TRUE)
 
@@ -1818,7 +1825,8 @@ tiersServer <- function(id, shared) {
                                       "' (", row$display_name, ") aprobado"),
                  target_id   = row$client_id_proposed,
                  s3_key      = "hd-admin/client_registry.rds",
-                 client_id   = "hd-admin")
+                 client_id             = "hd-admin",
+                 viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
       activity_refresh(activity_refresh() + 1L)
       session$userData$reviewing_req_id <- NULL
     }, ignoreInit = TRUE)
@@ -1857,7 +1865,8 @@ tiersServer <- function(id, shared) {
                                       if (nzchar(reason)) paste0(" — motivo: ", reason) else ""),
                  target_id   = row$client_id_proposed,
                  s3_key      = "hd-admin/client_requests.rds",
-                 client_id   = "hd-admin")
+                 client_id             = "hd-admin",
+                 viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
       activity_refresh(activity_refresh() + 1L)
       session$userData$reviewing_req_id <- NULL
     }, ignoreInit = TRUE)
@@ -2087,7 +2096,8 @@ tiersServer <- function(id, shared) {
                        "' desactivada por reducción de límite en '", cid, "'"),
                      target_id   = usuarios_new$account_code[to_deact_idx[i]],
                      s3_key      = paste0(cid, "/usuarios.rds"),
-                     client_id   = cid)
+                     client_id             = cid,
+                     viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
         }
       }
 
@@ -2129,7 +2139,8 @@ tiersServer <- function(id, shared) {
                                        cid, old_max, new_max, reviewer),
                  target_id   = cid,
                  s3_key      = "hd-admin/client_registry.rds",
-                 client_id   = "hd-admin",
+                 client_id             = "hd-admin",
+                 viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL),
                  metadata    = limit_meta)
       log_action(user        = reviewer,
                  module      = "clientes",
@@ -2138,7 +2149,8 @@ tiersServer <- function(id, shared) {
                                        old_max, new_max, reviewer),
                  target_id   = cid,
                  s3_key      = paste0(cid, "/app_audit.rds"),
-                 client_id   = cid,
+                 client_id             = cid,
+                 viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL),
                  metadata    = limit_meta)
 
       removeModal()
@@ -2312,7 +2324,8 @@ tiersServer <- function(id, shared) {
                  description = paste0("Contacto '", name, "' (", email, ") agregado a '", cid, "'"),
                  target_id   = cid,
                  s3_key      = paste0(cid, "/contacts.rds"),
-                 client_id   = "hd-admin")
+                 client_id             = "hd-admin",
+                 viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
       activity_refresh(activity_refresh() + 1L)
     }, ignoreInit = TRUE)
 
@@ -2343,7 +2356,8 @@ tiersServer <- function(id, shared) {
                  description = paste0("Contacto '", row$name[1], "' desactivado de '", cid, "'"),
                  target_id   = cid,
                  s3_key      = paste0(cid, "/contacts.rds"),
-                 client_id   = "hd-admin")
+                 client_id             = "hd-admin",
+                 viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
       activity_refresh(activity_refresh() + 1L)
     }, ignoreInit = TRUE)
 

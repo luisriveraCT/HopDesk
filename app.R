@@ -1988,14 +1988,16 @@ server <- function(input, output, session) {
                  description = sprintf("Staff switched active context to '%s'", effective_cid),
                  target_id   = effective_cid,
                  s3_key      = NA_character_,
-                 client_id   = "hd-admin")
+                 client_id   = "hd-admin",
+                 viewer_home_client_id = home_client_id())
       log_action(user        = current_user() %||% "unknown",
                  module      = "clientes",
                  action      = "external_access",
                  description = "HopDesk staff accessed this client's data (session context switch)",
                  target_id   = effective_cid,
                  s3_key      = NA_character_,
-                 client_id   = effective_cid)
+                 client_id   = effective_cid,
+                 viewer_home_client_id = home_client_id())
     }
 
     message(sprintf("[CTX] Context switch to '%s' complete", effective_cid))

@@ -105,6 +105,61 @@ home_log <- tryCatch(mock_s3readRDS("hd-admin/app_audit.rds",  "mock-bucket"), e
 
 Sys.setenv(CLIENT_ID = "networks")   # restore
 
+# ── C2. Dual-write keys off the ACTOR's true home, not Sys.getenv("CLIENT_ID") ─
+# Found 2026-07-16 while manually testing Stage 4: this app runs as ONE shared
+# deployment (CLIENT_ID env var is always "hd-admin"), so keying dual-write off
+# that fixed env var meant EVERY native client user's own action (not just
+# staff jump actions) got needlessly dual-written into hd-admin's own log.
+# viewer_home_client_id must be the actual acting session's home.
+
+Sys.setenv(CLIENT_ID = "hd-admin")   # the shared deployment's fixed env var
+
+# A native Networks user acting in their own folder — home == target — must
+# NOT dual-write into hd-admin, even though Sys.getenv("CLIENT_ID") != "networks".
+mock_s3saveRDS(.APP_AUDIT_SCHEMA(), "networks/app_audit.rds", "mock-bucket")
+mock_s3saveRDS(.APP_AUDIT_SCHEMA(), "hd-admin/app_audit.rds", "mock-bucket")
+
+log_action(
+  user        = "larm",
+  module      = "ledger_AR",
+  action      = "mover_fecha",
+  description = "native client action, own folder",
+  client_id             = "networks",
+  viewer_home_client_id = "networks"   # actor's true home == target
+)
+
+net_log_c2 <- tryCatch(mock_s3readRDS("networks/app_audit.rds", "mock-bucket"), error = function(e) NULL)
+hd_log_c2  <- tryCatch(mock_s3readRDS("hd-admin/app_audit.rds", "mock-bucket"), error = function(e) NULL)
+
+.chk(!is.null(net_log_c2) && nrow(net_log_c2) == 1L, TRUE,
+     "no-dual-write: native client's own action lands in their own folder")
+.chk(is.null(hd_log_c2) || nrow(hd_log_c2) == 0L, TRUE,
+     "no-dual-write: native client's own action does NOT leak into hd-admin")
+
+# A staff member mid-jump (home != target) — dual-write must still fire, keyed
+# off their real home, not the shared deployment's env var.
+mock_s3saveRDS(.APP_AUDIT_SCHEMA(), "networks/app_audit.rds", "mock-bucket")
+mock_s3saveRDS(.APP_AUDIT_SCHEMA(), "hd-admin/app_audit.rds", "mock-bucket")
+
+log_action(
+  user        = "bunny",
+  module      = "ledger_AR",
+  action      = "mover_fecha",
+  description = "staff action while jumped into networks",
+  client_id             = "networks",
+  viewer_home_client_id = "hd-admin"   # staff's true home != target
+)
+
+net_log_c3 <- tryCatch(mock_s3readRDS("networks/app_audit.rds", "mock-bucket"), error = function(e) NULL)
+hd_log_c3  <- tryCatch(mock_s3readRDS("hd-admin/app_audit.rds", "mock-bucket"), error = function(e) NULL)
+
+.chk(!is.null(net_log_c3) && nrow(net_log_c3) == 1L, TRUE,
+     "dual-write still fires: staff mid-jump action lands in target client log")
+.chk(!is.null(hd_log_c3) && nrow(hd_log_c3) == 1L, TRUE,
+     "dual-write still fires: staff mid-jump action also lands in their home log")
+
+Sys.setenv(CLIENT_ID = "networks")   # restore
+
 # ── D. rotate_log_if_needed: triggered at .MAX_AUDIT_ROWS ────────────────────
 
 now_ts <- Sys.time()

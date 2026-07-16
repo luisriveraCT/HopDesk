@@ -1490,7 +1490,9 @@ pagarHoyServer <- function(id, shared) {
                      paste(msg, collapse = " · "),
                      target_id = emp,
                      metadata = list(empresa = emp, n_pago = n_pago, n_abono = n_abono,
-                                     sap_ids = sap_fact_ids, man_ids = man_fact_ids))
+                                     sap_ids = sap_fact_ids, man_ids = man_fact_ids),
+                     client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+                     viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
         }
       }, ignoreInit = TRUE)
 
@@ -1714,7 +1716,9 @@ pagarHoyServer <- function(id, shared) {
                      paste(msg, collapse = " · "),
                      target_id = emp,
                      metadata = list(empresa = emp, n_cobro = n_cobro, n_abono = n_abono,
-                                     sap_ids = sap_fact_ids, man_ids = man_fact_ids))
+                                     sap_ids = sap_fact_ids, man_ids = man_fact_ids),
+                     client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+                     viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
         }
       }, ignoreInit = TRUE)
 
