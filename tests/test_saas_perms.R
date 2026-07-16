@@ -40,11 +40,13 @@ hp <- auth_resolve_perms("hopdesk", "{}")
 .chk(isTRUE(hp$can_jump_clients),            FALSE, "hopdesk: can_jump_clients=FALSE by default")
 .chk(isTRUE(hp$can_view_global_audit),       FALSE, "hopdesk: can_view_global_audit=FALSE")
 
-# dev, admin, finance, analysis: all SaaS perms FALSE
+# dev, admin, finance, analysis: all SaaS perms FALSE, except dev's
+# can_manage_invites — flipped to TRUE in Stage 2 Part C (a client's own
+# dev/IT can invite their own teammates without asking Hopdesk).
 for (t in c("dev", "admin", "finance", "analysis")) {
   p <- auth_resolve_perms(t, "{}")
   .chk(isTRUE(p$can_approve_clients),      FALSE, sprintf("%s: can_approve_clients=FALSE", t))
-  .chk(isTRUE(p$can_manage_invites),       FALSE, sprintf("%s: can_manage_invites=FALSE",  t))
+  .chk(isTRUE(p$can_manage_invites),       t == "dev", sprintf("%s: can_manage_invites=%s",  t, t == "dev"))
   .chk(isTRUE(p$can_jump_clients),         FALSE, sprintf("%s: can_jump_clients=FALSE",    t))
   .chk(isTRUE(p$can_view_global_audit),    FALSE, sprintf("%s: can_view_global_audit=FALSE", t))
 }
