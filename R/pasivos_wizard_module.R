@@ -223,7 +223,7 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
   }
   liabs <- dplyr::bind_rows(liabs, liab_row)
   save_ok <- tryCatch({
-    save_pasivos_liabilities(liabs, client_id = shared$active_client_id()); TRUE
+    save_pasivos_liabilities(liabs, client_id = shared$effective_client_id()); TRUE
   }, error = function(e) {
     message("[wizard] save_pasivos_liabilities failed: ", conditionMessage(e))
     FALSE
@@ -241,7 +241,7 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
       tryCatch(
         forecasting_set_estimate(fc_metric, Sys.Date(), liab_row$tasa_actual,
                                  source_method = "wizard_save", user = user,
-                                 client_id = shared$active_client_id()),
+                                 client_id = shared$effective_client_id()),
         error = function(e) warning("[wizard] forecasting_set_estimate failed: ", conditionMessage(e))
       )
   }
@@ -295,7 +295,7 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
     , drop = FALSE
   ]
   new_provs <- dplyr::bind_rows(others, result$keep, result$update, result$insert)
-  tryCatch(save_pasivos_provisions(new_provs, client_id = shared$active_client_id()),
+  tryCatch(save_pasivos_provisions(new_provs, client_id = shared$effective_client_id()),
            error = function(e) warning("[wizard] save_pasivos_provisions failed: ",
                                        conditionMessage(e)))
   tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
@@ -313,7 +313,7 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
     notes       = sprintf("Generated %d, updated %d, conflicts %d",
                           nrow(result$insert), nrow(result$update),
                           nrow(result$conflicts)),
-    client_id   = shared$active_client_id()
+    client_id   = shared$effective_client_id()
   ), error = function(e) NULL)
 
   shiny::removeModal()
@@ -1209,7 +1209,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     if (!nzchar(cot_en)) return(NULL)
     metric <- paste0("fx_", tolower(cot_en), "_", tolower(mon_pag))
     rate <- tryCatch(forecasting_get_estimate(metric, Sys.Date(),
-                                              client_id = shared$active_client_id()),
+                                              client_id = shared$effective_client_id()),
                      error = function(e) NA_real_)
     shiny::tags$small(class = "text-muted",
       if (!is.na(rate)) sprintf("FX usado: %.4f  (estimación: spot)", rate)

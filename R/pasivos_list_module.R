@@ -303,7 +303,7 @@ pasivos_list_module_server <- function(id, shared) {
       liabs$estado[idx[1]] <- new_estado
       liabs$updated_at[idx[1]] <- Sys.time()
       liabs$updated_by[idx[1]] <- user
-      tryCatch(save_pasivos_liabilities(liabs, client_id = shared$active_client_id()), error = function(e) NULL)
+      tryCatch(save_pasivos_liabilities(liabs, client_id = shared$effective_client_id()), error = function(e) NULL)
       shared$pasivos_liabilities_db(liabs)
       bump_sync_version("pasivos_liabilities_db")
 
@@ -317,7 +317,7 @@ pasivos_list_module_server <- function(id, shared) {
                       provs$fecha_efectiva >= Sys.Date()
         if (any(!is.na(provs_drop) & provs_drop)) {
           provs <- provs[!(!is.na(provs_drop) & provs_drop), , drop = FALSE]
-          tryCatch(save_pasivos_provisions(provs, client_id = shared$active_client_id()), error = function(e) NULL)
+          tryCatch(save_pasivos_provisions(provs, client_id = shared$effective_client_id()), error = function(e) NULL)
           tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
           shared$pasivos_provisions_db(provs)
           bump_sync_version("pasivos_provisions_db")
@@ -337,7 +337,7 @@ pasivos_list_module_server <- function(id, shared) {
         target_kind = "liability",
         target_id   = lid,
         notes       = sprintf("estado changed to %s", new_estado),
-        client_id   = shared$active_client_id()
+        client_id   = shared$effective_client_id()
       ), error = function(e) NULL)
     })
 
@@ -372,7 +372,7 @@ pasivos_list_module_server <- function(id, shared) {
       liabs$estado[idx[1]]     <- "deleted"
       liabs$updated_at[idx[1]] <- Sys.time()
       liabs$updated_by[idx[1]] <- user
-      tryCatch(save_pasivos_liabilities(liabs, client_id = shared$active_client_id()), error = function(e) NULL)
+      tryCatch(save_pasivos_liabilities(liabs, client_id = shared$effective_client_id()), error = function(e) NULL)
       shared$pasivos_liabilities_db(liabs)
       bump_sync_version("pasivos_liabilities_db")
 
@@ -385,7 +385,7 @@ pasivos_list_module_server <- function(id, shared) {
                 provs$fecha_efectiva >= Sys.Date())
       keep[is.na(keep)] <- TRUE
       provs <- provs[keep, , drop = FALSE]
-      tryCatch(save_pasivos_provisions(provs, client_id = shared$active_client_id()), error = function(e) NULL)
+      tryCatch(save_pasivos_provisions(provs, client_id = shared$effective_client_id()), error = function(e) NULL)
       tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
       shared$pasivos_provisions_db(provs)
       bump_sync_version("pasivos_provisions_db")
@@ -396,7 +396,7 @@ pasivos_list_module_server <- function(id, shared) {
         empresa     = liabs$empresa[idx[1]],
         target_kind = "liability",
         target_id   = lid,
-        client_id   = shared$active_client_id()
+        client_id   = shared$effective_client_id()
       ), error = function(e) NULL)
 
       shiny::removeModal()

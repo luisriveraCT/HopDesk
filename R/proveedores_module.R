@@ -181,13 +181,13 @@ proveedoresServer <- function(id, shared) {
     }
 
     set_provs <- function(df) {
-      save_proveedores(df, client_id = shared$active_client_id())
+      save_proveedores(df, client_id = shared$effective_client_id())
       bump_sync_version("proveedores_db")
       if (!is.null(shared$proveedores_db)) shared$proveedores_db(df)
     }
 
     set_inac <- function(df) {
-      save_proveedores_inactivos(df, client_id = shared$active_client_id())
+      save_proveedores_inactivos(df, client_id = shared$effective_client_id())
       if (!is.null(shared$proveedores_inactivos_db)) shared$proveedores_inactivos_db(df)
     }
 

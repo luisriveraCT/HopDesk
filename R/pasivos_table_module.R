@@ -317,7 +317,7 @@ pasivos_table_module_server <- function(id, shared) {
 
       new_all <- dplyr::bind_rows(existing, new_prov)
 
-      ok <- tryCatch({ save_pasivos_provisions(new_all, client_id = shared$active_client_id()); TRUE },
+      ok <- tryCatch({ save_pasivos_provisions(new_all, client_id = shared$effective_client_id()); TRUE },
                      error = function(e) {
                        shiny::showNotification(
                          paste0("Error al guardar: ", conditionMessage(e)),
@@ -337,7 +337,7 @@ pasivos_table_module_server <- function(id, shared) {
         empresa = empresa, target_kind = "provision", target_id = new_id,
         after = list(id = new_id, origin = "manual", estado = "provisional"),
         notes = "manual orphan provision via Pasivos tab",
-        client_id = shared$active_client_id()
+        client_id = shared$effective_client_id()
       ), error = function(e) NULL)
 
       shiny::removeModal()
@@ -378,7 +378,7 @@ pasivos_table_module_server <- function(id, shared) {
 
       new_all <- dplyr::bind_rows(existing, new_prov)
 
-      prov_ok <- tryCatch({ save_pasivos_provisions(new_all, client_id = shared$active_client_id()); TRUE },
+      prov_ok <- tryCatch({ save_pasivos_provisions(new_all, client_id = shared$effective_client_id()); TRUE },
                           error = function(e) {
                             shiny::showNotification(
                               paste0("Error al guardar provisión: ", conditionMessage(e)),
@@ -394,7 +394,7 @@ pasivos_table_module_server <- function(id, shared) {
         empresa = empresa, target_kind = "provision", target_id = new_id,
         after = list(id = new_id, origin = "manual", estado = "provisional"),
         notes = "manual orphan provision via Pasivos tab (with agenda staging)",
-        client_id = shared$active_client_id()
+        client_id = shared$effective_client_id()
       ), error = function(e) NULL)
 
       # ── Step 2: stage to Agenda de hoy ─────────────────────────────────────
@@ -418,12 +418,12 @@ pasivos_table_module_server <- function(id, shared) {
       )
 
       ph_existing <- tryCatch(shared$pagar_hoy_db(),
-                              error = function(e) NULL) %||% load_pagar_hoy(client_id = shared$active_client_id())
+                              error = function(e) NULL) %||% load_pagar_hoy(client_id = shared$effective_client_id())
       ph_new <- upsert_pagar_hoy(ph_existing, new_ph_row,
                                  keys = c("ledger", "Empresa", "Moneda", "Documento"))
 
       shared$pagar_hoy_db(ph_new)
-      tryCatch(save_pagar_hoy(ph_new, user, client_id = shared$active_client_id()), error = function(e)
+      tryCatch(save_pagar_hoy(ph_new, user, client_id = shared$effective_client_id()), error = function(e)
         warning("[pasivos] save_pagar_hoy failed: ", conditionMessage(e)))
 
       shiny::removeModal()

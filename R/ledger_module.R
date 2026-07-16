@@ -242,7 +242,7 @@ ledgerModuleServer <- function(id, config, shared) {
       papelera <- if (!is.null(shared$papelera_rv)) {
         tryCatch(shared$papelera_rv(), error = function(e) NULL)
       } else {
-        tryCatch(load_papelera(client_id = shared$active_client_id()), error = function(e) NULL)
+        tryCatch(load_papelera(client_id = shared$effective_client_id()), error = function(e) NULL)
       }
 
       # Anti-join for MANUAL papelera items by UUID so that only the exact
@@ -998,10 +998,10 @@ ledgerModuleServer <- function(id, config, shared) {
       new_rows[["status"]]    <- "pending"
       new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
                                 "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status"), drop = FALSE]
-      updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$active_client_id()), new_rows,
+      updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
                                   keys = c("ledger","Empresa","Moneda","Documento","Importe"))
       shared$pagar_hoy_db(updated)
-      save_pagar_hoy(updated, shared$current_user(), client_id = shared$active_client_id())
+      save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
       lbl <- if (ledger == "AR") "Agenda del d\u00eda (Cobros)" else "Agenda del d\u00eda (Pagos)"
       emps <- paste(unique(new_rows[["Empresa"]]), collapse = ", ")
       showNotification(
@@ -1051,10 +1051,10 @@ ledgerModuleServer <- function(id, config, shared) {
       new_rows[["status"]]    <- "pending"
       new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
                                 "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status"), drop = FALSE]
-      updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$active_client_id()), new_rows,
+      updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
                                   keys = c("ledger","Empresa","Moneda","Documento","Importe"))
       shared$pagar_hoy_db(updated)
-      save_pagar_hoy(updated, shared$current_user(), client_id = shared$active_client_id())
+      save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
       lbl <- if (ledger == "AR") "Agenda del d\u00eda (Cobros)" else "Agenda del d\u00eda (Pagos)"
       emps <- paste(unique(new_rows[["Empresa"]]), collapse = ", ")
       showNotification(
@@ -1189,7 +1189,7 @@ ledgerModuleServer <- function(id, config, shared) {
           }
           upd_keys <- cbind(inv_keys, ledger = ledger, stringsAsFactors = FALSE)
           updated <- unstage_pagar_hoy(ph_now, upd_keys, keys = c("ledger","Empresa","Moneda","Documento","Importe"))
-          shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$active_client_id())
+          shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
           showNotification("Quitado de la Agenda del d\u00eda.", type = "message", duration = 2)
         } else {
           lbl_tp <- if (ledger == "AR") "cobro" else "pago"
@@ -1216,9 +1216,9 @@ ledgerModuleServer <- function(id, config, shared) {
           }
           new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
                                     "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
-          updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$active_client_id()), new_rows,
+          updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
                                     keys = c("ledger","Empresa","Moneda","Documento","Importe"))
-          shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$active_client_id())
+          shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
           lbl_agenda <- if (ledger == "AR") "Agenda del d\u00eda (Cobros)" else "Agenda del d\u00eda (Pagos)"
           showNotification(
             paste0("\u2713 ", nrow(inv_keys), " factura(s) de ", row_p,
@@ -1291,7 +1291,7 @@ ledgerModuleServer <- function(id, config, shared) {
         }
         upd_keys <- cbind(inv_key, ledger=ledger, stringsAsFactors=FALSE)
         updated  <- unstage_pagar_hoy(ph_now, upd_keys, keys = c("ledger","Empresa","Moneda","Documento","Importe"))
-        shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$active_client_id())
+        shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
         showNotification("Quitado de la Agenda.", type="message", duration=2)
       } else {
         one <- inv_rows[j, , drop=FALSE]
@@ -1312,9 +1312,9 @@ ledgerModuleServer <- function(id, config, shared) {
           source     = "sap",
           stringsAsFactors = FALSE
         )
-        updated <- upsert_pagar_hoy(ph_now %||% load_pagar_hoy(client_id = shared$active_client_id()), new_row,
+        updated <- upsert_pagar_hoy(ph_now %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_row,
                                   keys = c("ledger","Empresa","Moneda","Documento","Importe"))
-        shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$active_client_id())
+        shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
         showNotification(
           paste0("Factura ", one[["Documento"]], " enviada a la Agenda."),
           type="message", duration=2)
@@ -1508,7 +1508,7 @@ ledgerModuleServer <- function(id, config, shared) {
         }
         .apply_move(keys, new_date, ledger, shared)
         .sync_staged(keys, ledger, shared$pagar_hoy_db, new_date = new_date,
-                     username = shared$current_user(), client_id = shared$active_client_id())
+                     username = shared$current_user(), client_id = shared$effective_client_id())
         showNotification(paste0(nrow(keys), " factura(s) movidas."), type = "message", duration = 2)
         session$sendCustomMessage("calCartClearSel",
           list(grpInputId = ns("cart_rows_sel"), invInputId = ns("cart_inv_sel")))
@@ -1549,7 +1549,7 @@ ledgerModuleServer <- function(id, config, shared) {
         }
         .clear_moves(keys, ledger, shared)
         .sync_staged(keys, ledger, shared$pagar_hoy_db, detail = detail,
-                     username = shared$current_user(), client_id = shared$active_client_id())
+                     username = shared$current_user(), client_id = shared$effective_client_id())
         showNotification("Fecha original restaurada.", type = "message", duration = 2)
         session$sendCustomMessage("calCartClearSel",
           list(grpInputId = ns("cart_rows_sel"), invInputId = ns("cart_inv_sel")))
@@ -1613,7 +1613,7 @@ ledgerModuleServer <- function(id, config, shared) {
       # not permanently deleted. No confirmation needed since the action is reversible.
       n_sap <- sum(sap_mask)
       if (n_sap > 0) {
-        sap_pap     <- tryCatch(load_papelera(client_id = shared$active_client_id()),
+        sap_pap     <- tryCatch(load_papelera(client_id = shared$effective_client_id()),
                                 error = function(e) .schema_papelera() |> dplyr::slice(0))
         sap_cols    <- intersect(c("Empresa","Moneda","Documento","Importe"), names(keys))
         sap_keys_sub <- keys[sap_mask, sap_cols, drop = FALSE]
@@ -1624,7 +1624,7 @@ ledgerModuleServer <- function(id, config, shared) {
         if (nrow(sap_detail) > 0) {
           sap_pap <- add_to_papelera(sap_pap, sap_detail,
                                      ledger, deleted_by = shared$current_user())
-          tryCatch(save_papelera(sap_pap, client_id = shared$active_client_id()),
+          tryCatch(save_papelera(sap_pap, client_id = shared$effective_client_id()),
                    error = function(e) showNotification(
                      paste("No se pudo guardar papelera:", e$message), type = "warning"))
           if (!is.null(shared$papelera_rv)) shared$papelera_rv(sap_pap)
@@ -1732,7 +1732,7 @@ ledgerModuleServer <- function(id, config, shared) {
       req(keys, ctx)
 
       detail <- ctx$detail
-      papelera_df <- tryCatch(load_papelera(client_id = shared$active_client_id()), error = function(e) .schema_papelera() |> dplyr::slice(0))
+      papelera_df <- tryCatch(load_papelera(client_id = shared$effective_client_id()), error = function(e) .schema_papelera() |> dplyr::slice(0))
 
       # Get full detail rows matching the keys.
       # Provision rows are matched by provision_id for precision — two provisions that
@@ -1772,7 +1772,7 @@ ledgerModuleServer <- function(id, config, shared) {
       # Add to papelera
       papelera_df <- add_to_papelera(papelera_df, rows_to_delete,
                                       ledger, deleted_by = shared$current_user())
-      tryCatch(save_papelera(papelera_df, client_id = shared$active_client_id()),
+      tryCatch(save_papelera(papelera_df, client_id = shared$effective_client_id()),
                error = function(e) showNotification(
                  paste("No se pudo guardar papelera:", e$message), type = "warning"))
       # Update shared reactive so df_combined invalidates without another S3 read
@@ -1786,7 +1786,7 @@ ledgerModuleServer <- function(id, config, shared) {
           m <- delete_manual(m, mid)
         }
         shared$manual_inv(m)
-        tryCatch(save_manual(m, client_id = shared$active_client_id()),
+        tryCatch(save_manual(m, client_id = shared$effective_client_id()),
                  error = function(e) showNotification(
                    paste("No se pudo guardar manual_inv:", e$message), type = "warning"))
       }
@@ -1806,7 +1806,7 @@ ledgerModuleServer <- function(id, config, shared) {
         if (!is.null(provs_db) && nrow(provs_db)) {
           provs_db[provs_db[["id"]] %in% prov_ids & !is.na(provs_db[["id"]]),
                    "estado"] <- "deleted"
-          tryCatch(save_pasivos_provisions(provs_db, client_id = shared$active_client_id()),
+          tryCatch(save_pasivos_provisions(provs_db, client_id = shared$effective_client_id()),
                    error = function(e) showNotification(
                      paste("No se pudo actualizar provisiones:", e$message), type = "warning"))
           tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
@@ -1867,7 +1867,7 @@ ledgerModuleServer <- function(id, config, shared) {
         tags_db <- set_invoice_tags(tags_db, ledger, rows[["Empresa"]][i], rows[["Moneda"]][i],
                                     rows[["Documento"]][i], new_tags, tagged_by=shared$current_user())
       }
-      shared$tags_db(tags_db); save_tags(tags_db, client_id = shared$active_client_id()); bump_sync_version("tags_db")
+      shared$tags_db(tags_db); save_tags(tags_db, client_id = shared$effective_client_id()); bump_sync_version("tags_db")
       showNotification("Etiquetas actualizadas.", type="message", duration=2)
     }
     observeEvent(input$tag_urgent,    { .handle_tags_once("urgent") },                ignoreInit=TRUE)
@@ -2098,7 +2098,7 @@ ledgerModuleServer <- function(id, config, shared) {
       )
       updated_moves <- upsert_moves(shared$moves_db(), new_move)
       shared$moves_db(updated_moves)
-      .save_moves_deferred(updated_moves, client_id = shared$active_client_id())
+      .save_moves_deferred(updated_moves, client_id = shared$effective_client_id())
 
       # --- field overrides (sap_overrides) ---
       ov_row <- tibble::tibble(
@@ -2123,7 +2123,7 @@ ledgerModuleServer <- function(id, config, shared) {
       updated_ov <- upsert_sap_override(shared$sap_ov_db(), ov_row)
       shared$sap_ov_db(updated_ov)
       tryCatch(
-        save_sap_overrides(updated_ov, client_id = shared$active_client_id()),
+        save_sap_overrides(updated_ov, client_id = shared$effective_client_id()),
         error = function(e) warning("[sap_edit_save] save_sap_overrides: ", e$message)
       )
 
@@ -2144,7 +2144,7 @@ ledgerModuleServer <- function(id, config, shared) {
                             abs(new_importe - orig_importe) > 0.001)
                           new_importe else NULL,
           username    = shared$current_user(),
-          client_id   = shared$active_client_id()),
+          client_id   = shared$effective_client_id()),
         error = function(e) warning("[sap_edit_save] .sync_staged: ", e$message)
       )
 
@@ -2966,7 +2966,7 @@ ledgerModuleServer <- function(id, config, shared) {
     )
   updated <- upsert_moves(moves, new_rows)
   shared$moves_db(updated)
-  .save_moves_deferred(updated, client_id = shared$active_client_id())
+  .save_moves_deferred(updated, client_id = shared$effective_client_id())
 }
 
 .clear_moves <- function(keys, ledger, shared) {
@@ -2977,7 +2977,7 @@ ledgerModuleServer <- function(id, config, shared) {
     by = c("ledger","Empresa","Moneda","Documento")
   )
   shared$moves_db(updated)
-  .save_moves_deferred(updated, client_id = shared$active_client_id())
+  .save_moves_deferred(updated, client_id = shared$effective_client_id())
 }
 
 # ── Sync pagar_hoy after a date-move, restore, or manual edit ─────────────────

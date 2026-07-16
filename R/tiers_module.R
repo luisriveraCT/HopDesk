@@ -429,14 +429,12 @@ tiersServer <- function(id, shared) {
     is_dev            <- reactive({ identical(current_tier(), "dev") })
     is_hopdesk        <- reactive({ identical(current_tier(), "hopdesk") })
     is_principal      <- reactive({ identical(current_tier(), "principal") })
+    # Stage 2 Part A: effective_client_id() (home, or jumped if mid-jump) is
+    # the single source of truth — this reactive just exposes it under this
+    # module's existing name so its ~10 internal call sites don't all need
+    # touching.
     current_client_id <- reactive({
-      tryCatch({
-        # active_client_id is set by the context switcher (hopdesk only) or login init
-        active <- shared$active_client_id()
-        if (!is.null(active) && nzchar(active)) return(active)
-        cid <- shared$current_user_info()$client_id
-        if (!is.null(cid) && nzchar(cid)) cid else tolower(Sys.getenv("CLIENT_ID"))
-      }, error = function(e) tolower(Sys.getenv("CLIENT_ID")))
+      tryCatch(shared$effective_client_id(), error = function(e) tolower(Sys.getenv("CLIENT_ID")))
     })
 
     # ── Header badge (+ context switcher for hopdesk) ────────────────────────
@@ -566,7 +564,7 @@ tiersServer <- function(id, shared) {
           return()
         }
       }
-      shared$active_client_id(new_cid)
+      shared$jump_client_id(resolve_jump_target(new_cid, shared$home_client_id()))
       message("[CTX] context switched to: ", new_cid)
       removeModal()
     })
@@ -2555,21 +2553,29 @@ tiersServer <- function(id, shared) {
     dg_selected     <- reactiveVal(list())    # list of list(client_id, label) for direct grant
     hop_grace_start <- reactiveVal(NULL)      # POSIXct when 30-min grace period began, or NULL
 
-    # Clear grace clock whenever the active client changes
-    observeEvent(shared$active_client_id(), {
+    # Clear grace clock whenever the jump changes (new jump, or back to home)
+    observeEvent(shared$jump_client_id(), {
       req(IS_ADMIN_DEPLOYMENT)
       hop_grace_start(NULL)
-    }, ignoreInit = TRUE)
+    }, ignoreInit = TRUE, ignoreNULL = FALSE)
 
-    # ── Grant watchdog: poll every 30 s while staff is inside a client context ──
-    # Revoked  → immediate kick back to hd-admin
+    # ── Grant watchdog: poll every 30 s while staff is mid-jump ─────────────────
+    # Revoked  → immediate kick back home
     # Expired  → 30-minute grace, then kick
+    # hop_watchdog_should_poll() makes this structurally impossible to reach
+    # for a session at home — staff or client — since jump_client_id() is
+    # NULL whenever there's no active jump. No more "cid != hd-admin" string
+    # check standing in for that. is_principal() stays excluded there —
+    # unlike hopdesk, principal jumps without ever needing a grant row, so a
+    # missing grant row would otherwise look like "revoked" and kick them out
+    # every 30s. is_dev() is dropped: Stage 1 made dev unable to ever set
+    # jump_client_id() at all, so that exemption was already dead — this was
+    # explicitly deferred to Stage 2 to clean up.
     observe({
       req(IS_ADMIN_DEPLOYMENT)
-      req(!isTRUE(is_principal()) && !isTRUE(is_dev()))
-      cid <- shared$active_client_id()
-      req(!is.null(cid) && nzchar(cid %||% "") && cid != "hd-admin")
-      invalidateLater(30000)   # reschedule; won't fire again once cid returns to hd-admin
+      cid <- shared$jump_client_id()
+      req(hop_watchdog_should_poll(is_principal(), cid))
+      invalidateLater(30000)   # reschedule; won't fire again once the jump ends
 
       me  <- shared$current_user() %||% ""
       now <- Sys.time()
@@ -2604,7 +2610,7 @@ tiersServer <- function(id, shared) {
           type = "error", duration = 8
         )
         hop_grace_start(NULL)
-        shared$active_client_id("hd-admin")
+        shared$jump_client_id(NULL)
         return()
       }
 
@@ -2624,7 +2630,7 @@ tiersServer <- function(id, shared) {
             type = "error", duration = 8
           )
           hop_grace_start(NULL)
-          shared$active_client_id("hd-admin")
+          shared$jump_client_id(NULL)
         }
       }
     })

@@ -138,16 +138,16 @@ settings_cuentas_observer <- function(input, output, session, shared) {
   editing_banco_id  <- reactiveVal(NULL)
 
   output$tbl_bancos_cat <- DT::renderDataTable({
-    .bancos_cat_datatable(client_id = shared$active_client_id())
+    .bancos_cat_datatable(client_id = shared$effective_client_id())
   }, server = TRUE)
 
   output$tbl_cuentas <- DT::renderDataTable({
-    .cuentas_datatable(shared, isolate(input$cta_empresa_filter %||% ""), client_id = shared$active_client_id())
+    .cuentas_datatable(shared, isolate(input$cta_empresa_filter %||% ""), client_id = shared$effective_client_id())
   }, server = TRUE)
 
   observeEvent(input$cta_empresa_filter, {
     output$tbl_cuentas <- DT::renderDataTable({
-      .cuentas_datatable(shared, input$cta_empresa_filter %||% "", client_id = shared$active_client_id())
+      .cuentas_datatable(shared, input$cta_empresa_filter %||% "", client_id = shared$effective_client_id())
     }, server = TRUE)
   }, ignoreInit = TRUE)
 
@@ -164,7 +164,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
       editing_banco_id(NULL)
       output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() }); return()
     }
-    bancos <- tryCatch(load_ctas_bancos(client_id = shared$active_client_id()), error = function(e) .schema_ctas_bancos())
+    bancos <- tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
     if (!nrow(bancos) || sel > nrow(bancos)) return()
     row <- bancos[sel, ]
     editing_banco_id(row$id); editing_cuenta_id(NULL)
@@ -179,17 +179,17 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     if (!nzchar(nombre)) {
       showNotification("El nombre del banco es obligatorio.", type = "warning"); return()
     }
-    bancos  <- tryCatch(load_ctas_bancos(client_id = shared$active_client_id()), error = function(e) .schema_ctas_bancos())
+    bancos  <- tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
     new_row <- tibble::tibble(
       id = if (is.null(eid)) uuid::UUIDgenerate() else eid,
       nombre = nombre, clave = clave
     )
     updated <- if (is.null(eid)) dplyr::bind_rows(bancos, new_row)
                else bancos |> dplyr::rows_update(new_row, by = "id", unmatched = "ignore")
-    save_ctas_bancos(updated, client_id = shared$active_client_id())
+    save_ctas_bancos(updated, client_id = shared$effective_client_id())
     editing_banco_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
-    output$tbl_bancos_cat <- DT::renderDataTable({ .bancos_cat_datatable(client_id = shared$active_client_id()) }, server = TRUE)
+    output$tbl_bancos_cat <- DT::renderDataTable({ .bancos_cat_datatable(client_id = shared$effective_client_id()) }, server = TRUE)
     showNotification(if (is.null(eid)) "Banco agregado." else "Banco actualizado.",
                      type = "message", duration = 2)
   }, ignoreInit = TRUE)
@@ -197,12 +197,12 @@ settings_cuentas_observer <- function(input, output, session, shared) {
   # ── Delete banco ──────────────────────────────────────────────────────────────
   observeEvent(input$banco_delete, {
     eid <- editing_banco_id(); if (is.null(eid)) return()
-    bancos  <- tryCatch(load_ctas_bancos(client_id = shared$active_client_id()), error = function(e) .schema_ctas_bancos())
+    bancos  <- tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
     updated <- bancos |> dplyr::filter(id != eid)
-    save_ctas_bancos(updated, client_id = shared$active_client_id())
+    save_ctas_bancos(updated, client_id = shared$effective_client_id())
     editing_banco_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
-    output$tbl_bancos_cat <- DT::renderDataTable({ .bancos_cat_datatable(client_id = shared$active_client_id()) }, server = TRUE)
+    output$tbl_bancos_cat <- DT::renderDataTable({ .bancos_cat_datatable(client_id = shared$effective_client_id()) }, server = TRUE)
     showNotification("Banco eliminado.", type = "message", duration = 2)
   }, ignoreInit = TRUE)
 
@@ -210,7 +210,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
   observeEvent(input$cta_new_cuenta, {
     editing_cuenta_id(NULL); editing_banco_id(NULL)
     sel_b  <- input$tbl_bancos_cat_rows_selected
-    bancos <- tryCatch(load_ctas_bancos(client_id = shared$active_client_id()), error = function(e) .schema_ctas_bancos())
+    bancos <- tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
     pre_b  <- if (length(sel_b) && nrow(bancos) >= sel_b) bancos$id[sel_b] else NULL
     pre_e  <- isolate(input$cta_empresa_filter %||% "")
     output$cuentas_edit_form <- renderUI({
@@ -233,7 +233,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     ctas <- ctas |> dplyr::filter(activa == TRUE)
     if (!nrow(ctas) || sel > nrow(ctas)) return()
     row    <- ctas[sel, ]
-    bancos <- tryCatch(load_ctas_bancos(client_id = shared$active_client_id()), error = function(e) .schema_ctas_bancos())
+    bancos <- tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
     editing_cuenta_id(row$id); editing_banco_id(NULL)
     output$cuentas_edit_form <- renderUI({
       .cuenta_form_ui(row, bancos, row$banco_id, ef, cmap = shared$company_map())
@@ -289,14 +289,14 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     updated <- if (is.null(eid)) dplyr::bind_rows(ctas, new_row)
                else dplyr::bind_rows(ctas |> dplyr::filter(id != eid), new_row)
 
-    save_ctas_cuentas(updated, client_id = shared$active_client_id())
+    save_ctas_cuentas(updated, client_id = shared$effective_client_id())
     bump_sync_version("ctas_cuentas")
     if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas(updated)
 
     editing_cuenta_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
     output$tbl_cuentas <- DT::renderDataTable({
-      .cuentas_datatable(shared, isolate(input$cta_empresa_filter %||% ""), client_id = shared$active_client_id())
+      .cuentas_datatable(shared, isolate(input$cta_empresa_filter %||% ""), client_id = shared$effective_client_id())
     }, server = TRUE)
     showNotification(
       if (is.null(eid)) "Cuenta agregada." else "Cuenta actualizada.",
@@ -311,13 +311,13 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     }, error = function(e) .schema_ctas_cuentas())
     updated <- ctas |> dplyr::mutate(
       activa = dplyr::if_else(id == eid, FALSE, activa))
-    save_ctas_cuentas(updated, client_id = shared$active_client_id())
+    save_ctas_cuentas(updated, client_id = shared$effective_client_id())
     bump_sync_version("ctas_cuentas")
     if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas(updated)
     editing_cuenta_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
     output$tbl_cuentas <- DT::renderDataTable({
-      .cuentas_datatable(shared, isolate(input$cta_empresa_filter %||% ""), client_id = shared$active_client_id())
+      .cuentas_datatable(shared, isolate(input$cta_empresa_filter %||% ""), client_id = shared$effective_client_id())
     }, server = TRUE)
     showNotification("Cuenta desactivada.", type = "message", duration = 2)
   }, ignoreInit = TRUE)

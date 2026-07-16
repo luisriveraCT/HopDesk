@@ -857,7 +857,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
 
       combined <- upsert_pagar_hoy(ph, new_rows)
       shared$pagar_hoy_db(combined)
-      tryCatch(save_pagar_hoy(combined, shared$current_user(), client_id = shared$active_client_id()), error = function(e) NULL)
+      tryCatch(save_pagar_hoy(combined, shared$current_user(), client_id = shared$effective_client_id()), error = function(e) NULL)
       payment_plan(list())
       showNotification(paste0(nrow(new_rows), " factura(s) enviada(s) a Agenda de Hoy."),
                        type = "message", duration = 3)

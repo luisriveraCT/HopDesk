@@ -234,7 +234,7 @@ empresasServer <- function(id, shared) {
       # Check per-user permission override
       info <- tryCatch(shared$current_user_info(), error = function(e) NULL)
       if (is.null(info)) return(FALSE)
-      all_u <- tryCatch(auth_load_usuarios(client_id = shared$active_client_id()), error = function(e) NULL)
+      all_u <- tryCatch(auth_load_usuarios(client_id = shared$effective_client_id()), error = function(e) NULL)
       if (is.null(all_u) || !nrow(all_u)) return(FALSE)
       row <- all_u[tolower(all_u$username) == tolower(info$user %||% ""), ]
       if (!nrow(row)) return(FALSE)
@@ -264,7 +264,7 @@ empresasServer <- function(id, shared) {
 
     # Helper: save + update local cache + broadcast to shared
     .save_and_broadcast <- function(df) {
-      save_empresas(df, client_id = shared$active_client_id())                         # throws on S3 failure
+      save_empresas(df, client_id = shared$effective_client_id())                         # throws on S3 failure
       bump_sync_version("empresas_db")
       .empresas_local(df)
       if (!is.null(shared$empresas_db) && is.function(shared$empresas_db))
@@ -431,7 +431,7 @@ empresasServer <- function(id, shared) {
           showNotification("Ya existe otra empresa con esas iniciales.", type = "error")
           return()
         }
-        cascade_err <- tryCatch({ rename_empresa_initials(old_ini, new_ini, client_id = shared$active_client_id()); NULL },
+        cascade_err <- tryCatch({ rename_empresa_initials(old_ini, new_ini, client_id = shared$effective_client_id()); NULL },
                                 error = function(e) e$message)
         if (!is.null(cascade_err)) {
           showNotification(paste0("Error actualizando tablas relacionadas: ", cascade_err),
@@ -465,25 +465,25 @@ empresasServer <- function(id, shared) {
       if (new_ini != old_ini) {
         tryCatch(
           if (!is.null(shared$ctas_cuentas) && is.function(shared$ctas_cuentas))
-            shared$ctas_cuentas(load_ctas_cuentas(client_id = shared$active_client_id())),
+            shared$ctas_cuentas(load_ctas_cuentas(client_id = shared$effective_client_id())),
           error = function(e) message("[EMP rename] reload ctas_cuentas: ", e$message)
         )
         tryCatch(
           if (!is.null(shared$interco_v2) && is.function(shared$interco_v2))
             shared$interco_v2(
-              load_interco_v2(client_id = shared$active_client_id()) %||%
+              load_interco_v2(client_id = shared$effective_client_id()) %||%
                 list(ar_prefix = "C", ap_prefix = "P", companies = list())
             ),
           error = function(e) message("[EMP rename] reload interco_v2: ", e$message)
         )
         tryCatch(
           if (!is.null(shared$proveedores_db) && is.function(shared$proveedores_db))
-            shared$proveedores_db(load_proveedores(client_id = shared$active_client_id())),
+            shared$proveedores_db(load_proveedores(client_id = shared$effective_client_id())),
           error = function(e) message("[EMP rename] reload proveedores: ", e$message)
         )
         tryCatch(
           if (!is.null(shared$parte_alias_map_db) && is.function(shared$parte_alias_map_db))
-            shared$parte_alias_map_db(load_parte_alias_map(client_id = shared$active_client_id())),
+            shared$parte_alias_map_db(load_parte_alias_map(client_id = shared$effective_client_id())),
           error = function(e) message("[EMP rename] reload parte_alias_map: ", e$message)
         )
       }
@@ -657,7 +657,7 @@ empresasServer <- function(id, shared) {
       }
 
       tryCatch({
-        save_group_config(cfg, client_id = shared$active_client_id())
+        save_group_config(cfg, client_id = shared$effective_client_id())
         shared$group_config(cfg)
         showNotification("Configuración del grupo guardada correctamente.",
                          type = "message", duration = 4)

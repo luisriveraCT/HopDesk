@@ -106,21 +106,21 @@ forecastingServer <- function(id, shared) {
     # ── Reactive accessors ────────────────────────────────────────────────────
     .metrics <- shiny::reactive({
       tryCatch(
-        shared$forecasting_metrics_db() %||% load_forecasting_metrics(client_id = shared$active_client_id()),
+        shared$forecasting_metrics_db() %||% load_forecasting_metrics(client_id = shared$effective_client_id()),
         error = function(e) .schema_forecasting_metrics()
       )
     })
 
     .subs <- shiny::reactive({
       tryCatch(
-        shared$forecasting_subscriptions_db() %||% load_forecasting_subscriptions(client_id = shared$active_client_id()),
+        shared$forecasting_subscriptions_db() %||% load_forecasting_subscriptions(client_id = shared$effective_client_id()),
         error = function(e) .schema_forecasting_subscriptions()
       )
     })
 
     .observations <- shiny::reactive({
       tryCatch(
-        shared$forecasting_series_observations_db() %||% load_forecasting_series_observations(client_id = shared$active_client_id()),
+        shared$forecasting_series_observations_db() %||% load_forecasting_series_observations(client_id = shared$effective_client_id()),
         error = function(e) .schema_forecasting_series_observations()
       )
     })
@@ -262,7 +262,7 @@ forecastingServer <- function(id, shared) {
       )
       # Refresh in-memory cache so reactive updates
       fcs_flush_caches()
-      obs_new <- tryCatch(load_forecasting_series_observations(client_id = shared$active_client_id()), error = function(e) NULL)
+      obs_new <- tryCatch(load_forecasting_series_observations(client_id = shared$effective_client_id()), error = function(e) NULL)
       if (!is.null(obs_new) && !is.null(shared$forecasting_series_observations_db)) {
         tryCatch(shared$forecasting_series_observations_db(obs_new), error = function(e) NULL)
       }
@@ -380,12 +380,12 @@ forecastingServer <- function(id, shared) {
       if (!nzchar(sub_id) || !nzchar(new_meth)) { shiny::removeModal(); return() }
 
       user <- tryCatch(shared$current_user(), error = function(e) "system")
-      subs <- load_forecasting_subscriptions(client_id = shared$active_client_id())
+      subs <- load_forecasting_subscriptions(client_id = shared$effective_client_id())
       idx  <- which(subs$subscription_id == sub_id)
       if (!length(idx)) { shiny::removeModal(); return() }
       subs$method_id[idx[1]]  <- new_meth
       subs$updated_at[idx[1]] <- Sys.time()
-      save_forecasting_subscriptions(subs, client_id = shared$active_client_id())
+      save_forecasting_subscriptions(subs, client_id = shared$effective_client_id())
       tryCatch(shared$forecasting_subscriptions_db(subs), error = function(e) NULL)
       shiny::removeModal()
       shiny::showNotification("Suscripción actualizada.", type = "message", duration = 3)
@@ -439,9 +439,9 @@ forecastingServer <- function(id, shared) {
         updated_at      = now,
         notes           = NA_character_
       )
-      subs    <- load_forecasting_subscriptions(client_id = shared$active_client_id())
+      subs    <- load_forecasting_subscriptions(client_id = shared$effective_client_id())
       updated <- dplyr::bind_rows(subs, new_sub)
-      save_forecasting_subscriptions(updated, client_id = shared$active_client_id())
+      save_forecasting_subscriptions(updated, client_id = shared$effective_client_id())
       tryCatch(shared$forecasting_subscriptions_db(updated), error = function(e) NULL)
       shiny::removeModal()
       shiny::showNotification("Suscripción global creada.", type = "message", duration = 3)

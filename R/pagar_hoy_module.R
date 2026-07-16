@@ -148,7 +148,7 @@ pagarHoyServer <- function(id, shared) {
         if (!nzchar(user %||% "")) return()
         loaded <<- TRUE
         stored <- tryCatch(
-          load_saldos_apertura_user(user, client_id = shared$active_client_id()),
+          load_saldos_apertura_user(user, client_id = shared$effective_client_id()),
           error = function(e) list()
         )
         if (length(stored)) {
@@ -188,7 +188,7 @@ pagarHoyServer <- function(id, shared) {
       if (!is.null(shared$proveedores_db)) {
         shared$proveedores_db()
       } else {
-        tryCatch(load_proveedores(client_id = shared$active_client_id()), error = function(e) .schema_proveedores())
+        tryCatch(load_proveedores(client_id = shared$effective_client_id()), error = function(e) .schema_proveedores())
       }
     })
 
@@ -233,7 +233,7 @@ pagarHoyServer <- function(id, shared) {
       # fuzzy matching. Empresa "" means "applies to all companies".
       override_map <- tryCatch(
         if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db()
-        else load_parte_alias_map(client_id = shared$active_client_id()),
+        else load_parte_alias_map(client_id = shared$effective_client_id()),
         error = function(e) NULL
       )
 
@@ -575,7 +575,7 @@ pagarHoyServer <- function(id, shared) {
         saldos_apertura(sa)
         tryCatch(
           save_saldos_apertura_user(sa, shared$current_user(),
-                                    client_id = shared$active_client_id()),
+                                    client_id = shared$effective_client_id()),
           error = function(e) NULL
         )
       }, ignoreInit = TRUE)
@@ -1170,7 +1170,7 @@ pagarHoyServer <- function(id, shared) {
         }
         ph <- unstage_pagar_hoy(shared$pagar_hoy_db(),
                rows |> dplyr::select(id), keys = "id")
-        shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$active_client_id())
+        shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
 
         # Revert any pasivos provisions linked to the removed rows
         prov_ids <- rows$provision_id[!is.na(rows$provision_id) &
@@ -1187,14 +1187,14 @@ pagarHoyServer <- function(id, shared) {
               provs$pagar_hoy_id[idx_p]  <- NA_character_
               tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
               shared$pasivos_provisions_db(provs)
-              tryCatch({ save_pasivos_provisions(provs, client_id = shared$active_client_id()); bump_sync_version("pasivos_provisions_db") },
+              tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id()); bump_sync_version("pasivos_provisions_db") },
                        error = function(e) NULL)
               if (length(manual_ids)) {
                 mi <- tryCatch(shared$manual_inv(), error = function(e) NULL)
                 if (!is.null(mi) && nrow(mi)) {
                   mi <- mi[!mi$id %in% manual_ids, , drop = FALSE]
                   shared$manual_inv(mi)
-                  tryCatch(save_manual(mi, client_id = shared$active_client_id()), error = function(e) NULL)
+                  tryCatch(save_manual(mi, client_id = shared$effective_client_id()), error = function(e) NULL)
                 }
               }
             }
@@ -1231,7 +1231,7 @@ pagarHoyServer <- function(id, shared) {
         }
         ph <- unstage_pagar_hoy(shared$pagar_hoy_db(),
                rows |> dplyr::select(id), keys = "id")
-        shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$active_client_id())
+        shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
         showNotification(paste0(nrow(rows), " cobro(s) quitado(s)."), type = "message", duration = 2)
       }, ignoreInit = TRUE)
 
@@ -1242,7 +1242,7 @@ pagarHoyServer <- function(id, shared) {
       .bancos_cuenta_choices_for <- function(emp_name, moneda) {
         cts_raw <- tryCatch(
           if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas()
-          else load_ctas_cuentas(client_id = shared$active_client_id()),
+          else load_ctas_cuentas(client_id = shared$effective_client_id()),
           error = function(e) NULL
         )
         if (is.null(cts_raw) || !nrow(cts_raw)) return(c("Sin cuenta registrada" = ""))
@@ -1267,7 +1267,7 @@ pagarHoyServer <- function(id, shared) {
 
         if (!nrow(act)) return(c("Sin cuenta registrada" = ""))
         # Resolve bank names for readable labels
-        bnk     <- tryCatch(load_ctas_bancos(client_id = shared$active_client_id()), error = function(e) .schema_ctas_bancos())
+        bnk     <- tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
         bnk_map <- setNames(bnk$nombre, bnk$id)
         setNames(act$id,
                  paste0(act$alias, " \u2014 ",
@@ -1379,7 +1379,7 @@ pagarHoyServer <- function(id, shared) {
 
           shared$bancos_confirmados(conf_db)
           tryCatch({
-            save_bancos_confirmados(conf_db, client_id = shared$active_client_id())
+            save_bancos_confirmados(conf_db, client_id = shared$effective_client_id())
             bump_sync_version("bancos_confirmados_db")
           }, error = function(e)
             showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
@@ -1407,7 +1407,7 @@ pagarHoyServer <- function(id, shared) {
         if (length(rm_ids)) {
           ph <- unstage_pagar_hoy(ph, tibble::tibble(id = rm_ids), keys = "id")
         }
-        shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$active_client_id())
+        shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
 
         # Activate abonos: write to abonos_db so calendar balance deduction takes effect
         if (nrow(abono_rows) && !is.null(shared$abonos_db)) {
@@ -1427,7 +1427,7 @@ pagarHoyServer <- function(id, shared) {
           )
           ab_updated <- upsert_abono(shared$abonos_db() %||% load_abonos(), ab_new)
           shared$abonos_db(ab_updated)
-          tryCatch(save_abonos(ab_updated, client_id = shared$active_client_id()),
+          tryCatch(save_abonos(ab_updated, client_id = shared$effective_client_id()),
                    error = function(e) showNotification(
                      paste("Error al guardar abono:", e$message), type = "warning"))
         }
@@ -1447,8 +1447,8 @@ pagarHoyServer <- function(id, shared) {
                               comision, FechaPago, FechaContabilizacion,
                               FechaVencimiento, cuenta_id, notas, created_by, created_at)
           tryCatch({
-            new_conc <- dplyr::bind_rows(load_conciliacion(client_id = shared$active_client_id()), conc)
-            save_conciliacion(new_conc, client_id = shared$active_client_id())
+            new_conc <- dplyr::bind_rows(load_conciliacion(client_id = shared$effective_client_id()), conc)
+            save_conciliacion(new_conc, client_id = shared$effective_client_id())
             if (!is.null(shared$conciliacion_rv))
               shared$conciliacion_rv(new_conc)
           }, error = function(e)
@@ -1470,7 +1470,7 @@ pagarHoyServer <- function(id, shared) {
             if (length(manual_ids)) {
               mi_updated <- mi[!mi$id %in% manual_ids, , drop = FALSE]
               shared$manual_inv(mi_updated)
-              tryCatch(save_manual(mi_updated, client_id = shared$active_client_id()),
+              tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id()),
                        error = function(e) showNotification(
                          paste("Error al eliminar entrada manual:", e$message), type = "warning"))
             }
@@ -1604,7 +1604,7 @@ pagarHoyServer <- function(id, shared) {
 
           shared$bancos_confirmados(conf_db)
           tryCatch({
-            save_bancos_confirmados(conf_db, client_id = shared$active_client_id())
+            save_bancos_confirmados(conf_db, client_id = shared$effective_client_id())
             bump_sync_version("bancos_confirmados_db")
           }, error = function(e)
             showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
@@ -1632,7 +1632,7 @@ pagarHoyServer <- function(id, shared) {
         if (length(rm_ids)) {
           ph <- unstage_pagar_hoy(ph, tibble::tibble(id = rm_ids), keys = "id")
         }
-        shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$active_client_id())
+        shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
 
         # Activate abonos: write to abonos_db so calendar balance deduction takes effect
         if (nrow(abono_rows) && !is.null(shared$abonos_db)) {
@@ -1652,7 +1652,7 @@ pagarHoyServer <- function(id, shared) {
           )
           ab_updated <- upsert_abono(shared$abonos_db() %||% load_abonos(), ab_new)
           shared$abonos_db(ab_updated)
-          tryCatch(save_abonos(ab_updated, client_id = shared$active_client_id()),
+          tryCatch(save_abonos(ab_updated, client_id = shared$effective_client_id()),
                    error = function(e) showNotification(
                      paste("Error al guardar abono:", e$message), type = "warning"))
         }
@@ -1671,8 +1671,8 @@ pagarHoyServer <- function(id, shared) {
                               comision, FechaPago, FechaContabilizacion,
                               FechaVencimiento, cuenta_id, notas, created_by, created_at)
           tryCatch({
-            new_conc <- dplyr::bind_rows(load_conciliacion(client_id = shared$active_client_id()), conc)
-            save_conciliacion(new_conc, client_id = shared$active_client_id())
+            new_conc <- dplyr::bind_rows(load_conciliacion(client_id = shared$effective_client_id()), conc)
+            save_conciliacion(new_conc, client_id = shared$effective_client_id())
             if (!is.null(shared$conciliacion_rv))
               shared$conciliacion_rv(new_conc)
           }, error = function(e)
@@ -1694,7 +1694,7 @@ pagarHoyServer <- function(id, shared) {
             if (length(manual_ids)) {
               mi_updated <- mi[!mi$id %in% manual_ids, , drop = FALSE]
               shared$manual_inv(mi_updated)
-              tryCatch(save_manual(mi_updated, client_id = shared$active_client_id()),
+              tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id()),
                        error = function(e) showNotification(
                          paste("Error al eliminar entrada manual:", e$message), type = "warning"))
             }
@@ -1784,7 +1784,7 @@ pagarHoyServer <- function(id, shared) {
       can_link <- .can_link()
       provs <- tryCatch(
         if (!is.null(shared$proveedores_db)) shared$proveedores_db()
-        else load_proveedores(client_id = shared$active_client_id()),
+        else load_proveedores(client_id = shared$effective_client_id()),
         error = function(e) NULL
       )
       if (is.null(provs)) return(NULL)
@@ -1853,12 +1853,12 @@ pagarHoyServer <- function(id, shared) {
       can_link  <- .can_link()
       provs     <- tryCatch(
         if (!is.null(shared$proveedores_db)) shared$proveedores_db()
-        else load_proveedores(client_id = shared$active_client_id()),
+        else load_proveedores(client_id = shared$effective_client_id()),
         error = function(e) NULL
       )
       override_map <- tryCatch(
         if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db()
-        else load_parte_alias_map(client_id = shared$active_client_id()),
+        else load_parte_alias_map(client_id = shared$effective_client_id()),
         error = function(e) NULL
       )
 
@@ -2014,8 +2014,8 @@ pagarHoyServer <- function(id, shared) {
 
       am  <- tryCatch(
         if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db()
-        else load_parte_alias_map(client_id = shared$active_client_id()),
-        error = function(e) load_parte_alias_map(client_id = shared$active_client_id())
+        else load_parte_alias_map(client_id = shared$effective_client_id()),
+        error = function(e) load_parte_alias_map(client_id = shared$effective_client_id())
       )
 
       # Upsert: remove existing entry for this Parte+Empresa, add new one
@@ -2030,7 +2030,7 @@ pagarHoyServer <- function(id, shared) {
         linked_at = as.character(Sys.time())
       ))
 
-      save_parte_alias_map(am, client_id = shared$active_client_id())
+      save_parte_alias_map(am, client_id = shared$effective_client_id())
       if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db(am)
 
       # Invalidate annotation cache for this parte so it re-annotates immediately
@@ -2053,15 +2053,15 @@ pagarHoyServer <- function(id, shared) {
 
       am <- tryCatch(
         if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db()
-        else load_parte_alias_map(client_id = shared$active_client_id()),
-        error = function(e) load_parte_alias_map(client_id = shared$active_client_id())
+        else load_parte_alias_map(client_id = shared$effective_client_id()),
+        error = function(e) load_parte_alias_map(client_id = shared$effective_client_id())
       )
       am <- am[!(toupper(trimws(am$Parte)) == toupper(parte) &
                  (am$Empresa == emp |
                   (emp == "" & (is.na(am$Empresa) | am$Empresa == "")))),
                , drop = FALSE]
 
-      save_parte_alias_map(am, client_id = shared$active_client_id())
+      save_parte_alias_map(am, client_id = shared$effective_client_id())
       if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db(am)
       rm(list = ls(.annot_cache), envir = .annot_cache)
       .link_counter(.link_counter() + 1L)
@@ -2317,7 +2317,7 @@ pagarHoyServer <- function(id, shared) {
     observeEvent(input$do_clear_all, {
       ph      <- shared$pagar_hoy_db() |> dplyr::filter(status != "pending")
       saved   <- tryCatch({
-        save_pagar_hoy(ph, shared$current_user(), client_id = shared$active_client_id())
+        save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
         TRUE
       }, error = function(e) {
         message("[AGENDA] do_clear_all save failed: ", e$message)
@@ -2343,7 +2343,7 @@ pagarHoyServer <- function(id, shared) {
       # Movements: cuenta_id maps to ctas_cuentas$id.
       ctas <- tryCatch(
         if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas()
-        else load_ctas_cuentas(client_id = shared$active_client_id()),
+        else load_ctas_cuentas(client_id = shared$effective_client_id()),
         error = function(e) NULL
       )
       movs <- tryCatch(shared$bancos_movimientos(), error = function(e) NULL)
@@ -2423,7 +2423,7 @@ pagarHoyServer <- function(id, shared) {
       }
       saldos_apertura(sa)
       tryCatch(
-        save_saldos_apertura_user(sa, shared$current_user(), client_id = shared$active_client_id()),
+        save_saldos_apertura_user(sa, shared$current_user(), client_id = shared$effective_client_id()),
         error = function(e) NULL)
 
       # Refresh visible numericInputs
