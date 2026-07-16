@@ -22,10 +22,88 @@
   !is.null(s) && Sys.time() < (s$expires_at - 300)
 }
 
-# ── Credential loader ──────────────────────────────────────────────────────────
+# ── Credential loader (Stage 3b: fallback-aware) ────────────────────────────────
+#
+# Resolution order:
+#   1. An active, non-deleted sap_b1_service_layer connection in this client's
+#      erp_connections.rds store (Stage 3), matching `initials` in its
+#      company_initials array — decrypted via decrypt_secret().
+#   2. If a store row exists but fails to decrypt (wrong key, corrupted blob,
+#      anything): log a LOUD warning and fall through to (3) exactly as if no
+#      row had been found. A decrypt failure must never crash the fetch —
+#      only be visible in the logs.
+#   3. Legacy SAP_{INITIALS}_* env vars — unchanged, still the fallback safety
+#      net. Do not remove this path; that is a distinct future decision, not
+#      this stage's call to make.
+#   4. Neither has anything: same "Missing SAP credentials" error as before —
+#      no change to that failure mode.
+#
+# `client_id`: the caller (ultimately app.R's load_sap_data(), which has
+# access to the session's effective_client_id()) passes this down explicitly.
+# NULL falls back to Sys.getenv("CLIENT_ID") so every existing caller that
+# doesn't pass it (tests, other call sites) keeps today's exact behavior.
+.sap_creds <- function(initials, client_id = NULL) {
+  i   <- toupper(initials)
+  cid <- client_id %||% Sys.getenv("CLIENT_ID")
 
-.sap_creds <- function(initials) {
-  i <- toupper(initials)
+  store_creds <- if (nzchar(cid)) .sap_creds_from_store(i, cid) else NULL
+  if (!is.null(store_creds)) return(store_creds)
+
+  .sap_creds_from_env(i)
+}
+
+# In-memory record of which path last served each company's credentials —
+# not a new persisted tracking mechanism, just what .sap_creds() itself just
+# decided, kept around so the UI can show it (Stage 3b §3, source indicator).
+# Per-process only: on a multi-replica deployment each replica has its own.
+.sap_creds_source_log <- new.env(parent = emptyenv())
+
+#' Last-known credential source for a company, or NULL if never resolved in
+#' this process. `source` is "store" or "legacy"; `at` is a POSIXct.
+sap_creds_source <- function(initials) {
+  .sap_creds_source_log[[toupper(initials)]]
+}
+
+.sap_creds_record_source <- function(i, source) {
+  assign(i, list(source = source, at = Sys.time()), envir = .sap_creds_source_log)
+}
+
+# Returns a creds list resolved from erp_connections.rds, or NULL to signal
+# "fall through to the legacy env var path" — covers both "no matching row"
+# and "row found but failed to decrypt" (the latter also logs a loud warning).
+.sap_creds_from_store <- function(i, cid) {
+  rows <- tryCatch(load_erp_connections(cid), error = function(e) NULL)
+  if (is.null(rows) || !nrow(rows)) return(NULL)
+
+  matches <- vapply(rows$company_initials, function(x) {
+    inits <- tryCatch(jsonlite::fromJSON(x), error = function(e) character(0))
+    isTRUE(i %in% inits)
+  }, logical(1))
+  active_ok  <- !is.na(rows$active) & rows$active == TRUE
+  candidates <- rows[matches & rows$erp_type == "sap_b1_service_layer" & active_ok, , drop = FALSE]
+  if (!nrow(candidates)) return(NULL)
+
+  row     <- candidates[1, ]
+  config  <- tryCatch(jsonlite::fromJSON(row$config[1]), error = function(e) NULL)
+  secrets <- tryCatch(decrypt_secret(row$secrets_encrypted[1]), error = function(e) {
+    message(sprintf(
+      "[SAP] WARNING: erp_connections credential for %s failed to decrypt (%s) — falling back to legacy .Renviron credentials. Investigate.",
+      i, conditionMessage(e)
+    ))
+    NULL
+  })
+  if (is.null(config) || is.null(secrets)) return(NULL)
+
+  ssl_verify <- if (is.null(config$ssl_verify)) TRUE else isTRUE(config$ssl_verify) ||
+    identical(tolower(as.character(config$ssl_verify)), "true")
+
+  message(sprintf("[SAP] credentials for %s resolved from erp_connections store", i))
+  .sap_creds_record_source(i, "store")
+  list(url = config$url, company = config$company, user = secrets$user,
+       password = secrets$password, ssl_verify = ssl_verify)
+}
+
+.sap_creds_from_env <- function(i) {
   url      <- Sys.getenv(paste0("SAP_", i, "_URL"))
   company  <- Sys.getenv(paste0("SAP_", i, "_COMPANY"))
   user     <- Sys.getenv(paste0("SAP_", i, "_USER"))
@@ -44,6 +122,8 @@
   if (length(missing))
     stop("Missing SAP credentials for ", i, ": ", paste(missing, collapse = ", "), call. = FALSE)
 
+  message(sprintf("[SAP] credentials for %s resolved from legacy .Renviron (no erp_connections row / decrypt failed)", i))
+  .sap_creds_record_source(i, "legacy")
   list(url = url, company = company, user = user, password = password,
        ssl_verify = ssl_verify)
 }
@@ -113,8 +193,8 @@
   invisible(TRUE)
 }
 
-sap_login <- function(initials) {
-  creds <- .sap_creds(initials)
+sap_login <- function(initials, client_id = NULL) {
+  creds <- .sap_creds(initials, client_id = client_id)
   .sap_sessions[[initials]] <- .sap_login_raw(
     url = creds$url, company = creds$company, user = creds$user,
     password = creds$password, ssl_verify = creds$ssl_verify, label = initials
@@ -153,15 +233,15 @@ test_sap_b1_service_layer_connection <- function(config, secrets) {
   })
 }
 
-.ensure_session <- function(initials) {
-  if (!.session_valid(initials)) sap_login(initials)
+.ensure_session <- function(initials, client_id = NULL) {
+  if (!.session_valid(initials)) sap_login(initials, client_id = client_id)
 }
 
 # ── Low-level GET with pagination ──────────────────────────────────────────────
 
 .sap_get_all <- function(initials, endpoint, filter = NULL, select = NULL,
-                          top = 500) {
-  .ensure_session(initials)
+                          top = 500, client_id = NULL) {
+  .ensure_session(initials, client_id = client_id)
   s <- .sap_sessions[[initials]]
 
   # Single GET attempt — returns parsed body or stops.
@@ -208,7 +288,7 @@ test_sap_b1_service_layer_connection <- function(config, secrets) {
       sap_connection_error = function(e) stop(e),   # propagate immediately, no retry
       error = function(e) {
         # One re-auth retry — no sleep, dead hosts should already be timing out fast
-        sap_login(initials)
+        sap_login(initials, client_id = client_id)
         s <<- .sap_sessions[[initials]]
         .do_get(s, query)
       }
@@ -349,24 +429,26 @@ test_sap_b1_service_layer_connection <- function(config, secrets) {
   result_f
 }
 
-fetch_ar <- function(initials) {
+fetch_ar <- function(initials, client_id = NULL) {
   message("[SAP] Fetching AR invoices for ", initials)
   raw <- .sap_get_all(
     initials = initials,
     endpoint = "Invoices",
     filter   = "DocumentStatus eq 'bost_Open'",
-    select   = .SAP_AR_SELECT
+    select   = .SAP_AR_SELECT,
+    client_id = client_id
   )
   .parse_invoices(raw, "AR")
 }
 
-fetch_ap <- function(initials) {
+fetch_ap <- function(initials, client_id = NULL) {
   message("[SAP] Fetching AP invoices for ", initials)
   raw <- .sap_get_all(
     initials = initials,
     endpoint = "PurchaseInvoices",
     filter   = "DocumentStatus eq 'bost_Open'",
-    select   = .SAP_AP_SELECT
+    select   = .SAP_AP_SELECT,
+    client_id = client_id
   )
   .parse_invoices(raw, "AP")
 }
@@ -377,7 +459,7 @@ fetch_ap <- function(initials) {
 # Returns NULL if ALL companies fail (caller shows an error); partial failures
 # are logged and skipped.
 
-fetch_all_companies <- function(ledger = c("AR","AP"), cmap = COMPANY_MAP) {
+fetch_all_companies <- function(ledger = c("AR","AP"), cmap = COMPANY_MAP, client_id = NULL) {
   ledger <- match.arg(ledger)
   fetcher <- if (ledger == "AR") fetch_ar else fetch_ap
 
@@ -403,7 +485,7 @@ fetch_all_companies <- function(ledger = c("AR","AP"), cmap = COMPANY_MAP) {
       } else {
         message("[SAP] Fetching ", initials, " (", ledger, ") from SAP...")
         t0_co <- proc.time()
-        df <- fetcher(initials)
+        df <- fetcher(initials, client_id = client_id)
         elapsed_co <- round((proc.time() - t0_co)[["elapsed"]], 1)
         if (nrow(df)) {
           message("[SAP] ", initials, " (", ledger, ") — ", nrow(df), " rows in ",

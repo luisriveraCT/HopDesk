@@ -976,11 +976,17 @@ server <- function(input, output, session) {
   # hardcoded Networks fallback. This prevents cross-client data leakage when
   # switching from a populated client (e.g. networks) to an empty one (e.g. hopdesk).
   company_map_rv <- reactive({
-    # Admin deployment: company pills only make sense in a jumped client context.
-    # hd-admin's own S3 prefix may contain stale or seeded empresa data — ignore it
-    # here so staff never see it as a filter (it has no financial data to filter).
+    # Admin deployment: for a STAFF session, company pills only make sense in
+    # a jumped client context — hd-admin's own S3 prefix may contain stale or
+    # seeded empresa data, so ignore it while staff sit at home. This must
+    # NOT apply to a native client session: jump_client_id() is a staff-only
+    # concept and is always NULL for a client user, so checking it alone here
+    # was zeroing out every native client's own real company list too (found
+    # during Stage 3b, 2026-07-16 — the actual gate is is_staff, not "is
+    # jump_client_id set").
     if (IS_ADMIN_DEPLOYMENT) {
-      if (is.null(tryCatch(jump_client_id(), error = function(e) NULL))) return(c())
+      is_staff <- isTRUE(tryCatch(current_user_info()$is_staff, error = function(e) FALSE))
+      if (is_staff && is.null(tryCatch(jump_client_id(), error = function(e) NULL))) return(c())
     }
     df <- empresas_db()
     if (is.null(df)) return(COMPANY_MAP)  # NULL = still loading; keep static seed
@@ -1432,7 +1438,8 @@ server <- function(input, output, session) {
 
     load_ledger <- function(ledger_name) {
       result <- tryCatch(
-        fetch_all_companies(ledger_name, isolate(company_map_rv())),
+        fetch_all_companies(ledger_name, isolate(company_map_rv()),
+                            client_id = isolate(effective_client_id())),
         sap_no_connection = function(e) {
           # Transport failure (VPN/network) — fall through to snapshot silently;
           # the snapshot block below shows the dated "SAP no disponible" notification.

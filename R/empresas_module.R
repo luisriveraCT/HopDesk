@@ -640,16 +640,42 @@ empresasServer <- function(id, shared) {
     # current live state immediately before merging in `mutate_fn`'s change
     # and writing, so the write can never regress rows that changed since
     # this session's own copy was cached.
-    .erp_mutate_and_save <- function(mutate_fn) {
-      cid   <- shared$effective_client_id()
-      fresh <- load_erp_connections(cid)   # throws on failure — never fall back to a stale df here
+    # `include_deleted`: restore (Stage 3b) needs to find a row that
+    # load_erp_connections() would normally filter out — the one case where
+    # a mutation legitimately needs to see already-deleted rows.
+    .erp_mutate_and_save <- function(mutate_fn, include_deleted = FALSE) {
+      cid <- shared$effective_client_id()
+      fresh <- if (include_deleted) {
+        .normalize(.s3_read_with(S3_KEYS$erp_connections, client_id = cid), .schema_erp_connections)
+      } else {
+        load_erp_connections(cid)   # throws on failure — never fall back to a stale df here
+      }
       updated <- mutate_fn(fresh)
       save_erp_connections(updated, client_id = cid)
       .erp_connections_local(updated)
       invisible(updated)
     }
 
-    erp_modal <- reactiveValues(company = NULL, form_open = FALSE, editing_id = NULL, confirm_delete_id = NULL)
+    erp_modal <- reactiveValues(company = NULL, form_open = FALSE, editing_id = NULL,
+                                confirm_delete_id = NULL, show_deleted = FALSE)
+
+    # Deleted connections for the currently-open company's modal — a raw
+    # read (bypassing load_erp_connections()'s own deleted-row filter),
+    # scoped to just this company, feeding the "Ver eliminadas" / Restaurar
+    # UI (Stage 3b §2).
+    deleted_erp_rows <- reactive({
+      req(erp_modal$company)
+      cid <- shared$effective_client_id()
+      raw <- tryCatch(.normalize(.s3_read_with(S3_KEYS$erp_connections, client_id = cid), .schema_erp_connections),
+                      error = function(e) .schema_erp_connections())
+      if (!nrow(raw)) return(raw)
+      is_deleted  <- !is.na(raw$deleted) & raw$deleted == TRUE
+      has_company <- vapply(raw$company_initials, function(x) {
+        inits <- tryCatch(jsonlite::fromJSON(x), error = function(e) character(0))
+        isTRUE(erp_modal$company %in% inits)
+      }, logical(1))
+      raw[is_deleted & has_company, , drop = FALSE]
+    })
 
     company_erp_rows <- reactive({
       req(erp_modal$company)
@@ -736,6 +762,24 @@ empresasServer <- function(id, shared) {
         ))
       }
 
+      # Source indicator (Stage 3b §3) — small, unobtrusive, pulled straight
+      # from whatever .sap_creds() itself last logged for this company, not a
+      # new tracking mechanism.
+      src <- tryCatch(sap_creds_source(erp_modal$company), error = function(e) NULL)
+      source_indicator_ui <- if (is.null(src)) {
+        tags$p(class = "text-muted small mb-2",
+               icon("circle-info", class = "me-1"),
+               "Fuente de credenciales: sin datos todavía en esta sesión.")
+      } else {
+        label <- if (identical(src$source, "store")) "Conexión guardada" else "Variable de entorno (respaldo)"
+        color <- if (identical(src$source, "store")) "success" else "warning"
+        tags$p(class = "text-muted small mb-2",
+               icon("circle-info", class = "me-1"),
+               "Fuente de la última conexión SAP: ",
+               tags$span(class = paste0("badge bg-", color), label),
+               sprintf(" (%s)", format(src$at, "%H:%M:%S")))
+      }
+
       list_ui <- if (is.null(rows) || !nrow(rows)) {
         tags$p(class = "text-muted small", "Sin conexiones configuradas todavía.")
       } else {
@@ -797,7 +841,40 @@ empresasServer <- function(id, shared) {
                     class = "btn btn-outline-primary btn-sm mt-2")
       }
 
-      tagList(list_ui, form_ui)
+      # Restore section (Stage 3b §2) — "we really do not want any
+      # connection to get lost." Only shown when there's actually something
+      # deleted for this company, to keep the modal uncluttered otherwise.
+      del_rows <- deleted_erp_rows()
+      restore_ui <- if (!is.null(del_rows) && nrow(del_rows) > 0) {
+        tagList(
+          tags$hr(),
+          actionButton(ns("btn_toggle_deleted"),
+                      tagList(icon(if (isTRUE(erp_modal$show_deleted)) "eye-slash" else "eye"),
+                              if (isTRUE(erp_modal$show_deleted)) " Ocultar eliminadas"
+                              else paste0(" Ver eliminadas (", nrow(del_rows), ")")),
+                      class = "btn btn-outline-secondary btn-sm"),
+          if (isTRUE(erp_modal$show_deleted)) {
+            tagList(lapply(seq_len(nrow(del_rows)), function(i) {
+              r <- del_rows[i, ]
+              div(
+                class = "d-flex align-items-center justify-content-between border rounded p-2 mt-2",
+                style = "opacity: 0.75;",
+                div(
+                  tags$strong(r$label), " ",
+                  tags$span(class = "badge bg-secondary", "Eliminada"),
+                  tags$div(class = "text-muted small", paste0("Eliminada: ", r$deleted_at))
+                ),
+                tags$button(class = "btn btn-sm btn-outline-success", title = "Restaurar",
+                  onclick = sprintf("Shiny.setInputValue('%s','%s',{priority:'event'})",
+                                    ns("erp_restore_click"), r$id),
+                  tagList(icon("rotate-left"), " Restaurar"))
+              )
+            }))
+          } else NULL
+        )
+      } else NULL
+
+      tagList(source_indicator_ui, list_ui, restore_ui, form_ui)
     })
 
     observeEvent(input$erp_open_click, {
@@ -806,6 +883,7 @@ empresasServer <- function(id, shared) {
       erp_modal$form_open         <- FALSE
       erp_modal$editing_id        <- NULL
       erp_modal$confirm_delete_id <- NULL
+      erp_modal$show_deleted      <- FALSE
       showModal(modalDialog(
         title = tagList(icon("plug"), paste0(" Conexiones ERP — ", input$erp_open_click)),
         uiOutput(ns("erp_modal_body")),
@@ -980,6 +1058,37 @@ empresasServer <- function(id, shared) {
       erp_modal$confirm_delete_id <- NULL
       if (!saved) return()
       showNotification("Conexión eliminada.", type = "message", duration = 3)
+    })
+
+    # ── Restore (Stage 3b §2) ──────────────────────────────────────────────────
+
+    observeEvent(input$btn_toggle_deleted, {
+      erp_modal$show_deleted <- !isTRUE(erp_modal$show_deleted)
+    })
+
+    observeEvent(input$erp_restore_click, {
+      if (!isTRUE(erp_access())) { .reject_erp_action(); return() }
+
+      id <- input$erp_restore_click
+      saved <- tryCatch({
+        .erp_mutate_and_save(function(all_df) {
+          idx <- which(all_df$id == id)
+          if (length(idx) != 1) stop("Esta conexión ya no existe.")
+          all_df[idx, "deleted"]    <- FALSE
+          all_df[idx, "deleted_at"] <- NA_character_
+          all_df[idx, "active"]     <- TRUE
+          all_df
+        }, include_deleted = TRUE)
+        TRUE
+      }, error = function(e) {
+        message("[EMP ERP] restore failed: ", e$message)
+        showNotification(conditionMessage(e), type = "error", duration = 6)
+        FALSE
+      })
+      if (!saved) return()
+      showNotification(
+        "Conexión restaurada. Verifica que los datos sigan siendo correctos antes de usarla.",
+        type = "message", duration = 6)
     })
 
     # ── Group configuration section (dev only) ────────────────────────────────
