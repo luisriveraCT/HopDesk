@@ -180,4 +180,122 @@ combined <- read_audit_log_test("networks")
 .chk("r1" %in% combined$id, TRUE, "combined log contains current chunk row")
 .chk("r2" %in% combined$id, TRUE, "combined log contains archived chunk row")
 
+# ── F. read_audit_log: until= excludes rows after the boundary ──────────────
+
+now_ts <- Sys.time()
+until_log <- dplyr::bind_rows(
+  make_row("u1", "old",   delta_secs = -7200),  # 2h before now
+  make_row("u2", "recent", delta_secs = -60)    # 1min before now
+)
+mock_s3saveRDS(until_log, "networks/app_audit.rds", "mock-bucket")
+rm(list = ls(.mock_s3_store)[startsWith(ls(.mock_s3_store), "networks/app_audit_")],
+   envir = .mock_s3_store)
+mock_s3saveRDS(.APP_AUDIT_SCHEMA(), "networks/app_audit_001.rds", "mock-bucket")
+
+until_result <- read_audit_log(client_id = "networks", until = now_ts - 3600)
+.chk("u1" %in% until_result$id, TRUE, "until: keeps rows at/before the boundary")
+.chk("u2" %in% until_result$id, FALSE, "until: excludes rows after the boundary")
+
+since_until_result <- read_audit_log(client_id = "networks",
+                                     since = now_ts - 7260, until = now_ts - 3600)
+.chk(nrow(since_until_result), 1L, "since+until: narrows to exactly the rows inside the window")
+
+# ── G. read_audit_log_scoped: the three visibility rules (Part C) ───────────
+
+cat("\n  Scoped audit reads ──\n")
+
+.expect_error <- function(expr_fn, label) {
+  ok <- tryCatch({ expr_fn(); FALSE }, error = function(e) TRUE)
+  .chk(ok, TRUE, label)
+}
+
+# G1. A plain hopdesk session (no can_view_staff_audit_log override) requesting
+#     the hd-admin staff log gets a loud error, not an empty table.
+.expect_error(function() {
+  read_audit_log_scoped(
+    requested_client_id         = "hd-admin",
+    viewer_is_staff             = TRUE,
+    viewer_can_view_client_logs = TRUE,
+    viewer_can_view_staff_log   = FALSE,
+    viewer_home_client_id       = "hd-admin"
+  )
+}, "scoped: plain hopdesk requesting hd-admin log -> error")
+
+# G2. A finance-tier session at networks requesting a different client's log
+#     (hopdesk's own folder) gets a loud error.
+.expect_error(function() {
+  read_audit_log_scoped(
+    requested_client_id         = "hopdesk",
+    viewer_is_staff             = FALSE,
+    viewer_can_view_client_logs = FALSE,
+    viewer_can_view_staff_log   = FALSE,
+    viewer_home_client_id       = "networks"
+  )
+}, "scoped: finance@networks requesting a different client's log -> error")
+
+# G3. A hopdesk session requesting a client's log succeeds — this is exactly
+#     what "hopdesk sees client logs" means.
+ok_hopdesk_client <- tryCatch({
+  read_audit_log_scoped(
+    requested_client_id         = "networks",
+    viewer_is_staff             = TRUE,
+    viewer_can_view_client_logs = TRUE,
+    viewer_can_view_staff_log   = FALSE,
+    viewer_home_client_id       = "hd-admin"
+  )
+  TRUE
+}, error = function(e) FALSE)
+.chk(ok_hopdesk_client, TRUE, "scoped: hopdesk requesting networks log -> succeeds")
+
+# G3b. A hopdesk session WITHOUT can_view_client_audit_logs requesting a
+#      client's log still gets a loud error (defense in depth).
+.expect_error(function() {
+  read_audit_log_scoped(
+    requested_client_id         = "networks",
+    viewer_is_staff             = TRUE,
+    viewer_can_view_client_logs = FALSE,
+    viewer_can_view_staff_log   = FALSE,
+    viewer_home_client_id       = "hd-admin"
+  )
+}, "scoped: hopdesk without can_view_client_audit_logs requesting networks -> error")
+
+# G4. A principal session can request hd-admin and any client successfully.
+ok_principal_hd <- tryCatch({
+  read_audit_log_scoped(
+    requested_client_id         = "hd-admin",
+    viewer_is_staff             = TRUE,
+    viewer_can_view_client_logs = TRUE,
+    viewer_can_view_staff_log   = TRUE,
+    viewer_home_client_id       = "hd-admin"
+  )
+  TRUE
+}, error = function(e) FALSE)
+.chk(ok_principal_hd, TRUE, "scoped: principal requesting hd-admin log -> succeeds")
+
+ok_principal_client <- tryCatch({
+  read_audit_log_scoped(
+    requested_client_id         = "networks",
+    viewer_is_staff             = TRUE,
+    viewer_can_view_client_logs = TRUE,
+    viewer_can_view_staff_log   = TRUE,
+    viewer_home_client_id       = "hd-admin"
+  )
+  TRUE
+}, error = function(e) FALSE)
+.chk(ok_principal_client, TRUE, "scoped: principal requesting a client log -> succeeds")
+
+# G5. A native client user requesting their own home client's log succeeds
+#     (regression: Actividad's existing behavior for a client's own users).
+ok_native_home <- tryCatch({
+  read_audit_log_scoped(
+    requested_client_id         = "networks",
+    viewer_is_staff             = FALSE,
+    viewer_can_view_client_logs = FALSE,
+    viewer_can_view_staff_log   = FALSE,
+    viewer_home_client_id       = "networks"
+  )
+  TRUE
+}, error = function(e) FALSE)
+.chk(ok_native_home, TRUE, "scoped: native client requesting own home log -> succeeds")
+
 cat("\n")

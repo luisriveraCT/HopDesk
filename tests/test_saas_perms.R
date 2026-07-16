@@ -30,25 +30,30 @@ pp <- auth_resolve_perms("principal", "{}")
 .chk(isTRUE(pp$can_manage_hopdesk_perms),    TRUE, "principal: can_manage_hopdesk_perms=TRUE")
 .chk(isTRUE(pp$can_jump_clients),            TRUE, "principal: can_jump_clients=TRUE")
 .chk(isTRUE(pp$can_manage_invites),          TRUE, "principal: can_manage_invites=TRUE")
-.chk(isTRUE(pp$can_view_global_audit),       TRUE, "principal: can_view_global_audit=TRUE")
+.chk(isTRUE(pp$can_view_client_audit_logs),  TRUE, "principal: can_view_client_audit_logs=TRUE")
+.chk(isTRUE(pp$can_view_staff_audit_log),    TRUE, "principal: can_view_staff_audit_log=TRUE")
 
-# hopdesk: can_manage_invites TRUE, but NOT can_approve_clients
+# hopdesk: can_manage_invites TRUE, but NOT can_approve_clients.
+# Stage 4: hopdesk sees any client's audit log by default, but never
+# Hopdesk's own staff activity log (ARCHITECTURE.md §6).
 hp <- auth_resolve_perms("hopdesk", "{}")
 .chk(isTRUE(hp$can_manage_invites),          TRUE,  "hopdesk: can_manage_invites=TRUE")
 .chk(isTRUE(hp$can_approve_clients),         FALSE, "hopdesk: can_approve_clients=FALSE")
 .chk(isTRUE(hp$can_manage_hopdesk_perms),    FALSE, "hopdesk: can_manage_hopdesk_perms=FALSE")
 .chk(isTRUE(hp$can_jump_clients),            FALSE, "hopdesk: can_jump_clients=FALSE by default")
-.chk(isTRUE(hp$can_view_global_audit),       FALSE, "hopdesk: can_view_global_audit=FALSE")
+.chk(isTRUE(hp$can_view_client_audit_logs),  TRUE,  "hopdesk: can_view_client_audit_logs=TRUE by default")
+.chk(isTRUE(hp$can_view_staff_audit_log),    FALSE, "hopdesk: can_view_staff_audit_log=FALSE")
 
 # dev, admin, finance, analysis: all SaaS perms FALSE, except dev's
 # can_manage_invites — flipped to TRUE in Stage 2 Part C (a client's own
 # dev/IT can invite their own teammates without asking Hopdesk).
 for (t in c("dev", "admin", "finance", "analysis")) {
   p <- auth_resolve_perms(t, "{}")
-  .chk(isTRUE(p$can_approve_clients),      FALSE, sprintf("%s: can_approve_clients=FALSE", t))
-  .chk(isTRUE(p$can_manage_invites),       t == "dev", sprintf("%s: can_manage_invites=%s",  t, t == "dev"))
-  .chk(isTRUE(p$can_jump_clients),         FALSE, sprintf("%s: can_jump_clients=FALSE",    t))
-  .chk(isTRUE(p$can_view_global_audit),    FALSE, sprintf("%s: can_view_global_audit=FALSE", t))
+  .chk(isTRUE(p$can_approve_clients),          FALSE, sprintf("%s: can_approve_clients=FALSE", t))
+  .chk(isTRUE(p$can_manage_invites),           t == "dev", sprintf("%s: can_manage_invites=%s",  t, t == "dev"))
+  .chk(isTRUE(p$can_jump_clients),             FALSE, sprintf("%s: can_jump_clients=FALSE",    t))
+  .chk(isTRUE(p$can_view_client_audit_logs),   FALSE, sprintf("%s: can_view_client_audit_logs=FALSE", t))
+  .chk(isTRUE(p$can_view_staff_audit_log),     FALSE, sprintf("%s: can_view_staff_audit_log=FALSE", t))
 }
 
 # ── B. Override merging ───────────────────────────────────────────────────────

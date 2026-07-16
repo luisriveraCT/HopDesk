@@ -250,11 +250,12 @@ auth_resolve_perms <- function(tier, permisos_json) {
       can_manage_providers = TRUE, can_manage_users = TRUE, can_view_tiers = TRUE,
       can_manage_empresas = TRUE,
       # SaaS admin permissions — locked TRUE for principal
-      can_approve_clients      = TRUE,
-      can_manage_hopdesk_perms = TRUE,
-      can_jump_clients         = TRUE,
-      can_manage_invites       = TRUE,
-      can_view_global_audit    = TRUE
+      can_approve_clients        = TRUE,
+      can_manage_hopdesk_perms   = TRUE,
+      can_jump_clients           = TRUE,
+      can_manage_invites         = TRUE,
+      can_view_client_audit_logs = TRUE,
+      can_view_staff_audit_log   = TRUE
     ),
     hopdesk = list(
       can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
@@ -262,11 +263,12 @@ auth_resolve_perms <- function(tier, permisos_json) {
       can_move_invoices = TRUE, can_manage_tags = TRUE, can_export_pdf = TRUE,
       can_manage_providers = TRUE, can_manage_users = TRUE, can_view_tiers = TRUE,
       can_manage_empresas = TRUE,
-      can_approve_clients      = FALSE,
-      can_manage_hopdesk_perms = FALSE,
-      can_jump_clients         = FALSE,
-      can_manage_invites       = TRUE,
-      can_view_global_audit    = FALSE
+      can_approve_clients        = FALSE,
+      can_manage_hopdesk_perms   = FALSE,
+      can_jump_clients           = FALSE,
+      can_manage_invites         = TRUE,
+      can_view_client_audit_logs = TRUE,
+      can_view_staff_audit_log   = FALSE
     ),
     dev = list(
       can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
@@ -280,7 +282,8 @@ auth_resolve_perms <- function(tier, permisos_json) {
       # Mouse). Note: tiers_module.R's Invitaciones tab gate is tier-equality
       # based like its siblings, not driven by this flag directly — this
       # default documents the intended permission, it isn't itself consulted.
-      can_jump_clients = FALSE, can_manage_invites = TRUE, can_view_global_audit = FALSE
+      can_jump_clients = FALSE, can_manage_invites = TRUE,
+      can_view_client_audit_logs = FALSE, can_view_staff_audit_log = FALSE
     ),
     admin = list(
       can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
@@ -289,7 +292,8 @@ auth_resolve_perms <- function(tier, permisos_json) {
       can_manage_providers = TRUE, can_manage_users = TRUE, can_view_tiers = FALSE,
       can_manage_empresas = TRUE,
       can_approve_clients = FALSE, can_manage_hopdesk_perms = FALSE,
-      can_jump_clients = FALSE, can_manage_invites = FALSE, can_view_global_audit = FALSE
+      can_jump_clients = FALSE, can_manage_invites = FALSE,
+      can_view_client_audit_logs = FALSE, can_view_staff_audit_log = FALSE
     ),
     finance = list(
       can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
@@ -298,7 +302,8 @@ auth_resolve_perms <- function(tier, permisos_json) {
       can_manage_providers = FALSE, can_manage_users = FALSE, can_view_tiers = FALSE,
       can_manage_empresas = FALSE,
       can_approve_clients = FALSE, can_manage_hopdesk_perms = FALSE,
-      can_jump_clients = FALSE, can_manage_invites = FALSE, can_view_global_audit = FALSE
+      can_jump_clients = FALSE, can_manage_invites = FALSE,
+      can_view_client_audit_logs = FALSE, can_view_staff_audit_log = FALSE
     ),
     analysis = list(
       can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
@@ -307,7 +312,8 @@ auth_resolve_perms <- function(tier, permisos_json) {
       can_manage_providers = FALSE, can_manage_users = FALSE, can_view_tiers = FALSE,
       can_manage_empresas = FALSE,
       can_approve_clients = FALSE, can_manage_hopdesk_perms = FALSE,
-      can_jump_clients = FALSE, can_manage_invites = FALSE, can_view_global_audit = FALSE
+      can_jump_clients = FALSE, can_manage_invites = FALSE,
+      can_view_client_audit_logs = FALSE, can_view_staff_audit_log = FALSE
     )
   )
 

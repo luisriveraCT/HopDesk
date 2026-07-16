@@ -13,6 +13,10 @@ suppressPackageStartupMessages({
   library(uuid)
   library(aws.s3)    # must load before patching its namespace
   library(openssl)   # Stage 3: ERP secret encryption
+  library(shiny)     # Stage 4: audit_log_viewer_module.R + testServer()
+  library(bslib)
+  library(DT)
+  library(shinyWidgets)
 })
 
 # ── In-memory S3 mock ─────────────────────────────────────────────────────────
@@ -103,6 +107,7 @@ source("R/jump_logic.R",     local = FALSE)
 source("R/tiers_tab_config.R", local = FALSE)
 source("R/auth.R",           local = FALSE)
 source("R/app_audit.R",      local = FALSE)
+source("R/audit_log_viewer_module.R", local = FALSE)
 source("R/email_service.R",  local = FALSE)
 source("R/secrets_encryption.R",     local = FALSE)
 source("R/erp_connector_registry.R", local = FALSE)
@@ -180,6 +185,7 @@ cat("====================================================\n\n")
 .run_module("tests/test_saas_stage2_tabs.R")
 .run_module("tests/test_saas_invites.R")
 .run_module("tests/test_saas_audit.R")
+.run_module("tests/test_saas_audit_viewer.R")
 .run_module("tests/test_saas_notifications.R")
 .run_module("tests/test_saas_limit_change.R")
 
