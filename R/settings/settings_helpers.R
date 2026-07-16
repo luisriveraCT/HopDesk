@@ -91,7 +91,7 @@ get_cuentas_ppl_data <- function(empresa, moneda, shared) {
     Empresa %in% empresa_keys, toupper(Moneda) == toupper(moneda), activa == TRUE)
   if (!nrow(matches)) return(NULL)
 
-  cid        <- tryCatch(shared$active_client_id(), error = function(e) NULL)
+  cid        <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
   bancos_cat <- tryCatch(load_ctas_bancos(client_id = cid), error = function(e) NULL)
   banco_map  <- if (!is.null(bancos_cat) && nrow(bancos_cat))
     setNames(bancos_cat$nombre, bancos_cat$id) else character(0)

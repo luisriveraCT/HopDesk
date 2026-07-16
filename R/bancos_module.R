@@ -851,18 +851,18 @@ bancosServer <- function(id, shared) {
     observe({
       if (is.null(shared$bancos_movimientos())) {
         shared$bancos_movimientos(tryCatch(
-          load_bancos_movimientos(include_deleted = TRUE, client_id = shared$active_client_id()),
+          load_bancos_movimientos(include_deleted = TRUE, client_id = shared$effective_client_id()),
           error = function(e) .schema_bancos_movimientos()
         ))
       }
       if (is.null(shared$bancos_confirmados())) {
         shared$bancos_confirmados(tryCatch(
-          load_bancos_confirmados(client_id = shared$active_client_id()), error = function(e) .schema_bancos_confirmados()
+          load_bancos_confirmados(client_id = shared$effective_client_id()), error = function(e) .schema_bancos_confirmados()
         ))
       }
       if (is.null(shared$conciliacion_rv())) {
         shared$conciliacion_rv(tryCatch(
-          load_conciliacion(client_id = shared$active_client_id()), error = function(e) .schema_conciliacion()
+          load_conciliacion(client_id = shared$effective_client_id()), error = function(e) .schema_conciliacion()
         ))
       }
     })
@@ -894,7 +894,7 @@ bancosServer <- function(id, shared) {
         movs$eliminado_at[ghost_idx] <- Sys.time()
         shared$bancos_movimientos(movs)
         tryCatch({
-          save_bancos_movimientos(movs, client_id = shared$active_client_id())
+          save_bancos_movimientos(movs, client_id = shared$effective_client_id())
           bump_sync_version("bancos_movimientos_db")
         }, error = function(e)
           message("[BANCOS] cleanup save error: ", e$message)
@@ -906,11 +906,11 @@ bancosServer <- function(id, shared) {
     # ctas_bancos loaded once for bank-name resolution (not in shared)
     ctas_bancos_rv <- reactiveVal(NULL)
     observe({
-      # Always establish a reactive dep on active_client_id so ctas_bancos
+      # Always establish a reactive dep on effective_client_id so ctas_bancos
       # reloads when the session context switches (client_id changes after login).
       # Without this, the NULL-guard fires once before login (wrong prefix) and
       # never re-fires, leaving all banco names as "—".
-      cid <- tryCatch(shared$active_client_id(), error = function(e) NULL)
+      cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
       ctas_bancos_rv(tryCatch(
         load_ctas_bancos(client_id = cid), error = function(e) .schema_ctas_bancos()
       ))
@@ -922,7 +922,7 @@ bancosServer <- function(id, shared) {
     cuentas <- reactive({
       raw_cts <- tryCatch(
         if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas()
-        else load_ctas_cuentas(client_id = shared$active_client_id()),
+        else load_ctas_cuentas(client_id = shared$effective_client_id()),
         error = function(e) NULL
       )
       df      <- .ctas_to_bancos_cuentas(raw_cts, ctas_bancos_rv())
@@ -1570,7 +1570,7 @@ bancosServer <- function(id, shared) {
       movs$eliminado[idx]    <- TRUE
       movs$eliminado_at[idx] <- Sys.time()
       shared$bancos_movimientos(movs)
-      tryCatch({ save_bancos_movimientos(movs, client_id = shared$active_client_id()); bump_sync_version("bancos_movimientos_db") },
+      tryCatch({ save_bancos_movimientos(movs, client_id = shared$effective_client_id()); bump_sync_version("bancos_movimientos_db") },
                error = function(e)
                  showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
       removeModal()
@@ -1959,8 +1959,8 @@ bancosServer <- function(id, shared) {
         shared$bancos_confirmados(result$conf)
       })
       tryCatch({
-        save_bancos_movimientos(result$movs, client_id = shared$active_client_id())
-        save_bancos_confirmados(result$conf, client_id = shared$active_client_id())
+        save_bancos_movimientos(result$movs, client_id = shared$effective_client_id())
+        save_bancos_confirmados(result$conf, client_id = shared$effective_client_id())
         bump_sync_version("bancos_movimientos_db")
         bump_sync_version("bancos_confirmados_db")
       }, error = function(e)
@@ -2007,8 +2007,8 @@ bancosServer <- function(id, shared) {
         shared$bancos_confirmados(conf)
       })
       tryCatch({
-        save_bancos_movimientos(movs, client_id = shared$active_client_id())
-        save_bancos_confirmados(conf, client_id = shared$active_client_id())
+        save_bancos_movimientos(movs, client_id = shared$effective_client_id())
+        save_bancos_confirmados(conf, client_id = shared$effective_client_id())
         bump_sync_version("bancos_movimientos_db")
         bump_sync_version("bancos_confirmados_db")
       }, error = function(e)
@@ -2114,7 +2114,7 @@ bancosServer <- function(id, shared) {
 
       movs <- dplyr::bind_rows(movs_all(), new_mov)
       shared$bancos_movimientos(movs)
-      tryCatch({ save_bancos_movimientos(movs, client_id = shared$active_client_id()); bump_sync_version("bancos_movimientos_db") },
+      tryCatch({ save_bancos_movimientos(movs, client_id = shared$effective_client_id()); bump_sync_version("bancos_movimientos_db") },
                error = function(e)
                  showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
       removeModal()
@@ -2455,7 +2455,7 @@ bancosServer <- function(id, shared) {
       shared$bancos_movimientos(movs)
       shared$bancos_confirmados(conf)
       tryCatch({
-        save_bancos_movimientos(movs, client_id = shared$active_client_id()); save_bancos_confirmados(conf, client_id = shared$active_client_id())
+        save_bancos_movimientos(movs, client_id = shared$effective_client_id()); save_bancos_confirmados(conf, client_id = shared$effective_client_id())
         bump_sync_version("bancos_movimientos_db"); bump_sync_version("bancos_confirmados_db")
       }, error = function(e)
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
@@ -2492,7 +2492,7 @@ bancosServer <- function(id, shared) {
       shared$bancos_movimientos(movs)
       shared$bancos_confirmados(conf)
       tryCatch({
-        save_bancos_movimientos(movs, client_id = shared$active_client_id()); save_bancos_confirmados(conf, client_id = shared$active_client_id())
+        save_bancos_movimientos(movs, client_id = shared$effective_client_id()); save_bancos_confirmados(conf, client_id = shared$effective_client_id())
         bump_sync_version("bancos_movimientos_db"); bump_sync_version("bancos_confirmados_db")
       }, error = function(e)
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
@@ -2676,7 +2676,7 @@ bancosServer <- function(id, shared) {
       }
 
       shared$bancos_movimientos(movs)
-      tryCatch({ save_bancos_movimientos(movs, client_id = shared$active_client_id()); bump_sync_version("bancos_movimientos_db") },
+      tryCatch({ save_bancos_movimientos(movs, client_id = shared$effective_client_id()); bump_sync_version("bancos_movimientos_db") },
                error = function(e)
                  showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
       reasig_confirm_data_rv(NULL)
@@ -2768,7 +2768,7 @@ bancosServer <- function(id, shared) {
       movs$eliminado_at[mask]  <- Sys.time()
       movs$eliminado_por[mask] <- user
       shared$bancos_movimientos(movs)
-      tryCatch({ save_bancos_movimientos(movs, client_id = shared$active_client_id()); bump_sync_version("bancos_movimientos_db") },
+      tryCatch({ save_bancos_movimientos(movs, client_id = shared$effective_client_id()); bump_sync_version("bancos_movimientos_db") },
                error = function(e)
                  showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
       delete_sesion_confirm_rv(NULL)
@@ -3098,7 +3098,7 @@ bancosServer <- function(id, shared) {
 
       movs_new <- dplyr::bind_rows(existentes, nuevos)
       shared$bancos_movimientos(movs_new)
-      tryCatch({ save_bancos_movimientos(movs_new, client_id = shared$active_client_id()); bump_sync_version("bancos_movimientos_db") },
+      tryCatch({ save_bancos_movimientos(movs_new, client_id = shared$effective_client_id()); bump_sync_version("bancos_movimientos_db") },
                error = function(e)
                  showNotification("Error al guardar. Intenta de nuevo.", type = "error"))
 
@@ -3249,7 +3249,7 @@ bancosServer <- function(id, shared) {
           movs$eliminado_at[idx_m] <- Sys.time()
           shared$bancos_movimientos(movs)
           tryCatch({
-            save_bancos_movimientos(movs, client_id = shared$active_client_id())
+            save_bancos_movimientos(movs, client_id = shared$effective_client_id())
             bump_sync_version("bancos_movimientos_db")
           }, error = function(e)
             showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
@@ -3259,7 +3259,7 @@ bancosServer <- function(id, shared) {
 
       shared$bancos_confirmados(conf)
       tryCatch({
-        save_bancos_confirmados(conf, client_id = shared$active_client_id())
+        save_bancos_confirmados(conf, client_id = shared$effective_client_id())
         bump_sync_version("bancos_confirmados_db")
       }, error = function(e)
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
@@ -3299,7 +3299,7 @@ bancosServer <- function(id, shared) {
           movs$eliminado_at[idx_m] <- Sys.time()
           shared$bancos_movimientos(movs)
           tryCatch({
-            save_bancos_movimientos(movs, client_id = shared$active_client_id())
+            save_bancos_movimientos(movs, client_id = shared$effective_client_id())
             bump_sync_version("bancos_movimientos_db")
           }, error = function(e)
             showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
@@ -3309,7 +3309,7 @@ bancosServer <- function(id, shared) {
 
       shared$bancos_confirmados(conf)
       tryCatch({
-        save_bancos_confirmados(conf, client_id = shared$active_client_id())
+        save_bancos_confirmados(conf, client_id = shared$effective_client_id())
         bump_sync_version("bancos_confirmados_db")
       }, error = function(e)
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
@@ -3356,7 +3356,7 @@ bancosServer <- function(id, shared) {
 
       shared$pagar_hoy_db(ph_updated)
       tryCatch(
-        save_pagar_hoy(ph_updated, shared$current_user(), client_id = shared$active_client_id()),
+        save_pagar_hoy(ph_updated, shared$current_user(), client_id = shared$effective_client_id()),
         error = function(e)
           showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
       )

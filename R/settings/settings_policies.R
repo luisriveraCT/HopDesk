@@ -1017,7 +1017,7 @@ settings_policies_observer <- function(input, output, session, shared) {
     }
 
     tryCatch({
-      save_policy_catalog(new_db, client_id = shared$active_client_id())
+      save_policy_catalog(new_db, client_id = shared$effective_client_id())
       bump_sync_version("policy_catalog_db")
       shared$policy_catalog_db(new_db)
       pol_trigger(pol_trigger() + 1L)
@@ -1094,7 +1094,7 @@ settings_policies_observer <- function(input, output, session, shared) {
     }
 
     tryCatch({
-      save_partner_policies(pp_new, client_id = shared$active_client_id())
+      save_partner_policies(pp_new, client_id = shared$effective_client_id())
       shared$partner_policies_db(pp_new)
       n_add <- length(to_add); n_rem <- length(to_remove)
       msg <- paste0(
@@ -1123,14 +1123,14 @@ settings_policies_observer <- function(input, output, session, shared) {
     new_db <- if (!is.null(del_id)) db[db$id != del_id, , drop = FALSE] else db
     tryCatch({
       if (!is.null(del_id)) {
-        save_policy_catalog(new_db, client_id = shared$active_client_id())
+        save_policy_catalog(new_db, client_id = shared$effective_client_id())
         bump_sync_version("policy_catalog_db")
         # Cascade: remove deleted policy from all partner assignments
         pp_old <- tryCatch(shared$partner_policies_db(), error = function(e) NULL)
         if (!is.null(pp_old) && nrow(pp_old)) {
           pp_new <- pp_old[pp_old$policy_id != del_id, , drop = FALSE]
           if (nrow(pp_new) < nrow(pp_old)) {
-            save_partner_policies(pp_new, client_id = shared$active_client_id())
+            save_partner_policies(pp_new, client_id = shared$effective_client_id())
             shared$partner_policies_db(pp_new)
           }
         }

@@ -16,7 +16,7 @@ notes_handlers <- function(input, output, session, shared,
     now <- Sys.time()
     if (as.numeric(now - .last_notes_refresh, units = "secs") < 30)
       return(invisible(NULL))
-    fresh <- tryCatch(load_notes(client_id = shared$active_client_id()), error = function(e) NULL)
+    fresh <- tryCatch(load_notes(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (!is.null(fresh) && is.data.frame(fresh)) notes_df(fresh)
     .last_notes_refresh <<- now
   }
@@ -149,7 +149,7 @@ notes_handlers <- function(input, output, session, shared,
     }
 
     notes_df(df)
-    save_notes(df, client_id = shared$active_client_id())
+    save_notes(df, client_id = shared$effective_client_id())
     bump_sync_version("notes_df")
     removeModal()
     active_note_id(NULL)
@@ -216,7 +216,7 @@ notes_handlers <- function(input, output, session, shared,
     nid <- active_note_id(); req(nid)
     df <- dplyr::filter(notes_df(), .data$id != !!nid)
     notes_df(df)
-    save_notes(df, client_id = shared$active_client_id())
+    save_notes(df, client_id = shared$effective_client_id())
     bump_sync_version("notes_df")
     removeModal()
     active_note_id(NULL)

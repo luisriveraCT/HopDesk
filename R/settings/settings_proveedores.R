@@ -152,7 +152,7 @@ settings_catalogo_edit_observer <- function(input, output, session, shared) {
     } else {
       updated <- provs |> dplyr::rows_update(new_row, by = "id", unmatched = "ignore")
     }
-    save_proveedores(updated, client_id = shared$active_client_id())
+    save_proveedores(updated, client_id = shared$effective_client_id())
     bump_sync_version("proveedores_db")
     if (!is.null(shared$proveedores_db)) shared$proveedores_db(updated)
     editing_id(NULL)
@@ -169,7 +169,7 @@ settings_catalogo_edit_observer <- function(input, output, session, shared) {
     eid <- editing_id(); if (is.null(eid)) return()
     provs   <- tryCatch(load_proveedores(), error = function(e) .schema_proveedores_local())
     updated <- provs |> dplyr::mutate(activo = dplyr::if_else(id == eid, FALSE, activo))
-    save_proveedores(updated, client_id = shared$active_client_id())
+    save_proveedores(updated, client_id = shared$effective_client_id())
     bump_sync_version("proveedores_db")
     if (!is.null(shared$proveedores_db)) shared$proveedores_db(updated)
     editing_id(NULL)

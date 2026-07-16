@@ -103,7 +103,7 @@ pasivos_manage_converted_modal_ui <- function() {
 # Creates manual_inv row + optional pagar_hoy row + flips provision state.
 # Returns list(ok, msg, manual_id, pagar_hoy_id).
 .pasivos_perform_conversion <- function(input, shared, prov_id, stage_to_agenda, user) {
-  provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()), error = function(e) NULL)
+  provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
   if (is.null(provs)) return(list(ok = FALSE, msg = "No se pudo cargar la tabla de provisiones."))
 
   prov <- provs[provs$id == prov_id, , drop = FALSE]
@@ -157,7 +157,7 @@ pasivos_manage_converted_modal_ui <- function() {
   manual_df <- shared$manual_inv()
   manual_df <- dplyr::bind_rows(manual_df, new_manual)
   shared$manual_inv(manual_df)
-  tryCatch(save_manual(manual_df, client_id = shared$active_client_id()), error = function(e)
+  tryCatch(save_manual(manual_df, client_id = shared$effective_client_id()), error = function(e)
     warning("[pasivos] save_manual failed: ", conditionMessage(e)))
 
   # 2. Optional: stage to pagar_hoy
@@ -186,12 +186,12 @@ pasivos_manage_converted_modal_ui <- function() {
       source       = "provision"
     )
     ph_df <- upsert_pagar_hoy(
-      shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$active_client_id()),
+      shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$effective_client_id()),
       new_ph_row,
       keys = c("ledger", "Empresa", "Moneda", "Documento")
     )
     shared$pagar_hoy_db(ph_df)
-    tryCatch(save_pagar_hoy(ph_df, user, client_id = shared$active_client_id()), error = function(e)
+    tryCatch(save_pagar_hoy(ph_df, user, client_id = shared$effective_client_id()), error = function(e)
       warning("[pasivos] save_pagar_hoy failed: ", conditionMessage(e)))
   }
 
@@ -202,7 +202,7 @@ pasivos_manage_converted_modal_ui <- function() {
       manual_inv_id = new_manual_id,
       pagar_hoy_id  = new_pagar_hoy_id,
       user          = user,
-      client_id     = shared$active_client_id()
+      client_id     = shared$effective_client_id()
     ),
     error = function(e) e
   )
@@ -243,12 +243,12 @@ setup_pasivos_module <- function(input, output, session, shared) {
         user        = user,
         target_kind = "provision", target_id = prov_id,
         notes       = "convert_to_item",
-        client_id   = shared$active_client_id()
+        client_id   = shared$effective_client_id()
       ), error = function(e) NULL)
       return()
     }
 
-    provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()), error = function(e) NULL)
+    provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (is.null(provs)) {
       shiny::showNotification("Error cargando provisiones.", type = "error")
       return()
@@ -272,7 +272,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     rv$pending_provision_id <- prov_id
 
-    liabs          <- tryCatch(load_pasivos_liabilities(client_id = shared$active_client_id()), error = function(e) NULL)
+    liabs          <- tryCatch(load_pasivos_liabilities(client_id = shared$effective_client_id()), error = function(e) NULL)
     empresa_choices <- tryCatch(sort(names(shared$company_map())),
                                 error = function(e) sort(names(COMPANY_MAP)))
 
@@ -302,7 +302,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     if (is.null(prov_id)) return()
     user <- tryCatch(shared$current_user(), error = function(e) "system")
 
-    provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()), error = function(e) NULL)
+    provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (is.null(provs)) {
       shiny::showNotification("Error cargando provisiones.", type = "error"); return()
     }
@@ -327,7 +327,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     provs$last_edited_by[idx]  <- user
     provs$last_edited_at[idx]  <- now
 
-    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$active_client_id()); TRUE },
+    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id()); TRUE },
                    error = function(e) {
                      shiny::showNotification(paste0("Error: ", conditionMessage(e)),
                                              type = "error"); FALSE
@@ -339,7 +339,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     # Archive a copy to the unified papelera (same S3 store used by all modules)
     tryCatch({
-      papelera_df <- tryCatch(load_papelera(client_id = shared$active_client_id()), error = function(e) .schema_papelera())
+      papelera_df <- tryCatch(load_papelera(client_id = shared$effective_client_id()), error = function(e) .schema_papelera())
       papelera_detail <- data.frame(
         id       = prov_row$id[1],
         source   = "provision",
@@ -353,7 +353,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       )
       papelera_df <- add_to_papelera(papelera_df, papelera_detail,
                                      ledger = "AP", deleted_by = user)
-      save_papelera(papelera_df, client_id = shared$active_client_id())
+      save_papelera(papelera_df, client_id = shared$effective_client_id())
       if (!is.null(shared$papelera_rv)) shared$papelera_rv(papelera_df)
     }, error = function(e)
       message("[pasivos] papelera write failed: ", conditionMessage(e)))
@@ -363,7 +363,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       user        = user,
       target_kind = "provision", target_id = prov_id,
       notes       = "soft-deleted via convert modal; archived to papelera",
-      client_id   = shared$active_client_id()
+      client_id   = shared$effective_client_id()
     ), error = function(e) NULL)
 
     rv$pending_provision_id <- NULL
@@ -377,7 +377,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     if (is.null(prov_id)) return()
     user <- tryCatch(shared$current_user(), error = function(e) "system")
 
-    provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()), error = function(e) NULL)
+    provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (is.null(provs)) {
       shiny::showNotification("Error cargando provisiones.", type = "error"); return()
     }
@@ -406,7 +406,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     provs$last_edited_by[idx] <- user
     provs$last_edited_at[idx] <- now
 
-    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$active_client_id()); TRUE },
+    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id()); TRUE },
                    error = function(e) {
                      shiny::showNotification(paste0("Error: ", conditionMessage(e)),
                                              type = "error"); FALSE
@@ -424,7 +424,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
                          importe = new_imp,
                          fecha = as.character(new_fecha)),
       notes       = "inline provision edit via convert modal",
-      client_id   = shared$active_client_id()
+      client_id   = shared$effective_client_id()
     ), error = function(e) NULL)
 
     rv$pending_provision_id <- NULL
@@ -450,7 +450,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     rv$pending_provision_id <- NULL
     tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
     tryCatch({
-      shared$pasivos_provisions_db(load_pasivos_provisions(client_id = shared$active_client_id()))
+      shared$pasivos_provisions_db(load_pasivos_provisions(client_id = shared$effective_client_id()))
     }, error = function(e) NULL)
     shiny::removeModal()
     shiny::showNotification("Provisión convertida a comprobante.", type = "message")
@@ -474,7 +474,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     rv$pending_provision_id <- NULL
     tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
     tryCatch({
-      shared$pasivos_provisions_db(load_pasivos_provisions(client_id = shared$active_client_id()))
+      shared$pasivos_provisions_db(load_pasivos_provisions(client_id = shared$effective_client_id()))
     }, error = function(e) NULL)
     shiny::removeModal()
     shiny::showNotification(
@@ -541,7 +541,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     provs <- dplyr::bind_rows(existing, new_prov)
     save_ok <- tryCatch({
-      save_pasivos_provisions(provs, client_id = shared$active_client_id())
+      save_pasivos_provisions(provs, client_id = shared$effective_client_id())
       TRUE
     }, error = function(e) {
       shiny::showNotification(
@@ -565,7 +565,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
         fecha_efectiva = as.character(input$me_fecha)
       ),
       notes     = "manual orphan provision via Agregar modal",
-      client_id = shared$active_client_id()
+      client_id = shared$effective_client_id()
     ), error = function(e) NULL)
 
     # Refresh the shared reactive so the AP calendar picks up the new provision.
@@ -586,7 +586,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     user <- tryCatch(shared$current_user(), error = function(e) "")
 
-    provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()), error = function(e) NULL)
+    provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (is.null(provs)) {
       shiny::showNotification("Error cargando provisiones.", type = "error"); return()
     }
@@ -612,7 +612,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     rv$pending_provision_id <- prov_id
 
-    liabs           <- tryCatch(load_pasivos_liabilities(client_id = shared$active_client_id()), error = function(e) NULL)
+    liabs           <- tryCatch(load_pasivos_liabilities(client_id = shared$effective_client_id()), error = function(e) NULL)
     empresa_choices <- tryCatch(sort(names(shared$company_map())),
                                 error = function(e) sort(names(COMPANY_MAP)))
 
@@ -625,7 +625,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     if (is.null(prov_id)) return(NULL)
     view <- rv$conv_mgmt_view %||% "main"
 
-    provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()), error = function(e) NULL)
+    provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (is.null(provs)) return(shiny::p(class = "text-danger", "Error cargando datos."))
     prov <- provs[provs$id == prov_id, , drop = FALSE]
     if (!nrow(prov)) return(shiny::p(class = "text-warning", "Provisión no encontrada."))
@@ -635,7 +635,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     estado   <- prov$estado[1]
     is_conf  <- estado == "item_confirmed"
 
-    manual_df <- tryCatch(load_manual(client_id = shared$active_client_id()), error = function(e) NULL)
+    manual_df <- tryCatch(load_manual(client_id = shared$effective_client_id()), error = function(e) NULL)
     man_row <- if (!is.null(manual_df) && "provision_id" %in% names(manual_df))
       manual_df[!is.na(manual_df$provision_id) & manual_df$provision_id == prov_id, , drop = FALSE]
     else data.frame()
@@ -721,7 +721,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     user <- tryCatch(shared$current_user(), error = function(e) "system")
     now  <- Sys.time()
 
-    provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()), error = function(e) NULL)
+    provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (is.null(provs)) { shiny::showNotification("Error cargando provisiones.", type = "error"); return() }
     idx <- which(provs$id == prov_id)
     if (!length(idx)) { shiny::showNotification("Provisión no encontrada.", type = "error"); return() }
@@ -734,13 +734,13 @@ setup_pasivos_module <- function(input, output, session, shared) {
     pagar_hoy_id  <- provs$pagar_hoy_id[idx[1]]
 
     # 1. Remove manual_inv entry — capture details first for pagar_hoy cleanup below
-    mi <- tryCatch(load_manual(client_id = shared$active_client_id()), error = function(e) NULL)
+    mi <- tryCatch(load_manual(client_id = shared$effective_client_id()), error = function(e) NULL)
     mi_details <- NULL
     if (!is.null(mi) && "id" %in% names(mi) && !is.na(manual_inv_id) && nzchar(manual_inv_id %||% "")) {
       mi_details <- mi[!is.na(mi$id) & mi$id == manual_inv_id, , drop = FALSE]
       if (!nrow(mi_details)) mi_details <- NULL
       mi_new <- mi[!(!is.na(mi$id) & mi$id == manual_inv_id), , drop = FALSE]
-      tryCatch(save_manual(mi_new, client_id = shared$active_client_id()), error = function(e)
+      tryCatch(save_manual(mi_new, client_id = shared$effective_client_id()), error = function(e)
         shiny::showNotification(paste("Error al guardar manual_inv:", e$message), type = "warning"))
       if (!is.null(shared$manual_inv)) shared$manual_inv(mi_new)
     }
@@ -748,7 +748,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     # 2. Remove pagar_hoy (pending only) — by FK id, by provision_id, and by
     #    business key so calendar-staged rows (no FK) are also cleaned up.
     ph <- if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db() else
-          tryCatch(load_pagar_hoy(client_id = shared$active_client_id()), error = function(e) NULL)
+          tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (!is.null(ph) && nrow(ph) > 0) {
       rm_mask <- rep(FALSE, nrow(ph))
       if (!is.na(pagar_hoy_id) && nzchar(pagar_hoy_id %||% ""))
@@ -769,7 +769,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       rm_mask <- rm_mask & (is.na(ph$status) | ph$status != "confirmed")
       if (any(rm_mask)) {
         ph_new <- ph[!rm_mask, , drop = FALSE]
-        tryCatch(save_pagar_hoy(ph_new, user, client_id = shared$active_client_id()), error = function(e)
+        tryCatch(save_pagar_hoy(ph_new, user, client_id = shared$effective_client_id()), error = function(e)
           shiny::showNotification(paste("Error al guardar agenda:", e$message), type = "warning"))
         if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db(ph_new)
       }
@@ -784,7 +784,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     provs$last_edited_by[idx]  <- user
     provs$last_edited_at[idx]  <- now
 
-    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$active_client_id()); TRUE }, error = function(e) {
+    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id()); TRUE }, error = function(e) {
       shiny::showNotification(paste("Error:", e$message), type = "error"); FALSE })
     if (!ok) return()
     tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
@@ -795,7 +795,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       action_type = "provision.revived",
       user = user, target_kind = "provision", target_id = prov_id,
       notes     = "reverted from converted to provisional via UI",
-      client_id = shared$active_client_id()
+      client_id = shared$effective_client_id()
     ), error = function(e) NULL)
 
     rv$conv_prov_id   <- NULL
@@ -811,7 +811,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     user <- tryCatch(shared$current_user(), error = function(e) "system")
     now  <- Sys.time()
 
-    provs <- tryCatch(load_pasivos_provisions(client_id = shared$active_client_id()), error = function(e) NULL)
+    provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (is.null(provs)) { shiny::showNotification("Error cargando provisiones.", type = "error"); return() }
     idx <- which(provs$id == prov_id)
     if (!length(idx)) { shiny::showNotification("Provisión no encontrada.", type = "error"); return() }
@@ -822,13 +822,13 @@ setup_pasivos_module <- function(input, output, session, shared) {
     amount_del    <- if (!is.na(prov_row$amount_pago_override[1])) prov_row$amount_pago_override[1] else prov_row$amount_pago[1]
 
     # 1. Remove manual_inv entry — capture details first for pagar_hoy cleanup below
-    mi <- tryCatch(load_manual(client_id = shared$active_client_id()), error = function(e) NULL)
+    mi <- tryCatch(load_manual(client_id = shared$effective_client_id()), error = function(e) NULL)
     mi_details <- NULL
     if (!is.null(mi) && "id" %in% names(mi) && !is.na(manual_inv_id) && nzchar(manual_inv_id %||% "")) {
       mi_details <- mi[!is.na(mi$id) & mi$id == manual_inv_id, , drop = FALSE]
       if (!nrow(mi_details)) mi_details <- NULL
       mi_new <- mi[!(!is.na(mi$id) & mi$id == manual_inv_id), , drop = FALSE]
-      tryCatch(save_manual(mi_new, client_id = shared$active_client_id()), error = function(e)
+      tryCatch(save_manual(mi_new, client_id = shared$effective_client_id()), error = function(e)
         shiny::showNotification(paste("Error al guardar manual_inv:", e$message), type = "warning"))
       if (!is.null(shared$manual_inv)) shared$manual_inv(mi_new)
     }
@@ -836,7 +836,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     # 2. Remove pagar_hoy (pending only) — by FK id, by provision_id, and by
     #    business key so calendar-staged rows (no FK) are also cleaned up.
     ph <- if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db() else
-          tryCatch(load_pagar_hoy(client_id = shared$active_client_id()), error = function(e) NULL)
+          tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (!is.null(ph) && nrow(ph) > 0) {
       rm_mask <- rep(FALSE, nrow(ph))
       if (!is.na(pagar_hoy_id) && nzchar(pagar_hoy_id %||% ""))
@@ -857,7 +857,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       rm_mask <- rm_mask & (is.na(ph$status) | ph$status != "confirmed")
       if (any(rm_mask)) {
         ph_new <- ph[!rm_mask, , drop = FALSE]
-        tryCatch(save_pagar_hoy(ph_new, user, client_id = shared$active_client_id()), error = function(e)
+        tryCatch(save_pagar_hoy(ph_new, user, client_id = shared$effective_client_id()), error = function(e)
           shiny::showNotification(paste("Error al guardar agenda:", e$message), type = "warning"))
         if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db(ph_new)
       }
@@ -868,7 +868,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     provs$last_edited_by[idx] <- user
     provs$last_edited_at[idx] <- now
 
-    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$active_client_id()); TRUE }, error = function(e) {
+    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id()); TRUE }, error = function(e) {
       shiny::showNotification(paste("Error:", e$message), type = "error"); FALSE })
     if (!ok) return()
     tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
@@ -877,7 +877,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     # 4. Archive to papelera
     tryCatch({
-      pap <- tryCatch(load_papelera(client_id = shared$active_client_id()), error = function(e) .schema_papelera())
+      pap <- tryCatch(load_papelera(client_id = shared$effective_client_id()), error = function(e) .schema_papelera())
       pap_detail <- data.frame(
         id = prov_row$id[1], source = "provision",
         Empresa = prov_row$empresa[1] %||% "", Moneda = prov_row$moneda_pago[1] %||% "MXN",
@@ -886,7 +886,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
         stringsAsFactors = FALSE
       )
       pap <- add_to_papelera(pap, pap_detail, ledger = "AP", deleted_by = user)
-      save_papelera(pap, client_id = shared$active_client_id())
+      save_papelera(pap, client_id = shared$effective_client_id())
       if (!is.null(shared$papelera_rv)) shared$papelera_rv(pap)
     }, error = function(e) message("[pasivos] papelera write failed: ", e$message))
 
@@ -894,7 +894,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       action_type = "provision.deleted",
       user = user, target_kind = "provision", target_id = prov_id,
       notes     = "hard-deleted converted provision via manage-converted UI",
-      client_id = shared$active_client_id()
+      client_id = shared$effective_client_id()
     ), error = function(e) NULL)
 
     rv$conv_prov_id   <- NULL

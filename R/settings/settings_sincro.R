@@ -123,7 +123,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
 
   # ── Open panel ──────────────────────────────────────────────────────────────
   observeEvent(input$stg_btn_sincro, {
-    cfg <- tryCatch(load_agenda_sync_config(client_id = shared$active_client_id()),
+    cfg <- tryCatch(load_agenda_sync_config(client_id = shared$effective_client_id()),
                     error = function(e) list(is_enabled = FALSE, .missing = TRUE))
     output$settings_panel <- renderUI({ .sincro_panel_ui(cfg) })
   }, ignoreInit = TRUE)
@@ -172,7 +172,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
       agendas <- setNames(
         lapply(active_users$username, function(u) {
           tryCatch(
-            load_pagar_hoy_user(u, client_id = shared$active_client_id()) |>
+            load_pagar_hoy_user(u, client_id = shared$effective_client_id()) |>
               dplyr::filter(status == "pending"),
             error = function(e) .schema_pagar_hoy()
           )
@@ -190,7 +190,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
     u     <- input$sincro_src_selected$user
     req(nzchar(u %||% ""))
     items <- tryCatch(
-      load_pagar_hoy_user(u, client_id = shared$active_client_id()) |>
+      load_pagar_hoy_user(u, client_id = shared$effective_client_id()) |>
         dplyr::filter(status == "pending"),
       error = function(e) .schema_pagar_hoy()
     )
@@ -230,18 +230,18 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
     if (is.null(u) || !nzchar(u %||% "")) {
       showNotification("Selecciona un usuario primero.", type = "warning"); return()
     }
-    chosen <- tryCatch(load_pagar_hoy_user(u, client_id = shared$active_client_id()),
+    chosen <- tryCatch(load_pagar_hoy_user(u, client_id = shared$effective_client_id()),
                        error = function(e) .schema_pagar_hoy())
 
     tryCatch({
-      save_pagar_hoy_sync(chosen, client_id = shared$active_client_id())
+      save_pagar_hoy_sync(chosen, client_id = shared$effective_client_id())
     }, error = function(e) {
       showNotification(paste("Error al guardar agenda sincronizada:", e$message), type = "error")
       return()
     })
 
     actor <- tryCatch(shared$current_user(), error = function(e) "admin")
-    tryCatch(save_agenda_sync_config(TRUE, actor, client_id = shared$active_client_id()), error = function(e) NULL)
+    tryCatch(save_agenda_sync_config(TRUE, actor, client_id = shared$effective_client_id()), error = function(e) NULL)
 
     .GlobalEnv$.agenda_sync$is_on   <- TRUE
     .GlobalEnv$.agenda_sync$data    <- chosen
@@ -264,7 +264,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
   # ── Confirm DEACTIVATE ───────────────────────────────────────────────────────
   observeEvent(input$do_sincro_desactivar, {
     current_data <- tryCatch(
-      .GlobalEnv$.agenda_sync$data %||% load_pagar_hoy_sync(client_id = shared$active_client_id()),
+      .GlobalEnv$.agenda_sync$data %||% load_pagar_hoy_sync(client_id = shared$effective_client_id()),
       error = function(e) .schema_pagar_hoy()
     )
 
@@ -279,7 +279,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
       if (!is.list(tryCatch(.GlobalEnv$.agenda_user_cache, error = function(e) NULL)))
         .GlobalEnv$.agenda_user_cache <- list()
       for (u in active$username) {
-        tryCatch(save_pagar_hoy_user(current_data, u, client_id = shared$active_client_id()),
+        tryCatch(save_pagar_hoy_user(current_data, u, client_id = shared$effective_client_id()),
                  error = function(e)
                    message("[SINCRO] copy-to-user failed for '", u, "': ", e$message))
         .GlobalEnv$.agenda_user_cache[[tolower(trimws(u))]] <- current_data
@@ -287,7 +287,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
     }
 
     actor <- tryCatch(shared$current_user(), error = function(e) "unknown")
-    tryCatch(save_agenda_sync_config(FALSE, actor, client_id = shared$active_client_id()), error = function(e) NULL)
+    tryCatch(save_agenda_sync_config(FALSE, actor, client_id = shared$effective_client_id()), error = function(e) NULL)
 
     .GlobalEnv$.agenda_sync$is_on   <- FALSE
     .GlobalEnv$.agenda_sync$data    <- NULL
@@ -295,7 +295,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
       sample(c(letters, as.character(0:9)), 12, replace = TRUE), collapse = "")
     bump_sync_version("pagar_hoy_db")
 
-    my_data <- tryCatch(load_pagar_hoy_user(actor, client_id = shared$active_client_id()),
+    my_data <- tryCatch(load_pagar_hoy_user(actor, client_id = shared$effective_client_id()),
                         error = function(e) current_data)
     pagar_hoy_db(my_data)
 

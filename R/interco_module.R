@@ -406,7 +406,7 @@ intercoServer <- function(id, shared) {
 
       combined <- upsert_pagar_hoy(ph, new_rows)
       shared$pagar_hoy_db(combined)
-      tryCatch(save_pagar_hoy(combined, shared$current_user(), client_id = shared$active_client_id()), error = function(e) NULL)
+      tryCatch(save_pagar_hoy(combined, shared$current_user(), client_id = shared$effective_client_id()), error = function(e) NULL)
       nrow(new_rows)
     }
 

@@ -275,7 +275,12 @@ auth_resolve_perms <- function(tier, permisos_json) {
       can_manage_providers = TRUE, can_manage_users = TRUE, can_view_tiers = TRUE,
       can_manage_empresas = TRUE,
       can_approve_clients = FALSE, can_manage_hopdesk_perms = FALSE,
-      can_jump_clients = FALSE, can_manage_invites = FALSE, can_view_global_audit = FALSE
+      # can_manage_invites = TRUE: a client's own dev/IT can invite their own
+      # teammates without asking Hopdesk (Stage 2 Part C, confirmed with
+      # Mouse). Note: tiers_module.R's Invitaciones tab gate is tier-equality
+      # based like its siblings, not driven by this flag directly — this
+      # default documents the intended permission, it isn't itself consulted.
+      can_jump_clients = FALSE, can_manage_invites = TRUE, can_view_global_audit = FALSE
     ),
     admin = list(
       can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,

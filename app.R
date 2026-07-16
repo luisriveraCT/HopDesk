@@ -734,15 +734,16 @@ server <- function(input, output, session) {
     }
   }, once = TRUE, ignoreNULL = TRUE)
 
-  # ── Stage 4: set active_client_id from user record at login ──────────────────
-  # Fires once per session after authentication. Sets the S3 prefix for all
-  # data loads. Staff (client_id = "hd-admin") reload native data; client users
-  # are locked to their own prefix and have no context switcher.
+  # ── Stage 4 / Stage 2 Part A: set home_client_id from user record at login ────
+  # Fires once per session after authentication and never changes again for the
+  # session's lifetime — this is the user's home, not their current context.
+  # Staff (client_id = "hd-admin") have an empty home; client users are locked
+  # to their own prefix and have no context switcher.
   observeEvent(current_user_info(), {
     info <- current_user_info()
     req(!is.null(info$user) && nzchar(info$user) && info$user != "unknown")
     cid <- info$client_id
-    if (!is.null(cid) && nzchar(cid)) active_client_id(cid)
+    if (!is.null(cid) && nzchar(cid)) home_client_id(cid)
   }, once = TRUE, ignoreNULL = TRUE)
 
   output$force_pw_error <- renderUI(NULL)
@@ -951,7 +952,17 @@ server <- function(input, output, session) {
 
   # ── Grupos data — conglomerate / client-group registry ───────────────────────
   grupos_db        <- reactiveVal(NULL)
-  active_client_id <- reactiveVal(NULL)   # NULL until login; hopdesk can switch this to any client slug
+
+  # Stage 2 Part A: home vs. jump are two structurally separate reactiveVals —
+  # never one conflated variable. home_client_id is set once at login and never
+  # changes; jump_client_id is NULL unless a staff session is mid-jump (only a
+  # session where current_user_info()$is_staff is TRUE may ever set it — see
+  # tiers_module.R's context switcher). effective_client_id is what every data
+  # loader keys off: the jumped client if any, else home.
+  home_client_id      <- reactiveVal(NULL)
+  jump_client_id      <- reactiveVal(NULL)
+  effective_client_id <- reactive({ jump_client_id() %||% home_client_id() })
+
   hop_grants_db    <- reactiveVal(.schema_hop_grants())
 
   # S3-folder isolation is the real fence: CLIENT_ID prefix in .s3_key() ensures
@@ -969,9 +980,7 @@ server <- function(input, output, session) {
     # hd-admin's own S3 prefix may contain stale or seeded empresa data — ignore it
     # here so staff never see it as a filter (it has no financial data to filter).
     if (IS_ADMIN_DEPLOYMENT) {
-      cid  <- tryCatch(active_client_id(), error = function(e) NULL)
-      home <- tolower(Sys.getenv("CLIENT_ID"))
-      if (is.null(cid) || !nzchar(cid) || tolower(cid) == home) return(c())
+      if (is.null(tryCatch(jump_client_id(), error = function(e) NULL))) return(c())
     }
     df <- empresas_db()
     if (is.null(df)) return(COMPANY_MAP)  # NULL = still loading; keep static seed
@@ -1075,7 +1084,9 @@ server <- function(input, output, session) {
     empresa_sel       = empresa_sel_rv,
     empresas_db       = empresas_db,
     grupos_db         = grupos_db,
-    active_client_id  = active_client_id,
+    home_client_id      = home_client_id,
+    jump_client_id      = jump_client_id,
+    effective_client_id = effective_client_id,
     hop_grants_db     = hop_grants_db,
     visible_initials  = visible_initials,
     company_map       = company_map_rv,
@@ -1199,22 +1210,13 @@ server <- function(input, output, session) {
   register_synced("conciliacion_rv",    S3_KEYS$conciliacion,    load_conciliacion)
   register_synced("parte_alias_map_db", S3_KEYS$parte_alias_map, load_parte_alias_map)
 
-  # session_client_id: the authoritative client context for this session.
-  # Returns the jumped-to client slug when staff has switched context,
-  # otherwise returns the env-var CLIENT_ID (the native deployment context).
-  session_client_id <- reactive({
-    active <- tryCatch(active_client_id(), error = function(e) NULL)
-    if (!is.null(active) && nzchar(active)) active
-    else tolower(Sys.getenv("CLIENT_ID"))
-  })
-
   setup_sync_bus(session, shared, poll_ms = 8000,
-                 active_client_rv = session_client_id)
+                 active_client_rv = effective_client_id)
 
   # ── Abono parcial ─────────────────────────────────────────────────────────────
   setup_abono_browse(input, output, session,
                      sap_data, abonos_db, pagar_hoy_db, current_user,
-                     client_id = shared$active_client_id)
+                     client_id = shared$effective_client_id)
 
   # ── Pasivos lifecycle observers and module ────────────────────────────────────
   setup_pasivos_observers(input, output, session, shared)
@@ -1276,13 +1278,11 @@ server <- function(input, output, session) {
     FINANCIAL_TABS <- c("CAL", "VEN", "PH", "BNC", "IC", "PSV", "FC", "RPT")
 
     observe({
-      tier    <- tryCatch(shared$current_user_info()$tier, error = function(e) "")
-      cid     <- tryCatch(active_client_id(), error = function(e) NULL)
-      env_cid <- tolower(Sys.getenv("CLIENT_ID"))
+      tier <- tryCatch(shared$current_user_info()$tier, error = function(e) "")
       # Hopdesk staff only see financial modules when jumped into a client
       # context. All other tiers are clients and always see them.
       is_staff      <- isTRUE(tryCatch(shared$current_user_info()$is_staff, error = function(e) FALSE))
-      in_client_ctx <- !is.null(cid) && nzchar(cid) && tolower(cid) != env_cid
+      in_client_ctx <- !is.null(tryCatch(jump_client_id(), error = function(e) NULL))
       show_tabs     <- if (is_staff) in_client_ctx else nzchar(tier)
 
       lapply(FINANCIAL_TABS, function(tab) {
@@ -1334,17 +1334,13 @@ server <- function(input, output, session) {
 
   # ── Username badge in navbar ──────────────────────────────────────────────────
   output$navbar_user_badge <- renderUI({
-    active_client_id()  # explicit dep — badge re-renders on every context switch
+    cid <- tryCatch(jump_client_id(), error = function(e) NULL)  # dep — re-renders on every jump
     info  <- shared$current_user_info()
     user  <- info$user %||% ""
     if (!nzchar(user) || user == "unknown") return(NULL)
     name  <- info$name %||% user
     tier  <- info$tier %||% "finance"
-    # session_client_id() returns env CLIENT_ID when no jump is active (NULL or home),
-    # so comparing against home correctly yields in_jump=FALSE in the home context.
-    cid     <- tryCatch(session_client_id(), error = function(e) NULL)
-    home    <- tolower(Sys.getenv("CLIENT_ID"))
-    in_jump <- !is.null(cid) && nzchar(cid) && tolower(cid) != home
+    in_jump <- !is.null(cid)
 
     tier_color <- switch(tier,
       principal = "#7b1fa2",
@@ -1410,6 +1406,13 @@ server <- function(input, output, session) {
   .sap_triggered  <- FALSE
 
   load_sap_data <- function(force = FALSE) {
+    # A staff session at home (not jumped into any client) has no ERP to
+    # fetch — hd-admin has no SAP credentials and no companies. Skip the
+    # fetch entirely rather than running it just to get an empty result.
+    if (isTRUE(current_user_info()$is_staff) && is.null(jump_client_id())) {
+      message(sprintf("[SAP] Skipping fetch — staff session at home, nothing to fetch (session #%d)", .sn))
+      return(invisible(NULL))
+    }
     message(sprintf("[ERP] load_erp_data() starting at t+%.1fs (session #%d)",
                     (proc.time() - .t_session)[["elapsed"]], .sn))
     if (.sap_running)               return(invisible(NULL))
@@ -1498,12 +1501,10 @@ server <- function(input, output, session) {
     # Always cache at process level — even when data didn't change.
     # This is the only way session #2 knows session #1 already ran the fetch.
     # ar/ap here are either live data or the fallback snapshot — either way
-    # session #2 should use them rather than re-fetching.
-    .GlobalEnv$.sap_global_cache <- list(
-      AR         = ar,
-      AP         = ap,
-      fetched_at = Sys.time()
-    )
+    # session #2 should use them rather than re-fetching, but ONLY a session
+    # in the same client context — keyed by client id so this can never seed
+    # a different client's (or a staff-at-home session's) sap_data().
+    .sap_cache_set(effective_client_id(), ar, ap)
     message(sprintf("[SAP] Cross-session cache written at t+%.1fs (session #%d)",
                     (proc.time() - .t_session)[["elapsed"]], .sn))
   }
@@ -1573,10 +1574,11 @@ server <- function(input, output, session) {
     req(.phase1_done())
     isolate({
       t0     <- proc.time()
-      # Resolve the active client prefix from the login hook (set before Phase 1).
-      # Inside isolate() this reads the current value without creating a reactive
-      # dependency — Phase 2 will not re-fire when active_client_id changes later.
-      cid_lo <- tolower(active_client_id() %||% Sys.getenv("CLIENT_ID"))
+      # Resolve the home client prefix set at login (before Phase 1 — no jump
+      # can have happened yet). Inside isolate() this reads the current value
+      # without creating a reactive dependency — Phase 2 fires once, at
+      # startup; the Stage 4.4 observer below is what reloads on a jump.
+      cid_lo <- tolower(home_client_id() %||% Sys.getenv("CLIENT_ID"))
       message(sprintf("[LOAD] Phase 2 start at t+%.1fs (session #%d) [cid=%s]",
                       (proc.time() - .t_session)[["elapsed"]], .sn, cid_lo))
 
@@ -1781,8 +1783,9 @@ server <- function(input, output, session) {
       message(sprintf("[LOAD]   grupos           %.1fs", (proc.time() - t1)[["elapsed"]]))
 
       # empresas_db is not handled by the context-switch observer for the initial
-      # login event (ignoreInit = TRUE suppresses the first non-NULL active_client_id
-      # fire). Load it here in Phase 2 so it is always available after startup.
+      # login event (ignoreInit = TRUE suppresses the first jump_client_id fire,
+      # and login itself never sets jump_client_id). Load it here in Phase 2 so
+      # it is always available after startup.
       t1 <- proc.time()
       local({
         emp <- tryCatch(load_empresas(client_id = cid_lo), error = function(e) NULL)
@@ -1823,23 +1826,16 @@ server <- function(input, output, session) {
     )
   }
 
-  # ── Stage 4.4: context-switch reload ──────────────────────────────────────────
-  # When a HopDesk staff member switches to another client context via the
-  # context switcher, reload all financial reactiveVals from that client's S3 prefix.
-  # This observer runs AFTER Phase 2 (priority -3) and ignores the initial NULL value.
-  #
-  # SAP/calendar data is NOT re-loaded — it comes from a per-client SAP source that
-  # is unavailable in the hd-admin deployment; the calendar stays empty for jumped
-  # contexts, which is the correct behaviour for an admin-only view.
-  observeEvent(active_client_id(), {
-    cid <- active_client_id()
-    env_cid <- tolower(Sys.getenv("CLIENT_ID"))
-    # When jumping back to home context (NULL or same as CLIENT_ID), reload
-    # from the native prefix so the app shows correct home data.
-    effective_cid <- if (is.null(cid) || !nzchar(cid) || tolower(cid) == env_cid)
-                       env_cid
-                     else
-                       tolower(cid)
+  # ── Stage 4.4 / Stage 2 Part A: context-switch reload ─────────────────────────
+  # Fires when jump_client_id() changes — both jumping into a client AND
+  # jumping back to home (ignoreNULL = FALSE) — and reloads every financial
+  # reactiveVal, including the SAP snapshot, from effective_client_id()'s S3
+  # prefix. This observer runs AFTER Phase 2 (priority -3). Never fires for a
+  # client session (jump_client_id() is never settable by a non-staff session
+  # — enforced in tiers_module.R's context switcher).
+  observeEvent(jump_client_id(), {
+    jcid          <- jump_client_id()
+    effective_cid <- effective_client_id()
 
     message(sprintf("[CTX] Switching to client context '%s'", effective_cid))
 
@@ -1933,16 +1929,17 @@ server <- function(input, output, session) {
       AR = if (!is.null(snap_ar)) list(ts = snap_ar$saved_at, is_live = FALSE) else NULL,
       AP = if (!is.null(snap_ap)) list(ts = snap_ap$saved_at, is_live = FALSE) else NULL
     ))
-    # Seed the cross-session SAP cache so subsequent sessions on the same R process
-    # get the client's snapshot immediately in Phase 1 without waiting for this observer.
+    # Seed the cross-session SAP cache so subsequent sessions on the same R
+    # process AND ON THE SAME CLIENT get the client's snapshot immediately —
+    # keyed by effective_cid so this can never seed a different client's (or
+    # a staff-at-home session's) lookup.
     if (!is.null(new_snap$AR) || !is.null(new_snap$AP))
-      .GlobalEnv$.sap_global_cache <- list(AR = new_snap$AR, AP = new_snap$AP,
-                                            fetched_at = Sys.time())
+      .sap_cache_set(effective_cid, new_snap$AR, new_snap$AP)
     message(sprintf("[CTX]   sap_data OK (AR=%d AP=%d rows)",
                     nrow(new_snap$AR %||% data.frame()), nrow(new_snap$AP %||% data.frame())))
 
     # Dual audit log — only when jumping TO another client, not when resetting home
-    if (effective_cid != env_cid) {
+    if (!is.null(jcid)) {
       log_action(user        = current_user() %||% "unknown",
                  module      = "clientes",
                  action      = "client_access",
@@ -1960,7 +1957,7 @@ server <- function(input, output, session) {
     }
 
     message(sprintf("[CTX] Context switch to '%s' complete", effective_cid))
-  }, ignoreInit = TRUE, priority = -3)
+  }, ignoreInit = TRUE, ignoreNULL = FALSE, priority = -3)
 
   # ── OVERLAY FADE TIMING — ALL APPROACHES ABANDONED ──────────────────────────
   #
@@ -2031,21 +2028,26 @@ server <- function(input, output, session) {
   .dispatch_sap <- function() {
     if (.sap_triggered) return()
     .sap_triggered <<- TRUE
+    if (isTRUE(current_user_info()$is_staff) && is.null(jump_client_id())) {
+      message(sprintf("[SAP] Skipping dispatch — staff session at home, nothing to fetch (session #%d)", .sn))
+      .sap_ever_done <<- TRUE
+      return()
+    }
     message(sprintf("[SAP] sap_trigger fired at t+%.1fs (session #%d)",
                     (proc.time() - .t_session)[["elapsed"]], .sn))
-    cache <- .GlobalEnv$.sap_global_cache
-    age   <- if (!is.null(cache$fetched_at))
-               as.numeric(difftime(Sys.time(), cache$fetched_at, units = "secs"))
-             else Inf
-    if (age < 300 && (!is.null(cache$AR) || !is.null(cache$AP))) {
-      message("[SAP] Cross-session cache hit (", round(age), "s old) — skipping live fetch")
+    # Keyed by this session's own client id — never reads any other client's
+    # entry, so a staff-at-home session can never inherit a client's data and
+    # vice versa.
+    cache <- .sap_cache_get(effective_client_id())
+    if (.sap_cache_fresh(cache)) {
+      message("[SAP] Cross-session cache hit for '", effective_client_id(), "' — skipping live fetch")
       if (!identical(sap_data()$AR, cache$AR) || !identical(sap_data()$AP, cache$AP))
         sap_data(list(AR = cache$AR, AP = cache$AP))
       .sap_ever_done <<- TRUE
       return()
     }
-    message(sprintf("[SAP] No cross-session cache (age=%.0fs) — proceeding to live fetch (session #%d)",
-                    age, .sn))
+    message(sprintf("[SAP] No fresh cross-session cache for '%s' — proceeding to live fetch (session #%d)",
+                    effective_client_id(), .sn))
     load_sap_data()
   }
 
@@ -2427,10 +2429,10 @@ server <- function(input, output, session) {
           source    = "manual"
         )
         ph_updated <- upsert_pagar_hoy(
-          pagar_hoy_db() %||% safe_load_pagar_hoy(current_user(), client_id = active_client_id()),
+          pagar_hoy_db() %||% safe_load_pagar_hoy(current_user(), client_id = effective_client_id()),
           ph_row, keys = "id")
         pagar_hoy_db(ph_updated)
-        tryCatch(save_pagar_hoy(ph_updated, current_user(), client_id = active_client_id()),
+        tryCatch(save_pagar_hoy(ph_updated, current_user(), client_id = effective_client_id()),
                  error = function(e) showNotification(
                    paste("No se pudo guardar en Agenda:", e$message), type = "warning"))
       }

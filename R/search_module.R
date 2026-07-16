@@ -931,7 +931,7 @@ handle_invoice_action <- function(payload, shared) {
                tagged_by = current_user)
     }
     shared$tags_db(tdb)
-    tryCatch({ save_tags(tdb, client_id = shared$active_client_id()); bump_sync_version("tags_db") }, error = function(e)
+    tryCatch({ save_tags(tdb, client_id = shared$effective_client_id()); bump_sync_version("tags_db") }, error = function(e)
       showNotification(paste("Error guardando etiquetas:", e$message), type = "warning"))
     showNotification(paste0(nrow(keys_df), " factura(s) etiquetadas."),
                      type = "message", duration = 2)
@@ -955,7 +955,7 @@ handle_invoice_action <- function(payload, shared) {
     )
     updated <- upsert_moves(shared$moves_db(), new_rows)
     shared$moves_db(updated)
-    .save_moves_deferred(updated, client_id = shared$active_client_id())
+    .save_moves_deferred(updated, client_id = shared$effective_client_id())
     showNotification(
       paste0(nrow(keys_df), " factura(s) movidas a ", format(new_date, "%d/%m/%Y"), "."),
       type = "message", duration = 2)
@@ -972,7 +972,7 @@ handle_invoice_action <- function(payload, shared) {
     updated <- dplyr::anti_join(shared$moves_db(), restore_keys,
                                 by = c("ledger","Empresa","Moneda","Documento"))
     shared$moves_db(updated)
-    .save_moves_deferred(updated, client_id = shared$active_client_id())
+    .save_moves_deferred(updated, client_id = shared$effective_client_id())
     showNotification(
       paste0(nrow(keys_df), " factura(s) restauradas a fecha original."),
       type = "message", duration = 2)
@@ -986,7 +986,7 @@ handle_invoice_action <- function(payload, shared) {
       pids_cancel <- unique(prov_rows$provision_id)
       for (pid in pids_cancel) {
         tryCatch(pasivos_provision_cancel(provision_id = pid, user = current_user,
-                                          client_id = shared$active_client_id()),
+                                          client_id = shared$effective_client_id()),
                  error = function(e) NULL)
       }
       provs_db <- tryCatch(shared$pasivos_provisions_db(), error = function(e) NULL)
@@ -1004,7 +1004,7 @@ handle_invoice_action <- function(payload, shared) {
     }
 
     if (nrow(item_rows)) {
-      cid         <- tryCatch(shared$active_client_id(), error = function(e) NULL)
+      cid         <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
       papelera_df <- tryCatch(load_papelera(client_id = cid), error = function(e) tibble::tibble())
       archive      <- item_rows
       archive$FechaEff   <- as.Date(NA)
@@ -1012,7 +1012,7 @@ handle_invoice_action <- function(payload, shared) {
       archive$deleted_at <- Sys.time()
       papelera_df <- add_to_papelera(papelera_df, archive,
                                       ledger = "MIXED", deleted_by = current_user)
-      tryCatch(save_papelera(papelera_df, client_id = shared$active_client_id()), error = function(e)
+      tryCatch(save_papelera(papelera_df, client_id = shared$effective_client_id()), error = function(e)
         showNotification(paste("Error guardando papelera:", e$message), type = "warning"))
       # Update shared reactive so calendars refresh without extra S3 read
       if (!is.null(shared$papelera_rv)) shared$papelera_rv(papelera_df)
@@ -1022,7 +1022,7 @@ handle_invoice_action <- function(payload, shared) {
         m <- shared$manual_inv()
         for (mid in manual_rows$inv_id) m <- delete_manual(m, mid)
         shared$manual_inv(m)
-        tryCatch(save_manual(m, client_id = shared$active_client_id()), error = function(e)
+        tryCatch(save_manual(m, client_id = shared$effective_client_id()), error = function(e)
           showNotification(paste("Error actualizando manual:", e$message), type = "warning"))
       }
       showNotification(paste0(nrow(item_rows), " factura(s) enviadas a la papelera."),
@@ -1070,7 +1070,7 @@ handle_invoice_action <- function(payload, shared) {
     }
     updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(), new_rows)
     shared$pagar_hoy_db(updated)
-    tryCatch(save_pagar_hoy(updated, shared$current_user(), client_id = shared$active_client_id()), error = function(e)
+    tryCatch(save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id()), error = function(e)
       showNotification(paste("Error guardando agenda:", e$message), type = "warning"))
     # Build a descriptive notification: count, companies, ledger type, total amount
     emp_str  <- paste(unique(new_rows$Empresa), collapse = ", ")

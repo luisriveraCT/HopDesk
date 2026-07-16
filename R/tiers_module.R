@@ -56,152 +56,158 @@ tiersUI <- function(id) {
       uiOutput(ns("header_badge"))
     ),
 
-    bslib::navset_pill(
-      id = ns("main_tab"),
+    # Stage 2 Part C: the tab bar is built dynamically server-side (see
+    # tiersServer's output$main_tabs_ui) so Hopdesk-internal tabs can be
+    # omitted entirely for a non-staff session — not rendered and then
+    # locked, genuinely absent. See .tiers_all_panels()/tiers_visible_tab_keys().
+    uiOutput(ns("main_tabs_ui"))
+  )
+}
 
-      # ── Tab: Usuarios ──────────────────────────────────────────────────────
-      bslib::nav_panel(
-        title = tagList(icon("users"), " Usuarios"),
-        value = "usuarios",
-        div(
-          class = "mt-3",
-          fluidRow(
-            column(
-              width = 7,
+# All 9 Usuarios/Grupo sub-tabs, keyed by the same tab keys
+# tiers_visible_tab_keys() (R/tiers_tab_config.R) filters on. tiersServer's
+# output$main_tabs_ui picks which of these to actually include for a given
+# session — this function itself applies no visibility logic.
+.tiers_all_panels <- function(ns) {
+  list(
+    # ── Tab: Usuarios ──────────────────────────────────────────────────────
+    usuarios = bslib::nav_panel(
+      title = tagList(icon("users"), " Usuarios"),
+      value = "usuarios",
+      div(
+        class = "mt-3",
+        fluidRow(
+          column(
+            width = 7,
+            div(
+              class = "card border-0 shadow-sm",
               div(
-                class = "card border-0 shadow-sm",
+                class = "card-header bg-white py-2 d-flex align-items-center justify-content-between",
+                tags$span(class = "fw-semibold", tagList(icon("users"), " Cuentas del sistema")),
+                uiOutput(ns("new_user_btn_ui"))
+              ),
+              # Create form (hidden by default)
+              shinyjs::hidden(
                 div(
-                  class = "card-header bg-white py-2 d-flex align-items-center justify-content-between",
-                  tags$span(class = "fw-semibold", tagList(icon("users"), " Cuentas del sistema")),
-                  uiOutput(ns("new_user_btn_ui"))
-                ),
-                # Create form (hidden by default)
-                shinyjs::hidden(
-                  div(
-                    id = ns("create_form_wrap"),
-                    class = "card-body border-bottom",
-                    style = "background:#f8f9ff;",
-                    tags$h6(class = "fw-semibold mb-3", style = "color:#0a58ca;",
-                            tagList(icon("user-plus"), " Nueva cuenta")),
-                    fluidRow(
-                      column(6,
-                        textInput(ns("new_display_name"), "Nombre para mostrar",
-                                  placeholder = "Ej: Tesorer\u00eda")
-                      ),
-                      column(6,
-                        textInput(ns("new_username"), "Nombre de usuario",
-                                  placeholder = "Ej: tesoreria")
-                      )
+                  id = ns("create_form_wrap"),
+                  class = "card-body border-bottom",
+                  style = "background:#f8f9ff;",
+                  tags$h6(class = "fw-semibold mb-3", style = "color:#0a58ca;",
+                          tagList(icon("user-plus"), " Nueva cuenta")),
+                  fluidRow(
+                    column(6,
+                      textInput(ns("new_display_name"), "Nombre para mostrar",
+                                placeholder = "Ej: Tesorería")
                     ),
-                    fluidRow(
-                      column(6, passwordInput(ns("new_password"),  "Contrase\u00f1a")),
-                      column(6, passwordInput(ns("new_password2"), "Confirmar contrase\u00f1a"))
-                    ),
-                    fluidRow(
-                      column(6, uiOutput(ns("new_tier_ui"))),
-                      column(6,
-                        tags$div(style = "margin-top:26px;",
-                          checkboxInput(ns("new_activo"), "Cuenta activa", value = TRUE))
-                      )
-                    ),
-                    div(
-                      class = "d-flex gap-2 mt-1",
-                      actionButton(ns("btn_save_new_user"),
-                                   tagList(icon("floppy-disk"), " Crear cuenta"),
-                                   class = "btn btn-primary btn-sm"),
-                      actionButton(ns("btn_cancel_new_user"), "Cancelar",
-                                   class = "btn btn-outline-secondary btn-sm")
+                    column(6,
+                      textInput(ns("new_username"), "Nombre de usuario",
+                                placeholder = "Ej: tesoreria")
                     )
+                  ),
+                  fluidRow(
+                    column(6, passwordInput(ns("new_password"),  "Contraseña")),
+                    column(6, passwordInput(ns("new_password2"), "Confirmar contraseña"))
+                  ),
+                  fluidRow(
+                    column(6, uiOutput(ns("new_tier_ui"))),
+                    column(6,
+                      tags$div(style = "margin-top:26px;",
+                        checkboxInput(ns("new_activo"), "Cuenta activa", value = TRUE))
+                    )
+                  ),
+                  div(
+                    class = "d-flex gap-2 mt-1",
+                    actionButton(ns("btn_save_new_user"),
+                                 tagList(icon("floppy-disk"), " Crear cuenta"),
+                                 class = "btn btn-primary btn-sm"),
+                    actionButton(ns("btn_cancel_new_user"), "Cancelar",
+                                 class = "btn btn-outline-secondary btn-sm")
                   )
-                ),
-                div(class = "card-body p-0",
-                    DT::dataTableOutput(ns("usuarios_tbl")))
-              )
-            ),
-            column(width = 5, uiOutput(ns("perm_editor_ui")))
+                )
+              ),
+              div(class = "card-body p-0",
+                  DT::dataTableOutput(ns("usuarios_tbl")))
+            )
           ),
-          div(
-            class = "alert alert-light border small mt-3",
-            icon("circle-info", class = "text-primary"),
-            tags$strong(" Tier vs. Permisos: "),
-            "El tier define el rol base del usuario y sus permisos por defecto. ",
-            "Los permisos individuales son ", tags$em("overrides"),
-            " que se aplican encima del tier. ",
-            "Un JSON vac\u00edo significa que el usuario tiene exactamente los permisos de su tier."
-          )
-        )
-      ),
-
-      # ── Tab: Actividad ────────────────────────────────────────────────────
-      bslib::nav_panel(
-        title = tagList(icon("clock-rotate-left"), " Actividad"),
-        value = "actividad",
+          column(width = 5, uiOutput(ns("perm_editor_ui")))
+        ),
         div(
-          class = "mt-3",
-          div(
-            class = "d-flex align-items-center justify-content-between mb-2",
-            tags$h6(class = "fw-semibold mb-0",
-                    tagList(icon("clock-rotate-left"), " Registro de actividad del sistema")),
-            actionButton(ns("btn_reload_activity"),
-                         tagList(icon("arrows-rotate"), " Actualizar"),
-                         class = "btn btn-sm btn-outline-secondary")
-          ),
-          DT::dataTableOutput(ns("activity_tbl"))
+          class = "alert alert-light border small mt-3",
+          icon("circle-info", class = "text-primary"),
+          tags$strong(" Tier vs. Permisos: "),
+          "El tier define el rol base del usuario y sus permisos por defecto. ",
+          "Los permisos individuales son ", tags$em("overrides"),
+          " que se aplican encima del tier. ",
+          "Un JSON vacío significa que el usuario tiene exactamente los permisos de su tier."
         )
-      ),
+      )
+    ),
 
-      # ── Tab: Seguridad (principal only) ───────────────────────────────────
-      bslib::nav_panel(
-        title = tagList(icon("shield-halved"), " Seguridad"),
-        value = "security",
-        uiOutput(ns("security_section"))
-      ),
+    # ── Tab: Actividad ────────────────────────────────────────────────────
+    actividad = bslib::nav_panel(
+      title = tagList(icon("clock-rotate-left"), " Actividad"),
+      value = "actividad",
+      div(
+        class = "mt-3",
+        div(
+          class = "d-flex align-items-center justify-content-between mb-2",
+          tags$h6(class = "fw-semibold mb-0",
+                  tagList(icon("clock-rotate-left"), " Registro de actividad del sistema")),
+          actionButton(ns("btn_reload_activity"),
+                       tagList(icon("arrows-rotate"), " Actualizar"),
+                       class = "btn btn-sm btn-outline-secondary")
+        ),
+        DT::dataTableOutput(ns("activity_tbl"))
+      )
+    ),
 
-      # ── Tab: Clientes (principal / hopdesk) ───────────────────────────────
-      bslib::nav_panel(
-        title = tagList(icon("building-user"), " Clientes"),
-        value = "clients",
-        uiOutput(ns("clients_section"))
-      ),
+    # ── Tab: Seguridad (principal only) — hidden entirely from clients ────
+    security = bslib::nav_panel(
+      title = tagList(icon("shield-halved"), " Seguridad"),
+      value = "security",
+      uiOutput(ns("security_section"))
+    ),
 
-      # ── Tab: Invitaciones (can_manage_invites) ────────────────────────────
-      bslib::nav_panel(
-        title = tagList(icon("envelope-open-text"), " Invitaciones"),
-        value = "invites",
-        uiOutput(ns("invites_section"))
-      ),
+    # ── Tab: Clientes (principal / hopdesk) — hidden entirely from clients ─
+    clients = bslib::nav_panel(
+      title = tagList(icon("building-user"), " Clientes"),
+      value = "clients",
+      uiOutput(ns("clients_section"))
+    ),
 
-      # ── Tab: Accesos de Salto (staff: request; principal: approve) ───────────
-      bslib::nav_panel(
-        title = tagList(icon("key"), " Accesos de Salto"),
-        value = "hop_perms",
-        uiOutput(ns("hop_section"))
-      ),
+    # ── Tab: Invitaciones (can_manage_invites) — visible to dev too ───────
+    invites = bslib::nav_panel(
+      title = tagList(icon("envelope-open-text"), " Invitaciones"),
+      value = "invites",
+      uiOutput(ns("invites_section"))
+    ),
 
-      # ── Tab: Notificaciones (principal / hopdesk) ─────────────────────────
-      bslib::nav_panel(
-        title = tagList(icon("bell"), " Notificaciones"),
-        value = "notifications",
-        uiOutput(ns("notifications_section"))
-      ),
+    # ── Tab: Accesos de Salto — hidden entirely from clients ──────────────
+    hop_perms = bslib::nav_panel(
+      title = tagList(icon("key"), " Accesos de Salto"),
+      value = "hop_perms",
+      uiOutput(ns("hop_section"))
+    ),
 
-      # ── Tab: Bitácora Global (can_view_global_audit) ──────────────────────
-      bslib::nav_panel(
-        title = tagList(icon("scroll"), " Bitácora Global"),
-        value = "global_audit",
-        uiOutput(ns("global_audit_section"))
-      ),
+    # ── Tab: Notificaciones (principal / hopdesk) — hidden entirely from clients
+    notifications = bslib::nav_panel(
+      title = tagList(icon("bell"), " Notificaciones"),
+      value = "notifications",
+      uiOutput(ns("notifications_section"))
+    ),
 
-      # ── Tab: Config. de Tiers (dev only) ──────────────────────────────────
-      bslib::nav_panel(
-        title = tagList(icon("sliders"), " Config. de Tiers"),
-        value = "tier_config",
-        uiOutput(ns("tier_config_section"))
-      ),
+    # ── Tab: Bitácora Global — hidden entirely from clients ───────────────
+    global_audit = bslib::nav_panel(
+      title = tagList(icon("scroll"), " Bitácora Global"),
+      value = "global_audit",
+      uiOutput(ns("global_audit_section"))
+    ),
 
-      # Lock/unlock toggle — always visible in tab bar, only affects Config tab
-      bslib::nav_spacer(),
-      bslib::nav_item(uiOutput(ns("cfg_lock_btn")))
+    # ── Tab: Config. de Tiers (dev only) ──────────────────────────────────
+    tier_config = bslib::nav_panel(
+      title = tagList(icon("sliders"), " Config. de Tiers"),
+      value = "tier_config",
+      uiOutput(ns("tier_config_section"))
     )
   )
 }
@@ -429,15 +435,34 @@ tiersServer <- function(id, shared) {
     is_dev            <- reactive({ identical(current_tier(), "dev") })
     is_hopdesk        <- reactive({ identical(current_tier(), "hopdesk") })
     is_principal      <- reactive({ identical(current_tier(), "principal") })
+    # Stage 2 Part A: effective_client_id() (home, or jumped if mid-jump) is
+    # the single source of truth — this reactive just exposes it under this
+    # module's existing name so its ~10 internal call sites don't all need
+    # touching.
     current_client_id <- reactive({
-      tryCatch({
-        # active_client_id is set by the context switcher (hopdesk only) or login init
-        active <- shared$active_client_id()
-        if (!is.null(active) && nzchar(active)) return(active)
-        cid <- shared$current_user_info()$client_id
-        if (!is.null(cid) && nzchar(cid)) cid else tolower(Sys.getenv("CLIENT_ID"))
-      }, error = function(e) tolower(Sys.getenv("CLIENT_ID")))
+      tryCatch(shared$effective_client_id(), error = function(e) tolower(Sys.getenv("CLIENT_ID")))
     })
+
+    # ── Stage 2 Part C: dynamic tab bar ───────────────────────────────────────
+    # Built exactly once, right after the viewer's is_staff is genuinely known
+    # (same manual-guard pattern as Stage 1's landing-tab fix) — is_staff never
+    # changes after login, so building this once avoids losing the viewer's
+    # current sub-tab selection on every unrelated current_user_info() change
+    # (e.g. a jump changes client_id, not is_staff).
+    built_tabs_ui <- reactiveVal(NULL)
+    observe({
+      if (!is.null(built_tabs_ui())) return()                # already built
+      info <- shared$current_user_info()
+      if (is.null(info) || info$user == "unknown") return()  # not resolved yet
+      visible <- tiers_visible_tab_keys(isTRUE(info$is_staff))
+      panels  <- .tiers_all_panels(ns)[visible]
+      built_tabs_ui(do.call(bslib::navset_pill, c(
+        list(id = ns("main_tab")),
+        unname(panels),
+        list(bslib::nav_spacer(), bslib::nav_item(uiOutput(ns("cfg_lock_btn"))))
+      )))
+    })
+    output$main_tabs_ui <- renderUI({ built_tabs_ui() })
 
     # ── Header badge (+ context switcher for hopdesk) ────────────────────────
     output$header_badge <- renderUI({
@@ -566,7 +591,7 @@ tiersServer <- function(id, shared) {
           return()
         }
       }
-      shared$active_client_id(new_cid)
+      shared$jump_client_id(resolve_jump_target(new_cid, shared$home_client_id()))
       message("[CTX] context switched to: ", new_cid)
       removeModal()
     })
@@ -779,7 +804,7 @@ tiersServer <- function(id, shared) {
         return()
       }
       tryCatch(
-        register_username(username, Sys.getenv("CLIENT_ID"), new_row$account_code),
+        register_username(username, current_client_id(), new_row$account_code),
         error = function(e) message("[TIERS] username_index register failed: ", e$message)
       )
       tryCatch(
@@ -1330,7 +1355,7 @@ tiersServer <- function(id, shared) {
     # ── New-user button: dynamic based on client's remaining user slots ────────
     output$new_user_btn_ui <- renderUI({
       ns <- session$ns
-      cid <- Sys.getenv("CLIENT_ID")
+      cid <- current_client_id()
 
       # hd-admin has no user-limit concept — always show normal button
       if (!nzchar(cid) || cid == "hd-admin") {
@@ -1383,7 +1408,7 @@ tiersServer <- function(id, shared) {
     })
 
     observeEvent(input$btn_solicitar_usuarios, {
-      cid <- Sys.getenv("CLIENT_ID")
+      cid <- current_client_id()
       req(nzchar(cid), cid != "hd-admin")
       req(!isTRUE(solicitar_usuarios_sent()))
 
@@ -1449,8 +1474,7 @@ tiersServer <- function(id, shared) {
       registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
       requests <- tryCatch(read_client_requests(),  error = function(e) .schema_client_requests())
 
-      ns  <- session$ns
-      cid <- Sys.getenv("CLIENT_ID")
+      ns <- session$ns
 
       pending <- requests[!is.na(requests$status) & requests$status == "pending", , drop = FALSE]
 
@@ -2329,7 +2353,9 @@ tiersServer <- function(id, shared) {
     invites_refresh <- reactiveVal(0L)
 
     output$invites_section <- renderUI({
-      can_invite <- isTRUE(is_hopdesk()) || isTRUE(is_principal())
+      # dev can invite its own client's teammates — a client's own IT dept
+      # doesn't need to ask Hopdesk to onboard their own team (Stage 2 Part C).
+      can_invite <- isTRUE(is_hopdesk()) || isTRUE(is_principal()) || isTRUE(is_dev())
       if (!can_invite) {
         return(div(class = "alert alert-warning mt-3",
                    icon("lock"), " No tienes permiso para gestionar invitaciones."))
@@ -2556,21 +2582,29 @@ tiersServer <- function(id, shared) {
     dg_selected     <- reactiveVal(list())    # list of list(client_id, label) for direct grant
     hop_grace_start <- reactiveVal(NULL)      # POSIXct when 30-min grace period began, or NULL
 
-    # Clear grace clock whenever the active client changes
-    observeEvent(shared$active_client_id(), {
+    # Clear grace clock whenever the jump changes (new jump, or back to home)
+    observeEvent(shared$jump_client_id(), {
       req(IS_ADMIN_DEPLOYMENT)
       hop_grace_start(NULL)
-    }, ignoreInit = TRUE)
+    }, ignoreInit = TRUE, ignoreNULL = FALSE)
 
-    # ── Grant watchdog: poll every 30 s while staff is inside a client context ──
-    # Revoked  → immediate kick back to hd-admin
+    # ── Grant watchdog: poll every 30 s while staff is mid-jump ─────────────────
+    # Revoked  → immediate kick back home
     # Expired  → 30-minute grace, then kick
+    # hop_watchdog_should_poll() makes this structurally impossible to reach
+    # for a session at home — staff or client — since jump_client_id() is
+    # NULL whenever there's no active jump. No more "cid != hd-admin" string
+    # check standing in for that. is_principal() stays excluded there —
+    # unlike hopdesk, principal jumps without ever needing a grant row, so a
+    # missing grant row would otherwise look like "revoked" and kick them out
+    # every 30s. is_dev() is dropped: Stage 1 made dev unable to ever set
+    # jump_client_id() at all, so that exemption was already dead — this was
+    # explicitly deferred to Stage 2 to clean up.
     observe({
       req(IS_ADMIN_DEPLOYMENT)
-      req(!isTRUE(is_principal()) && !isTRUE(is_dev()))
-      cid <- shared$active_client_id()
-      req(!is.null(cid) && nzchar(cid %||% "") && cid != "hd-admin")
-      invalidateLater(30000)   # reschedule; won't fire again once cid returns to hd-admin
+      cid <- shared$jump_client_id()
+      req(hop_watchdog_should_poll(is_principal(), cid))
+      invalidateLater(30000)   # reschedule; won't fire again once the jump ends
 
       me  <- shared$current_user() %||% ""
       now <- Sys.time()
@@ -2605,7 +2639,7 @@ tiersServer <- function(id, shared) {
           type = "error", duration = 8
         )
         hop_grace_start(NULL)
-        shared$active_client_id("hd-admin")
+        shared$jump_client_id(NULL)
         return()
       }
 
@@ -2625,7 +2659,7 @@ tiersServer <- function(id, shared) {
             type = "error", duration = 8
           )
           hop_grace_start(NULL)
-          shared$active_client_id("hd-admin")
+          shared$jump_client_id(NULL)
         }
       }
     })
