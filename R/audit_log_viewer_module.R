@@ -123,9 +123,30 @@ auditLogViewerServer <- function(id, shared, mode,
       )
     })
 
-    # Módulo / Acción choices derived from whatever the current range returned.
-    observeEvent(fetched(), {
+    # Hopdesk's own jump/context-switch bookkeeping rows (logged by app.R's
+    # context-switch observer as module="clientes", action in
+    # {client_access, external_access}) are dual-written into a client's own
+    # folder so hd-admin's audit trail stays complete, but aren't meaningful
+    # "activity" from that client's point of view — a native client viewer's
+    # own Actividad shows substantive changes only. Staff/principal (and
+    # Bitácora Global, always multi_client) still see every row.
+    .JUMP_BOOKKEEPING_MODULE  <- "clientes"
+    .JUMP_BOOKKEEPING_ACTIONS <- c("client_access", "external_access")
+
+    visible_fetched <- reactive({
       df <- fetched()
+      if (inherits(df, "error") || is.null(df) || !nrow(df)) return(df)
+      if (identical(mode, "own_client") && !viewer_is_staff()) {
+        hide <- !is.na(df$module) & df$module == .JUMP_BOOKKEEPING_MODULE &
+                !is.na(df$action) & df$action %in% .JUMP_BOOKKEEPING_ACTIONS
+        df <- df[!hide, , drop = FALSE]
+      }
+      df
+    })
+
+    # Módulo / Acción choices derived from whatever the current range returned.
+    observeEvent(visible_fetched(), {
+      df <- visible_fetched()
       if (inherits(df, "error") || is.null(df)) return()
       mods <- sort(unique(df$module[!is.na(df$module) & nzchar(df$module)]))
       accs <- sort(unique(df$action[!is.na(df$action) & nzchar(df$action)]))
@@ -138,7 +159,7 @@ auditLogViewerServer <- function(id, shared, mode,
     })
 
     filtered <- reactive({
-      df <- fetched()
+      df <- visible_fetched()
       if (inherits(df, "error") || is.null(df) || !nrow(df)) return(df)
       if (!is.null(input$audit_mod_sel) && !identical(input$audit_mod_sel, "Todos"))
         df <- df[!is.na(df$module) & df$module == input$audit_mod_sel, , drop = FALSE]

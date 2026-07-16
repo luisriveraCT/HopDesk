@@ -42,6 +42,11 @@ mock_s3saveRDS(.APP_AUDIT_SCHEMA(), "networks/app_audit.rds", "mock-bucket")
 mock_s3saveRDS(.APP_AUDIT_SCHEMA(), "hd-admin/app_audit.rds", "mock-bucket")
 log_action(user = "tesoreria", module = "bancos", action = "reconcile",
           description = "test entry", client_id = "networks")
+# Jump/context-switch bookkeeping row — same shape app.R's context-switch
+# observer writes into a client's own folder when staff jumps in.
+log_action(user = "mouse", module = "clientes", action = "external_access",
+          description = "HopDesk staff accessed this client's data (session context switch)",
+          target_id = "networks", client_id = "networks")
 
 .mock_shared <- function(user, tier, client_id, is_staff, home_cid, effective_cid) {
   list(
@@ -53,6 +58,9 @@ log_action(user = "tesoreria", module = "bancos", action = "reconcile",
 }
 
 # ── A. own_client mode: native client user at home — unaffected regression ──
+# Also covers the newly-scoped fix: a native client viewer's own Actividad
+# hides Hopdesk's jump/context-switch bookkeeping rows (module="clientes",
+# action in {client_access, external_access}) but keeps substantive changes.
 
 shiny::testServer(auditLogViewerServer, args = list(
   shared = .mock_shared("tesoreria", "finance", "networks", FALSE, "networks", "networks"),
@@ -62,6 +70,25 @@ shiny::testServer(auditLogViewerServer, args = list(
   df <- fetched()
   .chk(inherits(df, "error"), FALSE, "own_client: native client user's own log fetch does not error")
   .chk(is.data.frame(df) && nrow(df) >= 1L, TRUE, "own_client: native client user sees their own log rows")
+
+  vis <- visible_fetched()
+  .chk(any(vis$action == "reconcile"), TRUE,
+       "own_client: native client viewer still sees substantive changes")
+  .chk(any(vis$module == "clientes" & vis$action == "external_access"), FALSE,
+       "own_client: native client viewer does not see jump/context-switch bookkeeping rows")
+})
+
+# ── A2. own_client mode: hopdesk staff MID-JUMP still sees bookkeeping rows ──
+# The filter only applies to a native (non-staff) viewer's own view.
+
+shiny::testServer(auditLogViewerServer, args = list(
+  shared = .mock_shared("bunny", "hopdesk", "hd-admin", TRUE, "hd-admin", "networks"),
+  mode   = "own_client"
+), {
+  session$flushReact()
+  vis <- visible_fetched()
+  .chk(any(vis$module == "clientes" & vis$action == "external_access"), TRUE,
+       "own_client: staff mid-jump still sees jump/context-switch bookkeeping rows")
 })
 
 # ── B. own_client mode: hopdesk staff AT HOME — Stage 4 gap #1 fix ──────────
