@@ -54,7 +54,7 @@ ui <- bslib::page_navbar(
                               primary = "#0A58CA"),
   fillable = TRUE,
   id       = "nav",
-  selected = if (IS_ADMIN_DEPLOYMENT) "TIERS" else "CAL",
+  selected = "CAL",
   header   = tagList(
     shinyjs::useShinyjs(),
     app_styles(),
@@ -677,7 +677,7 @@ server <- function(input, output, session) {
       return(list(user = "unknown", name = "unknown", tier = "finance",
                   account_code = "", group_ids = "[]",
                   client_id = tolower(Sys.getenv("CLIENT_ID")),
-                  allowed_clients = "[]"))
+                  allowed_clients = "[]", is_staff = FALSE))
     list(
       user            = user_val %||% "unknown",
       name            = name_val %||% user_val %||% "unknown",
@@ -685,7 +685,8 @@ server <- function(input, output, session) {
       account_code    = code_val %||% "",
       group_ids       = gids_val %||% "[]",
       client_id       = .cid(cid_val),
-      allowed_clients = ac_val   %||% "[]"
+      allowed_clients = ac_val   %||% "[]",
+      is_staff        = is_staff_tier(tier_val %||% "finance")
     )
   })
 
@@ -1278,9 +1279,9 @@ server <- function(input, output, session) {
       tier    <- tryCatch(shared$current_user_info()$tier, error = function(e) "")
       cid     <- tryCatch(active_client_id(), error = function(e) NULL)
       env_cid <- tolower(Sys.getenv("CLIENT_ID"))
-      # Hopdesk staff (hopdesk / principal tier) only see financial modules when
-      # jumped into a client context. All other tiers are clients and always see them.
-      is_staff      <- nzchar(tier) && tier %in% c("hopdesk", "principal")
+      # Hopdesk staff only see financial modules when jumped into a client
+      # context. All other tiers are clients and always see them.
+      is_staff      <- isTRUE(tryCatch(shared$current_user_info()$is_staff, error = function(e) FALSE))
       in_client_ctx <- !is.null(cid) && nzchar(cid) && tolower(cid) != env_cid
       show_tabs     <- if (is_staff) in_client_ctx else nzchar(tier)
 
@@ -1305,16 +1306,22 @@ server <- function(input, output, session) {
       })
     })
 
-    # After login: redirect client users to Calendario.
-    # Hopdesk staff (hopdesk / principal tier) stay on the TIERS management view.
-    # Every other tier is a client and goes straight to CAL regardless of client_id.
-    observeEvent(current_user_info(), {
+    # After login: staff sessions get moved off the default CAL landing tab to
+    # TIERS (Usuarios, inside the Grupo dropdown) — "GRUPO" itself is a
+    # bslib::nav_menu (dropdown container), not a selectable nav_panel, so it
+    # cannot be passed to updateNavbarPage(); TIERS is its real child panel.
+    # Client sessions do nothing — they're already on CAL. Uses a manual
+    # guard flag instead of observeEvent(..., once = TRUE): once + req() has
+    # ambiguous timing if req() aborts before info$user is genuinely resolved,
+    # which is the mechanism behind the tesoreria routing incident.
+    redirected_to_staff_home <- reactiveVal(FALSE)
+    observe({
       info <- current_user_info()
-      req(!is.null(info$user) && nzchar(info$user) && info$user != "unknown")
-      if (!info$tier %in% c("hopdesk", "principal")) {
-        updateNavbarPage(session, "nav", selected = "CAL")
-      }
-    }, once = TRUE, ignoreNULL = TRUE, priority = -1)
+      if (isTRUE(redirected_to_staff_home())) return()      # already handled
+      if (is.null(info) || info$user == "unknown") return() # not resolved yet
+      redirected_to_staff_home(TRUE)                         # mark BEFORE acting
+      if (isTRUE(info$is_staff)) updateNavbarPage(session, "nav", selected = "TIERS")
+    })
 
     # Load hop grants once after login — needed immediately for context-jump checks.
     observeEvent(current_user_info(), {

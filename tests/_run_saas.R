@@ -94,6 +94,7 @@ S3_KEYS <- list(
 "%||%" <- function(a, b) if (!is.null(a)) a else b
 
 source("R/persistence.R",    local = FALSE)
+source("R/tier_registry.R",  local = FALSE)
 source("R/auth.R",           local = FALSE)
 source("R/app_audit.R",      local = FALSE)
 source("R/email_service.R",  local = FALSE)

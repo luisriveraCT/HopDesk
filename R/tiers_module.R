@@ -477,15 +477,15 @@ tiersServer <- function(id, shared) {
 
     # ── Client context switcher modal (hopdesk only) ─────────────────────────
     observeEvent(input$btn_switch_ctx, {
-      req(is_hopdesk() || is_principal() || is_dev())
+      req(isTRUE(shared$current_user_info()$is_staff))
       # Build choices from user's allowed_clients intersected with live registry.
-      # Principal/Dev see all clients; hopdesk sees only grant-covered clients.
+      # Principal sees all clients; hopdesk sees only grant-covered clients.
       registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
       allowed_json <- shared$current_user_info()$allowed_clients %||% "[]"
       allowed_vec  <- tryCatch(jsonlite::fromJSON(allowed_json), error = function(e) character(0))
 
-      if (isTRUE(is_principal()) || isTRUE(is_dev())) {
-        # Principal and Dev can jump to any registered active client
+      if (isTRUE(is_principal())) {
+        # Principal can jump to any registered active client
         valid <- registry[registry$status == "active", , drop = FALSE]
         # Also include the current deployment even if not formally in the registry
         current_deploy <- tolower(trimws(Sys.getenv("CLIENT_ID")))
@@ -541,12 +541,12 @@ tiersServer <- function(id, shared) {
     })
 
     observeEvent(input$modal_ctx_confirm, {
-      req(is_hopdesk() || is_principal() || is_dev())
+      req(isTRUE(shared$current_user_info()$is_staff))
       new_cid <- input$modal_ctx_select
       req(nzchar(new_cid %||% ""))
-      # Principal and Dev can jump freely; hopdesk requires an active grant per client.
+      # Principal can jump freely; hopdesk requires an active grant per client.
       # Always load fresh from S3 so grants take effect immediately without session restart.
-      if (!isTRUE(is_principal()) && !isTRUE(is_dev()) && new_cid != "hd-admin") {
+      if (!isTRUE(is_principal()) && new_cid != "hd-admin") {
         grants <- tryCatch(load_hop_grants(), error = function(e) .schema_hop_grants())
         me     <- shared$current_user() %||% ""
         active_rows <- if (is.data.frame(grants) && nrow(grants))
@@ -702,18 +702,16 @@ tiersServer <- function(id, shared) {
     observeEvent(input$btn_cancel_new_user, { shinyjs::hide("create_form_wrap") })
 
     output$new_tier_ui <- renderUI({
-      choices <- if (is_principal()) {
-        c("Principal" = "principal", "Hopdesk" = "hopdesk", "Dev" = "dev",
-          "Admin" = "admin", "Finanzas" = "finance", "Análisis" = "analysis")
-      } else if (is_hopdesk()) {
-        c("Hopdesk" = "hopdesk", "Dev" = "dev", "Admin" = "admin",
-          "Finanzas" = "finance", "Análisis" = "analysis")
-      } else if (is_dev()) {
-        c("Dev" = "dev", "Admin" = "admin",
-          "Finanzas" = "finance", "Análisis" = "analysis")
-      } else {
-        c("Admin" = "admin", "Finanzas" = "finance", "Análisis" = "analysis")
-      }
+      viewer_tier     <- current_tier()
+      viewer_is_staff <- isTRUE(shared$current_user_info()$is_staff)
+
+      # Same rank/internal_only rule the save handler enforces below — kept
+      # in sync via tier_assignment_allowed() so the dropdown never offers a
+      # tier the server would reject anyway.
+      tier_keys <- names(TIER_REGISTRY)[order(-vapply(names(TIER_REGISTRY), tier_rank, numeric(1)))]
+      tier_keys <- Filter(function(t) tier_assignment_allowed(t, viewer_tier, viewer_is_staff), tier_keys)
+
+      choices <- setNames(tier_keys, vapply(tier_keys, function(t) TIER_REGISTRY[[t]]$label, character(1)))
       selectInput(ns("new_tier"), "Tier", choices = choices, selected = "finance", width = "100%")
     })
 
@@ -738,20 +736,13 @@ tiersServer <- function(id, shared) {
         showNotification("Las contrase\u00f1as no coinciden.", type = "error"); return()
       }
       # ── HARD WALL: tier assignment gates ────────────────────────────────────────
-      # 1. req() silently aborts if a lower tier somehow submits a restricted tier value
-      # 2. Force-override: sanitise tier on save regardless of UI input
-      # 3. The selectInput in new_tier_ui already restricts choices by viewer tier (UI layer)
-      if (identical(tier, "principal")) {
-        req(is_principal())
-      }
-      if (identical(tier, "hopdesk")) {
-        req(is_hopdesk() || is_principal())
-      }
-      if (identical(tier, "dev")) {
-        req(is_dev() || is_hopdesk() || is_principal())
-      }
-      if (!is_dev() && !is_hopdesk() && !is_principal())
-        tier <- gsub("^(dev|hopdesk|principal)$", "admin", tier)
+      # Generic rank-based rule: a viewer may only assign a tier at or below
+      # their own rank, and an internal_only (staff) tier only if the viewer
+      # session itself is_staff. Enforced here regardless of what the
+      # dropdown (UI layer, new_tier_ui above) offered — a forged request
+      # cannot bypass it. Anything not assignable falls back to "admin".
+      viewer_is_staff <- isTRUE(shared$current_user_info()$is_staff)
+      if (!tier_assignment_allowed(tier, current_tier(), viewer_is_staff)) tier <- "admin"
 
       all_u <- all_usuarios_rv()
       if (!is.null(all_u) && username %in% tolower(all_u$username)) {
@@ -1001,10 +992,10 @@ tiersServer <- function(id, shared) {
       original_tier <- usuarios[idx, "tier"]
       new_tier      <- input$edit_tier %||% original_tier
 
-      # Safety guards — tier assignment walls
-      if (!is_hopdesk() && !is_principal() && identical(new_tier, "hopdesk")) new_tier <- "admin"
-      if (!is_dev() && !is_hopdesk() && !is_principal() && identical(new_tier, "dev")) new_tier <- "admin"
-      if (!is_principal() && identical(new_tier, "principal")) new_tier <- "hopdesk"
+      # Safety guards — tier assignment walls (same generic rank/internal_only
+      # rule as the create-user handler above; see comment there).
+      viewer_is_staff <- isTRUE(shared$current_user_info()$is_staff)
+      if (!tier_assignment_allowed(new_tier, current_tier(), viewer_is_staff)) new_tier <- "admin"
       # Hopdesk-tier protection: block demoting the last hopdesk
       if (identical(original_tier, "hopdesk") && !identical(new_tier, "hopdesk")) {
         all_u_check   <- all_usuarios_rv()
@@ -2672,10 +2663,10 @@ tiersServer <- function(id, shared) {
     }
 
     output$hop_section <- renderUI({
-      can_see <- isTRUE(is_hopdesk()) || isTRUE(is_dev()) || isTRUE(is_principal())
+      can_see <- isTRUE(shared$current_user_info()$is_staff)
       if (!can_see) {
         return(div(class = "alert alert-warning mt-3",
-                   icon("lock"), " Solo disponible para cuentas Hopdesk, Dev y Principal."))
+                   icon("lock"), " Solo disponible para cuentas Hopdesk y Principal."))
       }
       hop_refresh()
 
@@ -3013,7 +3004,7 @@ tiersServer <- function(id, shared) {
 
     # Staff submits a request — no duration; principal decides per client
     observeEvent(input$btn_hop_request_submit, {
-      req(isTRUE(is_hopdesk()) || isTRUE(is_dev()))
+      req(isTRUE(shared$current_user_info()$is_staff) && !isTRUE(is_principal()))
       clients_sel <- input$hop_req_clients
       req(length(clients_sel) > 0)
       me      <- shared$current_user()           %||% ""

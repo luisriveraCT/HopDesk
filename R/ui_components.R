@@ -1220,6 +1220,45 @@ app_scripts <- function() {
       }
     }, true);
 
+    /* ── Navbar dropdown (e.g. \"Grupo\") ──────────────────────────────
+       Plain open-on-click / close-on-outside-click / close-on-item-select,
+       same as any ordinary dropdown. Bootstrap's own Dropdown component
+       never reliably closes this one in this app (a binding/order clash
+       with Shiny's own nav-link click handling on the nested tab items,
+       most likely) — so it's managed by hand instead of fought with. */
+    function _hopNavDropdowns() { return document.querySelectorAll('.navbar li.dropdown'); }
+    function _hopCloseNavDropdowns(except) {
+      _hopNavDropdowns().forEach(function(li) {
+        if (li === except) return;
+        li.classList.remove('show');
+        var menu = li.querySelector('.dropdown-menu');
+        if (menu) menu.classList.remove('show');
+        var toggle = li.querySelector('[data-bs-toggle=\"dropdown\"]');
+        if (toggle) toggle.setAttribute('aria-expanded', 'false');
+      });
+    }
+    document.addEventListener('click', function(e) {
+      var toggle = e.target.closest('.navbar li.dropdown > [data-bs-toggle=\"dropdown\"]');
+      if (toggle) {
+        e.preventDefault();
+        e.stopPropagation();
+        var li     = toggle.closest('li.dropdown');
+        var isOpen = li.classList.contains('show');
+        _hopCloseNavDropdowns(isOpen ? null : li);
+        li.classList.toggle('show', !isOpen);
+        var menu = li.querySelector('.dropdown-menu');
+        if (menu) menu.classList.toggle('show', !isOpen);
+        toggle.setAttribute('aria-expanded', String(!isOpen));
+        return;
+      }
+      // Item selected inside an open menu, or click landed anywhere else —
+      // close (item clicks still bubble through to Shiny's own tab switch).
+      _hopCloseNavDropdowns(null);
+    }, true);
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') _hopCloseNavDropdowns(null);
+    });
+
     /* ── Refresh button feedback ───────────────────────────────────── */
     (function() {
       var _rfBar;
