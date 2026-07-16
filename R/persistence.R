@@ -477,6 +477,82 @@ save_holiday_overrides <- function(df, client_id = NULL) {
   if (exists(".cache_set", mode = "function")) .cache_set("holiday_overrides", norm)
 }
 
+# ── ERP Connections (Stage 3) ─────────────────────────────────────────────────
+# Per-client, per-company ERP credential store, one erp_connections.rds per
+# client at "<client_id>/erp_connections.rds". See R/erp_connector_registry.R
+# for the supported erp_type shapes and R/secrets_encryption.R for how
+# secrets_encrypted is produced/consumed — this file never sees a decrypted
+# secret.
+#
+# Isolation guarantee (docs/saas_rebuild/STAGE_3_ERP_CREDENTIALS.md §4):
+# unlike most load_*/save_* pairs above, client_id here is REQUIRED, not an
+# optional override that falls back to Sys.getenv("CLIENT_ID") — these
+# functions must be impossible to call without stating whose folder you mean.
+# Every read/write also re-asserts that every row's own client_id column
+# matches the folder it was read from / is being written to, and fails loudly
+# (stop(), never a silent filter) on any mismatch — a mismatch means an S3 key
+# or a caller upstream is already broken, and hiding that would be worse.
+
+.schema_erp_connections <- function() tibble(
+  id                = character(),   # uuid
+  client_id         = character(),   # redundant w/ S3 folder; re-checked on every read/write
+  label             = character(),
+  erp_type          = character(),   # key into ERP_CONNECTOR_REGISTRY
+  company_initials  = character(),   # JSON array string, e.g. '["NG"]'
+  config            = character(),   # JSON string — non-secret fields, shape per erp_type
+  secrets_encrypted = character(),   # base64 ciphertext from encrypt_secret() — never plaintext
+  created_at        = character(),
+  created_by        = character(),
+  updated_at        = character(),
+  updated_by        = character(),
+  last_tested_at    = character(),
+  last_test_result  = character(),   # "ok" | "error" | NA
+  last_test_message = character(),
+  active            = logical(),
+  deleted           = logical(),
+  deleted_at        = character()
+)
+
+# Fails loudly if any row's client_id doesn't match `client_id` — see isolation
+# guarantee above. `context` is only used to word the error message
+# (read vs write) since the check is identical either direction.
+.assert_erp_connections_isolated <- function(df, client_id, context) {
+  if (nrow(df) == 0L) return(invisible(TRUE))
+  bad <- is.na(df$client_id) | tolower(df$client_id) != tolower(client_id)
+  if (any(bad)) {
+    stop(sprintf(
+      "erp_connections isolation violation on %s: %d row(s) have client_id != '%s' (found: %s). ",
+      context, sum(bad), tolower(client_id),
+      paste(unique(df$client_id[bad]), collapse = ", ")
+    ), "This means an S3 key or a caller upstream is already broken — refusing to ",
+       "silently filter or correct it.", call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+load_erp_connections <- function(client_id) {
+  if (missing(client_id) || is.null(client_id) || !nzchar(client_id))
+    stop("load_erp_connections: client_id is required and must be a non-empty string — ",
+         "this function must never guess whose folder to read.", call. = FALSE)
+
+  raw <- .normalize(.s3_read_with(S3_KEYS$erp_connections, client_id = client_id),
+                     .schema_erp_connections)
+  .assert_erp_connections_isolated(raw, client_id, "read")
+  raw[is.na(raw$deleted) | raw$deleted != TRUE, , drop = FALSE]
+}
+
+save_erp_connections <- function(df, client_id) {
+  if (missing(client_id) || is.null(client_id) || !nzchar(client_id))
+    stop("save_erp_connections: client_id is required and must be a non-empty string — ",
+         "this function must never guess whose folder to write.", call. = FALSE)
+
+  norm <- .normalize(df, .schema_erp_connections)
+  .assert_erp_connections_isolated(norm, client_id, "write")
+
+  .s3_write(norm, S3_KEYS$erp_connections, client_id = client_id)
+  invisible(TRUE)
+}
+
 # ── Normalizers ────────────────────────────────────────────────────────────────
 # Coerce loaded data to the correct schema; adds missing columns, drops nothing.
 

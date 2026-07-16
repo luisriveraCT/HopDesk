@@ -293,6 +293,7 @@ empresasServer <- function(id, shared) {
 
       edit_id <- ns("trs_edit_click")
       del_id  <- ns("trs_del_click")
+      erp_id  <- ns("erp_open_click")
 
       df <- data.frame(
         `#`            = empresas$account_code,
@@ -314,6 +315,18 @@ empresasServer <- function(id, shared) {
         stringsAsFactors = FALSE,
         check.names      = FALSE
       )
+
+      # Stage 3: ERP action column — only added when the ERP feature itself is
+      # visible in this context (see erp_ui_visible()). Ordinary client-facing
+      # functionality; hidden for a staff-at-home session exactly like
+      # FINANCIAL_TABS hides Calendario/Vencidos/etc. for that same context.
+      if (isTRUE(erp_ui_visible())) {
+        df$ERP <- vapply(seq_len(nrow(empresas)), function(i)
+          sprintf(
+            '<button class="btn btn-outline-secondary btn-sm" onclick="Shiny.setInputValue(\'%s\',\'%s\',{priority:\'event\'})"><i class="fa fa-plug"></i> ERP</button>',
+            erp_id, empresas$initials[i]),
+          character(1))
+      }
 
       DT::datatable(
         df, escape = FALSE, selection = "none", rownames = FALSE,
@@ -564,6 +577,409 @@ empresasServer <- function(id, shared) {
       selected_idx(NULL)
       showNotification(paste0("Empresa '", target_initials, "' desactivada."),
                        type = "message", duration = 4)
+    })
+
+    # ── Stage 3: ERP connections ───────────────────────────────────────────────
+    # Per-company ERP credentials. See docs/saas_rebuild/STAGE_3_ERP_CREDENTIALS.md.
+    #
+    # Visibility (spec §5): FINANCIAL_TABS-style, not Stage 2's staff-only-tab
+    # hiding — this is ordinary client-facing functionality. Invisible for a
+    # staff-at-home session (nothing to configure, hd-admin has no
+    # companies), visible for a native client session and for staff mid-jump.
+    erp_is_staff <- reactive(isTRUE(tryCatch(shared$current_user_info()$is_staff, error = function(e) FALSE)))
+    erp_jumped   <- reactive(!is.null(tryCatch(shared$jump_client_id(), error = function(e) NULL)))
+
+    erp_ui_visible <- reactive(if (erp_is_staff()) erp_jumped() else TRUE)
+
+    # Server-side access gate (spec §5 "Access") — the actual enforcement.
+    # Every handler below calls this itself; the UI only hides the option.
+    erp_access <- reactive(erp_access_allowed(current_tier(), erp_is_staff(), erp_jumped()))
+
+    .reject_erp_action <- function() {
+      showNotification("No tienes permisos para administrar conexiones ERP.",
+                       type = "error", duration = 5)
+    }
+
+    .erp_connections_local <- reactiveVal(NULL)
+
+    # NOTE: .erp_connections_local() is a DISPLAY cache only — it may contain
+    # rows just flagged deleted=TRUE (the write path needs the full set to
+    # persist that flag correctly). load_erp_connections() already excludes
+    # deleted rows on a fresh read, so this reactive re-applies the same
+    # filter to the cached path too — otherwise a just-deleted row keeps
+    # showing in the UI after the very first mutation in a session, even
+    # though it really was removed from what's active.
+    all_erp_rv <- reactive({
+      ovr <- .erp_connections_local()
+      df <- if (!is.null(ovr)) {
+        ovr
+      } else {
+        req(erp_ui_visible())
+        tryCatch(load_erp_connections(shared$effective_client_id()),
+                error = function(e) { message("[EMP ERP] load failed: ", e$message); .schema_erp_connections() })
+      }
+      if (!is.null(df) && nrow(df) && "deleted" %in% names(df))
+        df <- df[is.na(df$deleted) | df$deleted != TRUE, , drop = FALSE]
+      df
+    })
+
+    .save_erp_and_broadcast <- function(df) {
+      save_erp_connections(df, client_id = shared$effective_client_id())   # throws on failure
+      .erp_connections_local(df)
+      invisible(TRUE)
+    }
+
+    # Every mutation (save/test/delete) MUST go through this, never through
+    # .save_erp_and_broadcast(all_erp_rv()) directly. all_erp_rv()/
+    # .erp_connections_local() are a per-session display cache — if a write
+    # ever merged its change into that cached snapshot instead of the live
+    # S3 state, a snapshot that was even briefly stale (a slow reactive
+    # flush, a second tab, another session) would silently overwrite S3 with
+    # a smaller set of rows and drop whatever wasn't in that snapshot — with
+    # no "deleted" flag, no trace, just gone. This function re-fetches the
+    # current live state immediately before merging in `mutate_fn`'s change
+    # and writing, so the write can never regress rows that changed since
+    # this session's own copy was cached.
+    .erp_mutate_and_save <- function(mutate_fn) {
+      cid   <- shared$effective_client_id()
+      fresh <- load_erp_connections(cid)   # throws on failure — never fall back to a stale df here
+      updated <- mutate_fn(fresh)
+      save_erp_connections(updated, client_id = cid)
+      .erp_connections_local(updated)
+      invisible(updated)
+    }
+
+    erp_modal <- reactiveValues(company = NULL, form_open = FALSE, editing_id = NULL, confirm_delete_id = NULL)
+
+    company_erp_rows <- reactive({
+      req(erp_modal$company)
+      df <- all_erp_rv()
+      if (is.null(df) || !nrow(df)) return(df)
+      has_company <- vapply(df$company_initials, function(x) {
+        inits <- tryCatch(jsonlite::fromJSON(x), error = function(e) character(0))
+        isTRUE(erp_modal$company %in% inits)
+      }, logical(1))
+      df[has_company, , drop = FALSE]
+    })
+
+    editing_erp_row <- reactive({
+      id <- erp_modal$editing_id
+      req(!is.null(id))
+      rows <- company_erp_rows()
+      req(!is.null(rows) && nrow(rows))
+      match_row <- rows[rows$id == id, , drop = FALSE]
+      req(nrow(match_row) == 1)
+      match_row
+    })
+
+    # Blocks browser autofill on a rendered input by patching the actual
+    # <input> element (not the wrapping div textInput()/passwordInput()
+    # return). Plain autocomplete="off" is routinely ignored by Chrome for
+    # login-shaped fields, so password fields get "new-password" instead —
+    # the one value Chrome actually honors for suppressing saved-credential
+    # suggestions. Needed because a text-input-next-to-password-input pair
+    # on the same origin as this app's own login screen gets autofilled with
+    # the logged-in user's own Hopdesk credentials by the browser itself —
+    # not a server-side leak, but confusing and worth blocking outright.
+    .erp_no_autofill <- function(tag, password = FALSE) {
+      htmltools::tagQuery(tag)$find("input")$
+        addAttrs(autocomplete = if (password) "new-password" else "off")$
+        allTags()
+    }
+
+    # `secret` = TRUE for fields that go into secrets_encrypted (prefix "secret") —
+    # these are NEVER pre-filled with the real value, even on edit, per the
+    # "leave blank to keep unchanged" convention. Non-secret config fields
+    # (prefix "cfg") are ordinary settings and MUST show their real current
+    # value on edit — leaving them blank-with-a-hint like the secret fields
+    # would silently wipe the URL/company/etc. on save if the user didn't
+    # notice and retype them.
+    .erp_render_field <- function(prefix, field, value = NULL, secret = FALSE) {
+      input_id <- ns(paste0(prefix, "_", field$name))
+      if (identical(field$type, "checkbox")) {
+        checkboxInput(input_id, field$label, value = if (is.null(value)) TRUE else isTRUE(value))
+      } else if (secret) {
+        if (identical(field$type, "password")) {
+          .erp_no_autofill(passwordInput(input_id, field$label, value = "",
+                        placeholder = if (!is.null(value)) "•••••• (dejar en blanco para no modificar)" else ""),
+                        password = TRUE)
+        } else {
+          .erp_no_autofill(textInput(input_id, field$label, value = "",
+                    placeholder = if (!is.null(value)) "(dejar en blanco para no modificar)" else ""))
+        }
+      } else {
+        .erp_no_autofill(textInput(input_id, field$label, value = if (is.null(value)) "" else as.character(value)))
+      }
+    }
+
+    output$erp_modal_body <- renderUI({
+      req(erp_modal$company)
+      rows <- company_erp_rows()
+
+      # Inline delete confirmation — NOT a nested showModal(), which would
+      # silently replace this "Conexiones ERP" modal (Shiny shows only one
+      # modal at a time) and strand the user without a way back to the list.
+      if (!is.null(erp_modal$confirm_delete_id)) {
+        target <- if (!is.null(rows) && nrow(rows)) rows[rows$id == erp_modal$confirm_delete_id, , drop = FALSE] else rows[0, ]
+        return(tagList(
+          tags$p("Vas a eliminar la conexión:"),
+          tags$div(class = "alert alert-warning py-2",
+                   tags$strong(if (nrow(target)) target$label[1] else "")),
+          tags$p(class = "text-muted small",
+                 icon("circle-info", class = "me-1"),
+                 " Esta acción no se puede deshacer desde la interfaz. Tendrás que volver a ",
+                 "capturar las credenciales si la necesitas de nuevo."),
+          div(class = "d-flex gap-2",
+              actionButton(ns("btn_confirm_erp_delete"), tagList(icon("trash"), " Sí, eliminar"),
+                          class = "btn btn-danger btn-sm"),
+              actionButton(ns("btn_cancel_erp_delete"), "Cancelar", class = "btn btn-outline-secondary btn-sm"))
+        ))
+      }
+
+      list_ui <- if (is.null(rows) || !nrow(rows)) {
+        tags$p(class = "text-muted small", "Sin conexiones configuradas todavía.")
+      } else {
+        tagList(lapply(seq_len(nrow(rows)), function(i) {
+          r <- rows[i, ]
+          badge <- if (isTRUE(r$last_test_result == "ok")) list(color = "success", text = "OK")
+                   else if (isTRUE(r$last_test_result == "error")) list(color = "danger", text = "Error")
+                   else list(color = "secondary", text = "Sin probar")
+          div(
+            class = "d-flex align-items-center justify-content-between border rounded p-2 mb-2",
+            div(
+              tags$strong(r$label), " ",
+              tags$span(class = paste0("badge bg-", badge$color), badge$text),
+              tags$div(class = "text-muted small", erp_connector_label(r$erp_type))
+            ),
+            div(
+              class = "d-flex gap-1",
+              tags$button(class = "btn btn-sm btn-outline-primary", title = "Editar",
+                onclick = sprintf("Shiny.setInputValue('%s','%s',{priority:'event'})",
+                                  ns("erp_edit_click"), r$id),
+                icon("pen")),
+              tags$button(class = "btn btn-sm btn-outline-secondary", title = "Probar conexión",
+                onclick = sprintf("Shiny.setInputValue('%s','%s',{priority:'event'})",
+                                  ns("erp_test_click"), r$id),
+                icon("plug")),
+              tags$button(class = "btn btn-sm btn-outline-danger", title = "Eliminar",
+                onclick = sprintf("Shiny.setInputValue('%s','%s',{priority:'event'})",
+                                  ns("erp_del_click"), r$id),
+                icon("trash"))
+            )
+          )
+        }))
+      }
+
+      form_ui <- if (isTRUE(erp_modal$form_open)) {
+        editing <- tryCatch(editing_erp_row(), error = function(e) NULL)
+        erp_type <- if (!is.null(editing)) editing$erp_type[1] else "sap_b1_service_layer"
+        cfg <- if (!is.null(editing)) tryCatch(jsonlite::fromJSON(editing$config[1]), error = function(e) list()) else list()
+
+        tagList(
+          tags$hr(),
+          tags$h6(class = "fw-semibold", if (!is.null(editing)) "Editar conexión" else "Nueva conexión"),
+          .erp_no_autofill(textInput(ns("erp_label"), "Nombre",
+                    value = if (!is.null(editing)) editing$label[1] else "",
+                    placeholder = "Ej: SAP — Networks Group (NG)")),
+          lapply(erp_connector_config_fields(erp_type), function(f) .erp_render_field("cfg", f, cfg[[f$name]])),
+          tags$p(class = "text-muted small mb-1 mt-2", "Credenciales"),
+          lapply(erp_connector_secret_fields(erp_type), function(f)
+            .erp_render_field("secret", f, value = if (!is.null(editing)) TRUE else NULL, secret = TRUE)),
+          div(
+            class = "d-flex gap-2 mt-2",
+            actionButton(ns("btn_save_erp"), tagList(icon("floppy-disk"), " Guardar"),
+                        class = "btn btn-primary btn-sm"),
+            actionButton(ns("btn_cancel_erp_form"), "Cancelar", class = "btn btn-outline-secondary btn-sm")
+          )
+        )
+      } else {
+        actionButton(ns("btn_new_erp"), tagList(icon("circle-plus"), " Nueva conexión"),
+                    class = "btn btn-outline-primary btn-sm mt-2")
+      }
+
+      tagList(list_ui, form_ui)
+    })
+
+    observeEvent(input$erp_open_click, {
+      req(erp_ui_visible())
+      erp_modal$company           <- input$erp_open_click
+      erp_modal$form_open         <- FALSE
+      erp_modal$editing_id        <- NULL
+      erp_modal$confirm_delete_id <- NULL
+      showModal(modalDialog(
+        title = tagList(icon("plug"), paste0(" Conexiones ERP — ", input$erp_open_click)),
+        uiOutput(ns("erp_modal_body")),
+        footer = modalButton("Cerrar"),
+        size = "m", easyClose = TRUE
+      ))
+    })
+
+    observeEvent(input$btn_new_erp, {
+      req(erp_access())
+      erp_modal$editing_id <- NULL; erp_modal$form_open <- TRUE; erp_modal$confirm_delete_id <- NULL
+    })
+    observeEvent(input$erp_edit_click, {
+      req(erp_access())
+      erp_modal$editing_id <- input$erp_edit_click; erp_modal$form_open <- TRUE; erp_modal$confirm_delete_id <- NULL
+    })
+    observeEvent(input$btn_cancel_erp_form, {
+      erp_modal$form_open <- FALSE; erp_modal$editing_id <- NULL
+    })
+
+    observeEvent(input$btn_save_erp, {
+      if (!isTRUE(erp_access())) { .reject_erp_action(); return() }
+
+      editing  <- tryCatch(editing_erp_row(), error = function(e) NULL)
+      erp_type <- if (!is.null(editing)) editing$erp_type[1] else "sap_b1_service_layer"
+      label    <- trimws(input$erp_label %||% "")
+      if (!nzchar(label)) { showNotification("El nombre es obligatorio.", type = "error"); return() }
+
+      cfg_fields <- erp_connector_config_fields(erp_type)
+      config <- setNames(lapply(cfg_fields, function(f) {
+        v <- input[[paste0("cfg_", f$name)]]
+        if (identical(f$type, "checkbox")) isTRUE(v) else trimws(v %||% "")
+      }), vapply(cfg_fields, function(f) f$name, character(1)))
+
+      secret_fields  <- erp_connector_secret_fields(erp_type)
+      secret_inputs  <- lapply(secret_fields, function(f) trimws(input[[paste0("secret_", f$name)]] %||% ""))
+      names(secret_inputs) <- vapply(secret_fields, function(f) f$name, character(1))
+      any_secret_filled <- any(vapply(secret_inputs, nzchar, logical(1)))
+      all_secret_filled <- all(vapply(secret_inputs, nzchar, logical(1)))
+
+      if (is.null(editing) && !all_secret_filled) {
+        showNotification("Completa todos los campos de credenciales.", type = "error"); return()
+      }
+      if (any_secret_filled && !all_secret_filled) {
+        showNotification("Completa todos los campos de credenciales, o déjalos todos en blanco para no modificarlas.",
+                         type = "error", duration = 6)
+        return()
+      }
+
+      secrets_encrypted <- if (!is.null(editing) && !any_secret_filled) {
+        editing$secrets_encrypted[1]
+      } else {
+        encrypt_secret(secret_inputs)
+      }
+
+      info <- tryCatch(shared$current_user_info(), error = function(e) NULL)
+      who  <- info$account_code %||% info$user %||% "unknown"
+      now  <- as.character(Sys.time())
+      cid  <- shared$effective_client_id()
+      erp_company <- erp_modal$company
+      editing_id  <- if (!is.null(editing)) editing$id[1] else NULL
+
+      saved <- tryCatch({
+        .erp_mutate_and_save(function(all_df) {
+          if (!is.null(editing_id)) {
+            idx <- which(all_df$id == editing_id)
+            if (length(idx) != 1)
+              stop("Esta conexión ya no existe — puede haber sido eliminada en otra sesión. Cierra y vuelve a abrir el panel.")
+            all_df[idx, "label"]             <- label
+            all_df[idx, "config"]            <- as.character(jsonlite::toJSON(config, auto_unbox = TRUE))
+            all_df[idx, "secrets_encrypted"] <- secrets_encrypted
+            all_df[idx, "updated_at"]        <- now
+            all_df[idx, "updated_by"]        <- who
+            all_df
+          } else {
+            new_row <- tibble::tibble(
+              id = uuid::UUIDgenerate(), client_id = cid, label = label, erp_type = erp_type,
+              company_initials = as.character(jsonlite::toJSON(erp_company, auto_unbox = FALSE)),
+              config = as.character(jsonlite::toJSON(config, auto_unbox = TRUE)),
+              secrets_encrypted = secrets_encrypted,
+              created_at = now, created_by = who, updated_at = now, updated_by = who,
+              last_tested_at = NA_character_, last_test_result = NA_character_, last_test_message = NA_character_,
+              active = TRUE, deleted = FALSE, deleted_at = NA_character_
+            )
+            dplyr::bind_rows(all_df, new_row)
+          }
+        })
+        TRUE
+      }, error = function(e) {
+        message("[EMP ERP] save failed: ", e$message)
+        showNotification(conditionMessage(e), type = "error", duration = 8)
+        FALSE
+      })
+      if (!saved) return()
+
+      erp_modal$form_open <- FALSE
+      erp_modal$editing_id <- NULL
+      showNotification(paste0("Conexión '", label, "' guardada."), type = "message", duration = 3)
+    })
+
+    observeEvent(input$erp_test_click, {
+      if (!isTRUE(erp_access())) { .reject_erp_action(); return() }
+
+      test_id <- input$erp_test_click
+      cid <- shared$effective_client_id()
+      current <- tryCatch(load_erp_connections(cid), error = function(e) NULL)
+      if (is.null(current) || !any(current$id == test_id)) {
+        showNotification("Esta conexión ya no existe (fue eliminada o modificada en otra sesión).",
+                         type = "error", duration = 6)
+        return()
+      }
+      row <- current[current$id == test_id, , drop = FALSE]
+
+      config  <- tryCatch(jsonlite::fromJSON(row$config[1]), error = function(e) list())
+      secrets <- tryCatch(decrypt_secret(row$secrets_encrypted[1]),
+                          error = function(e) { list(.decrypt_error = conditionMessage(e)) })
+
+      result <- if (!is.null(secrets$.decrypt_error)) {
+        list(ok = FALSE, message = paste0("No se pudo descifrar la credencial: ", secrets$.decrypt_error))
+      } else {
+        tryCatch(run_erp_connection_test(row$erp_type[1], config, secrets),
+                error = function(e) list(ok = FALSE, message = paste0("Error inesperado: ", conditionMessage(e))))
+      }
+
+      tryCatch({
+        .erp_mutate_and_save(function(all_df) {
+          idx <- which(all_df$id == test_id)
+          if (length(idx) != 1) stop("La conexión fue eliminada mientras se probaba — resultado no guardado.")
+          all_df[idx, "last_tested_at"]    <- as.character(Sys.time())
+          all_df[idx, "last_test_result"]  <- if (isTRUE(result$ok)) "ok" else "error"
+          all_df[idx, "last_test_message"] <- result$message %||% ""
+          all_df
+        })
+      }, error = function(e) message("[EMP ERP] test-result save failed: ", e$message))
+
+      showNotification(result$message %||% (if (isTRUE(result$ok)) "OK" else "Error"),
+                       type = if (isTRUE(result$ok)) "message" else "error", duration = 6)
+    })
+
+    observeEvent(input$erp_del_click, {
+      if (!isTRUE(erp_access())) { .reject_erp_action(); return() }
+      all_df <- all_erp_rv()
+      req(any(all_df$id == input$erp_del_click))
+      erp_modal$confirm_delete_id <- input$erp_del_click
+    })
+
+    observeEvent(input$btn_cancel_erp_delete, {
+      erp_modal$confirm_delete_id <- NULL
+    })
+
+    observeEvent(input$btn_confirm_erp_delete, {
+      if (!isTRUE(erp_access())) { .reject_erp_action(); return() }
+
+      id <- erp_modal$confirm_delete_id
+      req(!is.null(id))
+
+      saved <- tryCatch({
+        .erp_mutate_and_save(function(all_df) {
+          idx <- which(all_df$id == id)
+          if (length(idx) != 1) stop("Esta conexión ya no existe (fue eliminada en otra sesión).")
+          all_df[idx, "deleted"]    <- TRUE
+          all_df[idx, "deleted_at"] <- as.character(Sys.time())
+          all_df[idx, "active"]     <- FALSE
+          all_df
+        })
+        TRUE
+      }, error = function(e) {
+        message("[EMP ERP] delete failed: ", e$message)
+        showNotification(conditionMessage(e), type = "error", duration = 6)
+        FALSE
+      })
+      erp_modal$confirm_delete_id <- NULL
+      if (!saved) return()
+      showNotification("Conexión eliminada.", type = "message", duration = 3)
     })
 
     # ── Group configuration section (dev only) ────────────────────────────────

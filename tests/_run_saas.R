@@ -12,6 +12,7 @@ suppressPackageStartupMessages({
   library(jsonlite)
   library(uuid)
   library(aws.s3)    # must load before patching its namespace
+  library(openssl)   # Stage 3: ERP secret encryption
 })
 
 # ── In-memory S3 mock ─────────────────────────────────────────────────────────
@@ -48,7 +49,8 @@ Sys.setenv(CLIENT_ID     = "networks",
            AWS_SECRET_ACCESS_KEY = "mock",
            AWS_DEFAULT_REGION    = "us-east-1",
            RESEND_API_KEY        = "sandbox",
-           RESEND_FROM_EMAIL     = "noreply@test.hopdesk.com")
+           RESEND_FROM_EMAIL     = "noreply@test.hopdesk.com",
+           HOPDESK_SECRETS_KEY   = openssl::base64_encode(openssl::rand_bytes(32)))
 
 # ── S3 stubs for persistence.R internal helpers ──────────────────────────────
 .s3_read  <- function(key)      mock_s3readRDS(paste0("networks/", key), "mock-bucket")
@@ -85,6 +87,7 @@ S3_KEYS <- list(
   pasivos_provisions  = "pasivos_provisions.rds",
   abonos             = "abonos.rds",
   sap_overrides      = "sap_overrides.rds",
+  erp_connections    = "erp_connections.rds",
   manual             = "manual.rds",
   pagar_hoy          = "pagar_hoy.rds",
   pagar_hoy_sync     = "pagar_hoy_sync.rds",
@@ -101,6 +104,8 @@ source("R/tiers_tab_config.R", local = FALSE)
 source("R/auth.R",           local = FALSE)
 source("R/app_audit.R",      local = FALSE)
 source("R/email_service.R",  local = FALSE)
+source("R/secrets_encryption.R",     local = FALSE)
+source("R/erp_connector_registry.R", local = FALSE)
 
 # ── Override hd-admin direct-read helpers (they bypass .s3_key()) ─────────────
 # Re-point them at the mock store so tests can plant data there.
@@ -164,6 +169,9 @@ cat("  HopDesk SaaS Test Suite\n")
 cat("====================================================\n\n")
 
 .run_module("tests/test_saas_isolation.R")
+.run_module("tests/test_saas_erp_secrets.R")
+.run_module("tests/test_saas_erp_isolation.R")
+.run_module("tests/test_saas_erp_tiers.R")
 .run_module("tests/test_saas_perms.R")
 .run_module("tests/test_saas_sap_cache.R")
 .run_module("tests/test_saas_home_jump.R")

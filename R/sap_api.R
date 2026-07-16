@@ -49,23 +49,33 @@
 }
 
 # ── Authentication ─────────────────────────────────────────────────────────────
+#
+# .sap_login_raw()/.sap_logout_raw() take credentials as explicit arguments
+# instead of resolving them from SAP_{INITIALS}_* env vars. sap_login()/
+# sap_logout() below are the legacy env-var-driven entry points, rewritten
+# to call these low-level functions so there is exactly one HTTP
+# login/logout implementation (Stage 3 spec §2: "reuse, don't reimplement").
+# The legacy env-var path stays in place (not yet removed — see
+# docs/saas_rebuild/STAGE_3_ERP_CREDENTIALS.md §6) until the new
+# credential-store path has been proven end to end against live SAP data
+# and Mouse has signed off.
 
-sap_login <- function(initials) {
-  creds <- .sap_creds(initials)
+.sap_login_raw <- function(url, company, user, password, ssl_verify = TRUE, label = NULL) {
+  who <- if (!is.null(label)) paste0(" for ", label) else ""
 
   resp <- tryCatch(
     httr::POST(
-      url    = paste0(creds$url, "/Login"),
+      url    = paste0(url, "/Login"),
       httr::content_type_json(),
       httr::timeout(2),   # total timeout 2s (kept for when SAP is reachable)
       httr::config(
-        ssl_verifypeer   = creds$ssl_verify,
+        ssl_verifypeer   = ssl_verify,
         connecttimeout   = 0.8   # TCP connect: fail fast when host is unreachable
       ),
       body   = jsonlite::toJSON(list(
-        CompanyDB = creds$company,
-        UserName  = creds$user,
-        Password  = creds$password
+        CompanyDB = company,
+        UserName  = user,
+        Password  = password
       ), auto_unbox = TRUE)
     ),
     error = function(e) {
@@ -77,19 +87,37 @@ sap_login <- function(initials) {
   )
 
   if (httr::http_error(resp)) {
-    stop("SAP login failed for ", initials, ": ", httr::http_status(resp)$message, call. = FALSE)
+    stop("SAP login failed", who, ": ", httr::http_status(resp)$message, call. = FALSE)
   }
 
   cookie <- httr::cookies(resp)
   session_id <- cookie$value[cookie$name == "B1SESSION"]
   if (!length(session_id))
-    stop("SAP login for ", initials, " returned no session cookie.", call. = FALSE)
+    stop("SAP login", who, " returned no session cookie.", call. = FALSE)
 
-  .sap_sessions[[initials]] <- list(
+  list(
     cookie     = paste0("B1SESSION=", session_id),
-    base_url   = creds$url,
-    ssl_verify = creds$ssl_verify,
+    base_url   = url,
+    ssl_verify = ssl_verify,
     expires_at = Sys.time() + 1800   # 30 min
+  )
+}
+
+.sap_logout_raw <- function(session) {
+  tryCatch(
+    httr::POST(paste0(session$base_url, "/Logout"),
+               httr::add_headers(Cookie = session$cookie),
+               httr::config(ssl_verifypeer = session$ssl_verify)),
+    error = function(e) NULL
+  )
+  invisible(TRUE)
+}
+
+sap_login <- function(initials) {
+  creds <- .sap_creds(initials)
+  .sap_sessions[[initials]] <- .sap_login_raw(
+    url = creds$url, company = creds$company, user = creds$user,
+    password = creds$password, ssl_verify = creds$ssl_verify, label = initials
   )
   invisible(TRUE)
 }
@@ -97,14 +125,32 @@ sap_login <- function(initials) {
 sap_logout <- function(initials) {
   s <- .sap_sessions[[initials]]
   if (is.null(s)) return(invisible(NULL))
-  tryCatch(
-    httr::POST(paste0(s$base_url, "/Logout"),
-               httr::add_headers(Cookie = s$cookie),
-               httr::config(ssl_verifypeer = s$ssl_verify)),
-    error = function(e) NULL
-  )
+  .sap_logout_raw(s)
   rm(list = initials, envir = .sap_sessions)
   invisible(TRUE)
+}
+
+#' test_fn for erp_type "sap_b1_service_layer" (R/erp_connector_registry.R).
+#' One-shot login against the given non-secret config + decrypted secrets,
+#' logs out immediately, never throws — always returns list(ok=, message=).
+test_sap_b1_service_layer_connection <- function(config, secrets) {
+  ssl_verify <- if (is.null(config$ssl_verify)) TRUE else isTRUE(config$ssl_verify) ||
+    identical(tolower(as.character(config$ssl_verify)), "true")
+
+  tryCatch({
+    session <- .sap_login_raw(
+      url        = config$url,
+      company    = config$company,
+      user       = secrets$user,
+      password   = secrets$password,
+      ssl_verify = ssl_verify,
+      label      = config$company
+    )
+    .sap_logout_raw(session)
+    list(ok = TRUE, message = "Conexión exitosa.")
+  }, error = function(e) {
+    list(ok = FALSE, message = paste0("Error de conexión: ", conditionMessage(e)))
+  })
 }
 
 .ensure_session <- function(initials) {
