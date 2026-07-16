@@ -35,6 +35,7 @@ library(readxl)     # Excel import in proveedores module
 library(openxlsx)   # Excel export in cashflow report
 library(shinymanager)
 library(callr)
+library(openssl)    # Stage 3: ERP secret encryption (R/secrets_encryption.R)
 # htmltools loaded transitively by Shiny; htmltools::HTML() used directly in calendar_html()
 
 # ── Early utility definitions ─────────────────────────────────────────────────
@@ -59,6 +60,8 @@ source("R/tiers_tab_config.R")
 source("R/auth.R")
 source("R/data_pipeline.R")
 source("R/sap_api.R")
+source("R/secrets_encryption.R")
+source("R/erp_connector_registry.R")
 source("R/ledger_module.R")
 source("R/ui_components.R")
 source("R/notes_handlers.R")
@@ -159,6 +162,7 @@ S3_KEYS <- list(
   policy_moves          = "policy_moves.rds",       # computed FechaVenc_Politica per invoice
   holiday_overrides     = "holiday_overrides.rds",  # add/remove specific holiday dates
   sap_overrides         = "sap_overrides.rds",       # field-level overrides for SAP invoices (Parte, Codigo, Factura, Notas)
+  erp_connections       = "erp_connections.rds",     # Stage 3: per-client ERP credentials (encrypted)
   pasivos_liabilities   = "pasivos_liabilities.rds",
   pasivos_provisions    = "pasivos_provisions.rds",
   pasivos_modifiers     = "pasivos_modifiers.rds",
