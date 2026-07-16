@@ -3524,7 +3524,8 @@ tiersServer <- function(id, shared) {
     global_audit_allowed_ids <- reactive({
       registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
       active   <- registry[registry$status == "active", , drop = FALSE]
-      setNames(active$client_id, active$display_name)
+      choices  <- setNames(active$client_id, active$display_name)
+      choices[order(names(choices))]   # alphabetical, matching the context-switcher modal
     })
 
     # "Hopdesk (interno)" is only ever offered to a viewer with

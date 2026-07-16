@@ -178,4 +178,67 @@ shiny::testServer(auditLogViewerServer, args = list(
        "multi_client: finance-tier viewer has can_view_client_audit_logs=FALSE")
 })
 
+# ── G. multi_client mode: end-to-end — Bunny actually selects Networks ───────
+# Not just "the option exists" (test D) but selecting it retrieves the real,
+# correctly-scoped log data through the same railguard as own_client mode.
+
+shiny::testServer(auditLogViewerServer, args = list(
+  shared             = .mock_shared("bunny", "hopdesk", "hd-admin", TRUE, "hd-admin", "hd-admin"),
+  mode               = "multi_client",
+  allowed_client_ids = c(Networks = "networks"),
+  include_staff_log  = function() FALSE
+), {
+  session$setInputs(audit_client_sel = "networks")
+  session$flushReact()
+  df <- fetched()
+  .chk(inherits(df, "error"), FALSE,
+       "multi_client: hopdesk selecting Networks succeeds (no railguard error)")
+  .chk(is.data.frame(df) && any(df$action == "reconcile"), TRUE,
+       "multi_client: hopdesk selecting Networks sees Networks' real log rows")
+})
+
+# ── H. Filter narrowing — Módulo / Acción / Usuario actually narrow results ──
+# Seed a richer log so each filter has something real to narrow against.
+
+mock_s3saveRDS(.APP_AUDIT_SCHEMA(), "networks/app_audit.rds", "mock-bucket")
+log_action(user = "tesoreria", module = "bancos",    action = "reconcile",
+          description = "bank reconciliation", client_id = "networks",
+          viewer_home_client_id = "networks")
+log_action(user = "larm",      module = "ledger_AR", action = "mover_fecha",
+          description = "invoice moved", client_id = "networks",
+          viewer_home_client_id = "networks")
+log_action(user = "dev",       module = "usuarios",  action = "crear_usuario",
+          description = "user created", client_id = "networks",
+          viewer_home_client_id = "networks")
+
+shiny::testServer(auditLogViewerServer, args = list(
+  shared = .mock_shared("tesoreria", "finance", "networks", FALSE, "networks", "networks"),
+  mode   = "own_client"
+), {
+  session$flushReact()
+  .chk(nrow(visible_fetched()), 3L, "filters: seeded 3 distinct rows visible before narrowing")
+
+  session$setInputs(audit_mod_sel = "ledger_AR")
+  session$flushReact()
+  f1 <- filtered()
+  .chk(nrow(f1) == 1L && f1$action[1] == "mover_fecha", TRUE,
+       "filters: Módulo narrows to exactly the matching module")
+
+  session$setInputs(audit_mod_sel = "Todos", audit_accion_sel = "crear_usuario")
+  session$flushReact()
+  f2 <- filtered()
+  .chk(nrow(f2) == 1L && f2$user[1] == "dev", TRUE,
+       "filters: Acción narrows to exactly the matching action")
+
+  session$setInputs(audit_accion_sel = "Todos", audit_user_filter = "larm")
+  session$flushReact()
+  f3 <- filtered()
+  .chk(nrow(f3) == 1L && f3$module[1] == "ledger_AR", TRUE,
+       "filters: Usuario free-text narrows to exactly the matching user")
+
+  session$setInputs(audit_user_filter = "")
+  session$flushReact()
+  .chk(nrow(filtered()), 3L, "filters: clearing all filters restores all rows")
+})
+
 cat("\n")
