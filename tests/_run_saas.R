@@ -106,6 +106,7 @@ source("R/app_audit.R",      local = FALSE)
 source("R/email_service.R",  local = FALSE)
 source("R/secrets_encryption.R",     local = FALSE)
 source("R/erp_connector_registry.R", local = FALSE)
+source("R/sap_api.R",                local = FALSE)
 
 # ── Override hd-admin direct-read helpers (they bypass .s3_key()) ─────────────
 # Re-point them at the mock store so tests can plant data there.
@@ -172,6 +173,7 @@ cat("====================================================\n\n")
 .run_module("tests/test_saas_erp_secrets.R")
 .run_module("tests/test_saas_erp_isolation.R")
 .run_module("tests/test_saas_erp_tiers.R")
+.run_module("tests/test_saas_erp_fallback.R")
 .run_module("tests/test_saas_perms.R")
 .run_module("tests/test_saas_sap_cache.R")
 .run_module("tests/test_saas_home_jump.R")
