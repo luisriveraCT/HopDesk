@@ -1406,6 +1406,13 @@ server <- function(input, output, session) {
   .sap_triggered  <- FALSE
 
   load_sap_data <- function(force = FALSE) {
+    # A staff session at home (not jumped into any client) has no ERP to
+    # fetch — hd-admin has no SAP credentials and no companies. Skip the
+    # fetch entirely rather than running it just to get an empty result.
+    if (isTRUE(current_user_info()$is_staff) && is.null(jump_client_id())) {
+      message(sprintf("[SAP] Skipping fetch — staff session at home, nothing to fetch (session #%d)", .sn))
+      return(invisible(NULL))
+    }
     message(sprintf("[ERP] load_erp_data() starting at t+%.1fs (session #%d)",
                     (proc.time() - .t_session)[["elapsed"]], .sn))
     if (.sap_running)               return(invisible(NULL))
@@ -2021,6 +2028,11 @@ server <- function(input, output, session) {
   .dispatch_sap <- function() {
     if (.sap_triggered) return()
     .sap_triggered <<- TRUE
+    if (isTRUE(current_user_info()$is_staff) && is.null(jump_client_id())) {
+      message(sprintf("[SAP] Skipping dispatch — staff session at home, nothing to fetch (session #%d)", .sn))
+      .sap_ever_done <<- TRUE
+      return()
+    }
     message(sprintf("[SAP] sap_trigger fired at t+%.1fs (session #%d)",
                     (proc.time() - .t_session)[["elapsed"]], .sn))
     # Keyed by this session's own client id — never reads any other client's
@@ -2034,8 +2046,8 @@ server <- function(input, output, session) {
       .sap_ever_done <<- TRUE
       return()
     }
-    message(sprintf("[SAP] No cross-session cache (age=%.0fs) — proceeding to live fetch (session #%d)",
-                    age, .sn))
+    message(sprintf("[SAP] No fresh cross-session cache for '%s' — proceeding to live fetch (session #%d)",
+                    effective_client_id(), .sn))
     load_sap_data()
   }
 
