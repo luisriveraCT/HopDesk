@@ -13,6 +13,7 @@ source("R/search_module.R")
 source("R/vencidos_module.R")
 source("R/treasury_map_module.R")
 source("R/reporte_module.R")
+source("R/audit_log_viewer_module.R")
 source("R/tiers_module.R")
 source("R/empresas_module.R")
 source("R/interco_module.R")
@@ -694,24 +695,39 @@ server <- function(input, output, session) {
   # Runs once on session init. If the just-authenticated user appears in the
   # emergency lock file, reload the session immediately — this handles the case
   # where an account is locked while already logged in.
-  observeEvent(current_user_info(), {
+  #
+  # Manual guard flag instead of observeEvent(..., once = TRUE) — same fix as
+  # redirected_to_staff_home() below: once + req() self-destroys on the very
+  # first firing of current_user_info() (its "unknown" placeholder, before
+  # auth resolves) regardless of whether req() passed, so the check never
+  # actually ran for the real user. This silently disabled the emergency-lock
+  # kick-out for already-active sessions.
+  emergency_lock_checked <- reactiveVal(FALSE)
+  observe({
     info <- current_user_info()
-    req(!is.null(info$user) && nzchar(info$user) && info$user != "unknown")
+    if (isTRUE(emergency_lock_checked())) return()
+    if (is.null(info) || info$user == "unknown") return()
+    emergency_lock_checked(TRUE)
     lock <- tryCatch(read_emergency_lock(), error = function(e) NULL)
     if (is.data.frame(lock) && nrow(lock) > 0 &&
         any(tolower(lock$username) == tolower(info$user))) {
       message("[SECURITY] Active session terminated — account locked: ", info$user)
       session$reload()
     }
-  }, once = TRUE, ignoreNULL = TRUE)
+  })
 
   # ── First-login password change gate ─────────────────────────────────────────
   # Accounts created via direct script (not the invite flow) have
   # requires_password_change = TRUE. If set, intercept navigation here and show
   # only the password-change UI — no modules are accessible until the password is set.
-  observeEvent(current_user_info(), {
+  #
+  # Same once + req() fix as above.
+  force_pw_checked <- reactiveVal(FALSE)
+  observe({
     info <- current_user_info()
-    req(!is.null(info$user) && nzchar(info$user) && info$user != "unknown")
+    if (isTRUE(force_pw_checked())) return()
+    if (is.null(info) || info$user == "unknown") return()
+    force_pw_checked(TRUE)
     usuarios <- tryCatch(auth_load_usuarios(), error = function(e) NULL)
     if (is.null(usuarios) || !nrow(usuarios)) return()
     row <- usuarios[tolower(usuarios$username) == tolower(info$user), , drop = FALSE]
@@ -732,19 +748,32 @@ server <- function(input, output, session) {
                      class = "btn btn-primary w-100 mt-2")
       ))
     }
-  }, once = TRUE, ignoreNULL = TRUE)
+  })
 
   # ── Stage 4 / Stage 2 Part A: set home_client_id from user record at login ────
-  # Fires once per session after authentication and never changes again for the
-  # session's lifetime — this is the user's home, not their current context.
-  # Staff (client_id = "hd-admin") have an empty home; client users are locked
-  # to their own prefix and have no context switcher.
+  # Sets once per session and never changes again for the session's lifetime —
+  # this is the user's home, not their current context. Staff (client_id =
+  # "hd-admin") have an empty home; client users are locked to their own
+  # prefix and have no context switcher.
+  #
+  # Deliberately NOT once = TRUE: current_user_info() legitimately fires once
+  # with its "unknown" placeholder before shinymanager's auth resolves, and
+  # observeEvent(once = TRUE) self-destroys on that very first firing
+  # regardless of whether the inner req() below passed — req() only stops
+  # that one invocation, it does not stop the once-wrapper from tearing the
+  # whole observer down. That combination left home_client_id() permanently
+  # NULL for every session, silently falling back through effective_client_id()
+  # %||% to Sys.getenv("CLIENT_ID") (always "hd-admin" in this shared
+  # deployment) — a native client user ended up reading Hopdesk's own S3
+  # folder instead of their own. Idempotency is enforced explicitly instead,
+  # by checking home_client_id() is still unset.
   observeEvent(current_user_info(), {
+    if (!is.null(home_client_id())) return()
     info <- current_user_info()
     req(!is.null(info$user) && nzchar(info$user) && info$user != "unknown")
     cid <- info$client_id
     if (!is.null(cid) && nzchar(cid)) home_client_id(cid)
-  }, once = TRUE, ignoreNULL = TRUE)
+  }, ignoreNULL = TRUE)
 
   output$force_pw_error <- renderUI(NULL)
 
@@ -1329,13 +1358,19 @@ server <- function(input, output, session) {
       if (isTRUE(info$is_staff)) updateNavbarPage(session, "nav", selected = "TIERS")
     })
 
-    # Load hop grants once after login — needed immediately for context-jump checks.
-    observeEvent(current_user_info(), {
+    # Load hop grants once after login — needed immediately for context-jump
+    # checks. Same once + req() fix as above: manual guard flag instead of
+    # once = TRUE, which previously left hop_grants_db() permanently empty for
+    # every session.
+    hop_grants_loaded <- reactiveVal(FALSE)
+    observe({
       info <- current_user_info()
-      req(!is.null(info$user) && nzchar(info$user) && info$user != "unknown")
+      if (isTRUE(hop_grants_loaded())) return()
+      if (is.null(info) || info$user == "unknown") return()
+      hop_grants_loaded(TRUE)
       hg <- tryCatch(load_hop_grants(), error = function(e) NULL)
       if (!is.null(hg)) hop_grants_db(hg)
-    }, once = TRUE, ignoreNULL = TRUE, priority = -2)
+    }, priority = -2)
   }
 
   # ── Username badge in navbar ──────────────────────────────────────────────────
@@ -1953,14 +1988,16 @@ server <- function(input, output, session) {
                  description = sprintf("Staff switched active context to '%s'", effective_cid),
                  target_id   = effective_cid,
                  s3_key      = NA_character_,
-                 client_id   = "hd-admin")
+                 client_id   = "hd-admin",
+                 viewer_home_client_id = home_client_id())
       log_action(user        = current_user() %||% "unknown",
                  module      = "clientes",
                  action      = "external_access",
                  description = "HopDesk staff accessed this client's data (session context switch)",
                  target_id   = effective_cid,
                  s3_key      = NA_character_,
-                 client_id   = effective_cid)
+                 client_id   = effective_cid,
+                 viewer_home_client_id = home_client_id())
     }
 
     message(sprintf("[CTX] Context switch to '%s' complete", effective_cid))

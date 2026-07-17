@@ -25,7 +25,11 @@ PERM_LABELS <- c(
   can_manage_hopdesk_perms = "Gestionar permisos de staff HopDesk [Principal]",
   can_jump_clients         = "Acceder a contextos de clientes",
   can_manage_invites       = "Gestionar invitaciones de usuario",
-  can_view_global_audit    = "Ver bitácora global (todos los clientes)"
+  # Stage 4: split from the old single can_view_global_audit flag — browsing
+  # any client's log is a different capability from seeing Hopdesk's own
+  # staff activity log (ARCHITECTURE.md §6).
+  can_view_client_audit_logs = "Ver bitácora de clientes (con selector)",
+  can_view_staff_audit_log   = "Ver bitácora interna de Hopdesk"
 )
 
 # Keys that are immutably TRUE for principal accounts — UI renders them as locked.
@@ -149,15 +153,9 @@ tiersUI <- function(id) {
       value = "actividad",
       div(
         class = "mt-3",
-        div(
-          class = "d-flex align-items-center justify-content-between mb-2",
-          tags$h6(class = "fw-semibold mb-0",
-                  tagList(icon("clock-rotate-left"), " Registro de actividad del sistema")),
-          actionButton(ns("btn_reload_activity"),
-                       tagList(icon("arrows-rotate"), " Actualizar"),
-                       class = "btn btn-sm btn-outline-secondary")
-        ),
-        DT::dataTableOutput(ns("activity_tbl"))
+        tags$h6(class = "fw-semibold mb-0",
+                tagList(icon("clock-rotate-left"), " Registro de actividad del sistema")),
+        uiOutput(ns("activity_section"))
       )
     ),
 
@@ -828,7 +826,8 @@ tiersServer <- function(id, shared) {
         description = paste0("Cuenta '", username, "' creada (tier: ", tier, ")"),
         target_id   = new_row$account_code,
         s3_key      = paste0(current_client_id(), "/usuarios.rds"),
-        client_id   = current_client_id(),
+        client_id             = current_client_id(),
+        viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL),
         metadata    = list(tier = tier, display_name = display_name)
       )
       activity_refresh(activity_refresh() + 1L)
@@ -979,7 +978,8 @@ tiersServer <- function(id, shared) {
         description = paste0("Cuenta '", target_user, "' eliminada (tier: ", target_tier, ")"),
         target_id   = target_user,
         s3_key      = paste0(current_client_id(), "/usuarios.rds"),
-        client_id   = current_client_id(),
+        client_id             = current_client_id(),
+        viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL),
         metadata    = list(tier = target_tier)
       )
       activity_refresh(activity_refresh() + 1L)
@@ -1118,7 +1118,8 @@ tiersServer <- function(id, shared) {
         description = paste0("Permisos/tier de '", target_user, "' actualizados"),
         target_id   = target_user,
         s3_key      = paste0(current_client_id(), "/usuarios.rds"),
-        client_id   = current_client_id(),
+        client_id             = current_client_id(),
+        viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL),
         metadata    = list(tier = new_tier, overrides_count = length(overrides))
       )
       activity_refresh(activity_refresh() + 1L)
@@ -1312,7 +1313,8 @@ tiersServer <- function(id, shared) {
                    description = paste0("Lock applied to '", username, "' — reason: ", reason),
                    target_id   = username,
                    s3_key      = "hd-admin/emergency_lock.rds",
-                   client_id   = "hd-admin")
+                   client_id             = "hd-admin",
+                   viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
         activity_refresh(activity_refresh() + 1L)
       }, error = function(e) {
         showNotification(paste0("Error al bloquear: ", e$message), type = "error")
@@ -1338,7 +1340,8 @@ tiersServer <- function(id, shared) {
                    description = paste0("Lock removed from '", username, "' by ", current_viewer),
                    target_id   = username,
                    s3_key      = "hd-admin/emergency_lock.rds",
-                   client_id   = "hd-admin")
+                   client_id             = "hd-admin",
+                   viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
         activity_refresh(activity_refresh() + 1L)
       }, error = function(e) {
         showNotification(paste0("Error al desbloquear: ", e$message), type = "error")
@@ -1457,7 +1460,8 @@ tiersServer <- function(id, shared) {
         description = sprintf("'%s' solicitó aumento de límite (%d/%d)", dname, cur, max),
         target_id   = cid,
         s3_key      = paste0(cid, "/app_audit.rds"),
-        client_id   = cid
+        client_id             = cid,
+        viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
       )
       activity_refresh(activity_refresh() + 1L)
     }, ignoreInit = TRUE)
@@ -1719,7 +1723,8 @@ tiersServer <- function(id, shared) {
                  description = paste0("Solicitud para '", cid_prop, "' (", dname, ")"),
                  target_id   = cid_prop,
                  s3_key      = "hd-admin/client_requests.rds",
-                 client_id   = "hd-admin")
+                 client_id             = "hd-admin",
+                 viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
       activity_refresh(activity_refresh() + 1L)
     }, ignoreInit = TRUE)
 
@@ -1820,7 +1825,8 @@ tiersServer <- function(id, shared) {
                                       "' (", row$display_name, ") aprobado"),
                  target_id   = row$client_id_proposed,
                  s3_key      = "hd-admin/client_registry.rds",
-                 client_id   = "hd-admin")
+                 client_id             = "hd-admin",
+                 viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
       activity_refresh(activity_refresh() + 1L)
       session$userData$reviewing_req_id <- NULL
     }, ignoreInit = TRUE)
@@ -1859,7 +1865,8 @@ tiersServer <- function(id, shared) {
                                       if (nzchar(reason)) paste0(" — motivo: ", reason) else ""),
                  target_id   = row$client_id_proposed,
                  s3_key      = "hd-admin/client_requests.rds",
-                 client_id   = "hd-admin")
+                 client_id             = "hd-admin",
+                 viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
       activity_refresh(activity_refresh() + 1L)
       session$userData$reviewing_req_id <- NULL
     }, ignoreInit = TRUE)
@@ -2089,7 +2096,8 @@ tiersServer <- function(id, shared) {
                        "' desactivada por reducción de límite en '", cid, "'"),
                      target_id   = usuarios_new$account_code[to_deact_idx[i]],
                      s3_key      = paste0(cid, "/usuarios.rds"),
-                     client_id   = cid)
+                     client_id             = cid,
+                     viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
         }
       }
 
@@ -2131,7 +2139,8 @@ tiersServer <- function(id, shared) {
                                        cid, old_max, new_max, reviewer),
                  target_id   = cid,
                  s3_key      = "hd-admin/client_registry.rds",
-                 client_id   = "hd-admin",
+                 client_id             = "hd-admin",
+                 viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL),
                  metadata    = limit_meta)
       log_action(user        = reviewer,
                  module      = "clientes",
@@ -2140,7 +2149,8 @@ tiersServer <- function(id, shared) {
                                        old_max, new_max, reviewer),
                  target_id   = cid,
                  s3_key      = paste0(cid, "/app_audit.rds"),
-                 client_id   = cid,
+                 client_id             = cid,
+                 viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL),
                  metadata    = limit_meta)
 
       removeModal()
@@ -2314,7 +2324,8 @@ tiersServer <- function(id, shared) {
                  description = paste0("Contacto '", name, "' (", email, ") agregado a '", cid, "'"),
                  target_id   = cid,
                  s3_key      = paste0(cid, "/contacts.rds"),
-                 client_id   = "hd-admin")
+                 client_id             = "hd-admin",
+                 viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
       activity_refresh(activity_refresh() + 1L)
     }, ignoreInit = TRUE)
 
@@ -2345,7 +2356,8 @@ tiersServer <- function(id, shared) {
                  description = paste0("Contacto '", row$name[1], "' desactivado de '", cid, "'"),
                  target_id   = cid,
                  s3_key      = paste0(cid, "/contacts.rds"),
-                 client_id   = "hd-admin")
+                 client_id             = "hd-admin",
+                 viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
       activity_refresh(activity_refresh() + 1L)
     }, ignoreInit = TRUE)
 
@@ -3504,75 +3516,43 @@ tiersServer <- function(id, shared) {
       }, error = function(e) message("[NOTIF] mark-all failed: ", e$message))
     }, ignoreInit = TRUE)
 
-    # ── Bitácora Global panel (can_view_global_audit) ─────────────────────────
-    global_audit_refresh <- reactiveVal(0L)
+    # ── Bitácora Global panel (Stage 4 Part A/B/C) ────────────────────────────
+    # Gate is can_view_client_audit_logs (renamed/split from the old
+    # can_view_global_audit — see ARCHITECTURE.md §6 / Stage 4 Part A). This
+    # fixes gap #2: a plain hopdesk session now opens this tab by default and
+    # sees a client selector instead of being locked out entirely.
+    global_audit_allowed_ids <- reactive({
+      registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
+      active   <- registry[registry$status == "active", , drop = FALSE]
+      choices  <- setNames(active$client_id, active$display_name)
+      choices[order(names(choices))]   # alphabetical, matching the context-switcher modal
+    })
+
+    # "Hopdesk (interno)" is only ever offered to a viewer with
+    # can_view_staff_audit_log (principal) — absent from choices entirely for
+    # everyone else, not just gated on selection.
+    global_audit_include_staff <- reactive({
+      isTRUE(.audit_viewer_resolve_perms(shared)$can_view_staff_audit_log)
+    })
 
     output$global_audit_section <- renderUI({
-      perms   <- tryCatch(shared$current_user_info()$permisos_resolved %||% list(),
-                          error = function(e) list())
-      can_see <- isTRUE(is_principal()) ||
-                 isTRUE(perms[["can_view_global_audit"]])
+      perms   <- .audit_viewer_resolve_perms(shared)
+      can_see <- isTRUE(is_principal()) || isTRUE(perms$can_view_client_audit_logs)
       if (!can_see) {
         return(div(class = "alert alert-warning mt-3",
                    icon("lock"),
-                   " Requiere permiso ", tags$code("can_view_global_audit"), "."))
+                   " Requiere permiso ", tags$code("can_view_client_audit_logs"), "."))
       }
-      global_audit_refresh()
-      log_df <- tryCatch(
-        read_audit_log(client_id = "hd-admin"),
-        error = function(e) NULL
-      )
-      if (is.null(log_df) || !nrow(log_df)) {
-        return(div(class = "mt-3 alert alert-light border",
-                   icon("scroll", class = "text-muted"), " Sin entradas en la bitácora global."))
-      }
-      log_df <- log_df[order(log_df$ts, decreasing = TRUE), , drop = FALSE]
-      n_shown <- min(nrow(log_df), 200L)
-
-      tagList(
-        div(
-          class = "d-flex align-items-center justify-content-between mt-3 mb-2",
-          tags$h6(class = "fw-semibold mb-0",
-                  tagList(icon("scroll"),
-                          sprintf(" Bitácora global — últimas %d entradas (de %d)",
-                                  n_shown, nrow(log_df)))),
-          actionButton(ns("btn_global_audit_refresh"), icon("rotate"),
-                       class = "btn btn-sm btn-outline-secondary")
-        ),
-        div(
-          style = "overflow-x:auto;",
-          tags$table(
-            class = "table table-sm table-hover mb-0",
-            style = "font-size:.82rem;",
-            tags$thead(tags$tr(
-              tags$th("Fecha"),       tags$th("Usuario"),
-              tags$th("Cliente"),     tags$th("Módulo"),
-              tags$th("Acción"),      tags$th("Descripción")
-            )),
-            tags$tbody(
-              lapply(seq_len(n_shown), function(i) {
-                r <- log_df[i, ]
-                ts_fmt <- tryCatch(
-                  format(r$ts, "%d/%m/%y %H:%M", tz = "America/Mexico_City"),
-                  error = function(e) as.character(r$ts))
-                tags$tr(
-                  tags$td(ts_fmt),
-                  tags$td(r$user        %||% ""),
-                  tags$td(r$client_id   %||% ""),
-                  tags$td(r$module      %||% ""),
-                  tags$td(tags$code(style = "font-size:.78rem;",
-                                    r$action %||% "")),
-                  tags$td(r$description %||% "")
-                )
-              })
-            )
-          )
-        )
-      )
+      auditLogViewerUI(ns("global_viewer"))
     })
 
-    observeEvent(input$btn_global_audit_refresh,
-                 { global_audit_refresh(global_audit_refresh() + 1L) })
+    auditLogViewerServer(
+      "global_viewer",
+      shared             = shared,
+      mode               = "multi_client",
+      allowed_client_ids = global_audit_allowed_ids,
+      include_staff_log  = global_audit_include_staff
+    )
 
     output$tier_config_section <- renderUI({
       dev <- isTRUE(is_dev()) || isTRUE(is_hopdesk()) || isTRUE(is_principal())
@@ -3687,41 +3667,21 @@ tiersServer <- function(id, shared) {
       })
     })
 
-    # ── Actividad (audit log viewer) ─────────────────────────────────────────
-    output$activity_tbl <- DT::renderDataTable({
-      input$btn_reload_activity   # manual refresh button
-      activity_refresh()          # incremented after every in-session log_action
-      invalidateLater(20000)      # poll S3 every 20s for cross-session updates
+    # ── Actividad (audit log viewer — Stage 4 Part B/C shared module) ────────
+    # req_authorized() (dev/hopdesk/principal) is unchanged — out of scope for
+    # Stage 4 to touch who *within* a client can see their own Actividad tab.
+    # The staff-at-home-sees-hd-admin-log leak (Stage 4 Part A gap #1) is fixed
+    # inside auditLogViewerServer()'s read_audit_log_scoped() call, not here.
+    output$activity_section <- renderUI({
       req(req_authorized())
-      log_df <- read_audit_log(client_id = current_client_id())
-      if (is.null(log_df) || !nrow(log_df)) {
-        return(data.frame(
-          Hora = character(), Usuario = character(),
-          `Módulo` = character(), `Acción` = character(),
-          `Descripción` = character(), `ID destino` = character(),
-          check.names = FALSE
-        ))
-      }
-      log_df <- log_df[order(log_df$ts, decreasing = TRUE), , drop = FALSE]
-      data.frame(
-        Hora           = format(as.POSIXct(log_df$ts), "%d/%m/%Y %H:%M:%S"),
-        Usuario        = log_df$user,
-        `Módulo`  = log_df$module,
-        `Acción`  = log_df$action,
-        `Descripción` = log_df$description,
-        `ID destino`   = ifelse(is.na(log_df$target_id), "", log_df$target_id),
-        check.names    = FALSE
-      )
-    }, options = list(
-      pageLength = 25, dom = "ftp", order = list(),
-      language = list(
-        search      = "Filtrar:",
-        zeroRecords = "Sin registros",
-        info        = "Mostrando _START_ a _END_ de _TOTAL_ entradas",
-        infoEmpty   = "Sin registros",
-        paginate    = list(previous = "Anterior", `next` = "Siguiente")
-      )
-    ), selection = "none", rownames = FALSE)
+      auditLogViewerUI(ns("activity_viewer"))
+    })
+
+    auditLogViewerServer(
+      "activity_viewer",
+      shared = c(shared, list(refresh_signal = activity_refresh)),
+      mode   = "own_client"
+    )
 
     observeEvent(input$btn_save_tier_config, {
       req(is_dev() || is_hopdesk() || is_principal())

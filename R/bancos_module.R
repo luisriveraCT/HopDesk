@@ -1584,7 +1584,9 @@ bancosServer <- function(id, shared) {
         module      = "bancos",
         action      = "eliminar_movimientos",
         description = paste0(n, " movimiento(s) enviado(s) a papelera"),
-        metadata    = list(n = n)
+        metadata    = list(n = n),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
       # Clear JS selection
       session$sendCustomMessage(paste0(id, "-clear_selection"), TRUE)
@@ -2784,7 +2786,9 @@ bancosServer <- function(id, shared) {
         module      = "bancos",
         action      = "eliminar_sesion",
         description = paste0(actual_n, " movimiento(s) de sesión eliminados"),
-        metadata    = list(n = actual_n, sesion_key = sesion_key)
+        metadata    = list(n = actual_n, sesion_key = sesion_key),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
     }, ignoreInit = TRUE)
 
@@ -3272,7 +3276,9 @@ bancosServer <- function(id, shared) {
         module      = "bancos",
         action      = "eliminar_confirmacion",
         description = "Confirmaci\u00f3n bancaria movida a papelera",
-        target_id   = conf_id
+        target_id   = conf_id,
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
     }, ignoreInit = TRUE)
 
@@ -3379,7 +3385,9 @@ bancosServer <- function(id, shared) {
         description = paste0("Confirmaci\u00f3n revertida: ",
                              if (isTRUE(row$tipo == "cobro")) "Cobro" else "Pago",
                              " ", fecha_fmt),
-        target_id   = conf_id
+        target_id   = conf_id,
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
     }, ignoreInit = TRUE)
 

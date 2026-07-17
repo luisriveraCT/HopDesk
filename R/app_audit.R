@@ -79,7 +79,8 @@ rotate_log_if_needed <- function(cid, current_df) {
 
 # Read ALL audit chunks for a client (current + archived), newest first.
 # since: optional POSIXct or character cutoff — filters ts >= since.
-read_audit_log <- function(client_id = NULL, since = NULL) {
+# until: optional POSIXct or character cutoff — filters ts <= until.
+read_audit_log <- function(client_id = NULL, since = NULL, until = NULL) {
   cid    <- tolower(trimws(client_id %||% Sys.getenv("CLIENT_ID")))
   prefix <- paste0(cid, "/app_audit")
 
@@ -108,7 +109,41 @@ read_audit_log <- function(client_id = NULL, since = NULL) {
       result <- result[!is.na(result$ts) & result$ts >= since_ts, , drop = FALSE]
   }
 
+  if (!is.null(until)) {
+    until_ts <- tryCatch(as.POSIXct(until), error = function(e) NULL)
+    if (!is.null(until_ts))
+      result <- result[!is.na(result$ts) & result$ts <= until_ts, , drop = FALSE]
+  }
+
   result[order(result$ts, decreasing = TRUE), , drop = FALSE]
+}
+
+# ── Scoped read — the only path the audit log viewer UI may use ─────────────
+# Enforces the three visibility rules from ARCHITECTURE.md §6 / Stage 4 Part C.
+# Throws loudly (stop()) on any attempt outside those rules — a UI that reaches
+# this without the right permission is a bug worth surfacing, not a case to
+# silently return empty for.
+read_audit_log_scoped <- function(requested_client_id,
+                                  viewer_is_staff,
+                                  viewer_can_view_client_logs,
+                                  viewer_can_view_staff_log,
+                                  viewer_home_client_id,
+                                  since = NULL,
+                                  until = NULL) {
+  requested_cid <- tolower(trimws(requested_client_id %||% ""))
+  home_cid      <- tolower(trimws(viewer_home_client_id %||% ""))
+
+  if (identical(requested_cid, "hd-admin")) {
+    if (!isTRUE(viewer_can_view_staff_log))
+      stop("read_audit_log_scoped: viewer lacks can_view_staff_audit_log — cannot view the hd-admin staff log")
+  } else if (!isTRUE(viewer_is_staff)) {
+    if (!identical(requested_cid, home_cid))
+      stop("read_audit_log_scoped: a client session may only request its own client's log")
+  } else if (!isTRUE(viewer_can_view_client_logs)) {
+    stop("read_audit_log_scoped: viewer lacks can_view_client_audit_logs")
+  }
+
+  read_audit_log(client_id = requested_cid, since = since, until = until)
 }
 
 # Backward-compatible wrapper used by Actividad tab.
@@ -125,22 +160,37 @@ save_app_audit <- function(log_df, client_id = NULL) {
 # ── log_action() ─────────────────────────────────────────────────────────────
 # Fire-and-forget — never throws. Returns the new row invisibly.
 #
-# client_id  — target client folder for this entry (default: CLIENT_ID env var)
-# s3_key     — the S3 object that was created/modified by this action
+# client_id             — target folder this entry is filed under, i.e. where
+#                         the action actually happened (default: CLIENT_ID env
+#                         var — legacy fallback, see below).
+# viewer_home_client_id — the ACTING USER's own true home client (their login-
+#                         time client_id; always "hd-admin" for staff). Default
+#                         falls back to Sys.getenv("CLIENT_ID") for any call
+#                         site that hasn't been updated to pass it explicitly.
+# s3_key                — the S3 object that was created/modified by this action
 #
-# Dual-write: if client_id differs from Sys.getenv("CLIENT_ID"), the entry is
-# also appended to the home deployment's log so cross-client staff actions are
-# captured in both places.
+# Dual-write: fires when client_id differs from the ACTOR's own home, i.e. a
+# staff member acting inside a jumped client — never for a native client
+# user's own actions, and never just because this is a single shared
+# deployment. This app runs as ONE shared deployment (CLIENT_ID env var is
+# always "hd-admin", ARCHITECTURE.md §3) — comparing client_id against that
+# fixed env var instead of the actual actor's home meant EVERY native client
+# user's own action (not just staff jump actions) was dual-written into
+# hd-admin's own log, exactly the "CLIENT_ID as an is-this-session-staff
+# stand-in" anti-pattern §3 warns against elsewhere. Fixed 2026-07-16 while
+# testing Stage 4 (found via a client dev user's invoice-move entries leaking
+# into Bitácora Global / Hopdesk's own log).
 log_action <- function(user,
                        module,
                        action,
                        description,
-                       target_id  = NA_character_,
-                       s3_key     = NA_character_,
-                       metadata   = NULL,
-                       client_id  = NULL) {
+                       target_id             = NA_character_,
+                       s3_key                = NA_character_,
+                       metadata              = NULL,
+                       client_id             = NULL,
+                       viewer_home_client_id = NULL) {
   cid      <- tolower(trimws(client_id %||% Sys.getenv("CLIENT_ID")))
-  home_cid <- tolower(Sys.getenv("CLIENT_ID"))
+  home_cid <- tolower(trimws(viewer_home_client_id %||% Sys.getenv("CLIENT_ID")))
 
   # When staff acts in a client context, stamp home_client in metadata so the
   # audit record is clearly marked as an outsider write, not a client-user write.

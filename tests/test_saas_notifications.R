@@ -176,24 +176,33 @@ meta_lim <- tryCatch(jsonlite::fromJSON(limit_row$metadata[1]), error = function
 .chk(isTRUE(meta_lim$deactivated_count == 2L), TRUE,
      "notify_limit_change: deactivated_count in metadata")
 
-# ── F. Global-audit gate: can_view_global_audit permission ───────────────────
+# ── F. Audit-log gates: can_view_client_audit_logs / can_view_staff_audit_log ─
+# Stage 4: split from the old single can_view_global_audit flag.
 
 # Verify the perm gate logic using auth_resolve_perms directly
 p_principal <- auth_resolve_perms("principal", "{}")
 p_hopdesk   <- auth_resolve_perms("hopdesk",   "{}")
 p_finance   <- auth_resolve_perms("finance",   "{}")
 
-.chk(isTRUE(p_principal$can_view_global_audit), TRUE,
-     "global_audit gate: principal always has can_view_global_audit")
-.chk(isTRUE(p_hopdesk$can_view_global_audit), FALSE,
-     "global_audit gate: hopdesk does NOT have can_view_global_audit by default")
-.chk(isTRUE(p_finance$can_view_global_audit), FALSE,
-     "global_audit gate: finance does NOT have can_view_global_audit")
+.chk(isTRUE(p_principal$can_view_client_audit_logs), TRUE,
+     "audit gate: principal always has can_view_client_audit_logs")
+.chk(isTRUE(p_principal$can_view_staff_audit_log), TRUE,
+     "audit gate: principal always has can_view_staff_audit_log")
+.chk(isTRUE(p_hopdesk$can_view_client_audit_logs), TRUE,
+     "audit gate: hopdesk has can_view_client_audit_logs by default")
+.chk(isTRUE(p_hopdesk$can_view_staff_audit_log), FALSE,
+     "audit gate: hopdesk does NOT have can_view_staff_audit_log by default")
+.chk(isTRUE(p_finance$can_view_client_audit_logs), FALSE,
+     "audit gate: finance does NOT have can_view_client_audit_logs")
+.chk(isTRUE(p_finance$can_view_staff_audit_log), FALSE,
+     "audit gate: finance does NOT have can_view_staff_audit_log")
 
-# A hopdesk user granted the perm via override should gain access
-override_json <- jsonlite::toJSON(list(can_view_global_audit = TRUE), auto_unbox = TRUE)
+# A hopdesk user granted the staff-log perm via override should gain access
+override_json <- jsonlite::toJSON(list(can_view_staff_audit_log = TRUE), auto_unbox = TRUE)
 p_hopdesk_granted <- auth_resolve_perms("hopdesk", override_json)
-.chk(isTRUE(p_hopdesk_granted$can_view_global_audit), TRUE,
-     "global_audit gate: hopdesk + override can_view_global_audit → TRUE")
+.chk(isTRUE(p_hopdesk_granted$can_view_staff_audit_log), TRUE,
+     "audit gate: hopdesk + override can_view_staff_audit_log → TRUE")
+.chk(isTRUE(p_hopdesk_granted$can_view_client_audit_logs), TRUE,
+     "audit gate: hopdesk + staff-log override preserves can_view_client_audit_logs")
 
 cat("\n")
