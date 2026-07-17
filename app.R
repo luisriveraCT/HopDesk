@@ -319,6 +319,14 @@ ui <- bslib::page_navbar(
     value = "RPT",
     reporteUI("rpt")
   ),
+  # Stage 5 (design placeholder, not implemented — see
+  # docs/saas_rebuild/STAGE_5_HOPDESK_OPS_PLACEHOLDER.md and
+  # R/hopdesk_ops_placeholder.R): a future "Soporte"/dashboard nav
+  # destination for Hopdesk staff's own ticketing + cross-client
+  # dashboards would likely live alongside or within this GRUPO menu,
+  # visible only when is_staff (reuse Stage 1's tier-registry-derived
+  # is_staff — no new visibility mechanism for this). Not decided or
+  # scoped here; this comment only marks where it would attach.
   bslib::nav_menu(
     title = tagList(icon("building-user"), " Grupo"),
     value = "GRUPO",
@@ -1349,6 +1357,13 @@ server <- function(input, output, session) {
     # guard flag instead of observeEvent(..., once = TRUE): once + req() has
     # ambiguous timing if req() aborts before info$user is genuinely resolved,
     # which is the mechanism behind the tesoreria routing incident.
+    #
+    # Stage 5 (design placeholder, not implemented — see
+    # docs/saas_rebuild/STAGE_5_HOPDESK_OPS_PLACEHOLDER.md and
+    # R/hopdesk_ops_placeholder.R): today staff land on TIERS at home. A
+    # future cross-client ops dashboard might become the actual landing
+    # destination for a staff session instead — not a decision to make now,
+    # just a marker of where that redirect target would be wired in.
     redirected_to_staff_home <- reactiveVal(FALSE)
     observe({
       info <- current_user_info()
