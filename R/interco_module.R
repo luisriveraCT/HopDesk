@@ -94,6 +94,12 @@ intercoServer <- function(id, shared) {
       if (!length(cmap)) return(NULL)
       inv_map <- setNames(names(cmap), unname(cmap))
 
+      # Company pills (toolbar) — full display names of currently toggled-on
+      # companies. Empty/unset means "no filter" (same convention as
+      # ledger_module.R's df_combined()), so a not-yet-initialized pill state
+      # never hides everything.
+      emp_sel <- isolate(shared$empresa_sel()) %||% character()
+
       ar_pre   <- toupper(reg$ar_prefix %||% "C")
       ap_pre   <- toupper(reg$ap_prefix %||% "P")
 
@@ -142,6 +148,11 @@ intercoServer <- function(id, shared) {
           keep <- rep(FALSE, nrow(df))
         }
 
+        # Restrict to companies currently toggled on via the toolbar pills —
+        # filters on the owning company (Empresa), mirroring the Empresa %in%
+        # emp pattern used by ledger_module.R / cashflow / search modules.
+        if (length(emp_sel)) keep <- keep & (df$Empresa %in% emp_sel)
+
         out <- df[keep, , drop = FALSE]
         if (nrow(out) == 0) return(NULL)
         out$CardCode <- out[[code_col]]
@@ -155,16 +166,17 @@ intercoServer <- function(id, shared) {
       )
     }
 
-    # ── Auto-load: re-runs whenever registry, companies, or SAP data changes ──
-    # Reacts to interco_v2, company_map, AND sap_data — so context switches and
-    # live SAP refreshes all update the IC view automatically without a flag.
+    # ── Auto-load: re-runs whenever registry, companies, SAP data, or the
+    # toolbar's company pills change — so context switches, live SAP refreshes,
+    # and pill toggles all update the IC view automatically without a flag.
     # IMPORTANT: do NOT use req() here. req() silently aborts without clearing
     # ic_invoices, so jumping to a client with no SAP data leaves stale IC rows
     # from the previous context visible. Explicit clearing is required.
     observe({
-      reg  <- shared$interco_v2()
-      cmap <- shared$company_map()
-      sd   <- shared$sap_data()
+      reg     <- shared$interco_v2()
+      cmap    <- shared$company_map()
+      sd      <- shared$sap_data()
+      emp_sel <- shared$empresa_sel()   # dependency: re-filter when pills are toggled
       if (is.null(reg) || length(cmap) == 0 || (is.null(sd$AR) && is.null(sd$AP))) {
         ic_invoices(NULL)
         return()

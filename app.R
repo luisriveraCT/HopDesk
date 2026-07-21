@@ -2167,9 +2167,9 @@ server <- function(input, output, session) {
     # Force-reload S3 bancos data unconditionally so any edits made by other
     # concurrent users are visible immediately — independent of ERP connectivity.
     tryCatch({
-      shared$bancos_movimientos_db(load_bancos_movimientos(include_deleted = TRUE))
-      shared$bancos_confirmados_db(load_bancos_confirmados())
-      shared$conciliacion_rv(load_conciliacion())
+      shared$bancos_movimientos_db(load_bancos_movimientos(include_deleted = TRUE, client_id = effective_client_id()))
+      shared$bancos_confirmados_db(load_bancos_confirmados(client_id = effective_client_id()))
+      shared$conciliacion_rv(load_conciliacion(client_id = effective_client_id()))
     }, error = function(e)
       showNotification(paste0("Error al leer desde S3: ", e$message),
                        type = "warning", duration = 6)

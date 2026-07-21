@@ -403,11 +403,26 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       )
     }, ignoreInit = TRUE)
 
+    # ctas_bancos loaded once for bank-name resolution (not in shared) — mirrors
+    # bancos_module.R's ctas_bancos_rv pattern. banco_id is a FK to ctas_bancos$id,
+    # not a display name; without this join every account's bank falls back to "—".
+    ctas_bancos_rv <- reactiveVal(NULL)
+    observe({
+      cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
+      ctas_bancos_rv(tryCatch(
+        load_ctas_bancos(client_id = cid), error = function(e) .schema_ctas_bancos()
+      ))
+    })
+
     # ── Balance computation (mirrors bancos_module balance logic) ────────────
     compute_balances <- reactive({
       cts_raw <- tryCatch(shared$ctas_cuentas(), error = function(e) NULL)
       movs    <- tryCatch(shared$bancos_movimientos(), error = function(e) NULL)
       if (is.null(cts_raw) || !nrow(cts_raw)) return(NULL)
+
+      bancos_df <- ctas_bancos_rv()
+      banco_map <- if (!is.null(bancos_df) && nrow(bancos_df))
+        setNames(bancos_df$nombre, bancos_df$id) else character(0)
 
       movs_clean <- if (!is.null(movs) && nrow(movs))
         dplyr::filter(movs, !eliminado, fuente != "agenda")
@@ -434,7 +449,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           empresa    = Empresa,
           moneda     = Moneda,
           alias      = alias,
-          banco      = banco_id,
+          banco      = dplyr::coalesce(banco_map[banco_id], "—"),
           saldo_inicial = dplyr::coalesce(as.numeric(saldo_inicial), 0)
         ) |>
         dplyr::left_join(saldos, by = "cuenta_id") |>
@@ -1383,8 +1398,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     } else {
       card_cargo <- 0; card_abono <- 0
     }
-    # Bank display — use alias as account identifier (banco field is an internal UUID)
-    banco_display <- paste0("BanBaj\u00edo \u2014 ", he(row$alias %||% ""), " \u2014 ", he(mono))
+    # Bank display — real bank name resolved via ctas_bancos (banco_id is a FK, not a name)
+    banco_display <- paste0(he(row$banco %||% "\u2014"), " \u2014 ", he(row$alias %||% ""), " \u2014 ", he(mono))
     sprintf('
     <div class="acct-card" style="border-left:4px solid %s;background:%s;">
       <div class="acct-top">
