@@ -17,14 +17,39 @@ jobs:
           r-version: '4.5.2'
           use-public-rspm: true
 
+      # Uses pak (via r-lib/actions/setup-r-dependencies) instead of a plain
+      # install.packages() step — plain install.packages() left aws.s3
+      # uninstalled with no non-zero exit code (a per-package source-compile
+      # failure that install.packages() only warns about), which then failed
+      # every runner at library(aws.s3) load time. pak resolves Linux binaries
+      # from Posit Package Manager and auto-installs any missing system
+      # libraries, and fails the step loudly if a package truly can't install.
       - name: Install R package dependencies
-        run: |
-          Rscript -e 'install.packages(c(
-            "shiny", "shinyjs", "bslib", "dplyr", "tidyr", "lubridate",
-            "stringr", "scales", "purrr", "DT", "shinyWidgets", "aws.s3",
-            "httr", "jsonlite", "uuid", "readxl", "openxlsx", "shinymanager",
-            "callr", "openssl", "tibble", "stringi"
-          ), repos = "https://cloud.r-project.org")'
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::shiny
+            any::shinyjs
+            any::bslib
+            any::dplyr
+            any::tidyr
+            any::lubridate
+            any::stringr
+            any::scales
+            any::purrr
+            any::DT
+            any::shinyWidgets
+            any::aws.s3
+            any::httr
+            any::jsonlite
+            any::uuid
+            any::readxl
+            any::openxlsx
+            any::shinymanager
+            any::callr
+            any::openssl
+            any::tibble
+            any::stringi
 
       - name: Run test suite
         id: run_tests
