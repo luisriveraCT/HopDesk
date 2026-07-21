@@ -33,6 +33,12 @@ requests as the normal workflow yet (stages have been merged directly) —
 don't add branch protection rules requiring the check to pass. Revisit
 this once PRs become the normal way work lands.
 
+**Confirmed with Mouse: "report-only" must still surface enough detail to
+troubleshoot without digging through raw logs.** A bare red ✗ with no
+detail forces someone to go spelunking in the full Actions log to find out
+what actually broke. Design the workflow so the *first thing anyone sees*
+on a failed run is a short, specific summary — not just pass/fail counts.
+
 ## Design
 
 `.github/workflows/test.yml`:
@@ -61,6 +67,19 @@ this once PRs become the normal way work lands.
   process exit code for each; if a runner would print "FAIL" but still
   exit 0, wrap it so CI actually catches that, don't trust the printed
   text alone).
+- **Failure detail, surfaced up front — not just an exit code.** Write a
+  GitHub Actions step summary (`$GITHUB_STEP_SUMMARY`) for every runner:
+  which runner it was, how many passed/failed, and — for any failing
+  runner — the specific failing test descriptions/assertions it printed
+  (these test scripts already name each check in their PASS/FAIL lines;
+  capture and forward that text into the summary rather than only the
+  final tally). This should read, at a glance from the run's summary page
+  with zero scrolling through raw logs, "which test file, which specific
+  check, what it expected vs. got." If a given runner's own output doesn't
+  carry enough detail to say what actually failed (some may only print a
+  final count), improve that runner's own failure messaging as part of
+  this stage rather than leaving CI to report a bare "something in
+  _run_X.R failed."
 
 ## Explicitly out of scope
 
@@ -81,6 +100,10 @@ this once PRs become the normal way work lands.
   your workflow's exit-code handling would actually surface that as a
   failed CI check — this is the real proof the "report-only" check has
   teeth, not just green checkmarks by default.
+- With that same deliberately-broken test, confirm the step summary names
+  the specific broken check by its own description — not just "1 test
+  failed" — before reverting the deliberate break. This is the real proof
+  the detail requirement is met, not just the pass/fail signal.
 - Confirm the workflow does NOT require any GitHub Actions secrets to be
   configured — if it does, stop, because that means one of the "verify
   it's mocked" checks above was wrong.
@@ -100,13 +123,22 @@ this document's list. If any runner needs real credentials, stop and
 report back rather than silently skipping it or adding secrets.
 
 Create .github/workflows/test.yml per this document's Design section.
-Report-only, no branch protection changes.
+Report-only, no branch protection changes - but the report itself must
+surface specific, actionable failure detail (which runner, which named
+check, expected vs. got) via a GitHub Actions step summary, not just a
+red/green result. If any test runner's own output doesn't carry enough
+detail to identify what broke, improve that runner's failure messaging
+too - don't ship a CI report that just says "something in _run_X.R
+failed."
 
 Verify the workflow actually catches a failure (per the Test Plan) before
 declaring this done - a CI setup that always shows green regardless of
-test outcome is worse than no CI at all.
+test outcome is worse than no CI at all. Confirm the step summary names
+the specific broken check when you deliberately break something, per the
+Test Plan.
 
 When done, report back exactly which test runners were included/excluded
-and why, and confirm the workflow requires zero secrets. Do not merge to
+and why, confirm the workflow requires zero secrets, and show an example
+of what the step summary looks like on a failing run. Do not merge to
 master yourself.
 ```
