@@ -51,11 +51,12 @@ source("R/forecasting_resolve.R")
 
 with_mock_data <- function(metrics, methods, subs, obs, expr) {
   # In-memory overrides for all load functions used by the resolver
-  assign("load_forecasting_metrics",       function() metrics, envir = globalenv())
-  assign("load_forecasting_methods",       function() methods, envir = globalenv())
-  assign("load_forecasting_subscriptions", function() subs,    envir = globalenv())
-  assign("load_forecasting_series_observations", function() obs, envir = globalenv())
-  assign("load_forecasting_manual_curves", function() .schema_forecasting_manual_curves(),
+  # (client_id accepted-and-ignored to match the real load_forecasting_*() signatures)
+  assign("load_forecasting_metrics",       function(client_id = NULL) metrics, envir = globalenv())
+  assign("load_forecasting_methods",       function(client_id = NULL) methods, envir = globalenv())
+  assign("load_forecasting_subscriptions", function(client_id = NULL) subs,    envir = globalenv())
+  assign("load_forecasting_series_observations", function(client_id = NULL) obs, envir = globalenv())
+  assign("load_forecasting_manual_curves", function(client_id = NULL) .schema_forecasting_manual_curves(),
          envir = globalenv())
   on.exit({
     rm(list = c("load_forecasting_metrics","load_forecasting_methods",

@@ -30,7 +30,9 @@ source("R/forecasting_persistence.R")
 
 .pass <- 0L; .fail <- 0L
 .test <- function(label, expr) {
-  result <- tryCatch(expr, error = function(e) FALSE)
+  result <- tryCatch(expr, error = function(e) {
+    cat("[ERROR]", label, "—", conditionMessage(e), "\n"); FALSE
+  })
   if (isTRUE(result)) {
     .pass <<- .pass + 1L
     cat("[PASS]", label, "\n")
@@ -157,7 +159,7 @@ with_mock_s3 <- function(expr) {
   orig_read      <- get(".s3_read",       envir = globalenv(), inherits = TRUE)
   orig_read_with <- get(".s3_read_with",  envir = globalenv(), inherits = TRUE)
   env <- .s3_cache_test
-  assign(".s3_write", function(obj, key) { assign(key, obj, envir = env) },
+  assign(".s3_write", function(obj, key, client_id = NULL) { assign(key, obj, envir = env) },
          envir = globalenv())
   assign(".s3_read", function(key) {
     if (exists(key, envir = env)) get(key, envir = env) else NULL
