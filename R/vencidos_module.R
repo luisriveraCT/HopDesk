@@ -335,35 +335,24 @@ vencidosServer <- function(id, shared) {
     })
 
     # ── Badge ──────────────────────────────────────────────────────────────
-    # Count only unconfirmed rows — confirmed SAP ghosts are shown but not counted.
+    # Count only unconfirmed rows — confirmed SAP ghosts are shown but not
+    # counted. Reuses the `confirmed` column df_combined() (ledger_module.R)
+    # already computes from every confirmation source (bancos_confirmados,
+    # pagar_hoy_db, legacy conciliacion, papelera), with proper
+    # toupper(trimws(...)) normalization on Empresa+Documento+Moneda — do NOT
+    # re-derive confirmed status here. This used to reimplement its own
+    # independent (and weaker — no case/whitespace normalization, and the
+    # bancos_confirmados key was missing Moneda entirely) version, which could
+    # silently drift from what the calendar itself shows.
     observe({
-      df      <- vencidos_df()
+      df <- vencidos_df()
       if (is.null(df) || !nrow(df)) {
         session$sendCustomMessage("vencidosBadge", list(count = 0L)); return()
       }
-      # Mark confirmed using same two-source logic as renderUI.
-      conf_db  <- tryCatch(shared$bancos_confirmados(), error = function(e) NULL)
-      conc_rv  <- tryCatch(shared$conciliacion_rv(),    error = function(e) NULL)
-      confirmed <- rep(FALSE, nrow(df))
-      if (!is.null(conc_rv) && nrow(conc_rv)) {
-        for (tipo_val in c("cobro", "pago")) {
-          ck <- unique(conc_rv[conc_rv[["tipo"]] == tipo_val, c("Empresa","Moneda","Documento"), drop = FALSE])
-          if (nrow(ck)) {
-            mk <- paste(df[["Empresa"]], df[["Moneda"]], df[["Documento"]])
-            confirmed <- confirmed | (mk %in% paste(ck$Empresa, ck$Moneda, ck$Documento))
-          }
-        }
-      }
-      if (!is.null(conf_db) && nrow(conf_db)) {
-        for (tipo_val in c("cobro", "pago")) {
-          ca <- conf_db[!(conf_db[["eliminado"]] %in% TRUE) & conf_db[["tipo"]] == tipo_val, , drop = FALSE]
-          if (nrow(ca)) {
-            bk <- unique(ca[, c("empresa","documento"), drop = FALSE])
-            mk <- paste(df[["Empresa"]], df[["Documento"]])
-            confirmed <- confirmed | (mk %in% paste(bk$empresa, bk$documento))
-          }
-        }
-      }
+      confirmed <- if ("confirmed" %in% names(df))
+        !is.na(df[["confirmed"]]) & df[["confirmed"]]
+      else
+        rep(FALSE, nrow(df))
       # Manual confirmed disappear; SAP confirmed become ghosts — both excluded from badge.
       session$sendCustomMessage("vencidosBadge", list(count = sum(!confirmed)))
     })
