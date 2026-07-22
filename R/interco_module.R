@@ -100,6 +100,14 @@ intercoServer <- function(id, shared) {
       # never hides everything.
       emp_sel <- isolate(shared$empresa_sel()) %||% character()
 
+      # Confirmed-invoice sources — items that already went through
+      # "Confirmar" in Agenda de Hoy. Treasury has settled these internally
+      # even if Finance/SAP hasn't caught up yet, so they must disappear from
+      # Intercompany entirely (see .filter_ic() below for the exclusion logic).
+      conf_db    <- isolate(shared$bancos_confirmados()) %||% tibble::tibble()
+      ph_db      <- isolate(shared$pagar_hoy_db())        %||% tibble::tibble()
+      abonos_raw <- isolate(shared$abonos_db())           %||% tibble::tibble()
+
       ar_pre   <- toupper(reg$ar_prefix %||% "C")
       ap_pre   <- toupper(reg$ap_prefix %||% "P")
 
@@ -153,6 +161,67 @@ intercoServer <- function(id, shared) {
         # emp pattern used by ledger_module.R / cashflow / search modules.
         if (length(emp_sel)) keep <- keep & (df$Empresa %in% emp_sel)
 
+        amt_col <- if ("Saldo vencido" %in% names(df)) "Saldo vencido" else "DocTotal"
+
+        # ── Net out active abonos (partial payments staged via Agenda de Hoy) ──
+        # Same join convention as build_ledger_df() in data_pipeline.R: raw
+        # (Empresa, Moneda, Documento) equality, no case/whitespace
+        # normalization — abono rows are always written with the exact same
+        # casing as the invoice they were staged from. A fully-netted invoice
+        # (balance rounds to 0) is intentionally NOT removed here — it stays
+        # visible at $0 until it's actually run through "Confirmar".
+        if (amt_col %in% names(df)) {
+          ab_sum <- active_abonos_summary(abonos_raw) |>
+            dplyr::filter(.data$ledger == !!ledger)
+          if (nrow(ab_sum) > 0) {
+            ab_key    <- paste(ab_sum$Empresa, ab_sum$Moneda, ab_sum$Documento)
+            ab_lookup <- setNames(ab_sum$abono_total, ab_key)
+            df_key    <- paste(df$Empresa, df$Moneda, df$Documento)
+            abono_total <- dplyr::coalesce(unname(ab_lookup[df_key]), 0)
+            df[[amt_col]] <- pmax(0, df[[amt_col]] - abono_total)
+          }
+        }
+
+        # ── Exclude invoices already confirmed via "Confirmar" in Agenda de
+        # Hoy ─────────────────────────────────────────────────────────────
+        # Treasury already settled these internally (a bancos_confirmados
+        # row, or — for SAP-sourced items — the row simply staying in
+        # pagar_hoy_db with status="confirmed") even though Finance/SAP may
+        # not have applied the payment yet. Matched on (Empresa, Documento,
+        # Moneda), case/whitespace-insensitive — the same key
+        # ledger_module.R's df_combined() confirmed/ghost logic uses — PLUS
+        # an exact amount match (against the abono-netted balance above) as a
+        # safety guard: confirmation records never expire, so without an
+        # amount check a future unrelated invoice reusing the same DocNum
+        # would be falsely hidden forever.
+        if (amt_col %in% names(df)) {
+          .ckey <- function(empresa, documento, moneda, importe) {
+            paste(toupper(trimws(empresa)), toupper(trimws(documento)),
+                  toupper(trimws(moneda)), sprintf("%.2f", round(as.numeric(importe), 2)))
+          }
+          tipo_val  <- if (ledger == "AR") "cobro" else "pago"
+          conf_keys <- character(0)
+
+          if (nrow(conf_db)) {
+            ca <- dplyr::filter(conf_db, !(.data$eliminado %in% TRUE),
+                                .data$tipo == tipo_val, !is.na(.data$importe))
+            if (nrow(ca)) conf_keys <- c(conf_keys,
+              .ckey(ca$empresa, ca$documento, ca$moneda, ca$importe))
+          }
+          if (nrow(ph_db)) {
+            pc <- dplyr::filter(ph_db, !is.na(.data$status), .data$status == "confirmed",
+                                !is.na(.data$ledger), .data$ledger == !!ledger,
+                                !is.na(.data$Importe))
+            if (nrow(pc)) conf_keys <- c(conf_keys,
+              .ckey(pc$Empresa, pc$Documento, pc$Moneda, pc$Importe))
+          }
+
+          if (length(conf_keys)) {
+            df_ckey <- .ckey(df$Empresa, df$Documento, df$Moneda, df[[amt_col]])
+            keep    <- keep & !(df_ckey %in% conf_keys)
+          }
+        }
+
         out <- df[keep, , drop = FALSE]
         if (nrow(out) == 0) return(NULL)
         out$CardCode <- out[[code_col]]
@@ -166,17 +235,22 @@ intercoServer <- function(id, shared) {
       )
     }
 
-    # ── Auto-load: re-runs whenever registry, companies, SAP data, or the
-    # toolbar's company pills change — so context switches, live SAP refreshes,
-    # and pill toggles all update the IC view automatically without a flag.
-    # IMPORTANT: do NOT use req() here. req() silently aborts without clearing
-    # ic_invoices, so jumping to a client with no SAP data leaves stale IC rows
-    # from the previous context visible. Explicit clearing is required.
+    # ── Auto-load: re-runs whenever registry, companies, SAP data, the
+    # toolbar's company pills, or confirmed/abono state change — so context
+    # switches, live SAP refreshes, pill toggles, "Confirmar", "Deshacer", and
+    # staging/voiding an abono all update the IC view automatically without a
+    # flag. IMPORTANT: do NOT use req() here. req() silently aborts without
+    # clearing ic_invoices, so jumping to a client with no SAP data leaves
+    # stale IC rows from the previous context visible. Explicit clearing is
+    # required.
     observe({
-      reg     <- shared$interco_v2()
-      cmap    <- shared$company_map()
-      sd      <- shared$sap_data()
-      emp_sel <- shared$empresa_sel()   # dependency: re-filter when pills are toggled
+      reg      <- shared$interco_v2()
+      cmap     <- shared$company_map()
+      sd       <- shared$sap_data()
+      emp_sel  <- shared$empresa_sel()          # dependency: pill toggles
+      conf_dep <- shared$bancos_confirmados()   # dependency: Confirmar / Deshacer
+      ph_dep   <- shared$pagar_hoy_db()         # dependency: Confirmar / Deshacer
+      ab_dep   <- shared$abonos_db()            # dependency: abonos staged/voided
       if (is.null(reg) || length(cmap) == 0 || (is.null(sd$AR) && is.null(sd$AP))) {
         ic_invoices(NULL)
         return()
