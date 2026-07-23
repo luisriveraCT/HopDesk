@@ -10,6 +10,26 @@
 options(warn = 1)
 suppressPackageStartupMessages(library(dplyr))
 
+# Extract a handful of small, dependency-free function definitions straight
+# out of R/global.R by name, without sourcing the whole file (which would
+# run its guarded S3 preload block and require live AWS credentials). Keeps
+# tests exercising the REAL implementation rather than a hand-copied stand-in
+# that could silently drift from it.
+.extract_fn <- function(file, fn_name) {
+  exprs <- parse(file, keep.source = FALSE)
+  for (e in exprs) {
+    if (is.call(e) && length(e) >= 2 &&
+        identical(e[[1]], as.name("<-")) &&
+        identical(e[[2]], as.name(fn_name))) {
+      assign(fn_name, eval(e[[3]], envir = globalenv()), envir = globalenv())
+      return(invisible(TRUE))
+    }
+  }
+  stop(sprintf("%s not found in %s", fn_name, file))
+}
+.extract_fn("R/global.R", "%||%")
+.extract_fn("R/global.R", "is_erp_sourced")
+
 .pass <- 0L
 .fail <- 0L
 
@@ -30,6 +50,7 @@ cat("  Confirmed-Invoice-Logic Test Suite\n")
 cat("====================================================\n\n")
 
 .run_module("tests/test_confirmed_logic_stage_a.R")
+.run_module("tests/test_is_erp_sourced.R")
 
 cat("\n====================================================\n")
 cat(sprintf("  TOTAL: %d passed, %d failed\n", .pass, .fail))

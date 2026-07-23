@@ -336,6 +336,10 @@ ledgerModuleServer <- function(id, config, shared) {
         pap_this <- papelera[papelera[["ledger"]] == ledger |
                                papelera[["ledger"]] == "MIXED", , drop = FALSE]
         if (nrow(pap_this)) {
+          # Deliberately NOT is_erp_sourced() here: an ambiguous/legacy NA
+          # source in papelera should NOT be treated as a SAP ghost (which
+          # stays visible, excluded from sums) — safer to fall through to
+          # the manual anti-join path (fully hidden) for unknown provenance.
           sap_pap <- pap_this[!is.na(pap_this[["source"]]) &
                                 pap_this[["source"]] == "sap",
                               c("Empresa","Moneda","Documento"), drop = FALSE]
@@ -1161,7 +1165,7 @@ ledgerModuleServer <- function(id, config, shared) {
           ph_sub_bulk <- ph_now[ph_now[["ledger"]] == ledger, , drop=FALSE]
           matching_bulk <- merge(ph_sub_bulk, inv_keys, by=c("Empresa","Moneda","Documento","Importe"))
           sap_conf_bulk <- matching_bulk[!is.na(matching_bulk$status) & matching_bulk$status == "confirmed" &
-                                          (is.na(matching_bulk$source) | matching_bulk$source == "sap"), , drop=FALSE]
+                                          is_erp_sourced(matching_bulk$source), , drop=FALSE]
           if (nrow(sap_conf_bulk)) {
             showNotification(
               paste0(nrow(sap_conf_bulk), " pago(s) confirmado(s) de SAP no se pueden quitar. ",
@@ -1264,7 +1268,7 @@ ledgerModuleServer <- function(id, config, shared) {
         ph_sub <- ph_now[ph_now[["ledger"]] == ledger, , drop=FALSE]
         matching_inv <- merge(ph_sub, inv_key, by=c("Empresa","Moneda","Documento","Importe"))
         sap_conf_inv <- matching_inv[!is.na(matching_inv$status) & matching_inv$status == "confirmed" &
-                                      (is.na(matching_inv$source) | matching_inv$source == "sap"), , drop=FALSE]
+                                      is_erp_sourced(matching_inv$source), , drop=FALSE]
         if (nrow(sap_conf_inv)) {
           showNotification(
             "Pago confirmado de SAP. No se puede quitar. Solo SAP puede cerrarlo.",
@@ -1588,6 +1592,8 @@ ledgerModuleServer <- function(id, config, shared) {
         if (nrow(m) && "source" %in% names(m) && !is.na(m[["source"]][1]))
           m[["source"]][1] else "sap"
       }, character(1))
+      # key_sources already folds the is_erp_sourced() NA-defaults-to-sap
+      # logic into its own "else 'sap'" fallback above — never NA by here.
       sap_mask     <- key_sources == "sap"
       non_sap_keys <- keys[!sap_mask, , drop = FALSE]
 

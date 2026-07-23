@@ -47,6 +47,16 @@ strip_accents <- function(x) {
   stringi::stri_trans_general(x %||% "", "Latin-ASCII")
 }
 
+# A ledger row's `source` column is one of "sap" | "manual" | "provision"
+# (NA/blank normalized to "sap" on load, per .schema_pagar_hoy's own
+# documentation). "ERP-sourced" means owned by an external system HopDesk
+# doesn't control — today only SAP, but written so a future second ERP
+# integration just needs a distinct `source` value, not a second copy of
+# this check at every call site.
+is_erp_sourced <- function(source) {
+  is.na(source) | source == "sap"
+}
+
 CURRENCIES <- c("MXN","USD","EUR","GBP","CAD","JPY","CHF","AUD","CNY","BRL")
 
 # ── Source modules ────────────────────────────────────────────────────────────

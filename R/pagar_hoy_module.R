@@ -1159,7 +1159,7 @@ pagarHoyServer <- function(id, shared) {
         if (!nrow(rows)) return()
         sap_conf <- rows |> dplyr::filter(
           !is.na(status) & status == "confirmed" &
-          (is.na(source) | source == "sap"))
+          is_erp_sourced(source))
         if (nrow(sap_conf)) {
           showNotification(
             paste0(nrow(sap_conf), " pago(s) confirmado(s) de SAP no se pueden quitar. ",
@@ -1220,7 +1220,7 @@ pagarHoyServer <- function(id, shared) {
         if (!nrow(rows)) return()
         sap_conf <- rows |> dplyr::filter(
           !is.na(status) & status == "confirmed" &
-          (is.na(source) | source == "sap"))
+          is_erp_sourced(source))
         if (nrow(sap_conf)) {
           showNotification(
             paste0(nrow(sap_conf), " cobro(s) confirmado(s) de SAP no se pueden quitar. ",
@@ -1391,10 +1391,10 @@ pagarHoyServer <- function(id, shared) {
         ph  <- shared$pagar_hoy_db()
         now <- Sys.time()
         sap_fact_ids <- factura_rows$id[
-          is.na(factura_rows$source) | factura_rows$source == "sap"
+          is_erp_sourced(factura_rows$source)
         ]
         man_fact_ids <- factura_rows$id[
-          !is.na(factura_rows$source) & factura_rows$source != "sap"
+          !is_erp_sourced(factura_rows$source)
         ]
         if (length(sap_fact_ids)) {
           idx_ph <- which(ph$id %in% sap_fact_ids)
@@ -1594,10 +1594,10 @@ pagarHoyServer <- function(id, shared) {
         ph  <- shared$pagar_hoy_db()
         now <- Sys.time()
         sap_fact_ids <- factura_rows$id[
-          is.na(factura_rows$source) | factura_rows$source == "sap"
+          is_erp_sourced(factura_rows$source)
         ]
         man_fact_ids <- factura_rows$id[
-          !is.na(factura_rows$source) & factura_rows$source != "sap"
+          !is_erp_sourced(factura_rows$source)
         ]
         if (length(sap_fact_ids)) {
           idx_ph <- which(ph$id %in% sap_fact_ids)

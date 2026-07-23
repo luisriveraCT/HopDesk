@@ -341,6 +341,13 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
   # ── Apply SAP field overrides (Parte, Codigo, Factura, Notas) ───────────────
   # Overrides paint on top of SAP data for UI display only.
   # The underlying sap_data() snapshot and dedup keys are never touched.
+  # Deliberately literal source == "sap" below, not is_erp_sourced(): this
+  # whole feature (table, columns, settings UI) is SAP-specific by name, not
+  # a generic ERP-override mechanism yet — generalizing it is a bigger,
+  # separate decision than this stage's "don't hardcode the sap/manual split
+  # at every confirm/delete/stage site" scope. Also a no-op either way today
+  # — `source` is always explicitly "sap" by the time rows reach here, never
+  # NA (see build_ledger_df() above), so the two checks are equivalent now.
   if (!is.null(sap_ov) && is.data.frame(sap_ov) && nrow(sap_ov)) {
     if (!"Factura" %in% names(result)) result[["Factura"]] <- NA_character_
     ov_filt <- sap_ov |>
