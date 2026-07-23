@@ -236,139 +236,266 @@ full-table write lands second. This is a systemic risk broader than this
 specific bug — flagged for a scope decision in §4 (Q7), not assumed to be
 in-scope for the redesign below.
 
-## 3. Recommended direction
+## 2.8 Vencidos has zero direct mutation — already correct, no fix needed
 
-Translating Mouse's target architecture (§0) into concrete mechanism:
+Verified by grepping the entire file for any `shared$X(value)` write-call or
+`save_*`/`delete_*`/`add_to_papelera` call: `R/vencidos_module.R` (737 lines)
+contains none. Every edit action (tag/move/delete/stage) routes through
+`handle_invoice_action()` (`R/search_module.R:871-1088`), shared verbatim
+with the Search tab and wired at `app.R:2196-2198`
+(`observeEvent(input$vencidos_action, { handle_vencidos_action(input, shared) })`).
+Vencidos is, today, already a pure read-only mirror of `df_combined_AR/AP()`
+— exactly Mouse's rule for it. No change needed here.
+
+## 2.9 `undo_conf` and the provision-revival watcher collide, with no coordination
+
+Both `undo_conf` (`R/bancos_module.R:3286-3392`) and
+`pasivos_observers.R`'s reversal watcher (lines 95-136) react to the exact
+same event — a `bancos_confirmados` row's `eliminado` flipping to `TRUE`.
+`undo_conf` has **no check of `row$provision_id`** anywhere in its body; it
+unconditionally runs its generic "restore-in-place or synthesize a new
+`pagar_hoy_db` row" logic regardless of whether the confirmation belongs to
+a provision-derived item. Meanwhile `pasivos_observers.R` independently
+calls `pasivos_provision_revive()` (resets the provision to
+`estado="provisional"`, clears `manual_inv_id`/`pagar_hoy_id`/`bancos_conf_id`)
+and deletes the derived `manual_inv` row — but never touches whatever
+`undo_conf` just wrote to `pagar_hoy_db`.
+
+Net effect, confirmed by tracing both code paths against the actual
+confirm-time deletion (`R/pagar_hoy_module.R:1396-1409`, which physically
+removes provision/manual `pagar_hoy` rows, not merely flags them): for a
+provision-derived confirmation, `undo_conf`'s `orig_idx` lookup always comes
+up empty (the row was deleted at confirm time), so it always takes the
+"synthesize a new row" branch — leaving a **stray orphaned `pending` row in
+Agenda**, carrying `provision_id`, for a provision whose `estado` is now back
+to `"provisional"` and which, per Mouse's explicit rule, should have zero
+Agenda footprint. This is a real, confirmed bug, independent of the
+manual-entry data-loss bug in §1.
+
+**Checked and confirmed NOT a bug:** `liability_id` reconnection. The
+provision's own row (`pasivos_provisions_db`, schema at
+`R/pasivos_schemas.R:68-111`) is never deleted through any part of this
+cycle, and `pasivos_provision_revive()` (`R/pasivos_engine.R:959-984`) never
+reads or writes `liability_id` — only `estado`, `manual_inv_id`,
+`pagar_hoy_id`, `bancos_conf_id`, `reverted_count`. So "reconnecting a
+recovered provision to its originating liability" is already automatically
+true today; nothing to fix there.
+
+## 2.10 "Send straight to Agenda" fabricates a row at TWO sites — a feature worth keeping, wired unsafely
+
+Mouse wants this one-click "create/convert and immediately stage to Agenda"
+convenience kept. Today it exists at two independent sites, and **both**
+violate the root/mirror principle (§0) by handing Agenda a freshly
+manufactured row instead of staging an existing Calendario-sourced one:
+
+- **Pasivos conversion modal**, `stage_to_agenda` branch of
+  `.pasivos_perform_conversion` (`R/pasivos_module.R:163-196`): after
+  correctly writing the new invoice to `manual_inv` (the root write), it
+  builds a brand-new `pagar_hoy` row **directly from the modal's raw form
+  inputs** (`input$pcm_empresa`, `input$pcm_documento`, etc. — even
+  synthesizing a placeholder `Documento` via `paste0("CONV_", prov_id)` if
+  left blank) and calls `upsert_pagar_hoy()` with it. The low-level write
+  primitive is the same function Calendar/Search staging uses — but the row
+  handed to it is fabricated, not derived from re-reading the row that was
+  just written to the root table.
+- **Direct manual-entry creation with "send to agenda"**, `app.R:2449-2497`:
+  identical shape — writes `manual_inv` correctly, then separately
+  constructs and upserts a `pagar_hoy` row by hand (deliberately sharing the
+  new `manual_inv` row's own `id`, per §2.1).
+
+Both should instead: write the root row first, then stage it via the exact
+same "stage this existing Calendario row" path Calendar's day-modal and
+Search already use (i.e. re-derive the `pagar_hoy` row from the row that now
+actually exists in `manual_inv`, the same way `ledger_module.R:975-1002`
+does for a normal Stage-selected action) — same UX, same one-click
+convenience, but Agenda is handed a reference to something real rather than
+a hand-built guess.
+
+## 2.11 Ghosted rows remain selectable and are counted in the day-modal's "Selección" subtotal
+
+`ledger_module.R`'s day-modal table (`output$modal_tbl`) does not restrict
+`DT::datatable`'s `selection` on confirmed/ghost rows — they're only styled
+(struck-through, greyed, `line-through`/`opacity:0.55`,
+`ledger_module.R:2744-2819`), never made unselectable. The plain total
+(`all_total`, shown with nothing selected) already excludes confirmed rows
+via `unconfirmed_mask` (`ledger_module.R:2877-2881`), but `sel_total` (the
+running total for whatever the user has clicked, `ledger_module.R:2888`)
+indexes into `sorted_amts`, built with **no confirmed/ghost filtering at
+all** (`ledger_module.R:2868-2874`). So a user can select a struck-through
+"Confirmado" row and its amount silently counts toward "Selección: …" — a
+direct hit on the "ghost must never affect any calculation" rule, and it's
+specifically the multi-select hypothetical-cash-flow feature this would
+undermine most. Vencidos already blocks this correctly for its own display
+(`.ven-confirmed-ghost { pointer-events: none; }`,
+`R/vencidos_module.R` CSS) — the day-modal doesn't have the equivalent
+guard.
+
+## 2.12 Confirmed already-correct, no fix needed: ERP "deletion" already only ghosts, never wipes
+
+Cross-checked against Mouse's rule ("no manual input may wipe an ERP row —
+only the ERP's own update can"): today, "deleting" an ERP-sourced row via
+the calendar's papelera mechanism does **not** remove it from
+`df_combined()`'s data at all — Source 2 (papelera SAP-ghosts, post-Stage-A
+numbering) keeps the row in the dataframe and only sets
+`confirmed`/`is_ghost` (`R/ledger_module.R`, papelera block). The underlying
+SAP snapshot itself is never touched by any in-app delete action. So the
+"delete" button, when pointed at an ERP row, already only ghosts it — it can
+never actually wipe it. This matches the rule exactly and needs no change.
+
+## 3. Recommended direction — confirmed with Mouse, 2026-07-23
 
 1. **Confirming always fully removes the item from `pagar_hoy_db`, for every
-   source.** Today only manual/provision rows are removed; ERP rows are kept
-   with `status <- "confirmed"`. Change ERP-sourced confirm to unstage
-   (delete) the row too — Calendario's crossout already comes entirely from
-   `bancos_confirmados` matching (post-Stage-A Source 1), so
-   `pagar_hoy_db.status=="confirmed"` (post-Stage-A Source 3) becomes
-   unnecessary as a confirmed-signal once this lands; it can likely be
-   retired from `df_combined()`'s matching logic entirely (needs
-   verification once implemented, not assumed here).
+   source** — ERP and manual/provision alike. Today only manual/provision
+   rows are removed; ERP rows are kept with `status <- "confirmed"`. Change
+   ERP-sourced confirm to unstage (delete) the Agenda row too — this is
+   always safe for ERP per Mouse's explicit rule (Agenda removal never
+   touches the real Calendario data). Calendario's crossout for ERP rows
+   continues to come entirely from `bancos_confirmados` matching
+   (post-Stage-A Source 1) — **`pagar_hoy_db.status=="confirmed"`
+   (post-Stage-A Source 3) becomes structurally dead** once this lands (no
+   source ever leaves a `status=="confirmed"` row behind anymore) and should
+   be *removed*, not just left inert, from `df_combined()`'s matching logic.
+   This also means `undo_conf`'s "restore the original pagar_hoy row
+   in-place" branch becomes dead code for ERP too — undo for an ERP
+   confirmation should simply clear the `bancos_confirmados` flag and touch
+   `pagar_hoy_db` not at all, relying purely on the flag-clear to make the
+   item reappear (crossed-out → open) in Calendario.
 
-2. **Stop deleting `manual_inv` rows on confirm. Move them instead**, into a
-   new mirror table — schema-identical to `manual_inv`, plus confirmation
-   metadata — call it `manual_inv_confirmados`. Confirm = move the row
-   (unmodified) from `manual_inv` to `manual_inv_confirmados`. Undo = move it
-   back, unmodified. This is exactly Mouse's §0/answer-3 proposal ("a
-   different table identical to the regular item table... send it back to
-   its original table with zero damage") and eliminates every lossy-summary
-   problem in §2.3/§2.5 at the root, rather than patching around it.
-   `bancos_confirmados` keeps its current, different job — the bank-side
-   confirmation/reconciliation record (linked account, `mov_id`, etc.) — it
-   is not a replacement for keeping the original invoice data intact; the
-   two tables serve genuinely different purposes and both should exist.
+2. **One unified archive mechanism for BOTH "deleted" and "confirmed"
+   dispositions of a `manual_inv` row — generalize `papelera`, don't build a
+   second parallel table.** Mouse's explicit direction: confirmation-history
+   covers *everything that gets confirmed* (plain manual entries **and**
+   provision-derived ones — no special-casing by origin), and "the
+   mechanisms for deleted and confirmed are almost the same... unify,
+   standardize, simplify." Concretely: extend `papelera`'s existing
+   generic-archive shape (already stores the complete original row via
+   `original_data`, plus who/when) with a `disposition` column
+   (`"deleted"` | `"confirmed"`), and route **every** exit of a live
+   `manual_inv` row — the existing calendar/search "eliminar" paths AND the
+   confirm handlers AND provision-derived confirm/Quitar — through this one
+   mechanism instead of two. Undo/restore becomes one shared function
+   (move the archived row back to `manual_inv` unmodified, regardless of
+   which disposition it was archived under) rather than two separate,
+   drift-prone implementations. Exact schema fields to be verified fresh
+   against `papelera`'s current schema when this stage is implemented, not
+   locked here.
 
 3. **Generalize the `is.na(source) | source == "sap"` idiom into one shared
-   helper** (e.g. `is_erp_sourced(source)` / `is_locally_owned_source(source)`),
-   defined once, called at all ~10 current sites. Any future second ERP
-   integration then only needs to give its rows a distinct `source` value —
-   it does not need to be found and special-cased at every site by hand.
+   helper** (e.g. `is_erp_sourced(source)`), defined once, called at all ~10
+   current sites. Any future second ERP integration then only needs to give
+   its rows a distinct `source` value — it does not need to be found and
+   special-cased at every site by hand.
 
-4. **Leave calendar rendering untouched at staging time** (Mouse confirmed no
-   change needed there) but make the hourglass badge internally consistent:
-   at minimum, stop it from ever appearing over a day with zero visible line
-   items (since after point 1-2 land, a stand-in-with-wrong-date should no
-   longer be possible in the first place — this becomes primarily a
-   regression guard, not the main fix). Confirm with Mouse whether the 8s
-   cross-session poll interval for the badge count is acceptable or needs
-   tightening (§4 Q6).
+4. **Fix the "send straight to Agenda" convenience feature at both sites
+   (§2.10) without removing it** — Mouse explicitly wants this UX kept.
+   Rework both the Pasivos conversion modal's `stage_to_agenda` branch and
+   the direct-manual-entry-creation "send to agenda" path so the root write
+   (to `manual_inv`) happens first, then the resulting row is staged via the
+   same "stage an existing Calendario row" primitive Calendar/Search
+   already use — same one-click result for the user, no fabricated Agenda
+   row.
 
-5. Decide the concurrency question (§2.7) as its own explicit scope call
-   (§4 Q7) — likely a separate follow-up given it's broader than this
-   feature, but flagging it low-risk-to-defer only if Mouse agrees the
-   current staff headcount/usage pattern makes simultaneous conflicting
-   edits rare in practice.
+5. **Fix the `undo_conf` / `pasivos_observers.R` collision (§2.9)**:
+   `undo_conf` should skip its own Agenda-restore/synthesize logic entirely
+   whenever the confirmation being undone carries a non-NA `provision_id`,
+   deferring completely to the existing provision-revival watcher (which
+   already correctly reverts the provision and needs no Agenda footprint at
+   all, per Mouse's "provisions must never touch Agenda" rule).
 
-## 4. Needs an explicit decision from Mouse before implementation
+6. **Ghost rows become unselectable in the day-modal's `DT` table** (§2.11),
+   matching Vencidos' own existing `pointer-events: none` precedent —
+   consistency with an existing in-app pattern over inventing a new one.
+   This also structurally guarantees the "Selección" subtotal can never
+   include a ghost, without needing a second, separate filter fix.
 
-1. Confirm points 1-4 in §3 as the direction (or redirect).
-2. `manual_inv_confirmados`'s exact schema — full copy of `.schema_manual`
-   plus which metadata columns (proposed: `confirmed_at`, `confirmed_by`,
-   `eliminado`, `eliminado_at` for the undo-reversal itself, mirroring
-   `bancos_confirmados`'s own soft-delete shape)?
+7. **Hourglass consistency guard**: never render the staged-count badge over
+   a day with zero visible Calendario line items. Mostly becomes a
+   regression guard once points 1-2 land (the stand-in-with-wrong-date
+   scenario that caused this should no longer be producible), but keep the
+   guard anyway as defense-in-depth.
+
+8. **A structural simplification this unlocks, worth sequencing around**:
+   once every confirmed manual/provision row is archived (never flagged) and
+   every ERP confirm always fully unstages Agenda, `df_combined()`'s
+   confirmed-matching model drops from 3 sources (post-Stage-A) to
+   effectively **2** — `bancos_confirmados` matching and papelera SAP-ghosts.
+   `pagar_hoy_db.status=="confirmed"` matching (Source 3) is removed
+   entirely, not merely deprecated. This has a direct sequencing
+   implication for `docs/CONFIRMED_INVOICE_LOGIC_AUDIT.md`'s Stage C
+   (extracting `compute_confirmed_flags()`) — see the consolidated plan.
+
+9. Concurrency (§2.7, `pagar_hoy_db`/`manual_inv` read-modify-write race) —
+   still an open scope call, not assumed in-scope for this effort. Default
+   recommendation: treat as a separate, consciously-deferred follow-up given
+   it's a systemic risk broader than this specific feature — flag if that's
+   wrong.
+
+## 4. Still open — everything else confirmed 2026-07-23
+
+1. Invoice `1025618` (§1) — re-enter manually with the surviving fields
+   (Empresa=Networks Crossdocking Services, Parte=Hapag Lloyd,
+   Documento=1025618, Importe=532 USD, Codigo=P1581; real due date unknown —
+   22/07/2026 was the payment date, not the due date), or is there another
+   system of record to pull the real due date from?
+2. Is the 8-second cross-session poll interval for the hourglass badge count
+   acceptable, or does it need to tighten? (Same-session reactivity is
+   already instant.)
 3. Should `bancos_confirmados` gain a `source` column (mirroring
-   `pagar_hoy_db`'s), so future reporting/audit can tell at a glance whether
-   a given confirmation was ERP or locally-owned, independent of whether a
-   `manual_inv_confirmados` row also exists?
-4. Provision-derived invoices currently interact with `pasivos_provisions_db`
-   (estado/manual_inv_id/pagar_hoy_id FKs) on both confirm and Quitar (§2.4).
-   Moving to a mirror-table design for manual/provision rows needs this FK
-   wiring re-verified end-to-end, not just the manual case — should this be
-   its own stage, given `pasivos_*` is a large, separate subsystem?
-5. Invoice `1025618` itself (§1) — confirm you'll re-enter it manually with
-   the surviving fields (Empresa=Networks Crossdocking Services,
-   Parte=Hapag Lloyd, Documento=1025618, Importe=532 USD, Codigo=P1581,
-   original due date unknown — payment date shown was 22/07/2026 but that is
-   NOT the real due date), or is there another system of record (e.g. the
-   original SAP/freight-forwarder export) to pull the real due date from?
-6. Is the 8-second cross-session poll interval for the hourglard badge count
-   (and Agenda's pending list in general) acceptable, or does it need to
-   become push/faster? (Same-session reactivity is already instant — this
-   only affects a *different* logged-in user seeing your change.)
-7. Scope call on the `pagar_hoy_db`/`manual_inv` concurrent-write race
-   (§2.7): fix now as part of this effort, or treat as a separate,
-   consciously-deferred follow-up?
+   `pagar_hoy_db`'s), so audit/reporting can tell ERP vs. locally-owned
+   confirmations apart at a glance? Low-priority, nice-to-have.
+4. Concurrency (§3.9) — confirm the default (deferred) or pull it into scope.
 
 ## 5. Test plan hints for the implementing session
 
 - Confirm (ERP-sourced) → assert `pagar_hoy_db` row is gone, `bancos_confirmados`
-  row exists, Calendario shows the crossed-out row, Vencidos reflects it.
-- Confirm (manual-sourced) → assert `manual_inv` row moved (not deleted) to
-  `manual_inv_confirmados` unmodified, `pagar_hoy_db` row gone, Calendario no
-  longer shows the row, Vencidos no longer shows it.
-- Undo (either source) → assert the row is fully restored to its origin
-  table with **zero field loss** (this is the regression test that would
-  have caught `1025618`'s `FechaVenc` substitution) and **no** `pagar_hoy_db`
-  row is created.
+  row exists, Calendario shows the crossed-out row, Vencidos reflects it, and
+  the row is excluded from every calculation per §2.11/§2.12's rule (day
+  total, day-view sum, selection subtotal, Intercompany, Cash Flow
+  Preview/Export, Reporte Pulse — cross-check against
+  `docs/CONFIRMED_INVOICE_LOGIC_AUDIT.md`'s own test plan for the latter
+  three, since this is the same underlying rule).
+- Confirm (manual-sourced, both plain and provision-derived) → assert the
+  `manual_inv` row is archived (moved, `disposition="confirmed"`) not
+  deleted, unmodified field-for-field; `pagar_hoy_db` row gone; Calendario no
+  longer shows the row at all (not ghosted — fully absent); Vencidos no
+  longer shows it (inherits automatically, no direct Vencidos change needed
+  per §2.8).
+- Undo (any source) → row fully restored with **zero field loss** (the
+  regression test that would have caught `1025618`'s `FechaVenc`
+  substitution) and **no** `pagar_hoy_db` row is created or left behind, for
+  ERP, plain manual, AND provision-derived cases (§2.9's collision fix needs
+  its own explicit test: undo a provision-derived confirmation, assert
+  exactly one outcome — provision back to `"provisional"`, zero `pagar_hoy_db`
+  trace — not two independent mechanisms leaving inconsistent state).
+- Deletion (explicit "eliminar") → same archive mechanism, `disposition="deleted"`,
+  same restore guarantee — this is the regression path for papelera's
+  existing behavior once it's generalized; must not regress.
+- "Send to Agenda" convenience (§2.10, both entry points) → the staged
+  `pagar_hoy` row's fields exactly match what's now in `manual_inv` (proving
+  it was staged from the real row, not fabricated) — construct a case where
+  the modal's raw input would have differed from a hand-built row to make
+  this a meaningful assertion, not a tautology.
+- Selection subtotal (§2.11) → a ghost row cannot be selected at all in the
+  day-modal table; if selection is attempted programmatically in a test,
+  confirm it's excluded from the sum regardless (defense in depth).
 - Hourglass: staged-but-unconfirmed item → badge count matches; confirm or
-  Quitar it → badge count decrements immediately in the same session.
-- A day with zero visible Calendario line items never shows a populated
-  hourglass badge, under any of the above flows.
+  Quitar it → badge count decrements immediately in the same session. A day
+  with zero visible Calendario line items never shows a populated badge,
+  under any flow above.
 - Multi-source regression: add a second synthetic `source` value in tests
   (not a real ERP) and confirm every one of the ~10 sites now correctly
   treats it as ERP-owned via the new shared helper, with no site missed.
+- Concurrency (only if pulled into scope per §4.4): two sessions
+  staging/confirming/Quitar-ing concurrently within the poll window must not
+  silently drop either change.
 
-## Prompt for the implementing Claude Code session
+## This document has been superseded as the sole planning reference
 
-```
-Read C:\Users\luisr\Antiguedad_App\docs\AGENDA_CALENDARIO_WIRING_AUDIT.md in
-full before writing any code. This is an audit and recommended direction,
-not a locked spec — §4 lists decisions that need Mouse's explicit input
-before implementation. Ask him about each one in your own words; do not
-assume an answer.
-
-This is a HIGH-SEVERITY fix: §1 documents a real, already-occurred,
-unrecoverable data loss incident, and §2.3/2.4 show the exact mechanism
-(confirm/Quitar hard-deleting manual_inv with no papelera archive) is still
-live in production right now. Work in small, focused, independently-tested
-stages (Mouse's explicit instruction) — re-verify every line number cited
-here with a fresh read before editing, this codebase changes often. After
-EACH stage: run the existing test suite plus new tests for that stage,
-report results, stop and ask about anything not fully certain, and give
-Mouse a concrete manual-verification checklist (specific clicks, specific
-things to check in Calendario/Vencidos/Agenda/console) before starting the
-next stage. Do not merge to master yourself — Mouse reviews and merges each
-stage.
-
-Suggested stage breakdown (adjust if a better one emerges once you're in the
-code):
-1. `is_erp_sourced()`/equivalent helper + migrate all ~10 hardcoded
-   `source == "sap"` sites onto it (mechanical, low-risk, a good first
-   regression-test target).
-2. `manual_inv_confirmados` mirror table + move-not-delete on confirm for
-   manual-sourced rows + move-back-not-synthesize on undo. Verify zero field
-   loss end-to-end.
-3. ERP-sourced confirm also fully unstages `pagar_hoy_db` (matching the
-   manual case now); verify Source 3 in df_combined() (pagar_hoy_db
-   status=="confirmed") is no longer needed and remove or justify keeping it.
-4. Provision-derived invoices: re-verify the pasivos_provisions_db FK wiring
-   against the new mirror-table design end-to-end.
-5. Hourglass consistency guard (never show over zero visible line items).
-6. Concurrency (pagar_hoy_db/manual_inv race) — only if Mouse confirms it's
-   in scope for this effort per §4 Q7.
-```
+Everything in §3 is confirmed direction as of 2026-07-23. The actual staged
+implementation sequence — combined with `docs/CONFIRMED_INVOICE_LOGIC_AUDIT.md`,
+since the two efforts now share code paths and one specific sequencing
+dependency (§3.8) — lives in `docs/LEDGER_INTEGRITY_MASTER_PLAN.md`. Read
+that document for the stage order and prompts; this document remains the
+evidentiary record (incident details, exact current-code citations, the
+reasoning behind each decision) to consult when a stage's own instructions
+say to re-verify something against the audit.
