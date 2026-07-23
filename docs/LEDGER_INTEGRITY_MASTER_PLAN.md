@@ -63,6 +63,14 @@ reviewable increments, run the existing suite plus new tests for the stage,
 report pass/fail, ask about anything uncertain rather than guess, end with a
 concrete manual-verification checklist, do not merge yourself.
 
+**Testing bar, confirmed with Mouse 2026-07-23**: "around 100 quick tests
+per stage, true thorough." Table-driven/parameterized coverage (many field
+checks, many source/status/edge-case combinations) rather than a handful of
+hand-picked examples — Stage 3 landed 79 genuinely distinct assertions this
+way, not padding. Apply this bar from here on; Stages 1-2's lighter suites
+(8 and 14 tests) predate this instruction and weren't backfilled unless
+Mouse asks.
+
 ### Stage 1 — Retire `conciliacion_rv` ✅ DONE, awaiting validation
 
 Branch `confirmed-logic-stage-a`, commit `d8cae04`, not yet merged. Source:
@@ -102,11 +110,31 @@ column, one shared restore function):
   instruction. This doesn't change *what* Stage 4/5 wire into it, just the
   shape of the mechanism itself — worth designing this properly now since
   every later stage builds on it.
+- **Both histories are permanent in S3 forever** — confirmed explicitly by
+  Mouse, 2026-07-23, for auditory-compliance reasons: "at least a simple log
+  with the details of what happened, who did it, timestamp, whatever's
+  needed for auditory compliance." No event row, once written, is ever
+  physically deleted or edited by any code path — this matches papelera's
+  own existing documented behavior ("se conservan permanentemente para
+  auditoría") almost exactly; the fix is extending that same guarantee to
+  cover confirmations too, not inventing a new policy.
 
 Build and test this mechanism in isolation first — nothing calls it yet.
 Exact schema fields: re-verify `papelera`'s current schema fresh before
 extending it (don't trust either audit doc's field list without a fresh
 read).
+
+**✅ DONE 2026-07-23** — branch `confirmed-logic-stage-2` (stacked; touches
+`R/persistence.R`/`R/bancos_persistence.R`, unrelated to Stage 2's own
+files but the branch wasn't merged yet). Purely additive: `.schema_papelera()`
+gained `event_id`/`disposition`/`action`/`reverses_event_id`; `add_to_papelera()`
+gained a `disposition` param (defaults to `"deleted"`, so every existing
+call site is byte-for-byte unchanged); new `restore_from_papelera()`.
+`.schema_bancos_confirmados()` gained `action`/`reverses_confirmacion_id`/
+`recovered_at`; new `recover_confirmacion()`. 79 new tests (zero-field-loss
+round trips across every real manual-invoice field, multi-cycle chains,
+error conditions, backward compatibility) — full existing suite still
+green. Nothing in production code calls either new function yet.
 
 ### Stage 4 — Confirm/undo rewrite: ERP + plain manual entries
 
@@ -123,6 +151,19 @@ landed together since both touch the same confirm/undo handlers:
   migrate onto the same mechanism (`disposition="deleted"`) — regression
   test against papelera's current behavior to confirm no change in what
   those paths already do correctly.
+
+**Correction, confirmed with Mouse 2026-07-23**: the "can't Quitar/re-stage
+a confirmed SAP row, solo SAP puede cerrarlos" guards (`pagar_hoy_module.R`'s
+two Quitar handlers, `ledger_module.R`'s two stage_all/stage_selected
+collision guards — the exact sites Stage 2 migrated onto `is_erp_sourced()`)
+are based on the WRONG premise. Mouse's rule: users may remove *anything*
+from Agenda regardless of source — the only real guardrail is that no
+in-app action may remove an ERP row from **Calendario** (already correct,
+confirmed separately, §2.12). **Delete these four guard blocks entirely as
+part of this stage** — don't just leave them calling `is_erp_sourced()`,
+remove the restriction itself. (Stage 2's helper migration itself was still
+correct, low-risk, mechanical work — only the business rule these four
+specific call sites implement turned out to be wrong, not the refactor.)
 
 Verify: `df_combined()`'s `pagar_hoy_db.status=="confirmed"` matching
 (Source 3, post-Stage-1 numbering) never matches anything anymore — confirm
