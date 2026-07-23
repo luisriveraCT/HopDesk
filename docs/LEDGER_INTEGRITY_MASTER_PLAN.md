@@ -79,15 +79,34 @@ calls to it. Mechanical, low-risk — good first stage after Stage 1 lands.
 Test: a second synthetic `source` value behaves identically to `"sap"`
 through the helper at every site.
 
-### Stage 3 — Unified archive mechanism
+### Stage 3 — Unified archive mechanism, as an append-only event log
 
-Source: §3.2. Generalize `papelera` (already stores the full original row +
-who/when) with a `disposition` column (`"deleted"` | `"confirmed"`) and one
-shared restore function. Build and test this mechanism in isolation first —
-nothing calls it yet. This is the foundation Stages 4-5 wire real behavior
-into. Exact schema fields: re-verify `papelera`'s current schema fresh
-before extending it (don't trust either audit doc's field list without a
-fresh read).
+Source: §3.2, **extended 2026-07-23** per Mouse's explicit request while
+testing Stage 1: a single mutable row with a soft-delete flag isn't enough —
+he wants a real audit trail. Concretely, on top of the original design
+(generalize `papelera`'s full-row-preservation shape with a `disposition`
+column, one shared restore function):
+
+- **Every confirm/delete/recover is its own permanent, immutable event
+  record** — recovering an item must write a NEW line documenting the
+  recovery (who, when), not just flip a flag on the original record in
+  place. Never delete or overwrite an event row once written.
+- **Each recovery event carries an explicit FK back to the specific
+  confirm/delete event it reverses** (not just "this invoice, generically" —
+  the exact event), so an item confirmed → recovered → confirmed again →
+  recovered again produces a fully traceable chain, not an ambiguous pile of
+  same-invoice rows. This is what makes "how many times was this recovered"
+  and "was it eventually confirmed or deleted again" answerable later.
+- Both Historial de confirmaciones and Papelera need this — same mechanism,
+  applied to both dispositions, per Mouse's original "unify, standardize"
+  instruction. This doesn't change *what* Stage 4/5 wire into it, just the
+  shape of the mechanism itself — worth designing this properly now since
+  every later stage builds on it.
+
+Build and test this mechanism in isolation first — nothing calls it yet.
+Exact schema fields: re-verify `papelera`'s current schema fresh before
+extending it (don't trust either audit doc's field list without a fresh
+read).
 
 ### Stage 4 — Confirm/undo rewrite: ERP + plain manual entries
 
@@ -148,6 +167,21 @@ also fixes the "Selección" subtotal counting ghosts; add the hourglass
 consistency guard (never show the staged-count badge over a day with zero
 visible line items).
 
+**Added 2026-07-23, unrelated bug found while reproducing the above**: in
+Agenda de Hoy, removing ("Quitar") the last pending item in an
+empresa+currency bucket sometimes leaves the `DT` table showing the
+now-removed row while the header/count and action buttons correctly go to
+zero (reproduced once, self-corrected on a second stage+remove cycle in the
+same session). Investigated the full server-side reactive chain — header,
+buttons, and table all read the identical `staged()`/`shared$pagar_hoy_db()`
+value with no caching, `isolate()`, `dataTableProxy`, or debounce difference
+between them, which rules out every R-side explanation. This looks like a
+client-side DT/htmlwidgets redraw quirk at the 1-row-to-0-row transition,
+not a logic bug — try forcing a full table re-initialization on that
+specific transition (rather than trusting DT's incremental redraw) as the
+fix, and confirm live in a browser since this class of bug won't show up in
+an automated R test.
+
 ### Stage 8 — Vincular dedup warning dialog
 
 Source: `docs/CONFIRMED_INVOICE_LOGIC_AUDIT.md` §6.2 (Stage B in that
@@ -197,13 +231,25 @@ by this point it inherits the amount-match guard automatically (Stage 10)
 and picks up the two sources it was previously missing (papelera ghosts,
 and correctly does not reintroduce the retired `conciliacion_rv`).
 
-### Stage 14 — Concurrency (deferred by default — open scope call)
+### Stage 14 — Concurrency (open scope call — a real, if minor, incident happened 2026-07-23)
 
 Source: `AGENDA_CALENDARIO_WIRING_AUDIT.md` §2.7/§4.4. The
 `pagar_hoy_db`/`manual_inv` read-modify-write race (no version check, any
 user can Quitar, `manual_inv` isn't even in the cross-session sync
 registry) is real but systemic — broader than either audit's original
-scope. Not scheduled unless Mouse explicitly pulls it in.
+scope.
+
+**Update, same day**: a `bancos_confirmados` row Mouse confirmed during
+testing (a $0.02 "prueba" entry) disappeared entirely between two other
+confirmations of the same test invoice. No dedup/upsert bug was found
+anywhere in the write path (`do_confirm_ap_<emp>`, `save_bancos_confirmados`,
+`.normalize()` — all pure-append, verified read-only) — the most plausible
+explanation is exactly this class of race (a second session/tab's stale
+read-modify-write silently overwriting the first's newer data), not yet
+confirmed (need to know whether more than one browser tab/session was open
+during the test). If confirmed, this is no longer a hypothetical systemic
+risk — it already destroyed a real row today, and this stage's "deferred by
+default" framing needs to be revisited with Mouse rather than assumed.
 
 ## Open items needing Mouse's input before or during the relevant stage
 
