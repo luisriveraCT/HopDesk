@@ -8,7 +8,11 @@
 # =============================================================================
 
 options(warn = 1)
-suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(tibble)
+  library(uuid)
+})
 
 # Extract a handful of small, dependency-free function definitions straight
 # out of R/global.R by name, without sourcing the whole file (which would
@@ -29,6 +33,12 @@ suppressPackageStartupMessages(library(dplyr))
 }
 .extract_fn("R/global.R", "%||%")
 .extract_fn("R/global.R", "is_erp_sourced")
+.extract_fn("R/persistence.R", ".schema_papelera")
+.extract_fn("R/persistence.R", ".normalize")
+.extract_fn("R/persistence.R", "add_to_papelera")
+.extract_fn("R/persistence.R", "restore_from_papelera")
+.extract_fn("R/bancos_persistence.R", ".schema_bancos_confirmados")
+.extract_fn("R/bancos_persistence.R", "recover_confirmacion")
 
 .pass <- 0L
 .fail <- 0L
@@ -51,6 +61,7 @@ cat("====================================================\n\n")
 
 .run_module("tests/test_confirmed_logic_stage_a.R")
 .run_module("tests/test_is_erp_sourced.R")
+.run_module("tests/test_archive_mechanism.R")
 
 cat("\n====================================================\n")
 cat(sprintf("  TOTAL: %d passed, %d failed\n", .pass, .fail))

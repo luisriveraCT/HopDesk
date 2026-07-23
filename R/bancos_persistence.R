@@ -70,7 +70,20 @@
   confirmado_at   = as.POSIXct(character()),
   eliminado       = logical(),
   eliminado_at    = as.POSIXct(character()),  # timestamp of soft-delete
-  provision_id    = character()    # mirrored from pagar_hoy at confirmation; NA otherwise
+  provision_id    = character(),   # mirrored from pagar_hoy at confirmation; NA otherwise
+  # ── Ledger-integrity master plan, Stage 3: permanent event log ────────────
+  # Additive only, same convention as .schema_papelera(). `eliminado`/
+  # `eliminado_at` keep their existing meaning and existing readers (the
+  # Historial de confirmaciones filter, `confirmados()`) unchanged — undoing
+  # a confirmation still flips them on the ORIGINAL row, which is still
+  # never physically removed. These two new fields exist purely to record
+  # the recovery as its OWN permanent, separate row (recover_confirmacion()),
+  # never mutating or removing anything already written. Pre-Stage-3 rows
+  # normalize to action=NA/reverses_confirmacion_id=NA — treat NA action the
+  # same as "confirmed" (every row ever written before this stage was one).
+  action                    = character(),   # "confirmed" | "recovered"
+  reverses_confirmacion_id  = character(),   # NA unless action=="recovered"
+  recovered_at              = as.POSIXct(character())  # NA unless action=="recovered"
 )
 
 # ── Shared normalizer (reuses persistence.R's .normalize) ────────────────────
@@ -123,6 +136,43 @@ load_bancos_confirmados <- function(client_id = NULL) {
 
 save_bancos_confirmados <- function(df, client_id = NULL) {
   .s3_write(.normalize(df, .schema_bancos_confirmados), S3_KEYS$bancos_confirmados, client_id = client_id)
+}
+
+# Undo a confirmation, recording the recovery as its own permanent row
+# rather than only flipping `eliminado` in place. The original row is soft-
+# deleted exactly as before (existing readers keep working); a NEW row is
+# appended with action="recovered", reverses_confirmacion_id pointing back
+# at the original confirmacion_id, so later audits can answer "how many
+# times was this recovered" and "was it eventually confirmed again" by
+# walking the chain instead of relying on a single mutable flag. Display
+# fields (empresa/parte/documento/importe/moneda/tipo/provision_id) are
+# copied from the original row for a self-contained recovery record.
+recover_confirmacion <- function(conf_db, confirmacion_id, actor = "user") {
+  idx <- which(conf_db[["confirmacion_id"]] == confirmacion_id)
+  if (!length(idx)) {
+    stop("[bancos_confirmados] confirmacion_id not found: ", confirmacion_id)
+  }
+  if (length(idx) > 1L) {
+    stop("[bancos_confirmados] confirmacion_id is not unique (data integrity issue): ", confirmacion_id)
+  }
+  if (isTRUE(conf_db[["eliminado"]][idx])) {
+    stop("[bancos_confirmados] confirmacion_id already recovered: ", confirmacion_id)
+  }
+
+  now <- Sys.time()
+  conf_db[["eliminado"]][idx]    <- TRUE
+  conf_db[["eliminado_at"]][idx] <- now
+
+  original <- conf_db[idx, , drop = FALSE]
+  recovery_row <- original
+  recovery_row[["confirmacion_id"]]           <- uuid::UUIDgenerate()
+  recovery_row[["action"]]                    <- "recovered"
+  recovery_row[["reverses_confirmacion_id"]]  <- confirmacion_id
+  recovery_row[["recovered_at"]]              <- now
+  recovery_row[["eliminado"]]                 <- FALSE
+  recovery_row[["eliminado_at"]]               <- as.POSIXct(NA)
+
+  dplyr::bind_rows(conf_db, recovery_row)
 }
 
 # ── Helper: add movement + confirmation row atomically ───────────────────────

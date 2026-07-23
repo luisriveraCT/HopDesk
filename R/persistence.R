@@ -718,7 +718,7 @@ delete_manual <- function(df, id) {
 .schema_papelera <- function() tibble(
   id           = character(),   # original invoice id (manual) or generated uuid (SAP)
   ledger       = character(),   # "AR" | "AP"
-  source       = character(),   # "manual" | "sap"
+  source       = character(),   # "manual" | "sap" | "provision"
   Empresa      = character(),
   Moneda       = character(),
   Documento    = character(),
@@ -727,7 +727,21 @@ delete_manual <- function(df, id) {
   FechaEff     = as.Date(character()),
   deleted_by   = character(),
   deleted_at   = as.POSIXct(character()),
-  original_data = list()        # full row as a list for potential restore
+  original_data = list(),       # full row as a list for potential restore
+  # ── Ledger-integrity master plan, Stage 3: permanent event log ────────────
+  # Additive only — every field above is untouched, so every existing reader
+  # (papelera_tbl render, df_combined()'s Source-2 SAP-ghost matching, the
+  # existing test suite) keeps working unchanged. .normalize() backfills
+  # missing columns with typed NA, not a semantic default — pre-Stage-3 rows
+  # will have disposition=NA/action=NA. Any code reading these two fields
+  # MUST treat NA the same as "deleted"/"archived" (exactly what every row
+  # written before this stage always was) rather than assume they're always
+  # populated.
+  event_id           = character(),  # permanent unique id for THIS row/event, never reused or edited
+  disposition        = character(),  # "deleted" | "confirmed" -- why the row left the live table
+  action             = character(),  # "archived" | "recovered" -- is this row the original archive
+                                      # event, or a later event reversing an earlier one
+  reverses_event_id  = character()   # NA unless action=="recovered"; the archived row's own event_id
 )
 
 load_papelera <- function(client_id = NULL) {
@@ -742,8 +756,13 @@ save_papelera <- function(df, client_id = NULL) {
 }
 
 # Add rows to papelera. detail_rows is a plain data.frame of invoice rows.
+# disposition: "deleted" (default, matches every call site before Stage 3 of
+# the ledger-integrity master plan) or "confirmed" (a manual/provision row
+# being archived because it was confirmed, not deleted — Stage 4/5). Either
+# way this is always an action="archived" event; recovering it later is a
+# separate, permanent "recovered" event — see restore_from_papelera().
 add_to_papelera <- function(papelera_df, detail_rows, ledger,
-                             deleted_by = "user") {
+                             deleted_by = "user", disposition = "deleted") {
   if (!nrow(detail_rows)) return(papelera_df)
   new_rows <- tibble(
     id           = vapply(seq_len(nrow(detail_rows)),
@@ -771,9 +790,55 @@ add_to_papelera <- function(papelera_df, detail_rows, ledger,
     deleted_by   = deleted_by,
     deleted_at   = Sys.time(),
     original_data = lapply(seq_len(nrow(detail_rows)),
-                           function(i) as.list(detail_rows[i, , drop = FALSE]))
+                           function(i) as.list(detail_rows[i, , drop = FALSE])),
+    event_id           = vapply(seq_len(nrow(detail_rows)), function(i) uuid::UUIDgenerate(), character(1)),
+    disposition        = disposition,
+    action             = "archived",
+    reverses_event_id  = NA_character_
   )
   dplyr::bind_rows(papelera_df, new_rows)
+}
+
+# Recover a single archived row by its permanent event_id. Never mutates or
+# removes the original archived row (it stays exactly as written, forever,
+# per the "permanent for compliance" requirement) — appends a NEW
+# action="recovered" row instead, linked back via reverses_event_id, and
+# returns the original row's data (from original_data) for the caller to
+# reinsert into its live source table (manual_inv). Errors if event_id
+# isn't found, isn't an "archived" event, or has already been recovered
+# (each archived event can only be recovered once — recovering it again
+# after a second archive of the same invoice produces a NEW event_id, so
+# this is never a real-world blocker, just a guard against double-processing
+# the same click).
+restore_from_papelera <- function(papelera_df, event_id, actor = "user") {
+  idx <- which(papelera_df[["event_id"]] == event_id & papelera_df[["action"]] == "archived")
+  if (!length(idx)) {
+    stop("[papelera] event_id not found or not an archived event: ", event_id)
+  }
+  if (length(idx) > 1L) {
+    stop("[papelera] event_id is not unique (data integrity issue): ", event_id)
+  }
+  already <- papelera_df[["reverses_event_id"]] == event_id &
+             !is.na(papelera_df[["reverses_event_id"]]) &
+             papelera_df[["action"]] == "recovered"
+  if (any(already, na.rm = TRUE)) {
+    stop("[papelera] event_id already recovered: ", event_id)
+  }
+
+  archived_row  <- papelera_df[idx, , drop = FALSE]
+  restored_data <- archived_row[["original_data"]][[1]]
+
+  recovery_row <- archived_row
+  recovery_row[["event_id"]]          <- uuid::UUIDgenerate()
+  recovery_row[["action"]]            <- "recovered"
+  recovery_row[["reverses_event_id"]] <- event_id
+  recovery_row[["deleted_by"]]        <- actor
+  recovery_row[["deleted_at"]]        <- Sys.time()
+
+  list(
+    papelera_df   = dplyr::bind_rows(papelera_df, recovery_row),
+    restored_data = restored_data
+  )
 }
 
 # ── Intercompany settings ──────────────────────────────────────────────────────
