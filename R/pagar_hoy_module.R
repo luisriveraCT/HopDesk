@@ -1432,30 +1432,6 @@ pagarHoyServer <- function(id, shared) {
                      paste("Error al guardar abono:", e$message), type = "warning"))
         }
 
-        # Also record invoice rows in conciliacion for backward compat
-        if (nrow(factura_rows)) {
-          conc <- factura_rows |> dplyr::mutate(
-            id = purrr::map_chr(seq_len(dplyr::n()), ~uuid::UUIDgenerate()),
-            tipo = "pago", FechaPago = fecha_pago,
-            FechaContabilizacion = Sys.Date(),
-            FechaVencimiento = FechaVenc,
-            cuenta_id = cuenta_sel %||% NA_character_,
-            comision = 0,
-            notas = NA_character_,
-            created_by = shared$current_user(), created_at = Sys.time()
-          ) |> dplyr::select(id, tipo, Empresa, Parte, Documento, Moneda, Importe,
-                              comision, FechaPago, FechaContabilizacion,
-                              FechaVencimiento, cuenta_id, notas, created_by, created_at)
-          tryCatch({
-            new_conc <- dplyr::bind_rows(load_conciliacion(client_id = shared$effective_client_id()), conc)
-            save_conciliacion(new_conc, client_id = shared$effective_client_id())
-            if (!is.null(shared$conciliacion_rv))
-              shared$conciliacion_rv(new_conc)
-          }, error = function(e)
-            showNotification(paste("Error al guardar conciliación:", e$message),
-                             type = "warning"))
-        }
-
         # Remove confirmed provision-derived manual entries from the calendar.
         # Provision-converted items use separate UUIDs in pagar_hoy and manual_inv,
         # so match via provision_id FK. Fall back to direct id match for non-provision items.
@@ -1657,29 +1633,6 @@ pagarHoyServer <- function(id, shared) {
           tryCatch(save_abonos(ab_updated, client_id = shared$effective_client_id()),
                    error = function(e) showNotification(
                      paste("Error al guardar abono:", e$message), type = "warning"))
-        }
-
-        if (nrow(factura_rows)) {
-          conc <- factura_rows |> dplyr::mutate(
-            id = purrr::map_chr(seq_len(dplyr::n()), ~uuid::UUIDgenerate()),
-            tipo = "cobro", FechaPago = fecha_cobro,
-            FechaContabilizacion = Sys.Date(),
-            FechaVencimiento = FechaVenc,
-            cuenta_id = cuenta_sel %||% NA_character_,
-            comision = 0,
-            notas = NA_character_,
-            created_by = shared$current_user(), created_at = Sys.time()
-          ) |> dplyr::select(id, tipo, Empresa, Parte, Documento, Moneda, Importe,
-                              comision, FechaPago, FechaContabilizacion,
-                              FechaVencimiento, cuenta_id, notas, created_by, created_at)
-          tryCatch({
-            new_conc <- dplyr::bind_rows(load_conciliacion(client_id = shared$effective_client_id()), conc)
-            save_conciliacion(new_conc, client_id = shared$effective_client_id())
-            if (!is.null(shared$conciliacion_rv))
-              shared$conciliacion_rv(new_conc)
-          }, error = function(e)
-            showNotification(paste("Error al guardar conciliación:", e$message),
-                             type = "warning"))
         }
 
         # Remove confirmed provision-derived manual entries from the calendar.

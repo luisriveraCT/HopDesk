@@ -105,11 +105,7 @@ Any new S3 key goes into `S3_KEYS` (deferred), never `S3_KEYS_CRITICAL`.
 
 ### Rules
 
-**`df_combined` must not depend on `conciliacion_rv`.** This reactive is read with `isolate()`:
-```r
-conc_rv <- isolate(tryCatch(shared$conciliacion_rv(), error = function(e) NULL))
-```
-If this `isolate()` is ever removed, every payment confirmation invalidates `df_combined` for both ledgers simultaneously, triggering 4 full calendar re-renders (~6 minutes of blocking work).
+**`conciliacion_rv` is retired as a `df_combined` input entirely** (confirmed-invoice-logic refactor, Stage A) — it was never actually `isolate()`d despite this doc previously claiming so; it was a live, unisolated dependency. It's no longer read here at all, isolated or not.
 
 **`df_combined` dependencies are exactly:** `sap_data()`, `manual_inv()`, `moves_db()`, `empresa_sel()`, `papelera_rv()`. Adding any new reactive dependency here multiplies the render cost by however often that reactive fires.
 
@@ -140,8 +136,8 @@ pagar_hoy_db()      → staged_keys_rv (both)  → output$calendar (both)
 month_val           → tags_day_map_rv + output$calendar
 currency_choices    → output$calendar (currency resolution only)
 
-conciliacion_rv     → df_combined (ISOLATED — no reactive dependency)
-                    → modal crossout display only (reads on click, not on change)
+conciliacion_rv     → Bancos ▸ Historial "Legado" display only (retired as a
+                       df_combined input, Stage A of the confirmed-invoice-logic refactor)
 ```
 
 **Any reactive added to `df_combined` fires the entire left column above.** Treat additions here with extreme caution.

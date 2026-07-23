@@ -277,9 +277,10 @@ ledgerModuleServer <- function(id, config, shared) {
       }
 
       # ── Mark confirmed invoices ─────────────────────────────────────────────
-      # Reads from TWO sources (both are checked for full retroactive coverage):
-      #   1. conciliacion_rv  — confirmations made before the bancos wire-cut
-      #   2. bancos_confirmados — confirmations made after the wire-cut
+      # Reads from THREE sources (all checked for full retroactive coverage):
+      #   1. bancos_confirmados — confirmations made via Agenda de Hoy
+      #   2. papelera SAP ghosts — SAP items soft-deleted via the calendar's trash
+      #   3. pagar_hoy_db — the most reliable path, exact key match
       # isolate() is intentionally NOT used here so the calendar re-renders
       # immediately when a confirmation happens in Agenda de Hoy.
       tipo_val <- if (ledger == "AR") "cobro" else "pago"
@@ -306,26 +307,7 @@ ledgerModuleServer <- function(id, config, shared) {
       is_provision <- "source" %in% names(df) & !is.na(df[["source"]]) &
                       df[["source"]] == "provision"
 
-      # Source 1: conciliacion_rv (legacy path)
-      conc_rv <- tryCatch(shared$conciliacion_rv(), error = function(e) NULL)
-      if (!is.null(conc_rv) && nrow(conc_rv)) {
-        conc_keys <- unique(conc_rv[conc_rv[["tipo"]] == tipo_val,
-                                    c("Empresa","Moneda","Documento"), drop = FALSE])
-        if (nrow(conc_keys)) {
-          match_key  <- paste(toupper(trimws(df[["Empresa"]])),
-                              toupper(trimws(df[["Moneda"]])),
-                              toupper(trimws(df[["Documento"]])))
-          conf_key   <- paste(toupper(trimws(conc_keys[["Empresa"]])),
-                              toupper(trimws(conc_keys[["Moneda"]])),
-                              toupper(trimws(conc_keys[["Documento"]])))
-          conc_mask  <- (match_key %in% conf_key) & !is_manual & !is_provision
-          df[["confirmed"]]   <- df[["confirmed"]] | conc_mask
-          if (!"is_paid_ghost" %in% names(df)) df[["is_paid_ghost"]] <- FALSE
-          df[["is_paid_ghost"]] <- df[["is_paid_ghost"]] | conc_mask
-        }
-      }
-
-      # Source 2: bancos_confirmados (current path after wire-cut)
+      # Source 1: bancos_confirmados (current path after wire-cut)
       conf_db <- tryCatch(shared$bancos_confirmados(), error = function(e) NULL)
       if (!is.null(conf_db) && nrow(conf_db)) {
         conf_active <- conf_db[!(conf_db[["eliminado"]] %in% TRUE) &
@@ -346,7 +328,7 @@ ledgerModuleServer <- function(id, config, shared) {
         }
       }
 
-      # Source 3: papelera SAP ghosts — SAP items deleted via calendar/search
+      # Source 2: papelera SAP ghosts — SAP items deleted via calendar/search
       # ghost mechanic remain in df but are marked confirmed=TRUE so that
       # to_calendar_data() excludes them from sums and the day modal shows
       # them with a strikethrough.
@@ -372,7 +354,7 @@ ledgerModuleServer <- function(id, config, shared) {
       # SAP rows: keep in df with confirmed=TRUE → calendar excludes from totals,
       #           day modal shows with strikethrough
       # Manual rows: remove entirely from df → disappear from calendar and modal
-      # Source 4: pagar_hoy confirmed items — most reliable path.
+      # Source 3: pagar_hoy confirmed items — most reliable path.
       # Items staged from the ledger carry the exact same Empresa/Documento/Moneda
       # as df rows, so this match never fails due to case/whitespace drift.
       # SAP items: confirmed=TRUE + is_paid_ghost=TRUE (visible as crossed-out ghost).
