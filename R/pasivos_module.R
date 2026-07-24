@@ -161,30 +161,16 @@ pasivos_manage_converted_modal_ui <- function() {
     warning("[pasivos] save_manual failed: ", conditionMessage(e)))
 
   # 2. Optional: stage to pagar_hoy
+  # Re-derive the staged row from the manual_inv row that now actually exists
+  # (manual_df, just bound above) instead of rebuilding it from the modal's
+  # raw input a second time -- keeps Agenda a mirror of the root write rather
+  # than a second, independently-computed copy that can drift from it.
   new_pagar_hoy_id <- NA_character_
   if (stage_to_agenda) {
     new_pagar_hoy_id <- uuid::UUIDgenerate()
-    new_ph_row <- tibble::tibble(
-      id           = new_pagar_hoy_id,
-      ledger       = "AP",
-      Empresa      = full_empresa,
-      Moneda       = input$pcm_moneda,
-      Documento    = {
-        doc_raw <- trimws(input$pcm_documento %||% "")
-        if (nzchar(doc_raw)) doc_raw else paste0("CONV_", prov_id)
-      },
-      Parte        = input$pcm_parte,
-      Codigo       = input$pcm_codigo,
-      tipo_item    = "factura",
-      Importe      = as.numeric(input$pcm_importe),
-      FechaVenc    = as.Date(input$pcm_fecha),
-      staged_by    = user,
-      staged_at    = now,
-      status       = "pending",
-      provision_id = prov_id,
-      liability_id = prov$liability_id[1],
-      source       = "provision"
-    )
+    manual_row <- manual_df[manual_df[["id"]] == new_manual_id, , drop = FALSE]
+    new_ph_row <- stage_manual_row_to_agenda(manual_row, user)
+    new_ph_row[["id"]] <- new_pagar_hoy_id
     ph_df <- upsert_pagar_hoy(
       shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$effective_client_id()),
       new_ph_row,

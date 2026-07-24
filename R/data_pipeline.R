@@ -588,3 +588,37 @@ to_calendar_data <- function(df, amount_col = "Saldo vencido") {
           " monedas=", paste(sort(unique(result$Moneda)), collapse=","))
   result
 }
+
+# ── "Send straight to Agenda" — derive, never fabricate ────────────────────────
+# Builds the pagar_hoy staging row for the one-click "create/convert and
+# immediately stage to Agenda" convenience (direct manual-entry creation,
+# Pasivos conversion modal). Takes the manual_inv row exactly as it now
+# exists in the root table (post-write) — every field comes from that row,
+# never from the raw form inputs that produced it. This is what keeps
+# Agenda a mirror of Calendario's root data instead of a second,
+# independently-computed copy that can silently drift from it.
+# manual_row: single-row data frame, already bound into manual_inv/manual_df.
+stage_manual_row_to_agenda <- function(manual_row, user) {
+  stopifnot(is.data.frame(manual_row), nrow(manual_row) == 1)
+  prov_id  <- manual_row[["provision_id"]][1]
+  has_prov <- !is.na(prov_id) && nzchar(prov_id %||% "")
+  now      <- Sys.time()
+  tibble::tibble(
+    id           = manual_row[["id"]][1],
+    ledger       = manual_row[["ledger"]][1],
+    Empresa      = manual_row[["Empresa"]][1],
+    Moneda       = manual_row[["Moneda"]][1],
+    Documento    = manual_row[["Documento"]][1],
+    Parte        = manual_row[["Parte"]][1]  %||% "",
+    Codigo       = manual_row[["Codigo"]][1] %||% "",
+    tipo_item    = "factura",
+    Importe      = manual_row[["Importe"]][1],
+    FechaVenc    = as.Date(manual_row[["Fecha de vencimiento"]][1]),
+    staged_by    = user,
+    staged_at    = now,
+    status       = "pending",
+    provision_id = if (has_prov) prov_id else NA_character_,
+    liability_id = if (has_prov) manual_row[["liability_id"]][1] else NA_character_,
+    source       = if (has_prov) "provision" else "manual"
+  )
+}

@@ -2469,24 +2469,15 @@ server <- function(input, output, session) {
                  "No se pudieron guardar los cambios.", type = "warning"))
 
       # ── Stage to Agenda de hoy if toggle is active ───────────────────────
+      # Re-derive the staged row from the manual_inv row that now actually
+      # exists (df, just written above) instead of rebuilding it from the
+      # form input a second time -- keeps Agenda a mirror of the root write
+      # rather than a second, independently-computed copy that can drift
+      # from it.
       send_to_agenda <- isTRUE(input$me_agenda_active)
       if (send_to_agenda) {
-        ph_row <- tibble::tibble(
-          id        = new_row$id,
-          ledger    = ledger,
-          Empresa   = input$me_empresa,
-          Moneda    = toupper(trimws(input$me_moneda)),
-          Documento = doc,
-          Parte     = trimws(input$me_parte    %||% ""),
-          Codigo    = trimws(input$me_codigo   %||% ""),
-          tipo_item = "factura",
-          Importe   = input$me_importe         %||% 0,
-          FechaVenc = as.Date(input$me_fecha),
-          staged_by = current_user(),
-          staged_at = Sys.time(),
-          status    = "pending",
-          source    = "manual"
-        )
+        manual_row <- df[df[["id"]] == new_row$id, , drop = FALSE]
+        ph_row     <- stage_manual_row_to_agenda(manual_row, current_user())
         ph_updated <- upsert_pagar_hoy(
           pagar_hoy_db() %||% safe_load_pagar_hoy(current_user(), client_id = effective_client_id()),
           ph_row, keys = "id")

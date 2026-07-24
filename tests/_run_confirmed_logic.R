@@ -39,6 +39,7 @@ suppressPackageStartupMessages({
 .extract_fn("R/persistence.R", "restore_from_papelera")
 .extract_fn("R/bancos_persistence.R", ".schema_bancos_confirmados")
 .extract_fn("R/bancos_persistence.R", "recover_confirmacion")
+.extract_fn("R/data_pipeline.R", "stage_manual_row_to_agenda")
 
 .pass <- 0L
 .fail <- 0L
@@ -64,6 +65,7 @@ cat("====================================================\n\n")
 .run_module("tests/test_archive_mechanism.R")
 .run_module("tests/test_stage4_confirm_undo.R")
 .run_module("tests/test_stage5_provision_confirm_undo.R")
+.run_module("tests/test_stage6_agenda_derivation.R")
 
 cat("\n====================================================\n")
 cat(sprintf("  TOTAL: %d passed, %d failed\n", .pass, .fail))
