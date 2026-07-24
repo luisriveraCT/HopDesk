@@ -1621,7 +1621,10 @@ bancosServer <- function(id, shared) {
             fecha     = tryCatch(as.Date(r$fecha)[1L], error = function(e) as.Date(NA)),
             documento = as.character(r$documento)[1L]                    %||% "",
             empresa   = as.character(r$empresa)[1L]                      %||% "",
-            tipo      = as.character(r$tipo)[1L]                         %||% ""
+            tipo      = as.character(r$tipo)[1L]                         %||% "",
+            # Not previously captured -- needed to name the currency in the
+            # un-confirm warning dialog (Stage 8).
+            moneda    = as.character(r$moneda)[1L]                       %||% ""
           )
         }
       }
@@ -1944,7 +1947,13 @@ bancosServer <- function(id, shared) {
       list(movs = movs, conf = conf)
     }
 
-    observeEvent(input$vin_keep_a, {
+    # Conservar A discards the candidate -- if that candidate is itself a
+    # confirmed invoice, this silently un-confirms it as a side effect of
+    # picking which duplicate to keep. Warn first, naming the invoice,
+    # before .do_vinculation() ever runs (Stage 8). Conservar B never hits
+    # this: when the candidate's source is "confirmado" it's the one being
+    # KEPT there, not discarded, so it's already safe.
+    .do_vin_keep_a <- function() {
       confirm <- vin_confirm_rv()
       req(confirm)
       item <- confirm$item
@@ -1973,6 +1982,42 @@ bancosServer <- function(id, shared) {
       vincular_item_rv(NULL)
       showNotification("Vinculaci\u00f3n completada.", type = "message", duration = 3)
       session$sendCustomMessage(paste0(id, "-deactivate_vin"), TRUE)
+    }
+
+    observeEvent(input$vin_keep_a, {
+      confirm <- vin_confirm_rv()
+      req(confirm)
+      ca <- confirm$candidate
+      ca_source <- as.character(ca$source)[1L] %||% ""
+
+      if (ca_source == "confirmado") {
+        showModal(modalDialog(
+          title = "\u00bfDescartar una factura ya confirmada?",
+          tagList(
+            tags$p("Esta acci\u00f3n tambi\u00e9n anular\u00e1 la confirmaci\u00f3n de esta factura -- reaparecer\u00e1 como abierta en el calendario, Vencidos e Intercompany."),
+            tags$ul(
+              tags$li(paste("Parte:", ca$parte %||% "")),
+              tags$li(paste("Documento:", ca$documento %||% "")),
+              tags$li(paste("Importe:", fmt_money(ca$importe %||% 0),
+                            ca$moneda %||% "")),
+              tags$li(paste("Fecha:", format(as.Date(ca$fecha), "%d/%m/%Y")))
+            ),
+            tags$p("\u00bfContinuar?")
+          ),
+          footer = tagList(
+            modalButton("Cancelar"),
+            actionButton(ns("vin_keep_a_confirm"), "S\u00ed, continuar",
+                         class = "btn-warning btn-sm")
+          ),
+          easyClose = TRUE
+        ))
+      } else {
+        .do_vin_keep_a()
+      }
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$vin_keep_a_confirm, {
+      .do_vin_keep_a()
     }, ignoreInit = TRUE)
 
     observeEvent(input$vin_keep_b, {
