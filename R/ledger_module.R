@@ -2802,8 +2802,18 @@ ledgerModuleServer <- function(id, config, shared) {
         )
         sort_ord <- order(-detail[["Importe"]])
         tbl_live <- tbl_live[sort_ord, ]
+        # Ghost (confirmed) rows must never affect any calculation, including
+        # the "Selección" running total -- make them unselectable at the
+        # DT level rather than only styling them, so sel_total_ui's sum
+        # (which reads whatever the browser actually let the user select)
+        # can never include one. tbl_live's row order already matches
+        # sort_ord, so these indices line up with what DT itself uses.
+        ghost_rows <- which(tbl_live[["Confirmado"]])
+        select_arg <- if (length(ghost_rows))
+          list(mode = "multiple", target = "row", selectable = -ghost_rows)
+        else "multiple"
         DT::datatable(tbl_live,
-          escape = FALSE, selection = "multiple", rownames = FALSE,
+          escape = FALSE, selection = select_arg, rownames = FALSE,
           options = list(
             pageLength = 20, dom = "ftip", scrollX = TRUE,
             columnDefs = list(list(visible = FALSE, targets = which(names(tbl_live) == "Confirmado") - 1L))
@@ -2832,6 +2842,8 @@ ledgerModuleServer <- function(id, config, shared) {
         # ── Summary mode: one row per (Empresa, Parte) ────────────────────────
         grp_raw <- aggregate(Importe ~ Empresa + Parte, data = detail,
                              FUN = sum, na.rm = TRUE)
+        is_conf_detail <- if ("confirmed" %in% names(detail)) detail[["confirmed"]] %in% TRUE
+                          else rep(FALSE, nrow(detail))
         live_etiq <- vapply(seq_len(nrow(grp_raw)), function(i) {
           e <- grp_raw[["Empresa"]][i]; p <- grp_raw[["Parte"]][i]
           inv_docs <- unique(detail[detail[["Empresa"]] == e & detail[["Parte"]] == p,
@@ -2845,22 +2857,49 @@ ledgerModuleServer <- function(id, config, shared) {
           }
           tag_label(tags_for_grp)
         }, character(1))
+        # A group is a ghost only when EVERY invoice underlying it is
+        # confirmed -- a mixed group (some confirmed, some not) still has
+        # real open balance and must stay fully interactive. Only SAP rows
+        # can still be confirmed=TRUE here at all (confirmed manual rows are
+        # already removed from detail entirely by df_combined()).
+        grp_is_ghost <- vapply(seq_len(nrow(grp_raw)), function(i) {
+          e <- grp_raw[["Empresa"]][i]; p <- grp_raw[["Parte"]][i]
+          m <- detail[["Empresa"]] == e & detail[["Parte"]] == p
+          any(m) && all(is_conf_detail[m])
+        }, logical(1))
         tbl_disp <- data.frame(
-          Empresa  = grp_raw[["Empresa"]],
-          Parte    = grp_raw[["Parte"]],
-          Importe  = fmt_money(grp_raw[["Importe"]]),
-          Etiqueta = live_etiq,
-          stringsAsFactors = FALSE
+          Empresa    = grp_raw[["Empresa"]],
+          Parte      = grp_raw[["Parte"]],
+          Importe    = fmt_money(grp_raw[["Importe"]]),
+          Etiqueta   = live_etiq,
+          Confirmado = grp_is_ghost,
+          check.names = FALSE, stringsAsFactors = FALSE
         )
-        tbl_disp <- tbl_disp[order(-grp_raw[["Importe"]]), ]
+        sort_ord_disp <- order(-grp_raw[["Importe"]])
+        tbl_disp <- tbl_disp[sort_ord_disp, ]
+        # Same "ghosts never affect any calculation" rule as audit mode --
+        # a fully-confirmed group stays visible (struck through) but
+        # unselectable, so sel_total_ui's sum can never include it.
+        ghost_grp_rows <- which(tbl_disp[["Confirmado"]])
+        select_arg <- if (length(ghost_grp_rows))
+          list(mode = "multiple", target = "row", selectable = -ghost_grp_rows)
+        else "multiple"
         DT::datatable(tbl_disp,
-          escape = FALSE, selection = "multiple", rownames = FALSE,
-          options = list(pageLength = 20, dom = "ftip", scrollX = TRUE)
+          escape = FALSE, selection = select_arg, rownames = FALSE,
+          options = list(
+            pageLength = 20, dom = "ftip", scrollX = TRUE,
+            columnDefs = list(list(visible = FALSE, targets = which(names(tbl_disp) == "Confirmado") - 1L))
+          )
         ) |>
           DT::formatStyle("Etiqueta", target = "row",
             backgroundColor = DT::styleEqual(
               c("\U0001f534 Urgente","\U0001f7e1 Importante","\U0001f7e0 Ambas",""),
-              c("#fff0f0","#fffbe6","#fff3e6","transparent")))
+              c("#fff0f0","#fffbe6","#fff3e6","transparent"))) |>
+          DT::formatStyle("Confirmado",
+            target         = "row",
+            textDecoration = DT::styleEqual(c(TRUE, FALSE), c("line-through", "none")),
+            color          = DT::styleEqual(c(TRUE, FALSE), c("#adb5bd", "inherit")),
+            opacity        = DT::styleEqual(c(TRUE, FALSE), c("0.55",    "1")))
       }
     })
 

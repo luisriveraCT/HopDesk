@@ -596,7 +596,12 @@ calendar_html <- function(
     has_data   <- !is.null(parties) && nrow(parties) > 0
     day_tag    <- tag_for_day(fecha)
     n_staged   <- staged_count_by_day[[date_str]] %||% 0L
-    has_staged <- n_staged > 0
+    # Never show the staged-count badge over a day with zero visible line
+    # items -- staged_count_by_day is currency-agnostic and can carry a
+    # stale/cross-filter entry for a day this view shows nothing for
+    # (e.g. a staged item whose invoice no longer appears here at all).
+    # Same guard already applied to tag_for_day() above, for the same reason.
+    has_staged <- n_staged > 0 && has_data
 
     tile_class <- paste0(
       "cal-tile",
