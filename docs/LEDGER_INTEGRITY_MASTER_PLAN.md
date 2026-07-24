@@ -414,6 +414,43 @@ during the test). If confirmed, this is no longer a hypothetical systemic
 risk — it already destroyed a real row today, and this stage's "deferred by
 default" framing needs to be revisited with Mouse rather than assumed.
 
+**✅ Confirmed and partially fixed, 2026-07-24** — branch
+`confirmed-logic-stage-2` (stacked). The suspicion above was confirmed: a
+separate incident that same day (a live bug in `stage_all`/`stage_sel`/
+`handle_invoice_action` losing the `source` field on staged Agenda rows,
+fixed separately) required repairing 12 `manual_inv` rows directly against
+S3. An already-open tab kept showing the pre-repair rows and re-confirming
+them had no visible effect — because `manual_inv` was the *only* shared
+table completely absent from the cross-session sync registry
+(`R/sync_bus.R`), so a stale tab's in-memory copy never self-heals like
+every other table already does every 8 seconds. A second, independent gap
+made even registering it insufficient: every loader checks a
+process-global preload cache before touching S3, cleared only by that
+process's own writes — so a poll-triggered reload would still serve stale
+data even after a correct version bump, silently affecting all
+already-registered keys too, not just `manual_inv`.
+
+Fixed: `manual_inv` registered in the sync bus; `save_manual()` bumps its
+version on every write; the sync bus's reload loop now clears the
+preload-cache entry for whichever key it's about to reload, before
+calling its loader (closes the gap for every registered key). The six
+highest-stakes `manual_inv` archive/confirm/undo/delete read sites
+(`do_confirm_ap_<emp>`/`do_confirm_ar_<emp>`, the Quitar-cascade,
+`undo_conf`, `confirm_delete`, `handle_invoice_action`'s delete branch,
+the Pasivos conversion write) now read fresh from S3 instead of trusting
+the in-memory reactiveVal, mirroring a pattern two other `pasivos_module.R`
+handlers already used safely. 26 new tests, 276 total in the
+confirmed-logic suite, full existing suite still green.
+
+**Still deferred, unchanged from the original scope call**: a general
+optimistic-locking/version-check system across all shared tables (`.s3_write()`
+remains an unconditional full-object overwrite everywhere, no ETag/version
+check anywhere), and the residual ~8-second window where two tabs write to
+the same key inside one poll interval. `pagar_hoy_db` itself was already
+registered before this fix and still has the same class of naive
+read-modify-write at its own ~19 write sites — only `manual_inv`'s highest-
+stakes sites were hardened this pass, not every site for every table.
+
 ## Open items needing Mouse's input before or during the relevant stage
 
 - Invoice `1025618` (`AGENDA_CALENDARIO_WIRING_AUDIT.md` §1) — re-enter
