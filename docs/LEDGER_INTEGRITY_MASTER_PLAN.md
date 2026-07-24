@@ -224,6 +224,66 @@ comment-vs-code-aware static scan proving the branch's actual code (not
 its explanatory comment) never references `pagar_hoy_db`/`manual_inv`.
 184 total in this suite, full existing suite still green.
 
+**Correction, same day (2026-07-23)**: the design above was wrong.
+Mouse's actual rule: recovering a CONFIRMED item always recovers the
+ITEM, regardless of provision lineage — a provision itself is never
+confirmed (it can never reach Agenda), so `provision_id` on a confirmation
+is pure traceability metadata, not a branch condition. Deleting an
+unconverted PROVISION is a different operation entirely (Pasivos-level,
+unrelated to Agenda/bancos_confirmados) that returns the provision — not
+something undo_conf needs to handle. Fixed: `undo_conf()` no longer
+branches on `provision_id` at all; every archived confirmation restores
+through the single `has_archive` path. This surfaced a real, necessary
+second fix: `pasivos_observers.R`'s reversal watcher was independently
+reacting to the same event, reviving the provision and re-deleting the
+item undo_conf() had just restored — removed that reversal-detection
+block entirely (confirmation-detection is untouched, unaffected). **Open
+question, not yet resolved**: the provision's own `estado` now stays at
+"item_confirmed" after its item's confirmation is undone, since nothing
+reverts it — whether that should transition to something else (not
+"provisional" — the item still exists) is a real product decision.
+Tests updated to match (181 total, still green).
+
+Also added, per Mouse's explicit request: `R/global.R`'s `is_erp_sourced()`
+now carries a full philosophy reference for how ERP/manual/provision-
+derived rows differ and where they're alike — read that comment block
+first when touching any of this again.
+
+### Stage 5B — Search module: convert to a live reactive mirror (open question, not started)
+
+Source: Mouse's extension request, 2026-07-23, prompted by confirming
+Vencidos is already a pure mirror — verify the same holds for Search.
+
+**Audited, mixed result.** The *mutation* side is already fully compliant:
+every edit/tag/move/restore/delete/stage action in `R/search_module.R`
+routes through the exact same shared `handle_invoice_action()` function
+Vencidos calls, writing only to Calendario's root tables (`tags_db`,
+`moves_db`, `papelera_rv`, `manual_inv`, `pagar_hoy_db`,
+`pasivos_provisions_db`) — no Search-only reactiveVal holding data exists.
+`stage_all`/`stage_selected` are the identical code path already audited
+for Calendar/Vencidos, not a Search-specific duplicate.
+
+The *display* side is genuinely different in kind, not just less
+thorough: Search's table is a **one-shot static HTML string** built once
+per `show_search_modal()` call and shipped via `showModal()` — not a live
+Shiny render. While the modal is open, edits are reflected via a
+client-side JS "optimistic" DOM patch (`searchApplyUpdate`,
+`search_module.R:810-858`) that guesses the new state from what was *sent*
+to the server, not from the server's *actual* response — and the modal
+does not auto-refresh at all if root data changes elsewhere while it's
+open (closing and reopening via `btn_search` is the only way to re-pull
+from `df_combined_*()`). Vencidos has no client-side shadow-state layer at
+all — it's a genuine `moduleServer()`/`reactive()`/`renderUI()` mirror
+that self-heals live.
+
+Fixing this properly means converting Search's ~1000-line modal into a
+real reactive component (module server + `reactive()` + `renderUI()`/`DT`)
+and removing the now-redundant `searchApplyUpdate` JS layer — a
+meaningfully larger, riskier change than anything else in this plan so
+far, to a file with deep JS/server interplay. **Not started — needs an
+explicit go-ahead given the size, and ideally its own dedicated,
+heavily-tested stage rather than being folded into Stage 6/7.**
+
 ### Stage 6 — Fix "send straight to Agenda", keep the feature
 
 Source: §2.10, §3.4. Both the Pasivos conversion modal's `stage_to_agenda`
