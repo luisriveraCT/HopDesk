@@ -1060,6 +1060,12 @@ handle_invoice_action <- function(payload, shared) {
       staged_by = current_user,
       staged_at = Sys.time(),
       status    = "pending",
+      # Without this, every row staged here loses its source at write time
+      # and gets normalized to "sap" -- a manual entry confirmed later would
+      # then never be archived out of manual_inv (found 2026-07-24, the same
+      # bug as ledger_module.R's stage_all/stage_sel, in this shared
+      # handler used by both Search and Vencidos' Agregar todo/selección).
+      source    = ifelse(is.na(keys_df$source) | keys_df$source != "manual", "sap", "manual"),
       stringsAsFactors = FALSE
     )
     # Skip rows with blank Documento (can't key them)

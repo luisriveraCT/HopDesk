@@ -971,6 +971,17 @@ ledgerModuleServer <- function(id, config, shared) {
                          type = "message", duration = 3)
         return()
       }
+      # Source lookup: without this, every staged row loses its source at
+      # write time and gets silently normalized to "sap" on the next
+      # load_pagar_hoy() read (or treated as ERP in-memory via
+      # is_erp_sourced(NA)) -- a manual entry confirmed later would then
+      # never get archived out of manual_inv, since the confirm handler's
+      # manual-archiving branch filters on source (found 2026-07-24, a real
+      # incident: confirmed manual invoices stayed in the calendar,
+      # unconfirmed, and got re-staged with a fresh id on the next attempt).
+      src_lookup <- if ("source" %in% names(d))
+        unique(d[, c("Empresa","Moneda","Documento","source"), drop = FALSE])
+      else NULL
       detail_lu <- .fresh_lu(
         inv_keys, ctx$amt,
         unique(d[, c("Empresa","Moneda","Documento","Parte","Codigo","Importe","FechaEff"), drop = FALSE]))
@@ -982,8 +993,15 @@ ledgerModuleServer <- function(id, config, shared) {
       new_rows[["staged_by"]] <- shared$current_user()
       new_rows[["staged_at"]] <- Sys.time()
       new_rows[["status"]]    <- "pending"
+      if (!is.null(src_lookup) && nrow(src_lookup)) {
+        new_rows <- merge(new_rows, src_lookup, by = c("Empresa","Moneda","Documento"), all.x = TRUE)
+        new_rows[["source"]] <- ifelse(is.na(new_rows[["source"]]) | new_rows[["source"]] != "manual",
+                                       "sap", "manual")
+      } else {
+        new_rows[["source"]] <- "sap"
+      }
       new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
-                                "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status"), drop = FALSE]
+                                "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
       updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
                                   keys = c("ledger","Empresa","Moneda","Documento","Importe"))
       shared$pagar_hoy_db(updated)
@@ -1024,9 +1042,16 @@ ledgerModuleServer <- function(id, config, shared) {
         showNotification("No se encontraron facturas.", type = "warning")
         return()
       }
+      detail_np <- pasivos_filter_out_provisions(detail)
+      # Source lookup -- see stage_all's identical comment above; without
+      # this a manual entry staged here silently loses its source and can
+      # never be archived out of manual_inv when later confirmed.
+      src_lookup <- if ("source" %in% names(detail_np))
+        unique(detail_np[, c("Empresa","Moneda","Documento","source"), drop = FALSE])
+      else NULL
       detail_lu <- .fresh_lu(
         keys, ctx$amt,
-        unique(pasivos_filter_out_provisions(detail)[, c("Empresa","Moneda","Documento","Parte","Codigo","Importe","FechaEff"), drop = FALSE]))
+        unique(detail_np[, c("Empresa","Moneda","Documento","Parte","Codigo","Importe","FechaEff"), drop = FALSE]))
       new_rows  <- merge(keys, detail_lu, by = c("Empresa","Moneda","Documento","Importe"))
       new_rows[["id"]]        <- vapply(seq_len(nrow(new_rows)), function(x) uuid::UUIDgenerate(), character(1))
       new_rows[["ledger"]]    <- ledger
@@ -1035,8 +1060,15 @@ ledgerModuleServer <- function(id, config, shared) {
       new_rows[["staged_by"]] <- shared$current_user()
       new_rows[["staged_at"]] <- Sys.time()
       new_rows[["status"]]    <- "pending"
+      if (!is.null(src_lookup) && nrow(src_lookup)) {
+        new_rows <- merge(new_rows, src_lookup, by = c("Empresa","Moneda","Documento"), all.x = TRUE)
+        new_rows[["source"]] <- ifelse(is.na(new_rows[["source"]]) | new_rows[["source"]] != "manual",
+                                       "sap", "manual")
+      } else {
+        new_rows[["source"]] <- "sap"
+      }
       new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
-                                "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status"), drop = FALSE]
+                                "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
       updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
                                   keys = c("ledger","Empresa","Moneda","Documento","Importe"))
       shared$pagar_hoy_db(updated)
