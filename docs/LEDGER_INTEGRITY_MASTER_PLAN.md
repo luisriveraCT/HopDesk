@@ -529,6 +529,59 @@ registered before this fix and still has the same class of naive
 read-modify-write at its own ~19 write sites — only `manual_inv`'s highest-
 stakes sites were hardened this pass, not every site for every table.
 
+### Stage 14b — `cart_inv_click` and two more staging sites still lost `source` (found 2026-07-24)
+
+Source: a fresh live recurrence of Stage 6's original bug, reported the
+same day, *after* Stage 6's fix and the app restart — ruling out a stale
+process. A manual invoice ("test"/Networks Trucking Services, $1,000)
+was confirmed via Agenda de Hoy (`bancos_confirmados` written correctly,
+unstaged correctly) but never archived out of `manual_inv` — identical
+symptom, different cause.
+
+**✅ DONE 2026-07-24** — branch `confirmed-logic-stage-2` (stacked).
+Root-caused (independently corroborated by two parallel investigations —
+one tracing every `pagar_hoy_db`-row-construction site, one auditing
+`do_confirm_ap_<emp>`'s archive-matching logic end to end, explicitly
+ruling out the `mover_fecha` date-move, the Parte-edit path, and Stage
+14's `load_manual()` concurrency fix as causes) to `R/ledger_module.R`'s
+`cart_inv_click` observer — the per-individual-invoice "+" toggle shown
+when a Parte group is expanded in the calendar day-modal's cart, distinct
+from the already-fixed group-level `cart_<i>` button and `stage_all`/
+`stage_sel`. It had the row's real `source` available but hardcoded
+`source = "sap"` unconditionally, never consulting it — missed by Stage
+6's fix because it's a fourth, separate staging entry point.
+
+Fixed with the same `ifelse(is.na(source) | source != "manual", "sap",
+"manual")` normalization used everywhere else. Also hardened two more
+sites that never set `source` at all — `.ic_send_rows()`
+(`R/interco_module.R`) and `send_to_agenda` (`R/treasury_map_module.R`)
+— not implicated in this incident (both are fed only by SAP/intercompany
+snapshot data today) but closing the same gap defensively so a manual
+row can never silently misclassify if either path is ever extended to
+handle one. 8 new tests appended to `tests/test_stage_source_propagation.R`
+(same file — same bug class/incident family), full suite still green
+(393 total in the confirmed-logic suite, plus the broader `_run_saas`/
+`_run_agenda`/`_run_s1`/`_run_s2`/`_run_s3`/`_run_cart`/`_run_tag` suites).
+
+The specific stuck production row (`manual_inv` id
+`984022c5-3a8d-416f-a21f-eed8472d975f`) was repaired directly against S3,
+mirroring `do_confirm_ap_<emp>`'s own archive logic exactly (via the real
+`add_to_papelera()` function, not a reimplementation): archived to
+`papelera` with `disposition="confirmed"`, and `archive_event_id`
+backfilled on both of its `bancos_confirmados` rows (the user had
+re-staged and re-confirmed it a second time after the first confirm
+appeared to have no effect on the calendar — expected, given the bug).
+
+**This raises a real question the earlier "12 stuck invoices" repair
+didn't have to answer**: `cart_inv_click` was *not* covered by Stage 6's
+audit or its static tests at the time, meaning there is no verification
+step yet that exhaustively enumerates *every* `pagar_hoy_db`-row-
+construction site as a set and asserts each one sets `source` correctly
+— today's fix (and Stage 6's) each found the culprit by targeted
+investigation of one incident, not by that kind of exhaustive check.
+Worth flagging to Mouse as an open item (see below) rather than assuming
+this is now provably the last one.
+
 ## Open items needing Mouse's input before or during the relevant stage
 
 - Invoice `1025618` (`AGENDA_CALENDARIO_WIRING_AUDIT.md` §1) — re-enter
@@ -540,6 +593,11 @@ stakes sites were hardened this pass, not every site for every table.
   ERP-vs-local audit visibility? Low-priority, could fold into Stage 2 or
   skip.
 - Stage 14's scope call.
+- Whether it's worth writing one exhaustive test that enumerates every
+  `pagar_hoy_db`-row-construction call site (grep-based, so it can't miss
+  a future one either) and asserts each sets `source` correctly, rather
+  than relying on incident-by-incident discovery as happened for both
+  Stage 6 and Stage 14b.
 - **Not yet examined against the 3-type framework**: abono rows (partial-
   payment records that also live in `pagar_hoy_db`, removed on confirm
   alongside manual/provision rows per `AGENDA_CALENDARIO_WIRING_AUDIT.md`
