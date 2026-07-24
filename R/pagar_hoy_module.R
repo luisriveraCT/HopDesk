@@ -1478,11 +1478,43 @@ pagarHoyServer <- function(id, shared) {
               }
             }
 
-            # Provision-derived rows: unchanged hard-delete for now (Stage 5).
+            # Provision-derived rows: also archive (Stage 5), not hard-delete
+            # -- per Mouse's explicit rule, confirmation-history covers
+            # EVERYTHING that gets confirmed, no special-casing by origin.
+            # Recovering these works differently though (see undo_conf):
+            # this archived copy is for permanent audit-trail completeness
+            # only, never restored back to manual_inv on undo -- undoing a
+            # provision-derived confirmation instead reverts the provision
+            # itself to "provisional" (pasivos_observers.R), which is the
+            # only correct way to make it reappear (the raw placeholder,
+            # not a duplicate manual_inv copy alongside it).
             prov_ids_to_remove <- factura_rows$provision_id[!is.na(factura_rows$provision_id)]
             if (length(prov_ids_to_remove) && "provision_id" %in% names(mi)) {
               manual_ids <- mi[["id"]][!is.na(mi[["provision_id"]]) & mi[["provision_id"]] %in% prov_ids_to_remove]
               if (length(manual_ids)) {
+                pap      <- shared$papelera_rv() %||% load_papelera(client_id = shared$effective_client_id())
+                conf_now <- shared$bancos_confirmados()
+                for (mid in manual_ids) {
+                  to_archive <- mi[mi[["id"]] == mid, , drop = FALSE]
+                  pid   <- to_archive[["provision_id"]][1]
+                  fr_id <- factura_rows[["id"]][!is.na(factura_rows[["provision_id"]]) &
+                                                factura_rows[["provision_id"]] == pid]
+                  pap <- add_to_papelera(pap, to_archive, ledger = "AP",
+                                         deleted_by = shared$current_user(), disposition = "confirmed")
+                  event_id <- pap[["event_id"]][nrow(pap)]
+                  if (length(fr_id)) {
+                    cidx <- which(conf_now[["agenda_item_id"]] %in% fr_id & is.na(conf_now[["archive_event_id"]]))
+                    if (length(cidx)) conf_now[["archive_event_id"]][cidx[length(cidx)]] <- event_id
+                  }
+                }
+                shared$papelera_rv(pap)
+                tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
+                         error = function(e) showNotification(
+                           paste("Error al archivar entrada manual:", e$message), type = "warning"))
+                shared$bancos_confirmados(conf_now)
+                tryCatch(save_bancos_confirmados(conf_now, client_id = shared$effective_client_id()),
+                         error = function(e) NULL)
+
                 mi_updated <- mi[!mi[["id"]] %in% manual_ids, , drop = FALSE]
                 shared$manual_inv(mi_updated)
                 tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id()),
@@ -1733,11 +1765,43 @@ pagarHoyServer <- function(id, shared) {
               }
             }
 
-            # Provision-derived rows: unchanged hard-delete for now (Stage 5).
+            # Provision-derived rows: also archive (Stage 5), not hard-delete
+            # -- per Mouse's explicit rule, confirmation-history covers
+            # EVERYTHING that gets confirmed, no special-casing by origin.
+            # Recovering these works differently though (see undo_conf):
+            # this archived copy is for permanent audit-trail completeness
+            # only, never restored back to manual_inv on undo -- undoing a
+            # provision-derived confirmation instead reverts the provision
+            # itself to "provisional" (pasivos_observers.R), which is the
+            # only correct way to make it reappear (the raw placeholder,
+            # not a duplicate manual_inv copy alongside it).
             prov_ids_to_remove <- factura_rows$provision_id[!is.na(factura_rows$provision_id)]
             if (length(prov_ids_to_remove) && "provision_id" %in% names(mi)) {
               manual_ids <- mi[["id"]][!is.na(mi[["provision_id"]]) & mi[["provision_id"]] %in% prov_ids_to_remove]
               if (length(manual_ids)) {
+                pap      <- shared$papelera_rv() %||% load_papelera(client_id = shared$effective_client_id())
+                conf_now <- shared$bancos_confirmados()
+                for (mid in manual_ids) {
+                  to_archive <- mi[mi[["id"]] == mid, , drop = FALSE]
+                  pid   <- to_archive[["provision_id"]][1]
+                  fr_id <- factura_rows[["id"]][!is.na(factura_rows[["provision_id"]]) &
+                                                factura_rows[["provision_id"]] == pid]
+                  pap <- add_to_papelera(pap, to_archive, ledger = "AR",
+                                         deleted_by = shared$current_user(), disposition = "confirmed")
+                  event_id <- pap[["event_id"]][nrow(pap)]
+                  if (length(fr_id)) {
+                    cidx <- which(conf_now[["agenda_item_id"]] %in% fr_id & is.na(conf_now[["archive_event_id"]]))
+                    if (length(cidx)) conf_now[["archive_event_id"]][cidx[length(cidx)]] <- event_id
+                  }
+                }
+                shared$papelera_rv(pap)
+                tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
+                         error = function(e) showNotification(
+                           paste("Error al archivar entrada manual:", e$message), type = "warning"))
+                shared$bancos_confirmados(conf_now)
+                tryCatch(save_bancos_confirmados(conf_now, client_id = shared$effective_client_id()),
+                         error = function(e) NULL)
+
                 mi_updated <- mi[!mi[["id"]] %in% manual_ids, , drop = FALSE]
                 shared$manual_inv(mi_updated)
                 tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id()),

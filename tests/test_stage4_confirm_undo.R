@@ -56,10 +56,10 @@ cat("── Stage 4: confirm/undo rewrite (ERP + plain manual) ─────�
             "A5: confirm handler now unstages ALL factura_rows (not just non-ERP ones)")
   .chk(sum(grepl('ph\\$status\\[idx_ph\\]\\s*<-\\s*"confirmed"', ph_txt)), 0L,
        "A6: confirm handler no longer leaves any pagar_hoy row with status=='confirmed'")
-  .chk_true(sum(grepl("add_to_papelera\\(pap, to_archive", ph_txt)) == 2L,
-            "A7: exactly 2 archiving call sites (AP + AR confirm handlers)")
-  .chk_true(sum(grepl('disposition = "confirmed"', ph_txt)) == 2L,
-            "A8: exactly 2 disposition='confirmed' archive calls")
+  .chk_true(sum(grepl("add_to_papelera\\(pap, to_archive", ph_txt)) >= 2L,
+            "A7: at least 2 archiving call sites (AP + AR plain-manual confirm handlers -- Stage 5 adds 2 more for provisions)")
+  .chk_true(sum(grepl('disposition = "confirmed"', ph_txt)) >= 2L,
+            "A8: at least 2 disposition='confirmed' archive calls (AP + AR plain-manual -- Stage 5 adds 2 more)")
 
   .chk_true(any(grepl("recover_confirmacion\\(conf, conf_id", bnc_txt)),
             "A9: undo_conf() calls the new recover_confirmacion()")
