@@ -19,6 +19,15 @@
 # expects) with one confirmed SAP invoice and one open one, runs the real
 # function, and asserts the confirmed one is excluded while the open one
 # survives.
+#
+# Also fixes a second, real, pre-existing bug found live 2026-07-24 (not
+# introduced by Stage 11 -- the papelera anti-join predates it): the
+# anti-join matched by (Empresa, Moneda, Documento) only, so a brand-new
+# manual entry reusing the same key as a previously-deleted, unrelated
+# entry (e.g. a repeated "test" invoice) was silently hidden from the
+# export/preview even though it was never itself deleted. Fixed to
+# anti-join manual entries by UUID instead, matching the calendar's own
+# df_combined() precedent exactly.
 # =============================================================================
 
 cat("── Stage 11: Cash Flow Preview/Export excludes confirmed invoices ──────\n")
@@ -103,6 +112,70 @@ source("R/data_pipeline.R")
   .chk(result$Documento[1], "F-OPEN", "the surviving row is the OPEN invoice, not the confirmed one")
   .chk("F-CONF" %in% result$Documento, FALSE,
        "the confirmed invoice (F-CONF, matched in bancos_confirmados) is excluded from the export/preview data entirely")
+}
+
+# ── Real bug found 2026-07-24: a brand-new manual entry reusing a key from
+# a previously-deleted, unrelated papelera row was wrongly hidden ─────────
+# The old papelera anti-join here matched by (Empresa, Moneda, Documento)
+# only -- so a fresh manual invoice (a new UUID, a different amount/date)
+# that happened to share a key with a past, already-deleted entry (e.g. a
+# repeated "test" invoice) was silently excluded from the export/preview,
+# even though it was never itself deleted. The calendar's own df_combined()
+# was already fixed to anti-join manual papelera entries by UUID for
+# exactly this reason -- this export never got that same fix until now.
+{
+  manual_new <- tibble::tibble(
+    id = "new-uuid-123", ledger = "AP", Empresa = "ACME", Moneda = "MXN",
+    Documento = "test", Factura = "", Parte = "TEST", Codigo = "",
+    Importe = 1000, `Abono futuro` = NA_real_,
+    `Fecha de vencimiento` = as.Date("2026-08-05"), Notas = "",
+    created_by = "dev", created_at = Sys.time(), updated_at = Sys.time(),
+    provision_id = NA_character_, liability_id = NA_character_, referencia = NA_character_,
+    check.names = FALSE
+  )
+  # A DIFFERENT, OLD manual_inv row (a different UUID) with the SAME key was
+  # deleted in the past -- this is what's in papelera today.
+  papelera_stale <- tibble::tibble(
+    id = "old-uuid-999", ledger = "AP", source = "manual",
+    Empresa = "ACME", Moneda = "MXN", Documento = "test", Parte = "test",
+    Importe = 1, FechaEff = as.Date("2026-07-01"),
+    deleted_by = "dev", deleted_at = Sys.time() - 3600
+  )
+
+  shared2 <- list(
+    company_map            = function() list(),
+    sap_data                = function() list(AR = NULL, AP = NULL),
+    moves_db                 = function() NULL,
+    manual_inv               = function() manual_new,
+    abonos_db                = function() NULL,
+    policy_moves_db          = function() NULL,
+    sap_ov_db                = function() NULL,
+    pasivos_provisions_db    = function() NULL,
+    pasivos_liabilities_db   = function() NULL,
+    papelera_rv              = function() papelera_stale,
+    bancos_confirmados       = function() NULL,
+    interco_v2               = function() list(ar_prefix = "C", ap_prefix = "P", companies = list())
+  )
+
+  result2 <- build_export_combined_df(shared2, ic_mode_val = "exclude")
+  .chk(is.null(result2), FALSE,
+       "a brand-new manual invoice sharing a key with an old, deleted, DIFFERENT entry is NOT wrongly hidden")
+  .chk(nrow(result2), 1L, "the new invoice survives")
+  .chk(result2$id[1], "new-uuid-123",
+       "specifically the NEW invoice (by its own UUID), not somehow a stale reference to the old one")
+
+  txt <- readLines("R/cashflow_export_module.R", warn = FALSE)
+  start <- grep("Filter soft-deleted MANUAL entries", txt)
+  .chk(length(start) > 0, TRUE, "found the fixed papelera anti-join's comment to scan")
+  if (length(start)) {
+    block <- paste(sub("#.*$", "", txt[start[1]:min(start[1] + 25, length(txt))]), collapse = "\n")
+    .chk(grepl('df\\[\\["id"\\]\\] %in% valid_ids', block), TRUE,
+         "the anti-join now matches by id (UUID), not by Empresa/Moneda/Documento")
+    .chk(grepl('source"\\]\\] == "manual"', block), TRUE,
+         "the anti-join is still scoped to manual-sourced papelera entries only")
+    .chk(grepl("anti_join\\(df, pap", block), FALSE,
+         "the old dplyr::anti_join() by (Empresa, Moneda, Documento) is actually gone")
+  }
 }
 
 # ── Static scan: the fix is wired where the design calls for ──────────────

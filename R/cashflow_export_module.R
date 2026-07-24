@@ -326,15 +326,29 @@ build_export_combined_df <- function(shared, ic_mode_val) {
   ar_df <- .build_one("AR")
   ap_df <- .build_one("AP")
 
-  # Filter soft-deleted entries (papelera)
+  # Filter soft-deleted MANUAL entries (papelera) -- by UUID, not by
+  # (Empresa, Moneda, Documento). Found 2026-07-24, a real bug: the old key-
+  # based anti-join hid any BRAND-NEW manual entry that happened to reuse
+  # the same key as a previously-deleted, unrelated one (e.g. a repeated
+  # "test" invoice) -- exactly the class of bug the calendar's own
+  # df_combined() was already fixed to avoid (see its "Anti-join for MANUAL
+  # papelera items by UUID" comment), just never propagated to this export.
+  # SAP-sourced papelera entries (ghosts) are NOT handled here at all --
+  # compute_confirmed_flags() below (Stage 11) already excludes those
+  # correctly via its own amount-match-guarded Source 2, so re-anti-joining
+  # them here by key would just reintroduce the same DocNum-reuse risk
+  # Stage 10 exists to prevent.
   papelera <- tryCatch(shared$papelera_rv(), error = function(e) NULL)
   if (!is.null(papelera) && nrow(papelera)) {
     .rm_pap <- function(df, led) {
       if (is.null(df) || !nrow(df)) return(df)
-      pap <- papelera[ papelera$ledger == led,
-                       c("Empresa","Moneda","Documento"), drop = FALSE ]
-      if (nrow(pap)) dplyr::anti_join(df, pap, by = c("Empresa","Moneda","Documento"))
-      else df
+      pap_this <- papelera[papelera$ledger == led | papelera$ledger == "MIXED", , drop = FALSE]
+      if (!nrow(pap_this) || !"source" %in% names(pap_this)) return(df)
+      man_pap <- pap_this[!is.na(pap_this[["source"]]) & pap_this[["source"]] == "manual", , drop = FALSE]
+      if (!nrow(man_pap) || !"id" %in% names(df)) return(df)
+      valid_ids <- man_pap[["id"]][!is.na(man_pap[["id"]]) & nzchar(man_pap[["id"]] %||% "")]
+      if (!length(valid_ids)) return(df)
+      df[is.na(df[["id"]]) | !(df[["id"]] %in% valid_ids), , drop = FALSE]
     }
     ar_df <- .rm_pap(ar_df, "AR")
     ap_df <- .rm_pap(ap_df, "AP")
