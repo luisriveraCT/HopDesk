@@ -629,10 +629,21 @@ compute_confirmed_flags <- function(df, ledger, bancos_confirmados_df, papelera_
   na_conf <- is.na(df[["confirmed"]])
   if (any(na_conf)) df[["confirmed"]][na_conf] <- FALSE
 
-  is_manual    <- "source" %in% names(df) & !is.na(df[["source"]]) &
-                  df[["source"]] == "manual"
-  is_provision <- "source" %in% names(df) & !is.na(df[["source"]]) &
-                  df[["source"]] == "provision"
+  # A caller with no "source" column at all (e.g. Reporte's Cash Flow Pulse,
+  # which is deliberately SAP-only) must get an all-FALSE mask, not
+  # logical(0) -- "source" %in% names(df) is a length-1 scalar, so `&`-ing
+  # it against !is.na(df[["source"]]) on a NULL/absent column silently
+  # collapses the whole mask to zero length, which then breaks every
+  # downstream `df[["confirmed"]] | bc_mask` recycling (found 2026-07-24 via
+  # Reporte's own tests -- every other caller always has a real "source"
+  # column, so this was never exercised until now).
+  if ("source" %in% names(df)) {
+    is_manual    <- !is.na(df[["source"]]) & df[["source"]] == "manual"
+    is_provision <- !is.na(df[["source"]]) & df[["source"]] == "provision"
+  } else {
+    is_manual    <- rep(FALSE, nrow(df))
+    is_provision <- rep(FALSE, nrow(df))
+  }
 
   # Source 1: bancos_confirmados
   # Amount-match guard (Stage 10): standard everywhere bancos_confirmados

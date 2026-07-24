@@ -155,6 +155,19 @@ suppressPackageStartupMessages(library(tibble))
   out8_ap <- compute_confirmed_flags(df8, "AP", bc8, NULL)
   .chk(out8_ar$confirmed[1], TRUE,  "AR ledger matches bancos_confirmados rows with tipo=='cobro'")
   .chk(out8_ap$confirmed[1], FALSE, "the SAME confirmado row does NOT match when checked as AP (tipo mismatch, not just ledger-blind)")
+
+  # Real bug found 2026-07-24 wiring Stage 12 (Reporte's Cash Flow Pulse,
+  # deliberately SAP-only, no "source" column at all): is_manual/is_provision
+  # used to collapse to logical(0) instead of all-FALSE when "source" is
+  # entirely absent (not just NA-valued), which broke every downstream mask
+  # recycling and crashed on the tibble assignment. A caller with no "source"
+  # column at all must still work, treating every row as (implicitly) SAP.
+  df9 <- tibble::tibble(Empresa = "ACME", Moneda = "MXN", Documento = "F-5", Saldo_original = 400)
+  bc9 <- tibble::tibble(empresa = "ACME", documento = "F-5", moneda = "MXN",
+                        tipo = "pago", eliminado = FALSE, importe = 400)
+  out9 <- compute_confirmed_flags(df9, "AP", bc9, NULL)
+  .chk(nrow(out9), 1L, "a data frame with no 'source' column at all does not crash")
+  .chk(out9$confirmed[1], TRUE, "and still correctly matches bancos_confirmados (every row is implicitly treated as SAP)")
 }
 
 # ── 3. Regression: byte-for-byte equivalence with the frozen pre-extraction logic ─
