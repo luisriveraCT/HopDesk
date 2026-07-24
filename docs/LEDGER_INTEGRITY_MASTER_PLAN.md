@@ -295,6 +295,30 @@ via the same primitive Calendar/Search staging already uses. Test:
 construct a case where the fabricated row would have differed from the real
 one, to make the "staged from the real row" assertion meaningful.
 
+**✅ DONE 2026-07-24** — branch `confirmed-logic-stage-2` (stacked, same
+branch as Stages 2-5). New `stage_manual_row_to_agenda()`
+(`R/data_pipeline.R`) derives every `pagar_hoy` field from a `manual_inv`
+row passed in directly — no `shared`/reactive access, matching the file's
+existing pure-function convention. Both call sites now re-read the row by
+id from the data frame that was just bound/saved (`manual_df`/`df`) and
+pass it through, instead of touching `input$...` a second time:
+Pasivos keeps minting its own fresh `pagar_hoy` id (decoupled from
+`manual_inv`'s id, its existing convention — overridden back after the
+helper call, which defaults to sharing the id per §2.1) and still passes
+`liability_id`/`source="provision"` correctly since those come through
+automatically once `provision_id` is set on the row. Direct manual-entry
+keeps sharing the id (the helper's default). 42 new tests: unit coverage
+on the new helper (field mapping, plain-manual vs provision-derived source
+inference, blank-string handling), a divergence test constructing a row
+whose stored Empresa deliberately differs from what naive raw-input
+reconstruction would have produced (proving real re-derivation, not a
+tautology), and a static scan confirming both call sites call the helper
+and no longer reference `input$pcm_*`/`input$me_*` inside the staging
+block. 223 total in this suite, full existing suite still green (a
+pre-existing, unrelated failure in `test_pasivos_stage2.R`'s Group 3 —
+`save_pasivos_liabilities()` called with an unsupported `client_id` arg —
+was confirmed via a clean-checkout re-run to predate this stage).
+
 ### Stage 7 — Ghosts must not affect any calculation, inside Calendario's own UI
 
 Source: §2.11, §3.6, §3.7. Three related fixes: make ghost rows unselectable
