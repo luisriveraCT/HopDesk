@@ -101,12 +101,15 @@ intercoServer <- function(id, shared) {
       emp_sel <- isolate(shared$empresa_sel()) %||% character()
 
       # Confirmed-invoice sources — items that already went through
-      # "Confirmar" in Agenda de Hoy. Treasury has settled these internally
-      # even if Finance/SAP hasn't caught up yet, so they must disappear from
-      # Intercompany entirely (see .filter_ic() below for the exclusion logic).
-      conf_db    <- isolate(shared$bancos_confirmados()) %||% tibble::tibble()
-      ph_db      <- isolate(shared$pagar_hoy_db())        %||% tibble::tibble()
-      abonos_raw <- isolate(shared$abonos_db())           %||% tibble::tibble()
+      # "Confirmar" in Agenda de Hoy, or that were soft-deleted as a SAP
+      # ghost via the calendar/search trash. Treasury has settled these
+      # internally even if Finance/SAP hasn't caught up yet, so they must
+      # disappear from Intercompany entirely (see .filter_ic() below, which
+      # now calls the canonical compute_confirmed_flags() -- Stage 13 --
+      # instead of its own standalone 5th independent implementation).
+      conf_db      <- isolate(shared$bancos_confirmados()) %||% tibble::tibble()
+      papelera_raw <- isolate(shared$papelera_rv())         %||% tibble::tibble()
+      abonos_raw   <- isolate(shared$abonos_db())           %||% tibble::tibble()
 
       ar_pre   <- toupper(reg$ar_prefix %||% "C")
       ap_pre   <- toupper(reg$ap_prefix %||% "P")
@@ -163,6 +166,14 @@ intercoServer <- function(id, shared) {
 
         amt_col <- if ("Saldo vencido" %in% names(df)) "Saldo vencido" else "DocTotal"
 
+        # Captured BEFORE abono-netting below -- compute_confirmed_flags()'s
+        # amount-match guard (Stage 10) matches against the pre-netting
+        # amount, same as every other caller. Matching the netted balance
+        # instead (as this module's own retired .ckey() implementation used
+        # to) would cause exactly the false-negative Mouse flagged: an abono
+        # applied after confirmation would silently reopen a still-valid one.
+        if (amt_col %in% names(df)) df[["Saldo_original"]] <- df[[amt_col]]
+
         # ── Net out active abonos (partial payments staged via Agenda de Hoy) ──
         # Same join convention as build_ledger_df() in data_pipeline.R: raw
         # (Empresa, Moneda, Documento) equality, no case/whitespace
@@ -183,44 +194,18 @@ intercoServer <- function(id, shared) {
         }
 
         # ── Exclude invoices already confirmed via "Confirmar" in Agenda de
-        # Hoy ─────────────────────────────────────────────────────────────
-        # Treasury already settled these internally (a bancos_confirmados
-        # row, or — for SAP-sourced items — the row simply staying in
-        # pagar_hoy_db with status="confirmed") even though Finance/SAP may
-        # not have applied the payment yet. Matched on (Empresa, Documento,
-        # Moneda), case/whitespace-insensitive — the same key
-        # ledger_module.R's df_combined() confirmed/ghost logic uses — PLUS
-        # an exact amount match (against the abono-netted balance above) as a
-        # safety guard: confirmation records never expire, so without an
-        # amount check a future unrelated invoice reusing the same DocNum
-        # would be falsely hidden forever.
-        if (amt_col %in% names(df)) {
-          .ckey <- function(empresa, documento, moneda, importe) {
-            paste(toupper(trimws(empresa)), toupper(trimws(documento)),
-                  toupper(trimws(moneda)), sprintf("%.2f", round(as.numeric(importe), 2)))
-          }
-          tipo_val  <- if (ledger == "AR") "cobro" else "pago"
-          conf_keys <- character(0)
-
-          if (nrow(conf_db)) {
-            ca <- dplyr::filter(conf_db, !(.data$eliminado %in% TRUE),
-                                .data$tipo == tipo_val, !is.na(.data$importe))
-            if (nrow(ca)) conf_keys <- c(conf_keys,
-              .ckey(ca$empresa, ca$documento, ca$moneda, ca$importe))
-          }
-          if (nrow(ph_db)) {
-            pc <- dplyr::filter(ph_db, !is.na(.data$status), .data$status == "confirmed",
-                                !is.na(.data$ledger), .data$ledger == !!ledger,
-                                !is.na(.data$Importe))
-            if (nrow(pc)) conf_keys <- c(conf_keys,
-              .ckey(pc$Empresa, pc$Documento, pc$Moneda, pc$Importe))
-          }
-
-          if (length(conf_keys)) {
-            df_ckey <- .ckey(df$Empresa, df$Documento, df$Moneda, df[[amt_col]])
-            keep    <- keep & !(df_ckey %in% conf_keys)
-          }
-        }
+        # Hoy, or soft-deleted as a SAP ghost via the calendar/search trash
+        # (Stage 13) ─────────────────────────────────────────────────────
+        # Treasury already settled these internally even if Finance/SAP
+        # hasn't applied the payment yet. Now uses the canonical
+        # compute_confirmed_flags() (R/data_pipeline.R) instead of this
+        # module's own standalone 5th independent implementation -- inherits
+        # the amount-match guard automatically (Stage 10) and picks up
+        # papelera SAP ghosts, a source this module was previously missing
+        # entirely. The dead pagar_hoy_db.status=="confirmed" source (no
+        # code path can produce it since Stage 4) is retired along with it.
+        df <- compute_confirmed_flags(df, ledger, conf_db, papelera_raw)
+        keep <- keep & !(df[["confirmed"]] %in% TRUE)
 
         out <- df[keep, , drop = FALSE]
         if (nrow(out) == 0) return(NULL)
