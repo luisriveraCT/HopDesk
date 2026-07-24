@@ -277,131 +277,19 @@ ledgerModuleServer <- function(id, config, shared) {
       }
 
       # ── Mark confirmed invoices ─────────────────────────────────────────────
-      # Reads from THREE sources (all checked for full retroactive coverage):
-      #   1. bancos_confirmados — confirmations made via Agenda de Hoy
-      #   2. papelera SAP ghosts — SAP items soft-deleted via the calendar's trash
-      #   3. pagar_hoy_db — the most reliable path, exact key match
+      # Canonical 2-source implementation (Stage 9) — see compute_confirmed_flags()
+      # in R/data_pipeline.R for the full source-by-source rationale. A third
+      # source (pagar_hoy_db.status=="confirmed") existed pre-Stage-4 but is
+      # now structurally dead: every confirm handler unconditionally unstages
+      # the Agenda row regardless of source, so nothing can ever leave one
+      # behind with status=="confirmed" again.
       # isolate() is intentionally NOT used here so the calendar re-renders
       # immediately when a confirmation happens in Agenda de Hoy.
-      tipo_val <- if (ledger == "AR") "cobro" else "pago"
-      # confirmed column: provision rows carry FALSE already; SAP/manual rows
-      # come from df_base which has no confirmed column yet.
-      if (!"confirmed" %in% names(df)) df[["confirmed"]] <- FALSE
-      na_conf <- is.na(df[["confirmed"]])
-      if (any(na_conf)) df[["confirmed"]][na_conf] <- FALSE
-
-      # Document-level confirmation matching applies ONLY to SAP rows.
-      # Manual entries carry UUIDs for precise identification; matching them by
-      # (Empresa, Moneda, Documento) alone would hide any NEW manual entry whose
-      # Documento happens to match a past payment that was already confirmed —
-      # preventing the user from ever registering a second entry of the same type.
-      # Manual entries are removed from the calendar via the papelera (UUID-based)
-      # or by the user explicitly deleting them.
-      is_manual    <- "source" %in% names(df) & !is.na(df[["source"]]) &
-                      df[["source"]] == "manual"
-      # Provision rows must NEVER receive any payment/confirmation flag.
-      # They can only change state through the explicit conversion modal
-      # (pasivos_perform_conversion). Matching by Empresa/Documento/Moneda
-      # against bancos_confirmados or pagar_hoy would wrongly mark a provision
-      # as paid whenever a real payment shares the same documento key.
-      is_provision <- "source" %in% names(df) & !is.na(df[["source"]]) &
-                      df[["source"]] == "provision"
-
-      # Source 1: bancos_confirmados (current path after wire-cut)
-      conf_db <- tryCatch(shared$bancos_confirmados(), error = function(e) NULL)
-      if (!is.null(conf_db) && nrow(conf_db)) {
-        conf_active <- conf_db[!(conf_db[["eliminado"]] %in% TRUE) &
-                               conf_db[["tipo"]] == tipo_val, , drop = FALSE]
-        if (nrow(conf_active)) {
-          bc_keys   <- unique(conf_active[, c("empresa","documento","moneda"),
-                                          drop = FALSE])
-          match_key <- paste(toupper(trimws(df[["Empresa"]])),
-                             toupper(trimws(df[["Documento"]])),
-                             toupper(trimws(df[["Moneda"]])))
-          conf_key  <- paste(toupper(trimws(bc_keys[["empresa"]])),
-                             toupper(trimws(bc_keys[["documento"]])),
-                             toupper(trimws(bc_keys[["moneda"]])))
-          bc_mask   <- (match_key %in% conf_key) & !is_manual & !is_provision
-          df[["confirmed"]]   <- df[["confirmed"]] | bc_mask
-          if (!"is_paid_ghost" %in% names(df)) df[["is_paid_ghost"]] <- FALSE
-          df[["is_paid_ghost"]] <- df[["is_paid_ghost"]] | bc_mask
-        }
-      }
-
-      # Source 2: papelera SAP ghosts — SAP items deleted via calendar/search
-      # ghost mechanic remain in df but are marked confirmed=TRUE so that
-      # to_calendar_data() excludes them from sums and the day modal shows
-      # them with a strikethrough.
-      if (!is.null(papelera) && nrow(papelera)) {
-        pap_this <- papelera[papelera[["ledger"]] == ledger |
-                               papelera[["ledger"]] == "MIXED", , drop = FALSE]
-        if (nrow(pap_this)) {
-          # Deliberately NOT is_erp_sourced() here: an ambiguous/legacy NA
-          # source in papelera should NOT be treated as a SAP ghost (which
-          # stays visible, excluded from sums) — safer to fall through to
-          # the manual anti-join path (fully hidden) for unknown provenance.
-          sap_pap <- pap_this[!is.na(pap_this[["source"]]) &
-                                pap_this[["source"]] == "sap",
-                              c("Empresa","Moneda","Documento"), drop = FALSE]
-          if (nrow(sap_pap)) {
-            match_key <- paste(df[["Empresa"]], df[["Moneda"]], df[["Documento"]])
-            pap_key   <- paste(sap_pap[["Empresa"]], sap_pap[["Moneda"]], sap_pap[["Documento"]])
-            ghost_mask <- (match_key %in% pap_key) & !is_provision
-            df[["confirmed"]] <- df[["confirmed"]] | ghost_mask
-            if (!"is_ghost" %in% names(df)) df[["is_ghost"]] <- FALSE
-            df[["is_ghost"]]  <- df[["is_ghost"]] | ghost_mask
-          }
-        }
-      }
-
-      # ── Handle manual entries differently from SAP entries ──────────────────
-      # SAP rows: keep in df with confirmed=TRUE → calendar excludes from totals,
-      #           day modal shows with strikethrough
-      # Manual rows: remove entirely from df → disappear from calendar and modal
-      # Source 3: pagar_hoy confirmed items — most reliable path.
-      # Items staged from the ledger carry the exact same Empresa/Documento/Moneda
-      # as df rows, so this match never fails due to case/whitespace drift.
-      # SAP items: confirmed=TRUE + is_paid_ghost=TRUE (visible as crossed-out ghost).
-      # Manual items: confirmed=TRUE only (removed by the block below).
-      ph_db <- tryCatch(shared$pagar_hoy_db(), error = function(e) NULL)
-      if (!is.null(ph_db) && nrow(ph_db)) {
-        ph_conf <- ph_db[
-          !is.na(ph_db[["status"]]) & ph_db[["status"]] == "confirmed" &
-          !is.na(ph_db[["ledger"]]) & ph_db[["ledger"]] == ledger,
-          , drop = FALSE
-        ]
-        if (nrow(ph_conf) && all(c("Empresa","Documento","Moneda") %in% names(ph_conf))) {
-          ph_key  <- paste(toupper(trimws(ph_conf[["Empresa"]])),
-                           toupper(trimws(ph_conf[["Documento"]])),
-                           toupper(trimws(ph_conf[["Moneda"]])))
-          df_key  <- paste(toupper(trimws(df[["Empresa"]])),
-                           toupper(trimws(df[["Documento"]])),
-                           toupper(trimws(df[["Moneda"]])))
-          ph_mask     <- (df_key %in% ph_key) & !is_provision
-          sap_ph_mask <- ph_mask & !is_manual
-          df[["confirmed"]] <- df[["confirmed"]] | ph_mask
-          if (!"is_paid_ghost" %in% names(df)) df[["is_paid_ghost"]] <- FALSE
-          df[["is_paid_ghost"]] <- df[["is_paid_ghost"]] | sap_ph_mask
-        }
-      }
-
-      if ("source" %in% names(df) && any(df[["confirmed"]] & df[["source"]] == "manual")) {
-        df <- df[!(df[["confirmed"]] & df[["source"]] == "manual"), , drop = FALSE]
-      }
-
-      # Provisions cannot receive ANY payment/confirmation flag.
-      # Belt: masks above already exclude is_provision.
-      # Suspenders: forcibly clear all three flags here so the '\u2713 Pagado'
-      # badge can never render on a provision row regardless of future mask changes.
-      if ("source" %in% names(df) && "confirmed" %in% names(df)) {
-        prov_mask <- !is.na(df[["source"]]) & df[["source"]] == "provision"
-        if (any(prov_mask)) {
-          df[["confirmed"]][prov_mask] <- FALSE
-          if ("is_paid_ghost" %in% names(df)) df[["is_paid_ghost"]][prov_mask] <- FALSE
-          if ("is_ghost"      %in% names(df)) df[["is_ghost"]][prov_mask]      <- FALSE
-        }
-      }
-
+      df <- compute_confirmed_flags(
+        df, ledger,
+        bancos_confirmados_df = tryCatch(shared$bancos_confirmados(), error = function(e) NULL),
+        papelera_df           = papelera
+      )
       message("[DF_COMBINED] complete ledger=", ledger,
               " final_rows=", nrow(df),
               " total ", round((proc.time() - t0_comb)[["elapsed"]], 2), "s")
