@@ -340,6 +340,25 @@ build_export_combined_df <- function(shared, ic_mode_val) {
     ap_df <- .rm_pap(ap_df, "AP")
   }
 
+  # Exclude already-confirmed invoices (Stage 11) -- this export previously
+  # applied ZERO confirmation exclusion at all, overstating projections with
+  # invoices Treasury has already closed out. Same canonical function the
+  # calendar uses (R/data_pipeline.R); unlike the calendar's day-modal
+  # (which keeps a confirmed SAP row visible, struck through, for detail
+  # review), an export/preview only cares about the open total, so confirmed
+  # rows -- manual (already removed by compute_confirmed_flags itself) and
+  # SAP ghosts alike -- are dropped entirely here, the same way
+  # to_calendar_data() drops them before summing calendar tile totals.
+  bancos_confirmados <- tryCatch(shared$bancos_confirmados(), error = function(e) NULL)
+  .drop_confirmed <- function(df, led) {
+    if (is.null(df) || !nrow(df)) return(df)
+    df <- compute_confirmed_flags(df, led, bancos_confirmados, papelera)
+    if ("confirmed" %in% names(df)) df <- df[is.na(df[["confirmed"]]) | !df[["confirmed"]], , drop = FALSE]
+    df
+  }
+  ar_df <- .drop_confirmed(ar_df, "AR")
+  ap_df <- .drop_confirmed(ap_df, "AP")
+
   # Apply IC filter
   interco <- tryCatch(shared$interco_v2(), error = function(e) NULL)
   ic_rfcs <- {

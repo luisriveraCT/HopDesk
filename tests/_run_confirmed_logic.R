@@ -74,6 +74,7 @@ cat("====================================================\n\n")
 .run_module("tests/test_stage8_vincular_warning.R")
 .run_module("tests/test_stage9_compute_confirmed_flags.R")
 .run_module("tests/test_stage10_amount_match_guard.R")
+.run_module("tests/test_stage11_cashflow_export_confirmed.R")
 
 cat("\n====================================================\n")
 cat(sprintf("  TOTAL: %d passed, %d failed\n", .pass, .fail))
