@@ -353,6 +353,18 @@ before Vincular's duplicate-merge modal is allowed to silently un-confirm an
 invoice, naming the affected invoice. No dependency on Stages 2-7; could run
 in parallel if useful, sequenced here for narrative continuity.
 
+**✅ DONE 2026-07-24** — branch `confirmed-logic-stage-2` (stacked).
+`vin_keep_a` (the only risky path — `vin_keep_b` already only ever *keeps* a
+confirmado candidate, never discards one) now checks the discarded
+candidate's source before doing anything: if `"confirmado"`, shows a warning
+dialog naming the invoice (Parte/Documento/Importe/Moneda/Fecha) with
+Cancelar + a separate confirm button; the actual mutation (unchanged,
+extracted into `.do_vin_keep_a()`) only runs after that confirm. Also
+captured `moneda` on the confirmado candidate struct
+(`.build_candidates_bank_side()`), missing before. 20 new tests (branch-
+decision logic, per the stage's own note that the modal itself isn't
+meaningfully unit-testable).
+
 ### Stage 9 — Extract `compute_confirmed_flags()` — now a 2-source model
 
 Source: `docs/CONFIRMED_INVOICE_LOGIC_AUDIT.md` §5/§7 (Stage C), **revised**
@@ -366,6 +378,15 @@ this explicitly), following the pure-function signature convention already
 established (plain data frames in, no `shared` reactive access inside
 `data_pipeline.R`).
 
+**✅ DONE 2026-07-24** — branch `confirmed-logic-stage-2` (stacked).
+Extracted `compute_confirmed_flags(df, ledger, bancos_confirmados_df,
+papelera_df)` into `R/data_pipeline.R`; `df_combined()` now calls it instead
+of the ~110-line inline 3-source block. Dead Source 3 dropped entirely, not
+left as unused code. 22 new tests, including a frozen snapshot of the exact
+pre-extraction 3-source logic run against identical synthetic input and
+asserted byte-for-byte identical to the new function's output — the "zero
+further behavior change" contract made concrete.
+
 ### Stage 10 — Amount-match guard
 
 Source: `docs/CONFIRMED_INVOICE_LOGIC_AUDIT.md` §5/§7 (Stage D). Standard
@@ -378,13 +399,48 @@ confirmation time*, not a live-recomputed balance — resolve carefully per
 the original audit's design note, don't copy Intercompany's netted-balance
 approach verbatim).
 
+**✅ DONE 2026-07-24** — branch `confirmed-logic-stage-2` (stacked). Source 1
+now also requires the amount to match, using the same 2-decimal-rounded-
+string key shape already proven in `interco_module.R`'s `.ckey()`. Matched
+against `Saldo_original` (the balance *before* the current render's
+abono-netting), not `Importe` — SAP rows have no such column at all — and
+not the live `Saldo vencido`, resolving the design note's open question
+correctly. Source 2 (papelera ghosts) deliberately left unguarded — a
+discrete, immediate, single-invoice action, not the long-lived DocNum-reuse
+risk this guard targets. 12 new tests covering both named edge cases plus
+the DocNum-reuse case the guard exists to catch.
+
 ### Stage 11 — Wire canonical function into Cash Flow Preview/Export
 
 Source: `docs/CONFIRMED_INVOICE_LOGIC_AUDIT.md` §5/§7 (Stage E).
 
+**✅ DONE 2026-07-24** — branch `confirmed-logic-stage-2` (stacked).
+`build_export_combined_df()` now calls `compute_confirmed_flags()` on each
+ledger and drops confirmed rows entirely (including SAP ghosts — an
+export/preview has no visual-ghosting concept, unlike the calendar's
+day-modal). `cashflow_preview_module.R` calls this exact same function, so
+one fix covers both the live preview panel and the Word/Excel export
+(confirmed by grep). 7 new tests, including an integration test with a mock
+`shared` and a real confirmed/open invoice pair.
+
 ### Stage 12 — Wire canonical function into Reporte's Cash Flow Pulse
 
 Source: `docs/CONFIRMED_INVOICE_LOGIC_AUDIT.md` §5/§7 (Stage F).
+
+**✅ DONE 2026-07-24** — branch `confirmed-logic-stage-2` (stacked). Design
+choice reasoned through per this stage's own instruction: `compute_pulse()`'s
+`normalize_sap()` builds its own deliberately SAP-only frame (no `source`
+column at all), bypassing `build_ledger_df()`/`df_combined()` entirely —
+routing it through the full pipeline just to reach the canonical function
+would be a much bigger, riskier change than calling
+`compute_confirmed_flags()` directly against `ar_all`/`ap_all` as they
+already are. That exposed a real, latent bug in `compute_confirmed_flags()`
+itself: when `source` is entirely absent (not just NA-valued, as every
+prior caller always had it), `is_manual`/`is_provision` silently collapsed
+to `logical(0)` instead of all-FALSE, breaking every downstream mask
+recycling. Fixed generally in the shared function, not worked around per
+caller. 8 new Stage 12 tests plus 2 regression tests added to Stage 9's
+suite for the missing-source-column case directly.
 
 ### Stage 13 — Migrate Intercompany onto the canonical function
 
@@ -393,6 +449,28 @@ Intercompany's standalone 5th independent confirmed-check implementation —
 by this point it inherits the amount-match guard automatically (Stage 10)
 and picks up the two sources it was previously missing (papelera ghosts,
 and correctly does not reintroduce the retired `conciliacion_rv`).
+
+**✅ DONE 2026-07-24** — branch `confirmed-logic-stage-2` (stacked, final
+stage of the master plan's confirmed-logic unification). `.filter_ic()`'s
+own `.ckey()` + dead-Source-3 implementation retired entirely in favor of
+`compute_confirmed_flags()`, called against the raw SAP snapshot data it
+already works with. The pre-netting amount is now captured into
+`Saldo_original` *before* the abono-netting mutation runs, fixing a latent
+bug in the old `.ckey()` approach (which matched the netted balance) as a
+side effect of the migration, not just a refactor. 12 new tests, including
+the concrete regression this stage exists to fix: an invoice confirmed ONLY
+via a papelera ghost (never in `bancos_confirmados`) now correctly
+disappears from Intercompany too.
+
+**Master plan status**: Stages 1, 8-13 (the confirmed-invoice-logic
+unification, `CONFIRMED_INVOICE_LOGIC_AUDIT.md`'s original scope) are
+complete — every consumer (calendar, Vencidos, Agenda de Hoy, Cash Flow
+Preview/Export, Reporte's Pulse, Intercompany) now reads confirmed/ghost
+status from the one canonical `compute_confirmed_flags()`. Stages 2-7
+(`AGENDA_CALENDARIO_WIRING_AUDIT.md`'s scope — ERP/manual/provision
+architecture, the archive mechanism, ghost isolation) are also complete.
+Stage 14 (concurrency) is partially addressed — see its own section above
+for exactly what's closed and what remains deliberately deferred.
 
 ### Stage 14 — Concurrency (open scope call — a real, if minor, incident happened 2026-07-23)
 
