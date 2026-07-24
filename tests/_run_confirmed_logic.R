@@ -62,6 +62,7 @@ cat("====================================================\n\n")
 .run_module("tests/test_confirmed_logic_stage_a.R")
 .run_module("tests/test_is_erp_sourced.R")
 .run_module("tests/test_archive_mechanism.R")
+.run_module("tests/test_stage4_confirm_undo.R")
 
 cat("\n====================================================\n")
 cat(sprintf("  TOTAL: %d passed, %d failed\n", .pass, .fail))

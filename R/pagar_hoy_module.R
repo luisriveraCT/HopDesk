@@ -1157,17 +1157,11 @@ pagarHoyServer <- function(id, shared) {
         }
         rows  <- (s_cur |> dplyr::arrange(FechaVenc))[sel, , drop = FALSE]
         if (!nrow(rows)) return()
-        sap_conf <- rows |> dplyr::filter(
-          !is.na(status) & status == "confirmed" &
-          is_erp_sourced(source))
-        if (nrow(sap_conf)) {
-          showNotification(
-            paste0(nrow(sap_conf), " pago(s) confirmado(s) de SAP no se pueden quitar. ",
-                   "Solo SAP puede cerrarlos."),
-            type = "warning", duration = 4)
-          rows <- dplyr::anti_join(rows, sap_conf, by = "id")
-          if (!nrow(rows)) return()
-        }
+        # Users may remove anything from Agenda regardless of source --
+        # ERP-confirmed rows included. Agenda never holds the real data, so
+        # removing a reference from it can never destroy anything; the only
+        # real guardrail (no in-app action may remove an ERP row from
+        # Calendario itself) lives elsewhere and is untouched by this.
         ph <- unstage_pagar_hoy(shared$pagar_hoy_db(),
                rows |> dplyr::select(id), keys = "id")
         shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
@@ -1218,17 +1212,11 @@ pagarHoyServer <- function(id, shared) {
         }
         rows  <- (s_cur |> dplyr::arrange(FechaVenc))[sel, , drop = FALSE]
         if (!nrow(rows)) return()
-        sap_conf <- rows |> dplyr::filter(
-          !is.na(status) & status == "confirmed" &
-          is_erp_sourced(source))
-        if (nrow(sap_conf)) {
-          showNotification(
-            paste0(nrow(sap_conf), " cobro(s) confirmado(s) de SAP no se pueden quitar. ",
-                   "Solo SAP puede cerrarlos."),
-            type = "warning", duration = 4)
-          rows <- dplyr::anti_join(rows, sap_conf, by = "id")
-          if (!nrow(rows)) return()
-        }
+        # Users may remove anything from Agenda regardless of source --
+        # ERP-confirmed rows included. Agenda never holds the real data, so
+        # removing a reference from it can never destroy anything; the only
+        # real guardrail (no in-app action may remove an ERP row from
+        # Calendario itself) lives elsewhere and is untouched by this.
         ph <- unstage_pagar_hoy(shared$pagar_hoy_db(),
                rows |> dplyr::select(id), keys = "id")
         shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
@@ -1386,24 +1374,18 @@ pagarHoyServer <- function(id, shared) {
           )
         }
 
-        # SAP-sourced rows: mark confirmed but keep visible until SAP closes them.
-        # Manual/provision rows and all abono rows: physically remove from queue.
+        # Confirming ALWAYS fully removes the item from Agenda, for every
+        # source -- ERP rows are never left behind with status=="confirmed".
+        # Calendario's crossout for ERP rows comes entirely from
+        # bancos_confirmados matching, never from anything lingering here;
+        # removing an item from Agenda is always safe regardless of source,
+        # since Agenda never holds the real data (Mouse, 2026-07-23).
+        # sap_fact_ids/man_fact_ids are still split below, for the
+        # manual_inv-archiving decision, not for what happens here.
         ph  <- shared$pagar_hoy_db()
-        now <- Sys.time()
-        sap_fact_ids <- factura_rows$id[
-          is_erp_sourced(factura_rows$source)
-        ]
-        man_fact_ids <- factura_rows$id[
-          !is_erp_sourced(factura_rows$source)
-        ]
-        if (length(sap_fact_ids)) {
-          idx_ph <- which(ph$id %in% sap_fact_ids)
-          if (length(idx_ph)) {
-            ph$status[idx_ph]       <- "confirmed"
-            ph$confirmed_at[idx_ph] <- now
-          }
-        }
-        rm_ids <- c(man_fact_ids, abono_rows$id)
+        sap_fact_ids <- factura_rows$id[is_erp_sourced(factura_rows$source)]
+        man_fact_ids <- factura_rows$id[!is_erp_sourced(factura_rows$source)]
+        rm_ids <- c(factura_rows$id, abono_rows$id)
         if (length(rm_ids)) {
           ph <- unstage_pagar_hoy(ph, tibble::tibble(id = rm_ids), keys = "id")
         }
@@ -1432,23 +1414,81 @@ pagarHoyServer <- function(id, shared) {
                      paste("Error al guardar abono:", e$message), type = "warning"))
         }
 
-        # Remove confirmed provision-derived manual entries from the calendar.
-        # Provision-converted items use separate UUIDs in pagar_hoy and manual_inv,
-        # so match via provision_id FK. Fall back to direct id match for non-provision items.
-        if (!is.null(shared$manual_inv)) {
+        # Plain manual entries (no provision_id): archive instead of
+        # hard-delete, so undo can restore the real row losslessly (Stage 3's
+        # mechanism) instead of faking a stand-in in Agenda. Provision-
+        # derived rows keep today's hard-delete behavior for now -- Stage 5
+        # extends the same archiving treatment to them, alongside the
+        # separate undo_conf/pasivos_observers.R collision fix.
+        if (!is.null(shared$manual_inv) && nrow(factura_rows)) {
           mi <- shared$manual_inv()
           if (!is.null(mi) && nrow(mi) && "id" %in% names(mi)) {
+            plain_manual <- factura_rows[
+              !is_erp_sourced(factura_rows$source) & is.na(factura_rows$provision_id),
+            , drop = FALSE]
+
+            if (nrow(plain_manual)) {
+              .biz_key <- function(df) paste(
+                toupper(trimws(df[["Empresa"]])), toupper(trimws(df[["Moneda"]])),
+                toupper(trimws(df[["Documento"]])),
+                sprintf("%.2f", round(as.numeric(df[["Importe"]]), 2)))
+
+              pap      <- shared$papelera_rv() %||% load_papelera(client_id = shared$effective_client_id())
+              conf_now <- shared$bancos_confirmados()
+              archived_mi_ids <- character(0)
+
+              for (i in seq_len(nrow(plain_manual))) {
+                fr     <- plain_manual[i, , drop = FALSE]
+                mi_idx <- which(mi[["id"]] == fr[["id"]])
+                if (!length(mi_idx)) {
+                  # Rows staged via Calendar's "Stage all"/"Stage selection"
+                  # or Search's stage_all/stage_selected always mint a FRESH
+                  # pagar_hoy id, decoupled from manual_inv's own id (unlike
+                  # the direct manual-entry "send to agenda" path, which
+                  # deliberately shares the id) -- id-match alone silently
+                  # misses these, a latent gap found while building this
+                  # stage. Fall back to the business key.
+                  mi_idx <- which(.biz_key(mi) == .biz_key(fr) & !mi[["id"]] %in% archived_mi_ids)
+                }
+                if (!length(mi_idx)) next
+                mi_idx     <- mi_idx[1]
+                to_archive <- mi[mi_idx, , drop = FALSE]
+                pap <- add_to_papelera(pap, to_archive, ledger = "AP",
+                                       deleted_by = shared$current_user(), disposition = "confirmed")
+                event_id <- pap[["event_id"]][nrow(pap)]
+                archived_mi_ids <- c(archived_mi_ids, mi[["id"]][mi_idx])
+
+                cidx <- which(conf_now[["agenda_item_id"]] == fr[["id"]] & is.na(conf_now[["archive_event_id"]]))
+                if (length(cidx)) conf_now[["archive_event_id"]][cidx[length(cidx)]] <- event_id
+              }
+
+              if (length(archived_mi_ids)) {
+                shared$papelera_rv(pap)
+                tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
+                         error = function(e) showNotification(
+                           paste("Error al archivar entrada manual:", e$message), type = "warning"))
+                shared$bancos_confirmados(conf_now)
+                tryCatch(save_bancos_confirmados(conf_now, client_id = shared$effective_client_id()),
+                         error = function(e) NULL)
+                mi <- mi[!mi[["id"]] %in% archived_mi_ids, , drop = FALSE]
+                shared$manual_inv(mi)
+                tryCatch(save_manual(mi, client_id = shared$effective_client_id()),
+                         error = function(e) showNotification(
+                           paste("Error al eliminar entrada manual:", e$message), type = "warning"))
+              }
+            }
+
+            # Provision-derived rows: unchanged hard-delete for now (Stage 5).
             prov_ids_to_remove <- factura_rows$provision_id[!is.na(factura_rows$provision_id)]
-            manual_ids <- if (length(prov_ids_to_remove) && "provision_id" %in% names(mi))
-              mi$id[!is.na(mi$provision_id) & mi$provision_id %in% prov_ids_to_remove]
-            else
-              factura_rows$id[factura_rows$id %in% mi$id]
-            if (length(manual_ids)) {
-              mi_updated <- mi[!mi$id %in% manual_ids, , drop = FALSE]
-              shared$manual_inv(mi_updated)
-              tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id()),
-                       error = function(e) showNotification(
-                         paste("Error al eliminar entrada manual:", e$message), type = "warning"))
+            if (length(prov_ids_to_remove) && "provision_id" %in% names(mi)) {
+              manual_ids <- mi[["id"]][!is.na(mi[["provision_id"]]) & mi[["provision_id"]] %in% prov_ids_to_remove]
+              if (length(manual_ids)) {
+                mi_updated <- mi[!mi[["id"]] %in% manual_ids, , drop = FALSE]
+                shared$manual_inv(mi_updated)
+                tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id()),
+                         error = function(e) showNotification(
+                           paste("Error al eliminar entrada manual:", e$message), type = "warning"))
+              }
             }
           }
         }
@@ -1589,24 +1629,18 @@ pagarHoyServer <- function(id, shared) {
           )
         }
 
-        # SAP-sourced rows: mark confirmed but keep visible until SAP closes them.
-        # Manual/provision rows and all abono rows: physically remove from queue.
+        # Confirming ALWAYS fully removes the item from Agenda, for every
+        # source -- ERP rows are never left behind with status=="confirmed".
+        # Calendario's crossout for ERP rows comes entirely from
+        # bancos_confirmados matching, never from anything lingering here;
+        # removing an item from Agenda is always safe regardless of source,
+        # since Agenda never holds the real data (Mouse, 2026-07-23).
+        # sap_fact_ids/man_fact_ids are still split below, for the
+        # manual_inv-archiving decision, not for what happens here.
         ph  <- shared$pagar_hoy_db()
-        now <- Sys.time()
-        sap_fact_ids <- factura_rows$id[
-          is_erp_sourced(factura_rows$source)
-        ]
-        man_fact_ids <- factura_rows$id[
-          !is_erp_sourced(factura_rows$source)
-        ]
-        if (length(sap_fact_ids)) {
-          idx_ph <- which(ph$id %in% sap_fact_ids)
-          if (length(idx_ph)) {
-            ph$status[idx_ph]       <- "confirmed"
-            ph$confirmed_at[idx_ph] <- now
-          }
-        }
-        rm_ids <- c(man_fact_ids, abono_rows$id)
+        sap_fact_ids <- factura_rows$id[is_erp_sourced(factura_rows$source)]
+        man_fact_ids <- factura_rows$id[!is_erp_sourced(factura_rows$source)]
+        rm_ids <- c(factura_rows$id, abono_rows$id)
         if (length(rm_ids)) {
           ph <- unstage_pagar_hoy(ph, tibble::tibble(id = rm_ids), keys = "id")
         }
@@ -1635,23 +1669,81 @@ pagarHoyServer <- function(id, shared) {
                      paste("Error al guardar abono:", e$message), type = "warning"))
         }
 
-        # Remove confirmed provision-derived manual entries from the calendar.
-        # Provision-converted items use separate UUIDs in pagar_hoy and manual_inv,
-        # so match via provision_id FK. Fall back to direct id match for non-provision items.
-        if (!is.null(shared$manual_inv)) {
+        # Plain manual entries (no provision_id): archive instead of
+        # hard-delete, so undo can restore the real row losslessly (Stage 3's
+        # mechanism) instead of faking a stand-in in Agenda. Provision-
+        # derived rows keep today's hard-delete behavior for now -- Stage 5
+        # extends the same archiving treatment to them, alongside the
+        # separate undo_conf/pasivos_observers.R collision fix.
+        if (!is.null(shared$manual_inv) && nrow(factura_rows)) {
           mi <- shared$manual_inv()
           if (!is.null(mi) && nrow(mi) && "id" %in% names(mi)) {
+            plain_manual <- factura_rows[
+              !is_erp_sourced(factura_rows$source) & is.na(factura_rows$provision_id),
+            , drop = FALSE]
+
+            if (nrow(plain_manual)) {
+              .biz_key <- function(df) paste(
+                toupper(trimws(df[["Empresa"]])), toupper(trimws(df[["Moneda"]])),
+                toupper(trimws(df[["Documento"]])),
+                sprintf("%.2f", round(as.numeric(df[["Importe"]]), 2)))
+
+              pap      <- shared$papelera_rv() %||% load_papelera(client_id = shared$effective_client_id())
+              conf_now <- shared$bancos_confirmados()
+              archived_mi_ids <- character(0)
+
+              for (i in seq_len(nrow(plain_manual))) {
+                fr     <- plain_manual[i, , drop = FALSE]
+                mi_idx <- which(mi[["id"]] == fr[["id"]])
+                if (!length(mi_idx)) {
+                  # Rows staged via Calendar's "Stage all"/"Stage selection"
+                  # or Search's stage_all/stage_selected always mint a FRESH
+                  # pagar_hoy id, decoupled from manual_inv's own id (unlike
+                  # the direct manual-entry "send to agenda" path, which
+                  # deliberately shares the id) -- id-match alone silently
+                  # misses these, a latent gap found while building this
+                  # stage. Fall back to the business key.
+                  mi_idx <- which(.biz_key(mi) == .biz_key(fr) & !mi[["id"]] %in% archived_mi_ids)
+                }
+                if (!length(mi_idx)) next
+                mi_idx     <- mi_idx[1]
+                to_archive <- mi[mi_idx, , drop = FALSE]
+                pap <- add_to_papelera(pap, to_archive, ledger = "AR",
+                                       deleted_by = shared$current_user(), disposition = "confirmed")
+                event_id <- pap[["event_id"]][nrow(pap)]
+                archived_mi_ids <- c(archived_mi_ids, mi[["id"]][mi_idx])
+
+                cidx <- which(conf_now[["agenda_item_id"]] == fr[["id"]] & is.na(conf_now[["archive_event_id"]]))
+                if (length(cidx)) conf_now[["archive_event_id"]][cidx[length(cidx)]] <- event_id
+              }
+
+              if (length(archived_mi_ids)) {
+                shared$papelera_rv(pap)
+                tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
+                         error = function(e) showNotification(
+                           paste("Error al archivar entrada manual:", e$message), type = "warning"))
+                shared$bancos_confirmados(conf_now)
+                tryCatch(save_bancos_confirmados(conf_now, client_id = shared$effective_client_id()),
+                         error = function(e) NULL)
+                mi <- mi[!mi[["id"]] %in% archived_mi_ids, , drop = FALSE]
+                shared$manual_inv(mi)
+                tryCatch(save_manual(mi, client_id = shared$effective_client_id()),
+                         error = function(e) showNotification(
+                           paste("Error al eliminar entrada manual:", e$message), type = "warning"))
+              }
+            }
+
+            # Provision-derived rows: unchanged hard-delete for now (Stage 5).
             prov_ids_to_remove <- factura_rows$provision_id[!is.na(factura_rows$provision_id)]
-            manual_ids <- if (length(prov_ids_to_remove) && "provision_id" %in% names(mi))
-              mi$id[!is.na(mi$provision_id) & mi$provision_id %in% prov_ids_to_remove]
-            else
-              factura_rows$id[factura_rows$id %in% mi$id]
-            if (length(manual_ids)) {
-              mi_updated <- mi[!mi$id %in% manual_ids, , drop = FALSE]
-              shared$manual_inv(mi_updated)
-              tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id()),
-                       error = function(e) showNotification(
-                         paste("Error al eliminar entrada manual:", e$message), type = "warning"))
+            if (length(prov_ids_to_remove) && "provision_id" %in% names(mi)) {
+              manual_ids <- mi[["id"]][!is.na(mi[["provision_id"]]) & mi[["provision_id"]] %in% prov_ids_to_remove]
+              if (length(manual_ids)) {
+                mi_updated <- mi[!mi[["id"]] %in% manual_ids, , drop = FALSE]
+                shared$manual_inv(mi_updated)
+                tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id()),
+                         error = function(e) showNotification(
+                           paste("Error al eliminar entrada manual:", e$message), type = "warning"))
+              }
             }
           }
         }

@@ -3290,11 +3290,7 @@ bancosServer <- function(id, shared) {
       if (!length(idx_c)) return()
 
       row <- conf[idx_c, , drop = FALSE]
-
-      # Soft-delete the confirmation
       mov_id_linked <- conf$mov_id[idx_c]
-      conf$eliminado[idx_c]    <- TRUE
-      conf$eliminado_at[idx_c] <- Sys.time()
 
       # Also soft-delete the linked movimiento if present
       if (!is.null(mov_id_linked) && !is.na(mov_id_linked) && nzchar(mov_id_linked)) {
@@ -3313,6 +3309,10 @@ bancosServer <- function(id, shared) {
         }
       }
 
+      # recover_confirmacion() soft-deletes the original row (as before) AND
+      # appends a permanent, separate "recovered" event row referencing it
+      # (Stage 3) -- the actual fix for "recovery should add a line."
+      conf <- recover_confirmacion(conf, conf_id, actor = tryCatch(shared$current_user(), error = function(e) "user"))
       shared$bancos_confirmados(conf)
       tryCatch({
         save_bancos_confirmados(conf, client_id = shared$effective_client_id())
@@ -3321,55 +3321,84 @@ bancosServer <- function(id, shared) {
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
       )
 
-      # Re-stage into pagar_hoy so item reappears on calendar.
-      # Primary path: restore the ORIGINAL pagar_hoy row in-place via agenda_item_id.
-      # This preserves the original FechaVenc (not the payment date) and exact
-      # Empresa/Moneda casing so the item lands on the correct calendar day and
-      # appears under the right company tab in Agenda.
-      ph_ledger  <- if (isTRUE(row$tipo == "cobro")) "AR" else "AP"
-      ph_current <- shared$pagar_hoy_db() %||% load_pagar_hoy()
-      orig_id    <- as.character(row$agenda_item_id %||% "")
-      orig_idx   <- if (nzchar(orig_id)) which(ph_current$id == orig_id) else integer(0)
+      has_provision <- !is.na(row$provision_id) && nzchar(row$provision_id %||% "")
+      has_archive   <- "archive_event_id" %in% names(row) &&
+                        !is.na(row$archive_event_id) && nzchar(row$archive_event_id %||% "")
+      restored_fecha <- as.Date(row$fecha)  # fallback; overridden below when a real date is recovered
 
-      if (length(orig_idx) > 0) {
-        # Restore in-place — keeps original FechaVenc, Empresa casing, all fields
-        ph_current$status[orig_idx]       <- "pending"
-        ph_current$confirmed_at[orig_idx] <- as.POSIXct(NA)
-        ph_updated <- ph_current
-      } else {
-        # Original row gone (e.g., manual item that was physically deleted);
-        # synthesize from bancos_confirmados data — FechaVenc falls back to
-        # the payment date, which is the best available approximation.
-        new_ph_row <- tibble::tibble(
-          id           = uuid::UUIDgenerate(),
-          ledger       = ph_ledger,
-          Empresa      = as.character(row$empresa),
-          Moneda       = as.character(row$moneda),
-          Documento    = as.character(row$documento),
-          Parte        = as.character(row$parte),
-          Codigo       = trimws(as.character(row$codigo %||% "")),
-          tipo_item    = "factura",
-          Importe      = as.numeric(row$importe),
-          FechaVenc    = as.Date(row$fecha),
-          staged_by    = shared$current_user(),
-          staged_at    = Sys.time(),
-          status       = "pending",
-          provision_id = if ("provision_id" %in% names(row)) as.character(row$provision_id) else NA_character_,
-          liability_id = if ("liability_id" %in% names(row)) as.character(row$liability_id) else NA_character_
+      if (has_provision) {
+        # Deferred to Stage 5 -- keep today's behavior unchanged for
+        # provision-derived confirmations for now (restore-in-place-or-
+        # synthesize into pagar_hoy_db). The undo_conf/pasivos_observers.R
+        # collision this produces is a known, separately-scoped fix.
+        ph_ledger  <- if (isTRUE(row$tipo == "cobro")) "AR" else "AP"
+        ph_current <- shared$pagar_hoy_db() %||% load_pagar_hoy()
+        orig_id    <- as.character(row$agenda_item_id %||% "")
+        orig_idx   <- if (nzchar(orig_id)) which(ph_current$id == orig_id) else integer(0)
+
+        if (length(orig_idx) > 0) {
+          ph_current$status[orig_idx]       <- "pending"
+          ph_current$confirmed_at[orig_idx] <- as.POSIXct(NA)
+          ph_updated <- ph_current
+          restored_fecha <- ph_updated$FechaVenc[orig_idx]
+        } else {
+          new_ph_row <- tibble::tibble(
+            id           = uuid::UUIDgenerate(),
+            ledger       = ph_ledger,
+            Empresa      = as.character(row$empresa),
+            Moneda       = as.character(row$moneda),
+            Documento    = as.character(row$documento),
+            Parte        = as.character(row$parte),
+            Codigo       = trimws(as.character(row$codigo %||% "")),
+            tipo_item    = "factura",
+            Importe      = as.numeric(row$importe),
+            FechaVenc    = as.Date(row$fecha),
+            staged_by    = shared$current_user(),
+            staged_at    = Sys.time(),
+            status       = "pending",
+            provision_id = if ("provision_id" %in% names(row)) as.character(row$provision_id) else NA_character_,
+            liability_id = if ("liability_id" %in% names(row)) as.character(row$liability_id) else NA_character_
+          )
+          ph_updated <- upsert_pagar_hoy(ph_current, new_ph_row)
+        }
+        shared$pagar_hoy_db(ph_updated)
+        tryCatch(
+          save_pagar_hoy(ph_updated, shared$current_user(), client_id = shared$effective_client_id()),
+          error = function(e) showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
         )
-        ph_updated <- upsert_pagar_hoy(ph_current, new_ph_row)
+      } else if (has_archive) {
+        # Plain manual entry, archived (not deleted) at confirm time (Stage
+        # 4) -- restore the REAL row losslessly. Never touches pagar_hoy_db;
+        # Agenda has nothing to do with this recovery at all.
+        pap <- shared$papelera_rv() %||% load_papelera(client_id = shared$effective_client_id())
+        restore_result <- tryCatch(
+          restore_from_papelera(pap, row$archive_event_id,
+                                actor = tryCatch(shared$current_user(), error = function(e) "user")),
+          error = function(e) {
+            showNotification(paste("Error al recuperar la entrada original:", e$message), type = "warning")
+            NULL
+          }
+        )
+        if (!is.null(restore_result)) {
+          shared$papelera_rv(restore_result$papelera_df)
+          tryCatch(save_papelera(restore_result$papelera_df, client_id = shared$effective_client_id()),
+                   error = function(e) NULL)
+          mi <- shared$manual_inv() %||% load_manual(client_id = shared$effective_client_id())
+          restored_row <- as.data.frame(restore_result$restored_data, stringsAsFactors = FALSE)
+          mi_updated <- dplyr::bind_rows(mi, restored_row)
+          shared$manual_inv(mi_updated)
+          tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id()),
+                   error = function(e) showNotification(
+                     paste("Error al restaurar entrada manual:", e$message), type = "warning"))
+          if ("Fecha de vencimiento" %in% names(restored_row))
+            restored_fecha <- as.Date(restored_row[["Fecha de vencimiento"]][1])
+        }
       }
+      # else: ERP-sourced (or a manual confirmation from before Stage 4, with
+      # no archive to restore from) -- nothing else to do. Clearing the
+      # bancos_confirmados flag above is enough; the item reappears in
+      # Calendario on its own the moment nothing matches it as confirmed.
 
-      shared$pagar_hoy_db(ph_updated)
-      tryCatch(
-        save_pagar_hoy(ph_updated, shared$current_user(), client_id = shared$effective_client_id()),
-        error = function(e)
-          showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
-      )
-
-      # Notification date: prefer restored row's FechaVenc, fall back to bancos fecha
-      restored_fecha <- if (length(orig_idx) > 0 && "FechaVenc" %in% names(ph_updated))
-        ph_updated$FechaVenc[orig_idx] else as.Date(row$fecha)
       cal_label <- if (isTRUE(row$tipo == "cobro")) "CxC" else "CxP"
       fecha_fmt <- format(restored_fecha, "%d/%m/%Y")
       showNotification(

@@ -83,7 +83,13 @@
   # same as "confirmed" (every row ever written before this stage was one).
   action                    = character(),   # "confirmed" | "recovered"
   reverses_confirmacion_id  = character(),   # NA unless action=="recovered"
-  recovered_at              = as.POSIXct(character())  # NA unless action=="recovered"
+  recovered_at              = as.POSIXct(character()),  # NA unless action=="recovered"
+  # ── Stage 4: link to the papelera event archiving the real manual_inv row
+  # at confirmation time. NA for ERP-sourced confirmations (nothing archived
+  # -- the ERP snapshot is never touched) and for provision-derived ones
+  # (deferred to Stage 5). Lets undo_conf() find and restore the exact right
+  # archived row instead of reconstructing an approximation.
+  archive_event_id          = character()
 )
 
 # ── Shared normalizer (reuses persistence.R's .normalize) ────────────────────

@@ -1162,17 +1162,9 @@ ledgerModuleServer <- function(id, config, shared) {
           nrow(merge(ph_sub[, c("Empresa","Moneda","Documento","Importe"), drop=FALSE], inv_keys, by = c("Empresa","Moneda","Documento","Importe")))
         } else 0L
         if (already > 0L) {
-          ph_sub_bulk <- ph_now[ph_now[["ledger"]] == ledger, , drop=FALSE]
-          matching_bulk <- merge(ph_sub_bulk, inv_keys, by=c("Empresa","Moneda","Documento","Importe"))
-          sap_conf_bulk <- matching_bulk[!is.na(matching_bulk$status) & matching_bulk$status == "confirmed" &
-                                          is_erp_sourced(matching_bulk$source), , drop=FALSE]
-          if (nrow(sap_conf_bulk)) {
-            showNotification(
-              paste0(nrow(sap_conf_bulk), " pago(s) confirmado(s) de SAP no se pueden quitar. ",
-                     "Solo SAP puede cerrarlos."),
-              type = "warning", duration = 4)
-            return()
-          }
+          # Users may remove anything from Agenda regardless of source --
+          # Agenda never holds the real data, so this can never destroy
+          # anything (the only real guardrail is Calendario itself).
           upd_keys <- cbind(inv_keys, ledger = ledger, stringsAsFactors = FALSE)
           updated <- unstage_pagar_hoy(ph_now, upd_keys, keys = c("ledger","Empresa","Moneda","Documento","Importe"))
           shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
@@ -1265,16 +1257,9 @@ ledgerModuleServer <- function(id, config, shared) {
                    inv_key, by=c("Empresa","Moneda","Documento","Importe")))
       } else 0L
       if (already > 0L) {
-        ph_sub <- ph_now[ph_now[["ledger"]] == ledger, , drop=FALSE]
-        matching_inv <- merge(ph_sub, inv_key, by=c("Empresa","Moneda","Documento","Importe"))
-        sap_conf_inv <- matching_inv[!is.na(matching_inv$status) & matching_inv$status == "confirmed" &
-                                      is_erp_sourced(matching_inv$source), , drop=FALSE]
-        if (nrow(sap_conf_inv)) {
-          showNotification(
-            "Pago confirmado de SAP. No se puede quitar. Solo SAP puede cerrarlo.",
-            type = "warning", duration = 4)
-          return()
-        }
+        # Users may remove anything from Agenda regardless of source --
+        # Agenda never holds the real data, so this can never destroy
+        # anything (the only real guardrail is Calendario itself).
         upd_keys <- cbind(inv_key, ledger=ledger, stringsAsFactors=FALSE)
         updated  <- unstage_pagar_hoy(ph_now, upd_keys, keys = c("ledger","Empresa","Moneda","Documento","Importe"))
         shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
