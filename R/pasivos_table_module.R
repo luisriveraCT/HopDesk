@@ -251,8 +251,10 @@ pasivos_table_module_server <- function(id, shared) {
     })
 
     # ── Helper: build a new orphan provision tibble from modal inputs ──────────
-    .ppm_build_new_prov <- function(new_id, now, user, empresa,
-                                    pagar_hoy_id = NA_character_) {
+    # pagar_hoy_id is always NA_character_ here: a freshly-created provision
+    # is never staged to Agenda directly (Mouse's rule) -- only its converted
+    # derivative item can be, via the separate convert-to-comprobante modal.
+    .ppm_build_new_prov <- function(new_id, now, user, empresa) {
       tibble::tibble(
         id                       = new_id,
         liability_id             = NA_character_,
@@ -281,7 +283,7 @@ pasivos_table_module_server <- function(id, shared) {
         referencia               = input$ppm_referencia  %||% "",
         notas                    = input$ppm_notas       %||% "",
         manual_inv_id            = NA_character_,
-        pagar_hoy_id             = pagar_hoy_id,
+        pagar_hoy_id             = NA_character_,
         bancos_conf_id           = NA_character_,
         reverted_count           = 0L,
         generated_by             = user,
@@ -301,8 +303,7 @@ pasivos_table_module_server <- function(id, shared) {
       }
 
       shinyjs::disable("ppm_save")
-      shinyjs::disable("ppm_save_and_stage")
-      on.exit({ shinyjs::enable("ppm_save"); shinyjs::enable("ppm_save_and_stage") }, add = TRUE)
+      on.exit(shinyjs::enable("ppm_save"), add = TRUE)
 
       new_id   <- uuid::UUIDgenerate()
       now      <- Sys.time()
@@ -342,94 +343,6 @@ pasivos_table_module_server <- function(id, shared) {
 
       shiny::removeModal()
       shiny::showNotification("Provisión manual creada.", type = "message", duration = 3)
-    })
-
-    # Button 2 — Agregar a calendario y Agenda de hoy: save provision first, then
-    # stage to pagar_hoy; both calendar and Agenda update in real time.
-    shiny::observeEvent(input$ppm_save_and_stage, ignoreInit = TRUE, {
-      user    <- tryCatch(shared$current_user(), error = function(e) "")
-      empresa <- input$ppm_empresa %||% ""
-
-      if (!has_capability(user, "pasivos.create_provision_manual")) {
-        shiny::showNotification("Sin permiso.", type = "error"); return()
-      }
-
-      shinyjs::disable("ppm_save")
-      shinyjs::disable("ppm_save_and_stage")
-      on.exit({ shinyjs::enable("ppm_save"); shinyjs::enable("ppm_save_and_stage") }, add = TRUE)
-
-      new_id    <- uuid::UUIDgenerate()
-      now       <- Sys.time()
-      new_ph_id <- uuid::UUIDgenerate()
-
-      # empresa is already a full name (dropdown shows unname(company_map))
-      # so no translation needed for pagar_hoy.
-      doc_val <- trimws(input$ppm_documento %||% "")
-      if (!nzchar(doc_val)) doc_val <- paste0("PROV_", new_id)
-
-      # ── Step 1: calendar provision (always first; this is the source of truth) ─
-      new_prov <- .ppm_build_new_prov(new_id, now, user, empresa,
-                                      pagar_hoy_id = new_ph_id)
-
-      existing <- tryCatch(shared$pasivos_provisions_db(),
-                           error = function(e) .schema_pasivos_provision())
-      if (is.null(existing) || !is.data.frame(existing))
-        existing <- .schema_pasivos_provision()
-
-      new_all <- dplyr::bind_rows(existing, new_prov)
-
-      prov_ok <- tryCatch({ save_pasivos_provisions(new_all, client_id = shared$effective_client_id()); TRUE },
-                          error = function(e) {
-                            shiny::showNotification(
-                              paste0("Error al guardar provisión: ", conditionMessage(e)),
-                              type = "error"); FALSE })
-      if (!prov_ok) return()
-
-      tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
-      shared$pasivos_provisions_db(new_all)
-      bump_sync_version("pasivos_provisions_db")
-
-      tryCatch(pasivos_log_audit(
-        action_type = "provision.generated", user = user,
-        empresa = empresa, target_kind = "provision", target_id = new_id,
-        after = list(id = new_id, origin = "manual", estado = "provisional"),
-        notes = "manual orphan provision via Pasivos tab (with agenda staging)",
-        client_id = shared$effective_client_id()
-      ), error = function(e) NULL)
-
-      # ── Step 2: stage to Agenda de hoy ─────────────────────────────────────
-      new_ph_row <- tibble::tibble(
-        id           = new_ph_id,
-        ledger       = "AP",
-        Empresa      = empresa,
-        Moneda       = input$ppm_moneda %||% "MXN",
-        Documento    = doc_val,
-        Parte        = input$ppm_parte  %||% "",
-        Codigo       = input$ppm_codigo %||% "",
-        tipo_item    = "factura",
-        Importe      = as.numeric(input$ppm_importe %||% 0),
-        FechaVenc    = as.Date(input$ppm_fecha %||% Sys.Date()),
-        staged_by    = user,
-        staged_at    = now,
-        status       = "pending",
-        provision_id = new_id,
-        liability_id = NA_character_,
-        source       = "provision"
-      )
-
-      ph_existing <- tryCatch(shared$pagar_hoy_db(),
-                              error = function(e) NULL) %||% load_pagar_hoy(client_id = shared$effective_client_id())
-      ph_new <- upsert_pagar_hoy(ph_existing, new_ph_row,
-                                 keys = c("ledger", "Empresa", "Moneda", "Documento"))
-
-      shared$pagar_hoy_db(ph_new)
-      tryCatch(save_pagar_hoy(ph_new, user, client_id = shared$effective_client_id()), error = function(e)
-        warning("[pasivos] save_pagar_hoy failed: ", conditionMessage(e)))
-
-      shiny::removeModal()
-      shiny::showNotification(
-        "Provisión manual creada e ingresada a Agenda de hoy.",
-        type = "message", duration = 4)
     })
 
     # ── Visible window ──────────────────────────────────────────────────────
@@ -631,9 +544,10 @@ pasivos_table_module_server <- function(id, shared) {
     ),
     footer = shiny::tagList(
       shiny::modalButton("Cancelar"),
-      shiny::actionButton(ns("ppm_save"),           "Agregar a calendario",
-                          class = "btn btn-outline-secondary"),
-      shiny::actionButton(ns("ppm_save_and_stage"), "Agregar a calendario y Agenda de hoy",
+      # No "send to Agenda" option here, deliberately: a provision may never
+      # enter Agenda directly (Mouse's rule) -- only its converted derivative
+      # item can, via the separate convert-to-comprobante modal.
+      shiny::actionButton(ns("ppm_save"), "Agregar a calendario",
                           class = "btn btn-primary")
     )
   )
