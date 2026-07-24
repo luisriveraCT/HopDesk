@@ -64,6 +64,19 @@ vencidosUI <- function(id) {
         letter-spacing: .05em; margin-top: 5px; margin-bottom: 1px;
       }
       .ven-bubble-sep { border-top: 1px solid #dee2e6; margin: 5px 0 2px; }
+      /* Stage/delete confirm bars — fixed, not in normal document flow.
+         These used to render right after the sticky header, so once the
+         list was scrolled down their normal-flow position scrolled up with
+         it, ending up hidden above the viewport or behind the sticky
+         header — clicking Agregar todo/Agregar selección/Eliminar looked
+         like it did nothing. Fixed positioning (matching #ven_sel_bubble's
+         existing pattern) keeps them visible regardless of scroll position. */
+      #ven_stage_confirm_bar, #ven_delete_confirm_bar {
+        position: fixed !important;
+        left: 50%; bottom: 22px; transform: translateX(-50%);
+        z-index: 9999; max-width: 92vw;
+        box-shadow: 0 4px 18px rgba(0,0,0,.18);
+      }
       /* Pasivos provision rows */
       .pasivos-provision { border: 1.5px dashed #a78bfa !important; background: #faf5ff !important; }
       .pasivos-provision::before { content: 'P'; display: inline-flex; align-items: center;

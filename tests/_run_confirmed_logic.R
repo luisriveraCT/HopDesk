@@ -67,6 +67,7 @@ cat("====================================================\n\n")
 .run_module("tests/test_stage5_provision_confirm_undo.R")
 .run_module("tests/test_stage6_agenda_derivation.R")
 .run_module("tests/test_provision_no_direct_agenda.R")
+.run_module("tests/test_vencidos_confirm_bar_fixed_position.R")
 
 cat("\n====================================================\n")
 cat(sprintf("  TOTAL: %d passed, %d failed\n", .pass, .fail))
