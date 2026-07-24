@@ -2426,7 +2426,7 @@ server <- function(input, output, session) {
       )
       df <- upsert_manual(manual_inv(), new_row)
       manual_inv(df)
-      tryCatch(save_manual(df),
+      tryCatch(save_manual(df, client_id = effective_client_id()),
                error = function(e) showNotification(
                  "No se pudieron guardar los cambios.", type = "warning"))
       .sync_staged(
@@ -2464,7 +2464,7 @@ server <- function(input, output, session) {
       )
       df <- upsert_manual(manual_inv(), new_row)
       manual_inv(df)
-      tryCatch(save_manual(df),
+      tryCatch(save_manual(df, client_id = effective_client_id()),
                error = function(e) showNotification(
                  "No se pudieron guardar los cambios.", type = "warning"))
 
