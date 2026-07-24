@@ -3321,31 +3321,25 @@ bancosServer <- function(id, shared) {
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
       )
 
-      has_provision <- !is.na(row$provision_id) && nzchar(row$provision_id %||% "")
-      has_archive   <- "archive_event_id" %in% names(row) &&
+      # ── Philosophy: recovering a CONFIRMED item always recovers the ITEM ──
+      # It doesn't matter whether that item originated from a converted
+      # provision or was always a plain manual entry — a provision itself is
+      # NEVER confirmed (it can never reach Agenda in the first place, per
+      # Mouse's explicit rule); only its DERIVED item can be. So
+      # `provision_id` on this confirmation is pure lineage/traceability
+      # metadata — it does not change how the item's own recovery works.
+      # (Recovering a DELETED, unconverted provision is a completely
+      # separate operation, at the Pasivos level, unrelated to
+      # Agenda/bancos_confirmados entirely — nothing to do here for that.)
+      has_archive <- "archive_event_id" %in% names(row) &&
                         !is.na(row$archive_event_id) && nzchar(row$archive_event_id %||% "")
       restored_fecha <- as.Date(row$fecha)  # fallback; overridden below when a real date is recovered
 
-      if (has_provision) {
-        # Stage 5 fix: undo_conf no longer touches pagar_hoy_db or manual_inv
-        # for provision-derived confirmations AT ALL -- it used to
-        # unconditionally restore-in-place-or-synthesize into Agenda here,
-        # completely independently of pasivos_observers.R's own reversal
-        # watcher (also triggered by this same bancos_confirmados.eliminado
-        # flip, above), leaving a stray orphaned pagar_hoy_db row behind
-        # every time. Provisions must never touch Agenda, full stop (Mouse's
-        # explicit rule) -- reverting one back to "provisional" so its raw
-        # placeholder reappears in Calendario is pasivos_observers.R's job
-        # alone; doing anything to pagar_hoy_db here would either duplicate
-        # that or race it. liability_id reconnection is already correct
-        # (the provision row is never deleted through this cycle, only its
-        # estado/FK columns change) -- confirmed in the audit, not something
-        # this branch needs to do anything about either.
-        restored_fecha <- as.Date(row$fecha)
-      } else if (has_archive) {
-        # Plain manual entry, archived (not deleted) at confirm time (Stage
-        # 4) -- restore the REAL row losslessly. Never touches pagar_hoy_db;
-        # Agenda has nothing to do with this recovery at all.
+      if (has_archive) {
+        # Manual entry (plain or provision-derived alike), archived — not
+        # deleted — at confirm time (Stages 4-5). Restore the REAL row
+        # losslessly. Never touches pagar_hoy_db; Agenda has nothing to do
+        # with this recovery at all.
         pap <- shared$papelera_rv() %||% load_papelera(client_id = shared$effective_client_id())
         restore_result <- tryCatch(
           restore_from_papelera(pap, row$archive_event_id,

@@ -37,26 +37,15 @@ cat("── Stage 5: provision-derived confirm/undo ─────────�
   .chk_true(sum(grepl('disposition = "confirmed"', ph_txt)) == 4L,
             "A2: exactly 4 disposition='confirmed' archive calls now (2 plain-manual + 2 provision-derived)")
 
-  # The has_provision branch in undo_conf must no longer reference
-  # pagar_hoy_db / manual_inv / upsert_pagar_hoy at all -- isolate its body
-  # (from the "if (has_provision)" line to the matching "} else if
-  # (has_archive)") and scan only that block.
-  start <- grep("if \\(has_provision\\)", bnc_txt)
-  end   <- grep("else if \\(has_archive\\)", bnc_txt)
-  .chk(length(start), 1L, "A3: exactly one has_provision branch found in bancos_module.R")
-  .chk(length(end), 1L, "A4: exactly one has_archive else-branch found (bounds the has_provision block)")
-  if (length(start) && length(end)) {
-    block <- bnc_txt[start:end]
-    # Strip full-line and trailing comments before scanning -- the block's
-    # own explanatory comment legitimately discusses pagar_hoy_db/manual_inv
-    # in prose (explaining what it USED to do); only actual code matters here.
-    code_only <- sub("#.*$", "", block)
-    code_only <- code_only[!grepl("^\\s*$", code_only)]
-    .chk(sum(grepl("pagar_hoy_db|upsert_pagar_hoy|shared\\$manual_inv", code_only)), 0L,
-         "A5: the has_provision branch's CODE (not its comments) touches neither pagar_hoy_db nor manual_inv anywhere")
-    .chk_true(any(grepl("pasivos_observers", block)),
-              "A6: the has_provision branch documents that it defers to pasivos_observers.R")
-  }
+  # Corrected 2026-07-23 per Mouse: recovering a CONFIRMED item always
+  # recovers the ITEM, regardless of provision lineage -- undo_conf() no
+  # longer branches on provision_id AT ALL, deferring is gone entirely
+  # (not deferred to pasivos_observers.R, just removed as a distinction).
+  code_only_full <- sub("#.*$", "", bnc_txt)
+  .chk(sum(grepl("has_provision", code_only_full)), 0L,
+       "A3: undo_conf() has no has_provision variable/branch anywhere (removed, not just unused)")
+  .chk_true(any(grepl("if \\(has_archive\\)", bnc_txt)),
+            "A4: the has_archive branch still exists and is the ONLY branch now (no provision special-case beside it)")
 }
 
 # =============================================================================
@@ -160,10 +149,11 @@ empty_papelera <- .schema_papelera() |> dplyr::slice(0)
 }
 
 # =============================================================================
-# D. Undo a provision-derived confirmation: recover_confirmacion() still
-#    fires (Historial gets its recovery line, uniform with every other
-#    disposition), but the archived manual_inv copy is never restored --
-#    that would duplicate the provision's own revival display.
+# D. Undo a provision-derived confirmation: CORRECTED 2026-07-23 per Mouse's
+#    explicit correction -- recovering a CONFIRMED item always recovers the
+#    ITEM, regardless of provision lineage. This is now IDENTICAL to the
+#    plain-manual restore path (Stage 4's Section B/C), just confirming it
+#    also holds for provision-derived rows specifically.
 # =============================================================================
 {
   row <- .manual_invoice_row(list(Documento = "D-PROV"))
@@ -175,46 +165,46 @@ empty_papelera <- .schema_papelera() |> dplyr::slice(0)
 
   step1 <- .simulate_confirm_provision(mi, empty_papelera, conf, ph_id, row$provision_id)
 
-  # Undo: recover_confirmacion() fires unconditionally (same as every other
-  # disposition) -- this is the actual behavior undo_conf exercises before
-  # any has_provision/has_archive branching.
+  # Undo: recover_confirmacion() fires (Historial gets its recovery line,
+  # uniform with every other disposition), and -- per the correction -- the
+  # archived manual_inv copy IS restored, exactly like a plain manual entry.
   recovered_conf <- recover_confirmacion(step1$conf, conf_id, actor = "mouse2")
+  archive_event_id <- recovered_conf$archive_event_id[recovered_conf$confirmacion_id == conf_id]
+  restore_result <- restore_from_papelera(step1$pap, archive_event_id, actor = "mouse2")
+  restored_row <- as.data.frame(restore_result$restored_data, stringsAsFactors = FALSE)
+  mi_after_undo <- dplyr::bind_rows(step1$mi, restored_row)
+
   .chk(sum(recovered_conf$eliminado, na.rm = TRUE), 1L,
        "D1: provision-derived confirmation's eliminado flag clears correctly on undo")
   .chk(sum(recovered_conf$action == "recovered", na.rm = TRUE), 1L,
-       "D2: provision-derived confirmation still gets its own permanent recovery event row")
-
-  # The archived manual_inv copy itself is NEVER touched by undo -- it
-  # stays exactly as archived, forever (permanent per Mouse's rule), with
-  # no corresponding "recovered" event of its own, since reverting the
-  # provision (tracked entirely in pasivos_provisions_db, not here) is the
-  # actual undo mechanism for this case.
-  .chk(nrow(step1$pap), 1L, "D3: papelera still has exactly 1 row (the original archive) after undo -- no restore attempted")
-  .chk(sum(step1$pap$action == "recovered"), 0L,
-       "D4: no 'recovered' papelera event exists for the provision-derived archive -- undo never calls restore_from_papelera for this case")
-  .chk(nrow(mi), 1L, "D5: manual_inv is untouched by this undo simulation (still holds the original unarchived reference from before confirm, proving undo doesn't reach into it)")
+       "D2: provision-derived confirmation gets its own permanent recovery event row, same as any other")
+  .chk(nrow(mi_after_undo), 1L, "D3: the provision-derived ITEM is restored to manual_inv, same as a plain manual entry")
+  .chk(mi_after_undo$provision_id[1], "prov-fixed-1",
+       "D4: the restored item still carries its provision_id (lineage/traceability metadata, untouched by the restore)")
+  .chk(sum(restore_result$papelera_df$action == "recovered"), 1L,
+       "D5: the papelera archive now has its own 'recovered' event too, same mechanism as plain manual")
 }
 
 # =============================================================================
-# E. pasivos_observers.R's own manual_inv cleanup degrades to a safe no-op
-#    once the row is already archived (not hard-deleted) at confirm time
+# E. pasivos_observers.R no longer reacts to reversal at all (the collision
+#    this stage originally fixed by deferring is now fixed by REMOVING that
+#    reaction entirely -- see the file's header comment). This is a static
+#    check that the reversal-detection code is actually gone, not just
+#    unreachable, since that's the real guarantee against the row being
+#    silently re-deleted right after undo_conf() restores it.
 # =============================================================================
 {
-  # Simulates exactly what pasivos_observers.R's revival watcher does to
-  # manual_inv (R/pasivos_observers.R:125-129): `mi <- mi[mi$id != mi_id, ]`.
-  # After Stage 5, by the time this runs, the row is already gone (archived
-  # at confirm time), so this must be provably harmless -- no error, no
-  # unintended removal of anything else.
-  row <- .manual_invoice_row(list(Documento = "E-PROV"))
-  mi_after_archive <- row[row$id != row$id, , drop = FALSE]  # simulates the post-archive empty state
-  mi_id <- row$id
-
-  result <- tryCatch({
-    mi_after_archive[mi_after_archive$id != mi_id, , drop = FALSE]
-  }, error = function(e) "ERROR")
-
-  .chk(nrow(result), 0L, "E1: pasivos_observers.R's manual_inv cleanup is a safe no-op when the row is already archived")
-  .chk_true(!identical(result, "ERROR"), "E2: no error is thrown by the now-redundant cleanup step")
+  obs_txt <- readLines("R/pasivos_observers.R", warn = FALSE)
+  # Matches only the ORIGINAL removed block's exact header format (dashes
+  # immediately before the phrase) -- not this test file's or the source
+  # file's own prose ABOUT the removal, which legitimately still says
+  # "reversal" in past tense.
+  .chk(sum(grepl("----\\s*Reversal event detection", obs_txt)), 0L,
+       "E1: the reversal-detection block's actual code header is gone from pasivos_observers.R")
+  .chk(sum(grepl("pasivos_provision_revive\\(", obs_txt)), 0L,
+       "E2: pasivos_observers.R no longer calls pasivos_provision_revive() anywhere")
+  .chk(sum(grepl("reversed_seen", obs_txt)), 0L,
+       "E3: the now-unused reversed_seen reactive value is fully removed, not just orphaned")
 }
 
 cat(sprintf("\n=== Stage 5 provision confirm/undo results: %d passed, %d failed ===\n", .pass, .fail))

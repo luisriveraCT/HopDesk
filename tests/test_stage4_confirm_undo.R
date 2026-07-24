@@ -65,8 +65,13 @@ cat("── Stage 4: confirm/undo rewrite (ERP + plain manual) ─────�
             "A9: undo_conf() calls the new recover_confirmacion()")
   .chk_true(any(grepl("restore_from_papelera\\(pap, row\\$archive_event_id", bnc_txt)),
             "A10: undo_conf() calls the new restore_from_papelera() for the archived-manual branch")
-  .chk_true(any(grepl("has_provision", bnc_txt)) && any(grepl("has_archive", bnc_txt)),
-            "A11: undo_conf() branches explicitly on provision vs. archived-manual vs. neither")
+  .chk_true(any(grepl("has_archive", bnc_txt)),
+            "A11: undo_conf() branches on archived-manual vs. neither")
+  # Updated 2026-07-23 per Mouse's correction (see test_stage5's own file):
+  # undo_conf() does NOT branch on provision_id at all anymore -- recovering
+  # a confirmed item always recovers the item, regardless of lineage.
+  .chk(sum(grepl("has_provision", bnc_txt)), 0L,
+       "A11b: undo_conf() no longer has a separate has_provision branch")
 }
 
 # =============================================================================
@@ -217,24 +222,13 @@ empty_papelera <- .schema_papelera() |> dplyr::slice(0)
             "D4: the ERP recovery event row itself has no archive_event_id (nothing was ever archived)")
 }
 
-# =============================================================================
-# E. Provision-derived rows — deferred behavior unchanged for now (Stage 5)
-# =============================================================================
-{
-  conf <- .fresh_conf_row("prov-ph-id", "Networks & Logistics", "Provider", "PROV-DOC-1", 250,
-                          provision_id = "prov-xyz")
-  row  <- conf[1, ]
-  has_provision <- !is.na(row$provision_id) && nzchar(row$provision_id %||% "")
-  has_archive   <- "archive_event_id" %in% names(row) &&
-                    !is.na(row$archive_event_id) && nzchar(row$archive_event_id %||% "")
-  .chk_true(has_provision, "E1: a provision-derived confirmation is correctly identified as such")
-  .chk_true(!has_archive, "E2: a provision-derived confirmation has no archive_event_id (Stage 4 never archives these)")
-  # The actual branch precedence in undo_conf checks has_provision FIRST --
-  # confirmed here since Stage 5 will need to know this ordering is safe to
-  # change later without silently breaking Stage 4's ERP/manual paths.
-  branch <- if (has_provision) "provision-deferred" else if (has_archive) "archived-manual" else "erp-or-legacy"
-  .chk(branch, "provision-deferred", "E3: provision-derived rows route to the unchanged deferred branch, not the new archive-restore one")
-}
+# Section E (provision-derived rows) intentionally removed: Stage 4's
+# original design special-cased provision_id in undo_conf, deferring to
+# pasivos_observers.R's reversal watcher. Mouse corrected this (2026-07-23):
+# recovering a CONFIRMED item always recovers the ITEM regardless of
+# provision lineage -- provision_id is pure traceability metadata, not a
+# branch condition. See tests/test_stage5_provision_confirm_undo.R for the
+# corrected behavior and docs/LEDGER_INTEGRITY_MASTER_PLAN.md Stage 5.
 
 # =============================================================================
 # F. Multi-cycle: confirm -> undo -> confirm -> undo for the same business
