@@ -1186,6 +1186,13 @@ ledgerModuleServer <- function(id, config, shared) {
         showNotification("Quitado de la Agenda.", type="message", duration=2)
       } else {
         one <- inv_rows[j, , drop=FALSE]
+        # See stage_all's identical comment above (source propagation,
+        # found 2026-07-24) -- this per-invoice "+" toggle is another
+        # entry point into pagar_hoy_db and needs the same guard. "source"
+        # may not even exist on `detail` (SAP-only callers), so check
+        # column presence before indexing -- one[["source"]] on a missing
+        # column returns NULL, not NA.
+        one_source <- if ("source" %in% names(one)) one[["source"]] else NA_character_
         new_row <- data.frame(
           id         = uuid::UUIDgenerate(),
           ledger     = ledger,
@@ -1200,7 +1207,8 @@ ledgerModuleServer <- function(id, config, shared) {
           staged_by  = shared$current_user(),
           staged_at  = Sys.time(),
           status     = "pending",
-          source     = "sap",
+          source     = ifelse(is.na(one_source) | one_source != "manual",
+                               "sap", "manual"),
           stringsAsFactors = FALSE
         )
         updated <- upsert_pagar_hoy(ph_now %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_row,

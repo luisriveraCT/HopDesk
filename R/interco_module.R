@@ -471,7 +471,8 @@ intercoServer <- function(id, shared) {
           FechaVenc = tryCatch(as.Date(r[[due_col]][1]), error = function(e) Sys.Date()),
           staged_by = user_id,
           staged_at = Sys.time(),
-          status    = "pending"
+          status    = "pending",
+          source    = "sap"
         )
       }))
 

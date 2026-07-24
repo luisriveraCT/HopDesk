@@ -28,6 +28,27 @@
 # from df_combined()/the client payload) and propagate it into the staged
 # row, defaulting anything that isn't literally "manual" to "sap" -- never
 # leaving it NA.
+#
+# Follow-up, found 2026-07-24 (same day, same bug class -- this staging
+# site was missed by the fix above): R/ledger_module.R's cart_inv_click
+# observer is the per-individual-invoice "+" toggle shown when a Parte
+# group is expanded in the calendar day-modal cart (distinct from the
+# already-fixed group-level cart_<i> button and from stage_all/stage_sel).
+# It had `one[["source"]]` available on the row but hardcoded
+# `source = "sap"` unconditionally when building the new pagar_hoy row,
+# never consulting it. Reproduced live: a manual invoice staged via this
+# single-invoice "+" and later confirmed via Agenda got bancos_confirmados
+# written and unstaged correctly, but was never archived out of
+# manual_inv (is_erp_sourced("sap") == TRUE skipped the manual-archive
+# branch) -- identical symptom to the original 12-invoice incident.
+#
+# Also hardened two other pagar_hoy-row-construction sites that never set
+# `source` at all (R/interco_module.R's .ic_send_rows, R/treasury_map_
+# module.R's send_to_agenda) -- not implicated in any known incident (both
+# are fed only by SAP/intercompany snapshot data today, so the NA->"sap"
+# default they relied on was accidentally correct), but closed
+# defensively so the whole bug class can't recur if a manual row ever
+# flows through either path.
 # =============================================================================
 
 cat("── Staged pagar_hoy rows always carry an explicit source ───────────────\n")
@@ -94,6 +115,46 @@ cat("── Staged pagar_hoy rows always carry an explicit source ────�
          "handle_invoice_action's new_rows now assigns source from keys_df$source")
     .chk(grepl("keys_df\\$source", block), TRUE,
          "the assignment actually reads keys_df$source (the row's real source), not a hardcoded value")
+  }
+}
+
+# ── 4. Static scan: ledger_module.R's cart_inv_click ────────────────────────
+{
+  txt <- readLines("R/ledger_module.R", warn = FALSE)
+  start <- grep("observeEvent\\(input\\$cart_inv_click,", txt)
+  .chk(length(start) > 0, TRUE, "found cart_inv_click observer to scan")
+  if (length(start)) {
+    end <- grep("\\}, ignoreInit\\s*=\\s*TRUE, ignoreNULL\\s*=\\s*TRUE\\)", txt)
+    end <- end[end > start[1]][1] %||% (start[1] + 70)
+    block <- paste(sub("#.*$", "", txt[start[1]:end]), collapse = "\n")
+    .chk(grepl('source\\s*=\\s*"sap"\\s*,', block), FALSE,
+         "cart_inv_click no longer hardcodes a bare source = \"sap\" literal")
+    .chk(grepl('one_source', block), TRUE,
+         "cart_inv_click reads the row's real source (one_source) before building the new row")
+    .chk(grepl('one_source\\s*!=\\s*"manual"', block), TRUE,
+         "cart_inv_click normalizes anything that isn't literally \"manual\" to \"sap\", matching the other sites' rule")
+  }
+}
+
+# ── 5. Static scan: interco_module.R's .ic_send_rows and
+# treasury_map_module.R's send_to_agenda now set source explicitly ────────
+{
+  txt_ic <- readLines("R/interco_module.R", warn = FALSE)
+  start_ic <- grep("\\.ic_send_rows\\s*<-\\s*function", txt_ic)
+  .chk(length(start_ic) > 0, TRUE, "found .ic_send_rows to scan")
+  if (length(start_ic)) {
+    block_ic <- paste(txt_ic[start_ic[1]:min(start_ic[1] + 45, length(txt_ic))], collapse = "\n")
+    .chk(grepl('source\\s*=\\s*"sap"', block_ic), TRUE,
+         ".ic_send_rows now sets source = \"sap\" explicitly on new pagar_hoy rows")
+  }
+
+  txt_tm <- readLines("R/treasury_map_module.R", warn = FALSE)
+  start_tm <- grep("observeEvent\\(input\\$send_to_agenda,", txt_tm)
+  .chk(length(start_tm) > 0, TRUE, "found send_to_agenda observer to scan")
+  if (length(start_tm)) {
+    block_tm <- paste(txt_tm[start_tm[1]:min(start_tm[1] + 40, length(txt_tm))], collapse = "\n")
+    .chk(grepl('source\\s*=\\s*"sap"', block_tm), TRUE,
+         "send_to_agenda now sets source = \"sap\" explicitly on new pagar_hoy rows")
   }
 }
 

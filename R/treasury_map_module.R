@@ -851,7 +851,8 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
           FechaVenc = tryCatch(as.Date(x$FechaVenc), error = function(e) Sys.Date()),
           staged_by = user_id,
           staged_at = Sys.time(),
-          status    = "pending"
+          status    = "pending",
+          source    = "sap"
         )
       }))
 
