@@ -207,6 +207,23 @@ trace, `liability_id` connection intact (already proven correct in the
 audit, but lock it in with a regression test since this stage touches the
 surrounding code).
 
+**✅ DONE 2026-07-23** — branch `confirmed-logic-stage-2` (stacked, same
+files as Stages 2-4). Provision-derived rows now archive at confirm time,
+same as plain manual (2 more `add_to_papelera(..., disposition="confirmed")`
+sites, 4 total). `undo_conf`'s `has_provision` branch now does nothing
+beyond the unconditional `recover_confirmacion()` call — no `pagar_hoy_db`,
+no `manual_inv` — deferring entirely to `pasivos_observers.R`'s existing
+revival watcher, which needed no code change at all (its own `manual_inv`
+cleanup step naturally degrades into a safe no-op once the row is already
+archived rather than hard-deleted). The archived copy is never
+auto-restored on undo — that would duplicate the provision's own revived
+placeholder — it just stays as a permanent record, which is correct since
+the provision's own `estado`/FK columns (never touched, confirmed already)
+are the real undo mechanism for this case. 24 new tests, including a
+comment-vs-code-aware static scan proving the branch's actual code (not
+its explanatory comment) never references `pagar_hoy_db`/`manual_inv`.
+184 total in this suite, full existing suite still green.
+
 ### Stage 6 — Fix "send straight to Agenda", keep the feature
 
 Source: §2.10, §3.4. Both the Pasivos conversion modal's `stage_to_agenda`
