@@ -170,6 +170,27 @@ Verify: `df_combined()`'s `pagar_hoy_db.status=="confirmed"` matching
 this with a test, but leave the dead code removal for Stage 9 (it's about
 to be extracted/rewritten there anyway; removing it twice is wasted work).
 
+**✅ DONE 2026-07-23** — branch `confirmed-logic-stage-2` (stacked, same
+files as Stages 2-3). All four guards deleted. Confirm now always removes
+the `pagar_hoy_db` row (every source); plain manual entries archive via
+Stage 3's mechanism with a new `bancos_confirmados.archive_event_id` link
+so `undo_conf` can find and restore the exact right archived row; `undo_conf`
+now branches on provision/archived-manual/neither and calls
+`recover_confirmacion()`/`restore_from_papelera()` accordingly. Found and
+fixed along the way: entries staged via Calendar/Search's "Stage
+all"/"selected" mint a fresh `pagar_hoy` id decoupled from `manual_inv`'s
+own id (only the direct-creation "send to agenda" path shares it) —
+id-match alone silently missed archiving these; added a business-key
+fallback. Also fixed a pre-existing quirk where a mixed provision+manual
+confirm batch only processed one type. The explicit-delete ("eliminar")
+paths were deliberately left untouched — they already archive correctly
+with `disposition="deleted"` and `restore_from_papelera()` already supports
+restoring them, but no UI to trigger that restore was built in this stage
+(wasn't in scope; only confirm/undo was). 59 new tests (static scan + full
+confirm-then-undo integration simulations covering both id-matching cases,
+ERP's no-touch path, and multi-cycle chains) — 160 total in this suite,
+full existing suite still green.
+
 ### Stage 5 — Confirm/undo rewrite: provision-derived rows
 
 Source: §2.9, §3.5, provision part of §3.2. Mouse's explicit rule:
