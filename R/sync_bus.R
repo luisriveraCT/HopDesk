@@ -103,6 +103,23 @@ setup_sync_bus <- function(session, shared, poll_ms = 8000,
       local_ver  <- local_versions[[name]] %||% 0L
       if (global_ver == local_ver) next
 
+      # .s3_read_with()/.s3_read() (what every loader() ultimately calls)
+      # check the process-global preload cache BEFORE touching S3, and that
+      # cache is only cleared by THIS process's own .s3_write() for the
+      # exact key -- so a version-triggered reload here would otherwise
+      # keep serving a stale preloaded snapshot forever, even for a change
+      # made out-of-band (a direct S3 edit, or another R worker process)
+      # that correctly bumped the version stamp. Clear it explicitly so this
+      # reload is always a guaranteed S3 hit (found 2026-07-24, a real
+      # incident: an out-of-band manual_inv repair was never picked up by
+      # any already-running session even after adding manual_inv here).
+      key_full <- tryCatch(
+        .s3_key(entry$s3_key, client_id = if (in_jump_context) active_cid else NULL),
+        error = function(e) NULL
+      )
+      if (!is.null(key_full))
+        suppressWarnings(rm(list = intersect(key_full, ls(.s3_preload_cache)), envir = .s3_preload_cache))
+
       # When in a jump context, pass active_cid so the reload fetches data
       # from the correct prefix (not the env-var CLIENT_ID prefix).
       new_value <- tryCatch(

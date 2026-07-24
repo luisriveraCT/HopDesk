@@ -1786,7 +1786,12 @@ ledgerModuleServer <- function(id, config, shared) {
       # For manual invoices: remove from manual_inv
       manual_keys <- rows_to_delete[rows_to_delete[["source"]] == "manual", , drop = FALSE]
       if (nrow(manual_keys) > 0 && !is.null(manual_keys[["id"]])) {
-        m <- shared$manual_inv()
+        # Read fresh from S3, same as papelera_df above -- this deletes
+        # rows, so a stale in-memory read here can silently resurrect a row
+        # another session already removed (found 2026-07-24, a real
+        # incident).
+        m <- tryCatch(load_manual(client_id = shared$effective_client_id()),
+                     error = function(e) NULL) %||% shared$manual_inv()
         for (mid in manual_keys[["id"]]) {
           m <- delete_manual(m, mid)
         }

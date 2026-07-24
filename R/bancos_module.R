@@ -3353,7 +3353,13 @@ bancosServer <- function(id, shared) {
           shared$papelera_rv(restore_result$papelera_df)
           tryCatch(save_papelera(restore_result$papelera_df, client_id = shared$effective_client_id()),
                    error = function(e) NULL)
-          mi <- shared$manual_inv() %||% load_manual(client_id = shared$effective_client_id())
+          # Read fresh from S3 first, not just as a NULL-fallback -- this is
+          # a restore path (undo a confirmation), so a stale in-memory read
+          # here would silently drop any row another session added/removed
+          # since this session's snapshot (found 2026-07-24, a real
+          # incident).
+          mi <- tryCatch(load_manual(client_id = shared$effective_client_id()),
+                         error = function(e) NULL) %||% shared$manual_inv()
           restored_row <- as.data.frame(restore_result$restored_data, stringsAsFactors = FALSE)
           mi_updated <- dplyr::bind_rows(mi, restored_row)
           shared$manual_inv(mi_updated)

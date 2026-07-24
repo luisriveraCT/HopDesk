@@ -698,6 +698,7 @@ save_manual <- function(df, client_id = NULL) {
   norm <- .normalize(df, .schema_manual)
   .s3_write(norm, S3_KEYS$manual, client_id = client_id)
   if (exists(".cache_set", mode = "function")) .cache_set("manual", norm)
+  if (exists("bump_sync_version", mode = "function")) bump_sync_version("manual_inv", client_id = client_id)
 }
 
 upsert_manual <- function(df, new_row) {

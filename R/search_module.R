@@ -1019,7 +1019,11 @@ handle_invoice_action <- function(payload, shared) {
 
       manual_rows <- item_rows[item_rows$source == "manual" & nzchar(item_rows$inv_id), ]
       if (nrow(manual_rows)) {
-        m <- shared$manual_inv()
+        # Read fresh from S3, same as papelera_df above -- this deletes
+        # rows, so a stale in-memory read here can silently resurrect a row
+        # another session already removed (found 2026-07-24, a real
+        # incident).
+        m <- tryCatch(load_manual(client_id = cid), error = function(e) NULL) %||% shared$manual_inv()
         for (mid in manual_rows$inv_id) m <- delete_manual(m, mid)
         shared$manual_inv(m)
         tryCatch(save_manual(m, client_id = shared$effective_client_id()), error = function(e)

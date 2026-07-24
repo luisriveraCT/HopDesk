@@ -1234,6 +1234,11 @@ server <- function(input, output, session) {
   register_synced("pasivos_liabilities_db", S3_KEYS$pasivos_liabilities,
                   load_pasivos_liabilities)
   register_synced("papelera_rv", S3_KEYS$papelera,        load_papelera)
+  # manual_inv was missing from this registry entirely (found 2026-07-24, a
+  # real incident: an open tab's stale copy silently survives forever,
+  # never self-healing like every other key here does) -- one-line fix,
+  # same shape as papelera_rv above.
+  register_synced("manual_inv",  S3_KEYS$manual,          load_manual)
   register_synced("notes_df",   S3_KEYS$notes,          load_notes)
   register_synced("tags_db",    S3_KEYS$tags,            load_tags)
   register_synced("moves_db",   S3_KEYS$moves,           load_moves)

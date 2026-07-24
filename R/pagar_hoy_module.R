@@ -1184,7 +1184,12 @@ pagarHoyServer <- function(id, shared) {
               tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id()); bump_sync_version("pasivos_provisions_db") },
                        error = function(e) NULL)
               if (length(manual_ids)) {
-                mi <- tryCatch(shared$manual_inv(), error = function(e) NULL)
+                # Read fresh from S3, not just this session's in-memory copy
+                # -- this removes rows, so a stale read can silently
+                # resurrect a row another session already removed (found
+                # 2026-07-24, a real incident).
+                mi <- tryCatch(load_manual(client_id = shared$effective_client_id()),
+                              error = function(e) NULL) %||% tryCatch(shared$manual_inv(), error = function(e) NULL)
                 if (!is.null(mi) && nrow(mi)) {
                   mi <- mi[!mi$id %in% manual_ids, , drop = FALSE]
                   shared$manual_inv(mi)
@@ -1421,7 +1426,16 @@ pagarHoyServer <- function(id, shared) {
         # extends the same archiving treatment to them, alongside the
         # separate undo_conf/pasivos_observers.R collision fix.
         if (!is.null(shared$manual_inv) && nrow(factura_rows)) {
-          mi <- shared$manual_inv()
+          # Read fresh from S3 rather than trusting this session's possibly
+          # stale in-memory copy -- this handler archives-and-removes rows,
+          # so a stale read here can silently resurrect a row another
+          # session already archived, or drop one it just added (found
+          # 2026-07-24, a real incident). Single fetch, threaded through
+          # both the plain-manual block below and the provision-derived
+          # block further down -- do not re-fetch a second time there, or
+          # this block's own archive-removal would be silently discarded.
+          mi <- tryCatch(load_manual(client_id = shared$effective_client_id()),
+                         error = function(e) NULL) %||% shared$manual_inv()
           if (!is.null(mi) && nrow(mi) && "id" %in% names(mi)) {
             plain_manual <- factura_rows[
               !is_erp_sourced(factura_rows$source) & is.na(factura_rows$provision_id),
@@ -1708,7 +1722,16 @@ pagarHoyServer <- function(id, shared) {
         # extends the same archiving treatment to them, alongside the
         # separate undo_conf/pasivos_observers.R collision fix.
         if (!is.null(shared$manual_inv) && nrow(factura_rows)) {
-          mi <- shared$manual_inv()
+          # Read fresh from S3 rather than trusting this session's possibly
+          # stale in-memory copy -- this handler archives-and-removes rows,
+          # so a stale read here can silently resurrect a row another
+          # session already archived, or drop one it just added (found
+          # 2026-07-24, a real incident). Single fetch, threaded through
+          # both the plain-manual block below and the provision-derived
+          # block further down -- do not re-fetch a second time there, or
+          # this block's own archive-removal would be silently discarded.
+          mi <- tryCatch(load_manual(client_id = shared$effective_client_id()),
+                         error = function(e) NULL) %||% shared$manual_inv()
           if (!is.null(mi) && nrow(mi) && "id" %in% names(mi)) {
             plain_manual <- factura_rows[
               !is_erp_sourced(factura_rows$source) & is.na(factura_rows$provision_id),

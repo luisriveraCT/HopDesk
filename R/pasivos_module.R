@@ -154,7 +154,12 @@ pasivos_manage_converted_modal_ui <- function() {
     referencia             = prov$referencia[1] %||% ""
   )
 
-  manual_df <- shared$manual_inv()
+  # Read fresh from S3 rather than trusting this session's possibly stale
+  # in-memory copy (found 2026-07-24, a real incident) -- pure append with
+  # a fresh UUID, so no batch-matching logic needs adjusting, just the
+  # source of the read.
+  manual_df <- tryCatch(load_manual(client_id = shared$effective_client_id()),
+                        error = function(e) NULL) %||% shared$manual_inv()
   manual_df <- dplyr::bind_rows(manual_df, new_manual)
   shared$manual_inv(manual_df)
   tryCatch(save_manual(manual_df, client_id = shared$effective_client_id()), error = function(e)
