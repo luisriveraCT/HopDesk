@@ -79,16 +79,19 @@ suppressPackageStartupMessages(library(tibble))
 }
 
 # ── 2. Unit tests on compute_confirmed_flags() ─────────────────────────────
-.mkdf <- function(source, Empresa, Moneda, Documento, Importe) {
+# Saldo_original (not Importe -- SAP rows have no such column at all, only
+# Saldo vencido/Saldo_original) doubles as the row's "confirmation-time"
+# amount here too, matching Stage 10's amount-match guard.
+.mkdf <- function(source, Empresa, Moneda, Documento, Saldo_original) {
   tibble::tibble(source = source, Empresa = Empresa, Moneda = Moneda,
-                 Documento = Documento, Importe = Importe)
+                 Documento = Documento, Saldo_original = Saldo_original)
 }
 
 {
   # Source 1: bancos_confirmados matches a SAP row -> confirmed + is_paid_ghost
   df1 <- .mkdf("sap", "ACME", "MXN", "F-1", 100)
   bc1 <- tibble::tibble(empresa = "ACME", documento = "F-1", moneda = "MXN",
-                        tipo = "pago", eliminado = FALSE)
+                        tipo = "pago", eliminado = FALSE, importe = 100)
   out1 <- compute_confirmed_flags(df1, "AP", bc1, NULL)
   .chk(out1$confirmed[1],     TRUE, "Source 1: matching SAP row marked confirmed")
   .chk(out1$is_paid_ghost[1], TRUE, "Source 1: matching SAP row marked is_paid_ghost")
@@ -103,7 +106,9 @@ suppressPackageStartupMessages(library(tibble))
   .chk(any(out2$confirmed), FALSE,
        "Source 1: a matching key never confirms a manual or provision row")
 
-  # Source 2: papelera SAP ghost -> confirmed + is_ghost
+  # Source 2: papelera SAP ghost -> confirmed + is_ghost. Source 2 has no
+  # amount-match guard (Stage 10 scopes it to bancos_confirmados only), so
+  # amount is irrelevant here.
   df3 <- .mkdf("sap", "ACME", "MXN", "F-2", 200)
   pap3 <- tibble::tibble(ledger = "AP", source = "sap", Empresa = "ACME",
                          Moneda = "MXN", Documento = "F-2")
@@ -122,13 +127,13 @@ suppressPackageStartupMessages(library(tibble))
   # -- simulate by pre-setting confirmed=TRUE directly, matching how a
   # caller might pass a row already flagged) gets removed entirely from df.
   df5 <- tibble::tibble(source = "manual", Empresa = "ACME", Moneda = "MXN",
-                        Documento = "F-3", Importe = 50, confirmed = TRUE)
+                        Documento = "F-3", Saldo_original = 50, confirmed = TRUE)
   out5 <- compute_confirmed_flags(df5, "AP", NULL, NULL)
   .chk(nrow(out5), 0L, "a confirmed manual row is removed entirely from df (disappears from calendar), unlike a SAP ghost")
 
   # Provision belt-and-suspenders: forcibly cleared regardless of any mask.
   df6 <- tibble::tibble(source = "provision", Empresa = "ACME", Moneda = "MXN",
-                        Documento = "F-1", Importe = 100,
+                        Documento = "F-1", Saldo_original = 100,
                         confirmed = TRUE, is_paid_ghost = TRUE, is_ghost = TRUE)
   out6 <- compute_confirmed_flags(df6, "AP", bc1, pap3)
   .chk(out6$confirmed[1],     FALSE, "provision suspenders-clear: confirmed forced FALSE even if already TRUE going in")
@@ -137,7 +142,7 @@ suppressPackageStartupMessages(library(tibble))
 
   # NA confirmed input normalizes to FALSE, never left NA.
   df7 <- tibble::tibble(source = "sap", Empresa = "X", Moneda = "MXN",
-                        Documento = "F-9", Importe = 1, confirmed = NA)
+                        Documento = "F-9", Saldo_original = 1, confirmed = NA)
   out7 <- compute_confirmed_flags(df7, "AP", NULL, NULL)
   .chk(is.na(out7$confirmed[1]), FALSE, "NA confirmed input is normalized, never left NA")
   .chk(out7$confirmed[1], FALSE, "NA confirmed input normalizes to FALSE absent any match")
@@ -145,7 +150,7 @@ suppressPackageStartupMessages(library(tibble))
   # AR uses tipo=="cobro", not "pago" -- confirm the tipo_val branch is correct.
   df8 <- .mkdf("sap", "ACME", "MXN", "F-4", 300)
   bc8 <- tibble::tibble(empresa = "ACME", documento = "F-4", moneda = "MXN",
-                        tipo = "cobro", eliminado = FALSE)
+                        tipo = "cobro", eliminado = FALSE, importe = 300)
   out8_ar <- compute_confirmed_flags(df8, "AR", bc8, NULL)
   out8_ap <- compute_confirmed_flags(df8, "AP", bc8, NULL)
   .chk(out8_ar$confirmed[1], TRUE,  "AR ledger matches bancos_confirmados rows with tipo=='cobro'")
@@ -225,15 +230,20 @@ suppressPackageStartupMessages(library(tibble))
   }
 
   synth_df <- tibble::tibble(
-    source    = c("sap",   "sap",   "manual", "manual", "provision", "sap"),
-    Empresa   = c("ACME",  "ACME",  "ACME",   "ACME",   "ACME",      "ZETA"),
-    Moneda    = c("MXN",   "MXN",   "MXN",    "MXN",    "MXN",       "USD"),
-    Documento = c("F-10",  "F-11",  "F-12",   "F-13",   "F-11",      "F-14"),
-    Importe   = c(100,      200,     50,       75,       200,         999)
+    source         = c("sap",   "sap",   "manual", "manual", "provision", "sap"),
+    Empresa        = c("ACME",  "ACME",  "ACME",   "ACME",   "ACME",      "ZETA"),
+    Moneda         = c("MXN",   "MXN",   "MXN",    "MXN",    "MXN",       "USD"),
+    Documento      = c("F-10",  "F-11",  "F-12",   "F-13",   "F-11",      "F-14"),
+    Saldo_original = c(100,      200,     50,       75,       200,         999)
   )
+  # importe matches F-10's Saldo_original (100) exactly -- this section
+  # tests the extraction (Stage 9) is behavior-preserving, not Stage 10's
+  # amount-guard itself (that gets its own dedicated test file), so amounts
+  # are set up to agree under both old (amount-blind) and new (amount-aware)
+  # logic.
   synth_bc <- tibble::tibble(
     empresa = c("ACME"), documento = c("F-10"), moneda = c("MXN"),
-    tipo = c("pago"), eliminado = c(FALSE)
+    tipo = c("pago"), eliminado = c(FALSE), importe = c(100)
   )
   synth_pap <- tibble::tibble(
     ledger = c("AP"), source = c("sap"), Empresa = c("ZETA"),

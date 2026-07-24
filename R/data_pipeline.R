@@ -635,19 +635,41 @@ compute_confirmed_flags <- function(df, ledger, bancos_confirmados_df, papelera_
                   df[["source"]] == "provision"
 
   # Source 1: bancos_confirmados
+  # Amount-match guard (Stage 10): standard everywhere bancos_confirmados
+  # is matched, deliberately WITHOUT a date-window check -- Mouse's explicit
+  # reasoning is that a date guard would treat a normal month-end SAP delay
+  # as staleness and reopen a still-valid confirmation. Protects against
+  # SAP reusing a DocNum years later for an unrelated future invoice, using
+  # the exact key shape already proven in production at
+  # R/interco_module.R's .ckey(): 2-decimal-rounded amount appended to the
+  # existing (Empresa, Documento, Moneda) key.
+  # Matched against df$Saldo_original -- the balance BEFORE this render's
+  # abono-netting is applied (build_ledger_df() always sets it, for SAP and
+  # manual rows alike, before subtracting active abonos into "Saldo
+  # vencido"). df has no "Importe" column at all for SAP rows (confirmed
+  # directly against a real SAP snapshot -- only Saldo vencido/Saldo_original
+  # exist there); Saldo_original is also stable across time in the one way
+  # that matters here: matching the live, ever-shrinking "Saldo vencido"
+  # instead would cause exactly the false-negative Mouse is worried about --
+  # an abono applied after confirmation would change Saldo vencido and make
+  # a genuinely still-valid confirmation silently fail to match, reopening it.
   conf_db <- bancos_confirmados_df
   if (!is.null(conf_db) && nrow(conf_db)) {
     conf_active <- conf_db[!(conf_db[["eliminado"]] %in% TRUE) &
-                           conf_db[["tipo"]] == tipo_val, , drop = FALSE]
+                           conf_db[["tipo"]] == tipo_val &
+                           !is.na(conf_db[["importe"]]), , drop = FALSE]
     if (nrow(conf_active)) {
-      bc_keys   <- unique(conf_active[, c("empresa","documento","moneda"),
+      bc_keys   <- unique(conf_active[, c("empresa","documento","moneda","importe"),
                                       drop = FALSE])
+      amt_col   <- if ("Saldo_original" %in% names(df)) "Saldo_original" else "Saldo vencido"
       match_key <- paste(toupper(trimws(df[["Empresa"]])),
                          toupper(trimws(df[["Documento"]])),
-                         toupper(trimws(df[["Moneda"]])))
+                         toupper(trimws(df[["Moneda"]])),
+                         sprintf("%.2f", round(as.numeric(df[[amt_col]]), 2)))
       conf_key  <- paste(toupper(trimws(bc_keys[["empresa"]])),
                          toupper(trimws(bc_keys[["documento"]])),
-                         toupper(trimws(bc_keys[["moneda"]])))
+                         toupper(trimws(bc_keys[["moneda"]])),
+                         sprintf("%.2f", round(as.numeric(bc_keys[["importe"]]), 2)))
       bc_mask   <- (match_key %in% conf_key) & !is_manual & !is_provision
       df[["confirmed"]]   <- df[["confirmed"]] | bc_mask
       if (!"is_paid_ghost" %in% names(df)) df[["is_paid_ghost"]] <- FALSE
