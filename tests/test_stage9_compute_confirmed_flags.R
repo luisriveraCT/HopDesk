@@ -168,6 +168,34 @@ suppressPackageStartupMessages(library(tibble))
   out9 <- compute_confirmed_flags(df9, "AP", bc9, NULL)
   .chk(nrow(out9), 1L, "a data frame with no 'source' column at all does not crash")
   .chk(out9$confirmed[1], TRUE, "and still correctly matches bancos_confirmados (every row is implicitly treated as SAP)")
+
+  # Real bug found 2026-07-24: Source 2 (papelera SAP ghosts) had no
+  # !is_manual guard, unlike Source 1 -- a brand-new manual invoice that
+  # happens to reuse the same Empresa+Moneda+Documento key as some
+  # unrelated, previously-archived SAP invoice (a generic placeholder like
+  # "test" is a realistic collision) was wrongly treated as that SAP ghost,
+  # marked confirmed, and then deleted outright -- silently vanishing from
+  # the calendar despite never having been staged, confirmed, or deleted by
+  # any real user action. Reproduced live: a user created a manual AP
+  # invoice (Documento="test") that collided with an old trashed SAP
+  # invoice of the same key and it never appeared on the calendar.
+  df10 <- .mkdf("manual", "Networks & Logistics", "MXN", "test", 1)
+  pap10 <- tibble::tibble(ledger = "AP", source = "sap",
+                          Empresa = "Networks & Logistics",
+                          Moneda = "MXN", Documento = "test")
+  out10 <- compute_confirmed_flags(df10, "AP", NULL, pap10)
+  .chk(nrow(out10), 1L,
+       "a manual invoice colliding on key with an unrelated papelera SAP ghost survives -- it is NOT deleted from df")
+  .chk(out10$confirmed[1], FALSE,
+       "and is not marked confirmed either -- the SAP ghost's archival has nothing to do with this manual row")
+
+  # The same collision against a SAP-sourced row (not manual) must still
+  # correctly ghost -- proves the fix is a manual-only guard, not a
+  # regression that breaks Source 2 for its actual intended case.
+  df11 <- .mkdf("sap", "Networks & Logistics", "MXN", "test", 1)
+  out11 <- compute_confirmed_flags(df11, "AP", NULL, pap10)
+  .chk(out11$confirmed[1], TRUE,
+       "the identical key collision still correctly ghosts a real SAP row (Source 2's actual intended case, unaffected by the manual-only guard)")
 }
 
 # ── 3. Regression: byte-for-byte equivalence with the frozen pre-extraction logic ─

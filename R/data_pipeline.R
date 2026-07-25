@@ -703,7 +703,17 @@ compute_confirmed_flags <- function(df, ledger, bancos_confirmados_df, papelera_
       if (nrow(sap_pap)) {
         match_key <- paste(df[["Empresa"]], df[["Moneda"]], df[["Documento"]])
         pap_key   <- paste(sap_pap[["Empresa"]], sap_pap[["Moneda"]], sap_pap[["Documento"]])
-        ghost_mask <- (match_key %in% pap_key) & !is_provision
+        # !is_manual guard (found 2026-07-24): this source only ever means
+        # "an ERP row was trashed" -- without the guard, a brand-new manual
+        # invoice that happens to reuse the same Empresa+Moneda+Documento key
+        # as some unrelated, previously-archived SAP invoice (e.g. a generic
+        # placeholder like "test") gets wrongly treated as that SAP ghost,
+        # marked confirmed, and then deleted outright by the manual-removal
+        # block below -- silently vanishing from the calendar even though it
+        # was never staged, confirmed, or deleted by any real user action.
+        # Source 1 (bancos_confirmados, above) already has this guard; this
+        # one was missing it.
+        ghost_mask <- (match_key %in% pap_key) & !is_manual & !is_provision
         df[["confirmed"]] <- df[["confirmed"]] | ghost_mask
         if (!"is_ghost" %in% names(df)) df[["is_ghost"]] <- FALSE
         df[["is_ghost"]]  <- df[["is_ghost"]] | ghost_mask
