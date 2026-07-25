@@ -703,6 +703,43 @@ race here is self-healing via the 8-second poll, not permanent data
 loss, unlike the 7 sites hardened above. Not silently skipped — listed
 here as an explicit open item below if Mouse wants full coverage later.
 
+### Stage 17 — Manual invoice silently vanished on a papelera-ghost key collision
+
+Source: live user report, same day as Stages 15-16 — created a new
+manual AP invoice (`Documento="test"`, `Empresa="Networks & Logistics"`,
+`Importe=1`, due 2026-07-07), "Guardar" appeared to succeed (modal
+closed cleanly), but nothing showed up on Calendario, in the same
+session that created it. Tried a second time with identical values;
+same result.
+
+**✅ DONE 2026-07-24** — branch `confirmed-logic-stage-2` (stacked).
+Direct S3 read confirmed the invoice WAS correctly saved (twice, since
+the user retried) to `manual_invoices.rds` — this was never a save-path
+bug or a cross-session staleness issue. Root-caused via a live
+reproduction of the real pipeline against the real data: an old,
+previously-trashed SAP invoice happened to share the exact same
+`Empresa+Moneda+Documento` key ("Networks & Logistics MXN test" — a
+generic placeholder value, an easy real-world collision). `compute_confirmed_flags()`'s
+Source 2 (papelera SAP-ghost matching, `R/data_pipeline.R`) had no
+`!is_manual` guard — unlike Source 1 (`bancos_confirmados` matching),
+which already has one — so the new manual row was wrongly treated as
+that unrelated SAP ghost, marked `confirmed`, and deleted outright by
+the manual-row-removal step a few lines later. Because this is the one
+canonical function every consumer reads from (calendar, Vencidos, Cash
+Flow, Reporte Pulse, Intercompany — the entire point of Stages 9-13's
+unification), the invoice was invisible everywhere, not just Calendario.
+
+Fixed with the identical guard Source 1 already has:
+`ghost_mask <- (match_key %in% pap_key) & !is_manual & !is_provision`.
+3 new tests in `tests/test_stage9_compute_confirmed_flags.R` (the
+regression itself, plus a control case proving Source 2 still correctly
+ghosts a real SAP row on the same key collision — the fix is a
+manual-only guard, not a behavior removal). 451 total in the
+confirmed-logic suite, full existing suite still green. No data repair
+needed — the two live "test" invoices were never actually deleted from
+`manual_invoices.rds`, only hidden by this bug; they reappear
+automatically once the fix is deployed and the app restarted.
+
 ## Open items needing Mouse's input before or during the relevant stage
 
 - Invoice `1025618` (`AGENDA_CALENDARIO_WIRING_AUDIT.md` §1) — re-enter
