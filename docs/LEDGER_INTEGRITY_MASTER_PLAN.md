@@ -787,6 +787,37 @@ needed — the two live "test" invoices were never actually deleted from
 `manual_invoices.rds`, only hidden by this bug; they reappear
 automatically once the fix is deployed and the app restarted.
 
+### Stage 18 — Cart checkmarks falsely linked invoices sharing a Documento
+
+Source: live user report, same day as Stages 15-17 — two manual
+invoices under the same Empresa, sharing the same free-text `Documento`
+("test") but with different `Parte` ("test"/"test1") and different
+`Importe` (1.00/0.50), appeared linked in the calendar day-modal's
+cart: staging or unstaging one made the *other's* checkmark toggle too.
+User's own description: "as if there was a ghost group that controlled
+both items (spoiler; there's clearly not)."
+
+**✅ DONE 2026-07-25** — branch `confirmed-logic-stage-2` (stacked).
+Root-caused to three display-layer "is this invoice currently staged"
+checks in `R/ledger_module.R` that matched on `(Empresa, Documento)`
+alone — not a unique invoice key, since `Documento` is free text a user
+can legitimately reuse (exactly as happened here). The actual
+stage/unstage operations themselves (`cart_inv_click`'s own `already`
+check, and the group-level `cart_<i>` toggle's own `already` check)
+already correctly keyed on the full `(Empresa, Moneda, Documento,
+Importe)` tuple — only the checkmark/label *rendering* used the
+narrower, colliding key, so the underlying data was never actually
+corrupted, just visually (and confusingly) cross-linked. Widened all
+three sites to the same four-column key the real operations already
+trusted: `output$cart_table`'s per-group `is_staged`/`n_in_cart` check,
+the expanded-subrow `in_cart_ii` check, and the currently-unused
+`EnProceso` join (kept consistent for when/if it's read later). 11 new
+tests in `tests/test_cart_shared_documento_collision.R`, including a
+control assertion proving the OLD key really does falsely match (so the
+test would have caught this before it shipped) and that the fix still
+correctly matches an invoice against itself. 476 total in the
+confirmed-logic suite, full existing suite still green.
+
 ## Open items needing Mouse's input before or during the relevant stage
 
 - Invoice `1025618` (`AGENDA_CALENDARIO_WIRING_AUDIT.md` §1) — re-enter
