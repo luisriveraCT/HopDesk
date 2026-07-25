@@ -662,6 +662,47 @@ Mouse, no decision requested yet — see open items below):
   rename after an abono was recorded would silently break that abono's
   netting join.
 
+### Stage 16 — Harden `pagar_hoy_db`'s highest-stakes sites
+
+Source: Stage 14's own deferred scope, picked up immediately after Stage
+15 per Mouse's sequencing call ("whatever seems easier or quicker goes
+first").
+
+**✅ DONE 2026-07-24** — branch `confirmed-logic-stage-2` (stacked).
+Verified the actual count first: 21 read-modify-write sites (the doc's
+"~19" estimate was close but undercounted by 2), none of which read
+fresh from S3 as their primary path. Hardened the 7 in the same severity
+tier as `manual_inv`'s already-hardened sites — both confirm handlers
+(`do_confirm_ap_/ar_<emp>`), both Quitar/unstage handlers
+(`remove_ap_/ar_<emp>`), `do_clear_all` (Vaciar agenda — the single
+largest blast radius of any site, since it wipes every pending row for
+every user in one write), and the two Pasivos provision revert/delete
+cleanup paths — with the identical pattern already established: try
+`load_pagar_hoy(client_id=...)` first, fall back to the in-memory
+reactiveVal only on a genuine read error.
+
+The two Pasivos sites (`pcm_do_revert_converted`, `pcm_do_delete_converted`
+in `R/pasivos_module.R`) had the precedence backwards — they tried
+`shared$pagar_hoy_db()` FIRST and only fell back to a fresh read if the
+accessor didn't exist at all (which in practice it always does), meaning
+the fresh read essentially never ran. Flipped to match every other
+hardened site. 19 new tests in
+`tests/test_pagar_hoy_db_stale_read_hardening.R`, including a regression
+guard specifically asserting the corrected precedence order (not just
+that `load_pagar_hoy()` appears somewhere in the block, which the buggy
+version also technically satisfied). 448 total in the confirmed-logic
+suite, full existing suite still green.
+
+**Deliberately deferred, same reasoning Stage 14 used to scope its own
+pass**: the remaining 14 medium-severity sites (bulk/single-row stage
+buttons across `ledger_module.R`, `search_module.R`,
+`treasury_map_module.R`, `interco_module.R`, `staging_browse_module.R`,
+one more `pasivos_module.R` site, `app.R`, and the three `.sync_staged`
+call sites). Lower blast radius — Agenda never holds real data, so a
+race here is self-healing via the 8-second poll, not permanent data
+loss, unlike the 7 sites hardened above. Not silently skipped — listed
+here as an explicit open item below if Mouse wants full coverage later.
+
 ## Open items needing Mouse's input before or during the relevant stage
 
 - Invoice `1025618` (`AGENDA_CALENDARIO_WIRING_AUDIT.md` §1) — re-enter
@@ -672,10 +713,10 @@ Mouse, no decision requested yet — see open items below):
 - Should `bancos_confirmados` gain a `source` column for at-a-glance
   ERP-vs-local audit visibility? Low-priority, could fold into Stage 2 or
   skip.
-- Stage 14's scope call — specifically, whether to harden `pagar_hoy_db`'s
-  remaining 21 naive read-modify-write sites the same way `manual_inv`'s
-  six highest-stakes sites were hardened (verified count, was estimated
-  at ~19 — Mouse picked this up next, right after Stage 15).
+- Whether to harden `pagar_hoy_db`'s remaining 14 medium-severity sites
+  too, for full parity with `manual_inv`'s coverage (Stage 16 only
+  hardened the 7 highest-stakes ones — see Stage 16 above for exactly
+  which are left).
 - Whether to add a `void_abono()` UI, fix the staged-abono due-date
   display, and extend `rename_empresa_initials()` to cover `abonos_db`
   (and `pagar_hoy`/`manual_inv`/`sap_overrides`) — all found by Stage
