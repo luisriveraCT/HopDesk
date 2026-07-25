@@ -605,6 +605,63 @@ logic today — it splits on `tipo_item=="abono"` before ever checking
 silently drop the column without the suite noticing). 12 new tests, 405
 total in the confirmed-logic suite, full existing suite still green.
 
+### Stage 15 — Abono Parcial audit: partial payments weren't reflecting
+
+Source: live user report — "partial payments are not getting completed
+and the UI is not working properly either." This also closes the open
+item directly above (abono rows vs. the 3-type framework), found while
+auditing.
+
+**✅ Root cause fixed, 2026-07-24** — branch `confirmed-logic-stage-2`
+(stacked). The 3-type framework question itself checks out: abono rows
+are correctly hardcoded `source="manual"` regardless of the underlying
+invoice's type, `do_confirm_ap_/ar_<emp>` splits strictly on
+`tipo_item=="abono"` (never touching `is_erp_sourced()`), and a partial
+payment against an ERP-sourced invoice correctly nets its balance down
+without ever ghosting/ERP-removing the row — all already covered by
+Stage 9/10/13's regression tests. The real bugs were orthogonal to that
+framework, in the tooling around it:
+
+1. **Root cause of the reported symptom**: `show_abono_modal`/
+   `setup_abono_browse` (`R/staging_browse_module.R`) accepted an
+   `abonos_db` parameter but never read it — the modal's "Saldo" column,
+   and the amount input's default/max, always came straight from the raw
+   SAP snapshot. A user paying an invoice down in installments saw the
+   *same original balance* every time they reopened the tool, with no
+   visible sign a prior confirmed partial payment had any effect. Fixed
+   by netting against `active_abonos_summary()` using the identical join
+   `build_ledger_df()` already uses (`R/data_pipeline.R`), so the modal
+   now agrees with what Calendario itself shows. Invoices fully covered
+   by confirmed abonos are dropped from the list instead of showing a
+   stale/zero row.
+2. The AR side of Agenda de Hoy (`tbl_ar_<emp>`) had no "ABONO" badge at
+   all — AP already had one. A staged partial payment on the Cobros side
+   looked identical to a full invoice awaiting collection. Fixed with
+   the same `tipo_item=="abono"` badge AP uses.
+3. Nothing server-side ever blocked staging an abono larger than the
+   invoice's remaining balance — the client-side `.ab-warn` CSS class was
+   cosmetic only. The `ab_rows` observer now rejects any row whose
+   `importe` exceeds its `saldo` (the balance shown at render time,
+   already correctly netted by fix #1), stages only the valid ones, and
+   tells the user what was rejected instead of silently absorbing the
+   excess.
+
+24 new tests in `tests/test_abono_parcial_audit.R`, 429 total in the
+confirmed-logic suite, full existing suite still green.
+
+**Deferred, found by the same audit, not fixed this stage** (flagged to
+Mouse, no decision requested yet — see open items below):
+- `void_abono()` exists in `R/persistence.R` but is never called from
+  anywhere — a confirmed abono has no undo path. A wrong amount or wrong
+  invoice is permanent today.
+- A staged abono's displayed "Vencimiento" is always the staging date
+  (`Sys.Date()`), not the underlying invoice's real due date — misleading
+  next to real factura rows in the same Agenda table.
+- `rename_empresa_initials()` (`R/persistence.R`) doesn't touch
+  `abonos_db` (or `pagar_hoy`/`manual_inv`/`sap_overrides`) — a company
+  rename after an abono was recorded would silently break that abono's
+  netting join.
+
 ## Open items needing Mouse's input before or during the relevant stage
 
 - Invoice `1025618` (`AGENDA_CALENDARIO_WIRING_AUDIT.md` §1) — re-enter
@@ -616,17 +673,13 @@ total in the confirmed-logic suite, full existing suite still green.
   ERP-vs-local audit visibility? Low-priority, could fold into Stage 2 or
   skip.
 - Stage 14's scope call — specifically, whether to harden `pagar_hoy_db`'s
-  remaining ~19 naive read-modify-write sites the same way `manual_inv`'s
-  six highest-stakes sites were hardened.
-- **Not yet examined against the 3-type framework**: abono rows (partial-
-  payment records that also live in `pagar_hoy_db`, removed on confirm
-  alongside manual/provision rows per `AGENDA_CALENDARIO_WIRING_AUDIT.md`
-  §2.3). Their real data lives in `abonos_db`, a separate table from
-  `manual_inv`, so they're likely already safe by the same reasoning as ERP
-  rows (Agenda losing the reference doesn't destroy the source data) — but
-  Mouse's ERP/manual/provision framework didn't mention abonos explicitly,
-  and this was not independently verified. Check during Stage 4 rather than
-  assuming; flag to Mouse if it turns out abonos need their own fix.
+  remaining 21 naive read-modify-write sites the same way `manual_inv`'s
+  six highest-stakes sites were hardened (verified count, was estimated
+  at ~19 — Mouse picked this up next, right after Stage 15).
+- Whether to add a `void_abono()` UI, fix the staged-abono due-date
+  display, and extend `rename_empresa_initials()` to cover `abonos_db`
+  (and `pagar_hoy`/`manual_inv`/`sap_overrides`) — all found by Stage
+  15's audit, none fixed yet.
 
 ## Completeness check (self-review before presenting)
 
