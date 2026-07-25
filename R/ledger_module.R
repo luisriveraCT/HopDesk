@@ -2250,8 +2250,13 @@ ledgerModuleServer <- function(id, config, shared) {
           if (nrow(ph_p)) {
             dk <- unique(detail[, c("Empresa","Moneda","Documento","Parte"),
                                 drop = FALSE])
-            merged <- merge(ph_p[, c("Empresa","Moneda","Documento"), drop=FALSE],
-                            dk, by = c("Empresa","Moneda","Documento"))
+            # Parte in the join key (found 2026-07-25): two different manual
+            # invoices can share the same Documento (a free-text field) while
+            # having different Parte -- matching on Empresa+Moneda+Documento
+            # alone made a staged invoice under one Parte falsely mark an
+            # unrelated invoice under a DIFFERENT Parte as staged too.
+            merged <- merge(ph_p[, c("Empresa","Moneda","Documento","Parte"), drop=FALSE],
+                            dk, by = c("Empresa","Moneda","Documento","Parte"))
             staged_pairs <- unique(merged[, c("Empresa","Parte"), drop = FALSE])
           } else {
             staged_pairs <- data.frame(Empresa=character(), Parte=character())
@@ -2330,10 +2335,16 @@ ledgerModuleServer <- function(id, config, shared) {
           ph_now <- shared$pagar_hoy_db()
           current_tags <- shared$tags_db()   # reactive dep — rerenders on tag change
           tg_cur <- current_tags[current_tags[["ledger"]] == ledger, , drop = FALSE]
+          # Empresa+Moneda+Documento+Importe -- matches cart_inv_click's own
+          # authoritative stage/unstage key exactly (found 2026-07-25: Documento
+          # alone let two different manual invoices sharing the same free-text
+          # Documento but different Parte/Importe falsely display as linked --
+          # staging or unstaging one made the other's checkmark toggle too).
           staged_now <- if (!is.null(ph_now) && nrow(ph_now)) {
             ph_now[ph_now[["ledger"]] == ledger & ph_now[["status"]] == "pending",
-                   c("Empresa","Documento"), drop = FALSE]
-          } else data.frame(Empresa = character(), Documento = character())
+                   c("Empresa","Moneda","Documento","Importe"), drop = FALSE]
+          } else data.frame(Empresa = character(), Moneda = character(),
+                            Documento = character(), Importe = numeric())
 
           rows_ui <- lapply(seq_len(nrow(grp)), function(i) {
             row_e <- grp[["Empresa"]][i]
@@ -2349,14 +2360,18 @@ ledgerModuleServer <- function(id, config, shared) {
             is_paid_group  <- "is_paid_ghost" %in% names(detail) && sum(inv_mask) > 0 &&
                               any(detail[["is_paid_ghost"]][inv_mask] %in% TRUE)
             if (is_conf_group && !is_ghost_group && !is_paid_group) return(NULL)
-            inv_keys <- unique(detail[inv_mask, c("Empresa","Documento"),
+            # Moneda+Importe included (found 2026-07-25): Documento alone is
+            # not a unique invoice key -- two different manual invoices can
+            # share the same free-text Documento. See staged_now's comment
+            # above for the full incident.
+            inv_keys <- unique(detail[inv_mask, c("Empresa","Moneda","Documento","Importe"),
                                       drop = FALSE])
             # Raw row count, not unique-key count: two manual entries can share
             # Empresa+Documento (they differ only by UUID) and must each count as
             # a separate member so the expand button is shown.
             n_inv     <- sum(inv_mask & !is.na(detail[["Documento"]]))
             n_in_cart <- nrow(merge(inv_keys, staged_now,
-                                    by = c("Empresa","Documento")))
+                                    by = c("Empresa","Moneda","Documento","Importe")))
             is_staged <- n_in_cart > 0
             btn_lbl   <- if (is_staged) "\u2713" else "\uff0b"
             btn_cls   <- if (is_staged) "btn btn-xs btn-success cart-btn"
@@ -2474,9 +2489,12 @@ ledgerModuleServer <- function(id, config, shared) {
                   )
                 } else {
                   j_item    <- inv_detail[[".j_item"]][ii]
-                  key_ii    <- inv_detail[ii, c("Empresa","Documento"), drop=FALSE]
+                  # Empresa+Moneda+Documento+Importe (found 2026-07-25, same
+                  # incident as staged_now's comment above): Documento alone
+                  # can't distinguish two invoices that happen to share it.
+                  key_ii    <- inv_detail[ii, c("Empresa","Moneda","Documento","Importe"), drop=FALSE]
                   in_cart_ii <- nrow(merge(key_ii, staged_now,
-                                          by=c("Empresa","Documento"))) > 0
+                                          by=c("Empresa","Moneda","Documento","Importe"))) > 0
                   btn_ii_cls <- if (in_cart_ii) "btn btn-xs btn-success cart-inv-btn"
                                else             "btn btn-xs btn-outline-success cart-inv-btn"
                   tags$button(
