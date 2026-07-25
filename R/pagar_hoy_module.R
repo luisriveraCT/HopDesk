@@ -1178,7 +1178,8 @@ pagarHoyServer <- function(id, shared) {
         # removal is by id, so a stale base only risks silently dropping
         # another session's concurrent stage/unstage, never a wrong removal.
         ph <- unstage_pagar_hoy(
-               tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()),
+               tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                            client_id = shared$effective_client_id()),
                         error = function(e) NULL) %||% shared$pagar_hoy_db(),
                rows |> dplyr::select(id), keys = "id")
         shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
@@ -1243,7 +1244,8 @@ pagarHoyServer <- function(id, shared) {
         # removal is by id, so a stale base only risks silently dropping
         # another session's concurrent stage/unstage, never a wrong removal.
         ph <- unstage_pagar_hoy(
-               tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()),
+               tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                            client_id = shared$effective_client_id()),
                         error = function(e) NULL) %||% shared$pagar_hoy_db(),
                rows |> dplyr::select(id), keys = "id")
         shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
@@ -1416,7 +1418,8 @@ pagarHoyServer <- function(id, shared) {
         # incident fixed 2026-07-24; removal is still strictly by id, so a
         # fresh base only adds safety, it never changes which rows this
         # confirm removes).
-        ph  <- tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()),
+        ph  <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                            client_id = shared$effective_client_id()),
                         error = function(e) NULL) %||% shared$pagar_hoy_db()
         sap_fact_ids <- factura_rows$id[is_erp_sourced(factura_rows$source)]
         man_fact_ids <- factura_rows$id[!is_erp_sourced(factura_rows$source)]
@@ -1720,7 +1723,8 @@ pagarHoyServer <- function(id, shared) {
         # incident fixed 2026-07-24; removal is still strictly by id, so a
         # fresh base only adds safety, it never changes which rows this
         # confirm removes).
-        ph  <- tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()),
+        ph  <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                            client_id = shared$effective_client_id()),
                         error = function(e) NULL) %||% shared$pagar_hoy_db()
         sap_fact_ids <- factura_rows$id[is_erp_sourced(factura_rows$source)]
         man_fact_ids <- factura_rows$id[!is_erp_sourced(factura_rows$source)]
@@ -2495,7 +2499,8 @@ pagarHoyServer <- function(id, shared) {
       # session staged moments ago, since that row was never in this
       # session's copy to begin with and this filter can only keep what's
       # already present.
-      ph      <- (tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()),
+      ph      <- (tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                               client_id = shared$effective_client_id()),
                            error = function(e) NULL) %||% shared$pagar_hoy_db()) |>
                     dplyr::filter(status != "pending")
       saved   <- tryCatch({

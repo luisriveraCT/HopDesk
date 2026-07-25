@@ -742,7 +742,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     # copy -- this removes rows, so a stale read can silently resurrect a
     # row another session already removed or drop one it just added (same
     # race class as the manual_inv incident fixed 2026-07-24).
-    ph <- tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()), error = function(e) NULL) %||%
+    ph <- tryCatch(safe_load_pagar_hoy(username = user, client_id = shared$effective_client_id()), error = function(e) NULL) %||%
           (if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db() else NULL)
     if (!is.null(ph) && nrow(ph) > 0) {
       rm_mask <- rep(FALSE, nrow(ph))
@@ -834,7 +834,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     # copy -- this removes rows, so a stale read can silently resurrect a
     # row another session already removed or drop one it just added (same
     # race class as the manual_inv incident fixed 2026-07-24).
-    ph <- tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()), error = function(e) NULL) %||%
+    ph <- tryCatch(safe_load_pagar_hoy(username = user, client_id = shared$effective_client_id()), error = function(e) NULL) %||%
           (if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db() else NULL)
     if (!is.null(ph) && nrow(ph) > 0) {
       rm_mask <- rep(FALSE, nrow(ph))
