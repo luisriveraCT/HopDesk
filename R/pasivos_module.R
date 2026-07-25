@@ -738,8 +738,12 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     # 2. Remove pagar_hoy (pending only) — by FK id, by provision_id, and by
     #    business key so calendar-staged rows (no FK) are also cleaned up.
-    ph <- if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db() else
-          tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()), error = function(e) NULL)
+    # Read fresh from S3 first, not this session's possibly-stale in-memory
+    # copy -- this removes rows, so a stale read can silently resurrect a
+    # row another session already removed or drop one it just added (same
+    # race class as the manual_inv incident fixed 2026-07-24).
+    ph <- tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()), error = function(e) NULL) %||%
+          (if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db() else NULL)
     if (!is.null(ph) && nrow(ph) > 0) {
       rm_mask <- rep(FALSE, nrow(ph))
       if (!is.na(pagar_hoy_id) && nzchar(pagar_hoy_id %||% ""))
@@ -826,8 +830,12 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     # 2. Remove pagar_hoy (pending only) — by FK id, by provision_id, and by
     #    business key so calendar-staged rows (no FK) are also cleaned up.
-    ph <- if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db() else
-          tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()), error = function(e) NULL)
+    # Read fresh from S3 first, not this session's possibly-stale in-memory
+    # copy -- this removes rows, so a stale read can silently resurrect a
+    # row another session already removed or drop one it just added (same
+    # race class as the manual_inv incident fixed 2026-07-24).
+    ph <- tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()), error = function(e) NULL) %||%
+          (if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db() else NULL)
     if (!is.null(ph) && nrow(ph) > 0) {
       rm_mask <- rep(FALSE, nrow(ph))
       if (!is.na(pagar_hoy_id) && nzchar(pagar_hoy_id %||% ""))

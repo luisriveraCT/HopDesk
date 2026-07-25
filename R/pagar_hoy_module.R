@@ -1174,7 +1174,12 @@ pagarHoyServer <- function(id, shared) {
         # removing a reference from it can never destroy anything; the only
         # real guardrail (no in-app action may remove an ERP row from
         # Calendario itself) lives elsewhere and is untouched by this.
-        ph <- unstage_pagar_hoy(shared$pagar_hoy_db(),
+        # Still read fresh from S3 before writing the whole table back --
+        # removal is by id, so a stale base only risks silently dropping
+        # another session's concurrent stage/unstage, never a wrong removal.
+        ph <- unstage_pagar_hoy(
+               tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()),
+                        error = function(e) NULL) %||% shared$pagar_hoy_db(),
                rows |> dplyr::select(id), keys = "id")
         shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
 
@@ -1234,7 +1239,12 @@ pagarHoyServer <- function(id, shared) {
         # removing a reference from it can never destroy anything; the only
         # real guardrail (no in-app action may remove an ERP row from
         # Calendario itself) lives elsewhere and is untouched by this.
-        ph <- unstage_pagar_hoy(shared$pagar_hoy_db(),
+        # Still read fresh from S3 before writing the whole table back --
+        # removal is by id, so a stale base only risks silently dropping
+        # another session's concurrent stage/unstage, never a wrong removal.
+        ph <- unstage_pagar_hoy(
+               tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()),
+                        error = function(e) NULL) %||% shared$pagar_hoy_db(),
                rows |> dplyr::select(id), keys = "id")
         shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
         showNotification(paste0(nrow(rows), " cobro(s) quitado(s)."), type = "message", duration = 2)
@@ -1399,7 +1409,15 @@ pagarHoyServer <- function(id, shared) {
         # since Agenda never holds the real data (Mouse, 2026-07-23).
         # sap_fact_ids/man_fact_ids are still split below, for the
         # manual_inv-archiving decision, not for what happens here.
-        ph  <- shared$pagar_hoy_db()
+        # Read fresh from S3, not this session's possibly-stale in-memory
+        # copy -- unstaging writes the WHOLE table back, so a stale base
+        # snapshot here would silently drop any row another session staged
+        # or unstaged in the meantime (same race class as the manual_inv
+        # incident fixed 2026-07-24; removal is still strictly by id, so a
+        # fresh base only adds safety, it never changes which rows this
+        # confirm removes).
+        ph  <- tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()),
+                        error = function(e) NULL) %||% shared$pagar_hoy_db()
         sap_fact_ids <- factura_rows$id[is_erp_sourced(factura_rows$source)]
         man_fact_ids <- factura_rows$id[!is_erp_sourced(factura_rows$source)]
         rm_ids <- c(factura_rows$id, abono_rows$id)
@@ -1695,7 +1713,15 @@ pagarHoyServer <- function(id, shared) {
         # since Agenda never holds the real data (Mouse, 2026-07-23).
         # sap_fact_ids/man_fact_ids are still split below, for the
         # manual_inv-archiving decision, not for what happens here.
-        ph  <- shared$pagar_hoy_db()
+        # Read fresh from S3, not this session's possibly-stale in-memory
+        # copy -- unstaging writes the WHOLE table back, so a stale base
+        # snapshot here would silently drop any row another session staged
+        # or unstaged in the meantime (same race class as the manual_inv
+        # incident fixed 2026-07-24; removal is still strictly by id, so a
+        # fresh base only adds safety, it never changes which rows this
+        # confirm removes).
+        ph  <- tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()),
+                        error = function(e) NULL) %||% shared$pagar_hoy_db()
         sap_fact_ids <- factura_rows$id[is_erp_sourced(factura_rows$source)]
         man_fact_ids <- factura_rows$id[!is_erp_sourced(factura_rows$source)]
         rm_ids <- c(factura_rows$id, abono_rows$id)
@@ -2463,7 +2489,15 @@ pagarHoyServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$do_clear_all, {
-      ph      <- shared$pagar_hoy_db() |> dplyr::filter(status != "pending")
+      # This wipes every pending row for every user/empresa in one write --
+      # the largest blast radius of any pagar_hoy_db site. Read fresh from
+      # S3 first: a stale base here would silently discard anything another
+      # session staged moments ago, since that row was never in this
+      # session's copy to begin with and this filter can only keep what's
+      # already present.
+      ph      <- (tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()),
+                           error = function(e) NULL) %||% shared$pagar_hoy_db()) |>
+                    dplyr::filter(status != "pending")
       saved   <- tryCatch({
         save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
         TRUE
