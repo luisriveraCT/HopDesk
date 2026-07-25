@@ -853,7 +853,7 @@ pagarHoyServer <- function(id, shared) {
         dt
       }, server = FALSE)
 
-      # ── AR table (unchanged) ─────────────────────────────────────────────
+      # ── AR table ──────────────────────────────────────────────────────────
       output[[paste0("tbl_ar_", emp)]] <- DT::renderDataTable({
         s_emp   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
         cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
@@ -868,12 +868,24 @@ pagarHoyServer <- function(id, shared) {
                            language = list(emptyTable = "Sin cobros esperados"))))
         }
         s_sorted    <- s_cur |> dplyr::arrange(FechaVenc)
+        if (!"tipo_item" %in% names(s_sorted)) s_sorted[["tipo_item"]] <- NA_character_
         row_classes <- dplyr::if_else(!is.na(s_sorted$status) & s_sorted$status == "confirmed",
                                        "ph-row-confirmed", "")
+        # Abono rows must be visually distinguishable from real Cobros, same
+        # as the AP table's abono_pfx badge above -- otherwise a partial
+        # payment looks exactly like a full invoice awaiting collection
+        # (found 2026-07-24, AR side had no badge at all).
+        abono_pfx <- dplyr::if_else(
+          !is.na(s_sorted[["tipo_item"]]) & s_sorted[["tipo_item"]] == "abono",
+          '<span class="badge bg-warning text-dark me-1" style="font-size:0.65em;">ABONO</span>',
+          ''
+        )
         tbl <- s_sorted |>
-          dplyr::transmute(Cliente = Parte, Documento,
-                           Vencimiento = format(FechaVenc, "%d/%m/%Y"),
-                           Importe = fmt_money(Importe))
+          dplyr::transmute(
+            Cliente = paste0(abono_pfx, htmltools::htmlEscape(Parte)),
+            Documento,
+            Vencimiento = format(FechaVenc, "%d/%m/%Y"),
+            Importe = fmt_money(Importe))
         DT::datatable(tbl, escape = FALSE, rownames = FALSE,
           selection = list(mode = "multiple"),
           options   = list(pageLength = 50, dom = "t", scrollX = TRUE, scrollY = "180px",
