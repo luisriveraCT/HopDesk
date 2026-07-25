@@ -703,6 +703,53 @@ race here is self-healing via the 8-second poll, not permanent data
 loss, unlike the 7 sites hardened above. Not silently skipped — listed
 here as an explicit open item below if Mouse wants full coverage later.
 
+### Stage 16 correction — hardening itself corrupted the live Agenda
+
+Source: live incident, same day, a few hours after Stage 16 shipped — a
+user hit "whack-a-mole" in Agenda de Hoy: clicking "Quitar" on one
+selected row removed more than the selection, and confirming one
+company's queue kept resurrecting another company's already-confirmed
+items every time the other queue was confirmed.
+
+**✅ Root-caused and fixed 2026-07-25** — branch `confirmed-logic-stage-2`
+(stacked). Stage 16's fix was itself the bug. It read fresh via plain
+`load_pagar_hoy(client_id=...)` at all 7 sites — but that function
+unconditionally reads the legacy `S3_KEYS$pagar_hoy` key, with no
+awareness of `save_pagar_hoy()`'s own three-way branch (shared sync
+file when sync mode is on, a per-user file otherwise, or that same
+legacy file as a last resort). This client has sync mode on, so every
+real write goes to `pagar_hoy_sync.rds` — while all 7 of Stage 16's
+"fresh" reads kept pulling a frozen, months-old snapshot from the
+abandoned legacy key. Confirmed live: every row in that snapshot has
+`staged_by="anon"` and `staged_at=NA` — leftover seed data, not a
+single real user action, and one row was independently verifiable as
+already confirmed-and-archived to `papelera` the day before, yet
+present again in this "fresh" read as `pending`. Since all 7 sites are
+read-modify-**whole-table**-write, every write silently replaced the
+correct live sync state with that stale snapshot — reproducing exactly
+as reported: a Quitar click appearing to ignore the selection (the
+targeted rows weren't even in the stale base to begin with, so nothing
+about them changed, while dozens of unrelated old rows came back), and
+confirming each company's queue in turn re-introducing whatever the
+*other* company's queue looked like in the frozen snapshot.
+
+Fixed by switching all 7 sites to `safe_load_pagar_hoy()`
+(`R/persistence.R`) — an existing dispatch helper that already
+replicates `save_pagar_hoy()`'s own three-way branch, and the same
+function `app.R`'s `me_save` already trusted for exactly this reason.
+14 new/updated tests in `tests/test_pagar_hoy_db_stale_read_hardening.R`,
+including an explicit static-scan guard against the bare
+`load_pagar_hoy()` regression recurring at any of the 7 sites. 465
+total in the confirmed-logic suite, full existing suite still green.
+
+**Data impact**: the live `pagar_hoy_sync.rds` for this client was left
+in a corrupted state by the bad writes (a mix of legitimate recent
+staging and dozens of resurrected legacy rows). Repair requires a
+judgment call about which of the resurrected rows are real outstanding
+business vs. abandoned seed data — raised to Mouse directly rather than
+resolved unilaterally, since real vendor invoices with real amounts are
+involved.
+
 ### Stage 17 — Manual invoice silently vanished on a papelera-ghost key collision
 
 Source: live user report, same day as Stages 15-16 — created a new
