@@ -582,6 +582,29 @@ investigation of one incident, not by that kind of exhaustive check.
 Worth flagging to Mouse as an open item (see below) rather than assuming
 this is now provably the last one.
 
+### Stage 14c — Exhaustive `pagar_hoy_db` staging-site source scan
+
+Source: the open item Stage 14b raised immediately above. Mouse chose
+this over the two other candidates (hardening `pagar_hoy_db`'s remaining
+~19 naive read-modify-write sites; auditing abono rows against the
+3-type framework — both still open, listed below).
+
+**✅ DONE 2026-07-24** — branch `confirmed-logic-stage-2` (stacked).
+`tests/test_stage14b_exhaustive_source_scan.R` grep-enumerates every
+`upsert_pagar_hoy()` call site in `R/*.R` (the one function every
+staging path funnels through) and asserts both the total count (9) and
+the per-file breakdown — so a future site being added or removed fails
+the suite loudly instead of silently, forcing a conscious audit-and-bump
+rather than letting a fifth site hide the same way `cart_inv_click` did.
+Also added first-time static-scan coverage for the two sites that had
+none until now (both already correct): `ledger_module.R`'s `cart_<i>`
+group-level button, and `staging_browse_module.R`'s abono-staging
+observer (where `source` is inert to the confirm handler's archiving
+logic today — it splits on `tipo_item=="abono"` before ever checking
+`is_erp_sourced` — but is still asserted so a future refactor can't
+silently drop the column without the suite noticing). 12 new tests, 405
+total in the confirmed-logic suite, full existing suite still green.
+
 ## Open items needing Mouse's input before or during the relevant stage
 
 - Invoice `1025618` (`AGENDA_CALENDARIO_WIRING_AUDIT.md` §1) — re-enter
@@ -592,12 +615,9 @@ this is now provably the last one.
 - Should `bancos_confirmados` gain a `source` column for at-a-glance
   ERP-vs-local audit visibility? Low-priority, could fold into Stage 2 or
   skip.
-- Stage 14's scope call.
-- Whether it's worth writing one exhaustive test that enumerates every
-  `pagar_hoy_db`-row-construction call site (grep-based, so it can't miss
-  a future one either) and asserts each sets `source` correctly, rather
-  than relying on incident-by-incident discovery as happened for both
-  Stage 6 and Stage 14b.
+- Stage 14's scope call — specifically, whether to harden `pagar_hoy_db`'s
+  remaining ~19 naive read-modify-write sites the same way `manual_inv`'s
+  six highest-stakes sites were hardened.
 - **Not yet examined against the 3-type framework**: abono rows (partial-
   payment records that also live in `pagar_hoy_db`, removed on confirm
   alongside manual/provision rows per `AGENDA_CALENDARIO_WIRING_AUDIT.md`
