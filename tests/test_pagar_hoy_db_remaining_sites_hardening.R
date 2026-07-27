@@ -76,7 +76,7 @@ sites <- list(
   list(file = "R/ledger_module.R", anchor = "observeEvent\\(input\\$cart_inv_click,", occurrence = 1L, label = "cart_inv_click", window = 30),
   list(file = "R/ledger_module.R", anchor = "^\\.sync_staged <- function", occurrence = 1L, label = ".sync_staged (shared helper)", window = 20),
   list(file = "R/search_module.R", anchor = 'action %in% c\\("stage_all", "stage_selected"\\)', occurrence = 1L, label = "handle_invoice_action stage_all/stage_selected", window = 50),
-  list(file = "R/staging_browse_module.R", anchor = "observeEvent\\(input\\$ab_rows,", occurrence = 1L, label = "ab_rows (abono staging)", window = 10),
+  list(file = "R/staging_browse_module.R", anchor = "observeEvent\\(input\\$ab_rows,", occurrence = 1L, label = "ab_rows (abono staging)", window = 25),
   list(file = "R/treasury_map_module.R", anchor = "observeEvent\\(input\\$send_to_agenda,", occurrence = 1L, label = "send_to_agenda", window = 10),
   list(file = "R/interco_module.R", anchor = "\\.ic_send_rows <- function", occurrence = 1L, label = ".ic_send_rows", window = 10),
   list(file = "R/pasivos_module.R", anchor = "\\.pasivos_perform_conversion <- function", occurrence = 1L, label = ".pasivos_perform_conversion stage-to-agenda", window = 85),

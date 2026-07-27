@@ -307,11 +307,38 @@ show_combined_entry_modal <- function(ledger, sap_data, session,
       ' data-idx="', i,         '"',
       ' data-max="', saldo_val, '"',
       ' value="',    saldo_val, '"',
+      # Disabled until its checkbox is checked -- the change.abcheck handler
+      # (.ab_js) already enables/disables it on toggle, but only reacts to a
+      # CHANGE event, so the initial render must start disabled to match the
+      # unchecked default (found live 2026-07-27: every amount field was
+      # editable from the moment the modal opened, regardless of selection).
+      ' disabled',
       ' min="0" step="0.01">',
       '<div class="ab-warn-msg">Mayor al saldo (', htmltools::htmlEscape(saldo_fmt), ')</div>',
     '</td>',
     '</tr>'
   )
+}
+
+# Normalize the client's checked-rows payload to a list-of-lists, one entry
+# per row, regardless of how many rows were checked. jsonlite/Shiny
+# simplifies a JSON array of objects differently depending on its length --
+# see the observeEvent(input$ab_rows) call site for the exact shapes and the
+# live incident this fixes (2026-07-27), matching the same normalization
+# R/ledger_module.R's .cart_inv_sel_to_keys() already needed for cart_inv_sel.
+.normalize_ab_rows <- function(rows_data) {
+  if (is.null(rows_data)) return(list())
+  if (is.data.frame(rows_data)) {
+    return(lapply(seq_len(nrow(rows_data)), function(k) as.list(rows_data[k, , drop = FALSE])))
+  }
+  if (is.list(rows_data) && !is.null(rows_data[["idx"]])) {
+    n <- length(rows_data[["idx"]])
+    if (n > 1L) {
+      return(lapply(seq_len(n), function(k) lapply(rows_data, function(v) v[[k]])))
+    }
+    return(list(rows_data))
+  }
+  rows_data
 }
 
 # ── Show the abono modal ──────────────────────────────────────────────────────
@@ -504,8 +531,20 @@ setup_abono_browse <- function(input, output, session,
   # Calendar reduction takes effect only when "Confirmar pagos" in Agenda de Hoy
   # writes confirmed rows to abonos_db with status = "active".
   observeEvent(input$ab_rows, {
-    rows_data <- input$ab_rows
-    if (!is.list(rows_data) || length(rows_data) == 0) return()
+    # Normalize to list-of-lists. Shiny/jsonlite delivers the client's JSON
+    # array of row objects in different shapes depending on how many rows
+    # were checked -- the exact same failure mode already documented and
+    # fixed for cart_inv_sel (R/ledger_module.R's .cart_inv_sel_to_keys()):
+    #   (a) data.frame        — jsonlite simplifyDataFrame kicked in (2+ rows)
+    #   (b) list(idx=vec,...) — named list of vectors (2+ rows)
+    #   (c) list(idx=x, ...)  — single row, auto-unboxed (found live
+    #       2026-07-27: checking exactly one row and clicking "Enviar a
+    #       Agenda" silently did nothing -- `for (r_raw in rows_data)` was
+    #       iterating over this row's individual FIELD VALUES instead of
+    #       over rows, so `r_raw$saldo` errored on a plain scalar)
+    #   (d) list(list(...), ...) — already correct
+    rows_data <- .normalize_ab_rows(input$ab_rows)
+    if (!length(rows_data)) return()
 
     ledger <- input$ab_ledger %||% "AP"
     # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
