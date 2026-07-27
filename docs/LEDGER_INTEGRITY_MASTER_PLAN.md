@@ -859,6 +859,56 @@ following it.
 green. `pagar_hoy_db` now has the same concurrency-hardening coverage
 as `manual_inv` — no sites left on the original Stage 14 open-item list.
 
+### Stage 20 — Close out the three remaining Abono Parcial follow-ups
+
+Source: Stage 15's audit, picked up per Mouse's choice ("both, hardening
+first") right after Stage 19.
+
+**✅ DONE 2026-07-26** — branch `confirmed-logic-stage-2` (stacked).
+
+1. **Staged-abono due-date display**: `R/staging_browse_module.R`'s
+   `ab_rows` observer always set `FechaVenc = Sys.Date()`, showing
+   "today" in Agenda de Hoy instead of the real invoice due date. Fixed
+   to parse the real due date the client already sends
+   (`r_raw$fecha_venc`), falling back to `Sys.Date()` only if genuinely
+   unparseable.
+
+2. **`rename_empresa_initials()` gap — corrected scope**: the originally
+   suspected gap (extend the cascade to `abonos_db`/`pagar_hoy`/
+   `manual_inv`/`sap_overrides`) doesn't actually apply — those four
+   tables store the company's *full display name*, not its initials, so
+   they were never in scope for a function that only ever renames
+   initials (`old_ini`/`new_ini`). A full-name rename cascade would be a
+   separate, unbuilt feature; Mouse deprioritized it as low-frequency
+   (full legal/display names change far less often than a short internal
+   initials code). The *real* gap, found while verifying this: two
+   tables that genuinely do store initials — `pasivos_provisions` and
+   `pasivos_liabilities` — were missing from the cascade entirely. A
+   renamed company's provisions/liabilities would silently keep the old
+   initials, breaking the initials-to-full-name lookup used when staging
+   a converted provision to `manual_inv`/`pagar_hoy`. Fixed — both added,
+   verified hardcoding-free (every table in the cascade is parameterized
+   purely by `old_ini`/`new_ini`/`client_id`, confirmed by direct read).
+
+3. **`void_abono()` finally wired to a UI**: existed since the abono
+   system was built, never called from anywhere — a wrong abono amount
+   or wrong invoice was permanent. Added a "Deshacer" button for active
+   abonos directly inside the existing Historial de confirmaciones table
+   (`R/bancos_module.R`), alongside the regular undo/delete actions,
+   reusing the same visual pattern and columns rather than a new screen
+   (Mouse's explicit choice over a dedicated Abonos view).
+
+37 new tests in `tests/test_stage20_abono_followups.R`, including a real
+end-to-end run of `rename_empresa_initials()` against mocked S3 I/O
+(caught and fixed a test-authoring bug along the way: an early version's
+mocks leaked into the shared test-runner's global environment via a
+top-level `<<-`, silently breaking an unrelated later test file in the
+same run — fixed by running the mocked section inside a function so
+`on.exit()` can properly save/restore prior bindings). 537 total in the
+confirmed-logic suite, full existing suite still green.
+
+This closes every item Stage 15's audit raised.
+
 ## Open items needing Mouse's input before or during the relevant stage
 
 - Invoice `1025618` (`AGENDA_CALENDARIO_WIRING_AUDIT.md` §1) — re-enter
@@ -869,10 +919,11 @@ as `manual_inv` — no sites left on the original Stage 14 open-item list.
 - Should `bancos_confirmados` gain a `source` column for at-a-glance
   ERP-vs-local audit visibility? Low-priority, could fold into Stage 2 or
   skip.
-- Whether to add a `void_abono()` UI, fix the staged-abono due-date
-  display, and extend `rename_empresa_initials()` to cover `abonos_db`
-  (and `pagar_hoy`/`manual_inv`/`sap_overrides`) — all found by Stage
-  15's audit, none fixed yet.
+- A full-name (Razón Social/Nombre corto) rename cascade for
+  `manual_inv`/`pagar_hoy`/`abonos_db`/`sap_overrides` — deliberately not
+  built (Stage 20), deprioritized as low-frequency. Revisit if a client
+  actually renames a company's full display name and hits stale-key
+  issues in these tables.
 
 ## Completeness check (self-review before presenting)
 
