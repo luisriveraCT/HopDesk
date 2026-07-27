@@ -890,7 +890,17 @@ ledgerModuleServer <- function(id, config, shared) {
       }
       new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
                                 "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
-      updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
+      # Read fresh from S3 first, not this session's possibly-stale in-memory
+      # copy -- this writes the whole table back, so a stale base would
+      # silently drop another session's concurrent stage/unstage. Must be
+      # safe_load_pagar_hoy(), not the mode-blind load_pagar_hoy() (found
+      # 2026-07-25: the latter always reads the legacy S3 key regardless of
+      # sync/per-user mode, corrupting the live agenda -- see Stage 16's
+      # correction in docs/LEDGER_INTEGRITY_MASTER_PLAN.md).
+      ph_base <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                              client_id = shared$effective_client_id()),
+                          error = function(e) NULL) %||% shared$pagar_hoy_db()
+      updated <- upsert_pagar_hoy(ph_base, new_rows,
                                   keys = c("ledger","Empresa","Moneda","Documento","Importe"))
       shared$pagar_hoy_db(updated)
       save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
@@ -957,7 +967,17 @@ ledgerModuleServer <- function(id, config, shared) {
       }
       new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
                                 "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
-      updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
+      # Read fresh from S3 first, not this session's possibly-stale in-memory
+      # copy -- this writes the whole table back, so a stale base would
+      # silently drop another session's concurrent stage/unstage. Must be
+      # safe_load_pagar_hoy(), not the mode-blind load_pagar_hoy() (found
+      # 2026-07-25: the latter always reads the legacy S3 key regardless of
+      # sync/per-user mode, corrupting the live agenda -- see Stage 16's
+      # correction in docs/LEDGER_INTEGRITY_MASTER_PLAN.md).
+      ph_base <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                              client_id = shared$effective_client_id()),
+                          error = function(e) NULL) %||% shared$pagar_hoy_db()
+      updated <- upsert_pagar_hoy(ph_base, new_rows,
                                   keys = c("ledger","Empresa","Moneda","Documento","Importe"))
       shared$pagar_hoy_db(updated)
       save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
@@ -1076,7 +1096,14 @@ ledgerModuleServer <- function(id, config, shared) {
             type = "warning", duration = 4)
           return()
         }
-        ph_now  <- shared$pagar_hoy_db()
+        # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, NOT
+        # the legacy-key-blind load_pagar_hoy(), found 2026-07-25). Reused
+        # for both the "already staged" check and the write below, so this
+        # one read is the base for the whole action, not silently mixed
+        # with a stale shared$pagar_hoy_db() partway through.
+        ph_now  <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                                client_id = shared$effective_client_id()),
+                            error = function(e) NULL) %||% shared$pagar_hoy_db()
         already <- if (!is.null(ph_now) && nrow(ph_now)) {
           ph_sub <- ph_now[ph_now[["ledger"]] == ledger, , drop = FALSE]
           nrow(merge(ph_sub[, c("Empresa","Moneda","Documento","Importe"), drop=FALSE], inv_keys, by = c("Empresa","Moneda","Documento","Importe")))
@@ -1114,7 +1141,8 @@ ledgerModuleServer <- function(id, config, shared) {
           }
           new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
                                     "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
-          updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
+          # Reuse the fresh ph_now read from above -- no need for a second read.
+          updated <- upsert_pagar_hoy(ph_now %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
                                     keys = c("ledger","Empresa","Moneda","Documento","Importe"))
           shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
           lbl_agenda <- if (ledger == "AR") "Agenda del d\u00eda (Cobros)" else "Agenda del d\u00eda (Pagos)"
@@ -1170,7 +1198,12 @@ ledgerModuleServer <- function(id, config, shared) {
       inv_rows <- inv_rows[order(-inv_rows[["Importe"]]), ]
       if (j > nrow(inv_rows)) return()
       inv_key  <- inv_rows[j, c("Empresa","Moneda","Documento","Importe"), drop=FALSE]
-      ph_now   <- shared$pagar_hoy_db()
+      # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
+      # 2026-07-25); reused below for both the "already staged" check and
+      # the write, same reasoning as cart_<i>'s identical comment above.
+      ph_now   <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                               client_id = shared$effective_client_id()),
+                           error = function(e) NULL) %||% shared$pagar_hoy_db()
       already  <- if (!is.null(ph_now) && nrow(ph_now)) {
         ph_sub <- ph_now[ph_now[["ledger"]] == ledger, , drop=FALSE]
         nrow(merge(ph_sub[, c("Empresa","Moneda","Documento","Importe"), drop=FALSE],
@@ -2992,7 +3025,13 @@ ledgerModuleServer <- function(id, config, shared) {
                          new_importe = NULL,
                          username    = NULL,
                          client_id   = NULL) {
-  ph <- ph_rv()
+  # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
+  # 2026-07-25); this edits a row in place and writes the whole table back,
+  # so a stale base could silently drop another session's concurrent
+  # stage/unstage. Shared by do_move/do_restore/sap_edit_save -- one fix
+  # covers all three call sites.
+  ph <- tryCatch(safe_load_pagar_hoy(username = username, client_id = client_id),
+                 error = function(e) NULL) %||% ph_rv()
   if (is.null(ph) || !nrow(ph)) return(invisible(NULL))
   changed <- FALSE
   for (i in seq_len(nrow(keys))) {

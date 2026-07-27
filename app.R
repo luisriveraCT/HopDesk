@@ -2443,7 +2443,9 @@ server <- function(input, output, session) {
         ph_rv      = pagar_hoy_db,
         new_date   = as.Date(input$me_fecha),
         new_imp    = input$me_importe  %||% 0,
-        new_parte  = trimws(input$me_parte %||% ""))
+        new_parte  = trimws(input$me_parte %||% ""),
+        username   = current_user(),
+        client_id  = effective_client_id())
       session$userData[["me_edit_id"]] <- ""
       removeModal()
       active_entry_ledger(NULL)
@@ -2483,8 +2485,12 @@ server <- function(input, output, session) {
       if (send_to_agenda) {
         manual_row <- df[df[["id"]] == new_row$id, , drop = FALSE]
         ph_row     <- stage_manual_row_to_agenda(manual_row, current_user())
+        # Fresh read first, not this session's possibly-stale in-memory copy
+        # (found 2026-07-25 -- this call had the precedence backwards, the
+        # same mistake Stage 16 originally made in pasivos_module.R).
         ph_updated <- upsert_pagar_hoy(
-          pagar_hoy_db() %||% safe_load_pagar_hoy(current_user(), client_id = effective_client_id()),
+          tryCatch(safe_load_pagar_hoy(current_user(), client_id = effective_client_id()),
+                   error = function(e) NULL) %||% pagar_hoy_db(),
           ph_row, keys = "id")
         pagar_hoy_db(ph_updated)
         tryCatch(save_pagar_hoy(ph_updated, current_user(), client_id = effective_client_id()),

@@ -143,7 +143,7 @@ cat("── Staged pagar_hoy rows always carry an explicit source ────�
   start_ic <- grep("\\.ic_send_rows\\s*<-\\s*function", txt_ic)
   .chk(length(start_ic) > 0, TRUE, "found .ic_send_rows to scan")
   if (length(start_ic)) {
-    block_ic <- paste(txt_ic[start_ic[1]:min(start_ic[1] + 45, length(txt_ic))], collapse = "\n")
+    block_ic <- paste(txt_ic[start_ic[1]:min(start_ic[1] + 55, length(txt_ic))], collapse = "\n")
     .chk(grepl('source\\s*=\\s*"sap"', block_ic), TRUE,
          ".ic_send_rows now sets source = \"sap\" explicitly on new pagar_hoy rows")
   }

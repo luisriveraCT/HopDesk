@@ -508,7 +508,11 @@ setup_abono_browse <- function(input, output, session,
     if (!is.list(rows_data) || length(rows_data) == 0) return()
 
     ledger <- input$ab_ledger %||% "AP"
-    ph     <- pagar_hoy_db() %||% load_pagar_hoy()
+    # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
+    # 2026-07-25); a stale base here would silently drop another session's
+    # concurrent stage/unstage.
+    ph     <- tryCatch(safe_load_pagar_hoy(username = current_user(), client_id = client_id()),
+                       error = function(e) NULL) %||% pagar_hoy_db()
 
     # The client-side warning class (.ab-warn) is cosmetic only -- nothing
     # ever stopped submitting an abono larger than the invoice's remaining

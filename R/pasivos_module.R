@@ -176,8 +176,12 @@ pasivos_manage_converted_modal_ui <- function() {
     manual_row <- manual_df[manual_df[["id"]] == new_manual_id, , drop = FALSE]
     new_ph_row <- stage_manual_row_to_agenda(manual_row, user)
     new_ph_row[["id"]] <- new_pagar_hoy_id
+    # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
+    # 2026-07-25); a stale base here would silently drop another session's
+    # concurrent stage/unstage.
     ph_df <- upsert_pagar_hoy(
-      shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$effective_client_id()),
+      tryCatch(safe_load_pagar_hoy(username = user, client_id = shared$effective_client_id()),
+               error = function(e) NULL) %||% shared$pagar_hoy_db(),
       new_ph_row,
       keys = c("ledger", "Empresa", "Moneda", "Documento")
     )

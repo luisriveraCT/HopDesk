@@ -1078,7 +1078,13 @@ handle_invoice_action <- function(payload, shared) {
       showNotification("No se encontraron facturas con documento válido.", type = "warning")
       return()
     }
-    updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(), new_rows)
+    # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
+    # 2026-07-25); a stale base here would silently drop another session's
+    # concurrent stage/unstage.
+    ph_base <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                            client_id = shared$effective_client_id()),
+                        error = function(e) NULL) %||% shared$pagar_hoy_db()
+    updated <- upsert_pagar_hoy(ph_base, new_rows)
     shared$pagar_hoy_db(updated)
     tryCatch(save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id()), error = function(e)
       showNotification(paste("Error guardando agenda:", e$message), type = "warning"))

@@ -828,7 +828,13 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
     observeEvent(input$send_to_agenda, {
       plan <- payment_plan(); req(length(plan) > 0)
 
-      ph <- tryCatch(shared$pagar_hoy_db(), error = function(e) NULL) %||%
+      # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
+      # 2026-07-25); a stale base here would silently drop another session's
+      # concurrent stage/unstage.
+      ph <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                         client_id = shared$effective_client_id()),
+                    error = function(e) NULL) %||%
+            tryCatch(shared$pagar_hoy_db(), error = function(e) NULL) %||%
             tibble::tibble(id = character(), ledger = character(), Empresa = character(),
                            Moneda = character(), Documento = character(), Parte = character(),
                            Importe = numeric(), FechaVenc = as.Date(character()),
