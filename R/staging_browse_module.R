@@ -543,7 +543,10 @@ setup_abono_browse <- function(input, output, session,
           Codigo    = trimws(as.character(r_raw$codigo %||% "")),
           tipo_item = "abono",
           Importe   = as.numeric(r_raw$importe %||% 0),
-          FechaVenc = Sys.Date(),
+          # The invoice's real due date, not the staging date (found
+          # 2026-07-24: this always showed "today" in Agenda de Hoy,
+          # misleading next to real factura rows in the same table).
+          FechaVenc = tryCatch(as.Date(r_raw$fecha_venc), error = function(e) Sys.Date()),
           staged_by = current_user(),
           staged_at = Sys.time(),
           status    = "pending",

@@ -3227,6 +3227,7 @@ bancosServer <- function(id, shared) {
           Tipo      = ifelse(tipo == "pago",
             '<span class="badge bg-danger">Pago</span>',
             '<span class="badge bg-success">Cobro</span>'),
+          .sort_at  = confirmado_at,
           Acciones  = ifelse(
             .legacy,
             '<span class="badge bg-secondary" title="Confirmado por la ruta anterior">Legado</span>',
@@ -3239,11 +3240,88 @@ bancosServer <- function(id, shared) {
             )
           )
         ) |>
-        dplyr::select(Fecha, Empresa, Parte, Documento, Importe, Moneda, Tipo, Acciones)
+        dplyr::select(Fecha, Empresa, Parte, Documento, Importe, Moneda, Tipo, Acciones, .sort_at)
+
+      # Active abonos (Abono Parcial confirmations) \u2014 a separate table
+      # (abonos_db, not bancos_confirmados), but shown in this same history
+      # so "Deshacer" for a partial payment lives next to every other undo
+      # action instead of a whole new screen (found 2026-07-24's audit:
+      # void_abono() existed but nothing ever called it).
+      ab_all <- tryCatch(shared$abonos_db(), error = function(e) NULL) %||% tibble::tibble()
+      ab_active <- if (nrow(ab_all)) dplyr::filter(ab_all, status == "active") else ab_all
+      if (nzchar(emp_f))  ab_active <- dplyr::filter(ab_active, tolower(Empresa) == tolower(emp_f))
+      if (nzchar(tipo_f)) {
+        want_ledger <- if (tipo_f == "pago") "AP" else "AR"
+        ab_active <- dplyr::filter(ab_active, ledger == want_ledger)
+      }
+      if (nzchar(search_q)) {
+        q <- tolower(search_q)
+        ab_active <- dplyr::filter(ab_active,
+          grepl(q, tolower(Parte     %||% ""), fixed = TRUE) |
+          grepl(q, tolower(Documento %||% ""), fixed = TRUE) |
+          grepl(q, tolower(Empresa   %||% ""), fixed = TRUE)
+        )
+      }
+      if (nrow(ab_active)) {
+        ab_tbl <- ab_active |>
+          dplyr::mutate(
+            Fecha     = format(as.Date(fecha_abono), "%d/%m/%Y"),
+            Empresa   = htmltools::htmlEscape(Empresa   %||% ""),
+            Parte     = htmltools::htmlEscape(Parte     %||% ""),
+            Documento = htmltools::htmlEscape(Documento %||% ""),
+            Importe   = fmt_money(importe),
+            Moneda    = Moneda %||% "",
+            Tipo      = '<span class="badge bg-warning text-dark">Abono</span>',
+            .sort_at  = as.POSIXct(created_at),
+            Acciones  = sprintf(
+              '<button class="bnc-btn-xs bnc-btn-xs--undo" title="Deshacer abono y restaurar el saldo" onclick="Shiny.setInputValue(\'%s\', {id:\'%s\', nonce:Math.random()}, {priority:\'event\'})">&#8630;</button>',
+              ns("undo_abono"), id)
+          ) |>
+          dplyr::select(Fecha, Empresa, Parte, Documento, Importe, Moneda, Tipo, Acciones, .sort_at)
+        tbl <- dplyr::bind_rows(tbl, ab_tbl)
+      }
+
+      tbl <- tbl |>
+        dplyr::arrange(dplyr::desc(.sort_at)) |>
+        dplyr::select(-.sort_at)
 
       DT::datatable(tbl, escape = FALSE, rownames = FALSE, selection = "none",
         options = list(pageLength = 25, scrollX = TRUE, dom = "lrtip"))
     }, server = TRUE)
+
+    # \u2500\u2500 Deshacer abono \u2014 void it, restoring the invoice's balance \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    # void_abono() (R/persistence.R) already existed but nothing called it
+    # (found 2026-07-24's Abono Parcial audit). Soft-delete only (status \u2192
+    # "voided", same permanent-record convention as every other undo in this
+    # module) -- the invoice's Saldo vencido nets back up automatically on
+    # the next render, since active_abonos_summary() only sums status=="active".
+    observeEvent(input$undo_abono, {
+      ab_id <- input$undo_abono$id
+      req(ab_id)
+      ab <- tryCatch(shared$abonos_db(), error = function(e) NULL) %||% tibble::tibble()
+      if (!nrow(ab) || !ab_id %in% ab[["id"]]) return()
+
+      updated <- void_abono(ab, ab_id)
+      shared$abonos_db(updated)
+      # abonos_db isn't registered in the cross-session sync bus (matching
+      # the confirm-path's own save_abonos() call, which also doesn't bump
+      # a version) -- consistent with existing behavior, not a new gap.
+      tryCatch(save_abonos(updated, client_id = shared$effective_client_id()),
+               error = function(e)
+                 showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
+
+      showNotification("Abono deshecho \u2014 el saldo del comprobante se restaur\u00f3.",
+                       type = "message", duration = 3)
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "bancos",
+        action      = "deshacer_abono",
+        description = "Abono parcial deshecho",
+        target_id   = ab_id,
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
+    }, ignoreInit = TRUE)
 
     observeEvent(input$delete_conf, {
       conf_id <- input$delete_conf$id

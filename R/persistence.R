@@ -1618,6 +1618,29 @@ rename_empresa_initials <- function(old_ini, new_ini, client_id = NULL) {
     }
   }, error = function(e) message("[EMP rename] interco_v2: ", e$message))
 
+  # 6. pasivos_provisions \u2014 empresa column stores initials (found 2026-07-26:
+  # missing from this cascade entirely -- a renamed company's provisions
+  # would silently keep the old initials, breaking the initials-to-full-name
+  # lookup used to stage a converted provision to manual_inv/pagar_hoy).
+  tryCatch({
+    df <- load_pasivos_provisions(client_id = client_id)
+    if (nrow(df) && any(!is.na(df$empresa) & df$empresa == old_ini)) {
+      df <- .rni_col(df, "empresa")
+      save_pasivos_provisions(df, client_id = client_id)
+      touched <- c(touched, "pasivos_provisions")
+    }
+  }, error = function(e) message("[EMP rename] pasivos_provisions: ", e$message))
+
+  # 7. pasivos_liabilities \u2014 same gap, same reasoning as pasivos_provisions.
+  tryCatch({
+    df <- load_pasivos_liabilities(client_id = client_id)
+    if (nrow(df) && any(!is.na(df$empresa) & df$empresa == old_ini)) {
+      df <- .rni_col(df, "empresa")
+      save_pasivos_liabilities(df, client_id = client_id)
+      touched <- c(touched, "pasivos_liabilities")
+    }
+  }, error = function(e) message("[EMP rename] pasivos_liabilities: ", e$message))
+
   message(sprintf("[EMP rename] %s \u2192 %s \u2014 touched: %s",
                   old_ini, new_ini,
                   if (length(touched)) paste(touched, collapse = ", ") else "nothing"))
