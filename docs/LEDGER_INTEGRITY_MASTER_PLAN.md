@@ -909,6 +909,64 @@ confirmed-logic suite, full existing suite still green.
 
 This closes every item Stage 15's audit raised.
 
+### Stage 21 — Abono Parcial: "Enviar a Agenda" silently did nothing
+
+Source: live user report, found while actually operating the feature
+right after Stage 20 shipped — checked exactly one invoice, clicked
+"Enviar a Agenda", nothing happened, no error shown, modal stayed open.
+Also flagged in the same report: the amount input was editable before
+its checkbox was ever checked.
+
+This is directly relevant to the standing question of testing rigor on
+this project: Stage 20's own test suite was 22/22 green when it shipped.
+Every test exercised the server-side logic and static-scanned the
+markup; none of them simulated what Shiny/jsonlite actually does to the
+client's JSON payload for exactly one selected row. No browser-automation
+tool is available in this environment, so UI-facing changes in this
+project are verified by logic-level tests plus Mouse actually operating
+the app — not by anyone actually clicking the button before shipping.
+This incident, and Stage 16's before it, are the concrete evidence for
+why that distinction matters and why Mouse's own hands-on testing after
+each UI-facing stage remains load-bearing, not a formality.
+
+**✅ DONE 2026-07-27** — branch `confirmed-logic-stage-2` (stacked).
+Root cause: the client sends a JSON array of checked-row objects to
+`Shiny.setInputValue('ab_rows', rows, ...)`. jsonlite/Shiny simplifies
+that array differently depending on its length — for exactly one row, it
+unboxes to a flat named list (the row's fields directly) instead of a
+list containing one list. This is the *exact* failure mode
+`R/ledger_module.R`'s `.cart_inv_sel_to_keys()` already had to guard
+against for `cart_inv_sel` (a completely different feature, same
+underlying jsonlite behavior) — the abono staging code was written
+later and never got the equivalent treatment. The `ab_rows` observer's
+`for (r_raw in rows_data)` was iterating over the row's individual field
+values instead of over rows, and `r_raw$saldo` on a plain scalar throws
+— silently, since Shiny doesn't surface an observer error to the user
+by default.
+
+Fixed with an analogous normalizer, `.normalize_ab_rows()`
+(`R/staging_browse_module.R`), handling all four shapes jsonlite can
+produce (data.frame, named-list-of-vectors, single unboxed row,
+already-correct list-of-lists) — mirroring `.cart_inv_sel_to_keys()`'s
+own documented shape-handling exactly. Also fixed the sibling bug: the
+amount `<input>` had no `disabled` attribute on initial render (the
+`change.abcheck` handler in `.ab_js` only reacts to a *change* event, so
+it never ran on first paint), so every row's amount was editable before
+its checkbox was ever checked, regardless of selection state.
+
+20 new tests in `tests/test_abono_ab_rows_unboxing.R`, including a
+control assertion that reproduces the *original* crash on the
+un-normalized shape (proving the bug was real, not hypothetical) and
+coverage of all four jsonlite shapes, not just the one that happened to
+be hit live. 557 total in the confirmed-logic suite, full existing suite
+still green.
+
+**Still needs Mouse's hands-on verification** — same reasoning as
+above: check a single row and confirm it stages correctly, check
+multiple rows and confirm each keeps its own amount/documento (not
+cross-contaminated), and confirm the amount field now starts greyed out
+until its checkbox is checked.
+
 ## Open items needing Mouse's input before or during the relevant stage
 
 - Invoice `1025618` (`AGENDA_CALENDARIO_WIRING_AUDIT.md` §1) — re-enter
