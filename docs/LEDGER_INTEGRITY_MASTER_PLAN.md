@@ -818,6 +818,47 @@ test would have caught this before it shipped) and that the fix still
 correctly matches an invoice against itself. 476 total in the
 confirmed-logic suite, full existing suite still green.
 
+### Stage 19 — Harden pagar_hoy_db's remaining 14 medium-severity sites
+
+Source: Stage 16's own deferred scope, picked up per Mouse's explicit
+choice ("both, hardening first") after Stages 17-18's live bugs were
+closed out.
+
+**✅ DONE 2026-07-25** — branch `confirmed-logic-stage-2` (stacked).
+Completes the concurrency-hardening pass across all remaining
+read-modify-write `pagar_hoy_db` sites: `stage_all`, `stage_sel`, the
+`cart_<i>` group toggle (both branches), `cart_inv_click` (both
+branches), the shared `.sync_staged()` helper (one fix covers its three
+call sites — `do_move`/`do_restore`/`sap_edit_save`),
+`handle_invoice_action`'s `stage_all`/`stage_selected`, Abono Parcial
+staging, Intercompany's and Treasury Map's stage-to-agenda buttons,
+Pasivos' provision-conversion staging, and both of `me_save`'s
+stage-to-agenda paths — 13 code locations covering all 14 sites. Every
+site now uses `safe_load_pagar_hoy()`, never the mode-blind
+`load_pagar_hoy()` (the exact regression Stage 16 shipped and then
+corrected this same week — see that stage's correction above).
+
+Found two more instances of the same bug class while doing this sweep:
+`app.R`'s `me_save` insert-mode stage-to-agenda call had the
+fresh-read/stale-read precedence backwards (tried the stale in-memory
+value first, same mistake as the two Pasivos sites Stage 16 originally
+got backwards); and its edit-mode `.sync_staged()` call passed neither
+`username` nor `client_id` at all, silently defeating the mode-aware
+dispatch for that one call site. Both fixed.
+
+`app.R`'s session-init "Phase 2" block is deliberately left untouched —
+it IS the mode-detection logic `safe_load_pagar_hoy()` abstracts (it
+decides sync/per-user/legacy for the whole session), so calling that
+helper from inside it would be circular. Every other
+`shared$pagar_hoy_db()` read remaining in the codebase was individually
+verified to be a pure display/dependency reactive with no write
+following it.
+
+39 new tests in `tests/test_pagar_hoy_db_remaining_sites_hardening.R`.
+515 total in the confirmed-logic suite, full existing suite still
+green. `pagar_hoy_db` now has the same concurrency-hardening coverage
+as `manual_inv` — no sites left on the original Stage 14 open-item list.
+
 ## Open items needing Mouse's input before or during the relevant stage
 
 - Invoice `1025618` (`AGENDA_CALENDARIO_WIRING_AUDIT.md` §1) — re-enter
@@ -828,10 +869,6 @@ confirmed-logic suite, full existing suite still green.
 - Should `bancos_confirmados` gain a `source` column for at-a-glance
   ERP-vs-local audit visibility? Low-priority, could fold into Stage 2 or
   skip.
-- Whether to harden `pagar_hoy_db`'s remaining 14 medium-severity sites
-  too, for full parity with `manual_inv`'s coverage (Stage 16 only
-  hardened the 7 highest-stakes ones — see Stage 16 above for exactly
-  which are left).
 - Whether to add a `void_abono()` UI, fix the staged-abono due-date
   display, and extend `rename_empresa_initials()` to cover `abonos_db`
   (and `pagar_hoy`/`manual_inv`/`sap_overrides`) — all found by Stage
