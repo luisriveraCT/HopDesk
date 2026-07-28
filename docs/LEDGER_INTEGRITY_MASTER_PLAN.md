@@ -973,11 +973,27 @@ coverage of all four jsonlite shapes, not just the one that happened to
 be hit live. 557 total in the confirmed-logic suite, full existing suite
 still green.
 
-**Still needs Mouse's hands-on verification** — same reasoning as
-above: check a single row and confirm it stages correctly, check
-multiple rows and confirm each keeps its own amount/documento (not
-cross-contaminated), and confirm the amount field now starts greyed out
-until its checkbox is checked.
+**Stage 21 correction, found during Mouse's own hands-on verification
+(2026-07-27, same day)** — checking a row and clicking "Enviar a Agenda"
+crashed the whole app: "$ operator is invalid for atomic vectors" at
+`r_raw$saldo`. A single checked row with only scalar fields can *also*
+unbox to a plain named atomic vector, not a named list — `is.list()` is
+FALSE for that shape even though `rows_data[["idx"]]` still resolves, so
+it fell through this stage's own shape-(c) guard unconverted and
+reproduced the identical failure mode via a type the guard didn't catch.
+Fixed: `.normalize_ab_rows()` now recognizes this shape too, and — since
+hands-on use has now found an unanticipated shape twice in one day — the
+whole observer is wrapped in `tryCatch` as defense in depth, so any future
+shape nobody has thought of yet degrades to "that didn't go through, try
+again" instead of crashing the session. 9 new tests. 566 total in the
+confirmed-logic suite, full existing suite still green (see
+`R/staging_browse_module.R`'s `.normalize_ab_rows()` and its
+`observeEvent(input$ab_rows, ...)`).
+
+**Still needs Mouse's hands-on verification** — re-check all of the above
+against this correction: a single row, multiple rows (each keeping its
+own amount/documento, not cross-contaminated), and the amount field
+starting greyed out until its checkbox is checked.
 
 ## Open items needing Mouse's input before or during the relevant stage
 
