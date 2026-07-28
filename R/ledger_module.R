@@ -1351,12 +1351,33 @@ ledgerModuleServer <- function(id, config, shared) {
     }
 
     .cart_inv_sel_to_keys <- function(inv_sel, detail, grp_snap = NULL) {
+      .empty_keys <- data.frame(Empresa = character(), Moneda = character(),
+                                Documento = character(), Importe = numeric())
+      tryCatch({
       # Normalize inv_sel to list-of-lists. Shiny/jsonlite may deliver the
-      # JSON array of {i,j} objects in three different shapes:
+      # JSON array of {i,j} objects in different shapes:
       #   (a) data.frame          — jsonlite simplifyDataFrame kicked in (2+ items)
       #   (b) list(i=vec,j=vec)   — named list with vector elements (2+ items)
       #   (c) list(i=x, j=y)      — single item, auto-unboxed (1 item)
       #   (d) list(list(...), ...) — already correct
+      #   (f) c(i=,j=,i=,j=,...)  — MULTIPLE items flattened into ONE named
+      #       vector with repeated keys (found live 2026-07-28, same
+      #       incident as ab_rows: selecting individual cart sub-rows and
+      #       moving them crashed with "$ operator is invalid for atomic
+      #       vectors" -- `inv_sel[["i"]]` on a vector with duplicate names
+      #       only ever returns the FIRST match, so this fell through with
+      #       NO branch matching at all, unlike ab_rows's narrower crash).
+      #       Detected by counting repeats of the first field name ("i")
+      #       and splitting into that many equal chunks at each repeat.
+      .nm <- names(inv_sel)
+      if (!is.null(.nm) && !is.null(inv_sel[["i"]])) {
+        i_pos <- which(.nm == "i")
+        if (length(i_pos) > 1L) {
+          bounds <- c(i_pos, length(.nm) + 1L)
+          inv_sel <- lapply(seq_along(i_pos), function(k)
+            as.list(inv_sel[bounds[k]:(bounds[k + 1L] - 1L)]))
+        }
+      }
       if (is.data.frame(inv_sel)) {
         inv_sel <- lapply(seq_len(nrow(inv_sel)), function(k)
           list(i = inv_sel[["i"]][k], j = inv_sel[["j"]][k]))
@@ -1368,10 +1389,26 @@ ledgerModuleServer <- function(id, config, shared) {
         } else {
           inv_sel <- list(inv_sel)
         }
+      } else if (is.atomic(inv_sel) && !is.null(names(inv_sel)) && !is.null(inv_sel[["i"]])) {
+        # A single item with only scalar fields can also unbox to a plain
+        # named atomic vector rather than a named list -- same shape (e)
+        # already hardened for ab_rows.
+        inv_sel <- list(as.list(inv_sel))
       }
-      if (!length(inv_sel)) return(data.frame(
-        Empresa = character(), Moneda = character(),
-        Documento = character(), Importe = numeric()))
+      # Defense in depth: drop (not crash on) any entry that still isn't
+      # list-like after all of the above -- an unrecognized shape degrades
+      # to "that item didn't get included" instead of killing the session.
+      if (is.list(inv_sel)) {
+        malformed <- !vapply(inv_sel, is.list, logical(1))
+        if (any(malformed)) {
+          warning("[CART_INV_SEL] ", sum(malformed), " item(s) in an unrecognized shape, dropped: ",
+                  paste(utils::capture.output(str(inv_sel)), collapse = " | "))
+          inv_sel <- inv_sel[!malformed]
+        }
+      } else {
+        inv_sel <- list()
+      }
+      if (!length(inv_sel)) return(.empty_keys)
 
       grp_agg <- if (!is.null(grp_snap) && is.data.frame(grp_snap) && nrow(grp_snap) > 0) {
         grp_snap
@@ -1395,10 +1432,12 @@ ledgerModuleServer <- function(id, config, shared) {
                               names(inv_rows)), drop = FALSE]
       })
       keys_list <- Filter(Negate(is.null), keys_list)
-      if (!length(keys_list)) return(data.frame(
-        Empresa = character(), Moneda = character(),
-        Documento = character(), Importe = numeric()))
+      if (!length(keys_list)) return(.empty_keys)
       do.call(rbind, keys_list)
+      }, error = function(e) {
+        warning("[CART_INV_SEL] .cart_inv_sel_to_keys failed: ", conditionMessage(e))
+        .empty_keys
+      })
     }
 
     .resolve_summary_sel <- function(input, detail, grp_snap = NULL) {
