@@ -893,6 +893,35 @@ handle_invoice_action <- function(payload, shared) {
 
   current_user <- tryCatch(shared$current_user(), error = function(e) "user")
 
+  # Mirrors R/ledger_module.R's log_action() calls for the same three
+  # actions (eliminar_facturas / mover_fecha / restaurar_fecha) so an action
+  # taken from Vencidos or Search shows up in Gestión de Usuarios > Actividad
+  # exactly like the same action taken from Calendario does (found live
+  # 2026-07-29: deleting a manual invoice from Vencidos left no log entry at
+  # all -- this shared handler never called log_action for any action).
+  # Split by ledger since a single call here can span AR and AP at once,
+  # unlike Calendario's own handlers which only ever act on one ledger.
+  .log_ledger_action <- function(keys_df, action, describe) {
+    cid      <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
+    home_cid <- tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    for (lg in unique(keys_df$ledger)) {
+      sub <- keys_df[keys_df$ledger == lg, , drop = FALSE]
+      tryCatch(
+        log_action(
+          user        = current_user,
+          module      = paste0("ledger_", lg),
+          action      = action,
+          description = describe(sub),
+          target_id   = paste(sub[["Documento"]][seq_len(min(5, nrow(sub)))], collapse = ", "),
+          metadata    = list(n = nrow(sub)),
+          client_id             = cid,
+          viewer_home_client_id = home_cid
+        ),
+        error = function(e) message("[VENCIDOS/SEARCH] log_action failed (", action, "): ", e$message)
+      )
+    }
+  }
+
   # Recover blank Empresa — happens when a row came from an old snapshot or
   # manual entry that didn't have Empresa set, so data-empresa="" in the JS.
   # Without a valid Empresa the row would be staged but invisible in Agenda de hoy
@@ -959,6 +988,8 @@ handle_invoice_action <- function(payload, shared) {
     showNotification(
       paste0(nrow(keys_df), " factura(s) movidas a ", format(new_date, "%d/%m/%Y"), "."),
       type = "message", duration = 2)
+    .log_ledger_action(keys_df, "mover_fecha", function(sub)
+      sprintf("%d factura(s) movida(s) a %s", nrow(sub), format(new_date, "%d/%m/%Y")))
 
   } else if (action == "restore") {
     # Remove move records for the selected invoices so they revert to their
@@ -976,6 +1007,8 @@ handle_invoice_action <- function(payload, shared) {
     showNotification(
       paste0(nrow(keys_df), " factura(s) restauradas a fecha original."),
       type = "message", duration = 2)
+    .log_ledger_action(keys_df, "restaurar_fecha", function(sub)
+      sprintf("%d factura(s) restaurada(s) a su fecha original", nrow(sub)))
 
   } else if (action == "delete") {
     # Provisions use lifecycle close, not papelera
@@ -1032,6 +1065,13 @@ handle_invoice_action <- function(payload, shared) {
       showNotification(paste0(nrow(item_rows), " factura(s) enviadas a la papelera."),
                        type = "message", duration = 3)
     }
+
+    # One combined log entry per ledger for the whole deleted selection
+    # (provisions + papelera items together), matching how Calendario's own
+    # delete handler logs eliminar_facturas once for the full rows_to_delete
+    # set regardless of source.
+    .log_ledger_action(keys_df, "eliminar_facturas", function(sub)
+      sprintf("%d factura(s) enviada(s) a papelera", nrow(sub)))
 
   } else if (action %in% c("stage_all", "stage_selected")) {
     # Silently exclude provision rows — they cannot be staged as regular items.
