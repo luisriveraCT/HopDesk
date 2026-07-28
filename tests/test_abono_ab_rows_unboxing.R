@@ -186,4 +186,49 @@ cat("── Abono Parcial: ab_rows shape normalization + disabled-by-default ─
   }
 }
 
+# ── 8. Shape (f): MULTIPLE rows flatten into ONE vector with repeated keys ──
+# Live bug found 2026-07-28: "no matter how many items I select, only the
+# first one gets sent" -- checking 2+ rows and clicking "Enviar a Agenda"
+# always staged only the first row, silently. Reproduced live via a headless
+# Chrome session (chromote) driving the actual .ab_js click handler against
+# a minimal Shiny harness: checking 2 rows produced this exact 20-element
+# named character vector server-side (idx/empresa/.../importe repeated
+# once per row, in order) -- not shapes (a)-(e), a distinct failure mode.
+{
+  two_flat <- c(idx = "1", empresa = "Networks & Logistics", moneda = "MXN",
+                documento = "D001", parte = "Parte Uno", codigo = "C1",
+                referencia = "D001", fecha_venc = "2026-08-01",
+                saldo = "1234.56", importe = "1234.56",
+                idx = "2", empresa = "Networks Trucking", moneda = "MXN",
+                documento = "D002", parte = "Parte Dos", codigo = "C2",
+                referencia = "D002", fecha_venc = "2026-08-02",
+                saldo = "789.1", importe = "300.25")
+  .chk(is.list(two_flat), FALSE, "control: this shape really is atomic, not a list")
+  .chk(sum(names(two_flat) == "idx"), 2L, "control: 'idx' really does repeat twice in this shape (proves it's distinct from shape (e))")
+
+  out6 <- .normalize_ab_rows(two_flat)
+  .chk(length(out6), 2L, "two flattened rows normalize to a list of exactly 2 rows, not 1")
+  .chk(out6[[1]]$documento, "D001", "row 1 keeps its own documento")
+  .chk(out6[[2]]$documento, "D002", "row 2 keeps its own documento, not row 1's")
+  .chk(as.numeric(out6[[1]]$saldo), 1234.56, "row 1's saldo survives with full decimal precision")
+  .chk(as.numeric(out6[[2]]$saldo), 789.1, "row 2 keeps its OWN saldo, not row 1's")
+  .chk(as.numeric(out6[[2]]$importe), 300.25, "row 2's edited partial-abono importe (different from its own saldo) survives intact -- proves amounts aren't cross-contaminated between rows")
+
+  # Control: reproduce the ORIGINAL bug this fix prevents -- the old code's
+  # `n <- length(rows_data[["idx"]])` sees only the FIRST "idx" match.
+  old_n <- length(two_flat[["idx"]])
+  .chk(old_n, 1L,
+       "control: the OLD length-check saw only 1 row here (rows_data[[\"idx\"]] only ever returns the first match) -- confirms the bug was real and would have silently dropped row 2")
+
+  # Three rows, to confirm this isn't special-cased to exactly two.
+  three_flat <- c(two_flat, c(idx = "3", empresa = "NCS Company", moneda = "MXN",
+                              documento = "D003", parte = "Parte Tres", codigo = "C3",
+                              referencia = "D003", fecha_venc = "2026-08-03",
+                              saldo = "50000.99", importe = "50000.99"))
+  out7 <- .normalize_ab_rows(three_flat)
+  .chk(length(out7), 3L, "three flattened rows normalize to a list of exactly 3 rows")
+  .chk(out7[[3]]$documento, "D003", "row 3 keeps its own documento")
+  .chk(as.numeric(out7[[3]]$saldo), 50000.99, "row 3's large saldo survives without truncation or scientific notation")
+}
+
 cat(sprintf("\n  Subtotal: %d passed, %d failed\n", .pass, .fail))

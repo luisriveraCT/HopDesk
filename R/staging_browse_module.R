@@ -331,6 +331,25 @@ show_combined_entry_modal <- function(ledger, sap_data, session,
   if (is.data.frame(rows_data)) {
     return(lapply(seq_len(nrow(rows_data)), function(k) as.list(rows_data[k, , drop = FALSE])))
   }
+  # (f) MULTIPLE checked rows can also arrive as ONE FLAT VECTOR/LIST with
+  # every row's fields concatenated back-to-back and key names repeated --
+  # e.g. checking 2 rows produces idx,empresa,...,importe,idx,empresa,...,
+  # importe (20 elements, "idx" appearing twice). Found live 2026-07-28:
+  # "no matter how many items I select, only the first one gets sent" --
+  # `rows_data[["idx"]]` on a vector/list with duplicate names only ever
+  # returns the FIRST match, so this always looked like exactly 1 row to
+  # the branch below and every row after the first was silently dropped.
+  # Detected by counting repeats of the first field name and splitting the
+  # vector into that many equal chunks at each repeat boundary.
+  .nm <- names(rows_data)
+  if (!is.null(.nm) && !is.null(rows_data[["idx"]])) {
+    idx_pos <- which(.nm == "idx")
+    if (length(idx_pos) > 1L) {
+      bounds <- c(idx_pos, length(.nm) + 1L)
+      return(lapply(seq_along(idx_pos), function(k)
+        as.list(rows_data[bounds[k]:(bounds[k + 1L] - 1L)])))
+    }
+  }
   if (is.list(rows_data) && !is.null(rows_data[["idx"]])) {
     n <- length(rows_data[["idx"]])
     if (n > 1L) {
