@@ -47,6 +47,50 @@ strip_accents <- function(x) {
   stringi::stri_trans_general(x %||% "", "Latin-ASCII")
 }
 
+# ── The three kinds of ledger row, and how they actually differ ────────────
+#
+# A ledger row's `source` column is one of "sap" | "manual" | "provision"
+# (NA/blank normalized to "sap" on load, per .schema_pagar_hoy's own
+# documentation). This isn't just a label — it's the one thing that decides
+# how far the app is allowed to go when touching a row:
+#
+# ERP-SOURCED ("sap", or NA defaulting to it): owned by an external system
+# HopDesk doesn't control — today only SAP, but this helper exists so a
+# future second ERP integration just needs a distinct `source` value, not a
+# second copy of this check at every call site. An ERP row otherwise lives
+# and moves through the app EXACTLY like a manual entry (staged, edited,
+# viewed in Vencidos, confirmed, etc.) — the one hard rule is that no in-app
+# action may ever remove it from Calendario; only the ERP's own next
+# snapshot pull can make it disappear (because it was closed out there).
+# Confirming an ERP row turns it into a ghost (crossed out, excluded from
+# every calculation) rather than removing it. Agenda-level removal is
+# always safe for an ERP row regardless — Agenda never holds the real data,
+# so nothing is lost by unstaging it.
+#
+# MANUAL ("manual"): fully owned by HopDesk, no restrictions. Confirming or
+# deleting one removes it from Calendario entirely (never ghosted) — the
+# only trace that survives is a permanent, immutable archive record (see
+# R/persistence.R's add_to_papelera()/restore_from_papelera()), which undo
+# restores losslessly.
+#
+# PROVISION-DERIVED ("manual" with a non-NA provision_id, or historically
+# "provision" for the raw, unconverted placeholder row): a provision itself
+# is NEVER staged to Agenda and NEVER confirmed — it can't be, by
+# construction (see R/pasivos_calendar_glue.R, which only ever surfaces
+# provisions with estado=="provisional" into the ledger). What CAN be
+# staged and confirmed is a real, separate item created by converting the
+# provision (R/pasivos_module.R's .pasivos_perform_conversion()) — once
+# that conversion happens, the derived item behaves exactly like any other
+# manual entry for confirm/delete/undo purposes. `provision_id` on that
+# item is lineage/traceability metadata only — it does not change how the
+# item's own confirmation or recovery works. Recovering a CONFIRMED item
+# always recovers the ITEM, regardless of whether it came from a provision.
+# Recovering a DELETED, unconverted provision is a different operation
+# entirely, at the Pasivos level, unrelated to Agenda or bancos_confirmados.
+is_erp_sourced <- function(source) {
+  is.na(source) | source == "sap"
+}
+
 CURRENCIES <- c("MXN","USD","EUR","GBP","CAD","JPY","CHF","AUD","CNY","BRL")
 
 # ── Source modules ────────────────────────────────────────────────────────────
@@ -552,7 +596,12 @@ calendar_html <- function(
     has_data   <- !is.null(parties) && nrow(parties) > 0
     day_tag    <- tag_for_day(fecha)
     n_staged   <- staged_count_by_day[[date_str]] %||% 0L
-    has_staged <- n_staged > 0
+    # Never show the staged-count badge over a day with zero visible line
+    # items -- staged_count_by_day is currency-agnostic and can carry a
+    # stale/cross-filter entry for a day this view shows nothing for
+    # (e.g. a staged item whose invoice no longer appears here at all).
+    # Same guard already applied to tag_for_day() above, for the same reason.
+    has_staged <- n_staged > 0 && has_data
 
     tile_class <- paste0(
       "cal-tile",

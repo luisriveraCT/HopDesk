@@ -154,39 +154,34 @@ pasivos_manage_converted_modal_ui <- function() {
     referencia             = prov$referencia[1] %||% ""
   )
 
-  manual_df <- shared$manual_inv()
+  # Read fresh from S3 rather than trusting this session's possibly stale
+  # in-memory copy (found 2026-07-24, a real incident) -- pure append with
+  # a fresh UUID, so no batch-matching logic needs adjusting, just the
+  # source of the read.
+  manual_df <- tryCatch(load_manual(client_id = shared$effective_client_id()),
+                        error = function(e) NULL) %||% shared$manual_inv()
   manual_df <- dplyr::bind_rows(manual_df, new_manual)
   shared$manual_inv(manual_df)
   tryCatch(save_manual(manual_df, client_id = shared$effective_client_id()), error = function(e)
     warning("[pasivos] save_manual failed: ", conditionMessage(e)))
 
   # 2. Optional: stage to pagar_hoy
+  # Re-derive the staged row from the manual_inv row that now actually exists
+  # (manual_df, just bound above) instead of rebuilding it from the modal's
+  # raw input a second time -- keeps Agenda a mirror of the root write rather
+  # than a second, independently-computed copy that can drift from it.
   new_pagar_hoy_id <- NA_character_
   if (stage_to_agenda) {
     new_pagar_hoy_id <- uuid::UUIDgenerate()
-    new_ph_row <- tibble::tibble(
-      id           = new_pagar_hoy_id,
-      ledger       = "AP",
-      Empresa      = full_empresa,
-      Moneda       = input$pcm_moneda,
-      Documento    = {
-        doc_raw <- trimws(input$pcm_documento %||% "")
-        if (nzchar(doc_raw)) doc_raw else paste0("CONV_", prov_id)
-      },
-      Parte        = input$pcm_parte,
-      Codigo       = input$pcm_codigo,
-      tipo_item    = "factura",
-      Importe      = as.numeric(input$pcm_importe),
-      FechaVenc    = as.Date(input$pcm_fecha),
-      staged_by    = user,
-      staged_at    = now,
-      status       = "pending",
-      provision_id = prov_id,
-      liability_id = prov$liability_id[1],
-      source       = "provision"
-    )
+    manual_row <- manual_df[manual_df[["id"]] == new_manual_id, , drop = FALSE]
+    new_ph_row <- stage_manual_row_to_agenda(manual_row, user)
+    new_ph_row[["id"]] <- new_pagar_hoy_id
+    # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
+    # 2026-07-25); a stale base here would silently drop another session's
+    # concurrent stage/unstage.
     ph_df <- upsert_pagar_hoy(
-      shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$effective_client_id()),
+      tryCatch(safe_load_pagar_hoy(username = user, client_id = shared$effective_client_id()),
+               error = function(e) NULL) %||% shared$pagar_hoy_db(),
       new_ph_row,
       keys = c("ledger", "Empresa", "Moneda", "Documento")
     )
@@ -747,8 +742,12 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     # 2. Remove pagar_hoy (pending only) — by FK id, by provision_id, and by
     #    business key so calendar-staged rows (no FK) are also cleaned up.
-    ph <- if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db() else
-          tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()), error = function(e) NULL)
+    # Read fresh from S3 first, not this session's possibly-stale in-memory
+    # copy -- this removes rows, so a stale read can silently resurrect a
+    # row another session already removed or drop one it just added (same
+    # race class as the manual_inv incident fixed 2026-07-24).
+    ph <- tryCatch(safe_load_pagar_hoy(username = user, client_id = shared$effective_client_id()), error = function(e) NULL) %||%
+          (if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db() else NULL)
     if (!is.null(ph) && nrow(ph) > 0) {
       rm_mask <- rep(FALSE, nrow(ph))
       if (!is.na(pagar_hoy_id) && nzchar(pagar_hoy_id %||% ""))
@@ -835,8 +834,12 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     # 2. Remove pagar_hoy (pending only) — by FK id, by provision_id, and by
     #    business key so calendar-staged rows (no FK) are also cleaned up.
-    ph <- if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db() else
-          tryCatch(load_pagar_hoy(client_id = shared$effective_client_id()), error = function(e) NULL)
+    # Read fresh from S3 first, not this session's possibly-stale in-memory
+    # copy -- this removes rows, so a stale read can silently resurrect a
+    # row another session already removed or drop one it just added (same
+    # race class as the manual_inv incident fixed 2026-07-24).
+    ph <- tryCatch(safe_load_pagar_hoy(username = user, client_id = shared$effective_client_id()), error = function(e) NULL) %||%
+          (if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db() else NULL)
     if (!is.null(ph) && nrow(ph) > 0) {
       rm_mask <- rep(FALSE, nrow(ph))
       if (!is.na(pagar_hoy_id) && nzchar(pagar_hoy_id %||% ""))

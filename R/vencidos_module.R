@@ -64,6 +64,19 @@ vencidosUI <- function(id) {
         letter-spacing: .05em; margin-top: 5px; margin-bottom: 1px;
       }
       .ven-bubble-sep { border-top: 1px solid #dee2e6; margin: 5px 0 2px; }
+      /* Stage/delete confirm bars — fixed, not in normal document flow.
+         These used to render right after the sticky header, so once the
+         list was scrolled down their normal-flow position scrolled up with
+         it, ending up hidden above the viewport or behind the sticky
+         header — clicking Agregar todo/Agregar selección/Eliminar looked
+         like it did nothing. Fixed positioning (matching #ven_sel_bubble's
+         existing pattern) keeps them visible regardless of scroll position. */
+      #ven_stage_confirm_bar, #ven_delete_confirm_bar {
+        position: fixed !important;
+        left: 50%; bottom: 22px; transform: translateX(-50%);
+        z-index: 9999; max-width: 92vw;
+        box-shadow: 0 4px 18px rgba(0,0,0,.18);
+      }
       /* Pasivos provision rows */
       .pasivos-provision { border: 1.5px dashed #a78bfa !important; background: #faf5ff !important; }
       .pasivos-provision::before { content: 'P'; display: inline-flex; align-items: center;
@@ -75,19 +88,108 @@ vencidosUI <- function(id) {
       .pasivos-convert-btn { background: none; border: none; cursor: pointer; padding: 0 3px;
         font-size: 1rem; line-height: 1; vertical-align: middle; opacity: 0.85; }
       .pasivos-convert-btn:hover { opacity: 1; }
+      /* Sticky stack: #ven_sticky_header -> per-section band -> column
+         headers, all inside the SAME scrolling container (.h-100.overflow-auto,
+         the per-tab scroll div). That container's own top edge already sits
+         flush below the global control-bar (confirmed on Calendario/
+         Intercompany — no gap there), so #ven_sticky_header needs top:0, NOT
+         the control-bar's height: sticky offsets are relative to the nearest
+         *scrolling ancestor's own viewport*, never the outer page. Adding the
+         control-bar's height here was the actual bug behind the persistent
+         gap — it pushed the header (and everything stacked below it) down by
+         that amount every time. band/section and thead only need to clear
+         ven_sticky_header itself (and, for thead, the band too) — computed by
+         venRecalcStickyOffsets() in vencidos.js since both can change height
+         (edit toolbar opening) after first paint. */
+      .ven-section-band {
+        position: sticky;
+        top: var(--ven-hdr-h, 50px);
+        z-index: 150;
+      }
+      .ven-ledger-section thead th {
+        position: sticky;
+        top: var(--ven-band-h, 84px);
+        background: #fff;
+        z-index: 140;
+      }
+      /* Compact filter pill — same recipe as .cb-zone-controls/.cb-field in
+         ui_components.R (the top pills toolbar's control card), sized down
+         further so the whole toolbar row fits on one line. */
+      .ven-filter-pill {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        background: #f4f7fc;
+        border: 1px solid #dde4f0;
+        border-radius: 8px;
+        padding: 2px 7px;
+        white-space: nowrap;
+      }
+      .ven-filter-pill .form-control,
+      .ven-filter-pill .form-select {
+        height: 24px !important;
+        padding: 1px 6px !important;
+        font-size: 0.72rem !important;
+        line-height: 1.2 !important;
+        background: #fff !important;
+        border-color: #d0d9ec !important;
+      }
+      .ven-filter-pill .form-select { padding-right: 20px !important; }
+      /* Cell hover tooltip — full untruncated content + copy button, for any
+         table cell (Parte/Referencia are the usual culprits that clip with
+         text-overflow:ellipsis, but this works for any column). One shared
+         floating element, positioned near whichever cell is hovered — see
+         venCellTipShow() in vencidos.js. */
+      #ven_cell_tip {
+        position: fixed;
+        display: none;
+        align-items: flex-start;
+        gap: 6px;
+        max-width: 380px;
+        background: #fff;
+        border: 1px solid #c9d3e3;
+        border-radius: 6px;
+        padding: 6px 8px;
+        box-shadow: 0 4px 14px rgba(0,0,0,.15);
+        font-size: 0.8rem;
+        color: #1c2530;
+        z-index: 10000;
+      }
+      .ven-tip-text { white-space: pre-wrap; word-break: break-word; }
+      .ven-tip-copy {
+        flex: 0 0 auto;
+        display: flex; align-items: center; justify-content: center;
+        width: 20px; height: 20px;
+        border: 1px solid #d0d9ec;
+        border-radius: 4px;
+        background: #f4f7fc;
+        cursor: pointer;
+        color: #6c757d;
+        font-size: 0.7rem;
+        line-height: 1;
+        padding: 0;
+      }
+      .ven-tip-copy:hover { background: #e5edfb; color: #0a58ca; }
+      .ven-tip-copy.ven-tip-copied { color: #198754; }
     ")),
 
     # Fixed selection bubble (shown whenever rows are selected)
     div(id = "ven_sel_bubble", style = "display:none;"),
 
+    # Shared cell hover tooltip (full content + copy button) — see venCellTipShow()
+    div(id = "ven_cell_tip", style = "display:none;",
+      tags$span(class = "ven-tip-text"),
+      tags$button(class = "ven-tip-copy", title = "Copiar", icon("copy"))
+    ),
+
     div(class = "vencidos-wrap p-3",
 
       div(
         id    = "ven_sticky_header",
-        style = "position:sticky; top:56px; z-index:200; background:#fff; margin:-1rem -1rem 0; padding:0.75rem 1rem 0.5rem; border-bottom:1px solid #dee2e6;",
+        style = "position:sticky; top:0; z-index:200; background:#fff; margin:-1rem -1rem 0; padding:0.4rem 1rem; border-bottom:1px solid #dee2e6;",
 
         # ── Top action + filter bar ──────────────────────────────────────────
-        div(class = "d-flex flex-wrap gap-2 mb-2 align-items-end",
+        div(class = "d-flex flex-wrap gap-2 align-items-center",
         tags$button(
           id      = "ven_edit_toggle",
           class   = "btn btn-outline-secondary btn-sm",
@@ -119,35 +221,29 @@ vencidosUI <- function(id) {
           onclick = "venSelectNone()",
           "Deseleccionar"
         ),
-        # Filter controls — right-aligned
-        div(class = "ms-auto d-flex flex-wrap gap-2 align-items-end",
-          div(
-            tags$label("Buscar", class = "form-label mb-0 small text-muted"),
-            tags$input(id = "ven_search_text", type = "text",
-                       class = "form-control form-control-sm",
-                       style = "width:190px;",
-                       placeholder = "Parte, ref., doc\u2026")
-          ),
-          div(
-            tags$label("Tipo", class = "form-label mb-0 small text-muted"),
-            tags$select(id = "ven_tipo", class = "form-select form-select-sm",
-                        style = "min-width:110px;",
-                        tags$option(value = "", "Todos"),
-                        tags$option(value = "Cobro", "Cobros (AR)"),
-                        tags$option(value = "Pago",  "Pagos (AP)"))
-          ),
-          div(
-            tags$label("Etiqueta", class = "form-label mb-0 small text-muted"),
-            tags$select(id = "ven_tag_filter", class = "form-select form-select-sm",
-                        style = "min-width:130px;",
-                        tags$option(value = "",          "Todas"),
-                        tags$option(value = "tagged",    "Solo etiquetadas"),
-                        tags$option(value = "urgent",    "\U0001f534 Urgente"),
-                        tags$option(value = "important", "\U0001f7e1 Importante"),
-                        tags$option(value = "both",      "\U0001f7e0 Ambas"))
+        # Filter controls (right-aligned) — compact pill, same recipe as the
+        # top toolbar's .cb-zone-controls card, sized further down.
+        div(class = "ms-auto d-flex flex-wrap gap-2 align-items-center",
+          div(class = "ven-filter-pill",
+          tags$input(id = "ven_search_text", type = "text",
+                     class = "form-control",
+                     style = "width:130px;",
+                     placeholder = "Buscar\u2026"),
+          tags$select(id = "ven_tipo", class = "form-select",
+                      style = "width:90px;",
+                      tags$option(value = "", "Todos"),
+                      tags$option(value = "Cobro", "Cobros"),
+                      tags$option(value = "Pago",  "Pagos")),
+          tags$select(id = "ven_tag_filter", class = "form-select",
+                      style = "width:100px;",
+                      tags$option(value = "",          "Etiquetas"),
+                      tags$option(value = "tagged",    "Etiquetadas"),
+                      tags$option(value = "urgent",    "\U0001f534 Urgente"),
+                      tags$option(value = "important", "\U0001f7e1 Importante"),
+                      tags$option(value = "both",      "\U0001f7e0 Ambas"))
           ),
           # Tiny utility buttons — group expand toggle + doc column toggle
-          div(class = "d-flex gap-1 align-items-end pb-1",
+          div(class = "d-flex gap-1 align-items-center",
             tags$button(
               id      = "ven_groups_btn",
               class   = "btn btn-outline-secondary btn-sm",
@@ -171,6 +267,14 @@ vencidosUI <- function(id) {
               onclick = "venToggleOrig()",
               title   = "Mostrar / ocultar columna Origen",
               "Origen"
+            ),
+            tags$button(
+              id      = "ven_fechaorig_toggle_btn",
+              class   = "btn btn-outline-secondary btn-sm",
+              style   = "padding:2px 6px; font-size:0.7rem; line-height:1.5;",
+              onclick = "venToggleFechaOrig()",
+              title   = "Mostrar / ocultar columna Vencimiento original",
+              "Venc. original"
             )
           )
         )
@@ -178,7 +282,7 @@ vencidosUI <- function(id) {
 
       # ── Edit toolbar (hidden until ✏ Editar) ────────────────────────────
       div(id    = "ven_edit_toolbar",
-          class = "mb-2 p-2 border rounded bg-light",
+          class = "mt-2 mb-2 p-2 border rounded bg-light",
           style = "display:none;",
         div(class = "d-flex flex-wrap gap-2 align-items-end",
           div(class = "d-flex gap-1",
@@ -256,7 +360,7 @@ vencidosUI <- function(id) {
 
     # -- JavaScript (loaded from www/vencidos.js) -------------------------
     # ?v= query string forces browsers to reload after each edit.
-    tags$script(src = "vencidos.js?v=8")
+    tags$script(src = "vencidos.js?v=14")
   )
 }
 
@@ -321,10 +425,12 @@ vencidosServer <- function(id, shared) {
         # Tag labels
         df <- add_tag_labels(df, tags, ledger_name)
 
-        df[["Ledger"]]  <- ledger_name
-        df[["Tipo"]]    <- if (ledger_name == "AR") "Cobro" else "Pago"
-        df[["Importe"]] <- abs(tidyr::replace_na(df[["Saldo vencido"]], 0))
-        df[["Fecha"]]   <- as.Date(df[["FechaEff"]])
+        df[["Ledger"]]        <- ledger_name
+        df[["Tipo"]]          <- if (ledger_name == "AR") "Cobro" else "Pago"
+        df[["Importe"]]       <- abs(tidyr::replace_na(df[["Saldo vencido"]], 0))
+        df[["Fecha"]]         <- as.Date(df[["FechaEff"]])
+        df[["FechaOriginal"]] <- if ("FechaVenc_Original" %in% names(df))
+          as.Date(df[["FechaVenc_Original"]]) else as.Date(NA)
         df
       }
 
@@ -387,6 +493,8 @@ vencidosServer <- function(id, shared) {
           e
         },
         Fecha      = format(df[["Fecha"]], "%d/%m/%Y"),
+        FechaOrig  = ifelse(is.na(df[["FechaOriginal"]]), "",
+                            format(df[["FechaOriginal"]], "%d/%m/%Y")),
         Parte      = df[["Parte"]] %||% "",
         Documento  = df[["Documento"]] %||% "",
         Codigo     = if ("Codigo" %in% names(df)) df[["Codigo"]] %||% "" else "",
@@ -510,6 +618,7 @@ vencidosServer <- function(id, shared) {
             ' data-tag="',       htmltools::htmlEscape(row[["Etiqueta"]]),           '"',
             ' data-importe="',   as.character(row[["Importe"]]),                     '"',
             ' data-fecha="',     htmltools::htmlEscape(row[["Fecha"]]),              '"',
+            ' data-fechaorig="', htmltools::htmlEscape(row[["FechaOrig"]]),          '"',
             ' data-parte="',     htmltools::htmlEscape(tolower(row[["Parte"]])),     '"',
             ' data-parteraw="',  htmltools::htmlEscape(row[["Parte"]]),              '"',
             ' data-doc="',       htmltools::htmlEscape(tolower(row[["Documento"]])), '"',
@@ -544,6 +653,9 @@ vencidosServer <- function(id, shared) {
                 "manual"    = "Manual",
                 "provision" = "Provisión",
                 "SAP"),
+            '</td>',
+            '<td class="text-muted small ven-fechaorig-cell" style="display:none;white-space:nowrap;">',
+              htmltools::htmlEscape(row[["FechaOrig"]]),
             '</td>',
             '<td class="text-end fw-bold" style="color:#1a6cc4;font-variant-numeric:tabular-nums;">',
               fmt_money(row[["Importe"]]),
@@ -610,6 +722,7 @@ vencidosServer <- function(id, shared) {
             '<td class="text-muted small"></td>',
             '<td class="text-muted small ven-doc-cell" style="display:none;"></td>',
             '<td class="text-muted small ven-orig-cell" style="display:none;"></td>',
+            '<td class="text-muted small ven-fechaorig-cell" style="display:none;"></td>',
             '<td class="text-end fw-bold" style="color:#1a6cc4;font-variant-numeric:tabular-nums;">',
               fmt_money(g_importe),
             '</td>',
@@ -650,7 +763,7 @@ vencidosServer <- function(id, shared) {
 
         div(class = "ven-ledger-section mb-3",
           `data-ledger` = ledger_name, `data-moneda` = cur,
-          div(class = "d-flex align-items-center gap-2 px-2 py-1 mb-1",
+          div(class = "d-flex align-items-center gap-2 px-2 py-1 mb-1 ven-section-band",
               style = paste0("background:#f1f5fb; border-left:3px solid ", border_c,
                              "; border-radius:0 4px 4px 0;"),
             tags$span(class = badge_cls, tipo_label),
@@ -660,7 +773,14 @@ vencidosServer <- function(id, shared) {
                       style = "font-size:.9rem; color:#0B2038;",
                       fmt_money(total), " ", cur)
           ),
-          div(style = "overflow-x:auto;",
+          # No per-table overflow-x wrapper here on purpose: setting overflow-x
+          # on this div (without also being the page's real scroller) makes
+          # browsers treat it as ITS OWN scroll container, which becomes the
+          # containing block for position:sticky — silently breaking the
+          # sticky column headers below. The outer .h-100.overflow-auto tab
+          # container already scrolls both axes (Bootstrap's overflow-auto
+          # utility), so it remains the single scrolling ancestor.
+          div(
             tags$table(
               class = "table table-sm table-hover mb-1",
               tags$thead(tags$tr(
@@ -680,6 +800,13 @@ vencidosServer <- function(id, shared) {
                   class = "ven-orig-th",
                   style = "display:none;",
                   "Origen"
+                ),
+                tags$th(
+                  class      = "ven-fechaorig-th ven-th-sort",
+                  `data-col` = "fecha_orig",
+                  onclick    = "venSortByCol('fecha_orig')",
+                  style      = "display:none;",
+                  "Venc. original ", tags$span(class = "ven-sort-arrow", "↕")
                 ),
                 tags$th(class = "ven-th-sort text-end", `data-col` = "importe",
                         onclick = "venSortByCol('importe')",

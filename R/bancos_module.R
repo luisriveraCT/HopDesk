@@ -1621,7 +1621,10 @@ bancosServer <- function(id, shared) {
             fecha     = tryCatch(as.Date(r$fecha)[1L], error = function(e) as.Date(NA)),
             documento = as.character(r$documento)[1L]                    %||% "",
             empresa   = as.character(r$empresa)[1L]                      %||% "",
-            tipo      = as.character(r$tipo)[1L]                         %||% ""
+            tipo      = as.character(r$tipo)[1L]                         %||% "",
+            # Not previously captured -- needed to name the currency in the
+            # un-confirm warning dialog (Stage 8).
+            moneda    = as.character(r$moneda)[1L]                       %||% ""
           )
         }
       }
@@ -1944,7 +1947,13 @@ bancosServer <- function(id, shared) {
       list(movs = movs, conf = conf)
     }
 
-    observeEvent(input$vin_keep_a, {
+    # Conservar A discards the candidate -- if that candidate is itself a
+    # confirmed invoice, this silently un-confirms it as a side effect of
+    # picking which duplicate to keep. Warn first, naming the invoice,
+    # before .do_vinculation() ever runs (Stage 8). Conservar B never hits
+    # this: when the candidate's source is "confirmado" it's the one being
+    # KEPT there, not discarded, so it's already safe.
+    .do_vin_keep_a <- function() {
       confirm <- vin_confirm_rv()
       req(confirm)
       item <- confirm$item
@@ -1973,6 +1982,42 @@ bancosServer <- function(id, shared) {
       vincular_item_rv(NULL)
       showNotification("Vinculaci\u00f3n completada.", type = "message", duration = 3)
       session$sendCustomMessage(paste0(id, "-deactivate_vin"), TRUE)
+    }
+
+    observeEvent(input$vin_keep_a, {
+      confirm <- vin_confirm_rv()
+      req(confirm)
+      ca <- confirm$candidate
+      ca_source <- as.character(ca$source)[1L] %||% ""
+
+      if (ca_source == "confirmado") {
+        showModal(modalDialog(
+          title = "\u00bfDescartar una factura ya confirmada?",
+          tagList(
+            tags$p("Esta acci\u00f3n tambi\u00e9n anular\u00e1 la confirmaci\u00f3n de esta factura -- reaparecer\u00e1 como abierta en el calendario, Vencidos e Intercompany."),
+            tags$ul(
+              tags$li(paste("Parte:", ca$parte %||% "")),
+              tags$li(paste("Documento:", ca$documento %||% "")),
+              tags$li(paste("Importe:", fmt_money(ca$importe %||% 0),
+                            ca$moneda %||% "")),
+              tags$li(paste("Fecha:", format(as.Date(ca$fecha), "%d/%m/%Y")))
+            ),
+            tags$p("\u00bfContinuar?")
+          ),
+          footer = tagList(
+            modalButton("Cancelar"),
+            actionButton(ns("vin_keep_a_confirm"), "S\u00ed, continuar",
+                         class = "btn-warning btn-sm")
+          ),
+          easyClose = TRUE
+        ))
+      } else {
+        .do_vin_keep_a()
+      }
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$vin_keep_a_confirm, {
+      .do_vin_keep_a()
     }, ignoreInit = TRUE)
 
     observeEvent(input$vin_keep_b, {
@@ -3182,6 +3227,7 @@ bancosServer <- function(id, shared) {
           Tipo      = ifelse(tipo == "pago",
             '<span class="badge bg-danger">Pago</span>',
             '<span class="badge bg-success">Cobro</span>'),
+          .sort_at  = confirmado_at,
           Acciones  = ifelse(
             .legacy,
             '<span class="badge bg-secondary" title="Confirmado por la ruta anterior">Legado</span>',
@@ -3194,11 +3240,88 @@ bancosServer <- function(id, shared) {
             )
           )
         ) |>
-        dplyr::select(Fecha, Empresa, Parte, Documento, Importe, Moneda, Tipo, Acciones)
+        dplyr::select(Fecha, Empresa, Parte, Documento, Importe, Moneda, Tipo, Acciones, .sort_at)
+
+      # Active abonos (Abono Parcial confirmations) \u2014 a separate table
+      # (abonos_db, not bancos_confirmados), but shown in this same history
+      # so "Deshacer" for a partial payment lives next to every other undo
+      # action instead of a whole new screen (found 2026-07-24's audit:
+      # void_abono() existed but nothing ever called it).
+      ab_all <- tryCatch(shared$abonos_db(), error = function(e) NULL) %||% tibble::tibble()
+      ab_active <- if (nrow(ab_all)) dplyr::filter(ab_all, status == "active") else ab_all
+      if (nzchar(emp_f))  ab_active <- dplyr::filter(ab_active, tolower(Empresa) == tolower(emp_f))
+      if (nzchar(tipo_f)) {
+        want_ledger <- if (tipo_f == "pago") "AP" else "AR"
+        ab_active <- dplyr::filter(ab_active, ledger == want_ledger)
+      }
+      if (nzchar(search_q)) {
+        q <- tolower(search_q)
+        ab_active <- dplyr::filter(ab_active,
+          grepl(q, tolower(Parte     %||% ""), fixed = TRUE) |
+          grepl(q, tolower(Documento %||% ""), fixed = TRUE) |
+          grepl(q, tolower(Empresa   %||% ""), fixed = TRUE)
+        )
+      }
+      if (nrow(ab_active)) {
+        ab_tbl <- ab_active |>
+          dplyr::mutate(
+            Fecha     = format(as.Date(fecha_abono), "%d/%m/%Y"),
+            Empresa   = htmltools::htmlEscape(Empresa   %||% ""),
+            Parte     = htmltools::htmlEscape(Parte     %||% ""),
+            Documento = htmltools::htmlEscape(Documento %||% ""),
+            Importe   = fmt_money(importe),
+            Moneda    = Moneda %||% "",
+            Tipo      = '<span class="badge bg-warning text-dark">Abono</span>',
+            .sort_at  = as.POSIXct(created_at),
+            Acciones  = sprintf(
+              '<button class="bnc-btn-xs bnc-btn-xs--undo" title="Deshacer abono y restaurar el saldo" onclick="Shiny.setInputValue(\'%s\', {id:\'%s\', nonce:Math.random()}, {priority:\'event\'})">&#8630;</button>',
+              ns("undo_abono"), id)
+          ) |>
+          dplyr::select(Fecha, Empresa, Parte, Documento, Importe, Moneda, Tipo, Acciones, .sort_at)
+        tbl <- dplyr::bind_rows(tbl, ab_tbl)
+      }
+
+      tbl <- tbl |>
+        dplyr::arrange(dplyr::desc(.sort_at)) |>
+        dplyr::select(-.sort_at)
 
       DT::datatable(tbl, escape = FALSE, rownames = FALSE, selection = "none",
         options = list(pageLength = 25, scrollX = TRUE, dom = "lrtip"))
     }, server = TRUE)
+
+    # \u2500\u2500 Deshacer abono \u2014 void it, restoring the invoice's balance \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    # void_abono() (R/persistence.R) already existed but nothing called it
+    # (found 2026-07-24's Abono Parcial audit). Soft-delete only (status \u2192
+    # "voided", same permanent-record convention as every other undo in this
+    # module) -- the invoice's Saldo vencido nets back up automatically on
+    # the next render, since active_abonos_summary() only sums status=="active".
+    observeEvent(input$undo_abono, {
+      ab_id <- input$undo_abono$id
+      req(ab_id)
+      ab <- tryCatch(shared$abonos_db(), error = function(e) NULL) %||% tibble::tibble()
+      if (!nrow(ab) || !ab_id %in% ab[["id"]]) return()
+
+      updated <- void_abono(ab, ab_id)
+      shared$abonos_db(updated)
+      # abonos_db isn't registered in the cross-session sync bus (matching
+      # the confirm-path's own save_abonos() call, which also doesn't bump
+      # a version) -- consistent with existing behavior, not a new gap.
+      tryCatch(save_abonos(updated, client_id = shared$effective_client_id()),
+               error = function(e)
+                 showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
+
+      showNotification("Abono deshecho \u2014 el saldo del comprobante se restaur\u00f3.",
+                       type = "message", duration = 3)
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "bancos",
+        action      = "deshacer_abono",
+        description = "Abono parcial deshecho",
+        target_id   = ab_id,
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
+    }, ignoreInit = TRUE)
 
     observeEvent(input$delete_conf, {
       conf_id <- input$delete_conf$id
@@ -3290,11 +3413,7 @@ bancosServer <- function(id, shared) {
       if (!length(idx_c)) return()
 
       row <- conf[idx_c, , drop = FALSE]
-
-      # Soft-delete the confirmation
       mov_id_linked <- conf$mov_id[idx_c]
-      conf$eliminado[idx_c]    <- TRUE
-      conf$eliminado_at[idx_c] <- Sys.time()
 
       # Also soft-delete the linked movimiento if present
       if (!is.null(mov_id_linked) && !is.na(mov_id_linked) && nzchar(mov_id_linked)) {
@@ -3313,6 +3432,10 @@ bancosServer <- function(id, shared) {
         }
       }
 
+      # recover_confirmacion() soft-deletes the original row (as before) AND
+      # appends a permanent, separate "recovered" event row referencing it
+      # (Stage 3) -- the actual fix for "recovery should add a line."
+      conf <- recover_confirmacion(conf, conf_id, actor = tryCatch(shared$current_user(), error = function(e) "user"))
       shared$bancos_confirmados(conf)
       tryCatch({
         save_bancos_confirmados(conf, client_id = shared$effective_client_id())
@@ -3321,55 +3444,60 @@ bancosServer <- function(id, shared) {
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
       )
 
-      # Re-stage into pagar_hoy so item reappears on calendar.
-      # Primary path: restore the ORIGINAL pagar_hoy row in-place via agenda_item_id.
-      # This preserves the original FechaVenc (not the payment date) and exact
-      # Empresa/Moneda casing so the item lands on the correct calendar day and
-      # appears under the right company tab in Agenda.
-      ph_ledger  <- if (isTRUE(row$tipo == "cobro")) "AR" else "AP"
-      ph_current <- shared$pagar_hoy_db() %||% load_pagar_hoy()
-      orig_id    <- as.character(row$agenda_item_id %||% "")
-      orig_idx   <- if (nzchar(orig_id)) which(ph_current$id == orig_id) else integer(0)
+      # ── Philosophy: recovering a CONFIRMED item always recovers the ITEM ──
+      # It doesn't matter whether that item originated from a converted
+      # provision or was always a plain manual entry — a provision itself is
+      # NEVER confirmed (it can never reach Agenda in the first place, per
+      # Mouse's explicit rule); only its DERIVED item can be. So
+      # `provision_id` on this confirmation is pure lineage/traceability
+      # metadata — it does not change how the item's own recovery works.
+      # (Recovering a DELETED, unconverted provision is a completely
+      # separate operation, at the Pasivos level, unrelated to
+      # Agenda/bancos_confirmados entirely — nothing to do here for that.)
+      has_archive <- "archive_event_id" %in% names(row) &&
+                        !is.na(row$archive_event_id) && nzchar(row$archive_event_id %||% "")
+      restored_fecha <- as.Date(row$fecha)  # fallback; overridden below when a real date is recovered
 
-      if (length(orig_idx) > 0) {
-        # Restore in-place — keeps original FechaVenc, Empresa casing, all fields
-        ph_current$status[orig_idx]       <- "pending"
-        ph_current$confirmed_at[orig_idx] <- as.POSIXct(NA)
-        ph_updated <- ph_current
-      } else {
-        # Original row gone (e.g., manual item that was physically deleted);
-        # synthesize from bancos_confirmados data — FechaVenc falls back to
-        # the payment date, which is the best available approximation.
-        new_ph_row <- tibble::tibble(
-          id           = uuid::UUIDgenerate(),
-          ledger       = ph_ledger,
-          Empresa      = as.character(row$empresa),
-          Moneda       = as.character(row$moneda),
-          Documento    = as.character(row$documento),
-          Parte        = as.character(row$parte),
-          Codigo       = trimws(as.character(row$codigo %||% "")),
-          tipo_item    = "factura",
-          Importe      = as.numeric(row$importe),
-          FechaVenc    = as.Date(row$fecha),
-          staged_by    = shared$current_user(),
-          staged_at    = Sys.time(),
-          status       = "pending",
-          provision_id = if ("provision_id" %in% names(row)) as.character(row$provision_id) else NA_character_,
-          liability_id = if ("liability_id" %in% names(row)) as.character(row$liability_id) else NA_character_
+      if (has_archive) {
+        # Manual entry (plain or provision-derived alike), archived — not
+        # deleted — at confirm time (Stages 4-5). Restore the REAL row
+        # losslessly. Never touches pagar_hoy_db; Agenda has nothing to do
+        # with this recovery at all.
+        pap <- shared$papelera_rv() %||% load_papelera(client_id = shared$effective_client_id())
+        restore_result <- tryCatch(
+          restore_from_papelera(pap, row$archive_event_id,
+                                actor = tryCatch(shared$current_user(), error = function(e) "user")),
+          error = function(e) {
+            showNotification(paste("Error al recuperar la entrada original:", e$message), type = "warning")
+            NULL
+          }
         )
-        ph_updated <- upsert_pagar_hoy(ph_current, new_ph_row)
+        if (!is.null(restore_result)) {
+          shared$papelera_rv(restore_result$papelera_df)
+          tryCatch(save_papelera(restore_result$papelera_df, client_id = shared$effective_client_id()),
+                   error = function(e) NULL)
+          # Read fresh from S3 first, not just as a NULL-fallback -- this is
+          # a restore path (undo a confirmation), so a stale in-memory read
+          # here would silently drop any row another session added/removed
+          # since this session's snapshot (found 2026-07-24, a real
+          # incident).
+          mi <- tryCatch(load_manual(client_id = shared$effective_client_id()),
+                         error = function(e) NULL) %||% shared$manual_inv()
+          restored_row <- as.data.frame(restore_result$restored_data, stringsAsFactors = FALSE)
+          mi_updated <- dplyr::bind_rows(mi, restored_row)
+          shared$manual_inv(mi_updated)
+          tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id()),
+                   error = function(e) showNotification(
+                     paste("Error al restaurar entrada manual:", e$message), type = "warning"))
+          if ("Fecha de vencimiento" %in% names(restored_row))
+            restored_fecha <- as.Date(restored_row[["Fecha de vencimiento"]][1])
+        }
       }
+      # else: ERP-sourced (or a manual confirmation from before Stage 4, with
+      # no archive to restore from) -- nothing else to do. Clearing the
+      # bancos_confirmados flag above is enough; the item reappears in
+      # Calendario on its own the moment nothing matches it as confirmed.
 
-      shared$pagar_hoy_db(ph_updated)
-      tryCatch(
-        save_pagar_hoy(ph_updated, shared$current_user(), client_id = shared$effective_client_id()),
-        error = function(e)
-          showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
-      )
-
-      # Notification date: prefer restored row's FechaVenc, fall back to bancos fecha
-      restored_fecha <- if (length(orig_idx) > 0 && "FechaVenc" %in% names(ph_updated))
-        ph_updated$FechaVenc[orig_idx] else as.Date(row$fecha)
       cal_label <- if (isTRUE(row$tipo == "cobro")) "CxC" else "CxP"
       fecha_fmt <- format(restored_fecha, "%d/%m/%Y")
       showNotification(

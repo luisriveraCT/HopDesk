@@ -1234,6 +1234,11 @@ server <- function(input, output, session) {
   register_synced("pasivos_liabilities_db", S3_KEYS$pasivos_liabilities,
                   load_pasivos_liabilities)
   register_synced("papelera_rv", S3_KEYS$papelera,        load_papelera)
+  # manual_inv was missing from this registry entirely (found 2026-07-24, a
+  # real incident: an open tab's stale copy silently survives forever,
+  # never self-healing like every other key here does) -- one-line fix,
+  # same shape as papelera_rv above.
+  register_synced("manual_inv",  S3_KEYS$manual,          load_manual)
   register_synced("notes_df",   S3_KEYS$notes,          load_notes)
   register_synced("tags_db",    S3_KEYS$tags,            load_tags)
   register_synced("moves_db",   S3_KEYS$moves,           load_moves)
@@ -2426,7 +2431,7 @@ server <- function(input, output, session) {
       )
       df <- upsert_manual(manual_inv(), new_row)
       manual_inv(df)
-      tryCatch(save_manual(df),
+      tryCatch(save_manual(df, client_id = effective_client_id()),
                error = function(e) showNotification(
                  "No se pudieron guardar los cambios.", type = "warning"))
       .sync_staged(
@@ -2438,7 +2443,9 @@ server <- function(input, output, session) {
         ph_rv      = pagar_hoy_db,
         new_date   = as.Date(input$me_fecha),
         new_imp    = input$me_importe  %||% 0,
-        new_parte  = trimws(input$me_parte %||% ""))
+        new_parte  = trimws(input$me_parte %||% ""),
+        username   = current_user(),
+        client_id  = effective_client_id())
       session$userData[["me_edit_id"]] <- ""
       removeModal()
       active_entry_ledger(NULL)
@@ -2464,31 +2471,26 @@ server <- function(input, output, session) {
       )
       df <- upsert_manual(manual_inv(), new_row)
       manual_inv(df)
-      tryCatch(save_manual(df),
+      tryCatch(save_manual(df, client_id = effective_client_id()),
                error = function(e) showNotification(
                  "No se pudieron guardar los cambios.", type = "warning"))
 
       # ── Stage to Agenda de hoy if toggle is active ───────────────────────
+      # Re-derive the staged row from the manual_inv row that now actually
+      # exists (df, just written above) instead of rebuilding it from the
+      # form input a second time -- keeps Agenda a mirror of the root write
+      # rather than a second, independently-computed copy that can drift
+      # from it.
       send_to_agenda <- isTRUE(input$me_agenda_active)
       if (send_to_agenda) {
-        ph_row <- tibble::tibble(
-          id        = new_row$id,
-          ledger    = ledger,
-          Empresa   = input$me_empresa,
-          Moneda    = toupper(trimws(input$me_moneda)),
-          Documento = doc,
-          Parte     = trimws(input$me_parte    %||% ""),
-          Codigo    = trimws(input$me_codigo   %||% ""),
-          tipo_item = "factura",
-          Importe   = input$me_importe         %||% 0,
-          FechaVenc = as.Date(input$me_fecha),
-          staged_by = current_user(),
-          staged_at = Sys.time(),
-          status    = "pending",
-          source    = "manual"
-        )
+        manual_row <- df[df[["id"]] == new_row$id, , drop = FALSE]
+        ph_row     <- stage_manual_row_to_agenda(manual_row, current_user())
+        # Fresh read first, not this session's possibly-stale in-memory copy
+        # (found 2026-07-25 -- this call had the precedence backwards, the
+        # same mistake Stage 16 originally made in pasivos_module.R).
         ph_updated <- upsert_pagar_hoy(
-          pagar_hoy_db() %||% safe_load_pagar_hoy(current_user(), client_id = effective_client_id()),
+          tryCatch(safe_load_pagar_hoy(current_user(), client_id = effective_client_id()),
+                   error = function(e) NULL) %||% pagar_hoy_db(),
           ph_row, keys = "id")
         pagar_hoy_db(ph_updated)
         tryCatch(save_pagar_hoy(ph_updated, current_user(), client_id = effective_client_id()),

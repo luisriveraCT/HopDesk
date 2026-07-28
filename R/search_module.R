@@ -1019,7 +1019,11 @@ handle_invoice_action <- function(payload, shared) {
 
       manual_rows <- item_rows[item_rows$source == "manual" & nzchar(item_rows$inv_id), ]
       if (nrow(manual_rows)) {
-        m <- shared$manual_inv()
+        # Read fresh from S3, same as papelera_df above -- this deletes
+        # rows, so a stale in-memory read here can silently resurrect a row
+        # another session already removed (found 2026-07-24, a real
+        # incident).
+        m <- tryCatch(load_manual(client_id = cid), error = function(e) NULL) %||% shared$manual_inv()
         for (mid in manual_rows$inv_id) m <- delete_manual(m, mid)
         shared$manual_inv(m)
         tryCatch(save_manual(m, client_id = shared$effective_client_id()), error = function(e)
@@ -1060,6 +1064,12 @@ handle_invoice_action <- function(payload, shared) {
       staged_by = current_user,
       staged_at = Sys.time(),
       status    = "pending",
+      # Without this, every row staged here loses its source at write time
+      # and gets normalized to "sap" -- a manual entry confirmed later would
+      # then never be archived out of manual_inv (found 2026-07-24, the same
+      # bug as ledger_module.R's stage_all/stage_sel, in this shared
+      # handler used by both Search and Vencidos' Agregar todo/selección).
+      source    = ifelse(is.na(keys_df$source) | keys_df$source != "manual", "sap", "manual"),
       stringsAsFactors = FALSE
     )
     # Skip rows with blank Documento (can't key them)
@@ -1068,7 +1078,13 @@ handle_invoice_action <- function(payload, shared) {
       showNotification("No se encontraron facturas con documento válido.", type = "warning")
       return()
     }
-    updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(), new_rows)
+    # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
+    # 2026-07-25); a stale base here would silently drop another session's
+    # concurrent stage/unstage.
+    ph_base <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                            client_id = shared$effective_client_id()),
+                        error = function(e) NULL) %||% shared$pagar_hoy_db()
+    updated <- upsert_pagar_hoy(ph_base, new_rows)
     shared$pagar_hoy_db(updated)
     tryCatch(save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id()), error = function(e)
       showNotification(paste("Error guardando agenda:", e$message), type = "warning"))

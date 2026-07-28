@@ -307,11 +307,38 @@ show_combined_entry_modal <- function(ledger, sap_data, session,
       ' data-idx="', i,         '"',
       ' data-max="', saldo_val, '"',
       ' value="',    saldo_val, '"',
+      # Disabled until its checkbox is checked -- the change.abcheck handler
+      # (.ab_js) already enables/disables it on toggle, but only reacts to a
+      # CHANGE event, so the initial render must start disabled to match the
+      # unchecked default (found live 2026-07-27: every amount field was
+      # editable from the moment the modal opened, regardless of selection).
+      ' disabled',
       ' min="0" step="0.01">',
       '<div class="ab-warn-msg">Mayor al saldo (', htmltools::htmlEscape(saldo_fmt), ')</div>',
     '</td>',
     '</tr>'
   )
+}
+
+# Normalize the client's checked-rows payload to a list-of-lists, one entry
+# per row, regardless of how many rows were checked. jsonlite/Shiny
+# simplifies a JSON array of objects differently depending on its length --
+# see the observeEvent(input$ab_rows) call site for the exact shapes and the
+# live incident this fixes (2026-07-27), matching the same normalization
+# R/ledger_module.R's .cart_inv_sel_to_keys() already needed for cart_inv_sel.
+.normalize_ab_rows <- function(rows_data) {
+  if (is.null(rows_data)) return(list())
+  if (is.data.frame(rows_data)) {
+    return(lapply(seq_len(nrow(rows_data)), function(k) as.list(rows_data[k, , drop = FALSE])))
+  }
+  if (is.list(rows_data) && !is.null(rows_data[["idx"]])) {
+    n <- length(rows_data[["idx"]])
+    if (n > 1L) {
+      return(lapply(seq_len(n), function(k) lapply(rows_data, function(v) v[[k]])))
+    }
+    return(list(rows_data))
+  }
+  rows_data
 }
 
 # ── Show the abono modal ──────────────────────────────────────────────────────
@@ -426,6 +453,36 @@ setup_abono_browse <- function(input, output, session,
     if (!nrow(df))
       return(div(class = "ab-empty", "Sin facturas en ese rango."))
 
+    # Net out already-CONFIRMED abonos before showing "Saldo" -- otherwise this
+    # modal always shows the invoice's original SAP balance, forever, even
+    # after a partial payment against it was confirmed (found 2026-07-24: the
+    # `abonos_db` parameter was accepted but never actually read here). Mirrors
+    # build_ledger_df()'s exact join (R/data_pipeline.R) so this modal agrees
+    # with what Calendario itself would show. Only ACTIVE (confirmed) abonos
+    # count -- a still-pending, unconfirmed abono staged in Agenda deliberately
+    # does not reduce the balance yet, matching the documented design above.
+    ab_summary <- active_abonos_summary(abonos_db() %||% tibble::tibble()) |>
+      dplyr::filter(.data$ledger == !!ledger)
+    if (nrow(ab_summary) > 0) {
+      df <- df |>
+        dplyr::left_join(
+          ab_summary |> dplyr::select(Empresa, Moneda, Documento, abono_total),
+          by = c("Empresa", "Moneda", "Documento")
+        ) |>
+        dplyr::mutate(
+          abono_total       = dplyr::coalesce(abono_total, 0),
+          `Saldo vencido`   = pmax(0, `Saldo vencido` - abono_total)
+        )
+    } else {
+      df[["abono_total"]] <- 0
+    }
+
+    # An invoice already fully covered by confirmed abonos has nothing left to
+    # partially pay -- drop it instead of showing a stale/zero row.
+    df <- df[df[["Saldo vencido"]] > 0, , drop = FALSE]
+    if (!nrow(df))
+      return(div(class = "ab-empty", "Sin facturas con saldo pendiente en ese rango."))
+
     # ── Group by Parte + Empresa + Moneda ─────────────────────────────────
     df[["group_key"]] <- paste(df$Parte %||% "", df$Empresa %||% "",
                                df$Moneda %||% "", sep = "\x1f")
@@ -474,43 +531,90 @@ setup_abono_browse <- function(input, output, session,
   # Calendar reduction takes effect only when "Confirmar pagos" in Agenda de Hoy
   # writes confirmed rows to abonos_db with status = "active".
   observeEvent(input$ab_rows, {
-    rows_data <- input$ab_rows
-    if (!is.list(rows_data) || length(rows_data) == 0) return()
+    # Normalize to list-of-lists. Shiny/jsonlite delivers the client's JSON
+    # array of row objects in different shapes depending on how many rows
+    # were checked -- the exact same failure mode already documented and
+    # fixed for cart_inv_sel (R/ledger_module.R's .cart_inv_sel_to_keys()):
+    #   (a) data.frame        — jsonlite simplifyDataFrame kicked in (2+ rows)
+    #   (b) list(idx=vec,...) — named list of vectors (2+ rows)
+    #   (c) list(idx=x, ...)  — single row, auto-unboxed (found live
+    #       2026-07-27: checking exactly one row and clicking "Enviar a
+    #       Agenda" silently did nothing -- `for (r_raw in rows_data)` was
+    #       iterating over this row's individual FIELD VALUES instead of
+    #       over rows, so `r_raw$saldo` errored on a plain scalar)
+    #   (d) list(list(...), ...) — already correct
+    rows_data <- .normalize_ab_rows(input$ab_rows)
+    if (!length(rows_data)) return()
 
     ledger <- input$ab_ledger %||% "AP"
-    ph     <- pagar_hoy_db() %||% load_pagar_hoy()
+    # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
+    # 2026-07-25); a stale base here would silently drop another session's
+    # concurrent stage/unstage.
+    ph     <- tryCatch(safe_load_pagar_hoy(username = current_user(), client_id = client_id()),
+                       error = function(e) NULL) %||% pagar_hoy_db()
 
+    # The client-side warning class (.ab-warn) is cosmetic only -- nothing
+    # ever stopped submitting an abono larger than the invoice's remaining
+    # balance (found 2026-07-24). `r_raw$saldo` is the balance shown in the
+    # table at render time, already netted against confirmed abonos by the
+    # fix above, so this guard is consistent with what the user actually saw.
+    accepted <- list()
+    rejected <- character(0)
     for (r_raw in rows_data) {
-      new_row <- tibble::tibble(
-        id        = uuid::UUIDgenerate(),
-        ledger    = ledger,
-        Empresa   = as.character(r_raw$empresa   %||% ""),
-        Moneda    = as.character(r_raw$moneda    %||% "MXN"),
-        Documento = as.character(r_raw$documento %||% ""),
-        Parte     = as.character(r_raw$parte     %||% ""),
-        Codigo    = trimws(as.character(r_raw$codigo %||% "")),
-        tipo_item = "abono",
-        Importe   = as.numeric(r_raw$importe %||% 0),
-        FechaVenc = Sys.Date(),
-        staged_by = current_user(),
-        staged_at = Sys.time(),
-        status    = "pending",
-        source    = "manual"
-      )
-      ph <- upsert_pagar_hoy(ph, new_row, keys = "id")
+      saldo   <- as.numeric(r_raw$saldo   %||% 0)
+      importe <- as.numeric(r_raw$importe %||% 0)
+      if (importe <= 0 || importe > saldo + 1e-6) {
+        rejected <- c(rejected, r_raw$referencia %||% r_raw$documento %||% "")
+        next
+      }
+      accepted[[length(accepted) + 1L]] <- r_raw
     }
 
-    pagar_hoy_db(ph)
-    tryCatch(save_pagar_hoy(ph, current_user(), client_id = client_id()),
-             error = function(e) showNotification(
-               paste("No se pudo guardar en Agenda:", e$message), type = "warning"))
+    if (length(accepted)) {
+      for (r_raw in accepted) {
+        new_row <- tibble::tibble(
+          id        = uuid::UUIDgenerate(),
+          ledger    = ledger,
+          Empresa   = as.character(r_raw$empresa   %||% ""),
+          Moneda    = as.character(r_raw$moneda    %||% "MXN"),
+          Documento = as.character(r_raw$documento %||% ""),
+          Parte     = as.character(r_raw$parte     %||% ""),
+          Codigo    = trimws(as.character(r_raw$codigo %||% "")),
+          tipo_item = "abono",
+          Importe   = as.numeric(r_raw$importe %||% 0),
+          # The invoice's real due date, not the staging date (found
+          # 2026-07-24: this always showed "today" in Agenda de Hoy,
+          # misleading next to real factura rows in the same table).
+          FechaVenc = tryCatch(as.Date(r_raw$fecha_venc), error = function(e) Sys.Date()),
+          staged_by = current_user(),
+          staged_at = Sys.time(),
+          status    = "pending",
+          source    = "manual"
+        )
+        ph <- upsert_pagar_hoy(ph, new_row, keys = "id")
+      }
 
-    n <- length(rows_data)
-    showNotification(
-      paste0(n, if (n == 1L) " abono enviado" else " abonos enviados",
-             " a Agenda de hoy. Confirma para aplicar al saldo."),
-      type = "message", duration = 4
-    )
-    removeModal()
+      pagar_hoy_db(ph)
+      tryCatch(save_pagar_hoy(ph, current_user(), client_id = client_id()),
+               error = function(e) showNotification(
+                 paste("No se pudo guardar en Agenda:", e$message), type = "warning"))
+
+      n <- length(accepted)
+      showNotification(
+        paste0(n, if (n == 1L) " abono enviado" else " abonos enviados",
+               " a Agenda de hoy. Confirma para aplicar al saldo."),
+        type = "message", duration = 4
+      )
+    }
+
+    if (length(rejected)) {
+      showNotification(
+        paste0("No se envi", if (length(rejected) == 1L) "ó 1 abono" else paste0("aron ", length(rejected), " abonos"),
+               " por exceder el saldo disponible: ", paste(rejected, collapse = ", ")),
+        type = "warning", duration = 6
+      )
+    }
+
+    if (length(accepted)) removeModal()
   }, ignoreInit = TRUE)
 }

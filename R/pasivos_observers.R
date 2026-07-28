@@ -1,7 +1,28 @@
 # =============================================================================
 # R/pasivos_observers.R
 # Reactive observers that close the Pasivos lifecycle automatically when
-# bancos_confirmados changes (confirmation and reversal events).
+# bancos_confirmados changes (confirmation events).
+#
+# Ledger-integrity master plan, 2026-07-23: the REVERSAL side of this file
+# was removed. It used to revive the provision (estado -> "provisional",
+# clearing manual_inv_id/pagar_hoy_id) and delete the derived manual_inv row
+# whenever a provision-linked confirmation was undone — racing independently
+# against undo_conf() (R/bancos_module.R), which reacts to the exact same
+# bancos_confirmados.eliminado flip. Per Mouse's explicit correction:
+# recovering a CONFIRMED item always recovers the ITEM, regardless of
+# whether it originated from a converted provision — a provision itself is
+# never confirmed (it can never reach Agenda), so there is no "revive the
+# provision" step to run here at all. undo_conf() now restores the item
+# losslessly on its own (same mechanism as any other manual entry); this
+# file reviving the provision on top of that would just re-delete the
+# row undo_conf() just restored. See docs/LEDGER_INTEGRITY_MASTER_PLAN.md
+# Stage 5 for the full reasoning.
+#
+# Known open question, flagged to Mouse rather than guessed at: the
+# provision's own `estado` now stays at "item_confirmed" after its item's
+# confirmation is undone, since nothing reverts it anymore. Whether that
+# should transition to something else (not "provisional" — the item still
+# exists, just unconfirmed) is a real product decision, not yet made.
 # =============================================================================
 
 # Vector-safe TRUE check — guards against the bare-isTRUE bug on logical vectors.
@@ -12,16 +33,17 @@ isTRUE_safe <- function(x) !is.na(x) & x
 #
 # Watches shared$bancos_confirmados() for rows with provision_id set.
 # On confirmation: calls pasivos_provision_item_confirmed().
-# On reversal:     calls pasivos_provision_revive() and removes orphaned manual_inv row.
+# (No longer reacts to reversal at all -- see the file header.)
 #
 # Note: bancos_confirmados schema uses 'confirmacion_id' (not 'id') as the row key.
 #
 # Investigation findings (Fix 1A):
 # 1. first_run guard is required: without it, any rows already-eliminado=TRUE at
-#    startup are treated as new reversal events and incorrectly trigger revive().
-#    On first run we snapshot current state into seen-sets without firing lifecycle
-#    functions; reversals that happened while the user was logged out are not replayed.
-# 2. shared$bancos_confirmados() is the same reactive the reversal handlers write to
+#    startup would have been treated as new reversal events (before reversal
+#    handling was removed entirely, see file header) and incorrectly trigger
+#    revive(). On first run we snapshot current state into confirmed_seen
+#    without firing any lifecycle functions.
+# 2. shared$bancos_confirmados() is the same reactive the confirm handler writes to
 #    (bancos_module.R:2736 shared$bancos_confirmados(conf)). Identity is correct.
 # 3. isTRUE_safe = !is.na(x) & x. Already correct — no fix needed.
 # 4. eliminado is logical() in schema; load_bancos_confirmados normalises with
@@ -30,7 +52,6 @@ setup_pasivos_observers <- function(input, output, session, shared) {
 
   rv <- shiny::reactiveValues(
     confirmed_seen = character(0),  # confirmacion_ids handled for confirmation
-    reversed_seen  = character(0),  # confirmacion_ids handled for reversal
     first_run      = TRUE           # suppress historical replay on startup
   )
 
@@ -49,10 +70,6 @@ setup_pasivos_observers <- function(input, output, session, shared) {
       rv$confirmed_seen <- bc$confirmacion_id[
         !is.na(bc$provision_id) & nzchar(bc$provision_id) &
         !isTRUE_safe(bc$eliminado)
-      ]
-      rv$reversed_seen <- bc$confirmacion_id[
-        !is.na(bc$provision_id) & nzchar(bc$provision_id) &
-        isTRUE_safe(bc$eliminado)
       ]
       rv$first_run <- FALSE
       return()
@@ -92,48 +109,10 @@ setup_pasivos_observers <- function(input, output, session, shared) {
       }, error = function(e) NULL)
     }
 
-    # ---- Reversal event detection --------------------------------------------
-    # Rows: provision_id non-NA, eliminado IS TRUE, not yet handled.
-    new_reversals <- bc[
-      !is.na(bc$provision_id) & nzchar(bc$provision_id) &
-      isTRUE_safe(bc$eliminado) &
-      !(bc$confirmacion_id %in% rv$reversed_seen),
-      , drop = FALSE
-    ]
-
-    if (nrow(new_reversals)) {
-      for (i in seq_len(nrow(new_reversals))) {
-        prov_id <- new_reversals$provision_id[i]
-
-        tryCatch({
-          # Read manual_inv_id from the provision BEFORE reviving clears FK fields.
-          provs    <- load_pasivos_provisions(client_id = shared$effective_client_id())
-          prov_row <- provs[provs$id == prov_id, , drop = FALSE]
-          mi_id    <- if (nrow(prov_row)) prov_row$manual_inv_id[1] else NA_character_
-
-          pasivos_provision_revive(provision_id = prov_id, user = user,
-                                   client_id = shared$effective_client_id())
-
-          # Refresh provision reactive so the AP calendar shows the revived item.
-          tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
-          tryCatch({
-            shared$pasivos_provisions_db(load_pasivos_provisions(client_id = shared$effective_client_id()))
-          }, error = function(e) NULL)
-
-          # Remove the orphaned manual_inv row so the calendar doesn't show both
-          # the revived provision and the now-stale converted item.
-          if (!is.na(mi_id) && nzchar(mi_id %||% "")) {
-            mi <- shared$manual_inv()
-            mi <- mi[mi$id != mi_id, , drop = FALSE]
-            shared$manual_inv(mi)
-            save_manual(mi, client_id = shared$effective_client_id())
-          }
-        }, error = function(e) {
-          warning("[pasivos] failed to revive provision: ", conditionMessage(e))
-        })
-      }
-      rv$reversed_seen <- c(rv$reversed_seen, new_reversals$confirmacion_id)
-    }
+    # Reversal event detection was removed here -- see the file header
+    # comment. undo_conf() (R/bancos_module.R) now handles the entire
+    # recovery of a provision-derived confirmation on its own, the same way
+    # it handles any other manual entry.
   })
 
   invisible(NULL)

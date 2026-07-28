@@ -541,6 +541,28 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       ar_all <- normalize_sap(sap_raw$AR, "AR")
       ap_all <- normalize_sap(sap_raw$AP, "AP")
 
+      # Exclude already-confirmed invoices (Stage 12) -- the Pulse previously
+      # applied zero confirmation exclusion, counting invoices Treasury has
+      # already closed out in its inflow/outflow projections. Same canonical
+      # function the calendar/Cash Flow Export use. normalize_sap()'s output
+      # is deliberately SAP-only (no "source" column at all -- Pulse never
+      # includes manual entries or provisions), so compute_confirmed_flags()'s
+      # manual/provision-specific masks are simply no-ops here, which is
+      # correct: every row IS a SAP row by construction. Matched against
+      # "Saldo vencido" directly (not Saldo_original) -- this module has no
+      # abono-netting step of its own to preserve a pre-netting snapshot of,
+      # so there's nothing for the amount-match guard to be stale relative to.
+      conf_db_pulse <- tryCatch(shared$bancos_confirmados(), error = function(e) NULL)
+      pap_db_pulse  <- tryCatch(shared$papelera_rv(),         error = function(e) NULL)
+      .drop_confirmed_pulse <- function(df, ledger_type) {
+        if (!nrow(df)) return(df)
+        df <- compute_confirmed_flags(df, ledger_type, conf_db_pulse, pap_db_pulse)
+        if ("confirmed" %in% names(df)) df <- df[is.na(df[["confirmed"]]) | !df[["confirmed"]], , drop = FALSE]
+        df
+      }
+      ar_all <- .drop_confirmed_pulse(ar_all, "AR")
+      ap_all <- .drop_confirmed_pulse(ap_all, "AP")
+
       # Attach urgency / importance tags to AP rows
       if (!is.null(tags_raw) && is.data.frame(tags_raw) && nrow(tags_raw) > 0 &&
           nrow(ap_all) > 0 &&

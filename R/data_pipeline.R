@@ -341,6 +341,13 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
   # ── Apply SAP field overrides (Parte, Codigo, Factura, Notas) ───────────────
   # Overrides paint on top of SAP data for UI display only.
   # The underlying sap_data() snapshot and dedup keys are never touched.
+  # Deliberately literal source == "sap" below, not is_erp_sourced(): this
+  # whole feature (table, columns, settings UI) is SAP-specific by name, not
+  # a generic ERP-override mechanism yet — generalizing it is a bigger,
+  # separate decision than this stage's "don't hardcode the sap/manual split
+  # at every confirm/delete/stage site" scope. Also a no-op either way today
+  # — `source` is always explicitly "sap" by the time rows reach here, never
+  # NA (see build_ledger_df() above), so the two checks are equivalent now.
   if (!is.null(sap_ov) && is.data.frame(sap_ov) && nrow(sap_ov)) {
     if (!"Factura" %in% names(result)) result[["Factura"]] <- NA_character_
     ov_filt <- sap_ov |>
@@ -580,4 +587,194 @@ to_calendar_data <- function(df, amount_col = "Saldo vencido") {
           "' rows_in=", nrow(df), " rows_out=", nrow(result),
           " monedas=", paste(sort(unique(result$Moneda)), collapse=","))
   result
+}
+
+# ── Canonical "is this invoice confirmed?" computation ─────────────────────────
+# Ledger-integrity master plan, Stage 9: the single reference implementation
+# every consumer (calendar, and eventually Cash Flow Preview/Export, Reporte's
+# Cash Flow Pulse, Intercompany) reads from, instead of each one growing its
+# own reimplementation. Two sources only -- a third (pagar_hoy_db.status==
+# "confirmed") existed pre-Stage-4 but is now structurally dead: every confirm
+# handler unconditionally unstages the Agenda row regardless of source, so no
+# code path can ever leave one behind with status=="confirmed" again.
+#
+#   1. bancos_confirmados matching (Empresa+Documento+Moneda, case/whitespace
+#      normalized) -- confirmations made via Agenda de Hoy. Never applied to
+#      manual or provision rows (see below).
+#   2. papelera SAP ghosts -- SAP items soft-deleted via the calendar/search
+#      trash mechanic remain visible, struck through, excluded from sums.
+#
+# Manual rows: matched only by their own UUID (papelera anti-join, done by the
+# caller before this runs) or explicit deletion -- never by document-key
+# matching here, which would wrongly hide a brand-new manual entry that
+# happens to reuse a past, already-confirmed Documento. A manual row that DOES
+# end up confirmed (via the archive-on-confirm mechanism) is removed from df
+# entirely below, rather than kept as a ghost like a SAP row.
+#
+# Provision rows: forcibly cleared on all three flags regardless of any match
+# -- they can only change state through the explicit conversion modal, never
+# through payment/confirmation matching (which would wrongly mark a provision
+# "paid" whenever a real invoice happens to share its Documento key).
+#
+# df: combined ledger rows (SAP + manual + provisions), already empresa-
+# filtered and past the manual-papelera anti-join -- the caller's concern,
+# not this function's; papelera_df is still needed here for Source 2 (SAP
+# ghosts), a distinct concern from the manual anti-join.
+# bancos_confirmados_df/papelera_df: plain data frames, not reactives --
+# callers resolve their own shared$xxx() and pass the result in, keeping this
+# file's "no reactives, no S3" contract (see file header) intact.
+compute_confirmed_flags <- function(df, ledger, bancos_confirmados_df, papelera_df) {
+  tipo_val <- if (ledger == "AR") "cobro" else "pago"
+  if (!"confirmed" %in% names(df)) df[["confirmed"]] <- FALSE
+  na_conf <- is.na(df[["confirmed"]])
+  if (any(na_conf)) df[["confirmed"]][na_conf] <- FALSE
+
+  # A caller with no "source" column at all (e.g. Reporte's Cash Flow Pulse,
+  # which is deliberately SAP-only) must get an all-FALSE mask, not
+  # logical(0) -- "source" %in% names(df) is a length-1 scalar, so `&`-ing
+  # it against !is.na(df[["source"]]) on a NULL/absent column silently
+  # collapses the whole mask to zero length, which then breaks every
+  # downstream `df[["confirmed"]] | bc_mask` recycling (found 2026-07-24 via
+  # Reporte's own tests -- every other caller always has a real "source"
+  # column, so this was never exercised until now).
+  if ("source" %in% names(df)) {
+    is_manual    <- !is.na(df[["source"]]) & df[["source"]] == "manual"
+    is_provision <- !is.na(df[["source"]]) & df[["source"]] == "provision"
+  } else {
+    is_manual    <- rep(FALSE, nrow(df))
+    is_provision <- rep(FALSE, nrow(df))
+  }
+
+  # Source 1: bancos_confirmados
+  # Amount-match guard (Stage 10): standard everywhere bancos_confirmados
+  # is matched, deliberately WITHOUT a date-window check -- Mouse's explicit
+  # reasoning is that a date guard would treat a normal month-end SAP delay
+  # as staleness and reopen a still-valid confirmation. Protects against
+  # SAP reusing a DocNum years later for an unrelated future invoice, using
+  # the exact key shape already proven in production at
+  # R/interco_module.R's .ckey(): 2-decimal-rounded amount appended to the
+  # existing (Empresa, Documento, Moneda) key.
+  # Matched against df$Saldo_original -- the balance BEFORE this render's
+  # abono-netting is applied (build_ledger_df() always sets it, for SAP and
+  # manual rows alike, before subtracting active abonos into "Saldo
+  # vencido"). df has no "Importe" column at all for SAP rows (confirmed
+  # directly against a real SAP snapshot -- only Saldo vencido/Saldo_original
+  # exist there); Saldo_original is also stable across time in the one way
+  # that matters here: matching the live, ever-shrinking "Saldo vencido"
+  # instead would cause exactly the false-negative Mouse is worried about --
+  # an abono applied after confirmation would change Saldo vencido and make
+  # a genuinely still-valid confirmation silently fail to match, reopening it.
+  conf_db <- bancos_confirmados_df
+  if (!is.null(conf_db) && nrow(conf_db)) {
+    conf_active <- conf_db[!(conf_db[["eliminado"]] %in% TRUE) &
+                           conf_db[["tipo"]] == tipo_val &
+                           !is.na(conf_db[["importe"]]), , drop = FALSE]
+    if (nrow(conf_active)) {
+      bc_keys   <- unique(conf_active[, c("empresa","documento","moneda","importe"),
+                                      drop = FALSE])
+      amt_col   <- if ("Saldo_original" %in% names(df)) "Saldo_original" else "Saldo vencido"
+      match_key <- paste(toupper(trimws(df[["Empresa"]])),
+                         toupper(trimws(df[["Documento"]])),
+                         toupper(trimws(df[["Moneda"]])),
+                         sprintf("%.2f", round(as.numeric(df[[amt_col]]), 2)))
+      conf_key  <- paste(toupper(trimws(bc_keys[["empresa"]])),
+                         toupper(trimws(bc_keys[["documento"]])),
+                         toupper(trimws(bc_keys[["moneda"]])),
+                         sprintf("%.2f", round(as.numeric(bc_keys[["importe"]]), 2)))
+      bc_mask   <- (match_key %in% conf_key) & !is_manual & !is_provision
+      df[["confirmed"]]   <- df[["confirmed"]] | bc_mask
+      if (!"is_paid_ghost" %in% names(df)) df[["is_paid_ghost"]] <- FALSE
+      df[["is_paid_ghost"]] <- df[["is_paid_ghost"]] | bc_mask
+    }
+  }
+
+  # Source 2: papelera SAP ghosts
+  if (!is.null(papelera_df) && nrow(papelera_df)) {
+    pap_this <- papelera_df[papelera_df[["ledger"]] == ledger |
+                           papelera_df[["ledger"]] == "MIXED", , drop = FALSE]
+    if (nrow(pap_this)) {
+      # Deliberately NOT is_erp_sourced() here: an ambiguous/legacy NA source
+      # in papelera should NOT be treated as a SAP ghost (which stays
+      # visible, excluded from sums) -- safer to fall through to the manual
+      # anti-join path (fully hidden) for unknown provenance.
+      sap_pap <- pap_this[!is.na(pap_this[["source"]]) &
+                            pap_this[["source"]] == "sap",
+                          c("Empresa","Moneda","Documento"), drop = FALSE]
+      if (nrow(sap_pap)) {
+        match_key <- paste(df[["Empresa"]], df[["Moneda"]], df[["Documento"]])
+        pap_key   <- paste(sap_pap[["Empresa"]], sap_pap[["Moneda"]], sap_pap[["Documento"]])
+        # !is_manual guard (found 2026-07-24): this source only ever means
+        # "an ERP row was trashed" -- without the guard, a brand-new manual
+        # invoice that happens to reuse the same Empresa+Moneda+Documento key
+        # as some unrelated, previously-archived SAP invoice (e.g. a generic
+        # placeholder like "test") gets wrongly treated as that SAP ghost,
+        # marked confirmed, and then deleted outright by the manual-removal
+        # block below -- silently vanishing from the calendar even though it
+        # was never staged, confirmed, or deleted by any real user action.
+        # Source 1 (bancos_confirmados, above) already has this guard; this
+        # one was missing it.
+        ghost_mask <- (match_key %in% pap_key) & !is_manual & !is_provision
+        df[["confirmed"]] <- df[["confirmed"]] | ghost_mask
+        if (!"is_ghost" %in% names(df)) df[["is_ghost"]] <- FALSE
+        df[["is_ghost"]]  <- df[["is_ghost"]] | ghost_mask
+      }
+    }
+  }
+
+  # Manual rows: keep in df with confirmed=TRUE → calendar excludes from
+  # totals, day modal shows with strikethrough (SAP rows). Manual rows:
+  # remove entirely from df → disappear from calendar and modal (their real
+  # data survives in the archive, restorable via undo).
+  if ("source" %in% names(df) && any(df[["confirmed"]] & df[["source"]] == "manual")) {
+    df <- df[!(df[["confirmed"]] & df[["source"]] == "manual"), , drop = FALSE]
+  }
+
+  # Provisions cannot receive ANY payment/confirmation flag.
+  # Belt: masks above already exclude is_provision.
+  # Suspenders: forcibly clear all three flags here so the '✓ Pagado' badge
+  # can never render on a provision row regardless of future mask changes.
+  if ("source" %in% names(df) && "confirmed" %in% names(df)) {
+    prov_mask <- !is.na(df[["source"]]) & df[["source"]] == "provision"
+    if (any(prov_mask)) {
+      df[["confirmed"]][prov_mask] <- FALSE
+      if ("is_paid_ghost" %in% names(df)) df[["is_paid_ghost"]][prov_mask] <- FALSE
+      if ("is_ghost"      %in% names(df)) df[["is_ghost"]][prov_mask]      <- FALSE
+    }
+  }
+
+  df
+}
+
+# ── "Send straight to Agenda" — derive, never fabricate ────────────────────────
+# Builds the pagar_hoy staging row for the one-click "create/convert and
+# immediately stage to Agenda" convenience (direct manual-entry creation,
+# Pasivos conversion modal). Takes the manual_inv row exactly as it now
+# exists in the root table (post-write) — every field comes from that row,
+# never from the raw form inputs that produced it. This is what keeps
+# Agenda a mirror of Calendario's root data instead of a second,
+# independently-computed copy that can silently drift from it.
+# manual_row: single-row data frame, already bound into manual_inv/manual_df.
+stage_manual_row_to_agenda <- function(manual_row, user) {
+  stopifnot(is.data.frame(manual_row), nrow(manual_row) == 1)
+  prov_id  <- manual_row[["provision_id"]][1]
+  has_prov <- !is.na(prov_id) && nzchar(prov_id %||% "")
+  now      <- Sys.time()
+  tibble::tibble(
+    id           = manual_row[["id"]][1],
+    ledger       = manual_row[["ledger"]][1],
+    Empresa      = manual_row[["Empresa"]][1],
+    Moneda       = manual_row[["Moneda"]][1],
+    Documento    = manual_row[["Documento"]][1],
+    Parte        = manual_row[["Parte"]][1]  %||% "",
+    Codigo       = manual_row[["Codigo"]][1] %||% "",
+    tipo_item    = "factura",
+    Importe      = manual_row[["Importe"]][1],
+    FechaVenc    = as.Date(manual_row[["Fecha de vencimiento"]][1]),
+    staged_by    = user,
+    staged_at    = now,
+    status       = "pending",
+    provision_id = if (has_prov) prov_id else NA_character_,
+    liability_id = if (has_prov) manual_row[["liability_id"]][1] else NA_character_,
+    source       = if (has_prov) "provision" else "manual"
+  )
 }

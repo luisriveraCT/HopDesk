@@ -277,145 +277,19 @@ ledgerModuleServer <- function(id, config, shared) {
       }
 
       # ── Mark confirmed invoices ─────────────────────────────────────────────
-      # Reads from TWO sources (both are checked for full retroactive coverage):
-      #   1. conciliacion_rv  — confirmations made before the bancos wire-cut
-      #   2. bancos_confirmados — confirmations made after the wire-cut
+      # Canonical 2-source implementation (Stage 9) — see compute_confirmed_flags()
+      # in R/data_pipeline.R for the full source-by-source rationale. A third
+      # source (pagar_hoy_db.status=="confirmed") existed pre-Stage-4 but is
+      # now structurally dead: every confirm handler unconditionally unstages
+      # the Agenda row regardless of source, so nothing can ever leave one
+      # behind with status=="confirmed" again.
       # isolate() is intentionally NOT used here so the calendar re-renders
       # immediately when a confirmation happens in Agenda de Hoy.
-      tipo_val <- if (ledger == "AR") "cobro" else "pago"
-      # confirmed column: provision rows carry FALSE already; SAP/manual rows
-      # come from df_base which has no confirmed column yet.
-      if (!"confirmed" %in% names(df)) df[["confirmed"]] <- FALSE
-      na_conf <- is.na(df[["confirmed"]])
-      if (any(na_conf)) df[["confirmed"]][na_conf] <- FALSE
-
-      # Document-level confirmation matching applies ONLY to SAP rows.
-      # Manual entries carry UUIDs for precise identification; matching them by
-      # (Empresa, Moneda, Documento) alone would hide any NEW manual entry whose
-      # Documento happens to match a past payment that was already confirmed —
-      # preventing the user from ever registering a second entry of the same type.
-      # Manual entries are removed from the calendar via the papelera (UUID-based)
-      # or by the user explicitly deleting them.
-      is_manual    <- "source" %in% names(df) & !is.na(df[["source"]]) &
-                      df[["source"]] == "manual"
-      # Provision rows must NEVER receive any payment/confirmation flag.
-      # They can only change state through the explicit conversion modal
-      # (pasivos_perform_conversion). Matching by Empresa/Documento/Moneda
-      # against bancos_confirmados or pagar_hoy would wrongly mark a provision
-      # as paid whenever a real payment shares the same documento key.
-      is_provision <- "source" %in% names(df) & !is.na(df[["source"]]) &
-                      df[["source"]] == "provision"
-
-      # Source 1: conciliacion_rv (legacy path)
-      conc_rv <- tryCatch(shared$conciliacion_rv(), error = function(e) NULL)
-      if (!is.null(conc_rv) && nrow(conc_rv)) {
-        conc_keys <- unique(conc_rv[conc_rv[["tipo"]] == tipo_val,
-                                    c("Empresa","Moneda","Documento"), drop = FALSE])
-        if (nrow(conc_keys)) {
-          match_key  <- paste(toupper(trimws(df[["Empresa"]])),
-                              toupper(trimws(df[["Moneda"]])),
-                              toupper(trimws(df[["Documento"]])))
-          conf_key   <- paste(toupper(trimws(conc_keys[["Empresa"]])),
-                              toupper(trimws(conc_keys[["Moneda"]])),
-                              toupper(trimws(conc_keys[["Documento"]])))
-          conc_mask  <- (match_key %in% conf_key) & !is_manual & !is_provision
-          df[["confirmed"]]   <- df[["confirmed"]] | conc_mask
-          if (!"is_paid_ghost" %in% names(df)) df[["is_paid_ghost"]] <- FALSE
-          df[["is_paid_ghost"]] <- df[["is_paid_ghost"]] | conc_mask
-        }
-      }
-
-      # Source 2: bancos_confirmados (current path after wire-cut)
-      conf_db <- tryCatch(shared$bancos_confirmados(), error = function(e) NULL)
-      if (!is.null(conf_db) && nrow(conf_db)) {
-        conf_active <- conf_db[!(conf_db[["eliminado"]] %in% TRUE) &
-                               conf_db[["tipo"]] == tipo_val, , drop = FALSE]
-        if (nrow(conf_active)) {
-          bc_keys   <- unique(conf_active[, c("empresa","documento","moneda"),
-                                          drop = FALSE])
-          match_key <- paste(toupper(trimws(df[["Empresa"]])),
-                             toupper(trimws(df[["Documento"]])),
-                             toupper(trimws(df[["Moneda"]])))
-          conf_key  <- paste(toupper(trimws(bc_keys[["empresa"]])),
-                             toupper(trimws(bc_keys[["documento"]])),
-                             toupper(trimws(bc_keys[["moneda"]])))
-          bc_mask   <- (match_key %in% conf_key) & !is_manual & !is_provision
-          df[["confirmed"]]   <- df[["confirmed"]] | bc_mask
-          if (!"is_paid_ghost" %in% names(df)) df[["is_paid_ghost"]] <- FALSE
-          df[["is_paid_ghost"]] <- df[["is_paid_ghost"]] | bc_mask
-        }
-      }
-
-      # Source 3: papelera SAP ghosts — SAP items deleted via calendar/search
-      # ghost mechanic remain in df but are marked confirmed=TRUE so that
-      # to_calendar_data() excludes them from sums and the day modal shows
-      # them with a strikethrough.
-      if (!is.null(papelera) && nrow(papelera)) {
-        pap_this <- papelera[papelera[["ledger"]] == ledger |
-                               papelera[["ledger"]] == "MIXED", , drop = FALSE]
-        if (nrow(pap_this)) {
-          sap_pap <- pap_this[!is.na(pap_this[["source"]]) &
-                                pap_this[["source"]] == "sap",
-                              c("Empresa","Moneda","Documento"), drop = FALSE]
-          if (nrow(sap_pap)) {
-            match_key <- paste(df[["Empresa"]], df[["Moneda"]], df[["Documento"]])
-            pap_key   <- paste(sap_pap[["Empresa"]], sap_pap[["Moneda"]], sap_pap[["Documento"]])
-            ghost_mask <- (match_key %in% pap_key) & !is_provision
-            df[["confirmed"]] <- df[["confirmed"]] | ghost_mask
-            if (!"is_ghost" %in% names(df)) df[["is_ghost"]] <- FALSE
-            df[["is_ghost"]]  <- df[["is_ghost"]] | ghost_mask
-          }
-        }
-      }
-
-      # ── Handle manual entries differently from SAP entries ──────────────────
-      # SAP rows: keep in df with confirmed=TRUE → calendar excludes from totals,
-      #           day modal shows with strikethrough
-      # Manual rows: remove entirely from df → disappear from calendar and modal
-      # Source 4: pagar_hoy confirmed items — most reliable path.
-      # Items staged from the ledger carry the exact same Empresa/Documento/Moneda
-      # as df rows, so this match never fails due to case/whitespace drift.
-      # SAP items: confirmed=TRUE + is_paid_ghost=TRUE (visible as crossed-out ghost).
-      # Manual items: confirmed=TRUE only (removed by the block below).
-      ph_db <- tryCatch(shared$pagar_hoy_db(), error = function(e) NULL)
-      if (!is.null(ph_db) && nrow(ph_db)) {
-        ph_conf <- ph_db[
-          !is.na(ph_db[["status"]]) & ph_db[["status"]] == "confirmed" &
-          !is.na(ph_db[["ledger"]]) & ph_db[["ledger"]] == ledger,
-          , drop = FALSE
-        ]
-        if (nrow(ph_conf) && all(c("Empresa","Documento","Moneda") %in% names(ph_conf))) {
-          ph_key  <- paste(toupper(trimws(ph_conf[["Empresa"]])),
-                           toupper(trimws(ph_conf[["Documento"]])),
-                           toupper(trimws(ph_conf[["Moneda"]])))
-          df_key  <- paste(toupper(trimws(df[["Empresa"]])),
-                           toupper(trimws(df[["Documento"]])),
-                           toupper(trimws(df[["Moneda"]])))
-          ph_mask     <- (df_key %in% ph_key) & !is_provision
-          sap_ph_mask <- ph_mask & !is_manual
-          df[["confirmed"]] <- df[["confirmed"]] | ph_mask
-          if (!"is_paid_ghost" %in% names(df)) df[["is_paid_ghost"]] <- FALSE
-          df[["is_paid_ghost"]] <- df[["is_paid_ghost"]] | sap_ph_mask
-        }
-      }
-
-      if ("source" %in% names(df) && any(df[["confirmed"]] & df[["source"]] == "manual")) {
-        df <- df[!(df[["confirmed"]] & df[["source"]] == "manual"), , drop = FALSE]
-      }
-
-      # Provisions cannot receive ANY payment/confirmation flag.
-      # Belt: masks above already exclude is_provision.
-      # Suspenders: forcibly clear all three flags here so the '\u2713 Pagado'
-      # badge can never render on a provision row regardless of future mask changes.
-      if ("source" %in% names(df) && "confirmed" %in% names(df)) {
-        prov_mask <- !is.na(df[["source"]]) & df[["source"]] == "provision"
-        if (any(prov_mask)) {
-          df[["confirmed"]][prov_mask] <- FALSE
-          if ("is_paid_ghost" %in% names(df)) df[["is_paid_ghost"]][prov_mask] <- FALSE
-          if ("is_ghost"      %in% names(df)) df[["is_ghost"]][prov_mask]      <- FALSE
-        }
-      }
-
+      df <- compute_confirmed_flags(
+        df, ledger,
+        bancos_confirmados_df = tryCatch(shared$bancos_confirmados(), error = function(e) NULL),
+        papelera_df           = papelera
+      )
       message("[DF_COMBINED] complete ledger=", ledger,
               " final_rows=", nrow(df),
               " total ", round((proc.time() - t0_comb)[["elapsed"]], 2), "s")
@@ -985,6 +859,17 @@ ledgerModuleServer <- function(id, config, shared) {
                          type = "message", duration = 3)
         return()
       }
+      # Source lookup: without this, every staged row loses its source at
+      # write time and gets silently normalized to "sap" on the next
+      # load_pagar_hoy() read (or treated as ERP in-memory via
+      # is_erp_sourced(NA)) -- a manual entry confirmed later would then
+      # never get archived out of manual_inv, since the confirm handler's
+      # manual-archiving branch filters on source (found 2026-07-24, a real
+      # incident: confirmed manual invoices stayed in the calendar,
+      # unconfirmed, and got re-staged with a fresh id on the next attempt).
+      src_lookup <- if ("source" %in% names(d))
+        unique(d[, c("Empresa","Moneda","Documento","source"), drop = FALSE])
+      else NULL
       detail_lu <- .fresh_lu(
         inv_keys, ctx$amt,
         unique(d[, c("Empresa","Moneda","Documento","Parte","Codigo","Importe","FechaEff"), drop = FALSE]))
@@ -996,9 +881,26 @@ ledgerModuleServer <- function(id, config, shared) {
       new_rows[["staged_by"]] <- shared$current_user()
       new_rows[["staged_at"]] <- Sys.time()
       new_rows[["status"]]    <- "pending"
+      if (!is.null(src_lookup) && nrow(src_lookup)) {
+        new_rows <- merge(new_rows, src_lookup, by = c("Empresa","Moneda","Documento"), all.x = TRUE)
+        new_rows[["source"]] <- ifelse(is.na(new_rows[["source"]]) | new_rows[["source"]] != "manual",
+                                       "sap", "manual")
+      } else {
+        new_rows[["source"]] <- "sap"
+      }
       new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
-                                "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status"), drop = FALSE]
-      updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
+                                "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
+      # Read fresh from S3 first, not this session's possibly-stale in-memory
+      # copy -- this writes the whole table back, so a stale base would
+      # silently drop another session's concurrent stage/unstage. Must be
+      # safe_load_pagar_hoy(), not the mode-blind load_pagar_hoy() (found
+      # 2026-07-25: the latter always reads the legacy S3 key regardless of
+      # sync/per-user mode, corrupting the live agenda -- see Stage 16's
+      # correction in docs/LEDGER_INTEGRITY_MASTER_PLAN.md).
+      ph_base <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                              client_id = shared$effective_client_id()),
+                          error = function(e) NULL) %||% shared$pagar_hoy_db()
+      updated <- upsert_pagar_hoy(ph_base, new_rows,
                                   keys = c("ledger","Empresa","Moneda","Documento","Importe"))
       shared$pagar_hoy_db(updated)
       save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
@@ -1038,9 +940,16 @@ ledgerModuleServer <- function(id, config, shared) {
         showNotification("No se encontraron facturas.", type = "warning")
         return()
       }
+      detail_np <- pasivos_filter_out_provisions(detail)
+      # Source lookup -- see stage_all's identical comment above; without
+      # this a manual entry staged here silently loses its source and can
+      # never be archived out of manual_inv when later confirmed.
+      src_lookup <- if ("source" %in% names(detail_np))
+        unique(detail_np[, c("Empresa","Moneda","Documento","source"), drop = FALSE])
+      else NULL
       detail_lu <- .fresh_lu(
         keys, ctx$amt,
-        unique(pasivos_filter_out_provisions(detail)[, c("Empresa","Moneda","Documento","Parte","Codigo","Importe","FechaEff"), drop = FALSE]))
+        unique(detail_np[, c("Empresa","Moneda","Documento","Parte","Codigo","Importe","FechaEff"), drop = FALSE]))
       new_rows  <- merge(keys, detail_lu, by = c("Empresa","Moneda","Documento","Importe"))
       new_rows[["id"]]        <- vapply(seq_len(nrow(new_rows)), function(x) uuid::UUIDgenerate(), character(1))
       new_rows[["ledger"]]    <- ledger
@@ -1049,9 +958,26 @@ ledgerModuleServer <- function(id, config, shared) {
       new_rows[["staged_by"]] <- shared$current_user()
       new_rows[["staged_at"]] <- Sys.time()
       new_rows[["status"]]    <- "pending"
+      if (!is.null(src_lookup) && nrow(src_lookup)) {
+        new_rows <- merge(new_rows, src_lookup, by = c("Empresa","Moneda","Documento"), all.x = TRUE)
+        new_rows[["source"]] <- ifelse(is.na(new_rows[["source"]]) | new_rows[["source"]] != "manual",
+                                       "sap", "manual")
+      } else {
+        new_rows[["source"]] <- "sap"
+      }
       new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
-                                "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status"), drop = FALSE]
-      updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
+                                "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
+      # Read fresh from S3 first, not this session's possibly-stale in-memory
+      # copy -- this writes the whole table back, so a stale base would
+      # silently drop another session's concurrent stage/unstage. Must be
+      # safe_load_pagar_hoy(), not the mode-blind load_pagar_hoy() (found
+      # 2026-07-25: the latter always reads the legacy S3 key regardless of
+      # sync/per-user mode, corrupting the live agenda -- see Stage 16's
+      # correction in docs/LEDGER_INTEGRITY_MASTER_PLAN.md).
+      ph_base <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                              client_id = shared$effective_client_id()),
+                          error = function(e) NULL) %||% shared$pagar_hoy_db()
+      updated <- upsert_pagar_hoy(ph_base, new_rows,
                                   keys = c("ledger","Empresa","Moneda","Documento","Importe"))
       shared$pagar_hoy_db(updated)
       save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
@@ -1170,23 +1096,22 @@ ledgerModuleServer <- function(id, config, shared) {
             type = "warning", duration = 4)
           return()
         }
-        ph_now  <- shared$pagar_hoy_db()
+        # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, NOT
+        # the legacy-key-blind load_pagar_hoy(), found 2026-07-25). Reused
+        # for both the "already staged" check and the write below, so this
+        # one read is the base for the whole action, not silently mixed
+        # with a stale shared$pagar_hoy_db() partway through.
+        ph_now  <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                                client_id = shared$effective_client_id()),
+                            error = function(e) NULL) %||% shared$pagar_hoy_db()
         already <- if (!is.null(ph_now) && nrow(ph_now)) {
           ph_sub <- ph_now[ph_now[["ledger"]] == ledger, , drop = FALSE]
           nrow(merge(ph_sub[, c("Empresa","Moneda","Documento","Importe"), drop=FALSE], inv_keys, by = c("Empresa","Moneda","Documento","Importe")))
         } else 0L
         if (already > 0L) {
-          ph_sub_bulk <- ph_now[ph_now[["ledger"]] == ledger, , drop=FALSE]
-          matching_bulk <- merge(ph_sub_bulk, inv_keys, by=c("Empresa","Moneda","Documento","Importe"))
-          sap_conf_bulk <- matching_bulk[!is.na(matching_bulk$status) & matching_bulk$status == "confirmed" &
-                                          (is.na(matching_bulk$source) | matching_bulk$source == "sap"), , drop=FALSE]
-          if (nrow(sap_conf_bulk)) {
-            showNotification(
-              paste0(nrow(sap_conf_bulk), " pago(s) confirmado(s) de SAP no se pueden quitar. ",
-                     "Solo SAP puede cerrarlos."),
-              type = "warning", duration = 4)
-            return()
-          }
+          # Users may remove anything from Agenda regardless of source --
+          # Agenda never holds the real data, so this can never destroy
+          # anything (the only real guardrail is Calendario itself).
           upd_keys <- cbind(inv_keys, ledger = ledger, stringsAsFactors = FALSE)
           updated <- unstage_pagar_hoy(ph_now, upd_keys, keys = c("ledger","Empresa","Moneda","Documento","Importe"))
           shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
@@ -1216,7 +1141,8 @@ ledgerModuleServer <- function(id, config, shared) {
           }
           new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
                                     "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
-          updated <- upsert_pagar_hoy(shared$pagar_hoy_db() %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
+          # Reuse the fresh ph_now read from above -- no need for a second read.
+          updated <- upsert_pagar_hoy(ph_now %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
                                     keys = c("ledger","Empresa","Moneda","Documento","Importe"))
           shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
           lbl_agenda <- if (ledger == "AR") "Agenda del d\u00eda (Cobros)" else "Agenda del d\u00eda (Pagos)"
@@ -1272,29 +1198,34 @@ ledgerModuleServer <- function(id, config, shared) {
       inv_rows <- inv_rows[order(-inv_rows[["Importe"]]), ]
       if (j > nrow(inv_rows)) return()
       inv_key  <- inv_rows[j, c("Empresa","Moneda","Documento","Importe"), drop=FALSE]
-      ph_now   <- shared$pagar_hoy_db()
+      # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
+      # 2026-07-25); reused below for both the "already staged" check and
+      # the write, same reasoning as cart_<i>'s identical comment above.
+      ph_now   <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                               client_id = shared$effective_client_id()),
+                           error = function(e) NULL) %||% shared$pagar_hoy_db()
       already  <- if (!is.null(ph_now) && nrow(ph_now)) {
         ph_sub <- ph_now[ph_now[["ledger"]] == ledger, , drop=FALSE]
         nrow(merge(ph_sub[, c("Empresa","Moneda","Documento","Importe"), drop=FALSE],
                    inv_key, by=c("Empresa","Moneda","Documento","Importe")))
       } else 0L
       if (already > 0L) {
-        ph_sub <- ph_now[ph_now[["ledger"]] == ledger, , drop=FALSE]
-        matching_inv <- merge(ph_sub, inv_key, by=c("Empresa","Moneda","Documento","Importe"))
-        sap_conf_inv <- matching_inv[!is.na(matching_inv$status) & matching_inv$status == "confirmed" &
-                                      (is.na(matching_inv$source) | matching_inv$source == "sap"), , drop=FALSE]
-        if (nrow(sap_conf_inv)) {
-          showNotification(
-            "Pago confirmado de SAP. No se puede quitar. Solo SAP puede cerrarlo.",
-            type = "warning", duration = 4)
-          return()
-        }
+        # Users may remove anything from Agenda regardless of source --
+        # Agenda never holds the real data, so this can never destroy
+        # anything (the only real guardrail is Calendario itself).
         upd_keys <- cbind(inv_key, ledger=ledger, stringsAsFactors=FALSE)
         updated  <- unstage_pagar_hoy(ph_now, upd_keys, keys = c("ledger","Empresa","Moneda","Documento","Importe"))
         shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
         showNotification("Quitado de la Agenda.", type="message", duration=2)
       } else {
         one <- inv_rows[j, , drop=FALSE]
+        # See stage_all's identical comment above (source propagation,
+        # found 2026-07-24) -- this per-invoice "+" toggle is another
+        # entry point into pagar_hoy_db and needs the same guard. "source"
+        # may not even exist on `detail` (SAP-only callers), so check
+        # column presence before indexing -- one[["source"]] on a missing
+        # column returns NULL, not NA.
+        one_source <- if ("source" %in% names(one)) one[["source"]] else NA_character_
         new_row <- data.frame(
           id         = uuid::UUIDgenerate(),
           ledger     = ledger,
@@ -1309,7 +1240,8 @@ ledgerModuleServer <- function(id, config, shared) {
           staged_by  = shared$current_user(),
           staged_at  = Sys.time(),
           status     = "pending",
-          source     = "sap",
+          source     = ifelse(is.na(one_source) | one_source != "manual",
+                               "sap", "manual"),
           stringsAsFactors = FALSE
         )
         updated <- upsert_pagar_hoy(ph_now %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_row,
@@ -1606,6 +1538,8 @@ ledgerModuleServer <- function(id, config, shared) {
         if (nrow(m) && "source" %in% names(m) && !is.na(m[["source"]][1]))
           m[["source"]][1] else "sap"
       }, character(1))
+      # key_sources already folds the is_erp_sourced() NA-defaults-to-sap
+      # logic into its own "else 'sap'" fallback above — never NA by here.
       sap_mask     <- key_sources == "sap"
       non_sap_keys <- keys[!sap_mask, , drop = FALSE]
 
@@ -1781,7 +1715,12 @@ ledgerModuleServer <- function(id, config, shared) {
       # For manual invoices: remove from manual_inv
       manual_keys <- rows_to_delete[rows_to_delete[["source"]] == "manual", , drop = FALSE]
       if (nrow(manual_keys) > 0 && !is.null(manual_keys[["id"]])) {
-        m <- shared$manual_inv()
+        # Read fresh from S3, same as papelera_df above -- this deletes
+        # rows, so a stale in-memory read here can silently resurrect a row
+        # another session already removed (found 2026-07-24, a real
+        # incident).
+        m <- tryCatch(load_manual(client_id = shared$effective_client_id()),
+                     error = function(e) NULL) %||% shared$manual_inv()
         for (mid in manual_keys[["id"]]) {
           m <- delete_manual(m, mid)
         }
@@ -2344,8 +2283,13 @@ ledgerModuleServer <- function(id, config, shared) {
           if (nrow(ph_p)) {
             dk <- unique(detail[, c("Empresa","Moneda","Documento","Parte"),
                                 drop = FALSE])
-            merged <- merge(ph_p[, c("Empresa","Moneda","Documento"), drop=FALSE],
-                            dk, by = c("Empresa","Moneda","Documento"))
+            # Parte in the join key (found 2026-07-25): two different manual
+            # invoices can share the same Documento (a free-text field) while
+            # having different Parte -- matching on Empresa+Moneda+Documento
+            # alone made a staged invoice under one Parte falsely mark an
+            # unrelated invoice under a DIFFERENT Parte as staged too.
+            merged <- merge(ph_p[, c("Empresa","Moneda","Documento","Parte"), drop=FALSE],
+                            dk, by = c("Empresa","Moneda","Documento","Parte"))
             staged_pairs <- unique(merged[, c("Empresa","Parte"), drop = FALSE])
           } else {
             staged_pairs <- data.frame(Empresa=character(), Parte=character())
@@ -2424,10 +2368,16 @@ ledgerModuleServer <- function(id, config, shared) {
           ph_now <- shared$pagar_hoy_db()
           current_tags <- shared$tags_db()   # reactive dep — rerenders on tag change
           tg_cur <- current_tags[current_tags[["ledger"]] == ledger, , drop = FALSE]
+          # Empresa+Moneda+Documento+Importe -- matches cart_inv_click's own
+          # authoritative stage/unstage key exactly (found 2026-07-25: Documento
+          # alone let two different manual invoices sharing the same free-text
+          # Documento but different Parte/Importe falsely display as linked --
+          # staging or unstaging one made the other's checkmark toggle too).
           staged_now <- if (!is.null(ph_now) && nrow(ph_now)) {
             ph_now[ph_now[["ledger"]] == ledger & ph_now[["status"]] == "pending",
-                   c("Empresa","Documento"), drop = FALSE]
-          } else data.frame(Empresa = character(), Documento = character())
+                   c("Empresa","Moneda","Documento","Importe"), drop = FALSE]
+          } else data.frame(Empresa = character(), Moneda = character(),
+                            Documento = character(), Importe = numeric())
 
           rows_ui <- lapply(seq_len(nrow(grp)), function(i) {
             row_e <- grp[["Empresa"]][i]
@@ -2443,14 +2393,18 @@ ledgerModuleServer <- function(id, config, shared) {
             is_paid_group  <- "is_paid_ghost" %in% names(detail) && sum(inv_mask) > 0 &&
                               any(detail[["is_paid_ghost"]][inv_mask] %in% TRUE)
             if (is_conf_group && !is_ghost_group && !is_paid_group) return(NULL)
-            inv_keys <- unique(detail[inv_mask, c("Empresa","Documento"),
+            # Moneda+Importe included (found 2026-07-25): Documento alone is
+            # not a unique invoice key -- two different manual invoices can
+            # share the same free-text Documento. See staged_now's comment
+            # above for the full incident.
+            inv_keys <- unique(detail[inv_mask, c("Empresa","Moneda","Documento","Importe"),
                                       drop = FALSE])
             # Raw row count, not unique-key count: two manual entries can share
             # Empresa+Documento (they differ only by UUID) and must each count as
             # a separate member so the expand button is shown.
             n_inv     <- sum(inv_mask & !is.na(detail[["Documento"]]))
             n_in_cart <- nrow(merge(inv_keys, staged_now,
-                                    by = c("Empresa","Documento")))
+                                    by = c("Empresa","Moneda","Documento","Importe")))
             is_staged <- n_in_cart > 0
             btn_lbl   <- if (is_staged) "\u2713" else "\uff0b"
             btn_cls   <- if (is_staged) "btn btn-xs btn-success cart-btn"
@@ -2568,9 +2522,12 @@ ledgerModuleServer <- function(id, config, shared) {
                   )
                 } else {
                   j_item    <- inv_detail[[".j_item"]][ii]
-                  key_ii    <- inv_detail[ii, c("Empresa","Documento"), drop=FALSE]
+                  # Empresa+Moneda+Documento+Importe (found 2026-07-25, same
+                  # incident as staged_now's comment above): Documento alone
+                  # can't distinguish two invoices that happen to share it.
+                  key_ii    <- inv_detail[ii, c("Empresa","Moneda","Documento","Importe"), drop=FALSE]
                   in_cart_ii <- nrow(merge(key_ii, staged_now,
-                                          by=c("Empresa","Documento"))) > 0
+                                          by=c("Empresa","Moneda","Documento","Importe"))) > 0
                   btn_ii_cls <- if (in_cart_ii) "btn btn-xs btn-success cart-inv-btn"
                                else             "btn btn-xs btn-outline-success cart-inv-btn"
                   tags$button(
@@ -2792,8 +2749,18 @@ ledgerModuleServer <- function(id, config, shared) {
         )
         sort_ord <- order(-detail[["Importe"]])
         tbl_live <- tbl_live[sort_ord, ]
+        # Ghost (confirmed) rows must never affect any calculation, including
+        # the "Selección" running total -- make them unselectable at the
+        # DT level rather than only styling them, so sel_total_ui's sum
+        # (which reads whatever the browser actually let the user select)
+        # can never include one. tbl_live's row order already matches
+        # sort_ord, so these indices line up with what DT itself uses.
+        ghost_rows <- which(tbl_live[["Confirmado"]])
+        select_arg <- if (length(ghost_rows))
+          list(mode = "multiple", target = "row", selectable = -ghost_rows)
+        else "multiple"
         DT::datatable(tbl_live,
-          escape = FALSE, selection = "multiple", rownames = FALSE,
+          escape = FALSE, selection = select_arg, rownames = FALSE,
           options = list(
             pageLength = 20, dom = "ftip", scrollX = TRUE,
             columnDefs = list(list(visible = FALSE, targets = which(names(tbl_live) == "Confirmado") - 1L))
@@ -2822,6 +2789,8 @@ ledgerModuleServer <- function(id, config, shared) {
         # ── Summary mode: one row per (Empresa, Parte) ────────────────────────
         grp_raw <- aggregate(Importe ~ Empresa + Parte, data = detail,
                              FUN = sum, na.rm = TRUE)
+        is_conf_detail <- if ("confirmed" %in% names(detail)) detail[["confirmed"]] %in% TRUE
+                          else rep(FALSE, nrow(detail))
         live_etiq <- vapply(seq_len(nrow(grp_raw)), function(i) {
           e <- grp_raw[["Empresa"]][i]; p <- grp_raw[["Parte"]][i]
           inv_docs <- unique(detail[detail[["Empresa"]] == e & detail[["Parte"]] == p,
@@ -2835,22 +2804,49 @@ ledgerModuleServer <- function(id, config, shared) {
           }
           tag_label(tags_for_grp)
         }, character(1))
+        # A group is a ghost only when EVERY invoice underlying it is
+        # confirmed -- a mixed group (some confirmed, some not) still has
+        # real open balance and must stay fully interactive. Only SAP rows
+        # can still be confirmed=TRUE here at all (confirmed manual rows are
+        # already removed from detail entirely by df_combined()).
+        grp_is_ghost <- vapply(seq_len(nrow(grp_raw)), function(i) {
+          e <- grp_raw[["Empresa"]][i]; p <- grp_raw[["Parte"]][i]
+          m <- detail[["Empresa"]] == e & detail[["Parte"]] == p
+          any(m) && all(is_conf_detail[m])
+        }, logical(1))
         tbl_disp <- data.frame(
-          Empresa  = grp_raw[["Empresa"]],
-          Parte    = grp_raw[["Parte"]],
-          Importe  = fmt_money(grp_raw[["Importe"]]),
-          Etiqueta = live_etiq,
-          stringsAsFactors = FALSE
+          Empresa    = grp_raw[["Empresa"]],
+          Parte      = grp_raw[["Parte"]],
+          Importe    = fmt_money(grp_raw[["Importe"]]),
+          Etiqueta   = live_etiq,
+          Confirmado = grp_is_ghost,
+          check.names = FALSE, stringsAsFactors = FALSE
         )
-        tbl_disp <- tbl_disp[order(-grp_raw[["Importe"]]), ]
+        sort_ord_disp <- order(-grp_raw[["Importe"]])
+        tbl_disp <- tbl_disp[sort_ord_disp, ]
+        # Same "ghosts never affect any calculation" rule as audit mode --
+        # a fully-confirmed group stays visible (struck through) but
+        # unselectable, so sel_total_ui's sum can never include it.
+        ghost_grp_rows <- which(tbl_disp[["Confirmado"]])
+        select_arg <- if (length(ghost_grp_rows))
+          list(mode = "multiple", target = "row", selectable = -ghost_grp_rows)
+        else "multiple"
         DT::datatable(tbl_disp,
-          escape = FALSE, selection = "multiple", rownames = FALSE,
-          options = list(pageLength = 20, dom = "ftip", scrollX = TRUE)
+          escape = FALSE, selection = select_arg, rownames = FALSE,
+          options = list(
+            pageLength = 20, dom = "ftip", scrollX = TRUE,
+            columnDefs = list(list(visible = FALSE, targets = which(names(tbl_disp) == "Confirmado") - 1L))
+          )
         ) |>
           DT::formatStyle("Etiqueta", target = "row",
             backgroundColor = DT::styleEqual(
               c("\U0001f534 Urgente","\U0001f7e1 Importante","\U0001f7e0 Ambas",""),
-              c("#fff0f0","#fffbe6","#fff3e6","transparent")))
+              c("#fff0f0","#fffbe6","#fff3e6","transparent"))) |>
+          DT::formatStyle("Confirmado",
+            target         = "row",
+            textDecoration = DT::styleEqual(c(TRUE, FALSE), c("line-through", "none")),
+            color          = DT::styleEqual(c(TRUE, FALSE), c("#adb5bd", "inherit")),
+            opacity        = DT::styleEqual(c(TRUE, FALSE), c("0.55",    "1")))
       }
     })
 
@@ -3029,7 +3025,13 @@ ledgerModuleServer <- function(id, config, shared) {
                          new_importe = NULL,
                          username    = NULL,
                          client_id   = NULL) {
-  ph <- ph_rv()
+  # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
+  # 2026-07-25); this edits a row in place and writes the whole table back,
+  # so a stale base could silently drop another session's concurrent
+  # stage/unstage. Shared by do_move/do_restore/sap_edit_save -- one fix
+  # covers all three call sites.
+  ph <- tryCatch(safe_load_pagar_hoy(username = username, client_id = client_id),
+                 error = function(e) NULL) %||% ph_rv()
   if (is.null(ph) || !nrow(ph)) return(invisible(NULL))
   changed <- FALSE
   for (i in seq_len(nrow(keys))) {
