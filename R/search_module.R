@@ -893,12 +893,12 @@ handle_invoice_action <- function(payload, shared) {
 
   current_user <- tryCatch(shared$current_user(), error = function(e) "user")
 
-  # Mirrors R/ledger_module.R's log_action() calls for the same three
-  # actions (eliminar_facturas / mover_fecha / restaurar_fecha) so an action
-  # taken from Vencidos or Search shows up in Gestión de Usuarios > Actividad
-  # exactly like the same action taken from Calendario does (found live
-  # 2026-07-29: deleting a manual invoice from Vencidos left no log entry at
-  # all -- this shared handler never called log_action for any action).
+  # Mirrors R/ledger_module.R's audit-logging for the same actions
+  # (eliminar_facturas / mover_fecha / restaurar_fecha / etiquetar) so an
+  # action taken from Vencidos or Search shows up in Gestión de Usuarios >
+  # Actividad exactly like the same action taken from Calendario does
+  # (found live 2026-07-29: deleting a manual invoice from Vencidos left no
+  # log entry at all -- this shared handler never logged any action at all).
   # Split by ledger since a single call here can span AR and AP at once,
   # unlike Calendario's own handlers which only ever act on one ledger.
   .log_ledger_action <- function(keys_df, action, describe) {
@@ -920,6 +920,16 @@ handle_invoice_action <- function(payload, shared) {
         error = function(e) message("[VENCIDOS/SEARCH] log_action failed (", action, "): ", e$message)
       )
     }
+  }
+
+  # Kept in sync by hand with the identical helper in R/ledger_module.R's
+  # .handle_tags_once(), so a tag applied from Calendario logs identically
+  # to one applied from Vencidos or the Search modal.
+  .tag_label_es <- function(new_tags) {
+    if (!length(new_tags)) "sin etiqueta"
+    else if (length(new_tags) == 2L) "urgente e importante"
+    else if (identical(new_tags, "urgent")) "urgente"
+    else "importante"
   }
 
   # Recover blank Empresa — happens when a row came from an old snapshot or
@@ -964,6 +974,8 @@ handle_invoice_action <- function(payload, shared) {
       showNotification(paste("Error guardando etiquetas:", e$message), type = "warning"))
     showNotification(paste0(nrow(keys_df), " factura(s) etiquetadas."),
                      type = "message", duration = 2)
+    .log_ledger_action(keys_df, "etiquetar", function(sub)
+      sprintf("%d factura(s) etiquetada(s) como %s", nrow(sub), .tag_label_es(new_tags)))
 
   } else if (action == "move") {
     new_date <- tryCatch(as.Date(payload$move_to), error = function(e) NULL)

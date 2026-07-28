@@ -1834,6 +1834,18 @@ ledgerModuleServer <- function(id, config, shared) {
       } else removeModal()
     })
 
+    # Spanish label for a tag action's log description -- kept in sync by
+    # hand with the identical helper in R/search_module.R's
+    # handle_invoice_action() (tag_urgent/tag_important/tag_both/tag_clear),
+    # so a tag applied from Calendario logs identically to one applied from
+    # Vencidos or the Search modal.
+    .tag_label_es <- function(new_tags) {
+      if (!length(new_tags)) "sin etiqueta"
+      else if (length(new_tags) == 2L) "urgente e importante"
+      else if (identical(new_tags, "urgent")) "urgente"
+      else "importante"
+    }
+
     # ── Tag buttons (registered once) ────────────────────────────────────────
     .handle_tags_once <- function(new_tags) {
       ctx <- modal_ctx(); req(ctx)
@@ -1849,6 +1861,19 @@ ledgerModuleServer <- function(id, config, shared) {
       }
       shared$tags_db(tags_db); save_tags(tags_db, client_id = shared$effective_client_id()); bump_sync_version("tags_db")
       showNotification("Etiquetas actualizadas.", type="message", duration=2)
+      tryCatch(
+        log_action(
+          user        = tryCatch(shared$current_user(), error = function(e) "system"),
+          module      = paste0("ledger_", ledger),
+          action      = "etiquetar",
+          description = sprintf("%d factura(s) etiquetada(s) como %s", nrow(rows), .tag_label_es(new_tags)),
+          target_id   = paste(rows[["Documento"]][seq_len(min(5, nrow(rows)))], collapse = ", "),
+          metadata    = list(n = nrow(rows), tags = new_tags),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        ),
+        error = function(e) message("[LEDGER] log_action failed (etiquetar): ", e$message)
+      )
     }
     observeEvent(input$tag_urgent,    { .handle_tags_once("urgent") },                ignoreInit=TRUE)
     observeEvent(input$tag_important, { .handle_tags_once("important") },             ignoreInit=TRUE)
