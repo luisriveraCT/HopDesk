@@ -1,5 +1,5 @@
 (function() {
-  console.info('[VEN] vencidos.js v8 loaded');
+  console.info('[VEN] vencidos.js v14 loaded');
 
   // -- State -----------------------------------------------------------------
   var _venSortCol        = null;
@@ -8,6 +8,7 @@
   var _venGroupsExpanded = false;
   var _venDocShown       = false;
   var _venOrigShown      = false;
+  var _venFechaOrigShown = false;
 
   // -- Row helpers -----------------------------------------------------------
   function venAllRows()  { return Array.from(document.querySelectorAll('.ven-row')); }
@@ -232,6 +233,20 @@
     }
   };
 
+  // -- Venc. original column toggle -------------------------------------------
+  window.venToggleFechaOrig = function() {
+    _venFechaOrigShown = !_venFechaOrigShown;
+    var disp = _venFechaOrigShown ? '' : 'none';
+    document.querySelectorAll('.ven-fechaorig-cell, .ven-fechaorig-th').forEach(function(el) {
+      el.style.display = disp;
+    });
+    var btn = document.getElementById('ven_fechaorig_toggle_btn');
+    if (btn) {
+      btn.classList.toggle('btn-secondary',         _venFechaOrigShown);
+      btn.classList.toggle('btn-outline-secondary', !_venFechaOrigShown);
+    }
+  };
+
   // -- Column sort -----------------------------------------------------------
   window.venSortByCol = function(col) {
     if (_venSortCol === col) {
@@ -254,6 +269,10 @@
     venFilterAndSort();
   };
 
+  function venToYMD(s) {
+    return (s || '').replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3$2$1');
+  }
+
   function venSortRow(a, b) {
     var col = _venSortCol;
     var dir = _venSortDir === 'asc' ? 1 : -1;
@@ -267,10 +286,10 @@
       return dir * (parseFloat(a.dataset.importe) - parseFloat(b.dataset.importe));
     }
     if (col === 'fecha') {
-      var toYMD = function(s) {
-        return (s || '').replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3$2$1');
-      };
-      return dir * toYMD(a.dataset.fecha).localeCompare(toYMD(b.dataset.fecha));
+      return dir * venToYMD(a.dataset.fecha).localeCompare(venToYMD(b.dataset.fecha));
+    }
+    if (col === 'fecha_orig') {
+      return dir * venToYMD(a.dataset.fechaorig).localeCompare(venToYMD(b.dataset.fechaorig));
     }
     var keyMap = { tipo:'tipo', empresa:'empresa', parte:'parte',
                    documento:'doc', referencia:'ref', etiqueta:'tag' };
@@ -489,14 +508,69 @@
       var ob = document.getElementById('ven_orig_toggle_btn');
       if (ob) { ob.classList.add('btn-secondary'); ob.classList.remove('btn-outline-secondary'); }
     }
+    // Restore Venc. original column
+    if (_venFechaOrigShown) {
+      document.querySelectorAll('.ven-fechaorig-cell, .ven-fechaorig-th').forEach(function(el) {
+        el.style.display = '';
+      });
+      var fob = document.getElementById('ven_fechaorig_toggle_btn');
+      if (fob) { fob.classList.add('btn-secondary'); fob.classList.remove('btn-outline-secondary'); }
+    }
   }
 
   // Re-apply state whenever Shiny replaces the table body
   $(document).on('shiny:value', function(e) {
     if (e.name && e.name.indexOf('ven_table_ui') >= 0) {
       setTimeout(venRestoreState, 20);
+      setTimeout(venRecalcStickyOffsets, 20);
     }
   });
+
+  // -- Sticky offset stack ----------------------------------------------------
+  // #ven_sticky_header, the per-section band, and the column headers all
+  // live inside the SAME scrolling container (.h-100.overflow-auto). Sticky
+  // "top" is relative to that container's own viewport, NOT the outer page —
+  // its top edge already sits flush below the global control-bar (see the
+  // comment above .ven-section-band in vencidos_module.R), so control-bar's
+  // height must NOT be added in here. Only #ven_sticky_header's own height
+  // (and, for thead, the band's too) matters, and those can change after
+  // first paint (edit toolbar opening) — recomputed from the real DOM.
+  function venRecalcStickyOffsets() {
+    var hdr  = document.getElementById('ven_sticky_header');
+    var band = document.querySelector('.ven-section-band');
+    var hdrH  = hdr  ? Math.ceil(hdr.getBoundingClientRect().height)  : 50;
+    var bandH = band ? Math.ceil(band.getBoundingClientRect().height) : 34;
+    var root = document.documentElement.style;
+    root.setProperty('--ven-hdr-h',  hdrH + 'px');
+    root.setProperty('--ven-band-h', (hdrH + bandH) + 'px');
+  }
+  window.venRecalcStickyOffsets = venRecalcStickyOffsets;
+
+  if (window.ResizeObserver) {
+    var _venStickyRO = new ResizeObserver(function() { venRecalcStickyOffsets(); });
+    var _venStickyObserved = { hdr: null };
+    function venObserveStickyEls() {
+      var hdr = document.getElementById('ven_sticky_header');
+      if (hdr && hdr !== _venStickyObserved.hdr) { _venStickyRO.observe(hdr); _venStickyObserved.hdr = hdr; }
+    }
+    $(document).on('shiny:connected shiny:value', function() { venObserveStickyEls(); });
+    setTimeout(venObserveStickyEls, 300);
+  } else {
+    window.addEventListener('resize', venRecalcStickyOffsets);
+  }
+  // Several early attempts: company pills (uiOutput) and fonts can settle
+  // their final size slightly after these events fire, and any one wrong
+  // reading otherwise persists until the next resize/toggle.
+  [0, 100, 300, 600, 1200].forEach(function(ms) { setTimeout(venRecalcStickyOffsets, ms); });
+  // Continuous self-heal: cheap (just a few getBoundingClientRect reads) and
+  // rAF-throttled, so any residual drift corrects itself within a frame of
+  // scrolling instead of staying wrong until the next resize/toggle.
+  var _venScrollTicking = false;
+  window.addEventListener('scroll', function() {
+    if (_venScrollTicking) return;
+    _venScrollTicking = true;
+    requestAnimationFrame(function() { venRecalcStickyOffsets(); _venScrollTicking = false; });
+  }, true);
 
   // -- Badge -----------------------------------------------------------------
   $(document).on('shiny:connected', function() {
@@ -517,5 +591,93 @@
   }
   $(document).on('shiny:bound shiny:value', venAttachListeners);
   setTimeout(venAttachListeners, 300);
+
+  // -- Cell hover tooltip: full content + copy ------------------------------
+  // Table cells (Parte, Referencia, ...) clip long text with text-overflow:
+  // ellipsis, but the full text is already in the DOM — no extra data
+  // attributes needed. One shared floating tooltip, shown near whichever
+  // cell is hovered, with a button to copy that cell's full text.
+  var _venTipShowTimer = null;
+  var _venTipHideTimer = null;
+
+  function venCellTipEl() { return document.getElementById('ven_cell_tip'); }
+
+  function venCellTipShow(td) {
+    var tip = venCellTipEl();
+    if (!tip) return;
+    var text = (td.innerText || td.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    tip.dataset.copyText = text;
+    tip.querySelector('.ven-tip-text').textContent = text;
+    tip.style.display = 'flex';
+
+    var r = td.getBoundingClientRect();
+    tip.style.left = r.left + 'px';
+    tip.style.top  = (r.bottom + 4) + 'px';
+
+    // Clamp inside the viewport once we know the tooltip's own size.
+    var tr = tip.getBoundingClientRect();
+    var left = r.left, top = r.bottom + 4;
+    if (tr.right  > window.innerWidth  - 8) left = Math.max(8, window.innerWidth  - tr.width  - 8);
+    if (tr.bottom > window.innerHeight - 8) top  = r.top - tr.height - 4;
+    tip.style.left = left + 'px';
+    tip.style.top  = top  + 'px';
+  }
+
+  function venCellTipScheduleHide() {
+    clearTimeout(_venTipShowTimer);
+    clearTimeout(_venTipHideTimer);
+    _venTipHideTimer = setTimeout(function() {
+      var tip = venCellTipEl();
+      if (tip) tip.style.display = 'none';
+    }, 200);
+  }
+
+  document.addEventListener('mouseover', function(e) {
+    var td = e.target.closest('.ven-tbody td');
+    if (td) {
+      clearTimeout(_venTipHideTimer);
+      clearTimeout(_venTipShowTimer);
+      _venTipShowTimer = setTimeout(function() { venCellTipShow(td); }, 350);
+      return;
+    }
+    if (e.target.closest('#ven_cell_tip')) { clearTimeout(_venTipHideTimer); }
+  });
+  document.addEventListener('mouseout', function(e) {
+    var td  = e.target.closest('.ven-tbody td');
+    var tip = e.target.closest('#ven_cell_tip');
+    if (!td && !tip) return;
+    // Moving between nested elements within the same td (e.g. a badge span)
+    // or from the td onto the tooltip fires mouseout too — only actually
+    // hide once the pointer leaves both for good.
+    var to = e.relatedTarget;
+    if (to && ((td && td.contains(to)) || (tip && tip.contains(to)))) return;
+    venCellTipScheduleHide();
+  });
+
+  var _venTip = venCellTipEl();
+  if (_venTip) {
+    var _venTipCopyBtn = _venTip.querySelector('.ven-tip-copy');
+    if (_venTipCopyBtn) {
+      _venTipCopyBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var text = _venTip.dataset.copyText || '';
+        if (!text || !navigator.clipboard) return;
+        navigator.clipboard.writeText(text).then(function() {
+          // Icons render as inline SVG (fontawesome pkg) — the shape is baked
+          // into the SVG's path data, so swapping a fa-* class does nothing.
+          // Cache/restore the actual markup instead, works regardless of icon
+          // rendering mode.
+          var origHTML = _venTipCopyBtn.innerHTML;
+          _venTipCopyBtn.classList.add('ven-tip-copied');
+          _venTipCopyBtn.textContent = '✓';
+          setTimeout(function() {
+            _venTipCopyBtn.classList.remove('ven-tip-copied');
+            _venTipCopyBtn.innerHTML = origHTML;
+          }, 900);
+        }).catch(function(err) { console.error('[VEN] copy failed:', err); });
+      });
+    }
+  }
 
 })();
