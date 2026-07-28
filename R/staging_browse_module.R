@@ -338,6 +338,16 @@ show_combined_entry_modal <- function(ledger, sap_data, session,
     }
     return(list(rows_data))
   }
+  # (e) a single checked row with only scalar (never nested) fields can also
+  # unbox to a plain NAMED ATOMIC VECTOR rather than a named list -- is.list()
+  # is FALSE for this shape even though `[["idx"]]` still resolves. Found live
+  # 2026-07-27 (session #6, ~30 min in): crashed with "$ operator is invalid
+  # for atomic vectors" -- the same for-loop-over-field-values failure as
+  # shape (c) above, just via a type is.list() doesn't catch. as.list()
+  # converts it to the same named-list-of-one shape (c) already produces.
+  if (is.atomic(rows_data) && !is.null(names(rows_data)) && !is.null(rows_data[["idx"]])) {
+    return(list(as.list(rows_data)))
+  }
   rows_data
 }
 
@@ -531,6 +541,7 @@ setup_abono_browse <- function(input, output, session,
   # Calendar reduction takes effect only when "Confirmar pagos" in Agenda de Hoy
   # writes confirmed rows to abonos_db with status = "active".
   observeEvent(input$ab_rows, {
+   tryCatch({
     # Normalize to list-of-lists. Shiny/jsonlite delivers the client's JSON
     # array of row objects in different shapes depending on how many rows
     # were checked -- the exact same failure mode already documented and
@@ -543,8 +554,27 @@ setup_abono_browse <- function(input, output, session,
     #       iterating over this row's individual FIELD VALUES instead of
     #       over rows, so `r_raw$saldo` errored on a plain scalar)
     #   (d) list(list(...), ...) — already correct
+    #   (e) a named atomic vector — same failure as (c), see .normalize_ab_rows()
     rows_data <- .normalize_ab_rows(input$ab_rows)
     if (!length(rows_data)) return()
+
+    # Defense in depth: even after (a)-(e) above, don't trust the shape
+    # blindly -- drop (not crash on) any entry that still isn't list-like,
+    # so a jsonlite/Shiny unboxing variant we haven't seen yet degrades to
+    # "that one row didn't stage" instead of killing the whole session
+    # (found live 2026-07-27: an unhandled shape crashed the entire app,
+    # not just this feature).
+    malformed <- !vapply(rows_data, is.list, logical(1))
+    if (any(malformed)) {
+      warning("[AB_ROWS] ", sum(malformed), " row(s) in an unrecognized shape, dropped: ",
+              paste(utils::capture.output(str(input$ab_rows)), collapse = " | "))
+      rows_data <- rows_data[!malformed]
+    }
+    if (!length(rows_data)) {
+      showNotification("No se pudo leer la selección de abonos. Intenta de nuevo.",
+                        type = "error", duration = 6)
+      return()
+    }
 
     ledger <- input$ab_ledger %||% "AP"
     # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
@@ -616,5 +646,10 @@ setup_abono_browse <- function(input, output, session,
     }
 
     if (length(accepted)) removeModal()
+   }, error = function(e) {
+     warning("[AB_ROWS] observer failed: ", conditionMessage(e))
+     showNotification("Ocurrió un error al enviar los abonos a Agenda. Intenta de nuevo; si persiste, avisa a soporte.",
+                       type = "error", duration = 8)
+   })
   }, ignoreInit = TRUE)
 }

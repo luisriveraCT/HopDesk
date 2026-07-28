@@ -143,4 +143,47 @@ cat("── Abono Parcial: ab_rows shape normalization + disabled-by-default ─
   }
 }
 
+# ── 6. Shape (e): single row unboxes to a plain NAMED ATOMIC VECTOR ────────
+# Live crash found 2026-07-27 (session #6, ~30 min in, during Stage 21's own
+# hands-on verification): "$ operator is invalid for atomic vectors" at the
+# same r_raw$saldo line -- is.list() is FALSE for a named atomic vector even
+# though `[["idx"]]` still resolves, so this shape fell through shape (c)'s
+# guard undetected and reproduced the exact bug shape (c) was meant to fix.
+{
+  single_atomic <- c(idx = "1", empresa = "Networks & Logistics",
+                      moneda = "MXN", documento = "6563",
+                      parte = "Networks Trucking Services", codigo = "",
+                      referencia = "6563", fecha_venc = "2026-07-22",
+                      saldo = "23209", importe = "23209")
+  .chk(is.list(single_atomic), FALSE, "control: this shape really is atomic, not a list (proves it's distinct from shape (c))")
+
+  out5 <- .normalize_ab_rows(single_atomic)
+  .chk(length(out5), 1L, "a named atomic vector normalizes to a list of exactly 1 row")
+  .chk(is.list(out5[[1]]), TRUE, "that 1 row is coerced into a list (has $-accessible fields)")
+  .chk(as.numeric(out5[[1]]$saldo), 23209, "the row's saldo field survives normalization intact")
+  .chk(as.numeric(out5[[1]]$importe), 23209, "the row's importe field survives normalization intact")
+
+  # Control: reproduce the ORIGINAL crash this fix prevents.
+  crashes5 <- tryCatch({ for (r in single_atomic) r$saldo; FALSE },
+                       error = function(e) TRUE)
+  .chk(crashes5, TRUE,
+       "control: iterating the UN-normalized atomic-vector shape directly does crash ($ on atomic vector) -- confirms the bug was real")
+}
+
+# ── 7. Static scan: the observer never crashes on an unrecognized shape ────
+{
+  txt <- readLines("R/staging_browse_module.R", warn = FALSE)
+  start <- grep("observeEvent\\(input\\$ab_rows,", txt)
+  .chk(length(start) > 0, TRUE, "found the ab_rows observer to scan")
+  if (length(start)) {
+    end <- grep("^  \\}, ignoreInit = TRUE\\)$", txt)
+    end <- end[end > start[1]][1]
+    block <- paste(sub("#.*$", "", txt[start[1]:end]), collapse = "\n")
+    .chk(grepl("tryCatch\\(\\{", block), TRUE,
+         "the observer body is wrapped in tryCatch -- an unanticipated shape notifies, it doesn't crash the session")
+    .chk(grepl("vapply\\(rows_data, is\\.list, logical\\(1\\)\\)", block), TRUE,
+         "malformed (non-list) rows are detected defensively before the loop that does $ access")
+  }
+}
+
 cat(sprintf("\n  Subtotal: %d passed, %d failed\n", .pass, .fail))

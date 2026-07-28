@@ -57,7 +57,7 @@ suppressPackageStartupMessages({ library(dplyr); library(tibble) })
   start <- grep("observeEvent\\(input\\$ab_rows,", txt)
   .chk(length(start) > 0, TRUE, "found the ab_rows observer to scan")
   if (length(start)) {
-    block <- paste(.strip_comments(txt[start[1]:min(start[1] + 60, length(txt))]), collapse = "\n")
+    block <- paste(.strip_comments(txt[start[1]:min(start[1] + 90, length(txt))]), collapse = "\n")
     .chk(grepl("FechaVenc\\s*=\\s*tryCatch\\(as\\.Date\\(r_raw\\$fecha_venc\\)", block), TRUE,
          "the staged abono row's FechaVenc parses the real invoice due date (r_raw$fecha_venc)")
     .chk(grepl("error = function\\(e\\) Sys\\.Date\\(\\)", block), TRUE,

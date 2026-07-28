@@ -108,7 +108,7 @@ hits <- do.call(rbind, lapply(r_files, function(f) {
   start <- grep("observeEvent\\(input\\$ab_rows,", txt)
   .chk(length(start) > 0, TRUE, "found the ab_rows (abono staging) observer to scan")
   if (length(start)) {
-    block <- paste(txt[start[1]:min(start[1] + 60, length(txt))], collapse = "\n")
+    block <- paste(txt[start[1]:min(start[1] + 90, length(txt))], collapse = "\n")
     .chk(grepl('source\\s*=\\s*"manual"', block), TRUE,
          "abono rows staged here always carry an explicit source (\"manual\"), never left unset")
   }
