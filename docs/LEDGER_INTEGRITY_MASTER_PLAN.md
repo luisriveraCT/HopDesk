@@ -1,11 +1,23 @@
 # Master Plan — Ledger Integrity (Confirmed-Status Unification + Agenda/Calendario Wiring)
 
-**Status: consolidated staged implementation plan. Supersedes the separate
-stage lists in `docs/CONFIRMED_INVOICE_LOGIC_AUDIT.md` and
-`docs/AGENDA_CALENDARIO_WIRING_AUDIT.md` — read this document for stage
-order and prompts; read those two for full technical evidence (exact
-current-code citations, incident details, the reasoning behind each
-decision) whenever a stage's own instructions say to re-verify something.**
+**Status (2026-07-27): all 21 stages implemented and merged to `master`
+(previously stacked on the now-merged `confirmed-logic-stage-2` branch,
+which had diverged from `master` since the Stage-2-equivalent fixes;
+557/557 confirmed-logic tests green post-merge, full suite otherwise
+unaffected). Code- and test-complete is not the same as closed: Stage 21
+explicitly still needs Mouse's hands-on verification (see that stage's own
+note on why this has been load-bearing twice already), and the four items
+under "Open items needing Mouse's input" below remain genuinely open —
+decisions/data actions, not code stages. Treat the plan as implementation-
+complete, not yet verification-closed.**
+
+Supersedes the separate stage lists in
+`docs/archive/CONFIRMED_INVOICE_LOGIC_AUDIT.md` and
+`docs/archive/AGENDA_CALENDARIO_WIRING_AUDIT.md` (moved to `docs/archive/`
+now that every item in both is accounted for above) — read this document
+for stage order and prompts; read those two for full technical evidence
+(exact current-code citations, incident details, the reasoning behind each
+decision) whenever a stage's own instructions say to re-verify something.
 
 ## Why one plan, not two
 
