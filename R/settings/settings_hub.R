@@ -448,6 +448,7 @@ settings_observers <- function(input, output, session, shared) {
 
     saved_ok <- tryCatch({
       save_interco_v2(registry, client_id = shared$effective_client_id())
+      bump_sync_version("interco_v2")
       TRUE
     }, error = function(e) {
       showNotification(
@@ -685,8 +686,10 @@ settings_observers <- function(input, output, session, shared) {
 
     shared$interco_v2(new_registry)
     # Auto-persist scanner results immediately — no manual Guardar required
-    tryCatch(
-      save_interco_v2(new_registry, client_id = shared$effective_client_id()),
+    tryCatch({
+      save_interco_v2(new_registry, client_id = shared$effective_client_id())
+      bump_sync_version("interco_v2")
+    },
       error = function(e)
         showNotification(paste("No se pudo guardar en S3:", e$message), type = "warning")
     )
@@ -795,8 +798,10 @@ settings_observers <- function(input, output, session, shared) {
     )
 
     shared$interco_v2(new_registry)
-    tryCatch(
-      save_interco_v2(new_registry, client_id = shared$effective_client_id()),
+    tryCatch({
+      save_interco_v2(new_registry, client_id = shared$effective_client_id())
+      bump_sync_version("interco_v2")
+    },
       error = function(e)
         showNotification(paste("No se pudo guardar en S3:", e$message), type = "warning")
     )

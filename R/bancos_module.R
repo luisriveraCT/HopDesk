@@ -3303,12 +3303,11 @@ bancosServer <- function(id, shared) {
 
       updated <- void_abono(ab, ab_id)
       shared$abonos_db(updated)
-      # abonos_db isn't registered in the cross-session sync bus (matching
-      # the confirm-path's own save_abonos() call, which also doesn't bump
-      # a version) -- consistent with existing behavior, not a new gap.
-      tryCatch(save_abonos(updated, client_id = shared$effective_client_id()),
-               error = function(e)
-                 showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
+      tryCatch({
+        save_abonos(updated, client_id = shared$effective_client_id())
+        bump_sync_version("abonos_db")
+      }, error = function(e)
+        showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
 
       showNotification("Abono deshecho \u2014 el saldo del comprobante se restaur\u00f3.",
                        type = "message", duration = 3)

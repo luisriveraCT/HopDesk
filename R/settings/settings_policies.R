@@ -1095,6 +1095,7 @@ settings_policies_observer <- function(input, output, session, shared) {
 
     tryCatch({
       save_partner_policies(pp_new, client_id = shared$effective_client_id())
+      bump_sync_version("partner_policies_db")
       shared$partner_policies_db(pp_new)
       n_add <- length(to_add); n_rem <- length(to_remove)
       msg <- paste0(
@@ -1131,6 +1132,7 @@ settings_policies_observer <- function(input, output, session, shared) {
           pp_new <- pp_old[pp_old$policy_id != del_id, , drop = FALSE]
           if (nrow(pp_new) < nrow(pp_old)) {
             save_partner_policies(pp_new, client_id = shared$effective_client_id())
+            bump_sync_version("partner_policies_db")
             shared$partner_policies_db(pp_new)
           }
         }

@@ -3128,6 +3128,7 @@ tiersServer <- function(id, shared) {
         )
         updated_grants <- rbind(grants, new_g)
         save_hop_grants(updated_grants)
+        bump_sync_version("hop_grants_db")
         shared$hop_grants_db(updated_grants)
         # Resolve request when all clients decided
         all_done <- all(vapply(clients_v,
@@ -3211,6 +3212,7 @@ tiersServer <- function(id, shared) {
         req(length(idx) > 0)
         grants$revoked[idx[1]] <- TRUE
         save_hop_grants(grants)
+        bump_sync_version("hop_grants_db")
         shared$hop_grants_db(grants)
         showNotification("Acceso revocado.", type = "warning", duration = 3)
         hop_refresh(hop_refresh() + 1L)
@@ -3375,6 +3377,7 @@ tiersServer <- function(id, shared) {
         }))
         updated <- rbind(grants, new_rows)
         save_hop_grants(updated)
+        bump_sync_version("hop_grants_db")
         shared$hop_grants_db(updated)
         labels <- paste(vapply(to_grant, `[[`, character(1), "label"), collapse = ", ")
         append_hd_notification(

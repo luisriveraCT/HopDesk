@@ -1269,6 +1269,28 @@ server <- function(input, output, session) {
   register_synced("conciliacion_rv",    S3_KEYS$conciliacion,    load_conciliacion)
   register_synced("parte_alias_map_db", S3_KEYS$parte_alias_map, load_parte_alias_map)
 
+  # The following 8 were found missing entirely (2026-07-29): each has a real,
+  # actively-used save_*()/load_*() pair, but a change to any of them by one
+  # session was invisible to every other open session until that session's
+  # next full login -- not slow, just never, until then. Same shape as every
+  # registration above.
+  register_synced("abonos_db",                S3_KEYS$abonos,           load_abonos)
+  register_synced("interco_v2",                S3_KEYS$interco_v2,      load_interco_v2)
+  register_synced("sap_ov_db",                 S3_KEYS$sap_overrides,   load_sap_overrides)
+  register_synced("proveedores_inactivos_db",  S3_KEYS$proveedores_inactivos, load_proveedores_inactivos)
+  register_synced("partner_policies_db",       S3_KEYS$partner_policies, load_partner_policies)
+  register_synced("policy_moves_db",           S3_KEYS$policy_moves,    load_policy_moves)
+  register_synced("holiday_overrides_db",      S3_KEYS$holiday_overrides, load_holiday_overrides)
+  # hop_grants_db is intentionally NOT client-scoped (staff access grants are
+  # global to the Hopdesk deployment, stored under a fixed hd-admin/ key --
+  # see .HOP_GRANTS_KEY in R/persistence.R, same convention as the emergency
+  # lock file) -- load_hop_grants() takes no client_id argument at all, unlike
+  # every other loader here, so wrap it to tolerate being called with one
+  # (setup_sync_bus() always passes client_id when a staff session has jumped
+  # to another client's context; without this wrapper that call would error).
+  register_synced("hop_grants_db", .HOP_GRANTS_KEY,
+                  function(client_id = NULL) load_hop_grants())
+
   setup_sync_bus(session, shared, poll_ms = 8000,
                  active_client_rv = effective_client_id)
 

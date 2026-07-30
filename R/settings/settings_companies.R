@@ -219,6 +219,7 @@ settings_companies_observer <- function(input, output, session, shared) {
     pm_new <- pm[!tolower(trimws(pm$Parte)) %in% sel_lc, , drop = FALSE]
     tryCatch({
       save_policy_moves(pm_new, client_id = shared$effective_client_id())
+      bump_sync_version("policy_moves_db")
       shared$policy_moves_db(pm_new)
       removeModal()
       show_settings_modal(input, output, session, shared)
@@ -580,6 +581,7 @@ settings_companies_observer <- function(input, output, session, shared) {
 
     tryCatch({
       save_partner_policies(pp_new, client_id = shared$effective_client_id())
+      bump_sync_version("partner_policies_db")
       shared$partner_policies_db(pp_new)
 
       # Clear stale policy moves for this partner — they'll recompute on next Apply.
@@ -592,6 +594,7 @@ settings_companies_observer <- function(input, output, session, shared) {
         if (nrow(kept_moves) < nrow(existing_moves)) {
           tryCatch({
             save_policy_moves(kept_moves, client_id = shared$effective_client_id())
+            bump_sync_version("policy_moves_db")
             shared$policy_moves_db(kept_moves)
           }, error = function(e) NULL)
         }
@@ -863,6 +866,7 @@ settings_companies_observer <- function(input, output, session, shared) {
 
     tryCatch({
       save_policy_moves(moves, client_id = shared$effective_client_id())
+      bump_sync_version("policy_moves_db")
       shared$policy_moves_db(moves)
 
       # "Todos sin excepción": clear manual date overrides for computed docs so
@@ -973,6 +977,7 @@ settings_companies_observer <- function(input, output, session, shared) {
 
     tryCatch({
       save_policy_moves(moves, client_id = shared$effective_client_id())
+      bump_sync_version("policy_moves_db")
       shared$policy_moves_db(moves)
       policies_dirty(FALSE)
     }, error = function(e) NULL)
@@ -1039,6 +1044,7 @@ settings_companies_observer <- function(input, output, session, shared) {
 
     tryCatch({
       save_policy_moves(moves, client_id = shared$effective_client_id())
+      bump_sync_version("policy_moves_db")
       shared$policy_moves_db(moves)
       policies_dirty(FALSE)
     }, error = function(e) NULL)

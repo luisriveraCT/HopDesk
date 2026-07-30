@@ -1447,8 +1447,10 @@ pagarHoyServer <- function(id, shared) {
           )
           ab_updated <- upsert_abono(shared$abonos_db() %||% load_abonos(), ab_new)
           shared$abonos_db(ab_updated)
-          tryCatch(save_abonos(ab_updated, client_id = shared$effective_client_id()),
-                   error = function(e) showNotification(
+          tryCatch({
+            save_abonos(ab_updated, client_id = shared$effective_client_id())
+            bump_sync_version("abonos_db")
+          }, error = function(e) showNotification(
                      paste("Error al guardar abono:", e$message), type = "warning"))
         }
 
@@ -1752,8 +1754,10 @@ pagarHoyServer <- function(id, shared) {
           )
           ab_updated <- upsert_abono(shared$abonos_db() %||% load_abonos(), ab_new)
           shared$abonos_db(ab_updated)
-          tryCatch(save_abonos(ab_updated, client_id = shared$effective_client_id()),
-                   error = function(e) showNotification(
+          tryCatch({
+            save_abonos(ab_updated, client_id = shared$effective_client_id())
+            bump_sync_version("abonos_db")
+          }, error = function(e) showNotification(
                      paste("Error al guardar abono:", e$message), type = "warning"))
         }
 

@@ -2127,8 +2127,10 @@ ledgerModuleServer <- function(id, config, shared) {
       )
       updated_ov <- upsert_sap_override(shared$sap_ov_db(), ov_row)
       shared$sap_ov_db(updated_ov)
-      tryCatch(
-        save_sap_overrides(updated_ov, client_id = shared$effective_client_id()),
+      tryCatch({
+        save_sap_overrides(updated_ov, client_id = shared$effective_client_id())
+        bump_sync_version("sap_ov_db")
+      },
         error = function(e) warning("[sap_edit_save] save_sap_overrides: ", e$message)
       )
 

@@ -940,7 +940,10 @@ load_interco_v2 <- function(client_id = NULL) {
       message(sprintf("[IC] v2 has no codes — auto-migrating from legacy interco_settings.rds (%d AR, %d AP codes)",
                       length(old$ar_clients), length(old$ap_suppliers)))
       out <- .migrate_interco_v1_to_v2(old)
-      tryCatch(save_interco_v2(out), error = function(e)
+      tryCatch({
+        save_interco_v2(out)
+        if (exists("bump_sync_version", mode = "function")) bump_sync_version("interco_v2")
+      }, error = function(e)
         message("[IC] auto-migration save failed: ", e$message))
       return(out)
     }
@@ -1614,6 +1617,7 @@ rename_empresa_initials <- function(old_ini, new_ini, client_id = NULL) {
       reg$companies[[new_ini]] <- reg$companies[[old_ini]]
       reg$companies[[old_ini]] <- NULL
       save_interco_v2(reg, client_id = client_id)
+      if (exists("bump_sync_version", mode = "function")) bump_sync_version("interco_v2", client_id = client_id)
       touched <- c(touched, "interco_v2")
     }
   }, error = function(e) message("[EMP rename] interco_v2: ", e$message))
