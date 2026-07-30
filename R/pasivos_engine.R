@@ -872,7 +872,7 @@ pasivos_reconcile_provisions <- function(existing, generated, mode = "regenerate
 }
 
 pasivos_provision_convert <- function(provision_id, manual_inv_id, pagar_hoy_id, user,
-                                       client_id = NULL) {
+                                       client_id = NULL, content_diff = NULL) {
   row <- .load_provision(provision_id, client_id = client_id)
   if (row$estado != "provisional")
     stop("[pasivos] cannot convert provision with estado=", row$estado,
@@ -882,13 +882,25 @@ pasivos_provision_convert <- function(provision_id, manual_inv_id, pagar_hoy_id,
   row$manual_inv_id <- as.character(manual_inv_id)
   row$pagar_hoy_id  <- as.character(pagar_hoy_id)
   .save_provision_row(row, client_id = client_id)
+  # content_diff (2026-07-30): the provision row itself only captures the
+  # estado transition + linkage ids -- it has no fields comparable to the
+  # empresa/moneda/documento/importe/etc. the user can edit on the review
+  # form before finalizing the conversion. Flagged as critical: "who
+  # approved what, when, how, because they could've made edits ... either
+  # correctly or incorrectly." Caller (.pasivos_perform_conversion) computes
+  # this field-by-field diff, since it's the only place both the
+  # provision's original implied values and the form's final values are in
+  # scope together. Merged into `after` so one audit entry shows both the
+  # state transition and exactly what content changed, if anything.
+  after_payload <- as.list(row)
+  if (!is.null(content_diff)) after_payload$content_diff <- content_diff
   pasivos_log_audit(
     action_type = "provision.converted_to_item",
     user        = user,
     target_kind = "provision",
     target_id   = provision_id,
     before      = before,
-    after       = as.list(row),
+    after       = after_payload,
     client_id   = client_id
   )
   invisible(row)

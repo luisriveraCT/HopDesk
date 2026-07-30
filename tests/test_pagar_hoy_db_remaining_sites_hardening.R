@@ -79,7 +79,7 @@ sites <- list(
   list(file = "R/staging_browse_module.R", anchor = "observeEvent\\(input\\$ab_rows,", occurrence = 1L, label = "ab_rows (abono staging)", window = 50),
   list(file = "R/treasury_map_module.R", anchor = "observeEvent\\(input\\$send_to_agenda,", occurrence = 1L, label = "send_to_agenda", window = 10),
   list(file = "R/interco_module.R", anchor = "\\.ic_send_rows <- function", occurrence = 1L, label = ".ic_send_rows", window = 10),
-  list(file = "R/pasivos_module.R", anchor = "\\.pasivos_perform_conversion <- function", occurrence = 1L, label = ".pasivos_perform_conversion stage-to-agenda", window = 85),
+  list(file = "R/pasivos_module.R", anchor = "\\.pasivos_perform_conversion <- function", occurrence = 1L, label = ".pasivos_perform_conversion stage-to-agenda", window = 130),
   list(file = "app.R", anchor = "Stage to Agenda de hoy if toggle is active", occurrence = 1L, label = "me_save insert-mode stage-to-agenda", window = 16)
 )
 

@@ -18,6 +18,23 @@ PASIVOS_ACTION_TYPES <- c(
 
 # Write one audit row and return its id.
 # before / after: any R object; serialized to JSON automatically.
+#
+# Also dual-writes into the app-wide audit log via log_action (R/app_audit.R)
+# -- found 2026-07-30:
+# this function's own pasivos_audit.rds table was never read by anything.
+# R/audit_log_viewer_module.R (Gestión de Usuarios > Actividad, the ONLY
+# real activity screen in the app) exclusively reads app_audit.rds via
+# read_audit_log_scoped(); it has no code path that touches pasivos_audit
+# at all. So every pasivos action "logged" here -- provision conversions,
+# reverts, deletes, generation, capability denials -- was being written to
+# a store nobody's Activity screen could ever show. This was flagged as
+# critical specifically because provision conversion is exactly the kind of
+# "who approved what, when, how" moment that needs to be auditable, and it
+# wasn't, silently, the whole time. Fixed at this one choke point instead of
+# the ~20 call sites individually: every pasivos_log_audit() call now also
+# produces a real, visible entry in that log, with before/after passed
+# through as structured metadata (not flattened into a description string),
+# so a viewer can see exactly what changed, not just that something did.
 pasivos_log_audit <- function(action_type,
                                user,
                                empresa        = NA_character_,
@@ -27,7 +44,8 @@ pasivos_log_audit <- function(action_type,
                                after          = NULL,
                                session_id     = NA_character_,
                                notes          = NA_character_,
-                               client_id      = NULL) {
+                               client_id      = NULL,
+                               viewer_home_client_id = NULL) {
   if (!action_type %in% PASIVOS_ACTION_TYPES) {
     warning("[pasivos] unknown action_type: ", action_type)
   }
@@ -60,6 +78,23 @@ pasivos_log_audit <- function(action_type,
 
   existing <- tryCatch(load_pasivos_audit(client_id = client_id), error = function(e) .schema_pasivos_audit())
   save_pasivos_audit(dplyr::bind_rows(existing, new_row), client_id = client_id)
+
+  notes_txt   <- if (!is.na(notes) && nzchar(notes)) notes else NULL
+  description <- if (!is.null(notes_txt)) sprintf("%s: %s", action_type, notes_txt) else action_type
+  tryCatch(
+    log_action(
+      user        = user,
+      module      = "pasivos",
+      action      = action_type,
+      description = description,
+      target_id   = target_id,
+      metadata    = list(target_kind = target_kind, empresa = empresa,
+                         before = before, after = after),
+      client_id             = client_id,
+      viewer_home_client_id = viewer_home_client_id
+    ),
+    error = function(e) warning("[pasivos] log_action dual-write failed: ", e$message)
+  )
 
   invisible(row_id)
 }

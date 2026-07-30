@@ -130,6 +130,36 @@ pasivos_manage_converted_modal_ui <- function() {
     }
   }
 
+  # Field-by-field diff between the provision's original implied values and
+  # what's actually being saved -- the review form lets the user edit
+  # empresa/moneda/documento/parte/codigo/importe/fecha/notas before
+  # finalizing, and "did they change anything" is exactly the "who approved
+  # what, how" question this audit trail needs to answer, not just that a
+  # conversion happened (2026-07-30).
+  orig_documento <- {
+    d <- trimws(prov$documento[1] %||% "")
+    if (nzchar(d)) d else paste0("CONV_", prov_id)
+  }
+  .cmp <- function(a, b) !identical(as.character(a) %||% "", as.character(b) %||% "")
+  content_diff <- Filter(Negate(is.null), list(
+    if (.cmp(prov$empresa[1], input$pcm_empresa))
+      list(field = "empresa",   before = prov$empresa[1],                  after = input$pcm_empresa),
+    if (.cmp(prov$moneda_pago[1], input$pcm_moneda))
+      list(field = "moneda",    before = prov$moneda_pago[1],              after = input$pcm_moneda),
+    if (.cmp(orig_documento, trimws(input$pcm_documento %||% "")))
+      list(field = "documento", before = orig_documento,                   after = trimws(input$pcm_documento %||% "")),
+    if (.cmp(prov$parte[1], input$pcm_parte))
+      list(field = "parte",     before = prov$parte[1],                    after = input$pcm_parte),
+    if (.cmp(prov$codigo_parte[1], input$pcm_codigo))
+      list(field = "codigo",    before = prov$codigo_parte[1],             after = input$pcm_codigo),
+    if (.cmp(pasivos_pago_amount(prov), as.numeric(input$pcm_importe)))
+      list(field = "importe",   before = pasivos_pago_amount(prov),        after = as.numeric(input$pcm_importe)),
+    if (.cmp(as.character(prov$fecha_efectiva[1]), as.character(as.Date(input$pcm_fecha))))
+      list(field = "fecha",     before = as.character(prov$fecha_efectiva[1]), after = as.character(as.Date(input$pcm_fecha))),
+    if (.cmp(prov$notas[1], input$pcm_notas))
+      list(field = "notas",     before = prov$notas[1],                    after = input$pcm_notas)
+  ))
+
   new_manual <- tibble::tibble(
     id                     = new_manual_id,
     ledger                 = "AP",
@@ -197,7 +227,8 @@ pasivos_manage_converted_modal_ui <- function() {
       manual_inv_id = new_manual_id,
       pagar_hoy_id  = new_pagar_hoy_id,
       user          = user,
-      client_id     = shared$effective_client_id()
+      client_id     = shared$effective_client_id(),
+      content_diff  = if (length(content_diff)) content_diff else NULL
     ),
     error = function(e) e
   )
@@ -785,6 +816,12 @@ setup_pasivos_module <- function(input, output, session, shared) {
     }
 
     # 3. Revert provision estado to "provisional"
+    # before/after captured around the mutation (2026-07-30) -- this audit
+    # call previously passed only a bare notes string, unlike conversion's
+    # richer before/after. "Audit both directions": reverting a conversion
+    # is exactly as much a "who approved what, when" moment as converting
+    # one, and needs the same traceability.
+    before <- as.list(provs[idx[1], ])
     provs$estado[idx]          <- "provisional"
     provs$manual_inv_id[idx]   <- NA_character_
     provs$pagar_hoy_id[idx]    <- NA_character_
@@ -792,6 +829,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     provs$reverted_count[idx]  <- (as.integer(provs$reverted_count[idx[1]]) %||% 0L) + 1L
     provs$last_edited_by[idx]  <- user
     provs$last_edited_at[idx]  <- now
+    after <- as.list(provs[idx[1], ])
 
     ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id()); TRUE }, error = function(e) {
       shiny::showNotification(paste("Error:", e$message), type = "error"); FALSE })
@@ -803,6 +841,8 @@ setup_pasivos_module <- function(input, output, session, shared) {
     tryCatch(pasivos_log_audit(
       action_type = "provision.revived",
       user = user, target_kind = "provision", target_id = prov_id,
+      before    = before,
+      after     = after,
       notes     = "reverted from converted to provisional via UI",
       client_id = shared$effective_client_id()
     ), error = function(e) NULL)
@@ -877,9 +917,15 @@ setup_pasivos_module <- function(input, output, session, shared) {
     }
 
     # 3. Soft-delete provision
+    # before already captured above as prov_row (needed for the papelera
+    # archive too); after captured post-mutation (2026-07-30, same "audit
+    # both directions" fix as the revert handler above -- this call
+    # previously passed only a bare notes string).
+    before <- as.list(prov_row)
     provs$estado[idx]         <- "deleted"
     provs$last_edited_by[idx] <- user
     provs$last_edited_at[idx] <- now
+    after <- as.list(provs[idx[1], ])
 
     ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id()); TRUE }, error = function(e) {
       shiny::showNotification(paste("Error:", e$message), type = "error"); FALSE })
@@ -906,6 +952,8 @@ setup_pasivos_module <- function(input, output, session, shared) {
     tryCatch(pasivos_log_audit(
       action_type = "provision.deleted",
       user = user, target_kind = "provision", target_id = prov_id,
+      before    = before,
+      after     = after,
       notes     = "hard-deleted converted provision via manage-converted UI",
       client_id = shared$effective_client_id()
     ), error = function(e) NULL)

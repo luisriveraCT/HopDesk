@@ -28,7 +28,8 @@ cat("── log_action() call-site scoping (static) ─────────�
 
 .PRODUCTION_FILES <- c(
   "app.R", "R/bancos_module.R", "R/pagar_hoy_module.R",
-  "R/tiers_module.R", "R/ledger_module.R", "R/search_module.R"
+  "R/tiers_module.R", "R/ledger_module.R", "R/search_module.R",
+  "R/pasivos_audit.R"
 )
 
 for (f in .PRODUCTION_FILES) {
