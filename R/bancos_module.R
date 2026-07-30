@@ -369,6 +369,17 @@ bancos_libro_js <- function(id) {
       { ids: sel.slice(), nonce: Math.random() }, { priority: "event" });
   });
 
+  /* ── Editar button (2026-07-30, Vantage Bank manual-entry correction
+     tool) -- reuses the same row-selection state as Eliminar; the server
+     validates exactly one row is selected and that it is a manual entry,
+     rather than duplicating enable/disable logic here client-side. ────── */
+  $(document).on("click", "#" + NS + "btn_editar", function() {
+    if (sel.length === 0) { alert("Selecciona una fila para editar."); return; }
+    if (sel.length > 1) { alert("Selecciona solo una fila para editar."); return; }
+    Shiny.setInputValue(NS + "editar_row",
+      { id: sel[0], nonce: Math.random() }, { priority: "event" });
+  });
+
   /* ── Flujo cycling button ───────────────────────────────── */
   var _flujoClasses = ["bnc-flujo-todos","bnc-flujo-egresos","bnc-flujo-ingresos"];
   $(document).on("click", "#" + NS + "btn_flujo_cycle", function() {
@@ -387,7 +398,7 @@ bancos_libro_js <- function(id) {
     Shiny.setInputValue(NS + "mostrar_comisiones", _comVisible, { priority: "event" });
   });
 
-  /* ── Vincular button ────────────────────────────────────── */
+  /* ── Vincular button (VINCULAR_RETIRED — code preserved for future use) ──
   function deactivateVin() {
     vinMode = false;
     var b = $id("btn_vincular");
@@ -407,10 +418,11 @@ bancos_libro_js <- function(id) {
     $("body").addClass("bnc-vincular-mode");
   });
 
-  /* ESC cancels Vincular mode */
+  ESC cancels Vincular mode
   $(document).on("keydown.bnc", function(e) {
     if (e.key === "Escape" && vinMode) deactivateVin();
   });
+  ── END VINCULAR_RETIRED ──────────────────────────────────────────────── */
 
   /* ── Conciliar button (REMOVED — code preserved for future use) ──────────
   $(document).on("click", "#" + NS + "btn_sugerencias", function() {
@@ -632,19 +644,28 @@ bancosUI <- function(id) {
               title = "Eliminar seleccionados",
               HTML('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>')
             ),
-            # Vincular
-            tags$button(
-              id = ns("btn_vincular"), type = "button",
-              class = "btn btn-sm btn-outline-primary",
-              style = "font-size:.78rem; padding:3px 9px; white-space:nowrap;",
-              HTML('<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:3px;vertical-align:-1px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Vincular')
-            ),
+            # VINCULAR_RETIRED (2026-07-30): the "Vincular" duplicate-merge
+            # button was here. Retired -- kept for possible future creative
+            # reuse, but the app no longer surfaces it; code preserved in
+            # if(FALSE) blocks (server logic below) and a /* */ block
+            # (bancos_libro_js()), same convention as CONCILIAR_REMOVED
+            # right below.
             # CONCILIAR_REMOVED: Conciliar button was here; code preserved in
             # if(FALSE) blocks — see bancos_libro_js() and server section.
             actionButton(ns("add_mov_manual"), icon("plus"),
                          label = " Agregar",
                          class  = "btn btn-sm btn-outline-primary",
                          style  = "font-size:.78rem; padding:3px 9px; white-space:nowrap;"),
+            # Editar (2026-07-30): correction tool for manually-entered rows
+            # (e.g. Vantage Bank, whose statements can't go through Importar
+            # TXT) -- reuses the same row selection as Eliminar; only manual
+            # entries can be edited (validated server-side).
+            tags$button(
+              id = ns("btn_editar"), type = "button",
+              class = "btn btn-sm btn-outline-secondary",
+              style = "font-size:.78rem; padding:3px 9px; white-space:nowrap;",
+              icon("pen"), " Editar"
+            ),
             downloadButton(
               ns("download_libro"),
               label = HTML(paste0(
@@ -1491,8 +1512,11 @@ bancosServer <- function(id, shared) {
     )
 
     # ── Reactive state for Vincular / Sugerencias modals ─────────────────────
+    # ── VINCULAR_RETIRED: reactive state (preserved, not active) ─────────────
+    if (FALSE) {
     vincular_item_rv  <- reactiveVal(NULL)   # chosen movement row
     vin_confirm_rv    <- reactiveVal(NULL)   # NULL=search, list=confirm panel data
+    } # END VINCULAR_RETIRED
     # ── CONCILIAR_REMOVED: Sugerencias reactive state (preserved, not active) ─
     if (FALSE) {
     sug_state_rv      <- reactiveVal("list") # "list" | "confirm"
@@ -1592,7 +1616,14 @@ bancosServer <- function(id, shared) {
       session$sendCustomMessage(paste0(id, "-clear_selection"), TRUE)
     }, ignoreInit = TRUE)
 
-    # ── Vincular modal ────────────────────────────────────────────────────────
+    # ── VINCULAR_RETIRED: Vincular modal (preserved, not active) ─────────────
+    # Retired 2026-07-30 -- a manual duplicate-merge tool, superseded by a
+    # dedicated manual-movement edit/delete/restore capability (see "Manual
+    # entry modal" below). Kept in place, not deleted: may be reused
+    # creatively later, but the app no longer surfaces it (toolbar button
+    # removed above, JS mode-toggle commented out in bancos_libro_js()).
+    # Same if(FALSE) convention as CONCILIAR_REMOVED elsewhere in this file.
+    if (FALSE) {
     # Step 4-5: Vincular mode activates via JS; clicking a row fires
     # input$vincular_row_id. Server opens modal with search panel.
 
@@ -2067,56 +2098,67 @@ bancosServer <- function(id, shared) {
       showNotification("Vinculaci\u00f3n completada.", type = "message", duration = 3)
       session$sendCustomMessage(paste0(id, "-deactivate_vin"), TRUE)
     }, ignoreInit = TRUE)
+    } # END VINCULAR_RETIRED
 
     # ── Manual entry modal ────────────────────────────────────────────────────
-    observeEvent(input$add_mov_manual, {
+    # editing_mov_id: NULL = "Agregar" (insert a new row); otherwise the id of
+    # the manual row being edited via the "Editar" button (2026-07-30, the
+    # Vantage Bank manual-entry correction tool -- scoped to fuente=="manual"
+    # rows only, never TXT-imported ones, which could fight a future
+    # re-import of the same statement).
+    editing_mov_id <- reactiveVal(NULL)
+
+    .show_manual_mov_modal <- function(prefill = NULL) {
       cts <- cuentas()
       cuenta_ch <- c(
         .cuenta_choices(cts, include_sin_cuenta = FALSE),
         "Sin cuenta registrada" = "__sin_cuenta__"
       )
+      is_edit <- !is.null(prefill)
 
       showModal(modalDialog(
-        title = "Agregar movimiento manual",
+        title = if (is_edit) "Editar movimiento manual" else "Agregar movimiento manual",
         size  = "m", easyClose = TRUE,
         div(class = "row g-2",
           div(class = "col-md-6",
             tags$label("Cuenta", class = "form-label small"),
-            selectInput(ns("man_cuenta"), NULL, choices = cuenta_ch, width = "100%")
+            selectInput(ns("man_cuenta"), NULL, choices = cuenta_ch,
+                        selected = prefill$cuenta_id %||% "__sin_cuenta__", width = "100%")
           ),
           div(class = "col-md-6",
             tags$label("Fecha", class = "form-label small"),
-            dateInput(ns("man_fecha"), NULL, value = Sys.Date(), width = "100%",
+            dateInput(ns("man_fecha"), NULL, value = prefill$fecha %||% Sys.Date(), width = "100%",
                       format = "dd/mm/yyyy", language = "es")
           ),
           div(class = "col-md-6",
             tags$label("Tipo", class = "form-label small"),
             selectInput(ns("man_tipo"), NULL,
                         choices = setNames(names(.TIPO_LABELS), .TIPO_LABELS),
-                        selected = "manual_in", width = "100%")
+                        selected = prefill$tipo %||% "manual_in", width = "100%")
           ),
           div(class = "col-md-6",
             tags$label("Parte (beneficiario/ordenante)", class = "form-label small"),
-            textInput(ns("man_parte"), NULL, placeholder = "Nombre...", width = "100%")
+            textInput(ns("man_parte"), NULL, value = prefill$parte %||% "",
+                      placeholder = "Nombre...", width = "100%")
           ),
           div(class = "col-12",
             tags$label("Concepto", class = "form-label small"),
-            textInput(ns("man_concepto"), NULL, placeholder = "Descripci\u00f3n...",
-                      width = "100%")
+            textInput(ns("man_concepto"), NULL, value = prefill$concepto %||% "",
+                      placeholder = "Descripción...", width = "100%")
           ),
           div(class = "col-md-6",
             tags$label("Cargo ($)", class = "form-label small"),
-            numericInput(ns("man_cargo"), NULL, value = 0, min = 0, step = 100,
+            numericInput(ns("man_cargo"), NULL, value = prefill$cargo %||% 0, min = 0, step = 100,
                          width = "100%")
           ),
           div(class = "col-md-6",
             tags$label("Abono ($)", class = "form-label small"),
-            numericInput(ns("man_abono"), NULL, value = 0, min = 0, step = 100,
+            numericInput(ns("man_abono"), NULL, value = prefill$abono %||% 0, min = 0, step = 100,
                          width = "100%")
           ),
           div(class = "col-12",
             tags$label("Notas (opcional)", class = "form-label small"),
-            textAreaInput(ns("man_notas"), NULL, rows = 2, width = "100%",
+            textAreaInput(ns("man_notas"), NULL, value = prefill$notas %||% "", rows = 2, width = "100%",
                           resize = "none")
           )
         ),
@@ -2125,6 +2167,26 @@ bancosServer <- function(id, shared) {
           actionButton(ns("do_add_manual"), "Guardar", class = "btn btn-primary")
         )
       ))
+    }
+
+    observeEvent(input$add_mov_manual, {
+      editing_mov_id(NULL)
+      .show_manual_mov_modal()
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$editar_row, {
+      mov_id <- input$editar_row$id
+      req(mov_id)
+      movs <- movs_all()
+      row  <- movs[!is.na(movs$id) & movs$id == mov_id &
+                   movs$fuente == "manual" & !movs$eliminado, , drop = FALSE]
+      if (!nrow(row)) {
+        showNotification("Solo se pueden editar movimientos manuales (no importados de TXT).",
+                         type = "warning")
+        return()
+      }
+      editing_mov_id(mov_id)
+      .show_manual_mov_modal(prefill = as.list(row[1, ]))
     }, ignoreInit = TRUE)
 
     observeEvent(input$do_add_manual, {
@@ -2132,41 +2194,97 @@ bancosServer <- function(id, shared) {
       tipo_sel      <- input$man_tipo   %||% "manual_in"
       cargo_v       <- as.numeric(input$man_cargo %||% 0)
       abono_v       <- as.numeric(input$man_abono %||% 0)
+      edit_id       <- editing_mov_id()
+      is_edit       <- !is.null(edit_id)
 
-      new_mov <- tibble::tibble(
-        id              = uuid::UUIDgenerate(),
-        cuenta_id       = if (cuenta_id_sel == "__sin_cuenta__") NA_character_
-                          else cuenta_id_sel,
-        fecha           = as.Date(input$man_fecha),
-        hora            = format(Sys.time(), "%H:%M:%S"),
-        recibo          = NA_character_,
-        descripcion_raw = trimws(input$man_concepto %||% ""),
-        tipo            = tipo_sel,
-        parte           = trimws(input$man_parte    %||% ""),
-        rfc             = NA_character_,
-        referencia      = NA_character_,
-        clave_rastreo   = NA_character_,
-        concepto        = trimws(input$man_concepto %||% ""),
-        cargo           = if (is.na(cargo_v)) 0 else cargo_v,
-        abono           = if (is.na(abono_v)) 0 else abono_v,
-        saldo_banco     = NA_real_,
-        conciliado      = FALSE,
-        doc_vinculado   = NA_character_,
-        agenda_id       = NA_character_,
-        importado_at    = Sys.time(),
-        fuente          = "manual",
-        eliminado       = FALSE,
-        notas           = trimws(input$man_notas %||% "")
-      )
+      movs   <- movs_all()
+      before <- NULL
 
-      movs <- dplyr::bind_rows(movs_all(), new_mov)
+      if (is_edit) {
+        idx <- which(!is.na(movs$id) & movs$id == edit_id & movs$fuente == "manual")
+        if (!length(idx)) {
+          showNotification("El movimiento ya no existe (pudo haber sido eliminado en otra sesión).",
+                           type = "warning")
+          removeModal(); editing_mov_id(NULL)
+          return()
+        }
+        before <- as.list(movs[idx[1], c("cuenta_id", "fecha", "tipo", "parte",
+                                         "concepto", "cargo", "abono", "notas")])
+        movs$cuenta_id[idx]       <- if (cuenta_id_sel == "__sin_cuenta__") NA_character_ else cuenta_id_sel
+        movs$fecha[idx]           <- as.Date(input$man_fecha)
+        movs$descripcion_raw[idx] <- trimws(input$man_concepto %||% "")
+        movs$tipo[idx]            <- tipo_sel
+        movs$parte[idx]           <- trimws(input$man_parte %||% "")
+        movs$concepto[idx]        <- trimws(input$man_concepto %||% "")
+        movs$cargo[idx]           <- if (is.na(cargo_v)) 0 else cargo_v
+        movs$abono[idx]           <- if (is.na(abono_v)) 0 else abono_v
+        movs$notas[idx]           <- trimws(input$man_notas %||% "")
+        target_row <- movs[idx[1], ]
+      } else {
+        new_mov <- tibble::tibble(
+          id              = uuid::UUIDgenerate(),
+          cuenta_id       = if (cuenta_id_sel == "__sin_cuenta__") NA_character_
+                            else cuenta_id_sel,
+          fecha           = as.Date(input$man_fecha),
+          hora            = format(Sys.time(), "%H:%M:%S"),
+          recibo          = NA_character_,
+          descripcion_raw = trimws(input$man_concepto %||% ""),
+          tipo            = tipo_sel,
+          parte           = trimws(input$man_parte    %||% ""),
+          rfc             = NA_character_,
+          referencia      = NA_character_,
+          clave_rastreo   = NA_character_,
+          concepto        = trimws(input$man_concepto %||% ""),
+          cargo           = if (is.na(cargo_v)) 0 else cargo_v,
+          abono           = if (is.na(abono_v)) 0 else abono_v,
+          saldo_banco     = NA_real_,
+          conciliado      = FALSE,
+          doc_vinculado   = NA_character_,
+          agenda_id       = NA_character_,
+          importado_at    = Sys.time(),
+          fuente          = "manual",
+          eliminado       = FALSE,
+          notas           = trimws(input$man_notas %||% "")
+        )
+        movs <- dplyr::bind_rows(movs, new_mov)
+        target_row <- new_mov
+      }
+
       shared$bancos_movimientos(movs)
       tryCatch({ save_bancos_movimientos(movs, client_id = shared$effective_client_id()); bump_sync_version("bancos_movimientos_db") },
                error = function(e)
                  showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
       removeModal()
-      showNotification("Movimiento manual guardado.", type = "message", duration = 2)
+      showNotification(if (is_edit) "Movimiento actualizado." else "Movimiento manual guardado.",
+                       type = "message", duration = 2)
+
+      log_desc <- sprintf("Movimiento manual %s: %s %s por $%s",
+                          if (is_edit) "editado" else "agregado",
+                          .TIPO_LABELS[[tipo_sel]] %||% tipo_sel,
+                          target_row$parte[1],
+                          format(max(target_row$cargo[1], target_row$abono[1]), big.mark = ",", nsmall = 2))
+      log_meta <- if (is_edit) {
+        after <- list(cuenta_id = target_row$cuenta_id[1], fecha = as.character(target_row$fecha[1]),
+                      tipo = tipo_sel, parte = target_row$parte[1], concepto = target_row$concepto[1],
+                      cargo = target_row$cargo[1], abono = target_row$abono[1], notas = target_row$notas[1])
+        list(before = before, after = after)
+      } else {
+        list(cuenta_id = target_row$cuenta_id[1], tipo = tipo_sel,
+             cargo = target_row$cargo[1], abono = target_row$abono[1])
+      }
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "bancos",
+        action      = if (is_edit) "editar_movimiento_manual" else "agregar_movimiento_manual",
+        description = log_desc,
+        target_id   = target_row$id[1],
+        metadata    = log_meta,
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
+      editing_mov_id(NULL)
     }, ignoreInit = TRUE)
+
 
     # ── CONCILIAR_REMOVED: Sugerencias modal logic (preserved, not active) ────
     if (FALSE) {
@@ -3289,6 +3407,36 @@ bancosServer <- function(id, shared) {
         options = list(pageLength = 25, scrollX = TRUE, dom = "lrtip"))
     }, server = TRUE)
 
+    # \u2500\u2500 Deshacer eliminaci\u00f3n de movimiento manual \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    # Restores a manually-entered bank movement that was deleted by mistake
+    # (2026-07-30, part of the Vantage Bank manual-entry correction tool --
+    # scoped to fuente=="manual" only, see the Acciones column in
+    # papelera_tbl above; a TXT-imported row never gets this button at all).
+    observeEvent(input$undo_mov_delete, {
+      mov_id <- input$undo_mov_delete$id
+      req(mov_id)
+      movs <- movs_all()
+      idx  <- which(movs$id == mov_id & movs$fuente == "manual")
+      if (!length(idx)) return()
+
+      movs$eliminado[idx]    <- FALSE
+      movs$eliminado_at[idx] <- as.POSIXct(NA)
+      shared$bancos_movimientos(movs)
+      tryCatch({ save_bancos_movimientos(movs, client_id = shared$effective_client_id()); bump_sync_version("bancos_movimientos_db") },
+               error = function(e)
+                 showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
+      showNotification("Movimiento restaurado.", type = "message", duration = 3)
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "bancos",
+        action      = "deshacer_eliminar_movimiento_manual",
+        description = paste0("Movimiento manual restaurado: ", htmltools::htmlEscape(movs$parte[idx[1]] %||% "")),
+        target_id   = mov_id,
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
+    }, ignoreInit = TRUE)
+
     # \u2500\u2500 Deshacer abono \u2014 void it, restoring the invoice's balance \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     # void_abono() (R/persistence.R) already existed but nothing called it
     # (found 2026-07-24's Abono Parcial audit). Soft-delete only (status \u2192
@@ -3559,7 +3707,8 @@ bancosServer <- function(id, shared) {
               !is.na(deleted_at),
               format(as.POSIXct(deleted_at), "%d/%m/%Y %H:%M"),
               "\u2014"
-            )
+            ),
+            Acciones        = ""
           )
       } else NULL
 
@@ -3569,7 +3718,7 @@ bancosServer <- function(id, shared) {
           data.frame(Origen=character(), Fecha=character(), Parte=character(),
                      Importe=character(), Tipo=character(),
                      `Doc. vinculado`=character(),
-                     `Eliminado el`=character(), check.names=FALSE),
+                     `Eliminado el`=character(), Acciones=character(), check.names=FALSE),
           escape = FALSE, rownames = FALSE,
           options = list(dom = "t", language = list(emptyTable = "Papelera vac\u00eda"))
         ))
@@ -3584,7 +3733,20 @@ bancosServer <- function(id, shared) {
             Importe         = dplyr::if_else(cargo > 0, fmt_money(cargo), fmt_money(abono)),
             Tipo            = vapply(tipo, .tipo_badge, character(1)),
             `Doc. vinculado` = "",
-            `Eliminado el`  = dplyr::if_else(!is.na(eliminado_at), format(eliminado_at, "%d/%m/%Y %H:%M"), "\u2014")
+            `Eliminado el`  = dplyr::if_else(!is.na(eliminado_at), format(eliminado_at, "%d/%m/%Y %H:%M"), "\u2014"),
+            # "Deshacer" only for manually-entered rows -- restoring a
+            # TXT-imported row here would fight a future re-import of the
+            # same statement (found 2026-07-30, part of the Vantage Bank
+            # manual-entry correction tool: manual rows need an undo path,
+            # TXT rows deliberately keep the existing one-way behavior).
+            Acciones        = dplyr::if_else(
+              fuente == "manual",
+              sprintf(
+                '<button class="bnc-btn-xs bnc-btn-xs--undo" title="Deshacer eliminaci\u00f3n" onclick="Shiny.setInputValue(\'%s\', {id:\'%s\', nonce:Math.random()}, {priority:\'event\'})">&#8630;</button>',
+                ns("undo_mov_delete"), id
+              ),
+              ""
+            )
           )
       } else NULL
 
@@ -3599,7 +3761,8 @@ bancosServer <- function(id, shared) {
               '<span class="badge bg-danger">Pago</span>',
               '<span class="badge bg-success">Cobro</span>'),
             `Doc. vinculado` = "",
-            `Eliminado el`  = dplyr::if_else(!is.na(eliminado_at), format(eliminado_at, "%d/%m/%Y %H:%M"), "\u2014")
+            `Eliminado el`  = dplyr::if_else(!is.na(eliminado_at), format(eliminado_at, "%d/%m/%Y %H:%M"), "\u2014"),
+            Acciones        = ""
           )
       } else NULL
 
@@ -3612,7 +3775,8 @@ bancosServer <- function(id, shared) {
             Importe         = dplyr::if_else(cargo > 0, fmt_money(cargo), fmt_money(abono)),
             Tipo            = vapply(tipo, .tipo_badge, character(1)),
             `Doc. vinculado` = htmltools::htmlEscape(doc_vinculado %||% ""),
-            `Eliminado el`  = "\u2014"
+            `Eliminado el`  = "\u2014",
+            Acciones        = ""
           )
       } else NULL
 
