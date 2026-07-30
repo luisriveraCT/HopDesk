@@ -98,6 +98,136 @@ ok("policy_moves_db: bump_sync_version(...) appears at all 5 real save sites",
   }
 }
 
+# ── 5. No dataset is registered twice (a duplicate register_synced() call
+# would silently overwrite the first entry in .SYNC_REGISTRY -- not a crash,
+# just quietly wrong, exactly the kind of "vulnerable to failure" case worth
+# a permanent guard) ─────────────────────────────────────────────────────────
+for (key in NEWLY_SYNCED) {
+  pat <- sprintf('register_synced\\("%s"', key)
+  ok(sprintf("app.R: register_synced(\"%s\", ...) appears exactly once, not duplicated", key),
+     sum(grepl(pat, app_txt)) == 1L)
+}
+
+# ── 6. Every loader function passed to register_synced() for these 8 keys
+# actually exists as a real function somewhere in R/ (catches a typo'd
+# loader name, which would silently no-op every poll tick for that key
+# rather than error visibly) ─────────────────────────────────────────────────
+LOADER_OF <- c(
+  abonos_db                = "load_abonos",
+  interco_v2                = "load_interco_v2",
+  sap_ov_db                 = "load_sap_overrides",
+  hop_grants_db             = "load_hop_grants",
+  proveedores_inactivos_db  = "load_proveedores_inactivos",
+  partner_policies_db       = "load_partner_policies",
+  policy_moves_db           = "load_policy_moves",
+  holiday_overrides_db      = "load_holiday_overrides"
+)
+r_files <- list.files("R", pattern = "\\.R$", recursive = TRUE, full.names = TRUE)
+r_all_txt <- unlist(lapply(r_files, readLines, warn = FALSE))
+for (key in names(LOADER_OF)) {
+  fn <- LOADER_OF[[key]]
+  ok(sprintf("%s's loader %s() is a real function definition somewhere in R/", key, fn),
+     any(grepl(sprintf("^%s\\s*<-\\s*function", fn), r_all_txt)))
+}
+
+# ── 7. Every one of the 8 real save_*() functions used by these datasets
+# accepts client_id (except save_hop_grants(), which is deliberately global-
+# scoped, not per-client -- the one confirmed, intentional exception) ───────
+SAVE_OF <- c(
+  abonos_db                = "save_abonos",
+  interco_v2                = "save_interco_v2",
+  sap_ov_db                 = "save_sap_overrides",
+  proveedores_inactivos_db  = "save_proveedores_inactivos",
+  partner_policies_db       = "save_partner_policies",
+  policy_moves_db           = "save_policy_moves",
+  holiday_overrides_db      = "save_holiday_overrides"
+)
+for (key in names(SAVE_OF)) {
+  fn <- SAVE_OF[[key]]
+  def_line <- grep(sprintf("^%s\\s*<-\\s*function", fn), r_all_txt, value = TRUE)
+  ok(sprintf("%s's save function %s() accepts client_id (per-client scoping preserved)", key, fn),
+     length(def_line) > 0 && any(grepl("client_id", def_line)))
+}
+ok("save_hop_grants() deliberately does NOT take client_id (global admin-scoped, by design -- see .HOP_GRANTS_KEY)",
+   {
+     def_line <- grep("^save_hop_grants\\s*<-\\s*function", r_all_txt, value = TRUE)
+     length(def_line) > 0 && !grepl("client_id", def_line)
+   })
+
+# ── 8. .s3_key() resolves to a well-formed, non-malformed key for every one
+# of the 7 client-scoped S3_KEYS entries, across several different client
+# ids -- this is the exact vulnerability class found this stage (a missing
+# S3_KEYS entry silently resolving to "<client>/" with no filename at all).
+# Extracts the REAL .s3_key()/.client_id() implementation, not a hand-copied
+# mirror, so this catches a regression in .s3_key() itself too. ────────────
+{
+  .extract_fn <- function(file, fn_name, envir) {
+    exprs <- parse(file, keep.source = FALSE)
+    for (e in exprs) {
+      if (is.call(e) && length(e) >= 2 &&
+          identical(e[[1]], as.name("<-")) &&
+          identical(e[[2]], as.name(fn_name))) {
+        assign(fn_name, eval(e[[3]], envir = envir), envir = envir)
+        return(invisible(TRUE))
+      }
+    }
+    NULL
+  }
+  keyenv <- new.env()
+  assign("S3_KEYS", list(
+    abonos = "abonos.rds", interco_v2 = "interco_v2.rds",
+    sap_overrides = "sap_overrides.rds",
+    proveedores_inactivos = "proveedores_inactivos.rds",
+    partner_policies = "partner_policies.rds",
+    policy_moves = "policy_moves.rds",
+    holiday_overrides = "holiday_overrides.rds"
+  ), envir = keyenv)
+  assign(".client_id", function() "hd-admin", envir = keyenv)
+  .extract_fn("R/persistence.R", ".s3_key", keyenv)
+
+  CLIENT_SCOPED_KEYS <- c("abonos", "interco_v2", "sap_overrides",
+                          "proveedores_inactivos", "partner_policies",
+                          "policy_moves", "holiday_overrides")
+  TEST_CLIENTS <- c("networks", "hd-admin", "another-client-99")
+
+  if (is.null(get0(".s3_key", envir = keyenv))) {
+    ok("could extract the real .s3_key() implementation to test against", FALSE)
+  } else {
+    s3_key_fn <- get(".s3_key", envir = keyenv)
+    s3_keys <- get("S3_KEYS", envir = keyenv)
+    for (key in CLIENT_SCOPED_KEYS) {
+      for (cid in TEST_CLIENTS) {
+        resolved <- s3_key_fn(s3_keys[[key]], client_id = cid)
+        expected <- paste0(tolower(cid), "/", s3_keys[[key]])
+        ok(sprintf(".s3_key() resolves %s for client '%s' to a real filename, not \"<client>/\" (%s)",
+                   key, cid, resolved),
+           identical(resolved, expected) && !grepl("/$", resolved))
+      }
+    }
+  }
+}
+
+# ── 9. Global defense in depth: NO two entries in the real S3_KEYS list
+# (not just the 8 from this stage) resolve to the same filename -- a
+# collision here would mean two datasets silently overwrite each other's
+# S3 object. Directly generalizes the abonos bug (a MISSING entry) to its
+# sibling risk (a DUPLICATE entry), across the entire list, not just the 8
+# touched this stage. ────────────────────────────────────────────────────
+{
+  global_txt <- readLines("R/global.R", warn = FALSE)
+  s3_start <- grep("^S3_KEYS\\s*<-\\s*list\\(", global_txt)
+  ok("found the real S3_KEYS <- list(...) definition to scan", length(s3_start) > 0)
+  if (length(s3_start)) {
+    s3_end <- s3_start[1] - 1L + which(grepl("^\\)\\s*$", global_txt[s3_start[1]:length(global_txt)]))[1]
+    block <- global_txt[s3_start[1]:s3_end]
+    values <- regmatches(block, regexpr('=\\s*"[^"]+\\.rds"', block))
+    values <- sub('^=\\s*"', "", values); values <- sub('"$', "", values)
+    ok(sprintf("S3_KEYS has no duplicate filename values across its %d entries (every dataset has its own S3 object)",
+               length(values)),
+       length(values) == length(unique(values)))
+  }
+}
+
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0) stop("Tests FAILED.")
 invisible(NULL)
