@@ -189,6 +189,15 @@ S3_KEYS <- list(
   proveedores_inactivos = "proveedores_inactivos.rds",
   interco               = "interco_settings.rds",
   interco_v2            = "interco_v2.rds",
+  # Found missing 2026-07-29 while wiring abonos_db into sync_bus: this key
+  # was never defined, so S3_KEYS$abonos was NULL and every save_abonos()/
+  # load_abonos() call resolved through .s3_key() to the malformed literal
+  # key "<client>/" (paste0(prefix, "/", NULL) == "networks/", confirmed live
+  # against production S3 -- an object genuinely exists there, but it holds
+  # unrelated stale interco_v2-shaped data, not abono records; load_abonos()
+  # for the "networks" client currently returns 0 rows regardless, so this
+  # fix cannot lose any abono data -- there was none reachable to lose).
+  abonos                = "abonos.rds",
   papelera              = "papelera.rds",
   ctas_bancos           = "ctas_bancos.rds",
   ctas_cuentas          = "ctas_cuentas.rds",
