@@ -604,7 +604,6 @@ ui <- shinymanager::secure_app(
     }
   ")),
   enable_admin     = FALSE,
-  timeout_session  = 4000,   # ← auth inactivity timeout in seconds (tweak here)
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA")
 )
 
@@ -663,8 +662,20 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
 
   # ── Authentication gate ──────────────────────────────────────────────────────
+  # keep_token = TRUE: without it, shinymanager strips its own auth token from
+  # the URL right after login (resetQueryString()), so ANY refresh afterward
+  # has no token to present and falls through to the login screen -- visually
+  # identical to a real logout but entirely self-inflicted (found 2026-07-29,
+  # the #1 collaboration complaint: "refresh forces a logout"). Trade-off,
+  # accepted: the token now sits visibly in the browser URL, so a copied/
+  # shared/bookmarked link would let someone else assume that session until
+  # the inactivity timeout (secure_server()'s own default, 15 minutes -- see
+  # removed timeout_session on secure_app() above, which never did anything;
+  # it isn't a real argument to secure_app()/auth_ui(), so it was silently
+  # ignored the whole time).
   res_auth <- shinymanager::secure_server(
-    check_credentials = auth_check_credentials()
+    check_credentials = auth_check_credentials(),
+    keep_token         = TRUE
   )
   message(sprintf("[AUTH] secure_server() resolved at t+%.1fs (session #%d)",
                   (proc.time() - .t_session)[["elapsed"]], .sn))
