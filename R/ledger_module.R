@@ -720,12 +720,27 @@ ledgerModuleServer <- function(id, config, shared) {
       modal_open(FALSE)
     }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
-    # Auto-refresh day pane when provisions change (e.g. after a convert or delete)
-    # so the cart list updates in real-time without the user closing and reopening.
-    # suppress_ledger_prov_refresh is set TRUE by external PPM save handlers before
-    # they write to pasivos_provisions_db; we consume it here so an external add
-    # never re-opens the calendar modal.
-    observeEvent(shared$pasivos_provisions_db(), ignoreInit = TRUE, {
+    # Auto-refresh day pane when any relevant shared dataset changes (a move,
+    # delete, tag, abono confirmation, SAP field override, or provisions
+    # convert/delete -- from THIS session or, now that all of these are
+    # registered with sync_bus, from another session entirely) so the open
+    # day pane updates live instead of only on the user's own next click.
+    # Originally only watched pasivos_provisions_db (2026-07-xx); widened
+    # 2026-07-30 to the full set that .refresh_ctx_detail() actually reads,
+    # same template as R/interco_module.R's own observe() block for
+    # ic_invoices, which already does this correctly for its own view.
+    # suppress_ledger_prov_refresh is set TRUE by external PPM save handlers
+    # before they write to pasivos_provisions_db; we consume it here so an
+    # external add never re-opens the calendar modal.
+    observeEvent({
+      shared$moves_db()
+      shared$manual_inv()
+      shared$tags_db()
+      shared$papelera_rv()
+      shared$bancos_confirmados()
+      shared$abonos_db()
+      shared$pasivos_provisions_db()
+    }, ignoreInit = TRUE, {
       if (!is.null(shared$suppress_ledger_prov_refresh) &&
           isTRUE(isolate(shared$suppress_ledger_prov_refresh()))) {
         shared$suppress_ledger_prov_refresh(FALSE)

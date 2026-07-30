@@ -4,6 +4,19 @@
 # Called from app.R via observeEvent(input$btn_search).
 # Edit actions fire Shiny.setInputValue('search_action', ...) which is
 # handled by observeEvent(input$search_action) in app.R.
+#
+# Deliberately NOT converted to a live-refreshing view (2026-07-30, part of
+# the app-wide real-time-refresh effort): its results table is built once
+# from df_combined_AR()/AP() and baked into static HTML at open time. Those
+# same reactives are shared with nearly every other dataset in the app
+# (moves, deletes, tags, confirmations, abonos, SAP refreshes all invalidate
+# them), so making this modal live would mean it recomputes and rebuilds its
+# entire table on every one of those changes for as long as it stays open --
+# a real, constant cost, not a one-time dependency add like the other views
+# in this effort. A search result is also inherently more point-in-time than
+# a shared calendar/ledger view -- the value of it updating live is lower
+# while the cost is higher. Revisit if/when the app's render-cost story
+# changes (client-side caching, or a non-Shiny frontend), not before.
 # =============================================================================
 
 show_search_modal <- function(input, output, session, shared, search_raw_data = NULL) {

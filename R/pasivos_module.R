@@ -615,12 +615,22 @@ setup_pasivos_module <- function(input, output, session, shared) {
   })
 
   # ── Manage-converted modal body (rendered reactively inside the open modal) ──
+  # Reads shared$pasivos_provisions_db()/shared$manual_inv() directly (not a
+  # fresh load_*() S3 call) so this renderUI is a genuine reactive dependency,
+  # not a one-time snapshot -- it now redraws live while open whenever either
+  # changes, whether from THIS session's own action or (since both are
+  # sync_bus-registered) another session's, same as R/ledger_module.R's day
+  # modal and R/interco_module.R's own observe() block. The ~8s sync_bus
+  # window this trades against an always-fresh S3 read is the right tradeoff
+  # here -- the whole point is to catch a concurrent change while this
+  # display-only management modal sits open, not to shave a few seconds off
+  # a single read.
   output$pcm_conv_body <- shiny::renderUI({
     prov_id <- rv$conv_prov_id
     if (is.null(prov_id)) return(NULL)
     view <- rv$conv_mgmt_view %||% "main"
 
-    provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
+    provs <- tryCatch(shared$pasivos_provisions_db(), error = function(e) NULL)
     if (is.null(provs)) return(shiny::p(class = "text-danger", "Error cargando datos."))
     prov <- provs[provs$id == prov_id, , drop = FALSE]
     if (!nrow(prov)) return(shiny::p(class = "text-warning", "Provisión no encontrada."))
@@ -630,7 +640,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     estado   <- prov$estado[1]
     is_conf  <- estado == "item_confirmed"
 
-    manual_df <- tryCatch(load_manual(client_id = shared$effective_client_id()), error = function(e) NULL)
+    manual_df <- tryCatch(shared$manual_inv(), error = function(e) NULL)
     man_row <- if (!is.null(manual_df) && "provision_id" %in% names(manual_df))
       manual_df[!is.na(manual_df$provision_id) & manual_df$provision_id == prov_id, , drop = FALSE]
     else data.frame()

@@ -236,6 +236,12 @@ intercoServer <- function(id, shared) {
       conf_dep <- shared$bancos_confirmados()   # dependency: Confirmar / Deshacer
       ph_dep   <- shared$pagar_hoy_db()         # dependency: Confirmar / Deshacer
       ab_dep   <- shared$abonos_db()            # dependency: abonos staged/voided
+      # Found 2026-07-30: .load_ic_data() below reads papelera_rv too (see its
+      # own isolate() call), but this outer observe() never listed it as a
+      # dependency -- a papelera-only change (e.g. restoring a deleted item)
+      # never triggered a re-derive here, unlike every other input that feeds
+      # .load_ic_data(). Same fix shape as the dependencies just above.
+      pap_dep  <- shared$papelera_rv()
       if (is.null(reg) || length(cmap) == 0 || (is.null(sd$AR) && is.null(sd$AP))) {
         ic_invoices(NULL)
         return()
