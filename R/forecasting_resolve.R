@@ -175,6 +175,22 @@ forecasting_set_estimate <- function(metric, fecha, value,
       old_est <- dplyr::bind_rows(old_est, new_row)
     }
     save_pasivos_estimates(old_est, client_id = client_id)
+    tryCatch(
+      log_action(
+        user        = user, module = "forecasting",
+        action      = if (isTRUE(is_frozen)) "congelar_metrica" else "set_estimate",
+        description = sprintf('Estimado manual para "%s" en %s = %s (método: %s)%s',
+                              metric_id, format(as.Date(fecha), "%d/%m/%Y"), value, source_method,
+                              if (isTRUE(is_frozen)) " [congelado]" else ""),
+        target_id   = metric_id,
+        metadata    = list(metric_id = metric_id, fecha = as.character(as.Date(fecha)),
+                           value = as.numeric(value), source_method = source_method,
+                           is_frozen = isTRUE(is_frozen)),
+        client_id             = client_id,
+        viewer_home_client_id = NULL
+      ),
+      error = function(e) NULL
+    )
   }, error = function(e) warning("[forecasting] forecasting_set_estimate: ", conditionMessage(e)))
   invisible(TRUE)
 }
@@ -190,6 +206,17 @@ forecasting_unfreeze_metric <- function(metric, user = "system", client_id = NUL
     current <- load_pasivos_estimates(client_id = client_id)
     current$is_frozen[current$metric == metric] <- FALSE
     save_pasivos_estimates(current, client_id = client_id)
+    tryCatch(
+      log_action(
+        user        = user, module = "forecasting", action = "descongelar_metrica",
+        description = sprintf('Métrica "%s" descongelada (vuelve a estimado automático)', metric),
+        target_id   = metric,
+        metadata    = list(metric = metric),
+        client_id             = client_id,
+        viewer_home_client_id = NULL
+      ),
+      error = function(e) NULL
+    )
   }, error = function(e) NULL)
   invisible(TRUE)
 }

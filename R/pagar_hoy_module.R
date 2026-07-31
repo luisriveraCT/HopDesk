@@ -578,6 +578,12 @@ pagarHoyServer <- function(id, shared) {
                                     client_id = shared$effective_client_id()),
           error = function(e) NULL
         )
+        log_action(shared$current_user(), "pagar_hoy", "editar_saldo_apertura",
+                   sprintf("Saldo de apertura de %s (%s) actualizado a %s", emp, cur, fmt_money(new_val)),
+                   target_id = emp,
+                   metadata = list(empresa = emp, moneda = cur, valor = new_val),
+                   client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+                   viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
       }, ignoreInit = TRUE)
 
       # ── Legend for color codes ──────────────────────────────────────────────
@@ -1219,6 +1225,12 @@ pagarHoyServer <- function(id, shared) {
         }
 
         showNotification(paste0(nrow(rows), " pago(s) quitado(s)."), type = "message", duration = 2)
+        log_action(shared$current_user(), "pagar_hoy", "quitar_pagos",
+                   sprintf("%d pago(s) quitado(s) de %s", nrow(rows), emp),
+                   target_id = emp,
+                   metadata = list(empresa = emp, n = nrow(rows), ids = rows$id),
+                   client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+                   viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
       }, ignoreInit = TRUE)
 
       # ── Remove AR ──────────────────────────────────────────────────────────
@@ -1250,6 +1262,12 @@ pagarHoyServer <- function(id, shared) {
                rows |> dplyr::select(id), keys = "id")
         shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
         showNotification(paste0(nrow(rows), " cobro(s) quitado(s)."), type = "message", duration = 2)
+        log_action(shared$current_user(), "pagar_hoy", "quitar_cobros",
+                   sprintf("%d cobro(s) quitado(s) de %s", nrow(rows), emp),
+                   target_id = emp,
+                   metadata = list(empresa = emp, n = nrow(rows), ids = rows$id),
+                   client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+                   viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
       }, ignoreInit = TRUE)
 
       # ── Confirm AP ──────────────────────────────────────────────────────────
@@ -2220,9 +2238,15 @@ pagarHoyServer <- function(id, shared) {
       .link_counter(.link_counter() + 1L)
 
       showNotification(
-        paste0("\u2713 Vinculado: \"", parte, "\" \u2192 ", ali),
+        paste0("✓ Vinculado: \"", parte, "\" → ", ali),
         type = "message", duration = 3)
       removeModal()
+      log_action(tryCatch(shared$current_user(), error = function(e) "unknown"), "pagar_hoy", "vincular_proveedor",
+                 sprintf("Vinculado: \"%s\" -> %s", parte, ali),
+                 target_id = parte,
+                 metadata = list(parte = parte, alias = ali, empresa = emp),
+                 client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+                 viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
     }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
     # ── Unlink supplier observer ──────────────────────────────────────────────
@@ -2251,6 +2275,12 @@ pagarHoyServer <- function(id, shared) {
       showNotification(paste0("Vínculo eliminado para: ", parte),
                        type = "message", duration = 3)
       removeModal()
+      log_action(tryCatch(shared$current_user(), error = function(e) "unknown"), "pagar_hoy", "desvincular_proveedor",
+                 sprintf("Vínculo eliminado para: %s", parte),
+                 target_id = parte,
+                 metadata = list(parte = parte, empresa = emp),
+                 client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+                 viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
     }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
     # ── Cycle alias observer ──────────────────────────────────────────────────
@@ -2518,6 +2548,10 @@ pagarHoyServer <- function(id, shared) {
         shared$pagar_hoy_db(ph)
         removeModal()
         showNotification("Agenda vaciada.", type = "message", duration = 2)
+        log_action(tryCatch(shared$current_user(), error = function(e) "system"), "pagar_hoy", "vaciar_agenda",
+                   "Agenda de hoy vaciada (todos los pendientes eliminados)",
+                   client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+                   viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
       } else {
         removeModal()
         showNotification("No se pudo guardar. Verifica la conexión e intenta de nuevo.",
@@ -2627,6 +2661,11 @@ pagarHoyServer <- function(id, shared) {
       showNotification(
         paste0("Saldos cargados desde Bancos: ", n_updated, " cuenta(s) actualizada(s)."),
         type = "message", duration = 3)
+      log_action(tryCatch(shared$current_user(), error = function(e) "system"), "pagar_hoy", "cargar_saldos_bancos",
+                 sprintf("Saldos de apertura cargados desde Bancos: %d cuenta(s) actualizada(s)", n_updated),
+                 metadata = list(n_updated = n_updated),
+                 client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+                 viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
     }, ignoreInit = TRUE)
 
   }) # end moduleServer

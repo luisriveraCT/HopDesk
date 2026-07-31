@@ -2873,6 +2873,18 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       }, finally = {
         if (!is.null(html_path) && file.exists(html_path)) unlink(html_path)
       })
+
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "cashflow_export",
+        action      = "exportar_cashflow_pdf",
+        description = sprintf("Reporte de flujo de efectivo exportado (%s - %s, empresas: %s)",
+                              date_from, date_to, paste(initials, collapse = ", ")),
+        metadata    = list(date_from = as.character(date_from), date_to = as.character(date_to),
+                           empresas = initials, ic_mode = ic_val, currency_mode = cur_mode),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }
   )
 

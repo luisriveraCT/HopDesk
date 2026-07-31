@@ -192,18 +192,38 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     output$tbl_bancos_cat <- DT::renderDataTable({ .bancos_cat_datatable(client_id = shared$effective_client_id()) }, server = TRUE)
     showNotification(if (is.null(eid)) "Banco agregado." else "Banco actualizado.",
                      type = "message", duration = 2)
+    log_action(
+      user        = tryCatch(shared$current_user(), error = function(e) "system"),
+      module      = "settings_cuentas",
+      action      = if (is.null(eid)) "agregar_banco" else "editar_banco",
+      description = paste0(if (is.null(eid)) "Banco agregado: " else "Banco editado: ", nombre),
+      target_id   = new_row$id,
+      metadata    = list(nombre = nombre, clave = clave),
+      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    )
   }, ignoreInit = TRUE)
 
   # ── Delete banco ──────────────────────────────────────────────────────────────
   observeEvent(input$banco_delete, {
     eid <- editing_banco_id(); if (is.null(eid)) return()
     bancos  <- tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
+    deleted_nombre <- { m <- bancos$nombre[bancos$id == eid]; if (length(m)) m[1] else eid }
     updated <- bancos |> dplyr::filter(id != eid)
     save_ctas_bancos(updated, client_id = shared$effective_client_id())
     editing_banco_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
     output$tbl_bancos_cat <- DT::renderDataTable({ .bancos_cat_datatable(client_id = shared$effective_client_id()) }, server = TRUE)
     showNotification("Banco eliminado.", type = "message", duration = 2)
+    log_action(
+      user        = tryCatch(shared$current_user(), error = function(e) "system"),
+      module      = "settings_cuentas",
+      action      = "eliminar_banco",
+      description = paste0("Banco eliminado: ", deleted_nombre),
+      target_id   = eid,
+      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    )
   }, ignoreInit = TRUE)
 
   # ── + Cuenta ──────────────────────────────────────────────────────────────────
@@ -301,6 +321,17 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     showNotification(
       if (is.null(eid)) "Cuenta agregada." else "Cuenta actualizada.",
       type = "message", duration = 2)
+    log_action(
+      user        = tryCatch(shared$current_user(), error = function(e) "system"),
+      module      = "settings_cuentas",
+      action      = if (is.null(eid)) "agregar_cuenta" else "editar_cuenta",
+      description = paste0(if (is.null(eid)) "Cuenta agregada: " else "Cuenta editada: ",
+                           empresa_val, " — ", cuenta_val),
+      target_id   = new_row$id,
+      metadata    = list(empresa = empresa_val, moneda = moneda_val, cuenta = cuenta_val),
+      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    )
   }, ignoreInit = TRUE)
 
   # ── Delete cuenta ─────────────────────────────────────────────────────────────
@@ -309,6 +340,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     ctas <- tryCatch({
       if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas() else load_ctas_cuentas()
     }, error = function(e) .schema_ctas_cuentas())
+    deleted_row <- ctas[ctas$id == eid, ]
     updated <- ctas |> dplyr::mutate(
       activa = dplyr::if_else(id == eid, FALSE, activa))
     save_ctas_cuentas(updated, client_id = shared$effective_client_id())
@@ -320,6 +352,16 @@ settings_cuentas_observer <- function(input, output, session, shared) {
       .cuentas_datatable(shared, isolate(input$cta_empresa_filter %||% ""), client_id = shared$effective_client_id())
     }, server = TRUE)
     showNotification("Cuenta desactivada.", type = "message", duration = 2)
+    log_action(
+      user        = tryCatch(shared$current_user(), error = function(e) "system"),
+      module      = "settings_cuentas",
+      action      = "desactivar_cuenta",
+      description = paste0("Cuenta desactivada: ",
+                           if (nrow(deleted_row)) paste0(deleted_row$Empresa[1], " — ", deleted_row$cuenta[1]) else eid),
+      target_id   = eid,
+      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    )
   }, ignoreInit = TRUE)
 
   # ── Cancel ────────────────────────────────────────────────────────────────────

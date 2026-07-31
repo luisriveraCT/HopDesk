@@ -868,6 +868,15 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       payment_plan(list())
       showNotification(paste0(nrow(new_rows), " factura(s) enviada(s) a Agenda de Hoy."),
                        type = "message", duration = 3)
+      log_action(
+        user        = user_id,
+        module      = "treasury_map",
+        action      = "enviar_ruta_a_agenda",
+        description = paste0(nrow(new_rows), " factura(s) del plan de pago enviada(s) a Agenda de Hoy"),
+        metadata    = list(n = nrow(new_rows), documentos = new_rows$Documento),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, ignoreInit = TRUE)
 
     # ── Preset target from pagar_hoy button ───────────────────────────────────

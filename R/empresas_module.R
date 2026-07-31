@@ -403,6 +403,16 @@ empresasServer <- function(id, shared) {
       showNotification(
         paste0("Empresa '", initials, "' (", new_row$account_code, ") creada."),
         type = "message", duration = 3)
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "empresas",
+        action      = "crear_empresa",
+        description = paste0("Empresa creada: ", initials, " (", new_row$account_code, ") — ", razon_social),
+        target_id   = new_row$id,
+        metadata    = list(initials = initials, account_code = new_row$account_code, razon_social = razon_social),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     })
 
     # ── Edit panel ────────────────────────────────────────────────────────────
@@ -509,6 +519,19 @@ empresasServer <- function(id, shared) {
         else
           "Empresa actualizada.",
         type = "message", duration = 3)
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "empresas",
+        action      = "editar_empresa",
+        description = if (new_ini != old_ini)
+          paste0("Empresa editada: iniciales '", old_ini, "' \u2192 '", new_ini, "'")
+        else
+          paste0("Empresa editada: ", new_ini),
+        target_id   = all_e[full_idx, "id"],
+        metadata    = list(old_initials = old_ini, new_initials = new_ini),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     })
 
     # ── Delete (soft) ─────────────────────────────────────────────────────────
@@ -577,6 +600,16 @@ empresasServer <- function(id, shared) {
       selected_idx(NULL)
       showNotification(paste0("Empresa '", target_initials, "' desactivada."),
                        type = "message", duration = 4)
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "empresas",
+        action      = "desactivar_empresa",
+        description = paste0("Empresa desactivada: ", target_initials),
+        target_id   = if (length(row_idx) == 1) all_e[row_idx, "id"] else NA_character_,
+        metadata    = list(initials = target_initials),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     })
 
     # ── Stage 3: ERP connections ───────────────────────────────────────────────
@@ -1186,6 +1219,16 @@ empresasServer <- function(id, shared) {
         shared$group_config(cfg)
         showNotification("Configuración del grupo guardada correctamente.",
                          type = "message", duration = 4)
+        log_action(
+          user        = tryCatch(shared$current_user(), error = function(e) "system"),
+          module      = "empresas",
+          action      = "guardar_config_grupo",
+          description = paste0("Configuración del grupo actualizada: nombre='", name, "'",
+                               if (!is.null(logo_file)) ", logo actualizado" else ""),
+          metadata    = list(group_name = name, logo_updated = !is.null(logo_file)),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        )
       }, error = function(e) {
         showNotification(paste("Error al guardar:", conditionMessage(e)),
                          type = "error", duration = 6)

@@ -1026,6 +1026,17 @@ settings_policies_observer <- function(input, output, session, shared) {
         if (mode == "new") "Política creada." else "Política actualizada.",
         type = "message", duration = 3
       )
+      log_action(
+        user        = user,
+        module      = "settings_policies",
+        action      = if (mode == "new") "crear_politica" else "editar_politica",
+        description = paste0(if (mode == "new") "Política creada: " else "Política editada: ", nm,
+                             " (tipo=", type, ", roll=", roll, ")"),
+        target_id   = if (mode == "new") new_row$id else pid,
+        metadata    = list(name = nm, type = type, roll_direction = roll, params = params),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, error = function(e) {
       showNotification(paste("Error al guardar:", e$message), type = "error", duration = 5)
     })
@@ -1106,6 +1117,16 @@ settings_policies_observer <- function(input, output, session, shared) {
       )
       .close_assign()
       showNotification(msg, type = "message", duration = 3)
+      log_action(
+        user        = user,
+        module      = "settings_policies",
+        action      = "asignar_politica_socios",
+        description = paste0("Asignación de política ", pol_id, ": ", msg),
+        target_id   = pol_id,
+        metadata    = list(policy_id = pol_id, ledger = ledger, added = to_add, removed = to_remove),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, error = function(e) {
       showNotification(paste("Error al guardar asignaciones:", e$message),
                        type = "error", duration = 5)
@@ -1119,8 +1140,9 @@ settings_policies_observer <- function(input, output, session, shared) {
 
   # Delete confirm -------------------------------------------------------------
   observeEvent(input$pol_delete_confirm, {
-    del_id <- isolate(pol_editing())$id
-    db     <- .get_catalog()
+    del_id   <- isolate(pol_editing())$id
+    db       <- .get_catalog()
+    del_name <- { m <- db$name[db$id == del_id]; if (length(m)) m[1] else del_id }
     new_db <- if (!is.null(del_id)) db[db$id != del_id, , drop = FALSE] else db
     tryCatch({
       if (!is.null(del_id)) {
@@ -1144,6 +1166,15 @@ settings_policies_observer <- function(input, output, session, shared) {
       show_settings_modal(input, output, session, shared)
       output$settings_panel <- renderUI({ .policies_merged_panel_ui("reglas") })
       showNotification("Política eliminada.", type = "message", duration = 3)
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "settings_policies",
+        action      = "eliminar_politica",
+        description = paste0("Política eliminada: ", del_name),
+        target_id   = del_id,
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, error = function(e) {
       removeModal()
       show_settings_modal(input, output, session, shared)

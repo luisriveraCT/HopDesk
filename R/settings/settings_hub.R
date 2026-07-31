@@ -475,6 +475,16 @@ settings_observers <- function(input, output, session, shared) {
     else
       "\u2705 Configuraci\u00f3n intercompany guardada en S3."
     showNotification(msg, type = "message", duration = 4)
+    log_action(
+      user        = tryCatch(shared$current_user(), error = function(e) "system"),
+      module      = "settings_hub",
+      action      = "guardar_interco_v2",
+      description = "Configuraci\u00f3n intercompany (registry AR/AP por empresa) guardada",
+      metadata    = list(ar_prefix = registry$ar_prefix, ap_prefix = registry$ap_prefix,
+                         companies = names(registry$companies)),
+      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    )
   }, ignoreInit = TRUE)
 
   # ── IC Scanner (dev only) ─────────────────────────────────────────────────────
@@ -704,6 +714,15 @@ settings_observers <- function(input, output, session, shared) {
       sprintf("%d c\u00f3digo(s) IC guardados.", nrow(selected)),
       type = "message", duration = 4
     )
+    log_action(
+      user        = tryCatch(shared$current_user(), error = function(e) "system"),
+      module      = "settings_hub",
+      action      = "aplicar_scan_interco",
+      description = sprintf("%d c\u00f3digo(s) IC aplicados desde el esc\u00e1ner de SAP", nrow(selected)),
+      metadata    = list(n_codes = nrow(selected), companies = unique(selected$initials)),
+      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    )
   })
 
   # ── Business Partners ─────────────────────────────────────────────────────────
@@ -817,6 +836,15 @@ settings_observers <- function(input, output, session, shared) {
     showNotification(
       sprintf("%d c\u00f3digo(s) IC guardados desde Business Partners.", nrow(selected)),
       type = "message", duration = 4
+    )
+    log_action(
+      user        = tryCatch(shared$current_user(), error = function(e) "system"),
+      module      = "settings_hub",
+      action      = "aplicar_bp_interco",
+      description = sprintf("%d c\u00f3digo(s) IC aplicados desde Business Partners", nrow(selected)),
+      metadata    = list(n_codes = nrow(selected), companies = unique(selected$initials)),
+      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
     )
   })
 

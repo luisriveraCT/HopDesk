@@ -654,6 +654,18 @@ setup_abono_browse <- function(input, output, session,
                " a Agenda de hoy. Confirma para aplicar al saldo."),
         type = "message", duration = 4
       )
+      tryCatch(
+        log_action(
+          user        = tryCatch(current_user(), error = function(e) "system"),
+          module      = "staging_browse",
+          action      = "enviar_abonos_a_agenda",
+          description = paste0(n, if (n == 1L) " abono enviado" else " abonos enviados", " a Agenda de hoy"),
+          metadata    = list(n = n, ledger = ledger),
+          client_id             = tryCatch(client_id(), error = function(e) NULL),
+          viewer_home_client_id = NULL
+        ),
+        error = function(e) NULL
+      )
     }
 
     if (length(rejected)) {

@@ -3083,6 +3083,16 @@ tiersServer <- function(id, shared) {
                               message    = msg_txt)
         )
         showNotification("Solicitud enviada.", type = "message", duration = 3)
+        log_action(user        = me,
+                   module      = "tiers",
+                   action      = "hop_access_requested",
+                   description = sprintf("%s solicitó acceso a: %s",
+                                         me_name, paste(clients_sel, collapse = ", ")),
+                   target_id   = new_req$id,
+                   metadata    = list(clients = clients_sel, message = msg_txt),
+                   client_id             = "hd-admin",
+                   viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
+        activity_refresh(activity_refresh() + 1L)
         hop_refresh(hop_refresh() + 1L)
       }, error = function(e)
         showNotification(paste("Error:", e$message), type = "error", duration = 5))
@@ -3152,6 +3162,18 @@ tiersServer <- function(id, shared) {
                   row$requester_name %||% row$requester, cid, .dur_label(dur_secs)),
           type = "message", duration = 3
         )
+        log_action(user        = me,
+                   module      = "tiers",
+                   action      = "hop_access_approved",
+                   description = sprintf("%s aprobó acceso de %s a %s (%s)",
+                                         me, row$requester_name %||% row$requester, cid,
+                                         .dur_label(dur_secs)),
+                   target_id   = req_id,
+                   metadata    = list(client_id = cid, grantee = row$requester,
+                                      duration_secs = dur_secs, grant_id = new_g$id),
+                   client_id             = "hd-admin",
+                   viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
+        activity_refresh(activity_refresh() + 1L)
         hop_refresh(hop_refresh() + 1L)
       }, error = function(e)
         showNotification(paste("Error al aprobar:", e$message), type = "error", duration = 5))
@@ -3196,6 +3218,16 @@ tiersServer <- function(id, shared) {
         save_hop_requests(reqs)
         showNotification(sprintf("Denegado: %s → %s.", row$requester_name %||% row$requester, cid),
                          type = "warning", duration = 3)
+        log_action(user        = shared$current_user() %||% "",
+                   module      = "tiers",
+                   action      = "hop_access_denied",
+                   description = sprintf("%s denegó acceso de %s a %s",
+                                         shared$current_user() %||% "", row$requester_name %||% row$requester, cid),
+                   target_id   = req_id,
+                   metadata    = list(client_id = cid, grantee = row$requester),
+                   client_id             = "hd-admin",
+                   viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
+        activity_refresh(activity_refresh() + 1L)
         hop_refresh(hop_refresh() + 1L)
       }, error = function(e)
         showNotification(paste("Error al denegar:", e$message), type = "error", duration = 5))
@@ -3210,11 +3242,23 @@ tiersServer <- function(id, shared) {
         grants <- load_hop_grants()
         idx    <- which(grants$id == grant_id)
         req(length(idx) > 0)
+        grantee_v  <- grants$grantee[idx[1]]
+        cid_v      <- grants$client_id[idx[1]]
         grants$revoked[idx[1]] <- TRUE
         save_hop_grants(grants)
         bump_sync_version("hop_grants_db")
         shared$hop_grants_db(grants)
         showNotification("Acceso revocado.", type = "warning", duration = 3)
+        log_action(user        = shared$current_user() %||% "",
+                   module      = "tiers",
+                   action      = "hop_access_revoked",
+                   description = sprintf("%s revocó acceso de %s a %s",
+                                         shared$current_user() %||% "", grantee_v, cid_v),
+                   target_id   = grant_id,
+                   metadata    = list(client_id = cid_v, grantee = grantee_v),
+                   client_id             = "hd-admin",
+                   viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
+        activity_refresh(activity_refresh() + 1L)
         hop_refresh(hop_refresh() + 1L)
       }, error = function(e)
         showNotification(paste("Error al revocar:", e$message), type = "error", duration = 5))
@@ -3390,6 +3434,17 @@ tiersServer <- function(id, shared) {
           sprintf("Acceso concedido a %s (%d cliente(s)).", grantee, length(to_grant)),
           type = "message", duration = 4
         )
+        log_action(user        = me,
+                   module      = "tiers",
+                   action      = "hop_access_direct_grant",
+                   description = sprintf("%s concedió acceso directo a %s en: %s",
+                                         me, grantee, labels),
+                   target_id   = grantee,
+                   metadata    = list(clients = vapply(to_grant, `[[`, character(1), "client_id"),
+                                      durations_secs = vapply(to_grant, `[[`, numeric(1), "dur_secs")),
+                   client_id             = "hd-admin",
+                   viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
+        activity_refresh(activity_refresh() + 1L)
         dg_selected(list())
         hop_refresh(hop_refresh() + 1L)
       }, error = function(e)

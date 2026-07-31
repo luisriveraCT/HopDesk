@@ -922,9 +922,19 @@ ledgerModuleServer <- function(id, config, shared) {
       lbl <- if (ledger == "AR") "Agenda del d\u00eda (Cobros)" else "Agenda del d\u00eda (Pagos)"
       emps <- paste(unique(new_rows[["Empresa"]]), collapse = ", ")
       showNotification(
-        paste0("\u2713 ", nrow(new_rows), " factura(s) enviadas a ", lbl,
-               " \u2014 ", emps, "."),
+        paste0("✓ ", nrow(new_rows), " factura(s) enviadas a ", lbl,
+               " — ", emps, "."),
         type = "message", duration = 3)
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = paste0("ledger_", ledger),
+        action      = "enviar_a_agenda_dia",
+        description = paste0(nrow(new_rows), " factura(s) enviada(s) a ", lbl, " -- ", emps),
+        target_id   = paste(new_rows[["Documento"]][seq_len(min(5, nrow(new_rows)))], collapse = ", "),
+        metadata    = list(n = nrow(new_rows), source = "stage_all"),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, ignoreInit = TRUE)
 
     # ── Stage selection (audit or summary mode) ───────────────────────────────
@@ -999,9 +1009,19 @@ ledgerModuleServer <- function(id, config, shared) {
       lbl <- if (ledger == "AR") "Agenda del d\u00eda (Cobros)" else "Agenda del d\u00eda (Pagos)"
       emps <- paste(unique(new_rows[["Empresa"]]), collapse = ", ")
       showNotification(
-        paste0("\u2713 ", nrow(new_rows), " factura(s) enviadas a ", lbl,
-               " \u2014 ", emps, "."),
+        paste0("✓ ", nrow(new_rows), " factura(s) enviadas a ", lbl,
+               " — ", emps, "."),
         type = "message", duration = 3)
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = paste0("ledger_", ledger),
+        action      = "enviar_a_agenda_dia",
+        description = paste0(nrow(new_rows), " factura(s) enviada(s) a ", lbl, " -- ", emps),
+        target_id   = paste(new_rows[["Documento"]][seq_len(min(5, nrow(new_rows)))], collapse = ", "),
+        metadata    = list(n = nrow(new_rows), source = "stage_sel"),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
       session$sendCustomMessage("calCartClearSel",
         list(grpInputId = ns("cart_rows_sel"), invInputId = ns("cart_inv_sel")))
     }, ignoreInit = TRUE)
@@ -1130,7 +1150,17 @@ ledgerModuleServer <- function(id, config, shared) {
           upd_keys <- cbind(inv_keys, ledger = ledger, stringsAsFactors = FALSE)
           updated <- unstage_pagar_hoy(ph_now, upd_keys, keys = c("ledger","Empresa","Moneda","Documento","Importe"))
           shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
-          showNotification("Quitado de la Agenda del d\u00eda.", type = "message", duration = 2)
+          showNotification("Quitado de la Agenda del día.", type = "message", duration = 2)
+          log_action(
+            user        = tryCatch(shared$current_user(), error = function(e) "system"),
+            module      = paste0("ledger_", ledger),
+            action      = "quitar_de_agenda_dia",
+            description = paste0(nrow(inv_keys), " factura(s) de ", row_p, " quitada(s) de la Agenda del día"),
+            target_id   = row_p,
+            metadata    = list(n = nrow(inv_keys), source = "cart_toggle", empresa = row_e),
+            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+          )
         } else {
           lbl_tp <- if (ledger == "AR") "cobro" else "pago"
           total_imp <- sum(detail[mask, "Importe"], na.rm = TRUE)
@@ -1160,12 +1190,22 @@ ledgerModuleServer <- function(id, config, shared) {
           updated <- upsert_pagar_hoy(ph_now %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
                                     keys = c("ledger","Empresa","Moneda","Documento","Importe"))
           shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
-          lbl_agenda <- if (ledger == "AR") "Agenda del d\u00eda (Cobros)" else "Agenda del d\u00eda (Pagos)"
+          lbl_agenda <- if (ledger == "AR") "Agenda del día (Cobros)" else "Agenda del día (Pagos)"
           showNotification(
-            paste0("\u2713 ", nrow(inv_keys), " factura(s) de ", row_p,
+            paste0("✓ ", nrow(inv_keys), " factura(s) de ", row_p,
                    " enviadas a ", lbl_agenda,
-                   " \u2014 ", cur_lbl, " ", fmt_money(total_imp), "."),
+                   " — ", cur_lbl, " ", fmt_money(total_imp), "."),
             type = "message", duration = 3)
+          log_action(
+            user        = tryCatch(shared$current_user(), error = function(e) "system"),
+            module      = paste0("ledger_", ledger),
+            action      = "enviar_a_agenda_dia",
+            description = paste0(nrow(inv_keys), " factura(s) de ", row_p, " enviada(s) a ", lbl_agenda),
+            target_id   = row_p,
+            metadata    = list(n = nrow(inv_keys), source = "cart_toggle", empresa = row_e),
+            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+          )
         }
       }, ignoreInit = TRUE)
     })
@@ -1232,6 +1272,16 @@ ledgerModuleServer <- function(id, config, shared) {
         updated  <- unstage_pagar_hoy(ph_now, upd_keys, keys = c("ledger","Empresa","Moneda","Documento","Importe"))
         shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
         showNotification("Quitado de la Agenda.", type="message", duration=2)
+        log_action(
+          user        = tryCatch(shared$current_user(), error = function(e) "system"),
+          module      = paste0("ledger_", ledger),
+          action      = "quitar_de_agenda_dia",
+          description = paste0("Factura ", inv_key[["Documento"]][1], " quitada de la Agenda"),
+          target_id   = inv_key[["Documento"]][1],
+          metadata    = list(source = "cart_inv_click", empresa = row_e, parte = row_p),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        )
       } else {
         one <- inv_rows[j, , drop=FALSE]
         # See stage_all's identical comment above (source propagation,
@@ -1265,6 +1315,16 @@ ledgerModuleServer <- function(id, config, shared) {
         showNotification(
           paste0("Factura ", one[["Documento"]], " enviada a la Agenda."),
           type="message", duration=2)
+        log_action(
+          user        = tryCatch(shared$current_user(), error = function(e) "system"),
+          module      = paste0("ledger_", ledger),
+          action      = "enviar_a_agenda_dia",
+          description = paste0("Factura ", one[["Documento"]], " enviada a la Agenda"),
+          target_id   = one[["Documento"]],
+          metadata    = list(source = "cart_inv_click", empresa = row_e, parte = row_p),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        )
       }
     }, ignoreInit=TRUE, ignoreNULL=TRUE)
 
@@ -1620,6 +1680,16 @@ ledgerModuleServer <- function(id, config, shared) {
         showNotification(
           paste0(n_sap, " factura(s) SAP tachada(s) y enviada(s) a la papelera."),
           type = "message", duration = 3
+        )
+        log_action(
+          user        = tryCatch(shared$current_user(), error = function(e) "system"),
+          module      = paste0("ledger_", ledger),
+          action      = "eliminar_facturas_sap",
+          description = paste0(n_sap, " factura(s) SAP enviada(s) a papelera"),
+          target_id   = paste(keys[["Documento"]][sap_mask][seq_len(min(5, n_sap))], collapse = ", "),
+          metadata    = list(n = n_sap),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
         )
       }
 
@@ -2179,6 +2249,20 @@ ledgerModuleServer <- function(id, config, shared) {
         removeModal()
       }
       showNotification("Cambios guardados.", type = "message", duration = 2)
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = paste0("ledger_", ledger),
+        action      = "editar_factura_sap",
+        description = paste0("Factura ", row[["Documento"]], " editada (fecha=",
+                             format(new_date, "%d/%m/%Y"), ")"),
+        target_id   = row[["Documento"]],
+        metadata    = list(empresa = row[["Empresa"]], new_date = as.character(new_date),
+                           parte_override = ov_row$Parte_override, codigo_override = ov_row$Codigo_override,
+                           factura_override = ov_row$Factura_override, notas_override = ov_row$Notas_override,
+                           moneda_override = ov_row$Moneda_override, importe_override = ov_row$Importe_override),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, ignoreInit = TRUE)
 
     # ── Supplier autocomplete for SAP edit modal (AP only) ────────────────────

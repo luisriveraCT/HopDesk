@@ -259,6 +259,16 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
     showNotification(
       paste0("Sincronización activada con la agenda de «", u, "»."),
       type = "message", duration = 4)
+    log_action(
+      user        = actor,
+      module      = "settings_sincro",
+      action      = "activar_sincronizacion_agenda",
+      description = paste0("Sincronización de Agenda de hoy activada, usando como base la agenda de '", u, "'"),
+      target_id   = u,
+      metadata    = list(source_user = u),
+      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    )
   }, ignoreInit = TRUE)
 
   # ── Confirm DEACTIVATE ───────────────────────────────────────────────────────
@@ -307,6 +317,14 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
     showNotification(
       "Sincronización desactivada. Cada cuenta mantiene su propia Agenda de hoy.",
       type = "message", duration = 4)
+    log_action(
+      user        = actor,
+      module      = "settings_sincro",
+      action      = "desactivar_sincronizacion_agenda",
+      description = "Sincronización de Agenda de hoy desactivada; cada cuenta vuelve a su propia agenda",
+      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    )
   }, ignoreInit = TRUE)
 }
 

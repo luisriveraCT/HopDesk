@@ -163,11 +163,23 @@ settings_catalogo_edit_observer <- function(input, output, session, shared) {
     showNotification(
       if (is.null(eid)) "Proveedor agregado." else "Proveedor actualizado.",
       type = "message", duration = 2)
+    log_action(
+      user        = tryCatch(shared$current_user(), error = function(e) "system"),
+      module      = "settings_proveedores",
+      action      = if (is.null(eid)) "agregar_proveedor" else "editar_proveedor",
+      description = paste0(if (is.null(eid)) "Proveedor agregado: " else "Proveedor editado: ",
+                           new_row$nombre, " (", new_row$alias, ")"),
+      target_id   = new_row$id,
+      metadata    = list(empresa = new_row$Empresa, alias = alias_val, medio_pago = medio_val),
+      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    )
   }, ignoreInit = TRUE)
 
   observeEvent(input$cat_delete_row, {
     eid <- editing_id(); if (is.null(eid)) return()
     provs   <- tryCatch(load_proveedores(), error = function(e) .schema_proveedores_local())
+    deleted_row <- provs[provs$id == eid, ]
     updated <- provs |> dplyr::mutate(activo = dplyr::if_else(id == eid, FALSE, activo))
     save_proveedores(updated, client_id = shared$effective_client_id())
     bump_sync_version("proveedores_db")
@@ -178,6 +190,16 @@ settings_catalogo_edit_observer <- function(input, output, session, shared) {
       .catalogo_datatable(shared, input$cat_empresa_filter %||% "")
     }, server = TRUE)
     showNotification("Proveedor eliminado.", type = "message", duration = 2)
+    log_action(
+      user        = tryCatch(shared$current_user(), error = function(e) "system"),
+      module      = "settings_proveedores",
+      action      = "eliminar_proveedor",
+      description = paste0("Proveedor eliminado: ",
+                           if (nrow(deleted_row)) paste0(deleted_row$nombre[1], " (", deleted_row$alias[1], ")") else eid),
+      target_id   = eid,
+      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    )
   }, ignoreInit = TRUE)
 }
 

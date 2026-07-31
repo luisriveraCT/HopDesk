@@ -222,7 +222,33 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     "save_manual", "save_papelera", "save_pagar_hoy", "save_grupos",
     "load_interco_v2", ".save_provision_row", "fetch_all_companies",
     ".save_moves_deferred", ".sync_staged", ".pasivos_perform_conversion",
-    "rename_empresa_initials"
+    "rename_empresa_initials",
+    # generate_cashflow_html_doc's "mutation" is htmltools::save_html() writing
+    # a throwaway temp file for Chrome to print, not app data -- a false
+    # positive from the scanner's textual save_*( match. The real export
+    # action is logged at its one call site (cashflow_export_module.R's
+    # downloadHandler, action="exportar_cashflow_pdf").
+    "generate_cashflow_html_doc",
+    # Generic forecasting persistence writers (forecasting_persistence.R) --
+    # each caller already logs with its own user-facing context:
+    #   save_forecasting_metrics/save_forecasting_subscriptions are called
+    #   from forecasting_seed_if_empty (action="seed_catalog", user="system")
+    #   and forecasting_module.R's sub_save/global_sub_save handlers
+    #   (action="editar_suscripcion"/"crear_suscripcion_global").
+    #   save_forecasting_series_observations is called from
+    #   forecasting_set_estimate (action="set_estimate"/"congelar_metrica")
+    #   and fcs_fetch_and_store (logged at ITS OWN call sites below).
+    #   save_forecasting_manual_curves has no live call site yet (manual-curve
+    #   editor UI is "Etapa 6.2" -- not built); log at that call site when it
+    #   ships, not inside this generic writer.
+    "save_forecasting_series_observations", "save_forecasting_metrics",
+    "save_forecasting_subscriptions", "save_forecasting_manual_curves",
+    # fcs_fetch_and_store is called once per metric from forecasting_module.R's
+    # btn_refresh_all loop (up to ~13x per click) -- logging inside it would
+    # emit one row per metric instead of one summary row per click. Both its
+    # UI call sites (btn_refresh, btn_refresh_all) already log a single
+    # summary entry (action="refrescar_metrica"/"refrescar_todas_metricas").
+    "fcs_fetch_and_store"
   )
   gaps_actionable <- gaps[!gaps$label %in% KNOWN_FINE_HELPERS, ]
 
@@ -243,13 +269,21 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
 
   ok("every entry in KNOWN_FINE_HELPERS is still actually found by the scanner (guards against this exclusion list going stale -- e.g. if one of these is deleted or renamed, this catches it rather than silently hiding a typo forever)",
      all(KNOWN_FINE_HELPERS %in% gaps$label))
+
+  # The full 55-item punch list this scanner originally produced (Tiers
+  # hop_grants, every Settings sub-tab, Bancos reasignar/import, Ledger
+  # stage/cart/delete/sap-edit, Pagar Hoy balances/remove/link/clear-all/
+  # load-saldos, Forecasting, notes/staging/treasury-map/cashflow-export) has
+  # now all been closed -- either with a real log_action() call at the
+  # right choke point, or (for genuine false positives / generic multi-caller
+  # helpers) an explicit, justified KNOWN_FINE_HELPERS entry. This is now a
+  # real regression gate, not just a visibility report: a future mutating
+  # handler that ships without logging must fail the suite, the same way any
+  # other correctness regression would.
+  ok("zero actionable (unlogged, non-helper) mutating handlers remain -- every gap from the original completeness sweep is either logged or a justified KNOWN_FINE_HELPERS exclusion",
+     nrow(gaps_actionable) == 0L)
 }
 
-# NOTE: this test intentionally does NOT fail when gaps_actionable > 0.
-# Fixing all of them is real, ongoing work (see the punch list above),
-# not a one-shot change -- the point of this test is to keep the list
-# current and visible every time the suite runs, per "no silent caps":
-# a shrinking-but-nonzero number here is progress, not a red build.
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0) stop("Tests FAILED.")
 invisible(NULL)

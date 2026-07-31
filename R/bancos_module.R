@@ -2857,6 +2857,16 @@ bancosServer <- function(id, shared) {
                       if (n_deduped == 1) "" else "s", " eliminado",
                       if (n_deduped == 1) "" else "s", ".)")
       showNotification(msg, type = "message", duration = 5)
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "bancos",
+        action      = "reasignar_sesion",
+        description = msg,
+        metadata    = list(sesion_key = sesion_key, new_cuenta_id = new_cid,
+                           n_kept = n_kept, n_deduped = n_deduped),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, ignoreInit = TRUE)
 
     # ── Eliminar sesión de importación ────────────────────────────────────────
@@ -3276,6 +3286,15 @@ bancosServer <- function(id, shared) {
 
       showNotification(msg, type = "message", duration = 4)
       parsed_preview(NULL)  # clear preview
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "bancos",
+        action      = "importar_movimientos",
+        description = msg,
+        metadata    = list(cuenta_id = cid_final, n_importados = nrow(nuevos), n_auto_conciliado = n_auto),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, ignoreInit = TRUE)
 
     # ── Tab 3: Historial ─────────────────────────────────────────────────────

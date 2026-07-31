@@ -133,23 +133,28 @@
 
 # Called during app startup if stores are empty; idempotent.
 forecasting_seed_if_empty <- function() {
+  seeded <- character()
+
   metrics_db <- load_forecasting_metrics()
   if (!nrow(metrics_db)) {
     message("[forecasting] seeding metrics catalog")
     save_forecasting_metrics(.seed_forecasting_metrics())
     metrics_db <- load_forecasting_metrics()
+    seeded <- c(seeded, "metrics")
   }
 
   sources_db <- load_forecasting_sources()
   if (!nrow(sources_db)) {
     message("[forecasting] seeding sources catalog")
     save_forecasting_sources(.seed_forecasting_sources())
+    seeded <- c(seeded, "sources")
   }
 
   methods_db <- load_forecasting_methods()
   if (!nrow(methods_db)) {
     message("[forecasting] seeding methods catalog")
     save_forecasting_methods(.seed_forecasting_methods())
+    seeded <- c(seeded, "methods")
   }
 
   subs_db <- load_forecasting_subscriptions()
@@ -157,6 +162,22 @@ forecasting_seed_if_empty <- function() {
     message("[forecasting] seeding global-default subscriptions")
     subs <- .seed_forecasting_global_subscriptions(metrics_db)
     save_forecasting_subscriptions(subs)
+    seeded <- c(seeded, "subscriptions")
+  }
+
+  if (length(seeded)) {
+    tryCatch(
+      log_action(
+        user        = "system",
+        module      = "forecasting",
+        action      = "seed_catalog",
+        description = sprintf("Catálogos de forecasting inicializados: %s", paste(seeded, collapse = ", ")),
+        metadata    = list(seeded = seeded),
+        client_id             = NULL,
+        viewer_home_client_id = NULL
+      ),
+      error = function(e) NULL
+    )
   }
 
   invisible(NULL)

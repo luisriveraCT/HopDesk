@@ -230,6 +230,17 @@ settings_companies_observer <- function(input, output, session, shared) {
         sprintf("Fechas de política revertidas para %d socio%s.",
                 length(sel), if (length(sel) == 1L) "" else "s"),
         type = "message", duration = 4)
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "settings_companies",
+        action      = "revertir_politica_socio",
+        description = sprintf("Fechas de política revertidas para %d socio%s: %s",
+                              length(sel), if (length(sel) == 1L) "" else "s",
+                              paste(sel, collapse = ", ")),
+        metadata    = list(partes = sel),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, error = function(e) {
       showNotification(paste("Error al revertir:", conditionMessage(e)),
                        type = "error", duration = 5)
@@ -612,6 +623,17 @@ settings_companies_observer <- function(input, output, session, shared) {
         sprintf('Políticas de "%s" guardadas.', parte),
         type = "message", duration = 3
       )
+      log_action(
+        user        = user,
+        module      = "settings_companies",
+        action      = "guardar_politicas_socio",
+        description = sprintf('Políticas de "%s" guardadas (%d política(s), ledger=%s, interco=%s)',
+                              parte, length(stack), ledger, is_interco),
+        target_id   = parte,
+        metadata    = list(parte = parte, policy_ids = stack, ledger = ledger, is_interco = is_interco),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, error = function(e) {
       showNotification(paste("Error al guardar:", e$message), type = "error", duration = 5)
     })
@@ -901,6 +923,16 @@ settings_companies_observer <- function(input, output, session, shared) {
         msg <- paste0(msg, sprintf(" Sin documentos: %s", display))
       }
       showNotification(msg, type = "message", duration = 6)
+      log_action(
+        user        = user,
+        module      = "settings_companies",
+        action      = "aplicar_politicas",
+        description = msg,
+        metadata    = list(scope = scope, n_moves = nrow(new_moves),
+                           partes = unique(new_moves$Parte)),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, error = function(e) {
       showNotification(paste("Error al guardar:", e$message), type = "error", duration = 5)
     })
@@ -972,6 +1004,7 @@ settings_companies_observer <- function(input, output, session, shared) {
       if (!nrow(truly_new)) return()
       moves <- dplyr::bind_rows(existing_moves, truly_new)
     } else {
+      truly_new <- new_moves
       moves <- new_moves
     }
 
@@ -980,6 +1013,16 @@ settings_companies_observer <- function(input, output, session, shared) {
       bump_sync_version("policy_moves_db")
       shared$policy_moves_db(moves)
       policies_dirty(FALSE)
+      log_action(
+        user        = "system",
+        module      = "settings_companies",
+        action      = "auto_aplicar_politicas",
+        description = sprintf("Auto-aplicación de políticas tras refresco SAP: %d documento(s) nuevo(s) calculados (%d socio(s))",
+                              nrow(truly_new), length(unique(truly_new$Parte))),
+        metadata    = list(n_moves = nrow(truly_new), partes = unique(truly_new$Parte)),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, error = function(e) NULL)
   }, ignoreInit = TRUE)
 
@@ -1039,6 +1082,7 @@ settings_companies_observer <- function(input, output, session, shared) {
       if (!nrow(truly_new)) return()
       moves <- dplyr::bind_rows(existing_moves, truly_new)
     } else {
+      truly_new <- new_moves
       moves <- new_moves
     }
 
@@ -1047,6 +1091,16 @@ settings_companies_observer <- function(input, output, session, shared) {
       bump_sync_version("policy_moves_db")
       shared$policy_moves_db(moves)
       policies_dirty(FALSE)
+      log_action(
+        user        = "system",
+        module      = "settings_companies",
+        action      = "auto_aplicar_politicas",
+        description = sprintf("Auto-aplicación de políticas (retry al cargar socios): %d documento(s) nuevo(s) calculados (%d socio(s))",
+                              nrow(truly_new), length(unique(truly_new$Parte))),
+        metadata    = list(n_moves = nrow(truly_new), partes = unique(truly_new$Parte)),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, error = function(e) NULL)
   }, ignoreInit = TRUE)
 }

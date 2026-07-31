@@ -266,6 +266,16 @@ forecastingServer <- function(id, shared) {
       if (!is.null(obs_new) && !is.null(shared$forecasting_series_observations_db)) {
         tryCatch(shared$forecasting_series_observations_db(obs_new), error = function(e) NULL)
       }
+      log_action(
+        user        = user,
+        module      = "forecasting",
+        action      = "refrescar_metrica",
+        description = sprintf('Serie "%s" actualizada: %d observación(es) nueva(s)', metric_id, n_added),
+        target_id   = metric_id,
+        metadata    = list(metric_id = metric_id, n_added = n_added, days = days),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, ignoreInit = TRUE)
 
     # ── Refresh all button ────────────────────────────────────────────────────
@@ -294,6 +304,17 @@ forecastingServer <- function(id, shared) {
         type = "message", duration = 4
       )
       fcs_flush_caches()
+      log_action(
+        user        = user,
+        module      = "forecasting",
+        action      = "refrescar_todas_metricas",
+        description = sprintf("Actualización masiva de forecasting: %d observación(es) nueva(s) en %d métrica(s)",
+                              total, nrow(active_metrics)),
+        metadata    = list(n_added = total, n_metrics = nrow(active_metrics),
+                           metric_ids = active_metrics$metric_id),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, ignoreInit = TRUE)
 
     # ── Methods table ─────────────────────────────────────────────────────────
@@ -383,12 +404,25 @@ forecastingServer <- function(id, shared) {
       subs <- load_forecasting_subscriptions(client_id = shared$effective_client_id())
       idx  <- which(subs$subscription_id == sub_id)
       if (!length(idx)) { shiny::removeModal(); return() }
+      old_meth <- subs$method_id[idx[1]]
       subs$method_id[idx[1]]  <- new_meth
       subs$updated_at[idx[1]] <- Sys.time()
       save_forecasting_subscriptions(subs, client_id = shared$effective_client_id())
       tryCatch(shared$forecasting_subscriptions_db(subs), error = function(e) NULL)
       shiny::removeModal()
       shiny::showNotification("Suscripción actualizada.", type = "message", duration = 3)
+      log_action(
+        user        = user,
+        module      = "forecasting",
+        action      = "editar_suscripcion",
+        description = sprintf('Suscripción de "%s" actualizada: método %s -> %s',
+                              subs$metric_id[idx[1]], old_meth, new_meth),
+        target_id   = sub_id,
+        metadata    = list(subscription_id = sub_id, metric_id = subs$metric_id[idx[1]],
+                           old_method = old_meth, new_method = new_meth),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, ignoreInit = TRUE)
 
     # ── Add global subscription ───────────────────────────────────────────────
@@ -445,6 +479,16 @@ forecastingServer <- function(id, shared) {
       tryCatch(shared$forecasting_subscriptions_db(updated), error = function(e) NULL)
       shiny::removeModal()
       shiny::showNotification("Suscripción global creada.", type = "message", duration = 3)
+      log_action(
+        user        = user,
+        module      = "forecasting",
+        action      = "crear_suscripcion_global",
+        description = sprintf('Suscripción global creada para "%s" (método: %s)', metric_id, method_id),
+        target_id   = new_sub$subscription_id,
+        metadata    = list(subscription_id = new_sub$subscription_id, metric_id = metric_id, method_id = method_id),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
     }, ignoreInit = TRUE)
 
     # ── Fetch log table ───────────────────────────────────────────────────────

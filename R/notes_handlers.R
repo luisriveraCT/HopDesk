@@ -214,6 +214,7 @@ notes_handlers <- function(input, output, session, shared,
 
   observeEvent(input$note_delete_confirm, {
     nid <- active_note_id(); req(nid)
+    deleted_row <- notes_df()[notes_df()$id == nid, , drop = FALSE]
     df <- dplyr::filter(notes_df(), .data$id != !!nid)
     notes_df(df)
     save_notes(df, client_id = shared$effective_client_id())
@@ -222,6 +223,16 @@ notes_handlers <- function(input, output, session, shared,
     active_note_id(NULL)
     active_note_lgr(NULL)
     showNotification("Nota eliminada.", type = "message", duration = 2)
+    log_action(
+      user        = tryCatch(current_user(), error = function(e) "system"),
+      module      = "notes",
+      action      = "eliminar_nota",
+      description = paste0("Nota eliminada: ", if (nrow(deleted_row)) deleted_row$title[1] else nid),
+      target_id   = nid,
+      metadata    = list(ledger = if (nrow(deleted_row)) deleted_row$ledger[1] else NA_character_),
+      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    )
   }, ignoreInit = TRUE)
 
   observeEvent(input$note_delete_cancel, {
