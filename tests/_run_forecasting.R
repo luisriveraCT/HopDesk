@@ -31,14 +31,19 @@ for (mod in .modules) {
   )
   exit_ok <- is.null(attr(out, "status")) || attr(out, "status") == 0L
 
-  pass_line <- grep("^PASS:", out, value = TRUE)
-  fail_line <- grep("^FAIL:", out, value = TRUE)
-  pass_n <- if (length(pass_line)) {
-    as.integer(regmatches(pass_line[1], regexpr("\\d+", pass_line[1])))
-  } else 0L
-  fail_n <- if (length(fail_line)) {
-    as.integer(regmatches(fail_line[1], regexpr("\\d+", fail_line[1])))
-  } else if (!exit_ok) 1L else 0L
+  # Each module ends with a single "PASS: %d   FAIL: %d" summary line — pull
+  # both counts from it directly. (Previously this looked for a separate line
+  # starting with "FAIL:", which never exists, so fail_n silently fell back to
+  # a hardcoded 1 per broken module regardless of how many checks failed.)
+  summary_line <- grep("^PASS:.*FAIL:", out, value = TRUE)
+  if (length(summary_line)) {
+    nums   <- regmatches(summary_line[1], gregexpr("\\d+", summary_line[1]))[[1]]
+    pass_n <- as.integer(nums[1])
+    fail_n <- as.integer(nums[2])
+  } else {
+    pass_n <- 0L
+    fail_n <- if (!exit_ok) 1L else 0L
+  }
 
   .total_pass <- .total_pass + pass_n
   .total_fail <- .total_fail + fail_n
