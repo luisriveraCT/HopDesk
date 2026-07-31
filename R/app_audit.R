@@ -89,19 +89,24 @@ read_audit_log <- function(client_id = NULL, since = NULL, until = NULL) {
     vapply(objs, function(o) o[["Key"]], character(1))
   }, error = function(e) character(0))
 
-  if (!length(all_keys)) return(.APP_AUDIT_SCHEMA())
+  chunks <- if (length(all_keys)) Filter(Negate(is.null), lapply(all_keys, .audit_read_chunk)) else list()
 
-  chunks <- Filter(Negate(is.null), lapply(all_keys, .audit_read_chunk))
-  if (!length(chunks)) return(.APP_AUDIT_SCHEMA())
-
-  result <- tryCatch(
+  result <- if (length(chunks)) tryCatch(
     dplyr::bind_rows(lapply(chunks, function(ch) {
       for (col in names(.APP_AUDIT_SCHEMA()))
         if (!col %in% names(ch)) ch[[col]] <- NA
       ch[, names(.APP_AUDIT_SCHEMA()), drop = FALSE]
     })),
     error = function(e) .APP_AUDIT_SCHEMA()
-  )
+  ) else .APP_AUDIT_SCHEMA()
+
+  # Merge in anything queued but not yet flushed to S3 (see .audit_queue further
+  # down) — otherwise an action taken moments ago could briefly appear missing
+  # from Actividad/Bitácora while its entry sits in the buffer.
+  pending <- tryCatch(.audit_pending[[cid]], error = function(e) NULL)
+  if (!is.null(pending) && nrow(pending)) result <- dplyr::bind_rows(result, pending)
+
+  if (!nrow(result)) return(.APP_AUDIT_SCHEMA())
 
   if (!is.null(since)) {
     since_ts <- tryCatch(as.POSIXct(since), error = function(e) NULL)
@@ -157,8 +162,83 @@ save_app_audit <- function(log_df, client_id = NULL) {
   .audit_write_chunk(log_df, .audit_current_key(cid))
 }
 
+# ── Deferred write buffer ─────────────────────────────────────────────────────
+# log_action() must never block its caller on an S3 round-trip — with 60+ call
+# sites across the app (Stage 6 logging-completeness sweep), a synchronous
+# read-rotate-reread-write on every single action was the dominant source of
+# multi-second latency on routine actions. Entries are held in memory per
+# client_id and flushed via one batched read-modify-write on a short delay
+# (later::later(), same defer-the-write pattern already used for save_moves()
+# in ledger_module.R) — a burst of actions in the same couple of seconds costs
+# one S3 round-trip total, not one per action.
+#
+# Durability trade, made deliberately: if the R process crashes inside the
+# ~2s window before a flush fires, whatever hasn't flushed yet is lost. This
+# is not meaningfully worse than the previous behavior, where ANY transient S3
+# write failure already silently dropped the entry with no retry — the
+# difference is failures here DO retry (see .audit_flush_pending) instead of
+# vanishing. Deliberately just an in-memory buffer, not a local-disk queue —
+# it has no dependency on where this process is hosted (today's shinyapps.io
+# containers, or a future self-hosted NAS), so it isn't something that needs
+# to be redesigned at migration time.
+.audit_pending          <- new.env(parent = emptyenv())
+.audit_flush_scheduled  <- new.env(parent = emptyenv())
+.AUDIT_FLUSH_DELAY       <- 2    # seconds — batches a burst of actions together
+.AUDIT_FLUSH_RETRY_DELAY <- 10   # seconds — backoff before retrying a failed flush
+
+.audit_queue <- function(write_cid, row) {
+  existing <- .audit_pending[[write_cid]]
+  .audit_pending[[write_cid]] <- if (is.null(existing)) row else dplyr::bind_rows(existing, row)
+
+  if (!isTRUE(.audit_flush_scheduled[[write_cid]])) {
+    .audit_flush_scheduled[[write_cid]] <- TRUE
+    later::later(function() .audit_flush_pending(write_cid), delay = .AUDIT_FLUSH_DELAY)
+  }
+}
+
+# Flushes whatever is currently pending for one client_id in a single
+# read-modify-write. Re-reads after rotation ONLY if rotation actually
+# happened (the old code re-read unconditionally on every call — pure waste
+# on the common, non-rotating path).
+.audit_flush_pending <- function(write_cid) {
+  pending <- .audit_pending[[write_cid]]
+  .audit_pending[[write_cid]]         <- NULL
+  .audit_flush_scheduled[[write_cid]] <- FALSE
+  if (is.null(pending) || !nrow(pending)) return(invisible(TRUE))
+
+  ok <- tryCatch({
+    current <- .audit_read_chunk(.audit_current_key(write_cid))
+    if (is.null(current) || !is.data.frame(current) || !nrow(current))
+      current <- .APP_AUDIT_SCHEMA()
+    rotated <- isTRUE(rotate_log_if_needed(write_cid, current))
+    if (rotated) {
+      current <- tryCatch({
+        ch <- .audit_read_chunk(.audit_current_key(write_cid))
+        if (is.null(ch) || !nrow(ch)) .APP_AUDIT_SCHEMA() else ch
+      }, error = function(e) .APP_AUDIT_SCHEMA())
+    }
+    .audit_write_chunk(dplyr::bind_rows(current, pending), .audit_current_key(write_cid))
+    TRUE
+  }, error = function(e) {
+    message("[APP_AUDIT] flush failed (", write_cid, "), will retry: ", e$message)
+    FALSE
+  })
+
+  if (!ok) {
+    # Put the rows back (prepended, in case new ones arrived meanwhile) and
+    # retry after a longer backoff instead of losing them.
+    still_pending <- .audit_pending[[write_cid]]
+    .audit_pending[[write_cid]] <- if (is.null(still_pending)) pending
+                                    else dplyr::bind_rows(pending, still_pending)
+    .audit_flush_scheduled[[write_cid]] <- TRUE
+    later::later(function() .audit_flush_pending(write_cid), delay = .AUDIT_FLUSH_RETRY_DELAY)
+  }
+  invisible(ok)
+}
+
 # ── log_action() ─────────────────────────────────────────────────────────────
-# Fire-and-forget — never throws. Returns the new row invisibly.
+# Fire-and-forget — never throws. Returns the new row invisibly. The S3 write
+# itself is deferred (see above) — this function never blocks on network I/O.
 #
 # client_id             — target folder this entry is filed under, i.e. where
 #                         the action actually happened (default: CLIENT_ID env
@@ -214,31 +294,11 @@ log_action <- function(user,
                   else "{}")
   )
 
-  .append_to <- function(write_cid) {
-    tryCatch({
-      current <- .audit_read_chunk(.audit_current_key(write_cid))
-      if (is.null(current) || !is.data.frame(current) || !nrow(current))
-        current <- .APP_AUDIT_SCHEMA()
-      rotate_log_if_needed(write_cid, current)
-      # Re-read after potential rotation (may be a fresh empty schema)
-      current <- tryCatch({
-        ch <- .audit_read_chunk(.audit_current_key(write_cid))
-        if (is.null(ch) || !nrow(ch)) .APP_AUDIT_SCHEMA() else ch
-      }, error = function(e) .APP_AUDIT_SCHEMA())
-      .audit_write_chunk(dplyr::bind_rows(current, new_row),
-                         .audit_current_key(write_cid))
-      invisible(TRUE)
-    }, error = function(e) {
-      message("[APP_AUDIT] write failed (", write_cid, "): ", e$message)
-      invisible(FALSE)
-    })
-  }
-
-  .append_to(cid)
+  .audit_queue(cid, new_row)
 
   # Dual-write when a staff user acts in a different client's context
   if (nzchar(home_cid) && home_cid != cid)
-    .append_to(home_cid)
+    .audit_queue(home_cid, new_row)
 
   invisible(new_row)
 }

@@ -193,6 +193,12 @@ log_action(user        = reviewer,
            client_id   = cid,
            metadata    = limit_meta)
 
+# log_action() now defers its S3 write (see R/app_audit.R's .audit_queue) —
+# force both flushes so this test stays synchronous/deterministic instead of
+# waiting on later::later()'s real-time delay.
+.audit_flush_pending("hd-admin")
+.audit_flush_pending("networks")
+
 admin_log  <- tryCatch(mock_s3readRDS("hd-admin/app_audit.rds", "mock-bucket"),
                        error = function(e) NULL)
 client_log <- tryCatch(mock_s3readRDS("networks/app_audit.rds", "mock-bucket"),
@@ -232,6 +238,8 @@ log_action(user        = "mouse",
            target_id   = users_g$account_code[deact_idx],
            s3_key      = "networks/usuarios.rds",
            client_id   = "networks")
+
+.audit_flush_pending("networks")
 
 per_user_log <- tryCatch(mock_s3readRDS("networks/app_audit.rds", "mock-bucket"),
                          error = function(e) NULL)

@@ -54,6 +54,11 @@ log_action(
   client_id   = "networks"
 )
 
+# log_action() now defers its S3 write (see R/app_audit.R's .audit_queue) —
+# force the flush immediately here so this test stays synchronous/deterministic
+# instead of waiting on later::later()'s real-time delay.
+.audit_flush_pending("networks")
+
 log1 <- mock_s3readRDS("networks/app_audit.rds", "mock-bucket")
 .chk(nrow(log1), 1L, "log_action: one row written")
 .chk(log1$user[1], "mouse", "log_action: user column populated")
@@ -70,6 +75,7 @@ log_action(
   s3_key      = "networks/bancos.rds",
   client_id   = "networks"
 )
+.audit_flush_pending("networks")
 log2 <- mock_s3readRDS("networks/app_audit.rds", "mock-bucket")
 .chk(nrow(log2), 2L, "log_action: two rows after second call")
 .chk(log2$ts[2] >= log2$ts[1], TRUE, "timestamps are non-decreasing")
@@ -87,6 +93,8 @@ log_action(
   s3_key      = NA_character_,
   client_id   = "networks"   # writing to networks log while CLIENT_ID=hd-admin
 )
+.audit_flush_pending("networks")
+.audit_flush_pending("hd-admin")
 
 # Should have written to BOTH logs
 net_log  <- tryCatch(mock_s3readRDS("networks/app_audit.rds",  "mock-bucket"), error = function(e) NULL)
@@ -127,6 +135,8 @@ log_action(
   client_id             = "networks",
   viewer_home_client_id = "networks"   # actor's true home == target
 )
+.audit_flush_pending("networks")
+.audit_flush_pending("hd-admin")
 
 net_log_c2 <- tryCatch(mock_s3readRDS("networks/app_audit.rds", "mock-bucket"), error = function(e) NULL)
 hd_log_c2  <- tryCatch(mock_s3readRDS("hd-admin/app_audit.rds", "mock-bucket"), error = function(e) NULL)
@@ -149,6 +159,8 @@ log_action(
   client_id             = "networks",
   viewer_home_client_id = "hd-admin"   # staff's true home != target
 )
+.audit_flush_pending("networks")
+.audit_flush_pending("hd-admin")
 
 net_log_c3 <- tryCatch(mock_s3readRDS("networks/app_audit.rds", "mock-bucket"), error = function(e) NULL)
 hd_log_c3  <- tryCatch(mock_s3readRDS("hd-admin/app_audit.rds", "mock-bucket"), error = function(e) NULL)

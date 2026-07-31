@@ -162,6 +162,14 @@ auth_save_usuarios <- function(df, client_id = NULL) {
   e <- new.env(parent = globalenv())
   e$.pass <- 0L
   e$.fail <- 0L
+  # Defensive reset: log_action() defers its S3 write via an in-memory
+  # pending-queue (R/app_audit.R's .audit_queue). Without this, an unflushed
+  # entry from one test module could bleed into the next module's assertions.
+  # Individual test files also flush explicitly where it matters, but resetting
+  # here means a forgotten flush fails loudly in its own module instead of
+  # silently corrupting an unrelated one.
+  if (exists(".audit_pending"))         rm(list = ls(.audit_pending),         envir = .audit_pending)
+  if (exists(".audit_flush_scheduled")) rm(list = ls(.audit_flush_scheduled), envir = .audit_flush_scheduled)
   tryCatch(source(file, local = e), error = function(err) {
     cat(sprintf("  ERROR loading %s: %s\n", basename(file), err$message))
     e$.fail <- e$.fail + 1L

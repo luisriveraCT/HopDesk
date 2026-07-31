@@ -48,6 +48,12 @@ log_action(user = "mouse", module = "clientes", action = "external_access",
           description = "HopDesk staff accessed this client's data (session context switch)",
           target_id = "networks", client_id = "networks")
 
+# log_action() now defers its S3 write (see R/app_audit.R's .audit_queue) —
+# flush immediately so this test stays deterministic and so unflushed rows
+# don't bleed into later sections of this file that reseed the mock store.
+.audit_flush_pending("networks")
+.audit_flush_pending("hd-admin")
+
 .mock_shared <- function(user, tier, client_id, is_staff, home_cid, effective_cid) {
   list(
     current_user_info   = function() list(user = user, tier = tier, client_id = client_id,
@@ -210,6 +216,8 @@ log_action(user = "larm",      module = "ledger_AR", action = "mover_fecha",
 log_action(user = "dev",       module = "usuarios",  action = "crear_usuario",
           description = "user created", client_id = "networks",
           viewer_home_client_id = "networks")
+
+.audit_flush_pending("networks")
 
 shiny::testServer(auditLogViewerServer, args = list(
   shared = .mock_shared("tesoreria", "finance", "networks", FALSE, "networks", "networks"),
