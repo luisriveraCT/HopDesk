@@ -1879,6 +1879,24 @@ ledgerModuleServer <- function(id, config, shared) {
       }
 
       n_del <- nrow(rows_to_delete)
+      # found 2026-08-03 (Stage 9, Issue D): this batch delete already got
+      # logged every time (the call further down, unconditionally) even when
+      # a provision was part of the batch -- Mouse's "deletes don't show in
+      # Actividad" report was not this path going unlogged. But the
+      # description was generic ("N
+      # factura(s)...") regardless of what was actually deleted, so an entry
+      # for a provision-only delete read identically to a real-invoice delete
+      # -- not a missing log, but not a "sensible, readable" one either (the
+      # bar this stage's doc set). Now names provisions explicitly when
+      # present, same idea as pasivos_log_audit()'s notes fields elsewhere.
+      n_prov <- if ("provision_id" %in% names(rows_to_delete))
+        sum(!is.na(rows_to_delete[["provision_id"]]) &
+            nzchar(rows_to_delete[["provision_id"]] %||% ""))
+        else 0L
+      desc <- if (n_prov > 0)
+        sprintf("%d factura(s) enviada(s) a papelera (incluye %d provisión(es))", n_del, n_prov)
+      else
+        sprintf("%d factura(s) enviada(s) a papelera", n_del)
       session$userData[[paste0(ns("pending_delete_keys"))]] <- NULL
       session$userData[[paste0(ns("pending_delete_ctx"))]]  <- NULL
       showNotification(paste0(n_del, " factura(s) enviadas a la papelera."),
@@ -1887,11 +1905,12 @@ ledgerModuleServer <- function(id, config, shared) {
         user        = tryCatch(shared$current_user(), error = function(e) "system"),
         module      = paste0("ledger_", ledger),
         action      = "eliminar_facturas",
-        description = paste0(n_del, " factura(s) enviada(s) a papelera"),
+        description = desc,
         target_id   = paste(rows_to_delete[["Documento"]][seq_len(min(5, nrow(rows_to_delete)))],
                             collapse = ", "),
         metadata    = list(
           n      = n_del,
+          n_provisiones = n_prov,
           source = unique(rows_to_delete[["source"]] %||% "sap")
         ),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
