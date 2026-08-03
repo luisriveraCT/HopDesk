@@ -9,8 +9,10 @@
 
 library(tibble)
 library(uuid)
+library(scrypt)
 
 source("R/persistence.R")
+source("R/auth.R")   # hash_password() — Stage 7 password hashing
 S3_KEYS <- list(usuarios = "usuarios.rds")
 
 readRenviron(".Renviron")
@@ -40,7 +42,7 @@ if (is.null(raw)) raw <- tibble()
 mouse_rows <- if (!is.null(raw$username)) which(tolower(raw$username) == "mouse") else integer(0)
 
 if (length(mouse_rows)) {
-  raw$password_hash[mouse_rows]  <- new_pw
+  raw$password_hash[mouse_rows]  <- hash_password(new_pw)
   raw$activo[mouse_rows]         <- TRUE
   if ("deleted" %in% names(raw)) raw$deleted[mouse_rows] <- FALSE
   message("[RECOVER] Updated password for existing mouse account.")
@@ -49,7 +51,7 @@ if (length(mouse_rows)) {
     id                       = uuid::UUIDgenerate(),
     account_code             = "U0001",
     username                 = "mouse",
-    password_hash            = new_pw,
+    password_hash            = hash_password(new_pw),
     display_name             = "Luis Rivera",
     tier                     = "principal",
     client_id                = "hd-admin",

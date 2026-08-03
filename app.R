@@ -818,7 +818,7 @@ server <- function(input, output, session) {
     if (is.null(usuarios)) return()
     idx <- which(tolower(usuarios$username) == tolower(info$user))
     if (!length(idx)) return()
-    usuarios$password_hash[idx]            <- pw1
+    usuarios$password_hash[idx]            <- hash_password(pw1)
     usuarios$requires_password_change[idx] <- FALSE
     tryCatch({
       auth_save_usuarios(usuarios)
@@ -915,7 +915,7 @@ server <- function(input, output, session) {
         id                       = paste0("u_", format(Sys.time(), "%Y%m%d%H%M%S")),
         account_code             = sprintf("U%04d", nrow(usuarios) + 1L),
         username                 = username,
-        password_hash            = pw1,
+        password_hash            = hash_password(pw1),
         display_name             = invite$display_name,
         tier                     = invite$tier,
         client_id                = invite$client_id,

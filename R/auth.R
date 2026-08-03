@@ -4,12 +4,70 @@
 # Credentials stored in S3 as usuarios.rds.
 # No reactives, no UI. Called once at startup and once per login attempt.
 #
-# NOTE on password storage: shinymanager's data.frame credential path uses
-# plain-text comparison (credentials$password == entered_password). Scrypt/bcrypt
-# hashing is only supported by shinymanager's SQLite encrypted-db backend.
-# Proper hashing will be added in Step 5 (User Management UI) when we control
-# the full save/verify cycle. Until then, passwords in usuarios.rds are plain text.
+# Password storage (Stage 7 password hashing): passwords are stored as scrypt
+# hashes, never plaintext. Contrary to what an earlier version of this
+# comment claimed, shinymanager's data.frame credential path (which this app
+# uses) natively supports hashed passwords via an `is_hashed_password` column
+# + scrypt::verifyPassword() — no SQLite backend required, no custom
+# comparator needed. See hash_password()/verify_password()/.is_scrypt_hash()
+# below, and .migrate_legacy_passwords() for the transparent one-time
+# upgrade of any pre-Stage-7 plaintext rows.
 # =============================================================================
+
+# ── Password hashing (Stage 7) ────────────────────────────────────────────────
+# scrypt, not a custom scheme — well-understood, one well-known R package
+# (already a shinymanager dependency, so nothing new to install), and it's
+# the exact algorithm shinymanager's own hashed-password support expects.
+
+hash_password <- function(plain) {
+  scrypt::hashPassword(plain)
+}
+
+# Never throws — a malformed/legacy hash should fail verification, not crash
+# the login attempt.
+verify_password <- function(plain, hash) {
+  tryCatch(isTRUE(scrypt::verifyPassword(hash, plain)), error = function(e) FALSE)
+}
+
+# scrypt hashes from this package always start with the base64 encoding of
+# the literal string "scrypt" — a version/magic header baked into the hash
+# format itself (verified empirically: every hashPassword() output begins
+# with "c2NyeXB0", 128 chars long). Any password_hash value that doesn't
+# start this way predates Stage 7 and is legacy plaintext.
+.is_scrypt_hash <- function(x) {
+  !is.na(x) & nzchar(x) & startsWith(x, "c2NyeXB0")
+}
+
+# Transparently upgrades any legacy plaintext password_hash values in a raw
+# usuarios data.frame to scrypt hashes, in place, and persists the upgrade
+# back to S3 immediately if anything changed. No user-facing effect, no
+# forced reset — the next login attempt authenticates exactly as before,
+# just against a hash now.
+#
+# This is a deliberate safety net, not just a one-time migration: if a
+# future password-write site is ever added without hashing (a mistake, not
+# something to rely on), the very next time that row is loaded here it gets
+# auto-corrected instead of staying broken forever. Do not remove this
+# check as "redundant" — see docs/saas_rebuild/STAGE_7_PASSWORD_HASHING.md.
+.migrate_legacy_passwords <- function(raw, cid) {
+  if (is.null(raw) || !is.data.frame(raw) || !nrow(raw) ||
+      !"password_hash" %in% names(raw)) return(raw)
+
+  legacy <- !.is_scrypt_hash(raw$password_hash)
+  if (!any(legacy)) return(raw)
+
+  raw$password_hash[legacy] <- vapply(raw$password_hash[legacy], hash_password, character(1))
+
+  tryCatch({
+    aws.s3::s3saveRDS(raw, object = paste0(cid, "/usuarios.rds"), bucket = .s3_bucket())
+    message(sprintf("[AUTH] Migrated %d legacy plaintext password(s) -> scrypt hash for %s",
+                    sum(legacy), cid))
+  }, error = function(e) {
+    message("[AUTH] Legacy password migration save failed (", cid, "): ", e$message)
+  })
+
+  raw
+}
 
 # Returns a data.frame in the exact format shinymanager expects:
 # columns: user, password, admin (logical), name, tier
@@ -21,6 +79,7 @@
   data.frame(
     user            = tolower(trimws(raw$username)),
     password        = raw$password_hash,
+    is_hashed_password = TRUE,   # Stage 7 — migration below guarantees this by the time we get here
     admin           = raw$tier == "dev",
     name            = raw$display_name,
     tier            = raw$tier,
@@ -60,6 +119,7 @@
     message("[AUTH] CLIENT_ID not set — skipping client credential load")
     NULL
   }
+  if (!is.null(raw) && nrow(raw) > 0) raw <- .migrate_legacy_passwords(raw, cid)
   client_creds <- if (!is.null(raw) && nrow(raw) > 0)
     .normalize_credentials(raw, cid) else NULL
 
@@ -72,6 +132,8 @@
       aws.s3::s3readRDS(object = "hd-admin/usuarios.rds", bucket = .s3_bucket()),
       error = function(e) NULL
     )
+    if (!is.null(hd_raw) && is.data.frame(hd_raw) && nrow(hd_raw))
+      hd_raw <- .migrate_legacy_passwords(hd_raw, "hd-admin")
     if (!is.null(hd_raw) && is.data.frame(hd_raw) && nrow(hd_raw)) {
       hd_staff <- hd_raw[hd_raw$tier %in% c("principal", "hopdesk"), , drop = FALSE]
       if (nrow(hd_staff))
@@ -93,6 +155,7 @@
           error = function(e) NULL
         )
         if (is.null(raw_c) || !nrow(raw_c)) return(NULL)
+        raw_c <- .migrate_legacy_passwords(raw_c, ccid)
         raw_c <- raw_c[!raw_c$tier %in% c("principal", "hopdesk"), , drop = FALSE]
         if (!nrow(raw_c)) return(NULL)
         .normalize_credentials(raw_c, ccid)
@@ -218,6 +281,12 @@ auth_load_usuarios <- function(client_id = NULL) {
     message(sprintf("[AUTH] client_id backfilled for %d user(s) → %s", sum(needs_cid), cid))
   }
 
+  # Stage 7: transparently upgrade any legacy plaintext passwords. Every
+  # real caller of this function (Settings ▸ Usuarios, tiers_module.R,
+  # etc.) goes through here, so this is the other natural choke point
+  # alongside .load_or_init_credentials()'s own read sites (the login path).
+  raw <- .migrate_legacy_passwords(raw, cid)
+
   raw
 }
 
@@ -338,6 +407,13 @@ auth_resolve_perms <- function(tier, permisos_json) {
 # Case-insensitive credential checker for shinymanager.
 # Resolves credentials fresh on every login attempt so accounts created during
 # the running session are immediately usable without a server restart.
+#
+# Stage 7: no custom password comparison lives here. `creds` (below) carries
+# is_hashed_password = TRUE on every row (.normalize_credentials()), and
+# every real read path hashes any legacy plaintext before it reaches here
+# (.migrate_legacy_passwords()) — so shinymanager's own check_credentials()
+# already does the right thing via its native scrypt::verifyPassword()
+# support. Nothing to change here when the hashing scheme itself changes.
 auth_check_credentials <- function() {
   function(user, password) {
     creds <- auth_get_credentials()

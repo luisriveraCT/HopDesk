@@ -780,7 +780,7 @@ tiersServer <- function(id, shared) {
         id            = uuid::UUIDgenerate(),
         account_code  = .next_account_code(all_u),
         username      = username,
-        password_hash = password,
+        password_hash = hash_password(password),
         display_name  = display_name,
         tier          = tier,
         client_id     = current_client_id(),
@@ -1087,7 +1087,7 @@ tiersServer <- function(id, shared) {
         all_u[full_idx, "username"]  <- new_username
         new_display <- trimws(input$edit_display_name %||% "")
         if (nzchar(new_display)) all_u[full_idx, "display_name"] <- new_display
-        if (nzchar(new_pass)) all_u[full_idx, "password_hash"] <- new_pass
+        if (nzchar(new_pass)) all_u[full_idx, "password_hash"] <- hash_password(new_pass)
         all_u[full_idx, "activo"] <- isTRUE(input$edit_activo)
 
         all_u[full_idx, "tier"]     <- new_tier

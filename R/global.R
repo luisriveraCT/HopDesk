@@ -36,6 +36,7 @@ library(openxlsx)   # Excel export in cashflow report
 library(shinymanager)
 library(callr)
 library(openssl)    # Stage 3: ERP secret encryption (R/secrets_encryption.R)
+library(scrypt)     # Stage 7: password hashing (R/auth.R)
 # htmltools loaded transitively by Shiny; htmltools::HTML() used directly in calendar_html()
 
 # ── Early utility definitions ─────────────────────────────────────────────────

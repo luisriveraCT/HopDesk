@@ -50,6 +50,7 @@ jobs:
             any::openssl
             any::tibble
             any::stringi
+            any::scrypt
 
       - name: Run test suite
         id: run_tests

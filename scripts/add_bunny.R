@@ -9,8 +9,10 @@
 
 library(tibble)
 library(uuid)
+library(scrypt)
 
 source("R/persistence.R")
+source("R/auth.R")   # hash_password() — Stage 7 password hashing
 S3_KEYS <- list(usuarios = "usuarios.rds")
 
 readRenviron(".Renviron")
@@ -37,7 +39,7 @@ bunny <- tibble(
   id                       = uuid::UUIDgenerate(),
   account_code             = "U0002",
   username                 = "bunny",
-  password_hash            = bunny_pw,
+  password_hash            = hash_password(bunny_pw),
   display_name             = "Ana Fernanda Nemer",
   tier                     = "hopdesk",
   client_id                = "hd-admin",

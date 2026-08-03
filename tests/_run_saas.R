@@ -197,6 +197,7 @@ cat("====================================================\n\n")
 .run_module("tests/test_saas_log_action_scoping.R")
 .run_module("tests/test_saas_notifications.R")
 .run_module("tests/test_saas_limit_change.R")
+.run_module("tests/test_saas_password_hashing.R")
 .run_module("tests/test_saas_manual_entry_client_scoping.R")
 
 cat("\n====================================================\n")
