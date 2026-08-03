@@ -19,8 +19,19 @@
 # (already a shinymanager dependency, so nothing new to install), and it's
 # the exact algorithm shinymanager's own hashed-password support expects.
 
+# scrypt's own default (maxtime = 1) calibrates cost to ~1s of compute per
+# call — deliberate, since scrypt is meant to resist brute force, but at
+# ~0.8s measured on this hardware it made every login and every legacy-
+# password migration noticeably slow. maxtime = 0.05 (~50ms measured)
+# targets a level Mouse chose explicitly after seeing the real tradeoff:
+# still real scrypt protection, far beyond the plaintext status quo either
+# way, just tuned for a small known internal team rather than scrypt's
+# default assumption of a mass public login surface. Cost parameters are
+# baked into the hash string itself, so verify_password() below needs no
+# matching setting — it always verifies at whatever cost the hash was
+# created with.
 hash_password <- function(plain) {
-  scrypt::hashPassword(plain)
+  scrypt::hashPassword(plain, maxtime = 0.05)
 }
 
 # Never throws — a malformed/legacy hash should fail verification, not crash
