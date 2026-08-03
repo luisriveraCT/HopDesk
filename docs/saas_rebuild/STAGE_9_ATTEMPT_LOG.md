@@ -125,3 +125,68 @@ would not have caught before writing the "real" timing test. Confirmed
 correct in both cases by checking the real app.R's own shape rather than
 guessing. See `tests/test_sync_bus_timing_chromote.R` for the corrected,
 committed fixture.
+
+---
+
+## Issue E2 (cross-client isolation): a "fix" for the UX concern that turned
+out to be unnecessary -- reverted after checking Shiny's own source
+
+**What was tried:** the Stage 9 doc's sub-question (b) asked whether an
+unrelated client's write forces every OTHER client's session to
+recompute/re-render, even when the reloaded data stays correctly scoped. A
+first, less careful two-session chromote reproduction (client A writes,
+client B -- a different, uninvolved client -- watches) appeared to confirm
+this: B's own re-render counter went from 0 to 1 right after A's write. This
+looked like exactly the bug Mouse described ("it should NOT interrupt
+anything on anyone's window... ESPECIALLY CRITICAL CROSS CLIENTS"), so a fix
+was written and applied to `R/sync_bus.R`: before calling `rv(new_value)` in
+the poll/reload loop, compare `new_value` against `isolate(rv())` and skip
+the call entirely if `identical()`.
+
+**Why it didn't hold up:** re-examining the FIRST reproduction's setup
+before trusting the result (per this stage's own "verify before building on
+it" discipline, applied one layer deeper): client B's `shared$shared_val`
+reactiveVal is only ever initialized ONCE, at session start, under WHATEVER
+identity was active at that moment (in the test, B started as "networks"
+before switching its own dropdown to "acme" mid-test). Switching identity
+alone does not itself trigger a sync_bus reload -- only an actual
+`bump_sync_version()` call does. So B's very first observed "re-render"
+was really B finally catching up to its OWN correct client's data for the
+first time (a genuine, deserved reload), not a false trigger from A's
+unrelated write. Rebuilt the reproduction to have B "prime" its own
+baseline (one real write+reload under its true identity) BEFORE testing
+whether an UNRELATED client's write causes a SECOND, spurious reload -- and
+with that confound removed, B's re-render count never increased in
+repeated trials, even against the ORIGINAL, unfixed `sync_bus.R`.
+
+Traced why directly in the installed shiny package rather than guessing:
+`shiny:::ReactiveVal$public_methods$set` already does
+`if (identical(private$value, value)) return(invisible(FALSE))` before
+touching `private$dependents$invalidate()`. Combined with app.R:1131's
+`shared` being a plain list of individual `reactiveVal()`s (not
+`shiny::reactiveValues()`, confirmed during Issue E1's investigation), this
+means Shiny itself already skips invalidation whenever a poll-triggered
+reload returns byte-for-byte identical content to what a session already
+has -- which is exactly what happens for every OTHER client whenever ONE
+client writes to a shared dataset name.
+
+**Reverted the `R/sync_bus.R` change** (`git stash` + `git stash drop`,
+confirmed via `git diff` that the file matched its last commit again)
+rather than keep it: it was 100% behaviorally redundant with what
+`reactiveVal()` already does internally, so keeping it would have been dead
+code duplicating existing behavior for no benefit -- exactly the kind of
+unnecessary addition this project's own conventions say not to ship.
+
+**Lesson:** the exact same discipline this stage's doc asked for
+("verify... they were researched carefully but are not guaranteed still
+accurate") applies just as much to a hypothesis formed mid-stage, from a
+live test result, as to the original doc's own hypotheses. A live
+reproduction that shows the shape of a bug is strong evidence, but the
+FIRST version of a hand-built harness can itself have a confound -- worth
+re-checking the harness's own setup, and worth checking upstream (Shiny's
+own source) for whether a lower layer already solves the problem, before
+writing a fix. The final, corrected reproduction with the confound removed
+is `tests/test_sync_bus_isolation_chromote.R`, which also proves it has
+teeth (Part 2: a deliberately-broken sync_bus.R variant IS caught by the
+same harness) for the correctness/security half of E2 that IS real and DOES
+need the existing client_id-threading logic to stay intact.
