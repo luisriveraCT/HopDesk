@@ -1591,12 +1591,33 @@ bancosServer <- function(id, shared) {
       idx  <- which(movs$id %in% ids)
       if (!length(idx)) { removeModal(); return() }
 
+      # Snapshot the pre-delete rows BEFORE flipping eliminado, so the
+      # bancos_papelera archive event (below) records the movement as it
+      # actually looked at the moment of deletion, not post-mutation.
+      del_rows <- movs[idx, , drop = FALSE]
+      actor    <- tryCatch(shared$current_user(), error = function(e) "system")
+
       movs$eliminado[idx]    <- TRUE
       movs$eliminado_at[idx] <- Sys.time()
       shared$bancos_movimientos(movs)
       tryCatch({ save_bancos_movimientos(movs, client_id = shared$effective_client_id()); bump_sync_version("bancos_movimientos_db") },
                error = function(e)
                  showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
+
+      # found 2026-08-03 (Stage 9, Issue C): Mouse asked for a dedicated,
+      # separate backend store for deleted bank movements (see
+      # R/bancos_persistence.R's "bancos_papelera" section for the full
+      # reasoning). This is additive -- the eliminado flag above remains the
+      # mechanism that hides the row from the live Libro de Banco view; this
+      # writes a genuinely separate, permanent, restorable archive event.
+      tryCatch({
+        bpap <- tryCatch(load_bancos_papelera(client_id = shared$effective_client_id()),
+                         error = function(e) .schema_bancos_papelera())
+        bpap <- add_to_bancos_papelera(bpap, del_rows, actor = actor)
+        save_bancos_papelera(bpap, client_id = shared$effective_client_id())
+      }, error = function(e)
+        message("[bancos] bancos_papelera archive write failed: ", conditionMessage(e)))
+
       removeModal()
       n <- length(idx)
       showNotification(
@@ -1604,7 +1625,7 @@ bancosServer <- function(id, shared) {
         type = "message", duration = 3
       )
       log_action(
-        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        user        = actor,
         module      = "bancos",
         action      = "eliminar_movimientos",
         description = paste0(n, " movimiento(s) enviado(s) a papelera"),
@@ -3444,6 +3465,23 @@ bancosServer <- function(id, shared) {
       tryCatch({ save_bancos_movimientos(movs, client_id = shared$effective_client_id()); bump_sync_version("bancos_movimientos_db") },
                error = function(e)
                  showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
+
+      # found 2026-08-03 (Stage 9, Issue C): mirror of the archive write in
+      # do_eliminar_confirm above -- records this restore as its own
+      # permanent bancos_papelera event (action="restored"), rather than
+      # only un-flipping the live eliminado flag. Best-effort: if no
+      # archived event exists (e.g. this movement was deleted before this
+      # stage shipped), the flag un-flip above already fully restores it;
+      # this is additive bookkeeping, not the primary restore mechanism.
+      tryCatch({
+        bpap <- tryCatch(load_bancos_papelera(client_id = shared$effective_client_id()),
+                         error = function(e) .schema_bancos_papelera())
+        res  <- restore_from_bancos_papelera(bpap, mov_id,
+                                             actor = tryCatch(shared$current_user(), error = function(e) "system"))
+        save_bancos_papelera(res$papelera_df, client_id = shared$effective_client_id())
+      }, error = function(e)
+        message("[bancos] bancos_papelera restore write skipped/failed: ", conditionMessage(e)))
+
       showNotification("Movimiento restaurado.", type = "message", duration = 3)
       log_action(
         user        = tryCatch(shared$current_user(), error = function(e) "system"),

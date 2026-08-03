@@ -257,3 +257,128 @@ bancos_confirmar_pago <- function(
     confirmados = dplyr::bind_rows(confirmados_db, new_conf)
   )
 }
+
+# ── bancos_papelera ───────────────────────────────────────────────────────────
+# found 2026-08-03 (Stage 9, Issue C): Mouse asked for a dedicated, separate
+# backend store for deleted bank movements, modeled on the item-level
+# manual_inv + papelera.rds lifecycle (add_to_papelera()/restore_from_papelera()
+# in R/persistence.R), rather than reusing that same machinery (which is
+# scoped to invoice-shaped rows -- Empresa/Documento/Parte/Importe -- and
+# shared across manual invoices, SAP ghosts, and provisions; a bank movement
+# is a structurally different object: cargo/abono/cuenta_id, no Documento/
+# Parte in the invoice sense).
+#
+# This table is intentionally ADDITIVE, not a replacement for the existing
+# eliminado/eliminado_at flag on bancos_movimientos itself. Two things are
+# both true and worth being explicit about (this file's own header already
+# documents bancos_movimientos rows as "never physically removed" and always
+# saved in full "for permanent audit trail" -- that part of the design
+# already gave deleted movements a permanent record before this stage):
+#   1. bancos_movimientos' own eliminado flag remains the mechanism that
+#      hides a deleted row from the live "Libro de Banco" view
+#      (load_bancos_movimientos(include_deleted=FALSE)) -- unchanged, still
+#      the cheapest and already-correct way to do that.
+#   2. This table is the genuinely separate, permanent, replay-able EVENT
+#      log Mouse asked for -- action="archived"/"restored" pairs, mirroring
+#      the enrichment .schema_papelera() itself gained in the ledger-integrity
+#      master plan's Stage 3 (event_id/disposition/action/reverses_event_id),
+#      adapted to bank-movement fields.
+# Wired additively into do_eliminar_confirm/undo_mov_delete alongside the
+# existing flag flip -- NOT yet wired as papelera_tbl's rows_mov display
+# source (that still reads live off bancos_movimientos' own eliminado flag,
+# unchanged). Whether rows_mov should be switched to read from this table
+# instead is an open design question, flagged back rather than decided here
+# -- see this stage's final report. bancos_confirmados' own deleted rows
+# (rows_conf) and vinculado rows (rows_vin) already use the identical
+# flag-on-the-live-table pattern this table's sibling data uses, so
+# switching ONLY movimientos' display source would make Bancos' own three
+# sibling "deleted record" patterns internally inconsistent with each other,
+# not more consistent -- worth Mouse's explicit call, not a silent decision.
+.schema_bancos_papelera <- function() tibble::tibble(
+  id            = character(),   # permanent, unique id for THIS archive/restore event
+  mov_id        = character(),   # original bancos_movimientos$id
+  cuenta_id     = character(),
+  fecha         = as.Date(character()),
+  parte         = character(),
+  concepto      = character(),
+  cargo         = numeric(),
+  abono         = numeric(),
+  tipo          = character(),
+  fuente        = character(),   # "txt" | "manual" | "agenda" -- copied from the movement at archive time
+  disposition   = character(),   # "deleted" (the only disposition today; field kept for parity with .schema_papelera())
+  action        = character(),  # "archived" | "restored"
+  reverses_id   = character(),  # NA unless action == "restored"; points back at the archived row's own id
+  actor         = character(),  # username who archived or restored this event
+  event_at      = as.POSIXct(character()),
+  original_data = list()        # full pre-delete movement row, for restore + audit
+)
+
+load_bancos_papelera <- function(client_id = NULL) {
+  .normalize(.s3_read_with(S3_KEYS$bancos_papelera, client_id = client_id), .schema_bancos_papelera)
+}
+
+save_bancos_papelera <- function(df, client_id = NULL) {
+  .s3_write(.normalize(df, .schema_bancos_papelera), S3_KEYS$bancos_papelera, client_id = client_id)
+}
+
+# Archive one or more just-deleted bancos_movimientos rows as their own
+# permanent "archived" event. mov_rows is a plain data.frame/tibble slice of
+# bancos_movimientos (the rows about to be/just soft-deleted via the
+# eliminado flag) -- this does NOT flip that flag itself, callers already do
+# that separately; this only writes the permanent archive record alongside it.
+add_to_bancos_papelera <- function(papelera_df, mov_rows, actor = "user") {
+  if (!nrow(mov_rows)) return(papelera_df)
+  new_rows <- tibble::tibble(
+    id            = vapply(seq_len(nrow(mov_rows)), function(i) uuid::UUIDgenerate(), character(1)),
+    mov_id        = as.character(mov_rows[["id"]]),
+    cuenta_id     = as.character(mov_rows[["cuenta_id"]] %||% NA_character_),
+    fecha         = as.Date(mov_rows[["fecha"]]),
+    parte         = as.character(mov_rows[["parte"]]    %||% ""),
+    concepto      = as.character(mov_rows[["concepto"]] %||% ""),
+    cargo         = as.numeric(mov_rows[["cargo"]] %||% 0),
+    abono         = as.numeric(mov_rows[["abono"]] %||% 0),
+    tipo          = as.character(mov_rows[["tipo"]]   %||% ""),
+    fuente        = as.character(mov_rows[["fuente"]] %||% ""),
+    disposition   = "deleted",
+    action        = "archived",
+    reverses_id   = NA_character_,
+    actor         = actor,
+    event_at      = Sys.time(),
+    original_data = lapply(seq_len(nrow(mov_rows)), function(i) as.list(mov_rows[i, , drop = FALSE]))
+  )
+  dplyr::bind_rows(papelera_df, new_rows)
+}
+
+# Recover the most recent "archived" event for a given movement id, appending
+# a NEW action="restored" row rather than mutating or removing the original
+# (same permanent-event-log philosophy as recover_confirmacion() above and
+# restore_from_papelera() in R/persistence.R). Returns list(papelera_df =
+# updated archive table, original_data = the pre-delete movement row for the
+# caller to use when un-flipping bancos_movimientos' own eliminado flag).
+# Errors if no un-restored archived event exists for this movement.
+restore_from_bancos_papelera <- function(papelera_df, mov_id, actor = "user") {
+  candidates <- which(papelera_df[["mov_id"]] == mov_id & papelera_df[["action"]] == "archived")
+  if (!length(candidates)) {
+    stop("[bancos_papelera] no archived event found for mov_id: ", mov_id)
+  }
+  restored_ids <- papelera_df[["reverses_id"]][papelera_df[["action"]] == "restored"]
+  still_archived <- candidates[!papelera_df[["id"]][candidates] %in% restored_ids]
+  if (!length(still_archived)) {
+    stop("[bancos_papelera] mov_id's archived event(s) already restored: ", mov_id)
+  }
+  # Most recent still-archived event for this movement.
+  idx <- still_archived[which.max(papelera_df[["event_at"]][still_archived])]
+
+  archived_row <- papelera_df[idx, , drop = FALSE]
+  restore_row  <- archived_row
+  restore_row[["id"]]          <- uuid::UUIDgenerate()
+  restore_row[["action"]]      <- "restored"
+  restore_row[["reverses_id"]] <- archived_row[["id"]][1]
+  restore_row[["actor"]]       <- actor
+  restore_row[["event_at"]]    <- Sys.time()
+
+  list(
+    papelera_df   = dplyr::bind_rows(papelera_df, restore_row),
+    original_data = archived_row[["original_data"]][[1]]
+  )
+}
