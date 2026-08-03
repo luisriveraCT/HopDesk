@@ -190,3 +190,49 @@ is `tests/test_sync_bus_isolation_chromote.R`, which also proves it has
 teeth (Part 2: a deliberately-broken sync_bus.R variant IS caught by the
 same harness) for the correctness/security half of E2 that IS real and DOES
 need the existing client_id-threading logic to stay intact.
+
+---
+
+## Real incident: a shipped syntax error in R/ui_components.R broke the
+whole app -- caught by Mouse running it directly, not by this stage's own
+tests
+
+**What happened:** Issue B's fix added an explanatory comment inside
+`app_scripts()`'s big `tags$script(HTML("..."))` block in
+`R/ui_components.R` -- the ENTIRE function body is one R double-quoted
+string. The comment (written as an ordinary JS-style `/* ... */` block)
+used straight double quotes to talk about CSS class names, e.g.
+`".modal fade in"`. Those literal, unescaped `"` characters inside the
+comment prematurely closed the enclosing R string at that exact point,
+corrupting the parse of everything after it in the file. `parse()`-based
+sanity would have caught this instantly, but nothing in this stage's own
+test suite ever called `parse()` on the whole file -- every chromote test
+this stage built (Issue A, B, E1, E2) EXTRACTS just the specific JS/R block
+under test into a small, isolated fixture, which works perfectly well in
+isolation even when the file's own SURROUNDING string context is broken,
+because the fixture never reproduces that surrounding context at all. This
+committed to the branch (`3b877a4`) and stayed broken through three more
+commits (Issue C, E1, E2) before Mouse ran `shiny::runApp()` directly and
+hit `unexpected symbol` at the exact corrupted line.
+
+**Fix:** removed the double quotes from the comment (reworded to use plain
+text / single quotes instead), matching what the rest of this same file's
+PRE-EXISTING comments already do correctly in the same string context
+(backslash-escaping, e.g. `\"tooltip\"`) -- confirmed those pre-existing
+lines were never the problem; only the newly-added comment was.
+
+**Lesson, the important one:** a chromote test that extracts a code
+fragment into an isolated fixture proves the FRAGMENT's behavior is
+correct -- it says nothing about whether the fragment, left in place inside
+the real file, still leaves that file syntactically valid R. These are two
+different, both-necessary checks. Added
+`tests/test_stage9_touched_files_parse.R` as a permanent, extremely cheap
+regression guard: every file this stage touched must still `parse()`
+successfully, plus a specific, targeted check that `app_scripts()`'s own
+HTML-string block never again contains an unescaped `"` inside a comment.
+Confirmed this new test actually would have caught the incident: reverted
+to the broken committed version and confirmed the parse check fails, then
+restored the fix and confirmed it passes again. This class of check --
+"does every touched file still parse" -- is now something every future
+stage touching JS-in-R-string content should run before considering a
+chromote-only test suite sufficient.

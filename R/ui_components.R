@@ -1127,8 +1127,8 @@ app_scripts <- function() {
        a NATIVE DOM listener -- but Shiny's bundled modal dialog (showModal())
        uses the OLD jQuery/Bootstrap-3-style modal plugin (confirmed live:
        window.bootstrap is undefined in this app; the modal element is
-       ".modal fade in", the Bootstrap-3/4 jQuery-plugin class shape, not
-       Bootstrap 5's ".modal fade show"). That plugin fires 'hidden.bs.modal'
+       'modal fade in', the Bootstrap-3/4 jQuery-plugin class shape, not
+       Bootstrap 5's 'modal fade show'). That plugin fires hidden.bs.modal
        as a jQuery-namespaced event via $el.trigger(...), which is invisible
        to addEventListener -- jQuery's own event system and the native DOM
        event system don't share events unless jQuery is told to dispatch a
