@@ -652,13 +652,32 @@ server <- function(input, output, session) {
   observeEvent(input[[".__keepalive__"]], {}, ignoreInit = TRUE)
 
   # ── Logout button ─────────────────────────────────────────────────────────────
+  # found 2026-08-03: "Salir doesn't log out" and "a copied URL logs in forever"
+  # are the same bug. The old handler cleared cookies and called location.reload()
+  # -- but shinymanager validates purely off the URL's ?token= query string
+  # (confirmed by reading the installed shinymanager source: getToken() reads
+  # query$token only; secure_app()'s per-request filter calls .tok$is_valid(token)
+  # on every page load; cookies are never consulted anywhere in that path).
+  # Clearing cookies was dead code from the start. Reloading the SAME url left
+  # the SAME still-registered, still-valid token in place, so shinymanager just
+  # logged the user right back in -- Salir appeared to do nothing, and a token
+  # never actually expired short of the 15-min inactivity timeout.
+  # shinymanager's own secure_server() already wires a real revocation path
+  # that nothing in this app was triggering: an internal observeEvent on
+  # session$input$.shinymanager_logout that calls .tok$remove(token) (deletes
+  # the token from its in-memory valid-token registry for good -- this registry
+  # is what .tok$is_valid()/is_valid_server() check, so removal invalidates the
+  # token everywhere, including any other tab/session holding a copy of the same
+  # url), then clearQueryString() (strips ?token= from the address bar) and
+  # session$reload(). That input is normally fired by shinymanager's own
+  # built-in fab-button logout, only rendered when enable_admin = TRUE; this app
+  # sets enable_admin = FALSE and uses its own navbar "Salir" button instead, so
+  # the real revocation path existed but was never wired to anything. Firing it
+  # here reuses the package's own tested logic instead of re-inventing (and
+  # re-breaking) it. keep_token's refresh-survival behavior is untouched --
+  # this only changes what an explicit Salir click does.
   observeEvent(input$btn_logout, {
-    shinyjs::runjs("
-      document.cookie.split(';').forEach(function(c) {
-        document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
-      });
-      location.reload();
-    ")
+    shinyjs::runjs("Shiny.setInputValue('.shinymanager_logout', Math.random(), {priority: 'event'});")
   }, ignoreInit = TRUE)
 
   # ── Authentication gate ──────────────────────────────────────────────────────

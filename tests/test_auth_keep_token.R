@@ -22,6 +22,21 @@
 # invalid token falls back to the login form rather than crashing; and a
 # logout-style cookie-clear + reload still correctly forces re-login, so
 # keep_token didn't silently break "Salir". All 14 passed.
+#
+# Stage 9 correction (2026-08-03, Issue A): that last claim does not hold up.
+# Mouse reported live that clicking "Salir" did not log him out, and reading
+# the actual app.R + installed shinymanager source confirmed why: shinymanager
+# validates purely off the url's ?token= query string, never a cookie, so a
+# cookie-clear + reload of the SAME url with the SAME still-valid token
+# re-authenticates instantly -- it does not "still correctly force re-login."
+# Whatever the 2026-07-29 manual chromote pass actually clicked through, it
+# was not exercising the real production failure mode end-to-end (most likely
+# a manually-stripped-token reload, which trivially forces a login and proves
+# nothing about the app's own logout button). Lesson: a live-browser scenario
+# description in a header is not a substitute for a runnable, re-executable
+# test -- see tests/test_auth_logout_chromote.R, which IS runnable, extracts
+# the real current app.R logout code verbatim, and was confirmed to fail
+# against the pre-fix code before being confirmed to pass against the fix.
 # =============================================================================
 cat("=== test_auth_keep_token ===\n\n")
 
@@ -73,15 +88,27 @@ ok("control: keep_token=TRUE appears exactly once in actual code (one deliberate
    sum(grepl("keep_token\\s*=\\s*TRUE", code_lines)) == 1L)
 
 # ── Explicit no-regression checks on adjacent, unrelated auth code ─────────
-ok("the logout handler (btn_logout) is untouched -- still clears cookies and reloads",
+# UPDATED 2026-08-03 (Stage 9, Issue A): these two checks used to assert the
+# logout handler "still clears cookies and reloads" as a regression guard --
+# but that WAS Issue A's bug (cookies are never checked by shinymanager;
+# reloading the same url with the same still-valid token silently logged the
+# user right back in). Stage 9 replaced the handler with a call into
+# shinymanager's own token-revocation input (.shinymanager_logout). Asserting
+# the old body here would fail the suite against the correct fix, so this
+# guard now checks for the NEW real behavior instead of the old broken one --
+# see tests/test_auth_logout_chromote.R for the live-browser proof this
+# actually revokes the token, not just this static shape check.
+ok("the logout handler (btn_logout) is untouched -- still exists as input$btn_logout",
    any(grepl("observeEvent\\(input\\$btn_logout,", app_txt)))
 logout_start <- grep("observeEvent\\(input\\$btn_logout,", app_txt)
 if (length(logout_start)) {
   logout_block <- paste(app_txt[logout_start[1]:min(logout_start[1] + 10, length(app_txt))], collapse = "\n")
-  ok("logout handler still clears document.cookie (unaffected by the keep_token fix)",
-     grepl("document\\.cookie", logout_block))
-  ok("logout handler still calls location.reload() (unaffected by the keep_token fix)",
-     grepl("location\\.reload\\(\\)", logout_block))
+  ok("logout handler fires shinymanager's own .shinymanager_logout revocation input (Stage 9 fix)",
+     grepl("\\.shinymanager_logout", logout_block))
+  ok("logout handler no longer relies on cookie-clearing (confirmed dead code -- shinymanager never reads a cookie)",
+     !grepl("document\\.cookie", logout_block))
+  ok("logout handler no longer calls location.reload() directly (shinymanager's own .shinymanager_logout observer calls session$reload() itself, after removing the token and clearing the query string -- doing it twice would race)",
+     !grepl("location\\.reload\\(\\)", logout_block))
 }
 
 # ── Documentation/comment quality -- the fix explains itself for the next
