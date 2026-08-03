@@ -75,3 +75,53 @@ against the real, current code (both halves fixed). The rootScope-only and
 JS-only intermediate states described above were reproduced in scratch
 fixtures during investigation (not committed) specifically to isolate which
 half of the fix was doing the work before committing either change.
+
+---
+
+## Issue E1 (sync latency measurement): two fixture-building mistakes before
+getting a clean two-session timing harness
+
+**What was tried first:** a minimal fixture app sourcing the real
+`R/sync_bus.R` against a local, in-memory fake of the S3 layer, with a
+`shared <- reactiveValues(shared_val = 0)` object (the ordinary,
+most-common Shiny pattern for a bag of reactive fields), to measure real
+propagation delay between two chromote sessions under the real 8000ms
+`poll_ms`.
+
+**Why it didn't work (first bug):** every trial timed out -- neither
+session ever saw the bumped value, even after 15s. Added `message()` trace
+lines into a throwaway copy of `sync_bus.R` and found the real cause:
+`setup_sync_bus()`'s reload step does `rv <- shared[[name]]; if
+(is.function(rv)) rv(new_value)` -- this requires `shared[[name]]` to BE a
+`reactiveVal()` getter/setter function, not a `shiny::reactiveValues()`
+field (which is read/set via `$`/`[[` assignment, never called like a
+function). The trace showed `rv is.function=FALSE` on every tick -- the
+reload was silently no-opping. Checked app.R:1131 and confirmed the REAL
+app's `shared` object is `shared <- list(...)`, a plain list where each
+element is individually a `reactiveVal(...)` -- not a `reactiveValues()`
+object at all. Fixed the fixture to `shared <- list(shared_val =
+reactiveVal(0))` and the mechanism worked immediately.
+
+**Second bug, same debugging session:** after fixing the above, a
+DIFFERENT error appeared first: `[sync_bus] version stamp write failed:
+could not find function ".s3_write"`, even though `.s3_write` was clearly
+defined earlier in the same fixture file. Root cause: the fixture sourced
+`R/sync_bus.R` with `local = FALSE`, which (per `source()`'s own semantics)
+evaluates the sourced file in `.GlobalEnv` specifically -- but
+`shiny::runApp()` on a single-file app evaluates the app file's OWN top
+level in a private, app-specific environment, not `.GlobalEnv`. So the
+fixture's own `.s3_write`/`.s3_key`/etc (defined via ordinary top-level
+`<-` in that app-private environment) ended up in a DIFFERENT environment
+than `sync_bus.R`'s functions (forced into `.GlobalEnv` by `local = FALSE`),
+breaking lexical lookup between them. Fixed by sourcing with `local = TRUE`
+instead, keeping everything in the one shared app-private environment.
+
+**Lesson:** both mistakes were about environment/object-shape mismatches
+between a hand-built test fixture and the real app's actual conventions,
+not bugs in `sync_bus.R` itself -- exactly the kind of thing a live,
+executable reproduction catches immediately (both surfaced as an obvious,
+loud failure on the very first run) that a purely-read-the-code review
+would not have caught before writing the "real" timing test. Confirmed
+correct in both cases by checking the real app.R's own shape rather than
+guessing. See `tests/test_sync_bus_timing_chromote.R` for the corrected,
+committed fixture.
