@@ -1904,9 +1904,9 @@ ledgerModuleServer <- function(id, config, shared) {
       # logged every time (the call further down, unconditionally) even when
       # a provision was part of the batch -- Mouse's "deletes don't show in
       # Actividad" report was not this path going unlogged. But the
-      # description was generic ("N
-      # factura(s)...") regardless of what was actually deleted, so an entry
-      # for a provision-only delete read identically to a real-invoice delete
+      # description was generic ("N factura(s)...") regardless of what was
+      # actually deleted, so an entry for a provision-only delete read
+      # identically to a real-invoice delete
       # -- not a missing log, but not a "sensible, readable" one either (the
       # bar this stage's doc set). Now names provisions explicitly when
       # present, same idea as pasivos_log_audit()'s notes fields elsewhere.
