@@ -1123,7 +1123,24 @@ app_scripts <- function() {
     /* ── Notify R when any Bootstrap modal is dismissed ─────────────── */
     /* ledger_module uses this to clear modal_open so the provisions     */
     /* observer doesn't re-open the calendar day modal after user leaves */
-    document.addEventListener('hidden.bs.modal', function() {
+    /* found 2026-08-03 (Stage 9, Issue B): this was document.addEventListener,
+       a NATIVE DOM listener -- but Shiny's bundled modal dialog (showModal())
+       uses the OLD jQuery/Bootstrap-3-style modal plugin (confirmed live:
+       window.bootstrap is undefined in this app; the modal element is
+       ".modal fade in", the Bootstrap-3/4 jQuery-plugin class shape, not
+       Bootstrap 5's ".modal fade show"). That plugin fires 'hidden.bs.modal'
+       as a jQuery-namespaced event via $el.trigger(...), which is invisible
+       to addEventListener -- jQuery's own event system and the native DOM
+       event system don't share events unless jQuery is told to dispatch a
+       real one. Confirmed by a live chromote test: with addEventListener,
+       closing a modal via jQuery's own $('#shiny-modal').modal('hide') (the
+       exact call Shiny's bundled JS makes for a backdrop click, ESC, or the
+       close button) never fired this handler at all, at ANY scope -- not
+       just the module-namespace mismatch fixed alongside this in
+       ledger_module.R, but the signal never reaching R in the first place.
+       Switching to jQuery's own $(document).on(...) binding is what actually
+       receives it. */
+    $(document).on('hidden.bs.modal', function() {
       if (window.Shiny) Shiny.setInputValue('cal_day_modal_closed', Math.random(), {priority: 'event'});
     });
 

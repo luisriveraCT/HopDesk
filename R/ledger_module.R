@@ -716,7 +716,28 @@ ledgerModuleServer <- function(id, config, shared) {
 
     # Track when the user (or code) closes the day modal so the provisions
     # observer doesn't re-open it for stale modal_ctx() values.
-    observeEvent(input$cal_day_modal_closed, {
+    # found 2026-08-03 (Stage 9, Issue B): this was input$cal_day_modal_closed
+    # -- but ledgerModuleServer runs inside moduleServer(id, ...), so `input`
+    # here is namespace-scoped to "ar-" or "ap-". The JS in ui_components.R
+    # sends the bare root-level name (it has no way to know which module
+    # instance, if any, currently owns the open modal -- there's only ever
+    # one Bootstrap modal in the DOM at a time), so this observer's real
+    # listened-for name (e.g. "ar-cal_day_modal_closed") never matched what
+    # was actually sent, and never fired -- confirmed live via chromote
+    # (a fire-counter reactiveVal stayed 0 across a real modal close). Fixed
+    # by reading the ROOT session's input instead of this module's own --
+    # session$rootScope() is the standard Shiny mechanism for exactly this
+    # (a module reading a document-level, non-namespaced signal). Both AR's
+    # and AP's instances react to the same global "a modal closed somewhere"
+    # signal and reset THEIR OWN modal_open flag; harmless when it wasn't
+    # theirs (already FALSE, a no-op) since only one modal can be open across
+    # the whole app at a time, and the "single render gate" above immediately
+    # re-sets modal_open(TRUE) on any subsequent re-render anyway (verified
+    # live: replacing an open modal's content with a second showModal() call,
+    # e.g. a delete-confirmation dialog, does NOT itself fire hidden.bs.modal
+    # -- only an actual dismiss does, so this doesn't spuriously reset a
+    # modal that's just being replaced mid-flow).
+    observeEvent(session$rootScope()$input$cal_day_modal_closed, {
       modal_open(FALSE)
     }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
