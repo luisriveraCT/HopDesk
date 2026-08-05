@@ -1024,6 +1024,43 @@ save_pagar_hoy <- function(df, username = NULL, client_id = NULL) {
   invisible(TRUE)
 }
 
+# found 2026-08-05: pagar_hoy_module.R's AP/AR confirm handlers called
+# save_pagar_hoy() with no error handling at all, unlike the bancos_confirmados
+# write one step earlier in the same handlers (which already has its own
+# tryCatch). A transient failure here (a flaky connection during the S3 PUT is
+# exactly the reported case) aborted the observer uncaught: bancos_confirmados
+# had already been written (so the action IS "confirmed" somewhere), but the
+# item was never durably cleared from Agenda (S3 unchanged, even though the
+# session's own in-memory reactiveVal had already optimistically updated one
+# line earlier -- so the acting user saw nothing wrong), and log_action() --
+# further down the same unprotected path -- never ran, so it never appeared
+# in Actividad either. One root cause, both symptoms.
+#
+# Fix: a small synchronous retry, not a later::later()-deferred one like
+# log_action()'s own flush queue. That fire-and-forget pattern is right for
+# an audit entry nobody is blocked waiting on, but this call's caller needs a
+# definitive yes/no before deciding whether to log success, activate abonos,
+# or show an error -- a deferred retry would let the observer sail past that
+# decision point still not knowing the outcome. Every S3 call in this app
+# already blocks its calling process synchronously (this codebase's existing,
+# accepted model, not something this function newly introduces) -- a couple
+# of retry attempts a fraction of a second apart is a small, bounded extension
+# of that same trade-off, not a new architectural risk, and it targets exactly
+# the short-blip case a "wifi isn't always great" report describes.
+save_pagar_hoy_with_retry <- function(df, username = NULL, client_id = NULL,
+                                      max_attempts = 3, retry_delay = 0.5) {
+  last_err <- NULL
+  for (attempt in seq_len(max_attempts)) {
+    ok <- tryCatch({
+      save_pagar_hoy(df, username = username, client_id = client_id)
+      TRUE
+    }, error = function(e) { last_err <<- e; FALSE })
+    if (ok) return(list(ok = TRUE, error = NULL, attempts = attempt))
+    if (attempt < max_attempts) Sys.sleep(retry_delay)
+  }
+  list(ok = FALSE, error = last_err, attempts = max_attempts)
+}
+
 # ── Per-user agenda helpers (sync OFF) ────────────────────────────────────────
 
 s3_key_pagar_hoy_user <- function(username) {

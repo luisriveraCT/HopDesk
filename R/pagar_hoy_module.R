@@ -1445,7 +1445,60 @@ pagarHoyServer <- function(id, shared) {
         if (length(rm_ids)) {
           ph <- unstage_pagar_hoy(ph, tibble::tibble(id = rm_ids), keys = "id")
         }
-        shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
+        shared$pagar_hoy_db(ph)
+        # found 2026-08-05: this call used to be bare, no error handling at
+        # all -- unlike the bancos_confirmados write just above, which
+        # already has its own tryCatch. A transient failure here (a flaky
+        # connection during this exact S3 write) aborted the observer
+        # uncaught: bancos_confirmados had already been written, so the
+        # action WAS "confirmed" somewhere, but the item was never durably
+        # cleared from Agenda (S3 unchanged, even though shared$pagar_hoy_db()
+        # just above had already optimistically updated in-memory -- so the
+        # acting user saw nothing wrong), and the audit-log call further
+        # down this same path never ran either -- no Actividad entry. One
+        # root cause,
+        # both of Mouse's reported symptoms. save_pagar_hoy_with_retry()
+        # (R/persistence.R) gives this a bounded, synchronous retry instead
+        # of silently failing once; on total failure it's treated as fatal
+        # for THIS confirm (stop before abono activation and before logging
+        # a false success), but the failure itself is now logged too, so
+        # Actividad shows the inconsistency instead of nothing at all.
+        save_result <- save_pagar_hoy_with_retry(ph, shared$current_user(),
+                                                  client_id = shared$effective_client_id())
+        if (!isTRUE(save_result$ok)) {
+          showNotification(
+            paste0("La confirmación se registró, pero no se pudo actualizar la Agenda tras ",
+                   save_result$attempts, " intento(s) (posible problema de conexión). ",
+                   "Actualiza la página; si el ítem sigue en Agenda, vuelve a confirmarlo."),
+            type = "error", duration = 15
+          )
+          tryCatch(log_action(
+            user = shared$current_user(), module = "pagar_hoy",
+            action = "confirmar_pago_incompleto",
+            description = sprintf(
+              "Confirmación de %s registrada en bancos_confirmados, pero Agenda no se pudo actualizar tras %d intento(s): %s",
+              emp, save_result$attempts,
+              if (!is.null(save_result$error)) conditionMessage(save_result$error) else "error desconocido"),
+            target_id = emp,
+            metadata  = list(empresa = emp, ids = rm_ids),
+            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+          ), error = function(e) NULL)
+          return()
+        }
+
+        # found 2026-08-05: the abono-activation and manual_inv-archiving
+        # blocks below already individually tryCatch() each of their OWN
+        # save_*() calls -- but the surrounding control flow (loops, index
+        # lookups) was not itself guarded, so an unexpected failure there
+        # would still abort the observer before ever reaching the
+        # notification/audit-log block further down, silently suppressing
+        # the audit entry for a confirm that, by this point, has already
+        # fully and durably succeeded (bancos_confirmados written, Agenda
+        # cleared). Wrapping the whole secondary-processing section in one
+        # outer tryCatch means a hiccup HERE can never also swallow the log
+        # entry for the primary confirm action.
+        secondary_err_ap <- tryCatch({
 
         # Activate abonos: write to abonos_db so calendar balance deduction takes effect
         if (nrow(abono_rows) && !is.null(shared$abonos_db)) {
@@ -1592,6 +1645,15 @@ pagarHoyServer <- function(id, shared) {
           }
         }
 
+        }, error = function(e) e)
+        if (inherits(secondary_err_ap, "error")) {
+          showNotification(
+            paste0("Pago(s) confirmado(s) correctamente, pero algo falló al procesar ",
+                   "abonos/archivado relacionado: ", conditionMessage(secondary_err_ap)),
+            type = "warning", duration = 10
+          )
+        }
+
         .link_counter(.link_counter() + 1L)
         removeModal()
         {
@@ -1605,7 +1667,9 @@ pagarHoyServer <- function(id, shared) {
                      paste(msg, collapse = " · "),
                      target_id = emp,
                      metadata = list(empresa = emp, n_pago = n_pago, n_abono = n_abono,
-                                     sap_ids = sap_fact_ids, man_ids = man_fact_ids),
+                                     sap_ids = sap_fact_ids, man_ids = man_fact_ids,
+                                     secondary_error = if (inherits(secondary_err_ap, "error"))
+                                       conditionMessage(secondary_err_ap) else NA_character_),
                      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
                      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
         }
@@ -1752,7 +1816,36 @@ pagarHoyServer <- function(id, shared) {
         if (length(rm_ids)) {
           ph <- unstage_pagar_hoy(ph, tibble::tibble(id = rm_ids), keys = "id")
         }
-        shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
+        shared$pagar_hoy_db(ph)
+        # found 2026-08-05: same bare-call bug as the AP handler above (see
+        # its comment for the full incident) -- fixed identically here.
+        save_result <- save_pagar_hoy_with_retry(ph, shared$current_user(),
+                                                  client_id = shared$effective_client_id())
+        if (!isTRUE(save_result$ok)) {
+          showNotification(
+            paste0("La confirmación se registró, pero no se pudo actualizar la Agenda tras ",
+                   save_result$attempts, " intento(s) (posible problema de conexión). ",
+                   "Actualiza la página; si el ítem sigue en Agenda, vuelve a confirmarlo."),
+            type = "error", duration = 15
+          )
+          tryCatch(log_action(
+            user = shared$current_user(), module = "pagar_hoy",
+            action = "confirmar_cobro_incompleto",
+            description = sprintf(
+              "Confirmación de %s registrada en bancos_confirmados, pero Agenda no se pudo actualizar tras %d intento(s): %s",
+              emp, save_result$attempts,
+              if (!is.null(save_result$error)) conditionMessage(save_result$error) else "error desconocido"),
+            target_id = emp,
+            metadata  = list(empresa = emp, ids = rm_ids),
+            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+          ), error = function(e) NULL)
+          return()
+        }
+
+        # found 2026-08-05: same outer-guard fix as the AP handler above (see
+        # its comment for the full incident) -- fixed identically here.
+        secondary_err_ar <- tryCatch({
 
         # Activate abonos: write to abonos_db so calendar balance deduction takes effect
         if (nrow(abono_rows) && !is.null(shared$abonos_db)) {
@@ -1899,6 +1992,15 @@ pagarHoyServer <- function(id, shared) {
           }
         }
 
+        }, error = function(e) e)
+        if (inherits(secondary_err_ar, "error")) {
+          showNotification(
+            paste0("Cobro(s) confirmado(s) correctamente, pero algo falló al procesar ",
+                   "abonos/archivado relacionado: ", conditionMessage(secondary_err_ar)),
+            type = "warning", duration = 10
+          )
+        }
+
         .link_counter(.link_counter() + 1L)
         removeModal()
         {
@@ -1912,7 +2014,9 @@ pagarHoyServer <- function(id, shared) {
                      paste(msg, collapse = " · "),
                      target_id = emp,
                      metadata = list(empresa = emp, n_cobro = n_cobro, n_abono = n_abono,
-                                     sap_ids = sap_fact_ids, man_ids = man_fact_ids),
+                                     sap_ids = sap_fact_ids, man_ids = man_fact_ids,
+                                     secondary_error = if (inherits(secondary_err_ar, "error"))
+                                       conditionMessage(secondary_err_ar) else NA_character_),
                      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
                      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
         }

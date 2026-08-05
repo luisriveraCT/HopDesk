@@ -223,6 +223,16 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     "load_interco_v2", ".save_provision_row", "fetch_all_companies",
     ".save_moves_deferred", ".sync_staged", ".pasivos_perform_conversion",
     "rename_empresa_initials",
+    # save_pagar_hoy_with_retry() (found 2026-08-05, R/persistence.R) is a
+    # generic retry wrapper around save_pagar_hoy() -- same shape as
+    # .sync_staged above: called from multiple contexts (the AP and AR
+    # confirm handlers in R/pagar_hoy_module.R), each of which already logs
+    # with its own user-facing action (action="confirmar_pago"/
+    # "confirmar_cobro" on success, "confirmar_pago_incompleto"/
+    # "confirmar_cobro_incompleto" on a retry-exhausted failure -- see
+    # tests/test_confirm_agenda_resilience.R). Logging belongs at those call
+    # sites, not inside the generic retry mechanism itself.
+    "save_pagar_hoy_with_retry",
     # generate_cashflow_html_doc's "mutation" is htmltools::save_html() writing
     # a throwaway temp file for Chrome to print, not app data -- a false
     # positive from the scanner's textual save_*( match. The real export
