@@ -3,6 +3,21 @@
 # Runner for all HopDesk SaaS feature tests.
 # Run from project root:  source("tests/_run_saas.R")
 # No live S3 credentials needed — all S3 I/O is mocked in-memory.
+#
+# IMPORTANT: this patches the REAL aws.s3 package's namespace
+# (utils::assignInNamespace) so every aws.s3::s3readRDS/s3saveRDS/get_bucket
+# call hits the in-memory mock instead of real S3. That patch is
+# process-global and OUTLIVES this script's own execution — if this file is
+# ever source()'d into a persistent interactive session (e.g. VS Code's
+# "R Interactive" terminal, an RStudio console) that is later reused to run
+# the real app WITHOUT restarting R, the live app would silently read/write
+# an in-memory mock store instead of real S3 (found 2026-08-04: exactly this
+# happened — Intercompany settings and Pasivos data looked "gone"/wrong until
+# the next fresh R process). Fixed here with a guaranteed tryCatch/finally
+# restore, so the patch can never outlive this script even if a test fails
+# or errors partway through. The safe habit regardless: only ever run this
+# file as a fresh `Rscript` subprocess (`Rscript tests/_run_saas.R`), never
+# source()'d into a terminal you plan to keep using afterward.
 # =============================================================================
 
 options(warn = 1)
@@ -19,190 +34,213 @@ suppressPackageStartupMessages({
   library(shinyWidgets)
 })
 
-# ── In-memory S3 mock ─────────────────────────────────────────────────────────
-# Each object stored by its full S3 key (e.g. "networks/usuarios.rds").
-.mock_s3_store <- new.env(parent = emptyenv())
+# Capture the REAL functions before patching, so they can be restored no
+# matter how this script exits (normal completion, a failed-test stop(), or
+# an unexpected error partway through).
+.orig_s3readRDS  <- aws.s3::s3readRDS
+.orig_s3saveRDS  <- aws.s3::s3saveRDS
+.orig_get_bucket <- aws.s3::get_bucket
 
-mock_s3readRDS <- function(object, bucket, ...) {
-  obj <- .mock_s3_store[[object]]
-  if (is.null(obj)) stop("NoSuchKey: ", object)
-  obj
-}
-mock_s3saveRDS <- function(x, object, bucket, ...) {
-  .mock_s3_store[[object]] <- x
-  invisible(x)
-}
-mock_s3getbucket <- function(bucket, prefix = "", max = 200L, ...) {
-  all_keys <- ls(.mock_s3_store)
-  matched  <- all_keys[startsWith(all_keys, prefix)]
-  lapply(matched, function(k) list(Key = k))
+.restore_aws_s3_namespace <- function() {
+  suppressWarnings({
+    utils::assignInNamespace("s3readRDS",  .orig_s3readRDS,  "aws.s3")
+    utils::assignInNamespace("s3saveRDS",  .orig_s3saveRDS,  "aws.s3")
+    utils::assignInNamespace("get_bucket", .orig_get_bucket, "aws.s3")
+  })
 }
 
-# Patch aws.s3 namespace so every aws.s3::s3readRDS / s3saveRDS / get_bucket
-# call (including those with :: inside sourced files) hits the mock.
-suppressWarnings({
-  utils::assignInNamespace("s3readRDS",  mock_s3readRDS,   "aws.s3")
-  utils::assignInNamespace("s3saveRDS",  mock_s3saveRDS,   "aws.s3")
-  utils::assignInNamespace("get_bucket", mock_s3getbucket, "aws.s3")
-})
-
-# ── Env vars ──────────────────────────────────────────────────────────────────
-Sys.setenv(CLIENT_ID     = "networks",
-           S3_BUCKET     = "mock-bucket",
-           AWS_ACCESS_KEY_ID     = "mock",
-           AWS_SECRET_ACCESS_KEY = "mock",
-           AWS_DEFAULT_REGION    = "us-east-1",
-           RESEND_API_KEY        = "sandbox",
-           RESEND_FROM_EMAIL     = "noreply@test.hopdesk.com",
-           HOPDESK_SECRETS_KEY   = openssl::base64_encode(openssl::rand_bytes(32)))
-
-# ── S3 stubs for persistence.R internal helpers ──────────────────────────────
-.s3_read  <- function(key)      mock_s3readRDS(paste0("networks/", key), "mock-bucket")
-.s3_write <- function(obj, key) mock_s3saveRDS(obj, paste0("networks/", key), "mock-bucket")
-
-# ── Minimal S3_KEYS (superset of all keys used by tested code) ───────────────
-S3_KEYS <- list(
-  usuarios           = "usuarios.rds",
-  username_index     = "username_index.rds",
-  pending_invites    = "pending_invites.rds",
-  app_audit          = "app_audit.rds",
-  sync_versions      = "sync_versions.rds",
-  bancos             = "bancos.rds",
-  bancos_cuentas     = "bancos_cuentas.rds",
-  bancos_movimientos = "bancos_movimientos.rds",
-  bancos_confirmados = "bancos_confirmados.rds",
-  empresas           = "empresas.rds",
-  grupos             = "grupos.rds",
-  proveedores        = "proveedores.rds",
-  proveedores_inactivos = "proveedores_inactivos.rds",
-  moves              = "invoice_moves.rds",
-  notes              = "notes.rds",
-  tags               = "tags.rds",
-  papelera           = "papelera.rds",
-  ctas_cuentas       = "ctas_cuentas.rds",
-  conciliacion       = "conciliacion.rds",
-  parte_alias_map    = "parte_alias_map.rds",
-  policy_catalog     = "policy_catalog.rds",
-  partner_policies   = "partner_policies.rds",
-  policy_moves       = "policy_moves.rds",
-  holiday_overrides  = "holiday_overrides.rds",
-  client_registry    = "hd-admin/client_registry.rds",
-  pasivos_liabilities = "pasivos_liabilities.rds",
-  pasivos_provisions  = "pasivos_provisions.rds",
-  abonos             = "abonos.rds",
-  sap_overrides      = "sap_overrides.rds",
-  erp_connections    = "erp_connections.rds",
-  manual             = "manual.rds",
-  pagar_hoy          = "pagar_hoy.rds",
-  pagar_hoy_sync     = "pagar_hoy_sync.rds",
-  interco            = "interco.rds"
-)
-
-"%||%" <- function(a, b) if (!is.null(a)) a else b
-
-source("R/persistence.R",    local = FALSE)
-source("R/tier_registry.R",  local = FALSE)
-source("R/sap_cache.R",      local = FALSE)
-source("R/jump_logic.R",     local = FALSE)
-source("R/tiers_tab_config.R", local = FALSE)
-source("R/auth.R",           local = FALSE)
-source("R/app_audit.R",      local = FALSE)
-source("R/audit_log_viewer_module.R", local = FALSE)
-source("R/email_service.R",  local = FALSE)
-source("R/secrets_encryption.R",     local = FALSE)
-source("R/erp_connector_registry.R", local = FALSE)
-source("R/sap_api.R",                local = FALSE)
-
-# ── Override hd-admin direct-read helpers (they bypass .s3_key()) ─────────────
-# Re-point them at the mock store so tests can plant data there.
-.read_username_index <- function() {
-  tryCatch(mock_s3readRDS("hd-admin/username_index.rds", "mock-bucket"),
-           error = function(e) .schema_username_index())
-}
-.write_username_index <- function(df) {
-  mock_s3saveRDS(df, "hd-admin/username_index.rds", "mock-bucket")
-  invisible(TRUE)
-}
-read_emergency_lock <- function() {
-  tryCatch(mock_s3readRDS("hd-admin/emergency_lock.rds", "mock-bucket"),
-           error = function(e) NULL)
-}
-read_pending_invites <- function() {
-  tryCatch(mock_s3readRDS("hd-admin/pending_invites.rds", "mock-bucket"),
-           error = function(e) .schema_pending_invites())
-}
-write_pending_invites <- function(df) {
-  mock_s3saveRDS(df, "hd-admin/pending_invites.rds", "mock-bucket")
-  invisible(TRUE)
-}
-read_client_registry <- function() {
-  tryCatch(mock_s3readRDS("hd-admin/client_registry.rds", "mock-bucket"),
-           error = function(e) .schema_client_registry())
-}
-write_client_registry <- function(df) {
-  mock_s3saveRDS(df, "hd-admin/client_registry.rds", "mock-bucket")
-  invisible(TRUE)
-}
-auth_load_usuarios <- function(client_id = NULL) {
-  cid <- client_id %||% Sys.getenv("CLIENT_ID")
-  tryCatch(mock_s3readRDS(paste0(tolower(cid), "/usuarios.rds"), "mock-bucket"),
-           error = function(e) auth_schema_usuarios())
-}
-auth_save_usuarios <- function(df, client_id = NULL) {
-  cid <- client_id %||% Sys.getenv("CLIENT_ID")
-  mock_s3saveRDS(df, paste0(tolower(cid), "/usuarios.rds"), "mock-bucket")
-  invisible(TRUE)
-}
-
-# ── Run all test modules ──────────────────────────────────────────────────────
 .total_pass <- 0L
 .total_fail <- 0L
 
-.run_module <- function(file) {
-  e <- new.env(parent = globalenv())
-  e$.pass <- 0L
-  e$.fail <- 0L
-  # Defensive reset: log_action() defers its S3 write via an in-memory
-  # pending-queue (R/app_audit.R's .audit_queue). Without this, an unflushed
-  # entry from one test module could bleed into the next module's assertions.
-  # Individual test files also flush explicitly where it matters, but resetting
-  # here means a forgotten flush fails loudly in its own module instead of
-  # silently corrupting an unrelated one.
-  if (exists(".audit_pending"))         rm(list = ls(.audit_pending),         envir = .audit_pending)
-  if (exists(".audit_flush_scheduled")) rm(list = ls(.audit_flush_scheduled), envir = .audit_flush_scheduled)
-  tryCatch(source(file, local = e), error = function(err) {
-    cat(sprintf("  ERROR loading %s: %s\n", basename(file), err$message))
-    e$.fail <- e$.fail + 1L
+tryCatch({
+
+  # ── In-memory S3 mock ───────────────────────────────────────────────────────
+  # Each object stored by its full S3 key (e.g. "networks/usuarios.rds").
+  .mock_s3_store <- new.env(parent = emptyenv())
+
+  mock_s3readRDS <- function(object, bucket, ...) {
+    obj <- .mock_s3_store[[object]]
+    if (is.null(obj)) stop("NoSuchKey: ", object)
+    obj
+  }
+  mock_s3saveRDS <- function(x, object, bucket, ...) {
+    .mock_s3_store[[object]] <- x
+    invisible(x)
+  }
+  mock_s3getbucket <- function(bucket, prefix = "", max = 200L, ...) {
+    all_keys <- ls(.mock_s3_store)
+    matched  <- all_keys[startsWith(all_keys, prefix)]
+    lapply(matched, function(k) list(Key = k))
+  }
+
+  # Patch aws.s3 namespace so every aws.s3::s3readRDS / s3saveRDS / get_bucket
+  # call (including those with :: inside sourced files) hits the mock.
+  # Restored unconditionally in this tryCatch's finally block below.
+  suppressWarnings({
+    utils::assignInNamespace("s3readRDS",  mock_s3readRDS,   "aws.s3")
+    utils::assignInNamespace("s3saveRDS",  mock_s3saveRDS,   "aws.s3")
+    utils::assignInNamespace("get_bucket", mock_s3getbucket, "aws.s3")
   })
-  .total_pass <<- .total_pass + e$.pass
-  .total_fail <<- .total_fail + e$.fail
-}
 
-cat("\n====================================================\n")
-cat("  HopDesk SaaS Test Suite\n")
-cat("====================================================\n\n")
+  # ── Env vars ─────────────────────────────────────────────────────────────────
+  Sys.setenv(CLIENT_ID     = "networks",
+             S3_BUCKET     = "mock-bucket",
+             AWS_ACCESS_KEY_ID     = "mock",
+             AWS_SECRET_ACCESS_KEY = "mock",
+             AWS_DEFAULT_REGION    = "us-east-1",
+             RESEND_API_KEY        = "sandbox",
+             RESEND_FROM_EMAIL     = "noreply@test.hopdesk.com",
+             HOPDESK_SECRETS_KEY   = openssl::base64_encode(openssl::rand_bytes(32)))
 
-.run_module("tests/test_saas_isolation.R")
-.run_module("tests/test_saas_erp_secrets.R")
-.run_module("tests/test_saas_erp_isolation.R")
-.run_module("tests/test_saas_erp_tiers.R")
-.run_module("tests/test_saas_erp_fallback.R")
-.run_module("tests/test_saas_perms.R")
-.run_module("tests/test_saas_sap_cache.R")
-.run_module("tests/test_saas_home_jump.R")
-.run_module("tests/test_saas_stage2_tabs.R")
-.run_module("tests/test_saas_invites.R")
-.run_module("tests/test_saas_audit.R")
-.run_module("tests/test_saas_audit_viewer.R")
-.run_module("tests/test_saas_log_action_scoping.R")
-.run_module("tests/test_saas_notifications.R")
-.run_module("tests/test_saas_limit_change.R")
-.run_module("tests/test_saas_password_hashing.R")
-.run_module("tests/test_saas_manual_entry_client_scoping.R")
+  # ── S3 stubs for persistence.R internal helpers ────────────────────────────
+  .s3_read  <- function(key)      mock_s3readRDS(paste0("networks/", key), "mock-bucket")
+  .s3_write <- function(obj, key) mock_s3saveRDS(obj, paste0("networks/", key), "mock-bucket")
 
-cat("\n====================================================\n")
-cat(sprintf("  TOTAL: %d passed, %d failed\n", .total_pass, .total_fail))
-cat("====================================================\n\n")
+  # ── Minimal S3_KEYS (superset of all keys used by tested code) ────────────
+  S3_KEYS <- list(
+    usuarios           = "usuarios.rds",
+    username_index     = "username_index.rds",
+    pending_invites    = "pending_invites.rds",
+    app_audit          = "app_audit.rds",
+    sync_versions      = "sync_versions.rds",
+    bancos             = "bancos.rds",
+    bancos_cuentas     = "bancos_cuentas.rds",
+    bancos_movimientos = "bancos_movimientos.rds",
+    bancos_confirmados = "bancos_confirmados.rds",
+    empresas           = "empresas.rds",
+    grupos             = "grupos.rds",
+    proveedores        = "proveedores.rds",
+    proveedores_inactivos = "proveedores_inactivos.rds",
+    moves              = "invoice_moves.rds",
+    notes              = "notes.rds",
+    tags               = "tags.rds",
+    papelera           = "papelera.rds",
+    ctas_cuentas       = "ctas_cuentas.rds",
+    conciliacion       = "conciliacion.rds",
+    parte_alias_map    = "parte_alias_map.rds",
+    policy_catalog     = "policy_catalog.rds",
+    partner_policies   = "partner_policies.rds",
+    policy_moves       = "policy_moves.rds",
+    holiday_overrides  = "holiday_overrides.rds",
+    client_registry    = "hd-admin/client_registry.rds",
+    pasivos_liabilities = "pasivos_liabilities.rds",
+    pasivos_provisions  = "pasivos_provisions.rds",
+    abonos             = "abonos.rds",
+    sap_overrides      = "sap_overrides.rds",
+    erp_connections    = "erp_connections.rds",
+    manual             = "manual.rds",
+    pagar_hoy          = "pagar_hoy.rds",
+    pagar_hoy_sync     = "pagar_hoy_sync.rds",
+    interco            = "interco.rds"
+  )
 
-if (.total_fail > 0L) stop(sprintf("%d test(s) failed", .total_fail))
+  "%||%" <- function(a, b) if (!is.null(a)) a else b
+
+  source("R/persistence.R",    local = FALSE)
+  source("R/tier_registry.R",  local = FALSE)
+  source("R/sap_cache.R",      local = FALSE)
+  source("R/jump_logic.R",     local = FALSE)
+  source("R/tiers_tab_config.R", local = FALSE)
+  source("R/auth.R",           local = FALSE)
+  source("R/app_audit.R",      local = FALSE)
+  source("R/audit_log_viewer_module.R", local = FALSE)
+  source("R/email_service.R",  local = FALSE)
+  source("R/secrets_encryption.R",     local = FALSE)
+  source("R/erp_connector_registry.R", local = FALSE)
+  source("R/sap_api.R",                local = FALSE)
+
+  # ── Override hd-admin direct-read helpers (they bypass .s3_key()) ─────────
+  # Re-point them at the mock store so tests can plant data there.
+  .read_username_index <- function() {
+    tryCatch(mock_s3readRDS("hd-admin/username_index.rds", "mock-bucket"),
+             error = function(e) .schema_username_index())
+  }
+  .write_username_index <- function(df) {
+    mock_s3saveRDS(df, "hd-admin/username_index.rds", "mock-bucket")
+    invisible(TRUE)
+  }
+  read_emergency_lock <- function() {
+    tryCatch(mock_s3readRDS("hd-admin/emergency_lock.rds", "mock-bucket"),
+             error = function(e) NULL)
+  }
+  read_pending_invites <- function() {
+    tryCatch(mock_s3readRDS("hd-admin/pending_invites.rds", "mock-bucket"),
+             error = function(e) .schema_pending_invites())
+  }
+  write_pending_invites <- function(df) {
+    mock_s3saveRDS(df, "hd-admin/pending_invites.rds", "mock-bucket")
+    invisible(TRUE)
+  }
+  read_client_registry <- function() {
+    tryCatch(mock_s3readRDS("hd-admin/client_registry.rds", "mock-bucket"),
+             error = function(e) .schema_client_registry())
+  }
+  write_client_registry <- function(df) {
+    mock_s3saveRDS(df, "hd-admin/client_registry.rds", "mock-bucket")
+    invisible(TRUE)
+  }
+  auth_load_usuarios <- function(client_id = NULL) {
+    cid <- client_id %||% Sys.getenv("CLIENT_ID")
+    tryCatch(mock_s3readRDS(paste0(tolower(cid), "/usuarios.rds"), "mock-bucket"),
+             error = function(e) auth_schema_usuarios())
+  }
+  auth_save_usuarios <- function(df, client_id = NULL) {
+    cid <- client_id %||% Sys.getenv("CLIENT_ID")
+    mock_s3saveRDS(df, paste0(tolower(cid), "/usuarios.rds"), "mock-bucket")
+    invisible(TRUE)
+  }
+
+  # ── Run all test modules ───────────────────────────────────────────────────
+  .run_module <- function(file) {
+    e <- new.env(parent = globalenv())
+    e$.pass <- 0L
+    e$.fail <- 0L
+    # Defensive reset: log_action() defers its S3 write via an in-memory
+    # pending-queue (R/app_audit.R's .audit_queue). Without this, an unflushed
+    # entry from one test module could bleed into the next module's assertions.
+    # Individual test files also flush explicitly where it matters, but resetting
+    # here means a forgotten flush fails loudly in its own module instead of
+    # silently corrupting an unrelated one.
+    if (exists(".audit_pending"))         rm(list = ls(.audit_pending),         envir = .audit_pending)
+    if (exists(".audit_flush_scheduled")) rm(list = ls(.audit_flush_scheduled), envir = .audit_flush_scheduled)
+    tryCatch(source(file, local = e), error = function(err) {
+      cat(sprintf("  ERROR loading %s: %s\n", basename(file), err$message))
+      e$.fail <- e$.fail + 1L
+    })
+    .total_pass <<- .total_pass + e$.pass
+    .total_fail <<- .total_fail + e$.fail
+  }
+
+  cat("\n====================================================\n")
+  cat("  HopDesk SaaS Test Suite\n")
+  cat("====================================================\n\n")
+
+  .run_module("tests/test_saas_isolation.R")
+  .run_module("tests/test_saas_erp_secrets.R")
+  .run_module("tests/test_saas_erp_isolation.R")
+  .run_module("tests/test_saas_erp_tiers.R")
+  .run_module("tests/test_saas_erp_fallback.R")
+  .run_module("tests/test_saas_perms.R")
+  .run_module("tests/test_saas_sap_cache.R")
+  .run_module("tests/test_saas_home_jump.R")
+  .run_module("tests/test_saas_stage2_tabs.R")
+  .run_module("tests/test_saas_invites.R")
+  .run_module("tests/test_saas_audit.R")
+  .run_module("tests/test_saas_audit_viewer.R")
+  .run_module("tests/test_saas_log_action_scoping.R")
+  .run_module("tests/test_saas_notifications.R")
+  .run_module("tests/test_saas_limit_change.R")
+  .run_module("tests/test_saas_password_hashing.R")
+  .run_module("tests/test_saas_manual_entry_client_scoping.R")
+
+  cat("\n====================================================\n")
+  cat(sprintf("  TOTAL: %d passed, %d failed\n", .total_pass, .total_fail))
+  cat("====================================================\n\n")
+
+  if (.total_fail > 0L) stop(sprintf("%d test(s) failed", .total_fail))
+
+}, finally = {
+  .restore_aws_s3_namespace()
+})
+
 invisible(.total_pass)
