@@ -1001,7 +1001,18 @@ ledgerModuleServer <- function(id, config, shared) {
       detail_lu <- .fresh_lu(
         keys, ctx$amt,
         unique(detail_np[, c("Empresa","Moneda","Documento","Parte","Codigo","Importe","FechaEff"), drop = FALSE]))
-      new_rows  <- merge(keys, detail_lu, by = c("Empresa","Moneda","Documento","Importe"))
+      # found 2026-08-04 (live crash: "undefined columns selected" at the
+      # final column-select below): in summary mode, `keys` already carries
+      # its own Parte (from .resolve_summary_sel()/.summary_sel_to_keys()) --
+      # audit mode's keys never do, which is why this only broke in summary
+      # mode. Merging that Parte against detail_lu's OWN Parte (neither is a
+      # join column) renamed both to Parte.x/Parte.y instead of erroring at
+      # merge time, so the crash only surfaced later, at the plain "Parte"
+      # column-select. detail_lu is the authoritative, freshly-read source
+      # for Parte/Codigo/FechaEff -- keys only needs to contribute the join
+      # columns here, exactly like stage_all's inv_keys already does.
+      new_rows  <- merge(keys[, c("Empresa","Moneda","Documento","Importe"), drop = FALSE],
+                         detail_lu, by = c("Empresa","Moneda","Documento","Importe"))
       new_rows[["id"]]        <- vapply(seq_len(nrow(new_rows)), function(x) uuid::UUIDgenerate(), character(1))
       new_rows[["ledger"]]    <- ledger
       new_rows[["tipo_item"]] <- "factura"

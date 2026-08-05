@@ -71,7 +71,7 @@ cat("── pagar_hoy_db: remaining 13 sites read fresh via safe_load_pagar_hoy 
 
 sites <- list(
   list(file = "R/ledger_module.R", anchor = "observeEvent\\(input\\$stage_all,", occurrence = 1L, label = "stage_all", window = 55),
-  list(file = "R/ledger_module.R", anchor = "observeEvent\\(input\\$stage_sel,", occurrence = 1L, label = "stage_sel", window = 70),
+  list(file = "R/ledger_module.R", anchor = "observeEvent\\(input\\$stage_sel,", occurrence = 1L, label = "stage_sel", window = 90),
   list(file = "R/ledger_module.R", anchor = 'observeEvent\\(input\\[\\[paste0\\("cart_", i\\)\\]\\],', occurrence = 1L, label = "cart_<i> group toggle", window = 30),
   list(file = "R/ledger_module.R", anchor = "observeEvent\\(input\\$cart_inv_click,", occurrence = 1L, label = "cart_inv_click", window = 30),
   list(file = "R/ledger_module.R", anchor = "^\\.sync_staged <- function", occurrence = 1L, label = ".sync_staged (shared helper)", window = 20),

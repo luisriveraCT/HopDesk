@@ -210,6 +210,77 @@ assign("%||%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) ==
      any(grepl("found 2026-08-04", txt)))
 }
 
+# ── 5. Found live 2026-08-04, moments after the fix above shipped: Mouse hit
+# a SECOND, PRE-EXISTING bug in this same handler -- "Error in [.data.frame:
+# undefined columns selected" at the final column-select. Root cause:
+# summary-mode `keys` (from .resolve_summary_sel()/.summary_sel_to_keys())
+# already carries its own `Parte` column -- audit mode's keys never do,
+# which is why this only broke in summary mode ("Modo auditoría" off, the
+# default view). Merging that `keys` (with Parte) against detail_lu (which
+# ALSO has its own Parte, plus Codigo) on a by= that does NOT include Parte
+# silently renamed both to Parte.x/Parte.y instead of erroring at merge
+# time -- the crash only surfaced later, at the plain "Parte" column-select.
+# This bug predates today's provision-exclusion fix entirely (reproduced
+# against the unmodified pasivos_filter_out_provisions(keys) no-op too, same
+# outcome) -- it wasn't introduced by that fix, just found immediately after
+# because that's when this exact code path got run again.
+#
+# Fix: narrow `keys` to just the join columns (Empresa,Moneda,Documento,
+# Importe) immediately before merging with detail_lu, exactly like
+# stage_all's inv_keys already does -- detail_lu is the authoritative,
+# freshly-read source for Parte/Codigo/FechaEff, so keys never needs to
+# contribute those columns to this specific merge.
+{
+  # ── 5a. Functional: reproduce the exact collision with synthetic data,
+  # matching .resolve_summary_sel()'s real output shape (Parte column
+  # present) merged against a detail_lu shape (Parte + Codigo present). ────
+  detail_lu <- data.frame(
+    Empresa = "NCS", Moneda = "MXN", Documento = "SAP-100",
+    Parte = "Proveedor A", Codigo = "C001", Importe = 1000,
+    FechaEff = as.Date("2026-08-10"), stringsAsFactors = FALSE
+  )
+  keys_summary <- data.frame(
+    Empresa = "NCS", Moneda = "MXN", Documento = "SAP-100",
+    Importe = 1000, Parte = "Proveedor A",
+    stringsAsFactors = FALSE
+  )
+
+  broken_merge <- merge(keys_summary, detail_lu, by = c("Empresa","Moneda","Documento","Importe"))
+  ok("control: confirms the collision is real -- merging keys WITH its own Parte column produces Parte.x/Parte.y, not a plain Parte",
+     "Parte.x" %in% names(broken_merge) && "Parte.y" %in% names(broken_merge) && !("Parte" %in% names(broken_merge)))
+  ok("control: selecting a plain 'Parte' column from that broken merge throws exactly the reported error",
+     inherits(tryCatch(broken_merge[, "Parte", drop = FALSE], error = function(e) e), "error"))
+
+  fixed_merge <- merge(keys_summary[, c("Empresa","Moneda","Documento","Importe"), drop = FALSE],
+                       detail_lu, by = c("Empresa","Moneda","Documento","Importe"))
+  ok("the fix: narrowing keys to just the join columns first produces a clean, single 'Parte' column",
+     "Parte" %in% names(fixed_merge) && !("Parte.x" %in% names(fixed_merge)))
+  ok("the fix: Codigo (never in keys, always in detail_lu) still comes through correctly",
+     identical(fixed_merge$Codigo[1], "C001"))
+  ok("the fix: selecting the full expected new_rows column set no longer throws",
+     !inherits(tryCatch(fixed_merge[, c("Empresa","Moneda","Documento","Importe","Parte","Codigo","FechaEff"), drop = FALSE],
+                        error = function(e) e), "error"))
+
+  # ── 5b. Static: the real stage_sel code narrows keys before this merge ──
+  txt <- readLines("R/ledger_module.R", warn = FALSE)
+  start <- grep("observeEvent\\(input\\$stage_sel,", txt)
+  ok("found stage_sel to scan (merge-narrowing fix)", length(start) > 0)
+  if (length(start)) {
+    block <- paste(txt[start[1]:min(start[1] + 70, length(txt))], collapse = "\n")
+    ok("stage_sel narrows keys to Empresa/Moneda/Documento/Importe before merging with detail_lu (the fix)",
+       grepl('merge\\(keys\\[, c\\("Empresa","Moneda","Documento","Importe"\\), drop = FALSE\\]', block) &&
+       grepl("detail_lu, by = ", block))
+    ok("stage_sel no longer merges the bare `keys` object directly against detail_lu (the old, colliding call)",
+       !grepl("merge\\(keys, detail_lu,", block))
+  }
+
+  # ── Regression guard: stage_all's own inv_keys was ALWAYS narrow (never
+  # had this bug) -- confirms the fix matches, not diverges from, the one
+  # already-correct sibling that does this same kind of merge. ────────────
+  ok("stage_all's inv_keys is already narrow (Empresa/Moneda/Documento/Importe only) going into its own merge with detail_lu -- unaffected regression guard",
+     any(grepl('inv_keys <- unique\\(d\\[, c\\("Empresa","Moneda","Documento","Importe"\\)', txt)))
+}
+
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0) stop("Tests FAILED.")
 invisible(NULL)
