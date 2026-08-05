@@ -121,3 +121,39 @@ pasivos_filter_out_provisions <- function(rows) {
   if (is.null(rows) || !nrow(rows) || !"source" %in% names(rows)) return(rows)
   rows[rows$source != "provision", , drop = FALSE]
 }
+
+# found 2026-08-04: Calendario's per-selection buttons (stage_sel/do_move/
+# do_restore in ledger_module.R) were calling pasivos_filter_out_provisions()
+# on the WRONG object -- on `keys`, the small Empresa/Moneda/Documento/Importe
+# (+Parte/provision_id) frame returned by .audit_sel_to_keys()/
+# .resolve_summary_sel() AFTER the user's row selection had already been
+# resolved, not on `detail` (the full day's rows, which still carries
+# `source`). pasivos_filter_out_provisions()'s own early-return
+# (!"source" %in% names(rows)) fired silently every time, since `keys` never
+# has a `source` column -- the call looked correct (it's right there in the
+# code, matching the pattern in stage_all/cart_<i>/cart_inv_click) but was a
+# complete no-op. A selected provision then flowed straight through
+# .fresh_lu() (which reads live from the FULL, provision-inclusive
+# df_combined(), not a filtered copy) into new_rows and from there into the
+# real pagar_hoy_db upsert -- i.e. "Agregar selección" could actually
+# register a provision in the real Agenda, the one thing this whole mechanism
+# exists to prevent. Confirmed by reproducing the exact call chain with
+# synthetic data (a real SAP invoice + a provision selected together): the
+# provision survived to the final new_rows every time.
+#
+# This is the one correct place to close that gap: restrict `keys` to just
+# the (Empresa,Moneda,Documento,Importe) combinations that ALSO survive
+# pasivos_filter_out_provisions(detail) -- `detail` still has `source`, so
+# that filter is effective, and any extra columns already on `keys`
+# (Parte, provision_id) pass through the merge untouched.
+pasivos_exclude_provision_keys <- function(keys, detail) {
+  if (is.null(keys) || !nrow(keys)) return(keys)
+  detail_np <- pasivos_filter_out_provisions(detail)
+  join_cols <- intersect(c("Empresa", "Moneda", "Documento", "Importe"), names(keys))
+  join_cols <- intersect(join_cols, names(detail_np %||% data.frame()))
+  if (!length(join_cols) || is.null(detail_np) || !nrow(detail_np)) {
+    return(keys[0, , drop = FALSE])
+  }
+  np_key_set <- unique(detail_np[, join_cols, drop = FALSE])
+  merge(keys, np_key_set, by = join_cols)
+}

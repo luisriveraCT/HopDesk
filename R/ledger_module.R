@@ -981,9 +981,14 @@ ledgerModuleServer <- function(id, config, shared) {
         }
         k
       }
-      keys <- pasivos_filter_out_provisions(keys)
-      if (!nrow(keys)) {
-        showNotification("No se encontraron facturas.", type = "warning")
+      # found 2026-08-04: pasivos_filter_out_provisions(keys) here was a
+      # no-op -- `keys` never carries a `source` column (see
+      # pasivos_exclude_provision_keys()'s own header comment in
+      # pasivos_calendar_glue.R for the full incident). Use the helper that
+      # actually works on a post-selection keys object.
+      keys <- pasivos_exclude_provision_keys(keys, detail)
+      if (is.null(keys) || !nrow(keys)) {
+        showNotification("No se encontraron facturas; las provisiones se convierten con ⚡.", type = "warning")
         return()
       }
       detail_np <- pasivos_filter_out_provisions(detail)
@@ -1568,7 +1573,14 @@ ledgerModuleServer <- function(id, config, shared) {
             return()
           }
         }
-        keys <- pasivos_filter_out_provisions(keys)
+        # found 2026-08-04: same no-op as stage_sel (see
+        # pasivos_exclude_provision_keys()'s header comment in
+        # pasivos_calendar_glue.R) -- `keys` here never has a `source`
+        # column, so pasivos_filter_out_provisions(keys) never excluded
+        # anything. A provision selected alongside real invoices would get
+        # its date force-moved through this generic mechanism instead of
+        # going through its own Pasivos edit path.
+        keys <- pasivos_exclude_provision_keys(keys, detail)
         if (is.null(keys) || !nrow(keys)) {
           showNotification("No se encontraron facturas reales (sólo provisiones).", type = "warning")
           return()
@@ -1609,7 +1621,10 @@ ledgerModuleServer <- function(id, config, shared) {
             return()
           }
         }
-        keys <- pasivos_filter_out_provisions(keys)
+        # found 2026-08-04: same no-op as stage_sel/do_move (see
+        # pasivos_exclude_provision_keys()'s header comment in
+        # pasivos_calendar_glue.R).
+        keys <- pasivos_exclude_provision_keys(keys, detail)
         if (is.null(keys) || !nrow(keys)) {
           showNotification("No se encontraron facturas reales (sólo provisiones).", type = "warning")
           return()
