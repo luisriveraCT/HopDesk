@@ -939,7 +939,34 @@ ledgerModuleServer <- function(id, config, shared) {
       updated <- upsert_pagar_hoy(ph_base, new_rows,
                                   keys = c("ledger","Empresa","Moneda","Documento","Importe"))
       shared$pagar_hoy_db(updated)
-      save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
+      # found 2026-08-05: same bare-call bug fixed in the confirm/quitar
+      # handlers (see save_pagar_hoy_with_retry()'s header comment in
+      # R/persistence.R for the full incident) -- a transient failure here
+      # left the acting user's own screen showing the item staged (the
+      # reactiveVal above already updated) while nothing persisted and
+      # nothing got logged.
+      stage_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
+                                                client_id = shared$effective_client_id())
+      if (!isTRUE(stage_result$ok)) {
+        showNotification(
+          paste0("No se pudo enviar a Agenda tras ", stage_result$attempts,
+                 " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
+          type = "error", duration = 15
+        )
+        tryCatch(log_action(
+          user = tryCatch(shared$current_user(), error = function(e) "system"),
+          module = paste0("ledger_", ledger), action = "enviar_a_agenda_dia_incompleto",
+          description = sprintf(
+            "Intento de enviar %d factura(s) no se pudo guardar tras %d intento(s): %s",
+            nrow(new_rows), stage_result$attempts,
+            if (!is.null(stage_result$error)) conditionMessage(stage_result$error) else "error desconocido"),
+          target_id = paste(new_rows[["Documento"]][seq_len(min(5, nrow(new_rows)))], collapse = ", "),
+          metadata  = list(n = nrow(new_rows), source = "stage_all"),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        ), error = function(e) NULL)
+        return()
+      }
       lbl <- if (ledger == "AR") "Agenda del d\u00eda (Cobros)" else "Agenda del d\u00eda (Pagos)"
       emps <- paste(unique(new_rows[["Empresa"]]), collapse = ", ")
       showNotification(
@@ -1042,7 +1069,34 @@ ledgerModuleServer <- function(id, config, shared) {
       updated <- upsert_pagar_hoy(ph_base, new_rows,
                                   keys = c("ledger","Empresa","Moneda","Documento","Importe"))
       shared$pagar_hoy_db(updated)
-      save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
+      # found 2026-08-05: same bare-call bug fixed in the confirm/quitar
+      # handlers (see save_pagar_hoy_with_retry()'s header comment in
+      # R/persistence.R for the full incident) -- a transient failure here
+      # left the acting user's own screen showing the item staged (the
+      # reactiveVal above already updated) while nothing persisted and
+      # nothing got logged.
+      stage_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
+                                                client_id = shared$effective_client_id())
+      if (!isTRUE(stage_result$ok)) {
+        showNotification(
+          paste0("No se pudo enviar a Agenda tras ", stage_result$attempts,
+                 " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
+          type = "error", duration = 15
+        )
+        tryCatch(log_action(
+          user = tryCatch(shared$current_user(), error = function(e) "system"),
+          module = paste0("ledger_", ledger), action = "enviar_a_agenda_dia_incompleto",
+          description = sprintf(
+            "Intento de enviar %d factura(s) no se pudo guardar tras %d intento(s): %s",
+            nrow(new_rows), stage_result$attempts,
+            if (!is.null(stage_result$error)) conditionMessage(stage_result$error) else "error desconocido"),
+          target_id = paste(new_rows[["Documento"]][seq_len(min(5, nrow(new_rows)))], collapse = ", "),
+          metadata  = list(n = nrow(new_rows), source = "stage_sel"),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        ), error = function(e) NULL)
+        return()
+      }
       lbl <- if (ledger == "AR") "Agenda del d\u00eda (Cobros)" else "Agenda del d\u00eda (Pagos)"
       emps <- paste(unique(new_rows[["Empresa"]]), collapse = ", ")
       showNotification(
@@ -1186,7 +1240,32 @@ ledgerModuleServer <- function(id, config, shared) {
           # anything (the only real guardrail is Calendario itself).
           upd_keys <- cbind(inv_keys, ledger = ledger, stringsAsFactors = FALSE)
           updated <- unstage_pagar_hoy(ph_now, upd_keys, keys = c("ledger","Empresa","Moneda","Documento","Importe"))
-          shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
+          shared$pagar_hoy_db(updated)
+          # found 2026-08-05: same bare-call bug fixed in the confirm/quitar
+          # handlers (see save_pagar_hoy_with_retry()'s header comment in
+          # R/persistence.R for the full incident) -- a transient failure here
+          # left the acting user's own screen looking updated (the reactiveVal
+          # above already changed) while nothing persisted and nothing got logged.
+          site_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
+                                                   client_id = shared$effective_client_id())
+          if (!isTRUE(site_result$ok)) {
+            showNotification(
+              paste0("No se pudo quitar de la Agenda tras ", site_result$attempts,
+                     " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
+              type = "error", duration = 15
+            )
+            tryCatch(log_action(
+              user = tryCatch(shared$current_user(), error = function(e) "system"),
+              module = paste0("ledger_", ledger), action = "quitar_de_agenda_dia_incompleto",
+              description = sprintf("No se pudo guardar tras %d intento(s): %s", site_result$attempts,
+                if (!is.null(site_result$error)) conditionMessage(site_result$error) else "error desconocido"),
+              target_id = tryCatch(as.character(row_p %||% ''), error = function(e) ''),
+              metadata  = list(source = "cart_toggle"),
+              client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+              viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+            ), error = function(e) NULL)
+            return()
+          }
           showNotification("Quitado de la Agenda del día.", type = "message", duration = 2)
           log_action(
             user        = tryCatch(shared$current_user(), error = function(e) "system"),
@@ -1226,7 +1305,32 @@ ledgerModuleServer <- function(id, config, shared) {
           # Reuse the fresh ph_now read from above -- no need for a second read.
           updated <- upsert_pagar_hoy(ph_now %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
                                     keys = c("ledger","Empresa","Moneda","Documento","Importe"))
-          shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
+          shared$pagar_hoy_db(updated)
+          # found 2026-08-05: same bare-call bug fixed in the confirm/quitar
+          # handlers (see save_pagar_hoy_with_retry()'s header comment in
+          # R/persistence.R for the full incident) -- a transient failure here
+          # left the acting user's own screen looking updated (the reactiveVal
+          # above already changed) while nothing persisted and nothing got logged.
+          site_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
+                                                   client_id = shared$effective_client_id())
+          if (!isTRUE(site_result$ok)) {
+            showNotification(
+              paste0("No se pudo enviar a la Agenda tras ", site_result$attempts,
+                     " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
+              type = "error", duration = 15
+            )
+            tryCatch(log_action(
+              user = tryCatch(shared$current_user(), error = function(e) "system"),
+              module = paste0("ledger_", ledger), action = "enviar_a_agenda_dia_incompleto",
+              description = sprintf("No se pudo guardar tras %d intento(s): %s", site_result$attempts,
+                if (!is.null(site_result$error)) conditionMessage(site_result$error) else "error desconocido"),
+              target_id = tryCatch(as.character(row_p %||% ''), error = function(e) ''),
+              metadata  = list(source = "cart_toggle"),
+              client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+              viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+            ), error = function(e) NULL)
+            return()
+          }
           lbl_agenda <- if (ledger == "AR") "Agenda del día (Cobros)" else "Agenda del día (Pagos)"
           showNotification(
             paste0("✓ ", nrow(inv_keys), " factura(s) de ", row_p,
@@ -1307,7 +1411,32 @@ ledgerModuleServer <- function(id, config, shared) {
         # anything (the only real guardrail is Calendario itself).
         upd_keys <- cbind(inv_key, ledger=ledger, stringsAsFactors=FALSE)
         updated  <- unstage_pagar_hoy(ph_now, upd_keys, keys = c("ledger","Empresa","Moneda","Documento","Importe"))
-        shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
+        shared$pagar_hoy_db(updated)
+        # found 2026-08-05: same bare-call bug fixed in the confirm/quitar
+        # handlers (see save_pagar_hoy_with_retry()'s header comment in
+        # R/persistence.R for the full incident) -- a transient failure here
+        # left the acting user's own screen looking updated (the reactiveVal
+        # above already changed) while nothing persisted and nothing got logged.
+        site_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
+                                                 client_id = shared$effective_client_id())
+        if (!isTRUE(site_result$ok)) {
+          showNotification(
+            paste0("No se pudo quitar de la Agenda tras ", site_result$attempts,
+                   " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
+            type = "error", duration = 15
+          )
+          tryCatch(log_action(
+            user = tryCatch(shared$current_user(), error = function(e) "system"),
+            module = paste0("ledger_", ledger), action = "quitar_de_agenda_dia_incompleto",
+            description = sprintf("No se pudo guardar tras %d intento(s): %s", site_result$attempts,
+              if (!is.null(site_result$error)) conditionMessage(site_result$error) else "error desconocido"),
+            target_id = tryCatch(as.character(row_p %||% ''), error = function(e) ''),
+            metadata  = list(source = "cart_inv_click"),
+            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+          ), error = function(e) NULL)
+          return()
+        }
         showNotification("Quitado de la Agenda.", type="message", duration=2)
         log_action(
           user        = tryCatch(shared$current_user(), error = function(e) "system"),
@@ -1348,7 +1477,32 @@ ledgerModuleServer <- function(id, config, shared) {
         )
         updated <- upsert_pagar_hoy(ph_now %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_row,
                                   keys = c("ledger","Empresa","Moneda","Documento","Importe"))
-        shared$pagar_hoy_db(updated); save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id())
+        shared$pagar_hoy_db(updated)
+        # found 2026-08-05: same bare-call bug fixed in the confirm/quitar
+        # handlers (see save_pagar_hoy_with_retry()'s header comment in
+        # R/persistence.R for the full incident) -- a transient failure here
+        # left the acting user's own screen looking updated (the reactiveVal
+        # above already changed) while nothing persisted and nothing got logged.
+        site_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
+                                                 client_id = shared$effective_client_id())
+        if (!isTRUE(site_result$ok)) {
+          showNotification(
+            paste0("No se pudo enviar a la Agenda tras ", site_result$attempts,
+                   " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
+            type = "error", duration = 15
+          )
+          tryCatch(log_action(
+            user = tryCatch(shared$current_user(), error = function(e) "system"),
+            module = paste0("ledger_", ledger), action = "enviar_a_agenda_dia_incompleto",
+            description = sprintf("No se pudo guardar tras %d intento(s): %s", site_result$attempts,
+              if (!is.null(site_result$error)) conditionMessage(site_result$error) else "error desconocido"),
+            target_id = tryCatch(as.character(row_p %||% ''), error = function(e) ''),
+            metadata  = list(source = "cart_inv_click"),
+            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+          ), error = function(e) NULL)
+          return()
+        }
         showNotification(
           paste0("Factura ", one[["Documento"]], " enviada a la Agenda."),
           type="message", duration=2)
@@ -3263,7 +3417,7 @@ ledgerModuleServer <- function(id, config, shared) {
   # covers all three call sites.
   ph <- tryCatch(safe_load_pagar_hoy(username = username, client_id = client_id),
                  error = function(e) NULL) %||% ph_rv()
-  if (is.null(ph) || !nrow(ph)) return(invisible(NULL))
+  if (is.null(ph) || !nrow(ph)) return(invisible(list(changed = FALSE, ok = TRUE, error = NULL)))
   changed <- FALSE
   for (i in seq_len(nrow(keys))) {
     emp <- keys[["Empresa"]][i]
@@ -3292,6 +3446,36 @@ ledgerModuleServer <- function(id, config, shared) {
     if (!is.null(new_importe)) ph[["Importe"]][idx] <- abs(new_importe)
     changed <- TRUE
   }
-  if (changed) { ph_rv(ph); save_pagar_hoy(ph, username, client_id = client_id) }
-  invisible(NULL)
+  if (!changed) return(invisible(list(changed = FALSE, ok = TRUE, error = NULL)))
+  ph_rv(ph)
+  # found 2026-08-05: this used to be a bare save_pagar_hoy() call -- same
+  # bug shape as the confirm/quitar/stage handlers, but a different fix is
+  # right for THIS site: this whole function is a best-effort "keep an
+  # already-staged Agenda row's displayed date/amount in sync with an edit
+  # made elsewhere" helper, not the primary action -- every one of its 4 callers
+  # (do_move/do_restore/sap_edit_save in this file, app.R's manual-entry
+  # edit) already does its OWN primary save + its OWN log_action for the
+  # actual user-facing action, entirely separately from this call. A failure
+  # here was never "the action didn't happen" -- it only meant the staged
+  # Agenda row's displayed values could go stale until the next reload. So
+  # instead of adding a new user-facing error + audit-log entry (there was
+  # never a SUCCESS log for this cosmetic step either, at any call site --
+  # adding one only for the failure path would be new, disproportionate
+  # noise), the fix here is to make the underlying write itself more
+  # resilient (the same retry as everywhere else) and guarantee this
+  # function can never throw uncaught, matching the existing containment
+  # 3 of its 4 callers already have (do_move/do_restore wrap their whole
+  # handler; sap_edit_save wraps this specific call) -- the 4th
+  # (app.R's manual-entry edit-mode save) had NO containment around this
+  # call at all, so this is what actually closes that one's real gap: not a
+  # bespoke per-site block, but making the shared helper safe by
+  # construction so every caller benefits without needing its own copy of
+  # the same fix.
+  sync_result <- save_pagar_hoy_with_retry(ph, username, client_id = client_id)
+  if (!isTRUE(sync_result$ok)) {
+    warning("[.sync_staged] save_pagar_hoy failed after ", sync_result$attempts,
+            " attempt(s): ", conditionMessage(sync_result$error))
+    return(invisible(list(changed = TRUE, ok = FALSE, error = sync_result$error)))
+  }
+  invisible(list(changed = TRUE, ok = TRUE, error = NULL))
 }
