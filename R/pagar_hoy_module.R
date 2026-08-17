@@ -1188,8 +1188,45 @@ pagarHoyServer <- function(id, shared) {
                                             client_id = shared$effective_client_id()),
                         error = function(e) NULL) %||% shared$pagar_hoy_db(),
                rows |> dplyr::select(id), keys = "id")
-        shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
+        shared$pagar_hoy_db(ph)
+        # found 2026-08-05: same bare-call bug as the confirm handlers (see
+        # save_pagar_hoy_with_retry()'s own header comment in
+        # R/persistence.R for the full incident) -- this one is actually
+        # higher-stakes than a plain unstage: a failed save here must ALSO
+        # stop before the provision-revert block below runs, or a provision
+        # would get reverted to "provisional" (editable again) while its
+        # linked pagar_hoy row is still sitting in S3, unremoved -- the
+        # opposite of a safe no-op, a genuinely inconsistent state.
+        remove_result <- save_pagar_hoy_with_retry(ph, shared$current_user(),
+                                                    client_id = shared$effective_client_id())
+        if (!isTRUE(remove_result$ok)) {
+          showNotification(
+            paste0("No se pudo quitar de la Agenda tras ", remove_result$attempts,
+                   " intento(s) (posible problema de conexión). Actualiza la página e intenta de nuevo."),
+            type = "error", duration = 15
+          )
+          tryCatch(log_action(
+            user = shared$current_user(), module = "pagar_hoy",
+            action = "quitar_pagos_incompleto",
+            description = sprintf(
+              "Intento de quitar %d pago(s) de %s no se pudo guardar tras %d intento(s): %s",
+              nrow(rows), emp, remove_result$attempts,
+              if (!is.null(remove_result$error)) conditionMessage(remove_result$error) else "error desconocido"),
+            target_id = emp,
+            metadata  = list(empresa = emp, n = nrow(rows), ids = rows$id),
+            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+          ), error = function(e) NULL)
+          return()
+        }
 
+        # found 2026-08-05: this whole block already individually tryCatch()es
+        # each of its OWN save_*() calls, but the surrounding control flow
+        # (index lookups) was not itself guarded -- wrapping it means an
+        # unexpected failure here can't also suppress the "quitar_pagos"
+        # success log below for an unstage that, by this point, has already
+        # durably succeeded.
+        secondary_err_rmap <- tryCatch({
         # Revert any pasivos provisions linked to the removed rows
         prov_ids <- rows$provision_id[!is.na(rows$provision_id) &
                                         nzchar(rows$provision_id %||% "")]
@@ -1223,12 +1260,22 @@ pagarHoyServer <- function(id, shared) {
             }
           }
         }
+        }, error = function(e) e)
+        if (inherits(secondary_err_rmap, "error")) {
+          showNotification(
+            paste0("Pago(s) quitado(s) correctamente, pero algo falló al revertir la provisión relacionada: ",
+                   conditionMessage(secondary_err_rmap)),
+            type = "warning", duration = 10
+          )
+        }
 
         showNotification(paste0(nrow(rows), " pago(s) quitado(s)."), type = "message", duration = 2)
         log_action(shared$current_user(), "pagar_hoy", "quitar_pagos",
                    sprintf("%d pago(s) quitado(s) de %s", nrow(rows), emp),
                    target_id = emp,
-                   metadata = list(empresa = emp, n = nrow(rows), ids = rows$id),
+                   metadata = list(empresa = emp, n = nrow(rows), ids = rows$id,
+                                   secondary_error = if (inherits(secondary_err_rmap, "error"))
+                                     conditionMessage(secondary_err_rmap) else NA_character_),
                    client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
                    viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
       }, ignoreInit = TRUE)
@@ -1260,7 +1307,33 @@ pagarHoyServer <- function(id, shared) {
                                             client_id = shared$effective_client_id()),
                         error = function(e) NULL) %||% shared$pagar_hoy_db(),
                rows |> dplyr::select(id), keys = "id")
-        shared$pagar_hoy_db(ph); save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
+        shared$pagar_hoy_db(ph)
+        # found 2026-08-05: same bare-call bug as "Remove AP" above (see its
+        # comment for the full incident) -- no linked-provision revert here
+        # (provisions are AP-only), so this fix is simpler: guard the save,
+        # and on failure stop before the success notification/log.
+        remove_result <- save_pagar_hoy_with_retry(ph, shared$current_user(),
+                                                    client_id = shared$effective_client_id())
+        if (!isTRUE(remove_result$ok)) {
+          showNotification(
+            paste0("No se pudo quitar de la Agenda tras ", remove_result$attempts,
+                   " intento(s) (posible problema de conexión). Actualiza la página e intenta de nuevo."),
+            type = "error", duration = 15
+          )
+          tryCatch(log_action(
+            user = shared$current_user(), module = "pagar_hoy",
+            action = "quitar_cobros_incompleto",
+            description = sprintf(
+              "Intento de quitar %d cobro(s) de %s no se pudo guardar tras %d intento(s): %s",
+              nrow(rows), emp, remove_result$attempts,
+              if (!is.null(remove_result$error)) conditionMessage(remove_result$error) else "error desconocido"),
+            target_id = emp,
+            metadata  = list(empresa = emp, n = nrow(rows), ids = rows$id),
+            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+          ), error = function(e) NULL)
+          return()
+        }
         showNotification(paste0(nrow(rows), " cobro(s) quitado(s)."), type = "message", duration = 2)
         log_action(shared$current_user(), "pagar_hoy", "quitar_cobros",
                    sprintf("%d cobro(s) quitado(s) de %s", nrow(rows), emp),
