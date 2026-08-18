@@ -99,16 +99,39 @@ pasivos_expand_recurrence <- function(recurrence_type, recurrence_params, from, 
       results[seq_len(n)]
     },
 
+    # "Quincenal" = two fixed calendar dates per month (day1/day2), not a
+    # rolling 14-day interval — real quincena pay dates don't drift. The old
+    # rolling behavior now lives under interval_days below. day2=31 clamps
+    # to real month-end via .ym_date().
     biweekly = {
-      anchor <- as.Date(recurrence_params$anchor_date)
-      # Find the smallest anchor + 14k >= from
-      delta <- as.integer(from - anchor)
-      k_start <- ceiling(delta / 14)
+      day1 <- as.integer(recurrence_params$day1 %||% 15L)
+      day2 <- as.integer(recurrence_params$day2 %||% 31L)
+      year0  <- lubridate::year(from)
+      month0 <- lubridate::month(from)
+      results <- Date(0)
+      m <- 0L
+      while (length(results) < n) {
+        yr <- year0 + (month0 + m - 1L) %/% 12L
+        mo <- ((month0 + m - 1L) %% 12L) + 1L
+        cand <- sort(unique(c(.ym_date(yr, mo, day1), .ym_date(yr, mo, day2))))
+        results <- c(results, cand[cand >= from])
+        m <- m + 1L
+      }
+      results[seq_len(n)]
+    },
+
+    # "Cada N días" — the rolling-interval behavior biweekly used to have,
+    # generalized from a hardcoded 14 to any interval.
+    interval_days = {
+      anchor   <- as.Date(recurrence_params$anchor_date)
+      interval <- as.integer(recurrence_params$interval_days %||% 30L)
+      delta    <- as.integer(from - anchor)
+      k_start  <- ceiling(delta / interval)
       if (k_start < 0L) k_start <- 0L
       results <- Date(0)
       k <- k_start
       while (length(results) < n) {
-        d <- anchor + k * 14L
+        d <- anchor + k * interval
         if (d >= from) results <- c(results, d)
         k <- k + 1L
       }
@@ -153,6 +176,39 @@ pasivos_expand_recurrence <- function(recurrence_type, recurrence_params, from, 
           for (q_off in c(0L, 3L, 6L, 9L)) {
             mo <- ((anchor_month - 1L + q_off) %% 12L) + 1L
             extra_yr <- (anchor_month - 1L + q_off) %/% 12L
+            d <- .ym_date(yr + extra_yr, mo, day)
+            results <- c(results, d)
+          }
+          if (length(results) >= n) break
+        }
+        results <- sort(unique(results))
+      }
+      results[seq_len(n)]
+    },
+
+    # "Bimestral" — same shape as quarterly above, 2-month offsets instead of 3.
+    bimestral = {
+      anchor_month <- as.integer(recurrence_params$anchor_month)
+      day          <- as.integer(recurrence_params$day)
+      year0  <- lubridate::year(from)
+      results <- Date(0)
+      for (yr_off in 0L:6L) {
+        yr <- year0 - 1L + yr_off
+        for (b_off in c(0L, 2L, 4L, 6L, 8L, 10L)) {
+          mo <- ((anchor_month - 1L + b_off) %% 12L) + 1L
+          extra_yr <- (anchor_month - 1L + b_off) %/% 12L
+          d <- .ym_date(yr + extra_yr, mo, day)
+          if (d >= from) results <- c(results, d)
+        }
+      }
+      results <- sort(unique(results))
+      if (length(results) < n) {
+        last_yr <- lubridate::year(results[length(results)])
+        for (yr_off in 1L:20L) {
+          yr <- last_yr + yr_off
+          for (b_off in c(0L, 2L, 4L, 6L, 8L, 10L)) {
+            mo <- ((anchor_month - 1L + b_off) %% 12L) + 1L
+            extra_yr <- (anchor_month - 1L + b_off) %/% 12L
             d <- .ym_date(yr + extra_yr, mo, day)
             results <- c(results, d)
           }

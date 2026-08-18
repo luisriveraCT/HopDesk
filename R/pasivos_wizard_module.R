@@ -64,9 +64,20 @@ pasivos_liability_to_draft <- function(row) {
       nth  = as.integer(input$pwiz_rp_nth  %||% 1L),
       wday = as.integer(input$pwiz_rp_wday %||% 1L)
     ),
-    biweekly           = list(anchor_date = as.Date(input$pwiz_rp_anchor %||% Sys.Date())),
+    biweekly           = list(
+      day1 = as.integer(input$pwiz_rp_day1 %||% 15L),
+      day2 = as.integer(input$pwiz_rp_day2 %||% 31L)
+    ),
     weekly             = list(wday = as.integer(input$pwiz_rp_wday %||% 1L)),
+    interval_days      = list(
+      anchor_date   = as.Date(input$pwiz_rp_anchor %||% Sys.Date()),
+      interval_days = as.integer(input$pwiz_rp_interval_days %||% 30L)
+    ),
     quarterly          = list(
+      anchor_month = as.integer(input$pwiz_rp_anchor_month %||% 1L),
+      day          = as.integer(input$pwiz_rp_day %||% 1L)
+    ),
+    bimestral          = list(
       anchor_month = as.integer(input$pwiz_rp_anchor_month %||% 1L),
       day          = as.integer(input$pwiz_rp_day %||% 1L)
     ),
@@ -931,7 +942,10 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     wiz$mode             <- "edit"
     wiz$edit_target_id   <- lid
     wiz$draft            <- draft
-    wiz$step_id          <- "categoria"
+    # Editing opens on Revisión (last step) since reviewing an existing
+    # pasivo means wanting the overview first; new pasivos still start at
+    # "categoria" (see the sibling pasivos_add_liability observer).
+    wiz$step_id          <- utils::tail(.wiz_steps_for(draft$categoria)$ids, 1)
     wiz$validation_errors <- list()
     wiz$cargos_list      <- draft$cargos_iniciales %||% list()
     last_tasa_touched("anual")

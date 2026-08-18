@@ -168,11 +168,34 @@ r5 <- pasivos_expand_recurrence("monthly_nth_weekday", list(nth = -1L, wday = 1L
                                   as.Date("2026-03-01"), 1L)
 .chk(r5[1], as.Date("2026-03-30"), "G1: last Mon March 2026 = 30th (5th Monday)")
 
-# biweekly, anchor 2025-01-01, from=2026-05-04, n=3
-r6 <- pasivos_expand_recurrence("biweekly", list(anchor_date = as.Date("2025-01-01")),
+# biweekly (redefined, Stage: quincenal fixed dates) -- two fixed calendar
+# dates per month, day2=31 clamping to real month-end, NOT a rolling
+# interval. from=2026-01-20, n=6 spans a month-end clamp (Feb, non-leap).
+r6 <- pasivos_expand_recurrence("biweekly", list(day1 = 15L, day2 = 31L),
+                                  as.Date("2026-01-20"), 6L)
+.chk(r6[1], as.Date("2026-01-31"), "G1: biweekly (fixed dates) first after Jan 20 = Jan 31")
+.chk(r6[2], as.Date("2026-02-15"), "G1: biweekly (fixed dates) Feb 15")
+.chk(r6[3], as.Date("2026-02-28"), "G1: biweekly (fixed dates) Feb 28 (day2=31 clamped, non-leap)")
+.chk(r6[4], as.Date("2026-03-15"), "G1: biweekly (fixed dates) Mar 15")
+.chk(r6[5], as.Date("2026-03-31"), "G1: biweekly (fixed dates) Mar 31 (31-day month, no clamp)")
+.chk(r6[6], as.Date("2026-04-15"), "G1: biweekly (fixed dates) Apr 15")
+
+# interval_days -- the literal rolling-anchor behavior biweekly used to have,
+# now under its own explicit name, generalized to any interval (not just 14).
+r6b <- pasivos_expand_recurrence("interval_days",
+                                  list(anchor_date = as.Date("2025-01-01"), interval_days = 14L),
                                   as.Date("2026-05-04"), 3L)
-.chk_true(all(r6 >= as.Date("2026-05-04")), "G1: biweekly all dates >= from")
-.chk_true(all(diff(as.integer(r6)) == 14L),  "G1: biweekly exactly 14 days apart")
+.chk_true(all(r6b >= as.Date("2026-05-04")), "G1: interval_days all dates >= from")
+.chk_true(all(diff(as.integer(r6b)) == 14L),  "G1: interval_days exactly 14 days apart")
+
+# interval_days with a different interval -- confirms it's actually
+# parameterized, not hardcoded to 14 like the old biweekly was.
+r6c <- pasivos_expand_recurrence("interval_days",
+                                  list(anchor_date = as.Date("2026-01-01"), interval_days = 30L),
+                                  as.Date("2026-01-01"), 3L)
+.chk(r6c[1], as.Date("2026-01-01"), "G1: interval_days=30 first = anchor")
+.chk(r6c[2], as.Date("2026-01-31"), "G1: interval_days=30 second = +30d")
+.chk(r6c[3], as.Date("2026-03-02"), "G1: interval_days=30 third = +60d")
 
 # weekly wday=5 (Fri), from Wednesday 2026-05-06, n=3
 r7 <- pasivos_expand_recurrence("weekly", list(wday = 5L),
@@ -187,6 +210,15 @@ r8 <- pasivos_expand_recurrence("quarterly", list(anchor_month = 2L, day = 15L),
 .chk(r8[2], as.Date("2026-05-15"), "G1: quarterly q2=2026-05-15")
 .chk(r8[3], as.Date("2026-08-15"), "G1: quarterly q3=2026-08-15")
 .chk(r8[4], as.Date("2026-11-15"), "G1: quarterly q4=2026-11-15")
+
+# bimestral anchor_month=1, day=15, from=2026-01-01, n=4 (2-month cadence,
+# mirrors quarterly exactly, just every 2 months instead of every 3)
+r8b <- pasivos_expand_recurrence("bimestral", list(anchor_month = 1L, day = 15L),
+                                  as.Date("2026-01-01"), 4L)
+.chk(r8b[1], as.Date("2026-01-15"), "G1: bimestral b1=2026-01-15")
+.chk(r8b[2], as.Date("2026-03-15"), "G1: bimestral b2=2026-03-15")
+.chk(r8b[3], as.Date("2026-05-15"), "G1: bimestral b3=2026-05-15")
+.chk(r8b[4], as.Date("2026-07-15"), "G1: bimestral b4=2026-07-15")
 
 # yearly month=12, day=31, n=3
 r9 <- pasivos_expand_recurrence("yearly", list(month = 12L, day = 31L),

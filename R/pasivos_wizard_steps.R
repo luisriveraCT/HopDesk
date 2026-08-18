@@ -253,6 +253,8 @@ pasivos_step_ui_recurrencia_regular <- function(draft, errors = list()) {
             "Mensual (n-ésimo día de la semana)" = "monthly_nth_weekday",
             "Quincenal" = "biweekly",
             "Semanal"   = "weekly",
+            "Cada N días" = "interval_days",
+            "Bimestral"  = "bimestral",
             "Trimestral" = "quarterly",
             "Anual"      = "yearly",
             "Personalizada (lista de fechas)" = "custom"
@@ -761,10 +763,15 @@ pasivos_periodicidad_subfields_ui <- function(periodicidad, draft) {
       )
     ),
 
-    biweekly = shiny::dateInput(
-      "pwiz_rp_anchor", "Fecha ancla",
-      value     = rp$anchor_date %||% Sys.Date(),
-      weekstart = 1, language = "es"
+    # Two fixed calendar dates per month — day2=31 clamps to real month-end
+    # automatically (28th/29th/30th), same mechanism quarterly/yearly already
+    # rely on. Pre-selected 15 + 31 to match the standard Mexican-payroll
+    # quincena pattern by default.
+    biweekly = shiny::tagList(
+      shiny::numericInput("pwiz_rp_day1", "Día 1 del mes",
+                          value = rp$day1 %||% 15L, min = 1, max = 31, step = 1),
+      shiny::numericInput("pwiz_rp_day2", "Día 2 del mes",
+                          value = rp$day2 %||% 31L, min = 1, max = 31, step = 1)
     ),
 
     weekly = shiny::selectInput("pwiz_rp_wday", "Día de la semana",
@@ -773,7 +780,26 @@ pasivos_periodicidad_subfields_ui <- function(periodicidad, draft) {
       selected = rp$wday %||% 5L
     ),
 
+    interval_days = shiny::tagList(
+      shiny::dateInput("pwiz_rp_anchor", "Fecha ancla",
+                       value     = rp$anchor_date %||% Sys.Date(),
+                       weekstart = 1, language = "es"),
+      shiny::numericInput("pwiz_rp_interval_days", "Cada cuántos días",
+                          value = rp$interval_days %||% 30L, min = 1, step = 1)
+    ),
+
     quarterly = shiny::tagList(
+      shiny::numericInput("pwiz_rp_anchor_month",
+                          "Mes ancla (1-12)",
+                          value = rp$anchor_month %||% 1L,
+                          min = 1, max = 12, step = 1),
+      shiny::numericInput("pwiz_rp_day",
+                          "Día del mes",
+                          value = rp$day %||% 1L,
+                          min = 1, max = 31, step = 1)
+    ),
+
+    bimestral = shiny::tagList(
       shiny::numericInput("pwiz_rp_anchor_month",
                           "Mes ancla (1-12)",
                           value = rp$anchor_month %||% 1L,
