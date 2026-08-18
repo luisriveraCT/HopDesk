@@ -56,8 +56,12 @@
   switch(periodo,
     mes_actual   = dplyr::filter(df, fecha >= ms(hoy), fecha <= hoy),
     mes_anterior = {
-      inicio <- ms(hoy - 32)
+      # Derive inicio FROM fin (fin's own month-1st) rather than a fixed
+      # "go back 32 days" offset -- that heuristic under-shoots whenever the
+      # previous month has 31 days and today is early in the current month
+      # (e.g. today=Aug 1: hoy-32=Jun 30, truncates to Jun 1 instead of Jul 1).
       fin    <- ms(hoy) - 1
+      inicio <- ms(fin)
       dplyr::filter(df, fecha >= inicio, fecha <= fin)
     },
     ultimos_3m   = dplyr::filter(df, fecha >= ms(hoy - 90)),
@@ -571,6 +575,10 @@ score_vincular_match <- function(item, candidate) {
 
 # ── Badge HTML helper ─────────────────────────────────────────────────────────
 .tipo_badge <- function(tipo) {
+  # %||% only substitutes on NULL, not NA -- an NA tipo (e.g. a legacy/manual
+  # row with none set) would otherwise render a literal "NA" badge instead of
+  # falling back to the existing "Otro" bucket.
+  if (is.na(tipo)) tipo <- "otro"
   lbl <- .TIPO_LABELS[tipo] %||% tipo
   sprintf('<span class="bnc-tipo-badge bnc-tipo-%s">%s</span>',
           htmltools::htmlEscape(tipo), htmltools::htmlEscape(lbl))
@@ -1583,8 +1591,12 @@ bancosServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$do_eliminar_confirm, {
+      shinyjs::disable("do_eliminar_confirm")
+      on.exit(shinyjs::enable("do_eliminar_confirm"), add = TRUE)
+
       ids <- elim_ids_rv()
       req(length(ids) > 0)
+      elim_ids_rv(NULL)
 
       movs <- movs_all()
       idx  <- which(movs$id %in% ids)
@@ -2834,8 +2846,12 @@ bancosServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$do_reasignar_confirm, {
+      shinyjs::disable("do_reasignar_confirm")
+      on.exit(shinyjs::enable("do_reasignar_confirm"), add = TRUE)
+
       data <- reasig_confirm_data_rv()
       req(data)
+      reasig_confirm_data_rv(NULL)
       sesion_key <- data$sesion_key
       new_cid    <- data$new_cid
       dest_label <- data$dest_label
@@ -2867,7 +2883,6 @@ bancosServer <- function(id, shared) {
       tryCatch({ save_bancos_movimientos(movs, client_id = shared$effective_client_id()); bump_sync_version("bancos_movimientos_db") },
                error = function(e)
                  showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
-      reasig_confirm_data_rv(NULL)
       removeModal()
       session$sendCustomMessage("bnc_collapse_reasignar",
         list(target = ns("reasignar_panel")))
@@ -2952,8 +2967,12 @@ bancosServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$do_eliminar_sesion_confirm, {
+      shinyjs::disable("do_eliminar_sesion_confirm")
+      on.exit(shinyjs::enable("do_eliminar_sesion_confirm"), add = TRUE)
+
       data <- delete_sesion_confirm_rv()
       req(data)
+      delete_sesion_confirm_rv(NULL)
       sesion_key <- data$sesion_key
       user <- tryCatch(shared$current_user(), error = function(e) "system")
       movs <- movs_all()
@@ -3260,6 +3279,9 @@ bancosServer <- function(id, shared) {
     })
 
     observeEvent(input$do_import, {
+      shinyjs::disable("do_import")
+      on.exit(shinyjs::enable("do_import"), add = TRUE)
+
       pv        <- parsed_preview()
       req(pv, nrow(pv) > 0)
 
@@ -3460,6 +3482,14 @@ bancosServer <- function(id, shared) {
       movs <- movs_all()
       idx  <- which(movs$id == mov_id & movs$fuente == "manual")
       if (!length(idx)) return()
+      # This button is rendered per-row with a onclick nonce (to defeat
+      # Shiny's dedup), not a persistent actionButton -- shinyjs::disable()
+      # has no real DOM id to target here, unlike do_add_manual/do_*_confirm.
+      # A genuine double-click re-fires this observer with the same mov_id,
+      # so guard by checking the row is still actually eliminado (idempotent
+      # check-before-act, same idea as elim_ids_rv being cleared after use)
+      # instead of relying on a disable that wouldn't work anyway.
+      if (!isTRUE(movs$eliminado[idx[1]])) return()
 
       movs$eliminado[idx]    <- FALSE
       movs$eliminado_at[idx] <- as.POSIXct(NA)
@@ -3507,6 +3537,10 @@ bancosServer <- function(id, shared) {
       req(ab_id)
       ab <- tryCatch(shared$abonos_db(), error = function(e) NULL) %||% tibble::tibble()
       if (!nrow(ab) || !ab_id %in% ab[["id"]]) return()
+      # Same per-row dynamic-button caveat as undo_mov_delete above (no real
+      # DOM id for shinyjs::disable() to target) -- guard idempotency by
+      # checking it isn't already voided instead.
+      if (identical(ab$status[ab$id == ab_id][1], "voided")) return()
 
       updated <- void_abono(ab, ab_id)
       shared$abonos_db(updated)
@@ -3534,6 +3568,11 @@ bancosServer <- function(id, shared) {
       conf    <- confirmados()
       idx_c   <- which(conf$confirmacion_id == conf_id)
       if (!length(idx_c)) return()
+      if (length(idx_c) > 1) {
+        message("[bancos] confirmacion_id '", conf_id, "' matched ", length(idx_c),
+                " rows (should be unique) -- data integrity issue, using the first match")
+        idx_c <- idx_c[1]
+      }
 
       row <- conf[idx_c, , drop = FALSE]
       session$userData[[paste0(ns("pending_delete_conf_id"))]] <- conf_id
@@ -3569,6 +3608,11 @@ bancosServer <- function(id, shared) {
       conf    <- confirmados()
       idx_c   <- which(conf$confirmacion_id == conf_id)
       if (!length(idx_c)) { removeModal(); return() }
+      if (length(idx_c) > 1) {
+        message("[bancos] confirmacion_id '", conf_id, "' matched ", length(idx_c),
+                " rows (should be unique) -- data integrity issue, using the first match")
+        idx_c <- idx_c[1]
+      }
 
       mov_id_linked <- conf$mov_id[idx_c]
       conf$eliminado[idx_c]    <- TRUE
@@ -3617,6 +3661,11 @@ bancosServer <- function(id, shared) {
       conf    <- confirmados()
       idx_c   <- which(conf$confirmacion_id == conf_id)
       if (!length(idx_c)) return()
+      if (length(idx_c) > 1) {
+        message("[bancos] confirmacion_id '", conf_id, "' matched ", length(idx_c),
+                " rows (should be unique) -- data integrity issue, using the first match")
+        idx_c <- idx_c[1]
+      }
 
       row <- conf[idx_c, , drop = FALSE]
       mov_id_linked <- conf$mov_id[idx_c]

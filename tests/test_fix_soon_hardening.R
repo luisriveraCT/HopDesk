@@ -184,7 +184,7 @@ after <- mock_s3readRDS("networks/app_audit.rds", "mock-bucket")
 {
   txt   <- readLines("R/bancos_module.R", warn = FALSE)
   start <- grep("observeEvent\\(input\\$undo_conf,", txt)[1]
-  block <- paste(txt[start:min(start + 40, length(txt))], collapse = "\n")
+  block <- paste(txt[start:min(start + 55, length(txt))], collapse = "\n")
   .chk(grepl("tryCatch\\(\\s*\\n?\\s*recover_confirmacion\\(", block), TRUE,
        "R/bancos_module.R: the undo_conf handler's recover_confirmacion() call is wrapped in tryCatch")
 }

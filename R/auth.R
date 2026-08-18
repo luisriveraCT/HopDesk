@@ -71,13 +71,34 @@ verify_password <- function(plain, hash) {
 
   raw$password_hash[legacy] <- vapply(raw$password_hash[legacy], hash_password, character(1))
 
-  tryCatch({
-    aws.s3::s3saveRDS(raw, object = paste0(cid, "/usuarios.rds"), bucket = .s3_bucket())
-    message(sprintf("[AUTH] Migrated %d legacy plaintext password(s) -> scrypt hash for %s",
-                    sum(legacy), cid))
-  }, error = function(e) {
-    message("[AUTH] Legacy password migration save failed (", cid, "): ", e$message)
-  })
+  # Re-read the freshest S3 state immediately before writing, and apply the
+  # migration to THAT instead of the `raw` the caller already had (which may
+  # have been read a while ago, e.g. inside auth_load_usuarios() after other
+  # backfill steps already did their own slow S3 round trips). Without this,
+  # writing the caller's stale `raw` back can silently clobber a concurrent
+  # auth_save_usuarios() write on a different row -- a password reset, a
+  # tier change -- that landed after `raw` was read but before this write.
+  # This narrows that window to just this call's own round trip, matching
+  # the risk level already accepted elsewhere in this app.
+  key   <- paste0(cid, "/usuarios.rds")
+  fresh <- tryCatch(
+    suppressMessages(suppressWarnings(aws.s3::s3readRDS(object = key, bucket = .s3_bucket()))),
+    error = function(e) NULL
+  )
+  if (is.data.frame(fresh) && nrow(fresh) && "password_hash" %in% names(fresh)) {
+    fresh_legacy <- !.is_scrypt_hash(fresh$password_hash)
+    if (any(fresh_legacy)) {
+      fresh$password_hash[fresh_legacy] <- vapply(fresh$password_hash[fresh_legacy], hash_password, character(1))
+      tryCatch({
+        aws.s3::s3saveRDS(fresh, object = key, bucket = .s3_bucket())
+        auth_invalidate_credentials()
+        message(sprintf("[AUTH] Migrated %d legacy plaintext password(s) -> scrypt hash for %s",
+                        sum(fresh_legacy), cid))
+      }, error = function(e) {
+        message("[AUTH] Legacy password migration save failed (", cid, "): ", e$message)
+      })
+    }
+  }
 
   raw
 }
@@ -205,8 +226,11 @@ verify_password <- function(plain, hash) {
 # a future horizontally-scaled deployment — has no way to signal this one to
 # refresh. Without a TTL, "emergency recovery" on a live process could
 # silently not take effect until an unrelated write or a restart. A 60s TTL
-# bounds that to "at most a minute," at the cost of at most one extra S3 read
-# per minute of active use — a good trade given what it fixes.
+# bounds that to "at most a minute," at the cost of one extra credential
+# refresh per minute of active use — on a plain client deployment that's one
+# S3 read; on the shared hd-admin deployment it's one read per active client
+# folder (.load_or_init_credentials() loops over the registry) — still a good
+# trade given what it fixes.
 .auth_credentials    <- NULL
 .auth_credentials_at <- NULL
 .AUTH_CREDENTIALS_TTL <- 60   # seconds
@@ -285,31 +309,65 @@ auth_load_usuarios <- function(client_id = NULL) {
     if (!col %in% names(raw)) raw[[col]] <- defaults[[col]]
 
   # Back-fill account_code for accounts created before this field existed.
+  #
+  # Re-reads the freshest S3 state immediately before writing (rather than
+  # writing the `raw` snapshot read at the top of this function) so this
+  # best-effort backfill can't silently clobber a concurrent
+  # auth_save_usuarios() write on a different row -- e.g. an admin resetting
+  # a password via tiers_module.R -- that landed after `raw` was read but
+  # before this write. auth_load_usuarios() is called from several
+  # read-looking sites (audit log viewer, email service, settings modules)
+  # that can be in flight for a while, so this narrows the lost-update
+  # window to just this write's own round trip, matching the risk level
+  # already accepted elsewhere in the app (register_username(), tier edits).
   needs_code <- is.na(raw$account_code) | !nzchar(trimws(raw$account_code))
   if (any(needs_code)) {
-    existing_nums <- suppressWarnings(as.integer(
-      sub("^U0*", "", raw$account_code[grepl("^U\\d+$", raw$account_code)])))
-    existing_nums <- existing_nums[!is.na(existing_nums)]
-    next_n <- if (length(existing_nums)) max(existing_nums) + 1L else 1L
-    for (i in which(needs_code)) {
-      raw$account_code[i] <- sprintf("U%04d", next_n)
-      next_n <- next_n + 1L
-    }
-    tryCatch(
-      aws.s3::s3saveRDS(raw, object = key, bucket = .s3_bucket()),
-      error = function(e) message("[AUTH] account_code backfill save failed: ", e$message)
+    fresh <- tryCatch(
+      suppressMessages(suppressWarnings(aws.s3::s3readRDS(object = key, bucket = .s3_bucket()))),
+      error = function(e) NULL
     )
+    if (is.data.frame(fresh) && nrow(fresh)) {
+      for (col in names(defaults)) if (!col %in% names(fresh)) fresh[[col]] <- defaults[[col]]
+      needs_code_fresh <- is.na(fresh$account_code) | !nzchar(trimws(fresh$account_code))
+      if (any(needs_code_fresh)) {
+        existing_nums <- suppressWarnings(as.integer(
+          sub("^U0*", "", fresh$account_code[grepl("^U\\d+$", fresh$account_code)])))
+        existing_nums <- existing_nums[!is.na(existing_nums)]
+        next_n <- if (length(existing_nums)) max(existing_nums) + 1L else 1L
+        for (i in which(needs_code_fresh)) {
+          fresh$account_code[i] <- sprintf("U%04d", next_n)
+          next_n <- next_n + 1L
+        }
+        tryCatch({
+          aws.s3::s3saveRDS(fresh, object = key, bucket = .s3_bucket())
+          auth_invalidate_credentials()
+        }, error = function(e) message("[AUTH] account_code backfill save failed: ", e$message))
+      }
+      raw <- fresh
+    }
   }
 
   # Back-fill client_id for accounts that predate the multi-tenant model.
+  # Same re-read-immediately-before-write reasoning as account_code above.
   needs_cid <- is.na(raw$client_id) | !nzchar(trimws(raw$client_id %||% ""))
   if (any(needs_cid)) {
-    raw$client_id[needs_cid] <- cid
-    tryCatch(
-      aws.s3::s3saveRDS(raw, object = key, bucket = .s3_bucket()),
-      error = function(e) message("[AUTH] client_id backfill save failed: ", e$message)
+    fresh <- tryCatch(
+      suppressMessages(suppressWarnings(aws.s3::s3readRDS(object = key, bucket = .s3_bucket()))),
+      error = function(e) NULL
     )
-    message(sprintf("[AUTH] client_id backfilled for %d user(s) → %s", sum(needs_cid), cid))
+    if (is.data.frame(fresh) && nrow(fresh)) {
+      for (col in names(defaults)) if (!col %in% names(fresh)) fresh[[col]] <- defaults[[col]]
+      needs_cid_fresh <- is.na(fresh$client_id) | !nzchar(trimws(fresh$client_id %||% ""))
+      if (any(needs_cid_fresh)) {
+        fresh$client_id[needs_cid_fresh] <- cid
+        tryCatch({
+          aws.s3::s3saveRDS(fresh, object = key, bucket = .s3_bucket())
+          auth_invalidate_credentials()
+        }, error = function(e) message("[AUTH] client_id backfill save failed: ", e$message))
+        message(sprintf("[AUTH] client_id backfilled for %d user(s) → %s", sum(needs_cid_fresh), cid))
+      }
+      raw <- fresh
+    }
   }
 
   # Stage 7: transparently upgrade any legacy plaintext passwords. Every

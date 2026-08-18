@@ -180,6 +180,11 @@ tryCatch({
     mock_s3saveRDS(df, "hd-admin/client_registry.rds", "mock-bucket")
     invisible(TRUE)
   }
+  # Stashed before the stub below replaces it, so tests that specifically
+  # need the REAL backfill/migration logic (e.g. test_minor_hardening.R's
+  # lost-update race test) can still reach it via .real_auth_load_usuarios().
+  .real_auth_load_usuarios <- auth_load_usuarios
+
   auth_load_usuarios <- function(client_id = NULL) {
     cid <- client_id %||% Sys.getenv("CLIENT_ID")
     tryCatch(mock_s3readRDS(paste0(tolower(cid), "/usuarios.rds"), "mock-bucket"),
@@ -237,6 +242,7 @@ tryCatch({
   .run_module("tests/test_saas_password_hashing.R")
   .run_module("tests/test_fix_soon_hardening.R")
   .run_module("tests/test_lower_urgency_hardening.R")
+  .run_module("tests/test_minor_hardening.R")
   .run_module("tests/test_saas_manual_entry_client_scoping.R")
 
   cat("\n====================================================\n")
