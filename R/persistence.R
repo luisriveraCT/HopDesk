@@ -68,7 +68,7 @@
   # Preload cache hit — keyed by full_key to isolate different clients.
   if (exists(full_key, envir = .s3_preload_cache, inherits = FALSE))
     return(.s3_preload_cache[[full_key]])
-  if (isTRUE(.s3_missing_cache[[full_key]])) return(NULL)
+  if (.s3_missing_cache_hit(full_key)) return(NULL)
   tryCatch({
     out <- NULL
     suppressMessages(capture.output(
@@ -77,7 +77,7 @@
     ))
     out
   }, error = function(e) {
-    .s3_missing_cache[[full_key]] <- TRUE
+    .s3_missing_cache_set(full_key)
     NULL
   })
 }
@@ -99,7 +99,27 @@ s3_init <- function() {
 }
 
 # Cache of known-missing S3 keys — avoids repeated round-trips within a session.
-.s3_missing_cache <- new.env(parent = emptyenv())
+# Values are the timestamp (proc.time() elapsed seconds) the miss was recorded,
+# not TRUE — a bare flag never expires, so a key created by another process
+# (an emergency-recovery script, a future second replica) would stay
+# "missing" here forever even after it exists in S3. A bounded TTL, same
+# pattern as auth_get_credentials()'s cache, bounds that staleness instead.
+.s3_missing_cache     <- new.env(parent = emptyenv())
+.S3_MISSING_CACHE_TTL <- 60   # seconds
+
+.s3_missing_cache_hit <- function(full_key) {
+  ts <- .s3_missing_cache[[full_key]]
+  if (is.null(ts)) return(FALSE)
+  if (proc.time()[["elapsed"]] - ts > .S3_MISSING_CACHE_TTL) {
+    rm(list = full_key, envir = .s3_missing_cache)
+    return(FALSE)
+  }
+  TRUE
+}
+
+.s3_missing_cache_set <- function(full_key) {
+  .s3_missing_cache[[full_key]] <- proc.time()[["elapsed"]]
+}
 
 # ── Emergency lock (hd-admin/emergency_lock.rds) ─────────────────────────────
 #
@@ -245,7 +265,7 @@ unregister_username <- function(username) {
   full_key <- .s3_key(key)
   bucket   <- .s3_bucket()
 
-  if (isTRUE(.s3_missing_cache[[full_key]])) return(NULL)
+  if (.s3_missing_cache_hit(full_key)) return(NULL)
 
   tryCatch({
     out <- NULL
@@ -257,7 +277,7 @@ unregister_username <- function(username) {
     )
     out
   }, error = function(e) {
-    .s3_missing_cache[[full_key]] <- TRUE
+    .s3_missing_cache_set(full_key)
     NULL
   })
 }

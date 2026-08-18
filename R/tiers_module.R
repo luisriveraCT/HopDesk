@@ -662,10 +662,15 @@ tiersServer <- function(id, shared) {
       # this client's users — no client_id filter needed here.
       # Principal sees all tiers. Hopdesk sees all except principal.
       # Lower tiers cannot see hopdesk or dev rows.
+      #
+      # The principal exclusion must apply to hopdesk too (not just non-staff
+      # viewers) — otherwise a hopdesk viewer can open a principal row's
+      # editor, whose tier <select> doesn't offer "Principal" as a choice and
+      # silently defaults to its first option on save, demoting the account.
+      if (!is_principal() && nrow(df) > 0)
+        df <- df[df$tier != "principal", , drop = FALSE]
       if (!is_principal() && !is_hopdesk() && nrow(df) > 0)
         df <- df[df$tier != "hopdesk", , drop = FALSE]
-      if (!is_principal() && !is_hopdesk() && nrow(df) > 0)
-        df <- df[df$tier != "principal", , drop = FALSE]
       if (!is_dev() && !is_hopdesk() && !is_principal() && nrow(df) > 0)
         df <- df[df$tier != "dev", , drop = FALSE]
       df

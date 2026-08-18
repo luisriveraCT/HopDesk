@@ -42,11 +42,13 @@ verify_password <- function(plain, hash) {
 
 # scrypt hashes from this package always start with the base64 encoding of
 # the literal string "scrypt" — a version/magic header baked into the hash
-# format itself (verified empirically: every hashPassword() output begins
-# with "c2NyeXB0", 128 chars long). Any password_hash value that doesn't
-# start this way predates Stage 7 and is legacy plaintext.
+# format itself — and are always 128 chars long (both verified empirically:
+# every hashPassword() output is exactly this). Checking both, not just the
+# prefix, matters: a legacy plaintext password that happens to start with
+# "c2NyeXB0" (e.g. literally "c2NyeXB0!2025") would otherwise be misclassified
+# as already hashed, never migrated, and permanently lock its owner out.
 .is_scrypt_hash <- function(x) {
-  !is.na(x) & nzchar(x) & startsWith(x, "c2NyeXB0")
+  !is.na(x) & nzchar(x) & nchar(x) == 128L & startsWith(x, "c2NyeXB0")
 }
 
 # Transparently upgrades any legacy plaintext password_hash values in a raw

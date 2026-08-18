@@ -2210,6 +2210,9 @@ bancosServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$do_add_manual, {
+      shinyjs::disable("do_add_manual")
+      on.exit(shinyjs::enable("do_add_manual"), add = TRUE)
+
       cuenta_id_sel <- input$man_cuenta %||% "__sin_cuenta__"
       tipo_sel      <- input$man_tipo   %||% "manual_in"
       cargo_v       <- as.numeric(input$man_cargo %||% 0)
