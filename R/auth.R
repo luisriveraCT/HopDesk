@@ -195,26 +195,44 @@ verify_password <- function(plain, hash) {
   )
 }
 
-# Cached at startup — avoids S3 read on every login attempt
-.auth_credentials <- NULL
+# Cached at startup — avoids S3 read on every login attempt. Bounded by a TTL
+# (not just explicit invalidation): auth_invalidate_credentials() only clears
+# THIS process's copy, so a write from a genuinely separate process — the
+# emergency recovery scripts (recover_mouse.R/add_bunny.R write straight to
+# S3, deliberately not depending on this file at all), or another replica in
+# a future horizontally-scaled deployment — has no way to signal this one to
+# refresh. Without a TTL, "emergency recovery" on a live process could
+# silently not take effect until an unrelated write or a restart. A 60s TTL
+# bounds that to "at most a minute," at the cost of at most one extra S3 read
+# per minute of active use — a good trade given what it fixes.
+.auth_credentials    <- NULL
+.auth_credentials_at <- NULL
+.AUTH_CREDENTIALS_TTL <- 60   # seconds
 
 auth_get_credentials <- function() {
-  if (is.null(.auth_credentials)) {
+  age   <- if (is.null(.auth_credentials_at)) Inf
+           else as.numeric(Sys.time() - .auth_credentials_at, units = "secs")
+  stale <- is.null(.auth_credentials) || age > .AUTH_CREDENTIALS_TTL
+
+  if (stale) {
     message("[AUTH] Fetching credentials from S3 (usuarios.rds)...")
     t0 <- proc.time()
-    .auth_credentials <<- .load_or_init_credentials()
+    .auth_credentials    <<- .load_or_init_credentials()
+    .auth_credentials_at <<- Sys.time()
     message(sprintf("[AUTH] Credentials loaded (%d user(s)) in %.1fs",
                     nrow(.auth_credentials),
                     (proc.time() - t0)[["elapsed"]]))
   } else {
-    message(sprintf("[AUTH] Credentials from cache (%d user(s))", nrow(.auth_credentials)))
+    message(sprintf("[AUTH] Credentials from cache (%d user(s), %.0fs old)",
+                    nrow(.auth_credentials), age))
   }
   .auth_credentials
 }
 
 # Call after a successful save to force reload on next login attempt
 auth_invalidate_credentials <- function() {
-  .auth_credentials <<- NULL
+  .auth_credentials    <<- NULL
+  .auth_credentials_at <<- NULL
 }
 
 # Load raw usuarios.rds as a data.frame (all columns, not shinymanager format).

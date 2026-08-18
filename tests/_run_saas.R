@@ -143,6 +143,7 @@ tryCatch({
   source("R/tiers_tab_config.R", local = FALSE)
   source("R/auth.R",           local = FALSE)
   source("R/app_audit.R",      local = FALSE)
+  source("R/bancos_persistence.R", local = FALSE)
   source("R/audit_log_viewer_module.R", local = FALSE)
   source("R/email_service.R",  local = FALSE)
   source("R/secrets_encryption.R",     local = FALSE)
@@ -203,6 +204,8 @@ tryCatch({
     # silently corrupting an unrelated one.
     if (exists(".audit_pending"))         rm(list = ls(.audit_pending),         envir = .audit_pending)
     if (exists(".audit_flush_scheduled")) rm(list = ls(.audit_flush_scheduled), envir = .audit_flush_scheduled)
+    if (exists(".audit_retry_count"))     rm(list = ls(.audit_retry_count),     envir = .audit_retry_count)
+    if (exists("auth_invalidate_credentials")) auth_invalidate_credentials()
     tryCatch(source(file, local = e), error = function(err) {
       cat(sprintf("  ERROR loading %s: %s\n", basename(file), err$message))
       e$.fail <- e$.fail + 1L
@@ -231,6 +234,7 @@ tryCatch({
   .run_module("tests/test_saas_notifications.R")
   .run_module("tests/test_saas_limit_change.R")
   .run_module("tests/test_saas_password_hashing.R")
+  .run_module("tests/test_fix_soon_hardening.R")
   .run_module("tests/test_saas_manual_entry_client_scoping.R")
 
   cat("\n====================================================\n")

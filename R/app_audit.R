@@ -183,10 +183,25 @@ save_app_audit <- function(log_df, client_id = NULL) {
 # to be redesigned at migration time.
 .audit_pending          <- new.env(parent = emptyenv())
 .audit_flush_scheduled  <- new.env(parent = emptyenv())
+.audit_retry_count      <- new.env(parent = emptyenv())
 .AUDIT_FLUSH_DELAY       <- 2    # seconds — batches a burst of actions together
 .AUDIT_FLUSH_RETRY_DELAY <- 10   # seconds — backoff before retrying a failed flush
+.AUDIT_MAX_RETRIES       <- 5    # ~50s of retrying before giving up and dropping the batch
 
+# write_cid must be a real, non-empty client slug — env[[key]] assignment
+# throws on "" and silently files NA under the literal string key "NA" (never
+# reachable by any read path) instead of throwing. Both are caller bugs
+# (log_action() invoked with no resolvable client context) that must not
+# crash the shared later::later() flush loop or silently vanish forever.
 .audit_queue <- function(write_cid, row) {
+  if (is.na(write_cid) || !nzchar(write_cid)) {
+    message(sprintf(
+      "[APP_AUDIT] Dropping audit entry (action=%s) — invalid client_id (%s). This means log_action() was called with no resolvable client context; the caller needs fixing.",
+      row$action[1] %||% "?", if (is.na(write_cid)) "NA" else "empty string"
+    ))
+    return(invisible(FALSE))
+  }
+
   existing <- .audit_pending[[write_cid]]
   .audit_pending[[write_cid]] <- if (is.null(existing)) row else dplyr::bind_rows(existing, row)
 
@@ -224,7 +239,26 @@ save_app_audit <- function(log_df, client_id = NULL) {
     FALSE
   })
 
-  if (!ok) {
+  if (ok) {
+    .audit_retry_count[[write_cid]] <- NULL
+  } else {
+    # Bounded retry: an extended S3 outage must not grow this buffer (or the
+    # crash-loss exposure window) without limit. After .AUDIT_MAX_RETRIES
+    # failed attempts, give up loudly and drop the batch rather than retrying
+    # forever — a silent indefinite retry loop is worse than a visible,
+    # bounded loss with a clear log line pointing at S3 connectivity.
+    attempt <- (.audit_retry_count[[write_cid]] %||% 0L) + 1L
+    if (attempt > .AUDIT_MAX_RETRIES) {
+      message(sprintf(
+        "[APP_AUDIT] Giving up after %d failed attempts to flush %d pending entr%s for %s — check S3 connectivity. These entries are lost.",
+        .AUDIT_MAX_RETRIES, nrow(pending), if (nrow(pending) == 1) "y" else "ies", write_cid
+      ))
+      .audit_retry_count[[write_cid]]     <- NULL
+      .audit_flush_scheduled[[write_cid]] <- FALSE
+      return(invisible(FALSE))
+    }
+    .audit_retry_count[[write_cid]] <- attempt
+
     # Put the rows back (prepended, in case new ones arrived meanwhile) and
     # retry after a longer backoff instead of losing them.
     still_pending <- .audit_pending[[write_cid]]
@@ -271,6 +305,15 @@ log_action <- function(user,
                        viewer_home_client_id = NULL) {
   cid      <- tolower(trimws(client_id %||% Sys.getenv("CLIENT_ID")))
   home_cid <- tolower(trimws(viewer_home_client_id %||% Sys.getenv("CLIENT_ID")))
+  # %||% only substitutes on NULL, not NA — an explicit client_id=NA_character_
+  # (or a viewer_home_client_id resolving to NA via some upstream tryCatch)
+  # survives to here unchanged. Normalize to "" so every downstream comparison
+  # (including .audit_queue()'s guard below) has one single, non-NA definition
+  # of "no resolvable client" instead of every call site needing its own
+  # NA-safety check. Without this, `if (nzchar(home_cid) && home_cid != cid)`
+  # evaluates to `if (NA)` and throws — log_action() must never throw.
+  if (is.na(cid))      cid      <- ""
+  if (is.na(home_cid)) home_cid <- ""
 
   # When staff acts in a client context, stamp home_client in metadata so the
   # audit record is clearly marked as an outsider write, not a client-user write.

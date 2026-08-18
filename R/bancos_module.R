@@ -1528,6 +1528,7 @@ bancosServer <- function(id, shared) {
     # ── Reasignar cuenta reactives ────────────────────────────────────────────
     reasig_confirm_data_rv    <- reactiveVal(NULL)
     delete_sesion_confirm_rv  <- reactiveVal(NULL)
+    elim_ids_rv               <- reactiveVal(NULL)
 
     # ── Import reactives ──────────────────────────────────────────────────────
     txt_empresa_rv       <- reactiveVal("")
@@ -1555,6 +1556,8 @@ bancosServer <- function(id, shared) {
           Abono  = dplyr::if_else(abono > 0, fmt_money(abono), "")
         )
 
+      elim_ids_rv(ids)
+
       showModal(modalDialog(
         title = sprintf("\u00bfEliminar %d movimiento%s?", n, if (n == 1) "" else "s"),
         size  = "m", easyClose = TRUE,
@@ -1570,9 +1573,7 @@ bancosServer <- function(id, shared) {
           modalButton("Cancelar"),
           actionButton(ns("do_eliminar_confirm"), "Eliminar",
                        class = "btn btn-danger")
-        ),
-        tags$input(type = "hidden", id = ns("elim_ids_hidden"),
-                   value = paste(ids, collapse = "|"))
+        )
       ))
 
       output$elim_preview_tbl <- DT::renderDataTable({
@@ -1582,9 +1583,7 @@ bancosServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$do_eliminar_confirm, {
-      ids_raw <- input$elim_ids_hidden %||% ""
-      ids     <- strsplit(ids_raw, "\\|")[[1]]
-      ids     <- ids[nzchar(ids)]
+      ids <- elim_ids_rv()
       req(length(ids) > 0)
 
       movs <- movs_all()
@@ -3639,7 +3638,24 @@ bancosServer <- function(id, shared) {
       # recover_confirmacion() soft-deletes the original row (as before) AND
       # appends a permanent, separate "recovered" event row referencing it
       # (Stage 3) -- the actual fix for "recovery should add a line."
-      conf <- recover_confirmacion(conf, conf_id, actor = tryCatch(shared$current_user(), error = function(e) "user"))
+      # Guarded (unlike before): it stop()s if conf_id is already recovered --
+      # reachable via a double-click/fast re-click, since the nonce on this
+      # button's onclick defeats Shiny's normal unchanged-value dedup, and
+      # nothing here debounces it. An uncaught stop() inside an observeEvent
+      # (not an output binding) crashes the whole session, not just this
+      # action -- caught here the same way every other risky write in this
+      # handler already is.
+      new_conf <- tryCatch(
+        recover_confirmacion(conf, conf_id, actor = tryCatch(shared$current_user(), error = function(e) "user")),
+        error = function(e) {
+          message("[bancos] recover_confirmacion failed (likely an already-recovered double-click): ",
+                  conditionMessage(e))
+          showNotification("Esta confirmación ya fue recuperada.", type = "warning", duration = 3)
+          NULL
+        }
+      )
+      if (is.null(new_conf)) return()
+      conf <- new_conf
       shared$bancos_confirmados(conf)
       tryCatch({
         save_bancos_confirmados(conf, client_id = shared$effective_client_id())
