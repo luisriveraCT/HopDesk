@@ -244,6 +244,7 @@ tryCatch({
   .run_module("tests/test_lower_urgency_hardening.R")
   .run_module("tests/test_minor_hardening.R")
   .run_module("tests/test_saas_manual_entry_client_scoping.R")
+  .run_module("tests/test_phase2_stale_preload_cache.R")
 
   cat("\n====================================================\n")
   cat(sprintf("  TOTAL: %d passed, %d failed\n", .total_pass, .total_fail))

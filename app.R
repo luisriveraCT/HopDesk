@@ -1682,8 +1682,10 @@ server <- function(input, output, session) {
   # ── Phase 2: aux data loader (low-priority) ───────────────────────────────────
   # Triggered by .phase1_done(). Runs at priority=-2 so CUR_CHOICES (p1),
   # calendar renderUIs (p0), and SAP dispatch (p-1) all execute first.
-  # Batch-fetches all deferred S3 keys into .s3_preload_cache, then loads the
-  # 14 aux reactive vals. All load_*() calls are guaranteed cache hits after fetch.
+  # Batch-fetches all deferred, non-sync-registered S3 keys into
+  # .s3_preload_cache, then loads the 14 aux reactive vals -- those load_*()
+  # calls are guaranteed cache hits for non-registered keys, and guaranteed
+  # live S3 reads for sync-registered keys (see the two comments below).
   observe({
     req(.phase1_done())
     isolate({
@@ -1696,17 +1698,43 @@ server <- function(input, output, session) {
       message(sprintf("[LOAD] Phase 2 start at t+%.1fs (session #%d) [cid=%s]",
                       (proc.time() - .t_session)[["elapsed"]], .sn, cid_lo))
 
+      # Any S3 key backed by a live sync_bus registration can be mutated by
+      # another session (in this process or a sibling worker) at any moment,
+      # so a leftover process-cache hit for one of these can never be trusted
+      # at a brand-new session's very first load -- only the 8s poll
+      # (R/sync_bus.R) is allowed to treat a cache hit as valid, and only
+      # after its own version check. Computed here (outside the local({})
+      # block below) so it's also visible to the explicit cache-clear loop
+      # further down, after that block closes.
+      #
+      # Generalized 2026-08-20 from the narrower, hand-picked "notes"/
+      # "sync_versions" exclusion below to cover every registered key, not
+      # just those two. Root-caused incident: a treasurer's invoice-date
+      # moves (`invoice_moves.rds`, registered as "moves_db") sat correctly
+      # written in S3 but silently invisible to every session connecting to
+      # a long-lived worker process for over a day -- that worker's own
+      # preload cache had been populated before the move and nothing at
+      # session-start ever re-checked it, hard refresh included (the 8s poll
+      # only refreshes an ALREADY-running session; it never protects a new
+      # session's first load). Without this, the next registered table hits
+      # the identical incident before anyone notices.
+      .synced_s3_keys <- unique(vapply(.SYNC_REGISTRY, function(e) e$s3_key %||% NA_character_,
+                                        character(1)))
+
       # Batch-fetch all deferred S3 keys not already in the preload cache
       local({
         t0_fetch <- proc.time()
         message("[LOAD] Fetching deferred S3 objects...")
         # keys_needed: logical names whose file-suffix keys are not yet in cache.
         # Cache keyed by file suffix (e.g. "interco_v2.rds") to match .s3_read().
-        # "notes" and "sync_versions" are intentionally excluded from the preload
-        # cache so every load_notes() call (Phase 2, sync bus, panel toggle) always
-        # hits S3 directly.  This ensures one session's Phase-2 cache hit can never
-        # serve stale data to another session that started before a note was saved.
-        SKIP_PRELOAD <- c("sync_versions", "notes")
+        # "notes" and "sync_versions" were originally the only two hand-picked
+        # exclusions here, to ensure every load_notes() call (Phase 2, sync bus,
+        # panel toggle) always hits S3 directly rather than serving one
+        # session's Phase-2 cache hit as stale data to another session that
+        # started before a note was saved. See the comment above this block
+        # for why this is now generalized to every sync-registered key.
+        SKIP_PRELOAD <- union(c("sync_versions", "notes"),
+                               names(S3_KEYS)[unname(S3_KEYS) %in% .synced_s3_keys])
         # Check for already-cached full-prefix keys (e.g. "networks/movimientos.rds")
         # set by a previous session for the same client.
         keys_needed <- names(S3_KEYS)[
@@ -1745,7 +1773,23 @@ server <- function(input, output, session) {
         }
       })
 
-      # Load aux objects with per-item timing (all guaranteed cache hits above)
+      # Excluding a registered key from the batch-prefetch above (SKIP_PRELOAD)
+      # only stops THIS step from writing a fresh entry for it -- it does NOT
+      # clear a stale entry already sitting in .s3_preload_cache from earlier
+      # in this same worker process's life (an older session's own prefetch,
+      # or a stale entry pre-dating this fix). Explicitly clear every
+      # sync-registered key's cache entry here so the individual load_*()
+      # calls below are a guaranteed live S3 read, exactly mirroring what
+      # R/sync_bus.R's poll loop already does before every version-triggered
+      # reload (see its own "found 2026-07-24" comment for the same pattern).
+      for (.rk in intersect(unname(S3_KEYS), .synced_s3_keys)) {
+        .rk_full <- paste0(cid_lo, "/", .rk)
+        suppressWarnings(rm(list = intersect(.rk_full, ls(.s3_preload_cache)), envir = .s3_preload_cache))
+      }
+
+      # Load aux objects with per-item timing (non-registered keys are
+      # guaranteed cache hits from the batch-prefetch above; sync-registered
+      # keys are guaranteed live S3 reads from the explicit clear above)
       t1 <- proc.time(); moves_db(tryCatch(load_moves(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   moves            %.1fs", (proc.time() - t1)[["elapsed"]]))
       # policy_moves_db is loaded in Phase 1 so the first calendar render already
