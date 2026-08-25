@@ -29,7 +29,13 @@ PERM_LABELS <- c(
   # any client's log is a different capability from seeing Hopdesk's own
   # staff activity log (ARCHITECTURE.md §6).
   can_view_client_audit_logs = "Ver bitácora de clientes (con selector)",
-  can_view_staff_audit_log   = "Ver bitácora interna de Hopdesk"
+  can_view_staff_audit_log   = "Ver bitácora interna de Hopdesk",
+  # Stage: structured payment-file audit trail (2026-08-25). A regular
+  # client-tier permission (not a Hopdesk-only one) -- default ON for
+  # dev/admin, OFF for finance/analysis; Hopdesk staff always allowed
+  # regardless of this flag (see .payment_audit_can_view() in
+  # R/pagos_audit_viewer_module.R).
+  can_view_payment_audit = "Ver bitácora de archivos de pago (auditoría)"
 )
 
 # Keys that are immutably TRUE for principal accounts — UI renders them as locked.
@@ -3735,9 +3741,38 @@ tiersServer <- function(id, shared) {
     # Stage 4 to touch who *within* a client can see their own Actividad tab.
     # The staff-at-home-sees-hd-admin-log leak (Stage 4 Part A gap #1) is fixed
     # inside auditLogViewerServer()'s read_audit_log_scoped() call, not here.
+    #
+    # Switch-view button (2026-08-25): swaps this same panel for the
+    # structured payment-file audit trail (R/pagos_audit_viewer_module.R).
+    # The button itself is only rendered when the viewer can actually see
+    # that view (can_view_payment_audit, or staff) -- matching this repo's
+    # own "genuinely absent, not rendered-then-locked" convention for
+    # permission-gated UI (see Stage 2 Part C's tab-bar comment above).
+    activity_view <- reactiveVal("actividad")
+    observeEvent(input$activity_switch_view, {
+      activity_view(if (identical(activity_view(), "actividad")) "pagos" else "actividad")
+    }, ignoreInit = TRUE)
+
     output$activity_section <- renderUI({
       req(req_authorized())
-      auditLogViewerUI(ns("activity_viewer"))
+      show_switch <- isTRUE(.payment_audit_can_view(shared))
+      view <- if (show_switch) activity_view() else "actividad"
+
+      tagList(
+        if (show_switch)
+          div(class = "d-flex justify-content-end mb-2",
+              actionButton(ns("activity_switch_view"),
+                if (identical(view, "actividad"))
+                  tagList(icon("file-invoice-dollar"), " Ver archivos de pago")
+                else
+                  tagList(icon("clock-rotate-left"), " Ver Actividad"),
+                class = "btn btn-sm btn-outline-primary"))
+        else NULL,
+        if (identical(view, "pagos"))
+          pagosAuditViewerUI(ns("pagos_viewer"))
+        else
+          auditLogViewerUI(ns("activity_viewer"))
+      )
     })
 
     auditLogViewerServer(
@@ -3745,6 +3780,8 @@ tiersServer <- function(id, shared) {
       shared = c(shared, list(refresh_signal = activity_refresh)),
       mode   = "own_client"
     )
+
+    pagosAuditViewerServer("pagos_viewer", shared = shared)
 
     observeEvent(input$btn_save_tier_config, {
       req(is_dev() || is_hopdesk() || is_principal())

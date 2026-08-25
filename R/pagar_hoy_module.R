@@ -96,6 +96,48 @@ pagarHoyUI <- function(id) {
   ) # end tagList
 }
 
+# ── Payment-file audit logging ───────────────────────────────────────────────
+# Called from both PPL generation paths below (the single-account
+# downloadHandler and the "Descargar todos" ZIP bundler) right after a file
+# is actually written -- a structured, permanent record of who generated
+# what, when, from which account, to which beneficiaries. See
+# R/pagos_generados_persistence.R for the storage design and why it does
+# not store the file bytes themselves. Never throws -- a logging failure
+# must never block the user's actual download.
+.log_pago_generado <- function(shared, emp, moneda, cuenta_origen, ppl_rows,
+                                fname, source_type) {
+  if (is.null(ppl_rows) || !nrow(ppl_rows)) return(invisible(NULL))
+  tryCatch({
+    ben <- lapply(seq_len(nrow(ppl_rows)), function(i) list(
+      alias    = as.character(ppl_rows$alias[i] %||% NA_character_),
+      clabe    = as.character(ppl_rows$clabe_dest[i] %||% NA_character_),
+      banco    = as.character(ppl_rows$banco_dest[i] %||% NA_character_),
+      importe  = as.numeric(ppl_rows$importe[i] %||% NA_real_),
+      concepto = as.character(ppl_rows$concepto[i] %||% NA_character_)
+    ))
+    cid  <- tryCatch(shared$effective_client_id(), error = function(e) NULL) %||% Sys.getenv("CLIENT_ID")
+    user <- tryCatch(shared$current_user(), error = function(e) NULL) %||% "unknown"
+    add_pago_generado(
+      list(
+        id            = uuid::UUIDgenerate(),
+        ts            = Sys.time(),
+        user          = user,
+        client_id     = cid,
+        empresa       = emp,
+        moneda        = moneda,
+        cuenta_origen = as.character(cuenta_origen %||% NA_character_),
+        banco_origen  = NA_character_,
+        n_pagos       = nrow(ppl_rows),
+        total         = sum(as.numeric(ppl_rows$importe), na.rm = TRUE),
+        beneficiarios = jsonlite::toJSON(ben, auto_unbox = TRUE),
+        source        = source_type,
+        archivo       = as.character(fname %||% NA_character_)
+      ),
+      client_id = cid
+    )
+  }, error = function(e) message("[PAGOS_AUDIT] .log_pago_generado failed: ", e$message))
+}
+
 pagarHoyServer <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -1157,6 +1199,11 @@ pagarHoyServer <- function(id, shared) {
 
           lines <- generate_ppl(ppl_rows, cuenta_origen, Sys.Date(), 1L)
           write_ppl(lines, file)
+          .log_pago_generado(
+            shared, emp, cur_sel, cuenta_origen, ppl_rows,
+            fname = paste0("pagos_", emp, "_", format(Sys.Date(), "%d%m%Y"), "_001.txt"),
+            source_type = "individual"
+          )
           removeModal()
         }
       )
@@ -2685,6 +2732,10 @@ pagarHoyServer <- function(id, shared) {
             fname <- file.path(tmpdir,
               paste0("pagos_", emp, "_", cur, "_", format(Sys.Date(), "%d%m%Y"), "_001.txt"))
             write_ppl(generate_ppl(ppl_rows, cuenta_origen, Sys.Date(), 1L), fname)
+            .log_pago_generado(
+              shared, emp, cur, cuenta_origen, ppl_rows,
+              fname = basename(fname), source_type = "zip_bulk"
+            )
             fname
           })))
         fnames <- Filter(Negate(is.null), fnames)

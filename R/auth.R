@@ -413,7 +413,8 @@ auth_resolve_perms <- function(tier, permisos_json) {
       can_jump_clients           = TRUE,
       can_manage_invites         = TRUE,
       can_view_client_audit_logs = TRUE,
-      can_view_staff_audit_log   = TRUE
+      can_view_staff_audit_log   = TRUE,
+      can_view_payment_audit     = TRUE
     ),
     hopdesk = list(
       can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
@@ -426,7 +427,14 @@ auth_resolve_perms <- function(tier, permisos_json) {
       can_jump_clients           = FALSE,
       can_manage_invites         = TRUE,
       can_view_client_audit_logs = TRUE,
-      can_view_staff_audit_log   = FALSE
+      can_view_staff_audit_log   = FALSE,
+      # Staff always have this regardless of the client's own tier config --
+      # see .payment_audit_can_view()'s staff bypass in
+      # R/pagos_audit_viewer_module.R, which does not consult this default
+      # at all for a staff session. Set TRUE here too so a direct call to
+      # auth_resolve_perms() for a hopdesk user (outside that bypass path)
+      # is still consistent with "staff always allowed."
+      can_view_payment_audit     = TRUE
     ),
     dev = list(
       can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
@@ -441,7 +449,10 @@ auth_resolve_perms <- function(tier, permisos_json) {
       # based like its siblings, not driven by this flag directly — this
       # default documents the intended permission, it isn't itself consulted.
       can_jump_clients = FALSE, can_manage_invites = TRUE,
-      can_view_client_audit_logs = FALSE, can_view_staff_audit_log = FALSE
+      can_view_client_audit_logs = FALSE, can_view_staff_audit_log = FALSE,
+      # A client's own dev/IT tier -- default ON per Mouse's explicit call
+      # 2026-08-25 ("disable for everyone except dev and admin").
+      can_view_payment_audit = TRUE
     ),
     admin = list(
       can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
@@ -451,7 +462,8 @@ auth_resolve_perms <- function(tier, permisos_json) {
       can_manage_empresas = TRUE,
       can_approve_clients = FALSE, can_manage_hopdesk_perms = FALSE,
       can_jump_clients = FALSE, can_manage_invites = FALSE,
-      can_view_client_audit_logs = FALSE, can_view_staff_audit_log = FALSE
+      can_view_client_audit_logs = FALSE, can_view_staff_audit_log = FALSE,
+      can_view_payment_audit = TRUE
     ),
     finance = list(
       can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
@@ -461,7 +473,11 @@ auth_resolve_perms <- function(tier, permisos_json) {
       can_manage_empresas = FALSE,
       can_approve_clients = FALSE, can_manage_hopdesk_perms = FALSE,
       can_jump_clients = FALSE, can_manage_invites = FALSE,
-      can_view_client_audit_logs = FALSE, can_view_staff_audit_log = FALSE
+      can_view_client_audit_logs = FALSE, can_view_staff_audit_log = FALSE,
+      # OFF by default (Mouse's explicit call) -- the toggle still appears in
+      # Config. de Tiers for this tier (PERM_LABELS applies to all client
+      # tiers uniformly), dev/admin can turn it on per-client if needed.
+      can_view_payment_audit = FALSE
     ),
     analysis = list(
       can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
@@ -471,7 +487,8 @@ auth_resolve_perms <- function(tier, permisos_json) {
       can_manage_empresas = FALSE,
       can_approve_clients = FALSE, can_manage_hopdesk_perms = FALSE,
       can_jump_clients = FALSE, can_manage_invites = FALSE,
-      can_view_client_audit_logs = FALSE, can_view_staff_audit_log = FALSE
+      can_view_client_audit_logs = FALSE, can_view_staff_audit_log = FALSE,
+      can_view_payment_audit = FALSE
     )
   )
 

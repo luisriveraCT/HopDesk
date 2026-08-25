@@ -96,6 +96,7 @@ CURRENCIES <- c("MXN","USD","EUR","GBP","CAD","JPY","CHF","AUD","CNY","BRL")
 
 # ── Source modules ────────────────────────────────────────────────────────────
 source("R/persistence.R")
+source("R/pagos_generados_persistence.R")
 source("R/email_service.R")
 source("R/policy_engine.R")
 source("R/tier_registry.R")
@@ -224,6 +225,7 @@ S3_KEYS <- list(
   pasivos_card_expenses = "pasivos_card_expenses.rds",
   pasivos_audit         = "pasivos_audit.rds",
   app_audit             = "app_audit.rds",
+  pagos_generados       = "pagos_generados.rds",  # structured payment-file audit trail (see R/pagos_generados_persistence.R)
   # Forecasting module (Stage 6.1)
   forecasting_series_observations = "forecasting_series_observations.rds",
   forecasting_metrics             = "forecasting_metrics.rds",
