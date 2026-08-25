@@ -97,10 +97,44 @@ auditLogViewerServer <- function(id, shared, mode,
     refresh_tick <- reactiveVal(0L)
     observeEvent(input$audit_refresh, { refresh_tick(refresh_tick() + 1L) }, ignoreInit = TRUE)
 
+    # Live auto-refresh (the 20s poll below) is opt-in, default OFF. It used
+    # to run unconditionally, which rebuilt the whole DT widget (and its own
+    # client-side search box + page position) every 20 seconds regardless of
+    # whether anyone was actively using the filters -- reported 2026-08-25 as
+    # "the table seems to refresh or restart constantly" and filters
+    # "randomly" resetting. The manual refresh button (audit_refresh, above)
+    # already covers "show me what changed"; this toggle is for the rarer
+    # case of wanting to watch the log update live while it's open.
+    live_refresh_on <- reactiveVal(FALSE)
+    observeEvent(input$audit_live_toggle, {
+      live_refresh_on(!isTRUE(live_refresh_on()))
+    }, ignoreInit = TRUE)
+
+    # Rendered as its own tiny uiOutput (not inside output$panel) so toggling
+    # it never forces the surrounding toolbar/filters/table to re-render --
+    # exactly the kind of unrelated full-rebuild this fix exists to avoid.
+    output$live_toggle_btn <- renderUI({
+      on <- isTRUE(live_refresh_on())
+      actionButton(
+        ns("audit_live_toggle"),
+        icon(if (on) "toggle-on" else "toggle-off"),
+        class = paste("btn btn-sm", if (on) "btn-outline-success" else "btn-outline-secondary"),
+        title = if (on)
+          "Actualización en vivo: activada (cada 20s) — clic para desactivar"
+        else
+          "Actualización en vivo: desactivada — usa el botón de actualizar, o clic aquí para activarla"
+      )
+    })
+
     # ── Fetch — the only call site for read_audit_log_scoped() ────────────────
     fetched <- reactive({
       refresh_tick()
-      invalidateLater(20000)   # poll for cross-session updates, matching Actividad's prior behavior
+      # Only poll for cross-session updates while live-refresh is explicitly
+      # on (see live_refresh_on above) -- invalidateLater() must be called
+      # unconditionally from inside the reactive on the branch that wants it,
+      # not skipped via an early return, so it correctly stops re-scheduling
+      # itself the instant the toggle is switched off.
+      if (isTRUE(live_refresh_on())) invalidateLater(20000)
       tryCatch(shared$refresh_signal(), error = function(e) NULL)  # optional: caller-side "just acted" signal
 
       cid <- requested_client_id()
@@ -209,8 +243,10 @@ auditLogViewerServer <- function(id, shared, mode,
               tags$label("Usuario", class = "form-label small fw-semibold mb-1"),
               textInput(ns("audit_user_filter"), NULL,
                        placeholder = "Filtrar por usuario...", width = "100%")),
-          actionButton(ns("audit_refresh"), icon("rotate"),
-                      class = "btn btn-sm btn-outline-secondary", title = "Actualizar")
+          div(class = "d-flex gap-1",
+              actionButton(ns("audit_refresh"), icon("rotate"),
+                          class = "btn btn-sm btn-outline-secondary", title = "Actualizar"),
+              uiOutput(ns("live_toggle_btn"), inline = TRUE))
         ),
         uiOutput(ns("audit_results"))
       )
