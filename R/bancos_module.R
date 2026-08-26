@@ -1516,6 +1516,16 @@ bancosServer <- function(id, shared) {
         openxlsx::setRowHeights(wb, ws, rows = 1, heights = 20)
 
         openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
+
+        log_archivo_generado(
+          shared, tipo = "bancos_libro_excel",
+          empresa = if (todas_exp) "Todas" else (base_exp$.empresa[1] %||% NA_character_),
+          moneda = if (todas_exp) NA_character_ else (base_exp$.moneda[1] %||% NA_character_),
+          detalle_list = list(cuenta = cuenta_sel, periodo = periodo, flujo = flujo,
+                              mostrar_comisiones = show_com),
+          n_items = nrow(export),
+          fname = paste0("movimientos_", format(Sys.Date(), "%Y%m%d"), ".xlsx")
+        )
       }
     )
 

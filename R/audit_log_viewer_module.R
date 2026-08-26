@@ -108,6 +108,11 @@ auditLogViewerServer <- function(id, shared, mode,
     live_refresh_on <- reactiveVal(FALSE)
     observeEvent(input$audit_live_toggle, {
       live_refresh_on(!isTRUE(live_refresh_on()))
+      msg <- if (isTRUE(live_refresh_on()))
+        "Actualización en vivo activada" else "Actualización en vivo desactivada"
+      shinyjs::html(id = "live_toggle_msg", html = msg)
+      shinyjs::show("live_toggle_msg")
+      shinyjs::delay(1800, shinyjs::hide("live_toggle_msg"))
     }, ignoreInit = TRUE)
 
     # Rendered as its own tiny uiOutput (not inside output$panel) so toggling
@@ -243,54 +248,83 @@ auditLogViewerServer <- function(id, shared, mode,
               tags$label("Usuario", class = "form-label small fw-semibold mb-1"),
               textInput(ns("audit_user_filter"), NULL,
                        placeholder = "Filtrar por usuario...", width = "100%")),
-          div(class = "d-flex gap-1",
+          div(class = "d-flex gap-2 align-items-center",
               actionButton(ns("audit_refresh"), icon("rotate"),
                           class = "btn btn-sm btn-outline-secondary", title = "Actualizar"),
-              uiOutput(ns("live_toggle_btn"), inline = TRUE))
+              uiOutput(ns("live_toggle_btn"), inline = TRUE),
+              # Bare text, no background/border/box -- a quick transient
+              # confirmation when the live-refresh toggle is clicked, shown
+              # briefly then auto-hidden. Not a showNotification() toast
+              # (those always render as a bordered card) and not styled as
+              # a button/badge -- literally just the message text.
+              shinyjs::hidden(
+                tags$span(id = ns("live_toggle_msg"),
+                          style = "font-size:0.8rem; color:#6c757d;")
+              ))
         ),
         uiOutput(ns("audit_results"))
       )
     })
 
-    # Swaps between the results table and a permission-denied alert — this is
-    # what surfaces read_audit_log_scoped()'s loud stop() as "requires higher
-    # permission" instead of silently showing an empty table (Stage 4 Part A
-    # fix for the Actividad staff-log leak).
+    # Swaps between the results table and a permission-denied alert. A plain
+    # reactive() re-evaluates on every upstream invalidation regardless of
+    # whether its RETURN VALUE actually changed -- Shiny does not dedupe by
+    # value on its own. Reading fetched() directly here meant this whole
+    # renderUI (and therefore the dataTableOutput() container it returns)
+    # was torn down and rebuilt on every date-range/filter interaction, even
+    # when the error/no-error state never changed -- destroying the DT
+    # widget's own sort/search/page state each time (reported 2026-08-25/26
+    # as "just opening the [date range] clears everything"). error_state is
+    # a reactiveVal, only ever updated when the boolean actually flips, so
+    # this renderUI -- and the DT container it creates -- now only reruns
+    # on a genuine permission-state change (e.g. a staff jump), never on an
+    # ordinary data refresh.
+    error_state <- reactiveVal(FALSE)
+    observe({
+      new_err <- inherits(fetched(), "error")
+      if (!identical(new_err, isolate(error_state()))) error_state(new_err)
+    })
+
     output$audit_results <- renderUI({
-      if (inherits(fetched(), "error")) {
+      if (isTRUE(error_state())) {
         return(div(class = "alert alert-warning mt-2", icon("lock"),
                    " No tienes permiso para ver esta bitácora."))
       }
       DT::dataTableOutput(ns("audit_tbl"))
     })
 
-    output$audit_tbl <- DT::renderDataTable({
-      df <- filtered()
-      cols <- if (identical(mode, "multi_client"))
-        c(Hora = "ts", Usuario = "user", Cliente = "client_id", `Módulo` = "module",
-         `Acción` = "action", `Descripción` = "description", `ID destino` = "target_id")
-      else
-        c(Hora = "ts", Usuario = "user", `Módulo` = "module",
-         `Acción` = "action", `Descripción` = "description", `ID destino` = "target_id")
+    .audit_cols <- if (identical(mode, "multi_client"))
+      c(Hora = "ts", Usuario = "user", Cliente = "client_id", `Módulo` = "module",
+       `Acción` = "action", `Descripción` = "description", `ID destino` = "target_id")
+    else
+      c(Hora = "ts", Usuario = "user", `Módulo` = "module",
+       `Acción` = "action", `Descripción` = "description", `ID destino` = "target_id")
 
+    .audit_display_df <- function(df) {
       if (inherits(df, "error") || is.null(df) || !nrow(df)) {
-        empty <- setNames(
-          lapply(names(cols), function(x) character()),
-          names(cols)
-        )
-        return(as.data.frame(empty, check.names = FALSE, stringsAsFactors = FALSE))
+        return(as.data.frame(
+          setNames(lapply(names(.audit_cols), function(x) character()), names(.audit_cols)),
+          check.names = FALSE, stringsAsFactors = FALSE
+        ))
       }
-
       df <- df[order(df$ts, decreasing = TRUE), , drop = FALSE]
-      out <- data.frame(
-        Hora = format(as.POSIXct(df$ts), "%d/%m/%Y %H:%M:%S"),
-        stringsAsFactors = FALSE
-      )
-      for (label in names(cols)[-1]) {
-        src <- cols[[label]]
+      out <- data.frame(Hora = format(as.POSIXct(df$ts), "%d/%m/%Y %H:%M:%S"),
+                        stringsAsFactors = FALSE)
+      for (label in names(.audit_cols)[-1]) {
+        src <- .audit_cols[[label]]
         out[[label]] <- ifelse(is.na(df[[src]]), "", df[[src]])
       }
       out
+    }
+
+    # Rendered ONCE (isolate()) -- the table's structure/columns never
+    # change after that. All subsequent data changes go through the
+    # dataTableProxy below via replaceData(), which updates the rows in
+    # place client-side without touching the widget's own sort order,
+    # search-box text, or current page (the exact state a full rebuild was
+    # wiping every time).
+    output$audit_tbl <- DT::renderDataTable({
+      isolate(.audit_display_df(filtered()))
     }, options = list(
       pageLength = 25, dom = "ftp", order = list(),
       language = list(
@@ -301,5 +335,11 @@ auditLogViewerServer <- function(id, shared, mode,
         paginate    = list(previous = "Anterior", `next` = "Siguiente")
       )
     ), selection = "none", rownames = FALSE)
+
+    audit_tbl_proxy <- DT::dataTableProxy("audit_tbl")
+    observe({
+      DT::replaceData(audit_tbl_proxy, .audit_display_df(filtered()),
+                      resetPaging = FALSE, rownames = FALSE)
+    })
   })
 }

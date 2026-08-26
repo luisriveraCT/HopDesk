@@ -2138,6 +2138,11 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
   .xl_job      <- reactiveVal(NULL)
   .xl_file     <- reactiveVal(NULL)   # path to generated xlsx (state=="done")
   .xl_basename <- reactiveVal(NULL)   # download filename
+  # Captured at job-trigger time (not re-read at download time) so the audit
+  # log reflects the parameters actually used to GENERATE the file, not
+  # whatever the UI happens to show whenever the user eventually clicks
+  # "Descargar Excel" after the async job finishes.
+  .xl_log_params <- reactiveVal(NULL)
   .xl_start    <- reactiveVal(NULL)   # POSIXct when job was launched
   .xl_timer    <- reactiveTimer(1000) # 1-second poll tick
   # Elapsed-seconds threshold for next warning dialog; bumped by 60 each time shown
@@ -2499,6 +2504,16 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       if (is.null(doc)) stop("Error al generar el documento Word.")
 
       print(doc, target = file)
+
+      log_archivo_generado(
+        shared, tipo = "reporte_word",
+        empresa = paste(emp_sel, collapse = ", "), moneda = base_cur,
+        detalle_list = list(desde = as.character(date_from), hasta = as.character(date_to),
+                            intercompania = ic_val, agrupacion = grouping,
+                            modo_moneda = cur_mode, empresas = emp_sel),
+        n_items = length(emp_sel),
+        fname = paste0("cashflow_", format(Sys.Date(), "%d%m%Y"), ".docx")
+      )
     }
   )
 
@@ -2579,6 +2594,10 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
     prefix    <- gsub("[^A-Za-z0-9]", "", g_name %||% "Networks Group")
     if (!nzchar(prefix)) prefix <- "FlujoEfectivo"
     .xl_basename(paste0(prefix, "_", inits_str, "_", from_str, "-", to_str, ".xlsx"))
+    .xl_log_params(list(empresa = paste(emp_sel, collapse = ", "), moneda = base_cur,
+                        desde = as.character(date_from), hasta = as.character(date_to),
+                        intercompania = ic_val, agrupacion = grouping,
+                        modo_moneda = cur_mode, n_empresas = length(emp_sel)))
 
     # ── Serialize snapshot and launch callr background job ───────────────
     snap_path <- tempfile(fileext = ".rds")
@@ -2708,6 +2727,14 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       src <- .xl_file()
       req(!is.null(src), file.exists(src))
       file.copy(src, file, overwrite = TRUE)
+
+      params <- .xl_log_params() %||% list()
+      log_archivo_generado(
+        shared, tipo = "reporte_excel",
+        empresa = params$empresa %||% NA_character_, moneda = params$moneda %||% NA_character_,
+        detalle_list = params, n_items = params$n_empresas %||% NA_integer_,
+        fname = .xl_basename() %||% "flujo_caja.xlsx"
+      )
     }
   )
 
@@ -2884,6 +2911,16 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
                            empresas = initials, ic_mode = ic_val, currency_mode = cur_mode),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
+
+      log_archivo_generado(
+        shared, tipo = "reporte_pdf",
+        empresa = paste(emp_sel, collapse = ", "), moneda = base_cur,
+        detalle_list = list(desde = as.character(date_from), hasta = as.character(date_to),
+                            intercompania = ic_val, agrupacion = grouping,
+                            modo_moneda = cur_mode, empresas = emp_sel),
+        n_items = length(emp_sel),
+        fname = paste0("cashflow_", format(Sys.Date(), "%d%m%Y"), ".pdf")
       )
     }
   )

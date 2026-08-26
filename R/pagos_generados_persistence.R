@@ -40,9 +40,18 @@
   banco_origen  = character(),
   n_pagos       = integer(),
   total         = double(),
-  beneficiarios = character(),  # JSON-encoded list of {alias, clabe, banco, importe, concepto}
-  source        = character(),  # "individual" | "zip_bulk"
-  archivo       = character()   # filename of the generated file (bytes not stored, see header)
+  beneficiarios = character(),  # JSON-encoded list of {alias, clabe, banco, importe, concepto} -- "pago_ppl" only
+  source        = character(),  # "individual" | "zip_bulk" | "word" | "excel" | "pdf" | ...
+  archivo       = character(),  # filename of the generated file (bytes not stored, see header)
+  # Extended 2026-08-26 to cover every generated/downloaded file app-wide,
+  # not just bank-payment files ("every time I download anything... it
+  # needs to appear here" -- Mouse, 2026-08-26): tipo distinguishes a
+  # payment file ("pago_ppl", the only kind that ever populates
+  # beneficiarios/cuenta_origen/banco_origen) from every other generated
+  # file ("reporte_word"/"reporte_excel"/"reporte_pdf"/...), which instead
+  # carries whatever it needs in the free-form detalle JSON blob.
+  tipo          = character(),
+  detalle       = character()   # JSON-encoded named list, free-form per tipo; NA for "pago_ppl"
 )
 
 .pagos_current_key <- function(cid) paste0(tolower(trimws(cid)), "/pagos_generados.rds")
@@ -164,6 +173,49 @@ add_pago_generado <- function(record, client_id = NULL, max_attempts = 3, retry_
   invisible(list(ok = FALSE, error = last_err, attempts = max_attempts))
 }
 
+# ── Generic logging helper for non-payment downloads ─────────────────────────
+# Payment files (PPL bank layouts) go through .log_pago_generado()
+# (R/pagar_hoy_module.R), which fills beneficiarios/cuenta_origen/
+# banco_origen. Every OTHER generated/downloaded file (Word/Excel/PDF cash
+# flow exports, and any future export type) goes through this instead --
+# same permanent table, same viewer, distinguished by `tipo`. Never throws;
+# a logging failure must never block the user's actual download.
+#
+# detalle_list: a plain named list of whatever's relevant to this export
+# (date range, empresas included, currency mode, ...) -- stored as-is, JSON-
+# encoded, and shown as simple key/value pairs in the viewer's detail modal.
+log_archivo_generado <- function(shared, tipo, empresa, moneda, detalle_list,
+                                 total = NA_real_, n_items = NA_integer_,
+                                 fname = NA_character_) {
+  tryCatch({
+    cid  <- tryCatch(shared$effective_client_id(), error = function(e) NULL) %||% Sys.getenv("CLIENT_ID")
+    user <- tryCatch(shared$current_user(), error = function(e) NULL) %||% "unknown"
+    add_pago_generado(
+      list(
+        id            = uuid::UUIDgenerate(),
+        ts            = Sys.time(),
+        user          = user,
+        client_id     = cid,
+        empresa       = as.character(empresa %||% NA_character_),
+        moneda        = as.character(moneda %||% NA_character_),
+        cuenta_origen = NA_character_,
+        banco_origen  = NA_character_,
+        n_pagos       = as.integer(n_items %||% NA_integer_),
+        total         = as.numeric(total %||% NA_real_),
+        beneficiarios = NA_character_,
+        source        = as.character(tipo),
+        archivo       = as.character(fname %||% NA_character_),
+        tipo          = as.character(tipo),
+        # as.character() strips jsonlite::toJSON()'s "json" S3 class -- see
+        # the identical, hard-learned comment in R/pagar_hoy_module.R's
+        # .log_pago_generado() for why this is required, not cosmetic.
+        detalle       = as.character(jsonlite::toJSON(detalle_list %||% list(), auto_unbox = TRUE))
+      ),
+      client_id = cid
+    )
+  }, error = function(e) message("[PAGOS_AUDIT] log_archivo_generado failed: ", e$message))
+}
+
 # ── Helpers for consumers (viewer module + tests) ──────────────────────────────
 
 # Parses the JSON beneficiarios blob back into a data frame. Never errors --
@@ -178,6 +230,16 @@ parse_pago_beneficiarios <- function(json_str) {
   if (is.null(df) || !nrow(df)) return(empty)
   for (col in names(empty)) if (!col %in% names(df)) df[[col]] <- empty[[col]][NA_integer_]
   df[, names(empty), drop = FALSE]
+}
+
+# Parses the generic `detalle` JSON blob (non-"pago_ppl" rows) back into a
+# plain named list of scalars, for the viewer to render as key/value pairs.
+# Never errors -- an unparseable/empty blob returns an empty list.
+parse_pago_detalle <- function(json_str) {
+  if (is.null(json_str) || is.na(json_str) || !nzchar(json_str)) return(list())
+  parsed <- tryCatch(jsonlite::fromJSON(json_str, simplifyVector = TRUE), error = function(e) NULL)
+  if (is.null(parsed) || !length(parsed)) return(list())
+  as.list(parsed)
 }
 
 # Masks a CLABE/account number to its last 4 digits (e.g. "••••1234").

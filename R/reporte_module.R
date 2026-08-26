@@ -789,6 +789,14 @@ reporteServer <- function(id, shared, active_tab = NULL) {
                              pulse = pulse_data),
           file, useBytes = FALSE
         )
+
+        log_archivo_generado(
+          shared, tipo = "reporte_financiero_html", empresa = paste(emps, collapse = ", "),
+          moneda = NA_character_,
+          detalle_list = list(desde = as.character(desde), hasta = as.character(hasta), empresas = emps),
+          n_items = length(emps),
+          fname = paste0("reporte_financiero_", format(Sys.Date(), "%Y%m%d"), ".html")
+        )
       }
     )
 
@@ -862,6 +870,14 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           showNotification(
             "\u2713 PDF generado correctamente.",
             type = "message", duration = 3
+          )
+
+          log_archivo_generado(
+            shared, tipo = "reporte_financiero_pdf", empresa = paste(emps, collapse = ", "),
+            moneda = NA_character_,
+            detalle_list = list(desde = as.character(desde), hasta = as.character(hasta), empresas = emps),
+            n_items = length(emps),
+            fname = paste0("reporte_financiero_", format(Sys.Date(), "%Y%m%d"), ".pdf")
           )
         }, error = function(e) {
           # Chrome found but print failed — deliver HTML and show error

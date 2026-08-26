@@ -301,7 +301,7 @@ cat("\n-- Part D: additional static checks --\n")
      "live_toggle_btn's uiOutput() call site correctly namespaces the id via ns()")
 .chk(length(grep('output\\$live_toggle_btn <- renderUI', txt)), 1L,
      "the matching server-side output$live_toggle_btn definition exists (bare name, matched to the ns()-wrapped UI id by Shiny's module boundary)")
-colocation_hits <- grep('div\\(class = "d-flex gap-1"', txt)
+colocation_hits <- grep('div\\(class = "d-flex gap-2 align-items-center"', txt)
 .chk(length(colocation_hits), 1L,
      "the refresh button and the live-toggle button are wrapped in one small flex container (co-located, minimal footprint)")
 if (length(colocation_hits)) {
@@ -335,5 +335,111 @@ shiny::testServer(auditLogViewerServer, args = list(
   .chk(inherits(df_after, "error"), TRUE,
        "E2: same railguard still refuses access even after toggling live-refresh ON")
 })
+
+# =============================================================================
+# Part F -- DT full-rebuild-on-every-filter-change fix (reported 2026-08-26:
+# "just opening the [date range] clears everything", i.e. column sort order,
+# DT's own search box, and page position all reset on ANY filter/date
+# interaction, not just the 20s poll fixed in Parts A-E above)
+# =============================================================================
+cat("\n-- Part F: DT rebuild-avoidance (error_state stability + proxy pattern) --\n")
+
+error_state_ln    <- grep("error_state <- reactiveVal\\(FALSE\\)", txt)
+dedup_observe_ln  <- grep("if \\(!identical\\(new_err, isolate\\(error_state\\(\\)\\)\\)\\) error_state\\(new_err\\)", txt)
+isolate_render_ln <- grep("isolate\\(\\.audit_display_df\\(filtered\\(\\)\\)\\)", txt)
+proxy_ln          <- grep('audit_tbl_proxy <- DT::dataTableProxy\\("audit_tbl"\\)', txt)
+replace_data_ln   <- grep("DT::replaceData\\(audit_tbl_proxy, \\.audit_display_df\\(filtered\\(\\)\\)", txt)
+
+.chk(length(error_state_ln), 1L, "error_state reactiveVal is defined")
+.chk(length(dedup_observe_ln), 1L, "the value-dedup observe() (only update error_state on an actual flip) exists")
+.chk(length(isolate_render_ln), 1L, "output$audit_tbl's initial render is isolate()-wrapped (renders once, not on every filtered() change)")
+.chk(length(proxy_ln), 1L, "audit_tbl_proxy (DT::dataTableProxy) is defined")
+.chk(length(replace_data_ln), 1L, "DT::replaceData() is called to push data updates without a full rebuild")
+
+# output$audit_results must depend on error_state(), NOT directly on
+# fetched() -- reading fetched() there was the actual root cause (a plain
+# reactive() re-evaluating on every upstream change regardless of whether
+# its value changed, tearing down and recreating the dataTableOutput()
+# container each time).
+audit_results_start <- grep("output\\$audit_results <- renderUI", txt)
+.chk_true(length(audit_results_start) == 1, "found output$audit_results to scan")
+if (length(audit_results_start)) {
+  block <- paste(txt[audit_results_start[1]:min(audit_results_start[1] + 8, length(txt))], collapse = "\n")
+  .chk_true(grepl("error_state\\(\\)", block), "output$audit_results reads error_state()")
+  .chk_true(!grepl("inherits\\(fetched\\(\\), \"error\"\\)", block),
+            "output$audit_results no longer reads fetched() directly (the actual bug)")
+}
+
+# Functional: error_state() genuinely reflects the current permission state,
+# and (this is the real fix, not just its symptom) fetched()/filtered() keep
+# working correctly across repeated date-range-style interactions -- proving
+# the refactor didn't break underlying correctness while fixing the rebuild.
+shiny::testServer(auditLogViewerServer, args = list(
+  shared = .mock_shared_local("tesoreria2", "finance", "networks", FALSE, "networks", "networks"),
+  mode   = "own_client"
+), {
+  session$flushReact()
+  .chk(error_state(), FALSE, "F1: error_state() is FALSE for a viewer who is allowed to see their own log")
+
+  # Simulate repeated date-range interactions (the exact reported scenario)
+  # -- each one changes input$audit_range, which fetched()/filtered() must
+  # react to correctly, while error_state() (and therefore the DT
+  # container) must NOT flip since permission state never changed.
+  for (i in 1:4) {
+    session$setInputs(audit_range = c(Sys.time() - (7 + i) * 86400, Sys.time()))
+    session$flushReact()
+    .chk(error_state(), FALSE,
+         sprintf("F2.%d: error_state() stays FALSE across repeated date-range changes (no permission flip)", i))
+  }
+  df_final <- fetched()
+  .chk(inherits(df_final, "error"), FALSE,
+       "F3: fetched() still resolves correctly after repeated date-range interactions")
+})
+
+shiny::testServer(auditLogViewerServer, args = list(
+  shared = .mock_shared_local("bunny_toggle3", "hopdesk", "hd-admin", TRUE, "hd-admin", "hd-admin"),
+  mode   = "own_client"
+), {
+  session$flushReact()
+  .chk(error_state(), TRUE, "F4: error_state() is TRUE for a viewer who is genuinely refused (plain hopdesk at home)")
+})
+
+# =============================================================================
+# Part G -- live-toggle popup message ("just the text, no background, no
+# text box, just a quick message" -- requested 2026-08-26)
+# =============================================================================
+cat("\n-- Part G: live-toggle popup message --\n")
+
+.chk(length(grep('shinyjs::hidden\\(', txt)), 1L,
+     "the popup message element is wrapped in shinyjs::hidden() (starts hidden)")
+.chk(length(grep('id = ns\\("live_toggle_msg"\\)', txt)), 1L,
+     "the popup message span has a namespaced id")
+.chk(length(grep('shinyjs::html\\(id = "live_toggle_msg"', txt)), 1L,
+     "the toggle observer sets the popup's text via shinyjs::html()")
+.chk(length(grep('shinyjs::show\\("live_toggle_msg"\\)', txt)), 1L,
+     "the toggle observer shows the popup")
+.chk(length(grep('shinyjs::delay\\(1800, shinyjs::hide\\("live_toggle_msg"\\)\\)', txt)), 1L,
+     "the toggle observer auto-hides the popup after a short delay")
+
+# "No background, no text box" -- the element must not carry any box-styling
+# CSS (background/border/box-shadow), just typography.
+msg_span_ln <- grep('tags\\$span\\(id = ns\\("live_toggle_msg"\\)', txt)
+.chk_true(length(msg_span_ln) == 1, "found the popup message span definition to scan")
+if (length(msg_span_ln)) {
+  span_block <- paste(txt[msg_span_ln[1]:min(msg_span_ln[1] + 2, length(txt))], collapse = " ")
+  .chk_true(!grepl("background", span_block, ignore.case = TRUE),
+            "popup message has no background styling")
+  .chk_true(!grepl("border", span_block, ignore.case = TRUE),
+            "popup message has no border styling")
+}
+
+# Both toggle directions produce a message (activada / desactivada).
+toggle_obs_block_start <- grep("observeEvent\\(input\\$audit_live_toggle,", txt)
+.chk_true(length(toggle_obs_block_start) == 1, "found the toggle observeEvent to scan")
+if (length(toggle_obs_block_start)) {
+  obs_block <- paste(txt[toggle_obs_block_start[1]:min(toggle_obs_block_start[1] + 8, length(txt))], collapse = "\n")
+  .chk_true(grepl("activada", obs_block), "toggle observer has an 'activated' message branch")
+  .chk_true(grepl("desactivada", obs_block), "toggle observer has a 'deactivated' message branch")
+}
 
 cat(sprintf("\n  Subtotal: %d passed, %d failed\n", .pass, .fail))

@@ -26,6 +26,20 @@
   isTRUE(.audit_viewer_resolve_perms(shared)$can_view_payment_audit)
 }
 
+# Module-file scope (not inside pagosAuditViewerServer) -- both the server's
+# own table/modal rendering AND the standalone .build_pago_receipt_html()
+# function below need it, and the latter is not part of the module closure.
+.TIPO_LABELS <- c(pago_ppl = "Pago", reporte_word = "Reporte Word",
+                  reporte_excel = "Reporte Excel", reporte_pdf = "Reporte PDF",
+                  reporte_financiero_html = "Reporte Financiero (HTML)",
+                  reporte_financiero_pdf  = "Reporte Financiero (PDF)",
+                  bancos_libro_excel      = "Libro de Bancos (Excel)")
+.tipo_label <- function(tipo) {
+  t <- as.character(tipo)
+  out <- unname(.TIPO_LABELS[t])
+  ifelse(is.na(out), ifelse(is.na(t) | !nzchar(t), "", t), out)
+}
+
 pagosAuditViewerUI <- function(id) {
   ns <- NS(id)
   uiOutput(ns("panel"))
@@ -112,27 +126,42 @@ pagosAuditViewerServer <- function(id, shared) {
       )
     })
 
-    output$pagos_tbl <- DT::renderDataTable({
-      df <- filtered()
+    .pagos_display_df <- function(df) {
       if (is.null(df) || !nrow(df)) {
-        empty <- data.frame(Hora = character(), Usuario = character(), Empresa = character(),
-                            Moneda = character(), `Cuenta origen` = character(),
-                            `N° pagos` = integer(), Total = character(), Origen = character(),
-                            check.names = FALSE)
-        return(empty)
+        return(data.frame(Hora = character(), Usuario = character(), Tipo = character(),
+                          Empresa = character(), Moneda = character(), `Cuenta origen` = character(),
+                          `Cant.` = integer(), Total = character(), Origen = character(),
+                          check.names = FALSE))
       }
       df <- df[order(df$ts, decreasing = TRUE), , drop = FALSE]
       data.frame(
         Hora            = format(as.POSIXct(df$ts), "%d/%m/%Y %H:%M:%S"),
         Usuario         = ifelse(is.na(df$user), "", df$user),
+        Tipo            = .tipo_label(df$tipo),
         Empresa         = ifelse(is.na(df$empresa), "", df$empresa),
         Moneda          = ifelse(is.na(df$moneda), "", df$moneda),
         `Cuenta origen` = mask_clabe(df$cuenta_origen),
-        `N° pagos`      = ifelse(is.na(df$n_pagos), 0L, df$n_pagos),
+        `Cant.`         = ifelse(is.na(df$n_pagos), 0L, df$n_pagos),
         Total           = ifelse(is.na(df$total), "", formatC(df$total, format = "f", digits = 2, big.mark = ",")),
-        Origen          = ifelse(is.na(df$source), "", ifelse(df$source == "zip_bulk", "ZIP (todos)", "Individual")),
+        # Only meaningful for pago_ppl (individual vs. bulk-ZIP generation) --
+        # for every other tipo, `source` just duplicates `tipo` itself (see
+        # log_archivo_generado()), so leave this column blank rather than
+        # show a confusingly redundant/wrong "Individual" for a report.
+        Origen          = ifelse(is.na(df$tipo) | df$tipo != "pago_ppl", "",
+                                 ifelse(df$source == "zip_bulk", "ZIP (todos)", "Individual")),
         check.names = FALSE, stringsAsFactors = FALSE
       )
+    }
+
+    # Rendered ONCE (isolate()); subsequent data changes go through the
+    # dataTableProxy below via replaceData(), which updates rows in place
+    # without resetting the widget's own sort order, search-box text,
+    # current page, or row selection (clearSelection="none") -- a full
+    # rebuild on every filter/date-range interaction was wiping all of
+    # that (reported 2026-08-25/26, same root cause fixed in
+    # R/audit_log_viewer_module.R).
+    output$pagos_tbl <- DT::renderDataTable({
+      isolate(.pagos_display_df(filtered()))
     }, options = list(
       pageLength = 25, dom = "ftp", order = list(),
       language = list(search = "Filtrar:", zeroRecords = "Sin registros",
@@ -140,6 +169,12 @@ pagosAuditViewerServer <- function(id, shared) {
                       infoEmpty = "Sin registros",
                       paginate = list(previous = "Anterior", `next` = "Siguiente"))
     ), selection = "single", rownames = FALSE)
+
+    pagos_tbl_proxy <- DT::dataTableProxy("pagos_tbl")
+    observe({
+      DT::replaceData(pagos_tbl_proxy, .pagos_display_df(filtered()),
+                      resetPaging = FALSE, rownames = FALSE, clearSelection = "none")
+    })
 
     output$detail_btn_ui <- renderUI({
       df <- filtered()
@@ -163,36 +198,60 @@ pagosAuditViewerServer <- function(id, shared) {
       row <- df[sel, , drop = FALSE]
       selected_record(row)
 
-      ben <- parse_pago_beneficiarios(row$beneficiarios[1])
+      # NA/missing tipo => a row written before the tipo/detalle columns
+      # existed; treat it as the only tipo that could have been logged back
+      # then (pago_ppl). Explicit is.na() check rather than %||%'s NA-
+      # coalescing, since that behavior differs across %||% definitions in
+      # different sourcing contexts (found via a test-harness discrepancy,
+      # 2026-08-26) -- this must not depend on which one happens to be in scope.
+      is_pago <- is.na(row$tipo[1]) || identical(row$tipo[1], "pago_ppl")
 
       showModal(modalDialog(
-        title = tagList(icon("receipt"), " Detalle del archivo de pagos"),
+        title = tagList(icon("receipt"),
+                        if (is_pago) " Detalle del archivo de pagos" else " Detalle del archivo generado"),
         size = "l", easyClose = TRUE,
         div(class = "mb-3 small",
           tags$div(tags$strong("Usuario: "), row$user[1]),
           tags$div(tags$strong("Fecha: "), format(as.POSIXct(row$ts[1]), "%d/%m/%Y %H:%M:%S")),
+          tags$div(tags$strong("Tipo: "), .tipo_label(row$tipo[1])),
           tags$div(tags$strong("Empresa: "), row$empresa[1], " (", row$moneda[1], ")"),
-          tags$div(tags$strong("Cuenta origen: "), row$cuenta_origen[1]),
-          tags$div(tags$strong("Origen: "), if (identical(row$source[1], "zip_bulk")) "ZIP (todos)" else "Individual"),
+          if (is_pago) tags$div(tags$strong("Cuenta origen: "), row$cuenta_origen[1]),
+          if (is_pago) tags$div(tags$strong("Origen: "),
+                                if (identical(row$source[1], "zip_bulk")) "ZIP (todos)" else "Individual"),
           tags$div(tags$strong("Archivo: "), row$archivo[1])
         ),
-        if (nrow(ben))
-          tags$table(class = "table table-sm table-hover small",
-            tags$thead(class = "table-light",
-              tags$tr(tags$th("Beneficiario"), tags$th("CLABE"), tags$th("Banco"),
-                      tags$th(class = "text-end", "Importe"), tags$th("Concepto"))),
-            tags$tbody(
-              lapply(seq_len(nrow(ben)), function(i)
-                tags$tr(
-                  tags$td(ben$alias[i]),
-                  tags$td(ben$clabe[i]),
-                  tags$td(ben$banco[i]),
-                  tags$td(class = "text-end", formatC(ben$importe[i], format = "f", digits = 2, big.mark = ",")),
-                  tags$td(ben$concepto[i])
-                ))
+        if (is_pago) {
+          ben <- parse_pago_beneficiarios(row$beneficiarios[1])
+          if (nrow(ben))
+            tags$table(class = "table table-sm table-hover small",
+              tags$thead(class = "table-light",
+                tags$tr(tags$th("Beneficiario"), tags$th("CLABE"), tags$th("Banco"),
+                        tags$th(class = "text-end", "Importe"), tags$th("Concepto"))),
+              tags$tbody(
+                lapply(seq_len(nrow(ben)), function(i)
+                  tags$tr(
+                    tags$td(ben$alias[i]),
+                    tags$td(ben$clabe[i]),
+                    tags$td(ben$banco[i]),
+                    tags$td(class = "text-end", formatC(ben$importe[i], format = "f", digits = 2, big.mark = ",")),
+                    tags$td(ben$concepto[i])
+                  ))
+              )
             )
-          )
-        else tags$p(class = "text-muted small", "Sin beneficiarios registrados."),
+          else tags$p(class = "text-muted small", "Sin beneficiarios registrados.")
+        } else {
+          det <- parse_pago_detalle(row$detalle[1])
+          if (length(det))
+            tags$table(class = "table table-sm small",
+              tags$tbody(
+                lapply(names(det), function(k)
+                  tags$tr(tags$td(class = "fw-semibold", k),
+                          tags$td(paste(unlist(det[[k]]), collapse = ", ")))
+                )
+              )
+            )
+          else tags$p(class = "text-muted small", "Sin detalle adicional registrado.")
+        },
         footer = tagList(
           modalButton("Cerrar"),
           downloadButton(ns("dl_pago_pdf"), tagList(icon("file-pdf"), " Descargar recibo (PDF)"),
@@ -249,20 +308,50 @@ pagosAuditViewerServer <- function(id, shared) {
 }
 
 # Builds a self-contained HTML receipt for one pagos_generados row. Full
-# (unmasked) CLABE by design -- this is the download path a permitted
-# viewer already had to click through the masked summary + unmasked detail
-# modal to reach, not a shortcut around the masking.
+# (unmasked) CLABE by design for pago_ppl rows -- this is the download path
+# a permitted viewer already had to click through the masked summary +
+# unmasked detail modal to reach, not a shortcut around the masking. Every
+# other tipo (2026-08-26 extension) shows its detalle key/value pairs
+# instead of a beneficiary table.
 .build_pago_receipt_html <- function(row) {
-  ben <- parse_pago_beneficiarios(row$beneficiarios[1])
-  rows_html <- if (nrow(ben)) paste(vapply(seq_len(nrow(ben)), function(i) sprintf(
-    "<tr><td>%s</td><td>%s</td><td>%s</td><td style='text-align:right;'>%s</td><td>%s</td></tr>",
-    htmltools::htmlEscape(ben$alias[i] %||% ""),
-    htmltools::htmlEscape(ben$clabe[i] %||% ""),
-    htmltools::htmlEscape(ben$banco[i] %||% ""),
-    formatC(ben$importe[i], format = "f", digits = 2, big.mark = ","),
-    htmltools::htmlEscape(ben$concepto[i] %||% "")
-  ), character(1)), collapse = "\n") else
-    "<tr><td colspan='5' style='text-align:center;color:#888;'>Sin beneficiarios registrados.</td></tr>"
+  # See the identical is.na()-explicit check (and its comment) in the detail
+  # modal's observeEvent above -- kept in sync deliberately, not %||%-based.
+  is_pago <- is.na(row$tipo[1]) || identical(row$tipo[1], "pago_ppl")
+
+  if (is_pago) {
+    ben <- parse_pago_beneficiarios(row$beneficiarios[1])
+    body_html <- if (nrow(ben)) sprintf(
+      '<table><thead><tr><th>Beneficiario</th><th>CLABE</th><th>Banco</th><th style="text-align:right;">Importe</th><th>Concepto</th></tr></thead><tbody>%s</tbody></table>',
+      paste(vapply(seq_len(nrow(ben)), function(i) sprintf(
+        "<tr><td>%s</td><td>%s</td><td>%s</td><td style='text-align:right;'>%s</td><td>%s</td></tr>",
+        htmltools::htmlEscape(ben$alias[i] %||% ""),
+        htmltools::htmlEscape(ben$clabe[i] %||% ""),
+        htmltools::htmlEscape(ben$banco[i] %||% ""),
+        formatC(ben$importe[i], format = "f", digits = 2, big.mark = ","),
+        htmltools::htmlEscape(ben$concepto[i] %||% "")
+      ), character(1)), collapse = "\n")
+    ) else "<p style='color:#888;'>Sin beneficiarios registrados.</p>"
+    total_html <- sprintf('<div class="total">Total: %s (%d pago(s))</div>',
+                          formatC(row$total[1] %||% 0, format = "f", digits = 2, big.mark = ","),
+                          as.integer(row$n_pagos[1] %||% 0L))
+    extra_meta <- sprintf('<div><strong>Cuenta origen:</strong> %s</div>',
+                          htmltools::htmlEscape(row$cuenta_origen[1] %||% ""))
+    title_txt <- "Recibo de archivo de pagos"
+  } else {
+    det <- parse_pago_detalle(row$detalle[1])
+    body_html <- if (length(det))
+      paste0("<table><tbody>", paste(vapply(names(det), function(k) sprintf(
+        "<tr><td style='font-weight:bold;'>%s</td><td>%s</td></tr>",
+        htmltools::htmlEscape(k),
+        htmltools::htmlEscape(paste(unlist(det[[k]]), collapse = ", "))
+      ), character(1)), collapse = "\n"), "</tbody></table>")
+    else "<p style='color:#888;'>Sin detalle adicional registrado.</p>"
+    total_html <- if (!is.na(row$total[1] %||% NA_real_))
+      sprintf('<div class="total">Total: %s</div>',
+             formatC(row$total[1], format = "f", digits = 2, big.mark = ",")) else ""
+    extra_meta <- ""
+    title_txt <- "Recibo de archivo generado"
+  }
 
   sprintf('
 <!DOCTYPE html><html><head><meta charset="utf-8">
@@ -277,31 +366,30 @@ pagosAuditViewerServer <- function(id, shared) {
   .total { text-align: right; font-weight: bold; margin-top: 10px; font-size: 13px; }
   .footer { margin-top: 24px; font-size: 10px; color: #888; }
 </style></head><body>
-  <h1>Recibo de archivo de pagos</h1>
+  <h1>%s</h1>
   <div class="meta">
     <div><strong>Generado por:</strong> %s</div>
     <div><strong>Fecha:</strong> %s</div>
+    <div><strong>Tipo:</strong> %s</div>
     <div><strong>Empresa:</strong> %s (%s)</div>
-    <div><strong>Cuenta origen:</strong> %s</div>
+    %s
     <div><strong>Archivo:</strong> %s</div>
     <div><strong>ID de registro:</strong> %s</div>
   </div>
-  <table>
-    <thead><tr><th>Beneficiario</th><th>CLABE</th><th>Banco</th><th style="text-align:right;">Importe</th><th>Concepto</th></tr></thead>
-    <tbody>%s</tbody>
-  </table>
-  <div class="total">Total: %s (%d pago(s))</div>
-  <div class="footer">Generado automáticamente por HopDesk a partir de un registro permanente e inmutable. Este recibo refleja exactamente lo que quedó registrado al momento de crear el archivo de pagos.</div>
+  %s
+  %s
+  <div class="footer">Generado automáticamente por HopDesk a partir de un registro permanente e inmutable. Este recibo refleja exactamente lo que quedó registrado al momento de generar el archivo.</div>
 </body></html>',
+    title_txt,
     htmltools::htmlEscape(row$user[1] %||% ""),
     format(as.POSIXct(row$ts[1]), "%d/%m/%Y %H:%M:%S"),
+    htmltools::htmlEscape(.tipo_label(row$tipo[1] %||% "pago_ppl")),
     htmltools::htmlEscape(row$empresa[1] %||% ""),
     htmltools::htmlEscape(row$moneda[1] %||% ""),
-    htmltools::htmlEscape(row$cuenta_origen[1] %||% ""),
+    extra_meta,
     htmltools::htmlEscape(row$archivo[1] %||% ""),
     htmltools::htmlEscape(row$id[1] %||% ""),
-    rows_html,
-    formatC(row$total[1] %||% 0, format = "f", digits = 2, big.mark = ","),
-    as.integer(row$n_pagos[1] %||% 0L)
+    body_html,
+    total_html
   )
 }

@@ -129,9 +129,16 @@ pagarHoyUI <- function(id) {
         banco_origen  = NA_character_,
         n_pagos       = nrow(ppl_rows),
         total         = sum(as.numeric(ppl_rows$importe), na.rm = TRUE),
-        beneficiarios = jsonlite::toJSON(ben, auto_unbox = TRUE),
+        # as.character() strips jsonlite::toJSON()'s "json" S3 class -- left
+        # unwrapped, dplyr::bind_rows() cannot reconcile it against the
+        # schema's plain-character column and silently fails every write
+        # (found 2026-08-26 via a direct functional reproduction after this
+        # exact silent failure meant NO payment file was ever logged).
+        beneficiarios = as.character(jsonlite::toJSON(ben, auto_unbox = TRUE)),
         source        = source_type,
-        archivo       = as.character(fname %||% NA_character_)
+        archivo       = as.character(fname %||% NA_character_),
+        tipo          = "pago_ppl",
+        detalle       = NA_character_
       ),
       client_id = cid
     )

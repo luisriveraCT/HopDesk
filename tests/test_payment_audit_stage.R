@@ -32,6 +32,13 @@ source("R/audit_log_viewer_module.R",     local = FALSE)  # .audit_viewer_resolv
 source("R/pagos_audit_viewer_module.R",   local = FALSE)
 source("R/tiers_module.R",                local = FALSE)  # PERM_LABELS, .PRINCIPAL_LOCKED_KEYS
 
+# Sourcing the whole (huge) pagar_hoy_module.R just to reach the one function
+# under test here (.log_pago_generado, module-scope, no dependency on the
+# rest of the file's reactive machinery) -- this only DEFINES functions, it
+# never executes pagarHoyServer's body, so none of that module's other
+# dependencies (SAP data, proveedores catalog, etc.) need to be present.
+source("R/pagar_hoy_module.R", local = FALSE)
+
 # =============================================================================
 # Part A -- persistence layer
 # =============================================================================
@@ -39,7 +46,8 @@ cat("\n-- Part A: R/pagos_generados_persistence.R --\n")
 
 sch <- .schema_pagos_generados()
 expected_cols <- c("id","ts","user","client_id","empresa","moneda","cuenta_origen",
-                    "banco_origen","n_pagos","total","beneficiarios","source","archivo")
+                    "banco_origen","n_pagos","total","beneficiarios","source","archivo",
+                    "tipo","detalle")
 .chk(names(sch), expected_cols, "schema has exactly the expected columns, in order")
 .chk(nrow(sch), 0L, "schema starts with zero rows")
 
@@ -186,6 +194,99 @@ not_rotated <- rotate_pagos_if_needed(rot_cid, big_df[1:2, ])
 .chk(isTRUE(not_rotated), FALSE, "rotate_pagos_if_needed: does NOT rotate when below the threshold")
 
 .MAX_PAGOS_ROWS <<- .real_max  # restore immediately
+
+# =============================================================================
+# Part A2 -- .log_pago_generado() itself, end to end, with realistic data
+#
+# CRITICAL regression coverage: the original version of this function passed
+# jsonlite::toJSON()'s return value (class "json", not plain "character")
+# straight into the beneficiarios field. dplyr::bind_rows() cannot reconcile
+# a "json"-classed column against the schema's plain-character column, so
+# EVERY SINGLE CALL silently failed after 3 retries -- caught live 2026-08-26
+# when no payment file ever produced a log entry at all, for either
+# generation path. Part F below only static-scans that the call sites exist;
+# it would NOT have caught this, because the bug was inside the shared
+# helper both call sites correctly invoke. This is why the actual function
+# is exercised here with real data, not just grepped for.
+# =============================================================================
+cat("\n-- Part A2: .log_pago_generado() end-to-end with realistic ppl_rows --\n")
+
+realistic_ppl_rows <- tibble::tibble(
+  alias      = c("ACME SA DE CV", "BETA LOGISTICS"),
+  clabe_dest = c("012345678901234567", "098765432109876543"),
+  banco_dest = c("030", "072"),
+  medio_pago = c("SPI", "SPI"),
+  importe    = c(1000.50, 2500.00),
+  concepto   = c("FAC-1", "FAC-2")
+)
+fake_shared_a2 <- list(
+  effective_client_id = function() "pagos-test-e2e",
+  current_user         = function() "tesoreria_e2e"
+)
+
+e2e_error <- tryCatch({
+  .log_pago_generado(fake_shared_a2, "Networks Group", "MXN", "012180001234567890",
+                     realistic_ppl_rows, fname = "pagos_e2e_001.txt", source_type = "individual")
+  NULL
+}, error = function(e) e)
+.chk(is.null(e2e_error), TRUE,
+     "log_pago_generado: does not throw when called with realistic data")
+
+e2e_rows <- read_pagos_generados(client_id = "pagos-test-e2e")
+.chk(nrow(e2e_rows), 1L,
+     "log_pago_generado: a record actually lands in pagos_generados (THE regression this section exists for)")
+if (nrow(e2e_rows)) {
+  .chk(e2e_rows$user[1], "tesoreria_e2e", "log_pago_generado: user resolved from shared$current_user()")
+  .chk(e2e_rows$client_id[1], "pagos-test-e2e", "log_pago_generado: client_id resolved from shared$effective_client_id()")
+  .chk(e2e_rows$empresa[1], "Networks Group", "log_pago_generado: empresa recorded correctly")
+  .chk(e2e_rows$moneda[1], "MXN", "log_pago_generado: moneda recorded correctly")
+  .chk(e2e_rows$n_pagos[1], 2L, "log_pago_generado: n_pagos matches the number of ppl_rows")
+  .chk(e2e_rows$total[1], 3500.50, "log_pago_generado: total is the correct sum of importe")
+  .chk(e2e_rows$source[1], "individual", "log_pago_generado: source_type is recorded correctly")
+  .chk(is.character(e2e_rows$beneficiarios[1]) && !inherits(e2e_rows$beneficiarios[1], "json"),
+       TRUE, "log_pago_generado: beneficiarios is stored as plain character, not a 'json'-classed object")
+  e2e_ben <- parse_pago_beneficiarios(e2e_rows$beneficiarios[1])
+  .chk(nrow(e2e_ben), 2L, "log_pago_generado: both beneficiaries round-trip out of the stored JSON")
+  .chk(e2e_ben$alias, c("ACME SA DE CV", "BETA LOGISTICS"),
+       "log_pago_generado: beneficiary aliases round-trip correctly")
+  .chk(e2e_ben$clabe[1], "012345678901234567",
+       "log_pago_generado: full (unmasked) CLABE round-trips correctly in storage")
+}
+
+# Zero-row ppl_rows must be a silent no-op, not an error and not an empty record.
+no_op_error <- tryCatch({
+  .log_pago_generado(fake_shared_a2, "Networks Group", "MXN", "012180001234567890",
+                     tibble::tibble(alias=character(), clabe_dest=character(), banco_dest=character(),
+                                    medio_pago=character(), importe=double(), concepto=character()),
+                     fname = "empty.txt", source_type = "individual")
+  NULL
+}, error = function(e) e)
+.chk(is.null(no_op_error), TRUE, "log_pago_generado: zero-row ppl_rows does not throw")
+.chk(nrow(read_pagos_generados(client_id = "pagos-test-e2e")), 1L,
+     "log_pago_generado: zero-row ppl_rows does not create a spurious record (still just the 1 from above)")
+
+# NULL shared accessors (a malformed caller context) must degrade gracefully,
+# not silently lose the record's client attribution.
+fake_shared_a2_broken <- list(
+  effective_client_id = function() stop("no client context"),
+  current_user         = function() stop("no user context")
+)
+Sys.setenv(CLIENT_ID = "pagos-test-e2e-fallback")
+broken_error <- tryCatch({
+  .log_pago_generado(fake_shared_a2_broken, "Networks Group", "MXN", "0121800012",
+                     realistic_ppl_rows, fname = "fallback.txt", source_type = "zip_bulk")
+  NULL
+}, error = function(e) e)
+.chk(is.null(broken_error), TRUE,
+     "log_pago_generado: a shared accessor that throws does not propagate/crash the caller")
+fallback_rows <- read_pagos_generados(client_id = "pagos-test-e2e-fallback")
+.chk(nrow(fallback_rows), 1L,
+     "log_pago_generado: falls back to Sys.getenv('CLIENT_ID') when shared$effective_client_id() throws")
+if (nrow(fallback_rows))
+  .chk(fallback_rows$user[1], "unknown",
+       "log_pago_generado: falls back to 'unknown' user when shared$current_user() throws")
+Sys.unsetenv("CLIENT_ID")
+Sys.setenv(CLIENT_ID = "networks")
 
 # =============================================================================
 # Part B -- permission wiring (auth_resolve_perms + PERM_LABELS)
@@ -410,5 +511,144 @@ app_txt_pa <- readLines("app.R", warn = FALSE)
 global_txt <- readLines("R/global.R", warn = FALSE)
 .chk(length(grep('source\\("R/pagos_generados_persistence.R"\\)', global_txt)), 1L,
      "global.R sources R/pagos_generados_persistence.R")
+
+# ── DT rebuild-avoidance in pagos_audit_viewer_module.R (same fix class as
+# Part F of test_activity_live_refresh_toggle.R) ────────────────────────────
+pav_txt <- readLines("R/pagos_audit_viewer_module.R", warn = FALSE)
+.chk(length(grep("isolate\\(\\.pagos_display_df\\(filtered\\(\\)\\)\\)", pav_txt)), 1L,
+     "output$pagos_tbl's initial render is isolate()-wrapped (renders once, not on every filtered() change)")
+.chk(length(grep('pagos_tbl_proxy <- DT::dataTableProxy\\("pagos_tbl"\\)', pav_txt)), 1L,
+     "pagos_tbl_proxy (DT::dataTableProxy) is defined")
+.chk(length(grep('DT::replaceData\\(pagos_tbl_proxy, \\.pagos_display_df\\(filtered\\(\\)\\)', pav_txt)), 1L,
+     "DT::replaceData() is called to push data updates without a full rebuild")
+.chk(length(grep('clearSelection = "none"', pav_txt)), 1L,
+     "replaceData() preserves the user's row selection (clearSelection=\"none\") across data refreshes")
+
+# =============================================================================
+# Part G -- generic download/export logging (2026-08-26 extension: "every
+# time I download anything... it needs to appear here" -- Word/Excel/PDF
+# cash flow exports, not just PPL payment files)
+# =============================================================================
+cat("\n-- Part G: log_archivo_generado() + tipo/detalle handling --\n")
+
+source("R/cashflow_export_module.R", local = FALSE)
+
+# ── .tipo_label() ───────────────────────────────────────────────────────────
+.chk(.tipo_label("pago_ppl"), "Pago", ".tipo_label: pago_ppl maps to 'Pago'")
+.chk(.tipo_label("reporte_word"), "Reporte Word", ".tipo_label: reporte_word maps correctly")
+.chk(.tipo_label("reporte_excel"), "Reporte Excel", ".tipo_label: reporte_excel maps correctly")
+.chk(.tipo_label("reporte_pdf"), "Reporte PDF", ".tipo_label: reporte_pdf maps correctly")
+.chk(.tipo_label("algo_futuro"), "algo_futuro",
+     ".tipo_label: an unknown future tipo passes through as-is (not silently blanked)")
+.chk(.tipo_label(NA_character_), "", ".tipo_label: NA tipo returns empty string")
+.chk(.tipo_label(""), "", ".tipo_label: empty-string tipo returns empty string")
+
+# ── parse_pago_detalle() ────────────────────────────────────────────────────
+.chk(length(parse_pago_detalle(NA_character_)), 0L, "parse_pago_detalle: NA returns an empty list")
+.chk(length(parse_pago_detalle("")), 0L, "parse_pago_detalle: empty string returns an empty list")
+.chk(length(parse_pago_detalle("not json{{{")), 0L, "parse_pago_detalle: malformed JSON returns an empty list, does not error")
+
+detalle_json <- jsonlite::toJSON(list(desde = "2026-08-01", hasta = "2026-08-31",
+                                      intercompania = "exclude", empresas = c("Networks Group", "Networks Realtors")),
+                                 auto_unbox = TRUE)
+parsed_detalle <- parse_pago_detalle(as.character(detalle_json))
+.chk(parsed_detalle$desde, "2026-08-01", "parse_pago_detalle: scalar field round-trips correctly")
+.chk(parsed_detalle$intercompania, "exclude", "parse_pago_detalle: another scalar field round-trips correctly")
+.chk(length(parsed_detalle$empresas), 2L, "parse_pago_detalle: a multi-value field round-trips with the right length")
+
+# ── log_archivo_generado() end to end ───────────────────────────────────────
+fake_shared_g <- list(
+  effective_client_id = function() "pagos-test-export",
+  current_user         = function() "dev_export_test"
+)
+
+g_error <- tryCatch({
+  log_archivo_generado(
+    fake_shared_g, tipo = "reporte_word", empresa = "Networks Group, Networks Realtors",
+    moneda = "MXN",
+    detalle_list = list(desde = "2026-08-01", hasta = "2026-08-31", agrupacion = "semanal"),
+    n_items = 2L, fname = "cashflow_26082026.docx"
+  )
+  NULL
+}, error = function(e) e)
+.chk(is.null(g_error), TRUE, "log_archivo_generado: does not throw for a Word-export-shaped call")
+
+g_rows <- read_pagos_generados(client_id = "pagos-test-export")
+.chk(nrow(g_rows), 1L, "log_archivo_generado: a record actually lands in pagos_generados")
+if (nrow(g_rows)) {
+  .chk(g_rows$tipo[1], "reporte_word", "log_archivo_generado: tipo recorded correctly")
+  .chk(g_rows$source[1], "reporte_word", "log_archivo_generado: source mirrors tipo for non-payment rows")
+  .chk(g_rows$empresa[1], "Networks Group, Networks Realtors", "log_archivo_generado: empresa recorded correctly")
+  .chk(g_rows$moneda[1], "MXN", "log_archivo_generado: moneda recorded correctly")
+  .chk(g_rows$n_pagos[1], 2L, "log_archivo_generado: n_items lands in the n_pagos column")
+  .chk(is.na(g_rows$total[1]), TRUE, "log_archivo_generado: total is NA when not supplied")
+  .chk(is.na(g_rows$beneficiarios[1]), TRUE, "log_archivo_generado: beneficiarios is NA for a non-payment row")
+  .chk(is.na(g_rows$cuenta_origen[1]), TRUE, "log_archivo_generado: cuenta_origen is NA for a non-payment row")
+  .chk(is.character(g_rows$detalle[1]) && !inherits(g_rows$detalle[1], "json"), TRUE,
+       "log_archivo_generado: detalle is stored as plain character, not a 'json'-classed object (same class of bug as .log_pago_generado's)")
+  g_det <- parse_pago_detalle(g_rows$detalle[1])
+  .chk(g_det$agrupacion, "semanal", "log_archivo_generado: detalle round-trips correctly")
+}
+
+# A second call with a numeric total (the PDF/Excel shape).
+log_archivo_generado(fake_shared_g, tipo = "reporte_pdf", empresa = "Networks Group",
+                     moneda = "USD", detalle_list = list(desde = "2026-08-01"),
+                     total = 15000.75, n_items = 1L, fname = "cashflow.pdf")
+g_rows2 <- read_pagos_generados(client_id = "pagos-test-export")
+.chk(nrow(g_rows2), 2L, "log_archivo_generado: a second, different-tipo record also lands correctly")
+pdf_row <- g_rows2[g_rows2$tipo == "reporte_pdf", , drop = FALSE]
+.chk(nrow(pdf_row) == 1L && pdf_row$total[1] == 15000.75, TRUE,
+     "log_archivo_generado: an explicit total is recorded correctly")
+
+# ── Receipt HTML branches correctly for a non-payment row ───────────────────
+cat("\n-- Part G2: receipt HTML for a non-payment (reporte_word) row --\n")
+word_row <- g_rows[1, , drop = FALSE]
+word_html <- .build_pago_receipt_html(word_row)
+.chk(grepl("Recibo de archivo generado", word_html, fixed = TRUE), TRUE,
+     "receipt HTML: non-payment rows get the generic title, not 'Recibo de archivo de pagos'")
+.chk(grepl("agrupacion", word_html, fixed = TRUE), TRUE,
+     "receipt HTML: detalle keys appear in the non-payment receipt")
+.chk(grepl("semanal", word_html, fixed = TRUE), TRUE,
+     "receipt HTML: detalle values appear in the non-payment receipt")
+.chk(grepl("Cuenta origen", word_html, fixed = TRUE), FALSE,
+     "receipt HTML: a non-payment receipt never shows a (meaningless) Cuenta origen line")
+
+# ── Static scan: the 3 export handlers actually call log_archivo_generado() ─
+cat("\n-- Part G3: static scan of export handler hooks --\n")
+ce_txt <- readLines("R/cashflow_export_module.R", warn = FALSE)
+.chk_true({p <- tryCatch({parse("R/cashflow_export_module.R"); TRUE}, error = function(e) FALSE); p},
+          "R/cashflow_export_module.R still parses without syntax errors")
+.chk(length(grep('tipo = "reporte_word"', ce_txt)), 1L, "btn_export_word logs with tipo=\"reporte_word\"")
+.chk(length(grep('tipo = "reporte_excel"', ce_txt)), 1L, "btn_download_excel_ready logs with tipo=\"reporte_excel\"")
+.chk(length(grep('tipo = "reporte_pdf"', ce_txt)), 1L, "btn_export_pdf logs with tipo=\"reporte_pdf\"")
+.chk(length(grep("\\.xl_log_params <- reactiveVal\\(NULL\\)", ce_txt)), 1L,
+     ".xl_log_params reactiveVal exists to capture export parameters at job-trigger time")
+.chk(length(grep("\\.xl_log_params\\(list\\(", ce_txt)), 1L,
+     ".xl_log_params is populated when the async Excel job is triggered")
+.chk(length(grep("params <- \\.xl_log_params\\(\\) %\\|\\|% list\\(\\)", ce_txt)), 1L,
+     "the Excel download handler reads .xl_log_params() (job-trigger-time params, not stale/re-read UI state)")
+
+# ── Part G4: the two other downloadHandler sites found app-wide
+# (R/reporte_module.R's HTML/PDF financial report, R/bancos_module.R's
+# Libro de Bancos Excel export) also got the same treatment ─────────────────
+cat("\n-- Part G4: reporte_module.R / bancos_module.R hooks --\n")
+
+rep_txt <- readLines("R/reporte_module.R", warn = FALSE)
+.chk_true({p <- tryCatch({parse("R/reporte_module.R"); TRUE}, error = function(e) FALSE); p},
+          "R/reporte_module.R still parses without syntax errors")
+.chk(length(grep('tipo = "reporte_financiero_html"', rep_txt)), 1L,
+     "dl_html (Reporte tab) logs with tipo=\"reporte_financiero_html\"")
+.chk(length(grep('tipo = "reporte_financiero_pdf"', rep_txt)), 1L,
+     "dl_pdf (Reporte tab) logs with tipo=\"reporte_financiero_pdf\"")
+
+banc_txt <- readLines("R/bancos_module.R", warn = FALSE)
+.chk_true({p <- tryCatch({parse("R/bancos_module.R"); TRUE}, error = function(e) FALSE); p},
+          "R/bancos_module.R still parses without syntax errors")
+.chk(length(grep('tipo = "bancos_libro_excel"', banc_txt)), 1L,
+     "download_libro (Bancos tab) logs with tipo=\"bancos_libro_excel\"")
+
+for (t in c("reporte_financiero_html", "reporte_financiero_pdf", "bancos_libro_excel")) {
+  .chk(nzchar(.tipo_label(t)), TRUE, sprintf(".tipo_label('%s') has a real (non-empty) display label", t))
+}
 
 cat(sprintf("\n  Subtotal: %d passed, %d failed\n", .pass, .fail))
