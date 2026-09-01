@@ -239,6 +239,15 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     # action is logged at its one call site (cashflow_export_module.R's
     # downloadHandler, action="exportar_cashflow_pdf").
     "generate_cashflow_html_doc",
+    # Same false-positive shape as generate_cashflow_html_doc above (found
+    # 2026-09-01): both also call htmltools::save_html() to write a
+    # throwaway temp file for Chrome/pagedown to print into a PDF, not app
+    # data. generate_audit_log_html_doc (R/audit_log_viewer_module.R) and
+    # generate_pagos_audit_html_doc (R/pagos_audit_viewer_module.R) are the
+    # Actividad/payment-audit PDF-export equivalents of the same pattern --
+    # the real export action is logged at each one's own downloadHandler
+    # call site, not inside the pure HTML-building function itself.
+    "generate_audit_log_html_doc", "generate_pagos_audit_html_doc",
     # Generic forecasting persistence writers (forecasting_persistence.R) --
     # each caller already logs with its own user-facing context:
     #   save_forecasting_metrics/save_forecasting_subscriptions are called

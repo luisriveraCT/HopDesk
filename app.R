@@ -2,17 +2,40 @@
 # app.R
 # =============================================================================
 
-# Bootstrap: source global.R if it hasn't been loaded yet in this R session.
-# Covers the "Run App" button workflow where the user hasn't manually sourced
-# global.R first. The guard avoids double-sourcing in the normal dev workflow
-# (source("R/global.R") then runApp()).
-if (!exists("S3_KEYS", envir = .GlobalEnv)) source("R/global.R")
+# Bootstrap: ALWAYS source global.R, unconditionally, on every app.R launch.
+#
+# CRITICAL FIX (found 2026-08-27): this used to be
+# `if (!exists("S3_KEYS", envir = .GlobalEnv)) source("R/global.R")` -- a
+# guard meant only to avoid a harmless double-source in the
+# source("R/global.R") + runApp() dev workflow. Its real effect: in any
+# persistent R session (an RStudio console kept open across multiple
+# presses of "Run App"), S3_KEYS survives from the FIRST run, so every
+# later "Run App" in that same session silently skipped reloading
+# global.R -- and, critically, R/persistence.R too, since persistence.R is
+# ONLY ever source()'d from inside global.R (line ~98), never directly by
+# app.R. Every code fix landing in persistence.R or global.R itself
+# (including the cross-tenant .app_data_cache isolation fix a few commits
+# before this one, AND the .load_proveedores_raw fix) would sit correctly
+# on disk but NEVER ACTUALLY LOAD into that session -- while fixes in
+# files app.R sources unconditionally below (pagar_hoy_module.R,
+# audit_log_viewer_module.R, ...) took effect immediately, producing the
+# exact confusing split this incident showed: some fixes "worked", others
+# silently didn't, with no error anywhere. Worse, .app_data_cache itself
+# (reset to list() at the top of global.R) never got a fresh start either,
+# so stale/cross-client cache entries from earlier in the session outlived
+# any number of "Run App" clicks -- full data appearing to "vanish" again
+# after every relaunch, not just once.
+# global.R only does idempotent work (library() calls, readRenviron(),
+# constant/function (re)definitions) -- there is no correctness reason to
+# ever skip re-running it, only a now-proven-dangerous one.
+source("R/global.R")
 
 source("R/pagar_hoy_module.R")
 source("R/search_module.R")
 source("R/vencidos_module.R")
 source("R/treasury_map_module.R")
 source("R/reporte_module.R")
+source("R/audit_sticky_ui.R")
 source("R/audit_log_viewer_module.R")
 source("R/pagos_audit_viewer_module.R")
 source("R/tiers_module.R")
@@ -678,6 +701,7 @@ server <- function(input, output, session) {
   # re-breaking) it. keep_token's refresh-survival behavior is untouched --
   # this only changes what an explicit Salir click does.
   observeEvent(input$btn_logout, {
+    .log_logout_once()
     shinyjs::runjs("Shiny.setInputValue('.shinymanager_logout', Math.random(), {priority: 'event'});")
   }, ignoreInit = TRUE)
 
@@ -729,6 +753,66 @@ server <- function(input, output, session) {
       is_staff        = is_staff_tier(tier_val %||% "finance")
     )
   })
+
+  # ── Login/logout activity logging ─────────────────────────────────────────
+  # Stage 1 of the Actividad audit overhaul (2026-08-26): log_action had no
+  # login/logout call sites at all -- Actividad could not answer "who logged
+  # in/out and when," let alone how long they were active. session$userData
+  # caches the login moment/user/client the instant auth resolves to a real
+  # user (once per session, read back by .log_logout_once() below without
+  # depending on a still-live reactive context) and the explicit "Salir"
+  # click / the session's own teardown (tab close, inactivity timeout) each
+  # attempt to log the matching "logout" entry with the computed active-
+  # duration -- logout_logged guards so whichever fires first wins and the
+  # other is a no-op, never a duplicate entry.
+  #
+  # Manual guard flag (login_logged reactiveVal), not observeEvent(once=TRUE)
+  # -- see emergency_lock_checked just below for the exact same fix and why:
+  # once + req() self-destroys on current_user_info()'s first "unknown"
+  # placeholder firing regardless of whether req() passed, silently disabling
+  # the check for the real user that resolves moments later.
+  login_logged <- reactiveVal(FALSE)
+  observe({
+    info <- current_user_info()
+    if (isTRUE(login_logged())) return()
+    if (is.null(info) || info$user == "unknown") return()
+    login_logged(TRUE)
+    session$userData$login_ts        <- Sys.time()
+    session$userData$login_user      <- info$user
+    session$userData$login_client_id <- info$client_id
+    log_action(info$user, "auth", "login",
+               sprintf("Inicio de sesión: %s", info$user),
+               target_id = info$user,
+               metadata  = list(user = info$user, tier = info$tier, is_staff = info$is_staff),
+               client_id             = info$client_id,
+               viewer_home_client_id = info$client_id)
+  })
+
+  logout_logged <- reactiveVal(FALSE)
+  .log_logout_once <- function() {
+    if (isTRUE(isolate(logout_logged()))) return(invisible(NULL))
+    isolate(logout_logged(TRUE))
+    login_ts <- session$userData$login_ts
+    user     <- session$userData$login_user
+    cid      <- session$userData$login_client_id %||% Sys.getenv("CLIENT_ID")
+    if (is.null(user) || !nzchar(user)) return(invisible(NULL))
+    dur_secs <- if (!is.null(login_ts))
+      as.numeric(difftime(Sys.time(), login_ts, units = "secs")) else NA_real_
+    log_action(user, "auth", "logout",
+               sprintf("Cierre de sesión: %s%s", user,
+                       if (!is.na(dur_secs))
+                         paste0(" (", format_session_duration(dur_secs), " activo)") else ""),
+               target_id = user,
+               metadata  = list(user = user, duration_seconds = dur_secs,
+                                login_ts  = if (!is.null(login_ts)) format(login_ts, "%Y-%m-%d %H:%M:%S") else NA_character_,
+                                logout_ts = format(Sys.time(), "%Y-%m-%d %H:%M:%S")),
+               client_id             = cid,
+               viewer_home_client_id = cid)
+  }
+  # Covers a tab close / inactivity timeout / browser crash -- any session
+  # end that never routed through the "Salir" button's own call to
+  # .log_logout_once() above.
+  session$onSessionEnded(function() { .log_logout_once() })
 
   # ── Emergency lock: terminate active sessions of locked accounts ─────────────
   # Runs once on session init. If the just-authenticated user appears in the
@@ -1571,7 +1655,8 @@ server <- function(input, output, session) {
         return(cur)
       }
       # Nothing seeded yet — last resort S3 read
-      snap <- tryCatch(load_sap_snapshot(ledger_name), error = function(e) NULL)
+      snap <- tryCatch(load_sap_snapshot(ledger_name, client_id = isolate(effective_client_id())),
+                       error = function(e) NULL)
       if (!is.null(snap)) {
         lbl <- format(snap$saved_at, "%d %b %Y %H:%M", tz = (input$client_tz %||% "America/Mexico_City"))
         showNotification(
@@ -1650,10 +1735,14 @@ server <- function(input, output, session) {
 
       # Load SAP snapshots + policy_moves together so the first calendar render
       # already uses policy-adjusted dates for all previously-seen invoices.
+      # cid_p1: same home_client_id() %||% env-var fallback Phase 2 uses
+      # (app.R's own "cid_lo") -- home_client_id() is already resolved by
+      # this point (Phase 1 explicitly runs after the auth-gate session).
+      cid_p1  <- tolower(tryCatch(home_client_id(), error = function(e) NULL) %||% Sys.getenv("CLIENT_ID"))
       t0_snap <- proc.time()
-      ar_snap <- tryCatch(load_sap_snapshot("AR"), error = function(e) NULL)
-      ap_snap <- tryCatch(load_sap_snapshot("AP"), error = function(e) NULL)
-      pm_snap <- tryCatch(load_policy_moves(),     error = function(e) NULL)
+      ar_snap <- tryCatch(load_sap_snapshot("AR", client_id = cid_p1), error = function(e) NULL)
+      ap_snap <- tryCatch(load_sap_snapshot("AP", client_id = cid_p1), error = function(e) NULL)
+      pm_snap <- tryCatch(load_policy_moves(client_id = cid_p1),       error = function(e) NULL)
       message(sprintf("[LOAD] SAP snapshots + policy_moves fetched in %.1fs",
                       (proc.time() - t0_snap)[["elapsed"]]))
 
@@ -1952,19 +2041,24 @@ server <- function(input, output, session) {
       })
       message(sprintf("[LOAD]   empresas         %.1fs", (proc.time() - t1)[["elapsed"]]))
 
-      # Populate global cache so save_*() callbacks update it
-      .cache_set("moves",        moves_db())
-      .cache_set("notes",        notes_df())
-      .cache_set("tags",         tags_db())
-      .cache_set("manual",       manual_inv())
-      .cache_set("sap_overrides", sap_ov_db())
-      .cache_set("interco_v2",   interco_v2())
-      .cache_set("pagar_hoy",    pagar_hoy_db())
-      .cache_set("abonos",       abonos_db())
-      .cache_set("papelera",     papelera_rv())
-      .cache_set("proveedores",  proveedores_db())
-      .cache_set("ctas_cuentas", ctas_cuentas())
-      .cache_set("conciliacion", conciliacion_rv())
+      # Populate global cache so save_*() callbacks update it. Every call
+      # passes cid_lo explicitly -- these keys are now client_id-scoped (see
+      # R/global.R's .cache_get/.cache_set fix, 2026-08-27); a bare key here
+      # would silently fall back to the CLIENT_ID env var (always "hd-admin"
+      # in this shared deployment) instead of THIS session's real client,
+      # reproducing the exact cross-tenant cache bug that fix closes.
+      .cache_set("moves",        moves_db(),        cid_lo)
+      .cache_set("notes",        notes_df(),        cid_lo)
+      .cache_set("tags",         tags_db(),         cid_lo)
+      .cache_set("manual",       manual_inv(),      cid_lo)
+      .cache_set("sap_overrides", sap_ov_db(),       cid_lo)
+      .cache_set("interco_v2",   interco_v2(),      cid_lo)
+      .cache_set("pagar_hoy",    pagar_hoy_db(),    cid_lo)
+      .cache_set("abonos",       abonos_db(),       cid_lo)
+      .cache_set("papelera",     papelera_rv(),     cid_lo)
+      .cache_set("proveedores",  proveedores_db(),  cid_lo)
+      .cache_set("ctas_cuentas", ctas_cuentas(),    cid_lo)
+      .cache_set("conciliacion", conciliacion_rv(), cid_lo)
 
       message(sprintf("[LOAD] Phase 2 done in %.1fs at t+%.1fs (session #%d)",
                       (proc.time() - t0)[["elapsed"]],

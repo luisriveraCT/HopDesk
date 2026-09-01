@@ -352,12 +352,42 @@ local({
 # Nothing is loaded here at process start — S3 reads happen in the server's
 # first observe() and are cached here so subsequent sessions pay nothing.
 # .cache_get / .cache_set are used throughout the app.
-
+#
+# CRITICAL FIX (found 2026-08-27, investigating a treasurer's invoice-date
+# moves appearing to vanish): this cache's keys used to be bare strings
+# ("moves", "interco_v2", ...) with NO client_id in them at all. In this
+# app's single-shared-deployment model (docs/saas_rebuild/ARCHITECTURE.md
+# §3) one running worker process legitimately serves MULTIPLE different
+# clients' sessions, each with its own client_id resolved from the logged-in
+# user, not from a fixed per-deployment env var. A bare "moves" key means
+# whichever client's session happens to populate the cache FIRST in a given
+# process silently serves ITS data to every other client's session that
+# calls load_moves()/load_interco_v2() afterward in that same process --
+# load_moves() had no client_id-awareness in its cache read at all, so this
+# was live and unconditional, not an edge case. This reproduces exactly the
+# reported symptom (a client's own moved invoice dates appearing to revert
+# to raw SAP dates) whenever an emptier/different client's cache entry wins
+# the race, and is a real cross-tenant data exposure risk independent of
+# that specific symptom -- the same "McDonald's employee must never see
+# KFC's data" boundary every other persistence function in this file is
+# built to respect. Fixed by scoping every cache key by client_id, using the
+# exact same resolution convention as .s3_key() (R/persistence.R) --
+# explicit client_id if given, else the CLIENT_ID env var -- so a cache
+# lookup can never cross a client boundary regardless of call order.
 .sap_snapshot_cache <- list(AR = NULL, AP = NULL)
 .app_data_cache     <- list()
 
-.cache_get <- function(key) .app_data_cache[[key]]
-.cache_set <- function(key, value) { .app_data_cache[[key]] <<- value }
+.cache_scoped_key <- function(key, client_id = NULL) {
+  prefix <- if (!is.null(client_id) && nzchar(client_id))
+              tolower(trimws(client_id))
+            else
+              tolower(.client_id())
+  paste0(prefix, "/", key)
+}
+.cache_get <- function(key, client_id = NULL) .app_data_cache[[.cache_scoped_key(key, client_id)]]
+.cache_set <- function(key, value, client_id = NULL) {
+  .app_data_cache[[.cache_scoped_key(key, client_id)]] <<- value
+}
 
 # Calendar visual theme
 CALENDAR_THEME <- list(

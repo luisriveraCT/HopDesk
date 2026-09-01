@@ -270,6 +270,28 @@ save_app_audit <- function(log_df, client_id = NULL) {
   invisible(ok)
 }
 
+# ── Session-duration formatting ──────────────────────────────────────────────
+# Shared by app.R's login/logout logging (Stage 1 of the Actividad audit
+# overhaul, 2026-08-26) and the Actividad detail popup/PDF export (Stage 2/3)
+# that render a logout entry's active-duration. Pulled out to a plain,
+# app.R-independent function so it's unit-testable without booting the whole
+# Shiny app, and so the popup/PDF can format the same duration_seconds value
+# identically to how it was described at logout time.
+format_session_duration <- function(secs) {
+  # %||% only substitutes on NULL, not NA (same NA-safety gap documented in
+  # log_action() above) -- an explicit NA (an unknown/unrecorded login time,
+  # the common case for a logout with no matching login in this session) must
+  # be normalized here too, or `if (h > 0)` below throws "missing value
+  # where TRUE/FALSE needed" instead of the intended "0s" fallback.
+  secs <- suppressWarnings(as.numeric(secs %||% 0))
+  if (is.null(secs) || !length(secs) || is.na(secs)) secs <- 0
+  secs <- max(0, secs)
+  h <- secs %/% 3600L; m <- (secs %% 3600) %/% 60L; s <- round(secs %% 60)
+  if (h > 0) sprintf("%dh %dmin", h, m)
+  else if (m > 0) sprintf("%dmin %ds", m, s)
+  else sprintf("%ds", s)
+}
+
 # ── log_action() ─────────────────────────────────────────────────────────────
 # Fire-and-forget — never throws. Returns the new row invisibly. The S3 write
 # itself is deferred (see above) — this function never blocks on network I/O.
@@ -331,8 +353,16 @@ log_action <- function(user,
     target_id   = as.character(target_id   %||% NA_character_),
     s3_key      = as.character(s3_key      %||% NA_character_),
     client_id   = cid,
+    # na = "null": jsonlite's own default (no na= argument) inconsistently
+    # serializes a numeric NA (e.g. duration_seconds = NA_real_ for a logout
+    # with no known login time) as the literal STRING "NA" instead of JSON
+    # null -- confirmed empirically while building Stage 1 of the Actividad
+    # audit overhaul (2026-08-26), where a bare NA_real_ round-tripped back
+    # as the misleading string "NA" rather than a real, checkable NA/NULL.
+    # Character NA already happened to serialize as null by default; this
+    # makes every NA type in metadata behave the same, consistent way.
     metadata    = as.character(if (!is.null(metadata))
-                    tryCatch(jsonlite::toJSON(metadata, auto_unbox = TRUE),
+                    tryCatch(jsonlite::toJSON(metadata, auto_unbox = TRUE, na = "null"),
                              error = function(e) "{}")
                   else "{}")
   )

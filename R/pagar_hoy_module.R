@@ -15,6 +15,46 @@
 #   4. generate_bajio_file() replaced by generate_ppl() from ppl_generator.R
 # =============================================================================
 
+# ── Payment audit-log detail helper ──────────────────────────────────────────
+# Builds the per-invoice detail array captured in confirmar_pago/confirmar_cobro's
+# log_action metadata: exactly the same source fields (Parte, Documento, Importe)
+# used to write the bancos_confirmados rows a few lines above each confirm
+# handler, so the Actividad detail popup and PDF export can show which invoices/
+# partners were paid, in which currency/account, without re-deriving it from
+# bancos_confirmados (avoids any risk of a match mismatch against a concurrent
+# write). Stage 1 of the Actividad audit overhaul, 2026-08-26.
+.pago_audit_detalle <- function(factura_rows, cur, cuenta_sel, fecha) {
+  if (is.null(factura_rows) || !nrow(factura_rows)) return(list())
+  lapply(seq_len(nrow(factura_rows)), function(i) list(
+    parte     = as.character(factura_rows$Parte[i]     %||% NA_character_),
+    documento = as.character(factura_rows$Documento[i]  %||% NA_character_),
+    importe   = as.numeric(factura_rows$Importe[i]      %||% NA_real_),
+    moneda    = as.character(cur                        %||% NA_character_),
+    cuenta_id = as.character(cuenta_sel                  %||% NA_character_),
+    fecha     = as.character(fecha                      %||% NA_character_)
+  ))
+}
+
+# Aggregates a list of per-file summary lists (one per bundled PPL file in a
+# "Descargar todos" ZIP click, each already shaped like
+# .log_pago_generado()'s own metadata) into the whole-click summary metadata
+# logged once for the bulk action. Pure function -- no Shiny/reactive
+# dependency -- so it's unit-testable without the module's server body.
+# 2026-08-27: added so the ZIP button's log reflects "N files in one click",
+# not just N indistinguishable per-file entries.
+.zip_pago_aggregate_metadata <- function(summaries) {
+  if (!length(summaries))
+    return(list(n_archivos = 0L, empresas = character(0), n_pagos_total = 0L,
+               total_general = 0, archivos = list()))
+  list(
+    n_archivos    = length(summaries),
+    empresas      = unique(vapply(summaries, function(x) as.character(x$empresa %||% ""), character(1))),
+    n_pagos_total = sum(vapply(summaries, function(x) as.integer(x$n_pagos %||% 0L), integer(1)), na.rm = TRUE),
+    total_general = sum(vapply(summaries, function(x) as.numeric(x$total %||% 0), numeric(1)), na.rm = TRUE),
+    archivos      = summaries
+  )
+}
+
 pagarHoyUI <- function(id) {
   ns <- NS(id)
   tagList(
@@ -105,7 +145,7 @@ pagarHoyUI <- function(id) {
 # not store the file bytes themselves. Never throws -- a logging failure
 # must never block the user's actual download.
 .log_pago_generado <- function(shared, emp, moneda, cuenta_origen, ppl_rows,
-                                fname, source_type) {
+                                fname, source_type, banco_origen = NA_character_) {
   if (is.null(ppl_rows) || !nrow(ppl_rows)) return(invisible(NULL))
   tryCatch({
     ben <- lapply(seq_len(nrow(ppl_rows)), function(i) list(
@@ -115,8 +155,11 @@ pagarHoyUI <- function(id) {
       importe  = as.numeric(ppl_rows$importe[i] %||% NA_real_),
       concepto = as.character(ppl_rows$concepto[i] %||% NA_character_)
     ))
-    cid  <- tryCatch(shared$effective_client_id(), error = function(e) NULL) %||% Sys.getenv("CLIENT_ID")
-    user <- tryCatch(shared$current_user(), error = function(e) NULL) %||% "unknown"
+    n_pagos <- nrow(ppl_rows)
+    total   <- sum(as.numeric(ppl_rows$importe), na.rm = TRUE)
+    cid       <- tryCatch(shared$effective_client_id(), error = function(e) NULL) %||% Sys.getenv("CLIENT_ID")
+    home_cid  <- tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    user      <- tryCatch(shared$current_user(),        error = function(e) NULL) %||% "unknown"
     add_pago_generado(
       list(
         id            = uuid::UUIDgenerate(),
@@ -126,9 +169,9 @@ pagarHoyUI <- function(id) {
         empresa       = emp,
         moneda        = moneda,
         cuenta_origen = as.character(cuenta_origen %||% NA_character_),
-        banco_origen  = NA_character_,
-        n_pagos       = nrow(ppl_rows),
-        total         = sum(as.numeric(ppl_rows$importe), na.rm = TRUE),
+        banco_origen  = as.character(banco_origen  %||% NA_character_),
+        n_pagos       = n_pagos,
+        total         = total,
         # as.character() strips jsonlite::toJSON()'s "json" S3 class -- left
         # unwrapped, dplyr::bind_rows() cannot reconcile it against the
         # schema's plain-character column and silently fails every write
@@ -141,6 +184,32 @@ pagarHoyUI <- function(id) {
         detalle       = NA_character_
       ),
       client_id = cid
+    )
+
+    # Stage 4 of the Actividad audit overhaul (2026-08-26): generating a bank
+    # payment file (real CLABEs, real transfer instructions) is exactly the
+    # kind of event Mouse asked to "see everything" for in the general
+    # Actividad log, not only in the separate "Ver archivos de pago" viewer
+    # add_pago_generado() feeds -- the two are dual-written here so the same
+    # event is queryable from either screen. Logged from THIS shared helper
+    # (both the per-company and the bulk-ZIP download handlers call it) so
+    # both download buttons get this for free, and BEFORE the caller writes
+    # the actual PPL bytes to the browser's download target, per Mouse's
+    # explicit requirement: "The log needs to happen even before the actual
+    # document is downloaded to the user's computer."
+    log_action(
+      user, "pagar_hoy", "generar_archivo_pago",
+      sprintf("Archivo de pago generado: %s (%d pago(s), %s)",
+             emp, n_pagos, moneda),
+      target_id = emp,
+      metadata  = list(empresa = emp, moneda = moneda,
+                       cuenta_origen = as.character(cuenta_origen %||% NA_character_),
+                       banco_origen  = as.character(banco_origen  %||% NA_character_),
+                       n_pagos = n_pagos, total = total, source = source_type,
+                       archivo = as.character(fname %||% NA_character_),
+                       beneficiarios = ben),
+      client_id             = cid,
+      viewer_home_client_id = home_cid
     )
   }, error = function(e) message("[PAGOS_AUDIT] .log_pago_generado failed: ", e$message))
 }
@@ -1148,12 +1217,18 @@ pagarHoyServer <- function(id, shared) {
             return()
           }
 
+          # Fetched unconditionally (not just in the no-selection fallback
+          # branch below) so banco_origen can always be resolved by matching
+          # it against whichever cuenta_origen actually ends up selected --
+          # previously only fetched when no radio selection existed, so a
+          # multi-account empresa always logged banco_origen = NA.
+          cuenta_data_dl <- get_cuentas_ppl_data(emp, cur_sel, shared)
           cuenta_origen <- {
             sel_cta <- input[[paste0("ppl_cuenta_", emp)]] %||% ""
             if (nzchar(sel_cta)) {
               sel_cta
             } else {
-              cd <- get_cuentas_ppl_data(emp, cur_sel, shared)
+              cd <- cuenta_data_dl
               if (!is.null(cd) && nrow(cd)) {
                 def <- cd$cuenta[cd$is_ppl_default]
                 if (length(def)) def[1L] else cd$cuenta[1L]
@@ -1204,13 +1279,25 @@ pagarHoyServer <- function(id, shared) {
               }
             )
 
-          lines <- generate_ppl(ppl_rows, cuenta_origen, Sys.Date(), 1L)
-          write_ppl(lines, file)
+          banco_origen <- if (!is.null(cuenta_data_dl) && nrow(cuenta_data_dl)) {
+            b <- cuenta_data_dl$banco[cuenta_data_dl$cuenta == cuenta_origen]
+            if (length(b)) b[1L] else NA_character_
+          } else NA_character_
+
+          # Logged BEFORE the PPL bytes are written to `file` -- Mouse's
+          # explicit requirement that the log exist even before the document
+          # reaches the user's computer. Shiny only streams a downloadHandler's
+          # `file` to the browser after content() fully returns, so this
+          # ordering also means a crash/error during generate_ppl()/write_ppl()
+          # below can never produce a downloaded file with no matching log
+          # entry -- the log always exists first.
           .log_pago_generado(
             shared, emp, cur_sel, cuenta_origen, ppl_rows,
             fname = paste0("pagos_", emp, "_", format(Sys.Date(), "%d%m%Y"), "_001.txt"),
-            source_type = "individual"
+            source_type = "individual", banco_origen = banco_origen
           )
+          lines <- generate_ppl(ppl_rows, cuenta_origen, Sys.Date(), 1L)
+          write_ppl(lines, file)
           removeModal()
         }
       )
@@ -1607,7 +1694,11 @@ pagarHoyServer <- function(id, shared) {
               emp, save_result$attempts,
               if (!is.null(save_result$error)) conditionMessage(save_result$error) else "error desconocido"),
             target_id = emp,
-            metadata  = list(empresa = emp, ids = rm_ids),
+            metadata  = list(empresa = emp, ids = rm_ids,
+                             moneda = as.character(cur %||% NA_character_),
+                             cuenta_id = as.character(cuenta_sel %||% NA_character_),
+                             fecha_pago = as.character(fecha_pago %||% NA_character_),
+                             pagos = .pago_audit_detalle(factura_rows, cur, cuenta_sel, fecha_pago)),
             client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
             viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
           ), error = function(e) NULL)
@@ -1795,6 +1886,10 @@ pagarHoyServer <- function(id, shared) {
                      target_id = emp,
                      metadata = list(empresa = emp, n_pago = n_pago, n_abono = n_abono,
                                      sap_ids = sap_fact_ids, man_ids = man_fact_ids,
+                                     moneda = as.character(cur %||% NA_character_),
+                                     cuenta_id = as.character(cuenta_sel %||% NA_character_),
+                                     fecha_pago = as.character(fecha_pago %||% NA_character_),
+                                     pagos = .pago_audit_detalle(factura_rows, cur, cuenta_sel, fecha_pago),
                                      secondary_error = if (inherits(secondary_err_ap, "error"))
                                        conditionMessage(secondary_err_ap) else NA_character_),
                      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
@@ -1963,7 +2058,11 @@ pagarHoyServer <- function(id, shared) {
               emp, save_result$attempts,
               if (!is.null(save_result$error)) conditionMessage(save_result$error) else "error desconocido"),
             target_id = emp,
-            metadata  = list(empresa = emp, ids = rm_ids),
+            metadata  = list(empresa = emp, ids = rm_ids,
+                             moneda = as.character(cur %||% NA_character_),
+                             cuenta_id = as.character(cuenta_sel %||% NA_character_),
+                             fecha_cobro = as.character(fecha_cobro %||% NA_character_),
+                             cobros = .pago_audit_detalle(factura_rows, cur, cuenta_sel, fecha_cobro)),
             client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
             viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
           ), error = function(e) NULL)
@@ -2142,6 +2241,10 @@ pagarHoyServer <- function(id, shared) {
                      target_id = emp,
                      metadata = list(empresa = emp, n_cobro = n_cobro, n_abono = n_abono,
                                      sap_ids = sap_fact_ids, man_ids = man_fact_ids,
+                                     moneda = as.character(cur %||% NA_character_),
+                                     cuenta_id = as.character(cuenta_sel %||% NA_character_),
+                                     fecha_cobro = as.character(fecha_cobro %||% NA_character_),
+                                     cobros = .pago_audit_detalle(factura_rows, cur, cuenta_sel, fecha_cobro),
                                      secondary_error = if (inherits(secondary_err_ar, "error"))
                                        conditionMessage(secondary_err_ar) else NA_character_),
                      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
@@ -2449,10 +2552,16 @@ pagarHoyServer <- function(id, shared) {
         error = function(e) load_parte_alias_map(client_id = shared$effective_client_id())
       )
 
-      # Upsert: remove existing entry for this Parte+Empresa, add new one
-      am <- am[!(toupper(trimws(am$Parte)) == toupper(parte) &
-                 (am$Empresa == emp | (emp == "" & (is.na(am$Empresa) | am$Empresa == "")))),
-               , drop = FALSE]
+      # Upsert: remove ANY existing entry for this Parte, add the new one.
+      # Previously scoped to Parte+Empresa (only removing a prior row whose
+      # Empresa was blank/NA, since emp is always "" from this UI) -- a
+      # legacy or otherwise empresa-scoped row for the same Parte would
+      # survive alongside the new global link, and .annotate_ap's override
+      # lookup silently prefers whichever row comes first, so re-linking
+      # could appear to silently do nothing (found 2026-08-26 while
+      # investigating "vincular doesn't work"). One link per Parte, always
+      # fully replaced.
+      am <- am[toupper(trimws(am$Parte)) != toupper(parte), , drop = FALSE]
       am <- dplyr::bind_rows(am, tibble::tibble(
         Parte     = parte,
         Empresa   = emp,
@@ -2463,6 +2572,15 @@ pagarHoyServer <- function(id, shared) {
 
       save_parte_alias_map(am, client_id = shared$effective_client_id())
       if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db(am)
+      # Found 2026-08-26: this write was never followed by a
+      # bump_sync_version() call, unlike every other registered-key save in
+      # this file (see R/sync_bus.R's explicit contract). The current tab's
+      # OWN reactiveVal update (line above) + .annot_cache invalidation below
+      # made the link look like it worked in that one tab, but no other
+      # session -- another open tab, a staff jump, a reload -- ever saw it,
+      # since sync_bus's poller only re-reads when the version actually
+      # changes. This is the real "doesn't persist / doesn't take effect" bug.
+      bump_sync_version("parte_alias_map_db")
 
       # Invalidate annotation cache for this parte so it re-annotates immediately
       rm(list = ls(.annot_cache), envir = .annot_cache)
@@ -2493,13 +2611,14 @@ pagarHoyServer <- function(id, shared) {
         else load_parte_alias_map(client_id = shared$effective_client_id()),
         error = function(e) load_parte_alias_map(client_id = shared$effective_client_id())
       )
-      am <- am[!(toupper(trimws(am$Parte)) == toupper(parte) &
-                 (am$Empresa == emp |
-                  (emp == "" & (is.na(am$Empresa) | am$Empresa == "")))),
-               , drop = FALSE]
+      # Same Parte-only match as the link handler above -- see its comment.
+      am <- am[toupper(trimws(am$Parte)) != toupper(parte), , drop = FALSE]
 
       save_parte_alias_map(am, client_id = shared$effective_client_id())
       if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db(am)
+      # See the link handler's identical comment above -- same missing-
+      # bump_sync_version() bug, same fix.
+      bump_sync_version("parte_alias_map_db")
       rm(list = ls(.annot_cache), envir = .annot_cache)
       .link_counter(.link_counter() + 1L)
 
@@ -2692,12 +2811,28 @@ pagarHoyServer <- function(id, shared) {
         if (!nrow(s)) { writeLines("", file); return() }
         tmpdir <- tempfile(); dir.create(tmpdir)
         on.exit(unlink(tmpdir, recursive = TRUE), add = TRUE)
-        fnames <- unlist(lapply(unique(s$Empresa), function(emp)
-          lapply(unique(dplyr::filter(s, Empresa == emp)$Moneda), function(cur) {
+        # Plain accumulator list, not nested lapply/unlist() -- unlist() on a
+        # list of per-file LIST results (not plain scalars) risks silently
+        # mangling the nested beneficiarios structure needed for the
+        # aggregate log below, so this loop builds `results` explicitly
+        # instead.
+        results <- list()
+        for (emp in unique(s$Empresa)) {
+          for (cur in unique(dplyr::filter(s, Empresa == emp)$Moneda)) {
             rows     <- s |> dplyr::filter(Empresa == emp, Moneda == cur)
             ann      <- .annotate_ap_cached(rows, emp) |> dplyr::filter(ppl_status == "ok")
-            if (!nrow(ann)) return(NULL)
+            if (!nrow(ann)) next
             cuenta_origen <- get_cuenta_ppl(emp, cur, shared)
+            # Same account, fetched a second way purely to resolve the bank
+            # NAME for logging -- get_cuenta_ppl() above only returns the
+            # account number (needed for generate_ppl()'s own PPL-layout
+            # requirement), not the bank, and there's no per-account picker
+            # in this bulk/ZIP flow to otherwise disambiguate.
+            cuenta_data_z <- get_cuentas_ppl_data(emp, cur, shared)
+            banco_origen_z <- if (!is.null(cuenta_data_z) && nrow(cuenta_data_z)) {
+              b <- cuenta_data_z$banco[cuenta_data_z$cuenta == cuenta_origen]
+              if (length(b)) b[1L] else NA_character_
+            } else NA_character_
             sap_ap_z   <- tryCatch(shared$sap_data()[["AP"]], error = function(e) NULL)
             ref_lkup_z <- if (!is.null(sap_ap_z) && "Factura" %in% names(sap_ap_z) &&
                               "Documento" %in% names(sap_ap_z)) {
@@ -2738,15 +2873,79 @@ pagarHoyServer <- function(id, shared) {
               })
             fname <- file.path(tmpdir,
               paste0("pagos_", emp, "_", cur, "_", format(Sys.Date(), "%d%m%Y"), "_001.txt"))
-            write_ppl(generate_ppl(ppl_rows, cuenta_origen, Sys.Date(), 1L), fname)
+            # Logged BEFORE write_ppl() writes this PPL file to disk -- same
+            # "log exists even before the document is produced" ordering as
+            # the per-company handler above. This is the per-FILE record
+            # (module="pagar_hoy", action="generar_archivo_pago") -- the
+            # aggregate, whole-click summary is logged separately below,
+            # once every file in this ZIP has been generated.
             .log_pago_generado(
               shared, emp, cur, cuenta_origen, ppl_rows,
-              fname = basename(fname), source_type = "zip_bulk"
+              fname = basename(fname), source_type = "zip_bulk", banco_origen = banco_origen_z
             )
-            fname
-          })))
-        fnames <- Filter(Negate(is.null), fnames)
-        if (length(fnames)) zip(file, unlist(fnames), flags = "-j")
+            write_ppl(generate_ppl(ppl_rows, cuenta_origen, Sys.Date(), 1L), fname)
+            results[[length(results) + 1L]] <- list(
+              fname = fname,
+              summary = list(
+                empresa = emp, moneda = cur,
+                cuenta_origen = as.character(cuenta_origen  %||% NA_character_),
+                banco_origen  = as.character(banco_origen_z %||% NA_character_),
+                n_pagos = nrow(ppl_rows),
+                total   = sum(as.numeric(ppl_rows$importe), na.rm = TRUE),
+                archivo = basename(fname),
+                beneficiarios = lapply(seq_len(nrow(ppl_rows)), function(i) list(
+                  alias     = as.character(ppl_rows$alias[i]      %||% NA_character_),
+                  clabe     = as.character(ppl_rows$clabe_dest[i] %||% NA_character_),
+                  banco     = as.character(ppl_rows$banco_dest[i] %||% NA_character_),
+                  importe   = as.numeric(ppl_rows$importe[i]      %||% NA_real_),
+                  concepto  = as.character(ppl_rows$concepto[i]   %||% NA_character_)
+                ))
+              )
+            )
+          }
+        }
+
+        # Stage: aggregate "Descargar todos" summary -- one entry reflecting
+        # the WHOLE bulk click (every file it produced, with full per-file
+        # beneficiary detail), on top of the per-file entries above. Found
+        # 2026-08-27: those per-file entries alone read, from Actividad, as
+        # indistinguishable from N separate single-company clicks -- nothing
+        # tied them together as one bulk action, which is what "it does not
+        # generate a log [for the bulk nature]" was actually reporting.
+        # Logged BEFORE zip() below assembles the actual downloadable file,
+        # same ordering as every other log_action call in this feature.
+        if (length(results)) {
+          # Wrapped defensively -- log_action has no top-level tryCatch of
+          # its own (its "never throws" doc comment is achieved by careful
+          # coercion at each field, not a blanket guard), so a genuinely
+          # unexpected value shape here (found 2026-08-27: reported as "the
+          # zip button logs nothing" with no visible error) could otherwise
+          # throw and silently abort content() *before* zip() ever runs --
+          # this must never take down the actual file download, and the
+          # failure must be visible somewhere instead of vanishing.
+          tryCatch({
+            agg <- .zip_pago_aggregate_metadata(lapply(results, function(r) r$summary))
+            user_z <- tryCatch(shared$current_user(), error = function(e) NULL) %||% "unknown"
+            log_action(
+              user_z, "pagar_hoy", "generar_archivo_pago_zip",
+              sprintf("Descarga masiva de archivos de pago: %d archivo(s), %d empresa(s), %d pago(s) en total",
+                     agg$n_archivos, length(agg$empresas), agg$n_pagos_total),
+              target_id = paste(agg$empresas, collapse = ", "),
+              metadata  = agg,
+              client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+              viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+            )
+          }, error = function(e) {
+            message("[PAGAR_HOY] ZIP aggregate log_action call failed: ", conditionMessage(e))
+            showNotification(
+              paste("Aviso: el ZIP se generó correctamente, pero no se pudo registrar el resumen en Actividad:",
+                   conditionMessage(e)),
+              type = "warning", duration = 10)
+          })
+        }
+
+        fnames <- vapply(results, function(r) r$fname, character(1))
+        if (length(fnames)) zip(file, fnames, flags = "-j")
         else writeLines("", file)
       }
     )

@@ -43,7 +43,13 @@ cat("── log_action() call-site scoping (static) ─────────�
   "R/settings/settings_companies.R", "R/settings/settings_hub.R",
   "R/settings/settings_policies.R", "R/settings/settings_proveedores.R",
   "R/settings/settings_sincro.R", "R/forecasting_module.R",
-  "R/notes_handlers.R", "R/treasury_map_module.R", "R/cashflow_export_module.R"
+  "R/notes_handlers.R", "R/treasury_map_module.R", "R/cashflow_export_module.R",
+  # Stage 3 of the Actividad audit overhaul (2026-08-26): the PDF export's
+  # own self-logging call (action="exportar_actividad_pdf").
+  "R/audit_log_viewer_module.R",
+  # Follow-up (2026-08-27): "Ver archivos de pago"'s own PDF export
+  # self-logging call (action="exportar_pagos_pdf").
+  "R/pagos_audit_viewer_module.R"
 )
 
 for (f in .PRODUCTION_FILES) {

@@ -497,8 +497,8 @@ settings_observers <- function(input, output, session, shared) {
   # Build code→name lookup from S3 snapshots.
   # Used to label IC code inputs with the matched company name.
   .build_code_lookup <- function() {
-    snap_ar <- tryCatch(load_sap_snapshot("AR")$data, error = function(e) NULL)
-    snap_ap <- tryCatch(load_sap_snapshot("AP")$data, error = function(e) NULL)
+    snap_ar <- tryCatch(load_sap_snapshot("AR", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL))$data, error = function(e) NULL)
+    snap_ap <- tryCatch(load_sap_snapshot("AP", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL))$data, error = function(e) NULL)
     cmap    <- shared$company_map()
     inv_map <- setNames(names(cmap), unname(cmap))
 
@@ -534,9 +534,9 @@ settings_observers <- function(input, output, session, shared) {
   observeEvent(input$scan_ic_btn, {
     # Prefer S3 snapshots — they include ALL companies even when SAP was unreachable
     # this session.  Fall back to in-memory session data when snapshots are absent.
-    sap_ar <- tryCatch(load_sap_snapshot("AR")$data, error = function(e) NULL) %||%
+    sap_ar <- tryCatch(load_sap_snapshot("AR", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL))$data, error = function(e) NULL) %||%
               shared$sap_data()[["AR"]]
-    sap_ap <- tryCatch(load_sap_snapshot("AP")$data, error = function(e) NULL) %||%
+    sap_ap <- tryCatch(load_sap_snapshot("AP", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL))$data, error = function(e) NULL) %||%
               shared$sap_data()[["AP"]]
 
     if (is.null(sap_ar) && is.null(sap_ap)) {
@@ -735,8 +735,8 @@ settings_observers <- function(input, output, session, shared) {
     ic_panel_active(FALSE)
     # Populate bp_candidates on first open (or if empty)
     if (is.null(bp_candidates())) {
-      snap_ar <- tryCatch(load_sap_snapshot("AR"), error = function(e) NULL)
-      snap_ap <- tryCatch(load_sap_snapshot("AP"), error = function(e) NULL)
+      snap_ar <- tryCatch(load_sap_snapshot("AR", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL)), error = function(e) NULL)
+      snap_ap <- tryCatch(load_sap_snapshot("AP", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL)), error = function(e) NULL)
       sap_ar  <- snap_ar$data
       sap_ap  <- snap_ap$data
       if (!is.null(sap_ar) || !is.null(sap_ap)) {
@@ -751,8 +751,8 @@ settings_observers <- function(input, output, session, shared) {
 
   # Refresh SAP BP table
   observeEvent(input$bp_refresh_btn, {
-    snap_ar <- tryCatch(load_sap_snapshot("AR"), error = function(e) NULL)
-    snap_ap <- tryCatch(load_sap_snapshot("AP"), error = function(e) NULL)
+    snap_ar <- tryCatch(load_sap_snapshot("AR", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL)), error = function(e) NULL)
+    snap_ap <- tryCatch(load_sap_snapshot("AP", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL)), error = function(e) NULL)
     sap_ar  <- snap_ar$data
     sap_ap  <- snap_ap$data
     if (is.null(sap_ar) && is.null(sap_ap)) {
@@ -827,8 +827,8 @@ settings_observers <- function(input, output, session, shared) {
 
     # Refresh is_ic flags in bp_candidates so preselection updates
     new_cands <- tryCatch({
-      sap_ar <- tryCatch(load_sap_snapshot("AR")$data, error = function(e) NULL)
-      sap_ap <- tryCatch(load_sap_snapshot("AP")$data, error = function(e) NULL)
+      sap_ar <- tryCatch(load_sap_snapshot("AR", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL))$data, error = function(e) NULL)
+      sap_ap <- tryCatch(load_sap_snapshot("AP", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL))$data, error = function(e) NULL)
       scan_ic_candidates(sap_ar, sap_ap, new_registry, isolate(shared$company_map()))
     }, error = function(e) NULL)
     if (!is.null(new_cands) && nrow(new_cands)) bp_candidates(new_cands)

@@ -464,17 +464,17 @@ load_policy_moves <- function(client_id = NULL) {
 
 save_policy_catalog <- function(df, client_id = NULL) {
   .s3_write(df, S3_KEYS$policy_catalog, client_id = client_id)
-  if (exists(".cache_set", mode = "function")) .cache_set("policy_catalog", df)
+  if (exists(".cache_set", mode = "function")) .cache_set("policy_catalog", df, client_id)
 }
 
 save_partner_policies <- function(df, client_id = NULL) {
   .s3_write(df, S3_KEYS$partner_policies, client_id = client_id)
-  if (exists(".cache_set", mode = "function")) .cache_set("partner_policies", df)
+  if (exists(".cache_set", mode = "function")) .cache_set("partner_policies", df, client_id)
 }
 
 save_policy_moves <- function(df, client_id = NULL) {
   .s3_write(df, S3_KEYS$policy_moves, client_id = client_id)
-  if (exists(".cache_set", mode = "function")) .cache_set("policy_moves", df)
+  if (exists(".cache_set", mode = "function")) .cache_set("policy_moves", df, client_id)
 }
 
 .schema_holiday_overrides <- function() tibble(
@@ -494,7 +494,7 @@ load_holiday_overrides <- function(client_id = NULL) {
 save_holiday_overrides <- function(df, client_id = NULL) {
   norm <- .normalize(df, .schema_holiday_overrides)
   .s3_write(norm, S3_KEYS$holiday_overrides, client_id = client_id)
-  if (exists(".cache_set", mode = "function")) .cache_set("holiday_overrides", norm)
+  if (exists(".cache_set", mode = "function")) .cache_set("holiday_overrides", norm, client_id)
 }
 
 # ── ERP Connections (Stage 3) ─────────────────────────────────────────────────
@@ -597,7 +597,7 @@ save_erp_connections <- function(df, client_id) {
 # ── Invoice moves ──────────────────────────────────────────────────────────────
 
 load_moves <- function(client_id = NULL) {
-  cached <- if (exists(".cache_get", mode = "function")) .cache_get("moves") else NULL
+  cached <- if (exists(".cache_get", mode = "function")) .cache_get("moves", client_id) else NULL
   df <- if (!is.null(cached)) cached else .s3_read_with(S3_KEYS$moves, client_id = client_id)
   .normalize(df, .schema_moves) |>
     filter(ledger %in% c("AR","AP"), !is.na(Empresa),
@@ -607,7 +607,7 @@ load_moves <- function(client_id = NULL) {
 save_moves <- function(df, client_id = NULL) {
   norm <- .normalize(df, .schema_moves)
   .s3_write(norm, S3_KEYS$moves, client_id = client_id)
-  if (exists(".cache_set", mode = "function")) .cache_set("moves", norm)
+  if (exists(".cache_set", mode = "function")) .cache_set("moves", norm, client_id)
 }
 
 # Upsert rows into moves table (matched on Empresa + Moneda + Documento + ledger)
@@ -645,7 +645,7 @@ load_notes <- function(client_id = NULL) {
 save_notes <- function(df, client_id = NULL) {
   norm <- .normalize(df, .schema_notes)
   .s3_write(norm, S3_KEYS$notes, client_id = client_id)
-  if (exists(".cache_set", mode = "function")) .cache_set("notes", norm)
+  if (exists(".cache_set", mode = "function")) .cache_set("notes", norm, client_id)
 }
 
 # ── Invoice tags ───────────────────────────────────────────────────────────────
@@ -658,7 +658,7 @@ load_tags <- function(client_id = NULL) {
 save_tags <- function(df, client_id = NULL) {
   norm <- .normalize(df, .schema_tags)
   .s3_write(norm, S3_KEYS$tags, client_id = client_id)
-  if (exists(".cache_set", mode = "function")) .cache_set("tags", norm)
+  if (exists(".cache_set", mode = "function")) .cache_set("tags", norm, client_id)
 }
 
 # Set tags for one invoice (replaces all existing tags for that invoice)
@@ -717,7 +717,7 @@ load_manual <- function(client_id = NULL) {
 save_manual <- function(df, client_id = NULL) {
   norm <- .normalize(df, .schema_manual)
   .s3_write(norm, S3_KEYS$manual, client_id = client_id)
-  if (exists(".cache_set", mode = "function")) .cache_set("manual", norm)
+  if (exists(".cache_set", mode = "function")) .cache_set("manual", norm, client_id)
   if (exists("bump_sync_version", mode = "function")) bump_sync_version("manual_inv", client_id = client_id)
 }
 
@@ -772,7 +772,7 @@ load_papelera <- function(client_id = NULL) {
 save_papelera <- function(df, client_id = NULL) {
   norm <- .normalize(df, .schema_papelera)
   .s3_write(norm, S3_KEYS$papelera, client_id = client_id)
-  if (exists(".cache_set", mode = "function")) .cache_set("papelera", norm)
+  if (exists(".cache_set", mode = "function")) .cache_set("papelera", norm, client_id)
   if (exists("bump_sync_version", mode = "function")) bump_sync_version("papelera_rv", client_id = client_id)
 }
 
@@ -881,7 +881,7 @@ save_interco <- function(lst, client_id = NULL) {
   lst$ar_clients   <- normalize_code(lst$ar_clients   %||% character())
   lst$ap_suppliers <- normalize_code(lst$ap_suppliers %||% character())
   .s3_write(lst, S3_KEYS$interco, client_id = client_id)
-  if (exists(".cache_set", mode = "function")) .cache_set("interco", lst)
+  if (exists(".cache_set", mode = "function")) .cache_set("interco", lst, client_id)
 }
 
 # ── Intercompany v2 — per-empresa, per-ledger code registry ───────────────────
@@ -933,7 +933,7 @@ load_interco_v2 <- function(client_id = NULL) {
   }
 
   # 1. Cross-session in-memory cache (fastest — populated by save or Phase 2 .cache_set)
-  cached <- if (exists(".cache_get", mode = "function")) .cache_get("interco_v2") else NULL
+  cached <- if (exists(".cache_get", mode = "function")) .cache_get("interco_v2", client_id) else NULL
   out <- if (is.list(cached) && !is.null(cached$companies)) {
     message("[IC] load_interco_v2 — hit .app_data_cache")
     cached
@@ -981,7 +981,7 @@ load_interco_v2 <- function(client_id = NULL) {
 save_interco_v2 <- function(registry, client_id = NULL) {
   .s3_write(registry, S3_KEYS$interco_v2, client_id = client_id)
   # Populate both in-memory caches so subsequent reads skip S3 entirely
-  if (exists(".cache_set", mode = "function")) .cache_set("interco_v2", registry)
+  if (exists(".cache_set", mode = "function")) .cache_set("interco_v2", registry, client_id)
   assign(S3_KEYS$interco_v2, registry, envir = .s3_preload_cache)
   message(sprintf("[IC] save_interco_v2 — S3 write OK (%d companies)",
                   length(registry$companies %||% list())))
@@ -1039,7 +1039,7 @@ save_pagar_hoy <- function(df, username = NULL, client_id = NULL) {
   } else {
     # Legacy fallback: shared file (backward compat for callers without a username)
     .s3_write(norm, S3_KEYS$pagar_hoy, client_id = client_id)
-    if (exists(".cache_set", mode = "function")) .cache_set("pagar_hoy", norm)
+    if (exists(".cache_set", mode = "function")) .cache_set("pagar_hoy", norm, client_id)
   }
   invisible(TRUE)
 }
@@ -1234,15 +1234,31 @@ save_sap_snapshot <- function(df, ledger, client_id = NULL) {
   prev1_key <- sub("\\.rds$", "_prev1.rds", cur_key)
   prev2_key <- sub("\\.rds$", "_prev2.rds", cur_key)
 
+  # CRITICAL FIX (found 2026-08-27, after this exact bug reproduced "bad
+  # data" reappearing multiple times despite earlier, narrower fixes to
+  # .app_data_cache): the in-memory preload-cache side of this rotation used
+  # to key by the BARE suffix ("sap_snapshot_AR.rds"), not the full
+  # client-prefixed key. .s3_write() below always wrote to the correct
+  # per-client S3 path, but this cache is what load_sap_snapshot() actually
+  # reads back (see its own matching fix) -- SAP snapshot data is what Phase
+  # 1 seeds the calendar with on every session, upstream of moves/
+  # proveedores/everything else, so a bare-key collision here reads as
+  # "everything is randomly wrong" exactly as reported, not something
+  # obviously snapshot-shaped. Full-prefix keys, matching .s3_read_with()'s
+  # own convention, isolate clients from each other correctly.
+  cur_full   <- .s3_key(cur_key,   client_id = client_id)
+  prev1_full <- .s3_key(prev1_key, client_id = client_id)
+  prev2_full <- .s3_key(prev2_key, client_id = client_id)
+
   # ── Step 1: rotate prev1 → prev2 ────────────────────────────────────────────
   tryCatch({
-    prev1_obj <- if (exists(prev1_key, envir = .s3_preload_cache, inherits = FALSE))
-      .s3_preload_cache[[prev1_key]]
+    prev1_obj <- if (exists(prev1_full, envir = .s3_preload_cache, inherits = FALSE))
+      .s3_preload_cache[[prev1_full]]
     else
-      .s3_read(prev1_key)
+      .s3_read_with(prev1_key, client_id = client_id)
     if (!is.null(prev1_obj)) {
       .s3_write(prev1_obj, prev2_key, client_id = client_id)
-      assign(prev2_key, prev1_obj, envir = .s3_preload_cache)
+      assign(prev2_full, prev1_obj, envir = .s3_preload_cache)
       message(sprintf("[SNAP] %s prev1→prev2 rotated (saved_at=%s)",
                       ledger, format(prev1_obj$saved_at, "%d/%m %H:%M")))
     }
@@ -1251,13 +1267,13 @@ save_sap_snapshot <- function(df, ledger, client_id = NULL) {
 
   # ── Step 2: rotate current → prev1 ─────────────────────────────────────────
   tryCatch({
-    cur_obj <- if (exists(cur_key, envir = .s3_preload_cache, inherits = FALSE))
-      .s3_preload_cache[[cur_key]]
+    cur_obj <- if (exists(cur_full, envir = .s3_preload_cache, inherits = FALSE))
+      .s3_preload_cache[[cur_full]]
     else
-      .s3_read(cur_key)
+      .s3_read_with(cur_key, client_id = client_id)
     if (!is.null(cur_obj)) {
       .s3_write(cur_obj, prev1_key, client_id = client_id)
-      assign(prev1_key, cur_obj, envir = .s3_preload_cache)
+      assign(prev1_full, cur_obj, envir = .s3_preload_cache)
       message(sprintf("[SNAP] %s cur→prev1 rotated (saved_at=%s)",
                       ledger, format(cur_obj$saved_at, "%d/%m %H:%M")))
     }
@@ -1269,18 +1285,32 @@ save_sap_snapshot <- function(df, ledger, client_id = NULL) {
   tryCatch(.s3_write(obj, cur_key, client_id = client_id), error = function(e)
     warning("Could not save SAP snapshot: ", e$message, call. = FALSE))
   # Restore preload cache after .s3_write() cleared it (see comment above).
-  assign(cur_key, obj, envir = .s3_preload_cache)
+  assign(cur_full, obj, envir = .s3_preload_cache)
   message(sprintf("[SNAP] %s snapshot saved (%d rows, saved_at=%s) — prev1/prev2 rotated",
                   ledger, nrow(df), format(obj$saved_at, "%H:%M:%S")))
   invisible(obj)
 }
 
-load_sap_snapshot <- function(ledger) {
-  key     <- if (toupper(ledger) == "AR") S3_KEYS_CRITICAL$sap_snap_ar else S3_KEYS_CRITICAL$sap_snap_ap
-  cached  <- exists(key, envir = .s3_preload_cache, inherits = FALSE)
-  t0_snap <- proc.time()
-  obj     <- .s3_read(key)
-  elapsed <- round((proc.time() - t0_snap)[["elapsed"]], 2)
+# CRITICAL FIX (found 2026-08-27): this had NO client_id parameter at all --
+# every call read via .s3_read(key), a bare (non-client-prefixed) key that
+# (a) resolves its S3 read against Sys.getenv("CLIENT_ID"), always
+# "hd-admin" in this shared deployment, and (b) checks/caches
+# .s3_preload_cache under that same bare key, so ANY client's session that
+# populated it first would silently serve ITS AR/AP data to every other
+# client's session calling load_sap_snapshot() afterward in the same
+# process. This function seeds Phase 1's sap_data() on every session --
+# upstream of moves/proveedores/everything else built on top of it -- so
+# this one bug reads as "unrelated, seemingly-random bad data" everywhere
+# downstream, not as an obviously snapshot-shaped problem. Fixed by adding
+# client_id and routing through .s3_read_with() (full-prefix keys), the
+# same fix already applied to save_sap_snapshot()'s own cache-restore calls.
+load_sap_snapshot <- function(ledger, client_id = NULL) {
+  key      <- if (toupper(ledger) == "AR") S3_KEYS_CRITICAL$sap_snap_ar else S3_KEYS_CRITICAL$sap_snap_ap
+  full_key <- .s3_key(key, client_id = client_id)
+  cached   <- exists(full_key, envir = .s3_preload_cache, inherits = FALSE)
+  t0_snap  <- proc.time()
+  obj      <- .s3_read_with(key, client_id = client_id)
+  elapsed  <- round((proc.time() - t0_snap)[["elapsed"]], 2)
   if (is.null(obj) || !is.list(obj)) {
     message(sprintf("[SNAP] %s — NULL (%s, %.2fs)", toupper(ledger),
                     if (cached) "cache-hit/NULL" else "live-miss/NULL", elapsed))
@@ -1386,7 +1416,17 @@ save_bancos <- function(df, client_id = NULL) {
   updated_at   = character()
 )
 
-load_proveedores <- function(client_id = NULL) {
+# Reads + normalizes proveedores.rds WITHOUT the active-only filter
+# load_proveedores() applies below. In normal operation every row in this key
+# already has activo==TRUE (the "Inactivar" UI flow moves a row OUT to
+# proveedores_inactivos.rds the instant it's deactivated, never leaving it
+# behind here) -- but any row that predates that split, or was ever written
+# some other way with activo==FALSE still sitting in this key, must survive
+# a resave. Any caller that reads-modifies-writes this whole table (e.g.
+# rename_empresa_initials()) must use THIS, not load_proveedores(), or it
+# silently and permanently drops such rows on every write (found 2026-08-27
+# while investigating a "Sin proveedores activos" report).
+.load_proveedores_raw <- function(client_id = NULL) {
   raw <- .s3_read_with(S3_KEYS$proveedores, client_id = client_id)
   df  <- .normalize(raw, .schema_proveedores)
   # Back-compat: if alias column is all NA, copy from nombre (trimmed to 15)
@@ -1397,7 +1437,11 @@ load_proveedores <- function(client_id = NULL) {
   if (nrow(df) > 0 && all(is.na(df$medio_pago) | !nzchar(trimws(df$medio_pago)))) {
     df$medio_pago <- "SPI"
   }
-  df |> dplyr::filter(activo == TRUE)
+  df
+}
+
+load_proveedores <- function(client_id = NULL) {
+  .load_proveedores_raw(client_id = client_id) |> dplyr::filter(activo == TRUE)
 }
 
 save_proveedores <- function(df, client_id = NULL) {
@@ -1735,7 +1779,7 @@ load_abonos <- function(client_id = NULL) {
 
 save_abonos <- function(df, client_id = NULL) {
   .s3_write(.normalize(df, .schema_abonos), S3_KEYS$abonos, client_id = client_id)
-  if (exists(".cache_set", mode = "function")) .cache_set("abonos", df)
+  if (exists(".cache_set", mode = "function")) .cache_set("abonos", df, client_id)
 }
 
 # Add new abono records (each has a fresh UUID — never replaces existing)
@@ -1781,7 +1825,7 @@ load_sap_overrides <- function(client_id = NULL) {
 save_sap_overrides <- function(df, client_id = NULL) {
   norm <- .normalize(df, .schema_sap_overrides)
   .s3_write(norm, S3_KEYS$sap_overrides, client_id = client_id)
-  if (exists(".cache_set", mode = "function")) .cache_set("sap_overrides", norm)
+  if (exists(".cache_set", mode = "function")) .cache_set("sap_overrides", norm, client_id)
   invisible(TRUE)
 }
 

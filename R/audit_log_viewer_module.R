@@ -24,6 +24,518 @@
 # params are resolved lazily, at render/fetch time, via .resolve_param().
 # =============================================================================
 
+# =============================================================================
+# Stage 2 of the Actividad audit overhaul (2026-08-26): a click on any row's
+# Descripción cell opens a detail modal. Payment confirmations and policy
+# applies get bespoke, information-dense rendering (Mouse's explicit
+# priority: "if it was a payment I need full information about it"); login/
+# logout get their own small bespoke views; every other module/action falls
+# through to a generic key/value dump of its metadata JSON, so every log type
+# is covered without needing one bespoke renderer per action. Pure data/
+# classification helpers are kept separate from the tag-building ones so the
+# former are unit-testable without a running Shiny session (see
+# tests/test_activity_stage2_detail_modal.R).
+# =============================================================================
+
+# Classifies one audit row into which bespoke (or generic) detail view its
+# popup should use. Pure function -- no UI, no reactive context.
+.audit_detail_kind <- function(module, action) {
+  # %||% only substitutes on NULL, not NA -- an explicit NA module/action
+  # must be normalized to "" too, or module == "auth" && action == "login"
+  # below evaluates to NA && NA (neither side is FALSE, so && can't
+  # short-circuit) and `if (NA)` throws "missing value where TRUE/FALSE
+  # needed" instead of falling through to the generic classification.
+  module <- as.character(module %||% "")
+  action <- as.character(action %||% "")
+  if (is.na(module)) module <- ""
+  if (is.na(action)) action <- ""
+  if (module == "pagar_hoy" && action %in% c("confirmar_pago", "confirmar_pago_incompleto"))
+    return("payment_pago")
+  if (module == "pagar_hoy" && action %in% c("confirmar_cobro", "confirmar_cobro_incompleto"))
+    return("payment_cobro")
+  if (module == "settings_companies" && action %in% c("aplicar_politicas", "auto_aplicar_politicas"))
+    return("policy")
+  if (module == "pagar_hoy" && action == "generar_archivo_pago") return("payment_file")
+  if (module == "pagar_hoy" && action == "generar_archivo_pago_zip") return("payment_file_zip")
+  if (module == "cashflow_export" &&
+      action %in% c("exportar_cashflow_pdf", "exportar_cashflow_word", "exportar_cashflow_excel"))
+    return("cashflow_export")
+  if (module == "auth" && action == "login")  return("login")
+  if (module == "auth" && action == "logout") return("logout")
+  "generic"
+}
+
+# Parses one row's metadata JSON string back into a plain list. Never
+# errors -- an unparseable/empty/NA value returns an empty list, same
+# never-throw convention as pagos_generados_persistence.R's parse_pago_*().
+.audit_parse_metadata <- function(metadata_json) {
+  metadata_json <- metadata_json[1]
+  if (is.null(metadata_json) || is.na(metadata_json) || !nzchar(metadata_json)) return(list())
+  parsed <- tryCatch(jsonlite::fromJSON(metadata_json, simplifyVector = TRUE), error = function(e) NULL)
+  if (is.null(parsed)) return(list())
+  if (is.list(parsed)) parsed else as.list(parsed)
+}
+
+# Normalizes a payment-detail metadata field (the "pagos"/"cobros" array
+# written by .pago_audit_detalle(), R/pagar_hoy_module.R) to a data frame
+# with a fixed column set, regardless of whether it arrived as NULL, a
+# single row, or many -- same defensive shape as
+# pagos_generados_persistence.R's parse_pago_beneficiarios().
+.audit_normalize_pagos <- function(x) {
+  empty <- data.frame(parte = character(), documento = character(), importe = double(),
+                      moneda = character(), cuenta_id = character(), fecha = character(),
+                      stringsAsFactors = FALSE)
+  if (is.null(x) || (is.list(x) && !length(x))) return(empty)
+  df <- tryCatch(as.data.frame(x, stringsAsFactors = FALSE), error = function(e) NULL)
+  if (is.null(df) || !nrow(df)) return(empty)
+  for (col in names(empty)) if (!col %in% names(df)) df[[col]] <- empty[[col]][NA_integer_]
+  df[, names(empty), drop = FALSE]
+}
+
+# ── Per-kind detail bodies (tagList builders) ────────────────────────────────
+.audit_detail_payment <- function(meta, key, label) {
+  det    <- .audit_normalize_pagos(meta[[key]])
+  fecha  <- meta$fecha_pago %||% meta$fecha_cobro %||% NA_character_
+  header <- div(class = "mb-2 small",
+    tags$div(tags$strong("Empresa: "),  meta$empresa   %||% ""),
+    tags$div(tags$strong("Moneda: "),   meta$moneda    %||% ""),
+    tags$div(tags$strong("Cuenta: "),   meta$cuenta_id %||% ""),
+    tags$div(tags$strong("Fecha: "),    if (!is.na(fecha)) fecha else "")
+  )
+  if (!nrow(det)) {
+    tagList(header, tags$p(class = "text-muted small",
+                           sprintf("Sin detalle de %s registrado.", tolower(label))))
+  } else {
+    tagList(header,
+      tags$table(class = "table table-sm table-hover small",
+        tags$thead(class = "table-light",
+          tags$tr(tags$th("Socio"), tags$th("Documento"),
+                  tags$th(class = "text-end", "Importe"), tags$th("Moneda"))),
+        tags$tbody(
+          lapply(seq_len(nrow(det)), function(i)
+            tags$tr(
+              tags$td(det$parte[i]),
+              tags$td(det$documento[i]),
+              tags$td(class = "text-end",
+                      formatC(det$importe[i], format = "f", digits = 2, big.mark = ",")),
+              tags$td(det$moneda[i])
+            ))
+        )
+      )
+    )
+  }
+}
+
+.audit_detail_policy <- function(meta) {
+  pol_names <- meta$policy_names %||% character(0)
+  partes    <- meta$partes       %||% character(0)
+  tagList(
+    tags$div(tags$strong("Política(s) aplicada(s): "),
+             if (length(pol_names)) paste(pol_names, collapse = ", ") else "—"),
+    tags$div(tags$strong("Documentos calculados: "), as.character(meta$n_moves %||% "")),
+    tags$div(tags$strong("Socios afectados: "),
+             if (length(partes)) paste(partes, collapse = ", ") else "—")
+  )
+}
+
+# Follow-up (2026-08-27): Calendario's cash flow export -- PDF, Word, and
+# Excel all now log here (module="cashflow_export"; PDF already did, Word/
+# Excel were dual-writing only to "Ver archivos de pago", never to this
+# general log). Basic info only, matching .audit_detail_policy()'s level of
+# detail above -- there's no beneficiary/bank-level data in a cash flow
+# report the way there is for a payment file, so a full receipt-style view
+# isn't warranted here.
+.CF_IC_LABELS <- c(exclude = "Sin transacciones entre compañías",
+                   include = "Con transacciones entre compañías",
+                   only    = "Sólo transacciones entre compañías")
+.CF_FORMATO_LABELS <- c(pdf = "PDF", word = "Word", excel = "Excel")
+
+.audit_detail_cashflow_export <- function(meta) {
+  empresas <- meta$empresas %||% character(0)
+  ic_lbl   <- unname(.CF_IC_LABELS[as.character(meta$ic_mode %||% "")])
+  fmt_lbl  <- unname(.CF_FORMATO_LABELS[as.character(meta$formato %||% "")])
+  tagList(
+    tags$div(tags$strong("Rango: "),
+             sprintf("%s — %s", meta$date_from %||% "—", meta$date_to %||% "—")),
+    tags$div(tags$strong("Empresas: "),
+             if (length(empresas)) paste(empresas, collapse = ", ") else "—"),
+    tags$div(tags$strong("Intercompañía: "), if (is.na(ic_lbl)) (meta$ic_mode %||% "—") else ic_lbl),
+    tags$div(tags$strong("Modo de moneda: "), meta$currency_mode %||% "—"),
+    tags$div(tags$strong("Formato: "), if (is.na(fmt_lbl)) (meta$formato %||% "—") else fmt_lbl)
+  )
+}
+
+# Normalizes the "beneficiarios" metadata field written by
+# .log_pago_generado() (R/pagar_hoy_module.R) -- same defensive shape as
+# .audit_normalize_pagos(), different column set (this is a bank-transfer
+# beneficiary, not an invoice).
+.audit_normalize_beneficiarios <- function(x) {
+  empty <- data.frame(alias = character(), clabe = character(), banco = character(),
+                      importe = double(), concepto = character(), stringsAsFactors = FALSE)
+  if (is.null(x) || (is.list(x) && !length(x))) return(empty)
+  df <- tryCatch(as.data.frame(x, stringsAsFactors = FALSE), error = function(e) NULL)
+  if (is.null(df) || !nrow(df)) return(empty)
+  for (col in names(empty)) if (!col %in% names(df)) df[[col]] <- empty[[col]][NA_integer_]
+  df[, names(empty), drop = FALSE]
+}
+
+# Stage 4 of the Actividad audit overhaul (2026-08-26): a bank payment file
+# (PPL) generation -- real CLABEs, real transfer instructions -- gets its own
+# bespoke view, matching what R/pagos_audit_viewer_module.R already shows
+# (and reusing its own mask_clabe() for consistency): full beneficiary
+# breakdown, CLABE masked to its last 4 digits, plus origin account/bank.
+# Shared beneficiary table -- one payment file's worth of rows, CLABE always
+# masked. Used both by the single-file view and, per bundled file, by the
+# ZIP/bulk aggregate view below.
+.audit_beneficiarios_table <- function(det) {
+  if (!nrow(det)) return(tags$p(class = "text-muted small", "Sin beneficiarios registrados."))
+  tags$table(class = "table table-sm table-hover small",
+    tags$thead(class = "table-light",
+      tags$tr(tags$th("Beneficiario"), tags$th("CLABE"), tags$th("Banco"),
+              tags$th(class = "text-end", "Importe"), tags$th("Concepto"))),
+    tags$tbody(
+      lapply(seq_len(nrow(det)), function(i)
+        tags$tr(
+          tags$td(det$alias[i]),
+          tags$td(mask_clabe(det$clabe[i])),
+          tags$td(det$banco[i]),
+          tags$td(class = "text-end",
+                  formatC(det$importe[i], format = "f", digits = 2, big.mark = ",")),
+          tags$td(det$concepto[i])
+        ))
+    )
+  )
+}
+
+.audit_detail_payment_file <- function(meta) {
+  det <- .audit_normalize_beneficiarios(meta$beneficiarios)
+  source_label <- switch(as.character(meta$source %||% ""),
+                         individual = "Individual", zip_bulk = "ZIP (todos)",
+                         as.character(meta$source %||% "—"))
+  header <- div(class = "mb-2 small",
+    tags$div(tags$strong("Empresa: "), meta$empresa %||% ""),
+    tags$div(tags$strong("Moneda: "), meta$moneda %||% ""),
+    tags$div(tags$strong("Cuenta origen: "), meta$cuenta_origen %||% ""),
+    tags$div(tags$strong("Banco origen: "), meta$banco_origen %||% "—"),
+    tags$div(tags$strong("Total: "),
+             formatC(as.numeric(meta$total %||% 0), format = "f", digits = 2, big.mark = ","),
+             sprintf(" (%s pago(s))", as.character(meta$n_pagos %||% nrow(det)))),
+    tags$div(tags$strong("Origen: "), source_label),
+    tags$div(tags$strong("Archivo: "), meta$archivo %||% "")
+  )
+  if (!nrow(det)) {
+    tagList(header, .audit_beneficiarios_table(det))
+  } else {
+    tagList(header,
+      tags$p(class = "small text-muted mb-1", icon("circle-info"),
+             " Las cuentas se muestran enmascaradas; el recibo completo (con CLABE sin enmascarar) ",
+             "está disponible en \"Ver archivos de pago\"."),
+      .audit_beneficiarios_table(det)
+    )
+  }
+}
+
+# Stage 4 follow-up (2026-08-27): the "Descargar todos" bulk/ZIP action's
+# aggregate entry -- one summary header for the whole click, then every
+# bundled file's own full beneficiary detail (same information density as a
+# single-company download, per Mouse's explicit ask), not just a file count.
+.audit_detail_payment_file_zip <- function(meta) {
+  archivos <- meta$archivos
+  archivos_list <- if (is.data.frame(archivos))
+    lapply(seq_len(nrow(archivos)), function(i) as.list(archivos[i, , drop = FALSE]))
+  else if (is.list(archivos)) archivos
+  else list()
+
+  header <- div(class = "mb-3 small",
+    tags$div(tags$strong("Archivos generados: "), as.character(meta$n_archivos %||% length(archivos_list))),
+    tags$div(tags$strong("Empresas: "),
+             paste(meta$empresas %||% character(0), collapse = ", ")),
+    tags$div(tags$strong("Pagos totales: "), as.character(meta$n_pagos_total %||% "")),
+    tags$div(tags$strong("Total general: "),
+             formatC(as.numeric(meta$total_general %||% 0), format = "f", digits = 2, big.mark = ","))
+  )
+
+  if (!length(archivos_list))
+    return(tagList(header, tags$p(class = "text-muted small", "Sin archivos registrados.")))
+
+  blocks <- lapply(seq_along(archivos_list), function(i) {
+    a   <- archivos_list[[i]]
+    det <- .audit_normalize_beneficiarios(a$beneficiarios)
+    tagList(
+      tags$hr(),
+      tags$div(class = "small fw-semibold mb-1",
+               sprintf("Archivo %d de %d — %s (%s)", i, length(archivos_list),
+                       a$empresa %||% "", a$moneda %||% "")),
+      div(class = "mb-1 small",
+        tags$div(tags$strong("Cuenta origen: "), a$cuenta_origen %||% "",
+                 " · ", tags$strong("Banco: "), a$banco_origen %||% "—"),
+        tags$div(tags$strong("Total: "),
+                 formatC(as.numeric(a$total %||% 0), format = "f", digits = 2, big.mark = ","),
+                 sprintf(" (%s pago(s))", as.character(a$n_pagos %||% nrow(det)))),
+        tags$div(tags$strong("Archivo: "), a$archivo %||% "")
+      ),
+      .audit_beneficiarios_table(det)
+    )
+  })
+
+  tagList(
+    header,
+    tags$p(class = "small text-muted mb-1", icon("circle-info"),
+           " Las cuentas se muestran enmascaradas; el recibo completo de cada archivo ",
+           "está disponible en \"Ver archivos de pago\"."),
+    blocks
+  )
+}
+
+.audit_detail_login <- function(meta) {
+  tagList(
+    tags$div(tags$strong("Usuario: "), meta$user %||% ""),
+    tags$div(tags$strong("Nivel (tier): "), meta$tier %||% ""),
+    tags$div(tags$strong("Personal Hopdesk: "), if (isTRUE(meta$is_staff)) "Sí" else "No")
+  )
+}
+
+.audit_detail_logout <- function(meta) {
+  dur_val <- suppressWarnings(as.numeric(meta$duration_seconds %||% NA_real_))
+  tagList(
+    tags$div(tags$strong("Usuario: "), meta$user %||% ""),
+    tags$div(tags$strong("Duración activa: "),
+             if (!is.na(dur_val)) format_session_duration(dur_val) else "Desconocida"),
+    tags$div(tags$strong("Inicio de sesión: "), meta$login_ts  %||% "Desconocido"),
+    tags$div(tags$strong("Cierre de sesión: "), meta$logout_ts %||% "")
+  )
+}
+
+# Generic fallback -- covers every module/action this popup has no bespoke
+# view for, as a plain key/value dump of its metadata. Same shape as
+# pagos_audit_viewer_module.R's non-"pago_ppl" detail rendering.
+.audit_detail_generic <- function(meta) {
+  if (!length(meta)) return(tags$p(class = "text-muted small", "Sin detalle adicional registrado."))
+  tags$table(class = "table table-sm small",
+    tags$tbody(
+      lapply(names(meta), function(k)
+        tags$tr(tags$td(class = "fw-semibold", k),
+                tags$td(paste(unlist(meta[[k]]), collapse = ", "))))
+    )
+  )
+}
+
+# Assembles the full modal body for one raw audit row (a 1-row slice of
+# read_audit_log_scoped()'s output -- NOT the formatted display data.frame).
+# mode: "own_client" | "multi_client" -- multi_client also shows which client
+# the row belongs to, since Bitácora Global spans several.
+.audit_detail_modal_body <- function(row, mode = "own_client") {
+  meta <- .audit_parse_metadata(row$metadata[1])
+  kind <- .audit_detail_kind(row$module[1], row$action[1])
+  target_id <- row$target_id[1]
+  common <- div(class = "mb-3 small",
+    tags$div(tags$strong("Usuario: "), row$user[1] %||% ""),
+    tags$div(tags$strong("Fecha: "), format(as.POSIXct(row$ts[1]), "%d/%m/%Y %H:%M:%S")),
+    tags$div(tags$strong("Módulo: "), row$module[1] %||% ""),
+    tags$div(tags$strong("Acción: "), row$action[1] %||% ""),
+    if (identical(mode, "multi_client") && "client_id" %in% names(row))
+      tags$div(tags$strong("Cliente: "), row$client_id[1] %||% ""),
+    if (!is.na(target_id) && nzchar(target_id %||% ""))
+      tags$div(tags$strong("ID destino: "), target_id)
+  )
+  tagList(common, .audit_detail_body_by_kind(kind, meta))
+}
+
+# The type-specific body alone, without the "common" header (Usuario/Fecha/
+# Módulo/Acción/Cliente/ID destino) -- factored out so Stage 3's PDF export
+# can reuse the exact same bespoke/generic renderers for each entry's inline
+# detail block without repeating fields the PDF's table row already shows.
+.audit_detail_body_by_kind <- function(kind, meta) {
+  switch(kind,
+    payment_pago  = .audit_detail_payment(meta, "pagos",  "Pago(s)"),
+    payment_cobro = .audit_detail_payment(meta, "cobros", "Cobro(s)"),
+    payment_file  = .audit_detail_payment_file(meta),
+    payment_file_zip = .audit_detail_payment_file_zip(meta),
+    cashflow_export = .audit_detail_cashflow_export(meta),
+    policy        = .audit_detail_policy(meta),
+    login         = .audit_detail_login(meta),
+    logout        = .audit_detail_logout(meta),
+    .audit_detail_generic(meta)
+  )
+}
+
+# =============================================================================
+# Stage 3 of the Actividad audit overhaul (2026-08-26): PDF export of the
+# currently filtered log, segmented into one section per Módulo for
+# readability, each containing BOTH a compact table (exactly what's on
+# screen) AND, per entry, the same bespoke/generic detail body Stage 2's
+# popup shows -- an auditor working from a printed/downloaded copy sees
+# everything a live click would have shown, with nothing left one click
+# away. Modeled on R/cashflow_export_module.R's generate_cashflow_html_doc()
+# + pagedown::chrome_print() pattern (the proven "export button" this
+# feature was asked to learn from), and on
+# R/pagos_generados_persistence.R's "Generado automáticamente por HopDesk a
+# partir de un registro permanente e inmutable" authenticity footer for the
+# same "this is an official, untampered document" framing here. No image
+# logo exists in the repo yet (confirmed while scoping this stage) -- Mouse's
+# explicit call: a text wordmark header for now, swap in a real logo image
+# later without changing this structure.
+#
+# generate_audit_log_html_doc() is a PLAIN function (no reactives/session) --
+# same design as generate_cashflow_html_doc() -- so it's directly unit-
+# testable (tests/test_activity_stage3_pdf_export.R) without pagedown/Chrome
+# even being installed; only the downloadHandler wiring below needs those.
+# =============================================================================
+
+.AUDIT_PDF_CSS <- "
+  @page { size: A4 portrait; margin: 1.5cm 1.4cm; }
+  body { font-family: Arial, Calibri, sans-serif; font-size: 9pt; margin: 0; color:#222; }
+  .pb { page-break-before: always; }
+  .cover { text-align:center; padding: 60px 50px 30px; }
+  .cover .wordmark { font-size:30pt; font-weight:bold; letter-spacing:2px; color:#1E3A5F; }
+  .cover h1 { font-size:16pt; color:#1E3A5F; font-weight:bold; margin:6px 0 4px; }
+  .cover h2 { font-size:11pt; color:#444; font-weight:normal; margin:0 0 20px; }
+  .meta-tbl { width:100%; border-collapse:collapse; font-size:9pt; margin:16px auto; max-width:520px; }
+  .meta-tbl td { padding:3px 8px; border-bottom:1px solid #E0E0E0; }
+  .meta-tbl .k { text-align:right; font-weight:bold; color:#333; width:42%; }
+  .meta-tbl .v { text-align:left; }
+  .conf { font-size:8pt; font-style:italic; color:#888; margin-top:24px; }
+  .sec-hdr { background:#1E3A5F; color:#fff; font-weight:bold; font-size:10pt; padding:5px 10px; margin: 16px 0 6px; }
+  table.audit-tbl { width:100%; border-collapse:collapse; font-size:8pt; margin-bottom:10px; table-layout:fixed; }
+  table.audit-tbl th, table.audit-tbl td { border:1px solid #ccc; padding:3px 5px; text-align:left;
+                                           word-wrap:break-word; overflow-wrap:break-word; }
+  table.audit-tbl th { background:#f2f2f2; }
+  .entry-card { border:1px solid #ddd; border-radius:3px; padding:6px 8px; margin-bottom:6px; font-size:8.5pt; }
+  .entry-card .ehdr { font-weight:bold; color:#1E3A5F; margin-bottom:2px; }
+  .entry-card .edesc { margin-bottom:4px; }
+  .entry-card table { width:100%; border-collapse:collapse; font-size:8pt; margin-top:2px; }
+  .entry-card table th, .entry-card table td { border:1px solid #ddd; padding:2px 4px; }
+  .no-data { text-align:center; font-style:italic; color:#888; padding:10px; }
+  .footer-note { font-size:7.5pt; color:#888; margin-top:6px; }
+"
+
+# Per-módulo entry counts, in alphabetical módulo order -- a stable,
+# predictable order for a document meant to be compared run-over-run (unlike
+# "most active first", which would reorder sections between two exports of
+# overlapping ranges just because volume shifted).
+.audit_module_summary <- function(df) {
+  if (is.null(df) || !nrow(df)) return(data.frame(module = character(), n = integer()))
+  mods <- ifelse(is.na(df$module) | !nzchar(df$module), "(sin módulo)", df$module)
+  tab  <- sort(table(mods))
+  data.frame(module = names(tab), n = as.integer(tab), stringsAsFactors = FALSE)[
+    order(names(tab)), , drop = FALSE]
+}
+
+# One entry's "card": the same info its table row shows (Hora/Usuario/Acción/
+# Descripción/ID destino) plus its Stage-2 detail body -- Módulo is omitted
+# here since it's already this section's own header.
+.audit_pdf_entry_card <- function(row) {
+  meta <- .audit_parse_metadata(row$metadata[1])
+  kind <- .audit_detail_kind(row$module[1], row$action[1])
+  target_id <- row$target_id[1]
+  tags$div(class = "entry-card",
+    tags$div(class = "ehdr",
+             sprintf("%s · %s · %s", format(as.POSIXct(row$ts[1]), "%d/%m/%Y %H:%M:%S"),
+                     row$user[1] %||% "", row$action[1] %||% "")),
+    tags$div(class = "edesc", row$description[1] %||% ""),
+    if (!is.na(target_id) && nzchar(target_id %||% ""))
+      tags$div(class = "edesc", tags$strong("ID destino: "), target_id),
+    .audit_detail_body_by_kind(kind, meta)
+  )
+}
+
+# Builds the full printable HTML document for the currently filtered log and
+# writes it to a temp file (same return convention as
+# generate_cashflow_html_doc()). export_df: the RAW rows as returned by
+# read_audit_log_scoped()/filtered() (ts/user/module/action/description/
+# target_id/metadata/client_id) -- NOT the display-formatted data.frame.
+# meta_info: list(generated_by, date_from, date_to, modulo_filter,
+#   accion_filter, usuario_filter, client_label, mode).
+generate_audit_log_html_doc <- function(export_df, meta_info = list()) {
+  df <- export_df
+  if (is.null(df) || !is.data.frame(df)) df <- .APP_AUDIT_SCHEMA()
+  df <- df[order(
+    ifelse(is.na(df$module), "", df$module),
+    df$ts, method = "radix", decreasing = c(FALSE, TRUE)
+  ), , drop = FALSE]
+
+  fmt_filter <- function(x) if (is.null(x) || identical(x, "Todos") || !nzchar(x %||% "")) "Todos" else x
+  meta_rows <- list(
+    c("Rango exportado", sprintf("%s — %s",
+      format(as.POSIXct(meta_info$date_from %||% Sys.time()), "%d/%m/%Y %H:%M"),
+      format(as.POSIXct(meta_info$date_to   %||% Sys.time()), "%d/%m/%Y %H:%M"))),
+    c("Módulo (filtro)",  fmt_filter(meta_info$modulo_filter)),
+    c("Acción (filtro)",  fmt_filter(meta_info$accion_filter)),
+    c("Usuario (filtro)", if (nzchar(meta_info$usuario_filter %||% "")) meta_info$usuario_filter else "Todos"),
+    c("Cliente",          meta_info$client_label %||% "—"),
+    c("Generado por",     meta_info$generated_by %||% "—"),
+    c("Fecha de generación", format(Sys.time(), "%d/%m/%Y %H:%M:%S")),
+    c("Total de entradas", as.character(nrow(df)))
+  )
+  meta_html <- tags$table(class = "meta-tbl",
+    lapply(meta_rows, function(r) tags$tr(tags$td(class = "k", r[1]), tags$td(class = "v", r[2]))))
+
+  summ <- .audit_module_summary(df)
+  summary_html <- if (!nrow(summ)) NULL else
+    tags$table(class = "audit-tbl", style = "max-width:520px; margin:10px auto;",
+      tags$thead(tags$tr(tags$th("Módulo"), tags$th("Entradas"))),
+      tags$tbody(lapply(seq_len(nrow(summ)), function(i)
+        tags$tr(tags$td(summ$module[i]), tags$td(as.character(summ$n[i]))))))
+
+  cover <- tags$div(class = "cover pb",
+    tags$div(class = "wordmark", "HOPDESK"),
+    tags$h1("Registro Oficial de Actividad"),
+    tags$h2("Documento generado automáticamente por el sistema"),
+    meta_html,
+    summary_html,
+    tags$div(class = "conf",
+      "Este documento refleja exactamente lo registrado en la bitácora del sistema al momento de su ",
+      "generación, a partir de un registro permanente e inmutable. Cualquier alteración posterior a su ",
+      "descarga no queda reflejada aquí.")
+  )
+
+  mods <- unique(ifelse(is.na(df$module) | !nzchar(df$module), "(sin módulo)", df$module))
+  mods <- sort(mods)
+  sections <- lapply(mods, function(m) {
+    sub <- df[ifelse(is.na(df$module) | !nzchar(df$module), "(sin módulo)", df$module) == m, , drop = FALSE]
+    quick_tbl <- tags$table(class = "audit-tbl",
+      tags$colgroup(tags$col(style="width:15%"), tags$col(style="width:12%"),
+                    tags$col(style="width:16%"), tags$col(style="width:42%"), tags$col(style="width:15%")),
+      tags$thead(tags$tr(tags$th("Hora"), tags$th("Usuario"), tags$th("Acción"),
+                         tags$th("Descripción"), tags$th("ID destino"))),
+      tags$tbody(lapply(seq_len(nrow(sub)), function(i)
+        tags$tr(
+          tags$td(format(as.POSIXct(sub$ts[i]), "%d/%m/%Y %H:%M:%S")),
+          tags$td(sub$user[i] %||% ""),
+          tags$td(sub$action[i] %||% ""),
+          tags$td(sub$description[i] %||% ""),
+          tags$td(if (!is.na(sub$target_id[i])) sub$target_id[i] else "")
+        )))
+    )
+    cards <- tagList(lapply(seq_len(nrow(sub)), function(i) .audit_pdf_entry_card(sub[i, , drop = FALSE])))
+    tagList(
+      tags$div(class = "pb"),
+      tags$div(class = "sec-hdr", sprintf("%s (%d entrada%s)", m, nrow(sub), if (nrow(sub) == 1) "" else "s")),
+      quick_tbl,
+      cards
+    )
+  })
+
+  if (!nrow(df)) sections <- list(tagList(
+    tags$div(class = "pb"),
+    tags$div(class = "sec-hdr", "Sin entradas"),
+    tags$div(class = "no-data", "No hay entradas en el rango/filtros exportados.")
+  ))
+
+  html_doc <- tags$html(
+    tags$head(
+      tags$meta(charset = "UTF-8"),
+      tags$title("Registro Oficial de Actividad — HopDesk"),
+      tags$style(HTML(.AUDIT_PDF_CSS))
+    ),
+    tags$body(cover, sections)
+  )
+
+  tmp_html <- tempfile(fileext = ".html")
+  htmltools::save_html(html_doc, tmp_html, background = "white")
+  tmp_html
+}
+
 .resolve_param <- function(x) if (is.function(x)) x() else x
 
 auditLogViewerUI <- function(id) {
@@ -220,49 +732,65 @@ auditLogViewerServer <- function(id, shared, mode,
       choices <- client_choices()
 
       tagList(
+        tags$style(HTML(paste0(
+          ".audit-desc-clickable { cursor: pointer; }
+           .audit-desc-clickable:hover { text-decoration: underline; color: #0d6efd; }",
+          .AUDIT_STICKY_CSS
+        ))),
         div(
-          class = "d-flex align-items-end gap-2 flex-wrap mb-2 mt-3",
-          if (identical(mode, "multi_client"))
-            div(style = "min-width:170px;",
-                tags$label("Cliente", class = "form-label small fw-semibold mb-1"),
-                selectInput(ns("audit_client_sel"), NULL,
-                           choices  = choices,
-                           selected = if (length(choices)) choices[[1]] else NULL,
-                           width    = "100%")),
-          div(style = "min-width:330px;",
-              tags$label("Rango (fecha y hora)", class = "form-label small fw-semibold mb-1"),
-              shinyWidgets::airDatepickerInput(
-                ns("audit_range"), label = NULL,
-                range = TRUE, timepicker = TRUE,
-                value = c(Sys.time() - 7 * 86400, Sys.time()),
-                dateFormat = "dd/MM/yy HH:mm",
-                language = "es",
-                update_on = "close", width = "100%")),
-          div(style = "min-width:130px;",
-              tags$label("Módulo", class = "form-label small fw-semibold mb-1"),
-              selectInput(ns("audit_mod_sel"), NULL, choices = c("Todos"), width = "100%")),
-          div(style = "min-width:130px;",
-              tags$label("Acción", class = "form-label small fw-semibold mb-1"),
-              selectInput(ns("audit_accion_sel"), NULL, choices = c("Todos"), width = "100%")),
-          div(style = "min-width:150px; flex:1;",
-              tags$label("Usuario", class = "form-label small fw-semibold mb-1"),
-              textInput(ns("audit_user_filter"), NULL,
-                       placeholder = "Filtrar por usuario...", width = "100%")),
-          div(class = "d-flex gap-2 align-items-center",
-              actionButton(ns("audit_refresh"), icon("rotate"),
-                          class = "btn btn-sm btn-outline-secondary", title = "Actualizar"),
-              uiOutput(ns("live_toggle_btn"), inline = TRUE),
-              # Bare text, no background/border/box -- a quick transient
-              # confirmation when the live-refresh toggle is clicked, shown
-              # briefly then auto-hidden. Not a showNotification() toast
-              # (those always render as a bordered card) and not styled as
-              # a button/badge -- literally just the message text.
-              shinyjs::hidden(
-                tags$span(id = ns("live_toggle_msg"),
-                          style = "font-size:0.8rem; color:#6c757d;")
-              ))
+          id = ns("sticky_scope"),
+          div(
+            id = ns("sticky_toolbar"), class = "audit-sticky-toolbar",
+            div(
+              class = "d-flex align-items-end gap-2 flex-wrap",
+              if (identical(mode, "multi_client"))
+                div(style = "min-width:170px;",
+                    tags$label("Cliente", class = "form-label small fw-semibold mb-1"),
+                    selectInput(ns("audit_client_sel"), NULL,
+                               choices  = choices,
+                               selected = if (length(choices)) choices[[1]] else NULL,
+                               width    = "100%")),
+              div(style = "min-width:330px;",
+                  tags$label("Rango (fecha y hora)", class = "form-label small fw-semibold mb-1"),
+                  shinyWidgets::airDatepickerInput(
+                    ns("audit_range"), label = NULL,
+                    range = TRUE, timepicker = TRUE,
+                    value = c(Sys.time() - 7 * 86400, Sys.time()),
+                    dateFormat = "dd/MM/yy HH:mm",
+                    language = "es",
+                    update_on = "close", width = "100%")),
+              div(style = "min-width:130px;",
+                  tags$label("Módulo", class = "form-label small fw-semibold mb-1"),
+                  selectInput(ns("audit_mod_sel"), NULL, choices = c("Todos"), width = "100%")),
+              div(style = "min-width:130px;",
+                  tags$label("Acción", class = "form-label small fw-semibold mb-1"),
+                  selectInput(ns("audit_accion_sel"), NULL, choices = c("Todos"), width = "100%")),
+              div(style = "min-width:150px; flex:1;",
+                  tags$label("Usuario", class = "form-label small fw-semibold mb-1"),
+                  textInput(ns("audit_user_filter"), NULL,
+                           placeholder = "Filtrar por usuario...", width = "100%")),
+              div(class = "d-flex gap-2 align-items-center",
+                  actionButton(ns("audit_refresh"), icon("rotate"),
+                              class = "btn btn-sm btn-outline-secondary", title = "Actualizar"),
+                  uiOutput(ns("live_toggle_btn"), inline = TRUE),
+                  downloadButton(ns("audit_export_pdf"), " Exportar PDF",
+                                class = "btn btn-sm btn-outline-primary",
+                                icon = icon("file-pdf"),
+                                title = "Exportar a PDF el rango y filtros actuales"),
+                  # Bare text, no background/border/box -- a quick transient
+                  # confirmation when the live-refresh toggle is clicked, shown
+                  # briefly then auto-hidden. Not a showNotification() toast
+                  # (those always render as a bordered card) and not styled as
+                  # a button/badge -- literally just the message text.
+                  shinyjs::hidden(
+                    tags$span(id = ns("live_toggle_msg"),
+                              style = "font-size:0.8rem; color:#6c757d;")
+                  ))
+            )
+          ),
+          div(class = "audit-sticky-table", uiOutput(ns("audit_results")))
         ),
-        uiOutput(ns("audit_results"))
+        audit_sticky_js(ns("sticky_toolbar"), ns("sticky_scope"))
       )
     })
 
@@ -300,6 +828,10 @@ auditLogViewerServer <- function(id, shared, mode,
       c(Hora = "ts", Usuario = "user", `Módulo` = "module",
        `Acción` = "action", `Descripción` = "description", `ID destino` = "target_id")
 
+    # 0-based column index of "Descripción" -- rownames=FALSE below, so DT's
+    # cell_clicked$col (also 0-based) lines up directly with this.
+    .audit_desc_col0 <- which(names(.audit_cols) == "Descripción") - 1L
+
     .audit_display_df <- function(df) {
       if (inherits(df, "error") || is.null(df) || !nrow(df)) {
         return(as.data.frame(
@@ -327,8 +859,15 @@ auditLogViewerServer <- function(id, shared, mode,
       isolate(.audit_display_df(filtered()))
     }, options = list(
       pageLength = 25, dom = "ftp", order = list(),
+      # Stage 2: visual affordance only (cursor + underline-on-hover) --
+      # the actual click handling is input$audit_tbl_cell_clicked below,
+      # which DT emits for a cell click regardless of this className.
+      columnDefs = list(list(targets = .audit_desc_col0, className = "audit-desc-clickable")),
+      # search = "" -- .AUDIT_STICKY_CSS (R/audit_sticky_ui.R) replaces the
+      # "Filtrar:" text label with a magnifying-glass icon baked into the
+      # input box itself; leaving this non-empty would show both.
       language = list(
-        search      = "Filtrar:",
+        search      = "",
         zeroRecords = "Sin registros",
         info        = "Mostrando _START_ a _END_ de _TOTAL_ entradas",
         infoEmpty   = "Sin registros",
@@ -341,5 +880,127 @@ auditLogViewerServer <- function(id, shared, mode,
       DT::replaceData(audit_tbl_proxy, .audit_display_df(filtered()),
                       resetPaging = FALSE, rownames = FALSE)
     })
+
+    # ── Stage 2: click on a Descripción cell -> detail modal ────────────────
+    # input$<id>_cell_clicked is DT's own passive click-report input, fired
+    # on any cell click independent of `selection` (kept "none" above -- no
+    # row-highlight UI, this table is pure click-for-detail). $row is the
+    # index into the data as originally handed to the table/replaceData(),
+    # NOT the live sorted display position -- same convention this codebase
+    # already relies on for input$..._rows_selected elsewhere (e.g. the AP/AR
+    # confirm tables in R/pagar_hoy_module.R). .audit_display_df()'s own
+    # ts-descending sort is reproduced here so the index lines up with what
+    # was actually rendered.
+    observeEvent(input$audit_tbl_cell_clicked, {
+      info <- input$audit_tbl_cell_clicked
+      if (is.null(info) || is.null(info$row) || is.null(info$col)) return()
+      if (!identical(as.integer(info$col), as.integer(.audit_desc_col0))) return()
+      raw <- filtered()
+      if (inherits(raw, "error") || is.null(raw) || !nrow(raw)) return()
+      raw_sorted <- raw[order(raw$ts, decreasing = TRUE), , drop = FALSE]
+      r <- as.integer(info$row)
+      if (is.na(r) || r < 1L || r > nrow(raw_sorted)) return()
+      row_data <- raw_sorted[r, , drop = FALSE]
+      showModal(modalDialog(
+        title = tagList(icon("circle-info"), " Detalle de la actividad"),
+        size = "l", easyClose = TRUE,
+        .audit_detail_modal_body(row_data, mode),
+        footer = modalButton("Cerrar")
+      ))
+    })
+
+    # ── Stage 3: PDF export of the currently filtered log ───────────────────
+    # Same pattern as R/cashflow_export_module.R's btn_export_pdf: build a
+    # self-contained HTML doc, print it with pagedown::chrome_print(), fall
+    # back to raw HTML with a warning if pagedown/Chrome isn't available --
+    # identical resilience to R/pagos_audit_viewer_module.R's dl_pago_pdf.
+    output$audit_export_pdf <- downloadHandler(
+      filename = function() {
+        rng   <- input$audit_range
+        from  <- format(if (!is.null(rng) && length(rng) == 2) rng[[1]] else Sys.time() - 7 * 86400, "%d%b%Y")
+        to    <- format(if (!is.null(rng) && length(rng) == 2) rng[[2]] else Sys.time(), "%d%b%Y")
+        label <- if (identical(mode, "multi_client"))
+          (input$audit_client_sel %||% "grupo")
+        else
+          tryCatch(shared$effective_client_id(), error = function(e) NULL) %||% "hopdesk"
+        label <- gsub("[^A-Za-z0-9]", "", label)
+        paste0("Actividad_HopDesk_", if (nzchar(label)) label else "reporte", "_", from, "-", to, ".pdf")
+      },
+      content = function(file) {
+        showNotification(
+          tagList(tags$span(class = "spinner-border spinner-border-sm me-1"),
+                  "Generando PDF… (puede tomar unos segundos)"),
+          id = "audit_export_notif", type = "message", duration = NULL)
+        on.exit(removeNotification("audit_export_notif"), add = TRUE)
+
+        export_df <- filtered()
+        if (inherits(export_df, "error") || is.null(export_df)) export_df <- export_df[0, ]
+
+        rng <- input$audit_range
+        user_info <- tryCatch(shared$current_user_info(), error = function(e) NULL)
+        client_label <- if (identical(mode, "multi_client"))
+          (input$audit_client_sel %||% "—")
+        else
+          tryCatch(shared$effective_client_id(), error = function(e) NULL) %||% "—"
+
+        html_path <- tryCatch(
+          generate_audit_log_html_doc(export_df, list(
+            generated_by   = user_info$name %||% user_info$user %||% "—",
+            date_from      = if (!is.null(rng) && length(rng) == 2) rng[[1]] else Sys.time() - 7 * 86400,
+            date_to        = if (!is.null(rng) && length(rng) == 2) rng[[2]] else Sys.time(),
+            modulo_filter  = input$audit_mod_sel,
+            accion_filter  = input$audit_accion_sel,
+            usuario_filter = input$audit_user_filter,
+            client_label   = client_label
+          )),
+          error = function(e) {
+            showNotification(paste("Error generando el documento:", conditionMessage(e)),
+                             type = "error", duration = 10); NULL
+          })
+        if (is.null(html_path)) stop("Error al generar el documento HTML.")
+
+        if (!requireNamespace("pagedown", quietly = TRUE)) {
+          file.copy(html_path, file, overwrite = TRUE)
+          showNotification(
+            tagList(tags$strong("Instala pagedown primero:"), tags$br(),
+                   tags$code('install.packages("pagedown")'), tags$br(),
+                   tags$small("Se descargó el reporte como HTML mientras tanto.")),
+            type = "warning", duration = 15)
+          return(invisible(NULL))
+        }
+
+        chrome_extra <- if (.Platform$OS.type == "unix")
+          c("--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage") else character(0)
+
+        tryCatch({
+          pagedown::chrome_print(
+            input = html_path, output = file, timeout = 120,
+            extra_args = chrome_extra,
+            options = list(printBackground = TRUE, preferCSSPageSize = TRUE,
+                          paperWidth = 8.27, paperHeight = 11.69,
+                          marginTop = 0.59, marginBottom = 0.59, marginLeft = 0.55, marginRight = 0.55)
+          )
+        }, error = function(e) {
+          file.copy(html_path, file, overwrite = TRUE)
+          showNotification(
+            tagList(tags$strong("No se pudo generar el PDF (¿Chrome instalado?):"), tags$br(),
+                   tags$code(conditionMessage(e)), tags$br(),
+                   tags$small("Se descargó el reporte como HTML en su lugar.")),
+            type = "warning", duration = 15)
+        })
+
+        log_action(
+          user = tryCatch(shared$current_user(), error = function(e) NULL) %||% user_info$user %||% "unknown",
+          module = "audit_export", action = "exportar_actividad_pdf",
+          description = sprintf("Exportación de Actividad a PDF: %d entrada(s)", nrow(export_df)),
+          target_id = client_label,
+          metadata = list(n_entradas = nrow(export_df), modulo_filter = input$audit_mod_sel,
+                          accion_filter = input$audit_accion_sel, usuario_filter = input$audit_user_filter,
+                          mode = mode),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        )
+      }
+    )
   })
 }

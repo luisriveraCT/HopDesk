@@ -2503,8 +2503,29 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
 
       if (is.null(doc)) stop("Error al generar el documento Word.")
 
-      print(doc, target = file)
-
+      # Logged BEFORE print(doc, target=file) writes the actual bytes to the
+      # download target -- same "log exists before the document reaches the
+      # user" ordering used throughout the Actividad audit work (pagar_hoy's
+      # PPL/ZIP exports, Actividad's own PDF export). Dual-write: log_action
+      # for the general Actividad log (found 2026-08-27 to be missing here
+      # and on the Excel export below -- only the PDF export had it),
+      # log_archivo_generado() for the specialized "Ver archivos de pago"
+      # trail (already existed, unchanged).
+      tryCatch(
+        log_action(
+          user        = tryCatch(shared$current_user(), error = function(e) "system"),
+          module      = "cashflow_export",
+          action      = "exportar_cashflow_word",
+          description = sprintf("Reporte de flujo de efectivo exportado (Word) (%s - %s, empresas: %s)",
+                                date_from, date_to, paste(initials, collapse = ", ")),
+          metadata    = list(date_from = as.character(date_from), date_to = as.character(date_to),
+                             empresas = initials, ic_mode = ic_val, currency_mode = cur_mode,
+                             formato = "word"),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        ),
+        error = function(e) message("[CASHFLOW_EXPORT] Word log_action call failed: ", conditionMessage(e))
+      )
       log_archivo_generado(
         shared, tipo = "reporte_word",
         empresa = paste(emp_sel, collapse = ", "), moneda = base_cur,
@@ -2514,6 +2535,8 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
         n_items = length(emp_sel),
         fname = paste0("cashflow_", format(Sys.Date(), "%d%m%Y"), ".docx")
       )
+
+      print(doc, target = file)
     }
   )
 
@@ -2594,7 +2617,8 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
     prefix    <- gsub("[^A-Za-z0-9]", "", g_name %||% "Networks Group")
     if (!nzchar(prefix)) prefix <- "FlujoEfectivo"
     .xl_basename(paste0(prefix, "_", inits_str, "_", from_str, "-", to_str, ".xlsx"))
-    .xl_log_params(list(empresa = paste(emp_sel, collapse = ", "), moneda = base_cur,
+    .xl_log_params(list(empresa = paste(emp_sel, collapse = ", "), initials = initials,
+                        moneda = base_cur,
                         desde = as.character(date_from), hasta = as.character(date_to),
                         intercompania = ic_val, agrupacion = grouping,
                         modo_moneda = cur_mode, n_empresas = length(emp_sel)))
@@ -2726,15 +2750,49 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
     content  = function(file) {
       src <- .xl_file()
       req(!is.null(src), file.exists(src))
-      file.copy(src, file, overwrite = TRUE)
 
       params <- .xl_log_params() %||% list()
+      # Logged BEFORE file.copy() below hands the bytes to the download
+      # target -- same ordering as every other export in this feature.
+      # Dual-write: log_action for the general Actividad log (found
+      # 2026-08-27 to be missing here and on the Word export above -- only
+      # the PDF export had it), log_archivo_generado() for the specialized
+      # "Ver archivos de pago" trail (already existed, unchanged).
+      #
+      # metadata$empresas below uses params$initials (e.g. "NG, NTS"), NOT
+      # params$empresa (full company names) -- found 2026-08-27, reported as
+      # "slightly inconsistent information" between formats: Word/PDF logged
+      # initials via a separately-computed `initials` variable, this call
+      # used to reuse params$empresa (built for the older
+      # log_archivo_generado() call, full names) instead, showing different
+      # company labels for the same kind of export depending only on format.
+      tryCatch(
+        log_action(
+          user        = tryCatch(shared$current_user(), error = function(e) "system"),
+          module      = "cashflow_export",
+          action      = "exportar_cashflow_excel",
+          description = sprintf("Reporte de flujo de efectivo exportado (Excel) (%s - %s, empresas: %s)",
+                                params$desde %||% "—", params$hasta %||% "—",
+                                paste(params$initials %||% "—", collapse = ", ")),
+          metadata    = list(date_from = params$desde %||% NA_character_,
+                             date_to   = params$hasta %||% NA_character_,
+                             empresas  = params$initials %||% NA_character_,
+                             ic_mode   = params$intercompania %||% NA_character_,
+                             currency_mode = params$modo_moneda %||% NA_character_,
+                             formato   = "excel"),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        ),
+        error = function(e) message("[CASHFLOW_EXPORT] Excel log_action call failed: ", conditionMessage(e))
+      )
       log_archivo_generado(
         shared, tipo = "reporte_excel",
         empresa = params$empresa %||% NA_character_, moneda = params$moneda %||% NA_character_,
         detalle_list = params, n_items = params$n_empresas %||% NA_integer_,
         fname = .xl_basename() %||% "flujo_caja.xlsx"
       )
+
+      file.copy(src, file, overwrite = TRUE)
     }
   )
 
@@ -2877,6 +2935,38 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
                            type = "error", duration = 10); NULL })
       if (is.null(html_path)) stop("Error al generar el documento HTML.")
 
+      # Logged BEFORE chrome_print() below writes the actual PDF bytes to
+      # the download target -- moved here 2026-08-27 (previously logged
+      # AFTER the print completed) for the same "log exists before the
+      # document reaches the user" ordering used throughout the rest of the
+      # Actividad audit work. None of this metadata depends on chrome_print's
+      # own success, so nothing is lost by logging first.
+      tryCatch(
+        log_action(
+          user        = tryCatch(shared$current_user(), error = function(e) "system"),
+          module      = "cashflow_export",
+          action      = "exportar_cashflow_pdf",
+          description = sprintf("Reporte de flujo de efectivo exportado (PDF) (%s - %s, empresas: %s)",
+                                date_from, date_to, paste(initials, collapse = ", ")),
+          metadata    = list(date_from = as.character(date_from), date_to = as.character(date_to),
+                             empresas = initials, ic_mode = ic_val, currency_mode = cur_mode,
+                             formato = "pdf"),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        ),
+        error = function(e) message("[CASHFLOW_EXPORT] PDF log_action call failed: ", conditionMessage(e))
+      )
+
+      log_archivo_generado(
+        shared, tipo = "reporte_pdf",
+        empresa = paste(emp_sel, collapse = ", "), moneda = base_cur,
+        detalle_list = list(desde = as.character(date_from), hasta = as.character(date_to),
+                            intercompania = ic_val, agrupacion = grouping,
+                            modo_moneda = cur_mode, empresas = emp_sel),
+        n_items = length(emp_sel),
+        fname = paste0("cashflow_", format(Sys.Date(), "%d%m%Y"), ".pdf")
+      )
+
       # Linux Shiny servers need --no-sandbox to run Chrome headless
       chrome_extra <- if (.Platform$OS.type == "unix") {
         c("--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage")
@@ -2900,28 +2990,6 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       }, finally = {
         if (!is.null(html_path) && file.exists(html_path)) unlink(html_path)
       })
-
-      log_action(
-        user        = tryCatch(shared$current_user(), error = function(e) "system"),
-        module      = "cashflow_export",
-        action      = "exportar_cashflow_pdf",
-        description = sprintf("Reporte de flujo de efectivo exportado (%s - %s, empresas: %s)",
-                              date_from, date_to, paste(initials, collapse = ", ")),
-        metadata    = list(date_from = as.character(date_from), date_to = as.character(date_to),
-                           empresas = initials, ic_mode = ic_val, currency_mode = cur_mode),
-        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-      )
-
-      log_archivo_generado(
-        shared, tipo = "reporte_pdf",
-        empresa = paste(emp_sel, collapse = ", "), moneda = base_cur,
-        detalle_list = list(desde = as.character(date_from), hasta = as.character(date_to),
-                            intercompania = ic_val, agrupacion = grouping,
-                            modo_moneda = cur_mode, empresas = emp_sel),
-        n_items = length(emp_sel),
-        fname = paste0("cashflow_", format(Sys.Date(), "%d%m%Y"), ".pdf")
-      )
     }
   )
 

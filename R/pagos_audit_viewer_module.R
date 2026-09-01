@@ -97,32 +97,47 @@ pagosAuditViewerServer <- function(id, shared) {
                    " Requiere permiso ", tags$code("can_view_payment_audit"), "."))
       }
       tagList(
-        div(
-          class = "d-flex align-items-end gap-2 flex-wrap mb-2 mt-3",
-          div(style = "min-width:330px;",
-              tags$label("Rango (fecha y hora)", class = "form-label small fw-semibold mb-1"),
-              shinyWidgets::airDatepickerInput(
-                ns("pagos_range"), label = NULL,
-                range = TRUE, timepicker = TRUE,
-                value = c(Sys.time() - 30 * 86400, Sys.time()),
-                dateFormat = "dd/MM/yy HH:mm",
-                language = "es",
-                update_on = "close", width = "100%")),
-          div(style = "min-width:170px;",
-              tags$label("Empresa", class = "form-label small fw-semibold mb-1"),
-              selectInput(ns("pagos_emp_sel"), NULL, choices = c("Todas"), width = "100%")),
-          div(style = "min-width:150px; flex:1;",
-              tags$label("Usuario", class = "form-label small fw-semibold mb-1"),
-              textInput(ns("pagos_user_filter"), NULL,
-                       placeholder = "Filtrar por usuario...", width = "100%")),
-          actionButton(ns("pagos_refresh"), icon("rotate"),
-                      class = "btn btn-sm btn-outline-secondary", title = "Actualizar")
+        tags$style(HTML(.AUDIT_STICKY_CSS)),
+        div(id = ns("sticky_scope"),
+          div(id = ns("sticky_toolbar"), class = "audit-sticky-toolbar",
+            div(
+              class = "d-flex align-items-end gap-2 flex-wrap",
+              div(style = "min-width:330px;",
+                  tags$label("Rango (fecha y hora)", class = "form-label small fw-semibold mb-1"),
+                  shinyWidgets::airDatepickerInput(
+                    ns("pagos_range"), label = NULL,
+                    range = TRUE, timepicker = TRUE,
+                    value = c(Sys.time() - 30 * 86400, Sys.time()),
+                    dateFormat = "dd/MM/yy HH:mm",
+                    language = "es",
+                    update_on = "close", width = "100%")),
+              div(style = "min-width:170px;",
+                  tags$label("Empresa", class = "form-label small fw-semibold mb-1"),
+                  selectInput(ns("pagos_emp_sel"), NULL, choices = c("Todas"), width = "100%")),
+              div(style = "min-width:150px; flex:1;",
+                  tags$label("Usuario", class = "form-label small fw-semibold mb-1"),
+                  textInput(ns("pagos_user_filter"), NULL,
+                           placeholder = "Filtrar por usuario...", width = "100%")),
+              actionButton(ns("pagos_refresh"), icon("rotate"),
+                          class = "btn btn-sm btn-outline-secondary", title = "Actualizar"),
+              downloadButton(ns("pagos_export_pdf"), " Exportar PDF",
+                            class = "btn btn-sm btn-outline-primary",
+                            icon = icon("file-pdf"),
+                            title = "Exportar a PDF el rango y filtros actuales"),
+              # Moved here from below the table (2026-08-27): stays reachable
+              # without scrolling back up, right where the other filter
+              # controls already are -- renderUI'd conditionally on a row
+              # actually being selected, same reactive logic as before, just
+              # relocated.
+              uiOutput(ns("detail_btn_ui"), inline = TRUE)
+            ),
+            tags$p(class = "small text-muted mb-0 mt-2",
+                   icon("circle-info"),
+                   " Los números de cuenta se muestran enmascarados. Haz clic en una fila para ver el detalle completo y descargar el recibo en PDF.")
+          ),
+          div(class = "audit-sticky-table", DT::dataTableOutput(ns("pagos_tbl")))
         ),
-        tags$p(class = "small text-muted mb-2",
-               icon("circle-info"),
-               " Los números de cuenta se muestran enmascarados. Haz clic en una fila para ver el detalle completo y descargar el recibo en PDF."),
-        DT::dataTableOutput(ns("pagos_tbl")),
-        uiOutput(ns("detail_btn_ui"))
+        audit_sticky_js(ns("sticky_toolbar"), ns("sticky_scope"))
       )
     })
 
@@ -164,7 +179,10 @@ pagosAuditViewerServer <- function(id, shared) {
       isolate(.pagos_display_df(filtered()))
     }, options = list(
       pageLength = 25, dom = "ftp", order = list(),
-      language = list(search = "Filtrar:", zeroRecords = "Sin registros",
+      # search = "" -- .AUDIT_STICKY_CSS (R/audit_sticky_ui.R) replaces the
+      # "Filtrar:" text label with a magnifying-glass icon baked into the
+      # input box itself; leaving this non-empty would show both.
+      language = list(search = "", zeroRecords = "Sin registros",
                       info = "Mostrando _START_ a _END_ de _TOTAL_ entradas",
                       infoEmpty = "Sin registros",
                       paginate = list(previous = "Anterior", `next` = "Siguiente"))
@@ -179,9 +197,8 @@ pagosAuditViewerServer <- function(id, shared) {
     output$detail_btn_ui <- renderUI({
       df <- filtered()
       if (is.null(df) || !nrow(df) || is.null(input$pagos_tbl_rows_selected)) return(NULL)
-      div(class = "mt-2",
-          actionButton(ns("btn_ver_detalle"), tagList(icon("magnifying-glass"), " Ver detalle"),
-                       class = "btn btn-sm btn-primary"))
+      actionButton(ns("btn_ver_detalle"), tagList(icon("magnifying-glass"), " Ver detalle"),
+                   class = "btn btn-sm btn-primary")
     })
 
     # Selected row's full record, captured at "Ver detalle" click time --
@@ -304,6 +321,92 @@ pagosAuditViewerServer <- function(id, shared) {
         })
       }
     )
+
+    # ── PDF export of the currently filtered "Ver archivos de pago" log ─────
+    # Follow-up (2026-08-27) to the single-receipt download above and to
+    # Actividad's own PDF export (R/audit_log_viewer_module.R) -- same
+    # pagedown::chrome_print() pattern and HTML-fallback resilience.
+    output$pagos_export_pdf <- downloadHandler(
+      filename = function() {
+        rng  <- input$pagos_range
+        from <- format(if (!is.null(rng) && length(rng) == 2) rng[[1]] else Sys.time() - 30 * 86400, "%d%b%Y")
+        to   <- format(if (!is.null(rng) && length(rng) == 2) rng[[2]] else Sys.time(), "%d%b%Y")
+        label <- gsub("[^A-Za-z0-9]", "", effective_cid() %||% "hopdesk")
+        paste0("ArchivosDePago_HopDesk_", if (nzchar(label)) label else "reporte", "_", from, "-", to, ".pdf")
+      },
+      content = function(file) {
+        showNotification(
+          tagList(tags$span(class = "spinner-border spinner-border-sm me-1"),
+                  "Generando PDF… (puede tomar unos segundos)"),
+          id = "pagos_export_notif", type = "message", duration = NULL)
+        on.exit(removeNotification("pagos_export_notif"), add = TRUE)
+
+        export_df <- filtered()
+        if (is.null(export_df) || !is.data.frame(export_df)) export_df <- .schema_pagos_generados()
+
+        rng <- input$pagos_range
+        user_info <- tryCatch(shared$current_user_info(), error = function(e) NULL)
+
+        html_path <- tryCatch(
+          generate_pagos_audit_html_doc(export_df, list(
+            generated_by    = user_info$name %||% user_info$user %||% "—",
+            date_from       = if (!is.null(rng) && length(rng) == 2) rng[[1]] else Sys.time() - 30 * 86400,
+            date_to         = if (!is.null(rng) && length(rng) == 2) rng[[2]] else Sys.time(),
+            empresa_filter  = input$pagos_emp_sel,
+            usuario_filter  = input$pagos_user_filter,
+            client_label    = effective_cid()
+          )),
+          error = function(e) {
+            showNotification(paste("Error generando el documento:", conditionMessage(e)),
+                             type = "error", duration = 10); NULL
+          })
+        if (is.null(html_path)) stop("Error al generar el documento HTML.")
+
+        if (!requireNamespace("pagedown", quietly = TRUE)) {
+          file.copy(html_path, file, overwrite = TRUE)
+          showNotification(
+            tagList(tags$strong("Instala pagedown primero:"), tags$br(),
+                   tags$code('install.packages("pagedown")'), tags$br(),
+                   tags$small("Se descargó el reporte como HTML mientras tanto.")),
+            type = "warning", duration = 15)
+          return(invisible(NULL))
+        }
+
+        chrome_extra <- if (.Platform$OS.type == "unix")
+          c("--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage") else character(0)
+
+        tryCatch({
+          pagedown::chrome_print(
+            input = html_path, output = file, timeout = 120,
+            extra_args = chrome_extra,
+            options = list(printBackground = TRUE, preferCSSPageSize = TRUE,
+                          paperWidth = 8.27, paperHeight = 11.69,
+                          marginTop = 0.59, marginBottom = 0.59, marginLeft = 0.55, marginRight = 0.55)
+          )
+        }, error = function(e) {
+          file.copy(html_path, file, overwrite = TRUE)
+          showNotification(
+            tagList(tags$strong("No se pudo generar el PDF (¿Chrome instalado?):"), tags$br(),
+                   tags$code(conditionMessage(e)), tags$br(),
+                   tags$small("Se descargó el reporte como HTML en su lugar.")),
+            type = "warning", duration = 15)
+        })
+
+        tryCatch(
+          log_action(
+            tryCatch(shared$current_user(), error = function(e) NULL) %||% user_info$user %||% "unknown",
+            "pagos_export", "exportar_pagos_pdf",
+            sprintf("Exportación de Ver archivos de pago a PDF: %d entrada(s)", nrow(export_df)),
+            target_id = effective_cid(),
+            metadata  = list(n_entradas = nrow(export_df), empresa_filter = input$pagos_emp_sel,
+                            usuario_filter = input$pagos_user_filter),
+            client_id             = effective_cid(),
+            viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
+          ),
+          error = function(e) message("[PAGOS_AUDIT] export log_action call failed: ", conditionMessage(e))
+        )
+      }
+    )
   })
 }
 
@@ -392,4 +495,170 @@ pagosAuditViewerServer <- function(id, shared) {
     body_html,
     total_html
   )
+}
+
+# =============================================================================
+# Follow-up (2026-08-27): PDF export for the whole filtered "Ver archivos de
+# pago" log, requested right after the same feature shipped for Actividad --
+# "I like the formatting, fonts, colors", so this reuses .AUDIT_PDF_CSS
+# (R/audit_log_viewer_module.R) directly rather than defining a parallel
+# style. Segmented per Tipo (this table's equivalent of Actividad's Módulo),
+# each entry with FULL (unmasked) detail -- consistent with this table's own
+# existing single-row "Ver detalle" + receipt download, which already shows
+# unmasked CLABE to a viewer already permissioned for this specific,
+# separately-gated audit trail; masking again in a bulk "export everything"
+# document would show LESS than one click already does.
+# =============================================================================
+
+# Per-Tipo entry counts, alphabetical order -- same stable-ordering
+# rationale as R/audit_log_viewer_module.R's .audit_module_summary().
+.pagos_tipo_summary <- function(df) {
+  if (is.null(df) || !nrow(df)) return(data.frame(tipo = character(), n = integer()))
+  labs <- .tipo_label(df$tipo)
+  labs <- ifelse(is.na(labs) | !nzchar(labs), "(sin tipo)", labs)
+  tab  <- sort(table(labs))
+  data.frame(tipo = names(tab), n = as.integer(tab), stringsAsFactors = FALSE)[
+    order(names(tab)), , drop = FALSE]
+}
+
+# One entry's full detail block for the bulk PDF -- same content as
+# .build_pago_receipt_html()'s body above, as tags instead of a standalone
+# HTML document, for embedding inside the larger multi-entry export.
+.pagos_pdf_entry_block <- function(row) {
+  is_pago <- is.na(row$tipo[1]) || identical(row$tipo[1], "pago_ppl")
+  header <- div(class = "entry-card",
+    tags$div(class = "ehdr",
+             sprintf("%s · %s · %s", format(as.POSIXct(row$ts[1]), "%d/%m/%Y %H:%M:%S"),
+                     row$user[1] %||% "", .tipo_label(row$tipo[1] %||% "pago_ppl"))),
+    div(class = "edesc",
+      tags$div(tags$strong("Empresa: "), row$empresa[1] %||% "",
+               if (!is.na(row$moneda[1]) && nzchar(row$moneda[1] %||% ""))
+                 paste0(" (", row$moneda[1], ")") else ""),
+      if (is_pago) tags$div(tags$strong("Cuenta origen: "), row$cuenta_origen[1] %||% ""),
+      if (is_pago) tags$div(tags$strong("Origen: "),
+                            if (identical(row$source[1], "zip_bulk")) "ZIP (todos)" else "Individual"),
+      tags$div(tags$strong("Archivo: "), row$archivo[1] %||% ""),
+      tags$div(tags$strong("Total: "),
+               formatC(as.numeric(row$total[1] %||% 0), format = "f", digits = 2, big.mark = ","),
+               if (is_pago) sprintf(" (%s pago(s))", as.character(row$n_pagos[1] %||% "")) else "")
+    )
+  )
+  if (is_pago) {
+    ben <- parse_pago_beneficiarios(row$beneficiarios[1])
+    if (!nrow(ben)) return(tagList(header, tags$p(class = "text-muted small", "Sin beneficiarios registrados.")))
+    tagList(header, tags$table(class = "table table-sm table-hover small",
+      tags$thead(class = "table-light",
+        tags$tr(tags$th("Beneficiario"), tags$th("CLABE"), tags$th("Banco"),
+                tags$th(class = "text-end", "Importe"), tags$th("Concepto"))),
+      tags$tbody(lapply(seq_len(nrow(ben)), function(i)
+        tags$tr(tags$td(ben$alias[i]), tags$td(ben$clabe[i]), tags$td(ben$banco[i]),
+                tags$td(class = "text-end", formatC(ben$importe[i], format = "f", digits = 2, big.mark = ",")),
+                tags$td(ben$concepto[i]))))
+    ))
+  } else {
+    det <- parse_pago_detalle(row$detalle[1])
+    if (!length(det)) return(tagList(header, tags$p(class = "text-muted small", "Sin detalle adicional registrado.")))
+    tagList(header, tags$table(class = "table table-sm small",
+      tags$tbody(lapply(names(det), function(k)
+        tags$tr(tags$td(class = "fw-semibold", k), tags$td(paste(unlist(det[[k]]), collapse = ", ")))))
+    ))
+  }
+}
+
+# Builds the full printable HTML document for the currently filtered "Ver
+# archivos de pago" log and writes it to a temp file (same convention as
+# generate_audit_log_html_doc()). export_df: raw pagos_generados rows
+# (id/ts/user/client_id/empresa/moneda/cuenta_origen/banco_origen/n_pagos/
+# total/beneficiarios/source/archivo/tipo/detalle).
+generate_pagos_audit_html_doc <- function(export_df, meta_info = list()) {
+  df <- export_df
+  if (is.null(df) || !is.data.frame(df)) df <- .schema_pagos_generados()
+  df <- df[order(df$ts, decreasing = TRUE), , drop = FALSE]
+
+  meta_rows <- list(
+    c("Rango exportado", sprintf("%s — %s",
+      format(as.POSIXct(meta_info$date_from %||% Sys.time()), "%d/%m/%Y %H:%M"),
+      format(as.POSIXct(meta_info$date_to   %||% Sys.time()), "%d/%m/%Y %H:%M"))),
+    c("Empresa (filtro)",  if (nzchar(meta_info$empresa_filter %||% "")) meta_info$empresa_filter else "Todas"),
+    c("Usuario (filtro)",  if (nzchar(meta_info$usuario_filter %||% "")) meta_info$usuario_filter else "Todos"),
+    c("Cliente",           meta_info$client_label %||% "—"),
+    c("Generado por",      meta_info$generated_by  %||% "—"),
+    c("Fecha de generación", format(Sys.time(), "%d/%m/%Y %H:%M:%S")),
+    c("Total de entradas", as.character(nrow(df)))
+  )
+  meta_html <- tags$table(class = "meta-tbl",
+    lapply(meta_rows, function(r) tags$tr(tags$td(class = "k", r[1]), tags$td(class = "v", r[2]))))
+
+  summ <- .pagos_tipo_summary(df)
+  summary_html <- if (!nrow(summ)) NULL else
+    tags$table(class = "audit-tbl", style = "max-width:520px; margin:10px auto;",
+      tags$thead(tags$tr(tags$th("Tipo"), tags$th("Entradas"))),
+      tags$tbody(lapply(seq_len(nrow(summ)), function(i)
+        tags$tr(tags$td(summ$tipo[i]), tags$td(as.character(summ$n[i]))))))
+
+  cover <- tags$div(class = "cover pb",
+    tags$div(class = "wordmark", "HOPDESK"),
+    tags$h1("Registro Oficial de Archivos de Pago"),
+    tags$h2("Documento generado automáticamente por el sistema"),
+    meta_html,
+    summary_html,
+    tags$div(class = "conf",
+      "Este documento refleja exactamente lo registrado en la bitácora de archivos de pago al momento de su ",
+      "generación, a partir de un registro permanente e inmutable. Cualquier alteración posterior a su ",
+      "descarga no queda reflejada aquí.")
+  )
+
+  tipo_of <- function(sub_df) {
+    labs <- .tipo_label(sub_df$tipo)
+    ifelse(is.na(labs) | !nzchar(labs), "(sin tipo)", labs)
+  }
+  tipos <- sort(unique(tipo_of(df)))
+
+  sections <- lapply(tipos, function(tp) {
+    sub <- df[tipo_of(df) == tp, , drop = FALSE]
+    quick_tbl <- tags$table(class = "audit-tbl",
+      tags$colgroup(tags$col(style = "width:14%"), tags$col(style = "width:10%"),
+                    tags$col(style = "width:20%"), tags$col(style = "width:10%"),
+                    tags$col(style = "width:16%"), tags$col(style = "width:10%"),
+                    tags$col(style = "width:20%")),
+      tags$thead(tags$tr(tags$th("Hora"), tags$th("Usuario"), tags$th("Empresa"), tags$th("Moneda"),
+                         tags$th("Cuenta origen"), tags$th(class = "text-end", "Cant."), tags$th("Archivo"))),
+      tags$tbody(lapply(seq_len(nrow(sub)), function(i)
+        tags$tr(
+          tags$td(format(as.POSIXct(sub$ts[i]), "%d/%m/%Y %H:%M:%S")),
+          tags$td(sub$user[i] %||% ""),
+          tags$td(sub$empresa[i] %||% ""),
+          tags$td(sub$moneda[i] %||% ""),
+          tags$td(if (!is.na(sub$cuenta_origen[i])) sub$cuenta_origen[i] else ""),
+          tags$td(class = "text-end", as.character(sub$n_pagos[i] %||% "")),
+          tags$td(sub$archivo[i] %||% "")
+        )))
+    )
+    cards <- tagList(lapply(seq_len(nrow(sub)), function(i) .pagos_pdf_entry_block(sub[i, , drop = FALSE])))
+    tagList(
+      tags$div(class = "pb"),
+      tags$div(class = "sec-hdr", sprintf("%s (%d entrada%s)", tp, nrow(sub), if (nrow(sub) == 1) "" else "s")),
+      quick_tbl,
+      cards
+    )
+  })
+
+  if (!nrow(df)) sections <- list(tagList(
+    tags$div(class = "pb"),
+    tags$div(class = "sec-hdr", "Sin entradas"),
+    tags$div(class = "no-data", "No hay entradas en el rango/filtros exportados.")
+  ))
+
+  html_doc <- tags$html(
+    tags$head(
+      tags$meta(charset = "UTF-8"),
+      tags$title("Registro Oficial de Archivos de Pago — HopDesk"),
+      tags$style(HTML(.AUDIT_PDF_CSS))
+    ),
+    tags$body(cover, sections)
+  )
+
+  tmp_html <- tempfile(fileext = ".html")
+  htmltools::save_html(html_doc, tmp_html, background = "white")
+  tmp_html
 }

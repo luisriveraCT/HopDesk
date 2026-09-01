@@ -4,6 +4,32 @@
 # =============================================================================
 # (Originally part of R/settings_module.R; split in Stage 7.1 for session efficiency.)
 
+# ── Policy audit-log detail helper ───────────────────────────────────────────
+# Resolves the comma-separated policy_id lists in compute_policy_moves()'s
+# `policy_ids` column (R/policy_engine.R) down to the unique set of policy
+# names that actually drove this apply, for the Actividad detail popup and PDF
+# export ("if it was a policy I need to know which one, in a basic way" —
+# Mouse, 2026-08-26 Actividad audit spec). Never errors -- an empty/NULL
+# catalog or moves frame returns an empty vector rather than blocking the
+# apply's own log_action call.
+.policy_names_from_moves <- function(moves, catalog) {
+  ids <- if (!is.null(moves) && "policy_ids" %in% names(moves)) {
+    # as.character() first -- an all-NA policy_ids column defaults to logical
+    # type (e.g. a synthetic/edge data frame that never assigned a policy),
+    # and strsplit() throws "non-character argument" on a logical vector
+    # rather than coercing it like most other string functions here do.
+    pids <- as.character(moves$policy_ids)
+    unique(unlist(strsplit(pids[!is.na(pids)], ",", fixed = TRUE)))
+  } else character(0)
+  ids <- trimws(ids[nzchar(trimws(ids %||% ""))])
+  if (!length(ids)) return(list(ids = character(0), names = character(0)))
+  nm <- if (!is.null(catalog) && is.data.frame(catalog) && nrow(catalog) &&
+            all(c("id", "name") %in% names(catalog)))
+    catalog$name[match(ids, catalog$id)]
+  else rep(NA_character_, length(ids))
+  list(ids = ids, names = unname(ifelse(is.na(nm), ids, nm)))
+}
+
 # =============================================================================
 # SOCIOS COMERCIALES (COMPANIES) — UI helpers
 # =============================================================================
@@ -923,13 +949,16 @@ settings_companies_observer <- function(input, output, session, shared) {
         msg <- paste0(msg, sprintf(" Sin documentos: %s", display))
       }
       showNotification(msg, type = "message", duration = 6)
+      pol_catalog <- tryCatch(shared$policy_catalog_db(), error = function(e) NULL)
+      pol_info    <- .policy_names_from_moves(new_moves, pol_catalog)
       log_action(
         user        = user,
         module      = "settings_companies",
         action      = "aplicar_politicas",
         description = msg,
         metadata    = list(scope = scope, n_moves = nrow(new_moves),
-                           partes = unique(new_moves$Parte)),
+                           partes = unique(new_moves$Parte),
+                           policy_ids = pol_info$ids, policy_names = pol_info$names),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
@@ -1019,7 +1048,12 @@ settings_companies_observer <- function(input, output, session, shared) {
         action      = "auto_aplicar_politicas",
         description = sprintf("Auto-aplicación de políticas tras refresco SAP: %d documento(s) nuevo(s) calculados (%d socio(s))",
                               nrow(truly_new), length(unique(truly_new$Parte))),
-        metadata    = list(n_moves = nrow(truly_new), partes = unique(truly_new$Parte)),
+        metadata    = local({
+          pol_info <- .policy_names_from_moves(
+            truly_new, tryCatch(shared$policy_catalog_db(), error = function(e) NULL))
+          list(n_moves = nrow(truly_new), partes = unique(truly_new$Parte),
+               policy_ids = pol_info$ids, policy_names = pol_info$names)
+        }),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
@@ -1097,7 +1131,12 @@ settings_companies_observer <- function(input, output, session, shared) {
         action      = "auto_aplicar_politicas",
         description = sprintf("Auto-aplicación de políticas (retry al cargar socios): %d documento(s) nuevo(s) calculados (%d socio(s))",
                               nrow(truly_new), length(unique(truly_new$Parte))),
-        metadata    = list(n_moves = nrow(truly_new), partes = unique(truly_new$Parte)),
+        metadata    = local({
+          pol_info <- .policy_names_from_moves(
+            truly_new, tryCatch(shared$policy_catalog_db(), error = function(e) NULL))
+          list(n_moves = nrow(truly_new), partes = unique(truly_new$Parte),
+               policy_ids = pol_info$ids, policy_names = pol_info$names)
+        }),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )

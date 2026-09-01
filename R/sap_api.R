@@ -549,7 +549,22 @@ fetch_all_companies <- function(ledger = c("AR","AP"), cmap = COMPANY_MAP, clien
   # Save snapshot for outage resilience — rotates prev1/prev2 before writing.
   # The new snapshot contains ONLY the invoices returned by THIS fetch —
   # no data from any prior snapshot is carried forward.
-  save_sap_snapshot(combined, ledger, client_id = NULL)
+  #
+  # BUG (found 2026-09-01): this hardcoded client_id = NULL instead of using
+  # this function's OWN client_id parameter (received correctly from every
+  # caller, e.g. app.R's load_ledger() already passes
+  # client_id = effective_client_id()) -- so every successful live fetch
+  # silently persisted the fresh snapshot under the shared deployment's bare
+  # env-level prefix ("hd-admin/...") instead of the actual client's own
+  # ("networks/..."). The read side (load_sap_snapshot(), fixed 2026-08-27
+  # to properly use client_id) was therefore reading a CORRECTLY-scoped key
+  # that nothing was writing to -- so the fallback-on-SAP-outage snapshot
+  # silently never advanced past its original one-time seed (2026-06-25),
+  # and any session that hit the live-SAP-unavailable fallback path (VPN not
+  # yet connected, SAP transiently unreachable) got served 2+ month old
+  # data with only an easy-to-miss toast, not a code bug someone would
+  # normally think to check the snapshot's own actual freshness against.
+  save_sap_snapshot(combined, ledger, client_id = client_id)
   combined
 }
 
