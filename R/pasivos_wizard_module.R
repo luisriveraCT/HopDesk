@@ -229,6 +229,9 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
   # Persist liability
   liabs <- tryCatch(shared$pasivos_liabilities_db(),
                     error = function(e) .schema_pasivos_liability())
+  # Snapshot pre-edit for the audit entry below -- must come before the
+  # filter-out on the next line replaces this row in `liabs`.
+  before_row <- if (wiz$mode == "edit") liabs[liabs$id == liab_row$id, , drop = FALSE] else NULL
   if (wiz$mode == "edit") {
     liabs <- liabs[liabs$id != liab_row$id, , drop = FALSE]
   }
@@ -313,14 +316,20 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
   shared$pasivos_provisions_db(new_provs)
   bump_sync_version("pasivos_provisions_db")
 
-  # Audit
+  # Audit -- previously captured only 5 identity columns (id/categoria/
+  # nombre/empresa/estado), never the actual payment terms (recurrence,
+  # amount, rate, schedule) a treasurer sets in the wizard, and never a
+  # `before` on edit at all (found 2026-09-03 while extending Bancos/Pasivos
+  # activity logging). Full row, same as_list(row) convention already used
+  # by every pasivos_engine.R audit call.
   tryCatch(pasivos_log_audit(
     action_type = if (wiz$mode == "create") "liability.created" else "liability.edited",
     user        = user,
     empresa     = liab_row$empresa,
     target_kind = "liability",
     target_id   = liab_row$id,
-    after       = as.list(liab_row[, c("id","categoria","nombre","empresa","estado")]),
+    before      = if (!is.null(before_row) && nrow(before_row)) as.list(before_row) else NULL,
+    after       = as.list(liab_row),
     notes       = sprintf("Generated %d, updated %d, conflicts %d",
                           nrow(result$insert), nrow(result$update),
                           nrow(result$conflicts)),

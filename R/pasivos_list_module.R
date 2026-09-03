@@ -299,7 +299,9 @@ pasivos_list_module_server <- function(id, shared) {
                         error = function(e) .schema_pasivos_liability())
       idx <- which(liabs$id == lid)
       if (!length(idx)) return()
-      new_estado <- if (identical(liabs$estado[idx[1]], "active")) "paused" else "active"
+      old_estado <- liabs$estado[idx[1]]
+      nombre     <- liabs$nombre[idx[1]]
+      new_estado <- if (identical(old_estado, "active")) "paused" else "active"
       liabs$estado[idx[1]] <- new_estado
       liabs$updated_at[idx[1]] <- Sys.time()
       liabs$updated_by[idx[1]] <- user
@@ -331,11 +333,13 @@ pasivos_list_module_server <- function(id, shared) {
       }
 
       tryCatch(pasivos_log_audit(
-        action_type = if (new_estado == "paused") "liability.edited" else "liability.edited",
+        action_type = "liability.edited",
         user        = user,
         empresa     = liabs$empresa[idx[1]],
         target_kind = "liability",
         target_id   = lid,
+        before      = list(nombre = nombre, estado = old_estado),
+        after       = list(nombre = nombre, estado = new_estado),
         notes       = sprintf("estado changed to %s", new_estado),
         client_id   = shared$effective_client_id()
       ), error = function(e) NULL)
@@ -369,6 +373,8 @@ pasivos_list_module_server <- function(id, shared) {
                         error = function(e) .schema_pasivos_liability())
       idx <- which(liabs$id == lid)
       if (!length(idx)) { shiny::removeModal(); return() }
+      old_estado <- liabs$estado[idx[1]]
+      nombre     <- liabs$nombre[idx[1]]
       liabs$estado[idx[1]]     <- "deleted"
       liabs$updated_at[idx[1]] <- Sys.time()
       liabs$updated_by[idx[1]] <- user
@@ -396,6 +402,8 @@ pasivos_list_module_server <- function(id, shared) {
         empresa     = liabs$empresa[idx[1]],
         target_kind = "liability",
         target_id   = lid,
+        before      = list(nombre = nombre, estado = old_estado),
+        after       = list(nombre = nombre, estado = "deleted"),
         client_id   = shared$effective_client_id()
       ), error = function(e) NULL)
 

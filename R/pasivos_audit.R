@@ -6,12 +6,12 @@
 
 PASIVOS_ACTION_TYPES <- c(
   "liability.created", "liability.edited", "liability.deleted", "liability.restored",
-  "provision.generated", "provision.edited", "provision.deleted",
+  "provision.generated", "provision.edited", "provision.deleted", "provision.cancelled",
   "provision.converted_to_item", "provision.item_confirmed",
   "provision.item_reversed", "provision.revived",
   "modifier.added", "modifier.toggled", "modifier.frozen", "modifier.removed",
   "estimate.changed", "estimate.frozen", "estimate.unfrozen",
-  "bulk.aplicar_pagos_futuros", "bulk.recalculate_schedule",
+  "bulk.aplicar_pagos_futuros", "bulk.recalculate_schedule", "bulk.purge_closed_provisions",
   "capability.denied",
   "card_expense.logged", "card_expense.deleted"
 )

@@ -412,6 +412,14 @@ setup_pasivos_module <- function(input, output, session, shared) {
       shiny::showNotification("Provisión no encontrada.", type = "error"); return()
     }
 
+    # Snapshot before mutation -- same as pasivos_engine.R's convert/confirm/
+    # cancel/revive handlers, which all capture `before` this way. This
+    # handler previously logged only `after` (and only 3 of the ~7 editable
+    # fields), so an inline provision edit had no recorded "changed from"
+    # value at all -- found 2026-09-03 while extending Bancos/Pasivos
+    # activity logging.
+    before <- as.list(provs[idx, ])
+
     now       <- Sys.time()
     new_fecha <- tryCatch(as.Date(input$pcm_fecha), error = function(e) as.Date(NA))
     new_imp   <- as.numeric(input$pcm_importe %||% NA_real_)
@@ -446,9 +454,8 @@ setup_pasivos_module <- function(input, output, session, shared) {
       action_type = "provision.edited",
       user        = user,
       target_kind = "provision", target_id = prov_id,
-      after       = list(parte = input$pcm_parte %||% "",
-                         importe = new_imp,
-                         fecha = as.character(new_fecha)),
+      before      = before,
+      after       = as.list(provs[idx, ]),
       notes       = "inline provision edit via convert modal",
       client_id   = shared$effective_client_id()
     ), error = function(e) NULL)
@@ -1051,6 +1058,8 @@ pasivos_admin_purge_closed <- function(drop_estados = "closed",
     user        = user,
     target_kind = "bulk",
     target_id   = NA_character_,
+    before      = list(ids = provs$id[to_drop], n = n_drop, estados = drop_estados),
+    after       = list(backup_key = backup_key),
     notes       = sprintf("Purged %d rows with estado in {%s}; backup at %s",
                           n_drop, paste(drop_estados, collapse = ", "), backup_key),
     client_id   = client_id

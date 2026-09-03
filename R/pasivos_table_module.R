@@ -336,7 +336,7 @@ pasivos_table_module_server <- function(id, shared) {
       tryCatch(pasivos_log_audit(
         action_type = "provision.generated", user = user,
         empresa = empresa, target_kind = "provision", target_id = new_id,
-        after = list(id = new_id, origin = "manual", estado = "provisional"),
+        after = as.list(new_prov),
         notes = "manual orphan provision via Pasivos tab",
         client_id = shared$effective_client_id()
       ), error = function(e) NULL)

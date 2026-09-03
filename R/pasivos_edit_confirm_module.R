@@ -175,11 +175,22 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
   provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()),
                     error = function(e) .schema_pasivos_provision())
 
+  # Per-provision decision detail for the audit entry (2026-09-03) -- this
+  # previously logged only a bare conflict count, even though the real
+  # per-provision decisions (aplicar/mantener/personalizar, and the value
+  # each one resolved to) were fully in scope in this loop.
+  decision_log <- list()
+
   for (i in seq_len(nrow(conflicts))) {
     prov_id <- conflicts$id[i]
     dec     <- decisions[[prov_id]] %||% "mantener"
     idx     <- which(provs$id == prov_id)
     if (!length(idx)) next
+    decision_log[[length(decision_log) + 1L]] <- list(
+      provision_id = prov_id, decision = dec,
+      custom_value = if (identical(dec, "personalizar"))
+        as.numeric(decisions[[paste0(prov_id, "_custom")]] %||% NA) else NA_real_
+    )
 
     if (identical(dec, "aplicar")) {
       # Clear the override, apply generated value
@@ -216,6 +227,7 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
     user        = user,
     target_kind = "bulk",
     target_id   = .pec_state$liability_id %||% NA_character_,
+    after       = list(n_conflicts = nrow(conflicts), decisions = decision_log),
     notes       = sprintf("Edit-confirm: %d conflicts resolved", nrow(conflicts)),
     client_id   = shared$effective_client_id()
   ), error = function(e) NULL)

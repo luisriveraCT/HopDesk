@@ -76,6 +76,15 @@
     return("bancos_movimientos")
   if (module == "bancos" && action %in% c("editar_movimiento_manual", "agregar_movimiento_manual"))
     return("bancos_manual_edit")
+  # Stage 3 of the Bancos/Pasivos activity-logging extension (2026-09-03):
+  # pasivos_log_audit() (R/pasivos_audit.R) already dual-writes every one of
+  # its ~20 action types into this same app_audit log, with a consistent
+  # metadata shape (target_kind, empresa, before, after) regardless of
+  # action type -- so ONE generic before/after diff view (unlike Bancos'
+  # per-action bespoke tables) covers all of them, rather than the previous
+  # unlabeled unlist()-flattened blob the plain generic view produced for a
+  # nested list.
+  if (module == "pasivos") return("pasivos_diff")
   "generic"
 }
 
@@ -404,6 +413,56 @@
   )
 }
 
+# Every pasivos_log_audit() call passes the same metadata shape
+# (target_kind, empresa, before, after) regardless of its ~20 action types,
+# whose before/after field sets are themselves wildly heterogeneous
+# (a liability's ~40 columns vs. a provision's ~20 vs. an estimate's 5) --
+# so this renders a generic, field-agnostic before/after diff (only
+# CHANGED fields, like .audit_detail_bancos_manual_edit() but without a
+# fixed field-label map), rather than one bespoke view per action type.
+.audit_pasivos_fmt_val <- function(v) {
+  if (is.null(v)) return("")
+  if (is.list(v)) return(paste(unlist(v), collapse = ", "))
+  if (!length(v)) return("")
+  if (length(v) == 1 && is.na(v)) return("")
+  paste(as.character(v), collapse = ", ")
+}
+
+.audit_detail_pasivos_diff <- function(meta) {
+  target_kind <- as.character(meta$target_kind %||% "")
+  empresa     <- as.character(meta$empresa %||% "")
+  header <- div(class = "mb-2 small",
+    if (nzchar(target_kind)) tags$div(tags$strong("Tipo: "), target_kind) else NULL,
+    if (nzchar(empresa) && !identical(empresa, "NA")) tags$div(tags$strong("Empresa: "), empresa) else NULL
+  )
+  before <- meta$before
+  after  <- meta$after
+
+  if (is.null(before)) {
+    if (!length(after))
+      return(tagList(header, tags$p(class = "text-muted small", "Sin detalle adicional registrado.")))
+    rows <- lapply(names(after), function(k)
+      tags$tr(tags$td(class = "fw-semibold", k), tags$td(.audit_pasivos_fmt_val(after[[k]]))))
+    return(tagList(header, tags$table(class = "table table-sm small", tags$tbody(rows))))
+  }
+
+  all_fields <- union(names(before), names(after))
+  diff_rows <- Filter(Negate(is.null), lapply(all_fields, function(f) {
+    b <- .audit_pasivos_fmt_val(before[[f]])
+    a <- .audit_pasivos_fmt_val(after[[f]])
+    if (identical(b, a)) return(NULL)
+    tags$tr(tags$td(f), tags$td(b), tags$td(a))
+  }))
+  if (!length(diff_rows))
+    return(tagList(header, tags$p(class = "text-muted small", "Sin cambios de valor detectados.")))
+  tagList(header,
+    tags$table(class = "table table-sm table-hover small",
+      tags$thead(class = "table-light", tags$tr(tags$th("Campo"), tags$th("Antes"), tags$th("Después"))),
+      tags$tbody(diff_rows)
+    )
+  )
+}
+
 # Generic fallback -- covers every module/action this popup has no bespoke
 # view for, as a plain key/value dump of its metadata. Same shape as
 # pagos_audit_viewer_module.R's non-"pago_ppl" detail rendering.
@@ -455,6 +514,7 @@
     logout        = .audit_detail_logout(meta),
     bancos_movimientos = .audit_detail_bancos_movimientos(meta),
     bancos_manual_edit  = .audit_detail_bancos_manual_edit(meta),
+    pasivos_diff  = .audit_detail_pasivos_diff(meta),
     .audit_detail_generic(meta)
   )
 }

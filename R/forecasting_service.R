@@ -71,6 +71,10 @@ forecasting_set_estimate <- function(metric, fecha, value,
     updated_at    = Sys.time()
   )
 
+  # Snapshot before overwrite -- previously only `after` was logged, so
+  # overwriting an existing estimate had no recorded "changed from" value.
+  before_est <- if (length(existing_idx)) as.list(current[existing_idx[1], ]) else NULL
+
   if (length(existing_idx)) {
     current[existing_idx[1], ] <- new_row
     updated <- current
@@ -85,6 +89,7 @@ forecasting_set_estimate <- function(metric, fecha, value,
     user        = user,
     target_kind = "estimate",
     target_id   = paste0(metric, "@", as.character(fecha)),
+    before      = before_est,
     after       = list(metric = metric, fecha = as.character(fecha),
                        value = value, source_method = source_method,
                        is_frozen = is_frozen),

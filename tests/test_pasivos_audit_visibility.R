@@ -35,11 +35,20 @@ ok <- function(label, expr) {
   }
 }
 
-# ── 1. Confirm the original finding is real (control, not assumed) ─────────
+# ── 1. Confirm the original finding was real, and is now genuinely fixed ───
+# Up through Stage 2 of the Bancos/Pasivos activity-logging extension
+# (2026-09-03), R/audit_log_viewer_module.R never mentioned "pasivos" at all
+# -- this control assertion documented that gap. Stage 3 closes it (a
+# module == "pasivos" dispatch to a bespoke before/after diff view,
+# .audit_detail_pasivos_diff()), which is the actual fix this whole test
+# file is about, so the control now asserts the fix landed instead of
+# asserting the historical absence it would otherwise now contradict.
 {
   viewer_txt <- readLines("R/audit_log_viewer_module.R", warn = FALSE)
-  ok("control: R/audit_log_viewer_module.R genuinely never mentions pasivos anywhere (confirms the bug was real, not a misreading)",
-     !any(grepl("pasivos", viewer_txt, ignore.case = TRUE)))
+  ok("R/audit_log_viewer_module.R now explicitly dispatches module==\"pasivos\" to a bespoke view (Stage 3 fix, not the pre-Stage-3 blind spot)",
+     any(grepl('module == "pasivos"', viewer_txt, fixed = TRUE)))
+  ok("the bespoke pasivos view is a real before/after diff renderer, not just a routed-but-empty case",
+     any(grepl("\\.audit_detail_pasivos_diff\\s*<-\\s*function", viewer_txt)))
   ok("control: the viewer's only data source is read_audit_log_scoped() (app_audit.rds)",
      any(grepl("read_audit_log_scoped", viewer_txt)))
 }
