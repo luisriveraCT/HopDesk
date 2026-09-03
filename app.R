@@ -2386,11 +2386,11 @@ server <- function(input, output, session) {
 
   # Handle edit actions fired from the search modal (tag / move / delete)
   observeEvent(input$search_action, {
-    handle_search_action(input, shared)
+    handle_search_action(input, shared, session)
   }, ignoreInit = TRUE)
 
   observeEvent(input$vencidos_action, {
-    handle_vencidos_action(input, shared)
+    handle_vencidos_action(input, shared, session)
   }, ignoreInit = TRUE)
 
   observeEvent(input$search_stage_toast, {

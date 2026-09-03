@@ -881,7 +881,7 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
 # payload: list with $action, $rows, optionally $move_to
 # =============================================================================
 
-handle_invoice_action <- function(payload, shared) {
+handle_invoice_action <- function(payload, shared, session = NULL) {
   req(payload)
 
   action <- payload$action
@@ -1009,7 +1009,7 @@ handle_invoice_action <- function(payload, shared) {
     )
     updated <- upsert_moves(shared$moves_db(), new_rows)
     shared$moves_db(updated)
-    .save_moves_deferred(updated, client_id = shared$effective_client_id())
+    .save_moves_deferred(updated, client_id = shared$effective_client_id(), session = session)
     showNotification(
       paste0(nrow(keys_df), " factura(s) movidas a ", format(new_date, "%d/%m/%Y"), "."),
       type = "message", duration = 2)
@@ -1028,7 +1028,7 @@ handle_invoice_action <- function(payload, shared) {
     updated <- dplyr::anti_join(shared$moves_db(), restore_keys,
                                 by = c("ledger","Empresa","Moneda","Documento"))
     shared$moves_db(updated)
-    .save_moves_deferred(updated, client_id = shared$effective_client_id())
+    .save_moves_deferred(updated, client_id = shared$effective_client_id(), session = session)
     showNotification(
       paste0(nrow(keys_df), " factura(s) restauradas a fecha original."),
       type = "message", duration = 2)
@@ -1168,10 +1168,10 @@ handle_invoice_action <- function(payload, shared) {
 }
 
 # Thin wrappers — read from the specific input slot, then delegate.
-handle_search_action <- function(input, shared) {
-  handle_invoice_action(input$search_action, shared)
+handle_search_action <- function(input, shared, session = NULL) {
+  handle_invoice_action(input$search_action, shared, session = session)
 }
 
-handle_vencidos_action <- function(input, shared) {
-  handle_invoice_action(input$vencidos_action, shared)
+handle_vencidos_action <- function(input, shared, session = NULL) {
+  handle_invoice_action(input$vencidos_action, shared, session = session)
 }

@@ -1750,7 +1750,7 @@ ledgerModuleServer <- function(id, config, shared) {
           showNotification("No se encontraron facturas reales (sólo provisiones).", type = "warning")
           return()
         }
-        .apply_move(keys, new_date, ledger, shared)
+        .apply_move(keys, new_date, ledger, shared, session = session)
         .sync_staged(keys, ledger, shared$pagar_hoy_db, new_date = new_date,
                      username = shared$current_user(), client_id = shared$effective_client_id())
         showNotification(paste0(nrow(keys), " factura(s) movidas."), type = "message", duration = 2)
@@ -1794,7 +1794,7 @@ ledgerModuleServer <- function(id, config, shared) {
           showNotification("No se encontraron facturas reales (sólo provisiones).", type = "warning")
           return()
         }
-        .clear_moves(keys, ledger, shared)
+        .clear_moves(keys, ledger, shared, session = session)
         .sync_staged(keys, ledger, shared$pagar_hoy_db, detail = detail,
                      username = shared$current_user(), client_id = shared$effective_client_id())
         showNotification("Fecha original restaurada.", type = "message", duration = 2)
@@ -2408,7 +2408,7 @@ ledgerModuleServer <- function(id, config, shared) {
       )
       updated_moves <- upsert_moves(shared$moves_db(), new_move)
       shared$moves_db(updated_moves)
-      .save_moves_deferred(updated_moves, client_id = shared$effective_client_id())
+      .save_moves_deferred(updated_moves, client_id = shared$effective_client_id(), session = session)
 
       # --- field overrides (sap_overrides) ---
       ov_row <- tibble::tibble(
@@ -3326,19 +3326,68 @@ ledgerModuleServer <- function(id, config, shared) {
 # Defers the S3 write + sync-version bump to the next event-loop tick.
 # shared$moves_db(updated) MUST be called first — that fires the reactive so
 # Shiny can flush (calendar re-render) before the I/O blocks anything.
-.save_moves_deferred <- function(updated, client_id = NULL) {
-  force(client_id)   # evaluate promise NOW (in calling reactive context) before later() captures it
-  later::later(function() {
+#
+# BUG (found 2026-09-01): the S3 write used to be entirely fire-and-forget —
+# a failure only reached warning() (the server's own R console/log), which
+# nobody watches during a live session. The calendar had already shown the
+# move as applied (shared$moves_db(updated) above always fires immediately),
+# and the Activity-log write below used to fire unconditionally right after,
+# so the Activity log recorded "moved to X" as a fact even when the write behind it
+# never landed. The next fresh session (server restart, cold R process) then
+# reloaded moves from S3's last ACTUALLY-successful save and every edit made
+# in between silently vanished, with no error anyone ever saw — exactly the
+# "my moves are gone" reports despite the underlying invoice/snapshot data
+# always being intact. Root cause is almost certainly transient (S3
+# permission hiccup, clock skew — hopdesk_start.bat's own VPN/clock-resync
+# step already documents this class of AWS failure, or a dropped tunnel —
+# the ngrok log itself shows a brief "heartbeat timeout / failed to
+# reconnect" gap), so this now (1) retries once after a short delay before
+# giving up, (2) shows a persistent, explicit on-screen error if it still
+# fails so the user knows NOT to trust the screen and not to close the
+# session, and (3) only logs "mover_fecha"/"restaurar_fecha" as a genuine
+# Activity-log fact once the write is actually confirmed — a failed save
+# gets its own clearly-flagged log entry instead of a misleading success one.
+.save_moves_deferred <- function(updated, client_id = NULL, session = NULL, log_info = NULL) {
+  force(client_id); force(session); force(log_info)   # evaluate NOW, before later() captures them
+
+  .log_outcome <- function(failed, err_msg = NULL) {
+    if (is.null(log_info)) return(invisible(NULL))
+    info <- log_info
+    if (failed) {
+      info$action      <- paste0(info$action, "_fallo_guardado")
+      info$description <- paste0("FALLO AL GUARDAR (no se aplico realmente): ",
+                                 info$description, " -- error S3: ", err_msg)
+    }
+    tryCatch(do.call(log_action, info), error = function(e)
+      message("[LEDGER] log_action failed (", info$action, "): ", e$message))
+  }
+
+  .attempt <- function(retries_left) {
     tryCatch({
       save_moves(updated, client_id = client_id)
       bump_sync_version("moves_db", client_id = client_id)
+      .log_outcome(failed = FALSE)
     }, error = function(e) {
       warning("[SAVE_MOVES] S3 write failed: ", e$message)
+      if (retries_left > 0) {
+        later::later(function() .attempt(retries_left - 1), delay = 2)
+      } else {
+        if (!is.null(session)) {
+          showNotification(
+            paste0("No se pudo guardar el movimiento de fecha en el servidor (\"", e$message,
+                   "\"). El cambio se ve en pantalla pero NO quedo guardado -- vuelve a ",
+                   "intentarlo en unos minutos y NO cierres la sesion mientras tanto."),
+            type = "error", duration = NULL, session = session
+          )
+        }
+        .log_outcome(failed = TRUE, err_msg = e$message)
+      }
     })
-  }, delay = 0)
+  }
+  later::later(function() .attempt(1), delay = 0)
 }
 
-.apply_move <- function(keys, new_date, ledger, shared) {
+.apply_move <- function(keys, new_date, ledger, shared, session = NULL) {
   moves <- shared$moves_db()
   new_rows <- keys |>
     dplyr::mutate(
@@ -3350,9 +3399,9 @@ ledgerModuleServer <- function(id, config, shared) {
   updated <- upsert_moves(moves, new_rows)
   shared$moves_db(updated)
   cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
-  .save_moves_deferred(updated, client_id = cid)
-  tryCatch(
-    log_action(
+  .save_moves_deferred(
+    updated, client_id = cid, session = session,
+    log_info = list(
       user        = tryCatch(shared$current_user(), error = function(e) "system"),
       module      = paste0("ledger_", ledger),
       action      = "mover_fecha",
@@ -3362,12 +3411,11 @@ ledgerModuleServer <- function(id, config, shared) {
       metadata    = list(n = nrow(keys)),
       client_id             = cid,
       viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
-    ),
-    error = function(e) message("[LEDGER] log_action failed (mover_fecha): ", e$message)
+    )
   )
 }
 
-.clear_moves <- function(keys, ledger, shared) {
+.clear_moves <- function(keys, ledger, shared, session = NULL) {
   moves   <- shared$moves_db()
   updated <- dplyr::anti_join(
     moves,
@@ -3376,9 +3424,9 @@ ledgerModuleServer <- function(id, config, shared) {
   )
   shared$moves_db(updated)
   cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
-  .save_moves_deferred(updated, client_id = cid)
-  tryCatch(
-    log_action(
+  .save_moves_deferred(
+    updated, client_id = cid, session = session,
+    log_info = list(
       user        = tryCatch(shared$current_user(), error = function(e) "system"),
       module      = paste0("ledger_", ledger),
       action      = "restaurar_fecha",
@@ -3387,8 +3435,7 @@ ledgerModuleServer <- function(id, config, shared) {
       metadata    = list(n = nrow(keys)),
       client_id             = cid,
       viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
-    ),
-    error = function(e) message("[LEDGER] log_action failed (restaurar_fecha): ", e$message)
+    )
   )
 }
 
