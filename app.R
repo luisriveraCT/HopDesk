@@ -2338,16 +2338,29 @@ server <- function(input, output, session) {
   # Fetch current SOFR and TIIE28 and write them to the forecasting store.
   # Called on startup and on every manual refresh so provision interest calculations
   # always reflect the latest published rates.
+  #
+  # BUG (found 2026-09-03, unrelated to the SAP/ERP fetch above -- that one is
+  # correct and untouched): this never passed client_id, so
+  # forecasting_set_estimate()/pasivos_log_audit() defaulted to
+  # Sys.getenv("CLIENT_ID") ("hd-admin", the shared deployment's own env-level
+  # default) instead of the session's real effective_client_id() ("networks"
+  # for a real client session) -- every session's rate refresh silently wrote
+  # into hd-admin's own pasivos_estimates.rds/pasivos_audit.rds regardless of
+  # which client was actually using the app. Low severity (SOFR/TIIE28 are
+  # public market rates, identical for every client, not client financial
+  # data), but still a real cross-tenant scoping bug and needless repeated
+  # writes to the wrong place.
   .refresh_variable_rates <- function() {
     jobs <- list(list(fn = .fetch_sofr,   metric = "sofr"),
                  list(fn = .fetch_tiie28, metric = "tiie28"))
+    cid <- tryCatch(effective_client_id(), error = function(e) NULL)
     for (job in jobs) {
       res <- tryCatch(job$fn(), error = function(e) list(error = conditionMessage(e)))
       rate <- res$today %||% NA_real_
       if (!is.null(res$error) || is.na(rate)) next
       tryCatch(
         forecasting_set_estimate(job$metric, Sys.Date(), rate,
-                                 source_method = "auto_refresh"),
+                                 source_method = "auto_refresh", client_id = cid),
         error = function(e) NULL
       )
     }

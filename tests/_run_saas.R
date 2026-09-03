@@ -253,6 +253,7 @@ tryCatch({
   .run_module("tests/test_moves_save_failure_visibility.R")
   .run_module("tests/test_hopdesk_single_instance_lock.R")
   .run_module("tests/test_hopdesk_dev_bucket_override.R")
+  .run_module("tests/test_refresh_variable_rates_client_scoping.R")
   .run_module("tests/test_saas_log_action_scoping.R")
   .run_module("tests/test_saas_notifications.R")
   .run_module("tests/test_saas_limit_change.R")
