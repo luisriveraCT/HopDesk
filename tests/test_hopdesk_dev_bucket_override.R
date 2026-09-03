@@ -89,6 +89,8 @@ tryCatch({
        "with HOPDESK_PRODUCTION=1, S3_BUCKET stays the PRODUCTION bucket even though .Renviron.local exists")
   .chk_true(!any(grepl("Local dev override active", r2$messages)),
             "no dev-override message is printed when production is asserted")
+  .chk_true(any(grepl("PRODUCTION MODE ACTIVE", r2$messages)),
+            "a visible [ENV] message announces production mode is active")
 
   cat("\n-- No .Renviron.local at all: behaves exactly as before this fix, in both modes --\n")
   writeLines("S3_BUCKET=fake-prod-bucket", file.path(no_override_dir, ".Renviron"))

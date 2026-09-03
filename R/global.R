@@ -25,7 +25,13 @@ if (file.exists(".Renviron")) readRenviron(".Renviron")
 # separate opt-in step to remember. The alternative (an opt-IN dev flag)
 # would silently default back to production the instant someone forgets to
 # set it -- exactly the failure mode this whole fix exists to close.
-if (Sys.getenv("HOPDESK_PRODUCTION") != "1" && file.exists(".Renviron.local")) {
+if (Sys.getenv("HOPDESK_PRODUCTION") == "1") {
+  # Also fires for hopdesk_start.bat's own launch, not just a manual local
+  # assertion (scripts/enable_production_mode.R) -- extra visibility there is
+  # harmless and desirable, not just tolerated.
+  message("[ENV] PRODUCTION MODE ACTIVE -- HOPDESK_PRODUCTION=1 asserted, using bucket '",
+          Sys.getenv("S3_BUCKET"), "'. This session can read/write real client data.")
+} else if (file.exists(".Renviron.local")) {
   readRenviron(".Renviron.local")
   message("[ENV] Local dev override active from .Renviron.local -- using bucket '",
           Sys.getenv("S3_BUCKET"), "', NOT production.")
