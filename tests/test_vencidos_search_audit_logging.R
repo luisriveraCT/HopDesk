@@ -159,8 +159,8 @@ tag_label_es <- function(new_tags) {
     block <- paste(txt[start[1]:end], collapse = "\n")
     ok("ledger_module.R defines the .tag_label_es helper",
        grepl("\\.tag_label_es\\s*<-\\s*function", paste(txt, collapse = "\n")))
-    ok(".handle_tags_once() calls log_action with action = \"etiquetar\"",
-       grepl('action\\s*=\\s*"etiquetar"', block))
+    ok(".handle_tags_once() calls log_action with action = \"etiquetar\" (now conditional on save success -- see \"etiquetar_fallo_guardado\", the 2026-09-03 silent-failure fix)",
+       grepl('action\\s*=.*"etiquetar"', block))
     ok(".handle_tags_once() logs against the SAME rows that were just tagged (nrow(rows))",
        grepl("nrow\\(rows\\).*\\.tag_label_es\\(new_tags\\)", block))
   }
@@ -181,8 +181,8 @@ tag_label_es <- function(new_tags) {
   ok("found the tag branch to scan", length(tag_start) > 0 && length(tag_end) > 0)
   if (length(tag_start) && length(tag_end)) {
     tag_block <- paste(txt[tag_start[1]:tag_end[1]], collapse = "\n")
-    ok("the tag branch calls .log_ledger_action(..., \"etiquetar\", ...)",
-       grepl('\\.log_ledger_action\\(keys_df,\\s*"etiquetar"', tag_block))
+    ok("the tag branch calls .log_ledger_action(..., \"etiquetar\", ...) (now conditional on save success, see \"etiquetar_fallo_guardado\")",
+       grepl('\\.log_ledger_action\\(keys_df,.*"etiquetar"', tag_block))
   }
 
   start <- grep('} else if \\(action == "move"\\)', txt)
@@ -208,8 +208,8 @@ tag_label_es <- function(new_tags) {
   ok("found the delete branch to scan", length(start3) > 0 && length(end3) > 0)
   if (length(start3) && length(end3)) {
     delete_block <- paste(txt[start3[1]:end3[1]], collapse = "\n")
-    ok("the delete branch calls .log_ledger_action(..., \"eliminar_facturas\", ...)",
-       grepl('\\.log_ledger_action\\(keys_df,\\s*"eliminar_facturas"', delete_block))
+    ok("the delete branch calls .log_ledger_action(..., \"eliminar_facturas\", ...) (now conditional on save success, see \"eliminar_facturas_fallo_guardado\")",
+       grepl('\\.log_ledger_action\\(keys_df,.*"eliminar_facturas"', delete_block))
     ok("the delete branch's log call covers the FULL selection (keys_df), not just item_rows",
        grepl('\\.log_ledger_action\\(keys_df,', delete_block) &&
        !grepl('\\.log_ledger_action\\(item_rows,', delete_block))

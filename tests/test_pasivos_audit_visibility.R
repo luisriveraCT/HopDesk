@@ -414,7 +414,10 @@ ok <- function(label, expr) {
   ok("found the Calendario/Ledger batch-delete handler (confirm_delete) to scan", length(bd_start) > 0)
   if (length(bd_start)) {
     end <- grep('^\\s*\\)\\s*$', ledger_txt)
-    la_start <- grep("action\\s*=\\s*\"eliminar_facturas\"", ledger_txt)
+    # Loosened 2026-09-03: action= is now conditional on save success
+    # (see "eliminar_facturas_fallo_guardado", the silent-write-failure fix),
+    # not a bare string literal immediately after "action =".
+    la_start <- grep("action\\s*=.*\"eliminar_facturas\"", ledger_txt)
     la_start <- la_start[la_start > bd_start[1]][1]
     ok("found the eliminar_facturas log_action() call to scan", !is.na(la_start))
     if (!is.na(la_start)) {

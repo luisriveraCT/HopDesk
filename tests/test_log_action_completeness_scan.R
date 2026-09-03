@@ -267,7 +267,25 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     # emit one row per metric instead of one summary row per click. Both its
     # UI call sites (btn_refresh, btn_refresh_all) already log a single
     # summary entry (action="refrescar_metrica"/"refrescar_todas_metricas").
-    "fcs_fetch_and_store"
+    "fcs_fetch_and_store",
+    # Found 2026-09-03: .apply_move/.clear_moves (R/ledger_module.R) no
+    # longer call log_action() directly in their own body -- they now pass a
+    # log_info list into .save_moves_deferred() (already a KNOWN_FINE_HELPERS
+    # entry above), which logs the real outcome ("mover_fecha"/
+    # "restaurar_fecha" on success, with a definitive failure path) only
+    # after the retried S3 write actually settles, instead of unconditionally
+    # at click time. Same silent-write-failure fix class as
+    # save_pagar_hoy_with_retry above, just one call-site indirection deeper.
+    ".apply_move", ".clear_moves",
+    # s3_save_with_retry (R/persistence.R, added 2026-09-03) is the generic
+    # retry wrapper behind that same fix for the Calendario/Search tag and
+    # delete handlers -- identical shape and rationale to
+    # save_pagar_hoy_with_retry: it has no idea what it's saving or how to
+    # describe it, so every caller logs its own outcome
+    # ("etiquetar"/"etiquetar_fallo_guardado",
+    # "eliminar_facturas"/"eliminar_facturas_fallo_guardado") at its own
+    # call site instead.
+    "s3_save_with_retry"
   )
   gaps_actionable <- gaps[!gaps$label %in% KNOWN_FINE_HELPERS, ]
 
