@@ -1870,23 +1870,44 @@ ledgerModuleServer <- function(id, config, shared) {
           merge(detail, sap_keys_sub, by = sap_cols),
           error = function(e) detail[0, , drop = FALSE]
         )
+        # BUG (found 2026-09-03, same class already fixed for
+        # .save_moves_deferred()): the save used to be tryCatch'd only to a
+        # transient warning toast, never gating the success notification or
+        # the Activity-log write below it -- a failed save still showed "sent to
+        # papelera" and logged it as a fact. Now retries, shows a persistent
+        # error and skips the false-success log/notification if it still
+        # fails.
+        save_ok <- TRUE
         if (nrow(sap_detail) > 0) {
           sap_pap <- add_to_papelera(sap_pap, sap_detail,
                                      ledger, deleted_by = shared$current_user())
-          tryCatch(save_papelera(sap_pap, client_id = shared$effective_client_id()),
-                   error = function(e) showNotification(
-                     paste("No se pudo guardar papelera:", e$message), type = "warning"))
-          if (!is.null(shared$papelera_rv)) shared$papelera_rv(sap_pap)
+          result  <- s3_save_with_retry(function()
+            save_papelera(sap_pap, client_id = shared$effective_client_id()))
+          save_ok <- isTRUE(result$ok)
+          if (save_ok) {
+            if (!is.null(shared$papelera_rv)) shared$papelera_rv(sap_pap)
+          } else {
+            showNotification(
+              paste0("No se pudo guardar la papelera (\"", result$error$message,
+                     "\"). Las facturas SAP NO quedaron enviadas a papelera -- vuelve a intentarlo."),
+              type = "error", duration = NULL
+            )
+          }
         }
-        showNotification(
-          paste0(n_sap, " factura(s) SAP tachada(s) y enviada(s) a la papelera."),
-          type = "message", duration = 3
-        )
+        if (save_ok) {
+          showNotification(
+            paste0(n_sap, " factura(s) SAP tachada(s) y enviada(s) a la papelera."),
+            type = "message", duration = 3
+          )
+        }
         log_action(
           user        = tryCatch(shared$current_user(), error = function(e) "system"),
           module      = paste0("ledger_", ledger),
-          action      = "eliminar_facturas_sap",
-          description = paste0(n_sap, " factura(s) SAP enviada(s) a papelera"),
+          action      = if (save_ok) "eliminar_facturas_sap" else "eliminar_facturas_sap_fallo_guardado",
+          description = if (save_ok)
+            paste0(n_sap, " factura(s) SAP enviada(s) a papelera")
+          else
+            paste0("FALLO AL GUARDAR (no se aplico realmente): ", n_sap, " factura(s) SAP a papelera"),
           target_id   = paste(keys[["Documento"]][sap_mask][seq_len(min(5, n_sap))], collapse = ", "),
           metadata    = list(n = n_sap),
           client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
@@ -2028,14 +2049,27 @@ ledgerModuleServer <- function(id, config, shared) {
         )
       }
 
+      # BUG (found 2026-09-03, same class already fixed for
+      # .save_moves_deferred()): each of these three saves used to be
+      # tryCatch'd only to a transient warning toast, never gating the
+      # success notification or the Activity-log write below -- any subset of them
+      # could silently fail to persist while the user still saw "sent to
+      # papelera" and Actividad still logged it as a fact. Now each retries,
+      # and the final notification/log is honest about which pieces (if any)
+      # never actually saved.
+      save_failures <- character(0)
+
       # Add to papelera
       papelera_df <- add_to_papelera(papelera_df, rows_to_delete,
                                       ledger, deleted_by = shared$current_user())
-      tryCatch(save_papelera(papelera_df, client_id = shared$effective_client_id()),
-               error = function(e) showNotification(
-                 paste("No se pudo guardar papelera:", e$message), type = "warning"))
-      # Update shared reactive so df_combined invalidates without another S3 read
-      if (!is.null(shared$papelera_rv)) shared$papelera_rv(papelera_df)
+      papelera_result <- s3_save_with_retry(function()
+        save_papelera(papelera_df, client_id = shared$effective_client_id()))
+      if (isTRUE(papelera_result$ok)) {
+        # Update shared reactive so df_combined invalidates without another S3 read
+        if (!is.null(shared$papelera_rv)) shared$papelera_rv(papelera_df)
+      } else {
+        save_failures <- c(save_failures, paste0("papelera (", papelera_result$error$message, ")"))
+      }
 
       # For manual invoices: remove from manual_inv
       manual_keys <- rows_to_delete[rows_to_delete[["source"]] == "manual", , drop = FALSE]
@@ -2049,10 +2083,13 @@ ledgerModuleServer <- function(id, config, shared) {
         for (mid in manual_keys[["id"]]) {
           m <- delete_manual(m, mid)
         }
-        shared$manual_inv(m)
-        tryCatch(save_manual(m, client_id = shared$effective_client_id()),
-                 error = function(e) showNotification(
-                   paste("No se pudo guardar manual_inv:", e$message), type = "warning"))
+        manual_result <- s3_save_with_retry(function()
+          save_manual(m, client_id = shared$effective_client_id()))
+        if (isTRUE(manual_result$ok)) {
+          shared$manual_inv(m)
+        } else {
+          save_failures <- c(save_failures, paste0("manual_inv (", manual_result$error$message, ")"))
+        }
       }
 
       # For SAP invoices: already handled in do_delete (immediate ghost via papelera confirmed=TRUE).
@@ -2070,13 +2107,25 @@ ledgerModuleServer <- function(id, config, shared) {
         if (!is.null(provs_db) && nrow(provs_db)) {
           provs_db[provs_db[["id"]] %in% prov_ids & !is.na(provs_db[["id"]]),
                    "estado"] <- "deleted"
-          tryCatch(save_pasivos_provisions(provs_db, client_id = shared$effective_client_id()),
-                   error = function(e) showNotification(
-                     paste("No se pudo actualizar provisiones:", e$message), type = "warning"))
-          tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
-          shared$pasivos_provisions_db(provs_db)
-          bump_sync_version("pasivos_provisions_db")
+          prov_result <- s3_save_with_retry(function()
+            save_pasivos_provisions(provs_db, client_id = shared$effective_client_id()))
+          if (isTRUE(prov_result$ok)) {
+            tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
+            shared$pasivos_provisions_db(provs_db)
+            bump_sync_version("pasivos_provisions_db")
+          } else {
+            save_failures <- c(save_failures, paste0("provisiones (", prov_result$error$message, ")"))
+          }
         }
+      }
+
+      if (length(save_failures)) {
+        showNotification(
+          paste0("No se pudo guardar completamente el borrado (", paste(save_failures, collapse = "; "),
+                 "). Puede que quede en un estado parcial -- vuelve a intentarlo en unos minutos y ",
+                 "no cierres la sesion mientras tanto."),
+          type = "error", duration = NULL
+        )
       }
 
       n_del <- nrow(rows_to_delete)
@@ -2100,13 +2149,17 @@ ledgerModuleServer <- function(id, config, shared) {
         sprintf("%d factura(s) enviada(s) a papelera", n_del)
       session$userData[[paste0(ns("pending_delete_keys"))]] <- NULL
       session$userData[[paste0(ns("pending_delete_ctx"))]]  <- NULL
-      showNotification(paste0(n_del, " factura(s) enviadas a la papelera."),
-                       type = "message", duration = 3)
+      if (!length(save_failures)) {
+        showNotification(paste0(n_del, " factura(s) enviadas a la papelera."),
+                         type = "message", duration = 3)
+      }
       log_action(
         user        = tryCatch(shared$current_user(), error = function(e) "system"),
         module      = paste0("ledger_", ledger),
-        action      = "eliminar_facturas",
-        description = desc,
+        action      = if (!length(save_failures)) "eliminar_facturas" else "eliminar_facturas_fallo_guardado",
+        description = if (!length(save_failures)) desc
+          else paste0("FALLO AL GUARDAR (estado parcial): ", desc, " -- errores: ",
+                      paste(save_failures, collapse = "; ")),
         target_id   = paste(rows_to_delete[["Documento"]][seq_len(min(5, nrow(rows_to_delete)))],
                             collapse = ", "),
         metadata    = list(
@@ -2164,14 +2217,36 @@ ledgerModuleServer <- function(id, config, shared) {
         tags_db <- set_invoice_tags(tags_db, ledger, rows[["Empresa"]][i], rows[["Moneda"]][i],
                                     rows[["Documento"]][i], new_tags, tagged_by=shared$current_user())
       }
-      shared$tags_db(tags_db); save_tags(tags_db, client_id = shared$effective_client_id()); bump_sync_version("tags_db")
-      showNotification("Etiquetas actualizadas.", type="message", duration=2)
+      # BUG (found 2026-09-03, same class already fixed for
+      # .save_moves_deferred()): save_tags() used to have NO error handling
+      # at all (an uncaught throw would crash the observer), and the success
+      # notification/Activity-log write below fired unconditionally either way --
+      # a failed save still showed "tags updated" and logged it as a fact.
+      # Now retries, and skips the false-success notification/log if it
+      # still fails, showing a persistent error instead.
+      shared$tags_db(tags_db)
+      tag_result <- s3_save_with_retry(function()
+        save_tags(tags_db, client_id = shared$effective_client_id()))
+      if (isTRUE(tag_result$ok)) {
+        bump_sync_version("tags_db")
+        showNotification("Etiquetas actualizadas.", type = "message", duration = 2)
+      } else {
+        showNotification(
+          paste0("No se pudieron guardar las etiquetas (\"", tag_result$error$message,
+                 "\"). El cambio se ve en pantalla pero NO quedo guardado -- vuelve a intentarlo."),
+          type = "error", duration = NULL
+        )
+      }
       tryCatch(
         log_action(
           user        = tryCatch(shared$current_user(), error = function(e) "system"),
           module      = paste0("ledger_", ledger),
-          action      = "etiquetar",
-          description = sprintf("%d factura(s) etiquetada(s) como %s", nrow(rows), .tag_label_es(new_tags)),
+          action      = if (isTRUE(tag_result$ok)) "etiquetar" else "etiquetar_fallo_guardado",
+          description = if (isTRUE(tag_result$ok))
+            sprintf("%d factura(s) etiquetada(s) como %s", nrow(rows), .tag_label_es(new_tags))
+          else
+            sprintf("FALLO AL GUARDAR (no se aplico realmente): %d factura(s) etiquetada(s) como %s -- error S3: %s",
+                    nrow(rows), .tag_label_es(new_tags), tag_result$error$message),
           target_id   = paste(rows[["Documento"]][seq_len(min(5, nrow(rows)))], collapse = ", "),
           metadata    = list(n = nrow(rows), tags = new_tags),
           client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),

@@ -1081,6 +1081,24 @@ save_pagar_hoy_with_retry <- function(df, username = NULL, client_id = NULL,
   list(ok = FALSE, error = last_err, attempts = max_attempts)
 }
 
+# Generic version of the retry above, for any S3 save call whose caller needs
+# a definitive yes/no before deciding what to show/log -- not a fire-and-
+# forget log_action()-style queue. See save_pagar_hoy_with_retry()'s own
+# comment for the retry-vs-defer rationale; identical here, just not tied to
+# one specific save function. Added 2026-09-03 to close the same
+# silent-write-failure/dishonest-log bug class already fixed for
+# .save_moves_deferred() (ledger_module.R), in the Calendario/Search modal's
+# sibling actions: tagging and deleting an invoice.
+s3_save_with_retry <- function(save_fn, max_attempts = 3, retry_delay = 0.5) {
+  last_err <- NULL
+  for (attempt in seq_len(max_attempts)) {
+    ok <- tryCatch({ save_fn(); TRUE }, error = function(e) { last_err <<- e; FALSE })
+    if (ok) return(list(ok = TRUE, error = NULL, attempts = attempt))
+    if (attempt < max_attempts) Sys.sleep(retry_delay)
+  }
+  list(ok = FALSE, error = last_err, attempts = max_attempts)
+}
+
 # ── Per-user agenda helpers (sync OFF) ────────────────────────────────────────
 
 s3_key_pagar_hoy_user <- function(username) {

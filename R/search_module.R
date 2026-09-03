@@ -982,13 +982,33 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
                new_tags  = new_tags,
                tagged_by = current_user)
     }
-    shared$tags_db(tdb)
-    tryCatch({ save_tags(tdb, client_id = shared$effective_client_id()); bump_sync_version("tags_db") }, error = function(e)
-      showNotification(paste("Error guardando etiquetas:", e$message), type = "warning"))
-    showNotification(paste0(nrow(keys_df), " factura(s) etiquetadas."),
-                     type = "message", duration = 2)
-    .log_ledger_action(keys_df, "etiquetar", function(sub)
-      sprintf("%d factura(s) etiquetada(s) como %s", nrow(sub), .tag_label_es(new_tags)))
+    # BUG (found 2026-09-03, same class already fixed for
+    # .save_moves_deferred() in R/ledger_module.R -- this is search_module.R's
+    # own separate implementation of the identical action, reached from
+    # Vencidos/the Search modal rather than Calendario): the save's error
+    # handler only showed a transient warning toast, never gating the success
+    # notification/log below -- a failed save still showed "tags updated" and
+    # logged it as a fact. Now retries, and skips the false-success
+    # notification/log if it still fails, showing a persistent error instead.
+    tag_result <- s3_save_with_retry(function()
+      save_tags(tdb, client_id = shared$effective_client_id()))
+    if (isTRUE(tag_result$ok)) {
+      bump_sync_version("tags_db")
+      showNotification(paste0(nrow(keys_df), " factura(s) etiquetadas."),
+                       type = "message", duration = 2)
+    } else {
+      showNotification(
+        paste0("No se pudieron guardar las etiquetas (\"", tag_result$error$message,
+               "\"). El cambio se ve en pantalla pero NO quedo guardado -- vuelve a intentarlo."),
+        type = "error", duration = NULL
+      )
+    }
+    .log_ledger_action(keys_df, if (isTRUE(tag_result$ok)) "etiquetar" else "etiquetar_fallo_guardado", function(sub)
+      if (isTRUE(tag_result$ok))
+        sprintf("%d factura(s) etiquetada(s) como %s", nrow(sub), .tag_label_es(new_tags))
+      else
+        sprintf("FALLO AL GUARDAR (no se aplico realmente): %d factura(s) etiquetada(s) como %s -- error S3: %s",
+                nrow(sub), .tag_label_es(new_tags), tag_result$error$message))
 
   } else if (action == "move") {
     new_date <- tryCatch(as.Date(payload$move_to), error = function(e) NULL)
@@ -1061,6 +1081,16 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
                        type = "message", duration = 3)
     }
 
+    # BUG (found 2026-09-03, same class already fixed for
+    # .save_moves_deferred() in R/ledger_module.R -- this is search_module.R's
+    # own separate implementation of the identical action, reached from
+    # Vencidos/the Search modal rather than Calendario): both saves' error
+    # handlers only showed a transient warning toast, never gating the
+    # success notification or the log_action below -- either could silently
+    # fail to persist while the user still saw "sent to papelera" and
+    # Actividad still logged it as a fact. Now each retries, and the final
+    # notification/log is honest about which piece (if any) never saved.
+    item_save_failures <- character(0)
     if (nrow(item_rows)) {
       cid         <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
       papelera_df <- tryCatch(load_papelera(client_id = cid), error = function(e) tibble::tibble())
@@ -1070,10 +1100,14 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
       archive$deleted_at <- Sys.time()
       papelera_df <- add_to_papelera(papelera_df, archive,
                                       ledger = "MIXED", deleted_by = current_user)
-      tryCatch(save_papelera(papelera_df, client_id = shared$effective_client_id()), error = function(e)
-        showNotification(paste("Error guardando papelera:", e$message), type = "warning"))
-      # Update shared reactive so calendars refresh without extra S3 read
-      if (!is.null(shared$papelera_rv)) shared$papelera_rv(papelera_df)
+      papelera_result <- s3_save_with_retry(function()
+        save_papelera(papelera_df, client_id = shared$effective_client_id()))
+      if (isTRUE(papelera_result$ok)) {
+        # Update shared reactive so calendars refresh without extra S3 read
+        if (!is.null(shared$papelera_rv)) shared$papelera_rv(papelera_df)
+      } else {
+        item_save_failures <- c(item_save_failures, paste0("papelera (", papelera_result$error$message, ")"))
+      }
 
       manual_rows <- item_rows[item_rows$source == "manual" & nzchar(item_rows$inv_id), ]
       if (nrow(manual_rows)) {
@@ -1083,20 +1117,37 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
         # incident).
         m <- tryCatch(load_manual(client_id = cid), error = function(e) NULL) %||% shared$manual_inv()
         for (mid in manual_rows$inv_id) m <- delete_manual(m, mid)
-        shared$manual_inv(m)
-        tryCatch(save_manual(m, client_id = shared$effective_client_id()), error = function(e)
-          showNotification(paste("Error actualizando manual:", e$message), type = "warning"))
+        manual_result <- s3_save_with_retry(function()
+          save_manual(m, client_id = shared$effective_client_id()))
+        if (isTRUE(manual_result$ok)) {
+          shared$manual_inv(m)
+        } else {
+          item_save_failures <- c(item_save_failures, paste0("manual_inv (", manual_result$error$message, ")"))
+        }
       }
-      showNotification(paste0(nrow(item_rows), " factura(s) enviadas a la papelera."),
-                       type = "message", duration = 3)
+      if (length(item_save_failures)) {
+        showNotification(
+          paste0("No se pudo guardar completamente el borrado (", paste(item_save_failures, collapse = "; "),
+                 "). Puede que quede en un estado parcial -- vuelve a intentarlo en unos minutos y ",
+                 "no cierres la sesion mientras tanto."),
+          type = "error", duration = NULL
+        )
+      } else {
+        showNotification(paste0(nrow(item_rows), " factura(s) enviadas a la papelera."),
+                         type = "message", duration = 3)
+      }
     }
 
     # One combined log entry per ledger for the whole deleted selection
     # (provisions + papelera items together), matching how Calendario's own
     # delete handler logs eliminar_facturas once for the full rows_to_delete
     # set regardless of source.
-    .log_ledger_action(keys_df, "eliminar_facturas", function(sub)
-      sprintf("%d factura(s) enviada(s) a papelera", nrow(sub)))
+    .log_ledger_action(keys_df, if (!length(item_save_failures)) "eliminar_facturas" else "eliminar_facturas_fallo_guardado", function(sub)
+      if (!length(item_save_failures))
+        sprintf("%d factura(s) enviada(s) a papelera", nrow(sub))
+      else
+        sprintf("FALLO AL GUARDAR (estado parcial): %d factura(s) enviada(s) a papelera -- errores: %s",
+                nrow(sub), paste(item_save_failures, collapse = "; ")))
 
   } else if (action %in% c("stage_all", "stage_selected")) {
     # Silently exclude provision rows — they cannot be staged as regular items.
