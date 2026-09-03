@@ -45,7 +45,10 @@ cat("\n-- Part A: .audit_detail_kind() --\n")
 .chk(.audit_detail_kind("auth", "login"),  "login",  "auth/login -> login")
 .chk(.audit_detail_kind("auth", "logout"), "logout", "auth/logout -> logout")
 .chk(.audit_detail_kind("pagar_hoy", "quitar_pagos"), "generic", "an unrelated pagar_hoy action falls to generic")
-.chk(.audit_detail_kind("bancos", "importar_movimientos"), "generic", "a bancos action falls to generic")
+.chk(.audit_detail_kind("bancos", "eliminar_confirmacion"), "generic",
+     "a single-row bancos action (no bulk row detail) falls to generic")
+.chk(.audit_detail_kind("bancos", "importar_movimientos"), "bancos_movimientos",
+     "importar_movimientos gets the bespoke bancos row-table view (Stage 2 of the Bancos/Pasivos logging extension, 2026-09-03)")
 .chk(.audit_detail_kind("settings_companies", "guardar_politicas_socio"), "generic",
      "a settings_companies action NOT in the policy-apply set falls to generic")
 .chk(.audit_detail_kind(NA, NA), "generic", "NA module/action falls to generic, never errors")
@@ -261,8 +264,8 @@ row_logout <- .mk_row("auth", "logout", "Cierre de sesión: bunny (5min 0s activ
 html_i4 <- .html(.audit_detail_modal_body(row_logout, "own_client"))
 .chk_true(grepl("5min 0s", html_i4, fixed = TRUE), "end-to-end: logout view shows formatted duration")
 
-row_generic <- .mk_row("bancos", "importar_movimientos", "12 movimientos importados",
-  list(n = 12L, cuenta = "CTA-05"))
+row_generic <- .mk_row("bancos", "eliminar_confirmacion", "Confirmación bancaria movida a papelera",
+  list(empresa = "ACME", cuenta = "CTA-05"))
 html_i5 <- .html(.audit_detail_modal_body(row_generic, "own_client"))
 .chk_true(grepl("cuenta", html_i5, fixed = TRUE), "end-to-end: unmodeled module/action falls through to generic key/value view")
 .chk_true(grepl("CTA-05", html_i5, fixed = TRUE), "end-to-end: generic view's value rendered")

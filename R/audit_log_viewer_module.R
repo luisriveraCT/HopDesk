@@ -62,6 +62,20 @@
     return("cashflow_export")
   if (module == "auth" && action == "login")  return("login")
   if (module == "auth" && action == "logout") return("logout")
+  # Bancos activity-logging enrichment, Stage 2 (2026-09-03):
+  # the 4 bulk Bancos actions (import, bulk-delete, session reassign,
+  # session-delete) carry a row-level movimientos summary
+  # (.bancos_audit_rows_summary(), R/bancos_persistence.R) that the generic
+  # key/value dump would render as an unreadable unlist()'d blob -- these get
+  # a real table instead. The single-row undo/delete-confirmation actions
+  # deliberately do NOT get a bespoke kind here: their metadata is a handful
+  # of scalar fields, which the generic view already renders cleanly.
+  if (module == "bancos" &&
+      action %in% c("eliminar_movimientos", "reasignar_sesion",
+                    "eliminar_sesion", "importar_movimientos"))
+    return("bancos_movimientos")
+  if (module == "bancos" && action %in% c("editar_movimiento_manual", "agregar_movimiento_manual"))
+    return("bancos_manual_edit")
   "generic"
 }
 
@@ -306,6 +320,90 @@
   )
 }
 
+# Normalizes the "rows" metadata field written by
+# .bancos_audit_rows_summary() (R/bancos_persistence.R) -- same defensive
+# shape as .audit_normalize_pagos()/.audit_normalize_beneficiarios().
+.audit_normalize_bancos_rows <- function(x) {
+  empty <- data.frame(fecha = character(), parte = character(), concepto = character(),
+                      tipo = character(), cargo = double(), abono = double(),
+                      stringsAsFactors = FALSE)
+  if (is.null(x) || (is.list(x) && !length(x))) return(empty)
+  # x arrives as a proper data.frame when it round-tripped through
+  # jsonlite::fromJSON(simplifyVector = TRUE) (the real popup path -- a JSON
+  # array of objects auto-simplifies to a data.frame there), but as a plain
+  # list-of-lists when a caller (e.g. a test) hands it over directly without
+  # that round trip. as.data.frame() on a list-of-lists treats each element
+  # as a COLUMN, not a row -- dplyr::bind_rows() handles both shapes alike.
+  df <- tryCatch(dplyr::bind_rows(x), error = function(e) NULL)
+  if (is.null(df) || !nrow(df)) return(empty)
+  for (col in names(empty)) if (!col %in% names(df)) df[[col]] <- empty[[col]][NA_integer_]
+  df[, names(empty), drop = FALSE]
+}
+
+.audit_detail_bancos_movimientos <- function(meta) {
+  det     <- .audit_normalize_bancos_rows(meta$rows)
+  n_total <- suppressWarnings(as.integer(meta$n_total %||% nrow(det)))
+  header  <- if (isTRUE(meta$truncated))
+    tags$p(class = "small text-muted mb-1", icon("circle-info"),
+           sprintf(" Mostrando los primeros %d de %d movimiento(s).", nrow(det), n_total))
+  else NULL
+  if (!nrow(det)) {
+    tagList(header, tags$p(class = "text-muted small", "Sin detalle de movimientos registrado."))
+  } else {
+    tagList(header,
+      tags$table(class = "table table-sm table-hover small",
+        tags$thead(class = "table-light",
+          tags$tr(tags$th("Fecha"), tags$th("Parte"), tags$th("Concepto"), tags$th("Tipo"),
+                  tags$th(class = "text-end", "Cargo"), tags$th(class = "text-end", "Abono"))),
+        tags$tbody(
+          lapply(seq_len(nrow(det)), function(i)
+            tags$tr(
+              tags$td(det$fecha[i]),
+              tags$td(det$parte[i]),
+              tags$td(det$concepto[i]),
+              tags$td(det$tipo[i]),
+              tags$td(class = "text-end",
+                      if (isTRUE(det$cargo[i] > 0)) formatC(det$cargo[i], format = "f", digits = 2, big.mark = ",") else ""),
+              tags$td(class = "text-end",
+                      if (isTRUE(det$abono[i] > 0)) formatC(det$abono[i], format = "f", digits = 2, big.mark = ",") else "")
+            ))
+        )
+      )
+    )
+  }
+}
+
+# editar_movimiento_manual carries before/after (a genuine edit diff);
+# agregar_movimiento_manual has no "before" (there's nothing to diff against)
+# -- shown as a flat summary of the new row's fields instead.
+.audit_detail_bancos_manual_edit <- function(meta) {
+  after <- meta$after
+  if (is.null(after)) {
+    return(tagList(
+      tags$div(tags$strong("Cuenta: "), meta$cuenta_id %||% ""),
+      tags$div(tags$strong("Tipo: "), meta$tipo %||% ""),
+      tags$div(tags$strong("Cargo: "), formatC(as.numeric(meta$cargo %||% 0), format = "f", digits = 2, big.mark = ",")),
+      tags$div(tags$strong("Abono: "), formatC(as.numeric(meta$abono %||% 0), format = "f", digits = 2, big.mark = ","))
+    ))
+  }
+  before <- meta$before %||% list()
+  fields <- c(cuenta_id = "Cuenta", fecha = "Fecha", tipo = "Tipo", parte = "Parte",
+             concepto = "Concepto", cargo = "Cargo", abono = "Abono", notas = "Notas")
+  rows <- Filter(Negate(is.null), lapply(names(fields), function(f) {
+    b <- before[[f]]; a <- after[[f]]
+    b_s <- if (is.null(b) || is.na(b)) "" else as.character(b)
+    a_s <- if (is.null(a) || is.na(a)) "" else as.character(a)
+    if (identical(b_s, a_s)) return(NULL)
+    tags$tr(tags$td(fields[[f]]), tags$td(b_s), tags$td(a_s))
+  }))
+  if (!length(rows))
+    return(tags$p(class = "text-muted small", "Sin cambios de valor detectados."))
+  tags$table(class = "table table-sm table-hover small",
+    tags$thead(class = "table-light", tags$tr(tags$th("Campo"), tags$th("Antes"), tags$th("Después"))),
+    tags$tbody(rows)
+  )
+}
+
 # Generic fallback -- covers every module/action this popup has no bespoke
 # view for, as a plain key/value dump of its metadata. Same shape as
 # pagos_audit_viewer_module.R's non-"pago_ppl" detail rendering.
@@ -355,6 +453,8 @@
     policy        = .audit_detail_policy(meta),
     login         = .audit_detail_login(meta),
     logout        = .audit_detail_logout(meta),
+    bancos_movimientos = .audit_detail_bancos_movimientos(meta),
+    bancos_manual_edit  = .audit_detail_bancos_manual_edit(meta),
     .audit_detail_generic(meta)
   )
 }

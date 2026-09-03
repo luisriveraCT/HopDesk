@@ -1650,7 +1650,7 @@ bancosServer <- function(id, shared) {
         module      = "bancos",
         action      = "eliminar_movimientos",
         description = paste0(n, " movimiento(s) enviado(s) a papelera"),
-        metadata    = list(n = n),
+        metadata    = c(list(n = n), .bancos_audit_rows_summary(del_rows)),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
@@ -2872,6 +2872,11 @@ bancosServer <- function(id, shared) {
       actual_n <- sum(mask)
       if (actual_n == 0) { removeModal(); return() }
 
+      # Snapshot before mutation -- same reasoning as del_rows in
+      # do_eliminar_confirm above -- so the audit entry's row detail reflects
+      # what was actually reassigned, not the post-mutation state.
+      reasig_rows <- movs[mask, , drop = FALSE]
+
       # Step 1: Reassign cuenta_id for the whole batch
       movs$cuenta_id[mask] <- new_cid
 
@@ -2910,8 +2915,9 @@ bancosServer <- function(id, shared) {
         module      = "bancos",
         action      = "reasignar_sesion",
         description = msg,
-        metadata    = list(sesion_key = sesion_key, new_cuenta_id = new_cid,
-                           n_kept = n_kept, n_deduped = n_deduped),
+        metadata    = c(list(sesion_key = sesion_key, new_cuenta_id = new_cid,
+                             n_kept = n_kept, n_deduped = n_deduped),
+                        .bancos_audit_rows_summary(reasig_rows)),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
@@ -2991,6 +2997,7 @@ bancosServer <- function(id, shared) {
               !is.na(movs$eliminado) & movs$eliminado == FALSE
       actual_n <- sum(mask)
       if (actual_n == 0) { removeModal(); return() }
+      sesion_rows <- movs[mask, , drop = FALSE]
       movs$eliminado[mask]     <- TRUE
       movs$eliminado_at[mask]  <- Sys.time()
       movs$eliminado_por[mask] <- user
@@ -3011,7 +3018,8 @@ bancosServer <- function(id, shared) {
         module      = "bancos",
         action      = "eliminar_sesion",
         description = paste0(actual_n, " movimiento(s) de sesión eliminados"),
-        metadata    = list(n = actual_n, sesion_key = sesion_key),
+        metadata    = c(list(n = actual_n, sesion_key = sesion_key),
+                        .bancos_audit_rows_summary(sesion_rows)),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
@@ -3346,7 +3354,8 @@ bancosServer <- function(id, shared) {
         module      = "bancos",
         action      = "importar_movimientos",
         description = msg,
-        metadata    = list(cuenta_id = cid_final, n_importados = nrow(nuevos), n_auto_conciliado = n_auto),
+        metadata    = c(list(cuenta_id = cid_final, n_importados = nrow(nuevos), n_auto_conciliado = n_auto),
+                        .bancos_audit_rows_summary(nuevos)),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
@@ -3531,6 +3540,9 @@ bancosServer <- function(id, shared) {
         action      = "deshacer_eliminar_movimiento_manual",
         description = paste0("Movimiento manual restaurado: ", htmltools::htmlEscape(movs$parte[idx[1]] %||% "")),
         target_id   = mov_id,
+        metadata    = list(fecha = as.character(movs$fecha[idx[1]]), parte = movs$parte[idx[1]] %||% "",
+                           concepto = movs$concepto[idx[1]] %||% "", cargo = movs$cargo[idx[1]] %||% 0,
+                           abono = movs$abono[idx[1]] %||% 0),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
@@ -3552,6 +3564,7 @@ bancosServer <- function(id, shared) {
       # checking it isn't already voided instead.
       if (identical(ab$status[ab$id == ab_id][1], "voided")) return()
 
+      ab_row  <- ab[ab$id == ab_id, , drop = FALSE][1, ]
       updated <- void_abono(ab, ab_id)
       shared$abonos_db(updated)
       tryCatch({
@@ -3568,6 +3581,9 @@ bancosServer <- function(id, shared) {
         action      = "deshacer_abono",
         description = "Abono parcial deshecho",
         target_id   = ab_id,
+        metadata    = list(empresa = ab_row$Empresa %||% "", documento = ab_row$Documento %||% "",
+                           parte = ab_row$Parte %||% "", importe = ab_row$importe %||% 0,
+                           fecha_abono = as.character(ab_row$fecha_abono %||% NA)),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
@@ -3660,6 +3676,9 @@ bancosServer <- function(id, shared) {
         action      = "eliminar_confirmacion",
         description = "Confirmaci\u00f3n bancaria movida a papelera",
         target_id   = conf_id,
+        metadata    = list(empresa = conf$empresa[idx_c] %||% "", parte = conf$parte[idx_c] %||% "",
+                           documento = conf$documento[idx_c] %||% "", importe = conf$importe[idx_c] %||% 0,
+                           fecha = as.character(conf$fecha[idx_c] %||% NA), tipo = conf$tipo[idx_c] %||% ""),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
@@ -3796,6 +3815,9 @@ bancosServer <- function(id, shared) {
                              if (isTRUE(row$tipo == "cobro")) "Cobro" else "Pago",
                              " ", fecha_fmt),
         target_id   = conf_id,
+        metadata    = list(empresa = row$empresa[1] %||% "", parte = row$parte[1] %||% "",
+                           documento = row$documento[1] %||% "", importe = row$importe[1] %||% 0,
+                           tipo = row$tipo[1] %||% "", fecha_devuelta = as.character(restored_fecha)),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )

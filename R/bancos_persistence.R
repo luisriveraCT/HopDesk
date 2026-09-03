@@ -382,3 +382,38 @@ restore_from_bancos_papelera <- function(papelera_df, mov_id, actor = "user") {
     original_data = archived_row[["original_data"]][[1]]
   )
 }
+
+# ── Audit-log row summaries ──────────────────────────────────────────────────
+# Pure helper: turns a slice of bancos_movimientos (or bancos_confirmados) into
+# a compact list-of-lists suitable for log_action()'s metadata field (Stage 2
+# of the Bancos/Pasivos activity-logging extension, 2026-09-03). Used by the
+# bulk actions (import, delete, reassign) where a single scalar count in the
+# Actividad tab isn't enough for someone auditing "which movements exactly" --
+# but a raw JSON dump of the full movimiento row (20+ columns, including
+# internal bookkeeping fields like agenda_id/importado_at) would be noise, not
+# detail. Capped at .BANCOS_AUDIT_ROW_CAP rows so one bulk action (e.g.
+# importing a full year of statements) can't inflate a single app_audit entry
+# without bound; the caller is told via `truncated`/`n_total` so the popup can
+# say "showing the first 300 of 812" instead of silently hiding the rest.
+.BANCOS_AUDIT_ROW_CAP <- 300L
+
+.bancos_audit_rows_summary <- function(df, max_rows = .BANCOS_AUDIT_ROW_CAP) {
+  n_total <- if (is.null(df)) 0L else nrow(df)
+  if (!n_total) return(list(n_total = 0L, truncated = FALSE, rows = list()))
+
+  shown <- df[seq_len(min(n_total, max_rows)), , drop = FALSE]
+  # %||% only substitutes on NULL, not NA -- an actual NA_character_/NA_real_
+  # value in the source row (a movimiento with no parte, e.g. a bank fee)
+  # would survive to the JSON metadata as NA rather than the intended "" / 0.
+  .sc <- function(x) if (is.na(x)) "" else as.character(x)
+  .sn <- function(x) if (is.na(x)) 0  else as.numeric(x)
+  rows  <- lapply(seq_len(nrow(shown)), function(i) list(
+    fecha    = as.character(shown$fecha[i]),
+    parte    = .sc(shown$parte[i]),
+    concepto = .sc(shown$concepto[i]),
+    tipo     = .sc(shown$tipo[i]),
+    cargo    = .sn(shown$cargo[i]),
+    abono    = .sn(shown$abono[i])
+  ))
+  list(n_total = n_total, truncated = n_total > max_rows, rows = rows)
+}
