@@ -239,6 +239,7 @@ tryCatch({
   .run_module("tests/test_saas_audit_viewer.R")
   .run_module("tests/test_activity_live_refresh_toggle.R")
   .run_module("tests/test_payment_audit_stage.R")
+  .run_module("tests/test_activity_multiview_selector.R")
   .run_module("tests/test_activity_stage1_detail_capture.R")
   .run_module("tests/test_activity_stage2_detail_modal.R")
   .run_module("tests/test_activity_stage3_pdf_export.R")

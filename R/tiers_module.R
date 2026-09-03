@@ -41,6 +41,28 @@ PERM_LABELS <- c(
 # Keys that are immutably TRUE for principal accounts — UI renders them as locked.
 .PRINCIPAL_LOCKED_KEYS <- c("can_approve_clients", "can_manage_hopdesk_perms")
 
+# ── Activity tab views registry (2026-09-03) ─────────────────────────────────
+# The single source of truth for every switchable view inside the Actividad
+# tab (see tiersServer's activity_section below, which is entirely generic
+# over this list). To add a new structured audit view in a future stage
+# (Bancos/Pasivos activity are next), append ONE entry here -- id (used as
+# the reactiveVal value and the button's input-id suffix, so keep it a
+# simple identifier), label/icon for the button, can_view(shared) -> logical
+# for independent per-view permission gating, and ui(ns) -> the view's own
+# UI. Module-file scope (not inside tiersServer) since every field here is a
+# pure function reference or a static string, safe to build once rather than
+# per-session; the function references below (auditLogViewerUI,
+# .payment_audit_can_view, etc.) must already exist when this file is
+# sourced, which app.R's source() order guarantees.
+.ACTIVITY_VIEWS <- list(
+  list(id = "actividad", label = "Actividad", icon = "clock-rotate-left",
+       can_view = function(shared) TRUE,
+       ui       = function(ns) auditLogViewerUI(ns("activity_viewer"))),
+  list(id = "pagos", label = "Archivos de pago", icon = "file-invoice-dollar",
+       can_view = .payment_audit_can_view,
+       ui       = function(ns) pagosAuditViewerUI(ns("pagos_viewer")))
+)
+
 .TIER_COLORS <- c(principal = "#7b1fa2", hopdesk = "#c2185b", dev = "#0d1b3e",
                   admin = "#6610f2", finance = "#0a58ca", analysis = "#6c757d")
 .tier_color  <- function(t) .TIER_COLORS[[t]] %||% "#6c757d"
@@ -3742,36 +3764,48 @@ tiersServer <- function(id, shared) {
     # The staff-at-home-sees-hd-admin-log leak (Stage 4 Part A gap #1) is fixed
     # inside auditLogViewerServer()'s read_audit_log_scoped() call, not here.
     #
-    # Switch-view button (2026-08-25): swaps this same panel for the
-    # structured payment-file audit trail (R/pagos_audit_viewer_module.R).
-    # The button itself is only rendered when the viewer can actually see
-    # that view (can_view_payment_audit, or staff) -- matching this repo's
-    # own "genuinely absent, not rendered-then-locked" convention for
-    # permission-gated UI (see Stage 2 Part C's tab-bar comment above).
+    # Multi-view selector (2026-09-03, generalized from the 2026-08-25 binary
+    # actividad<->pagos toggle): swaps this same panel between the generic
+    # Actividad log and any number of structured audit views (payment files
+    # today; Bancos/Pasivos activity are the next planned entries). Adding a
+    # future view means appending ONE entry to .ACTIVITY_VIEWS below --
+    # nothing else in this block should need to change. Each entry's button
+    # is only rendered when that view's own can_view(shared) passes, matching
+    # this repo's "genuinely absent, not rendered-then-locked" convention for
+    # permission-gated UI (see Stage 2 Part C's tab-bar comment above) --
+    # every view gates independently, not behind one shared boolean.
     activity_view <- reactiveVal("actividad")
-    observeEvent(input$activity_switch_view, {
-      activity_view(if (identical(activity_view(), "actividad")) "pagos" else "actividad")
-    }, ignoreInit = TRUE)
+    for (.av in .ACTIVITY_VIEWS) {
+      local({
+        vid <- .av$id  # captured per-iteration; a shared loop variable would
+                       # otherwise make every observer close over the LAST id
+        observeEvent(input[[paste0("activity_view_btn_", vid)]], {
+          activity_view(vid)
+        }, ignoreInit = TRUE)
+      })
+    }
 
     output$activity_section <- renderUI({
       req(req_authorized())
-      show_switch <- isTRUE(.payment_audit_can_view(shared))
-      view <- if (show_switch) activity_view() else "actividad"
+      visible <- Filter(function(v) isTRUE(tryCatch(v$can_view(shared), error = function(e) FALSE)),
+                        .ACTIVITY_VIEWS)
+      visible_ids <- vapply(visible, `[[`, character(1), "id")
+      # Falls back to "actividad" if the current selection's permission was
+      # revoked mid-session (e.g. a staff jump ending) rather than rendering
+      # a view the viewer can no longer see.
+      view_id    <- if (isTRUE(activity_view() %in% visible_ids)) activity_view() else "actividad"
+      view_entry <- Find(function(v) identical(v$id, view_id), .ACTIVITY_VIEWS)
 
       tagList(
-        if (show_switch)
-          div(class = "d-flex justify-content-end mb-2",
-              actionButton(ns("activity_switch_view"),
-                if (identical(view, "actividad"))
-                  tagList(icon("file-invoice-dollar"), " Ver archivos de pago")
-                else
-                  tagList(icon("clock-rotate-left"), " Ver Actividad"),
-                class = "btn btn-sm btn-outline-primary"))
+        if (length(visible) > 1)
+          div(class = "d-flex justify-content-end gap-1 mb-2 flex-wrap",
+              lapply(visible, function(v)
+                actionButton(ns(paste0("activity_view_btn_", v$id)),
+                             tagList(icon(v$icon), " ", v$label),
+                             class = paste("btn btn-sm",
+                                           if (identical(view_id, v$id)) "btn-primary" else "btn-outline-primary"))))
         else NULL,
-        if (identical(view, "pagos"))
-          pagosAuditViewerUI(ns("pagos_viewer"))
-        else
-          auditLogViewerUI(ns("activity_viewer"))
+        view_entry$ui(ns)
       )
     })
 

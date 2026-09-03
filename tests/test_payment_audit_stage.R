@@ -492,10 +492,15 @@ tm_txt <- readLines("R/tiers_module.R", warn = FALSE)
      "pagosAuditViewerServer is wired into tiers_module.R's server")
 .chk(length(grep('pagosAuditViewerUI\\(ns\\("pagos_viewer"\\)\\)', tm_txt)), 1L,
      "pagosAuditViewerUI is wired into the activity_section render")
-.chk(length(grep("activity_switch_view", tm_txt)) >= 2, TRUE,
-     "the switch-view button (input id + observeEvent) is wired")
-.chk(length(grep("\\.payment_audit_can_view\\(shared\\)", tm_txt)), 1L,
-     "the switch-view button's visibility is gated by .payment_audit_can_view()")
+# Generalized 2026-09-03 from a binary activity_switch_view toggle into the
+# data-driven .ACTIVITY_VIEWS registry (see tests/test_activity_multiview_selector.R
+# for the dedicated Stage 1 coverage of that registry's own behavior) --
+# these two checks now confirm the "pagos" view is REGISTERED (a list entry
+# with the right id/can_view), not that a specific hardcoded input id exists.
+.chk(length(grep('id = "pagos"', tm_txt)), 1L,
+     "the \"pagos\" view is registered in .ACTIVITY_VIEWS")
+.chk(length(grep("can_view = \\.payment_audit_can_view", tm_txt)), 1L,
+     "the \"pagos\" view's visibility is gated by .payment_audit_can_view (via the registry, not a standalone if-check)")
 
 app_txt_pa <- readLines("app.R", warn = FALSE)
 .chk(length(grep('source\\("R/pagos_audit_viewer_module.R"\\)', app_txt_pa)), 1L,
