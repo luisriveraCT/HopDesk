@@ -202,8 +202,10 @@ suppressPackageStartupMessages(library(shiny))
   ok("C6 bulk.purge_closed_provisions: found pasivos_admin_purge_closed() to scan", !is.na(b6))
   if (!is.na(b6)) {
     ok("C6: pasivos_log_audit() now receives before= (the purged row ids) and after= (the backup key)",
-       grepl("before      = list\\(ids = provs\\$id\\[to_drop\\]", b6) &&
+       grepl("before      = list\\(ids = ids_capped", b6) &&
        grepl("after       = list\\(backup_key = backup_key\\)", b6))
+    ok("C6: the id list is capped (this scans the whole client's history, unlike Bancos' per-session bulk actions -- audit found this was unbounded and asked for the same discipline as .bancos_audit_rows_summary())",
+       grepl("ids_capped\\s*<-\\s*utils::head\\(ids_all,", b6))
   }
 
   # C7: forecasting_set_estimate (estimate.changed) -- overwrite lost the old value.

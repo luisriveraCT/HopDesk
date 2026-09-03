@@ -438,6 +438,15 @@
   before <- meta$before
   after  <- meta$after
 
+  # "id" duplicates the target row's own id, already shown one line above as
+  # "ID destino" (target_id) in the modal's common header -- every
+  # liability/provision row's before/after carries it (schema PK), so
+  # without this it appeared as a redundant, uninformative diff row on
+  # nearly every liability/provision entry (found while probing this
+  # renderer against a real liability row, not a hand-simplified test list).
+  before <- before[setdiff(names(before), "id")]
+  after  <- after[setdiff(names(after), "id")]
+
   if (is.null(before)) {
     if (!length(after))
       return(tagList(header, tags$p(class = "text-muted small", "Sin detalle adicional registrado.")))

@@ -1053,12 +1053,23 @@ pasivos_admin_purge_closed <- function(drop_estados = "closed",
   save_pasivos_provisions(cleaned, client_id = client_id)
   bump_sync_version("pasivos_provisions_db")
 
+  # This scans the WHOLE client's provision history, not one liability or
+  # session -- over years of data, to_drop can genuinely reach thousands of
+  # rows. Cap the logged id list (same 300-row cap convention as Bancos'
+  # .bancos_audit_rows_summary()) rather than writing an unbounded audit
+  # entry -- the real recovery path for a purge is the backup file, not the
+  # audit log, so truncating the id list here loses nothing (it's a
+  # traceability pointer, not the only record of what was purged).
+  .PURGE_AUDIT_ID_CAP <- 300L
+  ids_all     <- provs$id[to_drop]
+  ids_capped  <- utils::head(ids_all, .PURGE_AUDIT_ID_CAP)
   tryCatch(pasivos_log_audit(
     action_type = "bulk.purge_closed_provisions",
     user        = user,
     target_kind = "bulk",
     target_id   = NA_character_,
-    before      = list(ids = provs$id[to_drop], n = n_drop, estados = drop_estados),
+    before      = list(ids = ids_capped, n = n_drop, truncated = length(ids_all) > length(ids_capped),
+                       estados = drop_estados),
     after       = list(backup_key = backup_key),
     notes       = sprintf("Purged %d rows with estado in {%s}; backup at %s",
                           n_drop, paste(drop_estados, collapse = ", "), backup_key),

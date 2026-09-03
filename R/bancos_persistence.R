@@ -402,18 +402,20 @@ restore_from_bancos_papelera <- function(papelera_df, mov_id, actor = "user") {
   if (!n_total) return(list(n_total = 0L, truncated = FALSE, rows = list()))
 
   shown <- df[seq_len(min(n_total, max_rows)), , drop = FALSE]
-  # %||% only substitutes on NULL, not NA -- an actual NA_character_/NA_real_
-  # value in the source row (a movimiento with no parte, e.g. a bank fee)
-  # would survive to the JSON metadata as NA rather than the intended "" / 0.
-  .sc <- function(x) if (is.na(x)) "" else as.character(x)
-  .sn <- function(x) if (is.na(x)) 0  else as.numeric(x)
+  # Explicit is.na() checks rather than %||% here: the production %||%
+  # (R/global.R) DOES coalesce a scalar NA the same as NULL, but this
+  # codebase's own test harnesses (e.g. tests/_run_saas.R) define their own
+  # simplified, NULL-only %||% for isolation -- code whose correctness
+  # depends on the production %||%'s NA behavior passes in the real app but
+  # is not reliably exercised by those harnesses. Explicit is.na() handling
+  # is correct under either definition and isn't a redundant guard.
   rows  <- lapply(seq_len(nrow(shown)), function(i) list(
     fecha    = as.character(shown$fecha[i]),
-    parte    = .sc(shown$parte[i]),
-    concepto = .sc(shown$concepto[i]),
-    tipo     = .sc(shown$tipo[i]),
-    cargo    = .sn(shown$cargo[i]),
-    abono    = .sn(shown$abono[i])
+    parte    = if (is.na(shown$parte[i]))    "" else as.character(shown$parte[i]),
+    concepto = if (is.na(shown$concepto[i])) "" else as.character(shown$concepto[i]),
+    tipo     = if (is.na(shown$tipo[i]))     "" else as.character(shown$tipo[i]),
+    cargo    = if (is.na(shown$cargo[i]))    0  else as.numeric(shown$cargo[i]),
+    abono    = if (is.na(shown$abono[i]))    0  else as.numeric(shown$abono[i])
   ))
   list(n_total = n_total, truncated = n_total > max_rows, rows = rows)
 }
