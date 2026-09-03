@@ -8,7 +8,139 @@
 # AWS_* vars are set even when R is started outside the project directory.
 if (file.exists(".Renviron")) readRenviron(".Renviron")
 
+# ── Dev/staging S3 override (added 2026-09-02) ──────────────────────────────
+# CRITICAL: this repo has one single .Renviron, pointed at the LIVE
+# PRODUCTION S3 bucket -- there was no way to test locally without touching
+# real client data, and the single-instance lock above cannot help here
+# either: shinyapps.io (the real, day-to-day production) runs on entirely
+# separate infrastructure that a local Windows file lock has no way to see.
+#
+# Fail-safe by design, not by convention: an optional, gitignored/rscignored
+# (never committed, never deployed) .Renviron.local can override
+# S3_BUCKET/AWS_*/CLIENT_ID for local work -- but ONLY when this process was
+# NOT launched by hopdesk_start.bat, which is the one place allowed to assert
+# HOPDESK_PRODUCTION=1. Any other way of starting this app on this machine --
+# RStudio/VS Code "Run App", a stray Rscript, a forgotten terminal -- picks up
+# the dev override automatically the moment .Renviron.local exists, with NO
+# separate opt-in step to remember. The alternative (an opt-IN dev flag)
+# would silently default back to production the instant someone forgets to
+# set it -- exactly the failure mode this whole fix exists to close.
+if (Sys.getenv("HOPDESK_PRODUCTION") != "1" && file.exists(".Renviron.local")) {
+  readRenviron(".Renviron.local")
+  message("[ENV] Local dev override active from .Renviron.local -- using bucket '",
+          Sys.getenv("S3_BUCKET"), "', NOT production.")
+}
+
 IS_ADMIN_DEPLOYMENT <- tolower(trimws(Sys.getenv("CLIENT_ID"))) == "hd-admin"
+
+# ── Single-instance guard (added 2026-09-02) ────────────────────────────────
+# CRITICAL: every save_*() in this app does "read the whole table -> mutate
+# in R memory -> overwrite the whole table back to S3", with no locking or
+# versioning at the S3 level. Two live processes pointed at the SAME S3
+# bucket (e.g. this machine's production instance behind ngrok, and a second
+# local test run of an updated version of the code -- both read the same
+# single .Renviron, so both hit the identical production bucket today) can
+# silently clobber each other's saves this way: both S3 writes succeed, no
+# exception is raised anywhere, and whichever process wrote last simply wins
+# -- indistinguishable from a client's action being silently undone.
+#
+# This is made worse by a separate, confirmed Windows/R quirk:
+# hopdesk_start.bat's `start "" /B "Rscript.exe" ...` does not run as one
+# process -- it relaunches through an internal cmd.exe wrapper into the real
+# worker process, 2-3 layers deep. Verified empirically: closing that
+# script's console window does NOT stop the real worker underneath it -- it
+# survives as an invisible orphan (no window, still bound to its port, still
+# connected to this same S3 bucket) until something kills it directly. So
+# "I closed the window, then started it again" can produce a second live
+# writer with no double-launch ever being intended.
+#
+# Fix: a real OS-level advisory file lock (the `filelock` package), held for
+# the life of this process. Verified empirically before relying on it: (1) a
+# second acquire attempt while this one is alive fails immediately, (2) the
+# OS releases the lock instantly and automatically the moment this process
+# exits by ANY means, including a hard `taskkill /F` with no cooperation from
+# this process at all -- so an orphaned process keeps correctly blocking new
+# starts (as it must) with no manual staleness-timeout to tune anywhere. This
+# is what hopdesk_stop.bat / hopdesk_start.bat's own cleanup step key off of
+# via the companion .info file below.
+# Factored into a standalone function (rather than inline top-level code) so
+# tests/test_hopdesk_single_instance_lock.R can extract and exercise this
+# EXACT real logic against a throwaway temp directory, the same
+# "extract-the-real-block" approach test_moves_save_failure_visibility.R uses
+# for .save_moves_deferred() -- never hand-reimplement the logic under test.
+.hopdesk_acquire_instance_lock <- function(lock_dir_base = Sys.getenv("LOCALAPPDATA"),
+                                            client_id    = Sys.getenv("CLIENT_ID"),
+                                            s3_bucket    = Sys.getenv("S3_BUCKET")) {
+  if (!requireNamespace("filelock", quietly = TRUE)) {
+    stop(
+      "HopDesk cannot start: the 'filelock' package (required for the single-",
+      "instance safety guard) is not installed. Run install.packages('filelock') ",
+      "once, then start HopDesk again. Refusing to start WITHOUT this guard would ",
+      "risk two live processes silently corrupting production data -- see the ",
+      "single-instance guard notes in R/global.R."
+    )
+  }
+
+  lock_dir  <- file.path(lock_dir_base, "HopDesk")
+  dir.create(lock_dir, recursive = TRUE, showWarnings = FALSE)
+  lock_key  <- paste0(client_id, "_", s3_bucket)
+  lock_path <- file.path(lock_dir, paste0("instance_", lock_key, ".lock"))
+  pid_path  <- paste0(lock_path, ".info")
+
+  # Release a lock held by an earlier source("R/global.R") in this SAME R
+  # process (e.g. pressing "Run App" again in a kept-open RStudio/VS Code R
+  # session, a pattern this file already re-supports unconditionally -- see
+  # the CRITICAL FIX note above) before acquiring a fresh one, so a long dev
+  # session doesn't leak OS lock handles across many re-sources.
+  if (exists(".hopdesk_lock", envir = .GlobalEnv, inherits = FALSE) &&
+      !is.null(.GlobalEnv$.hopdesk_lock))
+    tryCatch(filelock::unlock(.GlobalEnv$.hopdesk_lock), error = function(e) NULL)
+
+  lock <- filelock::lock(lock_path, timeout = 0)
+
+  if (is.null(lock)) {
+    prior_info <- tryCatch(readLines(pid_path, warn = FALSE), error = function(e) character())
+    stop(
+      "\n\n=====================================================================\n",
+      "HOPDESK REFUSED TO START: another HopDesk process is already running\n",
+      "against this exact S3 bucket ('", s3_bucket, "', client '", client_id, "').\n\n",
+      "Starting a second one would risk two processes silently overwriting each\n",
+      "other's saves in production. This can happen even if hopdesk_start.bat's\n",
+      "window was already closed -- on Windows, closing that window does NOT\n",
+      "reliably stop the real R process running underneath it.\n\n",
+      if (length(prior_info))
+        paste0("Last known running instance:\n  ", paste(prior_info, collapse = "\n  "), "\n\n")
+      else "",
+      "To resolve: run hopdesk_stop.bat, confirm in Task Manager's Details tab\n",
+      "that no Rscript.exe remains, then start HopDesk again.\n",
+      "====================================================================="
+    )
+  }
+
+  writeLines(
+    c(paste0("pid: ",        Sys.getpid()),
+      paste0("host: ",       Sys.info()[["nodename"]]),
+      paste0("started_at: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")),
+      paste0("client_id: ",  client_id),
+      paste0("s3_bucket: ",  s3_bucket)),
+    pid_path
+  )
+
+  lock
+}
+
+.hopdesk_lock <- .hopdesk_acquire_instance_lock()
+
+# Deliberately no Shiny stop-callback/cleanup hook here: global.R is
+# unconditionally re-sourced on every app.R launch, including repeated ones in
+# the same persistent R session (see the CRITICAL FIX note atop this file) --
+# a registered stop callback would accumulate once per re-source instead of
+# replacing, and R/global.R is required to stay free of exactly this kind of
+# non-idempotent side effect (enforced by
+# tests/test_stage7_global_always_resourced.R). Not needed anyway: the OS
+# releases this lock immediately on ANY process exit, graceful or killed
+# (verified empirically), and the next process to acquire it simply
+# overwrites this stale .info file with its own -- also verified empirically.
 
 # Reset the S3 preload guard on re-source so a fresh global.R source always
 # re-runs the preload with the correct CLIENT_ID (needed after .Renviron changes).

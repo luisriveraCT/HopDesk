@@ -1,0 +1,7 @@
+# Files that must NEVER be bundled into a shinyapps.io deployment.
+# rsconnect does NOT read .gitignore for this -- it has its own hardcoded
+# exclusion list plus whatever is listed here. Added 2026-09-02 alongside the
+# dev/staging S3 bucket split: .Renviron.local carries LOCAL-ONLY AWS
+# overrides (a separate dev bucket) and must never reach production, since a
+# deploy picking it up would point shinyapps.io itself at the dev bucket.
+.Renviron.local

@@ -1,0 +1,22 @@
+# =============================================================================
+# .Renviron.local.example
+#
+# Template for LOCAL DEV ONLY overrides. Copy this file to ".Renviron.local"
+# (already in .gitignore AND .rscignore -- it will never be committed or
+# deployed) and fill in real values for the dev/staging S3 bucket.
+#
+# R/global.R loads this automatically for any local run (RStudio/VS Code
+# "Run App", a plain Rscript session, etc.) -- EXCEPT when launched via
+# hopdesk_start.bat, which explicitly sets HOPDESK_PRODUCTION=1 to assert
+# real production access. You do not need to do anything to "turn on" the
+# dev override besides having this file exist with real values in it.
+#
+# Do NOT put real production credentials here. The whole point of this file
+# is that local work can never touch production data again, even by
+# accident.
+# =============================================================================
+
+S3_BUCKET=antiguedad-rds-dev
+AWS_ACCESS_KEY_ID=REPLACE_ME
+AWS_SECRET_ACCESS_KEY=REPLACE_ME
+AWS_DEFAULT_REGION=us-east-1

@@ -1,5 +1,6 @@
 # R environment & secrets — never commit
 .Renviron
+.Renviron.local
 .Rhistory
 .RData
 **/.Rhistory
