@@ -85,6 +85,14 @@
   # unlabeled unlist()-flattened blob the plain generic view produced for a
   # nested list.
   if (module == "pasivos") return("pasivos_diff")
+  # Reporte activity logging (2026-09-04): "aplicar_filtros" carries the same
+  # before/after shape as pasivos entries (arbitrary field set, no fixed
+  # label map) -- reuses the same generic diff renderer rather than a
+  # module-specific copy. Exports get their own small bespoke view since
+  # they're a distinct kind of event (a document actually left the app),
+  # not a settings change.
+  if (module == "reporte" && action == "aplicar_filtros") return("reporte_filtros")
+  if (module == "reporte" && action %in% c("exportar_html", "exportar_pdf")) return("reporte_export")
   "generic"
 }
 
@@ -420,7 +428,12 @@
 # so this renders a generic, field-agnostic before/after diff (only
 # CHANGED fields, like .audit_detail_bancos_manual_edit() but without a
 # fixed field-label map), rather than one bespoke view per action type.
-.audit_pasivos_fmt_val <- function(v) {
+# Reused as-is (not a copy) by the "reporte" module's aplicar_filtros action
+# (Stage: Reporte/Grupo activity logging, 2026-09-04) -- same shape
+# (before/after, arbitrary field set), same need, no reason for a second
+# implementation. Named generically for that reason, not after either
+# module.
+.audit_generic_fmt_val <- function(v) {
   if (is.null(v)) return("")
   if (is.list(v)) return(paste(unlist(v), collapse = ", "))
   if (!length(v)) return("")
@@ -428,7 +441,7 @@
   paste(as.character(v), collapse = ", ")
 }
 
-.audit_detail_pasivos_diff <- function(meta) {
+.audit_detail_generic_diff <- function(meta) {
   target_kind <- as.character(meta$target_kind %||% "")
   empresa     <- as.character(meta$empresa %||% "")
   header <- div(class = "mb-2 small",
@@ -451,14 +464,14 @@
     if (!length(after))
       return(tagList(header, tags$p(class = "text-muted small", "Sin detalle adicional registrado.")))
     rows <- lapply(names(after), function(k)
-      tags$tr(tags$td(class = "fw-semibold", k), tags$td(.audit_pasivos_fmt_val(after[[k]]))))
+      tags$tr(tags$td(class = "fw-semibold", k), tags$td(.audit_generic_fmt_val(after[[k]]))))
     return(tagList(header, tags$table(class = "table table-sm small", tags$tbody(rows))))
   }
 
   all_fields <- union(names(before), names(after))
   diff_rows <- Filter(Negate(is.null), lapply(all_fields, function(f) {
-    b <- .audit_pasivos_fmt_val(before[[f]])
-    a <- .audit_pasivos_fmt_val(after[[f]])
+    b <- .audit_generic_fmt_val(before[[f]])
+    a <- .audit_generic_fmt_val(after[[f]])
     if (identical(b, a)) return(NULL)
     tags$tr(tags$td(f), tags$td(b), tags$td(a))
   }))
@@ -469,6 +482,27 @@
       tags$thead(class = "table-light", tags$tr(tags$th("Campo"), tags$th("Antes"), tags$th("Después"))),
       tags$tbody(diff_rows)
     )
+  )
+}
+
+# Reporte export (.log_reporte_export(), R/reporte_module.R) -- a financial
+# summary report actually left the app as a file, so this gets its own
+# small view (format, coverage, totals) rather than the generic diff -- an
+# export has no "before", it's a one-shot event, not a state change.
+.audit_detail_reporte_export <- function(meta) {
+  empresas <- meta$empresas %||% character(0)
+  tagList(
+    tags$div(tags$strong("Formato: "), toupper(as.character(meta$formato %||% ""))),
+    tags$div(tags$strong("Rango: "),
+             sprintf("%s — %s", meta$desde %||% "—", meta$hasta %||% "—")),
+    tags$div(tags$strong("Empresas: "),
+             if (length(empresas)) paste(empresas, collapse = ", ") else "—"),
+    tags$div(tags$strong("Cuentas incluidas: "), as.character(meta$n_cuentas %||% "")),
+    tags$div(tags$strong("Saldo total: "),
+             formatC(as.numeric(meta$total_saldo %||% 0), format = "f", digits = 2, big.mark = ",")),
+    if (!is.null(meta$nota) && !is.na(meta$nota) && nzchar(meta$nota %||% ""))
+      tags$div(class = "text-muted small mt-1", icon("circle-info"), " ", meta$nota)
+    else NULL
   )
 }
 
@@ -523,7 +557,9 @@
     logout        = .audit_detail_logout(meta),
     bancos_movimientos = .audit_detail_bancos_movimientos(meta),
     bancos_manual_edit  = .audit_detail_bancos_manual_edit(meta),
-    pasivos_diff  = .audit_detail_pasivos_diff(meta),
+    pasivos_diff  = .audit_detail_generic_diff(meta),
+    reporte_filtros = .audit_detail_generic_diff(meta),
+    reporte_export  = .audit_detail_reporte_export(meta),
     .audit_detail_generic(meta)
   )
 }

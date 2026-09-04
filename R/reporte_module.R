@@ -320,6 +320,37 @@ floor_date_month <- function() {
   as.Date(format(d, "%Y-%m-01"))
 }
 
+# ── Export logging ────────────────────────────────────────────────────────────
+# Previously this module's exports called the log_archivo_generado helper
+# (R/pagos_generados_persistence.R), which files entries into pagos_generados.rds --
+# the SAME store used for real bank payment files (masked CLABEs,
+# beneficiaries), shown only in "Ver archivos de pago". A financial summary
+# report is not a payment file; that mixed unrelated exports into a store
+# gated by a payment-specific permission and never surfaced them in the
+# general Actividad log at all. Uses log_action() directly instead, same as
+# every other export in the app (cashflow_export, pagos_audit). Kept
+# deliberately lean -- desde/hasta/empresas/n_cuentas/total_saldo is enough
+# to answer "what exactly did this export cover" without archiving the
+# report's full row-level content (unlike a payment file, this isn't a
+# permanent instruction to a bank -- the live data can always be
+# re-generated from the same filters).
+.log_reporte_export <- function(shared, formato, desde, hasta, empresas,
+                                n_cuentas, total_saldo, nota = NA_character_) {
+  tryCatch(log_action(
+    user        = tryCatch(shared$current_user(), error = function(e) "system"),
+    module      = "reporte",
+    action      = paste0("exportar_", formato),
+    description = sprintf("Reporte financiero exportado (%s): %s — %s (%d empresa(s))",
+                          toupper(formato), format(desde, "%d/%m/%Y"), format(hasta, "%d/%m/%Y"),
+                          length(empresas)),
+    metadata    = list(formato = formato, desde = as.character(desde), hasta = as.character(hasta),
+                       empresas = empresas, n_cuentas = n_cuentas,
+                       total_saldo = as.numeric(total_saldo %||% NA_real_), nota = nota),
+    client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+    viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+  ), error = function(e) NULL)
+}
+
 # ── Server ────────────────────────────────────────────────────────────────────
 reporteServer <- function(id, shared, active_tab = NULL) {
   moduleServer(id, function(input, output, session) {
@@ -388,11 +419,29 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 
     # ── Apply button: commit settings and re-render ──────────────────────────
     observeEvent(input$btn_apply, {
+      before_settings <- list(desde = as.character(isolate(applied$desde)),
+                              hasta = as.character(isolate(applied$hasta)),
+                              empresas = isolate(applied$empresas))
       applied$desde    <- input$fecha_desde
       applied$hasta    <- input$fecha_hasta
       applied$empresas <- selected_empresas()
       applied$trigger  <- isolate(applied$trigger) + 1L
       session$sendCustomMessage("rpt_close_settings", list())
+
+      tryCatch(log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "reporte",
+        action      = "aplicar_filtros",
+        description = sprintf("Filtros de reporte aplicados: %s — %s (%d empresa(s))",
+                              format(applied$desde, "%d/%m/%Y"), format(applied$hasta, "%d/%m/%Y"),
+                              length(applied$empresas)),
+        metadata    = list(before = before_settings,
+                           after  = list(desde = as.character(applied$desde),
+                                        hasta = as.character(applied$hasta),
+                                        empresas = applied$empresas)),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      ), error = function(e) NULL)
     }, ignoreInit = TRUE)
 
     # ── FAB back button → switch to BNC ─────────────────────────────────────
@@ -790,13 +839,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           file, useBytes = FALSE
         )
 
-        log_archivo_generado(
-          shared, tipo = "reporte_financiero_html", empresa = paste(emps, collapse = ", "),
-          moneda = NA_character_,
-          detalle_list = list(desde = as.character(desde), hasta = as.character(hasta), empresas = emps),
-          n_items = length(emps),
-          fname = paste0("reporte_financiero_", format(Sys.Date(), "%Y%m%d"), ".html")
-        )
+        .log_reporte_export(shared, formato = "html", desde = desde, hasta = hasta,
+                            empresas = emps, n_cuentas = nrow(bals_sel),
+                            total_saldo = sum(bals_sel$saldo, na.rm = TRUE))
       }
     )
 
@@ -845,6 +890,13 @@ reporteServer <- function(id, shared, active_tab = NULL) {
             ),
             type = "warning", duration = 15
           )
+          # The user actually received an HTML file, not a PDF -- the audit
+          # entry must reflect what was really downloaded, not the button
+          # that was clicked.
+          .log_reporte_export(shared, formato = "html", desde = desde, hasta = hasta,
+                              empresas = emps, n_cuentas = nrow(bals_sel),
+                              total_saldo = sum(bals_sel$saldo, na.rm = TRUE),
+                              nota = "pagedown no instalado; entregado como HTML")
           return()
         }
 
@@ -872,13 +924,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
             type = "message", duration = 3
           )
 
-          log_archivo_generado(
-            shared, tipo = "reporte_financiero_pdf", empresa = paste(emps, collapse = ", "),
-            moneda = NA_character_,
-            detalle_list = list(desde = as.character(desde), hasta = as.character(hasta), empresas = emps),
-            n_items = length(emps),
-            fname = paste0("reporte_financiero_", format(Sys.Date(), "%Y%m%d"), ".pdf")
-          )
+          .log_reporte_export(shared, formato = "pdf", desde = desde, hasta = hasta,
+                              empresas = emps, n_cuentas = nrow(bals_sel),
+                              total_saldo = sum(bals_sel$saldo, na.rm = TRUE))
         }, error = function(e) {
           # Chrome found but print failed — deliver HTML and show error
           writeLines(html_content, file)
@@ -892,6 +940,10 @@ reporteServer <- function(id, shared, active_tab = NULL) {
             ),
             type = "error", duration = 10
           )
+          .log_reporte_export(shared, formato = "html", desde = desde, hasta = hasta,
+                              empresas = emps, n_cuentas = nrow(bals_sel),
+                              total_saldo = sum(bals_sel$saldo, na.rm = TRUE),
+                              nota = paste("error al generar PDF, entregado como HTML:", conditionMessage(e)))
         })
       }
     )

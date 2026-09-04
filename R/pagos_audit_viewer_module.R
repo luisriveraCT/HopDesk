@@ -31,8 +31,6 @@
 # function below need it, and the latter is not part of the module closure.
 .TIPO_LABELS <- c(pago_ppl = "Pago", reporte_word = "Reporte Word",
                   reporte_excel = "Reporte Excel", reporte_pdf = "Reporte PDF",
-                  reporte_financiero_html = "Reporte Financiero (HTML)",
-                  reporte_financiero_pdf  = "Reporte Financiero (PDF)",
                   bancos_libro_excel      = "Libro de Bancos (Excel)")
 .tipo_label <- function(tipo) {
   t <- as.character(tipo)

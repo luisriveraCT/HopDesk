@@ -52,7 +52,7 @@ suppressPackageStartupMessages(library(shiny))
 }
 
 # =============================================================================
-# Part B -- .audit_detail_pasivos_diff() -- the new bespoke renderer
+# Part B -- .audit_detail_generic_diff() -- the new bespoke renderer
 # =============================================================================
 {
   source("R/audit_log_viewer_module.R", local = FALSE)
@@ -67,7 +67,7 @@ suppressPackageStartupMessages(library(shiny))
 
   # No before/after at all (e.g. capability.denied, notes-only) -- must not
   # crash, must say something rather than render an empty shell.
-  html_empty <- .html(.audit_detail_pasivos_diff(list(target_kind = "provision", empresa = "NCS")))
+  html_empty <- .html(.audit_detail_generic_diff(list(target_kind = "provision", empresa = "NCS")))
   ok("no before/after: shows the 'no detail' fallback message",
      grepl("Sin detalle adicional", html_empty, fixed = TRUE))
   ok("no before/after: still shows the target_kind/empresa header",
@@ -75,14 +75,14 @@ suppressPackageStartupMessages(library(shiny))
 
   # after only (creation, e.g. provision.generated / liability.created) --
   # flat field dump, not a diff table (nothing to diff against).
-  html_create <- .html(.audit_detail_pasivos_diff(list(
+  html_create <- .html(.audit_detail_generic_diff(list(
     target_kind = "liability", empresa = "NTS",
     after = list(nombre = "Renta oficina", categoria = "regular", amount_default = 15000))))
   ok("after-only (creation): the new value renders", grepl("Renta oficina", html_create, fixed = TRUE))
   ok("after-only (creation): the field name renders as a label", grepl("nombre", html_create, fixed = TRUE))
 
   # before+after with a real change -- diff table, changed fields only.
-  html_diff <- .html(.audit_detail_pasivos_diff(list(
+  html_diff <- .html(.audit_detail_generic_diff(list(
     target_kind = "provision", empresa = "NCS",
     before = list(estado = "provisional", amount_pago = 1000, parte = "Proveedor A"),
     after  = list(estado = "converted",   amount_pago = 1000, parte = "Proveedor A"))))
@@ -94,7 +94,7 @@ suppressPackageStartupMessages(library(shiny))
      lengths(regmatches(html_diff, gregexpr("Proveedor A", html_diff))) <= 1)
 
   # before+after with NO actual change -- e.g. a no-op save.
-  html_nochange <- .html(.audit_detail_pasivos_diff(list(
+  html_nochange <- .html(.audit_detail_generic_diff(list(
     target_kind = "provision", empresa = "NCS",
     before = list(estado = "provisional"), after = list(estado = "provisional"))))
   ok("before+after with identical values: shows a 'no changes' message, not an empty table",
@@ -103,7 +103,7 @@ suppressPackageStartupMessages(library(shiny))
   # A list-column value (e.g. recurrence_params, or the bulk decisions array
   # from .pec_apply_decisions()) must render as SOMETHING, not crash and not
   # print an R-internal representation like "list(a = 1)".
-  html_listval <- .html(.audit_detail_pasivos_diff(list(
+  html_listval <- .html(.audit_detail_generic_diff(list(
     target_kind = "bulk", empresa = NA_character_,
     after = list(n_conflicts = 2L,
                 decisions = list(list(provision_id = "p1", decision = "aplicar"),
@@ -114,7 +114,7 @@ suppressPackageStartupMessages(library(shiny))
   # NA-safety: %||% only substitutes on NULL, not NA -- a field genuinely
   # holding NA_character_ (very common in the liability schema: subcategoria,
   # flavor, cotizado_en are usually NA) must render as blank, not literal "NA".
-  html_na <- .html(.audit_detail_pasivos_diff(list(
+  html_na <- .html(.audit_detail_generic_diff(list(
     target_kind = "liability", empresa = "NCS",
     before = list(flavor = NA_character_), after = list(flavor = "credito_simple"))))
   ok("an NA before-value renders as blank, not the literal string 'NA'",

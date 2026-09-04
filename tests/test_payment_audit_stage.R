@@ -633,27 +633,37 @@ ce_txt <- readLines("R/cashflow_export_module.R", warn = FALSE)
 .chk(length(grep("params <- \\.xl_log_params\\(\\) %\\|\\|% list\\(\\)", ce_txt)), 1L,
      "the Excel download handler reads .xl_log_params() (job-trigger-time params, not stale/re-read UI state)")
 
-# ── Part G4: the two other downloadHandler sites found app-wide
-# (R/reporte_module.R's HTML/PDF financial report, R/bancos_module.R's
-# Libro de Bancos Excel export) also got the same treatment ─────────────────
+# ── Part G4: R/bancos_module.R's Libro de Bancos Excel export got the same
+# treatment (still true). R/reporte_module.R's HTML/PDF financial report
+# used to as well, but was DELIBERATELY MOVED OFF this pagos_generados/
+# "Ver archivos de pago" path (2026-09-04, Reporte/Grupo activity logging
+# stage) -- a financial summary report isn't a payment file, so mixing it
+# into the same store as real bank-transfer instructions (masked CLABEs,
+# beneficiaries) behind a payment-specific permission was a miscategorization,
+# not a feature. It now logs via log_action(module="reporte", ...) directly
+# instead -- see tests/test_reporte_activity_logging.R for that coverage. ───
 cat("\n-- Part G4: reporte_module.R / bancos_module.R hooks --\n")
 
 rep_txt <- readLines("R/reporte_module.R", warn = FALSE)
 .chk_true({p <- tryCatch({parse("R/reporte_module.R"); TRUE}, error = function(e) FALSE); p},
           "R/reporte_module.R still parses without syntax errors")
-.chk(length(grep('tipo = "reporte_financiero_html"', rep_txt)), 1L,
-     "dl_html (Reporte tab) logs with tipo=\"reporte_financiero_html\"")
-.chk(length(grep('tipo = "reporte_financiero_pdf"', rep_txt)), 1L,
-     "dl_pdf (Reporte tab) logs with tipo=\"reporte_financiero_pdf\"")
+.chk(length(grep('tipo = "reporte_financiero_html"', rep_txt)), 0L,
+     "dl_html (Reporte tab) no longer logs via the payment-file tipo= path (moved to log_action(module=\"reporte\"))")
+.chk(length(grep('tipo = "reporte_financiero_pdf"', rep_txt)), 0L,
+     "dl_pdf (Reporte tab) no longer logs via the payment-file tipo= path")
+.chk(length(grep('log_archivo_generado(', rep_txt, fixed = TRUE)), 0L,
+     "R/reporte_module.R no longer CALLS log_archivo_generado() (the name may still appear in an explanatory comment)")
 
 banc_txt <- readLines("R/bancos_module.R", warn = FALSE)
 .chk_true({p <- tryCatch({parse("R/bancos_module.R"); TRUE}, error = function(e) FALSE); p},
           "R/bancos_module.R still parses without syntax errors")
 .chk(length(grep('tipo = "bancos_libro_excel"', banc_txt)), 1L,
-     "download_libro (Bancos tab) logs with tipo=\"bancos_libro_excel\"")
+     "download_libro (Bancos tab) logs with tipo=\"bancos_libro_excel\" (unchanged, out of scope for this stage)")
 
-for (t in c("reporte_financiero_html", "reporte_financiero_pdf", "bancos_libro_excel")) {
+for (t in c("bancos_libro_excel")) {
   .chk(nzchar(.tipo_label(t)), TRUE, sprintf(".tipo_label('%s') has a real (non-empty) display label", t))
 }
+.chk(is.na(unname(.TIPO_LABELS["reporte_financiero_html"])), TRUE,
+     "the now-dead reporte_financiero_html tipo label was removed from .TIPO_LABELS, not left dangling")
 
 cat(sprintf("\n  Subtotal: %d passed, %d failed\n", .pass, .fail))
