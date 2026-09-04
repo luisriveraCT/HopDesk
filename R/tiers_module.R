@@ -648,12 +648,31 @@ tiersServer <- function(id, shared) {
 
     # ── Tier config (S3) ──────────────────────────────────────────────────────
     # Stores custom tier defaults; NULL = use hardcoded auth_resolve_perms defaults
+    #
+    # Scoping fix (2026-09-04, Grupo activity-logging audit): this used to
+    # read/write via .s3_read()/.s3_write() with NO client_id, which fall
+    # back to Sys.getenv("CLIENT_ID") -- always "hd-admin" for this single
+    # shared deployment (ARCHITECTURE.md §3), regardless of which client a
+    # session is jumped into or which client's own dev-tier user is saving.
+    # Any client's dev user editing "Config. de Tiers" was silently
+    # overwriting the SAME one global file every other client's session
+    # also reads from get_tier_defaults() below. In practice this file is
+    # only ever consulted to pre-fill THIS SAME admin screen's own preview
+    # checkboxes (confirmed: btn_save_perms/btn_save_new_user build real
+    # user permissions via auth_resolve_perms() directly, never through
+    # tier_config_rv()), so the real-world impact was a shared, cosmetic
+    # preview default rather than live permission escalation -- still a
+    # genuine cross-tenant write-isolation bug, worth fixing regardless of
+    # its blast radius. Now reads/writes .s3_key(key, client_id=
+    # current_client_id())'s own per-client file via .s3_read_with()/the
+    # existing client_id= param on .s3_write().
     tier_config_rv <- reactiveVal(NULL)
 
     observe({
+      cid <- current_client_id()  # explicit dependency: re-fetch on a jump/home switch
       req(is_dev() || is_hopdesk() || is_principal())
-      cfg <- tryCatch(.s3_read(S3_KEYS$tiers_config), error = function(e) NULL)
-      if (!is.null(cfg)) tier_config_rv(cfg)
+      cfg <- tryCatch(.s3_read_with(S3_KEYS$tiers_config, client_id = cid), error = function(e) NULL)
+      tier_config_rv(cfg)  # NULL on a client with no saved config yet, not last client's stale value
     })
 
     get_tier_defaults <- function(tier_key) {
@@ -3909,8 +3928,10 @@ tiersServer <- function(id, shared) {
 
     observeEvent(input$btn_save_tier_config, {
       req(is_dev() || is_hopdesk() || is_principal())
-      tk <- selected_tier_rv()
+      tk  <- selected_tier_rv()
+      cid <- current_client_id()
 
+      before_tk         <- tier_config_rv()[[tk]]
       full_config       <- tier_config_rv() %||% list()
       full_config[[tk]] <- lapply(setNames(names(PERM_LABELS), names(PERM_LABELS)), function(k) {
         if (identical(tk, "dev") && k == "can_view_tiers") return(TRUE)
@@ -3918,12 +3939,22 @@ tiersServer <- function(id, shared) {
       })
 
       tryCatch({
-        .s3_write(full_config, S3_KEYS$tiers_config)
+        .s3_write(full_config, S3_KEYS$tiers_config, client_id = cid)
         tier_config_rv(full_config)
         tier_config_locked(TRUE)
         showNotification(
           paste0("Configuración de «", TIER_META[[tk]], "» guardada."),
           type = "message", duration = 2)
+        tryCatch(log_action(
+          user        = shared$current_user() %||% "",
+          module      = "tiers",
+          action      = "guardar_tier_config",
+          description = sprintf("Configuración del tier «%s» actualizada", TIER_META[[tk]] %||% tk),
+          target_id   = tk,
+          metadata    = list(tier = tk, before = before_tk, after = full_config[[tk]]),
+          client_id             = cid,
+          viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
+        ), error = function(e) NULL)
       }, error = function(e) {
         showNotification(paste0("Error al guardar: ", e$message), type = "error")
       })

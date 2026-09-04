@@ -93,6 +93,10 @@
   # not a settings change.
   if (module == "reporte" && action == "aplicar_filtros") return("reporte_filtros")
   if (module == "reporte" && action %in% c("exportar_html", "exportar_pdf")) return("reporte_export")
+  # tier_config's before/after is a list of ~15-20 boolean permission flags
+  # per tier -- same generic diff shape, same reuse (Grupo activity-logging
+  # audit, 2026-09-04).
+  if (module == "tiers" && action == "guardar_tier_config") return("tiers_config_diff")
   "generic"
 }
 
@@ -559,6 +563,7 @@
     bancos_manual_edit  = .audit_detail_bancos_manual_edit(meta),
     pasivos_diff  = .audit_detail_generic_diff(meta),
     reporte_filtros = .audit_detail_generic_diff(meta),
+    tiers_config_diff = .audit_detail_generic_diff(meta),
     reporte_export  = .audit_detail_reporte_export(meta),
     .audit_detail_generic(meta)
   )
