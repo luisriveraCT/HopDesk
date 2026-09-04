@@ -76,7 +76,28 @@ IS_ADMIN_DEPLOYMENT <- tolower(trimws(Sys.getenv("CLIENT_ID"))) == "hd-admin"
 # for .save_moves_deferred() -- never hand-reimplement the logic under test.
 .hopdesk_acquire_instance_lock <- function(lock_dir_base = Sys.getenv("LOCALAPPDATA"),
                                             client_id    = Sys.getenv("CLIENT_ID"),
-                                            s3_bucket    = Sys.getenv("S3_BUCKET")) {
+                                            s3_bucket    = Sys.getenv("S3_BUCKET"),
+                                            os_type      = .Platform$OS.type) {
+  # PRODUCTION OUTAGE FIX (2026-09-04): this guard exists specifically for
+  # the Windows/hopdesk_start.bat scenario described above -- two processes
+  # on the SAME Windows machine, one an invisible orphan behind a closed
+  # console window. On a non-Windows deployment (shinyapps.io/Posit Connect
+  # runs each app in its own isolated Linux container -- there is no "second
+  # process on this machine" to guard against, and LOCALAPPDATA doesn't
+  # exist there at all) that failure mode is structurally impossible, while
+  # the guard's own Windows-only lock_dir_base default resolves to "" on
+  # Linux, making lock_dir = file.path("", "HopDesk") = "/HopDesk" --
+  # dir.create() at the filesystem root silently fails under the unprivileged
+  # container user, and the subsequent filelock::lock() call then throws an
+  # UNCAUGHT error ("Directory of lock file does not exist: '/HopDesk'"),
+  # crashing the whole app at startup before any Shiny session code ever
+  # runs. Confirmed via the actual shinyapps.io deployment logs: this is
+  # exactly what took production down today, the first time this guard (added
+  # 2026-09-02) was deployed there. Skip entirely off Windows -- the
+  # platform's own container isolation already prevents the failure mode
+  # this guard exists for.
+  if (!identical(os_type, "windows")) return(invisible(NULL))
+
   if (!requireNamespace("filelock", quietly = TRUE)) {
     stop(
       "HopDesk cannot start: the 'filelock' package (required for the single-",

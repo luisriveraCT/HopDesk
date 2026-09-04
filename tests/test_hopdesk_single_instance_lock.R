@@ -155,6 +155,45 @@ if (!ready) {
             "rejection error tells the user how to resolve it (hopdesk_stop.bat)")
 }
 
+# =============================================================================
+# Part E -- PRODUCTION OUTAGE FIX (2026-09-04): off Windows, the guard must
+# no-op entirely rather than attempt its Windows-only LOCALAPPDATA-based
+# path. Real deployment logs confirmed this exact crash took shinyapps.io
+# down: Sys.getenv("LOCALAPPDATA") resolves to "" on that Linux container,
+# so file.path("", "HopDesk") == "/HopDesk", dir.create() at the filesystem
+# root silently fails under the unprivileged container user, and
+# filelock::lock() then throws UNCAUGHT -- crashing the whole app at
+# startup, before any Shiny session code runs. os_type is a parameter
+# (mirroring lock_dir_base/client_id/s3_bucket's own existing testability
+# pattern) specifically so this can be exercised without needing to fake
+# .Platform$OS.type itself, which isn't mockable.
+# =============================================================================
+cat("\n-- Part E: off Windows, the guard no-ops instead of crashing (production outage fix) --\n")
+
+# Deliberately uses the EXACT empty-string lock_dir_base that reproduces
+# the real production crash (Sys.getenv("LOCALAPPDATA") on Linux) -- if the
+# os_type check weren't short-circuiting BEFORE the Windows-only path logic,
+# this would throw the same uncaught filelock/dir.create error that took
+# shinyapps.io down.
+result_linux <- tryCatch(
+  .hopdesk_acquire_instance_lock(lock_dir_base = "", client_id = "prod", s3_bucket = "prod-bucket",
+                                 os_type = "unix"),
+  error = function(e) paste("THREW:", conditionMessage(e))
+)
+.chk(result_linux, NULL,
+     "os_type=\"unix\" (shinyapps.io/Posit Connect) with the exact empty lock_dir_base that crashed production returns NULL cleanly, no error")
+
+# Side-effect check: confirms this is a genuine early return (before ANY
+# filesystem operation), not a NULL that happened to fall out after
+# dir.create()/filelock::lock() ran anyway -- a real lock_dir_base this
+# time, so a non-short-circuiting implementation WOULD leave a directory
+# behind here.
+side_effect_dir <- tempfile("hopdesk_lock_test_unix_")
+.hopdesk_acquire_instance_lock(lock_dir_base = side_effect_dir, client_id = "prod",
+                               s3_bucket = "prod-bucket", os_type = "unix")
+.chk_true(!dir.exists(file.path(side_effect_dir, "HopDesk")),
+          "os_type=\"unix\" never creates the lock directory at all -- confirms a genuine early return, not dead code after the fact")
+
 }
 
 cat(sprintf("\n  Subtotal: %d passed, %d failed\n", .pass, .fail))
