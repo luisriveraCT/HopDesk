@@ -25,6 +25,112 @@ if (file.exists(".Renviron")) readRenviron(".Renviron")
 # separate opt-in step to remember. The alternative (an opt-IN dev flag)
 # would silently default back to production the instant someone forgets to
 # set it -- exactly the failure mode this whole fix exists to close.
+# Copies real user-account/auth data from the production bucket into the
+# dev bucket, read-only against production (never writes there), so the
+# dev sandbox always has working login credentials instead of starting
+# empty every time (added 2026-09-04, after "Usuario o contraseña
+# incorrecto" against an unseeded dev bucket cost real debugging time
+# twice in one day). Deliberately narrow scope: only what auth/user-
+# management needs (usuarios.rds per client + the two hd-admin bookkeeping
+# files) -- NOT business data (empresas/bancos/SAP/etc.), which would
+# undercut the whole point of the dev sandbox never touching real
+# financial data. Parameterized (not reading Sys.getenv() internally) so
+# tests/test_hopdesk_dev_user_sync.R can exercise this against fake
+# buckets with aws.s3 fully mocked, never real S3, the same "extract the
+# real function" convention used throughout this codebase's test suite.
+#
+# prod_aws_* (found necessary 2026-09-04, via a real end-to-end run against
+# actual S3 -- not caught by mocked tests alone): by the point this function
+# actually runs in the real app, .Renviron.local has ALREADY overwritten
+# AWS_ACCESS_KEY_ID/SECRET/REGION to the dev bucket's own IAM user
+# ("hopdesk-dev"), which has ZERO read access to the production bucket at
+# all (confirmed: a plain s3readRDS(bucket=prod_bucket) using the AMBIENT
+# credentials at that point gets AccessDenied every time) -- by design,
+# presumably, a real security boundary between the two IAM users, not
+# something to route around by loosening it. So every READ from prod here
+# must explicitly pass the PRODUCTION credentials (captured by the caller
+# BEFORE .Renviron.local overwrote them), while every WRITE to dev
+# continues to use the ambient (dev) credentials as before, unchanged.
+.hopdesk_sync_dev_users_from_prod <- function(prod_bucket, dev_bucket,
+                                              prod_aws_key = NULL, prod_aws_secret = NULL,
+                                              prod_aws_region = NULL) {
+  # No %||% here deliberately -- it isn't defined yet at the point in this
+  # file where this function is actually CALLED (see below); %||% itself
+  # is only defined later, under "Early utility definitions".
+  if (is.null(prod_bucket) || !nzchar(prod_bucket) ||
+      is.null(dev_bucket)  || !nzchar(dev_bucket) ||
+      identical(prod_bucket, dev_bucket)) {
+    return(invisible(FALSE))
+  }
+
+  message("[DEV SYNC] Copying user accounts from prod bucket '", prod_bucket,
+          "' into dev bucket '", dev_bucket, "'...")
+
+  # Only overrides key/secret/region when actually supplied -- so tests can
+  # still call this with prod_aws_* left NULL and rely on their own
+  # ambient/mocked s3readRDS, without needing to fake real-looking
+  # credential strings just to pass through do.call()'s arg list.
+  read_prod <- function(key) {
+    args <- list(object = key, bucket = prod_bucket)
+    if (!is.null(prod_aws_key))    args$key    <- prod_aws_key
+    if (!is.null(prod_aws_secret)) args$secret <- prod_aws_secret
+    if (!is.null(prod_aws_region)) args$region <- prod_aws_region
+    do.call(aws.s3::s3readRDS, args)
+  }
+
+  copy_one <- function(key) {
+    obj <- tryCatch(
+      suppressMessages(suppressWarnings(read_prod(key))),
+      error = function(e) NULL
+    )
+    if (is.null(obj)) {
+      message("[DEV SYNC]   skip '", key, "' (not found in production)")
+      return(invisible(FALSE))
+    }
+    ok <- tryCatch({
+      aws.s3::s3saveRDS(obj, object = key, bucket = dev_bucket)
+      TRUE
+    }, error = function(e) {
+      message("[DEV SYNC]   FAILED to write '", key, "': ", e$message)
+      FALSE
+    })
+    if (isTRUE(ok)) message("[DEV SYNC]   OK: ", key)
+    invisible(ok)
+  }
+
+  copy_one("hd-admin/usuarios.rds")
+  copy_one("hd-admin/username_index.rds")
+
+  # Read once, use twice: copy_one() re-reads+re-writes from prod_bucket
+  # (consistent with every other key), and the same in-memory copy also
+  # drives the active-client-list lookup just below, avoiding a second,
+  # redundant network read of the exact same object.
+  registry <- tryCatch(
+    suppressMessages(suppressWarnings(read_prod("hd-admin/client_registry.rds"))),
+    error = function(e) NULL
+  )
+  if (!is.null(registry)) {
+    ok <- tryCatch({ aws.s3::s3saveRDS(registry, object = "hd-admin/client_registry.rds", bucket = dev_bucket); TRUE },
+                   error = function(e) { message("[DEV SYNC]   FAILED to write 'hd-admin/client_registry.rds': ", e$message); FALSE })
+    if (isTRUE(ok)) message("[DEV SYNC]   OK: hd-admin/client_registry.rds")
+  } else {
+    message("[DEV SYNC]   skip 'hd-admin/client_registry.rds' (not found in production)")
+  }
+
+  # Every ACTIVE client's own usuarios.rds -- needed for the cross-client
+  # credential merge (.load_or_init_credentials(), R/auth.R) to find a
+  # non-staff account (e.g. a client's own "dev" user) when logging in via
+  # the shared hd-admin deployment, exactly as production does.
+  if (!is.null(registry) && is.data.frame(registry) && "client_id" %in% names(registry)) {
+    status_col <- if ("status" %in% names(registry)) registry$status else rep(NA_character_, nrow(registry))
+    active <- unique(tolower(trimws(registry$client_id[!is.na(status_col) & status_col == "active"])))
+    for (cid in setdiff(active, "hd-admin")) copy_one(paste0(cid, "/usuarios.rds"))
+  }
+
+  message("[DEV SYNC] Done.")
+  invisible(TRUE)
+}
+
 if (Sys.getenv("HOPDESK_PRODUCTION") == "1") {
   # Also fires for hopdesk_start.bat's own launch, not just a manual local
   # assertion (scripts/enable_production_mode.R) -- extra visibility there is
@@ -32,9 +138,28 @@ if (Sys.getenv("HOPDESK_PRODUCTION") == "1") {
   message("[ENV] PRODUCTION MODE ACTIVE -- HOPDESK_PRODUCTION=1 asserted, using bucket '",
           Sys.getenv("S3_BUCKET"), "'. This session can read/write real client data.")
 } else if (file.exists(".Renviron.local")) {
+  # Capture PRODUCTION's own bucket + AWS credentials before .Renviron.local
+  # overwrites them -- the dev bucket's own IAM user has no read access to
+  # production at all (see .hopdesk_sync_dev_users_from_prod()'s own notes
+  # above), so these must be threaded through explicitly rather than relied
+  # on as ambient state once the override below has run.
+  .hopdesk_prod_bucket_before_override <- Sys.getenv("S3_BUCKET")
+  .hopdesk_prod_aws_key_before_override    <- Sys.getenv("AWS_ACCESS_KEY_ID")
+  .hopdesk_prod_aws_secret_before_override <- Sys.getenv("AWS_SECRET_ACCESS_KEY")
+  .hopdesk_prod_aws_region_before_override <- Sys.getenv("AWS_DEFAULT_REGION")
   readRenviron(".Renviron.local")
   message("[ENV] Local dev override active from .Renviron.local -- using bucket '",
           Sys.getenv("S3_BUCKET"), "', NOT production.")
+  tryCatch(
+    .hopdesk_sync_dev_users_from_prod(
+      .hopdesk_prod_bucket_before_override, Sys.getenv("S3_BUCKET"),
+      prod_aws_key    = .hopdesk_prod_aws_key_before_override,
+      prod_aws_secret = .hopdesk_prod_aws_secret_before_override,
+      prod_aws_region = .hopdesk_prod_aws_region_before_override
+    ),
+    error = function(e) message("[DEV SYNC] Failed (non-fatal, dev bucket may be missing/stale accounts): ",
+                                conditionMessage(e))
+  )
 }
 
 IS_ADMIN_DEPLOYMENT <- tolower(trimws(Sys.getenv("CLIENT_ID"))) == "hd-admin"
