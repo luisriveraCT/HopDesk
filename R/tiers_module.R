@@ -2606,6 +2606,25 @@ tiersServer <- function(id, shared) {
       output$inv_send_error <- renderUI(NULL)
       showNotification(paste0("Invitación enviada a ", email_in), type = "message", duration = 4)
       invites_refresh(invites_refresh() + 1L)
+      # Real gap, not just unlogged noise: this creates a usable signup
+      # token bound to a tier and a specific client -- exactly the kind of
+      # credential-adjacent event that needs an audit trail. client_id is
+      # the TARGET client (client_in), not "hd-admin" -- same reasoning as
+      # the clients-tab fixes above, and correct here because
+      # pending_invites.rds carries a real per-row client_id even though the
+      # file itself is physically stored once, globally, at hd-admin/.
+      tryCatch(log_action(
+        user        = shared$current_user(),
+        module      = "invites",
+        action      = "enviar_invitacion",
+        description = sprintf("Invitación enviada a %s (%s) para '%s', tier %s",
+                              email_in, dname_in, client_in, tier_in),
+        target_id   = token,
+        s3_key      = .INVITES_KEY,
+        metadata    = list(email = email_in, display_name = dname_in, tier = tier_in),
+        client_id             = client_in,
+        viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
+      ), error = function(e) NULL)
     }, ignoreInit = TRUE)
 
     observeEvent(input$btn_inv_refresh, { invites_refresh(invites_refresh() + 1L) })
@@ -2617,8 +2636,20 @@ tiersServer <- function(id, shared) {
       req(!is.null(invites))
       idx <- which(invites$token == token)
       if (length(idx)) {
+        inv_client <- invites$client_id[idx[1]]
+        inv_email  <- invites$email[idx[1]]
         invites[idx[1], "status"] <- "revoked"
         tryCatch(write_pending_invites(invites), error = function(e) NULL)
+        tryCatch(log_action(
+          user        = shared$current_user(),
+          module      = "invites",
+          action      = "revocar_invitacion",
+          description = sprintf("Invitación a %s (%s) revocada", inv_email %||% "?", inv_client %||% "?"),
+          target_id   = token,
+          s3_key      = .INVITES_KEY,
+          client_id             = inv_client,
+          viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
+        ), error = function(e) NULL)
       }
       invites_refresh(invites_refresh() + 1L)
     }, ignoreInit = TRUE)
@@ -2632,6 +2663,19 @@ tiersServer <- function(id, shared) {
         type = if (ok) "message" else "error", duration = 4
       )
       invites_refresh(invites_refresh() + 1L)
+      # A pure retry of Hopdesk's own send queue (hd-admin/email_queue.rds),
+      # not a client-data mutation -- hd-admin is the correct (and only
+      # possible) target here, unlike the two handlers above.
+      tryCatch(log_action(
+        user        = shared$current_user(),
+        module      = "invites",
+        action      = "reintentar_email",
+        description = sprintf("Reintento de envío de email (cola '%s'): %s",
+                              queue_id, if (ok) "exitoso" else "fallido"),
+        target_id   = queue_id,
+        client_id             = "hd-admin",
+        viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
+      ), error = function(e) NULL)
     }, ignoreInit = TRUE)
 
     # ── Notificaciones panel ─────────────────────────────────────────────────
