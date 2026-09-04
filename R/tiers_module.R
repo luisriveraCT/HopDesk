@@ -3255,6 +3255,13 @@ tiersServer <- function(id, shared) {
                   row$requester_name %||% row$requester, cid, .dur_label(dur_secs)),
           type = "message", duration = 3
         )
+        # client_id is the granted client (cid), not "hd-admin" -- per Mouse's
+        # explicit call (2026-09-04, Grupo activity-logging audit): a client
+        # should be able to see which Hopdesk staff had access to their own
+        # books and when, not just have this live purely in Hopdesk's
+        # internal bookkeeping. log_action()'s existing dual-write
+        # (viewer_home_client_id stays the reviewer's real "hd-admin" home)
+        # still files a copy in hd-admin's own log too, same as before.
         log_action(user        = me,
                    module      = "tiers",
                    action      = "hop_access_approved",
@@ -3264,7 +3271,7 @@ tiersServer <- function(id, shared) {
                    target_id   = req_id,
                    metadata    = list(client_id = cid, grantee = row$requester,
                                       duration_secs = dur_secs, grant_id = new_g$id),
-                   client_id             = "hd-admin",
+                   client_id             = cid,
                    viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
         activity_refresh(activity_refresh() + 1L)
         hop_refresh(hop_refresh() + 1L)
@@ -3311,6 +3318,7 @@ tiersServer <- function(id, shared) {
         save_hop_requests(reqs)
         showNotification(sprintf("Denegado: %s → %s.", row$requester_name %||% row$requester, cid),
                          type = "warning", duration = 3)
+        # Same reasoning as hop_access_approved above -- client_id = cid.
         log_action(user        = shared$current_user() %||% "",
                    module      = "tiers",
                    action      = "hop_access_denied",
@@ -3318,7 +3326,7 @@ tiersServer <- function(id, shared) {
                                          shared$current_user() %||% "", row$requester_name %||% row$requester, cid),
                    target_id   = req_id,
                    metadata    = list(client_id = cid, grantee = row$requester),
-                   client_id             = "hd-admin",
+                   client_id             = cid,
                    viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
         activity_refresh(activity_refresh() + 1L)
         hop_refresh(hop_refresh() + 1L)
@@ -3342,6 +3350,7 @@ tiersServer <- function(id, shared) {
         bump_sync_version("hop_grants_db")
         shared$hop_grants_db(grants)
         showNotification("Acceso revocado.", type = "warning", duration = 3)
+        # Same reasoning as hop_access_approved above -- client_id = cid_v.
         log_action(user        = shared$current_user() %||% "",
                    module      = "tiers",
                    action      = "hop_access_revoked",
@@ -3349,7 +3358,7 @@ tiersServer <- function(id, shared) {
                                          shared$current_user() %||% "", grantee_v, cid_v),
                    target_id   = grant_id,
                    metadata    = list(client_id = cid_v, grantee = grantee_v),
-                   client_id             = "hd-admin",
+                   client_id             = cid_v,
                    viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
         activity_refresh(activity_refresh() + 1L)
         hop_refresh(hop_refresh() + 1L)
@@ -3527,6 +3536,14 @@ tiersServer <- function(id, shared) {
           sprintf("Acceso concedido a %s (%d cliente(s)).", grantee, length(to_grant)),
           type = "message", duration = 4
         )
+        # Unlike hop_approve/hop_deny/hop_revoke (always exactly one target
+        # client), a direct grant can cover several clients in one click --
+        # this summary entry stays hd-admin-only (Hopdesk's own record of
+        # the whole action), and each granted client ALSO gets its own
+        # entry filed directly under their own log (viewer_home_client_id
+        # deliberately set equal to that same client_id, so log_action()'s
+        # dual-write does NOT also duplicate it into hd-admin -- the
+        # summary entry already covers that side).
         log_action(user        = me,
                    module      = "tiers",
                    action      = "hop_access_direct_grant",
@@ -3537,6 +3554,19 @@ tiersServer <- function(id, shared) {
                                       durations_secs = vapply(to_grant, `[[`, numeric(1), "dur_secs")),
                    client_id             = "hd-admin",
                    viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
+        for (g in to_grant) {
+          tryCatch(log_action(
+            user        = me,
+            module      = "tiers",
+            action      = "hop_access_direct_grant",
+            description = sprintf("%s concedió acceso directo a %s (%s)",
+                                  me, grantee, .dur_label(g$dur_secs)),
+            target_id   = grantee,
+            metadata    = list(grantee = grantee, duration_secs = g$dur_secs),
+            client_id             = g$client_id,
+            viewer_home_client_id = g$client_id
+          ), error = function(e) NULL)
+        }
         activity_refresh(activity_refresh() + 1L)
         dg_selected(list())
         hop_refresh(hop_refresh() + 1L)
