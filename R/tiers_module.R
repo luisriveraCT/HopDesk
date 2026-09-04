@@ -1851,6 +1851,15 @@ tiersServer <- function(id, shared) {
       requests_refresh(requests_refresh() + 1L)
       showNotification(paste0("Cliente '", row$client_id_proposed, "' aprobado y activado."),
                        type = "message", duration = 5)
+      # client_id is the NEW client (row$client_id_proposed), not "hd-admin" --
+      # initialize_client_folder() above has already created that client's
+      # own app_audit.rds. viewer_home_client_id stays the reviewer's real
+      # home (hd-admin for staff/principal); log_action()'s own dual-write
+      # (home_cid != cid) then files this in BOTH hd-admin's log (Hopdesk's
+      # own record of "we approved this client") AND the new client's own
+      # log -- otherwise their own genesis event, the one entry that would
+      # explain their own existence, was never visible to them (found
+      # 2026-09-04 auditing Grupo/tiers_module.R activity logging).
       log_action(user        = reviewer,
                  module      = "clientes",
                  action      = "aprobacion_cliente",
@@ -1858,7 +1867,7 @@ tiersServer <- function(id, shared) {
                                       "' (", row$display_name, ") aprobado"),
                  target_id   = row$client_id_proposed,
                  s3_key      = "hd-admin/client_registry.rds",
-                 client_id             = "hd-admin",
+                 client_id             = row$client_id_proposed,
                  viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
       activity_refresh(activity_refresh() + 1L)
       session$userData$reviewing_req_id <- NULL
@@ -2351,13 +2360,19 @@ tiersServer <- function(id, shared) {
       updateTextInput(session, "contact_role",  value = "")
       showNotification(paste0("Contacto '", name, "' agregado."),
                        type = "message", duration = 3)
+      # client_id must be the TARGET client (cid), not "hd-admin" -- contacts
+      # genuinely live at <cid>/contacts.rds (s3_key below already says so
+      # correctly); this was hard-coded wrong, so the target client's own
+      # contact changes never appeared in their own Actividad log and
+      # instead got misfiled as if they were a Hopdesk-internal action
+      # (found 2026-09-04 auditing Grupo/tiers_module.R activity logging).
       log_action(user        = shared$current_user(),
                  module      = "clientes",
                  action      = "agregar_contacto",
                  description = paste0("Contacto '", name, "' (", email, ") agregado a '", cid, "'"),
                  target_id   = cid,
                  s3_key      = paste0(cid, "/contacts.rds"),
-                 client_id             = "hd-admin",
+                 client_id             = cid,
                  viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
       activity_refresh(activity_refresh() + 1L)
     }, ignoreInit = TRUE)
@@ -2383,13 +2398,14 @@ tiersServer <- function(id, shared) {
       contacts_refresh(contacts_refresh() + 1L)
       showNotification(paste0("Contacto '", row$name[1], "' desactivado."),
                        type = "warning", duration = 3)
+      # Same fix as agregar_contacto above -- client_id is the target client.
       log_action(user        = shared$current_user(),
                  module      = "clientes",
                  action      = "desactivar_contacto",
                  description = paste0("Contacto '", row$name[1], "' desactivado de '", cid, "'"),
                  target_id   = cid,
                  s3_key      = paste0(cid, "/contacts.rds"),
-                 client_id             = "hd-admin",
+                 client_id             = cid,
                  viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
       activity_refresh(activity_refresh() + 1L)
     }, ignoreInit = TRUE)
