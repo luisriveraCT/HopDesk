@@ -135,7 +135,7 @@ pagosAuditViewerServer <- function(id, shared) {
           ),
           div(class = "audit-sticky-table", DT::dataTableOutput(ns("pagos_tbl")))
         ),
-        audit_sticky_js(ns("sticky_toolbar"), ns("sticky_scope"))
+        audit_sticky_js(ns("sticky_scope"))
       )
     })
 

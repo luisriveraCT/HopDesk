@@ -1000,7 +1000,7 @@ auditLogViewerServer <- function(id, shared, mode,
           ),
           div(class = "audit-sticky-table", uiOutput(ns("audit_results")))
         ),
-        audit_sticky_js(ns("sticky_toolbar"), ns("sticky_scope"))
+        audit_sticky_js(ns("sticky_scope"))
       )
     })
 

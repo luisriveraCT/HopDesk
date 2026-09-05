@@ -1,18 +1,22 @@
 # =============================================================================
 # tests/test_stage8_sticky_toolbar_ui.R
 #
-# UI request (2026-08-27): the filter/toolbar bar and the DT column headers
-# on both audit tables (Actividad -- R/audit_log_viewer_module.R -- and "Ver
-# archivos de pago" -- R/pagos_audit_viewer_module.R) should stay pinned in
-# view while scrolling a long table, mirroring R/vencidos_module.R's own
-# sticky toolbar/header treatment; the "Ver detalle" trigger on the payment-
-# file table should sit in that sticky bar instead of below the table; and
-# DT's built-in "Filtrar:" search label should become a plain icon baked
-# into the input box. Implemented via a new shared helper,
-# R/audit_sticky_ui.R (.AUDIT_STICKY_CSS + audit_sticky_js()), since
-# Vencidos itself renders a hand-built HTML table (no DT), so its exact
-# code has no 1:1 equivalent to copy -- this reproduces the same visual
-# effect against DT's own generated markup instead.
+# UI request (2026-08-27): the filter/toolbar bar on both audit tables
+# (Actividad -- R/audit_log_viewer_module.R -- and "Ver archivos de pago" --
+# R/pagos_audit_viewer_module.R) should stay pinned in view while scrolling
+# a long table, mirroring R/vencidos_module.R's own sticky toolbar; the "Ver
+# detalle" trigger on the payment-file table should sit in that sticky bar
+# instead of below the table; and DT's built-in "Filtrar:" search label
+# should become a plain icon baked into the input box.
+#
+# SCOPE NARROWED 2026-09-05: this originally ALSO tried to make DT's own
+# column headers sticky (a --audit-toolbar-h CSS var, kept in sync via
+# ResizeObserver/MutationObserver/a retry schedule). Three straight live
+# attempts at that (2026-08-27, 2026-08-28, 2026-09-05) each either didn't
+# hold up or made the symptom worse -- see R/audit_sticky_ui.R's own
+# history comment for the full account. Confirmed directly (asked, chose
+# this) rather than guessed a fourth time: only the toolbar is sticky now.
+# Column headers scroll away normally, like a plain table.
 #
 # This is a structural/static test file (no visual rendering harness is
 # available here) -- it verifies the shared CSS/JS helper's content and
@@ -46,10 +50,18 @@ cat("\n-- Part A: .AUDIT_STICKY_CSS --\n")
 
 .chk_true(grepl("\\.audit-sticky-toolbar", .AUDIT_STICKY_CSS), "defines .audit-sticky-toolbar")
 .chk_true(grepl("position:\\s*sticky", .AUDIT_STICKY_CSS), "toolbar rule uses position: sticky")
-.chk_true(grepl("\\.audit-sticky-table thead th", .AUDIT_STICKY_CSS), "defines a sticky rule for thead th")
-.chk_true(grepl("var\\(--audit-toolbar-h", .AUDIT_STICKY_CSS),
-     "thead th's sticky offset reads the --audit-toolbar-h custom property (kept in sync by audit_sticky_js())")
 .chk_true(grepl("dataTables_filter", .AUDIT_STICKY_CSS), "styles DT's own .dataTables_filter search wrapper")
+
+# Regression guard (scope narrowed 2026-09-05): DT's own column headers are
+# NOT made sticky anymore -- three straight live attempts at that (see
+# R/audit_sticky_ui.R's own history comment) either didn't hold up or made
+# the symptom worse, because DT renders its <thead> on its own async timer
+# that this code can't reliably observe. Only the toolbar (a plain
+# `top: 0`, no JS measurement) is sticky now.
+.chk_false(grepl("\\.audit-sticky-table thead th", .AUDIT_STICKY_CSS),
+     "no longer defines a sticky rule for thead th -- column headers are not pinned")
+.chk_false(grepl("var\\(--audit-toolbar-h", .AUDIT_STICKY_CSS),
+     "no longer reads a --audit-toolbar-h custom property -- nothing needs the toolbar's height anymore")
 
 # Regression guard (found 2026-08-28): the search icon used to be a plain
 # emoji baked into CSS `content` on the OUTER .dataTables_filter div, which
@@ -71,49 +83,39 @@ cat("\n-- Part A: .AUDIT_STICKY_CSS --\n")
 # =============================================================================
 cat("\n-- Part B: audit_sticky_js() --\n")
 
-js_tag <- audit_sticky_js("myns-sticky_toolbar", "myns-sticky_scope")
+js_tag <- audit_sticky_js("myns-sticky_scope")
 .chk_true(inherits(js_tag, "shiny.tag"), "audit_sticky_js() returns a tag (a <script> block)")
 js_txt <- paste(as.character(js_tag), collapse = "\n")
-.chk_true(grepl("myns-sticky_toolbar", js_txt, fixed = TRUE), "emitted script references the given toolbar id")
 .chk_true(grepl("myns-sticky_scope", js_txt, fixed = TRUE), "emitted script references the given scope id")
-.chk_true(grepl("ResizeObserver", js_txt, fixed = TRUE), "wires a ResizeObserver so a variable-height toolbar stays correctly offset")
-.chk_true(grepl("--audit-toolbar-h", js_txt, fixed = TRUE), "sets the same CSS custom property the CSS rule reads")
-.chk_true(grepl("addEventListener\\('resize'", js_txt),
-     "recalculates on window resize (filters wrapping to a second line on a narrow viewport)")
 
-# Regression guard (found 2026-08-27): the offset used to be just the
-# toolbar's own height, ignoring DT's own auto-generated ".dataTables_filter"
-# search box sitting between the toolbar and the <table> -- the thead then
-# stuck too early and appeared to float/duplicate in the middle of the data
-# as rows scrolled past underneath it. Fixed by measuring the actual gap up
-# to the <table> itself, using offsetTop/offsetHeight (layout-based, NOT
-# displaced by position:sticky's paint-time offset the way
-# getBoundingClientRect() would be once an element is already stuck).
-.chk_true(grepl("table.dataTable", js_txt, fixed = TRUE),
-     "measures the gap up to the actual <table> element, not just the toolbar's own height")
-.chk_true(grepl("offsetTop", js_txt, fixed = TRUE) && grepl("offsetHeight", js_txt, fixed = TRUE),
-     "uses offsetTop/offsetHeight (layout-based) rather than getBoundingClientRect() (paint-based, corrupted once an element is sticky-stuck)")
+# Regression guard (scope narrowed 2026-09-05): no height/offset
+# measurement logic survives in the JS anymore -- three straight live
+# attempts at keeping DT's own <thead> pinned below the toolbar (wrong
+# measurement 2026-08-27, DT-not-rendered-yet 2026-08-28, a scroll-heal
+# that made it worse 2026-09-05) were all reverted rather than patched a
+# fourth time; the toolbar's own `top: 0` needs none of this.
+.chk_false(grepl("ResizeObserver", js_txt, fixed = TRUE), "no ResizeObserver -- nothing depends on toolbar height anymore")
+.chk_false(grepl("--audit-toolbar-h", js_txt, fixed = TRUE), "no --audit-toolbar-h custom property is set")
+.chk_false(grepl("addEventListener\\('resize'", js_txt), "no window resize listener -- no offset to recompute on resize")
+.chk_false(grepl("table.dataTable", js_txt, fixed = TRUE), "no longer measures any gap up to the <table> element")
+.chk_false(grepl("offsetTop", js_txt, fixed = TRUE), "no offsetTop-based offset measurement")
 .chk_false(grepl("getBoundingClientRect", js_txt, fixed = TRUE),
-     "no longer uses getBoundingClientRect() for this measurement at all")
+     "no getBoundingClientRect() usage -- the scroll-heal attempt that used it was reverted")
 
-# Second regression guard (found 2026-08-28, live in production, after the
-# offsetTop fix above still reproduced the same bug): the DT table renders
-# ASYNCHRONOUSLY (its own data-dependent renderUI), so a fixed retry
-# schedule can finish before the <table> exists in the DOM at all -- every
-# retry then measures gap=0 and locks in the wrong offset, same visible bug
-# for a different reason. Fixed with a MutationObserver reacting to the
-# table actually appearing, the same "watch for it" principle
-# R/vencidos_module.R's own re-render hook already uses.
+# The search-icon injection has nothing to do with sticky positioning --
+# DT auto-generates its own ".dataTables_filter" search box asynchronously,
+# so this still needs a retry schedule + MutationObserver to catch that,
+# independent of the (now-removed) offset logic above.
 .chk_true(grepl("MutationObserver", js_txt, fixed = TRUE),
-     "watches for the table's own (async) appearance via MutationObserver, not just a fixed retry schedule")
+     "watches for the search box's own (async) appearance via MutationObserver, not just a fixed retry schedule")
 .chk_true(grepl("childList: true, subtree: true", js_txt, fixed = TRUE),
-     "MutationObserver watches the whole scope subtree (catches the table appearing anywhere inside it)")
+     "MutationObserver watches the whole scope subtree (catches the search box appearing anywhere inside it)")
 .chk_true(grepl("4000", js_txt, fixed = TRUE),
      "retry schedule extended to cover a slower/cold-started initial load, alongside the MutationObserver")
 
-# Third regression guard (found 2026-08-28, same live report): the search
-# icon must be a real, correctly-positioned Font Awesome glyph, not an
-# emoji floating outside the input box.
+# Regression guard (found 2026-08-28): the search icon must be a real,
+# correctly-positioned Font Awesome glyph, not an emoji floating outside
+# the input box.
 .chk_true(grepl("ensureAuditSearchIcon", js_txt, fixed = TRUE),
      "defines a dedicated function to inject the search icon")
 .chk_true(grepl("fas fa-magnifying-glass", js_txt, fixed = TRUE),
@@ -124,22 +126,15 @@ js_txt <- paste(as.character(js_tag), collapse = "\n")
      "wraps the actual <input> (not DT's outer .dataTables_filter div) so the icon positions correctly inside the box")
 .chk_true(grepl("classList.contains\\('audit-search-wrap'\\)", js_txt),
      "icon injection is idempotent -- checks whether the input is already wrapped before wrapping again")
-.chk_true(grepl("ensureAuditSearchIcon\\(\\);", js_txt) &&
-     length(gregexpr("ensureAuditSearchIcon\\(\\)", js_txt)[[1]]) >= 3,
-     "icon injection is wired into the same retry schedule AND the MutationObserver as the sticky-offset recalc (so it also survives the table's async render)")
-
-# A scroll-triggered recalc (mirroring R/vencidos_module.R's own
-# venRecalcStickyOffsets()) was tried here on 2026-09-05 and made the live
-# symptom WORSE, not better -- reverted the same day rather than leaving
-# an unverified guess in place. Left unresolved; see the module's own
-# history above for what's already been tried and ruled out.
+.chk_true(length(gregexpr("ensureAuditSearchIcon", js_txt, fixed = TRUE)[[1]]) >= 3,
+     "icon injection is wired into both the retry schedule AND the MutationObserver-driven retry")
 
 # IDs are passed through jsonlite::toJSON for safe embedding -- confirm a
 # value containing a single quote or other JS-special character can't break
 # the generated script (defensive, since ns() ids are usually simple but
 # this must never be assumed).
 ok_special <- tryCatch({
-  t <- audit_sticky_js("a'b\"c", "d'e\"f")
+  t <- audit_sticky_js("d'e\"f")
   is.character(paste(as.character(t), collapse = ""))
 }, error = function(e) FALSE)
 .chk_true(ok_special, "audit_sticky_js() does not error on ids containing quote characters")

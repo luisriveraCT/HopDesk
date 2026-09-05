@@ -1,17 +1,26 @@
 # =============================================================================
 # R/audit_sticky_ui.R
 #
-# Shared sticky toolbar/header treatment for the two audit-log DT tables
+# Shared sticky-toolbar treatment for the two audit-log DT tables
 # (R/audit_log_viewer_module.R's Actividad, R/pagos_audit_viewer_module.R's
 # "Ver archivos de pago") -- added 2026-08-27 per explicit request: the
-# filter bar and column headers should stay pinned in view while scrolling a
-# long table, the same way R/vencidos_module.R's own toolbar/header already
-# do (see that file's #ven_sticky_header + .ven-section-band/thead CSS for
-# the pattern this mirrors). Vencidos renders a hand-built HTML table, not a
-# DT one, so its exact CSS/JS doesn't transplant directly onto a
-# DT::dataTableOutput() table -- this reproduces the same effect (sticky
-# toolbar, sticky thead pinned just below it, via a CSS custom property kept
-# in sync with the toolbar's live height) against DT's own generated markup.
+# filter bar should stay pinned in view while scrolling a long table, the
+# same way R/vencidos_module.R's own toolbar already does.
+#
+# SCOPE NARROWED 2026-09-05 (see the file-history note further down for the
+# full story): this ONLY makes the filter toolbar sticky now, not DT's own
+# column headers too. Column headers scroll away normally, like a plain
+# table -- re-scroll up to see them again. That's a deliberate, confirmed
+# trade-off (asked directly, chose this), not an oversight: three straight
+# attempts at also pinning DT's own auto-generated <thead> all failed or
+# made things worse live, because DT initializes that markup on its OWN
+# async timer, entirely separate from Shiny's DOM insertion -- a race that
+# simply doesn't exist for Vencidos' hand-built table (no DT widget to wait
+# on at all), which is why "just copy Vencidos" doesn't transplant as
+# directly as it sounds. The toolbar itself was NEVER the buggy part in any
+# of those three attempts (it's a fixed `top: 0`, no JS measurement needed)
+# -- only the thead sync was, so dropping just that piece removes the
+# actual root cause instead of patching around it a fourth time.
 #
 # Usage, inside a module's output$panel <- renderUI({ ... }):
 #   tagList(
@@ -20,7 +29,7 @@
 #       div(id = ns("sticky_toolbar"), class = "audit-sticky-toolbar", ...toolbar content...),
 #       div(class = "audit-sticky-table", DT::dataTableOutput(ns("my_tbl")))
 #     ),
-#     audit_sticky_js(ns("sticky_toolbar"), ns("sticky_scope"))
+#     audit_sticky_js(ns("sticky_scope"))
 #   )
 # Also set language = list(search = "") in the table's DT options -- the CSS
 # below replaces the "Filtrar:" text label with an icon baked into the input
@@ -37,13 +46,6 @@
     padding: 0.5rem 0 0.75rem;
     margin-bottom: 0.25rem;
     border-bottom: 1px solid #dee2e6;
-  }
-  .audit-sticky-table thead th {
-    position: sticky;
-    top: var(--audit-toolbar-h, 92px);
-    background: #fff;
-    z-index: 150;
-    cursor: pointer;
   }
   .audit-sticky-table .dataTables_filter label {
     margin-bottom: 0;
@@ -77,79 +79,30 @@
   }
 "
 
-# Keeps --audit-toolbar-h (read by .audit-sticky-table thead th's `top`
-# above) in sync with the actual gap between the toolbar and the table,
-# via ResizeObserver plus a few staggered one-off retries (fonts/badges/
-# pills can still be settling their layout a beat after first paint) and a
-# window resize listener (filters wrap to a second line on a narrow
-# viewport). toolbar_id/scope_id must already be ns()-qualified by the
-# caller -- this file has no module of its own.
+# HISTORY (kept for the next person who's tempted to re-add thead
+# stickiness): this used to ALSO keep a --audit-toolbar-h CSS custom
+# property in sync with the toolbar's height, so DT's own <thead> could be
+# position:sticky too, pinned just below the toolbar. That went through
+# three real attempts -- wrong height measurement (2026-08-27), DT's
+# thead not existing yet when every retry fired because it renders on its
+# OWN async timer, separate from Shiny's DOM insertion (2026-08-28), and a
+# scroll-triggered recalc ported from Vencidos that made it WORSE live
+# instead of better (2026-09-05) -- before landing on the actual fix:
+# don't try to pin an element whose render timing this code can't observe
+# reliably. Scope narrowed the same day to just the toolbar (a plain
+# `top: 0`, no JS measurement, never the buggy part in any of the three
+# attempts) -- confirmed directly rather than guessed a fourth time.
 #
-# BUG FIXED 2026-08-27: this used to set the CSS var to just the toolbar's
-# OWN height. DT auto-generates its own ".dataTables_filter" search box as
-# a sibling sitting BETWEEN our toolbar and the actual <table> -- not part
-# of the toolbar element this measures -- so the thead's sticky `top` ended
-# up too small by exactly that search box's height. The thead then "stuck"
-# too early: as the user scrolled, it froze in place while still overlapping
-# that not-yet-scrolled-away search box, and every row that scrolled up
-# afterward appeared to pass BEHIND/UNDER the now-misplaced header --
-# reported as the header appearing to "duplicate" or float in the middle of
-# the data. Fixed by measuring the actual layout gap between the toolbar and
-# the <table> itself (whatever DT puts in between), using offsetTop/
-# offsetHeight rather than getBoundingClientRect(): the former reflect an
-# element's position in normal layout flow and are NOT affected by
-# position:sticky's paint-time displacement once an element is actually
-# stuck, while the latter would report the STUCK (already-offset) position
-# and silently corrupt this exact calculation for any recalc that fires
-# after the user has already scrolled (a window resize mid-scroll, for one).
-# SECOND FIX (found 2026-08-28, after the offsetTop/offsetHeight fix above
-# still reproduced the same visual bug live): the DT table itself renders
-# ASYNCHRONOUSLY -- output$audit_results (R/audit_log_viewer_module.R) is
-# its own renderUI that only resolves once fetched()'s data pipeline
-# completes, which can easily take longer than this script's whole
-# [0..1000]ms retry schedule, especially against a just-cold-started
-# server instance. When every retry fires before the <table> exists yet,
-# `gap` is silently measured as 0 (querySelector finds nothing) and
-# --audit-toolbar-h locks in at just the toolbar's height -- reproducing
-# the exact original bug, just for a different reason (missing element,
-# not a wrong measurement). Fixed by reacting to the table actually
-# appearing via MutationObserver on the scope element, the same "watch for
-# it, don't just guess a timeout" principle R/vencidos_module.R's own
-# venRecalcStickyOffsets() re-render hook already uses (see that file's
-# $(document).on('shiny:value', ...) call) -- generalized here to any DOM
-# change inside our own scope, debounced, so it needs no knowledge of this
-# specific output's name.
-#
-# THIRD ATTEMPT, REVERTED (2026-09-05): the header was reported floating
-# mid-table again, live, after both fixes above. Hypothesized this was the
-# same class of "one measurement was wrong, nothing ever corrected it"
-# problem, and ported R/vencidos_module.R's own scroll-triggered,
-# rAF-throttled recalc (its one mechanism this file didn't have). Live
-# result: reported WORSE, not better, same day -- reverted immediately
-# rather than leaving an unverified guess in place. Root cause for the
-# CURRENT (as of this note) recurrence is still open. Whatever is tried
-# next should be verified live in a real browser before being called
-# fixed -- both prior "fixes" above and this reverted one were each
-# reasoned through carefully but not actually watched happen in a browser
-# before being declared done, and each one either didn't hold up or made
-# things worse.
-audit_sticky_js <- function(toolbar_id, scope_id) {
+# What's left here is just the search-icon injection, which has nothing to
+# do with sticky positioning: DT auto-generates its own ".dataTables_filter"
+# search box asynchronously (same DT-render-timing fact as above), so
+# injecting a real Font Awesome icon into it (instead of a CSS ::before,
+# which positioned relative to the wrong wrapper element) still needs a
+# retry schedule + MutationObserver to catch that async render -- it just
+# no longer needs to also compute or react to anything about height/scroll.
+audit_sticky_js <- function(scope_id) {
   tags$script(HTML(sprintf("
     (function() {
-      var auditRecalcTimer = null;
-      function recalcAuditSticky() {
-        var t = document.getElementById(%s);
-        var s = document.getElementById(%s);
-        if (!t || !s) return;
-        var toolbarH = Math.ceil(t.offsetHeight);
-        var gap = 0;
-        var table = s.querySelector('table.dataTable');
-        if (table) {
-          gap = Math.max(0, Math.ceil(table.offsetTop - (t.offsetTop + t.offsetHeight)));
-        }
-        var total = toolbarH + gap;
-        if (total > 0) s.style.setProperty('--audit-toolbar-h', total + 'px');
-      }
       // Wraps DT's own auto-generated search <input> in a positioned span
       // and injects a REAL Font Awesome icon (matching every other icon in
       // the app -- icon('rotate'), icon('file-pdf'), ...) as its sibling,
@@ -157,7 +110,7 @@ audit_sticky_js <- function(toolbar_id, scope_id) {
       // positioned relative to the wrong element -- DT's <label> wraps the
       // input with its own box, so the icon landed beside the search box,
       // not inside it). Idempotent (checks .audit-search-wrap first) so
-      // re-running it on every recalc/mutation is a harmless no-op once done.
+      // re-running it on every retry/mutation is a harmless no-op once done.
       function ensureAuditSearchIcon() {
         var s = document.getElementById(%s);
         if (!s) return;
@@ -172,32 +125,22 @@ audit_sticky_js <- function(toolbar_id, scope_id) {
         icon.setAttribute('aria-hidden', 'true');
         wrap.insertBefore(icon, input);
       }
-      function scheduleAuditRecalc() {
-        if (auditRecalcTimer) clearTimeout(auditRecalcTimer);
-        auditRecalcTimer = setTimeout(function() {
-          recalcAuditSticky();
-          ensureAuditSearchIcon();
-        }, 30);
+      var iconRetryTimer = null;
+      function scheduleIconRetry() {
+        if (iconRetryTimer) clearTimeout(iconRetryTimer);
+        iconRetryTimer = setTimeout(ensureAuditSearchIcon, 30);
       }
       [0, 60, 200, 500, 1000, 2000, 4000].forEach(function(ms) {
-        setTimeout(function() { recalcAuditSticky(); ensureAuditSearchIcon(); }, ms);
+        setTimeout(ensureAuditSearchIcon, ms);
       });
-      var t0 = document.getElementById(%s);
-      if (t0 && window.ResizeObserver) {
-        new ResizeObserver(recalcAuditSticky).observe(t0);
-      }
       var s0 = document.getElementById(%s);
       if (s0 && window.MutationObserver) {
         // Catches the DT table's own (async) first render, any later
         // replaceData()-driven DOM churn, and a permission-alert <-> table
         // swap -- all without needing to name a specific Shiny output.
-        new MutationObserver(scheduleAuditRecalc).observe(s0, {childList: true, subtree: true});
+        new MutationObserver(scheduleIconRetry).observe(s0, {childList: true, subtree: true});
       }
-      window.addEventListener('resize', recalcAuditSticky);
     })();
-  ", jsonlite::toJSON(toolbar_id, auto_unbox = TRUE),
-     jsonlite::toJSON(scope_id, auto_unbox = TRUE),
-     jsonlite::toJSON(scope_id, auto_unbox = TRUE),
-     jsonlite::toJSON(toolbar_id, auto_unbox = TRUE),
+  ", jsonlite::toJSON(scope_id, auto_unbox = TRUE),
      jsonlite::toJSON(scope_id, auto_unbox = TRUE))))
 }
