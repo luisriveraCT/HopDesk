@@ -2105,14 +2105,35 @@ ledgerModuleServer <- function(id, config, shared) {
         provs_db <- tryCatch(shared$pasivos_provisions_db(),
                              error = function(e) NULL)
         if (!is.null(provs_db) && nrow(provs_db)) {
-          provs_db[provs_db[["id"]] %in% prov_ids & !is.na(provs_db[["id"]]),
-                   "estado"] <- "deleted"
+          del_idx <- which(provs_db[["id"]] %in% prov_ids & !is.na(provs_db[["id"]]))
+          # captured BEFORE mutation, one row per id, for the audit entries
+          # below (found 2026-09-05: this path deleted the provision but
+          # never called pasivos_log_audit() at all -- unlike the other 3
+          # provision-delete entry points (convert modal, manage-converted
+          # UI, Search/Vencidos' pasivos_provision_cancel), so it never got
+          # a structured provision.deleted record, only the generic ledger-
+          # wide activity log call further below).
+          before_rows <- provs_db[del_idx, , drop = FALSE]
+          provs_db[del_idx, "estado"] <- "deleted"
           prov_result <- s3_save_with_retry(function()
             save_pasivos_provisions(provs_db, client_id = shared$effective_client_id()))
           if (isTRUE(prov_result$ok)) {
             tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
             shared$pasivos_provisions_db(provs_db)
             bump_sync_version("pasivos_provisions_db")
+            for (i in seq_len(nrow(before_rows))) {
+              pid <- before_rows[["id"]][i]
+              after_row <- provs_db[provs_db[["id"]] == pid, , drop = FALSE]
+              tryCatch(pasivos_log_audit(
+                action_type = "provision.deleted",
+                user        = tryCatch(shared$current_user(), error = function(e) "system"),
+                target_kind = "provision", target_id = pid,
+                before      = as.list(before_rows[i, , drop = FALSE]),
+                after       = as.list(after_row[1, , drop = FALSE]),
+                notes       = "deleted via Calendario day-modal batch delete",
+                client_id   = shared$effective_client_id()
+              ), error = function(e) NULL)
+            }
           } else {
             save_failures <- c(save_failures, paste0("provisiones (", prov_result$error$message, ")"))
           }

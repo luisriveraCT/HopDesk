@@ -1378,13 +1378,30 @@ pagarHoyServer <- function(id, shared) {
             if (length(idx_p)) {
               manual_ids <- provs$manual_inv_id[idx_p]
               manual_ids <- manual_ids[!is.na(manual_ids) & nzchar(manual_ids %||% "")]
-              provs$estado[idx_p]        <- "provisional"
-              provs$manual_inv_id[idx_p] <- NA_character_
-              provs$pagar_hoy_id[idx_p]  <- NA_character_
               tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
-              shared$pasivos_provisions_db(provs)
-              tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id()); bump_sync_version("pasivos_provisions_db") },
-                       error = function(e) NULL)
+              # found 2026-09-05: this used to mutate provs$estado/
+              # manual_inv_id/pagar_hoy_id in-memory and save the whole
+              # table in one shot with no audit call at all -- a user
+              # could un-convert a provision just by "Quitar"-ing its
+              # staged item here, leaving the same end state as the
+              # explicit "↩ Deshacer conversión" button (R/pasivos_module.R)
+              # but zero trace of who did it or when. Routed through the
+              # same pasivos_provision_revive() the explicit button already
+              # uses (R/pasivos_engine.R), which logs provision.revived --
+              # one S3 round trip per provision instead of one for the
+              # whole batch, but this list is a handful of rows at most and
+              # correctness/auditability wins over that.
+              for (pid in unique(provs$id[idx_p])) {
+                tryCatch(
+                  pasivos_provision_revive(pid, user = shared$current_user(),
+                                            client_id = shared$effective_client_id()),
+                  error = function(e) NULL
+                )
+              }
+              provs_fresh <- tryCatch(
+                load_pasivos_provisions(client_id = shared$effective_client_id()),
+                error = function(e) NULL)
+              if (!is.null(provs_fresh)) shared$pasivos_provisions_db(provs_fresh)
               if (length(manual_ids)) {
                 # Read fresh from S3, not just this session's in-memory copy
                 # -- this removes rows, so a stale read can silently

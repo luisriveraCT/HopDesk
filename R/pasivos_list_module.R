@@ -233,19 +233,32 @@ pasivos_list_module_server <- function(id, shared) {
           htmltools::htmlEscape(lid, attribute = TRUE)
         )
         estado <- r$estado[1] %||% "active"
-        pause_icon <- if (identical(estado, "active")) "&#9646;&#9646;" else "&#9654;"
-        pause_btn <- sprintf(
+        is_deleted <- identical(estado, "deleted")
+        # found 2026-09-05: pause/resume and archive were both always
+        # rendered regardless of estado -- clicking "Reanudar" (resume) on
+        # an already-archived row would silently flip estado straight to
+        # "active" with no restore UI, no capability check tied to
+        # un-archiving, and logged as a plain liability.edited ("estado
+        # changed to active") rather than liability.restored. A dedicated
+        # restore button now replaces both pause and archive once a
+        # liability is archived.
+        pause_btn <- if (!is_deleted) sprintf(
           '<button class="pasivos-list-btn text-warning" title="%s" onclick="Shiny.setInputValue(\'%s\',\'%s\',{priority:\'event\'})">%s</button>',
           if (identical(estado, "active")) "Pausar" else "Reanudar",
           ns("pasivos_list_pause"),
           htmltools::htmlEscape(lid, attribute = TRUE),
-          pause_icon
-        )
-        archive_btn <- sprintf(
+          if (identical(estado, "active")) "&#9646;&#9646;" else "&#9654;"
+        ) else ""
+        archive_btn <- if (!is_deleted) sprintf(
           '<button class="pasivos-list-btn text-danger" title="Archivar" onclick="Shiny.setInputValue(\'%s\',\'%s\',{priority:\'event\'})">&#128465;</button>',
           ns("pasivos_list_archive"),
           htmltools::htmlEscape(lid, attribute = TRUE)
-        )
+        ) else ""
+        restore_btn <- if (is_deleted) sprintf(
+          '<button class="pasivos-list-btn text-success" title="Restaurar" onclick="Shiny.setInputValue(\'%s\',\'%s\',{priority:\'event\'})">&#8635;</button>',
+          ns("pasivos_list_restore"),
+          htmltools::htmlEscape(lid, attribute = TRUE)
+        ) else ""
 
         list(
           pencil      = edit_btn,
@@ -256,7 +269,7 @@ pasivos_list_module_server <- function(id, shared) {
           moneda      = moneda_str(r$moneda_pago[1] %||% "", r$cotizado_en[1]),
           estado      = estado_label(estado),
           next_prov   = np_str,
-          acciones    = paste0(edit_btn, " ", pause_btn, " ", archive_btn)
+          acciones    = paste0(edit_btn, " ", pause_btn, " ", archive_btn, " ", restore_btn)
         )
       })
 
@@ -300,6 +313,7 @@ pasivos_list_module_server <- function(id, shared) {
       idx <- which(liabs$id == lid)
       if (!length(idx)) return()
       old_estado <- liabs$estado[idx[1]]
+      if (identical(old_estado, "deleted")) return()  # archived -- use restore instead
       nombre     <- liabs$nombre[idx[1]]
       new_estado <- if (identical(old_estado, "active")) "paused" else "active"
       liabs$estado[idx[1]] <- new_estado
@@ -310,19 +324,35 @@ pasivos_list_module_server <- function(id, shared) {
       bump_sync_version("pasivos_liabilities_db")
 
       if (identical(new_estado, "paused")) {
-        # Remove future provisional provisions
+        # Remove future provisional provisions -- captured individually
+        # BEFORE filtering (found 2026-09-05: these vanished from
+        # pasivos_provisions_db entirely with only an uncounted mention in
+        # the liability-level log below; an auditor could see a liability
+        # was paused but not which provisions were dropped, when, or by
+        # whom, since the row itself no longer exists to look up).
         provs <- tryCatch(shared$pasivos_provisions_db(),
                           error = function(e) .schema_pasivos_provision())
-        provs_drop <- provs$liability_id == lid &
-                      provs$estado == "provisional" &
-                      !is.na(provs$fecha_efectiva) &
-                      provs$fecha_efectiva >= Sys.Date()
-        if (any(!is.na(provs_drop) & provs_drop)) {
-          provs <- provs[!(!is.na(provs_drop) & provs_drop), , drop = FALSE]
+        drop_mask <- !is.na(provs$liability_id) & provs$liability_id == lid &
+                     !is.na(provs$estado) & provs$estado == "provisional" &
+                     !is.na(provs$fecha_efectiva) & provs$fecha_efectiva >= Sys.Date()
+        dropped_rows <- provs[drop_mask, , drop = FALSE]
+        if (nrow(dropped_rows)) {
+          provs <- provs[!drop_mask, , drop = FALSE]
           tryCatch(save_pasivos_provisions(provs, client_id = shared$effective_client_id()), error = function(e) NULL)
           tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
           shared$pasivos_provisions_db(provs)
           bump_sync_version("pasivos_provisions_db")
+          for (i in seq_len(nrow(dropped_rows))) {
+            tryCatch(pasivos_log_audit(
+              action_type = "provision.deleted",
+              user        = user,
+              target_kind = "provision",
+              target_id   = dropped_rows$id[i],
+              before      = as.list(dropped_rows[i, , drop = FALSE]),
+              notes       = sprintf("removed as future provisional provision when liability '%s' was paused", nombre),
+              client_id   = shared$effective_client_id()
+            ), error = function(e) NULL)
+          }
         }
         shiny::showNotification("Pasivo pausado. Provisiones futuras eliminadas.",
                                 type = "message", duration = 3)
@@ -382,15 +412,15 @@ pasivos_list_module_server <- function(id, shared) {
       shared$pasivos_liabilities_db(liabs)
       bump_sync_version("pasivos_liabilities_db")
 
-      # Remove future provisions
+      # Remove future provisions -- captured individually BEFORE filtering,
+      # same reasoning as the pause handler above (found 2026-09-05).
       provs <- tryCatch(shared$pasivos_provisions_db(),
                         error = function(e) .schema_pasivos_provision())
-      keep <- !(provs$liability_id == lid &
-                provs$estado == "provisional" &
-                !is.na(provs$fecha_efectiva) &
-                provs$fecha_efectiva >= Sys.Date())
-      keep[is.na(keep)] <- TRUE
-      provs <- provs[keep, , drop = FALSE]
+      drop_mask <- !is.na(provs$liability_id) & provs$liability_id == lid &
+                   !is.na(provs$estado) & provs$estado == "provisional" &
+                   !is.na(provs$fecha_efectiva) & provs$fecha_efectiva >= Sys.Date()
+      dropped_rows <- provs[drop_mask, , drop = FALSE]
+      provs <- provs[!drop_mask, , drop = FALSE]
       tryCatch(save_pasivos_provisions(provs, client_id = shared$effective_client_id()), error = function(e) NULL)
       tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
       shared$pasivos_provisions_db(provs)
@@ -404,11 +434,70 @@ pasivos_list_module_server <- function(id, shared) {
         target_id   = lid,
         before      = list(nombre = nombre, estado = old_estado),
         after       = list(nombre = nombre, estado = "deleted"),
+        notes       = sprintf("%d provisión(es) futura(s) eliminada(s) junto con el pasivo", nrow(dropped_rows)),
         client_id   = shared$effective_client_id()
       ), error = function(e) NULL)
 
+      if (nrow(dropped_rows)) {
+        for (i in seq_len(nrow(dropped_rows))) {
+          tryCatch(pasivos_log_audit(
+            action_type = "provision.deleted",
+            user        = user,
+            target_kind = "provision",
+            target_id   = dropped_rows$id[i],
+            before      = as.list(dropped_rows[i, , drop = FALSE]),
+            notes       = sprintf("removed as future provisional provision when liability '%s' was archived", nombre),
+            client_id   = shared$effective_client_id()
+          ), error = function(e) NULL)
+        }
+      }
+
       shiny::removeModal()
       shiny::showNotification("Pasivo archivado.", type = "message", duration = 3)
+    })
+
+    # ── Restore ─────────────────────────────────────────────────────────────
+    # "liability.restored" existed in PASIVOS_ACTION_TYPES (R/pasivos_audit.R)
+    # with zero call sites anywhere -- there was no UI to un-archive a
+    # liability once deleted. Added 2026-09-05 for audit completeness. No
+    # confirmation modal (unlike archive) since restoring destroys nothing;
+    # matches the no-confirm pattern pause/resume already uses.
+    shiny::observeEvent(input$pasivos_list_restore, ignoreInit = TRUE, {
+      lid <- input$pasivos_list_restore %||% ""
+      if (!nzchar(lid)) return()
+      user <- tryCatch(shared$current_user(), error = function(e) "system")
+      if (!has_capability(user, "pasivos.delete_liability")) {
+        shiny::showNotification("Sin permiso para restaurar.", type = "error"); return()
+      }
+      liabs <- tryCatch(shared$pasivos_liabilities_db(),
+                        error = function(e) .schema_pasivos_liability())
+      idx <- which(liabs$id == lid)
+      if (!length(idx)) return()
+      old_estado <- liabs$estado[idx[1]]
+      if (!identical(old_estado, "deleted")) return()  # nothing to restore
+      nombre <- liabs$nombre[idx[1]]
+      liabs$estado[idx[1]]     <- "active"
+      liabs$updated_at[idx[1]] <- Sys.time()
+      liabs$updated_by[idx[1]] <- user
+      tryCatch(save_pasivos_liabilities(liabs, client_id = shared$effective_client_id()), error = function(e) NULL)
+      shared$pasivos_liabilities_db(liabs)
+      bump_sync_version("pasivos_liabilities_db")
+
+      tryCatch(pasivos_log_audit(
+        action_type = "liability.restored",
+        user        = user,
+        empresa     = liabs$empresa[idx[1]],
+        target_kind = "liability",
+        target_id   = lid,
+        before      = list(nombre = nombre, estado = old_estado),
+        after       = list(nombre = nombre, estado = "active"),
+        notes       = "restored via Lista sub-tab",
+        client_id   = shared$effective_client_id()
+      ), error = function(e) NULL)
+
+      shiny::showNotification(
+        "Pasivo restaurado. Usa '+ Agregar pasivo' o el lápiz para regenerar provisiones futuras.",
+        type = "message", duration = 5)
     })
 
     invisible(NULL)

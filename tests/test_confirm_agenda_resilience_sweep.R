@@ -159,17 +159,24 @@ assign("%||%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) ==
        grepl("isTRUE\\(remove_result\\$ok\\)", block) && grepl("return\\(\\)", block))
     ok("Remove AP logs the failure itself (quitar_pagos_incompleto)",
        grepl('action = "quitar_pagos_incompleto"', block))
+    # found 2026-09-05: the revert itself used to be an inline
+    # provs$estado[idx_p] <- "provisional" mutation, saved once for the
+    # whole batch, with NO audit call at all -- a real blind spot (see
+    # tests/test_pasivos_activity_richness.R Part [pagar_hoy revive] for the
+    # audit-completeness side of this fix). Now routed through the same
+    # pasivos_provision_revive() the explicit "Deshacer conversión" button
+    # already uses, which logs provision.revived internally.
     ok("Remove AP's provision-revert block still exists and is now wrapped in its own outer tryCatch (secondary_err_rmap)",
-       grepl("secondary_err_rmap <- tryCatch\\(\\{", block) && grepl('provs\\$estado\\[idx_p\\]\\s*<-\\s*"provisional"', block))
+       grepl("secondary_err_rmap <- tryCatch\\(\\{", block) && grepl("pasivos_provision_revive\\(", block))
     ok("Remove AP still logs the normal success action (quitar_pagos) on the happy path (regression guard)",
        grepl('"pagar_hoy", "quitar_pagos"', block))
 
     # The actual ordering claim: in the source text, the failure-path
-    # return() must appear BEFORE the provision-revert assignment
-    # (provs$estado[idx_p] <- "provisional"), so a failed save can never
-    # reach the revert.
+    # return() must appear BEFORE the provision-revert loop
+    # (pasivos_provision_revive( ... )), so a failed save can never reach
+    # the revert.
     return_pos  <- regexpr("if \\(!isTRUE\\(remove_result\\$ok\\)\\)", block)
-    revert_pos  <- regexpr('provs\\$estado\\[idx_p\\]\\s*<-\\s*"provisional"', block)
+    revert_pos  <- regexpr("pasivos_provision_revive\\(", block)
     ok("Remove AP's failure-check appears BEFORE the provision-revert code in source order (the actual safety property)",
        return_pos > 0 && revert_pos > 0 && return_pos < revert_pos)
   }

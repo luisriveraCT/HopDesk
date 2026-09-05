@@ -132,11 +132,12 @@ suppressPackageStartupMessages(library(shiny))
   # the fragility of trying to brace-match the handler's true closing line
   # (a naive "first bare '})'" search hits an unrelated inner tryCatch's
   # close well before the real end in more than one of these handlers).
-  .scan_block <- function(txt, start_pattern) {
+  .scan_block <- function(txt, start_pattern, occurrence = 1L) {
     s <- grep(start_pattern, txt)
     if (!length(s)) return(NA_character_)
     call_start <- grep("pasivos_log_audit\\(", txt)
-    call_start <- call_start[call_start > s[1]][1]
+    call_start <- call_start[call_start > s[1]]
+    call_start <- call_start[occurrence]
     if (is.na(call_start)) return(NA_character_)
     paste(txt[s[1]:min(call_start + 15, length(txt))], collapse = "\n")
   }
@@ -167,8 +168,13 @@ suppressPackageStartupMessages(library(shiny))
   }
 
   # C3: liability pause/resume (liability.edited) -- was notes-only.
+  # occurrence = 2: found 2026-09-05, a per-dropped-provision
+  # pasivos_log_audit(provision.deleted) call was added INSIDE the pause
+  # branch, ahead of the liability-level call this test targets -- the
+  # liability.edited call is now the SECOND pasivos_log_audit() site in
+  # this handler, not the first.
   list_txt <- readLines("R/pasivos_list_module.R", warn = FALSE)
-  b3 <- .scan_block(list_txt, "pasivos_list_pause, ignoreInit = TRUE")
+  b3 <- .scan_block(list_txt, "pasivos_list_pause, ignoreInit = TRUE", occurrence = 2L)
   ok("C3 liability pause/resume: found the handler to scan", !is.na(b3))
   if (!is.na(b3)) {
     ok("C3: captures old_estado before flipping it", grepl("old_estado <- liabs\\$estado\\[idx\\[1\\]\\]", b3))
