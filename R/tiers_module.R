@@ -3884,15 +3884,15 @@ tiersServer <- function(id, shared) {
     # permission-gated UI (see Stage 2 Part C's tab-bar comment above) --
     # every view gates independently, not behind one shared boolean.
     activity_view <- reactiveVal("actividad")
-    for (.av in .ACTIVITY_VIEWS) {
-      local({
-        vid <- .av$id  # captured per-iteration; a shared loop variable would
-                       # otherwise make every observer close over the LAST id
-        observeEvent(input[[paste0("activity_view_btn_", vid)]], {
-          activity_view(vid)
-        }, ignoreInit = TRUE)
-      })
-    }
+    # Single shinyWidgets::radioGroupButtons() input instead of one
+    # actionButton + one observeEvent per view (2026-09-05) -- this is the
+    # SAME compact segmented-toggle widget already proven elsewhere in the
+    # app (app.R's "Sin IC / Con IC / Sólo IC" and Cobros/Pagos toggles),
+    # reused rather than a bespoke button row: one control regardless of
+    # how many views exist, no per-view observer to register/deregister.
+    observeEvent(input$activity_view_selector, {
+      activity_view(input$activity_view_selector)
+    }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
     output$activity_section <- renderUI({
       req(req_authorized())
@@ -3907,12 +3907,14 @@ tiersServer <- function(id, shared) {
 
       tagList(
         if (length(visible) > 1)
-          div(class = "d-flex justify-content-end gap-1 mb-2 flex-wrap",
-              lapply(visible, function(v)
-                actionButton(ns(paste0("activity_view_btn_", v$id)),
-                             tagList(icon(v$icon), " ", v$label),
-                             class = paste("btn btn-sm",
-                                           if (identical(view_id, v$id)) "btn-primary" else "btn-outline-primary"))))
+          div(class = "d-flex justify-content-end mb-2",
+              shinyWidgets::radioGroupButtons(
+                inputId  = ns("activity_view_selector"),
+                label    = NULL,
+                choices  = setNames(visible_ids, vapply(visible, `[[`, character(1), "label")),
+                selected = view_id,
+                size     = "sm", status = "outline-secondary"
+              ))
         else NULL,
         view_entry$ui(ns)
       )

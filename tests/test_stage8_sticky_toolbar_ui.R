@@ -128,6 +128,23 @@ js_txt <- paste(as.character(js_tag), collapse = "\n")
      length(gregexpr("ensureAuditSearchIcon\\(\\)", js_txt)[[1]]) >= 3,
      "icon injection is wired into the same retry schedule AND the MutationObserver as the sticky-offset recalc (so it also survives the table's async render)")
 
+# Fourth regression guard (found 2026-09-05, live again after both prior
+# fixes): the retry schedule + MutationObserver above can still measure a
+# wrong value ONCE (e.g. the tab was mid shown.bs.tab transition, or still
+# hidden and suspended by Shiny, at the exact moment every retry fired) --
+# and unlike R/vencidos_module.R's own sticky mechanism, nothing here ever
+# corrected a wrong value AFTERWARD. Vencidos' venRecalcStickyOffsets()
+# also recalculates on every scroll (rAF-throttled, capture-phase so it
+# catches an inner scrollable container too, not just window's own
+# scrollbar) -- ported the same pattern here rather than inventing a new
+# one, closing the actual gap between the two mechanisms.
+.chk_true(grepl("addEventListener\\('scroll'", js_txt),
+     "recalculates on scroll too, not just resize/mutation/the fixed retry schedule -- self-heals a wrong value at ANY point afterward, not only once at startup")
+.chk_true(grepl("requestAnimationFrame", js_txt, fixed = TRUE),
+     "the scroll recalc is rAF-throttled (cheap enough to run on every scroll frame without jank)")
+.chk_true(grepl("addEventListener\\('scroll', function\\(\\) \\{[\\s\\S]*?\\}, true\\);", js_txt, perl = TRUE),
+     "scroll listener is registered with capture=true (mirrors Vencidos -- catches scroll on an inner scrollable container, which does not bubble to window in the default bubble phase)")
+
 # IDs are passed through jsonlite::toJSON for safe embedding -- confirm a
 # value containing a single quote or other JS-special character can't break
 # the generated script (defensive, since ns() ids are usually simple but

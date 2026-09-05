@@ -180,6 +180,27 @@ audit_sticky_js <- function(toolbar_id, scope_id) {
         new MutationObserver(scheduleAuditRecalc).observe(s0, {childList: true, subtree: true});
       }
       window.addEventListener('resize', recalcAuditSticky);
+      // Continuous self-heal (added 2026-09-05, ported from
+      // R/vencidos_module.R's own venRecalcStickyOffsets() -- that table
+      // never reproduces the 'header stuck too early / floats mid-table'
+      // bug this file's history above describes fixing twice, and the one
+      // thing its sticky mechanism does that this one didn't is recalc on
+      // every scroll, not just on a fixed timer schedule + DOM mutations.
+      // If EITHER of those retry mechanisms ever measures a wrong value
+      // (e.g. the tab was still hidden/mid-transition when they fired --
+      // Shiny suspends a hidden tab's renderUI, so the very first render
+      // can land at an awkward moment relative to the tab's own
+      // shown.bs.tab animation), nothing before this correction was ever
+      // able to fix it afterward -- the wrong CSS var just persisted for
+      // the rest of the session. Cheap (recalcAuditSticky() itself is
+      // just a couple of offset reads) and rAF-throttled, so this costs
+      // nothing during normal scrolling.
+      var _auditScrollTicking = false;
+      window.addEventListener('scroll', function() {
+        if (_auditScrollTicking) return;
+        _auditScrollTicking = true;
+        requestAnimationFrame(function() { recalcAuditSticky(); _auditScrollTicking = false; });
+      }, true);
     })();
   ", jsonlite::toJSON(toolbar_id, auto_unbox = TRUE),
      jsonlite::toJSON(scope_id, auto_unbox = TRUE),
