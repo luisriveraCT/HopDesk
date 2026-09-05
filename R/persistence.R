@@ -58,6 +58,44 @@
   paste0(prefix, "/", key)
 }
 
+# Attempts one S3 read with a bounded, synchronous retry -- shared by
+# .s3_read() and .s3_read_with(). Found 2026-09-06: both used to call
+# aws.s3::s3readRDS() exactly once and treat ANY error identically to a
+# genuine "this object doesn't exist" — a transient timeout/blip (exactly
+# what's likely right after a cold app-process boot, when connection pools
+# haven't warmed up yet) got marked "confirmed missing" in
+# .s3_missing_cache for a full 60 seconds (.S3_MISSING_CACHE_TTL below),
+# with NO retry and no self-heal except some UNRELATED later read of the
+# same key happening to fire after the TTL expired. A real, reported
+# incident: a provision converted to a real item just before an app
+# relaunch was invisible everywhere (Agenda de hoy AND Calendario) right
+# after the relaunch, until converting a third, unrelated item forced a
+# fresh read of the same file and the "missing" item reappeared alongside
+# it — consistent with exactly this mechanism, not a genuine data-loss bug.
+# Mirrors the same bounded-retry shape the WRITE side already has
+# (save_pagar_hoy_with_retry(), s3_save_with_retry(), 2026-08-05/
+# 2026-09-03) rather than trying to distinguish a real 404 from a
+# transient network error by parsing aws.s3's error object -- this
+# codebase has never needed to do that reliably, and guessing at its
+# exact error shape risks a different, subtler bug.
+.s3_read_raw_with_retry <- function(full_key, bucket,
+                                     max_attempts = 3, retry_delay = 0.5) {
+  last_err <- NULL
+  for (attempt in seq_len(max_attempts)) {
+    out <- NULL
+    ok <- tryCatch({
+      suppressMessages(capture.output(
+        out <- aws.s3::s3readRDS(object = full_key, bucket = bucket),
+        type = "output"
+      ))
+      TRUE
+    }, error = function(e) { last_err <<- e; FALSE })
+    if (ok) return(list(ok = TRUE, value = out, error = NULL, attempts = attempt))
+    if (attempt < max_attempts) Sys.sleep(retry_delay)
+  }
+  list(ok = FALSE, value = NULL, error = last_err, attempts = max_attempts)
+}
+
 # .s3_read_with(): like .s3_read() but accepts an explicit client_id override.
 # Checks the preload cache under the FULL prefix key (e.g. "networks/movimientos.rds")
 # so that Phase-2 batch fetches benefit subsequent load_*() calls without the
@@ -69,17 +107,12 @@
   if (exists(full_key, envir = .s3_preload_cache, inherits = FALSE))
     return(.s3_preload_cache[[full_key]])
   if (.s3_missing_cache_hit(full_key)) return(NULL)
-  tryCatch({
-    out <- NULL
-    suppressMessages(capture.output(
-      out <- aws.s3::s3readRDS(object = full_key, bucket = bucket),
-      type = "output"
-    ))
-    out
-  }, error = function(e) {
+  result <- .s3_read_raw_with_retry(full_key, bucket)
+  if (!isTRUE(result$ok)) {
     .s3_missing_cache_set(full_key)
-    NULL
-  })
+    return(NULL)
+  }
+  result$value
 }
 
 # Validates AWS credentials are present at startup. aws.s3 reads AWS_* vars
@@ -267,19 +300,14 @@ unregister_username <- function(username) {
 
   if (.s3_missing_cache_hit(full_key)) return(NULL)
 
-  tryCatch({
-    out <- NULL
-    suppressMessages(
-      capture.output(
-        out <- aws.s3::s3readRDS(object = full_key, bucket = bucket),
-        type = "output"
-      )
-    )
-    out
-  }, error = function(e) {
+  # See .s3_read_raw_with_retry()'s own header comment (above, in
+  # .s3_read_with()) for why this retries before marking the key missing.
+  result <- .s3_read_raw_with_retry(full_key, bucket)
+  if (!isTRUE(result$ok)) {
     .s3_missing_cache_set(full_key)
-    NULL
-  })
+    return(NULL)
+  }
+  result$value
 }
 
 .s3_write <- function(obj, key, client_id = NULL) {
