@@ -3884,15 +3884,23 @@ tiersServer <- function(id, shared) {
     # permission-gated UI (see Stage 2 Part C's tab-bar comment above) --
     # every view gates independently, not behind one shared boolean.
     activity_view <- reactiveVal("actividad")
-    # Single shinyWidgets::radioGroupButtons() input instead of one
-    # actionButton + one observeEvent per view (2026-09-05) -- this is the
-    # SAME compact segmented-toggle widget already proven elsewhere in the
-    # app (app.R's "Sin IC / Con IC / Sólo IC" and Cobros/Pagos toggles),
-    # reused rather than a bespoke button row: one control regardless of
-    # how many views exist, no per-view observer to register/deregister.
-    observeEvent(input$activity_view_selector, {
-      activity_view(input$activity_view_selector)
-    }, ignoreInit = TRUE, ignoreNULL = TRUE)
+    # A single actionButton that CYCLES to the next view on each click
+    # (2026-09-05) -- NOT a segmented control showing every option at once
+    # (that was radioGroupButtons, tried first and explicitly rejected: it
+    # rendered as two joined-together buttons, not one). This is one button,
+    # one label, at all times -- its own icon/label just changes to name
+    # whichever view is now showing after each click, cycling back to the
+    # first view after the last.
+    observeEvent(input$activity_view_cycle, {
+      visible_ids <- vapply(
+        Filter(function(v) isTRUE(tryCatch(v$can_view(shared), error = function(e) FALSE)), .ACTIVITY_VIEWS),
+        `[[`, character(1), "id")
+      if (length(visible_ids) < 2) return()
+      cur  <- if (isTRUE(activity_view() %in% visible_ids)) activity_view() else visible_ids[1]
+      idx  <- match(cur, visible_ids)
+      next_idx <- if (is.na(idx) || idx >= length(visible_ids)) 1L else idx + 1L
+      activity_view(visible_ids[next_idx])
+    }, ignoreInit = TRUE)
 
     output$activity_section <- renderUI({
       req(req_authorized())
@@ -3908,13 +3916,10 @@ tiersServer <- function(id, shared) {
       tagList(
         if (length(visible) > 1)
           div(class = "d-flex justify-content-end mb-2",
-              shinyWidgets::radioGroupButtons(
-                inputId  = ns("activity_view_selector"),
-                label    = NULL,
-                choices  = setNames(visible_ids, vapply(visible, `[[`, character(1), "label")),
-                selected = view_id,
-                size     = "sm", status = "outline-secondary"
-              ))
+              actionButton(ns("activity_view_cycle"),
+                           tagList(icon(view_entry$icon), " ", view_entry$label),
+                           class = "btn btn-sm btn-primary",
+                           title = "Cambiar de vista"))
         else NULL,
         view_entry$ui(ns)
       )

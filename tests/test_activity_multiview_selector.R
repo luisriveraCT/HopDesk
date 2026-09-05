@@ -166,4 +166,72 @@ if (length(filter_start)) {
   }
 }
 
+# =============================================================================
+# Part D -- functional: the single cycle-button's advance logic (2026-09-05,
+# replacing an earlier attempt at a shinyWidgets::radioGroupButtons()
+# segmented control -- explicitly rejected live: "that's two joined
+# together... I want one single button"). Extracted from the real
+# observeEvent(input$activity_view_cycle, {...}) block, not hand-copied.
+# =============================================================================
+cat("\n-- Part D: single cycle-button advance logic --\n")
+
+cycle_start <- grep("observeEvent\\(input\\$activity_view_cycle,", tm_txt)
+.chk_true(length(cycle_start) == 1, "found the cycle-button observeEvent to scan")
+if (length(cycle_start)) {
+  cycle_end <- grep('\\}, ignoreInit = TRUE\\)', tm_txt)
+  cycle_end <- cycle_end[cycle_end > cycle_start[1]][1]
+  cycle_block <- paste(tm_txt[cycle_start[1]:cycle_end], collapse = "\n")
+
+  # Only one actionButton is ever rendered -- a regression guard against
+  # reintroducing the rejected multi-button segmented control.
+  .chk(length(gregexpr("actionButton\\(", cycle_block)[[1]][gregexpr("actionButton\\(", cycle_block)[[1]] > 0]),
+       0L, "the cycle observeEvent itself defines no actionButton (that lives in the renderUI block, checked separately below)")
+  .chk(any(grepl("radioGroupButtons(", tm_txt, fixed = TRUE)), FALSE,
+       "radioGroupButtons() is no longer CALLED anywhere in tiers_module.R (the rejected segmented-control attempt is fully gone, not just unused -- the name may still appear in an explanatory comment)")
+
+  render_start <- grep('actionButton\\(ns\\("activity_view_cycle"\\)', tm_txt)
+  .chk(length(render_start), 1L, "found exactly ONE actionButton for the cycle control (not one per view)")
+
+  run_cycle <- function(views, current_view) {
+    env <- new.env()
+    env$.ACTIVITY_VIEWS <- views
+    env$shared <- list()
+    result <- NULL
+    env$activity_view <- local({
+      val <- current_view
+      function(x) { if (missing(x)) val else { result <<- x; val <<- x } }
+    })
+    eval(parse(text = cycle_block), envir = env)
+    # The block is `observeEvent(input$activity_view_cycle, { BODY }, ...)`
+    # -- extract and run just BODY, since there's no real Shiny reactive
+    # context here to fire the observeEvent itself.
+    body_start <- grep("observeEvent\\(input\\$activity_view_cycle,", cycle_block, fixed = FALSE)
+    body_lines <- strsplit(cycle_block, "\n")[[1]]
+    inner <- paste(body_lines[2:(length(body_lines) - 1)], collapse = "\n")
+    eval(parse(text = inner), envir = env)
+    result
+  }
+
+  fake3 <- list(
+    list(id = "actividad", label = "A", icon = "x", can_view = function(shared) TRUE),
+    list(id = "pagos",     label = "P", icon = "x", can_view = function(shared) TRUE),
+    list(id = "bancos",    label = "B", icon = "x", can_view = function(shared) TRUE)
+  )
+  .chk(run_cycle(fake3, "actividad"), "pagos", "D1: cycling from the 1st view advances to the 2nd")
+  .chk(run_cycle(fake3, "pagos"),     "bancos", "D2: cycling from the 2nd view advances to the 3rd")
+  .chk(run_cycle(fake3, "bancos"),    "actividad", "D3: cycling from the LAST view wraps back to the 1st, not off the end")
+
+  fake_with_hidden <- list(
+    list(id = "actividad", label = "A", icon = "x", can_view = function(shared) TRUE),
+    list(id = "pagos",     label = "P", icon = "x", can_view = function(shared) FALSE),
+    list(id = "bancos",    label = "B", icon = "x", can_view = function(shared) TRUE)
+  )
+  .chk(run_cycle(fake_with_hidden, "actividad"), "bancos",
+       "D4: cycling skips a view whose can_view() is currently FALSE, landing on the next VISIBLE one")
+
+  only_one <- list(list(id = "actividad", label = "A", icon = "x", can_view = function(shared) TRUE))
+  .chk_true(is.null(run_cycle(only_one, "actividad")),
+       "D5: with only one visible view, clicking does nothing (no button is even rendered in this case, but the handler is still defensive)")
+}
+
 cat(sprintf("\n  Subtotal: %d passed, %d failed\n", .pass, .fail))

@@ -119,6 +119,20 @@
 # $(document).on('shiny:value', ...) call) -- generalized here to any DOM
 # change inside our own scope, debounced, so it needs no knowledge of this
 # specific output's name.
+#
+# THIRD ATTEMPT, REVERTED (2026-09-05): the header was reported floating
+# mid-table again, live, after both fixes above. Hypothesized this was the
+# same class of "one measurement was wrong, nothing ever corrected it"
+# problem, and ported R/vencidos_module.R's own scroll-triggered,
+# rAF-throttled recalc (its one mechanism this file didn't have). Live
+# result: reported WORSE, not better, same day -- reverted immediately
+# rather than leaving an unverified guess in place. Root cause for the
+# CURRENT (as of this note) recurrence is still open. Whatever is tried
+# next should be verified live in a real browser before being called
+# fixed -- both prior "fixes" above and this reverted one were each
+# reasoned through carefully but not actually watched happen in a browser
+# before being declared done, and each one either didn't hold up or made
+# things worse.
 audit_sticky_js <- function(toolbar_id, scope_id) {
   tags$script(HTML(sprintf("
     (function() {
@@ -180,27 +194,6 @@ audit_sticky_js <- function(toolbar_id, scope_id) {
         new MutationObserver(scheduleAuditRecalc).observe(s0, {childList: true, subtree: true});
       }
       window.addEventListener('resize', recalcAuditSticky);
-      // Continuous self-heal (added 2026-09-05, ported from
-      // R/vencidos_module.R's own venRecalcStickyOffsets() -- that table
-      // never reproduces the 'header stuck too early / floats mid-table'
-      // bug this file's history above describes fixing twice, and the one
-      // thing its sticky mechanism does that this one didn't is recalc on
-      // every scroll, not just on a fixed timer schedule + DOM mutations.
-      // If EITHER of those retry mechanisms ever measures a wrong value
-      // (e.g. the tab was still hidden/mid-transition when they fired --
-      // Shiny suspends a hidden tab's renderUI, so the very first render
-      // can land at an awkward moment relative to the tab's own
-      // shown.bs.tab animation), nothing before this correction was ever
-      // able to fix it afterward -- the wrong CSS var just persisted for
-      // the rest of the session. Cheap (recalcAuditSticky() itself is
-      // just a couple of offset reads) and rAF-throttled, so this costs
-      // nothing during normal scrolling.
-      var _auditScrollTicking = false;
-      window.addEventListener('scroll', function() {
-        if (_auditScrollTicking) return;
-        _auditScrollTicking = true;
-        requestAnimationFrame(function() { recalcAuditSticky(); _auditScrollTicking = false; });
-      }, true);
     })();
   ", jsonlite::toJSON(toolbar_id, auto_unbox = TRUE),
      jsonlite::toJSON(scope_id, auto_unbox = TRUE),
