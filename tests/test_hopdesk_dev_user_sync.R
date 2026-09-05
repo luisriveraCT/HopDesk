@@ -3,11 +3,14 @@
 #
 # .hopdesk_sync_dev_users_from_prod() (R/global.R, added 2026-09-04): when
 # the dev-bucket override is active, copies real user-account/auth data
-# (usuarios.rds per client, client_registry.rds, username_index.rds) from
-# the production bucket into the dev bucket, so the dev sandbox always has
-# working login credentials instead of starting empty (which cost real
-# debugging time twice in one day: "Usuario o contraseña incorrecto" against
-# an unseeded dev bucket, mistaken for a real account problem).
+# (usuarios.rds per client, client_registry.rds, username_index.rds) AND
+# each active client's own empresas.rds from the production bucket into
+# the dev bucket, so the dev sandbox always has working login credentials
+# and a real company list instead of starting empty (which cost real
+# debugging time three times in one day: "Usuario o contraseña incorrecto"
+# against an unseeded dev bucket twice, then the Calendario's company-
+# toggle "bubbles" silently disappearing because company_map_rv() had
+# nothing to read).
 #
 # STAKES: this reads from production and writes to the dev bucket. A
 # reversed direction, or a write that ever reaches the PRODUCTION bucket,
@@ -120,14 +123,18 @@ tryCatch({
   )
   usuarios_networks <- data.frame(username = "dev", tier = "dev", client_id = "networks", stringsAsFactors = FALSE)
   usuarios_hopdesk  <- data.frame(username = "bunny", tier = "hopdesk", client_id = "hopdesk", stringsAsFactors = FALSE)
+  empresas_networks <- data.frame(initials = "NCS", nombre_corto = "Networks CS", activa = TRUE, stringsAsFactors = FALSE)
 
   assign("prod-bucket/hd-admin/usuarios.rds",        usuarios_hd,       envir = .fake_store)
   assign("prod-bucket/hd-admin/username_index.rds",  idx,               envir = .fake_store)
   assign("prod-bucket/hd-admin/client_registry.rds", registry,          envir = .fake_store)
   assign("prod-bucket/networks/usuarios.rds",        usuarios_networks, envir = .fake_store)
+  assign("prod-bucket/networks/empresas.rds",        empresas_networks, envir = .fake_store)
   assign("prod-bucket/hopdesk/usuarios.rds",         usuarios_hopdesk,  envir = .fake_store)
   # Deliberately NO "prod-bucket/inactive-client/usuarios.rds" at all --
-  # proves the active-only filter, not just a lucky absence.
+  # proves the active-only filter, not just a lucky absence. Also
+  # deliberately NO "prod-bucket/hopdesk/empresas.rds" -- proves a missing
+  # empresas.rds for one client doesn't block anything else.
 
   .read_log <- list(); .write_log <- list()
   result <- .hopdesk_sync_dev_users_from_prod("prod-bucket", "dev-bucket")
@@ -146,6 +153,10 @@ tryCatch({
   .chk_true("hd-admin/client_registry.rds" %in% write_keys, "hd-admin/client_registry.rds was copied")
   .chk_true("networks/usuarios.rds" %in% write_keys, "the active 'networks' client's usuarios.rds was copied")
   .chk_true("hopdesk/usuarios.rds" %in% write_keys, "the active 'hopdesk' client's usuarios.rds was copied")
+  .chk_true("networks/empresas.rds" %in% write_keys,
+            "the active 'networks' client's empresas.rds was copied (this is what company_map_rv() needs to return anything at all)")
+  .chk_false("hopdesk/empresas.rds" %in% write_keys,
+             "hopdesk's empresas.rds, which doesn't exist in production, was correctly skipped rather than erroring the whole sync")
   .chk_false("inactive-client/usuarios.rds" %in% write_keys,
              "the SUSPENDED client's usuarios.rds was NOT copied -- proves the active-only filter is real, not incidental")
   .chk(sum(write_keys == "hd-admin/usuarios.rds"), 1L,
@@ -154,6 +165,8 @@ tryCatch({
   # Content actually landed correctly, not just a key with placeholder data
   .chk(get("dev-bucket/networks/usuarios.rds", envir = .fake_store)$username, "dev",
        "the copied networks/usuarios.rds has the REAL content from production, not a stand-in")
+  .chk(get("dev-bucket/networks/empresas.rds", envir = .fake_store)$initials, "NCS",
+       "the copied networks/empresas.rds has the REAL content from production, not a stand-in")
 
   # =============================================================================
   # Part C -- graceful degradation: a missing key in prod, and a write

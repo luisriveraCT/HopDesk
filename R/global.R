@@ -25,16 +25,23 @@ if (file.exists(".Renviron")) readRenviron(".Renviron")
 # separate opt-in step to remember. The alternative (an opt-IN dev flag)
 # would silently default back to production the instant someone forgets to
 # set it -- exactly the failure mode this whole fix exists to close.
-# Copies real user-account/auth data from the production bucket into the
+# Copies real user-account/auth data, plus each active client's own
+# company metadata (empresas.rds), from the production bucket into the
 # dev bucket, read-only against production (never writes there), so the
-# dev sandbox always has working login credentials instead of starting
-# empty every time (added 2026-09-04, after "Usuario o contraseña
-# incorrecto" against an unseeded dev bucket cost real debugging time
-# twice in one day). Deliberately narrow scope: only what auth/user-
-# management needs (usuarios.rds per client + the two hd-admin bookkeeping
-# files) -- NOT business data (empresas/bancos/SAP/etc.), which would
-# undercut the whole point of the dev sandbox never touching real
-# financial data. Parameterized (not reading Sys.getenv() internally) so
+# dev sandbox always has working login credentials and a real company
+# list instead of starting empty every time (added 2026-09-04, after
+# "Usuario o contraseña incorrecto" against an unseeded dev bucket cost
+# real debugging time twice in one day; empresas.rds added the same day
+# after the missing company list silently emptied out the Calendario's
+# company-toggle "bubbles" -- company_map_rv() (app.R) returns c() the
+# instant empresas_db() comes back as a valid-but-empty table, which is
+# exactly what an unsynced dev bucket produces, not a bug in that
+# reactive itself). Deliberately still narrow: empresas.rds is company
+# NAME/initials/RFC metadata, not financial data (no balances, no
+# transactions) -- copying it doesn't undercut the sandbox's purpose the
+# way ctas_cuentas.rds (real bank account numbers/CLABEs) or any
+# SAP/bancos movement data would. Parameterized (not reading Sys.getenv()
+# internally) so
 # tests/test_hopdesk_dev_user_sync.R can exercise this against fake
 # buckets with aws.s3 fully mocked, never real S3, the same "extract the
 # real function" convention used throughout this codebase's test suite.
@@ -63,7 +70,7 @@ if (file.exists(".Renviron")) readRenviron(".Renviron")
     return(invisible(FALSE))
   }
 
-  message("[DEV SYNC] Copying user accounts from prod bucket '", prod_bucket,
+  message("[DEV SYNC] Copying user accounts + company metadata from prod bucket '", prod_bucket,
           "' into dev bucket '", dev_bucket, "'...")
 
   # Only overrides key/secret/region when actually supplied -- so tests can
@@ -120,11 +127,18 @@ if (file.exists(".Renviron")) readRenviron(".Renviron")
   # Every ACTIVE client's own usuarios.rds -- needed for the cross-client
   # credential merge (.load_or_init_credentials(), R/auth.R) to find a
   # non-staff account (e.g. a client's own "dev" user) when logging in via
-  # the shared hd-admin deployment, exactly as production does.
+  # the shared hd-admin deployment, exactly as production does. Also that
+  # client's own empresas.rds -- needed for company_map_rv() (app.R) to
+  # return anything at all instead of c(), which otherwise empties out
+  # every company-scoped UI element (the Calendario company-toggle
+  # bubbles being the one that surfaced this, but not the only consumer).
   if (!is.null(registry) && is.data.frame(registry) && "client_id" %in% names(registry)) {
     status_col <- if ("status" %in% names(registry)) registry$status else rep(NA_character_, nrow(registry))
     active <- unique(tolower(trimws(registry$client_id[!is.na(status_col) & status_col == "active"])))
-    for (cid in setdiff(active, "hd-admin")) copy_one(paste0(cid, "/usuarios.rds"))
+    for (cid in setdiff(active, "hd-admin")) {
+      copy_one(paste0(cid, "/usuarios.rds"))
+      copy_one(paste0(cid, "/empresas.rds"))
+    }
   }
 
   message("[DEV SYNC] Done.")
