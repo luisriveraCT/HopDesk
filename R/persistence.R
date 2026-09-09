@@ -351,6 +351,22 @@ unregister_username <- function(username) {
       message("[S3_WRITE] put_object fallback OK")
     }, error = function(e2) {
       message(sprintf("[S3_WRITE] put_object fallback FAILED: %s", e2$message))
+      # Both upload attempts are exhausted. Durably stage the payload we
+      # already wrote to `tf` into the local offline queue (Stage 1 -- see
+      # R/offline_queue.R) before raising the same error this always raised.
+      # resolved_client_id is read back out of full_key (not recomputed via
+      # .client_id()/.s3_key()) so it can never drift from the prefix this
+      # write actually attempted. Staging is best-effort and never changes
+      # this function's outcome: on any failure inside it, this still stops
+      # with e2$message exactly as before offline queuing existed.
+      resolved_client_id <- sub("^([^/]+)/.*$", "\\1", full_key)
+      staged <- tryCatch(
+        .queue_stage_entry(payload_path = tf, s3_key = full_key, key = key,
+                           client_id = resolved_client_id),
+        error = function(e3) FALSE
+      )
+      if (isTRUE(staged))
+        message(sprintf("[S3_WRITE] upload failed but write was durably queued for later replay (client_id='%s')", resolved_client_id))
       stop(e2$message)
     })
   })

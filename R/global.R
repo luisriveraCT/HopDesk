@@ -448,6 +448,7 @@ source("R/pasivos_calendar_glue.R")
 source("R/pasivos_observers.R")
 source("R/pasivos_module.R")
 source("R/sync_bus.R")
+source("R/offline_queue.R")
 source("R/cashflow_export_module.R")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
