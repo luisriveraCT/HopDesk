@@ -449,6 +449,17 @@ source("R/pasivos_observers.R")
 source("R/pasivos_module.R")
 source("R/sync_bus.R")
 source("R/offline_queue.R")
+# Idempotent starter (see its own header comment in R/offline_queue.R) --
+# safe to call on every re-source of this file; only the first call in a
+# given process actually schedules the offline-queue flush loop's recurring
+# background callback. That scheduling primitive itself is deliberately not
+# invoked directly here: tests/test_stage7_global_always_resourced.R scans
+# this file's own text (comments included) for that call's fully-qualified
+# name and forbids it appearing anywhere in this file at all, since
+# global.R is re-sourced on every app.R launch, including repeated ones in
+# the same persistent R session -- so even naming it directly in a comment,
+# as an earlier version of this one did, is enough to trip that check.
+.queue_start_flush_loop()
 source("R/cashflow_export_module.R")
 
 # ── Constants ─────────────────────────────────────────────────────────────────

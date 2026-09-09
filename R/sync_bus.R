@@ -30,10 +30,17 @@ register_synced <- function(name, s3_key, loader, per_session_loader = NULL) {
   invisible(NULL)
 }
 
+# Returns invisibly whether ITS OWN version-stamp write to S3 succeeded --
+# TRUE/FALSE, not just NULL. Every existing caller (~90 call sites across the
+# app) ignores this return value already, so this is purely additive: it
+# exists so a caller that DOES care (R/offline_queue.R's replay path, added
+# alongside this) can tell "the data saved fine, but the cross-session
+# staleness broadcast for it didn't" apart from "everything worked," instead
+# of that distinction being silently swallowed here.
 bump_sync_version <- function(name, client_id = NULL) {
   if (!name %in% names(.SYNC_REGISTRY)) {
     warning("[sync_bus] bump_sync_version called for unregistered key: ", name)
-    return(invisible(NULL))
+    return(invisible(FALSE))
   }
   .GlobalEnv$.sync_versions[[name]] <-
     (.GlobalEnv$.sync_versions[[name]] %||% 0L) + 1L
@@ -41,12 +48,15 @@ bump_sync_version <- function(name, client_id = NULL) {
   # Write a cross-process stamp to S3 so other R workers detect this bump.
   # Suppress the verbose .s3_write log and swallow errors so a transient S3
   # failure never breaks the save that triggered this bump.
-  tryCatch(
-    suppressMessages(.s3_write(.GlobalEnv$.sync_versions, S3_KEYS$sync_versions, client_id = client_id)),
-    error = function(e) message("[sync_bus] version stamp write failed: ", e$message)
-  )
+  ok <- tryCatch({
+    suppressMessages(.s3_write(.GlobalEnv$.sync_versions, S3_KEYS$sync_versions, client_id = client_id))
+    TRUE
+  }, error = function(e) {
+    message("[sync_bus] version stamp write failed: ", e$message)
+    FALSE
+  })
 
-  invisible(NULL)
+  invisible(ok)
 }
 
 # active_client_rv: optional reactive (function) that returns the current session

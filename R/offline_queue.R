@@ -160,10 +160,6 @@
   fn()
 }
 
-# Same atomic tempfile-then-rename pattern as the manifest, applied to the
-# one small top-level index of "which clients currently have pending work"
-# (Stage 2's flush loop will use this to avoid scanning every client
-# directory that has ever existed).
 .queue_mark_client_pending <- function(client_id) {
   path <- .queue_pending_index_path()
   ids  <- if (file.exists(path)) tryCatch(readRDS(path), error = function(e) character(0)) else character(0)
@@ -175,6 +171,39 @@
   saveRDS(sort(unique(c(ids, slug))), tmp, compress = TRUE)
   ok <- file.rename(tmp, path)
   if (!ok) unlink(tmp)
+  invisible(TRUE)
+}
+
+# ── Stage 2 additions: purely additive, .queue_mark_client_pending() above is
+# untouched from Stage 1 so tests/test_offline_queue_stage1.R and
+# tests/test_offline_queue_review_findings.R keep working unmodified (each
+# extracts real function bodies individually; changing an existing function's
+# own dependencies would silently break whichever test file doesn't also
+# extract the new callee -- confirmed the hard way while building this).
+.queue_read_pending_index <- function() {
+  path <- .queue_pending_index_path()
+  ids  <- if (file.exists(path)) tryCatch(readRDS(path), error = function(e) character(0)) else character(0)
+  if (!is.character(ids)) ids <- character(0)
+  ids
+}
+
+.queue_write_pending_index <- function(ids) {
+  path <- .queue_pending_index_path()
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+  tmp <- tempfile(tmpdir = dirname(path), fileext = ".rds.tmp")
+  saveRDS(sort(unique(ids)), tmp, compress = TRUE)
+  ok <- file.rename(tmp, path)
+  if (!ok) unlink(tmp)
+  invisible(TRUE)
+}
+
+# Called once a client's manifest has no "pending" rows left, so the flush
+# loop stops visiting a client with nothing left to do.
+.queue_unmark_client_pending <- function(client_id) {
+  ids  <- .queue_read_pending_index()
+  slug <- .queue_slug(client_id)
+  if (!slug %in% ids) return(invisible(TRUE))
+  .queue_write_pending_index(setdiff(ids, slug))
   invisible(TRUE)
 }
 
@@ -257,4 +286,244 @@
     message("[offline_queue] staging failed, write will surface its normal error instead: ", e$message)
     FALSE
   })
+}
+
+# =============================================================================
+# Stage 2: background flush + replay (see OFFLINE_WRITE_QUEUE_DESIGN.md).
+#
+# IMPORTANT constraint this whole section is built around: R/global.R is
+# unconditionally RE-SOURCED on every app.R launch, including repeated ones
+# in the same persistent R session (tests/test_stage7_global_always_resourced.R
+# enforces this and explicitly forbids the literal substring "later::later("
+# from ever appearing in R/global.R's own text, precisely because a bare
+# scheduled callback there would duplicate on every re-source). So the actual
+# later::later() call lives here, in this file, behind its own idempotency
+# guard (.queue_start_flush_loop()) -- global.R only ever calls that guarded
+# starter, which is safe to call any number of times.
+# =============================================================================
+
+.QUEUE_FLUSH_INTERVAL_SECS <- 15
+
+# Idempotent: the first call schedules the self-rescheduling tick chain and
+# returns TRUE; every call after that (i.e. every later re-source of
+# global.R within the same process) is a no-op that returns FALSE. This is
+# what makes it safe for global.R to call this unconditionally on every
+# re-source, instead of needing global.R itself to somehow run "only once."
+.queue_start_flush_loop <- function() {
+  if (isTRUE(.GlobalEnv$.queue_flush_loop_started)) return(invisible(FALSE))
+  .GlobalEnv$.queue_flush_loop_started <- TRUE
+  # delay=0, not the full interval -- this is the design's "eager scan on
+  # boot" requirement: whatever was left pending from a previous process
+  # gets picked up as soon as the event loop starts spinning, not after
+  # waiting out one full 15s cycle first.
+  later::later(.queue_flush_tick, delay = 0)
+  invisible(TRUE)
+}
+
+# Fires on httpuv's event loop regardless of whether any browser session is
+# open (same primitive .audit_queue() already uses, just driven by a
+# heartbeat instead of a buffered-row event). Never lets a bad tick kill the
+# chain, and always reschedules the next one regardless of outcome.
+.queue_flush_tick <- function() {
+  tryCatch(.queue_flush_all_pending(), error = function(e) {
+    message("[offline_queue] flush tick failed, will retry next cycle: ", e$message)
+  })
+  later::later(.queue_flush_tick, delay = .QUEUE_FLUSH_INTERVAL_SECS)
+}
+
+.queue_flush_all_pending <- function() {
+  for (client_id in .queue_read_pending_index()) {
+    tryCatch(.queue_flush_client(client_id), error = function(e) {
+      message(sprintf("[offline_queue] flush failed for client_id='%s', will retry next cycle: %s",
+                      client_id, e$message))
+    })
+  }
+  invisible(TRUE)
+}
+
+# Processes every "pending" row for ONE client, in seq order (the order the
+# writes were originally attempted), under that client's own lock -- the
+# same mutex .queue_stage_entry() uses, and for the same reason: a live
+# write can fail and stage a brand new entry for this client while its
+# backlog is mid-replay, and the manifest read-modify-write here must not
+# race against that.
+.queue_flush_client <- function(client_id) {
+  .queue_with_client_lock(client_id, function() {
+    mf <- .queue_read_manifest(client_id)
+    pending_idx <- which(mf$status == "pending")
+    if (!length(pending_idx)) {
+      .queue_unmark_client_pending(client_id)
+      return(invisible(TRUE))
+    }
+    pending_idx <- pending_idx[order(mf$seq[pending_idx])]
+
+    changed <- FALSE
+    for (i in pending_idx) {
+      new_status <- tryCatch(.queue_replay_entry(mf[i, ], client_id),
+                              error = function(e) "pending")
+      if (!identical(new_status, "pending")) {
+        mf$status[i]    <- new_status
+        mf$synced_at[i] <- Sys.time()  # terminal-resolution time, for "blocked" too, not only "synced"
+        changed <- TRUE
+      }
+    }
+    if (changed) .queue_write_manifest(client_id, mf)
+    if (!any(mf$status == "pending")) .queue_unmark_client_pending(client_id)
+    invisible(TRUE)
+  })
+}
+
+# Replays exactly one manifest row. Returns the row's new status:
+#   "synced"  -- uploaded successfully (version matched or not -- see below)
+#   "blocked" -- a permanent, non-retryable problem (tenant-prefix mismatch,
+#                or the staged payload file itself is gone); never retried
+#                again, unlike "pending"
+#   "pending" -- upload attempt failed again (S3 presumably still down);
+#                left completely unchanged, retried again next tick
+#
+# Deliberately does NOT call .s3_write() -- that would re-run ITS OWN
+# failure path and stage a brand new duplicate queue entry for what is
+# already a queued retry. The payload is already durably sitting on local
+# disk from Stage 1, so this uploads that existing file directly.
+.queue_conflict_backups_dir <- function(client_id) file.path(.queue_client_dir(client_id), "conflict_backups")
+.queue_conflict_backup_path <- function(client_id, seq) file.path(.queue_conflict_backups_dir(client_id), sprintf("%012d.rds", seq))
+
+.queue_replay_entry <- function(row, client_id) {
+  slug <- .queue_slug(client_id)
+  # %||% (R/global.R) substitutes on a length-1 NA as well as NULL, so this
+  # correctly falls back when .queue_stage_entry() wasn't given these.
+  acting_user <- row$acting_user %||% "system"
+  acting_home <- row$acting_home_client_id %||% slug
+
+  # Defense in depth, mirrored from .queue_stage_entry()'s own identical
+  # check: should be unreachable given staging already verified this, but
+  # this is the last line before anything leaves local disk for S3.
+  if (!startsWith(row$s3_key, paste0(slug, "/"))) {
+    tryCatch(
+      log_action(user = acting_user, module = "offline_queue", action = "_queue_tenant_mismatch",
+                 description = sprintf("Refused to replay seq=%s: s3_key '%s' does not match client_id '%s'",
+                                       row$seq, row$s3_key, slug),
+                 target_id = row$table_name, s3_key = row$s3_key,
+                 client_id = slug, viewer_home_client_id = acting_home),
+      error = function(e) NULL
+    )
+    return("blocked")
+  }
+
+  dest <- file.path(.queue_entries_dir(client_id), sprintf("%012d.rds", row$seq))
+  if (!file.exists(dest)) return("blocked")  # the staged payload itself is gone -- retrying forever can't fix that
+
+  # Payload integrity: a local disk isn't immune to bit rot or a truncated
+  # write, especially over however long an entry might sit pending during a
+  # real outage. Confirm the staged bytes are still valid RDS BEFORE ever
+  # uploading them -- put_object() itself would happily push corrupt bytes
+  # into a real client's live table with no complaint at all.
+  payload_ok <- tryCatch({ readRDS(dest); TRUE }, error = function(e) FALSE)
+  if (!payload_ok) {
+    tryCatch(
+      log_action(user = acting_user, module = "offline_queue", action = "_queue_corrupt_payload",
+                 description = sprintf("Refused to replay seq=%s for table '%s': staged payload at '%s' is not valid RDS (local corruption)",
+                                       row$seq, row$table_name, dest),
+                 target_id = row$table_name, s3_key = row$s3_key,
+                 client_id = slug, viewer_home_client_id = acting_home),
+      error = function(e) NULL
+    )
+    return("blocked")
+  }
+
+  # Conflict check happens BEFORE the upload, not after: read the CURRENT
+  # version fresh from S3, scoped to this entry's own client_id -- never the
+  # process-global in-memory .sync_versions counter, which is shared across
+  # every client this one process happens to serve and would compare
+  # against whichever client's bump happened to run most recently, not
+  # necessarily this one. Doing this BEFORE uploading is what makes the
+  # pre-overwrite backup below possible at all -- checking only after the
+  # upload would mean reading back this replay's OWN just-written content,
+  # not the victim's.
+  current_version <- tryCatch({
+    stamp <- .s3_read_with(S3_KEYS$sync_versions, client_id = slug)
+    if (is.list(stamp)) suppressWarnings(as.integer(stamp[[row$table_name]] %||% NA_integer_)) else NA_integer_
+  }, error = function(e) NA_integer_)
+
+  expected <- suppressWarnings(as.integer(row$expected_sync_version))
+  # A missing baseline (NA) means Stage 1 never had a version snapshot to
+  # compare against in the first place -- there is genuinely nothing to
+  # compare, so this stays silent rather than logging a "conflict" that
+  # can't actually be confirmed one way or the other.
+  is_conflict <- !is.na(expected) && !is.na(current_version) && current_version != expected
+
+  # If this IS a conflict, back up whatever is CURRENTLY in S3 for this
+  # table (the victim of the impending overwrite) before replaying, so the
+  # audit trail isn't just two version numbers with no way to recover what
+  # was actually lost. Best-effort: a failure to back up must never block
+  # the replay itself, matching this design's "the queue must never make
+  # things worse than not having it" posture everywhere else. Forces a real
+  # S3 read (clears both caches for this key first) rather than risking a
+  # stale preload-cached copy of the very thing about to be overwritten.
+  backup_path <- NA_character_
+  if (is_conflict) {
+    bare_key <- tryCatch(.SYNC_REGISTRY[[row$table_name]]$s3_key, error = function(e) NULL)
+    if (!is.null(bare_key)) {
+      full_key_for_backup <- tryCatch(.s3_key(bare_key, client_id = slug), error = function(e) NULL)
+      if (!is.null(full_key_for_backup)) {
+        suppressWarnings(rm(list = intersect(full_key_for_backup, ls(.s3_preload_cache)), envir = .s3_preload_cache))
+        suppressWarnings(rm(list = intersect(full_key_for_backup, ls(.s3_missing_cache)), envir = .s3_missing_cache))
+      }
+      victim_content <- tryCatch(.s3_read_with(bare_key, client_id = slug), error = function(e) NULL)
+      if (!is.null(victim_content)) {
+        bpath <- tryCatch(.queue_conflict_backup_path(client_id, row$seq), error = function(e) NA_character_)
+        if (!is.na(bpath)) {
+          backed_up <- tryCatch({
+            dir.create(.queue_conflict_backups_dir(client_id), recursive = TRUE, showWarnings = FALSE)
+            saveRDS(victim_content, bpath, compress = TRUE)
+            TRUE
+          }, error = function(e) FALSE)
+          if (backed_up) backup_path <- bpath
+        }
+      }
+    }
+  }
+
+  ok <- tryCatch({
+    aws.s3::put_object(file = dest, object = row$s3_key, bucket = .s3_bucket())
+    TRUE
+  }, error = function(e) FALSE)
+  if (!ok) return("pending")
+
+  if (is_conflict) {
+    tryCatch(
+      log_action(user = acting_user, module = "offline_queue", action = "_conflict_replay",
+                 description = sprintf(
+                   "Replayed seq=%s for table '%s' after its version changed while offline (expected=%s, now=%s).%s",
+                   row$seq, row$table_name, expected, current_version,
+                   if (!is.na(backup_path))
+                     sprintf(" Pre-overwrite content backed up at '%s'.", backup_path)
+                   else
+                     " Pre-overwrite content could NOT be backed up."),
+                 target_id = row$table_name, s3_key = row$s3_key,
+                 client_id = slug, viewer_home_client_id = acting_home),
+      error = function(e) NULL
+    )
+  }
+
+  # bump_sync_version() now reports whether ITS OWN write succeeded. The
+  # actual data is already safely delivered above regardless -- but if the
+  # staleness broadcast for this table failed, that's worth a durable,
+  # findable record rather than staying silent the way bump_sync_version()
+  # swallows it internally: other sessions may not learn about this change
+  # until some unrelated later write to the same table happens to succeed.
+  bump_ok <- tryCatch(bump_sync_version(row$table_name, client_id = slug), error = function(e) FALSE)
+  if (!isTRUE(bump_ok)) {
+    tryCatch(
+      log_action(user = acting_user, module = "offline_queue", action = "_queue_stale_broadcast",
+                 description = sprintf(
+                   "Replay of seq=%s for table '%s' succeeded, but the version-stamp write failed -- other sessions may not see this change until a later write to the same table succeeds.",
+                   row$seq, row$table_name),
+                 target_id = row$table_name, s3_key = row$s3_key,
+                 client_id = slug, viewer_home_client_id = acting_home),
+      error = function(e) NULL
+    )
+  }
+
+  "synced"
 }
