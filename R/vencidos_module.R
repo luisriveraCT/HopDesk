@@ -506,7 +506,7 @@ vencidosServer <- function(id, shared) {
         Importe    = df[["Importe"]],
         Etiqueta   = df[["Etiqueta"]],
         tag_weight = df[["tag_weight"]],
-        source       = df[["source"]] %||% "sap",
+        source       = df[["source"]] %||% SAP_B1_ERP_TYPE,
         confirmed    = if ("confirmed" %in% names(df)) df[["confirmed"]] %||% FALSE else FALSE,
         inv_id       = if ("id" %in% names(df)) df[["id"]] %||% "" else "",
         provision_id = if ("provision_id" %in% names(df)) df[["provision_id"]] %||% "" else "",
@@ -648,8 +648,12 @@ vencidosServer <- function(id, shared) {
               htmltools::htmlEscape(row[["Documento"]]),
             '</td>',
             '<td class="text-muted small ven-orig-cell" style="display:none;">',
-              switch(row[["source"]] %||% "sap",
-                "sap"       = "SAP",
+              switch(row[["source"]] %||% SAP_B1_ERP_TYPE,
+                # Both the historical literal "sap" (pre-erp_type records)
+                # and today's SAP_B1_ERP_TYPE value map to the same label --
+                # never remove either case, they cover different eras of data.
+                "sap"                  = "SAP",
+                "sap_b1_service_layer" = "SAP",
                 "manual"    = "Manual",
                 "provision" = "Provisión",
                 "SAP"),

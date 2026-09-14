@@ -15,10 +15,26 @@
 #   test_fn        — name (character) of the function that performs a live
 #                    test given a resolved (decrypted) credential + config,
 #                    returns list(ok = TRUE/FALSE, message = "...")
+#   homologate_fn  — name (character) of the function that turns this ERP's
+#                    raw API response into HopDesk's own canonical invoice
+#                    row shape (Documento, Factura, Parte, Moneda, `Saldo
+#                    vencido`, etc. — see R/sap_api.R's .parse_invoices() for
+#                    the shape every ledger/calendar/Bancos-matching code
+#                    downstream already expects, regardless of source). This
+#                    is the one function a new connector MUST implement to be
+#                    usable — everything else in this app reads the
+#                    canonical shape, never a specific ERP's own field names.
 # =============================================================================
 
-ERP_CONNECTOR_REGISTRY <- list(
-  sap_b1_service_layer = list(
+# Stable identifier for the SAP Business One connector -- referenced instead
+# of a second hardcoded "sap_b1_service_layer" literal anywhere code needs to
+# check or write "this row came from SAP specifically" (e.g. the SAP-named
+# field-override feature in R/data_pipeline.R, which is deliberately
+# SAP-specific by name, not yet a generic ERP-override mechanism).
+SAP_B1_ERP_TYPE <- "sap_b1_service_layer"
+
+ERP_CONNECTOR_REGISTRY <- setNames(list(
+  list(
     label = "SAP Business One — Service Layer",
     config_fields = list(
       list(name = "url",        label = "Service Layer URL",     type = "text",     required = TRUE),
@@ -29,19 +45,23 @@ ERP_CONNECTOR_REGISTRY <- list(
       list(name = "user",     label = "Usuario",    type = "text"),
       list(name = "password", label = "Contraseña", type = "password")
     ),
-    test_fn = "test_sap_b1_service_layer_connection"
+    test_fn       = "test_sap_b1_service_layer_connection",
+    homologate_fn = ".parse_invoices"
   )
-)
+), SAP_B1_ERP_TYPE)
 
 # ── Add a new ERP type here ─────────────────────────────────────────────
 # ERP_CONNECTOR_REGISTRY[["your_new_type"]] <- list(
 #   label = "...",
 #   config_fields = list(...),
 #   secret_fields = list(...),
-#   test_fn = "your_test_function_name"
+#   test_fn = "your_test_function_name",
+#   homologate_fn = "your_homologate_function_name"
 # )
-# Then implement your_test_function_name() near wherever that ERP's API
-# client lives (a new R/<erp>_api.R, following R/sap_api.R's shape).
+# Then implement both functions near wherever that ERP's API client lives (a
+# new R/<erp>_api.R, following R/sap_api.R's shape) -- homologate_fn's job is
+# solely to map that ERP's raw fields onto the canonical row shape described
+# above; it must never invent new output columns other code doesn't expect.
 
 # ── Lookup helpers ─────────────────────────────────────────────────────────────
 # Mirrors tier_registry.R's tier_rank()/is_staff_tier() style: everything else
@@ -59,6 +79,8 @@ erp_connector_config_fields <- function(erp_type) ERP_CONNECTOR_REGISTRY[[erp_ty
 erp_connector_secret_fields <- function(erp_type) ERP_CONNECTOR_REGISTRY[[erp_type]]$secret_fields
 
 erp_connector_test_fn_name <- function(erp_type) ERP_CONNECTOR_REGISTRY[[erp_type]]$test_fn
+
+erp_connector_homologate_fn_name <- function(erp_type) ERP_CONNECTOR_REGISTRY[[erp_type]]$homologate_fn
 
 #' Server-side access gate for add/edit/test/delete ERP-connection actions
 #' (Stage 3 spec §5 "Access"). Reuses tier_rank()/is_staff_tier() from

@@ -920,9 +920,9 @@ ledgerModuleServer <- function(id, config, shared) {
       if (!is.null(src_lookup) && nrow(src_lookup)) {
         new_rows <- merge(new_rows, src_lookup, by = c("Empresa","Moneda","Documento"), all.x = TRUE)
         new_rows[["source"]] <- ifelse(is.na(new_rows[["source"]]) | new_rows[["source"]] != "manual",
-                                       "sap", "manual")
+                                       SAP_B1_ERP_TYPE, "manual")
       } else {
-        new_rows[["source"]] <- "sap"
+        new_rows[["source"]] <- SAP_B1_ERP_TYPE
       }
       new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
                                 "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
@@ -1050,9 +1050,9 @@ ledgerModuleServer <- function(id, config, shared) {
       if (!is.null(src_lookup) && nrow(src_lookup)) {
         new_rows <- merge(new_rows, src_lookup, by = c("Empresa","Moneda","Documento"), all.x = TRUE)
         new_rows[["source"]] <- ifelse(is.na(new_rows[["source"]]) | new_rows[["source"]] != "manual",
-                                       "sap", "manual")
+                                       SAP_B1_ERP_TYPE, "manual")
       } else {
-        new_rows[["source"]] <- "sap"
+        new_rows[["source"]] <- SAP_B1_ERP_TYPE
       }
       new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
                                 "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
@@ -1296,9 +1296,9 @@ ledgerModuleServer <- function(id, config, shared) {
           if (!is.null(src_lookup) && nrow(src_lookup)) {
             new_rows <- merge(new_rows, src_lookup, by = c("Empresa","Moneda","Documento"), all.x = TRUE)
             new_rows[["source"]] <- ifelse(is.na(new_rows[["source"]]) | new_rows[["source"]] != "manual",
-                                           "sap", "manual")
+                                           SAP_B1_ERP_TYPE, "manual")
           } else {
-            new_rows[["source"]] <- "sap"
+            new_rows[["source"]] <- SAP_B1_ERP_TYPE
           }
           new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
                                     "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
@@ -1472,7 +1472,7 @@ ledgerModuleServer <- function(id, config, shared) {
           staged_at  = Sys.time(),
           status     = "pending",
           source     = ifelse(is.na(one_source) | one_source != "manual",
-                               "sap", "manual"),
+                               SAP_B1_ERP_TYPE, "manual"),
           stringsAsFactors = FALSE
         )
         updated <- upsert_pagar_hoy(ph_now %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_row,
@@ -1851,11 +1851,13 @@ ledgerModuleServer <- function(id, config, shared) {
                       !is.na(detail[["Documento"]]) & detail[["Documento"]] == doc,
                       , drop = FALSE]
         if (nrow(m) && "source" %in% names(m) && !is.na(m[["source"]][1]))
-          m[["source"]][1] else "sap"
+          m[["source"]][1] else SAP_B1_ERP_TYPE
       }, character(1))
-      # key_sources already folds the is_erp_sourced() NA-defaults-to-sap
-      # logic into its own "else 'sap'" fallback above — never NA by here.
-      sap_mask     <- key_sources == "sap"
+      # key_sources already folds the is_erp_sourced() NA-defaults-to-SAP_B1_ERP_TYPE
+      # logic into its own "else SAP_B1_ERP_TYPE" fallback above — never NA by here.
+      # Matches both the historical literal "sap" and today's SAP_B1_ERP_TYPE
+      # value, since either can appear depending on when a row was created.
+      sap_mask     <- key_sources %in% c("sap", SAP_B1_ERP_TYPE)
       non_sap_keys <- keys[!sap_mask, , drop = FALSE]
 
       # SAP items: send to papelera immediately — they become ghosts (confirmed=TRUE),
@@ -2186,7 +2188,7 @@ ledgerModuleServer <- function(id, config, shared) {
         metadata    = list(
           n      = n_del,
           n_provisiones = n_prov,
-          source = unique(rows_to_delete[["source"]] %||% "sap")
+          source = unique(rows_to_delete[["source"]] %||% SAP_B1_ERP_TYPE)
         ),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
@@ -2381,7 +2383,7 @@ ledgerModuleServer <- function(id, config, shared) {
 
     # Shared function: open the correct edit modal based on source.
     .open_edit_for_row <- function(row) {
-      src <- row[["source"]] %||% "sap"
+      src <- row[["source"]] %||% SAP_B1_ERP_TYPE
       if (isTRUE(src == "provision")) {
         prov_id <- row[["provision_id"]] %||% ""
         if (nzchar(prov_id)) {

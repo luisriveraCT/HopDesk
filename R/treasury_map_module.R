@@ -858,7 +858,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
           staged_by = user_id,
           staged_at = Sys.time(),
           status    = "pending",
-          source    = "sap"
+          source    = SAP_B1_ERP_TYPE
         )
       }))
 

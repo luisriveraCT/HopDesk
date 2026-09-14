@@ -3839,10 +3839,14 @@ bancosServer <- function(id, shared) {
       rows_ledger <- if (!is.null(ledger_pap) && nrow(ledger_pap)) {
         src_badge <- function(s) {
           # switch(NA, ...) returns NULL in R (not the default value),
-          # which breaks vapply. Normalise to "sap" for unknown/missing sources.
-          s <- if (is.null(s) || is.na(s) || !nzchar(s)) "sap" else s
+          # which breaks vapply. Normalise to SAP_B1_ERP_TYPE for unknown/missing sources.
+          s <- if (is.null(s) || is.na(s) || !nzchar(s)) SAP_B1_ERP_TYPE else s
           switch(s,
-            "sap"       = '<span class="badge bg-secondary">SAP</span>',
+            # Both the historical literal "sap" (pre-erp_type records) and
+            # today's SAP_B1_ERP_TYPE value must map to the same badge --
+            # never remove either case, they cover different eras of data.
+            "sap"                    = '<span class="badge bg-secondary">SAP</span>',
+            "sap_b1_service_layer"   = '<span class="badge bg-secondary">SAP</span>',
             "manual"    = '<span class="badge bg-info text-dark">Manual</span>',
             "provision" = '<span class="badge bg-warning text-dark">Provisión</span>',
             '<span class="badge bg-secondary">ERP</span>'
@@ -3850,7 +3854,7 @@ bancosServer <- function(id, shared) {
         }
         ledger_pap |>
           dplyr::transmute(
-            Origen          = vapply(source %||% "sap", src_badge, character(1)),
+            Origen          = vapply(source %||% SAP_B1_ERP_TYPE, src_badge, character(1)),
             Fecha           = dplyr::if_else(
               !is.na(FechaEff),
               format(as.Date(FechaEff), "%d/%m/%Y"),

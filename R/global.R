@@ -348,15 +348,19 @@ strip_accents <- function(x) {
 
 # ── The three kinds of ledger row, and how they actually differ ────────────
 #
-# A ledger row's `source` column is one of "sap" | "manual" | "provision"
-# (NA/blank normalized to "sap" on load, per .schema_pagar_hoy's own
-# documentation). This isn't just a label — it's the one thing that decides
-# how far the app is allowed to go when touching a row:
+# A ledger row's `source` column is either "manual", "provision", or an
+# erp_type key from R/erp_connector_registry.R (e.g. "sap_b1_service_layer";
+# NA/blank normalized to SAP_B1_ERP_TYPE on load, per .schema_pagar_hoy's own
+# documentation — historical rows may still literally say "sap" from before
+# erp_type-based values existed, see is_erp_sourced()'s own comment below for
+# why that's harmless). This isn't just a label — it's the one thing that
+# decides how far the app is allowed to go when touching a row:
 #
-# ERP-SOURCED ("sap", or NA defaulting to it): owned by an external system
-# HopDesk doesn't control — today only SAP, but this helper exists so a
-# future second ERP integration just needs a distinct `source` value, not a
-# second copy of this check at every call site. An ERP row otherwise lives
+# ERP-SOURCED (anything that isn't "manual"/"provision", including NA):
+# owned by an external system HopDesk doesn't control — today only SAP, but
+# is_erp_sourced() checks by exclusion specifically so a future second ERP
+# integration is automatically recognized too, with no second copy of this
+# check needed at any call site. An ERP row otherwise lives
 # and moves through the app EXACTLY like a manual entry (staged, edited,
 # viewed in Vencidos, confirmed, etc.) — the one hard rule is that no in-app
 # action may ever remove it from Calendario; only the ERP's own next
@@ -386,8 +390,17 @@ strip_accents <- function(x) {
 # always recovers the ITEM, regardless of whether it came from a provision.
 # Recovering a DELETED, unconverted provision is a different operation
 # entirely, at the Pasivos level, unrelated to Agenda or bancos_confirmados.
+# Generalized 2026-09-14 for multi-ERP support: was `source == "sap"`, a
+# literal that would have silently stopped recognizing ERP-sourced rows the
+# moment a second connector (Odoo, Oracle, ...) started tagging rows with
+# its own erp_type instead of the old hardcoded "sap". Checking by exclusion
+# instead means any current or future erp_type value is automatically
+# recognized with no code to touch when a new connector is registered --
+# and is fully backward-compatible with every historical row already
+# persisted (including papelera archives) still literally saying "sap",
+# since "sap" is (and always was) neither "manual" nor "provision" either.
 is_erp_sourced <- function(source) {
-  is.na(source) | source == "sap"
+  is.na(source) | !(source %in% c("manual", "provision"))
 }
 
 CURRENCIES <- c("MXN","USD","EUR","GBP","CAD","JPY","CHF","AUD","CNY","BRL")

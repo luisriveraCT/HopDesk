@@ -140,7 +140,7 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
     Etiqueta   = all_df[["Etiqueta"]],
     Month      = format(all_df[["Fecha"]], "%Y-%m"),
     tag_weight = all_df[["tag_weight"]],
-    source       = all_df[["source"]] %||% "sap",
+    source       = all_df[["source"]] %||% SAP_B1_ERP_TYPE,
     inv_id       = if ("id" %in% names(all_df)) all_df[["id"]] %||% "" else "",
     provision_id = if ("provision_id" %in% names(all_df)) all_df[["provision_id"]] %||% "" else "",
     stringsAsFactors = FALSE
@@ -1185,7 +1185,7 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
       # then never be archived out of manual_inv (found 2026-07-24, the same
       # bug as ledger_module.R's stage_all/stage_sel, in this shared
       # handler used by both Search and Vencidos' Agregar todo/selección).
-      source    = ifelse(is.na(keys_df$source) | keys_df$source != "manual", "sap", "manual"),
+      source    = ifelse(is.na(keys_df$source) | keys_df$source != "manual", SAP_B1_ERP_TYPE, "manual"),
       stringsAsFactors = FALSE
     )
     # Skip rows with blank Documento (can't key them)

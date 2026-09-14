@@ -561,7 +561,14 @@ save_holiday_overrides <- function(df, client_id = NULL) {
   id                = character(),   # uuid
   client_id         = character(),   # redundant w/ S3 folder; re-checked on every read/write
   label             = character(),
+  short_name        = character(),   # compact display badge for this connection, e.g. "SAP" --
+                                      # distinct from `label`'s full descriptive name; also what
+                                      # a future multi-ERP UI would show in a tight space (a
+                                      # table column, a pill) where `label` wouldn't fit
   erp_type          = character(),   # key into ERP_CONNECTOR_REGISTRY
+  version           = character(),   # this specific installation's version (e.g. SAP B1 "10.0")
+                                      # -- a property of the installation, not the erp_type, so
+                                      # it lives here rather than in the connector registry
   company_initials  = character(),   # JSON array string, e.g. '["NG"]'
   config            = character(),   # JSON string — non-secret fields, shape per erp_type
   secrets_encrypted = character(),   # base64 ciphertext from encrypt_secret() — never plaintext
@@ -783,7 +790,10 @@ delete_manual <- function(df, id) {
 .schema_papelera <- function() tibble(
   id           = character(),   # original invoice id (manual) or generated uuid (SAP)
   ledger       = character(),   # "AR" | "AP"
-  source       = character(),   # "manual" | "sap" | "provision"
+  source       = character(),   # "manual" | "provision" | an erp_type key (e.g. "sap_b1_service_layer") --
+                                 # see is_erp_sourced() (R/global.R) for how "any value that isn't
+                                 # manual/provision" is treated as ERP-sourced; historical rows may
+                                 # still literally say "sap" from before erp_type-based values existed
   Empresa      = character(),
   Moneda       = character(),
   Documento    = character(),
@@ -845,7 +855,7 @@ add_to_papelera <- function(papelera_df, detail_rows, ledger,
                    else
                      ledger,
     source       = if ("source" %in% names(detail_rows))
-                     detail_rows[["source"]] else "sap",
+                     detail_rows[["source"]] else SAP_B1_ERP_TYPE,
     Empresa      = detail_rows[["Empresa"]],
     Moneda       = detail_rows[["Moneda"]],
     Documento    = detail_rows[["Documento"]] %||% "",
@@ -1049,14 +1059,16 @@ save_interco_v2 <- function(registry, client_id = NULL) {
   status       = character(),   # "pending" | "confirmed" | "cancelled"
   provision_id = character(),   # FK to pasivos_provisions; NA for non-provision items
   liability_id = character(),   # FK to pasivos_liabilities; NA for non-provision items
-  source       = character(),   # "sap" | "manual" | "provision"; NA treated as "sap"
+  source       = character(),   # "manual" | "provision" | an erp_type key (e.g. "sap_b1_service_layer");
+                                 # NA/blank treated as SAP_B1_ERP_TYPE (see load_pagar_hoy() etc.) --
+                                 # historical rows may still literally say "sap"
   confirmed_at = as.POSIXct(character())
 )
 
 load_pagar_hoy <- function(client_id = NULL) {
   df <- .normalize(.s3_read_with(S3_KEYS$pagar_hoy, client_id = client_id), .schema_pagar_hoy)
   df$status[is.na(df$status) | !nzchar(trimws(df$status))] <- "pending"
-  df$source[is.na(df$source) | !nzchar(trimws(df$source %||% ""))] <- "sap"
+  df$source[is.na(df$source) | !nzchar(trimws(df$source %||% ""))] <- SAP_B1_ERP_TYPE
   dplyr::filter(df, status %in% c("pending", "confirmed", "cancelled"))
 }
 
@@ -1153,7 +1165,7 @@ load_pagar_hoy_user <- function(username, client_id = NULL) {
   df <- .normalize(.s3_read_with(s3_key_pagar_hoy_user(username), client_id = client_id),
                    .schema_pagar_hoy)
   df$status[is.na(df$status) | !nzchar(trimws(df$status))] <- "pending"
-  df$source[is.na(df$source) | !nzchar(trimws(df$source %||% ""))] <- "sap"
+  df$source[is.na(df$source) | !nzchar(trimws(df$source %||% ""))] <- SAP_B1_ERP_TYPE
   dplyr::filter(df, status %in% c("pending", "confirmed", "cancelled"))
 }
 
@@ -1168,7 +1180,7 @@ save_pagar_hoy_user <- function(df, username, client_id = NULL) {
 load_pagar_hoy_sync <- function(client_id = NULL) {
   df <- .normalize(.s3_read_with(S3_KEYS$pagar_hoy_sync, client_id = client_id), .schema_pagar_hoy)
   df$status[is.na(df$status) | !nzchar(trimws(df$status))] <- "pending"
-  df$source[is.na(df$source) | !nzchar(trimws(df$source %||% ""))] <- "sap"
+  df$source[is.na(df$source) | !nzchar(trimws(df$source %||% ""))] <- SAP_B1_ERP_TYPE
   dplyr::filter(df, status %in% c("pending", "confirmed", "cancelled"))
 }
 

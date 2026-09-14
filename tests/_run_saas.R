@@ -259,6 +259,7 @@ tryCatch({
   .run_module("tests/test_hopdesk_dev_user_sync.R")
   .run_module("tests/test_refresh_variable_rates_client_scoping.R")
   .run_module("tests/test_calendar_save_failure_visibility.R")
+  .run_module("tests/test_erp_generic_source_wiring.R")
   .run_module("tests/test_saas_log_action_scoping.R")
   .run_module("tests/test_saas_notifications.R")
   .run_module("tests/test_saas_limit_change.R")

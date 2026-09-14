@@ -484,7 +484,7 @@ intercoServer <- function(id, shared) {
           staged_by = user_id,
           staged_at = Sys.time(),
           status    = "pending",
-          source    = "sap"
+          source    = SAP_B1_ERP_TYPE
         )
       }))
 

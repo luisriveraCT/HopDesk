@@ -171,7 +171,7 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
       ensure_documento() |>
       mutate(
         Tipo               = ledger,
-        source             = "sap",
+        source             = SAP_B1_ERP_TYPE,
         FechaVenc_Original = as.Date(`Fecha de vencimiento`)
       ) |>
       dedupe_invoices()
@@ -341,13 +341,18 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
   # ── Apply SAP field overrides (Parte, Codigo, Factura, Notas) ───────────────
   # Overrides paint on top of SAP data for UI display only.
   # The underlying sap_data() snapshot and dedup keys are never touched.
-  # Deliberately literal source == "sap" below, not is_erp_sourced(): this
-  # whole feature (table, columns, settings UI) is SAP-specific by name, not
-  # a generic ERP-override mechanism yet — generalizing it is a bigger,
-  # separate decision than this stage's "don't hardcode the sap/manual split
-  # at every confirm/delete/stage site" scope. Also a no-op either way today
-  # — `source` is always explicitly "sap" by the time rows reach here, never
-  # NA (see build_ledger_df() above), so the two checks are equivalent now.
+  # Deliberately literal source == SAP_B1_ERP_TYPE below, not
+  # is_erp_sourced(): this whole feature (table, columns, settings UI) is
+  # SAP-specific by name, not a generic ERP-override mechanism yet —
+  # generalizing it is a bigger, separate decision than this stage's "don't
+  # hardcode the sap/manual split at every confirm/delete/stage site" scope.
+  # Also a no-op either way today — `source` is always explicitly
+  # SAP_B1_ERP_TYPE by the time rows reach here, never NA (see
+  # build_ledger_df() above), so the two checks are equivalent now.
+  # (Updated 2026-09-14: the literal itself changed from the old bare "sap"
+  # to the connector registry's own erp_type key, SAP_B1_ERP_TYPE, so this
+  # keeps matching real SAP-sourced rows now that `source` carries that value
+  # instead — see is_erp_sourced()'s own comment in R/global.R.)
   if (!is.null(sap_ov) && is.data.frame(sap_ov) && nrow(sap_ov)) {
     if (!"Factura" %in% names(result)) result[["Factura"]] <- NA_character_
     ov_filt <- sap_ov |>
@@ -359,21 +364,21 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
       result <- dplyr::left_join(result, ov_filt,
                                  by = c("Empresa", "Moneda", "Documento")) |>
         dplyr::mutate(
-          has_sap_override = source == "sap" & (
+          has_sap_override = source == SAP_B1_ERP_TYPE & (
             !is.na(Parte_override) | !is.na(Codigo_override) |
             !is.na(Factura_override) | !is.na(Notas_override) |
             !is.na(Moneda_override) | !is.na(Importe_override)),
-          Parte   = dplyr::if_else(source == "sap" & !is.na(Parte_override),
+          Parte   = dplyr::if_else(source == SAP_B1_ERP_TYPE & !is.na(Parte_override),
                                    Parte_override,   Parte),
-          Codigo  = dplyr::if_else(source == "sap" & !is.na(Codigo_override),
+          Codigo  = dplyr::if_else(source == SAP_B1_ERP_TYPE & !is.na(Codigo_override),
                                    Codigo_override,  Codigo),
-          Factura = dplyr::if_else(source == "sap" & !is.na(Factura_override),
+          Factura = dplyr::if_else(source == SAP_B1_ERP_TYPE & !is.na(Factura_override),
                                    Factura_override, Factura),
-          notas   = dplyr::if_else(source == "sap" & !is.na(Notas_override),
+          notas   = dplyr::if_else(source == SAP_B1_ERP_TYPE & !is.na(Notas_override),
                                    Notas_override,   notas),
-          Moneda  = dplyr::if_else(source == "sap" & !is.na(Moneda_override),
+          Moneda  = dplyr::if_else(source == SAP_B1_ERP_TYPE & !is.na(Moneda_override),
                                    Moneda_override,  Moneda),
-          Importe = dplyr::if_else(source == "sap" & !is.na(Importe_override),
+          Importe = dplyr::if_else(source == SAP_B1_ERP_TYPE & !is.na(Importe_override),
                                    dplyr::if_else(Importe < 0,
                                                   -abs(Importe_override),
                                                   abs(Importe_override)),
@@ -696,9 +701,12 @@ compute_confirmed_flags <- function(df, ledger, bancos_confirmados_df, papelera_
       # Deliberately NOT is_erp_sourced() here: an ambiguous/legacy NA source
       # in papelera should NOT be treated as a SAP ghost (which stays
       # visible, excluded from sums) -- safer to fall through to the manual
-      # anti-join path (fully hidden) for unknown provenance.
+      # anti-join path (fully hidden) for unknown provenance. Still literally
+      # SAP_B1_ERP_TYPE rather than generic (matching the override feature's
+      # own reasoning above) -- revisit once a second ERP's ghost-visibility
+      # behavior is actually decided, don't assume it should match SAP's.
       sap_pap <- pap_this[!is.na(pap_this[["source"]]) &
-                            pap_this[["source"]] == "sap",
+                            pap_this[["source"]] == SAP_B1_ERP_TYPE,
                           c("Empresa","Moneda","Documento"), drop = FALSE]
       if (nrow(sap_pap)) {
         match_key <- paste(df[["Empresa"]], df[["Moneda"]], df[["Documento"]])
