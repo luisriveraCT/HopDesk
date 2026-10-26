@@ -125,12 +125,13 @@ ok("B1: reading a manifest for a client with no prior activity returns the empty
    nrow(.queue_read_manifest("brand_new_client_b1")) == 0L)
 ok("B1: empty schema has the expected columns",
    identical(names(.queue_manifest_schema()),
-             c("seq","s3_key","table_name","client_id","expected_sync_version",
+             c("seq","s3_key","bucket","table_name","client_id","expected_sync_version",
                "acting_user","acting_home_client_id","status","staged_at","synced_at")))
 
 {
   df <- .queue_manifest_schema()
   df <- rbind(df, data.frame(seq = 1L, s3_key = "b2client/invoice_moves.rds",
+                              bucket = "mock-bucket",
                               table_name = "moves_db", client_id = "b2client",
                               expected_sync_version = 3L, acting_user = NA_character_,
                               acting_home_client_id = NA_character_, status = "pending",
@@ -153,6 +154,7 @@ ok("B1: empty schema has the expected columns",
   # And a subsequent real write must still succeed despite the leftover file
   # (tempfile() picks a fresh random name, never collides with the stray one).
   df2 <- rbind(back, data.frame(seq = 2L, s3_key = "b2client/manual_invoices.rds",
+                                 bucket = "mock-bucket",
                                  table_name = "manual_inv", client_id = "b2client",
                                  expected_sync_version = NA_integer_, acting_user = NA_character_,
                                  acting_home_client_id = NA_character_, status = "pending",

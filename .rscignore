@@ -5,3 +5,24 @@
 # overrides (a separate dev bucket) and must never reach production, since a
 # deploy picking it up would point shinyapps.io itself at the dev bucket.
 .Renviron.local
+
+# Added 2026-09-26. Everything below was being bundled into production.
+#
+# .RData is a saved R workspace (513 KB, last written 2026-02-19). R loads a
+# .RData sitting in the working directory automatically at startup, so a
+# months-old workspace was being restored into production's global
+# environment on every boot -- stale objects silently shadowing live ones.
+.RData
+.Rhistory
+.Rproj.user
+
+# wipe_scripts/ DELETE PRODUCTION DATA. They are kept in the repo on purpose
+# (they are real operational tools and stay under version control, recoverable
+# from git at any time) -- they simply have no business being shipped inside
+# the running app, where nothing needs them and anything reachable is a risk.
+wipe_scripts
+
+# Test suite: ~100 files, never executed in production. Two of them
+# (tests/_run_saas.R, tests/_run_agenda.R) monkey-patch aws.s3 with in-memory
+# mocks, which is exactly what must never be loadable next to live data.
+tests

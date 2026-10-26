@@ -86,7 +86,14 @@ setup_sync_bus <- function(session, shared, poll_ms = 8000,
     # subsequent reads return NULL without hitting S3.  sync_versions.rds is
     # created lazily on the first bump, so we must clear that gate before
     # every poll to allow discovery once the file appears in S3.
-    sv_full_key <- tryCatch(.s3_key(S3_KEYS$sync_versions), error = function(e) NULL)
+    # active_cid is effective_client_id (see setup_sync_bus()'s caller in app.R),
+    # so it is the tenant this tick belongs to. Passing it explicitly -- rather
+    # than letting .s3_key() fall back to CLIENT_ID -- is what keeps a session on
+    # the shared deployment from polling (and merging) hd-admin's version stamps
+    # instead of its own. Before auth resolves, active_cid is NULL and .s3_key()
+    # now refuses to guess; the tryCatch turns that into "no sync yet this tick",
+    # which is exactly right -- there is no tenant to sync for yet.
+    sv_full_key <- tryCatch(.s3_key(S3_KEYS$sync_versions, client_id = active_cid), error = function(e) NULL)
     if (!is.null(sv_full_key))
       suppressWarnings(
         rm(list = intersect(sv_full_key, ls(.s3_missing_cache)),
@@ -94,7 +101,7 @@ setup_sync_bus <- function(session, shared, poll_ms = 8000,
       )
 
     s3_versions <- tryCatch(
-      suppressWarnings(.s3_read(S3_KEYS$sync_versions)),
+      suppressWarnings(.s3_read_with(S3_KEYS$sync_versions, client_id = active_cid)),
       error = function(e) NULL
     )
     if (!is.null(s3_versions) && is.list(s3_versions)) {

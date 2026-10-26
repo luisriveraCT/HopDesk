@@ -2506,7 +2506,8 @@ ledgerModuleServer <- function(id, config, shared) {
       )
       updated_moves <- upsert_moves(shared$moves_db(), new_move)
       shared$moves_db(updated_moves)
-      .save_moves_deferred(updated_moves, client_id = shared$effective_client_id(), session = session)
+      .save_moves_deferred(updated_moves, client_id = shared$effective_client_id(), session = session,
+                           rebase = function(fresh) upsert_moves(fresh, new_move))
 
       # --- field overrides (sap_overrides) ---
       ov_row <- tibble::tibble(
@@ -3445,8 +3446,34 @@ ledgerModuleServer <- function(id, config, shared) {
 # session, and (3) only logs "mover_fecha"/"restaurar_fecha" as a genuine
 # Activity-log fact once the write is actually confirmed — a failed save
 # gets its own clearly-flagged log entry instead of a misleading success one.
-.save_moves_deferred <- function(updated, client_id = NULL, session = NULL, log_info = NULL) {
-  force(client_id); force(session); force(log_info)   # evaluate NOW, before later() captures them
+# rebase (2026-09-27): the three callers below all build `updated` as
+# <this session's in-memory moves_db> + <their own change>, and this function
+# then overwrites the WHOLE S3 table with it. Anything another user saved
+# between this session's last sync poll and this write was therefore erased --
+# no error, no trace, and indistinguishable from "my moves disappeared". The
+# 8s sync poll narrows that window but cannot close it: nothing re-checks S3
+# at the moment of writing.
+#
+# `rebase` closes it. It is a function(fresh_table) that re-applies THIS
+# caller's change onto the table as it exists in S3 right now, so a concurrent
+# writer's rows survive instead of being overwritten by our stale snapshot.
+# When it is not supplied, or when the fresh read fails, behaviour is exactly
+# what it was before -- this can only preserve rows, never lose them.
+# Reads invoice_moves straight from S3, bypassing the preload cache the same
+# way R/sync_bus.R does before its own poll -- a cache hit here would defeat
+# the entire point of rebasing.
+.moves_read_live <- function(client_id = NULL) {
+  full_key <- tryCatch(.s3_key(S3_KEYS$moves, client_id = client_id), error = function(e) NULL)
+  if (!is.null(full_key)) {
+    suppressWarnings(rm(list = intersect(full_key, ls(.s3_preload_cache)), envir = .s3_preload_cache))
+    suppressWarnings(rm(list = intersect(full_key, ls(.s3_missing_cache)), envir = .s3_missing_cache))
+  }
+  load_moves(client_id = client_id)
+}
+
+.save_moves_deferred <- function(updated, client_id = NULL, session = NULL, log_info = NULL,
+                                 rebase = NULL) {
+  force(client_id); force(session); force(log_info); force(rebase)   # evaluate NOW, before later() captures them
 
   .log_outcome <- function(failed, err_msg = NULL) {
     if (is.null(log_info)) return(invisible(NULL))
@@ -3462,7 +3489,21 @@ ledgerModuleServer <- function(id, config, shared) {
 
   .attempt <- function(retries_left) {
     tryCatch({
-      save_moves(updated, client_id = client_id)
+      to_write <- updated
+      if (is.function(rebase)) {
+        fresh <- tryCatch(.moves_read_live(client_id), error = function(e) NULL)
+        if (!is.null(fresh) && is.data.frame(fresh)) {
+          rebased <- tryCatch(rebase(fresh), error = function(e) NULL)
+          if (!is.null(rebased) && is.data.frame(rebased)) {
+            if (nrow(rebased) != nrow(updated))
+              message(sprintf(
+                "[SAVE_MOVES] rebase: S3 cambio mientras esta sesion trabajaba (%d filas en memoria vs %d tras rebasar) -- se conservan los cambios de la otra sesion",
+                nrow(updated), nrow(rebased)))
+            to_write <- rebased
+          }
+        }
+      }
+      save_moves(to_write, client_id = client_id)
       bump_sync_version("moves_db", client_id = client_id)
       .log_outcome(failed = FALSE)
     }, error = function(e) {
@@ -3499,6 +3540,7 @@ ledgerModuleServer <- function(id, config, shared) {
   cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
   .save_moves_deferred(
     updated, client_id = cid, session = session,
+    rebase = function(fresh) upsert_moves(fresh, new_rows),
     log_info = list(
       user        = tryCatch(shared$current_user(), error = function(e) "system"),
       module      = paste0("ledger_", ledger),
@@ -3524,6 +3566,10 @@ ledgerModuleServer <- function(id, config, shared) {
   cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
   .save_moves_deferred(
     updated, client_id = cid, session = session,
+    rebase = function(fresh) dplyr::anti_join(
+      fresh, keys |> dplyr::mutate(ledger = !!ledger),
+      by = c("ledger","Empresa","Moneda","Documento")
+    ),
     log_info = list(
       user        = tryCatch(shared$current_user(), error = function(e) "system"),
       module      = paste0("ledger_", ledger),

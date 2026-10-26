@@ -186,7 +186,11 @@ app_txt    <- paste(readLines("app.R", warn = FALSE), collapse = "\n")
           "Calendario's do_move handler forwards its own session into .apply_move()")
 .chk_true(grepl(".clear_moves(keys, ledger, shared, session = session)", ledger_txt, fixed = TRUE),
           "Calendario's do_restore handler forwards its own session into .clear_moves()")
-.chk_true(grepl(".save_moves_deferred(updated_moves, client_id = shared$effective_client_id(), session = session)",
+# Trailing ")" dropped 2026-09-27: this call now also passes rebase=, so the
+# argument list runs onto a second line. The invariant under test is that
+# `session` reaches .save_moves_deferred() (so a failed save surfaces on
+# screen instead of vanishing), not that it is the final argument.
+.chk_true(grepl(".save_moves_deferred(updated_moves, client_id = shared$effective_client_id(), session = session",
                 ledger_txt, fixed = TRUE),
           "the SAP-row-edit date-move save forwards session too")
 

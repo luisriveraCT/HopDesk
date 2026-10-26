@@ -1549,7 +1549,9 @@ bancosServer <- function(id, shared) {
     elim_ids_rv               <- reactiveVal(NULL)
 
     # ── Import reactives ──────────────────────────────────────────────────────
-    txt_empresa_rv       <- reactiveVal("")
+    # Raw TXT lines of the current upload; the banner derives empresa,
+    # account and currency from them (detectar_cuenta_banbajio).
+    txt_lines_rv         <- reactiveVal(character(0))
     # TRUE once the user has consciously chosen an account in the banner dropdown.
     # Reset to FALSE on each new file upload so the best-match auto-selects again.
     user_picked_cuenta_rv <- reactiveVal(FALSE)
@@ -3032,10 +3034,9 @@ bancosServer <- function(id, shared) {
     output$import_cuenta_banner <- renderUI({
       req(parsed_preview())   # only show after file is parsed
 
-      txt_emp <- txt_empresa_rv()
-      cid     <- input$import_cuenta %||% ""
-      cts     <- cuentas()
-      txt_up  <- toupper(trimws(txt_emp))
+      txt_lines <- txt_lines_rv()
+      cid       <- input$import_cuenta %||% ""
+      cts       <- cuentas()
 
       # Active BanBaj\u00edo accounts only (the only parser we support right now)
       cts_baj <- dplyr::filter(cts, activa == TRUE,
@@ -3044,39 +3045,56 @@ bancosServer <- function(id, shared) {
       if (!nrow(cts_baj))
         return(div(
           style = "background:#fff3cd; border:1.5px solid #664d03; border-radius:8px; padding:14px 18px; margin-bottom:14px;",
-          "\u26a0\ufe0f No hay cuentas BanBaj\u00edo activas configuradas."
+          icon("triangle-exclamation", style = "color:#997404;"),
+          " No hay cuentas BanBaj\u00edo activas configuradas."
         ))
 
-      # Rank by company-name token match: 1 pt per 4+ char word from the
-      # account's full company name found in the TXT company string.
-      scores <- vapply(seq_len(nrow(cts_baj)), function(i) {
-        nm     <- toupper(.company_name(cts_baj$empresa[i]))
-        tokens <- strsplit(nm, "\\s+")[[1]]
-        tokens <- tokens[nchar(tokens) >= 4]
-        if (!length(tokens) || !nzchar(txt_up)) return(0L)
-        as.integer(sum(vapply(tokens, function(tok)
-          grepl(tok, txt_up, fixed = TRUE), logical(1))))
-      }, integer(1))
-
-      cts_baj <- cts_baj[order(scores, decreasing = TRUE), ]
+      # Rank by account number + subcuenta + currency + the CLIENT's raz\u00f3n
+      # social registry (see R/bancos_detect.R for the evidence behind it).
+      emp_df <- tryCatch(shared$empresas_db(), error = function(e) NULL)
+      det <- detectar_cuenta_banbajio(txt_lines, cts_baj, emp_df,
+                                      parsed = parsed_preview())
+      cts_baj <- det$ranking
+      txt_emp <- det$encabezado$razon_social
 
       choices <- setNames(cts_baj$cuenta_id, vapply(seq_len(nrow(cts_baj)), function(i) {
+        num  <- gsub("[^0-9]", "", cts_baj$numero_cuenta[i] %||% "")
+        tail <- if (!is.na(num) && nchar(num) >= 4L)
+                  paste0(" \u00b7 \u2026", substr(num, nchar(num) - 3L, nchar(num))) else ""
         paste0(.company_name(cts_baj$empresa[i]), " \u2014 ",
-               cts_baj$banco[i], " ", cts_baj$moneda[i],
+               cts_baj$banco[i], " ", cts_baj$moneda[i], tail,
                " (", cts_baj$alias[i], ")")
       }, character(1)))
 
+      seguro    <- identical(det$confianza, "alta")
+      det_icon  <- if (seguro)
+                     icon("circle-check", style = "color:#198754;")
+                   else
+                     icon("circle-exclamation", style = "color:#e0a100;")
       # Pre-select the best-scoring account on every new file upload.
       # Once the user has consciously changed the dropdown (user_picked_cuenta_rv),
       # preserve their choice on subsequent re-renders.
       sel <- if (user_picked_cuenta_rv() && nzchar(cid) && cid %in% choices) cid
              else choices[[1L]]
 
+      # Motivos describe the SUGGESTED account; once the user picks another one
+      # they no longer apply, so say that instead of showing stale evidence.
+      det_notas <- tagList(
+        if (!identical(unname(sel), det$sugerida))
+          div(style = "font-size:.75rem; color:#495057; margin-top:2px;",
+              .BNC_DETECT_TXT$nota_otra_cuenta)
+        else if (length(det$motivos))
+          div(style = "font-size:.75rem; color:#495057; margin-top:2px;", det$motivos),
+        lapply(det$avisos, function(a)
+          div(style = "font-size:.75rem; color:#7a5c00; margin-top:2px;",
+              icon("circle-info", style = "color:#e0a100;"), " ", a))
+      )
+
       div(style = "background:#d1e7dd; border:1.5px solid #0f5132; border-radius:8px; padding:14px 18px; margin-bottom:14px;",
         div(class = "d-flex align-items-start gap-3",
           div(style = "flex:1;",
             div(style = "font-size:.8rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; color:#212529;",
-                "\u2705 Empresa detectada en el archivo"),
+                det_icon, " Empresa detectada en el archivo"),
             div(style = "font-size:1rem; font-weight:700; color:#212529; margin-bottom:10px;",
                 if (nzchar(txt_emp)) txt_emp else "(no detectada)"),
             div(style = "font-size:.8rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px; color:#495057;",
@@ -3084,7 +3102,8 @@ bancosServer <- function(id, shared) {
             selectInput(ns("import_cuenta"), NULL,
                         choices  = choices,
                         selected = sel,
-                        width    = "100%")
+                        width    = "100%"),
+            det_notas
           )
         )
       )
@@ -3134,9 +3153,9 @@ bancosServer <- function(id, shared) {
         return()
       }
 
-      # Extract empresa from TXT header line 1; reset account-picker flag
-      hdr_parts <- strsplit(lines[1L], ",", fixed = TRUE)[[1]]
-      txt_empresa_rv(if (length(hdr_parts) >= 1L) trimws(hdr_parts[1L]) else "")
+      # Keep the raw lines for the account detector (banner); reset the
+      # account-picker flag so the new file's best match is pre-selected.
+      txt_lines_rv(lines)
       user_picked_cuenta_rv(FALSE)
 
       cuenta_id_sel <- input$import_cuenta %||% ""
@@ -3150,25 +3169,8 @@ bancosServer <- function(id, shared) {
 
       if (is.null(result)) { parsed_preview(NULL); return() }
 
-      # Auto-suggest account based on numero_cuenta in line 1.
-      # BanBajío TXT headers carry the short 7-8 digit account number, while
-      # the Settings "Cuenta origen" field stores the 11-12 digit PPL format
-      # (e.g. TXT "13386156" vs Settings "133861560201").  The PPL number
-      # always starts with the short TXT number, so we accept either an exact
-      # match OR a prefix match (Settings starts with TXT number).
-      numero_from_txt <- attr(result, "numero_cuenta")
-      if (!is.na(numero_from_txt) && nzchar(numero_from_txt)) {
-        txt_num <- trimws(numero_from_txt)
-        match_ct <- dplyr::filter(cuentas(),
-          trimws(numero_cuenta) == txt_num |
-          startsWith(trimws(numero_cuenta), txt_num),
-          activa == TRUE)
-        if (nrow(match_ct) == 1L && !nzchar(cuenta_id_sel)) {
-          updateSelectInput(session, "import_cuenta",
-                            selected = match_ct$cuenta_id[1L])
-        }
-      }
-
+      # Account suggestion lives in output$import_cuenta_banner, which re-ranks
+      # every render via detectar_cuenta_banbajio() (R/bancos_detect.R).
       parsed_preview(result)
     }, ignoreInit = TRUE)
 

@@ -132,14 +132,21 @@
 }
 
 # Called during app startup if stores are empty; idempotent.
-forecasting_seed_if_empty <- function() {
+# client_id (2026-09-25): metrics and subscriptions are TENANT-scoped -- each
+# client has its own forecasting_metrics.rds / forecasting_subscriptions.rds.
+# They used to be called with no client_id at all, which on the shared
+# deployment resolved to hd-admin's own folder: every client's first run
+# read, and seeded, the control plane's catalog instead of its own. sources /
+# methods / indicators below stay deployment-level on purpose -- they are
+# static definitions shared by every tenant, not per-client data.
+forecasting_seed_if_empty <- function(client_id = NULL) {
   seeded <- character()
 
-  metrics_db <- load_forecasting_metrics()
+  metrics_db <- load_forecasting_metrics(client_id = client_id)
   if (!nrow(metrics_db)) {
     message("[forecasting] seeding metrics catalog")
-    save_forecasting_metrics(.seed_forecasting_metrics())
-    metrics_db <- load_forecasting_metrics()
+    save_forecasting_metrics(.seed_forecasting_metrics(), client_id = client_id)
+    metrics_db <- load_forecasting_metrics(client_id = client_id)
     seeded <- c(seeded, "metrics")
   }
 
@@ -157,11 +164,11 @@ forecasting_seed_if_empty <- function() {
     seeded <- c(seeded, "methods")
   }
 
-  subs_db <- load_forecasting_subscriptions()
+  subs_db <- load_forecasting_subscriptions(client_id = client_id)
   if (!nrow(subs_db)) {
     message("[forecasting] seeding global-default subscriptions")
     subs <- .seed_forecasting_global_subscriptions(metrics_db)
-    save_forecasting_subscriptions(subs)
+    save_forecasting_subscriptions(subs, client_id = client_id)
     seeded <- c(seeded, "subscriptions")
   }
 
@@ -173,8 +180,8 @@ forecasting_seed_if_empty <- function() {
         action      = "seed_catalog",
         description = sprintf("Catálogos de forecasting inicializados: %s", paste(seeded, collapse = ", ")),
         metadata    = list(seeded = seeded),
-        client_id             = NULL,
-        viewer_home_client_id = NULL
+        client_id             = client_id,
+        viewer_home_client_id = client_id
       ),
       error = function(e) NULL
     )

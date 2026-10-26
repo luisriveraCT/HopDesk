@@ -46,16 +46,51 @@
   b
 }
 
+# Keys owned by the DEPLOYMENT itself (the hd-admin control plane) rather than
+# by any tenant. Only these may still resolve their prefix from CLIENT_ID when
+# no client_id is passed -- see .s3_key() below. The forecasting entries are
+# catalogs (definitions of sources/methods/indicators, plus the fetch
+# diagnostics log), shared config rather than anyone's financial data, and they
+# are reached through .s3_read(), which takes no client_id at all.
+.DEPLOYMENT_OWNED_KEYS <- c(
+  "client_registry.rds", "username_index.rds", "emergency_lock.rds",
+  "hop_grants.rds", "hop_requests.rds", "notifications.rds",
+  "pending_invites.rds",
+  "forecasting_sources.rds", "forecasting_methods.rds",
+  "forecasting_indicators.rds", "forecasting_fetch_log.rds"
+)
+
 # Prefixes every S3 key with "<client_id>/" for logical isolation within the bucket.
 # e.g. "invoice_moves.rds" → "networks/invoice_moves.rds"
 # client_id: optional override — used by cross-client staff access (Stage 4).
-#   When NULL, falls back to CLIENT_ID env var.
+#
+# FAIL-CLOSED (2026-09-25). CLIENT_ID answers "which deployment am I". On a
+# single-tenant deployment that is also "whose data is this" -- the two
+# coincide, so defaulting to it there is correct and is left untouched. On the
+# shared hd-admin deployment they are different questions, and CLIENT_ID is the
+# control plane's own identity, never a tenant's. Defaulting to it silently is
+# what wrote Networks' manual invoices, SAP snapshots and audit rows under
+# hd-admin/, where they then sat as a frozen July snapshot that later sessions
+# read back as if it were live Networks data -- showing invoices users had
+# already deleted and making a finished cleanup look undone. A wrong guess here
+# is invisible by inspection, so refuse to guess: the error below names the
+# exact call that forgot to thread client_id.
 .s3_key <- function(key, client_id = NULL) {
-  prefix <- if (!is.null(client_id) && nzchar(client_id))
-               tolower(trimws(client_id))
-             else
-               tolower(.client_id())
-  paste0(prefix, "/", key)
+  if (!is.null(client_id) && nzchar(client_id))
+    return(paste0(tolower(trimws(client_id)), "/", key))
+
+  # Computed from the env var rather than reusing global.R's
+  # IS_ADMIN_DEPLOYMENT so this file stays sourceable on its own, the way
+  # every script in scripts/ sources it (without global.R).
+  is_shared_deployment <- tolower(trimws(Sys.getenv("CLIENT_ID"))) == "hd-admin"
+
+  if (is_shared_deployment && !(key %in% .DEPLOYMENT_OWNED_KEYS)) {
+    stop("[.s3_key] refusing to guess a tenant for '", key, "': no client_id was passed, ",
+         "and CLIENT_ID='", Sys.getenv("CLIENT_ID"), "' is this shared deployment's own ",
+         "identity, not a tenant's. Thread the session's effective_client_id() through ",
+         "to this call.", call. = FALSE)
+  }
+  paste0(tolower(.client_id()), "/", key)
 }
 
 # Attempts one S3 read with a bounded, synchronous retry -- shared by
@@ -992,8 +1027,12 @@ load_interco_v2 <- function(client_id = NULL) {
     message("[IC] load_interco_v2 — hit .app_data_cache")
     cached
   } else {
-    # 2. Preload cache or live S3 read
-    raw <- .s3_read(S3_KEYS$interco_v2)
+    # 2. Preload cache or live S3 read. client_id threaded through (2026-09-25):
+    # this read used to go through .s3_read(), which takes no client_id at all,
+    # so it resolved to CLIENT_ID -- reading hd-admin's intercompany settings on
+    # the shared deployment even though the cache lookup one line above was
+    # already correctly scoped per client.
+    raw <- .s3_read_with(S3_KEYS$interco_v2, client_id = client_id)
     message(sprintf("[IC] load_interco_v2 — %s from S3/preload",
                     if (is.list(raw)) paste(length(raw$companies %||% list()), "companies") else "NULL"))
     raw
@@ -2321,26 +2360,53 @@ get_limit_alert_recipients <- function(client_id) {
 
   contacts <- tryCatch(read_contacts(client_id), error = function(e) NULL)
   if (!is.null(contacts) && nrow(contacts)) {
+    # isTRUE() collapses to a single FALSE on a length>1 vector, which made
+    # this filter return zero rows for every client with more than one
+    # contact. Element-wise test, NA-safe.
     alert_contacts <- contacts[
-      isTRUE(contacts$active) & isTRUE(contacts$receives_limit_alerts), , drop = FALSE
+      !is.na(contacts$active) & contacts$active &
+      !is.na(contacts$receives_limit_alerts) & contacts$receives_limit_alerts,
+      , drop = FALSE
     ]
     if (nrow(alert_contacts))
       emails <- c(emails, tolower(trimws(alert_contacts$email)))
   }
 
-  hd_staff <- tryCatch(auth_load_usuarios(client_id = "hd-admin"), error = function(e) NULL)
-  if (!is.null(hd_staff) && nrow(hd_staff)) {
-    active_staff <- hd_staff[
-      (is.na(hd_staff$deleted) | hd_staff$deleted != TRUE) &
-      isTRUE(hd_staff$can_manage_invites) &
-      !is.na(hd_staff$email) & nzchar(hd_staff$email %||% ""),
-      , drop = FALSE
-    ]
-    if (nrow(active_staff))
-      emails <- c(emails, tolower(trimws(active_staff$email)))
-  }
+  emails <- c(emails, hd_staff_emails_with_perm("can_manage_invites"))
 
   unique(emails[nzchar(emails)])
+}
+
+# ── hd_staff_emails_with_perm() ───────────────────────────────────────────────
+# Email addresses of live hd-admin staff holding a given permission.
+#
+# The two call sites used to filter on `hd_staff$can_manage_invites`, but that
+# is NOT a column on usuarios.rds — it is a permission resolved from the tier
+# (see auth_resolve_perms() in R/auth.R). `hd_staff$can_manage_invites` was
+# therefore NULL, `isTRUE(NULL)` is FALSE, and the filter returned zero staff
+# every single time: no user-limit alert or "solicito mas usuarios" mail has
+# ever reached anyone. Resolve the permission per row instead.
+hd_staff_emails_with_perm <- function(perm_key) {
+  staff <- tryCatch(auth_load_usuarios(client_id = "hd-admin"), error = function(e) NULL)
+  if (is.null(staff) || !nrow(staff)) return(character(0))
+
+  live <- staff[
+    (is.na(staff$deleted) | !staff$deleted) &
+    (is.na(staff$activo)  |  staff$activo)  &
+    !is.na(staff$email) & nzchar(staff$email),
+    , drop = FALSE
+  ]
+  if (!nrow(live)) return(character(0))
+
+  keep <- vapply(seq_len(nrow(live)), function(i) {
+    perms <- tryCatch(
+      auth_resolve_perms(live$tier[i], live$permisos[i] %||% "{}"),
+      error = function(e) list()
+    )
+    isTRUE(perms[[perm_key]])
+  }, logical(1))
+
+  unique(tolower(trimws(live$email[keep])))
 }
 
 # =============================================================================

@@ -443,4 +443,220 @@ What this note needs from someone other than a model reading code — the point 
 
 ## Related work not yet folded into this document
 
-A separate handoff prompt was written (3 Sep 2026) for a design/architecture-focused session to design the **classification-management UI and data model** — the tool that lets a user accept HopDesk's default CFO/CFI/CFF suggestions or build custom classification rules, across two separate domains (AR/AP and Bank cash flow), with an explicit unsolved problem flagged for that design pass: batched/aggregated settlements (credit card payments, and similarly-shaped cases) can't be classified as one atomic line item, since they net together purchases that individually belong to different categories. That design work is out of scope for this document and tracked separately.
+A separate handoff prompt was written (3 Sep 2026) for a design/architecture-focused session to design the **classification-management UI and data model** — the tool that lets a user accept HopDesk's default CFO/CFI/CFF suggestions or build custom classification rules, across two separate domains (AR/AP and Bank cash flow), with an explicit unsolved problem flagged for that design pass: batched/aggregated settlements (credit card payments, and similarly-shaped cases) can't be classified as one atomic line item, since they net together purchases that individually belong to different categories. That design work is folded in below as Part III, prepared 9–14 Sep 2026.
+
+---
+
+# Part III — The Classification-Management UI
+
+*The tool a client actually touches: accept HopDesk's default CFO/CFI/CFF mapping or build their own. Grounded in a 16-tool competitive survey (consumer finance, SMB accounting, FP&A SaaS, enterprise EPM) run 9 Sep 2026 and published separately as the artifact "Mapping the Ledger," plus a fresh code-verification pass against the live repo on 14 Sep 2026 — `sap_api.R:436/448`, `data_pipeline.R:159/398/626`, and `pasivos_engine.R`'s `componente_capital`/`componente_interes`/`componente_fees` all still match Part II's citations exactly, so nothing below is fighting stale assumptions about the code.*
+
+## Note 1 — What the survey confirms, and what it can't reach
+
+Two of Part II's Note 8 decisions turn out to be independently validated by the market, not just internally reasoned:
+
+- **Borrowing a taxonomy instead of inventing one.** No tool in the survey — not YNAB, not QuickBooks, not Anaplan — designs its own operating/investing/financing vocabulary from scratch either; they either delegate entirely to the source ERP's account type (Xero, Wave) or, where they do maintain their own tree (Fathom, PlanGuru), they seed it from a standard chart-of-accounts backbone and let the client extend it. Nobody in 16 tools reinvents the CFO/CFI/CFF split itself.
+- **Keeping `CFCategory` a separate entity, never a hijacked hierarchy.** This is the single most load-bearing finding from the survey: Prophix's own documentation states its Account dimension is explicitly *excluded* from carrying more than one hierarchy — the exact same shape as trying to make `pasivos_categoria` or the counterparty list double as both an accounting key and a cash-flow-statement key. Part II's Note 2 canonical model already keeps `CFCategory` as its own entity joined via `cf_category_id`, which this independently confirms rather than changes.
+
+Where the survey has nothing to offer: **true consolidation.** Fathom does automatic intercompany eliminations, Agicap and Trovata do FX-aware entity roll-ups, Datarails shows entity/currency natively — but none of them perform IFRS 10 / ASC 810-grade elimination accounting (a mirror elimination entry, not a netted or dropped row). Part I's Note 4.2 elimination engine remains a genuine, unprecedented build for this survey to inform — it's a bigger and separate workstream from the categorization UI, not a sub-feature of it (see Note 6 below).
+
+## Note 2 — The three-tier engine, reconciled with a rule-engine shape
+
+Part II's Note 4 pipeline already specifies a priority order: (1) SAP-native `CashFlowLineItem`, if Networks' finance team has configured one, (2) the Note 2 canonical account-class default mapping, (3) a client override table. The survey supplies a concrete, market-tested shape for tier 3 and a validated pattern for tier 2:
+
+- **Tier 3 — client overrides.** Monarch Money is the only tool in the survey with a fully documented answer to "what happens when two rules match the same row" (an ordered, sequential list, each rule applied in turn, drag-to-reorder) and to "should this apply retroactively" (an explicit checkbox showing the affected count before committing). Adopt that shape directly: `cf_category_rules` rows are ordered, multi-condition, and re-runnable against history with a visible before-you-commit count — never silent backfill.
+- **Tier 2 — default mapping.** PlanGuru auto-assigns every imported account using the source system's own coarse account-type field, then opens a review screen for what that signal gets wrong — its own docs cite a real failure (QuickBooks' single "Equity" type collapsing every equity account into one PlanGuru line). HopDesk's tier 2 is the Part I §4.1 default table (fleet purchase→CFI, loan principal→CFF, loan interest→CFO, vendor/carrier payment→CFO) seeded from `pasivos_categoria`/`flavor` — coarse by the same nature, so it inherits the same failure mode, and needs the same fix: anything it assigns stays visibly overridable, never silently final.
+- **Tier 1 — SAP-native.** Untouched by the survey (no tool studied reads a source ERP's own pre-built CF taxonomy) — Part II's own open ask (Note 11, item 3 of Part II) to check whether `CashFlowLineItem` is actually configured on Networks' instance stands as written.
+
+The category tree itself takes its shape from Fathom — the deepest hierarchy any *self-serve* tool in the survey supports (Classification → Heading → Subheading → Account, non-destructive on delete) — collapsed to three levels for v1: **Grupo** (CFO/CFI/CFF, seeded from Part II Note 8's real IFRS/US-GAAP element names — `CashFlowsFromUsedInOperatingActivities` and siblings — locked) → **Categoría** → **Subcategoría**, both client-editable, deleting one only orphans its rules back to "sin categorizar" rather than destroying anything.
+
+## Note 3 — Solving the flagged problem: batched settlements
+
+Stated precisely against the actual schema (`pasivos_schemas.R:31`): a `tarjeta` liability's cash outflow is one lump payment to the card issuer, tagged `tarjeta_provision_source` ∈ `registered_expenses` / `manual` / `average_12m`. The spend behind that lump sum can legitimately span several categories (fuel, tolls, office supplies), and a rule keyed on counterparty ("BANCO X — TARJETA CORPORATIVA") can only assign the *entire* payment to one category — exactly the multi-category-merchant failure Mint's research writeup flags for Amazon/Walmart, except structural here rather than incidental.
+
+The three provision sources don't all fail the same way, so they don't all need the same fix:
+
+- **`registered_expenses`** — if the underlying expense rows already carry (or can carry) their own category, classify at the expense-line grain and let the liability's total be the sum of already-classified pieces. *Open question, not yet verified against code:* whether `registered_expenses` rows currently carry any classifiable field at all — worth a direct check before assuming this path is free.
+- **`manual` and `average_12m`** — there is no per-transaction data to itemize; itemization is not a data-completeness gap, it's structurally unavailable. The survey's answer is Monarch's **rule-driven auto-split**, the one place a competitor had already solved precisely this shape of problem: a standing rule that splits one matched transaction into fixed dollar amounts or percentages automatically, used in Monarch for exactly the "one shared bill, several real categories" case. Copilot Money's percentage-based split presets are the same mechanic from the consumer side. Applied here: the client defines a **reparto** (allocation template) once per `tarjeta` liability or per liability category — e.g. 55% Nómina-adjacent, 25% Combustible, 20% Gastos generales — and the classification engine explodes the single cash amount into N sub-rows by percentage *before* CFO/CFI/CFF aggregation, not after.
+- The reparto is a **stored, editable object**, not a one-time computation — IAS 7's requirement to apply a classification method consistently period over period (Part I, Note 1) means the same split has to keep applying until the client deliberately changes it, and a changed split is a reclassification event subject to the same audit trail as any other rule edit (Part I §4.1).
+
+## Note 4 — Two domains, one panel
+
+Part II's closing paragraph named the two domains this UI actually has to cover: AR/AP and Bank cash flow. They don't share a rule vocabulary, because they don't share a data shape:
+
+- **AR/AP domain** — rows are projected, not realized (Part II Note 2: "all projected, none realized"). Rule fields are `Parte`, `Empresa`, ledger (AR/AP), `pasivos_categoria`/`flavor`, monto range — the same fields the existing Calendario pipeline already computes.
+- **Bank domain** — rows come from the Bancos module's parsed TXT statements, closer in shape to what Xero's cash-coding and Monarch's merchant-string rules operate on: bank-statement description text, counterparty-as-written-by-the-bank, amount, account. This is also where a realized-cash reconciliation against the AR/AP projection eventually lives (Part II Note 11's Bancos-vs-SAP-Payments fork), independent of this feature.
+
+Both domains write into the same `cf_categories` tree and the same permanent "Sin categorizar" queue (the convergent Jirav/Runway/Datarails/Monarch pattern — never a silent default), but the Settings panel presents them as two tabs under one "Categorías de Flujo" entry, not two separate features a client has to learn twice.
+
+## Note 5 — Revised data model
+
+Supersedes the sketch published in "Mapping the Ledger" — same two registries, plus a third to carry Note 3's split mechanic, and a domain flag on the rules table to carry Note 4's split:
+
+```
+cf_categories.rds
+  id, parent_id, nivel        # "grupo" | "categoria" | "subcategoria"
+  nombre, codigo_xbrl         # Grupo rows only — the real Part II Note 8 element names
+  orden, es_sistema           # TRUE for the 3 seeded Grupos — CFO / CFI / CFF
+
+cf_category_rules.rds
+  id, categoria_id, dominio   # "ar_ap" | "bancos"
+  prioridad, activo
+  campo      # ar_ap: parte | empresa | pasivos_categoria | ledger | monto
+             # bancos: descripcion | contraparte_banco | monto | cuenta
+  operador   # "es" | "contiene" | "rango"
+  valor
+
+cf_category_splits.rds        # resolves Note 3
+  id, liability_id_or_categoria_origen
+  categoria_destino_id, porcentaje
+  activo, actualizado_por, actualizado_en   # audit trail — IAS 7 consistency requirement
+```
+
+## Note 6 — What this feature is deliberately not
+
+Two pieces of Part I stay out of scope for the classification-UI build, because they *read* `cf_category` once it exists rather than needing to exist before it does:
+
+- **The elimination/consolidation engine** (Part I §4.2) — a genuine, unprecedented build (Note 1 above); belongs to the entity-hierarchy/ownership-percentage work, not the category tree.
+- **The financing-liability roll-forward view** (Part I §4.3 / Part II Note 10 — already "buildable now" from data that exists) — a reporting view on top of `componente_capital`/`componente_interes`/`componente_fees`, independent of whether a client has customized their CFO/CFI/CFF tree at all.
+
+## Note 7 — Revised phase order
+
+Supersedes the 5-phase list in "Mapping the Ledger" — same shape, with the engine priority (Note 2) and the split mechanic (Note 3) now placed correctly:
+
+1. **Registries + seeded template** — `cf_categories`/`cf_category_rules`/`cf_category_splits`, Grupos seeded with real XBRL element names, Categorías seeded from the Part I §4.1 default table (tier 2).
+2. **Tree editor** — add/rename/reorder/soft-delete, non-destructive, in a new Settings-hub panel.
+3. **Rule mapper + reparto builder + "sin categorizar" queue** — tier 3, both domains (Note 4), the percentage-split UI for `tarjeta` liabilities (Note 3), bulk-assign reusing the existing Intercompany-scanner interaction.
+4. **Wire the Note 9 (Part II) toggle** — Básico ⟷ Estructurado into `.build_summary()`; "Sin categorizar" always its own line; Word/Excel export inherit for free.
+5. **Tier 1 (stretch, blocked)** — once the pending SAP General Authorizations grant lands, check whether `CashFlowLineItem`/`CashFlowAssignment` is actually configured on Networks' instance (Part II Note 11); if so, it outranks tier 2 for every account it covers.
+
+### Sources (Part III)
+
+Full per-tool citations live in the published artifact "Mapping the Ledger" (https://claude.ai/code/artifact/f7df5329-2079-48fc-ae88-4de930c997c2) rather than duplicated here — Monarch (rule ordering + retroactive apply), Copilot Money (percentage split presets), Fathom (4-level self-serve hierarchy, non-destructive delete), Prophix (Account dimension excluded from alternate hierarchies), PlanGuru (type-based auto-map + exception review), Jirav/Runway/Datarails (convergent "unmapped" surfacing).
+
+---
+
+# Part IV — Four More Languages
+
+*SAP B1 was verified live. NetSuite, Microsoft Dynamics 365 (Business Central + Finance), QuickBooks Online, and Xero are verified against each vendor's own primary documentation — Xero's via its published OpenAPI spec directly, not just prose docs, which is the closest thing to a second "live probe" this pass could get without real credentials. Prepared 14 Sep 2026. Purpose: extend Part II's adapter contract from one ERP to five, and pressure-test Part I/II/III's design decisions against what four more systems actually do.*
+
+## Note 1 — Five languages, side by side
+
+What Part II's adapter contract (Note 3) means by "a new `R/<erp>_api.R`" concretely has to speak, per ERP:
+
+| ERP | Protocol | Query mechanism | Scripting needed? | Auth |
+|---|---|---|---|---|
+| SAP Business One | Service Layer (OData-flavored REST) | `$filter`/`$expand` | No — pure REST for read access | Session cookie, user/pass |
+| Oracle NetSuite | REST Web Services + SuiteQL | `SELECT ... FROM transaction WHERE ...` — real SQL, arbitrary JOINs, 1,000 rows/page, 100,000-row cap | No for reads — SuiteScript only needed for RESTlets/customization | OAuth 2.0 (TBA sunsetting — no new TBA integrations after release 2027.1) |
+| MS Dynamics 365 Business Central | API v2.0 (OData-flavored REST) + bound actions for state changes (`post`, `send`) | `$filter` | AL, but only for extending/customizing — not for read access | Entra ID (Azure AD) OAuth2, client-credentials, service-to-service — closest analog to SAP B1's service-account model of the four |
+| MS Dynamics 365 Finance | OData v4 over Data Entities, + async Data Management Framework for bulk | `$filter`/`$expand` (first-level only)/`$select`, no `has`/`in`, 10,000 max page | X++, for the same reason as AL above | Entra ID OAuth2, messier/older docs than BC |
+| QuickBooks Online | REST + a SQL-like query endpoint | `SELECT * FROM Invoice WHERE Balance > '0'` — **no JOINs, no OR, no GROUP BY, no field projection** — every relation is a separate call | No | OAuth 2.0, one scope for all accounting data (no granular read-only scope) |
+| Xero | REST, OData-adjacent `where` filter | `Status=="ACTIVE" AND Type=="BANK"` — LINQ-like, **no `IN` operator** (open request) | No | OAuth 2.0, granular read scopes — but legacy broad scopes sunset for new apps after 2 Mar 2026 |
+
+**The practical ranking for "closest to what HopDesk already knows how to build":** Dynamics 365 Business Central's service-to-service auth pattern is the nearest cousin to SAP B1's session-based service account — same "register once, run headless forever" shape. NetSuite's SuiteQL is the most *capable* query language of the five (the only one with real JOINs), which matters because QuickBooks' and Xero's thin filters mean HopDesk's adapter — not the ERP — has to do more of the relational stitching (e.g., resolving an invoice's customer name is a second call, every time, for both).
+
+**The practical warning for cost/timeline planning:** QuickBooks Online is the only one of the five with a mandatory pre-production security/technical review (1–3 weeks minimum, longer for Marketplace listing) gating a first customer connection — plan around this explicitly if a QBO client is ever the pilot for adapter #2, it isn't a same-day "flip a connector on" story the way SAP B1 has been.
+
+## Note 2 — Chart of accounts, updated
+
+Part II's Note 2 table listed classification fields at a glance; here's the same five ERPs (SAP B1 + the four) at the depth this pass actually reached:
+
+| ERP | Account type enum | Cash/bank signal | Nesting |
+|---|---|---|---|
+| SAP B1 | n/a (no generic type field) | `CashAccount` (boolean) | Confirmed present in schema, depth not probed this pass |
+| NetSuite | 17 `acctType` values | **No boolean equivalent** — cash-ness is entirely `acctType = "Bank"` (even petty cash gets typed Bank) | Parent/sub-account exists, no documented hard depth limit |
+| Dynamics 365 BC | 6 fixed `G/L Account Category` values (Assets/Liabilities/Equity/Income/COGS/Expense) + a **separate, decoupled** structural `Account Type` (Posting/Heading/Total/Begin-Total/End-Total) | `"Reconciliation Account"` boolean, plus a wholly separate Bank Account master table | User-defined hierarchical subcategories in their own table |
+| QuickBooks Online | 16 `AccountType` values, 125 `AccountSubType` values (both confirmed via Intuit's own SDK docs) | No boolean — `AccountType = Bank`, subtypes `Checking`/`Savings`/`MoneyMarket`/`CashOnHand` | Sub-accounts exist in the product (up to ~5 levels, per the earlier consumer-tool survey) — not re-confirmed at the API-field level this pass |
+| Xero | 18 `Account.Type` values, rolling up to a **read-only, derived** `Account.Class` (Asset/Equity/Expense/Liability/Revenue) | No boolean — `Type = BANK` | **Confirmed flat at the API level** — no parent-account field exists anywhere in the schema; the only grouping concept is a separate `ReportingCode` tag, not a tree |
+
+**What this changes about Part II Note 2's account-class default mapping (§4.1):** the five-way Asset/Liability/Equity/Revenue/Expense convergence Note 2 already found holds up exactly at this depth too — QuickBooks' `Classification` field and Xero's `Account.Class` are both explicitly *derived* from the more granular type, the same relationship SAP B1's canonical model already assumes. Nothing here changes the canonical `Account.class` design; it just confirms it generalizes to four more real schemas without modification.
+
+## Note 3 — Cash-flow-statement maturity, ranked
+
+Ordered from "closest to a purpose-built cash-flow taxonomy engine" to "doesn't have one at all":
+
+1. **SAP B1** — `CashFlowLineItem`/`CashFlowAssignment` is a genuine, GL-independent hierarchical taxonomy tree with its own assignment records (Part II Note 1). Still unknown whether Networks' instance has it configured — the single highest-leverage open question from Part II, unchanged by this pass.
+2. **Dynamics 365 Business Central** — no separate taxonomy entity, but the `G/L Account Category` table carries an **`"Additional Report Definition"` field explicitly documented as existing for cash-flow-statement and specialized financial-reporting purposes** — the closest thing any of the four new ERPs has to a purpose-built cash-flow tag on the account itself, short of SAP B1's dedicated object. BC's separate **Cash Flow Forecast** module is also the most transparent of anything found in this entire research arc (across both this pass and the earlier 16-tool survey): every forecasted line is explicitly source-typed — General Ledger, Purchasing, Sales, Service, Fixed Assets, or Manual — never an opaque blend.
+3. **NetSuite** — a real, native Statement of Cash Flows (indirect method), but CFO/CFI/CFF section membership is a **Financial Report Builder** construct (a filter-driven, reparentable tree of report sections keyed on account name/number/type/class/department/location/subsidiary) — a reporting-layer overlay, not a first-class taxonomy object the way SAP B1's is.
+4. **QuickBooks Online** — a `CashFlow` report exists via the Reports API, but classification is purely `AccountType`/`AccountSubType`-derived and **read-only at every layer, including the API** — no override exists anywhere, confirming and extending the earlier UI-level finding (Part III's "Four traps" — QBO's locked SCF) down to the data model itself.
+5. **Xero** — **no Statement of Cash Flows in the public Accounting API at all.** A real one exists only in a separate, partner-gated "Finance API" built for lenders, with an unresolved question of whether it even covers non-U.S. entities (Mexico's status is unconfirmed from public docs). For practical purposes, a Xero adapter gets nothing here — CFO/CFI/CFF would be 100% HopDesk's own classification work, same as if Xero had no report at all.
+
+**What this changes about Part I:** nothing in the standards story changes, but it sharpens the priority argument for HopDesk's own classification engine (Part III) — for 4 of 5 ERPs studied, HopDesk's own tagging is either the *only* source of CFO/CFI/CFF (Xero, and QBO in practice since it's locked) or a meaningfully better one than what ships natively (NetSuite's reporting-layer overlay, BC's still-manual-per-account tagging). SAP B1 is the outlier where the ERP might already have curated this — which is exactly why Part II Note 11's open ask (check if `CashFlowLineItem` is actually configured on Networks' instance) stays the single highest-leverage unresolved question across the whole document.
+
+## Note 4 — XBRL and the standards layer: confirmed, not contradicted
+
+Checked all four for native XBRL/IFRS support, specifically to pressure-test Part II Note 8's "borrow, don't invent" decision:
+
+- **NetSuite** — no confirmed native XBRL/SEC-filing export; the documented pattern is NetSuite as system-of-record feeding a *separate* disclosure-management product (Workiva, ActiveDisclosure) that does the actual tagging.
+- **Dynamics 365 Business Central** — Microsoft is **actively removing** XBRL reporting features from the product, in its own words. Not a gap to plan around — a feature being deleted.
+- **QuickBooks Online** — no native XBRL, confirmed by an unanswered Intuit developer-community question asking whether it exists at all.
+- **Xero** — no native XBRL; an open, unshipped product-idea request (driven by South African iXBRL mandates), not a roadmap commitment.
+
+**Zero for four.** Combined with Part II Note 8's original finding (Codat/Merge/Rutter never built a CFO/CFI/CFF layer either), this is now a much stronger result than "no aggregator does this" — **no ERP does this either.** XBRL and the IFRS/US-GAAP taxonomy are external, governance-body-maintained vocabularies that every system in this survey treats as somebody else's problem. HopDesk adopting them directly (Part II Note 8) isn't catching up to an industry practice — it's doing something none of the five systems studied actually do themselves.
+
+**IAS 7 §44A financing-liability roll-forward — now confirmed absent by design, not by oversight.** The Dynamics 365 research surfaced the actual IASB project history: the Board *considered* mandating a reconciliation format for the financing-liability roll-forward and explicitly **decided not to require one**. That's not a product gap Microsoft or anyone else failed to fill — it's a deliberate standards-setting choice to leave the presentation open. Part I §4.3's roll-forward view (buildable now from `pasivos_engine.R`'s existing principal/interest/fees split) isn't reinventing something the market already ships; it's building something the standard-setter deliberately left as whitespace.
+
+## Note 5 — Consolidation maturity, ranked
+
+Directly informs Part I §4.2's elimination-engine design — same ranking logic as Note 3, now for consolidation:
+
+1. **NetSuite OneWorld** — the most mature: real elimination-entry postings to dedicated Elimination Subsidiaries, auto-reversing entries the following period, a dedicated Cumulative Translation Adjustment–Elimination account for FX residue, idempotent (delete-and-regenerate) re-runs from the Period Close Checklist.
+2. **Dynamics 365 Finance** — a genuinely separate elimination-rules engine, run during consolidation or via an "elimination proposal" step — confirmed distinct from its automatic Due-to/Due-from reciprocal posting (which by itself does *not* eliminate anything).
+3. **Dynamics 365 Business Central** — no automated elimination engine; consolidation is per-account mapping/filtering fields (`Consol. Translation Method`, `Exclude From Consolidation`) plus a **bilateral intercompany mapping model** — an explicit `IC Partner Code` and an Outbox/Inbox message-passing journal between named partners. Less automatic than NetSuite or F&O, but the shape (explicit, named, two-way mapping) is the closest fit to HopDesk's own already-known constraint: SAP B1's `BusinessPartners` 403 and CardCode-only IC detection (per the interco-v2 project history) means HopDesk already can't rely on automatic matching either — BC validates building an explicit mapping-table UI as the right-sized answer, not a compromise.
+4. **QuickBooks Online** — no native consolidation via API even on Intuit Enterprise Suite (their new multi-entity product); every connection is still one realm at a time, and IES's consolidation features aren't API-exposed yet. A QBO adapter gets zero help here, same as today's SAP B1 situation.
+5. **Xero** — no native multi-entity anything; confirmed third-party-only (Fathom, Syft), each of which connects to every organisation separately and consolidates externally — architecturally identical to what HopDesk would have to do itself.
+
+**What this changes about Part I §4.2:** three of five ERPs offer nothing to lean on for elimination — the elimination engine has to be HopDesk's own, ERP-agnostic layer regardless of which adapter is behind it, exactly as §4.2 already assumed. Where an ERP *does* have one (NetSuite, F&O), the useful thing to import isn't the engine itself but the **signal**: NetSuite's `eliminate` flag on the Account record and F&O's elimination rules are both queryable, explicit markers of "this account represents an intercompany position" — a much cleaner detection primitive than what SAP B1's Service Layer currently exposes for the same concept. If NetSuite or F&O ever become a HopDesk adapter, IC detection there should be markedly easier than it's been for SAP B1.
+
+## Note 6 — Sync primitives worth adopting regardless of which ERP
+
+Two patterns, found independently, that generalize past any single adapter and are worth folding into Part II Note 3's adapter contract as a shared capability, not a per-ERP quirk:
+
+- **An append-only, cursor-walked, all-transactions feed** — Xero's `/Journals` endpoint (no `where` filter, deliberately; walked by a monotonic `JournalNumber` offset) is the cleanest version of this found anywhere in this research arc. Every transaction of every type posts through it exactly once, immutably. This is a categorically better incremental-sync primitive than polling each entity type separately with an `UpdatedDateUTC` filter, because it can't miss a transaction type the adapter forgot to poll.
+- **Thin webhook + periodic reconciliation sweep, as a pair, never webhook alone** — QuickBooks Online's Change Data Capture (`changedSince`, 30-day lookback cap) exists specifically to backstop missed/dropped webhook deliveries; Xero's webhooks are confirmed to cover only 6 of its event categories (no Payment, Account, ManualJournal, or BankTransaction events at all), making a periodic `/Journals`-cursor sweep mandatory, not optional, for completeness.
+
+**Why this matters beyond adapter #2:** this is the same shape of problem Bancos already hit and fixed — two independent detection paths that have to agree, or drift silently ([[feedback_dedup_bug]]). A shared "rate-budget + cursor-or-poll + reconciliation sweep" abstraction in the adapter contract would generalize that lesson forward instead of re-discovering it per ERP.
+
+## Note 7 — What elevates HopDesk's own standard
+
+Concrete, adoptable-now changes to Part II's canonical model and Part III's classification engine, surfaced by seeing four more systems' choices:
+
+- **Add an explicit Format layer to the adapter contract.** Dynamics 365 Finance's Electronic Reporting framework splits cleanly into Data model → Model mapping → Format, with **format-level validation rules that can block generation outright**. Part II Note 3's adapter contract already has the first two (the canonical schema, and each `<erp>_api.R` module); it has no equivalent of the third. Concretely: before generating a Structured cash-flow export, check the active connection's capability flags and refuse — with a clear, named reason — rather than silently rendering an incomplete or misleading statement when (say) `financing_liability_detail` isn't available for that client's tier.
+- **Give every classified row a visible provenance tag.** BC's Cash Flow Forecast tags every line with where it came from (General Ledger / Purchasing / Sales / Service / Fixed Assets / Manual) rather than presenting one opaque number. Part III's 3-tier engine (SAP-native → default mapping → client override) already has the tiers — it doesn't yet expose which tier produced a given row's category to the person looking at the report. Worth adding as a rendered attribute (a small badge or footnote marker on each line, not just an internal field), the same way BC makes its forecast composition auditable at a glance.
+- **Name the cash/bank signal explicitly, don't infer it.** Confirm Part II Note 2's `is_cash` canonical field by the same name and boolean shape BC uses (`Reconciliation Account`) and SAP B1 already has (`CashAccount`) — both real ERPs converge on "a plain boolean on the account," which is one more point of evidence the canonical model already has this right and shouldn't overthink it into something more dimensional.
+- **Steal NetSuite's declarative section-tree shape for HopDesk's own statement layout**, not just for the category tree (Part III already did this) but for the *export/report layer* itself — a small tree of `{label, parent, filter_expr}` nodes is a reasonable long-term shape for letting a client customize their Word/Excel statement's section order and grouping without touching R code, once Part III's Phase 4 toggle exists and clients start asking for layout variations on top of it.
+
+## Note 8 — Updated capability-flags table
+
+Extends Part II Note 3's registry pattern from one ERP to five — what each connection could realistically offer, and the integration cost of getting there:
+
+| Connection | Canonical entities realistically reachable | Integration cost/gate |
+|---|---|---|
+| SAP B1 (as authorized today) | `ar_invoices`, `ap_invoices` | None — live |
+| SAP B1 (after Note 1/Part II grant) | + `chart_of_accounts`, `gl_journal`, `payments`, possibly `native_cf_taxonomy` | One permissions grant, already requested |
+| NetSuite | All six canonical entities, plus a real `ic_elimination_flag` signal | OAuth2 setup + SuiteQL; no schema access gate found, but full field schemas sit behind an authenticated Schema Browser |
+| Dynamics 365 Business Central | All six, plus `is_cash_equivalent` and bilateral IC mapping | Entra ID app registration + permission set — closest to SAP B1's service-account effort |
+| Dynamics 365 Finance | All six, plus a real elimination-rules engine | Same Entra ID model, messier docs, X++ only for customization beyond standard entities |
+| QuickBooks Online | `ar_invoices`, `ap_invoices`, `chart_of_accounts`, `gl_journal` (JournalEntry), `payments` — **no consolidation, no CF-category override** | OAuth2 + **mandatory production security/technical review (1–3 weeks minimum)** + a metering layer that penalizes read-heavy usage specifically |
+| Xero | `ar_invoices`, `ap_invoices`, `chart_of_accounts`, `gl_journal` (via `/Journals`) — **no native CF statement, no consolidation** | OAuth2, granular scopes required for any app built after 2 Mar 2026; best sync primitive of the five but thinnest financial-statement surface |
+
+**If HopDesk builds adapter #2 next**, this pass's evidence points two directions depending on which client profile drives the decision: **NetSuite or Dynamics 365 Finance** for a future multi-subsidiary corporate-group client structurally like Networks (both have a real elimination engine, directly serving Part I §4.2); **Dynamics 365 Business Central** for the closest philosophical and technical fit to what HopDesk is already building for itself (per-account cash-flow tagging field, transparent forecast provenance, SAP-B1-like service-account auth) at SMB scale. QuickBooks Online and Xero are both worth building eventually for market reach, but neither contributes anything toward the two hardest unsolved problems this whole document is organized around — cash-flow classification and consolidation — so building either first would mean solving both from scratch in HopDesk with no ERP-side help at all, same as SAP B1 today, just for a different market.
+
+### Sources (Part IV)
+
+1. [NetSuite REST Web Services / SuiteQL — Oracle](https://docs.oracle.com/en/cloud/saas/netsuite/ns-online-help/section_157909186990.html)
+2. [NetSuite Account Types — Oracle](https://docs.oracle.com/en/cloud/saas/netsuite/ns-online-help/section_3947502870.html)
+3. [NetSuite Financial Report Builder — Oracle](https://docs.oracle.com/en/cloud/saas/netsuite/ns-online-help/chapter_N2105415.html)
+4. [NetSuite Elimination Subsidiaries — Oracle](https://docs.oracle.com/en/cloud/saas/netsuite/ns-online-help/section_N268759.html)
+5. [Dynamics 365 Business Central API v2.0 — Microsoft Learn](https://learn.microsoft.com/en-us/dynamics365/business-central/dev-itpro/api-reference/v2.0/)
+6. [G/L Account Category table — Microsoft Learn](https://learn.microsoft.com/en-us/dynamics365/business-central/application/base-application/table/microsoft.finance.generalledger.account.g-l-account-category)
+7. [Cash Flow Forecast overview — Microsoft Learn](https://learn.microsoft.com/en-us/dynamics365/business-central/finance-cash-flow-overview)
+8. [Electronic Reporting overview — Microsoft Learn](https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/analytics/general-electronic-reporting)
+9. [D365 Finance elimination rules — Microsoft Learn](https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/elimination-rules)
+10. [IASB — Disclosure of Changes in Liabilities from Financing Activities project history](https://www.ifrs.org/projects/completed-projects/2019/disclosure-of-changes-in-liabilities-arising-from-financing-activities-ias-7/tad-disclosure-of-changes-in-liabilities-arising-from-financing-activities/)
+11. [AccountTypeEnum / AccountSubTypeEnum — Intuit SDK Javadoc](https://static.developer.intuit.com/sdkdocs/qbv3doc/ipp-v3-java-devkit-javadoc/com/intuit/ipp/data/AccountTypeEnum.html)
+12. [QuickBooks Online Reports API — CashFlow](https://g-accon.com/quickbooks-online-reports-api-is-changing/)
+13. [Xero OpenAPI spec (accounting) — GitHub](https://github.com/XeroAPI/Xero-OpenAPI)
+14. [Xero API rate limits — developer.xero.com](https://developer.xero.com/faq/limits)
+15. [Xero Finance API — Statement of Cash Flows](https://developer.xero.com/documentation/api/finance/financialstatements)
+16. [Xero accounting API scope migration — devblog.xero.com](https://devblog.xero.com/upcoming-changes-to-xero-accounting-api-scopes-705c5a9621a0)

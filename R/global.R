@@ -437,6 +437,7 @@ source("R/settings/settings_companies.R", local = TRUE)
 source("R/settings/settings_hub.R",       local = TRUE)
 source("R/ppl_generator.R")
 source("R/bancos_parser.R")
+source("R/bancos_detect.R")
 source("R/bancos_persistence.R")
 source("R/bancos_module.R")
 source("R/proveedores_match.R")
@@ -477,19 +478,20 @@ source("R/cashflow_export_module.R")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-# Fallback company registry — used only on fresh deployments (before empresas.rds
-# exists) and as the seed for load_empresas(). In all normal sessions this is
-# overwritten immediately after the critical preload reads empresas.rds from S3.
-# To add a company to a fresh deployment, add it here; after the first run the
-# Empresas module in Settings is the authoritative source.
-COMPANY_MAP <- c(
-  NG  = "Networks Group",
-  NTS = "Networks Trucking Services",
-  NCS = "Networks Crossdocking Services",
-  NL  = "Networks & Logistics",
-  NRS = "Networks Realtors",
-  PL  = "Paragon Logistics"
-)
+# Company registry. Starts EMPTY and is populated per tenant from that tenant's
+# own empresas.rds (see the rebuild just after the critical preload, below).
+#
+# De-hardcoded 2026-09-25. This used to be seeded with a literal list of one
+# specific client's companies, which made it wrong in three separate ways on a
+# multi-tenant deployment: it named one tenant's companies inside code every
+# tenant runs; it was stale (it carried entries that tenant does not actually
+# operate); and because ~60 call sites use it as a `%||% COMPANY_MAP` fallback,
+# any session whose empresas.rds had not loaded silently fell back to THAT
+# client's company list rather than showing nothing. An empty map is the honest
+# answer to "which companies does this tenant have" before the registry loads --
+# a wrong answer here renders another tenant's company names in the UI. The
+# Empresas module in Settings is, and stays, the only authoritative source.
+COMPANY_MAP <- setNames(character(0), character(0))
 
 # Fetched synchronously at startup — must be ready before any session connects.
 # empresas.rds is included so COMPANY_MAP is rebuilt from the live registry

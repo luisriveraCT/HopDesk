@@ -266,7 +266,8 @@ cat("\n-- Part V1: resolved (synced/blocked) entries are never re-selected for r
 
   # Same invariant for a BLOCKED (not synced) terminal state.
   cid2 <- "auditblocked"
-  bad_row <- data.frame(seq = 1L, s3_key = "someoneelse/invoice_moves.rds", table_name = "moves_db",
+  bad_row <- data.frame(seq = 1L, s3_key = "someoneelse/invoice_moves.rds",
+                         bucket = "mock-bucket", table_name = "moves_db",
                          client_id = cid2, expected_sync_version = NA_integer_,
                          acting_user = NA_character_, acting_home_client_id = NA_character_,
                          status = "pending", staged_at = Sys.time(), synced_at = as.POSIXct(NA),

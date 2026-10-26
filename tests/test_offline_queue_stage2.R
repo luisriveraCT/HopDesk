@@ -389,7 +389,8 @@ cat("\n-- Part T7: tenant-prefix mismatch caught at replay, not just at stage ti
 {
   cid <- "victimclient"
   bad_row <- data.frame(
-    seq = 1L, s3_key = "attackerClient/invoice_moves.rds", table_name = "moves_db",
+    seq = 1L, s3_key = "attackerClient/invoice_moves.rds", bucket = "mock-bucket",
+    table_name = "moves_db",
     client_id = cid, expected_sync_version = NA_integer_,
     acting_user = NA_character_, acting_home_client_id = NA_character_,
     status = "pending", staged_at = Sys.time(), synced_at = as.POSIXct(NA),
@@ -419,7 +420,8 @@ cat("\n-- Part T8: missing staged payload file fails closed as 'blocked' --\n")
 {
   cid <- "missingpayload"
   row <- data.frame(
-    seq = 999L, s3_key = paste0(cid, "/invoice_moves.rds"), table_name = "moves_db",
+    seq = 999L, s3_key = paste0(cid, "/invoice_moves.rds"), bucket = "mock-bucket",
+    table_name = "moves_db",
     client_id = cid, expected_sync_version = NA_integer_,
     acting_user = NA_character_, acting_home_client_id = NA_character_,
     status = "pending", staged_at = Sys.time(), synced_at = as.POSIXct(NA),

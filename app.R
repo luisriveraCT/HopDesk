@@ -1041,11 +1041,46 @@ server <- function(input, output, session) {
       update_client_user_count(invite$client_id)
       tryCatch(notify_user_limit(invite$client_id),
                error = function(e) message("[INVITE] notify_user_limit failed: ", e$message))
-      removeModal()
-      showNotification(
-        paste0("Cuenta activada. Inicia sesión como '", username, "'."),
-        type = "message", duration = 6
+
+      # The username is derived here, server-side, from the display name --
+      # the invitee has no way to guess it. A 6-second showNotification was
+      # the only place it ever appeared. Show it in a modal they must dismiss
+      # AND mail it to them.
+      app_url <- tryCatch({
+        prot <- session$clientData$url_protocol
+        host <- session$clientData$url_hostname
+        port <- session$clientData$url_port
+        path <- session$clientData$url_pathname
+        if (nzchar(port %||% "")) sprintf("%s//%s:%s%s", prot, host, port, path)
+        else sprintf("%s//%s%s", prot, host, path)
+      }, error = function(e) "")
+
+      client_label <- tryCatch({
+        reg <- read_client_registry()
+        idx <- which(reg$client_id == invite$client_id)
+        if (length(idx)) reg$display_name[idx[1]] else invite$client_id
+      }, error = function(e) invite$client_id)
+
+      tryCatch(
+        send_email(to      = invite$email,
+                   subject = "Tu cuenta de HopDesk está activa",
+                   html    = email_welcome_html(invite$display_name, username,
+                                                client_label, app_url)),
+        error = function(e) message("[INVITE] welcome email failed: ", e$message)
       )
+
+      removeModal()
+      showModal(modalDialog(
+        title = tagList(icon("circle-check"), " Cuenta activada"),
+        tags$p("Tu cuenta quedó lista. Anota tu nombre de usuario — ",
+               tags$strong("no es tu correo"), ":"),
+        tags$div(class = "alert alert-secondary text-center fs-5 fw-bold my-3",
+                 username),
+        tags$p(class = "small text-muted",
+               "También te lo enviamos por correo. Inicia sesión con este usuario ",
+               "y la contraseña que acabas de crear."),
+        footer = modalButton("Entendido"), easyClose = FALSE
+      ))
     }, error = function(e) {
       output$invite_pw_error <- renderUI(
         tags$p(class = "text-danger small mt-1", paste("Error:", e$message))
@@ -1719,15 +1754,30 @@ server <- function(input, output, session) {
   .data_loaded <- FALSE
   observe({
     if (.data_loaded) return()
-    .data_loaded <<- TRUE
     # Session #1 is shinymanager's auth gate — it never needs app data and
     # its event loop must stay free so the login form renders immediately.
     # Skipping here also prevents the SAP dispatch from running in session #1
     # (which would block login button clicks until the SAP fetch completes).
     if (.sn <= 1L) {
+      .data_loaded <<- TRUE
       message(sprintf("[LOAD] Auth gate session #%d — skipping data load", .sn))
       return()
     }
+
+    # Tenant gate (2026-09-25). Read home_client_id() REACTIVELY -- outside the
+    # isolate() below -- so this observer re-fires when login resolves it, and
+    # refuse to load anything until it has. This used to read it inside
+    # isolate() and fall back to Sys.getenv("CLIENT_ID"), which on the shared
+    # deployment is "hd-admin": whenever Phase 1 happened to run before the
+    # auth observer had fired, it loaded hd-admin's own stale snapshots and
+    # rendered them as this client's live data -- showing invoices the client
+    # had already deleted and making a finished cleanup look undone. The flag
+    # is only consumed once we actually commit to loading, so an early pass
+    # cannot burn it.
+    cid_p1 <- tolower(tryCatch(home_client_id(), error = function(e) NULL) %||% "")
+    if (!nzchar(cid_p1)) return()
+
+    .data_loaded <<- TRUE
     isolate({
       t0 <- proc.time()
       message(sprintf("[LOAD] Phase 1 start at t+%.1fs (session #%d)",
@@ -1735,10 +1785,6 @@ server <- function(input, output, session) {
 
       # Load SAP snapshots + policy_moves together so the first calendar render
       # already uses policy-adjusted dates for all previously-seen invoices.
-      # cid_p1: same home_client_id() %||% env-var fallback Phase 2 uses
-      # (app.R's own "cid_lo") -- home_client_id() is already resolved by
-      # this point (Phase 1 explicitly runs after the auth-gate session).
-      cid_p1  <- tolower(tryCatch(home_client_id(), error = function(e) NULL) %||% Sys.getenv("CLIENT_ID"))
       t0_snap <- proc.time()
       ar_snap <- tryCatch(load_sap_snapshot("AR", client_id = cid_p1), error = function(e) NULL)
       ap_snap <- tryCatch(load_sap_snapshot("AP", client_id = cid_p1), error = function(e) NULL)
@@ -1778,13 +1824,17 @@ server <- function(input, output, session) {
   # live S3 reads for sync-registered keys (see the two comments below).
   observe({
     req(.phase1_done())
+    # Phase 1 now only completes once the tenant is resolved, so this is
+    # belt-and-braces -- but it is resolved here, outside isolate(), for the
+    # same reason, and never defaults to the deployment's own CLIENT_ID.
+    cid_lo <- tolower(tryCatch(home_client_id(), error = function(e) NULL) %||% "")
+    req(nzchar(cid_lo))
     isolate({
       t0     <- proc.time()
       # Resolve the home client prefix set at login (before Phase 1 — no jump
       # can have happened yet). Inside isolate() this reads the current value
       # without creating a reactive dependency — Phase 2 fires once, at
       # startup; the Stage 4.4 observer below is what reloads on a jump.
-      cid_lo <- tolower(home_client_id() %||% Sys.getenv("CLIENT_ID"))
       message(sprintf("[LOAD] Phase 2 start at t+%.1fs (session #%d) [cid=%s]",
                       (proc.time() - .t_session)[["elapsed"]], .sn, cid_lo))
 
@@ -2020,7 +2070,7 @@ server <- function(input, output, session) {
       })
       message(sprintf("[LOAD]   fc_subscriptions %.1fs", (proc.time() - t1)[["elapsed"]]))
       # Seed catalogs on first run (idempotent — no-op if already populated).
-      tryCatch(forecasting_seed_if_empty(), error = function(e)
+      tryCatch(forecasting_seed_if_empty(client_id = cid_lo), error = function(e)
         warning("[LOAD] forecasting_seed_if_empty: ", conditionMessage(e)))
 
       t1 <- proc.time()
@@ -2354,6 +2404,11 @@ server <- function(input, output, session) {
     jobs <- list(list(fn = .fetch_sofr,   metric = "sofr"),
                  list(fn = .fetch_tiie28, metric = "tiie28"))
     cid <- tryCatch(effective_client_id(), error = function(e) NULL)
+    # No tenant resolved yet (this fires from session$onFlushed, which can beat
+    # the auth observer): skip this round rather than writing public market
+    # rates into whichever prefix CLIENT_ID happens to name. The next manual
+    # refresh picks them up.
+    if (is.null(cid) || !nzchar(cid)) return(invisible(FALSE))
     for (job in jobs) {
       res <- tryCatch(job$fn(), error = function(e) list(error = conditionMessage(e)))
       rate <- res$today %||% NA_real_

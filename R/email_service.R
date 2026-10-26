@@ -6,12 +6,58 @@
 # manual retry via the "Cola de emails" panel in tiers_module.R.
 #
 # Environment variables:
-#   RESEND_API_KEY  — set to "sandbox" to skip actual delivery (dev mode)
-#   RESEND_FROM_EMAIL — sender address, e.g. noreply@hopdesk.com
+#   RESEND_API_KEY    — a real key starts with "re_". The literal "sandbox"
+#                       skips delivery and reports success (dev mode). An
+#                       EMPTY or malformed value is NOT sandbox: it is a
+#                       misconfiguration, and send_email() now reports
+#                       failure so the caller can say so out loud instead of
+#                       silently dropping real invitations on the floor.
+#   RESEND_FROM_EMAIL — sender address on a domain verified in Resend,
+#                       e.g. noreply@send.hopdesk.mx
+#
+# See docs/EMAIL_SERVICE_RUNBOOK.md for the full enable/pay/verify procedure.
 # =============================================================================
 
 .RESEND_ENDPOINT <- "https://api.resend.com/emails"
 .EMAIL_QUEUE_KEY <- "hd-admin/email_queue.rds"
+
+# ── Configuration status ──────────────────────────────────────────────────────
+# Single source of truth for "is email actually live?". Used by send_email()
+# and by the status badge in the Invitaciones tab so an operator can see the
+# mode BEFORE sending an invitation rather than discovering it afterwards.
+email_service_status <- function() {
+  api_key   <- trimws(Sys.getenv("RESEND_API_KEY"))
+  from_addr <- trimws(Sys.getenv("RESEND_FROM_EMAIL"))
+  if (!nzchar(from_addr)) from_addr <- "noreply@hopdesk.com"
+
+  mode <- if (!nzchar(api_key)) {
+    "unconfigured"
+  } else if (tolower(api_key) == "sandbox") {
+    "sandbox"
+  } else if (!grepl("^re_", api_key)) {
+    "invalid"
+  } else {
+    "live"
+  }
+
+  list(
+    mode    = mode,
+    live    = identical(mode, "live"),
+    from    = from_addr,
+    label   = switch(mode,
+      live         = "Envío de correo activo",
+      sandbox      = "Modo sandbox — no se envía correo real",
+      unconfigured = "Correo sin configurar",
+      invalid      = "Clave de API inválida"
+    ),
+    detail  = switch(mode,
+      live         = paste0("Remitente: ", from_addr),
+      sandbox      = "RESEND_API_KEY=sandbox. Las invitaciones se registran en el log pero nadie las recibe.",
+      unconfigured = "Falta RESEND_API_KEY en .Renviron. Las invitaciones se guardarán en la cola sin enviarse.",
+      invalid      = "RESEND_API_KEY no empieza con 're_'. Revisa que sea la clave de Resend y no otro valor."
+    )
+  )
+}
 
 # ── Schema ───────────────────────────────────────────────────────────────────
 .schema_email_queue <- function() {
@@ -51,7 +97,7 @@ write_email_queue <- function(q) {
   invisible(TRUE)
 }
 
-.enqueue_email <- function(to, subject, html) {
+.enqueue_email <- function(to, subject, html, error = NA_character_) {
   q <- read_email_queue()
   now <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   new_row <- data.frame(
@@ -63,7 +109,7 @@ write_email_queue <- function(q) {
     queued_at  = now,
     last_tried = NA_character_,
     attempts   = 0L,
-    last_error = NA_character_,
+    last_error = error %||% NA_character_,
     status     = "pending",
     stringsAsFactors = FALSE
   )
@@ -72,17 +118,37 @@ write_email_queue <- function(q) {
 }
 
 # ── Core send ────────────────────────────────────────────────────────────────
-# Returns TRUE on success, FALSE on failure.
+# Returns TRUE on success, or FALSE carrying an "error" attribute on failure.
 # Never throws. On failure, queues for retry.
+#
+# Callers that report to a human MUST branch on the return value. Before
+# 2026-09-30 an empty RESEND_API_KEY was silently treated as sandbox, so the
+# Invitaciones tab said "Invitación enviada" for a mail that was never sent
+# and never queued. Only the literal "sandbox" claims success now.
 send_email <- function(to, subject, html, queue_on_fail = TRUE) {
-  api_key  <- Sys.getenv("RESEND_API_KEY")
-  from_addr <- Sys.getenv("RESEND_FROM_EMAIL")
-  if (!nzchar(from_addr)) from_addr <- "noreply@hopdesk.com"
+  status    <- email_service_status()
+  api_key   <- trimws(Sys.getenv("RESEND_API_KEY"))
+  from_addr <- status$from
+
+  to <- tolower(trimws(to %||% ""))
+  if (!grepl("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", to)) {
+    message("[EMAIL] Refused: invalid recipient '", to, "'")
+    return(structure(FALSE, error = paste0("destinatario inválido: '", to, "'")))
+  }
 
   # Sandbox mode: log and return success without hitting the API
-  if (!nzchar(api_key) || tolower(api_key) == "sandbox") {
+  if (identical(status$mode, "sandbox")) {
     message("[EMAIL][SANDBOX] To: ", to, " | Subject: ", subject)
     return(TRUE)
+  }
+
+  # Not configured / malformed key: do NOT pretend. Queue so nothing is lost
+  # and the operator can retry from the "Cola de emails" panel once the key
+  # is in place.
+  if (!identical(status$mode, "live")) {
+    message("[EMAIL] Not sent (", status$mode, "): ", status$detail)
+    if (queue_on_fail) .enqueue_email(to, subject, html, error = status$detail)
+    return(structure(FALSE, error = status$detail))
   }
 
   body <- jsonlite::toJSON(list(
@@ -102,15 +168,17 @@ send_email <- function(to, subject, html, queue_on_fail = TRUE) {
       body   = body,
       encode = "raw"
     )
-    status <- httr::status_code(resp)
-    if (status %in% c(200L, 201L)) {
+    # NOT named `status` — that would clobber the email_service_status() list
+    # in this frame, since tryCatch evaluates its expr in the caller's env.
+    http_status <- httr::status_code(resp)
+    if (http_status %in% c(200L, 201L)) {
       message("[EMAIL] Sent to ", to, ": ", subject)
       TRUE
     } else {
       msg <- tryCatch(httr::content(resp, as = "text", encoding = "UTF-8"),
-                      error = function(e) as.character(status))
-      message("[EMAIL] API error (", status, "): ", msg)
-      list(ok = FALSE, error = paste0("HTTP ", status, ": ", msg))
+                      error = function(e) as.character(http_status))
+      message("[EMAIL] API error (", http_status, "): ", msg)
+      list(ok = FALSE, error = paste0("HTTP ", http_status, ": ", msg))
     }
   }, error = function(e) {
     message("[EMAIL] Network error: ", e$message)
@@ -119,11 +187,15 @@ send_email <- function(to, subject, html, queue_on_fail = TRUE) {
 
   if (isTRUE(result)) return(TRUE)
 
-  if (queue_on_fail) {
-    err_msg <- if (is.list(result)) result$error else "unknown error"
-    .enqueue_email(to, subject, html)
-  }
-  FALSE
+  err_msg <- if (is.list(result)) result$error else "error desconocido"
+  if (queue_on_fail) .enqueue_email(to, subject, html, error = err_msg)
+  structure(FALSE, error = err_msg)
+}
+
+# Human-readable reason for the last failure of a send_email() call.
+email_error_of <- function(x) {
+  e <- attr(x, "error", exact = TRUE)
+  if (is.null(e) || !nzchar(e %||% "")) "error desconocido" else e
 }
 
 # ── Retry a queued email by id ────────────────────────────────────────────────
@@ -139,10 +211,36 @@ retry_queued_email <- function(queue_id) {
 
   ok <- send_email(row$to, row$subject, row$html, queue_on_fail = FALSE)
 
-  q[idx, "status"]     <- if (ok) "sent" else "failed"
-  if (!ok) q[idx, "last_error"] <- "retry failed"
+  q[idx, "status"]     <- if (isTRUE(ok)) "sent" else "failed"
+  q[idx, "last_error"] <- if (isTRUE(ok)) NA_character_ else email_error_of(ok)
   write_email_queue(q)
-  ok
+  isTRUE(ok)
+}
+
+# ── Retry every pending/failed email in the queue ─────────────────────────────
+# Used by the "Reintentar todo" button after the API key is first installed:
+# everything that piled up while email was unconfigured goes out in one go.
+# Returns list(sent = <int>, failed = <int>).
+retry_all_queued_emails <- function(max_attempts = 5L) {
+  q <- read_email_queue()
+  idx <- which(!is.na(q$status) & q$status %in% c("pending", "failed") &
+               (is.na(q$attempts) | q$attempts < max_attempts))
+  if (!length(idx)) return(list(sent = 0L, failed = 0L))
+
+  now <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+  sent <- 0L; failed <- 0L
+  for (i in idx) {
+    res <- send_email(q$to[i], q$subject[i], q$html[i], queue_on_fail = FALSE)
+    q[i, "last_tried"] <- now
+    q[i, "attempts"]   <- (q$attempts[i] %||% 0L) + 1L
+    if (isTRUE(res)) {
+      q[i, "status"] <- "sent"; q[i, "last_error"] <- NA_character_; sent <- sent + 1L
+    } else {
+      q[i, "status"] <- "failed"; q[i, "last_error"] <- email_error_of(res); failed <- failed + 1L
+    }
+  }
+  write_email_queue(q)
+  list(sent = sent, failed = failed)
 }
 
 # ── Template helpers ──────────────────────────────────────────────────────────
@@ -164,6 +262,40 @@ email_invite_html <- function(display_name, client_name, invite_url, expires_hou
   </p>
 </div>
 ', display_name, client_name, invite_url, expires_hours)
+}
+
+# Sent once the invitee sets their password. The username is DERIVED from the
+# display name at activation time (app.R), so the invitee has no way to know
+# it in advance — without this mail it only ever appeared in a transient
+# showNotification that vanishes after 6 seconds.
+email_welcome_html <- function(display_name, username, client_name, app_url) {
+  sprintf('
+<div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px">
+  <h2 style="color:#c2185b">Tu cuenta de HopDesk está activa</h2>
+  <p>Hola <strong>%s</strong>,</p>
+  <p>Tu cuenta en <strong>%s</strong> quedó activada. Estos son tus datos de acceso:</p>
+  <table style="border-collapse:collapse;width:100%%;margin:16px 0">
+    <tr>
+      <td style="padding:8px;border:1px solid #e5e7eb;color:#6b7280">Usuario</td>
+      <td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">%s</td>
+    </tr>
+    <tr>
+      <td style="padding:8px;border:1px solid #e5e7eb;color:#6b7280">Contrase&ntilde;a</td>
+      <td style="padding:8px;border:1px solid #e5e7eb">La que acabas de crear</td>
+    </tr>
+  </table>
+  <p style="margin:24px 0">
+    <a href="%s"
+       style="background:#c2185b;color:#fff;padding:12px 24px;
+              border-radius:6px;text-decoration:none;font-weight:bold">
+      Entrar a HopDesk
+    </a>
+  </p>
+  <p style="color:#666;font-size:13px">
+    Guarda este correo: tu nombre de usuario no es tu direcci&oacute;n de correo.
+  </p>
+</div>
+', display_name, client_name, username, app_url)
 }
 
 email_password_reset_html <- function(display_name, reset_url, expires_hours = 2) {

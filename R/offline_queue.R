@@ -70,6 +70,7 @@
   data.frame(
     seq                   = integer(0),
     s3_key                = character(0),
+    bucket                 = character(0),
     table_name             = character(0),
     client_id              = character(0),
     expected_sync_version   = integer(0),
@@ -270,7 +271,8 @@
       if (!file.copy(payload_path, dest, overwrite = FALSE)) return(FALSE)
 
       row <- data.frame(
-        seq = seq, s3_key = s3_key, table_name = table_name, client_id = slug,
+        seq = seq, s3_key = s3_key, bucket = .s3_bucket(),
+        table_name = table_name, client_id = slug,
         expected_sync_version = expected_sync_version,
         acting_user = as.character(acting_user %||% NA_character_),
         acting_home_client_id = as.character(acting_home_client_id %||% NA_character_),
@@ -403,6 +405,33 @@
       log_action(user = acting_user, module = "offline_queue", action = "_queue_tenant_mismatch",
                  description = sprintf("Refused to replay seq=%s: s3_key '%s' does not match client_id '%s'",
                                        row$seq, row$s3_key, slug),
+                 target_id = row$table_name, s3_key = row$s3_key,
+                 client_id = slug, viewer_home_client_id = acting_home),
+      error = function(e) NULL
+    )
+    return("blocked")
+  }
+
+  # Environment isolation (2026-09-25). The manifest records which bucket the
+  # write was originally aimed at, because .s3_bucket() answers "which bucket am
+  # I pointed at RIGHT NOW", not "which bucket was this write for" -- and those
+  # differ whenever the process that stages an entry is not the process that
+  # replays it. A write staged by a local dev run (antiguedad-rds-dev) would
+  # otherwise be replayed into whatever bucket the next process happened to
+  # target, silently pushing sandbox rows over real client data in production.
+  # Fail closed on any mismatch, and on entries staged before this field
+  # existed (bucket unknown = not provably safe), and never retry: a bucket
+  # mismatch is a property of the entry, so retrying can only repeat it.
+  entry_bucket <- tryCatch(as.character(row$bucket %||% NA_character_), error = function(e) NA_character_)
+  if (!isTRUE(nzchar(entry_bucket)) || is.na(entry_bucket) ||
+      !identical(entry_bucket, .s3_bucket())) {
+    tryCatch(
+      log_action(user = acting_user, module = "offline_queue", action = "_queue_bucket_mismatch",
+                 description = sprintf(
+                   "Refused to replay seq=%s for table '%s': staged for bucket '%s' but this process targets '%s'.",
+                   row$seq, row$table_name,
+                   if (is.na(entry_bucket) || !nzchar(entry_bucket)) "<unknown>" else entry_bucket,
+                   .s3_bucket()),
                  target_id = row$table_name, s3_key = row$s3_key,
                  client_id = slug, viewer_home_client_id = acting_home),
       error = function(e) NULL

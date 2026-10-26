@@ -41,6 +41,26 @@ PERM_LABELS <- c(
 # Keys that are immutably TRUE for principal accounts — UI renders them as locked.
 .PRINCIPAL_LOCKED_KEYS <- c("can_approve_clients", "can_manage_hopdesk_perms")
 
+# Hopdesk-internal permissions (2026-09-26). A CLIENT session must never see
+# that these exist -- not merely be blocked from granting them. They describe
+# the development company's own internal capabilities (approving clients,
+# managing staff permissions, jumping into client contexts, reading other
+# clients' or Hopdesk's own audit logs) and leak Hopdesk's internal structure
+# to a customer just by being listed. This mirrors TIERS_STAFF_ONLY_TABS
+# (R/tiers_tab_config.R), which already does exactly this for whole tabs.
+PERM_STAFF_ONLY_KEYS <- c(
+  "can_approve_clients", "can_manage_hopdesk_perms", "can_jump_clients",
+  "can_view_client_audit_logs", "can_view_staff_audit_log"
+)
+
+# Permission keys a given viewer may see. Fail-closed: every caller must opt
+# IN to the staff view by passing is_staff = TRUE, so a call site that forgets
+# hides the internal permissions rather than exposing them.
+perm_visible_keys <- function(is_staff) {
+  if (isTRUE(is_staff)) names(PERM_LABELS)
+  else setdiff(names(PERM_LABELS), PERM_STAFF_ONLY_KEYS)
+}
+
 # ── Activity tab views registry (2026-09-03) ─────────────────────────────────
 # The single source of truth for every switchable view inside the Actividad
 # tab (see tiersServer's activity_section below, which is entirely generic
@@ -240,7 +260,8 @@ tiersUI <- function(id) {
 
 # ── Permission editor panel ────────────────────────────────────────────────────
 
-.tiers_perm_editor_ui <- function(ns, row, viewer_tier = "dev", registry = NULL) {
+.tiers_perm_editor_ui <- function(ns, row, viewer_tier = "dev", registry = NULL,
+                                  viewer_is_staff = FALSE) {
   tier <- row$tier %||% "finance"
 
   current_perms <- auth_resolve_perms(tier, row$permisos %||% "{}")
@@ -263,7 +284,7 @@ tiersUI <- function(id) {
   is_dev_tier       <- identical(tier, "dev")
   is_principal_tier <- identical(tier, "principal")
 
-  perm_rows <- lapply(names(PERM_LABELS), function(k) {
+  perm_rows <- lapply(perm_visible_keys(viewer_is_staff), function(k) {
     is_locked <- (is_dev_tier && k == "can_view_tiers") ||
                  (is_principal_tier && k %in% .PRINCIPAL_LOCKED_KEYS)
     is_override <- k %in% names(overrides)
@@ -395,8 +416,9 @@ tiersUI <- function(id) {
 
 # ── Tier config card (one per tier) ───────────────────────────────────────────
 
-.tier_config_card_ui <- function(ns, tier_key, tier_label, defaults, locked = TRUE) {
-  perm_rows <- lapply(names(PERM_LABELS), function(k) {
+.tier_config_card_ui <- function(ns, tier_key, tier_label, defaults, locked = TRUE,
+                                 viewer_is_staff = FALSE) {
+  perm_rows <- lapply(perm_visible_keys(viewer_is_staff), function(k) {
     is_sys_locked <- identical(tier_key, "dev") && k == "can_view_tiers"
     val           <- if (is_sys_locked) TRUE else isTRUE(defaults[[k]])
     # Disable when section is locked OR it's a system-locked permission
@@ -1050,13 +1072,16 @@ tiersServer <- function(id, shared) {
       req(!is.null(usuarios) && idx <= nrow(usuarios))
       registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
       .tiers_perm_editor_ui(ns, usuarios[idx, ], viewer_tier = current_tier(),
-                            registry = registry)
+                            registry = registry,
+                            viewer_is_staff = isTRUE(tryCatch(shared$current_user_info()$is_staff,
+                                                              error = function(e) FALSE)))
     })
 
     observeEvent(input$edit_tier, {
       req(!is.null(selected_user_idx()))
       base_perms <- auth_resolve_perms(input$edit_tier, "{}")
-      for (k in names(PERM_LABELS))
+      for (k in perm_visible_keys(isTRUE(tryCatch(shared$current_user_info()$is_staff,
+                                                  error = function(e) FALSE))))
         updateCheckboxInput(session, paste0("perm_", k), value = isTRUE(base_perms[[k]]))
     }, ignoreInit = TRUE)
 
@@ -1100,8 +1125,19 @@ tiersServer <- function(id, shared) {
 
       base_perms <- auth_resolve_perms(new_tier, "{}")
 
-      overrides <- list()
-      for (k in names(PERM_LABELS)) {
+      # Permissions this viewer never saw were never rendered, so their inputs
+      # do not exist. Reading them would yield NULL -> isTRUE(NULL) == FALSE,
+      # silently rewriting a staff permission to FALSE every time a client
+      # admin edits any user. Carry those stored overrides through untouched
+      # and only recompute the ones actually on screen.
+      vis_keys  <- perm_visible_keys(viewer_is_staff)
+      prev_ovr  <- tryCatch(
+        as.list(jsonlite::fromJSON(usuarios[idx, "permisos"] %||% "{}")),
+        error = function(e) list()
+      )
+      overrides <- prev_ovr[setdiff(names(prev_ovr), vis_keys)]
+
+      for (k in vis_keys) {
         if (identical(new_tier, "dev") && k == "can_view_tiers") next
         val <- isTRUE(input[[paste0("perm_", k)]])
         if (!identical(val, isTRUE(base_perms[[k]]))) overrides[[k]] <- val
@@ -1486,13 +1522,10 @@ tiersServer <- function(id, shared) {
 
       # Email to all HopDesk staff with can_manage_invites
       tryCatch({
-        hd_staff <- auth_load_usuarios(client_id = "hd-admin")
-        staff_emails <- hd_staff[
-          (is.na(hd_staff$deleted) | hd_staff$deleted != TRUE) &
-          isTRUE(hd_staff$can_manage_invites) &
-          !is.na(hd_staff$email) & nzchar(hd_staff$email %||% ""),
-          "email", drop = TRUE
-        ]
+        # Was filtering on hd_staff$can_manage_invites, which is a resolved
+        # permission and not a column -- so this list was always empty and
+        # the request never reached anyone. See hd_staff_emails_with_perm().
+        staff_emails <- hd_staff_emails_with_perm("can_manage_invites")
         if (length(staff_emails)) {
           html <- email_user_request_html(dname, cur, max, contact)
           subj <- sprintf("[HopDesk] Solicitud de más usuarios — %s", dname)
@@ -2450,7 +2483,28 @@ tiersServer <- function(id, shared) {
       pending_q <- email_q[!is.na(email_q$status) & email_q$status == "pending", , drop = FALSE]
       failed_q  <- email_q[!is.na(email_q$status) & email_q$status == "failed",  , drop = FALSE]
 
+      # Delivery mode is invisible from the UI otherwise: in sandbox or with a
+      # missing key the form looks identical while nobody receives anything.
+      esvc <- tryCatch(email_service_status(),
+                       error = function(e) list(mode = "unconfigured",
+                                                label = "Estado desconocido",
+                                                detail = ""))
+
       tagList(
+        div(
+          class = paste0("alert d-flex align-items-start gap-2 mt-3 mb-0 py-2 ",
+                         if (isTRUE(esvc$mode == "live")) "alert-success" else "alert-warning"),
+          icon(if (isTRUE(esvc$mode == "live")) "circle-check" else "triangle-exclamation",
+               class = "mt-1"),
+          div(
+            tags$strong(esvc$label),
+            tags$div(class = "small", esvc$detail),
+            if (!isTRUE(esvc$mode == "live"))
+              tags$div(class = "small text-muted mt-1",
+                       "Las invitaciones se siguen creando y el enlace se muestra al enviarlas, ",
+                       "pero hay que compartirlo a mano. Ver docs/EMAIL_SERVICE_RUNBOOK.md.")
+          )
+        ),
         div(
           class = "mt-3",
           fluidRow(
@@ -2530,9 +2584,13 @@ tiersServer <- function(id, shared) {
               if (nrow(pending_q) + nrow(failed_q) > 0) {
                 div(
                   class = "card border-0 shadow-sm",
-                  div(class = "card-header bg-white py-2 fw-semibold",
+                  div(class = "card-header bg-white py-2 fw-semibold d-flex justify-content-between align-items-center",
                       tagList(icon("triangle-exclamation", style = "color:#e65100"),
-                              " Cola de emails")),
+                              sprintf(" Cola de emails (%d)",
+                                      nrow(pending_q) + nrow(failed_q))),
+                      actionButton(ns("btn_email_retry_all"),
+                                   tagList(icon("rotate"), " Reintentar todo"),
+                                   class = "btn btn-outline-primary btn-sm py-0")),
                   div(
                     class = "card-body p-0",
                     tags$table(
@@ -2619,11 +2677,41 @@ tiersServer <- function(id, shared) {
         if (length(idx)) registry$display_name[idx[1]] else client_in
       }
       html_body <- email_invite_html(dname_in, client_name, invite_url)
-      send_email(to = email_in,
-                 subject = paste0("Invitación a HopDesk — ", client_name),
-                 html    = html_body)
+      sent <- send_email(to = email_in,
+                         subject = paste0("Invitación a HopDesk — ", client_name),
+                         html    = html_body)
       output$inv_send_error <- renderUI(NULL)
-      showNotification(paste0("Invitación enviada a ", email_in), type = "message", duration = 4)
+
+      # The token is valid whether or not the mail went out, so ALWAYS surface
+      # the link: if delivery failed, staff can still hand it over by other
+      # means instead of the invitee waiting for a mail that never arrives.
+      showModal(modalDialog(
+        title = if (isTRUE(sent))
+          tagList(icon("paper-plane"), " Invitación enviada")
+        else
+          tagList(icon("triangle-exclamation"), " Invitación creada — correo NO enviado"),
+        if (isTRUE(sent)) {
+          tags$p("Se envió un correo a ", tags$strong(email_in),
+                 ". El enlace expira en 48 horas.")
+        } else {
+          tagList(
+            tags$p(class = "text-danger",
+                   "La invitación existe, pero el correo no pudo enviarse: ",
+                   tags$strong(email_error_of(sent))),
+            tags$p(class = "small text-muted",
+                   "Quedó en la cola de emails para reintentar. Mientras tanto, ",
+                   "comparte manualmente el enlace de activación:")
+          )
+        },
+        tags$div(
+          class = "mt-2",
+          tags$label(class = "form-label small fw-semibold", "Enlace de activación"),
+          tags$input(type = "text", class = "form-control form-control-sm",
+                     readonly = NA, value = invite_url,
+                     onclick = "this.select()")
+        ),
+        footer = modalButton("Cerrar"), easyClose = TRUE, size = "l"
+      ))
       invites_refresh(invites_refresh() + 1L)
       # Real gap, not just unlogged noise: this creates a usable signup
       # token bound to a tier and a specific client -- exactly the kind of
@@ -2636,11 +2724,15 @@ tiersServer <- function(id, shared) {
         user        = shared$current_user(),
         module      = "invites",
         action      = "enviar_invitacion",
-        description = sprintf("Invitación enviada a %s (%s) para '%s', tier %s",
-                              email_in, dname_in, client_in, tier_in),
+        description = sprintf("Invitación creada para %s (%s) en '%s', tier %s — correo: %s",
+                              email_in, dname_in, client_in, tier_in,
+                              if (isTRUE(sent)) "enviado" else
+                                paste0("NO enviado (", email_error_of(sent), ")")),
         target_id   = token,
         s3_key      = .INVITES_KEY,
-        metadata    = list(email = email_in, display_name = dname_in, tier = tier_in),
+        metadata    = list(email = email_in, display_name = dname_in, tier = tier_in,
+                           email_sent = isTRUE(sent),
+                           email_mode = email_service_status()$mode),
         client_id             = client_in,
         viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
       ), error = function(e) NULL)
@@ -2671,6 +2763,28 @@ tiersServer <- function(id, shared) {
         ), error = function(e) NULL)
       }
       invites_refresh(invites_refresh() + 1L)
+    }, ignoreInit = TRUE)
+
+    # Drains everything that piled up while email was unconfigured — the
+    # normal first action after installing the Resend key.
+    observeEvent(input$btn_email_retry_all, {
+      req(isTRUE(is_hopdesk()) || isTRUE(is_principal()))
+      res <- tryCatch(retry_all_queued_emails(),
+                      error = function(e) list(sent = 0L, failed = 0L))
+      showNotification(
+        sprintf("Reintento de cola: %d enviado(s), %d fallido(s).", res$sent, res$failed),
+        type = if (res$failed > 0L) "warning" else "message", duration = 6
+      )
+      invites_refresh(invites_refresh() + 1L)
+      tryCatch(log_action(
+        user        = shared$current_user(),
+        module      = "invites",
+        action      = "reintentar_cola_email",
+        description = sprintf("Reintento masivo de la cola de emails: %d enviado(s), %d fallido(s)",
+                              res$sent, res$failed),
+        client_id             = "hd-admin",
+        viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
+      ), error = function(e) NULL)
     }, ignoreInit = TRUE)
 
     observeEvent(input$email_retry_id, {
@@ -3769,7 +3883,9 @@ tiersServer <- function(id, shared) {
       has_next  <- cur_idx < length(tier_keys)
       defaults  <- get_tier_defaults(sel_tier)
 
-      perm_rows <- lapply(names(PERM_LABELS), function(k) {
+      perm_rows <- lapply(perm_visible_keys(isTRUE(tryCatch(
+                            shared$current_user_info()$is_staff,
+                            error = function(e) FALSE))), function(k) {
         is_sys_locked <- identical(sel_tier, "dev") && k == "can_view_tiers"
         val           <- if (is_sys_locked) TRUE else isTRUE(defaults[[k]])
         is_disabled   <- locked || is_sys_locked

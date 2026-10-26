@@ -729,7 +729,16 @@ settings_companies_observer <- function(input, output, session, shared) {
 
   # ── Apply: confirmed → compute and save ───────────────────────────────────
   observeEvent(input$cmp_apply_confirm, {
-    scope   <- isolate(input$cmp_apply_scope) %||% "all"
+    # scope default (fixed 2026-09-26): this used to fall back to "all", the
+    # ONE scope that deletes manual date overrides (see the prune block at the
+    # end of this handler). A Shiny radio that has not rendered yet reports
+    # NULL -- the same hidden-widget-never-fires-its-initial-value trap this
+    # codebase has hit before -- so a confirm arriving before the modal's
+    # radio initialised silently ran the destructive scope and wiped every
+    # manual move for every computed document. "new" is additive-only and
+    # matches what the automatic post-SAP-refresh path does, so a missing
+    # input can now only under-apply, never destroy.
+    scope   <- isolate(input$cmp_apply_scope) %||% "new"
     pp_all  <- .get_pp_cmp()
     catalog <- .get_catalog_cmp()
     sap     <- .prep_sap(tryCatch(shared$sap_data(), error = function(e) list()))
@@ -922,10 +931,15 @@ settings_companies_observer <- function(input, output, session, shared) {
       if (scope == "all") {
         man_db <- tryCatch(shared$moves_db(), error = function(e) NULL)
         if (!is.null(man_db) && nrow(man_db)) {
-          pol_keys <- paste(new_moves$Empresa, new_moves$Moneda,
-                            new_moves$Documento, sep = "·")
-          man_keys <- paste(man_db$Empresa, man_db$Moneda,
-                            man_db$Documento, sep = "·")
+          # ledger included (fixed 2026-09-26): every other key in this
+          # function is (ledger, Empresa, Moneda, Documento) -- only this
+          # prune built a weaker one. AR and AP legitimately reuse the same
+          # document number, so an AR policy silently matched, and deleted,
+          # the manual move of the SAME-numbered AP invoice (and vice versa).
+          pol_keys <- paste(new_moves$ledger, new_moves$Empresa,
+                            new_moves$Moneda, new_moves$Documento, sep = "·")
+          man_keys <- paste(man_db$ledger, man_db$Empresa,
+                            man_db$Moneda, man_db$Documento, sep = "·")
           pruned <- man_db[!man_keys %in% pol_keys, , drop = FALSE]
           if (nrow(pruned) < nrow(man_db)) {
             save_moves(pruned, client_id = shared$effective_client_id())
