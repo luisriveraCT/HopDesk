@@ -20,3 +20,9 @@ S3_BUCKET=antiguedad-rds-dev
 AWS_ACCESS_KEY_ID=REPLACE_ME
 AWS_SECRET_ACCESS_KEY=REPLACE_ME
 AWS_DEFAULT_REGION=us-east-1
+
+# Correo: mantiene el envio REAL apagado en local. .Renviron trae la clave de
+# produccion (viaja en el bundle de shinyapps.io); este archivo se lee despues
+# y la sobreescribe. Dejalo en "sandbox" salvo que estes probando entrega real
+# a proposito.
+RESEND_API_KEY=sandbox

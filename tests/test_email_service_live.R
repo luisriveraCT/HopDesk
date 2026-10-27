@@ -62,8 +62,71 @@ Sys.setenv(RESEND_API_KEY = "re_abc123FAKEKEYfortests")
 # from address falls back when RESEND_FROM_EMAIL is blank
 .saved_from <- Sys.getenv("RESEND_FROM_EMAIL")
 Sys.setenv(RESEND_FROM_EMAIL = "")
-.chk(email_service_status()$from, "noreply@hopdesk.com", "status: blank from -> default sender")
+.chk(email_service_status()$from, "noreply@mail.hopdesk.app", "status: blank from -> default sender")
 Sys.setenv(RESEND_FROM_EMAIL = .saved_from)
+
+# ── A2. .resend_body(): the JSON Resend actually receives ────────────────────
+# Caught live on 2026-10-27 against the real API: `to = list(to)` serialised to
+# {"to":[["x@y.com"]]} and EVERY send came back 422 "The `to` field must be a
+# `string`". Nothing in the suite noticed, because sandbox mode returns before
+# the payload is ever built. These assertions look at the bytes on the wire.
+
+body <- as.character(.resend_body("HopDesk <noreply@mail.hopdesk.app>",
+                                  "ana@empresa.com", "Asunto", "<p>hola</p>"))
+.chk(grepl('"to":\\["ana@empresa.com"\\]', body, fixed = FALSE), TRUE,
+     "payload: `to` is a flat array of strings, NOT a nested array")
+.chk(grepl('"to":\\[\\[', body), FALSE,
+     "payload: no double-wrapped `to` (the exact 422 bug)")
+.chk(grepl('"from":"HopDesk <noreply@mail.hopdesk.app>"', body, fixed = TRUE), TRUE,
+     "payload: `from` carries the RFC 5322 display name, as a bare string")
+.chk(grepl('"subject":"Asunto"', body, fixed = TRUE), TRUE,
+     "payload: `subject` is a bare string")
+.chk(isTRUE(jsonlite::validate(body)), TRUE, "payload: is valid JSON")
+
+parsed <- jsonlite::fromJSON(body, simplifyVector = FALSE)
+# Checked after parsing, not on the raw bytes: jsonlite escapes the forward
+# slash (`<\/p>`), which is a legal JSON escape and round-trips correctly.
+.chk(parsed$html, "<p>hola</p>", "payload: `html` round-trips to the exact HTML")
+.chk(is.character(parsed$from) && length(parsed$from) == 1L, TRUE,
+     "payload: parses back with a scalar `from`")
+.chk(length(parsed$to) == 1L && is.character(parsed$to[[1]]), TRUE,
+     "payload: parses back with exactly one recipient string")
+.chk(is.null(parsed$reply_to), TRUE,
+     "payload: reply_to omitted when not configured")
+.chk(parsed$text, "hola", "payload: carries a plain-text alternative")
+
+body_rt <- as.character(.resend_body("HopDesk <noreply@mail.hopdesk.app>",
+                                     "ana@empresa.com", "Asunto", "<p>hola</p>",
+                                     reply_to = "soporte@empresa.com"))
+.chk(jsonlite::fromJSON(body_rt, simplifyVector = FALSE)$reply_to,
+     "soporte@empresa.com", "payload: reply_to included when configured")
+
+# ── A3. .html_to_text() ──────────────────────────────────────────────────────
+# A plain-text part that swallows the activation link is worse than none.
+inv_html <- email_invite_html("Ana", "ACME",
+                              "https://app.example.com/?invite=TOK123", 48)
+txt <- .html_to_text(inv_html)
+.chk(grepl("https://app.example.com/?invite=TOK123", txt, fixed = TRUE), TRUE,
+     "html->text: the activation URL survives")
+.chk(grepl("Activar mi cuenta: https://app.example.com/?invite=TOK123", txt,
+           fixed = TRUE), TRUE,
+     "html->text: label and URL stay on ONE line, not split by a stray colon")
+.chk(grepl("(^|\n):", txt), FALSE,
+     "html->text: no line begins with an orphaned colon")
+.chk(grepl("<", txt, fixed = TRUE), FALSE, "html->text: no leftover tags")
+.chk(grepl("&nbsp;|&#[0-9]+;|&aacute;", txt), FALSE,
+     "html->text: entities decoded or dropped, none left raw")
+.chk(grepl("Ana", txt, fixed = TRUE) && grepl("ACME", txt, fixed = TRUE), TRUE,
+     "html->text: the substituted names survive")
+.chk(nzchar(.html_to_text(NULL)), FALSE, "html->text: NULL is safe")
+
+# The limit templates use numeric entities and nested tables -- the shape most
+# likely to leave garbage behind.
+lim_txt <- .html_to_text(email_user_limit_reached_html("ACME", 10L, 10L))
+.chk(grepl("ACME", lim_txt, fixed = TRUE), TRUE,
+     "html->text: table-based template still yields its content")
+.chk(grepl("10 / 10", lim_txt, fixed = TRUE), TRUE,
+     "html->text: table cells are separated, not glued together")
 
 # ── B. send_email() tells the truth ──────────────────────────────────────────
 

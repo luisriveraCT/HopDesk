@@ -28,7 +28,19 @@
 email_service_status <- function() {
   api_key   <- trimws(Sys.getenv("RESEND_API_KEY"))
   from_addr <- trimws(Sys.getenv("RESEND_FROM_EMAIL"))
-  if (!nzchar(from_addr)) from_addr <- "noreply@hopdesk.com"
+  if (!nzchar(from_addr)) from_addr <- "noreply@mail.hopdesk.app"
+
+  # Gmail shows the local part of the address as the sender name when the From
+  # header carries no display name -- the 2026-10-27 test landed in the inbox
+  # as a bare "onboarding". A display name makes the invitation read as coming
+  # from HopDesk, which is also what keeps people from reporting it as phishing.
+  from_name <- trimws(Sys.getenv("RESEND_FROM_NAME"))
+  if (!nzchar(from_name)) from_name <- "HopDesk"
+
+  # Replies to an invitation have nowhere to land otherwise: the only MX on the
+  # sending subdomain is Amazon SES's return path, so anything a confused
+  # invitee sends back bounces into the void. Empty = header omitted.
+  reply_to <- trimws(Sys.getenv("RESEND_REPLY_TO"))
 
   mode <- if (!nzchar(api_key)) {
     "unconfigured"
@@ -41,9 +53,13 @@ email_service_status <- function() {
   }
 
   list(
-    mode    = mode,
-    live    = identical(mode, "live"),
-    from    = from_addr,
+    mode        = mode,
+    live        = identical(mode, "live"),
+    from        = from_addr,
+    from_name   = from_name,
+    # RFC 5322 display-name form, which is what actually goes on the wire.
+    from_header = sprintf('%s <%s>', from_name, from_addr),
+    reply_to    = reply_to,
     label   = switch(mode,
       live         = "Envío de correo activo",
       sandbox      = "Modo sandbox — no se envía correo real",
@@ -51,7 +67,8 @@ email_service_status <- function() {
       invalid      = "Clave de API inválida"
     ),
     detail  = switch(mode,
-      live         = paste0("Remitente: ", from_addr),
+      live         = paste0("Remitente: ", from_name, " <", from_addr, ">",
+                            if (nzchar(reply_to)) paste0(" · Respuestas a: ", reply_to) else ""),
       sandbox      = "RESEND_API_KEY=sandbox. Las invitaciones se registran en el log pero nadie las recibe.",
       unconfigured = "Falta RESEND_API_KEY en .Renviron. Las invitaciones se guardarán en la cola sin enviarse.",
       invalid      = "RESEND_API_KEY no empieza con 're_'. Revisa que sea la clave de Resend y no otro valor."
@@ -117,6 +134,64 @@ write_email_queue <- function(q) {
   message("[EMAIL] Queued (", to, "): ", subject)
 }
 
+# ── Payload ──────────────────────────────────────────────────────────────────
+# Builds the JSON body Resend expects. Split out of send_email() so it can be
+# asserted in tests WITHOUT hitting the network -- the bug below was invisible
+# to the whole suite precisely because sandbox mode never serialises anything.
+#
+# `to = list(to)` produced {"to":[["x@y.com"]]} -- a nested array -- because
+# with auto_unbox = FALSE the inner length-1 character vector ALREADY becomes
+# an array, and list() wrapped it a second time. Resend answers
+# 422 "The `to` field must be a `string`" and NOTHING would have been
+# delivered in production. I() marks the vector as-is, giving {"to":["x@y.com"]},
+# which is what the API documents (string or array of strings).
+.resend_body <- function(from_header, to, subject, html, reply_to = "") {
+  payload <- list(
+    from    = jsonlite::unbox(from_header),
+    to      = I(to),
+    subject = jsonlite::unbox(subject),
+    html    = jsonlite::unbox(html),
+    # HTML-only messages score worse with spam filters than multipart ones,
+    # and some corporate clients render the plain part only. Derived from the
+    # HTML so the two can never drift apart.
+    text    = jsonlite::unbox(.html_to_text(html))
+  )
+  if (nzchar(reply_to %||% "")) payload$reply_to <- jsonlite::unbox(reply_to)
+  jsonlite::toJSON(payload, auto_unbox = FALSE)
+}
+
+# ── HTML → texto plano ────────────────────────────────────────────────────────
+# Deliberately small: these are our own four templates, not arbitrary HTML.
+# The one thing it must not do is lose the link -- an invitation whose plain
+# part has no URL is useless to anyone reading the text alternative.
+.html_to_text <- function(html) {
+  x <- html %||% ""
+  # Surface each anchor's href next to its label before the tags are stripped.
+  # (?s) is load-bearing: our templates put the href and the link label on
+  # separate lines, and without it `.` stops at the newline, the match fails,
+  # and the <a> tag is later stripped WITH the URL inside it -- a plain-text
+  # invitation with no link at all.
+  x <- gsub('(?s)<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>', '\\2: \\1', x, perl = TRUE)
+  # The captured label keeps the newlines the template indents it with, which
+  # would otherwise orphan the URL on its own line under a stray colon:
+  #   Activar mi cuenta
+  #   : https://...
+  x <- gsub('[[:space:]]*\n[[:space:]]*:[ \t]*', ': ', x, perl = TRUE)
+  x <- gsub("<br[^>]*>|</p>|</div>|</tr>|</h[1-6]>", "\n", x, perl = TRUE)
+  x <- gsub("</td>", " ", x, perl = TRUE)
+  x <- gsub("<[^>]+>", "", x, perl = TRUE)
+  # Entities our templates actually emit, plus the always-present ampersand.
+  ents <- c("&nbsp;" = " ", "&aacute;" = "a", "&eacute;" = "e", "&iacute;" = "i",
+            "&oacute;" = "o", "&uacute;" = "u", "&ntilde;" = "n", "&Aacute;" = "A",
+            "&quot;" = '"', "&#39;" = "'", "&lt;" = "<", "&gt;" = ">", "&amp;" = "&")
+  for (e in names(ents)) x <- gsub(e, ents[[e]], x, fixed = TRUE)
+  # Drop the numeric entities used for the emoji/warning glyphs in the headers.
+  x <- gsub("&#[0-9]+;", "", x, perl = TRUE)
+  x <- gsub("[ \t]+", " ", x, perl = TRUE)
+  x <- gsub(" *\n[ \n]*", "\n", x, perl = TRUE)
+  trimws(x)
+}
+
 # ── Core send ────────────────────────────────────────────────────────────────
 # Returns TRUE on success, or FALSE carrying an "error" attribute on failure.
 # Never throws. On failure, queues for retry.
@@ -128,7 +203,6 @@ write_email_queue <- function(q) {
 send_email <- function(to, subject, html, queue_on_fail = TRUE) {
   status    <- email_service_status()
   api_key   <- trimws(Sys.getenv("RESEND_API_KEY"))
-  from_addr <- status$from
 
   to <- tolower(trimws(to %||% ""))
   if (!grepl("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", to)) {
@@ -151,12 +225,8 @@ send_email <- function(to, subject, html, queue_on_fail = TRUE) {
     return(structure(FALSE, error = status$detail))
   }
 
-  body <- jsonlite::toJSON(list(
-    from    = jsonlite::unbox(from_addr),
-    to      = list(to),
-    subject = jsonlite::unbox(subject),
-    html    = jsonlite::unbox(html)
-  ), auto_unbox = FALSE)
+  body <- .resend_body(status$from_header, to, subject, html,
+                       reply_to = status$reply_to)
 
   result <- tryCatch({
     resp <- httr::POST(

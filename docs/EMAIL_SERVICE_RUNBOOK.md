@@ -14,21 +14,62 @@
 | Creación de invitación + token + enlace de activación | ✅ Funciona |
 | Pantalla de activación (`?invite=<token>` en `app.R`) | ✅ Funciona |
 | Cola de reintentos en `hd-admin/email_queue.rds` | ✅ Funciona |
-| **Envío real de correo** | ❌ **Apagado** — `RESEND_API_KEY=sandbox` |
-| **Cuenta de Resend** | ❌ No existe |
-| **Dominio verificado para enviar** | ❌ No existe |
+| **Envío real de correo (producción)** | ⚠️ Clave real puesta, falta **redesplegar** |
+| **Envío real de correo (local)** | ✅ `sandbox` a propósito, vía `.Renviron.local` |
+| **Cuenta de Resend** | ✅ Creada, plan Free |
+| **API key en `.Renviron`** | ✅ Instalada y probada contra la API real |
+| **Entrega real verificada** | ✅ 3 correos a Primary de Gmail, no a Spam |
+| **Dominio propio** | ✅ **`hopdesk.app`** (Porkbun, hasta 2028-10-27) |
+| **Registros DNS en Porkbun** | ✅ Los 4 creados vía API el 2026-10-27, resuelven públicamente |
+| **Dominio verificado en Resend** | ❌ **Pendiente** — falta pulsar `Verify DNS Records` |
 
-El único bloqueo real es **el dominio**. Sin un dominio verificado en Resend,
-la API responde `403` a cualquier destinatario que no sea el correo del dueño
-de la cuenta. Este runbook resuelve eso.
+**Lo único que falta son los 3 registros DNS de la sección 3.** Verificado
+contra la API real el 2026-10-27: la clave funciona y está correctamente
+restringida a solo-envío, las dos plantillas (invitación y bienvenida) se
+entregan bien, y el error que devuelve hoy el remitente definitivo es
+exactamente el esperado:
 
-> `hopdesk.com` **no es tuyo**: está estacionado en Afternic (está en venta).
-> El código lo trae de fábrica como remitente por defecto, pero es un
-> *placeholder*, no un dominio que controles.
+```
+HTTP 403: The hopdesk.app domain is not verified.
+```
+
+Sin dominio verificado, Resend sólo entrega desde `onboarding@resend.dev` y
+sólo al correo del dueño de la cuenta.
+
+> `hopdesk.com` **no es tuyo** (está estacionado en Afternic, en venta) y no
+> hace falta: el dominio del producto es **`hopdesk.app`**. El código ya usa
+> `noreply@mail.hopdesk.app` como remitente por defecto.
 
 ---
 
-## 1. Decidir el dominio remitente (la única decisión real)
+## 1. Dominio remitente — **RESUELTO (2026-10-27)**
+
+> **Dominio:** `hopdesk.app`, registrado en **Porkbun** (vence 2028-10-27).
+> **Nameservers:** `curitiba / fortaleza / maceio / salvador .ns.porkbun.com`.
+> **Se verifica en Resend el SUBDOMINIO `mail.hopdesk.app`.**
+> **Remitente final:** `noreply@mail.hopdesk.app`.
+
+### Por qué un subdominio
+
+Es lo que recomienda Resend y es la decisión del 2026-10-27: **aísla por
+completo la reputación de envío transaccional del correo humano** que algún día
+viva en `hopdesk.app` (`soporte@`, `ventas@`). Si un buzón humano se compromete
+o alguien marca un correo como spam, las invitaciones no se ven arrastradas —
+y al revés.
+
+Un matiz que conviene tener claro, porque invierte la intuición: **Resend no
+pone su SPF en el dominio que verificas**, sino en `send.<dominio>` — el
+*return-path* de Amazon SES. Verificar `mail.hopdesk.app` crea entonces los
+registros bajo `send.mail.hopdesk.app`. Ese anidamiento se ve raro en el panel
+de DNS pero es correcto y esperado.
+
+Consecuencia directa: **el DMARC necesita alineación relajada (`aspf=r`)**,
+porque el remitente es `@mail.hopdesk.app` mientras el SPF se valida contra
+`send.mail.hopdesk.app`. Con `aspf=s` esa diferencia contaría como desalineada
+y DMARC fallaría en todos los correos.
+
+Si algún día HopDesk manda marketing o boletines, ésos van en **otro**
+subdominio (`news.hopdesk.app`) — nunca mezclados con las invitaciones.
 
 ### ⚠️ Lo que NO hay que hacer
 
@@ -44,42 +85,27 @@ algo que no sea Exchange Online se rechaza. Para meter a Resend ahí habría que
 tocar el SPF del dominio corporativo — es decir, arriesgar el correo de toda la
 empresa para mandar invitaciones. No vale la pena.
 
-### Opción A — Dominio propio de HopDesk *(recomendada)*
+`hopdesk.app` resuelve esto de raíz: es un dominio propio del producto, sin
+correo corporativo que arriesgar. Una invitación que llegara desde
+`@networkslogistics.com.mx` además le diría al cliente que está entrando a un
+sistema interno de Networks, no a una plataforma.
 
-Registra un dominio para el producto y verifica en Resend el **subdominio**
-`send.<tu-dominio>`.
+### Nota sobre la URL de la app
 
-- Sondeo DNS del 2026-09-30 (indicativo, confírmalo en el registrador):
-  `hopdesk.mx`, `hopdesk.com.mx`, `hopdesk.app` y `gethopdesk.com` **no tienen
-  NS** → probablemente libres. `hopdesk.io` y `hopdesk.com` están tomados.
-- Costo: ~**$15–40 USD/año** según extensión (`.mx` suele ir arriba de `.com`).
-- Registrador sugerido: el mismo **GoDaddy** donde ya tienes
-  `networkslogistics.com.mx` (los NS son `ns23/ns24.domaincontrol.com`), para
-  administrar todo el DNS en un solo panel.
+El correo sale de `@mail.hopdesk.app`, pero el **enlace de activación apunta a
+`https://1weh8r-luis-rivera.shinyapps.io/Hopdesk/`** — la app construye el
+enlace desde `session$clientData`, así que refleja dónde está corriendo de
+verdad. Es una inconsistencia **cosmética**, no funcional: el enlace sirve.
 
-**Por qué es la recomendada:** HopDesk se está vendiendo como producto a
-terceros. Una invitación que llega desde `@networkslogistics.com.mx` le dice al
-cliente que está entrando a un sistema interno de Networks, no a una
-plataforma. Además aísla la reputación de envío: si mañana un cliente marca una
-invitación como spam, eso no toca el correo corporativo.
+Decisión del 2026-10-27: **se queda así por ahora.** Un dominio personalizado
+en shinyapps.io exige el plan Professional (~$299 USD/mes), desproporcionado
+para esto. Si algún día se migra (Posit Connect Cloud, o el `docker-compose.yml`
++ `nginx.conf.template` que ya están en el repo), el enlace se corrige solo —
+no hay nada que cambiar en el código del correo.
 
-### Opción B — Subdominio de Networks *(salida rápida)*
-
-Si necesitas mandar invitaciones **esta semana** sin esperar la compra:
-verifica `hopdesk.networkslogistics.com.mx` en Resend.
-
-- Costo: **$0**. El dominio ya es tuyo y el DNS ya está en GoDaddy.
-- El SPF/DKIM del subdominio es **independiente** del raíz: Exchange Online no
-  se entera y no se toca.
-- Remitente: `noreply@hopdesk.networkslogistics.com.mx`.
-
-Es perfectamente válido y migrable después (Resend permite 3 dominios en el
-plan gratuito, así que puedes tener los dos y cambiar `RESEND_FROM_EMAIL`
-cuando el dominio propio esté listo).
-
-**Recomendación concreta:** arranca con **B** hoy para no frenar las
-invitaciones, y registra el dominio de **A** en paralelo. La migración después
-es cambiar una línea en `.Renviron` y redesplegar.
+> `.app` está en la lista HSTS precargada: **cualquier** cosa que se sirva en
+> ese dominio tiene que ser HTTPS obligatoriamente. Irrelevante para el correo,
+> importante el día que se monte la app ahí.
 
 ---
 
@@ -134,49 +160,93 @@ CFDI**.
 ## 3. Verificar el dominio en Resend
 
 1. `Domains → Add Domain`.
-2. Escribe el subdominio de envío, **no el raíz**:
-   - Opción A → `send.hopdesk.mx`
-   - Opción B → `hopdesk.networkslogistics.com.mx`
-3. Región: elige **`us-east-1`** (mismo continente que tus usuarios y que el
-   bucket S3; menor latencia y nada que reconfigurar después).
-4. Resend te muestra **tres registros DNS**. Son, en forma:
+2. Escribe **`mail.hopdesk.app`** (el subdominio completo, tal cual).
+3. Región: deja **`us-east-1`** (es el valor por omisión, bajo *Advanced
+   options*; mismo continente que tus usuarios y que el bucket S3). Elegir otra
+   cambia los valores de los registros, así que decídelo antes de capturarlos,
+   no después.
+4. Resend te muestra los registros. **Ojo: hay dos esquemas distintos.**
 
-| Tipo | Nombre / Host | Valor | Prioridad |
+   Resend cambió de esquema a mediados de 2026. Los dominios dados de alta
+   **antes de agosto de 2026** reciben `MX` + `TXT` de SPF (Amazon SES). Los
+   **posteriores** reciben **dos `CNAME`** apuntando a `...mta.net`.
+   `mail.hopdesk.app` se dio de alta el 2026-10-27, así que le tocó el
+   esquema nuevo:
+
+| Sección en Resend | Tipo | Host | Valor |
 |---|---|---|---|
-| `MX` | `send` | `feedback-smtp.us-east-1.amazonses.com` | `10` |
-| `TXT` | `send` | `v=spf1 include:amazonses.com ~all` | — |
-| `TXT` | `resend._domainkey` | `p=MIGfMA0GCSq...` (clave larga) | — |
+| Domain Verification · DKIM | `TXT` | `resend._domainkey.mail` | `p=MIGfMA0GCSq...` |
+| Enable Sending · SPF | `CNAME` | `rsend.mail` | `rsend.<...>.mta.net` |
+| Enable Sending · SPF | `CNAME` | `send.mail` | `send.<...>.mta.net` |
+| DMARC (opcional) | `TXT` | `_dmarc` | ver sección 4 |
 
-> **Copia los valores del panel, no de esta tabla.** La clave DKIM es única por
-> dominio y cambia. La tabla es para que reconozcas la forma de lo que vas a pegar.
+> **Copia los valores con el botón de copiar del panel, nunca de esta tabla ni
+> seleccionando a mano.** Son únicos por dominio, y la pantalla los **trunca
+> con `...`** — pegar un valor truncado produce un registro que se ve bien y
+> nunca verifica.
 
-### Cómo capturarlos en GoDaddy
+**Los dos CNAME se verifican por separado.** Si sólo pasa uno, el dominio queda
+`partially_verified`: envía, pero sin servidor de respaldo. Pon los dos.
 
-`Mis productos → DNS → Administrar zonas → <tu dominio> → Agregar registro`.
+#### Lo que NO hay que capturar
 
-GoDaddy pide el **host relativo**, no el nombre completo. La regla:
+- **Tracking (`CNAME links.mail`)**: reescribe los enlaces del correo para
+  medir aperturas y clics. En una invitación eso convierte una URL de
+  `hopdesk.app` en una de un tercero — justo lo que entrena a la gente a
+  desconfiar de un correo. No lo necesitamos.
+- **Enable Receiving**: déjalo apagado. Las respuestas se resuelven con la
+  cabecera `Reply-To`, no recibiendo correo (ver sección 5).
 
-- Si verificaste `send.hopdesk.mx` en el dominio `hopdesk.mx`:
-  host `send` y `resend._domainkey.send`
-- Si verificaste `hopdesk.networkslogistics.com.mx` dentro de
-  `networkslogistics.com.mx`:
-  host `send.hopdesk` y `resend._domainkey.hopdesk`
+### Cómo capturarlos en Porkbun
 
-Es decir: **quítale el dominio raíz al nombre que muestra Resend y pega el
-resto.** Este es el paso donde falla el 90 % de las verificaciones.
+Tres caminos, de menos a más trabajo.
 
-- TTL: deja el predeterminado (1 hora).
-- **No pongas comillas** alrededor del valor TXT en GoDaddy; las agrega solo.
-- Si el registrador ofrece "proxy"/CDN, déjalo **desactivado** (es DNS puro).
+**a) El botón `Go to Porkbun` de Resend.** Resend detecta el proveedor y lo
+ofrece en la misma pantalla. Si captura los registros solo, ya terminaste.
 
-5. De vuelta en Resend, `Verify DNS Records`. Normalmente tarda **15 minutos**;
-   puede tardar hasta 24–48 h si GoDaddy es lento en propagar.
+**b) Automatizado.** `scripts/porkbun_dns_resend.R` los crea vía la API de
+Porkbun, leyendo `scripts/resend_dns_records.tsv`:
+
+```powershell
+cd C:\Users\luisr\Antiguedad_App
+Rscript --vanilla scripts/porkbun_dns_resend.R            # prueba, no escribe
+Rscript --vanilla scripts/porkbun_dns_resend.R --apply    # escribe
+```
+
+Necesita `PORKBUN_API_KEY` / `PORKBUN_SECRET_KEY` en `.Renviron` (crear en
+<https://porkbun.com/account/api>) y `API ACCESS = ON` en el dominio. Borra la
+llave cuando termines: sólo se usa una vez.
+
+El script normaliza el host, es idempotente, no pisa un registro que ya exista
+con otro valor, y **rechaza cualquier valor que traiga `...`**.
+
+**c) A mano.** <https://porkbun.com/account/dns/hopdesk.app>.
+
+**Porkbun pide el host RELATIVO** y le agrega `.hopdesk.app` solo. En este
+esquema el panel de Resend ya los muestra relativos (`send.mail`,
+`resend._domainkey.mail`), así que se pegan tal cual. Si alguna vez los
+mostrara completos, quítales `.hopdesk.app`: pegarlos completos produce
+`send.mail.hopdesk.app.hopdesk.app`, el error número uno de este trámite.
+
+Detalles de Porkbun que importan:
+
+- **No pongas comillas** alrededor de los valores TXT; Porkbun las agrega sola.
+- TTL mínimo **600**. El panel de Resend dice "Auto"; 600 está bien.
+- La clave DKIM es larga y **no debe llevar saltos de línea**.
+- El dominio trae registros de *parking* (`ALIAS` raíz y `CNAME www`).
+  **Déjalos**: no estorban.
+- Si activas el **Email Forwarding gratuito de Porkbun** (para tener
+  `soporte@hopdesk.app`), agrega sus `MX` y `SPF` **en la raíz**. No hay
+  conflicto: lo de Resend vive bajo `.mail`.
+
+5. De vuelta en Resend, `Verify DNS Records`. Con Porkbun suele tardar
+   **menos de 15 minutos**; dale hasta unas horas antes de preocuparte.
 6. Confirma desde tu máquina antes de seguir:
 
 ```powershell
-nslookup -type=TXT resend._domainkey.send.hopdesk.mx
-nslookup -type=MX  send.hopdesk.mx
-nslookup -type=TXT send.hopdesk.mx
+nslookup -type=MX  send.mail.hopdesk.app
+nslookup -type=TXT send.mail.hopdesk.app
+nslookup -type=TXT resend._domainkey.mail.hopdesk.app
 ```
 
 El dominio debe quedar en **`Verified`** (verde) en Resend. No sigas hasta eso.
@@ -185,14 +255,29 @@ El dominio debe quedar en **`Verified`** (verde) en Resend. No sigas hasta eso.
 
 ## 4. Endurecer la entregabilidad (10 min, hazlo)
 
-Una vez verificado el dominio (SPF y DKIM ya pasan), agrega **DMARC** en GoDaddy.
+Una vez verificado el dominio (SPF y DKIM ya pasan), agrega **DMARC** en Porkbun.
 Sin esto, Gmail y Outlook mandan invitaciones a Spam con más frecuencia.
 
-Empieza en modo observación:
+Empieza en modo observación — un cuarto registro, mismo panel de DNS:
 
-| Tipo | Host | Valor |
-|---|---|---|
-| `TXT` | `_dmarc.send` *(o `_dmarc.send.hopdesk`)* | `v=DMARC1; p=none; rua=mailto:suscripciones@networkslogistics.com.mx; pct=100; aspf=r; adkim=r` |
+| Type | Host | Answer | TTL |
+|---|---|---|---|
+| `TXT` | `_dmarc` | `v=DMARC1; p=none; rua=mailto:suscripciones@networkslogistics.com.mx; pct=100; aspf=r; adkim=r` | `600` |
+
+El `aspf=r` (alineación relajada) **no es opcional aquí**: tu remitente es
+`@mail.hopdesk.app` pero el SPF se valida contra `send.mail.hopdesk.app`. Con
+`aspf=s` (estricta) esa diferencia se consideraría desalineada y DMARC fallaría
+en todos los correos.
+
+El registro va en el host `_dmarc` (la raíz), **no** en `_dmarc.mail`: cuando un
+receptor no encuentra DMARC en `mail.hopdesk.app` lo busca en el dominio
+organizacional `hopdesk.app` y aplica ése. Un solo registro cubre el subdominio
+de envío y cualquier correo futuro en la raíz.
+
+Resend sugiere en su panel un `v=DMARC1; p=none;` pelón. El de arriba es el
+mismo con `rua=` añadido, que es lo que hace la diferencia: sin esa dirección
+**nadie te manda los reportes**, y entonces `p=none` no sirve de nada — su
+único propósito es observar durante dos semanas antes de endurecer.
 
 Déjalo en `p=none` **dos semanas**, revisa que no lleguen reportes de fallo, y
 sólo entonces súbelo a `p=reject`.
@@ -210,8 +295,27 @@ sólo entonces súbelo a `p=reject`.
 
 ```
 RESEND_API_KEY=re_TuClaveRealAqui
-RESEND_FROM_EMAIL=noreply@send.hopdesk.mx
+RESEND_FROM_EMAIL=noreply@mail.hopdesk.app
 ```
+
+> **Ya hecho (2026-10-27).** La clave está instalada y verificada contra la API
+> real de Resend. Lo único que falta es que el dominio quede `Verified`.
+
+### Producción envía, local nunca
+
+`.Renviron` lleva la clave real porque **viaja dentro del bundle** de
+shinyapps.io. Pero ese mismo archivo se lee en cada corrida local, así que
+cualquier prueba en tu máquina que tocara una invitación habría mandado correo
+de verdad a un cliente real.
+
+Por eso `.Renviron.local` ahora trae `RESEND_API_KEY=sandbox`. Se lee **después**
+de `.Renviron` y lo sobreescribe (`R/global.R`), y `.rscignore` lo excluye del
+deploy — exactamente la misma mecánica que ya protege el bucket de desarrollo.
+Resultado: **producción manda correo real, local se queda en sandbox**, sin que
+tengas que acordarte de nada.
+
+Si alguna vez necesitas probar entrega real desde tu máquina, comenta esa línea
+en `.Renviron.local` y vuelve a ponerla al terminar.
 
 `RESEND_FROM_EMAIL` **tiene que ser del dominio verificado**. Si dejas
 `noreply@hopdesk.com` con una clave real, Resend devuelve `403` en cada envío.
@@ -252,7 +356,7 @@ desarrollo y nunca debe llegar a producción).
 
 1. Entra a producción: <https://1weh8r-luis-rivera.shinyapps.io/Hopdesk/>
 2. `Grupo → Invitaciones`. Arriba debe verse un banner **verde**:
-   *"Envío de correo activo — Remitente: noreply@send.hopdesk.mx"*.
+   *"Envío de correo activo — Remitente: noreply@mail.hopdesk.app"*.
    Si sale amarillo, la clave no llegó al bundle → repite el paso 6.
 3. Mándate una invitación a ti mismo a un correo **externo** (Gmail personal,
    no el corporativo: quieres probar entregabilidad real).
@@ -297,14 +401,16 @@ después del despliegue.
 
 ## 9. Resumen de costos
 
-| Concepto | Costo | Cuándo |
+| Concepto | Costo | Estado |
 |---|---|---|
-| Resend Free | **$0** | Ahora. Suficiente para el volumen actual |
-| Dominio `.mx` / `.com` (opción A) | **~$15–40 USD/año** | Opcional, recomendado para el producto |
-| Subdominio de Networks (opción B) | **$0** | Si arrancas hoy |
-| Resend Pro | **$20 USD/mes** | Sólo al pasar de 100 correos/día o necesitar logs >30 días |
+| `hopdesk.app` (Porkbun, 2 años) | ya pagado | ✅ Hasta 2028-10-27 |
+| Resend **Free** | **$0** | ⬅ **Lo que necesitas ahora.** 3,000 correos/mes contra ~150 de consumo real |
+| DNS en Porkbun | $0 | Incluido con el dominio |
+| Resend **Pro** | $20 USD/mes | Sólo al pasar de 100 correos/día o si necesitas logs de entrega de más de 30 días |
+| Dominio propio en shinyapps.io | $299 USD/mes | ❌ Descartado 2026-10-27, desproporcionado |
 
-**Arranque mínimo viable: $0.**
+**Costo adicional para encender el correo hoy: $0.** Lo único que falta es
+tiempo: ~20 min de captura + la espera de propagación DNS.
 
 ---
 
@@ -336,5 +442,39 @@ después del despliegue.
     solo `FALSE` — descartaba a todos los contactos de alerta.
 - `app.R` — al activar la cuenta, modal persistente con el nombre de usuario
   (antes sólo un aviso de 6 segundos) + correo de bienvenida.
-- `tests/test_email_service_live.R` — 43 aserciones nuevas sobre todo lo anterior,
-  registradas en `tests/_run_saas.R`. Suite completa: **1,731 passed, 0 failed**.
+### 2026-10-27 — al conectar la API real
+
+- **`R/email_service.R` — bug que habría tirado el 100 % de los correos.**
+  El cuerpo JSON se construía con `to = list(to)` y `auto_unbox = FALSE`, lo
+  que producía `{"to":[["x@y.com"]]}` — un array anidado. La API responde
+  `422 The 'to' field must be a 'string'`. **Ningún envío habría salido en
+  producción.** La suite no lo veía porque el modo sandbox retorna antes de
+  serializar nada. Se extrajo `.resend_body()` para poder afirmarlo sin red, y
+  se corrigió con `I(to)` → `{"to":["x@y.com"]}`.
+- Remitente por defecto: `noreply@hopdesk.com` (dominio ajeno) →
+  `noreply@mail.hopdesk.app`.
+- `.Renviron.local` fija `RESEND_API_KEY=sandbox` para que **local nunca mande
+  correo real** mientras producción sí (ver sección 5).
+- **`From` con nombre visible.** La primera prueba llegó a Gmail firmada como
+  un escueto "onboarding": sin *display name*, el cliente de correo muestra
+  sólo la parte local de la dirección. Ahora va
+  `HopDesk <noreply@mail.hopdesk.app>`, configurable con `RESEND_FROM_NAME`.
+- **`Reply-To`.** El único MX de `mail.hopdesk.app` es el *return-path* de
+  Amazon SES, así que ese buzón no recibe nada: la respuesta de un invitado
+  confundido rebotaba al vacío. Ahora se manda `RESEND_REPLY_TO`
+  (`suscripciones@networkslogistics.com.mx`). Vacío = cabecera omitida.
+- **Parte de texto plano.** Los correos sólo-HTML puntúan peor en los filtros
+  de spam y algunos clientes corporativos sólo renderizan el texto.
+  `.html_to_text()` la deriva del propio HTML — no puede desfasarse — y
+  **conserva las URLs**: una invitación cuyo texto plano perdiera el enlace no
+  serviría de nada.
+
+### Dónde se verificó
+
+Contra la API real, no contra mocks. Las tres plantillas se entregaron a
+**Primary de Gmail, no a Spam**, antes siquiera de tener el dominio verificado.
+
+### 2026-09-30 — la implementación original
+
+- `tests/test_email_service_live.R` — 63 aserciones sobre todo lo anterior,
+  registradas en `tests/_run_saas.R`. Suite completa: **1,751 passed, 0 failed**.

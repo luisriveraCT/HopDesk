@@ -1,0 +1,23 @@
+# Registros DNS que Resend pide para verificar mail.hopdesk.app.
+# Los lee scripts/porkbun_dns_resend.R y los crea via la API de Porkbun.
+#
+# Capturados del panel de Resend el 2026-10-27 (esquema CNAME, el que reciben
+# los dominios dados de alta despues de agosto de 2026).
+#
+# Los valores se copian con el BOTON DE COPIAR de cada fila: la pantalla los
+# trunca con "..." y el script rechaza cualquier valor truncado.
+# El 'host' puede ir relativo ("send.mail") o completo: el script lo normaliza.
+# 'prio' solo aplica a MX. Separador: TABULADOR.
+#
+# NO se incluye el CNAME de "Tracking" (links.mail) a proposito: reescribe los
+# enlaces del correo para medir aperturas y clics, lo que convertiria la URL de
+# activacion en una de un tercero. En una invitacion eso es justo lo que
+# entrena a la gente a desconfiar.
+#
+# "Enable Receiving" tambien se queda apagado: las respuestas se resuelven con
+# la cabecera Reply-To (RESEND_REPLY_TO en .Renviron), no recibiendo correo.
+type	host	content	prio
+TXT	resend._domainkey.mail	p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCmkuxVpIPfIBcYBiNxCzO3viB4C0XVLcAIJSPyFmZNHZY/3MOexncMEHIdPU8pkzWk5N1YluGuDBUcfri230P+cdopGf/th+6QK/te4eLjebWt5WKhsHeC5Wi4hSULPjEej2fEEXERyTr8tmCUDbCX9HiNCtLi8Cig/m0U3iRu2QIDAQAB
+CNAME	rsend.mail	rsend.forge.rmta.net
+CNAME	send.mail	send.forge.rmta.net
+TXT	_dmarc	v=DMARC1; p=none; rua=mailto:suscripciones@networkslogistics.com.mx; pct=100; aspf=r; adkim=r
