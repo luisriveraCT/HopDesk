@@ -93,6 +93,12 @@ parsed <- jsonlite::fromJSON(body, simplifyVector = FALSE)
      "payload: parses back with exactly one recipient string")
 .chk(is.null(parsed$reply_to), TRUE,
      "payload: reply_to omitted when not configured")
+
+# Un TRUE con atributos debe seguir pasando isTRUE(), porque TODOS los call
+# sites lo usan. Si alguien cambiara isTRUE por identical(TRUE, x), cada envío
+# exitoso se leeria como fallo.
+.chk(isTRUE(structure(TRUE, resend_id = "abc")), TRUE,
+     "contract: isTRUE() tolera el atributo resend_id del valor de retorno")
 .chk(parsed$text, "hola", "payload: carries a plain-text alternative")
 
 body_rt <- as.character(.resend_body("HopDesk <noreply@mail.hopdesk.app>",

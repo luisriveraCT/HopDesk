@@ -41,6 +41,14 @@ PERM_LABELS <- c(
 # Keys that are immutably TRUE for principal accounts — UI renders them as locked.
 .PRINCIPAL_LOCKED_KEYS <- c("can_approve_clients", "can_manage_hopdesk_perms")
 
+# Tiers an invitation may create. Deliberately excludes dev / hopdesk /
+# principal: an invite link is a credential that arrives by email, so it must
+# never be able to mint a staff account or a client's own IT account. Promoting
+# someone to those happens in Grupo -> Usuarios, by a human who already has the
+# authority. One list drives BOTH the dropdown and the server-side check, so
+# they cannot drift apart.
+.INVITABLE_TIERS <- c("analysis", "finance", "admin")
+
 # Hopdesk-internal permissions (2026-09-26). A CLIENT session must never see
 # that these exist -- not merely be blocked from granting them. They describe
 # the development company's own internal capabilities (approving clients,
@@ -489,6 +497,13 @@ tiersServer <- function(id, shared) {
     # touching.
     current_client_id <- reactive({
       tryCatch(shared$effective_client_id(), error = function(e) tolower(Sys.getenv("CLIENT_ID")))
+    })
+
+    # Hopdesk's own staff vs. a client's user. Fails CLOSED: if the viewer's
+    # identity can't be resolved we treat them as a client, so a half-loaded
+    # session can never be mistaken for staff.
+    viewer_is_staff <- reactive({
+      isTRUE(tryCatch(shared$current_user_info()$is_staff, error = function(e) FALSE))
     })
 
     # ── Stage 2 Part C: dynamic tab bar ───────────────────────────────────────
@@ -2477,7 +2492,28 @@ tiersServer <- function(id, shared) {
       invites <- tryCatch(read_pending_invites(), error = function(e) .schema_pending_invites())
       registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
       active_clients <- registry[registry$status == "active", , drop = FALSE]
-      client_choices <- setNames(active_clients$client_id, active_clients$display_name)
+
+      # ── Alcance por tenant ──────────────────────────────────────────────────
+      # pending_invites.rds es UN SOLO archivo global en hd-admin/ con una
+      # columna client_id por fila. Sin filtrar aquí, el dev de un cliente veía
+      # los correos, nombres y tiers de TODOS los demás clientes, y podía
+      # elegir cualquier cliente destino -- incluido hd-admin. Staff ve todo
+      # porque su trabajo es dar de alta clientes; un cliente ve lo suyo.
+      staff_view <- isTRUE(viewer_is_staff())
+      own_client <- current_client_id()
+      own_label  <- {
+        idx <- which(registry$client_id == own_client)
+        if (length(idx)) registry$display_name[idx[1]] else own_client
+      }
+
+      client_choices <- if (staff_view)
+        setNames(active_clients$client_id, active_clients$display_name)
+      else
+        setNames(own_client, own_label)
+
+      if (!staff_view)
+        invites <- invites[!is.na(invites$client_id) & invites$client_id == own_client,
+                           , drop = FALSE]
 
       email_q <- tryCatch(read_email_queue(), error = function(e) .schema_email_queue())
       pending_q <- email_q[!is.na(email_q$status) & email_q$status == "pending", , drop = FALSE]
@@ -2520,10 +2556,26 @@ tiersServer <- function(id, shared) {
                             placeholder = "usuario@empresa.com"),
                   textInput(ns("inv_display_name"), "Nombre para mostrar",
                             placeholder = "Ej: Ana Martínez"),
-                  selectInput(ns("inv_client_id"),  "Cliente destino",
-                              choices = client_choices, width = "100%"),
+                  # Staff elige el cliente destino porque da de alta clientes.
+                  # Un cliente no: su cuenta vive en su carpeta y no sale de
+                  # ahí. Se muestra de todas formas, en gris, para que quede
+                  # claro dónde va a caer la cuenta. El valor NO se toma del
+                  # navegador — ver el handler de btn_send_invite.
+                  if (staff_view)
+                    selectInput(ns("inv_client_id"), "Cliente destino",
+                                choices = client_choices,
+                                selected = own_client, width = "100%")
+                  else
+                    div(
+                      class = "mb-3",
+                      tags$label(class = "form-label", "Cliente destino"),
+                      tags$input(type = "text", class = "form-control",
+                                 readonly = NA, value = own_label),
+                      tags$div(class = "form-text",
+                               "Las invitaciones que creas pertenecen a tu empresa.")
+                    ),
                   selectInput(ns("inv_tier"), "Tier inicial",
-                              choices = c("analysis", "finance", "admin"),
+                              choices = .INVITABLE_TIERS,
                               width = "100%"),
                   uiOutput(ns("inv_send_error")),
                   div(
@@ -2581,7 +2633,9 @@ tiersServer <- function(id, shared) {
                 )
               ),
               # ── Email queue panel ──────────────────────────────────────────
-              if (nrow(pending_q) + nrow(failed_q) > 0) {
+              # Sólo staff. La cola vive en hd-admin/email_queue.rds y es
+              # global: muestra destinatarios y asuntos de TODOS los clientes.
+              if (staff_view && nrow(pending_q) + nrow(failed_q) > 0) {
                 div(
                   class = "card border-0 shadow-sm",
                   div(class = "card-header bg-white py-2 fw-semibold d-flex justify-content-between align-items-center",
@@ -2633,11 +2687,40 @@ tiersServer <- function(id, shared) {
     output$inv_send_error <- renderUI(NULL)
 
     observeEvent(input$btn_send_invite, {
-      req(isTRUE(is_hopdesk()) || isTRUE(is_principal()))
+      # La UI dejaba entrar a dev (un cliente onboardea a su propio equipo),
+      # pero este gate sólo admitía hopdesk/principal: req() abortaba en
+      # silencio y el botón "Enviar" NO HACÍA NADA para ese usuario, sin un
+      # solo mensaje de error. Los dos gates tienen que decir lo mismo.
+      req(isTRUE(is_hopdesk()) || isTRUE(is_principal()) || isTRUE(is_dev()))
+
       email_in   <- tolower(trimws(input$inv_email        %||% ""))
       dname_in   <- trimws(input$inv_display_name %||% "")
-      client_in  <- input$inv_client_id
-      tier_in    <- input$inv_tier %||% "analysis"
+
+      # ── El alcance de tenant se decide AQUÍ, no en el navegador ────────────
+      # Para quien no es staff, input$inv_client_id se ignora por completo.
+      # Esconder el desplegable no es seguridad: un Shiny.setInputValue desde
+      # la consola del navegador bastaría para sembrar una cuenta dentro de
+      # otro cliente, o dentro de hd-admin.
+      client_in <- if (isTRUE(viewer_is_staff()))
+        trimws(input$inv_client_id %||% "")
+      else
+        current_client_id()
+
+      if (!nzchar(client_in %||% "")) {
+        output$inv_send_error <- renderUI(
+          tags$p(class = "text-danger small mt-1", "No se pudo determinar el cliente destino."))
+        return()
+      }
+
+      # Mismo razonamiento para el tier: el desplegable sólo ofrece estos tres,
+      # así que cualquier otro valor llegó forjado. Sin esto, una invitación
+      # podría crear una cuenta 'principal' o 'hopdesk'.
+      tier_in <- trimws(input$inv_tier %||% "analysis")
+      if (!tier_in %in% .INVITABLE_TIERS) {
+        output$inv_send_error <- renderUI(
+          tags$p(class = "text-danger small mt-1", "Tier no permitido."))
+        return()
+      }
 
       if (!grepl("^[^@]+@[^@]+\\.[^@]+$", email_in)) {
         output$inv_send_error <- renderUI(
@@ -2741,6 +2824,7 @@ tiersServer <- function(id, shared) {
     observeEvent(input$btn_inv_refresh, { invites_refresh(invites_refresh() + 1L) })
 
     observeEvent(input$inv_revoke_token, {
+      req(isTRUE(is_hopdesk()) || isTRUE(is_principal()) || isTRUE(is_dev()))
       token <- input$inv_revoke_token
       req(nzchar(token %||% ""))
       invites <- tryCatch(read_pending_invites(), error = function(e) NULL)
@@ -2749,6 +2833,14 @@ tiersServer <- function(id, shared) {
       if (length(idx)) {
         inv_client <- invites$client_id[idx[1]]
         inv_email  <- invites$email[idx[1]]
+        # El token viaja en el onclick del botón, así que cualquiera puede
+        # mandar uno arbitrario. Sin esta comprobación, un cliente podía
+        # revocar la invitación de OTRO cliente con sólo conocer su token.
+        if (!isTRUE(viewer_is_staff()) && !identical(inv_client, current_client_id())) {
+          showNotification("Esa invitación no pertenece a tu empresa.",
+                           type = "error", duration = 5)
+          return()
+        }
         invites[idx[1], "status"] <- "revoked"
         tryCatch(write_pending_invites(invites), error = function(e) NULL)
         tryCatch(log_action(
@@ -2788,6 +2880,10 @@ tiersServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$email_retry_id, {
+      # La cola es global de hd-admin: reintentar desde aquí reenvía correo de
+      # cualquier cliente. El panel ya es staff-only, pero el input llega por
+      # un onclick y el gate tiene que estar tambien en el servidor.
+      req(isTRUE(is_hopdesk()) || isTRUE(is_principal()))
       queue_id <- input$email_retry_id
       req(nzchar(queue_id %||% ""))
       ok <- tryCatch(retry_queued_email(queue_id), error = function(e) FALSE)

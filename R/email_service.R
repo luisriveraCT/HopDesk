@@ -242,8 +242,16 @@ send_email <- function(to, subject, html, queue_on_fail = TRUE) {
     # in this frame, since tryCatch evaluates its expr in the caller's env.
     http_status <- httr::status_code(resp)
     if (http_status %in% c(200L, 201L)) {
-      message("[EMAIL] Sent to ", to, ": ", subject)
-      TRUE
+      # Resend devuelve un id por mensaje. Es la ÚNICA forma de correlacionar
+      # "la app dice que lo mandó" con lo que el panel de Resend reporta como
+      # entregado o rebotado: un 200 significa "lo acepté", no "llegó".
+      # Sin esto, un "no me llegó nada" no se puede investigar.
+      sent_id <- tryCatch(
+        jsonlite::fromJSON(httr::content(resp, as = "text", encoding = "UTF-8"))$id,
+        error = function(e) NULL
+      )
+      message("[EMAIL] Sent to ", to, " (id ", sent_id %||% "?", "): ", subject)
+      structure(TRUE, resend_id = sent_id)
     } else {
       msg <- tryCatch(httr::content(resp, as = "text", encoding = "UTF-8"),
                       error = function(e) as.character(http_status))
@@ -255,7 +263,8 @@ send_email <- function(to, subject, html, queue_on_fail = TRUE) {
     list(ok = FALSE, error = e$message)
   })
 
-  if (isTRUE(result)) return(TRUE)
+  # `result`, no TRUE: devolverlo pelón tiraba el atributo resend_id.
+  if (isTRUE(result)) return(result)
 
   err_msg <- if (is.list(result)) result$error else "error desconocido"
   if (queue_on_fail) .enqueue_email(to, subject, html, error = err_msg)
