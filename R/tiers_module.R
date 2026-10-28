@@ -2754,30 +2754,31 @@ tiersServer <- function(id, shared) {
         idx <- which(registry$client_id == client_in)
         if (length(idx)) registry$display_name[idx[1]] else client_in
       }
-      # Who the invitee should answer. Looked up in the INVITER's own client,
-      # not in client_in: staff invite into tenants they are not members of,
-      # so their account lives elsewhere. Both fields are best-effort -- an
-      # account with no email on file just yields an unsigned invitation with
-      # no Reply-To, which is better than naming the wrong person.
-      inviter <- tryCatch({
+      # The NAME of whoever pressed Enviar, so the mail can say who invited
+      # them -- an invitation that names its sender is the difference between
+      # "I'll click this" and "I'll ask someone first". Only the name: the
+      # address is deliberately not read, because the mail carries no
+      # Reply-To (see email_service_status()) and these invitations go to
+      # people who are not users yet.
+      #
+      # Looked up in the INVITER's own client, not in client_in: staff invite
+      # into tenants they are not members of, so their account lives
+      # elsewhere. Best-effort -- failing to resolve it drops the name from
+      # the sentence rather than inventing one.
+      inviter_name <- tryCatch({
         me  <- shared$current_user() %||% ""
         cid <- shared$current_user_info()$client_id %||% ""
         u   <- auth_load_usuarios(client_id = cid)
         idx <- which(tolower(u$username) == tolower(me) & !(u$deleted %in% TRUE))
-        if (length(idx)) {
-          nm <- trimws(u$display_name[idx[1]] %||% "")
-          em <- trimws(u$email[idx[1]] %||% "")
-          list(name  = if (is.na(nm) || !nzchar(nm)) me else nm,
-               email = if (is.na(em)) "" else em)
-        } else list(name = "", email = "")
-      }, error = function(e) list(name = "", email = ""))
+        nm  <- if (length(idx)) trimws(u$display_name[idx[1]] %||% "") else ""
+        if (is.na(nm) || !nzchar(nm)) me else nm
+      }, error = function(e) "")
 
       html_body <- email_invite_html(dname_in, client_name, invite_url,
-                                     inviter_name = inviter$name)
-      sent <- send_email(to       = email_in,
-                         subject  = paste0("Invitación a HopDesk — ", client_name),
-                         html     = html_body,
-                         reply_to = inviter$email)
+                                     inviter_name = inviter_name)
+      sent <- send_email(to      = email_in,
+                         subject = paste0("Invitación a HopDesk — ", client_name),
+                         html    = html_body)
       output$inv_send_error <- renderUI(NULL)
 
       # The token is valid whether or not the mail went out, so ALWAYS surface

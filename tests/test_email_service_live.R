@@ -92,7 +92,7 @@ parsed <- jsonlite::fromJSON(body, simplifyVector = FALSE)
 .chk(length(parsed$to) == 1L && is.character(parsed$to[[1]]), TRUE,
      "payload: parses back with exactly one recipient string")
 .chk(is.null(parsed$reply_to), TRUE,
-     "payload: reply_to omitted when not configured")
+     "payload: no reply_to -- la cabecera se eliminó a propósito (2026-10-28)")
 
 # Un TRUE con atributos debe seguir pasando isTRUE(), porque TODOS los call
 # sites lo usan. Si alguien cambiara isTRUE por identical(TRUE, x), cada envío
@@ -101,11 +101,8 @@ parsed <- jsonlite::fromJSON(body, simplifyVector = FALSE)
      "contract: isTRUE() tolera el atributo resend_id del valor de retorno")
 .chk(parsed$text, "hola", "payload: carries a plain-text alternative")
 
-body_rt <- as.character(.resend_body("HopDesk <noreply@mail.hopdesk.app>",
-                                     "ana@empresa.com", "Asunto", "<p>hola</p>",
-                                     reply_to = "soporte@empresa.com"))
-.chk(jsonlite::fromJSON(body_rt, simplifyVector = FALSE)$reply_to,
-     "soporte@empresa.com", "payload: reply_to included when configured")
+# El Reply-To ya no es configurable. Ver tests/test_email_templates.R para las
+# aserciones que impiden que vuelva a colarse.
 
 # ── A3. .html_to_text() ──────────────────────────────────────────────────────
 # A plain-text part that swallows the activation link is worse than none.

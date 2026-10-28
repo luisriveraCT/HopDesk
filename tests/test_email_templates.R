@@ -99,61 +99,57 @@ local({
          paste0(nm, ": ya no usa el rosa que no casaba con la página de activación"))
   }
 
-  # ── C. Reply-To ────────────────────────────────────────────────────────────
-  # El default global va VACÍO a propósito: hopdesk.app no tiene MX, así que
-  # ninguna dirección del dominio recibe, y apuntar a un buzón ajeno lo expone
-  # a cada invitado.
+  # ── C. Sin Reply-To ────────────────────────────────────────────────────────
+  # Decisión del 2026-10-28, no un valor por omisión: hopdesk.app no tiene MX
+  # (nada del dominio recibe), un buzón corporativo quedaba expuesto a cada
+  # invitado, y el correo de quien invita es una dirección del staff que no
+  # tiene por qué llegarle a alguien que todavía no es usuario.
+  #
+  # Estas aserciones existen para que nadie lo "restaure" sin querer.
+  cuerpo <- .resend_body("HopDesk <n@m.app>", "a@b.com", "asunto", "<p>h</p>")
+  .chk(grepl("reply_to", cuerpo, fixed = TRUE), FALSE,
+       "payload: el JSON a Resend no lleva la clave reply_to")
+  .chk(grepl('"from"', cuerpo, fixed = TRUE) && grepl('"text"', cuerpo, fixed = TRUE), TRUE,
+       "payload: sigue llevando from y la parte de texto plano")
+
+  .chk("reply_to" %in% names(formals(send_email)), FALSE,
+       "send_email() ya no acepta una dirección de respuesta")
+  .chk("reply_to" %in% names(formals(.resend_body)), FALSE,
+       ".resend_body() ya no acepta una dirección de respuesta")
+  .chk("reply_to" %in% names(email_service_status()), FALSE,
+       "email_service_status() ya no publica un reply_to")
+
+  # La variable de entorno quedó muerta: ponerla NO debe revivir la cabecera.
+  # Es el modo realista de que esto se rompa — alguien la hereda de un
+  # .Renviron viejo y asume que sigue funcionando.
   old <- Sys.getenv("RESEND_REPLY_TO", unset = NA)
   on.exit({
     if (is.na(old)) Sys.unsetenv("RESEND_REPLY_TO") else Sys.setenv(RESEND_REPLY_TO = old)
   }, add = TRUE)
+  Sys.setenv(RESEND_REPLY_TO = "nodeberia@aparecer.com")
+  .chk(grepl("nodeberia@aparecer.com",
+             .resend_body("H <n@m.app>", "a@b.com", "s", "<p>h</p>"), fixed = TRUE), FALSE,
+       "RESEND_REPLY_TO quedó muerta: ponerla no revive la cabecera")
 
-  Sys.unsetenv("RESEND_REPLY_TO")
-  .chk(email_service_status()$reply_to, "", "Reply-To global: vacío cuando no hay variable")
-
-  # "none" y no "" porque readRenviron() SALTA las líneas `NOMBRE=` sin valor:
-  # un vacío en .Renviron.local NO sobreescribe lo que puso .Renviron.
-  Sys.setenv(RESEND_REPLY_TO = "none")
-  .chk(email_service_status()$reply_to, "", "Reply-To global: el centinela 'none' lo apaga")
-  Sys.setenv(RESEND_REPLY_TO = "NONE")
-  .chk(email_service_status()$reply_to, "", "Reply-To global: el centinela ignora mayúsculas")
-  Sys.setenv(RESEND_REPLY_TO = "soporte@ejemplo.com")
-  .chk(email_service_status()$reply_to, "soporte@ejemplo.com",
-       "Reply-To global: una dirección real sí pasa")
-
-  # El cuerpo JSON sólo lleva la cabecera cuando hay dirección.
-  .chk(grepl("reply_to", .resend_body("H <n@m.app>", "a@b.com", "s", "<p>h</p>",
-                                      reply_to = ""), fixed = TRUE), FALSE,
-       "payload: sin dirección no se manda la cabecera reply_to")
-  .chk(grepl('"reply_to":"x@y.com"',
-             .resend_body("H <n@m.app>", "a@b.com", "s", "<p>h</p>",
-                          reply_to = "x@y.com"), fixed = TRUE), TRUE,
-       "payload: con dirección se manda tal cual")
-
-  .chk("reply_to" %in% names(formals(send_email)), TRUE,
-       "send_email() acepta un Reply-To por mensaje")
-
-  # Una dirección mal formada NO debe tumbar la invitación con un 422 de
-  # Resend: degrada al default global.
   src <- readLines("R/email_service.R", warn = FALSE, encoding = "UTF-8")
-  i <- grep("rt <- tolower\\(trimws\\(reply_to", src)
-  .chk(length(i), 1L, "send_email(): normaliza el reply_to recibido")
-  .chk(any(grepl("rt <- status\\$reply_to", src[i:(i + 6)])), TRUE,
-       "send_email(): un reply_to inválido cae al default, no falla el envío")
+  .chk(any(grepl("Sys.getenv\\(\"RESEND_REPLY_TO\"\\)", src)), FALSE,
+       "email_service: ya nadie lee RESEND_REPLY_TO")
 
-  # ── El sitio de llamada resuelve al invitador ──────────────────────────────
+  # ── El sitio de llamada nombra al invitador, pero NO lee su correo ──────────
   tm <- readLines("R/tiers_module.R", warn = FALSE, encoding = "UTF-8")
-  j <- grep("inviter <- tryCatch", tm)
-  .chk(length(j), 1L, "tiers_module: resuelve quién invita antes de mandar")
-  blk <- paste(tm[j:(j + 16)], collapse = "\n")
+  j <- grep("inviter_name <- tryCatch", tm)
+  .chk(length(j), 1L, "tiers_module: resuelve el nombre de quien invita")
+  blk <- paste(tm[j:(j + 10)], collapse = "\n")
   # El staff invita a inquilinos de los que NO es miembro: su cuenta vive en su
   # propio cliente, no en el de destino. Buscarlo en client_in daría vacío.
   .chk(grepl("current_user_info\\(\\)\\$client_id", blk), TRUE,
        "tiers_module: busca al invitador en SU cliente, no en el de destino")
   .chk(grepl("client_in", blk), FALSE,
        "tiers_module: no usa el cliente destino para resolver al invitador")
-  .chk(any(grepl("reply_to = inviter\\$email", tm)), TRUE,
-       "tiers_module: el Reply-To de la invitación es quien la envió")
-  .chk(any(grepl("inviter_name = inviter\\$name", tm)), TRUE,
-       "tiers_module: la plantilla recibe el nombre de quien invita")
+  .chk(grepl("\\$email", blk), FALSE,
+       "tiers_module: NO lee el correo del invitador (no hay a dónde mandarlo)")
+  .chk(any(grepl("reply_to", tm)), FALSE,
+       "tiers_module: ninguna llamada pasa una dirección de respuesta")
+  .chk(any(grepl("inviter_name = inviter_name", tm)), TRUE,
+       "tiers_module: la plantilla sí recibe el nombre de quien invita")
 })

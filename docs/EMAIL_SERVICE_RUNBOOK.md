@@ -195,7 +195,7 @@ CFDI**.
   `hopdesk.app` en una de un tercero — justo lo que entrena a la gente a
   desconfiar de un correo. No lo necesitamos.
 - **Enable Receiving**: déjalo apagado. Las respuestas se resuelven con la
-  cabecera `Reply-To`, no recibiendo correo (ver sección 5).
+  cabecera `Reply-To` — que hoy no se manda —, no recibiendo correo.
 
 ### Cómo capturarlos en Porkbun
 
@@ -459,16 +459,36 @@ tiempo: ~20 min de captura + la espera de propagación DNS.
   un escueto "onboarding": sin *display name*, el cliente de correo muestra
   sólo la parte local de la dirección. Ahora va
   `HopDesk <noreply@mail.hopdesk.app>`, configurable con `RESEND_FROM_NAME`.
-- **`Reply-To` por mensaje, no global.** `hopdesk.app` no tiene MX
-  (verificado 2026-10-27): ninguna dirección del dominio puede recibir, así
-  que la respuesta de un invitado confundido rebota al vacío. Apuntarla a un
-  buzón corporativo ajeno tampoco sirve: expone ese buzón a cada invitado y
-  no es de quien mandó la invitación. La invitación ahora pone como
-  `Reply-To` **el correo de quien la envió** (`send_email(reply_to=)`), que es
-  un humano al que el destinatario puede preguntarle "¿esto qué es?".
-  `RESEND_REPLY_TO` sigue existiendo como respaldo global y está vacío a
-  propósito. Para apagarlo desde `.Renviron.local` usa `none`, **no** un
-  valor vacío: `readRenviron()` ignora las líneas `NOMBRE=` sin valor.
+- **Sin `Reply-To`, a propósito.** Los correos no llevan esa cabecera y el
+  mecanismo se **eliminó** el 2026-10-28: `RESEND_REPLY_TO` ya no la lee
+  nadie, `send_email()` no acepta la dirección y `.resend_body()` no emite
+  la clave. No es un valor por omisión esperando a que lo llenes.
+
+  Tres razones, en orden de peso:
+
+  1. `hopdesk.app` **no tiene MX** (verificado 2026-10-27 contra 1.1.1.1):
+     ninguna dirección del dominio puede recibir nada.
+  2. Un buzón corporativo ajeno queda **expuesto a cada invitado** — que es
+     justo lo que se reportó al ver la primera invitación real.
+  3. El correo de quien invita es una dirección del staff, y estas
+     invitaciones van a empleados que **todavía no son usuarios**. El
+     mensaje ya dice quién los invitó; pueden buscar a esa persona por los
+     canales que ya usan.
+
+  **Para tener una dirección de respuesta hace falta primero un buzón que
+  exista.** Dos caminos, ninguno es sólo código:
+
+  - **Reenvío de Porkbun** (gratis, ~10 min): MX `fwd1.porkbun.com` (10) y
+    `fwd2.porkbun.com` (20) en la **raíz** `hopdesk.app`, más
+    `include:_spf.porkbun.com` en su SPF. Hasta 20 direcciones. Ojo: toma el
+    MX de **todo** el dominio, y sólo reenvía — al responder sale tu
+    dirección personal, no `hola@hopdesk.app`.
+  - **Inbound de Resend**: activar "Enable Receiving", agregar su MX y
+    exponer un webhook que reciba. Un Shiny en shinyapps.io no sirve de
+    webhook (se duerme), así que esto es trabajo real, no configuración.
+
+  Ninguno de los dos afecta el envío: Resend manda desde
+  `mail.hopdesk.app`, no desde la raíz.
 - **Plantillas a prueba de clientes de correo.** Sin `<style>` (varios
   clientes borran el `<head>`), sin `<svg>` (Gmail lo elimina) y sin logo en
   imagen: las imágenes vienen bloqueadas por defecto, y un logotipo que sale

@@ -37,19 +37,22 @@ email_service_status <- function() {
   from_name <- trimws(Sys.getenv("RESEND_FROM_NAME"))
   if (!nzchar(from_name)) from_name <- "HopDesk"
 
-  # GLOBAL fallback Reply-To, and deliberately empty by default.
+  # NO Reply-To header, by decision (2026-10-28). Not an oversight, and not a
+  # knob left at its default -- the mechanism is gone on purpose, so don't
+  # "restore" it:
   #
-  # hopdesk.app has no MX record at all -- verified 2026-10-27 -- so no address
-  # on the sending domain can receive anything, and pointing replies at an
-  # unrelated corporate mailbox only exposes that mailbox to every invitee.
-  # The invitation instead sets Reply-To per message to the person who sent it
-  # (see send_email's reply_to argument): a real human, already known to the
-  # recipient, who can actually answer "what is this?".
+  #   * hopdesk.app has no MX record at all (checked against 1.1.1.1), so no
+  #     address on the domain can receive anything.
+  #   * Pointing replies at a corporate mailbox exposes that mailbox to every
+  #     invitee, which is what got reported.
+  #   * Pointing them at the inviter publishes a staff address to people who
+  #     are not users yet. These invitations go to employees who are being
+  #     given controlled access; the mail already names who invited them, and
+  #     they can reach that person through the channels they already use.
   #
-  # "none" rather than "" because readRenviron() SKIPS a bare `NAME=` line, so
-  # an empty value in .Renviron.local does NOT override .Renviron.
-  reply_to <- trimws(Sys.getenv("RESEND_REPLY_TO"))
-  if (identical(tolower(reply_to), "none")) reply_to <- ""
+  # If a reply address is ever wanted, it needs a mailbox that exists first:
+  # Porkbun forwarding (MX fwd1/fwd2.porkbun.com at the apex) or Resend
+  # inbound. See docs/EMAIL_SERVICE_RUNBOOK.md.
 
   mode <- if (!nzchar(api_key)) {
     "unconfigured"
@@ -68,7 +71,6 @@ email_service_status <- function() {
     from_name   = from_name,
     # RFC 5322 display-name form, which is what actually goes on the wire.
     from_header = sprintf('%s <%s>', from_name, from_addr),
-    reply_to    = reply_to,
     label   = switch(mode,
       live         = "Envío de correo activo",
       sandbox      = "Modo sandbox — no se envía correo real",
@@ -77,7 +79,7 @@ email_service_status <- function() {
     ),
     detail  = switch(mode,
       live         = paste0("Remitente: ", from_name, " <", from_addr, ">",
-                            if (nzchar(reply_to)) paste0(" · Respuestas a: ", reply_to) else ""),
+                            " · Sin dirección de respuesta"),
       sandbox      = "RESEND_API_KEY=sandbox. Las invitaciones se registran en el log pero nadie las recibe.",
       unconfigured = "Falta RESEND_API_KEY en .Renviron. Las invitaciones se guardarán en la cola sin enviarse.",
       invalid      = "RESEND_API_KEY no empieza con 're_'. Revisa que sea la clave de Resend y no otro valor."
@@ -154,7 +156,7 @@ write_email_queue <- function(q) {
 # 422 "The `to` field must be a `string`" and NOTHING would have been
 # delivered in production. I() marks the vector as-is, giving {"to":["x@y.com"]},
 # which is what the API documents (string or array of strings).
-.resend_body <- function(from_header, to, subject, html, reply_to = "") {
+.resend_body <- function(from_header, to, subject, html) {
   payload <- list(
     from    = jsonlite::unbox(from_header),
     to      = I(to),
@@ -165,7 +167,7 @@ write_email_queue <- function(q) {
     # HTML so the two can never drift apart.
     text    = jsonlite::unbox(.html_to_text(html))
   )
-  if (nzchar(reply_to %||% "")) payload$reply_to <- jsonlite::unbox(reply_to)
+  # No reply_to key: see email_service_status() for why there is no Reply-To.
   jsonlite::toJSON(payload, auto_unbox = FALSE)
 }
 
@@ -209,12 +211,7 @@ write_email_queue <- function(q) {
 # 2026-09-30 an empty RESEND_API_KEY was silently treated as sandbox, so the
 # Invitaciones tab said "Invitación enviada" for a mail that was never sent
 # and never queued. Only the literal "sandbox" claims success now.
-#
-# `reply_to` overrides the global RESEND_REPLY_TO for this one message. Pass
-# the address of the human the recipient should answer -- for an invitation,
-# whoever sent it. NA/"" means "use the global default", which is itself empty
-# unless deployment sets one.
-send_email <- function(to, subject, html, queue_on_fail = TRUE, reply_to = NULL) {
+send_email <- function(to, subject, html, queue_on_fail = TRUE) {
   status    <- email_service_status()
   api_key   <- trimws(Sys.getenv("RESEND_API_KEY"))
 
@@ -239,15 +236,7 @@ send_email <- function(to, subject, html, queue_on_fail = TRUE, reply_to = NULL)
     return(structure(FALSE, error = status$detail))
   }
 
-  # A per-message address wins, but only if it is actually an address: a
-  # malformed Reply-To is rejected by the API as a 422 and would take the
-  # whole invitation down with it, so a bad one degrades to the default
-  # rather than failing the send.
-  rt <- tolower(trimws(reply_to %||% ""))
-  if (is.na(rt) || !grepl("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", rt))
-    rt <- status$reply_to
-
-  body <- .resend_body(status$from_header, to, subject, html, reply_to = rt)
+  body <- .resend_body(status$from_header, to, subject, html)
 
   result <- tryCatch({
     resp <- httr::POST(
