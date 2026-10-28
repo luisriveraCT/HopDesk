@@ -2743,16 +2743,11 @@ tiersServer <- function(id, shared) {
           tags$p(class = "text-danger small mt-1", "Error al crear la invitación."))
         return()
       }
-      # Build invite URL — uses current session's base URL
-      base_url <- tryCatch({
-        prot <- session$clientData$url_protocol
-        host <- session$clientData$url_hostname
-        port <- session$clientData$url_port
-        path <- session$clientData$url_pathname
-        if (nzchar(port %||% "")) sprintf("%s//%s:%s%s", prot, host, port, path)
-        else sprintf("%s//%s%s", prot, host, path)
-      }, error = function(e) "https://your-app.shinyapps.io/app")
-      invite_url <- paste0(base_url, "?invite=", token)
+      # Build the invite URL. NOT from this session's address bar: on
+      # shinyapps.io that path carries a /_w_<hex>/ worker segment and
+      # shinymanager's ?token=, so the mailed link pointed at the inviter's
+      # own worker. app_public_url() prefers HOPDESK_APP_URL and scrubs both.
+      invite_url <- invite_activation_url(token, session)
 
       registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
       client_name <- {

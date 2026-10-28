@@ -2244,6 +2244,21 @@ create_invite <- function(email, display_name, client_id, tier, invited_by,
   token
 }
 
+# The login name an invitee gets, derived from their display name at
+# activation time. Found 2026-10-27 while watching a real activation run end
+# to end: the original was tolower(gsub("[^a-z0-9]", "", display_name)) --
+# the strip ran BEFORE the lowercasing, so every capital letter was DELETED.
+# "Prueba Activacion" became "ruebactivacion"; "Luis Rivera" would have become
+# "uisivera". Nobody would have reported it as a bug, only as a confusing
+# username, and it is mailed out as the one credential they cannot look up.
+# Accents are folded rather than dropped, or "José Pérez" lands on "josprez".
+derive_username <- function(display_name) {
+  x <- tolower(trimws(display_name %||% ""))
+  x <- chartr("áàäâãéèëêíìïîóòöôõúùüûñç",
+              "aaaaaeeeeiiiiooooouuuunc", x)
+  gsub("[^a-z0-9]", "", x)
+}
+
 resolve_invite <- function(token) {
   invites <- read_pending_invites()
   idx <- which(invites$token == token & invites$status == "pending")

@@ -322,6 +322,59 @@ retry_all_queued_emails <- function(max_attempts = 5L) {
   list(sent = sent, failed = failed)
 }
 
+# ── Public app URL ────────────────────────────────────────────────────────────
+# Where a link that LEAVES the app must point.
+#
+# This used to be built, at both call sites, straight from the sender's own
+# session$clientData. That is the wrong source: shinyapps.io hands every
+# session a per-worker path segment (/Hopdesk/_w_<hex>/) and shinymanager
+# appends ?token=/?language= to the address bar. A link assembled from that
+# is a link into somebody else's worker, carrying somebody else's auth token
+# -- it cannot be mailed to an invitee.
+#
+# HOPDESK_APP_URL pins the canonical address. It belongs in .Renviron, which
+# IS bundled into the shinyapps.io deploy (unlike .Renviron.local). The
+# session-derived value stays only as a fallback, now scrubbed.
+.normalize_app_url <- function(url) {
+  url <- trimws(url %||% "")
+  if (!nzchar(url)) return("")
+  url <- sub("[?#].*$", "", url)                 # drop query / fragment
+  url <- gsub("/_w_[0-9a-fA-F]+(?=/|$)", "", url, perl = TRUE)  # drop worker segment
+  sub("/+$", "", url)                            # callers append "/?invite=..."
+}
+
+app_public_url <- function(session = NULL) {
+  raw <- trimws(Sys.getenv("HOPDESK_APP_URL"))
+  # "auto" = derive from this session. It has to be a real word, not an empty
+  # value: readRenviron() SKIPS a bare `NAME=` line, so .Renviron.local could
+  # not blank out what .Renviron set -- verified 2026-10-27, the production
+  # URL leaked into a local run exactly that way. Any override in that file
+  # that means "undo this" needs a sentinel, never emptiness.
+  pinned <- if (identical(tolower(raw), "auto")) "" else .normalize_app_url(raw)
+  if (nzchar(pinned)) return(pinned)
+  if (is.null(session)) return("")
+  derived <- tryCatch({
+    prot <- session$clientData$url_protocol
+    host <- session$clientData$url_hostname
+    port <- session$clientData$url_port
+    path <- session$clientData$url_pathname
+    if (!nzchar(host %||% "")) return("")
+    if (nzchar(port %||% "") && !port %in% c("80", "443"))
+      sprintf("%s//%s:%s%s", prot, host, port, path)
+    else
+      sprintf("%s//%s%s", prot, host, path)
+  }, error = function(e) "")
+  .normalize_app_url(derived)
+}
+
+# The address an invitee opens. Kept here, beside app_public_url(), so the
+# activation page and the mail that advertises it cannot drift apart.
+invite_activation_url <- function(token, session = NULL) {
+  base <- app_public_url(session)
+  if (!nzchar(base)) return("")
+  paste0(base, "/?invite=", utils::URLencode(token, reserved = TRUE))
+}
+
 # ── Template helpers ──────────────────────────────────────────────────────────
 email_invite_html <- function(display_name, client_name, invite_url, expires_hours = 48) {
   sprintf('

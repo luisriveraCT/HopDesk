@@ -26,3 +26,8 @@ AWS_DEFAULT_REGION=us-east-1
 # y la sobreescribe. Dejalo en "sandbox" salvo que estes probando entrega real
 # a proposito.
 RESEND_API_KEY=sandbox
+
+# "auto" = armar los enlaces de invitacion con la direccion de este run, no
+# con la de produccion. Tiene que ser la palabra "auto", NO vacio: una linea
+# `NOMBRE=` sin valor es ignorada por readRenviron() y no sobreescribe nada.
+HOPDESK_APP_URL=auto

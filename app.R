@@ -377,7 +377,72 @@ ui <- bslib::page_navbar(
   )
 )
 
-ui <- shinymanager::secure_app(
+# -- Brand mark ---------------------------------------------------------------
+# Shared by the login screen and by the invitation-activation page. An invitee
+# meets HopDesk for the first time on that page, arriving from a mail they have
+# every reason to distrust, so it has to look like the product. One definition,
+# used twice, instead of a copy left to drift.
+.hopdesk_brandmark <- function(subtitle = NULL) {
+    tags$div(
+      style = "text-align:center; padding: 2px 0 4px;",
+
+      # ── Precision instrument mark (compass / astrolabe reticle) ──────────────
+      HTML('
+        <svg width="52" height="52" viewBox="0 0 60 60" fill="none"
+             xmlns="http://www.w3.org/2000/svg"
+             style="display:block; margin:0 auto 10px; opacity:0.92;">
+          <!-- outer dashed ring -->
+          <circle cx="30" cy="30" r="26" stroke="#b49444" stroke-width="0.7"
+                  stroke-dasharray="3.2 2.6" opacity="0.6"/>
+          <!-- inner ring -->
+          <circle cx="30" cy="30" r="18" stroke="#b49444" stroke-width="0.45"
+                  opacity="0.28"/>
+          <!-- cardinal crosshair lines -->
+          <line x1="30" y1="2"  x2="30" y2="9"  stroke="#b49444" stroke-width="1.1"/>
+          <line x1="30" y1="51" x2="30" y2="58" stroke="#b49444" stroke-width="1.1"/>
+          <line x1="2"  y1="30" x2="9"  y2="30" stroke="#b49444" stroke-width="1.1"/>
+          <line x1="51" y1="30" x2="58" y2="30" stroke="#b49444" stroke-width="1.1"/>
+          <!-- 45-degree secondary marks -->
+          <line x1="10" y1="10" x2="14.5" y2="14.5" stroke="#b49444"
+                stroke-width="0.6" opacity="0.4"/>
+          <line x1="45.5" y1="45.5" x2="50" y2="50" stroke="#b49444"
+                stroke-width="0.6" opacity="0.4"/>
+          <line x1="50" y1="10" x2="45.5" y2="14.5" stroke="#b49444"
+                stroke-width="0.6" opacity="0.4"/>
+          <line x1="10" y1="50" x2="14.5" y2="45.5" stroke="#b49444"
+                stroke-width="0.6" opacity="0.4"/>
+          <!-- center diamond -->
+          <rect x="26.5" y="26.5" width="7" height="7"
+                transform="rotate(45 30 30)"
+                stroke="#b49444" stroke-width="0.75"
+                fill="rgba(180,148,68,0.09)"/>
+          <!-- center dot -->
+          <circle cx="30" cy="30" r="1.7" fill="#b49444"/>
+        </svg>
+      '),
+
+      # Brand name
+      tags$div(
+        style = paste0("font-size:1.55rem; font-weight:700; letter-spacing:0.22em; ",
+                       "color:#b49444; text-transform:uppercase;"),
+        "HopDesk"
+      ),
+      # Tagline
+      tags$div(
+        style = paste0("font-size:0.67rem; color:#283f58; letter-spacing:0.28em; ",
+                       "text-transform:uppercase; margin-top:4px; margin-bottom:16px;"),
+        "Treasury Intelligence Platform"
+      ),
+
+    if (is.null(subtitle)) NULL else tags$div(
+      style = paste0("font-size:1.2rem; font-weight:300; color:#7a99b8; ",
+                     "letter-spacing:0.04em; margin-bottom:2px;"),
+      subtitle
+    )
+  )
+}
+
+secured_ui <- shinymanager::secure_app(
   ui,
   language = "es",
   tags_top = tagList(
@@ -495,64 +560,7 @@ ui <- shinymanager::secure_app(
     # ── Loading overlay (www/overlay_init.js) ────────────────────────────────
     tags$script(src = "overlay_init.js?v=6"),
 
-    tags$div(
-      style = "text-align:center; padding: 2px 0 4px;",
-
-      # ── Precision instrument mark (compass / astrolabe reticle) ──────────────
-      HTML('
-        <svg width="52" height="52" viewBox="0 0 60 60" fill="none"
-             xmlns="http://www.w3.org/2000/svg"
-             style="display:block; margin:0 auto 10px; opacity:0.92;">
-          <!-- outer dashed ring -->
-          <circle cx="30" cy="30" r="26" stroke="#b49444" stroke-width="0.7"
-                  stroke-dasharray="3.2 2.6" opacity="0.6"/>
-          <!-- inner ring -->
-          <circle cx="30" cy="30" r="18" stroke="#b49444" stroke-width="0.45"
-                  opacity="0.28"/>
-          <!-- cardinal crosshair lines -->
-          <line x1="30" y1="2"  x2="30" y2="9"  stroke="#b49444" stroke-width="1.1"/>
-          <line x1="30" y1="51" x2="30" y2="58" stroke="#b49444" stroke-width="1.1"/>
-          <line x1="2"  y1="30" x2="9"  y2="30" stroke="#b49444" stroke-width="1.1"/>
-          <line x1="51" y1="30" x2="58" y2="30" stroke="#b49444" stroke-width="1.1"/>
-          <!-- 45-degree secondary marks -->
-          <line x1="10" y1="10" x2="14.5" y2="14.5" stroke="#b49444"
-                stroke-width="0.6" opacity="0.4"/>
-          <line x1="45.5" y1="45.5" x2="50" y2="50" stroke="#b49444"
-                stroke-width="0.6" opacity="0.4"/>
-          <line x1="50" y1="10" x2="45.5" y2="14.5" stroke="#b49444"
-                stroke-width="0.6" opacity="0.4"/>
-          <line x1="10" y1="50" x2="14.5" y2="45.5" stroke="#b49444"
-                stroke-width="0.6" opacity="0.4"/>
-          <!-- center diamond -->
-          <rect x="26.5" y="26.5" width="7" height="7"
-                transform="rotate(45 30 30)"
-                stroke="#b49444" stroke-width="0.75"
-                fill="rgba(180,148,68,0.09)"/>
-          <!-- center dot -->
-          <circle cx="30" cy="30" r="1.7" fill="#b49444"/>
-        </svg>
-      '),
-
-      # Brand name
-      tags$div(
-        style = paste0("font-size:1.55rem; font-weight:700; letter-spacing:0.22em; ",
-                       "color:#b49444; text-transform:uppercase;"),
-        "HopDesk"
-      ),
-      # Tagline
-      tags$div(
-        style = paste0("font-size:0.67rem; color:#283f58; letter-spacing:0.28em; ",
-                       "text-transform:uppercase; margin-top:4px; margin-bottom:16px;"),
-        "Treasury Intelligence Platform"
-      ),
-
-      # Auth heading — replaces shinymanager's hidden h2
-      tags$div(
-        style = paste0("font-size:1.2rem; font-weight:300; color:#7a99b8; ",
-                       "letter-spacing:0.04em; margin-bottom:2px;"),
-        "Acceda a su cuenta"
-      )
-    )
+    .hopdesk_brandmark("Acceda a su cuenta")
   ),
   tags_bottom = tags$p(
     style = paste0("text-align:center; color:#1b2e40; font-size:0.7rem; ",
@@ -631,6 +639,91 @@ ui <- shinymanager::secure_app(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA")
 )
 
+# ── Invitation activation page ───────────────────────────────────────────────
+# Reported 2026-10-27: the "Activar mi cuenta" button in the invitation mail
+# lands on the login screen.
+#
+# The account-setup flow did exist -- a modal fired by ?invite=<token> down in
+# server(). It was unreachable by the only person who ever needs it. Read
+# secure_app()'s source: when the request carries no VALID shinymanager token
+# it returns the auth page and the application's own `ui` is never sent. The
+# invitee has no account yet, by definition, so that branch is the only one
+# they can ever hit. A modal shown over a login form is the wrong answer
+# anyway: the form asks for credentials they do not have.
+#
+# So ?invite= is intercepted one level ABOVE secure_app and answered with its
+# own page. No login, no application UI, no data -- just the account setup.
+# Everything else still goes through shinymanager untouched.
+.invite_page_shell <- function() {
+  fluidPage(
+    theme = bslib::bs_theme(version = 5, bootswatch = "flatly",
+                            primary = "#0A58CA"),
+    tags$head(
+      tags$title("Activar cuenta — HopDesk"),
+      tags$style(HTML("
+        body { background:#07090d !important; color:#d8e4f0; }
+        .hd-activate-wrap {
+          max-width: 420px; margin: 0 auto; padding: 54px 20px 40px;
+        }
+        .hd-activate-card {
+          background:#0b1420; border:1px solid rgba(180,148,68,0.18);
+          border-radius:3px; padding:26px 24px 22px;
+        }
+        .hd-activate-card label {
+          color:#7a99b8 !important; font-size:0.72rem !important;
+          letter-spacing:0.12em !important; text-transform:uppercase !important;
+          font-weight:600 !important;
+        }
+        .hd-activate-card .form-control {
+          background:#0f1b29 !important; border:1px solid rgba(180,148,68,0.2) !important;
+          color:#d8e4f0 !important; border-radius:2px !important;
+          font-size:0.9rem !important; padding:9px 12px !important;
+        }
+        .hd-activate-card .form-control:focus {
+          border-color:rgba(180,148,68,0.55) !important;
+          box-shadow:0 0 0 3px rgba(180,148,68,0.07) !important;
+          background:#122030 !important;
+        }
+        .hd-activate-card .btn-primary {
+          background:#b49444 !important; border-color:#b49444 !important;
+          color:#07090d !important; font-weight:700 !important;
+          letter-spacing:0.15em !important; border-radius:2px !important;
+          text-transform:uppercase !important; font-size:0.76rem !important;
+          padding:11px !important; width:100% !important; margin-top:6px !important;
+        }
+        .hd-activate-card .btn-primary:hover {
+          background:#cba84e !important; border-color:#cba84e !important;
+        }
+        .hd-activate-note { color:#51708d; font-size:0.78rem; }
+        .hd-activate-lead { color:#9fb6cc; font-size:0.92rem; }
+        .hd-activate-user {
+          background:#0f1b29; border:1px solid rgba(180,148,68,0.35);
+          border-radius:2px; color:#cba84e; font-weight:700;
+          letter-spacing:0.08em; padding:12px; text-align:center;
+          font-size:1.15rem; margin:14px 0;
+        }
+        .hd-activate-foot {
+          text-align:center; color:#1b2e40; font-size:0.7rem;
+          padding-top:16px; letter-spacing:0.08em;
+        }
+      "))
+    ),
+    tags$div(
+      class = "hd-activate-wrap",
+      .hopdesk_brandmark(),
+      tags$div(class = "hd-activate-card", uiOutput("invite_body")),
+      tags$p(class = "hd-activate-foot",
+             paste0("© ", format(Sys.Date(), "%Y"), " HopDesk"))
+    )
+  )
+}
+
+ui <- function(request) {
+  query <- shiny::parseQueryString(request$QUERY_STRING %||% "")
+  if (nzchar(query[["invite"]] %||% "")) return(.invite_page_shell())
+  secured_ui(request)
+}
+
 # ── IMPORTANT: Shiny global reactive environment is a process-level singleton ──
 # shiny:::.getReactiveEnvironment() is ONE object shared across ALL runApp()
 # calls in the same R session.  Its internal priority queue (.priorities vector
@@ -661,6 +754,201 @@ server <- function(input, output, session) {
   .sn <- .GlobalEnv$.session_count
   message(sprintf("[SESSION] server() #%d started at %s  (1=auth gate, 2=real app)",
                   .sn, format(Sys.time(), "%H:%M:%S")))
+
+  # ── Invitation activation ────────────────────────────────────────────────────
+  # Fills the page that `ui` serves for ?invite=<token> (see .invite_page_shell
+  # above secure_app). Registered FIRST, before anything tenant-scoped, and
+  # followed by an early return: the invitee has no account yet, so nothing
+  # below this belongs to them.
+  # The token is single-use: marked "accepted" after the account is created.
+  invite_token_rv <- reactive({
+    qs <- session$clientData$url_search
+    if (!nzchar(qs %||% "")) return(NULL)
+    # shiny::parseQueryString, not a hand-rolled strsplit(pairs, "="): the
+    # address bar also carries shinymanager's token="..." and language="...",
+    # and any value containing "=" -- or a bare flag with none -- made the old
+    # `[[`(kv, 2) throw, which the tryCatch turned into "no invite token".
+    params <- tryCatch(shiny::parseQueryString(qs), error = function(e) list())
+    tok <- params[["invite"]] %||% NULL
+    if (is.null(tok) || !nzchar(tok)) NULL else tok
+  })
+
+  # Set once the account exists, so the page can switch to the success state
+  # without a reload -- the username is derived server-side and is the one
+  # thing the invitee cannot look up anywhere else.
+  invite_done_rv <- reactiveVal(NULL)
+
+  output$invite_body <- renderUI({
+    token <- invite_token_rv()
+    if (!nzchar(token %||% "")) return(NULL)
+
+    done <- invite_done_rv()
+    if (!is.null(done)) {
+      return(tagList(
+        tags$h5(style = "color:#b49444; letter-spacing:0.04em;", "Cuenta activada"),
+        tags$p(class = "hd-activate-lead",
+               HTML("Anota tu nombre de usuario. <strong>No es tu correo</strong>:")),
+        tags$div(class = "hd-activate-user", done$username),
+        tags$p(class = "hd-activate-note",
+               "Te lo enviamos también por correo. Entra con este usuario y la ",
+               "contraseña que acabas de crear."),
+        tags$a(href = done$app_url, class = "btn btn-primary mt-2",
+               "Ir a HopDesk")
+      ))
+    }
+
+    invite <- tryCatch(resolve_invite(token), error = function(e) NULL)
+    if (is.null(invite)) {
+      return(tagList(
+        tags$h5(style = "color:#b49444; letter-spacing:0.04em;", "Enlace no válido"),
+        tags$p(class = "hd-activate-lead",
+               "Esta invitación expiró o ya fue utilizada."),
+        tags$p(class = "hd-activate-note",
+               "Pide una nueva a quien te invitó; los enlaces duran 48 horas ",
+               "y sólo sirven una vez."),
+        tags$a(href = app_public_url(session), class = "btn btn-primary mt-2",
+               "Ir a HopDesk")
+      ))
+    }
+
+    client_label <- tryCatch({
+      reg <- read_client_registry()
+      idx <- which(reg$client_id == invite$client_id)
+      if (length(idx)) reg$display_name[idx[1]] else invite$client_id
+    }, error = function(e) invite$client_id)
+
+    tagList(
+      tags$h5(style = "color:#b49444; letter-spacing:0.04em;", "Activa tu cuenta"),
+      # Un solo nodo de texto, no tags$strong(x) seguido de ".": Shiny mete un
+      # espacio entre hijos y sale "Hola Maria Jose Nunez ." con el punto
+      # suelto. El nombre y el cliente los escribe quien invita, asi que van
+      # escapados aunque vengan de dentro.
+      tags$p(class = "hd-activate-lead",
+             HTML(sprintf("Hola <strong>%s</strong>. Te unes al equipo de <strong>%s</strong>.",
+                          htmltools::htmlEscape(invite$display_name),
+                          htmltools::htmlEscape(client_label)))),
+      tags$p(class = "hd-activate-note", "Cuenta: ", invite$email),
+      tags$hr(style = "border-color:rgba(180,148,68,0.15);"),
+      passwordInput("invite_pw_new",  "Nueva contraseña"),
+      passwordInput("invite_pw_conf", "Confirmar contraseña"),
+      tags$p(class = "hd-activate-note",
+             "Mínimo 6 caracteres, con al menos un número y un símbolo."),
+      uiOutput("invite_pw_error"),
+      actionButton("invite_pw_submit", "Activar cuenta", class = "btn btn-primary")
+    )
+  })
+
+  output$invite_pw_error <- renderUI(NULL)
+
+  observeEvent(input$invite_pw_submit, {
+    token <- invite_token_rv()
+    req(nzchar(token %||% ""))
+    pw1 <- input$invite_pw_new
+    pw2 <- input$invite_pw_conf
+    if (!nzchar(pw1) || nchar(pw1) < 6 ||
+        !grepl("[0-9]", pw1) || !grepl("[^A-Za-z0-9]", pw1)) {
+      output$invite_pw_error <- renderUI(
+        tags$p(class = "text-danger small mt-1",
+               "La contraseña debe tener al menos 6 caracteres, un número y un símbolo.")
+      )
+      return()
+    }
+    if (pw1 != pw2) {
+      output$invite_pw_error <- renderUI(
+        tags$p(class = "text-danger small mt-1", "Las contraseñas no coinciden.")
+      )
+      return()
+    }
+    invite <- tryCatch(resolve_invite(token), error = function(e) NULL)
+    if (is.null(invite)) {
+      output$invite_pw_error <- renderUI(
+        tags$p(class = "text-danger small mt-1",
+               "El enlace ya no es válido. Solicita una nueva invitación.")
+      )
+      return()
+    }
+    # Create the user account in the target client's folder
+    tryCatch({
+      usuarios <- auth_load_usuarios(client_id = invite$client_id)
+      username <- derive_username(invite$display_name)
+      # A name of only punctuation/accents could strip to nothing, and an
+      # empty username is unloggable-in and would collide with the next one.
+      if (!nzchar(username)) username <- paste0("usuario", substr(token, 1, 6))
+      # Ensure unique username
+      if (username %in% tolower(usuarios$username)) {
+        username <- paste0(username, substr(token, 1, 4))
+      }
+      new_user <- data.frame(
+        id                       = paste0("u_", format(Sys.time(), "%Y%m%d%H%M%S")),
+        account_code             = sprintf("U%04d", nrow(usuarios) + 1L),
+        username                 = username,
+        password_hash            = hash_password(pw1),
+        display_name             = invite$display_name,
+        tier                     = invite$tier,
+        client_id                = invite$client_id,
+        permisos                 = "{}",
+        group_ids                = "[]",
+        allowed_clients          = "[]",
+        email                    = invite$email,
+        requires_password_change = FALSE,
+        activo                   = TRUE,
+        created_at               = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+        last_login               = NA_character_,
+        deleted                  = FALSE,
+        deleted_at               = NA_character_,
+        stringsAsFactors = FALSE
+      )
+      auth_save_usuarios(rbind(usuarios, new_user), client_id = invite$client_id)
+      accept_invite(token)
+      register_username(username, invite$client_id, new_user$account_code)
+      update_client_user_count(invite$client_id)
+      tryCatch(notify_user_limit(invite$client_id),
+               error = function(e) message("[INVITE] notify_user_limit failed: ", e$message))
+
+      # The username is derived here, server-side, from the display name --
+      # the invitee has no way to guess it. A 6-second showNotification was
+      # the only place it ever appeared. Show it in a modal they must dismiss
+      # AND mail it to them.
+      # Same scrubbed, pinned address the invitation itself used -- never the
+      # worker-specific, token-carrying URL of whatever session is running.
+      app_url <- app_public_url(session)
+
+      client_label <- tryCatch({
+        reg <- read_client_registry()
+        idx <- which(reg$client_id == invite$client_id)
+        if (length(idx)) reg$display_name[idx[1]] else invite$client_id
+      }, error = function(e) invite$client_id)
+
+      tryCatch(
+        send_email(to      = invite$email,
+                   subject = "Tu cuenta de HopDesk está activa",
+                   html    = email_welcome_html(invite$display_name, username,
+                                                client_label, app_url)),
+        error = function(e) message("[INVITE] welcome email failed: ", e$message)
+      )
+
+      invite_done_rv(list(username = username,
+                          app_url  = if (nzchar(app_url)) app_url else "./"))
+    }, error = function(e) {
+      output$invite_pw_error <- renderUI(
+        tags$p(class = "text-danger small mt-1", paste("Error:", e$message))
+      )
+    })
+  }, ignoreInit = TRUE)
+
+  # The activation page mounts nothing else. Everything below this point --
+  # module registration, the S3 preload, the ERP/SAP fetch -- belongs to a
+  # signed-in tenant, and an invitee has none: no account, no client, no
+  # token. Before this early return the page took ~15s to paint, because the
+  # whole application booted behind it for a visitor who cannot use any of
+  # it, and ANY stranger hitting /?invite=<cualquier cosa> triggered that.
+  # The block above is registered first, unconditionally, so a session whose
+  # clientData has not arrived yet degrades to the old full boot rather than
+  # to an empty page.
+  if (nzchar(isolate(invite_token_rv()) %||% "")) {
+    message("[INVITE] activation page -- application boot skipped (session #", .sn, ")")
+    return(invisible(NULL))
+  }
 
   # Tell the browser to show (or keep showing) the loading overlay the instant
   # session #2 connects.  Priority 10 fires before Phase 1 (priority 0) so the
@@ -935,158 +1223,6 @@ server <- function(input, output, session) {
     })
   }, ignoreInit = TRUE)
 
-  # ── Invite token interceptor ─────────────────────────────────────────────────
-  # If the URL contains ?invite=<token>, intercept before the user reaches any
-  # module, resolve the token, and show a one-time account-setup modal.
-  # The token is single-use: marked "accepted" after the account is created.
-  invite_token_rv <- reactive({
-    qs <- session$clientData$url_search
-    if (!nzchar(qs %||% "")) return(NULL)
-    params <- tryCatch({
-      pairs <- strsplit(sub("^\\?", "", qs), "&")[[1]]
-      kv <- strsplit(pairs, "=")
-      setNames(lapply(kv, `[[`, 2), sapply(kv, `[[`, 1))
-    }, error = function(e) list())
-    params[["invite"]] %||% NULL
-  })
-
-  observeEvent(invite_token_rv(), {
-    token <- invite_token_rv()
-    req(nzchar(token %||% ""))
-    invite <- tryCatch(resolve_invite(token), error = function(e) NULL)
-    if (is.null(invite)) {
-      showModal(modalDialog(
-        title = "Enlace no válido",
-        tags$p("Este enlace de invitación ha expirado o ya fue utilizado."),
-        footer = modalButton("Cerrar"), easyClose = TRUE
-      ))
-      return()
-    }
-    showModal(modalDialog(
-      title = tagList(icon("user-plus"), " Activar cuenta"),
-      tags$p("Bienvenido a HopDesk. Crea tu contraseña para activar la cuenta ",
-             tags$strong(invite$email), "."),
-      passwordInput("invite_pw_new",  "Nueva contraseña"),
-      passwordInput("invite_pw_conf", "Confirmar contraseña"),
-      uiOutput("invite_pw_error"),
-      footer = tagList(
-        modalButton("Cancelar"),
-        actionButton("invite_pw_submit", "Activar cuenta",
-                     class = "btn btn-primary")
-      ),
-      easyClose = FALSE
-    ))
-  }, ignoreNULL = TRUE, once = TRUE)
-
-  output$invite_pw_error <- renderUI(NULL)
-
-  observeEvent(input$invite_pw_submit, {
-    token <- invite_token_rv()
-    req(nzchar(token %||% ""))
-    pw1 <- input$invite_pw_new
-    pw2 <- input$invite_pw_conf
-    if (!nzchar(pw1) || nchar(pw1) < 6 ||
-        !grepl("[0-9]", pw1) || !grepl("[^A-Za-z0-9]", pw1)) {
-      output$invite_pw_error <- renderUI(
-        tags$p(class = "text-danger small mt-1",
-               "La contraseña debe tener al menos 6 caracteres, un número y un símbolo.")
-      )
-      return()
-    }
-    if (pw1 != pw2) {
-      output$invite_pw_error <- renderUI(
-        tags$p(class = "text-danger small mt-1", "Las contraseñas no coinciden.")
-      )
-      return()
-    }
-    invite <- tryCatch(resolve_invite(token), error = function(e) NULL)
-    if (is.null(invite)) {
-      output$invite_pw_error <- renderUI(
-        tags$p(class = "text-danger small mt-1",
-               "El enlace ya no es válido. Solicita una nueva invitación.")
-      )
-      return()
-    }
-    # Create the user account in the target client's folder
-    tryCatch({
-      usuarios <- auth_load_usuarios(client_id = invite$client_id)
-      username <- tolower(gsub("[^a-z0-9]", "", invite$display_name))
-      # Ensure unique username
-      if (username %in% tolower(usuarios$username)) {
-        username <- paste0(username, substr(token, 1, 4))
-      }
-      new_user <- data.frame(
-        id                       = paste0("u_", format(Sys.time(), "%Y%m%d%H%M%S")),
-        account_code             = sprintf("U%04d", nrow(usuarios) + 1L),
-        username                 = username,
-        password_hash            = hash_password(pw1),
-        display_name             = invite$display_name,
-        tier                     = invite$tier,
-        client_id                = invite$client_id,
-        permisos                 = "{}",
-        group_ids                = "[]",
-        allowed_clients          = "[]",
-        email                    = invite$email,
-        requires_password_change = FALSE,
-        activo                   = TRUE,
-        created_at               = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
-        last_login               = NA_character_,
-        deleted                  = FALSE,
-        deleted_at               = NA_character_,
-        stringsAsFactors = FALSE
-      )
-      auth_save_usuarios(rbind(usuarios, new_user), client_id = invite$client_id)
-      accept_invite(token)
-      register_username(username, invite$client_id, new_user$account_code)
-      update_client_user_count(invite$client_id)
-      tryCatch(notify_user_limit(invite$client_id),
-               error = function(e) message("[INVITE] notify_user_limit failed: ", e$message))
-
-      # The username is derived here, server-side, from the display name --
-      # the invitee has no way to guess it. A 6-second showNotification was
-      # the only place it ever appeared. Show it in a modal they must dismiss
-      # AND mail it to them.
-      app_url <- tryCatch({
-        prot <- session$clientData$url_protocol
-        host <- session$clientData$url_hostname
-        port <- session$clientData$url_port
-        path <- session$clientData$url_pathname
-        if (nzchar(port %||% "")) sprintf("%s//%s:%s%s", prot, host, port, path)
-        else sprintf("%s//%s%s", prot, host, path)
-      }, error = function(e) "")
-
-      client_label <- tryCatch({
-        reg <- read_client_registry()
-        idx <- which(reg$client_id == invite$client_id)
-        if (length(idx)) reg$display_name[idx[1]] else invite$client_id
-      }, error = function(e) invite$client_id)
-
-      tryCatch(
-        send_email(to      = invite$email,
-                   subject = "Tu cuenta de HopDesk está activa",
-                   html    = email_welcome_html(invite$display_name, username,
-                                                client_label, app_url)),
-        error = function(e) message("[INVITE] welcome email failed: ", e$message)
-      )
-
-      removeModal()
-      showModal(modalDialog(
-        title = tagList(icon("circle-check"), " Cuenta activada"),
-        tags$p("Tu cuenta quedó lista. Anota tu nombre de usuario — ",
-               tags$strong("no es tu correo"), ":"),
-        tags$div(class = "alert alert-secondary text-center fs-5 fw-bold my-3",
-                 username),
-        tags$p(class = "small text-muted",
-               "También te lo enviamos por correo. Inicia sesión con este usuario ",
-               "y la contraseña que acabas de crear."),
-        footer = modalButton("Entendido"), easyClose = FALSE
-      ))
-    }, error = function(e) {
-      output$invite_pw_error <- renderUI(
-        tags$p(class = "text-danger small mt-1", paste("Error:", e$message))
-      )
-    })
-  }, ignoreInit = TRUE)
 
   # ── Shared state ────────────────────────────────────────────────────────────
   # All auxiliary objects are pre-loaded in global.R at process start.
