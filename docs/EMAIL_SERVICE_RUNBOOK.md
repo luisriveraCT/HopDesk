@@ -459,10 +459,26 @@ tiempo: ~20 min de captura + la espera de propagación DNS.
   un escueto "onboarding": sin *display name*, el cliente de correo muestra
   sólo la parte local de la dirección. Ahora va
   `HopDesk <noreply@mail.hopdesk.app>`, configurable con `RESEND_FROM_NAME`.
-- **`Reply-To`.** El único MX de `mail.hopdesk.app` es el *return-path* de
-  Amazon SES, así que ese buzón no recibe nada: la respuesta de un invitado
-  confundido rebotaba al vacío. Ahora se manda `RESEND_REPLY_TO`
-  (`suscripciones@networkslogistics.com.mx`). Vacío = cabecera omitida.
+- **`Reply-To` por mensaje, no global.** `hopdesk.app` no tiene MX
+  (verificado 2026-10-27): ninguna dirección del dominio puede recibir, así
+  que la respuesta de un invitado confundido rebota al vacío. Apuntarla a un
+  buzón corporativo ajeno tampoco sirve: expone ese buzón a cada invitado y
+  no es de quien mandó la invitación. La invitación ahora pone como
+  `Reply-To` **el correo de quien la envió** (`send_email(reply_to=)`), que es
+  un humano al que el destinatario puede preguntarle "¿esto qué es?".
+  `RESEND_REPLY_TO` sigue existiendo como respaldo global y está vacío a
+  propósito. Para apagarlo desde `.Renviron.local` usa `none`, **no** un
+  valor vacío: `readRenviron()` ignora las líneas `NOMBRE=` sin valor.
+- **Plantillas a prueba de clientes de correo.** Sin `<style>` (varios
+  clientes borran el `<head>`), sin `<svg>` (Gmail lo elimina) y sin logo en
+  imagen: las imágenes vienen bloqueadas por defecto, y un logotipo que sale
+  como recuadro gris es la peor primera impresión para un correo que pide
+  hacer clic y escribir una contraseña. El sello es texto con la tipografía
+  y los colores de la app (`#07090d` / `#b49444`), los mismos de la página de
+  activación a la que se llega un segundo después.
+- **Escape de HTML.** El nombre del invitado sale de un formulario y viaja en
+  un correo firmado por un dominio en el que el proveedor del destinatario ya
+  aprendió a confiar. `.email_esc()` lo escapa en las tres plantillas.
 - **Parte de texto plano.** Los correos sólo-HTML puntúan peor en los filtros
   de spam y algunos clientes corporativos sólo renderizan el texto.
   `.html_to_text()` la deriva del propio HTML — no puede desfasarse — y

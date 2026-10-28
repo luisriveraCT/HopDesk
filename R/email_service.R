@@ -37,10 +37,19 @@ email_service_status <- function() {
   from_name <- trimws(Sys.getenv("RESEND_FROM_NAME"))
   if (!nzchar(from_name)) from_name <- "HopDesk"
 
-  # Replies to an invitation have nowhere to land otherwise: the only MX on the
-  # sending subdomain is Amazon SES's return path, so anything a confused
-  # invitee sends back bounces into the void. Empty = header omitted.
+  # GLOBAL fallback Reply-To, and deliberately empty by default.
+  #
+  # hopdesk.app has no MX record at all -- verified 2026-10-27 -- so no address
+  # on the sending domain can receive anything, and pointing replies at an
+  # unrelated corporate mailbox only exposes that mailbox to every invitee.
+  # The invitation instead sets Reply-To per message to the person who sent it
+  # (see send_email's reply_to argument): a real human, already known to the
+  # recipient, who can actually answer "what is this?".
+  #
+  # "none" rather than "" because readRenviron() SKIPS a bare `NAME=` line, so
+  # an empty value in .Renviron.local does NOT override .Renviron.
   reply_to <- trimws(Sys.getenv("RESEND_REPLY_TO"))
+  if (identical(tolower(reply_to), "none")) reply_to <- ""
 
   mode <- if (!nzchar(api_key)) {
     "unconfigured"
@@ -200,7 +209,12 @@ write_email_queue <- function(q) {
 # 2026-09-30 an empty RESEND_API_KEY was silently treated as sandbox, so the
 # Invitaciones tab said "Invitación enviada" for a mail that was never sent
 # and never queued. Only the literal "sandbox" claims success now.
-send_email <- function(to, subject, html, queue_on_fail = TRUE) {
+#
+# `reply_to` overrides the global RESEND_REPLY_TO for this one message. Pass
+# the address of the human the recipient should answer -- for an invitation,
+# whoever sent it. NA/"" means "use the global default", which is itself empty
+# unless deployment sets one.
+send_email <- function(to, subject, html, queue_on_fail = TRUE, reply_to = NULL) {
   status    <- email_service_status()
   api_key   <- trimws(Sys.getenv("RESEND_API_KEY"))
 
@@ -225,8 +239,15 @@ send_email <- function(to, subject, html, queue_on_fail = TRUE) {
     return(structure(FALSE, error = status$detail))
   }
 
-  body <- .resend_body(status$from_header, to, subject, html,
-                       reply_to = status$reply_to)
+  # A per-message address wins, but only if it is actually an address: a
+  # malformed Reply-To is rejected by the API as a 422 and would take the
+  # whole invitation down with it, so a bad one degrades to the default
+  # rather than failing the send.
+  rt <- tolower(trimws(reply_to %||% ""))
+  if (is.na(rt) || !grepl("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", rt))
+    rt <- status$reply_to
+
+  body <- .resend_body(status$from_header, to, subject, html, reply_to = rt)
 
   result <- tryCatch({
     resp <- httr::POST(
@@ -376,24 +397,134 @@ invite_activation_url <- function(token, session = NULL) {
 }
 
 # ── Template helpers ──────────────────────────────────────────────────────────
-email_invite_html <- function(display_name, client_name, invite_url, expires_hours = 48) {
-  sprintf('
-<div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px">
-  <h2 style="color:#c2185b">Bienvenido a HopDesk</h2>
-  <p>Hola <strong>%s</strong>,</p>
-  <p>Has sido invitado a unirte al equipo de <strong>%s</strong> en HopDesk.</p>
-  <p style="margin:24px 0">
-    <a href="%s"
-       style="background:#c2185b;color:#fff;padding:12px 24px;
-              border-radius:6px;text-decoration:none;font-weight:bold">
-      Activar mi cuenta
-    </a>
-  </p>
-  <p style="color:#666;font-size:13px">
-    Este enlace expira en %d horas. Si no esperabas esta invitación, ignora este mensaje.
-  </p>
-</div>
-', display_name, client_name, invite_url, expires_hours)
+#
+# Design constraints these templates are built around, all of them learned the
+# hard way by people who ship email:
+#
+#   * No <style> block, no classes. Several clients strip the <head> entirely
+#     (Gmail's webmail keeps it, the Gmail mobile apps historically have not),
+#     so every rule is an inline attribute on the element it styles.
+#   * No <svg>. Gmail removes SVG outright, so the astrolabe from the login
+#     screen cannot travel. It is NOT replaced by a hosted PNG either: images
+#     are blocked by default in most clients, so an image-based logo renders
+#     as a grey placeholder box on first open -- the worst possible first
+#     impression for a message asking you to click a link and type a password.
+#     The wordmark is live text, which always renders.
+#   * Tables for layout. `display:flex` is not reliable in Outlook's Word
+#     rendering engine, and neither is the `font:` shorthand, which is why
+#     font-family/size/weight are always written out separately.
+#   * Colours are the app's: #07090d near-black, #b49444 gold. The invitee
+#     lands on the activation page seconds after clicking, and a pink email
+#     leading to a black-and-gold page reads as two different products.
+#     (The tagline's #283f58 from the login screen is deliberately dim against
+#     that page's grid; at email sizes it is illegible, so it is lightened.)
+
+# htmltools would do this, but these templates are also exercised by tests that
+# source R/ without shiny attached, and an invitee's display name is attacker-
+# adjacent input: it comes from a form, and whatever it contains is mailed from
+# a domain the recipient's provider has been taught to trust.
+.email_esc <- function(x) {
+  x <- as.character(x %||% "")
+  x <- gsub("&", "&amp;",  x, fixed = TRUE)   # first, or it double-escapes
+  x <- gsub("<", "&lt;",   x, fixed = TRUE)
+  x <- gsub(">", "&gt;",   x, fixed = TRUE)
+  x <- gsub('"', "&quot;", x, fixed = TRUE)
+  x
+}
+
+.EMAIL_SANS <- "font-family:Helvetica,Arial,sans-serif;"
+
+# A call to action. bgcolor= as well as background: because Outlook ignores the
+# CSS one; the padding lives on the <a> so the whole block is clickable.
+.email_button <- function(url, label) {
+  sprintf(
+    '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:28px 0 20px;">
+      <tr><td align="center" bgcolor="#b49444" style="background:#b49444;border-radius:4px;">
+        <a href="%s" style="display:inline-block;padding:14px 32px;%sfont-size:14px;font-weight:bold;letter-spacing:0.08em;color:#07090d;text-decoration:none;">%s</a>
+      </td></tr>
+    </table>',
+    .email_esc(url), .EMAIL_SANS, .email_esc(label))
+}
+
+# The button alone is not enough for an activation link: corporate gateways
+# rewrite or strip anchors, and some clients render the table flat. The bare
+# URL below it is plain text on purpose -- Gmail auto-links it, and leaving it
+# un-anchored keeps .html_to_text() from emitting "url: url" twice.
+.email_fallback_url <- function(url) {
+  sprintf(
+    '<p style="margin:0 0 4px;%sfont-size:12px;color:#7b8794;">Si el botón no funciona, copia esta dirección en tu navegador:</p>
+     <p style="margin:0 0 8px;%sfont-size:12px;color:#4a5b6b;word-break:break-all;">%s</p>',
+    .EMAIL_SANS, .EMAIL_SANS, .email_esc(url))
+}
+
+# `preheader` is the grey line the inbox list shows next to the subject. Left
+# out, the client grabs the first words of the body instead.
+.email_shell <- function(body, preheader = "", footer = "") {
+  sprintf(
+    '<div style="margin:0;padding:0;background:#f4f6f8;">
+  <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#f4f6f8;">%s</div>
+  <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f6f8;">
+    <tr><td align="center" style="padding:28px 12px;">
+      <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;margin:0 auto;border-collapse:collapse;">
+
+        <tr><td align="center" bgcolor="#07090d" style="background:#07090d;padding:32px 28px 24px;">
+          <div style="%sfont-size:22px;font-weight:bold;letter-spacing:0.22em;color:#b49444;text-transform:uppercase;">HopDesk</div>
+          <div style="%sfont-size:9px;letter-spacing:0.26em;color:#6b8299;text-transform:uppercase;padding-top:7px;">Treasury Intelligence Platform</div>
+        </td></tr>
+
+        <tr><td bgcolor="#b49444" style="background:#b49444;height:3px;line-height:3px;font-size:0;">&nbsp;</td></tr>
+
+        <tr><td bgcolor="#ffffff" style="background:#ffffff;padding:34px 32px 28px;%sfont-size:15px;line-height:1.62;color:#23303d;">%s</td></tr>
+
+        <tr><td bgcolor="#eef1f5" style="background:#eef1f5;padding:18px 32px;%sfont-size:11px;line-height:1.7;color:#7b8794;">%s</td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</div>',
+    .email_esc(preheader), .EMAIL_SANS, .EMAIL_SANS, .EMAIL_SANS, body,
+    .EMAIL_SANS, footer)
+}
+
+.email_footer_default <- function(extra = "") {
+  paste0(extra, if (nzchar(extra)) "<br>" else "",
+         "© ", format(Sys.Date(), "%Y"), " HopDesk · Mensaje automático.")
+}
+
+# `inviter_name` is the person who pressed Enviar, not a department. An
+# invitation that says who sent it is the difference between "I'll click this"
+# and "I'll ask someone first" -- and it is the honest answer to "who is
+# emailing me". Empty when the inviter could not be resolved, in which case
+# the sentence simply drops the name instead of inventing one.
+email_invite_html <- function(display_name, client_name, invite_url,
+                              expires_hours = 48, inviter_name = "") {
+  who <- trimws(inviter_name %||% "")
+  opening <- if (nzchar(who))
+    sprintf("<strong>%s</strong> te invitó a unirte al equipo de <strong>%s</strong> en HopDesk.",
+            .email_esc(who), .email_esc(client_name))
+  else
+    sprintf("Te invitaron a unirte al equipo de <strong>%s</strong> en HopDesk.",
+            .email_esc(client_name))
+
+  body <- sprintf(
+    '<p style="margin:0 0 14px;font-size:19px;font-weight:bold;color:#07090d;">Hola %s,</p>
+     <p style="margin:0 0 14px;">%s</p>
+     <p style="margin:0 0 14px;">HopDesk es la plataforma de inteligencia en tesorería donde %s concentra su operación financiera: antigüedad de saldos, bancos, pagos y flujo proyectado, con la información del ERP ya conciliada y al día.</p>
+     <p style="margin:0 0 4px;">Para entrar sólo tienes que elegir una contraseña. En esa misma página aparece tu <strong>nombre de usuario</strong>: anótalo, no es tu correo.</p>
+     %s
+     %s
+     <p style="margin:18px 0 0;font-size:13px;color:#7b8794;">El enlace caduca en %d horas y sólo puede usarse una vez.</p>',
+    .email_esc(display_name), opening, .email_esc(client_name),
+    .email_button(invite_url, "Activar mi cuenta"),
+    .email_fallback_url(invite_url),
+    as.integer(expires_hours))
+
+  .email_shell(
+    body,
+    preheader = sprintf("Activa tu cuenta y elige tu contraseña. El enlace caduca en %d horas.",
+                        as.integer(expires_hours)),
+    footer = .email_footer_default(
+      "Si no esperabas esta invitación puedes ignorar este mensaje: sin la contraseña que tú elijas, la cuenta no se crea."))
 }
 
 # Sent once the invitee sets their password. The username is DERIVED from the
@@ -401,53 +532,49 @@ email_invite_html <- function(display_name, client_name, invite_url, expires_hou
 # it in advance — without this mail it only ever appeared in a transient
 # showNotification that vanishes after 6 seconds.
 email_welcome_html <- function(display_name, username, client_name, app_url) {
-  sprintf('
-<div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px">
-  <h2 style="color:#c2185b">Tu cuenta de HopDesk está activa</h2>
-  <p>Hola <strong>%s</strong>,</p>
-  <p>Tu cuenta en <strong>%s</strong> quedó activada. Estos son tus datos de acceso:</p>
-  <table style="border-collapse:collapse;width:100%%;margin:16px 0">
-    <tr>
-      <td style="padding:8px;border:1px solid #e5e7eb;color:#6b7280">Usuario</td>
-      <td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">%s</td>
-    </tr>
-    <tr>
-      <td style="padding:8px;border:1px solid #e5e7eb;color:#6b7280">Contrase&ntilde;a</td>
-      <td style="padding:8px;border:1px solid #e5e7eb">La que acabas de crear</td>
-    </tr>
-  </table>
-  <p style="margin:24px 0">
-    <a href="%s"
-       style="background:#c2185b;color:#fff;padding:12px 24px;
-              border-radius:6px;text-decoration:none;font-weight:bold">
-      Entrar a HopDesk
-    </a>
-  </p>
-  <p style="color:#666;font-size:13px">
-    Guarda este correo: tu nombre de usuario no es tu direcci&oacute;n de correo.
-  </p>
-</div>
-', display_name, client_name, username, app_url)
+  body <- sprintf(
+    '<p style="margin:0 0 14px;font-size:19px;font-weight:bold;color:#07090d;">Listo, %s. Tu cuenta está activa.</p>
+     <p style="margin:0 0 18px;">Ya formas parte del equipo de <strong>%s</strong> en HopDesk. Estos son tus datos de acceso:</p>
+     <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:0 0 6px;">
+       <tr>
+         <td bgcolor="#f7f9fb" style="background:#f7f9fb;border:1px solid #e3e8ee;padding:12px 14px;%sfont-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#7b8794;width:38%%;">Usuario</td>
+         <td bgcolor="#f7f9fb" style="background:#f7f9fb;border:1px solid #e3e8ee;padding:12px 14px;font-family:Consolas,Menlo,monospace;font-size:16px;font-weight:bold;letter-spacing:0.04em;color:#07090d;">%s</td>
+       </tr>
+       <tr>
+         <td style="border:1px solid #e3e8ee;padding:12px 14px;%sfont-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#7b8794;">Contraseña</td>
+         <td style="border:1px solid #e3e8ee;padding:12px 14px;%sfont-size:14px;color:#4a5b6b;">La que acabas de crear</td>
+       </tr>
+     </table>
+     <p style="margin:0;font-size:13px;color:#4a5b6b;">Tu nombre de usuario <strong>no es tu correo</strong>. Guarda este mensaje.</p>
+     %s',
+    .email_esc(display_name), .email_esc(client_name),
+    .EMAIL_SANS, .email_esc(username), .EMAIL_SANS, .EMAIL_SANS,
+    .email_button(app_url, "Entrar a HopDesk"))
+
+  .email_shell(
+    body,
+    preheader = sprintf("Tu usuario es %s. Guárdalo: no es tu correo.", username),
+    footer = .email_footer_default())
 }
 
 email_password_reset_html <- function(display_name, reset_url, expires_hours = 2) {
-  sprintf('
-<div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px">
-  <h2 style="color:#c2185b">Restablecer contraseña — HopDesk</h2>
-  <p>Hola <strong>%s</strong>,</p>
-  <p>Recibimos una solicitud para restablecer tu contraseña.</p>
-  <p style="margin:24px 0">
-    <a href="%s"
-       style="background:#c2185b;color:#fff;padding:12px 24px;
-              border-radius:6px;text-decoration:none;font-weight:bold">
-      Restablecer contraseña
-    </a>
-  </p>
-  <p style="color:#666;font-size:13px">
-    Este enlace expira en %d horas. Si no solicitaste esto, ignora este mensaje.
-  </p>
-</div>
-', display_name, reset_url, expires_hours)
+  body <- sprintf(
+    '<p style="margin:0 0 14px;font-size:19px;font-weight:bold;color:#07090d;">Hola %s,</p>
+     <p style="margin:0 0 6px;">Recibimos una solicitud para restablecer tu contraseña de HopDesk.</p>
+     %s
+     %s
+     <p style="margin:18px 0 0;font-size:13px;color:#7b8794;">El enlace caduca en %d horas y sólo puede usarse una vez.</p>',
+    .email_esc(display_name),
+    .email_button(reset_url, "Elegir una contraseña nueva"),
+    .email_fallback_url(reset_url),
+    as.integer(expires_hours))
+
+  .email_shell(
+    body,
+    preheader = sprintf("Restablece tu contraseña. El enlace caduca en %d horas.",
+                        as.integer(expires_hours)),
+    footer = .email_footer_default(
+      "Si no fuiste tú, ignora este mensaje: tu contraseña actual sigue funcionando y nadie puede cambiarla sin este enlace."))
 }
 
 email_user_limit_warning_html <- function(client_name, current_users, max_users) {

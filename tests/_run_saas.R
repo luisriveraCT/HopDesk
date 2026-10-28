@@ -266,6 +266,7 @@ tryCatch({
   .run_module("tests/test_email_service_live.R")
   .run_module("tests/test_invites_tenant_scoping.R")
   .run_module("tests/test_invite_activation_page.R")
+  .run_module("tests/test_email_templates.R")
   .run_module("tests/test_saas_notifications.R")
   .run_module("tests/test_saas_limit_change.R")
   .run_module("tests/test_saas_password_hashing.R")
