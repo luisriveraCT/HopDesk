@@ -698,6 +698,23 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
     observeEvent(input$close_edge_detail, selected_edge(NULL), ignoreInit = TRUE)
 
     # ── Invoice table ──────────────────────────────────────────────────────────
+    # The edge's invoices in the order the table shows them (by due date).
+    # Both the table and "Agregar al plan" build the list here, so they can't
+    # disagree on which invoices belong to the edge.
+    edge_invoices <- function(edge, ar, cur) {
+      due_col <- "Fecha de vencimiento"
+      sub <- ar[ar$.ini == edge$to_ini & !is.na(ar$Moneda) & ar$Moneda == cur, , drop = FALSE]
+      sub$from_ini <- .tm_parte_to_ini(sub$Parte, shared$company_map())
+      sub <- sub[!is.na(sub$from_ini) & sub$from_ini == edge$from_ini, , drop = FALSE]
+      if (due_col %in% names(sub)) sub <- sub[order(sub[[due_col]]), , drop = FALSE]
+      sub
+    }
+    edge_inv_key <- function(sub) as.character(sub[["Documento"]] %||% sub[["Factura"]])
+    # Documento of each row as drawn in the table, in table order: DT's
+    # _rows_selected are positions in that table, so "Agregar al plan" maps
+    # them through this to the invoices the user actually marked.
+    edge_tbl_keys <- reactiveVal(character(0))
+
     output$edge_inv_tbl <- DT::renderDataTable({
       edge <- selected_edge(); req(edge)
       dat  <- tryCatch(ic_invoices_rv(), error = function(e) NULL)
@@ -709,16 +726,14 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       due_col <- "Fecha de vencimiento"
       doc_col <- "Fecha de contabilizaci\u00f3n"
 
-      sub <- ar[ar$.ini == edge$to_ini & !is.na(ar$Moneda) & ar$Moneda == cur, , drop = FALSE]
-      sub$from_ini <- .tm_parte_to_ini(sub$Parte)
-      sub <- sub[!is.na(sub$from_ini) & sub$from_ini == edge$from_ini, , drop = FALSE]
+      sub <- edge_invoices(edge, ar, cur)
       req(nrow(sub) > 0)
+      edge_tbl_keys(edge_inv_key(sub))
 
       keep    <- intersect(c("Documento", "Factura", doc_col, due_col, amt_col, "Moneda"), names(sub))
       display <- sub[, keep, drop = FALSE]
       if (due_col %in% names(display)) {
         display[["D\u00edas"]] <- as.integer(Sys.Date() - as.Date(display[[due_col]]))
-        display <- display[order(display[[due_col]]), ]
       }
 
       dt <- DT::datatable(display, rownames = FALSE, selection = "multiple",
@@ -757,12 +772,11 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       due_col <- "Fecha de vencimiento"
 
       cmap <- shared$company_map()
-      sub <- ar[ar$.ini == edge$to_ini & !is.na(ar$Moneda) & ar$Moneda == cur, , drop = FALSE]
-      sub$from_ini <- .tm_parte_to_ini(sub$Parte, cmap)
-      sub <- sub[!is.na(sub$from_ini) & sub$from_ini == edge$from_ini, , drop = FALSE]
+      sub  <- edge_invoices(edge, ar, cur)
       req(nrow(sub) > 0)
 
-      selected  <- sub[sel_idx, , drop = FALSE]
+      sel_keys  <- edge_tbl_keys()[sel_idx[sel_idx <= length(edge_tbl_keys())]]
+      selected  <- sub[edge_inv_key(sub) %in% sel_keys, , drop = FALSE]
       new_items <- lapply(seq_len(nrow(selected)), function(i) {
         row <- selected[i, ]
         doc <- tryCatch(as.character(row[["Documento"]][1]), error = function(e)
