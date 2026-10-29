@@ -1123,17 +1123,22 @@ ledgerModuleServer <- function(id, config, shared) {
       req(ctx)
       d <- ctx$detail
 
-      # Pull in the widest possible set of raw columns from sap_data for this day
+      # Pull in the widest possible set of raw columns from sap_data for this day.
+      # Match by Empresa + Documento of the rows actually shown in the day, not by
+      # the original due date: the day holds rows by FechaEff, so overdue invoices
+      # rolled forward to today (and moved ones) never matched and this came back
+      # with 0 rows.
       raw <- shared$sap_data()[[ledger]]
       raw_day <- if (!is.null(raw) && nrow(raw)) {
-        raw_filt <- raw[!is.na(raw[["Fecha de vencimiento"]]) &
-                        as.Date(raw[["Fecha de vencimiento"]]) == ctx$sel_date, ,
-                        drop = FALSE]
-        # Also match empresa filter
-        emp <- shared$empresa_sel()
-        if (length(emp) && "Empresa" %in% names(raw_filt))
-          raw_filt <- raw_filt[raw_filt[["Empresa"]] %in% emp, , drop = FALSE]
-        raw_filt
+        if (all(c("Empresa", "Documento") %in% names(raw)) &&
+            all(c("Empresa", "Documento") %in% names(d))) {
+          key_raw <- paste(raw[["Empresa"]], as.character(raw[["Documento"]]), sep = "\r")
+          key_day <- paste(d[["Empresa"]],   as.character(d[["Documento"]]),   sep = "\r")
+          raw[key_raw %in% key_day, , drop = FALSE]
+        } else {
+          raw[!is.na(raw[["Fecha de vencimiento"]]) &
+              as.Date(raw[["Fecha de vencimiento"]]) == ctx$sel_date, , drop = FALSE]
+        }
       } else NULL
 
       showModal(modalDialog(
@@ -1160,7 +1165,7 @@ ledgerModuleServer <- function(id, config, shared) {
         )
       ))
 
-      output[[ns("raw_detail_tbl")]] <- DT::renderDataTable({
+      output$raw_detail_tbl <- DT::renderDataTable({
         # Priority columns first, then all remaining columns
         pri  <- intersect(c("Empresa","Moneda","Documento","Factura","Parte","Importe","source"), names(d))
         rest <- setdiff(names(d), pri)
@@ -1177,7 +1182,7 @@ ledgerModuleServer <- function(id, config, shared) {
         )
       }, server = FALSE)
 
-      output[[ns("raw_sap_tbl")]] <- DT::renderDataTable({
+      output$raw_sap_tbl <- DT::renderDataTable({
         req(!is.null(raw_day) && nrow(raw_day))
         # Show ALL SAP columns — priority columns first
         pri  <- intersect(c("Empresa","Moneda","Documento","Parte","Fecha de vencimiento"), names(raw_day))
