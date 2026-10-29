@@ -72,7 +72,20 @@ stop_bg_app <- function(app) {
 # ChromoteSession, which is what lets Issue A's test prove a copied url in "a
 # fresh session/context" does not auto-authenticate, and Issue E2's test
 # prove two concurrent users don't bleed into each other).
+#
+# Found 2026-10-29: run from an elevated (Administrator) terminal, Chrome
+# refuses to stay elevated -- the chrome.exe chromote launched re-spawns
+# itself de-elevated and exits with status 0. chromote then sees its process
+# gone, reports "Failed to start chrome / Cannot find an available port", and
+# the re-spawned headless Chrome is left running as an orphan (one per
+# attempt). --do-not-de-elevate keeps Chrome in the process chromote started;
+# the longer timeout covers the slower first start on this machine. Both must
+# be set before the first session creates chromote's default browser.
 new_chromote_session <- function() {
+  if (!"--do-not-de-elevate" %in% chromote::get_chrome_args()) {
+    chromote::set_chrome_args(c(chromote::get_chrome_args(), "--do-not-de-elevate"))
+  }
+  options(chromote.timeout = max(60, getOption("chromote.timeout", 10)))
   b <- chromote::ChromoteSession$new()
   b$Page$enable()
   b
