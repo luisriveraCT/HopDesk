@@ -407,6 +407,9 @@ CURRENCIES <- c("MXN","USD","EUR","GBP","CAD","JPY","CHF","AUD","CNY","BRL")
 
 # ── Source modules ────────────────────────────────────────────────────────────
 source("R/i18n.R")
+source("R/hd_registro.R")
+source("R/hd_piezas.R")
+source("R/hd_columnas.R")
 source("R/persistence.R")
 source("R/pagos_generados_persistence.R")
 source("R/email_service.R")
