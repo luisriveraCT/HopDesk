@@ -1,0 +1,99 @@
+/* hd_table engine (R/hd_table.R, www/hdtable.js). Everything is scoped to .hdt.
+   Look follows the design page's Laboratorio: light-blue selection with a bar
+   on the left, struck-through locked rows, totals footer outside the scroll. */
+
+.hdt {
+  --hdt-alto: 60vh;
+  --hdt-ink: #141b2d; --hdt-muted: #5a6377; --hdt-line: #dce1ec;
+  --hdt-surface: #ffffff; --hdt-surface-2: #eef1f8;
+  --hdt-accent: #2456d6; --hdt-accent-soft: #e6edff;
+  --hdt-sel: #d8e5ff; --hdt-hover: #f0f4ff;
+  --hdt-cobro: #1f5fd1; --hdt-pago: #15804a;
+  --hdt-warn: #9a5600; --hdt-warn-soft: #fff4dc;
+  --hdt-danger: #c22b2b; --hdt-danger-soft: #ffecec; --hdt-ok-soft: #e7f6ee;
+  color: var(--hdt-ink);
+  font-size: .84rem;
+  display: flex; flex-direction: column; min-width: 0;
+}
+.hdt-cargando, .hdt-vacio { color: var(--hdt-muted); padding: 14px 10px; font-size: .84rem; }
+.hdt-vacio[hidden] { display: none; }
+
+/* Toolbar */
+.hdt-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0 0 6px; }
+.hdt-barra[hidden] { display: none; }
+.hdt-buscar { font: inherit; border: 1px solid var(--hdt-line); border-radius: 6px; padding: 3px 8px; min-width: 200px; }
+.hdt-btn { font: inherit; font-size: .78rem; border: 1px solid var(--hdt-line); background: var(--hdt-surface);
+  color: var(--hdt-ink); border-radius: 6px; padding: 2px 9px; cursor: pointer; }
+.hdt-btn:hover { border-color: var(--hdt-accent); color: var(--hdt-accent); }
+.hdt-btn.hdt-on { background: var(--hdt-accent-soft); border-color: var(--hdt-accent); color: var(--hdt-accent); }
+.hdt-contador { color: var(--hdt-muted); font-size: .8rem; margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* Body: scroll area and footer are siblings in a column, so the footer never
+   covers the last row. */
+.hdt-cuerpo { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--hdt-line);
+  border-radius: 6px; overflow: hidden; background: var(--hdt-surface); }
+.hdt-scroll { overflow: auto; max-height: var(--hdt-alto); min-height: 0; flex: 1 1 auto; }
+
+table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; font-variant-numeric: tabular-nums; }
+.hdt-tabla th { text-align: left; font-weight: 600; font-size: .78rem; color: var(--hdt-muted);
+  border-bottom: 1px solid var(--hdt-line); background: var(--hdt-surface); white-space: nowrap; user-select: none; }
+.hdt-fijo .hdt-tabla th { position: sticky; top: 0; z-index: 2; }
+.hdt-tabla td { border-bottom: 1px solid var(--hdt-line); vertical-align: middle; white-space: nowrap; }
+.hdt-tabla .hdt-der { text-align: right; }
+
+/* Density: compact by default, much lower than today's tables. */
+.hdt-tabla th, .hdt-tabla td { padding: 2px 8px; line-height: 1.3; }
+.hdt-normal .hdt-tabla th, .hdt-normal .hdt-tabla td { padding: 7px 10px; line-height: 1.5; }
+
+.hdt-recorte { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+
+/* Rows and selection */
+.hdt-tabla tbody tr:hover td { background: var(--hdt-hover); }
+.hdt-selec .hdt-tabla tbody tr { cursor: pointer; }
+.hdt-tabla tr.hdt-sel td { background: var(--hdt-sel) !important; }
+.hdt-tabla tr.hdt-sel td:first-child { box-shadow: inset 3px 0 0 var(--hdt-accent); }
+.hdt-tabla tr.hdt-bloq td { color: var(--hdt-muted); text-decoration: line-through; opacity: .6; }
+.hdt-selec .hdt-tabla tbody tr.hdt-bloq { cursor: default; }
+/* Shift held: no text gets shaded by a range click. */
+.hdt-mayus .hdt-tabla td { user-select: none; -webkit-user-select: none; }
+.hdt-cb { width: 26px; text-align: center; }
+.hdt-cb input { margin: 0; vertical-align: middle; cursor: pointer; }
+
+/* Sorting */
+.hdt-orden th.hdt-ordenable { cursor: pointer; }
+.hdt-orden th.hdt-ordenable:hover { color: var(--hdt-ink); }
+.hdt-flecha { font-size: .7rem; margin-left: 3px; opacity: .7; }
+
+/* Cell badges */
+.hdt-emp { display: inline-block; font-size: .72rem; border: 1px solid var(--hdt-line); color: var(--hdt-accent);
+  border-radius: 999px; padding: 0 7px; line-height: 1.5; background: var(--hdt-surface); }
+.hdt-ins { display: inline-block; font-size: .72rem; font-weight: 700; border-radius: 4px; padding: 0 7px; line-height: 1.5;
+  background: var(--hdt-surface-2); color: var(--hdt-muted); }
+.hdt-ins.hdt-tono-exito { background: var(--hdt-ok-soft); color: var(--hdt-pago); }
+.hdt-ins.hdt-tono-aviso { background: var(--hdt-warn-soft); color: var(--hdt-warn); }
+.hdt-ins.hdt-tono-peligro { background: var(--hdt-danger-soft); color: var(--hdt-danger); }
+.hdt-ins.hdt-tono-info { background: var(--hdt-accent-soft); color: var(--hdt-accent); }
+
+/* Totals footer */
+.hdt-pie { flex: none; border-top: 1px solid var(--hdt-line); background: var(--hdt-surface-2);
+  padding: 4px 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; font-size: .8rem;
+  font-variant-numeric: tabular-nums; }
+.hdt-pie[hidden] { display: none; }
+.hdt-pie-titulo { font-weight: 700; }
+.hdt-pie-grupo { display: inline-flex; gap: 8px; align-items: baseline; }
+.hdt-pie-tipo { font-weight: 700; font-size: .74rem; text-transform: uppercase; letter-spacing: .03em; }
+.hdt-pie-tipo.hdt-cobro { color: var(--hdt-cobro); }
+.hdt-pie-tipo.hdt-pago { color: var(--hdt-pago); }
+.hdt-pie .hdt-btn { margin-left: auto; }
+
+/* Full-value bubble (one per page, appended to body). */
+.hdt-tip { position: fixed; z-index: 2000; display: flex; gap: 8px; align-items: flex-start;
+  max-width: min(420px, calc(100vw - 16px)); background: #fff; color: #141b2d; border: 1px solid #dce1ec;
+  border-radius: 7px; box-shadow: 0 6px 20px rgba(0,0,0,.18); padding: 6px 8px 6px 11px; font-size: .84rem; line-height: 1.4; }
+.hdt-tip[hidden] { display: none !important; }
+.hdt-tip-texto { user-select: text; -webkit-user-select: text; word-break: break-word; font-variant-numeric: tabular-nums; }
+.hdt-tip-copiar { font: inherit; flex: none; border: 1px solid #dce1ec; background: #eef1f8; color: #141b2d;
+  border-radius: 5px; min-width: 26px; height: 24px; display: grid; place-items: center; cursor: pointer; padding: 0 4px; }
+.hdt-tip-copiar svg { width: 14px; height: 14px; }
+.hdt-tip-copiar.hdt-hecho { color: #15804a; border-color: #15804a; }
+.hdt-tip-aviso { font-size: .74rem; color: #5a6377; align-self: center; }
