@@ -260,15 +260,18 @@ pasivos_list_module_server <- function(id, shared) {
           htmltools::htmlEscape(lid, attribute = TRUE)
         ) else ""
 
+        # The table renders with escape = FALSE for the button columns, so
+        # every text column is escaped here: they all can carry user text.
+        esc <- function(x) htmltools::htmlEscape(x %||% "")
         list(
           pencil      = edit_btn,
-          nombre      = r$nombre[1]   %||% "",
-          categoria   = cat_label(r$categoria[1] %||% "", r$flavor[1]),
-          empresa     = r$empresa[1]  %||% "",
-          parte       = r$parte[1]    %||% "",
-          moneda      = moneda_str(r$moneda_pago[1] %||% "", r$cotizado_en[1]),
-          estado      = estado_label(estado),
-          next_prov   = np_str,
+          nombre      = esc(r$nombre[1]),
+          categoria   = esc(cat_label(r$categoria[1] %||% "", r$flavor[1])),
+          empresa     = esc(r$empresa[1]),
+          parte       = esc(r$parte[1]),
+          moneda      = esc(moneda_str(r$moneda_pago[1] %||% "", r$cotizado_en[1])),
+          estado      = esc(estado_label(estado)),
+          next_prov   = esc(np_str),
           acciones    = paste0(edit_btn, " ", pause_btn, " ", archive_btn, " ", restore_btn)
         )
       })
