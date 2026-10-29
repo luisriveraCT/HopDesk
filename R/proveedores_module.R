@@ -193,6 +193,11 @@ proveedoresServer <- function(id, shared) {
     }
 
     # ── Render active catalog DT ────────────────────────────────────────────
+    # ids of the rows the catalog table currently shows, in table order. The
+    # search filters in R, so DT's _rows_selected are positions in the
+    # filtered table: map them through this, never into get_provs().
+    catalogo_ids <- reactiveVal(character(0))
+
     .render_catalogo <- function(search_txt = "") {
       provs <- get_provs()
       # Filter only active rows
@@ -207,6 +212,7 @@ proveedoresServer <- function(id, shared) {
           grepl(s, strip_accents(tolower(provs$no_cuenta %||% "")), fixed = TRUE),
         ]
       }
+      catalogo_ids(if (is.null(provs)) character(0) else as.character(provs$id))
 
       if (is.null(provs) || !nrow(provs)) {
         return(DT::datatable(
@@ -475,20 +481,27 @@ proveedoresServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     # Bulk inactivar
+    # ids picked when the modal opens; the confirm acts on exactly these.
+    bulk_inactivar_ids <- reactiveVal(character(0))
+
     observeEvent(input$cat_inactivar_bulk, {
       sel <- input$tbl_catalogo_prov_rows_selected
       if (!length(sel)) {
         showNotification("Selecciona filas primero.", type = "warning"); return()
       }
+      ids   <- catalogo_ids()[sel[sel <= length(catalogo_ids())]]
       provs <- get_provs()
-      active_provs <- provs[!is.na(provs$activo) & provs$activo == TRUE, ]
-      rows_to_move <- active_provs[sel, ]
+      rows_to_move <- provs[provs$id %in% ids &
+                              !is.na(provs$activo) & provs$activo == TRUE, , drop = FALSE]
       if (!nrow(rows_to_move)) return()
+      bulk_inactivar_ids(as.character(rows_to_move$id))
 
       showModal(modalDialog(
         title = tagList(icon("ban"), " Inactivar selección"),
         size = "s", easyClose = TRUE,
-        paste0("¿Mover ", nrow(rows_to_move), " proveedor(es) a inactivos?"),
+        tags$p(sprintf("¿Mover %d proveedor(es) a inactivos?", nrow(rows_to_move))),
+        tags$ul(class = "small mb-0", style = "max-height:240px; overflow-y:auto;",
+                lapply(rows_to_move$nombre, tags$li)),
         footer = tagList(
           modalButton("Cancelar"),
           actionButton(ns("bulk_inactivar_confirm"),
@@ -499,18 +512,37 @@ proveedoresServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$bulk_inactivar_confirm, {
-      sel <- input$tbl_catalogo_prov_rows_selected
+      ids   <- bulk_inactivar_ids()
       provs <- get_provs()
-      active_provs <- provs[!is.na(provs$activo) & provs$activo == TRUE, ]
-      rows_to_move <- active_provs[sel, ]
-      remaining    <- active_provs[-sel, ]
+      rows_to_move <- provs[provs$id %in% ids, , drop = FALSE]
+      remaining    <- provs[!provs$id %in% ids, , drop = FALSE]
+      if (!nrow(rows_to_move)) { removeModal(); return() }
 
       rows_to_move$activo     <- FALSE
       rows_to_move$updated_at <- as.character(Sys.time())
 
       inac <- dplyr::bind_rows(get_inac(), rows_to_move)
-      set_provs(remaining)
-      set_inac(inac)
+      # Inactive list first: if the second write fails the providers are
+      # left in both lists rather than in neither.
+      saved <- tryCatch({ set_inac(inac); set_provs(remaining); TRUE },
+                        error = function(e) { message("[PROV] bulk inactivar failed: ", e$message); e })
+      if (!isTRUE(saved)) {
+        removeModal()
+        showNotification("No se pudieron inactivar los proveedores. Verifica la conexión e intenta de nuevo.",
+                         type = "error", duration = 6)
+        tryCatch(log_action(
+          user        = tryCatch(shared$current_user(), error = function(e) "system"),
+          module      = "proveedores",
+          action      = "inactivar_proveedores_fallido",
+          description = paste0("Falló al guardar la inactivación de ", nrow(rows_to_move),
+                               " proveedor(es): ", conditionMessage(saved)),
+          target_id   = paste(ids, collapse = ","),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        ), error = function(e) NULL)
+        return()
+      }
+      bulk_inactivar_ids(character(0))
       removeModal()
       showNotification(paste0(nrow(rows_to_move), " proveedor(es) inactivados."),
                        type = "message", duration = 2)
