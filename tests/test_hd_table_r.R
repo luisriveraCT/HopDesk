@@ -43,8 +43,7 @@ test_that("a piece the table removes can't be turned back on by the caller", {
   tabla <- names(quitan)[1]
   pieza <- quitan[[1]]$quitar[1]
   expect_false(pieza %in% hd_piezas_de(tabla))
-  if (!pieza %in% hd_clases[[quitan[[1]]$clase]]$opcional)
-    expect_error(hd_piezas_de(tabla, pieza), "not optional")
+  expect_error(hd_piezas_de(tabla, pieza), "not optional")
 })
 
 test_that("pieces not built yet are dropped with one message per table", {
@@ -74,6 +73,23 @@ test_that("col_dinero: shown in Spanish money format, sorted by number, copied r
   expect_identical(v$mostrar, c("$1,234.50", "-$0.50", "$1,000.00", "", "$1,000,000.00"))
   expect_identical(v$orden, c(1234.5, -0.5, 1000, NA, 1e6))
   expect_identical(v$copiar, c("1234.5", "-0.5", "1000", "", "1000000"))
+})
+
+test_that("col_dinero: near-zero amounts never show or copy a minus sign", {
+  v <- col_dinero("Importe")$valores(c(-0.001, 0.004, -0.005, -0.006))
+  expect_identical(v$mostrar[1:2], c("$0.00", "$0.00"))
+  expect_identical(v$copiar[1:2], c("0", "0"))
+  expect_false(any(v$mostrar %in% c("-$0.00", "-0")) || any(v$copiar %in% c("-0", "-0.00")))
+  expect_identical(v$mostrar[4], "-$0.01")
+})
+
+test_that("col_fecha: a POSIXct keeps its own time zone's date", {
+  x <- as.POSIXct("2026-10-29 20:00", tz = "America/Mexico_City")
+  v <- col_fecha("f")$valores(x)
+  expect_identical(v$copiar, "2026-10-29")
+  expect_identical(v$mostrar, "29 oct 2026")
+  y <- as.POSIXct("2026-10-30 01:30", tz = "UTC")
+  expect_identical(col_fecha("f")$valores(y)$copiar, "2026-10-30")
 })
 
 test_that("col_fecha: Date, POSIXct and ISO text; shown short, sorted and copied ISO", {
@@ -147,26 +163,51 @@ test_that("ids: missing column, empty or repeated ids stop with a clear message"
 
 test_that("payload is column by column, with control columns and defaults", {
   f <- hd_filas(df, cols)
-  expect_identical(f$ids, c("a", "b", "c"))
-  expect_identical(f$bloqueada, c(FALSE, FALSE, FALSE))
-  expect_identical(f$moneda, c("MXN", "USD", "MXN"))     # from col_dinero's `moneda`
+  expect_identical(unclass(f$ids), c("a", "b", "c"))
+  expect_identical(unclass(f$bloqueada), c(FALSE, FALSE, FALSE))
+  expect_identical(unclass(f$moneda), c("MXN", "USD", "MXN"))     # from col_dinero's `moneda`
   expect_true(all(is.na(f$tipo)))
   expect_length(f$celdas, 4)
-  expect_identical(f$celdas[[3]]$mostrar, c("$10.00", "$20.50", "$30.00"))
+  expect_identical(unclass(f$celdas[[3]]$mostrar), c("$10.00", "$20.50", "$30.00"))
 
   d2 <- df; d2$.bloqueada <- c(NA, TRUE, FALSE); d2$.moneda <- "EUR"
   d2$.tipo <- c("cobro", "pago", "otro")
   f2 <- hd_filas(d2, cols)
-  expect_identical(f2$bloqueada, c(FALSE, TRUE, FALSE))
-  expect_identical(f2$moneda, rep("EUR", 3))
-  expect_identical(f2$tipo, c("cobro", "pago", NA))
+  expect_identical(unclass(f2$bloqueada), c(FALSE, TRUE, FALSE))
+  expect_identical(unclass(f2$moneda), rep("EUR", 3))
+  expect_identical(unclass(f2$tipo), c("cobro", "pago", NA))
 })
 
+# What the browser receives: Shiny's own serializer (auto_unbox = TRUE).
+.json <- function(x) as.character(shiny:::toJSON(x))
+
 test_that("<b> travels to the browser as literal text, never as markup", {
-  json <- jsonlite::toJSON(hd_filas(df, cols), auto_unbox = TRUE, na = "null")
-  back <- jsonlite::fromJSON(json, simplifyVector = TRUE)
-  expect_identical(back$celdas$mostrar[[2]][1], '<b>Renta</b> & "Bodega"')
+  json <- .json(hd_filas(df, cols))
+  back <- jsonlite::fromJSON(json, simplifyVector = FALSE)
+  expect_identical(back$celdas[[2]]$mostrar[[1]], '<b>Renta</b> & "Bodega"')
   expect_false(grepl("&lt;", json, fixed = TRUE))   # not pre-escaped: the JS uses textContent
+})
+
+test_that("with 1 row every per-row value is still an array in the JSON", {
+  back <- jsonlite::fromJSON(.json(hd_filas(df[1, ], cols)), simplifyVector = FALSE)
+  for (k in c("ids", "bloqueada", "moneda", "tipo"))
+    expect_true(is.list(back[[k]]) && length(back[[k]]) == 1L, info = k)
+  for (j in seq_along(back$celdas))
+    for (k in c("mostrar", "orden", "copiar"))
+      expect_true(is.list(back$celdas[[j]][[k]]) && length(back$celdas[[j]][[k]]) == 1L,
+                  info = paste(j, k))
+  expect_match(.json(hd_filas(df[1, ], cols)), '"ids":["a"]', fixed = TRUE)
+})
+
+test_that("with 0 rows every per-row value is an empty array in the JSON", {
+  json <- .json(hd_filas(df[0, ], cols))
+  back <- jsonlite::fromJSON(json, simplifyVector = FALSE)
+  for (k in c("ids", "bloqueada", "moneda", "tipo"))
+    expect_identical(back[[k]], list(), info = k)
+  expect_length(back$celdas, 4)
+  for (j in seq_along(back$celdas))
+    expect_identical(back$celdas[[j]]$mostrar, list(), info = j)
+  expect_match(json, '"ids":[]', fixed = TRUE)
 })
 
 test_that("5,000 rows build quickly", {

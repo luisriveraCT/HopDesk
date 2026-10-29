@@ -48,8 +48,11 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE) {
   .hd_col("dinero", campo, titulo, "derecha", recorte = FALSE,
     moneda = moneda, sumar = isTRUE(sumar),
     valores = function(x) {
-      x   <- suppressWarnings(as.numeric(x))
+      # Round first: -0.001 must show "$0.00" and copy "0", not "-$0.00" / "-0"
+      # (and sprintf prints a negative zero as "-0.00", hence the reset).
+      x   <- round(suppressWarnings(as.numeric(x)), 2)
       ok  <- !is.na(x)
+      x[ok & x == 0] <- 0
       # sprintf + one regex for the thousands commas: formatC(big.mark =)
       # formats element by element and dominated the 5,000-row build.
       mostrar <- character(length(x))
@@ -65,7 +68,9 @@ col_fecha <- function(campo, titulo = NULL) {
   .hd_col("fecha", campo, titulo, "izquierda", recorte = FALSE,
     valores = function(x) {
       d <- if (inherits(x, "Date")) x
-           else if (inherits(x, "POSIXt")) as.Date(x)
+           # The value's own time zone: as.Date() would use UTC and turn
+           # 20:00 in Mexico City into the next day.
+           else if (inherits(x, "POSIXt")) as.Date(format(x, "%Y-%m-%d"))
            else suppressWarnings(as.Date(as.character(x), optional = TRUE))
       ok  <- !is.na(d)
       iso <- character(length(d))
@@ -190,10 +195,12 @@ hd_filas <- function(datos, columnas, id_col = "id") {
   tipo[!tipo %in% c("cobro", "pago")] <- NA_character_
 
   list(
-    ids       = ids,
-    bloqueada = bloqueada,
-    moneda    = moneda,
-    tipo      = tipo,
-    celdas    = lapply(columnas, function(col) col$valores(datos[[col$campo]]))
+    # I(): Shiny serializes with auto_unbox = TRUE, so without it a 1-row
+    # table would send "a1" instead of ["a1"] for every per-row vector.
+    ids       = I(ids),
+    bloqueada = I(bloqueada),
+    moneda    = I(moneda),
+    tipo      = I(tipo),
+    celdas    = lapply(columnas, function(col) lapply(col$valores(datos[[col$campo]]), I))
   )
 }

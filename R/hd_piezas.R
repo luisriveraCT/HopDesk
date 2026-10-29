@@ -61,7 +61,9 @@ hd_piezas_de <- function(tabla, piezas = NULL) {
     if (length(desconocidas))
       stop(sprintf("hd_table '%s': unknown piece(s): %s. Valid pieces are in HD_PIEZAS_VALIDAS.",
                    tabla, paste(desconocidas, collapse = ", ")), call. = FALSE)
-    permitidas <- union(activas, union(cl$opcional, def$agregar))
+    # What the registry removes from a table is a product decision; the
+    # caller can't turn it back on even if the class lists it as optional.
+    permitidas <- setdiff(union(activas, union(cl$opcional, def$agregar)), def$quitar)
     no_tocan <- setdiff(piezas, permitidas)
     if (length(no_tocan))
       stop(sprintf(paste0("hd_table '%s' (class %s): piece(s) %s are not optional for this class",
