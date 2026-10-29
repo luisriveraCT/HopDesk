@@ -1158,7 +1158,7 @@ ledgerModuleServer <- function(id, config, shared) {
           DT::dataTableOutput(ns("raw_detail_tbl")),
           tags$hr(),
           if (!is.null(raw_day) && nrow(raw_day)) tagList(
-            tags$h6("SAP raw — todos los campos originales (este d\u00eda, todas las monedas)",
+            tags$h6("SAP raw — todos los campos originales de las facturas de este d\u00eda",
                     class = "text-muted mb-1"),
             DT::dataTableOutput(ns("raw_sap_tbl"))
           ) else NULL
