@@ -72,9 +72,12 @@ if (!is.null(app)) {
      identical(n_rows("tbl_old"), 50L))
   ok("new options (paging = FALSE) draw all 60 rows", identical(n_rows("tbl_new"), 60L))
 
-  s1$Runtime$evaluate("document.querySelectorAll('#tbl_new tbody tr')[54].click()")
+  # DT selects rows on mousedown (not click), see DT's datatables.js.
+  s1$Runtime$evaluate("document.querySelectorAll('#tbl_new tbody tr')[54].querySelector('td')
+    .dispatchEvent(new MouseEvent('mousedown', {bubbles: true, button: 0}))")
   ok("clicking the 55th row selects row 55",
-     poll_until(function() grepl("SEL=55", body_text(s1), fixed = TRUE)))
+     poll_until(function() identical(trimws(s1$Runtime$evaluate(
+       "document.getElementById('sel').innerText")$result$value %||% ""), "SEL=55")))
 }
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
