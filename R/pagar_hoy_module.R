@@ -960,7 +960,7 @@ pagarHoyServer <- function(id, shared) {
           rownames  = FALSE,
           selection = list(mode = "multiple"),
           options   = list(
-            pageLength = 50, dom = "t", scrollX = TRUE, scrollY = "200px",
+            paging = FALSE, dom = "t", scrollX = TRUE, scrollY = "200px",
             destroy    = TRUE,
             language   = list(emptyTable = "Sin pagos en cola"),
             rowCallback = DT::JS(sprintf(
@@ -1012,7 +1012,7 @@ pagarHoyServer <- function(id, shared) {
             Importe = fmt_money(Importe))
         DT::datatable(tbl, escape = FALSE, rownames = FALSE,
           selection = list(mode = "multiple"),
-          options   = list(pageLength = 50, dom = "t", scrollX = TRUE, scrollY = "180px",
+          options   = list(paging = FALSE, dom = "t", scrollX = TRUE, scrollY = "180px",
                            destroy = TRUE,
                            language = list(emptyTable = "Sin cobros esperados"),
                            rowCallback = DT::JS(sprintf(
