@@ -406,6 +406,7 @@ is_erp_sourced <- function(source) {
 CURRENCIES <- c("MXN","USD","EUR","GBP","CAD","JPY","CHF","AUD","CNY","BRL")
 
 # ── Source modules ────────────────────────────────────────────────────────────
+source("R/i18n.R")
 source("R/persistence.R")
 source("R/pagos_generados_persistence.R")
 source("R/email_service.R")
