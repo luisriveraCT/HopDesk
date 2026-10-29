@@ -88,7 +88,7 @@ hits <- do.call(rbind, lapply(r_files, function(f) {
 # ── 2a. ledger_module.R's cart_<i> group button -- previously untested ─────
 {
   txt <- readLines("R/ledger_module.R", warn = FALSE)
-  start <- grep('observeEvent\\(input\\[\\[paste0\\("cart_", i\\)\\]\\],', txt)
+  start <- grep("observeEvent\\(input\\$cart_group_click,", txt)
   .chk(length(start) > 0, TRUE, "found the cart_<i> group-button observer to scan")
   if (length(start)) {
     end <- grep("Expand toggle", txt)

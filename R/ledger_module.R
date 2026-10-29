@@ -1201,160 +1201,164 @@ ledgerModuleServer <- function(id, config, shared) {
       }, server = FALSE)
     }, ignoreInit = TRUE)
 
-    # ── Cart buttons — up to 50 slots registered once at module init ─────────
-    MAX_CART_ROWS <- 50L
-    lapply(seq_len(MAX_CART_ROWS), function(i) {
-      observeEvent(input[[paste0("cart_", i)]], {
-        ctx <- modal_ctx()
-        req(ctx)
-        detail  <- ctx$detail
-        grp_agg <- session$userData[[ns("cart_grp_snapshot")]]
-        if (is.null(grp_agg) || i > nrow(grp_agg)) return()
-        row_e   <- grp_agg[["Empresa"]][i]
-        row_p   <- grp_agg[["Parte"]][i]
-        mask     <- detail[["Empresa"]] == row_e & detail[["Parte"]] == row_p & !is.na(detail[["Documento"]])
-        inv_keys <- pasivos_filter_out_provisions(
-          unique(detail[mask, c("Empresa","Moneda","Documento","Importe",
-                                if ("source" %in% names(detail)) "source" else character()), drop = FALSE])
-        )
-        src_lookup <- if ("source" %in% names(inv_keys))
-          unique(inv_keys[, c("Empresa","Moneda","Documento","source"), drop = FALSE])
-        else NULL
-        inv_keys <- inv_keys[, c("Empresa","Moneda","Documento","Importe"), drop = FALSE]
-        if (nrow(inv_keys) == 0L) {
+    # ── Cart buttons — event delegation ───────────────────────────────────────
+    # JS fires ns("cart_group_click") with {i, nonce}. One observer serves every
+    # group: the old 50 cart_<i> observers registered at init left the ＋ of
+    # group 51 and up with no handler, so it silently did nothing.
+    observeEvent(input$cart_group_click, {
+      click <- input$cart_group_click
+      req(click)
+      i <- as.integer(click$i %||% 0L)
+      if (is.na(i) || i < 1L) return()
+      ctx <- modal_ctx()
+      req(ctx)
+      detail  <- ctx$detail
+      grp_agg <- session$userData[[ns("cart_grp_snapshot")]]
+      if (is.null(grp_agg) || i > nrow(grp_agg)) return()
+      row_e   <- grp_agg[["Empresa"]][i]
+      row_p   <- grp_agg[["Parte"]][i]
+      mask     <- detail[["Empresa"]] == row_e & detail[["Parte"]] == row_p & !is.na(detail[["Documento"]])
+      inv_keys <- pasivos_filter_out_provisions(
+        unique(detail[mask, c("Empresa","Moneda","Documento","Importe",
+                              if ("source" %in% names(detail)) "source" else character()), drop = FALSE])
+      )
+      src_lookup <- if ("source" %in% names(inv_keys))
+        unique(inv_keys[, c("Empresa","Moneda","Documento","source"), drop = FALSE])
+      else NULL
+      inv_keys <- inv_keys[, c("Empresa","Moneda","Documento","Importe"), drop = FALSE]
+      if (nrow(inv_keys) == 0L) {
+        showNotification(
+          "No hay comprobantes que agregar; las provisiones se convierten con ⚡.",
+          type = "warning", duration = 4)
+        return()
+      }
+      # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, NOT
+      # the legacy-key-blind load_pagar_hoy(), found 2026-07-25). Reused
+      # for both the "already staged" check and the write below, so this
+      # one read is the base for the whole action, not silently mixed
+      # with a stale shared$pagar_hoy_db() partway through.
+      ph_now  <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                              client_id = shared$effective_client_id()),
+                          error = function(e) NULL) %||% shared$pagar_hoy_db()
+      already <- if (!is.null(ph_now) && nrow(ph_now)) {
+        ph_sub <- ph_now[ph_now[["ledger"]] == ledger, , drop = FALSE]
+        nrow(merge(ph_sub[, c("Empresa","Moneda","Documento","Importe"), drop=FALSE], inv_keys, by = c("Empresa","Moneda","Documento","Importe")))
+      } else 0L
+      if (already > 0L) {
+        # Users may remove anything from Agenda regardless of source --
+        # Agenda never holds the real data, so this can never destroy
+        # anything (the only real guardrail is Calendario itself).
+        upd_keys <- cbind(inv_keys, ledger = ledger, stringsAsFactors = FALSE)
+        updated <- unstage_pagar_hoy(ph_now, upd_keys, keys = c("ledger","Empresa","Moneda","Documento","Importe"))
+        shared$pagar_hoy_db(updated)
+        # found 2026-08-05: same bare-call bug fixed in the confirm/quitar
+        # handlers (see save_pagar_hoy_with_retry()'s header comment in
+        # R/persistence.R for the full incident) -- a transient failure here
+        # left the acting user's own screen looking updated (the reactiveVal
+        # above already changed) while nothing persisted and nothing got logged.
+        site_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
+                                                 client_id = shared$effective_client_id())
+        if (!isTRUE(site_result$ok)) {
           showNotification(
-            "No hay comprobantes que agregar; las provisiones se convierten con ⚡.",
-            type = "warning", duration = 4)
+            paste0("No se pudo quitar de la Agenda tras ", site_result$attempts,
+                   " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
+            type = "error", duration = 15
+          )
+          tryCatch(log_action(
+            user = tryCatch(shared$current_user(), error = function(e) "system"),
+            module = paste0("ledger_", ledger), action = "quitar_de_agenda_dia_incompleto",
+            description = sprintf("No se pudo guardar tras %d intento(s): %s", site_result$attempts,
+              if (!is.null(site_result$error)) conditionMessage(site_result$error) else "error desconocido"),
+            target_id = tryCatch(as.character(row_p %||% ''), error = function(e) ''),
+            metadata  = list(source = "cart_toggle"),
+            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+          ), error = function(e) NULL)
           return()
         }
-        # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, NOT
-        # the legacy-key-blind load_pagar_hoy(), found 2026-07-25). Reused
-        # for both the "already staged" check and the write below, so this
-        # one read is the base for the whole action, not silently mixed
-        # with a stale shared$pagar_hoy_db() partway through.
-        ph_now  <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
-                                                client_id = shared$effective_client_id()),
-                            error = function(e) NULL) %||% shared$pagar_hoy_db()
-        already <- if (!is.null(ph_now) && nrow(ph_now)) {
-          ph_sub <- ph_now[ph_now[["ledger"]] == ledger, , drop = FALSE]
-          nrow(merge(ph_sub[, c("Empresa","Moneda","Documento","Importe"), drop=FALSE], inv_keys, by = c("Empresa","Moneda","Documento","Importe")))
-        } else 0L
-        if (already > 0L) {
-          # Users may remove anything from Agenda regardless of source --
-          # Agenda never holds the real data, so this can never destroy
-          # anything (the only real guardrail is Calendario itself).
-          upd_keys <- cbind(inv_keys, ledger = ledger, stringsAsFactors = FALSE)
-          updated <- unstage_pagar_hoy(ph_now, upd_keys, keys = c("ledger","Empresa","Moneda","Documento","Importe"))
-          shared$pagar_hoy_db(updated)
-          # found 2026-08-05: same bare-call bug fixed in the confirm/quitar
-          # handlers (see save_pagar_hoy_with_retry()'s header comment in
-          # R/persistence.R for the full incident) -- a transient failure here
-          # left the acting user's own screen looking updated (the reactiveVal
-          # above already changed) while nothing persisted and nothing got logged.
-          site_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
-                                                   client_id = shared$effective_client_id())
-          if (!isTRUE(site_result$ok)) {
-            showNotification(
-              paste0("No se pudo quitar de la Agenda tras ", site_result$attempts,
-                     " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
-              type = "error", duration = 15
-            )
-            tryCatch(log_action(
-              user = tryCatch(shared$current_user(), error = function(e) "system"),
-              module = paste0("ledger_", ledger), action = "quitar_de_agenda_dia_incompleto",
-              description = sprintf("No se pudo guardar tras %d intento(s): %s", site_result$attempts,
-                if (!is.null(site_result$error)) conditionMessage(site_result$error) else "error desconocido"),
-              target_id = tryCatch(as.character(row_p %||% ''), error = function(e) ''),
-              metadata  = list(source = "cart_toggle"),
-              client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-              viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-            ), error = function(e) NULL)
-            return()
-          }
-          showNotification("Quitado de la Agenda del día.", type = "message", duration = 2)
-          log_action(
-            user        = tryCatch(shared$current_user(), error = function(e) "system"),
-            module      = paste0("ledger_", ledger),
-            action      = "quitar_de_agenda_dia",
-            description = paste0(nrow(inv_keys), " factura(s) de ", row_p, " quitada(s) de la Agenda del día"),
-            target_id   = row_p,
-            metadata    = list(n = nrow(inv_keys), source = "cart_toggle", empresa = row_e),
-            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-          )
+        showNotification("Quitado de la Agenda del día.", type = "message", duration = 2)
+        log_action(
+          user        = tryCatch(shared$current_user(), error = function(e) "system"),
+          module      = paste0("ledger_", ledger),
+          action      = "quitar_de_agenda_dia",
+          description = paste0(nrow(inv_keys), " factura(s) de ", row_p, " quitada(s) de la Agenda del día"),
+          target_id   = row_p,
+          metadata    = list(n = nrow(inv_keys), source = "cart_toggle", empresa = row_e),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        )
+      } else {
+        lbl_tp <- if (ledger == "AR") "cobro" else "pago"
+        total_imp <- sum(detail[mask, "Importe"], na.rm = TRUE)
+        cur_lbl   <- if (nrow(inv_keys)) detail[mask, "Moneda"][1] else ""
+        detail_lu <- .fresh_lu(
+          inv_keys,
+          ctx$amt,
+          unique(detail[, c("Empresa","Moneda","Documento","Parte","Codigo","Importe","FechaEff"), drop=FALSE]))
+        new_rows  <- merge(inv_keys, detail_lu, by = c("Empresa","Moneda","Documento","Importe"))
+        new_rows[["id"]]        <- vapply(seq_len(nrow(new_rows)), function(x) uuid::UUIDgenerate(), character(1))
+        new_rows[["ledger"]]    <- ledger
+        new_rows[["tipo_item"]] <- "factura"
+        new_rows[["FechaVenc"]] <- as.Date(new_rows[["FechaEff"]])
+        new_rows[["staged_by"]] <- shared$current_user()
+        new_rows[["staged_at"]] <- Sys.time()
+        new_rows[["status"]]    <- "pending"
+        if (!is.null(src_lookup) && nrow(src_lookup)) {
+          new_rows <- merge(new_rows, src_lookup, by = c("Empresa","Moneda","Documento"), all.x = TRUE)
+          new_rows[["source"]] <- ifelse(is.na(new_rows[["source"]]) | new_rows[["source"]] != "manual",
+                                         SAP_B1_ERP_TYPE, "manual")
         } else {
-          lbl_tp <- if (ledger == "AR") "cobro" else "pago"
-          total_imp <- sum(detail[mask, "Importe"], na.rm = TRUE)
-          cur_lbl   <- if (nrow(inv_keys)) detail[mask, "Moneda"][1] else ""
-          detail_lu <- .fresh_lu(
-            inv_keys,
-            ctx$amt,
-            unique(detail[, c("Empresa","Moneda","Documento","Parte","Codigo","Importe","FechaEff"), drop=FALSE]))
-          new_rows  <- merge(inv_keys, detail_lu, by = c("Empresa","Moneda","Documento","Importe"))
-          new_rows[["id"]]        <- vapply(seq_len(nrow(new_rows)), function(x) uuid::UUIDgenerate(), character(1))
-          new_rows[["ledger"]]    <- ledger
-          new_rows[["tipo_item"]] <- "factura"
-          new_rows[["FechaVenc"]] <- as.Date(new_rows[["FechaEff"]])
-          new_rows[["staged_by"]] <- shared$current_user()
-          new_rows[["staged_at"]] <- Sys.time()
-          new_rows[["status"]]    <- "pending"
-          if (!is.null(src_lookup) && nrow(src_lookup)) {
-            new_rows <- merge(new_rows, src_lookup, by = c("Empresa","Moneda","Documento"), all.x = TRUE)
-            new_rows[["source"]] <- ifelse(is.na(new_rows[["source"]]) | new_rows[["source"]] != "manual",
-                                           SAP_B1_ERP_TYPE, "manual")
-          } else {
-            new_rows[["source"]] <- SAP_B1_ERP_TYPE
-          }
-          new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
-                                    "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
-          # Reuse the fresh ph_now read from above -- no need for a second read.
-          updated <- upsert_pagar_hoy(ph_now %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
-                                    keys = c("ledger","Empresa","Moneda","Documento","Importe"))
-          shared$pagar_hoy_db(updated)
-          # found 2026-08-05: same bare-call bug fixed in the confirm/quitar
-          # handlers (see save_pagar_hoy_with_retry()'s header comment in
-          # R/persistence.R for the full incident) -- a transient failure here
-          # left the acting user's own screen looking updated (the reactiveVal
-          # above already changed) while nothing persisted and nothing got logged.
-          site_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
-                                                   client_id = shared$effective_client_id())
-          if (!isTRUE(site_result$ok)) {
-            showNotification(
-              paste0("No se pudo enviar a la Agenda tras ", site_result$attempts,
-                     " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
-              type = "error", duration = 15
-            )
-            tryCatch(log_action(
-              user = tryCatch(shared$current_user(), error = function(e) "system"),
-              module = paste0("ledger_", ledger), action = "enviar_a_agenda_dia_incompleto",
-              description = sprintf("No se pudo guardar tras %d intento(s): %s", site_result$attempts,
-                if (!is.null(site_result$error)) conditionMessage(site_result$error) else "error desconocido"),
-              target_id = tryCatch(as.character(row_p %||% ''), error = function(e) ''),
-              metadata  = list(source = "cart_toggle"),
-              client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-              viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-            ), error = function(e) NULL)
-            return()
-          }
-          lbl_agenda <- if (ledger == "AR") "Agenda del día (Cobros)" else "Agenda del día (Pagos)"
+          new_rows[["source"]] <- SAP_B1_ERP_TYPE
+        }
+        new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
+                                  "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
+        # Reuse the fresh ph_now read from above -- no need for a second read.
+        updated <- upsert_pagar_hoy(ph_now %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
+                                  keys = c("ledger","Empresa","Moneda","Documento","Importe"))
+        shared$pagar_hoy_db(updated)
+        # found 2026-08-05: same bare-call bug fixed in the confirm/quitar
+        # handlers (see save_pagar_hoy_with_retry()'s header comment in
+        # R/persistence.R for the full incident) -- a transient failure here
+        # left the acting user's own screen looking updated (the reactiveVal
+        # above already changed) while nothing persisted and nothing got logged.
+        site_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
+                                                 client_id = shared$effective_client_id())
+        if (!isTRUE(site_result$ok)) {
           showNotification(
-            paste0("✓ ", nrow(inv_keys), " factura(s) de ", row_p,
-                   " enviadas a ", lbl_agenda,
-                   " — ", cur_lbl, " ", fmt_money(total_imp), "."),
-            type = "message", duration = 3)
-          log_action(
-            user        = tryCatch(shared$current_user(), error = function(e) "system"),
-            module      = paste0("ledger_", ledger),
-            action      = "enviar_a_agenda_dia",
-            description = paste0(nrow(inv_keys), " factura(s) de ", row_p, " enviada(s) a ", lbl_agenda),
-            target_id   = row_p,
-            metadata    = list(n = nrow(inv_keys), source = "cart_toggle", empresa = row_e),
+            paste0("No se pudo enviar a la Agenda tras ", site_result$attempts,
+                   " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
+            type = "error", duration = 15
+          )
+          tryCatch(log_action(
+            user = tryCatch(shared$current_user(), error = function(e) "system"),
+            module = paste0("ledger_", ledger), action = "enviar_a_agenda_dia_incompleto",
+            description = sprintf("No se pudo guardar tras %d intento(s): %s", site_result$attempts,
+              if (!is.null(site_result$error)) conditionMessage(site_result$error) else "error desconocido"),
+            target_id = tryCatch(as.character(row_p %||% ''), error = function(e) ''),
+            metadata  = list(source = "cart_toggle"),
             client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
             viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-          )
+          ), error = function(e) NULL)
+          return()
         }
-      }, ignoreInit = TRUE)
-    })
+        lbl_agenda <- if (ledger == "AR") "Agenda del día (Cobros)" else "Agenda del día (Pagos)"
+        showNotification(
+          paste0("✓ ", nrow(inv_keys), " factura(s) de ", row_p,
+                 " enviadas a ", lbl_agenda,
+                 " — ", cur_lbl, " ", fmt_money(total_imp), "."),
+          type = "message", duration = 3)
+        log_action(
+          user        = tryCatch(shared$current_user(), error = function(e) "system"),
+          module      = paste0("ledger_", ledger),
+          action      = "enviar_a_agenda_dia",
+          description = paste0(nrow(inv_keys), " factura(s) de ", row_p, " enviada(s) a ", lbl_agenda),
+          target_id   = row_p,
+          metadata    = list(n = nrow(inv_keys), source = "cart_toggle", empresa = row_e),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        )
+      }
+    }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
     # confirm_cart_N observers removed — cart buttons now stage immediately
     # without a confirmation modal; a bottom notification confirms the action.
@@ -3134,8 +3138,8 @@ ledgerModuleServer <- function(id, config, shared) {
                   tags$button(
                     class   = btn_cls,
                     onclick = sprintf(
-                      "Shiny.setInputValue('%s', Math.random(), {priority:'event'})",
-                      ns(paste0("cart_", i))
+                      "Shiny.setInputValue('%s',{i:%d,nonce:Math.random()},{priority:'event'})",
+                      ns("cart_group_click"), i
                     ),
                     btn_lbl
                   )

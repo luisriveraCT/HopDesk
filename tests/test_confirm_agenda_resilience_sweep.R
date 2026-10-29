@@ -203,7 +203,7 @@ assign("%||%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) ==
   sites <- list(
     list(anchor = "observeEvent\\(input\\$stage_all,",          action = "enviar_a_agenda_dia_incompleto",  label = "stage_all"),
     list(anchor = "observeEvent\\(input\\$stage_sel,",           action = "enviar_a_agenda_dia_incompleto",  label = "stage_sel"),
-    list(anchor = 'observeEvent\\(input\\[\\[paste0\\("cart_", i\\)\\]\\],', action = "quitar_de_agenda_dia_incompleto", label = "cart_<i> (unstage branch)"),
+    list(anchor = "observeEvent\\(input\\$cart_group_click,", action = "quitar_de_agenda_dia_incompleto", label = "cart_<i> (unstage branch)"),
     list(anchor = "observeEvent\\(input\\$cart_inv_click,",      action = "quitar_de_agenda_dia_incompleto", label = "cart_inv_click (unstage branch)")
   )
   n_site_result <- length(gregexpr("site_result <- save_pagar_hoy_with_retry\\(", paste(txt, collapse = "\n"))[[1]])
