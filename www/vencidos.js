@@ -1,5 +1,5 @@
 (function() {
-  console.info('[VEN] vencidos.js v14 loaded');
+  console.info('[VEN] vencidos.js v15 loaded');
 
   // -- State -----------------------------------------------------------------
   var _venSortCol        = null;
@@ -15,8 +15,14 @@
   function venVisibleRows() {
     return venAllRows().filter(function(r) { return r.style.display !== 'none'; });
   }
+  // Confirmed (already paid) SAP rows stay on screen as greyed "ghosts"
+  // (.ven-confirmed-ghost, see R/vencidos_module.R). They must never be
+  // selected, counted or staged to Agenda -- not even via Select all,
+  // Agregar todo or a group-header click.
+  function venSelectable(r) { return !r.classList.contains('ven-confirmed-ghost'); }
   function venSelectedRows() {
-    return Array.from(document.querySelectorAll('.ven-row.ven-row-selected'));
+    return Array.from(document.querySelectorAll('.ven-row.ven-row-selected'))
+      .filter(venSelectable);
   }
 
   function venRowPayload(r) {
@@ -60,7 +66,8 @@
     if (groupRow) {
       var gid     = groupRow.dataset.groupId;
       var subRows = Array.from(document.querySelectorAll(
-                      '.ven-row.ven-subrow[data-group-id="' + gid + '"]'));
+                      '.ven-row.ven-subrow[data-group-id="' + gid + '"]'))
+                    .filter(venSelectable);
       var allSel  = subRows.length > 0 &&
                     subRows.every(function(r) { return r.classList.contains('ven-row-selected'); });
       subRows.forEach(function(r) {
@@ -82,7 +89,9 @@
       } else {
         var lo = Math.min(i1, i2), hi = Math.max(i1, i2);
         var tgt = !row.classList.contains('ven-row-selected');
-        for (var k = lo; k <= hi; k++) all[k].classList[tgt ? 'add' : 'remove']('ven-row-selected');
+        for (var k = lo; k <= hi; k++) {
+          if (venSelectable(all[k])) all[k].classList[tgt ? 'add' : 'remove']('ven-row-selected');
+        }
       }
     } else {
       row.classList.toggle('ven-row-selected');
@@ -103,7 +112,8 @@
         var gid     = gr.dataset.groupId;
         var subRows = Array.from(document.querySelectorAll(
                         '.ven-row.ven-subrow[data-group-id="' + gid + '"]'))
-                      .filter(venMatchesFilter);
+                      .filter(venMatchesFilter)
+                      .filter(venSelectable);
         var allSel  = subRows.length > 0 &&
                       subRows.every(function(r) { return r.classList.contains('ven-row-selected'); });
         var anySel  = subRows.some(function(r)  { return r.classList.contains('ven-row-selected'); });
@@ -158,7 +168,7 @@
 
   window.venSelectAll = function() {
     venAllRows().forEach(function(r) {
-      if (venMatchesFilter(r)) r.classList.add('ven-row-selected');
+      if (venMatchesFilter(r) && venSelectable(r)) r.classList.add('ven-row-selected');
     });
     venSyncSelButtons();
   };
@@ -352,7 +362,7 @@
                   .some(function(ls) { return ls.style.display !== 'none'; });
       sec.style.display = any ? '' : 'none';
     });
-    var n   = venAllRows().filter(venMatchesFilter).length;
+    var n   = venAllRows().filter(venMatchesFilter).filter(venSelectable).length;
     var cnt = document.getElementById('ven_count');
     if (cnt) cnt.textContent = n + ' factura' + (n !== 1 ? 's' : '');
     venSyncSelButtons();
@@ -408,7 +418,7 @@
 
   // -- Stage: Agregar todo ---------------------------------------------------
   window.venStageAll = function() {
-    var rows = venAllRows().filter(venMatchesFilter);
+    var rows = venAllRows().filter(venMatchesFilter).filter(venSelectable);
     if (!rows.length) {
       Shiny.setInputValue('search_stage_toast',
         { msg: 'No hay facturas.', type: 'warning', nonce: Math.random() },

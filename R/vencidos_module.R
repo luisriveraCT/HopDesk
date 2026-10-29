@@ -360,7 +360,7 @@ vencidosUI <- function(id) {
 
     # -- JavaScript (loaded from www/vencidos.js) -------------------------
     # ?v= query string forces browsers to reload after each edit.
-    tags$script(src = "vencidos.js?v=14")
+    tags$script(src = "vencidos.js?v=15")
   )
 }
 
