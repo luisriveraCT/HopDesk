@@ -97,12 +97,13 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 
 /* Row actions: right-aligned, fixed order, never wrap. */
 .hdt-tabla .hdt-acc { width: 1%; white-space: nowrap; text-align: right; }
-.hdt-accion { font: inherit; font-size: .9em; line-height: 1; min-width: 1.9em; height: 1.6em; margin-left: 3px;
+/* Same box as a badge, so a row with buttons is no taller than one without. */
+.hdt-accion { font: inherit; font-size: .82em; line-height: 1; min-width: 1.8em; height: 1.5em; margin-left: 3px;
   border: 1px solid var(--hdt-line); background: var(--hdt-surface); color: var(--hdt-ink);
   border-radius: 4px; padding: 0 4px; cursor: pointer; vertical-align: middle; }
 .hdt-accion:hover { border-color: var(--hdt-accent); color: var(--hdt-accent); }
 .hdt-accion[data-accion="provision"] { color: var(--hdt-prov); }
-.hdt-accion.hdt-accion-texto { font-size: .82em; font-weight: 600; padding: 0 7px; color: var(--hdt-accent); }
+.hdt-accion.hdt-accion-texto { font-weight: 600; padding: 0 7px; color: var(--hdt-accent); }
 .hdt-accion-hueco { display: inline-block; visibility: hidden; }
 .hdt-acc-molde { visibility: hidden; height: 0; overflow: hidden; white-space: nowrap; }
 .hdt-acc-molde .hdt-accion { display: inline-block; }
