@@ -25,7 +25,7 @@ descargas <- file.path(tempdir(), "hdt_descargas")
 on.exit({ try(if (!is.null(b)) b$close(), silent = TRUE); stop_bg_app(app); unlink(descargas, recursive = TRUE) }, add = TRUE)
 
 app <- tryCatch(start_bg_app(sprintf('setwd("%s"); source("dev/hd_table_demo/app.R")$value', repo),
-                             PORT, timeout_s = 40),
+                             PORT, timeout_s = 90),
                 error = function(e) { message(conditionMessage(e)); NULL })
 ok("demo app started", !is.null(app))
 if (is.null(app)) { cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n"); quit(status = 1L) }
@@ -59,7 +59,16 @@ centro <- function(js_el) ev(sprintf("(function(){ var e = %s; e.scrollIntoView(
 raton <- function(tipo, p, botones = 0L, n = 1L, shift = FALSE)
   b$Input$dispatchMouseEvent(type = tipo, x = p[[1]], y = p[[2]], button = if (tipo == "mouseMoved") "none" else "left",
                              buttons = botones, clickCount = n, modifiers = if (shift) 8L else 0L)
+# Before each click the mouse leaves the table and the full-value bubble
+# closes: on a loaded machine the bubble of the row just clicked can open
+# (350 ms) over the row below it, and the next click would land on it.
+sin_burbuja <- function() {
+  raton("mouseMoved", list(5, 5))
+  poll_until(function() isTRUE(ev("(function(){ var t = document.querySelector('.hdt-tip'); return !t || t.hidden; })()")),
+             timeout_s = 3, interval_s = 0.05)
+}
 clic <- function(js_el) {
+  sin_burbuja()
   p <- centro(js_el)
   raton("mouseMoved", p); raton("mousePressed", p, 1L); raton("mouseReleased", p)
   Sys.sleep(0.25)
@@ -173,6 +182,7 @@ ok("changing the selection closes the confirmation bar, still without accion()",
    isTRUE(ev(sprintf("document.querySelector('#%s .hdt-confirmar').hidden", A))) && n_log() == k)
 clic(sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=mandar_papelera]')", A))
 clic(sprintf("document.querySelector('#%s .hdt-confirmar-si')", A))
+poll_until(function() identical(ultima_accion()$accion, "mandar_papelera"), timeout_s = 8)
 ok("Confirmar fires accion() with the marked ids in visible order",
    identical(ultima_accion()$accion, "mandar_papelera") &&
      identical(ultima_accion()$ids, vis0[vis0 %in% c(dos, tercera)]))
@@ -180,6 +190,7 @@ deseleccionar()
 ok("an action without sin_seleccion hides when nothing is marked",
    isTRUE(ev(sprintf("!document.querySelector('#%s .hdt-acciones button[data-accion=agregar_seleccion]')", A))))
 clic(sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=agregar_todo]')", A))
+poll_until(function() identical(ultima_accion()$accion, "agregar_todo"), timeout_s = 8)   # the log comes from the server
 ok("'Agregar todo' (sin_seleccion) sends the visible ids, without locked rows",
    identical(ultima_accion()$accion, "agregar_todo") && identical(ultima_accion()$ids[1:8], setdiff(vis0, bloq)[1:8]) &&
      ultima_accion()$n == length(setdiff(vis0, bloq)))
@@ -189,11 +200,15 @@ formula_id <- vis0[unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s 
 formula_id <- setdiff(formula_id, bloq)[1]
 otra <- setdiff(vis0, c(bloq, formula_id))[1]
 clic(fila(otra, ".children[1]")); clic(fila(formula_id, ".children[1]"))
-b$Input$dispatchKeyEvent(type = "keyDown", key = "c", code = "KeyC", windowsVirtualKeyCode = 67L, modifiers = 2L,
-                         commands = list("copy"))
-b$Input$dispatchKeyEvent(type = "keyUp", key = "c", code = "KeyC", windowsVirtualKeyCode = 67L, modifiers = 2L)
-Sys.sleep(0.3)
-tsv <- tryCatch(ev("navigator.clipboard.readText()", await = TRUE), error = function(e) "")
+invisible(tryCatch(ev("navigator.clipboard.writeText('')", await = TRUE), error = function(e) NULL))
+invisible(b$Input$dispatchKeyEvent(type = "keyDown", key = "c", code = "KeyC", windowsVirtualKeyCode = 67L, modifiers = 2L,
+                                   commands = list("copy")))
+invisible(b$Input$dispatchKeyEvent(type = "keyUp", key = "c", code = "KeyC", windowsVirtualKeyCode = 67L, modifiers = 2L))
+# The clipboard can take a while on a loaded machine: wait for the copy to
+# land (up to 8 s) instead of a fixed pause.
+leer_portapapeles <- function() tryCatch(ev("navigator.clipboard.readText()", await = TRUE), error = function(e) "")
+poll_until(function() nzchar(leer_portapapeles()), timeout_s = 8)
+tsv <- leer_portapapeles()
 lineas <- strsplit(tsv, "\r\n")[[1]]
 cat("  clipboard:\n   ", paste(lineas, collapse = "\n    "), "\n")
 celdas <- strsplit(lineas, "\t")

@@ -25,7 +25,7 @@ app <- NULL; b <- NULL
 on.exit({ try(if (!is.null(b)) b$close(), silent = TRUE); stop_bg_app(app) }, add = TRUE)
 
 app <- tryCatch(start_bg_app(sprintf('setwd("%s"); source("dev/hd_table_demo/app.R")$value', repo),
-                             PORT, timeout_s = 40),
+                             PORT, timeout_s = 90),
                 error = function(e) { message(conditionMessage(e)); NULL })
 ok("demo app started", !is.null(app))
 if (is.null(app)) { cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n"); quit(status = 1L) }
