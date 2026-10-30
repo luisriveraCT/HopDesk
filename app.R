@@ -1312,7 +1312,7 @@ server <- function(input, output, session) {
       if (is_staff && is.null(tryCatch(jump_client_id(), error = function(e) NULL))) return(c())
     }
     df <- empresas_db()
-    if (is.null(df)) return(COMPANY_MAP)  # NULL = still loading; keep static seed
+    if (is.null(df)) return(c())  # NULL = still loading: no companies yet, never another client's
     active <- df[
       (is.na(df$deleted) | df$deleted != TRUE) &
       (isTRUE(df$activa) | df$activa == TRUE), , drop = FALSE]
@@ -1320,27 +1320,27 @@ server <- function(input, output, session) {
   })
 
   # ── Empresa toggle state ─────────────────────────────────────────────────────
-  # Initialises with COMPANY_MAP; refreshes to full selection when empresas loads.
-  empresa_sel_rv <- reactiveVal(unname(COMPANY_MAP))
+  # Starts empty; refreshes to full selection when empresas loads.
+  empresa_sel_rv <- reactiveVal(character(0))
 
-  # When empresas data arrives, keep COMPANY_MAP in sync and preserve the user's
-  # current filter — only auto-add empresas they haven't seen before.
+  # When empresas data arrives, preserve the user's current filter — only
+  # auto-add empresas they haven't seen before. The names seen last time are
+  # kept per session (they used to live in .GlobalEnv, shared by every session
+  # and client, so another session's list decided what counted as "new").
+  prev_company_names <- character(0)
   observeEvent(empresas_db(), {
     cmap     <- company_map_rv()
     all_now  <- unname(cmap)
     cur_sel  <- empresa_sel_rv()
     # Track which full names were present last time so we can detect new arrivals.
-    prev       <- isolate(.GlobalEnv$.prev_company_names %||% character(0))
+    prev       <- prev_company_names
     new_cos    <- setdiff(all_now, prev)
     keep_sel   <- intersect(cur_sel, all_now)
     # If the user had a non-empty selection, preserve it and append any new empresas.
     # If somehow empty (first load or all empresas removed), default to all.
     new_sel    <- if (length(keep_sel)) union(keep_sel, new_cos) else all_now
     if (!identical(new_sel, cur_sel)) empresa_sel_rv(new_sel)
-    assign(".prev_company_names", all_now, envir = .GlobalEnv)
-    # Keep global COMPANY_MAP in sync so modules that read it statically
-    # (settings forms, reports, etc.) see the latest companies when they render.
-    assign("COMPANY_MAP", cmap, envir = .GlobalEnv)
+    prev_company_names <<- all_now
   }, ignoreNULL = TRUE)
 
   # Single handler for all empresa toggle buttons — works for both static and

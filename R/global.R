@@ -483,24 +483,21 @@ source("R/cashflow_export_module.R")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-# Company registry. Starts EMPTY and is populated per tenant from that tenant's
-# own empresas.rds (see the rebuild just after the critical preload, below).
+# DO NOT USE. A session's companies are shared$company_map() (company_map_rv()
+# in app.R); outside a session, build the map from that client's empresas.rds
+# (.company_map_from_empresas(load_empresas(client_id))).
 #
-# De-hardcoded 2026-09-25. This used to be seeded with a literal list of one
-# specific client's companies, which made it wrong in three separate ways on a
-# multi-tenant deployment: it named one tenant's companies inside code every
-# tenant runs; it was stale (it carried entries that tenant does not actually
-# operate); and because ~60 call sites use it as a `%||% COMPANY_MAP` fallback,
-# any session whose empresas.rds had not loaded silently fell back to THAT
-# client's company list rather than showing nothing. An empty map is the honest
-# answer to "which companies does this tenant have" before the registry loads --
-# a wrong answer here renders another tenant's company names in the UI. The
-# Empresas module in Settings is, and stays, the only authoritative source.
+# This process-wide map used to be filled at startup and then rewritten by
+# every session as its empresas loaded. Production is one process shared by
+# every client, so it held whichever client loaded last -- and since c() is
+# NULL, every `shared$company_map() %||% COMPANY_MAP` fell back to it exactly
+# when the session's own map was empty (CM01, 2026-10-30). It stays declared,
+# always empty, only so that a stale reference reads "no companies" instead of
+# failing; tests/test_company_map_global_guard.R fails if code reads it again.
 COMPANY_MAP <- setNames(character(0), character(0))
 
 # Fetched synchronously at startup — must be ready before any session connects.
-# empresas.rds is included so COMPANY_MAP is rebuilt from the live registry
-# before any UI function (e.g. pagarHoyUI) captures it at render time.
+# empresas.rds is included so the first session's empresas load skips a round trip.
 S3_KEYS_CRITICAL <- list(
   sap_snap_ar = "sap_snapshot_AR.rds",
   sap_snap_ap = "sap_snapshot_AP.rds",
@@ -654,29 +651,6 @@ if (!exists(".s3_preload_done", envir = globalenv())) {
                     length(keys), (proc.time() - t0)[["elapsed"]]))
   })
 }
-
-# Rebuild COMPANY_MAP from the just-fetched empresas.rds so every module that
-# reads COMPANY_MAP at UI-build or startup time (e.g. pagarHoyUI, sap_api) sees
-# the live registry rather than the hardcoded seed above.
-local({
-  df <- tryCatch(.s3_preload_cache[["empresas.rds"]], error = function(e) NULL)
-  # Always rebuild COMPANY_MAP from empresas.rds — even if absent or zero rows.
-  # A NULL df means a fresh client with no empresas.rds yet; set empty map so
-  # the hardcoded Networks Group fallback above is never inherited by other clients.
-  if (is.null(df) || !is.data.frame(df) ||
-      !all(c("initials", "nombre_corto", "activa", "deleted") %in% names(df))) {
-    assign("COMPANY_MAP", c(), envir = .GlobalEnv)
-    message("[LOAD] COMPANY_MAP: no empresas.rds — empty map")
-    return(invisible(NULL))
-  }
-  active <- df[
-    (is.na(df$deleted) | df$deleted != TRUE) &
-    (is.na(df$activa)  | df$activa  == TRUE),  , drop = FALSE]
-  cmap <- if (nrow(active) > 0) setNames(active$nombre_corto, active$initials) else c()
-  assign("COMPANY_MAP", cmap, envir = .GlobalEnv)
-  message("[LOAD] COMPANY_MAP: ", length(cmap), " companies from empresas.rds (",
-          paste(names(cmap), collapse = ", "), ")")
-})
 
 # ── Runtime cache (populated on first session, shared across all sessions) ──────
 # Nothing is loaded here at process start — S3 reads happen in the server's
