@@ -30,7 +30,8 @@ local({
 # runApp() runs from this folder.
 assign(".i18n_dir", file.path(.raiz, "www", "i18n"), envir = globalenv())
 
-PIEZAS_T02 <- HD_PIEZAS_MOTOR
+# Class-A switches: copiar_tabla is a class-E piece (see the third table).
+PIEZAS_T02 <- setdiff(HD_PIEZAS_MOTOR, "copiar_tabla")
 
 # ── Generated data ──────────────────────────────────────────────────────────
 demo_facturas <- function(n, seed = 1, periodo = TRUE) {
@@ -115,6 +116,29 @@ registrar <- function(nombre, def) {
 }
 registrar("demo_d", list(nombre = "Demo clase D", clase = "D", archivo = "dev/hd_table_demo/app.R",
                          agregar = character(), quitar = character(), notas = character()))
+# Like evidencia_excel, plus copiar_tabla (not in the generated registry yet).
+registrar("demo_e", list(nombre = "Demo clase E · tabla pegada", clase = "E", archivo = "dev/hd_table_demo/app.R",
+                         agregar = c("recorte", "copiar_tabla"), quitar = "insignias", notas = character()))
+
+# A table pasted from Excel: text exactly as it came, first row maybe a header.
+PEGADA <- rbind(
+  c("Fecha", "Folio", "Concepto", "Importe", "Nota"),
+  c("01/02", "007", "Renta de bodega", "15,000.00", "=SUMA(A1)"),
+  c("15/02", "0012", "Fletes Querétaro - Monterrey, ida y vuelta con maniobras de carga y descarga", "8,450.50", "+52 55 1234 5678"),
+  c("28/02", "00099", "<b>Mantenimiento</b>", "-1,200.00", "@pendiente"),
+  c("03/03", "1e5", "Papelería", "320", "-"),
+  c("10/03", "0001", "Árbol \"El Güero\"", "1,000", "")
+)
+# Pasted cells as text columns (c1, c2, ...); titles from the first row or
+# "Columna n".
+demo_pegada <- function(encabezado) {
+  filas <- if (encabezado) PEGADA[-1, , drop = FALSE] else PEGADA
+  df <- as.data.frame(filas, stringsAsFactors = FALSE)
+  names(df) <- paste0("c", seq_len(ncol(df)))
+  df$id <- as.character(seq_len(nrow(df)))
+  titulos <- if (encabezado) PEGADA[1, ] else paste("Columna", seq_len(ncol(PEGADA)))
+  list(datos = df, columnas = lapply(seq_len(ncol(PEGADA)), function(j) col_texto(paste0("c", j), titulos[j])))
+}
 
 # ── UI ──────────────────────────────────────────────────────────────────────
 ui <- bslib::page_fluid(
@@ -143,7 +167,11 @@ ui <- bslib::page_fluid(
       verbatimTextOutput("log_a", placeholder = TRUE),
       tags$h5("Clase D · catálogo", class = "mt-3"),
       hd_table_ui("prov", alto = "220px"),
-      verbatimTextOutput("panel_d", placeholder = TRUE)
+      verbatimTextOutput("panel_d", placeholder = TRUE),
+      tags$h5("Clase E · tabla pegada de Excel", class = "mt-3"),
+      actionButton("aviso_e", "Aviso sí / no", class = "btn-sm btn-outline-secondary mb-2"),
+      hd_table_ui("pegada"),
+      verbatimTextOutput("panel_e", placeholder = TRUE)
     )
   )
 )
@@ -236,6 +264,25 @@ server <- function(input, output, session) {
                          piezas = c("densidad", "sel_fila", "sel_rango", "sel_todos", "casillas"),
                          id_col = "id")
   output$panel_d <- renderPrint(panel(t_d))
+
+  # Class E: the server decides the header (the switch only asks), builds
+  # the columns from it, and writes the trimming notice.
+  encabezado_e <- reactiveVal(TRUE)
+  con_aviso <- reactiveVal(TRUE)
+  observeEvent(input$aviso_e, con_aviso(!con_aviso()))
+  pegada <- reactive(demo_pegada(encabezado_e()))
+  t_e <- hd_table_server("pegada", tabla = "demo_e", datos = reactive(pegada()$datos),
+                         columnas = reactive(pegada()$columnas),
+                         encabezado = encabezado_e,
+                         aviso = reactive(if (con_aviso()) "Se pegaron 340 filas; se guardaron 200"))
+  observeEvent(t_e$accion(), {
+    a <- t_e$accion()
+    if (identical(a$accion, "encabezado")) encabezado_e(identical(a$ids, "si"))
+  })
+  output$panel_e <- renderPrint({
+    cat("encabezado: ", encabezado_e(), "\n", sep = "")
+    cat("accion: "); str(t_e$accion())
+  })
 }
 
 app <- shinyApp(ui, server)
