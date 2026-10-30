@@ -53,7 +53,7 @@
 
 # Build the SAP BP datatable with auto-match column
 .bp_datatable <- function(candidates, prov_db = NULL, presel = integer(0),
-                           cmap = COMPANY_MAP) {
+                           cmap) {
   tbl <- candidates |>
     dplyr::transmute(
       Empresa   = paste0(initials, " \u2014 ",

@@ -7,7 +7,7 @@
 # =============================================================================
 # Cuentas de Empresa
 # =============================================================================
-.cuentas_panel_ui <- function(cmap = COMPANY_MAP) {
+.cuentas_panel_ui <- function(cmap) {
   div(
     div(class = "d-flex align-items-center gap-2 mb-2",
       tags$h6(class = "fw-semibold mb-0",
@@ -434,7 +434,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
 
 # ── Account form ──────────────────────────────────────────────────────────────
 .cuenta_form_ui <- function(row = NULL, bancos = NULL, pre_banco_id = NULL,
-                             pre_empresa = "", cmap = COMPANY_MAP) {
+                             pre_empresa = "", cmap) {
   is_new <- is.null(row)
 
   banco_choices <- if (!is.null(bancos) && nrow(bancos)) {

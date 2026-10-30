@@ -490,7 +490,7 @@ build_ic_fullcodes <- function(registry, ledger) {
 #
 # Returns a tibble: initials, ledger, code (full, e.g. "C1027"), nombre, rfc,
 #                   n_facturas, is_ic (already in registry)
-scan_ic_candidates <- function(sap_ar, sap_ap, registry, cmap = COMPANY_MAP) {
+scan_ic_candidates <- function(sap_ar, sap_ap, registry, cmap) {
   inv_map <- setNames(names(cmap), unname(cmap))
 
   .extract <- function(df, ledger) {

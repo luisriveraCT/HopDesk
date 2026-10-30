@@ -759,7 +759,7 @@ settings_observers <- function(input, output, session, shared) {
       showNotification("No hay snapshots SAP disponibles.", type = "warning")
       return()
     }
-    cands <- scan_ic_candidates(sap_ar, sap_ap, isolate(shared$interco_v2()))
+    cands <- scan_ic_candidates(sap_ar, sap_ap, isolate(shared$interco_v2()), isolate(shared$company_map()))
     bp_candidates(cands)
     output$settings_panel <- renderUI({ .bp_panel_ui(shared, bp_candidates()) })
     showNotification("Tabla de Business Partners actualizada.", type = "message", duration = 3)

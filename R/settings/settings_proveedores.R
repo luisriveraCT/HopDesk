@@ -7,7 +7,7 @@
 # =============================================================================
 # Catálogo de Proveedores
 # =============================================================================
-.catalogo_panel_ui <- function(cmap = COMPANY_MAP) {
+.catalogo_panel_ui <- function(cmap) {
   div(
     div(class = "d-flex align-items-center gap-2 mb-2",
       tags$h6(class = "fw-semibold mb-0",
@@ -209,7 +209,7 @@ settings_catalogo_edit_observer <- function(input, output, session, shared) {
     " Selecciona un proveedor para editarlo, o haz clic en '+ Nuevo proveedor'.")
 }
 
-.catalogo_form_ui <- function(row = NULL, cmap = COMPANY_MAP) {
+.catalogo_form_ui <- function(row = NULL, cmap) {
   is_new  <- is.null(row)
   emp_val <- if (!is_new) row$Empresa    %||% "" else ""
   nom_val <- if (!is_new) row$nombre     %||% "" else ""

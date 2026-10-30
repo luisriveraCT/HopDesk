@@ -47,9 +47,9 @@
 # session's map -- or an empty one -- and the full name then never finds the
 # account stored under its initials ("Cuenta origen no configurada" for an
 # account that is there, found 2026-10-30 with Networks Realtors MXN).
+# An empty session map stays empty: only the key as given is matched.
 .empresa_keys <- function(empresa, shared) {
   cmap <- tryCatch(if (!is.null(shared$company_map)) shared$company_map(), error = function(e) NULL)
-  if (!length(cmap)) cmap <- COMPANY_MAP
   unique(c(empresa,
            names(cmap)[unname(cmap) == empresa],      # full name -> initials
            unname(cmap)[names(cmap) == empresa]))     # initials -> full name

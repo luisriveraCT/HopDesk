@@ -54,7 +54,17 @@ for (global in list(c(), c(HDX = "Otra Empresa"))) {
   ok(sprintf("with %s, get_cuenta_ppl returns the PPL account", etiqueta),
      identical(env$get_cuenta_ppl("Networks Realtors", "MXN", shared), "133865030201"))
 }
-ok("initials still work", identical(env$get_cuentas_ppl_data("NRS", "MXN", shared)$cuenta, "133865030201"))
+# Empty session map (staff at home, or a client with no active companies):
+# the global must not fill the gap. Here it holds another client's map where
+# "Networks Realtors" is the name of initials NTS, so falling back to it would
+# hand out NTS's account under NRS's name.
+env$COMPANY_MAP <- c(NTS = "Networks Realtors")
+shared_empty <- modifyList(shared, list(company_map = function() c()))
+ok("with an empty session map, the global is not used to translate the name",
+   identical(env$.empresa_keys("Networks Realtors", shared_empty), "Networks Realtors"))
+ok("with an empty session map, no account is found through another client's map",
+   is.null(env$get_cuentas_ppl_data("Networks Realtors", "MXN", shared_empty)))
+ok("initials still work",identical(env$get_cuentas_ppl_data("NRS", "MXN", shared)$cuenta, "133865030201"))
 ok("another company's account is never returned",
    is.null(env$get_cuentas_ppl_data("Networks Realtors", "EUR", shared)))
 
