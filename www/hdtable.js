@@ -292,7 +292,8 @@
     // Bar actions: shown while rows are marked (or always, for an action
     // that works on what's visible). Then the confirmation bar, inside the
     // table: never a confirm() or a modal on top of a modal.
-    st.accBarra = p.barra_acc ? arr(msg.acciones_barra) : [];
+    // (crudos brings its own action, even on a table without barra_acc.)
+    st.accBarra = arr(msg.acciones_barra).filter(function (a) { return p.barra_acc || a.accion === 'crudos'; });
     if (st.accBarra.length) {
       st.accBarraEl = nodo('div', 'hdt-acciones');
       st.accBarraEl.hidden = true;
@@ -842,6 +843,8 @@
     // that shows ▶/▼, the count and the name.
     st.grupoClave = st.p.expandir && msg.grupo ? arr(msg.grupo.claves) : null;
     st.grupoCol = st.grupoClave ? msg.grupo.columna : -1;
+    st.agr = arr(f.agregado);
+    st.adj = arr(f.adjuntos);
     st.fijar = arr(f.fijar);
     st.hayFijas = st.fijar.some(Boolean);
     st.meses = st.mes && msg.periodo ? arr(msg.periodo.meses) : null;
@@ -932,6 +935,8 @@
       // sample that may not include the text button.
       var molde = nodo('div', 'hdt-acc-molde');
       molde.setAttribute('aria-hidden', 'true');
+      if (st.p.agregado) molde.appendChild(nodo('span', 'hdt-agregado', '\u2713'));
+      if (st.p.adjuntos) molde.appendChild(nodo('span', 'hdt-accion hdt-adjuntos', '\uD83D\uDCCE 99'));
       st.accFila.forEach(function (a) {
         var texto = a.estilo === 'texto';
         molde.appendChild(nodo('span', 'hdt-accion' + (texto ? ' hdt-accion-texto' : ''), texto ? a.titulo : a.icono));
@@ -944,10 +949,37 @@
 
   function trDe(st, i) { return st.trs[i] || (st.trs[i] = fila(st, i)); }
 
+  // A row's marks: ✓ already in Agenda de Hoy (agregado; it doesn't lock
+  // the row) and the clip with how many attachments (adjuntos), a button
+  // that sends accion "adjuntos" without marking the row.
+  function marcasFila(st, i) {
+    var ag = st.p.agregado && st.agr[i], n = st.p.adjuntos ? Number(st.adj[i]) || 0 : 0;
+    if (!ag && !n) return null;
+    var frag = document.createDocumentFragment();
+    if (ag) {
+      var v = nodo('span', 'hdt-agregado', '\u2713');
+      v.title = t('tablas.agregado');
+      v.setAttribute('aria-label', v.title);
+      frag.appendChild(v);
+    }
+    if (n) {
+      var b = nodo('button', 'hdt-accion hdt-adjuntos', '\uD83D\uDCCE ' + FMT_N.format(n));
+      b.type = 'button';
+      b.dataset.accion = 'adjuntos';
+      b.title = t('tablas.accion.adjuntos');
+      b.setAttribute('aria-label', b.title);
+      frag.appendChild(b);
+    }
+    return frag;
+  }
+
   // Right-aligned row buttons, always in catalog order. .acciones only hides
   // buttons; the server checks the permission again (see R/hd_table.R).
+  // The row's marks go first, in the same column.
   function botonesFila(st, i) {
     var td = nodo('td', 'hdt-acc');
+    var marcas = marcasFila(st, i);
+    if (marcas) td.appendChild(marcas);
     var permitidas = st.permitidas ? st.permitidas[i] : null;
     st.accFila.forEach(function (a) {
       // crear_provision is the one button with text instead of an icon.
@@ -1001,6 +1033,8 @@
       td._c = j;
       // Provision rows: one badge, always in the first column shown.
       if (prov && k === 0) td.appendChild(nodo('span', 'hdt-ins hdt-tono-morado hdt-ins-prov', t('tablas.provision')));
+      // Without a row-actions column, the marks go in the first one.
+      if (k === 0 && !st.accFila.length) { var marcas = marcasFila(st, i); if (marcas) td.appendChild(marcas); }
       pintarCelda(st, td, j, i);
       tr.appendChild(td);
     }

@@ -428,6 +428,46 @@ fuerte_ok <- vapply(gl, function(g) {
 }, logical(1))
 ok("each group's row shows the strongest tag of its rows, with its background", all(fuerte_ok))
 
+# ── crudos, agregado, adjuntos ─────────────────────────────────────────────
+ok("demo loads with marks (60 rows, sections, no groups)", abrir("?n=60&seed=1&periodo=0&grupos=0"))
+dm <- demo$demo_facturas(60, 1, FALSE, FALSE, marcas = TRUE)
+ultima <- function() {
+  linea <- strsplit(ev("document.getElementById('log_a').innerText") %||% "", "\n")[[1]][1]
+  m <- regmatches(linea, regexec("^\\S+\\s+(\\S+)\\s+\\[(\\d+)\\]\\s*(.*)$", linea))[[1]]
+  if (!length(m)) return(list(accion = NA, ids = character(0)))
+  list(accion = m[2], ids = if (nzchar(trimws(m[4]))) strsplit(trimws(m[4]), " +")[[1]] else character(0))
+}
+marca <- function(id) ev(sprintf("(function(){ var tr = HDT.fila('%s', '%s'), td = tr.querySelector('td.hdt-acc');
+  var v = td.querySelector('.hdt-agregado'), c = td.querySelector('.hdt-adjuntos');
+  return { ag: !!v, clip: c ? c.textContent : '' }; })()", A, id))
+con_ag <- dm$id[dm$.agregado]; con_clip <- dm$id[dm$.adjuntos > 0]
+ok("agregado: a check in the actions column on exactly the rows already in Agenda de Hoy",
+   all(vapply(dm$id, function(id) marca(id)$ag == (id %in% con_ag), logical(1))))
+libre_ag <- setdiff(con_ag, dm$id[dm$.bloqueada])[1]
+clic(sprintf("HDT.fila('%s', '%s').children[1]", A, libre_ag))
+ok("... it doesn't lock the row: it can still be marked", identical(unlist(estado()$seleccion), libre_ag))
+invisible(ev(sprintf("(document.querySelector('#%s .hdt-deseleccionar')||{click:function(){}}).click()", A))); Sys.sleep(0.3)
+ok("adjuntos: a clip with the count on the rows that have attachments",
+   all(vapply(dm$id, function(id) { x <- marca(id)$clip; n <- dm$.adjuntos[dm$id == id]
+     if (n > 0) identical(x, sprintf("\U0001f4ce %d", n)) else identical(x, "") }, logical(1))))
+clic(sprintf("HDT.fila('%s', '%s').querySelector('.hdt-adjuntos')", A, con_clip[1]))
+ok("the clip sends accion 'adjuntos' with that row's id, without marking it",
+   poll_until(function() { u <- ultima(); identical(u$accion, "adjuntos") && identical(u$ids, con_clip[1]) }, timeout_s = 8) &&
+     length(unlist(estado()$seleccion)) == 0L)
+clic(sprintf("document.querySelector('#%s .hdt-editar')", A))
+crudos_btn <- sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=crudos]')", A)
+ok("crudos: 'Ver datos de origen' in the edit bar, usable with nothing marked",
+   identical(ev(sprintf("%s.textContent", crudos_btn)), "Ver datos de origen") && !isTRUE(ev(sprintf("%s.disabled", crudos_btn))))
+clic(crudos_btn)
+ok("... it sends accion 'crudos' with no ids (the module decides what to show)",
+   poll_until(function() { u <- ultima(); identical(u$accion, "crudos") && !length(u$ids) }, timeout_s = 8))
+dos <- setdiff(dm$id, dm$id[dm$.bloqueada])[1:2]
+clic(sprintf("HDT.fila('%s', '%s').children[1]", A, dos[1])); clic(sprintf("HDT.fila('%s', '%s').children[1]", A, dos[2]))
+clic(crudos_btn)
+ok("... and with rows marked, their ids",
+   poll_until(function() { u <- ultima(); identical(u$accion, "crudos") && setequal(u$ids, dos) }, timeout_s = 8))
+clic(sprintf("document.querySelector('#%s .hdt-editar')", A))
+
 # ── The table's own empty message ──────────────────────────────────────────
 ok("demo loads with no rows", abrir("?n=0&seed=1&periodo=0"))
 vacio <- ev(sprintf("(function(){ var v = document.querySelector('#%s .hdt-vacio'); return { t: v.textContent, c: v.className, h: v.hidden,

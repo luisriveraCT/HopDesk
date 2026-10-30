@@ -221,7 +221,9 @@ hd_columnas_meta <- function(columnas) {
 # ("cobro"/"pago") for the totals footer, .provision (logical: purple
 # provision row with its badge), .acciones (row actions allowed per row),
 # .fijar (logical: always shown whatever the month, on top as a block in any
-# order; it still follows the search, chips and filters).
+# order; it still follows the search, chips and filters), .agregado
+# (logical: a check, "already in Agenda de Hoy"; it doesn't lock the row) and
+# .adjuntos (integer: a clip with the count that sends accion "adjuntos").
 # Without .moneda, the currency comes from the first summed money column's
 # `moneda` field, then from "Moneda"; without .tipo, totals aren't split.
 hd_filas <- function(datos, columnas, id_col = "id") {
@@ -244,6 +246,10 @@ hd_filas <- function(datos, columnas, id_col = "id") {
   provision[is.na(provision)] <- FALSE
   fijar <- if (".fijar" %in% names(datos)) as.logical(datos[[".fijar"]]) else rep(FALSE, n)
   fijar[is.na(fijar)] <- FALSE
+  agregado <- if (".agregado" %in% names(datos)) as.logical(datos[[".agregado"]]) else rep(FALSE, n)
+  agregado[is.na(agregado)] <- FALSE
+  adjuntos <- if (".adjuntos" %in% names(datos)) suppressWarnings(as.integer(datos[[".adjuntos"]])) else rep(0L, n)
+  adjuntos[is.na(adjuntos) | adjuntos < 0L] <- 0L
   # .acciones: the row actions each row may show, as a list column of names
   # or comma-separated text. Without the column every row shows them all; a
   # row with NA or nothing shows none (fails closed).
@@ -265,6 +271,8 @@ hd_filas <- function(datos, columnas, id_col = "id") {
     tipo      = I(tipo),
     provision = I(provision),
     fijar     = I(fijar),
+    agregado  = I(agregado),
+    adjuntos  = I(adjuntos),
     celdas   = lapply(columnas, function(col) lapply(col$valores(datos[[col$campo]]), I))
   ) -> out
   # Only when the column exists: list(x = NULL) would serialize as {}.

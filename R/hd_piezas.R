@@ -27,7 +27,8 @@ HD_PIEZAS_MOTOR <- c(
   # T03b
   "filtros", "nav_periodo", "copiar_tabla",
   # T03c
-  "agrupar", "subtotales", "expandir", "sel_grupo", "columnas_opc", "etiquetas", "modo_editar"
+  "agrupar", "subtotales", "expandir", "sel_grupo", "columnas_opc", "etiquetas", "modo_editar",
+  "crudos", "agregado", "adjuntos"
 )
 
 HD_REGLAS_NUCLEO <- c(

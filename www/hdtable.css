@@ -194,6 +194,10 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-acc-molde { visibility: hidden; height: 0; overflow: hidden; white-space: nowrap; }
 .hdt-acc-molde .hdt-accion { display: inline-block; }
 
+/* Row marks: already in Agenda de Hoy (a check) and the attachments clip. */
+.hdt-agregado { color: var(--hdt-t-exito); font-weight: 800; margin: 0 4px; vertical-align: middle; }
+.hdt-accion.hdt-adjuntos { font-weight: 600; }
+
 /* Bar actions and the confirmation bar (inside the table, above it). */
 .hdt-acciones, .hdt-confirmar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 8px;
   margin: 0 0 6px; border: 1px solid var(--hdt-line); border-radius: 6px; background: var(--hdt-surface-2); }

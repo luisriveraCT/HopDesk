@@ -38,7 +38,7 @@ assign(".i18n_dir", file.path(.raiz, "www", "i18n"), envir = globalenv())
 PIEZAS_T02 <- setdiff(HD_PIEZAS_MOTOR, "copiar_tabla")
 
 # ── Generated data ──────────────────────────────────────────────────────────
-demo_facturas <- function(n, seed = 1, periodo = TRUE, grupos = FALSE) {
+demo_facturas <- function(n, seed = 1, periodo = TRUE, grupos = FALSE, marcas = grupos) {
   set.seed(seed)
   nombres <- c("Transportes del Bajío", "Aceros Monterrey", "Logística Querétaro",
                '<b>Renta</b> & "Bodega"', "Servicios Integrales de Mantenimiento Industrial del Norte, S.A. de C.V.",
@@ -67,6 +67,13 @@ demo_facturas <- function(n, seed = 1, periodo = TRUE, grupos = FALSE) {
   # Origin (no random draw, so the rest of the data stays the same): an
   # optional column that starts hidden, like Vencidos' Origen.
   df$Origen <- if (n) ifelse(seq_len(n) %% 7 == 0, "Manual", "SAP") else character(0)
+  # Marks (no random draw): every 13th row is already in Agenda de Hoy, and
+  # every 8th has attachments. Only with marcas: the earlier tests read the
+  # row-actions column, where they go.
+  if (marcas && n) {
+    df$.agregado <- seq_len(n) %% 13 == 0
+    df$.adjuntos <- ifelse(seq_len(n) %% 8 == 0, seq_len(n) %% 5 + 1L, 0L)
+  }
   # Month navigation: every 11th row is pinned (always shown, on top); some
   # rows have no date -- the pinned ones among them still show.
   # Groups: in every 10 rows, rows 2-4 take the company, due date,
@@ -220,7 +227,7 @@ server <- function(input, output, session) {
   ediciones <- reactiveVal(list(etiqueta = list(), vence = list()))
   datos_a <- reactive({
     n <- n_filas()
-    df <- demo_facturas(n, seed, con_periodo, con_grupos)
+    df <- demo_facturas(n, seed, con_periodo, con_grupos, marcas = con_secciones)
     k <- cambios()
     if (k > 0) {
       set.seed(seed + k)

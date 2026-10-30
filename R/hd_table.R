@@ -14,7 +14,9 @@
 # changes. Browser -> server: ns("sel") and ns("accion"), priority "event".
 #
 # accion() values: "detalle" (double click on a row, locked rows too),
-# "encabezado" (the header switch, with `encabezado`; ids "si" or "no"), and
+# "encabezado" (the header switch, with `encabezado`; ids "si" or "no"),
+# "crudos" (the crudos piece; the marked ids, maybe none), "adjuntos" (the
+# clip of a row with .adjuntos; that row's id), and
 # the names given in acciones_fila (one row's id) and acciones_barra. Actions
 # that confirm ("eliminar" on a row, bar actions with confirmar = TRUE) only
 # reach accion() once the user presses Confirmar in the table's own bar.
@@ -36,8 +38,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=19"),
-    htmltools::tags$script(src = "hdtable.js?v=19")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=20"),
+    htmltools::tags$script(src = "hdtable.js?v=20")
   ))
 }
 
@@ -486,6 +488,13 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
     stop(sprintf("hd_table '%s': bar action '%s' is modo = \"editar\" but the table doesn't have the 'modo_editar' piece.",
                  tabla, a$accion), call. = FALSE)
   acc_barra_meta <- if (length(acc_barra)) hd_acciones_barra_meta(acc_barra) else NULL
+  # crudos: "Ver datos de origen" sends accion "crudos" with the marked ids
+  # -- maybe none: the module decides what to show (the lupa, the whole
+  # month). In the edit bar when the table has one.
+  if ("crudos" %in% piezas_tabla)
+    acc_barra_meta <- c(acc_barra_meta, list(list(
+      accion = "crudos", texto = tr("tablas.accion.crudos"), confirmar = FALSE, peligro = FALSE,
+      sin_seleccion = FALSE, vacias = TRUE, modo = if ("modo_editar" %in% piezas_tabla) "editar")))
 
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns

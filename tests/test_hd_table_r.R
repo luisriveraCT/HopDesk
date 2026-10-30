@@ -48,10 +48,13 @@ test_that("a piece the table removes can't be turned back on by the caller", {
 })
 
 test_that("pieces not built yet are dropped with one message per table", {
-  p <- hd_piezas_de("vencidos")
-  expect_message(m <- hd_piezas_motor("vencidos", p), "not built yet")
+  # Class F (the time grid) still has pieces for after T04 (semaforo, columna_fija).
+  p <- hd_piezas_de("pasivos_tabla")
+  expect_message(m <- hd_piezas_motor("pasivos_tabla", p), "not built yet")
   expect_true(all(m %in% HD_PIEZAS_MOTOR))
-  expect_silent(hd_piezas_motor("vencidos", p))
+  expect_silent(hd_piezas_motor("pasivos_tabla", p))
+  # Since T03c every piece Vencidos uses is built.
+  expect_silent(hd_piezas_motor("vencidos", hd_piezas_de("vencidos")))
 })
 
 test_that("core rules exist and aren't pieces", {
@@ -537,6 +540,16 @@ test_that("bar actions: modo = \"editar\" and campo = \"fecha\" only; edit actio
   expect_error(hd_table_server("t", "sin_editar", shiny::reactive(NULL), list(col_texto("Parte")),
                                acciones_barra = list(list(accion = "mover", texto = "t", modo = "editar"))),
                "doesn't have the 'modo_editar' piece")
+})
+
+test_that(".agregado and .adjuntos travel per row (NA is FALSE / 0; without the column, none)", {
+  d <- data.frame(id = c("a", "b", "c"), Parte = "p", .agregado = c(TRUE, NA, FALSE), .adjuntos = c(2, NA, -1),
+                  stringsAsFactors = FALSE)
+  f <- hd_filas(d, list(col_texto("Parte")))
+  expect_identical(unclass(f$agregado), c(TRUE, FALSE, FALSE))
+  expect_identical(unclass(f$adjuntos), c(2L, 0L, 0L))
+  f0 <- hd_filas(d[, 1:2], list(col_texto("Parte")))
+  expect_identical(unclass(f0$adjuntos), c(0L, 0L, 0L))
 })
 
 test_that("vacio: key or text, or list(texto, tono); fijar_titulo: key or text", {
