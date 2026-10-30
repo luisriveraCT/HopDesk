@@ -6,14 +6,23 @@
 
 # ── In-memory caches (populated at startup from seeded stores) ────────────────
 
-.fcs_metrics_cache  <- NULL
+# Metrics are per client, and the process is shared by every client's sessions:
+# the cache is a list keyed by client (".default" when no client_id is given),
+# so one client never gets the catalog another client loaded first.
+.fcs_metrics_cache  <- list()
 .fcs_sources_cache  <- NULL
 
+.fcs_client_key <- function(client_id) {
+  if (is.null(client_id) || !nzchar(client_id)) ".default" else client_id
+}
+
 .lookup_metric <- function(metric_id, client_id = NULL) {
-  if (is.null(.fcs_metrics_cache)) {
-    .fcs_metrics_cache <<- load_forecasting_metrics(client_id = client_id)
+  key <- .fcs_client_key(client_id)
+  if (is.null(.fcs_metrics_cache[[key]])) {
+    .fcs_metrics_cache[[key]] <<- load_forecasting_metrics(client_id = client_id)
   }
-  m <- .fcs_metrics_cache[.fcs_metrics_cache$metric_id == metric_id, , drop = FALSE]
+  metrics <- .fcs_metrics_cache[[key]]
+  m <- metrics[metrics$metric_id == metric_id, , drop = FALSE]
   if (!nrow(m)) return(NULL)
   as.list(m[1, ])
 }
@@ -29,7 +38,7 @@
 
 # Flush caches (call after saving sources/metrics).
 fcs_flush_caches <- function() {
-  .fcs_metrics_cache <<- NULL
+  .fcs_metrics_cache <<- list()
   .fcs_sources_cache <<- NULL
   invisible(NULL)
 }

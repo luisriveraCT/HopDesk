@@ -222,7 +222,7 @@ with_mock_dispatch <- function(metric_list, sources_list, adapter_results, expr)
       row$fetch_params        <- list(ml$fetch_params)
       m <- dplyr::bind_rows(m, row)
     }
-    m
+    list(.default = m)   # the cache is keyed by client; these calls pass no client_id
   }, envir = globalenv())
   assign(".fcs_sources_cache", {
     s <- .schema_forecasting_sources()
