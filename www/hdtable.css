@@ -50,6 +50,8 @@
 .hdt-cuerpo { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--hdt-line);
   border-radius: 6px; overflow: hidden; background: var(--hdt-surface); }
 .hdt-scroll { overflow: auto; max-height: var(--hdt-alto); min-height: 0; flex: 1 1 auto; }
+/* alto = "auto": hdtable.js sets the height from the rows (ajustarAlto). */
+.hdt-auto .hdt-scroll { max-height: none; }
 
 table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; font-variant-numeric: tabular-nums; }
 .hdt-tabla th { text-align: left; font-weight: 600; font-size: .78rem; color: var(--hdt-muted);
@@ -68,8 +70,10 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
    the rows in view are painted between two spacer rows, so every row has
    one fixed height and the columns keep the widths measured on entry. */
 .hdt-tabla.hdt-fijas { table-layout: fixed; }
-.hdt-ventana .hdt-tabla tbody td { height: 22px; overflow: hidden; text-overflow: ellipsis; }
-.hdt-normal.hdt-ventana .hdt-tabla tbody td { height: 33px; }
+/* Same height as a natural row of that density (line-height + padding),
+   relative to the text so it matches on any page base size. */
+.hdt-ventana .hdt-tabla tbody td { height: calc(1.3em + 4px); overflow: hidden; text-overflow: ellipsis; }
+.hdt-normal.hdt-ventana .hdt-tabla tbody td { height: calc(1.5em + 14px); }
 .hdt-tabla tr.hdt-esp td { padding: 0; border: 0; background: transparent !important; }
 .hdt-tabla tr.hdt-esp:hover td { background: transparent; }
 

@@ -19,6 +19,11 @@
   var HDT_UMBRAL_VENTANA = 800;
   var HDT_COLCHON = 20;   // rows painted beyond each edge of the view in window mode
 
+  // alto = "auto" (R/hd_table.R): never fewer than 8 rows tall; up to 15
+  // rows while 30 or fewer are visible; above that, up to 70% of the window
+  // (or what fits in the modal around it).
+  var HDT_ALTO_MIN = 8, HDT_ALTO_NORMAL = 15, HDT_ALTO_CRECE = 30, HDT_ALTO_VENTANA = 0.7;
+
   var TABLAS = {};        // root element id -> state
   var ULTIMO = {};        // root element id -> last data message received for it
   var observador = null;
@@ -131,6 +136,8 @@
 
     st.cuerpo = nodo('div', 'hdt-cuerpo');
     st.scroll = nodo('div', 'hdt-scroll');
+    // Auto height starts at the minimum and is measured after the first paint.
+    if (root.classList.contains('hdt-auto')) st.scroll.style.height = (HDT_ALTO_MIN * 23 + 28) + 'px';
     st.tabla_el = nodo('table', 'hdt-tabla');
     st.thead = nodo('thead');
     st.tbody = nodo('tbody');
@@ -186,6 +193,59 @@
 
     eventos(st);
     return st;
+  }
+
+  // ── Automatic height (alto = "auto") ─────────────────────────────────────
+  // Measured after the paint (next frame), so it never forces a synchronous
+  // layout of the rows. It grows right away; it only shrinks on new data, a
+  // density change or a window resize -- never while typing a search.
+  function programarAlto(st, encoger) {
+    if (!st.root.classList.contains('hdt-auto')) return;
+    st.altoEncoger = st.altoEncoger || !!encoger;
+    if (st.altoPendiente) return;
+    st.altoPendiente = true;
+    requestAnimationFrame(function () {
+      st.altoPendiente = false;
+      var enc = st.altoEncoger;
+      st.altoEncoger = false;
+      ajustarAlto(st, enc, 0);
+    });
+  }
+
+  function ajustarAlto(st, encoger, intento) {
+    var cabeza = st.thead.offsetHeight;
+    if (!cabeza) {                                 // not laid out yet (hidden, just inserted)
+      if (intento < 10) requestAnimationFrame(function () { ajustarAlto(st, encoger, intento + 1); });
+      return;
+    }
+    var filas = st.tbody.querySelectorAll('tr:not(.hdt-esp)');
+    var h = st.modo === 'ventana' && st.altoFila ? st.altoFila
+          : filas.length > 1 ? (filas[filas.length - 1].getBoundingClientRect().bottom - filas[0].getBoundingClientRect().top) / filas.length
+          : (st.hFila || (st.root.classList.contains('hdt-normal') ? 34 : 23));
+    st.hFila = h;
+    var n = st.vis.length;
+    var contenido = st.modo === 'ventana' ? cabeza + n * h
+                  : st.tabla_el.offsetHeight + (st.vacio.hidden ? 0 : st.vacio.offsetHeight);
+    var minimo = cabeza + HDT_ALTO_MIN * h;
+    var tope;
+    if (n <= HDT_ALTO_CRECE) tope = cabeza + HDT_ALTO_NORMAL * h;
+    else {
+      tope = window.innerHeight * HDT_ALTO_VENTANA;
+      // Inside a modal: what fits without the page itself scrolling.
+      var dlg = st.root.closest('.modal-dialog');
+      if (dlg) {
+        var resto = dlg.getBoundingClientRect().height - st.scroll.getBoundingClientRect().height;
+        tope = Math.min(tope, window.innerHeight - resto - 2 * 28);
+      }
+    }
+    var alto = Math.max(minimo, Math.min(contenido, Math.max(tope, minimo)));
+    if (!encoger && st.altoActual) alto = Math.max(alto, st.altoActual);
+    alto = Math.round(alto);
+    if (alto !== st.altoActual) {
+      st.altoActual = alto;
+      st.scroll.style.height = alto + 'px';
+      if (st.modo === 'ventana') pintarVentana(st, false);   // a taller view needs more rows
+    }
   }
 
   // ── Bar actions and confirmation ─────────────────────────────────────────
@@ -285,6 +345,7 @@
     // Row height and column widths change with the density: measure again.
     st.altoFila = null; st.altoMedido = false; st.anchos = null;
     if (st.modo === 'ventana') { var top = st.scroll.scrollTop; salirVentana(st); st.modo = null; pintarFilas(st, top); }
+    if (st.scroll) programarAlto(st, true);
   }
 
   function cargar(st, msg) {
@@ -488,6 +549,7 @@
     pintarSel(st);
     flechas(st);
     if (st.contador) st.contador.textContent = tn(st.textos.contador || 'tablas.contador.registros', vis.length, { n: FMT_N.format(vis.length) });
+    programarAlto(st, desdeDatos);
   }
 
   // The mode is decided on every paint from the visible count; selection,
@@ -554,7 +616,11 @@
   function pintarVentana(st, forzar, arriba) {
     var h = st.altoFila || 23, n = st.vis.length;
     var top = arriba == null ? st.scroll.scrollTop : arriba;
-    var vista = st.scroll.clientHeight || 420;
+    // In auto height the view is the height being set, not what the
+    // spacers would stretch the area to before the first measurement.
+    var vista = st.root.classList.contains('hdt-auto')
+      ? (st.altoActual || window.innerHeight * HDT_ALTO_VENTANA)
+      : (st.scroll.clientHeight || 420);
     var ini = Math.max(0, Math.floor(top / h) - HDT_COLCHON);
     var fin = Math.min(n, Math.ceil((top + vista) / h) + HDT_COLCHON);
     if (!forzar && ini === st.vIni && fin === st.vFin) return;
@@ -815,6 +881,9 @@
   window.addEventListener('keydown', function (e) { if (e.key === 'Shift') mayus(true); });
   window.addEventListener('keyup',   function (e) { if (e.key === 'Shift') mayus(false); });
   window.addEventListener('blur',    function () { mayus(false); });
+  window.addEventListener('resize',  function () {
+    Object.keys(TABLAS).forEach(function (id) { programarAlto(TABLAS[id], true); });
+  });
 
   // ── Full-value bubble (copiar_celda) ─────────────────────────────────────
   // One bubble for the page. 350 ms over a cell shows the full value and a
