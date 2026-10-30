@@ -1026,19 +1026,19 @@ server <- function(input, output, session) {
     ac_val    <- tryCatch(res_auth$allowed_clients, error = function(e) NULL)
     .cid <- function(v) if (!is.null(v) && nzchar(v %||% "")) v else tolower(Sys.getenv("CLIENT_ID"))
     if (is.null(user_val) || !nzchar(user_val %||% ""))
-      return(list(user = "unknown", name = "unknown", tier = "finance",
+      return(list(user = "unknown", name = "unknown", tier = "",
                   account_code = "", group_ids = "[]",
                   client_id = tolower(Sys.getenv("CLIENT_ID")),
                   allowed_clients = "[]", is_staff = FALSE))
     list(
       user            = user_val %||% "unknown",
       name            = name_val %||% user_val %||% "unknown",
-      tier            = tier_val %||% "finance",
+      tier            = tier_val %||% "",
       account_code    = code_val %||% "",
       group_ids       = gids_val %||% "[]",
       client_id       = .cid(cid_val),
       allowed_clients = ac_val   %||% "[]",
-      is_staff        = is_staff_tier(tier_val %||% "finance")
+      is_staff        = is_staff_tier(tier_val %||% "")
     )
   })
 
@@ -1286,6 +1286,49 @@ server <- function(input, output, session) {
   jump_client_id      <- reactiveVal(NULL)
   effective_client_id <- reactive({ jump_client_id() %||% home_client_id() })
 
+  # ── Nivel efectivo y permisos de la sesión (frente A1) ───────────────────────
+  # A staff session inside a client works as the client's IT tier, and may
+  # switch with "Ver como" to any client tier. The choice is per session and
+  # resets on every jump: it is never remembered. Identity (current_user_info)
+  # never changes; only the tier used for permissions and tabs does.
+  ver_como_rv <- reactiveVal(NULL)
+  observeEvent(jump_client_id(), { ver_como_rv(NULL) }, ignoreNULL = FALSE)
+
+  tier_efectivo <- reactive({
+    info <- current_user_info()
+    if (isTRUE(info$is_staff) && !is.null(jump_client_id()))
+      return(ver_como_rv() %||% nivel_ti())
+    info$tier %||% ""
+  })
+
+  # Read by has_capability() (R/pasivos_capabilities.R), which has no `shared`.
+  session$userData$usuario <- function() usuario_sesion()
+
+  # Bumped by the Usuarios screen after saving permissions or tier config.
+  permisos_version <- reactiveVal(0L)
+
+  usuario_sesion <- reactive({
+    info  <- current_user_info()
+    tier  <- tier_efectivo()
+    permisos_version()
+    jumped <- isTRUE(info$is_staff) && !is.null(jump_client_id())
+    overrides <- "{}"
+    if (!jumped && nzchar(info$user %||% "") && info$user != "unknown") {
+      home <- home_client_id() %||% info$client_id
+      u <- tryCatch(auth_load_usuarios(client_id = home), error = function(e) NULL)
+      if (is.data.frame(u) && nrow(u)) {
+        row <- u[tolower(trimws(u$username)) == tolower(trimws(info$user)), , drop = FALSE]
+        if (nrow(row)) overrides <- row$permisos[1] %||% "{}"
+      }
+    }
+    cfg <- if (is_staff_tier(tier)) NULL else
+      tryCatch(.s3_read_with(S3_KEYS$tiers_config, client_id = effective_client_id()),
+               error = function(e) NULL)
+    list(user = info$user, name = info$name, tier = tier, tier_real = info$tier,
+         is_staff = isTRUE(info$is_staff), viendo_como = jumped,
+         permisos = permisos_resueltos(tier, overrides, cfg))
+  })
+
   hop_grants_db    <- reactiveVal(.schema_hop_grants())
 
   # S3-folder isolation is the real fence: CLIENT_ID prefix in .s3_key() ensures
@@ -1410,6 +1453,10 @@ server <- function(input, output, session) {
     active_entry_ledger = active_entry_ledger,
     current_user        = current_user,
     current_user_info   = current_user_info,
+    usuario             = usuario_sesion,
+    tier_efectivo       = tier_efectivo,
+    ver_como            = ver_como_rv,
+    permisos_version    = permisos_version,
     amount_col        = reactive("Saldo vencido"),
     empresa_sel       = empresa_sel_rv,
     empresas_db       = empresas_db,
@@ -1573,7 +1620,8 @@ server <- function(input, output, session) {
   # ── Abono parcial ─────────────────────────────────────────────────────────────
   setup_abono_browse(input, output, session,
                      sap_data, abonos_db, pagar_hoy_db, current_user,
-                     client_id = shared$effective_client_id)
+                     client_id = shared$effective_client_id,
+                     autorizado = function() puede_o_avisa(shared, "can_register_payments"))
 
   # ── Pasivos lifecycle observers and module ────────────────────────────────────
   setup_pasivos_observers(input, output, session, shared)
@@ -1591,9 +1639,10 @@ server <- function(input, output, session) {
   # GRUPO toggle is hidden by default via CSS (display:none!important).
   # Empresas  → dev + admin  (can_manage_empresas permission, TRUE for both by default).
   # Usuarios  → dev only; hidden from admin's dropdown so they don't see the option.
-  observeEvent(shared$current_user_info(), {
-    tier <- tryCatch(shared$current_user_info()$tier, error = function(e) "")
-    if (!tier %in% c("principal", "hopdesk", "dev", "admin")) return()
+  observeEvent(usuario_sesion(), {
+    u <- usuario_sesion()
+    ve_usuarios <- isTRUE(u$is_staff) || puede(u, "can_view_tiers")
+    if (!ve_usuarios && !puede(u, "can_manage_empresas")) return()
 
     # Reveal the GRUPO dropdown toggle (overrides CSS !important)
     shinyjs::runjs("
@@ -1605,8 +1654,8 @@ server <- function(input, output, session) {
         });
     ")
 
-    if (tier %in% c("principal", "hopdesk", "dev")) {
-      # Principal, Hopdesk and Dev see both dropdown items — ensure Usuarios item is visible
+    if (ve_usuarios) {
+      # Staff and whoever holds can_view_tiers see both dropdown items — ensure Usuarios item is visible
       shinyjs::runjs("
         document.querySelectorAll('.dropdown-menu a[data-value=\"TIERS\"]')
           .forEach(function(el) {
@@ -1627,6 +1676,30 @@ server <- function(input, output, session) {
       ")
     }
   }, ignoreInit = FALSE)
+
+  # ── Pestañas por nivel (registro) ───────────────────────────────────────────
+  # A tier with a `pestanas` list sees only those client tabs. Runs after the
+  # admin-deployment rule below, and only ever hides.
+  .TABS_CLIENTE <- c("CAL", "VEN", "PH", "BNC", "IC", "PSV", "FC", "RPT")
+  observe({
+    lista <- nivel_pestanas(tier_efectivo())
+    ocultas <- if (is.null(lista)) character() else setdiff(.TABS_CLIENTE, lista)
+    for (tab in .TABS_CLIENTE) {
+      oculta <- tab %in% ocultas
+      shinyjs::runjs(sprintf("
+        document.querySelectorAll('.navbar .nav-link[data-value=\"%s\"]').forEach(function(el) {
+          var li = el.closest('li');
+          if (%s) { el.style.setProperty('display', 'none', 'important');
+                    if (li) li.style.setProperty('display', 'none', 'important'); }
+          else if (el.dataset.ocultaNivel) { el.style.removeProperty('display');
+                    if (li) li.style.removeProperty('display'); }
+          el.dataset.ocultaNivel = %s ? '1' : '';
+        });
+      ", tab, tolower(oculta), tolower(oculta)))
+    }
+    if (length(ocultas) && isTRUE(input$nav %in% ocultas) && length(lista))
+      updateNavbarPage(session, "nav", selected = lista[1])
+  }, priority = -1)
 
   # ── Admin deployment: hide financial tabs until a client context is active ────
   # Uses runjs with setProperty(...,'important') to override the initial CSS rule
@@ -1709,18 +1782,27 @@ server <- function(input, output, session) {
     user  <- info$user %||% ""
     if (!nzchar(user) || user == "unknown") return(NULL)
     name  <- info$name %||% user
-    tier  <- info$tier %||% "finance"
+    tier  <- info$tier %||% ""
     in_jump <- !is.null(cid)
+    tier_color <- nivel_color(tier)
 
-    tier_color <- switch(tier,
-      principal = "#7b1fa2",
-      hopdesk   = "#c2185b",
-      dev       = "#0d1b3e",
-      admin     = "#6610f2",
-      finance   = "#0a58ca",
-      analysis  = "#6c757d",
-      "#6c757d"
-    )
+    ver_como_ui <- if (in_jump && isTRUE(info$is_staff)) {
+      niv <- niveles_cliente()
+      tags$span(
+        title = tr("niveles.ver_como_ayuda"),
+        style = "display:flex; align-items:center; gap:4px; margin-left:4px;",
+        tags$span(tr("niveles.ver_como"), style = "font-size:.7rem; opacity:.8;"),
+        tags$select(
+          id = "ver_como_sel", class = "form-select form-select-sm",
+          style = "font-size:.72rem; padding:1px 22px 1px 6px; width:auto;",
+          onchange = "Shiny.setInputValue('ver_como', this.value, {priority:'event'})",
+          lapply(niv, function(t) {
+            tags$option(value = t, selected = if (identical(t, isolate(tier_efectivo()))) NA,
+                        nivel_nombre(t))
+          })
+        )
+      )
+    } else NULL
 
     client_pill <- if (in_jump)
       tags$span(
@@ -1735,14 +1817,31 @@ server <- function(input, output, session) {
       style = "display:flex; align-items:center; gap:6px; margin:4px 4px 4px 0; font-size:.8rem; opacity:.9; color:#fff;",
       icon("user-circle"),
       tags$span(name),
-      tags$span(tier, style = sprintf(
+      tags$span(nivel_nombre(tier), style = sprintf(
         "font-size:.65rem; font-weight:700; letter-spacing:1px; text-transform:uppercase;
          background:%s; border:1px solid rgba(255,255,255,.35); padding:2px 7px; border-radius:20px;",
         tier_color
       )),
-      client_pill
+      client_pill,
+      ver_como_ui
     )
   })
+
+  # Only a staff session inside a client may switch, and only to a client tier.
+  observeEvent(input$ver_como, {
+    info <- current_user_info()
+    t <- input$ver_como
+    if (!isTRUE(info$is_staff) || is.null(jump_client_id())) return()
+    if (!t %in% niveles_cliente()) return()
+    ver_como_rv(t)
+    tryCatch(log_action(
+      user = info$user, module = "niveles", action = "ver_como",
+      description = sprintf("%s (como %s)", info$user, nivel_nombre(t)),
+      target_id = t, metadata = list(nivel = t),
+      client_id = jump_client_id(),
+      viewer_home_client_id = tryCatch(home_client_id(), error = function(e) NULL)
+    ), error = function(e) NULL)
+  }, ignoreInit = TRUE)
 
   # ── Diagnostic: log every sap_data() write ───────────────────────────────────
   # Fires whenever sap_data() is written (snapshot seed, cache hit, live fetch).
@@ -2777,6 +2876,7 @@ server <- function(input, output, session) {
 
   # ── Manual entry ─────────────────────────────────────────────────────────────
   observeEvent(input$btn_add_entry, {
+    if (!puede_o_avisa(shared, "can_register_payments")) return()
     showModal(modalDialog(
       title = "¿Qué tipo de entrada?", size = "s", easyClose = TRUE,
       footer = tagList(
@@ -2789,23 +2889,27 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$pick_ar, {
+    if (!puede_o_avisa(shared, "can_register_payments")) return()
     active_entry_ledger("AR"); removeModal()
     show_combined_entry_modal("AR", sap_data, session,
                               empresa_vals = empresa_sel_rv())
   }, ignoreInit = TRUE)
 
   observeEvent(input$pick_ap, {
+    if (!puede_o_avisa(shared, "can_register_payments")) return()
     active_entry_ledger("AP"); removeModal()
     show_combined_entry_modal("AP", sap_data, session,
                               empresa_vals = empresa_sel_rv())
   }, ignoreInit = TRUE)
 
   observeEvent(input$pick_abono, {
+    if (!puede_o_avisa(shared, "can_register_payments")) return()
     removeModal()
     show_abono_modal(sap_data, session, empresa_vals = unname(company_map_rv()))
   }, ignoreInit = TRUE)
 
   observeEvent(input$me_save, {
+    if (!puede_o_avisa(shared, "can_register_payments")) return()
     ledger  <- active_entry_ledger()
     req(ledger)
     edit_id <- session$userData[["me_edit_id"]] %||% ""

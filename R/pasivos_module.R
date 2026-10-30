@@ -307,6 +307,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
   # ── pcm_delete_provision: Prompt confirmation before deleting ────────────
   shiny::observeEvent(input$pcm_delete_provision, ignoreInit = TRUE, {
+    if (!pasivos_autoriza("pasivos.edit_provision")) return()
     prov_id <- rv$pending_provision_id
     if (is.null(prov_id)) return()
     shiny::showModal(shiny::modalDialog(
@@ -324,6 +325,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
   # ── pcm_delete_confirm: Actually remove the provision ─────────────────────
   shiny::observeEvent(input$pcm_delete_confirm, ignoreInit = TRUE, {
+    if (!pasivos_autoriza("pasivos.edit_provision")) return()
     prov_id <- rv$pending_provision_id
     if (is.null(prov_id)) return()
     user <- tryCatch(shared$current_user(), error = function(e) "system")
@@ -399,6 +401,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
   # ── pcm_save_provision: Save edits back to the provision without converting ─
   shiny::observeEvent(input$pcm_save_provision, ignoreInit = TRUE, {
+    if (!pasivos_autoriza("pasivos.edit_provision")) return()
     prov_id <- rv$pending_provision_id
     if (is.null(prov_id)) return()
     user <- tryCatch(shared$current_user(), error = function(e) "system")
@@ -759,6 +762,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
   # ── pcm_do_undo_conversion: revert converted provision ────────────────────────
   shiny::observeEvent(input$pcm_do_undo_conversion, ignoreInit = TRUE, {
+    if (!pasivos_autoriza("pasivos.convert_to_item")) return()
     prov_id <- rv$conv_prov_id
     if (is.null(prov_id)) return()
     user <- tryCatch(shared$current_user(), error = function(e) "system")
@@ -862,6 +866,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
   # ── pcm_do_delete_converted: fully delete a converted provision ───────────────
   shiny::observeEvent(input$pcm_do_delete_converted, ignoreInit = TRUE, {
+    if (!pasivos_autoriza("pasivos.convert_to_item")) return()
     prov_id <- rv$conv_prov_id
     if (is.null(prov_id)) return()
     user <- tryCatch(shared$current_user(), error = function(e) "system")

@@ -1541,6 +1541,7 @@ pagarHoyServer <- function(id, shared) {
       }
 
       observeEvent(input[[paste0("confirm_ap_", emp)]], {
+        if (!puede_o_avisa(shared, "can_confirm_payments")) return()
         s_emp <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
         cur   <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur <- s_emp |> dplyr::filter(Moneda == cur)
@@ -1593,6 +1594,7 @@ pagarHoyServer <- function(id, shared) {
       }, ignoreInit = TRUE)
 
       observeEvent(input[[paste0("do_confirm_ap_", emp)]], {
+        if (!puede_o_avisa(shared, "can_confirm_payments")) return()
         s_emp    <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
         cur      <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
@@ -1916,6 +1918,7 @@ pagarHoyServer <- function(id, shared) {
 
       # ── Confirm AR ─────────────────────────────────────────────────────────
       observeEvent(input[[paste0("confirm_ar_", emp)]], {
+        if (!puede_o_avisa(shared, "can_confirm_payments")) return()
         s_emp    <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
         cur      <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
@@ -1973,6 +1976,7 @@ pagarHoyServer <- function(id, shared) {
       }, ignoreInit = TRUE)
 
       observeEvent(input[[paste0("do_confirm_ar_", emp)]], {
+        if (!puede_o_avisa(shared, "can_confirm_payments")) return()
         s_emp    <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
         cur      <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur    <- s_emp |> dplyr::filter(Moneda == cur)

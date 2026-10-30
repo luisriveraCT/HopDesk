@@ -131,11 +131,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
   # ── Toggle changed ───────────────────────────────────────────────────────────
   observeEvent(input$sincro_toggle_change, {
     chk  <- isTRUE(input$sincro_toggle_change$checked)
-    tier <- tryCatch(shared$current_user_info()$tier, error = function(e) "")
-    if (!tier %in% c("dev", "admin")) {
-      showNotification("Sin permiso para cambiar la sincronización.", type = "error")
-      return()
-    }
+    if (!puede_o_avisa(shared, "can_manage_sync")) return()
 
     if (!chk) {
       # ── Turning OFF ─────────────────────────────────────────────────────────
@@ -240,7 +236,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
       return()
     })
 
-    actor <- tryCatch(shared$current_user(), error = function(e) "admin")
+    actor <- tryCatch(shared$current_user(), error = function(e) "sistema")
     tryCatch(save_agenda_sync_config(TRUE, actor, client_id = shared$effective_client_id()), error = function(e) NULL)
 
     .GlobalEnv$.agenda_sync$is_on   <- TRUE

@@ -281,6 +281,7 @@ setup_pasivos_edit_confirm <- function(input, output, session, shared) {
 
   # Save decisions
   shiny::observeEvent(input$pec_save, ignoreInit = TRUE, {
+    if (!pasivos_autoriza("pasivos.edit_liability")) return()
     conf <- .pec_state$conflicts
     repl <- .pec_state$replacement
     if (is.null(conf) || !nrow(conf)) { shiny::removeModal(); return() }

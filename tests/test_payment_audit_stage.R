@@ -30,7 +30,7 @@ cat("── Payment-file audit trail (structured log + permission + viewer) ─�
 source("R/pagos_generados_persistence.R", local = FALSE)
 source("R/audit_log_viewer_module.R",     local = FALSE)  # .audit_viewer_resolve_perms()
 source("R/pagos_audit_viewer_module.R",   local = FALSE)
-source("R/tiers_module.R",                local = FALSE)  # PERM_LABELS, .PRINCIPAL_LOCKED_KEYS
+source("R/tiers_module.R",                local = FALSE)
 
 # Sourcing the whole (huge) pagar_hoy_module.R just to reach the one function
 # under test here (.log_pago_generado, module-scope, no dependency on the
@@ -302,11 +302,11 @@ for (tier in names(expected_defaults)) {
                tier, expected_defaults[[tier]]))
 }
 
-.chk("can_view_payment_audit" %in% names(PERM_LABELS), TRUE,
-     "can_view_payment_audit is registered in PERM_LABELS (so Config. de Tiers renders a toggle for it)")
-.chk(nzchar(PERM_LABELS[["can_view_payment_audit"]] %||% ""), TRUE,
-     "can_view_payment_audit has a non-empty display label")
-.chk("can_view_payment_audit" %in% .PRINCIPAL_LOCKED_KEYS, FALSE,
+.chk("can_view_payment_audit" %in% permisos_claves(), TRUE,
+     "can_view_payment_audit is registered in PERMISOS (so Config. de Tiers renders a toggle for it)")
+.chk(permiso_nombre("can_view_payment_audit") != "permisos.can_view_payment_audit", TRUE,
+     "can_view_payment_audit has a display name in the dictionary")
+.chk("can_view_payment_audit" %in% permisos_bloqueados(nivel_tope()), FALSE,
      "can_view_payment_audit is NOT a principal-locked key -- it's a regular, toggleable permission")
 
 # Exhaustive consistency check: every key in PERM_LABELS must exist in
@@ -315,9 +315,9 @@ for (tier in names(expected_defaults)) {
 # a missed staging site.
 for (tier in c("principal","hopdesk","dev","admin","finance","analysis")) {
   resolved <- auth_resolve_perms(tier, "{}")
-  missing <- setdiff(names(PERM_LABELS), names(resolved))
+  missing <- setdiff(permisos_claves(), names(resolved))
   .chk(length(missing), 0L,
-       sprintf("tier '%s': every PERM_LABELS key has a default (missing: %s)",
+       sprintf("tier '%s': every PERMISOS key has a default (missing: %s)",
                tier, if (length(missing)) paste(missing, collapse=", ") else "none"))
 }
 

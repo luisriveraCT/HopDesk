@@ -23,7 +23,11 @@
 .payment_audit_can_view <- function(shared) {
   is_staff <- isTRUE(tryCatch(shared$current_user_info()$is_staff, error = function(e) FALSE))
   if (is_staff) return(TRUE)
-  isTRUE(.audit_viewer_resolve_perms(shared)$can_view_payment_audit)
+  u <- tryCatch(shared$usuario(), error = function(e) NULL)
+  # A `shared` without usuario() (older callers, tests): resolve from the
+  # viewer's own usuarios.rds row, as the audit viewer does.
+  if (is.null(u)) u <- list(permisos = unlist(.audit_viewer_resolve_perms(shared)))
+  puede(u, "can_view_payment_audit")
 }
 
 # Module-file scope (not inside pagosAuditViewerServer) -- both the server's

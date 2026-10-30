@@ -137,7 +137,9 @@ tryCatch({
   "%||%" <- function(a, b) if (!is.null(a)) a else b
 
   source("R/persistence.R",    local = FALSE)
+  source("R/i18n.R",           local = FALSE)
   source("R/tier_registry.R",  local = FALSE)
+  source("R/permisos.R",       local = FALSE)
   source("R/sap_cache.R",      local = FALSE)
   source("R/jump_logic.R",     local = FALSE)
   source("R/tiers_tab_config.R", local = FALSE)

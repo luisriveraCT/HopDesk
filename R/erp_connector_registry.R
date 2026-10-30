@@ -93,9 +93,10 @@ erp_connector_homologate_fn_name <- function(erp_type) ERP_CONNECTOR_REGISTRY[[e
 #' even though hopdesk/principal outrank dev — being staff never grants a
 #' standing bypass (ARCHITECTURE.md §1). This is the actual enforcement;
 #' the UI only hides the option, it never itself decides access.
-erp_access_allowed <- function(tier, is_staff, jumped) {
+erp_access_allowed <- function(tier, is_staff, jumped, usuario = NULL) {
   if (isTRUE(is_staff)) return(isTRUE(jumped))
-  !is.na(tier_rank(tier)) && tier_rank(tier) >= tier_rank("dev")
+  if (!is.null(usuario)) return(puede(usuario, "can_configure_erp"))
+  isTRUE(permisos_resueltos(tier)[["can_configure_erp"]])
 }
 
 #' Runs the registered test_fn for `erp_type` against `config` (a named list

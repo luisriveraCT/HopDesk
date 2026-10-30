@@ -229,17 +229,7 @@ empresasServer <- function(id, shared) {
     # Authorized if tier is dev/admin OR if the user has the can_manage_empresas
     # permission explicitly granted (allows future per-user overrides).
     req_authorized <- reactive({
-      tier <- current_tier()
-      if (tier %in% c("dev", "admin")) return(TRUE)
-      # Check per-user permission override
-      info <- tryCatch(shared$current_user_info(), error = function(e) NULL)
-      if (is.null(info)) return(FALSE)
-      all_u <- tryCatch(auth_load_usuarios(client_id = shared$effective_client_id()), error = function(e) NULL)
-      if (is.null(all_u) || !nrow(all_u)) return(FALSE)
-      row <- all_u[tolower(all_u$username) == tolower(info$user %||% ""), ]
-      if (!nrow(row)) return(FALSE)
-      perms <- auth_resolve_perms(row$tier[1], row$permisos[1] %||% "{}")
-      isTRUE(perms$can_manage_empresas)
+      puede(shared$usuario(), "can_manage_empresas")
     })
 
     # ── Header badge ──────────────────────────────────────────────────────────
@@ -626,7 +616,7 @@ empresasServer <- function(id, shared) {
 
     # Server-side access gate (spec §5 "Access") — the actual enforcement.
     # Every handler below calls this itself; the UI only hides the option.
-    erp_access <- reactive(erp_access_allowed(current_tier(), erp_is_staff(), erp_jumped()))
+    erp_access <- reactive(erp_access_allowed(current_tier(), erp_is_staff(), erp_jumped(), shared$usuario()))
 
     .reject_erp_action <- function() {
       showNotification("No tienes permisos para administrar conexiones ERP.",
@@ -1128,7 +1118,7 @@ empresasServer <- function(id, shared) {
 
     output$group_config_section <- renderUI({
       req(req_authorized())
-      if (!identical(current_tier(), "dev")) return(NULL)
+      if (!puede(shared$usuario(), "can_manage_group_branding")) return(NULL)
 
       cfg <- tryCatch(shared$group_config(), error = function(e) NULL) %||%
              list(group_name = "Networks Group", logo_raw = NULL, logo_ext = "png")

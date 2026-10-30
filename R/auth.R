@@ -114,7 +114,7 @@ verify_password <- function(plain, hash) {
     user            = tolower(trimws(raw$username)),
     password        = raw$password_hash,
     is_hashed_password = TRUE,   # Stage 7 — migration below guarantees this by the time we get here
-    admin           = raw$tier == "dev",
+    admin           = unname(vapply(raw$tier, nivel_es_ti, logical(1))),
     name            = raw$display_name,
     tier            = raw$tier,
     account_code    = raw$account_code    %||% NA_character_,
@@ -169,7 +169,7 @@ verify_password <- function(plain, hash) {
     if (!is.null(hd_raw) && is.data.frame(hd_raw) && nrow(hd_raw))
       hd_raw <- .migrate_legacy_passwords(hd_raw, "hd-admin")
     if (!is.null(hd_raw) && is.data.frame(hd_raw) && nrow(hd_raw)) {
-      hd_staff <- hd_raw[hd_raw$tier %in% c("principal", "hopdesk"), , drop = FALSE]
+      hd_staff <- hd_raw[hd_raw$tier %in% niveles_staff(), , drop = FALSE]
       if (nrow(hd_staff))
         staff_creds <- .normalize_credentials(hd_staff, "hd-admin")
     }
@@ -190,7 +190,7 @@ verify_password <- function(plain, hash) {
         )
         if (is.null(raw_c) || !nrow(raw_c)) return(NULL)
         raw_c <- .migrate_legacy_passwords(raw_c, ccid)
-        raw_c <- raw_c[!raw_c$tier %in% c("principal", "hopdesk"), , drop = FALSE]
+        raw_c <- raw_c[!raw_c$tier %in% niveles_staff(), , drop = FALSE]
         if (!nrow(raw_c)) return(NULL)
         .normalize_credentials(raw_c, ccid)
       })
@@ -390,125 +390,7 @@ auth_save_usuarios <- function(df, client_id = NULL) {
   invisible(TRUE)
 }
 
-# Resolve effective permissions for a user by combining tier defaults + JSON overrides.
-# Returns a named list of booleans for all 12 permission keys.
-# Tier hierarchy (highest to lowest): principal > hopdesk > dev > admin > finance > analysis
-#
-# Locked permissions (can_approve_clients, can_manage_hopdesk_perms):
-#   - Always TRUE for principal tier; cannot be toggled via UI by anyone.
-#   - Overrides in permisos JSON are ignored for these two keys on principal accounts.
-auth_resolve_perms <- function(tier, permisos_json) {
-  # Existing 13 keys + 5 new SaaS keys
-  defaults <- list(
-    principal = list(
-      # All operational permissions — full access
-      can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
-      can_view_bancos = TRUE, can_view_reportes = TRUE, can_edit_invoices = TRUE,
-      can_move_invoices = TRUE, can_manage_tags = TRUE, can_export_pdf = TRUE,
-      can_manage_providers = TRUE, can_manage_users = TRUE, can_view_tiers = TRUE,
-      can_manage_empresas = TRUE,
-      # SaaS admin permissions — locked TRUE for principal
-      can_approve_clients        = TRUE,
-      can_manage_hopdesk_perms   = TRUE,
-      can_jump_clients           = TRUE,
-      can_manage_invites         = TRUE,
-      can_view_client_audit_logs = TRUE,
-      can_view_staff_audit_log   = TRUE,
-      can_view_payment_audit     = TRUE
-    ),
-    hopdesk = list(
-      can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
-      can_view_bancos = TRUE, can_view_reportes = TRUE, can_edit_invoices = TRUE,
-      can_move_invoices = TRUE, can_manage_tags = TRUE, can_export_pdf = TRUE,
-      can_manage_providers = TRUE, can_manage_users = TRUE, can_view_tiers = TRUE,
-      can_manage_empresas = TRUE,
-      can_approve_clients        = FALSE,
-      can_manage_hopdesk_perms   = FALSE,
-      can_jump_clients           = FALSE,
-      can_manage_invites         = TRUE,
-      can_view_client_audit_logs = TRUE,
-      can_view_staff_audit_log   = FALSE,
-      # Staff always have this regardless of the client's own tier config --
-      # see .payment_audit_can_view()'s staff bypass in
-      # R/pagos_audit_viewer_module.R, which does not consult this default
-      # at all for a staff session. Set TRUE here too so a direct call to
-      # auth_resolve_perms() for a hopdesk user (outside that bypass path)
-      # is still consistent with "staff always allowed."
-      can_view_payment_audit     = TRUE
-    ),
-    dev = list(
-      can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
-      can_view_bancos = TRUE, can_view_reportes = TRUE, can_edit_invoices = TRUE,
-      can_move_invoices = TRUE, can_manage_tags = TRUE, can_export_pdf = TRUE,
-      can_manage_providers = TRUE, can_manage_users = TRUE, can_view_tiers = TRUE,
-      can_manage_empresas = TRUE,
-      can_approve_clients = FALSE, can_manage_hopdesk_perms = FALSE,
-      # can_manage_invites = TRUE: a client's own dev/IT can invite their own
-      # teammates without asking Hopdesk (Stage 2 Part C, confirmed with
-      # Mouse). Note: tiers_module.R's Invitaciones tab gate is tier-equality
-      # based like its siblings, not driven by this flag directly — this
-      # default documents the intended permission, it isn't itself consulted.
-      can_jump_clients = FALSE, can_manage_invites = TRUE,
-      can_view_client_audit_logs = FALSE, can_view_staff_audit_log = FALSE,
-      # A client's own dev/IT tier -- default ON per Mouse's explicit call
-      # 2026-08-25 ("disable for everyone except dev and admin").
-      can_view_payment_audit = TRUE
-    ),
-    admin = list(
-      can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
-      can_view_bancos = TRUE, can_view_reportes = TRUE, can_edit_invoices = TRUE,
-      can_move_invoices = TRUE, can_manage_tags = TRUE, can_export_pdf = TRUE,
-      can_manage_providers = TRUE, can_manage_users = TRUE, can_view_tiers = FALSE,
-      can_manage_empresas = TRUE,
-      can_approve_clients = FALSE, can_manage_hopdesk_perms = FALSE,
-      can_jump_clients = FALSE, can_manage_invites = FALSE,
-      can_view_client_audit_logs = FALSE, can_view_staff_audit_log = FALSE,
-      can_view_payment_audit = TRUE
-    ),
-    finance = list(
-      can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
-      can_view_bancos = TRUE, can_view_reportes = TRUE, can_edit_invoices = TRUE,
-      can_move_invoices = TRUE, can_manage_tags = TRUE, can_export_pdf = TRUE,
-      can_manage_providers = FALSE, can_manage_users = FALSE, can_view_tiers = FALSE,
-      can_manage_empresas = FALSE,
-      can_approve_clients = FALSE, can_manage_hopdesk_perms = FALSE,
-      can_jump_clients = FALSE, can_manage_invites = FALSE,
-      can_view_client_audit_logs = FALSE, can_view_staff_audit_log = FALSE,
-      # OFF by default (Mouse's explicit call) -- the toggle still appears in
-      # Config. de Tiers for this tier (PERM_LABELS applies to all client
-      # tiers uniformly), dev/admin can turn it on per-client if needed.
-      can_view_payment_audit = FALSE
-    ),
-    analysis = list(
-      can_view_cobros = TRUE, can_view_pagos = TRUE, can_view_agenda = TRUE,
-      can_view_bancos = FALSE, can_view_reportes = TRUE, can_edit_invoices = FALSE,
-      can_move_invoices = FALSE, can_manage_tags = FALSE, can_export_pdf = TRUE,
-      can_manage_providers = FALSE, can_manage_users = FALSE, can_view_tiers = FALSE,
-      can_manage_empresas = FALSE,
-      can_approve_clients = FALSE, can_manage_hopdesk_perms = FALSE,
-      can_jump_clients = FALSE, can_manage_invites = FALSE,
-      can_view_client_audit_logs = FALSE, can_view_staff_audit_log = FALSE,
-      can_view_payment_audit = FALSE
-    )
-  )
-
-  base <- defaults[[tier]] %||% defaults[["finance"]]
-
-  overrides <- tryCatch(
-    jsonlite::fromJSON(permisos_json %||% "{}"),
-    error = function(e) list()
-  )
-
-  # Apply overrides — but locked keys on principal accounts are immune
-  locked_principal_keys <- c("can_approve_clients", "can_manage_hopdesk_perms")
-  for (k in names(overrides)) {
-    if (!k %in% names(base)) next
-    if (identical(tier, "principal") && k %in% locked_principal_keys) next
-    base[[k]] <- isTRUE(overrides[[k]])
-  }
-
-  base
-}
+# auth_resolve_perms() lives in R/permisos.R (registry-driven).
 
 # Case-insensitive credential checker for shinymanager.
 # Resolves credentials fresh on every login attempt so accounts created during

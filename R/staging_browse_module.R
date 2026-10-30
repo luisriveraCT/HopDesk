@@ -453,7 +453,7 @@ show_abono_modal <- function(sap_data, session, empresa_vals) {
 # ── Server-side setup — call ONCE inside server() ────────────────────────────
 setup_abono_browse <- function(input, output, session,
                                 sap_data, abonos_db, pagar_hoy_db, current_user,
-                                client_id = NULL) {
+                                client_id = NULL, autorizado = function() FALSE) {
 
   output$ab_table <- renderUI({
     ledger <- input$ab_ledger
@@ -560,6 +560,7 @@ setup_abono_browse <- function(input, output, session,
   # Calendar reduction takes effect only when "Confirmar pagos" in Agenda de Hoy
   # writes confirmed rows to abonos_db with status = "active".
   observeEvent(input$ab_rows, {
+   if (!isTRUE(autorizado())) return()
    tryCatch({
     # Normalize to list-of-lists. Shiny/jsonlite delivers the client's JSON
     # array of row objects in different shapes depending on how many rows

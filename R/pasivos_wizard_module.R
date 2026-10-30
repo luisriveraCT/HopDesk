@@ -1354,6 +1354,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
   })
 
   shiny::observeEvent(input$pwiz_save, ignoreInit = TRUE, {
+    if (!pasivos_autoriza("pasivos.edit_liability")) return()
     shinyjs::disable("pwiz_save")
     on.exit(shinyjs::enable("pwiz_save"), add = TRUE)
 

@@ -384,13 +384,32 @@ norm_conf <- .normalize(old_conf, .schema_bancos_confirmados)
 .chk(norm_conf$importe[1], 500,                 "bancos_conf compat: importe unchanged")
 .chk(norm_conf$eliminado[1], FALSE,             "bancos_conf compat: eliminado unchanged")
 
-# ── 4. Capability stub ────────────────────────────────────────────────────────
-cat("── 4. Capability stub ───────────────────────────────────────────────────\n")
+# ── 4. Capabilities -> permission registry ──────────────────────────────────
+cat("── 4. Capabilities ──────────────────────────────────────────────────────
+")
 
-for (cap in PASIVOS_CAPABILITIES) {
-  .chk_true(has_capability("dev", cap),
-            paste("has_capability TRUE:", cap))
+if (!exists("tr")) source("R/i18n.R")
+source("R/tier_registry.R")
+source("R/permisos.R")
+
+.cap_as <- function(tier, cap) {
+  s <- shiny::MockShinySession$new()
+  s$userData$usuario <- list(tier = tier, permisos = permisos_resueltos(tier))
+  shiny::withReactiveDomain(s, has_capability("x", cap))
 }
+
+# Outside a session every mapped capability fails closed; read-only ones pass.
+for (cap in names(PASIVOS_CAPABILITIES)) {
+  esperado <- is.na(PASIVOS_CAPABILITIES[[cap]])
+  .chk(has_capability("dev", cap), esperado,
+       paste("sin sesión, has_capability =", esperado, ":", cap))
+}
+# Inside a session it follows the user's permissions.
+.chk_true(.cap_as(nivel_ti(), "pasivos.convert_to_item"), "Dev convierte provisiones")
+.chk(.cap_as("compras", "pasivos.convert_to_item"), FALSE, "Compras NO convierte provisiones")
+.chk_true(.cap_as("compras", "pasivos.create_provision_manual"), "Compras crea provisiones")
+.chk(.cap_as("analysis", "pasivos.create_provision_manual"), FALSE, "Análisis NO crea provisiones")
+.chk_true(.cap_as("analysis", "pasivos.view"), "Análisis ve Pasivos")
 
 # Unknown capability returns FALSE and warns
 .chk(has_capability("dev", "pasivos.unknown_capability"), FALSE,

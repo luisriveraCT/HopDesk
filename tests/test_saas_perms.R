@@ -101,12 +101,12 @@ lp <- auth_resolve_perms("principal", locked_override)
 # ── E. TIER_REGISTRY — single source of truth for staff vs. client tiers ─────
 # Stage 1: tesoreria routing bug + dev-tier jump security hole.
 
-staff_tiers  <- names(Filter(function(e) isTRUE(e$internal_only), TIER_REGISTRY))
-client_tiers <- names(Filter(function(e) !isTRUE(e$internal_only), TIER_REGISTRY))
+staff_tiers  <- names(Filter(function(e) isTRUE(e$interno), TIER_REGISTRY))
+client_tiers <- names(Filter(function(e) !isTRUE(e$interno), TIER_REGISTRY))
 .chk(sort(staff_tiers),  sort(c("principal", "hopdesk")),
      "TIER_REGISTRY: internal_only==TRUE is exactly {principal, hopdesk}")
-.chk(sort(client_tiers), sort(c("dev", "admin", "finance", "analysis")),
-     "TIER_REGISTRY: internal_only==FALSE is exactly {dev, admin, finance, analysis}")
+.chk(sort(client_tiers), sort(c("dev", "admin", "finance", "analysis", "compras")),
+     "TIER_REGISTRY: internal_only==FALSE is exactly {dev, admin, finance, analysis, compras}")
 
 # ── F. is_staff derivation — the mechanism current_user_info()$is_staff uses ─
 

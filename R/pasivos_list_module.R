@@ -399,6 +399,7 @@ pasivos_list_module_server <- function(id, shared) {
     })
 
     shiny::observeEvent(input$plist_confirm_archive, ignoreInit = TRUE, {
+      if (!pasivos_autoriza("pasivos.delete_liability")) return()
       lid  <- archive_target_rv()
       if (!nzchar(lid %||% "")) { shiny::removeModal(); return() }
       user <- tryCatch(shared$current_user(), error = function(e) "system")

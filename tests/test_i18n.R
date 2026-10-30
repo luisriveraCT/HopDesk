@@ -9,7 +9,7 @@ en <- i18n_dict("en")
 placeholders <- function(s) sort(unique(regmatches(s, gregexpr("\\{[a-z_]+\\}", s))[[1]]))
 
 test_that("keys follow <area>.<screen>.<thing> and areas are known", {
-  ok <- grepl("^(comun|tablas|panorama|requisiciones)(\\.[a-z0-9_]+)+$", names(es))
+  ok <- grepl("^(comun|tablas|panorama|requisiciones|niveles|permisos|avisos)(\\.[a-z0-9_]+)+$", names(es))
   expect_true(all(ok), info = paste(names(es)[!ok], collapse = ", "))
 })
 

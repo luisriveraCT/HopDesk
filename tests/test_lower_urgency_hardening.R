@@ -106,10 +106,11 @@ cat("── Lower-urgency hardening (post-review) ──────────
   start <- grep("^\\s*usuarios_rv <- reactive\\(\\{", txt)[1]
   block <- paste(txt[start:min(start + 20, length(txt))], collapse = "\n")
 
-  .chk(grepl('if\\s*\\(!is_principal\\(\\)\\s*&&\\s*nrow\\(df\\)\\s*>\\s*0\\)\\s*\\n\\s*df\\s*<-\\s*df\\[df\\$tier != "principal"',
-             block),
+  .chk(grepl("nivel_puede_ver_fila(vt, t)", block, fixed = TRUE),
        TRUE,
-       "usuarios_rv(): the principal-tier filter applies to ALL non-principal viewers, unconditionally on hopdesk status")
+       "usuarios_rv(): one rank rule filters rows for every viewer (a hopdesk viewer never sees a principal row)")
+  .chk(nivel_puede_ver_fila("hopdesk", "principal"), FALSE,
+       "nivel_puede_ver_fila(): hopdesk does not see principal")
 
   .chk(grepl('!is_principal\\(\\)\\s*&&\\s*!is_hopdesk\\(\\)\\s*&&\\s*nrow\\(df\\)\\s*>\\s*0\\)\\s*\\n\\s*df\\s*<-\\s*df\\[df\\$tier != "principal"',
              block),

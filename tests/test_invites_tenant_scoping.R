@@ -35,19 +35,19 @@ src <- paste(readLines("R/tiers_module.R", warn = FALSE), collapse = "\n")
 
 # ── A. El allowlist de tiers existe y es compartido ──────────────────────────
 
-.chk(exists(".INVITABLE_TIERS"), TRUE, ".INVITABLE_TIERS está definido")
-.chk(sort(.INVITABLE_TIERS), sort(c("analysis", "finance", "admin")),
-     "invitable tiers: exactamente analysis/finance/admin")
+.chk(exists("niveles_invitables"), TRUE, "niveles_invitables() está definido")
+.chk(sort(niveles_invitables()), sort(c("analysis", "finance", "admin", "compras")),
+     "invitable tiers: exactamente analysis/finance/admin/compras")
 for (forbidden in c("dev", "hopdesk", "principal"))
-  .chk(forbidden %in% .INVITABLE_TIERS, FALSE,
+  .chk(forbidden %in% niveles_invitables(), FALSE,
        sprintf("una invitación NO puede crear tier '%s'", forbidden))
 
 # Una sola lista alimenta el desplegable y la validación del servidor: si
 # alguien agrega un tier al selectInput, el check del servidor lo sigue solo.
-.chk(grepl('choices = .INVITABLE_TIERS', src, fixed = TRUE), TRUE,
-     "el selectInput de tier usa .INVITABLE_TIERS, no una lista literal")
-.chk(grepl('tier_in %in% .INVITABLE_TIERS', src, fixed = TRUE), TRUE,
-     "el servidor valida el tier contra .INVITABLE_TIERS")
+.chk(grepl('choices = setNames(niveles_invitables(),', src, fixed = TRUE), TRUE,
+     "el selectInput de tier usa niveles_invitables(), no una lista literal")
+.chk(grepl('tier_in %in% niveles_invitables()', src, fixed = TRUE), TRUE,
+     "el servidor valida el tier contra niveles_invitables()")
 .chk(grepl('choices = c("analysis", "finance", "admin")', src, fixed = TRUE), FALSE,
      "ya no queda la lista de tiers duplicada a mano")
 

@@ -25,9 +25,10 @@ cat("\n== Permisos internos de Hopdesk no se filtran a clientes ==\n")
 .chk_true <- function(cond, label) .chk(isTRUE(cond), TRUE, label)
 
 if (!exists("%||%")) `%||%` <- function(a, b) if (is.null(a)) b else a
+if (!exists("tr")) tr <- function(clave, ...) clave
+source("R/tier_registry.R", local = FALSE)
+source("R/permisos.R", local = FALSE)
 src <- readLines("R/tiers_module.R", warn = FALSE)
-eval(parse(text = paste(src[seq_len(grep("^perm_visible_keys <- function", src) + 4)],
-                        collapse = "\n")), envir = globalenv())
 
 INTERNAS <- c("can_approve_clients", "can_manage_hopdesk_perms", "can_jump_clients",
               "can_view_client_audit_logs", "can_view_staff_audit_log")
@@ -42,16 +43,16 @@ for (k in INTERNAS)
 
 # Las operativas deben seguir visibles para el cliente -- ocultar de más
 # rompería la gestión de su propio equipo.
-for (k in c("can_view_cobros", "can_view_pagos", "can_edit_invoices",
-            "can_move_invoices", "can_manage_tags", "can_manage_users",
-            "can_manage_empresas", "can_manage_invites", "can_view_payment_audit"))
+for (k in c("can_manage_empresas", "can_manage_invites", "can_view_payment_audit",
+            "can_edit_provisiones", "can_confirm_payments", "can_view_requisiciones"))
   .chk_true(k %in% cliente, sprintf("el cliente conserva '%s'", k))
 
-.chk(length(staff), length(PERM_LABELS), "staff ve el catalogo completo")
-.chk(length(cliente), length(PERM_LABELS) - length(INTERNAS),
+INTERNAS <- permisos_internos()
+.chk(length(staff), length(permisos_claves()), "staff ve el catalogo completo")
+.chk(length(cliente), length(permisos_claves()) - length(INTERNAS),
      "el cliente ve exactamente el catalogo menos las internas")
 .chk_true(setequal(setdiff(staff, cliente), INTERNAS),
-          "la unica diferencia entre ambas vistas son las 5 internas")
+          "la unica diferencia entre ambas vistas son las internas")
 
 # Fail-closed: quien olvide pasar el argumento obtiene la vista de cliente.
 .chk(perm_visible_keys(NULL), cliente, "sin argumento valido -> vista de cliente (fail-closed)")

@@ -745,7 +745,7 @@ notify_limit_change_to_principals <- function(client_id, client_name,
     if (is.null(hd_staff) || !nrow(hd_staff)) return(invisible(FALSE))
     principals <- hd_staff[
       (is.na(hd_staff$deleted) | hd_staff$deleted != TRUE) &
-      hd_staff$tier == "principal" &
+      hd_staff$tier == nivel_tope() &
       !is.na(hd_staff$email) & nzchar(hd_staff$email %||% ""),
     , drop = FALSE]
     if (!nrow(principals)) return(invisible(FALSE))

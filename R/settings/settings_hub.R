@@ -10,11 +10,9 @@
 show_settings_modal <- function(input, output, session, shared) {
 
   # Resolve tier before building the modal — must happen outside tagList/div
-  tier <- tryCatch(shared$current_user_info()$tier, error = function(e) "")
-  is_dev           <- identical(tier, "dev")
-  is_admin_or_dev  <- tier %in% c("dev", "admin")
+  usuario <- tryCatch(shared$usuario(), error = function(e) NULL)
 
-  sincro_btn <- if (is_admin_or_dev) {
+  sincro_btn <- if (puede(usuario, "can_manage_sync")) {
     tagList(
       tags$hr(class = "my-1"),
       tags$p(class = "text-muted small px-2 mb-1 text-uppercase fw-semibold", "Admin"),
@@ -383,7 +381,7 @@ settings_observers <- function(input, output, session, shared) {
         div(class = "mt-3 d-flex align-items-center gap-2 flex-wrap",
           actionButton("save_interco_v2", tagList(icon("floppy-disk"), " Guardar"),
                        class = "btn btn-primary btn-sm"),
-          if (isTRUE(isolate(shared$current_user_info())$tier == "dev"))
+          if (puede(isolate(shared$usuario()), "can_configure_erp"))
             tagList(
               tags$span(class = "text-muted", "|"),
               actionButton("scan_ic_btn",

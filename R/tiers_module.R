@@ -6,68 +6,9 @@
 # La sección "Config. de Tiers" es exclusiva para dev.
 # =============================================================================
 
-PERM_LABELS <- c(
-  can_view_cobros          = "Ver Cobros (CxC)",
-  can_view_pagos           = "Ver Pagos (CxP)",
-  can_view_agenda          = "Ver Agenda de Hoy",
-  can_view_bancos          = "Ver Bancos",
-  can_view_reportes        = "Ver y exportar Reportes",
-  can_edit_invoices        = "Editar facturas (mover, notas)",
-  can_move_invoices        = "Mover fechas de facturas",
-  can_manage_tags          = "Gestionar etiquetas (Urgente/Importante)",
-  can_export_pdf           = "Exportar PDF",
-  can_manage_providers     = "Gestionar proveedores",
-  can_manage_users         = "Gestionar usuarios",
-  can_view_tiers           = "Acceso al panel Usuarios",
-  can_manage_empresas      = "Gestionar empresas del grupo",
-  # SaaS admin permissions (Stage 1)
-  can_approve_clients      = "Aprobar nuevos clientes [Principal]",
-  can_manage_hopdesk_perms = "Gestionar permisos de staff HopDesk [Principal]",
-  can_jump_clients         = "Acceder a contextos de clientes",
-  can_manage_invites       = "Gestionar invitaciones de usuario",
-  # Stage 4: split from the old single can_view_global_audit flag — browsing
-  # any client's log is a different capability from seeing Hopdesk's own
-  # staff activity log (ARCHITECTURE.md §6).
-  can_view_client_audit_logs = "Ver bitácora de clientes (con selector)",
-  can_view_staff_audit_log   = "Ver bitácora interna de Hopdesk",
-  # Stage: structured payment-file audit trail (2026-08-25). A regular
-  # client-tier permission (not a Hopdesk-only one) -- default ON for
-  # dev/admin, OFF for finance/analysis; Hopdesk staff always allowed
-  # regardless of this flag (see .payment_audit_can_view() in
-  # R/pagos_audit_viewer_module.R).
-  can_view_payment_audit = "Ver bitácora de archivos de pago (auditoría)"
-)
-
-# Keys that are immutably TRUE for principal accounts — UI renders them as locked.
-.PRINCIPAL_LOCKED_KEYS <- c("can_approve_clients", "can_manage_hopdesk_perms")
-
-# Tiers an invitation may create. Deliberately excludes dev / hopdesk /
-# principal: an invite link is a credential that arrives by email, so it must
-# never be able to mint a staff account or a client's own IT account. Promoting
-# someone to those happens in Grupo -> Usuarios, by a human who already has the
-# authority. One list drives BOTH the dropdown and the server-side check, so
-# they cannot drift apart.
-.INVITABLE_TIERS <- c("analysis", "finance", "admin")
-
-# Hopdesk-internal permissions (2026-09-26). A CLIENT session must never see
-# that these exist -- not merely be blocked from granting them. They describe
-# the development company's own internal capabilities (approving clients,
-# managing staff permissions, jumping into client contexts, reading other
-# clients' or Hopdesk's own audit logs) and leak Hopdesk's internal structure
-# to a customer just by being listed. This mirrors TIERS_STAFF_ONLY_TABS
-# (R/tiers_tab_config.R), which already does exactly this for whole tabs.
-PERM_STAFF_ONLY_KEYS <- c(
-  "can_approve_clients", "can_manage_hopdesk_perms", "can_jump_clients",
-  "can_view_client_audit_logs", "can_view_staff_audit_log"
-)
-
-# Permission keys a given viewer may see. Fail-closed: every caller must opt
-# IN to the staff view by passing is_staff = TRUE, so a call site that forgets
-# hides the internal permissions rather than exposing them.
-perm_visible_keys <- function(is_staff) {
-  if (isTRUE(is_staff)) names(PERM_LABELS)
-  else setdiff(names(PERM_LABELS), PERM_STAFF_ONLY_KEYS)
-}
+# Permission names, groups, staff-only keys and perm_visible_keys() live in
+# R/permisos.R; tiers, colours, invitable tiers and locked keys in
+# R/tier_registry.R. This file only renders and saves them.
 
 # ── Activity tab views registry (2026-09-03) ─────────────────────────────────
 # The single source of truth for every switchable view inside the Actividad
@@ -91,9 +32,7 @@ perm_visible_keys <- function(is_staff) {
        ui       = function(ns) pagosAuditViewerUI(ns("pagos_viewer")))
 )
 
-.TIER_COLORS <- c(principal = "#7b1fa2", hopdesk = "#c2185b", dev = "#0d1b3e",
-                  admin = "#6610f2", finance = "#0a58ca", analysis = "#6c757d")
-.tier_color  <- function(t) .TIER_COLORS[[t]] %||% "#6c757d"
+.tier_color <- function(t) nivel_color(t)
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 
@@ -268,37 +207,25 @@ tiersUI <- function(id) {
 
 # ── Permission editor panel ────────────────────────────────────────────────────
 
-.tiers_perm_editor_ui <- function(ns, row, viewer_tier = "dev", registry = NULL,
-                                  viewer_is_staff = FALSE) {
-  tier <- row$tier %||% "finance"
+.tiers_perm_editor_ui <- function(ns, row, viewer_tier = "", registry = NULL,
+                                  viewer_is_staff = FALSE, config = NULL) {
+  tier <- row$tier %||% ""
 
-  current_perms <- auth_resolve_perms(tier, row$permisos %||% "{}")
+  current_perms <- permisos_resueltos(tier, row$permisos %||% "{}", config)
   overrides     <- tryCatch(jsonlite::fromJSON(row$permisos %||% "{}"),
                             error = function(e) list())
 
-  tier_choices <- if (identical(viewer_tier, "principal")) {
-    c("Principal" = "principal", "Hopdesk" = "hopdesk", "Dev" = "dev",
-      "Admin" = "admin", "Finanzas" = "finance", "Análisis" = "analysis")
-  } else if (identical(viewer_tier, "hopdesk")) {
-    c("Hopdesk" = "hopdesk", "Dev" = "dev", "Admin" = "admin",
-      "Finanzas" = "finance", "Análisis" = "analysis")
-  } else if (identical(viewer_tier, "dev")) {
-    c("Dev" = "dev", "Admin" = "admin",
-      "Finanzas" = "finance", "Análisis" = "analysis")
-  } else {
-    c("Admin" = "admin", "Finanzas" = "finance", "Análisis" = "analysis")
-  }
-
-  is_dev_tier       <- identical(tier, "dev")
-  is_principal_tier <- identical(tier, "principal")
+  asignables   <- niveles_asignables(viewer_tier, viewer_is_staff)
+  tier_choices <- setNames(asignables, vapply(asignables, nivel_nombre, character(1)))
+  bloqueados   <- permisos_bloqueados(tier)
+  tier_es_tope <- nivel_es_tope(tier)
 
   perm_rows <- lapply(perm_visible_keys(viewer_is_staff), function(k) {
-    is_locked <- (is_dev_tier && k == "can_view_tiers") ||
-                 (is_principal_tier && k %in% .PRINCIPAL_LOCKED_KEYS)
+    is_locked <- k %in% bloqueados
     is_override <- k %in% names(overrides)
     current_val <- if (is_locked) TRUE else isTRUE(current_perms[[k]])
 
-    badge <- if (is_locked && is_principal_tier) {
+    badge <- if (is_locked && tier_es_tope) {
       tags$span(class = "tiers-perm-override", style = "color:#7b1fa2;",
                 icon("lock", class = "fa-xs"), " obligatorio — principal")
     } else if (is_locked) {
@@ -310,7 +237,7 @@ tiersUI <- function(id) {
       tags$span(class = "tiers-perm-default", "default (tier)")
     }
 
-    tooltip_text <- if (is_locked && is_principal_tier)
+    tooltip_text <- if (is_locked && tier_es_tope)
       "Este permiso está bloqueado para cuentas principal. Modifícalo directamente en S3 para cambiarlo."
     else
       NULL
@@ -331,7 +258,7 @@ tiersUI <- function(id) {
     div(class = "tiers-perm-row",
         div(class = "d-flex align-items-center gap-2 flex-grow-1",
             cb,
-            tags$span(PERM_LABELS[[k]],
+            tags$span(permiso_nombre(k),
                       class = if (is_locked) "small fw-semibold" else "small")),
         badge)
   })
@@ -357,7 +284,7 @@ tiersUI <- function(id) {
               tags$span(
                 style = sprintf("font-size:.65rem; font-weight:700; letter-spacing:1px; text-transform:uppercase; background:%s; border:1px solid rgba(255,255,255,.3); padding:2px 8px; border-radius:20px;",
                                 .tier_color(tier)),
-                tier),
+                nivel_nombre(tier)),
               tags$span(style = "font-size:.75rem; opacity:.6;",
                         paste0("@", row$username %||% "")))
         )
@@ -390,7 +317,7 @@ tiersUI <- function(id) {
 
       # ── Allowed clients (principal editing hopdesk/principal with can_jump_clients) ──
       if (isTRUE(current_perms$can_jump_clients) &&
-          viewer_tier == "principal" &&
+          nivel_es_tope(viewer_tier) &&
           !is.null(registry) && is.data.frame(registry) && nrow(registry)) {
         active_clients  <- registry[registry$status == "active", , drop = FALSE]
         client_choices  <- setNames(active_clients$client_id, active_clients$display_name)
@@ -427,7 +354,7 @@ tiersUI <- function(id) {
 .tier_config_card_ui <- function(ns, tier_key, tier_label, defaults, locked = TRUE,
                                  viewer_is_staff = FALSE) {
   perm_rows <- lapply(perm_visible_keys(viewer_is_staff), function(k) {
-    is_sys_locked <- identical(tier_key, "dev") && k == "can_view_tiers"
+    is_sys_locked <- k %in% permisos_bloqueados(tier_key)
     val           <- if (is_sys_locked) TRUE else isTRUE(defaults[[k]])
     # Disable when section is locked OR it's a system-locked permission
     is_disabled   <- locked || is_sys_locked
@@ -446,7 +373,7 @@ tiersUI <- function(id) {
     div(
       style = "display:flex; align-items:center; gap:6px; padding:5px 10px; border-bottom:1px solid #f0f0f0;",
       cb,
-      tags$span(PERM_LABELS[[k]], style = "font-size:.82rem;"),
+      tags$span(permiso_nombre(k), style = "font-size:.82rem;"),
       if (is_sys_locked)
         tags$span(style = "color:#198754; font-size:.65rem; margin-left:auto; white-space:nowrap;",
                   icon("lock", class = "fa-xs"))
@@ -487,10 +414,20 @@ tiersServer <- function(id, shared) {
     })
 
     # Usuarios panel is visible to dev / hopdesk / principal
-    req_authorized    <- reactive({ current_tier() %in% c("principal", "hopdesk", "dev") })
-    is_dev            <- reactive({ identical(current_tier(), "dev") })
-    is_hopdesk        <- reactive({ identical(current_tier(), "hopdesk") })
-    is_principal      <- reactive({ identical(current_tier(), "principal") })
+    # Real tier (identity), not "Ver como": staff keep their own powers here.
+    is_principal      <- reactive({ nivel_es_tope(current_tier()) })
+    is_hopdesk        <- reactive({ is_staff_tier(current_tier()) && !is_principal() })
+    is_dev            <- reactive({ nivel_es_ti(current_tier()) })
+    # Staff's own permissions (home usuarios.rds), never "Ver como": internal
+    # actions are judged on who you are, not on the tier you are viewing as.
+    staff_perms       <- reactive({
+      if (!is_staff_tier(current_tier())) return(list())
+      .audit_viewer_resolve_perms(shared)
+    })
+    req_authorized    <- reactive({
+      is_staff_tier(current_tier()) ||
+        puede(tryCatch(shared$usuario(), error = function(e) NULL), "can_view_tiers")
+    })
     # Stage 2 Part A: effective_client_id() (home, or jumped if mid-jump) is
     # the single source of truth — this reactive just exposes it under this
     # module's existing name so its ~10 internal call sites don't all need
@@ -531,7 +468,7 @@ tiersServer <- function(id, shared) {
     output$header_badge <- renderUI({
       tier <- current_tier()
       if (!nzchar(tier)) return(NULL)
-      badge <- tags$span(class = "tiers-dev-badge", toupper(tier))
+      badge <- tags$span(class = "tiers-dev-badge", toupper(nivel_nombre(tier)))
 
       if (!is_hopdesk() && !is_principal()) return(tags$span(class = "ms-auto", badge))
 
@@ -707,15 +644,14 @@ tiersServer <- function(id, shared) {
 
     observe({
       cid <- current_client_id()  # explicit dependency: re-fetch on a jump/home switch
-      req(is_dev() || is_hopdesk() || is_principal())
+      req(req_authorized())
       cfg <- tryCatch(.s3_read_with(S3_KEYS$tiers_config, client_id = cid), error = function(e) NULL)
       tier_config_rv(cfg)  # NULL on a client with no saved config yet, not last client's stale value
     })
 
+    # Defaults this client gives a tier: registry, then its own tier config.
     get_tier_defaults <- function(tier_key) {
-      cfg <- tier_config_rv()
-      if (!is.null(cfg) && !is.null(cfg[[tier_key]])) return(cfg[[tier_key]])
-      auth_resolve_perms(tier_key, "{}")
+      as.list(permisos_resueltos(tier_key, "{}", tier_config_rv()))
     }
 
     # ── Usuarios data ─────────────────────────────────────────────────────────
@@ -751,12 +687,10 @@ tiersServer <- function(id, shared) {
       # viewers) — otherwise a hopdesk viewer can open a principal row's
       # editor, whose tier <select> doesn't offer "Principal" as a choice and
       # silently defaults to its first option on save, demoting the account.
-      if (!is_principal() && nrow(df) > 0)
-        df <- df[df$tier != "principal", , drop = FALSE]
-      if (!is_principal() && !is_hopdesk() && nrow(df) > 0)
-        df <- df[df$tier != "hopdesk", , drop = FALSE]
-      if (!is_dev() && !is_hopdesk() && !is_principal() && nrow(df) > 0)
-        df <- df[df$tier != "dev", , drop = FALSE]
+      if (nrow(df) > 0) {
+        vt <- current_tier()
+        df <- df[vapply(df$tier, function(t) nivel_puede_ver_fila(vt, t), logical(1)), , drop = FALSE]
+      }
       df
     })
 
@@ -820,11 +754,10 @@ tiersServer <- function(id, shared) {
       # Same rank/internal_only rule the save handler enforces below — kept
       # in sync via tier_assignment_allowed() so the dropdown never offers a
       # tier the server would reject anyway.
-      tier_keys <- names(TIER_REGISTRY)[order(-vapply(names(TIER_REGISTRY), tier_rank, numeric(1)))]
-      tier_keys <- Filter(function(t) tier_assignment_allowed(t, viewer_tier, viewer_is_staff), tier_keys)
+      tier_keys <- niveles_asignables(viewer_tier, viewer_is_staff)
 
-      choices <- setNames(tier_keys, vapply(tier_keys, function(t) TIER_REGISTRY[[t]]$label, character(1)))
-      selectInput(ns("new_tier"), "Tier", choices = choices, selected = "finance", width = "100%")
+      choices <- setNames(tier_keys, vapply(tier_keys, nivel_nombre, character(1)))
+      selectInput(ns("new_tier"), "Tier", choices = choices, selected = nivel_alta(), width = "100%")
     })
 
     observeEvent(input$btn_save_new_user, {
@@ -832,7 +765,7 @@ tiersServer <- function(id, shared) {
       username     <- tolower(trimws(input$new_username %||% ""))
       password     <- input$new_password  %||% ""
       password2    <- input$new_password2 %||% ""
-      tier         <- input$new_tier      %||% "finance"
+      tier         <- input$new_tier      %||% ""
 
       if (!nzchar(display_name)) {
         showNotification("El nombre para mostrar es obligatorio.", type = "error"); return()
@@ -852,9 +785,11 @@ tiersServer <- function(id, shared) {
       # their own rank, and an internal_only (staff) tier only if the viewer
       # session itself is_staff. Enforced here regardless of what the
       # dropdown (UI layer, new_tier_ui above) offered — a forged request
-      # cannot bypass it. Anything not assignable falls back to "admin".
+      # cannot bypass it. Anything not assignable is refused.
       viewer_is_staff <- isTRUE(shared$current_user_info()$is_staff)
-      if (!tier_assignment_allowed(tier, current_tier(), viewer_is_staff)) tier <- "admin"
+      if (!tier_assignment_allowed(tier, current_tier(), viewer_is_staff)) {
+        showNotification("No puedes asignar ese nivel.", type = "error"); return()
+      }
 
       all_u <- all_usuarios_rv()
       if (!is.null(all_u) && username %in% tolower(all_u$username)) {
@@ -937,25 +872,13 @@ tiersServer <- function(id, shared) {
       tier     <- row$tier
 
       # Constraint pre-check: protected tiers need at least one account alive
-      all_u          <- all_usuarios_rv()
-      live_devs      <- all_u[all_u$tier == "dev"     & (is.na(all_u$deleted) | all_u$deleted != TRUE), ]
-      live_hopdesks  <- all_u[all_u$tier == "hopdesk" & (is.na(all_u$deleted) | all_u$deleted != TRUE), ]
-      dev_count      <- nrow(live_devs)
-      hopdesk_count  <- nrow(live_hopdesks)
-      is_dev_row     <- identical(tier, "dev")
-      is_hopdesk_row <- identical(tier, "hopdesk")
-
-      if (is_dev_row && dev_count <= 1) {
+      all_u      <- all_usuarios_rv()
+      protegido  <- nivel_unico_vivo(tier)
+      vivos_tier <- sum(all_u$tier == tier & (is.na(all_u$deleted) | all_u$deleted != TRUE))
+      if (protegido && vivos_tier <= 1) {
         showNotification(
           paste0("No se puede eliminar '\u200b", uname,
-                 "': debe existir al menos una cuenta dev en el sistema."),
-          type = "error", duration = 5)
-        return()
-      }
-      if (is_hopdesk_row && hopdesk_count <= 1) {
-        showNotification(
-          paste0("No se puede eliminar '\u200b", uname,
-                 "': debe existir al menos una cuenta Hopdesk en el sistema."),
+                 "': debe existir al menos una cuenta ", nivel_nombre(tier), " en el sistema."),
           type = "error", duration = 5)
         return()
       }
@@ -963,14 +886,10 @@ tiersServer <- function(id, shared) {
       pending_del_idx(idx)
 
       # Warn extra loudly when deleting a protected account
-      extra_warning <- if (is_hopdesk_row) {
+      extra_warning <- if (protegido) {
         tags$p(class = "text-danger fw-semibold mb-0",
-               icon("triangle-exclamation"), " Esta es una cuenta Hopdesk. Quedar\u00e1n ",
-               hopdesk_count - 1L, " cuenta(s) Hopdesk despu\u00e9s de eliminar.")
-      } else if (is_dev_row) {
-        tags$p(class = "text-danger fw-semibold mb-0",
-               icon("triangle-exclamation"), " Esta es una cuenta dev. Quedar\u00e1n ",
-               dev_count - 1L, " cuenta(s) dev despu\u00e9s de eliminar.")
+               icon("triangle-exclamation"), " Esta es una cuenta ", nivel_nombre(tier), ". Quedar\u00e1n ",
+               vivos_tier - 1L, " cuenta(s) de ese nivel despu\u00e9s de eliminar.")
       } else NULL
 
       showModal(modalDialog(
@@ -982,7 +901,7 @@ tiersServer <- function(id, shared) {
           tags$span(
             class = "badge ms-2",
             style = sprintf("background:%s; color:#fff;", .tier_color(tier)),
-            tier)
+            nivel_nombre(tier))
         ),
         extra_warning,
         tags$p(class = "text-muted small mb-0",
@@ -1011,21 +930,13 @@ tiersServer <- function(id, shared) {
       target_tier <- usuarios[idx, "tier"]
       all_u       <- all_usuarios_rv()
 
-      # Final constraint guards (race-condition safety — re-check at save time)
-      if (identical(target_tier, "hopdesk")) {
-        live_hopdesks <- all_u[all_u$tier == "hopdesk" & (is.na(all_u$deleted) | all_u$deleted != TRUE), ]
-        if (nrow(live_hopdesks) <= 1) {
-          showNotification("No se puede eliminar: debe quedar al menos una cuenta Hopdesk.",
-                           type = "error", duration = 5)
-          return()
-        }
-      }
-      if (identical(target_tier, "dev")) {
-        live_devs <- all_u[all_u$tier == "dev" & (is.na(all_u$deleted) | all_u$deleted != TRUE), ]
-        dev_count <- nrow(live_devs)
-        if (dev_count <= 1) {
+      # Final constraint guard (race-condition safety — re-check at save time)
+      if (nivel_unico_vivo(target_tier)) {
+        vivos <- sum(all_u$tier == target_tier & (is.na(all_u$deleted) | all_u$deleted != TRUE))
+        if (vivos <= 1) {
           showNotification(
-            "Eliminaci\u00f3n cancelada: debe existir al menos una cuenta dev.",
+            paste0("Eliminaci\u00f3n cancelada: debe existir al menos una cuenta ",
+                   nivel_nombre(target_tier), "."),
             type = "error", duration = 5)
           pending_del_idx(NULL)
           return()
@@ -1087,6 +998,7 @@ tiersServer <- function(id, shared) {
       req(!is.null(usuarios) && idx <= nrow(usuarios))
       registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
       .tiers_perm_editor_ui(ns, usuarios[idx, ], viewer_tier = current_tier(),
+                            config = tier_config_rv(),
                             registry = registry,
                             viewer_is_staff = isTRUE(tryCatch(shared$current_user_info()$is_staff,
                                                               error = function(e) FALSE)))
@@ -1094,7 +1006,7 @@ tiersServer <- function(id, shared) {
 
     observeEvent(input$edit_tier, {
       req(!is.null(selected_user_idx()))
-      base_perms <- auth_resolve_perms(input$edit_tier, "{}")
+      base_perms <- get_tier_defaults(input$edit_tier)
       for (k in perm_visible_keys(isTRUE(tryCatch(shared$current_user_info()$is_staff,
                                                   error = function(e) FALSE))))
         updateCheckboxInput(session, paste0("perm_", k), value = isTRUE(base_perms[[k]]))
@@ -1112,33 +1024,24 @@ tiersServer <- function(id, shared) {
       # Safety guards — tier assignment walls (same generic rank/internal_only
       # rule as the create-user handler above; see comment there).
       viewer_is_staff <- isTRUE(shared$current_user_info()$is_staff)
-      if (!tier_assignment_allowed(new_tier, current_tier(), viewer_is_staff)) new_tier <- "admin"
-      # Hopdesk-tier protection: block demoting the last hopdesk
-      if (identical(original_tier, "hopdesk") && !identical(new_tier, "hopdesk")) {
-        all_u_check   <- all_usuarios_rv()
-        live_hopdesks <- all_u_check[all_u_check$tier == "hopdesk" &
-                                       (is.na(all_u_check$deleted) | all_u_check$deleted != TRUE), ]
-        if (nrow(live_hopdesks) <= 1) {
-          showNotification(
-            "No se puede cambiar el tier: debe existir al menos una cuenta Hopdesk en el sistema.",
-            type = "error", duration = 5)
-          return()
-        }
+      if (!tier_assignment_allowed(new_tier, current_tier(), viewer_is_staff)) {
+        showNotification("No puedes asignar ese nivel.", type = "error"); return()
       }
-      # Dev-tier protection: block demoting the last dev
-      if (identical(original_tier, "dev") && !identical(new_tier, "dev")) {
+      # Protected tiers: block demoting the last live account of the tier
+      if (nivel_unico_vivo(original_tier) && !identical(new_tier, original_tier)) {
         all_u_check <- all_usuarios_rv()
-        live_devs   <- all_u_check[all_u_check$tier == "dev" &
-                                     (is.na(all_u_check$deleted) | all_u_check$deleted != TRUE), ]
-        if (nrow(live_devs) <= 1) {
+        vivos <- sum(all_u_check$tier == original_tier &
+                       (is.na(all_u_check$deleted) | all_u_check$deleted != TRUE))
+        if (vivos <= 1) {
           showNotification(
-            "No se puede cambiar el tier: debe existir al menos una cuenta Dev en el sistema.",
+            paste0("No se puede cambiar el nivel: debe existir al menos una cuenta ",
+                   nivel_nombre(original_tier), " en el sistema."),
             type = "error", duration = 5)
           return()
         }
       }
 
-      base_perms <- auth_resolve_perms(new_tier, "{}")
+      base_perms <- get_tier_defaults(new_tier)
 
       # Permissions this viewer never saw were never rendered, so their inputs
       # do not exist. Reading them would yield NULL -> isTRUE(NULL) == FALSE,
@@ -1153,7 +1056,7 @@ tiersServer <- function(id, shared) {
       overrides <- prev_ovr[setdiff(names(prev_ovr), vis_keys)]
 
       for (k in vis_keys) {
-        if (identical(new_tier, "dev") && k == "can_view_tiers") next
+        if (k %in% permisos_bloqueados(new_tier)) next
         val <- isTRUE(input[[paste0("perm_", k)]])
         if (!identical(val, isTRUE(base_perms[[k]]))) overrides[[k]] <- val
       }
@@ -1210,6 +1113,7 @@ tiersServer <- function(id, shared) {
           return()
         }
         .usuarios_local(all_u)
+        tryCatch(shared$permisos_version(shared$permisos_version() + 1L), error = function(e) NULL)
       }
 
       selected_user_idx(NULL)
@@ -1229,15 +1133,10 @@ tiersServer <- function(id, shared) {
     })
 
     # ── Tier config section ───────────────────────────────────────────────────
-    TIER_META <- list(
-      hopdesk  = "Hopdesk",
-      dev      = "Dev",
-      admin    = "Admin",
-      finance  = "Finanzas",
-      analysis = "Análisis"
-    )
+    # Client tiers only: the config is the client's own, staff tiers are not its to set.
+    TIER_META <- setNames(lapply(niveles_cliente(), nivel_nombre), niveles_cliente())
 
-    selected_tier_rv <- reactiveVal("dev")
+    selected_tier_rv <- reactiveVal(nivel_ti())
 
     observeEvent(input$btn_tier_prev, {
       tier_keys <- names(TIER_META)
@@ -1864,7 +1763,7 @@ tiersServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$btn_approve_req, {
-      req(is_principal())
+      req(isTRUE(staff_perms()$can_approve_clients))
       rid <- session$userData$reviewing_req_id %||% ""
       req(nzchar(rid))
 
@@ -1941,7 +1840,7 @@ tiersServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$btn_reject_req, {
-      req(is_principal())
+      req(isTRUE(staff_perms()$can_approve_clients))
       rid <- session$userData$reviewing_req_id %||% ""
       req(nzchar(rid))
       reason   <- trimws(input$review_rejection_reason %||% "")
@@ -2575,7 +2474,8 @@ tiersServer <- function(id, shared) {
                                "Las invitaciones que creas pertenecen a tu empresa.")
                     ),
                   selectInput(ns("inv_tier"), "Tier inicial",
-                              choices = .INVITABLE_TIERS,
+                              choices = setNames(niveles_invitables(),
+                                                 vapply(niveles_invitables(), nivel_nombre, character(1))),
                               width = "100%"),
                   uiOutput(ns("inv_send_error")),
                   div(
@@ -2715,8 +2615,8 @@ tiersServer <- function(id, shared) {
       # Mismo razonamiento para el tier: el desplegable sólo ofrece estos tres,
       # así que cualquier otro valor llegó forjado. Sin esto, una invitación
       # podría crear una cuenta 'principal' o 'hopdesk'.
-      tier_in <- trimws(input$inv_tier %||% "analysis")
-      if (!tier_in %in% .INVITABLE_TIERS) {
+      tier_in <- trimws(input$inv_tier %||% "")
+      if (!tier_in %in% niveles_invitables()) {
         output$inv_send_error <- renderUI(
           tags$p(class = "text-danger small mt-1", "Tier no permitido."))
         return()
@@ -3215,7 +3115,9 @@ tiersServer <- function(id, shared) {
         staff_choices <- if (!is.null(all_staff) && nrow(all_staff)) {
           cands <- all_staff[
             (is.na(all_staff$deleted) | all_staff$deleted != TRUE) &
-            !is.na(all_staff$tier) & all_staff$tier %in% c("hopdesk", "dev"),
+            !is.na(all_staff$tier) &
+              all_staff$tier %in% Filter(function(t) !nivel_es_tope(t) && nivel_al_menos(t, nivel_ti()),
+                                         niveles_todos()),
             , drop = FALSE]
           if (nrow(cands))
             setNames(cands$username, cands$display_name %||% cands$username)
@@ -3439,7 +3341,7 @@ tiersServer <- function(id, shared) {
     # Principal approves one client within a request
     # event value: "request_id:client_id:duration_secs"
     observeEvent(input$hop_approve, {
-      req(isTRUE(is_principal()))
+      req(isTRUE(staff_perms()$can_manage_hopdesk_perms))
       parts    <- strsplit(input$hop_approve, ":", fixed = TRUE)[[1]]
       req(length(parts) >= 3)
       req_id   <- parts[1]
@@ -3527,7 +3429,7 @@ tiersServer <- function(id, shared) {
     # Principal denies one client within a request
     # event value: "request_id:client_id"
     observeEvent(input$hop_deny, {
-      req(isTRUE(is_principal()))
+      req(isTRUE(staff_perms()$can_manage_hopdesk_perms))
       parts <- strsplit(input$hop_deny, ":", fixed = TRUE)[[1]]
       req(length(parts) >= 2)
       req_id <- parts[1]
@@ -3581,7 +3483,7 @@ tiersServer <- function(id, shared) {
 
     # Principal revokes an active grant
     observeEvent(input$hop_revoke, {
-      req(isTRUE(is_principal()))
+      req(isTRUE(staff_perms()$can_manage_hopdesk_perms))
       grant_id <- input$hop_revoke
       req(nzchar(grant_id %||% ""))
       tryCatch({
@@ -3728,7 +3630,7 @@ tiersServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$btn_direct_grant, {
-      req(isTRUE(is_principal()))
+      req(isTRUE(staff_perms()$can_manage_hopdesk_perms))
       grantee  <- input$direct_grantee
       req(nzchar(grantee %||% ""))
       selected <- dg_selected()
@@ -3981,7 +3883,7 @@ tiersServer <- function(id, shared) {
     )
 
     output$tier_config_section <- renderUI({
-      dev <- isTRUE(is_dev()) || isTRUE(is_hopdesk()) || isTRUE(is_principal())
+      dev <- isTRUE(req_authorized())
       if (!dev) {
         return(div(class = "alert alert-warning mt-3",
                    icon("lock"), " Esta sección solo está disponible para Dev y Hopdesk."))
@@ -3998,7 +3900,7 @@ tiersServer <- function(id, shared) {
       perm_rows <- lapply(perm_visible_keys(isTRUE(tryCatch(
                             shared$current_user_info()$is_staff,
                             error = function(e) FALSE))), function(k) {
-        is_sys_locked <- identical(sel_tier, "dev") && k == "can_view_tiers"
+        is_sys_locked <- k %in% permisos_bloqueados(sel_tier)
         val           <- if (is_sys_locked) TRUE else isTRUE(defaults[[k]])
         is_disabled   <- locked || is_sys_locked
 
@@ -4018,7 +3920,7 @@ tiersServer <- function(id, shared) {
           class = "tiers-cfg-row",
           style = "display:flex; align-items:center; gap:8px; padding:7px 14px; border-bottom:1px solid #f0f0f0;",
           cb,
-          tags$span(PERM_LABELS[[k]], style = "font-size:.85rem; flex-grow:1;"),
+          tags$span(permiso_nombre(k), style = "font-size:.85rem; flex-grow:1;"),
           if (is_sys_locked)
             tags$span(style = "color:#198754; font-size:.65rem; white-space:nowrap;",
                       icon("lock", class = "fa-xs"), " obligatorio")
@@ -4162,14 +4064,18 @@ tiersServer <- function(id, shared) {
     pagosAuditViewerServer("pagos_viewer", shared = shared)
 
     observeEvent(input$btn_save_tier_config, {
-      req(is_dev() || is_hopdesk() || is_principal())
+      req(req_authorized())
       tk  <- selected_tier_rv()
+      req(tk %in% niveles_cliente())
       cid <- current_client_id()
 
       before_tk         <- tier_config_rv()[[tk]]
       full_config       <- tier_config_rv() %||% list()
-      full_config[[tk]] <- lapply(setNames(names(PERM_LABELS), names(PERM_LABELS)), function(k) {
-        if (identical(tk, "dev") && k == "can_view_tiers") return(TRUE)
+      # Client keys only: internal keys are never the client's to set, and
+      # saving them here used to switch them OFF for every user of the tier.
+      claves <- perm_visible_keys(FALSE)
+      full_config[[tk]] <- lapply(setNames(claves, claves), function(k) {
+        if (k %in% permisos_bloqueados(tk)) return(TRUE)
         isTRUE(input[[paste0("cfg_", tk, "_", k)]])
       })
 
@@ -4177,6 +4083,7 @@ tiersServer <- function(id, shared) {
         .s3_write(full_config, S3_KEYS$tiers_config, client_id = cid)
         tier_config_rv(full_config)
         tier_config_locked(TRUE)
+        tryCatch(shared$permisos_version(shared$permisos_version() + 1L), error = function(e) NULL)
         showNotification(
           paste0("Configuración de «", TIER_META[[tk]], "» guardada."),
           type = "message", duration = 2)
