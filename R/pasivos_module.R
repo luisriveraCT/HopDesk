@@ -300,7 +300,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     liabs          <- tryCatch(load_pasivos_liabilities(client_id = shared$effective_client_id()), error = function(e) NULL)
     empresa_choices <- tryCatch(sort(names(shared$company_map())),
-                                error = function(e) sort(names(COMPANY_MAP)))
+                                error = function(e) character(0))
 
     shiny::showModal(pasivos_convert_modal_ui(prov, liabs, empresa_choices))
   })
@@ -647,7 +647,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     liabs           <- tryCatch(load_pasivos_liabilities(client_id = shared$effective_client_id()), error = function(e) NULL)
     empresa_choices <- tryCatch(sort(names(shared$company_map())),
-                                error = function(e) sort(names(COMPANY_MAP)))
+                                error = function(e) character(0))
 
     shiny::showModal(pasivos_convert_modal_ui(prov, liabs, empresa_choices))
   })

@@ -205,7 +205,7 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
 # ── Save handler ───────────────────────────────────────────────────────────────
 .pasivos_wizard_save <- function(wiz, shared, session, user) {
   empresa_choices <- tryCatch(sort(names(shared$company_map())),
-                              error = function(e) sort(names(COMPANY_MAP)))
+                              error = function(e) character(0))
   validation <- pasivos_wizard_validate_final(wiz$draft, empresa_choices)
   if (!validation$ok) {
     wiz$validation_errors <- validation$errors
@@ -976,7 +976,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
   # ── Step content ───────────────────────────────────────────────────────────
   output$pwiz_step_content <- shiny::renderUI({
     empresa_choices <- tryCatch(sort(names(shared$company_map())),
-                                error = function(e) sort(names(COMPANY_MAP)))
+                                error = function(e) character(0))
     existing_subcats <- tryCatch({
       liabs <- shared$pasivos_liabilities_db()
       sort(unique(liabs$subcategoria[!is.na(liabs$subcategoria) &
@@ -1317,7 +1317,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     errs <- switch(wiz$step_id,
       detalles    = {
         ec <- tryCatch(sort(names(shared$company_map())),
-                       error = function(e) sort(names(COMPANY_MAP)))
+                       error = function(e) character(0))
         pasivos_wizard_validate_detalles(wiz$draft, ec)$errors
       },
       recurrencia = pasivos_wizard_validate_recurrencia(wiz$draft)$errors,

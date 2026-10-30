@@ -187,7 +187,7 @@ pasivos_table_module_server <- function(id, shared) {
       # Use full names (same as show_combined_entry_modal) so stored empresa matches
       # the full-name empresa_sel_rv filter in df_combined → Calendario picks it up.
       empresa_choices <- tryCatch(sort(unique(shared$empresa_sel())),
-                                  error = function(e) sort(unique(unname(COMPANY_MAP))))
+                                  error = function(e) character(0))
       shiny::showModal(.ppm_modal_ui(empresa_choices, ns = ns))
     })
 
