@@ -987,7 +987,9 @@ save_interco <- function(lst, client_id = NULL) {
 # breakdown, all codes are assigned to every known empresa so filter behavior is
 # preserved exactly.  The migrated registry is immediately saved to v2 S3 so the
 # next startup skips this path entirely.
-.migrate_interco_v1_to_v2 <- function(old) {
+# cmap: the migrated client's own company map (from its empresas.rds), never the
+# global COMPANY_MAP, which can hold another client's companies.
+.migrate_interco_v1_to_v2 <- function(old, cmap) {
   strip_prefix <- function(codes, prefix) {
     codes <- toupper(trimws(codes[nzchar(trimws(codes))]))
     sub(paste0("^", toupper(prefix)), "", codes)
@@ -995,8 +997,6 @@ save_interco <- function(lst, client_id = NULL) {
   ar_bases <- strip_prefix(old$ar_clients   %||% character(), "C")
   ap_bases <- strip_prefix(old$ap_suppliers %||% character(), "P")
 
-  cmap <- tryCatch(get("COMPANY_MAP", envir = .GlobalEnv, inherits = FALSE),
-                   error = function(e) list())
   companies <- if (length(cmap)) {
     setNames(lapply(names(cmap), function(ini) list(ar = ar_bases, ap = ap_bases)), names(cmap))
   } else {
@@ -1052,7 +1052,11 @@ load_interco_v2 <- function(client_id = NULL) {
     if (!is.null(old) && (length(old$ar_clients) > 0 || length(old$ap_suppliers) > 0)) {
       message(sprintf("[IC] v2 has no codes — auto-migrating from legacy interco_settings.rds (%d AR, %d AP codes)",
                       length(old$ar_clients), length(old$ap_suppliers)))
-      out <- .migrate_interco_v1_to_v2(old)
+      # Only reached with no client_id (a given client_id returns above), so
+      # the legacy file, the companies and the save all resolve to the same
+      # default client.
+      cmap <- tryCatch(.company_map_from_empresas(load_empresas()), error = function(e) c())
+      out  <- .migrate_interco_v1_to_v2(old, cmap)
       tryCatch({
         save_interco_v2(out)
         if (exists("bump_sync_version", mode = "function")) bump_sync_version("interco_v2")
@@ -1621,6 +1625,17 @@ save_parte_alias_map <- function(df, client_id = NULL) {
 
 # Load empresas from S3. Returns the empty schema on first run (no auto-seeding).
 # Companies are added via the Empresas module in Settings.
+# initials -> nombre_corto for a client's active, non-deleted companies.
+# Empty (c()) when the table is missing or has none: never another client's map.
+.company_map_from_empresas <- function(df) {
+  if (is.null(df) || !is.data.frame(df) ||
+      !all(c("initials", "nombre_corto", "activa", "deleted") %in% names(df))) return(c())
+  active <- df[
+    (is.na(df$deleted) | df$deleted != TRUE) &
+    (is.na(df$activa)  | df$activa  == TRUE), , drop = FALSE]
+  if (nrow(active) > 0) setNames(active$nombre_corto, active$initials) else c()
+}
+
 load_empresas <- function(client_id = NULL) {
   raw <- tryCatch(suppressMessages(.s3_read_with(S3_KEYS$empresas, client_id = client_id)), error = function(e) NULL)
 

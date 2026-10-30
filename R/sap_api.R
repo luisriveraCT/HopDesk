@@ -459,7 +459,7 @@ fetch_ap <- function(initials, client_id = NULL) {
 # Returns NULL if ALL companies fail (caller shows an error); partial failures
 # are logged and skipped.
 
-fetch_all_companies <- function(ledger = c("AR","AP"), cmap = COMPANY_MAP, client_id = NULL) {
+fetch_all_companies <- function(ledger = c("AR","AP"), cmap, client_id = NULL) {
   ledger <- match.arg(ledger)
   fetcher <- if (ledger == "AR") fetch_ar else fetch_ap
 
@@ -571,7 +571,7 @@ fetch_all_companies <- function(ledger = c("AR","AP"), cmap = COMPANY_MAP, clien
 # ── Availability check ─────────────────────────────────────────────────────────
 # Returns a named logical vector: which companies have credentials configured
 
-sap_companies_available <- function(cmap = COMPANY_MAP) {
+sap_companies_available <- function(cmap) {
   sapply(names(cmap), function(i) {
     all(nzchar(c(
       Sys.getenv(paste0("SAP_", i, "_URL")),
