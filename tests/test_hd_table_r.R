@@ -475,6 +475,25 @@ test_that("secciones: field names or list(campo, orden); validated; options in o
   expect_identical(vapply(pl2[[1]]$opciones, `[[`, "", "texto")[1:3], c("Dólares", "Pesos", "eur"))
 })
 
+test_that("grupo: field names; one key per row (empty if a field is); the column that shows it", {
+  expect_error(hd_grupo_validar(character(0)), "`grupo` must be the field names")
+  expect_error(hd_grupo_validar(c("Parte", "")), "`grupo` must be the field names")
+  expect_error(hd_grupo_validar(c("Parte", "Parte")), "repeats 'Parte'")
+  g <- hd_grupo_validar(c("Empresa", "Fecha", "Parte"))
+  d <- data.frame(id = as.character(1:4), Empresa = c("NTS", "NTS", NA, "NCS"),
+                  Fecha = as.Date(c("2026-10-01", "2026-10-01", "2026-10-01", "2026-10-02")),
+                  Parte = c("Aceros", "Aceros", "Aceros", ""), stringsAsFactors = FALSE)
+  expect_error(hd_grupo_payload(hd_grupo_validar("Nope"), d, list()), "grupo field(s) not in the data: Nope", fixed = TRUE)
+  cols <- list(col_empresa("Empresa"), col_texto("Parte"), col_fecha("Fecha"))
+  pl <- hd_grupo_payload(g, d, cols)
+  k <- unclass(pl$claves)
+  expect_identical(k[1], k[2])
+  expect_identical(k[3:4], c("", ""))           # an empty field: no group
+  expect_identical(pl$columna, 1L)              # Parte: the last field that's shown (0-based)
+  expect_identical(hd_grupo_payload(g, d, list(col_empresa("Empresa")))$columna, 0L)
+  expect_match(.json(hd_grupo_payload(g, d[1, ], cols)), '"claves":[', fixed = TRUE)
+})
+
 test_that("vacio: key or text, or list(texto, tono); fijar_titulo: key or text", {
   cols <- list(col_texto("Parte"))
   expect_error(hd_table_server("t", "vencidos", shiny::reactive(NULL), cols, vacio = 3), "`vacio` must be")

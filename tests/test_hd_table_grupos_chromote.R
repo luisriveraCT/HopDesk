@@ -73,7 +73,7 @@ buscar <- sprintf("document.querySelector('#%s .hdt-buscar')", A)
 # The demo's own data.
 demo <- new.env()
 invisible(capture.output(suppressMessages(sys.source("dev/hd_table_demo/app.R", envir = demo))))
-datos_de <- function(n, periodo = FALSE) demo$demo_facturas(n, 1, periodo)
+datos_de <- function(n, periodo = FALSE, grupos = FALSE) demo$demo_facturas(n, 1, periodo, grupos)
 
 # Bands as painted: level, title, count and amount read from the band.
 bandas_dom <- function() {
@@ -107,7 +107,7 @@ cuadran <- function(datos) {
 }
 
 # ── Sections and subtotals ─────────────────────────────────────────────────
-ok("demo loads (300 rows, sections on, no month)", abrir("?n=300&seed=1&periodo=0"))
+ok("demo loads (300 rows, sections on, no month, no groups)", abrir("?n=300&seed=1&periodo=0&grupos=0"))
 d300 <- datos_de(300)
 l <- lista()
 cabeceras <- l[startsWith(l, "banda:")]
@@ -164,7 +164,7 @@ ok("scrolling: the header stays on top and the current section's two bands stick
    isTRUE(p$cab) && !is.null(p$b1) && !is.null(p$b2))
 
 # ── The pinned block's line ─────────────────────────────────────────────────
-ok("demo loads with the month and pinned rows", abrir("?n=300&seed=1"))
+ok("demo loads with the month and pinned rows", abrir("?n=300&seed=1&grupos=0"))
 l <- lista(); nf <- length(unlist(estado()$fijas))
 sep <- ev(sprintf("(function(){ var tr = document.querySelector('#%s tr.hdt-sep-fijas'); return tr ? tr.textContent : null; })()", A))
 ok("a line with the caller's label goes right under the pinned block",
@@ -173,13 +173,13 @@ ok("... and the sections start below it", startsWith(l[nf + 2L], "banda:1:"))
 escribir(buscar, "zzzz-nada")
 ok("with the pinned block empty (search), no line is painted", !"sep" %in% lista())
 escribir(buscar, "")
-ok("demo loads with the pinned line but no label", abrir("?n=300&seed=1&rotulo=0"))
+ok("demo loads with the pinned line but no label", abrir("?n=300&seed=1&rotulo=0&grupos=0"))
 sep <- ev(sprintf("(function(){ var tr = document.querySelector('#%s tr.hdt-sep-fijas'); return tr ? { t: tr.textContent, h: tr.getBoundingClientRect().height } : null; })()", A))
 ok("without fijar_titulo there is only the line: no text, and thinner than a row",
    !is.null(sep) && identical(sep$t, "") && sep$h < 15)
 
 # ── Window mode: 5,000 rows, sticky bands that were never painted ─────────
-ok("demo loads with 5,000 rows", abrir("?n=5000&seed=1&periodo=0"))
+ok("demo loads with 5,000 rows", abrir("?n=5000&seed=1&periodo=0&grupos=0"))
 st <- estado()
 ok("5,000 rows in sections paint in window mode (bands count as rows)",
    identical(st$modo, "ventana") && st$pintadas < 300L && length(unlist(st$lista)) == 5006L)
@@ -197,6 +197,117 @@ d5000 <- datos_de(5000)
 escribir(buscar, "acero")
 ok("subtotals follow the search in window mode too (back to full under 800)", cuadran(d5000))
 escribir(buscar, "")
+
+# ── Groups (expandir, sel_grupo) and Shift + click ─────────────────────────
+ok("demo loads with groups (300 rows, Empresa + Vence + Parte)", abrir("?n=300&seed=1&periodo=0"))
+dg <- datos_de(300, FALSE, TRUE)
+clave <- paste(dg$Empresa, dg$Vence, dg$Parte, dg$Moneda, dg$.tipo, sep = "|")
+esperados <- split(dg$id, clave); esperados <- esperados[lengths(esperados) >= 2]
+grupos_lista <- function() { l <- lista(); l[startsWith(l, "grupo:")] }
+miembros <- function(g) strsplit(sub("^grupo:[a-z]+:", "", g), ",")[[1]]
+gl <- grupos_lista()
+cat(sprintf("  %d groups expected, %d painted\n", length(esperados), length(gl)))
+ok("one group per company + date + counterpart with 2 or more rows, all starting closed",
+   length(gl) == length(esperados) && all(startsWith(gl, "grupo:cerrado:")) &&
+     setequal(vapply(gl, function(g) paste(sort(miembros(g)), collapse = ","), ""),
+              vapply(esperados, function(x) paste(sort(x), collapse = ","), "")))
+ok("rows of closed groups aren't painted, but they are among the visible rows",
+   !any(unlist(lapply(gl, miembros)) %in% lista()) && all(unlist(lapply(gl, miembros)) %in% vis()))
+
+# A group with a locked row, to check counts, sums and marking.
+bloq <- setNames(dg$.bloqueada, dg$id); imp <- setNames(dg$Importe, dg$id)
+con_bloq <- Filter(function(g) any(bloq[miembros(g)]) && !all(bloq[miembros(g)]), gl)[[1]]
+m1 <- miembros(con_bloq); libres <- m1[!bloq[m1]]
+cab <- function(id) sprintf("document.querySelector('#%s tr.hdt-grupo[data-primera=\"%s\"]')", A, id)
+celda_grupo <- ev(sprintf("(function(){ var tr = %s; return { n: tr.querySelector('.hdt-grupo-n').textContent,
+  boton: tr.querySelector('.hdt-grupo-abrir').textContent, nombre: tr.querySelector('.hdt-col-grupo').lastChild.textContent,
+  suma: tr.children[3].textContent }; })()", cab(m1[1])))
+ok("the group's row shows ▶, how many rows without the locked ones, the counterpart and their total",
+   identical(celda_grupo$boton, "▶") && identical(as.integer(celda_grupo$n), length(libres)) &&
+     identical(celda_grupo$nombre, dg$Parte[dg$id == m1[1]]) &&
+     abs(as.numeric(gsub("[^0-9.]", "", celda_grupo$suma)) - sum(imp[libres])) < 0.006)
+
+# Open and close.
+clic(sprintf("%s.querySelector('.hdt-grupo-abrir')", cab(m1[1])))
+l <- lista(); p <- which(startsWith(l, "grupo:") & grepl(m1[1], l, fixed = TRUE))
+ok("▶ opens the group: its rows follow it, ▼ shows, and nothing gets marked",
+   startsWith(l[p], "grupo:abierto:") && identical(l[p + seq_along(m1)], miembros(l[p])) &&
+     identical(ev(sprintf("%s.querySelector('.hdt-grupo-abrir').textContent", cab(m1[1]))), "▼") &&
+     length(unlist(estado()$seleccion)) == 0L)
+clic("document.getElementById('cambiar')"); Sys.sleep(0.8)
+ok("an open group stays open with new data", any(startsWith(grupos_lista(), "grupo:abierto:") & grepl(m1[1], grupos_lista(), fixed = TRUE)))
+clic(sprintf("%s.querySelector('.hdt-grupo-abrir')", cab(m1[1])))
+ok("▼ closes it again", all(startsWith(grupos_lista(), "grupo:cerrado:")))
+todos_btn <- sprintf("document.querySelector('#%s .hdt-grupos-todos')", A)
+clic(todos_btn)
+ok("▶▶ opens every group and turns into ▼▼",
+   all(startsWith(grupos_lista(), "grupo:abierto:")) && identical(ev(sprintf("%s.textContent", todos_btn)), "▼▼"))
+clic(todos_btn)
+ok("▼▼ closes them all", all(startsWith(grupos_lista(), "grupo:cerrado:")) &&
+     identical(ev(sprintf("%s.textContent", todos_btn)), "▶▶"))
+
+# Marking a group.
+sel <- function() unlist(estado()$seleccion)
+clic(sprintf("%s.querySelector('.hdt-col-grupo')", cab(m1[1])))
+ok("a click on a closed group marks all its rows, never the locked ones",
+   setequal(sel(), libres) && isTRUE(ev(sprintf("%s.classList.contains('hdt-sel')", cab(m1[1])))))
+clic(sprintf("%s.querySelector('.hdt-col-grupo')", cab(m1[1])))
+ok("a second click unmarks them", length(sel()) == 0L)
+clic(sprintf("%s.querySelector('.hdt-grupo-abrir')", cab(m1[1])))
+fila_de <- function(id) sprintf("HDT.fila('%s', '%s').children[2]", A, id)
+clic(fila_de(libres[1]))
+ok("with only some of its rows marked, the group shows half-marked",
+   identical(sel(), libres[1]) && isTRUE(ev(sprintf("%s.classList.contains('hdt-sel-parcial')", cab(m1[1])))))
+clic(fila_de(libres[1]))
+clic(sprintf("%s.querySelector('.hdt-grupo-abrir')", cab(m1[1])))
+
+# Shift + click over groups: from one group to another, everything between.
+l <- lista(); items <- which(!startsWith(l, "banda:") & l != "sep")
+g_pos <- which(startsWith(l, "grupo:"))
+a_pos <- g_pos[2]; b_pos <- g_pos[4]
+if (any(startsWith(l[a_pos:b_pos], "banda:"))) { a_pos <- g_pos[1]; b_pos <- g_pos[2] }
+filas_entre <- unique(unlist(lapply(l[a_pos:b_pos], function(x) if (startsWith(x, "grupo:")) miembros(x) else if (startsWith(x, "banda:")) character(0) else x)))
+filas_entre <- filas_entre[!bloq[filas_entre]]
+clic(sprintf("%s.querySelector('.hdt-col-grupo')", cab(miembros(l[a_pos])[1])))
+clic(sprintf("%s.querySelector('.hdt-col-grupo')", cab(miembros(l[b_pos])[1])), shift = TRUE)
+ok("Shift + click from one group to another marks every row of both, of the groups and of the rows between",
+   setequal(sel(), filas_entre) && length(filas_entre) > 4L)
+# P2: Shift + click on a marked one takes the opposite state: unmarks.
+c_pos <- g_pos[which(g_pos == b_pos) - 1L]
+if (c_pos <= a_pos) c_pos <- a_pos
+quitar <- unique(unlist(lapply(l[c_pos:b_pos], function(x) if (startsWith(x, "grupo:")) miembros(x) else if (startsWith(x, "banda:")) character(0) else x)))
+clic(sprintf("%s.querySelector('.hdt-col-grupo')", cab(miembros(l[c_pos])[1])), shift = TRUE)
+ok("Shift + click on a marked group unmarks the range back to it (the clicked one's opposite state)",
+   setequal(sel(), setdiff(filas_entre, quitar)) && length(quitar) > 0L)
+deseleccionar <- function() { ev(sprintf("(document.querySelector('#%s .hdt-deseleccionar')||{click:function(){}}).click()", A)); Sys.sleep(0.3) }
+deseleccionar()
+
+# G7: a group click marks only the rows the filter leaves.
+estado_de <- setNames(dg$Estado, dg$id)
+cand <- Filter(function(g) { m <- miembros(g); k <- sum(estado_de[m] == "pendiente" & !bloq[m]); k >= 2 && k < length(m) }, gl)
+if (length(cand)) {
+  mg <- miembros(cand[[1]])
+  clic(sprintf("document.querySelector('#%s .hdt-ficha[data-valor=pendiente]')", A))
+  clic(sprintf("%s.querySelector('.hdt-col-grupo')", cab(intersect(mg, vis())[1])))
+  ok("with a chip on, a group click marks only its rows the chip leaves (never the hidden ones)",
+     setequal(sel(), mg[estado_de[mg] == "pendiente" & !bloq[mg]]))
+  clic(sprintf("document.querySelector('#%s .hdt-ficha[data-valor=pendiente]')", A))
+  deseleccionar()
+} else ok("(a group with 2+ pending rows and some that aren't: not in this data)", FALSE)
+
+# Groups with 5,000 rows: window mode, open all, stuck bands still right.
+ok("demo loads 5,000 rows with sections and groups", abrir("?n=5000&seed=1&periodo=0"))
+st <- estado()
+ng <- sum(startsWith(unlist(st$lista), "grupo:"))
+cat(sprintf("  5,000 rows: %d groups, %d items painted out of %d, mode %s\n", ng, st$pintadas, length(unlist(st$lista)), st$modo))
+ok("5,000 rows in groups paint in window mode", identical(st$modo, "ventana") && ng > 400L && st$pintadas < 300L)
+clic(sprintf("document.querySelector('#%s .hdt-grupos-todos')", A))
+ok("opening every group of 5,000 rows shows them all, still in window mode",
+   all(startsWith(grupos_lista(), "grupo:abierto:")) && identical(estado()$modo, "ventana"))
+invisible(ev(sprintf("(function(){ var s = document.querySelector('#%s .hdt-scroll'); s.scrollTop = s.scrollHeight * 0.4; })()", A)))
+Sys.sleep(0.5)
+p <- pegadas()
+ok("... and the current section's bands stay stuck", !is.null(p$b1) && !is.null(p$b2))
 
 # ── The table's own empty message ──────────────────────────────────────────
 ok("demo loads with no rows", abrir("?n=0&seed=1&periodo=0"))

@@ -94,7 +94,7 @@
       root: root, ns: root.getAttribute('data-ns') || '', tabla: msg.tabla, p: p,
       textos: msg.textos || {}, cols: [], n: 0, ids: [], idx: {}, bloq: [], moneda: [], tipo: [],
       celdas: [], busq: [], trs: [], vis: [], sel: new Set(), ancla: null,
-      filtros: [], fsel: {}, trasBusq: [],
+      filtros: [], fsel: {}, trasBusq: [], gTodos: false, gExcepto: {}, grupos: [], lista: [],
       orden: { col: -1, dir: 1 }, q: '', abajo: null, medidas: {}
     };
     root.textContent = '';
@@ -171,6 +171,15 @@
       st.btnLimpiar.hidden = true;
       st.btnLimpiar.addEventListener('click', function () { st.fsel = {}; cerrarMenu(false); aplicar(st); });
       st.barra.appendChild(st.btnLimpiar);
+    }
+    // Groups: open or close them all (▶▶ / ▼▼).
+    if (p.expandir && msg.grupo) {
+      st.btnGrupos = nodo('button', 'hdt-btn hdt-grupos-todos', '▶▶');
+      st.btnGrupos.type = 'button';
+      st.btnGrupos.title = t('tablas.grupos.todos');
+      st.btnGrupos.setAttribute('aria-label', st.btnGrupos.title);
+      st.btnGrupos.addEventListener('click', function () { todosLosGrupos(st); });
+      st.barra.appendChild(st.btnGrupos);
     }
     if (p.sel_todos) {
       st.btnTodos = nodo('button', 'hdt-btn hdt-todos');
@@ -713,6 +722,10 @@
     st.tipo = arr(f.tipo);
     st.prov = arr(f.provision);
     if (st.cbEncabezado && typeof msg.encabezado === 'boolean') st.cbEncabezado.checked = msg.encabezado;
+    // Groups (expandir): each row's group key ("" = no group) and the column
+    // that shows ▶/▼, the count and the name.
+    st.grupoClave = st.p.expandir && msg.grupo ? arr(msg.grupo.claves) : null;
+    st.grupoCol = st.grupoClave ? msg.grupo.columna : -1;
     st.fijar = arr(f.fijar);
     st.hayFijas = st.fijar.some(Boolean);
     st.meses = st.mes && msg.periodo ? arr(msg.periodo.meses) : null;
@@ -857,24 +870,36 @@
       td0.appendChild(cb);
       tr.appendChild(td0);
     }
+    if (st.miembro && st.miembro[i]) tr.classList.add('hdt-miembro');
     for (var j = 0; j < st.cols.length; j++) {
-      var c = st.cols[j], v = st.celdas[j].mostrar[i];
-      var td = nodo('td');
+      var td = celdaVacia(st, j);
       td._c = j;
-      if (c.alinear === 'derecha') td.classList.add('hdt-der');
-      if (c.recorte && st.p.recorte) td.classList.add('hdt-recorte');
       // Provision rows: one badge, always in the first column.
       if (prov && j === 0) td.appendChild(nodo('span', 'hdt-ins hdt-tono-morado hdt-ins-prov', t('tablas.provision')));
-      // Badges only with the `insignias` piece; otherwise the same text, plain.
-      if (st.p.insignias && c.tipo === 'empresa' && v) td.appendChild(nodo('span', 'hdt-ins hdt-emp', v));
-      else if (st.p.insignias && c.tipo === 'insignia' && v) {
-        var tono = String((st.celdas[j].tono || [])[i] || 'neutro').replace(/[^a-z_]/g, '');
-        td.appendChild(nodo('span', 'hdt-ins hdt-tono-' + tono, v));
-      } else td.appendChild(document.createTextNode(v == null ? '' : v));
+      pintarCelda(st, td, j, i);
       tr.appendChild(td);
     }
     if (st.accFila.length) tr.appendChild(botonesFila(st, i));
     return tr;
+  }
+
+  function celdaVacia(st, j) {
+    var c = st.cols[j], td = nodo('td');
+    if (c.alinear === 'derecha') td.classList.add('hdt-der');
+    if (c.recorte && st.p.recorte) td.classList.add('hdt-recorte');
+    if (j === st.grupoCol) td.classList.add('hdt-col-grupo');
+    return td;
+  }
+
+  // Row i's value in column j. Badges only with the `insignias` piece;
+  // otherwise the same text, plain.
+  function pintarCelda(st, td, j, i) {
+    var c = st.cols[j], v = st.celdas[j].mostrar[i];
+    if (st.p.insignias && c.tipo === 'empresa' && v) td.appendChild(nodo('span', 'hdt-ins hdt-emp', v));
+    else if (st.p.insignias && c.tipo === 'insignia' && v) {
+      var tono = String((st.celdas[j].tono || [])[i] || 'neutro').replace(/[^a-z_]/g, '');
+      td.appendChild(nodo('span', 'hdt-ins hdt-tono-' + tono, v));
+    } else td.appendChild(document.createTextNode(v == null ? '' : v));
   }
 
   // ── Filter, sort, paint ──────────────────────────────────────────────────
@@ -963,46 +988,169 @@
   }
 
   // What the table paints, in order: rows (their index) and, as objects,
-  // the line under the pinned block and a band where each section starts.
+  // the line under the pinned block, a band where each section starts and
+  // a header row per group (its rows follow only while it's open).
   // st.cab[p]: positions of the bands that govern item p, so window mode can
   // keep the current ones painted (and stuck) when they scroll out of it.
+  // st.vis ends up in the same order, with the rows of closed groups too.
   function armarLista(st) {
-    var lista = [], vis = st.vis, niv = st.secciones, k = 0;
+    var lista = [], filas = [], vis = st.vis, niv = st.secciones, k = 0;
+    var cab = niv ? [] : null, activas = [], l;
+    st.miembro = st.grupoClave ? new Uint8Array(st.n) : null;
+    st.grupos = [];
+    function poner(it) { lista.push(it); if (cab) cab.push(activas.slice()); }
     if (st.hayFijas) {
-      while (k < vis.length && st.fijar[vis[k]]) lista.push(vis[k++]);
-      if (k > 0) lista.push({ sep: true, n: k });
+      while (k < vis.length && st.fijar[vis[k]]) { filas.push(vis[k]); poner(vis[k++]); }
+      if (k > 0) poner({ sep: true, n: k });
     }
-    if (!niv) {
-      for (; k < vis.length; k++) lista.push(vis[k]);
-      st.lista = lista;
-      st.cab = null;
-      return;
-    }
-    var cab = lista.map(function () { return []; }), activas = [], bandas = [], previa = null, l;
-    for (; k < vis.length; k++) {
-      var i = vis[k], desde = previa == null ? 0 : -1;
-      if (desde < 0) {
-        for (l = 0; l < niv.length; l++) {
-          if (niv[l].valores[i] !== niv[l].valores[previa]) { desde = l; break; }
-        }
+    // Blocks of consecutive rows in the same section; `desde`: the first
+    // level whose band starts there.
+    var bloques = [], previa = null;
+    vis.slice(k).forEach(function (i) {
+      var desde = previa == null ? 0 : -1;
+      if (niv && desde < 0) {
+        for (l = 0; l < niv.length; l++) if (niv[l].valores[i] !== niv[l].valores[previa]) { desde = l; break; }
       }
-      if (desde >= 0) {
-        for (l = desde; l < niv.length; l++) {
-          var v = niv[l].valores[i];
+      if (desde >= 0) bloques.push({ desde: desde, filas: [] });
+      bloques[bloques.length - 1].filas.push(i);
+      previa = i;
+    });
+    var bandas = [];
+    bloques.forEach(function (bl) {
+      if (niv) {
+        for (l = bl.desde; l < niv.length; l++) {
+          var v = niv[l].valores[bl.filas[0]];
           bandas[l] = { banda: l, valor: v, texto: niv[l].textos[v] == null ? v : niv[l].textos[v], filas: [] };
           activas.length = l;
           activas[l] = lista.length;
-          lista.push(bandas[l]);
-          cab.push(activas.slice());
+          poner(bandas[l]);
         }
+        bl.filas.forEach(function (i) { for (l = 0; l < niv.length; l++) bandas[l].filas.push(i); });
       }
-      for (l = 0; l < niv.length; l++) bandas[l].filas.push(i);
-      lista.push(i);
-      cab.push(activas.slice());
-      previa = i;
-    }
+      agrupar(st, bl.filas).forEach(function (u) {
+        if (typeof u === 'number') { filas.push(u); poner(u); return; }
+        st.grupos.push(u);
+        poner(u);
+        u.filas.forEach(function (i) {
+          filas.push(i);
+          st.miembro[i] = 1;
+          if (u.abierto) poner(i);
+        });
+      });
+    });
+    st.vis = filas;
     st.lista = lista;
     st.cab = cab;
+    // Rows already built follow their (new) group membership.
+    if (st.miembro) {
+      for (var i = 0; i < st.n; i++) if (st.trs[i]) st.trs[i].classList.toggle('hdt-miembro', !!st.miembro[i]);
+    }
+    if (st.btnGrupos) {
+      var todos = st.grupos.length > 0 && st.grupos.every(function (u) { return u.abierto; });
+      st.btnGrupos.textContent = todos ? '▼▼' : '▶▶';
+      st.btnGrupos.setAttribute('aria-pressed', todos ? 'true' : 'false');
+      st.btnGrupos.disabled = !st.grupos.length;
+    }
+  }
+
+  // ── Groups (expandir, sel_grupo) ─────────────────────────────────────────
+  // Rows with the same group key (grupo = c("Empresa", "Fecha", "Parte"))
+  // make one unit; a key shared by a single row, or an empty one, is a plain
+  // row. Units keep the order of their first row, except when sorting by
+  // the summed amount, where a group goes by its total (as in Vencidos).
+  function agrupar(st, filas) {
+    if (!st.grupoClave) return filas;
+    var porClave = {}, unidades = [];
+    filas.forEach(function (i, pos) {
+      var c = st.grupoClave[i];
+      if (!c) { unidades.push({ fila: i, pos: pos }); return; }
+      var u = porClave[c];
+      if (!u) { u = porClave[c] = { grupo: true, clave: c, filas: [], pos: pos }; unidades.push(u); }
+      u.filas.push(i);
+    });
+    unidades = unidades.map(function (u) {
+      if (u.grupo && u.filas.length === 1) return { fila: u.filas[0], pos: u.pos };
+      if (u.grupo) u.abierto = !!st.gTodos !== !!st.gExcepto[u.clave];
+      return u;
+    });
+    if (st.orden.col >= 0 && st.orden.col === st.suma) {
+      var o = st.celdas[st.suma].orden;
+      unidades.forEach(function (u) {
+        u.valor = u.fila != null ? Number(o[u.fila]) || 0
+          : u.filas.reduce(function (s, i) { return s + (st.bloq[i] ? 0 : Number(o[i]) || 0); }, 0);
+      });
+      unidades.sort(function (a, b) { return (a.valor - b.valor) * st.orden.dir || a.pos - b.pos; });
+    }
+    return unidades.map(function (u) { return u.fila != null ? u.fila : u; });
+  }
+
+  // A group's header row: ▶/▼, how many rows (without locked ones) and the
+  // name in the group's column; the total in the summed column; and any
+  // other column whose value all its rows share.
+  function trGrupo(st, u) {
+    var tr = nodo('tr', 'hdt-grupo' + (u.abierto ? ' hdt-abierto' : ''));
+    tr._g = u;
+    tr.dataset.primera = st.ids[u.filas[0]];   // which group it is (tests, diagnostics)
+    var libres = u.filas.filter(function (i) { return !st.bloq[i]; }), i0 = u.filas[0];
+    if (st.p.casillas) {
+      var td0 = nodo('td', 'hdt-cb'), cb = nodo('input', 'hdt-cbx hdt-cbx-grupo');
+      cb.type = 'checkbox';
+      cb.disabled = !libres.length;
+      td0.appendChild(cb);
+      tr.appendChild(td0);
+    }
+    for (var j = 0; j < st.cols.length; j++) {
+      var td = celdaVacia(st, j), m = st.celdas[j].mostrar;
+      var comun = u.filas.every(function (i) { return m[i] === m[i0]; });
+      if (j === st.grupoCol) {
+        var b = nodo('button', 'hdt-grupo-abrir', u.abierto ? '▼' : '▶');
+        b.type = 'button';
+        b.title = t('tablas.grupos.abrir');
+        b.setAttribute('aria-label', b.title);
+        b.setAttribute('aria-expanded', u.abierto ? 'true' : 'false');
+        td.appendChild(b);
+        td.appendChild(nodo('span', 'hdt-grupo-n', FMT_N.format(libres.length)));
+        if (comun) pintarCelda(st, td, j, i0);
+      } else if (j === st.suma) {
+        var o = st.celdas[j].orden, s = {};
+        libres.forEach(function (i) { var mo = st.moneda[i] || ''; s[mo] = (s[mo] || 0) + (Number(o[i]) || 0); });
+        var mons = Object.keys(s).sort();
+        td.textContent = mons.length ? mons.map(function (mo) {
+          return (mons.length > 1 && mo ? mo + ' ' : '') + dinero(s[mo]);
+        }).join(' · ') : dinero(0);
+      } else if (comun) pintarCelda(st, td, j, i0);
+      tr.appendChild(td);
+    }
+    if (st.accFila.length) tr.appendChild(nodo('td', 'hdt-acc'));
+    return tr;
+  }
+
+  // ▶/▼ only opens or closes. The rest of the row marks or unmarks every
+  // row of the group (sel_grupo; with checkboxes, only its checkbox does,
+  // and the rest of the row opens it); without sel_grupo it opens too.
+  function clicGrupo(st, u, e) {
+    var marca = st.p.sel_grupo && (st.p.casillas ? !!e.target.closest('input.hdt-cbx-grupo') : !e.target.closest('button.hdt-grupo-abrir'));
+    if (!marca) {
+      st.gExcepto[u.clave] = !st.gExcepto[u.clave];
+      aplicar(st);
+      return;
+    }
+    if (!(e.shiftKey && rango(st, { grupo: u }))) {
+      var libres = u.filas.filter(function (i) { return !st.bloq[i]; });
+      var todas = libres.length > 0 && libres.every(function (i) { return st.sel.has(st.ids[i]); });
+      libres.forEach(function (i) { if (todas) st.sel.delete(st.ids[i]); else st.sel.add(st.ids[i]); });
+      st.ancla = null;
+      st.anclaGrupo = u.clave;
+    }
+    pintarSel(st);
+    enviarSel(st);
+  }
+
+  function todosLosGrupos(st) {
+    var abiertos = st.grupos.length > 0 && st.grupos.every(function (u) { return u.abierto; });
+    st.gTodos = !abiertos;
+    st.gExcepto = {};
+    aplicar(st);
   }
 
   function nColumnas(st) {
@@ -1011,7 +1159,7 @@
 
   function trItem(st, it) {
     if (typeof it === 'number') return trDe(st, it);
-    return it.tr || (it.tr = it.sep ? trSeparador(st, it) : trBanda(st, it));
+    return it.tr || (it.tr = it.sep ? trSeparador(st, it) : it.grupo ? trGrupo(st, it) : trBanda(st, it));
   }
 
   // A section's band: its label and, with `subtotales`, how many rows it
@@ -1225,6 +1373,16 @@
       tr.classList.toggle('hdt-sel', on);
       if (st.p.casillas) tr.firstChild.firstChild.checked = on;
     }
+    // Groups: all their free rows marked, or only some (half).
+    st.grupos.forEach(function (u) {
+      if (!u.tr) return;
+      var libres = u.filas.filter(function (i) { return !st.bloq[i]; });
+      var n = libres.filter(function (i) { return st.sel.has(st.ids[i]); }).length;
+      var todas = n > 0 && n === libres.length;
+      u.tr.classList.toggle('hdt-sel', todas);
+      u.tr.classList.toggle('hdt-sel-parcial', n > 0 && !todas);
+      if (st.p.casillas) { var cb = u.tr.firstChild.firstChild; cb.checked = todas; cb.indeterminate = n > 0 && !todas; }
+    });
     var sel = seleccionables(st), todos = sel.length > 0 && sel.every(function (i) { return st.sel.has(st.ids[i]); });
     if (st.btnTodos) {
       st.btnTodos.textContent = t(todos ? 'tablas.deseleccionar' : 'tablas.seleccionar_todos');
@@ -1257,20 +1415,48 @@
     if (st.bloq[i]) return;
     if (st.sel.has(id)) st.sel.delete(id); else st.sel.add(id);
     st.ancla = id;
+    st.anclaGrupo = null;
   }
 
-  // Shift + click: from the last row touched to this one, in visible order,
-  // skipping locked rows.
-  function rango(st, i) {
-    if (!st.p.sel_rango || st.ancla == null || !(st.ancla in st.idx)) return false;
-    var a = st.vis.indexOf(st.idx[st.ancla]), b = st.vis.indexOf(i);
+  // Shift + click: from the last row or group touched to this one, in the
+  // painted order (a closed group counts as all its rows). Everything in
+  // between takes the opposite of the clicked one's state -- on a marked
+  // row it unmarks the range, as Vencidos and the lupa always did -- and
+  // locked rows are skipped. `destino`: a row index, or {grupo: unit}.
+  function rango(st, destino) {
+    if (!st.p.sel_rango) return false;
+    var a = posicion(st, st.ancla, st.anclaGrupo);
+    var b = destino.grupo ? posicion(st, null, destino.grupo.clave) : posicion(st, st.ids[destino], null);
     if (a < 0 || b < 0) return false;
+    var filasDe = function (it) { return typeof it === 'number' ? [it] : it.grupo ? it.filas : []; };
+    var libres = filasDe(st.lista[b]).filter(function (i) { return !st.bloq[i]; });
+    var marcar = !(libres.length > 0 && libres.every(function (i) { return st.sel.has(st.ids[i]); }));
     for (var k = Math.min(a, b); k <= Math.max(a, b); k++) {
-      if (!st.bloq[st.vis[k]]) st.sel.add(st.ids[st.vis[k]]);
+      filasDe(st.lista[k]).forEach(function (i) {
+        if (st.bloq[i]) return;
+        if (marcar) st.sel.add(st.ids[i]); else st.sel.delete(st.ids[i]);
+      });
     }
+    if (destino.grupo) { st.ancla = null; st.anclaGrupo = destino.grupo.clave; }
+    else { st.ancla = st.ids[destino]; st.anclaGrupo = null; }
     var s = window.getSelection && window.getSelection();
     if (s) s.removeAllRanges();
     return true;
+  }
+
+  // Where a row (by id) or a group (by key) is painted; a row inside a
+  // closed group is where its group is.
+  function posicion(st, id, clave) {
+    var k;
+    if (clave != null) {
+      for (k = 0; k < st.lista.length; k++) if (st.lista[k].grupo && st.lista[k].clave === clave) return k;
+      return -1;
+    }
+    if (id == null || !(id in st.idx)) return -1;
+    var i = st.idx[id], p = st.lista.indexOf(i);
+    if (p >= 0) return p;
+    for (k = 0; k < st.lista.length; k++) if (st.lista[k].grupo && st.lista[k].filas.indexOf(i) >= 0) return k;
+    return -1;
   }
 
   function selTodos(st) {
@@ -1347,6 +1533,7 @@
 
     st.tbody.addEventListener('click', function (e) {
       var tr = e.target.closest('tr');
+      if (tr && tr._g) { clicGrupo(st, tr._g, e); return; }
       if (!tr || tr._i == null) return;
       var i = tr._i;
       // A row button sends its action and never touches the selection.
@@ -1611,6 +1798,11 @@
   // ── Test / diagnostics hook ──────────────────────────────────────────────
   window.HDT = {
     recibidos: function () { return recibidos; },
+    // A row's element by id, if it's built.
+    fila: function (id, filaId) {
+      var st = TABLAS[id], i = st ? st.idx[filaId] : null;
+      return i == null ? null : st.trs[i] || null;
+    },
     estado: function (id) {
       var st = TABLAS[id];
       if (!st) return null;
@@ -1618,7 +1810,9 @@
         visibles: st.vis.map(function (i) { return st.ids[i]; }),
         // What's painted, in order: "id", "banda:<level>:<value>" or "sep".
         lista: (st.lista || []).map(function (it) {
-          return typeof it === 'number' ? st.ids[it] : it.sep ? 'sep' : 'banda:' + (it.banda + 1) + ':' + it.valor;
+          return typeof it === 'number' ? st.ids[it] : it.sep ? 'sep'
+            : it.grupo ? 'grupo:' + (it.abierto ? 'abierto' : 'cerrado') + ':' + it.filas.map(function (i) { return st.ids[i]; }).join(',')
+            : 'banda:' + (it.banda + 1) + ':' + it.valor;
         }),
         seleccion: idsSel(st), orden: st.orden, busqueda: st.q,
         periodo: st.mes || null,

@@ -8,8 +8,9 @@
 #   periodo  0: no month navigation, no pinned rows and no empty dates in the
 #            class-A table (the T02/T03a tests count every row)
 #   rotulo   0: the line under the pinned rows goes without its label
-#   secciones 0: no sections in the class-A table (the earlier tests expect
-#            one flat list)
+#   secciones 0: no sections (nor groups) in the class-A table (the earlier
+#            tests expect one flat list)
+#   grupos   0: sections but no groups
 #
 # Bootstrap 5 with the app's own theme (flatly), so sizes are the ones
 # HopDesk will show.
@@ -37,7 +38,7 @@ assign(".i18n_dir", file.path(.raiz, "www", "i18n"), envir = globalenv())
 PIEZAS_T02 <- setdiff(HD_PIEZAS_MOTOR, "copiar_tabla")
 
 # ── Generated data ──────────────────────────────────────────────────────────
-demo_facturas <- function(n, seed = 1, periodo = TRUE) {
+demo_facturas <- function(n, seed = 1, periodo = TRUE, grupos = FALSE) {
   set.seed(seed)
   nombres <- c("Transportes del Bajío", "Aceros Monterrey", "Logística Querétaro",
                '<b>Renta</b> & "Bodega"', "Servicios Integrales de Mantenimiento Industrial del Norte, S.A. de C.V.",
@@ -65,6 +66,14 @@ demo_facturas <- function(n, seed = 1, periodo = TRUE) {
   df$.provision <- seq_len(n) %% 9 == 0
   # Month navigation: every 11th row is pinned (always shown, on top); some
   # rows have no date -- the pinned ones among them still show.
+  # Groups: in every 10 rows, rows 2-4 take the company, due date,
+  # counterpart, currency and type of row 1, so the four make one group.
+  if (grupos && n) {
+    k <- seq_len(n); seguidora <- k %% 10 %in% 2:4
+    lider <- k - (k %% 10) + 1L
+    for (campo in c("Empresa", "Vence", "Parte", "Moneda", ".tipo"))
+      df[[campo]][seguidora] <- df[[campo]][lider[seguidora]]
+  }
   if (periodo) {
     df$.fijar <- seq_len(n) %% 11 == 0
     df$Vence[seq_len(n) %% 22 == 0 | seq_len(n) %% 23 == 0] <- NA
@@ -184,6 +193,7 @@ server <- function(input, output, session) {
   alto <- q$alto %||% "auto"
   con_periodo <- !identical(q$periodo, "0")
   con_secciones <- !identical(q$secciones, "0")
+  con_grupos <- con_secciones && !identical(q$grupos, "0")
   if (!is.null(q$n)) updateSelectInput(session, "n", choices = unique(c(as.integer(q$n), 300, 1000, 5000)),
                                        selected = as.integer(q$n))
 
@@ -203,7 +213,7 @@ server <- function(input, output, session) {
   # "Cambiar datos": same ids, new amounts and states.
   datos_a <- reactive({
     n <- n_filas()
-    df <- demo_facturas(n, seed, con_periodo)
+    df <- demo_facturas(n, seed, con_periodo, con_grupos)
     k <- cambios()
     if (k > 0) {
       set.seed(seed + k)
@@ -237,6 +247,8 @@ server <- function(input, output, session) {
                                                                       fijar_titulo = if (!identical(q$rotulo, "0")) "Siempre arriba: {n}"),
                                       # Like Vencidos: by currency (MXN first), then Cobros / Pagos.
                                       secciones = if (con_secciones) list(list(campo = "Moneda", orden = "MXN"), ".tipo"),
+                                      # Like Vencidos: one group per company, date and counterpart.
+                                      grupo = if (con_grupos) c("Empresa", "Vence", "Parte"),
                                       vacio = list(texto = "Sin vencimientos pendientes, todo al día", tono = "exito"),
                                       acciones_fila = acc_fila, acciones_barra = acc_barra)))
   })

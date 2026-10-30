@@ -60,6 +60,8 @@
   "tablas.periodo.anio_anterior": "Previous year",
   "tablas.periodo.anio_siguiente": "Next year",
   "tablas.periodo.vacio": "No rows in {periodo}.",
+  "tablas.grupos.abrir": "Open or close the group",
+  "tablas.grupos.todos": "Open or close every group",
   "tablas.copiar_tabla": "Copy table",
   "tablas.copiar_fallo": "Could not copy.",
   "tablas.encabezado": "First row is a header",

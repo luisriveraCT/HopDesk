@@ -36,8 +36,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=15"),
-    htmltools::tags$script(src = "hdtable.js?v=15")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=16"),
+    htmltools::tags$script(src = "hdtable.js?v=16")
   ))
 }
 
@@ -273,6 +273,39 @@ hd_secciones_payload <- function(secciones, datos, columnas) {
   })
 }
 
+# ── grupo (expandir, sel_grupo) ─────────────────────────────────────────────
+# grupo = c("Empresa", "Fecha", "Parte"): rows that share all these values
+# (inside one section) make a group with a header row that opens and closes;
+# a row with any of them empty, or alone with its values, stays a plain row.
+# The ▶/▼, the count and the name go in the column of the last field shown.
+hd_grupo_validar <- function(grupo) {
+  if (is.null(grupo)) return(NULL)
+  if (!is.character(grupo) || !length(grupo) || any(is.na(grupo) | !nzchar(grupo)))
+    stop("hd_table: `grupo` must be the field names that make a group, e.g. c(\"Empresa\", \"Fecha\", \"Parte\").",
+         call. = FALSE)
+  if (anyDuplicated(grupo))
+    stop(sprintf("hd_table: grupo repeats '%s'.", grupo[duplicated(grupo)][1]), call. = FALSE)
+  grupo
+}
+
+hd_grupo_payload <- function(grupo, datos, columnas) {
+  if (is.null(grupo)) return(NULL)
+  faltan <- setdiff(grupo, names(datos))
+  if (length(faltan))
+    stop(sprintf("hd_table: grupo field(s) not in the data: %s.", paste(faltan, collapse = ", ")), call. = FALSE)
+  partes <- lapply(grupo, function(campo) {
+    v <- as.character(datos[[campo]])
+    v[is.na(v)] <- ""
+    v
+  })
+  vacia  <- Reduce(`|`, lapply(partes, function(v) !nzchar(v)))
+  claves <- do.call(paste, c(partes, sep = "\u001f"))
+  claves[vacia] <- ""
+  campos <- vapply(columnas, `[[`, character(1), "campo")
+  mostrados <- intersect(rev(grupo), campos)
+  list(claves = I(claves), columna = if (length(mostrados)) match(mostrados[1], campos) - 1L else 0L)
+}
+
 # ── Row actions (acc_fila) ──────────────────────────────────────────────────
 # Fixed catalog: icon, dictionary key for the title, and the order the
 # buttons always appear in, right-aligned. "provision" only shows on rows
@@ -402,7 +435,7 @@ hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "dat
 hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = "id",
                             fichas = NULL, acciones_fila = NULL, acciones_barra = NULL,
                             filtros = NULL, periodo = NULL, aviso = NULL, encabezado = NULL,
-                            secciones = NULL, vacio = NULL) {
+                            secciones = NULL, vacio = NULL, grupo = NULL) {
   piezas_tabla <- hd_piezas_de(tabla, piezas)
   piezas_motor <- hd_piezas_motor(tabla, piezas_tabla)
   # columnas: a list of col_*(), or a reactive returning one -- a table pasted
@@ -419,6 +452,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
   if (!is.null(encabezado) && !is.function(encabezado))
     stop("hd_table: `encabezado` must be a reactive returning TRUE or FALSE.", call. = FALSE)
   secciones    <- .hd_sin_pieza(tabla, "secciones", "agrupar", hd_secciones_validar(secciones), piezas_tabla)
+  grupo        <- .hd_sin_pieza(tabla, "grupo", "expandir", hd_grupo_validar(grupo), piezas_tabla)
   # vacio: the table's own message when it has no rows at all (a key or
   # text), or list(texto, tono) to show it with the tone's icon ("exito":
   # a green check, "Sin vencimientos pendientes, todo al día").
@@ -460,6 +494,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         # decided; toggling it sends accion "encabezado" with ids "si"/"no".
         encabezado = if (!is.null(encabezado)) isTRUE(encabezado()),
         secciones  = hd_secciones_payload(secciones, df, cols),
+        grupo      = hd_grupo_payload(grupo, df, cols),
         acciones_fila  = acc_fila_meta,
         acciones_barra = acc_barra_meta
       ))

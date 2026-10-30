@@ -137,6 +137,16 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-banda-n { color: var(--hdt-muted); }
 .hdt-banda-suma { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
 
+/* Groups (expandir): a header row per group, its rows indented under it
+   while open; half-marked when only some of its rows are. */
+.hdt-tabla tr.hdt-grupo td { background: var(--hdt-hover); font-weight: 600; }
+.hdt-tabla tr.hdt-grupo.hdt-sel-parcial td { background: var(--hdt-accent-soft); }
+.hdt-grupo-abrir { font: inherit; font-size: .75em; border: 0; background: none; color: var(--hdt-muted);
+  cursor: pointer; padding: 0 4px 0 0; line-height: 1; vertical-align: middle; }
+.hdt-grupo-abrir:hover { color: var(--hdt-accent); }
+.hdt-grupo-n { color: var(--hdt-muted); font-size: .8em; font-weight: 600; margin-right: 5px; }
+.hdt-tabla tr.hdt-miembro td.hdt-col-grupo { padding-left: 26px; }
+
 /* The line under the pinned block (.fijar), with an optional grey label. */
 .hdt-tabla tr.hdt-sep-fijas td { padding: 0 8px; height: 4px; border-bottom: 2px solid var(--hdt-line);
   background: transparent; color: var(--hdt-muted); font-size: .74rem; line-height: 1.2; }

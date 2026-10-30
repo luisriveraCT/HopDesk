@@ -131,6 +131,12 @@ ok("... skipping the locked rows in between", any(bloq_vis[desde:hasta]) &&
 ok("... with no text shaded", identical(texto_sombreado(), ""))
 ok("seleccion() reaches the server in visible order",
    poll_until(function() identical(sel_servidor(), esperado), timeout_s = 5))
+# Shift + click on a marked row takes its opposite state: it unmarks the
+# range back to the last row touched (as Vencidos and the lupa always did).
+m <- which(vis %in% esperado)[3]
+clic(fila_td(m), shift = TRUE)
+ok("Shift + click on a marked row unmarks the range from the last row touched",
+   identical(unlist(estado()$seleccion), setdiff(esperado, vis[m:hasta])))
 deseleccionar()
 
 # Click order reversed after sorting descending: still visible order.
