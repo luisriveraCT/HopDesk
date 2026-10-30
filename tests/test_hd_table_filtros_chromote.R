@@ -294,6 +294,59 @@ clic("document.getElementById('cambiar')")
 Sys.sleep(0.8)
 ok("new data keeps the month shown", identical(ev(sprintf("%s.textContent", boton_mes)), etiqueta(elegido)) &&
      setequal(vis(), esperadas(elegido)))
+ok("a table without `filtros` or `periodo` draws neither (class D has both pieces)",
+   isTRUE(ev("!document.querySelector('#prov-hdt .hdt-filtro') && !document.querySelector('#prov-hdt .hdt-periodo')")))
+
+# ── Table pasted from Excel (class E) ──────────────────────────────────────
+E <- "pegada-hdt"
+celdas_e <- function() unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s tbody td')).map(function(td){ return td.textContent; })", E)))
+titulos_e <- function() unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s thead th')).map(function(th){ return th.firstChild.textContent; })", E)))
+contador_e <- function() ev(sprintf("document.querySelector('#%s .hdt-contador').textContent", E))
+nota_e <- function() ev(sprintf("(function(){ var n = document.querySelector('#%s .hdt-nota'); return n && !n.hidden && n.offsetParent !== null ? n.textContent : null; })()", E))
+interruptor_e <- sprintf("document.querySelector('#%s .hdt-interruptor input')", E)
+panel_e <- function() ev("document.getElementById('panel_e').innerText")
+
+ok("class E counts its size: rows and columns", identical(contador_e(), "5 filas × 5 columnas"))
+ok("raw text shows exactly as pasted: 01/02, 007, =SUMA(A1), 1e5, 0001",
+   all(c("01/02", "007", "=SUMA(A1)", "1e5", "0001", "<b>Mantenimiento</b>") %in% celdas_e()))
+ok("long pasted cells are trimmed (recorte)",
+   isTRUE(ev(sprintf("Array.from(document.querySelectorAll('#%s tbody td.hdt-recorte')).some(function(td){ return td.textContent.indexOf('Fletes') === 0; })", E))))
+ok("the notice shows above the table, in its own line", identical(nota_e(), "Se pegaron 340 filas; se guardaron 200") &&
+     isTRUE(ev(sprintf("document.querySelector('#%s .hdt-nota').getBoundingClientRect().bottom <= document.querySelector('#%s .hdt-cuerpo').getBoundingClientRect().top", E, E))))
+clic("document.getElementById('aviso_e')"); Sys.sleep(0.5)
+ok("a NULL notice hides the line", is.null(nota_e()))
+clic("document.getElementById('aviso_e')"); Sys.sleep(0.5)
+ok("... and a new one shows it again", identical(nota_e(), "Se pegaron 340 filas; se guardaron 200"))
+
+# Copiar tabla, real clipboard.
+invisible(ev("navigator.clipboard.writeText('')", await = TRUE))
+clic(sprintf("document.querySelector('#%s .hdt-copiar-tabla')", E))
+Sys.sleep(0.3)
+tsv <- tryCatch(ev("navigator.clipboard.readText()", await = TRUE), error = function(e) "")
+lineas <- strsplit(tsv, "\r\n", fixed = TRUE)[[1]]
+cat("  clipboard:\n   ", paste(lineas, collapse = "\n    "), "\n")
+ok("'Copiar tabla' copies every row with the header, tab-separated",
+   length(lineas) == 6L && identical(lineas[1], "Fecha\tFolio\tConcepto\tImporte\tNota"))
+ok("... raw, with what a spreadsheet would run neutralized ('=, '+, '-, '@) and 007 kept",
+   identical(lineas[2], "01/02\t007\tRenta de bodega\t15,000.00\t'=SUMA(A1)") &&
+     identical(strsplit(lineas[3], "\t")[[1]][5], "'+52 55 1234 5678") &&
+     identical(strsplit(lineas[4], "\t")[[1]][4:5], c("'-1,200.00", "'@pendiente")) &&
+     identical(strsplit(lineas[5], "\t")[[1]][5], "'-"))
+ok("... and says how many rows it copied",
+   identical(ev(sprintf("document.querySelector('#%s .hdt-aviso').textContent", E)), "5 filas copiadas"))
+
+# Header switch: the server decides and sends the new columns.
+ok("the header switch shows the server's choice (on)", isTRUE(ev(sprintf("%s.checked", interruptor_e))) &&
+     identical(titulos_e(), c("Fecha", "Folio", "Concepto", "Importe", "Nota")))
+clic(interruptor_e); Sys.sleep(0.8)
+ok("turning it off sends accion 'encabezado' with 'no'; the first row becomes data",
+   grepl("encabezado: FALSE", panel_e()) && grepl('"no"', panel_e()) &&
+     identical(titulos_e(), paste("Columna", 1:5)) && "Fecha" %in% celdas_e() &&
+     identical(contador_e(), "6 filas × 5 columnas") && !isTRUE(ev(sprintf("%s.checked", interruptor_e))))
+clic(interruptor_e); Sys.sleep(0.8)
+ok("turning it on again sends 'si' and the header is back",
+   grepl("encabezado: TRUE", panel_e()) && identical(titulos_e(), c("Fecha", "Folio", "Concepto", "Importe", "Nota")) &&
+     identical(contador_e(), "5 filas × 5 columnas"))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)
