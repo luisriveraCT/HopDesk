@@ -157,10 +157,81 @@
       });
       root.appendChild(st.fichasEl);
     }
+    // Bar actions: shown while rows are marked (or always, for an action
+    // that works on what's visible). Then the confirmation bar, inside the
+    // table: never a confirm() or a modal on top of a modal.
+    st.accBarra = p.barra_acc ? arr(msg.acciones_barra) : [];
+    if (st.accBarra.length) {
+      st.accBarraEl = nodo('div', 'hdt-acciones');
+      st.accBarraEl.hidden = true;
+      st.accBarraEl.addEventListener('click', function (e) {
+        var b = e.target.closest('button[data-accion]');
+        if (!b) return;
+        var a = st.accBarra.filter(function (x) { return x.accion === b.dataset.accion; })[0];
+        if (!a) return;
+        var ids = a.sin_seleccion
+          ? st.vis.filter(function (i) { return !st.bloq[i]; }).map(function (i) { return st.ids[i]; })
+          : idsSel(st);
+        if (!ids.length) return;
+        if (a.confirmar) pedirConfirmacion(st, a.accion, a.texto, ids, a.peligro);
+        else enviarAccion(st, a.accion, ids);
+      });
+      root.appendChild(st.accBarraEl);
+    }
+    st.confEl = nodo('div', 'hdt-confirmar');
+    st.confEl.hidden = true;
+    st.confEl.setAttribute('role', 'alertdialog');
+    root.appendChild(st.confEl);
     root.appendChild(st.cuerpo);
 
     eventos(st);
     return st;
+  }
+
+  // ── Bar actions and confirmation ─────────────────────────────────────────
+  function pintarBarraAcc(st) {
+    if (!st.accBarraEl) return;
+    var n = idsSel(st).length;
+    var siempre = st.accBarra.some(function (a) { return a.sin_seleccion; });
+    st.accBarraEl.hidden = !n && !siempre;
+    if (st.accBarraEl.hidden) return;
+    st.accBarraEl.textContent = '';
+    if (n) st.accBarraEl.appendChild(nodo('span', 'hdt-acciones-n',
+      tn('tablas.sumador.seleccion', n, { n: FMT_N.format(n) })));
+    st.accBarra.forEach(function (a) {
+      if (!a.sin_seleccion && !n) return;
+      var b = nodo('button', 'hdt-btn' + (a.peligro ? ' hdt-peligro' : ''), a.texto);
+      b.type = 'button';
+      b.dataset.accion = a.accion;
+      st.accBarraEl.appendChild(b);
+    });
+  }
+
+  // accion() fires only on Confirmar. The bar closes if the selection or
+  // the visible rows change meanwhile.
+  function pedirConfirmacion(st, accion, texto, ids, peligro) {
+    st.pendiente = { accion: accion, ids: ids };
+    var c = st.confEl;
+    c.textContent = '';
+    c.appendChild(nodo('span', 'hdt-confirmar-texto',
+      tn('tablas.confirmar_accion', ids.length, { accion: texto, n: FMT_N.format(ids.length) })));
+    var si = nodo('button', 'hdt-btn hdt-confirmar-si' + (peligro ? ' hdt-peligro' : ''), t('comun.confirmar'));
+    var no = nodo('button', 'hdt-btn hdt-confirmar-no', t('comun.cancelar'));
+    si.type = no.type = 'button';
+    si.addEventListener('click', function () {
+      var p = st.pendiente;
+      cerrarConfirmacion(st);
+      if (p) enviarAccion(st, p.accion, p.ids);
+    });
+    no.addEventListener('click', function () { cerrarConfirmacion(st); });
+    c.appendChild(si);
+    c.appendChild(no);
+    c.hidden = false;
+  }
+
+  function cerrarConfirmacion(st) {
+    st.pendiente = null;
+    if (st.confEl) { st.confEl.hidden = true; st.confEl.textContent = ''; }
   }
 
   // ── Chips (fichas) ───────────────────────────────────────────────────────
@@ -300,6 +371,16 @@
     if (st.accFila.length) {
       var tha = nodo('th', 'hdt-acc');
       tha.setAttribute('aria-label', t('tablas.acciones'));
+      // Invisible mold with every button, so the column is always as wide as
+      // the widest row can be -- also when window mode freezes widths from a
+      // sample that may not include the text button.
+      var molde = nodo('div', 'hdt-acc-molde');
+      molde.setAttribute('aria-hidden', 'true');
+      st.accFila.forEach(function (a) {
+        var texto = a.estilo === 'texto';
+        molde.appendChild(nodo('span', 'hdt-accion' + (texto ? ' hdt-accion-texto' : ''), texto ? a.titulo : a.icono));
+      });
+      tha.appendChild(molde);
       tr.appendChild(tha);
     }
     st.thead.appendChild(tr);
@@ -313,9 +394,17 @@
     var td = nodo('td', 'hdt-acc');
     var permitidas = st.permitidas ? st.permitidas[i] : null;
     st.accFila.forEach(function (a) {
-      if (permitidas && !permitidas[a.accion]) return;
-      if (a.accion === 'provision' && !st.prov[i]) return;
-      var b = nodo('button', 'hdt-accion', a.icono);
+      // crear_provision is the one button with text instead of an icon.
+      var texto = a.estilo === 'texto';
+      // An action this row doesn't show leaves an invisible gap of its own
+      // width, so every action keeps its column across rows.
+      if ((permitidas && !permitidas[a.accion]) || (a.accion === 'provision' && !st.prov[i])) {
+        var hueco = nodo('span', 'hdt-accion hdt-accion-hueco' + (texto ? ' hdt-accion-texto' : ''), texto ? a.titulo : a.icono);
+        hueco.setAttribute('aria-hidden', 'true');
+        td.appendChild(hueco);
+        return;
+      }
+      var b = nodo('button', 'hdt-accion' + (texto ? ' hdt-accion-texto' : ''), texto ? a.titulo : a.icono);
       b.type = 'button';
       b.dataset.accion = a.accion;
       b.title = a.titulo;
@@ -371,6 +460,7 @@
   // `arriba`: scroll position to land on (new data keeps where you were);
   // omitted, the current one.
   function aplicar(st, desdeDatos, arriba) {
+    cerrarConfirmacion(st);   // the rows it was about may no longer be the ones shown
     var base = [], vis = [];
     for (var i = 0; i < st.n; i++) {
       if (!st.q || st.busq[i].indexOf(st.q) >= 0) base.push(i);
@@ -537,6 +627,7 @@
       st.cbTodos.indeterminate = !todos && sel.some(function (i) { return st.sel.has(st.ids[i]); });
     }
     sumador(st);
+    pintarBarraAcc(st);
   }
 
   // Ids in the order they're shown; selected rows hidden by the search last.
@@ -548,6 +639,7 @@
   }
 
   function enviarSel(st) {
+    cerrarConfirmacion(st);   // the selection changed: a pending confirmation no longer applies
     if (window.Shiny && Shiny.setInputValue)
       Shiny.setInputValue(st.ns + 'sel', idsSel(st), { priority: 'event' });
   }
@@ -651,7 +743,12 @@
       var i = tr._i;
       // A row button sends its action and never touches the selection.
       var btn = e.target.closest('button.hdt-accion');
-      if (btn) { enviarAccion(st, btn.dataset.accion, [st.ids[i]]); return; }
+      if (btn) {
+        var a = st.accFila.filter(function (x) { return x.accion === btn.dataset.accion; })[0];
+        if (a && a.confirmar) pedirConfirmacion(st, a.accion, a.titulo, [st.ids[i]], a.peligro);
+        else enviarAccion(st, btn.dataset.accion, [st.ids[i]]);
+        return;
+      }
       // Second click of a double click: the dblclick handler undoes the first.
       if (st.p.detalle && e.detail > 1) return;
       if (st.p.detalle) st.antesClic = { sel: new Set(st.sel), ancla: st.ancla };

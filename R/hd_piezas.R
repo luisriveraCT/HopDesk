@@ -22,7 +22,8 @@ HD_PIEZAS_MOTOR <- c(
   "contador", "sumador_sel", "sumador_vis",
   "ordenar", "buscar",
   # T03a
-  "insignias", "tachado", "provision", "fichas", "detalle", "acc_fila"
+  "insignias", "tachado", "provision", "fichas", "detalle", "acc_fila",
+  "barra_acc", "confirmar"
 )
 
 HD_REGLAS_NUCLEO <- c(

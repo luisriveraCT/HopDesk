@@ -98,6 +98,21 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
   border-radius: 4px; padding: 0 4px; cursor: pointer; vertical-align: middle; }
 .hdt-accion:hover { border-color: var(--hdt-accent); color: var(--hdt-accent); }
 .hdt-accion[data-accion="provision"] { color: var(--hdt-prov); }
+.hdt-accion.hdt-accion-texto { font-size: .82em; font-weight: 600; padding: 0 7px; color: var(--hdt-accent); }
+.hdt-accion-hueco { display: inline-block; visibility: hidden; }
+.hdt-acc-molde { visibility: hidden; height: 0; overflow: hidden; white-space: nowrap; }
+.hdt-acc-molde .hdt-accion { display: inline-block; }
+
+/* Bar actions and the confirmation bar (inside the table, above it). */
+.hdt-acciones, .hdt-confirmar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 8px;
+  margin: 0 0 6px; border: 1px solid var(--hdt-line); border-radius: 6px; background: var(--hdt-surface-2); }
+.hdt-acciones[hidden], .hdt-confirmar[hidden] { display: none; }
+.hdt-acciones-n { font-weight: 700; font-size: .8rem; margin-right: 6px; }
+.hdt-confirmar { border-color: var(--hdt-warn); background: var(--hdt-warn-soft); }
+.hdt-confirmar-texto { font-weight: 700; font-size: .82rem; margin-right: auto; }
+.hdt-btn.hdt-peligro { border-color: var(--hdt-danger); color: var(--hdt-danger); }
+.hdt-btn.hdt-peligro:hover { background: var(--hdt-danger-soft); }
+.hdt-confirmar-si.hdt-peligro { background: var(--hdt-danger); color: #fff; }
 
 /* Sorting */
 .hdt-orden th.hdt-ordenable { cursor: pointer; }

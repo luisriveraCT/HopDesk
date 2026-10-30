@@ -13,7 +13,13 @@
 # changes. Browser -> server: ns("sel") and ns("accion"), priority "event".
 #
 # accion() values: "detalle" (double click on a row, locked rows too), and
-# the names given in acciones_fila (one row's id) and acciones_barra.
+# the names given in acciones_fila (one row's id) and acciones_barra. Actions
+# that confirm ("eliminar" on a row, bar actions with confirmar = TRUE) only
+# reach accion() once the user presses Confirmar in the table's own bar.
+#
+# With the `detalle` piece, seleccion() changes twice on a double click: the
+# first click marks the row (and sends it), then the double click undoes it
+# (and sends it again). Code observing seleccion() sees both.
 #
 # PERMISSIONS: the .acciones control column only HIDES row buttons the user
 # may not use. A hidden button is not a permission check -- the module that
@@ -23,8 +29,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=5"),
-    htmltools::tags$script(src = "hdtable.js?v=5")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=6"),
+    htmltools::tags$script(src = "hdtable.js?v=6")
   ))
 }
 
@@ -98,13 +104,19 @@ hd_fichas_payload <- function(fichas, datos, columnas) {
 # buttons always appear in, right-aligned. "provision" only shows on rows
 # with .provision = TRUE.
 HD_ACCIONES_FILA <- list(
-  agregar   = list(icono = "＋",  clave = "tablas.accion.agregar"),
-  editar    = list(icono = "✎",  clave = "tablas.accion.editar"),
-  provision = list(icono = "⚡",  clave = "tablas.accion.provision"),
-  deshacer  = list(icono = "↶",  clave = "tablas.accion.deshacer"),
-  detalle   = list(icono = "ℹ",  clave = "tablas.accion.detalle"),
-  eliminar  = list(icono = "✕",  clave = "tablas.accion.eliminar")
+  crear_provision = list(icono = "",       clave = "tablas.accion.crear_provision", estilo = "texto"),
+  agregar         = list(icono = "\uff0b", clave = "tablas.accion.agregar",   estilo = "icono"),
+  editar          = list(icono = "\u270e", clave = "tablas.accion.editar",    estilo = "icono"),
+  provision       = list(icono = "\u26a1", clave = "tablas.accion.provision", estilo = "icono"),
+  deshacer        = list(icono = "\u21b6", clave = "tablas.accion.deshacer",  estilo = "icono"),
+  detalle         = list(icono = "\u2139", clave = "tablas.accion.detalle",   estilo = "icono"),
+  eliminar        = list(icono = "\u2715", clave = "tablas.accion.eliminar",  estilo = "icono",
+                         confirmar = TRUE, peligro = TRUE)
 )
+# crear_provision is the only button with text: it opens the provision form
+# (it is neither "provision" = convert to payment, nor "agregar" = send to
+# Agenda). eliminar always goes through the confirmation bar, even for one
+# row (Luis: deletes and bulk actions confirm).
 
 hd_acciones_fila_validar <- function(acciones_fila) {
   if (is.null(acciones_fila)) return(NULL)
@@ -119,12 +131,59 @@ hd_acciones_fila_validar <- function(acciones_fila) {
 }
 
 hd_acciones_fila_meta <- function(acciones) {
-  lapply(acciones, function(a) list(accion = a, icono = HD_ACCIONES_FILA[[a]]$icono,
-                                    titulo = tr(HD_ACCIONES_FILA[[a]]$clave)))
+  lapply(acciones, function(a) {
+    def <- HD_ACCIONES_FILA[[a]]
+    list(accion = a, icono = def$icono, titulo = tr(def$clave), estilo = def$estilo,
+         confirmar = isTRUE(def$confirmar), peligro = isTRUE(def$peligro))
+  })
+}
+
+# ── Bar actions (barra_acc) ─────────────────────────────────────────────────
+# acciones_barra = list(list(accion = "mandar_papelera", texto = <key or text>,
+#                            confirmar = TRUE, peligro = TRUE, sin_seleccion = FALSE), ...)
+# Shown above the table while rows are marked; they send the marked ids in
+# visible order. sin_seleccion = TRUE: always shown, sends the visible
+# (unlocked) ids -- "Agregar todo".
+hd_acciones_barra_validar <- function(acciones_barra) {
+  if (is.null(acciones_barra)) return(NULL)
+  if (!is.list(acciones_barra) || !length(acciones_barra))
+    stop("hd_table: `acciones_barra` must be a list of list(accion, texto, ...).", call. = FALSE)
+  campos <- c("accion", "texto", "confirmar", "peligro", "sin_seleccion")
+  out <- lapply(seq_along(acciones_barra), function(k) {
+    a <- acciones_barra[[k]]
+    if (!is.list(a) || !is.character(a$accion) || length(a$accion) != 1L || !nzchar(a$accion))
+      stop(sprintf("hd_table: acciones_barra[[%d]] needs `accion` (one name).", k), call. = FALSE)
+    if (!is.character(a$texto) || length(a$texto) != 1L || !nzchar(a$texto))
+      stop(sprintf("hd_table: acciones_barra '%s' needs `texto` (a dictionary key or text).", a$accion), call. = FALSE)
+    otros <- setdiff(names(a), campos)
+    if (length(otros))
+      stop(sprintf("hd_table: acciones_barra '%s': unknown field(s) %s.", a$accion, paste(otros, collapse = ", ")),
+           call. = FALSE)
+    list(accion = a$accion, texto = a$texto, confirmar = isTRUE(a$confirmar),
+         peligro = isTRUE(a$peligro), sin_seleccion = isTRUE(a$sin_seleccion))
+  })
+  nombres <- vapply(out, `[[`, character(1), "accion")
+  if (anyDuplicated(nombres))
+    stop(sprintf("hd_table: acciones_barra repeats '%s'.", nombres[duplicated(nombres)][1]), call. = FALSE)
+  if ("detalle" %in% nombres)
+    stop("hd_table: 'detalle' is reserved for the row double click.", call. = FALSE)
+  out
+}
+
+hd_acciones_barra_meta <- function(acciones) {
+  lapply(acciones, function(a) utils::modifyList(a, list(texto = .hd_texto(a$texto))))
+}
+
+# Confirmation can't be dropped silently: an action that asks for it on a
+# table without the `confirmar` piece is a programming error.
+.hd_exigir_confirmar <- function(tabla, piezas, quien) {
+  if (!"confirmar" %in% piezas)
+    stop(sprintf("hd_table '%s': %s asks for confirmation but the table doesn't have the 'confirmar' piece.",
+                 tabla, quien), call. = FALSE)
 }
 
 hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = "id",
-                            fichas = NULL, acciones_fila = NULL) {
+                            fichas = NULL, acciones_fila = NULL, acciones_barra = NULL) {
   piezas_tabla <- hd_piezas_de(tabla, piezas)
   piezas_motor <- hd_piezas_motor(tabla, piezas_tabla)
   meta         <- hd_columnas_meta(columnas)
@@ -133,6 +192,11 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
   acc_fila     <- .hd_sin_pieza(tabla, "acciones_fila", "acc_fila",
                                 hd_acciones_fila_validar(acciones_fila), piezas_tabla)
   acc_fila_meta <- if (length(acc_fila)) hd_acciones_fila_meta(acc_fila) else NULL
+  if ("eliminar" %in% acc_fila) .hd_exigir_confirmar(tabla, piezas_tabla, "row action 'eliminar'")
+  acc_barra    <- .hd_sin_pieza(tabla, "acciones_barra", "barra_acc",
+                                hd_acciones_barra_validar(acciones_barra), piezas_tabla)
+  for (a in acc_barra) if (a$confirmar) .hd_exigir_confirmar(tabla, piezas_tabla, sprintf("bar action '%s'", a$accion))
+  acc_barra_meta <- if (length(acc_barra)) hd_acciones_barra_meta(acc_barra) else NULL
 
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -148,7 +212,8 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         piezas   = I(piezas_motor),
         textos   = list(contador = contador),
         fichas   = hd_fichas_payload(fichas, df, columnas),
-        acciones_fila = acc_fila_meta
+        acciones_fila  = acc_fila_meta,
+        acciones_barra = acc_barra_meta
       ))
     })
 
