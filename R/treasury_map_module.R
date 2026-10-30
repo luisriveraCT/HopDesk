@@ -10,7 +10,7 @@
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 # Match SAP Parte display names → company initials (case-insensitive, partial).
-.tm_parte_to_ini <- function(parte_vec, cmap = COMPANY_MAP) {
+.tm_parte_to_ini <- function(parte_vec, cmap) {
   inv_map <- setNames(names(cmap), unname(cmap))
   lc_keys <- tolower(names(inv_map))
 
@@ -28,7 +28,7 @@
 # Bank balance per company per currency.
 # Returns named list: result[[ini]][[currency]] = numeric (NA if no data).
 .tm_bank_balances <- function(shared) {
-  cmap   <- tryCatch(shared$company_map(), error = function(e) COMPANY_MAP)
+  cmap   <- tryCatch(shared$company_map(), error = function(e) c())
   result <- setNames(
     lapply(names(cmap), function(ini) list(MXN = NA_real_, USD = NA_real_)),
     names(cmap)
@@ -340,7 +340,7 @@ treasuryMapUI <- function(id) {
       div(
         tags$label("Empresa objetivo:", class = "form-label d-block"),
         selectInput(ns("target_co"), NULL,
-                    choices = setNames(names(COMPANY_MAP), unname(COMPANY_MAP)),
+                    choices = character(0),  # filled per session by the observe() in the server
                     width = "230px")
       ),
       div(
@@ -405,9 +405,11 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
 
     observe({
       cmap <- shared$company_map()
+      sel  <- isolate(input$target_co)
+      if (is.null(sel) || !sel %in% names(cmap)) sel <- names(cmap)[1]
       updateSelectInput(session, "target_co",
                         choices  = setNames(names(cmap), unname(cmap)),
-                        selected = isolate(input$target_co) %||% names(cmap)[1])
+                        selected = sel)
     })
 
     # ── State ──────────────────────────────────────────────────────────────────
