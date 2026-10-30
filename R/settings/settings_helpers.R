@@ -40,6 +40,21 @@
 #   get_cuenta_ppl(empresa, moneda, shared)
 # =============================================================================
 
+# ctas$Empresa stores initials ("NTS"); callers may pass either the full name
+# ("Networks Trucking Services") or initials. Both are resolved against the
+# SESSION's company map, not the global COMPANY_MAP: every session rewrites
+# that global when its empresas load (app.R), so it can hold another
+# session's map -- or an empty one -- and the full name then never finds the
+# account stored under its initials ("Cuenta origen no configurada" for an
+# account that is there, found 2026-10-30 with Networks Realtors MXN).
+.empresa_keys <- function(empresa, shared) {
+  cmap <- tryCatch(if (!is.null(shared$company_map)) shared$company_map(), error = function(e) NULL)
+  if (!length(cmap)) cmap <- COMPANY_MAP
+  unique(c(empresa,
+           names(cmap)[unname(cmap) == empresa],      # full name -> initials
+           unname(cmap)[names(cmap) == empresa]))     # initials -> full name
+}
+
 # ── Public helper: fetch 12-digit origin account for PPL ──────────────────────
 get_cuenta_ppl <- function(empresa, moneda, shared) {
   ctas <- tryCatch({
@@ -51,15 +66,13 @@ get_cuenta_ppl <- function(empresa, moneda, shared) {
     return(.get_cuenta_origen_legacy(empresa, moneda, shared))
   }
 
-  # ctas$Empresa stores initials ("NTS"); callers may pass either the full name
-  # ("Networks Trucking Services") or initials. Accept both.
-  ini          <- names(COMPANY_MAP)[unname(COMPANY_MAP) == empresa]
-  empresa_keys <- unique(c(empresa, ini))
+  empresa_keys <- .empresa_keys(empresa, shared)
 
-  # Priority 1: empresa + moneda + PPL default flag
+  # Priority 1: empresa + moneda + PPL default flag (row-wise: isTRUE() on the
+  # whole column was FALSE whenever there was more than one account)
   m <- ctas |> dplyr::filter(
     Empresa %in% empresa_keys, toupper(Moneda) == toupper(moneda),
-    activa == TRUE, isTRUE(is_ppl_default)) |> dplyr::slice(1)
+    activa == TRUE, !is.na(is_ppl_default) & is_ppl_default) |> dplyr::slice(1)
   if (nrow(m) && nzchar(trimws(m$cuenta[1]))) return(trimws(m$cuenta[1]))
 
   # Priority 2: empresa + moneda, any active
@@ -84,8 +97,7 @@ get_cuentas_ppl_data <- function(empresa, moneda, shared) {
   }, error = function(e) NULL)
   if (is.null(ctas) || !nrow(ctas)) return(NULL)
 
-  ini          <- names(COMPANY_MAP)[unname(COMPANY_MAP) == empresa]
-  empresa_keys <- unique(c(empresa, ini))
+  empresa_keys <- .empresa_keys(empresa, shared)
 
   matches <- ctas |> dplyr::filter(
     Empresa %in% empresa_keys, toupper(Moneda) == toupper(moneda), activa == TRUE)

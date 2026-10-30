@@ -108,7 +108,7 @@
   } else { ctas$banco_nombre <- NA_character_ }
 
   disp <- ctas |> dplyr::mutate(
-    PPL = dplyr::if_else(isTRUE(is_ppl_default),
+    PPL = dplyr::if_else(!is.na(is_ppl_default) & is_ppl_default,
                          "<span class='badge bg-primary'>PPL</span>", ""),
     Cuenta_disp = paste0('<span class="font-monospace small">', cuenta, '</span>'),
     Alias_disp  = dplyr::if_else(
@@ -484,7 +484,10 @@ settings_cuentas_observer <- function(input, output, session, shared) {
           tags$input(
             type  = "checkbox", class = "form-check-input",
             id    = "cta_is_ppl_default",
-            if (default_val) list(checked = "checked") else list()
+            # An attribute, not a child: list(checked = "checked") as an
+            # unnamed argument rendered the word "checked" next to an always
+            # empty box, so saving any edit cleared the account's PPL flag.
+            checked = if (default_val) "checked" else NULL
           ),
           tags$label(class = "form-check-label small fw-semibold",
                      `for` = "cta_is_ppl_default",
