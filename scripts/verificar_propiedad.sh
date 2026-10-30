@@ -26,6 +26,7 @@ frente_de_rama() {
 dueno_de() {
   local f="$1" pat dueno
   while IFS=$'\t' read -r pat dueno; do
+    pat="${pat%$'\r'}"; dueno="${dueno%$'\r'}"   # a Windows checkout may add CR
     [[ -z "$pat" || "$pat" == \#* ]] && continue
     # shellcheck disable=SC2053
     if [[ "$f" == $pat ]]; then echo "$dueno"; return; fi
