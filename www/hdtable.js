@@ -95,6 +95,7 @@
       textos: msg.textos || {}, cols: [], n: 0, ids: [], idx: {}, bloq: [], moneda: [], tipo: [],
       celdas: [], busq: [], trs: [], vis: [], sel: new Set(), ancla: null,
       filtros: [], fsel: {}, trasBusq: [], gTodos: false, gExcepto: {}, grupos: [], lista: [],
+      editando: false, valores: {},
       orden: { col: -1, dir: 1 }, q: '', abajo: null, medidas: {}
     };
     root.textContent = '';
@@ -303,11 +304,28 @@
         var ids = a.sin_seleccion
           ? st.vis.filter(function (i) { return !st.bloq[i]; }).map(function (i) { return st.ids[i]; })
           : idsSel(st);
-        if (!ids.length) return;
-        if (a.confirmar) pedirConfirmacion(st, a.accion, a.texto, ids, a.peligro);
-        else enviarAccion(st, a.accion, ids);
+        if (!ids.length && !a.vacias) return;
+        // An action with a field sends what it holds (campo = "fecha").
+        var valor = a.campo ? valorCampo(st, a) : null;
+        if (a.campo && !valor) return;
+        if (a.confirmar) pedirConfirmacion(st, a.accion, a.texto, ids, a.peligro, valor);
+        else enviarAccion(st, a.accion, ids, valor);
       });
       root.appendChild(st.accBarraEl);
+      // Editar: shows the edit actions (modo = "editar") while it's on.
+      if (p.modo_editar && st.accBarra.some(function (a) { return a.modo === 'editar'; })) {
+        st.btnEditar = nodo('button', 'hdt-btn hdt-editar', t('tablas.editar'));
+        st.btnEditar.type = 'button';
+        st.btnEditar.setAttribute('aria-pressed', 'false');
+        st.btnEditar.addEventListener('click', function () {
+          st.editando = !st.editando;
+          st.btnEditar.classList.toggle('hdt-on', st.editando);
+          st.btnEditar.setAttribute('aria-pressed', st.editando ? 'true' : 'false');
+          pintarBarraAcc(st);
+        });
+        st.barra.insertBefore(st.btnEditar, st.contador || null);
+        st.barra.hidden = false;
+      }
     }
     st.confEl = nodo('div', 'hdt-confirmar');
     st.confEl.hidden = true;
@@ -379,28 +397,56 @@
   }
 
   // ── Bar actions and confirmation ─────────────────────────────────────────
+  // Edit actions (modo = "editar") show only while Editar is on, and then
+  // always -- disabled with nothing marked; the others while rows are marked
+  // (or always, with sin_seleccion).
   function pintarBarraAcc(st) {
     if (!st.accBarraEl) return;
     var n = idsSel(st).length;
-    var siempre = st.accBarra.some(function (a) { return a.sin_seleccion; });
-    st.accBarraEl.hidden = !n && !siempre;
+    var activas = st.accBarra.filter(function (a) {
+      return a.modo === 'editar' ? !!st.editando : (a.sin_seleccion || a.vacias || n > 0);
+    });
+    st.accBarraEl.hidden = !activas.length;
     if (st.accBarraEl.hidden) return;
     st.accBarraEl.textContent = '';
     if (n) st.accBarraEl.appendChild(nodo('span', 'hdt-acciones-n',
       tn('tablas.sumador.seleccion', n, { n: FMT_N.format(n) })));
-    st.accBarra.forEach(function (a) {
-      if (!a.sin_seleccion && !n) return;
+    activas.forEach(function (a) {
       var b = nodo('button', 'hdt-btn' + (a.peligro ? ' hdt-peligro' : ''), a.texto);
       b.type = 'button';
       b.dataset.accion = a.accion;
-      st.accBarraEl.appendChild(b);
+      var sinFilas = !n && !a.sin_seleccion && !a.vacias;
+      b.disabled = sinFilas;
+      if (a.campo !== 'fecha') { st.accBarraEl.appendChild(b); return; }
+      // The date box: tomorrow by default; while it's empty the button
+      // stays disabled.
+      var caja = nodo('span', 'hdt-accion-campo'), inp = nodo('input', 'hdt-fecha');
+      inp.type = 'date';
+      inp.value = valorCampo(st, a);
+      inp.setAttribute('aria-label', t('tablas.accion.fecha'));
+      inp.addEventListener('input', function () {
+        st.valores[a.accion] = inp.value;
+        b.disabled = sinFilas || !inp.value;
+      });
+      b.disabled = sinFilas || !inp.value;
+      caja.appendChild(inp);
+      caja.appendChild(b);
+      st.accBarraEl.appendChild(caja);
     });
+  }
+
+  function valorCampo(st, a) {
+    if (st.valores[a.accion] != null) return st.valores[a.accion];
+    var d = new Date();
+    d.setDate(d.getDate() + 1);
+    var dd = function (x) { return (x < 10 ? '0' : '') + x; };
+    return d.getFullYear() + '-' + dd(d.getMonth() + 1) + '-' + dd(d.getDate());
   }
 
   // accion() fires only on Confirmar. The bar closes if the selection or
   // the visible rows change meanwhile.
-  function pedirConfirmacion(st, accion, texto, ids, peligro) {
-    st.pendiente = { accion: accion, ids: ids };
+  function pedirConfirmacion(st, accion, texto, ids, peligro, valor) {
+    st.pendiente = { accion: accion, ids: ids, valor: valor };
     var c = st.confEl;
     c.textContent = '';
     c.appendChild(nodo('span', 'hdt-confirmar-texto',
@@ -411,7 +457,7 @@
     si.addEventListener('click', function () {
       var p = st.pendiente;
       cerrarConfirmacion(st);
-      if (p) enviarAccion(st, p.accion, p.ids);
+      if (p) enviarAccion(st, p.accion, p.ids, p.valor);
     });
     no.addEventListener('click', function () { cerrarConfirmacion(st); });
     c.appendChild(si);
@@ -817,6 +863,8 @@
     });
     st.idx = {};
     for (var i = 0; i < st.n; i++) st.idx[st.ids[i]] = i;
+    st.colEt = -1;
+    st.cols.forEach(function (c, j) { if (st.colEt < 0 && c.tipo === 'etiqueta') st.colEt = j; });
     st.suma = -1;
     for (var j = 0; j < st.cols.length; j++) {
       if (st.cols[j].tipo === 'dinero' && st.cols[j].sumar) { st.suma = j; break; }
@@ -922,9 +970,10 @@
     return td;
   }
 
-  function enviarAccion(st, accion, ids) {
-    if (window.Shiny && Shiny.setInputValue)
-      Shiny.setInputValue(st.ns + 'accion', { accion: accion, ids: ids, nonce: Math.random() }, { priority: 'event' });
+  function enviarAccion(st, accion, ids, valor) {
+    var a = { accion: accion, ids: ids, nonce: Math.random() };
+    if (valor != null) a.valor = valor;
+    if (window.Shiny && Shiny.setInputValue) Shiny.setInputValue(st.ns + 'accion', a, { priority: 'event' });
   }
 
   function fila(st, i) {
@@ -945,6 +994,8 @@
       tr.appendChild(td0);
     }
     if (st.miembro && st.miembro[i]) tr.classList.add('hdt-miembro');
+    var et = tonoEtiqueta(st, i);
+    if (et) tr.classList.add('hdt-et-' + et);
     for (var k = 0; k < st.ver.length; k++) {
       var j = st.ver[k], td = celdaVacia(st, j);
       td._c = j;
@@ -955,6 +1006,24 @@
     }
     if (st.accFila.length) tr.appendChild(botonesFila(st, i));
     return tr;
+  }
+
+  // The row's tag tone (its background, with the `etiquetas` piece).
+  function tonoEtiqueta(st, i) {
+    if (!st.p.etiquetas || st.colEt < 0 || i == null) return null;
+    var te = (st.celdas[st.colEt].tono || [])[i];
+    return te && te !== 'neutro' ? String(te).replace(/[^a-z_]/g, '') : null;
+  }
+
+  // A group's strongest tag: its row with the first tag in order.
+  function etiquetaFuerte(st, filas) {
+    if (st.colEt < 0) return null;
+    var o = st.celdas[st.colEt].orden, mejor = null;
+    filas.forEach(function (i) {
+      if (o[i] == null || o[i] === '') return;
+      if (mejor == null || o[i] < o[mejor]) mejor = i;
+    });
+    return mejor;
   }
 
   function celdaVacia(st, j) {
@@ -970,7 +1039,8 @@
   function pintarCelda(st, td, j, i) {
     var c = st.cols[j], v = st.celdas[j].mostrar[i];
     if (st.p.insignias && c.tipo === 'empresa' && v) td.appendChild(nodo('span', 'hdt-ins hdt-emp', v));
-    else if (st.p.insignias && c.tipo === 'insignia' && v) {
+    // Tags (etiquetas): the same pill, in the tone HD_ETIQUETAS gives.
+    else if (((st.p.insignias && c.tipo === 'insignia') || (st.p.etiquetas && c.tipo === 'etiqueta')) && v) {
       var tono = String((st.celdas[j].tono || [])[i] || 'neutro').replace(/[^a-z_]/g, '');
       td.appendChild(nodo('span', 'hdt-ins hdt-tono-' + tono, v));
     } else td.appendChild(document.createTextNode(v == null ? '' : v));
@@ -1166,6 +1236,7 @@
     tr._g = u;
     tr.dataset.primera = st.ids[u.filas[0]];   // which group it is (tests, diagnostics)
     var libres = u.filas.filter(function (i) { return !st.bloq[i]; }), i0 = u.filas[0];
+    var fuerte = st.p.etiquetas ? etiquetaFuerte(st, u.filas) : null;   // its tag and background
     if (st.p.casillas) {
       var td0 = nodo('td', 'hdt-cb'), cb = nodo('input', 'hdt-cbx hdt-cbx-grupo');
       cb.type = 'checkbox';
@@ -1192,9 +1263,13 @@
         td.textContent = mons.length ? mons.map(function (mo) {
           return (mons.length > 1 && mo ? mo + ' ' : '') + dinero(s[mo]);
         }).join(' · ') : dinero(0);
+      } else if (j === st.colEt && st.p.etiquetas) {
+        if (fuerte != null) pintarCelda(st, td, j, fuerte);
       } else if (comun) pintarCelda(st, td, j, i0);
       tr.appendChild(td);
     });
+    var tonoG = tonoEtiqueta(st, fuerte);
+    if (tonoG) tr.classList.add('hdt-et-' + tonoG);
     if (st.accFila.length) tr.appendChild(nodo('td', 'hdt-acc'));
     return tr;
   }

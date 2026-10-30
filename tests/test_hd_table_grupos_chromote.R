@@ -360,6 +360,74 @@ xl <- openxlsx::read.xlsx(list.files(descargas, pattern = "\\.xlsx$", full.names
 ok("... with only the columns shown, in their order", identical(names(xl), make.names(t1)) || identical(names(xl), t1))
 invisible(ev("localStorage.clear()"))
 
+# ── Tags A / B / C and the edit mode ───────────────────────────────────────
+ok("demo loads (60 rows, flat)", abrir("?n=60&seed=1&periodo=0&secciones=0"))
+d60 <- datos_de(60)
+COL_ET <- 7L
+ETQ <- c(urgent = "A", both = "B", important = "C")
+TONO <- c(urgent = "rojo", both = "naranja", important = "amarillo")
+fila_info <- function(id) ev(sprintf("(function(){ var tr = HDT.fila('%s', '%s'); var p = tr.children[%d].querySelector('.hdt-ins');
+  return { pill: p ? p.textContent : '', tono: p ? p.className : '', fila: tr.className }; })()", A, id, COL_ET))
+bien <- vapply(d60$id, function(id) {
+  e <- d60$Etiqueta[d60$id == id]; x <- fila_info(id)
+  if (!nzchar(e)) return(!nzchar(x$pill) && !grepl("hdt-et-", x$fila))
+  identical(x$pill, ETQ[[e]]) && grepl(paste0("hdt-tono-", TONO[[e]]), x$tono) && grepl(paste0("hdt-et-", TONO[[e]]), x$fila)
+}, logical(1))
+ok("tags show as pills A (red), B (orange), C (yellow) and color their row; untagged rows have neither", all(bien))
+clic(sprintf("document.querySelectorAll('#%s thead th')[%d]", A, COL_ET))
+peso <- c(urgent = 1, both = 2, important = 3)
+p_vis <- vapply(vis(), function(id) { e <- d60$Etiqueta[d60$id == id]; if (nzchar(e)) peso[[e]] else 9 }, 1)
+ok("sorting by the tag goes A, B, C, then untagged", !is.unsorted(p_vis))
+clic(sprintf("document.querySelectorAll('#%s thead th')[%d]", A, COL_ET))
+p_vis <- vapply(vis(), function(id) { e <- d60$Etiqueta[d60$id == id]; if (nzchar(e)) peso[[e]] else 9 }, 1)
+ok("... and descending C, B, A, with untagged still last", !is.unsorted(rev(p_vis[p_vis < 9])) && all(tail(p_vis, sum(p_vis == 9)) == 9))
+clic(sprintf("document.querySelectorAll('#%s thead th')[%d]", A, COL_ET))
+
+# Edit mode.
+acciones_vis <- function() unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s .hdt-acciones button')).map(function(b){ return b.dataset.accion + (b.disabled ? ':off' : ''); })", A)))
+editar <- sprintf("document.querySelector('#%s .hdt-editar')", A)
+ok("the edit actions don't show until Editar is on", !any(grepl("etiqueta_a", acciones_vis() %||% "")))
+clic(editar)
+a0 <- acciones_vis()
+ok("Editar shows them, disabled while nothing is marked",
+   all(c("etiqueta_a:off", "etiqueta_b:off", "etiqueta_c:off", "quitar_etiqueta:off", "mover:off", "restaurar:off") %in% a0) &&
+     identical(ev(sprintf("%s.getAttribute('aria-pressed')", editar)), "true"))
+sin_et <- setdiff(d60$id[!nzchar(d60$Etiqueta) & !d60$.bloqueada], character(0))[1]
+clic(sprintf("HDT.fila('%s', '%s').children[1]", A, sin_et))
+ok("with a row marked they can be used", "etiqueta_a" %in% acciones_vis() && "mover" %in% acciones_vis())
+clic(sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=etiqueta_a]')", A))
+ok("'Etiqueta A' reaches the server, and the row comes back with pill A and the red background",
+   poll_until(function() { x <- fila_info(sin_et); identical(x$pill, "A") && grepl("hdt-et-rojo", x$fila) }, timeout_s = 8))
+manana <- format(Sys.Date() + 1, "%Y-%m-%d")
+fecha_in <- sprintf("document.querySelector('#%s .hdt-acciones input.hdt-fecha')", A)
+ok("'Mover' has a date box, tomorrow by default", identical(ev(sprintf("%s.value", fecha_in)), manana))
+invisible(ev(sprintf("var i = %s; i.value = ''; i.dispatchEvent(new Event('input'))", fecha_in)))
+ok("an empty date disables 'Mover'", "mover:off" %in% acciones_vis())
+invisible(ev(sprintf("var i = %s; i.value = '2026-12-15'; i.dispatchEvent(new Event('input'))", fecha_in)))
+clic(sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=mover]')", A))
+ok("'Mover' sends the date as valor and the row moves to it",
+   poll_until(function() grepl('valor *: chr "2026-12-15"', ev("document.getElementById('panel_a').innerText")), timeout_s = 8) &&
+     poll_until(function() identical(ev(sprintf("HDT.fila('%s', '%s').children[5].textContent", A, sin_et)), "15 dic 2026"), timeout_s = 8))
+clic(sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=eliminar_edicion]')", A))
+ok("Eliminar in the edit bar asks for confirmation first",
+   isTRUE(ev(sprintf("!document.querySelector('#%s .hdt-confirmar').hidden", A))))
+clic(sprintf("document.querySelector('#%s .hdt-confirmar-no')", A))
+clic(editar)
+ok("Editar off hides the edit actions again", !any(grepl("etiqueta_a", acciones_vis() %||% "")))
+
+# A group shows its strongest tag.
+ok("demo loads with groups", abrir("?n=300&seed=1&periodo=0"))
+dg <- datos_de(300, FALSE, TRUE)
+gl <- grupos_lista()
+fuerte_ok <- vapply(gl, function(g) {
+  m <- miembros(g); e <- dg$Etiqueta[match(m, dg$id)]; e <- e[nzchar(e)]
+  esperado <- if (length(e)) ETQ[[names(peso)[min(peso[e])]]] else ""
+  x <- ev(sprintf("(function(){ var tr = %s, p = tr.children[%d].querySelector('.hdt-ins'); return { t: p ? p.textContent : '', c: tr.className }; })()",
+                  cab(m[1]), COL_ET))
+  identical(x$t, esperado) && (!nzchar(esperado) || grepl("hdt-et-", x$c))
+}, logical(1))
+ok("each group's row shows the strongest tag of its rows, with its background", all(fuerte_ok))
+
 # ── The table's own empty message ──────────────────────────────────────────
 ok("demo loads with no rows", abrir("?n=0&seed=1&periodo=0"))
 vacio <- ev(sprintf("(function(){ var v = document.querySelector('#%s .hdt-vacio'); return { t: v.textContent, c: v.className, h: v.hidden,

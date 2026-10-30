@@ -57,7 +57,7 @@ demo_facturas <- function(n, seed = 1, periodo = TRUE, grupos = FALSE) {
     Moneda     = sample(c("MXN", "MXN", "USD"), n, TRUE),
     Vence      = Sys.Date() - sample(-20:90, n, TRUE),
     Estado     = sample(c("pendiente", "programada", "confirmada"), n, TRUE, prob = c(.6, .3, .1)),
-    Etiqueta   = sample(c("", "", "", "Urgente", "Importante"), n, TRUE),
+    Etiqueta   = sample(c("", "", "both", "urgent", "important"), n, TRUE),
     .tipo      = tipos,
     stringsAsFactors = FALSE
   ) |> transform(.bloqueada = Estado == "confirmada") -> df
@@ -215,6 +215,9 @@ server <- function(input, output, session) {
   observeEvent(input$solo_mxn, solo_mxn(!solo_mxn()))
 
   # "Cambiar datos": same ids, new amounts and states.
+  # The edit actions (modo = "editar") really change the demo's data, so
+  # the tag's pill, background and order can be seen moving.
+  ediciones <- reactiveVal(list(etiqueta = list(), vence = list()))
   datos_a <- reactive({
     n <- n_filas()
     df <- demo_facturas(n, seed, con_periodo, con_grupos)
@@ -224,6 +227,10 @@ server <- function(input, output, session) {
       df$Importe <- round(df$Importe * runif(n, .5, 1.5), 2)
     }
     if (solo_mxn()) df <- df[df$Moneda == "MXN", ]
+    # What the edit actions changed (tags, dates), on top of the generated data.
+    cambios_ed <- ediciones()
+    for (id in names(cambios_ed$etiqueta)) df$Etiqueta[df$id == id] <- cambios_ed$etiqueta[[id]]
+    for (id in names(cambios_ed$vence)) df$Vence[df$id == id] <- cambios_ed$vence[[id]]
     df
   })
 
@@ -239,8 +246,19 @@ server <- function(input, output, session) {
     # otherwise); with it switched off the demo just leaves them out.
     con_conf <- "confirmar" %in% p
     acc_fila <- c("crear_provision", "agregar", "editar", "provision", "detalle", if (con_conf) "eliminar")
+    # Vencidos' edit bar, behind "Editar" (modo_editar).
+    con_editar <- "modo_editar" %in% p
     acc_barra <- c(
       if (con_conf) list(list(accion = "mandar_papelera", texto = "tablas.accion.papelera", confirmar = TRUE, peligro = TRUE)),
+      if (con_editar) list(
+        list(accion = "etiqueta_a", texto = "tablas.accion.etiqueta_a", modo = "editar"),
+        list(accion = "etiqueta_b", texto = "tablas.accion.etiqueta_b", modo = "editar"),
+        list(accion = "etiqueta_c", texto = "tablas.accion.etiqueta_c", modo = "editar"),
+        list(accion = "quitar_etiqueta", texto = "tablas.accion.quitar_etiqueta", modo = "editar"),
+        list(accion = "mover", texto = "tablas.accion.mover", modo = "editar", campo = "fecha"),
+        list(accion = "restaurar", texto = "tablas.accion.restaurar", modo = "editar")),
+      if (con_editar && con_conf) list(
+        list(accion = "eliminar_edicion", texto = "tablas.accion.eliminar", modo = "editar", confirmar = TRUE, peligro = TRUE)),
       list(list(accion = "agregar_seleccion", texto = "tablas.accion.agregar_seleccion"),
            list(accion = "agregar_todo", texto = "tablas.accion.agregar_todo", sin_seleccion = TRUE)))
     tabla_a(list(id = paste0("a", v),
@@ -260,6 +278,12 @@ server <- function(input, output, session) {
   registro <- reactiveVal(character(0))
   observeEvent(tabla_a()$t$accion(), {
     a <- tabla_a()$t$accion()
+    ed <- ediciones()
+    nueva <- switch(a$accion, etiqueta_a = "urgent", etiqueta_b = "both", etiqueta_c = "important", quitar_etiqueta = "", NULL)
+    if (!is.null(nueva)) for (id in a$ids) ed$etiqueta[[id]] <- nueva
+    if (identical(a$accion, "mover")) for (id in a$ids) ed$vence[[id]] <- as.Date(a$valor)
+    if (identical(a$accion, "restaurar")) ed$vence[a$ids] <- NULL
+    ediciones(ed)
     linea <- sprintf("%s  %s  [%d] %s", format(Sys.time(), "%H:%M:%S"), a$accion, length(a$ids),
                      paste(utils::head(a$ids, 8), collapse = " "))
     registro(utils::head(c(linea, registro()), 12))

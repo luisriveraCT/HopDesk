@@ -19,6 +19,10 @@
   --hdt-t-info: #2456d6;    --hdt-f-info: #e6edff;
   --hdt-t-neutro: #5a6377;  --hdt-f-neutro: #eef1f8;
   --hdt-t-morado: #6d28d9;  --hdt-f-morado: #f1e9ff;
+  /* Tags A (red), B (orange), C (yellow): pill text / pill / row. */
+  --hdt-t-rojo: #b42318;     --hdt-f-rojo: #ffe1de;     --hdt-fila-rojo: #fff0f0;
+  --hdt-t-naranja: #b54708;  --hdt-f-naranja: #ffe8d1;  --hdt-fila-naranja: #fff3e6;
+  --hdt-t-amarillo: #8a6100; --hdt-f-amarillo: #fff1b8; --hdt-fila-amarillo: #fffbe6;
   color: var(--hdt-ink);
   font-size: .84rem;
   display: flex; flex-direction: column; min-width: 0;
@@ -196,6 +200,12 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-acciones[hidden], .hdt-confirmar[hidden] { display: none; }
 .hdt-acciones-n { font-weight: 700; font-size: .8rem; margin-right: 6px; }
 .hdt-confirmar { border-color: var(--hdt-warn); background: var(--hdt-warn-soft); }
+/* An action with its own field ("Mover" with a date). */
+.hdt-accion-campo { display: inline-flex; align-items: center; gap: 4px; }
+.hdt-fecha { font: inherit; font-size: .78rem; border: 1px solid var(--hdt-line); border-radius: 6px; padding: 1px 6px;
+  background: var(--hdt-surface); color: var(--hdt-ink); }
+.hdt-btn:disabled { opacity: .5; cursor: default; }
+.hdt-btn:disabled:hover { border-color: var(--hdt-line); color: var(--hdt-ink); }
 .hdt-confirmar-texto { font-weight: 700; font-size: .82rem; margin-right: auto; }
 .hdt-btn.hdt-peligro { border-color: var(--hdt-danger); color: var(--hdt-danger); }
 .hdt-btn.hdt-peligro:hover { background: var(--hdt-danger-soft); }
@@ -219,6 +229,16 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-ins.hdt-tono-peligro { color: var(--hdt-t-peligro); background: var(--hdt-f-peligro); }
 .hdt-ins.hdt-tono-info    { color: var(--hdt-t-info);    background: var(--hdt-f-info); }
 .hdt-ins.hdt-tono-morado  { color: var(--hdt-t-morado);  background: var(--hdt-f-morado); }
+/* Tags A / B / C (HD_ETIQUETAS in R/hd_columnas.R): pill tones, and the
+   row's background (before the selection rules, which win over them). */
+.hdt-ins.hdt-tono-rojo     { color: var(--hdt-t-rojo);     background: var(--hdt-f-rojo); }
+.hdt-ins.hdt-tono-naranja  { color: var(--hdt-t-naranja);  background: var(--hdt-f-naranja); }
+.hdt-ins.hdt-tono-amarillo { color: var(--hdt-t-amarillo); background: var(--hdt-f-amarillo); }
+.hdt-tabla tr.hdt-et-rojo td     { background: var(--hdt-fila-rojo); }
+.hdt-tabla tr.hdt-et-naranja td  { background: var(--hdt-fila-naranja); }
+.hdt-tabla tr.hdt-et-amarillo td { background: var(--hdt-fila-amarillo); }
+.hdt-tabla tr.hdt-sel.hdt-et-rojo td, .hdt-tabla tr.hdt-sel.hdt-et-naranja td,
+.hdt-tabla tr.hdt-sel.hdt-et-amarillo td { background: var(--hdt-sel) !important; }
 /* Company: same box as any badge, outlined. */
 .hdt-ins.hdt-emp { font-weight: 500; border-color: var(--hdt-line); color: var(--hdt-accent);
   background: var(--hdt-surface); border-radius: 999px; }
@@ -238,6 +258,9 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
   --hdt-t-info: #7ea4ff;    --hdt-f-info: #1f2c4d;
   --hdt-t-neutro: #9aa4ba;  --hdt-f-neutro: #1d2638;
   --hdt-t-morado: #b794ff;  --hdt-f-morado: #2a2142;
+  --hdt-t-rojo: #ff8a80;     --hdt-f-rojo: #3d1d22;     --hdt-fila-rojo: #2a1a1e;
+  --hdt-t-naranja: #ffb066;  --hdt-f-naranja: #3a2614;  --hdt-fila-naranja: #2a2118;
+  --hdt-t-amarillo: #f5d061; --hdt-f-amarillo: #3a3214; --hdt-fila-amarillo: #29261a;
 }
 
 /* Totals footer */

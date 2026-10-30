@@ -36,8 +36,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=18"),
-    htmltools::tags$script(src = "hdtable.js?v=18")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=19"),
+    htmltools::tags$script(src = "hdtable.js?v=19")
   ))
 }
 
@@ -151,7 +151,7 @@ hd_filtros_payload <- function(filtros, datos, columnas) {
     valores <- as.character(datos[[f$campo]])
     valores[is.na(valores)] <- ""
     col  <- Find(function(c) identical(c$campo, f$campo), columnas)
-    mapa <- if (!is.null(col) && identical(col$tipo, "insignia")) col$mapa else list()
+    mapa <- if (!is.null(col) && length(col$mapa)) col$mapa else list()   # col_insignia(), col_etiqueta()
     presentes <- unique(valores[nzchar(valores)])
     resto <- setdiff(presentes, names(mapa))
     orden <- c(intersect(names(mapa), presentes), resto[order(.hd_plano(resto), resto)])
@@ -257,7 +257,7 @@ hd_secciones_payload <- function(secciones, datos, columnas) {
     tipo <- identical(s$campo, ".tipo")
     if (tipo) valores[!valores %in% c("cobro", "pago")] <- ""
     col  <- Find(function(c) identical(c$campo, s$campo), columnas)
-    mapa <- if (!is.null(col) && identical(col$tipo, "insignia")) col$mapa else list()
+    mapa <- if (!is.null(col) && length(col$mapa)) col$mapa else list()   # col_insignia(), col_etiqueta()
     presentes <- unique(valores[nzchar(valores)])
     primero <- c(s$orden, if (tipo) c("cobro", "pago"), names(mapa))
     resto <- setdiff(presentes, primero)
@@ -347,7 +347,11 @@ hd_acciones_fila_meta <- function(acciones) {
 
 # ── Bar actions (barra_acc) ─────────────────────────────────────────────────
 # acciones_barra = list(list(accion = "mandar_papelera", texto = <key or text>,
-#                            confirmar = TRUE, peligro = TRUE, sin_seleccion = FALSE), ...)
+#                            confirmar = TRUE, peligro = TRUE, sin_seleccion = FALSE,
+#                            modo = "editar", campo = "fecha"), ...)
+# modo = "editar": shown only while the bar's "Editar" is on (modo_editar).
+# campo = "fecha": a date box next to the button (tomorrow by default; empty
+# disables it), and accion() brings valor = "AAAA-MM-DD".
 # Shown above the table while rows are marked; they send the marked ids in
 # visible order. sin_seleccion = TRUE: always shown, sends the visible
 # (unlocked) ids -- "Agregar todo".
@@ -355,7 +359,7 @@ hd_acciones_barra_validar <- function(acciones_barra) {
   if (is.null(acciones_barra)) return(NULL)
   if (!is.list(acciones_barra) || !length(acciones_barra))
     stop("hd_table: `acciones_barra` must be a list of list(accion, texto, ...).", call. = FALSE)
-  campos <- c("accion", "texto", "confirmar", "peligro", "sin_seleccion")
+  campos <- c("accion", "texto", "confirmar", "peligro", "sin_seleccion", "modo", "campo")
   out <- lapply(seq_along(acciones_barra), function(k) {
     a <- acciones_barra[[k]]
     if (!is.list(a) || !is.character(a$accion) || length(a$accion) != 1L || !nzchar(a$accion))
@@ -366,8 +370,13 @@ hd_acciones_barra_validar <- function(acciones_barra) {
     if (length(otros))
       stop(sprintf("hd_table: acciones_barra '%s': unknown field(s) %s.", a$accion, paste(otros, collapse = ", ")),
            call. = FALSE)
+    if (!is.null(a$modo) && !identical(a$modo, "editar"))
+      stop(sprintf("hd_table: acciones_barra '%s': modo must be \"editar\".", a$accion), call. = FALSE)
+    if (!is.null(a$campo) && !identical(a$campo, "fecha"))
+      stop(sprintf("hd_table: acciones_barra '%s': campo must be \"fecha\".", a$accion), call. = FALSE)
     list(accion = a$accion, texto = a$texto, confirmar = isTRUE(a$confirmar),
-         peligro = isTRUE(a$peligro), sin_seleccion = isTRUE(a$sin_seleccion))
+         peligro = isTRUE(a$peligro), sin_seleccion = isTRUE(a$sin_seleccion),
+         modo = a$modo, campo = a$campo)
   })
   nombres <- vapply(out, `[[`, character(1), "accion")
   if (anyDuplicated(nombres))
@@ -472,6 +481,10 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
   acc_barra    <- .hd_sin_pieza(tabla, "acciones_barra", "barra_acc",
                                 hd_acciones_barra_validar(acciones_barra), piezas_tabla)
   for (a in acc_barra) if (a$confirmar) .hd_exigir_confirmar(tabla, piezas_tabla, sprintf("bar action '%s'", a$accion))
+  # An edit action on a table without the Editar button would never show.
+  for (a in acc_barra) if (identical(a$modo, "editar") && !"modo_editar" %in% piezas_tabla)
+    stop(sprintf("hd_table '%s': bar action '%s' is modo = \"editar\" but the table doesn't have the 'modo_editar' piece.",
+                 tabla, a$accion), call. = FALSE)
   acc_barra_meta <- if (length(acc_barra)) hd_acciones_barra_meta(acc_barra) else NULL
 
   shiny::moduleServer(id, function(input, output, session) {
@@ -549,7 +562,9 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
       accion    = shiny::reactive({
         a <- input$accion
         if (is.null(a)) return(NULL)
-        list(accion = as.character(a$accion), ids = as.character(unlist(a$ids)), nonce = a$nonce)
+        # valor: what the action's own field holds (campo = "fecha": "AAAA-MM-DD").
+        list(accion = as.character(a$accion), ids = as.character(unlist(a$ids)), nonce = a$nonce,
+             valor = if (!is.null(a$valor)) as.character(a$valor))
       })
     )
   })

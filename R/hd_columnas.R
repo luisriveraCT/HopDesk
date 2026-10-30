@@ -140,15 +140,36 @@ col_empresa <- function(campo = "Empresa", titulo = NULL, opcional = FALSE, visi
   col
 }
 
+# ── Tags (etiquetas) ────────────────────────────────────────────────────────
+# The one map for invoice tags: from it come the label, the pill's colour,
+# the row's background (by tone, in www/hdtable.css) and the order. The
+# stored values never change (urgent / both / important); Luis renamed what
+# people see to A, B and C so the name doesn't mean anything by itself.
+HD_ETIQUETAS <- list(
+  urgent    = list(texto = "tablas.etiquetas.a", tono = "rojo",     peso = 1L),
+  both      = list(texto = "tablas.etiquetas.b", tono = "naranja",  peso = 2L),
+  important = list(texto = "tablas.etiquetas.c", tono = "amarillo", peso = 3L)
+)
+
+# A tag column holds the stored values. Known ones show their label as a
+# pill (with the `etiquetas` piece) and sort A, B, C; any other text shows
+# as it comes, after them; untagged rows go last in either direction.
 col_etiqueta <- function(campo, titulo = NULL, opcional = FALSE, visible = TRUE) {
+  mapa <- lapply(HD_ETIQUETAS, function(e) list(texto = e$texto, tono = e$tono))
   col <- col_texto(campo, titulo, recorte = TRUE, opcional = opcional, visible = visible)
   col$tipo <- "etiqueta"
-  # Untagged rows sort after tagged ones in either direction of the text.
-  base <- col$valores
+  col$mapa <- mapa
   col$valores <- function(x) {
-    v <- base(x)
-    v$orden[!nzchar(v$orden)] <- NA_character_
-    v
+    raw <- as.character(x)
+    raw[is.na(raw)] <- ""
+    conocida <- raw %in% names(HD_ETIQUETAS)
+    mostrar <- raw
+    mostrar[conocida] <- vapply(raw[conocida], function(v) .hd_texto(HD_ETIQUETAS[[v]]$texto), character(1))
+    orden <- ifelse(conocida, paste0("0", vapply(raw, function(v) if (v %in% names(HD_ETIQUETAS)) HD_ETIQUETAS[[v]]$peso else 0L, integer(1))),
+                    paste0("1", .hd_plano(raw)))
+    orden[!nzchar(raw)] <- NA_character_
+    tono <- ifelse(conocida, vapply(raw, function(v) if (v %in% names(HD_ETIQUETAS)) HD_ETIQUETAS[[v]]$tono else "", character(1)), "neutro")
+    list(mostrar = unname(mostrar), orden = unname(orden), copiar = unname(mostrar), tono = unname(tono))
   }
   col
 }

@@ -133,8 +133,9 @@ test_that("col_insignia: label from the map, sorted by the map's order, tone per
 test_that("col_empresa and col_etiqueta are typed text columns", {
   expect_identical(col_empresa()$campo, "Empresa")
   expect_identical(col_empresa()$tipo, "empresa")
-  v <- col_etiqueta("Etiqueta")$valores(c("Urgente", ""))
-  expect_identical(v$orden, c("urgente", NA))
+  # Untagged rows last; text that isn't a known tag sorts after A, B, C.
+  v <- col_etiqueta("Etiqueta")$valores(c("Urgente", "", "both"))
+  expect_identical(v$orden, c("1urgente", NA, "02"))
 })
 
 test_that("titles: dictionary key or plain text", {
@@ -509,6 +510,33 @@ test_that("Excel writes only the columns shown, in their order", {
   f <- tempfile(fileext = ".xlsx"); on.exit(unlink(f))
   hd_excel_escribir(d, xl_cols, d$id, "id", f, campos = c("Parte", "Importe"))
   expect_identical(names(openxlsx::read.xlsx(f)), c("Proveedor", "Importe"))
+})
+
+test_that("tags: one map (A red, B orange, C yellow) gives label, tone and order; stored values stay", {
+  expect_identical(names(HD_ETIQUETAS), c("urgent", "both", "important"))
+  v <- col_etiqueta("E")$valores(c("important", "urgent", "", "both"))
+  expect_identical(v$mostrar, c("C", "A", "", "B"))
+  expect_identical(v$tono, c("amarillo", "rojo", "neutro", "naranja"))
+  expect_identical(order(v$orden, na.last = TRUE), c(2L, 4L, 1L, 3L))
+  # Filters and sections over a tag column get the same labels, in A-B-C order.
+  d <- data.frame(id = 1:3, E = c("important", "urgent", ""), stringsAsFactors = FALSE)
+  pl <- hd_filtros_payload(hd_filtros_validar(list(list(campo = "E"))), d, list(col_etiqueta("E")))
+  expect_identical(vapply(pl[[1]]$opciones, `[[`, "", "texto"), c("A", "C", tr("tablas.filtros.vacio")))
+})
+
+test_that("bar actions: modo = \"editar\" and campo = \"fecha\" only; edit actions need modo_editar", {
+  ok <- hd_acciones_barra_validar(list(list(accion = "mover", texto = "t", modo = "editar", campo = "fecha")))
+  expect_identical(ok[[1]]$modo, "editar")
+  expect_identical(ok[[1]]$campo, "fecha")
+  expect_error(hd_acciones_barra_validar(list(list(accion = "x", texto = "t", modo = "ver"))), "modo must be")
+  expect_error(hd_acciones_barra_validar(list(list(accion = "x", texto = "t", campo = "texto"))), "campo must be")
+  reg <- hd_registro
+  on.exit(assign("hd_registro", reg, envir = globalenv()))
+  hd_registro$sin_editar <<- list(nombre = "x", clase = "A", archivo = "x", agregar = character(),
+                                  quitar = "modo_editar", notas = character())
+  expect_error(hd_table_server("t", "sin_editar", shiny::reactive(NULL), list(col_texto("Parte")),
+                               acciones_barra = list(list(accion = "mover", texto = "t", modo = "editar"))),
+               "doesn't have the 'modo_editar' piece")
 })
 
 test_that("vacio: key or text, or list(texto, tono); fijar_titulo: key or text", {
