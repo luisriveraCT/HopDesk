@@ -399,8 +399,12 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
 
 # ── Intercompany filter ────────────────────────────────────────────────────────
 # mode: "exclude" | "include" (no-op) | "only"
+# cmap: the SESSION's company map (shared$company_map()), used by the name
+#   fallback below. Required: the global COMPANY_MAP can hold another client's
+#   companies in the shared production process.
 
-apply_ic_filter <- function(df, mode, code_col, ic_codes, ic_rfcs = character()) {
+apply_ic_filter <- function(df, mode, code_col, ic_codes, ic_rfcs = character(), cmap) {
+  force(cmap)
   if (mode == "include") return(df)
 
   has_codes <- length(ic_codes) > 0
@@ -408,11 +412,9 @@ apply_ic_filter <- function(df, mode, code_col, ic_codes, ic_rfcs = character())
 
   if (!has_codes && !has_rfcs) {
     # Fallback: when no CardCodes or RFCs are registered, detect IC by matching
-    # the Parte column against company display names from COMPANY_MAP.
+    # the Parte column against the session's company display names.
     # This is the same Layer-2 mechanism used by the Vencidos module.
     if ("Parte" %in% names(df)) {
-      cmap <- tryCatch(get("COMPANY_MAP", envir = .GlobalEnv, inherits = FALSE),
-                       error = function(e) list())
       if (length(cmap)) {
         company_names_up <- toupper(unname(cmap))
         is_ic_by_name    <- toupper(trimws(df[["Parte"]])) %in% company_names_up

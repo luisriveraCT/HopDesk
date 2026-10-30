@@ -394,13 +394,13 @@ vencidosServer <- function(id, shared) {
         df <- apply_ic_filter(df, mode = ic_mode_val,
                               code_col = code_col,
                               ic_codes = codes,
-                              ic_rfcs  = ic_rfcs)
+                              ic_rfcs  = ic_rfcs, cmap = shared$company_map())
         if (!is.null(df) && !nrow(df)) return(NULL)
 
         # Layer 2: Parte-name fallback (catches IC when codes not yet registered)
         # If Parte matches any company's display name, the invoice is intercompany.
         if (!is.null(df) && nrow(df) && "Parte" %in% names(df)) {
-          company_names_up <- toupper(unname(COMPANY_MAP))
+          company_names_up <- toupper(unname(shared$company_map()))
           is_ic_by_name    <- toupper(trimws(df[["Parte"]])) %in% company_names_up
           if (any(is_ic_by_name)) {
             if (ic_mode_val == "exclude") {

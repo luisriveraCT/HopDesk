@@ -385,7 +385,7 @@ build_export_combined_df <- function(shared, ic_mode_val) {
     codes <- tryCatch(build_ic_fullcodes(interco, led), error = function(e) character())
     tryCatch(
       apply_ic_filter(df, mode = ic_mode_val,
-                      code_col = col, ic_codes = codes, ic_rfcs = ic_rfcs),
+                      code_col = col, ic_codes = codes, ic_rfcs = ic_rfcs, cmap = shared$company_map()),
       error = function(e) df
     )
   }
@@ -2352,7 +2352,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
   # ── Render: active-filter info bar ────────────────────────────────────────
   output$export_info_bar_ui <- renderUI({
     emp_sel  <- shared$empresa_sel() %||% character(0)
-    cmap     <- shared$company_map() %||% COMPANY_MAP
+    cmap     <- shared$company_map()
     ic_val   <- input$ic_mode %||% "exclude"
 
     rev_map  <- setNames(names(cmap), unname(cmap))
@@ -2380,7 +2380,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       from  <- format(input$export_date_from %||% Sys.Date(), "%d%b%Y")
       to    <- format(input$export_date_to   %||% (lubridate::floor_date(Sys.Date(), "week", week_start = 1) + 6L), "%d%b%Y")
       emp   <- shared$empresa_sel() %||% character(0)
-      cmap  <- shared$company_map() %||% COMPANY_MAP
+      cmap  <- shared$company_map()
       rev   <- setNames(names(cmap), unname(cmap))
       inits <- paste(na.omit(unname(rev[ emp ])), collapse = "-")
       if (!nzchar(inits)) inits <- "GRUPO"
@@ -2462,7 +2462,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       if (is.null(export_data)) stop("Error al procesar los datos.")
 
       # ── Build Word document ──────────────────────────────────────────────
-      cmap     <- shared$company_map() %||% COMPANY_MAP
+      cmap     <- shared$company_map()
       rev_map  <- setNames(names(cmap), unname(cmap))
       initials <- na.omit(unname(rev_map[ emp_sel ]))
       if (!length(initials)) initials <- "—"
@@ -2595,7 +2595,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
     g_logo_raw <- tryCatch(shared$group_logo_raw(),    error = function(e) NULL)
     g_logo_ext <- tryCatch(shared$group_logo_ext(),    error = function(e) "png")
 
-    cmap     <- shared$company_map() %||% COMPANY_MAP
+    cmap     <- shared$company_map()
     rev_map  <- setNames(names(cmap), unname(cmap))
     initials <- na.omit(unname(rev_map[emp_sel]))
     if (!length(initials)) initials <- "—"
@@ -2841,7 +2841,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       from  <- format(input$export_date_from %||% Sys.Date(), "%d%b%Y")
       to    <- format(input$export_date_to   %||% (lubridate::floor_date(Sys.Date(), "week", week_start = 1) + 6L), "%d%b%Y")
       emp   <- shared$empresa_sel() %||% character(0)
-      cmap  <- shared$company_map() %||% COMPANY_MAP
+      cmap  <- shared$company_map()
       rev   <- setNames(names(cmap), unname(cmap))
       inits <- paste(na.omit(unname(rev[ emp ])), collapse = "-")
       if (!nzchar(inits)) inits <- "GRUPO"
@@ -2901,7 +2901,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
                            type = "error", duration = 8); NULL })
       if (is.null(export_data)) stop("Error al procesar los datos.")
 
-      cmap     <- shared$company_map() %||% COMPANY_MAP
+      cmap     <- shared$company_map()
       rev_map  <- setNames(names(cmap), unname(cmap))
       initials <- na.omit(unname(rev_map[ emp_sel ]))
       if (!length(initials)) initials <- "—"

@@ -68,7 +68,7 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
     }, error = function(e) character())
     ic_code_col  <- if (ledger_name == "AR") "C\u00f3digo de cliente" else "C\u00f3digo de proveedor"
     df <- apply_ic_filter(df, mode = ic_mode_val, code_col = ic_code_col,
-                          ic_codes = ic_codes_val, ic_rfcs = ic_rfcs_val)
+                          ic_codes = ic_codes_val, ic_rfcs = ic_rfcs_val, cmap = shared$company_map())
 
     amt <- shared$amount_col()
     df <- df |>
