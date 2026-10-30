@@ -8,6 +8,7 @@ source("R/i18n.R")
 source("R/hd_registro.R")
 source("R/hd_piezas.R")
 source("R/hd_columnas.R")
+source("R/hd_table.R")
 
 # ── Pieces ──────────────────────────────────────────────────────────────────
 test_that("every registered table resolves to valid pieces: siempre - quitar + agregar", {
@@ -219,4 +220,124 @@ test_that("5,000 rows build quickly", {
   cat(sprintf("\n  hd_filas(5,000 rows): %.3f s\n", t))
   expect_length(f$ids, n)
   expect_lt(t, 1)
+})
+
+
+# ── T03a: arguments, control columns, export ───────────────────────────────
+test_that("row actions: catalog order, crear_provision first and as text, unknown names stop", {
+  expect_identical(hd_acciones_fila_validar(c("eliminar", "editar", "crear_provision")),
+                   c("crear_provision", "editar", "eliminar"))
+  expect_identical(names(HD_ACCIONES_FILA)[1], "crear_provision")
+  expect_identical(HD_ACCIONES_FILA$crear_provision$estilo, "texto")
+  expect_true(all(vapply(HD_ACCIONES_FILA[-1], function(a) identical(a$estilo, "icono"), logical(1))))
+  expect_identical(utf8ToInt(HD_ACCIONES_FILA$provision$icono), 0x26a1L)
+  expect_true(HD_ACCIONES_FILA$eliminar$confirmar)
+  expect_error(hd_acciones_fila_validar(c("editar", "volar")), "unknown row action\\(s\\): volar")
+  expect_error(hd_acciones_fila_validar(character(0)), "character vector")
+  expect_identical(hd_acciones_fila_meta("crear_provision")[[1]]$titulo, tr("tablas.accion.crear_provision"))
+})
+
+test_that("icons in R/hd_table.R are written as escapes, not raw characters", {
+  txt <- readLines("R/hd_table.R", encoding = "UTF-8", warn = FALSE)
+  lineas <- grep("icono = \"", txt, value = TRUE)
+  expect_true(length(lineas) >= 6)
+  expect_false(any(vapply(lineas, function(l) any(utf8ToInt(l) > 127L), logical(1))))
+})
+
+test_that("fichas: shape validated, field must exist, labels from the col_insignia map", {
+  expect_error(hd_fichas_validar(list(orden = "a")), "fichas` must be list")
+  expect_error(hd_fichas_validar(list(campo = "x", ordne = "a")), "unknown `fichas` field\\(s\\): ordne")
+  expect_error(hd_fichas_validar(list(campo = "x", mostrar = "suma")), "conteo")
+  f <- hd_fichas_validar(list(campo = "Estado", orden = c("b", "a")))
+  d <- data.frame(id = c("1", "2", "3"), Estado = c("a", "c", NA), Importe = 1:3, stringsAsFactors = FALSE)
+  expect_error(hd_fichas_payload(hd_fichas_validar(list(campo = "Nope")), d, list(col_texto("Estado"))),
+               "fichas\\$campo 'Nope' is not in the data")
+  expect_error(hd_fichas_payload(hd_fichas_validar(list(campo = "Estado", mostrar = "monto")), d,
+                                 list(col_texto("Estado"))), "needs a col_dinero")
+  cols_f <- list(col_insignia("Estado", mapa = list(a = list(texto = "Alfa"))))
+  pl <- hd_fichas_payload(f, d, cols_f)
+  expect_identical(vapply(pl$opciones, `[[`, "", "valor"), c("b", "a", "c"))
+  expect_identical(vapply(pl$opciones, `[[`, "", "texto"), c("b", "Alfa", "c"))
+  expect_identical(unclass(pl$valores), c("a", "c", ""))
+})
+
+test_that("bar actions: validated, unique, 'detalle' reserved", {
+  ok <- hd_acciones_barra_validar(list(list(accion = "x", texto = "tablas.accion.papelera", confirmar = TRUE)))
+  expect_true(ok[[1]]$confirmar)
+  expect_false(ok[[1]]$sin_seleccion)
+  expect_error(hd_acciones_barra_validar(list(list(texto = "t"))), "needs `accion`")
+  expect_error(hd_acciones_barra_validar(list(list(accion = "x"))), "needs `texto`")
+  expect_error(hd_acciones_barra_validar(list(list(accion = "x", texto = "t", color = 1))), "unknown field\\(s\\) color")
+  expect_error(hd_acciones_barra_validar(list(list(accion = "x", texto = "t"), list(accion = "x", texto = "u"))),
+               "repeats 'x'")
+  expect_error(hd_acciones_barra_validar(list(list(accion = "detalle", texto = "t"))), "reserved")
+  expect_identical(hd_acciones_barra_meta(ok)[[1]]$texto, tr("tablas.accion.papelera"))
+})
+
+test_that("asking for confirmation on a table without the confirmar piece stops", {
+  reg <- hd_registro
+  on.exit(assign("hd_registro", reg, envir = globalenv()))
+  hd_registro$sin_conf <<- list(nombre = "x", clase = "A", archivo = "x", agregar = character(),
+                                quitar = "confirmar", notas = character())
+  cols1 <- list(col_texto("Parte"))
+  expect_error(hd_table_server("t", "sin_conf", shiny::reactive(NULL), cols1, acciones_fila = "eliminar"),
+               "row action 'eliminar' asks for confirmation")
+  expect_error(hd_table_server("t", "sin_conf", shiny::reactive(NULL), cols1,
+                               acciones_barra = list(list(accion = "borrar", texto = "t", confirmar = TRUE))),
+               "bar action 'borrar' asks for confirmation")
+})
+
+test_that(".acciones (list or comma text, fails closed) and .provision travel per row", {
+  d <- data.frame(id = c("a", "b", "c", "d"), Parte = "p", stringsAsFactors = FALSE)
+  d$.acciones <- list(c("editar", "detalle"), character(0), NA, "agregar, eliminar")
+  d$.provision <- c(TRUE, NA, FALSE, TRUE)
+  f <- hd_filas(d, list(col_texto("Parte")))
+  expect_identical(unclass(f$acciones), c("editar,detalle", "", "", "agregar,eliminar"))
+  expect_identical(unclass(f$provision), c(TRUE, FALSE, FALSE, TRUE))
+  expect_null(hd_filas(d[, c("id", "Parte")], list(col_texto("Parte")))$acciones)
+  expect_match(.json(hd_filas(d[1, ], list(col_texto("Parte")))), '"acciones":["editar,detalle"]', fixed = TRUE)
+})
+
+test_that("neutralize: text a spreadsheet would run as a formula gets an apostrophe", {
+  tab <- intToUtf8(9L); cr <- intToUtf8(13L)
+  expect_identical(hd_neutralizar(c("=1+1", "+52", "-3", "@x", paste0(tab, "A"), paste0(cr, "B"), "ok", NA)),
+                   c("'=1+1", "'+52", "'-3", "'@x", paste0("'", tab, "A"), paste0("'", cr, "B"), "ok", NA))
+})
+
+xl_cols <- list(col_texto("Parte", "Proveedor"), col_dinero("Importe", "Importe"), col_fecha("Vence", "Vence"),
+                col_insignia("Etapa", "Etapa", mapa = list(a = list(texto = "Aprobada"))))
+xl_df <- function(n) data.frame(id = sprintf("R%03d", seq_len(n)),
+                                Parte = c("=1+1", sprintf("P%d", seq_len(n)))[seq_len(n)],
+                                Importe = seq_len(n) * 1.5, Vence = as.Date("2026-10-01") + seq_len(n) - 1,
+                                Etapa = rep("a", n), stringsAsFactors = FALSE)
+leer <- function(f) openxlsx::read.xlsx(f, detectDates = TRUE)
+
+test_that("Excel, 300 rows: only the view's rows, in the view's order, typed, formulas neutralized", {
+  d <- xl_df(300)
+  vista <- rev(d$id[seq(1, 300, 3)])          # a filter and a reversed sort
+  f <- tempfile(fileext = ".xlsx"); on.exit(unlink(f))
+  hd_excel_escribir(d, xl_cols, vista, "id", f)
+  x <- leer(f)
+  expect_identical(nrow(x), length(vista))
+  expect_identical(names(x), c("Proveedor", "Importe", "Vence", "Etapa"))
+  esperado <- d[match(vista, d$id), ]
+  expect_identical(x$Proveedor, hd_neutralizar(esperado$Parte))
+  expect_true(is.numeric(x$Importe))
+  expect_equal(x$Importe, esperado$Importe)
+  expect_s3_class(x$Vence, "Date")
+  expect_identical(x$Vence, esperado$Vence)
+  expect_identical(x$Etapa, rep("a", nrow(x)))                     # raw value, not the label
+  expect_true("'=1+1" %in% x$Proveedor)                            # written as text
+})
+
+test_that("Excel with 1 and with 0 rows opens", {
+  d <- xl_df(5)
+  f1 <- tempfile(fileext = ".xlsx"); f0 <- tempfile(fileext = ".xlsx"); on.exit(unlink(c(f1, f0)))
+  hd_excel_escribir(d, xl_cols, "R002", "id", f1)
+  x1 <- leer(f1)
+  expect_identical(nrow(x1), 1L)
+  expect_identical(x1$Proveedor, "P1")   # R002 is the 2nd row: "P1"
+  hd_excel_escribir(d, xl_cols, character(0), "id", f0)
+  x0 <- openxlsx::read.xlsx(f0)
+  expect_identical(names(x0), c("Proveedor", "Importe", "Vence", "Etapa"))
 })

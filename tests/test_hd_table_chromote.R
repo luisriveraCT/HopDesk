@@ -49,8 +49,10 @@ A <- "a1-hdt"
 estado <- function(id = A) ev(sprintf("HDT.estado('%s')", id))
 
 # Center of an element (scrolled into view first), from a JS expression.
+# behavior 'instant': Bootstrap 5 sets scroll-behavior: smooth on :root, and a
+# smooth scrollIntoView would be measured mid-animation (clicks landed off-screen).
 centro <- function(js_el) {
-  ev(sprintf("(function(){ var e = %s; e.scrollIntoView({block:'center', inline:'nearest'});
+  ev(sprintf("(function(){ var e = %s; e.scrollIntoView({block:'center', inline:'nearest', behavior:'instant'});
                var r = e.getBoundingClientRect(); return [r.left + r.width/2, r.top + r.height/2]; })()", js_el))
 }
 # k-th painted row (1-based), col-th cell. Skips the window-mode spacer rows.
@@ -72,7 +74,7 @@ clic <- function(js_el, shift = FALSE) {
   Sys.sleep(0.15)
 }
 arrastrar <- function(js_el) {
-  r <- ev(sprintf("(function(){ var e = %s; e.scrollIntoView({block:'center'}); var r = e.getBoundingClientRect();
+  r <- ev(sprintf("(function(){ var e = %s; e.scrollIntoView({block:'center', behavior:'instant'}); var r = e.getBoundingClientRect();
                     return [r.left + 4, r.top + r.height/2, r.left + Math.min(r.width - 4, 140)]; })()", js_el))
   raton("mouseMoved", r[[1]], r[[2]])
   raton("mousePressed", r[[1]], r[[2]], botones = 1L)
@@ -313,9 +315,10 @@ ok("... and that last row is the last visible one", identical(
 # Keep where you were, in window mode.
 ev(sprintf("var s=document.querySelector('#%s .hdt-scroll'); s.scrollTop = 30000;", A)); Sys.sleep(0.4)
 antes <- estado()
+n_antes <- ev("HDT.recibidos()")
 p <- centro("document.getElementById('cambiar')")
 raton("mouseMoved", p[[1]], p[[2]]); raton("mousePressed", p[[1]], p[[2]], botones = 1L); raton("mouseReleased", p[[1]], p[[2]])
-ok("window mode: new data arrives", poll_until(function() !identical(estado()$medidas$pintado, antes$medidas$pintado), timeout_s = 15))
+ok("window mode: new data arrives", poll_until(function() ev("HDT.recibidos()") > n_antes, timeout_s = 15))
 Sys.sleep(0.4)
 despues <- estado()
 ok("window mode: new data keeps scroll, sort, selection and mode",
