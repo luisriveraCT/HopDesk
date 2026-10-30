@@ -499,12 +499,10 @@ settings_cuentas_observer <- function(input, output, session, shared) {
 
       # Row 2: Cuenta origen + CLABE interbancaria + Alias
       div(class = "col-md-4",
-        tags$label(
-          tagList("Cuenta origen",
-            tags$span(class = "text-muted fw-normal", " \u2014 11 d\u00edgitos")),
-          class = "form-label small fw-semibold mb-1"),
+        # No digit count: it isn't known for every bank and it may change.
+        tags$label("Cuenta origen", class = "form-label small fw-semibold mb-1"),
         textInput("cta_cuenta", NULL, value = cuenta_val, width = "100%",
-                  placeholder = "08153004987")
+                  placeholder = "N\u00famero de cuenta")
       ),
       div(class = "col-md-5",
         tags$label(
@@ -544,9 +542,8 @@ settings_cuentas_observer <- function(input, output, session, shared) {
 
     div(class = "small text-muted mt-2 border-top pt-2",
       icon("circle-info"),
-      " La ", tags$strong("Cuenta origen"), " es el n\u00famero de 12 d\u00edgitos en el ",
-      "campo origen del archivo PPL (ej: ", tags$code("08153004987"),
-      "). La CLABE interbancaria es el n\u00famero de 18 d\u00edgitos para recibir transferencias SPEI."
+      " La ", tags$strong("Cuenta origen"), " es el n\u00famero de cuenta que va en el ",
+      "campo origen del archivo PPL. La CLABE interbancaria es el n\u00famero de 18 d\u00edgitos para recibir transferencias SPEI."
     ),
 
     div(class = "d-flex gap-2 mt-3",
