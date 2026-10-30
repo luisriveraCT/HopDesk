@@ -619,6 +619,7 @@
   }
 
   function salirVentana(st) {
+    st.espArriba = st.espAbajo = null;
     if (st.colgroup) st.colgroup.textContent = '';
     st.tabla_el.classList.remove('hdt-fijas');
     st.root.classList.remove('hdt-ventana');
@@ -645,11 +646,32 @@
     var ini = Math.max(0, Math.floor(top / h) - HDT_COLCHON);
     var fin = Math.min(n, Math.ceil((top + vista) / h) + HDT_COLCHON);
     if (!forzar && ini === st.vIni && fin === st.vFin) return;
+    var vIni = st.vIni, vFin = st.vFin;
     st.vIni = ini; st.vFin = fin;
+    // Scrolling: only the rows leaving the window go out and only the ones
+    // entering come in. Rows that stay are never detached, so a click that
+    // lands while the window moves (mousedown and mouseup on the same row)
+    // is never lost.
+    if (!forzar && st.espArriba && vIni != null && ini < vFin && fin > vIni) {
+      var k;
+      for (k = vIni; k < Math.min(ini, vFin); k++) st.tbody.removeChild(trDe(st, st.vis[k]));
+      for (k = Math.max(fin, vIni); k < vFin; k++) st.tbody.removeChild(trDe(st, st.vis[k]));
+      var antes = document.createDocumentFragment();
+      for (k = ini; k < Math.min(vIni, fin); k++) antes.appendChild(trDe(st, st.vis[k]));
+      st.tbody.insertBefore(antes, st.espArriba.nextSibling);
+      var despues = document.createDocumentFragment();
+      for (k = Math.max(vFin, ini); k < fin; k++) despues.appendChild(trDe(st, st.vis[k]));
+      st.tbody.insertBefore(despues, st.espAbajo);
+      st.espArriba.firstChild.style.height = (ini * h) + 'px';
+      st.espAbajo.firstChild.style.height = ((n - fin) * h) + 'px';
+      return;
+    }
     var frag = document.createDocumentFragment();
-    frag.appendChild(espaciador(st, ini * h));
-    for (var k = ini; k < fin; k++) frag.appendChild(trDe(st, st.vis[k]));
-    frag.appendChild(espaciador(st, (n - fin) * h));
+    st.espArriba = espaciador(st, ini * h);
+    st.espAbajo = espaciador(st, (n - fin) * h);
+    frag.appendChild(st.espArriba);
+    for (var j = ini; j < fin; j++) frag.appendChild(trDe(st, st.vis[j]));
+    frag.appendChild(st.espAbajo);
     st.tbody.textContent = '';
     st.tbody.appendChild(frag);
   }
@@ -959,13 +981,21 @@
     b.style.top = top + 'px';
   }
   function burbuja(st) {
-    st.tbody.addEventListener('mouseover', function (e) {
+    // mousemove, not mouseover: after a scroll the browser sends mouseover
+    // for whatever cell slid under a still cursor, and the bubble would pop
+    // up (and cover the next click) without the mouse having moved.
+    var ultimoTd = null;
+    st.tbody.addEventListener('mousemove', function (e) {
       var td = e.target.closest('td');
-      if (!td || td._c == null) return;
+      if (!td || td._c == null || td === ultimoTd) return;
+      ultimoTd = td;
       clearTimeout(tipOcultar);
       clearTimeout(tipVer);
       tipVer = setTimeout(function () { tipAbrir(st, td); }, 350);
     });
+    st.tbody.addEventListener('mouseleave', function () { ultimoTd = null; });
+    // A scroll cancels a bubble about to open, too.
+    st.scroll.addEventListener('scroll', function () { clearTimeout(tipVer); ultimoTd = null; }, { passive: true });
     st.tbody.addEventListener('mouseout', function (e) {
       var td = e.target.closest('td');
       if (!td) return;
