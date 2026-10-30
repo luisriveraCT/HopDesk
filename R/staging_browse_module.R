@@ -43,7 +43,7 @@
 
 # ── Show the manual entry modal ───────────────────────────────────────────────
 show_combined_entry_modal <- function(ledger, sap_data, session,
-                                      empresa_vals = unname(COMPANY_MAP)) {
+                                      empresa_vals = character(0)) {
   # Use empresa_vals (from empresa_sel_rv) as the authoritative source.
   # This prevents stale SAP snapshot Empresa names (generated with an older COMPANY_MAP)
   # from appearing as choices; picking a stale name would cause the manual entry to be
@@ -371,7 +371,7 @@ show_combined_entry_modal <- function(ledger, sap_data, session,
 }
 
 # ── Show the abono modal ──────────────────────────────────────────────────────
-show_abono_modal <- function(sap_data, session) {
+show_abono_modal <- function(sap_data, session, empresa_vals) {
   today <- Sys.Date()
 
   showModal(modalDialog(
@@ -413,7 +413,7 @@ show_abono_modal <- function(sap_data, session) {
         tags$label("Empresa", class = "form-label mb-0 small text-muted"),
         selectInput("ab_empresa", NULL,
                     choices  = c("(Todas)" = "",
-                                 sort(unique(unname(COMPANY_MAP)))),
+                                 sort(unique(empresa_vals))),
                     selected = "", width = "200px")
       ),
       div(

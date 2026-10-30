@@ -83,8 +83,8 @@ proveedoresUI <- function(id) {
         div(class = "col-md-3",
           tags$label("Empresa", class = "form-label small fw-semibold mb-1"),
           selectInput(ns("excel_empresa"), NULL,
-                      choices = c("Todos (todas las empresas)" = "TODOS",
-                                  setNames(names(COMPANY_MAP), unname(COMPANY_MAP))),
+                      # The session's companies are added by the observe() in proveedoresServer.
+                      choices = c("Todos (todas las empresas)" = "TODOS"),
                       selected = "TODOS",
                       width = "100%")
         ),

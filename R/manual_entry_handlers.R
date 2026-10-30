@@ -74,7 +74,8 @@ manual_edit_handlers <- function(input, output, session,
   if (is.null(ledger)) return()
 
   # Use empresa_vals (from company_map_rv) when available so choices are always
-  # consistent with the empresa_sel filter; fall back to COMPANY_MAP + SAP values.
+  # consistent with the empresa_sel filter; fall back to the session's SAP values
+  # (never the global COMPANY_MAP, which can hold another client's companies).
   empresas <- if (!is.null(empresa_vals) && length(empresa_vals)) {
     sort(unique(empresa_vals))
   } else {
@@ -82,8 +83,7 @@ manual_edit_handlers <- function(input, output, session,
     ap <- sap_data()$AP
     sort(unique(c(
       if (!is.null(ar) && "Empresa" %in% names(ar)) ar$Empresa else character(),
-      if (!is.null(ap) && "Empresa" %in% names(ap)) ap$Empresa else character(),
-      unname(COMPANY_MAP)
+      if (!is.null(ap) && "Empresa" %in% names(ap)) ap$Empresa else character()
     )))
   }
   party_lbl <- if (ledger == "AR") "Cliente" else "Proveedor"

@@ -564,13 +564,20 @@ score_vincular_match <- function(item, candidate) {
     )
 }
 
-# ── Safe COMPANY_MAP lookup ───────────────────────────────────────────────────
-# Uses single [ (returns NA, never errors) instead of [[ (errors on unknown key).
-.company_name <- function(ini) {
+# ── Safe company-map lookup ───────────────────────────────────────────────────
+# cmap is the SESSION's map (shared$company_map()), never the global one.
+# Uses single [ (returns NA, never errors) instead of [[ (errors on unknown key);
+# an empty map (c() is NULL) gives NA for every key instead of a zero-length result.
+.cmap_lookup <- function(cmap, keys) {
+  if (!length(cmap)) return(rep(NA_character_, length(keys)))
+  unname(cmap[keys])
+}
+
+.company_name <- function(ini, cmap) {
   ini <- trimws(ini %||% "")
   if (!nzchar(ini)) return(ini)
-  nm <- COMPANY_MAP[ini]          # returns NA_character_ for unknown keys
-  if (is.na(nm)) ini else unname(nm)
+  nm <- .cmap_lookup(cmap, ini)
+  if (is.na(nm)) ini else nm
 }
 
 # ── Badge HTML helper ─────────────────────────────────────────────────────────
@@ -1207,7 +1214,7 @@ bancosServer <- function(id, shared) {
           div(class = paste0("bnc-ticker-dot ", cls)),
           div(
             div(class = "bnc-ticker-label",
-                paste0(.company_name(ct$empresa), " \u00b7 ", ct$alias)),
+                paste0(.company_name(ct$empresa, shared$company_map()), " \u00b7 ", ct$alias)),
             div(
               tags$span(class = paste("bnc-ticker-val", cls), fmt_money(saldo)),
               tags$span(class = "bnc-ticker-mon", mon)
@@ -1290,7 +1297,7 @@ bancosServer <- function(id, shared) {
           ),
           Empresa       = {
             ini <- dplyr::na_if(trimws(dplyr::coalesce(empresa, "")), "")
-            nm  <- COMPANY_MAP[dplyr::coalesce(ini, "")]
+            nm  <- .cmap_lookup(shared$company_map(), dplyr::coalesce(ini, ""))
             dplyr::coalesce(
               ifelse(!is.na(nm), unname(nm), NA_character_),
               ini,
@@ -1415,7 +1422,7 @@ bancosServer <- function(id, shared) {
           Saldo              = saldo_banco,
           .empresa           = {
             ini <- dplyr::na_if(trimws(dplyr::coalesce(empresa, "")), "")
-            nm  <- COMPANY_MAP[dplyr::coalesce(ini, "")]
+            nm  <- .cmap_lookup(shared$company_map(), dplyr::coalesce(ini, ""))
             dplyr::coalesce(
               ifelse(!is.na(nm), unname(nm), NA_character_),  # full name from map
               ini,                                              # raw initials if not in map
@@ -3061,7 +3068,7 @@ bancosServer <- function(id, shared) {
         num  <- gsub("[^0-9]", "", cts_baj$numero_cuenta[i] %||% "")
         tail <- if (!is.na(num) && nchar(num) >= 4L)
                   paste0(" \u00b7 \u2026", substr(num, nchar(num) - 3L, nchar(num))) else ""
-        paste0(.company_name(cts_baj$empresa[i]), " \u2014 ",
+        paste0(.company_name(cts_baj$empresa[i], shared$company_map()), " \u2014 ",
                cts_baj$banco[i], " ", cts_baj$moneda[i], tail,
                " (", cts_baj$alias[i], ")")
       }, character(1)))

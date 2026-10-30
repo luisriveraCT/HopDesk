@@ -2792,7 +2792,7 @@ server <- function(input, output, session) {
 
   observeEvent(input$pick_abono, {
     removeModal()
-    show_abono_modal(sap_data, session)
+    show_abono_modal(sap_data, session, empresa_vals = unname(company_map_rv()))
   }, ignoreInit = TRUE)
 
   observeEvent(input$me_save, {
