@@ -180,3 +180,11 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-tip-copiar svg { width: 14px; height: 14px; }
 .hdt-tip-copiar.hdt-hecho { color: #15804a; border-color: #15804a; }
 .hdt-tip-aviso { font-size: .74rem; color: #5a6377; align-self: center; }
+
+/* Brief notice ("3 filas copiadas"), over the table's bottom-right corner. */
+.hdt-cuerpo { position: relative; }
+.hdt-aviso { position: absolute; right: 10px; bottom: 34px; z-index: 3; font-size: .78rem; font-weight: 700;
+  color: #fff; background: var(--hdt-ink); border-radius: 5px; padding: 3px 9px; opacity: .92; pointer-events: none; }
+.hdt-aviso[hidden] { display: none; }
+.hdt-scroll:focus { outline: none; }
+.hdt-scroll:focus-visible { outline: 2px solid var(--hdt-accent); outline-offset: -2px; }

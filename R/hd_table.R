@@ -29,8 +29,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=7"),
-    htmltools::tags$script(src = "hdtable.js?v=7")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=8"),
+    htmltools::tags$script(src = "hdtable.js?v=8")
   ))
 }
 
@@ -188,6 +188,49 @@ hd_acciones_barra_meta <- function(acciones) {
                  tabla, quien), call. = FALSE)
 }
 
+# ── Export (excel) ──────────────────────────────────────────────────────────
+# Text a spreadsheet would run as a formula gets an apostrophe in front:
+# titles and notes are typed by people and must never execute on opening.
+hd_neutralizar <- function(x) {
+  x <- as.character(x)
+  peligro <- !is.na(x) & grepl("^[=+@\t\r-]", x)
+  x[peligro] <- paste0("'", x[peligro])
+  x
+}
+
+# Writes the rows `ids` (visible ones, in visible order) with every column,
+# titles as the header, and raw typed values: money as numbers, dates as
+# real dates, the rest as (neutralized) text.
+hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "datos") {
+  datos <- as.data.frame(datos, stringsAsFactors = FALSE)
+  filas <- match(as.character(ids), as.character(datos[[id_col]]))
+  filas <- filas[!is.na(filas)]
+  d <- datos[filas, , drop = FALSE]
+  salida <- lapply(columnas, function(col) {
+    v <- col$valores(d[[col$campo]])
+    switch(col$tipo,
+      dinero = v$orden,
+      fecha  = as.Date(ifelse(nzchar(v$copiar), v$copiar, NA_character_)),
+      hd_neutralizar(v$copiar))
+  })
+  titulos <- vapply(columnas, function(col) .hd_texto(col$titulo), character(1))
+  salida <- as.data.frame(salida, stringsAsFactors = FALSE, optional = TRUE)
+  names(salida) <- make.unique(titulos)
+  wb <- openxlsx::createWorkbook()
+  openxlsx::addWorksheet(wb, substr(hoja, 1, 31))
+  openxlsx::writeData(wb, 1, salida, headerStyle = openxlsx::createStyle(textDecoration = "bold"))
+  for (j in seq_along(columnas)) {
+    estilo <- switch(columnas[[j]]$tipo,
+      dinero = openxlsx::createStyle(numFmt = "#,##0.00"),
+      fecha  = openxlsx::createStyle(numFmt = "yyyy-mm-dd"),
+      NULL)
+    if (!is.null(estilo) && nrow(salida))
+      openxlsx::addStyle(wb, 1, estilo, rows = seq_len(nrow(salida)) + 1L, cols = j, stack = TRUE)
+  }
+  openxlsx::saveWorkbook(wb, archivo, overwrite = TRUE)
+  invisible(archivo)
+}
+
 hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = "id",
                             fichas = NULL, acciones_fila = NULL, acciones_barra = NULL) {
   piezas_tabla <- hd_piezas_de(tabla, piezas)
@@ -222,6 +265,29 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         acciones_barra = acc_barra_meta
       ))
     })
+
+    # Export: the browser sends the visible ids in visible order with a
+    # nonce; once they're stored the server answers with the same nonce and
+    # only then does the browser start the download, so the file can never
+    # come out with another filter or order than the screen.
+    if ("excel" %in% piezas_tabla) {
+      vista <- shiny::reactiveVal(NULL)
+      shiny::observeEvent(input$vista, {
+        v <- input$vista
+        vista(as.character(unlist(v$ids)))
+        session$sendCustomMessage("hdt-excel", list(id = ns("hdt"), nonce = v$nonce))
+      })
+      output$excel <- shiny::downloadHandler(
+        filename = function() paste0(tabla, "_", format(Sys.Date(), "%Y-%m-%d"), ".xlsx"),
+        content  = function(file) {
+          hd_excel_escribir(shiny::isolate(datos()), columnas, shiny::isolate(vista()) %||% character(0),
+                            id_col, file, hoja = tabla)
+        }
+      )
+      # The link is hidden (the visible button drives it), and Shiny never
+      # gives a hidden download link its URL unless told not to suspend it.
+      shiny::outputOptions(output, "excel", suspendWhenHidden = FALSE)
+    }
 
     list(
       seleccion = shiny::reactive(as.character(unlist(input$sel)) %||% character(0)),

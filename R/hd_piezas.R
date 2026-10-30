@@ -23,7 +23,7 @@ HD_PIEZAS_MOTOR <- c(
   "ordenar", "buscar",
   # T03a
   "insignias", "tachado", "provision", "fichas", "detalle", "acc_fila",
-  "barra_acc", "confirmar"
+  "barra_acc", "confirmar", "excel", "copiar_tsv"
 )
 
 HD_REGLAS_NUCLEO <- c(

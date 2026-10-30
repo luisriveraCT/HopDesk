@@ -131,11 +131,31 @@
       try { guardada = localStorage.getItem('hdt.densidad.' + st.tabla); } catch (e) {}
       densidad(st, guardada === 'normal' ? 'normal' : 'compacta', false);
     }
+    if (p.excel) {
+      // The visible button asks the server to store the view first; the
+      // hidden Shiny download link fires only when the server confirms.
+      st.btnExcel = nodo('button', 'hdt-btn hdt-excel', t('tablas.exportar'));
+      st.btnExcel.type = 'button';
+      st.btnExcel.addEventListener('click', function () { exportar(st); });
+      st.barra.appendChild(st.btnExcel);
+      st.lnkExcel = nodo('a', 'shiny-download-link hdt-excel-link');
+      st.lnkExcel.id = st.ns + 'excel';
+      st.lnkExcel.setAttribute('download', '');
+      st.lnkExcel.setAttribute('aria-hidden', 'true');
+      st.lnkExcel.style.display = 'none';
+      st.barra.appendChild(st.lnkExcel);
+    }
     if (p.contador) { st.contador = nodo('span', 'hdt-contador'); st.barra.appendChild(st.contador); }
     st.barra.hidden = !st.barra.childNodes.length;
 
     st.cuerpo = nodo('div', 'hdt-cuerpo');
+    st.aviso = nodo('div', 'hdt-aviso');
+    st.aviso.hidden = true;
+    st.aviso.setAttribute('role', 'status');
+    st.cuerpo.appendChild(st.aviso);
     st.scroll = nodo('div', 'hdt-scroll');
+    // Focusable, so Ctrl+C (copiar_tsv) knows which table it is for.
+    if (p.copiar_tsv) st.scroll.tabIndex = 0;
     // Auto height starts at the minimum and is measured after the first paint.
     if (root.classList.contains('hdt-auto')) st.scroll.style.height = (HDT_ALTO_MIN * 23 + 28) + 'px';
     st.tabla_el = nodo('table', 'hdt-tabla');
@@ -192,6 +212,7 @@
     root.appendChild(st.cuerpo);
 
     eventos(st);
+    if (st.lnkExcel && window.Shiny && Shiny.bindAll) Shiny.bindAll(st.barra);
     return st;
   }
 
@@ -832,6 +853,7 @@
       if (!(e.shiftKey && rango(st, i))) alternar(st, i);
       pintarSel(st);
       enviarSel(st);
+      if (st.p.copiar_tsv && document.activeElement !== st.scroll) st.scroll.focus({ preventScroll: true });
     });
 
     // Double click opens the detail -- locked rows too -- and leaves the
@@ -985,6 +1007,58 @@
     } catch (e) { aMano(); }
   }
 
+  // ── Export (excel) ───────────────────────────────────────────────────────
+  function exportar(st) {
+    st.excelNonce = String(Math.random());
+    var ids = st.vis.map(function (i) { return st.ids[i]; });
+    Shiny.setInputValue(st.ns + 'vista', { ids: ids, nonce: st.excelNonce }, { priority: 'event' });
+  }
+  function excelListo(msg) {
+    var st = TABLAS[msg.id];
+    if (!st || !st.lnkExcel || msg.nonce !== st.excelNonce) return;
+    st.excelNonce = null;
+    st.lnkExcel.click();
+  }
+
+  // ── Copy marked rows as TSV (copiar_tsv) ─────────────────────────────────
+  // Ctrl+C with rows marked, focus in the table and no text shaded: header
+  // plus marked rows in visible order, raw values, tab-separated, so they
+  // paste straight into Excel. With text shaded, the browser copies it.
+  function neutralizar(s) {
+    s = String(s == null ? '' : s).replace(/[\t\r\n]+/g, ' ');
+    return /^[=+\-@]/.test(s) ? "'" + s : s;
+  }
+  function filasTsv(st) {
+    var ids = idsSel(st);
+    var lineas = [st.cols.map(function (c) { return neutralizar(c.titulo); }).join('\t')];
+    ids.forEach(function (id) {
+      var i = st.idx[id];
+      lineas.push(st.cols.map(function (c, j) { return neutralizar(st.celdas[j].copiar[i]); }).join('\t'));
+    });
+    return { texto: lineas.join('\r\n'), n: ids.length };
+  }
+  function avisar(st, texto) {
+    st.aviso.textContent = texto;
+    st.aviso.hidden = false;
+    clearTimeout(st.avisoT);
+    st.avisoT = setTimeout(function () { st.aviso.hidden = true; }, 1600);
+  }
+  document.addEventListener('copy', function (e) {
+    var activo = document.activeElement;
+    var st = null;
+    Object.keys(TABLAS).forEach(function (id) {
+      var x = TABLAS[id];
+      if (activo && x.root.contains(activo) && document.body.contains(x.root)) st = x;
+    });
+    if (!st || !st.p.copiar_tsv || !st.sel.size) return;
+    if (window.getSelection && String(window.getSelection()).length) return;   // shaded text: normal copy
+    var r = filasTsv(st);
+    if (!r.n || !e.clipboardData) return;
+    e.clipboardData.setData('text/plain', r.texto);
+    e.preventDefault();
+    avisar(st, tn('tablas.copiadas_n', r.n, { n: FMT_N.format(r.n) }));
+  });
+
   // ── Test / diagnostics hook ──────────────────────────────────────────────
   window.HDT = {
     recibidos: function () { return recibidos; },
@@ -1003,7 +1077,10 @@
   };
 
   (function registrar() {
-    if (window.Shiny && Shiny.addCustomMessageHandler) Shiny.addCustomMessageHandler('hdt-datos', recibir);
+    if (window.Shiny && Shiny.addCustomMessageHandler) {
+      Shiny.addCustomMessageHandler('hdt-datos', recibir);
+      Shiny.addCustomMessageHandler('hdt-excel', excelListo);
+    }
     else setTimeout(registrar, 20);
   })();
 })();
