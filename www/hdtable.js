@@ -136,7 +136,7 @@
         else abrirMenu(st, k, b, true);
       });
       st.barra.appendChild(st.filtrosEl);
-      st.btnLimpiar = nodo('button', 'hdt-btn hdt-limpiar', t('tablas.limpiar'));
+      st.btnLimpiar = nodo('button', 'hdt-btn hdt-limpiar', t('tablas.filtros.limpiar'));
       st.btnLimpiar.type = 'button';
       st.btnLimpiar.hidden = true;
       st.btnLimpiar.addEventListener('click', function () { st.fsel = {}; cerrarMenu(false); aplicar(st); });
@@ -425,10 +425,11 @@
       if (!f) return;
       var s = st.fsel[f.campo] || {};
       var elegidas = f.opciones.filter(function (op) { return s[op.valor]; });
-      var valor = !elegidas.length ? t('tablas.filtros.todas')
-                : elegidas.length === 1 ? elegidas[0].texto
+      // Nothing chosen: just the title ("Moneda"), so an idle filter reads
+      // differently from an active one and no "Todas/Todos" is needed.
+      var valor = elegidas.length === 1 ? elegidas[0].texto
                 : tn('tablas.filtros.n', elegidas.length, { n: FMT_N.format(elegidas.length) });
-      b.textContent = t('tablas.filtros.boton', { filtro: f.titulo, valor: valor });
+      b.textContent = elegidas.length ? t('tablas.filtros.boton', { filtro: f.titulo, valor: valor }) : f.titulo;
       b.title = elegidas.map(function (op) { return op.texto; }).join(', ');
       b.classList.toggle('hdt-on', elegidas.length > 0);
     });

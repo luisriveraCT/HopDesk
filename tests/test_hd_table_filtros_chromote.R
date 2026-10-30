@@ -95,8 +95,8 @@ vis0 <- vis()
 moneda0 <- columna(COL_MONEDA); empresa0 <- columna(COL_EMPRESA)
 
 # ── Filters (filtros) ──────────────────────────────────────────────────────
-ok("two filter buttons in the bar, in Spanish, all off; no 'Limpiar filtros'",
-   identical(textos_filtros(), c("Moneda: Todas", "Empresa: Todas")) && !limpiar_visible())
+ok("two filter buttons in the bar, showing just their titles while off; no 'Limpiar filtros'",
+   identical(textos_filtros(), c("Moneda", "Empresa")) && !limpiar_visible())
 
 clic(boton_filtro(0))
 ops <- menu_ops()
@@ -152,7 +152,7 @@ escribir(sprintf("document.querySelector('#%s .hdt-buscar')", A), "")
 
 clic(sprintf("document.querySelector('#%s .hdt-limpiar')", A))
 ok("'Limpiar filtros' turns every filter off and hides itself",
-   length(vis()) == 300L && identical(textos_filtros(), c("Moneda: Todas", "Empresa: Todas")) && !limpiar_visible())
+   length(vis()) == 300L && identical(textos_filtros(), c("Moneda", "Empresa")) && !limpiar_visible())
 
 # New data: the filter stays; a chosen value that disappears drops out.
 clic(boton_filtro(0)); clic(menu_op("USD"), ver = FALSE); tecla("Escape", "Escape", 27L)
@@ -168,7 +168,7 @@ Sys.sleep(0.8)
 f <- estado()$filtros
 ok("a chosen value that's no longer in the data drops out of its filter (USD gone, NCS stays)",
    is.null(f$Moneda) && identical(unlist(f$Empresa), "NCS") &&
-     identical(textos_filtros(), c("Moneda: Todas", "Empresa: NCS")) &&
+     identical(textos_filtros(), c("Moneda", "Empresa: NCS")) &&
      all(columna(COL_MONEDA) == "MXN") && all(columna(COL_EMPRESA) == "NCS"))
 clic("document.getElementById('solo_mxn')")
 Sys.sleep(0.8)
