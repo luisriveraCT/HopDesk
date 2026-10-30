@@ -7,7 +7,8 @@
 #
 # Two halves:
 #   1. Static: the two data-bearing tables in R/pagar_hoy_module.R turn
-#      paging off (the empty-state placeholders are irrelevant: 0 rows).
+#      paging off (the empty-state placeholders are irrelevant: 0 rows), and
+#      past 30 rows they grow to 70vh instead of a fixed ~5-row height.
 #   2. Live (chromote): a fixture DT with 60 rows and the same options as the
 #      AP table draws all 60 rows, and clicking row 55 selects row 55. The
 #      same fixture with the old options is drawn too, to show the bug: 50.
@@ -25,12 +26,19 @@ ok <- function(label, expr) {
 
 # ── 1. Static ───────────────────────────────────────────────────────────────
 src <- readLines("R/pagar_hoy_module.R", warn = FALSE)
-ap_line <- grep('scrollY = "200px"', src, fixed = TRUE)
-ar_line <- grep('language = list(emptyTable = "Sin cobros esperados"),', src, fixed = TRUE)
+ap_line <- grep('.ph_queue_height(nrow(tbl), "200px")', src, fixed = TRUE)
+ar_line <- grep('.ph_queue_height(nrow(tbl), "180px")', src, fixed = TRUE)
 ok("AP table options turn paging off",
-   length(ap_line) == 1L && grepl("paging = FALSE", src[ap_line]))
+   length(ap_line) == 1L && grepl("paging = FALSE", src[ap_line - 1L]))
 ok("AR table options turn paging off",
-   length(ar_line) == 1L && grepl("paging = FALSE", src[ar_line - 2L]))
+   length(ar_line) == 1L && grepl("paging = FALSE", src[ar_line - 1L]))
+
+# Busy days (150+ payments for one company) grow the queue past ~5 rows.
+eval(parse(text = src[grep("^\\.ph_queue_height <- ", src)]))
+ok("a queue of 30 or fewer keeps its height",
+   identical(.ph_queue_height(30, "200px"), "200px"))
+ok("a queue of more than 30 grows to most of the window",
+   identical(.ph_queue_height(150, "200px"), "70vh"))
 
 # ── 2. Live ─────────────────────────────────────────────────────────────────
 source("tests/helpers/live_app_harness.R")
@@ -38,7 +46,7 @@ source("tests/helpers/live_app_harness.R")
 app_code <- '
 library(shiny)
 df <- data.frame(Proveedor = sprintf("PROV-%02d", 1:60), Importe = 1:60)
-opts_new <- list(paging = FALSE,   dom = "t", scrollX = TRUE, scrollY = "200px")
+opts_new <- list(paging = FALSE,   dom = "t", scrollX = TRUE, scrollY = "70vh", scrollCollapse = TRUE)
 opts_old <- list(pageLength = 50,  dom = "t", scrollX = TRUE, scrollY = "200px")
 ui <- fluidPage(DT::DTOutput("tbl_new"), DT::DTOutput("tbl_old"),
                 verbatimTextOutput("sel"))
@@ -71,6 +79,12 @@ if (!is.null(app)) {
   ok("old options (pageLength = 50, dom = 't') draw only 50 of 60 rows (the bug)",
      identical(n_rows("tbl_old"), 50L))
   ok("new options (paging = FALSE) draw all 60 rows", identical(n_rows("tbl_new"), 60L))
+  alto <- function(id) s1$Runtime$evaluate(sprintf(
+    "document.querySelector('#%s .dataTables_scrollBody').clientHeight", id))$result$value
+  cat(sprintf("  scroll height -- fixed 200px: %s px, 60 rows at 70vh: %s px\n",
+              alto("tbl_old"), alto("tbl_new")))
+  ok("a 60-row queue shows well over the old ~5-row height",
+     isTRUE(alto("tbl_new") >= 1.5 * alto("tbl_old")))
 
   # DT selects rows on mousedown (not click), see DT's datatables.js.
   s1$Runtime$evaluate("document.querySelectorAll('#tbl_new tbody tr')[54].querySelector('td')

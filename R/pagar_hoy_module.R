@@ -214,6 +214,11 @@ pagarHoyUI <- function(id) {
   }, error = function(e) message("[PAGOS_AUDIT] .log_pago_generado failed: ", e$message))
 }
 
+# Scroll height of an AP/AR queue table. Some days bring 150+ payments for one
+# company: past 30 rows the table grows to most of the window instead of
+# showing ~5 rows at a time. scrollCollapse keeps short tables short.
+.ph_queue_height <- function(n, base) if (n > 30) "70vh" else base
+
 pagarHoyServer <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -960,7 +965,8 @@ pagarHoyServer <- function(id, shared) {
           rownames  = FALSE,
           selection = list(mode = "multiple"),
           options   = list(
-            paging = FALSE, dom = "t", scrollX = TRUE, scrollY = "200px",
+            paging = FALSE, dom = "t", scrollX = TRUE,
+            scrollY = .ph_queue_height(nrow(tbl), "200px"), scrollCollapse = TRUE,
             destroy    = TRUE,
             language   = list(emptyTable = "Sin pagos en cola"),
             rowCallback = DT::JS(sprintf(
@@ -1012,7 +1018,8 @@ pagarHoyServer <- function(id, shared) {
             Importe = fmt_money(Importe))
         DT::datatable(tbl, escape = FALSE, rownames = FALSE,
           selection = list(mode = "multiple"),
-          options   = list(paging = FALSE, dom = "t", scrollX = TRUE, scrollY = "180px",
+          options   = list(paging = FALSE, dom = "t", scrollX = TRUE,
+                           scrollY = .ph_queue_height(nrow(tbl), "180px"), scrollCollapse = TRUE,
                            destroy = TRUE,
                            language = list(emptyTable = "Sin cobros esperados"),
                            rowCallback = DT::JS(sprintf(
