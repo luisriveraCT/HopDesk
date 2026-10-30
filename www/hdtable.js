@@ -20,8 +20,9 @@
   var HDT_COLCHON = 20;   // rows painted beyond each edge of the view in window mode
 
   var TABLAS = {};        // root element id -> state
-  var PENDIENTES = {};    // root element id -> message waiting for its element
+  var ULTIMO = {};        // root element id -> last data message received for it
   var observador = null;
+  var recibidos = 0;      // data messages received (diagnostics / tests)
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   function t(k, v) { return window.hdT ? window.hdT(k, v) : k; }
@@ -47,21 +48,36 @@
 
   // ── Incoming data ────────────────────────────────────────────────────────
   function recibir(msg) {
-    var root = document.getElementById(msg.id);
-    if (!root) { PENDIENTES[msg.id] = msg; vigilarPendientes(); return; }
-    var st = TABLAS[msg.id];
-    if (!st || st.root !== root) st = TABLAS[msg.id] = crear(root, msg);
-    cargar(st, msg);
+    recibidos++;
+    ULTIMO[msg.id] = msg;
+    vigilar();
+    pintarDesde(msg);
   }
 
-  // A table rendered later (renderUI, modal) gets its data when it appears.
-  function vigilarPendientes() {
+  // Paints a message into its container, if the container is in the page.
+  // A container that isn't the one the table's state was built on (the
+  // module's UI was rendered again: a modal closed and reopened, a renderUI)
+  // starts from scratch, with an empty selection the server is told about,
+  // so seleccion() never keeps ids from the previous container.
+  function pintarDesde(msg) {
+    var root = document.getElementById(msg.id);
+    if (!root) return;
+    var st = TABLAS[msg.id], nuevo = !!st && st.root !== root;
+    if (!st || nuevo) st = TABLAS[msg.id] = crear(root, msg);
+    cargar(st, msg);
+    if (nuevo) enviarSel(st);
+  }
+
+  // The server sends data only when it changes, so a container that appears
+  // later (rendered after the message, or re-created with the same id while
+  // the data stayed the same) is painted from the last message kept for it.
+  function vigilar() {
     if (observador) return;
     observador = new MutationObserver(function () {
-      Object.keys(PENDIENTES).forEach(function (id) {
-        if (document.getElementById(id)) { var m = PENDIENTES[id]; delete PENDIENTES[id]; recibir(m); }
+      Object.keys(ULTIMO).forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el && (!TABLAS[id] || TABLAS[id].root !== el)) pintarDesde(ULTIMO[id]);
       });
-      if (!Object.keys(PENDIENTES).length) { observador.disconnect(); observador = null; }
     });
     observador.observe(document.body, { childList: true, subtree: true });
   }
@@ -181,7 +197,8 @@
       st.busq = new Array(st.n);
       for (i = 0; i < st.n; i++) {
         var partes = [];
-        for (j = 0; j < st.celdas.length; j++) partes.push(st.celdas[j].mostrar[i]);
+        // Shown and raw values: "1234.5" and "2026-10-29" find rows too.
+        for (j = 0; j < st.celdas.length; j++) partes.push(st.celdas[j].mostrar[i], st.celdas[j].copiar[i]);
         st.busq[i] = plano(partes.join(' '));
       }
     }
@@ -672,6 +689,7 @@
 
   // ── Test / diagnostics hook ──────────────────────────────────────────────
   window.HDT = {
+    recibidos: function () { return recibidos; },
     estado: function (id) {
       var st = TABLAS[id];
       if (!st) return null;
