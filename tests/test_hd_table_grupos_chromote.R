@@ -140,11 +140,17 @@ invisible(b$Input$dispatchKeyEvent(type = "keyUp", key = "Escape", code = "Escap
 clic(sprintf("document.querySelector('#%s .hdt-limpiar')", A))
 
 # Sorting keeps the sections and sorts inside each one.
+l_datos <- lista()
 clic(sprintf("document.querySelectorAll('#%s thead th')[3]", A))   # Importe
 importe <- setNames(d300$Importe, d300$id)
 l <- lista(); bloques <- split(l[!startsWith(l, "banda:")], cumsum(startsWith(l, "banda:"))[!startsWith(l, "banda:")])
 ok("sorting by amount keeps the sections and sorts inside each one",
    identical(l[startsWith(l, "banda:")], cabeceras) && all(vapply(bloques, function(ids) !is.unsorted(importe[ids]), logical(1))))
+clic(sprintf("document.querySelectorAll('#%s thead th')[3]", A))   # descending
+clic(sprintf("document.querySelectorAll('#%s thead th')[3]", A))   # third click
+ok("a third click on the title goes back to the data's own order, with no arrow",
+   identical(lista(), l_datos) && identical(ev(sprintf("document.querySelectorAll('#%s thead th')[3].querySelector('.hdt-flecha').textContent", A)), "") &&
+     identical(estado()$orden$col, -1L))
 
 # Bands stick under the header while scrolling.
 # Sticky cells are the th / td (not the thead / tr): measure those. The

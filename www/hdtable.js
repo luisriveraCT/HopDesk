@@ -1595,7 +1595,10 @@
         if (!th) return;
         var t0 = performance.now();
         var j = Number(th.dataset.col);
-        st.orden = { col: j, dir: st.orden.col === j ? -st.orden.dir : 1 };
+        // Ascending, descending, then back to the order the data came in
+        // (the server's), with no arrow.
+        st.orden = st.orden.col !== j ? { col: j, dir: 1 }
+                 : st.orden.dir > 0 ? { col: j, dir: -1 } : { col: -1, dir: 1 };
         aplicar(st);
         st.medidas.orden = performance.now() - t0;
       });
