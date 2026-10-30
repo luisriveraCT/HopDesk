@@ -29,11 +29,12 @@ for (e in parse("R/reporte_module.R"))
     eval(e, env)
 env$`%||%` <- `%||%`
 
+# The template's neutral brand (it used to be a fixed "NG Finances / Networks Group").
 template <- paste(
-  '<div class="rpt-brand-name">NG Finances</div>',
-  '<div class="rpt-logo">N</div>',
-  '<span>Networks Group &mdash; Reporte Financiero</span>',
-  '<title>Reporte Financiero &mdash; Networks Group</title>')
+  '<div class="rpt-brand-name">HopDesk</div>',
+  '<div class="rpt-logo">H</div>',
+  '<span>HopDesk &mdash; Reporte financiero</span>',
+  '<title>Reporte financiero &mdash; HopDesk</title>')
 session_map <- c(NRS = "Networks Realtors", NTS = "Networks Trucking Services")
 brand <- function(...) tryCatch(env$.brand_inject(template, ...), error = function(e) {
   message("  ERROR: ", conditionMessage(e)); "" })
@@ -55,7 +56,7 @@ for (global in list(c(), c(HDX = "Otra Empresa"))) {
        grepl("NRS Finances", h, fixed = TRUE) && !grepl("Otra|HDX", h))
 
   h <- brand(c(), "")
-  ok(sprintf("with no group and no companies the template is untouched (global holds %s)", etiqueta),
+  ok(sprintf("with no group and no companies the report keeps the neutral HopDesk brand (global holds %s)", etiqueta),
      identical(h, template))
 }
 rm("COMPANY_MAP", envir = .GlobalEnv)
@@ -83,7 +84,10 @@ ok("every .build_report_html() call passes cmap and group_name from shared",
 
 src <- readLines("R/reporte_module.R", warn = FALSE)
 src <- src[!grepl("^\\s*#", src)]
-ok("reporte_module.R does not read COMPANY_MAP", !any(grepl("COMPANY_MAP", src, fixed = TRUE)))
+ok("the report template carries no fixed Networks brand",
+   !any(grepl("Networks Group|NG Finances", src)) &&
+     sum(grepl('<div class="rpt-brand-name">HopDesk</div>', src, fixed = TRUE)) == 3L)
+ok("reporte_module.R does not read COMPANY_MAP",!any(grepl("COMPANY_MAP", src, fixed = TRUE)))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)

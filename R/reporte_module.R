@@ -961,8 +961,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 # Uses the SESSION's group: group_name is shared$group_name() (the same source
 # as the cash-flow export) and cmap is shared$company_map(); never the global
 # COMPANY_MAP, which can hold another client's companies. Without a group name
-# the first company stands in, as before; with neither, the template is left
-# as is.
+# the first company stands in, as before; with neither, the template's neutral
+# HopDesk brand is left as is (it used to be a fixed Networks Group brand, shown
+# to any client without a group name or companies).
 # =============================================================================
 .brand_inject <- function(html, cmap, group_name = "") {
   group_name <- trimws(group_name %||% "")
@@ -979,13 +980,15 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   brand_name   <- paste0(grp_ini, " Finances")
   brand_letter <- substr(grp_ini, 1, 1)
 
-  html <- gsub("NG Finances",    brand_name, html, fixed = TRUE)
-  html <- gsub('class="rpt-logo">N<',
-               paste0('class="rpt-logo">', brand_letter, '<'), html, fixed = TRUE)
-  html <- gsub("Networks Group &mdash; Reporte Financiero",
+  html <- gsub('class="rpt-brand-name">HopDesk<',
+               paste0('class="rpt-brand-name">', htmltools::htmlEscape(brand_name), '<'),
+               html, fixed = TRUE)
+  html <- gsub('class="rpt-logo">H<',
+               paste0('class="rpt-logo">', htmltools::htmlEscape(brand_letter), '<'), html, fixed = TRUE)
+  html <- gsub("HopDesk &mdash; Reporte financiero",
                paste0(htmltools::htmlEscape(grp_name), " &mdash; Reporte Financiero"),
                html, fixed = TRUE)
-  html <- gsub("Reporte Financiero &mdash; Networks Group",
+  html <- gsub("Reporte financiero &mdash; HopDesk",
                paste0("Reporte Financiero &mdash; ", htmltools::htmlEscape(grp_name)),
                html, fixed = TRUE)
   html
@@ -1206,9 +1209,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       <div class="rpt-brand">
         <div class="rpt-brand-text">
           <div class="rpt-brand-label">Company</div>
-          <div class="rpt-brand-name">NG Finances</div>
+          <div class="rpt-brand-name">HopDesk</div>
         </div>
-        <div class="rpt-logo">N</div>
+        <div class="rpt-logo">H</div>
       </div>
       <div class="rpt-gen">Generado: %s &nbsp;&bull;&nbsp; CONFIDENCIAL</div>
     </div>
@@ -1219,7 +1222,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   </div>
   </div>
   <div class="rpt-footer">
-    <span>Networks Group &mdash; Reporte Financiero</span>
+    <span>HopDesk &mdash; Reporte financiero</span>
     <span>%s</span>
     <span>P&aacute;g. %d &mdash; CONFIDENCIAL</span>
   </div>
@@ -1942,9 +1945,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       <div class="rpt-brand">
         <div class="rpt-brand-text">
           <div class="rpt-brand-label">Company</div>
-          <div class="rpt-brand-name">NG Finances</div>
+          <div class="rpt-brand-name">HopDesk</div>
         </div>
-        <div class="rpt-logo">N</div>
+        <div class="rpt-logo">H</div>
       </div>
       <div class="rpt-gen">Generado: %s &nbsp;&bull;&nbsp; CONFIDENCIAL</div>
     </div>
@@ -1956,7 +1959,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   </div>
   </div>
   <div class="rpt-footer">
-    <span>Networks Group &mdash; Reporte Financiero</span>
+    <span>HopDesk &mdash; Reporte financiero</span>
     <span>%s</span>
     <span>P&aacute;g. 2 &mdash; CONFIDENCIAL</span>
   </div>
@@ -1972,7 +1975,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Reporte Financiero &mdash; Networks Group</title>
+<title>Reporte financiero &mdash; HopDesk</title>
 <style>%s</style>
 </head>
 <body>
@@ -1988,9 +1991,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       <div class="rpt-brand">
         <div class="rpt-brand-text">
           <div class="rpt-brand-label">Company</div>
-          <div class="rpt-brand-name">NG Finances</div>
+          <div class="rpt-brand-name">HopDesk</div>
         </div>
-        <div class="rpt-logo">N</div>
+        <div class="rpt-logo">H</div>
       </div>
       <div class="rpt-gen">Generado: %s &nbsp;&bull;&nbsp; CONFIDENCIAL</div>
     </div>
@@ -2037,7 +2040,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   </div>
 
   <div class="rpt-footer">
-    <span>Networks Group &mdash; Reporte Financiero</span>
+    <span>HopDesk &mdash; Reporte financiero</span>
     <span>%s</span>
     <span>P&aacute;g. 1 &mdash; CONFIDENCIAL</span>
   </div>
