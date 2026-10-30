@@ -29,8 +29,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=10"),
-    htmltools::tags$script(src = "hdtable.js?v=10")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=11"),
+    htmltools::tags$script(src = "hdtable.js?v=11")
   ))
 }
 
@@ -103,6 +103,57 @@ hd_fichas_payload <- function(fichas, datos, columnas) {
     opciones = lapply(orden, function(v) list(valor = v, texto = .hd_texto(mapa[[v]]$texto %||% v))),
     mostrar  = fichas$mostrar
   )
+}
+
+# ── filtros ─────────────────────────────────────────────────────────────────
+# filtros = list(list(campo = "Moneda"), list(campo = "Empresa", titulo = <key or text>), ...)
+# One button per filter in the bar ("Moneda: Todas"), with a checkbox menu of
+# the values in the data and their counts. Values chosen in one filter
+# combine with OR; filters, with AND; all of it with the search and the chips.
+hd_filtros_validar <- function(filtros) {
+  if (is.null(filtros)) return(NULL)
+  if (!is.list(filtros) || !length(filtros) || !all(vapply(filtros, is.list, logical(1))))
+    stop("hd_table: `filtros` must be a list of list(campo = <column name>, titulo = <key or text>).",
+         call. = FALSE)
+  out <- lapply(seq_along(filtros), function(k) {
+    f <- filtros[[k]]
+    if (!is.character(f$campo) || length(f$campo) != 1L || !nzchar(f$campo))
+      stop(sprintf("hd_table: filtros[[%d]] needs `campo` (one column name).", k), call. = FALSE)
+    otros <- setdiff(names(f), c("campo", "titulo"))
+    if (length(otros))
+      stop(sprintf("hd_table: filtro '%s': unknown field(s) %s.", f$campo, paste(otros, collapse = ", ")),
+           call. = FALSE)
+    if (!is.null(f$titulo) && (!is.character(f$titulo) || length(f$titulo) != 1L || !nzchar(f$titulo)))
+      stop(sprintf("hd_table: filtro '%s': `titulo` must be a dictionary key or text.", f$campo), call. = FALSE)
+    list(campo = f$campo, titulo = f$titulo)
+  })
+  campos <- vapply(out, `[[`, character(1), "campo")
+  if (anyDuplicated(campos))
+    stop(sprintf("hd_table: filtros repeats '%s'.", campos[duplicated(campos)][1]), call. = FALSE)
+  out
+}
+
+# Options: the values in the data, in the order of the field's col_insignia()
+# map (labels from it too, like the chips), then the rest alphabetically,
+# and "(Sin valor)" last when some row has none.
+hd_filtros_payload <- function(filtros, datos, columnas) {
+  if (is.null(filtros)) return(NULL)
+  lapply(filtros, function(f) {
+    if (!f$campo %in% names(datos))
+      stop(sprintf("hd_table: filtro '%s' is not a column in the data.", f$campo), call. = FALSE)
+    valores <- as.character(datos[[f$campo]])
+    valores[is.na(valores)] <- ""
+    col  <- Find(function(c) identical(c$campo, f$campo), columnas)
+    mapa <- if (!is.null(col) && identical(col$tipo, "insignia")) col$mapa else list()
+    presentes <- unique(valores[nzchar(valores)])
+    resto <- setdiff(presentes, names(mapa))
+    orden <- c(intersect(names(mapa), presentes), resto[order(.hd_plano(resto), resto)])
+    opciones <- lapply(orden, function(v) list(valor = v, texto = .hd_texto(mapa[[v]]$texto %||% v)))
+    if (!all(nzchar(valores)))
+      opciones <- c(opciones, list(list(valor = "", texto = tr("tablas.filtros.vacio"))))
+    list(campo = f$campo, titulo = .hd_texto(f$titulo %||% col$titulo %||% f$campo),
+         valores = I(valores), opciones = opciones)
+  })
 }
 
 # ── Row actions (acc_fila) ──────────────────────────────────────────────────
@@ -232,12 +283,14 @@ hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "dat
 }
 
 hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = "id",
-                            fichas = NULL, acciones_fila = NULL, acciones_barra = NULL) {
+                            fichas = NULL, acciones_fila = NULL, acciones_barra = NULL,
+                            filtros = NULL) {
   piezas_tabla <- hd_piezas_de(tabla, piezas)
   piezas_motor <- hd_piezas_motor(tabla, piezas_tabla)
   meta         <- hd_columnas_meta(columnas)
   contador     <- hd_contador_clave(tabla)
   fichas       <- .hd_sin_pieza(tabla, "fichas", "fichas", hd_fichas_validar(fichas), piezas_tabla)
+  filtros      <- .hd_sin_pieza(tabla, "filtros", "filtros", hd_filtros_validar(filtros), piezas_tabla)
   acc_fila     <- .hd_sin_pieza(tabla, "acciones_fila", "acc_fila",
                                 hd_acciones_fila_validar(acciones_fila), piezas_tabla)
   acc_fila_meta <- if (length(acc_fila)) hd_acciones_fila_meta(acc_fila) else NULL
@@ -261,6 +314,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         piezas   = I(piezas_motor),
         textos   = list(contador = contador),
         fichas   = hd_fichas_payload(fichas, df, columnas),
+        filtros  = hd_filtros_payload(filtros, df, columnas),
         acciones_fila  = acc_fila_meta,
         acciones_barra = acc_barra_meta
       ))

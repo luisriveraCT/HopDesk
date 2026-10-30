@@ -36,6 +36,22 @@
 .hdt-btn.hdt-on { background: var(--hdt-accent-soft); border-color: var(--hdt-accent); color: var(--hdt-accent); }
 .hdt-contador { color: var(--hdt-muted); font-size: .8rem; margin-left: auto; font-variant-numeric: tabular-nums; }
 
+/* Filters: a button per field in the bar, each with a checkbox menu
+   (position: fixed, placed by hdtable.js inside the window). */
+.hdt-filtros { display: contents; }
+.hdt-btn.hdt-filtro { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hdt-btn[hidden] { display: none; }
+.hdt-menu { position: fixed; z-index: 2000; min-width: 170px; max-width: min(360px, calc(100vw - 16px));
+  max-height: min(320px, calc(100vh - 16px)); overflow: auto; padding: 4px 0;
+  background: var(--hdt-surface); color: var(--hdt-ink); border: 1px solid var(--hdt-line); border-radius: 7px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.18); font-size: .82rem; }
+.hdt-menu-op { display: flex; align-items: center; gap: 8px; margin: 0; padding: 3px 10px; cursor: pointer;
+  font-weight: normal; white-space: nowrap; }
+.hdt-menu-op:hover { background: var(--hdt-hover); }
+.hdt-menu-op input { margin: 0; cursor: pointer; }
+.hdt-menu-texto { overflow: hidden; text-overflow: ellipsis; }
+.hdt-menu-n { margin-left: auto; padding-left: 14px; color: var(--hdt-muted); font-variant-numeric: tabular-nums; }
+
 /* Chips (fichas): count or amount per value; touching one filters. */
 .hdt-fichas { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 6px; }
 .hdt-ficha { font: inherit; font-size: .78rem; display: inline-flex; align-items: baseline; gap: 6px;

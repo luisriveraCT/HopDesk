@@ -94,6 +94,7 @@
       root: root, ns: root.getAttribute('data-ns') || '', tabla: msg.tabla, p: p,
       textos: msg.textos || {}, cols: [], n: 0, ids: [], idx: {}, bloq: [], moneda: [], tipo: [],
       celdas: [], busq: [], trs: [], vis: [], sel: new Set(), ancla: null,
+      filtros: [], fsel: {}, trasBusq: [],
       orden: { col: -1, dir: 1 }, q: '', abajo: null, medidas: {}
     };
     root.textContent = '';
@@ -114,8 +115,35 @@
       });
       st.barra.appendChild(st.buscar);
     }
+    // Filters: one button per field, each with its checkbox menu, plus
+    // "Limpiar filtros" while any is on. The fields are fixed per table;
+    // their values come with each data message (cargarFiltros).
+    if (p.filtros && arr(msg.filtros).length) {
+      st.filtrosEl = nodo('span', 'hdt-filtros');
+      arr(msg.filtros).forEach(function (f, k) {
+        var b = nodo('button', 'hdt-btn hdt-filtro');
+        b.type = 'button';
+        b.dataset.k = k;
+        b.setAttribute('aria-haspopup', 'true');
+        b.setAttribute('aria-expanded', 'false');
+        st.filtrosEl.appendChild(b);
+      });
+      st.filtrosEl.addEventListener('click', function (e) {
+        var b = e.target.closest('button.hdt-filtro');
+        if (!b) return;
+        var k = Number(b.dataset.k);
+        if (MENU && MENU.st === st && MENU.k === k) cerrarMenu(false);
+        else abrirMenu(st, k, b, true);
+      });
+      st.barra.appendChild(st.filtrosEl);
+      st.btnLimpiar = nodo('button', 'hdt-btn hdt-limpiar', t('tablas.limpiar'));
+      st.btnLimpiar.type = 'button';
+      st.btnLimpiar.hidden = true;
+      st.btnLimpiar.addEventListener('click', function () { st.fsel = {}; cerrarMenu(false); aplicar(st); });
+      st.barra.appendChild(st.btnLimpiar);
+    }
     if (p.sel_todos) {
-      st.btnTodos = nodo('button', 'hdt-btn');
+      st.btnTodos = nodo('button', 'hdt-btn hdt-todos');
       st.btnTodos.type = 'button';
       st.btnTodos.addEventListener('click', function () { selTodos(st); });
       st.barra.appendChild(st.btnTodos);
@@ -358,6 +386,162 @@
     st.fichasEl.appendChild(frag);
   }
 
+  // ── Filters (filtros) ────────────────────────────────────────────────────
+  // st.fsel: field -> {value: true}. It survives new data; a chosen value
+  // that's no longer in the data drops out of its filter.
+  function cargarFiltros(st, filtros) {
+    st.filtros = arr(filtros).map(function (f) {
+      return { campo: f.campo, titulo: f.titulo, valores: arr(f.valores), opciones: arr(f.opciones) };
+    });
+    var fsel = {};
+    st.filtros.forEach(function (f) {
+      var antes = st.fsel[f.campo], quedan = {}, alguno = false;
+      if (!antes) return;
+      f.opciones.forEach(function (op) { if (antes[op.valor]) { quedan[op.valor] = true; alguno = true; } });
+      if (alguno) fsel[f.campo] = quedan;
+    });
+    st.fsel = fsel;
+  }
+
+  function filtrosActivos(st) {
+    return st.filtros.filter(function (f) { var s = st.fsel[f.campo]; return !!s && Object.keys(s).length > 0; });
+  }
+
+  // OR inside a filter, AND across them; `salvo` is left out (a menu counts
+  // what each of its values would show with the other filters as they are).
+  function pasaFiltros(st, activos, i, salvo) {
+    for (var k = 0; k < activos.length; k++) {
+      var f = activos[k];
+      if (f !== salvo && !st.fsel[f.campo][f.valores[i]]) return false;
+    }
+    return true;
+  }
+
+  function pintarFiltros(st, activos) {
+    if (!st.filtrosEl) return;
+    Array.prototype.forEach.call(st.filtrosEl.children, function (b, k) {
+      var f = st.filtros[k];
+      b.hidden = !f;
+      if (!f) return;
+      var s = st.fsel[f.campo] || {};
+      var elegidas = f.opciones.filter(function (op) { return s[op.valor]; });
+      var valor = !elegidas.length ? t('tablas.filtros.todas')
+                : elegidas.length === 1 ? elegidas[0].texto
+                : tn('tablas.filtros.n', elegidas.length, { n: FMT_N.format(elegidas.length) });
+      b.textContent = t('tablas.filtros.boton', { filtro: f.titulo, valor: valor });
+      b.title = elegidas.map(function (op) { return op.texto; }).join(', ');
+      b.classList.toggle('hdt-on', elegidas.length > 0);
+    });
+    st.btnLimpiar.hidden = !activos.length;
+    if (MENU && MENU.st === st) contarMenu(st);
+  }
+
+  // One menu open in the page at a time. It lives inside the table's root
+  // (so a modal's focus trap doesn't fight it) with position: fixed, placed
+  // like the bubble so it never leaves the window.
+  var MENU = null;   // { st, k, el, boton }
+  function abrirMenu(st, k, boton, enfocar) {
+    cerrarMenu(false);
+    var f = st.filtros[k];
+    if (!f) return;
+    var m = nodo('div', 'hdt-menu');
+    m.setAttribute('role', 'group');
+    m.setAttribute('aria-label', f.titulo);
+    f.opciones.forEach(function (op) {
+      var l = nodo('label', 'hdt-menu-op');
+      var cb = nodo('input');
+      cb.type = 'checkbox';
+      cb.dataset.valor = op.valor;
+      l.appendChild(cb);
+      l.appendChild(nodo('span', 'hdt-menu-texto', op.texto));
+      l.appendChild(nodo('span', 'hdt-menu-n'));
+      m.appendChild(l);
+    });
+    m.addEventListener('change', function (e) {
+      var v = e.target.dataset && e.target.dataset.valor;
+      if (v == null) return;
+      var s = st.fsel[f.campo] || (st.fsel[f.campo] = {});
+      if (e.target.checked) s[v] = true; else delete s[v];
+      aplicar(st);
+    });
+    st.root.appendChild(m);
+    MENU = { st: st, k: k, el: m, boton: boton };
+    boton.setAttribute('aria-expanded', 'true');
+    contarMenu(st);
+    colocar(m, boton.getBoundingClientRect());
+    var primera = m.querySelector('input');
+    if (enfocar && primera) primera.focus({ preventScroll: true });
+  }
+
+  function cerrarMenu(devolverFoco) {
+    if (!MENU) return;
+    var m = MENU;
+    MENU = null;
+    m.boton.setAttribute('aria-expanded', 'false');
+    if (m.el.parentNode) m.el.parentNode.removeChild(m.el);
+    if (devolverFoco) m.boton.focus({ preventScroll: true });
+  }
+
+  // Counts over what the search, the chip and the other filters leave.
+  function contarMenu(st) {
+    var f = st.filtros[MENU.k];
+    if (!f) return;
+    var activos = filtrosActivos(st), cuenta = {};
+    var fv = st.fichas && st.ficha != null ? st.fichas.valores : null;
+    st.trasBusq.forEach(function (i) {
+      if ((fv && fv[i] !== st.ficha) || !pasaFiltros(st, activos, i, f)) return;
+      cuenta[f.valores[i]] = (cuenta[f.valores[i]] || 0) + 1;
+    });
+    var s = st.fsel[f.campo] || {};
+    Array.prototype.forEach.call(MENU.el.querySelectorAll('input'), function (cb) {
+      cb.checked = !!s[cb.dataset.valor];
+      cb.parentNode.lastChild.textContent = FMT_N.format(cuenta[cb.dataset.valor] || 0);
+    });
+  }
+
+  // Esc and a press anywhere outside close it. Esc is caught before a
+  // Bootstrap modal around the table sees it, so only the menu closes.
+  document.addEventListener('keydown', function (e) {
+    if (!MENU || e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation();
+    cerrarMenu(true);
+  }, true);
+  document.addEventListener('mousedown', function (e) {
+    if (MENU && !MENU.el.contains(e.target) && !MENU.boton.contains(e.target)) cerrarMenu(false);
+  }, true);
+  // Scrolling the page (or resizing it) moves the button: the menu follows.
+  var menuPendiente = false;
+  function seguirMenu() {
+    if (!MENU || menuPendiente) return;
+    menuPendiente = true;
+    requestAnimationFrame(function () {
+      menuPendiente = false;
+      if (!MENU) return;
+      if (!document.body.contains(MENU.boton)) { cerrarMenu(false); return; }
+      colocar(MENU.el, MENU.boton.getBoundingClientRect());
+    });
+  }
+  window.addEventListener('scroll', function (e) { if (MENU && !MENU.el.contains(e.target)) seguirMenu(); }, true);
+  window.addEventListener('resize', seguirMenu);
+
+  // Places a position: fixed element under the rect r (above it if it
+  // doesn't fit below), always inside the window. The bubble and the filter
+  // menus share it.
+  function colocar(el, r) {
+    var w = el.getBoundingClientRect();
+    var left = r.left, top = r.bottom + 4;
+    if (left + w.width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - w.width - 8);
+    if (top + w.height > window.innerHeight - 8) top = Math.max(8, r.top - w.height - 4);
+    el.style.left = left + 'px';
+    el.style.top = top + 'px';
+    // A transformed ancestor (a modal while it animates) moves what's
+    // fixed inside it; correct by what actually landed.
+    var real = el.getBoundingClientRect();
+    if (Math.abs(real.left - left) > 0.5) el.style.left = (2 * left - real.left) + 'px';
+    if (Math.abs(real.top - top) > 0.5) el.style.top = (2 * top - real.top) + 'px';
+  }
+
   function densidad(st, modo, guardar) {
     st.root.classList.toggle('hdt-normal', modo === 'normal');
     st.btnDens.textContent = t(modo === 'normal' ? 'tablas.densidad.normal' : 'tablas.densidad.compacta');
@@ -392,6 +576,7 @@
     st.tipo = arr(f.tipo);
     st.prov = arr(f.provision);
     if (msg.fichas) st.fichas = { valores: arr(msg.fichas.valores), opciones: arr(msg.fichas.opciones), mostrar: msg.fichas.mostrar };
+    if (st.filtrosEl) cargarFiltros(st, msg.filtros);
     st.celdas = arr(f.celdas).map(function (c) {
       return { mostrar: arr(c.mostrar), orden: arr(c.orden), copiar: arr(c.copiar), tono: c.tono ? arr(c.tono) : null };
     });
@@ -425,6 +610,8 @@
     st.trs = new Array(st.n);
 
     aplicar(st, true, arriba);
+    // An open filter menu is rebuilt: its values may have changed.
+    if (MENU && MENU.st === st) abrirMenu(st, MENU.k, MENU.boton, false);
     st.scroll.scrollLeft = izq;
     st.medidas.pintado = performance.now() - t0;
     if (st.sel.size !== antes) enviarSel(st);
@@ -543,16 +730,21 @@
   // omitted, the current one.
   function aplicar(st, desdeDatos, arriba) {
     cerrarConfirmacion(st);   // the rows it was about may no longer be the ones shown
-    var base = [], vis = [];
+    // Search, then filters (base: what the chips count), then the chip.
+    var activos = filtrosActivos(st), trasBusq = [], base = [], vis = [];
     for (var i = 0; i < st.n; i++) {
-      if (!st.q || st.busq[i].indexOf(st.q) >= 0) base.push(i);
+      if (st.q && st.busq[i].indexOf(st.q) < 0) continue;
+      trasBusq.push(i);
+      if (pasaFiltros(st, activos, i, null)) base.push(i);
     }
+    st.trasBusq = trasBusq;
     pintarFichas(st, base);
     var fv = st.fichas && st.ficha != null ? st.fichas.valores : null;
     vis = fv ? base.filter(function (k) { return fv[k] === st.ficha; }) : base;
     if (st.orden.col >= 0) ordenarVis(st, vis);
     st.vis = vis;
-    var filtrada = !!st.q || !!fv;
+    pintarFiltros(st, activos);
+    var filtrada = !!st.q || !!fv || activos.length > 0;
 
     // Without sel_persistente, rows the search or a chip hides drop out of
     // the selection.
@@ -973,12 +1165,7 @@
     b.boton.classList.remove('hdt-hecho');
     b.boton.innerHTML = b.icono;
     b.hidden = false;
-    var r = td.getBoundingClientRect(), tr = b.getBoundingClientRect();
-    var left = r.left, top = r.bottom + 4;
-    if (left + tr.width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - tr.width - 8);
-    if (top + tr.height > window.innerHeight - 8) top = r.top - tr.height - 4;
-    b.style.left = left + 'px';
-    b.style.top = top + 'px';
+    colocar(b, td.getBoundingClientRect());
   }
   function burbuja(st) {
     // mousemove, not mouseover: after a scroll the browser sends mouseover
@@ -1098,6 +1285,7 @@
       return {
         visibles: st.vis.map(function (i) { return st.ids[i]; }),
         seleccion: idsSel(st), orden: st.orden, busqueda: st.q,
+        filtros: Object.keys(st.fsel).reduce(function (o, c) { o[c] = Object.keys(st.fsel[c]); return o; }, {}),
         scrollTop: st.scroll.scrollTop, medidas: st.medidas,
         modo: st.modo, pintadas: st.tbody.querySelectorAll('tr:not(.hdt-esp)').length,
         altoFila: st.altoFila, ventana: [st.vIni, st.vFin],

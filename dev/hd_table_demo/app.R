@@ -122,6 +122,7 @@ ui <- bslib::page_fluid(
     div(class = "demo-lado",
       selectInput("n", "Filas (clase A)", c(300, 1000, 5000), width = "100%"),
       actionButton("cambiar", "Cambiar datos", class = "btn-sm btn-primary"),
+      actionButton("solo_mxn", "Solo MXN / todas", class = "btn-sm btn-outline-secondary"),
       tags$hr(),
       checkboxGroupInput("piezas", "Piezas (clase A)", choices = PIEZAS_T02,
                          selected = setdiff(PIEZAS_T02, "casillas"))
@@ -155,6 +156,11 @@ server <- function(input, output, session) {
   n_filas <- reactiveVal(as.integer(q$n %||% 300))
   observeEvent(input$n, ignoreInit = TRUE, n_filas(as.integer(input$n)))
 
+  # "Solo MXN": drops the USD rows (a filter value that disappears); again,
+  # brings them back.
+  solo_mxn <- reactiveVal(FALSE)
+  observeEvent(input$solo_mxn, solo_mxn(!solo_mxn()))
+
   # "Cambiar datos": same ids, new amounts and states.
   datos_a <- reactive({
     n <- n_filas()
@@ -164,6 +170,7 @@ server <- function(input, output, session) {
       set.seed(seed + k)
       df$Importe <- round(df$Importe * runif(n, .5, 1.5), 2)
     }
+    if (solo_mxn()) df <- df[df$Moneda == "MXN", ]
     df
   })
 
@@ -186,6 +193,7 @@ server <- function(input, output, session) {
     tabla_a(list(id = paste0("a", v),
                  t  = hd_table_server(paste0("a", v), tabla = nombre, datos = datos_a, columnas = COLS_A,
                                       fichas = list(campo = "Estado", orden = c("pendiente", "programada", "confirmada")),
+                                      filtros = list(list(campo = "Moneda"), list(campo = "Empresa")),
                                       acciones_fila = acc_fila, acciones_barra = acc_barra)))
   })
   # Every accion() that arrives, newest first.

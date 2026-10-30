@@ -160,15 +160,15 @@ ok("search is accent/case-free and narrows the rows ('acero' -> Aceros)", length
      all(grepl("Aceros", unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s tbody tr')).map(function(r){return r.children[1].textContent})", A))))))
 ok("the counter follows the search",
    grepl(sprintf("^%d facturas?$", length(vis_q)), ev(sprintf("document.querySelector('#%s .hdt-contador').textContent", A))))
-clic(sprintf("document.querySelector('#%s .hdt-barra .hdt-btn')", A))   # Seleccionar todos
+clic(sprintf("document.querySelector('#%s .hdt-barra .hdt-todos')", A))   # Seleccionar todos
 bloq_q <- unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s tbody tr')).map(function(r){return r.classList.contains('hdt-bloq')})", A)))
 ok("Seleccionar todos marks exactly the visible, unlocked rows",
    identical(unlist(estado()$seleccion), vis_q[!bloq_q]))
 ok("... and the button now offers to unmark",
-   identical(ev(sprintf("document.querySelector('#%s .hdt-barra .hdt-btn').textContent", A)), "Deseleccionar"))
+   identical(ev(sprintf("document.querySelector('#%s .hdt-barra .hdt-todos').textContent", A)), "Deseleccionar"))
 ok("the footer sums the selection",
    grepl(sprintf("^%d seleccionadas?", sum(!bloq_q)), ev(sprintf("document.querySelector('#%s .hdt-pie').innerText", A))))
-clic(sprintf("document.querySelector('#%s .hdt-barra .hdt-btn')", A))
+clic(sprintf("document.querySelector('#%s .hdt-barra .hdt-todos')", A))
 ok("a second click unmarks them", length(unlist(estado()$seleccion)) == 0L)
 ev(sprintf("var i=document.querySelector('#%s .hdt-buscar'); i.value=''; i.dispatchEvent(new Event('input'))", A))
 Sys.sleep(0.3)

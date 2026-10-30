@@ -341,3 +341,44 @@ test_that("Excel with 1 and with 0 rows opens", {
   x0 <- openxlsx::read.xlsx(f0)
   expect_identical(names(x0), c("Proveedor", "Importe", "Vence", "Etapa"))
 })
+
+test_that("filtros: shape validated, field must exist, options from the data with the col_insignia map", {
+  expect_error(hd_filtros_validar(list(campo = "Moneda")), "filtros` must be a list of list")
+  expect_error(hd_filtros_validar(list(list(titulo = "x"))), "filtros[[1]] needs `campo`", fixed = TRUE)
+  expect_error(hd_filtros_validar(list(list(campo = "Moneda", orden = "a"))), "filtro 'Moneda': unknown field(s) orden", fixed = TRUE)
+  expect_error(hd_filtros_validar(list(list(campo = "Moneda", titulo = 3))), "`titulo` must be")
+  expect_error(hd_filtros_validar(list(list(campo = "Moneda"), list(campo = "Moneda"))), "repeats 'Moneda'")
+  f <- hd_filtros_validar(list(list(campo = "Estado"), list(campo = "Moneda", titulo = "Divisa"),
+                               list(campo = "Empresa")))
+  d <- data.frame(id = as.character(1:5), Estado = c("c", "a", NA, "b", "a"),
+                  Moneda = c("USD", "MXN", "MXN", "eur", "USD"), Empresa = "NTS", stringsAsFactors = FALSE)
+  cols_f <- list(col_insignia("Estado", "Etapa", mapa = list(b = list(texto = "Beta"), a = list(texto = "Alfa"))),
+                 col_texto("Moneda"))
+  expect_error(hd_filtros_payload(hd_filtros_validar(list(list(campo = "Nope"))), d, cols_f),
+               "filtro 'Nope' is not a column in the data")
+  pl <- hd_filtros_payload(f, d, cols_f)
+  # Map order and labels first, then the rest; "(Sin valor)" last when a row has none.
+  expect_identical(vapply(pl[[1]]$opciones, `[[`, "", "valor"), c("b", "a", "c", ""))
+  expect_identical(vapply(pl[[1]]$opciones, `[[`, "", "texto"), c("Beta", "Alfa", "c", tr("tablas.filtros.vacio")))
+  expect_identical(unclass(pl[[1]]$valores), c("c", "a", "", "b", "a"))
+  # Without a map: alphabetical, case- and accent-free.
+  expect_identical(vapply(pl[[2]]$opciones, `[[`, "", "valor"), c("eur", "MXN", "USD"))
+  # Title: the filter's own, else its column's, else the field.
+  expect_identical(vapply(pl, `[[`, "", "titulo"), c("Etapa", "Divisa", "Empresa"))
+  # One value, one row: still arrays in the JSON.
+  j <- .json(hd_filtros_payload(f[3], d[1, ], cols_f))
+  expect_match(j, '"valores":["NTS"]', fixed = TRUE)
+  expect_match(j, '"opciones":[{"valor":"NTS","texto":"NTS"}]', fixed = TRUE)
+})
+
+test_that("filtros on a table without the piece are ignored with a message", {
+  reg <- hd_registro
+  on.exit(assign("hd_registro", reg, envir = globalenv()))
+  hd_registro$sin_filtros <<- list(nombre = "x", clase = "A", archivo = "x", agregar = character(),
+                                   quitar = "filtros", notas = character())
+  f <- hd_filtros_validar(list(list(campo = "Parte")))
+  expect_message(x <- .hd_sin_pieza("sin_filtros", "filtros", "filtros", f, hd_piezas_de("sin_filtros")),
+                 "`filtros` ignored, the table doesn't have the 'filtros' piece")
+  expect_null(x)
+  expect_identical(.hd_sin_pieza("vencidos", "filtros", "filtros", f, hd_piezas_de("vencidos")), f)
+})
