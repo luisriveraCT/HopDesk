@@ -116,9 +116,6 @@ registrar <- function(nombre, def) {
 }
 registrar("demo_d", list(nombre = "Demo clase D", clase = "D", archivo = "dev/hd_table_demo/app.R",
                          agregar = character(), quitar = character(), notas = character()))
-# Like evidencia_excel, plus copiar_tabla (not in the generated registry yet).
-registrar("demo_e", list(nombre = "Demo clase E · tabla pegada", clase = "E", archivo = "dev/hd_table_demo/app.R",
-                         agregar = c("recorte", "copiar_tabla"), quitar = "insignias", notas = character()))
 
 # A table pasted from Excel: text exactly as it came, first row maybe a header.
 PEGADA <- rbind(
@@ -271,8 +268,10 @@ server <- function(input, output, session) {
   con_aviso <- reactiveVal(TRUE)
   observeEvent(input$aviso_e, con_aviso(!con_aviso()))
   pegada <- reactive(demo_pegada(encabezado_e()))
-  t_e <- hd_table_server("pegada", tabla = "demo_e", datos = reactive(pegada()$datos),
-                         columnas = reactive(pegada()$columnas),
+  # ordenar is optional in class E (evidencia_excel doesn't have it); on
+  # here to show that a sort survives the columns changing.
+  t_e <- hd_table_server("pegada", tabla = "evidencia_excel", datos = reactive(pegada()$datos),
+                         columnas = reactive(pegada()$columnas), piezas = "ordenar",
                          encabezado = encabezado_e,
                          aviso = reactive(if (con_aviso()) "Se pegaron 340 filas; se guardaron 200"))
   observeEvent(t_e$accion(), {

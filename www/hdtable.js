@@ -702,6 +702,9 @@
       String(s || '').split(',').forEach(function (a) { if (a) set[a] = true; });
       return set;
     });
+    // The sort follows its column by field, not by position: new columns
+    // keep it if that field is still there.
+    var campoOrden = st.orden.col >= 0 && st.cols[st.orden.col] ? st.cols[st.orden.col].campo : null;
     st.cols = arr(msg.columnas);
     st.ids = arr(f.ids).map(String);
     st.n = st.ids.length;
@@ -727,7 +730,7 @@
     if (colsCambian) {
       cabecera(st);
       st.anchos = null;
-      if (st.orden.col >= st.cols.length) st.orden.col = -1;
+      st.orden.col = st.cols.map(function (c) { return c.campo; }).indexOf(campoOrden);
     }
 
     // Selection survives a refresh, minus ids that no longer exist.

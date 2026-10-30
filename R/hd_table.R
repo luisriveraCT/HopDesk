@@ -23,6 +23,11 @@
 # first click marks the row (and sends it), then the double click undoes it
 # (and sends it again). Code observing seleccion() sees both.
 #
+# `columnas` may be a list of col_*() or a reactive returning one (a table
+# pasted from Excel changes columns with each paste and with the header
+# switch). When the columns change, the table keeps the sort (if its column's
+# field is still there), the search and the selection.
+#
 # PERMISSIONS: the .acciones control column only HIDES row buttons the user
 # may not use. A hidden button is not a permission check -- the module that
 # uses the table must check the permission again when the action arrives.
@@ -32,7 +37,7 @@ hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
     htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=13"),
-    htmltools::tags$script(src = "hdtable.js?v=13")
+    htmltools::tags$script(src = "hdtable.js?v=14")
   ))
 }
 

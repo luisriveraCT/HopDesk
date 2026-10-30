@@ -10,14 +10,9 @@
 #
 # No S3 here yet: per-client overrides of the registry are Phase 7.
 
-# Pieces the engine has that the generated registry doesn't list yet. The
-# coordinator adds them to the design page and regenerates R/hd_registro.R;
-# until then a table gets them through its registry entry's `agregar`.
-HD_PIEZAS_NUEVAS <- c("copiar_tabla")
-
 # Every piece the design knows, in the design page's order.
-HD_PIEZAS_VALIDAS <- unique(c(unlist(lapply(hd_clases, function(cl) c(cl$siempre, cl$opcional)),
-                                     use.names = FALSE), HD_PIEZAS_NUEVAS))
+HD_PIEZAS_VALIDAS <- unique(unlist(lapply(hd_clases, function(cl) c(cl$siempre, cl$opcional)),
+                                   use.names = FALSE))
 
 # Pieces the engine implements so far (T02). The rest are T03+: a table that
 # has them still works, the engine just doesn't draw them yet.
@@ -47,12 +42,13 @@ HD_REGLAS_NUCLEO <- c(
 HD_CONTADOR_CLASE <- c(
   A = "tablas.contador.facturas", B = "tablas.contador.facturas",
   C = "tablas.contador.registros", D = "tablas.contador.registros",
-  # Class E (previews) says how big it is: "200 filas × 8 columnas".
-  E = "tablas.contador.tamano",    F = "tablas.contador.registros"
+  E = "tablas.contador.registros", F = "tablas.contador.registros"
 )
 HD_CONTADOR_TABLA <- c(
-  libro_banco   = "tablas.contador.movimientos",
-  requisiciones = "tablas.contador.registros"
+  libro_banco     = "tablas.contador.movimientos",
+  requisiciones   = "tablas.contador.registros",
+  # The pasted table says how big it is: "200 filas × 8 columnas".
+  evidencia_excel = "tablas.contador.tamano"
 )
 
 hd_tabla_def <- function(tabla) {

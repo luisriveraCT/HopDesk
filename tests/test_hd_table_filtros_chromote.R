@@ -338,7 +338,12 @@ ok("... and says how many rows it copied",
 # Header switch: the server decides and sends the new columns.
 ok("the header switch shows the server's choice (on)", isTRUE(ev(sprintf("%s.checked", interruptor_e))) &&
      identical(titulos_e(), c("Fecha", "Folio", "Concepto", "Importe", "Nota")))
+clic(sprintf("document.querySelectorAll('#%s thead th')[1]", E))   # sort by Folio
 clic(interruptor_e); Sys.sleep(0.8)
+orden_e <- ev(sprintf("HDT.estado('%s').orden", E))
+ok("new columns keep the sort when its field is still there (Folio -> Columna 2)",
+   identical(orden_e$col, 1L) && identical(orden_e$dir, 1L) &&
+     isTRUE(ev(sprintf("document.querySelectorAll('#%s thead th')[1].querySelector('.hdt-flecha').textContent !== ''", E))))
 ok("turning it off sends accion 'encabezado' with 'no'; the first row becomes data",
    grepl("encabezado: FALSE", panel_e()) && grepl('"no"', panel_e()) &&
      identical(titulos_e(), paste("Columna", 1:5)) && "Fecha" %in% celdas_e() &&

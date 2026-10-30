@@ -425,19 +425,18 @@ test_that(".fijar travels per row (NA is FALSE; without the column, all FALSE)",
 })
 
 # ── evidencia_excel (class E) ───────────────────────────────────────────────
-test_that("copiar_tabla is a valid piece the engine draws, given through the registry's agregar", {
-  expect_true("copiar_tabla" %in% HD_PIEZAS_VALIDAS)
+test_that("copiar_tabla: optional in class E, always on in evidencia_excel, drawn by the engine", {
+  expect_true("copiar_tabla" %in% hd_clases$E$opcional)
   expect_true("copiar_tabla" %in% HD_PIEZAS_MOTOR)
-  reg <- hd_registro
-  on.exit(assign("hd_registro", reg, envir = globalenv()))
-  hd_registro$con_copia <<- list(nombre = "x", clase = "E", archivo = "x", agregar = "copiar_tabla",
-                                 quitar = character(), notas = character())
-  expect_true("copiar_tabla" %in% hd_piezas_de("con_copia"))
-  expect_false("copiar_tabla" %in% hd_piezas_de("evidencia_excel"))   # until the registry adds it
+  expect_true("copiar_tabla" %in% hd_piezas_de("evidencia_excel"))
+  expect_true("copiar_tabla" %in% hd_piezas_de("importar_txt", "copiar_tabla"))
+  expect_false("copiar_tabla" %in% hd_piezas_de("importar_txt"))
 })
 
-test_that("class E counts its size: rows and columns, each with its plural", {
+test_that("the pasted table counts its size: rows and columns, each with its plural", {
   expect_identical(hd_contador_clave("evidencia_excel"), "tablas.contador.tamano")
+  # The other previews still count records.
+  expect_identical(hd_contador_clave("conflictos_pasivo"), "tablas.contador.registros")
   cols <- tr_n("tablas.contador.columnas", 8)
   expect_identical(tr_n("tablas.contador.tamano", 200, columnas = cols), "200 filas × 8 columnas")
   expect_identical(tr_n("tablas.contador.tamano", 1, columnas = tr_n("tablas.contador.columnas", 1)),

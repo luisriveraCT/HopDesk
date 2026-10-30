@@ -1,4 +1,4 @@
-# Generado desde el gestor de tablas (artifact 3ucuJmsbfbcnwRuZwWaZCq) el 2026-10-29.
+# Generado desde el gestor de tablas (artifact 3ucuJmsbfbcnwRuZwWaZCq) el 2026-10-30.
 # Valores de fábrica. Los cambios hechos desde la pestaña Tablas viven en S3 y se aplican encima.
 
 hd_clases <- list(
@@ -11,7 +11,7 @@ hd_clases <- list(
   D = list(siempre = c("texto", "copiar_celda", "recorte", "encabezado_fijo", "contador", "ordenar", "buscar", "filtros", "insignias", "acc_fila", "confirmar", "detalle", "excel"),
        opcional = c("multilinea", "densidad", "sel_fila", "sel_rango", "casillas", "sel_todos", "sel_persistente", "fichas", "columnas_opc", "carga_bloques", "barra_acc", "copiar_tsv")),
   E = list(siempre = c("texto", "copiar_celda", "encabezado_fijo", "contador", "insignias", "confirmar", "copiar_tsv"),
-       opcional = c("recorte", "multilinea", "columna_fija", "casillas", "sumador_vis", "subtotales", "fichas", "ordenar", "buscar", "acc_fila", "edicion_celda")),
+       opcional = c("recorte", "multilinea", "columna_fija", "casillas", "sumador_vis", "subtotales", "fichas", "ordenar", "buscar", "acc_fila", "edicion_celda", "copiar_tabla")),
   F = list(siempre = c("texto", "recorte", "encabezado_fijo", "columna_fija", "subtotales", "fichas", "buscar", "filtros", "agrupar", "nav_periodo", "insignias", "tachado", "provision", "semaforo", "adjuntos", "acc_fila", "confirmar", "detalle", "excel"),
        opcional = c("copiar_celda", "densidad", "contador", "expandir", "etiquetas", "copiar_tsv"))
 )
@@ -165,8 +165,8 @@ hd_registro <- list(
     agregar = character(), quitar = character(),
     notas = character()),
   evidencia_excel = list(nombre = "Evidencia · tabla pegada de Excel", clase = "E", archivo = "requisiciones_module.R",
-    agregar = c("recorte"), quitar = c("insignias"),
-    notas = c("Quitar: Editar en la celda: El plan no permite editar la tabla pegada; si está mal, se quita y se pega otra.", "Quitar: Acciones por fila: No hay acciones por fila.", "Quitar: Insignias: Los datos pegados no traen tipo, empresa ni estado.", "Agregar: Recorte con “…”: Las celdas pegadas pueden ser largas; recortar y mostrar el texto completo al pasar el mouse. En Vista previa viene como opcional; aquí debe ser siempre.", "Agregar: Interruptor “La primera fila es encabezado”: Se detecta solo, pero quien pega lo corrige. El encabezado queda fijo al desplazarse.", "Agregar: Montos a la derecha sólo si toda la columna es numérica; nada se reinterpreta: No convertir 01/02 en fecha ni quitar ceros a la izquierda: se muestra el texto tal como se pegó.", "Agregar: Sólo texto tabulado, nunca HTML; al copiar, fórmulas neutralizadas: Cada celda se escapa. Al copiar a Excel, la que empieza con =, +, - o @ lleva un apóstrofo delante.", "Agregar: Aviso de recorte: “Se pegaron 340 filas; se guardaron 200”: El límite es 200 × 20 por tabla y 10 tablas por requisición; nunca debe recortarse en silencio.", "Agregar: Título por tabla y botón para quitarla (a papelera): Con hasta 10 tablas por requisición hay que saber cuál es cuál.", "Agregar: Botón “Copiar tabla”: Vista previa no tiene selección de filas, así que hace falta copiar toda la tabla de vuelta a Excel de un clic.", "Agregar: El contador dice el tamaño: “200 filas × 8 columnas”: Basta con decir qué tan grande es; no hace falta sumar.")),
+    agregar = c("recorte", "copiar_tabla"), quitar = c("insignias"),
+    notas = c("Quitar: Editar en la celda: El plan no permite editar la tabla pegada; si está mal, se quita y se pega otra.", "Quitar: Acciones por fila: No hay acciones por fila.", "Quitar: Insignias: Los datos pegados no traen tipo, empresa ni estado.", "Agregar: Recorte con “…”: Las celdas pegadas pueden ser largas; recortar y mostrar el texto completo al pasar el mouse. En Vista previa viene como opcional; aquí debe ser siempre.", "Agregar: Interruptor “La primera fila es encabezado”: Se detecta solo, pero quien pega lo corrige. El encabezado queda fijo al desplazarse.", "Agregar: Montos a la derecha sólo si toda la columna es numérica; nada se reinterpreta: No convertir 01/02 en fecha ni quitar ceros a la izquierda: se muestra el texto tal como se pegó.", "Agregar: Sólo texto tabulado, nunca HTML; al copiar, fórmulas neutralizadas: Cada celda se escapa. Al copiar a Excel, la que empieza con =, +, - o @ lleva un apóstrofo delante.", "Agregar: Aviso de recorte: “Se pegaron 340 filas; se guardaron 200”: El límite es 200 × 20 por tabla y 10 tablas por requisición; nunca debe recortarse en silencio.", "Agregar: Título por tabla y botón para quitarla (a papelera): Con hasta 10 tablas por requisición hay que saber cuál es cuál.", "Agregar: Copiar tabla: Vista previa no tiene selección de filas, así que hace falta copiar toda la tabla de vuelta a Excel de un clic.", "Agregar: El contador dice el tamaño: “200 filas × 8 columnas”: Basta con decir qué tan grande es; no hace falta sumar.")),
   pasivos_tabla = list(nombre = "Pasivos · Tabla", clase = "F", archivo = "pasivos_table_module.R",
     agregar = character(), quitar = character(),
     notas = character()),
