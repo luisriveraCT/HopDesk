@@ -1837,6 +1837,37 @@
     TIP.addEventListener('mouseout', function (e) { if (!TIP.contains(e.relatedTarget)) tipLuego(); });
     TIP.boton.addEventListener('click', copiar);
     window.addEventListener('scroll', function () { TIP.hidden = true; }, true);
+    // The bubble sits under its cell, over the next row. A plain click on it
+    // -- not a drag (4 px, like the table), not on the copy button, leaving
+    // no text selected -- closes it and goes to what's underneath: the
+    // whole press-release-click reaches the table there, Shift included.
+    // Dragging inside it still selects its text.
+    var abajo = null;
+    TIP.addEventListener('mousedown', function (e) {
+      abajo = e.button === 0 && !e.target.closest('.hdt-tip-copiar') ? { x: e.clientX, y: e.clientY } : null;
+      // Shift + press would extend the page's text selection into the
+      // bubble (and the click would look like a selection): as on the rows,
+      // Shift never shades text.
+      if (abajo && e.shiftKey) e.preventDefault();
+    });
+    TIP.addEventListener('mouseup', function (e) {
+      var a = abajo;
+      abajo = null;
+      if (!a || e.button !== 0 || e.target.closest('.hdt-tip-copiar')) return;
+      if (Math.abs(e.clientX - a.x) > 4 || Math.abs(e.clientY - a.y) > 4) return;
+      if (window.getSelection && String(window.getSelection()).length) return;
+      clearTimeout(tipOcultar);
+      TIP.hidden = true;
+      var debajo = document.elementFromPoint(e.clientX, e.clientY);
+      if (!debajo) return;
+      ['mousedown', 'mouseup', 'click'].forEach(function (tipo) {
+        debajo.dispatchEvent(new MouseEvent(tipo, {
+          bubbles: true, cancelable: true, view: window, detail: 1, button: 0,
+          buttons: tipo === 'mousedown' ? 1 : 0, clientX: e.clientX, clientY: e.clientY,
+          shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey
+        }));
+      });
+    });
     return TIP;
   }
   function tipLuego() {

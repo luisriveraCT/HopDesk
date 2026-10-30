@@ -43,7 +43,7 @@ ev <- function(js, await = FALSE) {
 A <- "a1-hdt"
 abrir <- function(query) {
   b$Page$navigate(paste0(base, "/", query), wait_ = TRUE)
-  ok <- poll_until(function() isTRUE(ev(sprintf("!!window.HDT && !!HDT.estado('%s')", A))), timeout_s = 30)
+  ok <- poll_until(function() isTRUE(ev(sprintf("!!window.HDT && !!HDT.estado('%s')", A))), timeout_s = 60)
   Sys.sleep(0.6)   # auto height and band offsets settle on the next frame
   ok
 }
@@ -55,7 +55,7 @@ centro <- function(js_el, ver = TRUE) ev(sprintf("(function(){ var e = %s; %s
   var r = e.getBoundingClientRect(); return [r.left + r.width/2, r.top + r.height/2]; })()", js_el,
   if (ver) "e.scrollIntoView({block:'center', behavior:'instant'});" else ""))
 raton <- function(tipo, p, botones = 0L, n = 1L, shift = FALSE)
-  b$Input$dispatchMouseEvent(type = tipo, x = p[[1]], y = p[[2]], button = if (tipo == "mouseMoved") "none" else "left",
+  b$Input$dispatchMouseEvent(type = tipo, x = p[[1]], y = p[[2]], button = if (tipo == "mouseMoved" && !botones) "none" else "left",
                              buttons = botones, clickCount = n, modifiers = if (shift) 8L else 0L)
 clic <- function(js_el, ver = TRUE, shift = FALSE) {
   p <- centro(js_el, ver)
@@ -353,6 +353,10 @@ invisible(b$Input$dispatchKeyEvent(type = "keyUp", key = "c", code = "KeyC", win
 leer <- function() tryCatch(ev("navigator.clipboard.readText()", await = TRUE), error = function(e) "")
 poll_until(function() nzchar(leer()), timeout_s = 8)
 cabeza_tsv <- strsplit(strsplit(leer(), "\r\n", fixed = TRUE)[[1]][1], "\t", fixed = TRUE)[[1]]
+if (!identical(cabeza_tsv, t1))   # say why, if it ever fails again
+  cat("  copied header:", paste(cabeza_tsv, collapse = "|"), "| expected:", paste(t1, collapse = "|"), "| focus:",
+      ev("(function(){ var a = document.activeElement; return a ? a.tagName + '.' + a.className : 'null'; })()"),
+      "| marked:", paste(unlist(estado()$seleccion), collapse = ","), fill = TRUE)
 ok("Ctrl+C copies only the columns shown, in their order", identical(cabeza_tsv, t1))
 clic(sprintf("document.querySelector('#%s .hdt-excel')", A))
 ok("Excel downloads", poll_until(function() length(list.files(descargas, pattern = "\\.xlsx$")) == 1L, timeout_s = 20))
@@ -467,6 +471,50 @@ clic(crudos_btn)
 ok("... and with rows marked, their ids",
    poll_until(function() { u <- ultima(); identical(u$accion, "crudos") && setequal(u$ids, dos) }, timeout_s = 8))
 clic(sprintf("document.querySelector('#%s .hdt-editar')", A))
+
+# ── The full-value bubble never swallows a click on the row below ─────────
+ok("demo loads (flat, 60 rows)", abrir("?n=60&seed=1&periodo=0&secciones=0"))
+v <- vis(); bl <- unlist(estado()$bloqueadas)
+k <- which(vapply(seq_along(v), function(j) j >= 4 && j < length(v) && !any(v[c(j - 3, j, j + 1)] %in% bl), logical(1)))[1]
+burbuja_visible <- function() isTRUE(ev("(function(){ var t = document.querySelector('.hdt-tip'); return !!t && !t.hidden; })()"))
+# Mouse still over row k until its bubble opens, then the point on the
+# bubble that's over row k+1.
+sobre_burbuja <- function() {
+  # Start with no bubble (the one of a row clicked before may be open), then
+  # wait for the one of row k: its text is that cell's.
+  raton("mouseMoved", list(5, 5))
+  poll_until(function() !burbuja_visible(), timeout_s = 3, interval_s = 0.05)
+  celda <- sprintf("HDT.fila('%s', '%s').children[1]", A, v[k])
+  p <- centro(celda)
+  raton("mouseMoved", p)
+  if (!poll_until(function() burbuja_visible() && isTRUE(ev(sprintf("document.querySelector('.hdt-tip-texto').textContent === %s.textContent", celda))),
+                  timeout_s = 3, interval_s = 0.05)) return(NULL)
+  ev(sprintf("(function(){ var t = document.querySelector('.hdt-tip').getBoundingClientRect(),
+    r = HDT.fila('%s', '%s').getBoundingClientRect(), y = Math.max(t.top, r.top) + 2;
+    return y < Math.min(t.bottom, r.bottom) ? [t.left + 8, y] : null; })()", A, v[k + 1]))
+}
+pt <- sobre_burbuja()
+ok("with the mouse still, the bubble opens over the next row", !is.null(pt))
+if (!is.null(pt)) { raton("mouseMoved", pt); raton("mousePressed", pt, 1L); raton("mouseReleased", pt); Sys.sleep(0.3) }
+ok("a click on the bubble goes to the row underneath: that row gets marked and the bubble closes",
+   identical(unlist(estado()$seleccion), v[k + 1]) && !burbuja_visible())
+invisible(ev(sprintf("(document.querySelector('#%s .hdt-deseleccionar')||{click:function(){}}).click()", A))); Sys.sleep(0.3)
+clic(sprintf("HDT.fila('%s', '%s').children[1]", A, v[k - 3]))
+pt <- sobre_burbuja()
+if (!is.null(pt)) { raton("mouseMoved", pt); raton("mousePressed", pt, 1L, shift = TRUE); raton("mouseReleased", pt, shift = TRUE); Sys.sleep(0.3) }
+ok("... with Shift too: the range from the last row touched to the row underneath",
+   !is.null(pt) && identical(unlist(estado()$seleccion), setdiff(v[(k - 3):(k + 1)], bl)))
+invisible(ev(sprintf("(document.querySelector('#%s .hdt-deseleccionar')||{click:function(){}}).click()", A))); Sys.sleep(0.3)
+pt <- sobre_burbuja()
+ok("(the bubble opened again for the drag test)", !is.null(pt))
+texto0 <- ev("(function(){ var r = document.querySelector('.hdt-tip-texto').getBoundingClientRect(); return [r.left + 2, r.top + r.height / 2, r.right - 2]; })()")
+raton("mouseMoved", list(texto0[[1]], texto0[[2]]))
+raton("mousePressed", list(texto0[[1]], texto0[[2]]), 1L)
+raton("mouseMoved", list(texto0[[3]], texto0[[2]]), 1L)
+raton("mouseReleased", list(texto0[[3]], texto0[[2]])); Sys.sleep(0.3)
+ok("dragging inside the bubble still selects its text, and marks nothing",
+   burbuja_visible() && nchar(ev("String(window.getSelection())")) > 3 && length(unlist(estado()$seleccion)) == 0L)
+raton("mouseMoved", list(5, 5)); Sys.sleep(0.4)
 
 # ── The table's own empty message ──────────────────────────────────────────
 ok("demo loads with no rows", abrir("?n=0&seed=1&periodo=0"))

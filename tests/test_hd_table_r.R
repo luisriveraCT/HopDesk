@@ -552,6 +552,21 @@ test_that(".agregado and .adjuntos travel per row (NA is FALSE / 0; without the 
   expect_identical(unclass(f0$adjuntos), c(0L, 0L, 0L))
 })
 
+test_that("crudos: its own action, usable with nothing marked; the calling table can name it", {
+  p <- c("crudos", "modo_editar")
+  def <- hd_crudos_meta(NULL, p)
+  expect_identical(def[[1]]$texto, tr("tablas.accion.crudos"))
+  expect_true(def[[1]]$vacias)
+  expect_identical(def[[1]]$modo, "editar")
+  expect_null(hd_crudos_meta(NULL, "crudos")[[1]]$modo)          # no edit bar: always shown
+  propias <- hd_acciones_barra_meta(hd_acciones_barra_validar(list(
+    list(accion = "mover", texto = "t", modo = "editar"), list(accion = "crudos", texto = "Ver datos SAP"))))
+  m <- hd_crudos_meta(propias, p)
+  expect_identical(vapply(m, `[[`, "", "accion"), c("mover", "crudos"))   # once, last
+  expect_identical(m[[2]]$texto, "Ver datos SAP")
+  expect_identical(hd_crudos_meta(propias, "modo_editar"), propias)       # without the piece: as given
+})
+
 test_that("vacio: key or text, or list(texto, tono); fijar_titulo: key or text", {
   cols <- list(col_texto("Parte"))
   expect_error(hd_table_server("t", "vencidos", shiny::reactive(NULL), cols, vacio = 3), "`vacio` must be")

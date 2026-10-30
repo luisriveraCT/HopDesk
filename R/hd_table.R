@@ -39,7 +39,7 @@ hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
     htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=20"),
-    htmltools::tags$script(src = "hdtable.js?v=21")
+    htmltools::tags$script(src = "hdtable.js?v=22")
   ))
 }
 
@@ -392,6 +392,20 @@ hd_acciones_barra_meta <- function(acciones) {
   lapply(acciones, function(a) utils::modifyList(a, list(texto = .hd_texto(a$texto))))
 }
 
+# crudos: "Ver datos de origen" sends accion "crudos" with the marked ids
+# -- maybe none: the module decides what to show (the lupa, the whole
+# month). In the edit bar when the table has one. The calling table may name
+# it as people already know it, with list(accion = "crudos", texto = ...) in
+# acciones_barra (the lupa: "Ver datos SAP"); its modo, if given, too.
+hd_crudos_meta <- function(acciones, piezas) {
+  if (!"crudos" %in% piezas) return(acciones)
+  propia <- Find(function(a) identical(a$accion, "crudos"), acciones %||% list())
+  c(Filter(function(a) !identical(a$accion, "crudos"), acciones %||% list()), list(list(
+    accion = "crudos", texto = propia$texto %||% tr("tablas.accion.crudos"), confirmar = FALSE, peligro = FALSE,
+    sin_seleccion = FALSE, vacias = TRUE,
+    modo = propia$modo %||% (if ("modo_editar" %in% piezas) "editar"))))
+}
+
 # Confirmation can't be dropped silently: an action that asks for it on a
 # table without the `confirmar` piece is a programming error.
 .hd_exigir_confirmar <- function(tabla, piezas, quien) {
@@ -488,13 +502,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
     stop(sprintf("hd_table '%s': bar action '%s' is modo = \"editar\" but the table doesn't have the 'modo_editar' piece.",
                  tabla, a$accion), call. = FALSE)
   acc_barra_meta <- if (length(acc_barra)) hd_acciones_barra_meta(acc_barra) else NULL
-  # crudos: "Ver datos de origen" sends accion "crudos" with the marked ids
-  # -- maybe none: the module decides what to show (the lupa, the whole
-  # month). In the edit bar when the table has one.
-  if ("crudos" %in% piezas_tabla)
-    acc_barra_meta <- c(acc_barra_meta, list(list(
-      accion = "crudos", texto = tr("tablas.accion.crudos"), confirmar = FALSE, peligro = FALSE,
-      sin_seleccion = FALSE, vacias = TRUE, modo = if ("modo_editar" %in% piezas_tabla) "editar")))
+  acc_barra_meta <- hd_crudos_meta(acc_barra_meta, piezas_tabla)
 
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns

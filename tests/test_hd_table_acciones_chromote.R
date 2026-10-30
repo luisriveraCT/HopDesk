@@ -59,22 +59,12 @@ centro <- function(js_el) ev(sprintf("(function(){ var e = %s; e.scrollIntoView(
 raton <- function(tipo, p, botones = 0L, n = 1L, shift = FALSE)
   b$Input$dispatchMouseEvent(type = tipo, x = p[[1]], y = p[[2]], button = if (tipo == "mouseMoved") "none" else "left",
                              buttons = botones, clickCount = n, modifiers = if (shift) 8L else 0L)
-# Before each click the mouse leaves the table and the full-value bubble
-# closes: on a loaded machine the bubble of the row just clicked can open
-# (350 ms) over the row below it, and the next click would land on it.
-sin_burbuja <- function() {
-  raton("mouseMoved", list(5, 5))
-  poll_until(function() isTRUE(ev("(function(){ var t = document.querySelector('.hdt-tip'); return !t || t.hidden; })()")),
-             timeout_s = 3, interval_s = 0.05)
-}
 clic <- function(js_el) {
-  sin_burbuja()
   p <- centro(js_el)
   raton("mouseMoved", p); raton("mousePressed", p, 1L); raton("mouseReleased", p)
   Sys.sleep(0.25)
 }
 doble <- function(js_el) {
-  sin_burbuja()
   p <- centro(js_el)
   raton("mouseMoved", p)
   raton("mousePressed", p, 1L, 1L); raton("mouseReleased", p, 0L, 1L)
@@ -167,6 +157,7 @@ ok("✕ on a row asks '¿Eliminar 1 fila?' and sends nothing yet",
    identical(ev(sprintf("document.querySelector('#%s .hdt-confirmar-texto').textContent", A)), "¿Eliminar 1 fila?") &&
      n_log() == k)
 clic(sprintf("document.querySelector('#%s .hdt-confirmar-si')", A))
+poll_until(function() identical(ultima_accion()$accion, "eliminar"), timeout_s = 8)   # the log comes from the server
 ok("... Confirmar sends 'eliminar' with that id", identical(ultima_accion()$accion, "eliminar") &&
      identical(ultima_accion()$ids, abierta))
 
