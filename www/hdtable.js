@@ -1150,19 +1150,29 @@
   }
 
   // ── Sections and the pinned block's line ─────────────────────────────────
+  // The rows arrive already in the active order: one pass drops each into
+  // its section's bucket (keeping that order), and the buckets go out in
+  // section order -- no second sort of every row.
   function porSecciones(st, vis) {
-    var pos = {}, niv = st.secciones;
-    vis.forEach(function (k, j) { pos[k] = j; });
-    var fijas = st.hayFijas ? vis.filter(function (k) { return st.fijar[k]; }) : [];
-    var resto = st.hayFijas ? vis.filter(function (k) { return !st.fijar[k]; }) : vis.slice();
-    resto.sort(function (a, b) {
+    var niv = st.secciones, fijas = [], cubetas = {}, claves = [];
+    for (var k = 0; k < vis.length; k++) {
+      var i = vis[k];
+      if (st.hayFijas && st.fijar[i]) { fijas.push(i); continue; }
+      var c = '';
+      for (var l = 0; l < niv.length; l++) c += niv[l].rango[i] + '.';
+      if (!cubetas[c]) { cubetas[c] = []; claves.push({ c: c, i: i }); }
+      cubetas[c].push(i);
+    }
+    claves.sort(function (a, b) {
       for (var l = 0; l < niv.length; l++) {
-        var d = niv[l].rango[a] - niv[l].rango[b];
+        var d = niv[l].rango[a.i] - niv[l].rango[b.i];
         if (d) return d;
       }
-      return pos[a] - pos[b];
+      return 0;
     });
-    return fijas.concat(resto);
+    var out = fijas;
+    claves.forEach(function (x) { out = out.concat(cubetas[x.c]); });
+    return out;
   }
 
   // What the table paints, in order: rows (their index) and, as objects,
