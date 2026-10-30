@@ -145,10 +145,65 @@
     st.cuerpo.appendChild(st.scroll);
     st.cuerpo.appendChild(st.pie);
     root.appendChild(st.barra);
+    if (p.fichas && msg.fichas) {
+      st.fichasEl = nodo('div', 'hdt-fichas');
+      st.fichasEl.setAttribute('role', 'group');
+      st.fichasEl.addEventListener('click', function (e) {
+        var b = e.target.closest('button.hdt-ficha');
+        if (!b) return;
+        var v = b.dataset.todas ? null : b.dataset.valor;
+        st.ficha = (v == null || v === st.ficha) ? null : v;   // touching the active chip again clears it
+        aplicar(st);
+      });
+      root.appendChild(st.fichasEl);
+    }
     root.appendChild(st.cuerpo);
 
     eventos(st);
     return st;
+  }
+
+  // ── Chips (fichas) ───────────────────────────────────────────────────────
+  // Counts (or amounts) are over what the search leaves, so they tell what
+  // each chip would show; the active chip survives new data.
+  function pintarFichas(st, base) {
+    if (!st.fichasEl || !st.fichas) return;
+    var val = st.fichas.valores, monto = st.fichas.mostrar === 'monto' && st.suma >= 0;
+    var o = monto ? st.celdas[st.suma].orden : null;
+    var cuenta = {}, sumas = {};
+    base.forEach(function (i) {
+      var v = val[i];
+      cuenta[v] = (cuenta[v] || 0) + 1;
+      if (monto && !st.bloq[i]) {
+        var m = st.moneda[i] || '';
+        sumas[v] = sumas[v] || {};
+        sumas[v][m] = (sumas[v][m] || 0) + (Number(o[i]) || 0);
+        sumas.__todas = sumas.__todas || {};
+        sumas.__todas[m] = (sumas.__todas[m] || 0) + (Number(o[i]) || 0);
+      }
+    });
+    function cifra(v) {
+      if (!monto) return FMT_N.format(v == null ? base.length : (cuenta[v] || 0));
+      var s = (v == null ? sumas.__todas : sumas[v]) || {};
+      var mons = Object.keys(s).sort();
+      if (!mons.length) return dinero(0);
+      return mons.map(function (m) { return (mons.length > 1 && m ? m + ' ' : '') + dinero(s[m]); }).join(' · ');
+    }
+    function chip(texto, valor) {
+      var activa = valor == null ? st.ficha == null : st.ficha === valor;
+      var b = nodo('button', 'hdt-ficha' + (activa ? ' hdt-on' : ''));
+      b.type = 'button';
+      if (valor == null) b.dataset.todas = '1'; else b.dataset.valor = valor;
+      b.setAttribute('aria-pressed', activa ? 'true' : 'false');
+      b.appendChild(nodo('span', 'hdt-ficha-texto', texto));
+      b.appendChild(nodo('span', 'hdt-ficha-cifra', cifra(valor)));
+      return b;
+    }
+    var frag = document.createDocumentFragment();
+    frag.appendChild(chip(t('tablas.fichas.todas'), null));
+    arr(st.fichas.opciones).forEach(function (op) { frag.appendChild(chip(op.texto, op.valor)); });
+    st.fichasEl.textContent = '';
+    st.fichasEl.appendChild(frag);
   }
 
   function densidad(st, modo, guardar) {
@@ -175,6 +230,7 @@
     st.moneda = arr(f.moneda);
     st.tipo = arr(f.tipo);
     st.prov = arr(f.provision);
+    if (msg.fichas) st.fichas = { valores: arr(msg.fichas.valores), opciones: arr(msg.fichas.opciones), mostrar: msg.fichas.mostrar };
     st.celdas = arr(f.celdas).map(function (c) {
       return { mostrar: arr(c.mostrar), orden: arr(c.orden), copiar: arr(c.copiar), tono: c.tono ? arr(c.tono) : null };
     });
@@ -278,15 +334,20 @@
   // `arriba`: scroll position to land on (new data keeps where you were);
   // omitted, the current one.
   function aplicar(st, desdeDatos, arriba) {
-    var vis = [];
+    var base = [], vis = [];
     for (var i = 0; i < st.n; i++) {
-      if (!st.q || st.busq[i].indexOf(st.q) >= 0) vis.push(i);
+      if (!st.q || st.busq[i].indexOf(st.q) >= 0) base.push(i);
     }
+    pintarFichas(st, base);
+    var fv = st.fichas && st.ficha != null ? st.fichas.valores : null;
+    vis = fv ? base.filter(function (k) { return fv[k] === st.ficha; }) : base;
     if (st.orden.col >= 0) ordenarVis(st, vis);
     st.vis = vis;
+    var filtrada = !!st.q || !!fv;
 
-    // Without sel_persistente, rows the search hides drop out of the selection.
-    if (!desdeDatos && !st.p.sel_persistente && st.q) {
+    // Without sel_persistente, rows the search or a chip hides drop out of
+    // the selection.
+    if (!desdeDatos && !st.p.sel_persistente && filtrada) {
       var visibles = new Set(vis.map(function (k) { return st.ids[k]; }));
       var cambio = false;
       st.sel.forEach(function (id) { if (!visibles.has(id)) { st.sel.delete(id); cambio = true; } });
@@ -296,7 +357,7 @@
     pintarFilas(st, arriba == null ? st.scroll.scrollTop : arriba);
 
     st.vacio.hidden = vis.length > 0;
-    if (!vis.length) st.vacio.textContent = t(st.n && st.q ? 'tablas.vacio_filtro' : 'tablas.vacio');
+    if (!vis.length) st.vacio.textContent = t(st.n && filtrada ? 'tablas.vacio_filtro' : 'tablas.vacio');
     pintarSel(st);
     flechas(st);
     if (st.contador) st.contador.textContent = tn(st.textos.contador || 'tablas.contador.registros', vis.length, { n: FMT_N.format(vis.length) });

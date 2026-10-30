@@ -36,6 +36,15 @@
 .hdt-btn.hdt-on { background: var(--hdt-accent-soft); border-color: var(--hdt-accent); color: var(--hdt-accent); }
 .hdt-contador { color: var(--hdt-muted); font-size: .8rem; margin-left: auto; font-variant-numeric: tabular-nums; }
 
+/* Chips (fichas): count or amount per value; touching one filters. */
+.hdt-fichas { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 6px; }
+.hdt-ficha { font: inherit; font-size: .78rem; display: inline-flex; align-items: baseline; gap: 6px;
+  border: 1px solid var(--hdt-line); background: var(--hdt-surface); color: var(--hdt-ink);
+  border-radius: 999px; padding: 2px 10px; cursor: pointer; }
+.hdt-ficha:hover { border-color: var(--hdt-accent); }
+.hdt-ficha.hdt-on { background: var(--hdt-accent-soft); border-color: var(--hdt-accent); color: var(--hdt-accent); }
+.hdt-ficha-cifra { font-weight: 700; font-variant-numeric: tabular-nums; }
+
 /* Body: scroll area and footer are siblings in a column, so the footer never
    covers the last row. */
 .hdt-cuerpo { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--hdt-line);
@@ -89,9 +98,11 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 
 /* Cell badges */
 /* One size for every badge (type, company, origin, state), the same in both
-   densities: fixed height, fixed font size, box-sized border. */
-.hdt-ins { display: inline-flex; align-items: center; box-sizing: border-box; height: 16px; vertical-align: middle;
-  font-size: 11px; line-height: 1; font-weight: 700; white-space: nowrap; border-radius: 4px; padding: 0 7px;
+   densities: fixed height and font size relative to the table's own text
+   (em, so it scales with the page's base size like the rest of the table),
+   box-sized border. */
+.hdt-ins { display: inline-flex; align-items: center; box-sizing: border-box; height: 1.5em; vertical-align: middle;
+  font-size: .82em; line-height: 1; font-weight: 700; white-space: nowrap; border-radius: 4px; padding: 0 .6em;
   border: 1px solid transparent; color: var(--hdt-t-neutro); background: var(--hdt-f-neutro); }
 .hdt-ins.hdt-tono-exito   { color: var(--hdt-t-exito);   background: var(--hdt-f-exito); }
 .hdt-ins.hdt-tono-aviso   { color: var(--hdt-t-aviso);   background: var(--hdt-f-aviso); }

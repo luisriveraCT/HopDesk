@@ -34,11 +34,65 @@ hd_table_ui <- function(id, alto = NULL) {
   )
 }
 
-hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = "id") {
+# An optional argument whose piece the table doesn't have is ignored, with
+# one message per table and argument (like pieces not built yet).
+.hd_sin_pieza <- function(tabla, arg, pieza, valor, piezas) {
+  if (is.null(valor) || pieza %in% piezas) return(valor)
+  clave <- paste(tabla, arg, sep = "|")
+  if (is.null(.hd_avisadas[[clave]])) {
+    .hd_avisadas[[clave]] <- TRUE
+    message(sprintf("hd_table '%s': `%s` ignored, the table doesn't have the '%s' piece.", tabla, arg, pieza))
+  }
+  NULL
+}
+
+# ── fichas ──────────────────────────────────────────────────────────────────
+# fichas = list(campo = "etapa", orden = c(...), mostrar = "conteo" | "monto")
+# One "Todas" chip plus one per value: first the values in `orden`, then any
+# other value in the data, in order of appearance.
+hd_fichas_validar <- function(fichas) {
+  if (is.null(fichas)) return(NULL)
+  if (!is.list(fichas) || !is.character(fichas$campo) || length(fichas$campo) != 1L || !nzchar(fichas$campo))
+    stop("hd_table: `fichas` must be list(campo = <column name>, orden = <values>, mostrar = \"conteo\" | \"monto\").",
+         call. = FALSE)
+  desconocidos <- setdiff(names(fichas), c("campo", "orden", "mostrar"))
+  if (length(desconocidos))
+    stop(sprintf("hd_table: unknown `fichas` field(s): %s.", paste(desconocidos, collapse = ", ")), call. = FALSE)
+  fichas$mostrar <- fichas$mostrar %||% "conteo"
+  if (!fichas$mostrar %in% c("conteo", "monto"))
+    stop(sprintf("hd_table: fichas$mostrar must be \"conteo\" or \"monto\", not \"%s\".", fichas$mostrar), call. = FALSE)
+  fichas$orden <- as.character(fichas$orden %||% character(0))
+  fichas
+}
+
+hd_fichas_payload <- function(fichas, datos, columnas) {
+  if (is.null(fichas)) return(NULL)
+  if (!fichas$campo %in% names(datos))
+    stop(sprintf("hd_table: fichas$campo '%s' is not in the data.", fichas$campo), call. = FALSE)
+  if (identical(fichas$mostrar, "monto") &&
+      !any(vapply(columnas, function(c) identical(c$tipo, "dinero") && isTRUE(c$sumar), logical(1))))
+    stop("hd_table: fichas$mostrar = \"monto\" needs a col_dinero() with sumar = TRUE.", call. = FALSE)
+  valores <- as.character(datos[[fichas$campo]])
+  valores[is.na(valores)] <- ""
+  presentes <- unique(valores[nzchar(valores)])
+  orden <- c(fichas$orden, setdiff(presentes, fichas$orden))
+  # Labels from the col_insignia() of the same field, if there is one.
+  ins <- Filter(function(c) identical(c$tipo, "insignia") && identical(c$campo, fichas$campo), columnas)
+  mapa <- if (length(ins)) ins[[1]]$mapa else list()
+  list(
+    valores  = I(valores),
+    opciones = lapply(orden, function(v) list(valor = v, texto = .hd_texto(mapa[[v]]$texto %||% v))),
+    mostrar  = fichas$mostrar
+  )
+}
+
+hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = "id",
+                            fichas = NULL) {
   piezas_tabla <- hd_piezas_de(tabla, piezas)
   piezas_motor <- hd_piezas_motor(tabla, piezas_tabla)
   meta         <- hd_columnas_meta(columnas)
   contador     <- hd_contador_clave(tabla)
+  fichas       <- .hd_sin_pieza(tabla, "fichas", "fichas", hd_fichas_validar(fichas), piezas_tabla)
 
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -52,7 +106,8 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         filas    = hd_filas(df, columnas, id_col),
         columnas = meta,
         piezas   = I(piezas_motor),
-        textos   = list(contador = contador)
+        textos   = list(contador = contador),
+        fichas   = hd_fichas_payload(fichas, df, columnas)
       ))
     })
 
