@@ -423,3 +423,39 @@ test_that(".fijar travels per row (NA is FALSE; without the column, all FALSE)",
   expect_identical(unclass(hd_filas(d, list(col_texto("Parte")))$fijar), c(TRUE, FALSE, FALSE))
   expect_identical(unclass(hd_filas(d[, 1:2], list(col_texto("Parte")))$fijar), c(FALSE, FALSE, FALSE))
 })
+
+# ── evidencia_excel (class E) ───────────────────────────────────────────────
+test_that("copiar_tabla is a valid piece the engine draws, given through the registry's agregar", {
+  expect_true("copiar_tabla" %in% HD_PIEZAS_VALIDAS)
+  expect_true("copiar_tabla" %in% HD_PIEZAS_MOTOR)
+  reg <- hd_registro
+  on.exit(assign("hd_registro", reg, envir = globalenv()))
+  hd_registro$con_copia <<- list(nombre = "x", clase = "E", archivo = "x", agregar = "copiar_tabla",
+                                 quitar = character(), notas = character())
+  expect_true("copiar_tabla" %in% hd_piezas_de("con_copia"))
+  expect_false("copiar_tabla" %in% hd_piezas_de("evidencia_excel"))   # until the registry adds it
+})
+
+test_that("class E counts its size: rows and columns, each with its plural", {
+  expect_identical(hd_contador_clave("evidencia_excel"), "tablas.contador.tamano")
+  cols <- tr_n("tablas.contador.columnas", 8)
+  expect_identical(tr_n("tablas.contador.tamano", 200, columnas = cols), "200 filas × 8 columnas")
+  expect_identical(tr_n("tablas.contador.tamano", 1, columnas = tr_n("tablas.contador.columnas", 1)),
+                   "1 fila × 1 columna")
+})
+
+test_that("aviso and encabezado must be reactives", {
+  cols <- list(col_texto("Parte"))
+  expect_error(hd_table_server("t", "evidencia_excel", shiny::reactive(NULL), cols, aviso = "texto"),
+               "`aviso` must be a reactive", fixed = TRUE)
+  expect_error(hd_table_server("t", "evidencia_excel", shiny::reactive(NULL), cols, encabezado = TRUE),
+               "`encabezado` must be a reactive", fixed = TRUE)
+})
+
+test_that("pasted text is never reinterpreted: 01/02, 007 and =SUMA(A1) stay as typed", {
+  d <- data.frame(id = c("1", "2", "3"), A = c("01/02", "007", "=SUMA(A1)"), stringsAsFactors = FALSE)
+  v <- hd_filas(d, list(col_texto("A")))$celdas[[1]]
+  expect_identical(unclass(v$mostrar), c("01/02", "007", "=SUMA(A1)"))
+  expect_identical(unclass(v$copiar), c("01/02", "007", "=SUMA(A1)"))
+  expect_identical(hd_neutralizar(v$copiar), c("01/02", "007", "'=SUMA(A1)"))
+})

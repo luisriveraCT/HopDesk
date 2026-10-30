@@ -203,6 +203,28 @@
       st.lnkExcel.style.display = 'none';
       st.barra.appendChild(st.lnkExcel);
     }
+    // Copiar tabla: every visible row, header first, raw and neutralized,
+    // ready to paste back into Excel (class E has no row selection).
+    if (p.copiar_tabla) {
+      st.btnCopiarTabla = nodo('button', 'hdt-btn hdt-copiar-tabla', t('tablas.copiar_tabla'));
+      st.btnCopiarTabla.type = 'button';
+      st.btnCopiarTabla.addEventListener('click', function () { copiarTabla(st); });
+      st.barra.appendChild(st.btnCopiarTabla);
+    }
+    // "La primera fila es encabezado": the server decides (it sends the
+    // columns); the switch only shows its answer and asks for a change.
+    if (typeof msg.encabezado === 'boolean') {
+      var interruptor = nodo('label', 'hdt-interruptor');
+      st.cbEncabezado = nodo('input');
+      st.cbEncabezado.type = 'checkbox';
+      st.cbEncabezado.setAttribute('role', 'switch');
+      st.cbEncabezado.addEventListener('change', function () {
+        enviarAccion(st, 'encabezado', [st.cbEncabezado.checked ? 'si' : 'no']);
+      });
+      interruptor.appendChild(st.cbEncabezado);
+      interruptor.appendChild(nodo('span', '', t('tablas.encabezado')));
+      st.barra.appendChild(interruptor);
+    }
     if (p.contador) { st.contador = nodo('span', 'hdt-contador'); st.barra.appendChild(st.contador); }
     st.barra.hidden = !st.barra.childNodes.length;
 
@@ -267,6 +289,11 @@
     st.confEl.hidden = true;
     st.confEl.setAttribute('role', 'alertdialog');
     root.appendChild(st.confEl);
+    // The server's notice line (`aviso`), above the table.
+    st.notaEl = nodo('div', 'hdt-nota');
+    st.notaEl.setAttribute('role', 'status');
+    root.appendChild(st.notaEl);
+    pintarNota(st, NOTAS[root.id]);
     root.appendChild(st.cuerpo);
 
     eventos(st);
@@ -682,6 +709,7 @@
     st.moneda = arr(f.moneda);
     st.tipo = arr(f.tipo);
     st.prov = arr(f.provision);
+    if (st.cbEncabezado && typeof msg.encabezado === 'boolean') st.cbEncabezado.checked = msg.encabezado;
     st.fijar = arr(f.fijar);
     st.hayFijas = st.fijar.some(Boolean);
     st.meses = st.mes && msg.periodo ? arr(msg.periodo.meses) : null;
@@ -884,7 +912,14 @@
     }
     pintarSel(st);
     flechas(st);
-    if (st.contador) st.contador.textContent = tn(st.textos.contador || 'tablas.contador.registros', vis.length, { n: FMT_N.format(vis.length) });
+    if (st.contador) {
+      var clave = st.textos.contador || 'tablas.contador.registros', extra = {};
+      // Class E: "200 filas × 8 columnas", each number with its own plural.
+      if (clave === 'tablas.contador.tamano')
+        extra.columnas = tn('tablas.contador.columnas', st.cols.length, { n: FMT_N.format(st.cols.length) });
+      extra.n = FMT_N.format(vis.length);
+      st.contador.textContent = tn(clave, vis.length, extra);
+    }
     programarAlto(st, desdeDatos);
   }
 
@@ -1313,16 +1348,9 @@
       tipLuego();
     });
   }
-  // Clipboard API, then a hidden textarea + execCommand; if both fail, select
-  // the shown text so the user can copy it by hand.
-  function copiar() {
-    var b = TIP, valor = b.copia;
-    function hecho() {
-      b.boton.classList.add('hdt-hecho');
-      b.boton.textContent = '✓';
-      b.aviso.textContent = t('comun.copiado');
-      setTimeout(function () { b.boton.classList.remove('hdt-hecho'); b.boton.innerHTML = b.icono; }, 900);
-    }
+  // Clipboard API, then a hidden textarea + execCommand; `mal` runs if both
+  // fail.
+  function alPortapapeles(valor, bien, mal) {
     function aMano() {
       var ta = nodo('textarea');
       ta.value = valor;
@@ -1333,18 +1361,30 @@
       var ok = false;
       try { ok = document.execCommand('copy'); } catch (e) {}
       document.body.removeChild(ta);
-      if (ok) { hecho(); return; }
+      if (ok) bien(); else mal();
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(valor).then(bien, aMano);
+      else aMano();
+    } catch (e) { aMano(); }
+  }
+
+  // If copying fails, select the shown text so the user can copy it by hand.
+  function copiar() {
+    var b = TIP;
+    alPortapapeles(b.copia, function () {
+      b.boton.classList.add('hdt-hecho');
+      b.boton.textContent = '✓';
+      b.aviso.textContent = t('comun.copiado');
+      setTimeout(function () { b.boton.classList.remove('hdt-hecho'); b.boton.innerHTML = b.icono; }, 900);
+    }, function () {
       var r = document.createRange();
       r.selectNodeContents(b.texto);
       var s = window.getSelection();
       s.removeAllRanges();
       s.addRange(r);
       b.aviso.textContent = t('comun.copiar');
-    }
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(valor).then(hecho, aMano);
-      else aMano();
-    } catch (e) { aMano(); }
+    });
   }
 
   // ── Export (excel) ───────────────────────────────────────────────────────
@@ -1368,8 +1408,8 @@
     s = String(s == null ? '' : s).replace(/[\t\r\n]+/g, ' ');
     return /^[=+\-@]/.test(s) ? "'" + s : s;
   }
-  function filasTsv(st) {
-    var ids = idsSel(st);
+  function filasTsv(st, ids) {
+    ids = ids || idsSel(st);
     var lineas = [st.cols.map(function (c) { return neutralizar(c.titulo); }).join('\t')];
     ids.forEach(function (id) {
       var i = st.idx[id];
@@ -1399,6 +1439,26 @@
     avisar(st, tn('tablas.copiadas_n', r.n, { n: FMT_N.format(r.n) }));
   });
 
+  // ── Copy the whole table (copiar_tabla) ──────────────────────────────────
+  function copiarTabla(st) {
+    var r = filasTsv(st, st.vis.map(function (i) { return st.ids[i]; }));
+    alPortapapeles(r.texto,
+      function () { avisar(st, tn('tablas.copiadas_n', r.n, { n: FMT_N.format(r.n) })); },
+      function () { avisar(st, t('tablas.copiar_fallo')); });
+  }
+
+  // ── Notice line (aviso) ──────────────────────────────────────────────────
+  var NOTAS = {};   // root element id -> last notice text, for a re-created container
+  function pintarNota(st, texto) {
+    st.notaEl.textContent = texto || '';
+    st.notaEl.hidden = !texto;
+  }
+  function recibirNota(msg) {
+    NOTAS[msg.id] = msg.texto;
+    var st = TABLAS[msg.id];
+    if (st && st.root === document.getElementById(msg.id)) pintarNota(st, msg.texto);
+  }
+
   // ── Test / diagnostics hook ──────────────────────────────────────────────
   window.HDT = {
     recibidos: function () { return recibidos; },
@@ -1423,6 +1483,7 @@
     if (window.Shiny && Shiny.addCustomMessageHandler) {
       Shiny.addCustomMessageHandler('hdt-datos', recibir);
       Shiny.addCustomMessageHandler('hdt-excel', excelListo);
+      Shiny.addCustomMessageHandler('hdt-nota', recibirNota);
     }
     else setTimeout(registrar, 20);
   })();

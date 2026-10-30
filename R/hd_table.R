@@ -13,7 +13,8 @@
 # Server -> browser: one "hdt-datos" custom message each time `datos`
 # changes. Browser -> server: ns("sel") and ns("accion"), priority "event".
 #
-# accion() values: "detalle" (double click on a row, locked rows too), and
+# accion() values: "detalle" (double click on a row, locked rows too),
+# "encabezado" (the header switch, with `encabezado`; ids "si" or "no"), and
 # the names given in acciones_fila (one row's id) and acciones_barra. Actions
 # that confirm ("eliminar" on a row, bar actions with confirmar = TRUE) only
 # reach accion() once the user presses Confirmar in the table's own bar.
@@ -30,8 +31,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=12"),
-    htmltools::tags$script(src = "hdtable.js?v=12")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=13"),
+    htmltools::tags$script(src = "hdtable.js?v=13")
   ))
 }
 
@@ -331,14 +332,22 @@ hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "dat
 
 hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = "id",
                             fichas = NULL, acciones_fila = NULL, acciones_barra = NULL,
-                            filtros = NULL, periodo = NULL) {
+                            filtros = NULL, periodo = NULL, aviso = NULL, encabezado = NULL) {
   piezas_tabla <- hd_piezas_de(tabla, piezas)
   piezas_motor <- hd_piezas_motor(tabla, piezas_tabla)
-  meta         <- hd_columnas_meta(columnas)
+  # columnas: a list of col_*(), or a reactive returning one -- a table pasted
+  # from Excel has other columns with each paste and with the header switch.
+  columnas_r   <- if (is.function(columnas)) columnas else local({ cols <- columnas; function() cols })
+  cols_fijas   <- if (is.function(columnas)) list() else columnas
+  if (!is.function(columnas)) hd_columnas_meta(columnas)   # fails early on a bad spec
   contador     <- hd_contador_clave(tabla)
   fichas       <- .hd_sin_pieza(tabla, "fichas", "fichas", hd_fichas_validar(fichas), piezas_tabla)
   filtros      <- .hd_sin_pieza(tabla, "filtros", "filtros", hd_filtros_validar(filtros), piezas_tabla)
-  periodo      <- .hd_sin_pieza(tabla, "periodo", "nav_periodo", hd_periodo_validar(periodo, columnas), piezas_tabla)
+  periodo      <- .hd_sin_pieza(tabla, "periodo", "nav_periodo", hd_periodo_validar(periodo, cols_fijas), piezas_tabla)
+  if (!is.null(aviso) && !is.function(aviso))
+    stop("hd_table: `aviso` must be a reactive returning a text or NULL.", call. = FALSE)
+  if (!is.null(encabezado) && !is.function(encabezado))
+    stop("hd_table: `encabezado` must be a reactive returning TRUE or FALSE.", call. = FALSE)
   acc_fila     <- .hd_sin_pieza(tabla, "acciones_fila", "acc_fila",
                                 hd_acciones_fila_validar(acciones_fila), piezas_tabla)
   acc_fila_meta <- if (length(acc_fila)) hd_acciones_fila_meta(acc_fila) else NULL
@@ -354,20 +363,35 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
     shiny::observe({
       df <- datos()
       shiny::req(!is.null(df))
+      cols <- columnas_r()
+      if (is.function(columnas) && !is.null(periodo)) hd_periodo_validar(periodo, cols)
       session$sendCustomMessage("hdt-datos", list(
         id       = ns("hdt"),
         tabla    = tabla,
-        filas    = hd_filas(df, columnas, id_col),
-        columnas = meta,
+        filas    = hd_filas(df, cols, id_col),
+        columnas = hd_columnas_meta(cols),
         piezas   = I(piezas_motor),
         textos   = list(contador = contador),
-        fichas   = hd_fichas_payload(fichas, df, columnas),
-        filtros  = hd_filtros_payload(filtros, df, columnas),
+        fichas   = hd_fichas_payload(fichas, df, cols),
+        filtros  = hd_filtros_payload(filtros, df, cols),
         periodo  = hd_periodo_payload(periodo, df),
+        # "La primera fila es encabezado": the switch shows what the server
+        # decided; toggling it sends accion "encabezado" with ids "si"/"no".
+        encabezado = if (!is.null(encabezado)) isTRUE(encabezado()),
         acciones_fila  = acc_fila_meta,
         acciones_barra = acc_barra_meta
       ))
     })
+
+    # A line above the table in the warning tone ("Se pegaron 340 filas; se
+    # guardaron 200"), written by the server with tr(); NULL hides it.
+    if (!is.null(aviso)) {
+      shiny::observe({
+        texto <- aviso()
+        texto <- if (is.null(texto) || !length(texto) || is.na(texto[1]) || !nzchar(texto[1])) "" else as.character(texto[1])
+        session$sendCustomMessage("hdt-nota", list(id = ns("hdt"), texto = texto))
+      })
+    }
 
     # Export: the browser sends the visible ids in visible order with a
     # nonce; once they're stored the server answers with the same nonce and
@@ -383,7 +407,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
       output$excel <- shiny::downloadHandler(
         filename = function() paste0(tabla, "_", format(Sys.Date(), "%Y-%m-%d"), ".xlsx"),
         content  = function(file) {
-          hd_excel_escribir(shiny::isolate(datos()), columnas, shiny::isolate(vista()) %||% character(0),
+          hd_excel_escribir(shiny::isolate(datos()), shiny::isolate(columnas_r()), shiny::isolate(vista()) %||% character(0),
                             id_col, file, hoja = tabla)
         }
       )

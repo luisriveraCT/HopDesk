@@ -68,6 +68,15 @@
 .hdt-mes.hdt-con-filas::after { content: ""; position: absolute; top: 3px; right: 3px; width: 5px; height: 5px;
   border-radius: 50%; background: var(--hdt-accent); }
 
+/* Header switch ("La primera fila es encabezado") and the server's notice
+   line (`aviso`), in the warning tone, above the table. */
+.hdt-interruptor { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: .8rem;
+  font-weight: normal; cursor: pointer; }
+.hdt-interruptor input { margin: 0; cursor: pointer; }
+.hdt-nota { margin: 0 0 6px; padding: 4px 10px; border: 1px solid var(--hdt-t-aviso); border-radius: 6px;
+  color: var(--hdt-t-aviso); background: var(--hdt-f-aviso); font-size: .8rem; font-weight: 600; }
+.hdt-nota[hidden] { display: none; }
+
 /* Chips (fichas): count or amount per value; touching one filters. */
 .hdt-fichas { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 6px; }
 .hdt-ficha { font: inherit; font-size: .78rem; display: inline-flex; align-items: baseline; gap: 6px;
