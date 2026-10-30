@@ -36,8 +36,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=13"),
-    htmltools::tags$script(src = "hdtable.js?v=14")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=15"),
+    htmltools::tags$script(src = "hdtable.js?v=15")
   ))
 }
 
@@ -180,7 +180,7 @@ hd_periodo_validar <- function(periodo, columnas) {
   if (is.null(periodo)) return(NULL)
   if (!is.list(periodo) || !is.character(periodo$campo) || length(periodo$campo) != 1L || !nzchar(periodo$campo))
     stop("hd_table: `periodo` must be list(campo = <date column>, inicial = <date or \"AAAA-MM\">).", call. = FALSE)
-  otros <- setdiff(names(periodo), c("campo", "inicial"))
+  otros <- setdiff(names(periodo), c("campo", "inicial", "fijar_titulo"))
   if (length(otros))
     stop(sprintf("hd_table: unknown `periodo` field(s): %s.", paste(otros, collapse = ", ")), call. = FALSE)
   col <- Find(function(c) identical(c$campo, periodo$campo), columnas)
@@ -190,7 +190,10 @@ hd_periodo_validar <- function(periodo, columnas) {
   inicial <- .hd_mes(periodo$inicial %||% Sys.Date())
   if (is.na(inicial))
     stop("hd_table: periodo$inicial must be a date or \"AAAA-MM\".", call. = FALSE)
-  list(campo = periodo$campo, inicial = inicial)
+  ft <- periodo$fijar_titulo
+  if (!is.null(ft) && (!is.character(ft) || length(ft) != 1L || !nzchar(ft)))
+    stop("hd_table: periodo$fijar_titulo must be a dictionary key or text.", call. = FALSE)
+  list(campo = periodo$campo, inicial = inicial, fijar_titulo = ft)
 }
 
 # Each row's month ("AAAA-MM", "" without a date). The field must hold dates:
@@ -206,7 +209,68 @@ hd_periodo_payload <- function(periodo, datos) {
     stop(sprintf("hd_table: periodo$campo '%s' is not a date column (e.g. \"%s\").", periodo$campo,
                  texto[is.na(d) & !is.na(texto) & nzchar(texto)][1]), call. = FALSE)
   meses <- ifelse(is.na(d), "", format(d, "%Y-%m"))
-  list(meses = I(meses), inicial = periodo$inicial)
+  # fijar_titulo: the small label under the pinned block. A key with
+  # .uno/.otros goes as is (the browser picks the plural with {n}); any
+  # other key is translated here.
+  ft <- periodo$fijar_titulo
+  if (!is.null(ft) && is.null(i18n_dict("es")[[paste0(ft, ".uno")]])) ft <- .hd_texto(ft)
+  list(meses = I(meses), inicial = periodo$inicial, fijar_titulo = ft)
+}
+
+# ── secciones (agrupar) ─────────────────────────────────────────────────────
+# secciones = c("Moneda", ".tipo"), levels in order; a level can also be
+# list(campo = "Moneda", orden = "MXN") to put some values first. Each
+# section gets a band that sticks under the header while scrolling and, with
+# the `subtotales` piece, says how many rows it has and what they add up to
+# -- always over what the search, chips and filters leave.
+# Values within a level: those in `orden`, then the field's col_insignia()
+# map order, then alphabetically; ".tipo" is Cobros then Pagos; an empty
+# value is "(Sin valor)", last.
+hd_secciones_validar <- function(secciones) {
+  if (is.null(secciones)) return(NULL)
+  if (!(is.character(secciones) || is.list(secciones)) || !length(secciones))
+    stop("hd_table: `secciones` must be field names in order, e.g. c(\"Moneda\", \".tipo\").", call. = FALSE)
+  out <- lapply(seq_along(secciones), function(k) {
+    s <- secciones[[k]]
+    if (is.character(s) && length(s) == 1L && nzchar(s)) return(list(campo = s, orden = character(0)))
+    if (!is.list(s) || !is.character(s$campo) || length(s$campo) != 1L || !nzchar(s$campo))
+      stop(sprintf("hd_table: secciones[[%d]] must be a field name or list(campo, orden).", k), call. = FALSE)
+    otros <- setdiff(names(s), c("campo", "orden"))
+    if (length(otros))
+      stop(sprintf("hd_table: seccion '%s': unknown field(s) %s.", s$campo, paste(otros, collapse = ", ")),
+           call. = FALSE)
+    list(campo = s$campo, orden = as.character(s$orden %||% character(0)))
+  })
+  campos <- vapply(out, `[[`, character(1), "campo")
+  if (anyDuplicated(campos))
+    stop(sprintf("hd_table: secciones repeats '%s'.", campos[duplicated(campos)][1]), call. = FALSE)
+  out
+}
+
+hd_secciones_payload <- function(secciones, datos, columnas) {
+  if (is.null(secciones)) return(NULL)
+  lapply(secciones, function(s) {
+    if (!s$campo %in% names(datos))
+      stop(sprintf("hd_table: seccion '%s' is not a column in the data.", s$campo), call. = FALSE)
+    valores <- as.character(datos[[s$campo]])
+    valores[is.na(valores)] <- ""
+    tipo <- identical(s$campo, ".tipo")
+    if (tipo) valores[!valores %in% c("cobro", "pago")] <- ""
+    col  <- Find(function(c) identical(c$campo, s$campo), columnas)
+    mapa <- if (!is.null(col) && identical(col$tipo, "insignia")) col$mapa else list()
+    presentes <- unique(valores[nzchar(valores)])
+    primero <- c(s$orden, if (tipo) c("cobro", "pago"), names(mapa))
+    resto <- setdiff(presentes, primero)
+    orden <- c(intersect(unique(primero), presentes), resto[order(.hd_plano(resto), resto)])
+    texto <- function(v) {
+      if (tipo) return(tr(if (v == "cobro") "tablas.cobros" else "tablas.pagos"))
+      .hd_texto(mapa[[v]]$texto %||% v)
+    }
+    opciones <- lapply(orden, function(v) list(valor = v, texto = texto(v)))
+    if (!all(nzchar(valores)))
+      opciones <- c(opciones, list(list(valor = "", texto = tr("tablas.filtros.vacio"))))
+    list(campo = s$campo, valores = I(valores), opciones = opciones)
+  })
 }
 
 # ── Row actions (acc_fila) ──────────────────────────────────────────────────
@@ -337,7 +401,8 @@ hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "dat
 
 hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = "id",
                             fichas = NULL, acciones_fila = NULL, acciones_barra = NULL,
-                            filtros = NULL, periodo = NULL, aviso = NULL, encabezado = NULL) {
+                            filtros = NULL, periodo = NULL, aviso = NULL, encabezado = NULL,
+                            secciones = NULL, vacio = NULL) {
   piezas_tabla <- hd_piezas_de(tabla, piezas)
   piezas_motor <- hd_piezas_motor(tabla, piezas_tabla)
   # columnas: a list of col_*(), or a reactive returning one -- a table pasted
@@ -353,6 +418,16 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
     stop("hd_table: `aviso` must be a reactive returning a text or NULL.", call. = FALSE)
   if (!is.null(encabezado) && !is.function(encabezado))
     stop("hd_table: `encabezado` must be a reactive returning TRUE or FALSE.", call. = FALSE)
+  secciones    <- .hd_sin_pieza(tabla, "secciones", "agrupar", hd_secciones_validar(secciones), piezas_tabla)
+  # vacio: the table's own message when it has no rows at all (a key or
+  # text), or list(texto, tono) to show it with the tone's icon ("exito":
+  # a green check, "Sin vencimientos pendientes, todo al día").
+  if (is.character(vacio)) vacio <- list(texto = vacio)
+  if (!is.null(vacio) && (!is.list(vacio) || !is.character(vacio$texto) || length(vacio$texto) != 1L ||
+                          !nzchar(vacio$texto) || length(setdiff(names(vacio), c("texto", "tono"))) ||
+                          !(is.null(vacio$tono) || vacio$tono %in% c("exito", "aviso", "info", "neutro"))))
+    stop("hd_table: `vacio` must be a key or text, or list(texto, tono = \"exito\"|\"aviso\"|\"info\"|\"neutro\").",
+         call. = FALSE)
   acc_fila     <- .hd_sin_pieza(tabla, "acciones_fila", "acc_fila",
                                 hd_acciones_fila_validar(acciones_fila), piezas_tabla)
   acc_fila_meta <- if (length(acc_fila)) hd_acciones_fila_meta(acc_fila) else NULL
@@ -376,13 +451,15 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         filas    = hd_filas(df, cols, id_col),
         columnas = hd_columnas_meta(cols),
         piezas   = I(piezas_motor),
-        textos   = list(contador = contador),
+        textos   = list(contador = contador, vacio = if (!is.null(vacio)) .hd_texto(vacio$texto),
+                        vacio_tono = vacio$tono),
         fichas   = hd_fichas_payload(fichas, df, cols),
         filtros  = hd_filtros_payload(filtros, df, cols),
         periodo  = hd_periodo_payload(periodo, df),
         # "La primera fila es encabezado": the switch shows what the server
         # decided; toggling it sends accion "encabezado" with ids "si"/"no".
         encabezado = if (!is.null(encabezado)) isTRUE(encabezado()),
+        secciones  = hd_secciones_payload(secciones, df, cols),
         acciones_fila  = acc_fila_meta,
         acciones_barra = acc_barra_meta
       ))

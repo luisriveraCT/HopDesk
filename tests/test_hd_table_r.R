@@ -451,6 +451,44 @@ test_that("aviso and encabezado must be reactives", {
                "`encabezado` must be a reactive", fixed = TRUE)
 })
 
+# ── T03c ────────────────────────────────────────────────────────────────────
+test_that("secciones: field names or list(campo, orden); validated; options in order", {
+  expect_error(hd_secciones_validar(character(0)), "`secciones` must be field names")
+  expect_error(hd_secciones_validar(list(list(orden = "a"))), "secciones[[1]] must be a field name", fixed = TRUE)
+  expect_error(hd_secciones_validar(list(list(campo = "M", ord = "a"))), "seccion 'M': unknown field(s) ord", fixed = TRUE)
+  expect_error(hd_secciones_validar(c("M", "M")), "repeats 'M'")
+  s <- hd_secciones_validar(list(list(campo = "Moneda", orden = "MXN"), ".tipo"))
+  d <- data.frame(id = as.character(1:6), Moneda = c("USD", "eur", "MXN", NA, "USD", "MXN"),
+                  .tipo = c("pago", "cobro", "pago", "cobro", "x", "cobro"), stringsAsFactors = FALSE)
+  expect_error(hd_secciones_payload(hd_secciones_validar("Nope"), d, list()), "seccion 'Nope' is not a column")
+  pl <- hd_secciones_payload(s, d, list())
+  # orden first, then alphabetical, "(Sin valor)" last.
+  expect_identical(vapply(pl[[1]]$opciones, `[[`, "", "valor"), c("MXN", "eur", "USD", ""))
+  expect_identical(pl[[1]]$opciones[[4]]$texto, tr("tablas.filtros.vacio"))
+  # .tipo: Cobros then Pagos; anything else has no type.
+  expect_identical(vapply(pl[[2]]$opciones, `[[`, "", "valor"), c("cobro", "pago", ""))
+  expect_identical(vapply(pl[[2]]$opciones, `[[`, "", "texto")[1:2], c(tr("tablas.cobros"), tr("tablas.pagos")))
+  expect_identical(unclass(pl[[2]]$valores), c("pago", "cobro", "pago", "cobro", "", "cobro"))
+  # A col_insignia map gives the order and the labels.
+  cols <- list(col_insignia("Moneda", mapa = list(USD = list(texto = "Dólares"), MXN = list(texto = "Pesos"))))
+  pl2 <- hd_secciones_payload(hd_secciones_validar("Moneda"), d, cols)
+  expect_identical(vapply(pl2[[1]]$opciones, `[[`, "", "texto")[1:3], c("Dólares", "Pesos", "eur"))
+})
+
+test_that("vacio: key or text, or list(texto, tono); fijar_titulo: key or text", {
+  cols <- list(col_texto("Parte"))
+  expect_error(hd_table_server("t", "vencidos", shiny::reactive(NULL), cols, vacio = 3), "`vacio` must be")
+  expect_error(hd_table_server("t", "vencidos", shiny::reactive(NULL), cols, vacio = list(texto = "x", tono = "rojo")),
+               "`vacio` must be")
+  expect_error(hd_periodo_validar(list(campo = "f", fijar_titulo = 1), list()), "fijar_titulo must be")
+  p <- hd_periodo_validar(list(campo = "f", inicial = "2026-10", fijar_titulo = "Siempre arriba: {n}"), list())
+  d <- data.frame(id = 1, f = as.Date("2026-10-01"))
+  expect_identical(hd_periodo_payload(p, d)$fijar_titulo, "Siempre arriba: {n}")
+  # A plural key goes as is: the browser picks .uno / .otros with {n}.
+  p2 <- hd_periodo_validar(list(campo = "f", inicial = "2026-10", fijar_titulo = "tablas.contador.registros"), list())
+  expect_identical(hd_periodo_payload(p2, d)$fijar_titulo, "tablas.contador.registros")
+})
+
 test_that("pasted text is never reinterpreted: 01/02, 007 and =SUMA(A1) stay as typed", {
   d <- data.frame(id = c("1", "2", "3"), A = c("01/02", "007", "=SUMA(A1)"), stringsAsFactors = FALSE)
   v <- hd_filas(d, list(col_texto("A")))$celdas[[1]]

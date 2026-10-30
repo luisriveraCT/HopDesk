@@ -118,6 +118,37 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-tabla tr.hdt-esp td { padding: 0; border: 0; background: transparent !important; }
 .hdt-tabla tr.hdt-esp:hover td { background: transparent; }
 
+/* Section bands (agrupar): stuck under the header while scrolling, the
+   second level under the first (offsets measured by hdtable.js); in window
+   mode they are rows of the same fixed height. */
+.hdt-tabla tr.hdt-banda td { padding: 2px 8px; background: var(--hdt-surface-2); border-bottom: 1px solid var(--hdt-line); }
+.hdt-fijo .hdt-tabla tr.hdt-banda td { position: sticky; top: var(--hdt-cab, 0px); z-index: 1; }
+.hdt-fijo .hdt-tabla tr.hdt-banda-2 td { top: calc(var(--hdt-cab, 0px) + var(--hdt-banda1, 0px)); }
+.hdt-tabla tr.hdt-banda-2 td { background: var(--hdt-surface); box-shadow: inset 3px 0 0 var(--hdt-line); }
+.hdt-tabla tr.hdt-banda-2.hdt-cobro td { box-shadow: inset 3px 0 0 var(--hdt-cobro); }
+.hdt-tabla tr.hdt-banda-2.hdt-pago td { box-shadow: inset 3px 0 0 var(--hdt-pago); }
+.hdt-tabla tbody tr.hdt-banda:hover td { background: var(--hdt-surface-2); }
+.hdt-tabla tbody tr.hdt-banda-2:hover td { background: var(--hdt-surface); }
+.hdt-banda-caja { display: flex; align-items: baseline; gap: 10px; font-size: .8rem; white-space: nowrap; }
+.hdt-banda-titulo { font-weight: 700; }
+.hdt-banda-1 .hdt-banda-titulo { font-weight: 800; }
+.hdt-banda-2.hdt-cobro .hdt-banda-titulo { color: var(--hdt-cobro); }
+.hdt-banda-2.hdt-pago .hdt-banda-titulo { color: var(--hdt-pago); }
+.hdt-banda-n { color: var(--hdt-muted); }
+.hdt-banda-suma { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* The line under the pinned block (.fijar), with an optional grey label. */
+.hdt-tabla tr.hdt-sep-fijas td { padding: 0 8px; height: 4px; border-bottom: 2px solid var(--hdt-line);
+  background: transparent; color: var(--hdt-muted); font-size: .74rem; line-height: 1.2; }
+.hdt-tabla tr.hdt-sep-fijas.hdt-con-titulo td { padding: 2px 8px; }
+.hdt-tabla tbody tr.hdt-sep-fijas:hover td { background: transparent; }
+
+/* The table's own empty message (`vacio`), with its tone's icon. */
+.hdt-vacio-exito::before, .hdt-vacio-aviso::before, .hdt-vacio-info::before { font-weight: 800; margin-right: 6px; }
+.hdt-vacio-exito::before { content: "\2713"; color: var(--hdt-t-exito); }
+.hdt-vacio-aviso::before { content: "!"; color: var(--hdt-t-aviso); }
+.hdt-vacio-info::before  { content: "i"; color: var(--hdt-t-info); }
+
 /* Rows and selection */
 .hdt-tabla tbody tr:hover td { background: var(--hdt-hover); }
 .hdt-selec .hdt-tabla tbody tr { cursor: pointer; }

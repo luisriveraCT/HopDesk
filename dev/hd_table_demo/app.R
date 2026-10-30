@@ -7,6 +7,9 @@
 #   alto     height of the class-A table (default "auto")
 #   periodo  0: no month navigation, no pinned rows and no empty dates in the
 #            class-A table (the T02/T03a tests count every row)
+#   rotulo   0: the line under the pinned rows goes without its label
+#   secciones 0: no sections in the class-A table (the earlier tests expect
+#            one flat list)
 #
 # Bootstrap 5 with the app's own theme (flatly), so sizes are the ones
 # HopDesk will show.
@@ -66,8 +69,9 @@ demo_facturas <- function(n, seed = 1, periodo = TRUE) {
     df$.fijar <- seq_len(n) %% 11 == 0
     df$Vence[seq_len(n) %% 22 == 0 | seq_len(n) %% 23 == 0] <- NA
   }
-  df$.acciones <- paste0(ifelse(df$Estado == "pendiente", "crear_provision,", ""), "agregar,editar,detalle,eliminar",
-                         ifelse(seq_len(n) %% 18 == 0, "", ",provision"))
+  # (paste0 of zero rows would still give one string: ?n=0 shows the empty table)
+  df$.acciones <- if (n) paste0(ifelse(df$Estado == "pendiente", "crear_provision,", ""), "agregar,editar,detalle,eliminar",
+                                ifelse(seq_len(n) %% 18 == 0, "", ",provision")) else character(0)
   df
 }
 
@@ -179,6 +183,7 @@ server <- function(input, output, session) {
   seed <- as.integer(q$seed %||% 1)
   alto <- q$alto %||% "auto"
   con_periodo <- !identical(q$periodo, "0")
+  con_secciones <- !identical(q$secciones, "0")
   if (!is.null(q$n)) updateSelectInput(session, "n", choices = unique(c(as.integer(q$n), 300, 1000, 5000)),
                                        selected = as.integer(q$n))
 
@@ -228,7 +233,11 @@ server <- function(input, output, session) {
                  t  = hd_table_server(paste0("a", v), tabla = nombre, datos = datos_a, columnas = COLS_A,
                                       fichas = list(campo = "Estado", orden = c("pendiente", "programada", "confirmada")),
                                       filtros = list(list(campo = "Moneda"), list(campo = "Empresa")),
-                                      periodo = if (con_periodo) list(campo = "Vence", inicial = Sys.Date()),
+                                      periodo = if (con_periodo) list(campo = "Vence", inicial = Sys.Date(),
+                                                                      fijar_titulo = if (!identical(q$rotulo, "0")) "Siempre arriba: {n}"),
+                                      # Like Vencidos: by currency (MXN first), then Cobros / Pagos.
+                                      secciones = if (con_secciones) list(list(campo = "Moneda", orden = "MXN"), ".tipo"),
+                                      vacio = list(texto = "Sin vencimientos pendientes, todo al día", tono = "exito"),
                                       acciones_fila = acc_fila, acciones_barra = acc_barra)))
   })
   # Every accion() that arrives, newest first.

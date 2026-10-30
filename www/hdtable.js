@@ -329,7 +329,7 @@
           : filas.length > 1 ? (filas[filas.length - 1].getBoundingClientRect().bottom - filas[0].getBoundingClientRect().top) / filas.length
           : (st.hFila || (st.root.classList.contains('hdt-normal') ? 34 : 23));
     st.hFila = h;
-    var n = st.vis.length;
+    var n = st.lista ? st.lista.length : st.vis.length;   // bands and lines count as rows
     var contenido = st.modo === 'ventana' ? cabeza + n * h
                   : st.tabla_el.offsetHeight + (st.vacio.hidden ? 0 : st.vacio.offsetHeight);
     var minimo = cabeza + HDT_ALTO_MIN * h;
@@ -716,6 +716,17 @@
     st.fijar = arr(f.fijar);
     st.hayFijas = st.fijar.some(Boolean);
     st.meses = st.mes && msg.periodo ? arr(msg.periodo.meses) : null;
+    st.fijarTitulo = msg.periodo ? msg.periodo.fijar_titulo : null;
+    // Sections (agrupar): per level, each row's value, its rank in the
+    // level's order and the label to show.
+    st.secciones = st.p.agrupar && msg.secciones ? arr(msg.secciones).map(function (s) {
+      var rangoDe = {}, textos = {};
+      arr(s.opciones).forEach(function (op, k) { rangoDe[op.valor] = k; textos[op.valor] = op.texto; });
+      var valores = arr(s.valores);
+      return { campo: s.campo, valores: valores, textos: textos,
+               rango: valores.map(function (v) { return rangoDe[v] == null ? 1e9 : rangoDe[v]; }) };
+    }) : null;
+    if (st.secciones && !st.secciones.length) st.secciones = null;
     if (msg.fichas) st.fichas = { valores: arr(msg.fichas.valores), opciones: arr(msg.fichas.opciones), mostrar: msg.fichas.mostrar };
     if (st.filtrosEl) cargarFiltros(st, msg.filtros);
     st.celdas = arr(f.celdas).map(function (c) {
@@ -891,7 +902,11 @@
       vis = vis.filter(function (k) { return st.fijar[k]; })
                .concat(vis.filter(function (k) { return !st.fijar[k]; }));
     }
+    // Sections: below the pinned block, rows go by section, keeping the
+    // active order inside each one.
+    if (st.secciones) vis = porSecciones(st, vis);
     st.vis = vis;
+    armarLista(st);
     pintarFiltros(st, activos);
     var filtrada = !!st.q || !!fv || activos.length > 0;
 
@@ -908,7 +923,11 @@
 
     st.vacio.hidden = vis.length > 0;
     if (!vis.length) {
-      st.vacio.textContent = !st.n ? t('tablas.vacio')
+      // The table's own message (`vacio`) only when it has no rows at all.
+      var propio = !st.n && st.textos.vacio;
+      st.vacio.className = 'hdt-vacio' + (propio && st.textos.vacio_tono ? ' hdt-vacio-' + st.textos.vacio_tono : '');
+      st.vacio.textContent = propio ? st.textos.vacio
+        : !st.n ? t('tablas.vacio')
         : filtrada ? t('tablas.vacio_filtro')
         : mes ? t('tablas.periodo.vacio', { periodo: textoMes(mes) })
         : t('tablas.vacio');
@@ -924,6 +943,125 @@
       st.contador.textContent = tn(clave, vis.length, extra);
     }
     programarAlto(st, desdeDatos);
+    if (st.secciones) requestAnimationFrame(function () { pegarBandas(st); });
+  }
+
+  // ── Sections and the pinned block's line ─────────────────────────────────
+  function porSecciones(st, vis) {
+    var pos = {}, niv = st.secciones;
+    vis.forEach(function (k, j) { pos[k] = j; });
+    var fijas = st.hayFijas ? vis.filter(function (k) { return st.fijar[k]; }) : [];
+    var resto = st.hayFijas ? vis.filter(function (k) { return !st.fijar[k]; }) : vis.slice();
+    resto.sort(function (a, b) {
+      for (var l = 0; l < niv.length; l++) {
+        var d = niv[l].rango[a] - niv[l].rango[b];
+        if (d) return d;
+      }
+      return pos[a] - pos[b];
+    });
+    return fijas.concat(resto);
+  }
+
+  // What the table paints, in order: rows (their index) and, as objects,
+  // the line under the pinned block and a band where each section starts.
+  // st.cab[p]: positions of the bands that govern item p, so window mode can
+  // keep the current ones painted (and stuck) when they scroll out of it.
+  function armarLista(st) {
+    var lista = [], vis = st.vis, niv = st.secciones, k = 0;
+    if (st.hayFijas) {
+      while (k < vis.length && st.fijar[vis[k]]) lista.push(vis[k++]);
+      if (k > 0) lista.push({ sep: true, n: k });
+    }
+    if (!niv) {
+      for (; k < vis.length; k++) lista.push(vis[k]);
+      st.lista = lista;
+      st.cab = null;
+      return;
+    }
+    var cab = lista.map(function () { return []; }), activas = [], bandas = [], previa = null, l;
+    for (; k < vis.length; k++) {
+      var i = vis[k], desde = previa == null ? 0 : -1;
+      if (desde < 0) {
+        for (l = 0; l < niv.length; l++) {
+          if (niv[l].valores[i] !== niv[l].valores[previa]) { desde = l; break; }
+        }
+      }
+      if (desde >= 0) {
+        for (l = desde; l < niv.length; l++) {
+          var v = niv[l].valores[i];
+          bandas[l] = { banda: l, valor: v, texto: niv[l].textos[v] == null ? v : niv[l].textos[v], filas: [] };
+          activas.length = l;
+          activas[l] = lista.length;
+          lista.push(bandas[l]);
+          cab.push(activas.slice());
+        }
+      }
+      for (l = 0; l < niv.length; l++) bandas[l].filas.push(i);
+      lista.push(i);
+      cab.push(activas.slice());
+      previa = i;
+    }
+    st.lista = lista;
+    st.cab = cab;
+  }
+
+  function nColumnas(st) {
+    return st.cols.length + (st.p.casillas ? 1 : 0) + (st.accFila.length ? 1 : 0);
+  }
+
+  function trItem(st, it) {
+    if (typeof it === 'number') return trDe(st, it);
+    return it.tr || (it.tr = it.sep ? trSeparador(st, it) : trBanda(st, it));
+  }
+
+  // A section's band: its label and, with `subtotales`, how many rows it
+  // has and what they add up to per currency (locked rows don't count).
+  function trBanda(st, b) {
+    var tr = nodo('tr', 'hdt-banda hdt-banda-' + (b.banda + 1)), td = nodo('td');
+    if (st.secciones[b.banda].campo === '.tipo' && b.valor) tr.classList.add('hdt-' + b.valor);
+    td.colSpan = nColumnas(st);
+    var caja = nodo('div', 'hdt-banda-caja');
+    caja.appendChild(nodo('span', 'hdt-banda-titulo', b.texto));
+    if (st.p.subtotales) {
+      var filas = b.filas.filter(function (i) { return !st.bloq[i]; });
+      caja.appendChild(nodo('span', 'hdt-banda-n',
+        tn(st.textos.contador || 'tablas.contador.registros', filas.length, { n: FMT_N.format(filas.length) })));
+      if (st.suma >= 0) {
+        var o = st.celdas[st.suma].orden, s = {};
+        filas.forEach(function (i) { var m = st.moneda[i] || ''; s[m] = (s[m] || 0) + (Number(o[i]) || 0); });
+        var mons = Object.keys(s).sort();
+        caja.appendChild(nodo('span', 'hdt-banda-suma', mons.length
+          ? mons.map(function (m) { return (m ? m + ' ' : '') + dinero(s[m]); }).join(' · ') : dinero(0)));
+      }
+    }
+    td.appendChild(caja);
+    tr.appendChild(td);
+    return tr;
+  }
+
+  // The line under the pinned block, with the caller's label if it sent one
+  // (periodo$fijar_titulo; {n} = pinned rows shown).
+  function trSeparador(st, s) {
+    var tr = nodo('tr', 'hdt-sep-fijas' + (st.fijarTitulo ? ' hdt-con-titulo' : '')), td = nodo('td');
+    td.colSpan = nColumnas(st);
+    if (st.fijarTitulo) {
+      var v = { n: FMT_N.format(s.n) }, dic = window.HD_I18N || {};
+      td.appendChild(nodo('span', 'hdt-sep-titulo', dic[st.fijarTitulo + '.uno'] != null
+        ? tn(st.fijarTitulo, s.n, v) : String(st.fijarTitulo).split('{n}').join(v.n)));
+    }
+    tr.appendChild(td);
+    return tr;
+  }
+
+  // Bands stick under the header (and the second level under the first):
+  // their offsets come from the real heights, measured after the paint.
+  function pegarBandas(st) {
+    if (!st.p.encabezado_fijo) return;
+    // Exact (fractional) heights: offsetHeight rounds, and the bands would
+    // overlap the header or leave a gap by a fraction of a pixel.
+    st.root.style.setProperty('--hdt-cab', st.thead.getBoundingClientRect().height + 'px');
+    var b1 = st.tbody.querySelector('tr.hdt-banda-1');
+    if (b1) st.root.style.setProperty('--hdt-banda1', b1.getBoundingClientRect().height + 'px');
   }
 
   // The mode is decided on every paint from the visible count; selection,
@@ -931,7 +1069,7 @@
   // TODO(T03): a table with `multilinea` never enters window mode (its rows
   // don't have one fixed height).
   function pintarFilas(st, arriba) {
-    var ventana = st.vis.length > HDT_UMBRAL_VENTANA && !st.p.multilinea;
+    var ventana = st.lista.length > HDT_UMBRAL_VENTANA && !st.p.multilinea;
     if (ventana) {
       if (st.modo !== 'ventana') entrarVentana(st);
       st.modo = 'ventana';
@@ -945,7 +1083,7 @@
     if (st.modo === 'ventana') salirVentana(st);
     st.modo = 'completo';
     var frag = document.createDocumentFragment();
-    for (var k = 0; k < st.vis.length; k++) frag.appendChild(trDe(st, st.vis[k]));
+    for (var k = 0; k < st.lista.length; k++) frag.appendChild(trItem(st, st.lista[k]));
     st.tbody.textContent = '';
     st.tbody.appendChild(frag);
     // No scrollTop assignment here: the browser keeps the position when the
@@ -981,15 +1119,16 @@
 
   function espaciador(st, alto) {
     var tr = nodo('tr', 'hdt-esp'), td = nodo('td');
-    td.colSpan = st.cols.length + (st.p.casillas ? 1 : 0) + (st.accFila.length ? 1 : 0);
+    td.colSpan = nColumnas(st);
     td.style.height = alto + 'px';
     tr.appendChild(td);
     return tr;
   }
 
   // Paints only the rows around `arriba` (or the current scroll position).
+  // Bands and the pinned block's line count as rows of the same height.
   function pintarVentana(st, forzar, arriba) {
-    var h = st.altoFila || 23, n = st.vis.length;
+    var h = st.altoFila || 23, L = st.lista, n = L.length;
     var top = arriba == null ? st.scroll.scrollTop : arriba;
     // In auto height the view is the height being set, not what the
     // spacers would stretch the area to before the first measurement.
@@ -998,32 +1137,39 @@
       : (st.scroll.clientHeight || 420);
     var ini = Math.max(0, Math.floor(top / h) - HDT_COLCHON);
     var fin = Math.min(n, Math.ceil((top + vista) / h) + HDT_COLCHON);
+    // The bands of the section at the top of the window, if they are above
+    // it, are painted right before it (taking their height from the top
+    // spacer) so they stay stuck under the header.
+    var jalar = st.cab && ini < n ? st.cab[ini].filter(function (p) { return p < ini; }) : [];
+    var claveJalar = jalar.join(',');
+    if (claveJalar !== st.vJalar) forzar = true;
     if (!forzar && ini === st.vIni && fin === st.vFin) return;
     var vIni = st.vIni, vFin = st.vFin;
-    st.vIni = ini; st.vFin = fin;
+    st.vIni = ini; st.vFin = fin; st.vJalar = claveJalar;
     // Scrolling: only the rows leaving the window go out and only the ones
     // entering come in. Rows that stay are never detached, so a click that
     // lands while the window moves (mousedown and mouseup on the same row)
     // is never lost.
     if (!forzar && st.espArriba && vIni != null && ini < vFin && fin > vIni) {
-      var k;
-      for (k = vIni; k < Math.min(ini, vFin); k++) st.tbody.removeChild(trDe(st, st.vis[k]));
-      for (k = Math.max(fin, vIni); k < vFin; k++) st.tbody.removeChild(trDe(st, st.vis[k]));
+      var k, primera = trItem(st, L[Math.max(ini, vIni)]);   // first row that stays
+      for (k = vIni; k < Math.min(ini, vFin); k++) st.tbody.removeChild(trItem(st, L[k]));
+      for (k = Math.max(fin, vIni); k < vFin; k++) st.tbody.removeChild(trItem(st, L[k]));
       var antes = document.createDocumentFragment();
-      for (k = ini; k < Math.min(vIni, fin); k++) antes.appendChild(trDe(st, st.vis[k]));
-      st.tbody.insertBefore(antes, st.espArriba.nextSibling);
+      for (k = ini; k < Math.min(vIni, fin); k++) antes.appendChild(trItem(st, L[k]));
+      st.tbody.insertBefore(antes, primera);
       var despues = document.createDocumentFragment();
-      for (k = Math.max(vFin, ini); k < fin; k++) despues.appendChild(trDe(st, st.vis[k]));
+      for (k = Math.max(vFin, ini); k < fin; k++) despues.appendChild(trItem(st, L[k]));
       st.tbody.insertBefore(despues, st.espAbajo);
-      st.espArriba.firstChild.style.height = (ini * h) + 'px';
+      st.espArriba.firstChild.style.height = ((ini - jalar.length) * h) + 'px';
       st.espAbajo.firstChild.style.height = ((n - fin) * h) + 'px';
       return;
     }
     var frag = document.createDocumentFragment();
-    st.espArriba = espaciador(st, ini * h);
+    st.espArriba = espaciador(st, (ini - jalar.length) * h);
     st.espAbajo = espaciador(st, (n - fin) * h);
     frag.appendChild(st.espArriba);
-    for (var j = ini; j < fin; j++) frag.appendChild(trDe(st, st.vis[j]));
+    jalar.forEach(function (p) { frag.appendChild(trItem(st, L[p])); });
+    for (var j = ini; j < fin; j++) frag.appendChild(trItem(st, L[j]));
     frag.appendChild(st.espAbajo);
     st.tbody.textContent = '';
     st.tbody.appendChild(frag);
@@ -1470,6 +1616,10 @@
       if (!st) return null;
       return {
         visibles: st.vis.map(function (i) { return st.ids[i]; }),
+        // What's painted, in order: "id", "banda:<level>:<value>" or "sep".
+        lista: (st.lista || []).map(function (it) {
+          return typeof it === 'number' ? st.ids[it] : it.sep ? 'sep' : 'banda:' + (it.banda + 1) + ':' + it.valor;
+        }),
         seleccion: idsSel(st), orden: st.orden, busqueda: st.q,
         periodo: st.mes || null,
         fijas: st.vis.filter(function (i) { return st.fijar[i]; }).map(function (i) { return st.ids[i]; }),
