@@ -176,7 +176,7 @@ hd_columnas_meta <- function(columnas) {
 # Control columns: .bloqueada (paid/confirmed: not selectable; struck
 # through when the table has the `tachado` piece), .moneda and .tipo
 # ("cobro"/"pago") for the totals footer, .provision (logical: purple
-# provision row with its badge).
+# provision row with its badge), .acciones (row actions allowed per row).
 # Without .moneda, the currency comes from the first summed money column's
 # `moneda` field, then from "Moneda"; without .tipo, totals aren't split.
 hd_filas <- function(datos, columnas, id_col = "id") {
@@ -197,6 +197,17 @@ hd_filas <- function(datos, columnas, id_col = "id") {
   tipo[!tipo %in% c("cobro", "pago")] <- NA_character_
   provision <- if (".provision" %in% names(datos)) as.logical(datos[[".provision"]]) else rep(FALSE, n)
   provision[is.na(provision)] <- FALSE
+  # .acciones: the row actions each row may show, as a list column of names
+  # or comma-separated text. Without the column every row shows them all; a
+  # row with NA or nothing shows none (fails closed).
+  acciones <- if (".acciones" %in% names(datos)) {
+    a <- datos[[".acciones"]]
+    vapply(seq_len(n), function(i) {
+      v <- if (is.list(a)) unlist(a[[i]]) else a[i]
+      v <- trimws(unlist(strsplit(as.character(v %||% character(0)), ",", fixed = TRUE)))
+      paste(v[!is.na(v) & nzchar(v)], collapse = ",")
+    }, character(1))
+  } else NULL
 
   list(
     # I(): Shiny serializes with auto_unbox = TRUE, so without it a 1-row
@@ -207,5 +218,8 @@ hd_filas <- function(datos, columnas, id_col = "id") {
     tipo      = I(tipo),
     provision = I(provision),
     celdas    = lapply(columnas, function(col) lapply(col$valores(datos[[col$campo]]), I))
-  )
+  ) -> out
+  # Only when the column exists: list(x = NULL) would serialize as {}.
+  if (!is.null(acciones)) out$acciones <- I(acciones)
+  out
 }

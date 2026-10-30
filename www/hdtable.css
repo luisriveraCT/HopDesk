@@ -91,6 +91,14 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-cb { width: 26px; text-align: center; }
 .hdt-cb input { margin: 0; vertical-align: middle; cursor: pointer; }
 
+/* Row actions: right-aligned, fixed order, never wrap. */
+.hdt-tabla .hdt-acc { width: 1%; white-space: nowrap; text-align: right; }
+.hdt-accion { font: inherit; font-size: .9em; line-height: 1; min-width: 1.9em; height: 1.6em; margin-left: 3px;
+  border: 1px solid var(--hdt-line); background: var(--hdt-surface); color: var(--hdt-ink);
+  border-radius: 4px; padding: 0 4px; cursor: pointer; vertical-align: middle; }
+.hdt-accion:hover { border-color: var(--hdt-accent); color: var(--hdt-accent); }
+.hdt-accion[data-accion="provision"] { color: var(--hdt-prov); }
+
 /* Sorting */
 .hdt-orden th.hdt-ordenable { cursor: pointer; }
 .hdt-orden th.hdt-ordenable:hover { color: var(--hdt-ink); }

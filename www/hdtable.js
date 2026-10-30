@@ -221,8 +221,16 @@
     var f = msg.filas || {};
     var arriba = st.scroll.scrollTop, izq = st.scroll.scrollLeft;
 
-    var colsCambian = JSON.stringify(msg.columnas) !== JSON.stringify(st.colsMeta);
-    st.colsMeta = msg.columnas;
+    var cabeza = { columnas: msg.columnas, acciones: msg.acciones_fila || null };
+    var colsCambian = JSON.stringify(cabeza) !== JSON.stringify(st.colsMeta);
+    st.colsMeta = cabeza;
+    // Row actions in catalog order; .acciones narrows them per row.
+    st.accFila = st.p.acc_fila ? arr(msg.acciones_fila) : [];
+    st.permitidas = f.acciones == null ? null : arr(f.acciones).map(function (s) {
+      var set = {};
+      String(s || '').split(',').forEach(function (a) { if (a) set[a] = true; });
+      return set;
+    });
     st.cols = arr(msg.columnas);
     st.ids = arr(f.ids).map(String);
     st.n = st.ids.length;
@@ -289,10 +297,38 @@
       tr.appendChild(th);
       return th;
     });
+    if (st.accFila.length) {
+      var tha = nodo('th', 'hdt-acc');
+      tha.setAttribute('aria-label', t('tablas.acciones'));
+      tr.appendChild(tha);
+    }
     st.thead.appendChild(tr);
   }
 
   function trDe(st, i) { return st.trs[i] || (st.trs[i] = fila(st, i)); }
+
+  // Right-aligned row buttons, always in catalog order. .acciones only hides
+  // buttons; the server checks the permission again (see R/hd_table.R).
+  function botonesFila(st, i) {
+    var td = nodo('td', 'hdt-acc');
+    var permitidas = st.permitidas ? st.permitidas[i] : null;
+    st.accFila.forEach(function (a) {
+      if (permitidas && !permitidas[a.accion]) return;
+      if (a.accion === 'provision' && !st.prov[i]) return;
+      var b = nodo('button', 'hdt-accion', a.icono);
+      b.type = 'button';
+      b.dataset.accion = a.accion;
+      b.title = a.titulo;
+      b.setAttribute('aria-label', a.titulo);
+      td.appendChild(b);
+    });
+    return td;
+  }
+
+  function enviarAccion(st, accion, ids) {
+    if (window.Shiny && Shiny.setInputValue)
+      Shiny.setInputValue(st.ns + 'accion', { accion: accion, ids: ids, nonce: Math.random() }, { priority: 'event' });
+  }
 
   function fila(st, i) {
     var tr = nodo('tr');
@@ -327,6 +363,7 @@
       } else td.appendChild(document.createTextNode(v == null ? '' : v));
       tr.appendChild(td);
     }
+    if (st.accFila.length) tr.appendChild(botonesFila(st, i));
     return tr;
   }
 
@@ -417,7 +454,7 @@
 
   function espaciador(st, alto) {
     var tr = nodo('tr', 'hdt-esp'), td = nodo('td');
-    td.colSpan = st.cols.length + (st.p.casillas ? 1 : 0);
+    td.colSpan = st.cols.length + (st.p.casillas ? 1 : 0) + (st.accFila.length ? 1 : 0);
     td.style.height = alto + 'px';
     tr.appendChild(td);
     return tr;
@@ -604,12 +641,20 @@
       st.abajo = { x: e.clientX, y: e.clientY };
       // Shift + click must not shade the text between the two rows.
       if (e.shiftKey && st.p.sel_rango && e.target.closest('tr')) e.preventDefault();
+      // The second press of a double click would shade a word.
+      if (st.p.detalle && e.detail > 1 && !e.target.closest('input, button')) e.preventDefault();
     });
 
     st.tbody.addEventListener('click', function (e) {
       var tr = e.target.closest('tr');
       if (!tr || tr._i == null) return;
       var i = tr._i;
+      // A row button sends its action and never touches the selection.
+      var btn = e.target.closest('button.hdt-accion');
+      if (btn) { enviarAccion(st, btn.dataset.accion, [st.ids[i]]); return; }
+      // Second click of a double click: the dblclick handler undoes the first.
+      if (st.p.detalle && e.detail > 1) return;
+      if (st.p.detalle) st.antesClic = { sel: new Set(st.sel), ancla: st.ancla };
       var cb = e.target.closest('input.hdt-cbx');
       if (st.p.casillas) {
         if (!cb) return;                         // with checkboxes, the row click is free for other uses
@@ -625,6 +670,25 @@
       pintarSel(st);
       enviarSel(st);
     });
+
+    // Double click opens the detail -- locked rows too -- and leaves the
+    // selection as it was before the first of its two clicks.
+    if (st.p.detalle) {
+      st.tbody.addEventListener('dblclick', function (e) {
+        var tr = e.target.closest('tr');
+        if (!tr || tr._i == null || e.target.closest('input, button')) return;
+        if (st.antesClic) {
+          st.sel = st.antesClic.sel;
+          st.ancla = st.antesClic.ancla;
+          st.antesClic = null;
+          pintarSel(st);
+          enviarSel(st);
+        }
+        var s = window.getSelection && window.getSelection();
+        if (s) s.removeAllRanges();
+        enviarAccion(st, 'detalle', [st.ids[tr._i]]);
+      });
+    }
 
     if (st.p.casillas) {
       st.thead.addEventListener('change', function (e) {

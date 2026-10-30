@@ -11,13 +11,20 @@
 #
 # Server -> browser: one "hdt-datos" custom message each time `datos`
 # changes. Browser -> server: ns("sel") and ns("accion"), priority "event".
+#
+# accion() values: "detalle" (double click on a row, locked rows too), and
+# the names given in acciones_fila (one row's id) and acciones_barra.
+#
+# PERMISSIONS: the .acciones control column only HIDES row buttons the user
+# may not use. A hidden button is not a permission check -- the module that
+# uses the table must check the permission again when the action arrives.
 
 # Relative paths (like vencidos.js), so the app also works under a sub-path.
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=4"),
-    htmltools::tags$script(src = "hdtable.js?v=4")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=5"),
+    htmltools::tags$script(src = "hdtable.js?v=5")
   ))
 }
 
@@ -86,13 +93,46 @@ hd_fichas_payload <- function(fichas, datos, columnas) {
   )
 }
 
+# ── Row actions (acc_fila) ──────────────────────────────────────────────────
+# Fixed catalog: icon, dictionary key for the title, and the order the
+# buttons always appear in, right-aligned. "provision" only shows on rows
+# with .provision = TRUE.
+HD_ACCIONES_FILA <- list(
+  agregar   = list(icono = "＋",  clave = "tablas.accion.agregar"),
+  editar    = list(icono = "✎",  clave = "tablas.accion.editar"),
+  provision = list(icono = "⚡",  clave = "tablas.accion.provision"),
+  deshacer  = list(icono = "↶",  clave = "tablas.accion.deshacer"),
+  detalle   = list(icono = "ℹ",  clave = "tablas.accion.detalle"),
+  eliminar  = list(icono = "✕",  clave = "tablas.accion.eliminar")
+)
+
+hd_acciones_fila_validar <- function(acciones_fila) {
+  if (is.null(acciones_fila)) return(NULL)
+  if (!is.character(acciones_fila) || !length(acciones_fila))
+    stop("hd_table: `acciones_fila` must be a character vector of action names.", call. = FALSE)
+  desconocidas <- setdiff(acciones_fila, names(HD_ACCIONES_FILA))
+  if (length(desconocidas))
+    stop(sprintf("hd_table: unknown row action(s): %s. Valid: %s.",
+                 paste(desconocidas, collapse = ", "), paste(names(HD_ACCIONES_FILA), collapse = ", ")),
+         call. = FALSE)
+  names(HD_ACCIONES_FILA)[names(HD_ACCIONES_FILA) %in% acciones_fila]   # catalog order
+}
+
+hd_acciones_fila_meta <- function(acciones) {
+  lapply(acciones, function(a) list(accion = a, icono = HD_ACCIONES_FILA[[a]]$icono,
+                                    titulo = tr(HD_ACCIONES_FILA[[a]]$clave)))
+}
+
 hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = "id",
-                            fichas = NULL) {
+                            fichas = NULL, acciones_fila = NULL) {
   piezas_tabla <- hd_piezas_de(tabla, piezas)
   piezas_motor <- hd_piezas_motor(tabla, piezas_tabla)
   meta         <- hd_columnas_meta(columnas)
   contador     <- hd_contador_clave(tabla)
   fichas       <- .hd_sin_pieza(tabla, "fichas", "fichas", hd_fichas_validar(fichas), piezas_tabla)
+  acc_fila     <- .hd_sin_pieza(tabla, "acciones_fila", "acc_fila",
+                                hd_acciones_fila_validar(acciones_fila), piezas_tabla)
+  acc_fila_meta <- if (length(acc_fila)) hd_acciones_fila_meta(acc_fila) else NULL
 
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -107,7 +147,8 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         columnas = meta,
         piezas   = I(piezas_motor),
         textos   = list(contador = contador),
-        fichas   = hd_fichas_payload(fichas, df, columnas)
+        fichas   = hd_fichas_payload(fichas, df, columnas),
+        acciones_fila = acc_fila_meta
       ))
     })
 
