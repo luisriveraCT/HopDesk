@@ -173,8 +173,10 @@ hd_columnas_meta <- function(columnas) {
 # Rows, column by column:
 #   list(ids, bloqueada, moneda, tipo,
 #        celdas = list(<one per column>: list(mostrar, orden, copiar[, tono])))
-# Control columns: .bloqueada (paid/confirmed: struck through, not
-# selectable), .moneda and .tipo ("cobro"/"pago") for the totals footer.
+# Control columns: .bloqueada (paid/confirmed: not selectable; struck
+# through when the table has the `tachado` piece), .moneda and .tipo
+# ("cobro"/"pago") for the totals footer, .provision (logical: purple
+# provision row with its badge).
 # Without .moneda, the currency comes from the first summed money column's
 # `moneda` field, then from "Moneda"; without .tipo, totals aren't split.
 hd_filas <- function(datos, columnas, id_col = "id") {
@@ -193,6 +195,8 @@ hd_filas <- function(datos, columnas, id_col = "id") {
             else rep(NA_character_, n)
   tipo <- if (".tipo" %in% names(datos)) as.character(datos[[".tipo"]]) else rep(NA_character_, n)
   tipo[!tipo %in% c("cobro", "pago")] <- NA_character_
+  provision <- if (".provision" %in% names(datos)) as.logical(datos[[".provision"]]) else rep(FALSE, n)
+  provision[is.na(provision)] <- FALSE
 
   list(
     # I(): Shiny serializes with auto_unbox = TRUE, so without it a 1-row
@@ -201,6 +205,7 @@ hd_filas <- function(datos, columnas, id_col = "id") {
     bloqueada = I(bloqueada),
     moneda    = I(moneda),
     tipo      = I(tipo),
+    provision = I(provision),
     celdas    = lapply(columnas, function(col) lapply(col$valores(datos[[col$campo]]), I))
   )
 }

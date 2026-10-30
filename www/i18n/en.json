@@ -43,5 +43,20 @@
   "tablas.confirmar_accion": "{accion} {n} rows?",
   "tablas.fila_bloqueada": "This row is already paid or confirmed.",
   "tablas.densidad.compacta": "Compact",
-  "tablas.densidad.normal": "Normal"
+  "tablas.densidad.normal": "Normal",
+  "tablas.provision": "Provision",
+  "tablas.fichas.todas": "All",
+  "tablas.acciones": "Actions",
+  "tablas.accion.agregar": "Add",
+  "tablas.accion.editar": "Edit",
+  "tablas.accion.provision": "Convert provision",
+  "tablas.accion.deshacer": "Undo",
+  "tablas.accion.detalle": "View details",
+  "tablas.accion.eliminar": "Delete",
+  "tablas.accion.agregar_seleccion": "Add selection",
+  "tablas.accion.agregar_todo": "Add all",
+  "tablas.accion.papelera": "Send to trash",
+  "tablas.exportar": "Export to Excel",
+  "tablas.copiadas_n.uno": "{n} row copied",
+  "tablas.copiadas_n.otros": "{n} rows copied"
 }

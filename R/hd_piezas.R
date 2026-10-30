@@ -20,7 +20,9 @@ HD_PIEZAS_MOTOR <- c(
   "texto", "copiar_celda", "recorte", "encabezado_fijo", "densidad",
   "sel_fila", "sel_rango", "casillas", "sel_todos", "sel_persistente", "no_seleccionable",
   "contador", "sumador_sel", "sumador_vis",
-  "ordenar", "buscar"
+  "ordenar", "buscar",
+  # T03a
+  "insignias", "tachado", "provision"
 )
 
 HD_REGLAS_NUCLEO <- c(

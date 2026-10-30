@@ -95,6 +95,7 @@
     root.classList.toggle('hdt-fijo', !!p.encabezado_fijo);
     root.classList.toggle('hdt-selec', !!(p.sel_fila || p.casillas));
     root.classList.toggle('hdt-orden', !!p.ordenar);
+    root.classList.toggle('hdt-tachado', !!p.tachado);
 
     st.barra = nodo('div', 'hdt-barra');
     if (p.buscar) {
@@ -173,6 +174,7 @@
     st.bloq = arr(f.bloqueada);
     st.moneda = arr(f.moneda);
     st.tipo = arr(f.tipo);
+    st.prov = arr(f.provision);
     st.celdas = arr(f.celdas).map(function (c) {
       return { mostrar: arr(c.mostrar), orden: arr(c.orden), copiar: arr(c.copiar), tono: c.tono ? arr(c.tono) : null };
     });
@@ -240,6 +242,8 @@
     var tr = nodo('tr');
     tr._i = i;
     if (st.bloq[i]) tr.className = 'hdt-bloq';
+    var prov = st.p.provision && st.prov[i];
+    if (prov) tr.classList.add('hdt-prov');
     var marcada = st.sel.has(st.ids[i]);
     if (marcada) tr.classList.add('hdt-sel');
     if (st.p.casillas) {
@@ -257,11 +261,14 @@
       td._c = j;
       if (c.alinear === 'derecha') td.classList.add('hdt-der');
       if (c.recorte && st.p.recorte) td.classList.add('hdt-recorte');
-      if (c.tipo === 'empresa' && v) td.appendChild(nodo('span', 'hdt-emp', v));
-      else if (c.tipo === 'insignia' && v) {
+      // Provision rows: one badge, always in the first column.
+      if (prov && j === 0) td.appendChild(nodo('span', 'hdt-ins hdt-tono-morado hdt-ins-prov', t('tablas.provision')));
+      // Badges only with the `insignias` piece; otherwise the same text, plain.
+      if (st.p.insignias && c.tipo === 'empresa' && v) td.appendChild(nodo('span', 'hdt-ins hdt-emp', v));
+      else if (st.p.insignias && c.tipo === 'insignia' && v) {
         var tono = String((st.celdas[j].tono || [])[i] || 'neutro').replace(/[^a-z_]/g, '');
         td.appendChild(nodo('span', 'hdt-ins hdt-tono-' + tono, v));
-      } else td.textContent = v == null ? '' : v;
+      } else td.appendChild(document.createTextNode(v == null ? '' : v));
       tr.appendChild(td);
     }
     return tr;

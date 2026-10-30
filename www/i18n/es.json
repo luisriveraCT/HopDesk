@@ -43,5 +43,20 @@
   "tablas.confirmar_accion": "¿{accion} {n} filas?",
   "tablas.fila_bloqueada": "Esta fila ya está pagada o confirmada.",
   "tablas.densidad.compacta": "Compacta",
-  "tablas.densidad.normal": "Normal"
+  "tablas.densidad.normal": "Normal",
+  "tablas.provision": "Provisión",
+  "tablas.fichas.todas": "Todas",
+  "tablas.acciones": "Acciones",
+  "tablas.accion.agregar": "Agregar",
+  "tablas.accion.editar": "Editar",
+  "tablas.accion.provision": "Convertir provisión",
+  "tablas.accion.deshacer": "Deshacer",
+  "tablas.accion.detalle": "Ver detalle",
+  "tablas.accion.eliminar": "Eliminar",
+  "tablas.accion.agregar_seleccion": "Agregar selección",
+  "tablas.accion.agregar_todo": "Agregar todo",
+  "tablas.accion.papelera": "Mandar a papelera",
+  "tablas.exportar": "Exportar a Excel",
+  "tablas.copiadas_n.uno": "{n} fila copiada",
+  "tablas.copiadas_n.otros": "{n} filas copiadas"
 }

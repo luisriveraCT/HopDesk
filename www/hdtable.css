@@ -11,6 +11,14 @@
   --hdt-cobro: #1f5fd1; --hdt-pago: #15804a;
   --hdt-warn: #9a5600; --hdt-warn-soft: #fff4dc;
   --hdt-danger: #c22b2b; --hdt-danger-soft: #ffecec; --hdt-ok-soft: #e7f6ee;
+  --hdt-prov: #6d28d9; --hdt-prov-soft: #f6f0ff;
+  /* Badge tones: text / background pairs. */
+  --hdt-t-exito: #15804a;   --hdt-f-exito: #e7f6ee;
+  --hdt-t-aviso: #9a5600;   --hdt-f-aviso: #fff4dc;
+  --hdt-t-peligro: #c22b2b; --hdt-f-peligro: #ffecec;
+  --hdt-t-info: #2456d6;    --hdt-f-info: #e6edff;
+  --hdt-t-neutro: #5a6377;  --hdt-f-neutro: #eef1f8;
+  --hdt-t-morado: #6d28d9;  --hdt-f-morado: #f1e9ff;
   color: var(--hdt-ink);
   font-size: .84rem;
   display: flex; flex-direction: column; min-width: 0;
@@ -59,9 +67,15 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 /* Rows and selection */
 .hdt-tabla tbody tr:hover td { background: var(--hdt-hover); }
 .hdt-selec .hdt-tabla tbody tr { cursor: pointer; }
+/* Provision rows (before the selection rules, which win over them). */
+.hdt-tabla tr.hdt-prov td { background: var(--hdt-prov-soft); }
+.hdt-tabla tr.hdt-prov td:first-child { box-shadow: inset 3px 0 0 var(--hdt-prov); }
+.hdt-ins-prov { margin-right: 6px; }
 .hdt-tabla tr.hdt-sel td { background: var(--hdt-sel) !important; }
 .hdt-tabla tr.hdt-sel td:first-child { box-shadow: inset 3px 0 0 var(--hdt-accent); }
-.hdt-tabla tr.hdt-bloq td { color: var(--hdt-muted); text-decoration: line-through; opacity: .6; }
+/* Locked rows are never selectable; with the `tachado` piece they also show
+   struck through and faded. */
+.hdt-tachado .hdt-tabla tr.hdt-bloq td { color: var(--hdt-muted); text-decoration: line-through; opacity: .6; }
 .hdt-selec .hdt-tabla tbody tr.hdt-bloq { cursor: default; }
 /* Shift held: no text gets shaded by a range click. */
 .hdt-mayus .hdt-tabla td { user-select: none; -webkit-user-select: none; }
@@ -74,14 +88,36 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-flecha { font-size: .7rem; margin-left: 3px; opacity: .7; }
 
 /* Cell badges */
-.hdt-emp { display: inline-block; font-size: .72rem; border: 1px solid var(--hdt-line); color: var(--hdt-accent);
-  border-radius: 999px; padding: 0 7px; line-height: 1.5; background: var(--hdt-surface); }
-.hdt-ins { display: inline-block; font-size: .72rem; font-weight: 700; border-radius: 4px; padding: 0 7px; line-height: 1.5;
-  background: var(--hdt-surface-2); color: var(--hdt-muted); }
-.hdt-ins.hdt-tono-exito { background: var(--hdt-ok-soft); color: var(--hdt-pago); }
-.hdt-ins.hdt-tono-aviso { background: var(--hdt-warn-soft); color: var(--hdt-warn); }
-.hdt-ins.hdt-tono-peligro { background: var(--hdt-danger-soft); color: var(--hdt-danger); }
-.hdt-ins.hdt-tono-info { background: var(--hdt-accent-soft); color: var(--hdt-accent); }
+/* One size for every badge (type, company, origin, state), the same in both
+   densities: fixed height, fixed font size, box-sized border. */
+.hdt-ins { display: inline-flex; align-items: center; box-sizing: border-box; height: 16px; vertical-align: middle;
+  font-size: 11px; line-height: 1; font-weight: 700; white-space: nowrap; border-radius: 4px; padding: 0 7px;
+  border: 1px solid transparent; color: var(--hdt-t-neutro); background: var(--hdt-f-neutro); }
+.hdt-ins.hdt-tono-exito   { color: var(--hdt-t-exito);   background: var(--hdt-f-exito); }
+.hdt-ins.hdt-tono-aviso   { color: var(--hdt-t-aviso);   background: var(--hdt-f-aviso); }
+.hdt-ins.hdt-tono-peligro { color: var(--hdt-t-peligro); background: var(--hdt-f-peligro); }
+.hdt-ins.hdt-tono-info    { color: var(--hdt-t-info);    background: var(--hdt-f-info); }
+.hdt-ins.hdt-tono-morado  { color: var(--hdt-t-morado);  background: var(--hdt-f-morado); }
+/* Company: same box as any badge, outlined. */
+.hdt-ins.hdt-emp { font-weight: 500; border-color: var(--hdt-line); color: var(--hdt-accent);
+  background: var(--hdt-surface); border-radius: 999px; }
+
+/* Dark theme (Bootstrap 5.3's data-bs-theme). The app is light today; this
+   only applies once a page opts in, never from the OS setting alone. */
+[data-bs-theme="dark"] .hdt {
+  --hdt-ink: #e7ebf4; --hdt-muted: #9aa4ba; --hdt-line: #2a3449;
+  --hdt-surface: #161d2c; --hdt-surface-2: #1d2638;
+  --hdt-accent: #6f97ff; --hdt-accent-soft: #1f2c4d;
+  --hdt-sel: #253a6b; --hdt-hover: #1f2a42;
+  --hdt-cobro: #7ea4ff; --hdt-pago: #5fcf92;
+  --hdt-prov: #b794ff; --hdt-prov-soft: #2a2142;
+  --hdt-t-exito: #5fcf92;   --hdt-f-exito: #173326;
+  --hdt-t-aviso: #f0b35a;   --hdt-f-aviso: #3a2c14;
+  --hdt-t-peligro: #ff8080; --hdt-f-peligro: #3d1d22;
+  --hdt-t-info: #7ea4ff;    --hdt-f-info: #1f2c4d;
+  --hdt-t-neutro: #9aa4ba;  --hdt-f-neutro: #1d2638;
+  --hdt-t-morado: #b794ff;  --hdt-f-morado: #2a2142;
+}
 
 /* Totals footer */
 .hdt-pie { flex: none; border-top: 1px solid var(--hdt-line); background: var(--hdt-surface-2);
