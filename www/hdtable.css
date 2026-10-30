@@ -47,6 +47,15 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 
 .hdt-recorte { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
 
+/* Window mode (more visible rows than HDT_UMBRAL_VENTANA in hdtable.js): only
+   the rows in view are painted between two spacer rows, so every row has
+   one fixed height and the columns keep the widths measured on entry. */
+.hdt-tabla.hdt-fijas { table-layout: fixed; }
+.hdt-ventana .hdt-tabla tbody td { height: 22px; overflow: hidden; text-overflow: ellipsis; }
+.hdt-normal.hdt-ventana .hdt-tabla tbody td { height: 33px; }
+.hdt-tabla tr.hdt-esp td { padding: 0; border: 0; background: transparent !important; }
+.hdt-tabla tr.hdt-esp:hover td { background: transparent; }
+
 /* Rows and selection */
 .hdt-tabla tbody tr:hover td { background: var(--hdt-hover); }
 .hdt-selec .hdt-tabla tbody tr { cursor: pointer; }

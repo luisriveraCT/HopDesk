@@ -53,8 +53,9 @@ centro <- function(js_el) {
   ev(sprintf("(function(){ var e = %s; e.scrollIntoView({block:'center', inline:'nearest'});
                var r = e.getBoundingClientRect(); return [r.left + r.width/2, r.top + r.height/2]; })()", js_el))
 }
-fila_td <- function(k, col = 2, id = A)   # k-th visible row (1-based), col-th cell
-  sprintf("document.querySelectorAll('#%s tbody tr')[%d].children[%d]", id, k - 1L, col - 1L)
+# k-th painted row (1-based), col-th cell. Skips the window-mode spacer rows.
+fila_td <- function(k, col = 2, id = A)
+  sprintf("document.querySelectorAll('#%s tbody tr:not(.hdt-esp)')[%d].children[%d]", id, k - 1L, col - 1L)
 
 raton <- function(tipo, x, y, shift = FALSE, botones = 0L, click = 1L)
   b$Input$dispatchMouseEvent(type = tipo, x = x, y = y, button = if (tipo == "mouseMoved" && !botones) "none" else "left",
@@ -240,12 +241,74 @@ clic(sprintf("document.querySelectorAll('#%s thead th')[1]", A))
 ord2 <- estado()$medidas$orden
 cat(sprintf("  5,000 rows: initial paint %.0f ms, sort by Importe %.0f ms, sort by Proveedor %.0f ms\n",
             pint, ord1, ord2))
-# Reported, not asserted: with every row in the DOM, Chrome's layout of ~45,000
-# cells alone takes ~1 s here (a bare 5,000x9 <table> does the same), so the
-# targets (< 300 ms paint, < 150 ms sort) depend on a design decision
-# (render only the rows in view) pending in the coordination log.
-cat(sprintf("  targets: paint < 300 ms -> %s ; sort < 150 ms -> %s\n",
-            if (pint < 300) "met" else "NOT MET", if (max(ord1, ord2) < 150) "met" else "NOT MET"))
+ok("initial paint of 5,000 rows < 300 ms", pint < 300)
+ok("sort of 5,000 rows < 150 ms", max(ord1, ord2) < 150)
+# Same sort, timed until the frame is on screen (JS + layout + paint).
+a_pantalla <- ev(sprintf("new Promise(function(res){ var th=document.querySelectorAll('#%s thead th')[3], t0=performance.now();
+  th.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+  requestAnimationFrame(function(){ setTimeout(function(){ res(performance.now()-t0); },0); }); })", A), await = TRUE)
+cat(sprintf("  sort of 5,000 rows to the visible frame: %.0f ms\n", a_pantalla))
+
+# ── Window mode (more than HDT_UMBRAL_VENTANA = 800 visible rows) ──────────
+st <- estado()
+ok("5,000 rows paint in window mode, only the rows in view",
+   identical(st$modo, "ventana") && st$pintadas < 200)
+anchos <- function() unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s thead th')).map(function(th){return Math.round(th.getBoundingClientRect().width)})", A)))
+w0 <- anchos()
+ev(sprintf("var s=document.querySelector('#%s .hdt-scroll'); s.scrollTop = s.scrollHeight/2;", A)); Sys.sleep(0.4)
+ok("column widths stay frozen while scrolling", identical(anchos(), w0))
+
+ev(sprintf("var s=document.querySelector('#%s .hdt-scroll'); s.scrollTop = 0;", A)); Sys.sleep(0.4)
+vis <- unlist(estado()$visibles); bloq <- unlist(estado()$bloqueadas)
+k_ini <- which(!vis %in% bloq)[3]
+clic(fila_td(k_ini))
+ev(sprintf("var s=document.querySelector('#%s .hdt-scroll'); s.scrollTop = s.scrollHeight;", A)); Sys.sleep(0.5)
+ultima <- sprintf("(function(){ var r=document.querySelectorAll('#%s tbody tr:not(.hdt-esp)'); return r[r.length-1].children[1]; })()", A)
+clic(ultima, shift = TRUE)
+esperado <- vis[k_ini:length(vis)]; esperado <- esperado[!esperado %in% bloq]
+ok(sprintf("Shift + click from row %d to the last of 5,000 marks rows that were never painted (%d)",
+           k_ini, length(esperado)),
+   identical(unlist(estado()$seleccion), esperado))
+ok("... and the server gets them in visible order",
+   poll_until(function() identical(sel_servidor(), esperado), timeout_s = 8))
+ok("in window mode, scrolled to the bottom, the last row ends above the footer", isTRUE(ev(sprintf(
+  "(function(){ var r=document.querySelectorAll('#%s tbody tr:not(.hdt-esp)'); var last=r[r.length-1].getBoundingClientRect();
+     var pie=document.querySelector('#%s .hdt-pie').getBoundingClientRect(); return last.bottom <= pie.top + 0.5; })()", A, A))))
+ok("... and that last row is the last visible one", identical(
+  ev(sprintf("(function(){ var r=document.querySelectorAll('#%s tbody tr:not(.hdt-esp)'); return r[r.length-1].children[2].textContent; })()", A)),
+  ev(sprintf("(function(){ var v=HDT.estado('%s').visibles; return v[v.length-1].replace(/^F0*/, ''); })()", A)) |>
+    (\(x) as.character(100000 + as.integer(x)))()))
+
+# Keep where you were, in window mode.
+ev(sprintf("var s=document.querySelector('#%s .hdt-scroll'); s.scrollTop = 30000;", A)); Sys.sleep(0.4)
+antes <- estado()
+p <- centro("document.getElementById('cambiar')")
+raton("mouseMoved", p[[1]], p[[2]]); raton("mousePressed", p[[1]], p[[2]], botones = 1L); raton("mouseReleased", p[[1]], p[[2]])
+ok("window mode: new data arrives", poll_until(function() !identical(estado()$medidas$pintado, antes$medidas$pintado), timeout_s = 15))
+Sys.sleep(0.4)
+despues <- estado()
+ok("window mode: new data keeps scroll, sort, selection and mode",
+   identical(despues$scrollTop, antes$scrollTop) && identical(despues$orden, antes$orden) &&
+     identical(sort(unlist(despues$seleccion)), sort(unlist(antes$seleccion))) && identical(despues$modo, "ventana"))
+deseleccionar()
+
+# Search below the threshold switches to full painting, and back.
+p <- centro(sprintf("document.querySelector('#%s .hdt-buscar')", A))
+raton("mousePressed", p[[1]], p[[2]], botones = 1L); raton("mouseReleased", p[[1]], p[[2]])
+b$Input$insertText(text = "acero"); Sys.sleep(0.5)
+st <- estado()
+cat(sprintf("  search 'acero': %d visible rows, mode %s, %d painted\n", length(unlist(st$visibles)), st$modo, st$pintadas))
+ok("a search that leaves <= 800 rows paints them all (full mode)",
+   length(unlist(st$visibles)) <= 800 && identical(st$modo, "completo") && st$pintadas == length(unlist(st$visibles)))
+ev(sprintf("var i=document.querySelector('#%s .hdt-buscar'); i.value=''; i.dispatchEvent(new Event('input'))", A)); Sys.sleep(0.4)
+ok("clearing it goes back to window mode", identical(estado()$modo, "ventana"))
+
+# ── 300 rows must not get slower than before the window mode ──────────────
+ok("demo loads with 300 rows", abrir("?n=300&seed=2"))
+Sys.sleep(0.5)
+p300 <- estado()$medidas$pintado
+cat(sprintf("  300 rows: initial paint %.0f ms (mode %s)\n", p300, estado()$modo))
+ok("300 rows paint in full mode in < 100 ms", identical(estado()$modo, "completo") && p300 < 100)
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)

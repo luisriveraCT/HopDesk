@@ -12,6 +12,13 @@
 (function () {
   'use strict';
 
+  // Above this many visible rows (after search) only the rows in view are in
+  // the DOM, with spacers above and below: Chrome's layout of a full 5,000-row
+  // table alone takes ~1 s. At or below it every row is painted, so the
+  // browser's Ctrl+F and natural column widths keep working.
+  var HDT_UMBRAL_VENTANA = 800;
+  var HDT_COLCHON = 20;   // rows painted beyond each edge of the view in window mode
+
   var TABLAS = {};        // root element id -> state
   var PENDIENTES = {};    // root element id -> message waiting for its element
   var observador = null;
@@ -132,6 +139,9 @@
     st.btnDens.textContent = t(modo === 'normal' ? 'tablas.densidad.normal' : 'tablas.densidad.compacta');
     st.btnDens.classList.toggle('hdt-on', modo === 'normal');
     if (guardar) { try { localStorage.setItem('hdt.densidad.' + st.tabla, modo); } catch (e) {} }
+    // Row height and column widths change with the density: measure again.
+    st.altoFila = null; st.altoMedido = false; st.anchos = null;
+    if (st.modo === 'ventana') { var top = st.scroll.scrollTop; salirVentana(st); st.modo = null; pintarFilas(st, top); }
   }
 
   function cargar(st, msg) {
@@ -156,7 +166,11 @@
     for (var j = 0; j < st.cols.length; j++) {
       if (st.cols[j].tipo === 'dinero' && st.cols[j].sumar) { st.suma = j; break; }
     }
-    if (colsCambian) { cabecera(st); if (st.orden.col >= st.cols.length) st.orden.col = -1; }
+    if (colsCambian) {
+      cabecera(st);
+      st.anchos = null;
+      if (st.orden.col >= st.cols.length) st.orden.col = -1;
+    }
 
     // Selection survives a refresh, minus ids that no longer exist.
     var antes = st.sel.size;
@@ -171,11 +185,10 @@
         st.busq[i] = plano(partes.join(' '));
       }
     }
+    // Rows are built when first painted (trDe), not all up front.
     st.trs = new Array(st.n);
-    for (i = 0; i < st.n; i++) st.trs[i] = fila(st, i);
 
-    aplicar(st, true);
-    st.scroll.scrollTop = arriba;
+    aplicar(st, true, arriba);
     st.scroll.scrollLeft = izq;
     st.medidas.pintado = performance.now() - t0;
     if (st.sel.size !== antes) enviarSel(st);
@@ -204,14 +217,19 @@
     st.thead.appendChild(tr);
   }
 
+  function trDe(st, i) { return st.trs[i] || (st.trs[i] = fila(st, i)); }
+
   function fila(st, i) {
     var tr = nodo('tr');
     tr._i = i;
     if (st.bloq[i]) tr.className = 'hdt-bloq';
+    var marcada = st.sel.has(st.ids[i]);
+    if (marcada) tr.classList.add('hdt-sel');
     if (st.p.casillas) {
       var td0 = nodo('td', 'hdt-cb');
       var cb = nodo('input', 'hdt-cbx');
       cb.type = 'checkbox';
+      cb.checked = marcada;
       cb.disabled = !!st.bloq[i];
       td0.appendChild(cb);
       tr.appendChild(td0);
@@ -233,7 +251,9 @@
   }
 
   // ── Filter, sort, paint ──────────────────────────────────────────────────
-  function aplicar(st, desdeDatos) {
+  // `arriba`: scroll position to land on (new data keeps where you were);
+  // omitted, the current one.
+  function aplicar(st, desdeDatos, arriba) {
     var vis = [];
     for (var i = 0; i < st.n; i++) {
       if (!st.q || st.busq[i].indexOf(st.q) >= 0) vis.push(i);
@@ -249,16 +269,106 @@
       if (cambio) enviarSel(st);
     }
 
-    var frag = document.createDocumentFragment();
-    for (var k = 0; k < vis.length; k++) frag.appendChild(st.trs[vis[k]]);
-    st.tbody.textContent = '';
-    st.tbody.appendChild(frag);
+    pintarFilas(st, arriba == null ? st.scroll.scrollTop : arriba);
 
     st.vacio.hidden = vis.length > 0;
     if (!vis.length) st.vacio.textContent = t(st.n && st.q ? 'tablas.vacio_filtro' : 'tablas.vacio');
     pintarSel(st);
     flechas(st);
     if (st.contador) st.contador.textContent = tn(st.textos.contador || 'tablas.contador.registros', vis.length, { n: FMT_N.format(vis.length) });
+  }
+
+  // The mode is decided on every paint from the visible count; selection,
+  // sort, search and totals never know which one is on.
+  // TODO(T03): a table with `multilinea` never enters window mode (its rows
+  // don't have one fixed height).
+  function pintarFilas(st, arriba) {
+    var ventana = st.vis.length > HDT_UMBRAL_VENTANA && !st.p.multilinea;
+    if (ventana) {
+      if (st.modo !== 'ventana') entrarVentana(st);
+      st.modo = 'ventana';
+      pintarVentana(st, true, arriba);
+      st.scroll.scrollTop = arriba;
+      // The first paint at this density measures the real row height; if
+      // it differs from the estimate, repaint once with the right spacers.
+      if (medirFila(st)) { pintarVentana(st, true, arriba); st.scroll.scrollTop = arriba; }
+      return;
+    }
+    if (st.modo === 'ventana') salirVentana(st);
+    st.modo = 'completo';
+    var frag = document.createDocumentFragment();
+    for (var k = 0; k < st.vis.length; k++) frag.appendChild(trDe(st, st.vis[k]));
+    st.tbody.textContent = '';
+    st.tbody.appendChild(frag);
+    // No scrollTop assignment here: the browser keeps the position when the
+    // rows are replaced (clamped if the table got shorter), and assigning it
+    // would force a synchronous layout of every painted row.
+  }
+
+  // Column widths are measured once, on a sample of rows painted with the
+  // natural layout, and then frozen so they don't jump while scrolling.
+  function entrarVentana(st) {
+    if (!st.anchos) {
+      var paso = Math.max(1, Math.floor(st.vis.length / 150)), frag = document.createDocumentFragment();
+      for (var k = 0; k < st.vis.length; k += paso) frag.appendChild(trDe(st, st.vis[k]).cloneNode(true));
+      st.tbody.textContent = '';
+      st.tbody.appendChild(frag);
+      st.anchos = Array.prototype.map.call(st.thead.querySelectorAll('th'),
+                                           function (th) { return th.getBoundingClientRect().width; });
+    }
+    if (!st.colgroup) { st.colgroup = nodo('colgroup'); st.tabla_el.insertBefore(st.colgroup, st.thead); }
+    st.colgroup.textContent = '';
+    st.anchos.forEach(function (w) { var c = nodo('col'); c.style.width = w + 'px'; st.colgroup.appendChild(c); });
+    st.tabla_el.classList.add('hdt-fijas');
+    st.root.classList.add('hdt-ventana');
+  }
+
+  function salirVentana(st) {
+    if (st.colgroup) st.colgroup.textContent = '';
+    st.tabla_el.classList.remove('hdt-fijas');
+    st.root.classList.remove('hdt-ventana');
+    st.vIni = st.vFin = null;
+  }
+
+  function espaciador(st, alto) {
+    var tr = nodo('tr', 'hdt-esp'), td = nodo('td');
+    td.colSpan = st.cols.length + (st.p.casillas ? 1 : 0);
+    td.style.height = alto + 'px';
+    tr.appendChild(td);
+    return tr;
+  }
+
+  // Paints only the rows around `arriba` (or the current scroll position).
+  function pintarVentana(st, forzar, arriba) {
+    var h = st.altoFila || 23, n = st.vis.length;
+    var top = arriba == null ? st.scroll.scrollTop : arriba;
+    var vista = st.scroll.clientHeight || 420;
+    var ini = Math.max(0, Math.floor(top / h) - HDT_COLCHON);
+    var fin = Math.min(n, Math.ceil((top + vista) / h) + HDT_COLCHON);
+    if (!forzar && ini === st.vIni && fin === st.vFin) return;
+    st.vIni = ini; st.vFin = fin;
+    var frag = document.createDocumentFragment();
+    frag.appendChild(espaciador(st, ini * h));
+    for (var k = ini; k < fin; k++) frag.appendChild(trDe(st, st.vis[k]));
+    frag.appendChild(espaciador(st, (n - fin) * h));
+    st.tbody.textContent = '';
+    st.tbody.appendChild(frag);
+  }
+
+  // Returns true when the measured row height changed the one in use.
+  function medirFila(st) {
+    if (st.altoMedido) return false;
+    var filas = st.tbody.querySelectorAll('tr:not(.hdt-esp)');
+    if (filas.length < 2) return false;
+    var a = filas[0].getBoundingClientRect(), z = filas[filas.length - 1].getBoundingClientRect();
+    var h = (z.bottom - a.top) / filas.length;
+    // Not laid out yet (just inserted, or inside something hidden): keep the
+    // estimate and try again on the next paint.
+    if (!(h >= 8 && h <= 200)) return false;
+    st.altoMedido = true;
+    if (Math.abs(h - (st.altoFila || 23)) < 0.01) return false;
+    st.altoFila = h;
+    return true;
   }
 
   function ordenarVis(st, vis) {
@@ -287,8 +397,11 @@
   }
 
   function pintarSel(st) {
+    // Only rows already built; the rest are born with their state (fila()).
     for (var k = 0; k < st.vis.length; k++) {
-      var i = st.vis[k], tr = st.trs[i], on = st.sel.has(st.ids[i]);
+      var i = st.vis[k], tr = st.trs[i];
+      if (!tr) continue;
+      var on = st.sel.has(st.ids[i]);
       tr.classList.toggle('hdt-sel', on);
       if (st.p.casillas) tr.firstChild.firstChild.checked = on;
     }
@@ -395,6 +508,13 @@
 
   // ── Events ───────────────────────────────────────────────────────────────
   function eventos(st) {
+    var pendiente = false;
+    st.scroll.addEventListener('scroll', function () {
+      if (st.modo !== 'ventana' || pendiente) return;
+      pendiente = true;
+      requestAnimationFrame(function () { pendiente = false; if (st.modo === 'ventana') pintarVentana(st, false); });
+    }, { passive: true });
+
     st.tbody.addEventListener('mousedown', function (e) {
       st.abajo = { x: e.clientX, y: e.clientY };
       // Shift + click must not shade the text between the two rows.
@@ -558,7 +678,10 @@
       return {
         visibles: st.vis.map(function (i) { return st.ids[i]; }),
         seleccion: idsSel(st), orden: st.orden, busqueda: st.q,
-        scrollTop: st.scroll.scrollTop, medidas: st.medidas
+        scrollTop: st.scroll.scrollTop, medidas: st.medidas,
+        modo: st.modo, pintadas: st.tbody.querySelectorAll('tr:not(.hdt-esp)').length,
+        altoFila: st.altoFila, ventana: [st.vIni, st.vFin],
+        bloqueadas: st.ids.filter(function (id, i) { return !!st.bloq[i]; })
       };
     }
   };
