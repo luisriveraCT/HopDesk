@@ -1,10 +1,12 @@
 # hd_table demo: shiny::runApp("dev/hd_table_demo") from the repo root.
 # Generated data only: never touches S3 and never loads app.R.
 #
-# Query string (for tests): ?n=60&seed=1&alto=300px
-#   n     rows in the class-A table (default 300; the selector offers 5,000)
-#   seed  random seed for the generated data (default 1)
-#   alto  height of the class-A table (default "auto")
+# Query string (for tests): ?n=60&seed=1&alto=300px&periodo=0
+#   n        rows in the class-A table (default 300; the selector offers 5,000)
+#   seed     random seed for the generated data (default 1)
+#   alto     height of the class-A table (default "auto")
+#   periodo  0: no month navigation, no pinned rows and no empty dates in the
+#            class-A table (the T02/T03a tests count every row)
 #
 # Bootstrap 5 with the app's own theme (flatly), so sizes are the ones
 # HopDesk will show.
@@ -31,7 +33,7 @@ assign(".i18n_dir", file.path(.raiz, "www", "i18n"), envir = globalenv())
 PIEZAS_T02 <- HD_PIEZAS_MOTOR
 
 # ── Generated data ──────────────────────────────────────────────────────────
-demo_facturas <- function(n, seed = 1) {
+demo_facturas <- function(n, seed = 1, periodo = TRUE) {
   set.seed(seed)
   nombres <- c("Transportes del Bajío", "Aceros Monterrey", "Logística Querétaro",
                '<b>Renta</b> & "Bodega"', "Servicios Integrales de Mantenimiento Industrial del Norte, S.A. de C.V.",
@@ -57,6 +59,12 @@ demo_facturas <- function(n, seed = 1) {
   # Provision rows; half of them lose the convert button (.acciones), and
   # only pending rows offer "Crear provisión".
   df$.provision <- seq_len(n) %% 9 == 0
+  # Month navigation: every 11th row is pinned (always shown, on top); some
+  # rows have no date -- the pinned ones among them still show.
+  if (periodo) {
+    df$.fijar <- seq_len(n) %% 11 == 0
+    df$Vence[seq_len(n) %% 22 == 0 | seq_len(n) %% 23 == 0] <- NA
+  }
   df$.acciones <- paste0(ifelse(df$Estado == "pendiente", "crear_provision,", ""), "agregar,editar,detalle,eliminar",
                          ifelse(seq_len(n) %% 18 == 0, "", ",provision"))
   df
@@ -145,6 +153,7 @@ server <- function(input, output, session) {
   q <- shiny::isolate(parseQueryString(session$clientData$url_search))
   seed <- as.integer(q$seed %||% 1)
   alto <- q$alto %||% "auto"
+  con_periodo <- !identical(q$periodo, "0")
   if (!is.null(q$n)) updateSelectInput(session, "n", choices = unique(c(as.integer(q$n), 300, 1000, 5000)),
                                        selected = as.integer(q$n))
 
@@ -164,7 +173,7 @@ server <- function(input, output, session) {
   # "Cambiar datos": same ids, new amounts and states.
   datos_a <- reactive({
     n <- n_filas()
-    df <- demo_facturas(n, seed)
+    df <- demo_facturas(n, seed, con_periodo)
     k <- cambios()
     if (k > 0) {
       set.seed(seed + k)
@@ -194,6 +203,7 @@ server <- function(input, output, session) {
                  t  = hd_table_server(paste0("a", v), tabla = nombre, datos = datos_a, columnas = COLS_A,
                                       fichas = list(campo = "Estado", orden = c("pendiente", "programada", "confirmada")),
                                       filtros = list(list(campo = "Moneda"), list(campo = "Empresa")),
+                                      periodo = if (con_periodo) list(campo = "Vence", inicial = Sys.Date()),
                                       acciones_fila = acc_fila, acciones_barra = acc_barra)))
   })
   # Every accion() that arrives, newest first.
@@ -214,6 +224,7 @@ server <- function(input, output, session) {
     sel <- t$seleccion()
     cat("seleccion (", length(sel), "): ", paste(sel, collapse = " "), "\n", sep = "")
     cat("accion: "); str(t$accion())
+    cat("periodo: ", t$periodo() %||% "NULL", "\n", sep = "")
   }
   output$panel_a <- renderPrint({
     req(tabla_a())

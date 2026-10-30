@@ -45,7 +45,7 @@ ev <- function(js, await = FALSE) {
 }
 A <- "a1-hdt"
 abrir <- function(query) {
-  b$Page$navigate(paste0(base, "/", query), wait_ = TRUE)
+  b$Page$navigate(paste0(base, "/", query, "&periodo=0"), wait_ = TRUE)
   ok <- poll_until(function() isTRUE(ev(sprintf("!!window.HDT && !!HDT.estado('%s')", A))), timeout_s = 30)
   Sys.sleep(0.6)   # auto height settles on the next frame
   ok

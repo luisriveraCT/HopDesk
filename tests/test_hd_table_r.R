@@ -382,3 +382,44 @@ test_that("filtros on a table without the piece are ignored with a message", {
   expect_null(x)
   expect_identical(.hd_sin_pieza("vencidos", "filtros", "filtros", f, hd_piezas_de("vencidos")), f)
 })
+
+test_that("periodo: needs a date field, starts at the month of `inicial`", {
+  cols <- list(col_texto("Parte"), col_fecha("fecha"))
+  expect_error(hd_periodo_validar(list(), cols), "`periodo` must be list(campo", fixed = TRUE)
+  expect_error(hd_periodo_validar(list(inicial = Sys.Date()), cols), "`periodo` must be list(campo", fixed = TRUE)
+  expect_error(hd_periodo_validar(list(campo = "fecha", mes = 1), cols), "unknown `periodo` field(s): mes", fixed = TRUE)
+  expect_error(hd_periodo_validar(list(campo = "Parte"), cols), "periodo$campo 'Parte' is shown as a texto column",
+               fixed = TRUE)
+  expect_error(hd_periodo_validar(list(campo = "fecha", inicial = "octubre"), cols), "periodo$inicial must be",
+               fixed = TRUE)
+  expect_identical(hd_periodo_validar(list(campo = "fecha", inicial = as.Date("2026-10-30")), cols)$inicial, "2026-10")
+  expect_identical(hd_periodo_validar(list(campo = "fecha", inicial = "2026-03"), cols)$inicial, "2026-03")
+  expect_identical(hd_periodo_validar(list(campo = "fecha"), cols)$inicial, format(Sys.Date(), "%Y-%m"))
+  # A field that isn't shown is fine, as long as the data holds dates.
+  expect_identical(hd_periodo_validar(list(campo = "otra", inicial = "2026-10"), cols)$campo, "otra")
+})
+
+test_that("periodo payload: each row's month, empty without a date; a non-date field stops", {
+  p <- hd_periodo_validar(list(campo = "fecha", inicial = "2026-10"), list())
+  d <- data.frame(id = 1:4, fecha = as.Date(c("2026-10-01", NA, "2026-09-30", "2027-01-15")))
+  pl <- hd_periodo_payload(p, d)
+  expect_identical(unclass(pl$meses), c("2026-10", "", "2026-09", "2027-01"))
+  expect_identical(pl$inicial, "2026-10")
+  # ISO text and POSIXct (in its own time zone) work too.
+  d2 <- data.frame(id = 1:3, fecha = c("2026-10-05", "", NA), stringsAsFactors = FALSE)
+  expect_identical(unclass(hd_periodo_payload(p, d2)$meses), c("2026-10", "", ""))
+  d3 <- data.frame(id = 1, fecha = as.POSIXct("2026-10-31 20:00", tz = "America/Mexico_City"))
+  expect_identical(unclass(hd_periodo_payload(p, d3)$meses), "2026-10")
+  expect_error(hd_periodo_payload(p, data.frame(id = 1, fecha = "01/02")), "not a date column (e.g. \"01/02\")",
+               fixed = TRUE)
+  expect_error(hd_periodo_payload(p, data.frame(id = 1, otra = 1)), "periodo$campo 'fecha' is not in the data",
+               fixed = TRUE)
+  # One row: still an array in the JSON.
+  expect_match(.json(hd_periodo_payload(p, d[1, , drop = FALSE])), '"meses":["2026-10"]', fixed = TRUE)
+})
+
+test_that(".fijar travels per row (NA is FALSE; without the column, all FALSE)", {
+  d <- data.frame(id = c("a", "b", "c"), Parte = "p", .fijar = c(TRUE, NA, FALSE), stringsAsFactors = FALSE)
+  expect_identical(unclass(hd_filas(d, list(col_texto("Parte")))$fijar), c(TRUE, FALSE, FALSE))
+  expect_identical(unclass(hd_filas(d[, 1:2], list(col_texto("Parte")))$fijar), c(FALSE, FALSE, FALSE))
+})

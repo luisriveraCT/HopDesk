@@ -41,7 +41,7 @@ ev <- function(js, await = FALSE) {
   r$result$value
 }
 abrir <- function(query) {
-  b$Page$navigate(paste0(base, query), wait_ = TRUE)
+  b$Page$navigate(paste0(base, query, "&periodo=0"), wait_ = TRUE)
   poll_until(function() isTRUE(ev("!!document.querySelector('#a1-hdt tbody tr') && !!document.querySelector('#prov-hdt tbody tr')")),
              timeout_s = 30)
 }

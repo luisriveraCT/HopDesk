@@ -25,7 +25,7 @@ HD_PIEZAS_MOTOR <- c(
   "insignias", "tachado", "provision", "fichas", "detalle", "acc_fila",
   "barra_acc", "confirmar", "excel", "copiar_tsv",
   # T03b
-  "filtros"
+  "filtros", "nav_periodo"
 )
 
 HD_REGLAS_NUCLEO <- c(

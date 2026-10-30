@@ -8,6 +8,7 @@
 #                        piezas = c("densidad"), id_col = "id")
 #   t$seleccion()   # ids marked, in the order they're shown
 #   t$accion()      # list(accion, ids, nonce) or NULL
+#   t$periodo()     # "AAAA-MM" shown (with `periodo`), else NULL
 #
 # Server -> browser: one "hdt-datos" custom message each time `datos`
 # changes. Browser -> server: ns("sel") and ns("accion"), priority "event".
@@ -29,8 +30,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=11"),
-    htmltools::tags$script(src = "hdtable.js?v=11")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=12"),
+    htmltools::tags$script(src = "hdtable.js?v=12")
   ))
 }
 
@@ -154,6 +155,52 @@ hd_filtros_payload <- function(filtros, datos, columnas) {
     list(campo = f$campo, titulo = .hd_texto(f$titulo %||% col$titulo %||% f$campo),
          valores = I(valores), opciones = opciones)
   })
+}
+
+# ── periodo (nav_periodo) ───────────────────────────────────────────────────
+# periodo = list(campo = "fecha", inicial = Sys.Date())
+# "‹ oct 2026 ›" in the bar shows one month of that date column; a click on
+# the month opens a month/year picker. t$periodo() is the month shown,
+# "AAAA-MM", for a server that only wants to load that month. Rows with
+# .fijar = TRUE show whatever the month (rows with no date, only then).
+.hd_mes <- function(x) {
+  if (is.character(x) && length(x) == 1L && grepl("^[0-9]{4}-[0-9]{2}$", x)) x <- paste0(x, "-01")
+  d <- .hd_como_fecha(x)
+  if (length(d) != 1L || is.na(d)) return(NA_character_)
+  format(d, "%Y-%m")
+}
+
+hd_periodo_validar <- function(periodo, columnas) {
+  if (is.null(periodo)) return(NULL)
+  if (!is.list(periodo) || !is.character(periodo$campo) || length(periodo$campo) != 1L || !nzchar(periodo$campo))
+    stop("hd_table: `periodo` must be list(campo = <date column>, inicial = <date or \"AAAA-MM\">).", call. = FALSE)
+  otros <- setdiff(names(periodo), c("campo", "inicial"))
+  if (length(otros))
+    stop(sprintf("hd_table: unknown `periodo` field(s): %s.", paste(otros, collapse = ", ")), call. = FALSE)
+  col <- Find(function(c) identical(c$campo, periodo$campo), columnas)
+  if (!is.null(col) && !identical(col$tipo, "fecha"))
+    stop(sprintf("hd_table: periodo$campo '%s' is shown as a %s column, not a col_fecha().",
+                 periodo$campo, col$tipo), call. = FALSE)
+  inicial <- .hd_mes(periodo$inicial %||% Sys.Date())
+  if (is.na(inicial))
+    stop("hd_table: periodo$inicial must be a date or \"AAAA-MM\".", call. = FALSE)
+  list(campo = periodo$campo, inicial = inicial)
+}
+
+# Each row's month ("AAAA-MM", "" without a date). The field must hold dates:
+# Date, POSIXct or ISO text; anything else that doesn't read as one stops.
+hd_periodo_payload <- function(periodo, datos) {
+  if (is.null(periodo)) return(NULL)
+  if (!periodo$campo %in% names(datos))
+    stop(sprintf("hd_table: periodo$campo '%s' is not in the data.", periodo$campo), call. = FALSE)
+  x <- datos[[periodo$campo]]
+  d <- .hd_como_fecha(x)
+  texto <- if (inherits(x, c("Date", "POSIXt"))) character(0) else trimws(as.character(x))
+  if (length(texto) && any(is.na(d) & !is.na(texto) & nzchar(texto)))
+    stop(sprintf("hd_table: periodo$campo '%s' is not a date column (e.g. \"%s\").", periodo$campo,
+                 texto[is.na(d) & !is.na(texto) & nzchar(texto)][1]), call. = FALSE)
+  meses <- ifelse(is.na(d), "", format(d, "%Y-%m"))
+  list(meses = I(meses), inicial = periodo$inicial)
 }
 
 # ── Row actions (acc_fila) ──────────────────────────────────────────────────
@@ -284,13 +331,14 @@ hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "dat
 
 hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = "id",
                             fichas = NULL, acciones_fila = NULL, acciones_barra = NULL,
-                            filtros = NULL) {
+                            filtros = NULL, periodo = NULL) {
   piezas_tabla <- hd_piezas_de(tabla, piezas)
   piezas_motor <- hd_piezas_motor(tabla, piezas_tabla)
   meta         <- hd_columnas_meta(columnas)
   contador     <- hd_contador_clave(tabla)
   fichas       <- .hd_sin_pieza(tabla, "fichas", "fichas", hd_fichas_validar(fichas), piezas_tabla)
   filtros      <- .hd_sin_pieza(tabla, "filtros", "filtros", hd_filtros_validar(filtros), piezas_tabla)
+  periodo      <- .hd_sin_pieza(tabla, "periodo", "nav_periodo", hd_periodo_validar(periodo, columnas), piezas_tabla)
   acc_fila     <- .hd_sin_pieza(tabla, "acciones_fila", "acc_fila",
                                 hd_acciones_fila_validar(acciones_fila), piezas_tabla)
   acc_fila_meta <- if (length(acc_fila)) hd_acciones_fila_meta(acc_fila) else NULL
@@ -315,6 +363,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         textos   = list(contador = contador),
         fichas   = hd_fichas_payload(fichas, df, columnas),
         filtros  = hd_filtros_payload(filtros, df, columnas),
+        periodo  = hd_periodo_payload(periodo, df),
         acciones_fila  = acc_fila_meta,
         acciones_barra = acc_barra_meta
       ))
@@ -345,6 +394,12 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
 
     list(
       seleccion = shiny::reactive(as.character(unlist(input$sel)) %||% character(0)),
+      # The month the browser shows; until it reports one, the initial month.
+      periodo   = shiny::reactive({
+        if (is.null(periodo)) return(NULL)
+        m <- input$periodo
+        if (is.character(m) && length(m) == 1L && grepl("^[0-9]{4}-[0-9]{2}$", m)) m else periodo$inicial
+      }),
       accion    = shiny::reactive({
         a <- input$accion
         if (is.null(a)) return(NULL)

@@ -104,6 +104,36 @@
     root.classList.toggle('hdt-tachado', !!p.tachado);
 
     st.barra = nodo('div', 'hdt-barra');
+    // Month navigation (nav_periodo): "‹ oct 2026 ›"; the month opens a
+    // month/year picker. The month shown survives new data and a
+    // re-created container, and the server always knows it (t$periodo()).
+    if (p.nav_periodo && msg.periodo) {
+      st.mes = MES_DE[root.id] = MES_DE[root.id] || msg.periodo.inicial;
+      var per = nodo('span', 'hdt-periodo');
+      var ant = nodo('button', 'hdt-btn hdt-mes-flecha', '‹');
+      var sig = nodo('button', 'hdt-btn hdt-mes-flecha', '›');
+      st.btnMes = nodo('button', 'hdt-btn hdt-mes-actual');
+      ant.type = sig.type = st.btnMes.type = 'button';
+      ant.title = t('tablas.periodo.anterior');
+      sig.title = t('tablas.periodo.siguiente');
+      st.btnMes.title = t('tablas.periodo.elegir');
+      ant.setAttribute('aria-label', ant.title);
+      sig.setAttribute('aria-label', sig.title);
+      st.btnMes.setAttribute('aria-haspopup', 'true');
+      st.btnMes.setAttribute('aria-expanded', 'false');
+      ant.addEventListener('click', function () { elegirMes(st, sumarMes(st.mes, -1)); });
+      sig.addEventListener('click', function () { elegirMes(st, sumarMes(st.mes, 1)); });
+      st.btnMes.addEventListener('click', function () {
+        if (MENU && MENU.st === st && MENU.k === 'mes') cerrarMenu(false);
+        else abrirMeses(st, st.btnMes);
+      });
+      per.appendChild(ant);
+      per.appendChild(st.btnMes);
+      per.appendChild(sig);
+      st.barra.appendChild(per);
+      st.btnMes.textContent = textoMes(st.mes);
+      enviarPeriodo(st);
+    }
     if (p.buscar) {
       st.buscar = nodo('input', 'hdt-buscar');
       st.buscar.type = 'search';
@@ -434,7 +464,7 @@
       b.classList.toggle('hdt-on', elegidas.length > 0);
     });
     st.btnLimpiar.hidden = !activos.length;
-    if (MENU && MENU.st === st) contarMenu(st);
+    if (MENU && MENU.st === st && typeof MENU.k === 'number') contarMenu(st);
   }
 
   // One menu open in the page at a time. It lives inside the table's root
@@ -526,6 +556,82 @@
   window.addEventListener('scroll', function (e) { if (MENU && !MENU.el.contains(e.target)) seguirMenu(); }, true);
   window.addEventListener('resize', seguirMenu);
 
+  // ── Month navigation (nav_periodo) ───────────────────────────────────────
+  var MES_DE = {};   // root element id -> month shown ("AAAA-MM")
+  function textoMes(m) {
+    return t('tablas.periodo.mes', { mes: t('comun.mes.' + Number(m.slice(5, 7))), anio: m.slice(0, 4) });
+  }
+  function sumarMes(m, d) {
+    var n = Number(m.slice(0, 4)) * 12 + Number(m.slice(5, 7)) - 1 + d;
+    var anio = Math.floor(n / 12), mes = n - anio * 12 + 1;
+    return anio + '-' + (mes < 10 ? '0' : '') + mes;
+  }
+  function enviarPeriodo(st) {
+    if (window.Shiny && Shiny.setInputValue) Shiny.setInputValue(st.ns + 'periodo', st.mes);
+  }
+  // A new month is a new list: back to the top, and the height may shrink.
+  function elegirMes(st, m) {
+    if (!m || m === st.mes) return;
+    st.mes = MES_DE[st.root.id] = m;
+    st.btnMes.textContent = textoMes(m);
+    st.scroll.scrollTop = 0;
+    aplicar(st, false, 0);
+    programarAlto(st, true);
+    enviarPeriodo(st);
+  }
+
+  // Picker: the year with arrows and its twelve months; a dot marks the
+  // months that have rows.
+  function abrirMeses(st, boton) {
+    cerrarMenu(false);
+    var m = nodo('div', 'hdt-menu hdt-meses');
+    m.setAttribute('role', 'dialog');
+    m.setAttribute('aria-label', t('tablas.periodo.elegir'));
+    var anio = Number(st.mes.slice(0, 4)), conFilas = {};
+    (st.meses || []).forEach(function (x) { if (x) conFilas[x] = true; });
+    var cab = nodo('div', 'hdt-meses-cab');
+    var ant = nodo('button', 'hdt-btn hdt-mes-flecha', '‹');
+    var sig = nodo('button', 'hdt-btn hdt-mes-flecha', '›');
+    var etiqueta = nodo('span', 'hdt-meses-anio');
+    ant.type = sig.type = 'button';
+    ant.setAttribute('aria-label', t('tablas.periodo.anio_anterior'));
+    sig.setAttribute('aria-label', t('tablas.periodo.anio_siguiente'));
+    cab.appendChild(ant);
+    cab.appendChild(etiqueta);
+    cab.appendChild(sig);
+    var rejilla = nodo('div', 'hdt-meses-rejilla');
+    function pintar() {
+      etiqueta.textContent = anio;
+      rejilla.textContent = '';
+      for (var k = 1; k <= 12; k++) {
+        var v = anio + '-' + (k < 10 ? '0' : '') + k;
+        var b = nodo('button', 'hdt-mes' + (v === st.mes ? ' hdt-on' : '') + (conFilas[v] ? ' hdt-con-filas' : ''),
+                     t('comun.mes.' + k));
+        b.type = 'button';
+        b.dataset.mes = v;
+        b.setAttribute('aria-label', textoMes(v));
+        rejilla.appendChild(b);
+      }
+    }
+    ant.addEventListener('click', function () { anio--; pintar(); });
+    sig.addEventListener('click', function () { anio++; pintar(); });
+    rejilla.addEventListener('click', function (e) {
+      var b = e.target.closest('button.hdt-mes');
+      if (!b) return;
+      cerrarMenu(true);
+      elegirMes(st, b.dataset.mes);
+    });
+    pintar();
+    m.appendChild(cab);
+    m.appendChild(rejilla);
+    st.root.appendChild(m);
+    MENU = { st: st, k: 'mes', el: m, boton: boton };
+    boton.setAttribute('aria-expanded', 'true');
+    colocar(m, boton.getBoundingClientRect());
+    var actual = rejilla.querySelector('.hdt-on') || rejilla.firstChild;
+    actual.focus({ preventScroll: true });
+  }
+
   // Places a position: fixed element under the rect r (above it if it
   // doesn't fit below), always inside the window. The bubble and the filter
   // menus share it.
@@ -576,6 +682,9 @@
     st.moneda = arr(f.moneda);
     st.tipo = arr(f.tipo);
     st.prov = arr(f.provision);
+    st.fijar = arr(f.fijar);
+    st.hayFijas = st.fijar.some(Boolean);
+    st.meses = st.mes && msg.periodo ? arr(msg.periodo.meses) : null;
     if (msg.fichas) st.fichas = { valores: arr(msg.fichas.valores), opciones: arr(msg.fichas.opciones), mostrar: msg.fichas.mostrar };
     if (st.filtrosEl) cargarFiltros(st, msg.filtros);
     st.celdas = arr(f.celdas).map(function (c) {
@@ -612,7 +721,7 @@
 
     aplicar(st, true, arriba);
     // An open filter menu is rebuilt: its values may have changed.
-    if (MENU && MENU.st === st) abrirMenu(st, MENU.k, MENU.boton, false);
+    if (MENU && MENU.st === st && typeof MENU.k === 'number') abrirMenu(st, MENU.k, MENU.boton, false);
     st.scroll.scrollLeft = izq;
     st.medidas.pintado = performance.now() - t0;
     if (st.sel.size !== antes) enviarSel(st);
@@ -731,9 +840,12 @@
   // omitted, the current one.
   function aplicar(st, desdeDatos, arriba) {
     cerrarConfirmacion(st);   // the rows it was about may no longer be the ones shown
-    // Search, then filters (base: what the chips count), then the chip.
+    // Month (pinned rows pass whatever their date), search, then filters
+    // (base: what the chips count), then the chip.
+    var mes = st.meses ? st.mes : null;
     var activos = filtrosActivos(st), trasBusq = [], base = [], vis = [];
     for (var i = 0; i < st.n; i++) {
+      if (mes && !st.fijar[i] && st.meses[i] !== mes) continue;
       if (st.q && st.busq[i].indexOf(st.q) < 0) continue;
       trasBusq.push(i);
       if (pasaFiltros(st, activos, i, null)) base.push(i);
@@ -743,13 +855,18 @@
     var fv = st.fichas && st.ficha != null ? st.fichas.valores : null;
     vis = fv ? base.filter(function (k) { return fv[k] === st.ficha; }) : base;
     if (st.orden.col >= 0) ordenarVis(st, vis);
+    // Pinned rows (.fijar) go on top as one block, in the active order.
+    if (st.hayFijas) {
+      vis = vis.filter(function (k) { return st.fijar[k]; })
+               .concat(vis.filter(function (k) { return !st.fijar[k]; }));
+    }
     st.vis = vis;
     pintarFiltros(st, activos);
     var filtrada = !!st.q || !!fv || activos.length > 0;
 
-    // Without sel_persistente, rows the search or a chip hides drop out of
-    // the selection.
-    if (!desdeDatos && !st.p.sel_persistente && filtrada) {
+    // Without sel_persistente, rows the search, a chip, a filter or the
+    // month hides drop out of the selection.
+    if (!desdeDatos && !st.p.sel_persistente && (filtrada || mes)) {
       var visibles = new Set(vis.map(function (k) { return st.ids[k]; }));
       var cambio = false;
       st.sel.forEach(function (id) { if (!visibles.has(id)) { st.sel.delete(id); cambio = true; } });
@@ -759,7 +876,12 @@
     pintarFilas(st, arriba == null ? st.scroll.scrollTop : arriba);
 
     st.vacio.hidden = vis.length > 0;
-    if (!vis.length) st.vacio.textContent = t(st.n && filtrada ? 'tablas.vacio_filtro' : 'tablas.vacio');
+    if (!vis.length) {
+      st.vacio.textContent = !st.n ? t('tablas.vacio')
+        : filtrada ? t('tablas.vacio_filtro')
+        : mes ? t('tablas.periodo.vacio', { periodo: textoMes(mes) })
+        : t('tablas.vacio');
+    }
     pintarSel(st);
     flechas(st);
     if (st.contador) st.contador.textContent = tn(st.textos.contador || 'tablas.contador.registros', vis.length, { n: FMT_N.format(vis.length) });
@@ -1286,6 +1408,8 @@
       return {
         visibles: st.vis.map(function (i) { return st.ids[i]; }),
         seleccion: idsSel(st), orden: st.orden, busqueda: st.q,
+        periodo: st.mes || null,
+        fijas: st.vis.filter(function (i) { return st.fijar[i]; }).map(function (i) { return st.ids[i]; }),
         filtros: Object.keys(st.fsel).reduce(function (o, c) { o[c] = Object.keys(st.fsel[c]); return o; }, {}),
         scrollTop: st.scroll.scrollTop, medidas: st.medidas,
         modo: st.modo, pintadas: st.tbody.querySelectorAll('tr:not(.hdt-esp)').length,

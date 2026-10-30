@@ -90,7 +90,8 @@ menu_ops <- function() {
 menu_op <- function(valor) sprintf("document.querySelector('.hdt-menu input[data-valor=\"%s\"]')", valor)
 dentro <- function(js_el) isTRUE(ev(sprintf("(function(){ var r = %s.getBoundingClientRect(); return r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight; })()", js_el)))
 
-ok("demo loads (300 rows, Bootstrap 5)", abrir("?n=300&seed=1"))
+# Filters run without the month navigation, so they count every row.
+ok("demo loads (300 rows, Bootstrap 5)", abrir("?n=300&seed=1&periodo=0"))
 vis0 <- vis()
 moneda0 <- columna(COL_MONEDA); empresa0 <- columna(COL_EMPRESA)
 
@@ -185,13 +186,114 @@ Sys.sleep(0.2)
 clic(boton_filtro(1), ver = FALSE)
 abajo <- ev(sprintf("%s.getBoundingClientRect().top", boton_filtro(1)))
 arriba_menu <- ev("(document.querySelector('.hdt-menu') || {getBoundingClientRect: function(){ return {bottom: NaN}; }}).getBoundingClientRect().bottom")
-cat(sprintf("  window 420 px high: button top at %.0f, menu bottom at %.0f
-", abajo, arriba_menu))
+cat(sprintf("  window 420 px high: button top at %.0f, menu bottom at %.0f\n", abajo, arriba_menu))
 ok("near the bottom edge the menu opens above its button and stays inside the window",
    dentro("document.querySelector('.hdt-menu')") && arriba_menu <= abajo)
 tecla("Escape", "Escape", 27L)
 invisible(ev("document.body.style.paddingTop = ''"))
 pantalla(1400L, 1080L)
+
+# ── Month navigation (nav_periodo) and pinned rows (.fijar) ────────────────
+# The expected rows come from the demo's own generator (same seed, same day).
+demo <- new.env()
+invisible(capture.output(suppressMessages(sys.source("dev/hd_table_demo/app.R", envir = demo))))
+datos <- demo$demo_facturas(300, 1, TRUE)
+mes_de <- ifelse(is.na(datos$Vence), "", format(datos$Vence, "%Y-%m"))
+fijas <- datos$id[datos$.fijar]
+MESES <- c("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
+etiqueta <- function(m) paste(MESES[as.integer(substr(m, 6, 7))], substr(m, 1, 4))
+sumar_mes <- function(m, d) { n <- as.integer(substr(m, 1, 4)) * 12L + as.integer(substr(m, 6, 7)) - 1L + d
+  sprintf("%d-%02d", n %/% 12L, n %% 12L + 1L) }
+esperadas <- function(m) datos$id[datos$.fijar | mes_de == m]
+boton_mes <- sprintf("document.querySelector('#%s .hdt-mes-actual')", A)
+flecha <- function(k) sprintf("document.querySelectorAll('#%s .hdt-periodo .hdt-mes-flecha')[%d]", A, k)
+periodo_servidor <- function() {
+  txt <- ev("document.getElementById('panel_a').innerText")
+  sub("^.*periodo: (\\S+).*$", "\\1", gsub("\n", " ", txt))
+}
+# Pinned rows first, then the rest: the first length(fijas visible) ids are the pinned ones.
+fijas_arriba <- function() { v <- vis(); f <- unlist(estado()$fijas); length(f) > 0 && identical(v[seq_along(f)], f) }
+
+hoy <- format(Sys.Date(), "%Y-%m")
+ok("demo loads with the month navigation", abrir("?n=300&seed=1"))
+cat(sprintf("  month %s: %d rows in it + %d pinned (%d of them without a date)\n", hoy, sum(mes_de == hoy & !datos$.fijar),
+            length(fijas), sum(datos$.fijar & mes_de == "")))
+ok("the bar shows the initial month in Spanish, between two arrows",
+   identical(ev(sprintf("%s.textContent", boton_mes)), etiqueta(hoy)) &&
+     identical(unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s .hdt-mes-flecha')).map(function(b){ return b.textContent; })", A))),
+               c("‹", "›")))
+ok("t$periodo() starts at the initial month on the server", identical(periodo_servidor(), hoy))
+ok("only the month's rows show, plus every pinned row (also those without a date)",
+   setequal(vis(), esperadas(hoy)) && all(fijas %in% vis()))
+ok("a row without a date that isn't pinned never shows",
+   !any(datos$id[mes_de == "" & !datos$.fijar] %in% vis()))
+ok("pinned rows are on top as one block", fijas_arriba())
+
+# Pinned on top in both directions of the sort, ordered among themselves.
+importe <- setNames(datos$Importe, datos$id)
+cabecera_importe <- sprintf("document.querySelectorAll('#%s thead th')[3]", A)
+clic(cabecera_importe)
+v <- vis(); f <- unlist(estado()$fijas)
+ok("sorted up: pinned block still on top, each block sorted by amount",
+   fijas_arriba() && !is.unsorted(importe[f]) && !is.unsorted(importe[setdiff(v, f)]))
+clic(cabecera_importe)
+v <- vis(); f <- unlist(estado()$fijas)
+ok("sorted down: pinned block still on top, each block sorted by amount, descending",
+   fijas_arriba() && !is.unsorted(rev(importe[f])) && !is.unsorted(rev(importe[setdiff(v, f)])))
+
+# Arrows.
+antes <- sumar_mes(hoy, -1)
+clic(flecha(0)); Sys.sleep(0.4)
+ok("the left arrow goes to the previous month: label, rows and t$periodo()",
+   identical(ev(sprintf("%s.textContent", boton_mes)), etiqueta(antes)) &&
+     setequal(vis(), esperadas(antes)) && identical(periodo_servidor(), antes))
+ok("... pinned rows still all there and on top in another month", all(fijas %in% vis()) && fijas_arriba())
+clic(flecha(1)); clic(flecha(1)); Sys.sleep(0.4)
+despues <- sumar_mes(hoy, 1)
+ok("the right arrow goes forward, across the year if needed",
+   identical(ev(sprintf("%s.textContent", boton_mes)), etiqueta(despues)) &&
+     setequal(vis(), esperadas(despues)) && identical(periodo_servidor(), despues))
+
+# Pinned rows follow the search.
+escribir(sprintf("document.querySelector('#%s .hdt-buscar')", A), "aceros")
+f <- unlist(estado()$fijas)
+ok("pinned rows follow the search (only pinned 'Aceros' rows stay)",
+   setequal(f, intersect(fijas, datos$id[grepl("Aceros", datos$Parte)])) && fijas_arriba())
+escribir(sprintf("document.querySelector('#%s .hdt-buscar')", A), "")
+
+# Month picker.
+clic(boton_mes)
+ok("clicking the month opens the picker on its year, with the month marked, inside the window",
+   isTRUE(ev("!!document.querySelector('.hdt-meses')")) &&
+     identical(ev("document.querySelector('.hdt-meses-anio').textContent"), substr(despues, 1, 4)) &&
+     identical(ev("document.querySelector('.hdt-mes.hdt-on').dataset.mes"), despues) &&
+     dentro("document.querySelector('.hdt-meses')"))
+con_filas <- sort(unlist(ev("Array.from(document.querySelectorAll('.hdt-mes.hdt-con-filas')).map(function(b){ return b.dataset.mes; })")))
+ok("months with rows carry a mark",
+   identical(con_filas, sort(unique(mes_de[nzchar(mes_de) & substr(mes_de, 1, 4) == substr(despues, 1, 4)]))))
+clic("document.querySelector('.hdt-meses-cab .hdt-mes-flecha')", ver = FALSE)
+anio_ant <- as.character(as.integer(substr(despues, 1, 4)) - 1L)
+ok("the picker's year arrow shows the previous year",
+   identical(ev("document.querySelector('.hdt-meses-anio').textContent"), anio_ant))
+clic(sprintf("document.querySelectorAll('.hdt-meses-cab .hdt-mes-flecha')[1]"), ver = FALSE)
+elegido <- sort(unique(mes_de[nzchar(mes_de)]))[1]   # the oldest month with rows
+if (substr(elegido, 1, 4) != substr(despues, 1, 4))
+  clic("document.querySelectorAll('.hdt-meses-cab .hdt-mes-flecha')[0]", ver = FALSE)
+clic(sprintf("document.querySelector('.hdt-mes[data-mes=\"%s\"]')", elegido), ver = FALSE)
+Sys.sleep(0.4)
+ok("choosing a month in the picker closes it and shows that month (rows and t$periodo())",
+   !menu_abierto() && identical(ev(sprintf("%s.textContent", boton_mes)), etiqueta(elegido)) &&
+     setequal(vis(), esperadas(elegido)) && identical(periodo_servidor(), elegido))
+clic(boton_mes)
+tecla("Escape", "Escape", 27L)
+ok("Esc closes the picker and gives the focus back to the month",
+   !menu_abierto() && isTRUE(ev(sprintf("document.activeElement === %s", boton_mes))))
+
+# New data keeps the month.
+clic("document.getElementById('cambiar')")
+Sys.sleep(0.8)
+ok("new data keeps the month shown", identical(ev(sprintf("%s.textContent", boton_mes)), etiqueta(elegido)) &&
+     setequal(vis(), esperadas(elegido)))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)

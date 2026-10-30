@@ -64,14 +64,19 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE) {
     })
 }
 
+# Date, POSIXct or ISO text -> Date (NA where it isn't one).
+.hd_como_fecha <- function(x) {
+  if (inherits(x, "Date")) x
+  # The value's own time zone: as.Date() would use UTC and turn 20:00 in
+  # Mexico City into the next day.
+  else if (inherits(x, "POSIXt")) as.Date(format(x, "%Y-%m-%d"))
+  else suppressWarnings(as.Date(as.character(x), optional = TRUE))
+}
+
 col_fecha <- function(campo, titulo = NULL) {
   .hd_col("fecha", campo, titulo, "izquierda", recorte = FALSE,
     valores = function(x) {
-      d <- if (inherits(x, "Date")) x
-           # The value's own time zone: as.Date() would use UTC and turn
-           # 20:00 in Mexico City into the next day.
-           else if (inherits(x, "POSIXt")) as.Date(format(x, "%Y-%m-%d"))
-           else suppressWarnings(as.Date(as.character(x), optional = TRUE))
+      d <- .hd_como_fecha(x)
       ok  <- !is.na(d)
       iso <- character(length(d))
       iso[ok] <- format(d[ok], "%Y-%m-%d")
@@ -176,7 +181,9 @@ hd_columnas_meta <- function(columnas) {
 # Control columns: .bloqueada (paid/confirmed: not selectable; struck
 # through when the table has the `tachado` piece), .moneda and .tipo
 # ("cobro"/"pago") for the totals footer, .provision (logical: purple
-# provision row with its badge), .acciones (row actions allowed per row).
+# provision row with its badge), .acciones (row actions allowed per row),
+# .fijar (logical: always shown whatever the month, on top as a block in any
+# order; it still follows the search, chips and filters).
 # Without .moneda, the currency comes from the first summed money column's
 # `moneda` field, then from "Moneda"; without .tipo, totals aren't split.
 hd_filas <- function(datos, columnas, id_col = "id") {
@@ -197,6 +204,8 @@ hd_filas <- function(datos, columnas, id_col = "id") {
   tipo[!tipo %in% c("cobro", "pago")] <- NA_character_
   provision <- if (".provision" %in% names(datos)) as.logical(datos[[".provision"]]) else rep(FALSE, n)
   provision[is.na(provision)] <- FALSE
+  fijar <- if (".fijar" %in% names(datos)) as.logical(datos[[".fijar"]]) else rep(FALSE, n)
+  fijar[is.na(fijar)] <- FALSE
   # .acciones: the row actions each row may show, as a list column of names
   # or comma-separated text. Without the column every row shows them all; a
   # row with NA or nothing shows none (fails closed).
@@ -217,7 +226,8 @@ hd_filas <- function(datos, columnas, id_col = "id") {
     moneda    = I(moneda),
     tipo      = I(tipo),
     provision = I(provision),
-    celdas    = lapply(columnas, function(col) lapply(col$valores(datos[[col$campo]]), I))
+    fijar     = I(fijar),
+    celdas   = lapply(columnas, function(col) lapply(col$valores(datos[[col$campo]]), I))
   ) -> out
   # Only when the column exists: list(x = NULL) would serialize as {}.
   if (!is.null(acciones)) out$acciones <- I(acciones)

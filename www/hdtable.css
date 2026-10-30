@@ -53,6 +53,21 @@
 .hdt-menu-texto { overflow: hidden; text-overflow: ellipsis; }
 .hdt-menu-n { margin-left: auto; padding-left: 14px; color: var(--hdt-muted); font-variant-numeric: tabular-nums; }
 
+/* Month navigation (nav_periodo) and its month/year picker (a .hdt-menu). */
+.hdt-periodo { display: inline-flex; align-items: center; gap: 2px; }
+.hdt-btn.hdt-mes-flecha { padding: 2px 7px; font-weight: 700; line-height: 1.2; }
+.hdt-btn.hdt-mes-actual { font-weight: 700; min-width: 7.5em; text-align: center; }
+.hdt-menu.hdt-meses { min-width: 0; padding: 6px; }
+.hdt-meses-cab { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 6px; }
+.hdt-meses-anio { font-weight: 700; font-variant-numeric: tabular-nums; }
+.hdt-meses-rejilla { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.hdt-mes { font: inherit; position: relative; border: 1px solid var(--hdt-line); background: var(--hdt-surface);
+  color: var(--hdt-ink); border-radius: 5px; padding: 4px 12px; cursor: pointer; }
+.hdt-mes:hover { border-color: var(--hdt-accent); }
+.hdt-mes.hdt-on { background: var(--hdt-accent-soft); border-color: var(--hdt-accent); color: var(--hdt-accent); font-weight: 700; }
+.hdt-mes.hdt-con-filas::after { content: ""; position: absolute; top: 3px; right: 3px; width: 5px; height: 5px;
+  border-radius: 50%; background: var(--hdt-accent); }
+
 /* Chips (fichas): count or amount per value; touching one filters. */
 .hdt-fichas { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 6px; }
 .hdt-ficha { font: inherit; font-size: .78rem; display: inline-flex; align-items: baseline; gap: 6px;
