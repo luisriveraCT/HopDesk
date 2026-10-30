@@ -1379,10 +1379,11 @@ server <- function(input, output, session) {
   active_cal_ledger                  <- reactiveVal("AR")
   # .cal_fade_pending     <- reactiveVal(FALSE)  # OVERLAY FADE — abandoned (see observer below)
   # .ar_post_phase2_count <- reactiveVal(0L)     # OVERLAY FADE — abandoned (see observer below)
-  group_config_rv <- reactiveVal(
-    tryCatch(load_group_config(),
-             error = function(e) list(group_name = "", logo_raw = NULL, logo_ext = "png"))
-  )
+  # Starts empty; Phase 2 loads the session's own client (and the context-switch
+  # observer reloads it on a jump). It used to start with load_group_config()
+  # without a client_id -- the process's (hd-admin's) group name and logo -- and,
+  # since nothing reloaded it for a native client, kept it for the whole session.
+  group_config_rv <- reactiveVal(.schema_group_config())
 
   shared <- list(
     sap_data          = sap_data,
@@ -2226,6 +2227,15 @@ server <- function(input, output, session) {
         if (!is.null(emp)) empresas_db(emp)
       })
       message(sprintf("[LOAD]   empresas         %.1fs", (proc.time() - t1)[["elapsed"]]))
+
+      # Same as empresas: the context-switch observer skips the initial login,
+      # so the session's own group name and logo are loaded here.
+      t1 <- proc.time()
+      local({
+        cfg <- tryCatch(load_group_config(client_id = cid_lo), error = function(e) NULL)
+        if (!is.null(cfg)) group_config_rv(cfg)
+      })
+      message(sprintf("[LOAD]   group_config     %.1fs", (proc.time() - t1)[["elapsed"]]))
 
       # Populate global cache so save_*() callbacks update it. Every call
       # passes cid_lo explicitly -- these keys are now client_id-scoped (see
