@@ -367,7 +367,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     # ── Empresa checkboxes (derived from ctas_cuentas) ───────────────────────
     all_empresas <- reactive({
       cts <- tryCatch(shared$ctas_cuentas(), error = function(e) NULL)
-      emps <- if (is.null(cts) || !nrow(cts)) sort(names(COMPANY_MAP))
+      emps <- if (is.null(cts) || !nrow(cts)) sort(names(shared$company_map()))
               else sort(unique(trimws(cts$Empresa)))
       allowed <- tryCatch(shared$visible_initials(), error = function(e) NULL)
       if (!is.null(allowed)) emps <- intersect(emps, allowed)
@@ -756,7 +756,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           dplyr::filter(res$movimientos, cuenta_id %in% bals$cuenta_id)
         else NULL
         pulse <- compute_pulse()
-        .build_report_html(bals, movs, desde, hasta, Sys.time(), pulse = pulse)
+        .build_report_html(bals, movs, desde, hasta, Sys.time(), pulse = pulse,
+                           cmap = shared$company_map(), group_name = shared$group_name())
       })
     })
 
@@ -835,7 +836,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         pulse_data <- isolate(compute_pulse())
         writeLines(
           .build_report_html(bals_sel, movs_sel, desde, hasta, Sys.time(),
-                             pulse = pulse_data),
+                             pulse = pulse_data,
+                             cmap = isolate(shared$company_map()),
+                             group_name = isolate(shared$group_name())),
           file, useBytes = FALSE
         )
 
@@ -870,7 +873,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           desde       = desde,
           hasta       = hasta,
           generated   = Sys.time(),
-          pulse       = pulse_data
+          pulse       = pulse_data,
+          cmap        = isolate(shared$company_map()),
+          group_name  = isolate(shared$group_name())
         )
 
         tmp_html <- tempfile(fileext = ".html")
@@ -953,14 +958,24 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 # =============================================================================
 # .brand_inject() — replace static branding strings with dynamic group values.
 # Called on the assembled HTML before returning from .build_report_html().
-# Reads COMPANY_MAP from the global environment so it always reflects the
-# latest state (empresas_module broadcasts updates on every save).
+# Uses the SESSION's group: group_name is shared$group_name() (the same source
+# as the cash-flow export) and cmap is shared$company_map(); never the global
+# COMPANY_MAP, which can hold another client's companies. Without a group name
+# the first company stands in, as before; with neither, the template is left
+# as is.
 # =============================================================================
-.brand_inject <- function(html) {
-  cmap         <- tryCatch(get("COMPANY_MAP", envir = .GlobalEnv),
-                           error = function(e) c(NG = "Networks Group"))
-  grp_ini      <- names(cmap)[1]
-  grp_name     <- unname(cmap[1])
+.brand_inject <- function(html, cmap, group_name = "") {
+  group_name <- trimws(group_name %||% "")
+  if (nzchar(group_name)) {
+    words    <- strsplit(group_name, "\\s+")[[1]]
+    grp_ini  <- toupper(paste(substr(words[seq_len(min(3L, length(words)))], 1, 1), collapse = ""))
+    grp_name <- group_name
+  } else if (length(cmap)) {
+    grp_ini  <- names(cmap)[1]
+    grp_name <- unname(cmap[1])
+  } else {
+    return(html)
+  }
   brand_name   <- paste0(grp_ini, " Finances")
   brand_letter <- substr(grp_ini, 1, 1)
 
@@ -1230,7 +1245,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 # Page 2: Top movements per individual account (preserved exactly)
 # =============================================================================
 .build_report_html <- function(balances, movimientos = NULL, desde, hasta, generated,
-                                pulse = NULL) {
+                                pulse = NULL, cmap = c(), group_name = "") {
 
   he   <- htmltools::htmlEscape
   fmt  <- function(x) formatC(abs(x), format = "f", digits = 2, big.mark = ",")
@@ -2050,5 +2065,5 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     # pages 3-4: cash flow pulse (current week + next week)
     pulse_pages
   )
-  .brand_inject(html_out)
+  .brand_inject(html_out, cmap, group_name)
 }
