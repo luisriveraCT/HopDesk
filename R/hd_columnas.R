@@ -15,6 +15,21 @@
 # per column, not one object per row) so 5,000 rows stay small and fast to
 # build in R.
 
+# Optional columns (columnas_opc): opcional = TRUE puts the column in the
+# table's "Columnas" menu, and visible says whether it starts shown. Every
+# col_*() takes both, last, so existing calls don't change.
+.hd_opcional <- function(col, opcional, visible) {
+  if (!is.logical(opcional) || length(opcional) != 1L || is.na(opcional) ||
+      !is.logical(visible) || length(visible) != 1L || is.na(visible))
+    stop(sprintf("col_%s(\"%s\"): `opcional` and `visible` must be TRUE or FALSE.", col$tipo, col$campo), call. = FALSE)
+  if (!opcional && !visible)
+    stop(sprintf("col_%s(\"%s\"): only an optional column can start hidden (opcional = TRUE).", col$tipo, col$campo),
+         call. = FALSE)
+  col$opcional <- opcional
+  col$visible  <- visible
+  col
+}
+
 # Dictionary key -> text; anything that isn't a key is used as-is.
 .hd_texto <- function(x) {
   if (is.character(x) && length(x) == 1L && !is.null(i18n_dict("es")[[x]])) tr(x) else x
@@ -35,17 +50,17 @@
             class = "hd_columna")
 }
 
-col_texto <- function(campo, titulo = NULL, recorte = TRUE) {
-  .hd_col("texto", campo, titulo, "izquierda", recorte = isTRUE(recorte),
+col_texto <- function(campo, titulo = NULL, recorte = TRUE, opcional = FALSE, visible = TRUE) {
+  .hd_opcional(.hd_col("texto", campo, titulo, "izquierda", recorte = isTRUE(recorte),
     valores = function(x) {
       txt <- as.character(x)
       txt[is.na(txt)] <- ""
       list(mostrar = txt, orden = .hd_plano(txt), copiar = txt)
-    })
+    }), opcional, visible)
 }
 
-col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE) {
-  .hd_col("dinero", campo, titulo, "derecha", recorte = FALSE,
+col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, opcional = FALSE, visible = TRUE) {
+  .hd_opcional(.hd_col("dinero", campo, titulo, "derecha", recorte = FALSE,
     moneda = moneda, sumar = isTRUE(sumar),
     valores = function(x) {
       # Round first: -0.001 must show "$0.00" and copy "0", not "-$0.00" / "-0"
@@ -61,7 +76,7 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE) {
       copiar <- character(length(x))
       copiar[ok] <- sub("\\.$", "", sub("0+$", "", sprintf("%.2f", x[ok])))
       list(mostrar = mostrar, orden = x, copiar = copiar)
-    })
+    }), opcional, visible)
 }
 
 # Date, POSIXct or ISO text -> Date (NA where it isn't one).
@@ -73,8 +88,8 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE) {
   else suppressWarnings(as.Date(as.character(x), optional = TRUE))
 }
 
-col_fecha <- function(campo, titulo = NULL) {
-  .hd_col("fecha", campo, titulo, "izquierda", recorte = FALSE,
+col_fecha <- function(campo, titulo = NULL, opcional = FALSE, visible = TRUE) {
+  .hd_opcional(.hd_col("fecha", campo, titulo, "izquierda", recorte = FALSE,
     valores = function(x) {
       d <- .hd_como_fecha(x)
       ok  <- !is.na(d)
@@ -95,17 +110,17 @@ col_fecha <- function(campo, titulo = NULL) {
       orden <- iso
       orden[!ok] <- NA_character_
       list(mostrar = mostrar, orden = orden, copiar = iso)
-    })
+    }), opcional, visible)
 }
 
 # mapa: named list, raw value -> list(texto = <key or text>, tono = <css tone>).
 # Sorting follows the order the map declares; values not in the map go last
 # and show as they come, in the neutral tone.
-col_insignia <- function(campo, titulo = NULL, mapa = list()) {
+col_insignia <- function(campo, titulo = NULL, mapa = list(), opcional = FALSE, visible = TRUE) {
   if (length(mapa) && (is.null(names(mapa)) || any(!nzchar(names(mapa)))))
     stop("col_insignia(): `mapa` must be a named list (raw value -> list(texto, tono)).",
          call. = FALSE)
-  .hd_col("insignia", campo, titulo, "izquierda", recorte = FALSE, mapa = mapa,
+  .hd_opcional(.hd_col("insignia", campo, titulo, "izquierda", recorte = FALSE, mapa = mapa,
     valores = function(x) {
       raw <- as.character(x)
       raw[is.na(raw)] <- ""
@@ -116,17 +131,17 @@ col_insignia <- function(campo, titulo = NULL, mapa = list()) {
                      USE.NAMES = FALSE)
       list(mostrar = unname(mostrar), orden = ifelse(is.na(pos), length(mapa) + 1L, pos),
            copiar = raw, tono = tono)
-    })
+    }), opcional, visible)
 }
 
-col_empresa <- function(campo = "Empresa", titulo = NULL) {
-  col <- col_texto(campo, titulo, recorte = FALSE)
+col_empresa <- function(campo = "Empresa", titulo = NULL, opcional = FALSE, visible = TRUE) {
+  col <- col_texto(campo, titulo, recorte = FALSE, opcional = opcional, visible = visible)
   col$tipo <- "empresa"
   col
 }
 
-col_etiqueta <- function(campo, titulo = NULL) {
-  col <- col_texto(campo, titulo, recorte = TRUE)
+col_etiqueta <- function(campo, titulo = NULL, opcional = FALSE, visible = TRUE) {
+  col <- col_texto(campo, titulo, recorte = TRUE, opcional = opcional, visible = visible)
   col$tipo <- "etiqueta"
   # Untagged rows sort after tagged ones in either direction of the text.
   base <- col$valores
@@ -171,7 +186,9 @@ hd_columnas_meta <- function(columnas) {
     tipo    = col$tipo,
     alinear = col$alinear,
     recorte = isTRUE(col$recorte),
-    sumar   = isTRUE(col$sumar)
+    sumar   = isTRUE(col$sumar),
+    opcional = isTRUE(col$opcional),
+    visible  = !identical(col$visible, FALSE)
   ))
 }
 

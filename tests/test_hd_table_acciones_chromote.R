@@ -74,6 +74,7 @@ clic <- function(js_el) {
   Sys.sleep(0.25)
 }
 doble <- function(js_el) {
+  sin_burbuja()
   p <- centro(js_el)
   raton("mouseMoved", p)
   raton("mousePressed", p, 1L, 1L); raton("mouseReleased", p, 0L, 1L)
@@ -128,11 +129,13 @@ escribir(sprintf("document.querySelector('#%s .hdt-buscar')", A), "")
 # ── Double click: details, never marking; locked rows too ─────────────────
 abierta <- setdiff(vis0, bloq)[2]
 doble(fila(abierta, ".children[1]"))
+poll_until(function() identical(ultima_accion()$ids, abierta), timeout_s = 8)   # the log comes from the server
 ok("double click sends accion 'detalle' with that row's id",
    identical(ultima_accion()$accion, "detalle") && identical(ultima_accion()$ids, abierta))
 ok("... and leaves the row unmarked", length(sel_a()) == 0L)
 ok("... and no word shaded", identical(ev("String(window.getSelection())"), ""))
 doble(fila(bloq[1], ".children[1]"))
+poll_until(function() identical(ultima_accion()$ids, bloq[1]), timeout_s = 8)
 ok("a locked (paid) row also opens its details",
    identical(ultima_accion()$accion, "detalle") && identical(ultima_accion()$ids, bloq[1]))
 

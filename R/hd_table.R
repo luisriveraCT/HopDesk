@@ -36,8 +36,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=16"),
-    htmltools::tags$script(src = "hdtable.js?v=17")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=18"),
+    htmltools::tags$script(src = "hdtable.js?v=18")
   ))
 }
 
@@ -402,7 +402,10 @@ hd_neutralizar <- function(x) {
 # Writes the rows `ids` (visible ones, in visible order) with every column,
 # titles as the header, and raw typed values: money as numbers, dates as
 # real dates, the rest as (neutralized) text.
-hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "datos") {
+# campos: the columns shown (columnas_opc), in their order; NULL = all.
+hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "datos", campos = NULL) {
+  if (!is.null(campos))
+    columnas <- Filter(function(col) col$campo %in% campos, columnas)
   datos <- as.data.frame(datos, stringsAsFactors = FALSE)
   filas <- match(as.character(ids), as.character(datos[[id_col]]))
   filas <- filas[!is.na(filas)]
@@ -518,14 +521,16 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
       vista <- shiny::reactiveVal(NULL)
       shiny::observeEvent(input$vista, {
         v <- input$vista
-        vista(as.character(unlist(v$ids)))
+        vista(list(ids = as.character(unlist(v$ids)),
+                   campos = if (!is.null(v$columnas)) as.character(unlist(v$columnas))))
         session$sendCustomMessage("hdt-excel", list(id = ns("hdt"), nonce = v$nonce))
       })
       output$excel <- shiny::downloadHandler(
         filename = function() paste0(tabla, "_", format(Sys.Date(), "%Y-%m-%d"), ".xlsx"),
         content  = function(file) {
-          hd_excel_escribir(shiny::isolate(datos()), shiny::isolate(columnas_r()), shiny::isolate(vista()) %||% character(0),
-                            id_col, file, hoja = tabla)
+          v <- shiny::isolate(vista())
+          hd_excel_escribir(shiny::isolate(datos()), shiny::isolate(columnas_r()), v$ids %||% character(0),
+                            id_col, file, hoja = tabla, campos = v$campos)
         }
       )
       # The link is hidden (the visible button drives it), and Shiny never

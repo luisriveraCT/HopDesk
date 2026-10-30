@@ -64,6 +64,9 @@ demo_facturas <- function(n, seed = 1, periodo = TRUE, grupos = FALSE) {
   # Provision rows; half of them lose the convert button (.acciones), and
   # only pending rows offer "Crear provisión".
   df$.provision <- seq_len(n) %% 9 == 0
+  # Origin (no random draw, so the rest of the data stays the same): an
+  # optional column that starts hidden, like Vencidos' Origen.
+  df$Origen <- if (n) ifelse(seq_len(n) %% 7 == 0, "Manual", "SAP") else character(0)
   # Month navigation: every 11th row is pinned (always shown, on top); some
   # rows have no date -- the pinned ones among them still show.
   # Groups: in every 10 rows, rows 2-4 take the company, due date,
@@ -103,8 +106,9 @@ col_estado <- col_insignia("Estado", "Estado", mapa = list(
   programada = list(texto = "Programada", tono = "info"),
   confirmada = list(texto = "Confirmada", tono = "exito")))
 COLS_A <- list(col_empresa("Empresa"), col_texto("Parte", "Proveedor"), col_texto("Documento", "Documento", recorte = FALSE),
-               col_dinero("Importe", "Importe"), col_texto("Moneda", "Moneda", recorte = FALSE),
-               col_fecha("Vence", "Vence"), col_estado, col_etiqueta("Etiqueta", "Etiqueta"))
+               col_dinero("Importe", "Importe"), col_texto("Moneda", "Moneda", recorte = FALSE, opcional = TRUE),
+               col_fecha("Vence", "Vence"), col_estado, col_etiqueta("Etiqueta", "Etiqueta"),
+               col_texto("Origen", "Origen", recorte = FALSE, opcional = TRUE, visible = FALSE))
 COLS_D <- list(col_texto("Nombre", "Nombre"), col_texto("RFC", "RFC", recorte = FALSE),
                col_texto("Banco", "Banco"),
                col_insignia("Estado", "Estado", mapa = list(

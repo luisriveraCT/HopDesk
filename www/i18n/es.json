@@ -60,6 +60,7 @@
   "tablas.periodo.anio_anterior": "Año anterior",
   "tablas.periodo.anio_siguiente": "Año siguiente",
   "tablas.periodo.vacio": "No hay filas en {periodo}.",
+  "tablas.columnas": "Columnas",
   "tablas.grupos.abrir": "Abrir o cerrar el grupo",
   "tablas.grupos.todos": "Abrir o cerrar todos los grupos",
   "tablas.copiar_tabla": "Copiar tabla",

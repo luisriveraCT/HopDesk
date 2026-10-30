@@ -172,6 +172,21 @@
       st.btnLimpiar.addEventListener('click', function () { st.fsel = {}; cerrarMenu(false); aplicar(st); });
       st.barra.appendChild(st.btnLimpiar);
     }
+    // Optional columns: a "Columnas" menu with a checkbox per optional one.
+    st.colVer = {};
+    if (p.columnas_opc) {
+      try { st.colVer = JSON.parse(localStorage.getItem('hdt.columnas.' + st.tabla) || '{}') || {}; } catch (e) { st.colVer = {}; }
+      st.btnColumnas = nodo('button', 'hdt-btn hdt-columnas', t('tablas.columnas'));
+      st.btnColumnas.type = 'button';
+      st.btnColumnas.setAttribute('aria-haspopup', 'true');
+      st.btnColumnas.setAttribute('aria-expanded', 'false');
+      st.btnColumnas.hidden = !arr(msg.columnas).some(function (c) { return c.opcional; });
+      st.btnColumnas.addEventListener('click', function () {
+        if (MENU && MENU.st === st && MENU.k === 'columnas') cerrarMenu(false);
+        else abrirColumnas(st, st.btnColumnas);
+      });
+      st.barra.appendChild(st.btnColumnas);
+    }
     // Groups: open or close them all (▶▶ / ▼▼).
     if (p.expandir && msg.grupo) {
       st.btnGrupos = nodo('button', 'hdt-btn hdt-grupos-todos', '▶▶');
@@ -592,6 +607,61 @@
   window.addEventListener('scroll', function (e) { if (MENU && !MENU.el.contains(e.target)) seguirMenu(); }, true);
   window.addEventListener('resize', seguirMenu);
 
+  // ── Optional columns (columnas_opc) ──────────────────────────────────────
+  // Shown: every column, minus the optional ones turned off in the
+  // "Columnas" menu (or that start hidden), remembered per table in this
+  // browser. Without the piece every column shows. Excel and Ctrl+C take
+  // only the ones shown.
+  function columnasVisibles(st) {
+    var opc = !!st.p.columnas_opc;
+    st.ver = [];
+    st.cols.forEach(function (c, j) {
+      var ver = !opc || !c.opcional ? true
+              : Object.prototype.hasOwnProperty.call(st.colVer, c.campo) ? !!st.colVer[c.campo] : c.visible !== false;
+      if (ver) st.ver.push(j);
+    });
+    // The group's ▶/▼ and count go to the first column shown if theirs is hidden.
+    st.grupoColVis = st.grupoCol < 0 ? -1 : st.ver.indexOf(st.grupoCol) >= 0 ? st.grupoCol : st.ver[0];
+    if (st.btnColumnas) st.btnColumnas.hidden = !st.cols.some(function (c) { return c.opcional; });
+  }
+
+  function verColumna(st, campo, ver) {
+    st.colVer[campo] = ver;
+    try { localStorage.setItem('hdt.columnas.' + st.tabla, JSON.stringify(st.colVer)); } catch (e) {}
+    columnasVisibles(st);
+    cabecera(st);
+    st.trs = new Array(st.n);      // rows are built again with the new columns
+    st.anchos = null;
+    if (st.modo === 'ventana') { salirVentana(st); st.modo = null; }
+    aplicar(st);
+  }
+
+  function abrirColumnas(st, boton) {
+    cerrarMenu(false);
+    var m = nodo('div', 'hdt-menu');
+    m.setAttribute('role', 'group');
+    m.setAttribute('aria-label', t('tablas.columnas'));
+    st.cols.forEach(function (c, j) {
+      if (!c.opcional) return;
+      var l = nodo('label', 'hdt-menu-op'), cb = nodo('input');
+      cb.type = 'checkbox';
+      cb.dataset.campo = c.campo;
+      cb.checked = st.ver.indexOf(j) >= 0;
+      l.appendChild(cb);
+      l.appendChild(nodo('span', 'hdt-menu-texto', c.titulo));
+      m.appendChild(l);
+    });
+    m.addEventListener('change', function (e) {
+      if (e.target.dataset && e.target.dataset.campo != null) verColumna(st, e.target.dataset.campo, e.target.checked);
+    });
+    st.root.appendChild(m);
+    MENU = { st: st, k: 'columnas', el: m, boton: boton };
+    boton.setAttribute('aria-expanded', 'true');
+    colocar(m, boton.getBoundingClientRect());
+    var primera = m.querySelector('input');
+    if (primera) primera.focus({ preventScroll: true });
+  }
+
   // ── Month navigation (nav_periodo) ───────────────────────────────────────
   var MES_DE = {};   // root element id -> month shown ("AAAA-MM")
   function textoMes(m) {
@@ -751,6 +821,7 @@
     for (var j = 0; j < st.cols.length; j++) {
       if (st.cols[j].tipo === 'dinero' && st.cols[j].sumar) { st.suma = j; break; }
     }
+    columnasVisibles(st);
     if (colsCambian) {
       cabecera(st);
       st.anchos = null;
@@ -795,10 +866,13 @@
       }
       tr.appendChild(th0);
     }
-    st.ths = st.cols.map(function (c, j) {
-      var th = nodo('th', c.alinear === 'derecha' ? 'hdt-der' : '');
+    // Only the columns shown (columnas_opc); data-col keeps the column's
+    // index among all of them.
+    st.ths = st.ver.map(function (j) {
+      var c = st.cols[j], th = nodo('th', c.alinear === 'derecha' ? 'hdt-der' : '');
+      th.dataset.col = j;
       th.appendChild(nodo('span', '', c.titulo));
-      if (st.p.ordenar) { th.classList.add('hdt-ordenable'); th.dataset.col = j; th.appendChild(nodo('span', 'hdt-flecha')); }
+      if (st.p.ordenar) { th.classList.add('hdt-ordenable'); th.appendChild(nodo('span', 'hdt-flecha')); }
       tr.appendChild(th);
       return th;
     });
@@ -871,11 +945,11 @@
       tr.appendChild(td0);
     }
     if (st.miembro && st.miembro[i]) tr.classList.add('hdt-miembro');
-    for (var j = 0; j < st.cols.length; j++) {
-      var td = celdaVacia(st, j);
+    for (var k = 0; k < st.ver.length; k++) {
+      var j = st.ver[k], td = celdaVacia(st, j);
       td._c = j;
-      // Provision rows: one badge, always in the first column.
-      if (prov && j === 0) td.appendChild(nodo('span', 'hdt-ins hdt-tono-morado hdt-ins-prov', t('tablas.provision')));
+      // Provision rows: one badge, always in the first column shown.
+      if (prov && k === 0) td.appendChild(nodo('span', 'hdt-ins hdt-tono-morado hdt-ins-prov', t('tablas.provision')));
       pintarCelda(st, td, j, i);
       tr.appendChild(td);
     }
@@ -887,7 +961,7 @@
     var c = st.cols[j], td = nodo('td');
     if (c.alinear === 'derecha') td.classList.add('hdt-der');
     if (c.recorte && st.p.recorte) td.classList.add('hdt-recorte');
-    if (j === st.grupoCol) td.classList.add('hdt-col-grupo');
+    if (j === st.grupoColVis) td.classList.add('hdt-col-grupo');
     return td;
   }
 
@@ -963,7 +1037,7 @@
       var clave = st.textos.contador || 'tablas.contador.registros', extra = {};
       // Class E: "200 filas × 8 columnas", each number with its own plural.
       if (clave === 'tablas.contador.tamano')
-        extra.columnas = tn('tablas.contador.columnas', st.cols.length, { n: FMT_N.format(st.cols.length) });
+        extra.columnas = tn('tablas.contador.columnas', st.ver.length, { n: FMT_N.format(st.ver.length) });
       extra.n = FMT_N.format(vis.length);
       st.contador.textContent = tn(clave, vis.length, extra);
     }
@@ -1099,10 +1173,10 @@
       td0.appendChild(cb);
       tr.appendChild(td0);
     }
-    for (var j = 0; j < st.cols.length; j++) {
+    st.ver.forEach(function (j) {
       var td = celdaVacia(st, j), m = st.celdas[j].mostrar;
       var comun = u.filas.every(function (i) { return m[i] === m[i0]; });
-      if (j === st.grupoCol) {
+      if (j === st.grupoColVis) {
         var b = nodo('button', 'hdt-grupo-abrir', u.abierto ? '▼' : '▶');
         b.type = 'button';
         b.title = t('tablas.grupos.abrir');
@@ -1120,7 +1194,7 @@
         }).join(' · ') : dinero(0);
       } else if (comun) pintarCelda(st, td, j, i0);
       tr.appendChild(td);
-    }
+    });
     if (st.accFila.length) tr.appendChild(nodo('td', 'hdt-acc'));
     return tr;
   }
@@ -1154,7 +1228,7 @@
   }
 
   function nColumnas(st) {
-    return st.cols.length + (st.p.casillas ? 1 : 0) + (st.accFila.length ? 1 : 0);
+    return st.ver.length + (st.p.casillas ? 1 : 0) + (st.accFila.length ? 1 : 0);
   }
 
   function trItem(st, it) {
@@ -1353,9 +1427,9 @@
 
   function flechas(st) {
     if (!st.p.ordenar || !st.ths) return;
-    st.ths.forEach(function (th, j) {
+    st.ths.forEach(function (th) {
       var f = th.querySelector('.hdt-flecha');
-      if (f) f.textContent = j === st.orden.col ? (st.orden.dir > 0 ? '▲' : '▼') : '';
+      if (f) f.textContent = Number(th.dataset.col) === st.orden.col ? (st.orden.dir > 0 ? '▲' : '▼') : '';
     });
   }
 
@@ -1730,7 +1804,9 @@
   function exportar(st) {
     st.excelNonce = String(Math.random());
     var ids = st.vis.map(function (i) { return st.ids[i]; });
-    Shiny.setInputValue(st.ns + 'vista', { ids: ids, nonce: st.excelNonce }, { priority: 'event' });
+    // Only the columns shown go to the file (columnas_opc).
+    var columnas = st.ver.map(function (j) { return st.cols[j].campo; });
+    Shiny.setInputValue(st.ns + 'vista', { ids: ids, columnas: columnas, nonce: st.excelNonce }, { priority: 'event' });
   }
   function excelListo(msg) {
     var st = TABLAS[msg.id];
@@ -1749,10 +1825,10 @@
   }
   function filasTsv(st, ids) {
     ids = ids || idsSel(st);
-    var lineas = [st.cols.map(function (c) { return neutralizar(c.titulo); }).join('\t')];
+    var lineas = [st.ver.map(function (j) { return neutralizar(st.cols[j].titulo); }).join('\t')];
     ids.forEach(function (id) {
       var i = st.idx[id];
-      lineas.push(st.cols.map(function (c, j) { return neutralizar(st.celdas[j].copiar[i]); }).join('\t'));
+      lineas.push(st.ver.map(function (j) { return neutralizar(st.celdas[j].copiar[i]); }).join('\t'));
     });
     return { texto: lineas.join('\r\n'), n: ids.length };
   }

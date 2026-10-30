@@ -494,6 +494,23 @@ test_that("grupo: field names; one key per row (empty if a field is); the column
   expect_match(.json(hd_grupo_payload(g, d[1, ], cols)), '"claves":[', fixed = TRUE)
 })
 
+test_that("optional columns: every col_*() takes opcional/visible; only an optional one starts hidden", {
+  m <- hd_columnas_meta(list(col_texto("a"), col_dinero("b", opcional = TRUE), col_fecha("c", opcional = TRUE, visible = FALSE),
+                             col_insignia("d", opcional = TRUE), col_empresa("E", opcional = TRUE, visible = FALSE),
+                             col_etiqueta("f", opcional = TRUE)))
+  expect_identical(vapply(m, `[[`, TRUE, "opcional"), c(FALSE, TRUE, TRUE, TRUE, TRUE, TRUE))
+  expect_identical(vapply(m, `[[`, TRUE, "visible"), c(TRUE, TRUE, FALSE, TRUE, FALSE, TRUE))
+  expect_error(col_texto("a", visible = FALSE), "only an optional column can start hidden")
+  expect_error(col_texto("a", opcional = NA), "must be TRUE or FALSE")
+})
+
+test_that("Excel writes only the columns shown, in their order", {
+  d <- xl_df(3)
+  f <- tempfile(fileext = ".xlsx"); on.exit(unlink(f))
+  hd_excel_escribir(d, xl_cols, d$id, "id", f, campos = c("Parte", "Importe"))
+  expect_identical(names(openxlsx::read.xlsx(f)), c("Proveedor", "Importe"))
+})
+
 test_that("vacio: key or text, or list(texto, tono); fijar_titulo: key or text", {
   cols <- list(col_texto("Parte"))
   expect_error(hd_table_server("t", "vencidos", shiny::reactive(NULL), cols, vacio = 3), "`vacio` must be")

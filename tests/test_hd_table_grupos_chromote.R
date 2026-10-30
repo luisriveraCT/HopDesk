@@ -315,6 +315,51 @@ Sys.sleep(0.5)
 p <- pegadas()
 ok("... and the current section's bands stay stuck", !is.null(p$b1) && !is.null(p$b2))
 
+# ── Optional columns (columnas_opc) ────────────────────────────────────────
+descargas <- file.path(tempdir(), "hdt_descargas_t03c")
+unlink(descargas, recursive = TRUE); dir.create(descargas)
+invisible(b$Browser$setDownloadBehavior(behavior = "allow", downloadPath = normalizePath(descargas, winslash = "\\")))
+invisible(try(b$Browser$grantPermissions(permissions = list("clipboardReadWrite", "clipboardSanitizedWrite"), origin = base),
+              silent = TRUE))
+titulos <- function() unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s thead th')).filter(function(th){ return th.dataset.col != null; }).map(function(th){ return th.firstChild.textContent; })", A)))
+ok("demo loads (no sections, to read plain rows)", abrir("?n=60&seed=1&periodo=0&secciones=0"))
+invisible(ev("localStorage.clear()"))
+ok("demo reloads with nothing remembered", abrir("?n=60&seed=1&periodo=0&secciones=0"))
+t0 <- titulos()
+ok("an optional column that starts hidden isn't shown; one that starts shown is",
+   !"Origen" %in% t0 && "Moneda" %in% t0)
+btn_col <- sprintf("document.querySelector('#%s .hdt-columnas')", A)
+clic(btn_col)
+ops <- unlist(ev("Array.from(document.querySelectorAll('.hdt-menu input')).map(function(i){ return i.dataset.campo + '=' + i.checked; })"))
+ok("the 'Columnas' menu lists only the optional columns, checked as shown", identical(ops, c("Moneda=true", "Origen=false")))
+clic("document.querySelector('.hdt-menu input[data-campo=\"Origen\"]')", ver = FALSE)
+clic("document.querySelector('.hdt-menu input[data-campo=\"Moneda\"]')", ver = FALSE)
+t1 <- titulos()
+ok("checking Origen shows it, unchecking Moneda hides it (header and cells alike)",
+   "Origen" %in% t1 && !"Moneda" %in% t1 &&
+     isTRUE(ev(sprintf("Array.from(document.querySelectorAll('#%s tbody tr')).every(function(tr){ return tr.querySelectorAll('td:not(.hdt-acc):not(.hdt-cb)').length === %d; })", A, length(t1)))))
+invisible(b$Input$dispatchKeyEvent(type = "rawKeyDown", key = "Escape", code = "Escape", windowsVirtualKeyCode = 27L))
+invisible(b$Input$dispatchKeyEvent(type = "keyUp", key = "Escape", code = "Escape", windowsVirtualKeyCode = 27L))
+ok("the choice is remembered when the page reloads", abrir("?n=60&seed=1&periodo=0&secciones=0") && identical(titulos(), t1))
+
+# Ctrl+C and Excel take only the columns shown.
+v <- vis(); libres <- setdiff(v, unlist(estado()$bloqueadas))
+clic(sprintf("HDT.fila('%s', '%s').children[1]", A, libres[1]))
+clic(sprintf("HDT.fila('%s', '%s').children[1]", A, libres[2]))
+invisible(tryCatch(ev("navigator.clipboard.writeText('')", await = TRUE), error = function(e) NULL))
+invisible(b$Input$dispatchKeyEvent(type = "keyDown", key = "c", code = "KeyC", windowsVirtualKeyCode = 67L, modifiers = 2L,
+                                   commands = list("copy")))
+invisible(b$Input$dispatchKeyEvent(type = "keyUp", key = "c", code = "KeyC", windowsVirtualKeyCode = 67L, modifiers = 2L))
+leer <- function() tryCatch(ev("navigator.clipboard.readText()", await = TRUE), error = function(e) "")
+poll_until(function() nzchar(leer()), timeout_s = 8)
+cabeza_tsv <- strsplit(strsplit(leer(), "\r\n", fixed = TRUE)[[1]][1], "\t", fixed = TRUE)[[1]]
+ok("Ctrl+C copies only the columns shown, in their order", identical(cabeza_tsv, t1))
+clic(sprintf("document.querySelector('#%s .hdt-excel')", A))
+ok("Excel downloads", poll_until(function() length(list.files(descargas, pattern = "\\.xlsx$")) == 1L, timeout_s = 20))
+xl <- openxlsx::read.xlsx(list.files(descargas, pattern = "\\.xlsx$", full.names = TRUE)[1])
+ok("... with only the columns shown, in their order", identical(names(xl), make.names(t1)) || identical(names(xl), t1))
+invisible(ev("localStorage.clear()"))
+
 # ── The table's own empty message ──────────────────────────────────────────
 ok("demo loads with no rows", abrir("?n=0&seed=1&periodo=0"))
 vacio <- ev(sprintf("(function(){ var v = document.querySelector('#%s .hdt-vacio'); return { t: v.textContent, c: v.className, h: v.hidden,
