@@ -4,6 +4,10 @@
 # Query string (for tests): ?n=60&seed=1&alto=300px
 #   n     rows in the class-A table (default 300; the selector offers 5,000)
 #   seed  random seed for the generated data (default 1)
+#   alto  height of the class-A table (default "auto")
+#
+# Bootstrap 5 with the app's own theme (flatly), so sizes are the ones
+# HopDesk will show.
 
 library(shiny)
 
@@ -31,7 +35,8 @@ demo_facturas <- function(n, seed = 1) {
   set.seed(seed)
   nombres <- c("Transportes del Bajío", "Aceros Monterrey", "Logística Querétaro",
                '<b>Renta</b> & "Bodega"', "Servicios Integrales de Mantenimiento Industrial del Norte, S.A. de C.V.",
-               "Papelería Ñandú", "Árbol Verde Agrícola", "Fletes & Maniobras \"El Güero\"")
+               "Papelería Ñandú", "Árbol Verde Agrícola", "Fletes & Maniobras \"El Güero\"",
+               "=HIPERVINCULO(\"x\")")   # copying / exporting it must never run as a formula
   # Runs of rows of the same type, for Shift + click.
   tipos <- character(0)
   while (length(tipos) < n) tipos <- c(tipos, rep(sample(c("cobro", "pago"), 1), sample(3:8, 1)))
@@ -48,7 +53,13 @@ demo_facturas <- function(n, seed = 1) {
     Etiqueta   = sample(c("", "", "", "Urgente", "Importante"), n, TRUE),
     .tipo      = tipos,
     stringsAsFactors = FALSE
-  ) |> transform(.bloqueada = Estado == "confirmada")
+  ) |> transform(.bloqueada = Estado == "confirmada") -> df
+  # Provision rows; half of them lose the convert button (.acciones), and
+  # only pending rows offer "Crear provisión".
+  df$.provision <- seq_len(n) %% 9 == 0
+  df$.acciones <- paste0(ifelse(df$Estado == "pendiente", "crear_provision,", ""), "agregar,editar,detalle,eliminar",
+                         ifelse(seq_len(n) %% 18 == 0, "", ",provision"))
+  df
 }
 
 demo_proveedores <- function(seed = 1) {
@@ -98,9 +109,10 @@ registrar("demo_d", list(nombre = "Demo clase D", clase = "D", archivo = "dev/hd
                          agregar = character(), quitar = character(), notas = character()))
 
 # ── UI ──────────────────────────────────────────────────────────────────────
-ui <- fluidPage(
+ui <- bslib::page_fluid(
+  theme = bslib::bs_theme(version = 5, bootswatch = "flatly"),
   tags$head(tags$style(HTML("
-    body { padding: 12px 16px; font-family: system-ui, 'Segoe UI', sans-serif; }
+    body { padding: 12px 16px; }
     .demo-grid { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; }
     .demo-lado { font-size: .82rem; } .demo-lado .checkbox { margin: 2px 0; }
     .demo-panel { font-size: .78rem; max-height: 140px; overflow: auto; }
@@ -118,6 +130,8 @@ ui <- fluidPage(
       uiOutput("tabla_a"),
       tags$h6("seleccion() / accion() · clase A", class = "mt-2"),
       verbatimTextOutput("panel_a", placeholder = TRUE),
+      tags$h6("Cada accion() que llega · clase A"),
+      verbatimTextOutput("log_a", placeholder = TRUE),
       tags$h5("Clase D · catálogo", class = "mt-3"),
       hd_table_ui("prov", alto = "220px"),
       verbatimTextOutput("panel_d", placeholder = TRUE)
@@ -129,16 +143,21 @@ ui <- fluidPage(
 server <- function(input, output, session) {
   q <- shiny::isolate(parseQueryString(session$clientData$url_search))
   seed <- as.integer(q$seed %||% 1)
-  alto <- q$alto %||% "420px"
+  alto <- q$alto %||% "auto"
   if (!is.null(q$n)) updateSelectInput(session, "n", choices = unique(c(as.integer(q$n), 300, 1000, 5000)),
                                        selected = as.integer(q$n))
 
   cambios <- reactiveVal(0)
   observeEvent(input$cambiar, cambios(cambios() + 1))
+  # ?n= wins from the very first paint (the selector's own default of 300
+  # would otherwise paint first and be replaced a moment later); after that,
+  # the selector.
+  n_filas <- reactiveVal(as.integer(q$n %||% 300))
+  observeEvent(input$n, ignoreInit = TRUE, n_filas(as.integer(input$n)))
 
   # "Cambiar datos": same ids, new amounts and states.
   datos_a <- reactive({
-    n <- as.integer(input$n %||% q$n %||% 300)
+    n <- n_filas()
     df <- demo_facturas(n, seed)
     k <- cambios()
     if (k > 0) {
@@ -155,9 +174,29 @@ server <- function(input, output, session) {
     version(v)
     nombre <- paste0("demo_a_", v)
     registrar(nombre, piezas_demo(input$piezas %||% character(0)))
+    p <- input$piezas %||% character(0)
+    # Actions that confirm need the confirmar piece (the engine stops
+    # otherwise); with it switched off the demo just leaves them out.
+    con_conf <- "confirmar" %in% p
+    acc_fila <- c("crear_provision", "agregar", "editar", "provision", "detalle", if (con_conf) "eliminar")
+    acc_barra <- c(
+      if (con_conf) list(list(accion = "mandar_papelera", texto = "tablas.accion.papelera", confirmar = TRUE, peligro = TRUE)),
+      list(list(accion = "agregar_seleccion", texto = "tablas.accion.agregar_seleccion"),
+           list(accion = "agregar_todo", texto = "tablas.accion.agregar_todo", sin_seleccion = TRUE)))
     tabla_a(list(id = paste0("a", v),
-                 t  = hd_table_server(paste0("a", v), tabla = nombre, datos = datos_a, columnas = COLS_A)))
+                 t  = hd_table_server(paste0("a", v), tabla = nombre, datos = datos_a, columnas = COLS_A,
+                                      fichas = list(campo = "Estado", orden = c("pendiente", "programada", "confirmada")),
+                                      acciones_fila = acc_fila, acciones_barra = acc_barra)))
   })
+  # Every accion() that arrives, newest first.
+  registro <- reactiveVal(character(0))
+  observeEvent(tabla_a()$t$accion(), {
+    a <- tabla_a()$t$accion()
+    linea <- sprintf("%s  %s  [%d] %s", format(Sys.time(), "%H:%M:%S"), a$accion, length(a$ids),
+                     paste(utils::head(a$ids, 8), collapse = " "))
+    registro(utils::head(c(linea, registro()), 12))
+  })
+  output$log_a <- renderPrint(cat(registro(), sep = "\n"))
   output$tabla_a <- renderUI({
     req(tabla_a())
     hd_table_ui(tabla_a()$id, alto = alto)
