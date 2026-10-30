@@ -1508,10 +1508,33 @@ server <- function(input, output, session) {
     cf_preview_open(!cf_preview_open())
   }, ignoreInit = TRUE)
 
+  # ── Calendario fijo por nivel (Compras ve solo CxP) ─────────────────────────
+  observe({
+    fijo <- nivel_calendario(tier_efectivo())
+    if (!is.null(fijo)) {
+      active_cal_ledger(fijo)
+      if (fijo == "AR") { shinyjs::show("cal_ar_wrapper"); shinyjs::hide("cal_ap_wrapper") }
+      else              { shinyjs::hide("cal_ar_wrapper"); shinyjs::show("cal_ap_wrapper") }
+    }
+    shinyjs::runjs(sprintf(
+      "document.body.classList.toggle('hd-cal-fijo', %s);
+       if (!document.getElementById('hd-cal-fijo-css')) {
+         var st = document.createElement('style'); st.id = 'hd-cal-fijo-css';
+         st.textContent = 'body.hd-cal-fijo .cal-ledger-toggle{display:none!important}';
+         document.head.appendChild(st);
+       }", tolower(!is.null(fijo))))
+  })
+
+  # The server refuses anyway; this only keeps the button from being offered.
+  observe({
+    shinyjs::toggle("btn_add_entry", condition = puede(usuario_sesion(), "can_register_payments"))
+  })
+
   # ── Calendar ledger toggle (Cobros / Pagos pill) ────────────────────────────
   observeEvent(input$cal_ledger_toggle, {
     ledger <- input$cal_ledger_toggle
     if (!ledger %in% c("AR", "AP")) return()
+    if (!is.null(nivel_calendario(tier_efectivo()))) return()   # fixed by tier
     active_cal_ledger(ledger)
     if (ledger == "AR") {
       shinyjs::show("cal_ar_wrapper"); shinyjs::hide("cal_ap_wrapper")

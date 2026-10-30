@@ -19,6 +19,7 @@
 #   unico_vivo the last live account of this tier cannot be demoted/deleted.
 #   alta       the tier preselected when creating a user.
 #   pestanas   navbar tabs this tier sees; NULL = every client tab.
+#   calendario ledger the Calendario is fixed to ("AP" = CxP); NULL = both.
 #   permisos   permission keys ON by default ("*" = every key).
 #   bloqueados keys forced ON for this tier, not editable.
 # Permission keys themselves live in R/permisos.R.
@@ -80,7 +81,7 @@ TIER_REGISTRY <- list(
   compras   = list(rango = 10L, interno = FALSE, color = "#b8860b",
                    invitable = TRUE, ti = FALSE, unico_vivo = FALSE, alta = FALSE,
                    # Panorama and Requisiciones join this list when their tabs exist.
-                   pestanas = c("CAL", "PSV"),
+                   pestanas = c("CAL", "PSV"), calendario = "AP",
                    permisos = c("can_view_requisiciones", "can_create_requisiciones",
                                 "can_edit_requisiciones", "can_trash_own_requisiciones",
                                 "can_trash_others_requisiciones", "can_edit_provisiones"),
@@ -132,6 +133,9 @@ nivel_unico_vivo <- function(tier) isTRUE(.nivel(tier)$unico_vivo)
 
 # NULL = every client tab.
 nivel_pestanas <- function(tier) .nivel(tier)$pestanas
+
+# NULL = the tier switches between Cobros and Pagos freely.
+nivel_calendario <- function(tier) .nivel(tier)$calendario
 
 # TRUE when `tier` ranks at or above `referencia`.
 nivel_al_menos <- function(tier, referencia) {

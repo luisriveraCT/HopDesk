@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Candado de propiedad: ver coordinacion/PROPIEDAD.md.
+# Se activa por clon con:  git config core.hooksPath .githooks
+rama="$(git rev-parse --abbrev-ref HEAD)"
+mapfile -t archivos < <(git diff --cached --name-only --diff-filter=ACMRD)
+(( ${#archivos[@]} )) || exit 0
+exec "$(git rev-parse --show-toplevel)/scripts/verificar_propiedad.sh" "$rama" "${archivos[@]}"

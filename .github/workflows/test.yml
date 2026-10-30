@@ -1,10 +1,31 @@
 name: R Test Suite
 
-# Report-only: runs on every push to every branch. No branch protection is
-# configured against this check — see docs/saas_rebuild/STAGE_6_CI.md.
-on: push
+# Report-only. No branch protection is configured against this check — see
+# docs/saas_rebuild/STAGE_6_CI.md. Runs on master and on pull requests only:
+# the repo is private and Actions minutes are metered, so front branches
+# don't spend them on every push.
+on:
+  push:
+    branches: [master]
+  pull_request:
 
 jobs:
+  propiedad:
+    # coordinacion/PROPIEDAD.md: a front's PR may not touch another front's
+    # files. Same check as .githooks/pre-commit, for sessions that skip it.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verificar propiedad de archivos
+        run: |
+          base="origin/${{ github.base_ref }}"
+          mapfile -t archivos < <(git diff --name-only "$base"...HEAD)
+          (( ${#archivos[@]} )) || exit 0
+          bash scripts/verificar_propiedad.sh "${{ github.head_ref }}" "${archivos[@]}"
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -38,6 +59,7 @@ jobs:
             any::scales
             any::purrr
             any::DT
+            any::testthat
             any::shinyWidgets
             any::aws.s3
             any::httr
@@ -66,6 +88,7 @@ jobs:
             "tests/_run_s2.R"
             "tests/_run_s3.R"
             "tests/_run_tag.R"
+            "tests/_run_testthat.R"
           )
 
           # Lines matching this are individual named checks (not the file-level
