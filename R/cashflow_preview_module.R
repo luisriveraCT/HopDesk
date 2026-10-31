@@ -42,10 +42,13 @@ render_cashflow_preview_html <- function(ed, expanded = FALSE, day0_vals = list(
   # ── Helpers ──────────────────────────────────────────────────────────────
   h <- function(x) htmltools::htmlEscape(as.character(x))
 
+  # The marks keep their shapes; the title names the tag, A / B / C
+  # (HD_ETIQUETAS in R/hd_columnas.R).
   tag_badge <- function(urgent, important) {
+    tit <- h(tag_label(c(if (isTRUE(urgent)) "urgent", if (isTRUE(important)) "important")))
     paste0(
-      if (isTRUE(urgent))    '<span class="cf-tag-u" title="Urgente">&#9679;</span>' else "",
-      if (isTRUE(important)) '<span class="cf-tag-i" title="Importante">&#9733;</span>' else ""
+      if (isTRUE(urgent))    paste0('<span class="cf-tag-u" title="', tit, '">&#9679;</span>') else "",
+      if (isTRUE(important)) paste0('<span class="cf-tag-i" title="', tit, '">&#9733;</span>') else ""
     )
   }
 

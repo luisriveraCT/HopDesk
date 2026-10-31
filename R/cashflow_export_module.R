@@ -500,6 +500,13 @@ build_cashflow_export_data <- function(
 # ── Stage 3: Word document generation ────────────────────────────────────────
 
 # Label lookup for bilingual support.
+# A tag's name in the report, "Etiqueta A" / "Tag A" (HD_ETIQUETAS in
+# R/hd_columnas.R), in both languages.
+.cf_etiqueta <- function(clave) {
+  k <- sub("^tablas\\.etiquetas\\.", "tablas.accion.etiqueta_", HD_ETIQUETAS[[clave]]$texto)
+  c(es = tr(k, idioma = "es"), en = tr(k, idioma = "en"))
+}
+
 .cf_lbl <- function(key, lang = "es") {
   labels <- list(
     title          = c(es = "FLUJO DE CAJA PROYECTADO",
@@ -535,12 +542,15 @@ build_cashflow_export_data <- function(
     net_row        = c(es = "POSICIÓN NETA",      en = "NET POSITION"),
     cum_row        = c(es = "POS. ACUMULADA",     en = "CUMUL. POSITION"),
     glossary       = c(es = "Notas y Glosario",  en = "Notes & Glossary"),
-    g_tag_imp      = c(es = "Etiqueta: Importante",  en = "Tag: Important"),
+    g_tag_imp      = .cf_etiqueta("important"),
     g_tag_imp_desc = c(es = "Facturas marcadas como importantes — prioridad de seguimiento.",
                        en = "Invoices marked as important — follow-up priority."),
-    g_tag_urg      = c(es = "Etiqueta: Urgente",     en = "Tag: Urgent"),
+    g_tag_urg      = .cf_etiqueta("urgent"),
     g_tag_urg_desc = c(es = "Facturas marcadas como urgentes — atención inmediata.",
                        en = "Invoices marked as urgent — requires immediate attention."),
+    g_tag_both     = .cf_etiqueta("both"),
+    g_tag_both_desc = c(es = "Facturas urgentes e importantes — atención inmediata y seguimiento.",
+                        en = "Invoices both urgent and important — immediate attention and follow-up."),
     g_prov         = c(es = "Provisión",         en = "Provision"),
     g_prov_desc    = c(es = "Compromisos de pago programados (pasivos). Los montos son estimados.",
                        en = "Scheduled payment commitments (liabilities). Amounts are estimated."),
@@ -953,8 +963,9 @@ build_cashflow_export_data <- function(
   doc <- flextable::body_add_flextable(doc, glos_ft)
 
   gloss_rows <- list(
-    c(L("g_tag_imp"), Lp("g_tag_imp_desc"), "#8B6914", FALSE),
     c(L("g_tag_urg"), Lp("g_tag_urg_desc"), "#8B1A1A", FALSE),
+    c(L("g_tag_both"), Lp("g_tag_both_desc"), "#8B0000", FALSE),
+    c(L("g_tag_imp"), Lp("g_tag_imp_desc"), "#8B6914", FALSE),
     c(L("g_prov"),    Lp("g_prov_desc"),    "#606060", TRUE),
     c(L("g_method"),  Lp("g_method_desc"),  "#000000", FALSE),
     c(L("g_disclaimer"), Lp("g_disclaimer"),  "#555555", FALSE)
@@ -1306,8 +1317,9 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
   # ── Glossary ──────────────────────────────────────────────────────────────
   Lp <- function(k) .cf_lbl(k, lang)
   gloss_rows <- list(
-    c(L("g_tag_imp"), Lp("g_tag_imp_desc"), "#8B6914", FALSE),
     c(L("g_tag_urg"), Lp("g_tag_urg_desc"), "#8B1A1A", FALSE),
+    c(L("g_tag_both"), Lp("g_tag_both_desc"), "#8B0000", FALSE),
+    c(L("g_tag_imp"), Lp("g_tag_imp_desc"), "#8B6914", FALSE),
     c(L("g_prov"),    Lp("g_prov_desc"),    "#606060", TRUE),
     c(L("g_method"),  Lp("g_method_desc"),  "#000000", FALSE),
     c(L("g_disclaimer"), Lp("g_disclaimer"), "#555555", FALSE)
@@ -2063,8 +2075,9 @@ generate_cashflow_excel_wb <- function(export_data, emp_initials, emp_full,
   r <- r + 1L
 
   gloss_rows <- list(
-    c(L("g_tag_imp"),    Lp("g_tag_imp_desc"),  "#8B6914", FALSE),
     c(L("g_tag_urg"),    Lp("g_tag_urg_desc"),  "#8B1A1A", FALSE),
+    c(L("g_tag_both"),   Lp("g_tag_both_desc"), "#8B0000", FALSE),
+    c(L("g_tag_imp"),    Lp("g_tag_imp_desc"),  "#8B6914", FALSE),
     c(L("g_prov"),       Lp("g_prov_desc"),     "#606060", TRUE),
     c(L("g_method"),     Lp("g_method_desc"),   "#000000", FALSE),
     c(L("g_disclaimer"), Lp("g_disclaimer"),    "#555555", FALSE)
