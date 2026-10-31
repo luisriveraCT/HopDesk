@@ -7,6 +7,10 @@
 # Agenda. Actions never reach S3: a recorder applies tags, staging and
 # deletes to the in-memory data and lists every payload in #registro.
 #
+# The same data feeds the lupa (search_module.R): input btn_search opens it
+# on input month_sel ("AAAA-MM-DD"; this month if never set). Two invoices
+# fall in the month after next, so another month has its own rows.
+#
 # VEN_RAIZ: the repo whose R/ and www/ to load (default: this one). Point it
 # at an older checkout to see the old Vencidos with the same data.
 #
@@ -47,11 +51,12 @@ suppressPackageStartupMessages({ library(dplyr); library(tidyr) })
 CMAP <- c(NTS = "NETWORKS TRANS", NCS = "NETWORKS CARGO")
 assign("COMPANY_MAP", CMAP, envir = globalenv())    # the old module reads the global one
 hoy <- Sys.Date()
+MES_LEJOS <- seq(as.Date(format(hoy, "%Y-%m-01")), by = "month", length.out = 3)[3]   # 1st of the month after next
 fila <- function(ledger, emp, mon, doc, parte, dias, saldo, ref = "", source = SAP_B1_ERP_TYPE,
-                 confirmed = FALSE, id = "", prov = "", orig = NA)
+                 confirmed = FALSE, id = "", prov = "", orig = NA, fecha = hoy - dias)
   data.frame(Ledger = ledger, Empresa = emp, Moneda = mon, Documento = doc, Parte = parte, Factura = ref,
-             Codigo = paste0(substr(ledger, 2, 2), doc), FechaEff = hoy - dias,
-             FechaVenc_Original = if (is.na(orig)) hoy - dias else hoy - orig,
+             Codigo = paste0(substr(ledger, 2, 2), doc), FechaEff = fecha,
+             FechaVenc_Original = if (is.na(orig)) fecha else hoy - orig,
              `Saldo vencido` = saldo, source = source, confirmed = confirmed, id = id, provision_id = prov,
              check.names = FALSE, stringsAsFactors = FALSE)
 facturas0 <- rbind(
@@ -75,7 +80,10 @@ facturas0 <- rbind(
   # AP USD
   fila("AP", "NCS", "USD", "4001", "SOFTWARE CORP", 6, 1200, "S-4001"),
   # Not overdue: never shows
-  fila("AP", "NTS", "MXN", "3999", "FUTURO SA", -10, 7000)
+  fila("AP", "NTS", "MXN", "3999", "FUTURO SA", -10, 7000),
+  # The month after next (the lupa's other month)
+  fila("AR", "NTS", "MXN", "5001", "MAS ADELANTE SA", 0, 3100, "F-5001", fecha = MES_LEJOS + 14),
+  fila("AP", "NCS", "USD", "5002", "MAS ADELANTE SA", 0, 870, "P-5002", fecha = MES_LEJOS + 19)
 )
 # VEN_VACIO=1: no overdue invoices at all (the empty message).
 if (identical(Sys.getenv("VEN_VACIO"), "1")) facturas0 <- facturas0[0, , drop = FALSE]
@@ -100,6 +108,8 @@ ui <- bslib::page_navbar(
                     tags$span(id = "ven_tab_badge", class = "badge rounded-pill bg-danger",
                               style = "font-size:.6rem; vertical-align:middle; display:none;", "")),
     value = "VEN",
+    # The lupa's button lives in the Calendario; here the tests press it
+    # (Shiny.setInputValue('btn_search', ...)).
     div(class = "h-100 overflow-auto", vencidosUI("ven"),
         tags$pre(id = "registro", style = "font-size:.7rem; max-height:160px; overflow:auto;"))
   )
@@ -116,7 +126,7 @@ server <- function(input, output, session) {
     ic_mode = list(AR = reactive("exclude"), AP = reactive("exclude")),
     df_combined_AR = de("AR"), df_combined_AP = de("AP"),
     empresa_sel = reactive(c("NTS", "NCS")), company_map = reactive(CMAP),
-    current_user = reactive("luis"), sap_data = reactive(crudos0)
+    current_user = reactive("luis"), sap_data = reactive(crudos0), amount_col = reactive("Saldo vencido")
   )
   # What handle_invoice_action() would do, in memory, and a line per call.
   accion <- function(payload, shared, session = NULL) {
@@ -151,6 +161,17 @@ server <- function(input, output, session) {
   srv <- get("vencidosServer")
   if ("accion_factura" %in% names(formals(srv))) srv("ven", shared = shared, accion_factura = accion)
   else srv("ven", shared = shared)
+  # The ⚡ of a provision asks the pasivos module to convert it.
+  observeEvent(input$pasivos_convert_request,
+               registro(c(registro(), paste("convertir", input$pasivos_convert_request))))
+  # The lupa: the new module, or (an older checkout) the old modal.
+  if (exists("lupaServer")) {
+    lupaServer("lupa", shared, abrir = reactive(input$btn_search), mes = reactive(input$month_sel),
+               accion_factura = accion)
+  } else {
+    observeEvent(input$btn_search, show_search_modal(input, output, session, shared, reactiveVal(NULL)))
+    observeEvent(input$search_action, accion(input$search_action, shared))
+  }
   observe(session$sendCustomMessage("registro", paste(registro(), collapse = "\n")))
 }
 # The log takes no room (nor shows as a grey strip) until something is in it.

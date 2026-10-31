@@ -19,6 +19,114 @@
 # changes (client-side caching, or a non-Shiny frontend), not before.
 # =============================================================================
 
+# ── The lupa on the table engine ─────────────────────────────────────────────
+# Table "facturas_lupa" of the registry: the same table as Vencidos (the
+# facturas_*() functions in vencidos_module.R), over one month. It keeps the
+# reason above: its data is a picture taken when it opens, when another
+# month is chosen and after each action -- never df_combined_*() live.
+
+# The month's invoices ("AAAA-MM"), AR and AP, as the old lupa took them:
+# df_combined_*() (papelera, empresa and confirmed marks already applied),
+# the intercompany filter by code, the amount column the app shows.
+lupa_facturas <- function(shared, mes) {
+  desde <- as.Date(paste0(mes, "-01"))
+  hasta <- as.Date(lubridate::ceiling_date(desde, "month") - lubridate::days(1))
+  amt   <- tryCatch(shared$amount_col(), error = function(e) "Importe")
+  una <- function(ledger_name) {
+    df <- if (ledger_name == "AR") shared$df_combined_AR() else shared$df_combined_AP()
+    if (is.null(df) || !nrow(df)) return(NULL)
+    ic_args <- list(df, mode = tryCatch(shared$ic_mode[[ledger_name]](), error = function(e) "exclude"),
+                    code_col = if (ledger_name == "AR") "Código de cliente" else "Código de proveedor",
+                    ic_codes = tryCatch(build_ic_fullcodes(shared$interco_v2(), ledger_name), error = function(e) character()),
+                    ic_rfcs  = tryCatch({
+                      r <- unique(toupper(trimws(unname(shared$interco_v2()$rfcs %||% character()))))
+                      r[nzchar(r)]
+                    }, error = function(e) character()))
+    # The session's own company map (cm/sesion gives apply_ic_filter() a
+    # `cmap`; until that's merged the function doesn't take it).
+    if ("cmap" %in% names(formals(apply_ic_filter))) ic_args$cmap <- shared$company_map()
+    df <- do.call(apply_ic_filter, ic_args)
+    if (is.null(df) || !nrow(df)) return(NULL)
+    df <- df[!is.na(df$FechaEff) & as.Date(df$FechaEff) >= desde & as.Date(df$FechaEff) <= hasta, , drop = FALSE]
+    if (!nrow(df)) return(NULL)
+    imp <- if (amt %in% names(df)) df[[amt]] else if ("Importe" %in% names(df)) df[["Importe"]] else 0
+    df$Importe <- abs(tidyr::replace_na(as.numeric(imp), 0))
+    df$Ledger  <- ledger_name
+    df$Fecha   <- as.Date(df$FechaEff)
+    df$FechaOriginal <- if ("FechaVenc_Original" %in% names(df)) as.Date(df$FechaVenc_Original) else as.Date(NA)
+    df
+  }
+  dplyr::bind_rows(una("AR"), una("AP"))
+}
+
+# "Ver datos SAP": every raw SAP row due in the month, of the companies
+# chosen -- not just the marked ones (Luis).
+lupa_crudos <- function(shared, mes) {
+  raw_list <- tryCatch(shared$sap_data(), error = function(e) NULL)
+  if (is.null(raw_list)) return(NULL)
+  desde <- as.Date(paste0(mes, "-01"))
+  hasta <- as.Date(lubridate::ceiling_date(desde, "month") - lubridate::days(1))
+  emp <- tryCatch(shared$empresa_sel(), error = function(e) character(0))
+  dplyr::bind_rows(lapply(c("AR", "AP"), function(ldg) {
+    r <- raw_list[[ldg]]
+    if (is.null(r) || !nrow(r)) return(NULL)
+    date_col <- if ("Fecha de vencimiento" %in% names(r)) "Fecha de vencimiento"
+                else if ("FechaEff" %in% names(r)) "FechaEff" else NULL
+    if (!is.null(date_col))
+      r <- r[!is.na(r[[date_col]]) & as.Date(r[[date_col]]) >= desde & as.Date(r[[date_col]]) <= hasta, , drop = FALSE]
+    if (length(emp) && "Empresa" %in% names(r)) r <- r[r[["Empresa"]] %in% emp, , drop = FALSE]
+    if (nrow(r)) { r[["Ledger"]] <- ldg; r } else NULL
+  }))
+}
+
+# abrir: the lupa button; mes: the Calendario's month, where the lupa opens
+# each time. accion_factura: handle_invoice_action() in the app, a recorder
+# in the tests (no S3).
+lupaServer <- function(id, shared, abrir, mes, accion_factura = handle_invoice_action) {
+  moduleServer(id, function(input, output, session) {
+    datos   <- reactiveVal(NULL)   # the month's picture
+    cargado <- reactiveVal(NULL)   # which month it is ("AAAA-MM")
+    cargar <- function(m) {
+      df <- tryCatch(isolate(lupa_facturas(shared, m)), error = function(e) {
+        message("[LUPA] ", m, ": ", conditionMessage(e))
+        showNotification(tr("tablas.lupa.error_carga", error = conditionMessage(e)), type = "error")
+        NULL
+      })
+      datos(df)
+      cargado(m)
+    }
+
+    t <- facturas_tabla_server(
+      "tabla", tabla = "facturas_lupa", datos = datos, shared = shared,
+      crudos  = function(ids, df) mostrar_datos_sap(lupa_crudos(shared, isolate(cargado()))),
+      accion_factura = accion_factura,
+      vacio   = list(texto = "tablas.lupa.vacio"),
+      textos  = list(contador = "tablas.contador.facturas", sin_bloqueadas = TRUE),
+      periodo = list(campo = "Fecha"),
+      despues = function() cargar(isolate(cargado())))
+
+    observeEvent(abrir(), {
+      m <- tryCatch(format(as.Date(isolate(mes()) %||% Sys.Date()), "%Y-%m"), error = function(e) NA_character_)
+      if (is.na(m)) m <- format(Sys.Date(), "%Y-%m")
+      cargar(m)
+      t$ir_mes(m)
+      showModal(modalDialog(
+        title = tr("tablas.lupa.titulo"), size = "xl", easyClose = TRUE,
+        footer = modalButton(tr("comun.cerrar")),
+        tags$style(".modal-xl:has(.hd-lupa) { max-width: 1400px; }"),
+        div(class = "hd-lupa", facturas_tabla_ui(session$ns("tabla"), alto = "calc(100vh - 230px)"))
+      ))
+    }, ignoreInit = TRUE)
+
+    # Another month in the bar: load that one (B5: every month has its data).
+    observeEvent(t$periodo(), {
+      m <- t$periodo()
+      if (is.null(isolate(cargado())) || identical(m, isolate(cargado()))) return()
+      cargar(m)
+    }, ignoreInit = TRUE)
+  })
+}
+
 show_search_modal <- function(input, output, session, shared, search_raw_data = NULL) {
 
   month_start <- tryCatch({
@@ -877,8 +985,8 @@ show_search_modal <- function(input, output, session, shared, search_raw_data = 
 
 
 # =============================================================================
-# mostrar_datos_sap — the raw SAP viewer ("Ver datos SAP" in the lupa, "Ver
-# datos de origen" in Vencidos): every raw SAP column of the rows given,
+# mostrar_datos_sap — the raw SAP viewer ("Ver datos SAP" in the lupa and in
+# Vencidos): every raw SAP column of the rows given,
 # Ledger / Empresa / Parte / Documento / Moneda first, filterable, with CSV and
 # Excel download.
 # =============================================================================

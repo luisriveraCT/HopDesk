@@ -191,9 +191,10 @@ facturas_payload <- function(df, ids) {
 
 # The invoices table, the same for Vencidos and the lupa. `datos` is the
 # module's invoices (Ledger, Empresa, Fecha, Parte, Importe, ...); `crudos`
-# runs on "Ver datos SAP" with the marked rows (maybe none).
+# runs on "Ver datos SAP" with the marked rows (maybe none); `despues`, if
+# given, after each action reaches accion_factura (the lupa reloads its month).
 facturas_tabla_server <- function(id, tabla, datos, shared, crudos, accion_factura = handle_invoice_action,
-                                  vacio = NULL, textos = NULL, periodo = NULL) {
+                                  vacio = NULL, textos = NULL, periodo = NULL, despues = NULL) {
   moduleServer(id, function(input, output, session) {
     puede_convertir <- reactive(isTRUE(tryCatch(
       has_capability(shared$current_user(), "pasivos.convert_to_item"), error = function(e) FALSE)))
@@ -235,13 +236,26 @@ facturas_tabla_server <- function(id, tabla, datos, shared, crudos, accion_factu
       payload <- list(action = unname(accion), rows = facturas_payload(df, a$ids), nonce = a$nonce)
       if (identical(a$accion, "mover")) payload$move_to <- a$valor
       accion_factura(payload, shared, session = session)
+      if (is.function(despues)) despues()
     })
     t
   })
 }
 
 # alto: the table's maximum height (a whole tab: what's left of the window).
-facturas_tabla_ui <- function(id, alto = "auto") hd_table_ui(shiny::NS(id)("t"), alto = alto)
+# The ⚡ of a provision opens the pasivos module's convert dialog (once per
+# page, whichever table shows first).
+facturas_tabla_ui <- function(id, alto = "auto") {
+  shiny::tagList(
+    hd_table_ui(shiny::NS(id)("t"), alto = alto),
+    htmltools::singleton(shiny::tags$script(shiny::HTML("
+      (function registrar() {
+        if (!(window.Shiny && Shiny.addCustomMessageHandler)) { setTimeout(registrar, 20); return; }
+        Shiny.addCustomMessageHandler('hdFacturasConvertir', function (id) {
+          Shiny.setInputValue('pasivos_convert_request', id, { priority: 'event' });
+        });
+      })();"))))
+}
 
 # Raw SAP rows behind the overdue invoices (due today or earlier), for
 # "Ver datos SAP": all of them, as the lupa shows its whole month.
@@ -266,8 +280,7 @@ vencidosUI <- function(id) {
   ns <- NS(id)
   tagList(
     div(class = "vencidos-wrap p-3", facturas_tabla_ui(ns("tabla"), alto = "calc(100vh - 230px)")),
-    # The tab's badge (count of open overdue invoices) and the ⚡ of a
-    # provision, which opens the pasivos module's convert dialog.
+    # The tab's badge (count of open overdue invoices).
     tags$script(HTML("
       $(document).on('shiny:connected', function () {
         Shiny.addCustomMessageHandler('vencidosBadge', function (msg) {
@@ -275,9 +288,6 @@ vencidosUI <- function(id) {
           if (!el) return;
           if (msg.count > 0) { el.textContent = msg.count; el.style.display = ''; }
           else el.style.display = 'none';
-        });
-        Shiny.addCustomMessageHandler('hdFacturasConvertir', function (id) {
-          Shiny.setInputValue('pasivos_convert_request', id, { priority: 'event' });
         });
       });"))
   )

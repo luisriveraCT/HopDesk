@@ -18,7 +18,7 @@ hd_clases <- list(
 
 hd_registro <- list(
   facturas_lupa = list(nombre = "Facturas (lupa del Calendario)", clase = "A", archivo = "search_module.R",
-    agregar = character(), quitar = character(),
+    agregar = "nav_periodo", quitar = character(),
     notas = c("Quitar: Eliminar sin confirmación: En Vencidos Eliminar pide confirmar y en la lupa no; deben comportarse igual.", "Agregar: Columnas opcionales: faltan las opciones de agregar u ocultar columnas que tiene la tabla de \"Vencidos\"")),
   vencidos = list(nombre = "Vencidos", clase = "A", archivo = "vencidos_module.R",
     agregar = character(), quitar = character(),

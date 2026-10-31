@@ -2716,9 +2716,8 @@ server <- function(input, output, session) {
   setup_cashflow_export_server(input, output, session, shared)
 
   # ── Search modal ─────────────────────────────────────────────────────────────
-  observeEvent(input$btn_search, {
-    show_search_modal(input, output, session, shared, search_raw_data)
-  })
+  # The lupa (R/search_module.R): opens on the Calendario's month.
+  lupaServer("lupa", shared, abrir = reactive(input$btn_search), mes = reactive(input$month_sel))
 
   # Handle edit actions fired from the search modal (tag / move / delete)
   observeEvent(input$search_action, {
@@ -2740,7 +2739,7 @@ server <- function(input, output, session) {
 
   # ── Ver datos raw data popup ─────────────────────────────────────────────────
   # The viewer itself is mostrar_datos_sap() (R/search_module.R), shared with
-  # Vencidos' "Ver datos de origen".
+  # Vencidos' "Ver datos SAP".
   observeEvent(input$btn_ver_datos, {
     mostrar_datos_sap(search_raw_data())
   }, ignoreInit = TRUE)
