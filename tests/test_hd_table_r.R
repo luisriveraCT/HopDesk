@@ -567,6 +567,15 @@ test_that("crudos: its own action, usable with nothing marked; the calling table
   expect_identical(hd_crudos_meta(propias, "modo_editar"), propias)       # without the piece: as given
 })
 
+test_that("textos: the table's own counter key (with plural), optionally without locked rows", {
+  cols <- list(col_texto("Parte"))
+  expect_error(hd_table_server("t", "vencidos", shiny::reactive(NULL), cols, textos = list(contador = "tablas.no_existe")),
+               "`textos` must be")
+  expect_error(hd_table_server("t", "vencidos", shiny::reactive(NULL), cols, textos = list(otra = TRUE)),
+               "`textos` must be")
+  expect_identical(tr_n("tablas.contador.vencidas", 13), "13 facturas vencidas o con vencimiento hoy")
+})
+
 test_that("vacio: key or text, or list(texto, tono); fijar_titulo: key or text", {
   cols <- list(col_texto("Parte"))
   expect_error(hd_table_server("t", "vencidos", shiny::reactive(NULL), cols, vacio = 3), "`vacio` must be")

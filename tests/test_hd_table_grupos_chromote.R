@@ -209,6 +209,8 @@ ok("demo loads with groups (300 rows, Empresa + Vence + Parte)", abrir("?n=300&s
 dg <- datos_de(300, FALSE, TRUE)
 clave <- paste(dg$Empresa, dg$Vence, dg$Parte, dg$Moneda, dg$.tipo, sep = "|")
 esperados <- split(dg$id, clave); esperados <- esperados[lengths(esperados) >= 2]
+# ▶ goes with U+FE0E (its text form); compare without it.
+sin_vs <- function(x) gsub("\ufe0e", "", x, fixed = TRUE)
 grupos_lista <- function() { l <- lista(); l[startsWith(l, "grupo:")] }
 miembros <- function(g) strsplit(sub("^grupo:[a-z]+:", "", g), ",")[[1]]
 gl <- grupos_lista()
@@ -229,7 +231,7 @@ celda_grupo <- ev(sprintf("(function(){ var tr = %s; return { n: tr.querySelecto
   boton: tr.querySelector('.hdt-grupo-abrir').textContent, nombre: tr.querySelector('.hdt-col-grupo').lastChild.textContent,
   suma: tr.children[3].textContent }; })()", cab(m1[1])))
 ok("the group's row shows ▶, how many rows without the locked ones, the counterpart and their total",
-   identical(celda_grupo$boton, "▶") && identical(as.integer(celda_grupo$n), length(libres)) &&
+   identical(sin_vs(celda_grupo$boton), "▶") && identical(as.integer(celda_grupo$n), length(libres)) &&
      identical(celda_grupo$nombre, dg$Parte[dg$id == m1[1]]) &&
      abs(as.numeric(gsub("[^0-9.]", "", celda_grupo$suma)) - sum(imp[libres])) < 0.006)
 
@@ -250,7 +252,7 @@ ok("▶▶ opens every group and turns into ▼▼",
    all(startsWith(grupos_lista(), "grupo:abierto:")) && identical(ev(sprintf("%s.textContent", todos_btn)), "▼▼"))
 clic(todos_btn)
 ok("▼▼ closes them all", all(startsWith(grupos_lista(), "grupo:cerrado:")) &&
-     identical(ev(sprintf("%s.textContent", todos_btn)), "▶▶"))
+     identical(sin_vs(ev(sprintf("%s.textContent", todos_btn))), "▶▶"))
 
 # Marking a group.
 sel <- function() unlist(estado()$seleccion)

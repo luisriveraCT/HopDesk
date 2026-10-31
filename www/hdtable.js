@@ -190,7 +190,8 @@
     }
     // Groups: open or close them all (▶▶ / ▼▼).
     if (p.expandir && msg.grupo) {
-      st.btnGrupos = nodo('button', 'hdt-btn hdt-grupos-todos', '▶▶');
+      // \ufe0e: the text form of ▶ (Windows shows a bare ▶ as a blue emoji).
+      st.btnGrupos = nodo('button', 'hdt-btn hdt-grupos-todos', '\u25b6\ufe0e\u25b6\ufe0e');
       st.btnGrupos.type = 'button';
       st.btnGrupos.title = t('tablas.grupos.todos');
       st.btnGrupos.setAttribute('aria-label', st.btnGrupos.title);
@@ -1142,8 +1143,9 @@
       // Class E: "200 filas × 8 columnas", each number with its own plural.
       if (clave === 'tablas.contador.tamano')
         extra.columnas = tn('tablas.contador.columnas', st.ver.length, { n: FMT_N.format(st.ver.length) });
-      extra.n = FMT_N.format(vis.length);
-      st.contador.textContent = tn(clave, vis.length, extra);
+      var cuenta = st.textos.sin_bloqueadas ? vis.filter(function (i) { return !st.bloq[i]; }).length : vis.length;
+      extra.n = FMT_N.format(cuenta);
+      st.contador.textContent = tn(clave, cuenta, extra);
     }
     programarAlto(st, desdeDatos);
     if (st.secciones) requestAnimationFrame(function () { pegarBandas(st); });
@@ -1235,7 +1237,7 @@
     }
     if (st.btnGrupos) {
       var todos = st.grupos.length > 0 && st.grupos.every(function (u) { return u.abierto; });
-      st.btnGrupos.textContent = todos ? '▼▼' : '▶▶';
+      st.btnGrupos.textContent = todos ? '▼▼' : '\u25b6\ufe0e\u25b6\ufe0e';
       st.btnGrupos.setAttribute('aria-pressed', todos ? 'true' : 'false');
       st.btnGrupos.disabled = !st.grupos.length;
     }
@@ -1292,7 +1294,7 @@
       var td = celdaVacia(st, j), m = st.celdas[j].mostrar;
       var comun = u.filas.every(function (i) { return m[i] === m[i0]; });
       if (j === st.grupoColVis) {
-        var b = nodo('button', 'hdt-grupo-abrir', u.abierto ? '▼' : '▶');
+        var b = nodo('button', 'hdt-grupo-abrir', u.abierto ? '▼' : '\u25b6\ufe0e');
         b.type = 'button';
         b.title = t('tablas.grupos.abrir');
         b.setAttribute('aria-label', b.title);
@@ -1366,7 +1368,7 @@
     if (st.p.subtotales) {
       var filas = b.filas.filter(function (i) { return !st.bloq[i]; });
       caja.appendChild(nodo('span', 'hdt-banda-n',
-        tn(st.textos.contador || 'tablas.contador.registros', filas.length, { n: FMT_N.format(filas.length) })));
+        tn(st.textos.banda || st.textos.contador || 'tablas.contador.registros', filas.length, { n: FMT_N.format(filas.length) })));
       if (st.suma >= 0) {
         var o = st.celdas[st.suma].orden, s = {};
         filas.forEach(function (i) { var m = st.moneda[i] || ''; s[m] = (s[m] || 0) + (Number(o[i]) || 0); });

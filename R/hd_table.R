@@ -39,7 +39,7 @@ hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
     htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=20"),
-    htmltools::tags$script(src = "hdtable.js?v=22")
+    htmltools::tags$script(src = "hdtable.js?v=23")
   ))
 }
 
@@ -463,7 +463,7 @@ hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "dat
 hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = "id",
                             fichas = NULL, acciones_fila = NULL, acciones_barra = NULL,
                             filtros = NULL, periodo = NULL, aviso = NULL, encabezado = NULL,
-                            secciones = NULL, vacio = NULL, grupo = NULL) {
+                            secciones = NULL, vacio = NULL, grupo = NULL, textos = NULL) {
   piezas_tabla <- hd_piezas_de(tabla, piezas)
   piezas_motor <- hd_piezas_motor(tabla, piezas_tabla)
   # columnas: a list of col_*(), or a reactive returning one -- a table pasted
@@ -471,7 +471,16 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
   columnas_r   <- if (is.function(columnas)) columnas else local({ cols <- columnas; function() cols })
   cols_fijas   <- if (is.function(columnas)) list() else columnas
   if (!is.function(columnas)) hd_columnas_meta(columnas)   # fails early on a bad spec
-  contador     <- hd_contador_clave(tabla)
+  # textos = list(contador = <plural key>, sin_bloqueadas = TRUE): the
+  # table's own counter text ("594 facturas vencidas o con vencimiento hoy")
+  # instead of its class's -- section bands keep the class's ("10 facturas")
+  # -- and, with sin_bloqueadas, a count without the locked (paid) rows.
+  if (!is.null(textos) && (!is.list(textos) || length(setdiff(names(textos), c("contador", "sin_bloqueadas"))) ||
+                           (!is.null(textos$contador) && (!is.character(textos$contador) ||
+                             is.null(i18n_dict("es")[[paste0(textos$contador, ".uno")]])))))
+    stop("hd_table: `textos` must be list(contador = <dictionary key with .uno/.otros>, sin_bloqueadas = TRUE/FALSE).",
+         call. = FALSE)
+  contador     <- textos$contador %||% hd_contador_clave(tabla)
   fichas       <- .hd_sin_pieza(tabla, "fichas", "fichas", hd_fichas_validar(fichas), piezas_tabla)
   filtros      <- .hd_sin_pieza(tabla, "filtros", "filtros", hd_filtros_validar(filtros), piezas_tabla)
   periodo      <- .hd_sin_pieza(tabla, "periodo", "nav_periodo", hd_periodo_validar(periodo, cols_fijas), piezas_tabla)
@@ -518,7 +527,9 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         filas    = hd_filas(df, cols, id_col),
         columnas = hd_columnas_meta(cols),
         piezas   = I(piezas_motor),
-        textos   = list(contador = contador, vacio = if (!is.null(vacio)) .hd_texto(vacio$texto),
+        textos   = list(contador = contador, banda = hd_contador_clave(tabla),
+                        sin_bloqueadas = isTRUE(textos$sin_bloqueadas),
+                        vacio = if (!is.null(vacio)) .hd_texto(vacio$texto),
                         vacio_tono = vacio$tono),
         fichas   = hd_fichas_payload(fichas, df, cols),
         filtros  = hd_filtros_payload(filtros, df, cols),
