@@ -833,15 +833,9 @@ calendar_html <- function(
         " dcur_rows=", nrow(dcur),
         " monedas_in=", paste(unique(data_due$Moneda), collapse=","))
 
-  # Tag priority weight helper — tagged rows float to the top
-  tag_weight <- function(tag) {
-    switch(tag,
-      "urgent"    = 1L,
-      "both"      = 2L,
-      "important" = 3L,
-      4L
-    )
-  }
+  # Tag priority weight helper — tagged rows float to the top, A, B, C
+  # (HD_ETIQUETAS in R/hd_columnas.R)
+  tag_weight <- function(tag) HD_ETIQUETAS[[tag]]$peso %||% 4L
 
   per_party_raw <- dcur |>
     group_by(Fecha, Parte) |>

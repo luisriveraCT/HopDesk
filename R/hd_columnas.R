@@ -145,11 +145,39 @@ col_empresa <- function(campo = "Empresa", titulo = NULL, opcional = FALSE, visi
 # the row's background (by tone, in www/hdtable.css) and the order. The
 # stored values never change (urgent / both / important); Luis renamed what
 # people see to A, B and C so the name doesn't mean anything by itself.
+# tinta / pastilla / fondo: the same colours as the tone in hdtable.css, for
+# what is painted outside the engine (the Calendario and its DT tables).
 HD_ETIQUETAS <- list(
-  urgent    = list(texto = "tablas.etiquetas.a", tono = "rojo",     peso = 1L),
-  both      = list(texto = "tablas.etiquetas.b", tono = "naranja",  peso = 2L),
-  important = list(texto = "tablas.etiquetas.c", tono = "amarillo", peso = 3L)
+  urgent    = list(texto = "tablas.etiquetas.a", tono = "rojo",     peso = 1L,
+                   tinta = "#b42318", pastilla = "#ffe1de", fondo = "#fff0f0"),
+  both      = list(texto = "tablas.etiquetas.b", tono = "naranja",  peso = 2L,
+                   tinta = "#b54708", pastilla = "#ffe8d1", fondo = "#fff3e6"),
+  important = list(texto = "tablas.etiquetas.c", tono = "amarillo", peso = 3L,
+                   tinta = "#8a6100", pastilla = "#fff1b8", fondo = "#fffbe6")
 )
+
+# Outside the engine. The tag of an invoice from its stored tags (urgent
+# and important together are "both"), "" without one.
+hd_etiqueta_clave <- function(tags) {
+  hi <- "important" %in% tags
+  ur <- "urgent"    %in% tags
+  if (hi && ur) "both" else if (ur) "urgent" else if (hi) "important" else ""
+}
+
+# A tag's pill ("A" on red, ...), from its key or its label; NULL without one.
+hd_etiqueta_pastilla <- function(clave, class = "badge ms-1", style = "font-size:0.65rem;") {
+  e <- HD_ETIQUETAS[[clave]] %||% Find(function(x) identical(tr(x$texto), clave), HD_ETIQUETAS)
+  if (is.null(e)) return(NULL)
+  htmltools::tags$span(class = class, style = sprintf("%scolor:%s;background:%s;", style, e$tinta, e$pastilla),
+                       tr(e$texto))
+}
+
+# A DT table's row background by its tag label column (DT::formatStyle):
+# DT::styleEqual(hd_etiquetas_dt$etiquetas, hd_etiquetas_dt$fondos).
+hd_etiquetas_dt <- function() {
+  list(etiquetas = c(vapply(HD_ETIQUETAS, function(e) tr(e$texto), character(1), USE.NAMES = FALSE), ""),
+       fondos    = c(vapply(HD_ETIQUETAS, `[[`, character(1), "fondo", USE.NAMES = FALSE), "transparent"))
+}
 
 # A tag column holds the stored values. Known ones show their label as a
 # pill (with the `etiquetas` piece) and sort A, B, C; any other text shows

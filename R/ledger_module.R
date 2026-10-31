@@ -2708,14 +2708,13 @@ ledgerModuleServer <- function(id, config, shared) {
             DT::dataTableOutput(ns("modal_tbl")),
             hr(),
             div(class = "d-flex gap-2 mb-2",
-              actionButton(ns("tag_urgent"),    "\U0001f534 Urgente",
-                           class = "btn btn-sm btn-outline-danger"),
-              actionButton(ns("tag_important"), "\U0001f7e1 Importante",
-                           class = "btn btn-sm btn-outline-warning"),
-              actionButton(ns("tag_both"),      "\U0001f7e0 Ambas",
-                           class = "btn btn-sm",
-                           style = "border-color:#FF6B35;color:#FF6B35;"),
-              actionButton(ns("tag_clear"),     "\u2716 Quitar",
+              # A, B, C in their colours (HD_ETIQUETAS), as in Vencidos and the lupa.
+              lapply(c("urgent", "both", "important"), function(k) {
+                e <- HD_ETIQUETAS[[k]]
+                actionButton(ns(paste0("tag_", k)), tr(sub("^tablas\\.etiquetas\\.", "tablas.accion.etiqueta_", e$texto)),
+                             class = "btn btn-sm", style = sprintf("border-color:%s;color:%s;", e$tinta, e$tinta))
+              }),
+              actionButton(ns("tag_clear"),     tr("tablas.accion.quitar_etiqueta"),
                            class = "btn btn-sm btn-outline-secondary")
             ),
             div(class = "d-flex gap-2 mb-2",
@@ -2911,18 +2910,9 @@ ledgerModuleServer <- function(id, config, shared) {
                           tg_cur[["Documento"]] == inv_full[["Documento"]][j], , drop=FALSE]
               live_tags <- c(live_tags, r[["tag"]])
             }
-            etiq_val  <- tag_label(live_tags)
-            tag_span  <- if (nzchar(etiq_val))
-              tags$span(class = "badge bg-warning text-dark ms-1",
-                        style = "font-size:0.65rem;", etiq_val)
-            else NULL
-
-            row_bg <- switch(etiq_val,
-              "\U0001f534 Urgente"    = "background:#fff0f0;",
-              "\U0001f7e1 Importante" = "background:#fffbe6;",
-              "\U0001f7e0 Ambas"      = "background:#fff3e6;",
-              ""
-            )
+            etiq_key  <- hd_etiqueta_clave(live_tags)
+            tag_span  <- hd_etiqueta_pastilla(etiq_key)
+            row_bg    <- if (nzchar(etiq_key)) sprintf("background:%s;", HD_ETIQUETAS[[etiq_key]]$fondo) else ""
             # Confirmed check — distinguish paid-confirmed from ghost-deleted
             is_conf_group  <- FALSE
             is_ghost_group <- FALSE
@@ -3269,9 +3259,7 @@ ledgerModuleServer <- function(id, config, shared) {
               c("bold",    "bold",            "normal")
             )) |>
           DT::formatStyle("Etiqueta", target = "row",
-            backgroundColor = DT::styleEqual(
-              c("\U0001f534 Urgente","\U0001f7e1 Importante","\U0001f7e0 Ambas",""),
-              c("#fff0f0","#fffbe6","#fff3e6","transparent"))) |>
+            backgroundColor = DT::styleEqual(hd_etiquetas_dt()$etiquetas, hd_etiquetas_dt()$fondos)) |>
           DT::formatStyle("Confirmado",
             target         = "row",
             textDecoration = DT::styleEqual(c(TRUE, FALSE), c("line-through", "none")),
@@ -3332,9 +3320,7 @@ ledgerModuleServer <- function(id, config, shared) {
           )
         ) |>
           DT::formatStyle("Etiqueta", target = "row",
-            backgroundColor = DT::styleEqual(
-              c("\U0001f534 Urgente","\U0001f7e1 Importante","\U0001f7e0 Ambas",""),
-              c("#fff0f0","#fffbe6","#fff3e6","transparent"))) |>
+            backgroundColor = DT::styleEqual(hd_etiquetas_dt()$etiquetas, hd_etiquetas_dt()$fondos)) |>
           DT::formatStyle("Confirmado",
             target         = "row",
             textDecoration = DT::styleEqual(c(TRUE, FALSE), c("line-through", "none")),

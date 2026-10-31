@@ -141,6 +141,27 @@ test_that("col_empresa and col_etiqueta are typed text columns", {
   expect_identical(v$orden, c("1urgente", NA, "02"))
 })
 
+test_that("tags outside the engine read HD_ETIQUETAS: key, A/B/C, pill, DT background", {
+  expect_identical(hd_etiqueta_clave(c("important", "urgent")), "both")
+  expect_identical(hd_etiqueta_clave("urgent"), "urgent")
+  expect_identical(hd_etiqueta_clave(character(0)), "")
+  # tag_label() (R/persistence.R) is these two together.
+  e <- new.env(); local({
+    ex <- parse("R/persistence.R", keep.source = FALSE)
+    for (x in ex) if (is.call(x) && identical(as.character(x[[2]]), "tag_label")) eval(x, e)
+  })
+  expect_identical(vapply(list("urgent", c("urgent", "important"), "important", character(0)), e$tag_label, ""),
+                   c("A", "B", "C", ""))
+  p <- as.character(hd_etiqueta_pastilla("urgent"))
+  expect_match(p, "color:#b42318;background:#ffe1de;", fixed = TRUE)
+  expect_match(p, ">A</span>", fixed = TRUE)
+  expect_identical(as.character(hd_etiqueta_pastilla("B")), as.character(hd_etiqueta_pastilla("both")))
+  expect_null(hd_etiqueta_pastilla(""))
+  dt <- hd_etiquetas_dt()
+  expect_identical(dt$etiquetas, c("A", "B", "C", ""))
+  expect_identical(dt$fondos, c("#fff0f0", "#fff3e6", "#fffbe6", "transparent"))
+})
+
 test_that("titles: dictionary key or plain text", {
   meta <- hd_columnas_meta(list(col_texto("a", "tablas.buscar"), col_texto("b", "Proveedor"),
                                 col_texto("c")))

@@ -771,13 +771,10 @@ set_invoice_tags <- function(tags_df, ledger, empresa, moneda, documento,
 }
 
 # Summarise tags per invoice to a display label
+# A, B or C (HD_ETIQUETAS in R/hd_columnas.R), "" without a tag.
 tag_label <- function(tags) {
-  hi <- "important" %in% tags
-  ur <- "urgent"    %in% tags
-  if (hi && ur) "🟠 Ambas"
-  else if (ur)  "🔴 Urgente"
-  else if (hi)  "🟡 Importante"
-  else          ""
+  k <- hd_etiqueta_clave(tags)
+  if (nzchar(k)) tr(HD_ETIQUETAS[[k]]$texto) else ""
 }
 
 # Join tag labels onto an invoice data frame
