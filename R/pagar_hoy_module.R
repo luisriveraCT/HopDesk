@@ -3073,7 +3073,7 @@ pagarHoyServer <- function(id, shared) {
         emp_raw <- trimws(ct$Empresa %||% "")
         # ctas_cuentas stores initials (e.g. "NCS") — resolve to full name
         # COMPANY_MAP: c(NCS = "Networks Crossdocking Services", ...)
-        cmap_load <- tryCatch(shared$company_map(), error = function(e) COMPANY_MAP)
+        cmap_load <- tryCatch(shared$company_map(), error = function(e) c())   # never the global: it may be another client's
         emp <- if (emp_raw %in% names(cmap_load)) {
           cmap_load[[emp_raw]]
         } else if (emp_raw %in% unname(cmap_load)) {
