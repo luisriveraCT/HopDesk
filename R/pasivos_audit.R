@@ -16,6 +16,26 @@ PASIVOS_ACTION_TYPES <- c(
   "card_expense.logged", "card_expense.deleted"
 )
 
+# Fresh read of pasivos_audit for an append. Drops the key from the read caches
+# (so the append rebases on what S3 holds now, not on what this process read
+# earlier), and refuses an empty result when the object exists in S3:
+# .s3_read_with() returns NULL both for "no such object" and for a failed read,
+# so an empty table is only trusted when there really is no file yet.
+.pasivos_audit_leer_para_agregar <- function(client_id) {
+  full <- .s3_key(S3_KEYS$pasivos_audit, client_id = client_id)
+  for (env in list(.s3_preload_cache, .s3_missing_cache))
+    suppressWarnings(rm(list = intersect(full, ls(env)), envir = env))
+  existing <- load_pasivos_audit(client_id = client_id)
+  if (!nrow(existing) && .pasivos_audit_existe(full))
+    stop("pasivos_audit exists in S3 but read back empty; refusing to overwrite it", call. = FALSE)
+  existing
+}
+
+# Fails closed: if S3 cannot answer, assume the object exists.
+.pasivos_audit_existe <- function(full_key) {
+  isTRUE(tryCatch(aws.s3::object_exists(full_key, bucket = .s3_bucket()), error = function(e) TRUE))
+}
+
 # Write one audit row and return its id.
 # before / after: any R object; serialized to JSON automatically.
 #
@@ -76,8 +96,19 @@ pasivos_log_audit <- function(action_type,
     notes          = as.character(notes %||% NA_character_)
   )
 
-  existing <- tryCatch(load_pasivos_audit(client_id = client_id), error = function(e) .schema_pasivos_audit())
-  save_pasivos_audit(dplyr::bind_rows(existing, new_row), client_id = client_id)
+  # Append on a fresh, strict read. This used to fall back to an EMPTY table
+  # when the read failed and then save that plus the new row -- overwriting the
+  # whole pasivos audit with one row (found 2026-10-31, CM05/CM06). A read that
+  # fails, or comes back empty for an object that exists, now skips this table
+  # (and says so); the app_audit dual-write below still records the action.
+  existing <- tryCatch(.pasivos_audit_leer_para_agregar(client_id), error = function(e) e)
+  if (inherits(existing, "error")) {
+    msg <- sprintf("[pasivos] pasivos_audit not written (%s): %s", action_type, conditionMessage(existing))
+    message(msg)
+    warning(msg, call. = FALSE)
+  } else {
+    save_pasivos_audit(dplyr::bind_rows(existing, new_row), client_id = client_id)
+  }
 
   notes_txt   <- if (!is.na(notes) && nzchar(notes)) notes else NULL
   description <- if (!is.null(notes_txt)) sprintf("%s: %s", action_type, notes_txt) else action_type

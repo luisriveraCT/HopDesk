@@ -71,6 +71,9 @@ ok <- function(label, expr) {
   }
   assign("%||%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x, envir = globalenv())
   assign("load_pasivos_audit", function(client_id = NULL) tibble::tibble(), envir = globalenv())
+  # The append now goes through a strict read (CM07); here it is a good read.
+  assign(".pasivos_audit_leer_para_agregar", function(client_id) load_pasivos_audit(client_id = client_id),
+         envir = globalenv())
   pasivos_audit_saved <- NULL
   assign("save_pasivos_audit", function(df, client_id = NULL) { pasivos_audit_saved <<- df; invisible(TRUE) }, envir = globalenv())
   log_action_calls <- list()
