@@ -1,4 +1,4 @@
-# Generado desde el gestor de tablas (artifact 3ucuJmsbfbcnwRuZwWaZCq) el 2026-10-30.
+# Generado desde el gestor de tablas (artifact 3ucuJmsbfbcnwRuZwWaZCq) el 2026-10-31.
 # Valores de fábrica. Los cambios hechos desde la pestaña Tablas viven en S3 y se aplican encima.
 
 hd_clases <- list(
@@ -18,8 +18,8 @@ hd_clases <- list(
 
 hd_registro <- list(
   facturas_lupa = list(nombre = "Facturas (lupa del Calendario)", clase = "A", archivo = "search_module.R",
-    agregar = "nav_periodo", quitar = character(),
-    notas = c("Quitar: Eliminar sin confirmación: En Vencidos Eliminar pide confirmar y en la lupa no; deben comportarse igual.", "Agregar: Columnas opcionales: faltan las opciones de agregar u ocultar columnas que tiene la tabla de \"Vencidos\"")),
+    agregar = c("nav_periodo"), quitar = character(),
+    notas = c("Quitar: Eliminar sin confirmación: En Vencidos Eliminar pide confirmar y en la lupa no; deben comportarse igual.", "Agregar: Columnas opcionales: faltan las opciones de agregar u ocultar columnas que tiene la tabla de \"Vencidos\"", "Agregar: Navegar por periodo: La lupa ya navega por mes desde el título (tira de 5 meses). Se conserva al migrarla al motor, cargando el mes elegido (inventario T03c, B5).")),
   vencidos = list(nombre = "Vencidos", clase = "A", archivo = "vencidos_module.R",
     agregar = character(), quitar = character(),
     notas = character()),

@@ -35,7 +35,7 @@
 # may not use. A hidden button is not a permission check -- the module that
 # uses the table must check the permission again when the action arrives.
 
-# Relative paths (like vencidos.js), so the app also works under a sub-path.
+# Relative paths, so the app also works under a sub-path.
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),

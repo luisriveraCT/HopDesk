@@ -166,8 +166,12 @@ ok <- function(label, expr) {
      grepl("Deliberately NOT converted", header))
   ok("the documented reasoning explains the actual tradeoff (shared reactives -> recompute cost), not just \"skipped\"",
      grepl("recomputes and rebuilds", header))
-  ok("show_search_modal still exists and is still the entry point (regression guard -- decision didn't accidentally remove functionality)",
-     any(grepl("^show_search_modal <- function", search_txt)))
+  # T04: the lupa moved onto the table engine and keeps the decision -- its
+  # data is a reactiveVal picture, never df_combined_*() live.
+  ok("lupaServer is the entry point and its data is a picture (reactiveVal), not a live view",
+     any(grepl("^lupaServer <- function", search_txt)) &&
+       any(grepl("datos   <- reactiveVal(NULL)", search_txt, fixed = TRUE)) &&
+       any(grepl("isolate(lupa_facturas(shared, m))", search_txt, fixed = TRUE)))
 }
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")

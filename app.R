@@ -1251,7 +1251,6 @@ server <- function(input, output, session) {
   active_entry_ledger   <- reactiveVal(NULL)
   sap_loading       <- reactiveVal(FALSE)
   sap_snapshot_info <- reactiveVal(list(AR = NULL, AP = NULL))
-  search_raw_data   <- reactiveVal(NULL)
   current_user      <- reactive({
     # Prefer res_auth-driven current_user_info (reliable across overlay logins)
     ci <- tryCatch(current_user_info(), error = function(e) NULL)
@@ -2718,31 +2717,6 @@ server <- function(input, output, session) {
   # ── Search modal ─────────────────────────────────────────────────────────────
   # The lupa (R/search_module.R): opens on the Calendario's month.
   lupaServer("lupa", shared, abrir = reactive(input$btn_search), mes = reactive(input$month_sel))
-
-  # Handle edit actions fired from the search modal (tag / move / delete)
-  observeEvent(input$search_action, {
-    handle_search_action(input, shared, session)
-  }, ignoreInit = TRUE)
-
-  observeEvent(input$vencidos_action, {
-    handle_vencidos_action(input, shared, session)
-  }, ignoreInit = TRUE)
-
-  observeEvent(input$search_stage_toast, {
-    payload <- input$search_stage_toast
-    if (!is.null(payload) && nzchar(payload$msg %||% "")) {
-      showNotification(payload$msg,
-                       type     = payload$type %||% "message",
-                       duration = 3)
-    }
-  }, ignoreInit = TRUE, ignoreNULL = TRUE)
-
-  # ── Ver datos raw data popup ─────────────────────────────────────────────────
-  # The viewer itself is mostrar_datos_sap() (R/search_module.R), shared with
-  # Vencidos' "Ver datos SAP".
-  observeEvent(input$btn_ver_datos, {
-    mostrar_datos_sap(search_raw_data())
-  }, ignoreInit = TRUE)
 
   # ── Control UIs ──────────────────────────────────────────────────────────────
   output$empresa_ui <- renderUI({

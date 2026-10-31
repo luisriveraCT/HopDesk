@@ -176,6 +176,7 @@ cat("\n-- Part C: real call sites forward session, not just this test's fixture 
 
 ledger_txt <- paste(readLines("R/ledger_module.R", warn = FALSE), collapse = "\n")
 search_txt <- paste(readLines("R/search_module.R", warn = FALSE), collapse = "\n")
+ven_txt    <- paste(readLines("R/vencidos_module.R", warn = FALSE), collapse = "\n")
 app_txt    <- paste(readLines("app.R", warn = FALSE), collapse = "\n")
 
 .chk_true(grepl(".apply_move <- function(keys, new_date, ledger, shared, session = NULL)", ledger_txt, fixed = TRUE),
@@ -196,21 +197,19 @@ app_txt    <- paste(readLines("app.R", warn = FALSE), collapse = "\n")
 
 .chk_true(grepl("handle_invoice_action <- function(payload, shared, session = NULL)", search_txt, fixed = TRUE),
           "handle_invoice_action() accepts a session parameter")
-.chk_true(grepl("handle_search_action <- function(input, shared, session = NULL)", search_txt, fixed = TRUE),
-          "handle_search_action() accepts and forwards a session parameter")
-.chk_true(grepl("handle_vencidos_action <- function(input, shared, session = NULL)", search_txt, fixed = TRUE),
-          "handle_vencidos_action() accepts and forwards a session parameter")
-.chk_true(grepl("handle_invoice_action(input$search_action, shared, session = session)", search_txt, fixed = TRUE),
-          "handle_search_action() forwards session into handle_invoice_action()")
-.chk_true(grepl("handle_invoice_action(input$vencidos_action, shared, session = session)", search_txt, fixed = TRUE),
-          "handle_vencidos_action() forwards session into handle_invoice_action()")
+# Vencidos and the lupa (T04: both on the table engine) send their actions
+# through facturas_tabla_server(), which hands its own session on.
+.chk_true(grepl("facturas_tabla_server <- function(id, tabla, datos, shared, crudos, accion_factura = handle_invoice_action,",
+                ven_txt, fixed = TRUE),
+          "the invoices table (Vencidos and the lupa) runs its actions through handle_invoice_action()")
+.chk_true(grepl("accion_factura(payload, shared, session = session)", ven_txt, fixed = TRUE),
+          "... and forwards its session into it")
 .chk(lengths(regmatches(search_txt, gregexpr(".save_moves_deferred(updated, client_id = shared$effective_client_id(), session = session)",
                                               search_txt, fixed = TRUE))),
      2L, "both move/restore branches in handle_invoice_action() forward session into .save_moves_deferred()")
 
-.chk_true(grepl("handle_search_action(input, shared, session)", app_txt, fixed = TRUE),
-          "app.R's search_action observer passes its real session")
-.chk_true(grepl("handle_vencidos_action(input, shared, session)", app_txt, fixed = TRUE),
-          "app.R's vencidos_action observer passes its real session")
+.chk_true(grepl("lupaServer(\"lupa\", shared, abrir = reactive(input$btn_search), mes = reactive(input$month_sel))",
+                app_txt, fixed = TRUE),
+          "app.R wires the lupa with the default accion_factura, the real handle_invoice_action()")
 
 cat(sprintf("\n  Subtotal: %d passed, %d failed\n", .pass, .fail))
