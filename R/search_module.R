@@ -283,6 +283,11 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
                new_tags  = new_tags,
                tagged_by = current_user)
     }
+    # The session sees its own change now, as the Calendario's tag handler
+    # does. Before (found 2026-10-31, Luis): only S3 got it, and the session
+    # caught up at the next sync poll (8 s); a tag action inside that window
+    # started from the stale tags and wrote back ones just removed.
+    shared$tags_db(tdb)
     # BUG (found 2026-09-03, same class already fixed for
     # .save_moves_deferred() in R/ledger_module.R -- this is search_module.R's
     # own separate implementation of the identical action, reached from
