@@ -20,7 +20,8 @@
 # clip of a row with .adjuntos; that row's id), "quitar_agenda" (the row
 # action "agregar" on a row already in the Agenda, .agregado: the same
 # button takes it out; that row's id), "campo" (a bar action's field
-# changed: valor = what it holds, de = the action; no ids), and
+# changed, or showed with Editar: valor = what it holds, "" once Editar hides
+# it; de = the action; no ids), and
 # the names given in acciones_fila (one row's id) and acciones_barra. Actions
 # that confirm ("eliminar" on a row, bar actions with confirmar = TRUE) only
 # reach accion() once the user presses Confirmar in the table's own bar.
@@ -43,7 +44,7 @@ hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
     htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=21"),
-    htmltools::tags$script(src = "hdtable.js?v=30")
+    htmltools::tags$script(src = "hdtable.js?v=31")
   ))
 }
 

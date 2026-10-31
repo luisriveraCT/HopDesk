@@ -335,6 +335,10 @@
           st.btnEditar.classList.toggle('hdt-on', st.editando);
           st.btnEditar.setAttribute('aria-pressed', st.editando ? 'true' : 'false');
           pintarBarraAcc(st);
+          // An edit action's field shows now: report what it holds ("" once hidden).
+          st.accBarra.forEach(function (a) {
+            if (a.campo && a.modo === 'editar') enviarAccion(st, 'campo', [], st.editando ? valorCampo(st, a) : '', a.accion);
+          });
         });
         st.barra.insertBefore(st.btnEditar, st.contador || null);
         st.barra.hidden = false;
