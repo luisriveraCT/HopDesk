@@ -134,6 +134,24 @@ lupaServer <- function(id, shared, abrir, mes, accion_factura = handle_invoice_a
 }
 
 # =============================================================================
+# etiquetas_frescas -- the tags as S3 has them now, for a tag action to start
+# from (Vencidos, the lupa and the Calendario), as the Agenda does with
+# safe_load_pagar_hoy(). The session's copy may miss another session's change
+# from the last few seconds (the sync bus polls every 8 s), and writing on it
+# would undo that change. Read past the process's preload cache, which only
+# this process's own writes refresh. If S3 can't be read, the session's copy:
+# never an empty table, which would wipe every tag. (load_tags() turns a
+# failed read into an empty table, so it isn't used here.)
+# =============================================================================
+etiquetas_frescas <- function(shared) {
+  cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
+  r <- tryCatch(.s3_read_raw_with_retry(.s3_key(S3_KEYS$tags, client_id = cid), .s3_bucket()),
+                error = function(e) NULL)
+  if (!isTRUE(r$ok)) return(shared$tags_db())
+  dplyr::filter(.normalize(r$value, .schema_tags), tag %in% c("important", "urgent"))
+}
+
+# =============================================================================
 # mostrar_datos_sap — the raw SAP viewer ("Ver datos SAP" in the lupa and in
 # Vencidos): every raw SAP column of the rows given,
 # Ledger / Empresa / Parte / Documento / Moneda first, filterable, with CSV and
@@ -273,7 +291,7 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
       tag_both      = c("urgent","important"),
       tag_clear     = character(0)
     )
-    tdb <- shared$tags_db()
+    tdb <- etiquetas_frescas(shared)   # not the session's copy: another session may have just tagged
     for (i in seq_len(nrow(keys_df))) {
       tdb <- set_invoice_tags(tdb,
                ledger    = keys_df$ledger[i],

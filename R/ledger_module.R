@@ -2244,7 +2244,9 @@ ledgerModuleServer <- function(id, config, shared) {
       sel     <- input[["modal_tbl_rows_selected"]] %||% integer(0)
       if (!length(sel)) { showNotification("Selecciona al menos una factura.", type="warning"); return() }
       rows    <- .audit_sel_to_keys(tbl, sel, detail)
-      tags_db <- shared$tags_db()
+      # From S3 as it is now, not the session's copy (etiquetas_frescas() in
+      # R/search_module.R): another session may have just tagged.
+      tags_db <- etiquetas_frescas(shared)
       for (i in seq_len(nrow(rows))) {
         tags_db <- set_invoice_tags(tags_db, ledger, rows[["Empresa"]][i], rows[["Moneda"]][i],
                                     rows[["Documento"]][i], new_tags, tagged_by=shared$current_user())
