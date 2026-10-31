@@ -92,6 +92,13 @@ facturas0 <- rbind(
   fila("AR", "NTS", "MXN", "5001", "MAS ADELANTE SA", 0, 3100, "F-5001", fecha = MES_LEJOS + 14),
   fila("AP", "NCS", "USD", "5002", "MAS ADELANTE SA", 0, 870, "P-5002", fecha = MES_LEJOS + 19)
 )
+# VEN_EXTRA=n: n more overdue invoices, as many as a real company has (the
+# smoke test had 3,522), for the height.
+n_extra <- suppressWarnings(as.integer(Sys.getenv("VEN_EXTRA", "0")))
+if (!is.na(n_extra) && n_extra > 0L)
+  facturas0 <- rbind(facturas0, do.call(rbind, lapply(seq_len(n_extra), function(k)
+    fila(if (k %% 2) "AR" else "AP", if (k %% 3) "NTS" else "NCS", "MXN", sprintf("9%05d", k),
+         sprintf("PROVEEDOR %03d", k %% 400), 1 + k %% 60, 100 + k))))
 # VEN_VACIO=1: no overdue invoices at all (the empty message).
 if (identical(Sys.getenv("VEN_VACIO"), "1")) facturas0 <- facturas0[0, , drop = FALSE]
 tags0 <- data.frame(ledger = c("AR", "AR", "AR", "AP", "AP"), Empresa = c("NCS", "NTS", "NTS", "NTS", "NTS"),
@@ -119,7 +126,10 @@ ui <- bslib::page_navbar(
     # (Shiny.setInputValue('btn_search', ...)).
     div(class = "h-100 overflow-auto", vencidosUI("ven"),
         tags$pre(id = "registro", style = "font-size:.7rem; max-height:160px; overflow:auto;"))
-  )
+  ),
+  # The app's fixed "Notas del mes" button, bottom left (app.R).
+  footer = div(id = "notes_bar", class = "notes-toggle-bar",
+               tags$button(class = "notes-bar-btn", "Notas del mes"))
 )
 
 server <- function(input, output, session) {

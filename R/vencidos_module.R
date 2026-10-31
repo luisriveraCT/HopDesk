@@ -305,7 +305,9 @@ vencidos_crudos <- function(shared) {
 vencidosUI <- function(id) {
   ns <- NS(id)
   tagList(
-    div(class = "vencidos-wrap p-3", facturas_tabla_ui(ns("tabla"), alto = "calc(100vh - 230px)")),
+    # The table is the whole tab: it fills what's left of the window below
+    # it, footer included (alto = "ventana").
+    div(class = "vencidos-wrap p-3", facturas_tabla_ui(ns("tabla"), alto = "ventana")),
     # The tab's badge (count of open overdue invoices).
     tags$script(HTML("
       $(document).on('shiny:connected', function () {

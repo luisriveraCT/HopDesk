@@ -40,23 +40,27 @@ hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
     htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=20"),
-    htmltools::tags$script(src = "hdtable.js?v=25")
+    htmltools::tags$script(src = "hdtable.js?v=27")
   ))
 }
 
 # alto: height of the scrolling area (the totals footer sits below it).
 #   "auto" (default): as tall as its rows, never fewer than ~8; up to ~15
 #   compact rows while 30 or fewer are visible, and above that it grows to
-#   70% of the window (inside a modal, what fits without page scroll). No
-#   table ever cuts, pages or hides rows.
+#   70% of the window (inside a modal, what fits without page scroll). On a
+#   page, never more than what's left down to the window's bottom, so its
+#   footer always shows. No table ever cuts, pages or hides rows.
+#   "ventana": a table that is the whole page (Vencidos): as tall as its rows
+#   up to everything left down to the window's bottom, footer included.
 #   A CSS length ("420px", "60vh") is used as the maximum height, as before.
 hd_table_ui <- function(id, alto = "auto") {
   ns <- shiny::NS(id)
-  auto <- is.null(alto) || identical(alto, "auto")
+  ventana <- identical(alto, "ventana")
+  auto <- is.null(alto) || identical(alto, "auto") || ventana
   htmltools::tagList(
     hd_table_deps(),
     htmltools::div(
-      id = ns("hdt"), class = paste("hdt", if (auto) "hdt-auto"), `data-ns` = ns(""),
+      id = ns("hdt"), class = paste(c("hdt", if (auto) "hdt-auto", if (ventana) "hdt-llenar"), collapse = " "), `data-ns` = ns(""),
       style = if (!auto) paste0("--hdt-alto:", alto, ";"),
       htmltools::div(class = "hdt-cargando", tr("comun.cargando"))
     )

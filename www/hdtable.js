@@ -21,8 +21,12 @@
 
   // alto = "auto" (R/hd_table.R): never fewer than 8 rows tall; up to 15
   // rows while 30 or fewer are visible; above that, up to 70% of the window
-  // (or what fits in the modal around it).
+  // (or what fits in the modal around it). On a page, never more than what's
+  // left from the table's top to the window's bottom, so the footer under it
+  // always shows whole -- above the app's fixed "Notas del mes" button, which
+  // sits 16 px from the bottom (HDT_MARGEN_ABAJO).
   var HDT_ALTO_MIN = 8, HDT_ALTO_NORMAL = 15, HDT_ALTO_CRECE = 30, HDT_ALTO_VENTANA = 0.7;
+  var HDT_MARGEN_ABAJO = 56;
 
   var TABLAS = {};        // root element id -> state
   var ULTIMO = {};        // root element id -> last data message received for it
@@ -378,15 +382,23 @@
                   : st.tabla_el.offsetHeight + (st.vacio.hidden ? 0 : st.vacio.offsetHeight);
     var minimo = cabeza + HDT_ALTO_MIN * h;
     var tope;
-    if (n <= HDT_ALTO_CRECE) tope = cabeza + HDT_ALTO_NORMAL * h;
+    var dlg = st.root.closest('.modal-dialog');
+    if (st.root.classList.contains('hdt-llenar')) tope = Infinity;   // alto = "ventana": all that's left
+    else if (n <= HDT_ALTO_CRECE) tope = cabeza + HDT_ALTO_NORMAL * h;
     else {
       tope = window.innerHeight * HDT_ALTO_VENTANA;
       // Inside a modal: what fits without the page itself scrolling.
-      var dlg = st.root.closest('.modal-dialog');
       if (dlg) {
         var resto = dlg.getBoundingClientRect().height - st.scroll.getBoundingClientRect().height;
         tope = Math.min(tope, window.innerHeight - resto - 2 * 28);
       }
+    }
+    // On a page: what's left down to the window's bottom, less what the
+    // table has under its rows (the footer) and the bottom margin.
+    if (!dlg) {
+      var sr = st.scroll.getBoundingClientRect();
+      var debajo = st.root.getBoundingClientRect().bottom - sr.bottom;
+      tope = Math.min(tope, window.innerHeight - Math.max(0, sr.top) - debajo - HDT_MARGEN_ABAJO);
     }
     var alto = Math.max(minimo, Math.min(contenido, Math.max(tope, minimo)));
     if (!encoger && st.altoActual) alto = Math.max(alto, st.altoActual);

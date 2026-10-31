@@ -26,10 +26,10 @@ PORT <- 38964L
 app <- NULL; b <- NULL
 descargas <- file.path(tempdir(), "ven_descargas")
 on.exit({ try(if (!is.null(b)) b$close(), silent = TRUE); stop_bg_app(app); unlink(descargas, recursive = TRUE) }, add = TRUE)
-arrancar <- function(vacio = FALSE) {
+arrancar <- function(vacio = FALSE, extra = 0L) {
   if (!is.null(app)) stop_bg_app(app)
-  app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(VEN_VACIO = "%s"); setwd("%s"); source("tests/helpers/vencidos_fixture_app.R")$value',
-                                        if (vacio) "1" else "0", repo), PORT, timeout_s = 90),
+  app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(VEN_VACIO = "%s", VEN_EXTRA = "%d"); setwd("%s"); source("tests/helpers/vencidos_fixture_app.R")$value',
+                                        if (vacio) "1" else "0", extra, repo), PORT, timeout_s = 90),
                    error = function(e) { message(conditionMessage(e)); NULL })
   !is.null(app)
 }
@@ -286,6 +286,25 @@ ok("M7: the raw data button is 'Ver datos SAP', as in the lupa", identical(ev(sp
 clic(barra("crudos"))
 ok("M7: 'Ver datos SAP' opens the raw SAP viewer with the overdue rows (all of them, nothing marked)",
    poll_until(function() grepl("Datos SAP crudos — 3 filas", ev("(document.querySelector('.modal-title')||{}).textContent || ''"), fixed = TRUE), timeout_s = 10))
+
+# ── Height: the footer always shows whole (smoke test, 2026-10-31) ─────────
+# With the app's bar above the table (here a 140 px band) the footer ended
+# below the window, under the fixed "Notas del mes" button.
+ok("fixture app restarted with 3,500 more overdue invoices", arrancar(extra = 3500L) && abrir())
+invisible(ev(sprintf("var w = document.querySelector('.vencidos-wrap'); var d = document.createElement('div'); d.style.height = '140px'; d.textContent = 'barra de la app'; w.parentNode.insertBefore(d, w);", A)))
+pie_visible <- function() ev(sprintf("(function(){ var p = document.querySelector('#%s .hdt-pie').getBoundingClientRect(),
+  n = document.querySelector('.notes-bar-btn').getBoundingClientRect();
+  return { pie: p.bottom, notas: n.top, ventana: innerHeight, alto: document.querySelector('#%s .hdt-scroll').getBoundingClientRect().height }; })()", A, A))
+for (alto in c(900L, 1080L)) {
+  invisible(b$Emulation$setDeviceMetricsOverride(width = 1400L, height = alto, deviceScaleFactor = 1, mobile = FALSE))
+  invisible(ev("window.dispatchEvent(new Event('resize'))")); Sys.sleep(0.8)
+  m <- pie_visible()
+  cat(sprintf("  1400x%d: table %.0f px, footer ends at %.0f, the notes button starts at %.0f
+", alto, m$alto, m$pie, m$notas))
+  ok(sprintf("1400x%d: the footer shows whole, above the 'Notas del mes' button", alto),
+     m$pie <= m$notas && m$pie <= m$ventana)
+}
+invisible(b$Emulation$setDeviceMetricsOverride(width = 1400L, height = 1000L, deviceScaleFactor = 1, mobile = FALSE))
 
 # ── D6 · nothing overdue ───────────────────────────────────────────────────
 ok("fixture app restarted with no overdue invoices", arrancar(vacio = TRUE) && abrir())

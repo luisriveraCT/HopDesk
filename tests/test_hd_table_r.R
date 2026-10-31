@@ -299,6 +299,13 @@ test_that("bar actions: validated, unique, 'detalle' reserved", {
   expect_identical(hd_acciones_barra_meta(ok)[[1]]$texto, tr("tablas.accion.papelera"))
 })
 
+test_that("alto = \"ventana\": automatic height that fills the window", {
+  h <- as.character(hd_table_ui("v", alto = "ventana"))
+  expect_match(h, 'class="hdt hdt-auto hdt-llenar"', fixed = TRUE)
+  expect_false(grepl("--hdt-alto", h, fixed = TRUE))
+  expect_match(as.character(hd_table_ui("a")), 'class="hdt hdt-auto"', fixed = TRUE)
+})
+
 test_that("bar actions: confirmar_texto is a plural key, only with confirmar", {
   ok <- hd_acciones_barra_validar(list(list(accion = "x", texto = "t", confirmar = TRUE,
                                             confirmar_texto = "tablas.facturas.confirmar_eliminar")))
