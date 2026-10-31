@@ -107,7 +107,7 @@ lupaServer <- function(id, shared, abrir, mes, accion_factura = handle_invoice_a
     output$titulo <- renderText({
       m <- cargado()
       if (is.null(m)) return(tr("tablas.lupa.titulo"))
-      tr("tablas.lupa.titulo_mes", mes = tr(paste0("comun.mes_largo.", as.integer(substr(m, 6, 7)))),
+      tr("tablas.lupa.titulo_mes", mes = tr(paste0("tablas.periodo.mes_largo.", as.integer(substr(m, 6, 7)))),
          anio = substr(m, 1, 4))
     })
 
