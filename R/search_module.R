@@ -35,17 +35,14 @@ lupa_facturas <- function(shared, mes) {
   una <- function(ledger_name) {
     df <- if (ledger_name == "AR") shared$df_combined_AR() else shared$df_combined_AP()
     if (is.null(df) || !nrow(df)) return(NULL)
-    ic_args <- list(df, mode = tryCatch(shared$ic_mode[[ledger_name]](), error = function(e) "exclude"),
-                    code_col = if (ledger_name == "AR") "Código de cliente" else "Código de proveedor",
-                    ic_codes = tryCatch(build_ic_fullcodes(shared$interco_v2(), ledger_name), error = function(e) character()),
-                    ic_rfcs  = tryCatch({
-                      r <- unique(toupper(trimws(unname(shared$interco_v2()$rfcs %||% character()))))
-                      r[nzchar(r)]
-                    }, error = function(e) character()))
-    # The session's own company map (cm/sesion gives apply_ic_filter() a
-    # `cmap`; until that's merged the function doesn't take it).
-    if ("cmap" %in% names(formals(apply_ic_filter))) ic_args$cmap <- shared$company_map()
-    df <- do.call(apply_ic_filter, ic_args)
+    df <- apply_ic_filter(df, mode = tryCatch(shared$ic_mode[[ledger_name]](), error = function(e) "exclude"),
+                          code_col = if (ledger_name == "AR") "Código de cliente" else "Código de proveedor",
+                          ic_codes = tryCatch(build_ic_fullcodes(shared$interco_v2(), ledger_name), error = function(e) character()),
+                          ic_rfcs  = tryCatch({
+                            r <- unique(toupper(trimws(unname(shared$interco_v2()$rfcs %||% character()))))
+                            r[nzchar(r)]
+                          }, error = function(e) character()),
+                          cmap = shared$company_map())
     if (is.null(df) || !nrow(df)) return(NULL)
     df <- df[!is.na(df$FechaEff) & as.Date(df$FechaEff) >= desde & as.Date(df$FechaEff) <= hasta, , drop = FALSE]
     if (!nrow(df)) return(NULL)

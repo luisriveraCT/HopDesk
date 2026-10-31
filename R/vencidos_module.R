@@ -348,11 +348,8 @@ vencidosServer <- function(id, shared, accion_factura = handle_invoice_action) {
         ic_rfcs  <- unique(toupper(trimws(unname(ic_reg$rfcs %||% character()))))
         ic_rfcs  <- ic_rfcs[nzchar(ic_rfcs)]
         code_col <- if (ledger_name == "AR") "Código de cliente" else "Código de proveedor"
-        # The session's own company map (cm/sesion gives apply_ic_filter() a
-        # `cmap`; until that's merged the function doesn't take it).
-        ic_args <- list(df, mode = ic_mode_val, code_col = code_col, ic_codes = codes, ic_rfcs = ic_rfcs)
-        if ("cmap" %in% names(formals(apply_ic_filter))) ic_args$cmap <- shared$company_map()
-        df <- do.call(apply_ic_filter, ic_args)
+        df <- apply_ic_filter(df, mode = ic_mode_val, code_col = code_col, ic_codes = codes, ic_rfcs = ic_rfcs,
+                              cmap = shared$company_map())
         if (!is.null(df) && !nrow(df)) return(NULL)
 
         # Layer 2: Parte-name fallback (catches IC when codes not yet registered)
