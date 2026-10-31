@@ -2739,44 +2739,10 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
   # ── Ver datos raw data popup ─────────────────────────────────────────────────
+  # The viewer itself is mostrar_datos_sap() (R/search_module.R), shared with
+  # Vencidos' "Ver datos de origen".
   observeEvent(input$btn_ver_datos, {
-    raw <- search_raw_data()
-    if (is.null(raw) || !nrow(raw)) {
-      showNotification("No hay datos cargados.", type = "warning")
-      return()
-    }
-    # Show all raw SAP columns — prioritise Ledger, Empresa first for readability
-    disp <- as.data.frame(raw)
-    priority_cols <- intersect(c("Ledger","Empresa","Parte","Documento","Moneda"), names(disp))
-    rest_cols     <- setdiff(names(disp), priority_cols)
-    disp          <- disp[, c(priority_cols, rest_cols), drop = FALSE]
-    showModal(modalDialog(
-      title     = paste0("\U0001f4cb Datos SAP crudos — ", nrow(disp), " filas"),
-      size      = "xl",
-      easyClose = TRUE,
-      footer    = tagList(
-        tags$small(class = "text-muted me-auto",
-                   paste0(nrow(disp), " filas \u00d7 ", ncol(disp), " columnas")),
-        modalButton("Cerrar")
-      ),
-      div(style = "max-height:65vh; overflow:auto;",
-        DT::datatable(
-          disp,
-          rownames   = FALSE,
-          filter     = "top",
-          extensions = "Buttons",
-          options    = list(
-            pageLength = 25,
-            scrollX    = TRUE,
-            dom        = "Bfrtip",
-            buttons    = list(
-              list(extend = "csv",   text = "\U2B07 CSV"),
-              list(extend = "excel", text = "\U2B07 Excel")
-            )
-          )
-        )
-      )
-    ))
+    mostrar_datos_sap(search_raw_data())
   }, ignoreInit = TRUE)
 
   # ── Control UIs ──────────────────────────────────────────────────────────────
