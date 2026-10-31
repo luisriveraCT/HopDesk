@@ -63,7 +63,8 @@ walk <- function(x) {
   }
 }
 for (e in parse("R/treasury_map_module.R")) walk(e)
-ok("the module calls .tm_parte_to_ini at least 4 times", length(calls) >= 4L)
+# 3 since the edge table and "Agregar al plan" share edge_invoices() (ff90084).
+ok("the module calls .tm_parte_to_ini at least 3 times", length(calls) >= 3L)
 ok("every .tm_parte_to_ini() call passes a map",
    all(vapply(calls, function(cl) length(cl) == 3L, logical(1))))
 
