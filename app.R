@@ -2881,6 +2881,7 @@ server <- function(input, output, session) {
         created_at             = if (nrow(existing)) existing$created_at[1] else Sys.time(),
         updated_at             = Sys.time()
       )
+      new_row <- editar_manual(existing, new_row)
       df <- upsert_manual(manual_inv(), new_row)
       manual_inv(df)
       tryCatch(save_manual(df, client_id = effective_client_id()),

@@ -810,6 +810,17 @@ upsert_manual <- function(df, new_row) {
   dplyr::bind_rows(df, new_row)
 }
 
+# An edit replaces only the columns the form sends; every other column of the
+# stored row (provision_id, liability_id, referencia, Abono futuro...) is
+# kept. Rebuilding the row from the form alone cut a converted item off its
+# provision (found 2026-10-31).
+editar_manual <- function(existente, cambios) {
+  if (is.null(existente) || !nrow(existente)) return(cambios)
+  for (col in setdiff(names(existente), names(cambios)))
+    cambios[[col]] <- existente[[col]][1]
+  cambios
+}
+
 delete_manual <- function(df, id) {
   filter(df, .data$id != !!id)
 }
