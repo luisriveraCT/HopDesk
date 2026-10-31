@@ -868,8 +868,18 @@ server <- function(input, output, session) {
       return()
     }
     # Create the user account in the target client's folder
+    # The invitee is outside the app: a generic message, details only in the log.
+    # A failed read used to come back as "no users", and the save below then
+    # left the client with the invitee as its only account (CM08, 2026-11-01).
+    invite_reintentar <- function(e) {
+      message("[INVITE] ", invite$client_id, ": ", conditionMessage(e))
+      output$invite_pw_error <- renderUI(
+        tags$p(class = "text-danger small mt-1", tr("comun.reintentar")))
+    }
+    usuarios <- tryCatch(auth_load_usuarios(client_id = invite$client_id),
+                         error = function(e) { invite_reintentar(e); NULL })
+    if (is.null(usuarios)) return()
     tryCatch({
-      usuarios <- auth_load_usuarios(client_id = invite$client_id)
       username <- derive_username(invite$display_name)
       # A name of only punctuation/accents could strip to nothing, and an
       # empty username is unloggable-in and would collide with the next one.
@@ -929,11 +939,7 @@ server <- function(input, output, session) {
 
       invite_done_rv(list(username = username,
                           app_url  = if (nzchar(app_url)) app_url else "./"))
-    }, error = function(e) {
-      output$invite_pw_error <- renderUI(
-        tags$p(class = "text-danger small mt-1", paste("Error:", e$message))
-      )
-    })
+    }, error = invite_reintentar)
   }, ignoreInit = TRUE)
 
   # The activation page mounts nothing else. Everything below this point --

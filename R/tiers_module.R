@@ -662,7 +662,15 @@ tiersServer <- function(id, shared) {
       ovr <- .usuarios_local()
       if (!is.null(ovr)) return(ovr)
       req(req_authorized())
-      auth_load_usuarios(client_id = current_client_id())
+      # A failed read now stop()s instead of returning an empty table; say so
+      # and cancel every consumer (req), so no save goes on with no users.
+      u <- tryCatch(auth_load_usuarios(client_id = current_client_id()), error = function(e) {
+        message("[TIERS] usuarios read failed: ", conditionMessage(e))
+        showNotification(tr("comun.reintentar"), type = "error", duration = 8)
+        NULL
+      })
+      req(!is.null(u))
+      u
     })
 
     # Clear local cache whenever the client context changes so the next

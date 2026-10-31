@@ -266,17 +266,40 @@ auth_invalidate_credentials <- function() {
 # Sys.getenv("CLIENT_ID") for backwards compatibility. Passing this explicitly
 # is the Stage 4 mechanism for reading another client's folder without mutating
 # the global env var (which would affect all concurrent sessions).
+# ── Strict read of <cid>/usuarios.rds ─────────────────────────────────────────
+# Returns the table, or NULL only when the object really does not exist (a
+# new client). A read that fails, or comes back empty for an object that
+# exists, is retried and then stop()s. It used to return an EMPTY table on
+# any read error, which every caller took for "this client has no users":
+# accepting an invitation, creating a user or lowering the user limit then
+# saved that empty table plus their change, erasing every account of the
+# client (found 2026-11-01, CM07/CM08). If S3 cannot say whether the object
+# exists, it is assumed to exist (fail closed).
+.usuarios_existe <- function(key) {
+  tryCatch(isTRUE(aws.s3::object_exists(key, bucket = .s3_bucket())), error = function(e) NA)
+}
+
+.usuarios_leer_estricto <- function(key, intentos = 3L, espera = 0.5) {
+  ultimo_error <- NULL
+  for (i in seq_len(intentos)) {
+    raw <- tryCatch(
+      suppressMessages(suppressWarnings(aws.s3::s3readRDS(object = key, bucket = .s3_bucket()))),
+      error = function(e) { ultimo_error <<- e; NULL })
+    if (is.data.frame(raw) && nrow(raw)) return(raw)
+    if (identical(.usuarios_existe(key), FALSE)) return(NULL)
+    if (i < intentos) Sys.sleep(espera)
+  }
+  stop(sprintf("[AUTH] could not read %s (%s)", key,
+               if (is.null(ultimo_error)) "it exists but came back empty" else conditionMessage(ultimo_error)),
+       call. = FALSE)
+}
+
 auth_load_usuarios <- function(client_id = NULL) {
   cid <- tolower(trimws(client_id %||% Sys.getenv("CLIENT_ID")))
   key <- paste0(cid, "/usuarios.rds")
 
-  raw <- tryCatch(
-    suppressMessages(suppressWarnings(
-      aws.s3::s3readRDS(object = key, bucket = .s3_bucket())
-    )),
-    error = function(e) NULL
-  )
-  if (is.null(raw) || !is.data.frame(raw) || !nrow(raw)) {
+  raw <- .usuarios_leer_estricto(key)   # stop()s on a failed read: never "no users"
+  if (is.null(raw)) {                   # no file yet: a client with no users
     return(data.frame(
       id                       = character(),
       account_code             = character(),
@@ -382,9 +405,30 @@ auth_load_usuarios <- function(client_id = NULL) {
 # Save usuarios data.frame to S3 and invalidate the login cache.
 # client_id: explicit folder slug — same Stage 4 override as auth_load_usuarios().
 # Throws on failure — callers must wrap in tryCatch and surface the error to the user.
-auth_save_usuarios <- function(df, client_id = NULL) {
+# Last safety net: refuses to write an empty table, or one that drops more
+# than half of the accounts that are active in S3 right now, unless
+# alta_inicial = TRUE. Deactivating keeps the row (activo/deleted), so a
+# legitimate limit change still passes; what it stops is a save built on a
+# table that was read empty. It reads S3 first, strictly: if that read fails,
+# the save fails too (fail closed).
+auth_save_usuarios <- function(df, client_id = NULL, alta_inicial = FALSE) {
   cid <- tolower(trimws(client_id %||% Sys.getenv("CLIENT_ID")))
   key <- paste0(cid, "/usuarios.rds")
+  if (!isTRUE(alta_inicial)) {
+    if (!is.data.frame(df) || !nrow(df))
+      stop("[AUTH] refusing to save an empty user table for ", cid,
+           " (alta_inicial = TRUE if that is really intended)", call. = FALSE)
+    actual <- .usuarios_leer_estricto(key)
+    if (is.data.frame(actual) && nrow(actual)) {
+      activo  <- if ("activo"  %in% names(actual)) !(actual$activo  %in% FALSE) else rep(TRUE, nrow(actual))
+      borrado <- if ("deleted" %in% names(actual))   actual$deleted %in% TRUE   else rep(FALSE, nrow(actual))
+      activas <- unique(tolower(trimws(actual$username[activo & !borrado])))
+      quedan  <- sum(activas %in% tolower(trimws(df$username)))
+      if (length(activas) && quedan < length(activas) / 2)
+        stop(sprintf("[AUTH] refusing to save users for %s: only %d of its %d active accounts would remain",
+                     cid, quedan, length(activas)), call. = FALSE)
+    }
+  }
   aws.s3::s3saveRDS(df, object = key, bucket = .s3_bucket())
   auth_invalidate_credentials()
   invisible(TRUE)

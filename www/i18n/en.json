@@ -50,6 +50,7 @@
   "comun.cargando": "Loading…",
   "comun.error_guardar": "Couldn't save. Try again.",
   "comun.fecha_corta": "{mes} {dia}, {anio}",
+  "comun.reintentar": "We couldn't finish this. Please try again in a moment.",
   "comun.mes.1": "Jan",
   "comun.mes.2": "Feb",
   "comun.mes.3": "Mar",
