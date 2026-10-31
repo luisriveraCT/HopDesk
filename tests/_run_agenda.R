@@ -96,6 +96,7 @@ tryCatch({
   # Source order matters: sync_bus first (defines bump_sync_version), then persistence
   source("R/sync_bus.R",   local = FALSE)
   source("R/persistence.R", local = FALSE)
+  if (!exists("SAP_B1_ERP_TYPE")) SAP_B1_ERP_TYPE <- "sap_b1_service_layer"   # R/erp_connector_registry.R
 
   # ── Run test module ─────────────────────────────────────────────────────────
   .run_module <- function(file) {

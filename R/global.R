@@ -1165,14 +1165,6 @@ calendar_html <- function(
 # Bootstrap blocks removed — auto-seeding eliminated per CLAUDIO_SPEC Stage 0.
 # Accounts are created via scripts/seed_hd_admin.R (admin) or the invite flow.
 
-# ── Cross-session agenda sync state (single-process ShinyApps.io) ─────────────
-# Sessions share this in-memory state to propagate changes without re-reading S3.
-# .agenda_sync$version bumps on every write — polling observers detect the change.
-if (!exists(".agenda_sync", envir = .GlobalEnv)) {
-  assign(".agenda_sync", list(
-    is_on   = FALSE,
-    data    = NULL,
-    version = as.character(proc.time()[["elapsed"]])
-  ), envir = .GlobalEnv)
-}
+# Agenda sync state is per client and read from S3: see agenda_sync_activa()
+# in R/persistence.R. There is deliberately no process-global copy.
 

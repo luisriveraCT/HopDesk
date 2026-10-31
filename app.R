@@ -1558,23 +1558,15 @@ server <- function(input, output, session) {
   register_synced(
     "pagar_hoy_db",
     S3_KEYS$pagar_hoy_sync,
-    # Global loader: returns shared data when sync is ON (all sessions see same data)
-    function(client_id = NULL) {
-      if (isTRUE(tryCatch(.GlobalEnv$.agenda_sync$is_on, error = function(e) FALSE)))
-        .GlobalEnv$.agenda_sync$data
-      else
-        NULL  # per_session_loader handles sync-OFF case
-    },
-    # Per-session loader: returns the cached per-user data after a per-user save
-    # or after sync is deactivated and per-user files have been written.
+    # No process-global copy any more (it mixed clients and went stale): the
+    # per-session loader reads this session's own client from S3, shared or
+    # per-user file depending on that client's own sync setting.
+    function(client_id = NULL) NULL,
     per_session_loader = function(shared) {
-      sync_on <- isTRUE(tryCatch(.GlobalEnv$.agenda_sync$is_on, error = function(e) FALSE))
-      if (sync_on) return(NULL)
-      ukey  <- tolower(trimws(tryCatch(shared$current_user(), error = function(e) "")))
-      if (!nzchar(ukey)) return(NULL)
-      cache <- tryCatch(.GlobalEnv$.agenda_user_cache, error = function(e) NULL)
-      if (!is.list(cache)) return(NULL)
-      cache[[ukey]]
+      cid  <- isolate(tryCatch(shared$effective_client_id(), error = function(e) NULL))
+      user <- isolate(tryCatch(shared$current_user(), error = function(e) ""))
+      if (is.null(cid) || !nzchar(cid)) return(NULL)
+      safe_load_pagar_hoy(username = user, client_id = cid)
     }
   )
   register_synced("bancos_confirmados_db", S3_KEYS$bancos_confirmados,
@@ -2246,30 +2238,19 @@ server <- function(input, output, session) {
           tryCatch(save_pagar_hoy_sync(ph, client_id = cid_lo), error = function(e)
             message("[LOAD] agenda_sync migrate write failed: ", e$message))
           tryCatch(save_agenda_sync_config(TRUE, "system", client_id = cid_lo), error = function(e) NULL)
-          .GlobalEnv$.agenda_sync$is_on   <- TRUE
-          .GlobalEnv$.agenda_sync$data    <- ph
-          .GlobalEnv$.agenda_sync$version <- as.character(Sys.time())
           pagar_hoy_db(ph)
         } else if (isTRUE(cfg$is_enabled)) {
-          .GlobalEnv$.agenda_sync$is_on <- TRUE
-          # Always read from S3 (via preload cache — already fetched in batch above)
-          # on every new session login.  The in-memory $data was intentionally NOT
-          # used as the load source here: it persists across sessions in the same
-          # R process, so a week-old value would silently shadow every new login
-          # even after the user cleared the agenda and the S3 file was updated.
-          # $data is refreshed below and remains available for save_pagar_hoy /
-          # the poll observer to provide real-time cross-session sync.
+          # Read from S3 on every login; nothing is kept in process memory.
           d <- tryCatch(load_pagar_hoy_sync(client_id = cid_lo), error = function(e) .schema_pagar_hoy())
-          .GlobalEnv$.agenda_sync$data    <- d
-          .GlobalEnv$.agenda_sync$version <- as.character(Sys.time())
           ph <- .merge_early_adds(d)
           if (!identical(ph, d)) {
-            # Early-add items were merged in — persist immediately
-            tryCatch(save_pagar_hoy(ph, current_user(), client_id = cid_lo), error = function(e) NULL)
+            # Early-add items were merged in — persist immediately, rebased on
+            # S3 so a login never writes back an old copy of the agenda.
+            ph <- tryCatch(save_pagar_hoy(ph, current_user(), client_id = cid_lo, base = d),
+                           error = function(e) ph)
           }
           pagar_hoy_db(ph)
         } else {
-          .GlobalEnv$.agenda_sync$is_on <- FALSE
           ph <- tryCatch(
             load_pagar_hoy_user(current_user(), client_id = cid_lo),
             error = function(e) tryCatch(load_pagar_hoy(client_id = cid_lo), error = function(e2) NULL))
@@ -2464,13 +2445,7 @@ server <- function(input, output, session) {
       if (isTRUE(cfg_ctx$is_enabled)) {
         ph <- tryCatch(load_pagar_hoy_sync(client_id = effective_cid),
                        error = function(e) NULL)
-        if (!is.null(ph)) {
-          .GlobalEnv$.agenda_sync$is_on   <- TRUE
-          .GlobalEnv$.agenda_sync$data    <- ph
-          .GlobalEnv$.agenda_sync$version <- as.character(Sys.time())
-        }
       } else {
-        .GlobalEnv$.agenda_sync$is_on <- FALSE
         ph <- tryCatch(
           load_pagar_hoy_user(current_user(), client_id = effective_cid),
           error = function(e) tryCatch(

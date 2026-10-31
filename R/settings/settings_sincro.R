@@ -155,7 +155,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
 
     } else {
       # ── Turning ON: load each user's personal agenda for selection ──────────
-      all_users <- tryCatch(auth_load_usuarios(), error = function(e) NULL)
+      all_users <- tryCatch(auth_load_usuarios(client_id = shared$effective_client_id()), error = function(e) NULL)
       if (is.null(all_users) || !nrow(all_users)) {
         showNotification("No se pudo cargar la lista de usuarios.", type = "error")
         return()
@@ -239,11 +239,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
     actor <- tryCatch(shared$current_user(), error = function(e) "sistema")
     tryCatch(save_agenda_sync_config(TRUE, actor, client_id = shared$effective_client_id()), error = function(e) NULL)
 
-    .GlobalEnv$.agenda_sync$is_on   <- TRUE
-    .GlobalEnv$.agenda_sync$data    <- chosen
-    .GlobalEnv$.agenda_sync$version <- paste0(
-      sample(c(letters, as.character(0:9)), 12, replace = TRUE), collapse = "")
-    bump_sync_version("pagar_hoy_db")
+    bump_sync_version("pagar_hoy_db", client_id = shared$effective_client_id())
 
     pagar_hoy_db(chosen)
 
@@ -270,36 +266,29 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
   # ── Confirm DEACTIVATE ───────────────────────────────────────────────────────
   observeEvent(input$do_sincro_desactivar, {
     current_data <- tryCatch(
-      .GlobalEnv$.agenda_sync$data %||% load_pagar_hoy_sync(client_id = shared$effective_client_id()),
+      .pagar_hoy_vivo(TRUE, NULL, shared$effective_client_id()),
       error = function(e) .schema_pagar_hoy()
     )
 
     # Copy current shared agenda to every active user's personal file.
-    # Also populate .agenda_user_cache so running sessions pick up their personal
-    # copy on the next sync-bus poll without needing a page refresh.
-    all_users <- tryCatch(auth_load_usuarios(), error = function(e) NULL)
+    # Running sessions pick up their personal copy on the next sync-bus poll
+    # (the loader reads S3).
+    all_users <- tryCatch(auth_load_usuarios(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (!is.null(all_users)) {
       active <- all_users[
         (is.na(all_users$deleted) | all_users$deleted != TRUE) &
         (all_users$activo %in% TRUE), , drop = FALSE]
-      if (!is.list(tryCatch(.GlobalEnv$.agenda_user_cache, error = function(e) NULL)))
-        .GlobalEnv$.agenda_user_cache <- list()
       for (u in active$username) {
         tryCatch(save_pagar_hoy_user(current_data, u, client_id = shared$effective_client_id()),
                  error = function(e)
                    message("[SINCRO] copy-to-user failed for '", u, "': ", e$message))
-        .GlobalEnv$.agenda_user_cache[[tolower(trimws(u))]] <- current_data
       }
     }
 
     actor <- tryCatch(shared$current_user(), error = function(e) "unknown")
     tryCatch(save_agenda_sync_config(FALSE, actor, client_id = shared$effective_client_id()), error = function(e) NULL)
 
-    .GlobalEnv$.agenda_sync$is_on   <- FALSE
-    .GlobalEnv$.agenda_sync$data    <- NULL
-    .GlobalEnv$.agenda_sync$version <- paste0(
-      sample(c(letters, as.character(0:9)), 12, replace = TRUE), collapse = "")
-    bump_sync_version("pagar_hoy_db")
+    bump_sync_version("pagar_hoy_db", client_id = shared$effective_client_id())
 
     my_data <- tryCatch(load_pagar_hoy_user(actor, client_id = shared$effective_client_id()),
                         error = function(e) current_data)

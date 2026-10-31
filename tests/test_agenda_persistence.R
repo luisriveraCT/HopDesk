@@ -2,9 +2,11 @@
 # tests/test_agenda_persistence.R
 # Verifies the Agenda de Hoy persistence fixes:
 #   1. saldos_apertura per-user load/save round-trip
-#   2. save_pagar_hoy() per-user: S3 write, .agenda_user_cache, version bump
-#   3. sync_bus per_session_loader registration and dispatch
-#   4. Sync deactivation: .agenda_user_cache population + per_session_loader serves it
+#   2. save_pagar_hoy() writes the right file for THAT client's sync setting
+#   3. sync_bus per_session_loader reads S3 for the session's own client
+#   4. Sync deactivation: every user gets a personal copy, read back from S3
+# Since 2026-10-31 there is no process-global agenda state (.agenda_sync /
+# .agenda_user_cache): the sync flag is per client, in agenda_sync_config.rds.
 #
 # Sourced by tests/_run_agenda.R — do not run directly.
 # =============================================================================
@@ -23,37 +25,26 @@ cat("── Agenda de Hoy Persistence ──────────────
 }
 
 # ── state reset helper ────────────────────────────────────────────────────────
-# Also ensures pagar_hoy_db is registered in the sync bus (mirrors app startup).
+# Sync is a per-client setting in S3 now: .reset() writes networks' config.
+.per_session_loader_app <- function(shared) {   # same body as app.R's
+  cid  <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
+  user <- tryCatch(shared$current_user(), error = function(e) "")
+  if (is.null(cid) || !nzchar(cid)) return(NULL)
+  safe_load_pagar_hoy(username = user, client_id = cid)
+}
 .reset <- function(sync_on = FALSE) {
-  .GlobalEnv$.agenda_sync      <- list(is_on = sync_on, data = NULL, version = "")
-  .GlobalEnv$.agenda_user_cache <- list()
-  # Reset sync version counters for pagar_hoy_db
   if (!is.list(.GlobalEnv$.sync_versions)) .GlobalEnv$.sync_versions <- list()
   .GlobalEnv$.sync_versions[["pagar_hoy_db"]] <- 0L
-  # Ensure pagar_hoy_db is registered so bump_sync_version doesn't warn/bail
-  register_synced(
-    "pagar_hoy_db",
-    S3_KEYS$pagar_hoy_sync,
-    loader = function(client_id = NULL) {
-      if (isTRUE(tryCatch(.GlobalEnv$.agenda_sync$is_on, error = function(e) FALSE)))
-        .GlobalEnv$.agenda_sync$data
-      else NULL
-    },
-    per_session_loader = function(shared) {
-      sync_on <- isTRUE(tryCatch(.GlobalEnv$.agenda_sync$is_on, error = function(e) FALSE))
-      if (sync_on) return(NULL)
-      ukey <- tolower(trimws(tryCatch(shared$current_user(), error = function(e) "")))
-      if (!nzchar(ukey)) return(NULL)
-      cache <- tryCatch(.GlobalEnv$.agenda_user_cache, error = function(e) NULL)
-      if (!is.list(cache)) return(NULL)
-      cache[[ukey]]
-    }
-  )
-  # Wipe mock S3 store and caches so state doesn't bleed across groups
+  register_synced("pagar_hoy_db", S3_KEYS$pagar_hoy_sync,
+                  loader = function(client_id = NULL) NULL,
+                  per_session_loader = .per_session_loader_app)
   rm(list = ls(.mock_s3_store),    envir = .mock_s3_store)
   rm(list = ls(.s3_preload_cache), envir = .s3_preload_cache)
   rm(list = ls(.s3_missing_cache), envir = .s3_missing_cache)
+  save_agenda_sync_config(sync_on, "test", client_id = "networks")
 }
+.sesion <- function(user, cid = "networks")
+  list(current_user = function() user, effective_client_id = function() cid)
 
 # ── minimal pagar_hoy row builder ─────────────────────────────────────────────
 .make_ph_row <- function(id = "row-001", doc = "DOC-001", emp = "Networks Group",
@@ -123,235 +114,99 @@ reloaded <- load_saldos_apertura_user("luis", client_id = "networks")
      "second save overwrites first — latest value wins")
 
 # =============================================================================
-# GROUP 2: save_pagar_hoy() per-user mode
+# GROUP 2: save_pagar_hoy() follows the client's own sync setting
 # =============================================================================
-cat("\n  [2] save_pagar_hoy per-user mode\n")
+cat("
+  [2] save_pagar_hoy per-user / shared mode
+")
 .reset(sync_on = FALSE)
 
 ph <- .make_ph_row(id = "ph-001", doc = "FAC-2026-001")
-
-# 2a: per-user write goes to correct S3 key
 save_pagar_hoy(ph, username = "luis", client_id = "networks")
 .chk(exists("networks/pagar_hoy_user_luis.rds", envir = .mock_s3_store), TRUE,
-     "per-user save → pagar_hoy_user_luis.rds written")
-
-# 2b: shared sync key NOT written in per-user mode
+     "sync OFF → pagar_hoy_user_luis.rds written")
 .chk(exists("networks/pagar_hoy_sync.rds", envir = .mock_s3_store), FALSE,
-     "per-user save → pagar_hoy_sync.rds NOT written")
+     "sync OFF → pagar_hoy_sync.rds NOT written")
+.chk((.GlobalEnv$.sync_versions[["pagar_hoy_db"]] %||% 0L) >= 1L, TRUE,
+     "per-user save → sync version bumped")
 
-# 2c: .agenda_user_cache populated
-.chk(is.list(.GlobalEnv$.agenda_user_cache), TRUE,
-     "per-user save → .agenda_user_cache is a list")
-.chk(!is.null(.GlobalEnv$.agenda_user_cache[["luis"]]), TRUE,
-     "per-user save → cache entry for 'luis' exists")
-cached <- .GlobalEnv$.agenda_user_cache[["luis"]]
-.chk(nrow(cached), 1L,              "cached agenda → 1 row")
-.chk(cached$Documento[1], "FAC-2026-001", "cached agenda → correct Documento")
-
-# 2d: sync version bumped
-ver_after <- .GlobalEnv$.sync_versions[["pagar_hoy_db"]] %||% 0L
-.chk(ver_after >= 1L, TRUE, "per-user save → sync version bumped")
-
-# 2e: second user's cache is independent
 ph2 <- .make_ph_row(id = "ph-002", doc = "FAC-2026-002")
 save_pagar_hoy(ph2, username = "claudia", client_id = "networks")
-.chk(exists("networks/pagar_hoy_user_claudia.rds", envir = .mock_s3_store), TRUE,
-     "second user → own S3 file written")
-.chk(.GlobalEnv$.agenda_user_cache[["claudia"]]$Documento[1], "FAC-2026-002",
-     "second user cache independent of first")
-.chk(.GlobalEnv$.agenda_user_cache[["luis"]]$Documento[1], "FAC-2026-001",
-     "first user cache unchanged after second user save")
+.chk(load_pagar_hoy_user("claudia", client_id = "networks")$Documento[1], "FAC-2026-002",
+     "second user → own file")
+.chk(load_pagar_hoy_user("luis", client_id = "networks")$Documento[1], "FAC-2026-001",
+     "first user's file unchanged after second user save")
 
-# 2f: sync-ON mode → shared key written, per-user key NOT written
 .reset(sync_on = TRUE)
 save_pagar_hoy(ph, username = "luis", client_id = "networks")
 .chk(exists("networks/pagar_hoy_sync.rds", envir = .mock_s3_store), TRUE,
-     "sync-ON save → pagar_hoy_sync.rds written")
+     "sync ON → pagar_hoy_sync.rds written")
 .chk(exists("networks/pagar_hoy_user_luis.rds", envir = .mock_s3_store), FALSE,
-     "sync-ON save → per-user file NOT written")
+     "sync ON → per-user file NOT written")
+.chk(exists(".agenda_sync", envir = .GlobalEnv), FALSE,
+     "no process-global agenda copy exists")
 
-# 2g: sync-ON updates in-memory .agenda_sync$data
-.chk(!is.null(.GlobalEnv$.agenda_sync$data), TRUE,
-     "sync-ON save → .agenda_sync$data updated in memory")
+# Another client with sync off writes its own per-user file and does not
+# switch networks' shared agenda off.
+save_agenda_sync_config(FALSE, "test", client_id = "otro")
+save_pagar_hoy(ph2, username = "luis", client_id = "otro")
+.chk(exists("otro/pagar_hoy_user_luis.rds", envir = .mock_s3_store), TRUE,
+     "client 'otro' (sync OFF) → its own per-user file")
+.chk(agenda_sync_activa("networks"), TRUE, "networks' sync stays ON")
 
 # =============================================================================
-# GROUP 3: sync_bus per_session_loader
+# GROUP 3: per_session_loader reads S3 for the session's own client
 # =============================================================================
-cat("\n  [3] sync_bus per_session_loader\n")
+cat("
+  [3] sync_bus per_session_loader
+")
 .reset(sync_on = FALSE)
-
-# 3a: register_synced stores per_session_loader
-global_called  <- FALSE
-session_called <- FALSE
-
-register_synced(
-  "pagar_hoy_db",
-  S3_KEYS$pagar_hoy_sync,
-  loader = function(client_id = NULL) {
-    global_called <<- TRUE
-    NULL    # returns NULL in per-user mode → triggers per_session_loader
-  },
-  per_session_loader = function(shared) {
-    session_called <<- TRUE
-    tibble::tibble(id = "from-session-loader", ledger = "AP")
-  }
-)
-
-.chk(is.function(.SYNC_REGISTRY[["pagar_hoy_db"]]$per_session_loader), TRUE,
-     "register_synced → per_session_loader stored in registry")
-
-# 3b: simulate the setup_sync_bus dispatch loop
 entry <- .SYNC_REGISTRY[["pagar_hoy_db"]]
-mock_shared <- list(current_user = function() "luis")
+.chk(is.function(entry$per_session_loader), TRUE, "per_session_loader registered")
+.chk(is.null(entry$loader()), TRUE, "global loader → NULL (no process-global copy)")
 
-new_value <- tryCatch(entry$loader(), error = function(e) NULL)
-.chk(isTRUE(global_called), TRUE, "dispatch loop → global loader called first")
-.chk(is.null(new_value), TRUE,    "dispatch loop → global loader returned NULL")
+save_pagar_hoy(.make_ph_row(id = "luis-row", doc = "L"), "luis", client_id = "networks")
+save_pagar_hoy(.make_ph_row(id = "claudia-row", doc = "C"), "claudia", client_id = "networks")
+.chk(entry$per_session_loader(.sesion("luis"))$id[1], "luis-row", "luis → his own agenda")
+.chk(entry$per_session_loader(.sesion("claudia"))$id[1], "claudia-row", "claudia → her own agenda")
+.chk(nrow(entry$per_session_loader(.sesion("nadie"))), 0L, "user without a file → empty agenda")
+.chk(is.null(entry$per_session_loader(list(current_user = function() "luis",
+                                             effective_client_id = function() NULL))), TRUE,
+     "no client → NULL (fails closed)")
 
-if (is.null(new_value) && is.function(entry$per_session_loader)) {
-  new_value <- tryCatch(entry$per_session_loader(mock_shared), error = function(e) NULL)
-}
-.chk(isTRUE(session_called), TRUE,  "dispatch loop → per_session_loader called when global returns NULL")
-.chk(!is.null(new_value), TRUE,     "dispatch loop → per_session_loader return value used")
-.chk(new_value$id[1], "from-session-loader",
-     "dispatch loop → per_session_loader value is correct")
-
-# 3c: per_session_loader returns user-specific data from .agenda_user_cache
-.reset(sync_on = FALSE)
-.GlobalEnv$.agenda_user_cache <- list(
-  "luis"    = tibble::tibble(id = "luis-row",    ledger = "AP"),
-  "claudia" = tibble::tibble(id = "claudia-row", ledger = "AR")
-)
-
-# Register the real per_session_loader from app.R
-register_synced(
-  "pagar_hoy_db",
-  S3_KEYS$pagar_hoy_sync,
-  loader = function(client_id = NULL) {
-    if (isTRUE(tryCatch(.GlobalEnv$.agenda_sync$is_on, error = function(e) FALSE)))
-      .GlobalEnv$.agenda_sync$data
-    else
-      NULL
-  },
-  per_session_loader = function(shared) {
-    sync_on <- isTRUE(tryCatch(.GlobalEnv$.agenda_sync$is_on, error = function(e) FALSE))
-    if (sync_on) return(NULL)
-    ukey  <- tolower(trimws(tryCatch(shared$current_user(), error = function(e) "")))
-    if (!nzchar(ukey)) return(NULL)
-    cache <- tryCatch(.GlobalEnv$.agenda_user_cache, error = function(e) NULL)
-    if (!is.list(cache)) return(NULL)
-    cache[[ukey]]
-  }
-)
-
-entry <- .SYNC_REGISTRY[["pagar_hoy_db"]]
-
-local({
-  shared_luis <- list(current_user = function() "luis")
-  v <- entry$per_session_loader(shared_luis)
-  .chk(v$id[1], "luis-row", "per_session_loader → returns luis's cache entry for luis session")
-})
-local({
-  shared_claudia <- list(current_user = function() "claudia")
-  v <- entry$per_session_loader(shared_claudia)
-  .chk(v$id[1], "claudia-row", "per_session_loader → returns claudia's cache entry for claudia session")
-})
-
-# 3d: per_session_loader returns NULL when sync is ON (defers to global loader)
-.GlobalEnv$.agenda_sync$is_on <- TRUE
-local({
-  shared_luis <- list(current_user = function() "luis")
-  v <- entry$per_session_loader(shared_luis)
-  .chk(is.null(v), TRUE, "per_session_loader → NULL when sync is ON (global loader handles it)")
-})
-
-# 3e: per_session_loader returns NULL for unknown user (cache miss)
-.GlobalEnv$.agenda_sync$is_on <- FALSE
-local({
-  shared_unk <- list(current_user = function() "unknownuser")
-  v <- entry$per_session_loader(shared_unk)
-  .chk(is.null(v), TRUE, "per_session_loader → NULL for user not in cache (cache miss)")
-})
+save_agenda_sync_config(TRUE, "test", client_id = "networks")
+save_pagar_hoy(.make_ph_row(id = "shared-row", doc = "S"), "luis", client_id = "networks")
+.chk(entry$per_session_loader(.sesion("claudia"))$id[1], "shared-row",
+     "sync ON → every session gets the shared agenda from S3")
 
 # =============================================================================
-# GROUP 4: sync deactivation populates .agenda_user_cache
+# GROUP 4: sync deactivation gives every user a personal copy
 # =============================================================================
-cat("\n  [4] sync deactivation — .agenda_user_cache populated for all users\n")
+cat("
+  [4] sync deactivation — personal copies in S3
+")
 .reset(sync_on = TRUE)
-
 shared_data <- .make_ph_row(id = "shared-001", doc = "SHARED-DOC", importe = 999999)
-.GlobalEnv$.agenda_sync$data <- shared_data
-
+save_pagar_hoy_sync(shared_data, client_id = "networks")
 active_users <- c("luis", "claudia", "admin")
-
-# Simulate the deactivation block from settings_sincro.R
-if (!is.list(tryCatch(.GlobalEnv$.agenda_user_cache, error = function(e) NULL)))
-  .GlobalEnv$.agenda_user_cache <- list()
+# Same steps as settings_sincro.R's do_sincro_desactivar
+current_data <- .pagar_hoy_vivo(TRUE, NULL, "networks")
+for (u in active_users) save_pagar_hoy_user(current_data, u, client_id = "networks")
+save_agenda_sync_config(FALSE, "test", client_id = "networks")
 
 for (u in active_users) {
-  tryCatch(
-    save_pagar_hoy_user(shared_data, u, client_id = "networks"),
-    error = function(e) message("[SINCRO] copy failed for '", u, "': ", e$message)
-  )
-  .GlobalEnv$.agenda_user_cache[[tolower(trimws(u))]] <- shared_data
-}
-
-.GlobalEnv$.agenda_sync$is_on   <- FALSE
-.GlobalEnv$.agenda_sync$data    <- NULL
-
-# 4a: personal S3 files written for all users
-for (u in active_users) {
-  key <- paste0("networks/pagar_hoy_user_", tolower(u), ".rds")
-  .chk(exists(key, envir = .mock_s3_store), TRUE,
+  .chk(exists(paste0("networks/pagar_hoy_user_", u, ".rds"), envir = .mock_s3_store), TRUE,
        paste0("deactivation → personal S3 file written for '", u, "'"))
+  v <- entry$per_session_loader(.sesion(u))
+  .chk(v$Documento[1], "SHARED-DOC", paste0("post-deactivation loader → '", u, "' gets the copy"))
 }
 
-# 4b: .agenda_user_cache populated for all users
-for (u in active_users) {
-  .chk(!is.null(.GlobalEnv$.agenda_user_cache[[tolower(u)]]), TRUE,
-       paste0("deactivation → .agenda_user_cache populated for '", u, "'"))
-}
+save_pagar_hoy(.make_ph_row(id = "edit-001", doc = "LUIS-ONLY", importe = 111), "luis",
+               client_id = "networks")
+.chk(entry$per_session_loader(.sesion("luis"))$Documento[1], "LUIS-ONLY",
+     "after deactivation luis gets his own edit")
+.chk(entry$per_session_loader(.sesion("claudia"))$Documento[1], "SHARED-DOC",
+     "claudia does not see luis's edit")
 
-# 4c: cached data contains the shared snapshot
-for (u in active_users) {
-  d <- .GlobalEnv$.agenda_user_cache[[tolower(u)]]
-  .chk(nrow(d), 1L, paste0("deactivation → cache for '", u, "' has 1 row"))
-  .chk(d$Documento[1], "SHARED-DOC",
-       paste0("deactivation → cache for '", u, "' has correct Documento"))
-}
-
-# 4d: per_session_loader serves personal copy after deactivation
-for (u in active_users) {
-  local({
-    .u   <- tolower(u)
-    sh   <- list(current_user = function() .u)
-    val  <- entry$per_session_loader(sh)
-    .chk(!is.null(val), TRUE,
-         paste0("post-deactivation per_session_loader → non-NULL for '", .u, "'"))
-    .chk(val$Documento[1], "SHARED-DOC",
-         paste0("post-deactivation per_session_loader → correct data for '", .u, "'"))
-  })
-}
-
-# 4e: after deactivation, a new per-user edit is isolated
-.reset(sync_on = FALSE)  # fresh state
-ph_luis_edit <- .make_ph_row(id = "edit-001", doc = "LUIS-ONLY", importe = 111)
-save_pagar_hoy(ph_luis_edit, username = "luis", client_id = "networks")
-
-# Claudia has no entry → per_session_loader returns NULL (correct, not luis's data)
-local({
-  sh <- list(current_user = function() "claudia")
-  v  <- entry$per_session_loader(sh)
-  .chk(is.null(v), TRUE,
-       "post-deactivation per_session_loader → claudia gets NULL (not luis's edit)")
-})
-
-# Luis's session gets his own edit
-local({
-  sh <- list(current_user = function() "luis")
-  v  <- entry$per_session_loader(sh)
-  .chk(v$Documento[1], "LUIS-ONLY",
-       "post-deactivation per_session_loader → luis gets his own edited data")
-})
-
-cat("\n")
+cat("
+")

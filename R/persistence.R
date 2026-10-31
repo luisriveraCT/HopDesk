@@ -1112,24 +1112,95 @@ load_pagar_hoy <- function(client_id = NULL) {
   dplyr::filter(df, status %in% c("pending", "confirmed", "cancelled"))
 }
 
-save_pagar_hoy <- function(df, username = NULL, client_id = NULL) {
+# ── Agenda state is per client, and lives in S3 ───────────────────────────────
+# Until 2026-10-31 the shared-agenda flag and a copy of the agenda lived in one
+# process-global slot (.GlobalEnv$.agenda_sync), shared by EVERY client served
+# by the process. One client with sync off switched it off for all, so a
+# "Vaciar agenda" in networks went to a per-user file and never touched the
+# shared one; and the in-memory copy could be another client's agenda or an
+# old one, then written back (two processes against one bucket -- shinyapps.io
+# plus a local production run -- each wrote its own stale copy). Now the flag
+# is read from that client's agenda_sync_config.rds, and every write that
+# passes `base` is rebased on what S3 holds right now.
+
+# TRUE when this client's shared agenda is on. Live read: the toggle may have
+# changed in another process.
+agenda_sync_activa <- function(client_id) {
+  cid <- tolower(trimws(client_id %||% ""))
+  if (!nzchar(cid)) return(FALSE)
+  full_key <- tryCatch(.s3_key(S3_KEYS$agenda_sync_config, client_id = cid), error = function(e) NULL)
+  if (!is.null(full_key))
+    for (env in list(.s3_preload_cache, .s3_missing_cache))
+      suppressWarnings(rm(list = intersect(full_key, ls(env)), envir = env))
+  isTRUE(tryCatch(load_agenda_sync_config(client_id = cid)$is_enabled, error = function(e) FALSE))
+}
+
+# Fresh read of the file a save would write, bypassing the read caches.
+.pagar_hoy_vivo <- function(sync_on, username, client_id) {
+  key <- if (sync_on) S3_KEYS$pagar_hoy_sync
+         else if (nzchar(username %||% "")) s3_key_pagar_hoy_user(username)
+         else S3_KEYS$pagar_hoy
+  full_key <- tryCatch(.s3_key(key, client_id = client_id), error = function(e) NULL)
+  if (!is.null(full_key))
+    for (env in list(.s3_preload_cache, .s3_missing_cache))
+      suppressWarnings(rm(list = intersect(full_key, ls(env)), envir = env))
+  df <- .normalize(.s3_read_with(key, client_id = client_id), .schema_pagar_hoy)
+  # Same normalisation as load_pagar_hoy*(): a fresh read must look like a load.
+  df$status[is.na(df$status) | !nzchar(trimws(df$status))] <- "pending"
+  df$source[is.na(df$source) | !nzchar(trimws(df$source %||% ""))] <- SAP_B1_ERP_TYPE
+  dplyr::filter(df, status %in% c("pending", "confirmed", "cancelled"))
+}
+
+# Row identity: id, or the business key for rows without one.
+.ph_clave <- function(df) {
+  if (!nrow(df)) return(character())
+  sin_id <- is.na(df$id) | !nzchar(df$id %||% "")
+  ifelse(sin_id, paste("k", df$ledger, df$Empresa, df$Moneda, df$Documento, sep = "|"), df$id)
+}
+.ph_firma <- function(df) {
+  if (!nrow(df)) return(character())
+  do.call(paste, c(lapply(df, function(x) as.character(x)), sep = "\x1f"))
+}
+
+# Three-way merge. `nuevo` is what this session wants, `base` what it started
+# from, `fresco` what S3 holds now (other sessions' work included):
+#   - rows this session added or changed: its version wins;
+#   - rows it removed: stay removed;
+#   - rows it left untouched: S3's current version, or gone if someone
+#     else removed them;
+#   - rows someone else added: kept.
+rebase_pagar_hoy <- function(nuevo, base, fresco) {
+  nuevo  <- .normalize(nuevo,  .schema_pagar_hoy)
+  base   <- .normalize(base,   .schema_pagar_hoy)
+  fresco <- .normalize(fresco, .schema_pagar_hoy)
+  kn <- .ph_clave(nuevo); kb <- .ph_clave(base); kf <- .ph_clave(fresco)
+  firma_base <- setNames(.ph_firma(base), kb)
+  intacta <- kn %in% kb & .ph_firma(nuevo) == unname(firma_base[kn])
+  intacta[is.na(intacta)] <- FALSE
+  mias     <- nuevo[!intacta, , drop = FALSE]
+  vigentes <- fresco[kf %in% kn[intacta], , drop = FALSE]
+  ajenas   <- fresco[!(kf %in% kb) & !(kf %in% kn), , drop = FALSE]
+  out <- dplyr::bind_rows(mias, vigentes, ajenas)
+  # Two sessions staging the same invoice: keep one row, this session's first.
+  negocio <- paste(out$ledger, out$Empresa, out$Moneda, out$Documento, out$tipo_item, sep = "|")
+  out[!duplicated(negocio) | is.na(out$Documento), , drop = FALSE]
+}
+
+# `base`: the table this session derived `df` from (usually its
+# pagar_hoy_db()). With it the write is rebased on S3's current content;
+# without it the write replaces the file (old behaviour, last writer wins).
+save_pagar_hoy <- function(df, username = NULL, client_id = NULL, base = NULL) {
+  sync_on <- agenda_sync_activa(client_id)
+  if (!is.null(base)) {
+    fresco <- .pagar_hoy_vivo(sync_on, username, client_id)
+    df <- rebase_pagar_hoy(df, base, fresco)
+  }
   norm <- .normalize(df, .schema_pagar_hoy)
-  sync_on <- isTRUE(tryCatch(.GlobalEnv$.agenda_sync$is_on, error = function(e) FALSE))
   if (sync_on) {
-    # Sync mode: write to shared file and update in-memory state for all sessions
     .s3_write(norm, S3_KEYS$pagar_hoy_sync, client_id = client_id)
-    .GlobalEnv$.agenda_sync$data <- norm
-    .GlobalEnv$.agenda_sync$version <- paste0(
-      sample(c(letters, as.character(0:9)), 12, replace = TRUE), collapse = "")
     if (exists("bump_sync_version", mode = "function")) bump_sync_version("pagar_hoy_db", client_id = client_id)
   } else if (!is.null(username) && nzchar(username %||% "")) {
-    # Per-user mode: write to this user's personal file
     .s3_write(norm, s3_key_pagar_hoy_user(username), client_id = client_id)
-    # Cache so same-user sessions can reload via sync bus per_session_loader
-    ukey <- tolower(trimws(username))
-    if (!is.list(tryCatch(.GlobalEnv$.agenda_user_cache, error = function(e) NULL)))
-      .GlobalEnv$.agenda_user_cache <- list()
-    .GlobalEnv$.agenda_user_cache[[ukey]] <- norm
     if (exists("bump_sync_version", mode = "function"))
       bump_sync_version("pagar_hoy_db", client_id = client_id)
   } else {
@@ -1137,7 +1208,7 @@ save_pagar_hoy <- function(df, username = NULL, client_id = NULL) {
     .s3_write(norm, S3_KEYS$pagar_hoy, client_id = client_id)
     if (exists(".cache_set", mode = "function")) .cache_set("pagar_hoy", norm, client_id)
   }
-  invisible(TRUE)
+  invisible(norm)   # what was written (after the rebase): callers show this
 }
 
 # found 2026-08-05: pagar_hoy_module.R's AP/AR confirm handlers called
@@ -1164,14 +1235,15 @@ save_pagar_hoy <- function(df, username = NULL, client_id = NULL) {
 # of that same trade-off, not a new architectural risk, and it targets exactly
 # the short-blip case a "wifi isn't always great" report describes.
 save_pagar_hoy_with_retry <- function(df, username = NULL, client_id = NULL,
-                                      max_attempts = 3, retry_delay = 0.5) {
+                                      max_attempts = 3, retry_delay = 0.5, base = NULL) {
   last_err <- NULL
   for (attempt in seq_len(max_attempts)) {
+    escrito <- NULL
     ok <- tryCatch({
-      save_pagar_hoy(df, username = username, client_id = client_id)
+      escrito <- save_pagar_hoy(df, username = username, client_id = client_id, base = base)
       TRUE
     }, error = function(e) { last_err <<- e; FALSE })
-    if (ok) return(list(ok = TRUE, error = NULL, attempts = attempt))
+    if (ok) return(list(ok = TRUE, error = NULL, attempts = attempt, data = escrito))
     if (attempt < max_attempts) Sys.sleep(retry_delay)
   }
   list(ok = FALSE, error = last_err, attempts = max_attempts)
@@ -1301,12 +1373,9 @@ upsert_pagar_hoy <- function(db, new_rows,
 # Used as a fallback when the in-memory reactiveVal hasn't been populated yet
 # (e.g., item added via Agregar before Phase 2 finishes loading).
 safe_load_pagar_hoy <- function(username = NULL, client_id = NULL) {
-  sync_on <- isTRUE(tryCatch(.GlobalEnv$.agenda_sync$is_on, error = function(e) FALSE))
+  sync_on <- agenda_sync_activa(client_id)
   if (sync_on) {
-    d <- tryCatch(.GlobalEnv$.agenda_sync$data, error = function(e) NULL)
-    if (!is.null(d)) return(d)
-    tryCatch(load_pagar_hoy_sync(client_id = client_id),
-             error = function(e) .schema_pagar_hoy())
+    tryCatch(.pagar_hoy_vivo(TRUE, username, client_id), error = function(e) .schema_pagar_hoy())
   } else if (!is.null(username) && nzchar(username %||% "")) {
     tryCatch(load_pagar_hoy_user(username, client_id = client_id),
              error = function(e) tryCatch(load_pagar_hoy(client_id = client_id),
