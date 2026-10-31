@@ -25,11 +25,7 @@ ok <- function(label, expr) {
 allowed <- list(
   # The declaration itself.
   list(file = "R/global.R",
-       text = "COMPANY_MAP <- setNames(character(0), character(0))"),
-  # Owned by Requisiciones (A2); pending their change to
-  # `error = function(e) c()`. Remove this entry once it lands.
-  list(file = "R/pagar_hoy_module.R",
-       text = "cmap_load <- tryCatch(shared$company_map(), error = function(e) COMPANY_MAP)")
+       text = "COMPANY_MAP <- setNames(character(0), character(0))")
 )
 
 files <- c("app.R", list.files("R", pattern = "\\.R$", recursive = TRUE, full.names = TRUE))
