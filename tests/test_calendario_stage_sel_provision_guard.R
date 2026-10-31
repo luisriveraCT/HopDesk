@@ -168,13 +168,17 @@ assign("%||%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) ==
 }
 
 # ── 3. Static: the three fixed handlers now call the real helper ───────────
+# T05: the day modal is on the table engine; what were the stage_sel /
+# do_move / do_restore observers are the handlers .dia_agregar / .dia_mover
+# / .dia_restaurar, which take the table's keys (R/dia_module.R).
 {
   txt <- readLines("R/ledger_module.R", warn = FALSE)
-  for (handler in c('observeEvent\\(input\\$stage_sel,', 'observeEvent\\(input\\$do_move,', 'observeEvent\\(input\\$do_restore,')) {
+  for (handler in c('\\.dia_agregar <- function\\(keys, origen\\)', '\\.dia_mover <- function\\(keys, new_date\\)',
+                    '\\.dia_restaurar <- function\\(keys\\)')) {
     start <- grep(handler, txt)
     ok(sprintf("found %s to scan", handler), length(start) > 0)
     if (length(start)) {
-      end <- grep("^    \\}, ignoreInit = TRUE\\)$|^      \\}, ignoreInit = TRUE\\)$", txt)
+      end <- grep("^    \\}, ignoreInit = TRUE\\)$|^      \\}, ignoreInit = TRUE\\)$|^    \\}$", txt)
       end <- end[end > start[1]][1]
       block <- paste(txt[start[1]:min(end %||% (start[1] + 60), start[1] + 60)], collapse = "\n")
       ok(sprintf("%s calls pasivos_exclude_provision_keys(keys, detail) (the fix)", handler),
@@ -184,17 +188,22 @@ assign("%||%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) ==
     }
   }
 
-  # ── Regression guard: the already-correct buttons are untouched ──────────
-  ok("stage_all still filters on `detail` (or a detail-derived frame with `source`) BEFORE deriving keys -- unaffected regression guard",
-     any(grepl("pasivos_filter_out_provisions\\(detail\\[mask,", txt)))
-  ok("cart_<i> group-click handler still filters BEFORE stripping down to key columns -- unaffected regression guard",
-     any(grepl("inv_keys <- pasivos_filter_out_provisions\\(", txt)))
-  ok("cart_inv_click still filters on inv_rows_raw (has `source`) BEFORE deriving inv_key -- unaffected regression guard",
-     any(grepl("inv_rows <- pasivos_filter_out_provisions\\(inv_rows_raw\\)", txt)))
+  # ── The other ways into the Agenda (T05): Agregar todo, Agregar
+  # selección and a row's ＋ all reach .dia_agregar(), so all of them go
+  # through the helper above; a provision row never even offers ＋.
+  dia <- paste(readLines("R/dia_module.R", warn = FALSE), collapse = "\n")
+  ok("Agregar todo, Agregar selección and a row's ＋ all go to the same handler (manejadores$agregar)",
+     grepl('agregar_todo      = manejadores$agregar(llaves, "stage_all")', dia, fixed = TRUE) &&
+     grepl('agregar_seleccion = manejadores$agregar(llaves, "stage_sel")', dia, fixed = TRUE) &&
+     grepl('agregar           = manejadores$agregar(llaves, "cart_toggle")', dia, fixed = TRUE))
+  ok("... which the Calendario wires to .dia_agregar",
+     any(grepl("agregar = .dia_agregar", txt, fixed = TRUE)))
+  ok("a provision row has no ＋ (its row actions are only the ⚡)",
+     grepl('ifelse(provision, ifelse(nzchar(prov_id) & puede_convertir, "provision", "")', dia, fixed = TRUE))
 
   # ── do_delete is deliberately untouched (handles provisions differently) ─
-  del_start <- grep("observeEvent\\(input\\$do_delete,", txt)
-  ok("found do_delete to scan", length(del_start) > 0)
+  del_start <- grep("\\.dia_eliminar <- function\\(keys\\)", txt)
+  ok("found .dia_eliminar (was do_delete) to scan", length(del_start) > 0)
   if (length(del_start)) {
     block <- paste(txt[del_start[1]:min(del_start[1] + 40, length(txt))], collapse = "\n")
     ok("do_delete still keeps provisions in `keys` via provision_id (deliberately different handling, not this bug's fix)",
@@ -263,8 +272,8 @@ assign("%||%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) ==
 
   # ── 5b. Static: the real stage_sel code narrows keys before this merge ──
   txt <- readLines("R/ledger_module.R", warn = FALSE)
-  start <- grep("observeEvent\\(input\\$stage_sel,", txt)
-  ok("found stage_sel to scan (merge-narrowing fix)", length(start) > 0)
+  start <- grep("\\.dia_agregar <- function\\(keys, origen\\)", txt)
+  ok("found .dia_agregar (was stage_sel) to scan (merge-narrowing fix)", length(start) > 0)
   if (length(start)) {
     block <- paste(txt[start[1]:min(start[1] + 70, length(txt))], collapse = "\n")
     ok("stage_sel narrows keys to Empresa/Moneda/Documento/Importe before merging with detail_lu (the fix)",
@@ -274,11 +283,8 @@ assign("%||%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) ==
        !grepl("merge\\(keys, detail_lu,", block))
   }
 
-  # ── Regression guard: stage_all's own inv_keys was ALWAYS narrow (never
-  # had this bug) -- confirms the fix matches, not diverges from, the one
-  # already-correct sibling that does this same kind of merge. ────────────
-  ok("stage_all's inv_keys is already narrow (Empresa/Moneda/Documento/Importe only) going into its own merge with detail_lu -- unaffected regression guard",
-     any(grepl('inv_keys <- unique\\(d\\[, c\\("Empresa","Moneda","Documento","Importe"\\)', txt)))
+  # (stage_all, the already-narrow sibling this used to be compared with,
+  # is now the same handler -- T05.)
 }
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")

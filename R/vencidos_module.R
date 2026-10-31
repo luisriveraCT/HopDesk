@@ -274,19 +274,22 @@ facturas_tabla_server <- function(id, tabla, datos, shared, crudos, accion_factu
   })
 }
 
+# The ⚡ of a provision opens the pasivos module's convert dialog: the
+# server sends "hdFacturasConvertir" (once per page, whichever table shows
+# first -- Vencidos, the lupa or the day modal).
+facturas_convertir_js <- function() {
+  htmltools::singleton(shiny::tags$script(shiny::HTML("
+    (function registrar() {
+      if (!(window.Shiny && Shiny.addCustomMessageHandler)) { setTimeout(registrar, 20); return; }
+      Shiny.addCustomMessageHandler('hdFacturasConvertir', function (id) {
+        Shiny.setInputValue('pasivos_convert_request', id, { priority: 'event' });
+      });
+    })();")))
+}
+
 # alto: the table's maximum height (a whole tab: what's left of the window).
-# The ⚡ of a provision opens the pasivos module's convert dialog (once per
-# page, whichever table shows first).
 facturas_tabla_ui <- function(id, alto = "auto") {
-  shiny::tagList(
-    hd_table_ui(shiny::NS(id)("t"), alto = alto),
-    htmltools::singleton(shiny::tags$script(shiny::HTML("
-      (function registrar() {
-        if (!(window.Shiny && Shiny.addCustomMessageHandler)) { setTimeout(registrar, 20); return; }
-        Shiny.addCustomMessageHandler('hdFacturasConvertir', function (id) {
-          Shiny.setInputValue('pasivos_convert_request', id, { priority: 'event' });
-        });
-      })();"))))
+  shiny::tagList(hd_table_ui(shiny::NS(id)("t"), alto = alto), facturas_convertir_js())
 }
 
 # Raw SAP rows behind the overdue invoices (due today or earlier), for

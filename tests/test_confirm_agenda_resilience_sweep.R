@@ -200,18 +200,20 @@ assign("%||%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) ==
 # cart_<i> x2 branches, cart_inv_click x2 branches) all use the fix ────────
 {
   txt <- readLines("R/ledger_module.R", warn = FALSE)
+  # T05: the day modal is on the table engine. Its six Agenda writers are
+  # two handlers now: .dia_agregar (Agregar todo, Agregar selección, a row's
+  # ＋ -- was stage_all, stage_sel and the two ＋ toggles' stage branches)
+  # and .dia_quitar (a row's ✓ -- was their unstage branches).
   sites <- list(
-    list(anchor = "observeEvent\\(input\\$stage_all,",          action = "enviar_a_agenda_dia_incompleto",  label = "stage_all"),
-    list(anchor = "observeEvent\\(input\\$stage_sel,",           action = "enviar_a_agenda_dia_incompleto",  label = "stage_sel"),
-    list(anchor = "observeEvent\\(input\\$cart_group_click,", action = "quitar_de_agenda_dia_incompleto", label = "cart_<i> (unstage branch)"),
-    list(anchor = "observeEvent\\(input\\$cart_inv_click,",      action = "quitar_de_agenda_dia_incompleto", label = "cart_inv_click (unstage branch)")
+    list(anchor = "\\.dia_agregar <- function\\(keys, origen\\)", action = "enviar_a_agenda_dia_incompleto",  label = ".dia_agregar"),
+    list(anchor = "\\.dia_quitar <- function\\(keys\\)",          action = "quitar_de_agenda_dia_incompleto", label = ".dia_quitar")
   )
   n_site_result <- length(gregexpr("site_result <- save_pagar_hoy_with_retry\\(", paste(txt, collapse = "\n"))[[1]])
-  ok("exactly 4 site_result <- save_pagar_hoy_with_retry(...) call sites exist (cart_<i> stage+unstage, cart_inv_click stage+unstage)",
-     n_site_result == 4L)
+  ok("exactly 1 site_result <- save_pagar_hoy_with_retry(...) call site exists (.dia_quitar)",
+     n_site_result == 1L)
   n_stage_result <- length(gregexpr("stage_result <- save_pagar_hoy_with_retry\\(", paste(txt, collapse = "\n"))[[1]])
-  ok("exactly 2 stage_result <- save_pagar_hoy_with_retry(...) call sites exist (stage_all, stage_sel)",
-     n_stage_result == 2L)
+  ok("exactly 1 stage_result <- save_pagar_hoy_with_retry(...) call site exists (.dia_agregar)",
+     n_stage_result == 1L)
 
   for (s in sites) {
     start <- grep(s$anchor, txt)
@@ -223,9 +225,9 @@ assign("%||%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) ==
     }
   }
 
-  ok("stage_all's failure path stops (return()) strictly BEFORE its own success log_action (enviar_a_agenda_dia, not the _incompleto one) in source order",
+  ok(".dia_agregar's failure path stops (return()) strictly BEFORE its own success log_action (enviar_a_agenda_dia, not the _incompleto one) in source order",
      {
-       start <- grep("observeEvent\\(input\\$stage_all,", txt)
+       start <- grep("\\.dia_agregar <- function\\(keys, origen\\)", txt)
        block <- paste(txt[start[1]:min(start[1] + 150, length(txt))], collapse = "\n")
        incompleto_pos <- regexpr('action = "enviar_a_agenda_dia_incompleto"', block)
        success_pos    <- regexpr('action      = "enviar_a_agenda_dia"', block)

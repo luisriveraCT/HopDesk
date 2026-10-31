@@ -3,7 +3,11 @@
 # A single Shiny module that handles one ledger (AR or AP).
 # Instantiated twice in app.R with different config objects.
 # input/output/session never leave their proper scope.
+#
+# The day modal's tables live in R/dia_module.R (T05), loaded here so
+# global.R and app.R don't need another line.
 # =============================================================================
+source("R/dia_module.R")
 
 # ── Module UI ──────────────────────────────────────────────────────────────────
 
@@ -690,7 +694,13 @@ ledgerModuleServer <- function(id, config, shared) {
         )
         as.data.frame(d)[, keep, drop = FALSE]
       }, error = function(e) ctx$detail)
-      modifyList(ctx, list(detail = new_detail, nonce = runif(1)))
+      # Not modifyList(): it walks into `detail` (a data.frame is a list) and
+      # fails when the day has a different number of rows -- a delete, or a
+      # move out of the day -- so the refresh used to fail right then and the
+      # window closed or went stale (found 2026-11-01, T05).
+      ctx$detail <- new_detail
+      ctx$nonce  <- runif(1)
+      ctx
     }
 
     # Single render gate — the ONLY place showModal is called
@@ -698,13 +708,11 @@ ledgerModuleServer <- function(id, config, shared) {
       ctx <- modal_ctx()
       req(ctx)
       modal_open(TRUE)
-      is_refresh <- isTRUE(ctx[["prov_refresh"]])
-      if (!is_refresh) cart_expanded(integer(0))
-      # Preserve audit-mode state across provision refreshes
-      audit_init <- if (is_refresh) isolate(input$audit_toggle %||% FALSE) else FALSE
+      # A refresh (new data while the day is open) only changes the tables'
+      # data: they repaint where they are, keeping view, scroll and selection.
+      if (isTRUE(ctx[["prov_refresh"]])) return()
       tryCatch(
-        .render_day_modal(ctx, input, output, session, ns, ledger, config, shared,
-                          audit_init = audit_init),
+        .render_day_modal(ctx, input, output, session, ns, ledger, config, shared),
         error = function(e) {
           message("[modal error] ", conditionMessage(e))
           message("[modal cols] ", paste(names(ctx$detail), collapse = ", "))
@@ -881,133 +889,13 @@ ledgerModuleServer <- function(id, config, shared) {
       # modal_ctx change triggers the render gate — do NOT call .render_day_modal
     }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
-    # ── Stage-all button (registered once, reads current ctx) ────────────────
-    observeEvent(input$stage_all, {
+    # ── Agenda: add (Agregar todo, Agregar selección, a row's ＋) ──────────────
+    # keys: the day's rows the table sent (dia_llaves(), R/dia_module.R);
+    # origen says which of the three, for the log.
+    .dia_agregar <- function(keys, origen) {
       ctx <- modal_ctx()
       req(ctx)
       detail <- ctx$detail
-      mask   <- !is.na(detail[["Documento"]])
-      d      <- pasivos_filter_out_provisions(detail[mask, , drop = FALSE])
-      inv_keys <- unique(d[, c("Empresa","Moneda","Documento","Importe"), drop = FALSE])
-      n <- nrow(inv_keys)
-      if (n == 0) {
-        showNotification("No hay items para enviar (sólo provisiones en este día).",
-                         type = "message", duration = 3)
-        return()
-      }
-      # Source lookup: without this, every staged row loses its source at
-      # write time and gets silently normalized to "sap" on the next
-      # load_pagar_hoy() read (or treated as ERP in-memory via
-      # is_erp_sourced(NA)) -- a manual entry confirmed later would then
-      # never get archived out of manual_inv, since the confirm handler's
-      # manual-archiving branch filters on source (found 2026-07-24, a real
-      # incident: confirmed manual invoices stayed in the calendar,
-      # unconfirmed, and got re-staged with a fresh id on the next attempt).
-      src_lookup <- if ("source" %in% names(d))
-        unique(d[, c("Empresa","Moneda","Documento","source"), drop = FALSE])
-      else NULL
-      detail_lu <- .fresh_lu(
-        inv_keys, ctx$amt,
-        unique(d[, c("Empresa","Moneda","Documento","Parte","Codigo","Importe","FechaEff"), drop = FALSE]))
-      new_rows <- merge(inv_keys, detail_lu, by = c("Empresa","Moneda","Documento","Importe"))
-      new_rows[["id"]]        <- vapply(seq_len(nrow(new_rows)), function(x) uuid::UUIDgenerate(), character(1))
-      new_rows[["ledger"]]    <- ledger
-      new_rows[["tipo_item"]] <- "factura"
-      new_rows[["FechaVenc"]] <- as.Date(new_rows[["FechaEff"]])
-      new_rows[["staged_by"]] <- shared$current_user()
-      new_rows[["staged_at"]] <- Sys.time()
-      new_rows[["status"]]    <- "pending"
-      if (!is.null(src_lookup) && nrow(src_lookup)) {
-        new_rows <- merge(new_rows, src_lookup, by = c("Empresa","Moneda","Documento"), all.x = TRUE)
-        new_rows[["source"]] <- ifelse(is.na(new_rows[["source"]]) | new_rows[["source"]] != "manual",
-                                       SAP_B1_ERP_TYPE, "manual")
-      } else {
-        new_rows[["source"]] <- SAP_B1_ERP_TYPE
-      }
-      new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
-                                "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
-      # Read fresh from S3 first, not this session's possibly-stale in-memory
-      # copy -- this writes the whole table back, so a stale base would
-      # silently drop another session's concurrent stage/unstage. Must be
-      # safe_load_pagar_hoy(), not the mode-blind load_pagar_hoy() (found
-      # 2026-07-25: the latter always reads the legacy S3 key regardless of
-      # sync/per-user mode, corrupting the live agenda -- see Stage 16's
-      # correction in docs/LEDGER_INTEGRITY_MASTER_PLAN.md).
-      ph_base <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
-                                              client_id = shared$effective_client_id()),
-                          error = function(e) NULL) %||% shared$pagar_hoy_db()
-      updated <- upsert_pagar_hoy(ph_base, new_rows,
-                                  keys = c("ledger","Empresa","Moneda","Documento","Importe"))
-      shared$pagar_hoy_db(updated)
-      # found 2026-08-05: same bare-call bug fixed in the confirm/quitar
-      # handlers (see save_pagar_hoy_with_retry()'s header comment in
-      # R/persistence.R for the full incident) -- a transient failure here
-      # left the acting user's own screen showing the item staged (the
-      # reactiveVal above already updated) while nothing persisted and
-      # nothing got logged.
-      stage_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
-                                                client_id = shared$effective_client_id())
-      if (!isTRUE(stage_result$ok)) {
-        showNotification(
-          paste0("No se pudo enviar a Agenda tras ", stage_result$attempts,
-                 " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
-          type = "error", duration = 15
-        )
-        tryCatch(log_action(
-          user = tryCatch(shared$current_user(), error = function(e) "system"),
-          module = paste0("ledger_", ledger), action = "enviar_a_agenda_dia_incompleto",
-          description = sprintf(
-            "Intento de enviar %d factura(s) no se pudo guardar tras %d intento(s): %s",
-            nrow(new_rows), stage_result$attempts,
-            if (!is.null(stage_result$error)) conditionMessage(stage_result$error) else "error desconocido"),
-          target_id = paste(new_rows[["Documento"]][seq_len(min(5, nrow(new_rows)))], collapse = ", "),
-          metadata  = list(n = nrow(new_rows), source = "stage_all"),
-          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-        ), error = function(e) NULL)
-        return()
-      }
-      lbl <- if (ledger == "AR") "Agenda del d\u00eda (Cobros)" else "Agenda del d\u00eda (Pagos)"
-      emps <- paste(unique(new_rows[["Empresa"]]), collapse = ", ")
-      showNotification(
-        paste0("✓ ", nrow(new_rows), " factura(s) enviadas a ", lbl,
-               " — ", emps, "."),
-        type = "message", duration = 3)
-      log_action(
-        user        = tryCatch(shared$current_user(), error = function(e) "system"),
-        module      = paste0("ledger_", ledger),
-        action      = "enviar_a_agenda_dia",
-        description = paste0(nrow(new_rows), " factura(s) enviada(s) a ", lbl, " -- ", emps),
-        target_id   = paste(new_rows[["Documento"]][seq_len(min(5, nrow(new_rows)))], collapse = ", "),
-        metadata    = list(n = nrow(new_rows), source = "stage_all"),
-        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-      )
-    }, ignoreInit = TRUE)
-
-    # ── Stage selection (audit or summary mode) ───────────────────────────────
-    # In audit mode  → .audit_sel_to_keys()   : row = individual invoice
-    # In summary mode → .summary_sel_to_keys() : row = Parte group (all invoices)
-    observeEvent(input$stage_sel, {
-      ctx <- modal_ctx()
-      req(ctx)
-      detail <- ctx$detail
-      tbl    <- .detail_to_audit_tbl(detail)
-      keys <- if (isTRUE(ctx$audit)) {
-        sel <- input[["modal_tbl_rows_selected"]] %||% integer(0)
-        if (!length(sel)) {
-          showNotification("Selecciona al menos una factura.", type = "warning")
-          return()
-        }
-        .audit_sel_to_keys(tbl, sel, detail)
-      } else {
-        k <- .resolve_summary_sel(input, detail, session$userData[[ns("cart_grp_snapshot")]])
-        if (!nrow(k)) {
-          showNotification("Selecciona al menos una factura.", type = "warning")
-          return()
-        }
-        k
-      }
       # found 2026-08-04: pasivos_filter_out_provisions(keys) here was a
       # no-op -- `keys` never carries a `source` column (see
       # pasivos_exclude_provision_keys()'s own header comment in
@@ -1019,9 +907,9 @@ ledgerModuleServer <- function(id, config, shared) {
         return()
       }
       detail_np <- pasivos_filter_out_provisions(detail)
-      # Source lookup -- see stage_all's identical comment above; without
-      # this a manual entry staged here silently loses its source and can
-      # never be archived out of manual_inv when later confirmed.
+      # Source lookup (found 2026-07-24): without it every staged row loses
+      # its source and is normalized to "sap" on the next load_pagar_hoy(), so
+      # a manual entry confirmed later never gets archived out of manual_inv.
       src_lookup <- if ("source" %in% names(detail_np))
         unique(detail_np[, c("Empresa","Moneda","Documento","source"), drop = FALSE])
       else NULL
@@ -1091,7 +979,7 @@ ledgerModuleServer <- function(id, config, shared) {
             nrow(new_rows), stage_result$attempts,
             if (!is.null(stage_result$error)) conditionMessage(stage_result$error) else "error desconocido"),
           target_id = paste(new_rows[["Documento"]][seq_len(min(5, nrow(new_rows)))], collapse = ", "),
-          metadata  = list(n = nrow(new_rows), source = "stage_sel"),
+          metadata  = list(n = nrow(new_rows), source = origen),
           client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
           viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
         ), error = function(e) NULL)
@@ -1109,16 +997,14 @@ ledgerModuleServer <- function(id, config, shared) {
         action      = "enviar_a_agenda_dia",
         description = paste0(nrow(new_rows), " factura(s) enviada(s) a ", lbl, " -- ", emps),
         target_id   = paste(new_rows[["Documento"]][seq_len(min(5, nrow(new_rows)))], collapse = ", "),
-        metadata    = list(n = nrow(new_rows), source = "stage_sel"),
+        metadata    = list(n = nrow(new_rows), source = origen),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
-      session$sendCustomMessage("calCartClearSel",
-        list(grpInputId = ns("cart_rows_sel"), invInputId = ns("cart_inv_sel")))
-    }, ignoreInit = TRUE)
+    }
 
-    # ── Raw data diagnostic viewer ────────────────────────────────────────────
-    observeEvent(input$show_raw, {
+    # ── Raw data diagnostic viewer ("Ver datos SAP", both views) ───────────────
+    .dia_crudos <- function() {
       ctx <- modal_ctx()
       req(ctx)
       d <- ctx$detail
@@ -1142,8 +1028,7 @@ ledgerModuleServer <- function(id, config, shared) {
       } else NULL
 
       showModal(modalDialog(
-        title = paste0("\U0001f50d Datos crudos — ", format(ctx$sel_date, "%d %b %Y"),
-                       " — ", ctx$cur),
+        title = tr("tablas.dia.crudos_titulo", fecha = format(ctx$sel_date, "%d %b %Y"), moneda = ctx$cur),
         size  = "xl", easyClose = TRUE,
         footer = tagList(
           tags$small(class = "text-muted me-auto",
@@ -1199,334 +1084,57 @@ ledgerModuleServer <- function(id, config, shared) {
           )
         )
       }, server = FALSE)
-    }, ignoreInit = TRUE)
+    }
 
-    # ── Cart buttons — event delegation ───────────────────────────────────────
-    # JS fires ns("cart_group_click") with {i, nonce}. One observer serves every
-    # group: the old 50 cart_<i> observers registered at init left the ＋ of
-    # group 51 and up with no handler, so it silently did nothing.
-    observeEvent(input$cart_group_click, {
-      click <- input$cart_group_click
-      req(click)
-      i <- as.integer(click$i %||% 0L)
-      if (is.na(i) || i < 1L) return()
-      ctx <- modal_ctx()
-      req(ctx)
-      detail  <- ctx$detail
-      grp_agg <- session$userData[[ns("cart_grp_snapshot")]]
-      if (is.null(grp_agg) || i > nrow(grp_agg)) return()
-      row_e   <- grp_agg[["Empresa"]][i]
-      row_p   <- grp_agg[["Parte"]][i]
-      mask     <- detail[["Empresa"]] == row_e & detail[["Parte"]] == row_p & !is.na(detail[["Documento"]])
-      inv_keys <- pasivos_filter_out_provisions(
-        unique(detail[mask, c("Empresa","Moneda","Documento","Importe",
-                              if ("source" %in% names(detail)) "source" else character()), drop = FALSE])
-      )
-      src_lookup <- if ("source" %in% names(inv_keys))
-        unique(inv_keys[, c("Empresa","Moneda","Documento","source"), drop = FALSE])
-      else NULL
-      inv_keys <- inv_keys[, c("Empresa","Moneda","Documento","Importe"), drop = FALSE]
-      if (nrow(inv_keys) == 0L) {
+    # ── Agenda: take out (a row's ✓) ───────────────────────────────────────────
+    # The row's ＋ adds (.dia_agregar) and, once the row is in the Agenda,
+    # the same button takes it out -- as the day's ＋/✓ always did. Anything
+    # may leave the Agenda regardless of source: it never holds the real data.
+    .dia_quitar <- function(keys) {
+      inv_keys <- unique(keys[, c("Empresa","Moneda","Documento","Importe"), drop = FALSE])
+      # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
+      # 2026-07-25): this writes the whole table back.
+      ph_now <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                             client_id = shared$effective_client_id()),
+                         error = function(e) NULL) %||% shared$pagar_hoy_db()
+      if (is.null(ph_now) || !nrow(ph_now)) return()
+      upd_keys <- cbind(inv_keys, ledger = ledger, stringsAsFactors = FALSE)
+      updated  <- unstage_pagar_hoy(ph_now, upd_keys, keys = c("ledger","Empresa","Moneda","Documento","Importe"))
+      shared$pagar_hoy_db(updated)
+      # save_pagar_hoy_with_retry (found 2026-08-05): a bare save left the
+      # screen updated while nothing persisted and nothing got logged.
+      site_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
+                                               client_id = shared$effective_client_id())
+      if (!isTRUE(site_result$ok)) {
         showNotification(
-          "No hay comprobantes que agregar; las provisiones se convierten con ⚡.",
-          type = "warning", duration = 4)
+          paste0("No se pudo quitar de la Agenda tras ", site_result$attempts,
+                 " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
+          type = "error", duration = 15
+        )
+        tryCatch(log_action(
+          user = tryCatch(shared$current_user(), error = function(e) "system"),
+          module = paste0("ledger_", ledger), action = "quitar_de_agenda_dia_incompleto",
+          description = sprintf("No se pudo guardar tras %d intento(s): %s", site_result$attempts,
+            if (!is.null(site_result$error)) conditionMessage(site_result$error) else "error desconocido"),
+          target_id = paste(inv_keys[["Documento"]][seq_len(min(5, nrow(inv_keys)))], collapse = ", "),
+          metadata  = list(source = "dia_quitar"),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        ), error = function(e) NULL)
         return()
       }
-      # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, NOT
-      # the legacy-key-blind load_pagar_hoy(), found 2026-07-25). Reused
-      # for both the "already staged" check and the write below, so this
-      # one read is the base for the whole action, not silently mixed
-      # with a stale shared$pagar_hoy_db() partway through.
-      ph_now  <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
-                                              client_id = shared$effective_client_id()),
-                          error = function(e) NULL) %||% shared$pagar_hoy_db()
-      already <- if (!is.null(ph_now) && nrow(ph_now)) {
-        ph_sub <- ph_now[ph_now[["ledger"]] == ledger, , drop = FALSE]
-        nrow(merge(ph_sub[, c("Empresa","Moneda","Documento","Importe"), drop=FALSE], inv_keys, by = c("Empresa","Moneda","Documento","Importe")))
-      } else 0L
-      if (already > 0L) {
-        # Users may remove anything from Agenda regardless of source --
-        # Agenda never holds the real data, so this can never destroy
-        # anything (the only real guardrail is Calendario itself).
-        upd_keys <- cbind(inv_keys, ledger = ledger, stringsAsFactors = FALSE)
-        updated <- unstage_pagar_hoy(ph_now, upd_keys, keys = c("ledger","Empresa","Moneda","Documento","Importe"))
-        shared$pagar_hoy_db(updated)
-        # found 2026-08-05: same bare-call bug fixed in the confirm/quitar
-        # handlers (see save_pagar_hoy_with_retry()'s header comment in
-        # R/persistence.R for the full incident) -- a transient failure here
-        # left the acting user's own screen looking updated (the reactiveVal
-        # above already changed) while nothing persisted and nothing got logged.
-        site_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
-                                                 client_id = shared$effective_client_id())
-        if (!isTRUE(site_result$ok)) {
-          showNotification(
-            paste0("No se pudo quitar de la Agenda tras ", site_result$attempts,
-                   " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
-            type = "error", duration = 15
-          )
-          tryCatch(log_action(
-            user = tryCatch(shared$current_user(), error = function(e) "system"),
-            module = paste0("ledger_", ledger), action = "quitar_de_agenda_dia_incompleto",
-            description = sprintf("No se pudo guardar tras %d intento(s): %s", site_result$attempts,
-              if (!is.null(site_result$error)) conditionMessage(site_result$error) else "error desconocido"),
-            target_id = tryCatch(as.character(row_p %||% ''), error = function(e) ''),
-            metadata  = list(source = "cart_toggle"),
-            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-          ), error = function(e) NULL)
-          return()
-        }
-        showNotification("Quitado de la Agenda del día.", type = "message", duration = 2)
-        log_action(
-          user        = tryCatch(shared$current_user(), error = function(e) "system"),
-          module      = paste0("ledger_", ledger),
-          action      = "quitar_de_agenda_dia",
-          description = paste0(nrow(inv_keys), " factura(s) de ", row_p, " quitada(s) de la Agenda del día"),
-          target_id   = row_p,
-          metadata    = list(n = nrow(inv_keys), source = "cart_toggle", empresa = row_e),
-          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-        )
-      } else {
-        lbl_tp <- if (ledger == "AR") "cobro" else "pago"
-        total_imp <- sum(detail[mask, "Importe"], na.rm = TRUE)
-        cur_lbl   <- if (nrow(inv_keys)) detail[mask, "Moneda"][1] else ""
-        detail_lu <- .fresh_lu(
-          inv_keys,
-          ctx$amt,
-          unique(detail[, c("Empresa","Moneda","Documento","Parte","Codigo","Importe","FechaEff"), drop=FALSE]))
-        new_rows  <- merge(inv_keys, detail_lu, by = c("Empresa","Moneda","Documento","Importe"))
-        new_rows[["id"]]        <- vapply(seq_len(nrow(new_rows)), function(x) uuid::UUIDgenerate(), character(1))
-        new_rows[["ledger"]]    <- ledger
-        new_rows[["tipo_item"]] <- "factura"
-        new_rows[["FechaVenc"]] <- as.Date(new_rows[["FechaEff"]])
-        new_rows[["staged_by"]] <- shared$current_user()
-        new_rows[["staged_at"]] <- Sys.time()
-        new_rows[["status"]]    <- "pending"
-        if (!is.null(src_lookup) && nrow(src_lookup)) {
-          new_rows <- merge(new_rows, src_lookup, by = c("Empresa","Moneda","Documento"), all.x = TRUE)
-          new_rows[["source"]] <- ifelse(is.na(new_rows[["source"]]) | new_rows[["source"]] != "manual",
-                                         SAP_B1_ERP_TYPE, "manual")
-        } else {
-          new_rows[["source"]] <- SAP_B1_ERP_TYPE
-        }
-        new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
-                                  "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
-        # Reuse the fresh ph_now read from above -- no need for a second read.
-        updated <- upsert_pagar_hoy(ph_now %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_rows,
-                                  keys = c("ledger","Empresa","Moneda","Documento","Importe"))
-        shared$pagar_hoy_db(updated)
-        # found 2026-08-05: same bare-call bug fixed in the confirm/quitar
-        # handlers (see save_pagar_hoy_with_retry()'s header comment in
-        # R/persistence.R for the full incident) -- a transient failure here
-        # left the acting user's own screen looking updated (the reactiveVal
-        # above already changed) while nothing persisted and nothing got logged.
-        site_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
-                                                 client_id = shared$effective_client_id())
-        if (!isTRUE(site_result$ok)) {
-          showNotification(
-            paste0("No se pudo enviar a la Agenda tras ", site_result$attempts,
-                   " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
-            type = "error", duration = 15
-          )
-          tryCatch(log_action(
-            user = tryCatch(shared$current_user(), error = function(e) "system"),
-            module = paste0("ledger_", ledger), action = "enviar_a_agenda_dia_incompleto",
-            description = sprintf("No se pudo guardar tras %d intento(s): %s", site_result$attempts,
-              if (!is.null(site_result$error)) conditionMessage(site_result$error) else "error desconocido"),
-            target_id = tryCatch(as.character(row_p %||% ''), error = function(e) ''),
-            metadata  = list(source = "cart_toggle"),
-            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-          ), error = function(e) NULL)
-          return()
-        }
-        lbl_agenda <- if (ledger == "AR") "Agenda del día (Cobros)" else "Agenda del día (Pagos)"
-        showNotification(
-          paste0("✓ ", nrow(inv_keys), " factura(s) de ", row_p,
-                 " enviadas a ", lbl_agenda,
-                 " — ", cur_lbl, " ", fmt_money(total_imp), "."),
-          type = "message", duration = 3)
-        log_action(
-          user        = tryCatch(shared$current_user(), error = function(e) "system"),
-          module      = paste0("ledger_", ledger),
-          action      = "enviar_a_agenda_dia",
-          description = paste0(nrow(inv_keys), " factura(s) de ", row_p, " enviada(s) a ", lbl_agenda),
-          target_id   = row_p,
-          metadata    = list(n = nrow(inv_keys), source = "cart_toggle", empresa = row_e),
-          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-        )
-      }
-    }, ignoreInit = TRUE, ignoreNULL = TRUE)
-
-    # confirm_cart_N observers removed — cart buttons now stage immediately
-    # without a confirmation modal; a bottom notification confirms the action.
-
-    # ── Expand toggle — event delegation ─────────────────────────────────────
-    # JS fires ns("cart_expand_click") with {i, scrollTop, nonce}.
-    # Single observer replaces 50 pre-registered actionButton observers.
-    # No actionButton = no click-count replay on renderUI re-render.
-    observeEvent(input$cart_expand_click, {
-      click <- input$cart_expand_click
-      req(click)
-      i   <- as.integer(click$i %||% 0L)
-      top <- as.integer(click$scrollTop %||% 0L)
-      if (i < 1L) return()
-      exp <- cart_expanded()
-      cart_expanded(if (i %in% exp) setdiff(exp, i) else union(exp, i))
-      # Restore modal scroll position after renderUI settles
-      session$sendCustomMessage("restoreModalScroll", list(top = top))
-    }, ignoreInit = TRUE, ignoreNULL = TRUE)
-
-    # ── Per-invoice buttons — event delegation ────────────────────────────────
-    # Single observer replaces 50×200=10,000 pre-registered observers.
-    # JS fires ns("cart_inv_click") with {i, j, nonce} payload.
-    observeEvent(input$cart_inv_click, {
-      click <- input$cart_inv_click
-      req(click)
-      i <- as.integer(click$i); j <- as.integer(click$j)
-      ctx <- modal_ctx(); req(ctx)
-      detail  <- ctx$detail
-      grp_agg <- session$userData[[ns("cart_grp_snapshot")]]
-      if (is.null(grp_agg) || i > nrow(grp_agg)) return()
-
-      row_e <- grp_agg[["Empresa"]][i]
-      row_p <- grp_agg[["Parte"]][i]
-      inv_mask <- detail[["Empresa"]] == row_e &
-                  detail[["Parte"]]   == row_p &
-                  !is.na(detail[["Documento"]])
-      inv_rows_raw <- unique(detail[inv_mask,
-        intersect(c("Empresa","Moneda","Documento","Parte","Codigo","Importe","FechaEff","source"),
-                  names(detail)), drop=FALSE])
-      inv_rows <- pasivos_filter_out_provisions(inv_rows_raw)
-      inv_rows <- inv_rows[order(-inv_rows[["Importe"]]), ]
-      if (j > nrow(inv_rows)) return()
-      inv_key  <- inv_rows[j, c("Empresa","Moneda","Documento","Importe"), drop=FALSE]
-      # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
-      # 2026-07-25); reused below for both the "already staged" check and
-      # the write, same reasoning as cart_<i>'s identical comment above.
-      ph_now   <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
-                                               client_id = shared$effective_client_id()),
-                           error = function(e) NULL) %||% shared$pagar_hoy_db()
-      already  <- if (!is.null(ph_now) && nrow(ph_now)) {
-        ph_sub <- ph_now[ph_now[["ledger"]] == ledger, , drop=FALSE]
-        nrow(merge(ph_sub[, c("Empresa","Moneda","Documento","Importe"), drop=FALSE],
-                   inv_key, by=c("Empresa","Moneda","Documento","Importe")))
-      } else 0L
-      if (already > 0L) {
-        # Users may remove anything from Agenda regardless of source --
-        # Agenda never holds the real data, so this can never destroy
-        # anything (the only real guardrail is Calendario itself).
-        upd_keys <- cbind(inv_key, ledger=ledger, stringsAsFactors=FALSE)
-        updated  <- unstage_pagar_hoy(ph_now, upd_keys, keys = c("ledger","Empresa","Moneda","Documento","Importe"))
-        shared$pagar_hoy_db(updated)
-        # found 2026-08-05: same bare-call bug fixed in the confirm/quitar
-        # handlers (see save_pagar_hoy_with_retry()'s header comment in
-        # R/persistence.R for the full incident) -- a transient failure here
-        # left the acting user's own screen looking updated (the reactiveVal
-        # above already changed) while nothing persisted and nothing got logged.
-        site_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
-                                                 client_id = shared$effective_client_id())
-        if (!isTRUE(site_result$ok)) {
-          showNotification(
-            paste0("No se pudo quitar de la Agenda tras ", site_result$attempts,
-                   " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
-            type = "error", duration = 15
-          )
-          tryCatch(log_action(
-            user = tryCatch(shared$current_user(), error = function(e) "system"),
-            module = paste0("ledger_", ledger), action = "quitar_de_agenda_dia_incompleto",
-            description = sprintf("No se pudo guardar tras %d intento(s): %s", site_result$attempts,
-              if (!is.null(site_result$error)) conditionMessage(site_result$error) else "error desconocido"),
-            target_id = tryCatch(as.character(row_p %||% ''), error = function(e) ''),
-            metadata  = list(source = "cart_inv_click"),
-            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-          ), error = function(e) NULL)
-          return()
-        }
-        showNotification("Quitado de la Agenda.", type="message", duration=2)
-        log_action(
-          user        = tryCatch(shared$current_user(), error = function(e) "system"),
-          module      = paste0("ledger_", ledger),
-          action      = "quitar_de_agenda_dia",
-          description = paste0("Factura ", inv_key[["Documento"]][1], " quitada de la Agenda"),
-          target_id   = inv_key[["Documento"]][1],
-          metadata    = list(source = "cart_inv_click", empresa = row_e, parte = row_p),
-          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-        )
-      } else {
-        one <- inv_rows[j, , drop=FALSE]
-        # See stage_all's identical comment above (source propagation,
-        # found 2026-07-24) -- this per-invoice "+" toggle is another
-        # entry point into pagar_hoy_db and needs the same guard. "source"
-        # may not even exist on `detail` (SAP-only callers), so check
-        # column presence before indexing -- one[["source"]] on a missing
-        # column returns NULL, not NA.
-        one_source <- if ("source" %in% names(one)) one[["source"]] else NA_character_
-        new_row <- data.frame(
-          id         = uuid::UUIDgenerate(),
-          ledger     = ledger,
-          Empresa    = one[["Empresa"]],
-          Moneda     = one[["Moneda"]],
-          Documento  = one[["Documento"]],
-          Parte      = one[["Parte"]],
-          Codigo     = one[["Codigo"]] %||% NA_character_,
-          tipo_item  = "factura",
-          Importe    = one[["Importe"]],
-          FechaVenc  = as.Date(one[["FechaEff"]]),
-          staged_by  = shared$current_user(),
-          staged_at  = Sys.time(),
-          status     = "pending",
-          source     = ifelse(is.na(one_source) | one_source != "manual",
-                               SAP_B1_ERP_TYPE, "manual"),
-          stringsAsFactors = FALSE
-        )
-        updated <- upsert_pagar_hoy(ph_now %||% load_pagar_hoy(client_id = shared$effective_client_id()), new_row,
-                                  keys = c("ledger","Empresa","Moneda","Documento","Importe"))
-        shared$pagar_hoy_db(updated)
-        # found 2026-08-05: same bare-call bug fixed in the confirm/quitar
-        # handlers (see save_pagar_hoy_with_retry()'s header comment in
-        # R/persistence.R for the full incident) -- a transient failure here
-        # left the acting user's own screen looking updated (the reactiveVal
-        # above already changed) while nothing persisted and nothing got logged.
-        site_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
-                                                 client_id = shared$effective_client_id())
-        if (!isTRUE(site_result$ok)) {
-          showNotification(
-            paste0("No se pudo enviar a la Agenda tras ", site_result$attempts,
-                   " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
-            type = "error", duration = 15
-          )
-          tryCatch(log_action(
-            user = tryCatch(shared$current_user(), error = function(e) "system"),
-            module = paste0("ledger_", ledger), action = "enviar_a_agenda_dia_incompleto",
-            description = sprintf("No se pudo guardar tras %d intento(s): %s", site_result$attempts,
-              if (!is.null(site_result$error)) conditionMessage(site_result$error) else "error desconocido"),
-            target_id = tryCatch(as.character(row_p %||% ''), error = function(e) ''),
-            metadata  = list(source = "cart_inv_click"),
-            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-          ), error = function(e) NULL)
-          return()
-        }
-        showNotification(
-          paste0("Factura ", one[["Documento"]], " enviada a la Agenda."),
-          type="message", duration=2)
-        log_action(
-          user        = tryCatch(shared$current_user(), error = function(e) "system"),
-          module      = paste0("ledger_", ledger),
-          action      = "enviar_a_agenda_dia",
-          description = paste0("Factura ", one[["Documento"]], " enviada a la Agenda"),
-          target_id   = one[["Documento"]],
-          metadata    = list(source = "cart_inv_click", empresa = row_e, parte = row_p),
-          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-        )
-      }
-    }, ignoreInit=TRUE, ignoreNULL=TRUE)
+      showNotification("Quitado de la Agenda del día.", type = "message", duration = 2)
+      log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = paste0("ledger_", ledger),
+        action      = "quitar_de_agenda_dia",
+        description = paste0(nrow(inv_keys), " factura(s) quitada(s) de la Agenda del día"),
+        target_id   = paste(inv_keys[["Documento"]][seq_len(min(5, nrow(inv_keys)))], collapse = ", "),
+        metadata    = list(n = nrow(inv_keys), source = "dia_quitar"),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      )
+    }
 
     # helper: re-read Importe/Parte/FechaEff from current df_combined for a set of keys.
     # Called at staging time so edits made after the modal opened are reflected.
@@ -1727,26 +1335,14 @@ ledgerModuleServer <- function(id, config, shared) {
     }
 
     # ── Move / restore buttons ────────────────────────────────────────────────
-    observeEvent(input$do_move, {
+    .dia_mover <- function(keys, new_date) {
       tryCatch({
         ctx <- modal_ctx(); req(ctx)
-        new_date <- tryCatch(as.Date(input$move_to), error = function(e) NULL)
         if (is.null(new_date) || length(new_date) == 0L || anyNA(new_date)) {
           showNotification("Elige una fecha válida.", type = "warning")
           return()
         }
         detail <- ctx$detail
-        if (isTRUE(ctx$audit)) {
-          sel  <- input[["modal_tbl_rows_selected"]] %||% integer(0)
-          if (!length(sel)) { showNotification("Selecciona al menos una fila/partida.", type = "warning"); return() }
-          keys <- .audit_sel_to_keys(.detail_to_audit_tbl(detail), sel, detail)
-        } else {
-          keys <- .resolve_summary_sel(input, detail, session$userData[[ns("cart_grp_snapshot")]])
-          if (is.null(keys) || !nrow(keys)) {
-            showNotification("Selecciona al menos una fila/partida.", type = "warning")
-            return()
-          }
-        }
         # found 2026-08-04: same no-op as stage_sel (see
         # pasivos_exclude_provision_keys()'s header comment in
         # pasivos_calendar_glue.R) -- `keys` here never has a `source`
@@ -1763,8 +1359,6 @@ ledgerModuleServer <- function(id, config, shared) {
         .sync_staged(keys, ledger, shared$pagar_hoy_db, new_date = new_date,
                      username = shared$current_user(), client_id = shared$effective_client_id())
         showNotification(paste0(nrow(keys), " factura(s) movidas."), type = "message", duration = 2)
-        session$sendCustomMessage("calCartClearSel",
-          list(grpInputId = ns("cart_rows_sel"), invInputId = ns("cart_inv_sel")))
         cur_ctx <- modal_ctx()
         if (!is.null(cur_ctx)) {
           new_ctx <- tryCatch(.refresh_ctx_detail(cur_ctx), error = function(e) NULL)
@@ -1778,23 +1372,12 @@ ledgerModuleServer <- function(id, config, shared) {
         showNotification(paste("Error al mover:", conditionMessage(e)),
                          type = "error", duration = 8)
       })
-    }, ignoreInit = TRUE)
+    }
 
-    observeEvent(input$do_restore, {
+    .dia_restaurar <- function(keys) {
       tryCatch({
         ctx <- modal_ctx(); req(ctx)
         detail <- ctx$detail
-        if (isTRUE(ctx$audit)) {
-          sel  <- input[["modal_tbl_rows_selected"]] %||% integer(0)
-          if (!length(sel)) { showNotification("Selecciona al menos una fila/partida.", type = "warning"); return() }
-          keys <- .audit_sel_to_keys(.detail_to_audit_tbl(detail), sel, detail)
-        } else {
-          keys <- .resolve_summary_sel(input, detail, session$userData[[ns("cart_grp_snapshot")]])
-          if (is.null(keys) || !nrow(keys)) {
-            showNotification("Selecciona al menos una fila/partida.", type = "warning")
-            return()
-          }
-        }
         # found 2026-08-04: same no-op as stage_sel/do_move (see
         # pasivos_exclude_provision_keys()'s header comment in
         # pasivos_calendar_glue.R).
@@ -1807,8 +1390,6 @@ ledgerModuleServer <- function(id, config, shared) {
         .sync_staged(keys, ledger, shared$pagar_hoy_db, detail = detail,
                      username = shared$current_user(), client_id = shared$effective_client_id())
         showNotification("Fecha original restaurada.", type = "message", duration = 2)
-        session$sendCustomMessage("calCartClearSel",
-          list(grpInputId = ns("cart_rows_sel"), invInputId = ns("cart_inv_sel")))
         cur_ctx <- modal_ctx()
         if (!is.null(cur_ctx)) {
           new_ctx <- tryCatch(.refresh_ctx_detail(cur_ctx), error = function(e) NULL)
@@ -1822,26 +1403,15 @@ ledgerModuleServer <- function(id, config, shared) {
         showNotification(paste("Error al restaurar:", conditionMessage(e)),
                          type = "error", duration = 8)
       })
-    }, ignoreInit = TRUE)
+    }
 
-    # ── Delete selected rows ──────────────────────────────────────────────────
-    observeEvent(input$do_delete, {
+    # ── Delete ────────────────────────────────────────────────────────────────
+    # The table asked first, for every row (Luis: deletes confirm). SAP rows
+    # go to the papelera as ghosts; provisions and manual entries go through
+    # .borrar_no_sap() below.
+    .dia_eliminar <- function(keys) {
       ctx <- modal_ctx(); req(ctx)
       detail <- ctx$detail
-      if (isTRUE(ctx$audit)) {
-        sel  <- input[["modal_tbl_rows_selected"]] %||% integer(0)
-        if (!length(sel)) {
-          showNotification("Selecciona al menos una factura para eliminar.", type = "warning")
-          return()
-        }
-        keys <- .audit_sel_to_keys(.detail_to_audit_tbl(detail), sel, detail)
-      } else {
-        keys <- .resolve_summary_sel(input, detail, session$userData[[ns("cart_grp_snapshot")]])
-        if (!nrow(keys)) {
-          showNotification("Selecciona al menos una factura para eliminar.", type = "warning")
-          return()
-        }
-      }
       if (!nrow(keys)) {
         showNotification("No se encontraron facturas.", type = "warning")
         return()
@@ -1869,8 +1439,8 @@ ledgerModuleServer <- function(id, config, shared) {
       sap_mask     <- key_sources %in% c("sap", SAP_B1_ERP_TYPE)
       non_sap_keys <- keys[!sap_mask, , drop = FALSE]
 
-      # SAP items: send to papelera immediately — they become ghosts (confirmed=TRUE),
-      # not permanently deleted. No confirmation needed since the action is reversible.
+      # SAP items: send to papelera — they become ghosts (confirmed=TRUE),
+      # not permanently deleted.
       n_sap <- sum(sap_mask)
       if (n_sap > 0) {
         sap_pap     <- tryCatch(load_papelera(client_id = shared$effective_client_id()),
@@ -1939,88 +1509,11 @@ ledgerModuleServer <- function(id, config, shared) {
         return()
       }
 
-      # Non-SAP items (provisions, manual): show confirmation dialog.
-      has_pid_ns  <- "provision_id" %in% names(non_sap_keys) && "provision_id" %in% names(detail)
+      # Non-SAP items (provisions, manual).
+      .borrar_no_sap(non_sap_keys, ctx)
+    }
 
-      # Pre-compute the ACTUAL row count — the key set may have fewer rows than
-      # detail because unique() collapses identical manual entries that differ only
-      # by UUID.  Merge using Parte (when present) to limit scope to the selected
-      # group and avoid matching same-Documento entries from other groups.
-      non_prov_ns <- if (has_pid_ns)
-        non_sap_keys[is.na(non_sap_keys[["provision_id"]]) |
-                     !nzchar(non_sap_keys[["provision_id"]] %||% ""), , drop = FALSE]
-      else non_sap_keys
-      prov_ns <- if (has_pid_ns)
-        non_sap_keys[!is.na(non_sap_keys[["provision_id"]]) &
-                     nzchar(non_sap_keys[["provision_id"]] %||% ""), , drop = FALSE]
-      else non_sap_keys[0L, , drop = FALSE]
-      merge_cols_ns <- intersect(c("Empresa","Moneda","Documento","Importe","Parte"),
-                                 names(non_prov_ns))
-      np_detail_preview <- if (nrow(non_prov_ns) > 0)
-        merge(detail, non_prov_ns[, merge_cols_ns, drop = FALSE], by = merge_cols_ns)
-      else detail[0L, , drop = FALSE]
-      pv_detail_preview <- if (nrow(prov_ns) > 0 && has_pid_ns)
-        detail[!is.na(detail[["provision_id"]]) &
-               detail[["provision_id"]] %in% prov_ns[["provision_id"]], , drop = FALSE]
-      else detail[0L, , drop = FALSE]
-      all_preview  <- dplyr::bind_rows(np_detail_preview, pv_detail_preview)
-      n_ns         <- max(nrow(all_preview), 1L)   # fallback to 1 so dialog always shows
-      n_provs      <- nrow(pv_detail_preview)
-      item_label   <- if (n_provs == n_ns) "provisión(es)" else if (n_provs > 0) "elemento(s)" else "factura(s)"
-
-      display_labels <- if (nrow(all_preview) > 0) {
-        vapply(seq_len(min(nrow(all_preview), 5L)), function(i) {
-          emp  <- all_preview[["Empresa"]][i]  %||% ""
-          doc  <- all_preview[["Documento"]][i] %||% ""
-          pid  <- if ("provision_id" %in% names(all_preview)) all_preview[["provision_id"]][i] else NA_character_
-          prt  <- if ("Parte" %in% names(all_preview)) all_preview[["Parte"]][i] %||% "" else ""
-          if (!is.na(pid) && nzchar(pid %||% ""))
-            paste0(emp, " — ", if (nzchar(prt)) prt else doc, " [provisión]")
-          else if (nzchar(prt))
-            paste0(emp, " — ", prt, " (", doc, ")")
-          else
-            paste0(emp, " — ", doc)
-        }, character(1))
-      } else {
-        vapply(seq_len(nrow(non_sap_keys)), function(i)
-          paste0(non_sap_keys[["Empresa"]][i] %||% "", " — ",
-                 non_sap_keys[["Documento"]][i] %||% ""), character(1))
-      }
-
-      # Confirm dialog
-      showModal(modalDialog(
-        title = tags$span(style = "color:#dc3545;", "\u26a0\ufe0f Confirmar eliminación"),
-        size  = "s", easyClose = FALSE,
-        footer = tagList(
-          actionButton(ns("cancel_delete"), "Cancelar", class = "btn btn-secondary"),
-          actionButton(ns("confirm_delete"), paste0("Eliminar ", n_ns, " ", item_label),
-                       class = "btn btn-danger")
-        ),
-        tagList(
-          tags$p(paste0("¿Eliminar ", n_ns, " ", item_label, " seleccionado(s)?")),
-          tags$ul(
-            lapply(seq_len(min(n_ns, 5)), function(i)
-              tags$li(display_labels[i])
-            ),
-            if (n_ns > 5) tags$li(paste0("… y ", n_ns - 5, " más")) else NULL
-          ),
-          tags$p(class = "text-muted small mt-2",
-            "Las manuales y provisiones se eliminarán de la lista activa.",
-            tags$br(),
-            "Se guardan en la papelera y pueden recuperarse."
-          )
-        )
-      ))
-
-      # Store non-SAP keys for the confirm observer
-      session$userData[[paste0(ns("pending_delete_keys"))]] <- non_sap_keys
-      session$userData[[paste0(ns("pending_delete_ctx"))]]  <- ctx
-    }, ignoreInit = TRUE)
-
-    observeEvent(input$confirm_delete, {
-      keys <- session$userData[[paste0(ns("pending_delete_keys"))]]
-      ctx  <- session$userData[[paste0(ns("pending_delete_ctx"))]]
-      req(keys, ctx)
+    .borrar_no_sap <- function(keys, ctx) {
 
       detail <- ctx$detail
       papelera_df <- tryCatch(load_papelera(client_id = shared$effective_client_id()), error = function(e) .schema_papelera() |> dplyr::slice(0))
@@ -2217,27 +1710,16 @@ ledgerModuleServer <- function(id, config, shared) {
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
-      # Restore the day pane instead of closing everything.
-      # Updating modal_ctx re-shows the day pane with fresh data.
+      # The day's tables show the fresh data.
       cur_ctx <- modal_ctx()
       if (!is.null(cur_ctx)) {
         new_ctx <- tryCatch(.refresh_ctx_detail(cur_ctx), error = function(e) NULL)
         if (!is.null(new_ctx)) {
           new_ctx[["prov_refresh"]] <- TRUE
           modal_ctx(new_ctx)
-        } else removeModal()
-      } else removeModal()
-    }, ignoreInit = TRUE)
-
-    # Cancel delete — restore the day pane instead of leaving everything closed
-    observeEvent(input$cancel_delete, ignoreInit = TRUE, {
-      session$userData[[paste0(ns("pending_delete_keys"))]] <- NULL
-      session$userData[[paste0(ns("pending_delete_ctx"))]]  <- NULL
-      cur_ctx <- modal_ctx()
-      if (!is.null(cur_ctx)) {
-        modal_ctx(modifyList(cur_ctx, list(prov_refresh = TRUE, nonce = runif(1))))
-      } else removeModal()
-    })
+        }
+      }
+    }
 
     # Spanish label for a tag action's log description -- kept in sync by
     # hand with the identical helper in R/search_module.R's
@@ -2251,14 +1733,8 @@ ledgerModuleServer <- function(id, config, shared) {
       else "importante"
     }
 
-    # ── Tag buttons (registered once) ────────────────────────────────────────
-    .handle_tags_once <- function(new_tags) {
-      ctx <- modal_ctx(); req(ctx)
-      detail  <- ctx$detail
-      tbl     <- .detail_to_audit_tbl(detail)
-      sel     <- input[["modal_tbl_rows_selected"]] %||% integer(0)
-      if (!length(sel)) { showNotification("Selecciona al menos una factura.", type="warning"); return() }
-      rows    <- .audit_sel_to_keys(tbl, sel, detail)
+    # ── Tags (Etiqueta A/B/C, Quitar etiqueta) ───────────────────────────────
+    .dia_etiquetar <- function(rows, new_tags) {
       # From S3 as it is now, not the session's copy (etiquetas_frescas() in
       # R/search_module.R): another session may have just tagged.
       tags_db <- etiquetas_frescas(shared)
@@ -2304,10 +1780,6 @@ ledgerModuleServer <- function(id, config, shared) {
         error = function(e) message("[LEDGER] log_action failed (etiquetar): ", e$message)
       )
     }
-    observeEvent(input$tag_urgent,    { .handle_tags_once("urgent") },                ignoreInit=TRUE)
-    observeEvent(input$tag_important, { .handle_tags_once("important") },             ignoreInit=TRUE)
-    observeEvent(input$tag_both,      { .handle_tags_once(c("important","urgent")) }, ignoreInit=TRUE)
-    observeEvent(input$tag_clear,     { .handle_tags_once(character(0)) },            ignoreInit=TRUE)
 
     # ── Edit helpers ──────────────────────────────────────────────────────────
     # Full-form SAP edit modal. Locked fields (Empresa, Moneda, Documento,
@@ -2446,56 +1918,8 @@ ledgerModuleServer <- function(id, config, shared) {
       }
     }
 
-    # ── do_edit (audit mode) ──────────────────────────────────────────────────
-    observeEvent(input$do_edit, {
-      ctx <- modal_ctx(); req(ctx)
-      detail <- ctx$detail
-      sel    <- input[["modal_tbl_rows_selected"]] %||% integer(0)
-      if (!length(sel)) {
-        showNotification("Selecciona una factura para editar.", type = "warning")
-        return()
-      }
-      if (length(sel) > 1)
-        showNotification("Editando la primera factura seleccionada.",
-                         type = "message", duration = 2)
-      tbl  <- .detail_to_audit_tbl(detail)
-      keys <- .audit_sel_to_keys(tbl, sel[1L], detail)
-      if (!nrow(keys)) return()
-      mask <- detail[["Empresa"]]   == keys[["Empresa"]][1]   &
-              detail[["Moneda"]]    == keys[["Moneda"]][1]    &
-              detail[["Documento"]] == keys[["Documento"]][1]
-      row  <- detail[mask, , drop = FALSE][1L, , drop = FALSE]
-      .open_edit_for_row(row)
-    }, ignoreInit = TRUE)
-
-    # ── edit_inv_i_j — event delegation ──────────────────────────────────────
-    # Single observer replaces 50×200=10,000 pre-registered observers.
-    observeEvent(input$edit_inv_click, {
-      click <- input$edit_inv_click
-      req(click)
-      i <- as.integer(click$i); j <- as.integer(click$j)
-      ctx <- modal_ctx(); req(ctx)
-      detail  <- ctx$detail
-      grp_agg <- session$userData[[ns("cart_grp_snapshot")]]
-      if (is.null(grp_agg) || i > nrow(grp_agg)) return()
-      row_e    <- grp_agg[["Empresa"]][i]
-      row_p    <- grp_agg[["Parte"]][i]
-      inv_mask <- detail[["Empresa"]] == row_e &
-                  detail[["Parte"]]   == row_p &
-                  !is.na(detail[["Documento"]])
-      inv_cols <- intersect(
-        c("Empresa","Moneda","Documento","Parte","Importe",
-          "FechaEff","FechaVenc_Original","FechaVenc_Proyectada",
-          "source","notas"),
-        names(detail)
-      )
-      inv_rows_raw <- unique(detail[inv_mask, inv_cols, drop = FALSE])
-      inv_rows <- pasivos_filter_out_provisions(inv_rows_raw)
-      inv_rows <- inv_rows[order(-inv_rows[["Importe"]]), ]
-      if (j > nrow(inv_rows)) return()
-      row <- inv_rows[j, , drop = FALSE]
-      .open_edit_for_row(row)
-    }, ignoreInit = TRUE, ignoreNULL = TRUE)
+    # ── Edit: a row's ✎ (the day's row, all its columns) ───────────────────────
+    .dia_editar <- function(row) .open_edit_for_row(row)
 
     # ── sap_edit_save ─────────────────────────────────────────────────────────
     observeEvent(input$sap_edit_save, {
@@ -2667,18 +2091,10 @@ ledgerModuleServer <- function(id, config, shared) {
     # All operations on `detail` use base R [[]] to avoid dplyr NSE issues
     # with non-syntactic column names on Windows / dplyr 1.1+
     .render_day_modal <- function(ctx, input, output, session, ns,
-                                   ledger, config, shared, audit_init = FALSE) {
-      detail   <- ctx$detail          # plain data.frame, clean column names
+                                   ledger, config, shared) {
       sel_date <- ctx$sel_date
       cur      <- ctx$cur
       amt      <- ctx$amt
-      audit    <- ctx$audit
-
-      unconfirmed_mask <- if ("confirmed" %in% names(detail))
-        !(detail[["confirmed"]] %in% TRUE)
-      else
-        rep(TRUE, nrow(detail))
-      total    <- sum(detail[["Importe"]][unconfirmed_mask], na.rm = TRUE)
       lbl_type <- if (ledger == "AR") "Cobros — CxC" else "Pagos — CxP"
       amt_pill_class <- if (grepl("vencido", tolower(amt)))
         "modal-day-pill modal-day-pill--saldo" else "modal-day-pill modal-day-pill--abono"
@@ -2691,501 +2107,48 @@ ledgerModuleServer <- function(id, config, shared) {
         tags$span(class = "modal-day-pill modal-day-pill--cur", cur),
         tags$span(class = amt_pill_class, amt)
       )
-
-      if (audit) {
-        # Build display table using base R
-        tbl <- data.frame(
-          Empresa    = detail[["Empresa"]],
-          Documento  = detail[["Documento"]],
-          Parte      = detail[["Parte"]],
-          Importe    = detail[["Importe"]],
-          `Fecha orig.` = format(as.Date(detail[["FechaVenc_Original"]]), "%d/%m/%Y"),
-          Movida     = !is.na(detail[["FechaVenc_Proyectada"]]),
-          Etiqueta   = detail[["Etiqueta"]],
-          Origen     = ifelse(detail[["source"]] == "manual", "\u270e", "SAP"),
-          check.names = FALSE,
-          stringsAsFactors = FALSE
+      # Resumen or Detalle, the one last chosen in this session; switching
+      # happens inside the window (dia_ui()).
+      vista <- if (isTRUE(ctx$audit)) "detalle" else "resumen"
+      showModal(modalDialog(
+        title = lbl_type, size = "xl", easyClose = TRUE,
+        footer = modalButton(tr("comun.cerrar")),
+        div(class = "hd-dia",
+          context_header,
+          dia_ui(ns, vista),
+          uiOutput(ns("dia_agenda"))
         )
-        tbl <- tbl[order(-tbl[["Importe"]]), ]
-
-        showModal(modalDialog(
-          title = lbl_type, size = "xl", easyClose = TRUE,
-          footer = modalButton("Cerrar"),
-          tagList(
-            context_header,
-            div(class = "modal-summary-bar d-flex align-items-center gap-3",
-              tags$span(class = "badge bg-secondary", paste(sum(unconfirmed_mask), "facturas")),
-              uiOutput(ns("sel_total_ui")),
-              div(class = "ms-auto d-flex gap-2 align-items-center",
-                actionButton(ns("show_raw"), "\U0001f50d Ver datos SAP",
-                             class = "btn btn-sm btn-outline-secondary"),
-                checkboxInput(ns("audit_toggle"), "Modo auditoría", value = TRUE))
-            ),
-            hr(),
-            DT::dataTableOutput(ns("modal_tbl")),
-            hr(),
-            div(class = "d-flex gap-2 mb-2",
-              # A, B, C in their colours (HD_ETIQUETAS), as in Vencidos and the lupa.
-              lapply(c("urgent", "both", "important"), function(k) {
-                e <- HD_ETIQUETAS[[k]]
-                actionButton(ns(paste0("tag_", k)), tr(sub("^tablas\\.etiquetas\\.", "tablas.accion.etiqueta_", e$texto)),
-                             class = "btn btn-sm", style = sprintf("border-color:%s;color:%s;", e$tinta, e$tinta))
-              }),
-              actionButton(ns("tag_clear"),     tr("tablas.accion.quitar_etiqueta"),
-                           class = "btn btn-sm btn-outline-secondary")
-            ),
-            div(class = "d-flex gap-2 mb-2",
-              actionButton(ns("do_edit"), "\u270f\ufe0f Editar",
-                           class = "btn btn-sm btn-outline-secondary")
-            ),
-              div(class = "d-flex gap-2 align-items-end",
-                div(
-                  dateInput(ns("move_to"), "Mover a:",
-                            value = sel_date + 1, weekstart = 1, language = "es"),
-                  uiOutput(ns("move_to_hint_ui"))
-                ),
-                actionButton(ns("do_move"),    "Mover",
-                             class = "btn btn-primary btn-sm"),
-                actionButton(ns("do_restore"), "Restaurar original",
-                             class = "btn btn-outline-secondary btn-sm"),
-                div(class = "ms-auto d-flex gap-2",
-                  actionButton(ns("stage_sel"), "\U0001f6d2 Agregar selección",
-                               class = "btn btn-outline-success btn-sm"),
-                  actionButton(ns("do_delete"), "\U0001f5d1 Eliminar",
-                               class = "btn btn-outline-danger btn-sm")
-                )
-              )
-          )
-        ))
-
-        # output$modal_tbl rendered at module top level (see below)
-
-      } else {
-        # Build grouped summary using base R aggregate
-        grp_raw <- aggregate(
-          Importe ~ Empresa + Parte,
-          data    = detail,
-          FUN     = sum,
-          na.rm   = TRUE
-        )
-        # Add Etiqueta per group — guard against zero tagged rows
-        etiq_data <- detail[nzchar(detail[["Etiqueta"]]), , drop = FALSE]
-        if (nrow(etiq_data)) {
-          etiq_raw <- aggregate(
-            Etiqueta ~ Empresa + Parte,
-            data = etiq_data,
-            FUN  = function(x) tag_label(x)
-          )
-          grp <- merge(grp_raw, etiq_raw, by = c("Empresa","Parte"), all.x = TRUE)
-        } else {
-          grp <- grp_raw
-          grp[["Etiqueta"]] <- ""
-        }
-        grp[["Etiqueta"]][is.na(grp[["Etiqueta"]])] <- ""
-        grp <- grp[order(-grp[["Importe"]]), ]
-
-        # Staged pairs — which (Empresa, Parte) already in pagar_hoy
-        ph <- shared$pagar_hoy_db()
-        if (!is.null(ph) && nrow(ph)) {
-          ph_p <- ph[ph[["ledger"]] == ledger & ph[["status"]] == "pending", ,
-                     drop = FALSE]
-          if (nrow(ph_p)) {
-            dk <- unique(detail[, c("Empresa","Moneda","Documento","Parte"),
-                                drop = FALSE])
-            # Parte in the join key (found 2026-07-25): two different manual
-            # invoices can share the same Documento (a free-text field) while
-            # having different Parte -- matching on Empresa+Moneda+Documento
-            # alone made a staged invoice under one Parte falsely mark an
-            # unrelated invoice under a DIFFERENT Parte as staged too.
-            merged <- merge(ph_p[, c("Empresa","Moneda","Documento","Parte"), drop=FALSE],
-                            dk, by = c("Empresa","Moneda","Documento","Parte"))
-            staged_pairs <- unique(merged[, c("Empresa","Parte"), drop = FALSE])
-          } else {
-            staged_pairs <- data.frame(Empresa=character(), Parte=character())
-          }
-        } else {
-          staged_pairs <- data.frame(Empresa=character(), Parte=character())
-        }
-
-        grp[["EnProceso"]] <- mapply(function(e, p) {
-          any(staged_pairs[["Empresa"]] == e & staged_pairs[["Parte"]] == p)
-        }, grp[["Empresa"]], grp[["Parte"]])
-
-        # Fix 3: Recompute group importes excluding confirmed invoices so the
-        # cart shows only unconfirmed amounts (confirmed groups get Importe = 0).
-        if ("confirmed" %in% names(detail)) {
-          unconf_detail <- detail[!(detail[["confirmed"]] %in% TRUE), , drop = FALSE]
-          grp_unconf <- if (nrow(unconf_detail)) {
-            aggregate(Importe ~ Empresa + Parte, data = unconf_detail,
-                      FUN = sum, na.rm = TRUE)
-          } else {
-            data.frame(Empresa = character(), Parte = character(), Importe = numeric())
-          }
-          grp <- merge(grp[, c("Empresa","Parte","Etiqueta","EnProceso"), drop = FALSE],
-                       grp_unconf, by = c("Empresa","Parte"), all.x = TRUE)
-          grp[["Importe"]][is.na(grp[["Importe"]])] <- 0
-        }
-
-        # Fix 2: Count only groups that are not fully confirmed
-        n_unconf_groups <- if ("confirmed" %in% names(detail)) {
-          sum(vapply(seq_len(nrow(grp)), function(i) {
-            mask <- detail[["Empresa"]] == grp[["Empresa"]][i] &
-                    detail[["Parte"]]   == grp[["Parte"]][i]
-            !all(detail[["confirmed"]][mask] %in% TRUE)
-          }, logical(1)))
-        } else nrow(grp)
-
-        showModal(modalDialog(
-          title = lbl_type, size = "xl", easyClose = TRUE,
-          footer = modalButton("Cerrar"),
-          tagList(
-            context_header,
-            div(class = "modal-summary-bar d-flex align-items-center gap-3",
-              tags$span(class = "badge bg-secondary", paste(n_unconf_groups, "partidas")),
-              tags$strong(paste("Total:", fmt_money(total))),
-              div(class = "ms-auto d-flex gap-2 align-items-center",
-                actionButton(ns("stage_all"),
-                             if (ledger == "AR") "\U0001f6d2 Agregar todo" else "\U0001f6d2 Agregar todo",
-                             class = "btn btn-sm btn-outline-success"),
-                checkboxInput(ns("audit_toggle"), "Modo auditoría", value = audit_init)
-              )
-            ),
-            hr(),
-            # Cart for pagar_hoy staging (primary view in summary mode)
-            uiOutput(ns("cart_table")),
-            hr(),
-            div(class = "d-flex gap-2 align-items-end",
-              dateInput(ns("move_to"), "Mover a:",
-                        value = sel_date + 1, weekstart = 1, language = "es"),
-              actionButton(ns("do_move"),    "Mover",
-                           class = "btn btn-primary btn-sm"),
-              actionButton(ns("do_restore"), "Restaurar original",
-                           class = "btn btn-outline-secondary btn-sm"),
-              div(class = "ms-auto d-flex gap-2",
-                actionButton(ns("stage_sel"), "\U0001f6d2 Agregar selecci\u00f3n",
-                             class = "btn btn-outline-success btn-sm"),
-                actionButton(ns("do_delete"), "\U0001f5d1 Eliminar selecci\u00f3n",
-                             class = "btn btn-outline-danger btn-sm")
-              )
-            )
-          )
-        ))
-
-        # output$modal_tbl rendered at module top level (see below)
-
-        output$cart_table <- renderUI({
-          ph_now <- shared$pagar_hoy_db()
-          current_tags <- shared$tags_db()   # reactive dep — rerenders on tag change
-          tg_cur <- current_tags[current_tags[["ledger"]] == ledger, , drop = FALSE]
-          # Empresa+Moneda+Documento+Importe -- matches cart_inv_click's own
-          # authoritative stage/unstage key exactly (found 2026-07-25: Documento
-          # alone let two different manual invoices sharing the same free-text
-          # Documento but different Parte/Importe falsely display as linked --
-          # staging or unstaging one made the other's checkmark toggle too).
-          staged_now <- if (!is.null(ph_now) && nrow(ph_now)) {
-            ph_now[ph_now[["ledger"]] == ledger & ph_now[["status"]] == "pending",
-                   c("Empresa","Moneda","Documento","Importe"), drop = FALSE]
-          } else data.frame(Empresa = character(), Moneda = character(),
-                            Documento = character(), Importe = numeric())
-
-          rows_ui <- lapply(seq_len(nrow(grp)), function(i) {
-            row_e <- grp[["Empresa"]][i]
-            row_p <- grp[["Parte"]][i]
-            inv_mask <- detail[["Empresa"]] == row_e &
-                        detail[["Parte"]]   == row_p &
-                        !is.na(detail[["Documento"]])
-            # Skip groups where ALL invoices are confirmed and none are visible ghosts
-            is_conf_group  <- "confirmed" %in% names(detail) && sum(inv_mask) > 0 &&
-                              all(detail[["confirmed"]][inv_mask] %in% TRUE)
-            is_ghost_group <- "is_ghost" %in% names(detail) && sum(inv_mask) > 0 &&
-                              any(detail[["is_ghost"]][inv_mask] %in% TRUE)
-            is_paid_group  <- "is_paid_ghost" %in% names(detail) && sum(inv_mask) > 0 &&
-                              any(detail[["is_paid_ghost"]][inv_mask] %in% TRUE)
-            if (is_conf_group && !is_ghost_group && !is_paid_group) return(NULL)
-            # Moneda+Importe included (found 2026-07-25): Documento alone is
-            # not a unique invoice key -- two different manual invoices can
-            # share the same free-text Documento. See staged_now's comment
-            # above for the full incident.
-            inv_keys <- unique(detail[inv_mask, c("Empresa","Moneda","Documento","Importe"),
-                                      drop = FALSE])
-            # Raw row count, not unique-key count: two manual entries can share
-            # Empresa+Documento (they differ only by UUID) and must each count as
-            # a separate member so the expand button is shown.
-            n_inv     <- sum(inv_mask & !is.na(detail[["Documento"]]))
-            n_in_cart <- nrow(merge(inv_keys, staged_now,
-                                    by = c("Empresa","Moneda","Documento","Importe")))
-            is_staged <- n_in_cart > 0
-            btn_lbl   <- if (is_staged) "\u2713" else "\uff0b"
-            btn_cls   <- if (is_staged) "btn btn-xs btn-success cart-btn"
-                         else           "btn btn-xs btn-outline-success cart-btn"
-            # Live tag label from current_tags
-            inv_full  <- unique(detail[inv_mask, c("Empresa","Moneda","Documento"), drop=FALSE])
-            live_tags <- character(0)
-            for (j in seq_len(nrow(inv_full))) {
-              r <- tg_cur[tg_cur[["Empresa"]]   == inv_full[["Empresa"]][j]  &
-                          tg_cur[["Moneda"]]    == inv_full[["Moneda"]][j]   &
-                          tg_cur[["Documento"]] == inv_full[["Documento"]][j], , drop=FALSE]
-              live_tags <- c(live_tags, r[["tag"]])
-            }
-            etiq_key  <- hd_etiqueta_clave(live_tags)
-            tag_span  <- hd_etiqueta_pastilla(etiq_key)
-            row_bg    <- if (nzchar(etiq_key)) sprintf("background:%s;", HD_ETIQUETAS[[etiq_key]]$fondo) else ""
-            # Confirmed check — distinguish paid-confirmed from ghost-deleted
-            is_conf_group  <- FALSE
-            is_ghost_group <- FALSE
-            is_paid_group  <- FALSE
-            if ("confirmed" %in% names(detail) && sum(inv_mask) > 0)
-              is_conf_group  <- all(detail[["confirmed"]][inv_mask], na.rm = TRUE)
-            if ("is_ghost" %in% names(detail) && sum(inv_mask) > 0)
-              is_ghost_group <- any(detail[["is_ghost"]][inv_mask] %in% TRUE)
-            if ("is_paid_ghost" %in% names(detail) && sum(inv_mask) > 0)
-              is_paid_group  <- any(detail[["is_paid_ghost"]][inv_mask] %in% TRUE)
-            conf_badge <- if (is_ghost_group)
-              tags$span(class = "badge bg-secondary ms-1",
-                        style = "font-size:0.65rem;", "\u2715 Eliminado")
-            else if (is_paid_group)
-              tags$span(class = "badge bg-success ms-1",
-                        style = "font-size:0.65rem;", "\u2713 Pagado")
-            else if (is_conf_group)
-              tags$span(class = "badge bg-success ms-1",
-                        style = "font-size:0.65rem;", "\u2713 Confirmado")
-            else NULL
-            conf_style <- if (is_ghost_group || is_paid_group || is_conf_group)
-              "text-decoration:line-through; color:#888;" else ""
-
-            # Per-invoice expansion
-            is_expanded <- i %in% cart_expanded()
-            inv_detail  <- unique(detail[inv_mask,
-              intersect(c("id","Empresa","Moneda","Documento","Factura","Importe","source","provision_id"),
-                        names(detail)), drop=FALSE])
-            inv_detail  <- inv_detail[order(-inv_detail[["Importe"]]), ]
-            # Detect all-provision groups (show bolt instead of cart button)
-            all_prov <- nrow(inv_detail) > 0 &&
-              "source" %in% names(inv_detail) &&
-              all(!is.na(inv_detail[["source"]]) & inv_detail[["source"]] == "provision")
-            first_prov_id <- if (all_prov && "provision_id" %in% names(inv_detail))
-              inv_detail[["provision_id"]][1] %||% "" else ""
-            # Multiple provisions can share the same Documento (e.g. linked to same liability).
-            # unique(Empresa+Documento) undercounts them — use actual row count instead.
-            if (all_prov) n_inv <- nrow(inv_detail)
-            prov_badge <- if (all_prov)
-              tags$span(
-                class = "badge rounded-pill ms-1",
-                style = "font-size:0.65rem; background:#6d28d9; color:white;",
-                "⚡ Provisión"
-              )
-            else NULL
-            # Pre-compute j-index for non-provision rows (matches cart_inv_click's inv_rows indexing)
-            inv_detail[[".j_item"]] <- {
-              is_prov_vec <- "source" %in% names(inv_detail) &
-                             !is.na(inv_detail[["source"]]) &
-                             inv_detail[["source"]] == "provision"
-              j_seq <- cumsum(!is_prov_vec)
-              ifelse(is_prov_vec, NA_integer_, j_seq)
-            }
-
-            expand_lbl <- if (n_inv >= 2L) {
-              unit <- if (all_prov) "provisiones" else "facturas"
-              tags$small(
-                class = "cart-expand-lbl",
-                style = "cursor:pointer; user-select:none;",
-                if (is_expanded) paste0("▲ ", n_inv, " ", unit)
-                else             paste0("▼ ", n_inv, " ", unit)
-              )
-            } else NULL
-
-            inv_rows_ui <- if (is_expanded && n_inv >= 2L) {
-              lapply(seq_len(nrow(inv_detail)), function(ii) {
-                doc_raw   <- inv_detail[["Documento"]][ii]
-                # Synthetic PROV_ keys are internal identifiers \u2014 show "\u2014" to the user
-                doc       <- if (!is.na(doc_raw) && startsWith(doc_raw, "PROV_")) "\u2014" else doc_raw
-                ref       <- if ("Factura" %in% names(inv_detail))
-                  inv_detail[["Factura"]][ii] %||% ""
-                else ""
-                amt_ii    <- inv_detail[["Importe"]][ii]
-                is_prov_ii <- "source" %in% names(inv_detail) &&
-                              identical(inv_detail[["source"]][ii], "provision")
-                prov_id_ii <- if (is_prov_ii && "provision_id" %in% names(inv_detail))
-                  inv_detail[["provision_id"]][ii] %||% ""
-                else ""
-                j_item     <- if (!is_prov_ii) inv_detail[[".j_item"]][ii] else NA_integer_
-                action_btn <- if (is_prov_ii) {
-                  tags$button(
-                    class   = "btn btn-xs cart-inv-btn",
-                    style   = "background:#6d28d9; color:white; border-color:#6d28d9;",
-                    title   = "Convertir provisi\u00f3n",
-                    onclick = sprintf(
-                      "Shiny.setInputValue('pasivos_convert_request', '%s', {priority:'event'})",
-                      prov_id_ii
-                    ),
-                    "\u26a1"
-                  )
-                } else {
-                  j_item    <- inv_detail[[".j_item"]][ii]
-                  # Empresa+Moneda+Documento+Importe (found 2026-07-25, same
-                  # incident as staged_now's comment above): Documento alone
-                  # can't distinguish two invoices that happen to share it.
-                  key_ii    <- inv_detail[ii, c("Empresa","Moneda","Documento","Importe"), drop=FALSE]
-                  in_cart_ii <- nrow(merge(key_ii, staged_now,
-                                          by=c("Empresa","Moneda","Documento","Importe"))) > 0
-                  btn_ii_cls <- if (in_cart_ii) "btn btn-xs btn-success cart-inv-btn"
-                               else             "btn btn-xs btn-outline-success cart-inv-btn"
-                  tags$button(
-                    class   = btn_ii_cls,
-                    onclick = sprintf(
-                      "Shiny.setInputValue('%s', {i:%d, j:%d, nonce:Math.random()}, {priority:'event'})",
-                      ns("cart_inv_click"), i, j_item
-                    ),
-                    if (in_cart_ii) "\u2713" else "\uff0b"
-                  )
-                }
-                edit_btn <- if (!is_prov_ii) {
-                  j_item <- inv_detail[[".j_item"]][ii]
-                  tags$button(
-                    class   = "btn btn-xs btn-outline-secondary cart-inv-btn",
-                    style   = "padding:1px 5px;",
-                    onclick = sprintf(
-                      "Shiny.setInputValue('%s', {i:%d, j:%d, nonce:Math.random()}, {priority:'event'})",
-                      ns("edit_inv_click"), i, j_item
-                    ),
-                    shiny::icon("pencil")
-                  )
-                } else NULL
-                div(class = "cart-inv-row d-flex align-items-center gap-2",
-                  `data-i`       = as.character(i),
-                  `data-j`       = if (!is_prov_ii && !is.na(j_item)) as.character(j_item) else NULL,
-                  `data-importe` = if (!is_prov_ii) as.character(amt_ii) else NULL,
-                  onclick        = if (!is_prov_ii && !is.na(j_item))
-                                     sprintf("calCartToggleSubRow(this,'%s','%s')",
-                                             ns("cart_rows_sel"), ns("cart_inv_sel"))
-                                   else NULL,
-                  div(class = "cart-inv-doc text-muted d-flex flex-column gap-0",
-                    tags$span(
-                      tags$span(class = "small fw-semibold text-dark", "Doc: "),
-                      doc
-                    ),
-                    tags$span(
-                      tags$span(class = "small fw-semibold text-dark", "Ref: "),
-                      if (!is.na(ref) && nzchar(trimws(ref)) && ref != doc)
-                        ref
-                      else
-                        tags$span(class = "text-muted fst-italic", "\u2014")
-                    )
-                  ),
-                  tags$span(class = "cart-inv-amt ms-auto", fmt_money(amt_ii)),
-                  action_btn,
-                  edit_btn
-                )
-              })
-            } else list()
-
-            tagList(
-              div(class = "cart-row d-flex align-items-center gap-2 py-2 border-bottom",
-                style   = row_bg,
-                `data-i`       = as.character(i),
-                `data-importe` = as.character(grp[["Importe"]][i]),
-                onclick = sprintf("calCartToggleRow(this,'%s','%s')", ns("cart_rows_sel"), ns("cart_inv_sel")),
-                div(class = "flex-grow-1 min-width-0",
-                  div(class = "d-flex align-items-center gap-1",
-                    tags$span(class = "cart-empresa-badge", row_e),
-                    tags$span(class = "cart-party", style = conf_style, row_p),
-                    tag_span,
-                    conf_badge,
-                    prov_badge
-                  ),
-                  if (n_inv >= 2L)
-                    tags$button(
-                      class   = "btn btn-link p-0 border-0 shadow-none cart-expand-btn",
-                      onclick = sprintf(
-                        "var mb=document.querySelector('.modal-body');Shiny.setInputValue('%s',{i:%d,scrollTop:mb?mb.scrollTop:0,nonce:Math.random()},{priority:'event'})",
-                        ns("cart_expand_click"), i
-                      ),
-                      expand_lbl
-                    )
-                  else
-                    expand_lbl
-                ),
-                tags$span(class = "cart-amount", style = conf_style,
-                          fmt_money(grp[["Importe"]][i])),
-                if (all_prov && n_inv == 1L && nzchar(first_prov_id)) {
-                  # Single provision: purple convert button at group level
-                  tags$button(
-                    class   = "btn btn-sm cart-btn-provision",
-                    style   = "background:#6d28d9; color:white; border-color:#6d28d9;",
-                    title   = "Convertir provisión",
-                    onclick = sprintf(
-                      "Shiny.setInputValue('pasivos_convert_request','%s',{priority:'event'})",
-                      first_prov_id
-                    ),
-                    "⚡"
-                  )
-                } else if (all_prov && n_inv >= 2L) {
-                  NULL  # Multiple provisions: expand to convert individually
-                } else if (n_inv == 1L) {
-                  div(class = "d-flex gap-1",
-                    tags$button(
-                      class   = btn_cls,
-                      onclick = sprintf(
-                        "Shiny.setInputValue('%s',{i:%d,j:1,nonce:Math.random()},{priority:'event'})",
-                        ns("cart_inv_click"), i
-                      ),
-                      btn_lbl
-                    ),
-                    tags$button(
-                      class   = "btn btn-xs btn-outline-secondary cart-inv-btn",
-                      style   = "padding:1px 5px;",
-                      onclick = sprintf(
-                        "Shiny.setInputValue('%s',{i:%d,j:1,nonce:Math.random()},{priority:'event'})",
-                        ns("edit_inv_click"), i
-                      ),
-                      shiny::icon("pencil")
-                    )
-                  )
-                } else {
-                  tags$button(
-                    class   = btn_cls,
-                    onclick = sprintf(
-                      "Shiny.setInputValue('%s',{i:%d,nonce:Math.random()},{priority:'event'})",
-                      ns("cart_group_click"), i
-                    ),
-                    btn_lbl
-                  )
-                }
-              ),
-              if (length(inv_rows_ui))
-                div(class = "cart-inv-list px-3 pb-1", !!!inv_rows_ui)
-            )
-          })
-          rows_ui <- Filter(Negate(is.null), rows_ui)
-          session$userData[[ns("cart_grp_snapshot")]] <- grp
-
-          # Filter staged totals to only the companies visible in this modal
-          # so test/orphan items from other empresas don't bleed into the tally.
-          emps_in_modal <- unique(grp[["Empresa"]])
-          total_staged <- if (!is.null(ph_now) && nrow(ph_now)) {
-            ph_cur <- ph_now[ph_now[["ledger"]] == ledger &
-                             ph_now[["status"]] == "pending" &
-                             toupper(trimws(ph_now[["Moneda"]])) == cur &
-                             ph_now[["Empresa"]] %in% emps_in_modal, ,
-                             drop = FALSE]
-            sum(ph_cur[["Importe"]], na.rm = TRUE)
-          } else 0
-
-          tagList(
-            div(class = "cart-list",
-                `data-sel-input` = ns("cart_rows_sel"),
-                `data-moneda`    = cur,
-                !!!rows_ui),
-            if (total_staged > 0)
-              div(class = "cart-total-staged mt-2 p-2 rounded",
-                tags$span(if (ledger == "AR") "\U0001f6d2 En Agenda (Cobros):" else "\U0001f6d2 En Agenda (Pagos):"),
-                tags$strong(fmt_money(total_staged))
-              )
-          )
-        })
-      }
+      ))
     }
 
+    # Below the tables: what this day's companies already have in the Agenda,
+    # in this currency (the day's own line, P10).
+    output$dia_agenda <- renderUI({
+      ctx <- modal_ctx()
+      req(ctx)
+      ph_now <- shared$pagar_hoy_db()
+      emps   <- unique(ctx$detail[["Empresa"]])
+      total  <- if (!is.null(ph_now) && nrow(ph_now)) {
+        ph_cur <- ph_now[ph_now[["ledger"]] == ledger & ph_now[["status"]] == "pending" &
+                         toupper(trimws(ph_now[["Moneda"]])) == ctx$cur & ph_now[["Empresa"]] %in% emps, , drop = FALSE]
+        sum(ph_cur[["Importe"]], na.rm = TRUE)
+      } else 0
+      if (total > 0)
+        div(class = "cart-total-staged mt-2 p-2 rounded",
+            tags$span(tr(if (ledger == "AR") "tablas.dia.en_agenda_cobros" else "tablas.dia.en_agenda_pagos")),
+            tags$strong(fmt_money(total)))
+    })
+
+    # The view switch remembers its choice for the next day opened.
+    observeEvent(input$dia_vista, {
+      shared$audit_mode(identical(input$dia_vista, "detalle"))
+    }, ignoreInit = TRUE)
+
+    # ── The day's tables (R/dia_module.R) ──────────────────────────────────────
+    dia_server(input, output, session, modal_ctx, ledger, shared, manejadores = list(
+      agregar = .dia_agregar, quitar = .dia_quitar, etiquetar = .dia_etiquetar,
+      mover = .dia_mover, restaurar = .dia_restaurar, eliminar = .dia_eliminar,
+      editar = .dia_editar, crudos = .dia_crudos))
 
     # ── modal_tbl — defined at module top level so the binding persists ───────
     # MUST live here, not inside .render_day_modal / observeEvent, or Shiny

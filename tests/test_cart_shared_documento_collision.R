@@ -89,45 +89,28 @@ suppressPackageStartupMessages(library(dplyr))
        "the fix still correctly matches the ACTUALLY staged invoice against itself -- not a blanket never-match")
 }
 
-# ── 2. Static scan: all three display-layer sites use the widened key ──────
+# ── 2. The day modal on the table engine (T05) ─────────────────────────────
+# The three display sites (staged_now, n_in_cart, in_cart_ii) and the unused
+# EnProceso join are gone: whether a row is already in the Agenda is now
+# dia_datos()'s .agregado (R/dia_module.R), with the same four-column key.
+# The real function, with the incident's two invoices.
 {
-  txt <- readLines("R/ledger_module.R", warn = FALSE)
-
-  # staged_now must select Moneda+Importe, not just Empresa+Documento
-  s <- grep("staged_now <- if \\(!is\\.null\\(ph_now\\)", txt)
-  .chk(length(s) > 0, TRUE, "found staged_now's definition to scan")
-  if (length(s)) {
-    block <- paste(.strip_comments(txt[s[1]:min(s[1] + 6, length(txt))]), collapse = "\n")
-    .chk(grepl('"Empresa","Moneda","Documento","Importe"', block), TRUE,
-         "staged_now selects Empresa+Moneda+Documento+Importe, not just Empresa+Documento")
-  }
-
-  # inv_keys / n_in_cart merge (single-invoice group display)
-  s2 <- grep("n_in_cart <- nrow\\(merge\\(inv_keys, staged_now,", txt)
-  .chk(length(s2) > 0, TRUE, "found the per-group n_in_cart merge to scan")
-  if (length(s2)) {
-    block2 <- paste(.strip_comments(txt[max(1, s2[1] - 6):min(s2[1] + 2, length(txt))]), collapse = "\n")
-    .chk(grepl('by = c\\("Empresa","Moneda","Documento","Importe"\\)', block2), TRUE,
-         "the per-group staged-check merges on Empresa+Moneda+Documento+Importe")
-  }
-
-  # key_ii / in_cart_ii merge (expanded subrow display)
-  s3 <- grep("in_cart_ii <- nrow\\(merge\\(key_ii, staged_now,", txt)
-  .chk(length(s3) > 0, TRUE, "found the subrow in_cart_ii merge to scan")
-  if (length(s3)) {
-    block3 <- paste(.strip_comments(txt[max(1, s3[1] - 3):min(s3[1] + 2, length(txt))]), collapse = "\n")
-    .chk(grepl('by=c\\("Empresa","Moneda","Documento","Importe"\\)', block3), TRUE,
-         "the subrow staged-check merges on Empresa+Moneda+Documento+Importe")
-  }
-
-  # EnProceso join
-  s4 <- grep("Staged pairs — which \\(Empresa, Parte\\) already in pagar_hoy", txt)
-  .chk(length(s4) > 0, TRUE, "found the EnProceso block to scan")
-  if (length(s4)) {
-    block4 <- paste(.strip_comments(txt[s4[1]:min(s4[1] + 15, length(txt))]), collapse = "\n")
-    .chk(grepl('by = c\\("Empresa","Moneda","Documento","Parte"\\)', block4), TRUE,
-         "the EnProceso join includes Parte in its merge key, not just Empresa+Moneda+Documento")
-  }
+  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+              "R/vencidos_module.R", "R/dia_module.R")) source(f)
+  `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
+  SAP_B1_ERP_TYPE <- "sap_b1_service_layer"
+  dia <- as.data.frame(detail)
+  dia$source <- "manual"; dia$id <- c("MAN-1", "MAN-2")
+  agenda <- data.frame(ledger = "AP", Empresa = "Networks & Logistics", Moneda = "MXN", Documento = "test",
+                       Importe = 1.00, status = "pending", stringsAsFactors = FALSE)
+  d <- dia_datos(dia, "AP", NULL, agenda)
+  .chk(d$.agregado[d$Parte == "test"], TRUE, "dia_datos: the staged invoice (test, 1.00) shows as in the Agenda")
+  .chk(d$.agregado[d$Parte == "test1"], FALSE,
+       "dia_datos: the other invoice sharing its Documento (test1, 0.50) does NOT -- no false link")
+  src <- paste(.strip_comments(readLines("R/dia_module.R", warn = FALSE)), collapse = "\n")
+  .chk(grepl('llave(col("Empresa"), col("Moneda"), documento, importe)', src, fixed = TRUE) &&
+         grepl("llave(pend$Empresa, pend$Moneda, pend$Documento, pend$Importe)", src, fixed = TRUE), TRUE,
+       "dia_datos's Agenda key is Empresa+Moneda+Documento+Importe on both sides")
 }
 
 cat(sprintf("\n  Subtotal: %d passed, %d failed\n", .pass, .fail))

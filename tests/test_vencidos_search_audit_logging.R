@@ -151,17 +151,18 @@ tag_label_es <- function(new_tags) {
 # (single handler, fires identically in and out of "Modo auditoría")
 {
   txt   <- readLines("R/ledger_module.R", warn = FALSE)
-  start <- grep("\\.handle_tags_once <- function", txt)
-  ok("found .handle_tags_once() to scan", length(start) > 0)
+  # T05: .handle_tags_once() is .dia_etiquetar(rows, new_tags) (the day modal on the engine).
+  start <- grep("\\.dia_etiquetar <- function", txt)
+  ok("found .dia_etiquetar() (was .handle_tags_once()) to scan", length(start) > 0)
   if (length(start)) {
-    end   <- grep("^    observeEvent\\(input\\$tag_urgent,", txt)
+    end   <- grep("^    }$", txt)   # the end of the function
     end   <- end[end > start[1]][1]
     block <- paste(txt[start[1]:end], collapse = "\n")
     ok("ledger_module.R defines the .tag_label_es helper",
        grepl("\\.tag_label_es\\s*<-\\s*function", paste(txt, collapse = "\n")))
-    ok(".handle_tags_once() calls log_action with action = \"etiquetar\" (now conditional on save success -- see \"etiquetar_fallo_guardado\", the 2026-09-03 silent-failure fix)",
+    ok(".dia_etiquetar() calls log_action with action = \"etiquetar\" (now conditional on save success -- see \"etiquetar_fallo_guardado\", the 2026-09-03 silent-failure fix)",
        grepl('action\\s*=.*"etiquetar"', block))
-    ok(".handle_tags_once() logs against the SAME rows that were just tagged (nrow(rows))",
+    ok(".dia_etiquetar() logs against the SAME rows that were just tagged (nrow(rows))",
        grepl("nrow\\(rows\\).*\\.tag_label_es\\(new_tags\\)", block))
   }
 }

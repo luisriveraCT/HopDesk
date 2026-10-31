@@ -65,13 +65,15 @@ hits <- do.call(rbind, lapply(r_files, function(f) {
 
 # ── 1. Exhaustive inventory: exact total, and exact per-file counts ────────
 {
-  .chk(nrow(hits), 9L,
-       "exactly 9 upsert_pagar_hoy() call sites exist across R/*.R -- if this changed, a staging site was added or removed; audit the new one for source-propagation (see this file's header inventory) before updating this expected count")
+  # T05 (2026-11-01): the day modal's four sites (stage_all, stage_sel, the
+  # group ＋ and the invoice ＋) are one handler now, .dia_agregar -- 9 -> 6.
+  .chk(nrow(hits), 6L,
+       "exactly 6 upsert_pagar_hoy() call sites exist across R/*.R -- if this changed, a staging site was added or removed; audit the new one for source-propagation (see this file's header inventory) before updating this expected count")
 
   by_file <- table(basename(hits$file))
   expected_by_file <- c(
     "interco_module.R"        = 1L,
-    "ledger_module.R"         = 4L,
+    "ledger_module.R"         = 1L,
     "pasivos_module.R"        = 1L,
     "search_module.R"         = 1L,
     "staging_browse_module.R" = 1L,
@@ -85,19 +87,20 @@ hits <- do.call(rbind, lapply(r_files, function(f) {
   }
 }
 
-# ── 2a. ledger_module.R's cart_<i> group button -- previously untested ─────
+# ── 2a. ledger_module.R's day-modal staging (.dia_agregar, T05: was the
+# cart_<i> group button, the invoice ＋, stage_all and stage_sel) ──────────
 {
   txt <- readLines("R/ledger_module.R", warn = FALSE)
-  start <- grep("observeEvent\\(input\\$cart_group_click,", txt)
-  .chk(length(start) > 0, TRUE, "found the cart_<i> group-button observer to scan")
+  start <- grep("\\.dia_agregar <- function\\(keys, origen\\)", txt)
+  .chk(length(start) > 0, TRUE, "found .dia_agregar (the day modal's one staging handler) to scan")
   if (length(start)) {
-    end <- grep("Expand toggle", txt)
-    end <- end[end > start[1]][1] %||% (start[1] + 90)
+    end <- grep("Raw data diagnostic viewer", txt)
+    end <- end[end > start[1]][1] %||% (start[1] + 120)
     block <- paste(sub("#.*$", "", txt[start[1]:end]), collapse = "\n")
     .chk(grepl("src_lookup", block), TRUE,
-         "cart_<i> group button builds a src_lookup table (reads the row's real source)")
+         ".dia_agregar builds a src_lookup table (reads the row's real source)")
     .chk(grepl('!= "manual"', block), TRUE,
-         "cart_<i> normalizes anything that isn't literally \"manual\" to \"sap\", matching every other fixed site's rule")
+         ".dia_agregar normalizes anything that isn't literally \"manual\" to \"sap\", matching every other fixed site's rule")
   }
 }
 

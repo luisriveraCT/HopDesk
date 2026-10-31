@@ -70,10 +70,12 @@ cat("── pagar_hoy_db: remaining 13 sites read fresh via safe_load_pagar_hoy 
 }
 
 sites <- list(
-  list(file = "R/ledger_module.R", anchor = "observeEvent\\(input\\$stage_all,", occurrence = 1L, label = "stage_all", window = 55),
-  list(file = "R/ledger_module.R", anchor = "observeEvent\\(input\\$stage_sel,", occurrence = 1L, label = "stage_sel", window = 90),
-  list(file = "R/ledger_module.R", anchor = "observeEvent\\(input\\$cart_group_click,", occurrence = 1L, label = "cart_<i> group toggle", window = 40),
-  list(file = "R/ledger_module.R", anchor = "observeEvent\\(input\\$cart_inv_click,", occurrence = 1L, label = "cart_inv_click", window = 30),
+  # T05: the day modal's Agenda writers (stage_all, stage_sel, the two ＋
+  # toggles) are .dia_agregar and .dia_quitar now (R/dia_module.R sends them).
+  list(file = "R/ledger_module.R", anchor = "\\.dia_agregar <- function\\(keys, origen\\)", occurrence = 1L,
+       label = ".dia_agregar (Agregar todo, Agregar selección, a row's ＋)", window = 90),
+  list(file = "R/ledger_module.R", anchor = "\\.dia_quitar <- function\\(keys\\)", occurrence = 1L,
+       label = ".dia_quitar (a row's ✓)", window = 25),
   list(file = "R/ledger_module.R", anchor = "^\\.sync_staged <- function", occurrence = 1L, label = ".sync_staged (shared helper)", window = 20),
   list(file = "R/search_module.R", anchor = 'action %in% c\\("stage_all", "stage_selected"\\)', occurrence = 1L, label = "handle_invoice_action stage_all/stage_selected", window = 50),
   list(file = "R/staging_browse_module.R", anchor = "observeEvent\\(input\\$ab_rows,", occurrence = 1L, label = "ab_rows (abono staging)", window = 50),

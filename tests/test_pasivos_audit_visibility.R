@@ -369,8 +369,9 @@ ok <- function(label, expr) {
   # "changing a provision... from one date to another does update live and
   # does log", which could only be true via THIS path, not the (provision-
   # excluding) Calendario Mover button. ──────────────────────────────────────
-  move_start <- grep("observeEvent\\(input\\$do_move,", ledger_txt)
-  ok("found the Calendario/Ledger 'Mover' handler (do_move) to scan", length(move_start) > 0)
+  # T05: the 'Mover' observer is the handler .dia_mover (the day modal on the engine).
+  move_start <- grep("\\.dia_mover <- function\\(keys, new_date\\)", ledger_txt)
+  ok("found the Calendario/Ledger 'Mover' handler (.dia_mover, was do_move) to scan", length(move_start) > 0)
   if (length(move_start)) {
     block <- paste(ledger_txt[move_start[1]:min(move_start[1] + 30, length(ledger_txt))], collapse = "\n")
     ok("do_move calls pasivos_filter_out_provisions() before applying the move (provisions deliberately excluded from this bulk mechanism, not silently mismoved)",
@@ -422,8 +423,9 @@ ok <- function(label, expr) {
   # generic batch-delete now names provisions explicitly in its description
   # when the deleted batch includes one, instead of a generic "N factura(s)"
   # that reads identically whether a provision was involved or not. ─────────
-  bd_start <- grep("observeEvent\\(input\\$confirm_delete,", ledger_txt)
-  ok("found the Calendario/Ledger batch-delete handler (confirm_delete) to scan", length(bd_start) > 0)
+  # T05: confirm_delete's body is .borrar_no_sap (the table confirms first).
+  bd_start <- grep("\\.borrar_no_sap <- function\\(keys, ctx\\)", ledger_txt)
+  ok("found the Calendario/Ledger batch-delete handler (.borrar_no_sap, was confirm_delete) to scan", length(bd_start) > 0)
   if (length(bd_start)) {
     end <- grep('^\\s*\\)\\s*$', ledger_txt)
     # Loosened 2026-09-03: action= is now conditional on save success

@@ -76,31 +76,19 @@ cat("── Staged pagar_hoy rows always carry an explicit source ────�
        "vectorized: mixed batch normalizes element-wise")
 }
 
-# ── 2. Static scan: ledger_module.R's stage_all and stage_sel ──────────────
+# ── 2. Static scan: ledger_module.R's day-modal staging ────────────────────
+# T05: stage_all, stage_sel and the two ＋ toggles are one handler,
+# .dia_agregar (the day modal on the table engine).
 {
   txt <- readLines("R/ledger_module.R", warn = FALSE)
-  joined <- paste(txt, collapse = "\n")
-
-  stage_all_start <- grep("observeEvent\\(input\\$stage_all,", txt)
-  stage_sel_start <- grep("observeEvent\\(input\\$stage_sel,", txt)
-  .chk(length(stage_all_start) > 0, TRUE, "found stage_all observer to scan")
-  .chk(length(stage_sel_start) > 0, TRUE, "found stage_sel observer to scan")
-
-  if (length(stage_all_start) && length(stage_sel_start)) {
-    stage_all_block <- paste(txt[stage_all_start[1]:(stage_sel_start[1] - 1)], collapse = "\n")
-    .chk(grepl("src_lookup", stage_all_block), TRUE,
-         "stage_all builds a src_lookup table")
-    .chk(grepl('"status","source"\\)', stage_all_block), TRUE,
-         "stage_all's final column selection now includes source")
-
-    # stage_sel's block runs to the next observer/section after it.
-    next_start <- grep("Cart buttons", txt)
-    next_start <- next_start[next_start > stage_sel_start[1]][1] %||% (stage_sel_start[1] + 60)
-    stage_sel_block <- paste(txt[stage_sel_start[1]:next_start], collapse = "\n")
-    .chk(grepl("src_lookup", stage_sel_block), TRUE,
-         "stage_sel builds a src_lookup table")
-    .chk(grepl('"status","source"\\)', stage_sel_block), TRUE,
-         "stage_sel's final column selection now includes source")
+  start <- grep("\\.dia_agregar <- function\\(keys, origen\\)", txt)
+  .chk(length(start) > 0, TRUE, "found .dia_agregar (was stage_all/stage_sel/the ＋) to scan")
+  if (length(start)) {
+    end <- grep("Raw data diagnostic viewer", txt)
+    end <- end[end > start[1]][1] %||% (start[1] + 120)
+    block <- paste(txt[start[1]:end], collapse = "\n")
+    .chk(grepl("src_lookup", block), TRUE, ".dia_agregar builds a src_lookup table")
+    .chk(grepl('"status","source"\\)', block), TRUE, ".dia_agregar's final column selection includes source")
   }
 }
 
@@ -118,22 +106,12 @@ cat("── Staged pagar_hoy rows always carry an explicit source ────�
   }
 }
 
-# ── 4. Static scan: ledger_module.R's cart_inv_click ────────────────────────
+# ── 4. (T05) ledger_module.R's cart_inv_click is gone: a row's ＋ reaches
+# .dia_agregar (section 2), which never hardcodes source. ──────────────────
 {
-  txt <- readLines("R/ledger_module.R", warn = FALSE)
-  start <- grep("observeEvent\\(input\\$cart_inv_click,", txt)
-  .chk(length(start) > 0, TRUE, "found cart_inv_click observer to scan")
-  if (length(start)) {
-    end <- grep("\\}, ignoreInit\\s*=\\s*TRUE, ignoreNULL\\s*=\\s*TRUE\\)", txt)
-    end <- end[end > start[1]][1] %||% (start[1] + 70)
-    block <- paste(sub("#.*$", "", txt[start[1]:end]), collapse = "\n")
-    .chk(grepl('source\\s*=\\s*"sap"\\s*,', block), FALSE,
-         "cart_inv_click no longer hardcodes a bare source = \"sap\" literal")
-    .chk(grepl('one_source', block), TRUE,
-         "cart_inv_click reads the row's real source (one_source) before building the new row")
-    .chk(grepl('one_source\\s*!=\\s*"manual"', block), TRUE,
-         "cart_inv_click normalizes anything that isn't literally \"manual\" to \"sap\", matching the other sites' rule")
-  }
+  txt <- paste(sub("#.*$", "", readLines("R/ledger_module.R", warn = FALSE)), collapse = "\n")
+  .chk(grepl("observeEvent\\(input\\$cart_inv_click,", txt), FALSE,
+       "no separate cart_inv_click staging path left to drift")
 }
 
 # ── 5. Static scan: interco_module.R's .ic_send_rows and
