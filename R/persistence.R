@@ -1264,7 +1264,11 @@ save_pagar_hoy_with_retry <- function(df, username = NULL, client_id = NULL,
   for (attempt in seq_len(max_attempts)) {
     escrito <- NULL
     ok <- tryCatch({
-      escrito <- save_pagar_hoy(df, username = username, client_id = client_id, base = base)
+      # `base` only when given: a call without it stays the exact call it was.
+      escrito <- if (is.null(base))
+        save_pagar_hoy(df, username = username, client_id = client_id)
+      else
+        save_pagar_hoy(df, username = username, client_id = client_id, base = base)
       TRUE
     }, error = function(e) { last_err <<- e; FALSE })
     if (ok) return(list(ok = TRUE, error = NULL, attempts = attempt, data = escrito))
