@@ -56,7 +56,7 @@ lupa_facturas <- function(shared, mes) {
     df$FechaOriginal <- if ("FechaVenc_Original" %in% names(df)) as.Date(df$FechaVenc_Original) else as.Date(NA)
     df
   }
-  dplyr::bind_rows(una("AR"), una("AP"))
+  facturas_llenar_empresa(dplyr::bind_rows(una("AR"), una("AP")), shared)
 }
 
 # "Ver datos SAP": every raw SAP row due in the month, of the companies
@@ -103,7 +103,16 @@ lupaServer <- function(id, shared, abrir, mes, accion_factura = handle_invoice_a
       vacio   = list(texto = "tablas.lupa.vacio"),
       textos  = list(contador = "tablas.contador.facturas", sin_bloqueadas = TRUE),
       periodo = list(campo = "Fecha"),
-      despues = function() cargar(isolate(cargado())))
+      despues = function() cargar(isolate(cargado())),
+      visibles = "Documento")
+
+    # "Facturas — octubre 2026": the month shown, the first thing people read.
+    output$titulo <- renderText({
+      m <- cargado()
+      if (is.null(m)) return(tr("tablas.lupa.titulo"))
+      tr("tablas.lupa.titulo_mes", mes = tr(paste0("comun.mes_largo.", as.integer(substr(m, 6, 7)))),
+         anio = substr(m, 1, 4))
+    })
 
     observeEvent(abrir(), {
       m <- tryCatch(format(as.Date(isolate(mes()) %||% Sys.Date()), "%Y-%m"), error = function(e) NA_character_)
@@ -111,7 +120,7 @@ lupaServer <- function(id, shared, abrir, mes, accion_factura = handle_invoice_a
       cargar(m)
       t$ir_mes(m)
       showModal(modalDialog(
-        title = tr("tablas.lupa.titulo"), size = "xl", easyClose = TRUE,
+        title = textOutput(session$ns("titulo"), inline = TRUE), size = "xl", easyClose = TRUE,
         footer = modalButton(tr("comun.cerrar")),
         tags$style(".modal-xl:has(.hd-lupa) { max-width: 1400px; }"),
         div(class = "hd-lupa", facturas_tabla_ui(session$ns("tabla"), alto = "calc(100vh - 230px)"))

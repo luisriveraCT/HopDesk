@@ -120,7 +120,32 @@ facturas_datos <- function(df, tags_df, agenda_df = NULL, puede_convertir = FALS
   out[order(u_peso, -u_suma, unidad, peso, -out$Importe), , drop = FALSE]
 }
 
-facturas_columnas <- function() {
+# Fill missing Empresa (D4).
+# Rows from old snapshots or manual entries may lack Empresa; without it
+# they cannot be staged (pagar_hoy_module filters per-empresa).
+#   1. Look it up by Documento + Ledger among the rows that have it
+#      (SAP rows always carry Empresa).
+#   2. Fall back to empresa_sel when it narrows to exactly one company.
+facturas_llenar_empresa <- function(df, shared) {
+  if (is.null(df) || !nrow(df)) return(df)
+  emp <- as.character(df[["Empresa"]] %||% rep(NA_character_, nrow(df)))
+  blank <- !nzchar(emp, keepNA = FALSE)
+  if (any(blank)) {
+    llave <- paste(df[["Ledger"]], df[["Documento"]])
+    conocidas <- tapply(emp[!blank], llave[!blank], `[`, 1)
+    emp[blank] <- unname(conocidas[llave[blank]])
+    blank <- !nzchar(emp, keepNA = FALSE)
+    emp_now <- tryCatch(shared$empresa_sel(), error = function(e) character(0))
+    if (any(blank) && length(emp_now) == 1L) emp[blank] <- emp_now[1L]
+    emp[is.na(emp)] <- ""
+    df[["Empresa"]] <- emp
+  }
+  df
+}
+
+# visibles: optional columns each table shows until the user hides them
+# (the lupa shows Documento, as it always did; Vencidos doesn't).
+facturas_columnas <- function(visibles = character()) {
   list(
     col_insignia("Tipo", "tablas.facturas.tipo", mapa = list(
       cobro = list(texto = "tablas.facturas.cobro", tono = "info"),
@@ -129,7 +154,7 @@ facturas_columnas <- function() {
     col_fecha("Fecha", "tablas.facturas.fecha_venc"),
     col_texto("Parte", "tablas.facturas.parte"),
     col_texto("Referencia", "tablas.facturas.referencia"),
-    col_texto("Documento", "tablas.facturas.documento", recorte = FALSE, opcional = TRUE, visible = FALSE),
+    col_texto("Documento", "tablas.facturas.documento", recorte = FALSE, opcional = TRUE, visible = "Documento" %in% visibles),
     col_texto("Origen", "tablas.facturas.origen", recorte = FALSE, opcional = TRUE, visible = FALSE),
     col_fecha("FechaOriginal", "tablas.facturas.venc_original", opcional = TRUE, visible = FALSE),
     col_dinero("Importe", "tablas.facturas.importe", moneda = "Moneda"),
@@ -194,7 +219,8 @@ facturas_payload <- function(df, ids) {
 # runs on "Ver datos SAP" with the marked rows (maybe none); `despues`, if
 # given, after each action reaches accion_factura (the lupa reloads its month).
 facturas_tabla_server <- function(id, tabla, datos, shared, crudos, accion_factura = handle_invoice_action,
-                                  vacio = NULL, textos = NULL, periodo = NULL, despues = NULL) {
+                                  vacio = NULL, textos = NULL, periodo = NULL, despues = NULL,
+                                  visibles = character()) {
   moduleServer(id, function(input, output, session) {
     puede_convertir <- reactive(isTRUE(tryCatch(
       has_capability(shared$current_user(), "pasivos.convert_to_item"), error = function(e) FALSE)))
@@ -210,7 +236,7 @@ facturas_tabla_server <- function(id, tabla, datos, shared, crudos, accion_factu
                             tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), puede_convertir())
       out
     })
-    t <- hd_table_server("t", tabla = tabla, datos = tabla_df, columnas = facturas_columnas(),
+    t <- hd_table_server("t", tabla = tabla, datos = tabla_df, columnas = facturas_columnas(visibles),
                          secciones = list(list(campo = "Moneda", orden = "MXN"), ".tipo"),
                          grupo = c("Empresa", "Fecha", "Parte"),
                          filtros = list(list(campo = "Clase", titulo = "tablas.facturas.tipo"),
@@ -393,29 +419,7 @@ vencidosServer <- function(id, shared, accion_factura = handle_invoice_action) {
     })
 
     # ── The table's data ───────────────────────────────────────────────────
-    datos <- reactive({
-      df <- vencidos_df()
-      if (is.null(df) || !nrow(df)) return(df)
-      # Fill missing Empresa.
-      # Rows from old snapshots or manual entries may lack Empresa; without it
-      # they cannot be staged (pagar_hoy_module filters per-empresa).
-      #   1. Look it up by Documento + Ledger among the rows that have it
-      #      (SAP rows always carry Empresa).
-      #   2. Fall back to empresa_sel when it narrows to exactly one company.
-      emp <- as.character(df[["Empresa"]] %||% rep(NA_character_, nrow(df)))
-      blank <- !nzchar(emp, keepNA = FALSE)
-      if (any(blank)) {
-        llave <- paste(df[["Ledger"]], df[["Documento"]])
-        conocidas <- tapply(emp[!blank], llave[!blank], `[`, 1)
-        emp[blank] <- unname(conocidas[llave[blank]])
-        blank <- !nzchar(emp, keepNA = FALSE)
-        emp_now <- tryCatch(shared$empresa_sel(), error = function(e) character(0))
-        if (any(blank) && length(emp_now) == 1L) emp[blank] <- emp_now[1L]
-        emp[is.na(emp)] <- ""
-        df[["Empresa"]] <- emp
-      }
-      df
-    })
+    datos <- reactive(facturas_llenar_empresa(vencidos_df(), shared))
 
     facturas_tabla_server(
       "tabla", tabla = "vencidos", datos = datos, shared = shared,

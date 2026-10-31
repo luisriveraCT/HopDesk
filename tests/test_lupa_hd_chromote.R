@@ -98,14 +98,23 @@ Sys.sleep(1)
 ok("the lupa opens in its window on the engine", abrir_lupa())
 
 # ── D · the month's data ───────────────────────────────────────────────────
-ok("D: the title is 'Facturas' and the month bar shows this month",
-   identical(trimws(ev("document.querySelector('.modal.show .modal-title').textContent")), "Facturas") &&
+MESES <- c("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
+           "noviembre", "diciembre")
+titulo_de <- function(m) sprintf("Facturas — %s %s", MESES[as.integer(substr(m, 6, 7))], substr(m, 1, 4))
+titulo <- function() trimws(ev("document.querySelector('.modal.show .modal-title').textContent"))
+ok("D: the title says the month in Spanish ('Facturas — octubre 2026') and the bar shows it too",
+   poll_until(function() identical(titulo(), titulo_de(mes_de(hoy))), timeout_s = 5) &&
      identical(estado()$periodo, mes_de(hoy)))
 v <- setdiff(docs(c(vis(), unlist(estado()$bloqueadas))), "")
 ok("D1: every invoice due this month and only those (not intercompany, not other months)",
    setequal(intersect(v, names(dias)), este_mes) && !"5001" %in% v)
 titulos <- unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s thead th')).filter(function(th){ return th.dataset.col != null; }).map(function(th){ return th.firstChild.textContent; })", A)))
-ok("D2: the same columns as Vencidos", identical(titulos, c("Tipo", "Empresa", "Fecha venc.", "Parte", "Referencia", "Importe", "Etiqueta")))
+ok("D2: Vencidos' columns, with Documento shown, as the lupa always did",
+   identical(titulos, c("Tipo", "Empresa", "Fecha venc.", "Parte", "Referencia", "Documento", "Importe", "Etiqueta")))
+f1001b <- sprintf("Array.from(document.querySelectorAll('#%s tbody tr')).filter(function(tr){ return tr.textContent.indexOf('F-1001-B') >= 0; })[0]", A)
+if ("1001" %in% este_mes && (hoy - 2) >= as.Date(format(hoy, "%Y-%m-01")))
+  ok("D4: a row with no company gets it from the same document and ledger (NTS), as in Vencidos",
+     identical(ev(sprintf("%s.children[1].textContent", f1001b)), "NTS"))
 ok("Dif6: a paid invoice is locked (struck through, can't be marked), as in Vencidos",
    "1003" %in% este_mes == (id_de("1003") %in% unlist(estado()$bloqueadas)))
 n_libres <- length(setdiff(vis(), unlist(estado()$bloqueadas)))
@@ -120,6 +129,7 @@ clic(sprintf("document.querySelectorAll('#%s .hdt-mes-flecha')[1]", A))
 clic(sprintf("document.querySelectorAll('#%s .hdt-mes-flecha')[1]", A))
 ok("B5: › › goes to the month after next and loads its invoices (the old strip showed it empty)",
    identical(k_mes(), mes_lejos) &&
+     poll_until(function() identical(titulo(), titulo_de(mes_lejos)), timeout_s = 10) &&
      poll_until(function() setequal(docs(vis()), c("5001", "5002")), timeout_s = 10))
 clic(sprintf("document.querySelectorAll('#%s .hdt-mes-flecha')[0]", A))
 clic(sprintf("document.querySelectorAll('#%s .hdt-mes-flecha')[0]", A))
@@ -133,7 +143,7 @@ clic(sprintf("document.querySelector('#%s .hdt-editar')", A))
 k <- n_reg(); clic(barra("etiqueta_b"))
 ok("M2: 'Etiqueta B' goes to handle_invoice_action() as tag_both, the pill changes and the selection stays",
    poll_until(function() n_reg() > k && grepl("tag_both \\[1\\] AR NCS MXN 1004$", ultima()), timeout_s = 8) &&
-     poll_until(function() grepl("^B", ev(sprintf("%s.children[6].textContent", fila(r)))), timeout_s = 8) &&
+     poll_until(function() grepl("^B", ev(sprintf("%s.children[7].textContent", fila(r)))), timeout_s = 8) &&
      identical(sel(), r))
 fecha <- sprintf("document.querySelector('#%s .hdt-acciones input.hdt-fecha')", A)
 invisible(ev(sprintf("var i = %s; i.value = '2026-12-15'; i.dispatchEvent(new Event('input'))", fecha)))
