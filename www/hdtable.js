@@ -725,6 +725,13 @@
   function enviarPeriodo(st) {
     if (window.Shiny && Shiny.setInputValue) Shiny.setInputValue(st.ns + 'periodo', st.mes);
   }
+  // The server moves the table to a month (t$ir_mes()); a container that
+  // isn't painted yet opens on it.
+  function recibirMes(msg) {
+    var st = TABLAS[msg.id];
+    if (st && st.btnMes && st.root === document.getElementById(msg.id)) elegirMes(st, msg.mes);
+    else MES_DE[msg.id] = msg.mes;
+  }
   // A new month is a new list: back to the top, and the height may shrink.
   function elegirMes(st, m) {
     if (!m || m === st.mes) return;
@@ -2064,6 +2071,7 @@
       Shiny.addCustomMessageHandler('hdt-datos', recibir);
       Shiny.addCustomMessageHandler('hdt-excel', excelListo);
       Shiny.addCustomMessageHandler('hdt-nota', recibirNota);
+      Shiny.addCustomMessageHandler('hdt-mes', recibirMes);
     }
     else setTimeout(registrar, 20);
   })();

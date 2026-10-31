@@ -9,9 +9,10 @@
 #   t$seleccion()   # ids marked, in the order they're shown
 #   t$accion()      # list(accion, ids, nonce) or NULL
 #   t$periodo()     # "AAAA-MM" shown (with `periodo`), else NULL
+#   t$ir_mes(m)     # show month m, as if chosen in the bar (with `periodo`)
 #
 # Server -> browser: one "hdt-datos" custom message each time `datos`
-# changes. Browser -> server: ns("sel") and ns("accion"), priority "event".
+# changes (and "hdt-mes" from t$ir_mes()). Browser -> server: ns("sel") and ns("accion"), priority "event".
 #
 # accion() values: "detalle" (double click on a row, locked rows too),
 # "encabezado" (the header switch, with `encabezado`; ids "si" or "no"),
@@ -39,7 +40,7 @@ hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
     htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=20"),
-    htmltools::tags$script(src = "hdtable.js?v=24")
+    htmltools::tags$script(src = "hdtable.js?v=25")
   ))
 }
 
@@ -596,6 +597,15 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         m <- input$periodo
         if (is.character(m) && length(m) == 1L && grepl("^[0-9]{4}-[0-9]{2}$", m)) m else periodo$inicial
       }),
+      # A module that opens the table on a month of its own (the lupa: the
+      # Calendario's month each time it opens). A container not painted yet
+      # opens on it; t$periodo() follows once the browser shows it.
+      ir_mes    = function(m) {
+        if (is.null(periodo)) stop(sprintf("hd_table '%s': ir_mes() needs `periodo`.", tabla), call. = FALSE)
+        m <- .hd_mes(m)
+        if (is.na(m)) stop("hd_table: ir_mes() takes a date or \"AAAA-MM\".", call. = FALSE)
+        session$sendCustomMessage("hdt-mes", list(id = ns("hdt"), mes = m))
+      },
       accion    = shiny::reactive({
         a <- input$accion
         if (is.null(a)) return(NULL)
