@@ -1846,12 +1846,10 @@ pagarHoyServer <- function(id, shared) {
             # -- per Mouse's explicit rule, confirmation-history covers
             # EVERYTHING that gets confirmed, no special-casing by origin.
             # Recovering these works differently though (see undo_conf):
-            # this archived copy is for permanent audit-trail completeness
-            # only, never restored back to manual_inv on undo -- undoing a
-            # provision-derived confirmation instead reverts the provision
-            # itself to "provisional" (pasivos_observers.R), which is the
-            # only correct way to make it reappear (the raw placeholder,
-            # not a duplicate manual_inv copy alongside it).
+            # this archived copy is what undo_conf() restores (Bancos), and
+            # then the provision goes back to "converted"
+            # (pasivos_provision_item_reversed); deleting the confirmation
+            # instead revives it to "provisional".
             prov_ids_to_remove <- factura_rows$provision_id[!is.na(factura_rows$provision_id)]
             if (length(prov_ids_to_remove) && "provision_id" %in% names(mi)) {
               manual_ids <- mi[["id"]][!is.na(mi[["provision_id"]]) & mi[["provision_id"]] %in% prov_ids_to_remove]
@@ -2203,12 +2201,10 @@ pagarHoyServer <- function(id, shared) {
             # -- per Mouse's explicit rule, confirmation-history covers
             # EVERYTHING that gets confirmed, no special-casing by origin.
             # Recovering these works differently though (see undo_conf):
-            # this archived copy is for permanent audit-trail completeness
-            # only, never restored back to manual_inv on undo -- undoing a
-            # provision-derived confirmation instead reverts the provision
-            # itself to "provisional" (pasivos_observers.R), which is the
-            # only correct way to make it reappear (the raw placeholder,
-            # not a duplicate manual_inv copy alongside it).
+            # this archived copy is what undo_conf() restores (Bancos), and
+            # then the provision goes back to "converted"
+            # (pasivos_provision_item_reversed); deleting the confirmation
+            # instead revives it to "provisional".
             prov_ids_to_remove <- factura_rows$provision_id[!is.na(factura_rows$provision_id)]
             if (length(prov_ids_to_remove) && "provision_id" %in% names(mi)) {
               manual_ids <- mi[["id"]][!is.na(mi[["provision_id"]]) & mi[["provision_id"]] %in% prov_ids_to_remove]
