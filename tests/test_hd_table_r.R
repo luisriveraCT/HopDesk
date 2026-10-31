@@ -299,6 +299,13 @@ test_that("bar actions: validated, unique, 'detalle' reserved", {
   expect_identical(hd_acciones_barra_meta(ok)[[1]]$texto, tr("tablas.accion.papelera"))
 })
 
+test_that("bar actions: tono is one of the tags' tones", {
+  ok <- hd_acciones_barra_validar(list(list(accion = "x", texto = "t", tono = "rojo")))
+  expect_identical(ok[[1]]$tono, "rojo")
+  expect_null(hd_acciones_barra_validar(list(list(accion = "x", texto = "t")))[[1]]$tono)
+  expect_error(hd_acciones_barra_validar(list(list(accion = "x", texto = "t", tono = "azul"))), "tono must be one of rojo, naranja, amarillo")
+})
+
 test_that("alto = \"ventana\": automatic height that fills the window", {
   h <- as.character(hd_table_ui("v", alto = "ventana"))
   expect_match(h, 'class="hdt hdt-auto hdt-llenar"', fixed = TRUE)

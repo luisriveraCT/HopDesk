@@ -173,9 +173,10 @@ facturas_acciones <- function() {
          confirmar_texto = "tablas.facturas.confirmar_agregar"),
     list(accion = "agregar_seleccion", texto = "tablas.accion.agregar_seleccion", confirmar = TRUE,
          confirmar_texto = "tablas.facturas.confirmar_agregar_sel"),
-    list(accion = "etiqueta_a", texto = "tablas.accion.etiqueta_a", modo = "editar"),
-    list(accion = "etiqueta_b", texto = "tablas.accion.etiqueta_b", modo = "editar"),
-    list(accion = "etiqueta_c", texto = "tablas.accion.etiqueta_c", modo = "editar"),
+    # Each tag button in its tag's colour (HD_ETIQUETAS).
+    list(accion = "etiqueta_a", texto = "tablas.accion.etiqueta_a", modo = "editar", tono = HD_ETIQUETAS$urgent$tono),
+    list(accion = "etiqueta_b", texto = "tablas.accion.etiqueta_b", modo = "editar", tono = HD_ETIQUETAS$both$tono),
+    list(accion = "etiqueta_c", texto = "tablas.accion.etiqueta_c", modo = "editar", tono = HD_ETIQUETAS$important$tono),
     list(accion = "quitar_etiqueta", texto = "tablas.accion.quitar_etiqueta", modo = "editar"),
     list(accion = "mover", texto = "tablas.accion.mover", modo = "editar", campo = "fecha"),
     list(accion = "restaurar", texto = "tablas.accion.restaurar", modo = "editar"),

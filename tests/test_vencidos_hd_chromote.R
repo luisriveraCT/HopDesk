@@ -203,6 +203,12 @@ ok("E5: a group shows its strongest tag (ACEROS: A)",
 editar <- sprintf("document.querySelector('#%s .hdt-editar')", A)
 ok("M1: the edit actions are behind Editar", !isTRUE(ev(sprintf("!!%s", barra("etiqueta_a")))))
 clic(editar)
+tonos <- unlist(ev(sprintf("['etiqueta_a','etiqueta_b','etiqueta_c'].map(function(a){ var b = document.querySelector('#%s .hdt-acciones button[data-accion=' + a + ']'); return b.className + '|' + getComputedStyle(b).backgroundColor; })", A)))
+ok("M2: 'Etiqueta A/B/C' in their tags' colours: red, orange, yellow",
+   grepl("hdt-tono-rojo\\|rgb\\(255, 225, 222\\)", tonos[1]) && grepl("hdt-tono-naranja\\|rgb\\(255, 232, 209\\)", tonos[2]) &&
+     grepl("hdt-tono-amarillo\\|rgb\\(255, 241, 184\\)", tonos[3]))
+franja <- ev(sprintf("(function(){ var r = document.getElementById('%s'); return r.querySelector('.hdt-acciones').getBoundingClientRect().bottom - r.querySelector('.hdt-barra').getBoundingClientRect().top; })()", A))
+ok(sprintf("the tools and the actions make one compact strip (%.0f px, was 69)", franja), franja <= 56)
 r5 <- id_de("1005")
 clic(celda(r5))
 k <- n_reg()

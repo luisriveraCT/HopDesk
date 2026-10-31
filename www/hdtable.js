@@ -426,7 +426,7 @@
     if (n) st.accBarraEl.appendChild(nodo('span', 'hdt-acciones-n',
       tn('tablas.sumador.seleccion', n, { n: FMT_N.format(n) })));
     activas.forEach(function (a) {
-      var b = nodo('button', 'hdt-btn' + (a.peligro ? ' hdt-peligro' : ''), a.texto);
+      var b = nodo('button', 'hdt-btn' + (a.peligro ? ' hdt-peligro' : '') + (a.tono ? ' hdt-tono-' + a.tono : ''), a.texto);
       b.type = 'button';
       b.dataset.accion = a.accion;
       var sinFilas = !n && !a.sin_seleccion && !a.vacias;
