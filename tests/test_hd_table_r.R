@@ -278,6 +278,19 @@ test_that("bar actions: validated, unique, 'detalle' reserved", {
   expect_identical(hd_acciones_barra_meta(ok)[[1]]$texto, tr("tablas.accion.papelera"))
 })
 
+test_that("bar actions: confirmar_texto is a plural key, only with confirmar", {
+  ok <- hd_acciones_barra_validar(list(list(accion = "x", texto = "t", confirmar = TRUE,
+                                            confirmar_texto = "tablas.facturas.confirmar_eliminar")))
+  expect_identical(ok[[1]]$confirmar_texto, "tablas.facturas.confirmar_eliminar")
+  expect_null(hd_acciones_barra_validar(list(list(accion = "x", texto = "t")))[[1]]$confirmar_texto)
+  expect_error(hd_acciones_barra_validar(list(list(accion = "x", texto = "t",
+                                                   confirmar_texto = "tablas.facturas.confirmar_eliminar"))),
+               "confirmar_texto needs confirmar = TRUE")
+  expect_error(hd_acciones_barra_validar(list(list(accion = "x", texto = "t", confirmar = TRUE,
+                                                   confirmar_texto = "tablas.accion.eliminar"))),
+               "\\.uno/\\.otros")
+})
+
 test_that("asking for confirmation on a table without the confirmar piece stops", {
   reg <- hd_registro
   on.exit(assign("hd_registro", reg, envir = globalenv()))

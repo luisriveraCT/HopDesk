@@ -39,7 +39,7 @@ hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
     htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=20"),
-    htmltools::tags$script(src = "hdtable.js?v=23")
+    htmltools::tags$script(src = "hdtable.js?v=24")
   ))
 }
 
@@ -350,8 +350,12 @@ hd_acciones_fila_meta <- function(acciones) {
 # ── Bar actions (barra_acc) ─────────────────────────────────────────────────
 # acciones_barra = list(list(accion = "mandar_papelera", texto = <key or text>,
 #                            confirmar = TRUE, peligro = TRUE, sin_seleccion = FALSE,
-#                            modo = "editar", campo = "fecha"), ...)
+#                            modo = "editar", campo = "fecha",
+#                            confirmar_texto = <plural key>), ...)
 # modo = "editar": shown only while the bar's "Editar" is on (modo_editar).
+# confirmar_texto: the confirmation's own words, a dictionary key with
+# .uno/.otros and {n} ("¿Agregar {n} facturas a la Agenda del día?"),
+# instead of the generic "¿{accion} {n} filas?".
 # campo = "fecha": a date box next to the button (tomorrow by default; empty
 # disables it), and accion() brings valor = "AAAA-MM-DD".
 # Shown above the table while rows are marked; they send the marked ids in
@@ -361,7 +365,7 @@ hd_acciones_barra_validar <- function(acciones_barra) {
   if (is.null(acciones_barra)) return(NULL)
   if (!is.list(acciones_barra) || !length(acciones_barra))
     stop("hd_table: `acciones_barra` must be a list of list(accion, texto, ...).", call. = FALSE)
-  campos <- c("accion", "texto", "confirmar", "peligro", "sin_seleccion", "modo", "campo")
+  campos <- c("accion", "texto", "confirmar", "peligro", "sin_seleccion", "modo", "campo", "confirmar_texto")
   out <- lapply(seq_along(acciones_barra), function(k) {
     a <- acciones_barra[[k]]
     if (!is.list(a) || !is.character(a$accion) || length(a$accion) != 1L || !nzchar(a$accion))
@@ -376,9 +380,14 @@ hd_acciones_barra_validar <- function(acciones_barra) {
       stop(sprintf("hd_table: acciones_barra '%s': modo must be \"editar\".", a$accion), call. = FALSE)
     if (!is.null(a$campo) && !identical(a$campo, "fecha"))
       stop(sprintf("hd_table: acciones_barra '%s': campo must be \"fecha\".", a$accion), call. = FALSE)
+    if (!is.null(a$confirmar_texto) && (!isTRUE(a$confirmar) || !is.character(a$confirmar_texto) ||
+                                        length(a$confirmar_texto) != 1L ||
+                                        is.null(i18n_dict("es")[[paste0(a$confirmar_texto, ".uno")]])))
+      stop(sprintf("hd_table: acciones_barra '%s': confirmar_texto needs confirmar = TRUE and a dictionary key with .uno/.otros.",
+                   a$accion), call. = FALSE)
     list(accion = a$accion, texto = a$texto, confirmar = isTRUE(a$confirmar),
          peligro = isTRUE(a$peligro), sin_seleccion = isTRUE(a$sin_seleccion),
-         modo = a$modo, campo = a$campo)
+         modo = a$modo, campo = a$campo, confirmar_texto = a$confirmar_texto)
   })
   nombres <- vapply(out, `[[`, character(1), "accion")
   if (anyDuplicated(nombres))

@@ -138,20 +138,25 @@ facturas_columnas <- function() {
   )
 }
 
-# Bar actions: stage to Agenda de Hoy (both confirm: "lo que va en bloque"),
-# and behind Editar the tags, moving and restoring the date, and deleting.
-facturas_acciones <- function(crudos_texto = NULL) {
-  c(list(
-    list(accion = "agregar_todo", texto = "tablas.accion.agregar_todo", sin_seleccion = TRUE, confirmar = TRUE),
-    list(accion = "agregar_seleccion", texto = "tablas.accion.agregar_seleccion", confirmar = TRUE),
+# Bar actions: stage to Agenda de Hoy (both confirm: "lo que va en bloque",
+# in the words they always had), behind Editar the tags, moving and
+# restoring the date, and deleting; and "Ver datos SAP", named as the lupa
+# always named it.
+facturas_acciones <- function() {
+  list(
+    list(accion = "agregar_todo", texto = "tablas.accion.agregar_todo", sin_seleccion = TRUE, confirmar = TRUE,
+         confirmar_texto = "tablas.facturas.confirmar_agregar"),
+    list(accion = "agregar_seleccion", texto = "tablas.accion.agregar_seleccion", confirmar = TRUE,
+         confirmar_texto = "tablas.facturas.confirmar_agregar_sel"),
     list(accion = "etiqueta_a", texto = "tablas.accion.etiqueta_a", modo = "editar"),
     list(accion = "etiqueta_b", texto = "tablas.accion.etiqueta_b", modo = "editar"),
     list(accion = "etiqueta_c", texto = "tablas.accion.etiqueta_c", modo = "editar"),
     list(accion = "quitar_etiqueta", texto = "tablas.accion.quitar_etiqueta", modo = "editar"),
     list(accion = "mover", texto = "tablas.accion.mover", modo = "editar", campo = "fecha"),
     list(accion = "restaurar", texto = "tablas.accion.restaurar", modo = "editar"),
-    list(accion = "eliminar", texto = "tablas.accion.eliminar", modo = "editar", confirmar = TRUE, peligro = TRUE)),
-    if (!is.null(crudos_texto)) list(list(accion = "crudos", texto = crudos_texto)))
+    list(accion = "eliminar", texto = "tablas.accion.eliminar", modo = "editar", confirmar = TRUE, peligro = TRUE,
+         confirmar_texto = "tablas.facturas.confirmar_eliminar"),
+    list(accion = "crudos", texto = "tablas.datos_sap.ver"))
 }
 
 # The table's action -> handle_invoice_action(), with the rows by id.
@@ -186,9 +191,9 @@ facturas_payload <- function(df, ids) {
 
 # The invoices table, the same for Vencidos and the lupa. `datos` is the
 # module's invoices (Ledger, Empresa, Fecha, Parte, Importe, ...); `crudos`
-# runs on "Ver datos de origen / SAP" with the marked rows (maybe none).
+# runs on "Ver datos SAP" with the marked rows (maybe none).
 facturas_tabla_server <- function(id, tabla, datos, shared, crudos, accion_factura = handle_invoice_action,
-                                  vacio = NULL, textos = NULL, crudos_texto = NULL, periodo = NULL) {
+                                  vacio = NULL, textos = NULL, periodo = NULL) {
   moduleServer(id, function(input, output, session) {
     puede_convertir <- reactive(isTRUE(tryCatch(
       has_capability(shared$current_user(), "pasivos.convert_to_item"), error = function(e) FALSE)))
@@ -210,7 +215,7 @@ facturas_tabla_server <- function(id, tabla, datos, shared, crudos, accion_factu
                          filtros = list(list(campo = "Clase", titulo = "tablas.facturas.tipo"),
                                         list(campo = "Etiqueta")),
                          acciones_fila = "provision",
-                         acciones_barra = facturas_acciones(crudos_texto),
+                         acciones_barra = facturas_acciones(),
                          vacio = vacio, textos = textos, periodo = periodo)
 
     shiny::observeEvent(t$accion(), {
@@ -239,7 +244,7 @@ facturas_tabla_server <- function(id, tabla, datos, shared, crudos, accion_factu
 facturas_tabla_ui <- function(id, alto = "auto") hd_table_ui(shiny::NS(id)("t"), alto = alto)
 
 # Raw SAP rows behind the overdue invoices (due today or earlier), for
-# "Ver datos de origen": all of them, as the lupa shows its whole month.
+# "Ver datos SAP": all of them, as the lupa shows its whole month.
 vencidos_crudos <- function(shared) {
   raw_list <- tryCatch(shared$sap_data(), error = function(e) NULL)
   if (is.null(raw_list)) return(NULL)

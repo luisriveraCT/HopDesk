@@ -93,6 +93,7 @@ celda <- function(id, j = 3L) fila(id, sprintf(".children[%d]", j))
 registro <- function() strsplit(ev("document.getElementById('registro').textContent") %||% "", "\n")[[1]]
 ultima <- function() { r <- registro(); if (length(r)) r[length(r)] else "" }
 n_reg <- function() length(registro())
+conf_texto <- function() ev(sprintf("document.querySelector('#%s .hdt-confirmar-texto').textContent", A))
 barra <- function(accion) sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=%s]')", A, accion)
 deseleccionar <- function() { invisible(ev(sprintf("(document.querySelector('#%s .hdt-deseleccionar')||{click:function(){}}).click()", A))); Sys.sleep(0.3) }
 contador <- function() ev(sprintf("document.querySelector('#%s .hdt-contador').textContent", A))
@@ -212,6 +213,7 @@ ok("... the row comes back with pill A, and the selection stays (Dif5)",
    poll_until(function() grepl("^A\\|", pill(r5)), timeout_s = 8) && identical(sel(), r5))
 fecha <- sprintf("document.querySelector('#%s .hdt-acciones input.hdt-fecha')", A)
 ok("M3: 'Mover' has its date box, tomorrow by default", identical(ev(sprintf("%s.value", fecha)), format(Sys.Date() + 1, "%Y-%m-%d")))
+ok("... in Mexican Spanish (lang = es-MX)", identical(ev(sprintf("%s.lang", fecha)), "es-MX"))
 invisible(ev(sprintf("var i = %s; i.value = '2026-12-15'; i.dispatchEvent(new Event('input'))", fecha)))
 k <- n_reg(); clic(barra("mover"))
 ok("M3: ... and sends the date (move_to)", poll_until(function() n_reg() > k && grepl("move \\[1\\] AR NTS MXN 1005 -> 2026-12-15$", ultima()), timeout_s = 8))
@@ -220,6 +222,7 @@ ok("M4: 'Restaurar fecha' -> restore", poll_until(function() n_reg() > k && grep
 k <- n_reg(); clic(barra("eliminar"))
 ok("M5: 'Eliminar' asks first (Dif3) and sends nothing yet",
    isTRUE(ev(sprintf("!document.querySelector('#%s .hdt-confirmar').hidden", A))) && n_reg() == k)
+ok("... in the words it always had", identical(conf_texto(), "¿Eliminar 1 factura? Se guardará en la papelera."))
 clic(sprintf("document.querySelector('#%s .hdt-confirmar-si')", A))
 ok("M5: ... Confirmar deletes: delete, and the row goes away",
    poll_until(function() grepl("delete \\[1\\] AR NTS MXN 1005$", ultima()) && !r5 %in% vis(), timeout_s = 8))
@@ -239,13 +242,17 @@ invisible(ev(sprintf("(function(){ var s = document.querySelector('#%s .hdt-scro
 Sys.sleep(0.3)
 k <- n_reg(); clic(barra("agregar_seleccion"), ver = FALSE)
 ok("A2: 'Agregar selección' asks first (Dif4)", isTRUE(ev(sprintf("!document.querySelector('#%s .hdt-confirmar').hidden", A))) && n_reg() == k)
+ok("... in the words it always had", identical(conf_texto(), "¿Agregar 1 factura seleccionada a la Agenda del día?"))
 ok("... and its confirmation bar is in view with the table scrolled to its end",
    isTRUE(ev(sprintf("(function(){ var r = document.querySelector('#%s .hdt-confirmar').getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; })()", A))))
 clic(sprintf("document.querySelector('#%s .hdt-confirmar-si')", A))
 ok("A2: ... and stages it: stage_all, then its ✓ shows",
    poll_until(function() grepl("stage_all \\[1\\] AP NCS USD 4001$", ultima()) && marca(r4), timeout_s = 8))
 deseleccionar()
-k <- n_reg(); clic(barra("agregar_todo")); clic(sprintf("document.querySelector('#%s .hdt-confirmar-si')", A))
+k <- n_reg(); clic(barra("agregar_todo"))
+ok("A1: 'Agregar todo' asks in the words it always had, with a real plural",
+   identical(conf_texto(), "¿Agregar 12 facturas a la Agenda del día?"))
+clic(sprintf("document.querySelector('#%s .hdt-confirmar-si')", A))
 ok("A1: 'Agregar todo' stages every visible open invoice, never the paid one",
    poll_until(function() n_reg() > k && grepl("stage_all \\[12\\]", ultima()) && !grepl("1003", ultima()), timeout_s = 8))
 
@@ -275,8 +282,9 @@ invisible(poll_until(function() nzchar(leer()), timeout_s = 8))
 ok("O2: Ctrl+C copies the marked rows with the formula neutralized", grepl("'=HIPERVINCULO", leer(), fixed = TRUE))
 deseleccionar()
 clic(editar)
+ok("M7: the raw data button is 'Ver datos SAP', as in the lupa", identical(ev(sprintf("%s.textContent", barra("crudos"))), "Ver datos SAP"))
 clic(barra("crudos"))
-ok("M7: 'Ver datos de origen' opens the raw SAP viewer with the overdue rows (all of them, nothing marked)",
+ok("M7: 'Ver datos SAP' opens the raw SAP viewer with the overdue rows (all of them, nothing marked)",
    poll_until(function() grepl("Datos SAP crudos — 3 filas", ev("(document.querySelector('.modal-title')||{}).textContent || ''"), fixed = TRUE), timeout_s = 10))
 
 # ── D6 · nothing overdue ───────────────────────────────────────────────────

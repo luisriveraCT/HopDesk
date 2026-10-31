@@ -153,7 +153,8 @@ server <- function(input, output, session) {
   else srv("ven", shared = shared)
   observe(session$sendCustomMessage("registro", paste(registro(), collapse = "\n")))
 }
-ui <- tagList(ui, tags$script(HTML("Shiny.addCustomMessageHandler('registro', function (t) { document.getElementById('registro').textContent = t; });")))
+# The log takes no room (nor shows as a grey strip) until something is in it.
+ui <- tagList(ui, tags$style("#registro:empty { display: none; }"), tags$script(HTML("Shiny.addCustomMessageHandler('registro', function (t) { document.getElementById('registro').textContent = t; });")))
 
 app <- shinyApp(ui, server)
 local({

@@ -310,7 +310,7 @@
         // An action with a field sends what it holds (campo = "fecha").
         var valor = a.campo ? valorCampo(st, a) : null;
         if (a.campo && !valor) return;
-        if (a.confirmar) pedirConfirmacion(st, a.accion, a.texto, ids, a.peligro, valor);
+        if (a.confirmar) pedirConfirmacion(st, a.accion, a.texto, ids, a.peligro, valor, a.confirmar_texto);
         else enviarAccion(st, a.accion, ids, valor);
       });
       root.appendChild(st.accBarraEl);
@@ -424,6 +424,7 @@
       // stays disabled.
       var caja = nodo('span', 'hdt-accion-campo'), inp = nodo('input', 'hdt-fecha');
       inp.type = 'date';
+      inp.lang = 'es-MX';   // dd/mm/aaaa, if the browser follows it (Chrome uses its own language)
       inp.value = valorCampo(st, a);
       inp.setAttribute('aria-label', t('tablas.accion.fecha'));
       inp.addEventListener('input', function () {
@@ -446,13 +447,14 @@
   }
 
   // accion() fires only on Confirmar. The bar closes if the selection or
-  // the visible rows change meanwhile.
-  function pedirConfirmacion(st, accion, texto, ids, peligro, valor) {
+  // the visible rows change meanwhile. `clave`: the action's own plural
+  // question (confirmar_texto), else the generic one.
+  function pedirConfirmacion(st, accion, texto, ids, peligro, valor, clave) {
     st.pendiente = { accion: accion, ids: ids, valor: valor };
     var c = st.confEl;
     c.textContent = '';
     c.appendChild(nodo('span', 'hdt-confirmar-texto',
-      tn('tablas.confirmar_accion', ids.length, { accion: texto, n: FMT_N.format(ids.length) })));
+      tn(clave || 'tablas.confirmar_accion', ids.length, { accion: texto, n: FMT_N.format(ids.length) })));
     var si = nodo('button', 'hdt-btn hdt-confirmar-si' + (peligro ? ' hdt-peligro' : ''), t('comun.confirmar'));
     var no = nodo('button', 'hdt-btn hdt-confirmar-no', t('comun.cancelar'));
     si.type = no.type = 'button';
