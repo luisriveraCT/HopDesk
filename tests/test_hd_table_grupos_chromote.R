@@ -406,12 +406,16 @@ ok("with a row marked they can be used", "etiqueta_a" %in% acciones_vis() && "mo
 clic(sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=etiqueta_a]')", A))
 ok("'Etiqueta A' reaches the server, and the row comes back with pill A and the red background",
    poll_until(function() { x <- fila_info(sin_et); identical(x$pill, "A") && grepl("hdt-et-rojo", x$fila) }, timeout_s = 8))
-manana <- format(Sys.Date() + 1, "%Y-%m-%d")
+semana <- format(Sys.Date() + 7, "%Y-%m-%d")
 fecha_in <- sprintf("document.querySelector('#%s .hdt-acciones input.hdt-fecha')", A)
-ok("'Mover' has a date box, tomorrow by default", identical(ev(sprintf("%s.value", fecha_in)), manana))
+ok("'Mover' has a date box that opens on its campo_inicial (a week out in the demo)",
+   identical(ev(sprintf("%s.value", fecha_in)), semana))
 invisible(ev(sprintf("var i = %s; i.value = ''; i.dispatchEvent(new Event('input'))", fecha_in)))
 ok("an empty date disables 'Mover'", "mover:off" %in% acciones_vis())
 invisible(ev(sprintf("var i = %s; i.value = '2026-12-15'; i.dispatchEvent(new Event('input'))", fecha_in)))
+ok("changing the date reports it: accion 'campo' with valor and de, no ids, no confirmation",
+   poll_until(function() grepl("campo  \\[0\\]   = 2026-12-15 \\(mover\\)",
+                               strsplit(ev("document.getElementById('log_a').innerText"), "\n")[[1]][1]), timeout_s = 8))
 clic(sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=mover]')", A))
 ok("'Mover' sends the date as valor and the row moves to it",
    poll_until(function() grepl('valor *: chr "2026-12-15"', ev("document.getElementById('panel_a').innerText")), timeout_s = 8) &&
@@ -445,8 +449,9 @@ ultima <- function() {
   if (!length(m)) return(list(accion = NA, ids = character(0)))
   list(accion = m[2], ids = if (nzchar(trimws(m[4]))) strsplit(trimws(m[4]), " +")[[1]] else character(0))
 }
+# With the row action "agregar" the ✓ is that button (hdt-quitar-agenda).
 marca <- function(id) ev(sprintf("(function(){ var tr = HDT.fila('%s', '%s'), td = tr.querySelector('td.hdt-acc');
-  var v = td.querySelector('.hdt-agregado'), c = td.querySelector('.hdt-adjuntos');
+  var v = td.querySelector('.hdt-agregado, .hdt-quitar-agenda'), c = td.querySelector('.hdt-adjuntos');
   return { ag: !!v, clip: c ? c.textContent : '' }; })()", A, id))
 con_ag <- dm$id[dm$.agregado]; con_clip <- dm$id[dm$.adjuntos > 0]
 ok("agregado: a check in the actions column on exactly the rows already in Agenda de Hoy",
@@ -455,6 +460,18 @@ libre_ag <- setdiff(con_ag, dm$id[dm$.bloqueada])[1]
 clic(sprintf("HDT.fila('%s', '%s').children[1]", A, libre_ag))
 ok("... it doesn't lock the row: it can still be marked", identical(unlist(estado()$seleccion), libre_ag))
 invisible(ev(sprintf("(document.querySelector('#%s .hdt-deseleccionar')||{click:function(){}}).click()", A))); Sys.sleep(0.3)
+quitar_btn <- sprintf("HDT.fila('%s', '%s').querySelector('button.hdt-quitar-agenda')", A, libre_ag)
+ok("on a row in the Agenda the 'agregar' button is the ✓, titled 'Quitar de la Agenda'",
+   identical(ev(sprintf("%s.textContent + '|' + %s.title", quitar_btn, quitar_btn)), "✓|Quitar de la Agenda") &&
+     !isTRUE(ev(sprintf("!!HDT.fila('%s', '%s').querySelector('button[data-accion=agregar]')", A, libre_ag))))
+clic(quitar_btn)
+ok("... and it sends accion 'quitar_agenda' with that row's id, without marking it",
+   poll_until(function() { u <- ultima(); identical(u$accion, "quitar_agenda") && identical(u$ids, libre_ag) }, timeout_s = 8) &&
+     length(unlist(estado()$seleccion)) == 0L)
+sin_ag <- setdiff(dm$id, c(con_ag, dm$id[dm$.bloqueada]))[1]
+clic(sprintf("HDT.fila('%s', '%s').querySelector('button[data-accion=agregar]')", A, sin_ag))
+ok("on a row not in the Agenda it is still '＋', sending accion 'agregar'",
+   poll_until(function() { u <- ultima(); identical(u$accion, "agregar") && identical(u$ids, sin_ag) }, timeout_s = 8))
 ok("adjuntos: a clip with the count on the rows that have attachments",
    all(vapply(dm$id, function(id) { x <- marca(id)$clip; n <- dm$.adjuntos[dm$id == id]
      if (n > 0) identical(x, sprintf("\U0001f4ce %d", n)) else identical(x, "") }, logical(1))))

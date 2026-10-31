@@ -17,7 +17,10 @@
 # accion() values: "detalle" (double click on a row, locked rows too),
 # "encabezado" (the header switch, with `encabezado`; ids "si" or "no"),
 # "crudos" (the crudos piece; the marked ids, maybe none), "adjuntos" (the
-# clip of a row with .adjuntos; that row's id), and
+# clip of a row with .adjuntos; that row's id), "quitar_agenda" (the row
+# action "agregar" on a row already in the Agenda, .agregado: the same
+# button takes it out; that row's id), "campo" (a bar action's field
+# changed: valor = what it holds, de = the action; no ids), and
 # the names given in acciones_fila (one row's id) and acciones_barra. Actions
 # that confirm ("eliminar" on a row, bar actions with confirmar = TRUE) only
 # reach accion() once the user presses Confirmar in the table's own bar.
@@ -40,7 +43,7 @@ hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
     htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=21"),
-    htmltools::tags$script(src = "hdtable.js?v=29")
+    htmltools::tags$script(src = "hdtable.js?v=30")
   ))
 }
 
@@ -368,7 +371,10 @@ hd_acciones_fila_meta <- function(acciones) {
 # limpiar_tras = TRUE: the selection clears once the action is sent (the tag
 # actions: Luis, smoke test). Without it the selection stays (Dif5).
 # campo = "fecha": a date box next to the button (tomorrow by default; empty
-# disables it), and accion() brings valor = "AAAA-MM-DD".
+# disables it), and accion() brings valor = "AAAA-MM-DD". campo_inicial: the
+# box's first date instead of tomorrow -- a date, or a reactive returning one
+# (the day modal: the day after the one shown). While it changes the table
+# sends accion "campo" with valor, so the module can say something about it.
 # Shown above the table while rows are marked; they send the marked ids in
 # visible order. sin_seleccion = TRUE: always shown, sends the visible
 # (unlocked) ids -- "Agregar todo".
@@ -376,7 +382,8 @@ hd_acciones_barra_validar <- function(acciones_barra) {
   if (is.null(acciones_barra)) return(NULL)
   if (!is.list(acciones_barra) || !length(acciones_barra))
     stop("hd_table: `acciones_barra` must be a list of list(accion, texto, ...).", call. = FALSE)
-  campos <- c("accion", "texto", "confirmar", "peligro", "sin_seleccion", "modo", "campo", "confirmar_texto", "tono", "limpiar_tras")
+  campos <- c("accion", "texto", "confirmar", "peligro", "sin_seleccion", "modo", "campo", "confirmar_texto", "tono", "limpiar_tras",
+              "campo_inicial")
   out <- lapply(seq_along(acciones_barra), function(k) {
     a <- acciones_barra[[k]]
     if (!is.list(a) || !is.character(a$accion) || length(a$accion) != 1L || !nzchar(a$accion))
@@ -389,9 +396,13 @@ hd_acciones_barra_validar <- function(acciones_barra) {
            call. = FALSE)
     if (!is.null(a$modo) && !identical(a$modo, "editar"))
       stop(sprintf("hd_table: acciones_barra '%s': modo must be \"editar\".", a$accion), call. = FALSE)
-    if (!is.null(a$campo) && !identical(a$campo, "fecha"))
+    if (!is.null(a[["campo"]]) && !identical(a[["campo"]], "fecha"))
       stop(sprintf("hd_table: acciones_barra '%s': campo must be \"fecha\".", a$accion), call. = FALSE)
-    if (!is.null(a$confirmar_texto) && (!isTRUE(a$confirmar) || !is.character(a$confirmar_texto) ||
+    if (!is.null(a$campo_inicial) && (is.null(a[["campo"]]) ||
+        !(is.function(a$campo_inicial) || !is.na(.hd_fecha_iso(a$campo_inicial)))))
+      stop(sprintf("hd_table: acciones_barra '%s': campo_inicial needs campo and must be a date or a reactive.",
+                   a$accion), call. = FALSE)
+    if (!is.null(a$confirmar_texto) && (!isTRUE(a[["confirmar"]]) || !is.character(a$confirmar_texto) ||
                                         length(a$confirmar_texto) != 1L ||
                                         is.null(i18n_dict("es")[[paste0(a$confirmar_texto, ".uno")]])))
       stop(sprintf("hd_table: acciones_barra '%s': confirmar_texto needs confirmar = TRUE and a dictionary key with .uno/.otros.",
@@ -400,10 +411,10 @@ hd_acciones_barra_validar <- function(acciones_barra) {
     if (!is.null(a$tono) && !(is.character(a$tono) && length(a$tono) == 1L && a$tono %in% tonos))
       stop(sprintf("hd_table: acciones_barra '%s': tono must be one of %s.", a$accion, paste(tonos, collapse = ", ")),
            call. = FALSE)
-    list(accion = a$accion, texto = a$texto, confirmar = isTRUE(a$confirmar),
+    list(accion = a$accion, texto = a$texto, confirmar = isTRUE(a[["confirmar"]]),
          peligro = isTRUE(a$peligro), sin_seleccion = isTRUE(a$sin_seleccion),
-         modo = a$modo, campo = a$campo, confirmar_texto = a$confirmar_texto, tono = a$tono,
-         limpiar_tras = isTRUE(a$limpiar_tras))
+         modo = a$modo, campo = a[["campo"]], confirmar_texto = a$confirmar_texto, tono = a$tono,
+         limpiar_tras = isTRUE(a$limpiar_tras), campo_inicial = a$campo_inicial)
   })
   nombres <- vapply(out, `[[`, character(1), "accion")
   if (anyDuplicated(nombres))
@@ -413,8 +424,21 @@ hd_acciones_barra_validar <- function(acciones_barra) {
   out
 }
 
+# A date as "AAAA-MM-DD" (NA if it isn't one).
+.hd_fecha_iso <- function(x) {
+  d <- tryCatch(as.Date(x), error = function(e) as.Date(NA))
+  if (length(d) != 1L || is.na(d)) NA_character_ else format(d, "%Y-%m-%d")
+}
+
+# campo_inicial is evaluated here, each time the data goes out (a reactive
+# one follows it).
 hd_acciones_barra_meta <- function(acciones) {
-  lapply(acciones, function(a) utils::modifyList(a, list(texto = .hd_texto(a$texto))))
+  lapply(acciones, function(a) {
+    ini <- a$campo_inicial
+    if (is.function(ini)) ini <- tryCatch(ini(), error = function(e) NULL)
+    utils::modifyList(a, list(texto = .hd_texto(a$texto),
+                              campo_inicial = if (!is.null(ini)) .hd_fecha_iso(ini)))
+  })
 }
 
 # crudos: "Ver datos de origen" sends accion "crudos" with the marked ids
@@ -535,8 +559,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
   for (a in acc_barra) if (identical(a$modo, "editar") && !"modo_editar" %in% piezas_tabla)
     stop(sprintf("hd_table '%s': bar action '%s' is modo = \"editar\" but the table doesn't have the 'modo_editar' piece.",
                  tabla, a$accion), call. = FALSE)
-  acc_barra_meta <- if (length(acc_barra)) hd_acciones_barra_meta(acc_barra) else NULL
-  acc_barra_meta <- hd_crudos_meta(acc_barra_meta, piezas_tabla)
+  barra_meta <- function() hd_crudos_meta(if (length(acc_barra)) hd_acciones_barra_meta(acc_barra), piezas_tabla)
 
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -565,7 +588,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         secciones  = hd_secciones_payload(secciones, df, cols),
         grupo      = hd_grupo_payload(grupo, df, cols),
         acciones_fila  = acc_fila_meta,
-        acciones_barra = acc_barra_meta
+        acciones_barra = barra_meta()
       ))
     })
 
@@ -626,7 +649,8 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         if (is.null(a)) return(NULL)
         # valor: what the action's own field holds (campo = "fecha": "AAAA-MM-DD").
         list(accion = as.character(a$accion), ids = as.character(unlist(a$ids)), nonce = a$nonce,
-             valor = if (!is.null(a$valor)) as.character(a$valor))
+             valor = if (!is.null(a$valor)) as.character(a$valor),
+             de = if (!is.null(a$de)) as.character(a$de))
       })
     )
   })

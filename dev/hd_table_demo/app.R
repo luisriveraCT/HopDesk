@@ -262,7 +262,9 @@ server <- function(input, output, session) {
         list(accion = "etiqueta_b", texto = "tablas.accion.etiqueta_b", modo = "editar"),
         list(accion = "etiqueta_c", texto = "tablas.accion.etiqueta_c", modo = "editar"),
         list(accion = "quitar_etiqueta", texto = "tablas.accion.quitar_etiqueta", modo = "editar"),
-        list(accion = "mover", texto = "tablas.accion.mover", modo = "editar", campo = "fecha"),
+        # The date box opens a week out (campo_inicial) and reports each change (accion "campo").
+        list(accion = "mover", texto = "tablas.accion.mover", modo = "editar", campo = "fecha",
+             campo_inicial = Sys.Date() + 7),
         list(accion = "restaurar", texto = "tablas.accion.restaurar", modo = "editar")),
       if (con_editar && con_conf) list(
         list(accion = "eliminar_edicion", texto = "tablas.accion.eliminar", modo = "editar", confirmar = TRUE, peligro = TRUE)),
@@ -291,8 +293,9 @@ server <- function(input, output, session) {
     if (identical(a$accion, "mover")) for (id in a$ids) ed$vence[[id]] <- as.Date(a$valor)
     if (identical(a$accion, "restaurar")) ed$vence[a$ids] <- NULL
     ediciones(ed)
-    linea <- sprintf("%s  %s  [%d] %s", format(Sys.time(), "%H:%M:%S"), a$accion, length(a$ids),
-                     paste(utils::head(a$ids, 8), collapse = " "))
+    linea <- sprintf("%s  %s  [%d] %s%s", format(Sys.time(), "%H:%M:%S"), a$accion, length(a$ids),
+                     paste(utils::head(a$ids, 8), collapse = " "),
+                     if (!is.null(a$valor)) paste0("  = ", a$valor, if (!is.null(a$de)) paste0(" (", a$de, ")")) else "")
     registro(utils::head(c(linea, registro()), 12))
   })
   output$log_a <- renderPrint(cat(registro(), sep = "\n"))

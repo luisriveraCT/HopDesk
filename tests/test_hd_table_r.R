@@ -306,6 +306,20 @@ test_that("bar actions: tono is one of the tags' tones", {
   expect_error(hd_acciones_barra_validar(list(list(accion = "x", texto = "t", tono = "azul"))), "tono must be one of rojo, naranja, amarillo")
 })
 
+test_that("bar actions: campo_inicial, a date or a reactive evaluated when data goes out", {
+  ok <- hd_acciones_barra_validar(list(list(accion = "m", texto = "t", campo = "fecha", campo_inicial = as.Date("2026-11-02"))))
+  expect_identical(hd_acciones_barra_meta(ok)[[1]]$campo_inicial, "2026-11-02")
+  dia <- as.Date("2026-11-05")
+  r <- hd_acciones_barra_validar(list(list(accion = "m", texto = "t", campo = "fecha", campo_inicial = function() dia + 1)))
+  expect_identical(hd_acciones_barra_meta(r)[[1]]$campo_inicial, "2026-11-06")
+  dia <- as.Date("2026-12-01")
+  expect_identical(hd_acciones_barra_meta(r)[[1]]$campo_inicial, "2026-12-02")
+  expect_null(hd_acciones_barra_meta(hd_acciones_barra_validar(list(list(accion = "m", texto = "t", campo = "fecha"))))[[1]]$campo_inicial)
+  expect_error(hd_acciones_barra_validar(list(list(accion = "m", texto = "t", campo_inicial = Sys.Date()))), "campo_inicial needs campo")
+  expect_error(hd_acciones_barra_validar(list(list(accion = "m", texto = "t", campo = "fecha", campo_inicial = "mañana"))),
+               "campo_inicial needs campo")
+})
+
 test_that("bar actions: limpiar_tras, off unless asked", {
   expect_true(hd_acciones_barra_validar(list(list(accion = "x", texto = "t", limpiar_tras = TRUE)))[[1]]$limpiar_tras)
   expect_false(hd_acciones_barra_validar(list(list(accion = "x", texto = "t")))[[1]]$limpiar_tras)

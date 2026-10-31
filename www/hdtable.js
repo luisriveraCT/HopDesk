@@ -472,6 +472,7 @@
       inp.setAttribute('aria-label', t('tablas.accion.fecha'));
       inp.addEventListener('input', function () {
         st.valores[a.accion] = inp.value;
+        if (inp.value) enviarAccion(st, 'campo', [], inp.value, a.accion);   // no confirmation: it only reports
         b.disabled = sinFilas || !inp.value;
       });
       b.disabled = sinFilas || !inp.value;
@@ -483,6 +484,7 @@
 
   function valorCampo(st, a) {
     if (st.valores[a.accion] != null) return st.valores[a.accion];
+    if (a.campo_inicial) return a.campo_inicial;
     var d = new Date();
     d.setDate(d.getDate() + 1);
     var dd = function (x) { return (x < 10 ? '0' : '') + x; };
@@ -1034,7 +1036,9 @@
   // the row) and the clip with how many attachments (adjuntos), a button
   // that sends accion "adjuntos" without marking the row.
   function marcasFila(st, i) {
-    var ag = st.p.agregado && st.agr[i], n = st.p.adjuntos ? Number(st.adj[i]) || 0 : 0;
+    // With the row action "agregar" the ✓ is that button itself (botonesFila).
+    var ag = st.p.agregado && st.agr[i] && !conAgregar(st),
+        n = st.p.adjuntos ? Number(st.adj[i]) || 0 : 0;
     if (!ag && !n) return null;
     var frag = document.createDocumentFragment();
     if (ag) {
@@ -1053,6 +1057,8 @@
     }
     return frag;
   }
+
+  function conAgregar(st) { return st.accFila.some(function (a) { return a.accion === 'agregar'; }); }
 
   // Right-aligned row buttons, always in catalog order. .acciones only hides
   // buttons; the server checks the permission again (see R/hd_table.R).
@@ -1073,19 +1079,24 @@
         td.appendChild(hueco);
         return;
       }
-      var b = nodo('button', 'hdt-accion' + (texto ? ' hdt-accion-texto' : ''), texto ? a.titulo : a.icono);
+      // "agregar" on a row already in the Agenda: ✓, and the same button
+      // takes it out (accion "quitar_agenda").
+      var quitar = a.accion === 'agregar' && st.p.agregado && st.agr[i];
+      var b = nodo('button', 'hdt-accion' + (texto ? ' hdt-accion-texto' : '') + (quitar ? ' hdt-quitar-agenda' : ''),
+                   quitar ? '\u2713' : texto ? a.titulo : a.icono);
       b.type = 'button';
-      b.dataset.accion = a.accion;
-      b.title = a.titulo;
-      b.setAttribute('aria-label', a.titulo);
+      b.dataset.accion = quitar ? 'quitar_agenda' : a.accion;
+      b.title = quitar ? t('tablas.accion.quitar_agenda') : a.titulo;
+      b.setAttribute('aria-label', b.title);
       td.appendChild(b);
     });
     return td;
   }
 
-  function enviarAccion(st, accion, ids, valor) {
+  function enviarAccion(st, accion, ids, valor, de) {
     var a = { accion: accion, ids: ids, nonce: Math.random() };
     if (valor != null) a.valor = valor;
+    if (de) a.de = de;
     if (window.Shiny && Shiny.setInputValue) Shiny.setInputValue(st.ns + 'accion', a, { priority: 'event' });
   }
 
