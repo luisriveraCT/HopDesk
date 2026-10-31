@@ -173,11 +173,16 @@ facturas_acciones <- function() {
          confirmar_texto = "tablas.facturas.confirmar_agregar"),
     list(accion = "agregar_seleccion", texto = "tablas.accion.agregar_seleccion", confirmar = TRUE,
          confirmar_texto = "tablas.facturas.confirmar_agregar_sel"),
-    # Each tag button in its tag's colour (HD_ETIQUETAS).
-    list(accion = "etiqueta_a", texto = "tablas.accion.etiqueta_a", modo = "editar", tono = HD_ETIQUETAS$urgent$tono),
-    list(accion = "etiqueta_b", texto = "tablas.accion.etiqueta_b", modo = "editar", tono = HD_ETIQUETAS$both$tono),
-    list(accion = "etiqueta_c", texto = "tablas.accion.etiqueta_c", modo = "editar", tono = HD_ETIQUETAS$important$tono),
-    list(accion = "quitar_etiqueta", texto = "tablas.accion.quitar_etiqueta", modo = "editar"),
+    # Each tag button in its tag's colour (HD_ETIQUETAS). Tagging unmarks
+    # the rows when done (Luis: a click after it would add to the old ones);
+    # moving, restoring and staging keep them (Dif5).
+    list(accion = "etiqueta_a", texto = "tablas.accion.etiqueta_a", modo = "editar", tono = HD_ETIQUETAS$urgent$tono,
+         limpiar_tras = TRUE),
+    list(accion = "etiqueta_b", texto = "tablas.accion.etiqueta_b", modo = "editar", tono = HD_ETIQUETAS$both$tono,
+         limpiar_tras = TRUE),
+    list(accion = "etiqueta_c", texto = "tablas.accion.etiqueta_c", modo = "editar", tono = HD_ETIQUETAS$important$tono,
+         limpiar_tras = TRUE),
+    list(accion = "quitar_etiqueta", texto = "tablas.accion.quitar_etiqueta", modo = "editar", limpiar_tras = TRUE),
     list(accion = "mover", texto = "tablas.accion.mover", modo = "editar", campo = "fecha"),
     list(accion = "restaurar", texto = "tablas.accion.restaurar", modo = "editar"),
     list(accion = "eliminar", texto = "tablas.accion.eliminar", modo = "editar", confirmar = TRUE, peligro = TRUE,

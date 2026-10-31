@@ -40,7 +40,7 @@ hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
     htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=21"),
-    htmltools::tags$script(src = "hdtable.js?v=28")
+    htmltools::tags$script(src = "hdtable.js?v=29")
   ))
 }
 
@@ -356,13 +356,16 @@ hd_acciones_fila_meta <- function(acciones) {
 # acciones_barra = list(list(accion = "mandar_papelera", texto = <key or text>,
 #                            confirmar = TRUE, peligro = TRUE, sin_seleccion = FALSE,
 #                            modo = "editar", campo = "fecha",
-#                            confirmar_texto = <plural key>, tono = "rojo"), ...)
+#                            confirmar_texto = <plural key>, tono = "rojo",
+#                            limpiar_tras = TRUE), ...)
 # modo = "editar": shown only while the bar's "Editar" is on (modo_editar).
 # confirmar_texto: the confirmation's own words, a dictionary key with
 # .uno/.otros and {n} ("¿Agregar {n} facturas a la Agenda del día?"),
 # instead of the generic "¿{accion} {n} filas?".
 # tono: the button in a tag's colour (rojo / naranja / amarillo, the tones of
 # HD_ETIQUETAS), so "Etiqueta A" reads without reading.
+# limpiar_tras = TRUE: the selection clears once the action is sent (the tag
+# actions: Luis, smoke test). Without it the selection stays (Dif5).
 # campo = "fecha": a date box next to the button (tomorrow by default; empty
 # disables it), and accion() brings valor = "AAAA-MM-DD".
 # Shown above the table while rows are marked; they send the marked ids in
@@ -372,7 +375,7 @@ hd_acciones_barra_validar <- function(acciones_barra) {
   if (is.null(acciones_barra)) return(NULL)
   if (!is.list(acciones_barra) || !length(acciones_barra))
     stop("hd_table: `acciones_barra` must be a list of list(accion, texto, ...).", call. = FALSE)
-  campos <- c("accion", "texto", "confirmar", "peligro", "sin_seleccion", "modo", "campo", "confirmar_texto", "tono")
+  campos <- c("accion", "texto", "confirmar", "peligro", "sin_seleccion", "modo", "campo", "confirmar_texto", "tono", "limpiar_tras")
   out <- lapply(seq_along(acciones_barra), function(k) {
     a <- acciones_barra[[k]]
     if (!is.list(a) || !is.character(a$accion) || length(a$accion) != 1L || !nzchar(a$accion))
@@ -398,7 +401,8 @@ hd_acciones_barra_validar <- function(acciones_barra) {
            call. = FALSE)
     list(accion = a$accion, texto = a$texto, confirmar = isTRUE(a$confirmar),
          peligro = isTRUE(a$peligro), sin_seleccion = isTRUE(a$sin_seleccion),
-         modo = a$modo, campo = a$campo, confirmar_texto = a$confirmar_texto, tono = a$tono)
+         modo = a$modo, campo = a$campo, confirmar_texto = a$confirmar_texto, tono = a$tono,
+         limpiar_tras = isTRUE(a$limpiar_tras))
   })
   nombres <- vapply(out, `[[`, character(1), "accion")
   if (anyDuplicated(nombres))

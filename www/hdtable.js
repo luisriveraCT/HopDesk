@@ -314,8 +314,13 @@
         // An action with a field sends what it holds (campo = "fecha").
         var valor = a.campo ? valorCampo(st, a) : null;
         if (a.campo && !valor) return;
-        if (a.confirmar) pedirConfirmacion(st, a.accion, a.texto, ids, a.peligro, valor, a.confirmar_texto);
-        else enviarAccion(st, a.accion, ids, valor);
+        if (a.confirmar) {
+          pedirConfirmacion(st, a.accion, a.texto, ids, a.peligro, valor, a.confirmar_texto);
+          st.pendiente.limpiar = !!a.limpiar_tras;
+        } else {
+          enviarAccion(st, a.accion, ids, valor);
+          if (a.limpiar_tras) limpiarSel(st);   // done with these rows (the tags: Luis)
+        }
       });
       root.appendChild(st.accBarraEl);
       // Editar: shows the edit actions (modo = "editar") while it's on.
@@ -473,7 +478,7 @@
     si.addEventListener('click', function () {
       var p = st.pendiente;
       cerrarConfirmacion(st);
-      if (p) enviarAccion(st, p.accion, p.ids, p.valor);
+      if (p) { enviarAccion(st, p.accion, p.ids, p.valor); if (p.limpiar) limpiarSel(st); }
     });
     no.addEventListener('click', function () { cerrarConfirmacion(st); });
     c.appendChild(si);

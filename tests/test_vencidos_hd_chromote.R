@@ -215,14 +215,26 @@ k <- n_reg()
 clic(barra("etiqueta_a"))
 ok("M2: 'Etiqueta A' goes to handle_invoice_action() as tag_urgent with that invoice",
    poll_until(function() n_reg() > k && grepl("tag_urgent \\[1\\] AR NTS MXN 1005$", ultima()), timeout_s = 8))
-ok("... the row comes back with pill A, and the selection stays (Dif5)",
-   poll_until(function() grepl("^A\\|", pill(r5)), timeout_s = 8) && identical(sel(), r5))
+ok("... the row comes back with pill A, and tagging unmarks it (Luis, smoke test)",
+   poll_until(function() grepl("^A\\|", pill(r5)), timeout_s = 8) && !length(sel()))
+# Luis's sequence: remove the tags of two, then tag one -- only that one.
+r4 <- id_de("4001"); r22 <- id_de("2002")
+clic(celda(r4)); clic(celda(r22))
+k <- n_reg(); clic(barra("quitar_etiqueta"))
+ok("'Quitar etiqueta' on two: tag_clear [2], then nothing stays marked",
+   poll_until(function() n_reg() > k && grepl("tag_clear \\[2\\]", ultima()), timeout_s = 8) && !length(sel()))
+clic(celda(r4))
+k <- n_reg(); clic(barra("etiqueta_c"))
+ok("... and a click on one then 'Etiqueta C' tags only that one",
+   poll_until(function() n_reg() > k && grepl("tag_important \\[1\\] AP NCS USD 4001$", ultima()), timeout_s = 8))
+clic(celda(r5))
 fecha <- sprintf("document.querySelector('#%s .hdt-acciones input.hdt-fecha')", A)
 ok("M3: 'Mover' has its date box, tomorrow by default", identical(ev(sprintf("%s.value", fecha)), format(Sys.Date() + 1, "%Y-%m-%d")))
 ok("... in Mexican Spanish (lang = es-MX)", identical(ev(sprintf("%s.lang", fecha)), "es-MX"))
 invisible(ev(sprintf("var i = %s; i.value = '2026-12-15'; i.dispatchEvent(new Event('input'))", fecha)))
 k <- n_reg(); clic(barra("mover"))
-ok("M3: ... and sends the date (move_to)", poll_until(function() n_reg() > k && grepl("move \\[1\\] AR NTS MXN 1005 -> 2026-12-15$", ultima()), timeout_s = 8))
+ok("M3: ... and sends the date (move_to); the selection stays (Dif5)",
+   poll_until(function() n_reg() > k && grepl("move \\[1\\] AR NTS MXN 1005 -> 2026-12-15$", ultima()), timeout_s = 8) && identical(sel(), r5))
 k <- n_reg(); clic(barra("restaurar"))
 ok("M4: 'Restaurar fecha' -> restore", poll_until(function() n_reg() > k && grepl("restore \\[1\\]", ultima()), timeout_s = 8))
 k <- n_reg(); clic(barra("eliminar"))

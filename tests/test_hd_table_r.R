@@ -306,6 +306,11 @@ test_that("bar actions: tono is one of the tags' tones", {
   expect_error(hd_acciones_barra_validar(list(list(accion = "x", texto = "t", tono = "azul"))), "tono must be one of rojo, naranja, amarillo")
 })
 
+test_that("bar actions: limpiar_tras, off unless asked", {
+  expect_true(hd_acciones_barra_validar(list(list(accion = "x", texto = "t", limpiar_tras = TRUE)))[[1]]$limpiar_tras)
+  expect_false(hd_acciones_barra_validar(list(list(accion = "x", texto = "t")))[[1]]$limpiar_tras)
+})
+
 test_that("alto = \"ventana\": automatic height that fills the window", {
   h <- as.character(hd_table_ui("v", alto = "ventana"))
   expect_match(h, 'class="hdt hdt-auto hdt-llenar"', fixed = TRUE)

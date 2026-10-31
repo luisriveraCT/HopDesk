@@ -141,10 +141,11 @@ r <- id_de("1004")
 clic(celda(r))
 clic(sprintf("document.querySelector('#%s .hdt-editar')", A))
 k <- n_reg(); clic(barra("etiqueta_b"))
-ok("M2: 'Etiqueta B' goes to handle_invoice_action() as tag_both, the pill changes and the selection stays",
+ok("M2: 'Etiqueta B' goes to handle_invoice_action() as tag_both, the pill changes and tagging unmarks it",
    poll_until(function() n_reg() > k && grepl("tag_both \\[1\\] AR NCS MXN 1004$", ultima()), timeout_s = 8) &&
      poll_until(function() grepl("^B", ev(sprintf("%s.children[7].textContent", fila(r)))), timeout_s = 8) &&
-     identical(sel(), r))
+     !length(sel()))
+clic(celda(r))
 fecha <- sprintf("document.querySelector('#%s .hdt-acciones input.hdt-fecha')", A)
 invisible(ev(sprintf("var i = %s; i.value = '2026-12-15'; i.dispatchEvent(new Event('input'))", fecha)))
 k <- n_reg(); clic(barra("mover"))
