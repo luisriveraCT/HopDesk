@@ -574,10 +574,21 @@ build_cashflow_export_data <- function(
   paste0(prefix, format(round(x), big.mark = ",", scientific = FALSE))
 }
 
+# ── Group shown on the export ────────────────────────────────────────────────
+# The session's group name; without one, the session's first company; with
+# neither, the neutral "HopDesk". Never a fixed client's name: this used to
+# default to "Networks Group", which any client without a group name saw.
+.cf_group_display <- function(group_name, cmap = c()) {
+  group_name <- trimws(group_name %||% "")
+  if (nzchar(group_name)) return(group_name)
+  if (length(cmap)) return(unname(cmap[1]))
+  "HopDesk"
+}
+
 # ── Cover page ────────────────────────────────────────────────────────────────
 .add_cover_page <- function(doc, export_data, emp_initials,
                              ic_label, user_name, lang, bilingual,
-                             group_name = "Networks Group",
+                             group_name = "HopDesk",
                              group_logo_raw = NULL,
                              group_logo_ext = "png") {
   L <- function(k) {
@@ -621,7 +632,7 @@ build_cashflow_export_data <- function(
   doc <- officer::body_add_par(doc, "", style = "Normal")
 
   # ── Title block ──────────────────────────────────────────────────────────
-  group_display <- group_name %||% "Networks Group"
+  group_display <- .cf_group_display(group_name)
 
   doc <- officer::body_add_par(doc, "", style = "Normal")
   doc <- officer::body_add_fpar(doc,
@@ -1003,7 +1014,7 @@ generate_cashflow_word_doc <- function(export_data, emp_initials, emp_full,
                                         ic_label, user_name,
                                         primary_lang   = "es",
                                         secondary_lang = NULL,
-                                        group_name     = "Networks Group",
+                                        group_name     = "HopDesk",
                                         group_logo_raw = NULL,
                                         group_logo_ext = "png") {
 
@@ -1087,7 +1098,7 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
                                         ic_label, user_name,
                                         primary_lang   = "es",
                                         secondary_lang = NULL,
-                                        group_name     = "Networks Group",
+                                        group_name     = "HopDesk",
                                         group_logo_raw = NULL,
                                         group_logo_ext = "png") {
 
@@ -1144,7 +1155,7 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
     logo_el,
     h$h1(.cf_lbl("title", lang)),
     h$h3(.cf_lbl("subtitle", lang)),
-    h$h2(group_name %||% "Networks Group"),
+    h$h2(.cf_group_display(group_name)),
     meta_html,
     dv(class = "conf", L("confidential"))
   )
@@ -1491,7 +1502,7 @@ generate_cashflow_excel_wb <- function(export_data, emp_initials, emp_full,
                                         ic_label, user_name,
                                         primary_lang   = "es",
                                         secondary_lang = NULL,
-                                        group_name     = "Networks Group",
+                                        group_name     = "HopDesk",
                                         group_logo_raw = NULL,
                                         group_logo_ext = "png") {
 
@@ -1644,7 +1655,7 @@ generate_cashflow_excel_wb <- function(export_data, emp_initials, emp_full,
   for (info in list(
     list(txt = .cf_lbl("title",    lang), st = ST$title, ht = 40L),
     list(txt = .cf_lbl("subtitle", lang), st = ST$sub,   ht = 24L),
-    list(txt = group_name %||% "Networks Group", st = ST$grp, ht = 28L)
+    list(txt = .cf_group_display(group_name), st = ST$grp, ht = 28L)
   )) {
     openxlsx::writeData(wb, COV, x = info$txt, startRow = r, startCol = 1)
     openxlsx::mergeCells(wb, COV, cols = 1:N_COV, rows = r)
@@ -2384,8 +2395,9 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       rev   <- setNames(names(cmap), unname(cmap))
       inits <- paste(na.omit(unname(rev[ emp ])), collapse = "-")
       if (!nzchar(inits)) inits <- "GRUPO"
-      grp_raw <- tryCatch(shared$group_name(), error = function(e) "Networks Group")
-      prefix  <- gsub("[^A-Za-z0-9]", "", grp_raw %||% "Networks Group")
+      grp_raw <- .cf_group_display(tryCatch(shared$group_name(), error = function(e) ""),
+                                   shared$company_map())
+      prefix  <- gsub("[^A-Za-z0-9]", "", grp_raw)
       if (!nzchar(prefix)) prefix <- "FlujoEfectivo"
       paste0(prefix, "_", inits, "_", from, "-", to, ".docx")
     },
@@ -2475,7 +2487,8 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       user_info <- tryCatch(shared$current_user_info(), error = function(e) NULL)
       user_name <- user_info$name %||% user_info$user %||% "—"
 
-      g_name     <- tryCatch(shared$group_name(),     error = function(e) "Networks Group")
+      g_name     <- .cf_group_display(tryCatch(shared$group_name(), error = function(e) ""),
+                                      shared$company_map())
       g_logo_raw <- tryCatch(shared$group_logo_raw(), error = function(e) NULL)
       g_logo_ext <- tryCatch(shared$group_logo_ext(), error = function(e) "png")
 
@@ -2591,7 +2604,8 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
 
     tags_df    <- tryCatch(shared$tags_db(),           error = function(e) NULL)
     user_info  <- tryCatch(shared$current_user_info(), error = function(e) NULL)
-    g_name     <- tryCatch(shared$group_name(),        error = function(e) "Networks Group")
+    g_name     <- .cf_group_display(tryCatch(shared$group_name(), error = function(e) ""),
+                                    shared$company_map())
     g_logo_raw <- tryCatch(shared$group_logo_raw(),    error = function(e) NULL)
     g_logo_ext <- tryCatch(shared$group_logo_ext(),    error = function(e) "png")
 
@@ -2614,7 +2628,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
     to_str    <- format(date_to,   "%d%b%Y")
     inits_str <- paste(initials, collapse = "-")
     if (!nzchar(inits_str) || identical(inits_str, "—")) inits_str <- "GRUPO"
-    prefix    <- gsub("[^A-Za-z0-9]", "", g_name %||% "Networks Group")
+    prefix    <- gsub("[^A-Za-z0-9]", "", g_name)
     if (!nzchar(prefix)) prefix <- "FlujoEfectivo"
     .xl_basename(paste0(prefix, "_", inits_str, "_", from_str, "-", to_str, ".xlsx"))
     .xl_log_params(list(empresa = paste(emp_sel, collapse = ", "), initials = initials,
@@ -2845,8 +2859,9 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       rev   <- setNames(names(cmap), unname(cmap))
       inits <- paste(na.omit(unname(rev[ emp ])), collapse = "-")
       if (!nzchar(inits)) inits <- "GRUPO"
-      grp_raw <- tryCatch(shared$group_name(), error = function(e) "Networks Group")
-      prefix  <- gsub("[^A-Za-z0-9]", "", grp_raw %||% "Networks Group")
+      grp_raw <- .cf_group_display(tryCatch(shared$group_name(), error = function(e) ""),
+                                   shared$company_map())
+      prefix  <- gsub("[^A-Za-z0-9]", "", grp_raw)
       if (!nzchar(prefix)) prefix <- "FlujoEfectivo"
       paste0(prefix, "_", inits, "_", from, "-", to, ".pdf")
     },
@@ -2911,7 +2926,8 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
 
       user_info  <- tryCatch(shared$current_user_info(), error = function(e) NULL)
       user_name  <- user_info$name %||% user_info$user %||% "—"
-      g_name     <- tryCatch(shared$group_name(),     error = function(e) "Networks Group")
+      g_name     <- .cf_group_display(tryCatch(shared$group_name(), error = function(e) ""),
+                                      shared$company_map())
       g_logo_raw <- tryCatch(shared$group_logo_raw(), error = function(e) NULL)
       g_logo_ext <- tryCatch(shared$group_logo_ext(), error = function(e) "png")
 
