@@ -5,368 +5,284 @@
 # Edit actions (tag / move / delete / stage) share handle_invoice_action()
 # with the monthly search modal (search_module.R).
 #
-# Row selection: click any row to select/deselect (highlighted).
-# Shift+click for range. No checkboxes.
-# Column headers are sortable (click to sort asc/desc).
+# The table is the hd_table engine (R/hd_table.R, www/hdtable.js), table
+# "vencidos" of the registry. Its columns, pieces and actions come from the
+# facturas_*() functions below, which the lupa (search_module.R) uses too,
+# so the two tables can't drift apart. This module keeps what is its own:
+# which rows go in (overdue as of today), the tab's badge, the empty message
+# and the counter's text.
 # =============================================================================
+
+# ── Shared with the lupa: one table of invoices ────────────────────────────────
+
+# Stored tag of each row (urgent / both / important / ""), from tags_db, by
+# ledger + Empresa + Moneda + Documento -- the same join add_tag_labels() does.
+facturas_etiquetas <- function(df, tags_df) {
+  out <- rep("", nrow(df))
+  if (is.null(tags_df) || !nrow(tags_df) || !nrow(df)) return(out)
+  llave <- function(l, e, m, d) paste(l, e, m, d, sep = "\u001f")
+  tg <- split(as.character(tags_df$tag), llave(tags_df$ledger, tags_df$Empresa, tags_df$Moneda, tags_df$Documento))
+  k  <- llave(df$Ledger, df$Empresa, df$Moneda, df$Documento)
+  vapply(k, function(x) {
+    t <- tg[[x]]
+    if (is.null(t)) ""
+    else if (all(c("urgent", "important") %in% t)) "both"
+    else if ("urgent" %in% t) "urgent"
+    else if ("important" %in% t) "important"
+    else ""
+  }, character(1), USE.NAMES = FALSE)
+}
+
+# Each invoice's id in the table: its ledger + company + currency + document
+# + source + ids, unique even if two rows share a document. Built from the
+# module's data in its own order, so the same data always gives the same ids.
+facturas_ids <- function(df) {
+  col <- function(n, def = "") { v <- df[[n]]; if (is.null(v)) rep(def, nrow(df)) else { v <- as.character(v); v[is.na(v)] <- def; v } }
+  make.unique(paste(col("Ledger"), col("Empresa"), col("Moneda"), col("Documento"), col("source", SAP_B1_ERP_TYPE),
+                    col("id"), col("provision_id"), sep = "|"), sep = "#")
+}
+
+# The data the table gets: one row per invoice, with its control columns.
+# The order is the factory one (D3/G12): groups and loose rows by their
+# strongest tag (A, B, C, none), then by amount, largest first; inside a group
+# the same. The table's third click on a title comes back to it.
+facturas_datos <- function(df, tags_df, agenda_df = NULL, puede_convertir = FALSE) {
+  vacio <- data.frame(
+    id = character(), Tipo = character(), Clase = character(), Empresa = character(),
+    Fecha = as.Date(character()), Parte = character(), Referencia = character(),
+    Documento = character(), Origen = character(), FechaOriginal = as.Date(character()),
+    Importe = numeric(), Moneda = character(), Etiqueta = character(),
+    .tipo = character(), .bloqueada = logical(), .provision = logical(), .acciones = character(),
+    .agregado = logical(), stringsAsFactors = FALSE)
+  if (is.null(df) || !nrow(df)) return(vacio)
+  df <- as.data.frame(df, stringsAsFactors = FALSE)
+  col <- function(n, def = "") { v <- df[[n]]; if (is.null(v)) rep(def, nrow(df)) else { v <- as.character(v); v[is.na(v)] <- def; v } }
+  ledger    <- col("Ledger")
+  empresa   <- col("Empresa")
+  moneda    <- col("Moneda")
+  documento <- col("Documento")
+  source    <- col("source", SAP_B1_ERP_TYPE)
+  inv_id    <- col("id")
+  prov_id   <- col("provision_id")
+  confirmed <- if ("confirmed" %in% names(df)) !is.na(df$confirmed) & as.logical(df$confirmed) else rep(FALSE, nrow(df))
+  provision <- source == "provision" & nzchar(prov_id)
+  origen <- vapply(source, function(s) switch(s,
+    # Both the historical literal "sap" (pre-erp_type records)
+    # and today's SAP_B1_ERP_TYPE value map to the same label --
+    # never remove either case, they cover different eras of data.
+    "sap"                  = "SAP",
+    "sap_b1_service_layer" = "SAP",
+    "manual"    = tr("tablas.facturas.manual"),
+    "provision" = tr("tablas.provision"),
+    "SAP"), character(1), USE.NAMES = FALSE)
+  etiqueta <- facturas_etiquetas(data.frame(Ledger = ledger, Empresa = empresa, Moneda = moneda, Documento = documento),
+                                 tags_df)
+  # Already in Agenda de Hoy: the same pending queue the Agenda reads.
+  agregado <- rep(FALSE, nrow(df))
+  if (!is.null(agenda_df) && nrow(agenda_df) && "status" %in% names(agenda_df)) {
+    pend <- agenda_df[!is.na(agenda_df$status) & agenda_df$status == "pending", , drop = FALSE]
+    k_ag <- paste(pend$ledger, pend$Empresa, pend$Moneda, pend$Documento, sep = "\u001f")
+    agregado <- paste(ledger, empresa, moneda, documento, sep = "\u001f") %in% k_ag
+  }
+  out <- data.frame(
+    id            = facturas_ids(df),
+    # A provision shows only its own badge ("Provisión"), as today.
+    Tipo          = ifelse(provision, "", ifelse(ledger == "AR", "cobro", "pago")),
+    Clase         = ifelse(ledger == "AR", tr("tablas.facturas.cobro"), tr("tablas.facturas.pago")),
+    Empresa       = empresa,
+    Fecha         = as.Date(df$Fecha),
+    Parte         = col("Parte"),
+    Referencia    = col("Factura"),
+    Documento     = documento,
+    Origen        = origen,
+    FechaOriginal = if ("FechaOriginal" %in% names(df)) as.Date(df$FechaOriginal) else as.Date(NA),
+    Importe       = as.numeric(df$Importe),
+    Moneda        = moneda,
+    Etiqueta      = etiqueta,
+    .tipo         = ifelse(ledger == "AR", "cobro", "pago"),
+    .bloqueada    = confirmed,
+    .provision    = provision,
+    # The ⚡ only for whoever may convert; the pasivos module checks again.
+    .acciones     = ifelse(provision & puede_convertir, "provision", ""),
+    .agregado     = agregado,
+    stringsAsFactors = FALSE
+  )
+  # Factory order: by unit (a group of company + date + counterpart inside
+  # its currency and type, or a loose row), strongest tag first, then the
+  # unit's amount without paid rows; inside a unit, tag then amount.
+  peso <- vapply(etiqueta, function(e) if (nzchar(e)) HD_ETIQUETAS[[e]]$peso else 4L, integer(1), USE.NAMES = FALSE)
+  unidad <- ifelse(nzchar(empresa), paste(moneda, ledger, empresa, out$Fecha, out$Parte, sep = "\u001f"),
+                   paste0("__solo__", seq_len(nrow(out))))
+  unidad[unidad %in% names(which(table(unidad) < 2))] <- paste0("__solo__", which(unidad %in% names(which(table(unidad) < 2))))
+  libre_imp <- ifelse(confirmed, 0, out$Importe)
+  u_peso <- ave(peso, unidad, FUN = min)
+  u_suma <- ave(libre_imp, unidad, FUN = sum)
+  out[order(u_peso, -u_suma, unidad, peso, -out$Importe), , drop = FALSE]
+}
+
+facturas_columnas <- function() {
+  list(
+    col_insignia("Tipo", "tablas.facturas.tipo", mapa = list(
+      cobro = list(texto = "tablas.facturas.cobro", tono = "info"),
+      pago  = list(texto = "tablas.facturas.pago",  tono = "exito"))),
+    col_empresa("Empresa", "tablas.facturas.empresa"),
+    col_fecha("Fecha", "tablas.facturas.fecha_venc"),
+    col_texto("Parte", "tablas.facturas.parte"),
+    col_texto("Referencia", "tablas.facturas.referencia"),
+    col_texto("Documento", "tablas.facturas.documento", recorte = FALSE, opcional = TRUE, visible = FALSE),
+    col_texto("Origen", "tablas.facturas.origen", recorte = FALSE, opcional = TRUE, visible = FALSE),
+    col_fecha("FechaOriginal", "tablas.facturas.venc_original", opcional = TRUE, visible = FALSE),
+    col_dinero("Importe", "tablas.facturas.importe", moneda = "Moneda"),
+    col_texto("Moneda", "tablas.facturas.moneda", recorte = FALSE, opcional = TRUE, visible = FALSE),
+    col_etiqueta("Etiqueta", "tablas.facturas.etiqueta")
+  )
+}
+
+# Bar actions: stage to Agenda de Hoy (both confirm: "lo que va en bloque"),
+# and behind Editar the tags, moving and restoring the date, and deleting.
+facturas_acciones <- function(crudos_texto = NULL) {
+  c(list(
+    list(accion = "agregar_todo", texto = "tablas.accion.agregar_todo", sin_seleccion = TRUE, confirmar = TRUE),
+    list(accion = "agregar_seleccion", texto = "tablas.accion.agregar_seleccion", confirmar = TRUE),
+    list(accion = "etiqueta_a", texto = "tablas.accion.etiqueta_a", modo = "editar"),
+    list(accion = "etiqueta_b", texto = "tablas.accion.etiqueta_b", modo = "editar"),
+    list(accion = "etiqueta_c", texto = "tablas.accion.etiqueta_c", modo = "editar"),
+    list(accion = "quitar_etiqueta", texto = "tablas.accion.quitar_etiqueta", modo = "editar"),
+    list(accion = "mover", texto = "tablas.accion.mover", modo = "editar", campo = "fecha"),
+    list(accion = "restaurar", texto = "tablas.accion.restaurar", modo = "editar"),
+    list(accion = "eliminar", texto = "tablas.accion.eliminar", modo = "editar", confirmar = TRUE, peligro = TRUE)),
+    if (!is.null(crudos_texto)) list(list(accion = "crudos", texto = crudos_texto)))
+}
+
+# The table's action -> handle_invoice_action(), with the rows by id.
+FACTURAS_ACCION <- c(
+  agregar_todo = "stage_all", agregar_seleccion = "stage_all",
+  etiqueta_a = "tag_urgent", etiqueta_b = "tag_both", etiqueta_c = "tag_important", quitar_etiqueta = "tag_clear",
+  mover = "move", restaurar = "restore", eliminar = "delete"
+)
+
+# The row payload handle_invoice_action() has always taken (from the old
+# venRowPayload() / getCheckedRows()), built from the data by id.
+facturas_payload <- function(df, ids) {
+  df <- as.data.frame(df, stringsAsFactors = FALSE)
+  filas <- match(ids, df$.id_tabla)
+  filas <- filas[!is.na(filas)]
+  txt <- function(x) { x <- as.character(x); x[is.na(x)] <- ""; x }
+  lapply(filas, function(i) list(
+    ledger       = txt(df$Ledger[i]),
+    empresa      = txt(df$Empresa[i]),
+    moneda       = txt(df$Moneda[i]),
+    documento    = txt(df$Documento[i]),
+    source       = txt(df$source[i] %||% SAP_B1_ERP_TYPE),
+    inv_id       = txt(df$id[i] %||% ""),
+    provision_id = txt(df$provision_id[i] %||% ""),
+    parte        = txt(df$Parte[i]),
+    codigo       = txt(df$Codigo[i] %||% ""),
+    importe      = as.numeric(df$Importe[i]),
+    fecha        = format(as.Date(df$Fecha[i]), "%d/%m/%Y"),
+    tipo         = if (identical(df$Ledger[i], "AR")) "Cobro" else "Pago"
+  ))
+}
+
+# The invoices table, the same for Vencidos and the lupa. `datos` is the
+# module's invoices (Ledger, Empresa, Fecha, Parte, Importe, ...); `crudos`
+# runs on "Ver datos de origen / SAP" with the marked rows (maybe none).
+facturas_tabla_server <- function(id, tabla, datos, shared, crudos, accion_factura = handle_invoice_action,
+                                  vacio = NULL, textos = NULL, crudos_texto = NULL, periodo = NULL) {
+  moduleServer(id, function(input, output, session) {
+    puede_convertir <- reactive(isTRUE(tryCatch(
+      has_capability(shared$current_user(), "pasivos.convert_to_item"), error = function(e) FALSE)))
+    base <- reactive({
+      df <- datos()
+      if (is.null(df) || !nrow(df)) return(NULL)
+      df <- as.data.frame(df, stringsAsFactors = FALSE)
+      df
+    })
+    tabla_df <- reactive({
+      df <- base()
+      out <- facturas_datos(df, tryCatch(shared$tags_db(), error = function(e) NULL),
+                            tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), puede_convertir())
+      out
+    })
+    t <- hd_table_server("t", tabla = tabla, datos = tabla_df, columnas = facturas_columnas(),
+                         secciones = list(list(campo = "Moneda", orden = "MXN"), ".tipo"),
+                         grupo = c("Empresa", "Fecha", "Parte"),
+                         filtros = list(list(campo = "Clase", titulo = "tablas.facturas.tipo"),
+                                        list(campo = "Etiqueta")),
+                         acciones_fila = "provision",
+                         acciones_barra = facturas_acciones(crudos_texto),
+                         vacio = vacio, textos = textos, periodo = periodo)
+
+    shiny::observeEvent(t$accion(), {
+      a <- t$accion()
+      df <- base()
+      if (is.null(df)) return()
+      df$.id_tabla <- facturas_ids(df)   # the table's ids, row by row
+      if (identical(a$accion, "provision")) {
+        fila <- df[df$.id_tabla %in% a$ids, , drop = FALSE]
+        if (nrow(fila) && nzchar(fila$provision_id[1] %||% ""))
+          session$sendCustomMessage("hdFacturasConvertir", as.character(fila$provision_id[1]))
+        return()
+      }
+      if (identical(a$accion, "crudos")) { crudos(a$ids, df); return() }
+      accion <- FACTURAS_ACCION[a$accion]
+      if (is.na(accion)) return()
+      payload <- list(action = unname(accion), rows = facturas_payload(df, a$ids), nonce = a$nonce)
+      if (identical(a$accion, "mover")) payload$move_to <- a$valor
+      accion_factura(payload, shared, session = session)
+    })
+    t
+  })
+}
+
+# alto: the table's maximum height (a whole tab: what's left of the window).
+facturas_tabla_ui <- function(id, alto = "auto") hd_table_ui(shiny::NS(id)("t"), alto = alto)
+
+# Raw SAP rows behind the overdue invoices (due today or earlier), for
+# "Ver datos de origen": all of them, as the lupa shows its whole month.
+vencidos_crudos <- function(shared) {
+  raw_list <- tryCatch(shared$sap_data(), error = function(e) NULL)
+  if (is.null(raw_list)) return(NULL)
+  emp <- tryCatch(shared$empresa_sel(), error = function(e) character(0))
+  dplyr::bind_rows(lapply(c("AR", "AP"), function(ldg) {
+    r <- raw_list[[ldg]]
+    if (is.null(r) || !nrow(r)) return(NULL)
+    date_col <- if ("Fecha de vencimiento" %in% names(r)) "Fecha de vencimiento"
+                else if ("FechaEff" %in% names(r)) "FechaEff" else NULL
+    if (!is.null(date_col)) r <- r[!is.na(r[[date_col]]) & as.Date(r[[date_col]]) <= Sys.Date(), , drop = FALSE]
+    if (length(emp) && "Empresa" %in% names(r)) r <- r[r[["Empresa"]] %in% emp, , drop = FALSE]
+    if (nrow(r)) { r[["Ledger"]] <- ldg; r } else NULL
+  }))
+}
 
 # ── UI ────────────────────────────────────────────────────────────────────────
 
 vencidosUI <- function(id) {
   ns <- NS(id)
-
   tagList(
-    tags$style(HTML("
-      /* Row selection */
-      .ven-row { cursor: pointer; transition: background .1s; }
-      .ven-row:hover:not(.ven-row-selected) { background: #f0f5ff !important; }
-      .ven-row.ven-row-selected { background: #d0e4ff !important; outline: 2px solid #0a58ca; outline-offset:-2px; }
-      /* Column sort headers */
-      .ven-th-sort { cursor: pointer; user-select: none; white-space: nowrap; }
-      .ven-th-sort:hover { background: #f0f5ff; }
-      .ven-sort-arrow { color: #adb5bd; font-size:.75rem; margin-left:3px; }
-      .ven-sort-arrow.active { color: #0a58ca; }
-      /* Currency section header */
-      .ven-currency-header { border-bottom: 2px solid #D6E0F0; padding-bottom:4px; margin-top:12px; }
-      /* Group summary rows */
-      .ven-group-row { cursor: pointer; transition: background .1s; }
-      .ven-group-row:hover { background: #e8eef8 !important; }
-      .ven-group-row.ven-group-all-selected { background: #d0e4ff !important; outline: 2px solid #0a58ca; outline-offset:-2px; }
-      .ven-group-row.ven-group-some-selected { background: #e5efff !important; }
-      /* Sub-rows: indent Parte cell */
-      .ven-subrow td:nth-child(4) { padding-left: 26px !important; }
-      /* Expand button inside group row */
-      .ven-expand-btn { background:none; border:none; cursor:pointer; padding:0 3px;
-                        font-size:0.68rem; color:#6c757d; line-height:1; vertical-align:middle; }
-      .ven-expand-btn:hover { color:#0a58ca; }
-      /* Confirmed (ghost) rows — SAP items already paid; greyed, struck-through, not selectable */
-      .ven-confirmed-ghost { pointer-events: none; cursor: default; }
-      .ven-confirmed-ghost td { opacity: 0.38; text-decoration: line-through; color: #6c757d !important; font-weight: normal !important; }
-      /* Selection bubble */
-      #ven_sel_bubble {
-        position: fixed; bottom: 22px; right: 22px; z-index: 9999;
-        background: #fff; border: 2px solid #0a58ca; border-radius: 10px;
-        padding: 9px 15px; box-shadow: 0 4px 18px rgba(10,88,202,.18);
-        min-width: 155px; pointer-events: none;
-      }
-      .ven-bubble-count {
-        font-size: 0.72rem; color: #6c757d; margin-bottom: 5px;
-        border-bottom: 1px solid #dee2e6; padding-bottom: 4px;
-      }
-      .ven-bubble-line {
-        display: flex; justify-content: space-between; gap: 10px;
-        font-size: 0.83rem; font-weight: 600; margin-top: 3px;
-      }
-      .ven-bubble-cur { color: #6c757d; font-weight: 400; font-size: 0.72rem; }
-      .ven-bubble-amt { font-variant-numeric: tabular-nums; }
-      .ven-bubble-section-label {
-        font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
-        letter-spacing: .05em; margin-top: 5px; margin-bottom: 1px;
-      }
-      .ven-bubble-sep { border-top: 1px solid #dee2e6; margin: 5px 0 2px; }
-      /* Stage/delete confirm bars — fixed, not in normal document flow.
-         These used to render right after the sticky header, so once the
-         list was scrolled down their normal-flow position scrolled up with
-         it, ending up hidden above the viewport or behind the sticky
-         header — clicking Agregar todo/Agregar selección/Eliminar looked
-         like it did nothing. Fixed positioning (matching #ven_sel_bubble's
-         existing pattern) keeps them visible regardless of scroll position. */
-      #ven_stage_confirm_bar, #ven_delete_confirm_bar {
-        position: fixed !important;
-        left: 50%; bottom: 22px; transform: translateX(-50%);
-        z-index: 9999; max-width: 92vw;
-        box-shadow: 0 4px 18px rgba(0,0,0,.18);
-      }
-      /* Pasivos provision rows */
-      .pasivos-provision { border: 1.5px dashed #a78bfa !important; background: #faf5ff !important; }
-      .pasivos-provision::before { content: 'P'; display: inline-flex; align-items: center;
-        justify-content: center; width: 16px; height: 16px; border-radius: 50%;
-        background: #7c3aed; color: #fff; font-size: 10px; font-weight: 700;
-        margin-right: 4px; vertical-align: middle; }
-      .pasivos-tag-provision { background-color: #7c3aed; color: white; border-radius: 12px;
-        padding: 2px 10px; font-size: 12px; font-weight: 500; display: inline-block; }
-      .pasivos-convert-btn { background: none; border: none; cursor: pointer; padding: 0 3px;
-        font-size: 1rem; line-height: 1; vertical-align: middle; opacity: 0.85; }
-      .pasivos-convert-btn:hover { opacity: 1; }
-      /* Sticky stack: #ven_sticky_header -> per-section band -> column
-         headers, all inside the SAME scrolling container (.h-100.overflow-auto,
-         the per-tab scroll div). That container's own top edge already sits
-         flush below the global control-bar (confirmed on Calendario/
-         Intercompany — no gap there), so #ven_sticky_header needs top:0, NOT
-         the control-bar's height: sticky offsets are relative to the nearest
-         *scrolling ancestor's own viewport*, never the outer page. Adding the
-         control-bar's height here was the actual bug behind the persistent
-         gap — it pushed the header (and everything stacked below it) down by
-         that amount every time. band/section and thead only need to clear
-         ven_sticky_header itself (and, for thead, the band too) — computed by
-         venRecalcStickyOffsets() in vencidos.js since both can change height
-         (edit toolbar opening) after first paint. */
-      .ven-section-band {
-        position: sticky;
-        top: var(--ven-hdr-h, 50px);
-        z-index: 150;
-      }
-      .ven-ledger-section thead th {
-        position: sticky;
-        top: var(--ven-band-h, 84px);
-        background: #fff;
-        z-index: 140;
-      }
-      /* Compact filter pill — same recipe as .cb-zone-controls/.cb-field in
-         ui_components.R (the top pills toolbar's control card), sized down
-         further so the whole toolbar row fits on one line. */
-      .ven-filter-pill {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        background: #f4f7fc;
-        border: 1px solid #dde4f0;
-        border-radius: 8px;
-        padding: 2px 7px;
-        white-space: nowrap;
-      }
-      .ven-filter-pill .form-control,
-      .ven-filter-pill .form-select {
-        height: 24px !important;
-        padding: 1px 6px !important;
-        font-size: 0.72rem !important;
-        line-height: 1.2 !important;
-        background: #fff !important;
-        border-color: #d0d9ec !important;
-      }
-      .ven-filter-pill .form-select { padding-right: 20px !important; }
-      /* Cell hover tooltip — full untruncated content + copy button, for any
-         table cell (Parte/Referencia are the usual culprits that clip with
-         text-overflow:ellipsis, but this works for any column). One shared
-         floating element, positioned near whichever cell is hovered — see
-         venCellTipShow() in vencidos.js. */
-      #ven_cell_tip {
-        position: fixed;
-        display: none;
-        align-items: flex-start;
-        gap: 6px;
-        max-width: 380px;
-        background: #fff;
-        border: 1px solid #c9d3e3;
-        border-radius: 6px;
-        padding: 6px 8px;
-        box-shadow: 0 4px 14px rgba(0,0,0,.15);
-        font-size: 0.8rem;
-        color: #1c2530;
-        z-index: 10000;
-      }
-      .ven-tip-text { white-space: pre-wrap; word-break: break-word; }
-      .ven-tip-copy {
-        flex: 0 0 auto;
-        display: flex; align-items: center; justify-content: center;
-        width: 20px; height: 20px;
-        border: 1px solid #d0d9ec;
-        border-radius: 4px;
-        background: #f4f7fc;
-        cursor: pointer;
-        color: #6c757d;
-        font-size: 0.7rem;
-        line-height: 1;
-        padding: 0;
-      }
-      .ven-tip-copy:hover { background: #e5edfb; color: #0a58ca; }
-      .ven-tip-copy.ven-tip-copied { color: #198754; }
-    ")),
-
-    # Fixed selection bubble (shown whenever rows are selected)
-    div(id = "ven_sel_bubble", style = "display:none;"),
-
-    # Shared cell hover tooltip (full content + copy button) — see venCellTipShow()
-    div(id = "ven_cell_tip", style = "display:none;",
-      tags$span(class = "ven-tip-text"),
-      tags$button(class = "ven-tip-copy", title = "Copiar", icon("copy"))
-    ),
-
-    div(class = "vencidos-wrap p-3",
-
-      div(
-        id    = "ven_sticky_header",
-        style = "position:sticky; top:0; z-index:200; background:#fff; margin:-1rem -1rem 0; padding:0.4rem 1rem; border-bottom:1px solid #dee2e6;",
-
-        # ── Top action + filter bar ──────────────────────────────────────────
-        div(class = "d-flex flex-wrap gap-2 align-items-center",
-        tags$button(
-          id      = "ven_edit_toggle",
-          class   = "btn btn-outline-secondary btn-sm",
-          onclick = "venToggleEdit()",
-          "\u270f\ufe0f Editar"
-        ),
-        tags$button(
-          id      = "ven_stage_all_btn",
-          class   = "btn btn-outline-success btn-sm",
-          onclick = "venStageAll()",
-          "\U0001f6d2 Agregar todo"
-        ),
-        tags$button(
-          id      = "ven_stage_sel_btn",
-          class   = "btn btn-outline-success btn-sm",
-          onclick = "venStageSelected()",
-          "\uff0b Agregar selecci\u00f3n"
-        ),
-        tags$button(
-          id      = "ven_sel_all_btn",
-          class   = "btn btn-outline-secondary btn-sm",
-          onclick = "venSelectAll()",
-          "Seleccionar todos"
-        ),
-        tags$button(
-          id      = "ven_sel_none_btn",
-          class   = "btn btn-outline-secondary btn-sm",
-          style   = "display:none;",
-          onclick = "venSelectNone()",
-          "Deseleccionar"
-        ),
-        # Filter controls (right-aligned) — compact pill, same recipe as the
-        # top toolbar's .cb-zone-controls card, sized further down.
-        div(class = "ms-auto d-flex flex-wrap gap-2 align-items-center",
-          div(class = "ven-filter-pill",
-          tags$input(id = "ven_search_text", type = "text",
-                     class = "form-control",
-                     style = "width:130px;",
-                     placeholder = "Buscar\u2026"),
-          tags$select(id = "ven_tipo", class = "form-select",
-                      style = "width:90px;",
-                      tags$option(value = "", "Todos"),
-                      tags$option(value = "Cobro", "Cobros"),
-                      tags$option(value = "Pago",  "Pagos")),
-          tags$select(id = "ven_tag_filter", class = "form-select",
-                      style = "width:100px;",
-                      tags$option(value = "",          "Etiquetas"),
-                      tags$option(value = "tagged",    "Etiquetadas"),
-                      tags$option(value = "urgent",    "\U0001f534 Urgente"),
-                      tags$option(value = "important", "\U0001f7e1 Importante"),
-                      tags$option(value = "both",      "\U0001f7e0 Ambas"))
-          ),
-          # Tiny utility buttons — group expand toggle + doc column toggle
-          div(class = "d-flex gap-1 align-items-center",
-            tags$button(
-              id      = "ven_groups_btn",
-              class   = "btn btn-outline-secondary btn-sm",
-              style   = "padding:2px 6px; font-size:0.7rem; line-height:1.5;",
-              onclick = "venToggleAllGroups()",
-              title   = "Expandir / colapsar todos los grupos",
-              HTML("&#9660;&#9660;")
-            ),
-            tags$button(
-              id      = "ven_doc_toggle_btn",
-              class   = "btn btn-outline-secondary btn-sm",
-              style   = "padding:2px 6px; font-size:0.7rem; line-height:1.5;",
-              onclick = "venToggleDoc()",
-              title   = "Mostrar / ocultar columna Documento",
-              "Documento"
-            ),
-            tags$button(
-              id      = "ven_orig_toggle_btn",
-              class   = "btn btn-outline-secondary btn-sm",
-              style   = "padding:2px 6px; font-size:0.7rem; line-height:1.5;",
-              onclick = "venToggleOrig()",
-              title   = "Mostrar / ocultar columna Origen",
-              "Origen"
-            ),
-            tags$button(
-              id      = "ven_fechaorig_toggle_btn",
-              class   = "btn btn-outline-secondary btn-sm",
-              style   = "padding:2px 6px; font-size:0.7rem; line-height:1.5;",
-              onclick = "venToggleFechaOrig()",
-              title   = "Mostrar / ocultar columna Vencimiento original",
-              "Venc. original"
-            )
-          )
-        )
-      ),
-
-      # ── Edit toolbar (hidden until ✏ Editar) ────────────────────────────
-      div(id    = "ven_edit_toolbar",
-          class = "mt-2 mb-2 p-2 border rounded bg-light",
-          style = "display:none;",
-        div(class = "d-flex flex-wrap gap-2 align-items-end",
-          div(class = "d-flex gap-1",
-            tags$button(class = "btn btn-sm btn-outline-danger",
-                        onclick = "venAction('tag_urgent')",
-                        "\U0001f534 Urgente"),
-            tags$button(class = "btn btn-sm btn-outline-warning",
-                        onclick = "venAction('tag_important')",
-                        "\U0001f7e1 Importante"),
-            tags$button(class   = "btn btn-sm",
-                        style   = "border-color:#FF6B35;color:#FF6B35;",
-                        onclick = "venAction('tag_both')",
-                        "\U0001f7e0 Ambas"),
-            tags$button(class = "btn btn-sm btn-outline-secondary",
-                        onclick = "venAction('tag_clear')",
-                        "\u2716 Quitar etiqueta")
-          ),
-          tags$div(class = "vr"),
-          div(class = "d-flex gap-1 align-items-end",
-            div(
-              tags$label("Mover a:", class = "form-label mb-0 small text-muted"),
-              tags$input(id = "ven_move_date", type = "date",
-                         class = "form-control form-control-sm",
-                         style = "width:145px;",
-                         value = format(Sys.Date() + 1, "%Y-%m-%d"))
-            ),
-            tags$button(class = "btn btn-sm btn-primary",
-                        onclick = "venAction('move')",
-                        "\U0001f4c5 Mover"),
-            tags$button(class = "btn btn-sm btn-outline-secondary",
-                        onclick = "venAction('restore')",
-                        "\u21a9 Restaurar fecha")
-          ),
-          tags$div(class = "vr"),
-          tags$button(class = "btn btn-sm btn-outline-danger",
-                      onclick = "venAction('delete')",
-                      "\U0001f5d1 Eliminar")
-        )
-      )  # /ven_edit_toolbar
-
-      ),  # /ven_sticky_header
-
-      # ── Stage confirmation bar ───────────────────────────────────────────
-      # NOTE: no d-flex in class — Bootstrap d-flex uses !important and overrides
-      # display:none. We set display:flex via JS when showing.
-      div(id    = "ven_stage_confirm_bar",
-          class = "alert alert-warning align-items-center gap-3 py-2 px-3 mb-2",
-          style = "display:none;",
-        tags$span(id = "ven_stage_confirm_msg", class = "flex-grow-1 small fw-bold"),
-        tags$button(class = "btn btn-sm btn-success",
-                    onclick = "venConfirmStage()",
-                    "\u2713 Confirmar"),
-        tags$button(class = "btn btn-sm btn-outline-secondary",
-                    onclick = "venCancelStage()",
-                    "Cancelar")
-      ),
-
-      # ── Delete confirmation bar (replaces window.confirm for delete) ─────
-      # NOTE: no d-flex in class — set display:flex via JS when showing.
-      div(id    = "ven_delete_confirm_bar",
-          class = "alert alert-danger align-items-center gap-3 py-2 px-3 mb-2",
-          style = "display:none;",
-        tags$span(id = "ven_delete_confirm_msg", class = "flex-grow-1 small fw-bold"),
-        tags$button(class = "btn btn-sm btn-danger",
-                    onclick = "venConfirmDelete()",
-                    "\u2713 S\u00ed, eliminar"),
-        tags$button(class = "btn btn-sm btn-outline-secondary",
-                    onclick = "venCancelDelete()",
-                    "Cancelar")
-      ),
-
-      # ── Dynamic table content ────────────────────────────────────────────
-      uiOutput(ns("ven_table_ui"))
-    ),
-
-    # -- JavaScript (loaded from www/vencidos.js) -------------------------
-    # ?v= query string forces browsers to reload after each edit.
-    tags$script(src = "vencidos.js?v=15")
+    div(class = "vencidos-wrap p-3", facturas_tabla_ui(ns("tabla"), alto = "calc(100vh - 230px)")),
+    # The tab's badge (count of open overdue invoices) and the ⚡ of a
+    # provision, which opens the pasivos module's convert dialog.
+    tags$script(HTML("
+      $(document).on('shiny:connected', function () {
+        Shiny.addCustomMessageHandler('vencidosBadge', function (msg) {
+          var el = document.getElementById('ven_tab_badge');
+          if (!el) return;
+          if (msg.count > 0) { el.textContent = msg.count; el.style.display = ''; }
+          else el.style.display = 'none';
+        });
+        Shiny.addCustomMessageHandler('hdFacturasConvertir', function (id) {
+          Shiny.setInputValue('pasivos_convert_request', id, { priority: 'event' });
+        });
+      });"))
   )
 }
 
 # ── Server ────────────────────────────────────────────────────────────────────
 
-vencidosServer <- function(id, shared) {
+# accion_factura: what runs an edit or stage action; handle_invoice_action()
+# in the app, a recorder in the tests (no S3).
+vencidosServer <- function(id, shared, accion_factura = handle_invoice_action) {
   moduleServer(id, function(input, output, session) {
 
     # ── Build overdue data ─────────────────────────────────────────────────
@@ -390,11 +306,12 @@ vencidosServer <- function(id, shared) {
         codes    <- build_ic_fullcodes(ic_reg, ledger_name)
         ic_rfcs  <- unique(toupper(trimws(unname(ic_reg$rfcs %||% character()))))
         ic_rfcs  <- ic_rfcs[nzchar(ic_rfcs)]
-        code_col <- if (ledger_name == "AR") "C\u00f3digo de cliente" else "C\u00f3digo de proveedor"
-        df <- apply_ic_filter(df, mode = ic_mode_val,
-                              code_col = code_col,
-                              ic_codes = codes,
-                              ic_rfcs  = ic_rfcs, cmap = shared$company_map())
+        code_col <- if (ledger_name == "AR") "Código de cliente" else "Código de proveedor"
+        # The session's own company map (cm/sesion gives apply_ic_filter() a
+        # `cmap`; until that's merged the function doesn't take it).
+        ic_args <- list(df, mode = ic_mode_val, code_col = code_col, ic_codes = codes, ic_rfcs = ic_rfcs)
+        if ("cmap" %in% names(formals(apply_ic_filter))) ic_args$cmap <- shared$company_map()
+        df <- do.call(apply_ic_filter, ic_args)
         if (!is.null(df) && !nrow(df)) return(NULL)
 
         # Layer 2: Parte-name fallback (catches IC when codes not yet registered)
@@ -421,9 +338,6 @@ vencidosServer <- function(id, shared) {
         # Date filter: due today or overdue
         df <- df[!is.na(df[["FechaEff"]]) & as.Date(df[["FechaEff"]]) <= today, , drop = FALSE]
         if (!nrow(df)) return(NULL)
-
-        # Tag labels
-        df <- add_tag_labels(df, tags, ledger_name)
 
         df[["Ledger"]]        <- ledger_name
         df[["Tipo"]]          <- if (ledger_name == "AR") "Cobro" else "Pago"
@@ -463,406 +377,37 @@ vencidosServer <- function(id, shared) {
       session$sendCustomMessage("vencidosBadge", list(count = sum(!confirmed)))
     })
 
-    # ── Render table ───────────────────────────────────────────────────────
-    output$ven_table_ui <- renderUI({
+    # ── The table's data ───────────────────────────────────────────────────
+    datos <- reactive({
       df <- vencidos_df()
-
-      if (is.null(df) || !nrow(df)) {
-        return(div(
-          class = "text-center text-muted py-5",
-          tags$i(class = "fa fa-circle-check fa-2x mb-2 d-block", style = "color:#28a745;"),
-          tags$p("Sin vencimientos pendientes \u2014 todo al d\u00eda", class = "mb-0 fw-semibold")
-        ))
-      }
-
-      # Tag weight for default sort
-      df[["tag_weight"]] <- dplyr::case_when(
-        df[["Etiqueta"]] == "\U0001f7e0 Ambas"      ~ 1L,
-        df[["Etiqueta"]] == "\U0001f534 Urgente"    ~ 2L,
-        df[["Etiqueta"]] == "\U0001f7e1 Importante" ~ 3L,
-        TRUE                                         ~ 4L
-      )
-      df <- df[order(df[["tag_weight"]], -df[["Importe"]]), ]
-
-      disp_df <- data.frame(
-        Ledger     = df[["Ledger"]],
-        Tipo       = df[["Tipo"]],
-        Empresa    = {
-          e <- df[["Empresa"]]
-          if (is.null(e)) e <- rep(NA_character_, nrow(df))
-          e
-        },
-        Fecha      = format(df[["Fecha"]], "%d/%m/%Y"),
-        FechaOrig  = ifelse(is.na(df[["FechaOriginal"]]), "",
-                            format(df[["FechaOriginal"]], "%d/%m/%Y")),
-        Parte      = df[["Parte"]] %||% "",
-        Documento  = df[["Documento"]] %||% "",
-        Codigo     = if ("Codigo" %in% names(df)) df[["Codigo"]] %||% "" else "",
-        Referencia = {
-          fac <- if ("Factura" %in% names(df)) df[["Factura"]] else NA_character_
-          replace(fac, is.na(fac), "")
-        },
-        Moneda     = df[["Moneda"]],
-        Importe    = df[["Importe"]],
-        Etiqueta   = df[["Etiqueta"]],
-        tag_weight = df[["tag_weight"]],
-        source       = df[["source"]] %||% SAP_B1_ERP_TYPE,
-        confirmed    = if ("confirmed" %in% names(df)) df[["confirmed"]] %||% FALSE else FALSE,
-        inv_id       = if ("id" %in% names(df)) df[["id"]] %||% "" else "",
-        provision_id = if ("provision_id" %in% names(df)) df[["provision_id"]] %||% "" else "",
-        stringsAsFactors = FALSE
-      )
-
+      if (is.null(df) || !nrow(df)) return(df)
       # Fill missing Empresa.
       # Rows from old snapshots or manual entries may lack Empresa; without it
       # they cannot be staged (pagar_hoy_module filters per-empresa).
-      # Strategy:
-      #   1. Try the processed df first — SAP rows always carry Empresa there.
-      #      Look up by Documento (exact match) within the same Ledger.
+      #   1. Look it up by Documento + Ledger among the rows that have it
+      #      (SAP rows always carry Empresa).
       #   2. Fall back to empresa_sel when it narrows to exactly one company.
-      {
-        blank <- !nzchar(disp_df[["Empresa"]], keepNA = FALSE)
-        if (any(blank)) {
-          # Pass 1: look up Empresa from other rows in the same processed df
-          # that share the same Documento + Ledger. SAP rows always carry it;
-          # only old-snapshot or manual rows may be missing it.
-          valid_emp <- df[nzchar(df[["Empresa"]], keepNA = FALSE),
-                         c("Documento","Ledger","Empresa"), drop = FALSE]
-          for (i in which(blank)) {
-            doc <- disp_df[["Documento"]][i]
-            lgr <- disp_df[["Ledger"]][i]
-            if (!nzchar(doc %||% "")) next
-            hit <- valid_emp[
-              !is.na(valid_emp[["Documento"]]) & valid_emp[["Documento"]] == doc &
-              !is.na(valid_emp[["Ledger"]])    & valid_emp[["Ledger"]]    == lgr,
-              "Empresa", drop = TRUE]
-            if (length(hit) && nzchar(hit[1])) disp_df[["Empresa"]][i] <- hit[1]
-          }
-          # Pass 2: anything still blank — use empresa_sel if unambiguous
-          still_blank <- !nzchar(disp_df[["Empresa"]], keepNA = FALSE)
-          if (any(still_blank)) {
-            emp_now <- shared$empresa_sel()
-            if (length(emp_now) == 1L)
-              disp_df[["Empresa"]][still_blank] <- emp_now[1L]
-          }
-        }
+      emp <- as.character(df[["Empresa"]] %||% rep(NA_character_, nrow(df)))
+      blank <- !nzchar(emp, keepNA = FALSE)
+      if (any(blank)) {
+        llave <- paste(df[["Ledger"]], df[["Documento"]])
+        conocidas <- tapply(emp[!blank], llave[!blank], `[`, 1)
+        emp[blank] <- unname(conocidas[llave[blank]])
+        blank <- !nzchar(emp, keepNA = FALSE)
+        emp_now <- tryCatch(shared$empresa_sel(), error = function(e) character(0))
+        if (any(blank) && length(emp_now) == 1L) emp[blank] <- emp_now[1L]
+        emp[is.na(emp)] <- ""
+        df[["Empresa"]] <- emp
       }
-
-      # Group key: collapse rows sharing Empresa + Date + Parte + Tipo + Moneda.
-      # Empresa is required so invoices from different companies with the same
-      # counterpart are never merged into a single group row.
-      # Rows with blank Empresa get a unique per-row key so they stay standalone.
-      disp_df[["group_key"]] <- dplyr::if_else(
-        nzchar(disp_df[["Empresa"]], keepNA = FALSE),
-        paste(disp_df[["Empresa"]], disp_df[["Fecha"]], disp_df[["Parte"]],
-              disp_df[["Tipo"]],   disp_df[["Moneda"]], sep = "\x1f"),
-        paste0("__solo__", seq_len(nrow(disp_df)))
-      )
-      gk_tab                  <- table(disp_df[["group_key"]])
-      disp_df[["group_size"]] <- as.integer(gk_tab[disp_df[["group_key"]]])
-      disp_df[["group_id"]]   <- match(disp_df[["group_key"]], unique(disp_df[["group_key"]]))
-
-      currencies <- c(
-        intersect("MXN", unique(disp_df[["Moneda"]])),
-        sort(setdiff(unique(disp_df[["Moneda"]]), "MXN"))
-      )
-
-      # Sortable <th> helper
-      make_th <- function(label, col) {
-        tags$th(
-          class      = "ven-th-sort",
-          `data-col` = col,
-          onclick    = paste0("venSortByCol('", col, "')"),
-          label,
-          tags$span(class = "ven-sort-arrow", "\u2195")
-        )
-      }
-
-      make_table_section <- function(rows, ledger_name, tipo_label, cur) {
-        if (!nrow(rows)) return(NULL)
-        is_ghost  <- rows[["confirmed"]] %||% FALSE
-        total     <- sum(rows[["Importe"]][!is_ghost], na.rm = TRUE)
-        badge_cls <- if (ledger_name == "AR") "badge bg-primary" else "badge bg-success"
-        border_c  <- if (ledger_name == "AR") "#0a58ca" else "#198754"
-        tbody_id  <- paste0("ven_tbody_", ledger_name, "_", cur)
-
-        # ── Individual data row ──────────────────────────────────────────────
-        make_data_tr <- function(row, extra_class = "", group_id_val = "", hidden = FALSE) {
-          row_bg    <- switch(row[["Etiqueta"]],
-            "\U0001f534 Urgente"    = "background:#fff0f0;",
-            "\U0001f7e1 Importante" = "background:#fffbe6;",
-            "\U0001f7e0 Ambas"      = "background:#fff3e6;",
-            ""
-          )
-          full_style  <- paste0(row_bg, if (hidden) "display:none;" else "")
-          etiq_html   <- if (nzchar(row[["Etiqueta"]])) htmltools::htmlEscape(row[["Etiqueta"]]) else ""
-          ref_val     <- row[["Referencia"]] %||% ""
-          empresa_val <- { ev <- row[["Empresa"]] %||% ""; if (is.na(ev)) "" else ev }
-
-          is_provision  <- identical(row[["source"]], "provision")
-          is_ghost_row  <- isTRUE(row[["confirmed"]])
-          row_badge_cls  <- if (is_provision) "pasivos-tag-provision" else badge_cls
-          row_tipo_label <- if (is_provision) "Provisión" else htmltools::htmlEscape(row[["Tipo"]])
-          prov_id_val    <- row[["provision_id"]] %||% ""
-          row_extra_cls  <- paste0(
-            if (is_provision) " pasivos-provision" else "",
-            if (is_ghost_row) " ven-confirmed-ghost" else ""
-          )
-
-          paste0(
-            '<tr class="ven-row', if (nzchar(extra_class)) paste0(" ", extra_class) else "", row_extra_cls, '"',
-            if (nzchar(group_id_val)) paste0(' data-group-id="', group_id_val, '"') else "",
-            ' data-tipo="',      htmltools::htmlEscape(row[["Tipo"]]),               '"',
-            ' data-ledger="',    htmltools::htmlEscape(row[["Ledger"]]),             '"',
-            ' data-moneda="',    htmltools::htmlEscape(row[["Moneda"]]),             '"',
-            ' data-tag="',       htmltools::htmlEscape(row[["Etiqueta"]]),           '"',
-            ' data-importe="',   as.character(row[["Importe"]]),                     '"',
-            ' data-fecha="',     htmltools::htmlEscape(row[["Fecha"]]),              '"',
-            ' data-fechaorig="', htmltools::htmlEscape(row[["FechaOrig"]]),          '"',
-            ' data-parte="',     htmltools::htmlEscape(tolower(row[["Parte"]])),     '"',
-            ' data-parteraw="',  htmltools::htmlEscape(row[["Parte"]]),              '"',
-            ' data-doc="',       htmltools::htmlEscape(tolower(row[["Documento"]])), '"',
-            ' data-ref="',       htmltools::htmlEscape(tolower(ref_val)),            '"',
-            ' data-empresa="',   htmltools::htmlEscape(empresa_val),                '"',
-            ' data-documento="', htmltools::htmlEscape(row[["Documento"]]),          '"',
-            ' data-source="',    htmltools::htmlEscape(row[["source"]]),             '"',
-            ' data-invid="',     htmltools::htmlEscape(row[["inv_id"]]),             '"',
-            ' data-provisionid="', htmltools::htmlEscape(prov_id_val),              '"',
-            ' data-codigo="',    htmltools::htmlEscape(row[["Codigo"]] %||% ""),    '"',
-            ' data-tagweight="', as.character(row[["tag_weight"]]),                  '"',
-            if (nzchar(full_style)) paste0(' style="', full_style, '"') else "",
-            '>',
-            '<td><span class="', row_badge_cls, '">', row_tipo_label, '</span>',
-            if (is_provision && nzchar(prov_id_val)) sprintf(
-              ' <button class="pasivos-convert-btn" onclick="event.stopPropagation();Shiny.setInputValue(\'pasivos_convert_request\',\'%s\',{priority:\'event\'})" title="Convertir a comprobante">⚡</button>',
-              htmltools::htmlEscape(prov_id_val)
-            ) else "",
-            '</td>',
-            '<td>', if (nzchar(empresa_val)) paste0('<span class="cart-empresa-badge">', htmltools::htmlEscape(empresa_val), '</span>') else "", '</td>',
-            '<td style="white-space:nowrap;">', htmltools::htmlEscape(row[["Fecha"]]), '</td>',
-            '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">',
-              htmltools::htmlEscape(row[["Parte"]]),
-            '</td>',
-            '<td class="text-muted small">', htmltools::htmlEscape(ref_val), '</td>',
-            '<td class="text-muted small ven-doc-cell" style="display:none;">',
-              htmltools::htmlEscape(row[["Documento"]]),
-            '</td>',
-            '<td class="text-muted small ven-orig-cell" style="display:none;">',
-              switch(row[["source"]] %||% SAP_B1_ERP_TYPE,
-                # Both the historical literal "sap" (pre-erp_type records)
-                # and today's SAP_B1_ERP_TYPE value map to the same label --
-                # never remove either case, they cover different eras of data.
-                "sap"                  = "SAP",
-                "sap_b1_service_layer" = "SAP",
-                "manual"    = "Manual",
-                "provision" = "Provisión",
-                "SAP"),
-            '</td>',
-            '<td class="text-muted small ven-fechaorig-cell" style="display:none;white-space:nowrap;">',
-              htmltools::htmlEscape(row[["FechaOrig"]]),
-            '</td>',
-            '<td class="text-end fw-bold" style="color:#1a6cc4;font-variant-numeric:tabular-nums;">',
-              fmt_money(row[["Importe"]]),
-            '</td>',
-            '<td>', etiq_html, '</td>',
-            '</tr>'
-          )
-        }
-
-        # ── Group summary row ────────────────────────────────────────────────
-        make_group_tr <- function(grp_rows, gid) {
-          g_ghost     <- grp_rows[["confirmed"]] %||% FALSE
-          g_importe   <- sum(grp_rows[["Importe"]][!g_ghost], na.rm = TRUE)
-          g_tagweight <- min(grp_rows[["tag_weight"]], na.rm = TRUE)
-          g_etiqueta  <- dplyr::case_when(
-            g_tagweight == 1L ~ "\U0001f7e0 Ambas",
-            g_tagweight == 2L ~ "\U0001f534 Urgente",
-            g_tagweight == 3L ~ "\U0001f7e1 Importante",
-            TRUE              ~ ""
-          )
-          row_bg   <- switch(g_etiqueta,
-            "\U0001f534 Urgente"    = "background:#fff0f0;",
-            "\U0001f7e1 Importante" = "background:#fffbe6;",
-            "\U0001f7e0 Ambas"      = "background:#fff3e6;",
-            "background:#f0f4fa;"
-          )
-          n_inv    <- sum(!(grp_rows[["confirmed"]] %||% FALSE))
-          g_tipo   <- grp_rows[["Tipo"]][1]
-          g_fecha  <- grp_rows[["Fecha"]][1]
-          g_parte  <- grp_rows[["Parte"]][1]
-          g_moneda <- grp_rows[["Moneda"]][1]
-          g_ledger <- grp_rows[["Ledger"]][1]
-          # Show empresa if all sub-rows share the same one
-          empresas  <- unique(grp_rows[["Empresa"]][nzchar(grp_rows[["Empresa"]] %||% "")])
-          g_empresa <- if (length(empresas) == 1L) empresas else ""
-          etiq_html <- if (nzchar(g_etiqueta)) htmltools::htmlEscape(g_etiqueta) else ""
-          gid_str   <- as.character(gid)
-
-          paste0(
-            '<tr class="ven-group-row"',
-            ' data-group-id="',  gid_str,                                    '"',
-            ' data-tipo="',      htmltools::htmlEscape(g_tipo),               '"',
-            ' data-ledger="',    htmltools::htmlEscape(g_ledger),             '"',
-            ' data-moneda="',    htmltools::htmlEscape(g_moneda),             '"',
-            ' data-tag="',       htmltools::htmlEscape(g_etiqueta),           '"',
-            ' data-importe="',   as.character(g_importe),                     '"',
-            ' data-fecha="',     htmltools::htmlEscape(g_fecha),              '"',
-            ' data-parte="',     htmltools::htmlEscape(tolower(g_parte)),     '"',
-            ' data-doc="" data-ref=""',
-            ' data-tagweight="', as.character(g_tagweight),                   '"',
-            ' data-expanded="false"',
-            ' style="', row_bg, '"',
-            '>',
-            '<td><span class="', badge_cls, '">', htmltools::htmlEscape(g_tipo), '</span></td>',
-            '<td>', if (nzchar(g_empresa)) paste0('<span class="cart-empresa-badge">', htmltools::htmlEscape(g_empresa), '</span>') else "", '</td>',
-            '<td style="white-space:nowrap;">', htmltools::htmlEscape(g_fecha), '</td>',
-            '<td style="white-space:nowrap; max-width:220px;">',
-              '<button class="ven-expand-btn" onclick="event.stopPropagation();venExpandGroup(', gid_str, ')" title="Expandir/colapsar">&#9660;</button>',
-              ' <span class="ven-group-count" style="font-size:0.72rem;color:#6c757d;margin-right:3px;">', n_inv, '</span>',
-              '<span style="display:inline-block;max-width:155px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;white-space:nowrap;">',
-                htmltools::htmlEscape(g_parte),
-              '</span>',
-            '</td>',
-            '<td class="text-muted small"></td>',
-            '<td class="text-muted small ven-doc-cell" style="display:none;"></td>',
-            '<td class="text-muted small ven-orig-cell" style="display:none;"></td>',
-            '<td class="text-muted small ven-fechaorig-cell" style="display:none;"></td>',
-            '<td class="text-end fw-bold" style="color:#1a6cc4;font-variant-numeric:tabular-nums;">',
-              fmt_money(g_importe),
-            '</td>',
-            '<td>', etiq_html, '</td>',
-            '</tr>'
-          )
-        }
-
-        # ── Build HTML rows ──────────────────────────────────────────────────
-        grouped_keys    <- names(which(table(rows[["group_key"]]) >= 2L))
-        rows_html       <- character(0)
-        seen_group_keys <- character(0)
-
-        for (i in seq_len(nrow(rows))) {
-          row <- rows[i, ]
-          gk  <- row[["group_key"]]
-
-          if (gk %in% grouped_keys) {
-            if (gk %in% seen_group_keys) {
-              next  # already emitted as part of group block
-            } else {
-              seen_group_keys <- c(seen_group_keys, gk)
-              grp_rows <- rows[rows[["group_key"]] == gk, ]
-              gid      <- grp_rows[["group_id"]][1]
-              rows_html <- c(rows_html, make_group_tr(grp_rows, gid))
-              for (j in seq_len(nrow(grp_rows))) {
-                rows_html <- c(rows_html,
-                  make_data_tr(grp_rows[j, ],
-                    extra_class  = "ven-subrow",
-                    group_id_val = as.character(gid),
-                    hidden       = TRUE))
-              }
-            }
-          } else {
-            rows_html <- c(rows_html, make_data_tr(row))
-          }
-        }
-
-        div(class = "ven-ledger-section mb-3",
-          `data-ledger` = ledger_name, `data-moneda` = cur,
-          div(class = "d-flex align-items-center gap-2 px-2 py-1 mb-1 ven-section-band",
-              style = paste0("background:#f1f5fb; border-left:3px solid ", border_c,
-                             "; border-radius:0 4px 4px 0;"),
-            tags$span(class = badge_cls, tipo_label),
-            tags$span(class = "small text-muted",
-                      paste(sum(!is_ghost), "factura", if (sum(!is_ghost) != 1) "s" else "")),
-            tags$span(class = "ms-auto fw-semibold",
-                      style = "font-size:.9rem; color:#0B2038;",
-                      fmt_money(total), " ", cur)
-          ),
-          # No per-table overflow-x wrapper here on purpose: setting overflow-x
-          # on this div (without also being the page's real scroller) makes
-          # browsers treat it as ITS OWN scroll container, which becomes the
-          # containing block for position:sticky — silently breaking the
-          # sticky column headers below. The outer .h-100.overflow-auto tab
-          # container already scrolls both axes (Bootstrap's overflow-auto
-          # utility), so it remains the single scrolling ancestor.
-          div(
-            tags$table(
-              class = "table table-sm table-hover mb-1",
-              tags$thead(tags$tr(
-                make_th("Tipo",        "tipo"),
-                make_th("Empresa",     "empresa"),
-                make_th("Fecha venc.", "fecha"),
-                make_th("Parte",       "parte"),
-                make_th("Referencia",  "referencia"),
-                tags$th(
-                  class      = "ven-doc-th ven-th-sort",
-                  `data-col` = "documento",
-                  onclick    = "venSortByCol('documento')",
-                  style      = "display:none;",
-                  "Documento ", tags$span(class = "ven-sort-arrow", "\u2195")
-                ),
-                tags$th(
-                  class = "ven-orig-th",
-                  style = "display:none;",
-                  "Origen"
-                ),
-                tags$th(
-                  class      = "ven-fechaorig-th ven-th-sort",
-                  `data-col` = "fecha_orig",
-                  onclick    = "venSortByCol('fecha_orig')",
-                  style      = "display:none;",
-                  "Venc. original ", tags$span(class = "ven-sort-arrow", "↕")
-                ),
-                tags$th(class = "ven-th-sort text-end", `data-col` = "importe",
-                        onclick = "venSortByCol('importe')",
-                        "Importe ", tags$span(class = "ven-sort-arrow", "\u2195")),
-                make_th("Etiqueta", "etiqueta")
-              )),
-              tags$tbody(
-                id    = tbody_id, class = "ven-tbody",
-                `data-ledger` = ledger_name, `data-moneda` = cur,
-                HTML(paste(rows_html, collapse = "\n"))
-              )
-            )
-          )
-        )
-      }
-
-      cur_sections <- lapply(currencies, function(cur) {
-        cur_df    <- disp_df[disp_df[["Moneda"]] == cur, ]
-        ar_rows   <- cur_df[cur_df[["Ledger"]] == "AR", ]
-        ap_rows   <- cur_df[cur_df[["Ledger"]] == "AP", ]
-        cur_ghost <- cur_df[["confirmed"]] %||% FALSE
-        cur_total <- sum(cur_df[["Importe"]][!cur_ghost], na.rm = TRUE)
-        cur_n     <- sum(!cur_ghost)
-
-        div(class = "ven-cur-section mb-2", `data-moneda` = cur,
-          div(class = "ven-currency-header d-flex align-items-center gap-2 mb-2",
-            tags$h5(class = "mb-0 fw-bold", style = "color:#0B2038; font-size:1rem;", cur),
-            tags$span(class = "text-muted small",
-                      paste0(cur_n, " factura", if (cur_n != 1) "s" else "")),
-            tags$span(class = "ms-auto fw-bold",
-                      style = "font-size:1rem; color:#0A58CA;",
-                      fmt_money(cur_total))
-          ),
-          make_table_section(ar_rows, "AR", "Cobros", cur),
-          make_table_section(ap_rows, "AP", "Pagos",  cur)
-        )
-      })
-
-      total_n <- sum(!(disp_df[["confirmed"]] %||% FALSE))
-      tagList(
-        div(id    = "ven_count",
-            class = "small text-muted mb-3",
-            paste0(total_n, " factura", if (total_n != 1) "s" else "",
-                   " vencida", if (total_n != 1) "s" else "",
-                   " o con vencimiento hoy")),
-        tagList(cur_sections),
-        tags$script(HTML("
-          setTimeout(function(){
-            if(window.venFilterAndSort) venFilterAndSort();
-          }, 50);
-        "))
-      )
+      df
     })
+
+    facturas_tabla_server(
+      "tabla", tabla = "vencidos", datos = datos, shared = shared,
+      crudos = function(ids, df) mostrar_datos_sap(vencidos_crudos(shared)),
+      accion_factura = accion_factura,
+      vacio  = list(texto = "tablas.vencidos.vacio", tono = "exito"),
+      # The counter, like the tab's badge, leaves paid rows out.
+      textos = list(contador = "tablas.contador.vencidas", sin_bloqueadas = TRUE))
   })
 }
