@@ -58,6 +58,16 @@ pasivos_provisions_as_ledger_rows <- function(provisions, liabilities, ledger = 
 
   liabs <- if (!is.null(liabilities) && nrow(liabilities)) liabilities else NULL
 
+  # A provision of an archived liability (estado "deleted") is not a payment
+  # anyone will make. Archiving only removes FUTURE provisional provisions, so
+  # past ones used to stay in the Calendar and the cash flow as overdue
+  # payments (found 2026-10-31, CM06). Manual provisions have no liability.
+  if (!is.null(liabs) && "estado" %in% names(liabs)) {
+    archivados <- liabs$id[!is.na(liabs$estado) & liabs$estado == "deleted"]
+    prov <- prov[is.na(prov$liability_id) | !prov$liability_id %in% archivados, , drop = FALSE]
+    if (!nrow(prov)) return(.empty_provision_ledger_rows())
+  }
+
   rows <- lapply(seq_len(nrow(prov)), function(i) {
     p   <- prov[i, , drop = FALSE]
     lid <- p$liability_id[1]
