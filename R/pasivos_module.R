@@ -988,9 +988,9 @@ setup_pasivos_module <- function(input, output, session, shared) {
 #
 # Usage from an R session connected to the same S3 environment:
 #   pasivos_admin_inventory()                          # see what's in the store
-#   pasivos_admin_purge_closed()                       # dry run — shows what WOULD be purged
-#   pasivos_admin_purge_closed(dry_run = FALSE)        # actually purge
-#   pasivos_admin_purge_closed(drop_estados = c("closed"), dry_run = FALSE, user = "luis")
+#   pasivos_admin_purge_closed(client_id = "networks")                   # dry run — shows what WOULD be purged
+#   pasivos_admin_purge_closed(client_id = "networks", dry_run = FALSE)  # actually purge
+#   pasivos_admin_purge_closed(client_id = "networks", drop_estados = c("closed"), dry_run = FALSE, user = "luis")
 #
 # A backup is automatically written under a timestamped key before any destructive write.
 # =============================================================================
@@ -1022,7 +1022,13 @@ pasivos_admin_inventory <- function(client_id = NULL) {
 pasivos_admin_purge_closed <- function(drop_estados = "closed",
                                        user = "system",
                                        dry_run = TRUE,
-                                       client_id = NULL) {
+                                       client_id) {
+  # Required: the backup, the purge and the audit must all land in the same
+  # client. The backup used to be written without it (found 2026-10-31, CM07),
+  # which on the shared deployment fails and aborts, and elsewhere would land
+  # in whichever client CLIENT_ID names.
+  if (missing(client_id) || is.null(client_id) || !nzchar(client_id))
+    stop("pasivos_admin_purge_closed(): pass client_id (e.g. \"networks\").", call. = FALSE)
   provs <- load_pasivos_provisions(client_id = client_id)
   if (!nrow(provs)) {
     message("Nothing to purge.")
@@ -1048,7 +1054,7 @@ pasivos_admin_purge_closed <- function(drop_estados = "closed",
   backup_key <- sprintf("pasivos_provisions_backup_%s.rds",
                         format(Sys.time(), "%Y%m%d_%H%M%S"))
   tryCatch({
-    .s3_write(provs, backup_key)
+    .s3_write(provs, backup_key, client_id = client_id)
     message(sprintf("Backup written: %s", backup_key))
   }, error = function(e) {
     stop("[pasivos] backup failed; aborting purge. Error: ", conditionMessage(e))
@@ -1056,7 +1062,7 @@ pasivos_admin_purge_closed <- function(drop_estados = "closed",
 
   cleaned <- provs[!to_drop, , drop = FALSE]
   save_pasivos_provisions(cleaned, client_id = client_id)
-  bump_sync_version("pasivos_provisions_db")
+  bump_sync_version("pasivos_provisions_db", client_id = client_id)
 
   # This scans the WHOLE client's provision history, not one liability or
   # session -- over years of data, to_drop can genuinely reach thousands of
