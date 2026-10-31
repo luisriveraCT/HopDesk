@@ -98,7 +98,7 @@ txt <- readLines("R/bancos_module.R", warn = FALSE)
 
 # ── 4. Static scan: moneda captured on the confirmado candidate struct ─────
 {
-  start <- grep("Source 1: bancos_confirmados \\(eliminado=FALSE\\)", txt)
+  start <- grep("Source 1: live bancos_confirmados", txt, fixed = TRUE)
   .chk(length(start) > 0, TRUE, "found .build_candidates_bank_side()'s confirmado source block to scan")
   if (length(start)) {
     block <- paste(.strip_comments(txt[start[1]:min(start[1] + 30, length(txt))]), collapse = "\n")

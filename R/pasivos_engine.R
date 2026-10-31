@@ -984,6 +984,29 @@ pasivos_provision_item_confirmed <- function(provision_id, bancos_conf_id, user,
   invisible(row)
 }
 
+# The item's confirmation was undone in Bancos. undo_conf() restores the
+# item itself, so the provision is converted again -- not paid, and not
+# provisional either (the item still exists). Until 2026-10-31 nothing made
+# this transition and the provision stayed "item_confirmed" after the undo.
+pasivos_provision_item_reversed <- function(provision_id, user, client_id = NULL) {
+  row <- .load_provision(provision_id, client_id = client_id)
+  if (row$estado != "item_confirmed") return(invisible(row))
+  before <- as.list(row)
+  row$estado         <- "converted"
+  row$bancos_conf_id <- NA_character_
+  .save_provision_row(row, client_id = client_id)
+  pasivos_log_audit(
+    action_type = "provision.item_reversed",
+    user        = user,
+    target_kind = "provision",
+    target_id   = provision_id,
+    before      = before,
+    after       = as.list(row),
+    client_id   = client_id
+  )
+  invisible(row)
+}
+
 pasivos_provision_close <- function(provision_id, user, client_id = NULL) {
   row <- .load_provision(provision_id, client_id = client_id)
   if (row$estado != "item_confirmed")

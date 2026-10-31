@@ -89,6 +89,35 @@ provisiones_pagadas <- function(provs, prov_ids) {
   unique(provs$id[hit])
 }
 
+# Where each provision is, for other screens (Requisiciones): "provisionada",
+# "en_pago" (converted to an item, not paid yet), "pagada" or "borrada"; NA
+# for an id this client does not have. "pagada" comes ONLY from a live
+# bancos_confirmados row carrying the provision_id -- never from `estado`,
+# which has drifted from the payment before. Pure core + a fresh-read wrapper.
+etapa_de_provision_en <- function(provs, conf, provision_id) {
+  provision_id <- as.character(provision_id)
+  vivas  <- confirmaciones_vigentes(conf)
+  pagado <- if (!is.null(vivas) && nrow(vivas) && "provision_id" %in% names(vivas))
+    unique(vivas$provision_id[!is.na(vivas$provision_id)]) else character()
+  idx    <- match(provision_id, provs$id)
+  estado <- provs$estado[idx]
+  etapa  <- ifelse(estado %in% "deleted", "borrada",
+            ifelse(provision_id %in% pagado, "pagada",
+            ifelse(estado %in% c("converted", PROVISION_PAGADA), "en_pago",
+            ifelse(estado %in% "provisional", "provisionada", NA_character_))))
+  # A closed provision with no live payment was cancelled, not paid.
+  etapa[estado %in% "closed" & !(provision_id %in% pagado)] <- "borrada"
+  etapa[is.na(idx)] <- NA_character_
+  unname(etapa)
+}
+
+etapa_de_provision <- function(client_id, provision_id) {
+  if (is.null(client_id) || !nzchar(client_id)) stop("etapa_de_provision: sin client_id")
+  etapa_de_provision_en(load_pasivos_provisions(client_id = client_id),
+                        load_bancos_confirmados(client_id = client_id),
+                        provision_id)
+}
+
 # ── pasivos_modifiers ─────────────────────────────────────────────────────────
 # No list columns — standard normalize works.
 

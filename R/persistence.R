@@ -821,6 +821,19 @@ editar_manual <- function(existente, cambios) {
   cambios
 }
 
+# bancos_confirmados rows that still mean "paid". recover_confirmacion()
+# records an undo as its own row with eliminado = FALSE and action =
+# "recovered": a record of the undo, never a confirmation. Readers that
+# filtered on !eliminado alone counted it as one, so an undone confirmation
+# stayed confirmed -- the invoice never reopened and its provision was marked
+# paid again (found 2026-10-31). Ask this, never !eliminado alone.
+confirmaciones_vigentes <- function(conf) {
+  if (is.null(conf) || !is.data.frame(conf) || !nrow(conf)) return(conf)
+  elim <- if ("eliminado" %in% names(conf)) conf[["eliminado"]] %in% TRUE else FALSE
+  rec  <- if ("action" %in% names(conf)) conf[["action"]] %in% "recovered" else FALSE
+  conf[!elim & !rec, , drop = FALSE]
+}
+
 delete_manual <- function(df, id) {
   filter(df, .data$id != !!id)
 }

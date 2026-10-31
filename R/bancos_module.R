@@ -1681,8 +1681,8 @@ bancosServer <- function(id, shared) {
     # Helper: build standardised candidate list from bancos_confirmados + SAP
     .build_candidates_bank_side <- function(item, movs, conf, sap_list) {
       out <- list()
-      # Source 1: bancos_confirmados (eliminado=FALSE)
-      cf <- dplyr::filter(conf, !eliminado)
+      # Source 1: live bancos_confirmados (an undo's own row is not one)
+      cf <- confirmaciones_vigentes(conf)
       if (nrow(cf)) {
         for (i in seq_len(nrow(cf))) {
           r <- cf[i, ]
@@ -3373,7 +3373,9 @@ bancosServer <- function(id, shared) {
     # ── Tab 3: Historial ─────────────────────────────────────────────────────
     output$historial_tbl <- DT::renderDataTable({
       # Primary source: bancos_confirmados (active, not deleted)
-      conf <- dplyr::filter(confirmados(), !is.na(eliminado) & !eliminado) |>
+      # (an undo's own "recovered" row is not a confirmation: listing it
+      # offered a second Deshacer on the undo itself)
+      conf <- confirmaciones_vigentes(confirmados()) |>
         dplyr::mutate(.legacy = FALSE)
 
       # Secondary source: conciliacion_rv (legacy path — items confirmed before
@@ -3677,6 +3679,22 @@ bancosServer <- function(id, shared) {
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
       )
 
+      # Deleting a provision's confirmation leaves it unpaid with no item
+      # (the item was archived at confirm time and is not restored here), so
+      # the provision is pending again -- unless another live confirmation
+      # still pays it.
+      pid <- conf$provision_id[idx_c] %||% NA_character_
+      if (!is.na(pid) && nzchar(pid) && !any(confirmaciones_vigentes(conf)$provision_id %in% pid)) {
+        tryCatch(pasivos_provision_revive(
+          pid, user = tryCatch(shared$current_user(), error = function(e) "system"),
+          client_id = shared$effective_client_id()),
+          error = function(e) message("[bancos] provision revive failed: ", conditionMessage(e)))
+        tryCatch({
+          shared$suppress_ledger_prov_refresh(TRUE)
+          shared$pasivos_provisions_db(load_pasivos_provisions(client_id = shared$effective_client_id()))
+        }, error = function(e) NULL)
+      }
+
       removeModal()
       showNotification("Confirmaci\u00f3n movida a papelera.", type = "message", duration = 2)
       log_action(
@@ -3807,6 +3825,22 @@ bancosServer <- function(id, shared) {
       # no archive to restore from) -- nothing else to do. Clearing the
       # bancos_confirmados flag above is enough; the item reappears in
       # Calendario on its own the moment nothing matches it as confirmed.
+
+      # A provision-derived item is back unpaid: its provision goes back to
+      # "converted", unless another live confirmation still pays it.
+      pid <- row$provision_id[1] %||% NA_character_
+      if (!is.na(pid) && nzchar(pid)) {
+        vivas <- confirmaciones_vigentes(conf)
+        if (!any(vivas$provision_id %in% pid))
+          tryCatch(pasivos_provision_item_reversed(
+            pid, user = tryCatch(shared$current_user(), error = function(e) "system"),
+            client_id = shared$effective_client_id()),
+            error = function(e) message("[bancos] provision revert failed: ", conditionMessage(e)))
+        tryCatch({
+          shared$suppress_ledger_prov_refresh(TRUE)
+          shared$pasivos_provisions_db(load_pasivos_provisions(client_id = shared$effective_client_id()))
+        }, error = function(e) NULL)
+      }
 
       cal_label <- if (isTRUE(row$tipo == "cobro")) "CxC" else "CxP"
       fecha_fmt <- format(restored_fecha, "%d/%m/%Y")

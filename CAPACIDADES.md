@@ -62,6 +62,12 @@ Todas reciben `client_id` explícito y fallan cerradas sin él. Cada escritura r
 (`PASIVOS_CAPABILITIES` dice qué permiso pide cada capacidad).
 `pasivos_autoriza(cap)` es la versión para observers.
 
+| Función | Para qué |
+|---|---|
+| `etapa_de_provision(client_id, provision_id)` | `"provisionada"`, `"en_pago"`, `"pagada"`, `"borrada"` o `NA` si el cliente no la tiene. Vectorizada. Lee S3 fresco. "Pagada" sale **solo** de una confirmación vigente en Bancos con ese `provision_id`. **contrato** (`R/pasivos_persistence.R`) |
+| `confirmaciones_vigentes(conf)` | Las filas de `bancos_confirmados` que sí son un pago: ni eliminadas ni la fila que deja "Deshacer". Úsala siempre en lugar de `!eliminado`. (`R/persistence.R`) |
+| `provisiones_pagadas(provs, ids)` | Cuáles de esas provisiones ya están pagadas según su `estado`; Calendario y "Deshacer conversión" no las tocan. |
+
 ## Idiomas — `R/i18n.R` (T)
 
 `tr("clave", ...)`, `tr_n("clave", n)`; en JS `hdT()`, `hdTn()`. Ver el encabezado de `R/i18n.R`.

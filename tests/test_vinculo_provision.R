@@ -70,3 +70,76 @@ test_that("deshacer conversión rechaza en el servidor una provisión pagada", {
   expect_lt(regexpr("provisiones_pagadas(", undo, fixed = TRUE),
             regexpr("save_manual(", undo, fixed = TRUE))   # checked before anything is removed
 })
+
+# ── Undoing a confirmation in Bancos ──────────────────────────────────────────
+source("R/bancos_persistence.R")
+source("R/data_pipeline.R")
+conf0 <- .normalize(tibble(confirmacion_id = c("c1", "c2"), empresa = "NCS",
+                           documento = c("F100", "F200"), moneda = "MXN", importe = c(500, 80),
+                           tipo = "pago", eliminado = FALSE, provision_id = c("p3", NA),
+                           action = "confirmed"), .schema_bancos_confirmados)
+deshecha <- recover_confirmacion(conf0, "c1")
+
+test_that("la fila de recuperación no es una confirmación vigente", {
+  expect_equal(nrow(deshecha), 3)
+  expect_setequal(confirmaciones_vigentes(deshecha)$confirmacion_id, "c2")
+  expect_null(confirmaciones_vigentes(NULL))
+  # rows from before Stage 3 have no action column: still live
+  viejas <- conf0[, setdiff(names(conf0), "action")]
+  expect_equal(nrow(confirmaciones_vigentes(viejas)), 2)
+})
+
+test_that("una factura cuya confirmación se deshizo vuelve a estar abierta", {
+  df <- tibble(Empresa = c("NCS", "NCS"), Documento = c("F100", "F200"), Moneda = "MXN",
+               Saldo_original = c(500, 80), `Saldo vencido` = c(500, 80),
+               source = "sap", confirmed = FALSE)
+  out <- compute_confirmed_flags(df, "AP", deshecha, NULL)
+  expect_equal(out$confirmed, c(FALSE, TRUE))
+})
+
+test_that("etapa: pagada solo con una confirmación vigente", {
+  pv <- tibble(id = c("p1", "p2", "p3", "p4", "p5", "p6"),
+               estado = c("provisional", "converted", "item_confirmed", "closed", "deleted", "closed"))
+  cf <- .normalize(tibble(confirmacion_id = c("a", "b"), provision_id = c("p3", "p6"),
+                          eliminado = FALSE, action = "confirmed"), .schema_bancos_confirmados)
+  expect_equal(etapa_de_provision_en(pv, cf, c("p1", "p2", "p3", "p4", "p5", "p6", "zz")),
+               c("provisionada", "en_pago", "pagada", "borrada", "borrada", "pagada", NA))
+  # item_confirmed whose confirmation was undone: back to en_pago, not pagada
+  expect_equal(etapa_de_provision_en(pv, recover_confirmacion(cf, "a"), "p3"), "en_pago")
+  expect_error(etapa_de_provision(NULL, "p1"), "client_id")
+})
+
+test_that("deshacer la confirmación regresa la provisión a convertida", {
+  .mem <- new.env()
+  .s3_key       <<- function(key, client_id = NULL) paste0(client_id, "/", key)
+  .s3_read_with <<- function(key, client_id = NULL) .mem[[paste0(client_id, "/", key)]]
+  .s3_write     <<- function(obj, key, client_id = NULL) assign(paste0(client_id, "/", key), obj, envir = .mem)
+  bump_sync_version <<- function(...) invisible(TRUE)
+  pasivos_log_audit <<- function(...) invisible("audit")
+  S3_KEYS <<- list(pasivos_provisions = "pasivos_provisions.rds")
+  if (!exists(".schema_pasivos_provision")) source("R/pasivos_schemas.R")
+  source("R/pasivos_engine.R")
+  save_pasivos_provisions(tibble(id = c("p3", "p1"), estado = c("item_confirmed", "provisional"),
+                                 bancos_conf_id = c("c1", NA), manual_inv_id = c("m3", NA)),
+                          client_id = "cli")
+  pasivos_provision_item_reversed("p3", "ana", client_id = "cli")
+  pasivos_provision_item_reversed("p1", "ana", client_id = "cli")      # not paid: no-op
+  p <- load_pasivos_provisions(client_id = "cli")
+  expect_equal(p$estado, c("converted", "provisional"))
+  expect_true(is.na(p$bancos_conf_id[1]))
+  expect_equal(p$manual_inv_id[1], "m3")                               # the item is still linked
+})
+
+test_that("Bancos y Pasivos usan confirmaciones vigentes al deshacer y eliminar", {
+  obs <- lineas("R/pasivos_observers.R")
+  expect_match(obs, "bc <- confirmaciones_vigentes(bc)", fixed = TRUE)
+  ban <- lineas("R/bancos_module.R")
+  undo <- regmatches(ban, regexpr("observeEvent\\(input\\$undo_conf,[\\s\\S]*?ignoreInit = TRUE\\)", ban, perl = TRUE))
+  expect_match(undo, "pasivos_provision_item_reversed(", fixed = TRUE)
+  del <- regmatches(ban, regexpr("observeEvent\\(input\\$do_delete_conf_confirm,[\\s\\S]*?ignoreInit = TRUE\\)", ban, perl = TRUE))
+  expect_match(del, "pasivos_provision_revive(", fixed = TRUE)
+  expect_false(grepl("filter(confirmados(), !is.na(eliminado) & !eliminado)", ban, fixed = TRUE))
+  pas <- lineas("R/pasivos_module.R")
+  borrar <- regmatches(pas, regexpr("observeEvent\\(input\\$pcm_do_delete_converted[\\s\\S]*?provs\\$estado\\[idx\\]\\s+<- \"deleted\"", pas, perl = TRUE))
+  expect_match(borrar, "save_bancos_confirmados(conf", fixed = TRUE)
+})

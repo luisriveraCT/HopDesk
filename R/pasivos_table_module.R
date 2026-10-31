@@ -415,8 +415,7 @@ pasivos_table_module_server <- function(id, shared) {
 
       mi_ap <- if (nrow(mi) && "ledger" %in% names(mi))
         mi[mi$ledger == "AP", , drop = FALSE] else mi
-      bc_ok <- if (nrow(bc) && "eliminado" %in% names(bc))
-        bc[!isTRUE_safe(bc$eliminado), , drop = FALSE] else bc
+      bc_ok <- confirmaciones_vigentes(bc)
 
       tryCatch(
         pasivos_table_build_long(

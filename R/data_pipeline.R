@@ -673,8 +673,8 @@ compute_confirmed_flags <- function(df, ledger, bancos_confirmados_df, papelera_
   # a genuinely still-valid confirmation silently fail to match, reopening it.
   conf_db <- bancos_confirmados_df
   if (!is.null(conf_db) && nrow(conf_db)) {
-    conf_active <- conf_db[!(conf_db[["eliminado"]] %in% TRUE) &
-                           conf_db[["tipo"]] == tipo_val &
+    conf_db     <- confirmaciones_vigentes(conf_db)
+    conf_active <- conf_db[conf_db[["tipo"]] == tipo_val &
                            !is.na(conf_db[["importe"]]), , drop = FALSE]
     if (nrow(conf_active)) {
       bc_keys   <- unique(conf_active[, c("empresa","documento","moneda","importe"),

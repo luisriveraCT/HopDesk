@@ -66,20 +66,22 @@ setup_pasivos_observers <- function(input, output, session, shared) {
     # On first run: snapshot current state into seen-sets WITHOUT firing any
     # lifecycle events.  Reversals/confirmations that happened while the user
     # was logged out are not replayed — we only act on events observed live.
+    # Live confirmations only: an undo's own "recovered" row also carries
+    # the provision_id and eliminado = FALSE, and used to be taken for a new
+    # confirmation, marking the provision paid again.
+    bc <- confirmaciones_vigentes(bc)
     if (rv$first_run) {
       rv$confirmed_seen <- bc$confirmacion_id[
-        !is.na(bc$provision_id) & nzchar(bc$provision_id) &
-        !isTRUE_safe(bc$eliminado)
+        !is.na(bc$provision_id) & nzchar(bc$provision_id)
       ]
       rv$first_run <- FALSE
       return()
     }
 
     # ---- Confirmation event detection ----------------------------------------
-    # New rows: provision_id non-NA/non-empty, eliminado FALSE/NA, not yet handled.
+    # New rows: provision_id non-NA/non-empty, live, not yet handled.
     new_confirms <- bc[
       !is.na(bc$provision_id) & nzchar(bc$provision_id) &
-      !isTRUE_safe(bc$eliminado) &
       !(bc$confirmacion_id %in% rv$confirmed_seen),
       , drop = FALSE
     ]
