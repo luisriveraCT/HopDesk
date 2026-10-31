@@ -35,6 +35,11 @@ cargar <- function(archivo, nombres) {
 cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 cargar("R/data_pipeline.R", c("apply_ic_filter", "build_ic_fullcodes"))
 cargar("R/pasivos_capabilities.R", c("PASIVOS_CAPABILITIES", "has_capability"))
+# has_capability() asks the session's user through the permissions registry
+# (R/permisos.R, which needs a logged-in session): here, a user who may do
+# everything.
+if (!exists(".usuario_de_sesion")) assign(".usuario_de_sesion", function() "luis", envir = globalenv())
+if (!exists("puede")) assign("puede", function(usuario, permiso, ...) TRUE, envir = globalenv())
 cargar("R/global.R", "fmt_money")
 cargar("R/persistence.R", c("tag_label", "add_tag_labels", "normalize_code"))
 cargar("R/ui_components.R", "app_styles")
@@ -49,7 +54,9 @@ suppressPackageStartupMessages({ library(dplyr); library(tidyr) })
 
 # ── Fixed data ───────────────────────────────────────────────────────────────
 CMAP <- c(NTS = "NETWORKS TRANS", NCS = "NETWORKS CARGO")
-assign("COMPANY_MAP", CMAP, envir = globalenv())    # the old module reads the global one
+# Only the old module (an older checkout) reads the global map; today's
+# code must take the session's, shared$company_map().
+if (!exists("lupaServer")) assign("COMPANY_MAP", CMAP, envir = globalenv())
 hoy <- Sys.Date()
 MES_LEJOS <- seq(as.Date(format(hoy, "%Y-%m-01")), by = "month", length.out = 3)[3]   # 1st of the month after next
 fila <- function(ledger, emp, mon, doc, parte, dias, saldo, ref = "", source = SAP_B1_ERP_TYPE,
