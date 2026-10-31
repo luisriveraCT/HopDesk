@@ -184,5 +184,8 @@
   "tablas.accion.papelera": "Mandar a papelera",
   "tablas.exportar": "Exportar a Excel",
   "tablas.copiadas_n.uno": "{n} fila copiada",
-  "tablas.copiadas_n.otros": "{n} filas copiadas"
+  "tablas.copiadas_n.otros": "{n} filas copiadas",
+  "pasivos.borrar_pagada_bloqueado.uno": "No se borró 1 provisión porque ya está pagada. Para quitarla, usa Pasivos → Eliminar definitivamente, que también quita el registro de Bancos.",
+  "pasivos.borrar_pagada_bloqueado.otros": "No se borraron {n} provisiones porque ya están pagadas. Para quitarlas, usa Pasivos → Eliminar definitivamente, que también quita el registro de Bancos.",
+  "pasivos.deshacer_pagada_bloqueado": "Esta provisión ya está pagada; no se puede deshacer la conversión. Solo se puede eliminar definitivamente."
 }

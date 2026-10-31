@@ -772,6 +772,12 @@ setup_pasivos_module <- function(input, output, session, shared) {
     if (is.null(provs)) { shiny::showNotification("Error cargando provisiones.", type = "error"); return() }
     idx <- which(provs$id == prov_id)
     if (!length(idx)) { shiny::showNotification("Provisión no encontrada.", type = "error"); return() }
+    # Paid: the UI hides this button, but the server must refuse too, or the
+    # Bancos confirmation is left with no provision (see PROVISION_PAGADA).
+    if (length(provisiones_pagadas(provs[idx[1], , drop = FALSE], prov_id))) {
+      shiny::showNotification(tr("pasivos.deshacer_pagada_bloqueado"), type = "warning")
+      shiny::removeModal(); return()
+    }
     if (!provs$estado[idx[1]] %in% c("converted", "item_confirmed")) {
       shiny::showNotification("La provisión no puede ser revertida en este estado.", type = "warning")
       shiny::removeModal(); return()

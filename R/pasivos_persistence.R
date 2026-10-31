@@ -76,6 +76,19 @@ save_pasivos_provisions <- function(df, client_id = NULL) {
   invisible(TRUE)
 }
 
+# A provision whose item was already confirmed in Bancos is paid. Calendario
+# and undo-conversion must leave it alone: marking it "deleted" or
+# "provisional" erased that it was paid while its Bancos row stayed, so the
+# obligation could be paid twice (found 2026-10-31). Only Pasivos'
+# "Eliminar definitivamente" removes a paid one, Bancos row included.
+PROVISION_PAGADA <- c("item_confirmed", "closed")
+
+provisiones_pagadas <- function(provs, prov_ids) {
+  if (is.null(provs) || !nrow(provs) || !length(prov_ids)) return(character())
+  hit <- !is.na(provs$id) & provs$id %in% prov_ids & provs$estado %in% PROVISION_PAGADA
+  unique(provs$id[hit])
+}
+
 # ── pasivos_modifiers ─────────────────────────────────────────────────────────
 # No list columns — standard normalize works.
 

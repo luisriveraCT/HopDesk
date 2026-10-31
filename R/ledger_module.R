@@ -2060,6 +2060,20 @@ ledgerModuleServer <- function(id, config, shared) {
         )
       }
 
+      # Paid provisions stay out of a Calendario delete (see PROVISION_PAGADA).
+      # Fresh read: another session may have confirmed the payment meanwhile.
+      provs_db <- if ("provision_id" %in% names(rows_to_delete))
+        tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()),
+                 error = function(e) NULL)
+      pagadas <- provisiones_pagadas(provs_db, rows_to_delete[["provision_id"]])
+      if (length(pagadas)) {
+        rows_to_delete <- rows_to_delete[is.na(rows_to_delete[["provision_id"]]) |
+                                           !(rows_to_delete[["provision_id"]] %in% pagadas), , drop = FALSE]
+        showNotification(tr_n("pasivos.borrar_pagada_bloqueado", length(pagadas)),
+                         type = "warning", duration = 8)
+        if (!nrow(rows_to_delete)) { removeModal(); return() }
+      }
+
       # BUG (found 2026-09-03, same class already fixed for
       # .save_moves_deferred()): each of these three saves used to be
       # tryCatch'd only to a transient warning toast, never gating the
@@ -2113,8 +2127,9 @@ ledgerModuleServer <- function(id, config, shared) {
                                          nzchar(rows_to_delete[["provision_id"]] %||% "")]
       else character(0)
       if (length(prov_ids) > 0 && !is.null(shared$pasivos_provisions_db)) {
-        provs_db <- tryCatch(shared$pasivos_provisions_db(),
-                             error = function(e) NULL)
+        # provs_db was read fresh from S3 above, not this session's copy.
+        if (is.null(provs_db))
+          save_failures <- c(save_failures, "provisiones (no se pudieron leer)")
         if (!is.null(provs_db) && nrow(provs_db)) {
           del_idx <- which(provs_db[["id"]] %in% prov_ids & !is.na(provs_db[["id"]]))
           # captured BEFORE mutation, one row per id, for the audit entries
@@ -2131,7 +2146,7 @@ ledgerModuleServer <- function(id, config, shared) {
           if (isTRUE(prov_result$ok)) {
             tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
             shared$pasivos_provisions_db(provs_db)
-            bump_sync_version("pasivos_provisions_db")
+            bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
             for (i in seq_len(nrow(before_rows))) {
               pid <- before_rows[["id"]][i]
               after_row <- provs_db[provs_db[["id"]] == pid, , drop = FALSE]

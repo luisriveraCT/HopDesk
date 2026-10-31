@@ -38,3 +38,35 @@ test_that("sin fila previa, la edición es la fila del formulario", {
   expect_identical(editar_manual(guardado[0, ], formulario), formulario)
   expect_identical(editar_manual(NULL, formulario), formulario)
 })
+
+source("R/pasivos_persistence.R")
+provs <- tibble(id = c("p1", "p2", "p3", "p4", NA),
+                estado = c("provisional", "converted", "item_confirmed", "closed", "item_confirmed"))
+
+test_that("una provisión pagada se reconoce como pagada", {
+  expect_setequal(provisiones_pagadas(provs, c("p1", "p2", "p3", "p4")), c("p3", "p4"))
+  expect_length(provisiones_pagadas(provs, c("p1", "p2")), 0)
+  expect_length(provisiones_pagadas(provs, NA), 0)
+  expect_length(provisiones_pagadas(NULL, "p3"), 0)
+  expect_length(provisiones_pagadas(provs, character()), 0)
+})
+
+lineas <- function(f) paste(readLines(f, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+
+test_that("borrar desde Calendario deja fuera las pagadas y relee S3", {
+  src <- lineas("R/ledger_module.R")
+  expect_match(src, "provisiones_pagadas(provs_db", fixed = TRUE)
+  expect_match(src, "provs_db <- if (\"provision_id\" %in% names(rows_to_delete))\n        tryCatch(load_pasivos_provisions(",
+               fixed = TRUE)
+  # the in-memory copy is no longer the source for the estado write
+  expect_false(grepl("provs_db <- tryCatch(shared$pasivos_provisions_db()", src, fixed = TRUE))
+})
+
+test_that("deshacer conversión rechaza en el servidor una provisión pagada", {
+  src <- lineas("R/pasivos_module.R")
+  undo <- regmatches(src, regexpr("observeEvent\\(input\\$pcm_do_undo_conversion[\\s\\S]*?provs\\$estado\\[idx\\]\\s+<- \"provisional\"", src, perl = TRUE))
+  expect_length(undo, 1)
+  expect_match(undo, "provisiones_pagadas(", fixed = TRUE)
+  expect_lt(regexpr("provisiones_pagadas(", undo, fixed = TRUE),
+            regexpr("save_manual(", undo, fixed = TRUE))   # checked before anything is removed
+})

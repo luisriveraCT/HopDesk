@@ -184,5 +184,8 @@
   "tablas.accion.papelera": "Send to trash",
   "tablas.exportar": "Export to Excel",
   "tablas.copiadas_n.uno": "{n} row copied",
-  "tablas.copiadas_n.otros": "{n} rows copied"
+  "tablas.copiadas_n.otros": "{n} rows copied",
+  "pasivos.borrar_pagada_bloqueado.uno": "1 provision was not deleted because it is already paid. To remove it, use Pasivos → Delete permanently, which also removes its Bancos record.",
+  "pasivos.borrar_pagada_bloqueado.otros": "{n} provisions were not deleted because they are already paid. To remove them, use Pasivos → Delete permanently, which also removes their Bancos record.",
+  "pasivos.deshacer_pagada_bloqueado": "This provision is already paid; its conversion cannot be undone. It can only be deleted permanently."
 }
