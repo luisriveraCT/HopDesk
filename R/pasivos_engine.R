@@ -800,6 +800,14 @@ pasivos_reconcile_provisions <- function(existing, generated, mode = "regenerate
   insert_rows   <- empty
   conflict_rows <- empty
 
+  # Occurrences that already exist in ANY estado. Inserts used to be checked
+  # against the provisional ones only, so regenerating (or extending past) a
+  # converted, paid or deleted occurrence created it again as a new
+  # provisional row: a duplicate, or a deleted one coming back (found
+  # 2026-11-01).
+  .occ <- function(df) paste(df$liability_id, df$occurrence_index, sep = "\r")
+  ya_existe <- .occ(rule_exist)
+
   if (identical(mode, "extend")) {
     max_idx  <- if (nrow(mutable)) max(mutable$occurrence_index, na.rm = TRUE) else -Inf
     max_date <- if (nrow(mutable)) max(mutable$fecha_efectiva, na.rm = TRUE) else as.Date(-Inf)
@@ -808,6 +816,7 @@ pasivos_reconcile_provisions <- function(existing, generated, mode = "regenerate
         (!is.na(generated$fecha_efectiva) & generated$fecha_efectiva > max_date),
       , drop = FALSE
     ]
+    insert_rows <- insert_rows[!.occ(insert_rows) %in% ya_existe, , drop = FALSE]
     keep_rows <- dplyr::bind_rows(keep_rows, mutable)
 
   } else if (identical(mode, "rate_update")) {
@@ -889,13 +898,9 @@ pasivos_reconcile_provisions <- function(existing, generated, mode = "regenerate
       }
     }
 
-    # Rows in generated not in existing → insert
-    existing_idxs <- mutable$occurrence_index
-    for (i in seq_len(nrow(generated))) {
-      g <- generated[i, , drop = FALSE]
-      is_new <- !g$occurrence_index %in% existing_idxs
-      if (is_new) insert_rows <- dplyr::bind_rows(insert_rows, g)
-    }
+    # Rows in generated not in existing (any estado) → insert
+    insert_rows <- dplyr::bind_rows(insert_rows,
+                                    generated[!.occ(generated) %in% ya_existe, , drop = FALSE])
   }
 
   list(keep = keep_rows, update = update_rows,

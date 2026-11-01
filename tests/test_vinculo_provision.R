@@ -130,6 +130,24 @@ test_that("deshacer la confirmación regresa la provisión a convertida", {
   expect_equal(p$manual_inv_id[1], "m3")                               # the item is still linked
 })
 
+test_that("regenerar o extender un pasivo no vuelve a crear ocurrencias convertidas, pagadas o borradas", {
+  existentes <- tibble(id = c("a", "b", "c", "d"), liability_id = "L1", occurrence_index = 1:4,
+                       estado = c("converted", "item_confirmed", "deleted", "provisional"),
+                       fecha_efectiva = as.Date("2026-01-01") + 0:3 * 30)
+  generadas <- tibble(id = paste0("g", 1:5), liability_id = "L1", occurrence_index = 1:5,
+                      estado = "provisional", fecha_efectiva = as.Date("2026-01-01") + 0:4 * 30)
+  r <- pasivos_reconcile_provisions(existentes, generadas, mode = "regenerate")
+  expect_equal(r$insert$occurrence_index, 5L)
+  e <- pasivos_reconcile_provisions(existentes, generadas, mode = "extend")
+  expect_equal(e$insert$occurrence_index, 5L)
+  # all occurrences converted: extend only adds what is new
+  todas <- dplyr::mutate(existentes, estado = "converted")
+  expect_equal(pasivos_reconcile_provisions(todas, generadas, mode = "extend")$insert$occurrence_index, 5L)
+  # same index in another liability is not "already there"
+  otra <- dplyr::mutate(generadas[5, ], liability_id = "L2", occurrence_index = 1L)
+  expect_equal(nrow(pasivos_reconcile_provisions(existentes, otra, mode = "regenerate")$insert), 1L)
+})
+
 test_that("confirmar parte de lo que hay en S3 y no escribe si la lectura falla", {
   S3_KEYS$bancos_confirmados <<- "bancos_confirmados.rds"
   leer <- .s3_read_with   # the in-memory store set up in the test above
