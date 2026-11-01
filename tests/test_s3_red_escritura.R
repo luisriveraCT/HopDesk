@@ -97,6 +97,12 @@ assign(FULL, df(10), envir = store)                                          # a
 ok("a stale count never blocks: registry 100, S3 now 10, writing 11 passes",
    !falla(q(.s3_write(df(11), K, "acme"))) && nrow(get(FULL, envir = store)) == 11L)
 
+reset(); assign(FULL, df(10), envir = store); q(.s3_read_with(K, "acme"))     # registry: 10
+assign(FULL, df(100), envir = store)                                         # another worker grew it
+assign(FULL, list(n = 10L, t = proc.time()[["elapsed"]] - 120), envir = .s3_filas)  # seen 2 min ago
+ok("a count older than the TTL is not trusted: registry 10 (old), S3 100, writing 9 is refused",
+   falla(q(.s3_write(df(9), K, "acme"))) && nrow(get(FULL, envir = store)) == 100L)
+
 reset(); assign(FULL, df(50), envir = store); failing <- FULL
 ok("count unknown and the read fails: the write is refused", falla(q(.s3_write(df(1), K, "acme"))))
 ok("... nothing written", writes == 0L)

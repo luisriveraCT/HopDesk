@@ -169,9 +169,19 @@
 
 # ── Row counts last seen per key, for the write net in .s3_write() ───────────
 .s3_filas <- new.env(parent = emptyenv())
+# Each count carries the time it was seen and is trusted for .S3_FILAS_TTL
+# seconds only: another process or worker may have grown the table since
+# (10 -> 100), and a count left at 10 would let a write of 9 through without
+# a look at S3 (review of f95b42d, 2026-11-01). Past the TTL the net reads S3.
+.S3_FILAS_TTL <- 60   # seconds
 .s3_filas_registrar <- function(full_key, x) {
-  if (is.data.frame(x)) assign(full_key, nrow(x), envir = .s3_filas)
+  if (is.data.frame(x))
+    assign(full_key, list(n = nrow(x), t = proc.time()[["elapsed"]]), envir = .s3_filas)
   invisible(NULL)
+}
+.s3_filas_vigente <- function(full_key) {
+  r <- if (exists(full_key, envir = .s3_filas, inherits = FALSE)) get(full_key, envir = .s3_filas) else NULL
+  if (is.null(r) || proc.time()[["elapsed"]] - r$t > .S3_FILAS_TTL) NA_integer_ else r$n
 }
 
 # ── Write net: a save may not silently shrink a table (CM09) ─────────────────
@@ -211,7 +221,7 @@
 .s3_red_revisar <- function(obj, key, client_id, full_key) {
   if (!is.data.frame(obj) || .s3_sin_red(key)) return(invisible(NULL))
   despues <- nrow(obj)
-  antes   <- if (exists(full_key, envir = .s3_filas, inherits = FALSE)) get(full_key, envir = .s3_filas) else NA
+  antes   <- .s3_filas_vigente(full_key)
   # Unknown, or the registry says this shrinks: ask S3 itself (strict read).
   if (is.na(antes) || !is.null(.s3_motivo_reduccion(key, antes, despues))) {
     actual <- .s3_leer_para_escribir(key, client_id)   # stop()s on a failed read
