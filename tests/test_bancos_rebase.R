@@ -28,6 +28,8 @@ base   <- t(c("1", "2", "3"), c("a", "b", "c"))
 nuevo  <- t(c("1", "2", "3", "4"), c("a", "B-mio", "c", "d-mio"))       # changed 2, added 4
 fresco <- t(c("1", "2", "3", "5"), c("a", "b", "C-otro", "e-otro"))     # someone changed 3, added 5
 r <- rebase_por_id(nuevo, base, fresco, "id")
+ok("rebase: S3's row order is kept, my changed row in place and new rows last",
+   identical(r$id, c("1", "2", "3", "5", "4")))
 r <- r[order(r$id), ]
 ok("rebase: my changed row wins", r$v[r$id == "2"] == "B-mio")
 ok("rebase: my new row is added", r$v[r$id == "4"] == "d-mio")

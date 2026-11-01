@@ -281,8 +281,12 @@ rebase_por_id <- function(nuevo, base, fresco, id_col) {
   cambiada[is.na(cambiada)] <- TRUE
   quitadas <- setdiff(ids_b, ids_n)
   mias     <- nuevo[cambiada, , drop = FALSE]
-  resto    <- fresco[!(as.character(fresco[[id_col]]) %in% c(as.character(mias[[id_col]]), quitadas)), , drop = FALSE]
-  dplyr::bind_rows(resto, mias)
+  ids_f    <- as.character(fresco[[id_col]])
+  resto    <- fresco[!(ids_f %in% c(as.character(mias[[id_col]]), quitadas)), , drop = FALSE]
+  # S3's row order is kept: a changed row stays where it was, new rows go last.
+  out <- dplyr::bind_rows(resto, mias)
+  pos <- match(as.character(out[[id_col]]), ids_f); pos[is.na(pos)] <- Inf
+  out[order(pos, seq_len(nrow(out))), , drop = FALSE]
 }
 
 # Change a table starting from what S3 holds right now, never from a
