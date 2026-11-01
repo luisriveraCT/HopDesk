@@ -42,6 +42,25 @@
   )
 }
 
+# Read of the live chunk before appending to it (CM09). .audit_read_chunk()
+# turns any read error into NULL, and the flush then appended the pending
+# rows to an EMPTY table and wrote it over the live chunk -- up to
+# .MAX_AUDIT_ROWS entries of the app's activity log gone on one transient S3
+# error. This one returns NULL only when S3 says the chunk does not exist
+# (a new client); otherwise a failed read stop()s, and the flush puts the rows
+# back and retries. If S3 cannot answer, it assumes the chunk exists.
+.audit_read_chunk_para_escribir <- function(key) {
+  err <- NULL
+  x <- tryCatch(
+    suppressMessages(suppressWarnings(aws.s3::s3readRDS(object = key, bucket = .s3_bucket()))),
+    error = function(e) { err <<- e; NULL })
+  if (!is.null(x)) return(x)
+  existe <- tryCatch(isTRUE(aws.s3::object_exists(key, bucket = .s3_bucket())), error = function(e) NA)
+  if (identical(existe, FALSE)) return(NULL)
+  stop("[APP_AUDIT] could not read ", key, " before appending to it",
+       if (!is.null(err)) paste0(": ", conditionMessage(err)), call. = FALSE)
+}
+
 .audit_write_chunk <- function(df, key) {
   aws.s3::s3saveRDS(df, object = key, bucket = .s3_bucket())
 }
@@ -222,15 +241,15 @@ save_app_audit <- function(log_df, client_id = NULL) {
   if (is.null(pending) || !nrow(pending)) return(invisible(TRUE))
 
   ok <- tryCatch({
-    current <- .audit_read_chunk(.audit_current_key(write_cid))
+    # Strict: a failed read stop()s here and the rows go back to the queue
+    # (below), instead of being appended to an empty table over the live log.
+    current <- .audit_read_chunk_para_escribir(.audit_current_key(write_cid))
     if (is.null(current) || !is.data.frame(current) || !nrow(current))
       current <- .APP_AUDIT_SCHEMA()
     rotated <- isTRUE(rotate_log_if_needed(write_cid, current))
     if (rotated) {
-      current <- tryCatch({
-        ch <- .audit_read_chunk(.audit_current_key(write_cid))
-        if (is.null(ch) || !nrow(ch)) .APP_AUDIT_SCHEMA() else ch
-      }, error = function(e) .APP_AUDIT_SCHEMA())
+      ch <- .audit_read_chunk_para_escribir(.audit_current_key(write_cid))
+      current <- if (is.null(ch) || !nrow(ch)) .APP_AUDIT_SCHEMA() else ch
     }
     .audit_write_chunk(dplyr::bind_rows(current, pending), .audit_current_key(write_cid))
     TRUE
