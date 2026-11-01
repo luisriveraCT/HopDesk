@@ -326,13 +326,24 @@ hd_grupo_payload <- function(grupo, datos, columnas) {
 HD_ACCIONES_FILA <- list(
   crear_provision = list(icono = "",       clave = "tablas.accion.crear_provision", estilo = "texto"),
   agregar         = list(icono = "\uff0b", clave = "tablas.accion.agregar",   estilo = "icono", grupo = TRUE),
+  cambiar_cuenta  = list(icono = "\u21d5", clave = "tablas.accion.cambiar_cuenta", estilo = "icono"),
+  buscar          = list(icono = "\U0001f50d", clave = "tablas.accion.buscar", estilo = "icono"),
   editar          = list(icono = "\u270e", clave = "tablas.accion.editar",    estilo = "icono"),
   provision       = list(icono = "\u26a1", clave = "tablas.accion.provision", estilo = "icono"),
+  inactivar       = list(icono = "\U0001f6ab", clave = "tablas.accion.inactivar", estilo = "icono"),
+  reactivar       = list(icono = "\U0001f504", clave = "tablas.accion.reactivar", estilo = "icono"),
+  erp             = list(icono = "\U0001f50c", clave = "tablas.accion.erp",   estilo = "icono"),
   deshacer        = list(icono = "\u21b6", clave = "tablas.accion.deshacer",  estilo = "icono"),
   detalle         = list(icono = "\u2139", clave = "tablas.accion.detalle",   estilo = "icono"),
+  desactivar      = list(icono = "\u2298", clave = "tablas.accion.desactivar", estilo = "icono",
+                         confirmar = TRUE, peligro = TRUE),
   eliminar        = list(icono = "\u2715", clave = "tablas.accion.eliminar",  estilo = "icono",
                          confirmar = TRUE, peligro = TRUE)
 )
+# cambiar_cuenta, buscar (Agenda: the payee's account and the catalog
+# lookup), inactivar/reactivar (Proveedores), erp and desactivar (Empresas, a
+# soft delete that confirms like eliminar) only hand the server the row's id;
+# what opens next (a modal of its own) is the module's.
 # crear_provision is the only button with text: it opens the provision form
 # (it is neither "provision" = convert to payment, nor "agregar" = send to
 # Agenda). eliminar always goes through the confirmation bar, even for one

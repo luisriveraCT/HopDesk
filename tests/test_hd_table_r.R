@@ -262,6 +262,18 @@ test_that("row actions: catalog order, crear_provision first and as text, unknow
   expect_identical(hd_acciones_fila_meta("crear_provision")[[1]]$titulo, tr("tablas.accion.crear_provision"))
 })
 
+test_that("row actions for the Agenda (T06) and the catalogs (T07): titled, desactivar confirms", {
+  nuevas <- c("cambiar_cuenta", "buscar", "inactivar", "reactivar", "erp", "desactivar")
+  expect_true(all(nuevas %in% names(HD_ACCIONES_FILA)))
+  meta <- hd_acciones_fila_meta(hd_acciones_fila_validar(nuevas))
+  expect_true(all(vapply(meta, function(m) nzchar(m$titulo) && !startsWith(m$titulo, "tablas."), logical(1))))
+  expect_true(HD_ACCIONES_FILA$desactivar$confirmar && HD_ACCIONES_FILA$desactivar$peligro)
+  expect_false(any(vapply(HD_ACCIONES_FILA[c("inactivar", "reactivar", "erp", "cambiar_cuenta", "buscar")],
+                          function(a) isTRUE(a$confirmar), logical(1))))   # each opens its own modal
+  # catalog order keeps the destructive ones last
+  expect_identical(tail(names(HD_ACCIONES_FILA), 2), c("desactivar", "eliminar"))
+})
+
 test_that("icons in R/hd_table.R are written as escapes, not raw characters", {
   txt <- readLines("R/hd_table.R", encoding = "UTF-8", warn = FALSE)
   lineas <- grep("icono = \"", txt, value = TRUE)
