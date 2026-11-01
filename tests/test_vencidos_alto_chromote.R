@@ -114,7 +114,7 @@ menu()
 ok("the menu has 'Vista completa' first, apart from the list",
    identical(ev("document.querySelector('.hdt-menu .hdt-menu-op').textContent"), "Vista completa") &&
    isTRUE(ev("!!document.querySelector('.hdt-menu .hdt-menu-completa + .hdt-menu-sep')")))
-invisible(invisible(ev("document.querySelector('.hdt-menu .hdt-menu-completa input').click()")); Sys.sleep(0.8))
+invisible(ev("document.querySelector('.hdt-menu .hdt-menu-completa input').click()")); Sys.sleep(0.8)
 completa <- unlist(medir()$cabeceras)
 cat("  boxes with Vista completa on:", cajas(), "\n")
 ok("on: every optional column shows (Origen, Venc. original, Moneda too)",
@@ -126,7 +126,7 @@ invisible(cargar()); mostrar()
 ok("remembered: after a reload it is still the full view", identical(unlist(medir()$cabeceras), completa))
 menu()
 ok("remembered: the box is still on", grepl("^COMPLETA:1 ", cajas()))
-invisible(invisible(ev("document.querySelector('.hdt-menu .hdt-menu-completa input').click()")); Sys.sleep(0.8))
+invisible(ev("document.querySelector('.hdt-menu .hdt-menu-completa input').click()")); Sys.sleep(0.8)
 ok("off: back to exactly the user's choice (Documento shown, the rest hidden)", identical(unlist(medir()$cabeceras), antes))
 cat("  boxes with Vista completa off:", cajas(), "\n")
 ok("off: the boxes can change again and show the user's choice",
