@@ -72,6 +72,7 @@
     var root = document.getElementById(msg.id);
     if (!root) return;
     var st = TABLAS[msg.id], nuevo = !!st && st.root !== root;
+    if (nuevo && st.visible) st.visible.disconnect();
     if (!st || nuevo) st = TABLAS[msg.id] = crear(root, msg);
     cargar(st, msg);
     if (nuevo) enviarSel(st);
@@ -351,6 +352,7 @@
 
     eventos(st);
     if (st.lnkExcel && window.Shiny && Shiny.bindAll) Shiny.bindAll(st.barra);
+    observarVisible(st);
     return st;
   }
 
@@ -388,15 +390,15 @@
     var minimo = cabeza + HDT_ALTO_MIN * h;
     var tope;
     var dlg = st.root.closest('.modal-dialog');
-    if (st.root.classList.contains('hdt-llenar')) tope = Infinity;   // alto = "ventana": all that's left
+    var llenar = st.root.classList.contains('hdt-llenar');
+    if (llenar) tope = Infinity;   // alto = "ventana": all that's left
     else if (n <= HDT_ALTO_CRECE) tope = cabeza + HDT_ALTO_NORMAL * h;
-    else {
-      tope = window.innerHeight * HDT_ALTO_VENTANA;
-      // Inside a modal: what fits without the page itself scrolling.
-      if (dlg) {
-        var resto = dlg.getBoundingClientRect().height - st.scroll.getBoundingClientRect().height;
-        tope = Math.min(tope, window.innerHeight - resto - 2 * 28);
-      }
+    else tope = window.innerHeight * HDT_ALTO_VENTANA;
+    // Inside a modal: what fits without the page itself scrolling (the
+    // lupa, alto = "ventana": the whole modal, down to the window's bottom).
+    if (dlg && (llenar || n > HDT_ALTO_CRECE)) {
+      var resto = dlg.getBoundingClientRect().height - st.scroll.getBoundingClientRect().height;
+      tope = Math.min(tope, window.innerHeight - resto - 2 * 28);
     }
     // On a page: what's left down to the window's bottom, less what the
     // table has under its rows (the footer) and the bottom margin.
@@ -413,6 +415,29 @@
       st.scroll.style.height = alto + 'px';
       if (st.modo === 'ventana') pintarVentana(st, false);   // a taller view needs more rows
     }
+  }
+
+  // A table painted while hidden -- a tab not shown yet (Vencidos when the
+  // app opens on the Calendario), a modal still opening -- measured nothing:
+  // no header height, every column 0 px wide. When it shows, measure again:
+  // the column widths window mode freezes, the row height and the height.
+  // After that, a change of width only fits the height again.
+  function observarVisible(st) {
+    if (!window.ResizeObserver) return;
+    var ancho = st.root.offsetWidth;
+    st.visible = new ResizeObserver(function () {
+      var w = st.root.offsetWidth;
+      if (w === ancho) return;            // a change of height is the table's own
+      var aparece = !ancho;
+      ancho = w;
+      if (!w) return;                     // hidden again
+      if (aparece) {
+        st.altoFila = null; st.altoMedido = false; st.anchos = null;
+        if (st.modo === 'ventana') { var top = st.scroll.scrollTop; salirVentana(st); st.modo = null; pintarFilas(st, top); }
+      }
+      programarAlto(st, true);
+    });
+    st.visible.observe(st.root);
   }
 
   // ── Bar actions and confirmation ─────────────────────────────────────────

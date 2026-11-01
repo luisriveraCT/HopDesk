@@ -50,8 +50,9 @@ hd_table_deps <- function() {
 #   70% of the window (inside a modal, what fits without page scroll). On a
 #   page, never more than what's left down to the window's bottom, so its
 #   footer always shows. No table ever cuts, pages or hides rows.
-#   "ventana": a table that is the whole page (Vencidos): as tall as its rows
-#   up to everything left down to the window's bottom, footer included.
+#   "ventana": a table that is the whole page (Vencidos) or the whole modal
+#   (the lupa): as tall as its rows up to everything left down to the
+#   window's bottom, footer included (in a modal, the modal's own footer).
 #   A CSS length ("420px", "60vh") is used as the maximum height, as before.
 hd_table_ui <- function(id, alto = "auto") {
   ns <- shiny::NS(id)

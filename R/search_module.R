@@ -120,7 +120,7 @@ lupaServer <- function(id, shared, abrir, mes, accion_factura = handle_invoice_a
         title = textOutput(session$ns("titulo"), inline = TRUE), size = "xl", easyClose = TRUE,
         footer = modalButton(tr("comun.cerrar")),
         tags$style(".modal-xl:has(.hd-lupa) { max-width: 1400px; }"),
-        div(class = "hd-lupa", facturas_tabla_ui(session$ns("tabla"), alto = "calc(100vh - 230px)"))
+        div(class = "hd-lupa", facturas_tabla_ui(session$ns("tabla"), alto = "ventana"))
       ))
     }, ignoreInit = TRUE)
 
