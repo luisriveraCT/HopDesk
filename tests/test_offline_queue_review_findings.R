@@ -42,7 +42,7 @@ for (fn in c(".queue_root_dir", ".queue_slug", ".queue_valid_client_id",
              ".queue_read_manifest", ".queue_write_manifest", ".queue_next_seq",
              ".QUEUE_LOCK_STALE_SECS", ".queue_lock_dir", ".queue_with_client_lock",
              ".queue_mark_client_pending", ".queue_table_name_for_key",
-             ".queue_stage_entry"))
+             ".queue_stage_entry", ".queue_session_actual"))
   .extract_fn("R/offline_queue.R", fn)
 
 assign(".SYNC_REGISTRY", list(), envir = globalenv())

@@ -53,7 +53,7 @@ for (fn in c(".queue_root_dir", ".queue_slug", ".queue_valid_client_id",
              # findings.R Part R1): .queue_stage_entry() now calls these.
              ".QUEUE_LOCK_STALE_SECS", ".queue_lock_dir", ".queue_with_client_lock",
              ".queue_mark_client_pending", ".queue_table_name_for_key",
-             ".queue_stage_entry"))
+             ".queue_stage_entry", ".queue_session_actual"))
   .extract_fn("R/offline_queue.R", fn)
 
 # ── Extract the real sync_bus registry pieces (offline_queue depends on them) ─
@@ -130,7 +130,8 @@ ok("B1: reading a manifest for a client with no prior activity returns the empty
 ok("B1: empty schema has the expected columns",
    identical(names(.queue_manifest_schema()),
              c("seq","s3_key","bucket","table_name","client_id","expected_sync_version",
-               "acting_user","acting_home_client_id","status","staged_at","synced_at")))
+               "acting_user","acting_home_client_id","status","staged_at","synced_at",
+               "session_id","permitir_reduccion")))
 
 {
   df <- .queue_manifest_schema()
@@ -139,7 +140,7 @@ ok("B1: empty schema has the expected columns",
                               table_name = "moves_db", client_id = "b2client",
                               expected_sync_version = 3L, acting_user = NA_character_,
                               acting_home_client_id = NA_character_, status = "pending",
-                              staged_at = Sys.time(), synced_at = as.POSIXct(NA),
+                              staged_at = Sys.time(), synced_at = as.POSIXct(NA), session_id = NA_character_, permitir_reduccion = FALSE,
                               stringsAsFactors = FALSE))
   .queue_write_manifest("b2client", df)
   back <- .queue_read_manifest("b2client")
@@ -162,7 +163,7 @@ ok("B1: empty schema has the expected columns",
                                  table_name = "manual_inv", client_id = "b2client",
                                  expected_sync_version = NA_integer_, acting_user = NA_character_,
                                  acting_home_client_id = NA_character_, status = "pending",
-                                 staged_at = Sys.time(), synced_at = as.POSIXct(NA),
+                                 staged_at = Sys.time(), synced_at = as.POSIXct(NA), session_id = NA_character_, permitir_reduccion = FALSE,
                                  stringsAsFactors = FALSE))
   .queue_write_manifest("b2client", df2)
   ok("B4: a write after a stray .tmp file still succeeds and is durable",

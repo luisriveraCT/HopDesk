@@ -79,6 +79,11 @@
     status                  = character(0),
     staged_at               = as.POSIXct(character(0)),
     synced_at               = as.POSIXct(character(0)),
+    # CM09 (option B): the Shiny session that staged the entry (NA outside a
+    # session, and on entries staged before this column existed), and whether
+    # the original write was an intended shrink.
+    session_id              = character(0),
+    permitir_reduccion      = logical(0),
     stringsAsFactors        = FALSE
   )
 }
@@ -88,7 +93,21 @@
   if (!file.exists(path)) return(.queue_manifest_schema())
   df <- tryCatch(readRDS(path), error = function(e) NULL)
   if (is.null(df) || !is.data.frame(df)) return(.queue_manifest_schema())
+  # A manifest written before a column existed gets it as NA, so appending a
+  # new row (rbind) never fails on an older queue left on disk.
+  vacio <- .queue_manifest_schema()
+  for (col in setdiff(names(vacio), names(df))) df[[col]] <- rep(vacio[[col]][NA_integer_], nrow(df))
   df
+}
+
+# Which Shiny session is writing: pid + session token, since a token is only
+# unique within one process. NA outside a session (background callbacks).
+.queue_session_actual <- function() {
+  tryCatch({
+    d <- shiny::getDefaultReactiveDomain()
+    tok <- if (is.null(d)) NULL else d$token
+    if (is.null(tok) || !nzchar(tok)) NA_character_ else paste0(Sys.getpid(), ":", tok)
+  }, error = function(e) NA_character_)
 }
 
 # Atomic write: saveRDS() to a tempfile in the SAME directory as the real
@@ -238,7 +257,9 @@
 # still propagates completely unchanged.
 .queue_stage_entry <- function(payload_path, s3_key, key, client_id,
                                 acting_user = NA_character_,
-                                acting_home_client_id = NA_character_) {
+                                acting_home_client_id = NA_character_,
+                                permitir_reduccion = FALSE,
+                                session_id = .queue_session_actual()) {
   tryCatch({
     if (!.queue_valid_client_id(client_id)) return(FALSE)
     slug <- .queue_slug(client_id)
@@ -277,6 +298,8 @@
         acting_user = as.character(acting_user %||% NA_character_),
         acting_home_client_id = as.character(acting_home_client_id %||% NA_character_),
         status = "pending", staged_at = Sys.time(), synced_at = as.POSIXct(NA),
+        session_id = as.character(session_id %||% NA_character_),
+        permitir_reduccion = isTRUE(permitir_reduccion),
         stringsAsFactors = FALSE
       )
       df <- rbind(.queue_read_manifest(client_id), row)
@@ -359,7 +382,35 @@
     }
     pending_idx <- pending_idx[order(mf$seq[pending_idx])]
 
+    # CM09, option B (Luis, 2026-11-01): within one session, only the newest
+    # pending entry per table is replayed. Each entry is a whole-table
+    # snapshot, so replaying the older ones first changes nothing in the end
+    # (the newest overwrites them) except to flag a false "conflict" against
+    # the session's own write. They become "superseded"; their payloads stay
+    # on disk. Entries without a session (NA: background writes, older queues)
+    # replay one by one, as before. Between different sessions nothing
+    # changes: last write wins, with the victim backed up (_conflict_replay).
     changed <- FALSE
+    ses <- mf$session_id[pending_idx]
+    con_sesion <- pending_idx[!is.na(ses) & nzchar(ses)]
+    grupo <- paste(mf$s3_key[con_sesion], mf$session_id[con_sesion], sep = "\r")
+    viejas <- con_sesion[duplicated(grupo, fromLast = TRUE)]
+    for (i in viejas) {
+      mf$status[i]    <- "superseded"
+      mf$synced_at[i] <- Sys.time()
+      tryCatch(
+        log_action(user = mf$acting_user[i] %||% "system", module = "offline_queue",
+                   action = "_queue_superseded",
+                   description = sprintf("seq=%s for table '%s' not replayed: a newer entry from the same session holds the table.",
+                                         mf$seq[i], mf$table_name[i]),
+                   target_id = mf$table_name[i], s3_key = mf$s3_key[i],
+                   client_id = .queue_slug(client_id),
+                   viewer_home_client_id = mf$acting_home_client_id[i] %||% .queue_slug(client_id)),
+        error = function(e) NULL)
+      changed <- TRUE
+    }
+    pending_idx <- setdiff(pending_idx, viejas)
+
     for (i in pending_idx) {
       new_status <- tryCatch(.queue_replay_entry(mf[i, ], client_id),
                               error = function(e) "pending")
@@ -516,8 +567,10 @@
   # The write net applies to replays too (CM09): this uploads directly, past
   # .s3_write(), so check here that the staged table would not shrink what S3
   # holds now. A refusal blocks the entry for good (a person has to look); if
-  # S3 cannot be read yet, the entry just stays pending.
-  red <- tryCatch({
+  # S3 cannot be read yet, the entry just stays pending. An entry staged from
+  # an intended shrink (permitir_reduccion, e.g. a purge) skips it, as the
+  # original write did.
+  red <- if (isTRUE(row$permitir_reduccion)) NULL else tryCatch({
     .s3_red_revisar(readRDS(dest), sub("^[^/]+/", "", row$s3_key), slug, row$s3_key)
     NULL
   }, error = function(e) conditionMessage(e))

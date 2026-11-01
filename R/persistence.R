@@ -567,7 +567,8 @@ unregister_username <- function(username) {
       resolved_client_id <- sub("^([^/]+)/.*$", "\\1", full_key)
       staged <- tryCatch(
         .queue_stage_entry(payload_path = tf, s3_key = full_key, key = key,
-                           client_id = resolved_client_id),
+                           client_id = resolved_client_id,
+                           permitir_reduccion = permitir_reduccion),
         error = function(e3) FALSE
       )
       if (isTRUE(staged))
