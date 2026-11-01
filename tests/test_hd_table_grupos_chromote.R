@@ -332,8 +332,10 @@ ok("an optional column that starts hidden isn't shown; one that starts shown is"
    !"Origen" %in% t0 && "Moneda" %in% t0)
 btn_col <- sprintf("document.querySelector('#%s .hdt-columnas')", A)
 clic(btn_col)
-ops <- unlist(ev("Array.from(document.querySelectorAll('.hdt-menu input')).map(function(i){ return i.dataset.campo + '=' + i.checked; })"))
-ok("the 'Columnas' menu lists only the optional columns, checked as shown", identical(ops, c("Moneda=true", "Origen=false")))
+# T04b: "Vista completa" comes first, apart (no data-campo), off by default.
+ops <- unlist(ev("Array.from(document.querySelectorAll('.hdt-menu input')).map(function(i){ return (i.dataset.campo || 'completa') + '=' + i.checked; })"))
+ok("the 'Columnas' menu lists 'Vista completa' (off) and then only the optional columns, checked as shown",
+   identical(ops, c("completa=false", "Moneda=true", "Origen=false")))
 clic("document.querySelector('.hdt-menu input[data-campo=\"Origen\"]')", ver = FALSE)
 clic("document.querySelector('.hdt-menu input[data-campo=\"Moneda\"]')", ver = FALSE)
 t1 <- titulos()
