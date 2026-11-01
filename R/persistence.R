@@ -901,10 +901,16 @@ load_notes <- function(client_id = NULL) {
   .normalize(.s3_read_with(S3_KEYS$notes, client_id = client_id), .schema_notes)
 }
 
-save_notes <- function(df, client_id = NULL) {
+# `base`: as in save_manual() -- the session copy `df` was built from; with
+# it only this action's notes are applied on S3's table as it is now (CM09).
+save_notes <- function(df, client_id = NULL, base = NULL) {
   norm <- .normalize(df, .schema_notes)
-  .s3_write(norm, S3_KEYS$notes, client_id = client_id)
+  if (!is.null(base) && !is.null(client_id) && nzchar(client_id))
+    norm <- modificar_tabla(S3_KEYS$notes, client_id, .schema_notes, function(fresco)
+      rebase_por_id(norm, .normalize(base, .schema_notes), fresco, "id"))
+  else .s3_write(norm, S3_KEYS$notes, client_id = client_id)
   if (exists(".cache_set", mode = "function")) .cache_set("notes", norm, client_id)
+  invisible(norm)
 }
 
 # ── Invoice tags ───────────────────────────────────────────────────────────────
@@ -914,10 +920,18 @@ load_tags <- function(client_id = NULL) {
     filter(tag %in% c("important","urgent"))
 }
 
-save_tags <- function(df, client_id = NULL) {
+# `base`: as in save_notes(). A tag row has no id; it is keyed by invoice and
+# tag (ledger, Empresa, Moneda, Documento, tag).
+save_tags <- function(df, client_id = NULL, base = NULL) {
   norm <- .normalize(df, .schema_tags)
-  .s3_write(norm, S3_KEYS$tags, client_id = client_id)
+  if (!is.null(base) && !is.null(client_id) && nzchar(client_id)) {
+    llave <- function(d) dplyr::mutate(d, .llave = paste(ledger, Empresa, Moneda, Documento, tag, sep = "\x1f"))
+    norm <- modificar_tabla(S3_KEYS$tags, client_id, .schema_tags, function(fresco)
+      dplyr::select(rebase_por_id(llave(norm), llave(.normalize(base, .schema_tags)), llave(fresco), ".llave"),
+                    -".llave"))
+  } else .s3_write(norm, S3_KEYS$tags, client_id = client_id)
   if (exists(".cache_set", mode = "function")) .cache_set("tags", norm, client_id)
+  invisible(norm)
 }
 
 # Set tags for one invoice (replaces all existing tags for that invoice)

@@ -50,7 +50,7 @@ S3_KEYS <- list(tags = "invoice_tags.rds")
 .s3_bucket <- function() "dev"
 .s3_read_raw_with_retry <- function(full_key, bucket, ...)
   if (s3_cae || is.null(s3_tags)) list(ok = FALSE) else list(ok = TRUE, value = s3_tags)
-save_tags <- function(df, client_id = NULL) { s3_tags <<- df; invisible(TRUE) }
+save_tags <- function(df, client_id = NULL, base = NULL) { s3_tags <<- df; invisible(TRUE) }
 s3_save_with_retry <- function(f) { f(); list(ok = TRUE) }
 bump_sync_version <- function(...) invisible(TRUE)
 log_action <- function(...) invisible(NULL)

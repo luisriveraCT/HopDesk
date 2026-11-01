@@ -82,8 +82,10 @@ lg <- paste(readLines("R/ledger_module.R", warn = FALSE), collapse = "\n")
      "los 3 sitios de escritura pasan un rebase")
 .chk_true(grepl(".moves_read_live <- function(client_id = NULL)", lg, fixed = TRUE),
           "existe la lectura viva que evita la cache de preload")
-.chk_true(grepl("rm(list = intersect(full_key, ls(.s3_preload_cache))", lg, fixed = TRUE),
-          "la lectura viva limpia la cache de preload antes de leer")
+.chk_true(grepl(".s3_leer_para_escribir(S3_KEYS$moves", lg, fixed = TRUE),
+          "la lectura viva es estricta y salta los caches (CM09), incluido .app_data_cache")
+.chk_true(!grepl("tryCatch(.moves_read_live", lg, fixed = TRUE),
+          "una lectura viva fallida no se traga: va al reintento, no a guardar la copia de la sesion")
 
 cat(sprintf("\n  %d passed, %d failed\n", .pass, .fail))
 if (.fail > 0L) stop("test_moves_concurrent_rebase.R: ", .fail, " failure(s)")

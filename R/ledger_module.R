@@ -1538,6 +1538,7 @@ ledgerModuleServer <- function(id, config, shared) {
       # From S3 as it is now, not the session's copy (etiquetas_frescas() in
       # R/search_module.R): another session may have just tagged.
       tags_db <- etiquetas_frescas(shared)
+      tags_base <- tags_db   # CM09: if that read failed this is the session's copy; save rebases on S3
       for (i in seq_len(nrow(rows))) {
         tags_db <- set_invoice_tags(tags_db, ledger, rows[["Empresa"]][i], rows[["Moneda"]][i],
                                     rows[["Documento"]][i], new_tags, tagged_by=shared$current_user())
@@ -1551,7 +1552,7 @@ ledgerModuleServer <- function(id, config, shared) {
       # still fails, showing a persistent error instead.
       shared$tags_db(tags_db)
       tag_result <- s3_save_with_retry(function()
-        save_tags(tags_db, client_id = shared$effective_client_id()))
+        save_tags(tags_db, client_id = shared$effective_client_id(), base = tags_base))
       if (isTRUE(tag_result$ok)) {
         bump_sync_version("tags_db")
         showNotification("Etiquetas actualizadas.", type = "message", duration = 2)
@@ -1992,18 +1993,16 @@ ledgerModuleServer <- function(id, config, shared) {
 # `rebase` closes it. It is a function(fresh_table) that re-applies THIS
 # caller's change onto the table as it exists in S3 right now, so a concurrent
 # writer's rows survive instead of being overwritten by our stale snapshot.
-# When it is not supplied, or when the fresh read fails, behaviour is exactly
-# what it was before -- this can only preserve rows, never lose them.
-# Reads invoice_moves straight from S3, bypassing the preload cache the same
-# way R/sync_bus.R does before its own poll -- a cache hit here would defeat
-# the entire point of rebasing.
+# When it is not supplied, behaviour is exactly what it was before.
+# Reads invoice_moves straight from S3 (CM09): strict, past the preload and
+# "missing" caches AND past .app_data_cache, which load_moves() answers from
+# first and which only this process's own saves keep current -- a write from
+# another process, or an offline-queue replay, never reaches it. A failed
+# read stop()s, so the save retries and then reports the failure instead of
+# writing this session's whole copy.
 .moves_read_live <- function(client_id = NULL) {
-  full_key <- tryCatch(.s3_key(S3_KEYS$moves, client_id = client_id), error = function(e) NULL)
-  if (!is.null(full_key)) {
-    suppressWarnings(rm(list = intersect(full_key, ls(.s3_preload_cache)), envir = .s3_preload_cache))
-    suppressWarnings(rm(list = intersect(full_key, ls(.s3_missing_cache)), envir = .s3_missing_cache))
-  }
-  load_moves(client_id = client_id)
+  .normalize(.s3_leer_para_escribir(S3_KEYS$moves, client_id), .schema_moves) |>
+    dplyr::filter(ledger %in% c("AR", "AP"), !is.na(Empresa), !is.na(Moneda), !is.na(Documento))
 }
 
 .save_moves_deferred <- function(updated, client_id = NULL, session = NULL, log_info = NULL,
@@ -2026,8 +2025,8 @@ ledgerModuleServer <- function(id, config, shared) {
     tryCatch({
       to_write <- updated
       if (is.function(rebase)) {
-        fresh <- tryCatch(.moves_read_live(client_id), error = function(e) NULL)
-        if (!is.null(fresh) && is.data.frame(fresh)) {
+        fresh <- .moves_read_live(client_id)   # a failed read goes to the retry below
+        if (is.data.frame(fresh)) {
           rebased <- tryCatch(rebase(fresh), error = function(e) NULL)
           if (!is.null(rebased) && is.data.frame(rebased)) {
             if (nrow(rebased) != nrow(updated))

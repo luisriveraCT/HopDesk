@@ -38,5 +38,8 @@ s3_memoria_reset <- function() {
   rm(list = ls(.mem), envir = .mem); .mem_falla <<- character(); .mem_escrituras <<- 0L
   for (env in Filter(Negate(is.null), list(get0(".s3_preload_cache"), get0(".s3_missing_cache"), get0(".s3_filas"))))
     rm(list = ls(env), envir = env)
-  if (exists(".app_data_cache")) rm(list = ls(.app_data_cache), envir = .app_data_cache)
+  if (exists(".app_data_cache")) {   # a list in the app (R/global.R); an env in some tests
+    if (is.environment(.app_data_cache)) rm(list = ls(.app_data_cache), envir = .app_data_cache)
+    else assign(".app_data_cache", list(), envir = globalenv())
+  }
 }

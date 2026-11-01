@@ -101,14 +101,14 @@ cat("\n-- Part C: Calendario delete (manual/provision-sourced invoices) --\n")
           "a distinctly-flagged failure action exists for the manual/provision delete")
 
 cat("\n-- Part D: Calendario tag --\n")
-.chk_true(grepl("save_tags(tags_db, client_id = shared$effective_client_id()))",
+.chk_true(grepl("save_tags(tags_db, client_id = shared$effective_client_id(), base = tags_base))",
                 ledger_txt, fixed = TRUE),
           "the Calendario tag save is wrapped in s3_save_with_retry()")
 .chk_true(grepl('"etiquetar_fallo_guardado"', ledger_txt, fixed = TRUE),
           "a distinctly-flagged failure action exists for the Calendario tag save")
 
 cat("\n-- Part E: Vencidos/Search modal tag --\n")
-.chk_true(grepl("save_tags(tdb, client_id = shared$effective_client_id()))",
+.chk_true(grepl("save_tags(tdb, client_id = shared$effective_client_id(), base = tdb_base))",
                 search_txt, fixed = TRUE),
           "the Vencidos/Search tag save is wrapped in s3_save_with_retry()")
 .chk_true(grepl('if (isTRUE(tag_result$ok)) "etiquetar" else "etiquetar_fallo_guardado"',

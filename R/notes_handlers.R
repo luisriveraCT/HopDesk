@@ -120,6 +120,7 @@ notes_handlers <- function(input, output, session, shared,
     ledger <- active_note_lgr() %||% "AR"
     nid    <- active_note_id()
     df     <- notes_df()
+    df_base <- df   # CM09: only this note is applied on S3 as it is now
     now    <- Sys.time()
     info   <- shared$current_user_info()
 
@@ -149,12 +150,18 @@ notes_handlers <- function(input, output, session, shared,
     }
 
     notes_df(df)
-    save_notes(df, client_id = shared$effective_client_id())
+    guardado <- tryCatch({ save_notes(df, client_id = shared$effective_client_id(), base = df_base); TRUE },
+                         error = function(e) { message("[NOTES] save failed: ", conditionMessage(e)); FALSE })
+    if (!guardado) {
+      notes_df(df_base)
+      showNotification(tr("comun.error_guardar"), type = "error", duration = NULL)
+      return(invisible(NULL))
+    }
     bump_sync_version("notes_df")
     removeModal()
     active_note_id(NULL)
     active_note_lgr(NULL)
-    lbl <- if (visibility == "personal") "personal" else "pública"
+    lbl <-if (visibility == "personal") "personal" else "pública"
     showNotification(paste0("Nota ", lbl, " guardada."), type = "message", duration = 2)
   }
 
@@ -215,9 +222,16 @@ notes_handlers <- function(input, output, session, shared,
   observeEvent(input$note_delete_confirm, {
     nid <- active_note_id(); req(nid)
     deleted_row <- notes_df()[notes_df()$id == nid, , drop = FALSE]
-    df <- dplyr::filter(notes_df(), .data$id != !!nid)
+    df_base <- notes_df()
+    df <- dplyr::filter(df_base, .data$id != !!nid)
     notes_df(df)
-    save_notes(df, client_id = shared$effective_client_id())
+    guardado <- tryCatch({ save_notes(df, client_id = shared$effective_client_id(), base = df_base); TRUE },
+                         error = function(e) { message("[NOTES] save failed: ", conditionMessage(e)); FALSE })
+    if (!guardado) {
+      notes_df(df_base)
+      showNotification(tr("comun.error_guardar"), type = "error", duration = NULL)
+      return(invisible(NULL))
+    }
     bump_sync_version("notes_df")
     removeModal()
     active_note_id(NULL)

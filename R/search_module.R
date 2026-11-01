@@ -292,6 +292,7 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
       tag_clear     = character(0)
     )
     tdb <- etiquetas_frescas(shared)   # not the session's copy: another session may have just tagged
+    tdb_base <- tdb   # CM09: if that read failed this is the session's copy; save rebases on S3
     for (i in seq_len(nrow(keys_df))) {
       tdb <- set_invoice_tags(tdb,
                ledger    = keys_df$ledger[i],
@@ -315,7 +316,7 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
     # logged it as a fact. Now retries, and skips the false-success
     # notification/log if it still fails, showing a persistent error instead.
     tag_result <- s3_save_with_retry(function()
-      save_tags(tdb, client_id = shared$effective_client_id()))
+      save_tags(tdb, client_id = shared$effective_client_id(), base = tdb_base))
     if (isTRUE(tag_result$ok)) {
       bump_sync_version("tags_db")
       showNotification(paste0(nrow(keys_df), " factura(s) etiquetadas."),
