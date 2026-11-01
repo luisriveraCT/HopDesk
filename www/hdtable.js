@@ -1412,8 +1412,49 @@
     });
     var tonoG = tonoEtiqueta(st, fuerte);
     if (tonoG) tr.classList.add('hdt-et-' + tonoG);
-    if (st.accFila.length) tr.appendChild(nodo('td', 'hdt-acc'));
+    if (st.accFila.length) tr.appendChild(botonesGrupo(st, u));
     return tr;
+  }
+
+  // A group's row buttons: only the row actions with grupo = TRUE (＋),
+  // acting on the group's rows; the others leave their gap, so the ＋ stays
+  // in the rows' column. ＋ sends the rows not in the Agenda yet; when all
+  // of them are, ✓ takes them all out -- like a row's ＋/✓.
+  function filasAccionGrupo(st, u, accion) {
+    var permitidas = st.permitidas;
+    var libres = u.filas.filter(function (i) { return !st.bloq[i] && (!permitidas || permitidas[i][accion]); });
+    if (accion !== 'agregar' || !st.p.agregado) return { accion: accion, filas: libres };
+    var fuera = libres.filter(function (i) { return !st.agr[i]; });
+    return fuera.length || !libres.length ? { accion: 'agregar', filas: fuera } : { accion: 'quitar_agenda', filas: libres };
+  }
+  function botonesGrupo(st, u) {
+    var td = nodo('td', 'hdt-acc');
+    st.accFila.forEach(function (a) {
+      var texto = a.estilo === 'texto';
+      var g = a.grupo ? filasAccionGrupo(st, u, a.accion) : null;
+      if (!g || !g.filas.length) {
+        var hueco = nodo('span', 'hdt-accion hdt-accion-hueco' + (texto ? ' hdt-accion-texto' : ''), texto ? a.titulo : a.icono);
+        hueco.setAttribute('aria-hidden', 'true');
+        td.appendChild(hueco);
+        return;
+      }
+      var quitar = g.accion === 'quitar_agenda';
+      var b = nodo('button', 'hdt-accion' + (quitar ? ' hdt-quitar-agenda' : ''), quitar ? '\u2713' : a.icono);
+      b.type = 'button';
+      b.dataset.accion = a.accion;
+      b.title = quitar ? t('tablas.accion.quitar_agenda') : a.titulo;
+      b.setAttribute('aria-label', b.title);
+      td.appendChild(b);
+    });
+    return td;
+  }
+  function accionGrupo(st, u, accion) {
+    var a = st.accFila.filter(function (x) { return x.accion === accion; })[0];
+    if (!a || !a.grupo) return;
+    var g = filasAccionGrupo(st, u, accion), ids = g.filas.map(function (i) { return st.ids[i]; });
+    if (!ids.length) return;
+    if (a.confirmar && g.accion === accion) pedirConfirmacion(st, accion, a.titulo, ids, a.peligro);
+    else enviarAccion(st, g.accion, ids, null, 'grupo');
   }
 
   // ▶/▼ only opens or closes. The rest of the row marks or unmarks every
@@ -1824,7 +1865,13 @@
 
     st.tbody.addEventListener('click', function (e) {
       var tr = e.target.closest('tr');
-      if (tr && tr._g) { clicGrupo(st, tr._g, e); return; }
+      if (tr && tr._g) {
+        // A group's ＋ acts on its rows and never touches the selection.
+        var bg = e.target.closest('button.hdt-accion');
+        if (bg) accionGrupo(st, tr._g, bg.dataset.accion);
+        else clicGrupo(st, tr._g, e);
+        return;
+      }
       if (!tr || tr._i == null) return;
       var i = tr._i;
       // A row button sends its action and never touches the selection.

@@ -22,7 +22,8 @@
 # button takes it out; that row's id), "campo" (a bar action's field
 # changed, or showed with Editar: valor = what it holds, "" once Editar hides
 # it; de = the action; no ids), and
-# the names given in acciones_fila (one row's id) and acciones_barra. Actions
+# the names given in acciones_fila (one row's id; from a group's row, its
+# rows' ids and de = "grupo") and acciones_barra. Actions
 # that confirm ("eliminar" on a row, bar actions with confirmar = TRUE) only
 # reach accion() once the user presses Confirmar in the table's own bar.
 #
@@ -324,7 +325,7 @@ hd_grupo_payload <- function(grupo, datos, columnas) {
 # with .provision = TRUE.
 HD_ACCIONES_FILA <- list(
   crear_provision = list(icono = "",       clave = "tablas.accion.crear_provision", estilo = "texto"),
-  agregar         = list(icono = "\uff0b", clave = "tablas.accion.agregar",   estilo = "icono"),
+  agregar         = list(icono = "\uff0b", clave = "tablas.accion.agregar",   estilo = "icono", grupo = TRUE),
   editar          = list(icono = "\u270e", clave = "tablas.accion.editar",    estilo = "icono"),
   provision       = list(icono = "\u26a1", clave = "tablas.accion.provision", estilo = "icono"),
   deshacer        = list(icono = "\u21b6", clave = "tablas.accion.deshacer",  estilo = "icono"),
@@ -335,7 +336,10 @@ HD_ACCIONES_FILA <- list(
 # crear_provision is the only button with text: it opens the provision form
 # (it is neither "provision" = convert to payment, nor "agregar" = send to
 # Agenda). eliminar always goes through the confirmation bar, even for one
-# row (Luis: deletes and bulk actions confirm).
+# row (Luis: deletes and bulk actions confirm). grupo = TRUE: a group's row
+# shows the button too, for all its rows (agregar: ＋ sends the ones not in
+# the Agenda yet; ✓, when all of them are, takes them all out), with
+# de = "grupo" in accion().
 
 hd_acciones_fila_validar <- function(acciones_fila) {
   if (is.null(acciones_fila)) return(NULL)
@@ -353,7 +357,7 @@ hd_acciones_fila_meta <- function(acciones) {
   lapply(acciones, function(a) {
     def <- HD_ACCIONES_FILA[[a]]
     list(accion = a, icono = def$icono, titulo = tr(def$clave), estilo = def$estilo,
-         confirmar = isTRUE(def$confirmar), peligro = isTRUE(def$peligro))
+         confirmar = isTRUE(def$confirmar), peligro = isTRUE(def$peligro), grupo = isTRUE(def$grupo))
   })
 }
 
