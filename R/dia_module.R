@@ -141,12 +141,14 @@ dia_aviso_politicas <- function(fecha, partes, pp, catalog) {
 # The two views in the same window, `vista` showing first. The switch
 # changes which one shows without closing the window (the registry's note),
 # tells the server (ns("dia_vista")) and lets the shown table fit its height.
+# Both tables are the whole modal, like the lupa (alto = "ventana"): as tall
+# as their rows, up to the window's bottom (Luis: "ver más cosas a la vez").
 dia_ui <- function(ns, vista = "resumen") {
   boton <- function(v, clave) shiny::tags$button(
     type = "button", class = paste("btn btn-sm", if (v == vista) "btn-primary" else "btn-outline-secondary"),
     `data-vista` = v, `aria-pressed` = if (v == vista) "true" else "false", tr(clave))
   caja <- function(v) shiny::div(class = "hd-dia-vista", `data-vista` = v,
-                                 style = if (v != vista) "display:none;", hd_table_ui(ns(v)))
+                                 style = if (v != vista) "display:none;", hd_table_ui(ns(v), alto = "ventana"))
   shiny::tagList(
     shiny::div(class = "hd-dia-cambio btn-group mb-2", role = "group", `aria-label` = tr("tablas.dia.vista"),
                `data-input` = ns("dia_vista"),

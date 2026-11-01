@@ -15,6 +15,7 @@
 # DIA_RAIZ: the checkout whose R/ and www/ to use (default: this one). An
 # older checkout shows the day modal as it was (cal_cart.js + DT).
 #   input "abrir" opens the day; "abrir_detalle" opens it in Detalle.
+# DIA_EXTRA: more invoices for the day (see below).
 # =============================================================================
 library(shiny)
 raiz <- normalizePath(Sys.getenv("DIA_RAIZ", "."), winslash = "/")
@@ -89,6 +90,14 @@ detalle0 <- rbind(
   fila("NTS", "3007", "TRANSPORTES DEL BAJIO", 12500, "T-12"),
   fila("NTS", "3008", "TRANSPORTES DEL BAJIO", 7300, "T-13")
 )
+# DIA_EXTRA = n: n more invoices, each from its own supplier (rows, not
+# groups), for the height test.
+local({
+  n <- suppressWarnings(as.integer(Sys.getenv("DIA_EXTRA", "0")))
+  if (!is.na(n) && n > 0L)
+    detalle0 <<- rbind(detalle0, do.call(rbind, lapply(seq_len(n), function(i)
+      fila("NTS", as.character(5000L + i), sprintf("PROVEEDOR %03d", i), 1000 + i, sprintf("X-%d", i)))))
+})
 tags0   <- data.frame(ledger = "AP", Empresa = "NTS", Moneda = "MXN", Documento = c("3001", "3005"),
                       tag = c("urgent", "important"), stringsAsFactors = FALSE)
 agenda0 <- data.frame(id = "AG-1", ledger = "AP", Empresa = "NTS", Moneda = "MXN", Documento = "3002", Importe = 11000,

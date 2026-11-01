@@ -431,6 +431,7 @@
     if (!window.ResizeObserver) return;
     var ancho = st.root.offsetWidth;
     st.visible = new ResizeObserver(function () {
+      if (st.restoModal) st.restoModal();
       var w = st.root.offsetWidth;
       if (w === ancho) return;            // a change of height is the table's own
       var aparece = !ancho;
@@ -443,6 +444,20 @@
       programarAlto(st, true);
     });
     st.visible.observe(st.root);
+    // alto = "ventana" in a modal: what's around the table can arrive after
+    // it (the day's Agenda line, a notice) and push the modal's footer out of
+    // the window. When the modal's height changes by more than the table's
+    // own, fit the height again (shrinking too).
+    var cont = st.root.classList.contains('hdt-llenar') && st.root.closest('.modal-content');
+    if (!cont) return;
+    var resto = null;
+    st.visible.observe(cont);
+    st.restoModal = function () {
+      if (!st.root.offsetWidth) return;
+      var r = Math.round(cont.getBoundingClientRect().height - st.scroll.getBoundingClientRect().height);
+      if (resto !== null && r !== resto) programarAlto(st, true);
+      resto = r;
+    };
   }
 
   // ── Bar actions and confirmation ─────────────────────────────────────────
