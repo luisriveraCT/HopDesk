@@ -974,6 +974,7 @@
     st.ths = st.ver.map(function (j) {
       var c = st.cols[j], th = nodo('th', c.alinear === 'derecha' ? 'hdt-der' : '');
       th.dataset.col = j;
+      if (c.ancho) th.style.width = c.ancho + 'px';
       th.appendChild(nodo('span', '', c.titulo));
       if (st.p.ordenar) { th.classList.add('hdt-ordenable'); th.appendChild(nodo('span', 'hdt-flecha')); }
       tr.appendChild(th);
@@ -1116,6 +1117,7 @@
     var c = st.cols[j], td = nodo('td');
     if (c.alinear === 'derecha') td.classList.add('hdt-der');
     if (c.recorte && st.p.recorte) td.classList.add('hdt-recorte');
+    if (c.ancho) { td.classList.add('hdt-recorte'); td.style.maxWidth = c.ancho + 'px'; }
     if (j === st.grupoColVis) td.classList.add('hdt-col-grupo');
     return td;
   }

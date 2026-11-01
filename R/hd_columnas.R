@@ -50,8 +50,13 @@
             class = "hd_columna")
 }
 
-col_texto <- function(campo, titulo = NULL, recorte = TRUE, opcional = FALSE, visible = TRUE) {
-  .hd_opcional(.hd_col("texto", campo, titulo, "izquierda", recorte = isTRUE(recorte),
+# ancho: the column's width in px, for short values that would otherwise
+# take a share of the spare width like any other column (Documento): the
+# rest of the value is cut, and the bubble shows it whole.
+col_texto <- function(campo, titulo = NULL, recorte = TRUE, opcional = FALSE, visible = TRUE, ancho = NULL) {
+  if (!is.null(ancho) && !(is.numeric(ancho) && length(ancho) == 1L && !is.na(ancho) && ancho > 0))
+    stop(sprintf("col_texto(\"%s\"): `ancho` must be one positive number (px).", campo), call. = FALSE)
+  .hd_opcional(.hd_col("texto", campo, titulo, "izquierda", recorte = isTRUE(recorte), ancho = ancho,
     valores = function(x) {
       txt <- as.character(x)
       txt[is.na(txt)] <- ""
@@ -237,7 +242,8 @@ hd_columnas_meta <- function(columnas) {
     recorte = isTRUE(col$recorte),
     sumar   = isTRUE(col$sumar),
     opcional = isTRUE(col$opcional),
-    visible  = !identical(col$visible, FALSE)
+    visible  = !identical(col$visible, FALSE),
+    ancho    = if (is.null(col$ancho)) NA else col$ancho
   ))
 }
 

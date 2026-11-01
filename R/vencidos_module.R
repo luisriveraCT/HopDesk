@@ -154,7 +154,7 @@ facturas_columnas <- function(visibles = character()) {
     col_fecha("Fecha", "tablas.facturas.fecha_venc"),
     col_texto("Parte", "tablas.facturas.parte"),
     col_texto("Referencia", "tablas.facturas.referencia"),
-    col_texto("Documento", "tablas.facturas.documento", recorte = FALSE, opcional = TRUE, visible = "Documento" %in% visibles),
+    col_texto("Documento", "tablas.facturas.documento", opcional = TRUE, visible = "Documento" %in% visibles, ancho = 80),
     col_texto("Origen", "tablas.facturas.origen", recorte = FALSE, opcional = TRUE, visible = FALSE),
     col_fecha("FechaOriginal", "tablas.facturas.venc_original", opcional = TRUE, visible = FALSE),
     col_dinero("Importe", "tablas.facturas.importe", moneda = "Moneda"),
