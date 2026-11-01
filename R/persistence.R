@@ -273,7 +273,8 @@ modificar_tabla <- function(key, client_id, schema, cambio, permitir_reduccion =
   fresco <- leer_tabla_para_escribir(key, client_id, schema)
   nuevo  <- .normalize(cambio(fresco), schema)
   if (isTRUE(all.equal(nuevo, fresco, check.attributes = FALSE))) return(invisible(fresco))
-  .s3_write(nuevo, key, client_id = client_id, permitir_reduccion = permitir_reduccion)
+  if (isTRUE(permitir_reduccion)) .s3_write(nuevo, key, client_id = client_id, permitir_reduccion = TRUE)
+  else .s3_write(nuevo, key, client_id = client_id)
   invisible(nuevo)
 }
 
@@ -1030,7 +1031,23 @@ load_papelera <- function(client_id = NULL) {
   .normalize(.s3_read_with(S3_KEYS$papelera, client_id = client_id), .schema_papelera)
 }
 
+# The papelera only grows (add_to_papelera and restore_from_papelera append;
+# nothing removes rows). Callers pass their session's copy plus new events, so
+# the save is a union on S3's table as it is now: S3's rows, plus this copy's
+# rows S3 does not have yet (by event_id, or id for rows without one). A
+# stale copy can no longer drop another session's archive events -- and the
+# write net (CM09) would refuse that shrink anyway, failing the action.
+.papelera_llave <- function(df) ifelse(is.na(df$event_id) | !nzchar(df$event_id %||% ""), paste0("id:", df$id), df$event_id)
 save_papelera <- function(df, client_id = NULL) {
+  if (!is.null(client_id) && nzchar(client_id)) {
+    norm <- modificar_tabla(S3_KEYS$papelera, client_id, .schema_papelera, function(fresco) {
+      mio <- .normalize(df, .schema_papelera)
+      dplyr::bind_rows(fresco, mio[!.papelera_llave(mio) %in% .papelera_llave(fresco), , drop = FALSE])
+    })
+    if (exists(".cache_set", mode = "function")) .cache_set("papelera", norm, client_id)
+    if (exists("bump_sync_version", mode = "function")) bump_sync_version("papelera_rv", client_id = client_id)
+    return(invisible(norm))
+  }
   norm <- .normalize(df, .schema_papelera)
   .s3_write(norm, S3_KEYS$papelera, client_id = client_id)
   if (exists(".cache_set", mode = "function")) .cache_set("papelera", norm, client_id)
