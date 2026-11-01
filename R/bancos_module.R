@@ -2042,7 +2042,9 @@ bancosServer <- function(id, shared) {
       ca   <- confirm$candidate
 
       movs <- movs_all()
+      movs_base <- movs   # session copy before this change (CM09)
       conf <- confirmados()
+      conf_base <- conf   # session copy before this change (CM09/C5)
 
       ca_id     <- as.character(ca$id)[1L]     %||% ""
       ca_source <- as.character(ca$source)[1L] %||% ""
@@ -2052,8 +2054,8 @@ bancosServer <- function(id, shared) {
         shared$bancos_confirmados(result$conf)
       })
       tryCatch({
-        save_bancos_movimientos(result$movs, client_id = shared$effective_client_id())
-        save_bancos_confirmados(result$conf, client_id = shared$effective_client_id())
+        save_bancos_movimientos(result$movs, client_id = shared$effective_client_id(), base = movs_base)
+        save_bancos_confirmados(result$conf, client_id = shared$effective_client_id(), base = conf_base)
         bump_sync_version("bancos_movimientos_db")
         bump_sync_version("bancos_confirmados_db")
       }, error = function(e)
@@ -2110,7 +2112,9 @@ bancosServer <- function(id, shared) {
 
       # Keep candidate, discard bank item
       movs <- movs_all()
+      movs_base <- movs   # session copy before this change (CM09)
       conf <- confirmados()
+      conf_base <- conf   # session copy before this change (CM09/C5)
 
       item_id   <- as.character(item$id)[1L]   %||% ""
       ca_id     <- as.character(ca$id)[1L]     %||% ""
@@ -2136,8 +2140,8 @@ bancosServer <- function(id, shared) {
         shared$bancos_confirmados(conf)
       })
       tryCatch({
-        save_bancos_movimientos(movs, client_id = shared$effective_client_id())
-        save_bancos_confirmados(conf, client_id = shared$effective_client_id())
+        save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base)
+        save_bancos_confirmados(conf, client_id = shared$effective_client_id(), base = conf_base)
         bump_sync_version("bancos_movimientos_db")
         bump_sync_version("bancos_confirmados_db")
       }, error = function(e)
@@ -2655,7 +2659,9 @@ bancosServer <- function(id, shared) {
       it <- confirm$left
       ca <- confirm$right
       movs <- movs_all()
+      movs_base <- movs   # session copy before this change (CM09)
       conf <- confirmados()
+      conf_base <- conf   # session copy before this change (CM09/C5)
 
       # Eliminate bank movement
       idx_r <- which(movs$id == ca$id)
@@ -2674,7 +2680,7 @@ bancosServer <- function(id, shared) {
       shared$bancos_movimientos(movs)
       shared$bancos_confirmados(conf)
       tryCatch({
-        save_bancos_movimientos(movs, client_id = shared$effective_client_id()); save_bancos_confirmados(conf, client_id = shared$effective_client_id())
+        save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base); save_bancos_confirmados(conf, client_id = shared$effective_client_id(), base = conf_base)
         bump_sync_version("bancos_movimientos_db"); bump_sync_version("bancos_confirmados_db")
       }, error = function(e)
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
@@ -2690,7 +2696,9 @@ bancosServer <- function(id, shared) {
       it <- confirm$left
       ca <- confirm$right
       movs <- movs_all()
+      movs_base <- movs   # session copy before this change (CM09)
       conf <- confirmados()
+      conf_base <- conf   # session copy before this change (CM09/C5)
 
       # Mark bank movement as conciliado
       idx_r <- which(movs$id == ca$id)
@@ -2711,7 +2719,7 @@ bancosServer <- function(id, shared) {
       shared$bancos_movimientos(movs)
       shared$bancos_confirmados(conf)
       tryCatch({
-        save_bancos_movimientos(movs, client_id = shared$effective_client_id()); save_bancos_confirmados(conf, client_id = shared$effective_client_id())
+        save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base); save_bancos_confirmados(conf, client_id = shared$effective_client_id(), base = conf_base)
         bump_sync_version("bancos_movimientos_db"); bump_sync_version("bancos_confirmados_db")
       }, error = function(e)
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
@@ -3643,6 +3651,7 @@ bancosServer <- function(id, shared) {
       req(conf_id)
 
       conf    <- confirmados()
+      conf_base <- conf   # session copy before this change (CM09/C5)
       idx_c   <- which(conf$confirmacion_id == conf_id)
       if (!length(idx_c)) { removeModal(); return() }
       if (length(idx_c) > 1) {
@@ -3657,13 +3666,14 @@ bancosServer <- function(id, shared) {
 
       if (!is.null(mov_id_linked) && !is.na(mov_id_linked) && nzchar(mov_id_linked)) {
         movs <- movs_all()
+        movs_base <- movs   # session copy before this change (CM09)
         idx_m <- which(movs$id == mov_id_linked)
         if (length(idx_m)) {
           movs$eliminado[idx_m]    <- TRUE
           movs$eliminado_at[idx_m] <- Sys.time()
           shared$bancos_movimientos(movs)
           tryCatch({
-            save_bancos_movimientos(movs, client_id = shared$effective_client_id())
+            save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base)
             bump_sync_version("bancos_movimientos_db")
           }, error = function(e)
             showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
@@ -3673,7 +3683,7 @@ bancosServer <- function(id, shared) {
 
       shared$bancos_confirmados(conf)
       tryCatch({
-        save_bancos_confirmados(conf, client_id = shared$effective_client_id())
+        save_bancos_confirmados(conf, client_id = shared$effective_client_id(), base = conf_base)
         bump_sync_version("bancos_confirmados_db")
       }, error = function(e)
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
@@ -3715,6 +3725,7 @@ bancosServer <- function(id, shared) {
     observeEvent(input$undo_conf, {
       conf_id <- input$undo_conf$id
       conf    <- confirmados()
+      conf_base <- conf   # session copy before this change (CM09/C5)
       idx_c   <- which(conf$confirmacion_id == conf_id)
       if (!length(idx_c)) return()
       if (length(idx_c) > 1) {
@@ -3729,13 +3740,14 @@ bancosServer <- function(id, shared) {
       # Also soft-delete the linked movimiento if present
       if (!is.null(mov_id_linked) && !is.na(mov_id_linked) && nzchar(mov_id_linked)) {
         movs  <- movs_all()
+        movs_base <- movs   # session copy before this change (CM09)
         idx_m <- which(movs$id == mov_id_linked)
         if (length(idx_m)) {
           movs$eliminado[idx_m]    <- TRUE
           movs$eliminado_at[idx_m] <- Sys.time()
           shared$bancos_movimientos(movs)
           tryCatch({
-            save_bancos_movimientos(movs, client_id = shared$effective_client_id())
+            save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base)
             bump_sync_version("bancos_movimientos_db")
           }, error = function(e)
             showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
@@ -3766,7 +3778,7 @@ bancosServer <- function(id, shared) {
       conf <- new_conf
       shared$bancos_confirmados(conf)
       tryCatch({
-        save_bancos_confirmados(conf, client_id = shared$effective_client_id())
+        save_bancos_confirmados(conf, client_id = shared$effective_client_id(), base = conf_base)
         bump_sync_version("bancos_confirmados_db")
       }, error = function(e)
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning")

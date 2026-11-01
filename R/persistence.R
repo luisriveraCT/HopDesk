@@ -265,6 +265,26 @@ leer_tabla_para_escribir <- function(key, client_id, schema) {
   .normalize(.s3_leer_para_escribir(key, client_id), schema)
 }
 
+# Three-way merge by a unique id column. `nuevo` is what the session wants,
+# `base` what it started from, `fresco` what S3 holds now:
+#   - rows the session added or changed (not in base, or different from it):
+#     its version wins;
+#   - rows the session removed (in base, not in nuevo): stay removed;
+#   - every other row: S3's current version (other sessions' work kept).
+rebase_por_id <- function(nuevo, base, fresco, id_col) {
+  firma <- function(d) if (!nrow(d)) character() else
+    do.call(paste, c(lapply(d, function(x) as.character(x)), sep = "\x1f"))
+  ids_n <- as.character(nuevo[[id_col]]); ids_b <- as.character(base[[id_col]])
+  base_firma <- stats::setNames(firma(base[, intersect(names(nuevo), names(base)), drop = FALSE]), ids_b)
+  nuevo_comun <- nuevo[, intersect(names(nuevo), names(base)), drop = FALSE]
+  cambiada <- !(ids_n %in% ids_b) | firma(nuevo_comun) != unname(base_firma[ids_n])
+  cambiada[is.na(cambiada)] <- TRUE
+  quitadas <- setdiff(ids_b, ids_n)
+  mias     <- nuevo[cambiada, , drop = FALSE]
+  resto    <- fresco[!(as.character(fresco[[id_col]]) %in% c(as.character(mias[[id_col]]), quitadas)), , drop = FALSE]
+  dplyr::bind_rows(resto, mias)
+}
+
 # Change a table starting from what S3 holds right now, never from a
 # session's copy: strict read, cambio(fresco), write. The generic form of
 # modificar_bancos_confirmados(). Returns the table written.

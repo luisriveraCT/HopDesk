@@ -127,7 +127,14 @@ load_bancos_movimientos <- function(include_deleted = FALSE, client_id = NULL) {
 }
 
 #' Always saves the COMPLETE dataframe (eliminado rows included) for audit trail.
-save_bancos_movimientos <- function(df, client_id = NULL) {
+# `base`: the session's table this action started from (before its change).
+# With it, only the rows the action added or changed are applied, on S3's
+# table as it is now (rebase_por_id); rows other sessions added or changed
+# meanwhile survive. Without it, the whole table is written (old behaviour).
+save_bancos_movimientos <- function(df, client_id = NULL, base = NULL) {
+  if (!is.null(base) && !is.null(client_id) && nzchar(client_id))
+    return(invisible(modificar_tabla(S3_KEYS$bancos_movimientos, client_id, .schema_bancos_movimientos,
+                                     function(fresco) rebase_por_id(df, base, fresco, "id"))))
   .s3_write(.normalize(df, .schema_bancos_movimientos), S3_KEYS$bancos_movimientos, client_id = client_id)
 }
 
@@ -140,7 +147,14 @@ load_bancos_confirmados <- function(client_id = NULL) {
   df
 }
 
-save_bancos_confirmados <- function(df, client_id = NULL) {
+# `base`: as in save_bancos_movimientos(). Bancos saved its session copy of
+# the confirmations in six places (CM10/C5): an Agenda confirmation or an
+# undo written by another session meanwhile was dropped -- and since this
+# table only grows, the write net (CM09) would now refuse that save instead.
+save_bancos_confirmados <- function(df, client_id = NULL, base = NULL) {
+  if (!is.null(base) && !is.null(client_id) && nzchar(client_id))
+    return(invisible(modificar_bancos_confirmados(client_id,
+                       function(fresco) rebase_por_id(df, base, fresco, "confirmacion_id"))))
   .s3_write(.normalize(df, .schema_bancos_confirmados), S3_KEYS$bancos_confirmados, client_id = client_id)
 }
 
