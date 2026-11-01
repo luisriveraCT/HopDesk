@@ -77,6 +77,10 @@ src <- readLines("R/bancos_module.R", warn = FALSE)
 saves <- grep("save_bancos_confirmados(", src, fixed = TRUE, value = TRUE)
 ok("all six Bancos confirmation saves pass base = conf_base",
    length(saves) == 6L && all(grepl("base = conf_base", saves, fixed = TRUE)))
+movs_saves <- unlist(lapply(c("R/bancos_module.R", "R/pasivos_module.R"), function(f)
+  grep("save_bancos_movimientos(", readLines(f, warn = FALSE), fixed = TRUE, value = TRUE)))
+ok("every bancos_movimientos save in Bancos and Pasivos passes base = movs_base",
+   length(movs_saves) == 14L && all(grepl("base = movs_base", movs_saves, fixed = TRUE)))
 
 s3_memoria_restaurar()
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")

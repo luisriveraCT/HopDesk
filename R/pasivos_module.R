@@ -972,11 +972,12 @@ setup_pasivos_module <- function(input, output, session, shared) {
     if (length(mov_ids)) {
       tryCatch({
         movs  <- load_bancos_movimientos(include_deleted = TRUE, client_id = cid)
+        movs_base <- movs   # CM09: only these deletes are applied on S3 as it is now
         idx_m <- which(movs$id %in% mov_ids)
         if (length(idx_m)) {
           movs$eliminado[idx_m]    <- TRUE
           movs$eliminado_at[idx_m] <- now
-          save_bancos_movimientos(movs, client_id = cid)
+          save_bancos_movimientos(movs, client_id = cid, base = movs_base)
           if (!is.null(shared$bancos_movimientos)) shared$bancos_movimientos(movs)
           bump_sync_version("bancos_movimientos_db", client_id = cid)
         }
