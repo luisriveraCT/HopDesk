@@ -27,7 +27,10 @@ repo <- normalizePath(".", winslash = "/")
 PORT <- 38971L
 app <- NULL; b <- NULL
 on.exit({ try(if (!is.null(b)) b$close(), silent = TRUE); stop_bg_app(app) }, add = TRUE)
-app <- tryCatch(start_bg_app(sprintf('setwd("%s"); source("tests/helpers/vencidos_fixture_app.R")$value', repo),
+# The fixed data counts its days from the 28th of this month (VEN_HOY), so
+# the month the lupa opens on (today's) always has the same invoices.
+HOY <- format(Sys.Date(), "%Y-%m-28")
+app <- tryCatch(start_bg_app(sprintf('Sys.setenv(VEN_HOY = "%s"); setwd("%s"); source("tests/helpers/vencidos_fixture_app.R")$value', HOY, repo),
                              PORT, timeout_s = 90), error = function(e) { message(conditionMessage(e)); NULL })
 ok("fixture app started", !is.null(app))
 if (is.null(app)) { cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n"); quit(status = 1L) }
@@ -83,7 +86,7 @@ cerrar_lupa <- function() {
 }
 
 # The fixture's invoices, by document and days before today (see the fixture).
-hoy <- Sys.Date()
+hoy <- as.Date(HOY)   # the fixture's "today" (VEN_HOY)
 mes_de <- function(d) format(d, "%Y-%m")
 dias <- c(`1001` = 5, `1002` = 5, `1003` = 5, `1004` = 20, `1005` = 1, `2001` = 9, `2002` = 0, `3001` = 3,
           `3002` = 3, `3003` = 12, `3004` = 4, `3005` = 30, `4001` = 6, `3999` = -10)

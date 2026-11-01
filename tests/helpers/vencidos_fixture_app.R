@@ -57,7 +57,11 @@ CMAP <- c(NTS = "NETWORKS TRANS", NCS = "NETWORKS CARGO")
 # Only the old module (an older checkout) reads the global map; today's
 # code must take the session's, shared$company_map().
 if (!exists("lupaServer")) assign("COMPANY_MAP", CMAP, envir = globalenv())
-hoy <- Sys.Date()
+# VEN_HOY ("AAAA-MM-DD"): the day the fixed data counts its days from
+# (default: today). The lupa's test sets the 28th of this month, so "this
+# month" always holds the same invoices -- on the 1st, every invoice a few
+# days overdue fell in last month and the month's groups were gone.
+hoy <- as.Date(Sys.getenv("VEN_HOY", format(Sys.Date())))
 MES_LEJOS <- seq(as.Date(format(hoy, "%Y-%m-01")), by = "month", length.out = 3)[3]   # 1st of the month after next
 fila <- function(ledger, emp, mon, doc, parte, dias, saldo, ref = "", source = SAP_B1_ERP_TYPE,
                  confirmed = FALSE, id = "", prov = "", orig = NA, fecha = hoy - dias)
