@@ -56,7 +56,7 @@ cat("── manual_inv cross-session sync + stale-read hardening ─────
   sm_start <- grep("^save_manual <- function", pers_txt)
   .chk(length(sm_start) > 0, TRUE, "found save_manual() to scan")
   if (length(sm_start)) {
-    sm_block <- paste(.strip_comments(pers_txt[sm_start[1]:min(sm_start[1] + 6, length(pers_txt))]), collapse = "\n")
+    sm_block <- paste(.strip_comments(pers_txt[sm_start[1]:min(sm_start[1] + 15, length(pers_txt))]), collapse = "\n")
     .chk(grepl('bump_sync_version\\("manual_inv"', sm_block), TRUE,
          "save_manual() bumps the manual_inv sync version on every write")
   }

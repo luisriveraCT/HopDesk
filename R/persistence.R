@@ -970,9 +970,20 @@ load_manual <- function(client_id = NULL) {
   .normalize(.s3_read_with(S3_KEYS$manual, client_id = client_id), .schema_manual)
 }
 
-save_manual <- function(df, client_id = NULL) {
-  norm <- .normalize(df, .schema_manual)
-  .s3_write(norm, S3_KEYS$manual, client_id = client_id)
+# `base`: the session copy `df` was built from. With it, only the rows this
+# action added, changed or removed are applied on S3's table as it is now
+# (rebase_por_id), so a manual item another session saved meanwhile is not
+# dropped (CM09). Without it, `df` replaces the whole table, as before.
+save_manual <- function(df, client_id = NULL, base = NULL) {
+  norm <- if (!is.null(base) && !is.null(client_id) && nzchar(client_id))
+    modificar_tabla(S3_KEYS$manual, client_id, .schema_manual,
+                    function(fresco) rebase_por_id(.normalize(df, .schema_manual),
+                                                   .normalize(base, .schema_manual), fresco, "id"))
+  else {
+    norm <- .normalize(df, .schema_manual)
+    .s3_write(norm, S3_KEYS$manual, client_id = client_id)
+    norm
+  }
   if (exists(".cache_set", mode = "function")) .cache_set("manual", norm, client_id)
   if (exists("bump_sync_version", mode = "function")) bump_sync_version("manual_inv", client_id = client_id)
 }

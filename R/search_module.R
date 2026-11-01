@@ -440,9 +440,10 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
         # another session already removed (found 2026-07-24, a real
         # incident).
         m <- tryCatch(load_manual(client_id = cid), error = function(e) NULL) %||% shared$manual_inv()
+        m_base <- m   # what the deletes start from (CM09: applied on S3 as it is now)
         for (mid in manual_rows$inv_id) m <- delete_manual(m, mid)
         manual_result <- s3_save_with_retry(function()
-          save_manual(m, client_id = shared$effective_client_id()))
+          save_manual(m, client_id = shared$effective_client_id(), base = m_base))
         if (isTRUE(manual_result$ok)) {
           shared$manual_inv(m)
         } else {

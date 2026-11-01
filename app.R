@@ -2883,9 +2883,10 @@ server <- function(input, output, session) {
         updated_at             = Sys.time()
       )
       new_row <- editar_manual(existing, new_row)
-      df <- upsert_manual(manual_inv(), new_row)
+      mi_base <- manual_inv()   # CM09: only this row is applied on S3 as it is now
+      df <- upsert_manual(mi_base, new_row)
       manual_inv(df)
-      tryCatch(save_manual(df, client_id = effective_client_id()),
+      tryCatch(save_manual(df, client_id = effective_client_id(), base = mi_base),
                error = function(e) showNotification(
                  "No se pudieron guardar los cambios.", type = "warning"))
       .sync_staged(
@@ -2923,9 +2924,10 @@ server <- function(input, output, session) {
         created_at             = Sys.time(),
         updated_at             = Sys.time()
       )
-      df <- upsert_manual(manual_inv(), new_row)
+      mi_base <- manual_inv()   # CM09: only this row is applied on S3 as it is now
+      df <- upsert_manual(mi_base, new_row)
       manual_inv(df)
-      tryCatch(save_manual(df, client_id = effective_client_id()),
+      tryCatch(save_manual(df, client_id = effective_client_id(), base = mi_base),
                error = function(e) showNotification(
                  "No se pudieron guardar los cambios.", type = "warning"))
 

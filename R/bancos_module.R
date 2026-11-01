@@ -3826,7 +3826,7 @@ bancosServer <- function(id, shared) {
           restored_row <- as.data.frame(restore_result$restored_data, stringsAsFactors = FALSE)
           mi_updated <- dplyr::bind_rows(mi, restored_row)
           shared$manual_inv(mi_updated)
-          tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id()),
+          tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi),
                    error = function(e) showNotification(
                      paste("Error al restaurar entrada manual:", e$message), type = "warning"))
           if ("Fecha de vencimiento" %in% names(restored_row))

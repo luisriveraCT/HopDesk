@@ -190,9 +190,10 @@ pasivos_manage_converted_modal_ui <- function() {
   # source of the read.
   manual_df <- tryCatch(load_manual(client_id = shared$effective_client_id()),
                         error = function(e) NULL) %||% shared$manual_inv()
+  manual_base <- manual_df   # CM09: only the new row is applied on S3 as it is now
   manual_df <- dplyr::bind_rows(manual_df, new_manual)
   shared$manual_inv(manual_df)
-  tryCatch(save_manual(manual_df, client_id = shared$effective_client_id()), error = function(e)
+  tryCatch(save_manual(manual_df, client_id = shared$effective_client_id(), base = manual_base), error = function(e)
     warning("[pasivos] save_manual failed: ", conditionMessage(e)))
 
   # 2. Optional: stage to pagar_hoy
@@ -793,7 +794,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       mi_details <- mi[!is.na(mi$id) & mi$id == manual_inv_id, , drop = FALSE]
       if (!nrow(mi_details)) mi_details <- NULL
       mi_new <- mi[!(!is.na(mi$id) & mi$id == manual_inv_id), , drop = FALSE]
-      tryCatch(save_manual(mi_new, client_id = shared$effective_client_id()), error = function(e)
+      tryCatch(save_manual(mi_new, client_id = shared$effective_client_id(), base = mi), error = function(e)
         shiny::showNotification(paste("Error al guardar manual_inv:", e$message), type = "warning"))
       if (!is.null(shared$manual_inv)) shared$manual_inv(mi_new)
     }
@@ -895,7 +896,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       mi_details <- mi[!is.na(mi$id) & mi$id == manual_inv_id, , drop = FALSE]
       if (!nrow(mi_details)) mi_details <- NULL
       mi_new <- mi[!(!is.na(mi$id) & mi$id == manual_inv_id), , drop = FALSE]
-      tryCatch(save_manual(mi_new, client_id = shared$effective_client_id()), error = function(e)
+      tryCatch(save_manual(mi_new, client_id = shared$effective_client_id(), base = mi), error = function(e)
         shiny::showNotification(paste("Error al guardar manual_inv:", e$message), type = "warning"))
       if (!is.null(shared$manual_inv)) shared$manual_inv(mi_new)
     }
