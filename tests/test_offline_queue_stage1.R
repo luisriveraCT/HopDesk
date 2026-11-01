@@ -65,6 +65,7 @@ assign(".SYNC_REGISTRY", list(), envir = globalenv())
 .extract_fn("R/persistence.R", ".s3_key")
 .extract_fn("R/persistence.R", ".s3_bucket")
 .extract_fn("R/persistence.R", ".s3_write")
+source("tests/helpers/s3_red_harness.R")   # CM09: the write net .s3_write() now calls
 assign(".s3_missing_cache", new.env(parent = emptyenv()), envir = globalenv())
 assign(".s3_preload_cache", new.env(parent = emptyenv()), envir = globalenv())
 assign(".sync_versions", list(), envir = globalenv())
@@ -77,9 +78,12 @@ options(hopdesk.queue_dir = .TEST_QUEUE_ROOT)
 .with_mock_s3write <- function(fake_save, fake_put, expr) {
   orig_save <- aws.s3::s3saveRDS
   orig_put  <- aws.s3::put_object
+  orig_exists <- aws.s3::object_exists   # CM09 write net: S3 says "new key"
+  utils::assignInNamespace("object_exists", function(...) FALSE, "aws.s3")
   utils::assignInNamespace("s3saveRDS", fake_save, "aws.s3")
   utils::assignInNamespace("put_object", fake_put, "aws.s3")
   tryCatch(expr, finally = {
+    utils::assignInNamespace("object_exists", orig_exists, "aws.s3")
     utils::assignInNamespace("s3saveRDS", orig_save, "aws.s3")
     utils::assignInNamespace("put_object", orig_put, "aws.s3")
   })

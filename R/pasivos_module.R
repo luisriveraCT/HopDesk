@@ -1111,7 +1111,7 @@ pasivos_admin_purge_closed <- function(drop_estados = "closed",
   })
 
   cleaned <- provs[!to_drop, , drop = FALSE]
-  save_pasivos_provisions(cleaned, client_id = client_id)
+  save_pasivos_provisions(cleaned, client_id = client_id, permitir_reduccion = TRUE)  # an intended purge (CM09 net)
   bump_sync_version("pasivos_provisions_db", client_id = client_id)
 
   # This scans the WHOLE client's provision history, not one liability or

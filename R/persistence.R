@@ -139,15 +139,92 @@
   full_key <- .s3_key(key, client_id = client_id)
   bucket   <- .s3_bucket()
   # Preload cache hit — keyed by full_key to isolate different clients.
-  if (exists(full_key, envir = .s3_preload_cache, inherits = FALSE))
+  if (exists(full_key, envir = .s3_preload_cache, inherits = FALSE)) {
+    .s3_filas_registrar(full_key, .s3_preload_cache[[full_key]])
     return(.s3_preload_cache[[full_key]])
+  }
   if (.s3_missing_cache_hit(full_key)) return(NULL)
   result <- .s3_read_raw_with_retry(full_key, bucket)
   if (!isTRUE(result$ok)) {
-    .s3_missing_cache_set(full_key)
+    .s3_missing_si_no_existe(full_key, bucket)
     return(NULL)
   }
+  .s3_filas_registrar(full_key, result$value)
   result$value
+}
+
+# ── "Does not exist" only when S3 says so (CM09, 2026-11-01) ─────────────────
+# A failed read used to mark the key missing for .S3_MISSING_CACHE_TTL
+# seconds whatever the cause, so one transient error became a minute of empty
+# reads for the whole process -- and any save in that minute started from
+# nothing. Now only a key S3 confirms does not exist is cached as missing;
+# if S3 cannot answer, nothing is cached (the next read tries again).
+.s3_existe_full <- function(full_key, bucket = .s3_bucket()) {
+  tryCatch(isTRUE(aws.s3::object_exists(full_key, bucket = bucket)), error = function(e) NA)
+}
+.s3_missing_si_no_existe <- function(full_key, bucket = .s3_bucket()) {
+  if (identical(.s3_existe_full(full_key, bucket), FALSE)) .s3_missing_cache_set(full_key)
+  invisible(NULL)
+}
+
+# ── Row counts last seen per key, for the write net in .s3_write() ───────────
+.s3_filas <- new.env(parent = emptyenv())
+.s3_filas_registrar <- function(full_key, x) {
+  if (is.data.frame(x)) assign(full_key, nrow(x), envir = .s3_filas)
+  invisible(NULL)
+}
+
+# ── Write net: a save may not silently shrink a table (CM09) ─────────────────
+# On by default for every key (opt-out), so a save added tomorrow is covered
+# without anyone remembering to ask for it:
+#   - tables that only grow (.S3_SOLO_CRECEN): any shrink is refused;
+#   - every other data.frame: refused if it would keep fewer than half of the
+#     rows S3 holds (tables of 4+ rows), or none at all.
+# A shrink the registry flags is confirmed against a strict fresh read before
+# refusing, so a stale count never blocks a legitimate save. Intended shrinks
+# ("Vaciar agenda", purges, log rotation) pass permitir_reduccion = TRUE.
+# options(hopdesk.s3_red = "aviso") logs instead of refusing (an operational
+# escape hatch if a false positive ever shows up in production).
+.S3_SOLO_CRECEN <- function() unname(unlist(S3_KEYS[c("pasivos_audit", "papelera", "bancos_confirmados")]))
+# Keys outside the net, each for a reason:
+#   pagar_hoy*: Agenda is a queue -- confirming the day's payments empties it;
+#               its writes rebase on strict reads since A2 (CM10).
+#   sap_snapshot_*: replaced wholesale from the ERP on every fetch.
+#   agenda_sync_config / sync_versions: one-row or list state, not tables.
+.S3_SIN_RED <- function() c(unname(unlist(S3_KEYS[c("pagar_hoy", "pagar_hoy_sync",
+                                                     "agenda_sync_config", "sync_versions")])),
+                            "sap_snapshot_AR.rds", "sap_snapshot_AP.rds")
+.s3_sin_red <- function(key) key %in% .S3_SIN_RED() || grepl("^pagar_hoy_user_.*\\.rds$", key)
+
+# Why a shrink from `antes` to `despues` rows is refused, or NULL if it is fine.
+.s3_motivo_reduccion <- function(key, antes, despues) {
+  if (is.na(antes) || antes == 0L || despues >= antes) return(NULL)
+  if (key %in% .S3_SOLO_CRECEN())
+    return(sprintf("%s only grows: %d -> %d rows", key, antes, despues))
+  if (despues == 0L)
+    return(sprintf("%s would be emptied: %d -> 0 rows", key, antes))
+  if (antes >= 4L && despues < antes / 2)
+    return(sprintf("%s would lose more than half its rows: %d -> %d", key, antes, despues))
+  NULL
+}
+
+.s3_red_revisar <- function(obj, key, client_id, full_key) {
+  if (!is.data.frame(obj) || .s3_sin_red(key)) return(invisible(NULL))
+  despues <- nrow(obj)
+  antes   <- if (exists(full_key, envir = .s3_filas, inherits = FALSE)) get(full_key, envir = .s3_filas) else NA
+  # Unknown, or the registry says this shrinks: ask S3 itself (strict read).
+  if (is.na(antes) || !is.null(.s3_motivo_reduccion(key, antes, despues))) {
+    actual <- .s3_leer_para_escribir(key, client_id)   # stop()s on a failed read
+    antes  <- if (is.data.frame(actual)) nrow(actual) else NA
+  }
+  motivo <- .s3_motivo_reduccion(key, antes, despues)
+  if (is.null(motivo)) return(invisible(NULL))
+  if (identical(getOption("hopdesk.s3_red", "bloquear"), "aviso")) {
+    message("[S3_RED] would refuse (aviso mode, written anyway): ", motivo)
+    return(invisible(NULL))
+  }
+  stop("[S3_RED] refusing to write: ", motivo,
+       " (pass permitir_reduccion = TRUE if this is intended)", call. = FALSE)
 }
 
 # Read for a read-modify-write. .s3_read_with() returns NULL both for "no
@@ -170,6 +247,24 @@
   if (identical(.s3_existe(key, client_id), FALSE)) return(NULL)
   suppressWarnings(rm(list = intersect(full_key, ls(.s3_missing_cache)), envir = .s3_missing_cache))
   stop("[S3] could not read ", full_key, " before writing it; nothing was saved", call. = FALSE)
+}
+
+# A table to change and save: strict, normalised. NULL from S3 (no file yet)
+# comes back as the empty schema; a failed read stop()s.
+leer_tabla_para_escribir <- function(key, client_id, schema) {
+  .normalize(.s3_leer_para_escribir(key, client_id), schema)
+}
+
+# Change a table starting from what S3 holds right now, never from a
+# session's copy: strict read, cambio(fresco), write. The generic form of
+# modificar_bancos_confirmados(). Returns the table written.
+modificar_tabla <- function(key, client_id, schema, cambio, permitir_reduccion = FALSE) {
+  if (is.null(client_id) || !nzchar(client_id)) stop("modificar_tabla: sin client_id", call. = FALSE)
+  fresco <- leer_tabla_para_escribir(key, client_id, schema)
+  nuevo  <- .normalize(cambio(fresco), schema)
+  if (isTRUE(all.equal(nuevo, fresco, check.attributes = FALSE))) return(invisible(fresco))
+  .s3_write(nuevo, key, client_id = client_id, permitir_reduccion = permitir_reduccion)
+  invisible(nuevo)
 }
 
 # Validates AWS credentials are present at startup. aws.s3 reads AWS_* vars
@@ -361,13 +456,14 @@ unregister_username <- function(username) {
   # .s3_read_with()) for why this retries before marking the key missing.
   result <- .s3_read_raw_with_retry(full_key, bucket)
   if (!isTRUE(result$ok)) {
-    .s3_missing_cache_set(full_key)
+    .s3_missing_si_no_existe(full_key, bucket)
     return(NULL)
   }
+  .s3_filas_registrar(full_key, result$value)
   result$value
 }
 
-.s3_write <- function(obj, key, client_id = NULL) {
+.s3_write <- function(obj, key, client_id = NULL, permitir_reduccion = FALSE) {
   message(sprintf("[S3_WRITE] ── start key='%s'", key))
 
   if (!is.character(key) || !nzchar(key))
@@ -389,6 +485,27 @@ unregister_username <- function(username) {
   )
   sz <- file.info(tf)$size
   message(sprintf("[S3_WRITE] saveRDS OK — %d bytes written", sz))
+
+  # ── Step 1b: write net (CM09) -- before anything touches S3 ───────────────
+  # A refusal ([S3_RED]) stops here. If the net cannot verify because S3 did
+  # not answer, the write is staged in the offline queue exactly as when the
+  # upload itself fails (the replay applies the net again before uploading),
+  # and the same error is raised.
+  if (!isTRUE(permitir_reduccion)) {
+    red <- tryCatch({ .s3_red_revisar(obj, key, client_id, full_key); NULL }, error = function(e) e)
+    if (!is.null(red)) {
+      if (!startsWith(conditionMessage(red), "[S3_RED]")) {
+        resolved_client_id <- sub("^([^/]+)/.*$", "\\1", full_key)
+        staged <- tryCatch(
+          .queue_stage_entry(payload_path = tf, s3_key = full_key, key = key,
+                             client_id = resolved_client_id),
+          error = function(e3) FALSE)
+        if (isTRUE(staged))
+          message(sprintf("[S3_WRITE] net could not verify (S3 unreadable); write queued for replay (client_id='%s')", resolved_client_id))
+      }
+      stop(red)
+    }
+  }
 
   # ── Step 2: upload via s3saveRDS (high-level API, handles key normalisation) ──
   message(sprintf("[S3_WRITE] calling s3saveRDS: object='%s' bucket='%s'", full_key, bucket))
@@ -429,6 +546,7 @@ unregister_username <- function(username) {
   })
 
   # ── Step 3: invalidate caches ──────────────────────────────────────────────
+  .s3_filas_registrar(full_key, obj)
   rm(list = intersect(full_key, ls(.s3_missing_cache)), envir = .s3_missing_cache)
   # Invalidate bare-suffix key (legacy .s3_read() cache) and full-prefix key
   # (used by .s3_read_with()) so stale preload data never survives a write.
@@ -442,8 +560,9 @@ unregister_username <- function(username) {
   invisible(TRUE)
 }
 
-.s3_write_with <- function(obj, key, client_id = NULL) {
-  .s3_write(obj, key, client_id = client_id)
+.s3_write_with <- function(obj, key, client_id = NULL, permitir_reduccion = FALSE) {
+  if (isTRUE(permitir_reduccion)) .s3_write(obj, key, client_id = client_id, permitir_reduccion = TRUE)
+  else .s3_write(obj, key, client_id = client_id)
 }
 
 # ── Schema definitions ─────────────────────────────────────────────────────────

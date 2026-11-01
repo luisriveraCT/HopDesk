@@ -78,6 +78,7 @@ assign(".sync_versions", list(), envir = globalenv())
 .extract_fn("R/persistence.R", ".s3_key")
 .extract_fn("R/persistence.R", ".s3_bucket")
 .extract_fn("R/persistence.R", ".s3_write")
+source("tests/helpers/s3_red_harness.R")   # CM09: the write net .s3_write() now calls
 .extract_fn("R/persistence.R", ".s3_read_raw_with_retry")
 .extract_fn("R/persistence.R", ".s3_read_with")
 .extract_fn("R/persistence.R", ".s3_missing_cache_hit")
@@ -150,11 +151,14 @@ register_synced("manual_inv", "manual_invoices.rds", function(client_id = NULL) 
 .with_mock_s3 <- function(fake_save, fake_put, fake_read, expr) {
   orig_save <- aws.s3::s3saveRDS
   orig_put  <- aws.s3::put_object
+  orig_exists <- aws.s3::object_exists   # CM09 write net: S3 says "new key"
+  utils::assignInNamespace("object_exists", function(...) FALSE, "aws.s3")
   orig_read <- aws.s3::s3readRDS
   utils::assignInNamespace("s3saveRDS", fake_save, "aws.s3")
   utils::assignInNamespace("put_object", fake_put, "aws.s3")
   utils::assignInNamespace("s3readRDS", fake_read, "aws.s3")
   tryCatch(expr, finally = {
+    utils::assignInNamespace("object_exists", orig_exists, "aws.s3")
     utils::assignInNamespace("s3saveRDS", orig_save, "aws.s3")
     utils::assignInNamespace("put_object", orig_put, "aws.s3")
     utils::assignInNamespace("s3readRDS", orig_read, "aws.s3")

@@ -71,8 +71,13 @@ load_pasivos_provisions <- function(client_id = NULL) {
   .normalize(.s3_read_with(S3_KEYS$pasivos_provisions, client_id = client_id), .schema_pasivos_provision)
 }
 
-save_pasivos_provisions <- function(df, client_id = NULL) {
-  .s3_write(.normalize(df, .schema_pasivos_provision), S3_KEYS$pasivos_provisions, client_id = client_id)
+save_pasivos_provisions <- function(df, client_id = NULL, permitir_reduccion = FALSE) {
+  # The flag only when set: a normal save stays the exact call it always was.
+  if (isTRUE(permitir_reduccion))
+    .s3_write(.normalize(df, .schema_pasivos_provision), S3_KEYS$pasivos_provisions, client_id = client_id,
+              permitir_reduccion = TRUE)
+  else
+    .s3_write(.normalize(df, .schema_pasivos_provision), S3_KEYS$pasivos_provisions, client_id = client_id)
   invisible(TRUE)
 }
 

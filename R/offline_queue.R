@@ -513,6 +513,26 @@
     }
   }
 
+  # The write net applies to replays too (CM09): this uploads directly, past
+  # .s3_write(), so check here that the staged table would not shrink what S3
+  # holds now. A refusal blocks the entry for good (a person has to look); if
+  # S3 cannot be read yet, the entry just stays pending.
+  red <- tryCatch({
+    .s3_red_revisar(readRDS(dest), sub("^[^/]+/", "", row$s3_key), slug, row$s3_key)
+    NULL
+  }, error = function(e) conditionMessage(e))
+  if (!is.null(red)) {
+    if (!startsWith(red, "[S3_RED]")) return("pending")
+    tryCatch(
+      log_action(user = acting_user, module = "offline_queue", action = "_queue_red_refused",
+                 description = sprintf("Refused to replay seq=%s for table '%s': %s",
+                                       row$seq, row$table_name, red),
+                 target_id = row$table_name, s3_key = row$s3_key,
+                 client_id = slug, viewer_home_client_id = acting_home),
+      error = function(e) NULL)
+    return("blocked")
+  }
+
   ok <- tryCatch({
     aws.s3::put_object(file = dest, object = row$s3_key, bucket = .s3_bucket())
     TRUE

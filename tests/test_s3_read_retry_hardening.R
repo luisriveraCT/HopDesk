@@ -141,6 +141,14 @@ assign(".s3_preload_cache", new.env(parent = emptyenv()), envir = globalenv())
 Sys.setenv(CLIENT_ID = "networks", S3_BUCKET = "mock-bucket")
 .extract_fn("R/persistence.R", ".s3_read_with")
 .extract_fn("R/persistence.R", ".s3_read")
+# CM09: a key is cached as missing only when S3 says it does not exist
+# (.s3_existe_full). Here S3's answer is a stub (no aws.s3 patching needed):
+# FALSE = "does not exist", which is what B2/B3's NoSuchKey reads mean.
+.extract_fn("R/persistence.R", ".s3_missing_si_no_existe")
+.extract_fn("R/persistence.R", ".s3_filas_registrar")
+assign(".s3_filas", new.env(parent = emptyenv()), envir = globalenv())
+.s3_existe_respuesta <- FALSE
+assign(".s3_existe_full", function(full_key, bucket = NULL) .s3_existe_respuesta, envir = globalenv())
 
 # B1: .s3_read_with() -- a transient failure that clears within the retry
 # window never marks the key missing at all, and returns the real value.
@@ -169,6 +177,24 @@ Sys.setenv(CLIENT_ID = "networks", S3_BUCKET = "mock-bucket")
   ok("B2: .s3_read_with() returns NULL on a genuinely persistent failure", is.null(out))
   ok("B2: the key IS marked missing after every retry attempt genuinely fails",
      .s3_missing_cache_hit("networks/gonefile.rds"))
+}
+
+# B2b (CM09): a persistent failure of a key that DOES exist is not cached as
+# missing -- it used to be, so one outage blanked the key for 60 s and any
+# save in that window started from an empty table.
+{
+  rm(list = ls(envir = .s3_missing_cache), envir = .s3_missing_cache)
+  .s3_existe_respuesta <- TRUE
+  fake <- function(object, bucket, ...) stop("simulated S3 timeout")
+  out <- .with_mock_s3read(fake, .s3_read_with("vivofile.rds", client_id = "networks"))
+  ok("B2b: .s3_read_with() returns NULL when an existing key cannot be read", is.null(out))
+  ok("B2b: ... and does NOT mark it missing (S3 says it exists)",
+     !.s3_missing_cache_hit("networks/vivofile.rds"))
+  .s3_existe_respuesta <- NA
+  out <- .with_mock_s3read(fake, .s3_read_with("dudafile.rds", client_id = "networks"))
+  ok("B2b: if S3 cannot say whether it exists, it is not marked missing either",
+     !.s3_missing_cache_hit("networks/dudafile.rds"))
+  .s3_existe_respuesta <- FALSE
 }
 
 # B3: .s3_read() (bare-key variant) -- same retry-before-missing behavior.
