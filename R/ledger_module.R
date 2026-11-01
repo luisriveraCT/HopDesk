@@ -1362,7 +1362,8 @@ ledgerModuleServer <- function(id, config, shared) {
                                            !(rows_to_delete[["provision_id"]] %in% pagadas), , drop = FALSE]
         showNotification(tr_n("pasivos.borrar_pagada_bloqueado", length(pagadas)),
                          type = "warning", duration = 8)
-        if (!nrow(rows_to_delete)) { removeModal(); return() }
+        # The table already confirmed (no dialog to close): the day stays open.
+        if (!nrow(rows_to_delete)) return()
       }
 
       # BUG (found 2026-09-03, same class already fixed for
