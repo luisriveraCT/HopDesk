@@ -1356,6 +1356,7 @@ ledgerModuleServer <- function(id, config, shared) {
       provs_db <- if ("provision_id" %in% names(rows_to_delete))
         tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()),
                  error = function(e) NULL)
+      provs_base <- provs_db   # CM09: the save applies only these deletes on S3 as it is now
       pagadas <- provisiones_pagadas(provs_db, rows_to_delete[["provision_id"]])
       if (length(pagadas)) {
         rows_to_delete <- rows_to_delete[is.na(rows_to_delete[["provision_id"]]) |
@@ -1435,7 +1436,7 @@ ledgerModuleServer <- function(id, config, shared) {
           before_rows <- provs_db[del_idx, , drop = FALSE]
           provs_db[del_idx, "estado"] <- "deleted"
           prov_result <- s3_save_with_retry(function()
-            save_pasivos_provisions(provs_db, client_id = shared$effective_client_id()))
+            save_pasivos_provisions(provs_db, client_id = shared$effective_client_id(), base = provs_base))
           if (isTRUE(prov_result$ok)) {
             tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
             shared$pasivos_provisions_db(provs_db)

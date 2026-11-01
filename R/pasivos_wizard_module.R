@@ -309,7 +309,7 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
     , drop = FALSE
   ]
   new_provs <- dplyr::bind_rows(others, result$keep, result$update, result$insert)
-  tryCatch(save_pasivos_provisions(new_provs, client_id = shared$effective_client_id()),
+  tryCatch(save_pasivos_provisions(new_provs, client_id = shared$effective_client_id(), base = existing),
            error = function(e) warning("[wizard] save_pasivos_provisions failed: ",
                                        conditionMessage(e)))
   tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)

@@ -174,6 +174,7 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
 .pec_apply_decisions <- function(conflicts, replacement, decisions, shared, user) {
   provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()),
                     error = function(e) .schema_pasivos_provision())
+  provs_base <- provs   # CM09: the save applies only these decisions on S3 as it is now
 
   # Per-provision decision detail for the audit entry (2026-09-03) -- this
   # previously logged only a bare conflict count, even though the real
@@ -217,7 +218,7 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
     # "mantener" → do nothing (keep existing override)
   }
 
-  tryCatch(save_pasivos_provisions(provs, client_id = shared$effective_client_id()), error = function(e) NULL)
+  tryCatch(save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base), error = function(e) NULL)
   tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
   shared$pasivos_provisions_db(provs)
   bump_sync_version("pasivos_provisions_db")

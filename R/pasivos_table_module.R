@@ -318,7 +318,7 @@ pasivos_table_module_server <- function(id, shared) {
 
       new_all <- dplyr::bind_rows(existing, new_prov)
 
-      ok <- tryCatch({ save_pasivos_provisions(new_all, client_id = shared$effective_client_id()); TRUE },
+      ok <- tryCatch({ save_pasivos_provisions(new_all, client_id = shared$effective_client_id(), base = existing); TRUE },
                      error = function(e) {
                        shiny::showNotification(
                          paste0("Error al guardar: ", conditionMessage(e)),

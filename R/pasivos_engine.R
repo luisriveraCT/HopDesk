@@ -921,13 +921,14 @@ pasivos_reconcile_provisions <- function(existing, generated, mode = "regenerate
 
 .save_provision_row <- function(row, client_id = NULL) {
   all_provs <- load_pasivos_provisions(client_id = client_id)
+  provs_base <- all_provs   # CM09: only this row is applied on S3 as it is now
   idx <- which(all_provs$id == row$id)
   if (length(idx)) {
     all_provs[idx, ] <- row
   } else {
     all_provs <- dplyr::bind_rows(all_provs, row)
   }
-  save_pasivos_provisions(all_provs, client_id = client_id)
+  save_pasivos_provisions(all_provs, client_id = client_id, base = provs_base)
   bump_sync_version("pasivos_provisions_db")
   invisible(TRUE)
 }

@@ -335,13 +335,14 @@ pasivos_list_module_server <- function(id, shared) {
         # whom, since the row itself no longer exists to look up).
         provs <- tryCatch(shared$pasivos_provisions_db(),
                           error = function(e) .schema_pasivos_provision())
+        provs_base <- provs   # CM09: only the dropped rows leave S3's table
         drop_mask <- !is.na(provs$liability_id) & provs$liability_id == lid &
                      !is.na(provs$estado) & provs$estado == "provisional" &
                      !is.na(provs$fecha_efectiva) & provs$fecha_efectiva >= Sys.Date()
         dropped_rows <- provs[drop_mask, , drop = FALSE]
         if (nrow(dropped_rows)) {
           provs <- provs[!drop_mask, , drop = FALSE]
-          tryCatch(save_pasivos_provisions(provs, client_id = shared$effective_client_id()), error = function(e) NULL)
+          tryCatch(save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base), error = function(e) NULL)
           tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
           shared$pasivos_provisions_db(provs)
           bump_sync_version("pasivos_provisions_db")
@@ -420,12 +421,13 @@ pasivos_list_module_server <- function(id, shared) {
       # same reasoning as the pause handler above (found 2026-09-05).
       provs <- tryCatch(shared$pasivos_provisions_db(),
                         error = function(e) .schema_pasivos_provision())
+      provs_base <- provs   # CM09: only the dropped rows leave S3's table
       drop_mask <- !is.na(provs$liability_id) & provs$liability_id == lid &
                    !is.na(provs$estado) & provs$estado == "provisional" &
                    !is.na(provs$fecha_efectiva) & provs$fecha_efectiva >= Sys.Date()
       dropped_rows <- provs[drop_mask, , drop = FALSE]
       provs <- provs[!drop_mask, , drop = FALSE]
-      tryCatch(save_pasivos_provisions(provs, client_id = shared$effective_client_id()), error = function(e) NULL)
+      tryCatch(save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base), error = function(e) NULL)
       tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
       shared$pasivos_provisions_db(provs)
       bump_sync_version("pasivos_provisions_db")

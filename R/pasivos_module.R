@@ -335,6 +335,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     if (is.null(provs)) {
       shiny::showNotification("Error cargando provisiones.", type = "error"); return()
     }
+    provs_base <- provs   # CM09: the save applies only this change on S3 as it is now
     idx <- which(provs$id == prov_id)
     if (!length(idx)) {
       shiny::showNotification("Provisión no encontrada.", type = "error")
@@ -356,7 +357,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     provs$last_edited_by[idx]  <- user
     provs$last_edited_at[idx]  <- now
 
-    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id()); TRUE },
+    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base); TRUE },
                    error = function(e) {
                      shiny::showNotification(paste0("Error: ", conditionMessage(e)),
                                              type = "error"); FALSE
@@ -411,6 +412,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     if (is.null(provs)) {
       shiny::showNotification("Error cargando provisiones.", type = "error"); return()
     }
+    provs_base <- provs   # CM09: the save applies only this change on S3 as it is now
     idx <- which(provs$id == prov_id)
     if (!length(idx)) {
       shiny::showNotification("Provisión no encontrada.", type = "error"); return()
@@ -444,7 +446,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     provs$last_edited_by[idx] <- user
     provs$last_edited_at[idx] <- now
 
-    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id()); TRUE },
+    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base); TRUE },
                    error = function(e) {
                      shiny::showNotification(paste0("Error: ", conditionMessage(e)),
                                              type = "error"); FALSE
@@ -578,7 +580,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     provs <- dplyr::bind_rows(existing, new_prov)
     save_ok <- tryCatch({
-      save_pasivos_provisions(provs, client_id = shared$effective_client_id())
+      save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = existing)
       TRUE
     }, error = function(e) {
       shiny::showNotification(
@@ -771,6 +773,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (is.null(provs)) { shiny::showNotification("Error cargando provisiones.", type = "error"); return() }
+    provs_base <- provs   # CM09: the save applies only this change on S3 as it is now
     idx <- which(provs$id == prov_id)
     if (!length(idx)) { shiny::showNotification("Provisión no encontrada.", type = "error"); return() }
     # Paid: the UI hides this button, but the server must refuse too, or the
@@ -849,7 +852,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     provs$last_edited_at[idx]  <- now
     after <- as.list(provs[idx[1], ])
 
-    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id()); TRUE }, error = function(e) {
+    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base); TRUE }, error = function(e) {
       shiny::showNotification(paste("Error:", e$message), type = "error"); FALSE })
     if (!ok) return()
     tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
@@ -881,6 +884,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (is.null(provs)) { shiny::showNotification("Error cargando provisiones.", type = "error"); return() }
+    provs_base <- provs   # CM09: the save applies only this change on S3 as it is now
     idx <- which(provs$id == prov_id)
     if (!length(idx)) { shiny::showNotification("Provisión no encontrada.", type = "error"); return() }
 
@@ -990,7 +994,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     provs$last_edited_at[idx] <- now
     after <- as.list(provs[idx[1], ])
 
-    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id()); TRUE }, error = function(e) {
+    ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base); TRUE }, error = function(e) {
       shiny::showNotification(paste("Error:", e$message), type = "error"); FALSE })
     if (!ok) return()
     tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)

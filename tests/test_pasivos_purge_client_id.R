@@ -38,7 +38,7 @@ env$load_pasivos_provisions <- function(client_id = NULL)
   tibble::tibble(id = c("a", "b", "c"), liability_id = "L", estado = c("closed", "provisional", "closed"),
                  fecha_efectiva = as.Date("2026-05-01"), amount_pago = 1, parte = "P")
 env$.s3_write               <- function(obj, key, client_id = NULL) rec("backup")(client_id = client_id)
-env$save_pasivos_provisions <- function(df, client_id = NULL) rec("save")(client_id = client_id)
+env$save_pasivos_provisions <- function(df, client_id = NULL, ...) rec("save")(client_id = client_id)
 env$bump_sync_version       <- function(name, client_id = NULL) rec("bump")(client_id = client_id)
 env$pasivos_log_audit       <- function(..., client_id = NULL) rec("audit")(client_id = client_id)
 

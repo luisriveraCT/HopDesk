@@ -71,7 +71,18 @@ load_pasivos_provisions <- function(client_id = NULL) {
   .normalize(.s3_read_with(S3_KEYS$pasivos_provisions, client_id = client_id), .schema_pasivos_provision)
 }
 
-save_pasivos_provisions <- function(df, client_id = NULL, permitir_reduccion = FALSE) {
+# `base`: the copy `df` was built from (often the session's). With it only
+# this action's provisions are applied on S3's table as it is now (CM09), so
+# a provision another session created, converted or paid meanwhile is kept.
+save_pasivos_provisions <- function(df, client_id = NULL, permitir_reduccion = FALSE, base = NULL) {
+  if (!is.null(base) && !is.null(client_id) && nzchar(client_id)) {
+    nuevo <- .normalize(df, .schema_pasivos_provision)
+    base  <- .normalize(base, .schema_pasivos_provision)
+    modificar_tabla(S3_KEYS$pasivos_provisions, client_id, .schema_pasivos_provision,
+                    function(fresco) rebase_por_id(nuevo, base, fresco, "id"),
+                    permitir_reduccion = permitir_reduccion)
+    return(invisible(TRUE))
+  }
   # The flag only when set: a normal save stays the exact call it always was.
   if (isTRUE(permitir_reduccion))
     .s3_write(.normalize(df, .schema_pasivos_provision), S3_KEYS$pasivos_provisions, client_id = client_id,
