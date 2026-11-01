@@ -1628,11 +1628,7 @@ pagarHoyServer <- function(id, shared) {
         # observer to reload bancos_confirmados from S3. Writing to S3 first ensures
         # the poll reads the updated state rather than the pre-confirmation snapshot.
         if (nrow(factura_rows) && !is.null(shared$bancos_confirmados)) {
-          conf_db <- shared$bancos_confirmados() %||%
-            .schema_bancos_confirmados()
-
-          for (i in seq_len(nrow(factura_rows))) {
-            new_conf <- tibble::tibble(
+          nuevas <- dplyr::bind_rows(lapply(seq_len(nrow(factura_rows)), function(i) tibble::tibble(
               confirmacion_id = uuid::UUIDgenerate(),
               agenda_item_id  = as.character(factura_rows$id[i]),
               empresa         = as.character(emp),
@@ -1648,17 +1644,19 @@ pagarHoyServer <- function(id, shared) {
               confirmado_at   = Sys.time(),
               eliminado       = FALSE,
               provision_id    = as.character(factura_rows$provision_id[i] %||% NA_character_)
-            )
-            conf_db <- dplyr::bind_rows(conf_db, new_conf)
+            )))
+          # Appended to what S3 holds now (modificar_bancos_confirmados). If
+          # that fails, stop here: the items stay in Agenda, unconfirmed,
+          # instead of leaving Agenda with no confirmation saved.
+          conf_db <- tryCatch(
+            modificar_bancos_confirmados(shared$effective_client_id(), function(c) dplyr::bind_rows(c, nuevas)),
+            error = function(e) { message("[pagar_hoy] confirm AP: ", conditionMessage(e)); NULL })
+          if (is.null(conf_db)) {
+            showNotification(tr("comun.reintentar"), type = "error", duration = 8)
+            return()
           }
-
           shared$bancos_confirmados(conf_db)
-          tryCatch({
-            save_bancos_confirmados(conf_db, client_id = shared$effective_client_id())
-            bump_sync_version("bancos_confirmados_db")
-          }, error = function(e)
-            showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
-          )
+          bump_sync_version("bancos_confirmados_db", client_id = shared$effective_client_id())
         }
 
         # Confirming ALWAYS fully removes the item from Agenda, for every
@@ -1798,7 +1796,7 @@ pagarHoyServer <- function(id, shared) {
                 sprintf("%.2f", round(as.numeric(df[["Importe"]]), 2)))
 
               pap      <- shared$papelera_rv() %||% load_papelera(client_id = shared$effective_client_id())
-              conf_now <- shared$bancos_confirmados()
+              enlaces  <- list()   # agenda item -> papelera event, applied on S3 below
               archived_mi_ids <- character(0)
 
               for (i in seq_len(nrow(plain_manual))) {
@@ -1822,8 +1820,7 @@ pagarHoyServer <- function(id, shared) {
                 event_id <- pap[["event_id"]][nrow(pap)]
                 archived_mi_ids <- c(archived_mi_ids, mi[["id"]][mi_idx])
 
-                cidx <- which(conf_now[["agenda_item_id"]] == fr[["id"]] & is.na(conf_now[["archive_event_id"]]))
-                if (length(cidx)) conf_now[["archive_event_id"]][cidx[length(cidx)]] <- event_id
+                enlaces[[length(enlaces) + 1L]] <- list(ids = fr[["id"]], event = event_id)
               }
 
               if (length(archived_mi_ids)) {
@@ -1831,9 +1828,9 @@ pagarHoyServer <- function(id, shared) {
                 tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
                          error = function(e) showNotification(
                            paste("Error al archivar entrada manual:", e$message), type = "warning"))
-                shared$bancos_confirmados(conf_now)
-                tryCatch(save_bancos_confirmados(conf_now, client_id = shared$effective_client_id()),
-                         error = function(e) NULL)
+                conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces),
+                                     error = function(e) { message("[pagar_hoy] archive link: ", conditionMessage(e)); NULL })
+                if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
                 mi <- mi[!mi[["id"]] %in% archived_mi_ids, , drop = FALSE]
                 shared$manual_inv(mi)
                 tryCatch(save_manual(mi, client_id = shared$effective_client_id()),
@@ -1855,7 +1852,7 @@ pagarHoyServer <- function(id, shared) {
               manual_ids <- mi[["id"]][!is.na(mi[["provision_id"]]) & mi[["provision_id"]] %in% prov_ids_to_remove]
               if (length(manual_ids)) {
                 pap      <- shared$papelera_rv() %||% load_papelera(client_id = shared$effective_client_id())
-                conf_now <- shared$bancos_confirmados()
+                enlaces  <- list()   # agenda item -> papelera event, applied on S3 below
                 for (mid in manual_ids) {
                   to_archive <- mi[mi[["id"]] == mid, , drop = FALSE]
                   pid   <- to_archive[["provision_id"]][1]
@@ -1865,17 +1862,16 @@ pagarHoyServer <- function(id, shared) {
                                          deleted_by = shared$current_user(), disposition = "confirmed")
                   event_id <- pap[["event_id"]][nrow(pap)]
                   if (length(fr_id)) {
-                    cidx <- which(conf_now[["agenda_item_id"]] %in% fr_id & is.na(conf_now[["archive_event_id"]]))
-                    if (length(cidx)) conf_now[["archive_event_id"]][cidx[length(cidx)]] <- event_id
+                    enlaces[[length(enlaces) + 1L]] <- list(ids = fr_id, event = event_id)
                   }
                 }
                 shared$papelera_rv(pap)
                 tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
                          error = function(e) showNotification(
                            paste("Error al archivar entrada manual:", e$message), type = "warning"))
-                shared$bancos_confirmados(conf_now)
-                tryCatch(save_bancos_confirmados(conf_now, client_id = shared$effective_client_id()),
-                         error = function(e) NULL)
+                conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces),
+                                     error = function(e) { message("[pagar_hoy] archive link: ", conditionMessage(e)); NULL })
+                if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
 
                 mi_updated <- mi[!mi[["id"]] %in% manual_ids, , drop = FALSE]
                 shared$manual_inv(mi_updated)
@@ -2008,11 +2004,7 @@ pagarHoyServer <- function(id, shared) {
         # observer to reload bancos_confirmados from S3. Writing to S3 first ensures
         # the poll reads the updated state rather than the pre-confirmation snapshot.
         if (nrow(factura_rows) && !is.null(shared$bancos_confirmados)) {
-          conf_db <- shared$bancos_confirmados() %||%
-            .schema_bancos_confirmados()
-
-          for (i in seq_len(nrow(factura_rows))) {
-            new_conf <- tibble::tibble(
+          nuevas <- dplyr::bind_rows(lapply(seq_len(nrow(factura_rows)), function(i) tibble::tibble(
               confirmacion_id = uuid::UUIDgenerate(),
               agenda_item_id  = as.character(factura_rows$id[i]),
               empresa         = as.character(emp),
@@ -2027,17 +2019,18 @@ pagarHoyServer <- function(id, shared) {
               mov_id          = NA_character_,
               confirmado_at   = Sys.time(),
               eliminado       = FALSE
-            )
-            conf_db <- dplyr::bind_rows(conf_db, new_conf)
+            )))
+          # Same as the AP confirm: appended to S3's current table; on a
+          # failed read nothing is confirmed and the items stay in Agenda.
+          conf_db <- tryCatch(
+            modificar_bancos_confirmados(shared$effective_client_id(), function(c) dplyr::bind_rows(c, nuevas)),
+            error = function(e) { message("[pagar_hoy] confirm AR: ", conditionMessage(e)); NULL })
+          if (is.null(conf_db)) {
+            showNotification(tr("comun.reintentar"), type = "error", duration = 8)
+            return()
           }
-
           shared$bancos_confirmados(conf_db)
-          tryCatch({
-            save_bancos_confirmados(conf_db, client_id = shared$effective_client_id())
-            bump_sync_version("bancos_confirmados_db")
-          }, error = function(e)
-            showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
-          )
+          bump_sync_version("bancos_confirmados_db", client_id = shared$effective_client_id())
         }
 
         # Confirming ALWAYS fully removes the item from Agenda, for every
@@ -2153,7 +2146,7 @@ pagarHoyServer <- function(id, shared) {
                 sprintf("%.2f", round(as.numeric(df[["Importe"]]), 2)))
 
               pap      <- shared$papelera_rv() %||% load_papelera(client_id = shared$effective_client_id())
-              conf_now <- shared$bancos_confirmados()
+              enlaces  <- list()   # agenda item -> papelera event, applied on S3 below
               archived_mi_ids <- character(0)
 
               for (i in seq_len(nrow(plain_manual))) {
@@ -2177,8 +2170,7 @@ pagarHoyServer <- function(id, shared) {
                 event_id <- pap[["event_id"]][nrow(pap)]
                 archived_mi_ids <- c(archived_mi_ids, mi[["id"]][mi_idx])
 
-                cidx <- which(conf_now[["agenda_item_id"]] == fr[["id"]] & is.na(conf_now[["archive_event_id"]]))
-                if (length(cidx)) conf_now[["archive_event_id"]][cidx[length(cidx)]] <- event_id
+                enlaces[[length(enlaces) + 1L]] <- list(ids = fr[["id"]], event = event_id)
               }
 
               if (length(archived_mi_ids)) {
@@ -2186,9 +2178,9 @@ pagarHoyServer <- function(id, shared) {
                 tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
                          error = function(e) showNotification(
                            paste("Error al archivar entrada manual:", e$message), type = "warning"))
-                shared$bancos_confirmados(conf_now)
-                tryCatch(save_bancos_confirmados(conf_now, client_id = shared$effective_client_id()),
-                         error = function(e) NULL)
+                conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces),
+                                     error = function(e) { message("[pagar_hoy] archive link: ", conditionMessage(e)); NULL })
+                if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
                 mi <- mi[!mi[["id"]] %in% archived_mi_ids, , drop = FALSE]
                 shared$manual_inv(mi)
                 tryCatch(save_manual(mi, client_id = shared$effective_client_id()),
@@ -2210,7 +2202,7 @@ pagarHoyServer <- function(id, shared) {
               manual_ids <- mi[["id"]][!is.na(mi[["provision_id"]]) & mi[["provision_id"]] %in% prov_ids_to_remove]
               if (length(manual_ids)) {
                 pap      <- shared$papelera_rv() %||% load_papelera(client_id = shared$effective_client_id())
-                conf_now <- shared$bancos_confirmados()
+                enlaces  <- list()   # agenda item -> papelera event, applied on S3 below
                 for (mid in manual_ids) {
                   to_archive <- mi[mi[["id"]] == mid, , drop = FALSE]
                   pid   <- to_archive[["provision_id"]][1]
@@ -2220,17 +2212,16 @@ pagarHoyServer <- function(id, shared) {
                                          deleted_by = shared$current_user(), disposition = "confirmed")
                   event_id <- pap[["event_id"]][nrow(pap)]
                   if (length(fr_id)) {
-                    cidx <- which(conf_now[["agenda_item_id"]] %in% fr_id & is.na(conf_now[["archive_event_id"]]))
-                    if (length(cidx)) conf_now[["archive_event_id"]][cidx[length(cidx)]] <- event_id
+                    enlaces[[length(enlaces) + 1L]] <- list(ids = fr_id, event = event_id)
                   }
                 }
                 shared$papelera_rv(pap)
                 tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
                          error = function(e) showNotification(
                            paste("Error al archivar entrada manual:", e$message), type = "warning"))
-                shared$bancos_confirmados(conf_now)
-                tryCatch(save_bancos_confirmados(conf_now, client_id = shared$effective_client_id()),
-                         error = function(e) NULL)
+                conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces),
+                                     error = function(e) { message("[pagar_hoy] archive link: ", conditionMessage(e)); NULL })
+                if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
 
                 mi_updated <- mi[!mi[["id"]] %in% manual_ids, , drop = FALSE]
                 shared$manual_inv(mi_updated)

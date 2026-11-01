@@ -130,6 +130,35 @@ test_that("deshacer la confirmación regresa la provisión a convertida", {
   expect_equal(p$manual_inv_id[1], "m3")                               # the item is still linked
 })
 
+test_that("confirmar parte de lo que hay en S3 y no escribe si la lectura falla", {
+  S3_KEYS$bancos_confirmados <<- "bancos_confirmados.rds"
+  leer <- .s3_read_with   # the in-memory store set up in the test above
+  .s3_existe <<- function(key, client_id) !is.null(leer(key, client_id))
+  # another session already confirmed c2 after this session loaded c1 only
+  save_bancos_confirmados(conf0, client_id = "cli")
+  mia <- .normalize(tibble(confirmacion_id = "c9", agenda_item_id = "ag9", tipo = "pago",
+                           eliminado = FALSE), .schema_bancos_confirmados)
+  out <- modificar_bancos_confirmados("cli", function(c) dplyr::bind_rows(c, mia))
+  expect_setequal(out$confirmacion_id, c("c1", "c2", "c9"))
+  # archive link applied on the fresh table
+  enlazar_archivo_confirmaciones("cli", list(list(ids = "ag9", event = "ev9")))
+  guardado <- .s3_read_with("bancos_confirmados.rds", "cli")
+  expect_equal(guardado$archive_event_id[guardado$confirmacion_id == "c9"], "ev9")
+  # a failed read stops before writing
+  .s3_read_with <<- function(key, client_id = NULL) NULL
+  expect_error(modificar_bancos_confirmados("cli", function(c) mia), "could not read")
+  .s3_read_with <<- leer
+  expect_equal(nrow(.s3_read_with("bancos_confirmados.rds", "cli")), 3)
+  expect_error(modificar_bancos_confirmados(NULL, identity), "client_id")
+})
+
+test_that("confirmar en Agenda ya no guarda la copia en memoria", {
+  ph <- lineas("R/pagar_hoy_module.R")
+  expect_false(grepl("conf_db <- shared$bancos_confirmados()", ph, fixed = TRUE))
+  expect_false(grepl("save_bancos_confirmados(conf_now", ph, fixed = TRUE))
+  expect_equal(lengths(regmatches(ph, gregexpr("modificar_bancos_confirmados(", ph, fixed = TRUE))), 2L)
+})
+
 test_that("Bancos y Pasivos usan confirmaciones vigentes al deshacer y eliminar", {
   obs <- lineas("R/pasivos_observers.R")
   expect_match(obs, "bc <- confirmaciones_vigentes(bc)", fixed = TRUE)

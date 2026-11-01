@@ -154,7 +154,10 @@ assign("%||%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) ==
     # Regression guard: the bancos_confirmados write's OWN pre-existing
     # tryCatch (the part that was already correct) is untouched by this fix.
     ok("AP handler's bancos_confirmados write still has its own pre-existing tryCatch (unaffected regression guard)",
-       grepl('save_bancos_confirmados\\(conf_db, client_id = shared\\$effective_client_id\\(\\)\\)\\s*\\n\\s*bump_sync_version\\("bancos_confirmados_db"\\)', ap_block))
+       # since 2026-11-01 the write appends to S3's current table
+       # (modificar_bancos_confirmados) and a failure stops the handler
+       grepl('conf_db <- tryCatch\\(\\s*\\n\\s*modificar_bancos_confirmados\\(', ap_block) &&
+         grepl('if \\(is.null\\(conf_db\\)\\) \\{[^}]*return\\(\\)', ap_block))
   }
 }
 

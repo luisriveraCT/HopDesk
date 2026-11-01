@@ -19,6 +19,7 @@ S3_KEYS <- list(pagar_hoy = "pagar_hoy.rds", pagar_hoy_sync = "pagar_hoy_sync.rd
 }
 .s3_read_with <- function(key, client_id = NULL) .mem[[.s3_key(key, client_id)]]
 .s3_write <- function(obj, key, client_id = NULL) assign(.s3_key(key, client_id), obj, envir = .mem)
+.s3_existe <- function(key, client_id) !is.null(.mem[[.s3_key(key, client_id)]])
 bump_sync_version <- function(...) invisible(TRUE)
 
 fila <- function(id, doc, status = "pending", importe = 100) tibble(
@@ -85,6 +86,18 @@ test_that("save con base no pisa lo que otra sesión agregó", {
   escrito <- save_pagar_hoy(bind_rows(base, fila("z", "DZ")), "dev", client_id = "networks", base = base)
   expect_setequal(.mem[["networks/pagar_hoy_sync.rds"]]$id, c("x", "y", "z"))
   expect_setequal(escrito$id, c("x", "y", "z"))
+})
+
+test_that("si falla la lectura, guardar con base no escribe nada", {
+  .mem[["networks/pagar_hoy_sync.rds"]] <- bind_rows(fila("x", "DX"), fila("y", "DY"))
+  base <- safe_load_pagar_hoy("dev", "networks")
+  leer_bien <- .s3_read_with
+  .s3_read_with <<- function(key, client_id = NULL)
+    if (grepl("pagar_hoy_sync", key)) NULL else leer_bien(key, client_id)   # read fails; object exists
+  expect_error(save_pagar_hoy(bind_rows(base, fila("z", "DZ")), "dev", client_id = "networks", base = base),
+               "could not read")
+  .s3_read_with <<- leer_bien
+  expect_setequal(.mem[["networks/pagar_hoy_sync.rds"]]$id, c("x", "y"))   # untouched
 })
 
 test_that("no queda estado de agenda global en el código", {

@@ -150,6 +150,28 @@
   result$value
 }
 
+# Read for a read-modify-write. .s3_read_with() returns NULL both for "no
+# such object" and for a read that failed after its retries, and a write
+# built on that NULL replaces the whole file with only its own new rows (the
+# usuarios.rds incident of 2026-11-01, in every other table). This one reads
+# past the caches and stop()s unless S3 says the object really does not
+# exist; if S3 cannot say, it assumes it exists (fail closed).
+.s3_existe <- function(key, client_id) {
+  tryCatch(isTRUE(aws.s3::object_exists(.s3_key(key, client_id = client_id), bucket = .s3_bucket())),
+           error = function(e) NA)
+}
+
+.s3_leer_para_escribir <- function(key, client_id) {
+  full_key <- .s3_key(key, client_id = client_id)
+  for (env in list(.s3_preload_cache, .s3_missing_cache))
+    suppressWarnings(rm(list = intersect(full_key, ls(env)), envir = env))
+  x <- .s3_read_with(key, client_id = client_id)
+  if (!is.null(x)) return(x)
+  if (identical(.s3_existe(key, client_id), FALSE)) return(NULL)
+  suppressWarnings(rm(list = intersect(full_key, ls(.s3_missing_cache)), envir = .s3_missing_cache))
+  stop("[S3] could not read ", full_key, " before writing it; nothing was saved", call. = FALSE)
+}
+
 # Validates AWS credentials are present at startup. aws.s3 reads AWS_* vars
 # automatically — this function just warns early if they are missing.
 # Future per-client IAM migration: accept optional client_id and load a
@@ -1164,11 +1186,8 @@ agenda_sync_activa <- function(client_id) {
   key <- if (sync_on) S3_KEYS$pagar_hoy_sync
          else if (nzchar(username %||% "")) s3_key_pagar_hoy_user(username)
          else S3_KEYS$pagar_hoy
-  full_key <- tryCatch(.s3_key(key, client_id = client_id), error = function(e) NULL)
-  if (!is.null(full_key))
-    for (env in list(.s3_preload_cache, .s3_missing_cache))
-      suppressWarnings(rm(list = intersect(full_key, ls(env)), envir = env))
-  df <- .normalize(.s3_read_with(key, client_id = client_id), .schema_pagar_hoy)
+  # Strict: a failed read stop()s instead of rebasing a save on an empty agenda.
+  df <- .normalize(.s3_leer_para_escribir(key, client_id), .schema_pagar_hoy)
   # Same normalisation as load_pagar_hoy*(): a fresh read must look like a load.
   df$status[is.na(df$status) | !nzchar(trimws(df$status))] <- "pending"
   df$source[is.na(df$source) | !nzchar(trimws(df$source %||% ""))] <- SAP_B1_ERP_TYPE

@@ -144,6 +144,35 @@ save_bancos_confirmados <- function(df, client_id = NULL) {
   .s3_write(.normalize(df, .schema_bancos_confirmados), S3_KEYS$bancos_confirmados, client_id = client_id)
 }
 
+# Change bancos_confirmados starting from what S3 holds right now, never from
+# a session's copy. Confirming in Agenda appended to the session's in-memory
+# table and saved all of it, dropping any confirmation or undo another
+# session wrote meanwhile (found 2026-11-01). `cambio(conf)` returns the new
+# table, which is saved and returned. A failed read stop()s: nothing saved.
+modificar_bancos_confirmados <- function(client_id, cambio) {
+  if (is.null(client_id) || !nzchar(client_id)) stop("modificar_bancos_confirmados: sin client_id")
+  fresco <- .normalize(.s3_leer_para_escribir(S3_KEYS$bancos_confirmados, client_id),
+                       .schema_bancos_confirmados)
+  fresco$eliminado <- fresco$eliminado %in% TRUE
+  nuevo <- cambio(fresco)
+  save_bancos_confirmados(nuevo, client_id = client_id)
+  invisible(.normalize(nuevo, .schema_bancos_confirmados))
+}
+
+# Link confirmations to the papelera event that archived their item, on S3's
+# current table. `enlaces`: list of list(ids = agenda_item_id(s), event =
+# event_id); the newest unlinked row among `ids` gets the event, as before.
+enlazar_archivo_confirmaciones <- function(client_id, enlaces) {
+  if (!length(enlaces)) return(NULL)
+  modificar_bancos_confirmados(client_id, function(c) {
+    for (e in enlaces) {
+      cidx <- which(c$agenda_item_id %in% e$ids & is.na(c$archive_event_id))
+      if (length(cidx)) c$archive_event_id[cidx[length(cidx)]] <- e$event
+    }
+    c
+  })
+}
+
 # Undo a confirmation, recording the recovery as its own permanent row
 # rather than only flipping `eliminado` in place. The original row is soft-
 # deleted exactly as before (existing readers keep working); a NEW row is

@@ -223,6 +223,10 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     "load_interco_v2", ".save_provision_row", "fetch_all_companies",
     ".save_moves_deferred", ".sync_staged", ".pasivos_perform_conversion",
     "rename_empresa_initials",
+    # modificar_bancos_confirmados() (2026-11-01, R/bancos_persistence.R):
+    # the fresh-read-then-write wrapper around save_bancos_confirmados(); its
+    # callers (the Agenda AP/AR confirm handlers) log their own action.
+    "modificar_bancos_confirmados",
     # save_pagar_hoy_with_retry() (found 2026-08-05, R/persistence.R) is a
     # generic retry wrapper around save_pagar_hoy() -- same shape as
     # .sync_staged above: called from multiple contexts (the AP and AR
