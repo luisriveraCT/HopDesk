@@ -602,6 +602,7 @@ setup_abono_browse <- function(input, output, session,
     # concurrent stage/unstage.
     ph     <- tryCatch(safe_load_pagar_hoy(username = current_user(), client_id = client_id()),
                        error = function(e) NULL) %||% pagar_hoy_db()
+    ph_base <- ph   # CM09: the save applies only the accepted rows on S3 (A2)
 
     # The client-side warning class (.ab-warn) is cosmetic only -- nothing
     # ever stopped submitting an abono larger than the invoice's remaining
@@ -645,7 +646,7 @@ setup_abono_browse <- function(input, output, session,
       }
 
       pagar_hoy_db(ph)
-      tryCatch(save_pagar_hoy(ph, current_user(), client_id = client_id()),
+      tryCatch(save_pagar_hoy(ph, current_user(), client_id = client_id(), base = ph_base),
                error = function(e) showNotification(
                  paste("No se pudo guardar en Agenda:", e$message), type = "warning"))
 

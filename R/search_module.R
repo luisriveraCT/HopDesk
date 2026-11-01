@@ -528,7 +528,7 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
                         error = function(e) NULL) %||% shared$pagar_hoy_db()
     updated <- upsert_pagar_hoy(ph_base, new_rows)
     shared$pagar_hoy_db(updated)
-    tryCatch(save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id()), error = function(e)
+    tryCatch(save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id(), base = ph_base), error = function(e)
       showNotification(paste("Error guardando agenda:", e$message), type = "warning"))
     # Build a descriptive notification: count, companies, ledger type, total amount
     emp_str  <- paste(unique(new_rows$Empresa), collapse = ", ")

@@ -100,5 +100,36 @@ n <- sum(vapply(archivos, function(f) sum(grepl(patron, codigo(f))), integer(1))
 cat(sprintf("  read-with-empty-fallback sites: %d (ratchet %d)\n", n, .TRINQUETE))
 ok("read-with-empty-fallback sites did not go up", n <= .TRINQUETE)
 
+# ── 5. Whole-copy saves pass `base` (no lost update between sessions) ─────────
+# A save of a table built from a copy (the session's, or a read that may have
+# failed) passes the copy it started from, so only this action's rows are
+# applied on S3 as it is now. Known exceptions, counted so a new one shows up:
+#   - pagar_hoy_module.R: the integrator's file, under T06; quitar/confirmar
+#     (A2's resilience) and "Vaciar agenda" (empties on purpose);
+#   - the purge (permitir_reduccion) and persistence.R's own helpers.
+sin_base <- function(fn, excluir = character()) {
+  unlist(lapply(setdiff(archivos, c("R/persistence.R", "R/bancos_persistence.R",
+                                    "R/pasivos_persistence.R", excluir)), function(f) {
+    x <- readLines(f, warn = FALSE); x[grepl("^\\s*#", x)] <- ""
+    i <- grep(paste0(fn, "("), x, fixed = TRUE)
+    i <- i[!grepl("<- function", x[i], fixed = TRUE)]
+    malas <- i[!vapply(i, function(k) any(grepl("base\\s*=|permitir_reduccion = TRUE", x[k:min(length(x), k + 2L)])), logical(1))]
+    if (length(malas)) sprintf("%s:%d: %s", f, malas, trimws(x[malas])) else NULL
+  }))
+}
+for (fn in c("save_manual", "save_notes", "save_tags", "save_pasivos_provisions",
+             "save_bancos_movimientos", "save_bancos_confirmados")) {
+  m <- sin_base(fn, "R/pagar_hoy_module.R")
+  for (s in m) message("  without base: ", s)
+  ok(sprintf("%s(): every save built from a copy passes base (pagar_hoy_module.R aside)", fn), !length(m))
+}
+agenda <- function(excluir) c(sin_base("save_pagar_hoy", excluir), sin_base("save_pagar_hoy_with_retry", excluir))
+m <- agenda("R/pagar_hoy_module.R")
+for (s in m) message("  without base: ", s)
+ok("save_pagar_hoy*(): every Agenda save outside pagar_hoy_module.R passes base", !length(m))
+n_ph <- length(agenda(setdiff(archivos, "R/pagar_hoy_module.R")))
+ok(sprintf("pagar_hoy_module.R: %d Agenda saves still without base (ratchet 5: quitar x2, confirmar x2, Vaciar) -- lower when T06 converts", n_ph),
+   n_ph <= 5L)
+
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)

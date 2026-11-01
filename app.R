@@ -2944,12 +2944,12 @@ server <- function(input, output, session) {
         # Fresh read first, not this session's possibly-stale in-memory copy
         # (found 2026-07-25 -- this call had the precedence backwards, the
         # same mistake Stage 16 originally made in pasivos_module.R).
-        ph_updated <- upsert_pagar_hoy(
-          tryCatch(safe_load_pagar_hoy(current_user(), client_id = effective_client_id()),
-                   error = function(e) NULL) %||% pagar_hoy_db(),
-          ph_row, keys = "id")
+        ph_base <- tryCatch(safe_load_pagar_hoy(current_user(), client_id = effective_client_id()),
+                            error = function(e) NULL) %||% pagar_hoy_db()
+        ph_updated <- upsert_pagar_hoy(ph_base, ph_row, keys = "id")
         pagar_hoy_db(ph_updated)
-        tryCatch(save_pagar_hoy(ph_updated, current_user(), client_id = effective_client_id()),
+        tryCatch(save_pagar_hoy(ph_updated, current_user(), client_id = effective_client_id(),
+                                base = ph_base),   # CM09: rebased on S3 (A2)
                  error = function(e) showNotification(
                    paste("No se pudo guardar en Agenda:", e$message), type = "warning"))
       }

@@ -940,7 +940,8 @@ ledgerModuleServer <- function(id, config, shared) {
       # reactiveVal above already updated) while nothing persisted and
       # nothing got logged.
       stage_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
-                                                client_id = shared$effective_client_id())
+                                                client_id = shared$effective_client_id(),
+                                                base = ph_base)   # CM09: rebased on S3 (A2)
       if (!isTRUE(stage_result$ok)) {
         showNotification(
           paste0("No se pudo enviar a Agenda tras ", stage_result$attempts,
@@ -1080,7 +1081,8 @@ ledgerModuleServer <- function(id, config, shared) {
       # save_pagar_hoy_with_retry (found 2026-08-05): a bare save left the
       # screen updated while nothing persisted and nothing got logged.
       site_result <- save_pagar_hoy_with_retry(updated, shared$current_user(),
-                                               client_id = shared$effective_client_id())
+                                               client_id = shared$effective_client_id(),
+                                               base = ph_now)   # CM09: rebased on S3 (A2)
       if (!isTRUE(site_result$ok)) {
         showNotification(
           paste0("No se pudo quitar de la Agenda tras ", site_result$attempts,
@@ -2144,6 +2146,7 @@ ledgerModuleServer <- function(id, config, shared) {
   ph <- tryCatch(safe_load_pagar_hoy(username = username, client_id = client_id),
                  error = function(e) NULL) %||% ph_rv()
   if (is.null(ph) || !nrow(ph)) return(invisible(list(changed = FALSE, ok = TRUE, error = NULL)))
+  ph_base <- ph   # CM09: if the read failed this is ph_rv(); the save rebases on S3 (A2)
   changed <- FALSE
   for (i in seq_len(nrow(keys))) {
     emp <- keys[["Empresa"]][i]
@@ -2197,7 +2200,7 @@ ledgerModuleServer <- function(id, config, shared) {
   # bespoke per-site block, but making the shared helper safe by
   # construction so every caller benefits without needing its own copy of
   # the same fix.
-  sync_result <- save_pagar_hoy_with_retry(ph, username, client_id = client_id)
+  sync_result <- save_pagar_hoy_with_retry(ph, username, client_id = client_id, base = ph_base)
   if (!isTRUE(sync_result$ok)) {
     warning("[.sync_staged] save_pagar_hoy failed after ", sync_result$attempts,
             " attempt(s): ", conditionMessage(sync_result$error))

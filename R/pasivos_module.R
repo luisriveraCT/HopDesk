@@ -210,14 +210,15 @@ pasivos_manage_converted_modal_ui <- function() {
     # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
     # 2026-07-25); a stale base here would silently drop another session's
     # concurrent stage/unstage.
+    ph_base <- tryCatch(safe_load_pagar_hoy(username = user, client_id = shared$effective_client_id()),
+                        error = function(e) NULL) %||% shared$pagar_hoy_db()
     ph_df <- upsert_pagar_hoy(
-      tryCatch(safe_load_pagar_hoy(username = user, client_id = shared$effective_client_id()),
-               error = function(e) NULL) %||% shared$pagar_hoy_db(),
+      ph_base,
       new_ph_row,
       keys = c("ledger", "Empresa", "Moneda", "Documento")
     )
     shared$pagar_hoy_db(ph_df)
-    tryCatch(save_pagar_hoy(ph_df, user, client_id = shared$effective_client_id()), error = function(e)
+    tryCatch(save_pagar_hoy(ph_df, user, client_id = shared$effective_client_id(), base = ph_base), error = function(e)
       warning("[pasivos] save_pagar_hoy failed: ", conditionMessage(e)))
   }
 
@@ -830,7 +831,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       rm_mask <- rm_mask & (is.na(ph$status) | ph$status != "confirmed")
       if (any(rm_mask)) {
         ph_new <- ph[!rm_mask, , drop = FALSE]
-        tryCatch(save_pagar_hoy(ph_new, user, client_id = shared$effective_client_id()), error = function(e)
+        tryCatch(save_pagar_hoy(ph_new, user, client_id = shared$effective_client_id(), base = ph), error = function(e)
           shiny::showNotification(paste("Error al guardar agenda:", e$message), type = "warning"))
         if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db(ph_new)
       }
@@ -933,7 +934,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       rm_mask <- rm_mask & (is.na(ph$status) | ph$status != "confirmed")
       if (any(rm_mask)) {
         ph_new <- ph[!rm_mask, , drop = FALSE]
-        tryCatch(save_pagar_hoy(ph_new, user, client_id = shared$effective_client_id()), error = function(e)
+        tryCatch(save_pagar_hoy(ph_new, user, client_id = shared$effective_client_id(), base = ph), error = function(e)
           shiny::showNotification(paste("Error al guardar agenda:", e$message), type = "warning"))
         if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db(ph_new)
       }
