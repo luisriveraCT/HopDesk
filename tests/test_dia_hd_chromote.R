@@ -99,8 +99,27 @@ ok("M8: its ✓ takes it out of the Agenda: quitar [1] 3002",
 ok("... and the row goes back to ＋ (from the real queue)",
    poll_until(function() isTRUE(ev(sprintf("!!%s", fila(R, ag, ".querySelector('button[data-accion=agregar]')")))), timeout_s = 8))
 k <- n_reg(); clic(fila(R, ag, ".querySelector('button[data-accion=agregar]')"))
-ok("M8: ＋ puts it back: agregar cart_toggle [1] 3002",
-   poll_until(function() n_reg() > k && identical(ultima(), "agregar cart_toggle [1] 3002"), timeout_s = 8))
+ok("M8: ＋ puts it back: agregar cart_inv_click [1] 3002 (the log's name for a row's ＋, as before T05)",
+   poll_until(function() n_reg() > k && identical(ultima(), "agregar cart_inv_click [1] 3002"), timeout_s = 8))
+
+# The group's ＋ (cart_<i> before T05): ACEROS has 3001 (out), 3002 (in the
+# Agenda) and 3006 (paid, locked).
+grupo_a <- sprintf("Array.from(document.querySelectorAll('#%s tr.hdt-grupo')).filter(function (tr) { return tr.textContent.indexOf('ACEROS') >= 0; })[0]", R)
+boton_g <- sprintf("%s.querySelector('td.hdt-acc button.hdt-accion')", grupo_a)
+ok("G＋: a group's row has its ＋ in the rows' ＋ column",
+   identical(ev(sprintf("%s.textContent + '|' + %s.dataset.accion", boton_g, boton_g)), "＋|agregar") &&
+     abs(ev(sprintf("%s.getBoundingClientRect().left", boton_g)) -
+         ev(sprintf("%s.getBoundingClientRect().left", fila(R, id_de(R, "3001"), ".querySelector('button[data-accion=agregar]')")))) < 1)
+k <- n_reg(); clic(boton_g)
+ok("G＋: it sends only the group's invoices not in the Agenda yet (not the paid one): agregar cart_toggle [1] 3001",
+   poll_until(function() n_reg() > k && identical(ultima(), "agregar cart_toggle [1] 3001"), timeout_s = 8) && !length(sel(R)))
+ok("G✓: with all of them in the Agenda the group's button is ✓",
+   poll_until(function() identical(ev(sprintf("%s.textContent", boton_g)), "✓"), timeout_s = 8))
+k <- n_reg(); clic(boton_g)
+ok("G✓: ✓ takes them all out: quitar [2] 3001,3002; the selection is untouched",
+   poll_until(function() n_reg() > k && identical(ultima(), "quitar [2] 3001,3002"), timeout_s = 8) && !length(sel(R)))
+ok("... and the group's button is ＋ again",
+   poll_until(function() identical(ev(sprintf("%s.textContent", boton_g)), "＋"), timeout_s = 8))
 ok("A1: no ＋/✎ on the paid invoice",
    !isTRUE(ev(sprintf("!!%s", fila(R, id_de(R, "3006"), ".querySelector('button[data-accion=agregar], button[data-accion=editar]')")))))
 

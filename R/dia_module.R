@@ -222,7 +222,8 @@ dia_server <- function(input, output, session, ctx, ledger, shared, manejadores)
     switch(a$accion,
       agregar_todo      = manejadores$agregar(llaves, "stage_all"),
       agregar_seleccion = manejadores$agregar(llaves, "stage_sel"),
-      agregar           = manejadores$agregar(llaves, "cart_toggle"),
+      # A row's ＋ or its group's (de = "grupo"), named in the log as before.
+      agregar           = manejadores$agregar(llaves, if (identical(a$de, "grupo")) "cart_toggle" else "cart_inv_click"),
       quitar_agenda     = manejadores$quitar(llaves),
       etiqueta_a = , etiqueta_b = , etiqueta_c = , quitar_etiqueta = manejadores$etiquetar(llaves, ETIQUETA[[a$accion]]),
       mover             = manejadores$mover(llaves, as.Date(a$valor)),

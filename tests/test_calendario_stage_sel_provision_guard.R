@@ -195,7 +195,7 @@ assign("%||%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) ==
   ok("Agregar todo, Agregar selección and a row's ＋ all go to the same handler (manejadores$agregar)",
      grepl('agregar_todo      = manejadores$agregar(llaves, "stage_all")', dia, fixed = TRUE) &&
      grepl('agregar_seleccion = manejadores$agregar(llaves, "stage_sel")', dia, fixed = TRUE) &&
-     grepl('agregar           = manejadores$agregar(llaves, "cart_toggle")', dia, fixed = TRUE))
+     grepl('agregar           = manejadores$agregar(llaves, if (identical(a$de, "grupo")) "cart_toggle" else "cart_inv_click")', dia, fixed = TRUE))
   ok("... which the Calendario wires to .dia_agregar",
      any(grepl("agregar = .dia_agregar", txt, fixed = TRUE)))
   ok("a provision row has no ＋ (its row actions are only the ⚡)",
