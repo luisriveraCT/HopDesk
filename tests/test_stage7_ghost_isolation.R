@@ -40,36 +40,31 @@ suppressPackageStartupMessages(library(DT))
 }
 .strip_comments <- function(lines) sub("#.*$", "", lines)
 
-# ── 1. Static scan: audit-mode ghost rows made unselectable ────────────────
+# ── 1-2. The day modal on the table engine (T05) ───────────────────────────
+# The DT table (and its selectable = -ghost_rows, sel_total_ui) is gone. A
+# confirmed invoice is now a locked row (.bloqueada): the engine never lets
+# it be marked, struck through, left out of the counter, the totals and the
+# group's sum -- in both views, Resumen (groups) and Detalle. A group with
+# every invoice confirmed has no free row: nothing in it can be marked.
 {
-  txt <- readLines("R/ledger_module.R", warn = FALSE)
-  start <- grep("Ghost \\(confirmed\\) rows must never affect any calculation", txt)
-  .chk(length(start) > 0, TRUE, "found audit-mode ghost-selectable comment to scan")
-  if (length(start)) {
-    block <- paste(.strip_comments(txt[start[1]:min(start[1] + 15, length(txt))]), collapse = "\n")
-    .chk(grepl("ghost_rows <- which\\(tbl_live\\[\\[\"Confirmado\"\\]\\]\\)", block), TRUE,
-         "audit mode computes ghost_rows from the Confirmado column, post-sort")
-    .chk(grepl("selectable = -ghost_rows", block), TRUE,
-         "audit mode passes negative (not-selectable) indices for ghost rows to DT")
-    .chk(grepl('else "multiple"', block), TRUE,
-         "audit mode falls back to plain \"multiple\" selection when there are no ghost rows (never an empty selectable vector)")
-  }
-}
-
-# ── 2. Static scan: summary-mode groups made unselectable + styled ─────────
-{
-  txt <- readLines("R/ledger_module.R", warn = FALSE)
-  start <- grep("A group is a ghost only when EVERY invoice", txt)
-  .chk(length(start) > 0, TRUE, "found summary-mode grp_is_ghost comment to scan")
-  if (length(start)) {
-    block <- paste(.strip_comments(txt[start[1]:min(start[1] + 45, length(txt))]), collapse = "\n")
-    .chk(grepl("all\\(is_conf_detail\\[m\\]\\)", block), TRUE,
-         "a group is ghosted only when ALL its underlying rows are confirmed (any() would wrongly ghost a mixed group)")
-    .chk(grepl("selectable = -ghost_grp_rows", block), TRUE,
-         "summary mode also passes negative indices for fully-ghosted groups to DT")
-    .chk(grepl('DT::formatStyle\\("Confirmado"', block), TRUE,
-         "summary mode styles ghosted groups (line-through) matching audit mode's precedent")
-  }
+  `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
+  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+              "R/vencidos_module.R", "R/dia_module.R")) source(f, local = TRUE)
+  SAP_B1_ERP_TYPE <- "sap_b1_service_layer"
+  dia <- data.frame(Empresa = "NTS", Moneda = "MXN", Documento = c("1", "2", "3"), Factura = "",
+                    Parte = c("MIXTA", "MIXTA", "PAGADA"), Importe = c(100, 200, 300),
+                    source = SAP_B1_ERP_TYPE, confirmed = c(FALSE, TRUE, TRUE), stringsAsFactors = FALSE)
+  d <- dia_datos(dia, "AP", NULL)
+  .chk(d$.bloqueada[match(c("1", "2", "3"), d$Documento)], c(FALSE, TRUE, TRUE), "dia_datos: a confirmed invoice is a locked row (.bloqueada), the open one isn't")
+  .chk(d$.acciones[d$.bloqueada], c("", ""), "dia_datos: a confirmed invoice offers no ＋/✎")
+  js <- paste(readLines("www/hdtable.js", warn = FALSE), collapse = "\n")
+  .chk(grepl("var libres = u.filas.filter(function (i) { return !st.bloq[i]; })", js, fixed = TRUE) &&
+         grepl("libres.forEach(function (i) { var mo = st.moneda[i] || ''; s[mo] = (s[mo] || 0) + (Number(o[i]) || 0); });", js, fixed = TRUE),
+       TRUE, "engine: a group's sum counts only its free (unlocked) rows -- a mixed group keeps its real open balance")
+  .chk(grepl("if (st.bloq[i]) { if (cb) cb.checked = false; return; }", js, fixed = TRUE), TRUE,
+       "engine: a click never marks a locked row")
+  .chk(grepl("libres.forEach(function (i) { if (todas) st.sel.delete(st.ids[i]); else st.sel.add(st.ids[i]); });", js, fixed = TRUE),
+       TRUE, "engine: a click on a group marks only its free rows (a fully confirmed group marks nothing)")
 }
 
 # ── 3. Static scan: hourglass consistency guard ─────────────────────────────

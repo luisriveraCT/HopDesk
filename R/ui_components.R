@@ -784,67 +784,7 @@ app_styles <- function() {
     .modal-day-pill--saldo  { background: #e9f7ef; color: #155724; border: 1px solid #a3d9b3; }
     .modal-day-pill--abono  { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
 
-    /* ── Cart modal styles ───────────────────────────────────────────────── */
-    .cart-row {
-      border-bottom: 1px solid #f0f0f0;
-      padding: 8px 4px;
-    }
-    .cart-row:last-child { border-bottom: none; }
-    .cart-party {
-      font-weight: 500;
-      color: #2c3e50;
-      font-size: 0.9rem;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .cart-empresa-badge {
-      font-size: 0.65rem;
-      font-weight: 700;
-      padding: 1px 6px;
-      border-radius: 8px;
-      background: #EFF5FF;
-      color: #0A58CA;
-      border: 1px solid #9DB8E8;
-      flex-shrink: 0;
-    }
-    .cart-amount {
-      font-weight: 700;
-      color: #1a6cc4;
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-      flex-shrink: 0;
-      min-width: 100px;
-      text-align: right;
-    }
-    .cart-btn { min-width: 90px; flex-shrink: 0; }
-    .cart-btn-provision { min-width: 90px; flex-shrink: 0; transition: background-color 0.15s, border-color 0.15s, color 0.15s; }
-    .cart-btn-provision:hover { background-color: #6d28d9 !important; border-color: #6d28d9 !important; color: white !important; }
-    .cart-expand-btn { line-height: 1.2 !important; font-size: 0.75rem !important; color: #1a6cc4 !important; }
-    .cart-expand-btn:hover { color: #0a3d7a !important; }
-    .cart-expand-lbl { font-size: 0.72rem; color: #1a6cc4; }
-    .cart-inv-list {
-      background: #ffffff;
-      border-left: 3px solid #9DB8E8;
-      margin: -4px 0 6px 0;
-      border-radius: 0 0 6px 6px;
-      box-shadow: inset 0 2px 4px rgba(0,0,0,0.04);
-    }
-    .cart-inv-row {
-      padding: 5px 0;
-      border-bottom: 1px solid #f0f4fb;
-      font-size: 0.8rem;
-    }
-    .cart-inv-row:last-child { border-bottom: none; }
-    .cart-inv-doc { color: #2c3e50; font-weight: 500; font-variant-numeric: tabular-nums; min-width: 80px; }
-    .cart-inv-amt { font-weight: 700; color: #0A58CA; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .cart-inv-btn { min-width: 32px; padding: 1px 8px !important; font-size: 0.8rem !important; flex-shrink: 0; }
-    .cart-btn.btn-success {
-      background-color: #28a745;
-      border-color: #28a745;
-      color: white;
-    }
-    .cart-list { max-height: 420px; overflow-y: auto; }
+    /* ── Day modal: the Agenda line under its tables ──────────────────────── */
     .cart-total-staged {
       background: #EFF5FF;
       border: 1px solid #9DB8E8;

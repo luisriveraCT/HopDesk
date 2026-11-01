@@ -51,6 +51,8 @@ piezas_modal <- function() {
   cuerpo <- srv[[3]][[3]]                              # function(id, config, shared) { moduleServer(...) }
   ms <- Find(function(e) is.call(e) && identical(as.character(e[[1]]), "moduleServer"), as.list(cuerpo)[-1])
   stmts <- as.list(ms[[3]][[3]])[-1]
+  # (cart_expanded, modal_tbl, sel_total_ui, move_to_hint_ui: an older
+  # checkout's day modal, DIA_RAIZ.)
   nombres <- c("modal_ctx", "modal_open", "cart_expanded", ".render_day_modal", "ns", "ledger")
   salidas <- c("modal_tbl", "sel_total_ui", "move_to_hint_ui", "dia_agenda")
   Filter(function(e) {
@@ -100,7 +102,8 @@ politicas <- list(
 # ── App ──────────────────────────────────────────────────────────────────────
 ui <- fluidPage(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),
-  app_styles(), tags$head(tags$script(src = "i18n.js"), tags$script(src = "cal_cart.js?v=4")),
+  app_styles(), tags$head(tags$script(src = "i18n.js"),
+                             if (file.exists(file.path(raiz, "www", "cal_cart.js"))) tags$script(src = "cal_cart.js?v=4")),
   tags$script(HTML("Shiny.addCustomMessageHandler('restoreModalScroll', function(m){});")),
   h4("Calendario (fixture)"),
   tags$pre(id = "registro", style = "font-size:.7rem;")
