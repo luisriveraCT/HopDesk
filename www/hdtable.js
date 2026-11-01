@@ -182,6 +182,7 @@
     st.colVer = {};
     if (p.columnas_opc) {
       try { st.colVer = JSON.parse(localStorage.getItem('hdt.columnas.' + st.tabla) || '{}') || {}; } catch (e) { st.colVer = {}; }
+      try { st.completa = localStorage.getItem('hdt.columnas_completa.' + st.tabla) === '1'; } catch (e) { st.completa = false; }
       st.btnColumnas = nodo('button', 'hdt-btn hdt-columnas', t('tablas.columnas'));
       st.btnColumnas.type = 'button';
       st.btnColumnas.setAttribute('aria-haspopup', 'true');
@@ -703,12 +704,14 @@
   // Shown: every column, minus the optional ones turned off in the
   // "Columnas" menu (or that start hidden), remembered per table in this
   // browser. Without the piece every column shows. Excel and Ctrl+C take
-  // only the ones shown.
+  // only the ones shown. "Vista completa", apart at the top of the menu,
+  // shows them all without touching that choice: turned off, the table is
+  // back to exactly the columns the user had. It is remembered too.
   function columnasVisibles(st) {
     var opc = !!st.p.columnas_opc;
     st.ver = [];
     st.cols.forEach(function (c, j) {
-      var ver = !opc || !c.opcional ? true
+      var ver = !opc || !c.opcional || st.completa ? true
               : Object.prototype.hasOwnProperty.call(st.colVer, c.campo) ? !!st.colVer[c.campo] : c.visible !== false;
       if (ver) st.ver.push(j);
     });
@@ -720,6 +723,16 @@
   function verColumna(st, campo, ver) {
     st.colVer[campo] = ver;
     try { localStorage.setItem('hdt.columnas.' + st.tabla, JSON.stringify(st.colVer)); } catch (e) {}
+    rehacerColumnas(st);
+  }
+
+  function vistaCompleta(st, on) {
+    st.completa = on;
+    try { localStorage.setItem('hdt.columnas_completa.' + st.tabla, on ? '1' : '0'); } catch (e) {}
+    rehacerColumnas(st);
+  }
+
+  function rehacerColumnas(st) {
     columnasVisibles(st);
     cabecera(st);
     st.trs = new Array(st.n);      // rows are built again with the new columns
@@ -733,18 +746,33 @@
     var m = nodo('div', 'hdt-menu');
     m.setAttribute('role', 'group');
     m.setAttribute('aria-label', t('tablas.columnas'));
+    var lc = nodo('label', 'hdt-menu-op hdt-menu-completa'), completa = nodo('input');
+    completa.type = 'checkbox';
+    completa.checked = !!st.completa;
+    lc.appendChild(completa);
+    lc.appendChild(nodo('span', 'hdt-menu-texto', t('tablas.columnas_completa')));
+    m.appendChild(lc);
+    m.appendChild(nodo('div', 'hdt-menu-sep'));
+    var cajas = [];
     st.cols.forEach(function (c, j) {
       if (!c.opcional) return;
       var l = nodo('label', 'hdt-menu-op'), cb = nodo('input');
       cb.type = 'checkbox';
       cb.dataset.campo = c.campo;
-      cb.checked = st.ver.indexOf(j) >= 0;
+      cb.j = j;
       l.appendChild(cb);
       l.appendChild(nodo('span', 'hdt-menu-texto', c.titulo));
       m.appendChild(l);
+      cajas.push(cb);
     });
+    // While "Vista completa" is on, every box shows checked and can't change.
+    function marcar() {
+      cajas.forEach(function (cb) { cb.checked = st.ver.indexOf(cb.j) >= 0; cb.disabled = !!st.completa; });
+    }
+    marcar();
     m.addEventListener('change', function (e) {
-      if (e.target.dataset && e.target.dataset.campo != null) verColumna(st, e.target.dataset.campo, e.target.checked);
+      if (e.target === completa) { vistaCompleta(st, completa.checked); marcar(); }
+      else if (e.target.dataset && e.target.dataset.campo != null) verColumna(st, e.target.dataset.campo, e.target.checked);
     });
     st.root.appendChild(m);
     MENU = { st: st, k: 'columnas', el: m, boton: boton };

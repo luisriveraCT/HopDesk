@@ -162,6 +162,7 @@
   "tablas.accion.restaurar": "Restore date",
   "tablas.accion.fecha": "Date",
   "tablas.columnas": "Columns",
+  "tablas.columnas_completa": "Full view",
   "tablas.grupos.abrir": "Open or close the group",
   "tablas.grupos.todos": "Open or close every group",
   "tablas.copiar_tabla": "Copy table",

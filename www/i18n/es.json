@@ -162,6 +162,7 @@
   "tablas.accion.restaurar": "Restaurar fecha",
   "tablas.accion.fecha": "Fecha",
   "tablas.columnas": "Columnas",
+  "tablas.columnas_completa": "Vista completa",
   "tablas.grupos.abrir": "Abrir o cerrar el grupo",
   "tablas.grupos.todos": "Abrir o cerrar todos los grupos",
   "tablas.copiar_tabla": "Copiar tabla",

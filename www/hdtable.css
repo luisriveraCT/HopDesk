@@ -54,6 +54,9 @@
   font-weight: normal; white-space: nowrap; }
 .hdt-menu-op:hover { background: var(--hdt-hover); }
 .hdt-menu-op input { margin: 0; cursor: pointer; }
+.hdt-menu-op input:disabled { cursor: default; }
+.hdt-menu-op:has(input:disabled) { color: var(--hdt-muted); cursor: default; }
+.hdt-menu-sep { height: 1px; margin: 4px 0; background: var(--hdt-line); }
 .hdt-menu-texto { overflow: hidden; text-overflow: ellipsis; }
 .hdt-menu-n { margin-left: auto; padding-left: 14px; color: var(--hdt-muted); font-variant-numeric: tabular-nums; }
 
