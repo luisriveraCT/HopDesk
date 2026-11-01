@@ -99,6 +99,9 @@ if (!is.na(n_extra) && n_extra > 0L)
   facturas0 <- rbind(facturas0, do.call(rbind, lapply(seq_len(n_extra), function(k)
     fila(if (k %% 2) "AR" else "AP", if (k %% 3) "NTS" else "NCS", "MXN", sprintf("9%05d", k),
          sprintf("PROVEEDOR %03d", k %% 400), 1 + k %% 60, 100 + k))))
+# VEN_OTRA=1: the app opens on another tab, as the real app does (Vencidos
+# is not the first one): the table gets its data while hidden.
+otra_pestana <- identical(Sys.getenv("VEN_OTRA"), "1")
 # VEN_VACIO=1: no overdue invoices at all (the empty message).
 if (identical(Sys.getenv("VEN_VACIO"), "1")) facturas0 <- facturas0[0, , drop = FALSE]
 tags0 <- data.frame(ledger = c("AR", "AR", "AR", "AP", "AP"), Empresa = c("NCS", "NTS", "NTS", "NTS", "NTS"),
@@ -114,9 +117,10 @@ crudos0 <- list(
 
 # ── App ────────────────────────────────────────────────────────────────────────
 ui <- bslib::page_navbar(
-  title = "HopDesk", id = "nav", fillable = TRUE,
+  title = "HopDesk", id = "nav", fillable = TRUE, selected = if (otra_pestana) "INICIO" else "VEN",
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),
   header = tagList(app_styles(), tags$head(tags$script(src = "i18n.js"))),
+  bslib::nav_panel(title = "Inicio", value = "INICIO", div(class = "p-3", "Calendario")),
   bslib::nav_panel(
     title = tagList(icon("clock-rotate-left"), " Vencidos ",
                     tags$span(id = "ven_tab_badge", class = "badge rounded-pill bg-danger",
