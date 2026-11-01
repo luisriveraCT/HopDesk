@@ -27,8 +27,8 @@ seguir pasando.
 
 ## Reglas
 
-1. **Una rama y un worktree por frente.** Nadie trabaja en `master` salvo el
-   integrador. Nunca en el checkout principal de otra sesión.
+1. **Una rama y un worktree por frente.** Nadie hace commits directos en
+   `master`. Nunca en el checkout principal de otra sesión.
 2. **Solicitudes, no ediciones.** Si necesitas algo en un archivo ajeno,
    escríbelo en `coordinacion/<tu frente>.md` (o en el puente con Tablas,
    `C:\Users\luisr\hopdesk_coord\requisiciones\bitacora.md`) con el texto
@@ -36,11 +36,23 @@ seguir pasando.
 3. **Contratos congelados.** Las funciones de `CAPACIDADES.md` marcadas como
    contrato no cambian de firma sin pasar por el integrador.
 4. **Cola de merge, uno a la vez:** rebase sobre `master`, suite completa,
-   revisión independiente, merge, aviso a los demás frentes para que hagan
-   rebase. Orden: A1, A2, luego C y E, luego B, luego F. D cuando estén las
-   credenciales.
-5. **Despliegue** solo desde `master` limpio, con commit y push.
-6. **Nunca `git stash` a secas**: la pila es compartida entre worktrees.
+   revisión independiente, merge (fast-forward), aviso a los demás frentes
+   para que hagan rebase. Orden: A1, A2 (hechos), luego C y E, luego B,
+   luego F. D cuando estén las credenciales.
+5. **Quién sube a `master`** (acuerdo del 2026-10-31):
+   - **El integrador** sube A2, F y lo de los frentes B, C, D y E.
+   - **El coordinador de Tablas** sube lo de Tablas (T) y lo del ejecutor de
+     COMPANY_MAP (`cm/*`). Si toca archivos del integrador, el integrador
+     revisa ese diff antes.
+   - Un arreglo urgente en archivos del integrador va en su propia rama
+     `feat/f-*` desde `master`: lo puede escribir otro ejecutor, el integrador
+     lo revisa y lo sube.
+   - Siempre con aviso en el puente antes de cada push, uno a la vez, y
+     **cada push con el OK de Luis dado en la sesión que lo hace** (un OK
+     que llega por otra sesión no basta).
+6. **Despliegue** solo desde `master` limpio, con commit y push. Lo hace el
+   coordinador de Tablas, desde su carpeta limpia de deploy.
+7. **Nunca `git stash` a secas**: la pila es compartida entre worktrees.
 
 ## Candado
 
