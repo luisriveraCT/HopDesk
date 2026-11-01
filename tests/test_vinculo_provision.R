@@ -170,6 +170,24 @@ test_that("confirmar parte de lo que hay en S3 y no escribe si la lectura falla"
   expect_error(modificar_bancos_confirmados(NULL, identity), "client_id")
 })
 
+test_that("importar TXT no empata contra confirmaciones eliminadas ni deshechas (CM10/C6)", {
+  source("R/bancos_parser.R")
+  conf <- .normalize(tibble(confirmacion_id = c("v", "x"), agenda_item_id = c("ag-v", "ag-x"),
+                            documento = c("F1", "F2"), importe = c(300, 777),
+                            fecha = as.Date("2026-10-30"), tipo = "pago",
+                            eliminado = c(FALSE, TRUE)), .schema_bancos_confirmados)
+  conf <- recover_confirmacion(dplyr::mutate(conf, eliminado = FALSE)[1, ], "v") |>
+    dplyr::bind_rows(conf[2, ])                       # v undone, x deleted: nothing live
+  movs <- tibble(id = c("m1", "m2"), cargo = c(300, 777), abono = 0,
+                 fecha = as.Date("2026-10-30"))
+  out <- auto_match_agenda(movs, conf)
+  expect_false(any(out$conciliado))
+  vivo <- .normalize(tibble(confirmacion_id = "w", agenda_item_id = "ag-w", documento = "F3",
+                            importe = 300, fecha = as.Date("2026-10-30"), tipo = "pago",
+                            eliminado = FALSE), .schema_bancos_confirmados)
+  expect_true(auto_match_agenda(movs[1, ], vivo)$conciliado)
+})
+
 test_that("confirmar en Agenda ya no guarda la copia en memoria", {
   ph <- lineas("R/pagar_hoy_module.R")
   expect_false(grepl("conf_db <- shared$bancos_confirmados()", ph, fixed = TRUE))
@@ -188,5 +206,9 @@ test_that("Bancos y Pasivos usan confirmaciones vigentes al deshacer y eliminar"
   expect_false(grepl("filter(confirmados(), !is.na(eliminado) & !eliminado)", ban, fixed = TRUE))
   pas <- lineas("R/pasivos_module.R")
   borrar <- regmatches(pas, regexpr("observeEvent\\(input\\$pcm_do_delete_converted[\\s\\S]*?provs\\$estado\\[idx\\]\\s+<- \"deleted\"", pas, perl = TRUE))
-  expect_match(borrar, "save_bancos_confirmados(conf", fixed = TRUE)
+  expect_match(borrar, "modificar_bancos_confirmados(cid", fixed = TRUE)
+  # confirmation first, movement after; a failed read stops before the provision
+  expect_lt(regexpr("modificar_bancos_confirmados(cid", borrar, fixed = TRUE),
+            regexpr("save_bancos_movimientos(", borrar, fixed = TRUE))
+  expect_match(borrar, "if (is.null(conf)) {", fixed = TRUE)
 })

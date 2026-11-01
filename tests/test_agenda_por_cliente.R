@@ -100,6 +100,40 @@ test_that("si falla la lectura, guardar con base no escribe nada", {
   expect_setequal(.mem[["networks/pagar_hoy_sync.rds"]]$id, c("x", "y"))   # untouched
 })
 
+test_that("una lectura fallida nunca parece una agenda vacía (CM10/B1)", {
+  .mem[["networks/pagar_hoy_sync.rds"]] <- bind_rows(fila("x", "DX"), fila("y", "DY"), fila("z", "DZ"))
+  copia_sesion <- safe_load_pagar_hoy("dev", "networks")
+  leer_bien <- .s3_read_with
+  .s3_read_with <<- function(key, client_id = NULL)
+    if (grepl("pagar_hoy_sync", key)) NULL else leer_bien(key, client_id)
+  expect_error(safe_load_pagar_hoy("dev", "networks"), "could not read")
+  # the callers' pattern: the error falls back to the session's copy, and
+  # confirming one row then saves the other two -- never 0 rows
+  ph <- tryCatch(safe_load_pagar_hoy("dev", "networks"), error = function(e) NULL) %||% copia_sesion
+  expect_equal(nrow(ph), 3)
+  .s3_read_with <<- leer_bien
+})
+
+test_that("si no se puede leer la configuración, no se guarda en el archivo equivocado (CM10/C1)", {
+  .mem[["networks/pagar_hoy_sync.rds"]] <- fila("x", "DX")
+  leer_bien <- .s3_read_with
+  .s3_read_with <<- function(key, client_id = NULL)
+    if (grepl("agenda_sync_config", key)) NULL else leer_bien(key, client_id)
+  expect_error(agenda_sync_activa("networks"), "could not read")
+  expect_error(save_pagar_hoy(fila("n", "DN"), "dev", client_id = "networks"), "could not read")
+  .s3_read_with <<- leer_bien
+  expect_null(.mem[["networks/pagar_hoy_user_dev.rds"]])        # nothing went to the per-user file
+  expect_equal(.mem[["networks/pagar_hoy_sync.rds"]]$id, "x")
+  expect_false(agenda_sync_activa("nuevo_cliente"))              # no config at all = off
+})
+
+test_that("el rebase conserva dos importes de la misma factura (CM10/C3)", {
+  base   <- fila("1", "D1", importe = 100)
+  nuevo  <- bind_rows(base, fila("2", "D1", importe = 250))
+  out <- rebase_pagar_hoy(nuevo, base, base)
+  expect_setequal(out$id, c("1", "2"))
+})
+
 test_that("no queda estado de agenda global en el código", {
   archivos <- c("app.R", list.files("R", "[.]R$", recursive = TRUE, full.names = TRUE))
   hits <- unlist(lapply(archivos, function(f) {

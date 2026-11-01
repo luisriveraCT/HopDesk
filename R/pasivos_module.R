@@ -938,41 +938,44 @@ setup_pasivos_module <- function(input, output, session, shared) {
     #     2026-10-31 it was left live, so the deleted provision still showed
     #     as paid. Soft-delete its live confirmations and their movements,
     #     as Bancos' own "Eliminar confirmación" does. Fresh reads.
-    cid  <- shared$effective_client_id()
-    conf <- tryCatch(load_bancos_confirmados(client_id = cid), error = function(e) NULL)
-    if (!is.null(conf) && nrow(conf)) {
-      vivas  <- confirmaciones_vigentes(conf)
-      ids_c  <- vivas$confirmacion_id[!is.na(vivas$provision_id) & vivas$provision_id == prov_id]
-      if (length(ids_c)) {
-        idx_c <- which(conf$confirmacion_id %in% ids_c)
-        conf$eliminado[idx_c]    <- TRUE
-        conf$eliminado_at[idx_c] <- now
-        mov_ids <- conf$mov_id[idx_c]
-        mov_ids <- mov_ids[!is.na(mov_ids) & nzchar(mov_ids)]
-        ok_b <- tryCatch({
-          if (length(mov_ids)) {
-            movs  <- load_bancos_movimientos(include_deleted = TRUE, client_id = cid)
-            idx_m <- which(movs$id %in% mov_ids)
-            if (length(idx_m)) {
-              movs$eliminado[idx_m]    <- TRUE
-              movs$eliminado_at[idx_m] <- now
-              save_bancos_movimientos(movs, client_id = cid)
-              if (!is.null(shared$bancos_movimientos)) shared$bancos_movimientos(movs)
-              bump_sync_version("bancos_movimientos_db", client_id = cid)
-            }
-          }
-          save_bancos_confirmados(conf, client_id = cid)
-          TRUE
-        }, error = function(e) {
-          shiny::showNotification(paste("Error al eliminar el registro de Bancos:", e$message), type = "error")
-          FALSE
-        })
-        # Stop before deleting the provision: a paid provision must never be
-        # deleted while its payment stays live.
-        if (!ok_b) return()
-        if (!is.null(shared$bancos_confirmados)) shared$bancos_confirmados(conf)
-        bump_sync_version("bancos_confirmados_db", client_id = cid)
-      }
+    #     Strict read (review CM10/C2): a failed read used to look like "no
+    #     payment" and the paid provision was deleted with its payment live.
+    #     The confirmation goes first: if the movement save then fails, the
+    #     payment is already gone, never a movement deleted under a live one.
+    cid     <- shared$effective_client_id()
+    mov_ids <- character()
+    conf <- tryCatch(modificar_bancos_confirmados(cid, function(c) {
+      vivas <- confirmaciones_vigentes(c)
+      ids_c <- vivas$confirmacion_id[!is.na(vivas$provision_id) & vivas$provision_id == prov_id]
+      idx_c <- which(c$confirmacion_id %in% ids_c)
+      c$eliminado[idx_c]    <- TRUE
+      c$eliminado_at[idx_c] <- now
+      mov_ids <<- c$mov_id[idx_c][!is.na(c$mov_id[idx_c]) & nzchar(c$mov_id[idx_c])]
+      c
+    }), error = function(e) {
+      message("[pasivos] delete converted, bancos: ", conditionMessage(e))
+      NULL
+    })
+    # Stop before deleting the provision: a paid provision must never be
+    # deleted while its payment may still be live.
+    if (is.null(conf)) {
+      shiny::showNotification(tr("comun.reintentar"), type = "error", duration = 8)
+      return()
+    }
+    if (!is.null(shared$bancos_confirmados)) shared$bancos_confirmados(conf)
+    bump_sync_version("bancos_confirmados_db", client_id = cid)
+    if (length(mov_ids)) {
+      tryCatch({
+        movs  <- load_bancos_movimientos(include_deleted = TRUE, client_id = cid)
+        idx_m <- which(movs$id %in% mov_ids)
+        if (length(idx_m)) {
+          movs$eliminado[idx_m]    <- TRUE
+          movs$eliminado_at[idx_m] <- now
+          save_bancos_movimientos(movs, client_id = cid)
+          if (!is.null(shared$bancos_movimientos)) shared$bancos_movimientos(movs)
+          bump_sync_version("bancos_movimientos_db", client_id = cid)
+        }
+      }, error = function(e) message("[pasivos] delete converted, movimientos: ", conditionMessage(e)))
     }
 
     # 3. Soft-delete provision

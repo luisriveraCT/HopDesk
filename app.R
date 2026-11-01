@@ -1566,7 +1566,8 @@ server <- function(input, output, session) {
       cid  <- isolate(tryCatch(shared$effective_client_id(), error = function(e) NULL))
       user <- isolate(tryCatch(shared$current_user(), error = function(e) ""))
       if (is.null(cid) || !nzchar(cid)) return(NULL)
-      safe_load_pagar_hoy(username = user, client_id = cid)
+      # NULL on a failed read: the session keeps its agenda, never an empty one.
+      tryCatch(safe_load_pagar_hoy(username = user, client_id = cid), error = function(e) NULL)
     }
   )
   register_synced("bancos_confirmados_db", S3_KEYS$bancos_confirmados,

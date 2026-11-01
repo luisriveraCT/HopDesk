@@ -1174,11 +1174,12 @@ load_pagar_hoy <- function(client_id = NULL) {
 agenda_sync_activa <- function(client_id) {
   cid <- tolower(trimws(client_id %||% ""))
   if (!nzchar(cid)) return(FALSE)
-  full_key <- tryCatch(.s3_key(S3_KEYS$agenda_sync_config, client_id = cid), error = function(e) NULL)
-  if (!is.null(full_key))
-    for (env in list(.s3_preload_cache, .s3_missing_cache))
-      suppressWarnings(rm(list = intersect(full_key, ls(env)), envir = env))
-  isTRUE(tryCatch(load_agenda_sync_config(client_id = cid)$is_enabled, error = function(e) FALSE))
+  # Strict (review CM10/C1): a failed read used to mean "sync off", and the
+  # save then went to a per-user file nobody else sees. It stop()s instead;
+  # only a config S3 says does not exist means off.
+  df <- .normalize(.s3_leer_para_escribir(S3_KEYS$agenda_sync_config, cid),
+                   .schema_agenda_sync_config)
+  nrow(df) > 0 && isTRUE(df$is_enabled[1])
 }
 
 # Fresh read of the file a save would write, bypassing the read caches.
@@ -1225,7 +1226,11 @@ rebase_pagar_hoy <- function(nuevo, base, fresco) {
   ajenas   <- fresco[!(kf %in% kb) & !(kf %in% kn), , drop = FALSE]
   out <- dplyr::bind_rows(mias, vigentes, ajenas)
   # Two sessions staging the same invoice: keep one row, this session's first.
-  negocio <- paste(out$ledger, out$Empresa, out$Moneda, out$Documento, out$tipo_item, sep = "|")
+  # Importe is part of the key: Agenda legitimately holds two amounts of one
+  # invoice (ledger_module.R stages with Importe in its upsert key), and both
+  # must survive (review CM10/C3).
+  negocio <- paste(out$ledger, out$Empresa, out$Moneda, out$Documento, out$tipo_item,
+                   sprintf("%.2f", round(as.numeric(out$Importe), 2)), sep = "|")
   out[!duplicated(negocio) | is.na(out$Documento), , drop = FALSE]
 }
 
@@ -1419,17 +1424,17 @@ upsert_pagar_hoy <- function(db, new_rows,
 # Sync-aware load: reads from the correct source depending on sync state.
 # Used as a fallback when the in-memory reactiveVal hasn't been populated yet
 # (e.g., item added via Agregar before Phase 2 finishes loading).
+# A failed read stop()s, never comes back as an empty agenda: every caller
+# wraps this in tryCatch(..., error = NULL) %||% <its session copy>, and
+# then saves the WHOLE table. Returning an empty table on error (as this did
+# in A2 until review CM10/B1, 2026-11-01) skipped that fallback, so one
+# transient S3 failure while confirming saved the shared agenda with 0 rows.
+# Reads are strict (.pagar_hoy_vivo): only a file S3 says does not exist
+# reads as empty.
 safe_load_pagar_hoy <- function(username = NULL, client_id = NULL) {
-  sync_on <- agenda_sync_activa(client_id)
-  if (sync_on) {
-    tryCatch(.pagar_hoy_vivo(TRUE, username, client_id), error = function(e) .schema_pagar_hoy())
-  } else if (!is.null(username) && nzchar(username %||% "")) {
-    tryCatch(load_pagar_hoy_user(username, client_id = client_id),
-             error = function(e) tryCatch(load_pagar_hoy(client_id = client_id),
-                                          error = function(e2) .schema_pagar_hoy()))
-  } else {
-    tryCatch(load_pagar_hoy(client_id = client_id), error = function(e) .schema_pagar_hoy())
-  }
+  sync_on <- agenda_sync_activa(client_id)          # stop()s on a failed read too
+  user    <- if (!is.null(username) && nzchar(username %||% "")) username else NULL
+  .pagar_hoy_vivo(sync_on, user, client_id)
 }
 
 # Remove specific invoices from the queue entirely

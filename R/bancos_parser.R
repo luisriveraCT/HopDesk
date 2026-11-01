@@ -442,8 +442,10 @@ auto_match_agenda <- function(movimientos_nuevos, confirmados) {
 
   if (is.null(confirmados) || !nrow(confirmados)) return(result)
 
-  conf <- confirmados |>
-    dplyr::filter(!isTRUE(eliminado)) |>
+  # Live confirmations only. `!isTRUE(eliminado)` on the whole column filtered
+  # nothing, so imports matched deleted confirmations and undo records
+  # (since 2026-04-27; review CM10/C6).
+  conf <- confirmaciones_vigentes(confirmados) |>
     dplyr::select(agenda_item_id, documento, importe, fecha, mov_id)
 
   for (i in seq_len(nrow(result))) {
