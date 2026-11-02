@@ -62,7 +62,8 @@ test_that("headers: accents, dots and spaces are normalized; specific before gen
 
 test_that("format A/B is decided by the headers, not by one cell", {
   expect_true(prov_tiene_encabezado(c("Nombre", "Alias", "Banco", "No. Cuenta")))
-  expect_true(prov_tiene_encabezado(c("Beneficiario", "CLABE")))
+  expect_true(prov_tiene_encabezado(c("Beneficiario", "CLABE", "Banco")))
+  expect_false(prov_tiene_encabezado(c("Beneficiario", "CLABE")))   # T08b: 3 or more, as the header search
   # A BanBajío data row: a bank name, a dirty account -- not a header.
   expect_false(prov_tiene_encabezado(c("PROVEEDOR XYZ", "XYZ", "127-BANCO AZTECA", "40", "012180007777777771 ")))
 })
@@ -223,8 +224,8 @@ test_that("a CLABE's first 3 digits are its bank: when the file's bank says anot
   expect_identical(r$filas$.estado, c("listo", "revisar", "revisar"))
   expect_identical(r$filas$.motivo[2:3], rep("tablas.proveedores.importar.motivo_banco_clabe", 2))
   expect_identical(r$activos$nombre, "BIEN SA")                     # the held-back ones never go in
-  expect_identical(tr("tablas.proveedores.importar.motivo_banco_clabe", clabe = "012", banco = "002"),
-                   "La CLABE es del banco 012 y el banco dice 002.")
+  expect_identical(tr("tablas.proveedores.importar.motivo_banco_clabe", nombre_clabe = "BBVA", clabe = "012", banco = "002"),
+                   "La CLABE es de BBVA (012) y el archivo dice «002».")
 })
 
 test_that("a non-CLABE account that came as a number imports, with a visible warning", {
@@ -245,4 +246,117 @@ test_that("a non-CLABE account that came as a number imports, with a visible war
   expect_identical(r$filas$.estado, "listo")
   expect_identical(r$filas$.nota, "tablas.proveedores.importar.aviso_numero")
   expect_identical(c(r$activos$no_cuenta, r$activos$medio_pago), c("12345678901", "BCO"))
+})
+
+# ── T08b: BanBajío's real export ("Cuentas Destino Registradas") ────────────
+BAJIO <- "tests/fixtures/proveedores_excel/10_bajio_export.xlsx"
+
+test_that("T08b: the header is found on row 6; general data above and the final note are ignored", {
+  r <- prov_leer_excel(BAJIO)
+  expect_identical(c(r$formato, as.character(r$fila_encabezado), as.character(r$ignoradas_arriba), as.character(r$ignoradas_nota)),
+                   c("B", "6", "5", "1"))
+  expect_equal(nrow(r$filas), 451L)
+  expect_identical(r$columnas$nombre, "Nombre Beneficiario")      # wins over Alias
+  expect_identical(r$columnas$alias, "Alias")
+  expect_identical(r$columnas$no_cuenta, "Número")
+  expect_identical(r$columnas$moneda, "Divisa")
+  expect_identical(r$columnas$tipo_relacion, "Tipo de Relación")
+  expect_true(all(c("Otro Tipo de Relación", "Importe Máximo a Transferir", "Canal") %in% r$no_usadas))
+  expect_length(r$faltan, 0L)
+})
+
+test_that("T08b: every bank of the export is recognized; the bank comes out of the CLABE", {
+  f <- prov_clasificar(prov_leer_excel(BAJIO)$filas, NULL, NULL)
+  expect_equal(sum(f$.motivo %in% "tablas.proveedores.importar.motivo_banco"), 0L)   # 0 "no se reconoce"
+  expect_identical(as.vector(table(f$.estado)[c("listo", "revisar")]), c(450L, 1L))
+  expect_identical(f$.motivo[f$.estado == "revisar"], "tablas.proveedores.importar.motivo_banco_clabe")
+  expect_identical(f$.banco_archivo[f$.estado == "revisar"], "SANTANDER")
+  expect_identical(f$.banco_clabe[f$.estado == "revisar"], "012")
+  bb <- f$tipo_cuenta %in% "Cuenta BB"
+  expect_equal(sum(bb), 30L)
+  expect_true(all(f$banco[bb] == "030"))                           # "Cuenta BB" = BanBajío
+  expect_identical(as.vector(table(f$moneda)[c("MXN", "USD")]), c(426L, 25L))   # from Divisa
+  expect_false(any(grepl("^Nota", f$nombre)))
+})
+
+test_that("T08b: bank names, as people write them, to their key (checked against real CLABE prefixes)", {
+  nombres <- c("BBVA MEXICO", "BANAMEX", "BANORTE", "BAJIO", "SANTANDER", "HSBC", "SCOTIABANK", "AZTECA", "BANREGIO",
+               "KAPITAL", "INTERCAM BANCO", "INBURSA", "STP", "AFIRME", "BANK OF AMERICA", "BMONEX", "CBM BANCO",
+               "ASP INTEGRA OPC", "BANCOPPEL", "CITI MEXICO", "MIFEL", "NUBANK", "SABADELL")
+  claves  <- c("012", "002", "072", "030", "014", "021", "044", "127", "058", "128", "136", "036", "646", "062", "106",
+               "112", "124", "659", "137", "124", "042", "638", "156")
+  expect_identical(prov_banco_por_nombre(nombres), claves)
+  expect_identical(prov_banco_por_nombre(c("BANCO AZTECA, S.A., INSTITUCION DE BANCA MULTIPLE", "Banco del Bajío",
+                                           "BBVA Bancomer, S.A.", "CITIBANAMEX", "Nu México", "Banco Patito")),
+                   c("127", "030", "012", "002", "638", NA))
+  expect_identical(prov_banco_nombre(c("012", "128", NA)), c("BBVA", "KAPITAL", NA))
+})
+
+test_that("T08b: an unrecognized name takes the CLABE's bank (with a note); a recognized different one waits", {
+  filas <- data.frame(.row_num = 2:5, nombre = c("A SA", "B SA", "C SA", "D SA"),
+                      banco = c("BANCO RARO", "SANTANDER", NA, "SANTANDER"),
+                      no_cuenta = c(con_dv("01218000111111111"), con_dv("01218000222222222"), con_dv("07218000333333333"), "012345678901"),
+                      tipo_cuenta = c("CLABE", "CLABE", "CLABE", "Cuenta BB"),
+                      .num_no_cuenta = FALSE, .num_banco = FALSE, stringsAsFactors = FALSE)
+  for (k in setdiff(names(PROV_EXCEL_CAMPOS), names(filas))) filas[[k]] <- NA_character_
+  f <- prov_clasificar(filas, NULL, NULL)
+  expect_identical(f$.estado, c("listo", "revisar", "listo", "revisar"))
+  expect_identical(f$banco[c(1, 3)], c("012", "072"))
+  expect_identical(f$.nota[c(1, 3)], rep("tablas.proveedores.importar.nota_banco_clabe", 2))
+  expect_identical(f$.motivo[c(2, 4)], c("tablas.proveedores.importar.motivo_banco_clabe",
+                                          "tablas.proveedores.importar.motivo_banco_bb"))
+  expect_identical(tr("tablas.proveedores.importar.motivo_banco_clabe", nombre_clabe = "BBVA", clabe = "012", banco = "SANTANDER"),
+                   "La CLABE es de BBVA (012) y el archivo dice «SANTANDER».")
+})
+
+test_that("T08b: account type in words or BanBajío's code is the same thing (no false change)", {
+  expect_identical(prov_tipo_cuenta(c("40", "CLABE", "1", "Cuenta BB", "Tarjeta de debito", NA)),
+                   c("CLABE", "CLABE", "Cuenta BB", "Cuenta BB", "Tarjeta de Débito", NA))
+  ex <- prov_fila("p-1", "A SA", con_dv("01218000111111111")); ex$tipo_cuenta <- "40"
+  filas <- data.frame(.row_num = 2L, nombre = "A SA", banco = "BBVA MEXICO", no_cuenta = ex$no_cuenta, tipo_cuenta = "CLABE",
+                      moneda = "MXN", .num_no_cuenta = FALSE, .num_banco = FALSE, stringsAsFactors = FALSE)
+  for (k in setdiff(names(PROV_EXCEL_CAMPOS), names(filas))) filas[[k]] <- NA_character_
+  expect_identical(prov_clasificar(filas, ex, NULL)$.estado, "sin_cambios")
+})
+
+test_that("T08b: only accounts registered since a date are classified; the rest are out of range", {
+  expect_identical(prov_fecha(c("45785", "08/05/2025", "2025-05-08", NA, "x")), as.Date(c("2025-05-08", "2025-05-08", "2025-05-08", NA, NA)))
+  r <- prov_leer_excel(BAJIO)
+  desde <- as.Date(44924 + 300 * 3, origin = "1899-12-30")          # the fixture registers one every 3 days
+  f <- prov_clasificar(r$filas, NULL, NULL, desde = desde)
+  expect_equal(sum(f$.estado == "fuera_rango"), 299L)
+  expect_equal(sum(f$.estado != "fuera_rango"), 152L)
+  expect_true(all(prov_fecha(f$fecha_registro[f$.estado != "fuera_rango"]) >= desde))
+})
+
+test_that("T08b: an Estatus that isn't Activo sends the row to Inactivos", {
+  ex <- prov_fila("p-1", "A SA", con_dv("01218000111111111"))
+  filas <- data.frame(.row_num = 2:3, nombre = c("A SA", "NUEVO SA"), banco = c("012", "072"),
+                      no_cuenta = c(ex$no_cuenta, con_dv("07218000999999999")), estatus = c("Inactivo", "Bloqueado"),
+                      moneda = "MXN", .num_no_cuenta = FALSE, .num_banco = FALSE, stringsAsFactors = FALSE)
+  for (k in setdiff(names(PROV_EXCEL_CAMPOS), names(filas))) filas[[k]] <- NA_character_
+  f <- prov_clasificar(filas, ex, NULL)
+  expect_identical(f$.estado, c("inactiva", "listo"))
+  res <- prov_aplicar(f, ex, ex[0, ], decisiones = setNames(list("reemplazar"), ex$no_cuenta),
+                      opciones = list(nuevo_id = function() "p-nuevo"))
+  expect_equal(nrow(res$activos), 0L)
+  expect_setequal(res$inactivos$id, c("p-1", "p-nuevo"))
+  expect_false(any(res$inactivos$activo))
+})
+
+test_that("T08b speed: 500 rows against a 900-provider catalog classify in under 2 s", {
+  r <- prov_leer_excel(BAJIO)
+  filas <- r$filas[rep(seq_len(nrow(r$filas)), length.out = 500), ]
+  filas$.row_num <- seq_len(500)
+  # A catalog of 900 where the file's accounts exist (the update path, the slow one).
+  base <- prov_clasificar(r$filas, NULL, NULL)
+  cat900 <- do.call(rbind, lapply(seq_len(900), function(i) {
+    j <- (i - 1) %% nrow(base) + 1
+    prov_fila(paste0("p-", i), paste("VIEJO", i), if (i <= nrow(base)) base$no_cuenta[j] else con_dv(sprintf("01218%012d", i)),
+              banco = base$banco[j], moneda = NA)
+  }))
+  t <- system.time(f <- prov_clasificar(filas, cat900, NULL))[["elapsed"]]
+  cat(sprintf("  500 filas contra 900 proveedores: %.2f s\n", t))
+  expect_lt(t, 2)
+  expect_equal(nrow(f), 500L)
 })

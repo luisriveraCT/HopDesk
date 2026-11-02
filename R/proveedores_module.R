@@ -99,6 +99,13 @@ proveedoresUI <- function(id) {
           selectInput(ns("excel_moneda"), NULL, choices = c("MXN", "USD"), selected = "MXN", width = "100%")
         ))
       ),
+      # Shown once a file with a "Fecha de Registro" column is read (BanBajío's
+      # export): only the accounts registered since that date are classified.
+      shinyjs::hidden(div(id = ns("excel_desde_wrap"), class = "d-flex align-items-center gap-2 mb-2",
+        checkboxInput(ns("excel_desde_on"), tr("tablas.proveedores.importar.desde"), value = FALSE),
+        div(style = "width: 160px;", dateInput(ns("excel_desde"), NULL, value = Sys.Date(), language = "es")),
+        tags$span(class = "small text-muted", tr("tablas.proveedores.importar.desde_ayuda"))
+      )),
       div(class = "mb-2",
         downloadButton(ns("descargar_plantilla"), tr("tablas.proveedores.importar.plantilla"),
                        class = "btn btn-sm btn-outline-secondary"),
@@ -140,6 +147,8 @@ proveedoresUI <- function(id) {
       tags$hr(),
       tags$h6(class = "fw-semibold", tagList(icon("table"), " Revisión de datos")),
       uiOutput(ns("revision_mapeo")),
+      # The review opens on what changes; the rest is one click away.
+      actionLink(ns("revision_ver_todo"), ""),
       hd_table_ui(ns("revision"), alto = "auto")
     )),
 
@@ -734,6 +743,31 @@ proveedoresServer <- function(id, shared) {
       content  = function(file) prov_plantilla_escribir(get_provs(), file, .catalogo_bancos())
     )
 
+    # The date of the last Excel import for this company (or all), as the
+    # catalog keeps it: the newest created_at of a provider that came from an
+    # Excel. NA when there was none.
+    .ultima_importacion <- function(empresa) {
+      p <- dplyr::bind_rows(get_provs(), get_inac())
+      if (!nrow(p) || !"fuente" %in% names(p)) return(as.Date(NA))
+      p <- p[p$fuente %in% "excel", , drop = FALSE]
+      if (nzchar(empresa %||% "")) p <- p[grepl(paste0("(^|,)", empresa, "(,|$)"), p$empresas %||% ""), , drop = FALSE]
+      d <- suppressWarnings(as.Date(substr(as.character(p$created_at), 1, 10), optional = TRUE))
+      if (!length(d) || all(is.na(d))) as.Date(NA) else max(d, na.rm = TRUE)
+    }
+
+    # Classifies what was read (again when the date filter changes).
+    .clasificar_carga <- function(lectura, tipo, empresa) {
+      desde <- if (isTRUE(input$excel_desde_on) && "fecha_registro" %in% names(lectura$columnas))
+                 as.Date(input$excel_desde) else NULL
+      rows <- prov_clasificar(lectura$filas, get_provs(), get_inac(), tipo = tipo,
+                              catalogo = .catalogo_bancos(), alias_mapa = .alias_mapa(), desde = desde)
+      rows$.clasificacion <- rows$.estado
+      upload_data_rv(list(rows = rows, empresa = empresa, tipo = tipo, lectura = lectura, desde = desde))
+      conflict_decisions(list())
+      conflict_idx_rv(1L)
+      mostrar_todo_rv(FALSE)
+    }
+
     # Parse and classify uploaded Excel
     observeEvent(input$excel_file, {
       if (!.puede_editar()) return()
@@ -745,43 +779,77 @@ proveedoresServer <- function(id, shared) {
           return()
         }
         tipo <- input$excel_tipo %||% "activos"
-        rows <- prov_clasificar(lectura$filas, get_provs(), get_inac(), tipo = tipo,
-                                catalogo = .catalogo_bancos(), alias_mapa = .alias_mapa())
-        rows$.clasificacion <- rows$.estado
         emp_input <- input$excel_empresa %||% "TODOS"
-        upload_data_rv(list(rows = rows, empresa = if (emp_input == "TODOS") "" else emp_input,
-                            tipo = tipo, lectura = lectura))
-        conflict_decisions(list())
-        conflict_idx_rv(1L)
+        empresa <- if (emp_input == "TODOS") "" else emp_input
+        # With a registration date in the file, the filter starts at the last
+        # import (only what was registered since then), when there was one.
+        if ("fecha_registro" %in% names(lectura$columnas)) {
+          ultima <- .ultima_importacion(empresa)
+          if (!is.na(ultima)) updateDateInput(session, "excel_desde", value = ultima)
+          updateCheckboxInput(session, "excel_desde_on", value = !is.na(ultima))
+          # The inputs change in the browser after this flush: classify with
+          # the values the filter is about to have.
+          desde <- if (!is.na(ultima)) ultima else NULL
+          rows <- prov_clasificar(lectura$filas, get_provs(), get_inac(), tipo = tipo,
+                                  catalogo = .catalogo_bancos(), alias_mapa = .alias_mapa(), desde = desde)
+          rows$.clasificacion <- rows$.estado
+          upload_data_rv(list(rows = rows, empresa = empresa, tipo = tipo, lectura = lectura, desde = desde))
+          conflict_decisions(list()); conflict_idx_rv(1L); mostrar_todo_rv(FALSE)
+        } else .clasificar_carga(lectura, tipo, empresa)
       }, error = function(e) {
         showNotification(paste(tr("tablas.proveedores.importar.error_leer"), conditionMessage(e)), type = "error")
       })
     }, ignoreInit = TRUE)
 
+    # The date filter changed: classify the same file again.
+    observeEvent(list(input$excel_desde_on, input$excel_desde), {
+      ud <- upload_data_rv()
+      if (is.null(ud) || !"fecha_registro" %in% names(ud$lectura$columnas)) return()
+      nuevo <- if (isTRUE(input$excel_desde_on)) as.Date(input$excel_desde) else NULL
+      if (identical(nuevo, ud$desde)) return()
+      .clasificar_carga(ud$lectura, ud$tipo, ud$empresa)
+    }, ignoreInit = TRUE)
+
     # No Moneda column in the file: the new providers take the one chosen here.
     observe(shinyjs::toggle("excel_moneda_wrap",
                             condition = "moneda" %in% (upload_data_rv()$lectura$faltan %||% character(0))))
+    observe(shinyjs::toggle("excel_desde_wrap",
+                            condition = "fecha_registro" %in% names(upload_data_rv()$lectura$columnas %||% list())))
 
     # Stage 2/3 — the review table (hd_table, class E). Each row's id is its
-    # row number in the Excel (.row_num), the same key the ✕ removes by. The
-    # chips are the old filter buttons with their counts; "Dup. fila N" is now
-    # the Duplicado badge plus the Fila column, which every row has. Detalle
-    # says why a row is held back, what changes (antes → después) or what was
-    # repaired.
+    # row number in the Excel (.row_num), the same key the ✕ removes by. It
+    # opens on the rows that change something or need a look; "sin cambios"
+    # and "fuera del rango" are one click away (Luis updates 10-15 out of
+    # 451). Detalle starts with the reason, in plain words; the engine's
+    # bubble shows it whole.
     observe(shinyjs::toggle("revision_wrap", condition = !is.null(upload_data_rv())))
+    mostrar_todo_rv <- reactiveVal(FALSE)
+    .QUIETAS <- c("sin_cambios", "fuera_rango")
+    observeEvent(input$revision_ver_todo, mostrar_todo_rv(!mostrar_todo_rv()))
+    observe({
+      ud <- upload_data_rv()
+      n <- if (is.null(ud)) 0L else sum(ud$rows$.estado %in% .QUIETAS)
+      updateActionLink(session, "revision_ver_todo",
+                       label = if (!n) "" else if (mostrar_todo_rv()) tr("tablas.proveedores.importar.ocultar_quietas")
+                               else tr_n("tablas.proveedores.importar.ver_quietas", n))
+    })
 
     .campo_texto <- function(campo) tr(paste0("tablas.proveedores.", campo))
+    # "012 · BBVA": the key and who it is.
+    .banco_txt <- function(b) ifelse(!is.na(b) & grepl("^[0-9]{3}$", b), paste0(b, " · ", prov_banco_nombre(b)), b)
     .detalle <- function(rows) vapply(seq_len(nrow(rows)), function(i) {
+      cl <- rows$.banco_clabe[i]
+      datos <- list(cuenta = rows$no_cuenta[i] %||% "", banco = rows$.banco_archivo[i] %||% "",
+                    clabe = cl %||% "", nombre_clabe = if (!is.na(cl)) prov_banco_nombre(cl) else "")
       partes <- character(0)
-      # (the bank-vs-CLABE motive names both banks; other keys ignore the values)
-      if (!is.na(rows$.motivo[i])) partes <- c(partes, tr(rows$.motivo[i], clabe = substr(rows$no_cuenta[i], 1, 3),
-                                                          banco = rows$banco[i] %||% ""))
-      if (!is.na(rows$.nota[i]))   partes <- c(partes, tr(rows$.nota[i]))
+      if (!is.na(rows$.motivo[i])) partes <- c(partes, do.call(tr, c(list(rows$.motivo[i]), datos)))
       for (c in rows$.cambios[[i]])
         partes <- c(partes, tr("tablas.proveedores.importar.cambio", campo = .campo_texto(c$campo),
                                antes = c$antes %||% "—", despues = c$despues))
       if (rows$.alias_vinculos[i] > 0L)
         partes <- c(partes, tr_n("tablas.proveedores.importar.alias_vinculos", rows$.alias_vinculos[i]))
+      if (!is.na(rows$.nota[i]))
+        for (k in strsplit(rows$.nota[i], "|", fixed = TRUE)[[1]]) partes <- c(partes, do.call(tr, c(list(k), datos)))
       paste(partes, collapse = " · ")
     }, "")
 
@@ -789,17 +857,20 @@ proveedoresServer <- function(id, shared) {
       ud <- upload_data_rv()
       req(!is.null(ud))
       rows <- ud$rows
+      if (!mostrar_todo_rv()) rows <- rows[!rows$.estado %in% .QUIETAS, , drop = FALSE]
       data.frame(
         id        = as.character(rows$.row_num),
         estado    = rows$.estado,
-        fila      = as.character(rows$.row_num),
         nombre    = rows$nombre,
-        alias     = rows$alias,
-        rfc       = rows$rfc,
+        banco     = .banco_txt(rows$banco),
         no_cuenta = rows$no_cuenta,
-        banco     = rows$banco,
         moneda    = rows$moneda,
         detalle   = .detalle(rows),
+        alias     = rows$alias,
+        rfc       = rows$rfc,
+        correo    = rows$correo,
+        tipo      = rows$tipo_cuenta,
+        fila      = as.character(rows$.row_num),
         stringsAsFactors = FALSE
       )
     })
@@ -809,43 +880,67 @@ proveedoresServer <- function(id, shared) {
       actualiza   = list(texto = "tablas.proveedores.actualiza",   tono = "info"),
       reactiva    = list(texto = "tablas.proveedores.reactiva",    tono = "morado"),
       inactiva    = list(texto = "tablas.proveedores.inactiva",    tono = "morado"),
-      sin_cambios = list(texto = "tablas.proveedores.sin_cambios", tono = "neutro"),
-      incompleto  = list(texto = "tablas.proveedores.incompleto",  tono = "aviso"),
       revisar     = list(texto = "tablas.proveedores.revisar",     tono = "rojo"),
-      duplicado   = list(texto = "tablas.proveedores.duplicado",   tono = "peligro"))
+      incompleto  = list(texto = "tablas.proveedores.incompleto",  tono = "aviso"),
+      duplicado   = list(texto = "tablas.proveedores.duplicado",   tono = "peligro"),
+      sin_cambios = list(texto = "tablas.proveedores.sin_cambios", tono = "neutro"),
+      fuera_rango = list(texto = "tablas.proveedores.fuera_rango", tono = "neutro"))
 
+    # Columns in the order of what matters (Luis): Estado, Nombre, Banco,
+    # No. Cuenta, Moneda, Detalle; then the rest.
     revision <- hd_table_server(
       "revision", tabla = "revision_excel_prov", datos = revision_datos,
-      piezas = c("fichas", "ordenar", "acc_fila", "recorte"),
+      piezas = c("fichas", "ordenar", "acc_fila", "recorte", "buscar"),
       columnas = list(
         col_insignia("estado", "tablas.proveedores.estado", mapa = PROV_ESTADOS),
-        col_texto("fila",      "tablas.proveedores.fila", recorte = FALSE),
         col_texto("nombre",    "tablas.proveedores.nombre"),
+        col_texto("banco",     "tablas.proveedores.banco", recorte = FALSE),
+        col_texto("no_cuenta", "tablas.proveedores.no_cuenta", recorte = FALSE),
+        col_texto("moneda",    "tablas.proveedores.moneda", recorte = FALSE),
+        col_texto("detalle",   "tablas.proveedores.detalle"),
         col_texto("alias",     "tablas.proveedores.alias"),
         col_texto("rfc",       "tablas.proveedores.rfc", recorte = FALSE),
-        col_texto("no_cuenta", "tablas.proveedores.no_cuenta", recorte = FALSE),
-        col_texto("banco",     "tablas.proveedores.banco", recorte = FALSE),
-        col_texto("moneda",    "tablas.proveedores.moneda", recorte = FALSE),
-        col_texto("detalle",   "tablas.proveedores.detalle")
+        col_texto("correo",    "tablas.proveedores.correo"),
+        col_texto("tipo",      "tablas.proveedores.tipo_cuenta", recorte = FALSE),
+        col_texto("fila",      "tablas.proveedores.fila", recorte = FALSE)
       ),
       fichas        = list(campo = "estado", orden = names(PROV_ESTADOS)),
       acciones_fila = "eliminar",
       vacio         = "tablas.proveedores.revision_vacia"
     )
 
-    # Which column of the file each field came from, and what it lacks.
+    # One sentence on top ("Encabezado en la fila 6 · 451 cuentas · 12 con
+    # cambios · 0 por revisar"), then where each field came from.
     output$revision_mapeo <- renderUI({
-      lectura <- upload_data_rv()$lectura
-      req(!is.null(lectura))
-      tomadas <- vapply(names(lectura$columnas), function(campo)
+      ud <- upload_data_rv()
+      req(!is.null(ud))
+      lectura <- ud$lectura; e <- ud$rows$.estado
+      n_de <- function(est) sum(e %in% est)
+      cambios <- n_de(c("listo", "actualiza", "reactiva", "inactiva"))
+      piezas <- c(
+        if (lectura$formato == "B")
+          tr("tablas.proveedores.importar.resumen_encabezado", fila = lectura$fila_encabezado)
+        else tr("tablas.proveedores.importar.resumen_sin_encabezado"),
+        if (lectura$ignoradas_arriba > 0) tr_n("tablas.proveedores.importar.resumen_arriba", lectura$ignoradas_arriba),
+        tr_n("tablas.proveedores.importar.resumen_cuentas", length(e)),
+        tr_n("tablas.proveedores.importar.resumen_con_cambios", cambios),
+        tr_n("tablas.proveedores.importar.resumen_por_revisar", n_de(c("revisar", "incompleto", "duplicado"))),
+        if (n_de("sin_cambios")) tr_n("tablas.proveedores.importar.resumen_iguales", n_de("sin_cambios")),
+        if (n_de("fuera_rango")) tr_n("tablas.proveedores.importar.resumen_fuera", n_de("fuera_rango"),
+                                      desde = format(ud$desde, "%d/%m/%Y")))
+      tomadas <- vapply(setdiff(names(lectura$columnas), c("estatus", "fecha_registro")), function(campo)
         tr("tablas.proveedores.importar.columna_tomada", campo = .campo_texto(campo),
            columna = lectura$columnas[[campo]]), "")
       faltan <- vapply(lectura$faltan, .campo_texto, "")
-      tags$div(class = "small text-muted mb-2",
-        tags$div(tr("tablas.proveedores.importar.columnas_tomadas"), " ", paste(tomadas, collapse = " · ")),
-        if (length(faltan)) tags$div(tr("tablas.proveedores.importar.columnas_faltan"), " ", paste(faltan, collapse = ", ")),
-        if ("moneda" %in% lectura$faltan)
-          tags$div(tr("tablas.proveedores.importar.moneda_selector", moneda = input$excel_moneda %||% "MXN")))
+      tags$div(class = "mb-2",
+        tags$div(class = "fw-semibold", paste(piezas, collapse = " · ")),
+        tags$div(class = "small text-muted",
+          tags$div(tr("tablas.proveedores.importar.columnas_tomadas"), " ", paste(tomadas, collapse = " · ")),
+          if (length(faltan)) tags$div(tr("tablas.proveedores.importar.columnas_faltan"), " ", paste(faltan, collapse = ", ")),
+          if (length(lectura$no_usadas))
+            tags$div(tr("tablas.proveedores.importar.columnas_no_usadas"), " ", paste(lectura$no_usadas, collapse = ", ")),
+          if ("moneda" %in% lectura$faltan)
+            tags$div(tr("tablas.proveedores.importar.moneda_selector", moneda = input$excel_moneda %||% "MXN"))))
     })
 
     # ✕ (confirmed in the table's bar): the row leaves this upload only;

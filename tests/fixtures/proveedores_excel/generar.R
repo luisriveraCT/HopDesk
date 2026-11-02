@@ -96,7 +96,64 @@ generar <- function(dir = "tests/fixtures/proveedores_excel") {
   # provider while importing into Activos.
   guardar(data.frame(Nombre = "INACTIVO REGRESA SA", Banco = "044", `No. Cuenta` = C$inactivo,
                      Moneda = "MXN", check.names = FALSE), "09_reemplazo_inactivo.xlsx")
+
+  # 10 · (T08b) BanBajío's "Cuentas Destino Registradas" export, with the
+  # exact structure of the real one and invented data.
+  wb <- createWorkbook(); addWorksheet(wb, "CuentasDestino_XLS")
+  writeData(wb, 1, bajio_export(), colNames = FALSE)
+  saveWorkbook(wb, file.path(dir, "10_bajio_export.xlsx"), overwrite = TRUE)
   invisible(TRUE)
+}
+
+# BanBajío's export as a character matrix: 5 rows of general data, the
+# 25-column header on row 6, 451 accounts (all text) and a closing note.
+# Banks, account types, lengths and currencies in the real file's
+# proportions; one row says SANTANDER with a BBVA (012) CLABE.
+BAJIO_ENCABEZADO <- c("#", "Estatus", "Alias", "Número", "Tipo Cuenta", "Banco", "Divisa", "Nombre Beneficiario",
+                      "Tiempo de uso", "Usuarios que podrán utilizarla", "Importe Máximo a Transferir",
+                      "Periodo del Importe Máximo a Transferir", "Suma de lo Transferido", "Tipo de Relación",
+                      "Otro Tipo de Relación", "RFC", "Correo", "Fecha de Registro", "Hora de Registro",
+                      "Registrada por", "Usuario", "Nombre Archivo", "Canal", "Registro", "Autorización")
+bajio_export <- function() {
+  # name, CLABE prefix, how many CLABEs, Cuenta BB lengths, cards
+  bancos <- list(
+    list("BBVA MEXICO", "012", 154, NULL, 2), list("BANAMEX", "002", 64, NULL, 0), list("BANORTE", "072", 49, NULL, 0),
+    list("BAJIO", "030", 18, c(rep(12, 27), 11, 11, 13), 0), list("SANTANDER", "014", 45, NULL, 2),
+    list("HSBC", "021", 22, NULL, 0), list("SCOTIABANK", "044", 9, NULL, 0), list("AZTECA", "127", 8, NULL, 0),
+    list("BANREGIO", "058", 8, NULL, 0), list("KAPITAL", "128", 8, NULL, 0), list("INTERCAM BANCO", "136", 7, NULL, 0),
+    list("INBURSA", "036", 6, NULL, 0), list("STP", "646", 5, NULL, 0), list("AFIRME", "062", 2, NULL, 0),
+    list("BANK OF AMERICA", "106", 2, NULL, 0), list("BMONEX", "112", 2, NULL, 0), list("CBM BANCO", "124", 2, NULL, 0),
+    list("ASP INTEGRA OPC", "659", 1, NULL, 0), list("BANCOPPEL", "137", 0, NULL, 1), list("CITI MEXICO", "124", 1, NULL, 0),
+    list("MIFEL", "042", 1, NULL, 0), list("NUBANK", "638", 1, NULL, 0), list("SABADELL", "156", 1, NULL, 0))
+  filas <- list(); k <- 0L
+  fila <- function(banco, numero, tipo) {
+    k <<- k + 1L
+    c(as.character(k), "Activo", sprintf("PROV%03d", k), numero, tipo, banco, if (k %% 18 == 0) "USD" else "MXN",
+      sprintf("PROVEEDOR DE PRUEBA %03d SA DE CV", k), "Indefinido", "Todos", "0", "", "0", "Proveedor", "",
+      sprintf("PDP%06d%s", 100000 + k, c("AA1", "BB2", "CC3")[k %% 3 + 1]),
+      if (k %% 2) sprintf("pagos%03d@prueba.mx,cxp%03d@prueba.mx", k, k) else sprintf("pagos%03d@prueba.mx", k),
+      as.character(44924 + k * 3), "10:00:00", "USUARIO PRUEBA", "uprueba", "", "Web", "Alta", "Autorizada")
+  }
+  for (b in bancos) {
+    for (i in seq_len(b[[3]])) filas[[length(filas) + 1L]] <- fila(b[[1]], clabe_dv(sprintf("%s180%011d", b[[2]], k * 7919L + i)), "CLABE")
+    for (n in b[[4]]) filas[[length(filas) + 1L]] <- fila(b[[1]], substr(sprintf("%013.0f", 4400000000000 + k * 31), 14 - n, 13), "Cuenta BB")
+    for (i in seq_len(b[[5]])) filas[[length(filas) + 1L]] <- fila(b[[1]], sprintf("4152%012d", k * 97L + i),
+                                                                 if (i == 1 && b[[1]] == "BANCOPPEL") "Tarjeta de Crédito" else "Tarjeta de Débito")
+  }
+  datos <- do.call(rbind, filas)
+  # One SANTANDER row with a BBVA CLABE: must wait for review.
+  j <- which(datos[, 6] == "SANTANDER" & datos[, 5] == "CLABE")[1]
+  datos[j, 4] <- clabe_dv(sprintf("012180%011d", 99999999L))
+  arriba <- matrix("", 5, 25)
+  arriba[1, 1] <- "Datos Generales"
+  arriba[2, c(1, 3)] <- c("Nombre Cliente", "EMPRESA DE PRUEBA SA DE CV")
+  arriba[3, c(1, 3, 5, 7)] <- c("Cliente Principal", "1234567", "Cuentas Destino Registradas", as.character(nrow(datos)))
+  arriba[4, c(1, 3)] <- c("Generado el", "02/11/2026 08:42:53")
+  arriba[5, 1] <- "Cuentas Destino"
+  nota <- matrix("", 1, 25); nota[1, 1] <- "Nota: La información contenida en este archivo es exclusivamente de carácter informativo."
+  out <- rbind(arriba, BAJIO_ENCABEZADO, datos, nota)
+  out[out == ""] <- NA
+  out
 }
 
 if (!identical(Sys.getenv("PROV_EXCEL_SOLO_DATOS"), "1")) {

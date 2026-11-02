@@ -57,11 +57,14 @@ PROV_EXCEL_CAMPOS <- list(
   banco         = c("banco", "banco destino", "clave banco", "clave del banco", "banco beneficiario"),
   tipo_cuenta   = c("tipo de cuenta", "tipo cuenta"),
   no_cuenta     = c("no cuenta", "no de cuenta", "num de cuenta", "numero de cuenta", "num cuenta", "cuenta",
-                    "clabe", "cuenta clabe", "no cuenta clabe", "clabe interbancaria", "no de cuenta clabe"),
+                    "clabe", "cuenta clabe", "no cuenta clabe", "clabe interbancaria", "no de cuenta clabe", "numero"),
   rfc           = c("rfc", "r f c"),
   correo        = c("correo", "correo electronico", "email", "e mail", "mail"),
   moneda        = c("moneda", "divisa"),
-  tipo_relacion = c("tipo de relacion", "tipo relacion", "relacion")
+  tipo_relacion = c("tipo de relacion", "tipo relacion", "relacion"),
+  # BanBajío's export (T08b): informative, never written to the catalog.
+  estatus        = c("estatus", "status"),
+  fecha_registro = c("fecha de registro", "fecha registro", "fecha de alta")
 )
 # Word searched in the second pass, in an order where the specific goes before
 # the generic ("Tipo de cuenta" is not the account; "Nombre del banco" is the bank).
@@ -90,11 +93,31 @@ prov_mapear_columnas <- function(encabezados) {
   out
 }
 
-# Format B (header row) when the first row has 2 or more known headers, by
-# exact name: a data row rarely says just "Banco" or "RFC" in a cell.
-prov_tiene_encabezado <- function(fila1) {
-  norm <- prov_normalizar_encabezado(fila1)
-  sum(norm %in% unlist(PROV_EXCEL_CAMPOS), na.rm = TRUE) >= 2L
+# A header row has 3 or more known headers, by exact name: a data row rarely
+# says just "Banco", "RFC" or "Divisa" in its cells.
+prov_tiene_encabezado <- function(fila) {
+  norm <- prov_normalizar_encabezado(fila)
+  sum(norm %in% unlist(PROV_EXCEL_CAMPOS), na.rm = TRUE) >= 3L
+}
+
+# The header row wherever it is among the first `hasta` rows (BanBajío's
+# export has 5 rows of general data above it); NA: no header (format A).
+prov_fila_encabezado <- function(texto, hasta = 30L) {
+  for (i in seq_len(min(hasta, nrow(texto)))) if (prov_tiene_encabezado(texto[i, ])) return(i)
+  NA_integer_
+}
+
+# An Excel date: a serial number (45785 = 2025-05-08) or a date text.
+prov_fecha <- function(x) {
+  x <- prov_limpiar_texto(x)
+  out <- rep(as.Date(NA), length(x))
+  serial <- !is.na(x) & grepl("^[0-9]{4,6}([.][0-9]+)?$", x)
+  out[serial] <- as.Date(floor(as.numeric(x[serial])), origin = "1899-12-30")
+  dmy <- !is.na(x) & !serial & grepl("^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}", x)
+  out[dmy] <- as.Date(substr(x[dmy], 1, 10), format = "%d/%m/%Y")
+  iso <- !is.na(x) & !serial & !dmy
+  out[iso] <- suppressWarnings(as.Date(substr(x[iso], 1, 10), optional = TRUE))
+  out
 }
 
 # The BanBajío file without header: columns by position.
@@ -131,15 +154,20 @@ prov_leer_excel <- function(path) {
   numero <- vapply(celdas, function(col) vapply(col, `[[`, TRUE, "numero"), logical(nrow(crudo)))
   if (is.null(dim(texto))) { texto <- matrix(texto, nrow = 1L); numero <- matrix(numero, nrow = 1L) }
 
-  formato_b <- prov_tiene_encabezado(texto[1, ])
+  h <- prov_fila_encabezado(texto)
+  formato_b <- !is.na(h)
+  no_usadas <- character(0)
   if (formato_b) {
-    mapa  <- prov_mapear_columnas(texto[1, ])
-    datos <- seq_len(nrow(texto))[-1]
-    col_de <- function(campo) if (is.null(mapa[[campo]])) NA_integer_ else match(mapa[[campo]], texto[1, ])
-    columnas <- lapply(mapa, function(h) if (is.null(h)) NULL else prov_limpiar_texto(h))
+    mapa  <- prov_mapear_columnas(texto[h, ])
+    datos <- seq_len(nrow(texto))[-seq_len(h)]
+    col_de <- function(campo) if (is.null(mapa[[campo]])) NA_integer_ else match(mapa[[campo]], texto[h, ])
+    columnas <- lapply(mapa, function(x) if (is.null(x)) NULL else prov_limpiar_texto(x))
+    enc <- prov_limpiar_texto(texto[h, ])
+    no_usadas <- enc[!is.na(enc) & !enc %in% unlist(lapply(mapa, prov_limpiar_texto)) &
+                     nzchar(prov_normalizar_encabezado(enc))]
   } else {
     datos  <- seq_len(nrow(texto))
-    col_de <- function(campo) { j <- match(campo, PROV_EXCEL_POSICION); if (j <= ncol(texto)) j else NA_integer_ }
+    col_de <- function(campo) { j <- match(campo, PROV_EXCEL_POSICION); if (!is.na(j) && j <= ncol(texto)) j else NA_integer_ }
     columnas <- stats::setNames(lapply(PROV_EXCEL_POSICION, function(campo) {
       j <- col_de(campo); if (is.na(j)) NULL else paste("columna", LETTERS[j])
     }), PROV_EXCEL_POSICION)
@@ -150,13 +178,19 @@ prov_leer_excel <- function(path) {
   for (campo in names(PROV_EXCEL_CAMPOS)) filas[[campo]] <- campo_txt(campo)
   filas$.num_no_cuenta <- campo_num("no_cuenta")
   filas$.num_banco     <- campo_num("banco")
-  # Rows with nothing that identifies a provider are trailing blanks.
+  # Rows with nothing that identifies a provider are trailing blanks; a row
+  # whose first cell says "Nota: ..." is the export's footnote.
   vacia <- Reduce(`&`, lapply(c("nombre", "no_cuenta", "banco", "rfc"), function(k) is.na(prov_limpiar_texto(filas[[k]]))))
-  filas <- filas[!vacia, , drop = FALSE]
+  primera <- apply(texto[datos, , drop = FALSE], 1L, function(r) { r <- prov_limpiar_texto(r); r[!is.na(r)][1] %||% NA_character_ })
+  nota <- !is.na(primera) & grepl("^nota\\b", prov_normalizar_encabezado(primera))
+  filas <- filas[!vacia & !nota, , drop = FALSE]
   rownames(filas) <- NULL
-  faltan <- names(columnas)[vapply(columnas, is.null, logical(1))]
+  faltan <- setdiff(names(columnas)[vapply(columnas, is.null, logical(1))], c("estatus", "fecha_registro"))
   list(filas = filas, formato = if (formato_b) "B" else "A", columnas = columnas[!vapply(columnas, is.null, logical(1))],
-       faltan = faltan)
+       faltan = faltan, no_usadas = no_usadas,
+       fila_encabezado = if (formato_b) h else NA_integer_,
+       ignoradas_arriba = if (formato_b) h - 1L else 0L,
+       ignoradas_nota = sum(nota))
 }
 
 # ── Accounts ─────────────────────────────────────────────────────────────────
@@ -214,6 +248,89 @@ prov_banco_coincide <- function(cuenta, banco) {
   !es_clabe | substr(cuenta, 1L, 3L) == banco
 }
 
+# ── Bank names ───────────────────────────────────────────────────────────────
+# key -> the names people write for it. Keys are BanBajío's catalog (the 89
+# institutions of .BANCOS_MX_CHOICES, R/settings/settings_helpers.R); the
+# extra names were checked against the CLABE prefixes of a real BanBajío
+# export (T08b): KAPITAL accounts are 128 (formerly Autofin), CITI MEXICO and
+# CBM BANCO are 124 (Citi's license), NUBANK is 638.
+PROV_BANCOS <- list(
+  "002" = c("BANAMEX", "CITIBANAMEX", "BANCO NACIONAL DE MEXICO"),
+  "006" = c("BANCOMEXT"), "009" = c("BANOBRAS"),
+  "012" = c("BBVA", "BBVA MEXICO", "BBVA BANCOMER", "BANCOMER"),
+  "014" = c("SANTANDER", "SANTANDER MEXICO"), "019" = c("BANJERCITO"),
+  "021" = c("HSBC", "HSBC MEXICO"), "030" = c("BAJIO", "BANBAJIO", "BANCO DEL BAJIO", "DEL BAJIO"),
+  "036" = c("INBURSA"), "042" = c("MIFEL"), "044" = c("SCOTIABANK", "SCOTIA", "SCOTIABANK INVERLAT"),
+  "058" = c("BANREGIO", "REGIO"), "059" = c("INVEX"), "060" = c("BANSI"), "062" = c("AFIRME"),
+  "072" = c("BANORTE", "BANORTE IXE", "IXE"), "106" = c("BANK OF AMERICA", "BOFA"), "108" = c("MUFG"),
+  "110" = c("JP MORGAN"), "112" = c("BMONEX", "MONEX"), "113" = c("VE POR MAS", "VEPORMAS"),
+  "124" = c("CBM BANCO", "CITI MEXICO", "CITI", "CITIBANK"), "126" = c("CREDIT SUISSE"),
+  "127" = c("AZTECA"), "128" = c("KAPITAL", "KAPITAL BANK", "AUTOFIN"), "129" = c("BARCLAYS"),
+  "130" = c("COMPARTAMOS"), "132" = c("MULTIVA BANCO", "MULTIVA"), "133" = c("ACTINVER"), "135" = c("NAFIN"),
+  "136" = c("INTERCAM BANCO", "INTERCAM"), "137" = c("BANCOPPEL", "COPPEL"), "138" = c("ABC CAPITAL"),
+  "140" = c("CONSUBANCO"), "141" = c("VOLKSWAGEN"), "143" = c("CIBANCO"), "145" = c("BBASE"),
+  "147" = c("BANKAOOL"), "148" = c("PAGATODO"), "150" = c("INMOBILIARIO"), "151" = c("DONDE"),
+  "152" = c("BANCREA"), "154" = c("COVALTO"), "155" = c("ICBC"), "156" = c("SABADELL"), "157" = c("SHINHAN"),
+  "158" = c("MIZUHO BANK", "MIZUHO"), "159" = c("BANK OF CHINA"), "160" = c("S3"), "166" = c("BABIEN"),
+  "168" = c("HIPOTECARIA FEDERAL"), "600" = c("MONEXCB"), "601" = c("GBM"), "602" = c("MASARI"),
+  "605" = c("VALUE"), "608" = c("VECTOR"), "613" = c("MULTIVA CBOLSA"), "616" = c("FINAMEX"),
+  "617" = c("VALMEX"), "620" = c("PROFUTURO"), "623" = c("SKANDIA"), "630" = c("CB INTERCAM"),
+  "631" = c("CI BOLSA"), "634" = c("FINCOMUN"), "636" = c("HDI SEGUROS"), "638" = c("NU MEXICO", "NUBANK", "NU"),
+  "646" = c("STP"), "648" = c("TACTIV CB"), "649" = c("OSKNDIA"), "652" = c("CREDICAPITAL"), "653" = c("KUSPIT"),
+  "656" = c("UNAGRA"), "659" = c("ASP INTEGRA OPC", "ASP INTEGRA"), "661" = c("KLAR"), "670" = c("LIBERTAD"),
+  "677" = c("CAJA POP MEXICANA"), "680" = c("CRISTOBAL COLON"), "683" = c("CAJA TELEFONISTA"),
+  "684" = c("TRANSFER"), "685" = c("FONDO FIRA"), "686" = c("INVERCAP"), "688" = c("CREDICLUB"),
+  "689" = c("FOMPED"), "699" = c("FONDEADORA"), "703" = c("TESORED"), "706" = c("ARCUS"), "710" = c("NVIO"),
+  "722" = c("MERCADO PAGO W", "MERCADO PAGO"), "723" = c("CUENCA"), "902" = c("INDEVAL")
+)
+
+# A bank name as it is compared: no accents, upper case, without the legal
+# form or the word BANCO ("BANCO AZTECA, S.A., INSTITUCION DE BANCA MULTIPLE"
+# -> "AZTECA").
+prov_banco_normalizar <- function(x) {
+  x <- toupper(stringi::stri_trans_general(prov_limpiar_texto(x), "Latin-ASCII"))
+  x <- stringi::stri_replace_all_regex(x, "\\bS\\.?\\s*A\\.?(\\s*B\\.?)?\\b|\\bDE\\s+C\\.?\\s*V\\.?|INSTITUCION DE BANCA MULTIPLE|GRUPO FINANCIERO|\\bBANCO\\b", " ")
+  x <- stringi::stri_replace_all_regex(x, "[^A-Z0-9]+", " ")
+  trimws(stringi::stri_replace_all_regex(x, "\\s+", " "))
+}
+
+.PROV_BANCOS_TABLA <- local({
+  claves <- rep(names(PROV_BANCOS), lengths(PROV_BANCOS))
+  data.frame(clave = claves, nombre = prov_banco_normalizar(unlist(PROV_BANCOS, use.names = FALSE)),
+             stringsAsFactors = FALSE)
+})
+
+# The first (display) name of a key: "012" -> "BBVA".
+prov_banco_nombre <- function(clave) {
+  out <- vapply(as.character(clave), function(k) PROV_BANCOS[[k]][1] %||% k, "", USE.NAMES = FALSE)
+  out[is.na(clave)] <- NA_character_
+  out
+}
+
+# Name -> key, vectorized; NA where not recognized. Exact first, then a known
+# name contained as whole words ("BBVA MEXICO SA" -> 012). catalogo: extra
+# "Nombre|CLAVE" values (the app's .BANCOS_MX_CHOICES).
+prov_banco_por_nombre <- function(x, catalogo = character(0)) {
+  tabla <- .PROV_BANCOS_TABLA
+  if (length(catalogo)) {
+    partes <- strsplit(catalogo[nzchar(catalogo) & grepl("\\|", catalogo)], "|", fixed = TRUE)
+    partes <- Filter(function(p) length(p) == 2L && grepl("^[0-9]{3}$", p[2]), partes)
+    if (length(partes))
+      tabla <- rbind(tabla, data.frame(clave = unname(vapply(partes, `[[`, "", 2L)),
+                                       nombre = prov_banco_normalizar(vapply(partes, `[[`, "", 1L)),
+                                       stringsAsFactors = FALSE))
+  }
+  n <- prov_banco_normalizar(x)
+  out <- tabla$clave[match(n, tabla$nombre)]
+  # Longest name first, so "CITIBANAMEX" doesn't stop at "CITI".
+  orden <- order(-nchar(tabla$nombre))
+  for (i in which(is.na(out) & !is.na(n) & nzchar(n))) {
+    hit <- orden[vapply(tabla$nombre[orden], function(nm) grepl(paste0("\\b", nm, "\\b"), n[i]), logical(1))][1]
+    if (!is.na(hit)) out[i] <- tabla$clave[hit]
+  }
+  out
+}
+
 # ── Bank ─────────────────────────────────────────────────────────────────────
 # The 3-digit key, as the edit modal stores it: "30" -> "030",
 # "012-BBVA BANCOMER" -> "012", "Banorte" -> "072" (by the catalog's names).
@@ -224,14 +341,8 @@ prov_banco_clave <- function(texto, catalogo = character(0)) {
   ok <- function(v) list(valor = v, estado = "ok", motivo = NA_character_)
   if (grepl("^[0-9]{1,3}$", t)) return(ok(formatC(as.integer(t), width = 3L, flag = "0")))
   if (grepl("^[0-9]{3}([^0-9]|$)", t)) return(ok(substr(t, 1L, 3L)))
-  if (length(catalogo)) {
-    partes <- strsplit(catalogo[nzchar(catalogo) & grepl("\\|", catalogo)], "|", fixed = TRUE)
-    partes <- Filter(function(p) length(p) == 2L && grepl("^[0-9]{3}$", p[2]), partes)
-    nombres <- prov_normalizar_encabezado(vapply(partes, `[[`, "", 1L))
-    claves  <- unname(vapply(partes, `[[`, "", 2L))
-    j <- match(prov_normalizar_encabezado(t), nombres)
-    if (!is.na(j)) return(ok(claves[j]))
-  }
+  clave <- prov_banco_por_nombre(t, catalogo)
+  if (!is.na(clave)) return(ok(clave))
   list(valor = t, estado = "revisar", motivo = "tablas.proveedores.importar.motivo_banco")
 }
 
@@ -241,6 +352,20 @@ prov_moneda <- function(x) {
   out <- prov_limpiar_texto(x)
   out[!is.na(t) & grepl("^(mxn|mn|m n|peso|pesos|moneda nacional)$", t)] <- "MXN"
   out[!is.na(t) & grepl("^(usd|us|dll|dlls|dolar|dolares|dolar americano)$", t)] <- "USD"
+  out
+}
+
+# The account type in words: BanBajío's codes and its export's words are the
+# same thing ("40" = "CLABE", "1" = "Cuenta BB"), so a catalog that kept the
+# code and a file that brings the word don't count as a change (T08b: 433 of
+# 451 rows of the real export "changed" only that).
+prov_tipo_cuenta <- function(x) {
+  t <- prov_normalizar_encabezado(x)
+  out <- prov_limpiar_texto(x)
+  out[!is.na(t) & t %in% c("40", "clabe")] <- "CLABE"
+  out[!is.na(t) & t %in% c("1", "cuenta bb", "cuenta bajio")] <- "Cuenta BB"
+  out[!is.na(t) & t == "tarjeta de debito"] <- "Tarjeta de Débito"
+  out[!is.na(t) & t == "tarjeta de credito"] <- "Tarjeta de Crédito"
   out
 }
 
@@ -268,16 +393,6 @@ prov_cuenta_existente <- function(df) {
   prov_limpiar_campo("no_cuenta", dplyr::coalesce(prov_limpiar_texto(nc), prov_limpiar_texto(cl)))
 }
 
-# A stored value as the import compares it (so a legacy "012-BBVA BANCOMER"
-# or "Pesos" doesn't count as a change against "012" or "MXN").
-.prov_comparable <- function(campo, x, catalogo) {
-  switch(campo,
-    banco     = vapply(x, function(v) prov_banco_clave(v, catalogo)$valor, "", USE.NAMES = FALSE),
-    moneda    = prov_moneda(x),
-    no_cuenta = prov_limpiar_campo("no_cuenta", x),
-    prov_limpiar_campo(campo, x))
-}
-
 # Cleans the read rows and sorts each one:
 #   listo        new, ready
 #   incompleto   no name, account or bank
@@ -286,75 +401,136 @@ prov_cuenta_existente <- function(df) {
 #   duplicado    the same account earlier in the file
 #   actualiza    an existing provider of the list it goes to, with changes
 #   sin_cambios  an existing provider, nothing to change
-#   reactiva     an existing INACTIVE provider, importing into Activos (or
+#   reactiva     an existing INACTIVE provider, going to Activos (or
 #   inactiva     the reverse): updated in place and moved
-# Adds .cambios (list column of list(campo, antes, despues)), .nota (the
-# repair note or the alias warning), .existente_id and .existente_lista
-# ("activos"/"inactivos"), .alias_vinculos (Partes linked to the old alias).
+#   fuera_rango  registered before `desde` (the file's Fecha de Registro):
+#                not even classified
+# Adds .cambios (list column of list(campo, antes, despues)), .motivo (a
+# dictionary key), .nota (dictionary keys, "|"-separated: repairs, the bank
+# taken from the CLABE), .banco_archivo / .banco_clabe (for the bank
+# messages), .existente_id and .existente_lista ("activos"/"inactivos"),
+# .alias_vinculos (Partes linked to the old alias) and .destino (the list a
+# row goes to: `tipo`, or Inactivos when the file's Estatus isn't Activo).
 # tipo: the list the file goes to ("activos" / "inactivos").
 prov_clasificar <- function(filas, activos, inactivos, tipo = "activos", catalogo = character(0),
-                            alias_mapa = NULL) {
+                            alias_mapa = NULL, desde = NULL) {
   n <- nrow(filas)
   f <- filas
   for (campo in setdiff(names(PROV_EXCEL_CAMPOS), c("no_cuenta", "banco", "moneda")))
     f[[campo]] <- prov_limpiar_campo(campo, f[[campo]])
-  cuentas <- lapply(seq_len(n), function(i) prov_cuenta(f$no_cuenta[i], isTRUE(f$.num_no_cuenta[i])))
-  bancos  <- lapply(seq_len(n), function(i) prov_banco_clave(f$banco[i], catalogo))
-  f$no_cuenta <- vapply(cuentas, `[[`, "", "valor")
-  f$banco     <- vapply(bancos, `[[`, "", "valor")
-  f$moneda    <- prov_moneda(f$moneda)
-  motivo <- ifelse(vapply(cuentas, `[[`, "", "estado") == "revisar", vapply(cuentas, `[[`, "", "motivo"),
-            ifelse(vapply(bancos, `[[`, "", "estado") == "revisar", vapply(bancos, `[[`, "", "motivo"), NA_character_))
-  # A valid CLABE whose bank isn't the file's bank: held back, saying both.
-  choca <- is.na(motivo) & !prov_banco_coincide(f$no_cuenta, f$banco)
-  motivo[choca] <- "tablas.proveedores.importar.motivo_banco_clabe"
-  f$.motivo <- motivo
-  est_cuenta <- vapply(cuentas, `[[`, "", "estado")
-  f$.nota   <- ifelse(est_cuenta %in% c("reparada", "aviso"), vapply(cuentas, `[[`, "", "motivo"), NA_character_)
+  f$moneda <- prov_moneda(f$moneda)
+  f$tipo_cuenta <- prov_tipo_cuenta(f$tipo_cuenta)
+  f$.fecha <- prov_fecha(f$fecha_registro)
+  fuera <- if (!is.null(desde) && length(desde) == 1L && !is.na(desde)) !is.na(f$.fecha) & f$.fecha < as.Date(desde)
+           else rep(FALSE, n)
 
-  llave_act <- prov_cuenta_existente(activos)
-  llave_ina <- prov_cuenta_existente(inactivos)
+  # ── Account ──
+  cuentas <- lapply(seq_len(n), function(i) prov_cuenta(f$no_cuenta[i], isTRUE(f$.num_no_cuenta[i])))
+  est_cuenta <- vapply(cuentas, `[[`, "", "estado")
+  f$no_cuenta <- vapply(cuentas, `[[`, "", "valor")
+  motivo <- ifelse(est_cuenta == "revisar", vapply(cuentas, `[[`, "", "motivo"), NA_character_)
+  nota <- ifelse(est_cuenta %in% c("reparada", "aviso"), vapply(cuentas, `[[`, "", "motivo"), NA_character_)
+
+  # ── Bank ── A valid CLABE says its bank (its first 3 digits): the file's
+  # bank name is only checked against it. A "Cuenta BB" (11-13 digits) is
+  # BanBajío. Anything else (cards, other accounts) goes by the name.
+  texto_banco <- prov_limpiar_texto(f$banco)
+  clave_nombre <- rep(NA_character_, n)
+  num <- !is.na(texto_banco) & grepl("^[0-9]{1,3}$", texto_banco)
+  clave_nombre[num] <- formatC(as.integer(texto_banco[num]), width = 3L, flag = "0")
+  pref <- !is.na(texto_banco) & !num & grepl("^[0-9]{3}([^0-9]|$)", texto_banco)
+  clave_nombre[pref] <- substr(texto_banco[pref], 1L, 3L)
+  resto <- !is.na(texto_banco) & !num & !pref
+  clave_nombre[resto] <- prov_banco_por_nombre(texto_banco[resto], catalogo)
+  es_clabe <- est_cuenta %in% c("ok", "reparada") & !is.na(f$no_cuenta) & grepl("^[0-9]{18}$", f$no_cuenta) &
+              prov_clabe_valida(f$no_cuenta)
+  clave_clabe <- ifelse(es_clabe, substr(f$no_cuenta, 1L, 3L), NA_character_)
+  es_bb <- !es_clabe & !is.na(f$tipo_cuenta) & grepl("^cuenta bb$", prov_normalizar_encabezado(f$tipo_cuenta)) &
+           !is.na(f$no_cuenta) & grepl("^[0-9]{11,13}$", f$no_cuenta)
+  banco <- clave_nombre
+  banco[es_clabe] <- clave_clabe[es_clabe]
+  banco[es_bb] <- "030"
+  de_clabe <- es_clabe & is.na(clave_nombre)                      # name missing or not recognized
+  choca_clabe <- es_clabe & !is.na(clave_nombre) & clave_nombre != clave_clabe
+  choca_bb    <- es_bb & !is.na(clave_nombre) & clave_nombre != "030"
+  sin_nombre  <- !es_clabe & !es_bb & !is.na(texto_banco) & is.na(clave_nombre)
+  banco[sin_nombre] <- texto_banco[sin_nombre]
+  motivo[is.na(motivo) & choca_clabe] <- "tablas.proveedores.importar.motivo_banco_clabe"
+  motivo[is.na(motivo) & choca_bb]    <- "tablas.proveedores.importar.motivo_banco_bb"
+  motivo[is.na(motivo) & sin_nombre]  <- "tablas.proveedores.importar.motivo_banco"
+  nota[de_clabe] <- ifelse(is.na(nota[de_clabe]), "tablas.proveedores.importar.nota_banco_clabe",
+                           paste(nota[de_clabe], "tablas.proveedores.importar.nota_banco_clabe", sep = "|"))
+  f$banco <- banco
+  f$.banco_archivo <- texto_banco
+  f$.banco_clabe   <- ifelse(es_bb, "030", clave_clabe)
+  f$.motivo <- motivo
+  f$.nota   <- nota
+  # The file's Estatus (BanBajío): a row that isn't "Activo" goes to Inactivos.
+  f$.destino <- ifelse(!is.na(f$estatus) & !grepl("^activ", tolower(f$estatus)), "inactivos", tipo)
+
+  # ── The catalog, prepared once (comparable values, vectorized) ──
+  prep <- function(df) {
+    if (is.null(df) || !nrow(df)) return(NULL)
+    col <- function(k) if (k %in% names(df)) as.character(df[[k]]) else rep(NA_character_, nrow(df))
+    b <- prov_limpiar_texto(col("banco"))
+    bk <- rep(NA_character_, length(b))
+    nb <- !is.na(b) & grepl("^[0-9]{1,3}$", b); bk[nb] <- formatC(as.integer(b[nb]), width = 3L, flag = "0")
+    pb <- !is.na(b) & !nb & grepl("^[0-9]{3}([^0-9]|$)", b); bk[pb] <- substr(b[pb], 1L, 3L)
+    rb <- !is.na(b) & !nb & !pb; bk[rb] <- prov_banco_por_nombre(b[rb], catalogo)
+    bk[is.na(bk)] <- b[is.na(bk)]
+    comp <- list(banco = bk, moneda = prov_moneda(col("moneda")), no_cuenta = prov_cuenta_existente(df),
+                 tipo_cuenta = prov_tipo_cuenta(col("tipo_cuenta")))
+    for (campo in setdiff(PROV_EXCEL_ACTUALIZA, names(comp))) comp[[campo]] <- prov_limpiar_campo(campo, col(campo))
+    list(df = df, llave = comp$no_cuenta, comp = comp, crudo = lapply(stats::setNames(PROV_EXCEL_ACTUALIZA, PROV_EXCEL_ACTUALIZA),
+         function(k) if (k == "no_cuenta") comp$no_cuenta else col(k)))
+  }
+  act <- prep(activos); ina <- prep(inactivos)
+  alias_vinc <- if (!is.null(alias_mapa) && nrow(alias_mapa)) table(toupper(prov_limpiar_texto(alias_mapa$alias))) else NULL
+
   f$.existente_id    <- NA_character_
   f$.existente_lista <- NA_character_
   f$.cambios         <- rep(list(list()), n)
   f$.alias_vinculos  <- 0L
   estado <- character(n)
-  vistas <- character(0)
+  vistas <- new.env(hash = TRUE)
   for (i in seq_len(n)) {
+    if (fuera[i]) { estado[i] <- "fuera_rango"; next }
     if (!is.na(f$.motivo[i])) { estado[i] <- "revisar"; next }
     if (is.na(f$nombre[i]) || is.na(f$no_cuenta[i]) || is.na(f$banco[i])) { estado[i] <- "incompleto"; next }
     k <- f$no_cuenta[i]
     # The same account earlier in the file: a duplicate, whether it is new or
     # already in the catalog (applying it twice would be the second's word).
-    if (k %in% vistas) { estado[i] <- "duplicado"; next }
-    vistas <- c(vistas, k)
-    j_act <- match(k, llave_act); j_ina <- match(k, llave_ina)
+    if (!is.null(vistas[[k]])) { estado[i] <- "duplicado"; next }
+    vistas[[k]] <- TRUE
+    j_act <- if (!is.null(act)) match(k, act$llave) else NA_integer_
+    j_ina <- if (!is.na(j_act) || is.null(ina)) NA_integer_ else match(k, ina$llave)
     if (!is.na(j_act) || !is.na(j_ina)) {
       lista <- if (!is.na(j_act)) "activos" else "inactivos"
-      ex <- if (!is.na(j_act)) activos[j_act, , drop = FALSE] else inactivos[j_ina, , drop = FALSE]
-      f$.existente_id[i] <- as.character(ex$id)
+      p <- if (!is.na(j_act)) act else ina
+      j <- if (!is.na(j_act)) j_act else j_ina
+      f$.existente_id[i] <- as.character(p$df$id[j])
       f$.existente_lista[i] <- lista
       cambios <- list()
       for (campo in PROV_EXCEL_ACTUALIZA) {
         nuevo <- f[[campo]][i]
         if (is.na(nuevo)) next                                  # empty or missing column: keep
-        antes <- if (campo == "no_cuenta") prov_cuenta_existente(ex) else if (campo %in% names(ex)) as.character(ex[[campo]]) else NA_character_
-        if (identical(.prov_comparable(campo, antes, catalogo), nuevo)) next
-        cambios[[length(cambios) + 1L]] <- list(campo = campo, antes = antes, despues = nuevo)
+        if (identical(p$comp[[campo]][j], nuevo)) next
+        cambios[[length(cambios) + 1L]] <- list(campo = campo, antes = p$crudo[[campo]][j], despues = nuevo)
       }
       f$.cambios[[i]] <- cambios
       # A new alias breaks the Parte -> alias links (parte_alias_map): the PPL
       # would stop finding this provider. Flag it; the map isn't touched here.
-      viejo <- prov_limpiar_texto(ex$alias)
-      if (!is.na(f$alias[i]) && !is.na(viejo) && !identical(toupper(f$alias[i]), toupper(viejo)) &&
-          !is.null(alias_mapa) && nrow(alias_mapa))
-        f$.alias_vinculos[i] <- sum(toupper(prov_limpiar_texto(alias_mapa$alias)) == toupper(viejo), na.rm = TRUE)
-      estado[i] <- if (lista != tipo) { if (tipo == "activos") "reactiva" else "inactiva" }
+      viejo <- toupper(prov_limpiar_texto(p$crudo$alias[j]))
+      if (!is.na(f$alias[i]) && !is.na(viejo) && toupper(f$alias[i]) != viejo && !is.null(alias_vinc))
+        f$.alias_vinculos[i] <- as.integer(alias_vinc[viejo] %||% 0L) %||% 0L
+      destino <- f$.destino[i]
+      estado[i] <- if (lista != destino) { if (destino == "activos") "reactiva" else "inactiva" }
                    else if (length(cambios)) "actualiza" else "sin_cambios"
       next
     }
     estado[i] <- "listo"
   }
+  f$.alias_vinculos[is.na(f$.alias_vinculos)] <- 0L
   f$.estado <- estado
   f
 }
@@ -376,8 +552,10 @@ prov_aplicar <- function(clasificadas, activos, inactivos, decisiones = list(), 
   f <- clasificadas
   out <- list(activos = activos, inactivos = inactivos, cambia_activos = FALSE, cambia_inactivos = FALSE,
               nuevos = 0L, actualizados = 0L, movidos = 0L, omitidos_alias = 0L)
-  destino <- function(lista) if (lista == "activos") "activos" else "inactivos"
-  tipo_lista <- destino(op$tipo)
+  # Each row's list: the file's (op$tipo), or the row's own .destino (the
+  # Estatus of BanBajío's export).
+  destino_de <- function(i) if (".destino" %in% names(f) && !is.na(f$.destino[i])) f$.destino[i]
+                            else if (op$tipo == "activos") "activos" else "inactivos"
 
   # New providers: ready rows, and the opted-in incomplete / first duplicate.
   vistos <- character(0)
@@ -389,20 +567,22 @@ prov_aplicar <- function(clasificadas, activos, inactivos, decisiones = list(), 
       nuevas <- c(nuevas, i); vistos <- c(vistos, f$no_cuenta[i])
     }
   }
-  if (length(nuevas)) {
-    x <- f[nuevas, , drop = FALSE]
+  for (lista in c("activos", "inactivos")) {
+    de_lista <- nuevas[vapply(nuevas, destino_de, "") == lista]
+    if (!length(de_lista)) next
+    x <- f[de_lista, , drop = FALSE]
     moneda <- dplyr::coalesce(x$moneda, op$moneda)
     filas_nuevas <- data.frame(
-      id = vapply(seq_along(nuevas), function(k) op$nuevo_id(), ""), Empresa = op$empresa, codigo = NA_character_,
+      id = vapply(seq_along(de_lista), function(k) op$nuevo_id(), ""), Empresa = op$empresa, codigo = NA_character_,
       nombre = x$nombre, alias = x$alias, clabe = x$no_cuenta, medio_pago = prov_medio_pago(moneda, x$banco),
-      rfc = x$rfc, tipo = "012", banco_destino = x$banco, activo = op$tipo == "activos", no_cuenta = x$no_cuenta,
+      rfc = x$rfc, tipo = "012", banco_destino = x$banco, activo = lista == "activos", no_cuenta = x$no_cuenta,
       banco = x$banco, tipo_cuenta = x$tipo_cuenta, correo = x$correo, moneda = moneda,
       tipo_relacion = x$tipo_relacion, empresas = op$empresa,
       status = prov_status(x$nombre, moneda, x$banco, x$no_cuenta), fuente = "excel", upload_batch = op$lote,
       activo_hasta = "indefinido", created_at = op$ahora, updated_at = op$ahora, stringsAsFactors = FALSE)
-    out[[tipo_lista]] <- dplyr::bind_rows(out[[tipo_lista]], filas_nuevas)
-    out[[paste0("cambia_", tipo_lista)]] <- TRUE
-    out$nuevos <- length(nuevas)
+    out[[lista]] <- dplyr::bind_rows(out[[lista]], filas_nuevas)
+    out[[paste0("cambia_", lista)]] <- TRUE
+    out$nuevos <- out$nuevos + length(de_lista)
   }
 
   # Existing providers: update in place -- only what the file brings and
@@ -425,6 +605,7 @@ prov_aplicar <- function(clasificadas, activos, inactivos, decisiones = list(), 
     fila$medio_pago <- prov_medio_pago(moneda, prov_banco_clave(fila$banco)$valor)
     fila$status     <- prov_status(fila$nombre, moneda, fila$banco, dplyr::coalesce(fila$no_cuenta, fila$clabe))
     fila$updated_at <- op$ahora
+    tipo_lista <- destino_de(i)
     if (origen == tipo_lista) {
       out[[origen]][j, ] <- fila
       out[[paste0("cambia_", origen)]] <- TRUE

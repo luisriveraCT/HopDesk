@@ -35,6 +35,7 @@ app <- tryCatch(start_bg_app(sprintf('setwd("%s"); source("tests/helpers/proveed
 ok("fixture app started", !is.null(app))
 if (is.null(app)) { cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n"); quit(status = 1L) }
 
+# (T08b: SIN BANCO SA has a valid CLABE, so it is Listo with the bank taken from it.)
 # One row per state against the fixture's catalog (ACEROS, FLETES active;
 # PROVEEDOR VIEJO inactive). Row 5 is a NUMBER cell, as Excel keeps it.
 local({
@@ -97,6 +98,8 @@ ok("before a file: the review and the currency selector are hidden",
    oculta("prov_mod-revision_wrap") && oculta("prov_mod-excel_moneda_wrap"))
 
 # ── T08 · template ──────────────────────────────────────────────────────────
+# Shiny enables a download link once its tab shows: wait for that, as a person would see it.
+poll_until(function() isTRUE(ev("!document.getElementById('prov_mod-descargar_plantilla').classList.contains('disabled')")), timeout_s = 15)
 clic(porId("prov_mod-descargar_plantilla"))
 ok("T08-6: Descargar plantilla downloads the catalog with every column, accounts as text",
    poll_until(function() length(list.files(descargas, "\\.xlsx$")) == 1L, timeout_s = 20) && {
@@ -110,23 +113,50 @@ ok("T08-6: Descargar plantilla downloads the catalog with every column, accounts
 
 nodo <- b$DOM$querySelector(b$DOM$getDocument()$root$nodeId, "#prov_mod-excel_file")$nodeId
 invisible(b$DOM$setFileInputFiles(files = list(normalizePath(xl, winslash = "\\")), nodeId = nodo))
-ok("the file is read: 7 rows, by Excel row number",
-   poll_until(function() isTRUE(tryCatch(length(vis()) == 7L, error = function(e) FALSE)), timeout_s = 30) &&
-   identical(vis(), as.character(2:8)) && !oculta("prov_mod-revision_wrap"))
+# The summary and the link are painted a moment after the table: wait for them.
+poll_until(function() grepl("cuentas", texto("prov_mod-revision_mapeo")) && grepl("Ver", texto("prov_mod-revision_ver_todo")),
+           timeout_s = 15)
+ok("T08b: the review opens on what changes -- 6 of the 7 rows; FLETES (sin cambios) is one click away",
+   poll_until(function() isTRUE(tryCatch(length(vis()) == 6L, error = function(e) FALSE)), timeout_s = 30) &&
+   identical(vis(), c("2", "3", "4", "5", "6", "8")) && !oculta("prov_mod-revision_wrap") &&
+   grepl("Ver también 1 sin cambios", texto("prov_mod-revision_ver_todo")))
+ok("T08b: one sentence on top: header row, accounts, with changes, to review, unchanged",
+   grepl("Encabezado en la fila 1 · 7 cuentas · 4 con cambios · 2 por revisar · 1 sin cambios", texto("prov_mod-revision_mapeo")))
 Sys.sleep(0.5)
 
 # ── R1/R2 · columns and badges, one per state ───────────────────────────────
 titulos <- unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s thead th')).filter(function(th){ return th.dataset.col != null; }).map(function(th){ return th.firstChild.textContent; })", A)))
-ok("R1: columns Estado / Fila / Nombre / Alias / RFC / No. Cuenta / Banco / Moneda / Detalle",
-   identical(titulos, c("Estado", "Fila", "Nombre", "Alias", "RFC", "No. Cuenta", "Banco", "Moneda", "Detalle")))
+ok("R1/T08b: columns in the order of what matters: Estado / Nombre / Banco / No. Cuenta / Moneda / Detalle, then the rest",
+   identical(titulos, c("Estado", "Nombre", "Banco", "No. Cuenta", "Moneda", "Detalle", "Alias", "RFC", "Correo",
+                        "Tipo de cuenta", "Fila")))
+ok("T08b: the bank says its key and who it is", identical(celda("6", "Banco"), "012 · BBVA"))
 ok("R2/T08: one badge per state, in its tone",
-   identical(c(insignia("2"), insignia("3"), insignia("4"), insignia("5"), insignia("6"), insignia("7"), insignia("8")),
-             c("hdt-tono-exito Listo", "hdt-tono-aviso Incompleto", "hdt-tono-peligro Duplicado", "hdt-tono-rojo Revisar",
-               "hdt-tono-info Actualiza", "hdt-tono-neutro Sin cambios", "hdt-tono-morado Se reactiva")))
+   identical(c(insignia("2"), insignia("3"), insignia("4"), insignia("5"), insignia("6"), insignia("8")),
+             c("hdt-tono-exito Listo", "hdt-tono-exito Listo", "hdt-tono-peligro Duplicado", "hdt-tono-rojo Revisar",
+               "hdt-tono-info Actualiza", "hdt-tono-morado Se reactiva")))
+ok("T08b: SIN BANCO has a valid CLABE, so its bank comes from it (with the note) instead of 'Incompleto'",
+   identical(celda("3", "Banco"), "012 · BBVA") && grepl("Banco tomado de la CLABE: BBVA (012)", celda("3", "Detalle"), fixed = TRUE))
+clic(porId("prov_mod-revision_ver_todo"))
+ok("T08b: 'Ver también' shows the unchanged one, with its badge; again hides it",
+   "7" %in% vis() && identical(insignia("7"), "hdt-tono-neutro Sin cambios") &&
+   { clic(porId("prov_mod-revision_ver_todo")); !"7" %in% vis() })
 ok("R2: the Fila column says which Excel row each one is (the old 'Dup. fila N')",
    identical(celda("4", "Fila"), "4") && identical(celda("4", "Nombre"), "NUEVO UNO OTRA VEZ"))
-ok("T08-4: the number cell waits for review, with the reason in Detalle",
-   grepl("Excel guardó la cuenta como número", celda("5", "Detalle")))
+ok("T08-4/T08b: the number cell waits for review; Detalle starts with the reason",
+   startsWith(celda("5", "Detalle"), "Excel guardó la cuenta como número"))
+# The engine's bubble (after 350 ms on the cell) shows Detalle whole.
+local({
+  p <- centro(sprintf("(function(){ var ths = Array.from(document.querySelectorAll('#%s thead th'));
+    var j = ths.findIndex(function(th){ return th.firstChild && th.firstChild.textContent === 'Detalle'; });
+    return %s.children[j]; })()", A, fila("5")))
+  b$Input$dispatchMouseEvent(type = "mouseMoved", x = p[[1]] - 5, y = p[[2]], button = "none")
+  b$Input$dispatchMouseEvent(type = "mouseMoved", x = p[[1]], y = p[[2]], button = "none")
+  Sys.sleep(0.9)
+})
+ok("T08b: Detalle is never cut -- the bubble shows the whole reason, with the value quoted",
+   identical(ev("(document.querySelector('.hdt-tip:not([hidden]) .hdt-tip-texto')||{}).textContent || ''"),
+             "Excel guardó la cuenta como número y pudo perder dígitos: escríbela como texto («646180110400000000»)."))
+invisible(ev("document.body.dispatchEvent(new MouseEvent('mousemove')); 0"))
 ok("T08-5: Actualiza says what changes, antes → después",
    identical(celda("6", "Detalle"), "Nombre: ACEROS MONTERREY SA → ACEROS MONTERREY SA DE CV"))
 ok("T08-2: the review says which column of the file each field came from, and what's missing",
@@ -135,9 +165,9 @@ ok("T08-2: the review says which column of the file each field came from, and wh
 ok("T08-1: the file has Moneda, so no currency selector", oculta("prov_mod-excel_moneda_wrap"))
 
 # ── R3 · chips ──────────────────────────────────────────────────────────────
-ok("R3: one chip per state with its count",
-   identical(fichas(), c("todas=7", "listo=1", "actualiza=1", "reactiva=1", "inactiva=0", "sin_cambios=1",
-                         "incompleto=1", "revisar=1", "duplicado=1")))
+ok("R3: one chip per state with its count (of what is shown)",
+   identical(fichas(), c("todas=6", "listo=2", "actualiza=1", "reactiva=1", "inactiva=0", "revisar=1",
+                         "incompleto=0", "duplicado=1", "sin_cambios=0", "fuera_rango=0")))
 ficha("revisar")
 ok("R3: the Revisar chip shows only row 5", identical(vis(), "5"))
 ficha_todas()
@@ -146,7 +176,7 @@ ficha_todas()
 clic(fila("2", ".children[2]"))
 ok("R5: a click selects nothing (class E has no selection)", length(unlist(estado()$seleccion)) == 0L)
 clic(sprintf("Array.from(document.querySelectorAll('#%s thead th')).filter(function(th){ return th.firstChild && th.firstChild.textContent === 'Nombre'; })[0]", A))
-ok("R6: sorting by Nombre", identical(vis(), c("6", "7", "4", "2", "8", "3", "5")))
+ok("R6: sorting by Nombre", identical(vis(), c("6", "4", "2", "8", "3", "5")))
 
 # ── R4 · ✕ removes a row from the upload, after confirming ──────────────────
 n0 <- length(registro())
@@ -157,7 +187,7 @@ ok("R4: ✕ asks first in the table's bar, and nothing is removed yet",
 clic(sprintf("document.querySelector('#%s .hdt-confirmar-si')", A))
 Sys.sleep(0.5)
 ok("R4: Confirmar takes row 3 out of the upload; the chips follow; nothing is saved",
-   !"3" %in% vis() && length(vis()) == 6L && "incompleto=0" %in% fichas() && length(registro()) == n0)
+   !"3" %in% vis() && length(vis()) == 5L && "listo=1" %in% fichas() && length(registro()) == n0)
 
 # ── Existing providers: one card at a time, with the changes ────────────────
 ok("T08-5: the first card is ACEROS, with the change listed",
@@ -189,6 +219,49 @@ ok("R9: Activos = the 4 there were (ACEROS renamed) + NUEVO UNO + PROVEEDOR VIEJ
 ok("caso 09: Inactivos no longer has it (never in both lists)", grepl("^inactivos 0: ", inactivos[1]))
 ok("the import is logged, and the review hides again",
    any(grepl("^log importar_proveedores ", nuevos)) && oculta("prov_mod-revision_wrap"))
+
+# ── T08b · BanBajío's real export (synthetic: same structure, invented data) ─
+bajio <- normalizePath("tests/fixtures/proveedores_excel/10_bajio_export.xlsx", winslash = "\\")
+nodo <- b$DOM$querySelector(b$DOM$getDocument()$root$nodeId, "#prov_mod-excel_file")$nodeId
+t0 <- Sys.time()
+invisible(b$DOM$setFileInputFiles(files = list(bajio), nodeId = nodo))
+ok("T08b: BanBajío's export (header on row 6) is read",
+   poll_until(function() grepl("451", texto("prov_mod-revision_mapeo")), timeout_s = 30))
+t_leer <- as.numeric(Sys.time() - t0, units = "secs")
+cat(sprintf("  subir + leer + clasificar 451 filas: %.2f s\n", t_leer))
+# This session imported a moment ago, so "last import" is today: by default
+# only accounts registered since today are reviewed -- none of this file's.
+ok("T08b: the date filter starts on the last import (today here): every account is out of range, nothing to wade through",
+   !oculta("prov_mod-excel_desde_wrap") && isTRUE(ev("document.getElementById('prov_mod-excel_desde_on').checked")) &&
+   length(vis()) == 0L && grepl("451 registradas antes del", texto("prov_mod-revision_mapeo"), fixed = TRUE))
+t0 <- Sys.time()
+clic(porId("prov_mod-excel_desde_on"))
+ok("T08b: without the filter the whole file is reviewed",
+   poll_until(function() isTRUE(tryCatch(length(vis()) == 451L, error = function(e) FALSE)), timeout_s = 20))
+cat(sprintf("  reclasificar + pintar 451 filas: %.2f s\n", as.numeric(Sys.time() - t0, units = "secs")))
+poll_until(function() grepl("450 con cambios", texto("prov_mod-revision_mapeo")), timeout_s = 15)
+ok("T08b: the sentence says where the header was and what is in the file",
+   grepl("Encabezado en la fila 6 · se ignoraron 5 filas de datos generales · 451 cuentas · 450 con cambios · 1 por revisar",
+         texto("prov_mod-revision_mapeo"), fixed = TRUE))
+ok("T08b: the columns it took and the ones it didn't use are listed",
+   grepl("Nombre ← «Nombre Beneficiario»", texto("prov_mod-revision_mapeo"), fixed = TRUE) &&
+   grepl("Moneda ← «Divisa»", texto("prov_mod-revision_mapeo"), fixed = TRUE) &&
+   grepl("Columnas no usadas:", texto("prov_mod-revision_mapeo"), fixed = TRUE) &&
+   grepl("Otro Tipo de Relación", texto("prov_mod-revision_mapeo"), fixed = TRUE))
+ok("T08b: no bank goes unrecognized; the one with a BBVA CLABE that says SANTANDER waits, saying both",
+   "revisar=1" %in% fichas() &&
+   { ficha("revisar"); r <- vis(); length(r) == 1L &&
+       startsWith(celda(r, "Detalle"), "La CLABE es de BBVA (012) y el archivo dice «SANTANDER».") })
+ficha_todas()
+# Only accounts registered since the 300th (the fixture registers one every 3 days).
+desde <- format(as.Date(44924 + 300 * 3, origin = "1899-12-30"), "%Y-%m-%d")
+invisible(ev(sprintf("$('#prov_mod-excel_desde input').bsDatepicker('setDate', new Date('%sT12:00:00')); $('#prov_mod-excel_desde input').trigger('change'); 0", desde)))
+clic(porId("prov_mod-excel_desde_on"))
+ok("T08b: 'Solo cuentas registradas desde' leaves the 152 newer ones; the 299 older are out of range, one click away",
+   poll_until(function() isTRUE(tryCatch(length(vis()) == 152L, error = function(e) FALSE)), timeout_s = 20) &&
+   grepl("299 registradas antes del", texto("prov_mod-revision_mapeo"), fixed = TRUE) &&
+   grepl("Ver también las 299", texto("prov_mod-revision_ver_todo"), fixed = TRUE))
+clic(porId("prov_mod-cancelar_upload"))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)
