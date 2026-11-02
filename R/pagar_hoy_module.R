@@ -1589,14 +1589,25 @@ pagarHoyServer <- function(id, shared) {
                         dplyr::coalesce(bnk_map[act$banco_id], "Banco")))
       }
 
+      # The rows a Confirmar acts on, for the four confirm handlers (the modal
+      # and the confirmation itself, Pagos and Cobros): the marked ones, or
+      # -- nothing marked -- the whole currency (Luis, T01: not a bug).
+      # s_sorted: the currency's pending rows by FechaVenc, the order the
+      # table shows them in.
+      .ph_filas_confirmar <- function(s_sorted, libro) {
+        raw_sel <- input[[paste0(if (identical(libro, "AP")) "tbl_ap_" else "tbl_ar_", emp, "_rows_selected")]]
+        sel     <- if (length(raw_sel)) raw_sel[raw_sel >= 1L & raw_sel <= nrow(s_sorted)]
+        if (!length(sel)) sel <- seq_len(nrow(s_sorted))
+        s_sorted[sel, , drop = FALSE]
+      }
+
       observeEvent(input[[paste0("confirm_ap_", emp)]], {
         if (!puede_o_avisa(shared, "can_confirm_payments")) return()
         s_emp <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
         cur   <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur <- s_emp |> dplyr::filter(Moneda == cur)
         s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
-        sel      <- input[[paste0("tbl_ap_", emp, "_rows_selected")]] %||% seq_len(nrow(s_sorted))
-        rows     <- s_sorted[sel, , drop = FALSE]
+        rows     <- .ph_filas_confirmar(s_sorted, "AP")
         if (!nrow(rows)) { showNotification("Selecciona facturas.", type = "warning"); return() }
 
         cuenta_choices <- .bancos_cuenta_choices_for(emp, cur)
@@ -1648,13 +1659,7 @@ pagarHoyServer <- function(id, shared) {
         cur      <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
         s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
-        raw_sel  <- input[[paste0("tbl_ap_", emp, "_rows_selected")]]
-        sel      <- if (length(raw_sel))
-          raw_sel[raw_sel >= 1L & raw_sel <= nrow(s_sorted)]
-        else
-          seq_len(nrow(s_sorted))
-        if (!length(sel)) sel <- seq_len(nrow(s_sorted))
-        rows <- s_sorted[sel, , drop = FALSE]
+        rows <- .ph_filas_confirmar(s_sorted, "AP")
         if (!nrow(rows)) return()
         cuenta_sel_raw <- input[[paste0("conf_cuenta_ap_", emp)]]
         cuenta_sel <- if (!is.null(cuenta_sel_raw) && nzchar(trimws(as.character(cuenta_sel_raw)))) cuenta_sel_raw else NA_character_
@@ -1981,13 +1986,7 @@ pagarHoyServer <- function(id, shared) {
         cur      <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
         s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
-        raw_sel  <- input[[paste0("tbl_ar_", emp, "_rows_selected")]]
-        sel      <- if (length(raw_sel))
-          raw_sel[raw_sel >= 1L & raw_sel <= nrow(s_sorted)]
-        else
-          seq_len(nrow(s_sorted))
-        if (!length(sel)) sel <- seq_len(nrow(s_sorted))
-        rows  <- s_sorted[sel, , drop = FALSE]
+        rows  <- .ph_filas_confirmar(s_sorted, "AR")
         if (!nrow(rows)) { showNotification("Selecciona facturas.", type = "warning"); return() }
 
         cuenta_choices <- .bancos_cuenta_choices_for(emp, cur)
@@ -2039,13 +2038,7 @@ pagarHoyServer <- function(id, shared) {
         cur      <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
         s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
-        raw_sel  <- input[[paste0("tbl_ar_", emp, "_rows_selected")]]
-        sel      <- if (length(raw_sel))
-          raw_sel[raw_sel >= 1L & raw_sel <= nrow(s_sorted)]
-        else
-          seq_len(nrow(s_sorted))
-        if (!length(sel)) sel <- seq_len(nrow(s_sorted))
-        rows <- s_sorted[sel, , drop = FALSE]
+        rows <- .ph_filas_confirmar(s_sorted, "AR")
         if (!nrow(rows)) return()
         cuenta_sel_raw <- input[[paste0("conf_cuenta_ar_", emp)]]
         cuenta_sel <- if (!is.null(cuenta_sel_raw) && nzchar(trimws(as.character(cuenta_sel_raw)))) cuenta_sel_raw else NA_character_
