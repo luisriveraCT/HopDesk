@@ -5,7 +5,8 @@
 # o ciertos datos"). One block per fixture in tests/fixtures/proveedores_excel/
 # (built by generar.R). Each test states what SHOULD happen, so on the code of
 # ab9a5b9 they fail -- that failure is the reproduction. T08 paso 1 makes them
-# pass.
+# pass. (Paso 1 renamed the states: a row that touches an existing provider
+# is "actualiza" / "reactiva" instead of conflicto_s3_activo / _inactivo.)
 #
 # It drives the real proveedoresServer in testServer (the file input, the
 # conflict buttons, Importar) through tests/helpers/proveedores_testserver.R;
@@ -37,7 +38,7 @@ informe$start_file("test_proveedores_excel_repro.R")
 
 test_that("01 Reemplazar keeps what the Excel doesn't bring (empty cell or missing column)", {
   r <- quiet(prov_importar(fx("01_reemplazo.xlsx"), activos = aceros, decision = "reemplazar"))
-  expect_identical(r$filas$.clasificacion, "conflicto_s3_activo")
+  expect_identical(r$filas$.clasificacion, "actualiza")               # an existing provider, never new
   fila <- de(r$activos, C$aceros)
   expect_equal(nrow(fila), 1L)
   expect_identical(fila$nombre, "ACEROS MONTERREY SA DE CV")         # what the Excel changes
@@ -97,7 +98,7 @@ test_that("06 a bank key saved as a number (30) is BanBajío 030 and pays as BCO
 
 test_that("07 a row repeating an existing account (with a trailing space) is a conflict, never a duplicate", {
   r <- quiet(prov_importar(fx("07_clabe_existente.xlsx"), activos = rbind(aceros, fletes), decision = "conservar"))
-  expect_identical(r$filas$.clasificacion, c("conflicto_s3_activo", "conflicto_s3_activo"))
+  expect_identical(r$filas$.clasificacion, c("actualiza", "actualiza"))
   todas <- r$activos$no_cuenta %||% c(C$aceros, C$fletes)
   expect_equal(sum(trimws(todas, whitespace = "[\\s\\p{Z}﻿]") == C$aceros), 1L)
   expect_equal(sum(trimws(todas, whitespace = "[\\s\\p{Z}﻿]") == C$fletes), 1L)
@@ -108,7 +109,7 @@ test_that("08 an existing provider with its account only in `clabe` is a conflic
   # With more than one provider, as in any real catalog: `no_cuenta %||% clabe`
   # only falls back to clabe for a one-row table.
   r <- quiet(prov_importar(fx("08_clabe_legado.xlsx"), activos = rbind(aceros, legado), decision = "conservar"))
-  expect_identical(r$filas$.clasificacion, "conflicto_s3_activo")
+  expect_identical(r$filas$.clasificacion, "actualiza")
   guardado <- r$activos %||% rbind(aceros, legado)
   expect_equal(sum(dplyr::coalesce(guardado$no_cuenta, guardado$clabe) == C$legado, na.rm = TRUE), 1L)
 })
@@ -116,10 +117,19 @@ test_that("08 an existing provider with its account only in `clabe` is a conflic
 test_that("09 Reemplazar on an inactive provider never leaves it in both lists", {
   inactivo <- prov_fila("p-inac", "INACTIVO SA", C$inactivo, banco = "044", activo = FALSE)
   r <- quiet(prov_importar(fx("09_reemplazo_inactivo.xlsx"), inactivos = inactivo, decision = "reemplazar"))
-  expect_identical(r$filas$.clasificacion, "conflicto_s3_inactivo")
-  en_activos   <- sum((r$activos$no_cuenta   %||% character(0)) == C$inactivo, na.rm = TRUE)
-  en_inactivos <- sum((r$inactivos$no_cuenta %||% inactivo$no_cuenta) == C$inactivo, na.rm = TRUE)
+  expect_identical(r$filas$.clasificacion, "reactiva")
+  # What each list holds after Importar (a list that wasn't saved is as it was;
+  # a saved empty list is empty -- not "unsaved").
+  activos_d   <- if (is.null(r$activos))   inactivo[0, ] else r$activos
+  inactivos_d <- if (is.null(r$inactivos)) inactivo     else r$inactivos
+  en_activos   <- sum(activos_d$no_cuenta   == C$inactivo, na.rm = TRUE)
+  en_inactivos <- sum(inactivos_d$no_cuenta == C$inactivo, na.rm = TRUE)
   expect_equal(en_activos + en_inactivos, 1L)
+  # Reactivated in place: the same provider (id), active again, with the new name.
+  fila <- de(activos_d, C$inactivo)
+  expect_identical(fila$id, "p-inac")
+  expect_true(isTRUE(fila$activo))
+  expect_identical(fila$nombre, "INACTIVO REGRESA SA")
 })
 informe$end_file()
 })

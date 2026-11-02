@@ -84,14 +84,25 @@ proveedoresUI <- function(id) {
                       selected = "TODOS",
                       width = "100%")
         ),
-        div(class = "col-md-3",
+        div(class = "col-md-2",
           tags$label("Tipo", class = "form-label small fw-semibold mb-1"),
           shinyWidgets::radioGroupButtons(
             ns("excel_tipo"), NULL,
             choices = c("Activos" = "activos", "Inactivos" = "inactivos"),
             selected = "activos", size = "sm", status = "outline-primary"
           )
-        )
+        ),
+        # Shown once a file without a Moneda column is read: the currency of
+        # its new providers (never guessed from the account).
+        shinyjs::hidden(div(id = ns("excel_moneda_wrap"), class = "col-md-2",
+          tags$label(tr("tablas.proveedores.importar.moneda_archivo"), class = "form-label small fw-semibold mb-1"),
+          selectInput(ns("excel_moneda"), NULL, choices = c("MXN", "USD"), selected = "MXN", width = "100%")
+        ))
+      ),
+      div(class = "mb-2",
+        downloadButton(ns("descargar_plantilla"), tr("tablas.proveedores.importar.plantilla"),
+                       class = "btn btn-sm btn-outline-secondary"),
+        tags$span(class = "small text-muted ms-2", tr("tablas.proveedores.importar.plantilla_ayuda"))
       ),
       # Collapsed help panel
       shinyWidgets::panel(
@@ -128,6 +139,7 @@ proveedoresUI <- function(id) {
     shinyjs::hidden(div(id = ns("revision_wrap"),
       tags$hr(),
       tags$h6(class = "fw-semibold", tagList(icon("table"), " Revisión de datos")),
+      uiOutput(ns("revision_mapeo")),
       hd_table_ui(ns("revision"), alto = "auto")
     )),
 
@@ -660,12 +672,15 @@ proveedoresServer <- function(id, shared) {
     # ==========================================================================
     # IMPORTAR EXCEL TAB
     # ==========================================================================
+    # Reading, cleaning, classifying and applying are the pure functions of
+    # R/proveedores_excel.R (T08); this part shows their result and saves it.
 
     # Reactive: parsed + classified upload data
     upload_data_rv         <- reactiveVal(NULL)
     conflict_decisions     <- reactiveVal(list())
     incluir_incompletos_rv <- reactiveVal(FALSE)
     incluir_duplicados_rv  <- reactiveVal(FALSE)
+    cambiar_alias_rv       <- reactiveVal(FALSE)
 
     observeEvent(input$incluir_incompletos, {
       incluir_incompletos_rv(isTRUE(input$incluir_incompletos))
@@ -675,231 +690,80 @@ proveedoresServer <- function(id, shared) {
       incluir_duplicados_rv(isTRUE(input$incluir_duplicados))
     }, ignoreInit = TRUE)
 
-    # Column mapping helper — matches column name against a list of regex patterns.
-    .map_excel_col <- function(nms, patterns) {
-      nms_lo <- tolower(trimws(nms))
-      for (p in patterns) {
-        idx <- which(grepl(p, nms_lo, ignore.case = TRUE, perl = TRUE))[1]
-        if (!is.na(idx)) return(nms[idx])
-      }
-      NULL
-    }
+    observeEvent(input$cambiar_alias, {
+      cambiar_alias_rv(isTRUE(input$cambiar_alias))
+    }, ignoreInit = TRUE)
 
-    # Smart Excel reader — handles two formats:
-    #
-    # Format A (no header): row 1 is data. readxl col_names=FALSE names all
-    #   columns "...1","...2",... We assign standard positional names directly.
-    #   Detection: col 5 of row 1 looks like an account number (≥12 digits).
-    #
-    # Format B (has header): row 1 has Spanish column labels. We re-read using
-    #   that row as the header so downstream col_map patterns can match.
-    #   Detection: col 5 of row 1 does NOT look like an account number.
-    #
-    # After reading, strips blank columns that readxl auto-names "...N" (only
-    # applicable to Format B where col_names=TRUE is used).
-    .read_excel_smart <- function(path) {
+    .catalogo_bancos <- function() if (exists(".BANCOS_MX_CHOICES")) .BANCOS_MX_CHOICES else character(0)
+    .alias_mapa <- function() tryCatch(
+      if (is.function(shared$parte_alias_map_db)) shared$parte_alias_map_db() else NULL,
+      error = function(e) NULL)
+    # Rows that touch a provider already in the catalog: they need a decision.
+    .es_existente <- function(estado) estado %in% c("actualiza", "reactiva", "inactiva")
 
-      # Read row 1 only (with col_names=FALSE) to decide format
-      probe <- tryCatch(
-        suppressMessages(
-          readxl::read_excel(path, col_names = FALSE, col_types = "text", n_max = 1L)
-        ),
-        error = function(e) { message("[PROV_IMPORT] probe read error: ", e$message); NULL }
-      )
-      if (is.null(probe) || ncol(probe) == 0) return(NULL)
-
-      # Check col 5 of row 1: if it looks like an account number → Format A
-      c5 <- trimws(as.character(probe[[min(5L, ncol(probe))]][1] %||% ""))
-      is_format_a <- grepl("^[0-9]{10,18}$", c5)
-
-      if (is_format_a) {
-        # ── Format A: positional, no header ──────────────────────────────────
-        message("[PROV_IMPORT] Format A detected (no header row)")
-        df <- tryCatch(
-          suppressMessages(
-            readxl::read_excel(path, col_names = FALSE, col_types = "text")
-          ),
-          error = function(e) { message("[PROV_IMPORT] read error: ", e$message); NULL }
-        )
-        if (is.null(df) || !nrow(df)) return(NULL)
-
-        # Assign standard names by position — DO NOT strip (all cols are ...N)
-        pos_names <- c("nombre", "alias", "banco", "tipo_cuenta",
-                       "no_cuenta", "rfc", "correo", "moneda", "tipo_relacion")
-        n_assign  <- min(ncol(df), length(pos_names))
-        names(df)[seq_len(n_assign)] <- pos_names[seq_len(n_assign)]
-        return(df)
-      }
-
-      # ── Format B: has header row ──────────────────────────────────────────
-      message("[PROV_IMPORT] Format B detected (header row present)")
-      df <- tryCatch(
-        suppressMessages(
-          readxl::read_excel(path, col_names = TRUE, col_types = "text")
-        ),
-        error = function(e) { message("[PROV_IMPORT] read error: ", e$message); NULL }
-      )
-      if (is.null(df) || !nrow(df)) return(NULL)
-
-      # Strip auto-named blank columns ("...1", "...8", etc.) — only safe here
-      df <- df[, !grepl("^\\.\\.\\.\\d+$", names(df)), drop = FALSE]
-      df
-    }
+    # The round-trip template: the active catalog with every column the import
+    # reads, accounts / RFC / bank as text cells.
+    output$descargar_plantilla <- downloadHandler(
+      filename = function() paste0("proveedores_", format(Sys.Date(), "%Y%m%d"), ".xlsx"),
+      content  = function(file) prov_plantilla_escribir(get_provs(), file, .catalogo_bancos())
+    )
 
     # Parse and classify uploaded Excel
     observeEvent(input$excel_file, {
       if (!.puede_editar()) return()
       req(input$excel_file)
       tryCatch({
-        raw <- .read_excel_smart(input$excel_file$datapath)
-        if (is.null(raw) || !nrow(raw)) {
-          showNotification("El archivo está vacío o no pudo leerse.", type = "error")
+        lectura <- prov_leer_excel(input$excel_file$datapath)
+        if (is.null(lectura) || !nrow(lectura$filas)) {
+          showNotification(tr("tablas.proveedores.importar.vacio"), type = "error")
           return()
         }
-        nms <- names(raw)
-
-        # Map columns — patterns cover both positional names (Format A)
-        # and verbose Spanish header labels (Format B).
-        col_map <- list(
-          nombre        = .map_excel_col(nms, c(
-                            "^nombre$", "nombre.{0,5}beneficiario",
-                            "beneficiario", "nombre")),
-          alias         = .map_excel_col(nms, c(
-                            "^alias$", "alias.{0,5}beneficiario", "alias")),
-          banco         = .map_excel_col(nms, c("^banco$", "banco")),
-          tipo_cuenta   = .map_excel_col(nms, c(
-                            "^tipo_cuenta$", "tipo.{0,10}cuenta", "tipo_cuenta")),
-          no_cuenta     = .map_excel_col(nms, c(
-                            "^no_cuenta$", "no\\.?.{0,5}cuenta",
-                            "no_cuenta", "clabe")),
-          rfc           = .map_excel_col(nms, c("^rfc$", "rfc")),
-          correo        = .map_excel_col(nms, c(
-                            "^correo$", "correo.{0,20}electr",
-                            "correo", "email")),
-          moneda        = .map_excel_col(nms, c("^moneda$", "moneda")),
-          tipo_relacion = .map_excel_col(nms, c(
-                            "^tipo_relacion$", "tipo.{0,10}relaci", "tipo_relacion"))
-        )
-
-        # Log mapping result to console for debugging
-        message("[PROV_IMPORT] col_map: ",
-                paste(names(col_map), "=",
-                      vapply(col_map, function(x) x %||% "NULL", character(1)),
-                      collapse = " | "))
-
-        emp_input   <- input$excel_empresa %||% "TODOS"
-        empresa_sel <- if (emp_input == "TODOS") "" else emp_input
-
-        # Extract and clean column values
-        get_col <- function(field) {
-          col <- col_map[[field]]
-          if (is.null(col)) return(rep(NA_character_, nrow(raw)))
-          vals <- trimws(as.character(raw[[col]]))
-          dplyr::if_else(vals == "NA" | vals == "", NA_character_, vals)
-        }
-
-        rows <- tibble::tibble(
-          .row_num      = seq_len(nrow(raw)),
-          nombre        = get_col("nombre"),
-          alias         = get_col("alias"),
-          banco         = get_col("banco"),
-          tipo_cuenta   = get_col("tipo_cuenta"),
-          no_cuenta     = get_col("no_cuenta"),
-          rfc           = get_col("rfc"),
-          correo        = get_col("correo"),
-          moneda        = get_col("moneda"),
-          tipo_relacion = get_col("tipo_relacion"),
-          empresas      = empresa_sel,
-          Empresa       = empresa_sel
-        )
-
-        # Drop entirely blank rows (trailing empty rows from Excel)
-        rows <- rows[!(is.na(rows$nombre) & is.na(rows$no_cuenta) &
-                       is.na(rows$banco)  & is.na(rows$rfc)), , drop = FALSE]
-
-        message("[PROV_IMPORT] nrow=", nrow(rows),
-                " | nombre[1]=",    rows$nombre[1]    %||% "NULL",
-                " | alias[1]=",     rows$alias[1]     %||% "NULL",
-                " | banco[1]=",     rows$banco[1]     %||% "NULL",
-                " | no_cuenta[1]=", rows$no_cuenta[1] %||% "NULL")
-
-        if (!nrow(rows)) {
-          showNotification(
-            "No se encontraron filas con datos. Verifica el formato del archivo.",
-            type = "warning")
-          return()
-        }
-
-        # Classify rows
-        # Dedup key: no_cuenta alone (verified: no file has same no_cuenta at
-        # two different banks). First occurrence is kept; subsequent ones are
-        # marked duplicado_interno regardless of how many times they appear.
-        provs_activos   <- get_provs()
-        provs_inactivos <- get_inac()
-        nc_active   <- trimws(provs_activos$no_cuenta   %||% provs_activos$clabe   %||% "")
-        nc_inactive <- trimws(provs_inactivos$no_cuenta %||% provs_inactivos$clabe %||% "")
-        # Remove empty strings from S3 sets (avoid false conflict matches)
-        nc_active   <- nc_active[nzchar(nc_active)]
-        nc_inactive <- nc_inactive[nzchar(nc_inactive)]
-
-        # Pass 1: classify each row ignoring internal duplicates
-        rows <- rows |> dplyr::mutate(
-          .nc_t = trimws(no_cuenta),
-          .clasificacion = dplyr::case_when(
-            is.na(nombre)    | !nzchar(trimws(nombre))    ~ "incompleto",
-            is.na(no_cuenta) | !nzchar(trimws(no_cuenta)) ~ "incompleto",
-            .nc_t %in% nc_active                          ~ "conflicto_s3_activo",
-            .nc_t %in% nc_inactive                        ~ "conflicto_s3_inactivo",
-            is.na(banco)     | !nzchar(trimws(banco))     ~ "incompleto",
-            TRUE                                          ~ "listo"
-          )
-        ) |> dplyr::select(-.nc_t)
-
-        # Pass 2: among non-incomplete, non-conflict rows, keep only the FIRST
-        # occurrence of each no_cuenta; mark all subsequent as duplicado_interno.
-        seen_nc <- character(0)
-        for (ii in seq_len(nrow(rows))) {
-          cl <- rows$.clasificacion[ii]
-          if (cl %in% c("incompleto", "conflicto_s3_activo", "conflicto_s3_inactivo")) next
-          nc_ii <- trimws(rows$no_cuenta[ii])
-          if (nc_ii %in% seen_nc) {
-            rows$.clasificacion[ii] <- "duplicado_interno"
-          } else {
-            seen_nc <- c(seen_nc, nc_ii)
-          }
-        }
-
-        message("[PROV_IMPORT] classification: listo=",
-                sum(rows$.clasificacion == "listo"),
-                " incompleto=", sum(rows$.clasificacion == "incompleto"),
-                " duplicado=",  sum(rows$.clasificacion == "duplicado_interno"),
-                " conflicto=",  sum(grepl("^conflicto", rows$.clasificacion)))
-
-        upload_data_rv(list(rows = rows, empresa = empresa_sel,
-                            tipo = input$excel_tipo %||% "activos"))
+        tipo <- input$excel_tipo %||% "activos"
+        rows <- prov_clasificar(lectura$filas, get_provs(), get_inac(), tipo = tipo,
+                                catalogo = .catalogo_bancos(), alias_mapa = .alias_mapa())
+        rows$.clasificacion <- rows$.estado
+        emp_input <- input$excel_empresa %||% "TODOS"
+        upload_data_rv(list(rows = rows, empresa = if (emp_input == "TODOS") "" else emp_input,
+                            tipo = tipo, lectura = lectura))
         conflict_decisions(list())
-
+        conflict_idx_rv(1L)
       }, error = function(e) {
-        showNotification(paste("Error al leer el archivo:", e$message), type = "error")
+        showNotification(paste(tr("tablas.proveedores.importar.error_leer"), conditionMessage(e)), type = "error")
       })
     }, ignoreInit = TRUE)
 
+    # No Moneda column in the file: the new providers take the one chosen here.
+    observe(shinyjs::toggle("excel_moneda_wrap",
+                            condition = "moneda" %in% (upload_data_rv()$lectura$faltan %||% character(0))))
+
     # Stage 2/3 — the review table (hd_table, class E). Each row's id is its
     # row number in the Excel (.row_num), the same key the ✕ removes by. The
-    # chips are the old filter buttons (Listos / Incompletos / Duplicados /
-    # Conflictos, with their counts); "Dup. fila N" is now the Duplicado
-    # badge plus the Fila column, which every row has.
+    # chips are the old filter buttons with their counts; "Dup. fila N" is now
+    # the Duplicado badge plus the Fila column, which every row has. Detalle
+    # says why a row is held back, what changes (antes → después) or what was
+    # repaired.
     observe(shinyjs::toggle("revision_wrap", condition = !is.null(upload_data_rv())))
+
+    .campo_texto <- function(campo) tr(paste0("tablas.proveedores.", campo))
+    .detalle <- function(rows) vapply(seq_len(nrow(rows)), function(i) {
+      partes <- character(0)
+      if (!is.na(rows$.motivo[i])) partes <- c(partes, tr(rows$.motivo[i]))
+      if (!is.na(rows$.nota[i]))   partes <- c(partes, tr(rows$.nota[i]))
+      for (c in rows$.cambios[[i]])
+        partes <- c(partes, tr("tablas.proveedores.importar.cambio", campo = .campo_texto(c$campo),
+                               antes = c$antes %||% "—", despues = c$despues))
+      if (rows$.alias_vinculos[i] > 0L)
+        partes <- c(partes, tr_n("tablas.proveedores.importar.alias_vinculos", rows$.alias_vinculos[i]))
+      paste(partes, collapse = " · ")
+    }, "")
 
     revision_datos <- reactive({
       ud <- upload_data_rv()
       req(!is.null(ud))
       rows <- ud$rows
-      estado <- ifelse(grepl("^conflicto", rows$.clasificacion), "conflicto",
-                ifelse(rows$.clasificacion == "duplicado_interno", "duplicado", rows$.clasificacion))
       data.frame(
         id        = as.character(rows$.row_num),
-        estado    = estado,
+        estado    = rows$.estado,
         fila      = as.character(rows$.row_num),
         nombre    = rows$nombre,
         alias     = rows$alias,
@@ -907,31 +771,54 @@ proveedoresServer <- function(id, shared) {
         no_cuenta = rows$no_cuenta,
         banco     = rows$banco,
         moneda    = rows$moneda,
+        detalle   = .detalle(rows),
         stringsAsFactors = FALSE
       )
     })
 
+    PROV_ESTADOS <- list(
+      listo       = list(texto = "tablas.proveedores.listo",       tono = "exito"),
+      actualiza   = list(texto = "tablas.proveedores.actualiza",   tono = "info"),
+      reactiva    = list(texto = "tablas.proveedores.reactiva",    tono = "morado"),
+      inactiva    = list(texto = "tablas.proveedores.inactiva",    tono = "morado"),
+      sin_cambios = list(texto = "tablas.proveedores.sin_cambios", tono = "neutro"),
+      incompleto  = list(texto = "tablas.proveedores.incompleto",  tono = "aviso"),
+      revisar     = list(texto = "tablas.proveedores.revisar",     tono = "rojo"),
+      duplicado   = list(texto = "tablas.proveedores.duplicado",   tono = "peligro"))
+
     revision <- hd_table_server(
       "revision", tabla = "revision_excel_prov", datos = revision_datos,
-      piezas = c("fichas", "ordenar", "acc_fila"),
+      piezas = c("fichas", "ordenar", "acc_fila", "recorte"),
       columnas = list(
-        col_insignia("estado", "tablas.proveedores.estado", mapa = list(
-          listo      = list(texto = "tablas.proveedores.listo",      tono = "exito"),
-          incompleto = list(texto = "tablas.proveedores.incompleto", tono = "aviso"),
-          duplicado  = list(texto = "tablas.proveedores.duplicado",  tono = "peligro"),
-          conflicto  = list(texto = "tablas.proveedores.conflicto",  tono = "amarillo"))),
+        col_insignia("estado", "tablas.proveedores.estado", mapa = PROV_ESTADOS),
         col_texto("fila",      "tablas.proveedores.fila", recorte = FALSE),
         col_texto("nombre",    "tablas.proveedores.nombre"),
         col_texto("alias",     "tablas.proveedores.alias"),
         col_texto("rfc",       "tablas.proveedores.rfc", recorte = FALSE),
         col_texto("no_cuenta", "tablas.proveedores.no_cuenta", recorte = FALSE),
-        col_texto("banco",     "tablas.proveedores.banco"),
-        col_texto("moneda",    "tablas.proveedores.moneda", recorte = FALSE)
+        col_texto("banco",     "tablas.proveedores.banco", recorte = FALSE),
+        col_texto("moneda",    "tablas.proveedores.moneda", recorte = FALSE),
+        col_texto("detalle",   "tablas.proveedores.detalle")
       ),
-      fichas        = list(campo = "estado", orden = c("listo", "incompleto", "duplicado", "conflicto")),
+      fichas        = list(campo = "estado", orden = names(PROV_ESTADOS)),
       acciones_fila = "eliminar",
       vacio         = "tablas.proveedores.revision_vacia"
     )
+
+    # Which column of the file each field came from, and what it lacks.
+    output$revision_mapeo <- renderUI({
+      lectura <- upload_data_rv()$lectura
+      req(!is.null(lectura))
+      tomadas <- vapply(names(lectura$columnas), function(campo)
+        tr("tablas.proveedores.importar.columna_tomada", campo = .campo_texto(campo),
+           columna = lectura$columnas[[campo]]), "")
+      faltan <- vapply(lectura$faltan, .campo_texto, "")
+      tags$div(class = "small text-muted mb-2",
+        tags$div(tr("tablas.proveedores.importar.columnas_tomadas"), " ", paste(tomadas, collapse = " · ")),
+        if (length(faltan)) tags$div(tr("tablas.proveedores.importar.columnas_faltan"), " ", paste(faltan, collapse = ", ")),
+        if ("moneda" %in% lectura$faltan)
+          tags$div(tr("tablas.proveedores.importar.moneda_selector", moneda = input$excel_moneda %||% "MXN")))
+    })
 
     # ✕ (confirmed in the table's bar): the row leaves this upload only;
     # nothing is saved until Importar.
@@ -942,17 +829,19 @@ proveedoresServer <- function(id, shared) {
       if (is.null(ud)) return()
       rows <- ud[["rows"]]
       rows <- rows[!as.character(rows$.row_num) %in% a$ids, , drop = FALSE]
-      upload_data_rv(list(rows = rows, empresa = ud$empresa, tipo = ud$tipo))
+      ud$rows <- rows                       # (modifyList would merge the data frames column by column)
+      upload_data_rv(ud)
     })
 
-    # Stage 4 — Conflict resolution
+    # Stage 4 — Conflict resolution: one existing provider at a time, with
+    # what the file would change.
     conflict_idx_rv <- reactiveVal(1L)
 
     output$stage4_ui <- renderUI({
       ud <- upload_data_rv()
       if (is.null(ud)) return(NULL)
       rows    <- ud$rows
-      conf    <- rows[grepl("^conflicto", rows$.clasificacion), ]
+      conf    <- rows[.es_existente(rows$.estado), , drop = FALSE]
       if (!nrow(conf)) return(NULL)
 
       decisions <- conflict_decisions()
@@ -961,68 +850,40 @@ proveedoresServer <- function(id, shared) {
 
       idx <- conflict_idx_rv()
       if (idx > n_total) idx <- n_total
-
-      conf_row  <- conf[idx, ]
-      nc        <- trimws(conf_row$no_cuenta)
-
-      # Resolve account number: use no_cuenta when present, fall back to clabe.
-      # %||% only handles NULL, not NA — use coalesce for NA-safe fallback.
-      .nc_key <- function(df) {
-        trimws(dplyr::coalesce(
-          dplyr::na_if(as.character(df$no_cuenta), "NA"),
-          dplyr::na_if(as.character(df$clabe),     "NA")
-        ))
-      }
-      # Find S3 counterpart
-      if (conf_row$.clasificacion == "conflicto_s3_activo") {
-        provs_now <- get_provs()
-        s3_row    <- provs_now[.nc_key(provs_now) == nc, , drop = FALSE][1, ]
-        src_lbl   <- "Guardado (activo)"
-      } else {
-        inac_now <- get_inac()
-        s3_row   <- inac_now[.nc_key(inac_now) == nc, , drop = FALSE][1, ]
-        src_lbl  <- "Guardado (inactivo)"
-      }
+      conf_row <- conf[idx, ]
+      nc       <- conf_row$no_cuenta
+      cambios  <- conf_row$.cambios[[1]]
 
       tagList(
         tags$hr(),
-        tags$h6(class = "fw-semibold", tagList(icon("triangle-exclamation"), " Resolver conflictos")),
+        tags$h6(class = "fw-semibold", tagList(icon("triangle-exclamation"), " ",
+                                                tr("tablas.proveedores.importar.resolver"))),
         tags$p(class = "small text-muted",
-               paste0(n_resolved, " de ", n_total, " conflictos resueltos")),
+               tr("tablas.proveedores.importar.resueltos", n = n_resolved, total = n_total)),
 
         div(class = "prov-conflict-card",
-          tags$strong(paste0("Conflicto: No. Cuenta ", nc)),
+          tags$strong(tr(paste0("tablas.proveedores.importar.conflicto_", conf_row$.estado),
+                         nombre = conf_row$nombre %||% "", cuenta = nc)),
           tags$hr(class = "my-2"),
-          div(class = "d-flex gap-3",
-            div(class = "prov-conflict-side",
-              tags$strong("SUBIENDO"),
-              tags$br(),
-              paste0("Nombre: ", conf_row$nombre %||% ""), tags$br(),
-              paste0("RFC: ", conf_row$rfc %||% ""), tags$br(),
-              paste0("Banco: ", conf_row$banco %||% "")
-            ),
-            div(class = "prov-conflict-side",
-              tags$strong(src_lbl),
-              tags$br(),
-              paste0("Nombre: ", if (!is.null(s3_row) && nrow(s3_row))
-                dplyr::coalesce(s3_row$nombre[1], "\u2014") else "N/A"), tags$br(),
-              paste0("RFC: ", if (!is.null(s3_row) && nrow(s3_row))
-                dplyr::coalesce(s3_row$rfc[1], "\u2014") else "N/A"), tags$br(),
-              paste0("Banco: ", if (!is.null(s3_row) && nrow(s3_row))
-                dplyr::coalesce(s3_row$banco[1], "\u2014") else "N/A")
-            )
-          ),
+          if (length(cambios))
+            tags$ul(class = "small mb-0", lapply(cambios, function(c)
+              tags$li(tr("tablas.proveedores.importar.cambio", campo = .campo_texto(c$campo),
+                         antes = c$antes %||% "—", despues = c$despues))))
+          else tags$p(class = "small mb-0", tr("tablas.proveedores.importar.solo_mueve")),
+          if (conf_row$.alias_vinculos > 0L)
+            div(class = "alert alert-warning small mt-2 mb-0",
+                tr_n("tablas.proveedores.importar.alias_vinculos", conf_row$.alias_vinculos)),
           tags$hr(class = "my-2"),
           div(class = "d-flex gap-2 flex-wrap",
-            actionButton(ns("conf_conservar"),        "Conservar S3",
+            actionButton(ns("conf_conservar"),  tr("tablas.proveedores.importar.dejar"),
                          class = "btn btn-sm btn-outline-secondary"),
-            actionButton(ns("conf_reemplazar"),       "Reemplazar con nuevo",
+            actionButton(ns("conf_reemplazar"), tr("tablas.proveedores.importar.aplicar"),
                          class = "btn btn-sm btn-outline-primary"),
-            actionButton(ns("conf_omitir"),           "Omitir ambos",
+            actionButton(ns("conf_omitir"),     tr("tablas.proveedores.importar.omitir"),
                          class = "btn btn-sm btn-outline-danger"),
-            actionButton(ns("conf_reemplazar_todos"), "Reemplazar todos los restantes \u2192",
+            actionButton(ns("conf_reemplazar_todos"), tr("tablas.proveedores.importar.aplicar_todos"),
                          class = "btn btn-sm btn-warning",
-                         title = "Marca todos los conflictos pendientes como Reemplazar")
+                         title = tr("tablas.proveedores.importar.aplicar_todos_ayuda"))
           )
         )
       )
@@ -1030,10 +891,10 @@ proveedoresServer <- function(id, shared) {
 
     .advance_conflict <- function(decision) {
       ud   <- upload_data_rv()
-      conf <- ud$rows[grepl("^conflicto", ud$rows$.clasificacion), ]
+      conf <- ud$rows[.es_existente(ud$rows$.estado), , drop = FALSE]
       idx  <- conflict_idx_rv()
       if (idx > nrow(conf)) return()
-      nc   <- trimws(conf[idx, ]$no_cuenta)
+      nc   <- conf$no_cuenta[idx]
       dec  <- conflict_decisions()
       dec[[nc]] <- decision
       conflict_decisions(dec)
@@ -1048,19 +909,15 @@ proveedoresServer <- function(id, shared) {
     observeEvent(input$conf_reemplazar_todos, {
       ud <- upload_data_rv()
       if (is.null(ud)) return()
-      conf <- ud$rows[grepl("^conflicto", ud$rows$.clasificacion), ]
+      conf <- ud$rows[.es_existente(ud$rows$.estado), , drop = FALSE]
       if (!nrow(conf)) return()
       dec <- conflict_decisions()
-      for (ii in seq_len(nrow(conf))) {
-        nc <- trimws(conf$no_cuenta[ii])
-        if (is.null(dec[[nc]])) dec[[nc]] <- "reemplazar"
-      }
+      for (nc in conf$no_cuenta) if (is.null(dec[[nc]])) dec[[nc]] <- "reemplazar"
       conflict_decisions(dec)
       conflict_idx_rv(nrow(conf) + 1L)
       n_bulk <- sum(vapply(names(dec), function(k) dec[[k]] == "reemplazar", logical(1)))
-      showNotification(
-        paste0(n_bulk, " conflicto(s) marcados como Reemplazar. Haz clic en 'Importar' para confirmar."),
-        type = "message", duration = 4)
+      showNotification(tr("tablas.proveedores.importar.aplicar_todos_hecho", n = n_bulk),
+                       type = "message", duration = 4)
     }, ignoreInit = TRUE)
 
     # Stage 5 — Final summary
@@ -1068,29 +925,20 @@ proveedoresServer <- function(id, shared) {
       ud <- upload_data_rv()
       if (is.null(ud)) return(NULL)
       rows <- ud$rows
+      n_de <- function(e) sum(rows$.estado == e)
+      n_listo <- n_de("listo"); n_incom <- n_de("incompleto"); n_dup <- n_de("duplicado")
+      n_rev   <- n_de("revisar"); n_igual <- n_de("sin_cambios")
+      exist   <- rows[.es_existente(rows$.estado), , drop = FALSE]
+      dec     <- conflict_decisions()
+      conf_pending <- sum(vapply(exist$no_cuenta, function(nc) is.null(dec[[nc]]), logical(1)))
+      aplica  <- vapply(exist$no_cuenta, function(nc) identical(dec[[nc]], "reemplazar"), logical(1))
+      n_alias <- sum(aplica & exist$.alias_vinculos > 0L)
+      n_aplicar <- sum(aplica) - if (cambiar_alias_rv()) 0L else n_alias
 
-      n_listo  <- sum(rows$.clasificacion == "listo")
-      n_incom  <- sum(rows$.clasificacion == "incompleto")
-      n_dup    <- sum(rows$.clasificacion == "duplicado_interno")
-      n_conf   <- sum(grepl("^conflicto", rows$.clasificacion))
-      dec      <- conflict_decisions()
-
-      # conf_pending = unique no_cuenta values among conflict rows with no decision yet
-      conf_rows_nc <- unique(trimws(rows$no_cuenta[grepl("^conflicto", rows$.clasificacion)]))
-      conf_pending <- sum(vapply(conf_rows_nc, function(nc) is.null(dec[[nc]]), logical(1)))
-
-      # Count of conflict rows whose decision is "reemplazar" (deduplicated)
-      n_reemplazar <- length(unique(trimws(
-        conf_rows_nc[vapply(conf_rows_nc, function(nc) identical(dec[[nc]], "reemplazar"), logical(1))]
-      )))
-
-      # Total that will be imported if user clicks now
       n_to_import <- n_listo +
         (if (incluir_incompletos_rv()) n_incom else 0L) +
-        (if (incluir_duplicados_rv())  n_dup   else 0L) +
-        n_reemplazar
-
-      n_resolved <- length(dec)
+        (if (incluir_duplicados_rv())  length(unique(rows$no_cuenta[rows$.estado == "duplicado"])) else 0L) +
+        n_aplicar
 
       tagList(
         tags$hr(),
@@ -1098,20 +946,24 @@ proveedoresServer <- function(id, shared) {
         tags$p(class = "small text-muted fst-italic mb-2",
           icon("circle-info"),
           " Las decisiones de conflicto se aplican al hacer clic en ",
-          tags$strong("Importar"), " \u2014 nada se guarda hasta entonces."
+          tags$strong("Importar"), " — nada se guarda hasta entonces."
         ),
         div(class = "d-flex flex-column gap-1 mb-3",
-          div(paste0("\u2705 ", n_listo, " proveedores listos")),
+          div(paste0("✅ ", n_listo, " proveedores listos")),
+          if (nrow(exist) > 0)
+            div(tr("tablas.proveedores.importar.resumen_existentes", n = nrow(exist), resueltos = length(dec)))
+          else NULL,
+          if (n_igual > 0) div(tr("tablas.proveedores.importar.resumen_sin_cambios", n = n_igual)) else NULL,
+          if (n_rev > 0)
+            div(class = "text-danger", tr("tablas.proveedores.importar.resumen_revisar", n = n_rev))
+          else NULL,
           if (n_incom > 0)
-            div(paste0("\u26a0\ufe0f ", n_incom,
+            div(paste0("⚠️ ", n_incom,
                        " incompletos (serán omitidos a menos que marques la opción)"))
           else NULL,
           if (n_dup > 0)
             div(paste0("\U0001f534 ", n_dup,
                        " duplicados (serán omitidos a menos que marques la opción)"))
-          else NULL,
-          if (n_conf > 0)
-            div(paste0("\U0001f7e1 ", n_resolved, " de ", n_conf, " conflictos resueltos"))
           else NULL
         ),
         if (n_incom > 0)
@@ -1123,6 +975,10 @@ proveedoresServer <- function(id, shared) {
                         paste0("Incluir duplicados de todas formas (", n_dup, " filas)"),
                         value = incluir_duplicados_rv())
         else NULL,
+        if (n_alias > 0)
+          checkboxInput(ns("cambiar_alias"), tr_n("tablas.proveedores.importar.cambiar_alias", n_alias),
+                        value = cambiar_alias_rv())
+        else NULL,
         if (conf_pending > 0)
           div(class = "alert alert-warning small mt-2",
               paste0(conf_pending, " conflicto(s) sin resolver. Resuélvelos antes de importar."))
@@ -1133,19 +989,24 @@ proveedoresServer <- function(id, shared) {
           if (conf_pending == 0)
             actionButton(ns("confirmar_upload"),
                          tagList(icon("file-import"),
-                                 paste0(" Importar ", n_to_import, " proveedores \u2192")),
+                                 paste0(" Importar ", n_to_import, " proveedores →")),
                          class = "btn btn-sm btn-primary")
           else NULL
         )
       )
     })
 
-    observeEvent(input$cancelar_upload, {
+    .limpiar_carga <- function() {
       upload_data_rv(NULL)
       conflict_decisions(list())
       conflict_idx_rv(1L)
       incluir_incompletos_rv(FALSE)
       incluir_duplicados_rv(FALSE)
+      cambiar_alias_rv(FALSE)
+    }
+
+    observeEvent(input$cancelar_upload, {
+      .limpiar_carga()
       shinyjs::reset(ns("excel_file"))
     }, ignoreInit = TRUE)
 
@@ -1153,114 +1014,47 @@ proveedoresServer <- function(id, shared) {
       if (!.puede_editar()) return()
       ud   <- upload_data_rv()
       if (is.null(ud)) return()
-      rows <- ud$rows
-      dec  <- conflict_decisions()
-      incluir_incom <- incluir_incompletos_rv()
-      incluir_dups  <- incluir_duplicados_rv()
-
-      # ── Select rows to import ────────────────────────────────────────────
-      # 1. All "listo" rows
-      listo_idx <- which(rows$.clasificacion == "listo")
-
-      # 2. Incomplete rows if checkbox ticked
-      incom_idx <- if (incluir_incom) which(rows$.clasificacion == "incompleto") else integer(0)
-
-      # 3. Duplicate rows if checkbox ticked — keep first occurrence per no_cuenta
-      dup_idx <- integer(0)
-      if (incluir_dups) {
-        seen_dup_nc <- character(0)
-        for (ii in which(rows$.clasificacion == "duplicado_interno")) {
-          nc_ii <- trimws(rows$no_cuenta[ii])
-          if (!nc_ii %in% seen_dup_nc) {
-            dup_idx     <- c(dup_idx, ii)
-            seen_dup_nc <- c(seen_dup_nc, nc_ii)
-          }
-        }
-      }
-
-      # 4. Conflict rows marked "reemplazar" — keep first occurrence per no_cuenta
-      seen_conf_nc <- character(0)
-      conf_idx     <- integer(0)
-      for (ii in which(grepl("^conflicto", rows$.clasificacion))) {
-        nc_ii <- trimws(rows$no_cuenta[ii])
-        d     <- dec[[nc_ii]] %||% "conservar"
-        if (d == "reemplazar" && !nc_ii %in% seen_conf_nc) {
-          conf_idx     <- c(conf_idx, ii)
-          seen_conf_nc <- c(seen_conf_nc, nc_ii)
-        }
-      }
-
-      to_import <- rows[sort(unique(c(listo_idx, incom_idx, dup_idx, conf_idx))), , drop = FALSE]
-
-      if (!nrow(to_import)) {
-        showNotification(
-          "Nada que importar. Marca 'Reemplazar' en los conflictos o revisa los filtros.",
-          type = "warning")
+      res <- prov_aplicar(ud$rows, get_provs(), get_inac(), decisiones = conflict_decisions(), opciones = list(
+        tipo = ud$tipo, empresa = ud$empresa, moneda = input$excel_moneda %||% "MXN",
+        incluir_incompletos = incluir_incompletos_rv(), incluir_duplicados = incluir_duplicados_rv(),
+        cambiar_alias = cambiar_alias_rv(), lote = uuid::UUIDgenerate()))
+      n_imp <- res$nuevos + res$actualizados + res$movidos
+      if (n_imp == 0L) {
+        showNotification(tr("tablas.proveedores.importar.nada"), type = "warning")
         return()
       }
-
-      batch <- uuid::UUIDgenerate()
-      now   <- as.character(Sys.time())
-
-      new_rows <- to_import |> dplyr::transmute(
-        id            = vapply(seq_len(nrow(to_import)), function(i) uuid::UUIDgenerate(), character(1)),
-        Empresa       = empresas,
-        codigo        = NA_character_,
-        nombre        = nombre,
-        alias         = alias %||% NA_character_,
-        clabe         = no_cuenta,  # PPL compatibility
-        medio_pago    = dplyr::case_when(
-          grepl("USD|DOLAR|DOLLAR", toupper(trimws(dplyr::coalesce(moneda, "")))) ~ "SPD",
-          grepl("^030$|BAJIO",      toupper(trimws(dplyr::coalesce(banco,  "")))) ~ "BCO",
-          TRUE                                                                    ~ "SPI"
-        ),
-        rfc           = rfc %||% NA_character_,
-        tipo          = "012",
-        banco_destino = banco %||% NA_character_,
-        activo        = TRUE,
-        no_cuenta     = no_cuenta,
-        banco         = banco %||% NA_character_,
-        tipo_cuenta   = tipo_cuenta %||% NA_character_,
-        correo        = correo %||% NA_character_,
-        moneda        = moneda %||% NA_character_,
-        tipo_relacion = tipo_relacion %||% NA_character_,
-        empresas      = empresas,
-        status        = dplyr::if_else(
-          !is.na(nombre) & !is.na(moneda) & !is.na(banco) & !is.na(no_cuenta) &
-          nzchar(trimws(nombre)) & nzchar(trimws(moneda)) & nzchar(trimws(banco)) &
-          nzchar(trimws(no_cuenta)), "completo", "incompleto"),
-        fuente        = "excel",
-        upload_batch  = batch,
-        activo_hasta  = "indefinido",
-        created_at    = now,
-        updated_at    = now
-      )
-
-      if (ud$tipo == "activos") {
-        current <- get_provs()
-        # Remove replaced conflicts
-        reemplazados <- names(dec)[vapply(names(dec), function(nc) dec[[nc]] == "reemplazar", logical(1))]
-        if (length(reemplazados)) {
-          current <- current[!trimws(current$no_cuenta %||% current$clabe) %in% reemplazados, ]
-        }
-        updated <- dplyr::bind_rows(current, new_rows)
-        set_provs(updated)
-      } else {
-        current <- get_inac()
-        reemplazados <- names(dec)[vapply(names(dec), function(nc) dec[[nc]] == "reemplazar", logical(1))]
-        if (length(reemplazados)) {
-          current <- current[!trimws(current$no_cuenta %||% current$clabe) %in% reemplazados, ]
-        }
-        updated <- dplyr::bind_rows(current, new_rows)
-        set_inac(updated)
+      # The list that receives moved providers is written first: if the second
+      # write fails they are left in both lists rather than in neither.
+      orden <- if (ud$tipo == "activos") c("activos", "inactivos") else c("inactivos", "activos")
+      saved <- tryCatch({
+        for (lista in orden) if (isTRUE(res[[paste0("cambia_", lista)]]))
+          if (lista == "activos") set_provs(res$activos) else set_inac(res$inactivos)
+        TRUE
+      }, error = function(e) { message("[PROV] import failed: ", conditionMessage(e)); e })
+      resumen <- tr("tablas.proveedores.importar.hecho", nuevos = res$nuevos,
+                    actualizados = res$actualizados, movidos = res$movidos)
+      if (!isTRUE(saved)) {
+        showNotification(tr("tablas.proveedores.importar.error_guardar"), type = "error", duration = 8)
+        tryCatch(log_action(
+          user        = tryCatch(shared$current_user(), error = function(e) "system"),
+          module      = "proveedores",
+          action      = "importar_proveedores_fallido",
+          description = paste0("Falló al guardar la importación (", resumen, "): ", conditionMessage(saved)),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        ), error = function(e) NULL)
+        return()
       }
-
-      n_imp <- nrow(new_rows)
-      upload_data_rv(NULL)
-      conflict_decisions(list())
-      conflict_idx_rv(1L)
-      showNotification(paste0(n_imp, " proveedores importados."),
-                       type = "message", duration = 4)
+      tryCatch(log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "proveedores",
+        action      = "importar_proveedores",
+        description = paste0("Importación de Excel: ", resumen),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      ), error = function(e) NULL)
+      .limpiar_carga()
+      showNotification(resumen, type = "message", duration = 5)
       output$tbl_catalogo_prov <- DT::renderDataTable({
         .render_catalogo(input$cat_search %||% "")
       }, server = FALSE)

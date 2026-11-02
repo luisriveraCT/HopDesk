@@ -13,6 +13,8 @@
 #   r$activos    # what Importar saved as the active list (NULL: not saved)
 #   r$inactivos  # what it saved as the inactive list   (NULL: not saved)
 #   r$avisos     # showNotification() texts, in order
+# moneda: the "Moneda del archivo" selector; alias_mapa: parte_alias_map rows;
+# cambiar_alias: the "Cambiar el alias de todos modos" checkbox.
 #
 # PROV_RAIZ: the checkout whose R/ to use (default: this one).
 # =============================================================================
@@ -64,7 +66,7 @@ prov_fila <- function(id, nombre, no_cuenta, banco = "012", alias = "", rfc = ""
 prov_importar <- function(archivo, activos = prov_fila("p-0", "SIN USO", "000000000000000000")[0, ],
                           inactivos = activos[0, ], tipo = "activos", empresa = "TODOS",
                           decision = NULL, incluir_incompletos = FALSE, incluir_duplicados = FALSE,
-                          importar = TRUE) {
+                          importar = TRUE, moneda = NULL, alias_mapa = NULL, cambiar_alias = FALSE) {
   rm(list = ls(.prov_guardado), envir = .prov_guardado)
   avisos <- character(0)
   out <- NULL
@@ -75,7 +77,8 @@ prov_importar <- function(archivo, activos = prov_fila("p-0", "SIN USO", "000000
     effective_client_id      = function() "prueba",
     home_client_id           = function() "prueba",
     current_user             = function() "prueba",
-    usuario                  = function() "prueba"
+    usuario                  = function() "prueba",
+    parte_alias_map_db       = reactiveVal(alias_mapa)
   )
   # Keep the notifications' text (the module runs in globalenv, so this one
   # is found first); put things back as they were on the way out.
@@ -86,6 +89,7 @@ prov_importar <- function(archivo, activos = prov_fila("p-0", "SIN USO", "000000
          envir = globalenv())
   shiny::testServer(proveedoresServer, args = list(shared = shared), {
     session$setInputs(excel_tipo = tipo, excel_empresa = empresa)
+    if (!is.null(moneda)) session$setInputs(excel_moneda = moneda)
     session$setInputs(excel_file = data.frame(name = basename(archivo), size = file.size(archivo),
                                               type = "", datapath = normalizePath(archivo), stringsAsFactors = FALSE))
     ud <- upload_data_rv()
@@ -99,6 +103,7 @@ prov_importar <- function(archivo, activos = prov_fila("p-0", "SIN USO", "000000
       }
       if (incluir_incompletos) session$setInputs(incluir_incompletos = TRUE)
       if (incluir_duplicados)  session$setInputs(incluir_duplicados = TRUE)
+      if (cambiar_alias)       session$setInputs(cambiar_alias = TRUE)
       session$setInputs(confirmar_upload = 1)
     }
     out <<- list(filas = filas)

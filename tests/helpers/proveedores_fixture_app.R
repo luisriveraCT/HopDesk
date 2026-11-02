@@ -28,7 +28,7 @@ cargar("R/ui_components.R", "app_styles")
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
   for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
-              "R/proveedores_module.R"))
+              "R/proveedores_excel.R", "R/proveedores_module.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
 })
 assign(".i18n_dir", file.path(raiz, "www", "i18n"), envir = globalenv())
@@ -52,14 +52,15 @@ prov <- function(id, nombre, alias, banco, nc, rfc = "", moneda = "MXN", empresa
              no_cuenta = nc, clabe = nc, rfc = rfc, moneda = moneda, empresas = empresas, activo = activo,
              status = status, activo_hasta = activo_hasta, medio_pago = "SPI", fuente = "manual",
              created_at = "2026-01-01", updated_at = "2026-01-01", stringsAsFactors = FALSE)
+# Accounts are valid CLABEs (check digit), as the import requires.
 activos0 <- .normalize(rbind(
-  prov("p-acme", "ACEROS MONTERREY SA", "ACEROS", "012", "012180001111111111", "AMO010101AA1"),
-  prov("p-flet", "FLETES EL GÜERO", "FLETES", "072", "072180002222222222"),
+  prov("p-acme", "ACEROS MONTERREY SA", "ACEROS", "012", "012180001111111119", "AMO010101AA1"),
+  prov("p-flet", "FLETES EL GÜERO", "FLETES", "072", "072180002222222224"),
   prov("p-papl", "PAPELERIA ÑANDU", "PAPELERIA", "", "", status = "incompleto"),
-  prov("p-soft", "SOFTWARE CORP", "SOFTCORP", "002", "002180003333333333", moneda = "USD", activo_hasta = "2020-01-01")
+  prov("p-soft", "SOFTWARE CORP", "SOFTCORP", "002", "002180003333333330", moneda = "USD", activo_hasta = "2020-01-01")
 ), .schema_proveedores)
 inactivos0 <- .normalize(rbind(
-  prov("p-viej", "PROVEEDOR VIEJO SA", "VIEJO", "014", "014180004444444444", activo = FALSE)
+  prov("p-viej", "PROVEEDOR VIEJO SA", "VIEJO", "014", "014180004444444448", activo = FALSE)
 ), .schema_proveedores)
 
 ui <- bslib::page_fluid(
