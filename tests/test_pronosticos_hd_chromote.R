@@ -4,7 +4,8 @@
 # headless Chrome, against tests/helpers/pronosticos_fixture_app.R: the real
 # module over fixed data and a simulated `shared` (no S3). Every click is a
 # real input event. Blocks follow the T10 inventory
-# (hopdesk_coord/tablas/reportes/T10_inventario.md): M methods (§4).
+# (hopdesk_coord/tablas/reportes/T10_inventario.md): M methods (§4), S subscriptions (§5), C the fetch log (§3),
+# R refresh after Actualizar (seen in passing 2).
 #
 # Run from project root:  Rscript tests/test_pronosticos_hd_chromote.R
 # PRO_RAIZ=<older checkout> runs the same test against that checkout's module.
@@ -183,6 +184,23 @@ ok("BP4: a double click opens the same detail",
    identical(modal_titulo(), "Detalle de la consulta") &&
    grepl("tiie_28", ev("document.querySelector('.modal.show .modal-body').textContent")))
 cerrar_modal()
+
+# ── R · refresh (seen in passing 2) ─────────────────────────────────────────
+# The fetch log is no synced table: before, neither the status badge nor
+# the Registro de consultas read it again after a refresh.
+badge <- function() ev("(document.querySelector('#fc-fetch_status_badge .badge')||{}).textContent || ''")
+pestana("Series"); Sys.sleep(1)
+antes <- badge()
+clic("document.getElementById('fc-btn_refresh')"); Sys.sleep(1.5)
+ok("R: after Actualizar on a metric, its status badge shows today's fetch (it showed 31/10)",
+   grepl("^OK .*31/10/2026 23:00", antes) && poll_until(function() !identical(badge(), antes), timeout_s = 10) &&
+   grepl(format(Sys.Date(), "%d/%m/%Y"), badge()))
+pestana("Registro de consultas"); Sys.sleep(0.8)
+ok("R: the log shows that fetch too", poll_until(function() length(vis(C)) == 251L, timeout_s = 10))
+clic("document.getElementById('fc-btn_refresh_all')"); Sys.sleep(1.5)
+ok("R: after Actualizar todas las métricas, the log shows the 3 new fetches",
+   poll_until(function() length(vis(C)) == 254L, timeout_s = 10) &&
+   sum(startsWith(vis(C), "nuevo-")) == 4L)
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)

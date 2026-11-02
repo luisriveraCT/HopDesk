@@ -134,6 +134,10 @@ forecastingServer <- function(id, shared) {
       )
     })
 
+    # The fetch log is no synced table: a refresh here bumps this so the
+    # status badge and the Registro de consultas read it again.
+    .consultas_tick <- shiny::reactiveVal(0L)
+
     # ── Populate metric selector ──────────────────────────────────────────────
     shiny::observe({
       m  <- .metrics()
@@ -146,6 +150,7 @@ forecastingServer <- function(id, shared) {
     output$fetch_status_badge <- shiny::renderUI({
       metric_id <- input$metric_sel %||% ""
       if (!nzchar(metric_id)) return(NULL)
+      .consultas_tick()
       log <- tryCatch(load_forecasting_fetch_log(), error = function(e) NULL)
       if (is.null(log) || !nrow(log)) {
         return(shiny::tags$span(class = "badge bg-secondary", "Sin historial"))
@@ -271,6 +276,7 @@ forecastingServer <- function(id, shared) {
       )
       # Refresh in-memory cache so reactive updates
       fcs_flush_caches()
+      .consultas_tick(.consultas_tick() + 1L)
       obs_new <- tryCatch(load_forecasting_series_observations(client_id = shared$effective_client_id()), error = function(e) NULL)
       if (!is.null(obs_new) && !is.null(shared$forecasting_series_observations_db)) {
         tryCatch(shared$forecasting_series_observations_db(obs_new), error = function(e) NULL)
@@ -313,6 +319,7 @@ forecastingServer <- function(id, shared) {
         type = "message", duration = 4
       )
       fcs_flush_caches()
+      .consultas_tick(.consultas_tick() + 1L)
       log_action(
         user        = user,
         module      = "forecasting",
@@ -541,6 +548,7 @@ forecastingServer <- function(id, shared) {
     # dd/mm text, 30/09 fell between 30/10 and 29/10. ℹ or a double click
     # shows the whole row, the error uncut.
     .consultas_tabla <- shiny::reactive({
+      .consultas_tick()
       log <- tryCatch(load_forecasting_fetch_log(), error = function(e) .schema_forecasting_fetch_log())
       log <- log[order(log$attempted_at, decreasing = TRUE), , drop = FALSE]
       data.frame(
