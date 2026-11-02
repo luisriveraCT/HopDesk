@@ -35,13 +35,9 @@ proveedoresUI <- function(id) {
         if (confirm('\\u00bfEliminar permanentemente?'))
           Shiny.setInputValue('%s', $(this).data('id'), {priority:'event'});
       });
-      $(document).on('click.prov', '.prov-upload-del-btn', function() {
-        Shiny.setInputValue('%s', $(this).data('rownum'), {priority:'event'});
-      });
     ",
       ns("prov_edit_id"), ns("prov_inactivar_id"), ns("prov_delete_id"),
-      ns("prov_reactivar_id"), ns("prov_del_inac_id"),
-      ns("prov_upload_del_rownum")
+      ns("prov_reactivar_id"), ns("prov_del_inac_id")
     ))),
 
     tabsetPanel(id = ns("prov_tabs"),
@@ -127,8 +123,13 @@ proveedoresUI <- function(id) {
       )
     ),
 
-    # Stage 2/3 — Review table (shown after parse)
-    uiOutput(ns("stage2_ui")),
+    # Stage 2/3 — Review table (shown after parse). Static, not in a
+    # renderUI: the table keeps its chip, sort and scroll while rows change.
+    shinyjs::hidden(div(id = ns("revision_wrap"),
+      tags$hr(),
+      tags$h6(class = "fw-semibold", tagList(icon("table"), " Revisión de datos")),
+      hd_table_ui(ns("revision"), alto = "auto")
+    )),
 
     # Stage 4 — Conflict resolution
     uiOutput(ns("stage4_ui")),
@@ -883,126 +884,66 @@ proveedoresServer <- function(id, shared) {
       })
     }, ignoreInit = TRUE)
 
-    # Stage 2/3 UI
-    output$stage2_ui <- renderUI({
+    # Stage 2/3 — the review table (hd_table, class E). Each row's id is its
+    # row number in the Excel (.row_num), the same key the ✕ removes by. The
+    # chips are the old filter buttons (Listos / Incompletos / Duplicados /
+    # Conflictos, with their counts); "Dup. fila N" is now the Duplicado
+    # badge plus the Fila column, which every row has.
+    observe(shinyjs::toggle("revision_wrap", condition = !is.null(upload_data_rv())))
+
+    revision_datos <- reactive({
       ud <- upload_data_rv()
-      if (is.null(ud)) return(NULL)
+      req(!is.null(ud))
       rows <- ud$rows
-
-      n_listo  <- sum(rows$.clasificacion == "listo")
-      n_incom  <- sum(rows$.clasificacion == "incompleto")
-      n_dup    <- sum(rows$.clasificacion == "duplicado_interno")
-      n_conf   <- sum(grepl("^conflicto", rows$.clasificacion))
-
-      tagList(
-        tags$hr(),
-        tags$h6(class = "fw-semibold", tagList(icon("table"), " Revisión de datos")),
-        # Filter tabs
-        div(class = "d-flex gap-1 mb-2",
-          actionButton(ns("filter_todos"),     "Todos",
-                       class = "btn btn-sm btn-outline-secondary"),
-          actionButton(ns("filter_listo"),
-                       paste0("\u2705 Listos (", n_listo, ")"),
-                       class = "btn btn-sm btn-outline-success"),
-          actionButton(ns("filter_incompleto"),
-                       paste0("\u26a0\ufe0f Incompletos (", n_incom, ")"),
-                       class = "btn btn-sm btn-outline-warning"),
-          actionButton(ns("filter_duplicado"),
-                       paste0("\U0001f534 Duplicados (", n_dup, ")"),
-                       class = "btn btn-sm btn-outline-danger"),
-          actionButton(ns("filter_conflicto"),
-                       paste0("\U0001f7e1 Conflictos (", n_conf, ")"),
-                       class = "btn btn-sm btn-outline-warning")
-        ),
-        div(style = "position: relative;",
-          DT::dataTableOutput(ns("tbl_upload_review")),
-          div(id = ns("tbl_review_hscroll_anchor"), style = "height: 1px;")
-        )
+      estado <- ifelse(grepl("^conflicto", rows$.clasificacion), "conflicto",
+                ifelse(rows$.clasificacion == "duplicado_interno", "duplicado", rows$.clasificacion))
+      data.frame(
+        id        = as.character(rows$.row_num),
+        estado    = estado,
+        fila      = as.character(rows$.row_num),
+        nombre    = rows$nombre,
+        alias     = rows$alias,
+        rfc       = rows$rfc,
+        no_cuenta = rows$no_cuenta,
+        banco     = rows$banco,
+        moneda    = rows$moneda,
+        stringsAsFactors = FALSE
       )
     })
 
-    # Active filter for upload review
-    upload_filter_rv <- reactiveVal("todos")
-    observeEvent(input$filter_todos,      { upload_filter_rv("todos") },      ignoreInit = TRUE)
-    observeEvent(input$filter_listo,      { upload_filter_rv("listo") },      ignoreInit = TRUE)
-    observeEvent(input$filter_incompleto, { upload_filter_rv("incompleto") }, ignoreInit = TRUE)
-    observeEvent(input$filter_duplicado,  { upload_filter_rv("duplicado") },  ignoreInit = TRUE)
-    observeEvent(input$filter_conflicto,  { upload_filter_rv("conflicto") },  ignoreInit = TRUE)
+    revision <- hd_table_server(
+      "revision", tabla = "revision_excel_prov", datos = revision_datos,
+      piezas = c("fichas", "ordenar", "acc_fila"),
+      columnas = list(
+        col_insignia("estado", "tablas.proveedores.estado", mapa = list(
+          listo      = list(texto = "tablas.proveedores.listo",      tono = "exito"),
+          incompleto = list(texto = "tablas.proveedores.incompleto", tono = "aviso"),
+          duplicado  = list(texto = "tablas.proveedores.duplicado",  tono = "peligro"),
+          conflicto  = list(texto = "tablas.proveedores.conflicto",  tono = "amarillo"))),
+        col_texto("fila",      "tablas.proveedores.fila", recorte = FALSE),
+        col_texto("nombre",    "tablas.proveedores.nombre"),
+        col_texto("alias",     "tablas.proveedores.alias"),
+        col_texto("rfc",       "tablas.proveedores.rfc", recorte = FALSE),
+        col_texto("no_cuenta", "tablas.proveedores.no_cuenta", recorte = FALSE),
+        col_texto("banco",     "tablas.proveedores.banco"),
+        col_texto("moneda",    "tablas.proveedores.moneda", recorte = FALSE)
+      ),
+      fichas        = list(campo = "estado", orden = c("listo", "incompleto", "duplicado", "conflicto")),
+      acciones_fila = "eliminar",
+      vacio         = "tablas.proveedores.revision_vacia"
+    )
 
-    output$tbl_upload_review <- DT::renderDataTable({
-      ud <- upload_data_rv()
-      if (is.null(ud)) return(DT::datatable(data.frame()))
-
-      rows <- ud$rows
-      filt <- upload_filter_rv()
-      if (filt != "todos") {
-        if (filt == "conflicto") {
-          rows <- rows[grepl("^conflicto", rows$.clasificacion), ]
-        } else {
-          rows <- rows[rows$.clasificacion == filt, ]
-        }
-      }
-
-      if (!nrow(rows)) {
-        return(DT::datatable(
-          data.frame(Info = "Sin filas en esta categoría."),
-          options = list(dom = "t"), rownames = FALSE
-        ))
-      }
-
-      disp <- rows |> dplyr::mutate(
-        Status = dplyr::case_when(
-          .clasificacion == "listo" ~
-            '<span class="badge bg-success">\u2705 Listo</span>',
-          .clasificacion == "incompleto" ~
-            '<span class="badge bg-warning text-dark">\u26a0 Incompleto</span>',
-          .clasificacion == "duplicado_interno" ~
-            paste0('<span class="badge bg-danger">\U0001f534 Dup. fila ',
-                   .row_num, '</span>'),
-          grepl("^conflicto", .clasificacion) ~
-            '<span class="badge bg-warning text-dark">\U0001f7e1 Conflicto</span>',
-          TRUE ~ .clasificacion
-        ),
-        Quitar = paste0('<button class="btn btn-xs btn-outline-danger prov-upload-del-btn"',
-                        ' data-rownum="', .row_num, '" title="Quitar">\U0001f5d1</button>')
-      ) |> dplyr::select(
-        Status, Nombre = nombre, Alias = alias, RFC = rfc,
-        `No. Cuenta` = no_cuenta, Banco = banco, Moneda = moneda, Quitar
-      )
-
-      DT::datatable(
-        disp, escape = FALSE, rownames = FALSE,
-        options = list(
-          pageLength = 20,
-          dom        = "tip",
-          scrollX    = TRUE,
-          scrollY    = "340px",
-          scrollCollapse = TRUE,
-          autoWidth  = FALSE,
-          fixedHeader = FALSE,
-          columnDefs = list(
-            list(orderable = FALSE, targets = ncol(disp) - 1),
-            list(width = "90px",  targets = 0),
-            list(width = "180px", targets = 1),
-            list(width = "100px", targets = 2),
-            list(width = "115px", targets = 3),
-            list(width = "160px", targets = 4),
-            list(width = "130px", targets = 5),
-            list(width = "80px",  targets = 6),
-            list(width = "44px",  targets = 7)
-          )
-        )
-      )
-    }, server = TRUE)
-
-    # Handle delete from upload preview
-    observeEvent(input$prov_upload_del_rownum, {
+    # ✕ (confirmed in the table's bar): the row leaves this upload only;
+    # nothing is saved until Importar.
+    observeEvent(revision$accion(), {
+      a <- revision$accion()
+      if (!identical(a$accion, "eliminar")) return()
       ud <- upload_data_rv()
       if (is.null(ud)) return()
       rows <- ud[["rows"]]
-      rows <- rows[rows$.row_num != as.integer(input$prov_upload_del_rownum), ]
+      rows <- rows[!as.character(rows$.row_num) %in% a$ids, , drop = FALSE]
       upload_data_rv(list(rows = rows, empresa = ud$empresa, tipo = ud$tipo))
-    }, ignoreInit = TRUE)
+    })
 
     # Stage 4 — Conflict resolution
     conflict_idx_rv <- reactiveVal(1L)
