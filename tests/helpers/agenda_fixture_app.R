@@ -12,7 +12,8 @@
 # payment file only records what it would pay ("ppl: id=importe,...").
 #
 # Raw SAP rows (shared$sap_data) for documents 4001 and 4002 (and one that
-# isn't in the Agenda), for "Ver datos de origen"; their Factura is the
+# isn't in the Agenda), plus document 4001 of ANOTHER company (OTR), for
+# "Ver datos de origen"; their Factura is the
 # Pagos table's Referencia (F-4001, F-4002).
 # AGENDA_N: that many more MXN payments (default 0): AGENDA_N=850 puts the
 # table in window mode. The last one is "PROVEEDOR ULTIMO", Referencia
@@ -118,10 +119,11 @@ server <- function(input, output, session) {
   shared <- list(
     company_map = reactiveVal(c(NTS = EMP)), proveedores_db = reactiveVal(catalogo),
     parte_alias_map_db = reactiveVal(NULL), pagar_hoy_db = ph,
-    sap_data = reactiveVal(list(AP = data.frame(Empresa = "NTS", Documento = c("4001", "4002", "4999"),
-                                                Factura = c("F-4001", "F-4002", "F-4999"),
-                                                Parte = c("ACEROS MONTERREY SA", "BODEGAS DEL NORTE SA", "OTRO"),
-                                                `Saldo vencido` = c(15000, 8200, 1), check.names = FALSE))), sap_ov_db = reactiveVal(NULL), manual_inv = reactiveVal(NULL),
+    sap_data = reactiveVal(list(AP = data.frame(Empresa = c("NTS", "NTS", "NTS", "OTR"),
+                                                Documento = c("4001", "4002", "4999", "4001"),
+                                                Factura = c("F-4001", "F-4002", "F-4999", "F-OTRA"),
+                                                Parte = c("ACEROS MONTERREY SA", "BODEGAS DEL NORTE SA", "OTRO", "OTRA EMPRESA"),
+                                                `Saldo vencido` = c(15000, 8200, 1, 7), check.names = FALSE))), sap_ov_db = reactiveVal(NULL), manual_inv = reactiveVal(NULL),
     bancos_confirmados = reactiveVal(tibble::tibble()), abonos_db = reactiveVal(NULL),
     effective_client_id = function() "dev", current_user = function() "luis",
     home_client_id = function() "dev")

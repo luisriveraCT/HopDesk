@@ -123,7 +123,7 @@ cerrar_modal()
 clic(celda(AP, "P1", 1L))
 clic(sprintf("document.querySelector('#%s .hdt-editar')", AP))
 clic(sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=crudos]')", AP))
-ok("H1: Editar -> Ver datos de origen shows the raw SAP rows of the marked payment only (1 of the 3)",
+ok("H1: Editar -> Ver datos de origen shows the raw SAP rows of the marked payment only (1 of 4: not 4002, not 4999, not the other company's 4001)",
    poll_until(function() grepl("Datos SAP crudos — 1 filas", modal(), fixed = TRUE), timeout_s = 10))
 cerrar_modal()
 clic(sprintf("document.querySelector('#%s .hdt-editar')", AP))
