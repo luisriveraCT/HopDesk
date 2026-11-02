@@ -14,13 +14,32 @@ primera_linea <- function(lines, input) {
   trimws(lines[i + 1L])
 }
 
+# The row buttons and the bar of the catalog and Inactivos are the table
+# engine's (T07): they send an id to a function of the module instead of an
+# input to an observer. Same rule for both: the first line checks.
+primera_linea_fun <- function(lines, fun) {
+  i <- grep(sprintf("%s <- function(", fun), lines, fixed = TRUE)
+  expect_length(i, 1)
+  trimws(lines[i + 1L])
+}
+
 test_that("cada observador que edita el catálogo empieza revisando el permiso", {
-  escritores <- c("cat_new", "prov_edit_id", "prov_inactivar_id", "prov_confirm_inactivar",
-                  "prov_delete_id", "cat_inactivar_bulk", "bulk_inactivar_confirm",
-                  "prov_modal_save", "excel_file", "confirmar_upload", "prov_reactivar_id",
-                  "prov_confirm_reactivar", "prov_del_inac_id")
+  escritores <- c("cat_new", "prov_confirm_inactivar", "bulk_inactivar_confirm",
+                  "prov_modal_save", "excel_file", "confirmar_upload", "prov_confirm_reactivar")
   for (n in escritores)
     expect_identical(primera_linea(src, n), "if (!.puede_editar()) return()", info = n)
+})
+
+test_that("cada acción de las tablas que edita el catálogo empieza revisando el permiso", {
+  acciones <- c(".editar", ".pedir_inactivar", ".eliminar", ".pedir_inactivar_bloque",
+                ".pedir_reactivar", ".eliminar_inactivo")
+  for (f in acciones)
+    expect_identical(primera_linea_fun(src, f), "if (!.puede_editar()) return()", info = f)
+  # ... and every action the two tables send reaches one of them.
+  expect_true(all(vapply(c("detalle       = .editar(id)", "inactivar     = .pedir_inactivar(id)",
+                    "eliminar      = .eliminar(id)", "inactivar_sel = .pedir_inactivar_bloque(a$ids)",
+                    "reactivar = .pedir_reactivar(id)", "eliminar  = .eliminar_inactivo(id)"),
+                  function(x) any(grepl(x, src, fixed = TRUE)), logical(1))))
 })
 
 test_that("set_provs() y set_inac() exigen el permiso antes de guardar", {

@@ -5,6 +5,10 @@
 # selección" applied them to the unfiltered active list, inactivating other
 # providers than the ones marked. Its confirm also rewrote the catalog with
 # active rows only, dropping any row whose activo flag was not TRUE.
+# Since T07 the catalog is the table engine's: search runs in the browser and
+# the bar's "Inactivar selección" sends the marked ids (input "catalogo-accion"),
+# so this drives that, as a browser does after searching "gamma" and marking
+# its only row.
 #
 # Drives the real proveedoresServer with shiny::testServer. Runs in its own
 # Rscript process: the S3 save functions are replaced with in-memory fakes
@@ -74,14 +78,14 @@ run_case <- function(label, fail_inac = FALSE) {
   )
   cat("\n--", label, "\n")
   shiny::testServer(proveedoresServer, args = list(shared = shared), {
-    # Search "gamma": the table shows only Gamma Fletes, as row 1.
-    session$setInputs(cat_search = "gamma")
+    # The table sends ids: every active provider has its own (P4's activo
+    # isn't TRUE, so it isn't in the active table).
     session$flushReact()
-    invisible(tryCatch(output$tbl_catalogo_prov, error = function(e) NULL))
-    cat("  table shows:", paste(.try(catalogo_ids()), collapse = ", "), "\n")
-    .chk(identical(.try(catalogo_ids()), "P3"), "search 'gamma' shows only P3")
+    cat("  table rows:", paste(.try(catalogo_datos()$id), collapse = ", "), "\n")
+    .chk(identical(.try(catalogo_datos()$id), c("P1", "P2", "P3")), "the table's rows are ids P1, P2, P3")
 
-    session$setInputs(tbl_catalogo_prov_rows_selected = 1L, cat_inactivar_bulk = 1L)
+    # Searched "gamma" in the browser, marked its only row: the bar sends P3.
+    session$setInputs(`catalogo-accion` = list(accion = "inactivar_sel", ids = list("P3"), nonce = 1))
     cat("  modal will inactivate:", paste(.try(bulk_inactivar_ids()), collapse = ", "), "\n")
     .chk(identical(.try(bulk_inactivar_ids()), "P3"), "modal targets the marked provider (P3), not P1")
 
