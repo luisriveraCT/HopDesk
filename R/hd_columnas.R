@@ -118,6 +118,39 @@ col_fecha <- function(campo, titulo = NULL, opcional = FALSE, visible = TRUE) {
     }), opcional, visible)
 }
 
+# Date and time (the registers: Actividad, Archivos de pago, pronósticos).
+# Shows the date like col_fecha plus "hh:mm" (segundos = TRUE: "hh:mm:ss"),
+# in the value's own time zone, and sorts by the full instant -- text in
+# dd/mm/aaaa sorted wrong. POSIXct or ISO text ("2026-11-02 08:40:54").
+col_fecha_hora <- function(campo, titulo = NULL, segundos = FALSE, opcional = FALSE, visible = TRUE) {
+  fecha <- col_fecha(campo)$valores
+  .hd_opcional(.hd_col("fecha_hora", campo, titulo, "izquierda", recorte = FALSE,
+    valores = function(x) {
+      # Each value with the first format it reads in (as.POSIXct's tryFormats
+      # needs ALL of them in one format, so a single bad value blanked all).
+      t <- if (inherits(x, "POSIXt")) as.POSIXct(x) else {
+        s <- as.character(x)
+        t <- as.POSIXct(rep(NA_real_, length(s)), origin = "1970-01-01")
+        for (f in c("%Y-%m-%d %H:%M:%OS", "%Y-%m-%dT%H:%M:%OS", "%Y-%m-%d %H:%M")) {
+          falta <- is.na(t) & !is.na(s)
+          if (any(falta)) t[falta] <- as.POSIXct(strptime(s[falta], f, tz = ""))
+        }
+        t
+      }
+      ok  <- !is.na(t)
+      iso <- character(length(t))
+      iso[ok] <- format(t[ok], "%Y-%m-%d %H:%M:%S")
+      mostrar <- character(length(t))
+      if (any(ok)) {
+        d <- fecha(format(t[ok], "%Y-%m-%d"))$mostrar
+        mostrar[ok] <- paste(d, format(t[ok], if (isTRUE(segundos)) "%H:%M:%S" else "%H:%M"))
+      }
+      orden <- iso
+      orden[!ok] <- NA_character_
+      list(mostrar = mostrar, orden = orden, copiar = iso)
+    }), opcional, visible)
+}
+
 # mapa: named list, raw value -> list(texto = <key or text>, tono = <css tone>).
 # Sorting follows the order the map declares; values not in the map go last
 # and show as they come, in the neutral tone.

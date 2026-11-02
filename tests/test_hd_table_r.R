@@ -676,3 +676,20 @@ test_that("pasted text is never reinterpreted: 01/02, 007 and =SUMA(A1) stay as 
   expect_identical(unclass(v$copiar), c("01/02", "007", "=SUMA(A1)"))
   expect_identical(hd_neutralizar(v$copiar), c("01/02", "007", "'=SUMA(A1)"))
 })
+
+test_that("col_fecha_hora: shows date + hh:mm, sorts by the instant, exports a real datetime", {
+  x <- c("2026-11-02 08:40:54", "2026-10-31 23:05:00", "", NA, "no es fecha")
+  v <- col_fecha_hora("F")$valores(x)
+  expect_identical(v$mostrar[1], paste(col_fecha("F")$valores("2026-11-02")$mostrar, "08:40"))
+  expect_identical(col_fecha_hora("F", segundos = TRUE)$valores(x)$mostrar[1],
+                   paste(col_fecha("F")$valores("2026-11-02")$mostrar, "08:40:54"))
+  expect_identical(v$orden[1:2], c("2026-11-02 08:40:54", "2026-10-31 23:05:00"))
+  expect_true(all(is.na(v$orden[3:5])) && all(v$mostrar[3:5] == ""))
+  expect_identical(order(v$orden[1:2]), c(2L, 1L))   # the instant, not dd/mm text
+  p <- as.POSIXct("2026-11-02 20:30:00", tz = "America/Mexico_City")
+  expect_identical(col_fecha_hora("F")$valores(p)$orden, "2026-11-02 20:30:00")   # its own zone, not UTC
+  f <- tempfile(fileext = ".xlsx")
+  hd_excel_escribir(data.frame(id = "a", F = "2026-11-02 08:40:54"), list(col_fecha_hora("F")), "a", "id", f)
+  w <- openxlsx::read.xlsx(f, detectDates = FALSE)
+  expect_true(is.numeric(w[[1]]))   # a real Excel datetime, not text
+})
