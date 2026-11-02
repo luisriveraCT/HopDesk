@@ -8,6 +8,16 @@
 .FC_CAP_REFRESH_ALL     <- "forecasting.refresh_all"
 .FC_CAP_EDIT_SUB        <- "forecasting.edit_subscription"
 
+# Row ids for the tables (hd_table): the stored id, or one made up for a row
+# written without it, and never repeated -- the engine refuses both, and one
+# bad row must not take the whole table down.
+.fc_ids <- function(x) {
+  x <- as.character(x)
+  vacio <- is.na(x) | !nzchar(x)
+  x[vacio] <- paste0("sin-id-", which(vacio))
+  make.unique(x, sep = "#")
+}
+
 # ── UI ────────────────────────────────────────────────────────────────────────
 
 forecastingUI <- function(id) {
@@ -59,7 +69,7 @@ forecastingUI <- function(id) {
             # Left: methods catalog
             shiny::column(5,
               shiny::h6("Métodos instalados", class = "text-muted text-uppercase small fw-bold"),
-              DT::dataTableOutput(ns("methods_tbl"))
+              hd_table_ui(ns("metodos_t"))
             ),
             # Right: subscriptions
             shiny::column(7,
@@ -317,18 +327,30 @@ forecastingServer <- function(id, shared) {
       )
     }, ignoreInit = TRUE)
 
-    # ── Methods table ─────────────────────────────────────────────────────────
-    output$methods_tbl <- DT::renderDataTable({
+    # ── Methods table (hd_table, catalog) ─────────────────────────────────────
+    # Static config, read once per session. Read-only: nothing to do with a
+    # method, so no row actions; the bubble shows a long description whole.
+    .metodos_tabla <- shiny::reactive({
       m <- tryCatch(load_forecasting_methods(), error = function(e) .schema_forecasting_methods())
-      if (!nrow(m)) return(data.frame())
       data.frame(
-        ID          = m$method_id,
-        Nombre      = m$label,
-        Tipo        = m$kind,
-        Descripción = m$description,
+        id          = .fc_ids(m$method_id),
+        method_id   = as.character(m$method_id),
+        label       = as.character(m$label),
+        kind        = as.character(m$kind),
+        description = as.character(m$description),
         stringsAsFactors = FALSE
       )
-    }, options = list(pageLength = 10, dom = "t"), rownames = FALSE, selection = "none")
+    })
+    hd_table_server(
+      "metodos_t", tabla = "pronostico_metodos", datos = .metodos_tabla,
+      columnas = list(
+        col_texto("method_id",   "tablas.pronosticos.metodos.id", recorte = FALSE),
+        col_texto("label",       "tablas.pronosticos.metodos.nombre"),
+        col_texto("kind",        "tablas.pronosticos.metodos.tipo", recorte = FALSE),
+        col_texto("description", "tablas.pronosticos.metodos.descripcion")
+      ),
+      vacio = "tablas.pronosticos.metodos.vacio"
+    )
 
     # ── Subscriptions table ───────────────────────────────────────────────────
     output$subs_tbl <- DT::renderDataTable({
