@@ -129,8 +129,11 @@ m <- agenda("R/pagar_hoy_module.R")
 for (s in m) message("  without base: ", s)
 ok("save_pagar_hoy*(): every Agenda save outside pagar_hoy_module.R passes base", !length(m))
 n_ph <- length(agenda(setdiff(archivos, "R/pagar_hoy_module.R")))
-ok(sprintf("pagar_hoy_module.R: %d Agenda saves still without base (ratchet 5: quitar x2, confirmar x2, Vaciar) -- lower when T06 converts", n_ph),
-   n_ph <= 5L)
+ok(sprintf("pagar_hoy_module.R: %d Agenda saves still without base (ratchet 3: confirmar x2, Vaciar) -- lower when they convert", n_ph),
+   n_ph <= 3L)
+m <- sin_base("save_manual", setdiff(archivos, "R/pagar_hoy_module.R"))
+for (s in m) message("  without base: ", s)
+ok("pagar_hoy_module.R: every save_manual() passes base", !length(m))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)

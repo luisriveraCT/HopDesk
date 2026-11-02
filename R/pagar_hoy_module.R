@@ -1358,11 +1358,12 @@ pagarHoyServer <- function(id, shared) {
         # Still read fresh from S3 before writing the whole table back --
         # removal is by id, so a stale base only risks silently dropping
         # another session's concurrent stage/unstage, never a wrong removal.
-        ph <- unstage_pagar_hoy(
-               tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
-                                            client_id = shared$effective_client_id()),
-                        error = function(e) NULL) %||% shared$pagar_hoy_db(),
-               rows |> dplyr::select(id), keys = "id")
+        # The copy this removal starts from is also the save's `base`: only
+        # these ids leave S3's agenda, whatever another session staged (CM09).
+        ph_base <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                                client_id = shared$effective_client_id()),
+                            error = function(e) NULL) %||% shared$pagar_hoy_db()
+        ph <- unstage_pagar_hoy(ph_base, rows |> dplyr::select(id), keys = "id")
         shared$pagar_hoy_db(ph)
         # found 2026-08-05: same bare-call bug as the confirm handlers (see
         # save_pagar_hoy_with_retry()'s own header comment in
@@ -1373,7 +1374,8 @@ pagarHoyServer <- function(id, shared) {
         # linked pagar_hoy row is still sitting in S3, unremoved -- the
         # opposite of a safe no-op, a genuinely inconsistent state.
         remove_result <- save_pagar_hoy_with_retry(ph, shared$current_user(),
-                                                    client_id = shared$effective_client_id())
+                                                    client_id = shared$effective_client_id(),
+                                                    base = ph_base)
         if (!isTRUE(remove_result$ok)) {
           showNotification(
             paste0("No se pudo quitar de la Agenda tras ", remove_result$attempts,
@@ -1444,9 +1446,20 @@ pagarHoyServer <- function(id, shared) {
                 mi <- tryCatch(load_manual(client_id = shared$effective_client_id()),
                               error = function(e) NULL) %||% tryCatch(shared$manual_inv(), error = function(e) NULL)
                 if (!is.null(mi) && nrow(mi)) {
+                  mi_base <- mi
                   mi <- mi[!mi$id %in% manual_ids, , drop = FALSE]
                   shared$manual_inv(mi)
-                  tryCatch(save_manual(mi, client_id = shared$effective_client_id()), error = function(e) NULL)
+                  # Rule 8: this failure used to vanish (error = NULL).
+                  tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base),
+                           error = function(e) {
+                             showNotification(tr("comun.error_guardar"), type = "error", duration = NULL)
+                             tryCatch(log_action(
+                               shared$current_user(), "pagar_hoy", "quitar_agenda_manual_fallo_guardado",
+                               conditionMessage(e), target_id = paste(manual_ids, collapse = ","),
+                               client_id             = tryCatch(shared$effective_client_id(), error = function(e2) NULL),
+                               viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e2) NULL)),
+                               error = function(e2) NULL)
+                           })
                 }
               }
             }
@@ -1494,18 +1507,20 @@ pagarHoyServer <- function(id, shared) {
         # Still read fresh from S3 before writing the whole table back --
         # removal is by id, so a stale base only risks silently dropping
         # another session's concurrent stage/unstage, never a wrong removal.
-        ph <- unstage_pagar_hoy(
-               tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
-                                            client_id = shared$effective_client_id()),
-                        error = function(e) NULL) %||% shared$pagar_hoy_db(),
-               rows |> dplyr::select(id), keys = "id")
+        # The copy this removal starts from is also the save's `base`: only
+        # these ids leave S3's agenda, whatever another session staged (CM09).
+        ph_base <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                                client_id = shared$effective_client_id()),
+                            error = function(e) NULL) %||% shared$pagar_hoy_db()
+        ph <- unstage_pagar_hoy(ph_base, rows |> dplyr::select(id), keys = "id")
         shared$pagar_hoy_db(ph)
         # found 2026-08-05: same bare-call bug as "Remove AP" above (see its
         # comment for the full incident) -- no linked-provision revert here
         # (provisions are AP-only), so this fix is simpler: guard the save,
         # and on failure stop before the success notification/log.
         remove_result <- save_pagar_hoy_with_retry(ph, shared$current_user(),
-                                                    client_id = shared$effective_client_id())
+                                                    client_id = shared$effective_client_id(),
+                                                    base = ph_base)
         if (!isTRUE(remove_result$ok)) {
           showNotification(
             paste0("No se pudo quitar de la Agenda tras ", remove_result$attempts,
@@ -1811,6 +1826,7 @@ pagarHoyServer <- function(id, shared) {
           # this block's own archive-removal would be silently discarded.
           mi <- tryCatch(load_manual(client_id = shared$effective_client_id()),
                          error = function(e) NULL) %||% shared$manual_inv()
+          mi_base <- mi   # before any archive below changes it: the saves' rebase base (CM09)
           if (!is.null(mi) && nrow(mi) && "id" %in% names(mi)) {
             plain_manual <- factura_rows[
               !is_erp_sourced(factura_rows$source) & is.na(factura_rows$provision_id),
@@ -1853,14 +1869,21 @@ pagarHoyServer <- function(id, shared) {
               if (length(archived_mi_ids)) {
                 shared$papelera_rv(pap)
                 tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
-                         error = function(e) showNotification(
-                           paste("Error al archivar entrada manual:", e$message), type = "warning"))
+                         error = function(e) {
+                           showNotification(paste("Error al archivar entrada manual:", e$message), type = "warning")
+                           tryCatch(log_action(
+                             shared$current_user(), "pagar_hoy", "archivar_manual_fallo_guardado",
+                             conditionMessage(e),
+                             client_id             = tryCatch(shared$effective_client_id(), error = function(e2) NULL),
+                             viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e2) NULL)),
+                             error = function(e2) NULL)
+                         })
                 conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces),
                                      error = function(e) { message("[pagar_hoy] archive link: ", conditionMessage(e)); NULL })
                 if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
                 mi <- mi[!mi[["id"]] %in% archived_mi_ids, , drop = FALSE]
                 shared$manual_inv(mi)
-                tryCatch(save_manual(mi, client_id = shared$effective_client_id()),
+                tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base),
                          error = function(e) showNotification(
                            paste("Error al eliminar entrada manual:", e$message), type = "warning"))
               }
@@ -1894,15 +1917,22 @@ pagarHoyServer <- function(id, shared) {
                 }
                 shared$papelera_rv(pap)
                 tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
-                         error = function(e) showNotification(
-                           paste("Error al archivar entrada manual:", e$message), type = "warning"))
+                         error = function(e) {
+                           showNotification(paste("Error al archivar entrada manual:", e$message), type = "warning")
+                           tryCatch(log_action(
+                             shared$current_user(), "pagar_hoy", "archivar_manual_fallo_guardado",
+                             conditionMessage(e),
+                             client_id             = tryCatch(shared$effective_client_id(), error = function(e2) NULL),
+                             viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e2) NULL)),
+                             error = function(e2) NULL)
+                         })
                 conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces),
                                      error = function(e) { message("[pagar_hoy] archive link: ", conditionMessage(e)); NULL })
                 if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
 
                 mi_updated <- mi[!mi[["id"]] %in% manual_ids, , drop = FALSE]
                 shared$manual_inv(mi_updated)
-                tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id()),
+                tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi_base),
                          error = function(e) showNotification(
                            paste("Error al eliminar entrada manual:", e$message), type = "warning"))
               }
@@ -2161,6 +2191,7 @@ pagarHoyServer <- function(id, shared) {
           # this block's own archive-removal would be silently discarded.
           mi <- tryCatch(load_manual(client_id = shared$effective_client_id()),
                          error = function(e) NULL) %||% shared$manual_inv()
+          mi_base <- mi   # before any archive below changes it: the saves' rebase base (CM09)
           if (!is.null(mi) && nrow(mi) && "id" %in% names(mi)) {
             plain_manual <- factura_rows[
               !is_erp_sourced(factura_rows$source) & is.na(factura_rows$provision_id),
@@ -2203,14 +2234,21 @@ pagarHoyServer <- function(id, shared) {
               if (length(archived_mi_ids)) {
                 shared$papelera_rv(pap)
                 tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
-                         error = function(e) showNotification(
-                           paste("Error al archivar entrada manual:", e$message), type = "warning"))
+                         error = function(e) {
+                           showNotification(paste("Error al archivar entrada manual:", e$message), type = "warning")
+                           tryCatch(log_action(
+                             shared$current_user(), "pagar_hoy", "archivar_manual_fallo_guardado",
+                             conditionMessage(e),
+                             client_id             = tryCatch(shared$effective_client_id(), error = function(e2) NULL),
+                             viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e2) NULL)),
+                             error = function(e2) NULL)
+                         })
                 conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces),
                                      error = function(e) { message("[pagar_hoy] archive link: ", conditionMessage(e)); NULL })
                 if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
                 mi <- mi[!mi[["id"]] %in% archived_mi_ids, , drop = FALSE]
                 shared$manual_inv(mi)
-                tryCatch(save_manual(mi, client_id = shared$effective_client_id()),
+                tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base),
                          error = function(e) showNotification(
                            paste("Error al eliminar entrada manual:", e$message), type = "warning"))
               }
@@ -2244,15 +2282,22 @@ pagarHoyServer <- function(id, shared) {
                 }
                 shared$papelera_rv(pap)
                 tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
-                         error = function(e) showNotification(
-                           paste("Error al archivar entrada manual:", e$message), type = "warning"))
+                         error = function(e) {
+                           showNotification(paste("Error al archivar entrada manual:", e$message), type = "warning")
+                           tryCatch(log_action(
+                             shared$current_user(), "pagar_hoy", "archivar_manual_fallo_guardado",
+                             conditionMessage(e),
+                             client_id             = tryCatch(shared$effective_client_id(), error = function(e2) NULL),
+                             viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e2) NULL)),
+                             error = function(e2) NULL)
+                         })
                 conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces),
                                      error = function(e) { message("[pagar_hoy] archive link: ", conditionMessage(e)); NULL })
                 if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
 
                 mi_updated <- mi[!mi[["id"]] %in% manual_ids, , drop = FALSE]
                 shared$manual_inv(mi_updated)
-                tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id()),
+                tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi_base),
                          error = function(e) showNotification(
                            paste("Error al eliminar entrada manual:", e$message), type = "warning"))
               }
