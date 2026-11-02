@@ -214,11 +214,6 @@ pagarHoyUI <- function(id) {
   }, error = function(e) message("[PAGOS_AUDIT] .log_pago_generado failed: ", e$message))
 }
 
-# Scroll height of an AP/AR queue table. Some days bring 150+ payments for one
-# company: past 30 rows the table grows to most of the window instead of
-# showing ~5 rows at a time. scrollCollapse keeps short tables short.
-.ph_queue_height <- function(n, base) if (n > 30) "70vh" else base
-
 pagarHoyServer <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -561,6 +556,41 @@ pagarHoyServer <- function(id, shared) {
 
     # Currency selectors are now live renderUI outputs — see per-company loop.
 
+    # ── The Agenda's two tables (hd_table, T06) ─────────────────────────────
+    # Their ids: the company's name without spaces or dots, so the element's
+    # id also works as a CSS #selector.
+    .ph_tabla_id <- function(libro, emp) paste0("tbl_", libro, "_", gsub("[^A-Za-z0-9]", "_", emp))
+    .ph_columnas_ap <- list(
+      col_insignia("Archivo", "tablas.agenda.archivo", mapa = list(
+        ok       = list(texto = "tablas.agenda.incluido",     tono = "exito"),
+        no_clabe = list(texto = "tablas.agenda.sin_clabe",    tono = "aviso"),
+        no_match = list(texto = "tablas.agenda.sin_catalogo", tono = "peligro"))),
+      col_texto("Proveedor", "tablas.agenda.proveedor"),
+      col_texto("Cuenta", "tablas.agenda.cuenta"),
+      col_insignia("Tipo", "tablas.facturas.tipo", mapa = list(
+        abono = list(texto = "tablas.agenda.abono", tono = "aviso"))),
+      col_texto("Referencia", "tablas.facturas.referencia"),
+      col_texto("Documento", "tablas.facturas.documento", recorte = FALSE, opcional = TRUE, visible = FALSE),
+      col_fecha("Vencimiento", "tablas.agenda.vencimiento"),
+      col_dinero("Importe", "tablas.facturas.importe", moneda = "Moneda"))
+    .ph_columnas_ar <- list(
+      col_texto("Cliente", "tablas.agenda.cliente"),
+      col_insignia("Tipo", "tablas.facturas.tipo", mapa = list(
+        abono = list(texto = "tablas.agenda.abono", tono = "aviso"))),
+      col_texto("Documento", "tablas.facturas.documento", recorte = FALSE),
+      col_fecha("Vencimiento", "tablas.agenda.vencimiento"),
+      col_dinero("Importe", "tablas.facturas.importe", moneda = "Moneda"))
+    .ph_ap_vacia <- data.frame(id = character(), Archivo = character(), Proveedor = character(),
+                               Cuenta = character(), Tipo = character(), Referencia = character(),
+                               Documento = character(), Vencimiento = as.Date(character()),
+                               Importe = numeric(), Moneda = character(), Codigo = character(),
+                               CLABE = character(), .acciones = character(),
+                               stringsAsFactors = FALSE, check.names = FALSE)
+    .ph_ar_vacia <- data.frame(id = character(), Cliente = character(), Tipo = character(),
+                               Documento = character(), Vencimiento = as.Date(character()),
+                               Importe = numeric(), Moneda = character(),
+                               stringsAsFactors = FALSE)
+
     # ── Global totals bar ────────────────────────────────────────────────────
     output$global_total_ui <- renderUI({
       s <- active_staged()   # pending-only for position calculation
@@ -626,11 +656,11 @@ pagarHoyServer <- function(id, shared) {
             div(class = "ph-section mb-3",
               uiOutput(ns(paste0("hdr_ap_", emp))),
               uiOutput(ns(paste0("legend_", emp))),
-              DT::dataTableOutput(ns(paste0("tbl_ap_", emp)))
+              hd_table_ui(ns(.ph_tabla_id("ap", emp)))
             ),
             div(class = "ph-section",
               uiOutput(ns(paste0("hdr_ar_", emp))),
-              DT::dataTableOutput(ns(paste0("tbl_ar_", emp)))
+              hd_table_ui(ns(.ph_tabla_id("ar", emp)))
             )
           )
         )
@@ -775,11 +805,7 @@ pagarHoyServer <- function(id, shared) {
         # BanBajio count - pending rows only (confirmed are already paid) — selection-aware so it matches modal
         n_ok <- if (nrow(s_pend)) {
           ann_s   <- .annotate_ap_cached(s_pend, emp) |> dplyr::arrange(FechaVenc)
-          sel_hdr <- input[[paste0("tbl_ap_", emp, "_rows_selected")]]
-          ann_s2  <- if (length(sel_hdr)) {
-            valid <- sel_hdr[sel_hdr >= 1L & sel_hdr <= nrow(ann_s)]
-            if (length(valid)) ann_s[valid, , drop = FALSE] else ann_s
-          } else ann_s
+          ann_s2  <- .ph_filas_objetivo(ann_s, t_ap)
           sum(ann_s2$ppl_status == "ok", na.rm = TRUE)
         } else 0L
 
@@ -845,22 +871,16 @@ pagarHoyServer <- function(id, shared) {
         )
       })
 
-      # ── AP table — color-coded by catalog match ───────────────────────────
-      output[[paste0("tbl_ap_", emp)]] <- DT::renderDataTable({
+      # ── AP table (hd_table "agenda_pagos") ───────────────────────────────
+      # The currency's pending payments by FechaVenc. The catalog match is
+      # the Archivo badge (with the legend above); the account (⇕), the link
+      # (✎) and the catalog search (🔍) are row buttons, by status. They used
+      # to be a coloured row and buttons inside the Proveedor cell.
+      ap_datos <- reactive({
         .link_counter()   # reactive dependency — re-renders on link/unlink
-        s_emp   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
         cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
-        s_cur   <- s_emp |> dplyr::filter(Moneda == cur_sel)
-
-        if (!nrow(s_cur)) {
-          return(DT::datatable(
-            data.frame(Proveedor = character(), Referencia = character(),
-                       Vencimiento = character(), Importe = character()),
-            escape = FALSE, rownames = FALSE,
-            options = list(pageLength = 50, dom = "t",
-                           language = list(emptyTable = "Sin pagos en cola"))
-          ))
-        }
+        s_cur   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP", Moneda == cur_sel)
+        if (!nrow(s_cur)) return(.ph_ap_vacia)
 
         # Referencia lookup: Documento → Factura, SAP rows first, SAP overrides, then manual entries
         sap_ap_tbl <- tryCatch(shared$sap_data()[["AP"]], error = function(e) NULL)
@@ -901,10 +921,6 @@ pagarHoyServer <- function(id, shared) {
         if (!"Codigo"     %in% names(ann)) ann[["Codigo"]]     <- NA_character_
         if (!"tipo_item" %in% names(ann)) ann[["tipo_item"]] <- NA_character_
         ann <- ann |> dplyr::mutate(
-            # live_alias: session override wins over annotation result.
-            # This ensures the badge always reflects the true current alias even when
-            # .annotate_ap's empresa-filtered alias_lookup cannot resolve the override
-            # (e.g. NTSBB belongs to a different empresa entry in the catalog).
             live_alias = {
               keys <- paste0(emp, "|", toupper(trimws(Parte)))
               resolved <- alias
@@ -919,146 +935,79 @@ pagarHoyServer <- function(id, shared) {
             },
             Referencia = {
               doc <- trimws(as.character(Documento))
-              ref <- if (length(ref_lkup_tbl)) trimws(ref_lkup_tbl[doc] %||% "") else ""
+              ref <- if (length(ref_lkup_tbl)) trimws(ref_lkup_tbl[doc] %||% "") else rep("", length(doc))
               dplyr::if_else(nzchar(ref) & !is.na(ref), ref, Documento)
-            },
-            abono_pfx = dplyr::if_else(
-              !is.na(tipo_item) & tipo_item == "abono",
-              '<span class="badge bg-warning text-dark me-1" style="font-size:0.65em;">ABONO</span>',
-              ''
-            ),
-            # Build Proveedor cell with colored dot + alias badge if found
-            Proveedor = dplyr::case_when(
-              ppl_status == "ok" ~ paste0(
-                abono_pfx,
-                '<span class="ph-dot ph-dot-ok" title="Listo para archivo de pagos"></span>',
-                htmltools::htmlEscape(Parte),
-                ' <button class="btn btn-xs btn-link p-0 ms-1 ph-cycle-alias-btn badge bg-success-subtle text-success border border-success-subtle" ',
-                'data-parte="', htmltools::htmlEscape(Parte), '" ',
-                'data-emp="', htmltools::htmlEscape(emp), '" ',
-                'data-current-alias="', htmltools::htmlEscape(live_alias), '" ',
-                'data-current-clabe="', ifelse(!is.na(clabe_dest), htmltools::htmlEscape(clabe_dest), ""), '" ',
-                'title="Clic para cambiar cuenta bancaria" style="cursor:pointer;">',
-                htmltools::htmlEscape(live_alias), ' \u21d5</button>',
-                ' <button class="btn btn-xs btn-link p-0 ms-1 ph-lookup-btn text-secondary" ',
-                'data-parte="', htmltools::htmlEscape(Parte), '" ',
-                'data-codigo="', htmltools::htmlEscape(Codigo %||% ""), '" ',
-                'title="Editar v\u00ednculo" style="font-size:0.8rem;line-height:1;">&#x270e;</button>'
-              ),
-              ppl_status == "no_clabe" ~ paste0(
-                abono_pfx,
-                '<span class="ph-dot ph-dot-partial" title="Sin CLABE en catálogo"></span>',
-                htmltools::htmlEscape(Parte),
-                ' <button class="btn btn-xs btn-link p-0 ms-1 ph-cycle-alias-btn badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" ',
-                'data-parte="', htmltools::htmlEscape(Parte), '" ',
-                'data-emp="', htmltools::htmlEscape(emp), '" ',
-                'data-current-alias="', htmltools::htmlEscape(live_alias), '" ',
-                'data-current-clabe="', ifelse(!is.na(clabe_dest), htmltools::htmlEscape(clabe_dest), ""), '" ',
-                'title="Clic para cambiar cuenta bancaria" style="cursor:pointer;">',
-                htmltools::htmlEscape(live_alias), ' \u21d5 \u2014 sin CLABE</button>',
-                ' <button class="btn btn-xs btn-link p-0 ms-1 ph-lookup-btn text-secondary" ',
-                'data-parte="', htmltools::htmlEscape(Parte), '" ',
-                'data-codigo="', htmltools::htmlEscape(Codigo %||% ""), '" ',
-                'title="Editar v\u00ednculo" style="font-size:0.8rem;line-height:1;">&#x270e;</button>'
-              ),
-              TRUE ~ paste0(
-                abono_pfx,
-                '<span class="ph-dot ph-dot-nomatch" title="No encontrado en catálogo"></span>',
-                htmltools::htmlEscape(Parte),
-                ' <button class="btn btn-xs btn-link p-0 ms-1 ph-lookup-btn" ',
-                'data-parte="', htmltools::htmlEscape(Parte), '" ',
-                'data-codigo="', htmltools::htmlEscape(Codigo %||% ""), '" ',
-                'title="Buscar en catálogo de proveedores" style="font-size:0.85rem;">\U0001f50d</button>'
-              )
-            ),
-            Vencimiento = format(FechaVenc, "%d/%m/%Y"),
-            Importe_fmt = fmt_money(Importe),
-            row_bg_base = dplyr::case_when(
-              ppl_status == "ok"       ~ "ph-row-ok",
-              ppl_status == "no_clabe" ~ "ph-row-partial",
-              TRUE                     ~ "ph-row-nomatch"
-            ),
-            row_bg = dplyr::if_else(!is.na(status) & status == "confirmed",
-                                     paste(row_bg_base, "ph-row-confirmed"),
-                                     row_bg_base)
-          )
+            })
+        data.frame(
+          id          = ann$id,
+          Archivo     = ann$ppl_status,
+          Proveedor   = ann$Parte,
+          Cuenta      = ifelse(ann$ppl_status == "no_match" | is.na(ann$live_alias), "", ann$live_alias),
+          Tipo        = ifelse(!is.na(ann$tipo_item) & ann$tipo_item == "abono", "abono", ""),
+          Referencia  = ann$Referencia,
+          Documento   = ann$Documento,
+          Vencimiento = ann$FechaVenc,
+          Importe     = ann$Importe,
+          Moneda      = ann$Moneda,
+          Codigo      = ifelse(is.na(ann$Codigo), "", as.character(ann$Codigo)),
+          CLABE       = ifelse(is.na(ann$clabe_dest), "", as.character(ann$clabe_dest)),
+          .acciones   = ifelse(ann$ppl_status == "no_match", "buscar", "cambiar_cuenta,editar"),
+          stringsAsFactors = FALSE, check.names = FALSE)
+      })
+      t_ap <- hd_table_server(.ph_tabla_id("ap", emp), tabla = "agenda_pagos",
+                              datos = ap_datos, columnas = .ph_columnas_ap,
+                              acciones_fila = c("cambiar_cuenta", "buscar", "editar"),
+                              vacio = "tablas.agenda.vacio_pagos", visibles = TRUE)
 
-        tbl <- ann |> dplyr::select(Proveedor, Referencia, Vencimiento, Importe = Importe_fmt)
-        row_classes <- ann$row_bg
+      # Row buttons: the same ⇕ / ✎ / 🔍 handlers the cell buttons called.
+      observeEvent(t_ap$accion(), {
+        a <- t_ap$accion()
+        d <- isolate(ap_datos())
+        f <- d[d$id %in% a$ids, , drop = FALSE]
+        if (!nrow(f)) return()
+        if (identical(a$accion, "cambiar_cuenta"))
+          .ph_ciclar_alias(list(parte = f$Proveedor[1], emp = emp, current_alias = f$Cuenta[1],
+                                current_clabe = f$CLABE[1], nonce = a$nonce))
+        else if (a$accion %in% c("editar", "buscar"))
+          .ph_abrir_lookup(list(parte = f$Proveedor[1], codigo = f$Codigo[1]))
+      }, ignoreInit = TRUE)
 
-        dt <- DT::datatable(
-          tbl,
-          escape    = FALSE,
-          rownames  = FALSE,
-          selection = list(mode = "multiple"),
-          options   = list(
-            paging = FALSE, dom = "t", scrollX = TRUE,
-            scrollY = .ph_queue_height(nrow(tbl), "200px"), scrollCollapse = TRUE,
-            destroy    = TRUE,
-            language   = list(emptyTable = "Sin pagos en cola"),
-            rowCallback = DT::JS(sprintf(
-              "function(row, data, index) {
-                var classes = %s;
-                if (index < classes.length) {
-                  $(row).addClass(classes[index]);
-                }
-              }",
-              jsonlite::toJSON(row_classes)
-            ))
-          )
-        )
-        dt
-      }, server = FALSE)
-
-      # ── AR table ──────────────────────────────────────────────────────────
-      output[[paste0("tbl_ar_", emp)]] <- DT::renderDataTable({
-        s_emp   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
+      # ── AR table (hd_table "agenda_cobros") ──────────────────────────────
+      ar_datos <- reactive({
         cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
-        s_cur   <- s_emp |> dplyr::filter(Moneda == cur_sel)
-        if (!nrow(s_cur)) {
-          return(DT::datatable(
-            data.frame(Cliente = character(), Documento = character(),
-                       Vencimiento = character(), Importe = character()),
-            escape = FALSE, rownames = FALSE,
-            options = list(pageLength = 50, dom = "t", scrollX = TRUE, scrollY = "180px",
-                           destroy = TRUE,
-                           language = list(emptyTable = "Sin cobros esperados"))))
-        }
-        s_sorted    <- s_cur |> dplyr::arrange(FechaVenc)
-        if (!"tipo_item" %in% names(s_sorted)) s_sorted[["tipo_item"]] <- NA_character_
-        row_classes <- dplyr::if_else(!is.na(s_sorted$status) & s_sorted$status == "confirmed",
-                                       "ph-row-confirmed", "")
+        s_cur   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR", Moneda == cur_sel)
+        if (!nrow(s_cur)) return(.ph_ar_vacia)
+        s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
+        tipo     <- s_sorted[["tipo_item"]] %||% rep(NA_character_, nrow(s_sorted))
         # Abono rows must be visually distinguishable from real Cobros, same
-        # as the AP table's abono_pfx badge above -- otherwise a partial
-        # payment looks exactly like a full invoice awaiting collection
-        # (found 2026-07-24, AR side had no badge at all).
-        abono_pfx <- dplyr::if_else(
-          !is.na(s_sorted[["tipo_item"]]) & s_sorted[["tipo_item"]] == "abono",
-          '<span class="badge bg-warning text-dark me-1" style="font-size:0.65em;">ABONO</span>',
-          ''
-        )
-        tbl <- s_sorted |>
-          dplyr::transmute(
-            Cliente = paste0(abono_pfx, htmltools::htmlEscape(Parte)),
-            Documento,
-            Vencimiento = format(FechaVenc, "%d/%m/%Y"),
-            Importe = fmt_money(Importe))
-        DT::datatable(tbl, escape = FALSE, rownames = FALSE,
-          selection = list(mode = "multiple"),
-          options   = list(paging = FALSE, dom = "t", scrollX = TRUE,
-                           scrollY = .ph_queue_height(nrow(tbl), "180px"), scrollCollapse = TRUE,
-                           destroy = TRUE,
-                           language = list(emptyTable = "Sin cobros esperados"),
-                           rowCallback = DT::JS(sprintf(
-                             "function(row, data, index) {
-                               var classes = %s;
-                               if (index < classes.length && classes[index] !== '') {
-                                 $(row).addClass(classes[index]);
-                               }
-                             }",
-                             jsonlite::toJSON(row_classes)
-                           ))))
-      }, server = FALSE)
+        # as the Pagos table -- otherwise a partial payment looks exactly
+        # like a full invoice awaiting collection (found 2026-07-24).
+        data.frame(
+          id          = s_sorted$id,
+          Cliente     = s_sorted$Parte,
+          Tipo        = ifelse(!is.na(tipo) & tipo == "abono", "abono", ""),
+          Documento   = s_sorted$Documento,
+          Vencimiento = s_sorted$FechaVenc,
+          Importe     = s_sorted$Importe,
+          Moneda      = s_sorted$Moneda,
+          stringsAsFactors = FALSE, check.names = FALSE)
+      })
+      t_ar <- hd_table_server(.ph_tabla_id("ar", emp), tabla = "agenda_cobros",
+                              datos = ar_datos, columnas = .ph_columnas_ar,
+                              vacio = "tablas.agenda.vacio_cobros", visibles = TRUE)
+
+      # The rows an action acts on, by id (never by row position): the
+      # marked ones; nothing marked -> what the search or a filter leaves
+      # showing; nothing narrowing -> the whole currency. Luis (2026-11-01):
+      # "confirmar se puede llevar solo lo de la búsqueda, si hay algo en
+      # búsqueda". What's marked always wins.
+      .ph_filas_objetivo <- function(s_sorted, t) {
+        sel <- t$seleccion()
+        if (length(sel) && any(s_sorted$id %in% sel)) return(s_sorted[s_sorted$id %in% sel, , drop = FALSE])
+        vis <- t$visibles()
+        if (!is.null(vis)) return(s_sorted[s_sorted$id %in% vis, , drop = FALSE])
+        s_sorted
+      }
 
       # ── PPL preview + download flow ──────────────────────────────────────
       # Step 1: user clicks "BanBajío (n)" → show match report modal
@@ -1073,10 +1022,7 @@ pagarHoyServer <- function(id, shared) {
         }
         s_cur   <- s_emp |> dplyr::filter(Moneda == cur_sel)
         ann_all <- .annotate_ap_cached(s_cur, emp) |> dplyr::arrange(FechaVenc)
-        raw_sel <- input[[paste0("tbl_ap_", emp, "_rows_selected")]]
-        sel     <- if (length(raw_sel)) raw_sel[raw_sel >= 1L & raw_sel <= nrow(ann_all)]
-        if (!length(sel)) sel <- seq_len(nrow(ann_all))
-        ann     <- ann_all[sel, , drop = FALSE]
+        ann     <- .ph_filas_objetivo(ann_all, t_ap)
         if (!nrow(ann)) {
           showNotification("Selecciona facturas primero.", type = "warning"); return()
         }
@@ -1241,10 +1187,7 @@ pagarHoyServer <- function(id, shared) {
           cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
           s_cur   <- s_emp |> dplyr::filter(Moneda == cur_sel)
           ann_all  <- .annotate_ap_cached(s_cur, emp) |> dplyr::arrange(FechaVenc)
-          raw_sel  <- input[[paste0("tbl_ap_", emp, "_rows_selected")]]
-          sel      <- if (length(raw_sel)) raw_sel[raw_sel >= 1L & raw_sel <= nrow(ann_all)]
-          if (!length(sel)) sel <- seq_len(nrow(ann_all))
-          ann      <- ann_all[sel, , drop = FALSE] |> dplyr::filter(ppl_status == "ok")
+          ann      <- .ph_filas_objetivo(ann_all, t_ap) |> dplyr::filter(ppl_status == "ok")
 
           if (!nrow(ann)) {
             writeLines("# No hay proveedores con alias en catálogo", file)
@@ -1341,14 +1284,14 @@ pagarHoyServer <- function(id, shared) {
         s_emp <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
         cur   <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur <- s_emp |> dplyr::filter(Moneda == cur)
-        sel   <- input[[paste0("tbl_ap_", emp, "_rows_selected")]]
+        sel   <- intersect(t_ap$seleccion(), s_cur$id)
         if (!length(sel)) {
           showNotification(
             "Selecciona al menos una fila en la tabla de pagos para quitar.",
             type = "warning", duration = 3)
           return()
         }
-        rows  <- (s_cur |> dplyr::arrange(FechaVenc))[sel, , drop = FALSE]
+        rows  <- s_cur |> dplyr::arrange(FechaVenc) |> dplyr::filter(id %in% sel)
         if (!nrow(rows)) return()
         # Users may remove anything from Agenda regardless of source --
         # ERP-confirmed rows included. Agenda never holds the real data, so
@@ -1490,14 +1433,14 @@ pagarHoyServer <- function(id, shared) {
         s_emp <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
         cur   <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur <- s_emp |> dplyr::filter(Moneda == cur)
-        sel   <- input[[paste0("tbl_ar_", emp, "_rows_selected")]]
+        sel   <- intersect(t_ar$seleccion(), s_cur$id)
         if (!length(sel)) {
           showNotification(
             "Selecciona al menos una fila en la tabla de cobros para quitar.",
             type = "warning", duration = 3)
           return()
         }
-        rows  <- (s_cur |> dplyr::arrange(FechaVenc))[sel, , drop = FALSE]
+        rows  <- s_cur |> dplyr::arrange(FechaVenc) |> dplyr::filter(id %in% sel)
         if (!nrow(rows)) return()
         # Users may remove anything from Agenda regardless of source --
         # ERP-confirmed rows included. Agenda never holds the real data, so
@@ -2371,8 +2314,10 @@ pagarHoyServer <- function(id, shared) {
     lookup_parte_rv  <- reactiveVal("")
     lookup_codigo_rv <- reactiveVal("")
 
-    observeEvent(input$ph_lookup_parte, {
-      click    <- input$ph_lookup_parte
+    # The ✎/🔍 row buttons of the Pagos tables (hd_table acc_fila: editar,
+    # buscar) call this with the row's Parte/Codigo; the lookup modal's own
+    # buttons still go through input$ph_lookup_parte.
+    .ph_abrir_lookup <- function(click) {
       q_parte  <- trimws(if (is.list(click)) click$parte %||% "" else click %||% "")
       q_codigo <- trimws(if (is.list(click)) click$codigo %||% "" else "")
       if (!nzchar(q_parte)) return()
@@ -2380,7 +2325,8 @@ pagarHoyServer <- function(id, shared) {
       lookup_codigo_rv(q_codigo)
       lookup_search_rv("")
       .render_lookup_modal(q_parte, "")
-    }, ignoreInit = TRUE)
+    }
+    observeEvent(input$ph_lookup_parte, .ph_abrir_lookup(input$ph_lookup_parte), ignoreInit = TRUE)
 
     # Update search rv — results are rendered by output$ph_lookup_results (renderUI).
     # Never call showModal() here: recreating the modal on every keystroke causes
@@ -2714,8 +2660,9 @@ pagarHoyServer <- function(id, shared) {
     }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
     # ── Cycle alias observer ──────────────────────────────────────────────────
-    observeEvent(input$ph_cycle_alias, {
-      click <- input$ph_cycle_alias
+    # The ⇕ row button of the Pagos tables (cambiar_cuenta) calls this with
+    # the row's Parte, empresa, alias and CLABE.
+    .ph_ciclar_alias <- function(click) {
       req(click)
       parte       <- toupper(trimws(click$parte         %||% ""))
       emp         <- trimws(click$emp                   %||% "")
@@ -2782,7 +2729,8 @@ pagarHoyServer <- function(id, shared) {
                if (nzchar(next_clabe)) paste0(" (", substr(next_clabe, nchar(next_clabe)-3, nchar(next_clabe)), ")") else ""),
         type = "message", duration = 2
       )
-    }, ignoreInit = TRUE, ignoreNULL = TRUE)
+    }
+    observeEvent(input$ph_cycle_alias, .ph_ciclar_alias(input$ph_cycle_alias), ignoreInit = TRUE, ignoreNULL = TRUE)
 
     # ── Download all — Step 1: preview modal ─────────────────────────────────
     observeEvent(input$preview_all, {

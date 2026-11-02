@@ -33,7 +33,8 @@ ok <- function(label, expr) {
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
 fmt_money <- function(x) paste0("$ ", formatC(x, format = "f", digits = 2, big.mark = ","))
 
-source("R/ppl_generator.R")
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R", "R/ppl_generator.R"))
+  source(f)
 source(Sys.getenv("PH_MODULE", "R/pagar_hoy_module.R"))
 
 # Stubs (after sourcing, so they win over the module's own top-level helpers).
