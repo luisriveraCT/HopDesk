@@ -10,6 +10,8 @@ proveedoresUI <- function(id) {
   tagList(
     tags$style(HTML("
       .prov-conflict-card { border:1px solid #e5e7eb; border-radius:8px; padding:16px; margin-bottom:12px; }
+      /* Without can_manage_proveedores the catalog's bar (Inactivar selección) isn't shown. */
+      .prov-solo-lectura .hdt-acciones { display: none !important; }
     ")),
     tabsetPanel(id = ns("prov_tabs"),
       tabPanel("Catálogo activo",  value = "catalogo",  .prov_catalogo_tab(ns)),
@@ -22,7 +24,7 @@ proveedoresUI <- function(id) {
 # ── Tab UIs ───────────────────────────────────────────────────────────────────
 
 .prov_catalogo_tab <- function(ns) {
-  div(class = "p-3",
+  div(class = "p-3", id = ns("catalogo_wrap"),
     # Search, filters, selection and "Inactivar selección" are the table's own.
     div(class = "d-flex align-items-center gap-2 mb-2",
       actionButton(ns("cat_new"), tagList(icon("plus"), " Nuevo proveedor"),
@@ -164,6 +166,17 @@ proveedoresServer <- function(id, shared) {
     # panel being reachable is not a permission. Each write observer starts
     # with .puede_editar(); set_provs()/set_inac() refuse as a last line.
     .puede_editar <- function() puede_o_avisa(shared, "can_manage_proveedores", session)
+    # Who can't write doesn't see the buttons that write: the rows' ✎ 🚫 ✕ 🔄
+    # (.acciones), the bar's Inactivar selección and ＋ Nuevo proveedor. It
+    # follows the session's user (ver como, a jump): a reactive, not a value
+    # fixed when the tables were made. The server checks above stay as the lock.
+    .puede_ver_escritura <- reactive(isTRUE(tryCatch(puede(shared$usuario(), "can_manage_proveedores"),
+                                                     error = function(e) FALSE)))
+    observe({
+      ok <- .puede_ver_escritura()
+      shinyjs::toggle("cat_new", condition = ok)
+      shinyjs::toggleClass("catalogo_wrap", "prov-solo-lectura", condition = !ok)
+    })
     .exigir_permiso <- function() {
       if (!puede(isolate(shared$usuario()), "can_manage_proveedores"))
         stop("[proveedores] can_manage_proveedores required to save the catalog", call. = FALSE)
@@ -229,6 +242,8 @@ proveedoresServer <- function(id, shared) {
         # Only an expired date shows a badge, as before ("EXPIRADO ...").
         vigencia     = ifelse(!is.na(fecha) & fecha < Sys.Date(), "expirado", ""),
         status       = ifelse(provs$status %in% "completo", "completo", "incompleto"),
+        # Empty = no row button (the engine fails closed).
+        .acciones    = rep(if (.puede_ver_escritura()) "editar,inactivar,eliminar" else "", nrow(provs)),
         stringsAsFactors = FALSE
       )
     })
@@ -1114,6 +1129,7 @@ proveedoresServer <- function(id, shared) {
         no_cuenta = inac$no_cuenta,
         rfc       = inac$rfc,
         moneda    = inac$moneda,
+        .acciones = rep(if (.puede_ver_escritura()) "reactivar,eliminar" else "", nrow(inac)),
         stringsAsFactors = FALSE
       )
     })

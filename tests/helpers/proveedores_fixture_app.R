@@ -37,8 +37,17 @@ registro <- reactiveVal(character(0))
 anotar   <- function(x) registro(c(registro(), x))
 resumen  <- function(df) paste(sprintf("%s@%s", df$nombre, df$no_cuenta), collapse = ", ")
 assign("bump_sync_version", function(...) invisible(NULL), envir = globalenv())
-assign("puede", function(usuario, permiso, ...) TRUE, envir = globalenv())
-assign("puede_o_avisa", function(...) TRUE, envir = globalenv())
+# PROV_SIN_PERMISO = 1: a user without can_manage_proveedores (the server
+# refuses with a notice, as puede_o_avisa() does, and logs "sin_permiso").
+sin_permiso <- identical(Sys.getenv("PROV_SIN_PERMISO"), "1")
+assign("puede", function(usuario, permiso, ...) !(sin_permiso && identical(permiso, "can_manage_proveedores")),
+       envir = globalenv())
+assign("puede_o_avisa", function(shared, permiso, session = NULL) {
+  if (!(sin_permiso && identical(permiso, "can_manage_proveedores"))) return(TRUE)
+  anotar(paste("sin_permiso", permiso))
+  showNotification("No tienes permiso para esta acción.", type = "error")
+  FALSE
+}, envir = globalenv())
 assign("save_proveedores", function(df, client_id = NULL, base = NULL)
   anotar(sprintf("activos %d: %s", nrow(df), resumen(df))), envir = globalenv())
 assign("save_proveedores_inactivos", function(df, client_id = NULL, base = NULL)
