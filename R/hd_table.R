@@ -7,6 +7,7 @@
 #                        columnas = list(col_empresa("Empresa"), ...),
 #                        piezas = c("densidad"), id_col = "id")
 #   t$seleccion()   # ids marked, in the order they're shown
+#   t$visibles()    # with visibles = TRUE: ids a search/filter/chip leaves, NULL if none narrows
 #   t$accion()      # list(accion, ids, nonce) or NULL
 #   t$periodo()     # "AAAA-MM" shown (with `periodo`), else NULL
 #   t$ir_mes(m)     # show month m, as if chosen in the bar (with `periodo`)
@@ -45,7 +46,7 @@ hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
     htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=22"),
-    htmltools::tags$script(src = "hdtable.js?v=32")
+    htmltools::tags$script(src = "hdtable.js?v=33")
   ))
 }
 
@@ -538,7 +539,8 @@ hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "dat
 hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = "id",
                             fichas = NULL, acciones_fila = NULL, acciones_barra = NULL,
                             filtros = NULL, periodo = NULL, aviso = NULL, encabezado = NULL,
-                            secciones = NULL, vacio = NULL, grupo = NULL, textos = NULL) {
+                            secciones = NULL, vacio = NULL, grupo = NULL, textos = NULL,
+                            visibles = FALSE) {
   piezas_tabla <- hd_piezas_de(tabla, piezas)
   piezas_motor <- hd_piezas_motor(tabla, piezas_tabla)
   # columnas: a list of col_*(), or a reactive returning one -- a table pasted
@@ -610,6 +612,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
                         sin_bloqueadas = isTRUE(textos$sin_bloqueadas),
                         vacio = if (!is.null(vacio)) .hd_texto(vacio$texto),
                         vacio_tono = vacio$tono),
+        visibles = isTRUE(visibles),
         fichas   = hd_fichas_payload(fichas, df, cols),
         filtros  = hd_filtros_payload(filtros, df, cols),
         periodo  = hd_periodo_payload(periodo, df),
@@ -661,6 +664,14 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
 
     list(
       seleccion = shiny::reactive(as.character(unlist(input$sel)) %||% character(0)),
+      # visibles = TRUE: the ids a search, a filter or a chip leaves showing,
+      # or NULL while nothing narrows the table (every row shows). The Agenda:
+      # with nothing marked, Confirmar takes what the search left (Luis).
+      visibles  = shiny::reactive({
+        v <- input$vis
+        if (!isTRUE(visibles) || is.null(v) || !isTRUE(v$filtrada)) return(NULL)
+        as.character(unlist(v$ids)) %||% character(0)
+      }),
       # The month the browser shows; until it reports one, the initial month.
       periodo   = shiny::reactive({
         if (is.null(periodo)) return(NULL)

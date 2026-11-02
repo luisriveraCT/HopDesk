@@ -1245,6 +1245,7 @@
     armarLista(st);
     pintarFiltros(st, activos);
     var filtrada = !!st.q || !!fv || activos.length > 0;
+    if (st.textos.visibles) enviarVis(st, filtrada);
 
     // Without sel_persistente, rows the search, a chip, a filter or the
     // month hides drop out of the selection.
@@ -1770,6 +1771,18 @@
     st.vis.forEach(function (i) { if (st.sel.has(st.ids[i])) { out.push(st.ids[i]); vistos.add(st.ids[i]); } });
     st.ids.forEach(function (id) { if (st.sel.has(id) && !vistos.has(id)) out.push(id); });
     return out;
+  }
+
+  // visibles = TRUE: what a search, a filter or a chip leaves showing, so
+  // the server can act on it when nothing is marked (the Agenda's Confirmar).
+  // Sent only when it changes; without anything narrowing, no ids at all.
+  function enviarVis(st, filtrada) {
+    var ids = filtrada ? st.vis.map(function (k) { return st.ids[k]; }) : null;
+    var firma = filtrada ? JSON.stringify(ids) : '';
+    if (st.firmaVis === firma && st.visFiltrada === filtrada) return;
+    st.firmaVis = firma; st.visFiltrada = filtrada;
+    if (window.Shiny && Shiny.setInputValue)
+      Shiny.setInputValue(st.ns + 'vis', { filtrada: filtrada, ids: ids || [] }, { priority: 'event' });
   }
 
   function enviarSel(st) {
