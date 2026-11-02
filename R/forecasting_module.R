@@ -81,7 +81,7 @@ forecastingUI <- function(id) {
                                     shiny::tagList(shiny::icon("plus"), " Suscripción global"),
                                     class = "btn btn-sm btn-outline-success")
               ),
-              DT::dataTableOutput(ns("subs_tbl"))
+              hd_table_ui(ns("subs_t"))
             )
           )
         )
@@ -352,35 +352,60 @@ forecastingServer <- function(id, shared) {
       vacio = "tablas.pronosticos.metodos.vacio"
     )
 
-    # ── Subscriptions table ───────────────────────────────────────────────────
-    output$subs_tbl <- DT::renderDataTable({
+    # ── Subscriptions table (hd_table, catalog) ───────────────────────────────
+    # ✎ or a double click opens the editor for that row's id. A click only
+    # marks nothing: it used to open the editor at once (and a second click
+    # on the same row did nothing, the selection hadn't changed).
+    .subs_tabla <- shiny::reactive({
       s <- .subs()
       s <- s[!is.na(s$active) & s$active, , drop = FALSE]
-      if (!nrow(s)) return(data.frame())
-
       m <- .metrics()
       lbl_map <- stats::setNames(m$label, m$metric_id)
-
+      metrica <- unname(lbl_map[s$metric_id])
       data.frame(
-        ID           = s$subscription_id,
-        Consumidor   = ifelse(!is.na(s$consumer_id) & nzchar(s$consumer_id %||% ""),
-                              s$consumer_id, "—"),
-        Tipo         = s$consumer_type,
-        Métrica      = lbl_map[s$metric_id] %||% s$metric_id,
-        Método       = s$method_id,
+        id              = .fc_ids(s$subscription_id),
+        subscription_id = as.character(s$subscription_id),
+        consumidor      = ifelse(!is.na(s$consumer_id) & nzchar(s$consumer_id %||% ""),
+                                 s$consumer_id, "—"),
+        tipo            = as.character(s$consumer_type),
+        metrica         = ifelse(is.na(metrica), s$metric_id, metrica),
+        metodo          = as.character(s$method_id),
+        .acciones       = rep("editar", nrow(s)),
         stringsAsFactors = FALSE
       )
-    }, options = list(pageLength = 15, dom = "ftp"), rownames = FALSE,
-    selection = list(mode = "single", target = "row"))
+    })
+    subs_t <- hd_table_server(
+      "subs_t", tabla = "pronostico_subs", datos = .subs_tabla,
+      columnas = list(
+        col_texto("subscription_id", "tablas.pronosticos.subs.id"),
+        col_texto("consumidor",      "tablas.pronosticos.subs.consumidor", recorte = FALSE),
+        col_insignia("tipo",         "tablas.pronosticos.subs.tipo", mapa = list(
+          global_default    = list(texto = "tablas.pronosticos.subs.global", tono = "info"),
+          pasivos_liability = list(texto = "tablas.pronosticos.subs.pasivo", tono = "morado"))),
+        col_texto("metrica",         "tablas.pronosticos.subs.metrica", recorte = FALSE),
+        col_texto("metodo",          "tablas.pronosticos.subs.metodo", recorte = FALSE)
+      ),
+      acciones_fila = "editar",
+      filtros       = list(list(campo = "tipo")),
+      vacio         = "tablas.pronosticos.subs.vacio"
+    )
 
-    # ── Subscription edit modal ───────────────────────────────────────────────
-    shiny::observeEvent(input$subs_tbl_rows_selected, {
-      sel <- input$subs_tbl_rows_selected
-      if (!length(sel)) return()
+    # The subscription the editor is open on, by id -- what Guardar saves.
+    # (It rode in a hidden <input>, which Shiny never binds: Guardar read
+    # NULL and closed the editor without saving.)
+    sub_editando <- shiny::reactiveVal(NULL)
+
+    shiny::observeEvent(subs_t$accion(), {
+      a <- subs_t$accion()
+      if (!a$accion %in% c("editar", "detalle") || !length(a$ids)) return()
+      d      <- .subs_tabla()
+      sub_id <- d$subscription_id[match(a$ids[1], d$id)]
+      if (is.na(sub_id) || !nzchar(sub_id)) return()
       s   <- .subs()
-      s   <- s[!is.na(s$active) & s$active, , drop = FALSE]
-      if (sel > nrow(s)) return()
-      row <- s[sel, ]
+      s   <- s[!is.na(s$active) & s$active & !is.na(s$subscription_id) & s$subscription_id == sub_id, , drop = FALSE]
+      if (!nrow(s)) return()
+      row <- s[1, ]
+      sub_editando(sub_id)
 
       methods <- tryCatch(load_forecasting_methods(), error = function(e) .schema_forecasting_methods())
       method_choices <- stats::setNames(methods$method_id, methods$label)
@@ -401,11 +426,9 @@ forecastingServer <- function(id, shared) {
         shiny::selectInput(ns("sub_method_new"), "Método nuevo:",
                            choices = method_choices,
                            selected = row$method_id[1]),
-        shiny::uiOutput(ns("sub_curve_ui")),
-        shiny::tags$input(type = "hidden", id = ns("sub_edit_id"),
-                          value = row$subscription_id[1])
+        shiny::uiOutput(ns("sub_curve_ui"))
       ))
-    }, ignoreNULL = TRUE, ignoreInit = TRUE)
+    }, ignoreInit = TRUE)
 
     output$sub_curve_ui <- shiny::renderUI({
       if (!identical(input$sub_method_new, "manual_curve")) return(NULL)
@@ -418,7 +441,7 @@ forecastingServer <- function(id, shared) {
     })
 
     shiny::observeEvent(input$sub_save, {
-      sub_id    <- input$sub_edit_id %||% ""
+      sub_id    <- sub_editando() %||% ""
       new_meth  <- input$sub_method_new %||% ""
       if (!nzchar(sub_id) || !nzchar(new_meth)) { shiny::removeModal(); return() }
 

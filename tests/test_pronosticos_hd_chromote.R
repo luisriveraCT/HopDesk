@@ -7,6 +7,7 @@
 # (hopdesk_coord/tablas/reportes/T10_inventario.md): M methods (§4).
 #
 # Run from project root:  Rscript tests/test_pronosticos_hd_chromote.R
+# PRO_RAIZ=<older checkout> runs the same test against that checkout's module.
 # =============================================================================
 cat("=== test_pronosticos_hd_chromote ===\n\n")
 
@@ -25,8 +26,8 @@ app <- NULL; b <- NULL
 on.exit({ try(if (!is.null(b)) b$close(), silent = TRUE); stop_bg_app(app) }, add = TRUE)
 arrancar <- function(falla = FALSE) {
   if (!is.null(app)) stop_bg_app(app)
-  app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(PRO_FALLA = "%s"); setwd("%s"); source("tests/helpers/pronosticos_fixture_app.R")$value',
-                                        if (falla) "1" else "0", repo), PORT, timeout_s = 90),
+  app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(PRO_FALLA = "%s", PRO_RAIZ = "%s"); setwd("%s"); source("tests/helpers/pronosticos_fixture_app.R")$value',
+                                        if (falla) "1" else "0", Sys.getenv("PRO_RAIZ", repo), repo), PORT, timeout_s = 90),
                    error = function(e) { message(conditionMessage(e)); NULL })
   !is.null(app)
 }
@@ -104,6 +105,46 @@ escribir(sprintf("document.querySelector('#%s .hdt-buscar')", M), "")
 ok("M: sorting by Nombre",
    { clic(sprintf("Array.from(document.querySelectorAll('#%s thead th')).filter(function(th){ return th.firstChild && th.firstChild.textContent === 'Nombre'; })[0]", M))
      identical(vis(M), c("manual_curve", "spot", "yesterday_spot")) })
+
+# ── S · Suscripciones (catalog D) ───────────────────────────────────────────
+S <- "fc-subs_t-hdt"
+boton <- function(t, id, accion) fila(t, id, sprintf(".querySelector('td.hdt-acc button[data-accion=%s]')", accion))
+ok("S: Suscripciones is on the engine", listo(S))
+ok("S1: the 3 active subscriptions by subscription_id; the inactive one is out",
+   identical(vis(S), c("s-usd", "s-tiie", "s-psv")))
+ok("S1: columns ID / Consumidor / Tipo / Métrica / Método",
+   identical(titulos(S), c("ID", "Consumidor", "Tipo", "Métrica", "Método")))
+ok("S7: Tipo is a badge (Global / Pasivo); Métrica shows the metric's label",
+   grepl("Global", texto_fila(S, "s-usd")) && grepl("Pasivo", texto_fila(S, "s-psv")) &&
+   grepl("TIIE 28d", texto_fila(S, "s-tiie")) && grepl("PSV-001", texto_fila(S, "s-psv")))
+ok("S2: a click on a row no longer opens the editor",
+   { clic(fila(S, "s-tiie", ".children[3]")); Sys.sleep(0.6); !nzchar(modal_titulo()) })
+clic(boton(S, "s-tiie", "editar")); Sys.sleep(0.8)
+ok("S2: ✎ on TIIE opens Editar suscripción for TIIE 28d",
+   identical(modal_titulo(), "Editar suscripción") &&
+   grepl("TIIE 28d", ev("document.querySelector('.modal.show .modal-body').textContent")))
+# The modal covers the page, so "another session" arrives without a click.
+invisible(ev("Shiny.setInputValue('otra_sesion', 1, {priority: 'event'}); 0")); Sys.sleep(1)
+ok("S3: another session puts a subscription first while the editor is open -- the table shows it",
+   identical(vis(S)[1], "s-new") && identical(modal_titulo(), "Editar suscripción"))
+invisible(ev("$('#fc-sub_method_new')[0].selectize.setValue('manual_curve'); 0")); Sys.sleep(0.5)
+clic("Array.from(document.querySelectorAll('.modal.show button')).filter(function(b){ return b.textContent.trim() === 'Guardar'; })[0]")
+Sys.sleep(0.8)
+guardado <- tail(grep("^guardar ", registro(), value = TRUE), 1)
+ok("S5: Guardar saves TIIE's new method, and only TIIE's (by id, after the shift)",
+   length(guardado) == 1L && grepl("s-tiie:manual_curve", guardado) && grepl("s-new:spot", guardado) &&
+   grepl("s-usd:yesterday_spot", guardado) && grepl("s-psv:yesterday_spot", guardado))
+ok("S5: logged, the editor closes and the user is told",
+   any(grepl("^log editar_suscripcion s-tiie$", registro())) && !nzchar(modal_titulo()) &&
+   grepl("Suscripción actualizada", aviso()))
+doble(fila(S, "s-psv", ".children[3]"))
+ok("S2: a double click opens the editor too (INPC, PSV-001)",
+   identical(modal_titulo(), "Editar suscripción") &&
+   grepl("INPC", ev("document.querySelector('.modal.show .modal-body').textContent")))
+cerrar_modal()
+clic(boton(S, "s-psv", "editar")); Sys.sleep(0.8)
+ok("S4: ✎ on the same row again reopens it", identical(modal_titulo(), "Editar suscripción"))
+cerrar_modal()
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)
