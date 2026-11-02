@@ -61,7 +61,7 @@ cat("── Stage 4: confirm/undo rewrite (ERP + plain manual) ─────�
   .chk_true(sum(grepl('disposition = "confirmed"', ph_txt)) >= 2L,
             "A8: at least 2 disposition='confirmed' archive calls (AP + AR plain-manual -- Stage 5 adds 2 more)")
 
-  .chk_true(any(grepl("recover_confirmacion\\(conf, conf_id", bnc_txt)),
+  .chk_true(any(grepl("recover_confirmacion\\((conf|fresco), conf_id", bnc_txt)),   # CM09: on S3's table
             "A9: undo_conf() calls the new recover_confirmacion()")
   .chk_true(any(grepl("restore_from_papelera\\(pap, row\\$archive_event_id", bnc_txt)),
             "A10: undo_conf() calls the new restore_from_papelera() for the archived-manual branch")

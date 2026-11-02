@@ -3838,6 +3838,7 @@ bancosServer <- function(id, shared) {
                        action      = "recuperar_papelera_fallo_guardado",
                        description = paste0("No se pudo guardar la papelera al recuperar ",
                                             row$archive_event_id, ": ", conditionMessage(e)),
+                       metadata    = list(archive_event_id = row$archive_event_id, error = conditionMessage(e)),
                        client_id             = tryCatch(shared$effective_client_id(), error = function(e2) NULL),
                        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e2) NULL)),
                        error = function(e2) NULL)

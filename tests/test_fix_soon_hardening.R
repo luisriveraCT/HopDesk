@@ -187,7 +187,7 @@ after <- mock_s3readRDS("networks/app_audit.rds", "mock-bucket")
   block <- paste(txt[start:min(start + 55, length(txt))], collapse = "\n")
   # CM09: the recovery runs on S3's table inside modificar_bancos_confirmados(),
   # and that whole call is what the tryCatch wraps now.
-  .chk(grepl("tryCatch\\(\\s*\\n?\\s*modificar_bancos_confirmados\\([^\\n]*\\n\\s*function\\(fresco\\) recover_confirmacion\\(", block), TRUE,
+  .chk(grepl("tryCatch\\(\\s*\\n?\\s*modificar_bancos_confirmados\\([^\\n]*\\n\\s*function\\(fresco\\) recover_confirmacion\\(", block, perl = TRUE), TRUE,
        "R/bancos_module.R: the undo_conf handler's recover_confirmacion() call is wrapped in tryCatch")
 }
 

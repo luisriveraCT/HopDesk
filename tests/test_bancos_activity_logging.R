@@ -231,10 +231,10 @@ bm_txt <- paste(readLines("R/bancos_module.R", warn = FALSE), collapse = "\n")
 
 call_blocks <- regmatches(bm_txt, gregexpr("log_action\\(\\s*\\n(?:.*?\\n)*?\\s*\\)", bm_txt, perl = TRUE))[[1]]
 bancos_calls <- Filter(function(b) grepl('module\\s*=\\s*"bancos"', b), call_blocks)
-.chk(length(bancos_calls), 9L, "found all 9 log_action(module=\"bancos\", ...) call sites")
+.chk(length(bancos_calls), 10L, "found all 10 log_action(module=\"bancos\", ...) call sites (CM09 added recuperar_papelera_fallo_guardado)")
 
 n_with_metadata <- sum(vapply(bancos_calls, function(b) grepl("metadata\\s*=", b), logical(1)))
-.chk(n_with_metadata, 9L, "every one of the 9 bancos log_action() calls now passes a metadata argument")
+.chk(n_with_metadata, 10L, "every one of the 10 bancos log_action() calls now passes a metadata argument")
 
 for (marker in c(".bancos_audit_rows_summary(del_rows)", ".bancos_audit_rows_summary(reasig_rows)",
                  ".bancos_audit_rows_summary(sesion_rows)", ".bancos_audit_rows_summary(nuevos)")) {

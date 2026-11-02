@@ -83,7 +83,7 @@ cat("── manual_inv cross-session sync + stale-read hardening ─────
 
 # ── 3. Tier 2: static scan, one assertion per hardened site ────────────────
 {
-  .block_contains_load_manual <- function(file, anchor_pattern, window = 20) {
+  .block_contains_load_manual <- function(file, anchor_pattern, window = 35) {   # 35: CM09 added a logged failure branch
     txt <- readLines(file, warn = FALSE)
     s <- grep(anchor_pattern, txt)
     if (!length(s)) return(NA)
