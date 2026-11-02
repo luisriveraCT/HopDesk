@@ -1533,15 +1533,12 @@ pagarHoyServer <- function(id, shared) {
       }
 
       # The rows a Confirmar acts on, for the four confirm handlers (the modal
-      # and the confirmation itself, Pagos and Cobros): the marked ones, or
-      # -- nothing marked -- the whole currency (Luis, T01: not a bug).
-      # s_sorted: the currency's pending rows by FechaVenc, the order the
-      # table shows them in.
+      # and the confirmation itself, Pagos and Cobros), by id from the table:
+      # the marked ones; nothing marked -> what the search leaves; nothing
+      # searched -> the whole currency (Luis, T01 and 2026-11-01). See
+      # .ph_filas_objetivo. s_sorted: the currency's pending rows by FechaVenc.
       .ph_filas_confirmar <- function(s_sorted, libro) {
-        raw_sel <- input[[paste0(if (identical(libro, "AP")) "tbl_ap_" else "tbl_ar_", emp, "_rows_selected")]]
-        sel     <- if (length(raw_sel)) raw_sel[raw_sel >= 1L & raw_sel <= nrow(s_sorted)]
-        if (!length(sel)) sel <- seq_len(nrow(s_sorted))
-        s_sorted[sel, , drop = FALSE]
+        .ph_filas_objetivo(s_sorted, if (identical(libro, "AP")) t_ap else t_ar)
       }
 
       observeEvent(input[[paste0("confirm_ap_", emp)]], {
