@@ -9,37 +9,8 @@ proveedoresUI <- function(id) {
   ns <- NS(id)
   tagList(
     tags$style(HTML("
-      .prov-badge-completo { background:#d1fae5; color:#065f46; border:1px solid #6ee7b7; border-radius:4px; padding:2px 8px; font-size:0.78rem; }
-      .prov-badge-incompleto { background:#fef9c3; color:#713f12; border:1px solid #fde68a; border-radius:4px; padding:2px 8px; font-size:0.78rem; }
-      .prov-badge-expirado { background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; border-radius:4px; padding:2px 8px; font-size:0.78rem; }
       .prov-conflict-card { border:1px solid #e5e7eb; border-radius:8px; padding:16px; margin-bottom:12px; }
-      .prov-conflict-side { flex:1; padding:8px; background:#f9fafb; border-radius:4px; font-size:0.85rem; }
-      .prov-row-duplicate { background:#fce7f3 !important; }
     ")),
-    # Static event delegation — works regardless of render order
-    tags$script(HTML(sprintf("
-      $(document).off('click.prov').on('click.prov', '.prov-edit-btn', function() {
-        Shiny.setInputValue('%s', $(this).data('id'), {priority:'event'});
-      });
-      $(document).on('click.prov', '.prov-inactivar-btn', function() {
-        Shiny.setInputValue('%s', $(this).data('id'), {priority:'event'});
-      });
-      $(document).on('click.prov', '.prov-del-btn', function() {
-        if (confirm('\\u00bfEliminar permanentemente este proveedor?'))
-          Shiny.setInputValue('%s', $(this).data('id'), {priority:'event'});
-      });
-      $(document).on('click.prov', '.prov-reactivar-btn', function() {
-        Shiny.setInputValue('%s', $(this).data('id'), {priority:'event'});
-      });
-      $(document).on('click.prov', '.prov-del-inac-btn', function() {
-        if (confirm('\\u00bfEliminar permanentemente?'))
-          Shiny.setInputValue('%s', $(this).data('id'), {priority:'event'});
-      });
-    ",
-      ns("prov_edit_id"), ns("prov_inactivar_id"), ns("prov_delete_id"),
-      ns("prov_reactivar_id"), ns("prov_del_inac_id")
-    ))),
-
     tabsetPanel(id = ns("prov_tabs"),
       tabPanel("Catálogo activo",  value = "catalogo",  .prov_catalogo_tab(ns)),
       tabPanel("Importar Excel",   value = "importar",  .prov_importar_tab(ns)),
@@ -52,17 +23,12 @@ proveedoresUI <- function(id) {
 
 .prov_catalogo_tab <- function(ns) {
   div(class = "p-3",
-    div(class = "d-flex align-items-center gap-2 mb-3",
-      div(style = "flex:1;",
-        textInput(ns("cat_search"), NULL, placeholder = "Buscar nombre, alias, RFC, No. Cuenta...",
-                  width = "100%")
-      ),
+    # Search, filters, selection and "Inactivar selección" are the table's own.
+    div(class = "d-flex align-items-center gap-2 mb-2",
       actionButton(ns("cat_new"), tagList(icon("plus"), " Nuevo proveedor"),
-                   class = "btn btn-sm btn-outline-primary"),
-      actionButton(ns("cat_inactivar_bulk"), tagList(icon("ban"), " Inactivar selección"),
-                   class = "btn btn-sm btn-outline-secondary")
+                   class = "btn btn-sm btn-outline-primary")
     ),
-    DT::dataTableOutput(ns("tbl_catalogo_prov"))
+    hd_table_ui(ns("catalogo"), alto = "auto")
   )
 }
 
@@ -161,16 +127,7 @@ proveedoresUI <- function(id) {
 }
 
 .prov_inactivos_tab <- function(ns) {
-  div(class = "p-3",
-    div(class = "d-flex align-items-center gap-2 mb-3",
-      div(style = "flex:1;",
-        textInput(ns("inac_search"), NULL,
-                  placeholder = "Buscar nombre, alias, RFC, No. Cuenta...",
-                  width = "100%")
-      )
-    ),
-    DT::dataTableOutput(ns("tbl_inactivos_prov"))
-  )
+  div(class = "p-3", hd_table_ui(ns("inactivos"), alto = "auto"))
 }
 
 # ── Server ────────────────────────────────────────────────────────────────────
@@ -248,102 +205,70 @@ proveedoresServer <- function(id, shared) {
       if (!is.null(shared$proveedores_inactivos_db)) shared$proveedores_inactivos_db(df)
     }
 
-    # ── Render active catalog DT ────────────────────────────────────────────
-    # ids of the rows the catalog table currently shows, in table order. The
-    # search filters in R, so DT's _rows_selected are positions in the
-    # filtered table: map them through this, never into get_provs().
-    catalogo_ids <- reactiveVal(character(0))
-
-    .render_catalogo <- function(search_txt = "") {
+    # ── Active catalog (hd_table, class D) ──────────────────────────────────
+    # Row buttons, the double click and the bar bring ids; the table refreshes
+    # by itself from shared$proveedores_db() (keeping search, sort, scroll and
+    # selection), so no action re-renders it.
+    catalogo_datos <- reactive({
       provs <- get_provs()
-      # Filter only active rows
-      provs <- provs[!is.na(provs$activo) & provs$activo == TRUE, ]
-
-      if (nzchar(trimws(search_txt))) {
-        s <- strip_accents(tolower(trimws(search_txt)))
-        provs <- provs[
-          grepl(s, strip_accents(tolower(provs$nombre    %||% "")), fixed = TRUE) |
-          grepl(s, strip_accents(tolower(provs$alias     %||% "")), fixed = TRUE) |
-          grepl(s, strip_accents(tolower(provs$rfc       %||% "")), fixed = TRUE) |
-          grepl(s, strip_accents(tolower(provs$no_cuenta %||% "")), fixed = TRUE),
-        ]
-      }
-      catalogo_ids(if (is.null(provs)) character(0) else as.character(provs$id))
-
-      if (is.null(provs) || !nrow(provs)) {
-        return(DT::datatable(
-          data.frame(Info = "Sin proveedores activos."),
-          options = list(dom = "t"), rownames = FALSE
-        ))
-      }
-
-      today <- Sys.Date()
-
-      disp <- provs |> dplyr::mutate(
-        Status_html = dplyr::case_when(
-          !is.na(status) & status == "completo" ~
-            '<span class="prov-badge-completo">\u2713 Completo</span>',
-          TRUE ~
-            '<span class="prov-badge-incompleto">\u26a0 Incompleto</span>'
-        ),
-        Activo_hasta_html = dplyr::case_when(
-          is.na(activo_hasta) | activo_hasta == "" | activo_hasta == "indefinido" ~
-            "Indefinido",
-          tryCatch(as.Date(activo_hasta) < today, error = function(e) FALSE) ~
-            paste0('<span class="prov-badge-expirado">EXPIRADO ', activo_hasta, '</span>'),
-          TRUE ~ as.character(activo_hasta)
-        ),
-        Empresas_disp = dplyr::if_else(
-          !is.na(empresas) & nzchar(empresas), empresas, Empresa %||% ""
-        ),
-        Acciones = paste0(
-          '<button class="btn btn-xs btn-outline-secondary me-1 prov-edit-btn" data-id="', id,
-          '" title="Editar">\u270f\ufe0f</button>',
-          '<button class="btn btn-xs btn-outline-warning me-1 prov-inactivar-btn" data-id="', id,
-          '" title="Inactivar">\U0001f6ab</button>',
-          '<button class="btn btn-xs btn-outline-danger prov-del-btn" data-id="', id,
-          '" title="Eliminar">\U0001f5d1</button>'
-        )
-      ) |> dplyr::select(
-        Nombre = nombre, Alias = alias, Banco = banco, `No. Cuenta` = no_cuenta,
-        RFC = rfc, Moneda = moneda, Empresas = Empresas_disp,
-        `Activo hasta` = Activo_hasta_html, Status = Status_html, Acciones
+      provs <- provs[!is.na(provs$activo) & provs$activo == TRUE, , drop = FALSE]
+      ah    <- as.character(provs$activo_hasta)
+      indef <- is.na(ah) | !nzchar(ah) | ah == "indefinido"
+      fecha <- suppressWarnings(as.Date(ifelse(indef, NA_character_, ah), optional = TRUE))
+      empresas <- as.character(provs$empresas)
+      data.frame(
+        id           = as.character(provs$id),
+        nombre       = provs$nombre,
+        alias        = provs$alias,
+        banco        = provs$banco,
+        no_cuenta    = provs$no_cuenta,
+        rfc          = provs$rfc,
+        moneda       = provs$moneda,
+        empresas     = ifelse(!is.na(empresas) & nzchar(empresas), empresas, as.character(provs$Empresa %||% "")),
+        activo_hasta = ifelse(indef, tr("tablas.proveedores.indefinido"), ah),
+        # Only an expired date shows a badge, as before ("EXPIRADO ...").
+        vigencia     = ifelse(!is.na(fecha) & fecha < Sys.Date(), "expirado", ""),
+        status       = ifelse(provs$status %in% "completo", "completo", "incompleto"),
+        stringsAsFactors = FALSE
       )
+    })
 
-      DT::datatable(
-        disp, escape = FALSE, rownames = FALSE,
-        selection = "multiple",
-        options = list(
-          pageLength = 20, dom = "tip",
-          scrollX = TRUE, scrollY = "420px", scrollCollapse = TRUE,
-          autoWidth = FALSE,
-          language = list(emptyTable = "Sin proveedores activos"),
-          columnDefs = list(
-            list(orderable = FALSE, targets = ncol(disp) - 1),
-            list(width = "180px", targets = 0),   # Nombre
-            list(width = "100px", targets = 1),   # Alias
-            list(width = "130px", targets = 2),   # Banco
-            list(width = "155px", targets = 3),   # No. Cuenta
-            list(width = "100px", targets = 4),   # RFC
-            list(width = "70px",  targets = 5),   # Moneda
-            list(width = "90px",  targets = 6),   # Empresas
-            list(width = "90px",  targets = 7),   # Activo hasta
-            list(width = "80px",  targets = 8),   # Status
-            list(width = "90px",  targets = 9)    # Acciones
-          )
-        )
-      )
-    }
+    catalogo <- hd_table_server(
+      "catalogo", tabla = "proveedores", datos = catalogo_datos,
+      piezas = c("sel_fila", "sel_rango", "sel_todos", "barra_acc"),
+      columnas = list(
+        col_texto("nombre",       "tablas.proveedores.nombre"),
+        col_texto("alias",        "tablas.proveedores.alias"),
+        col_texto("banco",        "tablas.proveedores.banco"),
+        col_texto("no_cuenta",    "tablas.proveedores.no_cuenta", recorte = FALSE),
+        col_texto("rfc",          "tablas.proveedores.rfc", recorte = FALSE),
+        col_texto("moneda",       "tablas.proveedores.moneda", recorte = FALSE),
+        col_texto("empresas",     "tablas.proveedores.empresas", recorte = FALSE),
+        col_texto("activo_hasta", "tablas.proveedores.activo_hasta", recorte = FALSE),
+        col_insignia("vigencia",  "tablas.proveedores.vigencia", mapa = list(
+          expirado = list(texto = "tablas.proveedores.expirado", tono = "rojo"))),
+        col_insignia("status",    "tablas.proveedores.estado", mapa = list(
+          completo   = list(texto = "tablas.proveedores.completo",   tono = "exito"),
+          incompleto = list(texto = "tablas.proveedores.incompleto", tono = "aviso")))
+      ),
+      filtros = list(list(campo = "status"), list(campo = "moneda"), list(campo = "empresas")),
+      acciones_fila  = c("editar", "inactivar", "eliminar"),
+      # Without the engine's confirmation: the server opens today's modal,
+      # which lists the names before moving them.
+      acciones_barra = list(list(accion = "inactivar_sel", texto = "tablas.proveedores.inactivar_seleccion")),
+      vacio = "tablas.proveedores.vacio_activos"
+    )
 
-    output$tbl_catalogo_prov <- DT::renderDataTable({
-      .render_catalogo(input$cat_search %||% "")
-    }, server = FALSE)
-
-    observe({
-      input$cat_search
-      output$tbl_catalogo_prov <- DT::renderDataTable({
-        .render_catalogo(input$cat_search %||% "")
-      }, server = FALSE)
+    observeEvent(catalogo$accion(), {
+      a  <- catalogo$accion()
+      id <- a$ids[1]
+      switch(a$accion,
+        editar        = ,
+        detalle       = .editar(id),
+        inactivar     = .pedir_inactivar(id),
+        eliminar      = .eliminar(id),
+        inactivar_sel = .pedir_inactivar_bloque(a$ids),
+        NULL)
     })
 
     # ── Edit/New modal ──────────────────────────────────────────────────────
@@ -478,19 +403,22 @@ proveedoresServer <- function(id, shared) {
       .show_edit_modal(NULL)
     }, ignoreInit = TRUE)
 
-    # Handle edit button clicks via JS
-    observeEvent(input$prov_edit_id, {
+    # ✎ and the double click: the edit modal for that provider.
+    .editar <- function(id) {
       if (!.puede_editar()) return()
       provs <- get_provs()
-      row   <- provs[provs$id == input$prov_edit_id, ]
+      row   <- provs[provs$id == id, ]
       if (!nrow(row)) return()
       editing_id_cat(row$id[1])
       .show_edit_modal(row[1, ])
-    }, ignoreInit = TRUE)
+    }
 
-    # Handle inactivar button clicks
-    observeEvent(input$prov_inactivar_id, {
+    # 🚫: asks in a modal; the confirm acts on the id kept here.
+    inactivar_id_rv <- reactiveVal(NULL)
+
+    .pedir_inactivar <- function(id) {
       if (!.puede_editar()) return()
+      inactivar_id_rv(id)
       showModal(modalDialog(
         title = tagList(icon("ban"), " Inactivar proveedor"),
         size = "s", easyClose = TRUE,
@@ -502,11 +430,11 @@ proveedoresServer <- function(id, shared) {
                        class = "btn btn-warning")
         )
       ))
-    }, ignoreInit = TRUE)
+    }
 
     observeEvent(input$prov_confirm_inactivar, {
       if (!.puede_editar()) return()
-      pid <- input$prov_inactivar_id
+      pid <- inactivar_id_rv()
       provs <- get_provs()
       row   <- provs[provs$id == pid, ]
       if (!nrow(row)) { removeModal(); return() }
@@ -526,36 +454,27 @@ proveedoresServer <- function(id, shared) {
                            function() { set_inac(inac); set_provs(updated_provs) })
       removeModal()
       if (!guardado) return()
+      inactivar_id_rv(NULL)
       showNotification("Proveedor movido a inactivos.", type = "message", duration = 2)
-      output$tbl_catalogo_prov <- DT::renderDataTable({
-        .render_catalogo(input$cat_search %||% "")
-      }, server = FALSE)
     }, ignoreInit = TRUE)
 
-    # Handle delete button clicks
-    observeEvent(input$prov_delete_id, {
+    # ✕ (already confirmed in the table's bar)
+    .eliminar <- function(id) {
       if (!.puede_editar()) return()
       provs <- get_provs()
-      updated <- provs[provs$id != input$prov_delete_id, ]
-      if (!.guardar("eliminar_proveedor", "Falló al eliminar el proveedor", input$prov_delete_id,
+      updated <- provs[provs$id != id, ]
+      if (!.guardar("eliminar_proveedor", "Falló al eliminar el proveedor", id,
                     function() set_provs(updated))) return()
       showNotification("Proveedor eliminado.", type = "message", duration = 2)
-      output$tbl_catalogo_prov <- DT::renderDataTable({
-        .render_catalogo(input$cat_search %||% "")
-      }, server = FALSE)
-    }, ignoreInit = TRUE)
+    }
 
-    # Bulk inactivar
-    # ids picked when the modal opens; the confirm acts on exactly these.
+    # Bulk inactivar: the table's bar sends the marked ids (by id, never by
+    # position); the modal lists their names and the confirm acts on exactly
+    # these.
     bulk_inactivar_ids <- reactiveVal(character(0))
 
-    observeEvent(input$cat_inactivar_bulk, {
+    .pedir_inactivar_bloque <- function(ids) {
       if (!.puede_editar()) return()
-      sel <- input$tbl_catalogo_prov_rows_selected
-      if (!length(sel)) {
-        showNotification("Selecciona filas primero.", type = "warning"); return()
-      }
-      ids   <- catalogo_ids()[sel[sel <= length(catalogo_ids())]]
       provs <- get_provs()
       rows_to_move <- provs[provs$id %in% ids &
                               !is.na(provs$activo) & provs$activo == TRUE, , drop = FALSE]
@@ -575,8 +494,7 @@ proveedoresServer <- function(id, shared) {
                        class = "btn btn-warning")
         )
       ))
-    }, ignoreInit = TRUE)
-
+    }
     observeEvent(input$bulk_inactivar_confirm, {
       if (!.puede_editar()) return()
       ids   <- bulk_inactivar_ids()
@@ -613,9 +531,6 @@ proveedoresServer <- function(id, shared) {
       removeModal()
       showNotification(paste0(nrow(rows_to_move), " proveedor(es) inactivados."),
                        type = "message", duration = 2)
-      output$tbl_catalogo_prov <- DT::renderDataTable({
-        .render_catalogo(input$cat_search %||% "")
-      }, server = FALSE)
     }, ignoreInit = TRUE)
 
     # Save modal
@@ -702,9 +617,6 @@ proveedoresServer <- function(id, shared) {
       showNotification(
         if (is.null(eid)) "Proveedor agregado." else "Proveedor actualizado.",
         type = "message", duration = 2)
-      output$tbl_catalogo_prov <- DT::renderDataTable({
-        .render_catalogo(input$cat_search %||% "")
-      }, server = FALSE)
     }, ignoreInit = TRUE)
 
     # ==========================================================================
@@ -1181,9 +1093,6 @@ proveedoresServer <- function(id, shared) {
       ), error = function(e) NULL)
       .limpiar_carga()
       showNotification(resumen, type = "message", duration = 5)
-      output$tbl_catalogo_prov <- DT::renderDataTable({
-        .render_catalogo(input$cat_search %||% "")
-      }, server = FALSE)
     }, ignoreInit = TRUE)
 
     # ==========================================================================
@@ -1191,63 +1100,51 @@ proveedoresServer <- function(id, shared) {
     # ==========================================================================
     reactivar_id_rv <- reactiveVal(NULL)
 
-    .render_inactivos <- function(search_txt = "") {
+    # Inactive providers (hd_table, class D, without selection: nothing used
+    # it). 🔄 opens today's "Activo por" modal; ✕ confirms in the bar.
+    inactivos_datos <- reactive({
       inac <- get_inac()
-      if (is.null(inac)) inac <- data.frame()
-      inac <- inac[!is.na(inac$activo) & inac$activo == FALSE, ]
-
-      if (nzchar(trimws(search_txt))) {
-        s <- strip_accents(tolower(trimws(search_txt)))
-        inac <- inac[
-          grepl(s, strip_accents(tolower(inac$nombre    %||% "")), fixed = TRUE) |
-          grepl(s, strip_accents(tolower(inac$alias     %||% "")), fixed = TRUE) |
-          grepl(s, strip_accents(tolower(inac$rfc       %||% "")), fixed = TRUE) |
-          grepl(s, strip_accents(tolower(inac$no_cuenta %||% "")), fixed = TRUE),
-        ]
-      }
-
-      if (!nrow(inac)) {
-        return(DT::datatable(
-          data.frame(Info = "Sin proveedores inactivos."),
-          options = list(dom = "t"), rownames = FALSE
-        ))
-      }
-
-      disp <- inac |> dplyr::mutate(
-        Acciones = paste0(
-          '<button class="btn btn-xs btn-outline-success me-1 prov-reactivar-btn" data-id="', id,
-          '" title="Reactivar">\U0001f504</button>',
-          '<button class="btn btn-xs btn-outline-danger prov-del-inac-btn" data-id="', id,
-          '" title="Eliminar permanentemente">\U0001f5d1</button>'
-        )
-      ) |> dplyr::select(
-        Nombre = nombre, Alias = alias, Banco = banco, `No. Cuenta` = no_cuenta,
-        RFC = rfc, Moneda = moneda, Acciones
+      if (is.null(inac)) inac <- .schema_proveedores()
+      inac <- inac[!is.na(inac$activo) & inac$activo == FALSE, , drop = FALSE]
+      data.frame(
+        id        = as.character(inac$id),
+        nombre    = inac$nombre,
+        alias     = inac$alias,
+        banco     = inac$banco,
+        no_cuenta = inac$no_cuenta,
+        rfc       = inac$rfc,
+        moneda    = inac$moneda,
+        stringsAsFactors = FALSE
       )
-
-      DT::datatable(
-        disp, escape = FALSE, rownames = FALSE,
-        options = list(
-          pageLength = 20, dom = "tip", scrollX = TRUE,
-          columnDefs = list(list(orderable = FALSE, targets = ncol(disp) - 1))
-        )
-      )
-    }
-
-    output$tbl_inactivos_prov <- DT::renderDataTable({
-      .render_inactivos(input$inac_search %||% "")
-    }, server = FALSE)
-
-    observe({
-      input$inac_search
-      output$tbl_inactivos_prov <- DT::renderDataTable({
-        .render_inactivos(input$inac_search %||% "")
-      }, server = FALSE)
     })
 
-    observeEvent(input$prov_reactivar_id, {
+    inactivos <- hd_table_server(
+      "inactivos", tabla = "proveedores_inactivos", datos = inactivos_datos,
+      columnas = list(
+        col_texto("nombre",    "tablas.proveedores.nombre"),
+        col_texto("alias",     "tablas.proveedores.alias"),
+        col_texto("banco",     "tablas.proveedores.banco"),
+        col_texto("no_cuenta", "tablas.proveedores.no_cuenta", recorte = FALSE),
+        col_texto("rfc",       "tablas.proveedores.rfc", recorte = FALSE),
+        col_texto("moneda",    "tablas.proveedores.moneda", recorte = FALSE)
+      ),
+      filtros       = list(list(campo = "moneda")),
+      acciones_fila = c("reactivar", "eliminar"),
+      vacio         = "tablas.proveedores.vacio_inactivos"
+    )
+
+    observeEvent(inactivos$accion(), {
+      a  <- inactivos$accion()
+      id <- a$ids[1]
+      switch(a$accion,
+        reactivar = .pedir_reactivar(id),
+        eliminar  = .eliminar_inactivo(id),
+        NULL)
+    })
+    # 🔄: asks for "Activo por"; the confirm acts on the id kept here.
+    .pedir_reactivar <- function(id) {
       if (!.puede_editar()) return()
-      reactivar_id_rv(input$prov_reactivar_id)
+      reactivar_id_rv(id)
       showModal(modalDialog(
         title = tagList(icon("rotate"), " Reactivar proveedor"),
         size = "s", easyClose = TRUE,
@@ -1266,7 +1163,7 @@ proveedoresServer <- function(id, shared) {
                                 "1 año"      = "1a"),
                     selected = "indefinido", width = "100%")
       ))
-    }, ignoreInit = TRUE)
+    }
 
     observeEvent(input$prov_confirm_reactivar, {
       if (!.puede_editar()) return()
@@ -1292,25 +1189,17 @@ proveedoresServer <- function(id, shared) {
       removeModal()
       if (!guardado) return()
       showNotification("Proveedor reactivado.", type = "message", duration = 2)
-      output$tbl_inactivos_prov <- DT::renderDataTable({
-        .render_inactivos(input$inac_search %||% "")
-      }, server = FALSE)
-      output$tbl_catalogo_prov <- DT::renderDataTable({
-        .render_catalogo(input$cat_search %||% "")
-      }, server = FALSE)
     }, ignoreInit = TRUE)
 
-    observeEvent(input$prov_del_inac_id, {
+    # ✕ on an inactive one (already confirmed in the table's bar).
+    .eliminar_inactivo <- function(id) {
       if (!.puede_editar()) return()
       inac <- get_inac()
-      updated <- inac[inac$id != input$prov_del_inac_id, ]
-      if (!.guardar("eliminar_proveedor_inactivo", "Falló al eliminar el proveedor inactivo", input$prov_del_inac_id,
+      updated <- inac[inac$id != id, ]
+      if (!.guardar("eliminar_proveedor_inactivo", "Falló al eliminar el proveedor inactivo", id,
                     function() set_inac(updated))) return()
       showNotification("Proveedor eliminado permanentemente.", type = "message", duration = 2)
-      output$tbl_inactivos_prov <- DT::renderDataTable({
-        .render_inactivos(input$inac_search %||% "")
-      }, server = FALSE)
-    }, ignoreInit = TRUE)
+    }
 
   }) # end moduleServer
 }

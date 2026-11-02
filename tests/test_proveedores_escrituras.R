@@ -44,8 +44,15 @@ mover <- function(pasos, falla = NULL) {
   inactivos <- .prov_guardado$inactivos %||% i1
   list(activos = activos$id, inactivos = inactivos$id, error = error, avisos = avisos, logs = prov_logs())
 }
-inactivar <- function(id) function(session) { session$setInputs(prov_inactivar_id = id); session$setInputs(prov_confirm_inactivar = 1) }
-reactivar <- function(id) function(session) { session$setInputs(prov_reactivar_id = id, prov_reactivar_hasta = "indefinido")
+# A row action as the table sends it (input "<tabla>-accion": accion, ids, nonce).
+.nonce <- 0L
+accion <- function(session, tabla, accion, id) {
+  .nonce <<- .nonce + 1L
+  do.call(session$setInputs, setNames(list(list(accion = accion, ids = list(id), nonce = .nonce)), paste0(tabla, "-accion")))
+}
+inactivar <- function(id) function(session) { accion(session, "catalogo", "inactivar", id); session$setInputs(prov_confirm_inactivar = 1) }
+reactivar <- function(id) function(session) { session$setInputs(prov_reactivar_hasta = "indefinido")
+                                              accion(session, "inactivos", "reactivar", id)
                                               session$setInputs(prov_confirm_reactivar = 1) }
 
 test_that("VP2: Inactivar moves the provider (both writes fine)", {
@@ -73,10 +80,10 @@ test_that("VP2: Reactivar with the second write failing leaves it in both lists,
 })
 
 # ── VP3 ─────────────────────────────────────────────────────────────────────
-eliminar     <- function(id) function(session) session$setInputs(prov_delete_id = id)
-eliminar_ina <- function(id) function(session) session$setInputs(prov_del_inac_id = id)
+eliminar     <- function(id) function(session) accion(session, "catalogo", "eliminar", id)
+eliminar_ina <- function(id) function(session) accion(session, "inactivos", "eliminar", id)
 editar <- function(id, nombre) function(session) {
-  session$setInputs(prov_edit_id = id)
+  accion(session, "catalogo", "editar", id)
   session$setInputs(prov_nombre = nombre, prov_alias = "", prov_rfc = "", prov_no_cuenta = "012180001111111119",
                     prov_banco = "BBVA Bancomer|012", prov_correo = "", prov_moneda = "MXN", prov_tipo_relacion = "",
                     prov_empresas = "NTS", prov_activo_hasta_sel = "indefinido")
