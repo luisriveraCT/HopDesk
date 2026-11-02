@@ -34,7 +34,7 @@ test_that("set_provs() y set_inac() exigen el permiso antes de guardar", {
 
 test_that("ningún guardado del catálogo queda fuera de set_provs()/set_inac()", {
   llamadas <- grep("save_proveedores(_inactivos)?[(]", src)
-  dentro   <- grep("save_proveedores(_inactivos)?[(]df, client_id = shared[$]effective_client_id[(][)][)]", src)
+  dentro   <- grep("save_proveedores(_inactivos)?[(]df, client_id = shared[$]effective_client_id[(][)](, base = get_(provs|inac)[(][)])?[)]", src)   # CM09: base
   expect_setequal(llamadas, dentro)
   expect_length(dentro, 2)
 })
