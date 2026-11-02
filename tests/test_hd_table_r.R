@@ -693,3 +693,15 @@ test_that("col_fecha_hora: shows date + hh:mm, sorts by the instant, exports a r
   w <- openxlsx::read.xlsx(f, detectDates = FALSE)
   expect_true(is.numeric(w[[1]]))   # a real Excel datetime, not text
 })
+
+test_that("col_numero: thousands commas, sorts by value, no currency, exports a number", {
+  v <- col_numero("N")$valores(c(9, 10, 1234567, NA, "x", -0.2))
+  expect_identical(v$mostrar, c("9", "10", "1,234,567", "", "", "0"))
+  expect_identical(order(v$orden[1:3]), 1:3)          # 9 before 10, unlike text
+  expect_identical(col_numero("N", decimales = 1)$valores(1234.56)$mostrar, "1,234.6")
+  expect_error(col_numero("N", decimales = -1), "decimales")
+  expect_identical(col_numero("N")$alinear, "derecha")
+  f <- tempfile(fileext = ".xlsx")
+  hd_excel_escribir(data.frame(id = "a", N = 1234), list(col_numero("N")), "a", "id", f)
+  expect_identical(openxlsx::read.xlsx(f)[[1]], 1234)
+})

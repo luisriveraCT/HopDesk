@@ -504,6 +504,7 @@ hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "dat
     v <- col$valores(d[[col$campo]])
     switch(col$tipo,
       dinero = v$orden,
+      numero = v$orden,
       fecha  = as.Date(ifelse(nzchar(v$copiar), v$copiar, NA_character_)),
       fecha_hora = as.POSIXct(ifelse(nzchar(v$copiar), v$copiar, NA_character_), tz = ""),
       hd_neutralizar(v$copiar))
@@ -517,6 +518,7 @@ hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "dat
   for (j in seq_along(columnas)) {
     estilo <- switch(columnas[[j]]$tipo,
       dinero = openxlsx::createStyle(numFmt = "#,##0.00"),
+      numero = openxlsx::createStyle(numFmt = if (isTRUE(columnas[[j]]$decimales > 0)) paste0("#,##0.", strrep("0", columnas[[j]]$decimales)) else "#,##0"),
       fecha  = openxlsx::createStyle(numFmt = "yyyy-mm-dd"),
       fecha_hora = openxlsx::createStyle(numFmt = "yyyy-mm-dd hh:mm:ss"),
       NULL)

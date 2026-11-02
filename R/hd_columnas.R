@@ -84,6 +84,28 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, op
     }), opcional, visible)
 }
 
+# A plain number (rows, ms, quantities): right-aligned, thousands commas,
+# `decimales` places, sorted by value (as text "9" went after "10") and
+# exported as a number. No currency and never summed in the footer.
+col_numero <- function(campo, titulo = NULL, decimales = 0L, opcional = FALSE, visible = TRUE) {
+  if (!is.numeric(decimales) || length(decimales) != 1L || is.na(decimales) || decimales < 0)
+    stop(sprintf("col_numero(\"%s\"): `decimales` must be one number >= 0.", campo), call. = FALSE)
+  decimales <- as.integer(decimales)
+  .hd_opcional(.hd_col("numero", campo, titulo, "derecha", recorte = FALSE, decimales = decimales,
+    valores = function(x) {
+      x  <- round(suppressWarnings(as.numeric(x)), decimales)
+      ok <- !is.na(x)
+      x[ok & x == 0] <- 0
+      f  <- sprintf(paste0("%.", decimales, "f"), abs(x[ok]))
+      miles <- gsub(if (decimales) "(\\d)(?=(\\d{3})+\\.)" else "(\\d)(?=(\\d{3})+$)", "\\1,", f, perl = TRUE)
+      mostrar <- character(length(x))
+      mostrar[ok] <- paste0(ifelse(x[ok] < 0, "-", ""), miles)
+      copiar <- character(length(x))
+      copiar[ok] <- sprintf(paste0("%.", decimales, "f"), x[ok])
+      list(mostrar = mostrar, orden = x, copiar = copiar)
+    }), opcional, visible)
+}
+
 # Date, POSIXct or ISO text -> Date (NA where it isn't one).
 .hd_como_fecha <- function(x) {
   if (inherits(x, "Date")) x
