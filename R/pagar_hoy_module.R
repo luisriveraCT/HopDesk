@@ -510,9 +510,9 @@ pagarHoyServer <- function(id, shared) {
       ap_rows
     }
 
-    # ── Annotation cache — keyed on (empresa, Parte+Documento hash) ──────────
+    # ── Annotation cache — see .annotate_ap_cached below for its key ─────────
     # Prevents re-annotating the same AP rows on currency-switch or saldo edits.
-    # The env lives for the module session; no manual invalidation needed.
+    # The env lives for the module session; link/unlink still clear it.
     .annot_cache <- new.env(parent = emptyenv())
 
     # Session-only alias overrides: named list keyed by "empresa|parte_upper" → alias string.
@@ -522,14 +522,41 @@ pagarHoyServer <- function(id, shared) {
     # Incremented after every link/unlink to force table re-render
     .link_counter <- reactiveVal(0L)
 
+    # The cache holds ONLY the columns .annotate_ap adds, by row id, and pastes
+    # them onto the rows passed in -- so Importe, FechaVenc, tipo_item, id and
+    # order always come from the fresh rows. It used to return the whole
+    # cached row, keyed on Parte/Documento/Codigo alone: an Importe edited or
+    # a date moved in the Calendar (.sync_staged), or an invoice re-staged as
+    # an abono, came back with the old row, and the payment preview, the PPL
+    # file and the .zip paid the OLD amount (found 2026-11-01, T06 inventory).
+    # The key also carries everything the annotation reads -- the supplier
+    # catalog, the saved Parte -> alias links, this session's overrides and
+    # the company map -- so a CLABE corrected in Proveedores (here or in
+    # another session, via the sync bus) is never paid to the old account.
+    # Reading them here also makes the tables re-render when they change.
+    # With every row's data fresh, the table's order (by FechaVenc) again
+    # matches the order the confirm handlers sort by.
+    .annot_cols <- c("alias", "clabe_dest", "banco_dest", "medio_pago", "ppl_status")
     .annotate_ap_cached <- function(ap_rows, empresa) {
-      key <- paste0(empresa, "_",
-                    digest::digest(list(ap_rows$Parte, ap_rows$Documento, ap_rows$Codigo)))
-      cached <- .annot_cache[[key]]
-      if (!is.null(cached)) return(cached)
-      result <- .annotate_ap(ap_rows, empresa)
-      .annot_cache[[key]] <- result
-      result
+      ids <- as.character(ap_rows[["id"]] %||% rep(NA_character_, nrow(ap_rows)))
+      if (!nrow(ap_rows) || anyNA(ids) || anyDuplicated(ids)) return(.annotate_ap(ap_rows, empresa))
+      o   <- order(ids)
+      key <- paste0(empresa, "_", digest::digest(list(
+        ids[o], ap_rows$Parte[o], ap_rows[["Codigo"]][o],
+        provs_db(),
+        if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db(),
+        .session_alias_overrides(),
+        shared$company_map())))
+      ann <- .annot_cache[[key]]
+      if (is.null(ann)) {
+        full <- .annotate_ap(ap_rows, empresa)
+        ann  <- data.frame(id = ids, full[, intersect(.annot_cols, names(full)), drop = FALSE],
+                           stringsAsFactors = FALSE)
+        .annot_cache[[key]] <- ann
+      }
+      m <- match(ids, ann$id)
+      for (cl in setdiff(names(ann), "id")) ap_rows[[cl]] <- ann[[cl]][m]
+      ap_rows
     }
 
     # Currency selectors are now live renderUI outputs — see per-company loop.
