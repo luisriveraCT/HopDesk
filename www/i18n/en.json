@@ -270,6 +270,7 @@
   "tablas.proveedores.importar.hecho": "Import done: {nuevos} new, {actualizados} updated, {movidos} moved to the other list.",
   "tablas.proveedores.importar.motivo_banco_clabe": "The CLABE belongs to bank {clabe} but the bank says {banco}.",
   "tablas.proveedores.importar.aviso_numero": "⚠ Excel stored this account as a number; check whether leading zeros are missing.",
+  "tablas.proveedores.error_guardar": "The change to the vendor catalog couldn't be saved. Check the connection and try again.",
   "tablas.accion.agregar_seleccion": "Add selection",
   "tablas.accion.agregar_todo": "Add all",
   "tablas.accion.papelera": "Send to trash",

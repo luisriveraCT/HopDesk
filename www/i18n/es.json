@@ -270,6 +270,7 @@
   "tablas.proveedores.importar.hecho": "Importación lista: {nuevos} nuevos, {actualizados} actualizados, {movidos} cambiados de lista.",
   "tablas.proveedores.importar.motivo_banco_clabe": "La CLABE es del banco {clabe} y el banco dice {banco}.",
   "tablas.proveedores.importar.aviso_numero": "⚠ Excel guardó esta cuenta como número; revisa si le faltan ceros al inicio.",
+  "tablas.proveedores.error_guardar": "No se pudo guardar el cambio en el catálogo de proveedores. Verifica la conexión e intenta de nuevo.",
   "tablas.accion.agregar_seleccion": "Agregar selección",
   "tablas.accion.agregar_todo": "Agregar todo",
   "tablas.accion.papelera": "Mandar a papelera",

@@ -210,6 +210,25 @@ proveedoresServer <- function(id, shared) {
       if (!is.null(shared$proveedores_db)) shared$proveedores_db(df)
     }
 
+    # Every one-row write of the catalog (rule 8): a failed save is shown to
+    # the user and logged, never silent. TRUE when everything was saved.
+    .guardar <- function(accion, descripcion, target_id, escribir) {
+      error <- tryCatch({ escribir(); NULL }, error = function(e) e)
+      if (is.null(error)) return(TRUE)
+      message("[PROV] ", accion, " failed: ", conditionMessage(error))
+      showNotification(tr("tablas.proveedores.error_guardar"), type = "error", duration = 6)
+      tryCatch(log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "proveedores",
+        action      = paste0(accion, "_fallido"),
+        description = paste0(descripcion, ": ", conditionMessage(error)),
+        target_id   = target_id,
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      ), error = function(e) NULL)
+      FALSE
+    }
+
     set_inac <- function(df) {
       .exigir_permiso()
       save_proveedores_inactivos(df, client_id = shared$effective_client_id())
@@ -491,9 +510,10 @@ proveedoresServer <- function(id, shared) {
 
       # Inactive list first, as the bulk version: if the second write fails
       # the provider is left in both lists rather than in neither.
-      set_inac(inac)
-      set_provs(updated_provs)
+      guardado <- .guardar("inactivar_proveedor", "Falló al inactivar el proveedor", pid,
+                           function() { set_inac(inac); set_provs(updated_provs) })
       removeModal()
+      if (!guardado) return()
       showNotification("Proveedor movido a inactivos.", type = "message", duration = 2)
       output$tbl_catalogo_prov <- DT::renderDataTable({
         .render_catalogo(input$cat_search %||% "")
@@ -505,7 +525,8 @@ proveedoresServer <- function(id, shared) {
       if (!.puede_editar()) return()
       provs <- get_provs()
       updated <- provs[provs$id != input$prov_delete_id, ]
-      set_provs(updated)
+      if (!.guardar("eliminar_proveedor", "Falló al eliminar el proveedor", input$prov_delete_id,
+                    function() set_provs(updated))) return()
       showNotification("Proveedor eliminado.", type = "message", duration = 2)
       output$tbl_catalogo_prov <- DT::renderDataTable({
         .render_catalogo(input$cat_search %||% "")
@@ -660,7 +681,10 @@ proveedoresServer <- function(id, shared) {
         updated <- provs |> dplyr::rows_update(new_row, by = "id", unmatched = "ignore")
       }
 
-      set_provs(updated)
+      # On failure the modal stays open, with what was typed.
+      if (!.guardar(if (is.null(eid)) "crear_proveedor" else "editar_proveedor",
+                    if (is.null(eid)) "Falló al agregar el proveedor" else "Falló al guardar el proveedor",
+                    new_row$id, function() set_provs(updated))) return()
       editing_id_cat(NULL)
       removeModal()
       showNotification(
@@ -1164,11 +1188,11 @@ proveedoresServer <- function(id, shared) {
 
       # Active list first (the one that receives it): if the second write
       # fails the provider is left in both lists rather than in neither.
-      set_provs(updated_provs)
-      set_inac(updated_inac)
-
+      guardado <- .guardar("reactivar_proveedor", "Falló al reactivar el proveedor", pid,
+                           function() { set_provs(updated_provs); set_inac(updated_inac) })
       reactivar_id_rv(NULL)
       removeModal()
+      if (!guardado) return()
       showNotification("Proveedor reactivado.", type = "message", duration = 2)
       output$tbl_inactivos_prov <- DT::renderDataTable({
         .render_inactivos(input$inac_search %||% "")
@@ -1182,7 +1206,8 @@ proveedoresServer <- function(id, shared) {
       if (!.puede_editar()) return()
       inac <- get_inac()
       updated <- inac[inac$id != input$prov_del_inac_id, ]
-      set_inac(updated)
+      if (!.guardar("eliminar_proveedor_inactivo", "Falló al eliminar el proveedor inactivo", input$prov_del_inac_id,
+                    function() set_inac(updated))) return()
       showNotification("Proveedor eliminado permanentemente.", type = "message", duration = 2)
       output$tbl_inactivos_prov <- DT::renderDataTable({
         .render_inactivos(input$inac_search %||% "")

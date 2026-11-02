@@ -45,7 +45,13 @@ local({
 assign("bump_sync_version", function(...) invisible(NULL), envir = globalenv())
 assign("puede", function(usuario, permiso, ...) TRUE, envir = globalenv())
 assign("puede_o_avisa", function(...) TRUE, envir = globalenv())
-assign("log_action", function(...) invisible(NULL), envir = globalenv())
+# log_action() calls, as "<action> <target_id>", in prov_logs().
+.prov_logs_env <- new.env(); .prov_logs_env$x <- character(0)
+prov_logs <- function(limpiar = FALSE) { x <- .prov_logs_env$x; if (limpiar) .prov_logs_env$x <- character(0); x }
+assign("log_action", function(user = NULL, module = NULL, action = "", description = "", target_id = NA, ...) {
+  .prov_logs_env$x <- c(.prov_logs_env$x, paste(action, target_id %||% ""))
+  invisible(NULL)
+}, envir = globalenv())
 # prov_falla("activos" / "inactivos"): that list's next writes fail, as S3 would.
 prov_falla <- function(lista = NULL) assign("falla", lista, envir = .prov_falla_env)
 .prov_falla_env <- new.env()
