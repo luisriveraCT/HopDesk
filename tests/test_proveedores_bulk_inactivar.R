@@ -19,6 +19,12 @@ suppressPackageStartupMessages({ library(shiny); library(dplyr); library(tibble)
 }
 strip_accents <- function(x) stringi::stri_trans_general(x %||% "", "Latin-ASCII")
 source("R/persistence.R")          # .schema_proveedores
+# The module draws its tables with the engine (hd_table, since ce09c42) and
+# checks can_manage_proveedores on the server (89303f9): load both for real.
+for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R", "R/hd_registro.R", "R/hd_piezas.R",
+            "R/hd_columnas.R", "R/hd_table.R", "R/proveedores_excel.R"))
+  source(f)
+.i18n_dir <- file.path("www", "i18n")
 source("R/proveedores_module.R")
 
 # In-memory fakes for the writes this module does (this process only).
@@ -58,6 +64,9 @@ run_case <- function(label, fail_inac = FALSE) {
   shared <- list(
     company_map              = function() c(AAA = "Empresa A"),
     current_user             = function() "tester",
+    # A real finance user: the module's permission check runs, and passes.
+    usuario                  = function() list(user = "tester", tier = "finance",
+                                               permisos = permisos_resueltos("finance")),
     effective_client_id      = function() "test-client",
     home_client_id           = function() "test-client",
     proveedores_db           = provs_rv,

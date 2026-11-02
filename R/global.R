@@ -448,6 +448,7 @@ source("R/bancos_detect.R")
 source("R/bancos_persistence.R")
 source("R/bancos_module.R")
 source("R/proveedores_match.R")
+source("R/proveedores_excel.R")   # Excel import helpers (T08); proveedores_module.R uses them
 source("R/proveedores_module.R")
 source("R/pasivos_schemas.R")
 source("R/pasivos_persistence.R")
