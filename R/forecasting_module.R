@@ -94,13 +94,12 @@ forecastingUI <- function(id) {
           class = "mt-3",
           shiny::div(
             class = "d-flex justify-content-between align-items-center mb-3",
-            shiny::p(class = "text-muted small mb-0",
-                     "Últimas 200 consultas a fuentes de datos."),
+            shiny::p(class = "text-muted small mb-0", tr("tablas.pronosticos.consultas.ayuda")),
             shiny::actionButton(ns("btn_refresh_all"),
                                 shiny::tagList(shiny::icon("bolt"), " Actualizar todas las métricas"),
                                 class = "btn btn-sm btn-outline-warning")
           ),
-          DT::dataTableOutput(ns("fetch_log_tbl"))
+          hd_table_ui(ns("consultas_t"))
         )
       )
     )
@@ -536,24 +535,84 @@ forecastingServer <- function(id, shared) {
       )
     }, ignoreInit = TRUE)
 
-    # ── Fetch log table ───────────────────────────────────────────────────────
-    output$fetch_log_tbl <- DT::renderDataTable({
-      log <- tryCatch(load_forecasting_fetch_log(), error = function(e) NULL)
-      if (is.null(log) || !nrow(log)) return(data.frame())
+    # ── Fetch log table (hd_table, register) ──────────────────────────────────
+    # Every fetch, newest first (it used to stop at the last 200; the engine
+    # paints by window above 800 rows). Fecha sorts by the instant -- as
+    # dd/mm text, 30/09 fell between 30/10 and 29/10. ℹ or a double click
+    # shows the whole row, the error uncut.
+    .consultas_tabla <- shiny::reactive({
+      log <- tryCatch(load_forecasting_fetch_log(), error = function(e) .schema_forecasting_fetch_log())
       log <- log[order(log$attempted_at, decreasing = TRUE), , drop = FALSE]
-      log <- utils::head(log, 200L)
       data.frame(
-        Fecha      = format(log$attempted_at, "%d/%m/%Y %H:%M"),
-        Métrica    = log$metric_id,
-        Fuente     = log$source_id,
-        Estado     = log$status,
-        Filas      = log$rows_added,
-        ms         = log$duration_ms,
-        Error      = log$error_msg,
-        Origen     = log$triggered_by,
+        id           = .fc_ids(log$fetch_id),
+        attempted_at = log$attempted_at,
+        metric_id    = as.character(log$metric_id),
+        source_id    = as.character(log$source_id),
+        status       = as.character(log$status),
+        rows_added   = log$rows_added,
+        duration_ms  = log$duration_ms,
+        error_msg    = as.character(log$error_msg),
+        triggered_by = as.character(log$triggered_by),
+        .acciones    = rep("detalle", nrow(log)),
         stringsAsFactors = FALSE
       )
-    }, options = list(pageLength = 20, dom = "ftp", order = list(list(0, "desc"))),
-    rownames = FALSE, selection = "none")
+    })
+    .consultas_estados <- list(
+      ok           = list(texto = "tablas.pronosticos.consultas.estado_ok",           tono = "exito"),
+      no_data      = list(texto = "tablas.pronosticos.consultas.estado_no_data",      tono = "neutro"),
+      rate_limited = list(texto = "tablas.pronosticos.consultas.estado_rate_limited", tono = "naranja"),
+      timeout      = list(texto = "tablas.pronosticos.consultas.estado_timeout",      tono = "naranja"),
+      http_error   = list(texto = "tablas.pronosticos.consultas.estado_http_error",   tono = "rojo"),
+      parse_error  = list(texto = "tablas.pronosticos.consultas.estado_parse_error",  tono = "rojo"))
+    .consultas_origenes <- list(
+      scheduled = list(texto = "tablas.pronosticos.consultas.origen_scheduled", tono = "info"),
+      manual_ui = list(texto = "tablas.pronosticos.consultas.origen_manual_ui", tono = "neutro"),
+      first_use = list(texto = "tablas.pronosticos.consultas.origen_first_use", tono = "neutro"))
+    consultas_t <- hd_table_server(
+      "consultas_t", tabla = "bitacora_pronosticos", datos = .consultas_tabla,
+      columnas = list(
+        col_fecha_hora("attempted_at", "tablas.pronosticos.consultas.fecha"),
+        col_texto("metric_id",         "tablas.pronosticos.consultas.metrica", recorte = FALSE),
+        col_texto("source_id",         "tablas.pronosticos.consultas.fuente", recorte = FALSE),
+        col_insignia("status",         "tablas.pronosticos.consultas.estado", mapa = .consultas_estados),
+        col_numero("rows_added",       "tablas.pronosticos.consultas.filas"),
+        col_numero("duration_ms",      "tablas.pronosticos.consultas.ms"),
+        col_texto("error_msg",         "tablas.pronosticos.consultas.error"),
+        col_insignia("triggered_by",   "tablas.pronosticos.consultas.origen", mapa = .consultas_origenes)
+      ),
+      piezas        = "acc_fila",
+      acciones_fila = "detalle",
+      filtros       = list(list(campo = "status"), list(campo = "metric_id"), list(campo = "triggered_by")),
+      vacio         = "tablas.pronosticos.consultas.vacio"
+    )
+
+    # The whole row, the error uncut.
+    shiny::observeEvent(consultas_t$accion(), {
+      a <- consultas_t$accion()
+      if (!identical(a$accion, "detalle") || !length(a$ids)) return()
+      d <- .consultas_tabla()
+      r <- d[match(a$ids[1], d$id), , drop = FALSE]
+      if (!nrow(r) || is.na(r$id)) return()
+      etiqueta <- function(v, mapa) if (!is.na(v) && !is.null(mapa[[v]])) tr(mapa[[v]]$texto) else (v %||% "")
+      dato <- function(clave, valor)
+        shiny::tags$tr(shiny::tags$th(class = "text-nowrap pe-3", tr(clave)),
+                       shiny::tags$td(style = "white-space: pre-wrap; word-break: break-word;",
+                                      if (is.null(valor) || is.na(valor) || !nzchar(valor)) "—" else valor))
+      shiny::showModal(shiny::modalDialog(
+        title = tr("tablas.pronosticos.consultas.detalle_titulo"), easyClose = TRUE,
+        footer = shiny::modalButton(tr("comun.cerrar")),
+        shiny::tags$table(class = "table table-sm small mb-0", shiny::tags$tbody(
+          dato("tablas.pronosticos.consultas.fecha",
+               if (is.na(r$attempted_at)) NA else format(r$attempted_at, "%Y-%m-%d %H:%M:%S")),
+          dato("tablas.pronosticos.consultas.metrica", r$metric_id),
+          dato("tablas.pronosticos.consultas.fuente",  r$source_id),
+          dato("tablas.pronosticos.consultas.estado",  etiqueta(r$status, .consultas_estados)),
+          dato("tablas.pronosticos.consultas.filas",   as.character(r$rows_added)),
+          dato("tablas.pronosticos.consultas.ms",      as.character(r$duration_ms)),
+          dato("tablas.pronosticos.consultas.error",   r$error_msg),
+          dato("tablas.pronosticos.consultas.origen",  etiqueta(r$triggered_by, .consultas_origenes))
+        ))
+      ))
+    }, ignoreInit = TRUE)
   })
 }

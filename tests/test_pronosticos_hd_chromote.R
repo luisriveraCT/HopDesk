@@ -146,5 +146,43 @@ clic(boton(S, "s-psv", "editar")); Sys.sleep(0.8)
 ok("S4: ✎ on the same row again reopens it", identical(modal_titulo(), "Editar suscripción"))
 cerrar_modal()
 
+# ── C · Registro de consultas (register C) ──────────────────────────────────
+C <- "fc-consultas_t-hdt"
+pestana("Registro de consultas")
+ok("C: the fetch log is on the engine", listo(C))
+ok("BP1: all 250 fetches, not the last 200; the help line no longer says 200",
+   length(vis(C)) == 250L && !grepl("200", ev("document.querySelector('#fc-consultas_t-hdt').parentElement.parentElement.textContent")))
+ok("ids: a row with no fetch_id and two sharing one still show (made-up / suffixed ids)",
+   all(c("sin-id-5", "f-006", "f-006#1") %in% vis(C)))
+ok("C: columns Fecha / Métrica / Fuente / Estado / Filas / ms / Error / Origen",
+   identical(titulos(C), c("Fecha", "Métrica", "Fuente", "Estado", "Filas", "ms", "Error", "Origen")))
+orden_ids <- sprintf("f-%03d", 1:250); orden_ids[5] <- "sin-id-5"; orden_ids[7] <- "f-006#1"
+ok("BP2: newest first by the instant -- every 30/09 row after every 30/10 row",
+   identical(vis(C), orden_ids))
+ok("BP2: Fecha shows date and time",
+   grepl("31 oct 2026 23:00", texto_fila(C, "f-001")))
+clic(sprintf("Array.from(document.querySelectorAll('#%s thead th')).filter(function(th){ return th.firstChild && th.firstChild.textContent === 'Fecha'; })[0]", C))
+ok("BP2: sorting Fecha ascending puts the oldest first", identical(vis(C)[1], "f-250"))
+clic(sprintf("Array.from(document.querySelectorAll('#%s thead th')).filter(function(th){ return th.firstChild && th.firstChild.textContent === 'Filas'; })[0]", C))
+ok("C: Filas sorts as a number (0 < 9 < 10), not as text",
+   { v <- vis(C); f <- function(id) which(v == id)
+     f("f-003") < f("f-001") && f("f-001") < f("f-002") })
+ok("BP7: Estado and Origen are badges (Error HTTP red, Programada)",
+   isTRUE(ev(sprintf("!!%s", fila(C, "f-004", ".querySelector('.hdt-tono-rojo')")))) &&
+   grepl("Error HTTP", texto_fila(C, "f-004")) && grepl("Programada", texto_fila(C, "f-001")))
+ok("C: filters for Estado, Métrica and Origen",
+   length(unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s button.hdt-filtro')).map(function(b){ return b.textContent; })", C)))) == 3L)
+clic(boton(C, "f-004", "detalle")); Sys.sleep(0.8)
+ok("BP4: ℹ shows the whole row with the error uncut",
+   identical(modal_titulo(), "Detalle de la consulta") &&
+   grepl("siguiente corrida programada del día", ev("document.querySelector('.modal.show .modal-body').textContent")) &&
+   grepl("Error HTTP", ev("document.querySelector('.modal.show .modal-body').textContent")))
+cerrar_modal()
+doble(fila(C, "f-002", ".children[1]"))
+ok("BP4: a double click opens the same detail",
+   identical(modal_titulo(), "Detalle de la consulta") &&
+   grepl("tiie_28", ev("document.querySelector('.modal.show .modal-body').textContent")))
+cerrar_modal()
+
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)
