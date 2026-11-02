@@ -167,7 +167,7 @@ proveedoresServer <- function(id, shared) {
     get_provs <- function() {
       tryCatch(
         if (!is.null(shared$proveedores_db)) shared$proveedores_db()
-        else load_proveedores(),
+        else load_proveedores(client_id = shared$effective_client_id()),
         error = function(e) .schema_proveedores()
       )
     }
@@ -175,18 +175,30 @@ proveedoresServer <- function(id, shared) {
     get_inac <- function() {
       tryCatch(
         if (!is.null(shared$proveedores_inactivos_db)) shared$proveedores_inactivos_db()
-        else load_proveedores_inactivos(),
+        else load_proveedores_inactivos(client_id = shared$effective_client_id()),
         error = function(e) .schema_proveedores()
       )
     }
 
+    # The catalog's alias and CLABE are where the PPL sends money, so every
+    # action that changes it checks can_manage_proveedores on the server: the
+    # panel being reachable is not a permission. Each write observer starts
+    # with .puede_editar(); set_provs()/set_inac() refuse as a last line.
+    .puede_editar <- function() puede_o_avisa(shared, "can_manage_proveedores", session)
+    .exigir_permiso <- function() {
+      if (!puede(isolate(shared$usuario()), "can_manage_proveedores"))
+        stop("[proveedores] can_manage_proveedores required to save the catalog", call. = FALSE)
+    }
+
     set_provs <- function(df) {
+      .exigir_permiso()
       save_proveedores(df, client_id = shared$effective_client_id())
       bump_sync_version("proveedores_db")
       if (!is.null(shared$proveedores_db)) shared$proveedores_db(df)
     }
 
     set_inac <- function(df) {
+      .exigir_permiso()
       save_proveedores_inactivos(df, client_id = shared$effective_client_id())
       bump_sync_version("proveedores_inactivos_db")
       if (!is.null(shared$proveedores_inactivos_db)) shared$proveedores_inactivos_db(df)
@@ -417,12 +429,14 @@ proveedoresServer <- function(id, shared) {
     })
 
     observeEvent(input$cat_new, {
+      if (!.puede_editar()) return()
       editing_id_cat(NULL)
       .show_edit_modal(NULL)
     }, ignoreInit = TRUE)
 
     # Handle edit button clicks via JS
     observeEvent(input$prov_edit_id, {
+      if (!.puede_editar()) return()
       provs <- get_provs()
       row   <- provs[provs$id == input$prov_edit_id, ]
       if (!nrow(row)) return()
@@ -432,6 +446,7 @@ proveedoresServer <- function(id, shared) {
 
     # Handle inactivar button clicks
     observeEvent(input$prov_inactivar_id, {
+      if (!.puede_editar()) return()
       showModal(modalDialog(
         title = tagList(icon("ban"), " Inactivar proveedor"),
         size = "s", easyClose = TRUE,
@@ -446,6 +461,7 @@ proveedoresServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$prov_confirm_inactivar, {
+      if (!.puede_editar()) return()
       pid <- input$prov_inactivar_id
       provs <- get_provs()
       row   <- provs[provs$id == pid, ]
@@ -471,6 +487,7 @@ proveedoresServer <- function(id, shared) {
 
     # Handle delete button clicks
     observeEvent(input$prov_delete_id, {
+      if (!.puede_editar()) return()
       provs <- get_provs()
       updated <- provs[provs$id != input$prov_delete_id, ]
       set_provs(updated)
@@ -485,6 +502,7 @@ proveedoresServer <- function(id, shared) {
     bulk_inactivar_ids <- reactiveVal(character(0))
 
     observeEvent(input$cat_inactivar_bulk, {
+      if (!.puede_editar()) return()
       sel <- input$tbl_catalogo_prov_rows_selected
       if (!length(sel)) {
         showNotification("Selecciona filas primero.", type = "warning"); return()
@@ -512,6 +530,7 @@ proveedoresServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$bulk_inactivar_confirm, {
+      if (!.puede_editar()) return()
       ids   <- bulk_inactivar_ids()
       provs <- get_provs()
       rows_to_move <- provs[provs$id %in% ids, , drop = FALSE]
@@ -553,6 +572,7 @@ proveedoresServer <- function(id, shared) {
 
     # Save modal
     observeEvent(input$prov_modal_save, {
+      if (!.puede_editar()) return()
       nom  <- trimws(input$prov_nombre    %||% "")
       ali  <- trimws(input$prov_alias     %||% "")
       rfc  <- trimws(input$prov_rfc       %||% "")
@@ -727,6 +747,7 @@ proveedoresServer <- function(id, shared) {
 
     # Parse and classify uploaded Excel
     observeEvent(input$excel_file, {
+      if (!.puede_editar()) return()
       req(input$excel_file)
       tryCatch({
         raw <- .read_excel_smart(input$excel_file$datapath)
@@ -1188,6 +1209,7 @@ proveedoresServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$confirmar_upload, {
+      if (!.puede_editar()) return()
       ud   <- upload_data_rv()
       if (is.null(ud)) return()
       rows <- ud$rows
@@ -1363,6 +1385,7 @@ proveedoresServer <- function(id, shared) {
     })
 
     observeEvent(input$prov_reactivar_id, {
+      if (!.puede_editar()) return()
       reactivar_id_rv(input$prov_reactivar_id)
       showModal(modalDialog(
         title = tagList(icon("rotate"), " Reactivar proveedor"),
@@ -1385,6 +1408,7 @@ proveedoresServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$prov_confirm_reactivar, {
+      if (!.puede_editar()) return()
       pid <- reactivar_id_rv()
       inac <- get_inac()
       row  <- inac[inac$id == pid, ]
@@ -1414,6 +1438,7 @@ proveedoresServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$prov_del_inac_id, {
+      if (!.puede_editar()) return()
       inac <- get_inac()
       updated <- inac[inac$id != input$prov_del_inac_id, ]
       set_inac(updated)

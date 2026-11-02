@@ -46,7 +46,7 @@
 .catalogo_datatable <- function(shared, empresa_filter = "") {
   provs <- tryCatch(
     if (!is.null(shared$proveedores_db)) shared$proveedores_db()
-    else load_proveedores(),
+    else load_proveedores(client_id = shared$effective_client_id()),
     error = function(e) tibble::tibble()
   )
   if (!nrow(provs)) {
@@ -103,7 +103,7 @@ settings_catalogo_edit_observer <- function(input, output, session, shared) {
       output$catalogo_edit_form <- renderUI({ .catalogo_form_empty() }); return()
     }
     provs <- tryCatch(
-      if (!is.null(shared$proveedores_db)) shared$proveedores_db() else load_proveedores(),
+      if (!is.null(shared$proveedores_db)) shared$proveedores_db() else load_proveedores(client_id = shared$effective_client_id()),
       error = function(e) tibble::tibble()
     )
     ef <- isolate(input$cat_empresa_filter %||% "")
@@ -119,9 +119,15 @@ settings_catalogo_edit_observer <- function(input, output, session, shared) {
     output$catalogo_edit_form <- renderUI({ .catalogo_form_ui(NULL, cmap = shared$company_map()) })
   }, ignoreInit = TRUE)
 
+  # Legacy editor: no UI renders it any more, but these observers still answer
+  # a crafted input, so they check the permission and use the session's
+  # client like proveedores_module.R (before, a client-less load read the
+  # deployment's default client).
   observeEvent(input$cat_save_row, {
+    if (!puede_o_avisa(shared, "can_manage_proveedores", session)) return()
     eid       <- editing_id()
-    provs     <- tryCatch(load_proveedores(), error = function(e) .schema_proveedores_local())
+    provs     <- tryCatch(load_proveedores(client_id = shared$effective_client_id()),
+                          error = function(e) .schema_proveedores_local())
     alias_val <- trimws(input$cat_alias %||% "")
     if (nchar(alias_val) > 15) {
       showNotification("El alias no puede tener m\u00e1s de 15 caracteres.", type = "warning")
@@ -177,8 +183,10 @@ settings_catalogo_edit_observer <- function(input, output, session, shared) {
   }, ignoreInit = TRUE)
 
   observeEvent(input$cat_delete_row, {
+    if (!puede_o_avisa(shared, "can_manage_proveedores", session)) return()
     eid <- editing_id(); if (is.null(eid)) return()
-    provs   <- tryCatch(load_proveedores(), error = function(e) .schema_proveedores_local())
+    provs   <- tryCatch(load_proveedores(client_id = shared$effective_client_id()),
+                        error = function(e) .schema_proveedores_local())
     deleted_row <- provs[provs$id == eid, ]
     updated <- provs |> dplyr::mutate(activo = dplyr::if_else(id == eid, FALSE, activo))
     save_proveedores(updated, client_id = shared$effective_client_id())

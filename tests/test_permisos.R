@@ -96,3 +96,9 @@ test_that("las listas de permisos del registro de niveles existen", {
     expect_length(setdiff(TIER_REGISTRY[[t]]$bloqueados, permisos_claves()), 0)
   }
 })
+
+test_that("Proveedores: solo Finanzas, Admin y Dev administran el catálogo de inicio (decisión de Luis, 2026-11-01)", {
+  for (t in c("finance", "admin", TI)) expect_true(puede(u(t), "can_manage_proveedores"), info = t)
+  for (t in c("analysis", "compras", "hopdesk")) expect_false(puede(u(t), "can_manage_proveedores"), info = t)
+  expect_false(permiso_interno("can_manage_proveedores"))
+})

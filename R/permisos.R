@@ -44,6 +44,7 @@ PERMISOS <- list(
   can_register_payments          = list(grupo = "tesoreria"),
   can_confirm_payments           = list(grupo = "tesoreria"),
   can_manage_pasivos             = list(grupo = "tesoreria"),
+  can_manage_proveedores         = list(grupo = "tesoreria"),
   # ── Panorama ────────────────────────────────────────────────────────────
   can_publish_panorama           = list(grupo = "panorama", pendiente = "B"),
   # ── Internos de Hopdesk ─────────────────────────────────────────────────
