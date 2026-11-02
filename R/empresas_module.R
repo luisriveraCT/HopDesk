@@ -107,7 +107,7 @@ empresasUI <- function(id) {
             ),
 
             div(class = "card-body p-0",
-                DT::dataTableOutput(ns("empresas_tbl")))
+                hd_table_ui(ns("tabla"), alto = "auto"))
           )
         ),
 
@@ -275,62 +275,58 @@ empresasServer <- function(id, shared) {
       df
     })
 
-    # ── Companies table ───────────────────────────────────────────────────────
-    output$empresas_tbl <- DT::renderDataTable({
+    # ── Companies table (hd_table) ────────────────────────────────────────────
+    # Row buttons and the double click bring the company's id. The edit panel
+    # and the deactivate step keep that id, never a position in empresas_rv():
+    # another session's change can reorder or shrink that list while the panel
+    # is open, and a position would then point at a different company.
+    empresas_tabla <- reactive({
       req(req_authorized())
       empresas <- empresas_rv()
       req(!is.null(empresas))
-
-      edit_id <- ns("trs_edit_click")
-      del_id  <- ns("trs_del_click")
-      erp_id  <- ns("erp_open_click")
-
-      df <- data.frame(
-        `#`            = empresas$account_code,
-        Iniciales      = empresas$initials,
-        `Razón Social` = empresas$razon_social,
-        RFC            = empresas$rfc,
-        Estado         = ifelse(!is.na(empresas$activa) & empresas$activa == TRUE,
-                                "Activa", "Inactiva"),
-        Editar = vapply(seq_len(nrow(empresas)), function(i)
-          sprintf(
-            '<button class="btn btn-outline-primary btn-sm" onclick="Shiny.setInputValue(\'%s\',%d,{priority:\'event\'})">Editar</button>',
-            edit_id, i),
-          character(1)),
-        Eliminar = vapply(seq_len(nrow(empresas)), function(i)
-          sprintf(
-            '<button class="btn btn-outline-danger btn-sm" onclick="Shiny.setInputValue(\'%s\',%d,{priority:\'event\'})"><i class="fa fa-trash"></i></button>',
-            del_id, i),
-          character(1)),
-        stringsAsFactors = FALSE,
-        check.names      = FALSE
-      )
-
-      # Stage 3: ERP action column — only added when the ERP feature itself is
-      # visible in this context (see erp_ui_visible()). Ordinary client-facing
+      # Stage 3: the ERP button only when the ERP feature itself is visible in
+      # this context (see erp_ui_visible()). Ordinary client-facing
       # functionality; hidden for a staff-at-home session exactly like
       # FINANCIAL_TABS hides Calendario/Vencidos/etc. for that same context.
-      if (isTRUE(erp_ui_visible())) {
-        df$ERP <- vapply(seq_len(nrow(empresas)), function(i)
-          sprintf(
-            '<button class="btn btn-outline-secondary btn-sm" onclick="Shiny.setInputValue(\'%s\',\'%s\',{priority:\'event\'})"><i class="fa fa-plug"></i> ERP</button>',
-            erp_id, empresas$initials[i]),
-          character(1))
-      }
-
-      DT::datatable(
-        df, escape = FALSE, selection = "none", rownames = FALSE,
-        options = list(
-          pageLength = 15,
-          dom        = "tp",
-          language   = list(
-            zeroRecords = "No se encontraron empresas",
-            info        = "Mostrando _START_ a _END_ de _TOTAL_ empresas",
-            infoEmpty   = "Sin registros",
-            paginate    = list(previous = "Anterior", `next` = "Siguiente")
-          )
-        )
+      acciones <- c("editar", if (isTRUE(erp_ui_visible())) "erp", "desactivar")
+      data.frame(
+        id           = as.character(empresas$id),
+        account_code = empresas$account_code,
+        initials     = empresas$initials,
+        razon_social = empresas$razon_social,
+        rfc          = empresas$rfc,
+        estado       = ifelse(!is.na(empresas$activa) & empresas$activa == TRUE, "activa", "inactiva"),
+        .acciones    = rep(paste(acciones, collapse = ","), nrow(empresas)),
+        stringsAsFactors = FALSE
       )
+    })
+
+    tabla <- hd_table_server(
+      "tabla", tabla = "empresas", datos = empresas_tabla,
+      columnas = list(
+        col_texto("account_code", "tablas.empresas.codigo", recorte = FALSE),
+        col_texto("initials",     "tablas.empresas.iniciales", recorte = FALSE),
+        col_texto("razon_social", "tablas.empresas.razon_social"),
+        col_texto("rfc",          "tablas.empresas.rfc", recorte = FALSE),
+        col_insignia("estado",    "tablas.empresas.estado", mapa = list(
+          activa   = list(texto = "tablas.empresas.activa",   tono = "exito"),
+          inactiva = list(texto = "tablas.empresas.inactiva", tono = "neutro")))
+      ),
+      acciones_fila = c("editar", "erp", "desactivar"),
+      filtros       = list(list(campo = "estado")),
+      vacio         = "tablas.empresas.vacio"
+    )
+
+    observeEvent(tabla$accion(), {
+      a  <- tabla$accion()
+      id <- a$ids[1]
+      if (is.null(id) || is.na(id)) return()
+      switch(a$accion,
+        editar     = ,
+        detalle    = selected_id(id),
+        erp        = .abrir_erp(id),
+        desactivar = .desactivar_empresa(id),
+        NULL)
     })
 
     # ── New empresa form ──────────────────────────────────────────────────────
@@ -406,26 +402,31 @@ empresasServer <- function(id, shared) {
     })
 
     # ── Edit panel ────────────────────────────────────────────────────────────
-    selected_idx <- reactiveVal(NULL)
+    # The id of the company being edited (from the table), never its position.
+    selected_id <- reactiveVal(NULL)
 
-    observeEvent(input$trs_edit_click, { selected_idx(input$trs_edit_click) })
-    observeEvent(input$btn_cancel_edit, { selected_idx(NULL) })
+    observeEvent(input$btn_cancel_edit, { selected_id(NULL) })
+
+    # The visible company with that id, or a 0-row frame once it's gone
+    # (deactivated or hidden by another session): the panel then closes.
+    .empresa_por_id <- function(id) {
+      empresas <- empresas_rv()
+      if (is.null(id) || is.null(empresas)) return(empresas[0, , drop = FALSE])
+      empresas[as.character(empresas$id) == id, , drop = FALSE]
+    }
 
     output$edit_panel_ui <- renderUI({
-      idx <- selected_idx()
-      req(!is.null(idx))
-      empresas <- empresas_rv()
-      req(!is.null(empresas) && idx <= nrow(empresas))
-      .empresas_edit_panel_ui(ns, empresas[idx, ])
+      row <- .empresa_por_id(selected_id())
+      req(nrow(row) == 1)
+      .empresas_edit_panel_ui(ns, row)
     })
 
     observeEvent(input$btn_save_edit, {
-      idx <- selected_idx()
-      req(!is.null(idx))
-      empresas <- empresas_rv()
-      req(!is.null(empresas) && idx <= nrow(empresas))
+      sel_id <- selected_id()
+      row    <- .empresa_por_id(sel_id)
+      req(nrow(row) == 1)
 
-      old_ini <- trimws(empresas[idx, "initials"])
+      old_ini <- trimws(row$initials)
       new_ini <- toupper(trimws(input$edit_initials %||% ""))
 
       if (!nzchar(new_ini) || !grepl("^[A-Z0-9]+$", new_ini)) {
@@ -434,7 +435,7 @@ empresasServer <- function(id, shared) {
       }
 
       all_e    <- all_empresas_rv()
-      full_idx <- which(trimws(all_e$initials) == old_ini)
+      full_idx <- which(as.character(all_e$id) == sel_id)
       req(length(full_idx) == 1)
 
       # Cascade-rename across all related S3 tables when initials change
@@ -501,7 +502,7 @@ empresasServer <- function(id, shared) {
         )
       }
 
-      selected_idx(NULL)
+      selected_id(NULL)
       showNotification(
         if (new_ini != old_ini)
           paste0("Iniciales actualizadas: '", old_ini, "' \u2192 '", new_ini,
@@ -525,51 +526,15 @@ empresasServer <- function(id, shared) {
     })
 
     # ── Delete (soft) ─────────────────────────────────────────────────────────
-    pending_del_idx <- reactiveVal(NULL)
-
-    observeEvent(input$trs_del_click, {
-      idx      <- input$trs_del_click
-      empresas <- empresas_rv()
-      req(!is.null(empresas) && idx <= nrow(empresas))
-      row <- empresas[idx, ]
-      pending_del_idx(idx)
-
-      showModal(modalDialog(
-        title = tagList(icon("trash"), " Desactivar empresa"),
-        tags$p("Vas a desactivar la empresa:"),
-        tags$div(
-          class = "alert alert-warning py-2",
-          tags$strong(row$razon_social %||% row$initials),
-          tags$span(class = "badge ms-2",
-                    style = "background:#0a58ca; color:#fff;",
-                    row$initials)
-        ),
-        tags$p(class = "text-muted small mb-0",
-               icon("circle-info", class = "me-1"),
-               " La empresa quedará ",
-               tags$strong("oculta"), " en el sistema. Sus datos históricos y ",
-               "transacciones asociadas se conservan para auditoría."),
-        footer = tagList(
-          modalButton("Cancelar"),
-          actionButton(ns("btn_confirm_delete"),
-                       tagList(icon("trash"), " Sí, desactivar"),
-                       class = "btn btn-danger btn-sm")
-        ),
-        easyClose = TRUE
-      ))
-    })
-
-    observeEvent(input$btn_confirm_delete, {
-      idx <- pending_del_idx()
-      req(!is.null(idx))
-      removeModal()
-
-      empresas        <- empresas_rv()
-      req(!is.null(empresas) && idx <= nrow(empresas))
-      target_initials <- empresas[idx, "initials"]
+    # The table's ⊘ confirms in its own bar before the action arrives, so this
+    # runs on an already confirmed id.
+    .desactivar_empresa <- function(id) {
+      row <- .empresa_por_id(id)
+      if (nrow(row) != 1) return()
+      target_initials <- row$initials
 
       all_e    <- all_empresas_rv()
-      row_idx  <- which(trimws(all_e$initials) == trimws(target_initials))
+      row_idx  <- which(as.character(all_e$id) == id)
 
       if (length(row_idx) == 1) {
         all_e[row_idx, "deleted"]    <- TRUE
@@ -583,11 +548,9 @@ empresasServer <- function(id, shared) {
       if (!saved) {
         showNotification("No se pudo guardar el cambio. Intenta de nuevo.",
                          type = "error", duration = 6)
-        pending_del_idx(NULL)
         return()
       }
-      pending_del_idx(NULL)
-      selected_idx(NULL)
+      if (identical(selected_id(), id)) selected_id(NULL)
       showNotification(paste0("Empresa '", target_initials, "' desactivada."),
                        type = "message", duration = 4)
       log_action(
@@ -600,7 +563,7 @@ empresasServer <- function(id, shared) {
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
-    })
+    }
 
     # ── Stage 3: ERP connections ───────────────────────────────────────────────
     # Per-company ERP credentials. See docs/saas_rebuild/STAGE_3_ERP_CREDENTIALS.md.
@@ -900,20 +863,24 @@ empresasServer <- function(id, shared) {
       tagList(source_indicator_ui, list_ui, restore_ui, form_ui)
     })
 
-    observeEvent(input$erp_open_click, {
+    # The table's 🔌 brings the company's id; the modal works by initials.
+    .abrir_erp <- function(id) {
       req(erp_ui_visible())
-      erp_modal$company           <- input$erp_open_click
+      row <- .empresa_por_id(id)
+      if (nrow(row) != 1) return()
+      ini <- row$initials
+      erp_modal$company           <- ini
       erp_modal$form_open         <- FALSE
       erp_modal$editing_id        <- NULL
       erp_modal$confirm_delete_id <- NULL
       erp_modal$show_deleted      <- FALSE
       showModal(modalDialog(
-        title = tagList(icon("plug"), paste0(" Conexiones ERP — ", input$erp_open_click)),
+        title = tagList(icon("plug"), paste0(" Conexiones ERP — ", ini)),
         uiOutput(ns("erp_modal_body")),
         footer = modalButton("Cerrar"),
         size = "m", easyClose = TRUE
       ))
-    })
+    }
 
     observeEvent(input$btn_new_erp, {
       req(erp_access())
