@@ -580,6 +580,18 @@ pagarHoyServer <- function(id, shared) {
       col_texto("Documento", "tablas.facturas.documento", recorte = FALSE),
       col_fecha("Vencimiento", "tablas.agenda.vencimiento"),
       col_dinero("Importe", "tablas.facturas.importe", moneda = "Moneda"))
+    # "Ver datos de origen" (the class's crudos, in the Editar bar): the raw
+    # SAP rows behind the marked rows -- nothing marked, the whole table --
+    # in the same viewer as Vencidos and the lupa.
+    .ph_crudos <- function(libro, d, ids) {
+      docs <- d$Documento[if (length(ids)) d$id %in% ids else TRUE]
+      raw  <- tryCatch(shared$sap_data()[[libro]], error = function(e) NULL)
+      if (!is.null(raw) && nrow(raw) && "Documento" %in% names(raw)) {
+        raw <- raw[trimws(as.character(raw[["Documento"]])) %in% trimws(as.character(docs)), , drop = FALSE]
+        if (nrow(raw)) raw[["Ledger"]] <- libro
+      }
+      mostrar_datos_sap(raw)
+    }
     .ph_ap_vacia <- data.frame(id = character(), Archivo = character(), Proveedor = character(),
                                Cuenta = character(), Tipo = character(), Referencia = character(),
                                Documento = character(), Vencimiento = as.Date(character()),
@@ -963,6 +975,7 @@ pagarHoyServer <- function(id, shared) {
       observeEvent(t_ap$accion(), {
         a <- t_ap$accion()
         d <- isolate(ap_datos())
+        if (identical(a$accion, "crudos")) { .ph_crudos("AP", d, a$ids); return() }
         f <- d[d$id %in% a$ids, , drop = FALSE]
         if (!nrow(f)) return()
         if (identical(a$accion, "cambiar_cuenta"))
@@ -995,6 +1008,10 @@ pagarHoyServer <- function(id, shared) {
       t_ar <- hd_table_server(.ph_tabla_id("ar", emp), tabla = "agenda_cobros",
                               datos = ar_datos, columnas = .ph_columnas_ar,
                               vacio = "tablas.agenda.vacio_cobros", visibles = TRUE)
+      observeEvent(t_ar$accion(), {
+        a <- t_ar$accion()
+        if (identical(a$accion, "crudos")) .ph_crudos("AR", isolate(ar_datos()), a$ids)
+      }, ignoreInit = TRUE)
 
       # The rows an action acts on, by id (never by row position): the
       # marked ones; nothing marked -> what the search or a filter leaves

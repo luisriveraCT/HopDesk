@@ -15,6 +15,7 @@
 #      integrator's acceptance criterion).
 #   E. Quitar (Cobros) takes the marked row out, by id.
 #   F. The ⇕ / 🔍 row buttons reach the module's own handlers.
+#   H. Editar -> "Ver datos de origen": the raw SAP rows of the marked one.
 #   G. 850 payments (window mode): the search finds the last one by
 #      supplier, reference and amount; marked, it is the one confirmed and
 #      the one in the payment file (Luis: "buscar todo lo que esté en la
@@ -117,6 +118,17 @@ clic(boton_fila(AP, "P1", "editar"))
 ok("F3: ✎ opens the same lookup, for that row's supplier",
    poll_until(function() grepl("ACEROS MONTERREY SA", modal(), fixed = TRUE), timeout_s = 10))
 cerrar_modal()
+
+# ══ H · Ver datos de origen ══════════════════════════════════════════════════
+clic(celda(AP, "P1", 1L))
+clic(sprintf("document.querySelector('#%s .hdt-editar')", AP))
+clic(sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=crudos]')", AP))
+ok("H1: Editar -> Ver datos de origen shows the raw SAP rows of the marked payment only (1 of the 3)",
+   poll_until(function() grepl("Datos SAP crudos — 1 filas", modal(), fixed = TRUE), timeout_s = 10))
+cerrar_modal()
+clic(sprintf("document.querySelector('#%s .hdt-editar')", AP))
+clic(celda(AP, "P1", 1L))
+ok("H2: Editar off, P1 unmarked again", length(sel(AP)) == 0L)
 
 # ══ B · Selection by id after sorting ════════════════════════════════════════
 n0 <- length(registro())

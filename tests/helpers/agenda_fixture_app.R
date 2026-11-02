@@ -11,6 +11,8 @@
 # of the in-memory Agenda; Quitar does the same ("quitados AP: ..."); the
 # payment file only records what it would pay ("ppl: id=importe,...").
 #
+# Raw SAP rows (shared$sap_data) for documents 4001 and 4002 (and one that
+# isn't in the Agenda), for "Ver datos de origen".
 # AGENDA_N: that many more MXN payments (default 0): AGENDA_N=850 puts the
 # table in window mode. The last one is "PROVEEDOR ULTIMO", Referencia
 # "REF-ULTIMA", due last.
@@ -29,6 +31,7 @@ cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 cargar("R/global.R", c("fmt_money", "is_erp_sourced", "CURRENCIES"))
 cargar("R/persistence.R", "unstage_pagar_hoy")
 cargar("R/ui_components.R", "app_styles")
+cargar("R/search_module.R", "mostrar_datos_sap")
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/ppl_generator.R", "R/pagar_hoy_module.R"))
   sys.source(file.path(raiz, f), envir = globalenv())
@@ -114,7 +117,9 @@ server <- function(input, output, session) {
   shared <- list(
     company_map = reactiveVal(c(NTS = EMP)), proveedores_db = reactiveVal(catalogo),
     parte_alias_map_db = reactiveVal(NULL), pagar_hoy_db = ph,
-    sap_data = reactiveVal(list()), sap_ov_db = reactiveVal(NULL), manual_inv = reactiveVal(NULL),
+    sap_data = reactiveVal(list(AP = data.frame(Empresa = "NTS", Documento = c("4001", "4002", "4999"),
+                                                Parte = c("ACEROS MONTERREY SA", "BODEGAS DEL NORTE SA", "OTRO"),
+                                                `Saldo vencido` = c(15000, 8200, 1), check.names = FALSE))), sap_ov_db = reactiveVal(NULL), manual_inv = reactiveVal(NULL),
     bancos_confirmados = reactiveVal(tibble::tibble()), abonos_db = reactiveVal(NULL),
     effective_client_id = function() "dev", current_user = function() "luis",
     home_client_id = function() "dev")
