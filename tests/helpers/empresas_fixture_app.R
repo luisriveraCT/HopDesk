@@ -64,9 +64,9 @@ emp <- function(id, code, ini, razon, rfc, activa = TRUE, deleted = FALSE)
              nombres_alt = "[]", rfc = rfc, activa = activa, deleted = deleted, deleted_at = NA_character_,
              created_at = "2026-01-01", updated_at = "2026-01-01", stringsAsFactors = FALSE)
 empresas0 <- .normalize(rbind(
-  emp("e-ng",  "E0001", "NG",  "Networks Group LCT", "NGL210728KD3"),
-  emp("e-nts", "E0002", "NTS", "Networks Trucking Services S.A. de C.V.", "NTS061025613"),
-  emp("e-ncs", "E0003", "NCS", "Networks Crossdocking Services S.A. de C.V.", "NCS040623CU8"),
+  emp("e-ng",  "E0001", "NG",  "Networks Group LCT", "NGX000101AA1"),
+  emp("e-nts", "E0002", "NTS", "Networks Trucking Services S.A. de C.V.", "NTX000101BB2"),
+  emp("e-ncs", "E0003", "NCS", "Networks Crossdocking Services S.A. de C.V.", "NCX000101CC3"),
   emp("e-old", "E0004", "OLD", "Empresa Borrada SA", "OLD000000XX0", activa = FALSE, deleted = TRUE),
   emp("e-tst", "E0005", "TEST", "TEST EMPRESA SA", "TEST6715RFC01", activa = FALSE)
 ), .schema_empresas)
