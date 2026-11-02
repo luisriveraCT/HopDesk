@@ -202,5 +202,26 @@ ok("R: after Actualizar todas las métricas, the log shows the 3 new fetches",
    poll_until(function() length(vis(C)) == 254L, timeout_s = 10) &&
    sum(startsWith(vis(C), "nuevo-")) == 4L)
 
+# ── F · a failed save is never silent (seen in passing 4, rule 8) ───────────
+boton_modal <- function(texto) sprintf("Array.from(document.querySelectorAll('.modal.show button')).filter(function(b){ return b.textContent.trim() === '%s'; })[0]", texto)
+ok("fixture app restarted with saves failing", arrancar(falla = TRUE) && abrir())
+pestana("Métodos y suscripciones"); invisible(listo(S))
+clic(boton(S, "s-usd", "editar")); Sys.sleep(0.8)
+invisible(ev("$('#fc-sub_method_new')[0].selectize.setValue('spot'); 0")); Sys.sleep(0.4)
+clic(boton_modal("Guardar")); Sys.sleep(1)
+ok("F: a failed Guardar tells the user and keeps the editor open to retry",
+   grepl("No se pudo guardar", aviso()) && identical(modal_titulo(), "Editar suscripción"))
+ok("F: it is logged as editar_suscripcion_fallido, and nothing reads as saved",
+   any(grepl("^log editar_suscripcion_fallido s-usd$", registro())) &&
+   !any(grepl("^guardar |^log editar_suscripcion s-usd$", registro())) && !grepl("Suscripción actualizada", aviso()))
+cerrar_modal()
+clic("document.getElementById('fc-btn_add_global_sub')"); Sys.sleep(0.8)
+clic(boton_modal("Crear")); Sys.sleep(1)
+ok("F: a failed Crear (global subscription) tells the user, is logged, and the dialog stays",
+   identical(modal_titulo(), "Nueva suscripción global") &&
+   any(grepl("^log crear_suscripcion_global_fallido ", registro())) &&
+   !any(grepl("^log crear_suscripcion_global ", registro())))
+cerrar_modal()
+
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)
