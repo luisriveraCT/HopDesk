@@ -163,6 +163,8 @@
   "tablas.agenda.vencimiento": "Due date",
   "tablas.agenda.vacio_pagos": "No payments queued",
   "tablas.agenda.vacio_cobros": "No collections expected",
+  "tablas.agenda.marcas_ausentes": "The rows you marked are no longer in the Agenda (another session confirmed or removed them).",
+  "tablas.agenda.marcas_parcial": "{faltan} of the {marcadas} rows you marked are no longer in the Agenda; the {quedan} left will be used.",
   "tablas.dia.en_agenda_cobros": "🛒 In the Agenda (Collections):",
   "tablas.dia.en_agenda_pagos": "🛒 In the Agenda (Payments):",
   "tablas.dia.crudos_titulo": "🔍 Raw data — {fecha} — {moneda}",

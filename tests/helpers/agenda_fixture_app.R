@@ -15,6 +15,8 @@
 # isn't in the Agenda), plus document 4001 of ANOTHER company (OTR), for
 # "Ver datos de origen"; their Factura is the
 # Pagos table's Referencia (F-4001, F-4002).
+# Every session shares one Agenda (two sessions: one confirms what the other
+# had marked); each has its own #registro.
 # AGENDA_N: that many more MXN payments (default 0): AGENDA_N=850 puts the
 # table in window mode. The last one is "PROVEEDOR ULTIMO", Referencia
 # "REF-ULTIMA", due last.
@@ -41,7 +43,8 @@ assign(".i18n_dir", file.path(raiz, "www", "i18n"), envir = globalenv())
 suppressPackageStartupMessages({ library(dplyr) })
 
 # ── Recorders and stubs (after the module, so they win) ─────────────────────
-.anota <- NULL   # set by the server: appends a line to #registro
+# Each session's own #registro (a write by session B shows in B's, not A's).
+.anota <- function(...) shiny::getDefaultReactiveDomain()$userData$anota(...)
 stubs <- list(
   puede_o_avisa = function(shared, permiso, ...) TRUE,
   log_action = function(...) invisible(NULL),
@@ -100,6 +103,10 @@ if (n_extra > 0L) {
   agenda0 <- dplyr::bind_rows(agenda0, extra)
 }
 
+# The Agenda every session sees: what one session confirms or removes, the
+# others see go (the sync bus, in the app).
+AGENDA <- reactiveVal(agenda0)
+
 # ── App ──────────────────────────────────────────────────────────────────────
 ui <- fluidPage(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),
@@ -111,11 +118,11 @@ ui <- fluidPage(
 
 server <- function(input, output, session) {
   registro <- reactiveVal(character(0))
-  .anota <<- function(...) {
+  session$userData$anota <- function(...) {
     registro(c(registro(), paste0(...)))
     session$sendCustomMessage("registro", paste(registro(), collapse = "\n"))
   }
-  ph <- reactiveVal(agenda0)
+  ph <- AGENDA   # one Agenda for every session, as the sync bus makes it
   shared <- list(
     company_map = reactiveVal(c(NTS = EMP)), proveedores_db = reactiveVal(catalogo),
     parte_alias_map_db = reactiveVal(NULL), pagar_hoy_db = ph,

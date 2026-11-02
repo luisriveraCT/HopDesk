@@ -16,6 +16,9 @@
 #   E. Quitar (Cobros) takes the marked row out, by id.
 #   F. The ⇕ / 🔍 row buttons reach the module's own handlers.
 #   H. Editar -> "Ver datos de origen": the raw SAP rows of the marked one.
+#   I. Two sessions (the integrator): B confirms what A had marked -> A's
+#      Confirmar warns and writes nothing; B confirms one of A's two marks
+#      -> A's preview and confirm modal say so; only the one left is confirmed.
 #   G. 850 payments (window mode): the search finds the last one by
 #      supplier, reference and amount; marked, it is the one confirmed and
 #      the one in the payment file (Luis: "buscar todo lo que esté en la
@@ -220,6 +223,57 @@ txt <- confirmar()
 r <- nuevas(n0)
 ok("G10: Confirmar takes that one row, by id", grepl("Confirmar 1 pago(s)", txt, fixed = TRUE) && any(r == "confirmados AP: X0850"))
 ok("G11: and it left the table", poll_until(function() length(vis(AP)) == 853L && !("X0850" %in% vis(AP)), timeout_s = 10))
+
+# ══ I · Marks another session took away ══════════════════════════════════════
+ok("I0: a fresh fixture, opened in two sessions (A and B) sharing one Agenda", arrancar(0L, 38997L))
+bA <- b
+bB <- new_chromote_session()
+invisible(bB$Emulation$setDeviceMetricsOverride(width = 1400L, height = 1000L, deviceScaleFactor = 1, mobile = FALSE))
+en <- function(sesion, expr) { b <<- sesion; on.exit(b <<- bA); force(expr) }
+en(bB, {
+  invisible(b$Page$navigate("http://127.0.0.1:38997", wait_ = TRUE))
+  poll_until(function() isTRUE(ev(sprintf("!!window.HDT && !!HDT.estado('%s') && HDT.estado('%s').visibles.length > 0", AP, AP))),
+             timeout_s = 60)
+  Sys.sleep(1)
+})
+avisos <- function() unlist(ev("Array.from(document.querySelectorAll('.shiny-notification')).map(function(n){ return n.innerText; })"))
+escrituras <- function() sum(grepl("^(confirmados|abonos|ppl)", registro()))
+
+clic(celda(AP, "P1", 1L)); clic(celda(AP, "P3", 1L))
+ok("I1: A marks P1 and P3", setequal(sel(AP), c("P1", "P3")))
+en(bB, { clic(celda(AP, "P1", 1L)); clic(celda(AP, "P3", 1L)); confirmar() })
+ok("I2: B confirmed them", en(bB, any(registro() == "confirmados AP: P3,P1")))
+ok("I3: in A they leave the table and the marks go with them",
+   poll_until(function() !any(c("P1", "P3") %in% vis(AP)) && length(sel(AP)) == 0L, timeout_s = 10))
+n0 <- escrituras()
+clic(por_id(sprintf("confirm_ap_%s", EMP)))
+ok("I4: A's Confirmar warns 'Las filas que marcaste ya no están en la Agenda (otra sesión las confirmó o quitó)'",
+   poll_until(function() any(grepl("Las filas que marcaste ya no están en la Agenda", avisos(), fixed = TRUE)), timeout_s = 10))
+Sys.sleep(1)
+ok("I5: ...opens no modal and writes nothing (it does NOT fall back to the whole currency)",
+   !nzchar(modal()) && escrituras() == n0 && setequal(vis(AP), c("P2", "P4")))
+
+clic(celda(AP, "P2", 1L)); clic(celda(AP, "P4", 1L))
+ok("I6: A marks P2 and P4", setequal(sel(AP), c("P2", "P4")))
+en(bB, { clic(celda(AP, "P2", 1L)); confirmar() })
+ok("I7: B confirmed P2", en(bB, any(registro() == "confirmados AP: P2")))
+ok("I8: in A, P2 leaves; P4 stays marked", poll_until(function() identical(vis(AP), "P4") && identical(sel(AP), "P4"), timeout_s = 10))
+n0 <- length(registro())
+clic(por_id(sprintf("dl_preview_%s", EMP)))
+ok("I9: A's payment preview says 1 of the 2 marked is gone",
+   poll_until(function() grepl("1 de las 2 filas que marcaste ya no están", modal(), fixed = TRUE), timeout_s = 10))
+cerrar_modal()
+txt <- confirmar()
+ok("I10: A's confirm modal says it too, and confirms 1",
+   grepl("1 de las 2 filas que marcaste ya no están en la Agenda; se tomarán las 1 que quedan", txt, fixed = TRUE) &&
+     grepl("Confirmar 1 pago(s)", txt, fixed = TRUE))
+r <- nuevas(n0)
+ok("I11: A confirmed only P4 (the abono), nothing else", any(r == "abonos: 4004") && !any(grepl("^confirmados", r)))
+poll_until(function() !any(grepl("Las filas que marcaste", avisos(), fixed = TRUE)), timeout_s = 15)
+Sys.sleep(1)
+ok("I12: A's own confirmation leaves no 'marks missing' warning behind, and the table is empty",
+   !any(grepl("Las filas que marcaste", avisos(), fixed = TRUE)) && !length(vis(AP)) && !nzchar(modal()))
+try(bB$close(), silent = TRUE)
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) {

@@ -821,7 +821,7 @@ pagarHoyServer <- function(id, shared) {
         # BanBajio count - pending rows only (confirmed are already paid) — selection-aware so it matches modal
         n_ok <- if (nrow(s_pend)) {
           ann_s   <- .annotate_ap_cached(s_pend, emp) |> dplyr::arrange(FechaVenc)
-          ann_s2  <- .ph_filas_objetivo(ann_s, t_ap)
+          ann_s2  <- .ph_filas_objetivo(ann_s, t_ap, m_ap)
           sum(ann_s2$ppl_status == "ok", na.rm = TRUE)
         } else 0L
 
@@ -1017,17 +1017,66 @@ pagarHoyServer <- function(id, shared) {
         if (identical(a$accion, "crudos")) .ph_crudos("AR", emp, isolate(ar_datos()), a$ids)
       }, ignoreInit = TRUE)
 
+      # Marks that vanish (the integrator, T06 review). The engine drops
+      # from its selection the ids that leave the data and sends the shorter
+      # selection, so "the user unmarked" and "another session confirmed or
+      # removed the marked rows" look alike in t$seleccion(). Each table
+      # keeps the marks it last saw: a drop is the data's when the dropped
+      # ids left the table and this session didn't confirm or remove them
+      # itself (propias). Then the marks stay, to say what went missing.
+      .ph_marcas_de <- function(t, datos) {
+        marcas  <- reactiveVal(character(0))
+        propias <- character(0)
+        observeEvent(t$seleccion(), {
+          sel <- t$seleccion(); antes <- marcas()
+          faltan <- setdiff(antes, sel)
+          ajenas <- setdiff(faltan, c(isolate(datos())$id, propias))
+          if (length(faltan) && length(ajenas) == length(faltan) && all(sel %in% antes)) return()
+          marcas(sel)
+        }, ignoreNULL = FALSE, ignoreInit = TRUE)
+        list(marcas  = marcas,
+             propias = function(ids) propias <<- unique(c(propias, as.character(ids))),
+             olvidar = function() marcas(character(0)))
+      }
+      m_ap <- .ph_marcas_de(t_ap, ap_datos)
+      m_ar <- .ph_marcas_de(t_ar, ar_datos)
+      # Another currency is another set of rows: the old marks don't carry.
+      observeEvent(input[[paste0("bal_cur_", emp)]], { m_ap$olvidar(); m_ar$olvidar() }, ignoreInit = TRUE)
+
       # The rows an action acts on, by id (never by row position): the
       # marked ones; nothing marked -> what the search or a filter leaves
       # showing; nothing narrowing -> the whole currency. Luis (2026-11-01):
       # "confirmar se puede llevar solo lo de la búsqueda, si hay algo en
-      # búsqueda". What's marked always wins.
-      .ph_filas_objetivo <- function(s_sorted, t) {
-        sel <- t$seleccion()
-        if (length(sel) && any(s_sorted$id %in% sel)) return(s_sorted[s_sorted$id %in% sel, , drop = FALSE])
+      # búsqueda". What's marked always wins -- even when some or all of it
+      # is gone: then only what's left (maybe nothing), never the whole
+      # currency. attr "marcadas"/"faltan": how many were marked and how
+      # many of those are no longer here.
+      .ph_filas_objetivo <- function(s_sorted, t, m) {
+        sel <- m$marcas()
+        if (length(sel)) {
+          rows <- s_sorted[s_sorted$id %in% sel, , drop = FALSE]
+          attr(rows, "marcadas") <- length(sel)
+          attr(rows, "faltan")   <- sum(!sel %in% s_sorted$id)
+          return(rows)
+        }
         vis <- t$visibles()
         if (!is.null(vis)) return(s_sorted[s_sorted$id %in% vis, , drop = FALSE])
         s_sorted
+      }
+      # Every marked row is gone: say so and do nothing (the marks are
+      # forgotten, so the next click is a fresh choice). TRUE = stop.
+      .ph_marcas_ausentes <- function(rows, m) {
+        if (nrow(rows) || !(attr(rows, "faltan") %||% 0L)) return(FALSE)
+        showNotification(tr("tablas.agenda.marcas_ausentes"), type = "warning", duration = 8)
+        m$olvidar()
+        TRUE
+      }
+      # Some of them are gone: the line the modal shows before acting.
+      .ph_marcas_parcial <- function(rows) {
+        f <- attr(rows, "faltan") %||% 0L
+        if (!f || !nrow(rows)) return(NULL)
+        div(class = "alert alert-warning py-2 small mb-2",
+            tr("tablas.agenda.marcas_parcial", faltan = f, marcadas = attr(rows, "marcadas"), quedan = nrow(rows)))
       }
 
       # ── PPL preview + download flow ──────────────────────────────────────
@@ -1043,7 +1092,9 @@ pagarHoyServer <- function(id, shared) {
         }
         s_cur   <- s_emp |> dplyr::filter(Moneda == cur_sel)
         ann_all <- .annotate_ap_cached(s_cur, emp) |> dplyr::arrange(FechaVenc)
-        ann     <- .ph_filas_objetivo(ann_all, t_ap)
+        ann     <- .ph_filas_objetivo(ann_all, t_ap, m_ap)
+        if (.ph_marcas_ausentes(ann, m_ap)) return()
+        parcial <- .ph_marcas_parcial(ann)
         if (!nrow(ann)) {
           showNotification("Selecciona facturas primero.", type = "warning"); return()
         }
@@ -1091,6 +1142,7 @@ pagarHoyServer <- function(id, shared) {
           easyClose = TRUE,
 
           tagList(
+            parcial,
             # Summary counts
             div(class = "d-flex gap-3 mb-3",
               div(class = "text-center px-3 py-2 rounded bg-success-subtle border border-success-subtle",
@@ -1208,7 +1260,13 @@ pagarHoyServer <- function(id, shared) {
           cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
           s_cur   <- s_emp |> dplyr::filter(Moneda == cur_sel)
           ann_all  <- .annotate_ap_cached(s_cur, emp) |> dplyr::arrange(FechaVenc)
-          ann      <- .ph_filas_objetivo(ann_all, t_ap) |> dplyr::filter(ppl_status == "ok")
+          ann      <- .ph_filas_objetivo(ann_all, t_ap, m_ap)
+          # Every marked row gone since the preview: no file, no log.
+          if (!nrow(ann) && (attr(ann, "faltan") %||% 0L)) {
+            writeLines(paste("#", tr("tablas.agenda.marcas_ausentes")), file)
+            return()
+          }
+          ann      <- ann |> dplyr::filter(ppl_status == "ok")
 
           if (!nrow(ann)) {
             writeLines("# No hay proveedores con alias en catálogo", file)
@@ -1306,6 +1364,7 @@ pagarHoyServer <- function(id, shared) {
         cur   <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur <- s_emp |> dplyr::filter(Moneda == cur)
         sel   <- intersect(t_ap$seleccion(), s_cur$id)
+        m_ap$propias(sel)
         if (!length(sel)) {
           showNotification(
             "Selecciona al menos una fila en la tabla de pagos para quitar.",
@@ -1455,6 +1514,7 @@ pagarHoyServer <- function(id, shared) {
         cur   <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur <- s_emp |> dplyr::filter(Moneda == cur)
         sel   <- intersect(t_ar$seleccion(), s_cur$id)
+        m_ar$propias(sel)
         if (!length(sel)) {
           showNotification(
             "Selecciona al menos una fila en la tabla de cobros para quitar.",
@@ -1558,8 +1618,13 @@ pagarHoyServer <- function(id, shared) {
       # the marked ones; nothing marked -> what the search leaves; nothing
       # searched -> the whole currency (Luis, T01 and 2026-11-01). See
       # .ph_filas_objetivo. s_sorted: the currency's pending rows by FechaVenc.
-      .ph_filas_confirmar <- function(s_sorted, libro) {
-        .ph_filas_objetivo(s_sorted, if (identical(libro, "AP")) t_ap else t_ar)
+      # propias = TRUE (the confirmation itself): these rows are about to
+      # leave the table because of this session, not another one.
+      .ph_filas_confirmar <- function(s_sorted, libro, propias = FALSE) {
+        ap   <- identical(libro, "AP")
+        rows <- .ph_filas_objetivo(s_sorted, if (ap) t_ap else t_ar, if (ap) m_ap else m_ar)
+        if (propias) (if (ap) m_ap else m_ar)$propias(rows$id)
+        rows
       }
 
       observeEvent(input[[paste0("confirm_ap_", emp)]], {
@@ -1569,6 +1634,7 @@ pagarHoyServer <- function(id, shared) {
         s_cur <- s_emp |> dplyr::filter(Moneda == cur)
         s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
         rows     <- .ph_filas_confirmar(s_sorted, "AP")
+        if (.ph_marcas_ausentes(rows, m_ap)) return()
         if (!nrow(rows)) { showNotification("Selecciona facturas.", type = "warning"); return() }
 
         cuenta_choices <- .bancos_cuenta_choices_for(emp, cur)
@@ -1586,6 +1652,7 @@ pagarHoyServer <- function(id, shared) {
               ),
               paste0("\u2713 Confirmar ", nrow(rows), " pago(s)")
             )),
+          .ph_marcas_parcial(rows),
           div(class = "mb-2 p-2 bg-light rounded border-start border-3 border-success",
             tags$span(class = "fw-semibold", emp),
             tags$span(class = "badge bg-secondary ms-2", cur)
@@ -1620,7 +1687,8 @@ pagarHoyServer <- function(id, shared) {
         cur      <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
         s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
-        rows <- .ph_filas_confirmar(s_sorted, "AP")
+        rows <- .ph_filas_confirmar(s_sorted, "AP", propias = TRUE)
+        if (.ph_marcas_ausentes(rows, m_ap)) return()
         if (!nrow(rows)) return()
         cuenta_sel_raw <- input[[paste0("conf_cuenta_ap_", emp)]]
         cuenta_sel <- if (!is.null(cuenta_sel_raw) && nzchar(trimws(as.character(cuenta_sel_raw)))) cuenta_sel_raw else NA_character_
@@ -1948,6 +2016,7 @@ pagarHoyServer <- function(id, shared) {
         s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
         s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
         rows  <- .ph_filas_confirmar(s_sorted, "AR")
+        if (.ph_marcas_ausentes(rows, m_ar)) return()
         if (!nrow(rows)) { showNotification("Selecciona facturas.", type = "warning"); return() }
 
         cuenta_choices <- .bancos_cuenta_choices_for(emp, cur)
@@ -1965,6 +2034,7 @@ pagarHoyServer <- function(id, shared) {
               ),
               paste0("\u2713 Confirmar ", nrow(rows), " cobro(s)")
             )),
+          .ph_marcas_parcial(rows),
           div(class = "mb-2 p-2 bg-light rounded border-start border-3 border-primary",
             tags$span(class = "fw-semibold", emp),
             tags$span(class = "badge bg-secondary ms-2", cur)
@@ -1999,7 +2069,8 @@ pagarHoyServer <- function(id, shared) {
         cur      <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
         s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
-        rows <- .ph_filas_confirmar(s_sorted, "AR")
+        rows <- .ph_filas_confirmar(s_sorted, "AR", propias = TRUE)
+        if (.ph_marcas_ausentes(rows, m_ar)) return()
         if (!nrow(rows)) return()
         cuenta_sel_raw <- input[[paste0("conf_cuenta_ar_", emp)]]
         cuenta_sel <- if (!is.null(cuenta_sel_raw) && nzchar(trimws(as.character(cuenta_sel_raw)))) cuenta_sel_raw else NA_character_
