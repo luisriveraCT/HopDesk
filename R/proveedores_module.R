@@ -489,8 +489,10 @@ proveedoresServer <- function(id, shared) {
       row$updated_at <- as.character(Sys.time())
       inac <- dplyr::bind_rows(inac, row)
 
-      set_provs(updated_provs)
+      # Inactive list first, as the bulk version: if the second write fails
+      # the provider is left in both lists rather than in neither.
       set_inac(inac)
+      set_provs(updated_provs)
       removeModal()
       showNotification("Proveedor movido a inactivos.", type = "message", duration = 2)
       output$tbl_catalogo_prov <- DT::renderDataTable({
@@ -1157,11 +1159,13 @@ proveedoresServer <- function(id, shared) {
       row$updated_at   <- as.character(Sys.time())
 
       updated_inac <- inac[inac$id != pid, ]
-      set_inac(updated_inac)
-
       current_provs <- get_provs()
       updated_provs <- dplyr::bind_rows(current_provs, row)
+
+      # Active list first (the one that receives it): if the second write
+      # fails the provider is left in both lists rather than in neither.
       set_provs(updated_provs)
+      set_inac(updated_inac)
 
       reactivar_id_rv(NULL)
       removeModal()

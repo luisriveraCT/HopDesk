@@ -46,10 +46,15 @@ assign("bump_sync_version", function(...) invisible(NULL), envir = globalenv())
 assign("puede", function(usuario, permiso, ...) TRUE, envir = globalenv())
 assign("puede_o_avisa", function(...) TRUE, envir = globalenv())
 assign("log_action", function(...) invisible(NULL), envir = globalenv())
-assign("save_proveedores", function(df, client_id = NULL) assign("activos", df, envir = .prov_guardado),
-       envir = globalenv())
-assign("save_proveedores_inactivos", function(df, client_id = NULL) assign("inactivos", df, envir = .prov_guardado),
-       envir = globalenv())
+# prov_falla("activos" / "inactivos"): that list's next writes fail, as S3 would.
+prov_falla <- function(lista = NULL) assign("falla", lista, envir = .prov_falla_env)
+.prov_falla_env <- new.env()
+.prov_guardar <- function(lista, df) {
+  if (identical(.prov_falla_env$falla, lista)) stop("S3 no disponible (prueba): ", lista)
+  assign(lista, df, envir = .prov_guardado)
+}
+assign("save_proveedores", function(df, client_id = NULL) .prov_guardar("activos", df), envir = globalenv())
+assign("save_proveedores_inactivos", function(df, client_id = NULL) .prov_guardar("inactivos", df), envir = globalenv())
 
 # One provider row with every field the catalog keeps.
 prov_fila <- function(id, nombre, no_cuenta, banco = "012", alias = "", rfc = "", correo = "", moneda = "MXN",
