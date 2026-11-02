@@ -18,7 +18,9 @@
 #   H. Editar -> "Ver datos de origen": the raw SAP rows of the marked one.
 #   I. Two sessions (the integrator): B confirms what A had marked -> A's
 #      Confirmar warns and writes nothing; B confirms one of A's two marks
-#      -> A's preview and confirm modal say so; only the one left is confirmed.
+#      -> A's preview and confirm modal say so; only the one left is confirmed;
+#      B confirms what A had open in the payment preview -> A's Descargar
+#      warns and writes no payment.
 #   J. Two companies with the same document 4001: each row, its payment
 #      preview, its PPL line and the .zip preview carry its own company's
 #      Factura (Referencia / concepto).
@@ -198,7 +200,7 @@ ok("E2: Quitar with nothing marked takes nothing out (it asks to mark a row)",
 
 # ══ A8 · The currency switch ═════════════════════════════════════════════════
 invisible(ev(sprintf("document.getElementById('ph-bal_cur_%s').selectize.setValue('USD')", EMP)))
-ok("A8: USD shows its own payment (P5)", poll_until(function() identical(vis(AP), "P5"), timeout_s = 10))
+ok("A8: USD shows its own payments (P5, P6)", poll_until(function() setequal(vis(AP), c("P5", "P6")), timeout_s = 10))
 
 # ══ J · Same document, two companies ═════════════════════════════════════════
 invisible(b$Browser$setDownloadBehavior(behavior = "allow", downloadPath = normalizePath(tempdir(), winslash = "/")))
@@ -267,7 +269,7 @@ escrituras <- function() sum(grepl("^(confirmados|abonos|ppl)", registro()))
 
 clic(celda(AP, "P1", 1L)); clic(celda(AP, "P3", 1L))
 ok("I1: A marks P1 and P3", setequal(sel(AP), c("P1", "P3")))
-en(bB, { clic(celda(AP, "P1", 1L)); clic(celda(AP, "P3", 1L)); confirmar() })
+invisible(en(bB, { clic(celda(AP, "P1", 1L)); clic(celda(AP, "P3", 1L)); confirmar() }))
 ok("I2: B confirmed them", en(bB, any(registro() == "confirmados AP: P3,P1")))
 ok("I3: in A they leave the table and the marks go with them",
    poll_until(function() !any(c("P1", "P3") %in% vis(AP)) && length(sel(AP)) == 0L, timeout_s = 10))
@@ -281,7 +283,7 @@ ok("I5: ...opens no modal and writes nothing (it does NOT fall back to the whole
 
 clic(celda(AP, "P2", 1L)); clic(celda(AP, "P4", 1L))
 ok("I6: A marks P2 and P4", setequal(sel(AP), c("P2", "P4")))
-en(bB, { clic(celda(AP, "P2", 1L)); confirmar() })
+invisible(en(bB, { clic(celda(AP, "P2", 1L)); confirmar() }))
 ok("I7: B confirmed P2", en(bB, any(registro() == "confirmados AP: P2")))
 ok("I8: in A, P2 leaves; P4 stays marked", poll_until(function() identical(vis(AP), "P4") && identical(sel(AP), "P4"), timeout_s = 10))
 n0 <- length(registro())
@@ -299,6 +301,26 @@ poll_until(function() !any(grepl("Las filas que marcaste", avisos(), fixed = TRU
 Sys.sleep(1)
 ok("I12: A's own confirmation leaves no 'marks missing' warning behind, and the table is empty",
    !any(grepl("Las filas que marcaste", avisos(), fixed = TRUE)) && !length(vis(AP)) && !nzchar(modal()))
+
+# The PPL download, when every marked row left after the preview opened.
+invisible(b$Browser$setDownloadBehavior(behavior = "allow", downloadPath = normalizePath(tempdir(), winslash = "/")))
+usd <- function() invisible(ev(sprintf("document.getElementById('ph-bal_cur_%s').selectize.setValue('USD')", EMP)))
+usd(); en(bB, usd())
+# (USD keeps P6: were P5 its last payment, the currency itself would go and
+# the selector would move to MXN, which forgets the marks.)
+ok("I13: both on USD (P5, P6)", poll_until(function() identical(vis(AP), c("P5", "P6")) && identical(en(bB, vis(AP)), c("P5", "P6")), timeout_s = 10))
+clic(celda(AP, "P5", 1L))
+clic(por_id(sprintf("dl_preview_%s", EMP)))
+ok("I14: A opens the payment preview with P5 marked", poll_until(function() grepl("ACEROS MONTERREY SA", modal(), fixed = TRUE), timeout_s = 10))
+invisible(en(bB, { clic(celda(AP, "P5", 1L)); confirmar() }))
+ok("I15: B confirms P5 meanwhile", en(bB, any(registro() == "confirmados AP: P5")) &&
+     poll_until(function() identical(vis(AP), "P6") && !length(sel(AP)), timeout_s = 10))
+n0 <- length(registro())
+Sys.sleep(0.8)
+clic(sprintf("document.getElementById('ph-dl_ppl_%s')", EMP))
+ok("I16: A's Descargar then says the marked rows are gone, and pays nothing (no PPL line)",
+   poll_until(function() any(grepl("Las filas que marcaste ya no están en la Agenda", avisos(), fixed = TRUE)), timeout_s = 10) &&
+     !any(grepl("^ppl", nuevas(n0))))
 try(bB$close(), silent = TRUE)
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")

@@ -1249,14 +1249,16 @@ pagarHoyServer <- function(id, shared) {
           s_emp   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
           cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
           s_cur   <- s_emp |> dplyr::filter(Moneda == cur_sel)
-          ann_all  <- .annotate_ap_cached(s_cur, emp) |> dplyr::arrange(FechaVenc)
-          ann      <- .ph_filas_objetivo(ann_all, t_ap, m_ap)
-          # Every marked row gone since the preview: no file, no log.
-          if (!nrow(ann) && (attr(ann, "faltan") %||% 0L)) {
+          # Every marked row gone since the preview: say so (as Confirmar
+          # does) and write no payment -- the file holds only that line, and
+          # nothing is logged. Checked before annotating: the currency may
+          # have no rows left at all.
+          if (.ph_marcas_ausentes(.ph_filas_objetivo(s_cur, t_ap, m_ap), m_ap)) {
             writeLines(paste("#", tr("tablas.agenda.marcas_ausentes")), file)
             return()
           }
-          ann      <- ann |> dplyr::filter(ppl_status == "ok")
+          ann_all  <- .annotate_ap_cached(s_cur, emp) |> dplyr::arrange(FechaVenc)
+          ann      <- .ph_filas_objetivo(ann_all, t_ap, m_ap) |> dplyr::filter(ppl_status == "ok")
 
           if (!nrow(ann)) {
             writeLines("# No hay proveedores con alias en catálogo", file)

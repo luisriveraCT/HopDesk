@@ -94,6 +94,7 @@ agenda0 <- dplyr::bind_rows(
   pago("P3", "TRANSPORTES DESCONOCIDOS", "4003", 3100, "2026-11-02"),
   pago("P4", "ACEROS MONTERREY SA",  "4004",   400, "2026-11-04", tipo = "abono"),
   pago("P5", "ACEROS MONTERREY SA",  "4005",  1200, "2026-11-02", moneda = "USD"),
+  pago("P6", "BODEGAS DEL NORTE SA", "4006",   300, "2026-11-03", moneda = "USD"),
   dplyr::mutate(pago("Q1", "ACEROS MONTERREY SA", "4001", 700, "2026-11-05"), Empresa = OTR),
   pago("C1", "CLIENTE UNO SA",       "9001", 50000, "2026-11-02", ledger = "AR"),
   pago("C2", "CLIENTE DOS SA",       "9002", 12000, "2026-11-01", ledger = "AR"))
