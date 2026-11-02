@@ -29,8 +29,8 @@ source("R/proveedores_module.R")
 
 # In-memory fakes for the writes this module does (this process only).
 .saved <- new.env()
-save_proveedores           <- function(df, client_id = NULL) { .saved$provs <- df; invisible(TRUE) }
-save_proveedores_inactivos <- function(df, client_id = NULL) {
+save_proveedores           <- function(df, client_id = NULL, base = NULL) { .saved$provs <- df; invisible(TRUE) }
+save_proveedores_inactivos <- function(df, client_id = NULL, base = NULL) {
   if (isTRUE(.saved$fail_inac)) stop("simulated S3 outage")
   .saved$inac <- df; invisible(TRUE)
 }

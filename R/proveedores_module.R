@@ -212,9 +212,12 @@ proveedoresServer <- function(id, shared) {
         stop("[proveedores] can_manage_proveedores required to save the catalog", call. = FALSE)
     }
 
+    # The session copy is still what get_provs()/get_inac() return here (it
+    # is replaced only after the save), and every caller built `df` from it:
+    # passed as `base`, only this action's rows are applied on S3 (CM09).
     set_provs <- function(df) {
       .exigir_permiso()
-      save_proveedores(df, client_id = shared$effective_client_id())
+      save_proveedores(df, client_id = shared$effective_client_id(), base = get_provs())
       bump_sync_version("proveedores_db")
       if (!is.null(shared$proveedores_db)) shared$proveedores_db(df)
     }
@@ -240,7 +243,7 @@ proveedoresServer <- function(id, shared) {
 
     set_inac <- function(df) {
       .exigir_permiso()
-      save_proveedores_inactivos(df, client_id = shared$effective_client_id())
+      save_proveedores_inactivos(df, client_id = shared$effective_client_id(), base = get_inac())
       bump_sync_version("proveedores_inactivos_db")
       if (!is.null(shared$proveedores_inactivos_db)) shared$proveedores_inactivos_db(df)
     }

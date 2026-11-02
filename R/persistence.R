@@ -1886,8 +1886,26 @@ load_proveedores <- function(client_id = NULL) {
   .load_proveedores_raw(client_id = client_id) |> dplyr::filter(activo == TRUE)
 }
 
-save_proveedores <- function(df, client_id = NULL) {
-  .s3_write(.normalize(df, .schema_proveedores), S3_KEYS$proveedores, client_id = client_id)
+# `base`: the session copy `df` was built from. With it, only this action's
+# rows are applied on S3's catalog as it is now (CM09): a supplier another
+# session added or edited meanwhile is kept, and so are legacy activo=FALSE
+# rows that the session's active-only copy never had. Rows without a unique
+# id cannot be rebased, so then the whole table is written, as before.
+.proveedores_guardar <- function(df, key, client_id, base) {
+  norm <- .normalize(df, .schema_proveedores)
+  if (!is.null(base) && !is.null(client_id) && nzchar(client_id)) {
+    base <- .normalize(base, .schema_proveedores)
+    ids_ok <- function(d) !anyNA(d$id) && all(nzchar(d$id)) && !anyDuplicated(d$id)
+    if (ids_ok(norm) && ids_ok(base))
+      return(invisible(modificar_tabla(key, client_id, .schema_proveedores,
+                                       function(fresco) rebase_por_id(norm, base, fresco, "id"))))
+    message("[proveedores] rows without a unique id: whole-table save, no rebase")
+  }
+  .s3_write(norm, key, client_id = client_id)
+}
+
+save_proveedores <- function(df, client_id = NULL, base = NULL) {
+  .proveedores_guardar(df, S3_KEYS$proveedores, client_id, base)
 }
 
 load_proveedores_inactivos <- function(client_id = NULL) {
@@ -1895,8 +1913,8 @@ load_proveedores_inactivos <- function(client_id = NULL) {
   .normalize(raw, .schema_proveedores)
 }
 
-save_proveedores_inactivos <- function(df, client_id = NULL) {
-  .s3_write(.normalize(df, .schema_proveedores), S3_KEYS$proveedores_inactivos, client_id = client_id)
+save_proveedores_inactivos <- function(df, client_id = NULL, base = NULL) {
+  .proveedores_guardar(df, S3_KEYS$proveedores_inactivos, client_id, base)
 }
 
 # =============================================================================
