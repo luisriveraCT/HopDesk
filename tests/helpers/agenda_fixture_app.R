@@ -9,7 +9,8 @@
 # Everything that would write or reach S3 is a recorder: confirming writes
 # the confirmed ids to #registro ("confirmados AP: id,id") and takes them out
 # of the in-memory Agenda; Quitar does the same ("quitados AP: ..."); the
-# payment file only records what it would pay ("ppl: id=importe,...").
+# payment file only records what it would pay ("ppl: 15000 F-4001,..." --
+# amount and concepto per line).
 #
 # Raw SAP rows (shared$sap_data) for documents 4001 and 4002 (and one that
 # isn't in the Agenda), plus document 4001 of ANOTHER company (OTR), for
@@ -63,7 +64,7 @@ stubs <- list(
                stringsAsFactors = FALSE),
   get_cuenta_ppl = function(...) "012180001111111111",
   .log_pago_generado = function(shared, emp, moneda, cuenta_origen, ppl_rows, ...)
-    .anota(sprintf("ppl: %s", paste(ppl_rows$importe, collapse = ","))),
+    .anota(sprintf("ppl: %s", paste(ppl_rows$importe, ppl_rows$concepto, collapse = ","))),
   # Confirming an abono: the abonos store
   load_abonos = function(...) tibble::tibble(),
   upsert_abono = function(db, nuevo) {
@@ -76,6 +77,7 @@ for (n in names(stubs)) assign(n, stubs[[n]], envir = globalenv())
 
 # ── Data ─────────────────────────────────────────────────────────────────────
 EMP <- "Networks Trucking Services"
+OTR <- "Otra Empresa SA"   # a second company, with its own document 4001
 catalogo <- tibble::tibble(
   nombre = c("ACEROS MONTERREY SA", "BODEGAS DEL NORTE SA", "PROVEEDOR ULTIMO SA"),
   alias  = c("ACEROS", "BODEGAS", "ULTIMO"),
@@ -92,6 +94,7 @@ agenda0 <- dplyr::bind_rows(
   pago("P3", "TRANSPORTES DESCONOCIDOS", "4003", 3100, "2026-11-02"),
   pago("P4", "ACEROS MONTERREY SA",  "4004",   400, "2026-11-04", tipo = "abono"),
   pago("P5", "ACEROS MONTERREY SA",  "4005",  1200, "2026-11-02", moneda = "USD"),
+  dplyr::mutate(pago("Q1", "ACEROS MONTERREY SA", "4001", 700, "2026-11-05"), Empresa = OTR),
   pago("C1", "CLIENTE UNO SA",       "9001", 50000, "2026-11-02", ledger = "AR"),
   pago("C2", "CLIENTE DOS SA",       "9002", 12000, "2026-11-01", ledger = "AR"))
 n_extra <- as.integer(Sys.getenv("AGENDA_N", "0"))
@@ -124,7 +127,7 @@ server <- function(input, output, session) {
   }
   ph <- AGENDA   # one Agenda for every session, as the sync bus makes it
   shared <- list(
-    company_map = reactiveVal(c(NTS = EMP)), proveedores_db = reactiveVal(catalogo),
+    company_map = reactiveVal(c(NTS = EMP, OTR = OTR)), proveedores_db = reactiveVal(catalogo),
     parte_alias_map_db = reactiveVal(NULL), pagar_hoy_db = ph,
     sap_data = reactiveVal(list(AP = data.frame(Empresa = c("NTS", "NTS", "NTS", "OTR"),
                                                 Documento = c("4001", "4002", "4999", "4001"),

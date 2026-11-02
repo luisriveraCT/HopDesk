@@ -580,6 +580,45 @@ pagarHoyServer <- function(id, shared) {
       col_texto("Documento", "tablas.facturas.documento", recorte = FALSE),
       col_fecha("Vencimiento", "tablas.agenda.vencimiento"),
       col_dinero("Importe", "tablas.facturas.importe", moneda = "Moneda"))
+    # Referencia -- the Pagos table's column and the PPL's concepto:
+    # Documento -> Factura for ONE company, since the same number exists in
+    # two (found in T06; it used to take whichever company came first). SAP
+    # rows first, then (overrides = TRUE, the table) the SAP field overrides,
+    # then manual entries. A source without an Empresa column isn't
+    # filtered. SAP and the stores may name the company in full or by its
+    # initials (shared$company_map()).
+    .ph_ref_lookup <- function(emp, overrides = FALSE) {
+      cmap   <- shared$company_map()
+      claves <- c(emp, names(cmap)[unname(cmap) == emp])
+      de_emp <- function(df) {
+        if (is.null(df) || !nrow(df) || !"Empresa" %in% names(df)) return(df)
+        df[trimws(as.character(df[["Empresa"]])) %in% claves, , drop = FALSE]
+      }
+      pares <- function(df, valor) {
+        if (is.null(df) || !nrow(df)) return(character(0))
+        lk <- stats::setNames(trimws(as.character(df[[valor]] %||% "")), trimws(as.character(df[["Documento"]])))
+        lk[nzchar(names(lk))]
+      }
+      sap <- de_emp(tryCatch(shared$sap_data()[["AP"]], error = function(e) NULL))
+      lk  <- if (!is.null(sap) && all(c("Factura", "Documento") %in% names(sap)))
+        stats::setNames(trimws(as.character(sap[["Factura"]] %||% "")), trimws(as.character(sap[["Documento"]])))
+      else character(0)
+      if (overrides) {
+        ov <- tryCatch(shared$sap_ov_db(), error = function(e) NULL)
+        if (!is.null(ov) && nrow(ov) && all(c("ledger", "Documento", "Factura_override") %in% names(ov))) {
+          ov <- de_emp(ov[ov[["ledger"]] == "AP" & !is.na(ov[["Factura_override"]]), , drop = FALSE])
+          o  <- pares(ov, "Factura_override")
+          lk[names(o)] <- o
+        }
+      }
+      man <- tryCatch(shared$manual_inv(), error = function(e) NULL)
+      if (!is.null(man) && nrow(man) && all(c("Documento", "Factura", "ledger") %in% names(man))) {
+        m <- pares(de_emp(man[man$ledger == "AP", , drop = FALSE]), "Factura")
+        lk[names(m)] <- m   # manual entries override SAP
+      }
+      lk
+    }
+
     # "Ver datos de origen" (the class's crudos, in the Editar bar): the raw
     # SAP rows behind the marked rows -- nothing marked, the whole table --
     # in the same viewer as Vencidos and the lupa. By company AND document:
@@ -898,38 +937,7 @@ pagarHoyServer <- function(id, shared) {
         s_cur   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP", Moneda == cur_sel)
         if (!nrow(s_cur)) return(.ph_ap_vacia)
 
-        # Referencia lookup: Documento → Factura, SAP rows first, SAP overrides, then manual entries
-        sap_ap_tbl <- tryCatch(shared$sap_data()[["AP"]], error = function(e) NULL)
-        ref_lkup_tbl <- if (!is.null(sap_ap_tbl) &&
-                             "Factura"   %in% names(sap_ap_tbl) &&
-                             "Documento" %in% names(sap_ap_tbl)) {
-          setNames(trimws(as.character(sap_ap_tbl[["Factura"]]   %||% "")),
-                   trimws(as.character(sap_ap_tbl[["Documento"]])))
-        } else character(0)
-        # Apply SAP field overrides (Factura_override) on top of raw SAP lookup
-        sap_ov_tbl <- tryCatch(shared$sap_ov_db(), error = function(e) NULL)
-        if (!is.null(sap_ov_tbl) && nrow(sap_ov_tbl) &&
-            all(c("ledger", "Documento", "Factura_override") %in% names(sap_ov_tbl))) {
-          ov_ap <- sap_ov_tbl[sap_ov_tbl[["ledger"]] == "AP" &
-                                !is.na(sap_ov_tbl[["Factura_override"]]), , drop = FALSE]
-          if (nrow(ov_ap)) {
-            ov_lkup <- setNames(trimws(as.character(ov_ap[["Factura_override"]])),
-                                trimws(as.character(ov_ap[["Documento"]])))
-            ov_lkup <- ov_lkup[nzchar(names(ov_lkup))]
-            ref_lkup_tbl[names(ov_lkup)] <- ov_lkup
-          }
-        }
-        man_inv_tbl <- tryCatch(shared$manual_inv(), error = function(e) NULL)
-        if (!is.null(man_inv_tbl) && nrow(man_inv_tbl) &&
-            all(c("Documento", "Factura", "ledger") %in% names(man_inv_tbl))) {
-          man_ap <- man_inv_tbl[man_inv_tbl$ledger == "AP", , drop = FALSE]
-          if (nrow(man_ap)) {
-            man_lkup <- setNames(trimws(as.character(man_ap[["Factura"]]   %||% "")),
-                                 trimws(as.character(man_ap[["Documento"]])))
-            man_lkup <- man_lkup[nzchar(names(man_lkup))]
-            ref_lkup_tbl[names(man_lkup)] <- man_lkup   # manual entries override SAP
-          }
-        }
+        ref_lkup_tbl <- .ph_ref_lookup(emp, overrides = TRUE)
 
         sess_ovr <- tryCatch(.session_alias_overrides(), error = function(e) list())
         ann <- .annotate_ap_cached(s_cur, emp) |>
@@ -1104,25 +1112,7 @@ pagarHoyServer <- function(id, shared) {
 
         # Build Referencia lookup (Documento → Factura) — same logic as download handler
         # so the preview shows the concepto that will actually appear in the PPL file.
-        sap_ap_prev <- tryCatch(shared$sap_data()[["AP"]], error = function(e) NULL)
-        ref_lkup_prev <- if (!is.null(sap_ap_prev) &&
-                              "Factura"   %in% names(sap_ap_prev) &&
-                              "Documento" %in% names(sap_ap_prev)) {
-          setNames(trimws(as.character(sap_ap_prev[["Factura"]] %||% "")),
-                   trimws(as.character(sap_ap_prev[["Documento"]])))
-        } else character(0)
-        man_inv_prev <- tryCatch(shared$manual_inv(), error = function(e) NULL)
-        if (!is.null(man_inv_prev) && nrow(man_inv_prev) &&
-            all(c("Documento","Factura","ledger") %in% names(man_inv_prev))) {
-          man_ap_prev <- man_inv_prev[man_inv_prev$ledger == "AP", , drop = FALSE]
-          if (nrow(man_ap_prev)) {
-            man_lkup_prev <- setNames(
-              trimws(as.character(man_ap_prev[["Factura"]] %||% "")),
-              trimws(as.character(man_ap_prev[["Documento"]])))
-            man_lkup_prev <- man_lkup_prev[nzchar(names(man_lkup_prev))]
-            ref_lkup_prev[names(man_lkup_prev)] <- man_lkup_prev
-          }
-        }
+        ref_lkup_prev <- .ph_ref_lookup(emp)
         # Helper: resolve Referencia for a Documento; falls back to Documento
         .ref_label <- function(doc) {
           d <- trimws(as.character(doc))
@@ -1293,25 +1283,7 @@ pagarHoyServer <- function(id, shared) {
           }
           # Look up Factura (Referencia) from live SAP data to use as concepto.
           # Falls back to Documento if Factura is missing or blank.
-          sap_ap   <- tryCatch(shared$sap_data()[["AP"]], error = function(e) NULL)
-          ref_lkup <- if (!is.null(sap_ap) && "Factura" %in% names(sap_ap) &&
-                          "Documento" %in% names(sap_ap)) {
-            setNames(
-              trimws(as.character(sap_ap[["Factura"]] %||% "")),
-              trimws(as.character(sap_ap[["Documento"]]))
-            )
-          } else character(0)
-          man_inv_dl <- tryCatch(shared$manual_inv(), error = function(e) NULL)
-          if (!is.null(man_inv_dl) && nrow(man_inv_dl) &&
-              all(c("Documento", "Factura", "ledger") %in% names(man_inv_dl))) {
-            man_ap_dl <- man_inv_dl[man_inv_dl$ledger == "AP", , drop = FALSE]
-            if (nrow(man_ap_dl)) {
-              man_lkup_dl <- setNames(trimws(as.character(man_ap_dl[["Factura"]]   %||% "")),
-                                      trimws(as.character(man_ap_dl[["Documento"]])))
-              man_lkup_dl <- man_lkup_dl[nzchar(names(man_lkup_dl))]
-              ref_lkup[names(man_lkup_dl)] <- man_lkup_dl
-            }
-          }
+          ref_lkup <- .ph_ref_lookup(emp)
 
           ppl_rows <- ann |>
             dplyr::transmute(
@@ -2829,27 +2801,12 @@ pagarHoyServer <- function(id, shared) {
       }
 
       # Build Referencia lookup (Documento → Factura) same as download content fn
-      sap_ap_pv <- tryCatch(shared$sap_data()[["AP"]], error = function(e) NULL)
-      ref_lkup_pv <- if (!is.null(sap_ap_pv) &&
-                         "Factura"   %in% names(sap_ap_pv) &&
-                         "Documento" %in% names(sap_ap_pv)) {
-        setNames(trimws(as.character(sap_ap_pv[["Factura"]] %||% "")),
-                 trimws(as.character(sap_ap_pv[["Documento"]])))
-      } else character(0)
-      man_inv_pv <- tryCatch(shared$manual_inv(), error = function(e) NULL)
-      if (!is.null(man_inv_pv) && nrow(man_inv_pv) &&
-          all(c("Documento","Factura","ledger") %in% names(man_inv_pv))) {
-        man_ap_pv <- man_inv_pv[man_inv_pv$ledger == "AP", , drop = FALSE]
-        if (nrow(man_ap_pv)) {
-          man_lk <- setNames(trimws(as.character(man_ap_pv[["Factura"]] %||% "")),
-                             trimws(as.character(man_ap_pv[["Documento"]])))
-          man_lk <- man_lk[nzchar(names(man_lk))]
-          ref_lkup_pv[names(man_lk)] <- man_lk
-        }
-      }
-      .ref_pv <- function(doc) {
-        d <- trimws(as.character(doc))
-        r <- if (length(ref_lkup_pv)) { rv <- ref_lkup_pv[d]; if (is.na(rv)) "" else as.character(rv) } else ""
+      # One lookup per company: the same number exists in two.
+      lk_pv <- lapply(stats::setNames(nm = unique(s$Empresa)), .ph_ref_lookup)
+      .ref_pv <- function(emp, doc) {
+        d  <- trimws(as.character(doc))
+        rv <- lk_pv[[emp]][d]
+        r  <- if (length(rv) && !is.na(rv)) as.character(rv) else ""
         if (nzchar(r)) r else d
       }
 
@@ -2860,7 +2817,7 @@ pagarHoyServer <- function(id, shared) {
           Empresa    = Empresa,
           Moneda     = Moneda,
           Parte      = Parte,
-          Referencia = vapply(Documento, .ref_pv, character(1)),
+          Referencia = unname(mapply(.ref_pv, Empresa, Documento)),
           Importe    = fmt_money(Importe)
         )
 
@@ -2950,25 +2907,7 @@ pagarHoyServer <- function(id, shared) {
               b <- cuenta_data_z$banco[cuenta_data_z$cuenta == cuenta_origen]
               if (length(b)) b[1L] else NA_character_
             } else NA_character_
-            sap_ap_z   <- tryCatch(shared$sap_data()[["AP"]], error = function(e) NULL)
-            ref_lkup_z <- if (!is.null(sap_ap_z) && "Factura" %in% names(sap_ap_z) &&
-                              "Documento" %in% names(sap_ap_z)) {
-              setNames(
-                trimws(as.character(sap_ap_z[["Factura"]] %||% "")),
-                trimws(as.character(sap_ap_z[["Documento"]]))
-              )
-            } else character(0)
-            man_inv_z <- tryCatch(shared$manual_inv(), error = function(e) NULL)
-            if (!is.null(man_inv_z) && nrow(man_inv_z) &&
-                all(c("Documento", "Factura", "ledger") %in% names(man_inv_z))) {
-              man_ap_z <- man_inv_z[man_inv_z$ledger == "AP", , drop = FALSE]
-              if (nrow(man_ap_z)) {
-                man_lkup_z <- setNames(trimws(as.character(man_ap_z[["Factura"]]   %||% "")),
-                                       trimws(as.character(man_ap_z[["Documento"]])))
-                man_lkup_z <- man_lkup_z[nzchar(names(man_lkup_z))]
-                ref_lkup_z[names(man_lkup_z)] <- man_lkup_z
-              }
-            }
+            ref_lkup_z <- .ph_ref_lookup(emp)
 
             ppl_rows <- ann |> dplyr::transmute(
               alias = alias, clabe_dest = clabe_dest,

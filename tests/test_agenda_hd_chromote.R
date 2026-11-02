@@ -19,6 +19,9 @@
 #   I. Two sessions (the integrator): B confirms what A had marked -> A's
 #      Confirmar warns and writes nothing; B confirms one of A's two marks
 #      -> A's preview and confirm modal say so; only the one left is confirmed.
+#   J. Two companies with the same document 4001: each row, its payment
+#      preview, its PPL line and the .zip preview carry its own company's
+#      Factura (Referencia / concepto).
 #   G. 850 payments (window mode): the search finds the last one by
 #      supplier, reference and amount; marked, it is the one confirmed and
 #      the one in the payment file (Luis: "buscar todo lo que esté en la
@@ -196,6 +199,29 @@ ok("E2: Quitar with nothing marked takes nothing out (it asks to mark a row)",
 # ══ A8 · The currency switch ═════════════════════════════════════════════════
 invisible(ev(sprintf("document.getElementById('ph-bal_cur_%s').selectize.setValue('USD')", EMP)))
 ok("A8: USD shows its own payment (P5)", poll_until(function() identical(vis(AP), "P5"), timeout_s = 10))
+
+# ══ J · Same document, two companies ═════════════════════════════════════════
+invisible(b$Browser$setDownloadBehavior(behavior = "allow", downloadPath = normalizePath(tempdir(), winslash = "/")))
+APO <- "ph-tbl_ap_Otra_Empresa_SA-hdt"; OTR <- "Otra Empresa SA"
+clic("document.querySelector('a[data-value=\"Otra Empresa SA\"]')")
+ok("J1: the other company's tab shows its own 4001 (Q1)",
+   poll_until(function() identical(tryCatch(unlist(estado(APO)$visibles), error = function(e) NULL), "Q1"), timeout_s = 10))
+ok("J2: its Referencia is its own Factura (F-OTRA), not Networks' F-4001",
+   isTRUE(ev(sprintf("/F-OTRA/.test(HDT.fila('%s','Q1').innerText) && !/F-4001/.test(HDT.fila('%s','Q1').innerText)", APO, APO))))
+n0 <- length(registro())
+clic(sprintf("document.getElementById('ph-dl_preview_%s')", OTR))
+ok("J3: its payment preview shows F-OTRA",
+   poll_until(function() grepl("F-OTRA", modal(), fixed = TRUE), timeout_s = 10) && !grepl("F-4001", modal(), fixed = TRUE))
+Sys.sleep(0.8)
+clic(sprintf("document.getElementById('ph-dl_ppl_%s')", OTR))
+ok("J4: and its PPL line's concepto is F-OTRA",
+   poll_until(function() any(nuevas(n0) == "ppl: 700 F-OTRA"), timeout_s = 10))
+if (nzchar(modal())) cerrar_modal()
+poll_until(function() !isTRUE(ev("!!document.querySelector('.modal.show, .modal-backdrop')")), timeout_s = 10); Sys.sleep(0.5)
+clic("document.getElementById('ph-preview_all')")
+ok("J5: the .zip preview (every company) gives each company's 4001 its own Factura",
+   poll_until(function() grepl("F-OTRA", modal(), fixed = TRUE), timeout_s = 10))
+if (nzchar(modal())) cerrar_modal()
 
 # ══ G · 850 payments ═════════════════════════════════════════════════════════
 ok("G0: fixture with 850 more payments", arrancar(850L, 38996L))
