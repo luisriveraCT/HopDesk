@@ -209,3 +209,40 @@ test_that("template round trip with one real edit: only that field changes", {
   expect_identical(vapply(r$filas$.cambios[[1]], `[[`, "", "campo"), "correo")
   expect_identical(c(r$activos$correo, r$activos$alias, r$activos$id), c("nuevo@x.mx", "ACEROS", "p-1"))
 })
+
+# ── After T08: bank vs CLABE, and non-CLABE accounts that came as numbers ───
+test_that("a CLABE's first 3 digits are its bank: when the file's bank says another, it waits for review", {
+  expect_identical(prov_banco_coincide(c(con_dv("01218000111111111"), con_dv("01218000111111111"), "012345678901", NA),
+                                       c("012", "002", "030", "012")),
+                   c(TRUE, FALSE, TRUE, TRUE))
+  f <- escribir_xlsx(data.frame(Nombre = c("BIEN SA", "MAL BANCO SA", "MAL REPARADA SA"), Banco = c("012", "002", "072"),
+                                `No. Cuenta` = c(con_dv("01218000111111111"), con_dv("01218000222222222"),
+                                                 substr(con_dv("01418000333333333"), 2, 18)),
+                                Moneda = "MXN", check.names = FALSE))
+  r <- quiet(prov_importar(f))
+  expect_identical(r$filas$.estado, c("listo", "revisar", "revisar"))
+  expect_identical(r$filas$.motivo[2:3], rep("tablas.proveedores.importar.motivo_banco_clabe", 2))
+  expect_identical(r$activos$nombre, "BIEN SA")                     # the held-back ones never go in
+  expect_identical(tr("tablas.proveedores.importar.motivo_banco_clabe", clabe = "012", banco = "002"),
+                   "La CLABE es del banco 012 y el banco dice 002.")
+})
+
+test_that("a non-CLABE account that came as a number imports, with a visible warning", {
+  r <- prov_cuenta("12345678901", es_numero = TRUE)                  # BanBajío, maybe without its leading 0
+  expect_identical(c(r$valor, r$estado, r$motivo), c("12345678901", "aviso", "tablas.proveedores.importar.aviso_numero"))
+  tarjeta <- "4152313300001234"                                      # 16 digits that don't prove out as a CLABE
+  expect_false(prov_clabe_valida(paste0("00", tarjeta)))
+  expect_identical(prov_cuenta(tarjeta, es_numero = TRUE)$estado, "aviso")
+  expect_identical(prov_cuenta("17 dígitos que no cuadran", es_numero = FALSE)$estado, "ok")
+  expect_identical(prov_cuenta("12180001234567890")$estado, "revisar")   # 17 digits: still held back
+  # End to end: imported, with the note.
+  wb <- openxlsx::createWorkbook(); openxlsx::addWorksheet(wb, "P")
+  openxlsx::writeData(wb, "P", data.frame(Nombre = "BAJIO NUMERO SA", Banco = "030", `No. Cuenta` = "", Moneda = "MXN",
+                                          check.names = FALSE))
+  openxlsx::writeData(wb, "P", 12345678901, startCol = 3, startRow = 2)
+  f <- tempfile(fileext = ".xlsx"); openxlsx::saveWorkbook(wb, f)
+  r <- quiet(prov_importar(f))
+  expect_identical(r$filas$.estado, "listo")
+  expect_identical(r$filas$.nota, "tablas.proveedores.importar.aviso_numero")
+  expect_identical(c(r$activos$no_cuenta, r$activos$medio_pago), c("12345678901", "BCO"))
+})

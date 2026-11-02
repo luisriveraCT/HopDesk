@@ -174,7 +174,7 @@ prov_clabe_valida <- function(x) {
 # changed digits and nothing can tell which.
 .PROV_ENTERO_EXACTO <- 2^53
 
-# One account: list(valor, estado = "ok" | "reparada" | "revisar", motivo).
+# One account: list(valor, estado = "ok" | "reparada" | "aviso" | "revisar", motivo).
 # motivo is a dictionary key (tablas.proveedores.importar.*).
 prov_cuenta <- function(texto, es_numero = FALSE) {
   t <- prov_limpiar_campo("no_cuenta", texto)
@@ -197,9 +197,21 @@ prov_cuenta <- function(texto, es_numero = FALSE) {
     con_ceros <- paste0(strrep("0", 18L - n), t)
     if (prov_clabe_valida(con_ceros))
       return(list(valor = con_ceros, estado = "reparada", motivo = "tablas.proveedores.importar.motivo_cero"))
-    return(revisar("tablas.proveedores.importar.motivo_17"))
+    if (n == 17L) return(revisar("tablas.proveedores.importar.motivo_17"))
   }
-  list(valor = t, estado = "ok", motivo = NA_character_)          # 10-12 or 16 digits: not a CLABE
+  # 10-12 or 16 digits: not a CLABE, so no check digit to prove anything. If
+  # Excel had it as a number it may have dropped leading zeros: imported, but
+  # with a visible warning ("aviso") instead of being held back.
+  if (isTRUE(es_numero))
+    return(list(valor = t, estado = "aviso", motivo = "tablas.proveedores.importar.aviso_numero"))
+  list(valor = t, estado = "ok", motivo = NA_character_)
+}
+
+# A CLABE's first 3 digits ARE its bank's key: when the file's bank says
+# another, one of the two is a typing error.
+prov_banco_coincide <- function(cuenta, banco) {
+  es_clabe <- !is.na(cuenta) & grepl("^[0-9]{18}$", cuenta) & !is.na(banco) & grepl("^[0-9]{3}$", banco)
+  !es_clabe | substr(cuenta, 1L, 3L) == banco
 }
 
 # ── Bank ─────────────────────────────────────────────────────────────────────
@@ -293,8 +305,12 @@ prov_clasificar <- function(filas, activos, inactivos, tipo = "activos", catalog
   f$moneda    <- prov_moneda(f$moneda)
   motivo <- ifelse(vapply(cuentas, `[[`, "", "estado") == "revisar", vapply(cuentas, `[[`, "", "motivo"),
             ifelse(vapply(bancos, `[[`, "", "estado") == "revisar", vapply(bancos, `[[`, "", "motivo"), NA_character_))
+  # A valid CLABE whose bank isn't the file's bank: held back, saying both.
+  choca <- is.na(motivo) & !prov_banco_coincide(f$no_cuenta, f$banco)
+  motivo[choca] <- "tablas.proveedores.importar.motivo_banco_clabe"
   f$.motivo <- motivo
-  f$.nota   <- ifelse(vapply(cuentas, `[[`, "", "estado") == "reparada", vapply(cuentas, `[[`, "", "motivo"), NA_character_)
+  est_cuenta <- vapply(cuentas, `[[`, "", "estado")
+  f$.nota   <- ifelse(est_cuenta %in% c("reparada", "aviso"), vapply(cuentas, `[[`, "", "motivo"), NA_character_)
 
   llave_act <- prov_cuenta_existente(activos)
   llave_ina <- prov_cuenta_existente(inactivos)

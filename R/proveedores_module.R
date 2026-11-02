@@ -747,7 +747,9 @@ proveedoresServer <- function(id, shared) {
     .campo_texto <- function(campo) tr(paste0("tablas.proveedores.", campo))
     .detalle <- function(rows) vapply(seq_len(nrow(rows)), function(i) {
       partes <- character(0)
-      if (!is.na(rows$.motivo[i])) partes <- c(partes, tr(rows$.motivo[i]))
+      # (the bank-vs-CLABE motive names both banks; other keys ignore the values)
+      if (!is.na(rows$.motivo[i])) partes <- c(partes, tr(rows$.motivo[i], clabe = substr(rows$no_cuenta[i], 1, 3),
+                                                          banco = rows$banco[i] %||% ""))
       if (!is.na(rows$.nota[i]))   partes <- c(partes, tr(rows$.nota[i]))
       for (c in rows$.cambios[[i]])
         partes <- c(partes, tr("tablas.proveedores.importar.cambio", campo = .campo_texto(c$campo),
