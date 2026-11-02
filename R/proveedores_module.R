@@ -176,6 +176,9 @@ proveedoresServer <- function(id, shared) {
       ok <- .puede_ver_escritura()
       shinyjs::toggle("cat_new", condition = ok)
       shinyjs::toggleClass("catalogo_wrap", "prov-solo-lectura", condition = !ok)
+      # Importar Excel (with its template) is all writing: the whole tab goes.
+      if (ok) showTab("prov_tabs", "importar", session = session)
+      else    hideTab("prov_tabs", "importar", session = session)
     })
     .exigir_permiso <- function() {
       if (!puede(isolate(shared$usuario()), "can_manage_proveedores"))

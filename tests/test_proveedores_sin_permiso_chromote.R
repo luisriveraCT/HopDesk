@@ -73,6 +73,11 @@ Sys.sleep(0.5)
 
 ok("no row of the catalog shows ✎ 🚫 ✕", botones(CAT) == 0L)
 ok("＋ Nuevo proveedor is hidden", !visible("document.getElementById('prov_mod-cat_new')"))
+ok("the Importar Excel tab (and its template) is hidden; Catálogo activo and Inactivos stay",
+   !visible("document.querySelector(\"a[data-value='importar']\")") &&
+   !visible("document.getElementById('prov_mod-descargar_plantilla')") &&
+   visible("document.querySelector(\"a[data-value='catalogo']\")") &&
+   visible("document.querySelector(\"a[data-value='inactivos']\")"))
 clic(fila("p-acme", ".children[0]"))
 ok("selecting still works, but no 'Inactivar selección' bar shows",
    identical(sel(), "p-acme") &&
