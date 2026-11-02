@@ -74,23 +74,34 @@ pagosAuditViewerServer <- function(id, shared) {
                error = function(e) .schema_pagos_generados())
     })
 
+    # The chosen user, "" for all. A list of the range's users (it was free
+    # text): the PDF prints it in its header, so the filters stay on the
+    # server until the table can tell it what it shows (T10, P4/P5).
+    usuario_sel <- reactive({
+      u <- input$pagos_user_sel %||% "Todos"
+      if (identical(u, "Todos")) "" else u
+    })
+
     filtered <- reactive({
       df <- fetched()
       if (is.null(df) || !nrow(df)) return(df)
       if (!is.null(input$pagos_emp_sel) && !identical(input$pagos_emp_sel, "Todas"))
         df <- df[!is.na(df$empresa) & df$empresa == input$pagos_emp_sel, , drop = FALSE]
-      u_filter <- trimws(input$pagos_user_filter %||% "")
-      if (nzchar(u_filter))
-        df <- df[!is.na(df$user) & grepl(u_filter, df$user, ignore.case = TRUE), , drop = FALSE]
+      if (nzchar(usuario_sel()))
+        df <- df[!is.na(df$user) & df$user == usuario_sel(), , drop = FALSE]
       df
     })
 
     observeEvent(fetched(), {
       df <- fetched()
       emps <- if (!is.null(df) && nrow(df)) sort(unique(df$empresa[!is.na(df$empresa) & nzchar(df$empresa)])) else character(0)
+      users <- if (!is.null(df) && nrow(df)) sort(unique(df$user[!is.na(df$user) & nzchar(df$user)])) else character(0)
       updateSelectInput(session, "pagos_emp_sel",
                         choices = c("Todas", emps),
                         selected = if (isTRUE(input$pagos_emp_sel %in% emps)) input$pagos_emp_sel else "Todas")
+      updateSelectInput(session, "pagos_user_sel",
+                        choices = c("Todos", users),
+                        selected = if (isTRUE(input$pagos_user_sel %in% users)) input$pagos_user_sel else "Todos")
     })
 
     output$panel <- renderUI({
@@ -116,105 +127,93 @@ pagosAuditViewerServer <- function(id, shared) {
               div(style = "min-width:170px;",
                   tags$label("Empresa", class = "form-label small fw-semibold mb-1"),
                   selectInput(ns("pagos_emp_sel"), NULL, choices = c("Todas"), width = "100%")),
-              div(style = "min-width:150px; flex:1;",
+              div(style = "min-width:170px;",
                   tags$label("Usuario", class = "form-label small fw-semibold mb-1"),
-                  textInput(ns("pagos_user_filter"), NULL,
-                           placeholder = "Filtrar por usuario...", width = "100%")),
+                  selectInput(ns("pagos_user_sel"), NULL, choices = c("Todos"), width = "100%")),
               actionButton(ns("pagos_refresh"), icon("rotate"),
                           class = "btn btn-sm btn-outline-secondary", title = "Actualizar"),
               downloadButton(ns("pagos_export_pdf"), " Exportar PDF",
                             class = "btn btn-sm btn-outline-primary",
                             icon = icon("file-pdf"),
-                            title = "Exportar a PDF el rango y filtros actuales"),
-              # Moved here from below the table (2026-08-27): stays reachable
-              # without scrolling back up, right where the other filter
-              # controls already are -- renderUI'd conditionally on a row
-              # actually being selected, same reactive logic as before, just
-              # relocated.
-              uiOutput(ns("detail_btn_ui"), inline = TRUE)
+                            title = "Exportar a PDF el rango y filtros actuales")
             ),
             tags$p(class = "small text-muted mb-0 mt-2",
-                   icon("circle-info"),
-                   " Los números de cuenta se muestran enmascarados. Haz clic en una fila para ver el detalle completo y descargar el recibo en PDF.")
+                   icon("circle-info"), " ", tr("tablas.archivos_pago.ayuda"))
           ),
-          div(class = "audit-sticky-table", DT::dataTableOutput(ns("pagos_tbl")))
+          div(class = "audit-sticky-table", hd_table_ui(ns("pagos_t")))
         ),
         audit_sticky_js(ns("sticky_scope"))
       )
     })
 
-    .pagos_display_df <- function(df) {
-      if (is.null(df) || !nrow(df)) {
-        return(data.frame(Hora = character(), Usuario = character(), Tipo = character(),
-                          Empresa = character(), Moneda = character(), `Cuenta origen` = character(),
-                          `Cant.` = integer(), Total = character(), Origen = character(),
-                          check.names = FALSE))
-      }
+    # ── The table (hd_table, register) ───────────────────────────────────────
+    # Rows by the record's id: ℹ or a double click opens that record's
+    # detail. The old DT kept its selection by position, so after a filter
+    # changed the rows "Ver detalle" opened another record.
+    # Cuenta origen carries the MASKED account as its value: copying a cell,
+    # the rows or the Excel must never give the full CLABE either.
+    .pagos_tabla <- reactive({
+      df <- filtered()
+      if (is.null(df)) df <- .schema_pagos_generados()
       df <- df[order(df$ts, decreasing = TRUE), , drop = FALSE]
       data.frame(
-        Hora            = format(as.POSIXct(df$ts), "%d/%m/%Y %H:%M:%S"),
-        Usuario         = ifelse(is.na(df$user), "", df$user),
-        Tipo            = .tipo_label(df$tipo),
-        Empresa         = ifelse(is.na(df$empresa), "", df$empresa),
-        Moneda          = ifelse(is.na(df$moneda), "", df$moneda),
-        `Cuenta origen` = mask_clabe(df$cuenta_origen),
-        `Cant.`         = ifelse(is.na(df$n_pagos), 0L, df$n_pagos),
-        Total           = ifelse(is.na(df$total), "", formatC(df$total, format = "f", digits = 2, big.mark = ",")),
+        id        = .audit_ids(df$id),
+        ts        = as.POSIXct(df$ts),
+        user      = as.character(df$user),
+        tipo      = as.character(df$tipo),
+        empresa   = as.character(df$empresa),
+        moneda    = as.character(df$moneda),
+        # mask_clabe(character(0)) gives one "" (its %||%), not zero values.
+        cuenta    = if (nrow(df)) mask_clabe(df$cuenta_origen) else character(0),
+        n_pagos   = ifelse(is.na(df$n_pagos), 0L, df$n_pagos),
+        total     = as.numeric(df$total),
         # Only meaningful for pago_ppl (individual vs. bulk-ZIP generation) --
         # for every other tipo, `source` just duplicates `tipo` itself (see
         # log_archivo_generado()), so leave this column blank rather than
         # show a confusingly redundant/wrong "Individual" for a report.
-        Origen          = ifelse(is.na(df$tipo) | df$tipo != "pago_ppl", "",
-                                 ifelse(df$source == "zip_bulk", "ZIP (todos)", "Individual")),
-        check.names = FALSE, stringsAsFactors = FALSE
+        origen    = ifelse(is.na(df$tipo) | df$tipo != "pago_ppl", "",
+                           ifelse(!is.na(df$source) & df$source == "zip_bulk", "ZIP (todos)", "Individual")),
+        .acciones = rep("detalle", nrow(df)),
+        stringsAsFactors = FALSE
       )
-    }
-
-    # Rendered ONCE (isolate()); subsequent data changes go through the
-    # dataTableProxy below via replaceData(), which updates rows in place
-    # without resetting the widget's own sort order, search-box text,
-    # current page, or row selection (clearSelection="none") -- a full
-    # rebuild on every filter/date-range interaction was wiping all of
-    # that (reported 2026-08-25/26, same root cause fixed in
-    # R/audit_log_viewer_module.R).
-    output$pagos_tbl <- DT::renderDataTable({
-      isolate(.pagos_display_df(filtered()))
-    }, options = list(
-      pageLength = 25, dom = "ftp", order = list(),
-      # search = "" -- .AUDIT_STICKY_CSS (R/audit_sticky_ui.R) replaces the
-      # "Filtrar:" text label with a magnifying-glass icon baked into the
-      # input box itself; leaving this non-empty would show both.
-      language = list(search = "", zeroRecords = "Sin registros",
-                      info = "Mostrando _START_ a _END_ de _TOTAL_ entradas",
-                      infoEmpty = "Sin registros",
-                      paginate = list(previous = "Anterior", `next` = "Siguiente"))
-    ), selection = "single", rownames = FALSE)
-
-    pagos_tbl_proxy <- DT::dataTableProxy("pagos_tbl")
-    observe({
-      DT::replaceData(pagos_tbl_proxy, .pagos_display_df(filtered()),
-                      resetPaging = FALSE, rownames = FALSE, clearSelection = "none")
     })
-
-    output$detail_btn_ui <- renderUI({
-      df <- filtered()
-      if (is.null(df) || !nrow(df) || is.null(input$pagos_tbl_rows_selected)) return(NULL)
-      actionButton(ns("btn_ver_detalle"), tagList(icon("magnifying-glass"), " Ver detalle"),
-                   class = "btn btn-sm btn-primary")
-    })
+    pagos_t <- hd_table_server(
+      "pagos_t", tabla = "archivos_pago", datos = .pagos_tabla,
+      columnas = list(
+        col_fecha_hora("ts",   "tablas.archivos_pago.hora", segundos = TRUE),
+        col_texto("user",      "tablas.archivos_pago.usuario", recorte = FALSE),
+        col_insignia("tipo",   "tablas.archivos_pago.tipo", mapa = list(
+          pago_ppl           = list(texto = "tablas.archivos_pago.tipo_pago",          tono = "info"),
+          reporte_word       = list(texto = "tablas.archivos_pago.tipo_reporte_word",  tono = "neutro"),
+          reporte_excel      = list(texto = "tablas.archivos_pago.tipo_reporte_excel", tono = "neutro"),
+          reporte_pdf        = list(texto = "tablas.archivos_pago.tipo_reporte_pdf",   tono = "neutro"),
+          bancos_libro_excel = list(texto = "tablas.archivos_pago.tipo_libro_bancos",  tono = "neutro"))),
+        col_empresa("empresa", "tablas.archivos_pago.empresa"),
+        col_texto("moneda",    "tablas.archivos_pago.moneda", recorte = FALSE),
+        col_texto("cuenta",    "tablas.archivos_pago.cuenta_origen", recorte = FALSE),
+        col_numero("n_pagos",  "tablas.archivos_pago.cantidad"),
+        col_dinero("total",    "tablas.archivos_pago.total", moneda = "moneda", sumar = FALSE),
+        col_texto("origen",    "tablas.archivos_pago.origen", recorte = FALSE)
+      ),
+      piezas        = "acc_fila",
+      acciones_fila = "detalle",
+      vacio         = "tablas.archivos_pago.vacio"
+    )
 
     # Selected row's full record, captured at "Ver detalle" click time --
     # this is what the detail modal AND the PDF download both read from, so
     # they can never disagree about which record is being shown/exported.
     selected_record <- reactiveVal(NULL)
 
-    observeEvent(input$btn_ver_detalle, {
-      df  <- filtered()
-      sel <- input$pagos_tbl_rows_selected
-      if (is.null(df) || !nrow(df) || is.null(sel)) return(invisible(NULL))
+    observeEvent(pagos_t$accion(), {
+      a <- pagos_t$accion()
+      if (!identical(a$accion, "detalle") || !length(a$ids)) return(invisible(NULL))
+      df <- filtered()
+      if (is.null(df) || !nrow(df)) return(invisible(NULL))
       df <- df[order(df$ts, decreasing = TRUE), , drop = FALSE]
-      if (sel < 1L || sel > nrow(df)) return(invisible(NULL))
-      row <- df[sel, , drop = FALSE]
+      k  <- match(a$ids[1], .audit_ids(df$id))
+      if (is.na(k)) return(invisible(NULL))
+      row <- df[k, , drop = FALSE]
       selected_record(row)
 
       # NA/missing tipo => a row written before the tipo/detalle columns
@@ -355,7 +354,7 @@ pagosAuditViewerServer <- function(id, shared) {
             date_from       = if (!is.null(rng) && length(rng) == 2) rng[[1]] else Sys.time() - 30 * 86400,
             date_to         = if (!is.null(rng) && length(rng) == 2) rng[[2]] else Sys.time(),
             empresa_filter  = input$pagos_emp_sel,
-            usuario_filter  = input$pagos_user_filter,
+            usuario_filter  = usuario_sel(),
             client_label    = effective_cid()
           )),
           error = function(e) {
@@ -401,7 +400,7 @@ pagosAuditViewerServer <- function(id, shared) {
             sprintf("Exportación de Ver archivos de pago a PDF: %d entrada(s)", nrow(export_df)),
             target_id = effective_cid(),
             metadata  = list(n_entradas = nrow(export_df), empresa_filter = input$pagos_emp_sel,
-                            usuario_filter = input$pagos_user_filter),
+                            usuario_filter = usuario_sel()),
             client_id             = effective_cid(),
             viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
           ),

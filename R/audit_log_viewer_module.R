@@ -748,6 +748,17 @@ generate_audit_log_html_doc <- function(export_df, meta_info = list()) {
 
 .resolve_param <- function(x) if (is.function(x)) x() else x
 
+# Row ids for the register tables (hd_table), here and in
+# R/pagos_audit_viewer_module.R: the stored id, or one made up for a row
+# written without it, and never repeated -- the engine refuses both, and one
+# old row must not take the whole log down.
+.audit_ids <- function(x) {
+  x <- as.character(x)
+  vacio <- is.na(x) | !nzchar(x)
+  x[vacio] <- paste0("sin-id-", which(vacio))
+  make.unique(x, sep = "#")
+}
+
 auditLogViewerUI <- function(id) {
   ns <- NS(id)
   uiOutput(ns("panel"))
