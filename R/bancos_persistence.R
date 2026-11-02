@@ -133,8 +133,12 @@ load_bancos_movimientos <- function(include_deleted = FALSE, client_id = NULL) {
 # meanwhile survive. Without it, the whole table is written (old behaviour).
 save_bancos_movimientos <- function(df, client_id = NULL, base = NULL) {
   if (!is.null(base) && !is.null(client_id) && nzchar(client_id))
+    # Both normalised first: a column whose type changed in the session copy
+    # (e.g. a time put into an all-NA logical) must not mark every row changed.
     return(invisible(modificar_tabla(S3_KEYS$bancos_movimientos, client_id, .schema_bancos_movimientos,
-                                     function(fresco) rebase_por_id(df, base, fresco, "id"))))
+                                     function(fresco) rebase_por_id(.normalize(df, .schema_bancos_movimientos),
+                                                                    .normalize(base, .schema_bancos_movimientos),
+                                                                    fresco, "id"))))
   .s3_write(.normalize(df, .schema_bancos_movimientos), S3_KEYS$bancos_movimientos, client_id = client_id)
 }
 
@@ -154,7 +158,9 @@ load_bancos_confirmados <- function(client_id = NULL) {
 save_bancos_confirmados <- function(df, client_id = NULL, base = NULL) {
   if (!is.null(base) && !is.null(client_id) && nzchar(client_id))
     return(invisible(modificar_bancos_confirmados(client_id,
-                       function(fresco) rebase_por_id(df, base, fresco, "confirmacion_id"))))
+                       function(fresco) rebase_por_id(.normalize(df, .schema_bancos_confirmados),
+                                                      .normalize(base, .schema_bancos_confirmados),
+                                                      fresco, "confirmacion_id"))))
   .s3_write(.normalize(df, .schema_bancos_confirmados), S3_KEYS$bancos_confirmados, client_id = client_id)
 }
 

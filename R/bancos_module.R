@@ -3772,24 +3772,30 @@ bancosServer <- function(id, shared) {
       # (not an output binding) crashes the whole session, not just this
       # action -- caught here the same way every other risky write in this
       # handler already is.
+      # Recovered on S3's table as it is now (CM09): the "already recovered"
+      # check sees another session's recovery too, so two sessions cannot both
+      # add a "recovered" row. Read, change and save in one step; nothing else
+      # in this recovery runs if it fails.
+      actor_rc <- tryCatch(shared$current_user(), error = function(e) "user")
       new_conf <- tryCatch(
-        recover_confirmacion(conf, conf_id, actor = tryCatch(shared$current_user(), error = function(e) "user")),
+        modificar_bancos_confirmados(shared$effective_client_id(),
+          function(fresco) recover_confirmacion(fresco, conf_id, actor = actor_rc)),
         error = function(e) {
-          message("[bancos] recover_confirmacion failed (likely an already-recovered double-click): ",
-                  conditionMessage(e))
-          showNotification("Esta confirmación ya fue recuperada.", type = "warning", duration = 3)
+          if (grepl("already recovered", conditionMessage(e), fixed = TRUE)) {
+            message("[bancos] recover_confirmacion failed (likely an already-recovered double-click): ",
+                    conditionMessage(e))
+            showNotification("Esta confirmación ya fue recuperada.", type = "warning", duration = 3)
+          } else {
+            message("[bancos] recover_confirmacion save failed: ", conditionMessage(e))
+            showNotification(tr("comun.error_guardar"), type = "error", duration = NULL)
+          }
           NULL
         }
       )
       if (is.null(new_conf)) return()
       conf <- new_conf
       shared$bancos_confirmados(conf)
-      tryCatch({
-        save_bancos_confirmados(conf, client_id = shared$effective_client_id(), base = conf_base)
-        bump_sync_version("bancos_confirmados_db")
-      }, error = function(e)
-        showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
-      )
+      bump_sync_version("bancos_confirmados_db")
 
       # ── Philosophy: recovering a CONFIRMED item always recovers the ITEM ──
       # It doesn't matter whether that item originated from a converted
@@ -3821,8 +3827,21 @@ bancosServer <- function(id, shared) {
         )
         if (!is.null(restore_result)) {
           shared$papelera_rv(restore_result$papelera_df)
+          # A failed save (or one the CM09 net refuses) is shown and logged,
+          # never swallowed (rule 8).
           tryCatch(save_papelera(restore_result$papelera_df, client_id = shared$effective_client_id()),
-                   error = function(e) NULL)
+                   error = function(e) {
+                     showNotification(tr("comun.error_guardar"), type = "error", duration = NULL)
+                     tryCatch(log_action(
+                       user        = tryCatch(shared$current_user(), error = function(e2) "user"),
+                       module      = "bancos",
+                       action      = "recuperar_papelera_fallo_guardado",
+                       description = paste0("No se pudo guardar la papelera al recuperar ",
+                                            row$archive_event_id, ": ", conditionMessage(e)),
+                       client_id             = tryCatch(shared$effective_client_id(), error = function(e2) NULL),
+                       viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e2) NULL)),
+                       error = function(e2) NULL)
+                   })
           # Read fresh from S3 first, not just as a NULL-fallback -- this is
           # a restore path (undo a confirmation), so a stale in-memory read
           # here would silently drop any row another session added/removed

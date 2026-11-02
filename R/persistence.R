@@ -272,8 +272,11 @@ leer_tabla_para_escribir <- function(key, client_id, schema) {
 #   - rows the session removed (in base, not in nuevo): stay removed;
 #   - every other row: S3's current version (other sessions' work kept).
 rebase_por_id <- function(nuevo, base, fresco, id_col) {
+  # A time compares as its instant: as.character() of the same POSIXct reads
+  # differently under a different tzone attribute.
   firma <- function(d) if (!nrow(d)) character() else
-    do.call(paste, c(lapply(d, function(x) as.character(x)), sep = "\x1f"))
+    do.call(paste, c(lapply(d, function(x)
+      if (inherits(x, "POSIXt")) as.character(as.numeric(x)) else as.character(x)), sep = "\x1f"))
   ids_n <- as.character(nuevo[[id_col]]); ids_b <- as.character(base[[id_col]])
   base_firma <- stats::setNames(firma(base[, intersect(names(nuevo), names(base)), drop = FALSE]), ids_b)
   nuevo_comun <- nuevo[, intersect(names(nuevo), names(base)), drop = FALSE]
@@ -848,9 +851,17 @@ save_erp_connections <- function(df, client_id) {
     } else {
       # coerce to expected type quietly; use [1L] because multi-class types
       # like POSIXct ("POSIXct" "POSIXt") would make methods::as() error
+      # A time or date that lost its class (ifelse() returns the bare number)
+      # is converted back: methods::as() has no numeric -> POSIXct/Date method,
+      # and the whole column used to become NA (CM09).
+      v <- df[[col]]
       df[[col]] <- tryCatch(
-        methods::as(df[[col]], class(schema[[col]])[1L]),
-        error = function(e) schema[[col]][NA_integer_]
+        methods::as(v, class(schema[[col]])[1L]),
+        error = function(e) {
+          if (is.numeric(v) && inherits(schema[[col]], "POSIXct")) .POSIXct(v)
+          else if (is.numeric(v) && inherits(schema[[col]], "Date")) as.Date(v, origin = "1970-01-01")
+          else schema[[col]][NA_integer_]
+        }
       )
     }
   }

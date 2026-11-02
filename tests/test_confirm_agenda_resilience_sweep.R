@@ -102,7 +102,7 @@ assign("%||%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) ==
   # A matching row, save succeeds: reports changed=TRUE, ok=TRUE, and the row's
   # FechaVenc is actually updated.
   save_calls <- 0L
-  assign("save_pagar_hoy", function(df, username = NULL, client_id = NULL) {
+  assign("save_pagar_hoy", function(df, username = NULL, client_id = NULL, base = NULL) {
     save_calls <<- save_calls + 1L; invisible(TRUE)
   }, envir = globalenv())
   ph_rv_val <- NULL

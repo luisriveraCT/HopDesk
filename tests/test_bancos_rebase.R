@@ -74,11 +74,42 @@ s3m <- get(MK, envir = .mem)
 ok("movements: my change applied and the imported m3 survives",
    isTRUE(s3m$eliminado[s3m$id == "m1"]) && "m3" %in% s3m$id)
 
+# 3b. A column whose type changed in the session copy (ifelse() drops the
+# POSIXct class) does not mark every row changed, and keeps its values
+t0 <- as.POSIXct("2026-10-01 10:00:00", tz = "UTC")
+mov_t <- function(id, notas = "") { m <- mov(id); m$eliminado_at <- t0; m$notas <- notas; m }
+s3_memoria_reset()
+assign(MK, dplyr::bind_rows(mov_t("m1"), mov_t("m2", "editada por otra sesion")), envir = .mem)
+base_t  <- dplyr::bind_rows(mov_t("m1"), mov_t("m2"))
+nuevo_t <- base_t
+nuevo_t$eliminado    <- c(TRUE, FALSE)
+nuevo_t$eliminado_at <- ifelse(nuevo_t$eliminado, as.numeric(Sys.time()), nuevo_t$eliminado_at)  # now numeric
+q(save_bancos_movimientos(nuevo_t, client_id = "acme", base = base_t))
+s3t <- get(MK, envir = .mem)
+ok("type change: the other session's edit of m2 survives (m2 not counted as changed)",
+   s3t$notas[s3t$id == "m2"] == "editada por otra sesion")
+ok("type change: the times are kept as times, not blanked to NA",
+   inherits(s3t$eliminado_at, "POSIXct") && !anyNA(s3t$eliminado_at) &&
+   isTRUE(s3t$eliminado[s3t$id == "m1"]))
+
 # 4. The six Bancos saves pass their base
 src <- readLines("R/bancos_module.R", warn = FALSE)
 saves <- grep("save_bancos_confirmados(", src, fixed = TRUE, value = TRUE)
-ok("all six Bancos confirmation saves pass base = conf_base",
-   length(saves) == 6L && all(grepl("base = conf_base", saves, fixed = TRUE)))
+ok("the five Bancos confirmation saves pass base = conf_base (the recovery is done inside modificar)",
+   length(saves) == 5L && all(grepl("base = conf_base", saves, fixed = TRUE)))
+ok("Bancos recovers a confirmation inside modificar_bancos_confirmados()",
+   any(grepl("function(fresco) recover_confirmacion(fresco, conf_id", src, fixed = TRUE)))
+
+# 4b. Two sessions recover the same confirmation: only one "recovered" row
+s3_memoria_reset()
+assign(CK, dplyr::bind_rows(conf_fila("c1"), conf_fila("c2")), envir = .mem)
+rec <- function() q(modificar_bancos_confirmados("acme", function(f) recover_confirmacion(f, "c1", actor = "t")))
+r1 <- tryCatch(rec(), error = function(e) e)
+r2 <- tryCatch(rec(), error = function(e) e)                     # the other session, same click
+s3 <- get(CK, envir = .mem)
+ok("recover twice: the first one saves, the second sees it on S3 and refuses",
+   !inherits(r1, "error") && inherits(r2, "error") && grepl("already recovered", conditionMessage(r2)))
+ok("recover twice: exactly one 'recovered' row", sum(s3$action %in% "recovered") == 1L)
 movs_saves <- unlist(lapply(c("R/bancos_module.R", "R/pasivos_module.R"), function(f)
   grep("save_bancos_movimientos(", readLines(f, warn = FALSE), fixed = TRUE, value = TRUE)))
 ok("every bancos_movimientos save in Bancos and Pasivos passes base = movs_base",
