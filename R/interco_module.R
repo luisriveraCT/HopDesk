@@ -430,6 +430,9 @@ intercoServer <- function(id, shared) {
 
     # ── Helper: send rows to pagar_hoy_db ─────────────────────────────────────
     .ic_send_rows <- function(rows) {
+      # Sending to the Agenda needs can_register_payments on every path
+      # (Luis, 2026-11-03; tests/test_agenda_permiso.R). It says why if not.
+      if (!puede_o_avisa(shared, "can_register_payments")) return(NA_integer_)
       pair    <- isolate(selected_pair()); req(pair)
       req(!is.null(rows), nrow(rows) > 0)
       amt_col <- if ("Saldo vencido" %in% names(rows)) "Saldo vencido" else "DocTotal"
