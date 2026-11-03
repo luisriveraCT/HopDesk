@@ -466,7 +466,9 @@ intercoServer <- function(id, shared) {
           trimws(as.character(cc %||% ""))
         }, error = function(e) "")
         tibble::tibble(
-          id        = paste0("IC_", pair$ini, "_", doc, "_", as.integer(Sys.time()) + i),
+          # A UUID, as Abono parcial's rows: it was IC_<ini>_<doc>_<seconds + i>,
+          # which two sends in neighbouring seconds could repeat.
+          id        = uuid::UUIDgenerate(),
           ledger    = pair$ledger,
           Empresa   = pair$empresa,
           Moneda    = mon,

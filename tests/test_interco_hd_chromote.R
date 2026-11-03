@@ -149,6 +149,10 @@ ok("D3: the bar's Agregar selección asks first (a batch)",
    identical(agenda(), "P-3"))
 clic(sprintf("document.querySelector('#%s .hdt-confirmar-si')", D)); Sys.sleep(1.2)
 ok("D3: confirmed, P-4 and P-5 join P-3 in the Agenda", identical(agenda(), "P-3,P-4,P-5"))
+ids_agenda <- strsplit(sub("^ids \\S+ ", "", tail(grep("^ids pagar_hoy", registro(), value = TRUE), 1)), ",")[[1]]
+ok("VP5: the Agenda rows' ids are UUIDs, all different (they were IC_<ini>_<doc>_<seconds>)",
+   length(ids_agenda) == 3L && !anyDuplicated(ids_agenda) &&
+   all(grepl("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", ids_agenda)))
 
 # ── F · a failed save to the Agenda is never silent (seen in passing 1) ─────
 ok("F: fixture restarted with the Agenda's save failing", arrancar(falla = "pagar_hoy") && abrir() && listo(S))

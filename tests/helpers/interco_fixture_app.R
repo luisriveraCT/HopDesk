@@ -14,7 +14,8 @@
 #
 # IC_FALLA: a regex of S3 keys whose writes fail ("pagar_hoy"), to see a
 # failed save. Every write and log_action() is listed in #registro:
-#   escribe <key> <rows> <Documentos, sorted>   falla <key>   log <action> <target_id>
+#   escribe <key> <rows> <Documentos, sorted>   ids <key> <row ids>
+#   falla <key>   log <action> <target_id>
 # IC_RAIZ: the checkout whose R/ and www/ to use (default: this one).
 # =============================================================================
 library(shiny)
@@ -56,6 +57,7 @@ assign(".s3_write", function(obj, key, client_id = NULL) {
   assign(paste0(client_id %||% CID, "/", key), obj, envir = mem)
   anotar(sprintf("escribe %s %d %s", key, if (is.data.frame(obj)) nrow(obj) else length(obj),
                  if (is.data.frame(obj) && "Documento" %in% names(obj)) paste(sort(obj$Documento), collapse = ",") else ""))
+  if (is.data.frame(obj) && "id" %in% names(obj)) anotar(paste("ids", key, paste(obj$id, collapse = ",")))
   invisible(TRUE)
 }, envir = globalenv())
 assign("bump_sync_version", function(...) invisible(NULL), envir = globalenv())
