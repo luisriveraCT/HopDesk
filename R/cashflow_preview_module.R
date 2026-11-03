@@ -179,7 +179,8 @@ render_cashflow_preview_html <- function(ed, expanded = FALSE, day0_vals = list(
 
         d0_col  <- .cf_net_col(d0_val)
         d0_cell <- paste0(
-          '<td class="cf-num cf-cum-cell cf-day0-cell" data-currency="', h(cur), '">',
+          '<td class="cf-num cf-cum-cell cf-day0-cell" data-currency="', h(cur),
+          '" data-valor="', format(d0_val, scientific = FALSE, digits = 15), '">',
           '<span class="cf-day0-val" style="color:', d0_col, ';font-weight:600;">',
           .cf_fmt_corto(d0_val, show_zero = TRUE), '</span></td>')
 
@@ -431,14 +432,58 @@ cashflowPreviewUI <- function(id) {
         });
       }
 
+      // Arithmetic only: numbers, + - * /, parentheses and a sign. Spaces,
+      // $ and thousands commas are number formatting and are dropped; the
+      // typographic minus counts as one. Anything else is refused (null) --
+      // it used to go through Function(), which ran any JavaScript.
+      function evalArit(txt) {
+        var s = String(txt == null ? '' : txt).replace(/\\u2212/g, '-').replace(/[\\s$,]/g, '');
+        if (!s) return null;
+        var i = 0;
+        function num() {
+          var m = /^(\\d+(\\.\\d*)?|\\.\\d+)/.exec(s.slice(i));
+          if (!m) throw new Error('num');
+          i += m[0].length;
+          return parseFloat(m[0]);
+        }
+        function factor() {
+          var c = s.charAt(i);
+          if (c === '+' || c === '-') { i++; var v = factor(); return c === '-' ? -v : v; }
+          if (c === '(') {
+            i++; var w = suma();
+            if (s.charAt(i) !== ')') throw new Error('paren');
+            i++; return w;
+          }
+          return num();
+        }
+        function producto() {
+          var v = factor();
+          while (s.charAt(i) === '*' || s.charAt(i) === '/') {
+            var o = s.charAt(i++), w = factor();
+            v = o === '*' ? v * w : v / w;
+          }
+          return v;
+        }
+        function suma() {
+          var v = producto();
+          while (s.charAt(i) === '+' || s.charAt(i) === '-') {
+            var o = s.charAt(i++), w = producto();
+            v = o === '+' ? v + w : v - w;
+          }
+          return v;
+        }
+        try {
+          var v = suma();
+          return (i === s.length && isFinite(v)) ? v : null;
+        } catch (e) { return null; }
+      }
+      window.cfEvalArit = evalArit;
+
       function submitDay0() {
         var expr = (document.getElementById('cf-day0-input').value || '').trim();
         if (!expr) return;
-        var val;
-        try {
-          val = Function('\"use strict\"; return (' + expr + ')')();
-          if (!isFinite(val) || isNaN(val)) throw new Error();
-        } catch(err) {
+        var val = evalArit(expr);
+        if (val === null) {
           document.getElementById('cf-day0-input').style.borderColor = '#dc3545';
           return;
         }
@@ -458,9 +503,11 @@ cashflowPreviewUI <- function(id) {
         var left = Math.max(4, Math.min(rect.left - 60, window.innerWidth - 270));
         dlg.style.top  = top  + 'px';
         dlg.style.left = left + 'px';
+        // The stored value, not the cell's compact text: '$1.5K' couldn't be
+        // read back, and stripping the minus lost a negative's sign.
         var inp = document.getElementById('cf-day0-input');
-        var cur = $(this).find('.cf-day0-val').text().replace(/[$,−]/g, '').trim();
-        inp.value = (cur === '0' || cur === '') ? '' : cur;
+        var cur = Number(this.getAttribute('data-valor'));
+        inp.value = (!isFinite(cur) || cur === 0) ? '' : String(cur);
         inp.style.borderColor = '';
         setTimeout(function() { inp.focus(); inp.select(); }, 50);
       });
