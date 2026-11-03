@@ -11,6 +11,12 @@
 // no longer exist) and never re-creates the container.
 (function () {
   'use strict';
+  // Once per page. A second copy of this script (its dependency inserted
+  // again with a modal or a renderUI) would register new handlers over the
+  // first and start from nothing: the tables' state, their hidden actions,
+  // their last message (T09b: the lupa lost its acciones_ocultas).
+  if (window.HDT_CARGADO) return;
+  window.HDT_CARGADO = true;
 
   // Above this many visible rows (after search) only the rows in view are in
   // the DOM, with spacers above and below: Chrome's layout of a full 5,000-row
