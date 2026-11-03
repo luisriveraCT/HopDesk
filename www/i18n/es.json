@@ -214,6 +214,8 @@
   "tablas.interco.mas_30": "Más de 30 días",
   "tablas.interco.dias": "Días",
   "tablas.interco.detalle_vacio": "Este par ya no tiene facturas abiertas.",
+  "tablas.interco.contador_pares.uno": "{n} saldo",
+  "tablas.interco.contador_pares.otros": "{n} saldos",
   "tablas.pronosticos.metodos.id": "ID",
   "tablas.pronosticos.metodos.nombre": "Nombre",
   "tablas.pronosticos.metodos.tipo": "Tipo",

@@ -214,6 +214,8 @@
   "tablas.interco.mas_30": "Over 30 days",
   "tablas.interco.dias": "Days",
   "tablas.interco.detalle_vacio": "This pair has no open invoices left.",
+  "tablas.interco.contador_pares.uno": "{n} balance",
+  "tablas.interco.contador_pares.otros": "{n} balances",
   "tablas.pronosticos.metodos.id": "ID",
   "tablas.pronosticos.metodos.nombre": "Name",
   "tablas.pronosticos.metodos.tipo": "Type",

@@ -94,6 +94,8 @@ ok("S: columns Empresa / Tipo / Contraparte / Moneda / Total / Facturas",
 ok("S4/S5: Tipo is a badge; Total is money; Facturas a number",
    grepl("CxP — Pago", texto_fila(S, PAR_NCS)) && grepl("CxC — Cobro", texto_fila(S, PAR_NTS)) &&
    grepl("$15,002.50", texto_fila(S, PAR_NCS), fixed = TRUE) && grepl("5", texto_fila(S, PAR_NCS)))
+ok("S: the counter counts balances (pairs), not invoices",
+   identical(trimws(ev(sprintf("document.querySelector('#%s .hdt-contador').textContent", S))), "2 saldos"))
 clic(fila(S, PAR_NCS, ".children[2]")); Sys.sleep(0.6)
 ok("S1: a click on a row no longer opens the detail", !nzchar(detalle_abierto()))
 clic(boton(S, PAR_NCS, "detalle")); Sys.sleep(1)
