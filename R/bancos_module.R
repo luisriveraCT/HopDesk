@@ -2732,7 +2732,6 @@ bancosServer <- function(id, shared) {
 
       data <- reasig_confirm_data_rv()
       req(data)
-      reasig_confirm_data_rv(NULL)
       sesion_key <- data$sesion_key
       new_cid    <- data$new_cid
       dest_label <- data$dest_label
@@ -2766,10 +2765,14 @@ bancosServer <- function(id, shared) {
         movs$eliminado_at[movs$id %in% dup_ids] <- Sys.time()
       }
 
+      # Saved first (rule 8, T12a): on failure nothing changes in the
+      # session and nothing says it worked.
+      if (!.bnc_guardar("reasignar_cuenta", paste0("Reasignar ", actual_n, " movimiento(s) a ", dest_label),
+                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(),
+                                                           base = movs_base))) return()
+      reasig_confirm_data_rv(NULL)   # only now: a failed save keeps the confirmation's data
       shared$bancos_movimientos(movs)
-      tryCatch({ save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base); bump_sync_version("bancos_movimientos_db") },
-               error = function(e)
-                 showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
+      bump_sync_version("bancos_movimientos_db")
       removeModal()
       session$sendCustomMessage("bnc_collapse_reasignar",
         list(target = ns("reasignar_panel")))

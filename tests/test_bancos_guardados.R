@@ -110,6 +110,18 @@ testServer(bancosServer, args = list(shared = shared), {
                       man_fecha = as.Date("2026-10-31"), man_parte = "AJUSTE", man_concepto = "x", man_notas = "",
                       do_add_manual = runif(1))
   }, function(m) any(m$abono == 777 & m$fuente == "manual"))
+
+  # 2 · Reassign an import session's account
+  probar("2 · do_reasignar_confirm", "reasignar_cuenta", function() {
+    reasig_confirm_data_rv(list(sesion_key = as.character(SES), new_cid = "c2", dest_label = "NTS A2"))
+    session$setInputs(do_reasignar_confirm = runif(1))
+  }, function(m) all(m$cuenta_id[m$id %in% c("m1", "m2")] == "c2"))
+  ok("2 · do_reasignar_confirm: a failed save keeps the confirmation's data (to try again)", {
+    sembrar(); MOVS(movs0); .falla_escritura <<- MK
+    reasig_confirm_data_rv(list(sesion_key = as.character(SES), new_cid = "c2", dest_label = "NTS A2"))
+    session$setInputs(do_reasignar_confirm = runif(1)); .falla_escritura <<- character(0)
+    !is.null(reasig_confirm_data_rv())
+  })
 })
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
