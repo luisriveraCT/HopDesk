@@ -10,11 +10,12 @@
 
 # Row ids for the tables (hd_table): the stored id, or one made up for a row
 # written without it, and never repeated -- the engine refuses both, and one
-# bad row must not take the whole table down.
-.fc_ids <- function(x) {
+# bad row must not take the whole table down. `clave`: what a made-up id is
+# built from, so it stays the same when a refresh adds rows around it.
+.fc_ids <- function(x, clave = seq_along(x)) {
   x <- as.character(x)
   vacio <- is.na(x) | !nzchar(x)
-  x[vacio] <- paste0("sin-id-", which(vacio))
+  x[vacio] <- paste0("sin-id-", gsub("[^A-Za-z0-9_.-]+", "_", as.character(clave[vacio])))
   make.unique(x, sep = "#")
 }
 
@@ -573,7 +574,7 @@ forecastingServer <- function(id, shared) {
       log <- tryCatch(load_forecasting_fetch_log(), error = function(e) .schema_forecasting_fetch_log())
       log <- log[order(log$attempted_at, decreasing = TRUE), , drop = FALSE]
       data.frame(
-        id           = .fc_ids(log$fetch_id),
+        id           = .fc_ids(log$fetch_id, paste(format(log$attempted_at, "%Y%m%d%H%M%OS3"), log$metric_id)),
         attempted_at = log$attempted_at,
         metric_id    = as.character(log$metric_id),
         source_id    = as.character(log$source_id),
@@ -609,7 +610,7 @@ forecastingServer <- function(id, shared) {
         col_texto("error_msg",         "tablas.pronosticos.consultas.error"),
         col_insignia("triggered_by",   "tablas.pronosticos.consultas.origen", mapa = .consultas_origenes)
       ),
-      piezas        = "acc_fila",
+      piezas        = c("acc_fila", "recorte"),
       acciones_fila = "detalle",
       filtros       = list(list(campo = "status"), list(campo = "metric_id"), list(campo = "triggered_by")),
       vacio         = "tablas.pronosticos.consultas.vacio"

@@ -153,11 +153,12 @@ pestana("Registro de consultas")
 ok("C: the fetch log is on the engine", listo(C))
 ok("BP1: all 250 fetches, not the last 200; the help line no longer says 200",
    length(vis(C)) == 250L && !grepl("200", ev("document.querySelector('#fc-consultas_t-hdt').parentElement.parentElement.textContent")))
+sinC <- grep("^sin-id-", vis(C), value = TRUE)
 ok("ids: a row with no fetch_id and two sharing one still show (made-up / suffixed ids)",
-   all(c("sin-id-5", "f-006", "f-006#1") %in% vis(C)))
+   length(sinC) == 1L && all(c("f-006", "f-006#1") %in% vis(C)))
 ok("C: columns Fecha / Métrica / Fuente / Estado / Filas / ms / Error / Origen",
    identical(titulos(C), c("Fecha", "Métrica", "Fuente", "Estado", "Filas", "ms", "Error", "Origen")))
-orden_ids <- sprintf("f-%03d", 1:250); orden_ids[5] <- "sin-id-5"; orden_ids[7] <- "f-006#1"
+orden_ids <- sprintf("f-%03d", 1:250); orden_ids[5] <- sinC; orden_ids[7] <- "f-006#1"
 ok("BP2: newest first by the instant -- every 30/09 row after every 30/10 row",
    identical(vis(C), orden_ids))
 ok("BP2: Fecha shows date and time",
@@ -174,6 +175,8 @@ ok("BP7: Estado and Origen are badges (Error HTTP red, Programada)",
 ok("C: filters for Estado, Métrica and Origen",
    length(unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s button.hdt-filtro')).map(function(b){ return b.textContent; })", C)))) == 3L)
 clic(boton(C, "f-004", "detalle")); Sys.sleep(0.8)
+ok("C: a long Error is cut in the table (recorte), the bubble shows it",
+   isTRUE(ev(sprintf("%s.classList.contains('hdt-recorte')", fila(C, "f-004", ".children[6]")))))
 ok("BP4: ℹ shows the whole row with the error uncut",
    identical(modal_titulo(), "Detalle de la consulta") &&
    grepl("siguiente corrida programada del día", ev("document.querySelector('.modal.show .modal-body').textContent")) &&
@@ -190,13 +193,15 @@ cerrar_modal()
 # the Registro de consultas read it again after a refresh.
 badge <- function() ev("(document.querySelector('#fc-fetch_status_badge .badge')||{}).textContent || ''")
 pestana("Series"); Sys.sleep(1)
+invisible(poll_until(function() nzchar(badge()), timeout_s = 10))
 antes <- badge()
 clic("document.getElementById('fc-btn_refresh')"); Sys.sleep(1.5)
 ok("R: after Actualizar on a metric, its status badge shows today's fetch (it showed 31/10)",
    grepl("^OK .*31/10/2026 23:00", antes) && poll_until(function() !identical(badge(), antes), timeout_s = 10) &&
    grepl(format(Sys.Date(), "%d/%m/%Y"), badge()))
 pestana("Registro de consultas"); Sys.sleep(0.8)
-ok("R: the log shows that fetch too", poll_until(function() length(vis(C)) == 251L, timeout_s = 10))
+ok("R: the log shows that fetch too, and the row without fetch_id keeps its id",
+   poll_until(function() length(vis(C)) == 251L, timeout_s = 10) && sinC %in% vis(C))
 clic("document.getElementById('fc-btn_refresh_all')"); Sys.sleep(1.5)
 ok("R: after Actualizar todas las métricas, the log shows the 3 new fetches",
    poll_until(function() length(vis(C)) == 254L, timeout_s = 10) &&
