@@ -590,7 +590,12 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    # hdt_pedir: the browser asks for the data again. The engine's script
+    # can arrive after the first message -- a table whose hd_table_ui()
+    # comes inside a renderUI, with nothing else loading hdtable.js first:
+    # that message found no handler and was lost (T09, found in T10).
     shiny::observe({
+      input$hdt_pedir
       df <- datos()
       shiny::req(!is.null(df))
       cols <- columnas_r()
@@ -622,6 +627,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
     # guardaron 200"), written by the server with tr(); NULL hides it.
     if (!is.null(aviso)) {
       shiny::observe({
+        input$hdt_pedir
         texto <- aviso()
         texto <- if (is.null(texto) || !length(texto) || is.na(texto[1]) || !nzchar(texto[1])) "" else as.character(texto[1])
         session$sendCustomMessage("hdt-nota", list(id = ns("hdt"), texto = texto))

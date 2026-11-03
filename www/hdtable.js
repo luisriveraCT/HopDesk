@@ -2243,7 +2243,35 @@
       Shiny.addCustomMessageHandler('hdt-excel', excelListo);
       Shiny.addCustomMessageHandler('hdt-nota', recibirNota);
       Shiny.addCustomMessageHandler('hdt-mes', recibirMes);
+      pedirPerdidos();
     }
     else setTimeout(registrar, 20);
   })();
+
+  // This script arriving with the session already running (the first table
+  // came inside a renderUI): the server's first message for those tables
+  // came before there was a handler and was lost. Ask for it again
+  // (hdt_pedir); the server sends it as on a data change. Their containers
+  // may be inserted just after this script runs, so watch for them until
+  // the first one shows (5 s at most): any table after that gets its
+  // message with the handler already in place. On a normal page load the
+  // session isn't connected yet and the first message arrives after this.
+  // (T09)
+  function pedirPerdidos() {
+    var app = window.Shiny && Shiny.shinyapp;
+    if (!app || !app.isConnected || !app.isConnected() || !Shiny.setInputValue) return;
+    var pedir = function () {
+      var hay = false;
+      Array.prototype.forEach.call(document.querySelectorAll('.hdt[data-ns]'), function (el) {
+        hay = true;
+        if (!el.id || ULTIMO[el.id]) return;
+        Shiny.setInputValue(el.getAttribute('data-ns') + 'hdt_pedir', Date.now(), { priority: 'event' });
+      });
+      return hay;
+    };
+    if (pedir() || !window.MutationObserver) return;
+    var obs = new MutationObserver(function () { if (pedir()) obs.disconnect(); });
+    obs.observe(document.body, { childList: true, subtree: true });
+    setTimeout(function () { obs.disconnect(); }, 5000);
+  }
 })();
