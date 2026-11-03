@@ -882,8 +882,8 @@ tiersServer <- function(id, shared) {
       # Constraint pre-check: protected tiers need at least one account alive
       all_u      <- all_usuarios_rv()
       protegido  <- nivel_unico_vivo(tier)
-      vivos_tier <- sum(all_u$tier == tier & (is.na(all_u$deleted) | all_u$deleted != TRUE))
-      if (protegido && vivos_tier <= 1) {
+      sin_fila   <- all_u[all_u$username != uname, , drop = FALSE]
+      if (length(usuarios_niveles_perdidos(all_u, sin_fila))) {
         showNotification(
           paste0("No se puede eliminar '\u200b", uname,
                  "': debe existir al menos una cuenta ", nivel_nombre(tier), " en el sistema."),
@@ -897,7 +897,7 @@ tiersServer <- function(id, shared) {
       extra_warning <- if (protegido) {
         tags$p(class = "text-danger fw-semibold mb-0",
                icon("triangle-exclamation"), " Esta es una cuenta ", nivel_nombre(tier), ". Quedar\u00e1n ",
-               vivos_tier - 1L, " cuenta(s) de ese nivel despu\u00e9s de eliminar.")
+               usuarios_vivos_nivel(sin_fila, tier), " cuenta(s) de ese nivel despu\u00e9s de eliminar.")
       } else NULL
 
       showModal(modalDialog(
@@ -940,8 +940,7 @@ tiersServer <- function(id, shared) {
 
       # Final constraint guard (race-condition safety — re-check at save time)
       if (nivel_unico_vivo(target_tier)) {
-        vivos <- sum(all_u$tier == target_tier & (is.na(all_u$deleted) | all_u$deleted != TRUE))
-        if (vivos <= 1) {
+        if (length(usuarios_niveles_perdidos(all_u, all_u[all_u$username != target_user, , drop = FALSE]))) {
           showNotification(
             paste0("Eliminaci\u00f3n cancelada: debe existir al menos una cuenta ",
                    nivel_nombre(target_tier), "."),
@@ -1035,19 +1034,6 @@ tiersServer <- function(id, shared) {
       if (!tier_assignment_allowed(new_tier, current_tier(), viewer_is_staff)) {
         showNotification("No puedes asignar ese nivel.", type = "error"); return()
       }
-      # Protected tiers: block demoting the last live account of the tier
-      if (nivel_unico_vivo(original_tier) && !identical(new_tier, original_tier)) {
-        all_u_check <- all_usuarios_rv()
-        vivos <- sum(all_u_check$tier == original_tier &
-                       (is.na(all_u_check$deleted) | all_u_check$deleted != TRUE))
-        if (vivos <= 1) {
-          showNotification(
-            paste0("No se puede cambiar el nivel: debe existir al menos una cuenta ",
-                   nivel_nombre(original_tier), " en el sistema."),
-            type = "error", duration = 5)
-          return()
-        }
-      }
 
       base_perms <- get_tier_defaults(new_tier)
 
@@ -1111,6 +1097,17 @@ tiersServer <- function(id, shared) {
         if (!is.null(input$edit_allowed_clients) && is_principal()) {
           all_u[full_idx, "allowed_clients"] <- jsonlite::toJSON(
             as.character(input$edit_allowed_clients), auto_unbox = FALSE)
+        }
+
+        # Protected tiers: demoting or deactivating the last live account of
+        # the tier is refused (auth_save_usuarios() refuses it too).
+        perdidos <- usuarios_niveles_perdidos(all_usuarios_rv(), all_u)
+        if (length(perdidos)) {
+          showNotification(
+            paste0("No se puede guardar: debe existir al menos una cuenta ",
+                   nivel_nombre(perdidos[[1]]), " activa en este cliente."),
+            type = "error", duration = 5)
+          return()
         }
 
         saved <- tryCatch({ auth_save_usuarios(all_u, client_id = current_client_id()); TRUE },
@@ -2094,6 +2091,14 @@ tiersServer <- function(id, shared) {
             usuarios_new$display_name[to_deact_idx] %||%
             usuarios_new$username[to_deact_idx],
             " (@", usuarios_new$username[to_deact_idx], ")")
+        }
+        perdidos <- usuarios_niveles_perdidos(usuarios_orig, usuarios_new)
+        if (length(perdidos)) {
+          showNotification(
+            paste0("Mant\u00e9n activa al menos una cuenta ", nivel_nombre(perdidos[[1]]),
+                   " del cliente. Ning\u00fan cambio guardado."),
+            type = "error", duration = 6)
+          return()
         }
         ok_users <- tryCatch({
           auth_save_usuarios(usuarios_new, client_id = cid); TRUE

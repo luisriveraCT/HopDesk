@@ -402,6 +402,22 @@ auth_load_usuarios <- function(client_id = NULL) {
   raw
 }
 
+# Live accounts of `tier` in one client's user table: not deleted and not
+# deactivated (an inactive account cannot log in, so it does not count).
+usuarios_vivos_nivel <- function(df, tier) {
+  if (!is.data.frame(df) || !nrow(df) || !"tier" %in% names(df)) return(0L)
+  activo  <- if ("activo"  %in% names(df)) !(df$activo  %in% FALSE) else rep(TRUE, nrow(df))
+  borrado <- if ("deleted" %in% names(df))   df$deleted %in% TRUE   else rep(FALSE, nrow(df))
+  sum(df$tier %in% tier & activo & !borrado)
+}
+
+# unico_vivo tiers that have a live account in `antes` and none in `despues`.
+# A tier the client never had (a new client before its first dev) is not lost.
+usuarios_niveles_perdidos <- function(antes, despues) {
+  Filter(function(t) usuarios_vivos_nivel(antes, t) > 0L && usuarios_vivos_nivel(despues, t) == 0L,
+         niveles_unico_vivo())
+}
+
 # Save usuarios data.frame to S3 and invalidate the login cache.
 # client_id: explicit folder slug — same Stage 4 override as auth_load_usuarios().
 # Throws on failure — callers must wrap in tryCatch and surface the error to the user.
@@ -419,6 +435,13 @@ auth_save_usuarios <- function(df, client_id = NULL, alta_inicial = FALSE) {
       stop("[AUTH] refusing to save an empty user table for ", cid,
            " (alta_inicial = TRUE if that is really intended)", call. = FALSE)
     actual <- .usuarios_leer_estricto(key)
+    # Every path (demote, deactivate, delete, limit change, a stale table
+    # from another session) ends here, so the "last live account of a
+    # unico_vivo tier" lock lives here too, against S3 as it is now.
+    perdidos <- usuarios_niveles_perdidos(actual, df)
+    if (length(perdidos))
+      stop(sprintf("[AUTH] refusing to save users for %s: no live %s account would remain",
+                   cid, paste(perdidos, collapse = ", ")), call. = FALSE)
     if (is.data.frame(actual) && nrow(actual)) {
       activo  <- if ("activo"  %in% names(actual)) !(actual$activo  %in% FALSE) else rep(TRUE, nrow(actual))
       borrado <- if ("deleted" %in% names(actual))   actual$deleted %in% TRUE   else rep(FALSE, nrow(actual))

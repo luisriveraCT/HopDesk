@@ -47,11 +47,13 @@ utils::assignInNamespace("s3saveRDS", fake_save, "aws.s3")
 utils::assignInNamespace("object_exists", fake_exists, "aws.s3")
 
 # ── The real functions (no app) ───────────────────────────────────────────────
+source("R/tier_registry.R")   # niveles_unico_vivo(), for the last-live-account lock
 env <- new.env()
 for (e in parse("R/auth.R"))
   if (is.call(e) && identical(e[[1]], as.name("<-")) &&
       as.character(e[[2]]) %in% c("auth_load_usuarios", "auth_save_usuarios",
-                                  ".usuarios_leer_estricto", ".usuarios_existe"))
+                                  ".usuarios_leer_estricto", ".usuarios_existe",
+                                  "usuarios_vivos_nivel", "usuarios_niveles_perdidos"))
     eval(e, env)
 env$`%||%` <- `%||%`
 env$.s3_bucket <- function() "fake-bucket"
