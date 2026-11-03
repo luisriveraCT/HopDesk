@@ -13,6 +13,9 @@
 # Sync starts OFF. Users: ana (65 pending items, the preview's cut used to
 # be 50), beto (3), caro (none). Every write and log_action() is listed in
 # #registro:  escribe <key> <rows>   falla <key>   log <action> <target_id>
+# SIN_HUB = 1: the panel lives inside an Ajustes modal, as in the app
+# (show_settings_modal(), R/settings/settings_hub.R): #abrir_ajustes opens it,
+# and the activation / deactivation dialogs replace it, as showModal() does.
 # SIN_RAIZ: the checkout whose R/ and www/ to use (default: this one).
 # =============================================================================
 library(shiny)
@@ -63,7 +66,11 @@ assign(".s3_write", function(obj, key, client_id = NULL) {
 }, envir = globalenv())
 assign("bump_sync_version", function(...) anotar("bump"), envir = globalenv())
 assign("puede_o_avisa", function(...) TRUE, envir = globalenv())
-assign("show_settings_modal", function(...) invisible(NULL), envir = globalenv())
+hub <- identical(Sys.getenv("SIN_HUB"), "1")
+ajustes <- function() showModal(modalDialog(title = "Configuración", size = "xl", easyClose = FALSE,
+  footer = modalButton("Cerrar"),
+  actionButton("stg_btn_sincro", "Sincronización"), uiOutput("settings_panel")))
+assign("show_settings_modal", function(...) if (hub) ajustes() else invisible(NULL), envir = globalenv())
 assign("log_action", function(user, module, action, description = "", target_id = NA, ...)
   anotar(sprintf("log %s %s", action, target_id %||% "")), envir = globalenv())
 assign("auth_load_usuarios", function(client_id = NULL) data.frame(
@@ -91,8 +98,8 @@ ui <- bslib::page_fluid(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),
   # The engine in the page's head from the start, as in the app (Vencidos).
   shinyjs::useShinyjs(), app_styles(), hd_table_deps(),
-  actionButton("stg_btn_sincro", "Sincronizar Agenda"),
-  uiOutput("settings_panel"),
+  if (!hub) tagList(actionButton("stg_btn_sincro", "Sincronizar Agenda"), uiOutput("settings_panel"))
+  else actionButton("abrir_ajustes", "Ajustes"),
   tags$pre(id = "registro", style = "font-size:.7rem; max-height:200px; overflow:auto;"),
   tags$style("#registro:empty { display: none; }"),
   tags$script(HTML("Shiny.addCustomMessageHandler('registro', function (t) { document.getElementById('registro').textContent = t; });"))
@@ -106,6 +113,7 @@ server <- function(input, output, session) {
     current_user        = function() "luis"
   )
   settings_sincro_observer(input, output, session, shared, pagar_hoy_db)
+  observeEvent(input$abrir_ajustes, ajustes())
   observe(session$sendCustomMessage("registro", paste(registro(), collapse = "\n")))
 }
 

@@ -26,10 +26,11 @@ repo <- normalizePath(".", winslash = "/")
 PORT <- 38998L
 app <- NULL; b <- NULL
 on.exit({ try(if (!is.null(b)) b$close(), silent = TRUE); stop_bg_app(app) }, add = TRUE)
-arrancar <- function(falla = "", falla_lee = "", sync = FALSE) {
+arrancar <- function(falla = "", falla_lee = "", sync = FALSE, hub = FALSE) {
   if (!is.null(app)) stop_bg_app(app)
-  app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(SIN_FALLA = "%s", SIN_FALLA_LEE = "%s", SIN_SYNC = "%s", SIN_RAIZ = "%s"); setwd("%s"); source("tests/helpers/sincro_fixture_app.R")$value',
-                                        falla, falla_lee, if (sync) "1" else "0", Sys.getenv("SIN_RAIZ", repo), repo), PORT, timeout_s = 90),
+  app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(SIN_FALLA = "%s", SIN_FALLA_LEE = "%s", SIN_SYNC = "%s", SIN_HUB = "%s", SIN_RAIZ = "%s"); setwd("%s"); source("tests/helpers/sincro_fixture_app.R")$value',
+                                        falla, falla_lee, if (sync) "1" else "0", if (hub) "1" else "0",
+                                        Sys.getenv("SIN_RAIZ", repo), repo), PORT, timeout_s = 90),
                    error = function(e) { message(conditionMessage(e)); NULL })
   !is.null(app)
 }
@@ -159,6 +160,44 @@ falla_desactivar("D2")
 ok("D3: fixture restarted with the config's save failing", arrancar(falla = "agenda_sync_config", sync = TRUE) && desactivar())
 ok("D3: the user is told it is still on", grepl("No se pudo desactivar la sincronización", aviso()))
 falla_desactivar("D3")
+
+# ── J · the switch after Cancelar or a failure, inside Ajustes (fix 3) ──────
+# In the app the panel lives inside the Ajustes modal, and the activation /
+# deactivation dialogs REPLACE it (one modal at a time). Cancelar closes it;
+# reopening Ajustes paints the panel again from the saved config, so the
+# switch shows the real state.
+interruptor <- function() ev("(document.getElementById('sincro_toggle')||{}).checked")
+cancelar <- function() {
+  clic("Array.from(document.querySelectorAll('.modal.show button')).filter(function(b){ return b.textContent.trim() === 'Cancelar'; })[0]")
+  Sys.sleep(1.2)
+}
+ajustes_sincro <- function() {
+  clic("document.getElementById('abrir_ajustes')"); Sys.sleep(1)
+  clic("document.getElementById('stg_btn_sincro')")
+  poll_until(function() isTRUE(ev("!!document.getElementById('sincro_toggle')")), timeout_s = 20)
+}
+con_ajustes <- function(...) arrancar(..., hub = TRUE) && {
+  invisible(b$Page$navigate(base, wait_ = TRUE))
+  poll_until(function() isTRUE(ev("!!document.getElementById('abrir_ajustes')")), timeout_s = 60)
+}
+ok("J: fixture restarted with Ajustes as a modal", con_ajustes())
+ok("J1: Ajustes › Sincronización, switch off", ajustes_sincro() && isFALSE(interruptor()))
+ok("J1: switching it on replaces Ajustes with the account picker", activar() && is.null(interruptor()))
+cancelar()
+ok("J1: Cancelar closes it; reopening Ajustes shows the switch OFF (nothing was turned on)",
+   !nzchar(modal_titulo()) && ajustes_sincro() && isFALSE(interruptor()) && !tiene("agenda_sync_config"))
+ok("J2: fixture restarted, Ajustes as a modal, the shared agenda's save failing", con_ajustes(falla = "pagar_hoy_sync"))
+invisible(ajustes_sincro() && activar()); elegir("ana")
+clic(boton_modal("do_sincro_activar")); Sys.sleep(1.2)
+ok("J2: the activation fails and says so", grepl("No se pudo activar la sincronización", aviso()))
+cancelar()
+ok("J2: after Cancelar, reopening Ajustes shows the switch OFF", ajustes_sincro() && isFALSE(interruptor()))
+ok("J3: fixture restarted, Ajustes as a modal, the sync on", con_ajustes(sync = TRUE))
+ok("J3: the switch shows ON", ajustes_sincro() && isTRUE(interruptor()))
+clic("document.querySelector('label[for=sincro_toggle]')")
+invisible(poll_until(function() isTRUE(ev("!!document.getElementById('do_sincro_desactivar')")), timeout_s = 20))
+cancelar()
+ok("J3: Cancelar on turning it off; reopening Ajustes shows it still ON", ajustes_sincro() && isTRUE(interruptor()))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)
