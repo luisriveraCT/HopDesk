@@ -305,3 +305,16 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-aviso[hidden] { display: none; }
 .hdt-scroll:focus { outline: none; }
 .hdt-scroll:focus-visible { outline: 2px solid var(--hdt-accent); outline-offset: -2px; }
+/* ── hd_modal(): the window for a table (T09) ─────────────────────────────
+   Almost the whole window, one compact header line (title, pills, view
+   switch, ✕), no footer that only says "Cerrar". A table with
+   alto = "ventana" inside grows down to the window's bottom. */
+.modal-dialog:has(.hd-modal) { max-width: 98vw; width: 98vw; margin: 1.5vh auto; }
+.modal-dialog:has(.hd-modal) .modal-body { padding: 6px 12px 10px; }
+.hd-modal-encabezado { display: flex; align-items: center; gap: 10px; padding: 2px 0 6px; margin-bottom: 6px;
+  border-bottom: 1px solid var(--hdt-line); }
+.hd-modal-titulo { font-size: 1.1rem; font-weight: 600; line-height: 1.3; margin: 0; white-space: nowrap; }
+.hd-modal-extra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.hd-modal-cerrar { margin-left: auto; flex: none; }
+.hd-modal-pie { display: flex; align-items: center; gap: 8px; width: 100%; }
+.modal-dialog:has(.hd-modal) .modal-footer { padding: 6px 12px; }

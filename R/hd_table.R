@@ -44,8 +44,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=21"),
-    htmltools::tags$script(src = "hdtable.js?v=31")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=22"),
+    htmltools::tags$script(src = "hdtable.js?v=32")
   ))
 }
 
@@ -674,4 +674,38 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
       })
     )
   })
+}
+
+# ── hd_modal: the window for a table (T09) ───────────────────────────────────
+# Luis: "se pierde mucho espacio en blanco ... se necesita espacio para ver
+# más cosas a la vez". Every modal that shows a table opens through this, so
+# they all spend the window the same way:
+#   - almost the whole window (98vw, small margins); a table inside with
+#     alto = "ventana" grows down to the bottom of it;
+#   - one compact header line: the title, then `encabezado` (pills, a view
+#     switch, a total...) and ✕ at the right;
+#   - no footer that only says "Cerrar": ✕, Esc and a click outside close it.
+#     `pie`, when given, is a footer with something else in it, compact.
+#   - cerrar_id: ✕ sends this input instead of closing (a window that checks
+#     for unsaved changes first, like Ajustes).
+#
+#   showModal(hd_modal(titulo = "Pagos — CxP", encabezado = pastillas, tabla_ui))
+hd_modal <- function(..., titulo, encabezado = NULL, pie = NULL, easyClose = TRUE, cerrar_id = NULL) {
+  cerrar <- tr("comun.cerrar")
+  boton <- if (is.null(cerrar_id))
+    shiny::tags$button(type = "button", class = "btn-close hd-modal-cerrar", `data-bs-dismiss` = "modal",
+                       `aria-label` = cerrar, title = cerrar)
+  else shiny::tags$button(id = cerrar_id, type = "button", class = "btn-close hd-modal-cerrar action-button",
+                          `aria-label` = cerrar, title = cerrar)
+  shiny::modalDialog(
+    title = NULL, footer = if (!is.null(pie)) shiny::div(class = "hd-modal-pie", pie),
+    size = "xl", easyClose = easyClose,
+    shiny::div(class = "hd-modal",
+      hd_table_deps(),
+      shiny::div(class = "hd-modal-encabezado",
+        shiny::tags$h4(class = "hd-modal-titulo", titulo),
+        if (!is.null(encabezado)) shiny::div(class = "hd-modal-extra", encabezado),
+        boton),
+      shiny::div(class = "hd-modal-cuerpo", ...))
+  )
 }

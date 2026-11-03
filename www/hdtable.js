@@ -403,7 +403,10 @@
     // lupa, alto = "ventana": the whole modal, down to the window's bottom).
     if (dlg && (llenar || n > HDT_ALTO_CRECE)) {
       var resto = dlg.getBoundingClientRect().height - st.scroll.getBoundingClientRect().height;
-      tope = Math.min(tope, window.innerHeight - resto - 2 * 28);
+      // The dialog's own top margin, above and below (Bootstrap's 28 px; an
+      // hd_modal's 1.5vh): read, not assumed, so a fuller window gets used.
+      var margen = parseFloat(getComputedStyle(dlg).marginTop) || 28;
+      tope = Math.min(tope, window.innerHeight - resto - 2 * margen);
     }
     // On a page: what's left down to the window's bottom, less what the
     // table has under its rows (the footer) and the bottom margin.
