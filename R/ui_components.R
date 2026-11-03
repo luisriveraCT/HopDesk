@@ -926,10 +926,43 @@ app_styles <- function() {
       color: #0A58CA;
     }
 
-    .settings-content {
-      max-height: 520px;
-      overflow-y: auto;
+    /* No scroll of its own (T09): the window scrolls a long panel, and the
+       Excel review (alto = ventana) fills the window -- one scroll. */
+    .settings-content { min-width: 0; }
+
+    /* Reviewing an Excel (T09): what's only needed to choose the file steps
+       aside so the review gets the window. Back as soon as there's no review. */
+    .hd-importando .bp-sap-seccion,
+    .hd-importando .bp-catalogo-titulo,
+    .hd-importando .prov-solo-eleccion,
+    .hd-importando .prov-eleccion .control-label,
+    .hd-importando .prov-eleccion .form-label,
+    .hd-importando .prov-eleccion .progress { display: none !important; }
+    .hd-importando .prov-eleccion {
+      display: flex; flex-wrap: wrap; align-items: center; column-gap: 16px; row-gap: 4px; margin-bottom: 4px;
     }
+    .hd-importando .prov-eleccion > .row { flex: 0 1 auto; margin: 0; flex-wrap: nowrap; align-items: center; column-gap: 8px; }
+    .hd-importando .prov-eleccion > .row > div { width: auto; flex: 0 0 auto; padding: 0; margin: 0; }
+    .hd-importando .prov-eleccion > .row > .prov-archivo { width: 240px; }
+    .hd-importando .prov-eleccion .selectize-control { width: 200px; }
+    .hd-importando .prov-eleccion .selectize-input { white-space: nowrap; overflow: hidden; flex-wrap: nowrap; }
+    .hd-importando .prov-eleccion .prov-desde-fecha { width: 130px !important; }
+    .hd-importando .prov-eleccion .shiny-input-container:not(.shiny-input-container-inline) { width: auto; }
+    .hd-importando .nav-tabs .nav-link { padding-top: 3px; padding-bottom: 3px; }
+    .hd-importando .settings-content { padding-top: 2px !important; padding-bottom: 0 !important; }
+    .hd-importando .prov-resumen { padding-top: 4px !important; }
+    .hd-importando .prov-importar { padding-top: 4px !important; padding-bottom: 0 !important; }
+    .hd-importando .prov-eleccion .form-group,
+    .hd-importando .prov-eleccion .shiny-input-container,
+    .hd-importando .prov-eleccion .checkbox { margin-bottom: 0 !important; margin-top: 0; }
+    .hd-importando .prov-eleccion > div { margin-bottom: 0 !important; }
+
+    /* The review's summary line and its column mapping (T09). */
+    .prov-mapeo { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; row-gap: 2px; margin-bottom: 4px; }
+    .prov-mapeo > .shiny-html-output { display: contents; }
+    .prov-mapeo details[open], .prov-mapeo .prov-mapeo-falta { flex-basis: 100%; }
+    .prov-mapeo summary { cursor: pointer; }
+    .prov-resumen-opciones .form-group { margin-bottom: 0; }
 
     .catalogo-form { border-color: #dee2e6 !important; }
 

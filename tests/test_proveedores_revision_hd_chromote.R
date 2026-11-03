@@ -89,6 +89,13 @@ celda <- function(id, titulo) ev(sprintf("(function(){
 insignia <- function(id) ev(sprintf("(function(){ var s = %s; return s ? s.className.match(/hdt-tono-[a-z]+/)[0] + ' ' + s.textContent : ''; })()",
                                     fila(id, ".querySelector('.hdt-ins')")))
 texto <- function(id) ev(sprintf("(document.getElementById('%s')||{}).innerText || ''", id))
+# The columns read from the file fold under "Ver las columnas leídas" (T09):
+# open it, as Luis would, before reading them.
+leidas <- function() {
+  if (!isTRUE(ev("!!(document.querySelector('#prov_mod-revision_mapeo details')||{}).open")))
+    clic("document.querySelector('#prov_mod-revision_mapeo details summary')")
+  texto("prov_mod-revision_mapeo")
+}
 
 invisible(b$Page$navigate(sprintf("http://127.0.0.1:%d", PORT), wait_ = TRUE))
 poll_until(function() isTRUE(ev("!!document.querySelector(\"a[data-value='importar']\")")), timeout_s = 60)
@@ -126,9 +133,19 @@ Sys.sleep(0.5)
 
 # ── R1/R2 · columns and badges, one per state ───────────────────────────────
 titulos <- unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s thead th')).filter(function(th){ return th.dataset.col != null; }).map(function(th){ return th.firstChild.textContent; })", A)))
-ok("R1/T08b: columns in the order of what matters: Estado / Nombre / Banco / No. Cuenta / Moneda / Detalle, then the rest",
-   identical(titulos, c("Estado", "Nombre", "Banco", "No. Cuenta", "Moneda", "Detalle", "Alias", "RFC", "Correo",
-                        "Tipo de cuenta", "Fila")))
+ok("R1/T08b/T09: the columns that matter, in order: Estado / Nombre / Banco / No. Cuenta / Moneda / Detalle",
+   identical(titulos, c("Estado", "Nombre", "Banco", "No. Cuenta", "Moneda", "Detalle")))
+# T09: the rest are optional columns, hidden until asked for (no horizontal
+# scroll); Fila is turned on here for R2 below.
+clic(sprintf("document.querySelector('#%s .hdt-columnas')", A))
+ok("T09: Columnas offers Alias / RFC / Correo / Tipo de cuenta / Fila, all off",
+   identical(ev("[].map.call(document.querySelectorAll('.hdt-menu .hdt-menu-op input[data-campo]'), function (c) { return c.dataset.campo + ':' + (c.checked ? 1 : 0); }).join(' ')"),
+             "alias:0 rfc:0 correo:0 tipo:0 fila:0"))
+clic("document.querySelector('.hdt-menu input[data-campo=fila]')")
+invisible(ev("document.body.click(); 0"))
+ok("T09: and turning one on shows it",
+   poll_until(function() identical(tail(unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s thead th')).filter(function(th){ return th.dataset.col != null; }).map(function(th){ return th.firstChild.textContent; })", A))), 1), "Fila"),
+              timeout_s = 5))
 ok("T08b: the bank says its key and who it is", identical(celda("6", "Banco"), "012 · BBVA"))
 ok("R2/T08: one badge per state, in its tone",
    identical(c(insignia("2"), insignia("3"), insignia("4"), insignia("5"), insignia("6"), insignia("8")),
@@ -160,7 +177,7 @@ invisible(ev("document.body.dispatchEvent(new MouseEvent('mousemove')); 0"))
 ok("T08-5: Actualiza says what changes, antes → después",
    identical(celda("6", "Detalle"), "Nombre: ACEROS MONTERREY SA → ACEROS MONTERREY SA DE CV"))
 ok("T08-2: the review says which column of the file each field came from, and what's missing",
-   grepl("No. Cuenta ← «No. Cuenta»", texto("prov_mod-revision_mapeo")) &&
+   grepl("No. Cuenta ← «No. Cuenta»", leidas()) &&
    grepl("No vienen en el archivo: Tipo de cuenta, RFC, Correo, Tipo de relación", texto("prov_mod-revision_mapeo")))
 ok("T08-1: the file has Moneda, so no currency selector", oculta("prov_mod-excel_moneda_wrap"))
 
@@ -244,7 +261,7 @@ ok("T08b: the sentence says where the header was and what is in the file",
    grepl("Encabezado en la fila 6 · se ignoraron 5 filas de datos generales · 451 cuentas · 450 con cambios · 1 por revisar",
          texto("prov_mod-revision_mapeo"), fixed = TRUE))
 ok("T08b: the columns it took and the ones it didn't use are listed",
-   grepl("Nombre ← «Nombre Beneficiario»", texto("prov_mod-revision_mapeo"), fixed = TRUE) &&
+   grepl("Nombre ← «Nombre Beneficiario»", leidas(), fixed = TRUE) &&
    grepl("Moneda ← «Divisa»", texto("prov_mod-revision_mapeo"), fixed = TRUE) &&
    grepl("Columnas no usadas:", texto("prov_mod-revision_mapeo"), fixed = TRUE) &&
    grepl("Otro Tipo de Relación", texto("prov_mod-revision_mapeo"), fixed = TRUE))

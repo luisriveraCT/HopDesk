@@ -301,6 +301,7 @@
   "tablas.proveedores.importar.alias_vinculos.otros": "El alias cambia: {n} partes vinculadas dejarán de encontrarlo.",
   "tablas.proveedores.importar.columna_tomada": "{campo} ← «{columna}»",
   "tablas.proveedores.importar.columnas_tomadas": "Columnas tomadas:",
+  "tablas.proveedores.importar.columnas_ver": "Ver las columnas leídas",
   "tablas.proveedores.importar.columnas_faltan": "No vienen en el archivo:",
   "tablas.proveedores.importar.moneda_selector": "El archivo no trae Moneda: los proveedores nuevos llevarán {moneda} (elígela arriba).",
   "tablas.proveedores.importar.moneda_archivo": "Moneda del archivo",

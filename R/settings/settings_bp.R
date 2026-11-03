@@ -10,6 +10,8 @@
 .bp_panel_ui <- function(shared, candidates) {
   div(
     # ── Section 1: SAP Business Partners ────────────────────────────────────
+    # (steps aside while an Excel of providers is in review -- T09)
+    div(class = "bp-sap-seccion",
     div(class = "d-flex align-items-center gap-2 mb-2",
       tags$h6(class = "fw-semibold mb-0",
               tagList(icon("building"), " Business Partners (SAP)")),
@@ -38,10 +40,11 @@
       )
     },
 
-    tags$hr(class = "my-3"),
+    tags$hr(class = "my-3")
+    ),
 
     # ── Section 2: Catálogo de Proveedores ───────────────────────────────────
-    div(class = "d-flex align-items-center gap-2 mb-2",
+    div(class = "d-flex align-items-center gap-2 mb-2 bp-catalogo-titulo",
       tags$h6(class = "fw-semibold mb-0",
               tagList(icon("address-book"), " Cat\u00e1logo de Proveedores")),
       tags$span(class = "text-muted small",

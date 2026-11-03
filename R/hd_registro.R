@@ -141,7 +141,7 @@ hd_registro <- list(
     agregar = character(), quitar = character(),
     notas = character()),
   revision_excel_prov = list(nombre = "Revisión del Excel de proveedores", clase = "E", archivo = "proveedores_module.R",
-    agregar = character(), quitar = character(),
+    agregar = c("columnas_opc"), quitar = character(),
     notas = character()),
   datos_sap = list(nombre = "Datos crudos de SAP", clase = "E", archivo = "app.R · ledger_module.R",
     agregar = character(), quitar = character(),

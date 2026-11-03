@@ -22,19 +22,18 @@ show_settings_modal <- function(input, output, session, shared) {
     )
   } else NULL
 
-  showModal(modalDialog(
-    title     = tagList(icon("gear"), " Configuración"),
-    size      = "xl",
+  # The table's window (T09): ✕ sends stg_close_btn, which checks for
+  # unsaved changes before closing (so no Esc / click outside either).
+  showModal(hd_modal(
+    titulo    = tagList(icon("gear"), " Configuración"),
     easyClose = FALSE,
-    footer    = actionButton("stg_close_btn",
-                             tagList(icon("xmark"), " Cerrar"),
-                             class = "btn btn-secondary"),
+    cerrar_id = "stg_close_btn",
 
     div(class = "settings-hub d-flex", style = "min-height: 460px;",
 
       # ── Sidebar ──────────────────────────────────────────────────────────
       div(class = "settings-sidebar d-flex flex-column gap-1 p-2 border-end bg-light flex-shrink-0",
-        style = "width: 215px;",
+        style = "width: 170px;",
         tags$p(class = "text-muted small px-2 pt-1 mb-1 text-uppercase fw-semibold",
                "Módulos"),
         actionButton("stg_btn_interco",
@@ -53,7 +52,9 @@ show_settings_modal <- function(input, output, session, shared) {
       ),
 
       # ── Content ──────────────────────────────────────────────────────────
-      div(class = "settings-content flex-grow-1 p-3 overflow-auto",
+      # No scroll of its own: a long panel scrolls the window, and a table
+      # with alto = "ventana" (the Excel review) fills it -- one scroll.
+      div(class = "settings-content flex-grow-1 p-2",
         uiOutput("settings_panel")
       )
     )

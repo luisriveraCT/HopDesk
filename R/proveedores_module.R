@@ -35,12 +35,14 @@ proveedoresUI <- function(id) {
 }
 
 .prov_importar_tab <- function(ns) {
-  div(class = "p-3",
+  div(class = "p-2 prov-importar",
     # Stage 1 — Upload
-    div(id = ns("stage1_panel"),
-      tags$h6(class = "fw-semibold", tagList(icon("upload"), " Importar desde Excel")),
+    # During a review (.hd-importando) it folds into one line: the same
+    # controls, without their labels and help (T09).
+    div(id = ns("stage1_panel"), class = "prov-eleccion",
+      tags$h6(class = "fw-semibold prov-solo-eleccion", tagList(icon("upload"), " Importar desde Excel")),
       div(class = "row g-3 align-items-end",
-        div(class = "col-md-5",
+        div(class = "col-md-5 prov-archivo",
           fileInput(ns("excel_file"), "Archivo Excel (.xlsx / .xls)",
                     accept = c(".xlsx", ".xls"), width = "100%")
         ),
@@ -71,16 +73,18 @@ proveedoresUI <- function(id) {
       # export): only the accounts registered since that date are classified.
       shinyjs::hidden(div(id = ns("excel_desde_wrap"), class = "d-flex align-items-center gap-2 mb-2",
         checkboxInput(ns("excel_desde_on"), tr("tablas.proveedores.importar.desde"), value = FALSE),
-        div(style = "width: 160px;", dateInput(ns("excel_desde"), NULL, value = Sys.Date(), language = "es")),
-        tags$span(class = "small text-muted", tr("tablas.proveedores.importar.desde_ayuda"))
+        div(class = "prov-desde-fecha", style = "width: 160px;", dateInput(ns("excel_desde"), NULL, value = Sys.Date(), language = "es")),
+        tags$span(class = "small text-muted prov-solo-eleccion", tr("tablas.proveedores.importar.desde_ayuda"))
       )),
-      div(class = "mb-2",
+      # The template and the format help only matter to choose a file: they
+      # step aside while an Excel is in review (.hd-importando, T09).
+      div(class = "mb-2 prov-solo-eleccion",
         downloadButton(ns("descargar_plantilla"), tr("tablas.proveedores.importar.plantilla"),
                        class = "btn btn-sm btn-outline-secondary"),
         tags$span(class = "small text-muted ms-2", tr("tablas.proveedores.importar.plantilla_ayuda"))
       ),
       # Collapsed help panel
-      shinyWidgets::panel(
+      div(class = "prov-solo-eleccion", shinyWidgets::panel(
         heading = tagList(icon("circle-question"), " Formato requerido (clic para expandir)"),
         status  = "default",
         tags$p(class = "small text-muted mb-2",
@@ -106,18 +110,19 @@ proveedoresUI <- function(id) {
             tags$tr(tags$td("H"), tags$td("Moneda"),                  tags$td("Opcional: Pesos / Dólar"))
           )
         )
-      )
+      ))
     ),
 
     # Stage 2/3 — Review table (shown after parse). Static, not in a
     # renderUI: the table keeps its chip, sort and scroll while rows change.
     shinyjs::hidden(div(id = ns("revision_wrap"),
-      tags$hr(),
-      tags$h6(class = "fw-semibold", tagList(icon("table"), " Revisión de datos")),
-      uiOutput(ns("revision_mapeo")),
-      # The review opens on what changes; the rest is one click away.
-      actionLink(ns("revision_ver_todo"), ""),
-      hd_table_ui(ns("revision"), alto = "auto")
+      # One line on top: the summary, the columns read (on a click) and,
+      # since the review opens on what changes, the rest one click away.
+      div(class = "prov-mapeo",
+        uiOutput(ns("revision_mapeo")),
+        actionLink(ns("revision_ver_todo"), "")),
+      # The window's height (T09): the review fills down to the bottom.
+      hd_table_ui(ns("revision"), alto = "ventana")
     )),
 
     # Stage 4 — Conflict resolution
@@ -756,6 +761,13 @@ proveedoresServer <- function(id, shared) {
     # 451). Detalle starts with the reason, in plain words; the engine's
     # bubble shows it whole.
     observe(shinyjs::toggle("revision_wrap", condition = !is.null(upload_data_rv())))
+    # While an Excel is in review on this tab, the window around it makes
+    # room (.hd-importando hides what only serves to choose the file).
+    observe({
+      on <- !is.null(upload_data_rv()) && identical(input$prov_tabs, "importar")
+      shinyjs::runjs(sprintf("$('#%s').closest('.modal-content, body').toggleClass('hd-importando', %s);",
+                             ns("revision_wrap"), if (on) "true" else "false"))
+    })
     mostrar_todo_rv <- reactiveVal(FALSE)
     .QUIETAS <- c("sin_cambios", "fuera_rango")
     observeEvent(input$revision_ver_todo, mostrar_todo_rv(!mostrar_todo_rv()))
@@ -820,10 +832,11 @@ proveedoresServer <- function(id, shared) {
       fuera_rango = list(texto = "tablas.proveedores.fuera_rango", tono = "neutro"))
 
     # Columns in the order of what matters (Luis): Estado, Nombre, Banco,
-    # No. Cuenta, Moneda, Detalle; then the rest.
+    # No. Cuenta, Moneda, Detalle. The rest are optional, hidden until asked
+    # for (T09: no horizontal scroll).
     revision <- hd_table_server(
       "revision", tabla = "revision_excel_prov", datos = revision_datos,
-      piezas = c("fichas", "ordenar", "acc_fila", "recorte", "buscar"),
+      piezas = c("fichas", "ordenar", "acc_fila", "recorte", "buscar", "columnas_opc"),
       columnas = list(
         col_insignia("estado", "tablas.proveedores.estado", mapa = PROV_ESTADOS),
         col_texto("nombre",    "tablas.proveedores.nombre"),
@@ -831,11 +844,11 @@ proveedoresServer <- function(id, shared) {
         col_texto("no_cuenta", "tablas.proveedores.no_cuenta", recorte = FALSE),
         col_texto("moneda",    "tablas.proveedores.moneda", recorte = FALSE),
         col_texto("detalle",   "tablas.proveedores.detalle"),
-        col_texto("alias",     "tablas.proveedores.alias"),
-        col_texto("rfc",       "tablas.proveedores.rfc", recorte = FALSE),
-        col_texto("correo",    "tablas.proveedores.correo"),
-        col_texto("tipo",      "tablas.proveedores.tipo_cuenta", recorte = FALSE),
-        col_texto("fila",      "tablas.proveedores.fila", recorte = FALSE)
+        col_texto("alias",     "tablas.proveedores.alias", opcional = TRUE, visible = FALSE),
+        col_texto("rfc",       "tablas.proveedores.rfc", recorte = FALSE, opcional = TRUE, visible = FALSE),
+        col_texto("correo",    "tablas.proveedores.correo", opcional = TRUE, visible = FALSE),
+        col_texto("tipo",      "tablas.proveedores.tipo_cuenta", recorte = FALSE, opcional = TRUE, visible = FALSE),
+        col_texto("fila",      "tablas.proveedores.fila", recorte = FALSE, opcional = TRUE, visible = FALSE)
       ),
       fichas        = list(campo = "estado", orden = names(PROV_ESTADOS)),
       acciones_fila = "eliminar",
@@ -865,15 +878,19 @@ proveedoresServer <- function(id, shared) {
         tr("tablas.proveedores.importar.columna_tomada", campo = .campo_texto(campo),
            columna = lectura$columnas[[campo]]), "")
       faltan <- vapply(lectura$faltan, .campo_texto, "")
-      tags$div(class = "mb-2",
-        tags$div(class = "fw-semibold", paste(piezas, collapse = " · ")),
-        tags$div(class = "small text-muted",
+      tagList(
+        tags$span(class = "fw-semibold", paste(piezas, collapse = " · ")),
+        tags$details(class = "small text-muted",
+          tags$summary(tr("tablas.proveedores.importar.columnas_ver")),
           tags$div(tr("tablas.proveedores.importar.columnas_tomadas"), " ", paste(tomadas, collapse = " · ")),
-          if (length(faltan)) tags$div(tr("tablas.proveedores.importar.columnas_faltan"), " ", paste(faltan, collapse = ", ")),
           if (length(lectura$no_usadas))
-            tags$div(tr("tablas.proveedores.importar.columnas_no_usadas"), " ", paste(lectura$no_usadas, collapse = ", ")),
-          if ("moneda" %in% lectura$faltan)
-            tags$div(tr("tablas.proveedores.importar.moneda_selector", moneda = input$excel_moneda %||% "MXN"))))
+            tags$div(tr("tablas.proveedores.importar.columnas_no_usadas"), " ", paste(lectura$no_usadas, collapse = ", "))),
+        # What's missing stays in sight: it changes what gets imported.
+        if (length(faltan) || "moneda" %in% lectura$faltan)
+          tags$div(class = "small text-muted prov-mapeo-falta",
+            if (length(faltan)) tags$div(tr("tablas.proveedores.importar.columnas_faltan"), " ", paste(faltan, collapse = ", ")),
+            if ("moneda" %in% lectura$faltan)
+              tags$div(tr("tablas.proveedores.importar.moneda_selector", moneda = input$excel_moneda %||% "MXN"))))
     })
 
     # ✕ (confirmed in the table's bar): the row leaves this upload only;
@@ -996,15 +1013,14 @@ proveedoresServer <- function(id, shared) {
         (if (incluir_duplicados_rv())  length(unique(rows$no_cuenta[rows$.estado == "duplicado"])) else 0L) +
         n_aplicar
 
-      tagList(
-        tags$hr(),
-        tags$h6(class = "fw-semibold", tagList(icon("check-circle"), " Resumen final")),
-        tags$p(class = "small text-muted fst-italic mb-2",
-          icon("circle-info"),
-          " Las decisiones de conflicto se aplican al hacer clic en ",
-          tags$strong("Importar"), " — nada se guarda hasta entonces."
-        ),
-        div(class = "d-flex flex-column gap-1 mb-3",
+      # One line under the review (T09): the counts, then Cancelar /
+      # Importar at the right; the options below it. The note "nothing is
+      # saved until Importar" is the title's bubble.
+      div(class = "prov-resumen border-top pt-2 mt-1",
+        div(class = "d-flex align-items-center column-gap-3",
+         div(class = "d-flex flex-wrap align-items-center column-gap-3 flex-grow-1", style = "min-width: 0;",
+          tags$strong(title = "Las decisiones de conflicto se aplican al hacer clic en Importar — nada se guarda hasta entonces.",
+                      tagList(icon("check-circle"), " Resumen final ", icon("circle-info", class = "text-muted small"))),
           div(paste0("✅ ", n_listo, " proveedores listos")),
           if (nrow(exist) > 0)
             div(tr("tablas.proveedores.importar.resumen_existentes", n = nrow(exist), resueltos = length(dec)))
@@ -1020,8 +1036,18 @@ proveedoresServer <- function(id, shared) {
           if (n_dup > 0)
             div(paste0("\U0001f534 ", n_dup,
                        " duplicados (serán omitidos a menos que marques la opción)"))
-          else NULL
+          else NULL),
+          div(class = "ms-auto d-flex gap-2 flex-shrink-0",
+            actionButton(ns("cancelar_upload"), "Cancelar",
+                         class = "btn btn-sm btn-outline-secondary"),
+            if (conf_pending == 0)
+              actionButton(ns("confirmar_upload"),
+                           tagList(icon("file-import"),
+                                   paste0(" Importar ", n_to_import, " proveedores →")),
+                           class = "btn btn-sm btn-primary")
+            else NULL)
         ),
+        div(class = "d-flex flex-wrap column-gap-4 prov-resumen-opciones",
         if (n_incom > 0)
           checkboxInput(ns("incluir_incompletos"), "Incluir incompletos de todas formas",
                         value = incluir_incompletos_rv())
@@ -1034,21 +1060,11 @@ proveedoresServer <- function(id, shared) {
         if (n_alias > 0)
           checkboxInput(ns("cambiar_alias"), tr_n("tablas.proveedores.importar.cambiar_alias", n_alias),
                         value = cambiar_alias_rv())
-        else NULL,
+        else NULL),
         if (conf_pending > 0)
-          div(class = "alert alert-warning small mt-2",
+          div(class = "alert alert-warning small mt-2 mb-1",
               paste0(conf_pending, " conflicto(s) sin resolver. Resuélvelos antes de importar."))
-        else NULL,
-        div(class = "d-flex gap-2 mt-2",
-          actionButton(ns("cancelar_upload"), "Cancelar",
-                       class = "btn btn-sm btn-outline-secondary"),
-          if (conf_pending == 0)
-            actionButton(ns("confirmar_upload"),
-                         tagList(icon("file-import"),
-                                 paste0(" Importar ", n_to_import, " proveedores →")),
-                         class = "btn btn-sm btn-primary")
-          else NULL
-        )
+        else NULL
       )
     })
 

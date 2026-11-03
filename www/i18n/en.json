@@ -301,6 +301,7 @@
   "tablas.proveedores.importar.alias_vinculos.otros": "The alias changes: {n} linked parties will stop finding it.",
   "tablas.proveedores.importar.columna_tomada": "{campo} ← “{columna}”",
   "tablas.proveedores.importar.columnas_tomadas": "Columns used:",
+  "tablas.proveedores.importar.columnas_ver": "See the columns read",
   "tablas.proveedores.importar.columnas_faltan": "Not in the file:",
   "tablas.proveedores.importar.moneda_selector": "The file has no Currency: new vendors will get {moneda} (choose it above).",
   "tablas.proveedores.importar.moneda_archivo": "File currency",
