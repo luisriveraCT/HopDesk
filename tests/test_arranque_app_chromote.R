@@ -26,7 +26,7 @@ cat("=== test_arranque_app_chromote ===\n\n")
 if (file.exists(".Renviron.local")) readRenviron(".Renviron.local")
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
 
-LIMITE <- as.numeric(Sys.getenv("ARR_LIMITE", "180"))   # seconds from signing in to the overlay gone
+LIMITE <- as.numeric(Sys.getenv("ARR_LIMITE", "300"))   # from "Entrar" to the overlay gone: ~27 s idle, up to ~180 s on a busy machine
 usuarios <- list(prueba = c(user = Sys.getenv("HOPDESK_TEST_USER"), pass = Sys.getenv("HOPDESK_TEST_PASS")))
 faltan <- names(usuarios)[!vapply(usuarios, function(u) all(nzchar(u)), logical(1))]
 if (length(faltan)) {
@@ -43,6 +43,7 @@ ok <- function(label, expr) {
   result <- tryCatch(expr, error = function(e) { message("  ERROR: ", conditionMessage(e)); FALSE })
   if (isTRUE(result)) { cat(" PASS:", label, "\n"); .pass <<- .pass + 1L }
   else                { cat(" FAIL:", label, "\n"); .fail <<- .fail + 1L }
+  invisible(isTRUE(result))   # callers branch on it (if (!ok(...)) next)
 }
 source("tests/helpers/live_app_harness.R")
 repo <- normalizePath(".", winslash = "/")
@@ -69,7 +70,7 @@ conectado <- function() isTRUE(tryCatch(ev("!!(window.Shiny && Shiny.shinyapp &&
 # run passed while the session had died at the sign-in gate.
 dentro <- function() isTRUE(tryCatch(ev(
   "(function(){ var f = document.getElementById('auth-user_id');
-     return (!f || f.offsetParent === null) && !!document.querySelector('.navbar .nav-link[data-value]'); })()"),
+     return (!f || f.offsetParent === null) && !!document.querySelector('.nav-link[data-value]'); })()"),
   error = function(e) FALSE))
 carga_terminada <- function() dentro() && isTRUE(tryCatch(ev(
   "(function(){ var o = document.getElementById('hopdesk-loading');
@@ -78,7 +79,7 @@ pct <- function() tryCatch(ev("(document.getElementById('hld-pct')||{}).textCont
 mostrar <- function(lineas) if (length(lineas)) cat(paste0("      | ", utils::head(lineas, 8)), sep = "\n")
 
 PESTANAS <- c(CAL = "Calendario", VEN = "Vencidos", PH = "Agenda de Hoy", BNC = "Bancos", IC = "Intercompany",
-              PSV = "Pasivos", FC = "Pronósticos", RPT = "Reporte")
+              PSV = "Pasivos", FC = "Pronósticos", RPT = "Reporte", GRUPO = "Grupo")
 tiempos <- list()
 
 for (modo in modos) for (quien in quienes) {
@@ -106,30 +107,43 @@ for (modo in modos) for (quien in quienes) {
   ev("document.getElementById('auth-go_auth').click(); true")
   n_antes <- length(registro())
 
-  # A dead session can't finish loading: stop waiting as soon as it drops.
-  poll_until(function() carga_terminada() || !conectado(), timeout_s = LIMITE, interval_s = 1)
+  # A session that died can't finish loading: stop waiting at the first error
+  # in R's output. (Not on a dropped connection: signing in reloads the page,
+  # so the socket drops for a moment by design.)
+  poll_until(function() dentro() || length(errores()) > 0L, timeout_s = LIMITE, interval_s = 1)
+  t_dentro <- as.numeric(Sys.time() - t_entrada, units = "secs")
+  poll_until(function() carga_terminada() || length(errores()) > 0L,
+             timeout_s = max(1, LIMITE - t_dentro), interval_s = 1)
   terminada <- carga_terminada()
   t_carga <- as.numeric(Sys.time() - t_entrada, units = "secs")
-  tiempos[[et]] <- c(proceso = round(t_proceso), carga = round(t_carga))
+  tiempos[[et]] <- c(proceso = round(t_proceso), dentro = round(t_dentro), carga = round(t_carga))
   ok(paste(et, "signed in: the sign-in form is gone and the app is there"), dentro())
   ok(sprintf("%s the loading screen reaches 100%% and goes (%.0f s; it stood at %s)", et, t_carga, pct()), terminada)
   Sys.sleep(5)   # what the first flush queued after the overlay went
   ok(paste(et, "the session is still connected"), conectado())
   e <- errores(); ok(paste(et, "no 'Warning: Error in' / 'Execution halted' in the R output"), !length(e)); mostrar(e)
 
+  # The server reveals the tabs a user may see after the overlay goes (GRUPO
+  # for staff, app.R): give it a moment on a busy machine.
+  poll_until(function() isTRUE(tryCatch(ev(sprintf("[%s].some(function(v){
+      var a = document.querySelector(\".nav-link[data-value='\" + v + \"']\"); return !!a && a.offsetParent !== null; })",
+      paste0("'", names(PESTANAS), "'", collapse = ","))), error = function(x) FALSE)), timeout_s = 60, interval_s = 1)
   probadas <- 0L
   for (v in names(PESTANAS)) {
-    visible <- isTRUE(tryCatch(ev(sprintf("(function(){ var a = document.querySelector(\".navbar .nav-link[data-value='%s']\");
+    visible <- isTRUE(tryCatch(ev(sprintf("(function(){ var a = document.querySelector(\".nav-link[data-value='%s']\");
       return !!a && a.offsetParent !== null; })()", v)), error = function(x) FALSE))
     if (!visible) { cat(sprintf("   (pestaña %s no visible para %s)\n", PESTANAS[[v]], quien)); next }
     probadas <- probadas + 1L
     n <- length(registro())
-    ev(sprintf("document.querySelector(\".navbar .nav-link[data-value='%s']\").click(); true", v))
+    ev(sprintf("document.querySelector(\".nav-link[data-value='%s']\").click(); true", v))
     Sys.sleep(4)
     e <- errores(n)
     ok(sprintf("%s %s opens with no new error and the session alive", et, PESTANAS[[v]]), conectado() && !length(e)); mostrar(e)
   }
-  ok(sprintf("%s at least one main tab was there to open (%d)", et, probadas), probadas > 0L)
+  if (!ok(sprintf("%s at least one main tab was there to open (%d)", et, probadas), probadas > 0L))
+    cat("      | pestañas en la página:", tryCatch(ev("Array.from(document.querySelectorAll('.nav-link[data-value]')).map(function(a){
+      var s = getComputedStyle(a); return a.getAttribute('data-value') + '(' + s.display + ',' + (a.offsetParent ? 'en' : 'sin') + ' offsetParent)'; }).join(' ')"),
+      error = function(x) "?"), "\n")
   if (isTRUE(tryCatch(ev("!!document.getElementById('btn_settings')"), error = function(x) FALSE))) {
     n <- length(registro())
     ev("document.getElementById('btn_settings').click(); true"); Sys.sleep(4)
@@ -139,9 +153,14 @@ for (modo in modos) for (quien in quienes) {
   }
   escrituras <- grep("\\[ARRANQUE\\] escritura omitida", registro(), value = TRUE)
   cat(sprintf("   (%d escritura(s) que la app intentó y la prueba no dejó llegar a S3)\n", length(escrituras)))
+  # ARR_REGISTRO=<folder> keeps the app's R output per mode, to see where the time goes.
+  if (nzchar(Sys.getenv("ARR_REGISTRO")))
+    writeLines(registro(), file.path(Sys.getenv("ARR_REGISTRO"), sprintf("arranque_%s_%s.log", modo, quien)))
 }
 
-cat("\nTiempos (s): proceso = arranque de R hasta servir; carga = de 'Entrar' a la pantalla fuera\n")
-for (k in names(tiempos)) cat(sprintf("  %-22s proceso %4.0f   carga %4.0f\n", k, tiempos[[k]][["proceso"]], tiempos[[k]][["carga"]]))
+cat("\nTiempos (s): proceso = arranque de R hasta servir; dentro = de 'Entrar' a la app en pantalla;",
+    "carga = de 'Entrar' a la pantalla de carga fuera\n")
+for (k in names(tiempos)) cat(sprintf("  %-22s proceso %4.0f   dentro %4.0f   carga %4.0f\n", k,
+                                      tiempos[[k]][["proceso"]], tiempos[[k]][["dentro"]], tiempos[[k]][["carga"]]))
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)
