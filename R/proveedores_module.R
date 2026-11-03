@@ -232,6 +232,10 @@ proveedoresServer <- function(id, shared) {
     # selection), so no action re-renders it.
     catalogo_datos <- reactive({
       provs <- get_provs()
+      # Before the catalog loads, shared$proveedores_db() is NULL: rep(...,
+      # nrow(NULL)) stopped this reactive inside the table's observer, which
+      # closed the whole session (the app hung at the loading screen, 14%).
+      if (is.null(provs) || !is.data.frame(provs)) provs <- .schema_proveedores()
       provs <- provs[!is.na(provs$activo) & provs$activo == TRUE, , drop = FALSE]
       ah    <- as.character(provs$activo_hasta)
       indef <- is.na(ah) | !nzchar(ah) | ah == "indefinido"
