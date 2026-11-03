@@ -845,6 +845,9 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
     # ── Send to Agenda de Hoy ──────────────────────────────────────────────────
     observeEvent(input$send_to_agenda, {
       plan <- payment_plan(); req(length(plan) > 0)
+      # Sending to the Agenda needs can_register_payments on every path
+      # (tests/test_agenda_permiso.R); denied, the plan stays as it is.
+      if (!puede_o_avisa(shared, "can_register_payments")) return()
 
       # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
       # 2026-07-25); a stale base here would silently drop another session's
