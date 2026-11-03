@@ -415,6 +415,10 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
     # ── State ──────────────────────────────────────────────────────────────────
     payment_plan  <- reactiveVal(list())
     selected_edge <- reactiveVal(NULL)   # list(from_ini, to_ini) or NULL
+    # What writes (Agregar al plan, Enviar a Agenda) shows only with
+    # can_register_payments; send_to_agenda still checks it on the server.
+    .puede_registrar <- reactive(isTRUE(tryCatch(puede(shared$usuario(), "can_register_payments"),
+                                                 error = function(e) FALSE)))
 
     # ── Edge summary (AR only, by currency) ────────────────────────────────────
     edges_summary <- reactive({
@@ -647,16 +651,11 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
         )
       }
 
-      dat <- tryCatch(ic_invoices_rv(), error = function(e) NULL)
-      ar  <- if (!is.null(dat)) dat$ar else NULL
-      if (is.null(ar) || !nrow(ar)) return(NULL)
-
-      cur      <- input$map_cur %||% "MXN"
-      sub      <- ar[ar$.ini == edge$to_ini & !is.na(ar$Moneda) & ar$Moneda == cur, , drop = FALSE]
-      cmap <- shared$company_map()
-      sub$from_ini <- .tm_parte_to_ini(sub$Parte, cmap)
-      sub <- sub[!is.na(sub$from_ini) & sub$from_ini == edge$from_ini, , drop = FALSE]
-
+      # The panel depends on the edge only, never on its invoices: rebuilding
+      # it when the data changed (another session confirming one) re-created
+      # the table and dropped the user's marks, search and scroll. The engine
+      # follows the data by itself, and says so when the edge has none.
+      cmap <- isolate(shared$company_map())
       from_full <- cmap[[edge$from_ini]] %||% edge$from_ini
       to_full   <- cmap[[edge$to_ini]]   %||% edge$to_ini
 
@@ -679,20 +678,18 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
                        style = "padding:1px 7px; font-size:.78rem;",
                        title = "Cerrar")
         ),
+        # Without can_register_payments the invoices are only to read: no
+        # "Agregar al plan" (the plan feeds "Enviar a Agenda").
         div(class = "tm-edge-panel-body",
-          if (!nrow(sub)) {
-            tags$p(class = "tm-empty", "Sin facturas para este par en esta moneda.")
-          } else {
-            tagList(
-              tags$p(class = "small text-muted mb-2",
-                     "Selecciona filas y usa \u2018Agregar al plan\u2019 para incluirlas en el plan de pago."),
-              DT::dataTableOutput(ns("edge_inv_tbl")),
-              actionButton(ns("add_to_plan"),
-                           tagList(icon("plus"), " Agregar al plan"),
-                           class = "btn btn-sm btn-outline-primary mt-2",
-                           style = "font-size:.8rem;")
-            )
-          }
+          if (.puede_registrar())
+            tags$p(class = "small text-muted mb-2",
+                   "Selecciona filas y usa \u2018Agregar al plan\u2019 para incluirlas en el plan de pago."),
+          hd_table_ui(ns("arista_t")),
+          if (.puede_registrar())
+            actionButton(ns("add_to_plan"),
+                         tagList(icon("plus"), " Agregar al plan"),
+                         class = "btn btn-sm btn-outline-primary mt-2",
+                         style = "font-size:.8rem;")
         )
       )
     })
@@ -711,57 +708,62 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       if (due_col %in% names(sub)) sub <- sub[order(sub[[due_col]]), , drop = FALSE]
       sub
     }
-    edge_inv_key <- function(sub) as.character(sub[["Documento"]] %||% sub[["Factura"]])
-    # Documento of each row as drawn in the table, in table order: DT's
-    # _rows_selected are positions in that table, so "Agregar al plan" maps
-    # them through this to the invoices the user actually marked.
-    edge_tbl_keys <- reactiveVal(character(0))
-
-    output$edge_inv_tbl <- DT::renderDataTable({
-      edge <- selected_edge(); req(edge)
+    # The edge's invoices on the engine, keyed by facturas_ids() (as
+    # Intercompany's pair detail). "Agregar al plan" reads the selection as
+    # those ids: it used to be DT positions mapped through the Documentos the
+    # last render left, so a list that changed under the user (another
+    # session confirming one of them) shifted the marks to other invoices.
+    # Empty, never an error, before there is an edge or data: a datos() that
+    # throws closes the whole session (2026-11-03).
+    # D\u00edas: the same cuts the colour had (\u2264 0, 1\u201330, more than 30), as a badge
+    # and as a number to sort by.
+    .arista_tabla <- reactive({
+      edge <- selected_edge()
       dat  <- tryCatch(ic_invoices_rv(), error = function(e) NULL)
       ar   <- if (!is.null(dat)) dat$ar else NULL
-      req(!is.null(ar), nrow(ar) > 0)
-
-      cur     <- input$map_cur %||% "MXN"
-      amt_col <- if ("Saldo vencido" %in% names(ar)) "Saldo vencido" else "DocTotal"
-      due_col <- "Fecha de vencimiento"
-      doc_col <- "Fecha de contabilizaci\u00f3n"
-
-      sub <- edge_invoices(edge, ar, cur)
-      req(nrow(sub) > 0)
-      edge_tbl_keys(edge_inv_key(sub))
-
-      keep    <- intersect(c("Documento", "Factura", doc_col, due_col, amt_col, "Moneda"), names(sub))
-      display <- sub[, keep, drop = FALSE]
-      if (due_col %in% names(display)) {
-        display[["D\u00edas"]] <- as.integer(Sys.Date() - as.Date(display[[due_col]]))
-      }
-
-      dt <- DT::datatable(display, rownames = FALSE, selection = "multiple",
-                          class = "table table-sm table-hover",
-                          options = list(
-                            pageLength = 12, dom = "ftp",
-                            language = list(
-                              search   = "Buscar:",
-                              paginate = list(`next` = "\u203a", previous = "\u2039"),
-                              info     = "Mostrando _START_\u2013_END_ de _TOTAL_",
-                              zeroRecords = "Sin resultados"
-                            )
-                          ))
-      if (amt_col %in% names(display)) dt <- DT::formatRound(dt, amt_col, digits = 2, mark = ",")
-      if ("D\u00edas" %in% names(display))
-        dt <- DT::formatStyle(dt, "D\u00edas",
-                              color      = DT::styleInterval(c(0, 30), c("inherit", "#856404", "#dc3545")),
-                              fontWeight = DT::styleInterval(30, c("normal", "bold")))
-      dt
-    }, server = FALSE)
+      sub  <- if (!is.null(edge) && is.data.frame(ar) && nrow(ar))
+                edge_invoices(edge, ar, input$map_cur %||% "MXN") else NULL
+      if (is.null(sub)) sub <- tibble::tibble(Empresa = character(), Moneda = character(), Documento = character())
+      amt_col <- if ("Saldo vencido" %in% names(sub)) "Saldo vencido" else "DocTotal"
+      col <- function(n, def = NA) if (n %in% names(sub)) sub[[n]] else rep(def, nrow(sub))
+      dias  <- as.integer(Sys.Date() - as.Date(col("Fecha de vencimiento")))
+      tramo <- ifelse(is.na(dias), "", ifelse(dias <= 0, "al_dia", ifelse(dias <= 30, "d1_30", "mas_30")))
+      data.frame(
+        id        = facturas_ids(sub),
+        Documento = as.character(col("Documento", "")),
+        Factura   = as.character(col("Factura", "")),
+        Contab    = as.Date(col("Fecha de contabilizaci\u00f3n")),
+        Vence     = as.Date(col("Fecha de vencimiento")),
+        Saldo     = as.numeric(col(amt_col, 0)),
+        Moneda    = as.character(col("Moneda", "")),
+        Tramo     = tramo,
+        Dias      = dias,
+        stringsAsFactors = FALSE
+      )
+    })
+    arista_t <- hd_table_server(
+      "arista_t", tabla = "mapa_ic", datos = .arista_tabla,
+      columnas = list(
+        col_texto("Documento",  "tablas.interco.documento", recorte = FALSE),
+        col_texto("Factura",    "tablas.interco.referencia", recorte = FALSE),
+        col_fecha("Contab",     "tablas.interco.contabilizacion"),
+        col_fecha("Vence",      "tablas.interco.vencimiento"),
+        col_dinero("Saldo",     "tablas.interco.saldo", moneda = "Moneda"),
+        col_texto("Moneda",     "tablas.interco.moneda", recorte = FALSE),
+        col_insignia("Tramo",   "tablas.interco.tramo", mapa = list(
+          al_dia = list(texto = "tablas.interco.al_dia", tono = "neutro"),
+          d1_30  = list(texto = "tablas.interco.d1_30",  tono = "amarillo"),
+          mas_30 = list(texto = "tablas.interco.mas_30", tono = "rojo"))),
+        col_numero("Dias",      "tablas.interco.dias", opcional = TRUE, visible = TRUE)
+      ),
+      vacio = "tablas.interco.detalle_vacio"
+    )
 
     # ── Add to payment plan ────────────────────────────────────────────────────
     observeEvent(input$add_to_plan, {
       edge    <- selected_edge(); req(edge)
-      sel_idx <- input$edge_inv_tbl_rows_selected
-      if (!length(sel_idx)) {
+      sel_ids <- arista_t$seleccion()
+      if (!length(sel_ids)) {
         showNotification("Selecciona al menos una factura.", type = "warning", duration = 2)
         return()
       }
@@ -777,8 +779,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       sub  <- edge_invoices(edge, ar, cur)
       req(nrow(sub) > 0)
 
-      sel_keys  <- edge_tbl_keys()[sel_idx[sel_idx <= length(edge_tbl_keys())]]
-      selected  <- sub[edge_inv_key(sub) %in% sel_keys, , drop = FALSE]
+      selected  <- sub[stats::na.omit(match(sel_ids, facturas_ids(sub))), , drop = FALSE]
       new_items <- lapply(seq_len(nrow(selected)), function(i) {
         row <- selected[i, ]
         doc <- tryCatch(as.character(row[["Documento"]][1]), error = function(e)
@@ -819,7 +820,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
         return(tags$p(class = "tm-empty",
                       "Haz clic en una flecha, selecciona facturas y agr\u00e9galas aqu\u00ed."))
       }
-      shinyjs::show("send_btn_wrap")
+      if (.puede_registrar()) shinyjs::show("send_btn_wrap") else shinyjs::hide("send_btn_wrap")
 
       cur   <- input$map_cur %||% "MXN"
       total <- sum(vapply(plan, function(x) x$Importe %||% 0, numeric(1)), na.rm = TRUE)

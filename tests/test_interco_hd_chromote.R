@@ -24,10 +24,11 @@ repo <- normalizePath(".", winslash = "/")
 PORT <- 39001L
 app <- NULL; b <- NULL
 on.exit({ try(if (!is.null(b)) b$close(), silent = TRUE); stop_bg_app(app) }, add = TRUE)
-arrancar <- function(falla = "", sin_permiso = FALSE) {
+arrancar <- function(falla = "", sin_permiso = FALSE, vacio = FALSE) {
   if (!is.null(app)) stop_bg_app(app)
-  app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(IC_FALLA = "%s", IC_SIN_PERMISO = "%s", IC_RAIZ = "%s"); setwd("%s"); source("tests/helpers/interco_fixture_app.R")$value',
-                                        falla, if (sin_permiso) "1" else "0", Sys.getenv("IC_RAIZ", repo), repo), PORT, timeout_s = 120),
+  app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(IC_FALLA = "%s", IC_SIN_PERMISO = "%s", IC_VACIO = "%s", IC_RAIZ = "%s"); setwd("%s"); source("tests/helpers/interco_fixture_app.R")$value',
+                                        falla, if (sin_permiso) "1" else "0", if (vacio) "1" else "0",
+                                        Sys.getenv("IC_RAIZ", repo), repo), PORT, timeout_s = 120),
                    error = function(e) { message(conditionMessage(e)); NULL })
   !is.null(app)
 }
@@ -166,23 +167,65 @@ ok("F: it was tried (and retried), and the failure is logged with the invoice",
    sum(grepl("^falla pagar_hoy", registro())) >= 1L &&
    any(grepl("^log enviar_a_agenda_ic_incompleto P-2$", registro())))
 
-# ── M · the Mapa IC's send to the Agenda (its permission sits on top) ───────
-# Mapa -> the NCS -> NTS edge -> A-1 and A-2 into the plan -> Enviar a Agenda.
-# A-1 pays the debtor's own AP invoice found by folio (P-1); A-2 has none.
-plan_mapa_y_enviar <- function() {
+
+# ── M · the Mapa IC's edge on the engine ────────────────────────────────────
+# The NCS -> NTS edge lists NTS's AR invoices to NCS (A-1, A-2). A-1 carries
+# P-1's folio, so the send pays P-1 (the debtor's own AP invoice, 0ea8e37);
+# A-2 has no AP and stays in the plan.
+M <- "ic-icmap-arista_t-hdt"
+id_m <- function(doc) { v <- vis(M); v[doc_de(v) == doc][1] }
+abrir_arista <- function() {
   clic("document.getElementById('ic-view_map_btn')"); Sys.sleep(2)
   ev("Shiny.setInputValue('ic-icmap-net_click', {nodes: [], edges: [1], nonce: Math.random()}, {priority: 'event'}); 0")
-  poll_until(function() isTRUE(ev("!!document.getElementById('ic-icmap-add_to_plan')")), timeout_s = 20)
-  Sys.sleep(1.5)
-  ev("Shiny.setInputValue('ic-icmap-edge_inv_tbl_rows_selected', [1, 2], {priority: 'event'}); 0"); Sys.sleep(0.8)
-  clic("document.getElementById('ic-icmap-add_to_plan')"); Sys.sleep(1)
-  clic("document.getElementById('ic-icmap-send_to_agenda')"); Sys.sleep(1.5)
+  listo(M)
 }
+marcar <- function(doc) {
+  p <- centro(fila(M, id_m(doc), ".children[0]"))
+  raton("mouseMoved", p); raton("mousePressed", p, 1L); raton("mouseReleased", p); Sys.sleep(0.5)
+}
+existe <- function(id) isTRUE(ev(sprintf("!!document.getElementById('%s')", id)))
+envio_visible <- function() isTRUE(ev("(function(){ var w = document.getElementById('ic-icmap-send_btn_wrap');
+  return !!w && getComputedStyle(w).display !== 'none'; })()"))
+plan_texto <- function() ev("(document.getElementById('ic-icmap-payment_plan_ui')||{}).textContent || ''")
+errores_app <- function() { l <- c(readLines(app$proc$get_output_file(), warn = FALSE), readLines(app$proc$get_error_file(), warn = FALSE))
+                            l[grepl("Warning: Error in|Execution halted", l)] }
+
 ok("M: fixture restarted (with the permission)", arrancar() && abrir() && listo(S))
-plan_mapa_y_enviar()
-ok("M: with the permission, the Mapa sends the debtor's AP invoice found by folio (P-1); A-2, with none, is reported and stays",
-   any(grepl("^escribe pagar_hoy[^ ]* 1 P-1$", registro())) && !any(grepl("^permiso ", registro())) &&
-   grepl("(A-2)", aviso(), fixed = TRUE))
+ok("M: the edge's invoices are on the engine, by invoice id, by due date (A-1, A-2)",
+   abrir_arista() && identical(doc_de(vis(M)), c("A-1", "A-2")))
+ok("M: columns Documento / Factura / Contabilización / Vencimiento / Saldo / Moneda / Vencida / Días",
+   identical(titulos(M), c("Documento", "Factura", "Contabilización", "Vencimiento", "Saldo", "Moneda", "Vencida", "Días")))
+ok("M: Saldo is money and Días a badge by the same cuts ($2,500.00 for A-1, 1–30 días)",
+   grepl("$2,500.00", texto_fila(M, id_m("A-1")), fixed = TRUE) && grepl("1–30 días", texto_fila(M, id_m("A-1"))))
+ok("M: with the permission, Agregar al plan is there; Enviar waits for a plan",
+   existe("ic-icmap-add_to_plan") && !envio_visible())
+
+marcar("A-1")
+ok("M: a click marks A-1, by its id", identical(unlist(estado(M)$seleccion), id_m("A-1")))
+clic("document.getElementById('ic-icmap-add_to_plan')"); Sys.sleep(1)
+ok("M: Agregar al plan takes the marked invoice (A-1), and Enviar shows", grepl("A-1", plan_texto()) && envio_visible())
+clic("document.getElementById('ic-icmap-send_to_agenda')"); Sys.sleep(1.5)
+ok("M: Enviar pays the debtor's AP invoice found by folio (P-1), as 0ea8e37 does",
+   any(grepl("^escribe pagar_hoy[^ ]* 1 P-1$", registro())) && !any(grepl("^permiso ", registro())))
+
+# Two sessions: the user marks A-2; another session collects A-1, so the
+# edge loses its first row and A-2 moves up. The mark follows A-2 (by id),
+# and Agregar al plan takes A-2 -- with DT positions it was row 2, now empty.
+marcar("A-2")
+clic("document.getElementById('otra_sesion_cobra')"); Sys.sleep(1.5)
+ok("M (two sessions): another session collects A-1 -- it leaves the edge, A-2 moves up and stays marked",
+   identical(doc_de(vis(M)), "A-2") && identical(unlist(estado(M)$seleccion), id_m("A-2")))
+clic("document.getElementById('ic-icmap-add_to_plan')"); Sys.sleep(1)
+ok("M (two sessions): Agregar al plan takes A-2, the invoice the user marked",
+   grepl("A-2", plan_texto()) && !grepl("A-1", plan_texto()))
+ok("M: no error in the app's output", !length(errores_app()))
+
+# ── M0 · the Mapa at a cold start, before any snapshot ──────────────────────
+ok("M0: fixture restarted with no SAP snapshot (sap_data() is NULL)", arrancar(vacio = TRUE) && abrir())
+clic("document.getElementById('ic-view_map_btn')"); Sys.sleep(2)
+ev("Shiny.setInputValue('ic-icmap-net_click', {nodes: [], edges: [1], nonce: Math.random()}, {priority: 'event'}); 0"); Sys.sleep(1.5)
+ok("M0: the session is alive and nothing failed: the edge table's datos() is empty, never an error",
+   isTRUE(ev("Shiny.shinyapp.isConnected()")) && !length(errores_app()))
 
 # ── P · sending to the Agenda needs can_register_payments ───────────────────
 ok("P: fixture restarted without can_register_payments", arrancar(sin_permiso = TRUE) && abrir() && listo(S))
@@ -191,9 +234,15 @@ clic(boton(D, id_doc("P-2"), "agregar")); Sys.sleep(1.2)
 ok("P: the ＋ asks for the permission, says no, and nothing reaches the Agenda",
    any(grepl("^permiso can_register_payments no$", registro())) && grepl("No tienes permiso", aviso()) &&
    !any(grepl("^escribe pagar_hoy", registro())) && !grepl("añadida", aviso()))
+ok("P: in the Mapa the edge's invoices are there to read, without Agregar al plan",
+   abrir_arista() && identical(doc_de(vis(M)), c("A-1", "A-2")) && !existe("ic-icmap-add_to_plan"))
+# The server still checks: a plan forced through the inputs is never sent.
+marcar("A-1")
+ev("Shiny.setInputValue('ic-icmap-add_to_plan', 1, {priority: 'event'}); 0"); Sys.sleep(1)
+ok("P: even with a plan, Enviar a Agenda stays hidden", grepl("A-1", plan_texto()) && !envio_visible())
 negados <- sum(grepl("^permiso can_register_payments no$", registro()))
-plan_mapa_y_enviar()
-ok("P: the Mapa IC's Enviar a Agenda asks for it too, says no, and nothing reaches the Agenda",
+ev("Shiny.setInputValue('ic-icmap-send_to_agenda', 1, {priority: 'event'}); 0"); Sys.sleep(1.5)
+ok("P: and its server asks for the permission, says no, and nothing reaches the Agenda",
    sum(grepl("^permiso can_register_payments no$", registro())) == negados + 1L &&
    !any(grepl("^escribe pagar_hoy", registro())))
 
