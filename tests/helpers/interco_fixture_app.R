@@ -20,6 +20,7 @@
 # IC_SIN_PERMISO = 1: the user lacks can_register_payments (puede_o_avisa()
 # says so with its notice and returns FALSE; logged as "permiso <key> no").
 # IC_VACIO = 1: no SAP snapshot yet (shared$sap_data() is NULL), the cold start.
+# IC_SIN_IC = 1: snapshots loaded but with no intercompany invoice (only P-90).
 # IC_RAIZ: the checkout whose R/ and www/ to use (default: this one).
 # =============================================================================
 library(shiny)
@@ -114,7 +115,11 @@ server <- function(input, output, session) {
     company_map         = reactive(CMAP),
     interco_v2          = reactiveVal(registro_ic),
     # IC_VACIO = 1: the cold start, before any snapshot has loaded.
-    sap_data            = reactiveVal(if (identical(Sys.getenv("IC_VACIO"), "1")) NULL else list(AR = snap_ar, AP = snap_ap)),
+    # IC_SIN_IC = 1: snapshots loaded, but no intercompany invoice in them.
+    sap_data            = reactiveVal(if (identical(Sys.getenv("IC_VACIO"), "1")) NULL
+                                      else if (identical(Sys.getenv("IC_SIN_IC"), "1"))
+                                        list(AR = snap_ar[0, ], AP = snap_ap[snap_ap$Documento == "P-90", ])
+                                      else list(AR = snap_ar, AP = snap_ap)),
     empresa_sel         = reactiveVal(character()),
     bancos_confirmados  = confirmados,
     pagar_hoy_db        = reactiveVal(.schema_pagar_hoy()),
