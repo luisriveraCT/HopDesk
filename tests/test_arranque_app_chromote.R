@@ -5,38 +5,49 @@
 # closed the whole session, and production stayed on "Cargando… 14%"; no
 # module test saw it because every fixture starts with its data loaded.
 #
-# For each mode (normal: dev's real data; vacio: every tenant read empty) it
-# starts app.R through tests/helpers/arranque_app.R (own Rscript, dev bucket,
-# no S3 writes, no production reads), signs in as the test user, and requires:
+# For each mode (normal: dev's real data; vacio: every tenant read empty) and
+# each test user it starts app.R through tests/helpers/arranque_app.R (own
+# Rscript, dev bucket, no S3 writes, no production reads), signs in, and
+# requires:
 #   - the loading screen reaches 100% and goes, within LIMITE seconds;
 #   - the session stays connected;
 #   - no "Warning: Error in" / "Execution halted" in the R process's output;
-#   - every main tab (and Ajustes) opens with no new error in that output.
+#   - every main tab (and Ajustes) opens with no new error in that output;
+#   - client user, normal mode: the Flujo de caja preview opens from the
+#     Calendario, and its PDF export downloads with full amounts ("$1,234,567",
+#     never "$1.2M") and visible zeros ("$0") -- the .cf_fmt clash of 3e93b92.
 #
-# Credentials come from the environment (.Renviron.local), never the repo:
-#   HOPDESK_TEST_USER / HOPDESK_TEST_PASS   (the password is never printed)
+# Credentials come from the environment (.Renviron.local), never the repo;
+# the passwords are never printed:
+#   HOPDESK_TEST_USER / HOPDESK_TEST_PASS                 staff (hd-admin, at home: Grupo)
+#   HOPDESK_TEST_CLIENTE_USER / HOPDESK_TEST_CLIENTE_PASS a Networks client user
 # Without them the test SKIPS with a clear message and exit status 2: a
 # skip is never a pass.
 #
 # Run from project root:  Rscript tests/test_arranque_app_chromote.R
 # ARR_RAIZ=<checkout> runs it against that checkout's app.R (ebfbf5c must fail).
-# ARR_MODOS narrows it ("normal" or "vacio").
+# ARR_MODOS / ARR_USUARIOS narrow it ("normal" or "vacio"; "prueba" or "cliente").
 # =============================================================================
 cat("=== test_arranque_app_chromote ===\n\n")
 if (file.exists(".Renviron.local")) readRenviron(".Renviron.local")
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
 
 LIMITE <- as.numeric(Sys.getenv("ARR_LIMITE", "300"))   # from "Entrar" to the overlay gone: ~27 s idle, up to ~180 s on a busy machine
-usuarios <- list(prueba = c(user = Sys.getenv("HOPDESK_TEST_USER"), pass = Sys.getenv("HOPDESK_TEST_PASS")))
+usuarios <- list(
+  prueba  = c(user = Sys.getenv("HOPDESK_TEST_USER"),         pass = Sys.getenv("HOPDESK_TEST_PASS")),
+  cliente = c(user = Sys.getenv("HOPDESK_TEST_CLIENTE_USER"), pass = Sys.getenv("HOPDESK_TEST_CLIENTE_PASS")))
 faltan <- names(usuarios)[!vapply(usuarios, function(u) all(nzchar(u)), logical(1))]
 if (length(faltan)) {
-  cat("SKIP: faltan las credenciales de prueba",
-      "(HOPDESK_TEST_USER / HOPDESK_TEST_PASS en .Renviron.local).\n",
-      "     Esta prueba NO paso: no se corrio.\n")
+  cat("SKIP: faltan las credenciales de prueba de:", paste(faltan, collapse = ", "),
+      "(HOPDESK_TEST_USER / HOPDESK_TEST_PASS, HOPDESK_TEST_CLIENTE_USER / HOPDESK_TEST_CLIENTE_PASS",
+      "en .Renviron.local).\n     Esta prueba NO paso: no se corrio.\n")
   quit(status = 2L)
 }
+# The exported PDF is read with poppler's pdftotext (Git for Windows ships it).
+PDFTOTEXT <- Sys.which("pdftotext")
+if (!nzchar(PDFTOTEXT)) PDFTOTEXT <- "C:/Program Files/Git/mingw64/bin/pdftotext.exe"
 modos <- strsplit(Sys.getenv("ARR_MODOS", "normal,vacio"), ",")[[1]]
-quienes <- names(usuarios)
+quienes <- strsplit(Sys.getenv("ARR_USUARIOS", paste(names(usuarios), collapse = ",")), ",")[[1]]
 
 .pass <- 0L; .fail <- 0L
 ok <- function(label, expr) {
@@ -81,6 +92,67 @@ mostrar <- function(lineas) if (length(lineas)) cat(paste0("      | ", utils::he
 PESTANAS <- c(CAL = "Calendario", VEN = "Vencidos", PH = "Agenda de Hoy", BNC = "Bancos", IC = "Intercompany",
               PSV = "Pasivos", FC = "Pronósticos", RPT = "Reporte", GRUPO = "Grupo")
 tiempos <- list()
+
+visible_js <- function(sel) sprintf("(function(){ var a = document.querySelector(%s); return !!a && a.offsetParent !== null; })()",
+                                    jsonlite::toJSON(sel, auto_unbox = TRUE))
+esperar_visible <- function(sel, timeout_s) poll_until(function() isTRUE(tryCatch(ev(visible_js(sel)), error = function(x) FALSE)),
+                                                       timeout_s = timeout_s, interval_s = 1)
+clic <- function(sel) ev(sprintf("document.querySelector(%s).click(); true", jsonlite::toJSON(sel, auto_unbox = TRUE)))
+
+# Calendario -> Flujo de caja preview -> Exportar -> PDF, read back with pdftotext.
+flujo_pdf <- function(et) {
+  n <- length(registro())
+  ev("document.querySelector(\".nav-link[data-value='CAL']\").click(); true")
+  if (!ok(paste(et, "Flujo: the Calendario shows the preview arrow"), esperar_visible(".cf-preview-toggle-btn", 90))) return()
+  clic(".cf-preview-toggle-btn")
+  ok(paste(et, "Flujo: the preview opens, with its Exportar button"), esperar_visible("#cfp-btn_export", 60))
+  e <- errores(n); ok(paste(et, "Flujo: no new error opening the preview"), conectado() && !length(e)); mostrar(e)
+
+  clic("#cfp-btn_export")
+  if (!ok(paste(et, "Flujo: Exportar opens the export window"),
+          poll_until(function() isTRUE(tryCatch(ev("!!document.getElementById('export_format')"), error = function(x) FALSE)),
+                     timeout_s = 30, interval_s = 1))) return()
+  ev("(function(){ var s = document.getElementById('export_format');
+       if (s.selectize) s.selectize.setValue('pdf'); else $(s).val('pdf').trigger('change'); return true; })()")
+  if (!ok(paste(et, "Flujo: choosing PDF shows its Exportar button"), esperar_visible("#btn_export_pdf", 30))) return()
+  # The button is Shiny's download link; a headless session's own browser
+  # context ignores download settings, so the page fetches the link itself:
+  # the same request a click sends, served by the same downloadHandler.
+  n <- length(registro())
+  r <- tryCatch(b$Runtime$evaluate(
+    "(function(){ var a = document.getElementById('btn_export_pdf');
+       return fetch(a.href, {credentials: 'same-origin'}).then(function(r){
+         return r.arrayBuffer().then(function(buf){
+           var u = new Uint8Array(buf), s = '', i;
+           for (i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768));
+           return JSON.stringify({status: r.status, type: r.headers.get('content-type'), b64: btoa(s)});
+         });
+       }); })()", awaitPromise = TRUE, returnByValue = TRUE, timeout_ = 240),
+    error = function(x) { message("  ERROR: ", conditionMessage(x)); NULL })
+  res <- tryCatch(jsonlite::fromJSON(r$result$value), error = function(x) NULL)
+  pdf <- file.path(tempdir(), "arranque_flujo.pdf")
+  if (!is.null(res) && identical(as.integer(res$status), 200L)) writeBin(jsonlite::base64_dec(res$b64), pdf)
+  es_pdf <- file.exists(pdf) && identical(readBin(pdf, "raw", 4L), charToRaw("%PDF"))
+  if (!ok(sprintf("%s Flujo: the PDF downloads (HTTP %s, %s)", et, res$status %||% "?", res$type %||% "?"), es_pdf)) {
+    mostrar(errores(n)); return()
+  }
+  texto <- tryCatch(system2(PDFTOTEXT, c("-layout", shQuote(pdf), "-"), stdout = TRUE, stderr = FALSE),
+                    error = function(x) character())
+  if (!ok(sprintf("%s Flujo: the PDF has text (%s, %d lines)", et, basename(pdf), length(texto)), length(texto) > 0L)) return()
+  compactos <- regmatches(texto, gregexpr("\\$ ?-?[0-9]+([.][0-9]+)? ?[KkMm]\\b", texto, perl = TRUE))
+  compactos <- unlist(compactos)
+  ok(sprintf("%s Flujo: no compact amounts in the PDF (%s)", et,
+             if (length(compactos)) paste(utils::head(unique(compactos), 4), collapse = " ") else "none"),
+     !length(compactos))
+  completos <- unlist(regmatches(texto, gregexpr("\\$ ?-?[0-9]{1,3}(,[0-9]{3})+([.][0-9]{2})?", texto, perl = TRUE)))
+  ok(sprintf("%s Flujo: full amounts in the PDF (e.g. %s)", et, paste(utils::head(unique(completos), 3), collapse = " ")),
+     length(completos) > 0L)
+  ceros <- unlist(regmatches(texto, gregexpr("\\$ ?0([.]00)?(?![0-9,.])", texto, perl = TRUE)))
+  ok(sprintf("%s Flujo: zeros show as $0 in the PDF (%d)", et, length(ceros)), length(ceros) > 0L)
+  e <- errores(n); ok(paste(et, "Flujo: no new error exporting the PDF"), conectado() && !length(e)); mostrar(e)
+  ev("$('.modal').modal('hide'); true")
+  if (nzchar(Sys.getenv("ARR_REGISTRO"))) file.copy(pdf, file.path(Sys.getenv("ARR_REGISTRO"), "arranque_flujo.pdf"), overwrite = TRUE)
+}
 
 for (modo in modos) for (quien in quienes) {
   et <- sprintf("[%s · %s]", modo, quien)
@@ -144,6 +216,7 @@ for (modo in modos) for (quien in quienes) {
     cat("      | pestañas en la página:", tryCatch(ev("Array.from(document.querySelectorAll('.nav-link[data-value]')).map(function(a){
       var s = getComputedStyle(a); return a.getAttribute('data-value') + '(' + s.display + ',' + (a.offsetParent ? 'en' : 'sin') + ' offsetParent)'; }).join(' ')"),
       error = function(x) "?"), "\n")
+  if (identical(quien, "cliente") && identical(modo, "normal")) flujo_pdf(et)
   if (isTRUE(tryCatch(ev("!!document.getElementById('btn_settings')"), error = function(x) FALSE))) {
     n <- length(registro())
     ev("document.getElementById('btn_settings').click(); true"); Sys.sleep(4)
