@@ -121,6 +121,41 @@
 # =============================================================================
 settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_db) {
 
+  # ── Preview of the chosen account's agenda (hd_table) ───────────────────────
+  # Every pending item (it stopped at 50 without saying so), with the
+  # engine's counter. preview_visible only changes when the panel must
+  # appear or go, so choosing another account repaints the rows, not the
+  # container.
+  preview_items   <- reactiveVal(NULL)
+  preview_visible <- reactiveVal(FALSE)
+  hd_table_server(
+    "sincro_t", tabla = "sincro_preview",
+    datos = reactive({
+      items <- preview_items()
+      req(!is.null(items))
+      ids <- as.character(items$id)
+      sin <- is.na(ids) | !nzchar(ids)
+      ids[sin] <- paste(items$ledger, items$Empresa, items$Moneda, items$Documento, sep = "|")[sin]
+      data.frame(id = make.unique(ids, sep = "#"), Empresa = items$Empresa, Parte = items$Parte,
+                 Importe = items$Importe, Moneda = items$Moneda, stringsAsFactors = FALSE)
+    }),
+    columnas = list(
+      col_empresa("Empresa", "tablas.sincro.empresa"),
+      col_texto("Parte",     "tablas.sincro.parte"),
+      col_dinero("Importe",  "tablas.sincro.importe", moneda = "Moneda", sumar = FALSE),
+      col_texto("Moneda",    "tablas.sincro.moneda", recorte = FALSE)
+    ),
+    piezas = "recorte",
+    vacio  = "tablas.sincro.vacio"
+  )
+  output$sincro_preview_panel <- renderUI({
+    if (!isTRUE(preview_visible())) return(NULL)
+    div(
+      tags$h6(class = "fw-semibold mb-2 mt-2", tr("tablas.sincro.vista_previa")),
+      hd_table_ui("sincro_t", alto = "auto")
+    )
+  })
+
   # ── Open panel ──────────────────────────────────────────────────────────────
   observeEvent(input$stg_btn_sincro, {
     cfg <- tryCatch(load_agenda_sync_config(client_id = shared$effective_client_id()),
@@ -176,7 +211,8 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
         active_users$username
       )
 
-      output$sincro_preview_panel <- renderUI({ NULL })
+      preview_visible(FALSE)
+      preview_items(NULL)
       .sincro_activar_modal(active_users, agendas)
     }
   }, ignoreInit = TRUE, ignoreNULL = TRUE)
@@ -190,34 +226,8 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
         dplyr::filter(status == "pending"),
       error = function(e) .schema_pagar_hoy()
     )
-    output$sincro_preview_panel <- renderUI({
-      if (!nrow(items)) {
-        return(div(class = "text-muted small p-2 border rounded",
-                   "Esta cuenta no tiene elementos en su Agenda de hoy."))
-      }
-      div(
-        tags$h6(class = "fw-semibold mb-2 mt-2", "Vista previa:"),
-        div(style = "max-height:180px; overflow-y:auto;",
-          tags$table(class = "table table-sm table-striped mb-0",
-            tags$thead(tags$tr(
-              tags$th("Empresa"), tags$th("Parte"),
-              tags$th(class = "text-end", "Importe"), tags$th("Mon.")
-            )),
-            tags$tbody(
-              lapply(seq_len(min(nrow(items), 50L)), function(i) {
-                tags$tr(
-                  tags$td(items$Empresa[i]),
-                  tags$td(items$Parte[i]),
-                  tags$td(class = "text-end",
-                          format(items$Importe[i], big.mark = ",", nsmall = 2, scientific = FALSE)),
-                  tags$td(items$Moneda[i])
-                )
-              })
-            )
-          )
-        )
-      )
-    })
+    preview_items(items)
+    preview_visible(TRUE)
   }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
   # ── Confirm ACTIVATE ─────────────────────────────────────────────────────────
