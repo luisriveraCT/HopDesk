@@ -39,6 +39,12 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
   # are defined but never called. Only the pure computation functions are used.
   e <- new.env(parent = globalenv())
   e$`%||%` <- `%||%`
+  # The dictionary and the tag map the report's words come from (tr(),
+  # HD_ETIQUETAS): this process only has what it sources. Without them the
+  # Excel export stopped at the first tag ("object 'HD_ETIQUETAS' not found").
+  source(file.path(app_dir, "R", "i18n.R"), local = e)
+  e$.i18n_dir <- file.path(app_dir, "www", "i18n")
+  source(file.path(app_dir, "R", "hd_columnas.R"), local = e)
   source(file.path(app_dir, "R", "cashflow_export_module.R"), local = e)
 
   sn <- readRDS(snapshot_path)
