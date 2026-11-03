@@ -52,6 +52,7 @@
   "comun.copiado": "Copiado",
   "comun.cargando": "Cargando…",
   "comun.error_guardar": "No se pudo guardar. Intenta de nuevo.",
+  "tablas.bancos.saldos": "Saldos por cuenta",
   "comun.fecha_corta": "{dia} {mes} {anio}",
   "comun.reintentar": "No pudimos completar esto. Intenta de nuevo en un momento.",
   "comun.mes.1": "ene",

@@ -52,6 +52,7 @@
   "comun.copiado": "Copied",
   "comun.cargando": "Loading…",
   "comun.error_guardar": "Couldn't save. Try again.",
+  "tablas.bancos.saldos": "Balances by account",
   "comun.fecha_corta": "{mes} {dia}, {anio}",
   "comun.reintentar": "We couldn't finish this. Please try again in a moment.",
   "comun.mes.1": "Jan",

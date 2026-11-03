@@ -86,26 +86,46 @@
 bancos_styles <- function() {
   tags$style(HTML("
     /* ── Bancos module ─────────────────────────────────────── */
-    .bnc-dashboard { display:flex; flex-wrap:wrap; gap:12px; padding:12px 0; }
+    /* Balance cards, compact (T09b): company and balance on one line, the
+       bank and the 30-day sparkline on the next; ~48 px a card. */
+    .bnc-saldos-titulo {
+      border:0; background:none; padding:0 2px; font-size:.78rem; font-weight:600;
+      color:#6c757d; display:inline-flex; align-items:center; gap:4px; cursor:pointer;
+    }
+    .bnc-saldos-titulo:hover { color:#1a1a1a; }
+    .bnc-saldos-flecha { display:inline-block; transition:transform .15s; }
+    .bnc-saldos.bnc-plegado .bnc-saldos-flecha { transform:rotate(-90deg); }
+    .bnc-saldos.bnc-plegado .bnc-dashboard,
+    .bnc-saldos.bnc-plegado > .shiny-html-output { display:none; }
+    .bnc-dashboard {
+      display:grid; grid-template-columns:repeat(auto-fill, minmax(175px, 1fr));
+      gap:6px; padding:4px 0 2px;
+    }
     .bnc-card {
-      background:#fff; border:0.5px solid #dee2e6; border-radius:8px;
-      padding:12px 16px; min-width:180px; flex:1;
-      border-left-width:4px; border-left-style:solid; border-left-color:#adb5bd;
+      background:#fff; border:0.5px solid #dee2e6; border-radius:6px;
+      padding:4px 10px; min-width:0;
+      border-left-width:3px; border-left-style:solid; border-left-color:#adb5bd;
       overflow:hidden;
     }
+    .bnc-card .bnc-card-l1, .bnc-card .bnc-card-l2 {
+      display:flex; align-items:baseline; gap:6px; min-width:0;
+    }
+    .bnc-card .bnc-card-l2 { align-items:center; }
     .bnc-card .bnc-card-emp {
-      font-size:.75rem; font-weight:700; color:#1a1a1a;
-      text-transform:uppercase; letter-spacing:.07em; margin-bottom:2px;
+      font-size:.7rem; font-weight:700; color:#1a1a1a;
+      text-transform:uppercase; letter-spacing:.05em; flex:none;
     }
     .bnc-card .bnc-card-bal {
-      font-size:1.4rem; font-weight:700; margin:3px 0 2px; color:#1a1a1a;
+      font-size:1rem; font-weight:700; color:#1a1a1a; white-space:nowrap;
+      margin-left:auto;
     }
     .bnc-card .bnc-card-bal.bnc-neg-bal { color:#dc3545; }
     .bnc-card .bnc-card-mon {
-      font-size:.78rem; font-weight:600;
+      font-size:.7rem; font-weight:600; flex:1; min-width:0;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
     }
-    .bnc-card .bnc-spark-wrap { margin-top:6px; height:28px; }
-    .bnc-card .bnc-spark { width:100%; height:28px; display:block; }
+    .bnc-card .bnc-spark-wrap { flex:none; width:48px; height:16px; }
+    .bnc-card .bnc-spark { width:100%; height:16px; display:block; }
     .bnc-card.bnc-pos  { }
     .bnc-card.bnc-neg  { }
     .bnc-card.bnc-zero { }
@@ -453,10 +473,29 @@ bancosUI <- function(id) {
       # ── 1. Libro de Banco ─────────────────────────────────────────────────
       bslib::nav_panel(
         title = "Libro de Banco", value = "libro",
-        div(class = "p-3",
-          # Dashboard cards
-          uiOutput(ns("dashboard_cards")),
-          tags$hr(),
+        div(class = "p-2",
+          # Balance cards, compact and foldable (T09b): at Luis's window
+          # (1293x632) the 11 cards took 340 px and the table started below
+          # it. The title folds them; the choice is kept in this browser.
+          div(class = "bnc-saldos", id = ns("saldos"),
+            tags$button(type = "button", class = "bnc-saldos-titulo", `aria-expanded` = "true",
+                        `aria-controls` = ns("dashboard_cards"),
+                        tags$span(class = "bnc-saldos-flecha", `aria-hidden` = "true", "▾"),
+                        tr("tablas.bancos.saldos")),
+            uiOutput(ns("dashboard_cards"))
+          ),
+          tags$script(HTML(sprintf(
+            "(function () {
+               var w = document.getElementById('%s'); if (!w) return;
+               var b = w.querySelector('.bnc-saldos-titulo'), k = 'hd.bancos.saldos_plegado';
+               var poner = function (p) { w.classList.toggle('bnc-plegado', p); b.setAttribute('aria-expanded', p ? 'false' : 'true'); };
+               try { poner(localStorage.getItem(k) === '1'); } catch (e) {}
+               b.addEventListener('click', function () {
+                 var p = !w.classList.contains('bnc-plegado'); poner(p);
+                 try { localStorage.setItem(k, p ? '1' : '0'); } catch (e) {}
+               });
+             })();", ns("saldos")))),
+          tags$hr(class = "my-2"),
           # \u2500\u2500 Slim toolbar (one bar, no labels) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
           div(class = "d-flex align-items-center gap-2 bnc-toolbar",
             div(style = "flex-shrink:0;",
@@ -991,16 +1030,18 @@ bancosServer <- function(id, shared) {
         spark_vals <- spark_data(ct$cuenta_id)
         spark_svg  <- make_spark_svg(spark_vals, color)
 
+        detalle <- paste0(ct$banco, " \u00b7 ", ct$moneda, " \u00b7 ", ct$alias)
         div(
           class = "bnc-card",
           style = paste0("border-left-color:", color, ";"),
-          div(class = "bnc-card-emp", ct$empresa),
-          div(class = paste("bnc-card-bal", if (is_neg) "bnc-neg-bal" else ""),
-              bal_lbl),
-          div(class = "bnc-card-mon",
-              style = paste0("color:", color, ";"),
-              paste0(ct$banco, " \u00b7 ", ct$moneda, " \u00b7 ", ct$alias)),
-          div(class = "bnc-spark-wrap", spark_svg)
+          # Two lines (T09b): company and balance; bank and sparkline. The
+          # bank line can be cut: its title shows it whole.
+          div(class = "bnc-card-l1",
+            span(class = "bnc-card-emp", ct$empresa),
+            span(class = paste("bnc-card-bal", if (is_neg) "bnc-neg-bal" else ""), bal_lbl)),
+          div(class = "bnc-card-l2",
+            span(class = "bnc-card-mon", style = paste0("color:", color, ";"), title = detalle, detalle),
+            div(class = "bnc-spark-wrap", spark_svg))
         )
       })
 
