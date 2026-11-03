@@ -178,6 +178,7 @@
   "tablas.bancos.conciliado": "Conciliado",
   "tablas.bancos.eliminar": "Eliminar",
   "tablas.bancos.vacio_libro": "Sin movimientos en este período",
+  "tablas.bancos.exportar_banbajio": "Exportar (formato BanBajío)",
   "tablas.dia.en_agenda_cobros": "🛒 En Agenda (Cobros):",
   "tablas.dia.en_agenda_pagos": "🛒 En Agenda (Pagos):",
   "tablas.dia.crudos_titulo": "🔍 Datos crudos — {fecha} — {moneda}",

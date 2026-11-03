@@ -14,6 +14,8 @@
 #   E. Two sessions: B deletes one of the two A marked -> A's marks keep only
 #      the one left, and A's confirmation lists that one.
 #   A9. Exportar a Excel is logged as a generated file (as the old export).
+#   A10-11. Exportar (formato BanBajío), the module's own: logged, and
+#      narrowed by the table's search.
 #   G. Without can_manage_bancos: no ✎, no Agregar, no Eliminar in the bar.
 #   F. 900 more movements, "Todo el historial": window mode, and the search
 #      finds the oldest by supplier and by receipt.
@@ -81,14 +83,15 @@ b <- new_chromote_session()
 ok("fixture app started (3 accounts, 60 movements)", abrir(0L, 38961L))
 periodo("todo")
 ok("A1: every movement but the commission shows (59; commissions hidden by default)",
-   length(vis()) == 59L && !"MOV-0003" %in% vis())
+   poll_until(function() length(vis()) == 59L, timeout_s = 20) && !"MOV-0003" %in% vis())
 ok("A2: columns Empresa, Fecha y hora, Moneda, Tipo, Descripción, Cargo, Abono, Saldo (Recibo optional, hidden)",
    identical(titulos(), c("Empresa", "Fecha y hora", "Moneda", "Tipo", "Descripción", "Cargo", "Abono", "Saldo")))
-ok("A3: the counter says 59 movimientos", grepl("59 movimientos", ev(sprintf("document.getElementById('%s').innerText", T)), fixed = TRUE))
+ok("A3: the counter says 59 movimientos",
+   poll_until(function() grepl("59 movimientos", ev(sprintf("document.getElementById('%s').innerText", T)), fixed = TRUE), timeout_s = 10))
 ok("A4: the reconciled one shows the Conciliado badge",
    isTRUE(ev(sprintf("/Conciliado/.test(HDT.fila('%s','MOV-0004').innerText)", T))))
 ok("A5: ✎ only on the manual entry (MOV-0005)",
-   isTRUE(ev(sprintf("!!HDT.fila('%s','MOV-0005').querySelector('button[data-accion=editar]') && !HDT.fila('%s','MOV-0001').querySelector('button[data-accion=editar]')", T, T))))
+   poll_until(function() isTRUE(ev(sprintf("!!HDT.fila('%s','MOV-0005')", T))), timeout_s = 10) && isTRUE(ev(sprintf("!!HDT.fila('%s','MOV-0005').querySelector('button[data-accion=editar]') && !HDT.fila('%s','MOV-0001').querySelector('button[data-accion=editar]')", T, T))))
 clic("document.getElementById('bnc-btn_comisiones_toggle')"); Sys.sleep(1)
 ok("A6: 'Sin comisiones' -> 'Con comisiones': the commission shows, with the Comisión badge",
    poll_until(function() "MOV-0003" %in% vis(), timeout_s = 5) &&
@@ -103,7 +106,16 @@ ok("A8: every account again: Empresa is back", poll_until(function() "Empresa" %
 invisible(b$Browser$setDownloadBehavior(behavior = "allow", downloadPath = normalizePath(tempdir(), winslash = "/")))
 clic(sprintf("Array.from(document.querySelectorAll('#%s button')).filter(function(x){ return /Exportar a Excel/.test(x.textContent); })[0]", T))
 ok("A9: Exportar a Excel (the engine's) is logged as a generated file, with the rows exported (59)",
-   poll_until(function() grepl("bancos_libro_excel: 59 filas", registro(), fixed = TRUE), timeout_s = 10))
+   poll_until(function() grepl("bancos_libro_excel (tabla): 59 filas", registro(), fixed = TRUE), timeout_s = 10))
+buscar <- function(q) { invisible(ev(sprintf("var i = document.querySelector('#%s .hdt-buscar'); i.value = '%s'; i.dispatchEvent(new Event('input'))", T, q))); Sys.sleep(0.8) }
+clic("document.getElementById('bnc-download_libro')")
+ok("A10: Exportar (formato BanBajío) is back, logged too (59 rows, the bar's filters)",
+   poll_until(function() grepl("bancos_libro_excel (banbajio): 59 filas", registro(), fixed = TRUE), timeout_s = 10))
+buscar("aceros")
+clic("document.getElementById('bnc-download_libro')")
+ok("A11: with a search, the BanBajío Excel takes only what it leaves (1 row)",
+   poll_until(function() grepl("bancos_libro_excel (banbajio): 1 filas", registro(), fixed = TRUE), timeout_s = 10))
+buscar("")
 
 # ══ B · Marking and Eliminar ═════════════════════════════════════════════════
 ok("B0: nothing marked: no Eliminar in the bar",

@@ -178,6 +178,7 @@
   "tablas.bancos.conciliado": "Reconciled",
   "tablas.bancos.eliminar": "Delete",
   "tablas.bancos.vacio_libro": "No movements in this period",
+  "tablas.bancos.exportar_banbajio": "Export (BanBajío layout)",
   "tablas.dia.en_agenda_cobros": "🛒 In the Agenda (Collections):",
   "tablas.dia.en_agenda_pagos": "🛒 In the Agenda (Payments):",
   "tablas.dia.crudos_titulo": "🔍 Raw data — {fecha} — {moneda}",

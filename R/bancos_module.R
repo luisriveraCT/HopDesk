@@ -511,8 +511,24 @@ bancosUI <- function(id) {
                          label = " Agregar",
                          class  = "btn btn-sm btn-outline-primary",
                          style  = "font-size:.78rem; padding:3px 9px; white-space:nowrap;"),
-            # Eliminar (bar, with rows marked), Editar (✎ on manual rows) and
-            # Exportar live in the table now (T12a).
+            # Eliminar (bar, with rows marked) and Editar (✎ on manual rows)
+            # live in the table now (T12a), and so does its Excel (the
+            # table's columns); this one keeps the bank's layout.
+            downloadButton(
+              ns("download_libro"),
+              label = HTML(paste0(
+                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" ',
+                'stroke="currentColor" stroke-width="2" stroke-linecap="round" ',
+                'stroke-linejoin="round" style="margin-right:3px;vertical-align:-1px">',
+                '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>',
+                '<polyline points="14 2 14 8 20 8"/>',
+                '<line x1="16" y1="13" x2="8" y2="13"/>',
+                '<line x1="16" y1="17" x2="8" y2="17"/>',
+                '<polyline points="10 9 9 9 8 9"/>',
+                '</svg>', htmltools::htmlEscape(tr("tablas.bancos.exportar_banbajio")))),
+              class = "btn btn-sm btn-outline-secondary",
+              style = "font-size:.78rem; padding:3px 9px; white-space:nowrap;"
+            ),
           ),
           # Movement table: right below the bar, down to the window's bottom.
           # Without can_manage_bancos its bar (Eliminar) isn't shown.
@@ -1133,28 +1149,183 @@ bancosServer <- function(id, shared) {
                                acciones_fila = "editar",
                                acciones_barra = list(list(accion = "eliminar", texto = "tablas.bancos.eliminar",
                                                           peligro = TRUE)),
-                               vacio = "tablas.bancos.vacio_libro")
+                               vacio = "tablas.bancos.vacio_libro", visibles = TRUE)
 
-    # Exportar a Excel (the engine's): it is logged as a generated file, as
-    # the module's own export was ("bancos_libro_excel"). The engine sends
-    # the exported ids in libro-vista just before every download.
-    observeEvent(input[["libro-vista"]], {
-      ids        <- as.character(unlist(input[["libro-vista"]]$ids))
-      cuenta_sel <- input$libro_cuenta %||% "__todas__"
-      movs       <- libro_movs()
-      movs       <- movs[movs$id %in% ids, , drop = FALSE]
-      todas      <- cuenta_sel == "__todas__"
+    # Both Libro Excels are logged as a generated file ("bancos_libro_excel"),
+    # with the bar's filters and which one (formato: "tabla" / "banbajio").
+    .bnc_log_libro_excel <- function(formato, n_items, empresa, moneda, fname) {
       log_archivo_generado(
-        shared, tipo = "bancos_libro_excel",
-        empresa = if (todas) "Todas" else (movs$empresa[1] %||% NA_character_),
-        moneda  = if (todas) NA_character_ else (toupper(trimws(movs$moneda[1] %||% "")) %||% NA_character_),
-        detalle_list = list(cuenta = cuenta_sel, periodo = input$libro_periodo %||% "mes_actual",
+        shared, tipo = "bancos_libro_excel", empresa = empresa, moneda = moneda,
+        detalle_list = list(formato = formato, cuenta = input$libro_cuenta %||% "__todas__",
+                            periodo = input$libro_periodo %||% "mes_actual",
                             flujo = input$flujo_filter %||% "todos",
                             mostrar_comisiones = isTRUE(input$mostrar_comisiones)),
-        n_items = length(ids),
-        fname = paste0("libro_banco_", format(Sys.Date(), "%Y-%m-%d"), ".xlsx")
-      )
+        n_items = n_items, fname = fname)
+    }
+
+    # The engine's Exportar a Excel. It sends the exported ids in
+    # libro-vista just before every download.
+    # TODO t$exportado(): read the engine's hook once it has one (ejecutor 2).
+    observeEvent(input[["libro-vista"]], {
+      ids   <- as.character(unlist(input[["libro-vista"]]$ids))
+      movs  <- libro_movs()
+      movs  <- movs[movs$id %in% ids, , drop = FALSE]
+      todas <- (input$libro_cuenta %||% "__todas__") == "__todas__"
+      mon   <- toupper(trimws(movs$moneda[1] %||% ""))
+      .bnc_log_libro_excel("tabla", n_items = length(ids),
+        empresa = if (todas) "Todas" else (movs$empresa[1] %||% NA_character_),
+        moneda  = if (todas || !nzchar(mon)) NA_character_ else mon,
+        fname   = paste0("libro_banco_", format(Sys.Date(), "%Y-%m-%d"), ".xlsx"))
     }, ignoreInit = TRUE)
+
+    # "Exportar (formato BanBajío)": the module's own Excel, in the bank's
+    # layout (Fecha Movimiento, Hora, Recibo, Descripcion, Cargos, Abonos,
+    # Saldo); someone uses it that way (Luis, T12a). The engine's Excel
+    # (the table's columns) stays too.
+    output$download_libro <- downloadHandler(
+      filename = function() {
+        cuenta_sel <- input$libro_cuenta %||% "__todas__"
+        cts        <- cuentas()
+        alias_str  <- if (cuenta_sel == "__todas__") {
+          "todas"
+        } else if (nzchar(cuenta_sel) && cuenta_sel != "__sin_cuenta__") {
+          row <- dplyr::filter(cts, cuenta_id == cuenta_sel)
+          if (nrow(row)) gsub("[^A-Za-z0-9_-]", "_", row$alias[1]) else "banco"
+        } else "banco"
+        paste0("movimientos_", alias_str, "_", format(Sys.Date(), "%Y%m%d"), ".xlsx")
+      },
+      content = function(file) {
+        cuenta_sel <- input$libro_cuenta %||% "__todas__"
+        periodo    <- input$libro_periodo %||% "mes_actual"
+        show_com   <- isTRUE(input$mostrar_comisiones)
+        flujo      <- input$flujo_filter  %||% "todos"
+        rango      <- input$libro_rango
+
+        # The Libro's rows (the module's filters, accounts joined), narrowed
+        # to what the table's search or filters leave showing.
+        movs <- libro_movs()
+        vis  <- t_libro$visibles()
+        if (!is.null(vis)) movs <- movs[movs$id %in% vis, , drop = FALSE]
+        todas_exp <- cuenta_sel == "__todas__"
+
+        base_exp <- dplyr::transmute(movs,
+          `Fecha Movimiento` = format(as.Date(fecha), "%d-%b-%Y"),
+          Hora               = as.character(hora),
+          Recibo             = as.character(recibo),
+          `Descripcion`      = descripcion_raw,
+          Cargos             = cargo,
+          Abonos             = abono,
+          Saldo              = saldo_banco,
+          .empresa           = {
+            ini <- dplyr::na_if(trimws(dplyr::coalesce(empresa, "")), "")
+            nm  <- .cmap_lookup(shared$company_map(), dplyr::coalesce(ini, ""))
+            dplyr::coalesce(
+              ifelse(!is.na(nm), unname(nm), NA_character_),  # full name from map
+              ini,                                              # raw initials if not in map
+              alias                                             # account alias when empresa is unset
+            )
+          },
+          .moneda            = toupper(trimws(moneda %||% ""))
+        )
+
+        if (todas_exp) {
+          export <- dplyr::transmute(base_exp,
+            Empresa            = .empresa,
+            `Fecha Movimiento` = `Fecha Movimiento`,
+            Hora               = Hora,
+            Recibo             = Recibo,
+            `Descripcion`      = `Descripcion`,
+            Cargos             = Cargos,
+            Abonos             = Abonos,
+            Saldo              = Saldo,
+            Moneda             = .moneda
+          )
+          # col layout: Empresa(1),Fecha(2),Hora(3),Recibo(4),Desc(5),Cargos(6),Abonos(7),Saldo(8),Moneda(9)
+          txt_cols   <- 1:5
+          col_cargo  <- 6L; col_abono <- 7L; col_saldo <- 8L; col_moneda <- 9L
+          col_widths <- c(30, 16, 10, 16, 55, 14, 14, 14, 10)
+        } else {
+          export <- dplyr::select(base_exp, -`.empresa`, -`.moneda`)
+          # col layout: Fecha(1),Hora(2),Recibo(3),Desc(4),Cargos(5),Abonos(6),Saldo(7)
+          txt_cols   <- 1:4
+          col_cargo  <- 5L; col_abono <- 6L; col_saldo <- 7L; col_moneda <- NULL
+          col_widths <- c(16, 10, 16, 55, 14, 14, 14)
+        }
+
+        wb <- openxlsx::createWorkbook()
+        ws <- "Movimientos"
+        openxlsx::addWorksheet(wb, ws)
+        openxlsx::modifyBaseFont(wb, fontName = "Calibri", fontSize = 10)
+        openxlsx::freezePane(wb, ws, firstRow = TRUE)
+
+        mxn <- '$#,##0.00'
+
+        st_hdr <- openxlsx::createStyle(
+          fgFill = "#1E3A5F", fontColour = "#FFFFFF",
+          fontName = "Calibri", fontSize = 10, textDecoration = "bold",
+          halign = "center", valign = "center",
+          border = "TopBottomLeftRight", borderColour = "#4A7DB5", borderStyle = "thin"
+        )
+        st_txt <- openxlsx::createStyle(
+          fontName = "Calibri", fontSize = 10, halign = "left", valign = "center",
+          border = "TopBottomLeftRight", borderColour = "#CCCCCC", borderStyle = "thin"
+        )
+        st_num <- openxlsx::createStyle(
+          fontName = "Calibri", fontSize = 10, halign = "right", valign = "center",
+          numFmt = mxn,
+          border = "TopBottomLeftRight", borderColour = "#CCCCCC", borderStyle = "thin"
+        )
+        st_cargo <- openxlsx::createStyle(
+          fontName = "Calibri", fontSize = 10, fontColour = "#C0392B",
+          halign = "right", valign = "center", numFmt = mxn,
+          border = "TopBottomLeftRight", borderColour = "#CCCCCC", borderStyle = "thin"
+        )
+        st_abono <- openxlsx::createStyle(
+          fontName = "Calibri", fontSize = 10, fontColour = "#1A7A3A",
+          halign = "right", valign = "center", numFmt = mxn,
+          border = "TopBottomLeftRight", borderColour = "#CCCCCC", borderStyle = "thin"
+        )
+
+        openxlsx::writeData(wb, ws, export, startRow = 1, startCol = 1,
+                            headerStyle = st_hdr)
+
+        nr <- nrow(export)
+        if (nr > 0) {
+          data_rows <- seq(2L, nr + 1L)
+
+          openxlsx::addStyle(wb, ws, st_txt, rows = data_rows, cols = txt_cols,  gridExpand = TRUE)
+          openxlsx::addStyle(wb, ws, st_num, rows = data_rows, cols = col_saldo, gridExpand = TRUE)
+          if (!is.null(col_moneda))
+            openxlsx::addStyle(wb, ws, st_txt, rows = data_rows, cols = col_moneda, gridExpand = TRUE)
+
+          cargo_vals <- export$Cargos
+          rows_cargo_red   <- which(!is.na(cargo_vals) & cargo_vals > 0) + 1L
+          rows_cargo_plain <- setdiff(data_rows, rows_cargo_red)
+          if (length(rows_cargo_red)   > 0)
+            openxlsx::addStyle(wb, ws, st_cargo, rows = rows_cargo_red,   cols = col_cargo, gridExpand = TRUE)
+          if (length(rows_cargo_plain) > 0)
+            openxlsx::addStyle(wb, ws, st_num,   rows = rows_cargo_plain, cols = col_cargo, gridExpand = TRUE)
+
+          abono_vals <- export$Abonos
+          rows_abono_grn   <- which(!is.na(abono_vals) & abono_vals > 0) + 1L
+          rows_abono_plain <- setdiff(data_rows, rows_abono_grn)
+          if (length(rows_abono_grn)   > 0)
+            openxlsx::addStyle(wb, ws, st_abono, rows = rows_abono_grn,   cols = col_abono, gridExpand = TRUE)
+          if (length(rows_abono_plain) > 0)
+            openxlsx::addStyle(wb, ws, st_num,   rows = rows_abono_plain, cols = col_abono, gridExpand = TRUE)
+        }
+
+        openxlsx::setColWidths(wb, ws, cols = seq_along(col_widths), widths = col_widths)
+        openxlsx::setRowHeights(wb, ws, rows = 1, heights = 20)
+
+        openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
+
+        .bnc_log_libro_excel("banbajio", n_items = nrow(export),
+          empresa = if (todas_exp) "Todas" else (base_exp$.empresa[1] %||% NA_character_),
+          moneda  = if (todas_exp) NA_character_ else (base_exp$.moneda[1] %||% NA_character_),
+          fname   = paste0("movimientos_", format(Sys.Date(), "%Y%m%d"), ".xlsx"))
+      }
+    )
 
     # Eliminar (bar) opens the confirmation with the marked ids; ✎ opens
     # the manual-entry form for that row.

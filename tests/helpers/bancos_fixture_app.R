@@ -10,7 +10,7 @@
 # bus makes it in the app): what one session deletes, the others see go.
 # #registro lists, per session, the movements the store holds as deleted
 # ("eliminados: MOV-0003,MOV-0007") after each save, and the last Excel
-# export's log ("bancos_libro_excel: 59 filas").
+# export's log ("bancos_libro_excel (tabla): 59 filas").
 #
 # BANCOS_SIN_PERMISO=1: the user lacks can_manage_bancos.
 # BANCOS_N: that many more movements (default 0). BANCOS_N=900 puts the
@@ -47,7 +47,7 @@ assign("puede_o_avisa", function(shared, clave, ...) {
 # The Libro's Excel is logged as a generated file: record it in #registro.
 EXCEL <- NULL
 assign("log_archivo_generado", function(shared, tipo, empresa, moneda, detalle_list, total = NA, n_items = NA, fname = NA)
-  EXCEL(sprintf("%s: %s filas", tipo, n_items)), envir = globalenv())
+  EXCEL(sprintf("%s (%s): %s filas", tipo, detalle_list$formato, n_items)), envir = globalenv())
 suppressPackageStartupMessages({ library(dplyr); library(shinyjs) })
 
 # ── Data ─────────────────────────────────────────────────────────────────────
