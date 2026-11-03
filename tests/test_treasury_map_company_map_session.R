@@ -63,8 +63,10 @@ walk <- function(x) {
   }
 }
 for (e in parse("R/treasury_map_module.R")) walk(e)
-# 3 since the edge table and "Agregar al plan" share edge_invoices() (ff90084).
-ok("the module calls .tm_parte_to_ini at least 3 times", length(calls) >= 3L)
+# 2 since the edge panel no longer works out the edge's invoices itself (T13:
+# the engine's table and "Agregar al plan" share edge_invoices()): the map's
+# routes, and edge_invoices().
+ok("the module calls .tm_parte_to_ini at least 2 times", length(calls) >= 2L)
 ok("every .tm_parte_to_ini() call passes a map",
    all(vapply(calls, function(cl) length(cl) == 3L, logical(1))))
 
