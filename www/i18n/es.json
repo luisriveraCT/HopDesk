@@ -33,6 +33,7 @@
   "permisos.can_confirm_payments": "Confirmar pagos en Agenda de Hoy",
   "permisos.can_manage_pasivos": "Gestionar pasivos recurrentes",
   "permisos.can_manage_proveedores": "Administrar el catálogo de proveedores (alias y CLABE)",
+  "permisos.can_manage_bancos": "Administrar Bancos (movimientos, conciliaciones y confirmaciones)",
   "permisos.can_publish_panorama": "Publicar en Panorama",
   "permisos.can_approve_clients": "Aprobar nuevos clientes",
   "permisos.can_manage_hopdesk_perms": "Gestionar permisos del staff de Hopdesk",

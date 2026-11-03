@@ -140,7 +140,7 @@ cat("── Minor hardening (post-review) ────────────�
   .chk(grepl('if \\(!isTRUE\\(movs\\$eliminado\\[idx\\[1\\]\\]\\)\\) return\\(\\)', blk), TRUE,
        "R/bancos_module.R: undo_mov_delete guards against re-processing an already-restored row")
 
-  blk <- block_after("observeEvent\\(input\\$undo_abono,")
+  blk <- block_after("observeEvent\\(input\\$undo_abono,", n = 9)  # +1: the can_manage_bancos check comes first
   .chk(grepl('ab\\$status\\[ab\\$id == ab_id\\]\\[1\\], "voided"', blk), TRUE,
        "R/bancos_module.R: undo_abono guards against re-voiding an already-voided abono")
 

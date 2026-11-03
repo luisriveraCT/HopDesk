@@ -1611,6 +1611,7 @@ bancosServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$do_eliminar_confirm, {
+      if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       shinyjs::disable("do_eliminar_confirm")
       on.exit(shinyjs::enable("do_eliminar_confirm"), add = TRUE)
 
@@ -2038,6 +2039,7 @@ bancosServer <- function(id, shared) {
     # this: when the candidate's source is "confirmado" it's the one being
     # KEPT there, not discarded, so it's already safe.
     .do_vin_keep_a <- function() {
+      if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       confirm <- vin_confirm_rv()
       req(confirm)
       item <- confirm$item
@@ -2107,6 +2109,7 @@ bancosServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$vin_keep_b, {
+      if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       confirm <- vin_confirm_rv()
       req(confirm)
       item <- confirm$item
@@ -2247,6 +2250,7 @@ bancosServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$do_add_manual, {
+      if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       shinyjs::disable("do_add_manual")
       on.exit(shinyjs::enable("do_add_manual"), add = TRUE)
 
@@ -2656,6 +2660,7 @@ bancosServer <- function(id, shared) {
 
     # Execute sugerencia vinculation — same logic as Vincular
     observeEvent(input$sug_keep_a, {
+      if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       confirm <- sug_confirm_rv()
       req(confirm)
       # Keep LEFT (calendario/manual), eliminate RIGHT (bank movement)
@@ -2693,6 +2698,7 @@ bancosServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$sug_keep_b, {
+      if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       confirm <- sug_confirm_rv()
       req(confirm)
       # Keep RIGHT (bank movement), eliminate LEFT (calendario/manual)
@@ -2876,6 +2882,7 @@ bancosServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$do_reasignar_confirm, {
+      if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       shinyjs::disable("do_reasignar_confirm")
       on.exit(shinyjs::enable("do_reasignar_confirm"), add = TRUE)
 
@@ -3004,6 +3011,7 @@ bancosServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$do_eliminar_sesion_confirm, {
+      if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       shinyjs::disable("do_eliminar_sesion_confirm")
       on.exit(shinyjs::enable("do_eliminar_sesion_confirm"), add = TRUE)
 
@@ -3319,6 +3327,7 @@ bancosServer <- function(id, shared) {
     })
 
     observeEvent(input$do_import, {
+      if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       shinyjs::disable("do_import")
       on.exit(shinyjs::enable("do_import"), add = TRUE)
 
@@ -3521,6 +3530,7 @@ bancosServer <- function(id, shared) {
     # scoped to fuente=="manual" only, see the Acciones column in
     # papelera_tbl above; a TXT-imported row never gets this button at all).
     observeEvent(input$undo_mov_delete, {
+      if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       mov_id <- input$undo_mov_delete$id
       req(mov_id)
       movs <- movs_all()
@@ -3581,6 +3591,7 @@ bancosServer <- function(id, shared) {
     # module) -- the invoice's Saldo vencido nets back up automatically on
     # the next render, since active_abonos_summary() only sums status=="active".
     observeEvent(input$undo_abono, {
+      if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       ab_id <- input$undo_abono$id
       req(ab_id)
       ab <- tryCatch(shared$abonos_db(), error = function(e) NULL) %||% tibble::tibble()
@@ -3653,6 +3664,7 @@ bancosServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$do_delete_conf_confirm, {
+      if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       conf_id <- session$userData[[paste0(ns("pending_delete_conf_id"))]]
       session$userData[[paste0(ns("pending_delete_conf_id"))]] <- NULL
       req(conf_id)
@@ -3730,6 +3742,7 @@ bancosServer <- function(id, shared) {
 
     # ── Deshacer confirmación — restore to calendar as pending ───────────────
     observeEvent(input$undo_conf, {
+      if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       conf_id <- input$undo_conf$id
       conf    <- confirmados()
       conf_base <- conf   # session copy before this change (CM09/C5)
