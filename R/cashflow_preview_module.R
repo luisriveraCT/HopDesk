@@ -219,6 +219,12 @@ render_cashflow_preview_html <- function(ed, expanded = FALSE, day0_vals = list(
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 .CF_STORAGE_KEY  <- "hopdesk_cf_preview_state"
+# Today in the BROWSER's own calendar, "AAAA-MM-DD". The saved state is kept
+# for the day, and both the day it was saved and today come from here: the
+# server's Sys.Date() wrote it and toISOString() (UTC) read it, so from 18:00
+# in Mexico (already tomorrow in UTC) it was never restored.
+.CF_HOY_JS <- paste0("(function(d){return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+",
+                     "('0'+d.getDate()).slice(-2);})(new Date())")
 .GRP_LABELS      <- c(auto = "Auto", daily = "Diario", weekly = "Semanal")
 .GRP_CYCLE       <- c(auto = "daily", daily = "weekly", weekly = "auto")
 .CUR_LABELS      <- c(separate = "Separadas", fused = "Base")
@@ -591,13 +597,13 @@ cashflowPreviewServer <- function(id, shared) {
           (function() {
             try {
               var s = JSON.parse(localStorage.getItem('%s') || '{}');
-              var today = new Date().toISOString().slice(0,10);
+              var today = %s;
               if (s && s.saved_date === today) {
                 Shiny.setInputValue('%s', s, {priority:'event'});
               }
             } catch(e) {}
           })();
-        ", .CF_STORAGE_KEY, ns("stored_state")))
+        ", .CF_STORAGE_KEY, .CF_HOY_JS, ns("stored_state")))
       } else {
         shinyjs::removeClass(selector = ".cf-slide-wrapper",
                              class    = "cf-preview-active", asis = TRUE)
@@ -650,7 +656,7 @@ cashflowPreviewServer <- function(id, shared) {
 
     observeEvent(.state_to_save(), {
       shinyjs::runjs(sprintf(
-        "try{localStorage.setItem('%s',JSON.stringify({date_from:'%s',date_to:'%s',grouping:'%s',currency_mode:'%s',base_cur:'%s',fx_rates:%s,saved_date:'%s'}));}catch(e){}",
+        "try{localStorage.setItem('%s',JSON.stringify({date_from:'%s',date_to:'%s',grouping:'%s',currency_mode:'%s',base_cur:'%s',fx_rates:%s,saved_date:%s}));}catch(e){}",
         .CF_STORAGE_KEY,
         format(rv$date_from, "%Y-%m-%d"),
         format(rv$date_to,   "%Y-%m-%d"),
@@ -658,7 +664,7 @@ cashflowPreviewServer <- function(id, shared) {
         rv$currency_mode,
         rv$base_cur,
         .nvec_to_json(rv$fx_rates),
-        format(Sys.Date(), "%Y-%m-%d")
+        .CF_HOY_JS
       ))
     }, ignoreInit = TRUE)
 

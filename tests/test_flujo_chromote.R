@@ -103,5 +103,34 @@ letras <- unlist(ev("Array.from(document.querySelectorAll('.cf-table thead th.cf
 ok("H: this week's headers read L M X J V S D (Wednesday was a second M)",
    identical(letras, c("L", "M", "X", "J", "V", "S", "D")))
 
+# ── R · the saved state comes back after 18:00 in Mexico ────────────────────
+# The browser in Mexico City with its clock at 19:39 today -- already
+# tomorrow in UTC. The state is saved for the day; it was written with the
+# server's date and read against toISOString() (UTC), so from 18:00 it was
+# never restored.
+hoy <- format(Sys.Date(), "%Y-%m-%d")
+fijo <- as.numeric(as.POSIXct(paste(hoy, "19:39:00"), tz = "America/Mexico_City")) * 1000
+invisible(b$Emulation$setTimezoneOverride(timezoneId = "America/Mexico_City"))
+invisible(b$Page$addScriptToEvaluateOnNewDocument(source = sprintf(paste0(
+  "(function(){ var RD = Date, t0 = RD.now(), FIJO = %.0f;",
+  "  function ahora(){ return FIJO + (RD.now() - t0); }",
+  "  function FD(){ if (!(this instanceof FD)) return new RD(ahora()).toString();",
+  "    if (!arguments.length) return new RD(ahora());",
+  "    return new (Function.prototype.bind.apply(RD, [null].concat([].slice.call(arguments))))(); }",
+  "  FD.prototype = RD.prototype; FD.now = ahora; FD.UTC = RD.UTC; FD.parse = RD.parse; window.Date = FD; })();"), fijo)))
+abrir()
+invisible(poll_until(function() isTRUE(ev(sprintf("!!%s", celda))), timeout_s = 60))
+ok("R: the browser thinks it is 19:39 here and already the next day in UTC",
+   identical(ev("new Date().getHours()"), 19L) && ev("new Date().toISOString().slice(0,10)") > hoy)
+invisible(ev("localStorage.removeItem('hopdesk_cf_preview_state'); 0"))
+clic("document.getElementById('cfp-btn_grouping')"); Sys.sleep(2)
+ok("R: changing the grouping (Auto -> Diario) saves the state under today's LOCAL date",
+   identical(ev("JSON.parse(localStorage.getItem('hopdesk_cf_preview_state') || '{}').saved_date"), hoy) &&
+   identical(ev("JSON.parse(localStorage.getItem('hopdesk_cf_preview_state') || '{}').grouping"), "daily"))
+abrir()
+ok("R: after a reload, opening the preview restores it (the grouping says Diario)",
+   poll_until(function() identical(trimws(ev("document.getElementById('cfp-btn_grouping').textContent")), "Diario"),
+              timeout_s = 20))
+
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)
