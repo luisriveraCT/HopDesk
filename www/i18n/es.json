@@ -218,6 +218,7 @@
   "tablas.actividad.descripcion": "Descripción",
   "tablas.actividad.id_destino": "ID destino",
   "tablas.actividad.vacio": "Sin registros en este rango.",
+  "tablas.actividad.detalle_descripcion": "Descripción:",
   "tablas.accion.crudos": "Ver datos de origen",
   "tablas.agregado": "Ya está en la Agenda de Hoy",
   "tablas.accion.adjuntos": "Ver evidencia",

@@ -169,6 +169,11 @@ ok("A: columns Hora / Usuario / Módulo / Acción / Descripción / ID destino (n
 ok("A1: Hora shows date and time with seconds", grepl("[0-9]{2}:[0-9]{2}:[0-9]{2}", texto_fila(A, "a-001")))
 ok("A17: a long description is cut (the bubble shows it), not wrapped",
    isTRUE(ev(sprintf("(function(){ var td = %s; return td.scrollWidth > td.clientWidth; })()", fila(A, "a-003", ".children[4]")))))
+clic(boton(A, "a-003", "detalle")); Sys.sleep(0.8)
+ok("VP2: the detail shows the whole Descripción the table cuts (it never showed it)",
+   grepl("Descripción: Importación de movimientos BanBajío", modal_texto(), fixed = TRUE) &&
+   grepl("para que la conciliación de octubre no cambie", modal_texto(), fixed = TRUE))
+cerrar_modal()
 clic(fila(A, "a-002", ".children[4]")); Sys.sleep(0.6)
 ok("A7: a click on Descripción no longer opens the detail (a click is just a click)", !nzchar(modal_titulo()))
 clic(boton(A, "a-002", "detalle")); Sys.sleep(0.8)

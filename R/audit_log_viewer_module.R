@@ -538,6 +538,11 @@
     tags$div(tags$strong("Fecha: "), format(as.POSIXct(row$ts[1]), "%d/%m/%Y %H:%M:%S")),
     tags$div(tags$strong("Módulo: "), row$module[1] %||% ""),
     tags$div(tags$strong("Acción: "), row$action[1] %||% ""),
+    # Whole, as written: the table cuts a long one (T10). Not in the PDF's
+    # inline blocks (.audit_detail_body_by_kind), whose row already shows it.
+    if ("description" %in% names(row) && !is.na(row$description[1]) && nzchar(row$description[1]))
+      tags$div(tags$strong(tr("tablas.actividad.detalle_descripcion"), " "),
+               tags$span(style = "white-space: pre-wrap; word-break: break-word;", row$description[1])),
     if (identical(mode, "multi_client") && "client_id" %in% names(row))
       tags$div(tags$strong("Cliente: "), row$client_id[1] %||% ""),
     if (!is.na(target_id) && nzchar(target_id %||% ""))

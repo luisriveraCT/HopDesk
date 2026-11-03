@@ -218,6 +218,7 @@
   "tablas.actividad.descripcion": "Description",
   "tablas.actividad.id_destino": "Target ID",
   "tablas.actividad.vacio": "No entries in this range.",
+  "tablas.actividad.detalle_descripcion": "Description:",
   "tablas.accion.crudos": "See source data",
   "tablas.agregado": "Already in Today's Agenda",
   "tablas.accion.adjuntos": "See evidence",
