@@ -357,7 +357,10 @@ intercoServer <- function(id, shared) {
     # re-sorted matrix.
     .saldos_tabla <- reactive({
       mat <- tryCatch(ic_matrix_df(), error = function(e) NULL)
-      if (is.null(mat)) mat <- tibble::tibble(.ini = character(), Empresa = character(), Parte = character(),
+      # No IC invoice at all (a client without an IC registry) gives
+      # bind_rows(NULL, NULL): a tibble with no columns, not NULL. Sorting it
+      # threw inside the table's observer and closed the session (T15).
+      if (is.null(mat) || !nrow(mat)) mat <- tibble::tibble(.ini = character(), Empresa = character(), Parte = character(),
                                               Moneda = character(), Ledger = character(),
                                               Total = numeric(), Facturas = integer())
       mat <- mat |> dplyr::arrange(.ini, Ledger, dplyr::desc(Total))

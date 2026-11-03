@@ -24,10 +24,10 @@ repo <- normalizePath(".", winslash = "/")
 PORT <- 39001L
 app <- NULL; b <- NULL
 on.exit({ try(if (!is.null(b)) b$close(), silent = TRUE); stop_bg_app(app) }, add = TRUE)
-arrancar <- function(falla = "", sin_permiso = FALSE, vacio = FALSE) {
+arrancar <- function(falla = "", sin_permiso = FALSE, vacio = FALSE, sin_ic = FALSE) {
   if (!is.null(app)) stop_bg_app(app)
-  app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(IC_FALLA = "%s", IC_SIN_PERMISO = "%s", IC_VACIO = "%s", IC_RAIZ = "%s"); setwd("%s"); source("tests/helpers/interco_fixture_app.R")$value',
-                                        falla, if (sin_permiso) "1" else "0", if (vacio) "1" else "0",
+  app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(IC_FALLA = "%s", IC_SIN_PERMISO = "%s", IC_VACIO = "%s", IC_SIN_IC = "%s", IC_RAIZ = "%s"); setwd("%s"); source("tests/helpers/interco_fixture_app.R")$value',
+                                        falla, if (sin_permiso) "1" else "0", if (vacio) "1" else "0", if (sin_ic) "1" else "0",
                                         Sys.getenv("IC_RAIZ", repo), repo), PORT, timeout_s = 120),
                    error = function(e) { message(conditionMessage(e)); NULL })
   !is.null(app)
@@ -225,6 +225,12 @@ ok("M0: fixture restarted with no SAP snapshot (sap_data() is NULL)", arrancar(v
 clic("document.getElementById('ic-view_map_btn')"); Sys.sleep(2)
 ev("Shiny.setInputValue('ic-icmap-net_click', {nodes: [], edges: [1], nonce: Math.random()}, {priority: 'event'}); 0"); Sys.sleep(1.5)
 ok("M0: the session is alive and nothing failed: the edge table's datos() is empty, never an error",
+   isTRUE(ev("Shiny.shinyapp.isConnected()")) && !length(errores_app()))
+# Snapshots loaded but no IC invoice (a client without an IC registry): the
+# balances came as a tibble with no columns and sorting it closed the session.
+ok("M0: fixture restarted with snapshots but no intercompany invoice", arrancar(sin_ic = TRUE) && abrir())
+Sys.sleep(3)
+ok("M0: the session is alive and nothing failed (balances and edge empty, never an error)",
    isTRUE(ev("Shiny.shinyapp.isConnected()")) && !length(errores_app()))
 
 # ── P · sending to the Agenda needs can_register_payments ───────────────────
