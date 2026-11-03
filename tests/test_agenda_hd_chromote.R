@@ -83,7 +83,8 @@ encabezado <- function(libro = "ap") ev(sprintf("document.getElementById('ph-hdr
 modal <- function() ev("(function(){ var m = document.querySelector('.modal.show'); return m ? m.innerText : ''; })()")
 cerrar_modal <- function() {
   Sys.sleep(0.8)   # Bootstrap ignores a close while the modal is still fading in
-  clic("document.querySelector('.modal.show .modal-footer [data-bs-dismiss=modal], .modal.show .modal-footer [data-dismiss=modal]')")
+  # The footer's Cerrar, or the header's ✕ of a table window (hd_modal, T09).
+  clic("document.querySelector('.modal.show .modal-footer [data-bs-dismiss=modal], .modal.show .modal-footer [data-dismiss=modal], .modal.show .hd-modal-cerrar')")
   poll_until(function() !isTRUE(ev("!!document.querySelector('.modal.show, .modal-backdrop')")), timeout_s = 10); Sys.sleep(0.3)
 }
 # Header Confirmar -> the modal -> its own Confirmar.
