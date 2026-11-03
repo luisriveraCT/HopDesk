@@ -103,6 +103,32 @@ letras <- unlist(ev("Array.from(document.querySelectorAll('.cf-table thead th.cf
 ok("H: this week's headers read L M X J V S D (Wednesday was a second M)",
    identical(letras, c("L", "M", "X", "J", "V", "S", "D")))
 
+# ── E · the range button's text: one place, one format ──────────────────────
+# It used to read "02–08 Nov" at first and the picker's own "26 Oct - 01 Nov"
+# after a change. Now the server writes it from the dictionary every time.
+mes <- c("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
+etiqueta <- function(d1, d2) {
+  dd <- function(d) format(d, "%d"); m <- function(d) mes[as.integer(format(d, "%m"))]
+  if (format(d1, "%Y-%m") == format(d2, "%Y-%m")) sprintf("%s–%s %s", dd(d1), dd(d2), m(d2))
+  else sprintf("%s %s – %s %s", dd(d1), m(d1), dd(d2), m(d2))
+}
+boton_rango <- function() trimws(ev("document.getElementById('cfp-btn_date_range').textContent"))
+lunes <- as.Date(cut(Sys.Date(), "week"))
+ok("E: the first text is this week's, from the dictionary",
+   identical(boton_rango(), etiqueta(lunes, lunes + 6)))
+d1 <- lunes - 9; d2 <- lunes + 3
+invisible(ev(sprintf("(function(){ var bs = Shiny.inputBindings.getBindings();
+  for (var i = 0; i < bs.length; i++) { var st = bs[i].binding.store;
+    if (st && st['cfp-date_range']) { st['cfp-date_range'].selectDate([new Date(%d, %d, %d), new Date(%d, %d, %d)]); return true; } }
+  return false; })()",
+  as.integer(format(d1, "%Y")), as.integer(format(d1, "%m")) - 1L, as.integer(format(d1, "%d")),
+  as.integer(format(d2, "%Y")), as.integer(format(d2, "%m")) - 1L, as.integer(format(d2, "%d")))))
+ok("E: a range picked in the picker gets the same format (two months here)",
+   poll_until(function() identical(boton_rango(), etiqueta(d1, d2)), timeout_s = 10))
+fuente <- paste(readLines(file.path(Sys.getenv("FLU_RAIZ", repo), "R/cashflow_preview_module.R"), warn = FALSE), collapse = "\n")
+ok("E: no updateActionButton() on the plain range <button> is left",
+   !grepl('updateActionButton\\(session, "btn_date_range"', fuente))
+
 # ── R · the saved state comes back after 18:00 in Mexico ────────────────────
 # The browser in Mexico City with its clock at 19:39 today -- already
 # tomorrow in UTC. The state is saved for the day; it was written with the
@@ -131,6 +157,8 @@ abrir()
 ok("R: after a reload, opening the preview restores it (the grouping says Diario)",
    poll_until(function() identical(trimws(ev("document.getElementById('cfp-btn_grouping').textContent")), "Diario"),
               timeout_s = 20))
+ok("E: a restored range is written by the server in the same format",
+   identical(boton_rango(), etiqueta(lunes, lunes + 6)))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)

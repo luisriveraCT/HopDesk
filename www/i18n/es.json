@@ -266,6 +266,8 @@
   "tablas.flujo.dia.5": "V",
   "tablas.flujo.dia.6": "S",
   "tablas.flujo.dia.7": "D",
+  "tablas.flujo.rango": "{desde}–{hasta} {mes}",
+  "tablas.flujo.rango_meses": "{desde} {mes_desde} – {hasta} {mes_hasta}",
   "tablas.accion.crudos": "Ver datos de origen",
   "tablas.agregado": "Ya está en la Agenda de Hoy",
   "tablas.accion.adjuntos": "Ver evidencia",

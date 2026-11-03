@@ -228,8 +228,6 @@ render_cashflow_preview_html <- function(ed, expanded = FALSE, day0_vals = list(
 .GRP_LABELS      <- c(auto = "Auto", daily = "Diario", weekly = "Semanal")
 .GRP_CYCLE       <- c(auto = "daily", daily = "weekly", weekly = "auto")
 .CUR_LABELS      <- c(separate = "Separadas", fused = "Base")
-.M_ABBR          <- c("Ene","Feb","Mar","Abr","May","Jun",
-                       "Jul","Ago","Sep","Oct","Nov","Dic")
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -237,11 +235,19 @@ render_cashflow_preview_html <- function(ed, expanded = FALSE, day0_vals = list(
 .cf_default_from <- function() lubridate::floor_date(Sys.Date(), "week", week_start = 1)
 .cf_default_to   <- function() .cf_default_from() + 6L
 
-# "02–08 Jun" label for the date range pill
+# The date range button's text, from the dictionary: "02–08 nov" within a
+# month, "26 oct – 01 nov" across two. The one place it is written -- the
+# server sets it with shinyjs::html() whenever the range changes (the
+# picker, a restored state). It used to come from here at first, then from
+# the picker's own text ("26 Oct - 01 Nov") after a change, and the
+# updateActionButton() calls on this plain <button> did nothing.
 .cf_range_label <- function(d1, d2) {
-  paste0(sprintf("%02d", lubridate::day(d1)), "–",
-         sprintf("%02d", lubridate::day(d2)), " ",
-         .M_ABBR[lubridate::month(d2)])
+  dd <- function(d) sprintf("%02d", lubridate::day(d))
+  mes <- function(d) tr(paste0("comun.mes.", lubridate::month(d)))
+  if (identical(format(d1, "%Y-%m"), format(d2, "%Y-%m")))
+    tr("tablas.flujo.rango", desde = dd(d1), hasta = dd(d2), mes = mes(d2))
+  else
+    tr("tablas.flujo.rango_meses", desde = dd(d1), mes_desde = mes(d1), hasta = dd(d2), mes_hasta = mes(d2))
 }
 
 # Build minimal JSON for a named numeric vector — avoids jsonlite dependency
@@ -351,10 +357,6 @@ cashflowPreviewUI <- function(id) {
             // Close on Escape
             $(document).on('keydown', function(e){
               if(e.key==='Escape'){ var dp=getDP(); if(dp&&dp.visible) dp.hide(); }
-            });
-            // Update button label when date is selected
-            $(document).on('change','#'+inpId,function(){
-              var v=this.value; if(v) document.getElementById(btnId).textContent=v;
             });
           })();",
           ns("date_range"), ns("btn_date_range")
@@ -623,8 +625,7 @@ cashflowPreviewServer <- function(id, shared) {
             rv$date_from <- d1; rv$date_to <- d2
             shinyWidgets::updateAirDateInput(session, "date_range",
                                              value = c(d1, d2))
-            shiny::updateActionButton(session, "btn_date_range",
-                                      label = .cf_range_label(d1, d2))
+            shinyjs::html("btn_date_range", .cf_range_label(d1, d2))
           }
         }
         if (!is.null(s$grouping) && s$grouping %in% names(.GRP_LABELS)) {
@@ -675,8 +676,7 @@ cashflowPreviewServer <- function(id, shared) {
       if (!is.null(v) && length(v) == 2 && !anyNA(v)) {
         rv$date_from <- as.Date(v[[1]])
         rv$date_to   <- as.Date(v[[2]])
-        shiny::updateActionButton(session, "btn_date_range",
-                                  label = .cf_range_label(rv$date_from, rv$date_to))
+        shinyjs::html("btn_date_range", .cf_range_label(rv$date_from, rv$date_to))
       }
     }, ignoreInit = TRUE)
 
