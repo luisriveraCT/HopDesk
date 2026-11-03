@@ -1465,8 +1465,7 @@ bancosServer <- function(id, shared) {
       # Saved first: if S3 refuses, nothing changes in the session, the
       # confirmation stays open and nothing says it was deleted (T12a).
       if (!.bnc_guardar("eliminar_movimientos", sprintf("Eliminar %d movimiento(s)", length(idx)),
-                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(),
-                                                           base = movs_base))) return()
+                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base))) return()
       # Only now are these ids done with: a failed save keeps them, so the
       # same confirmation can try again.
       elim_ids_rv(NULL)
@@ -2159,8 +2158,7 @@ bancosServer <- function(id, shared) {
       # Saved first (rule 8, T12a): on failure nothing changes in the
       # session and nothing says it worked.
       if (!.bnc_guardar("guardar_movimiento_manual", paste0(if (is_edit) "Editar" else "Agregar", " movimiento manual"),
-                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(),
-                                                           base = movs_base))) return()
+                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base))) return()
       shared$bancos_movimientos(movs)
       bump_sync_version("bancos_movimientos_db")
       removeModal()
@@ -2768,8 +2766,7 @@ bancosServer <- function(id, shared) {
       # Saved first (rule 8, T12a): on failure nothing changes in the
       # session and nothing says it worked.
       if (!.bnc_guardar("reasignar_cuenta", paste0("Reasignar ", actual_n, " movimiento(s) a ", dest_label),
-                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(),
-                                                           base = movs_base))) return()
+                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base))) return()
       reasig_confirm_data_rv(NULL)   # only now: a failed save keeps the confirmation's data
       shared$bancos_movimientos(movs)
       bump_sync_version("bancos_movimientos_db")
@@ -2880,8 +2877,7 @@ bancosServer <- function(id, shared) {
       # Saved first (rule 8, T12a): on failure nothing changes in the
       # session and nothing says it worked.
       if (!.bnc_guardar("eliminar_sesion", paste0("Eliminar los ", actual_n, " movimiento(s) de una sesión de importación"),
-                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(),
-                                                           base = movs_base))) return()
+                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base))) return()
       shared$bancos_movimientos(movs)
       bump_sync_version("bancos_movimientos_db")
       delete_sesion_confirm_rv(NULL)
@@ -3221,8 +3217,7 @@ bancosServer <- function(id, shared) {
       # Saved first (rule 8, T12a): on failure nothing changes in the
       # session and nothing says it worked.
       if (!.bnc_guardar("importar_movimientos", paste0("Importar ", nrow(nuevos), " movimiento(s)"),
-                        function() save_bancos_movimientos(movs_new, client_id = shared$effective_client_id(),
-                                                           base = movs_base))) return()
+                        function() save_bancos_movimientos(movs_new, client_id = shared$effective_client_id(), base = movs_base))) return()
       shared$bancos_movimientos(movs_new)
       bump_sync_version("bancos_movimientos_db")
 
@@ -3403,8 +3398,7 @@ bancosServer <- function(id, shared) {
       # Saved first (rule 8, T12a): on failure nothing changes in the
       # session and nothing says it worked.
       if (!.bnc_guardar("deshacer_eliminar_movimiento_manual", "Restaurar un movimiento manual eliminado",
-                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(),
-                                                           base = movs_base))) return()
+                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base))) return()
       shared$bancos_movimientos(movs)
       bump_sync_version("bancos_movimientos_db")
 
