@@ -45,8 +45,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=22"),
-    htmltools::tags$script(src = "hdtable.js?v=33")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=23"),
+    htmltools::tags$script(src = "hdtable.js?v=34")
   ))
 }
 
@@ -84,6 +84,26 @@ hd_table_ui <- function(id, alto = "auto") {
     message(sprintf("hd_table '%s': `%s` ignored, the table doesn't have the '%s' piece.", tabla, arg, pieza))
   }
   NULL
+}
+
+# A table whose data failed (an error in datos(), reactive columnas, the
+# rows or the notice): the server says why in its log, log_action keeps it
+# (never throwing) and the browser shows "No se pudieron cargar los datos"
+# where the rows would be -- above them if some were already shown. The
+# rest of the session goes on.
+.hd_falla_datos <- function(tabla, e, session, id, que = "datos") {
+  msg <- conditionMessage(e)
+  message(sprintf("hd_table '%s': the %s failed, the table shows a notice: %s", tabla, que, msg))
+  if (exists("log_action", mode = "function")) tryCatch({
+    u <- tryCatch(shiny::isolate(session$userData$usuario()), error = function(e) NULL)
+    usuario <- if (is.list(u)) (u$user %||% u$username %||% "sistema") else if (is.character(u)) u[1] else "sistema"
+    log_action(user = usuario, module = "hd_table", action = "datos_fallido",
+               description = sprintf("La tabla '%s' no pudo cargar sus %s: %s", tabla, que, msg),
+               metadata = list(tabla = tabla, que = que, error = msg))
+  }, error = function(e) NULL)
+  tryCatch(session$sendCustomMessage("hdt-falla", list(id = id, que = que, texto = tr("tablas.error_datos"))),
+           error = function(e) NULL)
+  invisible(NULL)
 }
 
 # ── fichas ──────────────────────────────────────────────────────────────────
@@ -596,13 +616,20 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
     # can arrive after the first message -- a table whose hd_table_ui()
     # comes inside a renderUI, with nothing else loading hdtable.js first:
     # that message found no handler and was lost (T09, found in T10).
+    # A table never stops the session (incident 2026-11-03: the Proveedores
+    # catalog's datos() failed on a NULL source at startup and the whole app
+    # hung on "Cargando… 14%"). An error in datos(), in reactive columnas or
+    # while building the rows is caught: message() + log_action and the
+    # table says so; req()/validate() (shiny.silent.error) go through as
+    # before. Here, not in each module: every table gets it.
     shiny::observe({
       input$hdt_pedir
-      df <- datos()
-      shiny::req(!is.null(df))
-      cols <- columnas_r()
-      if (is.function(columnas) && !is.null(periodo)) hd_periodo_validar(periodo, cols)
-      session$sendCustomMessage("hdt-datos", list(
+      carga <- tryCatch({
+        df <- datos()
+        shiny::req(!is.null(df))
+        cols <- columnas_r()
+        if (is.function(columnas) && !is.null(periodo)) hd_periodo_validar(periodo, cols)
+        list(
         id       = ns("hdt"),
         tabla    = tabla,
         filas    = hd_filas(df, cols, id_col),
@@ -622,7 +649,13 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         grupo      = hd_grupo_payload(grupo, df, cols),
         acciones_fila  = acc_fila_meta,
         acciones_barra = barra_meta()
-      ))
+        )
+      }, error = function(e) {
+        if (inherits(e, "shiny.silent.error")) stop(e)
+        .hd_falla_datos(tabla, e, session, ns("hdt"))
+        NULL
+      })
+      if (!is.null(carga)) session$sendCustomMessage("hdt-datos", carga)
     })
 
     # A line above the table in the warning tone ("Se pegaron 340 filas; se
@@ -630,7 +663,15 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
     if (!is.null(aviso)) {
       shiny::observe({
         input$hdt_pedir
-        texto <- aviso()
+        # The module's notice may fail too: never the session (see above).
+        fallo <- FALSE
+        texto <- tryCatch(aviso(), error = function(e) {
+          if (inherits(e, "shiny.silent.error")) stop(e)
+          .hd_falla_datos(tabla, e, session, ns("hdt"), que = "aviso")
+          fallo <<- TRUE
+          NULL
+        })
+        if (fallo) return()   # the failure's notice stays (a NULL aviso() would hide it)
         texto <- if (is.null(texto) || !length(texto) || is.na(texto[1]) || !nzchar(texto[1])) "" else as.character(texto[1])
         session$sendCustomMessage("hdt-nota", list(id = ns("hdt"), texto = texto))
       })

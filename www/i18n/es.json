@@ -87,6 +87,7 @@
   "tablas.limpiar": "Limpiar",
   "tablas.copiar_valor": "Copiar valor completo",
   "tablas.cobros": "Cobros",
+  "tablas.error_datos": "No se pudieron cargar los datos.",
   "tablas.pagos": "Pagos",
   "tablas.sumador.visible": "Visible",
   "tablas.sumador.seleccion.uno": "{n} seleccionada",

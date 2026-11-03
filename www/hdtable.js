@@ -61,6 +61,11 @@
     ULTIMO[msg.id] = msg;
     vigilar();
     pintarDesde(msg);
+    // Good data after a failure: the failure's notice goes (the module's own stays).
+    if (FALLAS[msg.id]) {
+      delete FALLAS[msg.id];
+      if (TABLAS[msg.id]) pintarNota(TABLAS[msg.id], NOTAS[msg.id] || '');
+    }
   }
 
   // Paints a message into its container, if the container is in the page.
@@ -2213,6 +2218,20 @@
     st.notaEl.textContent = texto || '';
     st.notaEl.hidden = !texto;
   }
+  // The server couldn't load the table's data (hdt-falla): the notice goes
+  // where "Cargando…" was, or above rows already shown. Data that arrives
+  // later takes it away (recibir). The rest of the page goes on.
+  var FALLAS = {};
+  function recibirFalla(msg) {
+    // A failed notice (aviso) is a notice: it stays until the next one.
+    if (msg.que === 'aviso') { recibirNota(msg); return; }
+    FALLAS[msg.id] = msg.texto;
+    var root = document.getElementById(msg.id), st = TABLAS[msg.id];
+    if (!root) return;
+    if (st && st.root === root) { pintarNota(st, msg.texto); return; }
+    var c = root.querySelector('.hdt-cargando');
+    if (c) { c.textContent = msg.texto; c.classList.add('hdt-falla'); }
+  }
   function recibirNota(msg) {
     NOTAS[msg.id] = msg.texto;
     var st = TABLAS[msg.id];
@@ -2255,6 +2274,7 @@
       Shiny.addCustomMessageHandler('hdt-datos', recibir);
       Shiny.addCustomMessageHandler('hdt-excel', excelListo);
       Shiny.addCustomMessageHandler('hdt-nota', recibirNota);
+      Shiny.addCustomMessageHandler('hdt-falla', recibirFalla);
       Shiny.addCustomMessageHandler('hdt-mes', recibirMes);
       pedirPerdidos();
     }

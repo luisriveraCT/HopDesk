@@ -83,6 +83,8 @@
 .hdt-nota { margin: 0 0 6px; padding: 4px 10px; border: 1px solid var(--hdt-t-aviso); border-radius: 6px;
   color: var(--hdt-t-aviso); background: var(--hdt-f-aviso); font-size: .8rem; font-weight: 600; }
 .hdt-nota[hidden] { display: none; }
+/* The data couldn't be loaded (hdt-falla): where "Cargando…" was. */
+.hdt-cargando.hdt-falla { color: var(--hdt-t-aviso); font-weight: 600; }
 
 /* Chips (fichas): count or amount per value; touching one filters. */
 .hdt-fichas { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 6px; }
