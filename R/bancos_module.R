@@ -2156,10 +2156,13 @@ bancosServer <- function(id, shared) {
         target_row <- new_mov
       }
 
+      # Saved first (rule 8, T12a): on failure nothing changes in the
+      # session and nothing says it worked.
+      if (!.bnc_guardar("guardar_movimiento_manual", paste0(if (is_edit) "Editar" else "Agregar", " movimiento manual"),
+                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(),
+                                                           base = movs_base))) return()
       shared$bancos_movimientos(movs)
-      tryCatch({ save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base); bump_sync_version("bancos_movimientos_db") },
-               error = function(e)
-                 showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
+      bump_sync_version("bancos_movimientos_db")
       removeModal()
       showNotification(if (is_edit) "Movimiento actualizado." else "Movimiento manual guardado.",
                        type = "message", duration = 2)
