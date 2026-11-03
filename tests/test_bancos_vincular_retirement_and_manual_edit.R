@@ -131,8 +131,8 @@ full <- paste(txt, collapse = "\n")
   # entries (.acciones); the toolbar button and its alert() went.
   ok("Editar is the Libro's ✎ row action (acciones_fila = \"editar\")",
      any(grepl('acciones_fila = "editar"', txt, fixed = TRUE)))
-  ok("the ✎ shows only on manual entries (.acciones)",
-     any(grepl('.acciones   = ifelse(!is.na(movs$fuente) & movs$fuente == "manual", "editar", "")', txt, fixed = TRUE)))
+  ok("the ✎ shows only on manual entries (.acciones), to who can change Bancos",
+     any(grepl('.acciones   = ifelse(!is.na(movs$fuente) & movs$fuente == "manual" & .bnc_puede_ver_escritura(), "editar", "")', txt, fixed = TRUE)))
   ok("the table's ✎ calls the edit function with the row's id",
      any(grepl('identical(a$accion, "editar") && length(a$ids)) .bnc_editar(a$ids[1])', txt, fixed = TRUE)))
   ok("editing_mov_id reactiveVal exists to track add-vs-edit mode",

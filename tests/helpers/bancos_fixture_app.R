@@ -12,6 +12,7 @@
 # ("eliminados: MOV-0003,MOV-0007") after each save, and the last Excel
 # export's log ("bancos_libro_excel: 59 filas").
 #
+# BANCOS_SIN_PERMISO=1: the user lacks can_manage_bancos.
 # BANCOS_N: that many more movements (default 0). BANCOS_N=900 puts the
 # Libro in window mode; the oldest is "PROVEEDOR ULTIMO SA", receipt 999999.
 # =============================================================================
@@ -34,6 +35,15 @@ for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "
 assign(".i18n_dir", file.path(raiz, "www", "i18n"), envir = globalenv())
 assign("log_action", function(...) invisible(NULL), envir = globalenv())
 assign("bump_sync_version", function(...) invisible(NULL), envir = globalenv())
+# BANCOS_SIN_PERMISO=1: the user lacks can_manage_bancos (the buttons that
+# write must not show, and the server must refuse).
+SIN_PERMISO <- identical(Sys.getenv("BANCOS_SIN_PERMISO"), "1")
+assign("puede", function(usuario, clave, ...) !(SIN_PERMISO && identical(clave, "can_manage_bancos")), envir = globalenv())
+assign("puede_o_avisa", function(shared, clave, ...) {
+  ok <- puede("luis", clave)
+  if (!ok) showNotification("Sin permiso", type = "warning")
+  ok
+}, envir = globalenv())
 # The Libro's Excel is logged as a generated file: record it in #registro.
 EXCEL <- NULL
 assign("log_archivo_generado", function(shared, tipo, empresa, moneda, detalle_list, total = NA, n_items = NA, fname = NA)
@@ -97,6 +107,7 @@ ui <- fluidPage(
 server <- function(input, output, session) {
   shared <- list(
     effective_client_id = function() CID, home_client_id = function() CID, current_user = function() "luis",
+    usuario = reactive("luis"),
     company_map = reactiveVal(c(NTS = "Networks Trucking", NCS = "Networks Crossdocking")),
     visible_initials = reactiveVal(NULL), bancos_movimientos = MOVS, bancos_confirmados = CONF,
     conciliacion_rv = reactiveVal(tibble::tibble()), ctas_cuentas = reactiveVal(ctas),

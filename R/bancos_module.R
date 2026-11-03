@@ -515,7 +515,9 @@ bancosUI <- function(id) {
             # Exportar live in the table now (T12a).
           ),
           # Movement table: right below the bar, down to the window's bottom.
-          hd_table_ui(ns("libro"), alto = "auto"),
+          # Without can_manage_bancos its bar (Eliminar) isn't shown.
+          tags$style(HTML(".bnc-solo-lectura .hdt-acciones { display: none !important; }")),
+          div(id = ns("libro_wrap"), hd_table_ui(ns("libro"), alto = "auto")),
         )
       ),
 
@@ -1069,6 +1071,18 @@ bancosServer <- function(id, shared) {
       dplyr::left_join(movs, cts_disp, by = "cuenta_id")
     })
 
+    # Who can't change Bancos doesn't see the Libro's buttons that write:
+    # the rows' ✎ (.acciones), the bar's Eliminar and ＋ Agregar. It follows
+    # the session's user (ver como, a jump). The server checks
+    # (puede_o_avisa() in each write observer) stay as the lock.
+    .bnc_puede_ver_escritura <- reactive(isTRUE(tryCatch(puede(shared$usuario(), "can_manage_bancos"),
+                                                         error = function(e) FALSE)))
+    observe({
+      ok <- .bnc_puede_ver_escritura()
+      shinyjs::toggle("add_mov_manual", condition = ok)
+      shinyjs::toggleClass("libro_wrap", "bnc-solo-lectura", condition = !ok)
+    })
+
     libro_datos <- reactive({
       movs <- libro_movs()
       if (!nrow(movs)) return(.bnc_libro_vacia)
@@ -1091,8 +1105,9 @@ bancosServer <- function(id, shared) {
         Cargo       = ifelse(movs$cargo > 0, movs$cargo, NA_real_),
         Abono       = ifelse(movs$abono > 0, movs$abono, NA_real_),
         Saldo       = movs$saldo_banco,
-        # ✎ only on manual entries: imported TXT rows can't be edited.
-        .acciones   = ifelse(!is.na(movs$fuente) & movs$fuente == "manual", "editar", ""),
+        # ✎ only on manual entries (imported TXT rows can't be edited), and
+        # only for who can change Bancos.
+        .acciones   = ifelse(!is.na(movs$fuente) & movs$fuente == "manual" & .bnc_puede_ver_escritura(), "editar", ""),
         stringsAsFactors = FALSE, check.names = FALSE)
     })
 
@@ -1187,6 +1202,7 @@ bancosServer <- function(id, shared) {
                                               col_dinero("Cargo", "tablas.bancos.cargo", moneda = "Moneda"),
                                               col_dinero("Abono", "tablas.bancos.abono", moneda = "Moneda")))
     .bnc_pedir_eliminar <- function(ids) {
+      if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       req(length(ids) > 0)
       movs <- movs_all()
       rows <- dplyr::filter(movs, id %in% ids, !eliminado)
@@ -1849,6 +1865,7 @@ bancosServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     .bnc_editar <- function(mov_id) {
+      if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       req(mov_id)
       movs <- movs_all()
       row  <- movs[!is.na(movs$id) & movs$id == mov_id &

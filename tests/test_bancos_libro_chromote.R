@@ -14,6 +14,7 @@
 #   E. Two sessions: B deletes one of the two A marked -> A's marks keep only
 #      the one left, and A's confirmation lists that one.
 #   A9. Exportar a Excel is logged as a generated file (as the old export).
+#   G. Without can_manage_bancos: no ✎, no Agregar, no Eliminar in the bar.
 #   F. 900 more movements, "Todo el historial": window mode, and the search
 #      finds the oldest by supplier and by receipt.
 #
@@ -57,14 +58,16 @@ periodo <- function(v) { invisible(ev(sprintf("document.getElementById('bnc-libr
 cuenta  <- function(v) { invisible(ev(sprintf("document.getElementById('bnc-libro_cuenta').selectize.setValue('%s')", v))); Sys.sleep(1.5) }
 cerrar_modal <- function() {
   Sys.sleep(0.8)
+  if (!nzchar(modal())) return(invisible(FALSE))
   clic("document.querySelector('.modal.show .modal-footer [data-bs-dismiss=modal], .modal.show .modal-footer [data-dismiss=modal]')")
   poll_until(function() !isTRUE(ev("!!document.querySelector('.modal.show, .modal-backdrop')")), timeout_s = 10); Sys.sleep(0.3)
 }
-abrir <- function(n, puerto, sesion = NULL) {
+abrir <- function(n, puerto, sesion = NULL, sin_permiso = FALSE) {
   if (is.null(sesion)) {
     if (!is.null(app)) stop_bg_app(app)
-    app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(BANCOS_N = "%d"); setwd("%s"); source("tests/helpers/bancos_fixture_app.R")$value',
-                                          n, repo), puerto, timeout_s = 120), error = function(e) { message(conditionMessage(e)); NULL })
+    app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(BANCOS_N = "%d", BANCOS_SIN_PERMISO = "%s"); setwd("%s"); source("tests/helpers/bancos_fixture_app.R")$value',
+                                          n, if (isTRUE(sin_permiso)) "1" else "0", repo), puerto, timeout_s = 240),
+                     error = function(e) { message(conditionMessage(e)); NULL })
     if (is.null(app)) return(FALSE)
   }
   invisible(b$Emulation$setDeviceMetricsOverride(width = 1293L, height = 632L, deviceScaleFactor = 1, mobile = FALSE))
@@ -172,6 +175,16 @@ buscar("ultimo")
 ok("F3: the search finds it by supplier", identical(vis(), "MOV-1900"))
 buscar("999999")
 ok("F4: and by receipt (in the description)", identical(vis(), "MOV-1900"))
+
+# ══ G · Without can_manage_bancos ════════════════════════════════════════════
+ok("G0: fixture whose user lacks can_manage_bancos", abrir(0L, 38964L, sin_permiso = TRUE))
+periodo("todo")
+ok("G1: no ✎, not even on the manual entries", isTRUE(ev(sprintf("!document.querySelector('#%s button[data-accion=editar]')", T))))
+ok("G2: no ＋ Agregar", isTRUE(ev("(function(){ var b = document.getElementById('bnc-add_mov_manual'); return !b || b.offsetParent === null; })()")))
+clic(celda("MOV-0001"))
+ok("G3: rows can still be marked (counter, sums), but the bar's Eliminar doesn't show",
+   identical(sel(), "MOV-0001") &&
+     !isTRUE(ev(sprintf("(function(){ var b = document.querySelector('#%s .hdt-acciones button[data-accion=eliminar]'); return !!b && b.offsetParent !== null; })()", T))))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) {
