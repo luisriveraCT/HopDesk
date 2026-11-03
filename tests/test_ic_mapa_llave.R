@@ -92,6 +92,10 @@ ok("the Agenda row carries the debtor's Documento and Codigo",
      !grepl("Documento = x$Documento", envio, fixed = TRUE))
 ok("items without their AP stay in the plan, with a warning",
    grepl("payment_plan(plan[sin_ap])", envio, fixed = TRUE) && grepl('tr("comun.ic_sin_ap_deudor")', envio, fixed = TRUE))
+ok("a failed save is reported, never announced as sent, and keeps the plan",
+   grepl('if (!guardado) {\n        showNotification(tr("comun.error_guardar")', gsub("\r", "", envio), fixed = TRUE) &&
+     regexpr("if (!guardado)", envio, fixed = TRUE) < regexpr("payment_plan(plan[sin_ap])", envio, fixed = TRUE) &&
+     !grepl("base = ph), error = function(e) NULL)", envio, fixed = TRUE))
 ok("the plan carries the AR folio", grepl("Factura   = if (\"Factura\" %in% names(row))", src, fixed = TRUE))
 ok("app.R loads the key before the Mapa",
    { a <- readLines("app.R", warn = FALSE); which(a == 'source("R/ic_mapa_llave.R")') < which(a == 'source("R/treasury_map_module.R")') })

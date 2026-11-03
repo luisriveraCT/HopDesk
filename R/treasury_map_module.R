@@ -896,8 +896,17 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       }))
 
       combined <- upsert_pagar_hoy(ph, new_rows)
+      # A failed save used to be swallowed and announced as "enviadas": the
+      # plan emptied and nothing reached the Agenda. Now it says so and the
+      # plan stays as it was.
+      guardado <- tryCatch({
+        save_pagar_hoy(combined, shared$current_user(), client_id = shared$effective_client_id(), base = ph); TRUE
+      }, error = function(e) { message("[treasury_map] send to Agenda: ", conditionMessage(e)); FALSE })
+      if (!guardado) {
+        showNotification(tr("comun.error_guardar"), type = "error", duration = 8)
+        return()
+      }
       shared$pagar_hoy_db(combined)
-      tryCatch(save_pagar_hoy(combined, shared$current_user(), client_id = shared$effective_client_id(), base = ph), error = function(e) NULL)
       payment_plan(plan[sin_ap])     # the unsent ones stay, for the user to see
       showNotification(paste0(nrow(new_rows), " factura(s) enviada(s) a Agenda de Hoy."),
                        type = "message", duration = 3)
