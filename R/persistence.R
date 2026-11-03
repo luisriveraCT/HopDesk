@@ -1629,6 +1629,77 @@ upsert_pagar_hoy <- function(db, new_rows,
   dplyr::bind_rows(db, new_rows)
 }
 
+# ── The Agenda row of a ledger invoice ────────────────────────────────────────
+# Luis (2026-11-04): confirming a payment in the Agenda ALWAYS closes its
+# invoice -- paid and locked, never sendable again. Every path that sends an
+# ERP invoice (Vencidos, lupa, the day, Intercompany, the Mapa IC) builds its
+# rows here, so the row carries the invoice's own identity: Empresa,
+# Documento, Moneda and its posting date (fecha_factura), which the ERP never
+# changes when the balance moves. The confirmation copies it and
+# compute_confirmed_flags() closes the invoice on it.
+#
+# facturas: rows of the ledger as build_ledger_df() returns them (Empresa,
+# Moneda, Documento, Parte, Codigo, Importe or "Saldo vencido", FechaEff or
+# "Fecha de vencimiento", "Fecha de contabilizacion", source, confirmed),
+# with a `ledger` column or the ledger argument. importe: what is paid, one
+# per row; by default the invoice's balance.
+# Refused, on the server whatever the view showed: invoices already confirmed
+# (their `confirmed` flag, and again against `confirmaciones` when passed),
+# rows without Documento, provisions and HopDesk-generated rows (manual and
+# provisions have their own paths). attr(, "rechazadas") lists the Documento
+# of the confirmed ones, for the caller to say so.
+agenda_filas_factura <- function(facturas, usuario, ledger = NULL, importe = NULL,
+                                 confirmaciones = NULL) {
+  vacia <- .schema_pagar_hoy()
+  attr(vacia, "rechazadas") <- character()
+  if (!is.data.frame(facturas) || !nrow(facturas)) return(vacia)
+  f <- as.data.frame(facturas, stringsAsFactors = FALSE)
+  col <- function(n, def = NA) if (n %in% names(f)) f[[n]] else rep(def, nrow(f))
+  led <- toupper(as.character(ledger %||% col("ledger")))
+  led <- rep_len(led, nrow(f))
+  imp <- if (!is.null(importe)) as.numeric(importe)
+         else if ("Importe" %in% names(f)) abs(as.numeric(f$Importe))
+         else abs(as.numeric(col("Saldo vencido")))
+  venc <- if ("FechaEff" %in% names(f)) f$FechaEff else col("Fecha de vencimiento")
+  src  <- as.character(col("source", SAP_B1_ERP_TYPE))
+  src[is.na(src) | !nzchar(src)] <- SAP_B1_ERP_TYPE
+
+  confirmada <- col("confirmed", FALSE) %in% TRUE
+  if (!is.null(confirmaciones) && is.data.frame(confirmaciones) && nrow(confirmaciones))
+    for (l in unique(led)) {
+      i <- which(led == l)
+      g <- f[i, , drop = FALSE]
+      g$confirmed <- FALSE
+      if (!"source" %in% names(g)) g$source <- src[i]
+      confirmada[i] <- confirmada[i] | (compute_confirmed_flags(g, l, confirmaciones, NULL)$confirmed %in% TRUE)
+    }
+  doc <- trimws(as.character(col("Documento", "")))
+  ok  <- !is.na(doc) & nzchar(doc) & is_erp_sourced(src) & !confirmada & led %in% c("AP", "AR")
+
+  out <- tibble::tibble(
+    id            = vapply(seq_len(sum(ok)), function(x) uuid::UUIDgenerate(), character(1)),
+    ledger        = led[ok],
+    Empresa       = as.character(col("Empresa"))[ok],
+    Moneda        = as.character(col("Moneda"))[ok],
+    Documento     = doc[ok],
+    Parte         = as.character(col("Parte"))[ok],
+    Codigo        = trimws(dplyr::coalesce(as.character(col("Codigo")), ""))[ok],
+    tipo_item     = "factura",
+    Importe       = imp[ok],
+    FechaVenc     = as.Date(venc)[ok],
+    staged_by     = as.character(usuario %||% ""),
+    staged_at     = Sys.time(),
+    status        = "pending",
+    provision_id  = NA_character_,
+    liability_id  = NA_character_,
+    source        = src[ok],
+    confirmed_at  = as.POSIXct(NA),
+    fecha_factura = as.Date(col("Fecha de contabilización"))[ok]
+  )
+  attr(out, "rechazadas") <- doc[confirmada & !is.na(doc) & nzchar(doc)]
+  out
+}
+
 # Sync-aware load: reads from the correct source depending on sync state.
 # Used as a fallback when the in-memory reactiveVal hasn't been populated yet
 # (e.g., item added via Agregar before Phase 2 finishes loading).
