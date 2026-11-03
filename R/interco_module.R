@@ -275,10 +275,17 @@ intercoServer <- function(id, shared) {
     })
 
     # ── Body UI ────────────────────────────────────────────────────────────
-    output$ic_body <- renderUI({
+    # The page's frame only changes when there is or isn't IC data: the cards
+    # repaint with every refresh in their own output, and the matrix's
+    # container stays, so the table keeps its search, sort and scroll.
+    hay_ic <- reactiveVal(FALSE)
+    observe({
       dat <- ic_invoices()
+      hay_ic(!(is.null(dat) || (is.null(dat$ar) && is.null(dat$ap))))
+    })
 
-      if (is.null(dat) || (is.null(dat$ar) && is.null(dat$ap))) {
+    output$ic_body <- renderUI({
+      if (!isTRUE(hay_ic())) {
         return(div(
           class = "text-center text-muted py-5",
           tags$p(icon("circle-info")),
@@ -287,7 +294,23 @@ intercoServer <- function(id, shared) {
                  "Configura los c\u00f3digos IC en Configuraci\u00f3n \u203a Intercompany y recarga los datos SAP.")
         ))
       }
+      tagList(
+        uiOutput(ns("ic_tarjetas")),
 
+        # ── Matrix ───────────────────────────────────────────────────────
+        tags$h6(class = "fw-semibold mb-1",
+                tagList(icon("table-cells"), " Saldos por empresa y contraparte")),
+        tags$p(class = "text-muted small mb-2", tr("tablas.interco.saldos_ayuda")),
+        hd_table_ui(ns("saldos_t")),
+
+        # ── Drill-down ────────────────────────────────────────────────────
+        uiOutput(ns("ic_detail"))
+      )
+    })
+
+    output$ic_tarjetas <- renderUI({
+      dat <- ic_invoices()
+      req(!is.null(dat))
       n_ar <- if (!is.null(dat$ar)) nrow(dat$ar) else 0L
       n_ap <- if (!is.null(dat$ap)) nrow(dat$ap) else 0L
 
@@ -305,103 +328,82 @@ intercoServer <- function(id, shared) {
           paste(collapse = " \u00b7 ")
       }
 
-      tagList(
-        # ── Value boxes ──────────────────────────────────────────────────
-        fluidRow(
-          column(5,
-            div(class = "border rounded p-3 mb-3 bg-primary-subtle",
-              tags$p(class = "small fw-semibold mb-1 text-primary-emphasis",
-                     tagList(icon("arrow-circle-down"), " CxC Intercompany (cobros)")),
-              tags$p(class = "fw-bold mb-0 fs-6", .fmt_totals(dat$ar)),
-              tags$small(class = "text-muted",
-                         sprintf("%d factura%s", n_ar, if (n_ar == 1) "" else "s"))
-            )
-          ),
-          column(5,
-            div(class = "border rounded p-3 mb-3 bg-danger-subtle",
-              tags$p(class = "small fw-semibold mb-1 text-danger-emphasis",
-                     tagList(icon("arrow-circle-up"), " CxP Intercompany (pagos)")),
-              tags$p(class = "fw-bold mb-0 fs-6", .fmt_totals(dat$ap)),
-              tags$small(class = "text-muted",
-                         sprintf("%d factura%s", n_ap, if (n_ap == 1) "" else "s"))
-            )
+      fluidRow(
+        column(5,
+          div(class = "border rounded p-3 mb-3 bg-primary-subtle",
+            tags$p(class = "small fw-semibold mb-1 text-primary-emphasis",
+                   tagList(icon("arrow-circle-down"), " CxC Intercompany (cobros)")),
+            tags$p(class = "fw-bold mb-0 fs-6", .fmt_totals(dat$ar)),
+            tags$small(class = "text-muted",
+                       sprintf("%d factura%s", n_ar, if (n_ar == 1) "" else "s"))
           )
         ),
-
-        # ── Matrix ───────────────────────────────────────────────────────
-        tags$h6(class = "fw-semibold mb-1",
-                tagList(icon("table-cells"), " Saldos por empresa y contraparte")),
-        tags$p(class = "text-muted small mb-2",
-               "Selecciona una fila para ver el detalle de facturas."),
-        DT::dataTableOutput(ns("ic_matrix")),
-
-        # ── Drill-down ────────────────────────────────────────────────────
-        uiOutput(ns("ic_detail"))
+        column(5,
+          div(class = "border rounded p-3 mb-3 bg-danger-subtle",
+            tags$p(class = "small fw-semibold mb-1 text-danger-emphasis",
+                   tagList(icon("arrow-circle-up"), " CxP Intercompany (pagos)")),
+            tags$p(class = "fw-bold mb-0 fs-6", .fmt_totals(dat$ap)),
+            tags$small(class = "text-muted",
+                       sprintf("%d factura%s", n_ap, if (n_ap == 1) "" else "s"))
+          )
+        )
       )
     })
 
-    # ── Matrix DT ─────────────────────────────────────────────────────────
-    output$ic_matrix <- DT::renderDataTable({
-      mat <- ic_matrix_df()
-      req(mat, nrow(mat) > 0)
+    # ── Matrix (hd_table, grouped summary) ────────────────────────────────
+    # One row per company + counterpart + currency + ledger, keyed by those:
+    # ℹ or a double click opens that pair's invoices below. A click used to
+    # open it (the registry says to drop that), read by its position in the
+    # re-sorted matrix.
+    .saldos_tabla <- reactive({
+      mat <- tryCatch(ic_matrix_df(), error = function(e) NULL)
+      if (is.null(mat)) mat <- tibble::tibble(.ini = character(), Empresa = character(), Parte = character(),
+                                              Moneda = character(), Ledger = character(),
+                                              Total = numeric(), Facturas = integer())
+      mat <- mat |> dplyr::arrange(.ini, Ledger, dplyr::desc(Total))
+      data.frame(
+        id        = make.unique(paste(mat$.ini, mat$Ledger, mat$Parte, mat$Moneda, sep = "|"), sep = "#"),
+        ini       = as.character(mat$.ini),
+        empresa   = as.character(mat$Empresa),
+        Empresa   = sprintf("%s (%s)", mat$Empresa, mat$.ini),
+        Ledger    = as.character(mat$Ledger),
+        Parte     = as.character(mat$Parte),
+        Moneda    = as.character(mat$Moneda),
+        Total     = as.numeric(mat$Total),
+        Facturas  = as.integer(mat$Facturas),
+        .acciones = rep("detalle", nrow(mat)),
+        stringsAsFactors = FALSE, check.names = FALSE
+      )
+    })
+    saldos_t <- hd_table_server(
+      "saldos_t", tabla = "ic_saldos", datos = .saldos_tabla,
+      columnas = list(
+        col_texto("Empresa",     "tablas.interco.empresa", recorte = FALSE),
+        col_insignia("Ledger",   "tablas.interco.tipo", mapa = list(
+          AR = list(texto = "tablas.interco.cobro", tono = "info"),
+          AP = list(texto = "tablas.interco.pago",  tono = "peligro"))),
+        col_texto("Parte",       "tablas.interco.contraparte"),
+        col_texto("Moneda",      "tablas.interco.moneda", recorte = FALSE),
+        col_dinero("Total",      "tablas.interco.total", moneda = "Moneda", sumar = FALSE),
+        col_numero("Facturas",   "tablas.interco.facturas")
+      ),
+      acciones_fila = "detalle",
+      vacio         = "tablas.interco.saldos_vacio"
+    )
 
-      display <- mat |>
-        dplyr::arrange(.ini, Ledger, dplyr::desc(Total)) |>
-        dplyr::transmute(
-          Empresa     = sprintf("%s (%s)", Empresa, .ini),
-          Tipo        = dplyr::if_else(Ledger == "AR", "CxC \u2014 Cobro", "CxP \u2014 Pago"),
-          Contraparte = Parte,
-          Moneda      = Moneda,
-          Total       = format(round(Total), big.mark = ",", scientific = FALSE),
-          Facturas    = Facturas
-        )
-
-      DT::datatable(
-        display,
-        rownames  = FALSE,
-        selection = "single",
-        class     = "table table-sm table-hover",
-        options   = list(
-          pageLength = 25,
-          dom        = "ftp",
-          columnDefs = list(
-            list(className = "dt-right", targets = c(4L, 5L)),
-            list(className = "dt-center", targets = 1L)
-          ),
-          language = list(
-            search      = "Buscar:",
-            paginate    = list(`next` = "\u203a", previous = "\u2039"),
-            info        = "Mostrando _START_\u2013_END_ de _TOTAL_",
-            zeroRecords = "Sin resultados"
-          )
-        )
-      ) |>
-        DT::formatStyle(
-          "Tipo",
-          color      = DT::styleEqual(
-            c("CxC \u2014 Cobro", "CxP \u2014 Pago"),
-            c("#0d6efd",           "#dc3545")
-          ),
-          fontWeight = "600"
-        )
-    }, server = FALSE)
-
-    # Row click → select pair
-    observeEvent(input$ic_matrix_rows_selected, {
-      mat <- ic_matrix_df()
-      req(mat)
-      idx <- input$ic_matrix_rows_selected
-      req(length(idx) > 0)
-
-      ordered <- mat |> dplyr::arrange(.ini, Ledger, dplyr::desc(Total))
-      row      <- ordered[idx, ]
+    observeEvent(saldos_t$accion(), {
+      a <- saldos_t$accion()
+      if (!identical(a$accion, "detalle") || !length(a$ids)) return()
+      d   <- .saldos_tabla()
+      row <- d[match(a$ids[1], d$id), , drop = FALSE]
+      if (!nrow(row) || is.na(row$id)) return()
       selected_pair(list(
-        ini         = row$.ini,
-        empresa     = row$Empresa,
+        ini         = row$ini,
+        empresa     = row$empresa,
         counterpart = row$Parte,
         ledger      = row$Ledger
       ))
-    }, ignoreNULL = TRUE)
+    })
 
     # ── Detail panel UI ────────────────────────────────────────────────────
     output$ic_detail <- renderUI({
