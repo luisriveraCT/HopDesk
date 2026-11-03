@@ -11,6 +11,9 @@
 #   C. Confirming: the store holds them deleted, the table drops them at
 #      once and nothing stays marked.
 #   D. ✎ opens the manual entry's form.
+#   H. A save that fails (the fixture's fallar_escritura): the delete is
+#      refused, nothing changes and the confirmation stays; the archive
+#      in the Bancos trash fails: the user is told.
 #   E. Two sessions: B deletes one of the two A marked -> A's marks keep only
 #      the one left, and A's confirmation lists that one.
 #   A9. Exportar a Excel is logged as a generated file (as the old export).
@@ -153,6 +156,38 @@ ok("D1: ✎ opens the manual entry's form, filled in (4500)",
      isTRUE(ev("(function(){ var m = document.querySelector('.modal.show'); return !!m && Array.from(m.querySelectorAll('input')).some(function(i){ return /4500/.test(i.value); }); })()")))
 ok("D2: ...and marked nothing", !length(sel()))
 cerrar_modal()
+
+# ══ H · A save that fails ════════════════════════════════════════════════════
+avisos <- function() unlist(ev("Array.from(document.querySelectorAll('.shiny-notification')).map(function(n){ return n.innerText; })"))
+fallar <- function(...) { invisible(ev(sprintf("Shiny.setInputValue('fallar_escritura', %s, {priority: 'event'})",
+                                               jsonlite::toJSON(c(...))))); Sys.sleep(0.5) }
+quitar_avisos <- function() invisible(ev("document.querySelectorAll('.shiny-notification').forEach(function(n){ n.remove(); })"))
+fallar("acme/bancos_movimientos.rds"); quitar_avisos()
+clic(celda("MOV-0040"))
+clic(sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=eliminar]')", T))
+invisible(poll_until(function() grepl("Eliminar 1 movimiento", modal(), fixed = TRUE), timeout_s = 10)); Sys.sleep(0.8)
+clic("document.getElementById('bnc-do_eliminar_confirm')")
+ok("H1: S3 refuses the delete: 'No se pudo guardar', and nothing says it was deleted",
+   poll_until(function() any(grepl("No se pudo guardar", avisos(), fixed = TRUE)), timeout_s = 10) &&
+     !any(grepl("eliminado", avisos(), fixed = TRUE)))
+ok("H2: ...the confirmation stays open, the row stays in the table and in the store",
+   grepl("Eliminar 1 movimiento", modal(), fixed = TRUE) && "MOV-0040" %in% vis() && !"MOV-0040" %in% eliminados())
+fallar(); quitar_avisos()
+clic("document.getElementById('bnc-do_eliminar_confirm')")
+ok("H3: S3 back: the same confirmation deletes it now",
+   poll_until(function() "MOV-0040" %in% eliminados() && !"MOV-0040" %in% vis(), timeout_s = 10) &&
+     any(grepl("1 movimiento eliminado", avisos(), fixed = TRUE)))
+fallar("acme/bancos_papelera.rds"); quitar_avisos()
+invisible(poll_until(function() !nzchar(modal()), timeout_s = 10)); Sys.sleep(0.5)
+clic(celda("MOV-0041"))
+clic(sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=eliminar]')", T))
+invisible(poll_until(function() grepl("Eliminar 1 movimiento", modal(), fixed = TRUE), timeout_s = 10)); Sys.sleep(0.8)
+clic("document.getElementById('bnc-do_eliminar_confirm')")
+ok("H4: the archive in the Bancos trash fails: the movement is deleted, and the user is told the archive failed",
+   poll_until(function() "MOV-0041" %in% eliminados(), timeout_s = 10) &&
+     poll_until(function() any(grepl("no se pudieron archivar", avisos(), fixed = TRUE)), timeout_s = 10))
+fallar()
+invisible(poll_until(function() !nzchar(modal()), timeout_s = 10)); Sys.sleep(0.5)
 
 # ══ E · Two sessions ═════════════════════════════════════════════════════════
 bA <- b

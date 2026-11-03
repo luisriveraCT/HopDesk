@@ -12,6 +12,7 @@
 # ("eliminados: MOV-0003,MOV-0007") after each save, and the last Excel
 # export's log ("bancos_libro_excel (tabla): 59 filas").
 #
+# input "fallar_escritura": S3 keys whose save fails (see below).
 # BANCOS_SIN_PERMISO=1: the user lacks can_manage_bancos.
 # BANCOS_N: that many more movements (default 0). BANCOS_N=900 puts the
 # Libro in window mode; the oldest is "PROVEEDOR ULTIMO SA", receipt 999999.
@@ -19,6 +20,17 @@
 library(shiny)
 raiz <- normalizePath(".", winslash = "/")
 source(file.path(raiz, "tests/helpers/s3_memoria.R"))
+# Writes that fail on purpose: the input "fallar_escritura" (from the test)
+# lists the S3 keys whose save must fail ("acme/bancos_movimientos.rds").
+# Wraps s3_memoria's own fake; s3_memoria restores aws.s3 when R exits.
+.falla_escritura <- character(0)
+local({
+  guardar_mem <- get("s3saveRDS", asNamespace("aws.s3"))
+  utils::assignInNamespace("s3saveRDS", function(x, object, bucket, ...) {
+    if (object %in% .falla_escritura) stop("simulated S3 write failure")
+    guardar_mem(x, object, bucket, ...)
+  }, "aws.s3")
+})
 cargar <- function(archivo, nombres) {
   ex <- parse(file.path(raiz, archivo), keep.source = FALSE)
   for (e in ex)
@@ -122,6 +134,8 @@ server <- function(input, output, session) {
     session$sendCustomMessage("registro", paste(sprintf("eliminados: %s", paste(elim, collapse = ",")), EXCEL(), sep = "
 "))
   })
+  observeEvent(input$fallar_escritura, .falla_escritura <<- as.character(unlist(input$fallar_escritura)),
+               ignoreNULL = FALSE)
   bancosServer("bnc", shared)
 }
 

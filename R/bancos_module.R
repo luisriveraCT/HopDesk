@@ -1362,6 +1362,27 @@ bancosServer <- function(id, shared) {
     # Reset to FALSE on each new file upload so the best-match auto-selects again.
     user_picked_cuenta_rv <- reactiveVal(FALSE)
 
+    # A Bancos save (rule 8): a failed one is shown to the user and logged
+    # (<accion>_fallido), never silent and never announced as done. Callers
+    # save BEFORE touching the session's copy, closing the modal or saying
+    # it worked, and stop when this returns FALSE. `aviso`: the dictionary
+    # key the user sees.
+    .bnc_guardar <- function(accion, descripcion, escribir, aviso = "comun.error_guardar") {
+      error <- tryCatch({ escribir(); NULL }, error = function(e) e)
+      if (is.null(error)) return(TRUE)
+      message("[bancos] ", accion, " failed: ", conditionMessage(error))
+      showNotification(tr(aviso), type = "error", duration = 8)
+      tryCatch(log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "bancos",
+        action      = paste0(accion, "_fallido"),
+        description = paste0(descripcion, ": ", conditionMessage(error)),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      ), error = function(e) NULL)
+      FALSE
+    }
+
     # ── Eliminar batch ────────────────────────────────────────────────────────
     # The Libro's bar sends the marked ids; the confirmation lists the ones
     # still there (hd_table "eliminar_mov").
@@ -1418,7 +1439,6 @@ bancosServer <- function(id, shared) {
 
       ids <- elim_ids_rv()
       req(length(ids) > 0)
-      elim_ids_rv(NULL)
 
       movs <- movs_all()
       movs_base <- movs   # session copy before this change (CM09)
@@ -1433,10 +1453,16 @@ bancosServer <- function(id, shared) {
 
       movs$eliminado[idx]    <- TRUE
       movs$eliminado_at[idx] <- Sys.time()
+      # Saved first: if S3 refuses, nothing changes in the session, the
+      # confirmation stays open and nothing says it was deleted (T12a).
+      if (!.bnc_guardar("eliminar_movimientos", sprintf("Eliminar %d movimiento(s)", length(idx)),
+                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(),
+                                                           base = movs_base))) return()
+      # Only now are these ids done with: a failed save keeps them, so the
+      # same confirmation can try again.
+      elim_ids_rv(NULL)
       shared$bancos_movimientos(movs)
-      tryCatch({ save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base); bump_sync_version("bancos_movimientos_db") },
-               error = function(e)
-                 showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
+      bump_sync_version("bancos_movimientos_db")
 
       # found 2026-08-03 (Stage 9, Issue C): Mouse asked for a dedicated,
       # separate backend store for deleted bank movements (see
@@ -1444,13 +1470,18 @@ bancosServer <- function(id, shared) {
       # reasoning). This is additive -- the eliminado flag above remains the
       # mechanism that hides the row from the live Libro de Banco view; this
       # writes a genuinely separate, permanent, restorable archive event.
-      tryCatch({
-        bpap <- tryCatch(load_bancos_papelera(client_id = shared$effective_client_id()),
-                         error = function(e) .schema_bancos_papelera())
-        bpap <- add_to_bancos_papelera(bpap, del_rows, actor = actor)
-        save_bancos_papelera(bpap, client_id = shared$effective_client_id())
-      }, error = function(e)
-        message("[bancos] bancos_papelera archive write failed: ", conditionMessage(e)))
+      # The movements are already deleted; if their archive can't be written
+      # the user is told so and it is logged (it used to fail silently).
+      # (A failed read inside load_bancos_papelera() still comes back as an
+      # empty table: that, and saving without a base, is the integrator's
+      # VP3 in persistence, not this module's.)
+      .bnc_guardar("archivar_movimientos_eliminados",
+                   sprintf("Archivar %d movimiento(s) eliminados en la papelera de Bancos", nrow(del_rows)),
+                   function() {
+                     bpap <- load_bancos_papelera(client_id = shared$effective_client_id())
+                     bpap <- add_to_bancos_papelera(bpap, del_rows, actor = actor)
+                     save_bancos_papelera(bpap, client_id = shared$effective_client_id())
+                   }, aviso = "tablas.bancos.error_archivar")
 
       removeModal()
       n <- length(idx)
