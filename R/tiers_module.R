@@ -2487,8 +2487,8 @@ tiersServer <- function(id, shared) {
                                "Las invitaciones que creas pertenecen a tu empresa.")
                     ),
                   selectInput(ns("inv_tier"), "Tier inicial",
-                              choices = setNames(niveles_invitables(),
-                                                 vapply(niveles_invitables(), nivel_nombre, character(1))),
+                              choices = setNames(niveles_invitables_por(current_tier()),
+                                                 vapply(niveles_invitables_por(current_tier()), nivel_nombre, character(1))),
                               width = "100%"),
                   uiOutput(ns("inv_send_error")),
                   div(
@@ -2625,11 +2625,12 @@ tiersServer <- function(id, shared) {
         return()
       }
 
-      # Mismo razonamiento para el tier: el desplegable sólo ofrece estos tres,
+      # Mismo razonamiento para el tier: el desplegable sólo ofrece estos,
       # así que cualquier otro valor llegó forjado. Sin esto, una invitación
-      # podría crear una cuenta 'principal' o 'hopdesk'.
+      # podría crear una cuenta 'principal' o 'hopdesk'. El tier de TI solo
+      # lo ofrece a principal, y aquí se vuelve a juzgar por su tier real.
       tier_in <- trimws(input$inv_tier %||% "")
-      if (!tier_in %in% niveles_invitables()) {
+      if (!tier_in %in% niveles_invitables_por(current_tier())) {
         output$inv_send_error <- renderUI(
           tags$p(class = "text-danger small mt-1", "Tier no permitido."))
         return()

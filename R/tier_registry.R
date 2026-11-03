@@ -120,6 +120,12 @@ niveles_todos    <- function() .niveles_ordenados()
 niveles_cliente  <- function() .niveles_ordenados(function(e) !isTRUE(e$interno))
 niveles_staff    <- function() .niveles_ordenados(function(e) isTRUE(e$interno))
 niveles_invitables <- function() .niveles_ordenados(function(e) isTRUE(e$invitable))
+# Tiers this inviter's invite may create, highest first. The client's IT tier
+# is not `invitable` (an invite link is a credential), but the top tier may
+# send it on purpose (Luis, 2026-11-03).
+niveles_invitables_por <- function(viewer_tier) {
+  c(if (nivel_es_tope(viewer_tier)) nivel_ti(), niveles_invitables())
+}
 niveles_unico_vivo <- function() .niveles_ordenados(function(e) isTRUE(e$unico_vivo))
 
 # The client's own IT tier. Staff work inside a client as this tier.

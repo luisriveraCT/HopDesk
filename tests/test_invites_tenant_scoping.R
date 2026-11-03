@@ -44,10 +44,22 @@ for (forbidden in c("dev", "hopdesk", "principal"))
 
 # Una sola lista alimenta el desplegable y la validación del servidor: si
 # alguien agrega un tier al selectInput, el check del servidor lo sigue solo.
-.chk(grepl('choices = setNames(niveles_invitables(),', src, fixed = TRUE), TRUE,
-     "el selectInput de tier usa niveles_invitables(), no una lista literal")
-.chk(grepl('tier_in %in% niveles_invitables()', src, fixed = TRUE), TRUE,
-     "el servidor valida el tier contra niveles_invitables()")
+.chk(grepl('choices = setNames(niveles_invitables_por(current_tier()),', src, fixed = TRUE), TRUE,
+     "el selectInput de tier usa niveles_invitables_por(), no una lista literal")
+.chk(grepl('tier_in %in% niveles_invitables_por(current_tier())', src, fixed = TRUE), TRUE,
+     "el servidor valida el tier contra niveles_invitables_por() con el tier real")
+
+# Principal (y solo principal) puede invitar con el tier de TI (Luis, 2026-11-03).
+.chk(nivel_ti() %in% niveles_invitables_por(nivel_tope()), TRUE,
+     "principal puede invitar con el tier de TI")
+for (t in setdiff(niveles_todos(), nivel_tope()))
+  .chk(nivel_ti() %in% niveles_invitables_por(t), FALSE,
+       sprintf("'%s' no puede invitar con el tier de TI", t))
+for (t in c(niveles_todos(), ""))
+  .chk(any(c("hopdesk", "principal") %in% niveles_invitables_por(t)), FALSE,
+       sprintf("nadie ('%s') puede invitar con un tier de staff", t))
+.chk(niveles_invitables_por(nivel_tope())[-1], niveles_invitables(),
+     "para principal, la lista es el tier de TI y luego los invitables de siempre")
 .chk(grepl('choices = c("analysis", "finance", "admin")', src, fixed = TRUE), FALSE,
      "ya no queda la lista de tiers duplicada a mano")
 
