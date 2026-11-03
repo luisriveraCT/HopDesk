@@ -5,43 +5,38 @@
 # closed the whole session, and production stayed on "Cargando… 14%"; no
 # module test saw it because every fixture starts with its data loaded.
 #
-# For each mode (normal: dev's real data; vacio: every tenant read empty) and
-# each dev test user (finance, with every write permission; analysis, without
-# can_manage_bancos / can_manage_proveedores / can_register_payments), it
+# For each mode (normal: dev's real data; vacio: every tenant read empty) it
 # starts app.R through tests/helpers/arranque_app.R (own Rscript, dev bucket,
-# no S3 writes, no production reads), signs in, and requires:
+# no S3 writes, no production reads), signs in as the test user, and requires:
 #   - the loading screen reaches 100% and goes, within LIMITE seconds;
 #   - the session stays connected;
 #   - no "Warning: Error in" / "Execution halted" in the R process's output;
 #   - every main tab (and Ajustes) opens with no new error in that output.
 #
 # Credentials come from the environment (.Renviron.local), never the repo:
-#   HOPDESK_TEST_USER_FINANCE / HOPDESK_TEST_PASS_FINANCE
-#   HOPDESK_TEST_USER_ANALYSIS / HOPDESK_TEST_PASS_ANALYSIS
+#   HOPDESK_TEST_USER / HOPDESK_TEST_PASS   (the password is never printed)
 # Without them the test SKIPS with a clear message and exit status 2: a
 # skip is never a pass.
 #
 # Run from project root:  Rscript tests/test_arranque_app_chromote.R
 # ARR_RAIZ=<checkout> runs it against that checkout's app.R (ebfbf5c must fail).
-# ARR_MODOS / ARR_USUARIOS narrow it ("normal", "finance"...).
+# ARR_MODOS narrows it ("normal" or "vacio").
 # =============================================================================
 cat("=== test_arranque_app_chromote ===\n\n")
 if (file.exists(".Renviron.local")) readRenviron(".Renviron.local")
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
 
 LIMITE <- as.numeric(Sys.getenv("ARR_LIMITE", "180"))   # seconds from signing in to the overlay gone
-usuarios <- list(
-  finance  = c(user = Sys.getenv("HOPDESK_TEST_USER_FINANCE"),  pass = Sys.getenv("HOPDESK_TEST_PASS_FINANCE")),
-  analysis = c(user = Sys.getenv("HOPDESK_TEST_USER_ANALYSIS"), pass = Sys.getenv("HOPDESK_TEST_PASS_ANALYSIS")))
+usuarios <- list(prueba = c(user = Sys.getenv("HOPDESK_TEST_USER"), pass = Sys.getenv("HOPDESK_TEST_PASS")))
 faltan <- names(usuarios)[!vapply(usuarios, function(u) all(nzchar(u)), logical(1))]
 if (length(faltan)) {
-  cat("SKIP: faltan las credenciales de prueba de:", paste(faltan, collapse = ", "), "\n",
-      "     (HOPDESK_TEST_USER_<FINANCE|ANALYSIS> / HOPDESK_TEST_PASS_<...> en .Renviron.local).\n",
+  cat("SKIP: faltan las credenciales de prueba",
+      "(HOPDESK_TEST_USER / HOPDESK_TEST_PASS en .Renviron.local).\n",
       "     Esta prueba NO paso: no se corrio.\n")
   quit(status = 2L)
 }
 modos <- strsplit(Sys.getenv("ARR_MODOS", "normal,vacio"), ",")[[1]]
-quienes <- strsplit(Sys.getenv("ARR_USUARIOS", "finance,analysis"), ",")[[1]]
+quienes <- names(usuarios)
 
 .pass <- 0L; .fail <- 0L
 ok <- function(label, expr) {
@@ -69,7 +64,14 @@ ev <- function(js) {
 }
 conectado <- function() isTRUE(tryCatch(ev("!!(window.Shiny && Shiny.shinyapp && Shiny.shinyapp.isConnected())"),
                                         error = function(e) FALSE))
-carga_terminada <- function() isTRUE(tryCatch(ev(
+# Signed in = the sign-in form is gone and the app's navbar is there. Without
+# this, "no loading screen" was also true before signing in at all: the first
+# run passed while the session had died at the sign-in gate.
+dentro <- function() isTRUE(tryCatch(ev(
+  "(function(){ var f = document.getElementById('auth-user_id');
+     return (!f || f.offsetParent === null) && !!document.querySelector('.navbar .nav-link[data-value]'); })()"),
+  error = function(e) FALSE))
+carga_terminada <- function() dentro() && isTRUE(tryCatch(ev(
   "(function(){ var o = document.getElementById('hopdesk-loading');
      return !o || o.style.display === 'none' || o.classList.contains('hld-fadeout'); })()"), error = function(e) FALSE))
 pct <- function() tryCatch(ev("(document.getElementById('hld-pct')||{}).textContent || ''"), error = function(e) "?")
@@ -104,23 +106,30 @@ for (modo in modos) for (quien in quienes) {
   ev("document.getElementById('auth-go_auth').click(); true")
   n_antes <- length(registro())
 
-  terminada <- poll_until(carga_terminada, timeout_s = LIMITE, interval_s = 1)
+  # A dead session can't finish loading: stop waiting as soon as it drops.
+  poll_until(function() carga_terminada() || !conectado(), timeout_s = LIMITE, interval_s = 1)
+  terminada <- carga_terminada()
   t_carga <- as.numeric(Sys.time() - t_entrada, units = "secs")
   tiempos[[et]] <- c(proceso = round(t_proceso), carga = round(t_carga))
+  ok(paste(et, "signed in: the sign-in form is gone and the app is there"), dentro())
   ok(sprintf("%s the loading screen reaches 100%% and goes (%.0f s; it stood at %s)", et, t_carga, pct()), terminada)
+  Sys.sleep(5)   # what the first flush queued after the overlay went
   ok(paste(et, "the session is still connected"), conectado())
   e <- errores(); ok(paste(et, "no 'Warning: Error in' / 'Execution halted' in the R output"), !length(e)); mostrar(e)
 
+  probadas <- 0L
   for (v in names(PESTANAS)) {
     visible <- isTRUE(tryCatch(ev(sprintf("(function(){ var a = document.querySelector(\".navbar .nav-link[data-value='%s']\");
       return !!a && a.offsetParent !== null; })()", v)), error = function(x) FALSE))
     if (!visible) { cat(sprintf("   (pestaña %s no visible para %s)\n", PESTANAS[[v]], quien)); next }
+    probadas <- probadas + 1L
     n <- length(registro())
     ev(sprintf("document.querySelector(\".navbar .nav-link[data-value='%s']\").click(); true", v))
     Sys.sleep(4)
     e <- errores(n)
     ok(sprintf("%s %s opens with no new error and the session alive", et, PESTANAS[[v]]), conectado() && !length(e)); mostrar(e)
   }
+  ok(sprintf("%s at least one main tab was there to open (%d)", et, probadas), probadas > 0L)
   if (isTRUE(tryCatch(ev("!!document.getElementById('btn_settings')"), error = function(x) FALSE))) {
     n <- length(registro())
     ev("document.getElementById('btn_settings').click(); true"); Sys.sleep(4)

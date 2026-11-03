@@ -20,9 +20,17 @@
 #    process takes its own LOCALAPPDATA (a temp folder): it can't overwrite
 #    anything, so the lock's reason doesn't apply.
 #
-# ARR_RAIZ: the checkout whose app.R to run (default: this one).
+# ARR_RAIZ: the checkout whose app.R to run (default: this one), with this
+# checkout's environment.
 # =============================================================================
 raiz <- normalizePath(Sys.getenv("ARR_RAIZ", "."), winslash = "/")
+# Another checkout has no .Renviron files (git ignores them): take this one's,
+# already resolved to dev, instead of copying secrets there. global.R then
+# finds no .Renviron.local and leaves the environment as is.
+if (!identical(raiz, normalizePath(".", winslash = "/"))) {
+  if (file.exists(".Renviron")) readRenviron(".Renviron")
+  if (file.exists(".Renviron.local")) readRenviron(".Renviron.local")
+}
 setwd(raiz)
 Sys.setenv(LOCALAPPDATA = normalizePath(file.path(tempdir(), "arranque_lock"), winslash = "\\", mustWork = FALSE))
 dir.create(Sys.getenv("LOCALAPPDATA"), showWarnings = FALSE, recursive = TRUE)
