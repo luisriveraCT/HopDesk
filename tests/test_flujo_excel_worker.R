@@ -50,6 +50,14 @@ test_that("its daily headers carry the dictionary's letters (Wednesday is X)", {
   r <- correr_worker("es")
   skip_if(!is.null(r$err), r$err)
   todo <- celdas(r$out)
-  expect_true(any(grepl("^X 04 ", todo)))
-  expect_false(any(grepl("^M 04 ", todo)))
+  expect_true("X 04 nov" %in% todo)
+  expect_false(any(grepl("^M 04 ", todo[!is.na(todo)])))
+})
+
+test_that("an English export gets English letters and months", {
+  r <- correr_worker("en")
+  skip_if(!is.null(r$err), r$err)
+  todo <- celdas(r$out)
+  expect_true("W 04 Nov" %in% todo)
+  expect_false("X 04 nov" %in% todo)
 })

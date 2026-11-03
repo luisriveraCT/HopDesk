@@ -58,7 +58,8 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
     grouping      = sn$grouping,
     currency_mode = sn$currency_mode,
     base_cur      = sn$base_cur,
-    fx_rates      = sn$fx_rates
+    fx_rates      = sn$fx_rates,
+    idioma        = sn$lang_primary %||% "es"
   )
   if (is.null(export_data))
     stop("Sin datos disponibles para el período seleccionado.")
@@ -107,25 +108,25 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
 
 # ── Stage 2: Data pipeline helpers ───────────────────────────────────────────
 
-# Human-readable labels for date buckets.
-.bucket_labels <- function(buckets, grouping_used) {
-  m_es <- c("Ene","Feb","Mar","Abr","May","Jun",
-            "Jul","Ago","Sep","Oct","Nov","Dic")
+# Human-readable labels for date buckets, in `idioma`: the day's letter
+# (Monday first: L M X J V S D -- Wednesday is X, it was a second M) and the
+# month from the dictionary ("X 04 nov", "02–08 nov"; "W 04 Nov" in English).
+# The labels name the buckets' columns, so the preview and the exports take
+# them from here; an export passes its own language.
+.bucket_labels <- function(buckets, grouping_used, idioma = hd_idioma()) {
+  meses   <- vapply(1:12, function(m) tr(paste0("comun.mes.", m), idioma = idioma), character(1))
   if (grouping_used == "daily") {
-    # The day's letter from the dictionary, Monday first: L M X J V S D --
-    # Wednesday is X, it was a second M. The same labels feed the preview
-    # and every export.
-    letras  <- vapply(1:7, function(d) tr(paste0("tablas.flujo.dia.", d)), character(1))
+    letras  <- vapply(1:7, function(d) tr(paste0("tablas.flujo.dia.", d), idioma = idioma), character(1))
     day_ltr <- letras[lubridate::wday(buckets, week_start = 1)]
     paste0(day_ltr, " ", sprintf("%02d", lubridate::day(buckets)),
-           " ", m_es[lubridate::month(buckets)])
+           " ", meses[lubridate::month(buckets)])
   } else {
     # Last day of each week bucket (capped at bucket+6 within range)
     week_ends <- buckets + 6L
     paste0(
       sprintf("%02d", lubridate::day(buckets)), "–",
       sprintf("%02d", lubridate::day(week_ends)),
-      " ", m_es[lubridate::month(week_ends)]
+      " ", meses[lubridate::month(week_ends)]
     )
   }
 }
@@ -176,7 +177,7 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
 # Aggregate df (already filtered to one ledger type) to a wide data frame.
 # Rows  = one per (Parte, is_provision).
 # Cols  = one per date bucket + Total + Pct + tag flags.
-.aggregate_to_wide <- function(df, all_buckets, grouping_used) {
+.aggregate_to_wide <- function(df, all_buckets, grouping_used, idioma = hd_idioma()) {
   sv    <- "Saldo vencido"
   empty <- tibble::tibble(
     Parte = character(), is_provision = logical(),
@@ -185,7 +186,7 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
   )
   if (is.null(df) || !nrow(df) || !(sv %in% names(df))) return(empty)
 
-  bucket_labels <- .bucket_labels(all_buckets, grouping_used)
+  bucket_labels <- .bucket_labels(all_buckets, grouping_used, idioma)
   bucket_map    <- setNames(bucket_labels, as.character(all_buckets))
 
   df <- df |>
@@ -269,7 +270,7 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
 }
 
 # One-row-per-bucket summary: cobros, pagos, net_day, net_cum.
-.build_summary <- function(ar_df, ap_df, all_buckets, grouping_used) {
+.build_summary <- function(ar_df, ap_df, all_buckets, grouping_used, idioma = hd_idioma()) {
   sv <- "Saldo vencido"
 
   sum_df <- function(df) {
@@ -283,7 +284,7 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
       )
   }
 
-  bucket_labels <- .bucket_labels(all_buckets, grouping_used)
+  bucket_labels <- .bucket_labels(all_buckets, grouping_used, idioma)
 
   tibble::tibble(date_bucket = all_buckets, bucket_label = bucket_labels) |>
     dplyr::left_join(dplyr::rename(sum_df(ar_df), cobros = amount),
@@ -428,7 +429,8 @@ build_cashflow_export_data <- function(
     grouping      = "auto",
     currency_mode = "separate",
     base_cur      = "MXN",
-    fx_rates      = c()
+    fx_rates      = c(),
+    idioma        = hd_idioma()
 ) {
   if (is.null(df) || !nrow(df)) return(NULL)
 
@@ -474,7 +476,7 @@ build_cashflow_export_data <- function(
     result_curs <- sort(unique(df$Moneda[ !is.na(df$Moneda) ]))
   }
 
-  bucket_labels <- .bucket_labels(all_buckets, grouping_used)
+  bucket_labels <- .bucket_labels(all_buckets, grouping_used, idioma)
 
   # Build per-currency output
   data_list <- lapply(result_curs, function(cur) {
@@ -486,9 +488,9 @@ build_cashflow_export_data <- function(
 
     list(
       currency = cur,
-      ar_wide  = .aggregate_to_wide(ar_df, all_buckets, grouping_used),
-      ap_wide  = .aggregate_to_wide(ap_df, all_buckets, grouping_used),
-      summary  = .build_summary(ar_df, ap_df, all_buckets, grouping_used)
+      ar_wide  = .aggregate_to_wide(ar_df, all_buckets, grouping_used, idioma),
+      ap_wide  = .aggregate_to_wide(ap_df, all_buckets, grouping_used, idioma),
+      summary  = .build_summary(ar_df, ap_df, all_buckets, grouping_used, idioma)
     )
   })
 
@@ -2485,7 +2487,8 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
           grouping      = grouping,
           currency_mode = cur_mode,
           base_cur      = base_cur,
-          fx_rates      = fx_rates
+          fx_rates      = fx_rates,
+          idioma        = input$export_lang_primary %||% "es"
         ),
         error = function(e) {
           showNotification(paste("Error al agregar datos:", conditionMessage(e)),
@@ -2933,7 +2936,8 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
         build_cashflow_export_data(df = combined_df, tags_df = tags_df,
           emp_sel = emp_sel, date_from = date_from, date_to = date_to,
           grouping = grouping, currency_mode = cur_mode,
-          base_cur = base_cur, fx_rates = fx_rates),
+          base_cur = base_cur, fx_rates = fx_rates,
+          idioma = input$export_lang_primary %||% "es"),
         error = function(e) {
           showNotification(paste("Error al agregar:", conditionMessage(e)),
                            type = "error", duration = 8); NULL })
