@@ -15,7 +15,9 @@
 #      refused, nothing changes and the confirmation stays; the archive
 #      in the Bancos trash fails: the user is told.
 #   E. Two sessions: B deletes one of the two A marked -> A's marks keep only
-#      the one left, and A's confirmation lists that one.
+#      the one left, and A's confirmation lists that one; B then deletes
+#      that one while A's confirmation is open -> A is told, nothing is
+#      deleted or archived twice (VP4).
 #   A9. Exportar a Excel is logged as a generated file (as the old export).
 #   A10-11. Exportar (formato BanBajío), the module's own: logged, and
 #      narrowed by the table's search.
@@ -209,7 +211,23 @@ clic(sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=elimi
 ok("E3: A's confirmation lists only MOV-0021",
    poll_until(function() grepl("Eliminar 1 movimiento", modal(), fixed = TRUE) &&
                 identical(tryCatch(vis(E), error = function(e) NULL), "MOV-0021"), timeout_s = 10))
-cerrar_modal()
+# While A's confirmation is open, B deletes MOV-0021 too.
+invisible(en(bB, {
+  clic(celda("MOV-0021"))
+  clic(sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=eliminar]')", T))
+  poll_until(function() grepl("Eliminar 1 movimiento", modal(), fixed = TRUE), timeout_s = 10); Sys.sleep(0.8)
+  clic("document.getElementById('bnc-do_eliminar_confirm')")
+  poll_until(function() "MOV-0021" %in% eliminados(), timeout_s = 10)
+}))
+archivados <- function() { r <- grep("^archivados: ", strsplit(registro(), "\n")[[1]], value = TRUE); r <- sub("^archivados: ", "", r)
+                           if (length(r) && nzchar(r)) strsplit(r, ",")[[1]] else character(0) }
+invisible(poll_until(function() sum(archivados() == "MOV-0021") == 1L, timeout_s = 10))
+clic("document.getElementById('bnc-do_eliminar_confirm')")
+ok("E4: A's confirmation then says they are gone, and closes",
+   poll_until(function() !nzchar(modal()) &&
+                any(grepl("otra sesión los eliminó", unlist(ev("Array.from(document.querySelectorAll('.shiny-notification')).map(function(n){ return n.innerText; })")),
+                          fixed = TRUE)), timeout_s = 10))
+ok("E5: MOV-0021 is archived once, not twice (VP4)", sum(archivados() == "MOV-0021") == 1L)
 try(bB$close(), silent = TRUE)
 
 # ══ F · 900 more movements ═══════════════════════════════════════════════════

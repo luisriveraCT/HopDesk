@@ -10,7 +10,8 @@
 # bus makes it in the app): what one session deletes, the others see go.
 # #registro lists, per session, the movements the store holds as deleted
 # ("eliminados: MOV-0003,MOV-0007") after each save, and the last Excel
-# export's log ("bancos_libro_excel (tabla): 59 filas").
+# export's log ("bancos_libro_excel (tabla): 59 filas"), and the movements
+# archived in bancos_papelera, repeats included ("archivados: MOV-0001,...").
 #
 # input "fallar_escritura": S3 keys whose save fails (see below).
 # BANCOS_SIN_PERMISO=1: the user lacks can_manage_bancos.
@@ -131,8 +132,10 @@ server <- function(input, output, session) {
     MOVS()
     guardado <- get0(paste0(CID, "/", S3_KEYS$bancos_movimientos), envir = .mem)
     elim <- if (is.null(guardado)) character(0) else sort(guardado$id[guardado$eliminado %in% TRUE])
-    session$sendCustomMessage("registro", paste(sprintf("eliminados: %s", paste(elim, collapse = ",")), EXCEL(), sep = "
-"))
+    pap  <- get0(paste0(CID, "/", S3_KEYS$bancos_papelera), envir = .mem)
+    arch <- if (is.null(pap) || !nrow(pap)) character(0) else sort(pap$mov_id)
+    session$sendCustomMessage("registro", paste(sprintf("eliminados: %s", paste(elim, collapse = ",")), EXCEL(),
+                                                sprintf("archivados: %s", paste(arch, collapse = ",")), sep = "\n"))
   })
   observeEvent(input$fallar_escritura, .falla_escritura <<- as.character(unlist(input$fallar_escritura)),
                ignoreNULL = FALSE)

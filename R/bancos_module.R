@@ -1442,8 +1442,17 @@ bancosServer <- function(id, shared) {
 
       movs <- movs_all()
       movs_base <- movs   # session copy before this change (CM09)
-      idx  <- which(movs$id %in% ids)
-      if (!length(idx)) { removeModal(); return() }
+      # Only rows still not deleted: another session may have deleted some
+      # while this confirmation was open. Re-deleting them rewrote
+      # eliminado_at and archived them a second time in bancos_papelera
+      # (T12 inventory, VP4).
+      idx  <- which(movs$id %in% ids & !(movs$eliminado %in% TRUE))
+      if (!length(idx)) {
+        elim_ids_rv(NULL)
+        removeModal()
+        showNotification(tr("tablas.bancos.ya_eliminados"), type = "warning", duration = 6)
+        return()
+      }
 
       # Snapshot the pre-delete rows BEFORE flipping eliminado, so the
       # bancos_papelera archive event (below) records the movement as it
