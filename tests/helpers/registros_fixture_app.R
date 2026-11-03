@@ -9,7 +9,8 @@
 # log_action() call is listed in #registro as one line:
 #   log <action> <target_id> <metadata as k=v;k=v>
 # #otra_sesion plays "another session": it writes a new payment file, newest
-# of all; the table shows it after Actualizar, as before.
+# of all; #otra_sesion_log writes a new activity row (a-new-<n>). Both happen
+# after the panels were drawn: the tables show them after Actualizar.
 #
 # REG_STAFF = 1: the viewer is Hopdesk staff (sees the jump bookkeeping rows).
 # REG_MUCHAS = n: n more activity rows in the last day (window mode > 800).
@@ -129,7 +130,9 @@ ui <- bslib::page_navbar(
   # renderUI: with the engine arriving only with it, the first data message
   # can come before hdtable.js has a handler, and Shiny drops it.
   header = tagList(shinyjs::useShinyjs(), app_styles(), hd_table_deps()),
-  bslib::nav_panel("Actividad", value = "ACT", auditLogViewerUI("act")),
+  bslib::nav_panel("Actividad", value = "ACT",
+    actionButton("otra_sesion_log", "Otra sesión: registra una actividad"),
+    auditLogViewerUI("act")),
   bslib::nav_panel("Bitácora Global", value = "GLO", auditLogViewerUI("glo")),
   bslib::nav_panel("Archivos de pago", value = "PAG",
     actionButton("otra_sesion", "Otra sesión: genera un archivo de pago"),
@@ -157,6 +160,10 @@ server <- function(input, output, session) {
   observeEvent(input$otra_sesion, {
     almacen$pagos <- dplyr::bind_rows(pago("p-new", Sys.time(), "otra", "NETWORKS CARGO", "MXN", 555, 2,
                                            beneficiario = "OTRA SESION"), almacen$pagos)
+  })
+  observeEvent(input$otra_sesion_log, {
+    almacen$logs$fixture <- dplyr::bind_rows(fila_log(sprintf("a-new-%d", input$otra_sesion_log), Sys.time(), "otra",
+      "bancos", "importar_movimientos", "Importación hecha por otra sesión", "s-99"), almacen$logs$fixture)
   })
   observe(session$sendCustomMessage("registro", paste(registro(), collapse = "\n")))
 }

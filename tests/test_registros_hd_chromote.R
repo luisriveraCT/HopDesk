@@ -223,6 +223,34 @@ ok("G: ℹ opens the detail there too, with the client", grepl("Detalle de la ac
    grepl("Acción: client_access", modal_texto()) && grepl("Cliente: fixture", modal_texto()))
 cerrar_modal()
 
+# ── U · Actualizar reads up to now (seen in passing 1, T10) ─────────────────
+# The range's end was the picker's value, fixed when the panel was drawn:
+# a file or an action from after that never showed, Actualizar or not.
+picker <- function(id) ev(sprintf("document.getElementById('%s').value", id))
+pestana("PAG"); invisible(listo(P))
+elegir("pag-pagos_user_sel", "Todos")   # block P left it on ana
+antes_pk <- picker("pag-pagos_range")
+clic("document.getElementById('otra_sesion')"); Sys.sleep(0.5)
+ok("U: a file another session generates after the panel was drawn is not there by itself",
+   !"p-new" %in% vis(P))
+clic("document.getElementById('pag-pagos_refresh')")
+ok("U: Archivos de pago -- Actualizar brings it, newest first",
+   poll_until(function() identical(vis(P)[1], "p-new"), timeout_s = 10))
+ok("U: and the picker shows the new end (now)",
+   poll_until(function() !identical(picker("pag-pagos_range"), antes_pk), timeout_s = 5))
+pestana("ACT"); invisible(listo(A))
+clic("document.getElementById('otra_sesion_log')"); Sys.sleep(0.5)
+clic("document.getElementById('act-audit_refresh')")
+ok("U: Actividad -- Actualizar brings another session's new row",
+   poll_until(function() identical(vis(A)[1], "a-new-1"), timeout_s = 10))
+clic("document.getElementById('act-audit_live_toggle')"); Sys.sleep(1)
+clic("document.getElementById('otra_sesion_log')")
+ok("U: Actividad -- with Actualización en vivo on, the next poll (20 s) brings the next one",
+   poll_until(function() identical(vis(A)[1], "a-new-2"), timeout_s = 30))
+clic("document.getElementById('act-audit_live_toggle')"); Sys.sleep(1)
+ok("U: switching live off keeps the rows read up to now",
+   { Sys.sleep(1.5); all(c("a-new-1", "a-new-2") %in% vis(A)) })
+
 # ── W · staff, and more than 800 rows ───────────────────────────────────────
 ok("fixture app restarted as staff with 1,200 more rows", arrancar(staff = TRUE, muchas = 1200L) && abrir())
 pestana("ACT"); invisible(listo(A))

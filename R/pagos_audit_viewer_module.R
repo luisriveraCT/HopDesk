@@ -58,7 +58,12 @@ pagosAuditViewerServer <- function(id, shared) {
     })
 
     refresh_tick <- reactiveVal(0L)
-    observeEvent(input$pagos_refresh, { refresh_tick(refresh_tick() + 1L) }, ignoreInit = TRUE)
+    # Actualizar reads up to now (.audit_rango(), R/audit_log_viewer_module.R).
+    rango <- .audit_rango(input, session, "pagos_range", dias = 30)
+    observeEvent(input$pagos_refresh, {
+      rango$hasta_ahora()
+      refresh_tick(refresh_tick() + 1L)
+    }, ignoreInit = TRUE)
 
     fetched <- reactive({
       refresh_tick()
@@ -66,9 +71,8 @@ pagosAuditViewerServer <- function(id, shared) {
       cid <- effective_cid()
       if (is.null(cid) || !nzchar(cid)) return(.schema_pagos_generados())
 
-      rng <- input$pagos_range
-      since <- if (!is.null(rng) && length(rng) == 2 && !is.na(rng[[1]])) rng[[1]] else Sys.time() - 30 * 86400
-      until <- if (!is.null(rng) && length(rng) == 2 && !is.na(rng[[2]])) rng[[2]] else Sys.time()
+      since <- rango$rango()[1]
+      until <- rango$rango()[2]
 
       tryCatch(read_pagos_generados(client_id = cid, since = since, until = until),
                error = function(e) .schema_pagos_generados())
@@ -92,7 +96,9 @@ pagosAuditViewerServer <- function(id, shared) {
       df
     })
 
-    observeEvent(fetched(), {
+    # Also when the picker first reports (the panel is drawn): the panel
+    # starts hidden, and choices sent before its selects exist are lost.
+    observeEvent(list(fetched(), !is.null(input$pagos_range)), {
       df <- fetched()
       emps <- if (!is.null(df) && nrow(df)) sort(unique(df$empresa[!is.na(df$empresa) & nzchar(df$empresa)])) else character(0)
       users <- if (!is.null(df) && nrow(df)) sort(unique(df$user[!is.na(df$user) & nzchar(df$user)])) else character(0)
@@ -120,7 +126,7 @@ pagosAuditViewerServer <- function(id, shared) {
                   shinyWidgets::airDatepickerInput(
                     ns("pagos_range"), label = NULL,
                     range = TRUE, timepicker = TRUE,
-                    value = c(Sys.time() - 30 * 86400, Sys.time()),
+                    value = isolate(rango$rango()),
                     dateFormat = "dd/MM/yy HH:mm",
                     language = "es",
                     update_on = "close", width = "100%")),
@@ -330,9 +336,9 @@ pagosAuditViewerServer <- function(id, shared) {
     # pagedown::chrome_print() pattern and HTML-fallback resilience.
     output$pagos_export_pdf <- downloadHandler(
       filename = function() {
-        rng  <- input$pagos_range
-        from <- format(if (!is.null(rng) && length(rng) == 2) rng[[1]] else Sys.time() - 30 * 86400, "%d%b%Y")
-        to   <- format(if (!is.null(rng) && length(rng) == 2) rng[[2]] else Sys.time(), "%d%b%Y")
+        rng  <- rango$rango()
+        from <- format(rng[1], "%d%b%Y")
+        to   <- format(rng[2], "%d%b%Y")
         label <- gsub("[^A-Za-z0-9]", "", effective_cid() %||% "hopdesk")
         paste0("ArchivosDePago_HopDesk_", if (nzchar(label)) label else "reporte", "_", from, "-", to, ".pdf")
       },
@@ -346,14 +352,14 @@ pagosAuditViewerServer <- function(id, shared) {
         export_df <- filtered()
         if (is.null(export_df) || !is.data.frame(export_df)) export_df <- .schema_pagos_generados()
 
-        rng <- input$pagos_range
+        rng <- rango$rango()
         user_info <- tryCatch(shared$current_user_info(), error = function(e) NULL)
 
         html_path <- tryCatch(
           generate_pagos_audit_html_doc(export_df, list(
             generated_by    = user_info$name %||% user_info$user %||% "—",
-            date_from       = if (!is.null(rng) && length(rng) == 2) rng[[1]] else Sys.time() - 30 * 86400,
-            date_to         = if (!is.null(rng) && length(rng) == 2) rng[[2]] else Sys.time(),
+            date_from       = rng[1],
+            date_to         = rng[2],
             empresa_filter  = input$pagos_emp_sel,
             usuario_filter  = usuario_sel(),
             client_label    = effective_cid()

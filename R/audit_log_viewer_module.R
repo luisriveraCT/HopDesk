@@ -749,6 +749,38 @@ generate_audit_log_html_doc <- function(export_df, meta_info = list()) {
 
 .resolve_param <- function(x) if (is.function(x)) x() else x
 
+# The date-and-time range a register reads from S3 (Actividad here, and
+# R/pagos_audit_viewer_module.R). The picker sets it when the user changes
+# it; hasta_ahora() moves its end to now -- Actualizar and the live poll --
+# and shows that in the picker. The range used to be only the picker's
+# value, fixed when the panel was drawn, so Actualizar re-read S3 up to that
+# moment and never brought anything newer.
+# The picker answers every update with its new value: an answer within a
+# minute of what the server wrote is that echo, not a choice, and doesn't
+# set the range again (that would read S3 a second time).
+.audit_rango <- function(input, session, id, dias) {
+  rango    <- reactiveVal(c(Sys.time() - dias * 86400, Sys.time()))
+  mostrado <- NULL
+  mismo <- function(a, b) length(a) == 2L && length(b) == 2L &&
+    isTRUE(all(abs(as.numeric(difftime(a, b, units = "secs"))) < 60))
+  observeEvent(input[[id]], {
+    rng <- input[[id]]
+    if (is.null(rng) || length(rng) != 2L || anyNA(rng)) return()
+    nuevo <- as.POSIXct(c(rng[[1]], rng[[2]]))
+    if (anyNA(nuevo) || mismo(nuevo, mostrado) || mismo(nuevo, rango())) return()
+    rango(nuevo)
+  }, ignoreInit = TRUE)
+  list(
+    rango = rango,
+    hasta_ahora = function() {
+      r <- c(isolate(rango())[1], Sys.time())
+      mostrado <<- r
+      rango(r)
+      shinyWidgets::updateAirDateInput(session, id, value = r)
+    }
+  )
+}
+
 # Row ids for the register tables (hd_table), here and in
 # R/pagos_audit_viewer_module.R: the stored id, or one made up for a row
 # written without it, and never repeated -- the engine refuses both, and one
@@ -831,7 +863,17 @@ auditLogViewerServer <- function(id, shared, mode,
     })
 
     refresh_tick <- reactiveVal(0L)
-    observeEvent(input$audit_refresh, { refresh_tick(refresh_tick() + 1L) }, ignoreInit = TRUE)
+    rango <- .audit_rango(input, session, "audit_range", dias = 7)
+    observeEvent(input$audit_refresh, {
+      rango$hasta_ahora()
+      refresh_tick(refresh_tick() + 1L)
+    }, ignoreInit = TRUE)
+    # The caller's "just acted" signal (tiers_module.R's activity_refresh)
+    # reads up to now too, or the action just taken would stay out.
+    observe({
+      s <- tryCatch(shared$refresh_signal(), error = function(e) NULL)
+      if (!is.null(s)) isolate(rango$hasta_ahora())
+    })
 
     # Live auto-refresh (the 20s poll below) is opt-in, default OFF. It used
     # to run unconditionally, which rebuilt the whole DT widget (and its own
@@ -867,23 +909,26 @@ auditLogViewerServer <- function(id, shared, mode,
       )
     })
 
+    # Only poll for cross-session updates while live-refresh is explicitly
+    # on (see live_refresh_on above) -- invalidateLater() must be called
+    # unconditionally on the branch that wants it, not skipped via an early
+    # return, so it correctly stops re-scheduling itself the instant the
+    # toggle is switched off. Each poll reads up to now (it used to re-read
+    # up to the moment the panel was drawn).
+    observe({
+      if (isTRUE(live_refresh_on())) invalidateLater(20000)
+      if (isTRUE(live_refresh_on())) isolate(rango$hasta_ahora())
+    })
+
     # ── Fetch — the only call site for read_audit_log_scoped() ────────────────
     fetched <- reactive({
       refresh_tick()
-      # Only poll for cross-session updates while live-refresh is explicitly
-      # on (see live_refresh_on above) -- invalidateLater() must be called
-      # unconditionally from inside the reactive on the branch that wants it,
-      # not skipped via an early return, so it correctly stops re-scheduling
-      # itself the instant the toggle is switched off.
-      if (isTRUE(live_refresh_on())) invalidateLater(20000)
-      tryCatch(shared$refresh_signal(), error = function(e) NULL)  # optional: caller-side "just acted" signal
 
       cid <- requested_client_id()
       if (is.null(cid) || !nzchar(cid)) return(NULL)
 
-      rng <- input$audit_range
-      since <- if (!is.null(rng) && length(rng) == 2 && !is.na(rng[[1]])) rng[[1]] else Sys.time() - 7 * 86400
-      until <- if (!is.null(rng) && length(rng) == 2 && !is.na(rng[[2]])) rng[[2]] else Sys.time()
+      since <- rango$rango()[1]
+      until <- rango$rango()[2]
 
       tryCatch(
         read_audit_log_scoped(
@@ -923,7 +968,9 @@ auditLogViewerServer <- function(id, shared, mode,
     # returned. Usuario is a list (it was free text): the PDF prints the
     # filters in its header, so they stay on the server until the table can
     # tell it what it shows (T10, P4/P5).
-    observeEvent(visible_fetched(), {
+    # Also when the picker first reports (the panel is drawn): choices sent
+    # before its selects exist are lost.
+    observeEvent(list(visible_fetched(), !is.null(input$audit_range)), {
       df <- visible_fetched()
       if (inherits(df, "error") || is.null(df)) return()
       mods <- sort(unique(df$module[!is.na(df$module) & nzchar(df$module)]))
@@ -987,7 +1034,7 @@ auditLogViewerServer <- function(id, shared, mode,
                   shinyWidgets::airDatepickerInput(
                     ns("audit_range"), label = NULL,
                     range = TRUE, timepicker = TRUE,
-                    value = c(Sys.time() - 7 * 86400, Sys.time()),
+                    value = isolate(rango$rango()),
                     dateFormat = "dd/MM/yy HH:mm",
                     language = "es",
                     update_on = "close", width = "100%")),
@@ -1120,9 +1167,9 @@ auditLogViewerServer <- function(id, shared, mode,
     # identical resilience to R/pagos_audit_viewer_module.R's dl_pago_pdf.
     output$audit_export_pdf <- downloadHandler(
       filename = function() {
-        rng   <- input$audit_range
-        from  <- format(if (!is.null(rng) && length(rng) == 2) rng[[1]] else Sys.time() - 7 * 86400, "%d%b%Y")
-        to    <- format(if (!is.null(rng) && length(rng) == 2) rng[[2]] else Sys.time(), "%d%b%Y")
+        rng   <- rango$rango()
+        from  <- format(rng[1], "%d%b%Y")
+        to    <- format(rng[2], "%d%b%Y")
         label <- if (identical(mode, "multi_client"))
           (input$audit_client_sel %||% "grupo")
         else
@@ -1140,7 +1187,7 @@ auditLogViewerServer <- function(id, shared, mode,
         export_df <- filtered()
         if (inherits(export_df, "error") || is.null(export_df)) export_df <- export_df[0, ]
 
-        rng <- input$audit_range
+        rng <- rango$rango()
         user_info <- tryCatch(shared$current_user_info(), error = function(e) NULL)
         client_label <- if (identical(mode, "multi_client"))
           (input$audit_client_sel %||% "—")
@@ -1150,8 +1197,8 @@ auditLogViewerServer <- function(id, shared, mode,
         html_path <- tryCatch(
           generate_audit_log_html_doc(export_df, list(
             generated_by   = user_info$name %||% user_info$user %||% "—",
-            date_from      = if (!is.null(rng) && length(rng) == 2) rng[[1]] else Sys.time() - 7 * 86400,
-            date_to        = if (!is.null(rng) && length(rng) == 2) rng[[2]] else Sys.time(),
+            date_from      = rng[1],
+            date_to        = rng[2],
             modulo_filter  = input$audit_mod_sel,
             accion_filter  = input$audit_accion_sel,
             usuario_filter = usuario_sel(),
