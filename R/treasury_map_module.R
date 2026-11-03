@@ -789,6 +789,8 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
           from_full = cmap[[edge$from_ini]] %||% edge$from_ini,
           to_full   = cmap[[edge$to_ini]]   %||% edge$to_ini,
           Documento = doc,
+          # The creditor's folio: how the send finds the debtor's AP invoice.
+          Factura   = if ("Factura" %in% names(row)) as.character(row[["Factura"]][1]) else NA_character_,
           Importe   = as.numeric(row[[amt_col]][1] %||% 0),
           FechaVenc = tryCatch(as.character(as.Date(row[[due_col]][1])),
                                error = function(e) as.character(Sys.Date())),
@@ -859,18 +861,33 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
 
       user_id <- tryCatch(as.character(shared$current_user()), error = function(e) "icmap")
 
-      new_rows <- dplyr::bind_rows(lapply(plan, function(x) {
+      # The plan holds the creditor's AR invoices; what gets paid is the
+      # debtor's AP invoice for the same folio (R/ic_mapa_llave.R). Items
+      # without exactly one stay in the plan, unsent: confirming them would
+      # close nothing and leave the debt open to be paid twice.
+      ap_ic <- tryCatch(ic_invoices_rv()$ap, error = function(e) NULL)
+      ap_de <- lapply(plan, ic_mapa_ap_deudor, ap = ap_ic, cmap = shared$company_map())
+      sin_ap <- vapply(ap_de, is.null, logical(1))
+      if (any(sin_ap))
+        showNotification(sprintf(tr("comun.ic_sin_ap_deudor"), sum(sin_ap),
+                                 paste(vapply(plan[sin_ap], function(x) x$Documento, character(1)), collapse = ", ")),
+                         type = "warning", duration = 10)
+      if (all(sin_ap)) return()
+      ap_de <- ap_de[!sin_ap]
+
+      new_rows <- dplyr::bind_rows(lapply(seq_along(ap_de), function(i) {
+        x <- plan[!sin_ap][[i]]; a <- ap_de[[i]]
         tibble::tibble(
-          id        = paste0("IC_", x$from_ini, "_", x$Documento, "_", as.integer(Sys.time())),
+          id        = paste0("IC_", x$from_ini, "_", a$Documento, "_", as.integer(Sys.time())),
           ledger    = "AP",
           Empresa   = x$from_full,   # the PAYER (debtor, "from" node)
           Moneda    = x$Moneda,
-          Documento = x$Documento,
+          Documento = a$Documento,   # the debtor's own AP invoice
           Parte     = x$to_full,     # the RECIPIENT (creditor, "to" node)
-          Codigo    = trimws(as.character(x$Codigo %||% "")),
+          Codigo    = a$Codigo,
           tipo_item = "factura",
-          Importe   = x$Importe %||% 0,
-          FechaVenc = tryCatch(as.Date(x$FechaVenc), error = function(e) Sys.Date()),
+          Importe   = a$Importe %||% 0,
+          FechaVenc = tryCatch(as.Date(a$FechaVenc %||% x$FechaVenc), error = function(e) Sys.Date()),
           staged_by = user_id,
           staged_at = Sys.time(),
           status    = "pending",
@@ -881,7 +898,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       combined <- upsert_pagar_hoy(ph, new_rows)
       shared$pagar_hoy_db(combined)
       tryCatch(save_pagar_hoy(combined, shared$current_user(), client_id = shared$effective_client_id(), base = ph), error = function(e) NULL)
-      payment_plan(list())
+      payment_plan(plan[sin_ap])     # the unsent ones stay, for the user to see
       showNotification(paste0(nrow(new_rows), " factura(s) enviada(s) a Agenda de Hoy."),
                        type = "message", duration = 3)
       log_action(
