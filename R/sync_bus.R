@@ -22,6 +22,20 @@
 
 .SYNC_REGISTRY <- list()
 
+# Registered tables whose loader answers from .app_data_cache (.cache_get)
+# before S3, and the cache key it uses. A reload must drop that entry first.
+# tests/test_sync_cache.R fails if a .cache_get() key is missing here.
+.SYNC_CACHE_KEYS <- c(moves_db = "moves", interco_v2 = "interco_v2")
+
+.sync_olvidar_cache <- function(name, client_id = NULL) {
+  ck <- .SYNC_CACHE_KEYS[name]
+  if (is.na(ck) || !exists(".app_data_cache", envir = .GlobalEnv)) return(invisible(FALSE))
+  k <- tryCatch(.cache_scoped_key(ck, client_id), error = function(e) NULL)
+  if (is.null(k) || is.null(.GlobalEnv$.app_data_cache[[k]])) return(invisible(FALSE))
+  .GlobalEnv$.app_data_cache[[k]] <- NULL
+  invisible(TRUE)
+}
+
 register_synced <- function(name, s3_key, loader, per_session_loader = NULL) {
   .SYNC_REGISTRY[[name]] <<- list(s3_key = s3_key, loader = loader,
                                    per_session_loader = per_session_loader)
@@ -136,6 +150,12 @@ setup_sync_bus <- function(session, shared, poll_ms = 8000,
       )
       if (!is.null(key_full))
         suppressWarnings(rm(list = intersect(key_full, ls(.s3_preload_cache)), envir = .s3_preload_cache))
+      # Same for .app_data_cache, which load_moves()/load_interco_v2() answer
+      # from first: only this process's own saves keep it current, so a write
+      # from another process or an offline-queue replay stayed invisible to
+      # every session here (CM09, finding 1). Scoped exactly as the loader
+      # below reads it.
+      .sync_olvidar_cache(name, if (in_jump_context) active_cid else NULL)
 
       # When in a jump context, pass active_cid so the reload fetches data
       # from the correct prefix (not the env-var CLIENT_ID prefix).
