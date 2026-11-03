@@ -113,5 +113,42 @@ escribir(sprintf("document.querySelector('#%s .hdt-buscar')", S), "")
 ok("S7: and the NCS pair no longer counts P-1 (4 invoices, $14,002.00)",
    grepl("$14,002.004", texto_fila(S, PAR_NCS), fixed = TRUE))
 
+# ── D · the pair's invoices (line items A) ──────────────────────────────────
+D <- "ic-detalle_t-hdt"
+agenda <- function() { w <- grep("^escribe pagar_hoy", registro(), value = TRUE); if (length(w)) sub("^escribe \\S+ \\d+ ", "", w[length(w)]) else "" }
+doc_de <- function(id) sub("^[^|]*\\|[^|]*\\|[^|]*\\|([^|]*)\\|.*$", "\\1", id)
+id_doc <- function(doc) { v <- vis(D); v[doc_de(v) == doc][1] }
+ok("D: fixture restarted", arrancar() && abrir() && listo(S))
+clic(boton(S, PAR_NCS, "detalle"))
+ok("D: the NCS→NTS pair's detail is on the engine, its 5 invoices by due date",
+   listo(D) && identical(doc_de(vis(D)), paste0("P-", 1:5)))
+ok("D: columns Documento / Factura / Contabilización / Vencimiento / Saldo / Moneda / Vencida / Días",
+   identical(titulos(D), c("Documento", "Factura", "Contabilización", "Vencimiento", "Saldo", "Moneda", "Vencida", "Días")))
+ok("P2: how overdue, as a badge by the old colour cuts (40 → +30, 30 and 20 → 1–30, 0 → al día)",
+   grepl("Más de 30 días", texto_fila(D, id_doc("P-1"))) && grepl("1–30 días", texto_fila(D, id_doc("P-2"))) &&
+   grepl("1–30 días", texto_fila(D, id_doc("P-3"))) && grepl("Al día", texto_fila(D, id_doc("P-5"))))
+ok("D: Saldo is money ($3,000.50 for P-3)", grepl("$3,000.50", texto_fila(D, id_doc("P-3")), fixed = TRUE))
+
+# Seen in passing 4: the row's ＋ sends THAT invoice even after another
+# session confirmed one above it and every position shifted.
+clic("document.getElementById('otra_sesion_confirma')"); Sys.sleep(1.5)
+ok("VP4: another session confirms P-1 -- it leaves the list, the rest move up",
+   identical(doc_de(vis(D)), paste0("P-", 2:5)))
+clic(boton(D, id_doc("P-3"), "agregar")); Sys.sleep(1.2)
+ok("VP4: the ＋ of P-3 sends P-3 to the Agenda, not the invoice now in its old position (P-4)",
+   identical(agenda(), "P-3") && grepl("1 factura añadida a Agenda de Hoy", aviso()))
+p <- centro(fila(D, id_doc("P-4"), ".children[0]")); raton("mouseMoved", p); raton("mousePressed", p, 1L); raton("mouseReleased", p); Sys.sleep(0.3)
+q <- centro(fila(D, id_doc("P-5"), ".children[0]")); raton("mouseMoved", q)
+b$Input$dispatchMouseEvent(type = "mousePressed", x = q[[1]], y = q[[2]], button = "left", buttons = 1L, clickCount = 1L, modifiers = 8L)
+b$Input$dispatchMouseEvent(type = "mouseReleased", x = q[[1]], y = q[[2]], button = "left", clickCount = 1L, modifiers = 8L)
+Sys.sleep(0.6)
+ok("D3: Mayús+clic marks P-4 and P-5", setequal(unlist(estado(D)$seleccion), c(id_doc("P-4"), id_doc("P-5"))))
+clic(sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=agregar_seleccion]')", D))
+ok("D3: the bar's Agregar selección asks first (a batch)",
+   grepl("¿Agregar 2 facturas seleccionadas a la Agenda del día?", ev(sprintf("document.querySelector('#%s .hdt-confirmar-texto').textContent", D))) &&
+   identical(agenda(), "P-3"))
+clic(sprintf("document.querySelector('#%s .hdt-confirmar-si')", D)); Sys.sleep(1.2)
+ok("D3: confirmed, P-4 and P-5 join P-3 in the Agenda", identical(agenda(), "P-3,P-4,P-5"))
+
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)
