@@ -109,6 +109,10 @@ if (n_extra > 0L) {
 
 # The Agenda every session sees: what one session confirms or removes, the
 # others see go (the sync bus, in the app).
+# HD_ARRANQUE_NULL = 1: the sources start NULL, as before S3 loads at
+# startup (tests/test_hd_table_arranque_null.R; incident 2026-11-03).
+if (identical(Sys.getenv("HD_ARRANQUE_NULL"), "1")) { agenda0 <- NULL; catalogo <- NULL }
+
 AGENDA <- reactiveVal(agenda0)
 
 # ── App ──────────────────────────────────────────────────────────────────────

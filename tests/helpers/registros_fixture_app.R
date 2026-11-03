@@ -122,6 +122,10 @@ assign("log_action", function(user, module, action, description = "", target_id 
   anotar(sprintf("log %s %s %s", action, target_id %||% "", m))
 }, envir = globalenv())
 
+# HD_ARRANQUE_NULL = 1: the sources start NULL, as before S3 loads at
+# startup (tests/test_hd_table_arranque_null.R; incident 2026-11-03).
+if (identical(Sys.getenv("HD_ARRANQUE_NULL"), "1")) { almacen$logs <- NULL; almacen$pagos <- NULL }
+
 ui <- bslib::page_navbar(
   title = "registros", id = "nav",
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),

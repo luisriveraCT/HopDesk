@@ -120,6 +120,10 @@ crudos0 <- list(
                   Total = 22000, check.names = FALSE))
 
 # ── App ────────────────────────────────────────────────────────────────────────
+# HD_ARRANQUE_NULL = 1: the sources start NULL, as before S3 loads at
+# startup (tests/test_hd_table_arranque_null.R; incident 2026-11-03).
+if (identical(Sys.getenv("HD_ARRANQUE_NULL"), "1")) { facturas0 <- NULL; tags0 <- NULL; agenda0 <- NULL; crudos0 <- NULL }
+
 ui <- bslib::page_navbar(
   title = "HopDesk", id = "nav", fillable = TRUE, selected = if (otra_pestana) "INICIO" else "VEN",
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),

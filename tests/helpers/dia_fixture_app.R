@@ -119,6 +119,10 @@ politicas <- list(
           d$params <- list(list(days = 5L)); d })   # fridays only
 
 # ── App ──────────────────────────────────────────────────────────────────────
+# HD_ARRANQUE_NULL = 1: the sources start NULL, as before S3 loads at
+# startup (tests/test_hd_table_arranque_null.R; incident 2026-11-03).
+if (identical(Sys.getenv("HD_ARRANQUE_NULL"), "1")) { detalle0 <- NULL; tags0 <- NULL; agenda0 <- NULL }
+
 ui <- fluidPage(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),
   app_styles(), tags$head(tags$script(src = "i18n.js"),

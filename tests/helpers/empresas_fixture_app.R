@@ -71,6 +71,10 @@ empresas0 <- .normalize(rbind(
   emp("e-tst", "E0005", "TEST", "TEST EMPRESA SA", "TEST6715RFC01", activa = FALSE)
 ), .schema_empresas)
 
+# HD_ARRANQUE_NULL = 1: the sources start NULL, as before S3 loads at
+# startup (tests/test_hd_table_arranque_null.R; incident 2026-11-03).
+if (identical(Sys.getenv("HD_ARRANQUE_NULL"), "1")) empresas0 <- NULL
+
 ui <- bslib::page_fluid(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),
   shinyjs::useShinyjs(), app_styles(),

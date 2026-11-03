@@ -111,6 +111,10 @@ assign("fcs_fetch_and_store", function(metric_id, ...) {
 assign("log_action", function(user, module, action, description = "", target_id = NA, ...)
   anotar(sprintf("log %s %s", action, target_id %||% "")), envir = globalenv())
 
+# HD_ARRANQUE_NULL = 1: the sources start NULL, as before S3 loads at
+# startup (tests/test_hd_table_arranque_null.R; incident 2026-11-03).
+if (identical(Sys.getenv("HD_ARRANQUE_NULL"), "1")) { metricas <- NULL; almacen$subs <- NULL; almacen$log <- NULL }
+
 ui <- bslib::page_fluid(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),
   shinyjs::useShinyjs(), app_styles(),
