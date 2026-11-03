@@ -207,8 +207,13 @@ dia_server <- function(input, output, session, ctx, ledger, shared, manejadores)
                         tryCatch(shared$partner_policies_db(), error = function(e) NULL),
                         tryCatch(shared$policy_catalog_db(), error = function(e) NULL))
   })
+  # Sending to the Agenda needs can_register_payments: without it, no ＋
+  # (row or group) and no Agregar buttons (.dia_agregar checks it again).
+  sin_agenda <- shiny::reactive(
+    if (isTRUE(tryCatch(puede(shared$usuario(), "can_register_payments"), error = function(e) FALSE)))
+      character(0) else c("agregar", "agregar_todo", "agregar_seleccion"))
   comun <- list(datos = datos, acciones_fila = c("agregar", "editar", "provision"),
-                acciones_barra = dia_acciones(dia_siguiente), aviso = aviso,
+                acciones_barra = dia_acciones(dia_siguiente), aviso = aviso, acciones_ocultas = sin_agenda,
                 filtros = list(list(campo = "Etiqueta"), list(campo = "Origen")),
                 textos = list(contador = "tablas.contador.facturas", sin_bloqueadas = TRUE))
   iniciales <- shiny::reactive(tryCatch(shared$company_map(), error = function(e) NULL))

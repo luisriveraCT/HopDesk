@@ -869,6 +869,9 @@ ledgerModuleServer <- function(id, config, shared) {
     # keys: the day's rows the table sent (dia_llaves(), R/dia_module.R);
     # origen says which of the three, for the log.
     .dia_agregar <- function(keys, origen) {
+      # Sending to the Agenda needs can_register_payments (Luis, 2026-11-03);
+      # without it the buttons are hidden too (dia_server).
+      if (!puede_o_avisa(shared, "can_register_payments")) return()
       ctx <- modal_ctx()
       req(ctx)
       detail <- ctx$detail

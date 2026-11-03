@@ -486,6 +486,10 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
       if (is.na(d)) tryCatch(as.Date(s), error = function(e) Sys.Date())
       else d
     }
+    # Sending to the Agenda needs can_register_payments (Luis, 2026-11-03),
+    # before anything is written; without it the buttons are hidden too
+    # (facturas_tabla_server).
+    if (!puede_o_avisa(shared, "can_register_payments", session %||% shiny::getDefaultReactiveDomain())) return()
 
     new_rows <- data.frame(
       id        = vapply(seq_len(nrow(keys_df)), function(x) uuid::UUIDgenerate(), character(1)),

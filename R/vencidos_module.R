@@ -249,6 +249,12 @@ facturas_tabla_server <- function(id, tabla, datos, shared, crudos, accion_factu
                                         list(campo = "Etiqueta")),
                          acciones_fila = "provision",
                          acciones_barra = facturas_acciones(),
+                         # Sending to the Agenda needs can_register_payments:
+                         # without it, no Agregar buttons (handle_invoice_action
+                         # checks it again).
+                         acciones_ocultas = reactive(
+                           if (isTRUE(tryCatch(puede(shared$usuario(), "can_register_payments"), error = function(e) FALSE)))
+                             character(0) else c("agregar_todo", "agregar_seleccion")),
                          vacio = vacio, textos = textos, periodo = periodo)
 
     shiny::observeEvent(t$accion(), {

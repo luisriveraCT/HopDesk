@@ -39,7 +39,9 @@ cargar("R/pasivos_capabilities.R", c("PASIVOS_CAPABILITIES", "has_capability"))
 # (R/permisos.R, which needs a logged-in session): here, a user who may do
 # everything.
 if (!exists(".usuario_de_sesion")) assign(".usuario_de_sesion", function() "luis", envir = globalenv())
-if (!exists("puede")) assign("puede", function(usuario, permiso, ...) TRUE, envir = globalenv())
+# HD_SIN_AGENDA = 1: a user without can_register_payments (no Agregar / ＋).
+if (!exists("puede")) assign("puede", function(usuario, permiso, ...)
+  !(identical(Sys.getenv("HD_SIN_AGENDA"), "1") && identical(permiso, "can_register_payments")), envir = globalenv())
 cargar("R/global.R", "fmt_money")
 cargar("R/persistence.R", c("tag_label", "add_tag_labels", "normalize_code"))
 cargar("R/ui_components.R", "app_styles")

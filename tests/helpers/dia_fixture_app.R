@@ -34,7 +34,9 @@ cargar("R/pasivos_capabilities.R", c("PASIVOS_CAPABILITIES", "has_capability"))
 cargar("R/ui_components.R", "app_styles")
 sys.source(file.path(raiz, "R/policy_engine.R"), envir = globalenv())   # only definitions
 if (!exists(".usuario_de_sesion")) assign(".usuario_de_sesion", function() "luis", envir = globalenv())
-if (!exists("puede")) assign("puede", function(usuario, permiso, ...) TRUE, envir = globalenv())
+# HD_SIN_AGENDA = 1: a user without can_register_payments (no Agregar / ＋).
+if (!exists("puede")) assign("puede", function(usuario, permiso, ...)
+  !(identical(Sys.getenv("HD_SIN_AGENDA"), "1") && identical(permiso, "can_register_payments")), envir = globalenv())
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
   for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
