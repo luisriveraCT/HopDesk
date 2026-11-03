@@ -65,5 +65,23 @@ ok("a table that fails, then gets good data: it paints, and the notice goes",
      espera(function() identical(vis("vuelve-hdt"), c("1", "2"))) } &&
    !grepl(AVISO, texto("vuelve-hdt"), fixed = TRUE))
 
+# ── t$exportado(): each Excel download that was written (T12a's audit) ──────
+descargas <- file.path(tempdir(), "hdt_robusto_descargas")
+unlink(descargas, recursive = TRUE); dir.create(descargas)
+invisible(b$Browser$setDownloadBehavior(behavior = "allow", downloadPath = normalizePath(descargas, winslash = "\\")))
+ok("exportado() is NULL until something is downloaded",
+   espera(function() identical(vis("exporta-hdt"), c("1", "2"))) && identical(texto("exportado_caja"), "0"))
+descargar <- function() invisible(ev("document.querySelector('#exporta-hdt .hdt-excel').click(); 0"))
+descargar()
+ok("a download writes the file and fires exportado() once, with the ids exported",
+   espera(function() length(list.files(descargas, pattern = "\\.xlsx$")) == 1L) &&
+   espera(function() identical(texto("exportado_caja"), "1 excel 1,2")))
+invisible(ev("var i = document.querySelector('#exporta-hdt .hdt-buscar'); i.value = 'UNO'; i.dispatchEvent(new Event('input')); 0"))
+espera(function() identical(vis("exporta-hdt"), "1"))
+descargar()
+ok("each download fires it again, with what the screen shows (the search left 1)",
+   espera(function() identical(texto("exportado_caja"), "2 excel 1")))
+unlink(descargas, recursive = TRUE)
+
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)

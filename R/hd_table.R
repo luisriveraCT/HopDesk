@@ -681,6 +681,10 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
     # nonce; once they're stored the server answers with the same nonce and
     # only then does the browser start the download, so the file can never
     # come out with another filter or order than the screen.
+    # exportado: each download that was written, for the module's audit
+    # (Bancos, T12a): list(formato, ids, nonce). Set once the file is
+    # written, so a download that failed never counts.
+    exportado <- shiny::reactiveVal(NULL)
     if ("excel" %in% piezas_tabla) {
       vista <- shiny::reactiveVal(NULL)
       shiny::observeEvent(input$vista, {
@@ -695,6 +699,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
           v <- shiny::isolate(vista())
           hd_excel_escribir(shiny::isolate(datos()), shiny::isolate(columnas_r()), v$ids %||% character(0),
                             id_col, file, hoja = tabla, campos = v$campos)
+          exportado(list(formato = "excel", ids = v$ids %||% character(0), nonce = stats::runif(1)))
         }
       )
       # The link is hidden (the visible button drives it), and Shiny never
@@ -727,6 +732,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         if (is.na(m)) stop("hd_table: ir_mes() takes a date or \"AAAA-MM\".", call. = FALSE)
         session$sendCustomMessage("hdt-mes", list(id = ns("hdt"), mes = m))
       },
+      exportado = shiny::reactive(exportado()),
       accion    = shiny::reactive({
         a <- input$accion
         if (is.null(a)) return(NULL)

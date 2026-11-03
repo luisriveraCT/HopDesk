@@ -27,7 +27,8 @@ caja  <- function(id) div(style = "margin: 8px 0;", tags$b(id), hd_table_ui(id))
 ui <- fluidPage(
   actionButton("mas", "más"), actionButton("arreglar", "arreglar"),
   tags$span(id = "contador_caja", textOutput("contador", inline = TRUE)),
-  caja("mala"), caja("vuelve"), caja("aviso"), caja("espera"), caja("buena"),
+  caja("mala"), caja("vuelve"), caja("aviso"), caja("espera"), caja("buena"), caja("exporta"),
+  tags$span(id = "exportado_caja", textOutput("exportado", inline = TRUE)),
   tags$pre(id = "registro", textOutput("registro_txt"))
 )
 server <- function(input, output, session) {
@@ -44,6 +45,15 @@ server <- function(input, output, session) {
                   aviso = reactive(stop("el aviso truena")))
   hd_table_server("espera", tabla = "revision_excel_prov", datos = reactive(NULL), columnas = cols)
   hd_table_server("buena", tabla = "revision_excel_prov", datos = reactive(filas), columnas = cols)
+  # t$exportado() (T12a's audit of the Excel download): #exportado says how
+  # many downloads were written and the last one's ids.
+  ex <- hd_table_server("exporta", tabla = "proveedores", datos = reactive(filas), columnas = cols)
+  n_ex <- reactiveVal(0)
+  observeEvent(ex$exportado(), n_ex(n_ex() + 1))
+  output$exportado <- renderText({
+    e <- ex$exportado()
+    if (is.null(e)) "0" else paste(n_ex(), e$formato, paste(e$ids, collapse = ","))
+  })
 }
 app <- shinyApp(ui, server)
 local({
