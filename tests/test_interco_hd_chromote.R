@@ -24,10 +24,10 @@ repo <- normalizePath(".", winslash = "/")
 PORT <- 39001L
 app <- NULL; b <- NULL
 on.exit({ try(if (!is.null(b)) b$close(), silent = TRUE); stop_bg_app(app) }, add = TRUE)
-arrancar <- function(falla = "") {
+arrancar <- function(falla = "", sin_permiso = FALSE) {
   if (!is.null(app)) stop_bg_app(app)
-  app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(IC_FALLA = "%s", IC_RAIZ = "%s"); setwd("%s"); source("tests/helpers/interco_fixture_app.R")$value',
-                                        falla, Sys.getenv("IC_RAIZ", repo), repo), PORT, timeout_s = 120),
+  app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(IC_FALLA = "%s", IC_SIN_PERMISO = "%s", IC_RAIZ = "%s"); setwd("%s"); source("tests/helpers/interco_fixture_app.R")$value',
+                                        falla, if (sin_permiso) "1" else "0", Sys.getenv("IC_RAIZ", repo), repo), PORT, timeout_s = 120),
                    error = function(e) { message(conditionMessage(e)); NULL })
   !is.null(app)
 }
@@ -163,6 +163,14 @@ ok("F: the user is told it did NOT reach the Agenda, and never reads 'añadida'"
 ok("F: it was tried (and retried), and the failure is logged with the invoice",
    sum(grepl("^falla pagar_hoy", registro())) >= 1L &&
    any(grepl("^log enviar_a_agenda_ic_incompleto P-2$", registro())))
+
+# ── P · sending to the Agenda needs can_register_payments ───────────────────
+ok("P: fixture restarted without can_register_payments", arrancar(sin_permiso = TRUE) && abrir() && listo(S))
+clic(boton(S, PAR_NCS, "detalle")); invisible(listo(D))
+clic(boton(D, id_doc("P-2"), "agregar")); Sys.sleep(1.2)
+ok("P: the ＋ asks for the permission, says no, and nothing reaches the Agenda",
+   any(grepl("^permiso can_register_payments no$", registro())) && grepl("No tienes permiso", aviso()) &&
+   !any(grepl("^escribe pagar_hoy", registro())) && !grepl("añadida", aviso()))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)

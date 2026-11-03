@@ -16,6 +16,8 @@
 # failed save. Every write and log_action() is listed in #registro:
 #   escribe <key> <rows> <Documentos, sorted>   ids <key> <row ids>
 #   falla <key>   log <action> <target_id>
+# IC_SIN_PERMISO = 1: the user lacks can_register_payments (puede_o_avisa()
+# says so with its notice and returns FALSE; logged as "permiso <key> no").
 # IC_RAIZ: the checkout whose R/ and www/ to use (default: this one).
 # =============================================================================
 library(shiny)
@@ -61,6 +63,13 @@ assign(".s3_write", function(obj, key, client_id = NULL) {
   invisible(TRUE)
 }, envir = globalenv())
 assign("bump_sync_version", function(...) invisible(NULL), envir = globalenv())
+sin_permiso <- identical(Sys.getenv("IC_SIN_PERMISO"), "1")
+assign("puede_o_avisa", function(shared, permiso, session = shiny::getDefaultReactiveDomain()) {
+  if (!sin_permiso) return(TRUE)
+  anotar(paste("permiso", permiso, "no"))
+  showNotification(tr("permisos.denegado", permiso = permiso), type = "error")
+  FALSE
+}, envir = globalenv())
 assign("log_action", function(user, module, action, description = "", target_id = NA, ...)
   anotar(sprintf("log %s %s", action, target_id %||% "")), envir = globalenv())
 
