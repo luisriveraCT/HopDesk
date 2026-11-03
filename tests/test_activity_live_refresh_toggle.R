@@ -346,15 +346,19 @@ cat("\n-- Part F: DT rebuild-avoidance (error_state stability + proxy pattern) -
 
 error_state_ln    <- grep("error_state <- reactiveVal\\(FALSE\\)", txt)
 dedup_observe_ln  <- grep("if \\(!identical\\(new_err, isolate\\(error_state\\(\\)\\)\\)\\) error_state\\(new_err\\)", txt)
-isolate_render_ln <- grep("isolate\\(\\.audit_display_df\\(filtered\\(\\)\\)\\)", txt)
-proxy_ln          <- grep('audit_tbl_proxy <- DT::dataTableProxy\\("audit_tbl"\\)', txt)
-replace_data_ln   <- grep("DT::replaceData\\(audit_tbl_proxy, \\.audit_display_df\\(filtered\\(\\)\\)", txt)
+# Since T10 the table is the hd_table engine, which keeps scroll, sort and
+# search on new data by itself (its conservar_estado rule) -- what the
+# render-once + DT::replaceData() pattern was there for. The table is built
+# once, outside any renderUI, and fed by a reactive.
+engine_ln <- grep('audit_t <- hd_table_server\\(', txt)
+datos_ln  <- grep('"audit_t", tabla = "actividad", datos = \\.audit_tabla', txt)
+dt_ln     <- grep("DT::renderDataTable|DT::dataTableOutput|DT::replaceData", txt)
 
 .chk(length(error_state_ln), 1L, "error_state reactiveVal is defined")
 .chk(length(dedup_observe_ln), 1L, "the value-dedup observe() (only update error_state on an actual flip) exists")
-.chk(length(isolate_render_ln), 1L, "output$audit_tbl's initial render is isolate()-wrapped (renders once, not on every filtered() change)")
-.chk(length(proxy_ln), 1L, "audit_tbl_proxy (DT::dataTableProxy) is defined")
-.chk(length(replace_data_ln), 1L, "DT::replaceData() is called to push data updates without a full rebuild")
+.chk(length(engine_ln), 1L, "the table is one hd_table_server() (the engine keeps sort/search/scroll on new data)")
+.chk(length(datos_ln), 1L, "the engine is fed by the .audit_tabla reactive, not rebuilt by a render function")
+.chk(length(dt_ln), 0L, "no DT render/output/replaceData left in the module")
 
 # output$audit_results must depend on error_state(), NOT directly on
 # fetched() -- reading fetched() there was the actual root cause (a plain

@@ -168,16 +168,16 @@ for (nm_txt in list(list(name = "audit_log_viewer_module.R", txt = audit_txt),
      "audit_log_viewer_module.R: no remaining search = \"Filtrar:\" in its DT options")
 .chk_false(grepl('search\\s*=\\s*"Filtrar:"', pagos_txt),
      "pagos_audit_viewer_module.R: no remaining search = \"Filtrar:\" in its DT options")
-.chk_true(grepl('search\\s*=\\s*""', audit_txt), "audit_log_viewer_module.R: search label explicitly blanked")
-.chk_true(grepl('search\\s*=\\s*""', pagos_txt), "pagos_audit_viewer_module.R: search label explicitly blanked")
+# Since T10 both tables are the hd_table engine, with its own search box in
+# its own bar (no DT "Filtrar:" label to blank), inside .audit-sticky-table.
+.chk_true(grepl('hd_table_ui\\(ns\\("audit_t"\\)\\)', audit_txt), "audit_log_viewer_module.R: the table is hd_table_ui()")
+.chk_true(grepl('hd_table_ui\\(ns\\("pagos_t"\\)\\)', pagos_txt), "pagos_audit_viewer_module.R: the table is hd_table_ui()")
 
-# The "Ver detalle" trigger must now live inside the sticky toolbar, not
-# below the table -- checked structurally: detail_btn_ui's uiOutput() call
-# must appear BEFORE the DT::dataTableOutput() call in the source (matches
-# "moved into the toolbar" the way this file is laid out), not after it.
-detail_pos <- regexpr('uiOutput\\(ns\\("detail_btn_ui"\\)', pagos_txt)
-table_pos  <- regexpr('DT::dataTableOutput\\(ns\\("pagos_tbl"\\)\\)', pagos_txt)
-.chk_true(detail_pos > 0 && table_pos > 0 && detail_pos < table_pos,
-     "pagos_audit_viewer_module.R: the 'Ver detalle' trigger's UI call now appears before (i.e. inside the toolbar, above) the table output, not after it")
+# The detail no longer needs a "Ver detalle" button that appears in the
+# toolbar once a row is selected: every row has its own ℹ (and a double
+# click), always reachable where the row is.
+.chk_true(!grepl('detail_btn_ui|btn_ver_detalle', pagos_txt) &&
+            grepl('acciones_fila = "detalle"', pagos_txt),
+     "pagos_audit_viewer_module.R: the detail is a per-row action (ℹ), not a toolbar button")
 
 cat(sprintf("\n  Stage 8 subtotal: %d passed, %d failed\n", .pass, .fail))

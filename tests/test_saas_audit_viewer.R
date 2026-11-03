@@ -238,13 +238,14 @@ shiny::testServer(auditLogViewerServer, args = list(
   .chk(nrow(f2) == 1L && f2$user[1] == "dev", TRUE,
        "filters: Acción narrows to exactly the matching action")
 
-  session$setInputs(audit_accion_sel = "Todos", audit_user_filter = "larm")
+  # Usuario is a list of the range's users since T10 (it was free text).
+  session$setInputs(audit_accion_sel = "Todos", audit_user_sel = "larm")
   session$flushReact()
   f3 <- filtered()
   .chk(nrow(f3) == 1L && f3$module[1] == "ledger_AR", TRUE,
-       "filters: Usuario free-text narrows to exactly the matching user")
+       "filters: Usuario (list) narrows to exactly the matching user")
 
-  session$setInputs(audit_user_filter = "")
+  session$setInputs(audit_user_sel = "Todos")
   session$flushReact()
   .chk(nrow(filtered()), 3L, "filters: clearing all filters restores all rows")
 })

@@ -312,33 +312,37 @@ shiny::testServer(auditLogViewerServer, args = list(
   session$flushReact()
   .chk_true(nrow(visible_fetched()) >= 1L, "testServer setup: seeded row visible before click tests")
 
+  # Since T10 the detail opens from the row's ℹ or a double click: the table
+  # sends accion "detalle" with the row's id (it was a click on the
+  # Descripción cell, read by position).
+  id1 <- .audit_tabla()$id[1]
   ok1 <- tryCatch({
-    session$setInputs(audit_tbl_cell_clicked = list(row = 1, col = .audit_desc_col0))
+    session$setInputs(`audit_t-accion` = list(accion = "detalle", ids = id1, nonce = 1))
     session$flushReact()
     TRUE
-  }, error = function(e) { message("  click on Descripción cell errored: ", e$message); FALSE })
-  .chk_true(ok1, "clicking row 1's Descripción cell does not error (modal opens)")
+  }, error = function(e) { message("  the row's detalle action errored: ", e$message); FALSE })
+  .chk_true(ok1, "the row's detalle action (by id) does not error (modal opens)")
 
   ok2 <- tryCatch({
-    session$setInputs(audit_tbl_cell_clicked = list(row = 1, col = 0L))
+    session$setInputs(`audit_t-accion` = list(accion = "otra", ids = id1, nonce = 2))
     session$flushReact()
     TRUE
-  }, error = function(e) { message("  click on a non-Descripción cell errored: ", e$message); FALSE })
-  .chk_true(ok2, "clicking a DIFFERENT column (Hora, col=0) does not error (silent no-op)")
+  }, error = function(e) { message("  another action errored: ", e$message); FALSE })
+  .chk_true(ok2, "an action other than detalle does not error (silent no-op)")
 
   ok3 <- tryCatch({
-    session$setInputs(audit_tbl_cell_clicked = list(row = 9999L, col = .audit_desc_col0))
+    session$setInputs(`audit_t-accion` = list(accion = "detalle", ids = "no-existe", nonce = 3))
     session$flushReact()
     TRUE
-  }, error = function(e) { message("  out-of-range row click errored: ", e$message); FALSE })
-  .chk_true(ok3, "clicking an out-of-range row index does not error (guarded, silent no-op)")
+  }, error = function(e) { message("  unknown id errored: ", e$message); FALSE })
+  .chk_true(ok3, "an id that is no longer in the rows does not error (guarded, silent no-op)")
 
   ok4 <- tryCatch({
-    session$setInputs(audit_tbl_cell_clicked = NULL)
+    session$setInputs(`audit_t-accion` = NULL)
     session$flushReact()
     TRUE
-  }, error = function(e) { message("  NULL cell_clicked errored: ", e$message); FALSE })
-  .chk_true(ok4, "a NULL cell_clicked value (initial state) does not error")
+  }, error = function(e) { message("  NULL accion errored: ", e$message); FALSE })
+  .chk_true(ok4, "a NULL accion value (initial state) does not error")
 })
 
 cat(sprintf("\n  Stage 2 subtotal: %d passed, %d failed\n", .pass, .fail))

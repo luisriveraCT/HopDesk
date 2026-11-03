@@ -138,6 +138,10 @@ tryCatch({
 
   source("R/persistence.R",    local = FALSE)
   source("R/i18n.R",           local = FALSE)
+  # The table engine: the audit viewers and the payment-file viewer paint
+  # their tables with it (T10).
+  for (.f in c("R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R"))
+    source(.f, local = FALSE)
   source("R/tier_registry.R",  local = FALSE)
   source("R/permisos.R",       local = FALSE)
   source("R/sap_cache.R",      local = FALSE)

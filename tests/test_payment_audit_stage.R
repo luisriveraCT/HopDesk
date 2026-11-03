@@ -402,24 +402,31 @@ shiny::testServer(pagosAuditViewerServer, args = list(
   .chk(nrow(f) >= 1L && all(f$empresa == "Networks Group"), TRUE,
        "D2: Empresa filter narrows correctly")
 
-  session$setInputs(pagos_emp_sel = "Todas", pagos_user_filter = "larm3")
+  # Usuario is a list of the range's users since T10 (it was free text).
+  session$setInputs(pagos_emp_sel = "Todas", pagos_user_sel = "larm3")
   session$flushReact()
   f2 <- filtered()
   .chk(nrow(f2) == 1L && f2$user[1] == "larm3", TRUE,
        "D2: Usuario filter narrows correctly")
 
-  session$setInputs(pagos_emp_sel = "Todas", pagos_user_filter = "")
+  # The detail goes by the row's id (the table's ℹ / double click send
+  # accion "detalle" with it), even with the rows filtered: it used to be a
+  # position, which after a filter pointed at another record.
+  id_larm <- .pagos_tabla()$id[1]
+  session$setInputs(`pagos_t-accion` = list(accion = "detalle", ids = id_larm, nonce = 1))
+  session$flushReact()
+  rec <- selected_record()
+  .chk(is.data.frame(rec) && nrow(rec) == 1L && rec$user[1] == "larm3", TRUE,
+       "D2: the row's detail action (by id, filtered rows) populates selected_record() with THAT record")
+
+  session$setInputs(pagos_emp_sel = "Todas", pagos_user_sel = "Todos")
   session$flushReact()
   .chk(nrow(filtered()) >= 2L, TRUE, "D2: clearing filters restores all rows")
 
-  # Selecting a row and clicking "Ver detalle" populates selected_record()
-  session$setInputs(pagos_tbl_rows_selected = 1)
+  session$setInputs(`pagos_t-accion` = list(accion = "detalle", ids = "no-existe", nonce = 2))
   session$flushReact()
-  session$setInputs(btn_ver_detalle = 1)
-  session$flushReact()
-  rec <- selected_record()
-  .chk(is.data.frame(rec) && nrow(rec) == 1L, TRUE,
-       "D2: selecting a row + clicking Ver detalle populates selected_record()")
+  .chk(identical(selected_record()$user[1], "larm3"), TRUE,
+       "D2: an id that is no longer in the rows is a silent no-op (the last record stays)")
 })
 
 shiny::testServer(pagosAuditViewerServer, args = list(
@@ -519,15 +526,16 @@ global_txt <- readLines("R/global.R", warn = FALSE)
 
 # ── DT rebuild-avoidance in pagos_audit_viewer_module.R (same fix class as
 # Part F of test_activity_live_refresh_toggle.R) ────────────────────────────
+# Since T10 the table is the hd_table engine: it keeps scroll, sort and
+# search on new data by itself, and rows are identified by id, so there is
+# no position-based selection left to preserve.
 pav_txt <- readLines("R/pagos_audit_viewer_module.R", warn = FALSE)
-.chk(length(grep("isolate\\(\\.pagos_display_df\\(filtered\\(\\)\\)\\)", pav_txt)), 1L,
-     "output$pagos_tbl's initial render is isolate()-wrapped (renders once, not on every filtered() change)")
-.chk(length(grep('pagos_tbl_proxy <- DT::dataTableProxy\\("pagos_tbl"\\)', pav_txt)), 1L,
-     "pagos_tbl_proxy (DT::dataTableProxy) is defined")
-.chk(length(grep('DT::replaceData\\(pagos_tbl_proxy, \\.pagos_display_df\\(filtered\\(\\)\\)', pav_txt)), 1L,
-     "DT::replaceData() is called to push data updates without a full rebuild")
-.chk(length(grep('clearSelection = "none"', pav_txt)), 1L,
-     "replaceData() preserves the user's row selection (clearSelection=\"none\") across data refreshes")
+.chk(length(grep('pagos_t <- hd_table_server\\(', pav_txt)), 1L,
+     "the table is one hd_table_server() (the engine keeps sort/search/scroll on new data)")
+.chk(length(grep('"pagos_t", tabla = "archivos_pago", datos = \\.pagos_tabla', pav_txt)), 1L,
+     "the engine is fed by the .pagos_tabla reactive, not rebuilt by a render function")
+.chk(length(grep("DT::renderDataTable|DT::dataTableOutput|DT::replaceData|rows_selected", pav_txt)), 0L,
+     "no DT render/output/replaceData and no rows_selected left in the module")
 
 # =============================================================================
 # Part G -- generic download/export logging (2026-08-26 extension: "every
