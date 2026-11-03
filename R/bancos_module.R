@@ -3218,10 +3218,13 @@ bancosServer <- function(id, shared) {
       nuevos <- dplyr::select(nuevos, dplyr::all_of(schema_cols))
 
       movs_new <- dplyr::bind_rows(existentes, nuevos)
+      # Saved first (rule 8, T12a): on failure nothing changes in the
+      # session and nothing says it worked.
+      if (!.bnc_guardar("importar_movimientos", paste0("Importar ", nrow(nuevos), " movimiento(s)"),
+                        function() save_bancos_movimientos(movs_new, client_id = shared$effective_client_id(),
+                                                           base = movs_base))) return()
       shared$bancos_movimientos(movs_new)
-      tryCatch({ save_bancos_movimientos(movs_new, client_id = shared$effective_client_id(), base = movs_base); bump_sync_version("bancos_movimientos_db") },
-               error = function(e)
-                 showNotification("Error al guardar. Intenta de nuevo.", type = "error"))
+      bump_sync_version("bancos_movimientos_db")
 
       n_auto  <- sum(nuevos$conciliado, na.rm = TRUE)
       msg     <- paste0(nrow(nuevos), " movimiento(s) importado(s).")

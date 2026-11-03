@@ -134,6 +134,20 @@ testServer(bancosServer, args = list(shared = shared), {
     session$setInputs(do_eliminar_sesion_confirm = runif(1)); .falla_escritura <<- character(0)
     !is.null(delete_sesion_confirm_rv())
   })
+
+  # 4 · Import a TXT's movements (the preview as the parser leaves it)
+  probar("4 · do_import", "importar_movimientos", function() {
+    nuevo <- mov("TMP", cargo = 4321); nuevo$recibo <- "999001"; nuevo$id <- NULL
+    parsed_preview(nuevo)
+    session$setInputs(import_cuenta = "c1", do_import = runif(1))
+  }, function(m) any(m$cargo == 4321))
+  ok("4 · do_import: a failed save keeps the preview (to try again)", {
+    sembrar(); MOVS(movs0); .falla_escritura <<- MK
+    nuevo <- mov("TMP", cargo = 4321); nuevo$recibo <- "999001"; nuevo$id <- NULL
+    parsed_preview(nuevo); session$setInputs(import_cuenta = "c1", do_import = runif(1))
+    .falla_escritura <<- character(0)
+    !is.null(parsed_preview())
+  })
 })
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
