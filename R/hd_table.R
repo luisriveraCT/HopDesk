@@ -86,21 +86,26 @@ hd_table_ui <- function(id, alto = "auto") {
 }
 
 # ── fichas ──────────────────────────────────────────────────────────────────
-# fichas = list(campo = "etapa", orden = c(...), mostrar = "conteo" | "monto")
+# fichas = list(campo = "etapa", orden = c(...), mostrar = "conteo" | "monto",
+#               inicial = "revisar")
 # One "Todas" chip plus one per value: first the values in `orden`, then any
-# other value in the data, in order of appearance.
+# other value in the data, in order of appearance. `inicial`: the chip the
+# table opens on (T09); NULL = Todas. Only on opening: after that the chip
+# is the user's.
 hd_fichas_validar <- function(fichas) {
   if (is.null(fichas)) return(NULL)
   if (!is.list(fichas) || !is.character(fichas$campo) || length(fichas$campo) != 1L || !nzchar(fichas$campo))
     stop("hd_table: `fichas` must be list(campo = <column name>, orden = <values>, mostrar = \"conteo\" | \"monto\").",
          call. = FALSE)
-  desconocidos <- setdiff(names(fichas), c("campo", "orden", "mostrar"))
+  desconocidos <- setdiff(names(fichas), c("campo", "orden", "mostrar", "inicial"))
   if (length(desconocidos))
     stop(sprintf("hd_table: unknown `fichas` field(s): %s.", paste(desconocidos, collapse = ", ")), call. = FALSE)
   fichas$mostrar <- fichas$mostrar %||% "conteo"
   if (!fichas$mostrar %in% c("conteo", "monto"))
     stop(sprintf("hd_table: fichas$mostrar must be \"conteo\" or \"monto\", not \"%s\".", fichas$mostrar), call. = FALSE)
   fichas$orden <- as.character(fichas$orden %||% character(0))
+  if (!is.null(fichas$inicial) && !(is.character(fichas$inicial) && length(fichas$inicial) == 1L && nzchar(fichas$inicial)))
+    stop("hd_table: fichas$inicial must be one value of the chips' field (or NULL for Todas).", call. = FALSE)
   fichas
 }
 
@@ -121,7 +126,8 @@ hd_fichas_payload <- function(fichas, datos, columnas) {
   list(
     valores  = I(valores),
     opciones = lapply(orden, function(v) list(valor = v, texto = .hd_texto(mapa[[v]]$texto %||% v))),
-    mostrar  = fichas$mostrar
+    mostrar  = fichas$mostrar,
+    inicial  = if (!is.null(fichas$inicial) && fichas$inicial %in% orden) fichas$inicial
   )
 }
 

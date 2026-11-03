@@ -296,6 +296,18 @@ test_that("fichas: shape validated, field must exist, labels from the col_insign
   expect_identical(vapply(pl$opciones, `[[`, "", "valor"), c("b", "a", "c"))
   expect_identical(vapply(pl$opciones, `[[`, "", "texto"), c("b", "Alfa", "c"))
   expect_identical(unclass(pl$valores), c("a", "c", ""))
+  expect_null(pl$inicial)
+})
+
+test_that("fichas$inicial (T09): one chip value the table opens on; one not offered is ignored", {
+  expect_error(hd_fichas_validar(list(campo = "Estado", inicial = c("a", "b"))), "fichas\\$inicial must be one value")
+  expect_error(hd_fichas_validar(list(campo = "Estado", inicial = "")), "fichas\\$inicial must be one value")
+  d <- data.frame(id = c("1", "2"), Estado = c("a", "c"), stringsAsFactors = FALSE)
+  cols <- list(col_texto("Estado"))
+  expect_identical(hd_fichas_payload(hd_fichas_validar(list(campo = "Estado", inicial = "c")), d, cols)$inicial, "c")
+  # A value in `orden` with no rows yet is still a chip, so it can open on it.
+  expect_identical(hd_fichas_payload(hd_fichas_validar(list(campo = "Estado", orden = "z", inicial = "z")), d, cols)$inicial, "z")
+  expect_null(hd_fichas_payload(hd_fichas_validar(list(campo = "Estado", inicial = "nope")), d, cols)$inicial)
 })
 
 test_that("bar actions: validated, unique, 'detalle' reserved", {

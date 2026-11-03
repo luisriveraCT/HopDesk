@@ -976,7 +976,11 @@
                rango: valores.map(function (v) { return rangoDe[v] == null ? 1e9 : rangoDe[v]; }) };
     }) : null;
     if (st.secciones && !st.secciones.length) st.secciones = null;
-    if (msg.fichas) st.fichas = { valores: arr(msg.fichas.valores), opciones: arr(msg.fichas.opciones), mostrar: msg.fichas.mostrar };
+    if (msg.fichas) {
+      st.fichas = { valores: arr(msg.fichas.valores), opciones: arr(msg.fichas.opciones), mostrar: msg.fichas.mostrar };
+      // fichas$inicial: the chip it opens on, once; after that it's the user's (T09).
+      if (!st.fichaInicial) { st.fichaInicial = true; if (msg.fichas.inicial != null) st.ficha = msg.fichas.inicial; }
+    }
     if (st.filtrosEl) cargarFiltros(st, msg.filtros);
     st.celdas = arr(f.celdas).map(function (c) {
       return { mostrar: arr(c.mostrar), orden: arr(c.orden), copiar: arr(c.copiar), tono: c.tono ? arr(c.tono) : null,
