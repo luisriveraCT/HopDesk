@@ -150,11 +150,7 @@ setup_sync_bus <- function(session, shared, poll_ms = 8000,
       )
       if (!is.null(key_full))
         suppressWarnings(rm(list = intersect(key_full, ls(.s3_preload_cache)), envir = .s3_preload_cache))
-      # Same for .app_data_cache, which load_moves()/load_interco_v2() answer
-      # from first: only this process's own saves keep it current, so a write
-      # from another process or an offline-queue replay stayed invisible to
-      # every session here (CM09, finding 1). Scoped exactly as the loader
-      # below reads it.
+      # And .app_data_cache, which some loaders read first (see .SYNC_CACHE_KEYS).
       .sync_olvidar_cache(name, if (in_jump_context) active_cid else NULL)
 
       # When in a jump context, pass active_cid so the reload fetches data
