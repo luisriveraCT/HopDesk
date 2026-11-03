@@ -42,7 +42,8 @@ cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 cargar("R/global.R", c("fmt_money", "is_erp_sourced"))
 cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", "load_ctas_bancos"))
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
-            "R/bancos_parser.R", "R/bancos_detect.R", "R/bancos_persistence.R", "R/bancos_module.R"))
+            "R/bancos_parser.R", "R/bancos_detect.R", "R/bancos_persistence.R", "R/bancos_formatos.R",
+            "R/bancos_module.R"))
   suppressMessages(source(f))
 
 # Recorders (after the module, so they win)

@@ -446,6 +446,7 @@ source("R/ppl_generator.R")
 source("R/bancos_parser.R")
 source("R/bancos_detect.R")
 source("R/bancos_persistence.R")
+source("R/bancos_formatos.R")
 source("R/bancos_module.R")
 source("R/proveedores_match.R")
 source("R/proveedores_excel.R")   # Excel import helpers (T08); proveedores_module.R uses them

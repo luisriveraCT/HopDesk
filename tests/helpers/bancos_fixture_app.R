@@ -43,7 +43,8 @@ cargar("R/global.R", c("fmt_money", "is_erp_sourced", "CURRENCIES"))
 cargar("R/ui_components.R", "app_styles")
 cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", "load_ctas_bancos", ".schema_ctas_cuentas", "load_ctas_cuentas"))
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
-            "R/bancos_parser.R", "R/bancos_detect.R", "R/bancos_persistence.R", "R/bancos_module.R"))
+            "R/bancos_parser.R", "R/bancos_detect.R", "R/bancos_persistence.R", "R/bancos_formatos.R",
+            "R/bancos_module.R"))
   sys.source(file.path(raiz, f), envir = globalenv())
 assign(".i18n_dir", file.path(raiz, "www", "i18n"), envir = globalenv())
 assign("log_action", function(...) invisible(NULL), envir = globalenv())
