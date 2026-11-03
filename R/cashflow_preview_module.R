@@ -13,7 +13,7 @@
 # ── Stage 4: HTML table renderer ─────────────────────────────────────────────
 
 # Compact formatter: "" for 0, "$4.5M", "$802K", "$4,321"
-.cf_fmt <- function(x, show_zero = FALSE) {
+.cf_fmt_corto <- function(x, show_zero = FALSE) {
   if (is.na(x) || (!show_zero && x == 0)) return("")
   ax  <- abs(x); sgn <- if (x < 0) "−" else ""
   if      (ax >= 1e6) paste0(sgn, "$", formatC(ax / 1e6, digits = 1, format = "f"), "M")
@@ -53,7 +53,7 @@ render_cashflow_preview_html <- function(ed, expanded = FALSE, day0_vals = list(
   }
 
   num_td <- function(v, cls = "", show_zero = FALSE) {
-    paste0('<td class="cf-num ', cls, '">', .cf_fmt(v, show_zero), '</td>')
+    paste0('<td class="cf-num ', cls, '">', .cf_fmt_corto(v, show_zero), '</td>')
   }
 
   subtot_from_wide <- function(wide_df) {
@@ -157,7 +157,7 @@ render_cashflow_preview_html <- function(ed, expanded = FALSE, day0_vals = list(
         v <- if (j <= nrow(smry)) smry$net_day[j] else 0
         col <- .cf_net_col(v)
         paste0('<td class="cf-num cf-net-cell" style="color:', col, ';font-weight:600">',
-               .cf_fmt(v, show_zero = TRUE), '</td>')
+               .cf_fmt_corto(v, show_zero = TRUE), '</td>')
       }, character(1)), collapse = "")
 
       net_tot <- sum(smry$net_day, na.rm = TRUE)
@@ -181,13 +181,13 @@ render_cashflow_preview_html <- function(ed, expanded = FALSE, day0_vals = list(
         d0_cell <- paste0(
           '<td class="cf-num cf-cum-cell cf-day0-cell" data-currency="', h(cur), '">',
           '<span class="cf-day0-val" style="color:', d0_col, ';font-weight:600;">',
-          .cf_fmt(d0_val, show_zero = TRUE), '</span></td>')
+          .cf_fmt_corto(d0_val, show_zero = TRUE), '</span></td>')
 
         cum_cells <- paste0(vapply(seq_along(labels), function(j) {
           v <- (if (j <= nrow(smry)) smry$net_cum[j] else 0) + d0_val
           col <- .cf_net_col(v)
           paste0('<td class="cf-num cf-cum-cell" style="color:', col, ';font-weight:600">',
-                 .cf_fmt(v, show_zero = TRUE), '</td>')
+                 .cf_fmt_corto(v, show_zero = TRUE), '</td>')
         }, character(1)), collapse = "")
 
         cum_last <- smry$net_cum[nrow(smry)] + d0_val

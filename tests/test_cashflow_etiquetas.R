@@ -27,7 +27,7 @@ cargar <- function(archivo, nombres) {
 }
 cargar("R/persistence.R", "tag_label")
 cargar("R/cashflow_export_module.R", c(".cf_etiqueta", ".cf_lbl"))
-cargar("R/cashflow_preview_module.R", c(".cf_fmt", ".cf_fmt_full", ".cf_net_col", "render_cashflow_preview_html"))
+cargar("R/cashflow_preview_module.R", c(".cf_fmt_corto", ".cf_fmt_full", ".cf_net_col", "render_cashflow_preview_html"))
 
 ok("the export's glossary names the tags A, B and C, in Spanish",
    identical(c(.cf_lbl("g_tag_urg", "es"), .cf_lbl("g_tag_both", "es"), .cf_lbl("g_tag_imp", "es")),

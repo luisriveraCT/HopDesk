@@ -3165,9 +3165,7 @@ pagarHoyServer <- function(id, shared) {
 
 # get_cuenta_ppl() is now defined in settings_module.R and handles all lookup logic.
 
-# ── Schema helper (for empty fallback) ────────────────────────────────────────
-.schema_proveedores <- function() tibble::tibble(
-  id = character(), Empresa = character(), codigo = character(),
-  nombre = character(), alias = character(), clabe = character(),
-  medio_pago = character(), rfc = character(), activo = logical()
-)
+# .schema_proveedores() lives only in R/persistence.R. This file used to
+# redefine it with 9 of its columns; loaded later, the short copy replaced the
+# real one for the whole app and took it down on 2026-11-03
+# (tests/test_funciones_duplicadas.R now forbids a second definition).
