@@ -422,14 +422,7 @@ intercoServer <- function(id, shared) {
                        class = "btn btn-sm btn-outline-secondary ms-auto",
                        title = "Cerrar detalle")
         ),
-        DT::dataTableOutput(ns("ic_detail_tbl")),
-        div(class = "mt-2 d-flex align-items-center gap-2",
-          actionButton(ns("ic_add_selected"),
-                       tagList(icon("calendar-plus"), " Agregar a Agenda de Hoy"),
-                       class = "btn btn-sm btn-success"),
-          tags$small(class = "text-muted",
-                     "Shift+clic para seleccionar m\u00faltiples \u00b7 + para a\u00f1adir individual")
-        )
+        hd_table_ui(ns("detalle_t"))
       )
     })
 
@@ -496,94 +489,78 @@ intercoServer <- function(id, shared) {
       nrow(new_rows)
     }
 
-    # Single-row "+" button click
-    observeEvent(input$ic_add_single, {
+    # ── Pair detail (hd_table, line items) ───────────────────────────────────
+    # Rows keyed by facturas_ids() (ledger + company + currency + document +
+    # source, as Vencidos): the row's ＋ and the bar's "Agregar a Agenda"
+    # send THOSE invoices. Both used to be positions -- the ＋ a row number
+    # and the batch DT's rows_selected -- read against ic_detail_sub()
+    # recalculated at click time, so when another session confirmed one of
+    # the pair's invoices (or an abono or a pill changed the list) the ＋ of
+    # the row on screen sent its neighbour.
+    # Días: how overdue, as a badge by the same cuts the colour had (≤ 0,
+    # 1–30, more than 30), and as a number beside it to sort by.
+    .detalle_tabla <- reactive({
       sub <- tryCatch(ic_detail_sub(), error = function(e) NULL)
-      req(sub)
-      idx <- input$ic_add_single$row
-      req(!is.na(idx), idx >= 1, idx <= nrow(sub))
-      added <- .ic_send_rows(sub[idx, , drop = FALSE])
-      showNotification(paste0(added, " factura a\u00f1adida a Agenda de Hoy."),
-                       type = "message", duration = 2)
-    }, ignoreNULL = TRUE, ignoreInit = TRUE)
+      if (is.null(sub)) sub <- tibble::tibble(Ledger = character(), Empresa = character(), Moneda = character(),
+                                              Documento = character())
+      amt_col <- if ("Saldo vencido" %in% names(sub)) "Saldo vencido" else "DocTotal"
+      due_col <- "Fecha de vencimiento"
+      doc_col <- "Fecha de contabilizaci\u00f3n"
+      col <- function(n, def = NA) if (n %in% names(sub)) sub[[n]] else rep(def, nrow(sub))
+      dias  <- as.integer(Sys.Date() - as.Date(col(due_col)))
+      tramo <- ifelse(is.na(dias), "", ifelse(dias <= 0, "al_dia", ifelse(dias <= 30, "d1_30", "mas_30")))
+      data.frame(
+        id          = facturas_ids(sub),
+        Documento   = as.character(col("Documento", "")),
+        Factura     = as.character(col("Factura", "")),
+        Contab      = as.Date(col(doc_col)),
+        Vence       = as.Date(col(due_col)),
+        Saldo       = as.numeric(col(amt_col, 0)),
+        Moneda      = as.character(col("Moneda", "")),
+        Tramo       = tramo,
+        Dias        = dias,
+        .acciones   = rep("agregar", nrow(sub)),
+        stringsAsFactors = FALSE
+      )
+    })
+    detalle_t <- hd_table_server(
+      "detalle_t", tabla = "ic_detalle", datos = .detalle_tabla,
+      columnas = list(
+        col_texto("Documento",  "tablas.interco.documento", recorte = FALSE),
+        col_texto("Factura",    "tablas.interco.referencia", recorte = FALSE),
+        col_fecha("Contab",     "tablas.interco.contabilizacion"),
+        col_fecha("Vence",      "tablas.interco.vencimiento"),
+        col_dinero("Saldo",     "tablas.interco.saldo", moneda = "Moneda"),
+        col_texto("Moneda",     "tablas.interco.moneda", recorte = FALSE),
+        col_insignia("Tramo",   "tablas.interco.tramo", mapa = list(
+          al_dia = list(texto = "tablas.interco.al_dia", tono = "neutro"),
+          d1_30  = list(texto = "tablas.interco.d1_30",  tono = "amarillo"),
+          mas_30 = list(texto = "tablas.interco.mas_30", tono = "rojo"))),
+        col_numero("Dias",      "tablas.interco.dias", opcional = TRUE, visible = TRUE)
+      ),
+      acciones_fila  = "agregar",
+      acciones_barra = list(list(accion = "agregar_seleccion", texto = "tablas.accion.agregar_seleccion",
+                                 confirmar = TRUE, confirmar_texto = "tablas.facturas.confirmar_agregar_sel")),
+      vacio          = "tablas.interco.detalle_vacio"
+    )
 
-    # Batch add via "Agregar a Agenda de Hoy" button
-    observeEvent(input$ic_add_selected, {
-      sub     <- tryCatch(ic_detail_sub(), error = function(e) NULL); req(sub)
-      sel_idx <- input$ic_detail_tbl_rows_selected
-      if (!length(sel_idx)) {
-        showNotification("Selecciona al menos una fila primero.", type = "warning", duration = 2)
-        return()
-      }
-      added <- .ic_send_rows(sub[sel_idx, , drop = FALSE])
-      showNotification(paste0(added, " factura(s) a\u00f1adida(s) a Agenda de Hoy."),
+    observeEvent(detalle_t$accion(), {
+      a <- detalle_t$accion()
+      if (!a$accion %in% c("agregar", "agregar_seleccion") || !length(a$ids)) return()
+      sub  <- tryCatch(ic_detail_sub(), error = function(e) NULL)
+      if (is.null(sub)) return()
+      rows <- sub[match(a$ids, facturas_ids(sub)), , drop = FALSE]
+      rows <- rows[!is.na(rows[["Documento"]] %||% NA), , drop = FALSE]
+      if (!nrow(rows)) return()
+      added <- .ic_send_rows(rows)
+      showNotification(if (identical(a$accion, "agregar"))
+                         paste0(added, " factura a\u00f1adida a Agenda de Hoy.")
+                       else paste0(added, " factura(s) a\u00f1adida(s) a Agenda de Hoy."),
                        type = "message", duration = 2)
     }, ignoreInit = TRUE)
 
     # ── Treasury map sub-module ────────────────────────────────────────────
     treasuryMapServer("icmap", shared, reactive(ic_invoices()))
-
-    # ── Detail DT ─────────────────────────────────────────────────────────
-    output$ic_detail_tbl <- DT::renderDataTable({
-      sub <- ic_detail_sub()
-
-      amt_col <- if ("Saldo vencido" %in% names(sub)) "Saldo vencido" else "DocTotal"
-      due_col <- "Fecha de vencimiento"
-      doc_col <- "Fecha de contabilizaci\u00f3n"
-
-      display_cols <- intersect(
-        c("Documento", "Factura", doc_col, due_col, amt_col, "Moneda"),
-        names(sub)
-      )
-      display <- sub[, display_cols, drop = FALSE]
-
-      if (due_col %in% names(display))
-        display[["D\u00edas"]] <- as.integer(Sys.Date() - as.Date(display[[due_col]]))
-
-      # Per-row "+" button column
-      add_input_id <- ns("ic_add_single")
-      display[[" "]] <- vapply(seq_len(nrow(display)), function(i) {
-        sprintf(
-          '<button class="btn btn-success btn-xs" style="padding:0 6px;font-size:.8rem;line-height:1.6;" title="A\u00f1adir a Agenda de Hoy" onclick="event.stopPropagation();Shiny.setInputValue(\'%s\',{row:%d,nonce:Math.random()},{priority:\'event\'})">+</button>',
-          add_input_id, i
-        )
-      }, character(1))
-
-      n_cols   <- ncol(display)
-      amt_tgts <- which(names(display) %in% c(amt_col, "D\u00edas")) - 1L
-      btn_tgt  <- n_cols - 1L
-
-      dt <- DT::datatable(
-        display,
-        rownames  = FALSE,
-        escape    = FALSE,
-        selection = "multiple",
-        class     = "table table-sm table-hover",
-        options   = list(
-          pageLength = 25,
-          dom        = "ftp",
-          columnDefs = list(
-            list(className = "dt-right",  targets = amt_tgts),
-            list(className = "dt-center", targets = btn_tgt,
-                 width = "36px", orderable = FALSE)
-          ),
-          language = list(
-            search      = "Buscar:",
-            paginate    = list(`next` = "\u203a", previous = "\u2039"),
-            info        = "Mostrando _START_\u2013_END_ de _TOTAL_",
-            zeroRecords = "Sin resultados"
-          )
-        )
-      )
-
-      if (amt_col %in% names(display))
-        dt <- DT::formatRound(dt, amt_col, digits = 2, mark = ",")
-      if ("D\u00edas" %in% names(display))
-        dt <- DT::formatStyle(dt, "D\u00edas",
-                              color      = DT::styleInterval(c(0, 30), c("inherit", "#856404", "#dc3545")),
-                              fontWeight = DT::styleInterval(30, c("normal", "bold")))
-      dt
-    }, server = FALSE)
 
   })
 }
