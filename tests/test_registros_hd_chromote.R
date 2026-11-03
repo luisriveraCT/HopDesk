@@ -235,9 +235,15 @@ picker <- function(id) ev(sprintf("document.getElementById('%s').value", id))
 pestana("PAG"); invisible(listo(P))
 elegir("pag-pagos_user_sel", "Todos")   # block P left it on ana
 antes_pk <- picker("pag-pagos_range")
+t_antes <- Sys.time()
 clic("document.getElementById('otra_sesion')"); Sys.sleep(0.5)
 ok("U: a file another session generates after the panel was drawn is not there by itself",
    !"p-new" %in% vis(P))
+# The picker shows minutes, and its end is when the panel was drawn: an
+# Actualizar in that same minute shows the same text, and the check below
+# failed whenever the run got here in under a minute (its pass depended on
+# the clock). Wait for the next minute first (60 s at most).
+while (format(Sys.time(), "%Y%m%d%H%M") == format(t_antes, "%Y%m%d%H%M")) Sys.sleep(1)
 clic("document.getElementById('pag-pagos_refresh')")
 ok("U: Archivos de pago -- Actualizar brings it, newest first",
    poll_until(function() identical(vis(P)[1], "p-new"), timeout_s = 10))
