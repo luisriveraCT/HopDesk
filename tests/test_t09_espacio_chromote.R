@@ -157,6 +157,14 @@ for (k in seq_along(VENTANAS)) {
   clic("document.getElementById('abrir')")
   espera(function() isTRUE(ev("!!document.querySelector('.modal.show .settings-hub') && !!document.querySelector(\"a[data-value='importar']\")")))
   Sys.sleep(0.5)
+  # The catalog (T09b): no sideways scroll, the row buttons whole.
+  C <- "prov_mod-catalogo-hdt"
+  espera(function() isTRUE(ev(sprintf("!!window.HDT && !!HDT.estado('%s') && HDT.estado('%s').visibles.length > 0", C, C))))
+  mc <- estable(C); contar(mc, sprintf("catalog %dx%d", v[1], v[2]))
+  ok(sprintf("catalog at %dx%d: no sideways scroll, the row buttons whole", v[1], v[2]),
+     !isTRUE(mc$horizontal) &&
+     isTRUE(ev(sprintf("(function(){ var s = document.querySelector('#%s .hdt-scroll').getBoundingClientRect();
+       return [].every.call(document.querySelectorAll('#%s td.hdt-acc button'), function (b) { return b.getBoundingClientRect().right <= s.right; }); })()", C, C))))
   clic("document.querySelector(\"a[data-value='importar']\")")
   espera(function() isTRUE(ev("!!document.getElementById('prov_mod-excel_file')")))
   Sys.sleep(0.5)

@@ -278,17 +278,20 @@ proveedoresServer <- function(id, shared) {
 
     catalogo <- hd_table_server(
       "catalogo", tabla = "proveedores", datos = catalogo_datos,
-      piezas = c("sel_fila", "sel_rango", "sel_todos", "barra_acc"),
+      # RFC is an optional column, hidden until asked for: at Luis's window
+      # (1293x632) the catalog scrolled sideways and cut the row buttons.
+      # Vigencia stays in sight (optional too): it is where "Expirado" shows.
+      piezas = c("sel_fila", "sel_rango", "sel_todos", "barra_acc", "columnas_opc"),
       columnas = list(
         col_texto("nombre",       "tablas.proveedores.nombre"),
         col_texto("alias",        "tablas.proveedores.alias"),
         col_texto("banco",        "tablas.proveedores.banco"),
         col_texto("no_cuenta",    "tablas.proveedores.no_cuenta", recorte = FALSE),
-        col_texto("rfc",          "tablas.proveedores.rfc", recorte = FALSE),
+        col_texto("rfc",          "tablas.proveedores.rfc", recorte = FALSE, opcional = TRUE, visible = FALSE),
         col_texto("moneda",       "tablas.proveedores.moneda", recorte = FALSE),
         col_texto("empresas",     "tablas.proveedores.empresas", recorte = FALSE),
         col_texto("activo_hasta", "tablas.proveedores.activo_hasta", recorte = FALSE),
-        col_insignia("vigencia",  "tablas.proveedores.vigencia", mapa = list(
+        col_insignia("vigencia",  "tablas.proveedores.vigencia", opcional = TRUE, mapa = list(
           expirado = list(texto = "tablas.proveedores.expirado", tono = "rojo"))),
         col_insignia("status",    "tablas.proveedores.estado", mapa = list(
           completo   = list(texto = "tablas.proveedores.completo",   tono = "exito"),

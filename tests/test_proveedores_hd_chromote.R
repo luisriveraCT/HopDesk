@@ -111,8 +111,15 @@ ok("the catalog loads on the engine with the 4 active providers",
 
 # ── P1/P6/P7 · columns and badges ───────────────────────────────────────────
 titulos <- unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s thead th')).filter(function(th){ return th.dataset.col != null; }).map(function(th){ return th.firstChild.textContent; })", CAT)))
-ok("P1: columns Nombre / Alias / Banco / No. Cuenta / RFC / Moneda / Empresas / Activo hasta / Vigencia / Estado",
-   identical(titulos, c("Nombre", "Alias", "Banco", "No. Cuenta", "RFC", "Moneda", "Empresas", "Activo hasta", "Vigencia", "Estado")))
+ok("P1/T09b: columns Nombre / Alias / Banco / No. Cuenta / Moneda / Empresas / Activo hasta / Vigencia / Estado (RFC hidden)",
+   identical(titulos, c("Nombre", "Alias", "Banco", "No. Cuenta", "Moneda", "Empresas", "Activo hasta", "Vigencia", "Estado")))
+# T09b: RFC and Vigencia are optional columns; RFC starts hidden (no sideways
+# scroll at Luis's 1293x632), Vigencia in sight (it carries "Expirado").
+clic(sprintf("document.querySelector('#%s .hdt-columnas')", CAT))
+ok("T09b: Columnas offers RFC (off) and Vigencia (on)",
+   espera(function() identical(ev("[].map.call(document.querySelectorAll('.hdt-menu .hdt-menu-op input[data-campo]'), function (c) { return c.dataset.campo + ':' + (c.checked ? 1 : 0); }).join(' ')"),
+                               "rfc:0 vigencia:1")))
+invisible(ev("document.body.click(); 0"))
 ok("P6: Estado is Completo (green) or Incompleto (aviso)",
    identical(insignia("p-acme"), "hdt-tono-exito Completo") && identical(insignia("p-papl"), "hdt-tono-aviso Incompleto"))
 ok("P7: only the expired date gets the red Expirado badge, next to its date; the rest say Indefinido",
