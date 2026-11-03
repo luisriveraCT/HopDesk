@@ -116,10 +116,9 @@ lupaServer <- function(id, shared, abrir, mes, accion_factura = handle_invoice_a
       if (is.na(m)) m <- format(Sys.Date(), "%Y-%m")
       cargar(m)
       t$ir_mes(m)
-      showModal(modalDialog(
-        title = textOutput(session$ns("titulo"), inline = TRUE), size = "xl", easyClose = TRUE,
-        footer = modalButton(tr("comun.cerrar")),
-        tags$style(".modal-xl:has(.hd-lupa) { max-width: 1400px; }"),
+      # The table's window (T09): almost the whole screen, no "Cerrar" footer.
+      showModal(hd_modal(
+        titulo = textOutput(session$ns("titulo"), inline = TRUE),
         div(class = "hd-lupa", facturas_tabla_ui(session$ns("tabla"), alto = "ventana"))
       ))
     }, ignoreInit = TRUE)
@@ -166,16 +165,13 @@ mostrar_datos_sap <- function(raw) {
   priority_cols <- intersect(c("Ledger","Empresa","Parte","Documento","Moneda"), names(disp))
   rest_cols     <- setdiff(names(disp), priority_cols)
   disp          <- disp[, c(priority_cols, rest_cols), drop = FALSE]
-  showModal(modalDialog(
-    title     = tr("tablas.datos_sap.titulo", n = nrow(disp)),
-    size      = "xl",
-    easyClose = TRUE,
-    footer    = tagList(
-      tags$small(class = "text-muted me-auto",
-                 tr("tablas.datos_sap.tamano", filas = nrow(disp), columnas = ncol(disp))),
-      modalButton(tr("comun.cerrar"))
-    ),
-    div(style = "max-height:65vh; overflow:auto;",
+  # The table's window (T09); the size goes in the header, the table gets the
+  # rest of the screen (still DT until its migration).
+  showModal(hd_modal(
+    titulo     = tr("tablas.datos_sap.titulo", n = nrow(disp)),
+    encabezado = tags$small(class = "text-muted",
+                            tr("tablas.datos_sap.tamano", filas = nrow(disp), columnas = ncol(disp))),
+    div(style = "max-height: calc(97vh - 70px); overflow: auto;",
       DT::datatable(
         disp,
         rownames   = FALSE,

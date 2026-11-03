@@ -303,7 +303,7 @@ clic(editar)
 ok("M7: the raw data button is 'Ver datos SAP', as in the lupa", identical(ev(sprintf("%s.textContent", barra("crudos"))), "Ver datos SAP"))
 clic(barra("crudos"))
 ok("M7: 'Ver datos SAP' opens the raw SAP viewer with the overdue rows (all of them, nothing marked)",
-   poll_until(function() grepl("Datos SAP crudos — 3 filas", ev("(document.querySelector('.modal-title')||{}).textContent || ''"), fixed = TRUE), timeout_s = 10))
+   poll_until(function() grepl("Datos SAP crudos — 3 filas", ev("(document.querySelector('.modal.show .hd-modal-titulo')||{}).textContent || ''"), fixed = TRUE), timeout_s = 10))
 
 # ── Height: the footer always shows whole (smoke test, 2026-10-31) ─────────
 # With the app's bar above the table (here a 140 px band) the footer ended

@@ -104,7 +104,7 @@ ok("the lupa opens in its window on the engine", abrir_lupa())
 MESES <- c("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre",
            "noviembre", "diciembre")
 titulo_de <- function(m) sprintf("Facturas — %s %s", MESES[as.integer(substr(m, 6, 7))], substr(m, 1, 4))
-titulo <- function() trimws(ev("document.querySelector('.modal.show .modal-title').textContent"))
+titulo <- function() trimws(ev("document.querySelector('.modal.show .hd-modal-titulo').textContent"))
 ok("D: the title says the month in Spanish ('Facturas — octubre 2026') and the bar shows it too",
    poll_until(function() identical(titulo(), titulo_de(mes_de(hoy))), timeout_s = 5) &&
      identical(estado()$periodo, mes_de(hoy)))
@@ -198,7 +198,7 @@ n_crudos <- sum(mes_de(hoy - c(5, 20, 3)) == mes_de(hoy))
 clic(barra("crudos"))
 ok(sprintf("M7: ... and shows every raw SAP row of the month (%d), nothing marked", n_crudos),
    poll_until(function() grepl(sprintf("Datos SAP crudos — %d filas", n_crudos),
-                               ev("(document.querySelector('.modal.show .modal-title')||{}).textContent || ''"), fixed = TRUE), timeout_s = 10))
+                               ev("(document.querySelector('.modal.show .hd-modal-titulo')||{}).textContent || ''"), fixed = TRUE), timeout_s = 10))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)

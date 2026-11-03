@@ -141,12 +141,14 @@ invisible(ev("document.querySelector('.modal.show .hdt-mes-flecha').click()"))  
 Sys.sleep(1.5)
 l <- ev("(function(){ var s = document.querySelector('.modal.show .hdt-scroll'), c = document.querySelector('.modal.show .modal-content');
   return { ventana: innerHeight, scroll: s.getBoundingClientRect().height, abajo: c.getBoundingClientRect().bottom,
+           margen: parseFloat(getComputedStyle(c.closest('.modal-dialog')).marginTop),
            filas: HDT.estado(s.closest('.hdt').id).visibles.length }; })()")
 cat(sprintf("  lupa: %d rows, rows area %.0f px, modal ends at %.0f (window %d)\n", l$filas, l$scroll, l$abajo, l$ventana))
 ok("lupa: a month with hundreds of rows", l$filas > 300)
-ok("lupa: the modal ends inside the window (its Cerrar shows)", l$abajo <= l$ventana)
+ok("lupa: the modal ends inside the window", l$abajo <= l$ventana)
+# The hd_modal()'s margin (1.5vh since T09), read from the dialog.
 ok("lupa: and the table takes the rest of it (window's bottom less the modal margin, +-2 px)",
-   abs(l$abajo - (l$ventana - 28)) <= 2)
+   abs(l$abajo - (l$ventana - l$margen)) <= 2)
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)

@@ -1004,17 +1004,14 @@ ledgerModuleServer <- function(id, config, shared) {
         }
       } else NULL
 
-      showModal(modalDialog(
-        title = tr("tablas.dia.crudos_titulo", fecha = format(ctx$sel_date, "%d %b %Y"), moneda = ctx$cur),
-        size  = "xl", easyClose = TRUE,
-        footer = tagList(
-          tags$small(class = "text-muted me-auto",
+      # The table's window (T09): the counts go in the header, no footer.
+      showModal(hd_modal(
+        titulo = tr("tablas.dia.crudos_titulo", fecha = format(ctx$sel_date, "%d %b %Y"), moneda = ctx$cur),
+        encabezado = tags$small(class = "text-muted",
             paste0(nrow(d), " filas en detail | ",
                    if (!is.null(raw_day)) nrow(raw_day) else "?",
                    " filas en SAP raw para este día")
           ),
-          modalButton("Cerrar")
-        ),
         tagList(
           tags$h6("Campos procesados (moneda y amount_col aplicados)", class = "text-muted mb-1"),
           DT::dataTableOutput(ns("raw_detail_tbl")),
