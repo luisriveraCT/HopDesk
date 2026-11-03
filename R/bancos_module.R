@@ -2863,8 +2863,7 @@ bancosServer <- function(id, shared) {
       on.exit(shinyjs::enable("do_eliminar_sesion_confirm"), add = TRUE)
 
       data <- delete_sesion_confirm_rv()
-      req(data)
-      delete_sesion_confirm_rv(NULL)
+      req(data)   # cleared after the save: a failed one keeps it, to try again
       sesion_key <- data$sesion_key
       user <- tryCatch(shared$current_user(), error = function(e) "system")
       movs <- movs_all()
@@ -2878,10 +2877,13 @@ bancosServer <- function(id, shared) {
       movs$eliminado[mask]     <- TRUE
       movs$eliminado_at[mask]  <- Sys.time()
       movs$eliminado_por[mask] <- user
+      # Saved first (rule 8, T12a): on failure nothing changes in the
+      # session and nothing says it worked.
+      if (!.bnc_guardar("eliminar_sesion", paste0("Eliminar los ", actual_n, " movimiento(s) de una sesión de importación"),
+                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(),
+                                                           base = movs_base))) return()
       shared$bancos_movimientos(movs)
-      tryCatch({ save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base); bump_sync_version("bancos_movimientos_db") },
-               error = function(e)
-                 showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
+      bump_sync_version("bancos_movimientos_db")
       delete_sesion_confirm_rv(NULL)
       removeModal()
       session$sendCustomMessage("bnc_collapse_reasignar",

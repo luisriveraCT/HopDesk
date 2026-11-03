@@ -122,6 +122,18 @@ testServer(bancosServer, args = list(shared = shared), {
     session$setInputs(do_reasignar_confirm = runif(1)); .falla_escritura <<- character(0)
     !is.null(reasig_confirm_data_rv())
   })
+
+  # 3 · Delete an import session
+  probar("3 · do_eliminar_sesion_confirm", "eliminar_sesion", function() {
+    delete_sesion_confirm_rv(list(sesion_key = as.character(SES)))
+    session$setInputs(do_eliminar_sesion_confirm = runif(1))
+  }, function(m) all(m$eliminado[m$id %in% c("m1", "m2")]))
+  ok("3 · do_eliminar_sesion_confirm: a failed save keeps the confirmation's data (to try again)", {
+    sembrar(); MOVS(movs0); .falla_escritura <<- MK
+    delete_sesion_confirm_rv(list(sesion_key = as.character(SES)))
+    session$setInputs(do_eliminar_sesion_confirm = runif(1)); .falla_escritura <<- character(0)
+    !is.null(delete_sesion_confirm_rv())
+  })
 })
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
