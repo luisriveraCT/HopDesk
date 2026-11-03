@@ -556,11 +556,18 @@ hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "dat
   invisible(archivo)
 }
 
+# acciones_ocultas: a function / reactive giving the action names (row,
+# group or bar) this user doesn't get -- e.g. "agregar_todo" without
+# can_register_payments. Their buttons don't show, and an action that comes
+# anyway is ignored (t$accion() never gives it). The module still checks the
+# permission where it writes; this is what the user sees.
 hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = "id",
                             fichas = NULL, acciones_fila = NULL, acciones_barra = NULL,
                             filtros = NULL, periodo = NULL, aviso = NULL, encabezado = NULL,
                             secciones = NULL, vacio = NULL, grupo = NULL, textos = NULL,
-                            visibles = FALSE) {
+                            visibles = FALSE, acciones_ocultas = NULL) {
+  if (!is.null(acciones_ocultas) && !is.function(acciones_ocultas))
+    stop("hd_table: `acciones_ocultas` must be a function or reactive giving action names.", call. = FALSE)
   piezas_tabla <- hd_piezas_de(tabla, piezas)
   piezas_motor <- hd_piezas_motor(tabla, piezas_tabla)
   # columnas: a list of col_*(), or a reactive returning one -- a table pasted
@@ -681,6 +688,22 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
     # nonce; once they're stored the server answers with the same nonce and
     # only then does the browser start the download, so the file can never
     # come out with another filter or order than the screen.
+    # acciones_ocultas: what this user doesn't get; sent when it changes.
+    ocultas <- shiny::reactiveVal(character(0))
+    if (!is.null(acciones_ocultas)) {
+      shiny::observe({
+        input$hdt_pedir   # sent again when the engine arrives late (a modal, a renderUI)
+        a <- tryCatch(as.character(unlist(acciones_ocultas())), error = function(e) {
+          if (inherits(e, "shiny.silent.error")) stop(e)
+          .hd_falla_datos(tabla, e, session, ns("hdt"), que = "aviso")
+          NULL
+        })
+        if (is.null(a)) return()
+        ocultas(a)
+        session$sendCustomMessage("hdt-ocultas", list(id = ns("hdt"), acciones = I(a)))
+      })
+    }
+
     # exportado: each download that was written, for the module's audit
     # (Bancos, T12a): list(formato, ids, nonce). Set once the file is
     # written, so a download that failed never counts.
@@ -736,6 +759,8 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
       accion    = shiny::reactive({
         a <- input$accion
         if (is.null(a)) return(NULL)
+        # A hidden action (acciones_ocultas) never reaches the module.
+        if (as.character(a$accion) %in% shiny::isolate(ocultas())) return(NULL)
         # valor: what the action's own field holds (campo = "fecha": "AAAA-MM-DD").
         list(accion = as.character(a$accion), ids = as.character(unlist(a$ids)), nonce = a$nonce,
              valor = if (!is.null(a$valor)) as.character(a$valor),

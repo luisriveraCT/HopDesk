@@ -305,8 +305,9 @@
     // that works on what's visible). Then the confirmation bar, inside the
     // table: never a confirm() or a modal on top of a modal.
     // (crudos brings its own action, even on a table without barra_acc.)
-    st.accBarra = arr(msg.acciones_barra).filter(function (a) { return p.barra_acc || a.accion === 'crudos'; });
-    if (st.accBarra.length) {
+    st.accBarraTodas = arr(msg.acciones_barra).filter(function (a) { return p.barra_acc || a.accion === 'crudos'; });
+    st.accBarra = sinOcultas(st, st.accBarraTodas);
+    if (st.accBarraTodas.length) {
       st.accBarraEl = nodo('div', 'hdt-acciones');
       st.accBarraEl.hidden = true;
       st.accBarraEl.addEventListener('click', function (e) {
@@ -940,11 +941,13 @@
     var f = msg.filas || {};
     var arriba = st.scroll.scrollTop, izq = st.scroll.scrollLeft;
 
-    var cabeza = { columnas: msg.columnas, acciones: msg.acciones_fila || null };
+    var cabeza = { columnas: msg.columnas, acciones: msg.acciones_fila || null, ocultas: OCULTAS[st.root.id] || null };
     var colsCambian = JSON.stringify(cabeza) !== JSON.stringify(st.colsMeta);
     st.colsMeta = cabeza;
-    // Row actions in catalog order; .acciones narrows them per row.
-    st.accFila = st.p.acc_fila ? arr(msg.acciones_fila) : [];
+    // Row actions in catalog order; .acciones narrows them per row, and
+    // acciones_ocultas takes some away for this user (no permission).
+    st.accFila = sinOcultas(st, st.p.acc_fila ? arr(msg.acciones_fila) : []);
+    if (st.accBarraTodas) st.accBarra = sinOcultas(st, st.accBarraTodas);
     st.permitidas = f.acciones == null ? null : arr(f.acciones).map(function (s) {
       var set = {};
       String(s || '').split(',').forEach(function (a) { if (a) set[a] = true; });
@@ -2213,6 +2216,24 @@
   }
 
   // ── Notice line (aviso) ──────────────────────────────────────────────────
+  // acciones_ocultas (hdt-ocultas): actions this user doesn't get -- row,
+  // group or bar -- by name. The table is loaded again from its last message
+  // (the buttons column may come or go). The server checks the permission
+  // again and ignores a hidden action (R/hd_table.R).
+  var OCULTAS = {};   // root element id -> hidden action names
+  function sinOcultas(st, acciones) {
+    var o = OCULTAS[st.root.id];
+    return o && o.length ? acciones.filter(function (a) { return o.indexOf(a.accion) < 0; }) : acciones;
+  }
+  function recibirOcultas(msg) {
+    OCULTAS[msg.id] = arr(msg.acciones).map(String);
+    var st = TABLAS[msg.id];
+    if (st && st.root === document.getElementById(msg.id) && ULTIMO[msg.id]) {
+      cargar(st, ULTIMO[msg.id]);
+      pintarBarraAcc(st);
+    }
+  }
+
   var NOTAS = {};   // root element id -> last notice text, for a re-created container
   function pintarNota(st, texto) {
     st.notaEl.textContent = texto || '';
@@ -2257,7 +2278,7 @@
             : it.grupo ? 'grupo:' + (it.abierto ? 'abierto' : 'cerrado') + ':' + it.filas.map(function (i) { return st.ids[i]; }).join(',')
             : 'banda:' + (it.banda + 1) + ':' + it.valor;
         }),
-        seleccion: idsSel(st), orden: st.orden, busqueda: st.q,
+        seleccion: idsSel(st), orden: st.orden, busqueda: st.q, ocultas: OCULTAS[id] || [],
         periodo: st.mes || null,
         fijas: st.vis.filter(function (i) { return st.fijar[i]; }).map(function (i) { return st.ids[i]; }),
         filtros: Object.keys(st.fsel).reduce(function (o, c) { o[c] = Object.keys(st.fsel[c]); return o; }, {}),
@@ -2275,6 +2296,7 @@
       Shiny.addCustomMessageHandler('hdt-excel', excelListo);
       Shiny.addCustomMessageHandler('hdt-nota', recibirNota);
       Shiny.addCustomMessageHandler('hdt-falla', recibirFalla);
+      Shiny.addCustomMessageHandler('hdt-ocultas', recibirOcultas);
       Shiny.addCustomMessageHandler('hdt-mes', recibirMes);
       pedirPerdidos();
     }

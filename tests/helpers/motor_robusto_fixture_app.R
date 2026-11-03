@@ -29,6 +29,8 @@ ui <- fluidPage(
   tags$span(id = "contador_caja", textOutput("contador", inline = TRUE)),
   caja("mala"), caja("vuelve"), caja("aviso"), caja("espera"), caja("buena"), caja("exporta"),
   tags$span(id = "exportado_caja", textOutput("exportado", inline = TRUE)),
+  actionButton("ocultar", "ocultar"), caja("ocultas"),
+  tags$span(id = "acciones_caja", textOutput("acciones", inline = TRUE)),
   tags$pre(id = "registro", textOutput("registro_txt"))
 )
 server <- function(input, output, session) {
@@ -50,6 +52,20 @@ server <- function(input, output, session) {
   ex <- hd_table_server("exporta", tabla = "proveedores", datos = reactive(filas), columnas = cols)
   n_ex <- reactiveVal(0)
   observeEvent(ex$exportado(), n_ex(n_ex() + 1))
+  # acciones_ocultas: #ocultar toggles hiding "agregar" (row) and
+  # "agregar_todo" (bar); #acciones lists what t$accion() let through.
+  ocultar <- reactiveVal(TRUE)
+  observeEvent(input$ocultar, ocultar(!ocultar()))
+  oc <- hd_table_server("ocultas", tabla = "facturas_lupa", datos = reactive(filas), columnas = cols,
+                        acciones_fila = c("agregar", "editar"),
+                        acciones_barra = list(list(accion = "agregar_todo", texto = "tablas.accion.agregar_todo",
+                                                   sin_seleccion = TRUE),
+                                              list(accion = "mandar_papelera", texto = "tablas.accion.papelera",
+                                                   sin_seleccion = TRUE)),
+                        acciones_ocultas = reactive(if (ocultar()) c("agregar", "agregar_todo") else character(0)))
+  llegaron <- reactiveVal(character(0))
+  observeEvent(oc$accion(), llegaron(c(llegaron(), oc$accion()$accion)))
+  output$acciones <- renderText(paste(llegaron(), collapse = ","))
   output$exportado <- renderText({
     e <- ex$exportado()
     if (is.null(e)) "0" else paste(n_ex(), e$formato, paste(e$ids, collapse = ","))

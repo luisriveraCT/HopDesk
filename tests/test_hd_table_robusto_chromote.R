@@ -38,7 +38,7 @@ ev <- function(js) {
 }
 espera <- function(cond, timeout_s = 20)
   poll_until(function() isTRUE(tryCatch(cond(), error = function(e) FALSE)), timeout_s = timeout_s, interval_s = 0.2)
-texto <- function(id) ev(sprintf("(document.getElementById('%s') || {}).innerText || ''", id))
+texto <- function(id) trimws(ev(sprintf("(document.getElementById('%s') || {}).innerText || ''", id)))
 vis <- function(t) unlist(ev(sprintf("(HDT.estado('%s') || {}).visibles", t)))
 AVISO <- "No se pudieron cargar los datos."
 
@@ -82,6 +82,27 @@ descargar()
 ok("each download fires it again, with what the screen shows (the search left 1)",
    espera(function() identical(texto("exportado_caja"), "2 excel 1")))
 unlink(descargas, recursive = TRUE)
+
+# ── acciones_ocultas: actions this user doesn't get (no permission) ────────
+O <- "ocultas-hdt"
+botones <- function(sel) unlist(ev(sprintf("[].map.call(document.querySelectorAll('#%s %s'), function (b) { return b.dataset.accion; })", O, sel)))
+ok("hidden: the row has ✎ but no ＋, and the bar no 'Agregar todo' (Papelera stays)",
+   espera(function() identical(vis(O), c("1", "2"))) &&
+   espera(function() identical(unique(botones("tbody button.hdt-accion")), "editar")) &&
+   identical(botones(".hdt-acciones button.hdt-btn"), "mandar_papelera"))
+forjar <- function(accion) invisible(ev(sprintf(
+  "Shiny.setInputValue('ocultas-accion', {accion: '%s', ids: ['1'], nonce: Math.random()}, {priority: 'event'}); 0", accion)))
+forjar("agregar_todo"); forjar("agregar")
+Sys.sleep(1)
+forjar("mandar_papelera")
+ok("a hidden action sent anyway never reaches the module; a visible one does",
+   espera(function() identical(texto("acciones_caja"), "mandar_papelera")))
+invisible(ev("document.getElementById('ocultar').click(); 0"))
+ok("allowed again: ＋ and 'Agregar todo' come back, with the other buttons",
+   espera(function() setequal(unique(botones("tbody button.hdt-accion")), c("agregar", "editar"))) &&
+   espera(function() setequal(botones(".hdt-acciones button.hdt-btn"), c("agregar_todo", "mandar_papelera"))))
+invisible(ev(sprintf("HDT.fila('%s', '1').querySelector('button[data-accion=agregar]').click(); 0", O)))
+ok("...and its ＋ reaches the module", espera(function() identical(texto("acciones_caja"), "mandar_papelera,agregar")))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)
