@@ -25,8 +25,9 @@
 # =============================================================================
 
 # =============================================================================
-# Stage 2 of the Actividad audit overhaul (2026-08-26): a click on any row's
-# Descripción cell opens a detail modal. Payment confirmations and policy
+# Stage 2 of the Actividad audit overhaul (2026-08-26): a row's detail opens
+# in a modal (since T10, from the row's ℹ or a double click; it was a click
+# on the Descripción cell). Payment confirmations and policy
 # applies get bespoke, information-dense rendering (Mouse's explicit
 # priority: "if it was a payment I need full information about it"); login/
 # logout get their own small bespoke views; every other module/action falls
@@ -752,10 +753,12 @@ generate_audit_log_html_doc <- function(export_df, meta_info = list()) {
 # R/pagos_audit_viewer_module.R: the stored id, or one made up for a row
 # written without it, and never repeated -- the engine refuses both, and one
 # old row must not take the whole log down.
-.audit_ids <- function(x) {
+# `clave`: what a made-up id is built from (the row's time, user, action...),
+# so it stays the same when a filter or a refresh changes the rows around it.
+.audit_ids <- function(x, clave = seq_along(x)) {
   x <- as.character(x)
   vacio <- is.na(x) | !nzchar(x)
-  x[vacio] <- paste0("sin-id-", which(vacio))
+  x[vacio] <- paste0("sin-id-", gsub("[^A-Za-z0-9_.-]+", "_", as.character(clave[vacio])))
   make.unique(x, sep = "#")
 }
 
@@ -916,18 +919,31 @@ auditLogViewerServer <- function(id, shared, mode,
       df
     })
 
-    # Módulo / Acción choices derived from whatever the current range returned.
+    # Módulo / Acción / Usuario choices derived from whatever the current range
+    # returned. Usuario is a list (it was free text): the PDF prints the
+    # filters in its header, so they stay on the server until the table can
+    # tell it what it shows (T10, P4/P5).
     observeEvent(visible_fetched(), {
       df <- visible_fetched()
       if (inherits(df, "error") || is.null(df)) return()
       mods <- sort(unique(df$module[!is.na(df$module) & nzchar(df$module)]))
       accs <- sort(unique(df$action[!is.na(df$action) & nzchar(df$action)]))
+      users <- sort(unique(df$user[!is.na(df$user) & nzchar(df$user)]))
+      updateSelectInput(session, "audit_user_sel",
+                        choices = c("Todos", users),
+                        selected = if (isTRUE(input$audit_user_sel %in% users)) input$audit_user_sel else "Todos")
       updateSelectInput(session, "audit_mod_sel",
                         choices = c("Todos", mods),
                         selected = if (isTRUE(input$audit_mod_sel %in% mods)) input$audit_mod_sel else "Todos")
       updateSelectInput(session, "audit_accion_sel",
                         choices = c("Todos", accs),
                         selected = if (isTRUE(input$audit_accion_sel %in% accs)) input$audit_accion_sel else "Todos")
+    })
+
+    # The chosen user, "" for all.
+    usuario_sel <- reactive({
+      u <- input$audit_user_sel %||% "Todos"
+      if (identical(u, "Todos")) "" else u
     })
 
     filtered <- reactive({
@@ -937,9 +953,8 @@ auditLogViewerServer <- function(id, shared, mode,
         df <- df[!is.na(df$module) & df$module == input$audit_mod_sel, , drop = FALSE]
       if (!is.null(input$audit_accion_sel) && !identical(input$audit_accion_sel, "Todos"))
         df <- df[!is.na(df$action) & df$action == input$audit_accion_sel, , drop = FALSE]
-      u_filter <- trimws(input$audit_user_filter %||% "")
-      if (nzchar(u_filter))
-        df <- df[!is.na(df$user) & grepl(u_filter, df$user, ignore.case = TRUE), , drop = FALSE]
+      if (nzchar(usuario_sel()))
+        df <- df[!is.na(df$user) & df$user == usuario_sel(), , drop = FALSE]
       df
     })
 
@@ -953,11 +968,7 @@ auditLogViewerServer <- function(id, shared, mode,
       choices <- client_choices()
 
       tagList(
-        tags$style(HTML(paste0(
-          ".audit-desc-clickable { cursor: pointer; }
-           .audit-desc-clickable:hover { text-decoration: underline; color: #0d6efd; }",
-          .AUDIT_STICKY_CSS
-        ))),
+        tags$style(HTML(.AUDIT_STICKY_CSS)),
         div(
           id = ns("sticky_scope"),
           div(
@@ -986,10 +997,9 @@ auditLogViewerServer <- function(id, shared, mode,
               div(style = "min-width:130px;",
                   tags$label("Acción", class = "form-label small fw-semibold mb-1"),
                   selectInput(ns("audit_accion_sel"), NULL, choices = c("Todos"), width = "100%")),
-              div(style = "min-width:150px; flex:1;",
+              div(style = "min-width:150px;",
                   tags$label("Usuario", class = "form-label small fw-semibold mb-1"),
-                  textInput(ns("audit_user_filter"), NULL,
-                           placeholder = "Filtrar por usuario...", width = "100%")),
+                  selectInput(ns("audit_user_sel"), NULL, choices = c("Todos"), width = "100%")),
               div(class = "d-flex gap-2 align-items-center",
                   actionButton(ns("audit_refresh"), icon("rotate"),
                               class = "btn btn-sm btn-outline-secondary", title = "Actualizar"),
@@ -1019,13 +1029,13 @@ auditLogViewerServer <- function(id, shared, mode,
     # reactive() re-evaluates on every upstream invalidation regardless of
     # whether its RETURN VALUE actually changed -- Shiny does not dedupe by
     # value on its own. Reading fetched() directly here meant this whole
-    # renderUI (and therefore the dataTableOutput() container it returns)
-    # was torn down and rebuilt on every date-range/filter interaction, even
-    # when the error/no-error state never changed -- destroying the DT
-    # widget's own sort/search/page state each time (reported 2026-08-25/26
-    # as "just opening the [date range] clears everything"). error_state is
-    # a reactiveVal, only ever updated when the boolean actually flips, so
-    # this renderUI -- and the DT container it creates -- now only reruns
+    # renderUI (and therefore the table container it returns) was torn down
+    # and rebuilt on every date-range/filter interaction, even when the
+    # error/no-error state never changed -- destroying the table's own
+    # sort/search/scroll state each time (reported 2026-08-25/26 as "just
+    # opening the [date range] clears everything"). error_state is a
+    # reactiveVal, only ever updated when the boolean actually flips, so
+    # this renderUI -- and the container it creates -- now only reruns
     # on a genuine permission-state change (e.g. a staff jump), never on an
     # ordinary data refresh.
     error_state <- reactiveVal(FALSE)
@@ -1039,89 +1049,62 @@ auditLogViewerServer <- function(id, shared, mode,
         return(div(class = "alert alert-warning mt-2", icon("lock"),
                    " No tienes permiso para ver esta bitácora."))
       }
-      DT::dataTableOutput(ns("audit_tbl"))
+      hd_table_ui(ns("audit_t"))
     })
 
-    .audit_cols <- if (identical(mode, "multi_client"))
-      c(Hora = "ts", Usuario = "user", Cliente = "client_id", `Módulo` = "module",
-       `Acción` = "action", `Descripción` = "description", `ID destino` = "target_id")
-    else
-      c(Hora = "ts", Usuario = "user", `Módulo` = "module",
-       `Acción` = "action", `Descripción` = "description", `ID destino` = "target_id")
-
-    # 0-based column index of "Descripción" -- rownames=FALSE below, so DT's
-    # cell_clicked$col (also 0-based) lines up directly with this.
-    .audit_desc_col0 <- which(names(.audit_cols) == "Descripción") - 1L
-
-    .audit_display_df <- function(df) {
-      if (inherits(df, "error") || is.null(df) || !nrow(df)) {
-        return(as.data.frame(
-          setNames(lapply(names(.audit_cols), function(x) character()), names(.audit_cols)),
-          check.names = FALSE, stringsAsFactors = FALSE
-        ))
-      }
+    # ── The table (hd_table, register) ───────────────────────────────────────
+    # Newest first; new data (a refresh, the live poll) keeps the scroll,
+    # sort and search -- the engine's rule, which is what the old
+    # render-once + replaceData() was there for. ℹ or a double click on a
+    # row opens its detail by the row's id (it was a click on the
+    # Descripción cell, read by position).
+    .audit_clave <- function(df) paste(format(as.POSIXct(df$ts), "%Y%m%d%H%M%OS3"), df$user, df$action)
+    .audit_tabla <- reactive({
+      df <- filtered()
+      if (inherits(df, "error") || is.null(df)) df <- .APP_AUDIT_SCHEMA()
       df <- df[order(df$ts, decreasing = TRUE), , drop = FALSE]
-      out <- data.frame(Hora = format(as.POSIXct(df$ts), "%d/%m/%Y %H:%M:%S"),
-                        stringsAsFactors = FALSE)
-      for (label in names(.audit_cols)[-1]) {
-        src <- .audit_cols[[label]]
-        out[[label]] <- ifelse(is.na(df[[src]]), "", df[[src]])
-      }
-      out
-    }
-
-    # Rendered ONCE (isolate()) -- the table's structure/columns never
-    # change after that. All subsequent data changes go through the
-    # dataTableProxy below via replaceData(), which updates the rows in
-    # place client-side without touching the widget's own sort order,
-    # search-box text, or current page (the exact state a full rebuild was
-    # wiping every time).
-    output$audit_tbl <- DT::renderDataTable({
-      isolate(.audit_display_df(filtered()))
-    }, options = list(
-      pageLength = 25, dom = "ftp", order = list(),
-      # Stage 2: visual affordance only (cursor + underline-on-hover) --
-      # the actual click handling is input$audit_tbl_cell_clicked below,
-      # which DT emits for a cell click regardless of this className.
-      columnDefs = list(list(targets = .audit_desc_col0, className = "audit-desc-clickable")),
-      # search = "" -- .AUDIT_STICKY_CSS (R/audit_sticky_ui.R) replaces the
-      # "Filtrar:" text label with a magnifying-glass icon baked into the
-      # input box itself; leaving this non-empty would show both.
-      language = list(
-        search      = "",
-        zeroRecords = "Sin registros",
-        info        = "Mostrando _START_ a _END_ de _TOTAL_ entradas",
-        infoEmpty   = "Sin registros",
-        paginate    = list(previous = "Anterior", `next` = "Siguiente")
+      texto <- function(x) { x <- as.character(x); x[is.na(x)] <- ""; x }
+      data.frame(
+        id          = .audit_ids(df$id, .audit_clave(df)),
+        ts          = as.POSIXct(df$ts),
+        user        = texto(df$user),
+        client_id   = texto(df$client_id),
+        module      = texto(df$module),
+        action      = texto(df$action),
+        description = texto(df$description),
+        target_id   = texto(df$target_id),
+        .acciones   = rep("detalle", nrow(df)),
+        stringsAsFactors = FALSE
       )
-    ), selection = "none", rownames = FALSE)
-
-    audit_tbl_proxy <- DT::dataTableProxy("audit_tbl")
-    observe({
-      DT::replaceData(audit_tbl_proxy, .audit_display_df(filtered()),
-                      resetPaging = FALSE, rownames = FALSE)
     })
+    audit_t <- hd_table_server(
+      "audit_t", tabla = "actividad", datos = .audit_tabla,
+      columnas = c(
+        list(col_fecha_hora("ts", "tablas.actividad.hora", segundos = TRUE),
+             col_texto("user", "tablas.actividad.usuario", recorte = FALSE)),
+        if (identical(mode, "multi_client"))
+          list(col_texto("client_id", "tablas.actividad.cliente", recorte = FALSE)),
+        list(col_texto("module",      "tablas.actividad.modulo", recorte = FALSE),
+             col_texto("action",      "tablas.actividad.accion", recorte = FALSE),
+             col_texto("description", "tablas.actividad.descripcion"),
+             col_texto("target_id",   "tablas.actividad.id_destino"))
+      ),
+      # recorte: a long Descripción is cut, the bubble shows it whole (no
+      # multilinea in the engine yet).
+      piezas        = c("acc_fila", "recorte"),
+      acciones_fila = "detalle",
+      vacio         = "tablas.actividad.vacio"
+    )
 
-    # ── Stage 2: click on a Descripción cell -> detail modal ────────────────
-    # input$<id>_cell_clicked is DT's own passive click-report input, fired
-    # on any cell click independent of `selection` (kept "none" above -- no
-    # row-highlight UI, this table is pure click-for-detail). $row is the
-    # index into the data as originally handed to the table/replaceData(),
-    # NOT the live sorted display position -- same convention this codebase
-    # already relies on for input$..._rows_selected elsewhere (e.g. the AP/AR
-    # confirm tables in R/pagar_hoy_module.R). .audit_display_df()'s own
-    # ts-descending sort is reproduced here so the index lines up with what
-    # was actually rendered.
-    observeEvent(input$audit_tbl_cell_clicked, {
-      info <- input$audit_tbl_cell_clicked
-      if (is.null(info) || is.null(info$row) || is.null(info$col)) return()
-      if (!identical(as.integer(info$col), as.integer(.audit_desc_col0))) return()
+    observeEvent(audit_t$accion(), {
+      a <- audit_t$accion()
+      if (!identical(a$accion, "detalle") || !length(a$ids)) return()
       raw <- filtered()
       if (inherits(raw, "error") || is.null(raw) || !nrow(raw)) return()
       raw_sorted <- raw[order(raw$ts, decreasing = TRUE), , drop = FALSE]
-      r <- as.integer(info$row)
-      if (is.na(r) || r < 1L || r > nrow(raw_sorted)) return()
-      row_data <- raw_sorted[r, , drop = FALSE]
+      k <- match(a$ids[1], .audit_ids(raw_sorted$id, .audit_clave(raw_sorted)))
+      if (is.na(k)) return()
+      row_data <- raw_sorted[k, , drop = FALSE]
       showModal(modalDialog(
         title = tagList(icon("circle-info"), " Detalle de la actividad"),
         size = "l", easyClose = TRUE,
@@ -1171,7 +1154,7 @@ auditLogViewerServer <- function(id, shared, mode,
             date_to        = if (!is.null(rng) && length(rng) == 2) rng[[2]] else Sys.time(),
             modulo_filter  = input$audit_mod_sel,
             accion_filter  = input$audit_accion_sel,
-            usuario_filter = input$audit_user_filter,
+            usuario_filter = usuario_sel(),
             client_label   = client_label
           )),
           error = function(e) {
@@ -1216,7 +1199,7 @@ auditLogViewerServer <- function(id, shared, mode,
           description = sprintf("Exportación de Actividad a PDF: %d entrada(s)", nrow(export_df)),
           target_id = client_label,
           metadata = list(n_entradas = nrow(export_df), modulo_filter = input$audit_mod_sel,
-                          accion_filter = input$audit_accion_sel, usuario_filter = input$audit_user_filter,
+                          accion_filter = input$audit_accion_sel, usuario_filter = usuario_sel(),
                           mode = mode),
           client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
           viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)

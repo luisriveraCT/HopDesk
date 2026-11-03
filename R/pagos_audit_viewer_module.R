@@ -152,12 +152,13 @@ pagosAuditViewerServer <- function(id, shared) {
     # changed the rows "Ver detalle" opened another record.
     # Cuenta origen carries the MASKED account as its value: copying a cell,
     # the rows or the Excel must never give the full CLABE either.
+    .pagos_clave <- function(df) paste(format(as.POSIXct(df$ts), "%Y%m%d%H%M%OS3"), df$archivo)
     .pagos_tabla <- reactive({
       df <- filtered()
       if (is.null(df)) df <- .schema_pagos_generados()
       df <- df[order(df$ts, decreasing = TRUE), , drop = FALSE]
       data.frame(
-        id        = .audit_ids(df$id),
+        id        = .audit_ids(df$id, .pagos_clave(df)),
         ts        = as.POSIXct(df$ts),
         user      = as.character(df$user),
         tipo      = as.character(df$tipo),
@@ -211,7 +212,7 @@ pagosAuditViewerServer <- function(id, shared) {
       df <- filtered()
       if (is.null(df) || !nrow(df)) return(invisible(NULL))
       df <- df[order(df$ts, decreasing = TRUE), , drop = FALSE]
-      k  <- match(a$ids[1], .audit_ids(df$id))
+      k  <- match(a$ids[1], .audit_ids(df$id, .pagos_clave(df)))
       if (is.na(k)) return(invisible(NULL))
       row <- df[k, , drop = FALSE]
       selected_record(row)

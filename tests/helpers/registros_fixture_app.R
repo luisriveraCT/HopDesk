@@ -60,7 +60,9 @@ almacen$logs <- list(
     fila_log("a-002", hace(0, 3), "ana",   "pagar_hoy", "confirmar_pago", "Pago confirmado: PROVEEDOR UNO por $1,500.50", "F-1001", as.character(pago_meta)),
     fila_log("a-003", hace(1),    "luis",  "bancos",    "importar_movimientos",
              paste("Importación de movimientos BanBajío: 458 movimientos leídos del archivo, 455 nuevos, 3 duplicados",
-                   "descartados y 0 con error; cuenta 030180900012345678, periodo del 1 al 31 de octubre de 2026"), "s-77"),
+                   "descartados y 0 con error; cuenta 030180900012345678, periodo del 1 al 31 de octubre de 2026;",
+                   "los 3 duplicados ya estaban en la importación del 2 de noviembre y se dejaron como estaban, sin tocar",
+                   "su fecha de registro ni su referencia, para que la conciliación de octubre no cambie"), "s-77"),
     fila_log(NA,      hace(2),    "ana",   "reporte",   "exportar_pdf",   "Reporte exportado a PDF (fila sin id)", NA),
     fila_log("a-005", hace(3),    "mouse", "clientes",  "client_access",  "Acceso de staff a fixture", "fixture"),
     fila_log("a-006", hace(4),    "ana",   "auth",      "logout",         "Cierre de sesión: ana (12min 3s activo)", "ana"),
@@ -122,7 +124,11 @@ assign("log_action", function(user, module, action, description = "", target_id 
 ui <- bslib::page_navbar(
   title = "registros", id = "nav",
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),
-  header = tagList(shinyjs::useShinyjs(), app_styles()),
+  # The engine in the page's head from the start, as in the app (Vencidos is
+  # in app.R's static UI). Both modules paint their table inside a
+  # renderUI: with the engine arriving only with it, the first data message
+  # can come before hdtable.js has a handler, and Shiny drops it.
+  header = tagList(shinyjs::useShinyjs(), app_styles(), hd_table_deps()),
   bslib::nav_panel("Actividad", value = "ACT", auditLogViewerUI("act")),
   bslib::nav_panel("Bitácora Global", value = "GLO", auditLogViewerUI("glo")),
   bslib::nav_panel("Archivos de pago", value = "PAG",
