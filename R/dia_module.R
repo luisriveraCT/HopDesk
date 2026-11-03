@@ -145,21 +145,29 @@ dia_aviso_politicas <- function(fecha, partes, pp, catalog) {
 # tells the server (ns("dia_vista")) and lets the shown table fit its height.
 # Both tables are the whole modal, like the lupa (alto = "ventana"): as tall
 # as their rows, up to the window's bottom (Luis: "ver más cosas a la vez").
-dia_ui <- function(ns, vista = "resumen") {
+# cambio = FALSE: the Resumen | Detalle switch goes elsewhere (dia_cambio_ui(),
+# in the window's header -- T09); it still switches the views of its window.
+dia_cambio_ui <- function(ns, vista = "resumen") {
   boton <- function(v, clave) shiny::tags$button(
     type = "button", class = paste("btn btn-sm", if (v == vista) "btn-primary" else "btn-outline-secondary"),
     `data-vista` = v, `aria-pressed` = if (v == vista) "true" else "false", tr(clave))
+  shiny::div(class = "hd-dia-cambio btn-group btn-group-sm", role = "group", `aria-label` = tr("tablas.dia.vista"),
+             `data-input` = ns("dia_vista"),
+             boton("resumen", "tablas.dia.vista_resumen"), boton("detalle", "tablas.dia.vista_detalle"))
+}
+
+dia_ui <- function(ns, vista = "resumen", cambio = TRUE) {
   caja <- function(v) shiny::div(class = "hd-dia-vista", `data-vista` = v,
                                  style = if (v != vista) "display:none;", hd_table_ui(ns(v), alto = "ventana"))
   shiny::tagList(
-    shiny::div(class = "hd-dia-cambio btn-group mb-2", role = "group", `aria-label` = tr("tablas.dia.vista"),
-               `data-input` = ns("dia_vista"),
-               boton("resumen", "tablas.dia.vista_resumen"), boton("detalle", "tablas.dia.vista_detalle")),
+    if (cambio) shiny::div(class = "mb-2", dia_cambio_ui(ns, vista)),
     caja("resumen"), caja("detalle"),
     facturas_convertir_js(),
     htmltools::singleton(shiny::tags$script(shiny::HTML("
       $(document).on('click', '.hd-dia-cambio button[data-vista]', function () {
-        var g = this.closest('.hd-dia-cambio'), v = this.dataset.vista, raiz = g.parentNode;
+        // The views are in the same window (the switch may be in its header).
+        var g = this.closest('.hd-dia-cambio'), v = this.dataset.vista,
+            raiz = g.closest('.hd-modal') || g.closest('.hd-dia') || g.parentNode.parentNode;
         g.querySelectorAll('button').forEach(function (b) {
           var on = b.dataset.vista === v;
           b.classList.toggle('btn-primary', on); b.classList.toggle('btn-outline-secondary', !on);

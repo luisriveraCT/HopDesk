@@ -773,7 +773,7 @@ app_styles <- function() {
     }
 
     /* Modal context pills */
-    .modal-day-header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .modal-day-header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .modal-day-pill {
       font-size: 0.75rem; padding: 3px 10px;
       border-radius: 12px; font-weight: 600;
@@ -784,14 +784,13 @@ app_styles <- function() {
     .modal-day-pill--saldo  { background: #e9f7ef; color: #155724; border: 1px solid #a3d9b3; }
     .modal-day-pill--abono  { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
 
-    /* ── Day modal: the Agenda line under its tables ──────────────────────── */
+    /* ── Day modal: the Agenda total, a pill in the window's header (T09) ──── */
     .cart-total-staged {
       background: #EFF5FF;
       border: 1px solid #9DB8E8;
       color: #0A58CA;
-      font-size: 0.85rem;
-      display: flex;
-      justify-content: space-between;
+      display: inline-flex;
+      gap: 6px;
       align-items: center;
     }
 

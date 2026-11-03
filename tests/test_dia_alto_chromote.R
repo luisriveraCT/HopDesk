@@ -6,8 +6,10 @@
 #   1. The fixed day (9 invoices): the 8-row minimum, nothing stretched, the
 #      modal inside the window.
 #   2. 60 more invoices: Resumen takes the whole modal down to the window's
-#      bottom (it used to stop at ~15 rows), its Cerrar still shows, and the
-#      page itself never scrolls.
+#      bottom (it used to stop at ~15 rows), its ✕ still shows, and the
+#      page itself never scrolls. Since T09 the modal is an hd_modal(): no
+#      "Cerrar" footer (✕ in the header) and a 1.5vh margin, read from the
+#      dialog rather than assumed.
 #   3. Detalle, painted while hidden, fills it too once shown.
 #   4. A shorter window: the table follows it.
 #
@@ -59,19 +61,20 @@ arrancar <- function(extra, puerto) {
 }
 # The shown table's rows area and the modal, in px.
 medir <- function(t) ev(sprintf("(function(){ var s = document.querySelector('#%s .hdt-scroll'), c = document.querySelector('.modal.show .modal-content'),
-    f = document.querySelector('.modal.show .modal-footer');
+    x = document.querySelector('.modal.show .hd-modal-cerrar'), d = c.closest('.modal-dialog');
   return { ventana: innerHeight, scroll: s.getBoundingClientRect().height, abajo: c.getBoundingClientRect().bottom,
-           pie: f.getBoundingClientRect().bottom, filas: HDT.estado('%s').visibles.length,
+           margen: parseFloat(getComputedStyle(d).marginTop),
+           pie: x.getBoundingClientRect().bottom, x_arriba: x.getBoundingClientRect().top, filas: HDT.estado('%s').visibles.length,
            pagina: document.documentElement.scrollHeight > innerHeight + 1 && getComputedStyle(document.body).overflow !== 'hidden'
              && !document.body.classList.contains('modal-open') }; })()", t, t))
-llena <- function(m) abs(m$abajo - (m$ventana - 28)) <= 2
+llena <- function(m) abs(m$abajo - (m$ventana - m$margen)) <= 2
 
 # ── 1. The fixed day: nothing stretched ─────────────────────────────────────
 ok("fixture app started (the fixed day)", arrancar(0L, 38983L))
 m <- medir(R)
 cat(sprintf("  9 invoices: rows area %.0f px, modal ends at %.0f (window %d)\n", m$scroll, m$abajo, m$ventana))
 ok("few rows: the rows area is the 8-row minimum (not stretched to the window)", m$scroll < 300)
-ok("few rows: the modal ends inside the window, Cerrar shown", m$abajo <= m$ventana && m$pie <= m$ventana)
+ok("few rows: the modal ends inside the window, ✕ shown", m$abajo <= m$ventana && m$pie <= m$ventana && m$x_arriba >= 0)
 
 # ── 2. 60 more invoices: Resumen fills the modal ────────────────────────────
 ok("fixture app started (60 more invoices)", arrancar(60L, 38984L))
@@ -80,7 +83,7 @@ cat(sprintf("  Resumen: %d rows, rows area %.0f px, modal ends at %.0f (window %
 ok("Resumen: more than 30 rows (beyond the old ~15-row stop)", m$filas > 30)
 ok("Resumen: taller than the old 15-row stop (~375 px)", m$scroll > 500)
 ok("Resumen: the modal reaches the window's bottom less its margin (+-2 px)", llena(m))
-ok("Resumen: Cerrar shows and the page doesn't scroll", m$pie <= m$ventana && !isTRUE(m$pagina))
+ok("Resumen: ✕ shows and the page doesn't scroll", m$pie <= m$ventana && m$x_arriba >= 0 && !isTRUE(m$pagina))
 
 # ── 3. Detalle, painted while hidden, fills it too ──────────────────────────
 invisible(ev("document.querySelector('.hd-dia-cambio button[data-vista=detalle]').click()"))

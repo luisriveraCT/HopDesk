@@ -1903,25 +1903,25 @@ ledgerModuleServer <- function(id, config, shared) {
       amt_pill_class <- if (grepl("vencido", tolower(amt)))
         "modal-day-pill modal-day-pill--saldo" else "modal-day-pill modal-day-pill--abono"
 
-      context_header <- div(
-        class = "modal-day-header",
-        tags$span(class = "modal-day-pill modal-day-pill--date",
-                  format(sel_date, "%d %b %Y")),
-        tags$span(class = "modal-day-pill modal-day-pill--ledger", lbl_type),
-        tags$span(class = "modal-day-pill modal-day-pill--cur", cur),
-        tags$span(class = amt_pill_class, amt)
-      )
       # Resumen or Detalle, the one last chosen in this session; switching
       # happens inside the window (dia_ui()).
       vista <- if (isTRUE(ctx$audit)) "detalle" else "resumen"
-      showModal(modalDialog(
-        title = lbl_type, size = "xl", easyClose = TRUE,
-        footer = modalButton(tr("comun.cerrar")),
-        div(class = "hd-dia",
-          context_header,
-          dia_ui(ns, vista),
-          uiOutput(ns("dia_agenda"))
-        )
+      # One header line (T09): the title, the day's pills (the ledger isn't
+      # repeated: it is the title), the view switch and the Agenda total --
+      # no separate rows, no footer that only says "Cerrar".
+      context_header <- tagList(
+        div(class = "modal-day-header",
+          tags$span(class = "modal-day-pill modal-day-pill--date",
+                    format(sel_date, "%d %b %Y")),
+          tags$span(class = "modal-day-pill modal-day-pill--cur", cur),
+          tags$span(class = amt_pill_class, amt)
+        ),
+        dia_cambio_ui(ns, vista),
+        uiOutput(ns("dia_agenda"), inline = TRUE)
+      )
+      showModal(hd_modal(
+        titulo = lbl_type, encabezado = context_header,
+        div(class = "hd-dia", dia_ui(ns, vista, cambio = FALSE))
       ))
     }
 
@@ -1938,7 +1938,7 @@ ledgerModuleServer <- function(id, config, shared) {
         sum(ph_cur[["Importe"]], na.rm = TRUE)
       } else 0
       if (total > 0)
-        div(class = "cart-total-staged mt-2 p-2 rounded",
+        tags$span(class = "cart-total-staged modal-day-pill",
             tags$span(tr(if (ledger == "AR") "tablas.dia.en_agenda_cobros" else "tablas.dia.en_agenda_pagos")),
             tags$strong(fmt_money(total)))
     })
