@@ -150,5 +150,15 @@ ok("D3: the bar's Agregar selección asks first (a batch)",
 clic(sprintf("document.querySelector('#%s .hdt-confirmar-si')", D)); Sys.sleep(1.2)
 ok("D3: confirmed, P-4 and P-5 join P-3 in the Agenda", identical(agenda(), "P-3,P-4,P-5"))
 
+# ── F · a failed save to the Agenda is never silent (seen in passing 1) ─────
+ok("F: fixture restarted with the Agenda's save failing", arrancar(falla = "pagar_hoy") && abrir() && listo(S))
+clic(boton(S, PAR_NCS, "detalle")); invisible(listo(D))
+clic(boton(D, id_doc("P-2"), "agregar")); Sys.sleep(3)
+ok("F: the user is told it did NOT reach the Agenda, and never reads 'añadida'",
+   grepl("No se pudo enviar a Agenda", aviso()) && !grepl("añadida", aviso()))
+ok("F: it was tried (and retried), and the failure is logged with the invoice",
+   sum(grepl("^falla pagar_hoy", registro())) >= 1L &&
+   any(grepl("^log enviar_a_agenda_ic_incompleto P-2$", registro())))
+
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)

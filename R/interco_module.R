@@ -484,8 +484,31 @@ intercoServer <- function(id, shared) {
       }))
 
       combined <- upsert_pagar_hoy(ph, new_rows)
-      shared$pagar_hoy_db(combined)
-      tryCatch(save_pagar_hoy(combined, shared$current_user(), client_id = shared$effective_client_id(), base = ph), error = function(e) NULL)
+      # A failed save is never silent (it was tryCatch(..., NULL), and the
+      # user read "añadida"): same retry and wording as the Calendario's day
+      # (.dia_agregar). The session shows in the Agenda only what was saved.
+      res <- save_pagar_hoy_with_retry(combined, shared$current_user(),
+                                       client_id = shared$effective_client_id(), base = ph)
+      if (!isTRUE(res$ok)) {
+        showNotification(
+          paste0("No se pudo enviar a Agenda tras ", res$attempts,
+                 " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
+          type = "error", duration = 15)
+        tryCatch(log_action(
+          user        = tryCatch(shared$current_user(), error = function(e) "system"),
+          module      = "interco",
+          action      = "enviar_a_agenda_ic_incompleto",
+          description = sprintf("Intento de enviar %d factura(s) intercompany a Agenda no se pudo guardar tras %d intento(s): %s",
+                                nrow(new_rows), res$attempts,
+                                if (!is.null(res$error)) conditionMessage(res$error) else "error desconocido"),
+          target_id   = paste(new_rows$Documento[seq_len(min(5, nrow(new_rows)))], collapse = ", "),
+          metadata    = list(n = nrow(new_rows), par = paste(pair$ini, pair$counterpart, pair$ledger)),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        ), error = function(e) NULL)
+        return(NA_integer_)
+      }
+      shared$pagar_hoy_db(res$data %||% combined)
       nrow(new_rows)
     }
 
@@ -553,6 +576,7 @@ intercoServer <- function(id, shared) {
       rows <- rows[!is.na(rows[["Documento"]] %||% NA), , drop = FALSE]
       if (!nrow(rows)) return()
       added <- .ic_send_rows(rows)
+      if (is.na(added)) return()   # it said so already
       showNotification(if (identical(a$accion, "agregar"))
                          paste0(added, " factura a\u00f1adida a Agenda de Hoy.")
                        else paste0(added, " factura(s) a\u00f1adida(s) a Agenda de Hoy."),
