@@ -2937,7 +2937,10 @@ server <- function(input, output, session) {
       # form input a second time -- keeps Agenda a mirror of the root write
       # rather than a second, independently-computed copy that can drift
       # from it.
-      send_to_agenda <- isTRUE(input$me_agenda_active)
+      # Sending to the Agenda needs can_register_payments, on every path
+      # (Luis, 2026-11-03); the entry itself is saved either way.
+      send_to_agenda <- isTRUE(input$me_agenda_active) &&
+                        puede_o_avisa(shared, "can_register_payments")
       if (send_to_agenda) {
         manual_row <- df[df[["id"]] == new_row$id, , drop = FALSE]
         ph_row     <- stage_manual_row_to_agenda(manual_row, current_user())
