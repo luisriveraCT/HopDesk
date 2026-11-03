@@ -979,7 +979,8 @@
     if (msg.fichas) st.fichas = { valores: arr(msg.fichas.valores), opciones: arr(msg.fichas.opciones), mostrar: msg.fichas.mostrar };
     if (st.filtrosEl) cargarFiltros(st, msg.filtros);
     st.celdas = arr(f.celdas).map(function (c) {
-      return { mostrar: arr(c.mostrar), orden: arr(c.orden), copiar: arr(c.copiar), tono: c.tono ? arr(c.tono) : null };
+      return { mostrar: arr(c.mostrar), orden: arr(c.orden), copiar: arr(c.copiar), tono: c.tono ? arr(c.tono) : null,
+               completo: c.completo ? arr(c.completo) : null };
     });
     st.idx = {};
     for (var i = 0; i < st.n; i++) st.idx[st.ids[i]] = i;
@@ -2053,7 +2054,8 @@
   }
   function tipAbrir(st, td) {
     var i = td.parentNode._i, j = td._c;
-    var texto = st.celdas[j].mostrar[i];
+    // A shortened value (a company's initials) shows whole in the bubble.
+    var texto = (st.celdas[j].completo && st.celdas[j].completo[i]) || st.celdas[j].mostrar[i];
     if (texto == null || texto === '') return;
     var b = tip();
     b.texto.textContent = texto;

@@ -194,9 +194,24 @@ col_insignia <- function(campo, titulo = NULL, mapa = list(), opcional = FALSE, 
     }), opcional, visible)
 }
 
-col_empresa <- function(campo = "Empresa", titulo = NULL, opcional = FALSE, visible = TRUE) {
+# iniciales: the company map (initials = name, shared$company_map()). A value
+# that is a company's full name shows as its initials, and the bubble shows
+# the full name (`completo`); sorting, copying and filters keep the value as
+# it came. The day modal gets names ("Networks Crossdocking Services") that
+# made its table scroll sideways (T09).
+col_empresa <- function(campo = "Empresa", titulo = NULL, opcional = FALSE, visible = TRUE, iniciales = NULL) {
   col <- col_texto(campo, titulo, recorte = FALSE, opcional = opcional, visible = visible)
   col$tipo <- "empresa"
+  if (length(iniciales)) {
+    texto <- col$valores
+    col$valores <- function(x) {
+      v <- texto(x)
+      ini <- names(iniciales)[match(v$copiar, unname(iniciales))]
+      v$mostrar <- ifelse(is.na(ini), v$mostrar, ini)
+      v$completo <- ifelse(is.na(ini), NA_character_, v$copiar)
+      v
+    }
+  }
   col
 }
 

@@ -102,6 +102,16 @@ tags0   <- data.frame(ledger = "AP", Empresa = "NTS", Moneda = "MXN", Documento 
                       tag = c("urgent", "important"), stringsAsFactors = FALSE)
 agenda0 <- data.frame(id = "AG-1", ledger = "AP", Empresa = "NTS", Moneda = "MXN", Documento = "3002", Importe = 11000,
                       Parte = "ACEROS MONTERREY", status = "pending", stringsAsFactors = FALSE)
+# DIA_NOMBRES = 1: the rows carry company NAMES, as the real day does (T09:
+# "Networks Crossdocking Services" in Luis's capture), with the real map.
+CMAP <- c(NTS = "N T", NCS = "N C")
+if (identical(Sys.getenv("DIA_NOMBRES"), "1")) {
+  CMAP <- c(NTS = "Networks Trucking Services", NCS = "Networks Crossdocking Services")
+  a_nombre <- function(x) ifelse(x %in% names(CMAP), unname(CMAP[x]), x)
+  detalle0$Empresa <- a_nombre(detalle0$Empresa)
+  tags0$Empresa    <- a_nombre(tags0$Empresa)
+  agenda0$Empresa  <- a_nombre(agenda0$Empresa)
+}
 politicas <- list(
   pp  = data.frame(parte = "BODEGAS DEL NORTE", is_interco = FALSE, policy_order = 1L, policy_id = "POL-1",
                    stringsAsFactors = FALSE),
@@ -126,7 +136,7 @@ server <- function(input, output, session) {
   detalle_rv <- reactiveVal(detalle0)
   shared <- list(
     tags_db = reactiveVal(tags0), pagar_hoy_db = reactiveVal(agenda0), current_user = reactive("luis"),
-    effective_client_id = reactive("dev"), home_client_id = reactive("dev"), company_map = reactive(c(NTS = "N T", NCS = "N C")),
+    effective_client_id = reactive("dev"), home_client_id = reactive("dev"), company_map = reactive(CMAP),
     audit_mode = reactiveVal(FALSE), amount_col = reactive("Saldo vencido"),
     partner_policies_db = reactive(politicas$pp), policy_catalog_db = reactive(politicas$cat))
   observeEvent(input$pasivos_convert_request, anota("convertir ", input$pasivos_convert_request))

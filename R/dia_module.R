@@ -84,10 +84,12 @@ dia_datos <- function(detail, ledger, tags_df, agenda_df = NULL, puede_convertir
 
 # vista: "resumen" or "detalle". Both have the same columns; what shows by
 # default differs (T05, P7).
-dia_columnas <- function(vista) {
+# iniciales: the company map; the day's rows carry company names, shown as
+# initials with the name in the bubble (T09).
+dia_columnas <- function(vista, iniciales = NULL) {
   detalle <- identical(vista, "detalle")
   list(
-    col_empresa("Empresa", "tablas.facturas.empresa"),
+    col_empresa("Empresa", "tablas.facturas.empresa", iniciales = iniciales),
     col_texto("Parte", "tablas.facturas.parte"),
     col_texto("Referencia", "tablas.facturas.referencia"),
     col_texto("Documento", "tablas.facturas.documento", recorte = FALSE, opcional = TRUE, visible = detalle),
@@ -201,10 +203,13 @@ dia_server <- function(input, output, session, ctx, ledger, shared, manejadores)
                 acciones_barra = dia_acciones(dia_siguiente), aviso = aviso,
                 filtros = list(list(campo = "Etiqueta"), list(campo = "Origen")),
                 textos = list(contador = "tablas.contador.facturas", sin_bloqueadas = TRUE))
+  iniciales <- shiny::reactive(tryCatch(shared$company_map(), error = function(e) NULL))
   tablas <- list(
-    resumen = do.call(hd_table_server, c(list("resumen", tabla = "detalle_dia_resumen", columnas = dia_columnas("resumen"),
+    resumen = do.call(hd_table_server, c(list("resumen", tabla = "detalle_dia_resumen",
+                                             columnas = function() dia_columnas("resumen", iniciales()),
                                              grupo = c("Empresa", "Parte")), comun)),
-    detalle = do.call(hd_table_server, c(list("detalle", tabla = "detalle_dia_detalle", columnas = dia_columnas("detalle")),
+    detalle = do.call(hd_table_server, c(list("detalle", tabla = "detalle_dia_detalle",
+                                             columnas = function() dia_columnas("detalle", iniciales())),
                                          comun)))
   ETIQUETA <- list(etiqueta_a = "urgent", etiqueta_b = c("important", "urgent"),
                    etiqueta_c = "important", quitar_etiqueta = character(0))
