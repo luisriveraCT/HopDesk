@@ -1355,7 +1355,8 @@ save_interco_v2 <- function(registry, client_id = NULL) {
   source       = character(),   # "manual" | "provision" | an erp_type key (e.g. "sap_b1_service_layer");
                                  # NA/blank treated as SAP_B1_ERP_TYPE (see load_pagar_hoy() etc.) --
                                  # historical rows may still literally say "sap"
-  confirmed_at = as.POSIXct(character())
+  confirmed_at = as.POSIXct(character()),
+  fecha_factura = as.Date(character())   # the invoice's posting date (agenda_filas_factura())
 )
 
 load_pagar_hoy <- function(client_id = NULL) {

@@ -71,6 +71,11 @@
   eliminado       = logical(),
   eliminado_at    = as.POSIXct(character()),  # timestamp of soft-delete
   provision_id    = character(),   # mirrored from pagar_hoy at confirmation; NA otherwise
+  # The invoice's posting date, mirrored from pagar_hoy: with empresa +
+  # documento + moneda it is the invoice's identity, which the ERP never
+  # changes when the balance moves (compute_confirmed_flags()). NA on
+  # confirmations written before 2026-11-04, which match on importe.
+  fecha_factura   = as.Date(character()),
   # ── Ledger-integrity master plan, Stage 3: permanent event log ────────────
   # Additive only, same convention as .schema_papelera(). `eliminado`/
   # `eliminado_at` keep their existing meaning and existing readers (the

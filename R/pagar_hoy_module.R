@@ -1693,7 +1693,10 @@ pagarHoyServer <- function(id, shared) {
               mov_id          = NA_character_,
               confirmado_at   = Sys.time(),
               eliminado       = FALSE,
-              provision_id    = as.character(factura_rows$provision_id[i] %||% NA_character_)
+              provision_id    = as.character(factura_rows$provision_id[i] %||% NA_character_),
+              # The invoice's identity for compute_confirmed_flags(): closes it
+              # even if the ERP later moves its balance.
+              fecha_factura   = as.Date(factura_rows$fecha_factura[i] %||% NA)
             )))
           # Appended to what S3 holds now (modificar_bancos_confirmados). If
           # that fails, stop here: the items stay in Agenda, unconfirmed,
@@ -2074,7 +2077,8 @@ pagarHoyServer <- function(id, shared) {
               tipo            = "cobro",
               mov_id          = NA_character_,
               confirmado_at   = Sys.time(),
-              eliminado       = FALSE
+              eliminado       = FALSE,
+              fecha_factura   = as.Date(factura_rows$fecha_factura[i] %||% NA)
             )))
           # Same as the AP confirm: appended to S3's current table; on a
           # failed read nothing is confirmed and the items stay in Agenda.

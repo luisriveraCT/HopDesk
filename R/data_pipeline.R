@@ -676,6 +676,27 @@ compute_confirmed_flags <- function(df, ledger, bancos_confirmados_df, papelera_
     conf_db     <- confirmaciones_vigentes(conf_db)
     conf_active <- conf_db[conf_db[["tipo"]] == tipo_val &
                            !is.na(conf_db[["importe"]]), , drop = FALSE]
+    # A confirmation that carries the invoice's posting date (written since
+    # 2026-11-04, agenda_filas_factura()) closes it on Empresa + Documento +
+    # Moneda + that date: the invoice's identity, which survives the ERP
+    # moving its balance and still tells apart a DocNum reused years later.
+    # Luis: confirming ALWAYS closes the invoice. Older confirmations keep the
+    # amount key below.
+    fecha_df <- df[["Fecha de contabilización"]]
+    if (nrow(conf_active) && "fecha_factura" %in% names(conf_active) && !is.null(fecha_df)) {
+      con_f <- conf_active[!is.na(conf_active[["fecha_factura"]]), , drop = FALSE]
+      if (nrow(con_f)) {
+        f_key   <- paste(toupper(trimws(df[["Empresa"]])), toupper(trimws(df[["Documento"]])),
+                         toupper(trimws(df[["Moneda"]])), format(as.Date(fecha_df)))
+        f_conf  <- paste(toupper(trimws(con_f[["empresa"]])), toupper(trimws(con_f[["documento"]])),
+                         toupper(trimws(con_f[["moneda"]])), format(as.Date(con_f[["fecha_factura"]])))
+        f_mask  <- (f_key %in% f_conf) & !is_manual & !is_provision
+        df[["confirmed"]] <- df[["confirmed"]] | f_mask
+        if (!"is_paid_ghost" %in% names(df)) df[["is_paid_ghost"]] <- FALSE
+        df[["is_paid_ghost"]] <- df[["is_paid_ghost"]] | f_mask
+      }
+      conf_active <- conf_active[is.na(conf_active[["fecha_factura"]]), , drop = FALSE]
+    }
     if (nrow(conf_active)) {
       bc_keys   <- unique(conf_active[, c("empresa","documento","moneda","importe"),
                                       drop = FALSE])
