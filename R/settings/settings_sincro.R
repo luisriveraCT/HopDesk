@@ -156,6 +156,23 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
     )
   })
 
+  # A failed read or save stops the step where it is: the user is told what
+  # did not happen, and it is logged as <accion>_fallido. Nothing after it
+  # runs -- no "activada", no config saved as on, no success log.
+  .sincro_fallo <- function(accion, aviso, detalle, target_id = NA_character_) {
+    showNotification(aviso, type = "error", duration = 10)
+    tryCatch(log_action(
+      user        = tryCatch(shared$current_user(), error = function(e) "sistema"),
+      module      = "settings_sincro",
+      action      = paste0(accion, "_fallido"),
+      description = detalle,
+      target_id   = target_id,
+      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    ), error = function(e) NULL)
+    invisible(NULL)
+  }
+
   # ── Open panel ──────────────────────────────────────────────────────────────
   observeEvent(input$stg_btn_sincro, {
     cfg <- tryCatch(load_agenda_sync_config(client_id = shared$effective_client_id()),
@@ -236,18 +253,26 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
     if (is.null(u) || !nzchar(u %||% "")) {
       showNotification("Selecciona un usuario primero.", type = "warning"); return()
     }
-    chosen <- tryCatch(load_pagar_hoy_user(u, client_id = shared$effective_client_id()),
-                       error = function(e) .schema_pagar_hoy())
-
-    tryCatch({
-      save_pagar_hoy_sync(chosen, client_id = shared$effective_client_id())
-    }, error = function(e) {
-      showNotification(paste("Error al guardar agenda sincronizada:", e$message), type = "error")
-      return()
-    })
+    cid <- shared$effective_client_id()
+    # The chosen account's agenda: a failed read must not start the sync from
+    # an empty one (it used to become an empty agenda here).
+    chosen <- tryCatch(load_pagar_hoy_user(u, client_id = cid), error = function(e) e)
+    if (inherits(chosen, "error")) {
+      return(.sincro_fallo("activar_sincronizacion_agenda", tr("tablas.sincro.error_activar"),
+                           paste0("No se pudo leer la agenda de '", u, "': ", conditionMessage(chosen)), u))
+    }
+    ok <- tryCatch({ save_pagar_hoy_sync(chosen, client_id = cid); TRUE }, error = function(e) e)
+    if (!isTRUE(ok)) {
+      return(.sincro_fallo("activar_sincronizacion_agenda", tr("tablas.sincro.error_activar"),
+                           paste0("No se pudo guardar la agenda compartida: ", conditionMessage(ok)), u))
+    }
 
     actor <- tryCatch(shared$current_user(), error = function(e) "sistema")
-    tryCatch(save_agenda_sync_config(TRUE, actor, client_id = shared$effective_client_id()), error = function(e) NULL)
+    ok <- tryCatch({ save_agenda_sync_config(TRUE, actor, client_id = cid); TRUE }, error = function(e) e)
+    if (!isTRUE(ok)) {
+      return(.sincro_fallo("activar_sincronizacion_agenda", tr("tablas.sincro.error_activar"),
+                           paste0("No se pudo guardar la configuración de la sincronización: ", conditionMessage(ok)), u))
+    }
 
     bump_sync_version("pagar_hoy_db", client_id = shared$effective_client_id())
 
@@ -275,28 +300,49 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
 
   # ── Confirm DEACTIVATE ───────────────────────────────────────────────────────
   observeEvent(input$do_sincro_desactivar, {
-    current_data <- tryCatch(
-      .pagar_hoy_vivo(TRUE, NULL, shared$effective_client_id()),
-      error = function(e) .schema_pagar_hoy()
-    )
+    cid <- shared$effective_client_id()
+    # The shared agenda every account gets a copy of. A failed read must stop
+    # here: it used to become an empty agenda, copied to every account.
+    current_data <- tryCatch(.pagar_hoy_vivo(TRUE, NULL, cid), error = function(e) e)
+    if (inherits(current_data, "error")) {
+      return(.sincro_fallo("desactivar_sincronizacion_agenda", tr("tablas.sincro.error_desactivar"),
+                           paste0("No se pudo leer la agenda compartida: ", conditionMessage(current_data))))
+    }
 
     # Copy current shared agenda to every active user's personal file.
     # Running sessions pick up their personal copy on the next sync-bus poll
-    # (the loader reads S3).
-    all_users <- tryCatch(auth_load_usuarios(client_id = shared$effective_client_id()), error = function(e) NULL)
-    if (!is.null(all_users)) {
-      active <- all_users[
-        (is.na(all_users$deleted) | all_users$deleted != TRUE) &
-        (all_users$activo %in% TRUE), , drop = FALSE]
-      for (u in active$username) {
-        tryCatch(save_pagar_hoy_user(current_data, u, client_id = shared$effective_client_id()),
-                 error = function(e)
-                   message("[SINCRO] copy-to-user failed for '", u, "': ", e$message))
+    # (the loader reads S3). If any copy fails the sync stays on: that account
+    # would otherwise be left with an old or empty agenda of its own.
+    all_users <- tryCatch(auth_load_usuarios(client_id = cid), error = function(e) NULL)
+    if (is.null(all_users)) {
+      return(.sincro_fallo("desactivar_sincronizacion_agenda", tr("tablas.sincro.error_desactivar"),
+                           "No se pudo cargar la lista de usuarios para copiarles la agenda."))
+    }
+    active <- all_users[
+      (is.na(all_users$deleted) | all_users$deleted != TRUE) &
+      (all_users$activo %in% TRUE), , drop = FALSE]
+    fallidos <- character(0)
+    for (u in active$username) {
+      ok <- tryCatch({ save_pagar_hoy_user(current_data, u, client_id = cid); TRUE }, error = function(e) e)
+      if (!isTRUE(ok)) {
+        message("[SINCRO] copy-to-user failed for '", u, "': ", conditionMessage(ok))
+        fallidos <- c(fallidos, u)
       }
+    }
+    if (length(fallidos)) {
+      return(.sincro_fallo("desactivar_sincronizacion_agenda",
+                           tr("tablas.sincro.error_copia", usuarios = paste(fallidos, collapse = ", ")),
+                           paste0("No se pudo copiar la agenda a: ", paste(fallidos, collapse = ", "),
+                                  ". La sincronización sigue activa."),
+                           paste(fallidos, collapse = ",")))
     }
 
     actor <- tryCatch(shared$current_user(), error = function(e) "unknown")
-    tryCatch(save_agenda_sync_config(FALSE, actor, client_id = shared$effective_client_id()), error = function(e) NULL)
+    ok <- tryCatch({ save_agenda_sync_config(FALSE, actor, client_id = cid); TRUE }, error = function(e) e)
+    if (!isTRUE(ok)) {
+      return(.sincro_fallo("desactivar_sincronizacion_agenda", tr("tablas.sincro.error_desactivar"),
+                           paste0("No se pudo guardar la configuración de la sincronización: ", conditionMessage(ok))))
+    }
 
     bump_sync_version("pagar_hoy_db", client_id = shared$effective_client_id())
 

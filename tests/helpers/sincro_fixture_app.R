@@ -7,7 +7,9 @@
 # aws.s3 is never touched.
 #
 # SIN_FALLA: a regex of S3 keys whose writes fail ("pagar_hoy_sync",
-# "agenda_sync_config", "pagar_hoy_user_ana", ...), to see a failed save.
+# "agenda_sync_config", "pagar_hoy_user_ana", ...), to see a failed save;
+# SIN_FALLA_LEE: the same for reads. SIN_SYNC = 1 starts with the sync ON
+# (the shared agenda holds beto's 3 items).
 # Sync starts OFF. Users: ana (65 pending items, the preview's cut used to
 # be 50), beto (3), caro (none). Every write and log_action() is listed in
 # #registro:  escribe <key> <rows>   falla <key>   log <action> <target_id>
@@ -44,10 +46,15 @@ assign(".i18n_dir", file.path(raiz, "www", "i18n"), envir = globalenv())
 registro <- reactiveVal(character(0))
 anotar   <- function(x) registro(c(registro(), x))
 falla    <- Sys.getenv("SIN_FALLA")
+falla_lee <- Sys.getenv("SIN_FALLA_LEE")
+leer <- function(key, client_id) {
+  if (nzchar(falla_lee) && grepl(falla_lee, key)) stop("S3 no disponible al leer (fixture): ", key)
+  mem[[paste0(client_id, "/", key)]]
+}
 mem      <- new.env()
 CID      <- "fixture"
-assign(".s3_read_with", function(key, client_id = NULL) mem[[paste0(client_id, "/", key)]], envir = globalenv())
-assign(".s3_leer_para_escribir", function(key, client_id = NULL) mem[[paste0(client_id, "/", key)]], envir = globalenv())
+assign(".s3_read_with", function(key, client_id = NULL) leer(key, client_id), envir = globalenv())
+assign(".s3_leer_para_escribir", function(key, client_id = NULL) leer(key, client_id), envir = globalenv())
 assign(".s3_write", function(obj, key, client_id = NULL) {
   if (nzchar(falla) && grepl(falla, key)) { anotar(paste("falla", key)); stop("S3 no disponible (fixture): ", key) }
   assign(paste0(client_id, "/", key), obj, envir = mem)
@@ -74,6 +81,11 @@ agenda <- function(prefijo, n) {
 }
 mem[[paste0(CID, "/", s3_key_pagar_hoy_user("ana"))]]  <- .normalize(agenda("ana", 65L), .schema_pagar_hoy)
 mem[[paste0(CID, "/", s3_key_pagar_hoy_user("beto"))]] <- .normalize(agenda("beto", 3L), .schema_pagar_hoy)
+if (identical(Sys.getenv("SIN_SYNC"), "1")) {
+  mem[[paste0(CID, "/", S3_KEYS$pagar_hoy_sync)]] <- .normalize(agenda("beto", 3L), .schema_pagar_hoy)
+  mem[[paste0(CID, "/", S3_KEYS$agenda_sync_config)]] <- tibble::tibble(is_enabled = TRUE, enabled_by = "luis",
+                                                                       enabled_at = Sys.time())
+}
 
 ui <- bslib::page_fluid(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),
