@@ -473,9 +473,22 @@
     var activas = st.accBarra.filter(function (a) {
       return a.modo === 'editar' ? !!st.editando : (a.sin_seleccion || a.vacias || n > 0);
     });
-    st.accBarraEl.hidden = !activas.length;
-    if (st.accBarraEl.hidden) return;
     st.accBarraEl.textContent = '';
+    st.accBarraEl.classList.remove('hdt-reservada');
+    // Nothing to show yet, but marking a row would bring actions: keep the
+    // bar's place (invisible) so the rows don't move down on the first click
+    // -- the second click of a double click landed on the header (T09).
+    if (!activas.length) {
+      var reservar = (st.p.sel_fila || st.p.casillas) &&
+        st.accBarra.some(function (a) { return a.modo !== 'editar' && !a.sin_seleccion; });
+      st.accBarraEl.hidden = !reservar;
+      if (reservar) {
+        st.accBarraEl.classList.add('hdt-reservada');
+        st.accBarraEl.appendChild(nodo('button', 'hdt-btn', ' '));
+      }
+      return;
+    }
+    st.accBarraEl.hidden = false;
     if (n) st.accBarraEl.appendChild(nodo('span', 'hdt-acciones-n',
       tn('tablas.sumador.seleccion', n, { n: FMT_N.format(n) })));
     activas.forEach(function (a) {
