@@ -39,7 +39,7 @@ cargar("R/vencidos_module.R", "facturas_ids")
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
   for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
-              "R/persistence.R", "R/data_pipeline.R", "R/treasury_map_module.R", "R/interco_module.R"))
+              "R/persistence.R", "R/data_pipeline.R", "R/ic_mapa_llave.R", "R/treasury_map_module.R", "R/interco_module.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
 })
 assign(".i18n_dir", file.path(raiz, "www", "i18n"), envir = globalenv())
@@ -84,8 +84,10 @@ snap_ap <- dplyr::bind_rows(
   lapply(1:5, function(k) fila("Networks Crossdocking Services", "Networks Trucking Services SA de CV",
                                paste0("P-", k), paste0("T17050", k), hoy - 50 + k * 10, 1000 * k + 0.5, proveedor = "P1039")),
   fila("Networks Crossdocking Services", "PROVEEDOR EXTERNO SA", "P-90", "X1", hoy, 999, proveedor = "P9999"))
+# A-1 carries P-1's folio (T170501): the Mapa IC pays the debtor's AP invoice
+# found by folio (R/ic_mapa_llave.R), so A-1 -> P-1; A-2 has no AP and stays.
 snap_ar <- dplyr::bind_rows(
-  fila("Networks Trucking Services", "NETWORKS CROSSDOCKING SERVICES", "A-1", "F-1", hoy - 5, 2500, cliente = "C1003"),
+  fila("Networks Trucking Services", "NETWORKS CROSSDOCKING SERVICES", "A-1", "T170501", hoy - 5, 2500, cliente = "C1003"),
   fila("Networks Trucking Services", "NETWORKS CROSSDOCKING SERVICES", "A-2", "F-2", hoy + 5, 700, cliente = "C1003"))
 registro_ic <- list(ar_prefix = "C", ap_prefix = "P",
                     companies = list(NTS = list(ar = "1003", ap = character()), NCS = list(ar = character(), ap = "1039")))

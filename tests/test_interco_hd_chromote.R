@@ -166,6 +166,24 @@ ok("F: it was tried (and retried), and the failure is logged with the invoice",
    sum(grepl("^falla pagar_hoy", registro())) >= 1L &&
    any(grepl("^log enviar_a_agenda_ic_incompleto P-2$", registro())))
 
+# ── M · the Mapa IC's send to the Agenda (its permission sits on top) ───────
+# Mapa -> the NCS -> NTS edge -> A-1 and A-2 into the plan -> Enviar a Agenda.
+# A-1 pays the debtor's own AP invoice found by folio (P-1); A-2 has none.
+plan_mapa_y_enviar <- function() {
+  clic("document.getElementById('ic-view_map_btn')"); Sys.sleep(2)
+  ev("Shiny.setInputValue('ic-icmap-net_click', {nodes: [], edges: [1], nonce: Math.random()}, {priority: 'event'}); 0")
+  poll_until(function() isTRUE(ev("!!document.getElementById('ic-icmap-add_to_plan')")), timeout_s = 20)
+  Sys.sleep(1.5)
+  ev("Shiny.setInputValue('ic-icmap-edge_inv_tbl_rows_selected', [1, 2], {priority: 'event'}); 0"); Sys.sleep(0.8)
+  clic("document.getElementById('ic-icmap-add_to_plan')"); Sys.sleep(1)
+  clic("document.getElementById('ic-icmap-send_to_agenda')"); Sys.sleep(1.5)
+}
+ok("M: fixture restarted (with the permission)", arrancar() && abrir() && listo(S))
+plan_mapa_y_enviar()
+ok("M: with the permission, the Mapa sends the debtor's AP invoice found by folio (P-1); A-2, with none, is reported and stays",
+   any(grepl("^escribe pagar_hoy[^ ]* 1 P-1$", registro())) && !any(grepl("^permiso ", registro())) &&
+   grepl("(A-2)", aviso(), fixed = TRUE))
+
 # ── P · sending to the Agenda needs can_register_payments ───────────────────
 ok("P: fixture restarted without can_register_payments", arrancar(sin_permiso = TRUE) && abrir() && listo(S))
 clic(boton(S, PAR_NCS, "detalle")); invisible(listo(D))
@@ -173,6 +191,11 @@ clic(boton(D, id_doc("P-2"), "agregar")); Sys.sleep(1.2)
 ok("P: the ＋ asks for the permission, says no, and nothing reaches the Agenda",
    any(grepl("^permiso can_register_payments no$", registro())) && grepl("No tienes permiso", aviso()) &&
    !any(grepl("^escribe pagar_hoy", registro())) && !grepl("añadida", aviso()))
+negados <- sum(grepl("^permiso can_register_payments no$", registro()))
+plan_mapa_y_enviar()
+ok("P: the Mapa IC's Enviar a Agenda asks for it too, says no, and nothing reaches the Agenda",
+   sum(grepl("^permiso can_register_payments no$", registro())) == negados + 1L &&
+   !any(grepl("^escribe pagar_hoy", registro())))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)

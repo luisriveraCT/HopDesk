@@ -13,7 +13,7 @@
 library(testthat)
 
 EXCEPCIONES <- c("R/pasivos_module.R", "R/staging_browse_module.R")
-PENDIENTES  <- 1L   # treasury_map (T13); search_module and ledger_module done in tablas/motor-robusto
+PENDIENTES  <- 0L   # every path checks it now
 
 archivos <- setdiff(c(list.files("R", pattern = "\\.R$", full.names = TRUE, recursive = TRUE), "app.R"),
                     c("R/persistence.R", "R/pagar_hoy_module.R", EXCEPCIONES))
