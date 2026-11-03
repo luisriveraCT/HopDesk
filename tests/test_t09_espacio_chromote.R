@@ -147,12 +147,12 @@ for (v in VENTANAS) {
 
 # ── 3. Ajustes -> Importar Excel ────────────────────────────────────────────
 A <- "prov_mod-revision-hdt"
-# A fresh app per window: the module keeps its upload across a reopen and
-# the same file uploaded again changes nothing (reported apart, T09).
+VISIBLE <- "(function(){ var w = document.getElementById('prov_mod-revision_wrap'); return !!w && w.offsetParent !== null; })()"
+# One app for both windows: the second time Ajustes is reopened and the SAME
+# file chosen again -- before T09b its review stayed hidden (VP1).
+ok("Ajustes fixture started", arrancar('source("tests/helpers/ajustes_fixture_app.R")$value', 38976L))
 for (k in seq_along(VENTANAS)) {
   v <- VENTANAS[[k]]
-  ok(sprintf("Ajustes fixture started (%dx%d)", v[1], v[2]),
-     arrancar('source("tests/helpers/ajustes_fixture_app.R")$value', 38975L + k))
   ventana(v)
   clic("document.getElementById('abrir')")
   espera(function() isTRUE(ev("!!document.querySelector('.modal.show .settings-hub') && !!document.querySelector(\"a[data-value='importar']\")")))
@@ -160,10 +160,13 @@ for (k in seq_along(VENTANAS)) {
   clic("document.querySelector(\"a[data-value='importar']\")")
   espera(function() isTRUE(ev("!!document.getElementById('prov_mod-excel_file')")))
   Sys.sleep(0.5)
+  if (k > 1) ok("reopened, the review left from before isn't there (nothing chosen yet)", !isTRUE(ev(VISIBLE)))
   nodo <- b$DOM$querySelector(b$DOM$getDocument()$root$nodeId, "#prov_mod-excel_file")$nodeId
   invisible(b$DOM$setFileInputFiles(files = list(normalizePath("tests/fixtures/proveedores_excel/10_bajio_export.xlsx", winslash = "\\")),
                                     nodeId = nodo))
-  espera(function() isTRUE(ev(sprintf("!!HDT.estado('%s') && HDT.estado('%s').visibles.length > 100", A, A))), timeout_s = 40)
+  ok(sprintf("%s: the review shows (%dx%d)", if (k > 1) "reopened, the same file again" else "first upload", v[1], v[2]),
+     espera(function() isTRUE(ev(VISIBLE)) && isTRUE(ev(sprintf("!!HDT.estado('%s') && HDT.estado('%s').visibles.length > 100", A, A))),
+            timeout_s = 40))
   m <- estable(A); contar(m, sprintf("Excel review %dx%d", v[1], v[2]))
   ok(sprintf("Excel review at %dx%d: >= 12 rows in sight", v[1], v[2]), m$filas >= 12L)
   ok(sprintf("Excel review at %dx%d: one vertical scroll (not the panel's nor the window's), no horizontal one", v[1], v[2]),

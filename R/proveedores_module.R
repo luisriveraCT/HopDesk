@@ -13,6 +13,12 @@ proveedoresUI <- function(id) {
       /* Without can_manage_proveedores the catalog's bar (Inactivar selección) isn't shown. */
       .prov-solo-lectura .hdt-acciones { display: none !important; }
     ")),
+    # Each time this UI is drawn anew (Ajustes reopened, or back from another
+    # section) the server drops an upload left from before: its review was
+    # in the old DOM, and the same file chosen again changed nothing (T09b).
+    tags$script(HTML(sprintf(
+      "if (window.Shiny && Shiny.setInputValue) Shiny.setInputValue('%s', Math.random(), {priority: 'event'});",
+      ns("ui_pintada")))),
     tabsetPanel(id = ns("prov_tabs"),
       tabPanel("Catálogo activo",  value = "catalogo",  .prov_catalogo_tab(ns)),
       tabPanel("Importar Excel",   value = "importar",  .prov_importar_tab(ns)),
@@ -724,6 +730,9 @@ proveedoresServer <- function(id, shared) {
     observeEvent(input$excel_file, {
       if (!.puede_editar()) return()
       req(input$excel_file)
+      # A new file starts a new review: even the same file read again shows
+      # (setting the same value again would invalidate nothing).
+      .limpiar_carga()
       tryCatch({
         lectura <- prov_leer_excel(input$excel_file$datapath)
         if (is.null(lectura) || !nrow(lectura$filas)) {
@@ -1090,6 +1099,8 @@ proveedoresServer <- function(id, shared) {
       incluir_duplicados_rv(FALSE)
       cambiar_alias_rv(FALSE)
     }
+
+    observeEvent(input$ui_pintada, .limpiar_carga(), ignoreInit = TRUE)
 
     observeEvent(input$cancelar_upload, {
       .limpiar_carga()
