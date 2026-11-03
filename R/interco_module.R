@@ -388,7 +388,9 @@ intercoServer <- function(id, shared) {
         col_numero("Facturas",   "tablas.interco.facturas")
       ),
       acciones_fila = "detalle",
-      vacio         = "tablas.interco.saldos_vacio"
+      vacio         = "tablas.interco.saldos_vacio",
+      # Each row is a pair (empresa, libro, contraparte, moneda), not an invoice.
+      textos        = list(contador = "tablas.interco.contador_pares")
     )
 
     observeEvent(saldos_t$accion(), {
