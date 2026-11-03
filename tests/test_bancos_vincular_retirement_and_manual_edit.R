@@ -78,22 +78,14 @@ full <- paste(txt, collapse = "\n")
        preceding <- txt[max(1, start - 2):start]
        any(grepl("if \\(FALSE\\)", preceding))
      })
-  ok("the JS mode-toggle for Vincular is inside a /* */ block comment, not active",
+  # T12a: the Libro's selection JS went to the table engine, and the retired
+  # Vincular / Conciliar JS (kept in /* */ until then) went with it.
+  ok("the Libro's JS keeps no Vincular mode at all (T12a: the retired JS is gone, not just commented)",
      {
-       start <- grep('deactivateVin', txt)[1]
-       preceding <- txt[max(1, start - 2):start]
-       any(grepl("/\\*", preceding))
+       i <- grep("^bancos_libro_js <- function", txt)[1]
+       j <- grep("^# ── Match scoring", txt)[1]
+       !is.na(i) && !is.na(j) && !any(grepl("vinMode|deactivateVin|vincular_row_id", txt[i:j]))
      })
-  ok("the JS block comment for Vincular is properly closed (no nested */ prematurely ending it)",
-     {
-       start <- grep("Vincular button \\(VINCULAR_RETIRED", txt)[1]
-       end   <- grep("END VINCULAR_RETIRED", txt)[1]
-       ok_range <- txt[(start+1):(end-1)]
-       # None of the lines strictly between open and close may contain */
-       !any(grepl("\\*/", ok_range))
-     })
-  ok("vinMode/_vinBtnOrigHtml are still declared OUTSIDE the commented block (no ReferenceError -- the row-click handler's `if (vinMode)` branch still needs them, even though nothing can set vinMode=true anymore)",
-     any(grepl("var vinMode\\s*=\\s*false;", txt[1:300])))
   ok("R/bancos_module.R still parses as valid R after the retirement (structural sanity -- a misplaced brace would corrupt everything after it, not just Vincular)",
      !inherits(tryCatch(parse("R/bancos_module.R"), error = function(e) e), "error"))
   ok("the Manual entry modal section (right after Vincular) is genuinely OUTSIDE the if(FALSE) block, not accidentally swallowed",
@@ -135,13 +127,14 @@ full <- paste(txt, collapse = "\n")
 
 # ── Stage 4b: Edit capability ────────────────────────────────────────────────
 {
-  ok("a new 'Editar' toolbar button exists (btn_editar)",
-     any(grepl('id = ns\\("btn_editar"\\)', txt)))
-  ok("the Editar button's JS handler validates the selection count client-side before sending",
-     any(grepl('sel\\.length === 0.*Selecciona una fila', txt)) ||
-     any(grepl("Selecciona una fila para editar", txt)))
-  ok("the Editar button's JS handler also rejects 2+ selected rows (edit is single-row only)",
-     any(grepl("Selecciona solo una fila para editar", txt)))
+  # T12a: Editar is the row's ✎ (hd_table acc_fila), shown only on manual
+  # entries (.acciones); the toolbar button and its alert() went.
+  ok("Editar is the Libro's ✎ row action (acciones_fila = \"editar\")",
+     any(grepl('acciones_fila = "editar"', txt, fixed = TRUE)))
+  ok("the ✎ shows only on manual entries (.acciones)",
+     any(grepl('.acciones   = ifelse(!is.na(movs$fuente) & movs$fuente == "manual", "editar", "")', txt, fixed = TRUE)))
+  ok("the table's ✎ calls the edit function with the row's id",
+     any(grepl('identical(a$accion, "editar") && length(a$ids)) .bnc_editar(a$ids[1])', txt, fixed = TRUE)))
   ok("editing_mov_id reactiveVal exists to track add-vs-edit mode",
      any(grepl("editing_mov_id\\s*<-\\s*reactiveVal\\(NULL\\)", txt)))
   ok(".show_manual_mov_modal() helper exists (shared between Agregar and Editar, not duplicated)",
@@ -153,10 +146,10 @@ full <- paste(txt, collapse = "\n")
        grepl("editing_mov_id\\(NULL\\)", block)
      })
 
-  start <- grep("observeEvent\\(input\\$editar_row,", txt)
-  ok("found the editar_row observer to scan", length(start) > 0)
+  start <- grep("\\.bnc_editar <- function\\(mov_id\\)", txt)
+  ok("found the edit function (.bnc_editar) to scan", length(start) > 0)
   if (length(start)) {
-    end <- grep("^    \\}, ignoreInit = TRUE\\)$", txt)
+    end <- grep("^    \\}$", txt)
     end <- end[end > start[1]][1]
     block <- paste(txt[start[1]:end], collapse = "\n")
     ok("editar_row rejects rows that are NOT fuente==\"manual\" (never opens edit for a TXT-imported row)",

@@ -49,6 +49,14 @@
   "Rango..."          = "personalizado"
 )
 
+# The Libro's and the Eliminar confirmation's tables with no rows (hd_table, T12a).
+.bnc_libro_vacia <- data.frame(id = character(), Empresa = character(), FechaHora = as.POSIXct(character()),
+                               Moneda = character(), Tipo = character(), Descripcion = character(),
+                               Recibo = character(), Cargo = numeric(), Abono = numeric(), Saldo = numeric(),
+                               .acciones = character(), stringsAsFactors = FALSE, check.names = FALSE)
+.bnc_elim_vacia <- data.frame(id = character(), Fecha = as.Date(character()), Parte = character(),
+                              Cargo = numeric(), Abono = numeric(), Moneda = character(), stringsAsFactors = FALSE)
+
 # Filter movements by period
 .filter_periodo <- function(df, periodo, desde = NULL, hasta = NULL) {
   hoy <- Sys.Date()
@@ -260,132 +268,22 @@ bancos_styles <- function() {
   "))
 }
 
-# ── Row-selection + Vincular-mode JS (injected once in bancosUI) ─────────────
+# ── The Libro bar's toggles (injected once in bancosUI) ─────────────────────
+# Flujo cycles Todos -> Egresos -> Ingresos; Comisiones shows or hides them.
+# Marking rows, Eliminar and Editar belong to the table engine now (T12a,
+# hd_table "libro_banco"); Vincular and Conciliar were retired before it.
 bancos_libro_js <- function(id) {
   pfx <- paste0(id, "-")   # e.g. "bnc-"
   js  <- sprintf(
 '(function() {
   "use strict";
-  var NS      = "%s";
-  var sel     = [];
-  var _lastRow        = null;   /* last-clicked TR for shift-range */
-  var vinMode         = false;
-  var _vinBtnOrigHtml = null;
-  var _flujoIdx       = 0;      /* 0=todos 1=egresos 2=ingresos */
-  var _flujoStates    = ["todos","egresos","ingresos"];
-  var _flujoLabels    = ["Todos","Egresos","Ingresos"];
-  var _comVisible     = false;
-
-  /* Inject namespaced crosshair CSS so it scopes to this module instance */
-  (function() {
-    var s = document.createElement("style");
-    s.textContent = ".bnc-vincular-mode #" + NS + "libro_tbl tbody tr { cursor:crosshair !important; }";
-    document.head.appendChild(s);
-  })();
-
-  function $id(n) { return document.getElementById(NS + n); }
-
-  function updatePill() {
-    var n = sel.length;
-    var p = $id("sel_pill");
-    if (!p) return;
-    p.style.display = n > 0 ? "inline-flex" : "none";
-    if (n > 0) {
-      var t = $id("sel_pill_text");
-      if (t) t.textContent = "\\u2713 " + n +
-        " movimiento" + (n === 1 ? "" : "s") +
-        " seleccionado" + (n === 1 ? "" : "s");
-    }
-    var b = $id("btn_eliminar");
-    if (b) b.disabled = (n === 0);
-  }
-
-  function clearAll() {
-    sel = []; _lastRow = null;
-    $("#" + NS + "libro_tbl tbody tr").removeClass("bnc-row-selected");
-    updatePill();
-  }
-
-  /* Use data-id (set by createdRow) — avoids reading td:eq(0) which
-     resolves to the first VISIBLE cell (Fecha) when the id column is
-     hidden, causing all rows with the same date to share one apparent ID. */
-  function getRowId(tr) {
-    return (tr.getAttribute && tr.getAttribute("data-id")) ||
-           $(tr).find("td").eq(0).text().trim();
-  }
-
-  function highlightVisible() {
-    $("#" + NS + "libro_tbl tbody tr").each(function() {
-      $(this).toggleClass("bnc-row-selected", sel.indexOf(getRowId(this)) >= 0);
-    });
-  }
-
-  /* ── Row clicks ─────────────────────────────────────────── */
-  $(document).on("click", "#" + NS + "libro_tbl tbody tr", function(e) {
-    if (vinMode) {
-      var rid = getRowId(this);
-      if (rid) Shiny.setInputValue(NS + "vincular_row_id",
-        { id: rid, nonce: Math.random() }, { priority: "event" });
-      return;
-    }
-    var rid = getRowId(this);
-    if (!rid) return;
-
-    if (e.shiftKey && _lastRow && _lastRow !== this) {
-      var rows = $("#" + NS + "libro_tbl tbody tr").toArray();
-      var i1   = rows.indexOf(_lastRow), i2 = rows.indexOf(this);
-      if (i1 >= 0 && i2 >= 0) {
-        var lo  = Math.min(i1, i2), hi = Math.max(i1, i2);
-        var add = sel.indexOf(rid) < 0;   /* match target row state */
-        for (var k = lo; k <= hi; k++) {
-          var r = getRowId(rows[k]);
-          if (!r) continue;
-          var p = sel.indexOf(r);
-          if (add  && p < 0) sel.push(r);
-          if (!add && p >= 0) sel.splice(p, 1);
-        }
-      } else {
-        var pos = sel.indexOf(rid);
-        if (pos >= 0) sel.splice(pos, 1); else sel.push(rid);
-      }
-    } else {
-      var pos = sel.indexOf(rid);
-      if (pos >= 0) sel.splice(pos, 1); else sel.push(rid);
-    }
-    _lastRow = this;
-    highlightVisible(); updatePill();
-  });
-
-  /* Click outside rows → deselect all */
-  $(document).on("click", "#" + NS + "libro_tbl", function(e) {
-    if (!$(e.target).closest("tbody tr").length) clearAll();
-  });
-
-  /* ── Pill clear ─────────────────────────────────────────── */
-  $(document).on("click", "#" + NS + "sel_pill_clear", function(e) {
-    e.stopPropagation(); clearAll();
-  });
-
-  /* ── Eliminar button ────────────────────────────────────── */
-  $(document).on("click", "#" + NS + "btn_eliminar:not([disabled])", function() {
-    if (sel.length === 0) return;
-    Shiny.setInputValue(NS + "eliminar_rows",
-      { ids: sel.slice(), nonce: Math.random() }, { priority: "event" });
-  });
-
-  /* ── Editar button (2026-07-30, Vantage Bank manual-entry correction
-     tool) -- reuses the same row-selection state as Eliminar; the server
-     validates exactly one row is selected and that it is a manual entry,
-     rather than duplicating enable/disable logic here client-side. ────── */
-  $(document).on("click", "#" + NS + "btn_editar", function() {
-    if (sel.length === 0) { alert("Selecciona una fila para editar."); return; }
-    if (sel.length > 1) { alert("Selecciona solo una fila para editar."); return; }
-    Shiny.setInputValue(NS + "editar_row",
-      { id: sel[0], nonce: Math.random() }, { priority: "event" });
-  });
-
-  /* ── Flujo cycling button ───────────────────────────────── */
+  var NS          = "%s";
+  var _flujoIdx    = 0;      /* 0=todos 1=egresos 2=ingresos */
+  var _flujoStates = ["todos","egresos","ingresos"];
+  var _flujoLabels = ["Todos","Egresos","Ingresos"];
+  var _comVisible  = false;
   var _flujoClasses = ["bnc-flujo-todos","bnc-flujo-egresos","bnc-flujo-ingresos"];
+
   $(document).on("click", "#" + NS + "btn_flujo_cycle", function() {
     _flujoIdx = (_flujoIdx + 1) %% 3;
     this.textContent = _flujoLabels[_flujoIdx];
@@ -394,7 +292,6 @@ bancos_libro_js <- function(id) {
     Shiny.setInputValue(NS + "flujo_filter", _flujoStates[_flujoIdx], { priority: "event" });
   });
 
-  /* ── Comisiones toggle button ───────────────────────────── */
   $(document).on("click", "#" + NS + "btn_comisiones_toggle", function() {
     _comVisible = !_comVisible;
     this.textContent = _comVisible ? "Con comisiones" : "Sin comisiones";
@@ -402,57 +299,8 @@ bancos_libro_js <- function(id) {
     Shiny.setInputValue(NS + "mostrar_comisiones", _comVisible, { priority: "event" });
   });
 
-  /* ── Vincular button (VINCULAR_RETIRED — code preserved for future use) ──
-  function deactivateVin() {
-    vinMode = false;
-    var b = $id("btn_vincular");
-    if (b) {
-      $(b).removeClass("btn-warning").addClass("btn-outline-primary");
-      if (_vinBtnOrigHtml) b.innerHTML = _vinBtnOrigHtml;
-    }
-    $("body").removeClass("bnc-vincular-mode");
-  }
-
-  $(document).on("click", "#" + NS + "btn_vincular", function() {
-    if (vinMode) { deactivateVin(); return; }
-    if (!_vinBtnOrigHtml) _vinBtnOrigHtml = this.innerHTML;
-    vinMode = true;
-    $(this).removeClass("btn-outline-primary").addClass("btn-warning")
-           .html("\\u2715 Cancelar");
-    $("body").addClass("bnc-vincular-mode");
-  });
-
-  ESC cancels Vincular mode
-  $(document).on("keydown.bnc", function(e) {
-    if (e.key === "Escape" && vinMode) deactivateVin();
-  });
-  ── END VINCULAR_RETIRED ──────────────────────────────────────────────── */
-
-  /* ── Conciliar button (REMOVED — code preserved for future use) ──────────
-  $(document).on("click", "#" + NS + "btn_sugerencias", function() {
-    Shiny.setInputValue(NS + "open_sugerencias", Math.random(), { priority: "event" });
-  });
-  ── END CONCILIAR_REMOVED ─────────────────────────────────────────────── */
-
-  /* ── Re-highlight after DT redraw; reset last-row anchor ── */
-  $(document).on("draw.dt", "#" + NS + "libro_tbl table", function() {
-    _lastRow = null;   /* stale DOM ref after redraw */
-    highlightVisible();
-  });
-
-  window.__bncDeactivateVin  = deactivateVin;
-  window.__bncClearSelection = clearAll;
-
-  /* Custom message handlers — namespaced to avoid collisions across instances */
-  Shiny.addCustomMessageHandler(NS + "clear_selection", function(x) { clearAll(); });
-  Shiny.addCustomMessageHandler(NS + "deactivate_vin",  function(x) { deactivateVin(); });
-  /* sug_badge handler (REMOVED with Conciliar feature):
-  Shiny.addCustomMessageHandler(NS + "sug_badge", function(n) {
-    var b = $id("sug_badge");
-    if (!b) return;
-    if (n > 0) { b.textContent = n; b.style.display = ""; }
-    else        { b.style.display = "none"; }
-  }); */
+  /* The engine drops deleted rows from its selection by itself. */
+  Shiny.addCustomMessageHandler(NS + "clear_selection", function(x) {});
 })();', pfx)
   tags$script(HTML(js))
 }
@@ -651,14 +499,6 @@ bancosUI <- function(id) {
             ),
             tags$div(class = "flex-grow-1"),
             tags$div(class = "bnc-toolbar-sep"),
-            # Trash icon only (enabled = fills red via .bnc-btn-trash CSS)
-            tags$button(
-              id = ns("btn_eliminar"), type = "button",
-              class = "btn btn-sm btn-outline-danger bnc-btn-trash",
-              disabled = "disabled",
-              title = "Eliminar seleccionados",
-              HTML('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>')
-            ),
             # VINCULAR_RETIRED (2026-07-30): the "Vincular" duplicate-merge
             # button was here. Retired -- kept for possible future creative
             # reuse, but the app no longer surfaces it; code preserved in
@@ -671,50 +511,11 @@ bancosUI <- function(id) {
                          label = " Agregar",
                          class  = "btn btn-sm btn-outline-primary",
                          style  = "font-size:.78rem; padding:3px 9px; white-space:nowrap;"),
-            # Editar (2026-07-30): correction tool for manually-entered rows
-            # (e.g. Vantage Bank, whose statements can't go through Importar
-            # TXT) -- reuses the same row selection as Eliminar; only manual
-            # entries can be edited (validated server-side).
-            tags$button(
-              id = ns("btn_editar"), type = "button",
-              class = "btn btn-sm btn-outline-secondary",
-              style = "font-size:.78rem; padding:3px 9px; white-space:nowrap;",
-              icon("pen"), " Editar"
-            ),
-            downloadButton(
-              ns("download_libro"),
-              label = HTML(paste0(
-                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" ',
-                'stroke="currentColor" stroke-width="2" stroke-linecap="round" ',
-                'stroke-linejoin="round" style="margin-right:3px;vertical-align:-1px">',
-                '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>',
-                '<polyline points="14 2 14 8 20 8"/>',
-                '<line x1="16" y1="13" x2="8" y2="13"/>',
-                '<line x1="16" y1="17" x2="8" y2="17"/>',
-                '<polyline points="10 9 9 9 8 9"/>',
-                '</svg>Exportar')),
-              class = "btn btn-sm btn-outline-secondary",
-              style = "font-size:.78rem; padding:3px 9px; white-space:nowrap;"
-            )
+            # Eliminar (bar, with rows marked), Editar (✎ on manual rows) and
+            # Exportar live in the table now (T12a).
           ),
-          # ── Selection pill ───────────────────────────────────────────────
-          div(style = "min-height:28px; margin-bottom:6px;",
-            div(
-              id    = ns("sel_pill"),
-              class = "bnc-sel-pill",
-              style = "display:none;",
-              tags$span(id = ns("sel_pill_text"), "\u2713 0 seleccionados"),
-              tags$button(
-                id = ns("sel_pill_clear"), type = "button",
-                class = "bnc-sel-pill-clear",
-                HTML("&times;")
-              )
-            )
-          ),
-          # Movement table (wrapped for CSS scoping)
-          div(class = "bnc-libro-wrap",
-            DT::dataTableOutput(ns("libro_tbl"))
-          ),
+          # Movement table: right below the bar, down to the window's bottom.
+          hd_table_ui(ns("libro"), alto = "auto"),
         )
       ),
 
@@ -1227,8 +1028,10 @@ bancosServer <- function(id, shared) {
       div(class = "bnc-ticker", !!!items)
     })
 
-    # ── Tab 1: Movement table ─────────────────────────────────────────────────
-    output$libro_tbl <- DT::renderDataTable({
+    # ── Tab 1: Libro de Banco (hd_table "libro_banco", T12a) ─────────────────
+    # The bar's own filters (account, period, flow, commissions) cut the rows;
+    # the engine searches, sorts, marks (by id), sums and exports them.
+    libro_movs <- reactive({
       cuenta_sel <- input$libro_cuenta %||% "__todas__"
       periodo    <- input$libro_periodo %||% "mes_actual"
       show_com   <- isTRUE(input$mostrar_comisiones)
@@ -1263,279 +1066,88 @@ bancosServer <- function(id, shared) {
 
       # Join cuentas for empresa + moneda (alias used as fallback when empresa is blank)
       cts_disp <- dplyr::select(cuentas(), cuenta_id, empresa, alias, moneda)
-      movs     <- dplyr::left_join(movs, cts_disp, by = "cuenta_id")
+      dplyr::left_join(movs, cts_disp, by = "cuenta_id")
+    })
 
-      todas <- cuenta_sel == "__todas__"
-
-      if (!nrow(movs)) {
-        empty_df <- data.frame(
-          id = character(), Empresa = character(),
-          `Fecha y Hora` = character(), Moneda = character(),
-          `Descripcion` = character(),
-          Cargo = character(), Abono = character(), Saldo = character(),
-          check.names = FALSE
-        )
-        col_defs <- list(
-          list(visible = FALSE, targets = 0),
-          if (!todas) list(visible = FALSE, targets = 1) else NULL
-        )
-        col_defs <- Filter(Negate(is.null), col_defs)
-        return(DT::datatable(
-          empty_df, escape = FALSE, rownames = FALSE, class = "display compact",
-          options = list(
-            dom = "t", columnDefs = col_defs,
-            language = list(emptyTable = "Sin movimientos en este per\u00edodo")
-          )
-        ))
+    libro_datos <- reactive({
+      movs <- libro_movs()
+      if (!nrow(movs)) return(.bnc_libro_vacia)
+      empresa <- {
+        ini <- dplyr::na_if(trimws(dplyr::coalesce(movs$empresa, "")), "")
+        nm  <- .cmap_lookup(shared$company_map(), dplyr::coalesce(ini, ""))
+        dplyr::coalesce(ifelse(!is.na(nm), unname(nm), NA_character_), ini, movs$alias)
       }
+      data.frame(
+        id          = movs$id,
+        Empresa     = empresa,
+        FechaHora   = as.POSIXct(paste(format(movs$fecha, "%Y-%m-%d"), dplyr::coalesce(movs$hora, "00:00:00"))),
+        Moneda      = toupper(trimws(dplyr::coalesce(movs$moneda, ""))),
+        # A commission or a reconciled row used to be a grey or green row;
+        # the engine shows it as a badge (Luis, T12 P1).
+        Tipo        = ifelse(movs$tipo == "comision", "comision",
+                        ifelse(!is.na(movs$conciliado) & movs$conciliado, "conciliado", "")),
+        Descripcion = dplyr::coalesce(dplyr::na_if(trimws(movs$descripcion_raw %||% ""), ""), "\u2014"),
+        Recibo      = as.character(movs$recibo),
+        Cargo       = ifelse(movs$cargo > 0, movs$cargo, NA_real_),
+        Abono       = ifelse(movs$abono > 0, movs$abono, NA_real_),
+        Saldo       = movs$saldo_banco,
+        # ✎ only on manual entries: imported TXT rows can't be edited.
+        .acciones   = ifelse(!is.na(movs$fuente) & movs$fuente == "manual", "editar", ""),
+        stringsAsFactors = FALSE, check.names = FALSE)
+    })
 
-      tbl <- movs |>
-        dplyr::mutate(
-          .row_class  = dplyr::case_when(
-            tipo == "comision" ~ "bnc-row-comision",
-            conciliado == TRUE ~ "bnc-row-conciliado",
-            TRUE               ~ ""
-          ),
-          Empresa       = {
-            ini <- dplyr::na_if(trimws(dplyr::coalesce(empresa, "")), "")
-            nm  <- .cmap_lookup(shared$company_map(), dplyr::coalesce(ini, ""))
-            dplyr::coalesce(
-              ifelse(!is.na(nm), unname(nm), NA_character_),
-              ini,
-              alias
-            )
-          },
-          `Fecha y Hora` = paste(format(fecha, "%d/%m/%Y"), hora),
-          Moneda        = toupper(trimws(moneda %||% "")),
-          `Descripcion` = htmltools::htmlEscape(
-            dplyr::coalesce(dplyr::na_if(trimws(descripcion_raw %||% ""), ""), "\u2014")
-          ),
-          Cargo         = dplyr::if_else(cargo > 0,
-            sprintf('<span class="bnc-row-cargo">%s</span>', fmt_money(cargo)), ""),
-          Abono         = dplyr::if_else(abono > 0,
-            sprintf('<span class="bnc-row-abono">%s</span>', fmt_money(abono)), ""),
-          Saldo         = dplyr::if_else(!is.na(saldo_banco),
-            fmt_money(saldo_banco), "<span class='text-muted'>\u2014</span>")
-        )
+    # Empresa only while every account shows (one account = one company).
+    libro_columnas <- reactive({
+      todas <- (input$libro_cuenta %||% "__todas__") == "__todas__"
+      c(if (todas) list(col_empresa("Empresa", "tablas.facturas.empresa")),
+        list(col_fecha_hora("FechaHora", "tablas.bancos.fecha_hora"),
+             col_texto("Moneda", "tablas.facturas.moneda", recorte = FALSE),
+             col_insignia("Tipo", "tablas.facturas.tipo", mapa = list(
+               comision   = list(texto = "tablas.bancos.comision",   tono = "neutro"),
+               conciliado = list(texto = "tablas.bancos.conciliado", tono = "exito"))),
+             col_texto("Descripcion", "tablas.bancos.descripcion"),
+             col_texto("Recibo", "tablas.bancos.recibo", recorte = FALSE, opcional = TRUE, visible = FALSE),
+             col_dinero("Cargo", "tablas.bancos.cargo", moneda = "Moneda"),
+             col_dinero("Abono", "tablas.bancos.abono", moneda = "Moneda"),
+             col_dinero("Saldo", "tablas.bancos.saldo", moneda = "Moneda", sumar = FALSE)))
+    })
 
-      row_classes <- tbl$.row_class
+    t_libro <- hd_table_server("libro", tabla = "libro_banco", datos = libro_datos, columnas = libro_columnas,
+                               piezas = c("sel_fila", "sel_rango", "sumador_sel", "sumador_vis", "columnas_opc",
+                                          "recorte", "acc_fila", "barra_acc"),
+                               acciones_fila = "editar",
+                               acciones_barra = list(list(accion = "eliminar", texto = "tablas.bancos.eliminar",
+                                                          peligro = TRUE)),
+                               vacio = "tablas.bancos.vacio_libro")
 
-      date_group_idx <- {
-        d <- tbl$fecha
-        cumsum(c(TRUE, d[-1] != d[-length(d)])) %% 2L
-      }
-
-      # id(0,hidden), Empresa(1,conditional), FechaHora(2), Moneda(3), Desc(4), Cargo(5), Abono(6), Saldo(7)
-      disp <- dplyr::select(tbl, id, Empresa, `Fecha y Hora`, Moneda,
-                            `Descripcion`, Cargo, Abono, Saldo)
-
-      col_defs <- list(
-        list(visible = FALSE, targets = 0),
-        list(className = "dt-center", targets = 3),
-        list(className = "dt-right",  targets = c(5, 6, 7)),
-        list(width = "90px",  targets = 2),
-        list(width = "50px",  targets = 3),
-        list(width = "80px",  targets = c(5, 6, 7)),
-        list(targets = 4, className = "dt-left")
+    # Exportar a Excel (the engine's): it is logged as a generated file, as
+    # the module's own export was ("bancos_libro_excel"). The engine sends
+    # the exported ids in libro-vista just before every download.
+    observeEvent(input[["libro-vista"]], {
+      ids        <- as.character(unlist(input[["libro-vista"]]$ids))
+      cuenta_sel <- input$libro_cuenta %||% "__todas__"
+      movs       <- libro_movs()
+      movs       <- movs[movs$id %in% ids, , drop = FALSE]
+      todas      <- cuenta_sel == "__todas__"
+      log_archivo_generado(
+        shared, tipo = "bancos_libro_excel",
+        empresa = if (todas) "Todas" else (movs$empresa[1] %||% NA_character_),
+        moneda  = if (todas) NA_character_ else (toupper(trimws(movs$moneda[1] %||% "")) %||% NA_character_),
+        detalle_list = list(cuenta = cuenta_sel, periodo = input$libro_periodo %||% "mes_actual",
+                            flujo = input$flujo_filter %||% "todos",
+                            mostrar_comisiones = isTRUE(input$mostrar_comisiones)),
+        n_items = length(ids),
+        fname = paste0("libro_banco_", format(Sys.Date(), "%Y-%m-%d"), ".xlsx")
       )
-      if (!todas) col_defs <- c(col_defs, list(list(visible = FALSE, targets = 1)))
+    }, ignoreInit = TRUE)
 
-      DT::datatable(
-        disp,
-        escape    = FALSE,
-        rownames  = FALSE,
-        selection = "none",
-        class     = "display compact",
-        options   = list(
-          pageLength  = 50,
-          dom         = "lfrtip",
-          scrollX     = FALSE,
-          autoWidth   = FALSE,
-          order       = list(),
-          columnDefs  = col_defs,
-          language    = list(emptyTable = "Sin movimientos"),
-          createdRow  = DT::JS("function(row, data) { $(row).attr('data-id', data[0]); }"),
-          rowCallback = DT::JS(sprintf(
-            "function(row, data, index) {
-              var cls = %s;
-              if (index < cls.length && cls[index]) $(row).addClass(cls[index]);
-              var dg = %s;
-              if (index < dg.length && dg[index] === 1) $(row).addClass('bnc-day-alt');
-            }",
-            jsonlite::toJSON(row_classes),
-            jsonlite::toJSON(date_group_idx)
-          ))
-        )
-      )
-    }, server = TRUE)
-
-    # ── Exportar Excel ────────────────────────────────────────────────────────
-    output$download_libro <- downloadHandler(
-      filename = function() {
-        cuenta_sel <- input$libro_cuenta %||% "__todas__"
-        cts        <- cuentas()
-        alias_str  <- if (cuenta_sel == "__todas__") {
-          "todas"
-        } else if (nzchar(cuenta_sel) && cuenta_sel != "__sin_cuenta__") {
-          row <- dplyr::filter(cts, cuenta_id == cuenta_sel)
-          if (nrow(row)) gsub("[^A-Za-z0-9_-]", "_", row$alias[1]) else "banco"
-        } else "banco"
-        paste0("movimientos_", alias_str, "_", format(Sys.Date(), "%Y%m%d"), ".xlsx")
-      },
-      content = function(file) {
-        cuenta_sel <- input$libro_cuenta %||% "__todas__"
-        periodo    <- input$libro_periodo %||% "mes_actual"
-        show_com   <- isTRUE(input$mostrar_comisiones)
-        flujo      <- input$flujo_filter  %||% "todos"
-        rango      <- input$libro_rango
-
-        movs <- movs_active()
-
-        if (cuenta_sel == "__sin_cuenta__") {
-          movs <- dplyr::filter(movs, is.na(cuenta_id) | cuenta_id == "")
-        } else if (nzchar(cuenta_sel) && cuenta_sel != "__todas__") {
-          movs <- dplyr::filter(movs, cuenta_id == cuenta_sel)
-        }
-
-        movs <- .filter_periodo(movs, periodo,
-          desde = if (length(rango) >= 1) rango[1] else NULL,
-          hasta = if (length(rango) >= 2) rango[2] else NULL
-        )
-        movs <- dplyr::arrange(movs, dplyr::desc(fecha), dplyr::desc(hora))
-        if (!show_com) movs <- dplyr::filter(movs, tipo != "comision")
-        movs <- switch(flujo,
-          "egresos"  = dplyr::filter(movs, cargo > 0),
-          "ingresos" = dplyr::filter(movs, abono > 0),
-          dplyr::filter(movs, cargo > 0 | abono > 0)
-        )
-
-        todas_exp <- cuenta_sel == "__todas__"
-        cts_exp   <- dplyr::select(cuentas(), cuenta_id, empresa, alias, moneda)
-        movs      <- dplyr::left_join(movs, cts_exp, by = "cuenta_id")
-
-        base_exp <- dplyr::transmute(movs,
-          `Fecha Movimiento` = format(as.Date(fecha), "%d-%b-%Y"),
-          Hora               = as.character(hora),
-          Recibo             = as.character(recibo),
-          `Descripcion`      = descripcion_raw,
-          Cargos             = cargo,
-          Abonos             = abono,
-          Saldo              = saldo_banco,
-          .empresa           = {
-            ini <- dplyr::na_if(trimws(dplyr::coalesce(empresa, "")), "")
-            nm  <- .cmap_lookup(shared$company_map(), dplyr::coalesce(ini, ""))
-            dplyr::coalesce(
-              ifelse(!is.na(nm), unname(nm), NA_character_),  # full name from map
-              ini,                                              # raw initials if not in map
-              alias                                             # account alias when empresa is unset
-            )
-          },
-          .moneda            = toupper(trimws(moneda %||% ""))
-        )
-
-        if (todas_exp) {
-          export <- dplyr::transmute(base_exp,
-            Empresa            = .empresa,
-            `Fecha Movimiento` = `Fecha Movimiento`,
-            Hora               = Hora,
-            Recibo             = Recibo,
-            `Descripcion`      = `Descripcion`,
-            Cargos             = Cargos,
-            Abonos             = Abonos,
-            Saldo              = Saldo,
-            Moneda             = .moneda
-          )
-          # col layout: Empresa(1),Fecha(2),Hora(3),Recibo(4),Desc(5),Cargos(6),Abonos(7),Saldo(8),Moneda(9)
-          txt_cols   <- 1:5
-          col_cargo  <- 6L; col_abono <- 7L; col_saldo <- 8L; col_moneda <- 9L
-          col_widths <- c(30, 16, 10, 16, 55, 14, 14, 14, 10)
-        } else {
-          export <- dplyr::select(base_exp, -`.empresa`, -`.moneda`)
-          # col layout: Fecha(1),Hora(2),Recibo(3),Desc(4),Cargos(5),Abonos(6),Saldo(7)
-          txt_cols   <- 1:4
-          col_cargo  <- 5L; col_abono <- 6L; col_saldo <- 7L; col_moneda <- NULL
-          col_widths <- c(16, 10, 16, 55, 14, 14, 14)
-        }
-
-        wb <- openxlsx::createWorkbook()
-        ws <- "Movimientos"
-        openxlsx::addWorksheet(wb, ws)
-        openxlsx::modifyBaseFont(wb, fontName = "Calibri", fontSize = 10)
-        openxlsx::freezePane(wb, ws, firstRow = TRUE)
-
-        mxn <- '$#,##0.00'
-
-        st_hdr <- openxlsx::createStyle(
-          fgFill = "#1E3A5F", fontColour = "#FFFFFF",
-          fontName = "Calibri", fontSize = 10, textDecoration = "bold",
-          halign = "center", valign = "center",
-          border = "TopBottomLeftRight", borderColour = "#4A7DB5", borderStyle = "thin"
-        )
-        st_txt <- openxlsx::createStyle(
-          fontName = "Calibri", fontSize = 10, halign = "left", valign = "center",
-          border = "TopBottomLeftRight", borderColour = "#CCCCCC", borderStyle = "thin"
-        )
-        st_num <- openxlsx::createStyle(
-          fontName = "Calibri", fontSize = 10, halign = "right", valign = "center",
-          numFmt = mxn,
-          border = "TopBottomLeftRight", borderColour = "#CCCCCC", borderStyle = "thin"
-        )
-        st_cargo <- openxlsx::createStyle(
-          fontName = "Calibri", fontSize = 10, fontColour = "#C0392B",
-          halign = "right", valign = "center", numFmt = mxn,
-          border = "TopBottomLeftRight", borderColour = "#CCCCCC", borderStyle = "thin"
-        )
-        st_abono <- openxlsx::createStyle(
-          fontName = "Calibri", fontSize = 10, fontColour = "#1A7A3A",
-          halign = "right", valign = "center", numFmt = mxn,
-          border = "TopBottomLeftRight", borderColour = "#CCCCCC", borderStyle = "thin"
-        )
-
-        openxlsx::writeData(wb, ws, export, startRow = 1, startCol = 1,
-                            headerStyle = st_hdr)
-
-        nr <- nrow(export)
-        if (nr > 0) {
-          data_rows <- seq(2L, nr + 1L)
-
-          openxlsx::addStyle(wb, ws, st_txt, rows = data_rows, cols = txt_cols,  gridExpand = TRUE)
-          openxlsx::addStyle(wb, ws, st_num, rows = data_rows, cols = col_saldo, gridExpand = TRUE)
-          if (!is.null(col_moneda))
-            openxlsx::addStyle(wb, ws, st_txt, rows = data_rows, cols = col_moneda, gridExpand = TRUE)
-
-          cargo_vals <- export$Cargos
-          rows_cargo_red   <- which(!is.na(cargo_vals) & cargo_vals > 0) + 1L
-          rows_cargo_plain <- setdiff(data_rows, rows_cargo_red)
-          if (length(rows_cargo_red)   > 0)
-            openxlsx::addStyle(wb, ws, st_cargo, rows = rows_cargo_red,   cols = col_cargo, gridExpand = TRUE)
-          if (length(rows_cargo_plain) > 0)
-            openxlsx::addStyle(wb, ws, st_num,   rows = rows_cargo_plain, cols = col_cargo, gridExpand = TRUE)
-
-          abono_vals <- export$Abonos
-          rows_abono_grn   <- which(!is.na(abono_vals) & abono_vals > 0) + 1L
-          rows_abono_plain <- setdiff(data_rows, rows_abono_grn)
-          if (length(rows_abono_grn)   > 0)
-            openxlsx::addStyle(wb, ws, st_abono, rows = rows_abono_grn,   cols = col_abono, gridExpand = TRUE)
-          if (length(rows_abono_plain) > 0)
-            openxlsx::addStyle(wb, ws, st_num,   rows = rows_abono_plain, cols = col_abono, gridExpand = TRUE)
-        }
-
-        openxlsx::setColWidths(wb, ws, cols = seq_along(col_widths), widths = col_widths)
-        openxlsx::setRowHeights(wb, ws, rows = 1, heights = 20)
-
-        openxlsx::saveWorkbook(wb, file, overwrite = TRUE)
-
-        log_archivo_generado(
-          shared, tipo = "bancos_libro_excel",
-          empresa = if (todas_exp) "Todas" else (base_exp$.empresa[1] %||% NA_character_),
-          moneda = if (todas_exp) NA_character_ else (base_exp$.moneda[1] %||% NA_character_),
-          detalle_list = list(cuenta = cuenta_sel, periodo = periodo, flujo = flujo,
-                              mostrar_comisiones = show_com),
-          n_items = nrow(export),
-          fname = paste0("movimientos_", format(Sys.Date(), "%Y%m%d"), ".xlsx")
-        )
-      }
-    )
+    # Eliminar (bar) opens the confirmation with the marked ids; ✎ opens
+    # the manual-entry form for that row.
+    observeEvent(t_libro$accion(), {
+      a <- t_libro$accion()
+      if (identical(a$accion, "eliminar")) .bnc_pedir_eliminar(a$ids)
+      else if (identical(a$accion, "editar") && length(a$ids)) .bnc_editar(a$ids[1])
+    }, ignoreInit = TRUE)
 
     # ── Reactive state for Vincular / Sugerencias modals ─────────────────────
     # ── VINCULAR_RETIRED: reactive state (preserved, not active) ─────────────
@@ -1565,8 +1177,16 @@ bancosServer <- function(id, shared) {
     user_picked_cuenta_rv <- reactiveVal(FALSE)
 
     # ── Eliminar batch ────────────────────────────────────────────────────────
-    observeEvent(input$eliminar_rows, {
-      ids  <- input$eliminar_rows$ids
+    # The Libro's bar sends the marked ids; the confirmation lists the ones
+    # still there (hd_table "eliminar_mov").
+    elim_filas_rv <- reactiveVal(NULL)
+    t_elim <- hd_table_server("elim", tabla = "eliminar_mov",
+                              datos = reactive(elim_filas_rv() %||% .bnc_elim_vacia),
+                              columnas = list(col_fecha("Fecha", "tablas.bancos.fecha"),
+                                              col_texto("Parte", "tablas.facturas.parte"),
+                                              col_dinero("Cargo", "tablas.bancos.cargo", moneda = "Moneda"),
+                                              col_dinero("Abono", "tablas.bancos.abono", moneda = "Moneda")))
+    .bnc_pedir_eliminar <- function(ids) {
       req(length(ids) > 0)
       movs <- movs_all()
       rows <- dplyr::filter(movs, id %in% ids, !eliminado)
@@ -1576,13 +1196,12 @@ bancosServer <- function(id, shared) {
       total_abono <- sum(rows$abono, na.rm = TRUE)
       n           <- nrow(rows)
 
-      tbl_rows <- rows |>
-        dplyr::transmute(
-          Fecha  = format(fecha, "%d/%m/%Y"),
-          Parte  = htmltools::htmlEscape(parte %||% ""),
-          Cargo  = dplyr::if_else(cargo > 0, fmt_money(cargo), ""),
-          Abono  = dplyr::if_else(abono > 0, fmt_money(abono), "")
-        )
+      mon <- dplyr::left_join(dplyr::select(rows, id, cuenta_id), dplyr::select(cuentas(), cuenta_id, moneda), by = "cuenta_id")
+      elim_filas_rv(data.frame(
+        id = rows$id, Fecha = rows$fecha, Parte = rows$parte %||% "",
+        Cargo = ifelse(rows$cargo > 0, rows$cargo, NA_real_), Abono = ifelse(rows$abono > 0, rows$abono, NA_real_),
+        Moneda = toupper(trimws(dplyr::coalesce(mon$moneda[match(rows$id, mon$id)], ""))),
+        stringsAsFactors = FALSE))
 
       elim_ids_rv(ids)
 
@@ -1590,7 +1209,7 @@ bancosServer <- function(id, shared) {
         title = sprintf("\u00bfEliminar %d movimiento%s?", n, if (n == 1) "" else "s"),
         size  = "m", easyClose = TRUE,
         div(
-          DT::dataTableOutput(ns("elim_preview_tbl")),
+          hd_table_ui(ns("elim")),
           tags$hr(),
           div(class = "d-flex justify-content-between small text-muted",
             span(paste("Total cargos:", fmt_money(total_cargo))),
@@ -1603,12 +1222,7 @@ bancosServer <- function(id, shared) {
                        class = "btn btn-danger")
         )
       ))
-
-      output$elim_preview_tbl <- DT::renderDataTable({
-        DT::datatable(tbl_rows, escape = FALSE, rownames = FALSE, selection = "none",
-          options = list(dom = "t", pageLength = 200, scrollX = FALSE))
-      }, server = FALSE)
-    }, ignoreInit = TRUE)
+    }
 
     observeEvent(input$do_eliminar_confirm, {
       if (!puede_o_avisa(shared, "can_manage_bancos")) return()
@@ -2234,8 +1848,7 @@ bancosServer <- function(id, shared) {
       .show_manual_mov_modal()
     }, ignoreInit = TRUE)
 
-    observeEvent(input$editar_row, {
-      mov_id <- input$editar_row$id
+    .bnc_editar <- function(mov_id) {
       req(mov_id)
       movs <- movs_all()
       row  <- movs[!is.na(movs$id) & movs$id == mov_id &
@@ -2247,7 +1860,7 @@ bancosServer <- function(id, shared) {
       }
       editing_mov_id(mov_id)
       .show_manual_mov_modal(prefill = as.list(row[1, ]))
-    }, ignoreInit = TRUE)
+    }
 
     observeEvent(input$do_add_manual, {
       if (!puede_o_avisa(shared, "can_manage_bancos")) return()
