@@ -45,4 +45,11 @@ test_that("the worker writes the workbook in its own process", {
   expect_null(r$err)
   expect_true(file.exists(r$out))
 })
-# (The "Wednesday is X" check comes with T11, which adds the letters.)
+
+test_that("its daily headers carry the dictionary's letters (Wednesday is X)", {
+  r <- correr_worker("es")
+  skip_if(!is.null(r$err), r$err)
+  todo <- celdas(r$out)
+  expect_true(any(grepl("^X 04 ", todo)))
+  expect_false(any(grepl("^M 04 ", todo)))
+})

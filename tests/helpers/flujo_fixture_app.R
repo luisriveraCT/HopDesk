@@ -7,6 +7,8 @@
 # are the real ones. No S3.
 #
 # This week (Monday to Sunday) has AR and AP rows in MXN for two companies.
+# The panel starts closed and #abrir_flujo opens it, as the Calendario's
+# arrow does (the state saved in localStorage is restored on opening).
 # FLU_RAIZ: the checkout whose R/ and www/ to use (default: this one).
 # =============================================================================
 library(shiny)
@@ -44,6 +46,7 @@ assign("build_export_combined_df", function(shared, ic_mode_val) cf_df, envir = 
 ui <- bslib::page_fluid(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),
   shinyjs::useShinyjs(), app_styles(),
+  actionButton("abrir_flujo", "Flujo de caja"),
   tags$link(rel = "stylesheet", type = "text/css", href = "cashflow_preview.css?v=6"),
   div(class = "h-100 cf-slide-wrapper", style = "height:600px;",
       div(id = "cf-panel-calendar", class = "cf-panel cf-panel-calendar h-100", "Calendario"),
@@ -52,7 +55,7 @@ ui <- bslib::page_fluid(
 
 server <- function(input, output, session) {
   shared <- list(
-    cf_preview_open    = reactiveVal(TRUE),
+    cf_preview_open    = reactiveVal(FALSE),
     cf_preview_prefill = reactiveVal(NULL),
     currency_choices   = list(AR = function() "MXN", AP = function() "MXN"),
     ic_mode            = list(AR = function() "exclude"),
@@ -60,6 +63,7 @@ server <- function(input, output, session) {
     empresa_sel        = function() c("NETWORKS TRANS", "NETWORKS CARGO")
   )
   cashflowPreviewServer("cfp", shared)
+  observeEvent(input$abrir_flujo, shared$cf_preview_open(TRUE))
 }
 
 app <- shinyApp(ui, server)

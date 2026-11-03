@@ -61,7 +61,13 @@ dia0 <- function(expr) {
   clic("document.getElementById('cf-day0-ok')"); Sys.sleep(1.5)
 }
 
-invisible(b$Page$navigate(sprintf("http://127.0.0.1:%d", PORT), wait_ = TRUE))
+abrir <- function() {
+  invisible(b$Page$navigate(sprintf("http://127.0.0.1:%d", PORT), wait_ = TRUE))
+  poll_until(function() isTRUE(ev("!!window.Shiny && !!document.getElementById('abrir_flujo')")), timeout_s = 60)
+  Sys.sleep(1)
+  clic("document.getElementById('abrir_flujo')")
+}
+abrir()
 ok("the preview paints this week's grid",
    poll_until(function() isTRUE(ev(sprintf("!!%s", celda))), timeout_s = 60))
 invisible(ev("window.__alertas = 0; window.alert = function(){ window.__alertas++; }; 0"))
@@ -91,6 +97,11 @@ ok("D: and refuses anything that isn't + - * / ( ) and numbers",
    all(vapply(c("2**3", "1e3", "Math.PI", "1;2", "(1+2", "", "[]+1", "this"),
               function(x) is.null(ev(sprintf("window.cfEvalArit(%s)", deparse(x)))), logical(1))))
 ok("D: precedence and parentheses", identical(as.numeric(ev("window.cfEvalArit('(1+2)*3 - 8/4')")), 7))
+
+# ── H · day letters in the headers (seen in passing 7) ──────────────────────
+letras <- unlist(ev("Array.from(document.querySelectorAll('.cf-table thead th.cf-th-bkt')).map(function(t){ return t.textContent.charAt(0); })"))
+ok("H: this week's headers read L M X J V S D (Wednesday was a second M)",
+   identical(letras, c("L", "M", "X", "J", "V", "S", "D")))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)

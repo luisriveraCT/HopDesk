@@ -112,7 +112,11 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
   m_es <- c("Ene","Feb","Mar","Abr","May","Jun",
             "Jul","Ago","Sep","Oct","Nov","Dic")
   if (grouping_used == "daily") {
-    day_ltr <- c("L","M","M","J","V","S","D")[lubridate::wday(buckets, week_start = 1)]
+    # The day's letter from the dictionary, Monday first: L M X J V S D --
+    # Wednesday is X, it was a second M. The same labels feed the preview
+    # and every export.
+    letras  <- vapply(1:7, function(d) tr(paste0("tablas.flujo.dia.", d)), character(1))
+    day_ltr <- letras[lubridate::wday(buckets, week_start = 1)]
     paste0(day_ltr, " ", sprintf("%02d", lubridate::day(buckets)),
            " ", m_es[lubridate::month(buckets)])
   } else {
