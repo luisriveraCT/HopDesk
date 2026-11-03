@@ -3400,10 +3400,13 @@ bancosServer <- function(id, shared) {
 
       movs$eliminado[idx]    <- FALSE
       movs$eliminado_at[idx] <- as.POSIXct(NA)
+      # Saved first (rule 8, T12a): on failure nothing changes in the
+      # session and nothing says it worked.
+      if (!.bnc_guardar("deshacer_eliminar_movimiento_manual", "Restaurar un movimiento manual eliminado",
+                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(),
+                                                           base = movs_base))) return()
       shared$bancos_movimientos(movs)
-      tryCatch({ save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base); bump_sync_version("bancos_movimientos_db") },
-               error = function(e)
-                 showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
+      bump_sync_version("bancos_movimientos_db")
 
       # found 2026-08-03 (Stage 9, Issue C): mirror of the archive write in
       # do_eliminar_confirm above -- records this restore as its own
@@ -3412,14 +3415,18 @@ bancosServer <- function(id, shared) {
       # archived event exists (e.g. this movement was deleted before this
       # stage shipped), the flag un-flip above already fully restores it;
       # this is additive bookkeeping, not the primary restore mechanism.
-      tryCatch({
-        bpap <- tryCatch(load_bancos_papelera(client_id = shared$effective_client_id()),
-                         error = function(e) .schema_bancos_papelera())
-        res  <- restore_from_bancos_papelera(bpap, mov_id,
-                                             actor = tryCatch(shared$current_user(), error = function(e) "system"))
-        save_bancos_papelera(res$papelera_df, client_id = shared$effective_client_id())
-      }, error = function(e)
-        message("[bancos] bancos_papelera restore write skipped/failed: ", conditionMessage(e)))
+      # The movement is already restored. No archived event to reverse (a
+      # movement deleted before the archive existed) is expected and stays
+      # silent; failing to write the restore is not: the user is told and
+      # it is logged (it used to be a message() on the console).
+      .bnc_guardar("registrar_restauracion_papelera", "Registrar la restauración en la papelera de Bancos",
+                   function() {
+                     bpap <- load_bancos_papelera(client_id = shared$effective_client_id())
+                     res  <- tryCatch(restore_from_bancos_papelera(bpap, mov_id,
+                                        actor = tryCatch(shared$current_user(), error = function(e) "system")),
+                                      error = function(e) NULL)
+                     if (!is.null(res)) save_bancos_papelera(res$papelera_df, client_id = shared$effective_client_id())
+                   }, aviso = "tablas.bancos.error_archivar_restauracion")
 
       showNotification("Movimiento restaurado.", type = "message", duration = 3)
       log_action(

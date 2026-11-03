@@ -180,6 +180,7 @@
   "tablas.bancos.vacio_libro": "Sin movimientos en este período",
   "tablas.bancos.exportar_banbajio": "Exportar (formato BanBajío)",
   "tablas.bancos.error_archivar": "Se eliminaron, pero no se pudieron archivar en la papelera de Bancos. Avísale a soporte.",
+  "tablas.bancos.error_archivar_restauracion": "Se restauró, pero no se pudo registrar en la papelera de Bancos. Avísale a soporte.",
   "tablas.bancos.ya_eliminados": "Esos movimientos ya no están: otra sesión los eliminó.",
   "tablas.dia.en_agenda_cobros": "🛒 En Agenda (Cobros):",
   "tablas.dia.en_agenda_pagos": "🛒 En Agenda (Pagos):",

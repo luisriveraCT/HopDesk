@@ -180,6 +180,7 @@
   "tablas.bancos.vacio_libro": "No movements in this period",
   "tablas.bancos.exportar_banbajio": "Export (BanBajío layout)",
   "tablas.bancos.error_archivar": "Deleted, but they could not be archived in the Bancos trash. Tell support.",
+  "tablas.bancos.error_archivar_restauracion": "Restored, but it could not be recorded in the Bancos trash. Tell support.",
   "tablas.bancos.ya_eliminados": "Those movements are gone: another session deleted them.",
   "tablas.dia.en_agenda_cobros": "🛒 In the Agenda (Collections):",
   "tablas.dia.en_agenda_pagos": "🛒 In the Agenda (Payments):",
