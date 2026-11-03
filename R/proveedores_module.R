@@ -230,30 +230,40 @@ proveedoresServer <- function(id, shared) {
     # Row buttons, the double click and the bar bring ids; the table refreshes
     # by itself from shared$proveedores_db() (keeping search, sort, scroll and
     # selection), so no action re-renders it.
+    # A column of the catalog as character, NA where the table doesn't have
+    # it -- never NULL. Before the catalog loads the fallback schema can be
+    # the 9-column .schema_proveedores() pagar_hoy_module.R redefines (it is
+    # sourced after persistence.R): no banco, no_cuenta, moneda... and a
+    # missing column stopped the table's observer, closing the session (the
+    # app hung at the loading screen, 14%).
+    .prov_col <- function(df, n) {
+      v <- df[[n]]
+      if (is.null(v)) rep(NA_character_, nrow(df)) else as.character(v)
+    }
     catalogo_datos <- reactive({
       provs <- get_provs()
-      # Before the catalog loads, shared$proveedores_db() is NULL: rep(...,
-      # nrow(NULL)) stopped this reactive inside the table's observer, which
-      # closed the whole session (the app hung at the loading screen, 14%).
       if (is.null(provs) || !is.data.frame(provs)) provs <- .schema_proveedores()
-      provs <- provs[!is.na(provs$activo) & provs$activo == TRUE, , drop = FALSE]
-      ah    <- as.character(provs$activo_hasta)
+      activo <- provs[["activo"]]
+      provs <- provs[!is.na(activo) & activo %in% TRUE, , drop = FALSE]
+      col   <- function(n) .prov_col(provs, n)
+      ah    <- col("activo_hasta")
       indef <- is.na(ah) | !nzchar(ah) | ah == "indefinido"
       fecha <- suppressWarnings(as.Date(ifelse(indef, NA_character_, ah), optional = TRUE))
-      empresas <- as.character(provs$empresas)
+      empresas <- col("empresas")
+      emp_vieja <- col("Empresa")
       data.frame(
-        id           = as.character(provs$id),
-        nombre       = provs$nombre,
-        alias        = provs$alias,
-        banco        = provs$banco,
-        no_cuenta    = provs$no_cuenta,
-        rfc          = provs$rfc,
-        moneda       = provs$moneda,
-        empresas     = ifelse(!is.na(empresas) & nzchar(empresas), empresas, as.character(provs$Empresa %||% "")),
+        id           = col("id"),
+        nombre       = col("nombre"),
+        alias        = col("alias"),
+        banco        = col("banco"),
+        no_cuenta    = col("no_cuenta"),
+        rfc          = col("rfc"),
+        moneda       = col("moneda"),
+        empresas     = ifelse(!is.na(empresas) & nzchar(empresas), empresas, ifelse(is.na(emp_vieja), "", emp_vieja)),
         activo_hasta = ifelse(indef, tr("tablas.proveedores.indefinido"), ah),
         # Only an expired date shows a badge, as before ("EXPIRADO ...").
         vigencia     = ifelse(!is.na(fecha) & fecha < Sys.Date(), "expirado", ""),
-        status       = ifelse(provs$status %in% "completo", "completo", "incompleto"),
+        status       = ifelse(col("status") %in% "completo", "completo", "incompleto"),
         # Empty = no row button (the engine fails closed).
         .acciones    = rep(if (.puede_ver_escritura()) "editar,inactivar,eliminar" else "", nrow(provs)),
         stringsAsFactors = FALSE
@@ -1142,16 +1152,18 @@ proveedoresServer <- function(id, shared) {
     # it). 🔄 opens today's "Activo por" modal; ✕ confirms in the bar.
     inactivos_datos <- reactive({
       inac <- get_inac()
-      if (is.null(inac)) inac <- .schema_proveedores()
-      inac <- inac[!is.na(inac$activo) & inac$activo == FALSE, , drop = FALSE]
+      if (is.null(inac) || !is.data.frame(inac)) inac <- .schema_proveedores()
+      activo <- inac[["activo"]]
+      inac <- inac[!is.na(activo) & activo %in% FALSE, , drop = FALSE]
+      col  <- function(n) .prov_col(inac, n)
       data.frame(
-        id        = as.character(inac$id),
-        nombre    = inac$nombre,
-        alias     = inac$alias,
-        banco     = inac$banco,
-        no_cuenta = inac$no_cuenta,
-        rfc       = inac$rfc,
-        moneda    = inac$moneda,
+        id        = col("id"),
+        nombre    = col("nombre"),
+        alias     = col("alias"),
+        banco     = col("banco"),
+        no_cuenta = col("no_cuenta"),
+        rfc       = col("rfc"),
+        moneda    = col("moneda"),
         .acciones = rep(if (.puede_ver_escritura()) "reactivar,eliminar" else "", nrow(inac)),
         stringsAsFactors = FALSE
       )
