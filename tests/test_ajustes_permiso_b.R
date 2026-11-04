@@ -38,6 +38,7 @@ for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R", "R/policy_engine.R"
 GUARDADO <- character(0)
 grabar <- function(nombre) { force(nombre); function(...) { GUARDADO <<- c(GUARDADO, nombre); invisible(NULL) } }
 for (s in c("save_policy_catalog", "save_partner_policies", "save_policy_moves", "save_moves",
+            "modificar_partner_policies", "modificar_policy_moves",   # CM12e: on S3's current table
             "save_pagar_hoy_sync", "save_pagar_hoy_user", "save_agenda_sync_config"))
   assign(s, grabar(s))
 log_action <- function(...) invisible(NULL)
@@ -99,7 +100,7 @@ HANDLERS <- list(
     clics = function(session, output) session$setInputs(cmp_apply_scope = "new", cmp_apply_confirm = 1)),
   cmp_revert_confirm = list(permiso = "can_manage_policies", archivo = "settings_companies.R",
     clics = function(session, output) session$setInputs(cmp_revert_partes_sel = "PROV A", cmp_revert_confirm = 1),
-    con = "save_policy_moves"),
+    con = "modificar_policy_moves"),
   do_sincro_activar = list(permiso = "can_manage_sync", archivo = "settings_sincro.R",
     clics = function(session, output) session$setInputs(sincro_src_selected = list(user = "luis"), do_sincro_activar = 1),
     con = "save_pagar_hoy_sync"),
