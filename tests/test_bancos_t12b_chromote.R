@@ -163,9 +163,10 @@ confirmar_barra(H)
 ok("H10: ...and once confirmed the abono is voided and leaves the table",
    poll_until(function() "AB-1" %in% reg("abonos_anulados") && !"abono:AB-1" %in% vis(H), timeout_s = 10))
 clic(boton(H, "conf:CONF-2", "eliminar"))
-invisible(poll_until(function() barra_conf(H), timeout_s = 5)); confirmar_barra(H)
-ok("H11: ✕ on a confirmation opens its modal (what goes with it), by that row's id",
+ok("H11: ✕ on a confirmation opens its modal (what goes with it) right away, by that row's id",
    poll_until(function() grepl("Eliminar esta confirmaci", modal()) && grepl("CLIENTE DOS SA", modal(), fixed = TRUE), timeout_s = 10))
+ok("H11b: ...and asks only there: the table's confirmation bar didn't show (Luis: one confirmation)",
+   !barra_conf(H))
 Sys.sleep(0.8); clic("document.getElementById('bnc-do_delete_conf_confirm')")
 ok("H12: ...and Eliminar moves CONF-2 to the trash",
    poll_until(function() "CONF-2" %in% reg("conf_eliminadas") && !"conf:CONF-2" %in% vis(H), timeout_s = 10))

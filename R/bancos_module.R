@@ -2265,12 +2265,14 @@ bancosServer <- function(id, shared) {
                       col_insignia("Origen", "tablas.bancos.origen", mapa = list(
                         legado = list(texto = "tablas.bancos.legado", tono = "neutro")))),
       piezas = "acc_fila", acciones_fila = c("deshacer", "eliminar"),
+      # ✕ asks once, in its own modal, which says the linked movement goes
+      # too -- not in the bar first and then again (Luis, 2026-11-04).
+      sin_confirmar = "eliminar",
       filtros = list(list(campo = "Empresa"), list(campo = "Tipo")),
       vacio = "tablas.bancos.vacio_historial")
 
-    # ↶ undoes a confirmation (back to the calendar) or an abono; ✕ asks
-    # (its own modal, which says what goes with it) to delete a
-    # confirmation. Both already went through the table's confirmation.
+    # ↶ undoes a confirmation (back to the calendar) or an abono, after the
+    # table's confirmation bar; ✕ opens the delete modal, which asks.
     observeEvent(t_hist$accion(), {
       a <- t_hist$accion()
       id <- as.character(a$ids[1] %||% "")

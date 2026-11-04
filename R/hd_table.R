@@ -396,6 +396,16 @@ hd_acciones_fila_validar <- function(acciones_fila) {
   names(HD_ACCIONES_FILA)[names(HD_ACCIONES_FILA) %in% acciones_fila]   # catalog order
 }
 
+# sin_confirmar (hd_table_server): these row actions skip the bar's
+# confirmation in this table; the module asks in its own modal.
+hd_acciones_fila_sin_confirmar <- function(meta, sin_confirmar, tabla = "") {
+  if (!length(sin_confirmar)) return(meta)
+  acciones <- vapply(meta, `[[`, character(1), "accion")
+  if (!is.character(sin_confirmar) || length(setdiff(sin_confirmar, acciones)))
+    stop(sprintf("hd_table '%s': `sin_confirmar` must name row actions of acciones_fila.", tabla), call. = FALSE)
+  lapply(meta, function(a) { if (a$accion %in% sin_confirmar) a$confirmar <- FALSE; a })
+}
+
 hd_acciones_fila_meta <- function(acciones) {
   lapply(acciones, function(a) {
     def <- HD_ACCIONES_FILA[[a]]
@@ -621,11 +631,16 @@ hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "dat
 # can_register_payments. Their buttons don't show, and an action that comes
 # anyway is ignored (t$accion() never gives it). The module still checks the
 # permission where it writes; this is what the user sees.
+# sin_confirmar: row actions (of acciones_fila) that reach accion() on the
+# click, without the bar's confirmation, because the module asks in its own
+# modal -- one that says more than the bar can (Bancos' Historial: deleting
+# a confirmation also deletes its linked movement; Luis, 2026-11-04: one
+# confirmation, not two).
 hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = "id",
                             fichas = NULL, acciones_fila = NULL, acciones_barra = NULL,
                             filtros = NULL, periodo = NULL, aviso = NULL, encabezado = NULL,
                             secciones = NULL, vacio = NULL, grupo = NULL, textos = NULL,
-                            visibles = FALSE, acciones_ocultas = NULL) {
+                            visibles = FALSE, acciones_ocultas = NULL, sin_confirmar = NULL) {
   if (!is.null(acciones_ocultas) && !is.function(acciones_ocultas))
     stop("hd_table: `acciones_ocultas` must be a function or reactive giving action names.", call. = FALSE)
   piezas_tabla <- hd_piezas_de(tabla, piezas)
@@ -667,6 +682,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
   acc_fila     <- .hd_sin_pieza(tabla, "acciones_fila", "acc_fila",
                                 hd_acciones_fila_validar(acciones_fila), piezas_tabla)
   acc_fila_meta <- if (length(acc_fila)) hd_acciones_fila_meta(acc_fila) else NULL
+  acc_fila_meta <- hd_acciones_fila_sin_confirmar(acc_fila_meta, sin_confirmar, tabla)
   for (a in acc_fila_meta) if (a$confirmar) .hd_exigir_confirmar(tabla, piezas_tabla, sprintf("row action '%s'", a$accion))
   acc_barra    <- .hd_sin_pieza(tabla, "acciones_barra", "barra_acc",
                                 hd_acciones_barra_validar(acciones_barra), piezas_tabla)

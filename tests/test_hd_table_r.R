@@ -280,6 +280,18 @@ test_that("deshacer confirms (Bancos, T12 P5: one click put a paid item back in 
   expect_true(hd_acciones_fila_meta("deshacer")[[1]]$confirmar)
 })
 
+test_that("sin_confirmar: a row action that asks in the module's own modal skips the bar", {
+  meta <- hd_acciones_fila_meta(c("deshacer", "eliminar"))
+  conf <- function(m) setNames(vapply(m, `[[`, logical(1), "confirmar"), vapply(m, `[[`, character(1), "accion"))
+  expect_identical(conf(hd_acciones_fila_sin_confirmar(meta, "eliminar")), c(deshacer = TRUE, eliminar = FALSE))
+  expect_identical(conf(hd_acciones_fila_sin_confirmar(meta, NULL)), c(deshacer = TRUE, eliminar = TRUE))
+  expect_error(hd_acciones_fila_sin_confirmar(hd_acciones_fila_meta("deshacer"), "eliminar", "historial_conf"),
+               "sin_confirmar` must name row actions")
+  # the server sends this meta (acciones_fila) to the browser
+  expect_true(any(grepl("acc_fila_meta <- hd_acciones_fila_sin_confirmar(acc_fila_meta, sin_confirmar, tabla)",
+                        readLines("R/hd_table.R", warn = FALSE), fixed = TRUE)))
+})
+
 test_that("icons in R/hd_table.R are written as escapes, not raw characters", {
   txt <- readLines("R/hd_table.R", encoding = "UTF-8", warn = FALSE)
   lineas <- grep("icono = \"", txt, value = TRUE)
