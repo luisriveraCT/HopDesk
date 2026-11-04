@@ -224,7 +224,8 @@ cat("\n=== Group 1: pasivos_table_build_long ===\n")
   .chk_true("1.3 total 2 rows", nrow(out) == 2L)
 }
 
-# 1.4 confirmed_item when bancos_confirmados match exists
+# 1.4 paid (a bancos_confirmados match) leaves the table, no exception (rule 22;
+# Luis, 2026-11-04, T17b (b)): it used to show as confirmed_item
 {
   lib <- .make_liability("lib4")
   prov <- .make_provision("p4a", liability_id = "lib4", estado = "item_confirmed",
@@ -237,7 +238,7 @@ cat("\n=== Group 1: pasivos_table_build_long ===\n")
     confirmacion_id = "bc4a", provision_id = "p4a", eliminado = FALSE
   )
   out <- pasivos_table_build_long(prov, mi, bc, lib, .empty_filters)
-  .chk_true("1.4 item_confirmed + bc → confirmed_item kind", sum(out$cell_kind == "confirmed_item") == 1L)
+  .chk_true("1.4 item_confirmed + bc → not in the table", nrow(out) == 0L)
 }
 
 # 1.5 overdue: has_overdue row-level flag

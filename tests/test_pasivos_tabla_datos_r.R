@@ -53,7 +53,7 @@ test_that("cells: the provision's id, mark, button, count, hand change and tone,
   expect_identical(c(cel("lib1", -3, ".boton"), cel("lib1", -3, ".tono")), c("provision", "aviso"))
   expect_identical(c(cel("lib2", 3, ".marca"), cel("lib2", 3, ".boton"), cel("lib2", 3, ".tono")), c("pendiente", "comprobante", "neutro"))
   expect_identical(c(cel("lib2", -1, ".marca"), cel("lib2", -1, ".tono")), c("vencida", "peligro"))
-  expect_identical(c(cel("lib2", -2, ".marca"), cel("lib2", -2, ".boton"), cel("lib2", -2, ".tono")), c("confirmada", "", "exito"))
+  expect_true(is.na(fila("lib2")[[campo(-2)]]))   # paid (a current confirmation): out (T17b (b))
   expect_true(cel("lib1", 30, ".mano")); expect_false(cel("lib1", 5, ".mano"))
   expect_identical(c(cel("lib1", 2, ".id"), cel("lib1", 2, ".boton")), c("", ""))
   expect_true(is.na(fila("lib1")[[campo(2)]]))

@@ -140,14 +140,15 @@ test_that("C9: an item pending ◷ ↩, overdue ! ↩, with the provision's id",
   expect_identical(celda(R0, "Crédito Banorte", "d-1")[c("texto", "estado", "marca", "boton", "boton_id")],
                    list(texto = "$710.00", estado = "pendiente_vencido", marca = "vencido", boton = "comprobante", boton_id = "p2v"))
 })
-test_that("C10: a confirmed item: ✓, no button; a deleted confirmation doesn't confirm", {
+test_that("C10 [CAMBIA (b), Luis]: a confirmed item shows ✓ today, on the engine it leaves; a deleted confirmation doesn't confirm", {
+  if (isTRUE(MOTOR)) expect_null(celda(R0, "Crédito Banorte", "d-2")) else
   expect_identical(celda(R0, "Crédito Banorte", "d-2")[c("estado", "marca", "boton")],
                    list(estado = "confirmado", marca = "confirmado", boton = ""))
   expect_identical(celda(R0, "Crédito Banorte", "d-4")$estado, "pendiente_vencido")
 })
 test_that("C11: a cell with a provision sends its id on click; an empty one has nothing", {
   expect_identical(celda(R0, "Renta oficina", "d+1")$clic_id, "p1c")
-  expect_identical(celda(R0, "Crédito Banorte", "d-2")$clic_id, "p2c")
+  if (!isTRUE(MOTOR)) expect_identical(celda(R0, "Crédito Banorte", "d-2")$clic_id, "p2c")
   expect_null(celda(R0, "Renta oficina", "d+2"))
 })
 test_that("C12: an amount or a date changed by hand is marked", {
@@ -213,7 +214,7 @@ NADA <- list(list(empresa_sel = "BOD"), list(provision_type = "manuales"))
 test_that("C20: the summary line: counts, and per currency what is due in the next 7 days", {
   # L3's Monday is always within today + 1 .. today + 7.
   expect_identical(BASE$resumen, paste(
-    if (isTRUE(MOTOR)) "Mostrando 7 pasivos · 14 provisiones · 5 items" else "Mostrando 8 pasivos · 15 provisiones · 5 items",
+    if (isTRUE(MOTOR)) "Mostrando 7 pasivos · 14 provisiones · 4 items" else "Mostrando 8 pasivos · 15 provisiones · 5 items",
     "MXN $ 3,680.00 · 4 próx.", "USD $ 370.00 · 2 próx.", "EUR $ 300.00 · 1 próx.", "CAD $ 60.00 · 1 próx."))
   # [CAMBIA] today Manuales says "provisiones manuales"; on the engine the filter is the table's and
   # the line counts what it shows, the same words as always.
@@ -299,6 +300,7 @@ pt_cambios_motor <- function(ref) {
     if (!identical(f$tipo, "fila")) return(f)
     if (identical(f$etiqueta, "Licencias <b>Ñandú</b> & 'Co'")) f$editar_funciona <- TRUE       # C26
     if (isTRUE(f$comision)) f$parte <- "Crédito Banorte"                                          # Buscar (fees)
+    if (identical(f$etiqueta, "Crédito Banorte")) f$celdas[["d-2"]] <- NULL                      # (b) paid out
     if (identical(f$etiqueta, "Renta oficina")) {                                                 # C14, P4
       f$celdas[["d+20"]]$boton <- ""
       f$celdas[["d+20"]]["boton_id"] <- list(NULL)

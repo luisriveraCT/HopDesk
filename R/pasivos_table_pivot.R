@@ -184,8 +184,11 @@ pasivos_table_build_long <- function(provisions, manual_items,
                            bancos_confirmados[[bc_prov_col]] == p$id[1], , drop = FALSE]
       } else data.frame()
 
-      cell_kind <- if (nrow(bc_row)) "confirmed_item" else
-                   if (item_date < today) "overdue_manual" else "manual_item"
+      # Paid (a current confirmation) leaves the table, no exception (rule
+      # 22; Luis, 2026-11-04: T17b (b)). A deleted confirmation doesn't
+      # count: bancos_confirmados comes through confirmaciones_vigentes().
+      if (nrow(bc_row)) return(NULL)
+      cell_kind <- if (item_date < today) "overdue_manual" else "manual_item"
       overdue_sev <- switch(cell_kind,
         overdue_manual  = "overdue_manual",
         manual_item     = if (item_date == today) "due_today" else "none",
