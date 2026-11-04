@@ -532,6 +532,11 @@ test_that("=HYPERLINK(...) y compañía se neutralizan al exportar o copiar, sin
   expect_identical(neutralizar_celdas(c("-1+2", "-1e5", "- 3", "-", "+A1", "-150.00 MXN", "@1", "=150")),
                    c("'-1+2", "'-1e5", "'- 3", "'-", "'+A1", "'-150.00 MXN", "'@1", "'=150"))
   expect_identical(tabla_a_texto_copiable(matrix(c("-150.00", "-1+2"), 1)), "-150.00\t'-1+2")
+  # OWASP: leading tab or carriage return, and spaces before = + - @
+  expect_identical(neutralizar_celdas(c("\tdato", "\r=1", "  =1+1", " +A1", "   @SUM(A1)", " -2+3", "  -150")),
+                   c("'\tdato", "'\r=1", "'  =1+1", "' +A1", "'   @SUM(A1)", "' -2+3", "'  -150"))
+  expect_identical(neutralizar_celdas(c("  hola", "a\t=b", "x=1")), c("  hola", "a\t=b", "x=1"))
+  expect_identical(tabla_a_texto_copiable(matrix(c("  =1+1", "ok"), 1)), "'  =1+1\tok")
   df <- data.frame(t = c("=1", "ok"), n = 1:2, stringsAsFactors = FALSE)
   expect_identical(neutralizar_celdas(df)$t, c("'=1", "ok"))
   t <- tabla_pegada_preparar("=HYPERLINK(\"http://malo\")\tb")

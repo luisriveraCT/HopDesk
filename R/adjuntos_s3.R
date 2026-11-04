@@ -310,13 +310,16 @@ tabla_pegada_preparar <- function(texto) {
 # formula when opened in Excel, so it gets a leading apostrophe. Stored and
 # shown text is never altered. A pure number (-150.00, -1,234.5, +7) is left
 # alone so it stays a number in Excel (Luis, 2026-11-04); "-1+2" is not one.
+# As OWASP advises for CSV injection, a cell starting with a tab or carriage
+# return, or with spaces before = + - @ ("  =1+1"), gets the apostrophe too.
 .NUMERO_PURO <- "^[-+]?([0-9][0-9,]*(\\.[0-9]+)?|\\.[0-9]+)$"
+.CELDA_PELIGRO <- "^([\t\r]| *[=+@-])"
 
 neutralizar_celdas <- function(x) {
   if (is.null(x)) return(x)
   if (is.data.frame(x)) { x[] <- lapply(x, function(col) if (is.character(col)) neutralizar_celdas(col) else col); return(x) }
   if (!is.character(x)) return(x)
-  peligro <- !is.na(x) & grepl("^[=+@-]", x) & !grepl(.NUMERO_PURO, x)
+  peligro <- !is.na(x) & grepl(.CELDA_PELIGRO, x) & !grepl(.NUMERO_PURO, x)
   x[peligro] <- paste0("'", x[peligro])
   x
 }
