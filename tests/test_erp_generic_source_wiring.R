@@ -157,10 +157,16 @@ pr_txt   <- .read("R/persistence.R")
           "data_pipeline.R's SAP-specific override feature checks against SAP_B1_ERP_TYPE")
 .chk_true(grepl('pap_this[["source"]] == SAP_B1_ERP_TYPE', dp_txt, fixed = TRUE),
           "data_pipeline.R's papelera SAP-ghost detection checks against SAP_B1_ERP_TYPE")
-.chk_true(grepl("source    = SAP_B1_ERP_TYPE", ic_txt, fixed = TRUE),
-          "interco_module.R's Agenda-staging write uses SAP_B1_ERP_TYPE")
-.chk_true(grepl("source    = SAP_B1_ERP_TYPE", tm_txt, fixed = TRUE),
-          "treasury_map_module.R's Agenda-staging write uses SAP_B1_ERP_TYPE")
+# T13: Intercompany and the Mapa IC build their Agenda rows with
+# agenda_filas_factura(), which tags them SAP_B1_ERP_TYPE unless the row says.
+.chk_true(grepl('src  <- as.character(col("source", SAP_B1_ERP_TYPE))', pr_txt, fixed = TRUE),
+          "agenda_filas_factura() tags its Agenda rows with SAP_B1_ERP_TYPE by default")
+.chk_true(grepl("agenda_filas_factura(", ic_txt, fixed = TRUE) &&
+            !grepl('source\\s*=\\s*"sap"', ic_txt),
+          "interco_module.R's Agenda-staging write goes through agenda_filas_factura(), no \"sap\" literal")
+.chk_true(grepl("agenda_filas_factura(", tm_txt, fixed = TRUE) &&
+            !grepl('source\\s*=\\s*"sap"', tm_txt),
+          "treasury_map_module.R's Agenda-staging write goes through agenda_filas_factura(), no \"sap\" literal")
 .chk_true(lengths(regmatches(lm_txt, gregexpr("SAP_B1_ERP_TYPE", lm_txt, fixed = TRUE))) >= 8L,
           "ledger_module.R's several stage/delete/edit call sites all reference SAP_B1_ERP_TYPE (at least 8 uses)")
 .chk_true(grepl("SAP_B1_ERP_TYPE, \"manual\")", sm_txt, fixed = TRUE),

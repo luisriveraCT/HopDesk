@@ -88,7 +88,8 @@ cat("── Staged pagar_hoy rows always carry an explicit source ────�
     end <- end[end > start[1]][1] %||% (start[1] + 120)
     block <- paste(txt[start[1]:end], collapse = "\n")
     .chk(grepl("src_lookup", block), TRUE, ".dia_agregar builds a src_lookup table")
-    .chk(grepl('"status","source"\\)', block), TRUE, ".dia_agregar's final column selection includes source")
+    # cierra-facturas added fecha_factura after source in the same selection.
+    .chk(grepl('"status","source"[,)]', block), TRUE, ".dia_agregar's final column selection includes source")
   }
 }
 
