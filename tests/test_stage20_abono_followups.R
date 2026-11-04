@@ -145,7 +145,7 @@ suppressPackageStartupMessages({ library(dplyr); library(tibble) })
     assign(".s3_write",           function(obj, key, client_id = NULL) invisible(TRUE), envir = globalenv())
     assign(".normalize",          function(df, schema_fn) df, envir = globalenv())
     assign("load_interco_v2",     function(client_id = NULL) list(companies = list()), envir = globalenv())
-    assign("save_interco_v2",     function(reg, client_id = NULL) invisible(TRUE), envir = globalenv())
+    assign("save_interco_v2",     function(reg, client_id = NULL, base = NULL) invisible(reg), envir = globalenv())
 
     assign("load_pasivos_provisions", function(client_id = NULL)
       tibble(id = c("p1", "p2"), empresa = c("NCS", "OTHER")), envir = globalenv())

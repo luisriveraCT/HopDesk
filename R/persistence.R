@@ -1399,7 +1399,51 @@ load_interco_v2 <- function(client_id = NULL) {
   out
 }
 
-save_interco_v2 <- function(registry, client_id = NULL) {
+# Three-way merge of the IC registry (CM12c). `nuevo` is what the session
+# saves, `base` what it started from, `fresco` what S3 holds now. Per company
+# and side (ar/ap), the codes the session added or removed against base are
+# applied to S3's; prefixes and RFCs it changed win; everything else stays
+# as on S3 (another session's work is kept). A company it dropped against
+# base is dropped. Pure: no I/O.
+interco_v2_rebase <- function(nuevo, base, fresco) {
+  base   <- if (is.list(base))   base   else .empty_interco_v2()
+  fresco <- if (is.list(fresco)) fresco else .empty_interco_v2()
+  fresco$ar_prefix <- fresco$ar_prefix %||% "C"   # as load_interco_v2() fills them
+  fresco$ap_prefix <- fresco$ap_prefix %||% "P"
+  out <- fresco
+  for (p in c("ar_prefix", "ap_prefix"))
+    if (!identical(nuevo[[p]], base[[p]])) out[[p]] <- nuevo[[p]]
+  r_n <- nuevo$rfcs %||% character(); r_b <- base$rfcs %||% character(); r_f <- fresco$rfcs %||% character()
+  quitadas  <- setdiff(names(r_b), names(r_n))
+  cambiadas <- names(r_n)[!vapply(names(r_n), function(k) identical(unname(r_n[k]), unname(r_b[k])), logical(1))]
+  r_f <- r_f[!names(r_f) %in% quitadas]
+  r_f[cambiadas] <- r_n[cambiadas]
+  out$rfcs <- r_f
+  sin <- setdiff(names(base$companies), names(nuevo$companies))
+  comp <- list()
+  for (ini in setdiff(union(names(fresco$companies), names(nuevo$companies)), sin)) {
+    n <- nuevo$companies[[ini]]; b <- base$companies[[ini]]; f <- fresco$companies[[ini]]
+    if (is.null(n)) { comp[[ini]] <- f; next }
+    lado <- function(s) {
+      nn <- n[[s]] %||% character(); bb <- b[[s]] %||% character(); ff <- f[[s]] %||% character()
+      unique(c(setdiff(ff, setdiff(bb, nn)), setdiff(nn, bb)))
+    }
+    x <- if (is.list(f)) f else list()
+    x$ar <- lado("ar"); x$ap <- lado("ap")
+    comp[[ini]] <- x
+  }
+  out$companies <- comp
+  out
+}
+
+# base: the registry the caller started from. With it, the change is merged
+# onto S3's current registry (strict read) by interco_v2_rebase(), so another
+# session's codes saved since are kept (CM12c). Returns what was written.
+save_interco_v2 <- function(registry, client_id = NULL, base = NULL) {
+  if (!is.null(base)) {
+    fresco <- .s3_leer_para_escribir(S3_KEYS$interco_v2, client_id)
+    registry <- interco_v2_rebase(registry, base, fresco)
+  }
   .s3_write(registry, S3_KEYS$interco_v2, client_id = client_id)
   # Populate both in-memory caches so subsequent reads skip S3 entirely
   if (exists(".cache_set", mode = "function")) .cache_set("interco_v2", registry, client_id)
@@ -2327,9 +2371,10 @@ rename_empresa_initials <- function(old_ini, new_ini, client_id = NULL) {
   tryCatch({
     reg <- load_interco_v2(client_id = client_id)
     if (!is.null(reg$companies) && old_ini %in% names(reg$companies)) {
-      reg$companies[[new_ini]] <- reg$companies[[old_ini]]
-      reg$companies[[old_ini]] <- NULL
-      save_interco_v2(reg, client_id = client_id)
+      nuevo <- reg
+      nuevo$companies[[new_ini]] <- nuevo$companies[[old_ini]]
+      nuevo$companies[[old_ini]] <- NULL
+      save_interco_v2(nuevo, client_id = client_id, base = reg)   # onto S3's current (CM12c)
       if (exists("bump_sync_version", mode = "function")) bump_sync_version("interco_v2", client_id = client_id)
       touched <- c(touched, "interco_v2")
     }

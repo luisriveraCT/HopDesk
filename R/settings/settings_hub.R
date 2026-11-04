@@ -449,8 +449,12 @@ settings_observers <- function(input, output, session, shared) {
       companies = companies
     )
 
+    # Merged onto S3's current registry against the one this session opened
+    # (CM12c): another session's codes saved since are kept.
     saved_ok <- tryCatch({
-      save_interco_v2(registry, client_id = shared$effective_client_id())
+      registry <- save_interco_v2(registry, client_id = shared$effective_client_id(),
+                                  base = isolate(shared$interco_v2()))
+      companies <- registry$companies
       bump_sync_version("interco_v2")
       TRUE
     }, error = function(e) {
@@ -699,15 +703,15 @@ settings_observers <- function(input, output, session, shared) {
               "  AP=", paste(co$ap, collapse=",") %||% "(none)")
     }
 
-    shared$interco_v2(new_registry)
-    # Auto-persist scanner results immediately — no manual Guardar required
-    tryCatch({
-      save_interco_v2(new_registry, client_id = shared$effective_client_id())
-      bump_sync_version("interco_v2")
-    },
-      error = function(e)
-        showNotification(paste("No se pudo guardar en S3:", e$message), type = "warning")
-    )
+    # Auto-persist scanner results immediately — no manual Guardar required.
+    # Merged onto S3's current registry (CM12c); the session shows it only
+    # once saved, and a failure is an error, not a warning over unsaved codes.
+    guardado <- tryCatch(
+      save_interco_v2(new_registry, client_id = shared$effective_client_id(), base = cur),
+      error = function(e) { message("[IC_SCAN_APPLY] save failed: ", e$message); NULL })
+    if (is.null(guardado)) { showNotification(tr("comun.error_guardar"), type = "error"); return() }
+    bump_sync_version("interco_v2")
+    shared$interco_v2(guardado)
 
     # The scanner modal replaced the settings modal (Shiny supports only one modal at a time).
     # Re-open the settings modal shell, then immediately navigate to the IC panel so
@@ -822,14 +826,14 @@ settings_observers <- function(input, output, session, shared) {
       companies = new_companies
     )
 
-    shared$interco_v2(new_registry)
-    tryCatch({
-      save_interco_v2(new_registry, client_id = shared$effective_client_id())
-      bump_sync_version("interco_v2")
-    },
-      error = function(e)
-        showNotification(paste("No se pudo guardar en S3:", e$message), type = "warning")
-    )
+    # Merged onto S3's current registry (CM12c); shown only once saved.
+    guardado <- tryCatch(
+      save_interco_v2(new_registry, client_id = shared$effective_client_id(), base = cur),
+      error = function(e) { message("[BP_APPLY_IC] save failed: ", e$message); NULL })
+    if (is.null(guardado)) { showNotification(tr("comun.error_guardar"), type = "error"); return() }
+    bump_sync_version("interco_v2")
+    shared$interco_v2(guardado)
+    new_registry <- guardado
 
     # Refresh is_ic flags in bp_candidates so preselection updates
     new_cands <- tryCatch({
