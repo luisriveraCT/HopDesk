@@ -3432,7 +3432,6 @@ tiersServer <- function(id, shared) {
         reqs$decisions_json[ri[1]] <- jsonlite::toJSON(decisions, auto_unbox = TRUE)
         # Create grant for this client
         now    <- Sys.time()
-        grants <- load_hop_grants()
         new_g  <- data.frame(
           id         = uuid::UUIDgenerate(),
           request_id = req_id,
@@ -3444,8 +3443,7 @@ tiersServer <- function(id, shared) {
           revoked    = FALSE,
           stringsAsFactors = FALSE
         )
-        updated_grants <- rbind(grants, new_g)
-        save_hop_grants(updated_grants)
+        updated_grants <- modificar_hop_grants(function(g) dplyr::bind_rows(g, new_g))
         bump_sync_version("hop_grants_db")
         shared$hop_grants_db(updated_grants)
         # Resolve request when all clients decided
@@ -3560,8 +3558,7 @@ tiersServer <- function(id, shared) {
         req(length(idx) > 0)
         grantee_v  <- grants$grantee[idx[1]]
         cid_v      <- grants$client_id[idx[1]]
-        grants$revoked[idx[1]] <- TRUE
-        save_hop_grants(grants)
+        grants <- modificar_hop_grants(function(g) { g$revoked[g$id == grant_id] <- TRUE; g })
         bump_sync_version("hop_grants_db")
         shared$hop_grants_db(grants)
         showNotification("Acceso revocado.", type = "warning", duration = 3)
@@ -3722,7 +3719,6 @@ tiersServer <- function(id, shared) {
       me  <- shared$current_user() %||% ""
       now <- Sys.time()
       tryCatch({
-        grants   <- load_hop_grants()
         new_rows <- do.call(rbind, lapply(to_grant, function(g) {
           data.frame(
             id         = uuid::UUIDgenerate(),
@@ -3736,8 +3732,7 @@ tiersServer <- function(id, shared) {
             stringsAsFactors = FALSE
           )
         }))
-        updated <- rbind(grants, new_rows)
-        save_hop_grants(updated)
+        updated <- modificar_hop_grants(function(g) dplyr::bind_rows(g, new_rows))
         bump_sync_version("hop_grants_db")
         shared$hop_grants_db(updated)
         labels <- paste(vapply(to_grant, `[[`, character(1), "label"), collapse = ", ")
