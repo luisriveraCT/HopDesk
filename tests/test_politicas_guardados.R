@@ -70,9 +70,11 @@ correr <- function(pm, pp, sembrar, clics, sap = NULL) {
   shared$policy_catalog_db(tibble::tibble(id = "p1", name = "Viernes"))
   shared$partner_policies_db(pp)
   shared$policy_moves_db(pm)
+  # SAP data present from the start: the auto-apply observer (ignoreInit)
+  # does not run, so Aplicar meets the session copy as given.
+  if (!is.null(sap)) shared$sap_data(sap)
   testServer(function(input, output, session) settings_companies_observer(input, output, session, shared), {
     session$flushReact()
-    if (!is.null(sap)) { shared$sap_data(sap); session$flushReact() }
     clics(session)
   })
   invisible(shared)
