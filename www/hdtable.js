@@ -86,7 +86,7 @@
     if (nuevo && st.visible) st.visible.disconnect();
     if (!st || nuevo) st = TABLAS[msg.id] = crear(root, msg);
     cargar(st, msg);
-    if (nuevo) enviarSel(st);
+    if (nuevo) { enviarSel(st); if (st.p.edicion_celda) enviarEdiciones(st); }
   }
 
   // The server sends data only when it changes, so a container that appears
@@ -111,7 +111,7 @@
       textos: msg.textos || {}, cols: [], n: 0, ids: [], idx: {}, bloq: [], moneda: [], tipo: [],
       celdas: [], busq: [], trs: [], vis: [], sel: new Set(), ancla: null,
       filtros: [], fsel: {}, trasBusq: [], gTodos: false, gExcepto: {}, grupos: [], lista: [],
-      editando: false, valores: {},
+      editando: false, valores: {}, ed: {}, colEd: -1, editor: null,
       orden: { col: -1, dir: 1 }, q: '', abajo: null, medidas: {}
     };
     root.textContent = '';
@@ -572,7 +572,6 @@
   function pintarFichas(st, base) {
     if (!st.fichasEl || !st.fichas) return;
     var val = st.fichas.valores, monto = st.fichas.mostrar === 'monto' && st.suma >= 0;
-    var o = monto ? st.celdas[st.suma].orden : null;
     var cuenta = {}, sumas = {};
     base.forEach(function (i) {
       var v = val[i];
@@ -580,9 +579,9 @@
       if (monto && !st.bloq[i]) {
         var m = st.moneda[i] || '';
         sumas[v] = sumas[v] || {};
-        sumas[v][m] = (sumas[v][m] || 0) + (Number(o[i]) || 0);
+        sumas[v][m] = (sumas[v][m] || 0) + montoFila(st, i);
         sumas.__todas = sumas.__todas || {};
-        sumas.__todas[m] = (sumas.__todas[m] || 0) + (Number(o[i]) || 0);
+        sumas.__todas[m] = (sumas.__todas[m] || 0) + montoFila(st, i);
       }
     });
     function cifra(v) {
@@ -946,6 +945,11 @@
     var t0 = performance.now();
     var f = msg.filas || {};
     var arriba = st.scroll.scrollTop, izq = st.scroll.scrollLeft;
+    // A cell being typed in when new data comes: the rows are rebuilt, so
+    // it reopens on the same row (by id) with what was typed, if the row
+    // is still there.
+    var editor = st.editor ? { id: st.editor.id, texto: st.editor.input.value } : null;
+    st.editor = null;
 
     var cabeza = { columnas: msg.columnas, acciones: msg.acciones_fila || null, ocultas: OCULTAS[st.root.id] || null };
     var colsCambian = JSON.stringify(cabeza) !== JSON.stringify(st.colsMeta);
@@ -998,10 +1002,24 @@
     if (st.filtrosEl) cargarFiltros(st, msg.filtros);
     st.celdas = arr(f.celdas).map(function (c) {
       return { mostrar: arr(c.mostrar), orden: arr(c.orden), copiar: arr(c.copiar), tono: c.tono ? arr(c.tono) : null,
-               completo: c.completo ? arr(c.completo) : null };
+               completo: c.completo ? arr(c.completo) : null,
+               min: c.min ? arr(c.min) : null, max: c.max ? arr(c.max) : null };
     });
     st.idx = {};
     for (var i = 0; i < st.n; i++) st.idx[st.ids[i]] = i;
+    // edicion_celda (T14): amounts typed live by id, so they survive search,
+    // sort, filters and window mode. New data: a row that's gone (or locked
+    // now) loses its own, as with the selection; the rest are checked
+    // against their new bounds.
+    st.colEd = -1;
+    if (st.p.edicion_celda) st.cols.forEach(function (c, j) { if (st.colEd < 0 && c.editable) st.colEd = j; });
+    var edAntes = JSON.stringify(st.ed);
+    Object.keys(st.ed).forEach(function (id) {
+      var k = st.idx[id];
+      if (st.colEd < 0 || k == null || st.bloq[k]) delete st.ed[id];
+      else st.ed[id].valido = edValido(st, k, st.ed[id].valor);
+    });
+    if (JSON.stringify(st.ed) !== edAntes) enviarEdiciones(st);
     st.colEt = -1;
     st.cols.forEach(function (c, j) { if (st.colEt < 0 && c.tipo === 'etiqueta') st.colEt = j; });
     st.suma = -1;
@@ -1038,6 +1056,8 @@
     st.scroll.scrollLeft = izq;
     st.medidas.pintado = performance.now() - t0;
     if (st.sel.size !== antes) enviarSel(st);
+    if (editor && editor.id in st.idx && !st.bloq[st.idx[editor.id]] && st.colEd >= 0)
+      abrirEditor(st, st.idx[editor.id], editor.texto);
   }
 
   function cabecera(st) {
@@ -1181,7 +1201,8 @@
       if (prov && k === 0) td.appendChild(nodo('span', 'hdt-ins hdt-tono-morado hdt-ins-prov', t('tablas.provision')));
       // Without a row-actions column, the marks go in the first one.
       if (k === 0 && !st.accFila.length) { var marcas = marcasFila(st, i); if (marcas) td.appendChild(marcas); }
-      pintarCelda(st, td, j, i);
+      if (j === st.colEd) pintarEditable(st, td, i);
+      else pintarCelda(st, td, j, i);
       tr.appendChild(td);
     }
     if (st.accFila.length) tr.appendChild(botonesFila(st, i));
@@ -1450,8 +1471,8 @@
         td.appendChild(nodo('span', 'hdt-grupo-n', FMT_N.format(libres.length)));
         if (comun) pintarCelda(st, td, j, i0);
       } else if (j === st.suma) {
-        var o = st.celdas[j].orden, s = {};
-        libres.forEach(function (i) { var mo = st.moneda[i] || ''; s[mo] = (s[mo] || 0) + (Number(o[i]) || 0); });
+        var s = {};
+        libres.forEach(function (i) { var mo = st.moneda[i] || ''; s[mo] = (s[mo] || 0) + montoFila(st, i); });
         var mons = Object.keys(s).sort();
         td.textContent = mons.length ? mons.map(function (mo) {
           return (mons.length > 1 && mo ? mo + ' ' : '') + dinero(s[mo]);
@@ -1558,8 +1579,8 @@
       caja.appendChild(nodo('span', 'hdt-banda-n',
         tn(st.textos.banda || st.textos.contador || 'tablas.contador.registros', filas.length, { n: FMT_N.format(filas.length) })));
       if (st.suma >= 0) {
-        var o = st.celdas[st.suma].orden, s = {};
-        filas.forEach(function (i) { var m = st.moneda[i] || ''; s[m] = (s[m] || 0) + (Number(o[i]) || 0); });
+        var s = {};
+        filas.forEach(function (i) { var m = st.moneda[i] || ''; s[m] = (s[m] || 0) + montoFila(st, i); });
         var mons = Object.keys(s).sort();
         caja.appendChild(nodo('span', 'hdt-banda-suma', mons.length
           ? mons.map(function (m) { return (m ? m + ' ' : '') + dinero(s[m]); }).join(' · ') : dinero(0)));
@@ -1879,12 +1900,12 @@
     if (st.suma < 0 || (!conSel && !conVis)) { st.pie.hidden = true; return; }
     var filas = conSel ? st.ids.filter(function (id) { return st.sel.has(id); }).map(function (id) { return st.idx[id]; })
                        : st.vis.filter(function (i) { return !st.bloq[i]; });
-    var o = st.celdas[st.suma].orden, grupos = {}, orden = [];
+    var grupos = {}, orden = [];
     filas.forEach(function (i) {
       var tipo = st.tipo[i] === 'cobro' || st.tipo[i] === 'pago' ? st.tipo[i] : '';
       var mon = st.moneda[i] || '';
       if (!grupos[tipo]) { grupos[tipo] = {}; orden.push(tipo); }
-      grupos[tipo][mon] = (grupos[tipo][mon] || 0) + (Number(o[i]) || 0);
+      grupos[tipo][mon] = (grupos[tipo][mon] || 0) + montoFila(st, i);
     });
     orden.sort(function (a, b) { return ['cobro', 'pago', ''].indexOf(a) - ['cobro', 'pago', ''].indexOf(b); });
 
@@ -1907,6 +1928,213 @@
       st.pie.appendChild(b);
     }
     st.pie.hidden = false;
+  }
+
+  // ── Typing an amount in a cell (edicion_celda, T14) ──────────────────────
+  // One editable column (col_dinero(editable = ...)), the one the table
+  // sums. st.ed: id -> {valor, valido}, only what was typed; the server gets
+  // all of it (ns + "ediciones") and checks it again. A click on the cell
+  // types in it; Enter or Tab keep it and go to the next row's cell
+  // (Shift: the previous one), Esc leaves it as it was, empty + Enter goes
+  // back to the data's value. Typing marks the row (P1). Out of range: the
+  // cell in the danger tone, the reason in the bubble, and it doesn't add
+  // up in the footer or the subtotals.
+
+  // What row i adds to the footer, subtotals and chips: the amount typed if
+  // valid (0 if not), else the data's.
+  function montoFila(st, i) {
+    var e = st.suma === st.colEd ? st.ed[st.ids[i]] : null;
+    if (e) return e.valido ? e.valor : 0;
+    return Number(st.celdas[st.suma].orden[i]) || 0;
+  }
+  // What copying cell (j, i) gives: the amount typed, or the data's value.
+  function copiaCelda(st, j, i) {
+    var e = j === st.colEd ? st.ed[st.ids[i]] : null;
+    return e ? String(e.valor) : st.celdas[j].copiar[i];
+  }
+  function limitesFila(st, i) {
+    var c = st.celdas[st.colEd];
+    var mn = c.min ? c.min[i] : null, mx = c.max ? c.max[i] : null;
+    return { min: mn == null || mn === '' ? null : Number(mn), max: mx == null || mx === '' ? null : Number(mx) };
+  }
+  // The same rule as hd_ediciones() in R: within the row's bounds, and
+  // negative only with a min below 0.
+  function edValido(st, i, v) {
+    var l = limitesFila(st, i);
+    return (l.min == null || v >= l.min - 1e-9) && (l.max == null || v <= l.max + 1e-9) &&
+           (v >= 0 || (l.min != null && l.min < 0));
+  }
+  function avisoRango(st, i, v) {
+    var c = st.cols[st.colEd].editable || {}, l = limitesFila(st, i);
+    var arriba = l.max != null && v > l.max;
+    var texto = String((arriba ? c.mayor : c.menor) || '');
+    return texto.split('{max}').join(l.max == null ? '' : dinero(l.max))
+                .split('{min}').join(dinero(l.min == null ? 0 : l.min));
+  }
+  function pintarEditable(st, td, i) {
+    var e = st.ed[st.ids[i]];
+    if (!st.bloq[i]) td.classList.add('hdt-editable');
+    if (!e) { pintarCelda(st, td, st.colEd, i); return; }
+    td.classList.add('hdt-editada');
+    if (!e.valido) td.classList.add('hdt-ed-mal');
+    td.appendChild(document.createTextNode(dinero(e.valor)));
+  }
+  // "1,250.50", "$1250.5", " 1250 " -> 1250.5; "" -> "" (back to the
+  // data's value); anything else -> null.
+  function leerImporte(s) {
+    s = String(s == null ? '' : s).replace(/[\s$]/g, '').replace(/,/g, '');
+    if (s === '') return '';
+    if (!/^-?(\d+\.?\d*|\.\d+)$/.test(s)) return null;
+    return Math.round(Number(s) * 100) / 100;
+  }
+  function enviarEdiciones(st) {
+    var ids = Object.keys(st.ed);
+    if (window.Shiny && Shiny.setInputValue)
+      Shiny.setInputValue(st.ns + 'ediciones', { ids: ids, valores: ids.map(function (id) { return st.ed[id].valor; }),
+                                                 nonce: Math.random() }, { priority: 'event' });
+  }
+  function rehacerFila(st, i) {
+    var viejo = st.trs[i];
+    st.trs[i] = fila(st, i);
+    if (viejo && viejo.parentNode) viejo.parentNode.replaceChild(st.trs[i], viejo);
+  }
+  // The group rows and section bands that hold row i add up again; then the
+  // footer (pintarSel -> sumador).
+  function refrescarTotales(st, i) {
+    st.lista.forEach(function (it) {
+      if (typeof it === 'number' || it.sep || !it.tr || it.filas.indexOf(i) < 0) return;
+      var viejo = it.tr;
+      it.tr = it.grupo ? trGrupo(st, it) : trBanda(st, it);
+      if (viejo.parentNode) viejo.parentNode.replaceChild(it.tr, viejo);
+    });
+    pintarSel(st);
+  }
+  function tdEditable(st, i) {
+    var tr = st.trs[i];
+    if (!tr || !tr.parentNode) return null;
+    for (var k = 0; k < tr.children.length; k++) if (tr.children[k]._c === st.colEd) return tr.children[k];
+    return null;
+  }
+  // The next (d = 1) or previous (d = -1) painted row that can be typed in.
+  function vecina(st, i, d) {
+    var filas = st.lista.filter(function (it) { return typeof it === 'number' && !st.bloq[it]; });
+    var p = filas.indexOf(i);
+    return p < 0 || filas[p + d] == null ? null : filas[p + d];
+  }
+  function avisoEn(td, texto) {
+    var b = tip();
+    clearTimeout(tipVer);
+    clearTimeout(tipOcultar);
+    b.classList.remove('hdt-tip-rango');
+    b.classList.add('hdt-tip-mal');
+    b.texto.textContent = texto;
+    b.aviso.textContent = '';
+    b.copia = texto;
+    b.hidden = false;
+    colocar(b, td.getBoundingClientRect());
+  }
+  // texto: what to start with (a cell reopened after new data); else the
+  // amount typed before, or the data's value.
+  function abrirEditor(st, i, texto) {
+    if (st.editor) guardarEditor(st, 0, true);
+    if (st.colEd < 0 || st.bloq[i]) return;
+    var td = tdEditable(st, i);
+    if (!td) {
+      // Window mode: the row isn't painted yet; bring it into view.
+      var p = st.lista.indexOf(i);
+      if (p < 0) return;
+      st.scroll.scrollTop = Math.max(0, p * (st.altoFila || 23) - st.scroll.clientHeight / 2);
+      if (st.modo === 'ventana') pintarVentana(st, true);
+      td = tdEditable(st, i);
+      if (!td) return;
+    }
+    var id = st.ids[i], e = st.ed[id], o = st.celdas[st.colEd].orden[i];
+    var input = nodo('input', 'hdt-ed-input');
+    input.type = 'text';
+    input.inputMode = 'decimal';
+    input.autocomplete = 'off';
+    input.setAttribute('aria-label', t('tablas.edicion.editable'));
+    input.value = texto != null ? texto : e ? String(e.valor) : (o == null || o === '' ? '' : String(o));
+    td.classList.remove('hdt-ed-mal', 'hdt-editada');
+    td.classList.add('hdt-editando');
+    td.textContent = '';
+    td.appendChild(input);
+    var ed = st.editor = { i: i, id: id, td: td, input: input };
+    input.addEventListener('keydown', function (ev) {
+      if (st.editor !== ed) return;
+      // Never the page's: Esc would close the modal around the table.
+      ev.stopPropagation();
+      if (ev.key === 'Enter' || ev.key === 'Tab') { ev.preventDefault(); guardarEditor(st, ev.shiftKey ? -1 : 1); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); cancelarEditor(st); }
+    });
+    input.addEventListener('input', function () {
+      td.classList.remove('hdt-ed-mal');
+      if (TIP && TIP.classList.contains('hdt-tip-mal')) TIP.hidden = true;
+    });
+    // Leaving the cell keeps what was typed (an amount that isn't one: as it was).
+    input.addEventListener('blur', function () { if (st.editor === ed) guardarEditor(st, 0, true); });
+    if (TIP) TIP.hidden = true;
+    input.focus({ preventScroll: true });
+    input.select();
+  }
+  // mover: 1 / -1 opens the next / previous row's cell after; suave: leaving
+  // the cell (blur) -- text that isn't an amount is dropped, not insisted on.
+  function guardarEditor(st, mover, suave) {
+    var ed = st.editor;
+    if (!ed) return;
+    var v = leerImporte(ed.input.value);
+    if (v === null) {
+      if (suave) { cancelarEditor(st, true); return; }
+      ed.td.classList.add('hdt-ed-mal');
+      avisoEn(ed.td, t('tablas.edicion.no_numero'));
+      ed.input.focus({ preventScroll: true });
+      ed.input.select();
+      return;
+    }
+    var i = ed.i, id = ed.id, o = st.celdas[st.colEd].orden[i];
+    var antes = JSON.stringify(st.ed[id] || null);
+    // The data's own value (or empty) is no edit: the row goes back to it.
+    if (v === '' || (o != null && o !== '' && Math.abs(v - Number(o)) < 0.005)) delete st.ed[id];
+    else st.ed[id] = { valor: v, valido: edValido(st, i, v) };
+    st.editor = null;
+    if (TIP && TIP.classList.contains('hdt-tip-mal')) TIP.hidden = true;
+    // P1: typing an amount marks its row (taking it back to the data's
+    // value doesn't unmark it).
+    var marca = st.ed[id] && !st.sel.has(id) && (st.p.casillas || st.p.sel_fila);
+    if (marca) { st.sel.add(id); st.ancla = id; st.anclaGrupo = null; }
+    rehacerFila(st, i);
+    refrescarTotales(st, i);
+    if (JSON.stringify(st.ed[id] || null) !== antes) enviarEdiciones(st);
+    if (marca) enviarSel(st);
+    var k = mover ? vecina(st, i, mover) : null;
+    if (k != null) abrirEditor(st, k);
+    else if (!suave) devolverFoco(st);
+  }
+  // suave: the focus already went elsewhere (blur); else it goes back to
+  // the table, so Esc and the keys keep working (a modal's Esc closes it).
+  function cancelarEditor(st, suave) {
+    var ed = st.editor;
+    if (!ed) return;
+    st.editor = null;
+    if (TIP && TIP.classList.contains('hdt-tip-mal')) TIP.hidden = true;
+    rehacerFila(st, ed.i);
+    if (!suave) devolverFoco(st);
+  }
+  // The input is gone with its row: the focus goes to the table's scroll
+  // (focusable with copiar_tsv) or to what holds the table (a modal).
+  function devolverFoco(st) {
+    var destino = st.scroll.tabIndex >= 0 ? st.scroll : st.root.closest('[tabindex]');
+    if (destino) destino.focus({ preventScroll: true });
+  }
+  // t$limpiar_ediciones() (hdt-ediciones): every cell back to the data's value.
+  function recibirEdiciones(msg) {
+    var st = TABLAS[msg.id];
+    if (!st || !msg.limpiar || st.root !== document.getElementById(msg.id)) return;
+    st.editor = null;
+    st.ed = {};
+    st.trs = new Array(st.n);
+    aplicar(st, true);
+    enviarEdiciones(st);
   }
 
   // ── Events ───────────────────────────────────────────────────────────────
@@ -1945,6 +2173,12 @@
         else enviarAccion(st, btn.dataset.accion, [st.ids[i]]);
         return;
       }
+      // edicion_celda: a click on the editable cell types in it; it doesn't
+      // mark the row (typing does) nor open the detail.
+      if (e.target.closest('td.hdt-editable')) {
+        if (!e.target.closest('input.hdt-ed-input')) abrirEditor(st, i);
+        return;
+      }
       // Second click of a double click: the dblclick handler undoes the first.
       if (st.p.detalle && e.detail > 1) return;
       if (st.p.detalle) st.antesClic = { sel: new Set(st.sel), ancla: st.ancla };
@@ -1970,7 +2204,7 @@
     if (st.p.detalle) {
       st.tbody.addEventListener('dblclick', function (e) {
         var tr = e.target.closest('tr');
-        if (!tr || tr._i == null || e.target.closest('input, button')) return;
+        if (!tr || tr._i == null || e.target.closest('input, button, td.hdt-editable')) return;
         if (st.antesClic) {
           st.sel = st.antesClic.sel;
           st.ancla = st.antesClic.ancla;
@@ -2085,13 +2319,20 @@
   }
   function tipAbrir(st, td) {
     var i = td.parentNode._i, j = td._c;
+    if (td.querySelector('input.hdt-ed-input')) return;   // being typed in
     // A shortened value (a company's initials) shows whole in the bubble.
     var texto = (st.celdas[j].completo && st.celdas[j].completo[i]) || st.celdas[j].mostrar[i];
+    // An amount typed by hand: that amount, and why it's out of range.
+    var e = j === st.colEd ? st.ed[st.ids[i]] : null;
+    if (e) texto = dinero(e.valor);
     if (texto == null || texto === '') return;
     var b = tip();
+    b.classList.remove('hdt-tip-mal');
+    b.classList.toggle('hdt-tip-rango', !!(e && !e.valido));
     b.texto.textContent = texto;
-    b.aviso.textContent = '';
-    b.copia = st.celdas[j].copiar[i] == null ? String(texto) : String(st.celdas[j].copiar[i]);
+    b.aviso.textContent = e && !e.valido ? avisoRango(st, i, e.valor) : '';
+    var copia = copiaCelda(st, j, i);
+    b.copia = copia == null ? String(texto) : String(copia);
     b.boton.classList.remove('hdt-hecho');
     b.boton.innerHTML = b.icono;
     b.hidden = false;
@@ -2187,7 +2428,7 @@
     var lineas = [st.ver.map(function (j) { return neutralizar(st.cols[j].titulo); }).join('\t')];
     ids.forEach(function (id) {
       var i = st.idx[id];
-      lineas.push(st.ver.map(function (j) { return neutralizar(st.celdas[j].copiar[i]); }).join('\t'));
+      lineas.push(st.ver.map(function (j) { return neutralizar(copiaCelda(st, j, i)); }).join('\t'));
     });
     return { texto: lineas.join('\r\n'), n: ids.length };
   }
@@ -2205,6 +2446,7 @@
       if (activo && x.root.contains(activo) && document.body.contains(x.root)) st = x;
     });
     if (!st || !st.p.copiar_tsv || !st.sel.size) return;
+    if (activo && activo.classList.contains('hdt-ed-input')) return;           // typing an amount: its own text
     if (window.getSelection && String(window.getSelection()).length) return;   // shaded text: normal copy
     var r = filasTsv(st);
     if (!r.n || !e.clipboardData) return;
@@ -2291,7 +2533,8 @@
         scrollTop: st.scroll.scrollTop, medidas: st.medidas,
         modo: st.modo, pintadas: st.tbody.querySelectorAll('tr:not(.hdt-esp)').length,
         altoFila: st.altoFila, ventana: [st.vIni, st.vFin],
-        bloqueadas: st.ids.filter(function (id, i) { return !!st.bloq[i]; })
+        bloqueadas: st.ids.filter(function (id, i) { return !!st.bloq[i]; }),
+        ediciones: JSON.parse(JSON.stringify(st.ed)), editando: st.editor ? st.editor.id : null
       };
     }
   };
@@ -2304,6 +2547,7 @@
       Shiny.addCustomMessageHandler('hdt-falla', recibirFalla);
       Shiny.addCustomMessageHandler('hdt-ocultas', recibirOcultas);
       Shiny.addCustomMessageHandler('hdt-mes', recibirMes);
+      Shiny.addCustomMessageHandler('hdt-ediciones', recibirEdiciones);
       pedirPerdidos();
     }
     else setTimeout(registrar, 20);

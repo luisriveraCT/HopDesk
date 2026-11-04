@@ -183,6 +183,22 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-selec .hdt-tabla tbody tr.hdt-bloq { cursor: default; }
 /* Shift held: no text gets shaded by a range click. */
 .hdt-mayus .hdt-tabla td { user-select: none; -webkit-user-select: none; }
+/* edicion_celda (T14): an amount typed in its cell. Editable: a dotted
+   underline on hover; typed: bold with a blue dot; out of range: the danger
+   tone (and the reason in the bubble). The input fills the cell, numbers
+   right-aligned, so the row doesn't change height. */
+.hdt-tabla td.hdt-editable { cursor: text; }
+.hdt-tabla td.hdt-editable:hover { text-decoration: underline dotted var(--hdt-muted); text-underline-offset: 3px; }
+.hdt-tabla td.hdt-editada { font-weight: 700; }
+.hdt-tabla td.hdt-editada::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--hdt-accent); margin-right: 5px; vertical-align: middle; }
+.hdt-tabla tr td.hdt-ed-mal { color: var(--hdt-t-peligro); background: var(--hdt-f-peligro) !important; }
+.hdt-tabla tr td.hdt-ed-mal::before { background: var(--hdt-t-peligro); }
+.hdt-tabla td.hdt-editando { padding-top: 0; padding-bottom: 0; }
+.hdt-ed-input { font: inherit; font-variant-numeric: tabular-nums; text-align: right; width: 100%; min-width: 7em;
+  box-sizing: border-box; line-height: 1.25; padding: 1px 4px; border: 1px solid var(--hdt-accent); border-radius: 3px;
+  background: var(--hdt-surface); color: var(--hdt-ink); outline: none; }
+.hdt-ed-mal .hdt-ed-input { border-color: var(--hdt-t-peligro); }
 .hdt-cb { width: 26px; text-align: center; }
 .hdt-cb input { margin: 0; vertical-align: middle; cursor: pointer; }
 
@@ -299,6 +315,9 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-tip-copiar svg { width: 14px; height: 14px; }
 .hdt-tip-copiar.hdt-hecho { color: #15804a; border-color: #15804a; }
 .hdt-tip-aviso { font-size: .74rem; color: #5a6377; align-self: center; }
+/* edicion_celda: why an amount is out of range, or isn't one (no copy then). */
+.hdt-tip.hdt-tip-rango .hdt-tip-aviso, .hdt-tip.hdt-tip-mal .hdt-tip-texto { color: #c22b2b; font-weight: 600; }
+.hdt-tip.hdt-tip-mal .hdt-tip-copiar { display: none; }
 
 /* Brief notice ("3 filas copiadas"), over the table's bottom-right corner. */
 .hdt-cuerpo { position: relative; }
