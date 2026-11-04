@@ -1012,7 +1012,7 @@
       return { mostrar: arr(c.mostrar), orden: arr(c.orden), copiar: arr(c.copiar), tono: c.tono ? arr(c.tono) : null,
                completo: c.completo ? arr(c.completo) : null, valor: c.valor ? arr(c.valor) : null,
                cid: c.cid ? arr(c.cid) : null, marca: c.marca ? arr(c.marca) : null,
-               boton: c.boton ? arr(c.boton) : null, cn: c.n ? arr(c.n) : null,
+               boton: c.boton ? arr(c.boton) : null, cn: c.n ? arr(c.n) : null, mano: c.mano ? arr(c.mano) : null,
                min: c.min ? arr(c.min) : null, max: c.max ? arr(c.max) : null };
     });
     st.idx = {};
@@ -1358,6 +1358,8 @@
       td.appendChild(b);
     }
     if (cfg.clic && cel.cid[i] && !st.bloq[i] && !(oc && oc.indexOf(cfg.clic) >= 0)) td.classList.add('hdt-celda-clic');
+    // Changed by hand (Pasivos: an amount or a date overridden): a dot in its corner.
+    if (cel.mano && cel.mano[i]) { td.classList.add('hdt-celda-mano'); td.title = cfg.mano || ''; }
   }
   function enviarCelda(st, i, j, accion) {
     var cid = st.celdas[j].cid[i];

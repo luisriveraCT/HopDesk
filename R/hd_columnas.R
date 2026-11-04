@@ -116,8 +116,10 @@ col_texto <- function(campo, titulo = NULL, recorte = TRUE, opcional = FALSE, vi
 #                         sends; empty: the cell doesn't respond), <campo>.marca
 #                         (HD_CELDA_MARCAS: pendiente ◷ / vencida ! /
 #                         confirmada ✓), <campo>.boton (HD_CELDA_BOTONES: ⚡ /
-#                         ↩, in the cell) and <campo>.n (how many things the
-#                         cell adds up: above 1 it says so). Any missing: none.
+#                         ↩, in the cell), <campo>.n (how many things the
+#                         cell adds up: above 1 it says so) and <campo>.mano
+#                         (TRUE: changed by hand, a dot in its corner). Any
+#                         missing: none.
 col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, opcional = FALSE, visible = TRUE,
                        editable = NULL, fija = FALSE, formato = "completo", cero = "cifra", tono = NULL,
                        destacar = FALSE, accion = FALSE) {
@@ -610,7 +612,8 @@ hd_filas <- function(datos, columnas, id_col = "id") {
         ma  <- as.character(campo_de(".marca", "")); ma[is.na(ma) | !ma %in% names(HD_CELDA_MARCAS)] <- ""
         bo  <- as.character(campo_de(".boton", "")); bo[is.na(bo) | !bo %in% names(HD_CELDA_BOTONES)] <- ""
         nn  <- suppressWarnings(as.integer(campo_de(".n", 0L))); nn[is.na(nn) | nn < 0L] <- 0L
-        v$cid <- I(cid); v$marca <- I(ma); v$boton <- I(bo); v$n <- I(nn)
+        mano <- as.logical(campo_de(".mano", FALSE)); mano[is.na(mano)] <- FALSE
+        v$cid <- I(cid); v$marca <- I(ma); v$boton <- I(bo); v$n <- I(nn); v$mano <- I(mano)
       }
       # tono = "<campo>" (tono_celda, T17a): the row's own tone, only from
       # the closed list; anything else paints none.

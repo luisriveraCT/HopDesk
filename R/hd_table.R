@@ -743,6 +743,7 @@ hd_accion_celda_meta <- function(accion_celda, tabla, piezas) {
                                  !(is.null(clic) || (is.character(clic) && length(clic) == 1L && grepl("^[a-z_]+$", clic)))))
     stop(sprintf("hd_table '%s': `accion_celda` must be list(clic = \"<action name>\").", tabla), call. = FALSE)
   list(clic = clic,
+       mano    = tr("tablas.celda.mano"),
        marcas  = lapply(HD_CELDA_MARCAS, function(m) list(icono = m$icono, titulo = tr(m$clave))),
        botones = lapply(HD_CELDA_BOTONES, function(b) list(icono = b$icono, titulo = tr(b$clave))))
 }

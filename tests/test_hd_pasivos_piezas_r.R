@@ -42,6 +42,12 @@ test_that("each cell: its id, mark, button and count from <campo>.*, only the cl
   expect_identical(unclass(c1$boton), c("provision", "comprobante", "", ""))
   expect_identical(unclass(c1$n), c(1L, 3L, 0L, 0L))
 })
+test_that("<campo>.mano: changed by hand, a dot; anything not TRUE is FALSE; the title is in the language", {
+  d <- D; d$`d1.mano` <- c(TRUE, NA, FALSE, "x")
+  expect_identical(unclass(hd_filas(d, COLS)$celdas[[2]]$mano), c(TRUE, FALSE, FALSE, FALSE))
+  expect_identical(unclass(hd_filas(D, COLS)$celdas[[2]]$mano), rep(FALSE, 4))
+  expect_identical(hd_accion_celda_meta(NULL, "pasivos_tabla", "accion_celda")$mano, tr("tablas.celda.mano"))
+})
 test_that("a missing companion field means none (no id: the cell doesn't respond)", {
   c1 <- hd_filas(D[, c("id", "Nombre", "d1")], COLS)$celdas[[2]]
   expect_identical(unclass(c1$cid), rep("", 4)); expect_identical(unclass(c1$boton), rep("", 4))

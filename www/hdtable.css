@@ -237,6 +237,9 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-celda-btn { font: inherit; font-size: .8em; line-height: 1; margin-left: 4px; padding: 0 2px; border: 0; background: none;
   cursor: pointer; opacity: .75; }
 .hdt-celda-btn:hover { opacity: 1; }
+.hdt-tabla td.hdt-celda-mano { position: relative; }
+.hdt-tabla td.hdt-celda-mano::after { content: ""; position: absolute; top: 3px; right: 3px; width: 5px; height: 5px;
+  border-radius: 50%; background: var(--hdt-muted); }
 
 /* Matrix base (T17a). columna_fija: the first columns stay at the left while
    the table scrolls sideways (left = var(--hdt-fija-k), measured by

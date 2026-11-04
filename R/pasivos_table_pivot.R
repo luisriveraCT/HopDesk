@@ -240,6 +240,11 @@ pasivos_table_build_long <- function(provisions, manual_items,
                     row_empresa, row_categoria, row_subcategoria,
                     row_parte, row_moneda, fecha, cell_currency) %>%
     dplyr::summarise(
+      # T17b (Luis, P4): how many it adds up, and all their provision ids,
+      # so the cell can say so and a click can list them. First: summarise()
+      # goes in order, and below cell_provision_id becomes the first one.
+      cell_n            = dplyr::n(),
+      cell_ids          = paste(unique(stats::na.omit(cell_provision_id)), collapse = ","),
       cell_kind         = dplyr::first(cell_kind),
       cell_amount       = sum(cell_amount, na.rm = TRUE),
       cell_provision_id = dplyr::first(cell_provision_id),
@@ -292,6 +297,10 @@ pasivos_table_pivot_wide <- function(long_df, granularity = "day",
     ))
   }
 
+  # Rows built by hand (tests) may come without the count / ids of T17b.
+  if (!"cell_n" %in% names(long_df)) long_df$cell_n <- 1L
+  if (!"cell_ids" %in% names(long_df)) long_df$cell_ids <- ifelse(is.na(long_df$cell_provision_id), "", long_df$cell_provision_id)
+
   # Map each fecha to a column label bucket
   long_df[["col_label"]] <- .pasivos_fecha_to_col(long_df$fecha, granularity)
 
@@ -313,6 +322,8 @@ pasivos_table_pivot_wide <- function(long_df, granularity = "day",
         cell_bancos_conf_id = dplyr::first(cell_bancos_conf_id),
         cell_has_override = any(cell_has_override, na.rm = TRUE),
         cell_overdue_severity = dplyr::first(cell_overdue_severity),
+        cell_n            = sum(cell_n),
+        cell_ids          = paste(unique(unlist(strsplit(cell_ids[nzchar(cell_ids)], ",", fixed = TRUE))), collapse = ","),
         .groups = "drop"
       )
   }
@@ -371,13 +382,102 @@ pasivos_table_pivot_wide <- function(long_df, granularity = "day",
       cell_bancos_conf_id = long_df$cell_bancos_conf_id[k],
       cell_has_override   = long_df$cell_has_override[k],
       cell_overdue_severity = long_df$cell_overdue_severity[k],
-      fecha               = long_df$fecha[k]
+      fecha               = long_df$fecha[k],
+      cell_n              = long_df$cell_n[k],
+      cell_ids            = long_df$cell_ids[k]
     )
   }
 
   list(metadata_cols = meta_raw, date_cols = date_cols, cells = cells)
 }
 
+
+# ── For the table engine (T17b step 3) ────────────────────────────────────────
+# pasivos_tabla_datos(wide, liabilities): the wide pivot as hd_table rows --
+# one per liability (or orphan, or fee), one money column per period
+# (field .pasivos_campo(label)) with the cell's companion fields for the
+# piece accion_celda:
+#   .id     the provision's id; a cell that adds up several: "agg:<row>\t<label>"
+#           (a click lists them, Luis P4); none: ""
+#   .marca  pendiente (an item to pay) / vencida (an overdue item) / confirmada
+#   .boton  provision (⚡ convert) / comprobante (↩ a converted one's receipt);
+#           none on a cell that adds up several (its list has them)
+#   .n      how many it adds up;  .mano  amount or date changed by hand
+#   .tono   provision morado, overdue provision aviso, overdue item peligro,
+#           pending item neutro, confirmed exito
+# and per row .semaforo (vencida / muy_pronto / pronto), .nivel (1: a fee
+# under its liability) and .acciones ("editar" only on a real liability).
+.pasivos_campo <- function(lbl) paste0("c_", gsub("[^0-9A-Za-z]", "_", lbl))
+.pasivos_celda_marca <- c(manual_item = "pendiente", overdue_manual = "vencida", confirmed_item = "confirmada")
+.pasivos_celda_tono  <- c(provision = "morado", overdue_provision = "aviso", overdue_manual = "peligro",
+                          manual_item = "neutro", confirmed_item = "exito")
+
+pasivos_tabla_datos <- function(wide, liabilities = NULL) {
+  meta <- wide$metadata_cols
+  n <- nrow(meta)
+  fee <- as.logical(meta$row_is_fee %||% rep(FALSE, n)); fee[is.na(fee)] <- FALSE
+  bandera <- function(x) { x <- as.logical(x %||% rep(FALSE, n)); x[is.na(x)] <- FALSE; x }
+  ov <- bandera(meta$has_overdue); vs <- bandera(meta$has_very_soon); ds <- bandera(meta$has_due_soon)
+  reales <- if (!is.null(liabilities) && nrow(liabilities)) as.character(liabilities$id) else character(0)
+  d <- data.frame(
+    id = as.character(meta$row_id),
+    Pasivo = ifelse(is.na(meta$row_display_label), meta$row_label, meta$row_display_label),
+    Parte = ifelse(fee, "", meta$row_parte %||% ""),
+    Empresa = meta$row_empresa %||% "",
+    Moneda = meta$row_moneda %||% "",
+    .semaforo = ifelse(fee, "", ifelse(ov, "vencida", ifelse(vs, "muy_pronto", ifelse(ds, "pronto", "")))),
+    .nivel = as.integer(fee),
+    .acciones = ifelse(!fee & meta$row_id %in% reales, "editar", ""),
+    stringsAsFactors = FALSE, check.names = FALSE)
+  for (lbl in wide$date_cols) {
+    campo <- .pasivos_campo(lbl)
+    celdas <- lapply(d$id, function(r) wide$cells[[r]][[lbl]])
+    hay <- !vapply(celdas, is.null, logical(1))
+    toma <- function(nombre, vacio) vapply(celdas, function(c) {
+      v <- if (is.null(c)) NULL else c[[nombre]]
+      if (is.null(v) || length(v) != 1L || is.na(v)) vacio else v
+    }, vacio)
+    tipo  <- toma("cell_kind", "")
+    cuant <- toma("cell_n", 1L)
+    prov  <- toma("cell_provision_id", "")
+    varias <- hay & cuant > 1L
+    d[[campo]] <- ifelse(hay, toma("cell_amount", NA_real_), NA_real_)
+    d[[paste0(campo, ".id")]] <- ifelse(varias, paste0("agg:", d$id, "\t", lbl), prov)
+    d[[paste0(campo, ".marca")]] <- unname(ifelse(tipo %in% names(.pasivos_celda_marca), .pasivos_celda_marca[tipo], ""))
+    d[[paste0(campo, ".boton")]] <- ifelse(varias | !nzchar(prov), "",
+      ifelse(tipo %in% c("provision", "overdue_provision"), "provision",
+             ifelse(tipo %in% c("manual_item", "overdue_manual"), "comprobante", "")))
+    d[[paste0(campo, ".n")]] <- ifelse(hay, cuant, 0L)
+    d[[paste0(campo, ".mano")]] <- toma("cell_has_override", FALSE)
+    d[[paste0(campo, ".tono")]] <- unname(ifelse(tipo %in% names(.pasivos_celda_tono), .pasivos_celda_tono[tipo], ""))
+  }
+  d
+}
+
+# The ids a cell's click stands for: one provision, or the list behind an
+# "agg:<row>\t<label>" cell (from the same wide pivot the rows came from).
+pasivos_tabla_ids_celda <- function(wide, celda) {
+  if (!startsWith(celda, "agg:")) return(celda)
+  partes <- strsplit(sub("^agg:", "", celda), "\t", fixed = TRUE)[[1]]
+  if (length(partes) != 2L) return(character(0))
+  c1 <- wide$cells[[partes[1]]][[partes[2]]]
+  if (is.null(c1) || !nzchar(c1$cell_ids %||% "")) return(character(0))
+  strsplit(c1$cell_ids, ",", fixed = TRUE)[[1]]
+}
+
+# The columns: the liability fixed at the left, its part and company, then
+# one money column per period (today's shaded), titled with its label.
+pasivos_tabla_columnas <- function(wide, hoy = Sys.Date(), granularidad = "day") {
+  hoy_lbl <- .pasivos_fecha_to_col(as.Date(hoy), granularidad)
+  c(list(col_texto("Pasivo", "tablas.pasivos.col.pasivo", fija = TRUE),
+         col_texto("Parte", "tablas.pasivos.col.parte"),
+         col_empresa("Empresa", "tablas.pasivos.col.empresa")),
+    lapply(wide$date_cols, function(lbl) {
+      campo <- .pasivos_campo(lbl)
+      col_dinero(campo, lbl, sumar = FALSE, accion = TRUE, tono = paste0(campo, ".tono"),
+                 destacar = identical(lbl, hoy_lbl))
+    }))
+}
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
