@@ -38,6 +38,7 @@ cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", ".schema_ctas_c
 cargar("R/adjuntos_s3.R", c(".NUMERO_PURO", ".CELDA_PELIGRO", "neutralizar_celdas", "tabla_a_texto_copiable"))
 cargar("R/data_pipeline.R", "scan_ic_candidates")
 for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R",
+            "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/settings/settings_cuentas.R", "R/settings/settings_bp.R", "R/settings/settings_hub.R"))
   suppressMessages(source(f))
 
@@ -192,18 +193,20 @@ ok("Business Partners sin can_manage_interco: sin “Aplicar como IC”; la tabl
 ok("Business Partners con can_manage_interco: “Aplicar como IC”",
    tiene(html(isolate(.bp_panel_ui(nuevo_shared(CON), CANDS))), "bp_apply_ic_btn"))
 
-panel <- function(u, boton) {
+panel <- function(u, boton, salida = "settings_panel") {
   h <- NULL
   correr(u, settings_observers, function(session, output) {
     do.call(session$setInputs, stats::setNames(list(1), boton))
-    h <<- html(output$settings_panel$html)
+    h <<- paste(html(output$settings_panel$html), if (salida != "settings_panel") html(output[[salida]]$html))
   })
   h
 }
+# The IC panel: the saved registry (engine table) and, below, the editor.
 ok("panel Intercompany sin can_manage_interco: sin Guardar ni Escáner; el registro guardado sí",
-   { h <- panel(SIN$can_manage_interco, "stg_btn_interco"); !any(tiene(h, c("save_interco_v2", "scan_ic_btn"))) && grepl("C1027", h, fixed = TRUE) })
+   { h <- panel(SIN$can_manage_interco, "stg_btn_interco", "ic_editor")
+     !any(tiene(h, c("save_interco_v2", "scan_ic_btn"))) && grepl("ic_registro_t", h, fixed = TRUE) })
 ok("panel Intercompany con can_manage_interco: Guardar y Escáner",
-   all(tiene(panel(CON, "stg_btn_interco"), c("save_interco_v2", "scan_ic_btn"))))
+   all(tiene(panel(CON, "stg_btn_interco", "ic_editor"), c("save_interco_v2", "scan_ic_btn"))))
 ok("panel Cuentas de Empresa abierto por un cliente: sin “+ Banco”",
    !tiene(panel(SIN$can_manage_bancos, "stg_btn_cuentas"), "cta_new_banco"))
 ok("panel Cuentas de Empresa con can_manage_bancos: “+ Banco”",

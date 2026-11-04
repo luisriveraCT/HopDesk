@@ -63,6 +63,27 @@ show_settings_modal <- function(input, output, session, shared) {
   output$settings_panel <- renderUI({ .settings_welcome_ui() })
 }
 
+# Rows of the saved IC registry (ic_registro): one per company of `cmap`
+# with a code, its codes with their prefix. An empty registry (or one not
+# loaded yet, NULL) gives no rows -- with the columns, never an error.
+.ic_registro_filas <- function(reg, cmap) {
+  vacia <- data.frame(id = character(), Empresa = character(), cxc = character(),
+                      cxp = character(), stringsAsFactors = FALSE)
+  if (!is.list(reg) || !length(reg$companies) || !length(cmap)) return(vacia)
+  ar_pre <- reg$ar_prefix %||% "C"
+  ap_pre <- reg$ap_prefix %||% "P"
+  codigos <- function(cs, pre) if (length(cs)) paste(paste0(pre, cs), collapse = ", ") else "—"
+  filas <- lapply(names(cmap), function(ini) {
+    co <- reg$companies[[ini]] %||% list()
+    ar <- co$ar %||% character(); ap <- co$ap %||% character()
+    if (!length(ar) && !length(ap)) return(NULL)
+    data.frame(id = ini, Empresa = ini, cxc = codigos(ar, ar_pre), cxp = codigos(ap, ap_pre),
+               stringsAsFactors = FALSE)
+  })
+  filas <- Filter(Negate(is.null), filas)
+  if (!length(filas)) vacia else do.call(rbind, filas)
+}
+
 .settings_welcome_ui <- function() {
   div(class = "text-center text-muted pt-5",
     icon("gear", style = "font-size:2.5rem; opacity:0.2;"),
@@ -91,6 +112,28 @@ settings_observers <- function(input, output, session, shared) {
   bp_candidates        <- reactiveVal(NULL)
   # Sorted version of bp_candidates (matches DT display order for row-index alignment)
   bp_sorted_candidates <- reactiveVal(NULL)
+
+  # ── Saved IC registry (ic_registro, class E) ─────────────────────────────────
+  # What is saved, not what the boxes hold: follows shared$interco_v2().
+  hd_table_server(
+    "ic_registro_t", tabla = "ic_registro",
+    datos = reactive(.ic_registro_filas(shared$interco_v2(), shared$company_map())),
+    columnas = list(
+      col_empresa("Empresa", "tablas.ajustes.ic_registro.empresa"),
+      col_texto("cxc", "tablas.ajustes.ic_registro.cxc"),
+      col_texto("cxp", "tablas.ajustes.ic_registro.cxp")
+    ),
+    vacio = "tablas.ajustes.ic_registro.vacio"
+  )
+  output$ic_registro_titulo <- renderUI({
+    reg <- shared$interco_v2()
+    n   <- function(l) sum(vapply(reg$companies %||% list(),
+                                  function(co) length(co[[l]] %||% character()), integer(1)))
+    if (!n("ar") && !n("ap")) return(NULL)
+    tags$p(class = "fw-semibold small mb-2 text-success-emphasis",
+           icon("circle-check"), " ",
+           tr("tablas.ajustes.ic_registro.titulo", cxc = n("ar"), cxp = n("ap")))
+  })
 
 
   # Auto-grow: when the current last slot is non-empty, append a new empty one
@@ -255,7 +298,21 @@ settings_observers <- function(input, output, session, shared) {
     session$sendCustomMessage("icLookupData", jsonlite::toJSON(lkp, auto_unbox = TRUE))
     ic_trigger(ic_trigger() + 1L)
 
+    # The saved registry (ic_registro, T16) is the engine's table: drawn once
+    # per opening, outside the editor's renderUI, so re-drawing the code
+    # boxes never rebuilds it.
     output$settings_panel <- renderUI({
+      div(
+        tags$h6(class = "fw-semibold mb-3",
+                tagList(icon("arrows-left-right"), " Configurar Intercompany")),
+        div(class = "border rounded p-3 mb-3",
+          uiOutput("ic_registro_titulo"),
+          hd_table_ui("ic_registro_t", alto = "auto")),
+        uiOutput("ic_editor")
+      )
+    })
+
+    output$ic_editor <- renderUI({
       ic_trigger()   # reactive dependency: re-render whenever codes are applied/loaded
       cmap <- shared$company_map()   # reactive dep — re-renders when companies change
       cur2 <- isolate(shared$interco_v2())
@@ -318,55 +375,7 @@ settings_observers <- function(input, output, session, shared) {
         )
       })
 
-      # ── Registry summary card ──────────────────────────────────────────────
-      ar_pre  <- cur2$ar_prefix %||% "C"
-      ap_pre  <- cur2$ap_prefix %||% "P"
-      reg_rows <- Filter(Negate(is.null), lapply(names(cmap), function(ini) {
-        co    <- cur2$companies[[ini]] %||% list(ar = character(), ap = character())
-        ar_cs <- co$ar %||% character()
-        ap_cs <- co$ap %||% character()
-        if (!length(ar_cs) && !length(ap_cs)) return(NULL)
-        tags$tr(
-          tags$td(tags$code(ini)),
-          tags$td(class = "small font-monospace",
-                  if (length(ar_cs)) paste(paste0(ar_pre, ar_cs), collapse = ", ")
-                  else tags$span(class = "text-muted", "\u2014")),
-          tags$td(class = "small font-monospace",
-                  if (length(ap_cs)) paste(paste0(ap_pre, ap_cs), collapse = ", ")
-                  else tags$span(class = "text-muted", "\u2014"))
-        )
-      }))
-      total_ar <- sum(vapply(cur2$companies %||% list(),
-                             function(co) length(co$ar %||% character()), integer(1)))
-      total_ap <- sum(vapply(cur2$companies %||% list(),
-                             function(co) length(co$ap %||% character()), integer(1)))
-
-      summary_card <- if (length(reg_rows)) {
-        div(class = "border rounded p-3 mb-3 border-success bg-success-subtle",
-          tags$p(class = "fw-semibold small mb-2 text-success-emphasis",
-                 tagList(icon("circle-check"),
-                         sprintf(" Registro guardado \u2014 %d c\u00f3digo(s) CxC \u00b7 %d c\u00f3digo(s) CxP",
-                                 total_ar, total_ap))),
-          tags$div(class = "overflow-auto", style = "max-height:140px;",
-            tags$table(class = "table table-sm table-borderless mb-0",
-              tags$thead(tags$tr(
-                tags$th(class = "small", "Empresa"),
-                tags$th(class = "small", "Clientes IC (CxC)"),
-                tags$th(class = "small", "Proveedores IC (CxP)")
-              )),
-              tags$tbody(reg_rows)
-            )
-          )
-        )
-      } else {
-        div(class = "border rounded p-3 mb-3 text-muted small",
-            tagList(icon("circle-info"), " Sin c\u00f3digos IC guardados todav\u00eda."))
-      }
-
       div(
-        tags$h6(class = "fw-semibold mb-3",
-                tagList(icon("arrows-left-right"), " Configurar Intercompany")),
-        summary_card,
         div(
           class = "border rounded p-3 mb-3 bg-light",
           tags$p(class = "fw-semibold small mb-2", "Prefijos de c\u00f3digos SAP",
