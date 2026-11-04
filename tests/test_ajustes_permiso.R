@@ -3,7 +3,8 @@
 # The 7 saves of Ajustes check their permission on the server (T16a): the
 # gear opens for every user, a client included. can_manage_bancos guards the
 # bank catalog and the company accounts (the PPL file's source account);
-# can_configure_erp guards the IC registry (what is paid between companies).
+# can_manage_interco guards the IC registry (what is paid between companies):
+# a client's Admin edits it, Finanzas does not (Luis, 2026-11-04).
 #
 # On the real observers in testServer over the CM09's in-memory S3
 # (tests/helpers/s3_memoria.R):
@@ -52,8 +53,14 @@ proveedoresUI <- function(id) div()
 
 CID  <- "acme"
 CMAP <- c(NTS = "Networks Trucking")
-CON  <- list(user = "dev",     tier = "admin",    permisos = c(can_manage_bancos = TRUE,  can_configure_erp = TRUE))
-SIN  <- list(user = "cliente", tier = "analysis", permisos = c(can_manage_bancos = FALSE, can_configure_erp = FALSE))
+# Real tiers: Admin has both keys; without can_manage_bancos, Analisis;
+# without can_manage_interco, Finanzas (who does manage the banks).
+nivel <- function(t) list(user = t, tier = t, permisos = permisos_resueltos(t))
+CON   <- nivel("admin")
+SIN   <- list(can_manage_bancos = nivel("analysis"), can_manage_interco = nivel("finance"))
+stopifnot(puede(CON, "can_manage_bancos"), puede(CON, "can_manage_interco"),
+          !puede(SIN$can_manage_bancos, "can_manage_bancos"), !puede(SIN$can_manage_interco, "can_manage_interco"),
+          puede(SIN$can_manage_interco, "can_manage_bancos"))
 
 # Two banks: .s3_write refuses to empty the catalog (deleting the last bank
 # fails today -- a CM12 matter, not a permission one).
@@ -123,20 +130,20 @@ GUARDADOS <- list(
       session$setInputs(cuenta_delete = 1)
     },
     escribio = function(r) identical(r$cuentas$activa, FALSE)),
-  save_interco_v2 = list(servidor = settings_observers, permiso = "can_configure_erp",
+  save_interco_v2 = list(servidor = settings_observers, permiso = "can_manage_interco",
     clics = function(session, output) {
       session$setInputs(ic_ar_NTS_1 = "1027", ic_ar_NTS_2 = "3003")
       session$setInputs(save_interco_v2 = 1)
     },
     escribio = function(r) "3003" %in% r$registro$companies$NTS$ar),
-  ic_scan_apply = list(servidor = settings_observers, permiso = "can_configure_erp",
+  ic_scan_apply = list(servidor = settings_observers, permiso = "can_manage_interco",
     clics = function(session, output) {
       session$setInputs(scan_ic_btn = 1)
       session$setInputs(ic_scan_tbl_rows_selected = 2)   # C2001, the one not yet IC
       session$setInputs(ic_scan_apply = 1)
     },
     escribio = function(r) "2001" %in% r$registro$companies$NTS$ar),
-  bp_apply_ic_btn = list(servidor = settings_observers, permiso = "can_configure_erp",
+  bp_apply_ic_btn = list(servidor = settings_observers, permiso = "can_manage_interco",
     clics = function(session, output) {
       session$setInputs(bp_refresh_btn = 1)
       invisible(output$tbl_bp_sap)                       # draws the table: sets the sorted candidates
@@ -148,7 +155,7 @@ GUARDADOS <- list(
 
 for (g in names(GUARDADOS)) {
   G <- GUARDADOS[[g]]
-  r <- correr(SIN, G$servidor, G$clics)
+  r <- correr(SIN[[G$permiso]], G$servidor, G$clics)
   ok(sprintf("%s sin %s: no escribe en S3 (%d escrituras)", g, G$permiso, r$escrituras),
      r$escrituras == 0L && identical(r$bancos, BANCOS0) && identical(r$cuentas, CTAS0) && identical(r$registro, REG0))
   r <- correr(CON, G$servidor, G$clics)
@@ -175,10 +182,10 @@ ok("formulario de cuenta con permiso: Guardar y Desactivar",
    all(tiene(html(.cuenta_form_ui(CTAS0, BANCOS0, cmap = CMAP)), c("cuenta_save", "cuenta_delete"))))
 
 CANDS <- scan_ic_candidates(SNAP_AR, NULL, REG0, CMAP)
-ok("Business Partners sin can_configure_erp: sin “Aplicar como IC”; la tabla sí",
-   { h <- html(isolate(.bp_panel_ui(nuevo_shared(SIN), CANDS)))
+ok("Business Partners sin can_manage_interco: sin “Aplicar como IC”; la tabla sí",
+   { h <- html(isolate(.bp_panel_ui(nuevo_shared(SIN$can_manage_interco), CANDS)))
      !tiene(h, "bp_apply_ic_btn") && grepl("tbl_bp_sap", h, fixed = TRUE) })
-ok("Business Partners con can_configure_erp: “Aplicar como IC”",
+ok("Business Partners con can_manage_interco: “Aplicar como IC”",
    tiene(html(isolate(.bp_panel_ui(nuevo_shared(CON), CANDS))), "bp_apply_ic_btn"))
 
 panel <- function(u, boton) {
@@ -189,12 +196,12 @@ panel <- function(u, boton) {
   })
   h
 }
-ok("panel Intercompany sin can_configure_erp: sin Guardar ni Escáner; el registro guardado sí",
-   { h <- panel(SIN, "stg_btn_interco"); !any(tiene(h, c("save_interco_v2", "scan_ic_btn"))) && grepl("C1027", h, fixed = TRUE) })
-ok("panel Intercompany con can_configure_erp: Guardar y Escáner",
+ok("panel Intercompany sin can_manage_interco: sin Guardar ni Escáner; el registro guardado sí",
+   { h <- panel(SIN$can_manage_interco, "stg_btn_interco"); !any(tiene(h, c("save_interco_v2", "scan_ic_btn"))) && grepl("C1027", h, fixed = TRUE) })
+ok("panel Intercompany con can_manage_interco: Guardar y Escáner",
    all(tiene(panel(CON, "stg_btn_interco"), c("save_interco_v2", "scan_ic_btn"))))
 ok("panel Cuentas de Empresa abierto por un cliente: sin “+ Banco”",
-   !tiene(panel(SIN, "stg_btn_cuentas"), "cta_new_banco"))
+   !tiene(panel(SIN$can_manage_bancos, "stg_btn_cuentas"), "cta_new_banco"))
 ok("panel Cuentas de Empresa con can_manage_bancos: “+ Banco”",
    tiene(panel(CON, "stg_btn_cuentas"), "cta_new_banco"))
 
@@ -202,8 +209,8 @@ modal_escaner <- function(u) {
   correr(u, settings_observers, function(session, output) session$setInputs(scan_ic_btn = 1))
   html(MODALES[[length(MODALES)]])
 }
-ok("escáner sin can_configure_erp: sin “Aplicar selección”", !tiene(modal_escaner(SIN), "ic_scan_apply"))
-ok("escáner con can_configure_erp: “Aplicar selección”",   tiene(modal_escaner(CON), "ic_scan_apply"))
+ok("escáner sin can_manage_interco: sin “Aplicar selección”", !tiene(modal_escaner(SIN$can_manage_interco), "ic_scan_apply"))
+ok("escáner con can_manage_interco: “Aplicar selección”",   tiene(modal_escaner(CON), "ic_scan_apply"))
 
 # ── Static: each handler's first line is the check ───────────────────────────
 primera <- function(archivo, input) {

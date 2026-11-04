@@ -34,8 +34,8 @@
                "Aplicar", strong("agrega"), "c\u00f3digos; para eliminar uno, borra su campo en Intercompany."),
         div(style = "max-height: 260px; overflow-y: auto; margin-bottom: 0.5rem;",
             DT::DTOutput("tbl_bp_sap")),
-        # Writes the IC registry: only with can_configure_erp (the server checks too).
-        if (puede(tryCatch(isolate(shared$usuario()), error = function(e) NULL), "can_configure_erp"))
+        # Writes the IC registry: only with can_manage_interco (the server checks too).
+        if (puede(tryCatch(isolate(shared$usuario()), error = function(e) NULL), "can_manage_interco"))
           actionButton("bp_apply_ic_btn",
                        tagList(icon("arrows-left-right"), " Aplicar como IC"),
                        class = "btn btn-primary btn-sm mb-3")

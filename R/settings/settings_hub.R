@@ -383,8 +383,8 @@ settings_observers <- function(input, output, session, shared) {
           c(list(id = "ic_empresa_accordion", open = FALSE), panels)
         ),
         # Guardar and the scanner write the IC registry: only with
-        # can_configure_erp (each save checks again on the server).
-        if (puede(isolate(shared$usuario()), "can_configure_erp"))
+        # can_manage_interco (each save checks again on the server).
+        if (puede(isolate(shared$usuario()), "can_manage_interco"))
           div(class = "mt-3 d-flex align-items-center gap-2 flex-wrap",
             actionButton("save_interco_v2", tagList(icon("floppy-disk"), " Guardar"),
                          class = "btn btn-primary btn-sm"),
@@ -405,7 +405,7 @@ settings_observers <- function(input, output, session, shared) {
 
   # ── Save ─────────────────────────────────────────────────────────────────────
   observeEvent(input$save_interco_v2, {
-    if (!puede_o_avisa(shared, "can_configure_erp")) return()
+    if (!puede_o_avisa(shared, "can_manage_interco")) return()
     cmap <- isolate(shared$company_map())
 
     parse_code <- function(val) {
@@ -595,7 +595,7 @@ settings_observers <- function(input, output, session, shared) {
         "Para eliminar un c\u00f3digo, borra su campo en la pesta\u00f1a Intercompany."),
       DT::DTOutput("ic_scan_tbl"),
       footer = tagList(
-        if (puede(isolate(shared$usuario()), "can_configure_erp"))
+        if (puede(isolate(shared$usuario()), "can_manage_interco"))
           actionButton("ic_scan_apply",
                        tagList(icon("check"), " Aplicar selecci\u00f3n"),
                        class = "btn btn-primary btn-sm"),
@@ -619,7 +619,7 @@ settings_observers <- function(input, output, session, shared) {
   })
 
   observeEvent(input$ic_scan_apply, {
-    if (!puede_o_avisa(shared, "can_configure_erp")) return()
+    if (!puede_o_avisa(shared, "can_manage_interco")) return()
     sel        <- input$ic_scan_tbl_rows_selected
     candidates <- ic_scan_candidates()
     removeModal()
@@ -772,7 +772,7 @@ settings_observers <- function(input, output, session, shared) {
 
   # Apply selected BP rows as IC codes
   observeEvent(input$bp_apply_ic_btn, {
-    if (!puede_o_avisa(shared, "can_configure_erp")) return()
+    if (!puede_o_avisa(shared, "can_manage_interco")) return()
     sel      <- input$tbl_bp_sap_rows_selected
     sorted_c <- bp_sorted_candidates()
     if (is.null(sorted_c) || !length(sel)) {
