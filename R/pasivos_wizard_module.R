@@ -643,114 +643,105 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
   )
 }
 
-# ── Amortization preview ───────────────────────────────────────────────────────
-.wiz_revision_schedule_html <- function(draft) {
-  cat <- draft$categoria %||% ""
-
-  if (identical(cat, "financiero")) {
-    # For preview, lock variable rates to the current fetched value (tasa_actual + spread)
-    # so the table isn't poisoned by stale forecasting-store data.
-    preview_draft <- draft
-    if (startsWith(draft$tasa_tipo %||% "fija", "variable_") &&
-        !is.na(draft$tasa_actual %||% NA_real_)) {
-      preview_draft$tasa_actual <- (draft$tasa_actual %||% 0) + (draft$tasa_spread %||% 0) / 100
-      preview_draft$tasa_tipo   <- "fija"
-      preview_draft$tasa_spread <- 0
-    }
-    liab_row <- tryCatch(
-      pasivos_wizard_draft_to_liability(preview_draft, mode = "create", user = "preview"),
-      error = function(e) NULL
-    )
-    if (is.null(liab_row)) {
-      return(shiny::div(class = "text-muted small",
-                        "No se puede generar la vista previa con los datos actuales."))
-    }
-    sched <- tryCatch(
-      pasivos_generate_schedule(liab_row, today = Sys.Date()),
-      error = function(e) NULL
-    )
-    if (is.null(sched) || !nrow(sched)) {
-      return(shiny::div(class = "text-muted small", "Sin datos de amortización."))
-    }
-
-    future_rows <- sched[!isTRUE_safe(sched$historico), , drop = FALSE]
-    preview_top <- head(future_rows, 12)
-    preview_bot <- tail(future_rows, 3)
-
-    has_remo <- any(!is.na(sched$re_amortized) & sched$re_amortized, na.rm = TRUE)
-
-    shiny::tagList(
-      if (has_remo) shiny::div(
-        class = "alert alert-warning small py-1 mb-2",
-        "⚠ Re-amortización: el saldo declarado difiere del teórico. Las cuotas se recalcularon."
-      ) else NULL,
-      shiny::tags$table(
-        class = "table table-sm table-borderless small mb-0",
-        shiny::tags$thead(
-          shiny::tags$tr(
-            shiny::tags$th("#"), shiny::tags$th("Fecha"),
-            shiny::tags$th("Capital"), shiny::tags$th("Interés"),
-            shiny::tags$th("Total")
-          )
-        ),
-        shiny::tags$tbody(lapply(seq_len(nrow(preview_top)), function(i) {
-          row <- preview_top[i, ]
-          shiny::tags$tr(
-            shiny::tags$td(row$periodo),
-            shiny::tags$td(format(row$fecha, "%Y-%m-%d")),
-            shiny::tags$td(fmt_money(row$capital %||% 0)),
-            shiny::tags$td(fmt_money(row$interes %||% 0)),
-            shiny::tags$td(class = "fw-semibold", fmt_money(row$total %||% 0))
-          )
-        })),
-        if (nrow(preview_bot)) shiny::tags$tbody(
-          shiny::tags$tr(shiny::tags$td(colspan = 5,
-            class = "text-center text-muted", "…")),
-          lapply(seq_len(nrow(preview_bot)), function(i) {
-            row <- preview_bot[i, ]
-            shiny::tags$tr(
-              shiny::tags$td(row$periodo),
-              shiny::tags$td(format(row$fecha, "%Y-%m-%d")),
-              shiny::tags$td(fmt_money(row$capital %||% 0)),
-              shiny::tags$td(fmt_money(row$interes %||% 0)),
-              shiny::tags$td(class = "fw-semibold", fmt_money(row$total %||% 0))
-            )
-          })
-        ) else NULL
-      )
-    )
-
-  } else {
-    # Regular / tarjeta: show next 12 provision dates
-    liab_row <- tryCatch(
-      pasivos_wizard_draft_to_liability(draft, mode = "create", user = "preview"),
-      error = function(e) NULL
-    )
-    if (is.null(liab_row)) return(shiny::div(class = "text-muted small",
-                                              "Sin vista previa disponible."))
-    provs <- tryCatch(
-      pasivos_generate_provisions(liab_row, window_start = Sys.Date(),
-                                   policies_for_liability = list(),
-                                   holidays_cache = list()),
-      error = function(e) NULL
-    )
-    if (is.null(provs) || !nrow(provs)) return(
-      shiny::div(class = "text-muted small", "Sin provisiones para mostrar."))
-    preview <- head(provs, 12)
-    shiny::tags$table(
-      class = "table table-sm table-borderless small mb-0",
-      shiny::tags$thead(shiny::tags$tr(
-        shiny::tags$th("Fecha"), shiny::tags$th("Monto")
-      )),
-      shiny::tags$tbody(lapply(seq_len(nrow(preview)), function(i) {
-        row <- preview[i, ]
-        shiny::tags$tr(
-          shiny::tags$td(format(row$fecha_efectiva, "%Y-%m-%d")),
-          shiny::tags$td(fmt_money(row$amount_pago %||% 0))
-        )
-      }))
-    )
+# ── Previews of the Revisión step (amortizacion / provisiones_asistente, E) ──
+# What the draft would generate, as rows for hd_table (T18). Financiero: its
+# amortization schedule from today on, EVERY row (Luis: all of them, with a
+# scroll; it used to show the first 12, "…" and the last 3). Regular and
+# tarjeta: the first 12 provisions, as before. NULL when the draft cannot be
+# turned into a liability yet.
+pasivos_vista_amortizacion <- function(draft) {
+  # For preview, lock variable rates to the current fetched value (tasa_actual + spread)
+  # so the table isn't poisoned by stale forecasting-store data.
+  preview_draft <- draft
+  if (startsWith(draft$tasa_tipo %||% "fija", "variable_") &&
+      !is.na(draft$tasa_actual %||% NA_real_)) {
+    preview_draft$tasa_actual <- (draft$tasa_actual %||% 0) + (draft$tasa_spread %||% 0) / 100
+    preview_draft$tasa_tipo   <- "fija"
+    preview_draft$tasa_spread <- 0
   }
+  liab_row <- tryCatch(
+    pasivos_wizard_draft_to_liability(preview_draft, mode = "create", user = "preview"),
+    error = function(e) NULL
+  )
+  if (is.null(liab_row)) return(NULL)
+  sched <- tryCatch(pasivos_generate_schedule(liab_row, today = Sys.Date()), error = function(e) NULL)
+  if (is.null(sched) || !nrow(sched)) return(NULL)
+  futuras <- sched[!isTRUE_safe(sched$historico), , drop = FALSE]
+  filas <- data.frame(
+    id      = paste0("p", futuras$periodo),
+    periodo = as.integer(futuras$periodo),
+    fecha   = as.Date(futuras$fecha),
+    capital = as.numeric(futuras$capital %||% 0),
+    interes = as.numeric(futuras$interes %||% 0),
+    total   = as.numeric(futuras$total %||% 0),
+    moneda  = rep(draft$moneda_pago %||% "MXN", nrow(futuras)),
+    stringsAsFactors = FALSE)
+  attr(filas, "reamortizada") <- any(!is.na(sched$re_amortized) & sched$re_amortized, na.rm = TRUE)
+  filas
+}
+
+pasivos_vista_provisiones <- function(draft) {
+  liab_row <- tryCatch(
+    pasivos_wizard_draft_to_liability(draft, mode = "create", user = "preview"),
+    error = function(e) NULL
+  )
+  if (is.null(liab_row)) return(NULL)
+  provs <- tryCatch(
+    pasivos_generate_provisions(liab_row, window_start = Sys.Date(),
+                                 policies_for_liability = list(),
+                                 holidays_cache = list()),
+    error = function(e) NULL
+  )
+  if (is.null(provs) || !nrow(provs)) return(NULL)
+  p <- head(provs, 12)
+  data.frame(id = p$id, fecha = as.Date(p$fecha_efectiva), monto = as.numeric(p$amount_pago %||% 0),
+             moneda = p$moneda_pago %||% (draft$moneda_pago %||% "MXN"), stringsAsFactors = FALSE)
+}
+
+.wiz_vacia_amort <- data.frame(id = character(), periodo = integer(), fecha = as.Date(character()),
+                               capital = numeric(), interes = numeric(), total = numeric(),
+                               moneda = character(), stringsAsFactors = FALSE)
+.wiz_vacia_prov  <- data.frame(id = character(), fecha = as.Date(character()), monto = numeric(),
+                               moneda = character(), stringsAsFactors = FALSE)
+
+# The Revisión step's preview: a notice when the schedule was re-amortized,
+# and the table that fits the draft's categoría.
+.wiz_revision_schedule_html <- function(draft) {
+  if (identical(draft$categoria %||% "", "financiero")) {
+    filas <- pasivos_vista_amortizacion(draft)
+    shiny::tagList(
+      if (isTRUE(attr(filas, "reamortizada"))) shiny::div(
+        class = "alert alert-warning small py-1 mb-2", tr("tablas.pasivos.amort.reamortizada")),
+      hd_table_ui("pwiz_amort", alto = "320px"))
+  } else {
+    hd_table_ui("pwiz_prov", alto = "320px")
+  }
+}
+
+# The two tables' servers, once per session (from setup_pasivos_wizard).
+.wiz_tablas_vista_previa <- function(wiz) {
+  hd_table_server("pwiz_amort", tabla = "amortizacion",
+    datos = shiny::reactive({
+      if (!identical(wiz$draft$categoria %||% "", "financiero")) return(.wiz_vacia_amort)
+      pasivos_vista_amortizacion(wiz$draft) %||% .wiz_vacia_amort
+    }),
+    columnas = list(
+      col_numero("periodo", "tablas.pasivos.amort.periodo"),
+      col_fecha("fecha",    "tablas.pasivos.amort.fecha"),
+      col_dinero("capital", "tablas.pasivos.amort.capital", moneda = "moneda", sumar = FALSE),
+      col_dinero("interes", "tablas.pasivos.amort.interes", moneda = "moneda", sumar = FALSE),
+      col_dinero("total",   "tablas.pasivos.amort.total",   moneda = "moneda", sumar = FALSE)),
+    vacio = "tablas.pasivos.amort.vacio")
+  hd_table_server("pwiz_prov", tabla = "provisiones_asistente",
+    datos = shiny::reactive({
+      if (identical(wiz$draft$categoria %||% "", "financiero")) return(.wiz_vacia_prov)
+      pasivos_vista_provisiones(wiz$draft) %||% .wiz_vacia_prov
+    }),
+    columnas = list(
+      col_fecha("fecha",  "tablas.pasivos.amort.fecha"),
+      col_dinero("monto", "tablas.pasivos.amort.monto", moneda = "moneda", sumar = FALSE)),
+    vacio = "tablas.pasivos.prov.vacio")
+  invisible(NULL)
 }
 
 # ── Main setup function ────────────────────────────────────────────────────────
@@ -765,6 +756,9 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     cargos_list      = list(),     # in-progress cargo rows for the cargos step
     custom_dates     = character() # accumulating dates for "custom" recurrence
   )
+
+  # The Revisión step's previews (amortizacion / provisiones_asistente, T18)
+  .wiz_tablas_vista_previa(wiz)
 
   # ── Rate dual-input: last-touched tracking ────────────────────────────────
   last_tasa_touched    <- shiny::reactiveVal("anual")

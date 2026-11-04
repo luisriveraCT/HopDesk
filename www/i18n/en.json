@@ -566,5 +566,14 @@
   "tablas.pasivos.borrado_por": "Deleted by",
   "tablas.pasivos.vacio_lista": "No active or paused liabilities.",
   "tablas.pasivos.vacio_papelera": "The liabilities trash is empty.",
-  "tablas.pasivos.sin_permiso": "You don't have permission for this."
+  "tablas.pasivos.sin_permiso": "You don't have permission for this.",
+  "tablas.pasivos.amort.periodo": "#",
+  "tablas.pasivos.amort.fecha": "Date",
+  "tablas.pasivos.amort.capital": "Principal",
+  "tablas.pasivos.amort.interes": "Interest",
+  "tablas.pasivos.amort.total": "Total",
+  "tablas.pasivos.amort.monto": "Amount",
+  "tablas.pasivos.amort.vacio": "No schedule with the data entered so far.",
+  "tablas.pasivos.amort.reamortizada": "⚠ Re-amortization: the stated balance differs from the expected one. Payments were recalculated.",
+  "tablas.pasivos.prov.vacio": "No provisions to show with the data entered so far."
 }

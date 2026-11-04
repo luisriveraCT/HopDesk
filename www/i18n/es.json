@@ -566,5 +566,14 @@
   "tablas.pasivos.borrado_por": "Borrado por",
   "tablas.pasivos.vacio_lista": "No hay pasivos activos ni pausados.",
   "tablas.pasivos.vacio_papelera": "La papelera de pasivos está vacía.",
-  "tablas.pasivos.sin_permiso": "No tienes permiso para esto."
+  "tablas.pasivos.sin_permiso": "No tienes permiso para esto.",
+  "tablas.pasivos.amort.periodo": "#",
+  "tablas.pasivos.amort.fecha": "Fecha",
+  "tablas.pasivos.amort.capital": "Capital",
+  "tablas.pasivos.amort.interes": "Interés",
+  "tablas.pasivos.amort.total": "Total",
+  "tablas.pasivos.amort.monto": "Monto",
+  "tablas.pasivos.amort.vacio": "Sin amortización con los datos de ahora.",
+  "tablas.pasivos.amort.reamortizada": "⚠ Re-amortización: el saldo declarado difiere del teórico. Las cuotas se recalcularon.",
+  "tablas.pasivos.prov.vacio": "Sin provisiones para mostrar con los datos de ahora."
 }
