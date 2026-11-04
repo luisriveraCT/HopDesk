@@ -57,6 +57,29 @@
 .bnc_elim_vacia <- data.frame(id = character(), Fecha = as.Date(character()), Parte = character(),
                               Cargo = numeric(), Abono = numeric(), Moneda = character(), stringsAsFactors = FALSE)
 
+# Bancos' movement previews (Importar TXT, Reasignar; hd_table class E, T12b):
+# the movements as they are or will be saved, one row each.
+.BNC_COLUMNAS_PREVIA <- list(
+  col_fecha("Fecha", "tablas.bancos.fecha"),
+  col_insignia("Tipo", "tablas.facturas.tipo", mapa = lapply(as.list(.TIPO_LABELS), function(t) list(texto = t, tono = "neutro"))),
+  col_texto("Parte", "tablas.facturas.parte"),
+  col_texto("Concepto", "tablas.bancos.concepto"),
+  col_dinero("Cargo", "tablas.bancos.cargo", moneda = "Moneda"),
+  col_dinero("Abono", "tablas.bancos.abono", moneda = "Moneda"))
+.bnc_previa_datos <- function(movs, cuentas_df) {
+  if (is.null(movs) || !nrow(movs))
+    return(data.frame(id = character(), Fecha = as.Date(character()), Tipo = character(), Parte = character(),
+                      Concepto = character(), Cargo = numeric(), Abono = numeric(), Moneda = character(),
+                      stringsAsFactors = FALSE))
+  mon <- cuentas_df$moneda[match(movs$cuenta_id, cuentas_df$cuenta_id)]
+  data.frame(id = if ("id" %in% names(movs) && !anyNA(movs$id)) as.character(movs$id) else sprintf("p%05d", seq_len(nrow(movs))),
+             Fecha = as.Date(movs$fecha), Tipo = dplyr::coalesce(as.character(movs$tipo), "otro"),
+             Parte = as.character(movs$parte %||% ""),
+             Concepto = as.character(dplyr::coalesce(movs$concepto, movs$descripcion_raw, "")),
+             Cargo = ifelse(movs$cargo > 0, movs$cargo, NA_real_), Abono = ifelse(movs$abono > 0, movs$abono, NA_real_),
+             Moneda = toupper(trimws(dplyr::coalesce(mon, ""))), stringsAsFactors = FALSE)
+}
+
 # Filter movements by period
 .filter_periodo <- function(df, periodo, desde = NULL, hasta = NULL) {
   hoy <- Sys.Date()
@@ -678,7 +701,7 @@ bancosUI <- function(id) {
                   )
                 ),
                 div(class = "mb-2",
-                  DT::dataTableOutput(ns("reasig_preview_tbl"))
+                  hd_table_ui(ns("reasig"))
                 ),
                 div(class = "d-flex justify-content-between align-items-center",
                   uiOutput(ns("delete_sesion_btn_ui")),
@@ -2551,34 +2574,19 @@ bancosServer <- function(id, shared) {
       updateSelectInput(session, "reasig_destino", choices = ch)
     })
 
-    output$reasig_preview_tbl <- DT::renderDataTable({
-      sesion_key <- input$reasig_sesion %||% ""
-      empty_dt <- DT::datatable(
-        data.frame(Fecha=character(), Parte=character(), Concepto=character(),
-                   Cargo=character(), Abono=character(), Tipo=character()),
-        escape = FALSE, rownames = FALSE, selection = "none",
-        options = list(dom = "t",
-          language = list(emptyTable = "Selecciona una sesi\u00f3n"))
-      )
-      if (!nzchar(sesion_key)) return(empty_dt)
-      movs <- movs_all()
-      mask <- !is.na(movs$importado_at) &
-              as.character(movs$importado_at) == sesion_key &
-              !is.na(movs$eliminado) & movs$eliminado == FALSE
-      sess_movs <- movs[mask, ]
-      if (!nrow(sess_movs)) return(empty_dt)
-      tbl <- sess_movs |>
-        dplyr::transmute(
-          Fecha    = format(fecha, "%d/%m/%Y"),
-          Parte    = htmltools::htmlEscape(parte %||% ""),
-          Concepto = htmltools::htmlEscape(concepto %||% descripcion_raw %||% ""),
-          Cargo    = dplyr::if_else(cargo > 0, fmt_money(cargo), ""),
-          Abono    = dplyr::if_else(abono > 0, fmt_money(abono), ""),
-          Tipo     = vapply(tipo, .tipo_badge, character(1))
-        )
-      DT::datatable(tbl, escape = FALSE, rownames = FALSE, selection = "none",
-        options = list(dom = "tip", pageLength = 10, scrollX = TRUE))
-    }, server = FALSE)
+    # Reasignar's preview (hd_table "reasignar", T12b): the chosen import
+    # session's movements, all of them (it used to page by 10).
+    t_reasig <- hd_table_server("reasig", tabla = "reasignar",
+      datos = reactive({
+        sesion_key <- input$reasig_sesion %||% ""
+        if (!nzchar(sesion_key)) return(.bnc_previa_datos(NULL))
+        movs <- movs_all()
+        mask <- !is.na(movs$importado_at) &
+                as.character(movs$importado_at) == sesion_key &
+                !is.na(movs$eliminado) & movs$eliminado == FALSE
+        .bnc_previa_datos(movs[mask, , drop = FALSE], cuentas())
+      }),
+      columnas = .BNC_COLUMNAS_PREVIA, vacio = "tablas.bancos.vacio_reasignar")
 
     output$reasig_btn_ui <- renderUI({
       sesion_key <- input$reasig_sesion %||% ""
@@ -3012,25 +3020,6 @@ bancosServer <- function(id, shared) {
                   paste0(n_dup, " duplicados encontrados"))
       )
 
-      # Preview table (non-comision, first 20 rows)
-      preview_rows <- nuevos |>
-        dplyr::filter(tipo != "comision") |>
-        head(20L) |>
-        dplyr::transmute(
-          Fecha   = format(fecha, "%d/%m/%Y"),
-          Tipo    = vapply(tipo, .tipo_badge, character(1)),
-          Parte   = htmltools::htmlEscape(parte %||% ""),
-          Concepto= htmltools::htmlEscape(concepto %||% ""),
-          Cargo   = dplyr::if_else(cargo > 0, fmt_money(cargo), ""),
-          Abono   = dplyr::if_else(abono > 0, fmt_money(abono), "")
-        )
-
-      dt_preview <- DT::datatable(
-        preview_rows,
-        escape = FALSE, rownames = FALSE,
-        options = list(dom = "t", pageLength = 20, scrollX = TRUE,
-                       language = list(emptyTable = "Sin movimientos nuevos"))
-      )
 
       # Import footer
       import_footer <- if (n_new > 0) {
@@ -3050,40 +3039,21 @@ bancosServer <- function(id, shared) {
       }
 
       tagList(cnt_header, badges,
-              DT::dataTableOutput(ns("import_preview_tbl")), import_footer)
+              hd_table_ui(ns("import")), import_footer)
     })
 
-    # Render the import preview DT separately (driven by parsed_preview reactive)
-    output$import_preview_tbl <- DT::renderDataTable({
-      pv <- parsed_preview()
-      if (is.null(pv) || !nrow(pv)) return(DT::datatable(
-        data.frame(Fecha=character(), Tipo=character(), Parte=character(),
-                   Concepto=character(), Cargo=character(), Abono=character()),
-        escape = FALSE, rownames = FALSE,
-        options = list(dom = "t", language = list(emptyTable = ""))
-      ))
-
-      cid_final <- input$import_cuenta %||% ""
-      if (nzchar(cid_final)) pv$cuenta_id <- cid_final
-
-      existentes <- movs_all()
-      nuevos     <- dedup_movimientos(pv, existentes)$nuevos
-
-      nuevos |>
-        dplyr::filter(tipo != "comision") |>
-        head(20L) |>
-        dplyr::transmute(
-          Fecha    = format(fecha, "%d/%m/%Y"),
-          Tipo     = vapply(tipo, .tipo_badge, character(1)),
-          Parte    = htmltools::htmlEscape(parte %||% ""),
-          Concepto = htmltools::htmlEscape(concepto %||% ""),
-          Cargo    = dplyr::if_else(cargo > 0, fmt_money(cargo), ""),
-          Abono    = dplyr::if_else(abono > 0, fmt_money(abono), "")
-        ) |>
-        DT::datatable(escape = FALSE, rownames = FALSE,
-          options = list(dom = "t", pageLength = 20, scrollX = TRUE,
-                         language = list(emptyTable = "Sin movimientos nuevos")))
-    }, server = FALSE)
+    # The import's preview (hd_table "importar_txt", T12b): EVERY new movement,
+    # commissions included -- exactly what "Importar N movimientos" saves. It
+    # used to show the first 20 non-commission rows and import all of them.
+    t_import <- hd_table_server("import", tabla = "importar_txt",
+      datos = reactive({
+        pv <- parsed_preview()
+        if (is.null(pv) || !nrow(pv)) return(.bnc_previa_datos(NULL))
+        cid_final <- input$import_cuenta %||% ""
+        if (nzchar(cid_final)) pv$cuenta_id <- cid_final
+        .bnc_previa_datos(dedup_movimientos(pv, movs_all())$nuevos, cuentas())
+      }),
+      columnas = .BNC_COLUMNAS_PREVIA, vacio = "tablas.bancos.vacio_import")
 
     output$import_btn_ui <- renderUI({
       pv <- parsed_preview()
