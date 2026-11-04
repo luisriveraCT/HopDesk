@@ -208,15 +208,14 @@ full <- paste(txt, collapse = "\n")
 
 # ── Stage 4c: Deshacer (undo) for manual deletions ──────────────────────────
 {
-  ok("the Acciones column exists in papelera_tbl's schema (both the empty-table case and the real data path)",
-     sum(grepl("Acciones\\s*=\\s*character\\(\\)|Acciones\\s*=", txt)) >= 4L)
-  ok("rows_mov's Acciones column only shows the undo button for fuente==\"manual\" rows (dplyr::if_else gated)",
-     any(grepl('fuente == "manual",\\s*$', txt)) || any(grepl('fuente == "manual"', txt[grep("Acciones\\s*=\\s*dplyr::if_else", txt)])))
-  ok("the undo button's onclick fires undo_mov_delete with the row's real id (not a placeholder)",
-     {
-       start <- grep('ns\\("undo_mov_delete"\\), id', txt)[1]
-       !is.na(start) && any(grepl("nonce:Math\\.random", txt[max(1, start-4):start]))
-     })
+  # Since T12b the Papelera is hd_table "papelera": a deleted movement is a
+  # "mov:" row whose ↶ (.acciones "deshacer") calls the handler with its id.
+  ok("the Papelera table has the deshacer row action",
+     any(grepl('hd_table_server\\("papelera"', txt)) && any(grepl('acciones_fila = "deshacer"', txt)))
+  ok("a deleted movement's ↶ only shows for fuente==\"manual\" rows",
+     any(grepl('ifelse\\(movs_del\\$fuente %in% "manual" & escribe, "deshacer", ""\\)', txt)))
+  ok("the ↶ calls the undo handler with the row's real id (not a placeholder)",
+     any(grepl('startsWith\\(id, "mov:"\\)\\) \\.bnc_deshacer_eliminacion\\(sub\\("\\^mov:", "", id\\)\\)', txt)))
 
   # The handler is a function of the row's id since T12b (the Papelera's
   # engine table calls it with its id).

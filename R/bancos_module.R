@@ -699,12 +699,7 @@ bancosUI <- function(id) {
                 " Los elementos en papelera se conservan permanentemente",
                 "para auditor\u00eda, pero nunca se muestran en otras vistas."
               ),
-              div(class = "mb-2",
-                textInput(ns("papelera_search"), NULL,
-                          placeholder = "Buscar parte, documento\u2026",
-                          width = "250px")
-              ),
-              DT::dataTableOutput(ns("papelera_tbl"))
+              hd_table_ui(ns("papelera"))
             )
           )
         )
@@ -3205,8 +3200,8 @@ bancosServer <- function(id, shared) {
     # \u2500\u2500 Deshacer eliminaci\u00f3n de movimiento manual \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     # Restores a manually-entered bank movement that was deleted by mistake
     # (2026-07-30, part of the Vantage Bank manual-entry correction tool --
-    # scoped to fuente=="manual" only, see the Acciones column in
-    # papelera_tbl above; a TXT-imported row never gets this button at all).
+    # scoped to fuente=="manual" only, see the Papelera's .acciones below;
+    # a TXT-imported row never gets this button at all).
     .bnc_deshacer_eliminacion <- function(mov_id) {
       if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       req(mov_id)
@@ -3266,7 +3261,6 @@ bancosServer <- function(id, shared) {
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
     }
-    observeEvent(input$undo_mov_delete, .bnc_deshacer_eliminacion(input$undo_mov_delete$id), ignoreInit = TRUE)
 
     # \u2500\u2500 Deshacer abono \u2014 void it, restoring the invoice's balance \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     # void_abono() (R/persistence.R) already existed but nothing called it
@@ -3599,139 +3593,94 @@ bancosServer <- function(id, shared) {
       )
     }
 
-    # ── Tab 3: Papelera ───────────────────────────────────────────────────────
-    output$papelera_tbl <- DT::renderDataTable({
-      movs_del <- dplyr::filter(movs_all(), eliminado == TRUE)
-      conf_del <- dplyr::filter(confirmados(), eliminado == TRUE)
-      movs_vin <- dplyr::filter(movs_all(),
-                                !eliminado,
-                                conciliado == TRUE,
-                                !is.na(doc_vinculado) & nzchar(doc_vinculado))
+    # ── Papelera (hd_table "papelera", T12b) ─────────────────────────────────
+    # Four sources, as before: deleted movements, deleted confirmations,
+    # reconciled movements with a linked document, and the Calendario's trash
+    # (papelera_rv: SAP ghosts, deleted manual and provision rows). Each
+    # row's id says its source ("mov:", "conf:", "vin:", "cal:"). ↶ only on
+    # a deleted MANUAL movement -- restoring a TXT-imported row would fight
+    # a future re-import of the same statement (2026-07-30) -- and only for
+    # who can change Bancos. The Calendario's rows used to show the document
+    # under Tipo and the company under "Doc. vinculado" (T12 inventory, seen
+    # in passing 6): Tipo is now pago/cobro by its ledger, the document goes
+    # under "Doc. vinculado" and the company under Empresa.
+    .bnc_pap_filas <- function(fuente, ids, origen, fecha, empresa, parte, importe, moneda, tipo, doc, eliminado_el,
+                               acciones = "") {
+      n <- length(ids)
+      v <- function(x, como, na) { x <- if (length(x)) x else rep(na, n); rep(como(x), length.out = n) }
+      data.frame(id = if (n) paste0(fuente, ":", ids) else character(0), Origen = v(origen, as.character, NA),
+                 Fecha = v(fecha, as.Date, NA_real_), Empresa = v(empresa, as.character, NA),
+                 Parte = v(parte, as.character, NA), Importe = v(importe, as.numeric, NA),
+                 Moneda = v(moneda, as.character, NA), Tipo = v(tipo, as.character, NA),
+                 DocVinculado = v(doc, as.character, NA), EliminadoEl = v(eliminado_el, as.POSIXct, NA_real_),
+                 .acciones = v(acciones, as.character, NA), stringsAsFactors = FALSE, check.names = FALSE)
+    }
+    papelera_datos <- reactive({
+      escribe <- .bnc_puede_ver_escritura()
+      movs <- movs_all()
+      cts  <- cuentas()
+      mon_de <- function(cuenta_id) toupper(trimws(cts$moneda[match(cuenta_id, cts$cuenta_id)]))
+      emp_de <- function(cuenta_id) cts$empresa[match(cuenta_id, cts$cuenta_id)]
+      importe_mov <- function(m) ifelse(m$cargo > 0, m$cargo, m$abono)
 
-      # ── Unified ledger papelera (SAP ghosts, deleted manual/provision rows) ──
-      ledger_pap <- if (!is.null(shared$papelera_rv)) {
-        tryCatch(shared$papelera_rv(), error = function(e) NULL)
-      } else NULL
-      rows_ledger <- if (!is.null(ledger_pap) && nrow(ledger_pap)) {
-        src_badge <- function(s) {
-          # switch(NA, ...) returns NULL in R (not the default value),
-          # which breaks vapply. Normalise to SAP_B1_ERP_TYPE for unknown/missing sources.
-          s <- if (is.null(s) || is.na(s) || !nzchar(s)) SAP_B1_ERP_TYPE else s
-          switch(s,
-            # Both the historical literal "sap" (pre-erp_type records) and
-            # today's SAP_B1_ERP_TYPE value must map to the same badge --
-            # never remove either case, they cover different eras of data.
-            "sap"                    = '<span class="badge bg-secondary">SAP</span>',
-            "sap_b1_service_layer"   = '<span class="badge bg-secondary">SAP</span>',
-            "manual"    = '<span class="badge bg-info text-dark">Manual</span>',
-            "provision" = '<span class="badge bg-warning text-dark">Provisión</span>',
-            '<span class="badge bg-secondary">ERP</span>'
-          )
-        }
-        ledger_pap |>
-          dplyr::transmute(
-            Origen          = vapply(source %||% SAP_B1_ERP_TYPE, src_badge, character(1)),
-            Fecha           = dplyr::if_else(
-              !is.na(FechaEff),
-              format(as.Date(FechaEff), "%d/%m/%Y"),
-              format(as.Date(deleted_at), "%d/%m/%Y")
-            ),
-            Parte           = htmltools::htmlEscape(Parte %||% Empresa %||% ""),
-            Importe         = fmt_money(Importe %||% 0),
-            Tipo            = htmltools::htmlEscape(Documento %||% ""),
-            `Doc. vinculado` = htmltools::htmlEscape(Empresa %||% ""),
-            `Eliminado el`  = dplyr::if_else(
-              !is.na(deleted_at),
-              format(as.POSIXct(deleted_at), "%d/%m/%Y %H:%M"),
-              "\u2014"
-            ),
-            Acciones        = ""
-          )
-      } else NULL
+      movs_del <- movs[movs$eliminado %in% TRUE, , drop = FALSE]
+      conf_del <- confirmados()
+      conf_del <- conf_del[conf_del$eliminado %in% TRUE, , drop = FALSE]
+      movs_vin <- movs[!(movs$eliminado %in% TRUE) & movs$conciliado %in% TRUE &
+                         !is.na(movs$doc_vinculado) & nzchar(movs$doc_vinculado), , drop = FALSE]
+      filas <- list(
+        .bnc_pap_filas("mov", movs_del$id, "eliminado", movs_del$fecha, emp_de(movs_del$cuenta_id), movs_del$parte,
+                       importe_mov(movs_del), mon_de(movs_del$cuenta_id), dplyr::coalesce(movs_del$tipo, "otro"), "",
+                       movs_del$eliminado_at,
+                       ifelse(movs_del$fuente %in% "manual" & escribe, "deshacer", "")),
+        .bnc_pap_filas("conf", conf_del$confirmacion_id, "eliminado", conf_del$fecha, conf_del$empresa, conf_del$parte,
+                       conf_del$importe, conf_del$moneda, conf_del$tipo, "", conf_del$eliminado_at),
+        .bnc_pap_filas("vin", movs_vin$id, "vinculado", movs_vin$fecha, emp_de(movs_vin$cuenta_id), movs_vin$parte,
+                       importe_mov(movs_vin), mon_de(movs_vin$cuenta_id), dplyr::coalesce(movs_vin$tipo, "otro"),
+                       movs_vin$doc_vinculado, NA))
 
-      if (!nrow(movs_del) && !nrow(conf_del) && !nrow(movs_vin) &&
-          (is.null(rows_ledger) || !nrow(rows_ledger))) {
-        return(DT::datatable(
-          data.frame(Origen=character(), Fecha=character(), Parte=character(),
-                     Importe=character(), Tipo=character(),
-                     `Doc. vinculado`=character(),
-                     `Eliminado el`=character(), Acciones=character(), check.names=FALSE),
-          escape = FALSE, rownames = FALSE,
-          options = list(dom = "t", language = list(emptyTable = "Papelera vac\u00eda"))
-        ))
+      # The Calendario's trash. Both the historical "sap" and today's
+      # SAP_B1_ERP_TYPE are SAP; any other ERP source is "erp".
+      cal <- tryCatch(shared$papelera_rv(), error = function(e) NULL)
+      if (!is.null(cal) && nrow(cal)) {
+        src <- dplyr::coalesce(dplyr::na_if(as.character(cal$source), ""), SAP_B1_ERP_TYPE)
+        origen <- ifelse(src %in% c("sap", SAP_B1_ERP_TYPE), "sap", ifelse(src %in% c("manual", "provision"), src, "erp"))
+        ids <- make.unique(dplyr::coalesce(as.character(cal$event_id), as.character(cal$id), as.character(seq_len(nrow(cal)))))
+        filas$cal <- .bnc_pap_filas("cal", ids, origen, dplyr::coalesce(as.Date(cal$FechaEff), as.Date(cal$deleted_at)),
+                                    cal$Empresa, dplyr::coalesce(cal$Parte, cal$Empresa), cal$Importe, cal$Moneda,
+                                    ifelse(cal$ledger %in% "AR", "cobro", "pago"), cal$Documento, cal$deleted_at)
       }
+      do.call(rbind, unname(filas))
+    })
 
-      rows_mov <- if (nrow(movs_del)) {
-        movs_del |>
-          dplyr::transmute(
-            Origen          = "Eliminado",
-            Fecha           = format(fecha, "%d/%m/%Y"),
-            Parte           = htmltools::htmlEscape(parte %||% ""),
-            Importe         = dplyr::if_else(cargo > 0, fmt_money(cargo), fmt_money(abono)),
-            Tipo            = vapply(tipo, .tipo_badge, character(1)),
-            `Doc. vinculado` = "",
-            `Eliminado el`  = dplyr::if_else(!is.na(eliminado_at), format(eliminado_at, "%d/%m/%Y %H:%M"), "\u2014"),
-            # "Deshacer" only for manually-entered rows -- restoring a
-            # TXT-imported row here would fight a future re-import of the
-            # same statement (found 2026-07-30, part of the Vantage Bank
-            # manual-entry correction tool: manual rows need an undo path,
-            # TXT rows deliberately keep the existing one-way behavior).
-            Acciones        = dplyr::if_else(
-              fuente == "manual",
-              sprintf(
-                '<button class="bnc-btn-xs bnc-btn-xs--undo" title="Deshacer eliminaci\u00f3n" onclick="Shiny.setInputValue(\'%s\', {id:\'%s\', nonce:Math.random()}, {priority:\'event\'})">&#8630;</button>',
-                ns("undo_mov_delete"), id
-              ),
-              ""
-            )
-          )
-      } else NULL
+    t_papelera <- hd_table_server("papelera", tabla = "papelera", datos = papelera_datos,
+      columnas = list(col_insignia("Origen", "tablas.bancos.origen", mapa = list(
+                        eliminado = list(texto = "tablas.bancos.eliminado",  tono = "neutro"),
+                        vinculado = list(texto = "tablas.bancos.vinculado",  tono = "info"),
+                        sap       = list(texto = "SAP",                      tono = "neutro"),
+                        manual    = list(texto = "tablas.bancos.manual",     tono = "info"),
+                        provision = list(texto = "tablas.bancos.provision",  tono = "aviso"),
+                        erp       = list(texto = "ERP",                      tono = "neutro"))),
+                      col_fecha("Fecha", "tablas.bancos.fecha"),
+                      col_empresa("Empresa", "tablas.facturas.empresa"),
+                      col_texto("Parte", "tablas.facturas.parte"),
+                      col_dinero("Importe", "tablas.facturas.importe", moneda = "Moneda", sumar = FALSE),
+                      col_texto("Moneda", "tablas.facturas.moneda", recorte = FALSE),
+                      col_insignia("Tipo", "tablas.facturas.tipo", mapa = c(
+                        list(pago  = list(texto = "tablas.bancos.pago",  tono = "rojo"),
+                             cobro = list(texto = "tablas.bancos.cobro", tono = "exito")),
+                        lapply(as.list(.TIPO_LABELS), function(t) list(texto = t, tono = "neutro")))),
+                      col_texto("DocVinculado", "tablas.bancos.doc_vinculado", recorte = FALSE),
+                      col_fecha_hora("EliminadoEl", "tablas.bancos.eliminado_el")),
+      piezas = "acc_fila", acciones_fila = "deshacer",
+      vacio = "tablas.bancos.vacio_papelera")
 
-      rows_conf <- if (nrow(conf_del)) {
-        conf_del |>
-          dplyr::transmute(
-            Origen          = "Eliminado",
-            Fecha           = format(fecha, "%d/%m/%Y"),
-            Parte           = htmltools::htmlEscape(parte),
-            Importe         = fmt_money(importe),
-            Tipo            = dplyr::if_else(tipo == "pago",
-              '<span class="badge bg-danger">Pago</span>',
-              '<span class="badge bg-success">Cobro</span>'),
-            `Doc. vinculado` = "",
-            `Eliminado el`  = dplyr::if_else(!is.na(eliminado_at), format(eliminado_at, "%d/%m/%Y %H:%M"), "\u2014"),
-            Acciones        = ""
-          )
-      } else NULL
-
-      rows_vin <- if (nrow(movs_vin)) {
-        movs_vin |>
-          dplyr::transmute(
-            Origen          = '<span class="badge bg-primary">Vinculado</span>',
-            Fecha           = format(fecha, "%d/%m/%Y"),
-            Parte           = htmltools::htmlEscape(parte %||% ""),
-            Importe         = dplyr::if_else(cargo > 0, fmt_money(cargo), fmt_money(abono)),
-            Tipo            = vapply(tipo, .tipo_badge, character(1)),
-            `Doc. vinculado` = htmltools::htmlEscape(doc_vinculado %||% ""),
-            `Eliminado el`  = "\u2014",
-            Acciones        = ""
-          )
-      } else NULL
-
-      tbl <- dplyr::bind_rows(rows_mov, rows_conf, rows_vin, rows_ledger)
-
-      pap_q <- trimws(input$papelera_search %||% "")
-      if (nzchar(pap_q) && nrow(tbl)) {
-        q <- tolower(pap_q)
-        tbl <- dplyr::filter(tbl,
-          grepl(q, tolower(Parte              %||% ""), fixed = TRUE) |
-          grepl(q, tolower(`Doc. vinculado`   %||% ""), fixed = TRUE)
-        )
-      }
-
-      DT::datatable(tbl, escape = FALSE, rownames = FALSE, selection = "none",
-        options = list(pageLength = 25, scrollX = TRUE, dom = "lrtip",
-                       language = list(emptyTable = "Papelera vac\u00eda")))
-    }, server = TRUE)
+    # ↶ (already confirmed in the table's bar) restores that manual movement.
+    observeEvent(t_papelera$accion(), {
+      a <- t_papelera$accion()
+      id <- as.character(a$ids[1] %||% "")
+      if (identical(a$accion, "deshacer") && startsWith(id, "mov:")) .bnc_deshacer_eliminacion(sub("^mov:", "", id))
+    }, ignoreInit = TRUE)
 
     # ── Tab 4: Cuentas — read-only view of Settings → Cuentas de Empresa ────────
     # cuenta_id here = ctas_cuentas$id. Edit/add/deactivate via ⚙ Settings.

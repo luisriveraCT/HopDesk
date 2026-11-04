@@ -8,6 +8,14 @@
 #   I. Importar TXT (importar_txt, E): a 25-movement TXT with 2 commissions
 #      -> the preview shows the 25 (it used to show 20, without commissions)
 #      and the button imports those 25.
+#   H. Historial (historial_conf, C): confirmations and abonos by id; ↶
+#      asks first (T12 P5); two sessions undoing the same confirmation.
+#   P. Papelera (papelera, C): its four sources by id; ↶ only on a deleted
+#      manual movement, asks first; two sessions restoring the same one.
+#   S. Without can_manage_bancos: neither table shows a button that writes.
+#
+# The fixture runs with BANCOS_PAPELERA=1 (two deleted movements). Its
+# confirmations, abonos and trash are shared by every session.
 #
 # Run from project root:  Rscript tests/test_bancos_t12b_chromote.R
 # =============================================================================
@@ -163,6 +171,49 @@ ok("H12: ...and Eliminar moves CONF-2 to the trash",
    poll_until(function() "CONF-2" %in% reg("conf_eliminadas") && !"conf:CONF-2" %in% vis(H), timeout_s = 10))
 sin_modal()
 
+# ══ P · Papelera ═════════════════════════════════════════════════════════════
+# By now: MOV-0901 (manual) and MOV-0902 (imported) deleted in the fixture;
+# CONF-3 deleted there, CONF-2 deleted in H12, CONF-1's original row
+# soft-deleted by its undo in H7; and the Calendario's EV-77.
+P <- "bnc-papelera-hdt"
+eliminados <- function() reg("eliminados")
+sub_pestana("Papelera")
+ok("P1: the four sources, by id",
+   poll_until(function() setequal(tryCatch(vis(P), error = function(e) NULL),
+                                  c("mov:MOV-0901", "mov:MOV-0902", "conf:CONF-1", "conf:CONF-2", "conf:CONF-3", "cal:EV-77")),
+              timeout_s = 15))
+ok("P2: columns Origen, Fecha, Empresa, Parte, Importe, Moneda, Tipo, Doc. vinculado, Eliminado el",
+   identical(titulos(P), c("Origen", "Fecha", "Empresa", "Parte", "Importe", "Moneda", "Tipo", "Doc. vinculado", "Eliminado el")))
+ok("P3: the Calendario's row: Tipo Pago (its ledger), the document under Doc. vinculado (they were crossed)",
+   isTRUE(ev(sprintf("(function(){ var t = HDT.fila('%s','cal:EV-77').innerText; return /Pago/.test(t) && /DOC-77/.test(t) && /PROVEEDOR CALENDARIO SA/.test(t); })()", P))))
+ok("P4: ↶ only on the deleted manual movement",
+   tiene_boton(P, "mov:MOV-0901", "deshacer") && !tiene_boton(P, "mov:MOV-0902", "deshacer") &&
+     !tiene_boton(P, "conf:CONF-3", "deshacer") && !tiene_boton(P, "cal:EV-77", "deshacer"))
+
+# Two sessions: A asks to restore MOV-0901; before A confirms, B restores it.
+bB <- new_chromote_session()
+invisible(en(bB, {
+  invisible(b$Emulation$setDeviceMetricsOverride(width = 1293L, height = 632L, deviceScaleFactor = 1, mobile = FALSE))
+  invisible(b$Page$navigate("http://127.0.0.1:38981", wait_ = TRUE))
+  poll_until(function() isTRUE(ev("!!window.HDT && !!HDT.estado('bnc-libro-hdt')")), timeout_s = 60); Sys.sleep(1)
+  pestana("historial"); sub_pestana("Papelera")
+  poll_until(function() "mov:MOV-0901" %in% tryCatch(vis(P), error = function(e) NULL), timeout_s = 15)
+}))
+clic(boton(P, "mov:MOV-0901", "deshacer"))
+ok("P5: ↶ asks first: the confirmation bar shows and the movement is still deleted",
+   poll_until(function() barra_conf(P), timeout_s = 5) && "MOV-0901" %in% eliminados())
+invisible(en(bB, {
+  clic(boton(P, "mov:MOV-0901", "deshacer")); poll_until(function() barra_conf(P), timeout_s = 5)
+  confirmar_barra(P)
+  poll_until(function() !"MOV-0901" %in% eliminados(), timeout_s = 10)
+}))
+ok("P6: B restored MOV-0901; in A it leaves the Papelera", poll_until(function() !"mov:MOV-0901" %in% vis(P), timeout_s = 10))
+if (barra_conf(P)) confirmar_barra(P)
+Sys.sleep(1.5)
+ok("P7: A's late confirm changes nothing (still restored, the rest still deleted)",
+   !"MOV-0901" %in% eliminados() && "MOV-0902" %in% eliminados() && "conf:CONF-3" %in% vis(P))
+try(bB$close(), silent = TRUE)
+
 # ══ S · Without can_manage_bancos ════════════════════════════════════════════
 stop_bg_app(app)
 app <- tryCatch(start_bg_app(sprintf('Sys.setenv(BANCOS_PAPELERA = "1", BANCOS_SIN_PERMISO = "1"); setwd("%s"); source("tests/helpers/bancos_fixture_app.R")$value', repo),
@@ -175,6 +226,10 @@ pestana("historial"); sub_pestana("Historial de confirmaciones")
 ok("S1: the Historial lists the same rows, with no ↶ nor ✕",
    poll_until(function() length(tryCatch(vis(H), error = function(e) NULL)) == 3L, timeout_s = 15) &&
      isTRUE(ev(sprintf("!document.querySelector('#%s button[data-accion]')", H))))
+sub_pestana("Papelera")
+ok("S2: the Papelera lists its rows, with no ↶ (not even on the manual movement)",
+   poll_until(function() "mov:MOV-0901" %in% tryCatch(vis(P), error = function(e) NULL), timeout_s = 15) &&
+     isTRUE(ev(sprintf("!document.querySelector('#%s button[data-accion]')", P))))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) {
