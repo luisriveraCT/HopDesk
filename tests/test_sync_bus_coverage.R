@@ -149,9 +149,11 @@ for (key in names(SAVE_OF)) {
   ok(sprintf("%s's save function %s() accepts client_id (per-client scoping preserved)", key, fn),
      length(def_line) > 0 && any(grepl("client_id", def_line)))
 }
-ok("save_hop_grants() deliberately does NOT take client_id (global admin-scoped, by design -- see .HOP_GRANTS_KEY)",
+# Since CM13 grants change through modificar_hop_grants(cambio), on S3's
+# current table under hd-admin/.
+ok("modificar_hop_grants() deliberately does NOT take client_id (global admin-scoped, by design -- see .HOP_GRANTS_KEY)",
    {
-     def_line <- grep("^save_hop_grants\\s*<-\\s*function", r_all_txt, value = TRUE)
+     def_line <- grep("^modificar_hop_grants\\s*<-\\s*function", r_all_txt, value = TRUE)
      length(def_line) > 0 && !grepl("client_id", def_line)
    })
 

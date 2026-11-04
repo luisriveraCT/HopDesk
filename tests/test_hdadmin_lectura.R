@@ -84,6 +84,35 @@ ok("no write_client_registry() left", !any(grepl("write_client_registry(", codig
 ok("no direct s3saveRDS on hd-admin/client_registry.rds outside the dev-bucket copy",
    sum(grepl("s3saveRDS\\(.*hd-admin/client_registry\\.rds", codigo)) <= 1L)
 
+# ── 2. Hop grants (accesos de salto) ──────────────────────────────────────────
+k_hg <- "hd-admin/hop_grants.rds"
+acceso <- function(id, cid = "networks", revoked = FALSE)
+  data.frame(id = id, request_id = NA_character_, grantee = "bunny", client_id = cid,
+             granted_by = "luis", granted_at = as.POSIXct("2026-11-01", tz = "UTC"),
+             expires_at = as.POSIXct("2026-11-09", tz = "UTC"), revoked = revoked,
+             stringsAsFactors = FALSE)
+
+# 2a. A failed read writes nothing, and the caller sees the error (it was a
+#     warning, so "Acceso concedido" showed for a grant never saved)
+s3_memoria_reset()
+assign(k_hg, rbind(acceso("g1"), acceso("g2")), envir = .mem)
+.mem_falla <- k_hg
+ok("grants, failed read: modificar stops (no silent warning)",
+   falla(modificar_hop_grants(function(g) rbind(g, acceso("g3")))))
+ok("grants, failed read: nothing written", .mem_escrituras == 0L)
+
+# 2b. Two sessions: a revoke and a new grant from a stale copy both land
+s3_memoria_reset()
+assign(k_hg, rbind(acceso("g1"), acceso("g2")), envir = .mem)
+modificar_hop_grants(function(g) rbind(g, acceso("g3", "hopdesk")))       # session B grants
+modificar_hop_grants(function(g) { g$revoked[g$id == "g1"] <- TRUE; g })  # A revokes
+g <- get(k_hg, envir = .mem)
+ok("grants, two sessions: B's new grant kept", "g3" %in% g$id && nrow(g) == 3L)
+ok("grants, two sessions: A's revoke applied", isTRUE(g$revoked[g$id == "g1"]))
+ok("grants only grow", "hop_grants.rds" %in% .S3_SOLO_CRECEN() &&
+   falla(modificar_hop_grants(function(g) g[g$id != "g2", , drop = FALSE])))
+ok("no save_hop_grants() left", !any(grepl("save_hop_grants(", codigo, fixed = TRUE)))
+
 s3_memoria_restaurar()
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)

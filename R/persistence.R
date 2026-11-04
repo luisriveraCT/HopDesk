@@ -2962,12 +2962,7 @@ load_hop_grants <- function() {
   raw[, names(schema), drop = FALSE]
 }
 
-save_hop_grants <- function(df) {
-  tryCatch(
-    suppressMessages(
-      aws.s3::s3saveRDS(df, object = .HOP_GRANTS_KEY, bucket = .s3_bucket())
-    ),
-    error = function(e) warning("[HOP] save_hop_grants: ", e$message)
-  )
-  invisible(df)
-}
+# cambio(grants) -> grants, on S3's current table (CM13). It used to swallow
+# a failed save (a warning), so the caller announced a grant never saved.
+modificar_hop_grants <- function(cambio)
+  modificar_hd_admin("hop_grants.rds", .schema_hop_grants, cambio)
