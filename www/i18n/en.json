@@ -451,7 +451,7 @@
   "pasivos.deshacer_pagada_bloqueado": "This provision is already paid; its conversion cannot be undone. It can only be deleted permanently.",
   "tablas.pasivos.no_editar_borrado": "This liability is archived. Restore it in the List before editing it.",
   "tablas.pasivos.guardado_sin_provisiones": "Liability saved. It is paused, so no provisions were generated: once resumed, edit it to generate them.",
-  "cm.hdadmin.no_se_leyo": "The record could not be read from S3. Nothing was saved; try again.",
-  "cm.hdadmin.no_se_guardo": "It could not be saved to S3. Nothing changed; try again.",
-  "cm.hdadmin.cliente_existe": "Client '{cliente}' is already in the registry."
+  "niveles.hdadmin.no_se_leyo": "The record could not be read from S3. Nothing was saved; try again.",
+  "niveles.hdadmin.no_se_guardo": "It could not be saved to S3. Nothing changed; try again.",
+  "niveles.hdadmin.cliente_existe": "Client '{cliente}' is already in the registry."
 }

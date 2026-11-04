@@ -451,7 +451,7 @@
   "pasivos.deshacer_pagada_bloqueado": "Esta provisión ya está pagada; no se puede deshacer la conversión. Solo se puede eliminar definitivamente.",
   "tablas.pasivos.no_editar_borrado": "Este pasivo está archivado. Restáuralo en la Lista antes de editarlo.",
   "tablas.pasivos.guardado_sin_provisiones": "Pasivo guardado. Está pausado, así que no se generaron provisiones: al reanudarlo, edítalo para generarlas.",
-  "cm.hdadmin.no_se_leyo": "No se pudo leer el registro en S3. Nada se guardó; intenta de nuevo.",
-  "cm.hdadmin.no_se_guardo": "No se pudo guardar en S3. Nada cambió; intenta de nuevo.",
-  "cm.hdadmin.cliente_existe": "El cliente '{cliente}' ya existe en el registro."
+  "niveles.hdadmin.no_se_leyo": "No se pudo leer el registro en S3. Nada se guardó; intenta de nuevo.",
+  "niveles.hdadmin.no_se_guardo": "No se pudo guardar en S3. Nada cambió; intenta de nuevo.",
+  "niveles.hdadmin.cliente_existe": "El cliente '{cliente}' ya existe en el registro."
 }
