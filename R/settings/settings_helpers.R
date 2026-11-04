@@ -59,7 +59,7 @@
 get_cuenta_ppl <- function(empresa, moneda, shared) {
   ctas <- tryCatch({
     if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas()
-    else load_ctas_cuentas()
+    else load_ctas_cuentas(client_id = shared$effective_client_id())
   }, error = function(e) NULL)
 
   if (is.null(ctas) || !nrow(ctas)) {
@@ -93,7 +93,7 @@ get_cuenta_ppl <- function(empresa, moneda, shared) {
 get_cuentas_ppl_data <- function(empresa, moneda, shared) {
   ctas <- tryCatch({
     if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas()
-    else load_ctas_cuentas()
+    else load_ctas_cuentas(client_id = shared$effective_client_id())
   }, error = function(e) NULL)
   if (is.null(ctas) || !nrow(ctas)) return(NULL)
 
@@ -174,8 +174,14 @@ load_ctas_cuentas <- function(client_id = NULL) {
   obj
 }
 
-save_ctas_bancos  <- function(df, client_id = NULL) .s3_write(df, S3_KEYS$ctas_bancos, client_id = client_id)
-save_ctas_cuentas <- function(df, client_id = NULL) .s3_write(df, S3_KEYS$ctas_cuentas, client_id = client_id)
+# cambio(tabla) -> tabla, on S3's current table (CM12). They used to save the
+# copy just read (or the session's), so a failed read saved an empty catalog
+# and a stale copy undid another session's banks or accounts.
+modificar_ctas_bancos <- function(cambio, client_id, permitir_reduccion = FALSE)
+  modificar_tabla_completa(S3_KEYS$ctas_bancos, client_id, .schema_ctas_bancos, cambio,
+                           permitir_reduccion = permitir_reduccion)
+modificar_ctas_cuentas <- function(cambio, client_id)
+  modificar_tabla_completa(S3_KEYS$ctas_cuentas, client_id, .schema_ctas_cuentas, cambio)
 
 # ── Complete MX bank catalog (BanBajío CECOBAN codes) ─────────────────────────
 # Format: "Nombre|CLAVE" — JS splits on "|" to fill the two text inputs.

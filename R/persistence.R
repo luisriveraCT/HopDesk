@@ -337,11 +337,20 @@ leer_hd_admin <- function(key, schema_fn)
 
 # Returns the table written (or S3's, unchanged, when cambio changed nothing).
 # A failed read or write stop()s: callers say so and change nothing else.
-modificar_hd_admin <- function(key, schema_fn, cambio) {
-  fresco <- leer_hd_admin(key, schema_fn)
+modificar_hd_admin <- function(key, schema_fn, cambio)
+  modificar_tabla_completa(key, .HD_ADMIN_CID, schema_fn, cambio)
+
+# modificar_tabla() for any client's table that may carry columns its schema
+# does not list (ctas_*, CM12): strict read, cambio(fresco), .s3_write; the
+# schema only adds missing columns, none is dropped. permitir_reduccion is
+# for a change that removes rows on purpose (listed in the net's guardian).
+modificar_tabla_completa <- function(key, client_id, schema_fn, cambio, permitir_reduccion = FALSE) {
+  if (is.null(client_id) || !nzchar(client_id)) stop("modificar_tabla_completa: sin client_id", call. = FALSE)
+  fresco <- .hd_admin_completar(.s3_leer_para_escribir(key, client_id), schema_fn)
   nuevo  <- cambio(fresco)
   if (identical(nuevo, fresco)) return(invisible(fresco))
-  .s3_write(nuevo, key, client_id = .HD_ADMIN_CID)
+  if (isTRUE(permitir_reduccion)) .s3_write(nuevo, key, client_id = client_id, permitir_reduccion = TRUE)
+  else .s3_write(nuevo, key, client_id = client_id)
   invisible(nuevo)
 }
 
@@ -2274,12 +2283,13 @@ rename_empresa_initials <- function(old_ini, new_ini, client_id = NULL) {
 
   # 1. ctas_cuentas — Empresa column stores initials (e.g. "NCS")
   tryCatch({
-    df <- load_ctas_cuentas(client_id = client_id)
-    if (nrow(df) && any(!is.na(df$Empresa) & df$Empresa == old_ini)) {
-      df <- .rni_col(df, "Empresa")
-      save_ctas_cuentas(df, client_id = client_id)
-      touched <- c(touched, "ctas_cuentas")
-    }
+    # On S3's current accounts (CM12); a failed read renames nothing.
+    hubo <- FALSE
+    modificar_ctas_cuentas(function(df) {
+      hubo <<- any(!is.na(df$Empresa) & df$Empresa == old_ini)
+      .rni_col(df, "Empresa")
+    }, client_id = client_id)
+    if (hubo) touched <- c(touched, "ctas_cuentas")
   }, error = function(e) message("[EMP rename] ctas_cuentas: ", e$message))
 
   # 2. bancos_cuentas — empresa column (lowercase; bancos_persistence.R schema)

@@ -86,7 +86,7 @@
 .cuentas_datatable <- function(shared, empresa_filter = "", client_id = NULL) {
   ctas <- tryCatch({
     if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas()
-    else load_ctas_cuentas()
+    else load_ctas_cuentas(client_id = client_id)
   }, error = function(e) .schema_ctas_cuentas())
   bancos <- tryCatch(load_ctas_bancos(client_id = client_id), error = function(e) .schema_ctas_bancos())
 
@@ -186,14 +186,19 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     if (!nzchar(nombre)) {
       showNotification("El nombre del banco es obligatorio.", type = "warning"); return()
     }
-    bancos  <- tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
     new_row <- tibble::tibble(
       id = if (is.null(eid)) uuid::UUIDgenerate() else eid,
       nombre = nombre, clave = clave
     )
-    updated <- if (is.null(eid)) dplyr::bind_rows(bancos, new_row)
-               else bancos |> dplyr::rows_update(new_row, by = "id", unmatched = "ignore")
-    save_ctas_bancos(updated, client_id = shared$effective_client_id())
+    # On S3's current catalog (CM12); a failed read or save is said and
+    # nothing else changes.
+    guardado <- tryCatch({
+      modificar_ctas_bancos(function(bancos) {
+        if (is.null(eid)) dplyr::bind_rows(bancos, new_row)
+        else dplyr::rows_update(bancos, new_row, by = "id", unmatched = "ignore")
+      }, client_id = shared$effective_client_id()); TRUE
+    }, error = function(e) { message("[CTAS] banco save failed: ", e$message); FALSE })
+    if (!guardado) { showNotification(tr("comun.error_guardar"), type = "error"); return() }
     editing_banco_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
     output$tbl_bancos_cat <- DT::renderDataTable({ .bancos_cat_datatable(client_id = shared$effective_client_id()) }, server = TRUE)
@@ -217,8 +222,13 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     eid <- editing_banco_id(); if (is.null(eid)) return()
     bancos  <- tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
     deleted_nombre <- { m <- bancos$nombre[bancos$id == eid]; if (length(m)) m[1] else eid }
-    updated <- bancos |> dplyr::filter(id != eid)
-    save_ctas_bancos(updated, client_id = shared$effective_client_id())
+    # Removes only this bank, on S3's current catalog (CM12); deleting the
+    # last one empties it on purpose (permitir_reduccion).
+    guardado <- tryCatch({
+      modificar_ctas_bancos(function(b) b[is.na(b$id) | b$id != eid, , drop = FALSE],
+                            client_id = shared$effective_client_id(), permitir_reduccion = TRUE); TRUE
+    }, error = function(e) { message("[CTAS] banco delete failed: ", e$message); FALSE })
+    if (!guardado) { showNotification(tr("comun.error_guardar"), type = "error"); return() }
     editing_banco_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
     output$tbl_bancos_cat <- DT::renderDataTable({ .bancos_cat_datatable(client_id = shared$effective_client_id()) }, server = TRUE)
@@ -254,7 +264,8 @@ settings_cuentas_observer <- function(input, output, session, shared) {
       output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() }); return()
     }
     ctas <- tryCatch({
-      if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas() else load_ctas_cuentas()
+      if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas()
+      else load_ctas_cuentas(client_id = shared$effective_client_id())
     }, error = function(e) .schema_ctas_cuentas())
     ef <- isolate(input$cta_empresa_filter %||% "")
     if (nzchar(ef)) ctas <- ctas |> dplyr::filter(Empresa == ef)
@@ -286,19 +297,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
       showNotification("El n\u00famero de cuenta es obligatorio.", type = "warning"); return()
     }
 
-    ctas       <- tryCatch({
-      if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas() else load_ctas_cuentas()
-    }, error = function(e) .schema_ctas_cuentas())
     is_default <- isTRUE(input$cta_is_ppl_default)
-
-    # Clear PPL default flag from sibling accounts (same empresa + moneda)
-    if (is_default) {
-      if (!"is_ppl_default" %in% names(ctas)) ctas$is_ppl_default <- FALSE
-      mask <- !is.na(ctas$Empresa) & ctas$Empresa == empresa_val &
-              !is.na(ctas$Moneda)  & toupper(ctas$Moneda) == toupper(moneda_val) &
-              (is.null(eid) | (!is.na(ctas$id) & ctas$id != eid))
-      ctas$is_ppl_default[mask] <- FALSE
-    }
 
     new_row <- tibble::tibble(
       id                  = if (is.null(eid)) uuid::UUIDgenerate() else eid,
@@ -315,10 +314,21 @@ settings_cuentas_observer <- function(input, output, session, shared) {
       activa              = TRUE
     )
 
-    updated <- if (is.null(eid)) dplyr::bind_rows(ctas, new_row)
-               else dplyr::bind_rows(ctas |> dplyr::filter(id != eid), new_row)
-
-    save_ctas_cuentas(updated, client_id = shared$effective_client_id())
+    # On S3's current accounts, never the session's copy (CM12): the PPL
+    # default of the siblings is cleared there too. A failure is said.
+    updated <- tryCatch(
+      modificar_ctas_cuentas(function(ctas) {
+        if (is_default) {
+          mask <- !is.na(ctas$Empresa) & ctas$Empresa == empresa_val &
+                  !is.na(ctas$Moneda)  & toupper(ctas$Moneda) == toupper(moneda_val) &
+                  (is.null(eid) | (!is.na(ctas$id) & ctas$id != eid))
+          ctas$is_ppl_default[mask] <- FALSE
+        }
+        if (is.null(eid)) dplyr::bind_rows(ctas, new_row)
+        else dplyr::bind_rows(ctas[is.na(ctas$id) | ctas$id != eid, , drop = FALSE], new_row)
+      }, client_id = shared$effective_client_id()),
+      error = function(e) { message("[CTAS] cuenta save failed: ", e$message); NULL })
+    if (is.null(updated)) { showNotification(tr("comun.error_guardar"), type = "error"); return() }
     bump_sync_version("ctas_cuentas")
     if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas(updated)
 
@@ -347,13 +357,13 @@ settings_cuentas_observer <- function(input, output, session, shared) {
   observeEvent(input$cuenta_delete, {
     if (!puede_o_avisa(shared, "can_manage_bancos")) return()
     eid <- editing_cuenta_id(); if (is.null(eid)) return()
-    ctas <- tryCatch({
-      if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas() else load_ctas_cuentas()
-    }, error = function(e) .schema_ctas_cuentas())
-    deleted_row <- ctas[ctas$id == eid, ]
-    updated <- ctas |> dplyr::mutate(
-      activa = dplyr::if_else(id == eid, FALSE, activa))
-    save_ctas_cuentas(updated, client_id = shared$effective_client_id())
+    # Deactivates only this account, on S3's current accounts (CM12).
+    updated <- tryCatch(
+      modificar_ctas_cuentas(function(ctas) { ctas$activa[!is.na(ctas$id) & ctas$id == eid] <- FALSE; ctas },
+                             client_id = shared$effective_client_id()),
+      error = function(e) { message("[CTAS] cuenta deactivate failed: ", e$message); NULL })
+    if (is.null(updated)) { showNotification(tr("comun.error_guardar"), type = "error"); return() }
+    deleted_row <- updated[!is.na(updated$id) & updated$id == eid, , drop = FALSE]
     bump_sync_version("ctas_cuentas")
     if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas(updated)
     editing_cuenta_id(NULL)

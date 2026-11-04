@@ -115,7 +115,7 @@ suppressPackageStartupMessages({ library(dplyr); library(tibble) })
   # the test body exits.
   .run_mocked <- function() {
     .written <- new.env()
-    .mock_names <- c("load_ctas_cuentas", "save_ctas_cuentas", "load_bancos_cuentas",
+    .mock_names <- c("load_ctas_cuentas", "modificar_ctas_cuentas", "load_bancos_cuentas",
                       "save_bancos_cuentas", "load_proveedores", "save_proveedores",
                       ".s3_read_with", ".s3_write", ".normalize",
                       "load_interco_v2", "save_interco_v2",
@@ -134,7 +134,9 @@ suppressPackageStartupMessages({ library(dplyr); library(tibble) })
     }, add = TRUE)
 
     assign("load_ctas_cuentas",   function(client_id = NULL) tibble(Empresa = character()), envir = globalenv())
-    assign("save_ctas_cuentas",   function(df, client_id = NULL) invisible(TRUE), envir = globalenv())
+    # CM12: ctas_cuentas changes through modificar_ctas_cuentas(cambio, client_id)
+    assign("modificar_ctas_cuentas", function(cambio, client_id) invisible(cambio(tibble(Empresa = character()))),
+           envir = globalenv())
     assign("load_bancos_cuentas", function(client_id = NULL) tibble(empresa = character()), envir = globalenv())
     assign("save_bancos_cuentas", function(df, client_id = NULL) invisible(TRUE), envir = globalenv())
     assign("load_proveedores",    function(client_id = NULL) tibble(Empresa = character()), envir = globalenv())
