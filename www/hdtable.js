@@ -2304,6 +2304,11 @@
 
     st.tbody.addEventListener('mousedown', function (e) {
       st.abajo = { x: e.clientX, y: e.clientY };
+      // opcion_fila chooses on press: the press closes a cell being typed in,
+      // its column narrows and the button moves before the release -- the
+      // click then lands on another cell and the choice was lost.
+      var bo = e.button === 0 && e.target.closest('button.hdt-op-b'), tro = bo && bo.closest('tr');
+      if (bo && !bo.disabled && tro && tro._i != null) elegirOpcion(st, tro._i, bo.dataset.valor, true);
       // Shift + click must not shade the text between the two rows.
       if (e.shiftKey && st.p.sel_rango && e.target.closest('tr')) e.preventDefault();
       // The second press of a double click would shade a word.
@@ -2340,10 +2345,12 @@
         else enviarAccion(st, btn.dataset.accion, [st.ids[i]]);
         return;
       }
-      // opcion_fila: a click chooses; it never marks the row nor opens the detail.
+      // opcion_fila: it never marks the row nor opens the detail. The mouse
+      // already chose on mousedown; a click from the keyboard (Enter, Space:
+      // detail 0) chooses here.
       if (e.target.closest('.hdt-op')) {
         var bo = e.target.closest('button.hdt-op-b');
-        if (bo && !bo.disabled) elegirOpcion(st, i, bo.dataset.valor, true);
+        if (bo && !bo.disabled && e.detail === 0) elegirOpcion(st, i, bo.dataset.valor, true);
         return;
       }
       // edicion_celda: a click on the editable cell types in it; it doesn't
