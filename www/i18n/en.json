@@ -1,4 +1,5 @@
 {
+  "niveles.usuarios.ya_no_esta": "That account is no longer in the list; nothing was changed.",
   "niveles.nombre.principal": "Principal",
   "niveles.nombre.hopdesk": "Hopdesk",
   "niveles.nombre.dev": "Dev",

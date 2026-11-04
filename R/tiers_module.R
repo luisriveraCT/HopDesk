@@ -405,6 +405,20 @@ tiersUI <- function(id) {
 
 # ── Server ────────────────────────────────────────────────────────────────────
 
+# Row of `usuarios` (the viewer's filtered list) whose username is `uname`,
+# or NULL when that account is not there (or not visible to this viewer).
+# Every action on an account looks it up this way, never by row position.
+.fila_usuario <- function(usuarios, uname) {
+  if (is.null(usuarios) || !nrow(usuarios) || length(uname) != 1 || is.na(uname)) return(NULL)
+  i <- which(usuarios$username == as.character(uname))
+  if (length(i) == 1) i else NULL
+}
+
+# A username as a JS string literal, escaped for an HTML attribute.
+.usuario_js <- function(u)
+  htmltools::htmlEscape(as.character(jsonlite::toJSON(as.character(u), auto_unbox = TRUE)),
+                        attribute = TRUE)
+
 tiersServer <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -719,16 +733,18 @@ tiersServer <- function(id, shared) {
         Tier    = tier_labels[usuarios$tier] %||% usuarios$tier,
         Estado  = ifelse(isTRUE(usuarios$activo) | usuarios$activo == TRUE,
                          "Activo", "Inactivo"),
-        Editar  = vapply(seq_len(nrow(usuarios)), function(i) {
+        # Each button sends the account's username, never its row position:
+        # a position names another account as soon as the list changes.
+        Editar  = vapply(usuarios$username, function(u) {
           sprintf(
-            '<button class="btn btn-outline-primary btn-sm" onclick="Shiny.setInputValue(\'%s\',%d,{priority:\'event\'})">Editar</button>',
-            edit_input_id, i)
-        }, character(1)),
-        Eliminar = vapply(seq_len(nrow(usuarios)), function(i) {
+            '<button class="btn btn-outline-primary btn-sm" onclick="Shiny.setInputValue(\'%s\',%s,{priority:\'event\'})">Editar</button>',
+            edit_input_id, .usuario_js(u))
+        }, character(1), USE.NAMES = FALSE),
+        Eliminar = vapply(usuarios$username, function(u) {
           sprintf(
-            '<button class="btn btn-outline-danger btn-sm" onclick="Shiny.setInputValue(\'%s\',%d,{priority:\'event\'})"><i class=\"fa fa-trash\"></i></button>',
-            del_input_id, i)
-        }, character(1)),
+            '<button class="btn btn-outline-danger btn-sm" onclick="Shiny.setInputValue(\'%s\',%s,{priority:\'event\'})"><i class=\"fa fa-trash\"></i></button>',
+            del_input_id, .usuario_js(u))
+        }, character(1), USE.NAMES = FALSE),
         stringsAsFactors = FALSE,
         check.names      = FALSE
       )
@@ -866,13 +882,13 @@ tiersServer <- function(id, shared) {
     })
 
     # ── Delete account ────────────────────────────────────────────────────────
-    # pending_del_idx holds the row index awaiting confirmation
-    pending_del_idx <- reactiveVal(NULL)
+    # pending_del_user holds the username awaiting confirmation
+    pending_del_user <- reactiveVal(NULL)
 
     observeEvent(input$trs_del_click, {
-      idx      <- input$trs_del_click
       usuarios <- usuarios_rv()
-      req(!is.null(usuarios) && idx <= nrow(usuarios))
+      idx      <- .fila_usuario(usuarios, input$trs_del_click)
+      req(!is.null(idx))
 
       row      <- usuarios[idx, ]
       uname    <- row$username
@@ -891,7 +907,7 @@ tiersServer <- function(id, shared) {
         return()
       }
 
-      pending_del_idx(idx)
+      pending_del_user(uname)
 
       # Warn extra loudly when deleting a protected account
       extra_warning <- if (protegido) {
@@ -927,12 +943,18 @@ tiersServer <- function(id, shared) {
     })
 
     observeEvent(input$btn_confirm_delete, {
-      idx <- pending_del_idx()
-      req(!is.null(idx))
+      uname <- pending_del_user()
+      req(!is.null(uname))
       removeModal()
 
+      # The account named in the modal, wherever its row is now.
       usuarios <- usuarios_rv()
-      req(!is.null(usuarios) && idx <= nrow(usuarios))
+      idx      <- .fila_usuario(usuarios, uname)
+      if (is.null(idx)) {
+        pending_del_user(NULL)
+        showNotification(tr("niveles.usuarios.ya_no_esta"), type = "warning", duration = 5)
+        return()
+      }
 
       target_user <- usuarios[idx, "username"]
       target_tier <- usuarios[idx, "tier"]
@@ -945,7 +967,7 @@ tiersServer <- function(id, shared) {
             paste0("Eliminaci\u00f3n cancelada: debe existir al menos una cuenta ",
                    nivel_nombre(target_tier), "."),
             type = "error", duration = 5)
-          pending_del_idx(NULL)
+          pending_del_user(NULL)
           return()
         }
       }
@@ -962,7 +984,7 @@ tiersServer <- function(id, shared) {
       if (!saved) {
         showNotification("No se pudo guardar el cambio. Verifica la conexión e intenta de nuevo.",
                          type = "error", duration = 6)
-        pending_del_idx(NULL)
+        pending_del_user(NULL)
         return()
       }
       tryCatch(
@@ -974,8 +996,8 @@ tiersServer <- function(id, shared) {
         error = function(e) message("[TIERS] user count update failed: ", e$message)
       )
       .usuarios_local(all_u)
-      pending_del_idx(NULL)
-      selected_user_idx(NULL)
+      pending_del_user(NULL)
+      selected_user(NULL)
       showNotification(paste0("Cuenta '\u200b", target_user, "' desactivada."),
                        type = "message", duration = 4)
       log_action(
@@ -993,16 +1015,16 @@ tiersServer <- function(id, shared) {
     })
 
     # ── Perm editor ───────────────────────────────────────────────────────────
-    selected_user_idx <- reactiveVal(NULL)
+    # The username being edited, never a row position.
+    selected_user <- reactiveVal(NULL)
 
-    observeEvent(input$trs_edit_click, { selected_user_idx(input$trs_edit_click) })
-    observeEvent(input$btn_cancel_perms, { selected_user_idx(NULL) })
+    observeEvent(input$trs_edit_click, { selected_user(input$trs_edit_click) })
+    observeEvent(input$btn_cancel_perms, { selected_user(NULL) })
 
     output$perm_editor_ui <- renderUI({
-      idx <- selected_user_idx()
-      req(!is.null(idx))
       usuarios <- usuarios_rv()
-      req(!is.null(usuarios) && idx <= nrow(usuarios))
+      idx      <- .fila_usuario(usuarios, selected_user())
+      req(!is.null(idx))
       registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
       .tiers_perm_editor_ui(ns, usuarios[idx, ], viewer_tier = current_tier(),
                             config = tier_config_rv(),
@@ -1012,7 +1034,7 @@ tiersServer <- function(id, shared) {
     })
 
     observeEvent(input$edit_tier, {
-      req(!is.null(selected_user_idx()))
+      req(!is.null(selected_user()))
       base_perms <- get_tier_defaults(input$edit_tier)
       for (k in perm_visible_keys(isTRUE(tryCatch(shared$current_user_info()$is_staff,
                                                   error = function(e) FALSE))))
@@ -1020,10 +1042,14 @@ tiersServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     observeEvent(input$btn_save_perms, {
-      idx <- selected_user_idx()
-      req(!is.null(idx))
+      req(!is.null(selected_user()))
       usuarios <- usuarios_rv()
-      req(!is.null(usuarios) && idx <= nrow(usuarios))
+      idx      <- .fila_usuario(usuarios, selected_user())
+      if (is.null(idx)) {
+        selected_user(NULL)
+        showNotification(tr("niveles.usuarios.ya_no_esta"), type = "warning", duration = 5)
+        return()
+      }
 
       original_tier <- usuarios[idx, "tier"]
       new_tier      <- input$edit_tier %||% original_tier
@@ -1121,7 +1147,7 @@ tiersServer <- function(id, shared) {
         tryCatch(shared$permisos_version(shared$permisos_version() + 1L), error = function(e) NULL)
       }
 
-      selected_user_idx(NULL)
+      selected_user(NULL)
       showNotification("Cambios guardados.", type = "message", duration = 2)
       log_action(
         user        = shared$current_user(),
