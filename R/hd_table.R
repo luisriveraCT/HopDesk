@@ -362,7 +362,8 @@ HD_ACCIONES_FILA <- list(
   inactivar       = list(icono = "\U0001f6ab", clave = "tablas.accion.inactivar", estilo = "icono"),
   reactivar       = list(icono = "\U0001f504", clave = "tablas.accion.reactivar", estilo = "icono"),
   erp             = list(icono = "\U0001f50c", clave = "tablas.accion.erp",   estilo = "icono"),
-  deshacer        = list(icono = "\u21b6", clave = "tablas.accion.deshacer",  estilo = "icono"),
+  deshacer        = list(icono = "\u21b6", clave = "tablas.accion.deshacer",  estilo = "icono",
+                         confirmar = TRUE),
   detalle         = list(icono = "\u2139", clave = "tablas.accion.detalle",   estilo = "icono"),
   desactivar      = list(icono = "\u2298", clave = "tablas.accion.desactivar", estilo = "icono",
                          confirmar = TRUE, peligro = TRUE),
@@ -376,7 +377,9 @@ HD_ACCIONES_FILA <- list(
 # crear_provision is the only button with text: it opens the provision form
 # (it is neither "provision" = convert to payment, nor "agregar" = send to
 # Agenda). eliminar always goes through the confirmation bar, even for one
-# row (Luis: deletes and bulk actions confirm). grupo = TRUE: a group's row
+# row (Luis: deletes and bulk actions confirm). deshacer (Bancos: undo a
+# confirmation, an abono or a deletion) confirms the same way: one click put
+# a paid item back in the calendar (Luis, T12 P5). grupo = TRUE: a group's row
 # shows the button too, for all its rows (agregar: ＋ sends the ones not in
 # the Agenda yet; ✓, when all of them are, takes them all out), with
 # de = "grupo" in accion().
@@ -664,7 +667,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
   acc_fila     <- .hd_sin_pieza(tabla, "acciones_fila", "acc_fila",
                                 hd_acciones_fila_validar(acciones_fila), piezas_tabla)
   acc_fila_meta <- if (length(acc_fila)) hd_acciones_fila_meta(acc_fila) else NULL
-  if ("eliminar" %in% acc_fila) .hd_exigir_confirmar(tabla, piezas_tabla, "row action 'eliminar'")
+  for (a in acc_fila_meta) if (a$confirmar) .hd_exigir_confirmar(tabla, piezas_tabla, sprintf("row action '%s'", a$accion))
   acc_barra    <- .hd_sin_pieza(tabla, "acciones_barra", "barra_acc",
                                 hd_acciones_barra_validar(acciones_barra), piezas_tabla)
   for (a in acc_barra) if (a$confirmar) .hd_exigir_confirmar(tabla, piezas_tabla, sprintf("bar action '%s'", a$accion))

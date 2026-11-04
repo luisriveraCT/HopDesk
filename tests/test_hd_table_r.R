@@ -274,6 +274,12 @@ test_that("row actions for the Agenda (T06) and the catalogs (T07): titled, desa
   expect_identical(tail(names(HD_ACCIONES_FILA), 2), c("desactivar", "eliminar"))
 })
 
+test_that("deshacer confirms (Bancos, T12 P5: one click put a paid item back in the calendar)", {
+  expect_true(isTRUE(HD_ACCIONES_FILA$deshacer$confirmar))
+  expect_false(isTRUE(HD_ACCIONES_FILA$deshacer$peligro))
+  expect_true(hd_acciones_fila_meta("deshacer")[[1]]$confirmar)
+})
+
 test_that("icons in R/hd_table.R are written as escapes, not raw characters", {
   txt <- readLines("R/hd_table.R", encoding = "UTF-8", warn = FALSE)
   lineas <- grep("icono = \"", txt, value = TRUE)
