@@ -104,13 +104,57 @@ if (n_extra > 0L) {
   extra$fecha[n_extra] <- hoy - 400
   movs0 <- dplyr::bind_rows(movs0, extra)
 }
+# BANCOS_PAPELERA=1: two more movements, already deleted, for the Papelera
+# (T12b): a manual one, MOV-0901 (it gets ↶), and an imported one, MOV-0902
+# (it doesn't). Off by default: the Libro's test counts what is deleted.
+if (identical(Sys.getenv("BANCOS_PAPELERA"), "1")) {
+  borrados <- dplyr::bind_rows(
+    mov(901, "cta_nts_mxn", hoy - 2, abono = 2500, tipo = "manual_in", fuente = "manual", parte = "AJUSTE BORRADO"),
+    mov(902, "cta_ncs_mxn", hoy - 3, cargo = 640, parte = "IMPORTADO BORRADO SA"))
+  borrados$eliminado <- TRUE; borrados$eliminado_at <- as.POSIXct(paste(hoy - 1, "09:15:00"))
+  movs0 <- dplyr::bind_rows(movs0, borrados)
+}
 movs0 <- .normalize(movs0, .schema_bancos_movimientos)
 assign(paste0(CID, "/", S3_KEYS$bancos_movimientos), movs0, envir = .mem)
+
+# Historial (T12b): two live confirmations, one deleted (it goes to the
+# Papelera) and an undo's own "recovered" row (never listed); an active
+# abono. Papelera: one Calendario row (papelera_rv).
+conf <- function(id, empresa, parte, documento, importe, tipo, dias, eliminado = FALSE,
+                 eliminado_at = as.POSIXct(NA), ...)
+  tibble::tibble(confirmacion_id = id, agenda_item_id = paste0("AG-", id), empresa = empresa, parte = parte,
+                 documento = documento, codigo = NA_character_, importe = importe, moneda = "MXN",
+                 cuenta_id = "cta_nts_mxn", fecha = hoy - dias, tipo = tipo, mov_id = NA_character_,
+                 confirmado_at = as.POSIXct(paste(hoy - dias, "10:30:00")), eliminado = eliminado,
+                 eliminado_at = eliminado_at, provision_id = NA_character_, ...)
+conf0 <- .normalize(dplyr::bind_rows(
+  conf("CONF-1", "NTS", "ACEROS MONTERREY SA", "1001", 15000, "pago", 1),
+  conf("CONF-2", "NCS", "CLIENTE DOS SA", "2002", 7000, "cobro", 3),
+  conf("CONF-3", "NTS", "BORRADA SA", "3003", 500, "pago", 4, eliminado = TRUE,
+       eliminado_at = as.POSIXct(paste(hoy - 2, "11:00:00"))),
+  conf("CONF-4", "NTS", "DESHECHA SA", "4004", 800, "pago", 5, action = "recovered",
+       reverses_confirmacion_id = "CONF-0")), .schema_bancos_confirmados)
+assign(paste0(CID, "/", S3_KEYS$bancos_confirmados), conf0, envir = .mem)
+abonos0 <- .normalize(tibble::tibble(id = "AB-1", ledger = "AP", Empresa = "NTS", Moneda = "MXN", Documento = "5005",
+                                     Parte = "PROVEEDOR ABONO SA", importe = 1200, fecha_abono = hoy - 2, notas = NA_character_,
+                                     created_by = "luis", created_at = as.POSIXct(paste(hoy - 2, "12:00:00")),
+                                     status = "active"), .schema_abonos)
+assign(paste0(CID, "/", S3_KEYS$abonos), abonos0, envir = .mem)
+pap0 <- .normalize(tibble::tibble(id = "MAN-77", ledger = "AP", source = "manual", Empresa = "NTS", Moneda = "MXN",
+                                  Documento = "DOC-77", Parte = "PROVEEDOR CALENDARIO SA", Importe = 4321,
+                                  FechaEff = hoy - 6, deleted_by = "luis", deleted_at = as.POSIXct(paste(hoy - 3, "16:45:00")),
+                                  event_id = "EV-77", disposition = "deleted", action = "archived"), .schema_papelera)
+ctas0 <- ctas
+# HD_ARRANQUE_NULL = 1: the sources start NULL, as before S3 loads at
+# startup (tests/test_hd_table_arranque_null.R).
+if (identical(Sys.getenv("HD_ARRANQUE_NULL"), "1")) { movs0 <- NULL; conf0 <- NULL; abonos0 <- NULL; pap0 <- NULL; ctas0 <- NULL }
 
 # ── App ──────────────────────────────────────────────────────────────────────
 MOVS <- reactiveVal(movs0)                                   # one set for every session
 EXCEL <- reactiveVal("")
-CONF <- reactiveVal(.schema_bancos_confirmados())
+CONF <- reactiveVal(conf0)
+ABONOS <- reactiveVal(abonos0)
+PAP <- reactiveVal(pap0)
 ui <- fluidPage(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),
   shinyjs::useShinyjs(), app_styles(), tags$head(tags$script(src = "i18n.js")),
@@ -124,8 +168,8 @@ server <- function(input, output, session) {
     usuario = reactive("luis"),
     company_map = reactiveVal(c(NTS = "Networks Trucking", NCS = "Networks Crossdocking")),
     visible_initials = reactiveVal(NULL), bancos_movimientos = MOVS, bancos_confirmados = CONF,
-    conciliacion_rv = reactiveVal(tibble::tibble()), ctas_cuentas = reactiveVal(ctas),
-    papelera_rv = reactiveVal(NULL), abonos_db = reactiveVal(tibble::tibble()), manual_inv = reactiveVal(NULL),
+    conciliacion_rv = reactiveVal(tibble::tibble()), ctas_cuentas = reactiveVal(ctas0),
+    papelera_rv = PAP, abonos_db = ABONOS, manual_inv = reactiveVal(NULL),
     pasivos_provisions_db = reactiveVal(NULL), sap_data = reactiveVal(list()), empresas_db = reactiveVal(NULL),
     suppress_ledger_prov_refresh = reactiveVal(FALSE))
   # What the store holds as deleted, after each save.
@@ -135,8 +179,19 @@ server <- function(input, output, session) {
     elim <- if (is.null(guardado)) character(0) else sort(guardado$id[guardado$eliminado %in% TRUE])
     pap  <- get0(paste0(CID, "/", S3_KEYS$bancos_papelera), envir = .mem)
     arch <- if (is.null(pap) || !nrow(pap)) character(0) else sort(pap$mov_id)
+    # What the store holds of confirmations (deleted ones, and the ones an
+    # undo reversed) and of abonos (voided).
+    CONF(); ABONOS()
+    cg <- get0(paste0(CID, "/", S3_KEYS$bancos_confirmados), envir = .mem)
+    elim_c <- if (is.null(cg)) character(0) else sort(cg$confirmacion_id[cg$eliminado %in% TRUE])
+    rev_c  <- if (is.null(cg)) character(0) else sort(cg$reverses_confirmacion_id[cg$action %in% "recovered"])
+    ag <- get0(paste0(CID, "/", S3_KEYS$abonos), envir = .mem)
+    anul <- if (is.null(ag)) character(0) else sort(ag$id[ag$status %in% "voided"])
     session$sendCustomMessage("registro", paste(sprintf("eliminados: %s", paste(elim, collapse = ",")), EXCEL(),
-                                                sprintf("archivados: %s", paste(arch, collapse = ",")), sep = "\n"))
+                                                sprintf("archivados: %s", paste(arch, collapse = ",")),
+                                                sprintf("conf_eliminadas: %s", paste(elim_c, collapse = ",")),
+                                                sprintf("conf_deshechas: %s", paste(rev_c, collapse = ",")),
+                                                sprintf("abonos_anulados: %s", paste(anul, collapse = ",")), sep = "\n"))
   })
   observeEvent(input$fallar_escritura, .falla_escritura <<- as.character(unlist(input$fallar_escritura)),
                ignoreNULL = FALSE)

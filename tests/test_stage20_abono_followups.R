@@ -187,9 +187,13 @@ suppressPackageStartupMessages({ library(dplyr); library(tibble) })
        "void_abono() with no ids is a true no-op (returns the input unchanged)")
 
   txt <- readLines("R/bancos_module.R", warn = FALSE)
-  .chk(any(grepl('ns\\("undo_abono"\\)', txt)), TRUE,
-       "historial_tbl now renders a Deshacer button wired to undo_abono for active abono rows")
-  .chk(any(grepl('Tipo\\s*=\\s*.*badge bg-warning text-dark.*Abono', txt)), TRUE,
+  # Since T12b the Historial is hd_table "historial_conf": an active abono is
+  # an "abono:" row with ↶ (deshacer), which calls .bnc_deshacer_abono().
+  .chk(any(grepl('filas\\$abono <- \\.bnc_hist_filas\\("abono"', txt)) &&
+         any(grepl('if \\(escribe\\) "deshacer" else ""', txt)) &&
+         any(grepl('fuente == "abono"\\) \\.bnc_deshacer_abono\\(clave\\)', txt)), TRUE,
+       "the Historial gives active abono rows a Deshacer wired to the undo_abono handler")
+  .chk(any(grepl('abono = list\\(texto = "tablas\\.bancos\\.abono_parcial"', txt)), TRUE,
        "active abonos are shown with a distinct 'Abono' badge, not confused with Pago/Cobro")
 
   start <- grep("\\.bnc_deshacer_abono <- function\\(ab_id\\)", txt)   # a function of the id since T12b

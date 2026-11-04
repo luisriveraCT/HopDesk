@@ -28,7 +28,8 @@ FIXTURES <- c(
   "Registros: Actividad, Bitácora Global, Archivos"    = "registros",
   "Agenda de Hoy: Pagos y Cobros"                      = "agenda",
   "Detalle del día: Resumen y Detalle"                 = "dia",
-  "Vencidos y la lupa"                                 = "vencidos"
+  "Vencidos y la lupa"                                 = "vencidos",
+  "Bancos: Libro, Historial, Papelera, Cuentas"        = "bancos"
 )
 
 arrancar <- function(fixture) callr::r(function(repo, fixture) {

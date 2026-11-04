@@ -636,22 +636,7 @@ bancosUI <- function(id) {
         bslib::navset_tab(
           bslib::nav_panel(
             "Historial de confirmaciones",
-            div(class = "p-3",
-              div(class = "d-flex gap-2 mb-2 flex-wrap",
-                selectInput(ns("hist_empresa_filter"), NULL,
-                            choices = c("Todas las empresas" = ""),
-                            width = "200px"),
-                selectInput(ns("hist_tipo_filter"), NULL,
-                            choices = c("Pagos y cobros" = "",
-                                        "Solo pagos" = "pago",
-                                        "Solo cobros" = "cobro"),
-                            width = "180px"),
-                textInput(ns("hist_search"), NULL,
-                          placeholder = "Buscar parte, documento…",
-                          width = "250px")
-              ),
-              DT::dataTableOutput(ns("historial_tbl"))
-            )
+            div(class = "p-3", hd_table_ui(ns("historial")))
           ),
           bslib::nav_panel(
             "Papelera",
@@ -891,13 +876,6 @@ bancosServer <- function(id, shared) {
         selected = if (cur_sel %in% names(ch_full) || cur_sel %in% ch_full) cur_sel else "__todas__"
       )
       updateSelectInput(session, "import_cuenta", choices = ch_import)
-    })
-
-    # Update historial empresa filter
-    observe({
-      emps <- c("Todas las empresas" = "",
-                sort(unique(confirmados()$empresa)))
-      updateSelectInput(session, "hist_empresa_filter", choices = emps)
     })
 
     # ── Update reasignar session choices ──────────────────────────────────────
@@ -3137,136 +3115,92 @@ bancosServer <- function(id, shared) {
       )
     }, ignoreInit = TRUE)
 
-    # ── Tab 3: Historial ─────────────────────────────────────────────────────
-    output$historial_tbl <- DT::renderDataTable({
-      # Primary source: bancos_confirmados (active, not deleted)
-      # (an undo's own "recovered" row is not a confirmation: listing it
-      # offered a second Deshacer on the undo itself)
-      conf <- confirmaciones_vigentes(confirmados()) |>
-        dplyr::mutate(.legacy = FALSE)
+    # ── Historial de confirmaciones (hd_table "historial_conf", T12b) ───────
+    # Three sources, as before: the live confirmations (an undo's own
+    # "recovered" row is not one: listing it offered a second Deshacer on
+    # the undo itself), the legacy conciliación (items confirmed before
+    # bancos_confirmados existed; not repeated by empresa + documento) and
+    # the active abonos. Each row's id says which source it is ("conf:",
+    # "legado:", "abono:"), so ↶ and ✕ act on that row by id. Filters by
+    # empresa and tipo, and the search, are the engine's (T12 P4); the rows
+    # come newest confirmed first, with "Confirmado el" (P6).
+    # One source's rows; a column the source lacks comes as NA.
+    .bnc_hist_filas <- function(fuente, ids, confirmado_el, fecha, empresa, parte, documento, importe, moneda, tipo,
+                                origen, acciones) {
+      n <- length(ids)
+      v <- function(x, como, na) { x <- if (length(x)) x else rep(na, n); rep(como(x), length.out = n) }
+      data.frame(id = if (n) paste0(fuente, ":", ids) else character(0),
+                 ConfirmadoEl = v(confirmado_el, as.POSIXct, NA_real_), Fecha = v(fecha, as.Date, NA_real_),
+                 Empresa = v(empresa, as.character, NA), Parte = v(parte, as.character, NA),
+                 Documento = v(documento, as.character, NA), Importe = v(importe, as.numeric, NA),
+                 Moneda = v(moneda, as.character, NA), Tipo = v(tipo, as.character, NA),
+                 Origen = v(origen, as.character, NA), .acciones = v(acciones, as.character, NA),
+                 stringsAsFactors = FALSE, check.names = FALSE)
+    }
+    historial_datos <- reactive({
+      escribe <- .bnc_puede_ver_escritura()
+      conf <- confirmaciones_vigentes(confirmados())
+      filas <- list(
+        .bnc_hist_filas("conf", conf$confirmacion_id, conf$confirmado_at, conf$fecha, conf$empresa,
+                        conf$parte, conf$documento, conf$importe, conf$moneda, conf$tipo, "",
+                        if (escribe) "deshacer,eliminar" else ""))
 
-      # Secondary source: conciliacion_rv (legacy path — items confirmed before
-      # bancos_confirmados existed). Deduplicate by empresa + documento pair.
       conc_raw <- tryCatch(shared$conciliacion_rv(), error = function(e) NULL)
       if (!is.null(conc_raw) && nrow(conc_raw) > 0) {
-        bc_keys <- paste(tolower(trimws(conf$empresa)),
-                         tolower(trimws(conf$documento)), sep = "|")
-        conc_norm <- dplyr::transmute(conc_raw,
-          confirmacion_id = id,
-          empresa         = tolower(trimws(Empresa)),
-          parte           = tolower(trimws(Parte)),
-          documento       = tolower(trimws(Documento)),
-          moneda          = Moneda,
-          importe         = Importe,
-          fecha           = FechaPago,
-          tipo            = tipo,
-          confirmado_at   = created_at,
-          .legacy         = TRUE
-        )
-        conc_norm <- dplyr::filter(conc_norm,
-          !paste(empresa, documento, sep = "|") %in% bc_keys)
-        if (nrow(conc_norm)) conf <- dplyr::bind_rows(conf, conc_norm)
+        bc_keys <- paste(tolower(trimws(conf$empresa)), tolower(trimws(conf$documento)), sep = "|")
+        conc <- conc_raw[!paste(tolower(trimws(conc_raw$Empresa)), tolower(trimws(conc_raw$Documento)),
+                                sep = "|") %in% bc_keys, , drop = FALSE]
+        # No buttons: they were confirmed by the old route.
+        if (nrow(conc))
+          filas$legado <- .bnc_hist_filas("legado", conc$id, conc$created_at, conc$FechaPago,
+                                          trimws(conc$Empresa), trimws(conc$Parte), trimws(conc$Documento),
+                                          conc$Importe, conc$Moneda, conc$tipo, "legado", "")
       }
 
-      # Filters: empresa, tipo, free-text search
-      emp_f    <- input$hist_empresa_filter %||% ""
-      tipo_f   <- input$hist_tipo_filter    %||% ""
-      search_q <- trimws(input$hist_search  %||% "")
-      if (nzchar(emp_f))  conf <- dplyr::filter(conf, tolower(empresa) == tolower(emp_f))
-      if (nzchar(tipo_f)) conf <- dplyr::filter(conf, tipo == tipo_f)
-      if (nzchar(search_q)) {
-        q <- tolower(search_q)
-        conf <- dplyr::filter(conf,
-          grepl(q, tolower(parte      %||% ""), fixed = TRUE) |
-          grepl(q, tolower(documento  %||% ""), fixed = TRUE) |
-          grepl(q, tolower(empresa    %||% ""), fixed = TRUE)
-        )
+      # Active abonos (Abono Parcial; abonos_db, not bancos_confirmados):
+      # shown in this same history so their ↶ lives next to every other undo.
+      ab <- tryCatch(shared$abonos_db(), error = function(e) NULL)
+      if (!is.null(ab) && nrow(ab)) {
+        ab <- ab[ab$status %in% "active", , drop = FALSE]
+        if (nrow(ab))
+          filas$abono <- .bnc_hist_filas("abono", ab$id, ab$created_at, ab$fecha_abono, ab$Empresa,
+                                         ab$Parte, ab$Documento, ab$importe, ab$Moneda, "abono", "",
+                                         if (escribe) "deshacer" else "")
       }
+      h <- do.call(rbind, unname(filas))
+      h[order(h$ConfirmadoEl, decreasing = TRUE, na.last = TRUE), , drop = FALSE]
+    })
 
-      if (!nrow(conf)) {
-        return(DT::datatable(
-          data.frame(Fecha=character(), Empresa=character(), Parte=character(),
-                     Documento=character(), Importe=character(),
-                     Moneda=character(), Tipo=character(), Acciones=character()),
-          escape = FALSE, rownames = FALSE,
-          options = list(dom = "t",
-                         language = list(emptyTable = "Sin confirmaciones"))
-        ))
-      }
+    t_hist <- hd_table_server("historial", tabla = "historial_conf", datos = historial_datos,
+      columnas = list(col_fecha_hora("ConfirmadoEl", "tablas.bancos.confirmado_el"),
+                      col_fecha("Fecha", "tablas.bancos.fecha"),
+                      col_empresa("Empresa", "tablas.facturas.empresa"),
+                      col_texto("Parte", "tablas.facturas.parte"),
+                      col_texto("Documento", "tablas.facturas.documento", recorte = FALSE),
+                      col_dinero("Importe", "tablas.facturas.importe", moneda = "Moneda"),
+                      col_texto("Moneda", "tablas.facturas.moneda", recorte = FALSE),
+                      col_insignia("Tipo", "tablas.facturas.tipo", mapa = list(
+                        pago  = list(texto = "tablas.bancos.pago",  tono = "rojo"),
+                        cobro = list(texto = "tablas.bancos.cobro", tono = "exito"),
+                        abono = list(texto = "tablas.bancos.abono_parcial", tono = "aviso"))),
+                      col_insignia("Origen", "tablas.bancos.origen", mapa = list(
+                        legado = list(texto = "tablas.bancos.legado", tono = "neutro")))),
+      piezas = "acc_fila", acciones_fila = c("deshacer", "eliminar"),
+      filtros = list(list(campo = "Empresa"), list(campo = "Tipo")),
+      vacio = "tablas.bancos.vacio_historial")
 
-      tbl <- conf |>
-        dplyr::arrange(dplyr::desc(confirmado_at)) |>
-        dplyr::mutate(
-          Fecha     = format(as.Date(fecha), "%d/%m/%Y"),
-          Empresa   = htmltools::htmlEscape(empresa   %||% ""),
-          Parte     = htmltools::htmlEscape(parte     %||% ""),
-          Documento = htmltools::htmlEscape(documento %||% ""),
-          Importe   = fmt_money(importe),
-          Moneda    = moneda %||% "",
-          Tipo      = ifelse(tipo == "pago",
-            '<span class="badge bg-danger">Pago</span>',
-            '<span class="badge bg-success">Cobro</span>'),
-          .sort_at  = confirmado_at,
-          Acciones  = ifelse(
-            .legacy,
-            '<span class="badge bg-secondary" title="Confirmado por la ruta anterior">Legado</span>',
-            paste0(
-              sprintf(
-            '<button class="bnc-btn-xs bnc-btn-xs--undo" title="Deshacer confirmaci\u00f3n y devolver al calendario" onclick="Shiny.setInputValue(\'%s\', {id:\'%s\', nonce:Math.random()}, {priority:\'event\'})">&#8630;</button>',
-                ns("undo_conf"), confirmacion_id),
-              sprintf('<button class="bnc-btn-xs" onclick="Shiny.setInputValue(\'%s\', {id:\'%s\', nonce:Math.random()}, {priority:\'event\'})">&#128465;</button>',
-                ns("delete_conf"), confirmacion_id)
-            )
-          )
-        ) |>
-        dplyr::select(Fecha, Empresa, Parte, Documento, Importe, Moneda, Tipo, Acciones, .sort_at)
-
-      # Active abonos (Abono Parcial confirmations) \u2014 a separate table
-      # (abonos_db, not bancos_confirmados), but shown in this same history
-      # so "Deshacer" for a partial payment lives next to every other undo
-      # action instead of a whole new screen (found 2026-07-24's audit:
-      # void_abono() existed but nothing ever called it).
-      ab_all <- tryCatch(shared$abonos_db(), error = function(e) NULL) %||% tibble::tibble()
-      ab_active <- if (nrow(ab_all)) dplyr::filter(ab_all, status == "active") else ab_all
-      if (nzchar(emp_f))  ab_active <- dplyr::filter(ab_active, tolower(Empresa) == tolower(emp_f))
-      if (nzchar(tipo_f)) {
-        want_ledger <- if (tipo_f == "pago") "AP" else "AR"
-        ab_active <- dplyr::filter(ab_active, ledger == want_ledger)
-      }
-      if (nzchar(search_q)) {
-        q <- tolower(search_q)
-        ab_active <- dplyr::filter(ab_active,
-          grepl(q, tolower(Parte     %||% ""), fixed = TRUE) |
-          grepl(q, tolower(Documento %||% ""), fixed = TRUE) |
-          grepl(q, tolower(Empresa   %||% ""), fixed = TRUE)
-        )
-      }
-      if (nrow(ab_active)) {
-        ab_tbl <- ab_active |>
-          dplyr::mutate(
-            Fecha     = format(as.Date(fecha_abono), "%d/%m/%Y"),
-            Empresa   = htmltools::htmlEscape(Empresa   %||% ""),
-            Parte     = htmltools::htmlEscape(Parte     %||% ""),
-            Documento = htmltools::htmlEscape(Documento %||% ""),
-            Importe   = fmt_money(importe),
-            Moneda    = Moneda %||% "",
-            Tipo      = '<span class="badge bg-warning text-dark">Abono</span>',
-            .sort_at  = as.POSIXct(created_at),
-            Acciones  = sprintf(
-              '<button class="bnc-btn-xs bnc-btn-xs--undo" title="Deshacer abono y restaurar el saldo" onclick="Shiny.setInputValue(\'%s\', {id:\'%s\', nonce:Math.random()}, {priority:\'event\'})">&#8630;</button>',
-              ns("undo_abono"), id)
-          ) |>
-          dplyr::select(Fecha, Empresa, Parte, Documento, Importe, Moneda, Tipo, Acciones, .sort_at)
-        tbl <- dplyr::bind_rows(tbl, ab_tbl)
-      }
-
-      tbl <- tbl |>
-        dplyr::arrange(dplyr::desc(.sort_at)) |>
-        dplyr::select(-.sort_at)
-
-      DT::datatable(tbl, escape = FALSE, rownames = FALSE, selection = "none",
-        options = list(pageLength = 25, scrollX = TRUE, dom = "lrtip"))
-    }, server = TRUE)
+    # ↶ undoes a confirmation (back to the calendar) or an abono; ✕ asks
+    # (its own modal, which says what goes with it) to delete a
+    # confirmation. Both already went through the table's confirmation.
+    observeEvent(t_hist$accion(), {
+      a <- t_hist$accion()
+      id <- as.character(a$ids[1] %||% "")
+      fuente <- sub(":.*$", "", id)
+      clave  <- sub("^[^:]*:", "", id)
+      if (identical(a$accion, "deshacer") && fuente == "conf") .bnc_deshacer_confirmacion(clave)
+      else if (identical(a$accion, "deshacer") && fuente == "abono") .bnc_deshacer_abono(clave)
+      else if (identical(a$accion, "eliminar") && fuente == "conf") .bnc_pedir_eliminar_conf(clave)
+    }, ignoreInit = TRUE)
 
     # \u2500\u2500 Deshacer eliminaci\u00f3n de movimiento manual \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     # Restores a manually-entered bank movement that was deleted by mistake
@@ -3374,7 +3308,6 @@ bancosServer <- function(id, shared) {
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
     }
-    observeEvent(input$undo_abono, .bnc_deshacer_abono(input$undo_abono$id), ignoreInit = TRUE)
 
     .bnc_pedir_eliminar_conf <- function(conf_id) {
       conf    <- confirmados()
@@ -3411,7 +3344,6 @@ bancosServer <- function(id, shared) {
         easyClose = TRUE
       ))
     }
-    observeEvent(input$delete_conf, .bnc_pedir_eliminar_conf(input$delete_conf$id), ignoreInit = TRUE)
 
     observeEvent(input$do_delete_conf_confirm, {
       if (!puede_o_avisa(shared, "can_manage_bancos")) return()
@@ -3666,7 +3598,6 @@ bancosServer <- function(id, shared) {
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
     }
-    observeEvent(input$undo_conf, .bnc_deshacer_confirmacion(input$undo_conf$id), ignoreInit = TRUE)
 
     # ── Tab 3: Papelera ───────────────────────────────────────────────────────
     output$papelera_tbl <- DT::renderDataTable({
