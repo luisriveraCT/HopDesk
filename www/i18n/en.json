@@ -97,6 +97,8 @@
   "tablas.edicion.menor": "Below the minimum ({min})",
   "tablas.edicion.no_numero": "Type an amount, e.g. 1250.50",
   "tablas.edicion.editable": "Click to type the amount",
+  "tablas.dinero.millones": "{n}M",
+  "tablas.dinero.miles": "{n}K",
   "tablas.pagos": "Payments",
   "tablas.sumador.visible": "Visible",
   "tablas.sumador.seleccion.uno": "{n} selected",

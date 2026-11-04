@@ -30,6 +30,20 @@
   col
 }
 
+# fija (T17a, piece `columna_fija`): the column stays at the left while the
+# table scrolls sideways (the name of a matrix of periods: Flujo de caja,
+# Pasivos). Only the first columns, one after another, and never an
+# optional one (hd_table_server checks it).
+.hd_fija <- function(col, fija) {
+  if (!is.logical(fija) || length(fija) != 1L || is.na(fija))
+    stop(sprintf("col_%s(\"%s\"): `fija` must be TRUE or FALSE.", col$tipo, col$campo), call. = FALSE)
+  if (fija) col$fija <- TRUE
+  col
+}
+
+# The tones a cell can take (tono_celda): the badges' own (www/hdtable.css).
+HD_TONOS_CELDA <- c("exito", "aviso", "peligro", "info", "neutro", "morado")
+
 # Dictionary key -> text; anything that isn't a key is used as-is.
 .hd_texto <- function(x) {
   if (is.character(x) && length(x) == 1L && !is.null(i18n_dict("es")[[x]])) tr(x) else x
@@ -53,15 +67,16 @@
 # ancho: the column's width in px, for short values that would otherwise
 # take a share of the spare width like any other column (Documento): the
 # rest of the value is cut, and the bubble shows it whole.
-col_texto <- function(campo, titulo = NULL, recorte = TRUE, opcional = FALSE, visible = TRUE, ancho = NULL) {
+col_texto <- function(campo, titulo = NULL, recorte = TRUE, opcional = FALSE, visible = TRUE, ancho = NULL,
+                      fija = FALSE) {
   if (!is.null(ancho) && !(is.numeric(ancho) && length(ancho) == 1L && !is.na(ancho) && ancho > 0))
     stop(sprintf("col_texto(\"%s\"): `ancho` must be one positive number (px).", campo), call. = FALSE)
-  .hd_opcional(.hd_col("texto", campo, titulo, "izquierda", recorte = isTRUE(recorte), ancho = ancho,
+  .hd_fija(.hd_opcional(.hd_col("texto", campo, titulo, "izquierda", recorte = isTRUE(recorte), ancho = ancho,
     valores = function(x) {
       txt <- as.character(x)
       txt[is.na(txt)] <- ""
       list(mostrar = txt, orden = .hd_plano(txt), copiar = txt)
-    }), opcional, visible)
+    }), opcional, visible), fija)
 }
 
 # editable (T14, piece `edicion_celda`): an amount per row typed in the cell
@@ -72,9 +87,31 @@ col_texto <- function(campo, titulo = NULL, recorte = TRUE, opcional = FALSE, vi
 # .menor). The column's own value is where the edit starts. A table with an
 # editable column must have the piece, and that column must be the one it
 # sums (hd_table_server checks both).
+#
+# A matrix of periods (T17a; Flujo de caja, Pasivos):
+#   formato = "compacto"  (piece dinero_compacto) "$4.5M", "$802K", "$950";
+#                         the bubble, Copiar and the Excel keep the full amount
+#   cero = "vacio"        (dinero_compacto) a 0 paints nothing (it still
+#                         copies and exports 0)
+#   tono = "signo"        (piece tono_celda) green above 0, red below, grey at 0
+#   tono = "<campo>"      (tono_celda) the tone each row's field names, one of
+#                         HD_TONOS_CELDA (anything else: no tone); a state, so
+#                         it tints the cell too
+#   destacar = TRUE       (tono_celda) the whole column shaded (today's)
+#   fija = TRUE           (columna_fija) see .hd_fija()
 col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, opcional = FALSE, visible = TRUE,
-                       editable = NULL) {
-  .hd_opcional(.hd_col("dinero", campo, titulo, "derecha", recorte = FALSE,
+                       editable = NULL, fija = FALSE, formato = "completo", cero = "cifra", tono = NULL,
+                       destacar = FALSE) {
+  donde <- sprintf("col_dinero(\"%s\")", campo)
+  if (!(is.character(formato) && length(formato) == 1L && formato %in% c("completo", "compacto")))
+    stop(donde, ": `formato` must be \"completo\" or \"compacto\".", call. = FALSE)
+  if (!(is.character(cero) && length(cero) == 1L && cero %in% c("cifra", "vacio")))
+    stop(donde, ": `cero` must be \"cifra\" or \"vacio\".", call. = FALSE)
+  if (!is.null(tono) && !(is.character(tono) && length(tono) == 1L && !is.na(tono) && nzchar(tono)))
+    stop(donde, ": `tono` must be \"signo\" or the name of a field of the row.", call. = FALSE)
+  if (!is.logical(destacar) || length(destacar) != 1L || is.na(destacar))
+    stop(donde, ": `destacar` must be TRUE or FALSE.", call. = FALSE)
+  col <- .hd_fija(.hd_opcional(.hd_col("dinero", campo, titulo, "derecha", recorte = FALSE,
     moneda = moneda, sumar = isTRUE(sumar), editable = .hd_editable_validar(editable, campo),
     valores = function(x) {
       # Round first: -0.001 must show "$0.00" and copy "0", not "-$0.00" / "-0"
@@ -89,8 +126,47 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, op
       mostrar[ok] <- paste0(ifelse(x[ok] < 0, "-", ""), "$", miles)
       copiar <- character(length(x))
       copiar[ok] <- sub("\\.$", "", sub("0+$", "", sprintf("%.2f", x[ok])))
-      list(mostrar = mostrar, orden = x, copiar = copiar)
-    }), opcional, visible)
+      v <- list(mostrar = mostrar, orden = x, copiar = copiar)
+      if (formato == "compacto") {
+        v$completo <- mostrar
+        v$mostrar  <- .hd_dinero_compacto(x)
+      }
+      if (cero == "vacio") {
+        v$mostrar[ok & x == 0] <- ""
+        if (!is.null(v$completo)) v$completo[ok & x == 0] <- ""
+      }
+      if (identical(tono, "signo"))
+        v$tono <- ifelse(!ok, "", ifelse(x > 0, "exito", ifelse(x < 0, "peligro", "neutro")))
+      v
+    }), opcional, visible), fija)
+  # Only what a column asks for travels: no other table's message changes.
+  if (formato != "completo") col$formato <- formato
+  if (cero != "cifra") col$cero <- cero
+  if (!is.null(tono)) col$tono <- tono
+  if (destacar) col$destacar <- TRUE
+  col
+}
+
+# "$4.5M" / "$802K" / "$950" (dinero_compacto): one decimal in millions, none
+# below. The unit is chosen by what the amount rounds to, so 999,600 is
+# "$1.0M", not "$1000K", and 999.6 is "$1K", not "$1,000". Halves round up
+# (2,500 is "$3K"): sprintf alone rounds them to even, and 1,500 and 2,500
+# both read "$2K". One dictionary lookup per unit, filled in vectorized (a
+# matrix has tens of thousands of cells).
+.hd_dinero_compacto <- function(x) {
+  out <- character(length(x))
+  ok  <- !is.na(x)
+  ax  <- abs(x[ok])
+  m   <- ax >= 999500
+  k   <- !m & ax >= 999.5
+  u   <- !m & !k
+  arriba <- function(v) floor(v + 0.5 + 1e-9)   # 1e-9: 4,450,000 / 1e5 is 44.4999...
+  txt <- character(length(ax))
+  txt[m] <- stringi::stri_replace_all_fixed(tr("tablas.dinero.millones"), "{n}", sprintf("%.1f", arriba(ax[m] / 1e5) / 10))
+  txt[k] <- stringi::stri_replace_all_fixed(tr("tablas.dinero.miles"), "{n}", sprintf("%.0f", arriba(ax[k] / 1e3)))
+  txt[u] <- gsub("(\\d)(?=(\\d{3})+$)", "\\1,", sprintf("%.0f", arriba(ax[u])), perl = TRUE)
+  out[ok] <- paste0(ifelse(x[ok] < 0, "-", ""), "$", txt)
+  out
 }
 
 .hd_editable_validar <- function(editable, campo) {
@@ -241,8 +317,9 @@ col_insignia <- function(campo, titulo = NULL, mapa = list(), opcional = FALSE, 
 # the full name (`completo`); sorting, copying and filters keep the value as
 # it came. The day modal gets names ("Networks Crossdocking Services") that
 # made its table scroll sideways (T09).
-col_empresa <- function(campo = "Empresa", titulo = NULL, opcional = FALSE, visible = TRUE, iniciales = NULL) {
-  col <- col_texto(campo, titulo, recorte = FALSE, opcional = opcional, visible = visible)
+col_empresa <- function(campo = "Empresa", titulo = NULL, opcional = FALSE, visible = TRUE, iniciales = NULL,
+                        fija = FALSE) {
+  col <- col_texto(campo, titulo, recorte = FALSE, opcional = opcional, visible = visible, fija = fija)
   col$tipo <- "empresa"
   if (length(iniciales)) {
     texto <- col$valores
@@ -334,6 +411,11 @@ hd_validar_columnas <- function(columnas, datos) {
       stop(sprintf("hd_table: col_dinero(\"%s\") editable$%s names '%s', which is not in the data.",
                    col$campo, k, lim), call. = FALSE)
   }
+  # tono = "<campo>": each row's tone comes from that field (tono_celda).
+  for (col in columnas)
+    if (!is.null(col$tono) && !identical(col$tono, "signo") && !col$tono %in% names(datos))
+      stop(sprintf("hd_table: col_dinero(\"%s\") tono names '%s', which is not in the data.",
+                   col$campo, col$tono), call. = FALSE)
   invisible(TRUE)
 }
 
@@ -373,6 +455,11 @@ hd_columnas_meta <- function(columnas) {
                         mayor = .hd_texto(propio %||% "tablas.edicion.mayor"),
                         menor = .hd_texto(propio %||% "tablas.edicion.menor"))
    }
+   # Likewise (T17a): only a fixed or shaded column says so.
+   if (isTRUE(col$fija)) m$fija <- TRUE
+   if (isTRUE(col$destacar)) m$destacar <- TRUE
+   # The sign colours the text; a state (a field) tints the cell too.
+   if (!is.null(col$tono)) m$tono <- if (identical(col$tono, "signo")) "signo" else "estado"
    m
   })
 }
@@ -443,6 +530,13 @@ hd_filas <- function(datos, columnas, id_col = "id") {
       if (!is.null(col$editable)) {
         v$min <- I(.hd_editable_limite(col$editable$min, datos))
         v$max <- I(.hd_editable_limite(col$editable$max, datos))
+      }
+      # tono = "<campo>" (tono_celda, T17a): the row's own tone, only from
+      # the closed list; anything else paints none.
+      if (!is.null(col$tono) && !identical(col$tono, "signo")) {
+        tn <- as.character(datos[[col$tono]])
+        tn[is.na(tn) | !tn %in% HD_TONOS_CELDA] <- ""
+        v$tono <- I(tn)
       }
       v
     })

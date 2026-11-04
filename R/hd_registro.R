@@ -13,7 +13,7 @@ hd_clases <- list(
   E = list(siempre = c("texto", "copiar_celda", "encabezado_fijo", "contador", "insignias", "confirmar", "copiar_tsv"),
        opcional = c("recorte", "multilinea", "columna_fija", "casillas", "sumador_vis", "subtotales", "fichas", "ordenar", "buscar", "acc_fila", "edicion_celda", "copiar_tabla")),
   F = list(siempre = c("texto", "recorte", "encabezado_fijo", "columna_fija", "subtotales", "fichas", "buscar", "filtros", "agrupar", "nav_periodo", "insignias", "tachado", "provision", "semaforo", "adjuntos", "acc_fila", "confirmar", "detalle", "excel"),
-       opcional = c("copiar_celda", "densidad", "contador", "expandir", "etiquetas", "copiar_tsv"))
+       opcional = c("copiar_celda", "densidad", "contador", "expandir", "etiquetas", "copiar_tsv", "tono_celda", "dinero_compacto"))
 )
 
 hd_registro <- list(

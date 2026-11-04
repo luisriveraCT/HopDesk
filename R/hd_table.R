@@ -47,8 +47,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=24"),
-    htmltools::tags$script(src = "hdtable.js?v=35")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=25"),
+    htmltools::tags$script(src = "hdtable.js?v=36")
   ))
 }
 
@@ -544,6 +544,33 @@ hd_columna_editable <- function(columnas, tabla, piezas) {
   ed[[1]]
 }
 
+# ── Matrix base (T17a): columna_fija, tono_celda, dinero_compacto ───────────
+# A column that asks for one of them needs the piece, like edicion_celda:
+# never dropped silently. Fixed columns are the first ones, one after the
+# other, and never optional (a hidden one would leave a gap at the left).
+hd_columnas_piezas <- function(columnas, tabla, piezas) {
+  exigir <- function(pieza, usa, que) {
+    cols <- Filter(usa, columnas)
+    if (length(cols) && !pieza %in% piezas)
+      stop(sprintf("hd_table '%s': col_*(\"%s\") %s but the table doesn't have the '%s' piece.",
+                   tabla, cols[[1]]$campo, que, pieza), call. = FALSE)
+  }
+  exigir("columna_fija", function(c) isTRUE(c$fija), "is fija")
+  exigir("tono_celda", function(c) !is.null(c$tono) || isTRUE(c$destacar), "has a tono or destacar")
+  exigir("dinero_compacto", function(c) !is.null(c$formato) || !is.null(c$cero), "is compacto or cero = \"vacio\"")
+  fija <- vapply(columnas, function(c) isTRUE(c$fija), logical(1))
+  if (any(fija)) {
+    if (any(diff(fija) > 0) || !fija[1])
+      stop(sprintf("hd_table '%s': fixed columns (fija = TRUE) must be the first ones, one after the other.", tabla),
+           call. = FALSE)
+    opc <- Filter(function(c) isTRUE(c$fija) && isTRUE(c$opcional), columnas)
+    if (length(opc))
+      stop(sprintf("hd_table '%s': col_*(\"%s\") can't be both fija and opcional.", tabla, opc[[1]]$campo),
+           call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
 # The amounts typed (the browser's ns("ediciones"): ids and valores), checked
 # again against the data as it is now: ids no longer there, or locked, drop
 # out (like the selection), and `valido` comes from each row's current
@@ -651,7 +678,8 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
   cols_fijas   <- if (is.function(columnas)) list() else columnas
   if (!is.function(columnas)) hd_columnas_meta(columnas)   # fails early on a bad spec
   hd_columna_editable(cols_fijas, tabla, piezas_tabla)
-  # textos = list(contador = <plural key>, sin_bloqueadas = TRUE): the
+  hd_columnas_piezas(cols_fijas, tabla, piezas_tabla)
+  # textos =list(contador = <plural key>, sin_bloqueadas = TRUE): the
   # table's own counter text ("594 facturas vencidas o con vencimiento hoy")
   # instead of its class's -- section bands keep the class's ("10 facturas")
   # -- and, with sin_bloqueadas, a count without the locked (paid) rows.
@@ -714,6 +742,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         cols <- columnas_r()
         if (is.function(columnas) && !is.null(periodo)) hd_periodo_validar(periodo, cols)
         if (is.function(columnas)) hd_columna_editable(cols, tabla, piezas_tabla)
+        if (is.function(columnas)) hd_columnas_piezas(cols, tabla, piezas_tabla)
         list(
         id       = ns("hdt"),
         tabla    = tabla,

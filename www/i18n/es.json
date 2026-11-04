@@ -97,6 +97,8 @@
   "tablas.edicion.menor": "Menor que el mínimo ({min})",
   "tablas.edicion.no_numero": "Escribe un importe, por ejemplo 1250.50",
   "tablas.edicion.editable": "Clic para escribir el importe",
+  "tablas.dinero.millones": "{n}M",
+  "tablas.dinero.miles": "{n}K",
   "tablas.pagos": "Pagos",
   "tablas.sumador.visible": "Visible",
   "tablas.sumador.seleccion.uno": "{n} seleccionada",

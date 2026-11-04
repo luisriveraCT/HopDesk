@@ -30,7 +30,9 @@ HD_PIEZAS_MOTOR <- c(
   "agrupar", "subtotales", "expandir", "sel_grupo", "columnas_opc", "etiquetas", "modo_editar",
   "crudos", "agregado", "adjuntos",
   # T14
-  "edicion_celda"
+  "edicion_celda",
+  # T17a: the base of a matrix of periods (class F)
+  "columna_fija", "tono_celda", "dinero_compacto"
 )
 
 HD_REGLAS_NUCLEO <- c(
