@@ -202,6 +202,20 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
   )
 }
 
+# The generated row each conflict would become, under the conflict's own id,
+# matched by (liability_id, occurrence_index): what "Aplicar" writes. The
+# panel used to get result$update, which never holds a conflict, so "Nuevo
+# (sugerido)" showed "—" and "Aplicar" changed nothing (T18a).
+pasivos_conflictos_reemplazo <- function(conflicts, generated) {
+  if (is.null(generated) || !nrow(generated)) return(generated)
+  if (is.null(conflicts) || !nrow(conflicts)) return(generated[0L, , drop = FALSE])
+  occ <- function(df) paste(df$liability_id, df$occurrence_index, sep = "\r")
+  m   <- match(occ(conflicts), occ(generated))
+  rep <- generated[m[!is.na(m)], , drop = FALSE]
+  rep$id <- conflicts$id[!is.na(m)]
+  rep
+}
+
 # ── Save handler ───────────────────────────────────────────────────────────────
 .pasivos_wizard_save <- function(wiz, shared, session, user) {
   empresa_choices <- tryCatch(sort(names(shared$company_map())),
@@ -303,12 +317,17 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
                               conflicts = .schema_pasivos_provision())
   )
 
-  # Apply: keep + update + insert
+  # Apply: keep + conflicts + update + insert. A conflict (a provision edited
+  # by hand that the new terms would change) stays exactly as it is until the
+  # user decides in the edit-confirm panel. It used to be left out here, so
+  # this save removed it from S3 before the panel opened and no decision,
+  # "Mantener" included, could find it again (found 2026-11-04, T18a).
   others <- existing[
     is.na(existing$liability_id) | existing$liability_id != liab_row$id,
     , drop = FALSE
   ]
-  new_provs <- dplyr::bind_rows(others, result$keep, result$update, result$insert)
+  new_provs <- dplyr::bind_rows(others, result$keep, result$conflicts,
+                                result$update, result$insert)
   tryCatch(save_pasivos_provisions(new_provs, client_id = shared$effective_client_id(), base = existing),
            error = function(e) warning("[wizard] save_pasivos_provisions failed: ",
                                        conditionMessage(e)))
@@ -348,7 +367,7 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
     pasivos_edit_confirm_open(
       session     = session,
       conflicts   = conflicts,
-      replacement = result$update,
+      replacement = pasivos_conflictos_reemplazo(conflicts, generated),
       shared      = shared,
       liability_id = liab_row$id
     )
