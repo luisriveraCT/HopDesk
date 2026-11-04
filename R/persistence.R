@@ -197,8 +197,12 @@
 # escape hatch if a false positive ever shows up in production).
 # The hd-admin control-plane tables (CM13) only grow too: rows change status
 # (approved, revoked, read...) but are never removed.
+# Requisiciones' 6 tables too (front E): trashing is a mark, never a removal.
+# REQ_KEYS lives in R/requisiciones_persistence.R; scripts that source this
+# file alone simply do not have it.
 .S3_SOLO_CRECEN <- function() c(unname(unlist(S3_KEYS[c("pasivos_audit", "papelera", "bancos_confirmados")])),
-                                .HD_ADMIN_SOLO_CRECEN)
+                                .HD_ADMIN_SOLO_CRECEN,
+                                if (exists("REQ_KEYS")) unname(unlist(REQ_KEYS)))
 # Keys outside the net, each for a reason:
 #   pagar_hoy*: Agenda is a queue -- confirming the day's payments empties it;
 #               its writes rebase on strict reads since A2 (CM10).

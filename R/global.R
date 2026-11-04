@@ -8,6 +8,10 @@
 # AWS_* vars are set even when R is started outside the project directory.
 if (file.exists(".Renviron")) readRenviron(".Renviron")
 
+# Uploads up to 12 MB: Requisiciones evidence allows 10 MB per file (Shiny's
+# default is 5 MB). Each module still checks its own limit on the server.
+options(shiny.maxRequestSize = 12 * 1024^2)
+
 # ── Dev/staging S3 override (added 2026-09-02) ──────────────────────────────
 # CRITICAL: this repo has one single .Renviron, pointed at the LIVE
 # PRODUCTION S3 bucket -- there was no way to test locally without touching
@@ -453,6 +457,9 @@ source("R/proveedores_excel.R")   # Excel import helpers (T08); proveedores_modu
 source("R/proveedores_module.R")
 source("R/pasivos_schemas.R")
 source("R/pasivos_persistence.R")
+# Requisiciones (front E): they use the pasivos schemas and etapa_de_provision_en().
+source("R/adjuntos_s3.R")
+source("R/requisiciones_persistence.R")
 source("R/pasivos_capabilities.R")
 source("R/pasivos_audit.R")
 source("R/app_audit.R")
