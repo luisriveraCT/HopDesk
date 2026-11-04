@@ -319,9 +319,11 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     updated <- tryCatch(
       modificar_ctas_cuentas(function(ctas) {
         if (is_default) {
+          # With a new account (eid NULL) `is.null(eid) | ctas$id != eid` was
+          # logical(0): no sibling lost its default, and two stayed default.
+          otra <- if (is.null(eid)) rep(TRUE, nrow(ctas)) else (!is.na(ctas$id) & ctas$id != eid)
           mask <- !is.na(ctas$Empresa) & ctas$Empresa == empresa_val &
-                  !is.na(ctas$Moneda)  & toupper(ctas$Moneda) == toupper(moneda_val) &
-                  (is.null(eid) | (!is.na(ctas$id) & ctas$id != eid))
+                  !is.na(ctas$Moneda)  & toupper(ctas$Moneda) == toupper(moneda_val) & otra
           ctas$is_ppl_default[mask] <- FALSE
         }
         if (is.null(eid)) dplyr::bind_rows(ctas, new_row)
