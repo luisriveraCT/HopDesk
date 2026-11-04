@@ -35,6 +35,7 @@
   "permisos.can_manage_pasivos": "Gestionar pasivos recurrentes",
   "permisos.can_manage_proveedores": "Administrar el catálogo de proveedores (alias y CLABE)",
   "permisos.can_manage_bancos": "Administrar Bancos (movimientos, conciliaciones y confirmaciones)",
+  "permisos.can_manage_policies": "Gestionar políticas de pago",
   "comun.ic_sin_ap_deudor": "%d factura(s) del plan no se mandaron: no encontré en los libros del deudor una sola factura de proveedor con el mismo folio (%s). Siguen en el plan; confirmarlas no cerraría ninguna factura.",
   "permisos.can_publish_panorama": "Publicar en Panorama",
   "permisos.can_approve_clients": "Aprobar nuevos clientes",

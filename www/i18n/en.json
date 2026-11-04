@@ -35,6 +35,7 @@
   "permisos.can_manage_pasivos": "Manage recurring liabilities",
   "permisos.can_manage_proveedores": "Manage the vendor catalog (alias and CLABE)",
   "permisos.can_manage_bancos": "Manage Bancos (movements, reconciliation and confirmations)",
+  "permisos.can_manage_policies": "Manage payment policies",
   "comun.ic_sin_ap_deudor": "%d plan invoice(s) were not sent: the debtor's books have no single supplier invoice with the same folio (%s). They stay in the plan; confirming them would close no invoice.",
   "permisos.can_publish_panorama": "Publish in Panorama",
   "permisos.can_approve_clients": "Approve new clients",
