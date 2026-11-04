@@ -4,6 +4,10 @@
 # against tests/helpers/bancos_fixture_app.R (the real bancosServer on the
 # CM09's in-memory S3).
 #   C. Cuentas (cuentas_bancos, D): the active accounts, read only, Excel.
+#   R. Reasignar (reasignar, E): the chosen import session's movements, all.
+#   I. Importar TXT (importar_txt, E): a 25-movement TXT with 2 commissions
+#      -> the preview shows the 25 (it used to show 20, without commissions)
+#      and the button imports those 25.
 #
 # Run from project root:  Rscript tests/test_bancos_t12b_chromote.R
 # =============================================================================
@@ -43,7 +47,8 @@ ok("fixture app started", !is.null(app))
 b <- new_chromote_session()
 invisible(b$Emulation$setDeviceMetricsOverride(width = 1293L, height = 632L, deviceScaleFactor = 1, mobile = FALSE))
 invisible(b$Page$navigate("http://127.0.0.1:38981", wait_ = TRUE))
-invisible(poll_until(function() isTRUE(ev("!!window.HDT && !!HDT.estado('bnc-libro-hdt')")), timeout_s = 90))
+ok("the page loads (the Libro's table is there)",
+   poll_until(function() isTRUE(ev("!!window.HDT && !!HDT.estado('bnc-libro-hdt')")), timeout_s = 180))
 Sys.sleep(1)
 
 # ══ C · Cuentas ══════════════════════════════════════════════════════════════
@@ -56,6 +61,40 @@ ok("C2: columns Empresa, Banco, Moneda, Alias, Cuenta, CLABE",
 ok("C3: Exportar a Excel is there (Luis, T12 P7)",
    isTRUE(ev(sprintf("Array.from(document.querySelectorAll('#%s button')).some(function(x){ return /Exportar a Excel/.test(x.textContent); })", C))))
 ok("C4: read only: no row buttons", isTRUE(ev(sprintf("!document.querySelector('#%s button[data-accion]')", C))))
+
+# ══ R · Reasignar ════════════════════════════════════════════════════════════
+R <- "bnc-reasig-hdt"
+pestana("historial"); sub_pestana("Papelera")
+clic("document.querySelector('[data-bs-target=\"#bnc-reasignar_panel\"]')"); Sys.sleep(1)
+ses <- unlist(ev("Array.from(document.querySelectorAll('#bnc-reasig_sesion option')).map(function(o){ return o.value; }).filter(function(v){ return v; })"))
+invisible(ev(sprintf("(function(){ var s = document.getElementById('bnc-reasig_sesion'); if (s.selectize) s.selectize.setValue('%s'); else { s.value = '%s'; $(s).trigger('change'); } })()",
+                     ses[1], ses[1])))
+ok("R1: the session's 60 movements, all of them (no pages of 10)",
+   poll_until(function() length(tryCatch(vis(R), error = function(e) NULL)) == 60L, timeout_s = 15))
+ok("R2: columns Fecha, Tipo, Parte, Concepto, Cargo, Abono",
+   identical(titulos(R), c("Fecha", "Tipo", "Parte", "Concepto", "Cargo", "Abono")))
+
+# ══ I · Importar TXT ═════════════════════════════════════════════════════════
+I <- "bnc-import-hdt"
+txt <- local({
+  movs <- c(lapply(1:23, function(i) list(desc = sprintf("SPEI Enviado: | Beneficiario: PROV %02d SA | Recibo # %d", i, i), cargo = 100 + i)),
+            lapply(1:2, function(i) list(desc = sprintf("Comision por SPEI | Recibo # %d", 90 + i), cargo = 5)))
+  cg <- sum(vapply(movs, `[[`, numeric(1), "cargo"))
+  hdr <- sprintf("NETWORKS TRUCKING SERVICES SA DE CV,0111,Conecta BanBajio,01,26-Oct-2026,12:16:39,Mes Actual,TODOS,01-Oct-2026 al 31-Oct-2026,,%d,%.2f,%.2f",
+                 length(movs), cg, 0)
+  filas <- vapply(seq_along(movs), function(i) sprintf("%d,%02d-Oct-2026,12:00:%02d,%d,%s,%.2f,,%.2f", i, 1 + i %% 28, i %% 60,
+                                                      700000 + i, movs[[i]]$desc, movs[[i]]$cargo, 1000), character(1))
+  f <- tempfile(fileext = ".txt"); writeLines(c(hdr, "#,Fecha Movimiento,Hora,Recibo,Descripción,Cargos,Abonos,Saldo", filas), f); f
+})
+pestana("importar")
+doc <- b$DOM$getDocument(); nodo <- b$DOM$querySelector(doc$root$nodeId, "#bnc-txt_file")
+invisible(b$DOM$setFileInputFiles(files = list(normalizePath(txt)), nodeId = nodo$nodeId)); Sys.sleep(2)
+ok("I1: the preview shows all 25 new movements, the 2 commissions included",
+   poll_until(function() length(tryCatch(vis(I), error = function(e) NULL)) == 25L, timeout_s = 20) &&
+     isTRUE(ev(sprintf("/Comisi/.test(document.getElementById('%s').innerText)", I))))
+ok("I2: ...and the button imports exactly those 25",
+   poll_until(function() grepl("Importar 25 movimientos", ev("(document.getElementById('bnc-import_btn_ui') || {}).innerText || ''"),
+                               fixed = TRUE), timeout_s = 10))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) {
