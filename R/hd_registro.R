@@ -175,7 +175,12 @@ hd_registro <- list(
     notas = character()),
   flujo_caja = list(nombre = "Flujo de caja (vista previa)", clase = "F", archivo = "cashflow_preview_module.R",
     agregar = character(), quitar = character(),
-    notas = character())
+    notas = character()),
+  # T17b (Luis, P4; coordinator 2026-11-04: here, not on the design page):
+  # the provisions behind one cell of Pasivos · Tabla that adds up several.
+  provisiones_celda = list(nombre = "Provisiones de una celda (Pasivos)", clase = "E", archivo = "pasivos_table_module.R",
+    agregar = character(), quitar = character(),
+    notas = c("Agregar: Lista de lo que suma una celda: Fecha, Pasivo, Importe y Estado; cada fila con su ✎ (abre la provisión) y su ⚡ o ↩, los mismos de la tabla."))
 )
 
 # Decisiones de diseño que no son piezas:
