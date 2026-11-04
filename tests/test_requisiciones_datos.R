@@ -327,11 +327,37 @@ test_that("carpetas: nombre único, color, presupuesto con moneda, papelera", {
   r <- requisicion_crear(CID, modifyList(base_req, list(carpeta_id = c1)), "dani")
   res <- requisiciones_carpetas_resumen(tabla("carpetas"), requisiciones_vista(CID))
   expect_equal(res$n_requisiciones, 1); expect_equal(res$comprometido, 15000)
+  # Luis, 2026-11-04: a folder with live requisitions cannot go to the trash.
+  antes <- tabla("carpetas")
+  e <- tryCatch(requisiciones_carpeta_papelera(CID, c1, "dani"), error = identity)
+  expect_s3_class(e, "req_error")
+  expect_identical(e$clave, "requisiciones.error.carpeta_con_requisiciones")
+  expect_identical(tabla("carpetas"), antes)
+  # once its requisition is in the trash, it can
+  requisiciones_papelera(CID, r$id, "dani")
   requisiciones_carpeta_papelera(CID, c1, "dani")
+  expect_false(is.na(tabla("carpetas")$papelera_en))
   expect_true(is.na(requisiciones_vista(CID)$carpeta_nombre))
   expect_s3_class(tryCatch(requisicion_crear(CID, modifyList(base_req, list(carpeta_id = c1)), "d"), error = identity), "req_error")
   requisiciones_carpeta_restaurar(CID, c1, "dani")
   expect_identical(requisiciones_vista(CID)$carpeta_nombre, "Obra norte")
+})
+
+test_that("las requisiciones pagadas no cuentan como vivas al mandar una carpeta a la papelera", {
+  reiniciar()
+  c1 <- requisiciones_carpeta_crear(CID, list(nombre = "Obra sur"), "dani")
+  poner_provision("p1"); poner_provision("p2")
+  pagada <- requisicion_crear(CID, modifyList(base_req, list(carpeta_id = c1, provision_id = "p1")), "dani")
+  en_pago <- requisicion_crear(CID, modifyList(base_req, list(carpeta_id = c1, provision_id = "p2")), "dani")
+  poner_confirmacion("p1")
+  poner_provision("p2", estado = "converted")
+  # the one In payment is still live
+  expect_identical(tryCatch(requisiciones_carpeta_papelera(CID, c1, "dani"), error = identity)$clave,
+                   "requisiciones.error.carpeta_con_requisiciones")
+  requisiciones_mover(CID, en_pago$id, NA, "dani")
+  requisiciones_carpeta_papelera(CID, c1, "dani")      # only the paid one is left
+  expect_false(is.na(tabla("carpetas")$papelera_en))
+  expect_identical(tabla("requisiciones")$carpeta_id[tabla("requisiciones")$id == pagada$id], c1)
 })
 
 # ── Comments ─────────────────────────────────────────────────────────────────

@@ -480,6 +480,7 @@
   "requisiciones.error.carpeta_repetida": "Ya hay una carpeta con ese nombre.",
   "requisiciones.error.color": "El color no es válido.",
   "requisiciones.error.presupuesto": "El presupuesto debe ser un número mayor o igual a cero.",
+  "requisiciones.error.carpeta_con_requisiciones": "Esta carpeta tiene requisiciones. Muévelas o mándalas a la papelera primero.",
   "requisiciones.evidencia.error_leer": "No se pudo leer el archivo. Inténtalo de nuevo.",
   "requisiciones.evidencia.error_tamano": "El archivo pesa más de {mb} MB.",
   "requisiciones.evidencia.error_tipo": "Solo se aceptan imágenes PNG, JPG o WEBP, PDF y Excel (.xlsx).",

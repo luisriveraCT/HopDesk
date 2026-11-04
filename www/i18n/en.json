@@ -480,6 +480,7 @@
   "requisiciones.error.carpeta_repetida": "There is already a folder with that name.",
   "requisiciones.error.color": "The color is not valid.",
   "requisiciones.error.presupuesto": "The budget must be a number greater than or equal to zero.",
+  "requisiciones.error.carpeta_con_requisiciones": "This folder has requisitions. Move them or send them to the trash first.",
   "requisiciones.evidencia.error_leer": "The file could not be read. Try again.",
   "requisiciones.evidencia.error_tamano": "The file is larger than {mb} MB.",
   "requisiciones.evidencia.error_tipo": "Only PNG, JPG or WEBP images, PDF and Excel (.xlsx) files are accepted.",

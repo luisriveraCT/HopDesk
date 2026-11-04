@@ -490,10 +490,17 @@ requisiciones_carpeta_editar <- function(client_id, id, cambios, por) {
   invisible(TRUE)
 }
 
-# The folder goes to the trash; its requisitions keep carpeta_id and show
-# without a folder until it is restored.
+# A folder still holding live requisitions cannot go to the trash (Luis,
+# 2026-11-04): they must be moved or trashed first. Trashed and paid ones do
+# not count; they keep carpeta_id and show without a folder.
 requisiciones_carpeta_papelera <- function(client_id, id, por) {
   cid <- .req_cid(client_id)
+  reqs <- .req_leer("requisiciones", cid)
+  dentro <- reqs[reqs$carpeta_id %in% id & is.na(reqs$papelera_en), , drop = FALSE]
+  if (nrow(dentro)) {
+    etapa <- .req_etapa_provision(cid, dentro$provision_id)
+    if (any(!(etapa %in% "pagada"))) .req_error("requisiciones.error.carpeta_con_requisiciones")
+  }
   .req_modificar("carpetas", cid, function(df) {
     i <- .req_fila(df, id)
     if (is.na(df$papelera_en[i])) { df$papelera_por[i] <- por; df$papelera_en[i] <- .req_ahora() }
