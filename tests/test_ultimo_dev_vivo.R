@@ -135,7 +135,7 @@ ok("tiers_module: no hand-made dev count left (deleted-only, ignoring activo)",
      !any(grepl("all_u_check$deleted", src, fixed = TRUE)))
 lim <- grep("perdidos <- usuarios_niveles_perdidos(usuarios_orig, usuarios_new)", src, fixed = TRUE)
 ok("the limit change checks before saving",
-   length(lim) == 1L && lim < grep("auth_save_usuarios(usuarios_new, client_id = cid)", src, fixed = TRUE))
+   length(lim) == 1L && lim < grep("auth_save_usuarios(usuarios_new, client_id = cid", src, fixed = TRUE))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)
