@@ -504,9 +504,8 @@ pasivos_list_module_server <- function(id, shared) {
         client_id   = shared$effective_client_id()
       ), error = function(e) NULL)
 
-      shiny::showNotification(
-        "Pasivo restaurado. Usa '+ Agregar pasivo' o el lápiz para regenerar provisiones futuras.",
-        type = "message", duration = 5)
+      # Its provisions were never removed (T18), so they are back as they were.
+      shiny::showNotification(tr("tablas.pasivos.recuperado_ok"), type = "message", duration = 5)
     })
 
     invisible(NULL)

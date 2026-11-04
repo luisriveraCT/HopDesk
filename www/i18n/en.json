@@ -536,5 +536,6 @@
   "tablas.pasivos.borrar_pregunta": "Delete this liability? It goes to the Trash with all its provisions, and from there it is recovered just as it was.",
   "tablas.pasivos.borrar_agenda_uno": "It has 1 payment in the Agenda: that one stays.",
   "tablas.pasivos.borrar_agenda_otros": "It has {n} payments in the Agenda: those stay.",
-  "tablas.pasivos.borrado_ok": "Liability deleted. You can recover it from the Trash."
+  "tablas.pasivos.borrado_ok": "Liability deleted. You can recover it from the Trash.",
+  "tablas.pasivos.recuperado_ok": "Liability recovered, with its provisions just as they were."
 }

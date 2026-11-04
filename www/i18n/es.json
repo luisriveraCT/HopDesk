@@ -536,5 +536,6 @@
   "tablas.pasivos.borrar_pregunta": "¿Borrar este pasivo? Se va a la Papelera con todas sus provisiones, y desde ahí se recupera tal como estaba.",
   "tablas.pasivos.borrar_agenda_uno": "Tiene 1 pago en la Agenda: ese se queda.",
   "tablas.pasivos.borrar_agenda_otros": "Tiene {n} pagos en la Agenda: esos se quedan.",
-  "tablas.pasivos.borrado_ok": "Pasivo borrado. Lo puedes recuperar desde la Papelera."
+  "tablas.pasivos.borrado_ok": "Pasivo borrado. Lo puedes recuperar desde la Papelera.",
+  "tablas.pasivos.recuperado_ok": "Pasivo recuperado, con sus provisiones tal como estaban."
 }

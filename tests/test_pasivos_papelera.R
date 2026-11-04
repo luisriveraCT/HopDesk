@@ -118,6 +118,36 @@ PERMITIDO <- TRUE
 ok(.mem_escrituras == antes && identical(liab_s3()$estado, "active"),
    "D3: without can_manage_pasivos at the confirm, Borrar writes nothing")
 
+# ── R1: Borrar, then Recuperar: everything comes back exactly ────────────────
+sembrar(); sh <- nuevo_shared()
+testServer(pasivos_list_module_server, args = list(shared = sh), {
+  session$flushReact()
+  session$setInputs(pasivos_list_archive = "L1")
+  session$setInputs(plist_confirm_archive = 1)
+  session$setInputs(pasivos_list_restore = "L1")
+})
+ok(identical(liab_s3()$estado, "active"), "R1: L1 is active again on S3")
+ok(identical(firma(provs_s3()), firma(provs0)),
+   "R1: with every provision as it was: same ids, the hand edit, the Agenda payment")
+p_s3 <- provs_s3()
+ok(identical(sort(pasivos_provisions_as_ledger_rows(p_s3[p_s3$liability_id %in% "L1", ], liab_s3())$Documento),
+             sort(pasivos_provisions_as_ledger_rows(provs0[provs0$liability_id == "L1", ], liab0)$Documento)),
+   "R1: and they reach the ledger again, the same rows as before Borrar")
+r <- Filter(function(x) identical(x$action_type, "liability.restored"), AUDIT)
+ok(length(r) == 1L && identical(r[[1]]$target_id, "L1"), "R1: one liability.restored in the audit")
+
+# ── R2: Recuperar without permission writes nothing ──────────────────────────
+borrado_s3 <- liab0; borrado_s3$estado <- "deleted"
+sembrar(borrado_s3); sh <- nuevo_shared(borrado_s3); PERMITIDO <- FALSE
+antes <- .mem_escrituras
+testServer(pasivos_list_module_server, args = list(shared = sh), {
+  session$flushReact()
+  session$setInputs(pasivos_list_restore = "L1")
+})
+PERMITIDO <- TRUE
+ok(.mem_escrituras == antes && identical(liab_s3()$estado, "deleted"),
+   "R2: without can_manage_pasivos, Recuperar writes nothing")
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 s3_memoria_restaurar()
 if (.fail > 0L) quit(status = 1L)
