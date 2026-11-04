@@ -457,6 +457,7 @@
         if (st.modo === 'ventana') { var top = st.scroll.scrollTop; salirVentana(st); st.modo = null; pintarFilas(st, top); }
       }
       programarAlto(st, true);
+      pegarFijas(st);   // a narrower table may have narrower columns
     });
     st.visible.observe(st.root);
     // alto = "ventana" in a modal: what's around the table can arrive after
@@ -1063,8 +1064,19 @@
   function cabecera(st) {
     st.thead.textContent = '';
     var tr = nodo('tr');
+    // columna_fija (T17a): the fixed columns are the first ones shown (the
+    // server checks it); with any, the checkbox column stays at the left too.
+    st.nFijas = 0;
+    st.posFija = {};
+    if (st.p.columna_fija) while (st.nFijas < st.ver.length && st.cols[st.ver[st.nFijas]].fija) {
+      st.posFija[st.ver[st.nFijas]] = st.nFijas;
+      st.nFijas++;
+    }
+    st.root.classList.toggle('hdt-con-fijas', st.nFijas > 0);
+    // Only a matrix pays for matriz() on each cell; any other table, nothing.
+    st.matriz = st.nFijas > 0 || (!!st.p.tono_celda && st.ver.some(function (j) { return st.cols[j].destacar; }));
     if (st.p.casillas) {
-      var th0 = nodo('th', 'hdt-cb');
+      var th0 = nodo('th', 'hdt-cb' + (st.nFijas ? ' hdt-fija-cb' : ''));
       if (st.p.sel_todos) {
         st.cbTodos = nodo('input', 'hdt-cbx-todos');
         st.cbTodos.type = 'checkbox';
@@ -1078,6 +1090,7 @@
     st.ths = st.ver.map(function (j) {
       var c = st.cols[j], th = nodo('th', c.alinear === 'derecha' ? 'hdt-der' : '');
       th.dataset.col = j;
+      if (st.matriz) matriz(st, th, j);
       if (c.ancho) th.style.width = c.ancho + 'px';
       th.appendChild(nodo('span', '', c.titulo));
       if (st.p.ordenar) { th.classList.add('hdt-ordenable'); th.appendChild(nodo('span', 'hdt-flecha')); }
@@ -1183,7 +1196,7 @@
     var marcada = st.sel.has(st.ids[i]);
     if (marcada) tr.classList.add('hdt-sel');
     if (st.p.casillas) {
-      var td0 = nodo('td', 'hdt-cb');
+      var td0 = nodo('td', 'hdt-cb' + (st.nFijas ? ' hdt-fija-cb' : ''));
       var cb = nodo('input', 'hdt-cbx');
       cb.type = 'checkbox';
       cb.checked = marcada;
@@ -1233,13 +1246,50 @@
     if (c.recorte && st.p.recorte) td.classList.add('hdt-recorte');
     if (c.ancho) { td.classList.add('hdt-recorte'); td.style.maxWidth = c.ancho + 'px'; }
     if (j === st.grupoColVis) td.classList.add('hdt-col-grupo');
+    if (st.matriz) matriz(st, td, j);
     return td;
+  }
+
+  // ── Matrix base (T17a) ───────────────────────────────────────────────────
+  // A header or body cell of column j: fixed at the left (columna_fija; its
+  // offset is a variable pegarFijas() measures) and/or shaded (destacar,
+  // tono_celda). Nothing for any other table.
+  function matriz(st, el, j) {
+    var c = st.cols[j], k = st.nFijas ? st.posFija[j] : null;
+    if (k != null) {
+      el.classList.add('hdt-fija');
+      if (k === st.nFijas - 1) el.classList.add('hdt-fija-ultima');
+      el.style.left = 'var(--hdt-fija-' + k + ', 0px)';
+    }
+    if (st.p.tono_celda && c.destacar) el.classList.add('hdt-destacar');
+  }
+  // Each fixed column's left offset: the widths before it (the checkbox
+  // column's too), measured after the paint like the bands' heights. A new
+  // search or new data can change the widths, so on every paint.
+  function pegarFijas(st) {
+    if (!st.nFijas || !st.ths) return;
+    var cb = st.thead.querySelector('th.hdt-cb'), x = cb ? cb.getBoundingClientRect().width : 0;
+    for (var k = 0; k < st.nFijas; k++) {
+      st.root.style.setProperty('--hdt-fija-' + k, x + 'px');
+      x += st.ths[k].getBoundingClientRect().width;
+    }
   }
 
   // Row i's value in column j. Badges only with the `insignias` piece;
   // otherwise the same text, plain.
   function pintarCelda(st, td, j, i) {
     var c = st.cols[j], v = st.celdas[j].mostrar[i];
+    // tono_celda (T17a): an amount's tone -- by its sign, the text; by a
+    // state, the cell too. Only the closed list reaches here (the server
+    // drops anything else); the class name is cleaned all the same.
+    if (st.p.tono_celda && c.tipo === 'dinero' && c.tono && st.celdas[j].tono) {
+      var tc = String(st.celdas[j].tono[i] || '').replace(/[^a-z_]/g, '');
+      if (tc) td.classList.add('hdt-tc-' + tc, 'hdt-tc-' + (c.tono === 'signo' ? 'signo' : 'estado'));
+    }
+    // dinero_compacto: "$4.5M" says the full amount in the bubble; a table
+    // without the bubble (copiar_celda) says it on hover all the same.
+    if (c.tipo === 'dinero' && !st.p.copiar_celda && st.celdas[j].completo && st.celdas[j].completo[i])
+      td.title = st.celdas[j].completo[i];
     if (st.p.insignias && c.tipo === 'empresa' && v) td.appendChild(nodo('span', 'hdt-ins hdt-emp', v));
     // Tags (etiquetas): the same pill, in the tone HD_ETIQUETAS gives.
     else if (((st.p.insignias && c.tipo === 'insignia') || (st.p.etiquetas && c.tipo === 'etiqueta')) && v) {
@@ -1317,6 +1367,7 @@
     }
     programarAlto(st, desdeDatos);
     if (st.secciones) requestAnimationFrame(function () { pegarBandas(st); });
+    if (st.nFijas) requestAnimationFrame(function () { pegarFijas(st); });
   }
 
   // ── Sections and the pinned block's line ─────────────────────────────────
@@ -1452,7 +1503,7 @@
     var libres = u.filas.filter(function (i) { return !st.bloq[i]; }), i0 = u.filas[0];
     var fuerte = st.p.etiquetas ? etiquetaFuerte(st, u.filas) : null;   // its tag and background
     if (st.p.casillas) {
-      var td0 = nodo('td', 'hdt-cb'), cb = nodo('input', 'hdt-cbx hdt-cbx-grupo');
+      var td0 = nodo('td', 'hdt-cb' + (st.nFijas ? ' hdt-fija-cb' : '')), cb = nodo('input', 'hdt-cbx hdt-cbx-grupo');
       cb.type = 'checkbox';
       cb.disabled = !libres.length;
       td0.appendChild(cb);

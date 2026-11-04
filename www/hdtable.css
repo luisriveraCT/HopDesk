@@ -199,6 +199,32 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
   box-sizing: border-box; line-height: 1.25; padding: 1px 4px; border: 1px solid var(--hdt-accent); border-radius: 3px;
   background: var(--hdt-surface); color: var(--hdt-ink); outline: none; }
 .hdt-ed-mal .hdt-ed-input { border-color: var(--hdt-t-peligro); }
+
+/* Matrix base (T17a). columna_fija: the first columns stay at the left while
+   the table scrolls sideways (left = var(--hdt-fija-k), measured by
+   hdtable.js), with a line after the last one. Opaque, so what scrolls under
+   them doesn't show through; the row rules (hover, selection, provision,
+   tags) still win, they are more specific. Layers: fixed header cell (3) >
+   bands (2) > fixed body cells (1) > the rest. */
+.hdt-tabla td.hdt-fija, .hdt-tabla td.hdt-fija-cb { position: sticky; z-index: 1; background: var(--hdt-surface); }
+.hdt-tabla th.hdt-fija, .hdt-tabla th.hdt-fija-cb { position: sticky; z-index: 3; }
+.hdt-tabla .hdt-fija-cb { left: 0; }
+.hdt-tabla .hdt-fija-ultima { border-right: 1px solid var(--hdt-line); }
+.hdt-con-fijas.hdt-fijo .hdt-tabla tr.hdt-banda td { z-index: 2; }
+.hdt-con-fijas .hdt-banda-titulo { position: sticky; left: 8px; }
+/* tono_celda: an amount by its sign colours the text (green, red, grey at 0);
+   by a state, the cell is tinted too. destacar: the whole column shaded. */
+.hdt-tabla td.hdt-tc-signo.hdt-tc-exito   { color: var(--hdt-t-exito); }
+.hdt-tabla td.hdt-tc-signo.hdt-tc-peligro { color: var(--hdt-t-peligro); }
+.hdt-tabla td.hdt-tc-signo.hdt-tc-neutro  { color: var(--hdt-t-neutro); }
+.hdt-tabla td.hdt-tc-estado.hdt-tc-exito   { color: var(--hdt-t-exito);   background: var(--hdt-f-exito); }
+.hdt-tabla td.hdt-tc-estado.hdt-tc-aviso   { color: var(--hdt-t-aviso);   background: var(--hdt-f-aviso); }
+.hdt-tabla td.hdt-tc-estado.hdt-tc-peligro { color: var(--hdt-t-peligro); background: var(--hdt-f-peligro); }
+.hdt-tabla td.hdt-tc-estado.hdt-tc-info    { color: var(--hdt-t-info);    background: var(--hdt-f-info); }
+.hdt-tabla td.hdt-tc-estado.hdt-tc-neutro  { color: var(--hdt-t-neutro);  background: var(--hdt-f-neutro); }
+.hdt-tabla td.hdt-tc-estado.hdt-tc-morado  { color: var(--hdt-t-morado);  background: var(--hdt-f-morado); }
+.hdt-tabla td.hdt-destacar { background: var(--hdt-accent-soft); }
+.hdt-tabla th.hdt-destacar { color: var(--hdt-accent); background: var(--hdt-accent-soft); }
 .hdt-cb { width: 26px; text-align: center; }
 .hdt-cb input { margin: 0; vertical-align: middle; cursor: pointer; }
 
