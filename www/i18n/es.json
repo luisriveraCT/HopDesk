@@ -537,5 +537,7 @@
   "tablas.pasivos.borrar_agenda_uno": "Tiene 1 pago en la Agenda: ese se queda.",
   "tablas.pasivos.borrar_agenda_otros": "Tiene {n} pagos en la Agenda: esos se quedan.",
   "tablas.pasivos.borrado_ok": "Pasivo borrado. Lo puedes recuperar desde la Papelera.",
-  "tablas.pasivos.recuperado_ok": "Pasivo recuperado, con sus provisiones tal como estaban."
+  "tablas.pasivos.recuperado_ok": "Pasivo recuperado, con sus provisiones tal como estaban.",
+  "tablas.pasivos.pausar": "Pausar",
+  "tablas.pasivos.pausar_pregunta": "¿Pausar este pasivo? Sus provisiones futuras se eliminan; al reanudarlo, edítalo para generarlas."
 }

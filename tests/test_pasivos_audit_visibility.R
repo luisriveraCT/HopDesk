@@ -322,15 +322,19 @@ ok <- function(label, expr) {
     ok("liability archive/delete calls pasivos_log_audit()", grepl("pasivos_log_audit\\(", block))
     ok("liability archive/delete uses action_type = \"liability.deleted\"",
        grepl('action_type = "liability\\.deleted"', block))
-    ok("liability archive/delete also removes that liability's future provisional provisions (regression guard, unrelated to logging)",
+    # T18: Borrar keeps the provisions; it reads them to count what it keeps.
+    ok("liability delete reads that liability's provisions (to count those it keeps, T18)",
        grepl("pasivos_provisions_db\\(\\)", block))
   }
-  pause_start <- grep("pasivos_list_pause, ignoreInit = TRUE", list_txt)
-  ok("found pasivos_list_pause (pause/resume a liability) to scan", length(pause_start) > 0)
+  # Since T18 the click only asks (pausing) and .cambiar_pausa() does the
+  # change, for the confirm and for resuming: that is where the log must be.
+  pause_start <- grep("\\.cambiar_pausa <- function", list_txt)
+  ok("found .cambiar_pausa() (pause/resume a liability) to scan", length(pause_start) > 0)
   if (length(pause_start)) {
-    end <- grep("^\\s*\\}\\)$", list_txt); end <- end[end > pause_start[1]][1]
+    end <- grep("^    \\}$", list_txt); end <- end[end > pause_start[1]][1]   # the function's own brace
     block <- paste(list_txt[pause_start[1]:end], collapse = "\n")
-    ok("pause/resume calls pasivos_log_audit()", grepl("pasivos_log_audit\\(", block))
+    ok("pause/resume calls pasivos_log_audit() with liability.edited",
+       grepl("pasivos_log_audit\\(", block) && grepl('action_type = "liability\\.edited"', block))
   }
 
   # Wizard create/edit (liability.created / liability.edited)

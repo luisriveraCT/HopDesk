@@ -316,6 +316,9 @@ pasivos_list_module_server <- function(id, shared) {
     }, server = TRUE)
 
     # ── Pause / Resume ──────────────────────────────────────────────────────
+    # Pausing asks first (Luis, T18): it removes the liability's future
+    # provisions. Resuming does not ask, as before: it removes nothing.
+    pause_target_rv <- shiny::reactiveVal("")
     shiny::observeEvent(input$pasivos_list_pause, ignoreInit = TRUE, {
       lid  <- input$pasivos_list_pause %||% ""
       if (!nzchar(lid)) return()
@@ -329,8 +332,40 @@ pasivos_list_module_server <- function(id, shared) {
       if (!length(idx)) return()
       old_estado <- liabs$estado[idx[1]]
       if (identical(old_estado, "deleted")) return()  # archived -- use restore instead
+      if (!identical(old_estado, "active")) return(.cambiar_pausa(lid, user, "active"))
+      pause_target_rv(lid)
+      shiny::showModal(shiny::modalDialog(
+        tr("tablas.pasivos.pausar_pregunta"),
+        footer = shiny::tagList(
+          shiny::modalButton(tr("tablas.pasivos.cancelar")),
+          shiny::actionButton(ns("plist_confirm_pause"), tr("tablas.pasivos.pausar"),
+                              class = "btn btn-warning")
+        ),
+        size = "s"
+      ))
+    })
+
+    shiny::observeEvent(input$plist_confirm_pause, ignoreInit = TRUE, {
+      if (!pasivos_autoriza("pasivos.edit_liability")) return()
+      lid <- pause_target_rv()
+      shiny::removeModal()
+      if (!nzchar(lid %||% "")) return()
+      user <- tryCatch(shared$current_user(), error = function(e) "system")
+      .cambiar_pausa(lid, user, "paused")
+    })
+
+    # Sets an active liability to "paused" (dropping its future provisional
+    # provisions) or a paused one back to "active". Does nothing if the
+    # liability is deleted or already in `new_estado` (e.g. another session
+    # changed it while the confirm was open).
+    .cambiar_pausa <- function(lid, user, new_estado) {
+      liabs <- tryCatch(shared$pasivos_liabilities_db(),
+                        error = function(e) .schema_pasivos_liability())
+      idx <- which(liabs$id == lid)
+      if (!length(idx)) return(invisible(NULL))
+      old_estado <- liabs$estado[idx[1]]
+      if (identical(old_estado, "deleted") || identical(old_estado, new_estado)) return(invisible(NULL))
       nombre     <- liabs$nombre[idx[1]]
-      new_estado <- if (identical(old_estado, "active")) "paused" else "active"
       liabs$estado[idx[1]] <- new_estado
       liabs$updated_at[idx[1]] <- Sys.time()
       liabs$updated_by[idx[1]] <- user
@@ -389,7 +424,8 @@ pasivos_list_module_server <- function(id, shared) {
         notes       = sprintf("estado changed to %s", new_estado),
         client_id   = shared$effective_client_id()
       ), error = function(e) NULL)
-    })
+      invisible(NULL)
+    }
 
     # ── Archive ─────────────────────────────────────────────────────────────
     shiny::observeEvent(input$pasivos_list_archive, ignoreInit = TRUE, {

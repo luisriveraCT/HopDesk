@@ -148,6 +148,41 @@ PERMITIDO <- TRUE
 ok(.mem_escrituras == antes && identical(liab_s3()$estado, "deleted"),
    "R2: without can_manage_pasivos, Recuperar writes nothing")
 
+# ── P: Pausar asks first; Reanudar does not ──────────────────────────────────
+futuras_l1 <- provs0$id[provs0$liability_id == "L1" & provs0$estado == "provisional" &
+                          provs0$fecha_efectiva >= Sys.Date()]
+sembrar(); sh <- nuevo_shared(); antes <- .mem_escrituras
+testServer(pasivos_list_module_server, args = list(shared = sh), {
+  session$flushReact()
+  session$setInputs(pasivos_list_pause = "L1")
+  ok(.mem_escrituras == antes && identical(liab_s3()$estado, "active"),
+     "P1: clicking Pausar only asks: nothing is written yet")
+  session$setInputs(plist_confirm_pause = 1)
+})
+p_s3 <- provs_s3()
+ok(identical(liab_s3()$estado, "paused"), "P2: after confirming, L1 is paused")
+ok(!any(futuras_l1 %in% p_s3$id), "P2: and its future provisional provisions are removed, as before")
+ok(all(setdiff(provs0$id, futuras_l1) %in% p_s3$id), "P2: every other provision stays")
+
+pausado <- liab0; pausado$estado <- "paused"
+sembrar(pausado); sh <- nuevo_shared(pausado)
+testServer(pasivos_list_module_server, args = list(shared = sh), {
+  session$flushReact()
+  session$setInputs(pasivos_list_pause = "L1")
+})
+ok(identical(liab_s3()$estado, "active"), "P3: Reanudar acts at once, without asking")
+
+sembrar(); sh <- nuevo_shared(); antes <- .mem_escrituras
+testServer(pasivos_list_module_server, args = list(shared = sh), {
+  session$flushReact()
+  session$setInputs(pasivos_list_pause = "L1")
+  PERMITIDO <<- FALSE
+  session$setInputs(plist_confirm_pause = 1)
+})
+PERMITIDO <- TRUE
+ok(.mem_escrituras == antes && identical(liab_s3()$estado, "active"),
+   "P4: without can_manage_pasivos at the confirm, Pausar writes nothing")
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 s3_memoria_restaurar()
 if (.fail > 0L) quit(status = 1L)
