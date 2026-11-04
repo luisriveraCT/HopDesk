@@ -171,9 +171,12 @@ pr_txt   <- .read("R/persistence.R")
           "ledger_module.R's several stage/delete/edit call sites all reference SAP_B1_ERP_TYPE (at least 8 uses)")
 .chk_true(grepl("SAP_B1_ERP_TYPE, \"manual\")", sm_txt, fixed = TRUE),
           "search_module.R's shared stage handler uses SAP_B1_ERP_TYPE")
-.chk_true(grepl('"sap_b1_service_layer"   = \'<span class="badge bg-secondary">SAP</span>\'', bm_txt, fixed = TRUE),
+# Since T12b the Papelera is hd_table "papelera": its Origen badge is "sap"
+# for both values (and an NA source defaults to SAP_B1_ERP_TYPE).
+.chk_true(grepl('origen <- ifelse(src %in% c("sap", SAP_B1_ERP_TYPE), "sap"', bm_txt, fixed = TRUE),
           "bancos_module.R's source badge recognizes the new SAP_B1_ERP_TYPE value")
-.chk_true(grepl('"sap"                    = \'<span class="badge bg-secondary">SAP</span>\'', bm_txt, fixed = TRUE),
+.chk_true(grepl('src %in% c("sap", SAP_B1_ERP_TYPE)', bm_txt, fixed = TRUE) &&
+            grepl('sap       = list(texto = "SAP"', bm_txt, fixed = TRUE),
           "bancos_module.R's source badge STILL recognizes the historical literal \"sap\" -- old papelera records must keep rendering correctly")
 .chk_true(grepl('"sap_b1_service_layer" = "SAP"', vm_txt, fixed = TRUE),
           "vencidos_module.R's source label recognizes the new SAP_B1_ERP_TYPE value")

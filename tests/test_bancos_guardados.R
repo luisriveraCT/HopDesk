@@ -150,13 +150,14 @@ testServer(bancosServer, args = list(shared = shared), {
     !is.null(parsed_preview())
   })
 
-  # 5 · Restore a deleted manual movement (↶ in the Papelera)
+  # 5 · Restore a deleted manual movement (↶ in the Papelera: the engine's
+  # row action, already confirmed, with the row's id; T12b)
   probar("5 · undo_mov_delete", "deshacer_eliminar_movimiento_manual", function() {
-    session$setInputs(undo_mov_delete = list(id = "m3", nonce = runif(1)))
+    session$setInputs(`papelera-accion` = list(accion = "deshacer", ids = "mov:m3", nonce = runif(1)))
   }, function(m) isFALSE(m$eliminado[m$id == "m3"]))
   ok("5 · undo_mov_delete: the trash's restore record fails -> restored, and the user is told the record failed", {
     sembrar(); MOVS(movs0); limpiar(); .falla_escritura <<- PK
-    session$setInputs(undo_mov_delete = list(id = "m3", nonce = runif(1)))
+    session$setInputs(`papelera-accion` = list(accion = "deshacer", ids = "mov:m3", nonce = runif(1)))
     .falla_escritura <<- character(0)
     isFALSE(en_s3()$eliminado[en_s3()$id == "m3"]) &&
       any(grepl("no se pudo registrar en la papelera", AVISOS, fixed = TRUE)) &&
@@ -164,7 +165,7 @@ testServer(bancosServer, args = list(shared = shared), {
   })
   ok("5 · undo_mov_delete: with no archived event to reverse (deleted before the archive existed), nothing is reported", {
     sembrar(); assign(PK, .schema_bancos_papelera(), envir = .mem); MOVS(movs0); limpiar()
-    session$setInputs(undo_mov_delete = list(id = "m3", nonce = runif(1)))
+    session$setInputs(`papelera-accion` = list(accion = "deshacer", ids = "mov:m3", nonce = runif(1)))
     isFALSE(en_s3()$eliminado[en_s3()$id == "m3"]) && !any(grepl("_fallido$", LOG))
   })
 })

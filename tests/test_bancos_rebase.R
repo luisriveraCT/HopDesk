@@ -95,8 +95,10 @@ ok("type change: the times are kept as times, not blanked to NA",
 # 4. The six Bancos saves pass their base
 src <- readLines("R/bancos_module.R", warn = FALSE)
 saves <- grep("save_bancos_confirmados(", src, fixed = TRUE, value = TRUE)
-ok("the five Bancos confirmation saves pass base = conf_base (the recovery is done inside modificar)",
-   length(saves) == 5L && all(grepl("base = conf_base", saves, fixed = TRUE)))
+# T12b removed the retired Vincular/Conciliar code (if (FALSE)): 4 of the
+# confirmation saves and 4 of the movement saves counted here were in it.
+ok("the Bancos confirmation save passes base = conf_base (the recovery is done inside modificar)",
+   length(saves) == 1L && all(grepl("base = conf_base", saves, fixed = TRUE)))
 ok("Bancos recovers a confirmation inside modificar_bancos_confirmados()",
    any(grepl("function(fresco) recover_confirmacion(fresco, conf_id", src, fixed = TRUE)))
 
@@ -113,7 +115,7 @@ ok("recover twice: exactly one 'recovered' row", sum(s3$action %in% "recovered")
 movs_saves <- unlist(lapply(c("R/bancos_module.R", "R/pasivos_module.R"), function(f)
   grep("save_bancos_movimientos(", readLines(f, warn = FALSE), fixed = TRUE, value = TRUE)))
 ok("every bancos_movimientos save in Bancos and Pasivos passes base = movs_base",
-   length(movs_saves) == 14L && all(grepl("base = movs_base", movs_saves, fixed = TRUE)))
+   length(movs_saves) == 10L && all(grepl("base = movs_base", movs_saves, fixed = TRUE)))
 
 s3_memoria_restaurar()
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
