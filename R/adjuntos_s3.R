@@ -308,12 +308,15 @@ tabla_pegada_preparar <- function(texto) {
 
 # For export and copy only: a cell that starts with = + - @ would run as a
 # formula when opened in Excel, so it gets a leading apostrophe. Stored and
-# shown text is never altered.
+# shown text is never altered. A pure number (-150.00, -1,234.5, +7) is left
+# alone so it stays a number in Excel (Luis, 2026-11-04); "-1+2" is not one.
+.NUMERO_PURO <- "^[-+]?([0-9][0-9,]*(\\.[0-9]+)?|\\.[0-9]+)$"
+
 neutralizar_celdas <- function(x) {
   if (is.null(x)) return(x)
   if (is.data.frame(x)) { x[] <- lapply(x, function(col) if (is.character(col)) neutralizar_celdas(col) else col); return(x) }
   if (!is.character(x)) return(x)
-  peligro <- !is.na(x) & grepl("^[=+@-]", x)
+  peligro <- !is.na(x) & grepl("^[=+@-]", x) & !grepl(.NUMERO_PURO, x)
   x[peligro] <- paste0("'", x[peligro])
   x
 }

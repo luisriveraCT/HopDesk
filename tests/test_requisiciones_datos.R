@@ -526,6 +526,12 @@ test_that("=HYPERLINK(...) y compañía se neutralizan al exportar o copiar, sin
   x <- c("=HYPERLINK(\"http://malo\",\"clic\")", "+1+1", "-2+3", "@SUM(A1)", "normal", "a=b", NA)
   expect_identical(neutralizar_celdas(x),
                    c("'=HYPERLINK(\"http://malo\",\"clic\")", "'+1+1", "'-2+3", "'@SUM(A1)", "normal", "a=b", NA))
+  # Luis, 2026-11-04: pure numbers stay numbers; anything else with = + - @ does not
+  expect_identical(neutralizar_celdas(c("-150.00", "-1,234.5", "+7", "-.5", "-3")),
+                   c("-150.00", "-1,234.5", "+7", "-.5", "-3"))
+  expect_identical(neutralizar_celdas(c("-1+2", "-1e5", "- 3", "-", "+A1", "-150.00 MXN", "@1", "=150")),
+                   c("'-1+2", "'-1e5", "'- 3", "'-", "'+A1", "'-150.00 MXN", "'@1", "'=150"))
+  expect_identical(tabla_a_texto_copiable(matrix(c("-150.00", "-1+2"), 1)), "-150.00\t'-1+2")
   df <- data.frame(t = c("=1", "ok"), n = 1:2, stringsAsFactors = FALSE)
   expect_identical(neutralizar_celdas(df)$t, c("'=1", "ok"))
   t <- tabla_pegada_preparar("=HYPERLINK(\"http://malo\")\tb")
