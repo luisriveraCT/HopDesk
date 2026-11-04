@@ -195,15 +195,21 @@
 # ("Vaciar agenda", purges, log rotation) pass permitir_reduccion = TRUE.
 # options(hopdesk.s3_red = "aviso") logs instead of refusing (an operational
 # escape hatch if a false positive ever shows up in production).
-.S3_SOLO_CRECEN <- function() unname(unlist(S3_KEYS[c("pasivos_audit", "papelera", "bancos_confirmados")]))
+# The hd-admin control-plane tables (CM13) only grow too: rows change status
+# (approved, revoked, read...) but are never removed.
+.S3_SOLO_CRECEN <- function() c(unname(unlist(S3_KEYS[c("pasivos_audit", "papelera", "bancos_confirmados")])),
+                                .HD_ADMIN_SOLO_CRECEN)
 # Keys outside the net, each for a reason:
 #   pagar_hoy*: Agenda is a queue -- confirming the day's payments empties it;
 #               its writes rebase on strict reads since A2 (CM10).
 #   sap_snapshot_*: replaced wholesale from the ERP on every fetch.
 #   agenda_sync_config / sync_versions: one-row or list state, not tables.
+#   emergency_lock*: hd-admin's list of locked accounts -- unlocking removes the
+#               row by design (the last one empties it); writes rebase on
+#               strict reads since CM13.
 .S3_SIN_RED <- function() c(unname(unlist(S3_KEYS[c("pagar_hoy", "pagar_hoy_sync",
                                                      "agenda_sync_config", "sync_versions")])),
-                            "sap_snapshot_AR.rds", "sap_snapshot_AP.rds")
+                            "sap_snapshot_AR.rds", "sap_snapshot_AP.rds", "emergency_lock.rds")
 .s3_sin_red <- function(key) key %in% .S3_SIN_RED() || grepl("^pagar_hoy_user_.*\\.rds$", key)
 
 # Why a shrink from `antes` to `despues` rows is refused, or NULL if it is fine.
@@ -290,6 +296,40 @@ rebase_por_id <- function(nuevo, base, fresco, id_col) {
   out <- dplyr::bind_rows(resto, mias)
   pos <- match(as.character(out[[id_col]]), ids_f); pos[is.na(pos)] <- Inf
   out[order(pos, seq_len(nrow(out))), , drop = FALSE]
+}
+
+# ── hd-admin control-plane tables (CM13) ─────────────────────────────────────
+# Client registry, client requests, hop requests and grants, invites, staff
+# notifications and emergency locks live under hd-admin/ for every
+# deployment. They used to be saved with aws.s3::s3saveRDS() over a lenient
+# read (a failed read was an empty table), so approving a request with S3
+# unreachable left the registry with that one client. Every change now goes
+# through modificar_hd_admin(): strict read, cambio(fresco), .s3_write (net
+# included). Unlike modificar_tabla, no column is dropped: these files carry
+# columns added over time that their schema does not list.
+.HD_ADMIN_CID <- "hd-admin"
+.HD_ADMIN_SOLO_CRECEN <- c("client_registry.rds", "client_requests.rds", "hop_requests.rds",
+                           "hop_grants.rds", "pending_invites.rds", "notifications.rds")
+
+.hd_admin_completar <- function(df, schema_fn) {
+  if (is.null(df) || !is.data.frame(df)) return(schema_fn())
+  s <- schema_fn()
+  for (col in setdiff(names(s), names(df))) df[[col]] <- s[[col]][NA_integer_]
+  df
+}
+
+# Strict read (a failed read stop()s), for a check made right before a change.
+leer_hd_admin <- function(key, schema_fn)
+  .hd_admin_completar(.s3_leer_para_escribir(key, .HD_ADMIN_CID), schema_fn)
+
+# Returns the table written (or S3's, unchanged, when cambio changed nothing).
+# A failed read or write stop()s: callers say so and change nothing else.
+modificar_hd_admin <- function(key, schema_fn, cambio) {
+  fresco <- leer_hd_admin(key, schema_fn)
+  nuevo  <- cambio(fresco)
+  if (identical(nuevo, fresco)) return(invisible(fresco))
+  .s3_write(nuevo, key, client_id = .HD_ADMIN_CID)
+  invisible(nuevo)
 }
 
 # Change a table starting from what S3 holds right now, never from a
@@ -2481,10 +2521,9 @@ read_client_registry <- function() {
   raw
 }
 
-write_client_registry <- function(df) {
-  aws.s3::s3saveRDS(df, object = "hd-admin/client_registry.rds", bucket = .s3_bucket())
-  invisible(TRUE)
-}
+# cambio(registry) -> registry, run on S3's current registry (CM13).
+modificar_client_registry <- function(cambio)
+  modificar_hd_admin("client_registry.rds", .schema_client_registry, cambio)
 
 read_client_requests <- function() {
   raw <- tryCatch(
@@ -2565,13 +2604,15 @@ update_client_user_count <- function(client_id) {
     n_active <- if (is.null(raw) || !is.data.frame(raw) || !nrow(raw)) 0L else {
       nrow(raw[is.na(raw$deleted) | raw$deleted != TRUE, , drop = FALSE])
     }
-    registry <- read_client_registry()
-    if (!nrow(registry)) return(invisible(FALSE))
-    idx <- which(registry$client_id == client_id)
-    if (!length(idx)) return(invisible(FALSE))
-    registry$current_users[idx] <- n_active
-    write_client_registry(registry)
-    invisible(TRUE)
+    found <- FALSE
+    modificar_client_registry(function(registry) {
+      idx <- which(registry$client_id == client_id)
+      if (!length(idx)) return(registry)
+      found <<- TRUE
+      registry$current_users[idx] <- n_active
+      registry
+    })
+    invisible(found)
   }, error = function(e) {
     message("[CLIENT] update_client_user_count failed for '", client_id, "': ", e$message)
     invisible(FALSE)

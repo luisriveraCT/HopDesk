@@ -1779,6 +1779,19 @@ tiersServer <- function(id, shared) {
       row <- reqs[idx, , drop = FALSE]
       reviewer <- shared$current_user() %||% "unknown"
 
+      # 0. The registry, read strictly: if it cannot be read, nothing is done
+      #    (CM13); if the client already exists, its folder must not be reset.
+      existe <- tryCatch(
+        row$client_id_proposed %in% leer_hd_admin("client_registry.rds", .schema_client_registry)$client_id,
+        error = function(e) { message("[CLIENTS] registry read failed: ", e$message); NA })
+      if (is.na(existe)) {
+        showNotification(tr("cm.hdadmin.no_se_leyo"), type = "error"); return()
+      }
+      if (existe) {
+        showNotification(tr("cm.hdadmin.cliente_existe", cliente = row$client_id_proposed),
+                         type = "error"); return()
+      }
+
       # 1. Initialize S3 folder
       init_ok <- tryCatch({
         initialize_client_folder(row$client_id_proposed, created_by = reviewer); TRUE
@@ -1790,8 +1803,7 @@ tiersServer <- function(id, shared) {
         return()
       }
 
-      # 2. Write to client_registry
-      registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
+      # 2. Add to client_registry, on S3's current registry
       new_entry <- data.frame(
         client_id     = row$client_id_proposed,
         display_name  = row$display_name,
@@ -1804,7 +1816,10 @@ tiersServer <- function(id, shared) {
         stringsAsFactors = FALSE
       )
       saved_reg <- tryCatch({
-        write_client_registry(rbind(registry, new_entry)); TRUE
+        modificar_client_registry(function(registry) {
+          if (new_entry$client_id %in% registry$client_id) return(registry)
+          dplyr::bind_rows(registry, new_entry)
+        }); TRUE
       }, error = function(e) { message("[CLIENTS] registry save failed: ", e$message); FALSE })
       if (!saved_reg) {
         showNotification("Error al guardar el registro del cliente.", type = "error"); return()
@@ -2123,19 +2138,26 @@ tiersServer <- function(id, shared) {
       }
 
       # ── Step B: update registry (max_users + display_name + contact_email) ─
-      registry <- tryCatch(read_client_registry(), error = function(e) NULL)
-      if (is.null(registry)) {
-        showNotification("No se pudo leer el registro de clientes.", type = "error"); return()
-      }
-      reg_idx <- which(registry$client_id == cid)
-      if (!length(reg_idx)) {
+      # On S3's current registry (CM13): a failed read saves nothing.
+      reg_found <- FALSE
+      ok_reg <- tryCatch({
+        modificar_client_registry(function(registry) {
+          reg_idx <- which(registry$client_id == cid)
+          if (!length(reg_idx)) return(registry)
+          reg_found <<- TRUE
+          registry$display_name[reg_idx]  <- p$display_name
+          registry$contact_email[reg_idx] <- p$contact_email
+          registry$max_users[reg_idx]     <- new_max
+          registry
+        }); TRUE
+      }, error = function(e) { message("[CLIENTS] reg save failed: ", e$message); FALSE })
+      if (ok_reg && !reg_found) {
+        if (isTRUE(p$needs_deact)) {
+          tryCatch(auth_save_usuarios(usuarios_orig, client_id = cid),
+                   error = function(e) message("[CLIENTS] rollback failed: ", e$message))
+        }
         showNotification("Cliente no encontrado en el registro.", type = "error"); return()
       }
-      registry$display_name[reg_idx]  <- p$display_name
-      registry$contact_email[reg_idx] <- p$contact_email
-      registry$max_users[reg_idx]     <- new_max
-      ok_reg <- tryCatch({ write_client_registry(registry); TRUE },
-                          error = function(e) { message("[CLIENTS] reg save failed: ", e$message); FALSE })
       if (!ok_reg) {
         # Rollback Step A: restore original usuarios
         if (isTRUE(p$needs_deact)) {
