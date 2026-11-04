@@ -253,12 +253,12 @@ settings_companies_observer <- function(input, output, session, shared) {
     if (!puede_o_avisa(shared, "can_manage_policies")) return()
     sel <- input$cmp_revert_partes_sel
     if (!length(sel)) { removeModal(); return() }
-    pm <- tryCatch(shared$policy_moves_db(), error = function(e) NULL)
-    if (is.null(pm)) pm <- .schema_policy_moves()[0L, ]
     sel_lc <- tolower(trimws(sel))
-    pm_new <- pm[!tolower(trimws(pm$Parte)) %in% sel_lc, , drop = FALSE]
+    cid    <- shared$effective_client_id()
     tryCatch({
-      save_policy_moves(pm_new, client_id = shared$effective_client_id())
+      # Only the chosen partners' dates go, on S3's current table (CM12e).
+      pm_new <- modificar_policy_moves(function(pm) pm[!tolower(trimws(pm$Parte)) %in% sel_lc, , drop = FALSE],
+                                       client_id = cid, permitir_reduccion = TRUE)
       bump_sync_version("policy_moves_db")
       shared$policy_moves_db(pm_new)
       removeModal()
@@ -611,47 +611,38 @@ settings_companies_observer <- function(input, output, session, shared) {
     user       <- tryCatch(shared$current_user_info()$username, error = function(e) "")
     now        <- Sys.time()
 
-    pp_old <- .get_pp_cmp()
-    pp_new <- if (!is.null(pp_old) && nrow(pp_old)) {
-      pp_old[tolower(trimws(pp_old$parte)) != tolower(trimws(parte)), , drop = FALSE]
-    } else {
-      .schema_partner_policies()[0L, ]
-    }
-
-    if (length(stack)) {
-      new_rows <- tibble::tibble(
-        parte        = rep(parte, length(stack)),
-        policy_id    = stack,
-        policy_order = seq_along(stack),
-        ledger       = rep(ledger, length(stack)),
-        is_interco   = rep(is_interco, length(stack)),
-        is_manual    = TRUE,
-        linked_by    = rep(user, length(stack)),
-        linked_at    = rep(now, length(stack))
-      )
-      pp_new <- dplyr::bind_rows(pp_new, new_rows)
-    }
+    new_rows <- if (length(stack)) tibble::tibble(
+      parte        = rep(parte, length(stack)),
+      policy_id    = stack,
+      policy_order = seq_along(stack),
+      ledger       = rep(ledger, length(stack)),
+      is_interco   = rep(is_interco, length(stack)),
+      is_manual    = TRUE,
+      linked_by    = rep(user, length(stack)),
+      linked_at    = rep(now, length(stack))
+    ) else NULL
+    es_parte <- function(x) tolower(trimws(x)) == tolower(trimws(parte))
+    cid <- shared$effective_client_id()
 
     tryCatch({
-      save_partner_policies(pp_new, client_id = shared$effective_client_id())
+      # Only this partner's rows change, on S3's current table (CM12e).
+      pp_new <- modificar_partner_policies(function(pp) {
+        pp <- pp[!es_parte(pp$parte), , drop = FALSE]
+        if (is.null(new_rows)) pp else dplyr::bind_rows(pp, new_rows)
+      }, client_id = cid, permitir_reduccion = TRUE)
       bump_sync_version("partner_policies_db")
       shared$partner_policies_db(pp_new)
 
-      # Clear stale policy moves for this partner — they'll recompute on next Apply.
-      # Captured: user = user, now = now (for future audit log use).
-      existing_moves <- tryCatch(shared$policy_moves_db(), error = function(e) NULL)
-      if (!is.null(existing_moves) && nrow(existing_moves)) {
-        kept_moves <- existing_moves[
-          tolower(trimws(existing_moves$Parte)) != tolower(trimws(parte)), , drop = FALSE
-        ]
-        if (nrow(kept_moves) < nrow(existing_moves)) {
-          tryCatch({
-            save_policy_moves(kept_moves, client_id = shared$effective_client_id())
-            bump_sync_version("policy_moves_db")
-            shared$policy_moves_db(kept_moves)
-          }, error = function(e) NULL)
-        }
-      }
+      # Clear stale policy moves for this partner — they'll recompute on next
+      # Apply. On S3's current table; a failure is said, not swallowed.
+      limpio <- tryCatch({
+        kept_moves <- modificar_policy_moves(function(pm) pm[!es_parte(pm$Parte), , drop = FALSE],
+                                             client_id = cid, permitir_reduccion = TRUE)
+        bump_sync_version("policy_moves_db")
+        shared$policy_moves_db(kept_moves)
+        TRUE
+      }, error = function(e) { message("[POLICY_SAVE] clearing old dates failed: ", e$message); FALSE })
+      if (!limpio) showNotification(tr("comun.error_guardar"), type = "warning", duration = 6)
 
       cmp_active_parte(NULL)
       cmp_stack(character())
@@ -760,9 +751,6 @@ settings_companies_observer <- function(input, output, session, shared) {
     catalog <- .get_catalog_cmp()
     sap     <- .prep_sap(tryCatch(shared$sap_data(), error = function(e) list()))
     ov      <- tryCatch(shared$holiday_overrides_db(), error = function(e) NULL)
-
-    existing_moves <- tryCatch(shared$policy_moves_db(), error = function(e) NULL)
-    if (is.null(existing_moves)) existing_moves <- .schema_policy_moves()[0L, ]
 
     # Step 1 — strip interco
     is_ic <- !is.na(pp_all$is_interco) & pp_all$is_interco
@@ -889,20 +877,11 @@ settings_companies_observer <- function(input, output, session, shared) {
     #                 preserve existing policy moves for manually-dated docs
     # "all"         → replace for computed partners; keep for others;
     #                 also clear manual date overrides so policy date shows
-    moves <- switch(scope,
-      "new" = {
-        if (nrow(existing_moves)) {
-          exist_keys <- paste(existing_moves$ledger, existing_moves$Empresa,
-                              existing_moves$Moneda, existing_moves$Documento, sep = "·")
-          new_keys   <- paste(new_moves$ledger, new_moves$Empresa,
-                              new_moves$Moneda, new_moves$Documento, sep = "·")
-          dplyr::bind_rows(existing_moves,
-                           new_moves[!new_keys %in% exist_keys, , drop = FALSE])
-        } else {
-          new_moves
-        }
-      },
-      "skip_manual" = {
+    # The merge runs on S3's current policy_moves, never this session's copy
+    # (CM12e): each scope removes only what it replaces.
+    cambio <- switch(scope,
+      "new" = function(existing_moves) .policy_moves_sumar(existing_moves, new_moves),
+      "skip_manual" = function(existing_moves) {
         man_db   <- tryCatch(shared$moves_db(), error = function(e) NULL)
         man_keys <- if (!is.null(man_db) && nrow(man_db))
           paste(man_db$ledger, man_db$Empresa, man_db$Moneda, man_db$Documento, sep = "·")
@@ -910,44 +889,37 @@ settings_companies_observer <- function(input, output, session, shared) {
         new_keys <- paste(new_moves$ledger, new_moves$Empresa,
                           new_moves$Moneda, new_moves$Documento, sep = "·")
         apply_these <- new_moves[!new_keys %in% man_keys, , drop = FALSE]
-
-        if (nrow(existing_moves)) {
-          exist_keys <- paste(existing_moves$ledger, existing_moves$Empresa,
-                              existing_moves$Moneda, existing_moves$Documento, sep = "·")
-          # Keep existing for: manually-dated docs OR uncomputed partners
-          keep_ex <- existing_moves[
-            exist_keys %in% man_keys |
-              !tolower(trimws(existing_moves$Parte)) %in% computed_partes_lc, ,
-            drop = FALSE
-          ]
-          dplyr::bind_rows(keep_ex, apply_these)
-        } else {
-          apply_these
-        }
-      },
-      {
-        # "all" — replace for computed partners, keep for others
-        unaffected <- if (nrow(existing_moves))
-          existing_moves[
+        exist_keys <- paste(existing_moves$ledger, existing_moves$Empresa,
+                            existing_moves$Moneda, existing_moves$Documento, sep = "·")
+        # Keep existing for: manually-dated docs OR uncomputed partners
+        keep_ex <- existing_moves[
+          exist_keys %in% man_keys |
             !tolower(trimws(existing_moves$Parte)) %in% computed_partes_lc, ,
-            drop = FALSE
-          ]
-        else
-          existing_moves
+          drop = FALSE
+        ]
+        dplyr::bind_rows(keep_ex, apply_these)
+      },
+      function(existing_moves) {
+        # "all" — replace for computed partners, keep for others
+        unaffected <- existing_moves[
+          !tolower(trimws(existing_moves$Parte)) %in% computed_partes_lc, , drop = FALSE]
         dplyr::bind_rows(unaffected, new_moves)
       }
     )
+    cid <- shared$effective_client_id()
 
     tryCatch({
-      save_policy_moves(moves, client_id = shared$effective_client_id())
+      moves <- if (identical(scope, "new")) modificar_policy_moves(cambio, client_id = cid)
+               else modificar_policy_moves(cambio, client_id = cid, permitir_reduccion = TRUE)
       bump_sync_version("policy_moves_db")
       shared$policy_moves_db(moves)
 
       # "Todos sin excepción": clear manual date overrides for computed docs so
       # FechaEff shows the policy date rather than the superseded override.
+      # Pruned from S3's current moves, read strictly right before (CM12e).
       if (scope == "all") {
-        man_db <- tryCatch(shared$moves_db(), error = function(e) NULL)
-        if (!is.null(man_db) && nrow(man_db)) {
+        man_db <- leer_tabla_para_escribir(S3_KEYS$moves, cid, .schema_moves)
+        if (nrow(man_db)) {
           # ledger included (fixed 2026-09-26): every other key in this
           # function is (ledger, Empresa, Moneda, Documento) -- only this
           # prune built a weaker one. AR and AP legitimately reuse the same
@@ -959,7 +931,7 @@ settings_companies_observer <- function(input, output, session, shared) {
                             man_db$Moneda, man_db$Documento, sep = "·")
           pruned <- man_db[!man_keys %in% pol_keys, , drop = FALSE]
           if (nrow(pruned) < nrow(man_db)) {
-            save_moves(pruned, client_id = shared$effective_client_id())
+            save_moves(pruned, client_id = cid)
             bump_sync_version("moves_db")
             shared$moves_db(pruned)
           }
