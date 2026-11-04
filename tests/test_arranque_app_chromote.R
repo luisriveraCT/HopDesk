@@ -118,6 +118,8 @@ flujo_pdf <- function(et) {
   # The button is Shiny's download link; a headless session's own browser
   # context ignores download settings, so the page fetches the link itself:
   # the same request a click sends, served by the same downloadHandler.
+  # Until Shiny binds the output the link has no download href, and fetching it returns the page (HTML).
+  if (!ok(paste(et, "Flujo: the PDF link gets its download href"), poll_until(function() isTRUE(tryCatch(ev("((document.getElementById('btn_export_pdf') || {}).href || '').indexOf('/download/') >= 0"), error = function(x) FALSE)), timeout_s = 30, interval_s = 1))) return()
   n <- length(registro())
   r <- tryCatch(b$Runtime$evaluate(
     "(function(){ var a = document.getElementById('btn_export_pdf');
