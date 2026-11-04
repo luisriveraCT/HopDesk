@@ -2210,7 +2210,7 @@ tiersServer <- function(id, shared) {
       }, error = function(e) { message("[CLIENTS] reg save failed: ", e$message); FALSE })
       if (ok_reg && !reg_found) {
         if (isTRUE(p$needs_deact)) {
-          tryCatch(auth_save_usuarios(usuarios_orig, client_id = cid),
+          tryCatch(auth_save_usuarios(usuarios_orig, client_id = cid, base = usuarios_new),
                    error = function(e) message("[CLIENTS] rollback failed: ", e$message))
         }
         showNotification("Cliente no encontrado en el registro.", type = "error"); return()
