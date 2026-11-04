@@ -40,12 +40,14 @@ suppressPackageStartupMessages({
 .orig_s3readRDS  <- aws.s3::s3readRDS
 .orig_s3saveRDS  <- aws.s3::s3saveRDS
 .orig_get_bucket <- aws.s3::get_bucket
+.orig_object_exists <- aws.s3::object_exists
 
 .restore_aws_s3_namespace <- function() {
   suppressWarnings({
     utils::assignInNamespace("s3readRDS",  .orig_s3readRDS,  "aws.s3")
     utils::assignInNamespace("s3saveRDS",  .orig_s3saveRDS,  "aws.s3")
     utils::assignInNamespace("get_bucket", .orig_get_bucket, "aws.s3")
+    utils::assignInNamespace("object_exists", .orig_object_exists, "aws.s3")
   })
 }
 
@@ -80,6 +82,10 @@ tryCatch({
     utils::assignInNamespace("s3readRDS",  mock_s3readRDS,   "aws.s3")
     utils::assignInNamespace("s3saveRDS",  mock_s3saveRDS,   "aws.s3")
     utils::assignInNamespace("get_bucket", mock_s3getbucket, "aws.s3")
+    # Strict reads before a write (.s3_leer_para_escribir, CM13's hd-admin
+    # tables) ask whether a missing object really does not exist.
+    utils::assignInNamespace("object_exists",
+                             function(object, bucket, ...) !is.null(.mock_s3_store[[object]]), "aws.s3")
   })
 
   # ── Env vars ─────────────────────────────────────────────────────────────────
@@ -175,6 +181,9 @@ tryCatch({
     tryCatch(mock_s3readRDS("hd-admin/pending_invites.rds", "mock-bucket"),
              error = function(e) .schema_pending_invites())
   }
+  # The app no longer has write_pending_invites() / write_client_registry()
+  # (CM13: changes go through modificar_hd_admin()); tests still use these
+  # two to plant data in the mock store.
   write_pending_invites <- function(df) {
     mock_s3saveRDS(df, "hd-admin/pending_invites.rds", "mock-bucket")
     invisible(TRUE)
