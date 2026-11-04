@@ -226,22 +226,23 @@ cat("\n-- Part D: individual audit entries for provisions dropped by pause/archi
 
 .chk_true(any(grepl('notes\\s*=\\s*sprintf\\("removed as future provisional provision when liability .* was paused"', list_txt)),
      "pause handler logs each dropped provision individually, naming the liability and the reason")
-.chk_true(any(grepl('notes\\s*=\\s*sprintf\\("removed as future provisional provision when liability .* was archived"', list_txt)),
-     "archive handler logs each dropped provision individually, naming the liability and the reason")
+# Deleting ("Borrar", T18) no longer drops any provision: they stay on S3,
+# hidden with the liability, and come back with it. So the archive handler
+# has no per-provision drop to log any more.
+.chk_false(any(grepl("removed as future provisional provision when liability .* was archived", list_txt)),
+     "Borrar drops no provision, so it logs no provision.deleted (T18)")
 
-# Both handlers must capture the full pre-removal row as `before`, not just
-# an id -- an auditor reconstructing "what exactly was this provision"
+# The pause handler must capture the full pre-removal row as `before`, not
+# just an id -- an auditor reconstructing "what exactly was this provision"
 # needs the row content, since the row itself no longer exists afterward
 # (these are hard-removed from the table, not soft-deleted in place).
-.chk (sum(grepl("before\\s*=\\s*as\\.list\\(dropped_rows\\[i, , drop = FALSE\\]\\)", list_txt)), 2L,
-     "exactly 2 sites (pause + archive) capture the full dropped-provision row as before=")
+.chk (sum(grepl("before\\s*=\\s*as\\.list\\(dropped_rows\\[i, , drop = FALSE\\]\\)", list_txt)), 1L,
+     "exactly 1 site (pause) captures the full dropped-provision row as before=")
 
-# The archive handler's own liability-level entry must now count how many
-# provisions were dropped alongside it (the pause handler's equivalent
-# entry doesn't need a count -- each drop already gets its own entry, and
-# the liability-level notes there already describes the estado change).
-.chk_true(any(grepl('notes\\s*=\\s*sprintf\\("%d provisión\\(es\\) futura\\(s\\) eliminada\\(s\\) junto con el pasivo"', list_txt)),
-     "archive's liability.deleted entry names how many provisions were dropped alongside it")
+# Borrar's liability-level entry counts the provisions kept with it and the
+# payments left in the Agenda.
+.chk_true(any(grepl('provisional provision\\(s\\) kept and hidden with the liability', list_txt)),
+     "Borrar's liability.deleted entry counts the provisions kept with it (T18)")
 
 # =============================================================================
 # Part E -- functional: the drop_mask boolean logic, extracted verbatim from
@@ -251,7 +252,7 @@ cat("\n-- Part D: individual audit entries for provisions dropped by pause/archi
 cat("\n-- Part E: drop_mask logic (extracted + evaluated against synthetic data) --\n")
 
 dm_start <- grep("^\\s*drop_mask <- !is\\.na\\(provs\\$liability_id\\)", list_txt)
-.chk_true(length(dm_start) == 2, "found exactly 2 occurrences of the drop_mask expression (pause + archive)")
+.chk_true(length(dm_start) == 1, "found exactly 1 occurrence of the drop_mask expression (pause; Borrar drops none since T18)")
 
 if (length(dm_start) >= 1) {
   dm_code <- paste(list_txt[dm_start[1]:(dm_start[1] + 2)], collapse = "\n")

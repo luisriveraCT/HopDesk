@@ -530,5 +530,11 @@
   "requisiciones.tabla.recorte_filas": "Se pegaron {filas} filas; se guardaron {guardadas}.",
   "requisiciones.tabla.recorte_columnas": "Se pegaron {columnas} columnas; se guardaron {cguardadas}.",
   "requisiciones.tabla.recorte_ambos": "Se pegaron {filas} filas y {columnas} columnas; se guardaron {guardadas} filas y {cguardadas} columnas.",
-  "requisiciones.aviso.comentario": "Comentario nuevo en {folio}"
+  "requisiciones.aviso.comentario": "Comentario nuevo en {folio}",
+  "tablas.pasivos.borrar": "Borrar",
+  "tablas.pasivos.cancelar": "Cancelar",
+  "tablas.pasivos.borrar_pregunta": "¿Borrar este pasivo? Se va a la Papelera con todas sus provisiones, y desde ahí se recupera tal como estaba.",
+  "tablas.pasivos.borrar_agenda_uno": "Tiene 1 pago en la Agenda: ese se queda.",
+  "tablas.pasivos.borrar_agenda_otros": "Tiene {n} pagos en la Agenda: esos se quedan.",
+  "tablas.pasivos.borrado_ok": "Pasivo borrado. Lo puedes recuperar desde la Papelera."
 }

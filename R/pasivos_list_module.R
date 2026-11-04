@@ -72,6 +72,17 @@ pasivos_list_module_ui <- function(id) {
   )
 }
 
+# How many of a liability's payments are already in the Agenda: provisions
+# converted into an item that was staged there (pagar_hoy_id). Deleting the
+# liability leaves them as they are, and says so (Luis, T18).
+pasivos_pagos_en_agenda <- function(provs, lid) {
+  if (is.null(provs) || !nrow(provs) || !all(c("liability_id", "estado", "pagar_hoy_id") %in% names(provs)))
+    return(0L)
+  ph <- as.character(provs$pagar_hoy_id)
+  sum(!is.na(provs$liability_id) & provs$liability_id == lid &
+        provs$estado %in% "converted" & !is.na(ph) & nzchar(ph))
+}
+
 # ── Server ────────────────────────────────────────────────────────────────────
 pasivos_list_module_server <- function(id, shared) {
   shiny::moduleServer(id, function(input, output, session) {
@@ -389,11 +400,17 @@ pasivos_list_module_server <- function(id, shared) {
         shiny::showNotification("Sin permiso para archivar.", type = "error"); return()
       }
       archive_target_rv(lid)
+      provs <- tryCatch(shared$pasivos_provisions_db(),
+                        error = function(e) .schema_pasivos_provision())
+      n_agenda <- pasivos_pagos_en_agenda(provs, lid)
       shiny::showModal(shiny::modalDialog(
-        "¿Archivar este pasivo? Sus provisiones futuras se eliminarán.",
+        shiny::p(tr("tablas.pasivos.borrar_pregunta")),
+        if (n_agenda > 0L) shiny::p(class = "text-warning mb-0",
+          if (n_agenda == 1L) tr("tablas.pasivos.borrar_agenda_uno")
+          else tr("tablas.pasivos.borrar_agenda_otros", n = n_agenda)),
         footer = shiny::tagList(
-          shiny::modalButton("Cancelar"),
-          shiny::actionButton(ns("plist_confirm_archive"), "Archivar",
+          shiny::modalButton(tr("tablas.pasivos.cancelar")),
+          shiny::actionButton(ns("plist_confirm_archive"), tr("tablas.pasivos.borrar"),
                               class = "btn btn-danger")
         ),
         size = "s"
@@ -418,20 +435,18 @@ pasivos_list_module_server <- function(id, shared) {
       shared$pasivos_liabilities_db(liabs)
       bump_sync_version("pasivos_liabilities_db", client_id = shared$effective_client_id())
 
-      # Remove future provisions -- captured individually BEFORE filtering,
-      # same reasoning as the pause handler above (found 2026-09-05).
+      # Its provisions are NOT removed (Luis, T18): a deleted liability leaves
+      # every view together with all of them -- the Calendar, the Agenda and
+      # the cash flow already skip every provisional provision of a "deleted"
+      # liability (pasivos_provisions_as_ledger_rows, CM06) -- and recovering
+      # it brings them back exactly, ids and hand edits included. Deleting
+      # used to drop the future ones from S3, so a recovered liability came
+      # back without them. Payments already in the Agenda (converted) stay.
       provs <- tryCatch(shared$pasivos_provisions_db(),
                         error = function(e) .schema_pasivos_provision())
-      provs_base <- provs   # CM09: only the dropped rows leave S3's table
-      drop_mask <- !is.na(provs$liability_id) & provs$liability_id == lid &
-                   !is.na(provs$estado) & provs$estado == "provisional" &
-                   !is.na(provs$fecha_efectiva) & provs$fecha_efectiva >= Sys.Date()
-      dropped_rows <- provs[drop_mask, , drop = FALSE]
-      provs <- provs[!drop_mask, , drop = FALSE]
-      tryCatch(save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base), error = function(e) NULL)
-      tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
-      shared$pasivos_provisions_db(provs)
-      bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
+      de_este <- !is.na(provs$liability_id) & provs$liability_id == lid
+      n_prov   <- sum(de_este & provs$estado %in% "provisional")
+      n_agenda <- pasivos_pagos_en_agenda(provs, lid)
 
       tryCatch(pasivos_log_audit(
         action_type = "liability.deleted",
@@ -441,26 +456,13 @@ pasivos_list_module_server <- function(id, shared) {
         target_id   = lid,
         before      = list(nombre = nombre, estado = old_estado),
         after       = list(nombre = nombre, estado = "deleted"),
-        notes       = sprintf("%d provisión(es) futura(s) eliminada(s) junto con el pasivo", nrow(dropped_rows)),
+        notes       = sprintf("%d provisional provision(s) kept and hidden with the liability; %d payment(s) in the Agenda left as they are",
+                              n_prov, n_agenda),
         client_id   = shared$effective_client_id()
       ), error = function(e) NULL)
 
-      if (nrow(dropped_rows)) {
-        for (i in seq_len(nrow(dropped_rows))) {
-          tryCatch(pasivos_log_audit(
-            action_type = "provision.deleted",
-            user        = user,
-            target_kind = "provision",
-            target_id   = dropped_rows$id[i],
-            before      = as.list(dropped_rows[i, , drop = FALSE]),
-            notes       = sprintf("removed as future provisional provision when liability '%s' was archived", nombre),
-            client_id   = shared$effective_client_id()
-          ), error = function(e) NULL)
-        }
-      }
-
       shiny::removeModal()
-      shiny::showNotification("Pasivo archivado.", type = "message", duration = 3)
+      shiny::showNotification(tr("tablas.pasivos.borrado_ok"), type = "message", duration = 3)
     })
 
     # ── Restore ─────────────────────────────────────────────────────────────
