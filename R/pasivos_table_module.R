@@ -16,11 +16,11 @@ pasivos_table_module_ui <- function(id) {
     shiny::div(
       class = "d-flex gap-2 px-3 py-2 border-bottom bg-white",
       shiny::actionButton(ns("btn_add_liability"),
-                          shiny::tagList(shiny::icon("plus"), " Agregar pasivo"),
+                          shiny::tagList(shiny::icon("plus"), " ", tr("tablas.pasivos.btn.agregar")),
                           class = "btn btn-primary btn-sm",
                           onclick = "Shiny.setInputValue('pasivos_add_liability', Math.random(), {priority:'event'})"),
       shiny::actionButton(ns("btn_add_provision_manual"),
-                          shiny::tagList(shiny::icon("plus"), " Provisión manual"),
+                          shiny::tagList(shiny::icon("plus"), " ", tr("tablas.pasivos.btn.provision_manual")),
                           class = "btn btn-outline-secondary btn-sm")
     ),
 
@@ -34,7 +34,7 @@ pasivos_table_module_ui <- function(id) {
       # table's own; above it stay what only Pasivos has -- the granularity,
       # the window (← 60 / 60 →) and the summary line.
       shiny::tabPanel(
-        "Tabla", value = "tabla",
+        tr("tablas.pasivos.tab.tabla"), value = "tabla",
         shiny::div(
           shiny::div(
             class = "d-flex flex-wrap gap-2 align-items-center px-3 py-2 border-bottom bg-white",
@@ -42,16 +42,16 @@ pasivos_table_module_ui <- function(id) {
               inputId      = ns("granularity"), label = NULL,
               choiceValues = c("day", "week", "month", "year"),
               choiceNames  = list(
-                shiny::tags$span("Día",    title = "Ver cada provisión en su fecha exacta"),
-                shiny::tags$span("Semana", title = "Agrupar provisiones por semana"),
-                shiny::tags$span("Mes",    title = "Agrupar provisiones por mes"),
-                shiny::tags$span("Año",    title = "Agrupar provisiones por año")
+                shiny::tags$span(tr("tablas.pasivos.gran.dia"), title = tr("tablas.pasivos.gran_ayuda.dia")),
+                shiny::tags$span(tr("tablas.pasivos.gran.semana"), title = tr("tablas.pasivos.gran_ayuda.semana")),
+                shiny::tags$span(tr("tablas.pasivos.gran.mes"), title = tr("tablas.pasivos.gran_ayuda.mes")),
+                shiny::tags$span(tr("tablas.pasivos.gran.anio"), title = tr("tablas.pasivos.gran_ayuda.anio"))
               ),
               selected = "day", size = "sm", status = "outline-secondary"
             ),
-            shiny::actionButton(ns("extend_left"), "← 60 días",
+            shiny::actionButton(ns("extend_left"), tr("tablas.pasivos.ventana.antes"),
                                 class = "btn btn-outline-secondary btn-sm pasivos-extend-btn"),
-            shiny::actionButton(ns("extend_right"), "60 días →",
+            shiny::actionButton(ns("extend_right"), tr("tablas.pasivos.ventana.despues"),
                                 class = "btn btn-outline-secondary btn-sm pasivos-extend-btn"),
             shiny::div(class = "d-flex flex-wrap align-items-center gap-2 small ms-2",
                        shiny::uiOutput(ns("summary_line"), inline = TRUE))
@@ -62,7 +62,7 @@ pasivos_table_module_ui <- function(id) {
 
       # ── Lista sub-tab ────────────────────────────────────────────────────
       shiny::tabPanel(
-        "Lista de pasivos", value = "lista",
+        tr("tablas.pasivos.tab.lista"), value = "lista",
         pasivos_list_module_ui(ns("list"))
       )
     ),
@@ -198,7 +198,7 @@ pasivos_table_module_server <- function(id, shared) {
       empresa <- input$ppm_empresa %||% ""
 
       if (!has_capability(user, "pasivos.create_provision_manual")) {
-        shiny::showNotification("Sin permiso.", type = "error"); return()
+        shiny::showNotification(tr("tablas.pasivos.sin_permiso"), type = "error"); return()
       }
 
       shinyjs::disable("ppm_save")
@@ -220,7 +220,7 @@ pasivos_table_module_server <- function(id, shared) {
       ok <- tryCatch({ save_pasivos_provisions(new_all, client_id = shared$effective_client_id(), base = existing); TRUE },
                      error = function(e) {
                        shiny::showNotification(
-                         paste0("Error al guardar: ", conditionMessage(e)),
+                         tr("tablas.pasivos.error_guardar", error = conditionMessage(e)),
                          type = "error"); FALSE })
       if (!ok) return()
 
@@ -241,7 +241,7 @@ pasivos_table_module_server <- function(id, shared) {
       ), error = function(e) NULL)
 
       shiny::removeModal()
-      shiny::showNotification("Provisión manual creada.", type = "message", duration = 3)
+      shiny::showNotification(tr("tablas.pasivos.manual_creada"), type = "message", duration = 3)
     })
 
     # ── Visible window ──────────────────────────────────────────────────────
@@ -397,13 +397,13 @@ pasivos_table_module_server <- function(id, shared) {
       vis <- tabla$visibles()
       if (!is.null(vis)) ldf <- ldf[ldf$row_id %in% vis, , drop = FALSE]
       if (!nrow(ldf))
-        return(shiny::tags$span(class = "text-muted", "Sin datos para los filtros seleccionados."))
+        return(shiny::tags$span(class = "text-muted", tr("tablas.pasivos.resumen.sin_datos")))
 
       n_provs <- sum(ldf$cell_kind %in% c("provision", "overdue_provision"), na.rm = TRUE)
       n_items <- sum(ldf$cell_kind %in%
                        c("manual_item", "confirmed_item", "overdue_manual"), na.rm = TRUE)
       n_liabs <- length(unique(ldf$row_id))
-      summary_text <- sprintf("Mostrando %d pasivos · %d provisiones · %d items", n_liabs, n_provs, n_items)
+      summary_text <- tr("tablas.pasivos.resumen.texto", pasivos = n_liabs, provisiones = n_provs, items = n_items)
 
       # Per-currency badges: provisions due in the next 7 natural days
       today <- Sys.Date()
@@ -422,7 +422,7 @@ pasivos_table_module_server <- function(id, shared) {
           style = sprintf(
             "background:%s; color:#fff; font-size:11px; font-weight:500; padding:3px 9px;",
             col),
-          sprintf("%s %s · %d próx.", cur, fmt_money(total), n)
+          tr("tablas.pasivos.resumen.proximas", moneda = cur, monto = fmt_money(total), n = n)
         )
       })
 
@@ -440,41 +440,41 @@ pasivos_table_module_server <- function(id, shared) {
 # ── Manual provision modal UI ─────────────────────────────────────────────────
 .ppm_modal_ui <- function(empresa_choices = character(), ns = identity) {
   shiny::modalDialog(
-    title     = "Nueva provisión manual",
+    title     = tr("tablas.pasivos.manual.titulo"),
     size      = "m",
     easyClose = FALSE,
     shiny::fluidRow(
       shiny::column(6,
-        shiny::selectInput(ns("ppm_empresa"),   "Empresa",
+        shiny::selectInput(ns("ppm_empresa"),   tr("tablas.pasivos.manual.empresa"),
                            choices  = empresa_choices,
                            selected = empresa_choices[1] %||% ""),
-        shiny::selectInput(ns("ppm_moneda"),    "Moneda",
+        shiny::selectInput(ns("ppm_moneda"),    tr("tablas.pasivos.manual.moneda"),
                            choices = CURRENCIES, selected = "MXN"),
-        shiny::textInput(ns("ppm_documento"),   "Documento", value = "")
+        shiny::textInput(ns("ppm_documento"),   tr("tablas.pasivos.manual.documento"), value = "")
       ),
       shiny::column(6,
-        shiny::textInput(ns("ppm_parte"),       "Parte / Proveedor", value = ""),
+        shiny::textInput(ns("ppm_parte"),       tr("tablas.pasivos.manual.parte"), value = ""),
         shiny::uiOutput(ns("ppm_parte_suggestions")),
-        shiny::textInput(ns("ppm_codigo"),      "Código",            value = ""),
-        shiny::numericInput(ns("ppm_importe"),  "Importe",           value = 0, min = 0),
-        shiny::textInput(ns("ppm_referencia"),  "Referencia",        value = "")
+        shiny::textInput(ns("ppm_codigo"),      tr("tablas.pasivos.manual.codigo"),            value = ""),
+        shiny::numericInput(ns("ppm_importe"),  tr("tablas.pasivos.manual.importe"),           value = 0, min = 0),
+        shiny::textInput(ns("ppm_referencia"),  tr("tablas.pasivos.manual.referencia"),        value = "")
       )
     ),
     shiny::fluidRow(
       shiny::column(6,
-        shiny::dateInput(ns("ppm_fecha"), "Fecha",
+        shiny::dateInput(ns("ppm_fecha"), tr("tablas.pasivos.manual.fecha"),
                          value = Sys.Date(), weekstart = 1, language = "es")
       ),
       shiny::column(6,
-        shiny::textAreaInput(ns("ppm_notas"), "Notas", rows = 3, value = "")
+        shiny::textAreaInput(ns("ppm_notas"), tr("tablas.pasivos.manual.notas"), rows = 3, value = "")
       )
     ),
     footer = shiny::tagList(
-      shiny::modalButton("Cancelar"),
+      shiny::modalButton(tr("tablas.pasivos.manual.cancelar")),
       # No "send to Agenda" option here, deliberately: a provision may never
       # enter Agenda directly (Mouse's rule) -- only its converted derivative
       # item can, via the separate convert-to-comprobante modal.
-      shiny::actionButton(ns("ppm_save"), "Agregar a calendario",
+      shiny::actionButton(ns("ppm_save"), tr("tablas.pasivos.manual.guardar"),
                           class = "btn btn-primary")
     )
   )
