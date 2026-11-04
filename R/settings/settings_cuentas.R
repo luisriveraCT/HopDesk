@@ -7,7 +7,9 @@
 # =============================================================================
 # Cuentas de Empresa
 # =============================================================================
-.cuentas_panel_ui <- function(cmap) {
+# editar = FALSE (no can_manage_bancos): the tables still show, without the
+# buttons that write; the server checks again in each save.
+.cuentas_panel_ui <- function(cmap, editar = TRUE) {
   div(
     div(class = "d-flex align-items-center gap-2 mb-2",
       tags$h6(class = "fw-semibold mb-0",
@@ -26,8 +28,9 @@
           div(class = "card-header d-flex align-items-center py-2",
             tags$span(class = "fw-semibold small flex-grow-1",
                       tagList(icon("university"), " Bancos")),
-            actionButton("cta_new_banco", tagList(icon("plus"), " Banco"),
-                         class = "btn btn-sm btn-outline-primary py-0 px-2")
+            if (editar)
+              actionButton("cta_new_banco", tagList(icon("plus"), " Banco"),
+                           class = "btn btn-sm btn-outline-primary py-0 px-2")
           ),
           div(class = "card-body p-0", style = "max-height: 260px; overflow-y: auto;",
             DT::dataTableOutput("tbl_bancos_cat")
@@ -47,8 +50,9 @@
                               setNames(names(cmap), unname(cmap))),
                   width = "100%")
               ),
-              actionButton("cta_new_cuenta", tagList(icon("plus"), " Cuenta"),
-                           class = "btn btn-sm btn-outline-primary")
+              if (editar)
+                actionButton("cta_new_cuenta", tagList(icon("plus"), " Cuenta"),
+                             class = "btn btn-sm btn-outline-primary")
             )
           ),
           div(class = "card-body p-0", style = "max-height: 260px; overflow-y: auto;",
@@ -136,6 +140,8 @@ settings_cuentas_observer <- function(input, output, session, shared) {
 
   editing_cuenta_id <- reactiveVal(NULL)
   editing_banco_id  <- reactiveVal(NULL)
+  # Without can_manage_bancos the forms open read-only (no Guardar/Eliminar).
+  .puede_bancos <- function() puede(tryCatch(isolate(shared$usuario()), error = function(e) NULL), "can_manage_bancos")
 
   output$tbl_bancos_cat <- DT::renderDataTable({
     .bancos_cat_datatable(client_id = shared$effective_client_id())
@@ -154,7 +160,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
   # ── + Banco ──────────────────────────────────────────────────────────────────
   observeEvent(input$cta_new_banco, {
     editing_banco_id(NULL); editing_cuenta_id(NULL)
-    output$cuentas_edit_form <- renderUI({ .banco_form_ui(NULL) })
+    output$cuentas_edit_form <- renderUI({ .banco_form_ui(NULL, editar = .puede_bancos()) })
   }, ignoreInit = TRUE)
 
   # ── Select banco ─────────────────────────────────────────────────────────────
@@ -168,11 +174,12 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     if (!nrow(bancos) || sel > nrow(bancos)) return()
     row <- bancos[sel, ]
     editing_banco_id(row$id); editing_cuenta_id(NULL)
-    output$cuentas_edit_form <- renderUI({ .banco_form_ui(row) })
+    output$cuentas_edit_form <- renderUI({ .banco_form_ui(row, editar = .puede_bancos()) })
   }, ignoreInit = TRUE, ignoreNULL = FALSE)
 
   # ── Save banco ────────────────────────────────────────────────────────────────
   observeEvent(input$banco_save, {
+    if (!puede_o_avisa(shared, "can_manage_bancos")) return()
     eid    <- editing_banco_id()
     nombre <- trimws(input$banco_nombre %||% "")
     clave  <- trimws(input$banco_clave  %||% "")
@@ -206,6 +213,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
 
   # ── Delete banco ──────────────────────────────────────────────────────────────
   observeEvent(input$banco_delete, {
+    if (!puede_o_avisa(shared, "can_manage_bancos")) return()
     eid <- editing_banco_id(); if (is.null(eid)) return()
     bancos  <- tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
     deleted_nombre <- { m <- bancos$nombre[bancos$id == eid]; if (length(m)) m[1] else eid }
@@ -234,7 +242,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     pre_b  <- if (length(sel_b) && nrow(bancos) >= sel_b) bancos$id[sel_b] else NULL
     pre_e  <- isolate(input$cta_empresa_filter %||% "")
     output$cuentas_edit_form <- renderUI({
-      .cuenta_form_ui(NULL, bancos, pre_b, pre_e, cmap = shared$company_map())
+      .cuenta_form_ui(NULL, bancos, pre_b, pre_e, cmap = shared$company_map(), editar = .puede_bancos())
     })
   }, ignoreInit = TRUE)
 
@@ -256,12 +264,13 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     bancos <- tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
     editing_cuenta_id(row$id); editing_banco_id(NULL)
     output$cuentas_edit_form <- renderUI({
-      .cuenta_form_ui(row, bancos, row$banco_id, ef, cmap = shared$company_map())
+      .cuenta_form_ui(row, bancos, row$banco_id, ef, cmap = shared$company_map(), editar = .puede_bancos())
     })
   }, ignoreInit = TRUE, ignoreNULL = FALSE)
 
   # ── Save cuenta ───────────────────────────────────────────────────────────────
   observeEvent(input$cuenta_save, {
+    if (!puede_o_avisa(shared, "can_manage_bancos")) return()
     shinyjs::disable("cuenta_save")
     on.exit(shinyjs::enable("cuenta_save"), add = TRUE)
 
@@ -336,6 +345,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
 
   # ── Delete cuenta ─────────────────────────────────────────────────────────────
   observeEvent(input$cuenta_delete, {
+    if (!puede_o_avisa(shared, "can_manage_bancos")) return()
     eid <- editing_cuenta_id(); if (is.null(eid)) return()
     ctas <- tryCatch({
       if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas() else load_ctas_cuentas()
@@ -379,7 +389,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
 }
 
 # ── Bank form ─────────────────────────────────────────────────────────────────
-.banco_form_ui <- function(row = NULL) {
+.banco_form_ui <- function(row = NULL, editar = TRUE) {
   is_new  <- is.null(row)
   nom_val <- if (!is_new) row$nombre %||% "" else ""
   cla_val <- if (!is_new) row$clave  %||% "" else ""
@@ -421,10 +431,11 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     ")),
 
     div(class = "d-flex gap-2 mt-3",
-      actionButton("banco_save",
-        tagList(icon("floppy-disk"), if (is_new) " Agregar banco" else " Guardar"),
-        class = "btn btn-primary btn-sm"),
-      if (!is_new)
+      if (editar)
+        actionButton("banco_save",
+          tagList(icon("floppy-disk"), if (is_new) " Agregar banco" else " Guardar"),
+          class = "btn btn-primary btn-sm"),
+      if (editar && !is_new)
         actionButton("banco_delete", tagList(icon("trash"), " Eliminar"),
                      class = "btn btn-outline-danger btn-sm") else NULL,
       actionButton("cta_cancel", "Cancelar", class = "btn btn-outline-secondary btn-sm")
@@ -434,7 +445,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
 
 # ── Account form ──────────────────────────────────────────────────────────────
 .cuenta_form_ui <- function(row = NULL, bancos = NULL, pre_banco_id = NULL,
-                             pre_empresa = "", cmap) {
+                             pre_empresa = "", cmap, editar = TRUE) {
   is_new <- is.null(row)
 
   banco_choices <- if (!is.null(bancos) && nrow(bancos)) {
@@ -547,10 +558,11 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     ),
 
     div(class = "d-flex gap-2 mt-3",
-      actionButton("cuenta_save",
-        tagList(icon("floppy-disk"), if (is_new) " Agregar cuenta" else " Guardar cambios"),
-        class = "btn btn-primary btn-sm"),
-      if (!is_new)
+      if (editar)
+        actionButton("cuenta_save",
+          tagList(icon("floppy-disk"), if (is_new) " Agregar cuenta" else " Guardar cambios"),
+          class = "btn btn-primary btn-sm"),
+      if (editar && !is_new)
         actionButton("cuenta_delete", tagList(icon("trash"), " Desactivar"),
                      class = "btn btn-outline-danger btn-sm") else NULL,
       actionButton("cta_cancel", "Cancelar", class = "btn btn-outline-secondary btn-sm")
