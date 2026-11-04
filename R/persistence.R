@@ -2678,10 +2678,9 @@ read_pending_invites <- function() {
   raw
 }
 
-write_pending_invites <- function(df) {
-  aws.s3::s3saveRDS(df, object = .INVITES_KEY, bucket = .s3_bucket())
-  invisible(TRUE)
-}
+# cambio(invites) -> invites, on S3's current table (CM13).
+modificar_pending_invites <- function(cambio)
+  modificar_hd_admin("pending_invites.rds", .schema_pending_invites, cambio)
 
 create_invite <- function(email, display_name, client_id, tier, invited_by,
                           expires_hours = 48) {
@@ -2689,7 +2688,6 @@ create_invite <- function(email, display_name, client_id, tier, invited_by,
   now      <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   exp_time <- format(Sys.time() + expires_hours * 3600,
                      "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
-  existing <- read_pending_invites()
   new_row  <- data.frame(
     token        = token,
     email        = tolower(trimws(email)),
@@ -2703,7 +2701,7 @@ create_invite <- function(email, display_name, client_id, tier, invited_by,
     status       = "pending",
     stringsAsFactors = FALSE
   )
-  write_pending_invites(rbind(existing, new_row))
+  modificar_pending_invites(function(inv) dplyr::bind_rows(inv, new_row))
   token
 }
 
@@ -2730,21 +2728,26 @@ resolve_invite <- function(token) {
   exp <- tryCatch(as.POSIXct(row$expires_at, format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
                   error = function(e) NULL)
   if (!is.null(exp) && Sys.time() > exp) {
-    invites[idx[1], "status"] <- "expired"
-    write_pending_invites(invites)
+    modificar_pending_invites(function(inv) {
+      inv$status[inv$token == token & inv$status == "pending"] <- "expired"
+      inv
+    })
     return(NULL)
   }
   row
 }
 
 accept_invite <- function(token) {
-  invites <- read_pending_invites()
-  idx <- which(invites$token == token)
-  if (!length(idx)) return(invisible(FALSE))
-  invites[idx[1], "status"]      <- "accepted"
-  invites[idx[1], "accepted_at"] <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
-  write_pending_invites(invites)
-  invisible(TRUE)
+  found <- FALSE
+  modificar_pending_invites(function(invites) {
+    i <- which(invites$token == token)[1]
+    if (is.na(i)) return(invites)
+    found <<- TRUE
+    invites$status[i]      <- "accepted"
+    invites$accepted_at[i] <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+    invites
+  })
+  invisible(found)
 }
 
 # =============================================================================

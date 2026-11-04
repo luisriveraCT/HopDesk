@@ -2812,8 +2812,18 @@ tiersServer <- function(id, shared) {
                            type = "error", duration = 5)
           return()
         }
-        invites[idx[1], "status"] <- "revoked"
-        tryCatch(write_pending_invites(invites), error = function(e) NULL)
+        # On S3's current invites (CM13); a failed save is said, not swallowed.
+        revocada <- tryCatch({
+          modificar_pending_invites(function(inv) {
+            i <- which(inv$token == token)[1]
+            if (!is.na(i)) inv$status[i] <- "revoked"
+            inv
+          }); TRUE
+        }, error = function(e) { message("[INVITES] revoke save failed: ", e$message); FALSE })
+        if (!revocada) {
+          showNotification(tr("cm.hdadmin.no_se_guardo"), type = "error", duration = 6)
+          return()
+        }
         tryCatch(log_action(
           user        = shared$current_user(),
           module      = "invites",
