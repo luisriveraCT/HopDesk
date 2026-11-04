@@ -64,6 +64,12 @@ pasivos_table_module_ui <- function(id) {
       shiny::tabPanel(
         tr("tablas.pasivos.tab.lista"), value = "lista",
         pasivos_list_module_ui(ns("list"))
+      ),
+
+      # ── Papelera sub-tab (T18) ───────────────────────────────────────────
+      shiny::tabPanel(
+        tr("tablas.pasivos.tab.papelera"), value = "papelera",
+        pasivos_papelera_ui(ns("papelera"))
       )
     ),
 
@@ -80,6 +86,7 @@ pasivos_table_module_server <- function(id, shared) {
 
     # ── Start the list sub-module ───────────────────────────────────────────
     pasivos_list_module_server("list", shared)
+    pasivos_papelera_server("papelera", shared)
 
     # ── Action: + Provisión manual ──────────────────────────────────────────
     shiny::observeEvent(input$btn_add_provision_manual, ignoreInit = TRUE, {
