@@ -72,6 +72,11 @@ source("R/pasivos_capabilities.R")
 source("R/pasivos_audit.R")
 source("R/pasivos_table_pivot.R")
 source("R/pasivos_table_styles.R")
+# The search filter (pasivos_table_build_long) uses strip_accents() from
+# R/global.R, which the app loads first; taken by name, without the rest of
+# the file. Without it the test died alone at 1.9 (T17b).
+for (e in parse("R/global.R", keep.source = FALSE))
+  if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && identical(e[[2]], as.name("strip_accents"))) eval(e)
 
 # isTRUE_safe helper (same as in global.R)
 isTRUE_safe <- function(x) is.logical(x) && length(x) == 1L && !is.na(x) && x
@@ -375,8 +380,10 @@ cat("\n=== Group 2: pasivos_table_pivot_wide ===\n")
 
 .make_long_row <- function(row_id = "lib1", fecha = Sys.Date(),
                             cell_kind = "provision", amount = 1000) {
+  # row_display_label / row_is_fee: what build_long gives since the fee
+  # sub-rows; this row had stayed without them and Group 2 died (T17b).
   tibble::tibble(
-    row_id = row_id, row_label = "Test", row_empresa = "NG",
+    row_id = row_id, row_label = "Test", row_display_label = "Test", row_is_fee = FALSE, row_empresa = "NG",
     row_categoria = "regular", row_subcategoria = "renta",
     row_parte = "Prov", row_moneda = "MXN",
     fecha = as.Date(fecha),
@@ -401,15 +408,18 @@ win_end   <- Sys.Date() + 6L
 
 # 2.2 Weekly granularity → one column per ISO week
 {
+  # A Monday and its Tuesday, both in the window: win_start and the next day
+  # straddled two ISO weeks whenever win_start was a Sunday (on Wednesdays).
+  lunes <- win_start + ((8L - as.POSIXlt(win_start)$wday) %% 7L)
   rows <- dplyr::bind_rows(
-    .make_long_row(fecha = win_start, amount = 100),
-    .make_long_row(fecha = win_start + 1L, amount = 200)
+    .make_long_row(fecha = lunes, amount = 100),
+    .make_long_row(fecha = lunes + 1L, amount = 200)
   )
   out <- pasivos_table_pivot_wide(rows, "week", win_start, win_end)
   .chk_true("2.2 weekly: column labels match YYYY-Www pattern",
             all(grepl("^\\d{4}-W\\d{2}$", out$date_cols)))
   # Amounts on the same week should be summed
-  week_lbl <- format(win_start, "%G-W%V")
+  week_lbl <- format(lunes, "%G-W%V")
   cell_val <- out$cells[["lib1"]][[week_lbl]]
   .chk_true("2.2 weekly: amounts summed within week",
             !is.null(cell_val) && cell_val$cell_amount >= 300)
