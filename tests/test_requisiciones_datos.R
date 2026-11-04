@@ -262,6 +262,26 @@ test_that("una provisión borrada devuelve la requisición a Sin provisión, mar
   expect_identical(requisiciones_vista(CID)$etapa, "provisionada")
 })
 
+# Luis, 2026-11-04: a deleted OR cancelled provision sends the requisition
+# back to Sin provisión, flagged, and another provision can be linked.
+test_that("una provisión cancelada (cerrada sin pago vigente) también la devuelve a Sin provisión", {
+  reiniciar()
+  r <- requisicion_crear(CID, base_req, "dani")
+  poner_provision("p1")
+  requisicion_ligar_provision(CID, r$id, "p1", "caro")
+  poner_confirmacion("p1", eliminado = TRUE)          # its payment was undone
+  poner_provision("p1", estado = "closed")
+  v <- requisiciones_vista(CID)
+  expect_identical(v$etapa, "sin_provision"); expect_true(v$provision_perdida)
+  expect_identical(v$monto_fuente, "estimado")
+  expect_equal(nrow(requisiciones_vista(CID)), 1)       # still listed, not hidden as paid
+  poner_provision("p2")
+  requisicion_ligar_provision(CID, r$id, "p2", "caro")
+  v <- requisiciones_vista(CID)
+  expect_identical(v$etapa, "provisionada"); expect_false(v$provision_perdida)
+  expect_identical(v$provision_id, "p2")
+})
+
 test_that("una provisión tiene a lo más una requisición", {
   reiniciar()
   poner_provision("p1")
