@@ -64,9 +64,18 @@ col_texto <- function(campo, titulo = NULL, recorte = TRUE, opcional = FALSE, vi
     }), opcional, visible)
 }
 
-col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, opcional = FALSE, visible = TRUE) {
+# editable (T14, piece `edicion_celda`): an amount per row typed in the cell
+# (Abono parcial). list(min = 0, max = "Saldo", aviso = "tablas.abono.mayor_saldo"):
+# min / max are a number or the name of a field of the row (each row its
+# own bound); aviso is the dictionary key shown when a value falls out of
+# range ({min} and {max} come formatted; default tablas.edicion.mayor /
+# .menor). The column's own value is where the edit starts. A table with an
+# editable column must have the piece, and that column must be the one it
+# sums (hd_table_server checks both).
+col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, opcional = FALSE, visible = TRUE,
+                       editable = NULL) {
   .hd_opcional(.hd_col("dinero", campo, titulo, "derecha", recorte = FALSE,
-    moneda = moneda, sumar = isTRUE(sumar),
+    moneda = moneda, sumar = isTRUE(sumar), editable = .hd_editable_validar(editable, campo),
     valores = function(x) {
       # Round first: -0.001 must show "$0.00" and copy "0", not "-$0.00" / "-0"
       # (and sprintf prints a negative zero as "-0.00", hence the reset).
@@ -82,6 +91,39 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, op
       copiar[ok] <- sub("\\.$", "", sub("0+$", "", sprintf("%.2f", x[ok])))
       list(mostrar = mostrar, orden = x, copiar = copiar)
     }), opcional, visible)
+}
+
+.hd_editable_validar <- function(editable, campo) {
+  if (is.null(editable)) return(NULL)
+  donde <- sprintf("col_dinero(\"%s\"): `editable`", campo)
+  if (!is.list(editable))
+    stop(donde, " must be list(min = , max = , aviso = ).", call. = FALSE)
+  desconocidos <- setdiff(names(editable), c("min", "max", "paso", "aviso"))
+  if (length(desconocidos) || (length(editable) && is.null(names(editable))))
+    stop(sprintf("%s: unknown field(s): %s.", donde, paste(desconocidos, collapse = ", ")), call. = FALSE)
+  for (k in c("min", "max")) {
+    v <- editable[[k]]
+    if (!is.null(v) && !((is.numeric(v) || is.character(v)) && length(v) == 1L && !is.na(v) &&
+                         (is.numeric(v) || nzchar(v))))
+      stop(sprintf("%s$%s must be one number or the name of a field of the row.", donde, k), call. = FALSE)
+  }
+  if (is.numeric(editable$min) && is.numeric(editable$max) && editable$min > editable$max)
+    stop(donde, ": min is greater than max.", call. = FALSE)
+  paso <- editable$paso %||% 0.01
+  if (!is.numeric(paso) || length(paso) != 1L || is.na(paso) || paso <= 0)
+    stop(donde, "$paso must be a positive number.", call. = FALSE)
+  if (!is.null(editable$aviso) && !(is.character(editable$aviso) && length(editable$aviso) == 1L))
+    stop(donde, "$aviso must be one dictionary key.", call. = FALSE)
+  list(min = editable$min, max = editable$max, paso = paso, aviso = editable$aviso)
+}
+
+# A row's bounds for an editable column: a number for every row, or the
+# values of the field it names (NA = no bound).
+.hd_editable_limite <- function(lim, datos) {
+  n <- nrow(datos)
+  if (is.null(lim)) return(rep(NA_real_, n))
+  if (is.numeric(lim)) return(rep(as.numeric(lim), n))
+  suppressWarnings(as.numeric(datos[[lim]]))
 }
 
 # A plain number (rows, ms, quantities): right-aligned, thousands commas,
@@ -285,6 +327,13 @@ hd_validar_columnas <- function(columnas, datos) {
   if (length(faltan))
     stop(sprintf("hd_table: column(s) not in the data: %s.", paste(faltan, collapse = ", ")),
          call. = FALSE)
+  # An editable column's bounds may name fields of the row (max = "Saldo").
+  for (col in columnas) for (k in c("min", "max")) {
+    lim <- col$editable[[k]]
+    if (is.character(lim) && !lim %in% names(datos))
+      stop(sprintf("hd_table: col_dinero(\"%s\") editable$%s names '%s', which is not in the data.",
+                   col$campo, k, lim), call. = FALSE)
+  }
   invisible(TRUE)
 }
 
@@ -304,7 +353,8 @@ hd_validar_ids <- function(datos, id_col) {
 
 # Column metadata (no data) for the browser.
 hd_columnas_meta <- function(columnas) {
-  lapply(columnas, function(col) list(
+  lapply(columnas, function(col) {
+   m <- list(
     campo   = col$campo,
     titulo  = .hd_texto(col$titulo),
     tipo    = col$tipo,
@@ -314,7 +364,17 @@ hd_columnas_meta <- function(columnas) {
     opcional = isTRUE(col$opcional),
     visible  = !identical(col$visible, FALSE),
     ancho    = if (is.null(col$ancho)) NA else col$ancho
-  ))
+   )
+   # Only an editable column carries it, so no other table's message changes
+   # (the per-row bounds go with the rows).
+   if (!is.null(col$editable)) {
+     propio <- col$editable$aviso
+     m$editable <- list(paso  = col$editable$paso,
+                        mayor = .hd_texto(propio %||% "tablas.edicion.mayor"),
+                        menor = .hd_texto(propio %||% "tablas.edicion.menor"))
+   }
+   m
+  })
 }
 
 # Rows, column by column:
@@ -377,7 +437,15 @@ hd_filas <- function(datos, columnas, id_col = "id") {
     fijar     = I(fijar),
     agregado  = I(agregado),
     adjuntos  = I(adjuntos),
-    celdas   = lapply(columnas, function(col) lapply(col$valores(datos[[col$campo]]), I))
+    celdas   = lapply(columnas, function(col) {
+      v <- lapply(col$valores(datos[[col$campo]]), I)
+      # An editable column: each row's bounds (edicion_celda, T14).
+      if (!is.null(col$editable)) {
+        v$min <- I(.hd_editable_limite(col$editable$min, datos))
+        v$max <- I(.hd_editable_limite(col$editable$max, datos))
+      }
+      v
+    })
   ) -> out
   # Only when the column exists: list(x = NULL) would serialize as {}.
   if (!is.null(acciones)) out$acciones <- I(acciones)

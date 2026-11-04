@@ -11,6 +11,8 @@
 #   t$accion()      # list(accion, ids, nonce) or NULL
 #   t$periodo()     # "AAAA-MM" shown (with `periodo`), else NULL
 #   t$ir_mes(m)     # show month m, as if chosen in the bar (with `periodo`)
+#   t$ediciones()   # with edicion_celda: data.frame(id, valor, valido), every amount typed
+#   t$limpiar_ediciones()   # back to the data's own values (after sending them)
 #
 # Server -> browser: one "hdt-datos" custom message each time `datos`
 # changes (and "hdt-mes" from t$ir_mes()). Browser -> server: ns("sel") and ns("accion"), priority "event".
@@ -45,8 +47,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=23"),
-    htmltools::tags$script(src = "hdtable.js?v=34")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=24"),
+    htmltools::tags$script(src = "hdtable.js?v=35")
   ))
 }
 
@@ -506,6 +508,53 @@ hd_crudos_meta <- function(acciones, piezas) {
                  tabla, quien), call. = FALSE)
 }
 
+# ── edicion_celda (T14) ─────────────────────────────────────────────────────
+# The table's editable column (col_dinero(editable = ...)), or NULL. At most
+# one, and it must be the one column the table sums: the footer and the
+# subtotals add what was typed (Abono parcial: Importe sums, Saldo doesn't).
+# A table with one must have the piece -- like any other piece, never
+# dropped silently.
+hd_columna_editable <- function(columnas, tabla, piezas) {
+  ed <- Filter(function(col) !is.null(col$editable), columnas)
+  if (!length(ed)) return(NULL)
+  if (!"edicion_celda" %in% piezas)
+    stop(sprintf("hd_table '%s': col_dinero(\"%s\") is editable but the table doesn't have the 'edicion_celda' piece.",
+                 tabla, ed[[1]]$campo), call. = FALSE)
+  if (length(ed) > 1L)
+    stop(sprintf("hd_table '%s': only one editable column per table (%s).", tabla,
+                 paste(vapply(ed, `[[`, character(1), "campo"), collapse = ", ")), call. = FALSE)
+  suma <- Filter(function(col) identical(col$tipo, "dinero") && isTRUE(col$sumar), columnas)
+  if (length(suma) != 1L || !identical(suma[[1]]$campo, ed[[1]]$campo))
+    stop(sprintf(paste0("hd_table '%s': the editable col_dinero(\"%s\") must be the only one with sumar = TRUE",
+                        " (the footer adds what is typed); give the others sumar = FALSE."),
+                 tabla, ed[[1]]$campo), call. = FALSE)
+  ed[[1]]
+}
+
+# The amounts typed (the browser's ns("ediciones"): ids and valores), checked
+# again against the data as it is now: ids no longer there, or locked, drop
+# out (like the selection), and `valido` comes from each row's current
+# bounds -- never from the browser. A negative amount is only valid with a
+# min below 0.
+hd_ediciones <- function(e, datos, col, id_col) {
+  vacia <- data.frame(id = character(0), valor = numeric(0), valido = logical(0), stringsAsFactors = FALSE)
+  if (is.null(e) || is.null(col) || is.null(datos) || !length(e$ids)) return(vacia)
+  ids <- as.character(unlist(e$ids))
+  val <- suppressWarnings(as.numeric(unlist(e$valores)))
+  if (length(ids) != length(val)) return(vacia)
+  datos <- as.data.frame(datos, stringsAsFactors = FALSE)
+  fila <- match(ids, as.character(datos[[id_col]]))
+  bloq <- if (".bloqueada" %in% names(datos)) as.logical(datos[[".bloqueada"]]) %in% TRUE else rep(FALSE, nrow(datos))
+  sigue <- !is.na(fila) & !is.na(val) & !duplicated(ids)
+  sigue[sigue] <- !bloq[fila[sigue]]
+  if (!any(sigue)) return(vacia)
+  ids <- ids[sigue]; val <- round(val[sigue], 2); fila <- fila[sigue]
+  mn <- .hd_editable_limite(col$editable$min, datos)[fila]
+  mx <- .hd_editable_limite(col$editable$max, datos)[fila]
+  valido <- (is.na(mn) | val >= mn - 1e-9) & (is.na(mx) | val <= mx + 1e-9) & (val >= 0 | (!is.na(mn) & mn < 0))
+  data.frame(id = ids, valor = val, valido = valido, stringsAsFactors = FALSE)
+}
+
 # ── Export (excel) ──────────────────────────────────────────────────────────
 # Text a spreadsheet would run as a formula gets an apostrophe in front:
 # titles and notes are typed by people and must never execute on opening.
@@ -520,10 +569,18 @@ hd_neutralizar <- function(x) {
 # titles as the header, and raw typed values: money as numbers, dates as
 # real dates, the rest as (neutralized) text.
 # campos: the columns shown (columnas_opc), in their order; NULL = all.
-hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "datos", campos = NULL) {
+# ediciones: hd_ediciones() -- the file has what the screen shows, so the
+# editable column carries what was typed (T14, P3).
+hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "datos", campos = NULL,
+                              ediciones = NULL) {
+  datos <- as.data.frame(datos, stringsAsFactors = FALSE)
+  ed_col <- Find(function(col) !is.null(col$editable), columnas)
+  if (!is.null(ed_col) && is.data.frame(ediciones) && nrow(ediciones)) {
+    k <- match(as.character(ediciones$id), as.character(datos[[id_col]]))
+    datos[[ed_col$campo]][k[!is.na(k)]] <- ediciones$valor[!is.na(k)]
+  }
   if (!is.null(campos))
     columnas <- Filter(function(col) col$campo %in% campos, columnas)
-  datos <- as.data.frame(datos, stringsAsFactors = FALSE)
   filas <- match(as.character(ids), as.character(datos[[id_col]]))
   filas <- filas[!is.na(filas)]
   d <- datos[filas, , drop = FALSE]
@@ -575,6 +632,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
   columnas_r   <- if (is.function(columnas)) columnas else local({ cols <- columnas; function() cols })
   cols_fijas   <- if (is.function(columnas)) list() else columnas
   if (!is.function(columnas)) hd_columnas_meta(columnas)   # fails early on a bad spec
+  hd_columna_editable(cols_fijas, tabla, piezas_tabla)
   # textos = list(contador = <plural key>, sin_bloqueadas = TRUE): the
   # table's own counter text ("594 facturas vencidas o con vencimiento hoy")
   # instead of its class's -- section bands keep the class's ("10 facturas")
@@ -636,6 +694,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         shiny::req(!is.null(df))
         cols <- columnas_r()
         if (is.function(columnas) && !is.null(periodo)) hd_periodo_validar(periodo, cols)
+        if (is.function(columnas)) hd_columna_editable(cols, tabla, piezas_tabla)
         list(
         id       = ns("hdt"),
         tabla    = tabla,
@@ -708,6 +767,22 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
     # (Bancos, T12a): list(formato, ids, nonce). Set once the file is
     # written, so a download that failed never counts.
     exportado <- shiny::reactiveVal(NULL)
+
+    # edicion_celda: every amount typed, checked against the data as it is
+    # now (hd_ediciones). A failure here is the table's, never the session's.
+    ediciones <- shiny::reactive({
+      if (!"edicion_celda" %in% piezas_tabla) return(hd_ediciones(NULL, NULL, NULL, id_col))
+      e <- input$ediciones
+      tryCatch({
+        df <- datos()
+        hd_ediciones(e, df, hd_columna_editable(columnas_r(), tabla, piezas_tabla), id_col)
+      }, error = function(err) {
+        if (inherits(err, "shiny.silent.error")) stop(err)
+        message(sprintf("hd_table '%s': the typed amounts couldn't be checked: %s", tabla, conditionMessage(err)))
+        hd_ediciones(NULL, NULL, NULL, id_col)
+      })
+    })
+
     if ("excel" %in% piezas_tabla) {
       vista <- shiny::reactiveVal(NULL)
       shiny::observeEvent(input$vista, {
@@ -721,7 +796,8 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         content  = function(file) {
           v <- shiny::isolate(vista())
           hd_excel_escribir(shiny::isolate(datos()), shiny::isolate(columnas_r()), v$ids %||% character(0),
-                            id_col, file, hoja = tabla, campos = v$campos)
+                            id_col, file, hoja = tabla, campos = v$campos,
+                            ediciones = shiny::isolate(ediciones()))
           exportado(list(formato = "excel", ids = v$ids %||% character(0), nonce = stats::runif(1)))
         }
       )
@@ -756,6 +832,16 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         session$sendCustomMessage("hdt-mes", list(id = ns("hdt"), mes = m))
       },
       exportado = shiny::reactive(exportado()),
+      # edicion_celda (T14): data.frame(id, valor, valido) -- every amount
+      # typed in the editable column (marked rows or not; the module takes
+      # those it needs), a row not touched isn't there: its value is the
+      # data's. valido = within the row's min/max now; the module still
+      # checks again before writing. limpiar_ediciones(): the cells go back
+      # to the data's values (after "Enviar a Agenda"); ediciones() follows
+      # once the browser answers.
+      ediciones = ediciones,
+      limpiar_ediciones = function()
+        session$sendCustomMessage("hdt-ediciones", list(id = ns("hdt"), limpiar = TRUE)),
       accion    = shiny::reactive({
         a <- input$accion
         if (is.null(a)) return(NULL)
