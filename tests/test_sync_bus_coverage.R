@@ -62,8 +62,9 @@ ok("proveedores_inactivos_db: bump_sync_version(...) appears at its real save si
    .count_bump("proveedores_inactivos_db") >= 1L)
 ok("partner_policies_db: bump_sync_version(...) appears at all 3 real save sites",
    .count_bump("partner_policies_db") == 3L)
-ok("policy_moves_db: bump_sync_version(...) appears at all 5 real save sites",
-   .count_bump("policy_moves_db") == 5L)
+# 4 since CM12a: the two auto-apply observers share one save site.
+ok("policy_moves_db: bump_sync_version(...) appears at all 4 real save sites",
+   .count_bump("policy_moves_db") == 4L)
 
 # holiday_overrides_db: no save_holiday_overrides( call site exists anywhere
 # yet (confirmed via grep during this stage) -- so nothing to bump. Guard
