@@ -1709,13 +1709,22 @@ tiersServer <- function(id, shared) {
         stringsAsFactors   = FALSE
       )
 
+      # On S3's current requests (CM13); the pending check runs again there.
+      dup <- FALSE
       saved <- tryCatch({
-        write_client_requests(rbind(existing_req, new_req)); TRUE
+        modificar_client_requests(function(r) {
+          if (any(r$client_id_proposed == cid_prop & r$status == "pending")) { dup <<- TRUE; return(r) }
+          dplyr::bind_rows(r, new_req)
+        }); TRUE
       }, error = function(e) { message("[CLIENTS] request save failed: ", e$message); FALSE })
 
       if (!saved) {
         showNotification("Error al guardar la solicitud. Intenta de nuevo.", type = "error")
         return()
+      }
+      if (dup) {
+        showNotification(paste0("Ya hay una solicitud pendiente para '", cid_prop, "'."),
+                         type = "warning"); return()
       }
       removeModal()
       requests_refresh(requests_refresh() + 1L)
@@ -1826,11 +1835,17 @@ tiersServer <- function(id, shared) {
       }
 
       # 3. Update request status
-      reqs$status[idx]      <- "approved"
-      reqs$reviewed_by[idx] <- reviewer
-      reqs$reviewed_at[idx] <- as.character(Sys.time())
-      tryCatch(write_client_requests(reqs),
-               error = function(e) message("[CLIENTS] request update failed: ", e$message))
+      req_ok <- tryCatch({
+        modificar_client_requests(function(r) {
+          i <- which(r$id == rid)
+          r$status[i]      <- "approved"
+          r$reviewed_by[i] <- reviewer
+          r$reviewed_at[i] <- as.character(Sys.time())
+          r
+        }); TRUE
+      }, error = function(e) { message("[CLIENTS] request update failed: ", e$message); FALSE })
+      # The client exists already; only the request's status could not be saved.
+      if (!req_ok) showNotification(tr("cm.hdadmin.no_se_guardo"), type = "warning", duration = 6)
 
       removeModal()
       clients_refresh(clients_refresh()   + 1L)
@@ -1872,12 +1887,16 @@ tiersServer <- function(id, shared) {
       req(length(idx) == 1)
       row <- reqs[idx, , drop = FALSE]
 
-      reqs$status[idx]           <- "rejected"
-      reqs$reviewed_by[idx]      <- reviewer
-      reqs$reviewed_at[idx]      <- as.character(Sys.time())
-      reqs$rejection_reason[idx] <- if (nzchar(reason)) reason else NA_character_
-
-      saved <- tryCatch({ write_client_requests(reqs); TRUE },
+      saved <- tryCatch({
+        modificar_client_requests(function(r) {
+          i <- which(r$id == rid)
+          r$status[i]           <- "rejected"
+          r$reviewed_by[i]      <- reviewer
+          r$reviewed_at[i]      <- as.character(Sys.time())
+          r$rejection_reason[i] <- if (nzchar(reason)) reason else NA_character_
+          r
+        }); TRUE
+      },
                         error = function(e) { message("[CLIENTS] reject save failed: ", e$message); FALSE })
       if (!saved) {
         showNotification("Error al guardar el rechazo.", type = "error"); return()
@@ -3333,7 +3352,6 @@ tiersServer <- function(id, shared) {
       me_name <- shared$current_user_info()$name %||% me
       msg_txt <- trimws(input$hop_req_message %||% "")
       req(nzchar(me))
-      existing <- tryCatch(load_hop_requests(), error = function(e) .schema_hop_requests())
       init_decisions <- setNames(as.list(rep("pending", length(clients_sel))), clients_sel)
       new_req <- data.frame(
         id             = uuid::UUIDgenerate(),
@@ -3347,7 +3365,7 @@ tiersServer <- function(id, shared) {
         stringsAsFactors = FALSE
       )
       tryCatch({
-        save_hop_requests(rbind(existing, new_req))
+        modificar_hop_requests(function(r) dplyr::bind_rows(r, new_req))
         append_hd_notification(
           type         = "hop_request",
           client_id    = "hd-admin",
@@ -3374,6 +3392,31 @@ tiersServer <- function(id, shared) {
         showNotification(paste("Error:", e$message), type = "error", duration = 5))
     }, ignoreInit = TRUE)
 
+    # Records one client's decision on S3's current request (CM13), so two
+    # principals deciding different clients of one request no longer undo each
+    # other. Returns the request's decisions and whether all are in.
+    .hop_decidir <- function(req_id, cid, clients_v, decision) {
+      out <- list(decisions = list(), all_done = FALSE)
+      modificar_hop_requests(function(r) {
+        x <- hop_request_decidir(r, req_id, cid, clients_v, decision)
+        out <<- x[c("decisions", "all_done")]
+        x$requests
+      })
+      out
+    }
+    .hop_aviso_resuelta <- function(row, req_id, clients_v, decisions) {
+      n_ok <- sum(vapply(clients_v, function(c) identical(decisions[[c]], "approved"), logical(1)))
+      n_no <- sum(vapply(clients_v, function(c) identical(decisions[[c]], "denied"),   logical(1)))
+      append_hd_notification(
+        type         = "hop_resolved",
+        client_id    = "hd-admin",
+        message_text = sprintf("Solicitud de %s resuelta: %d aprobado(s), %d denegado(s).",
+                               row$requester_name %||% row$requester, n_ok, n_no),
+        metadata     = list(request_id = req_id, requester = row$requester,
+                            decisions  = decisions)
+      )
+    }
+
     # Principal approves one client within a request
     # event value: "request_id:client_id:duration_secs"
     observeEvent(input$hop_approve, {
@@ -3394,10 +3437,6 @@ tiersServer <- function(id, shared) {
         clients_v <- tryCatch(jsonlite::fromJSON(row$clients_json %||% "[]"),
                               error = function(e) character(0))
         req(cid %in% clients_v)
-        decisions        <- tryCatch(jsonlite::fromJSON(row$decisions_json %||% "{}"),
-                                     error = function(e) list())
-        decisions[[cid]] <- "approved"
-        reqs$decisions_json[ri[1]] <- jsonlite::toJSON(decisions, auto_unbox = TRUE)
         # Create grant for this client
         now    <- Sys.time()
         new_g  <- data.frame(
@@ -3414,23 +3453,9 @@ tiersServer <- function(id, shared) {
         updated_grants <- modificar_hop_grants(function(g) dplyr::bind_rows(g, new_g))
         bump_sync_version("hop_grants_db")
         shared$hop_grants_db(updated_grants)
-        # Resolve request when all clients decided
-        all_done <- all(vapply(clients_v,
-          function(c) { d <- decisions[[c]] %||% "pending"; d != "pending" }, logical(1)))
-        if (all_done) {
-          reqs$status[ri[1]] <- "resolved"
-          n_ok  <- sum(vapply(clients_v, function(c) identical(decisions[[c]], "approved"), logical(1)))
-          n_no  <- sum(vapply(clients_v, function(c) identical(decisions[[c]], "denied"),   logical(1)))
-          append_hd_notification(
-            type         = "hop_resolved",
-            client_id    = "hd-admin",
-            message_text = sprintf("Solicitud de %s resuelta: %d aprobado(s), %d denegado(s).",
-                                   row$requester_name %||% row$requester, n_ok, n_no),
-            metadata     = list(request_id = req_id, requester = row$requester,
-                                decisions  = decisions)
-          )
-        }
-        save_hop_requests(reqs)
+        # Record the decision; resolve the request when all clients decided
+        dec <- .hop_decidir(req_id, cid, clients_v, "approved")
+        if (dec$all_done) .hop_aviso_resuelta(row, req_id, clients_v, dec$decisions)
         showNotification(
           sprintf("Aprobado: %s → %s (%s).",
                   row$requester_name %||% row$requester, cid, .dur_label(dur_secs)),
@@ -3477,26 +3502,8 @@ tiersServer <- function(id, shared) {
         clients_v <- tryCatch(jsonlite::fromJSON(row$clients_json %||% "[]"),
                               error = function(e) character(0))
         req(cid %in% clients_v)
-        decisions        <- tryCatch(jsonlite::fromJSON(row$decisions_json %||% "{}"),
-                                     error = function(e) list())
-        decisions[[cid]] <- "denied"
-        reqs$decisions_json[ri[1]] <- jsonlite::toJSON(decisions, auto_unbox = TRUE)
-        all_done <- all(vapply(clients_v,
-          function(c) { d <- decisions[[c]] %||% "pending"; d != "pending" }, logical(1)))
-        if (all_done) {
-          reqs$status[ri[1]] <- "resolved"
-          n_ok  <- sum(vapply(clients_v, function(c) identical(decisions[[c]], "approved"), logical(1)))
-          n_no  <- sum(vapply(clients_v, function(c) identical(decisions[[c]], "denied"),   logical(1)))
-          append_hd_notification(
-            type         = "hop_resolved",
-            client_id    = "hd-admin",
-            message_text = sprintf("Solicitud de %s resuelta: %d aprobado(s), %d denegado(s).",
-                                   row$requester_name %||% row$requester, n_ok, n_no),
-            metadata     = list(request_id = req_id, requester = row$requester,
-                                decisions  = decisions)
-          )
-        }
-        save_hop_requests(reqs)
+        dec <- .hop_decidir(req_id, cid, clients_v, "denied")
+        if (dec$all_done) .hop_aviso_resuelta(row, req_id, clients_v, dec$decisions)
         showNotification(sprintf("Denegado: %s → %s.", row$requester_name %||% row$requester, cid),
                          type = "warning", duration = 3)
         # Same reasoning as hop_access_approved above -- client_id = cid.

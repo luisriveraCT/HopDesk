@@ -2536,10 +2536,8 @@ read_client_requests <- function() {
   raw
 }
 
-write_client_requests <- function(df) {
-  aws.s3::s3saveRDS(df, object = "hd-admin/client_requests.rds", bucket = .s3_bucket())
-  invisible(TRUE)
-}
+modificar_client_requests <- function(cambio)
+  modificar_hd_admin("client_requests.rds", .schema_client_requests, cambio)
 
 read_hd_notifications <- function() {
   raw <- tryCatch(
@@ -2939,14 +2937,24 @@ load_hop_requests <- function() {
   raw[, names(schema), drop = FALSE]
 }
 
-save_hop_requests <- function(df) {
-  tryCatch(
-    suppressMessages(
-      aws.s3::s3saveRDS(df, object = .HOP_REQUESTS_KEY, bucket = .s3_bucket())
-    ),
-    error = function(e) warning("[HOP] save_hop_requests: ", e$message)
-  )
-  invisible(df)
+# cambio(requests) -> requests, on S3's current table (CM13); a failed save
+# reaches the caller (it used to be a warning).
+modificar_hop_requests <- function(cambio)
+  modificar_hd_admin("hop_requests.rds", .schema_hop_requests, cambio)
+
+# Records `decision` for client `cid` on request `req_id` of `requests`, and
+# resolves it when every client in clients_v is decided. Pure: no I/O. Run
+# inside modificar_hop_requests() so it applies to S3's current request.
+hop_request_decidir <- function(requests, req_id, cid, clients_v, decision) {
+  i <- which(requests$id == req_id)[1]
+  if (is.na(i)) return(list(requests = requests, decisions = list(), all_done = FALSE))
+  d <- tryCatch(as.list(jsonlite::fromJSON(requests$decisions_json[i] %||% "{}")),
+                error = function(e) list())
+  d[[cid]] <- decision
+  requests$decisions_json[i] <- as.character(jsonlite::toJSON(d, auto_unbox = TRUE))
+  done <- all(vapply(clients_v, function(c) (d[[c]] %||% "pending") != "pending", logical(1)))
+  if (done) requests$status[i] <- "resolved"
+  list(requests = requests, decisions = d, all_done = done)
 }
 
 load_hop_grants <- function() {
