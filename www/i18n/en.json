@@ -522,6 +522,7 @@
   "tablas.pasivos.btn.provision_manual": "Manual provision",
   "tablas.pasivos.tab.tabla": "Table",
   "tablas.pasivos.tab.lista": "Liabilities list",
+  "tablas.pasivos.tab.papelera": "Trash",
   "tablas.pasivos.gran.dia": "Day",
   "tablas.pasivos.gran.semana": "Week",
   "tablas.pasivos.gran.mes": "Month",
