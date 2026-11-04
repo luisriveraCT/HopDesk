@@ -227,13 +227,14 @@ pasivos_list_module_server <- function(id, shared) {
           } else "—"
         }, error = function(e) "—")
 
-        # Button HTML (fires global Shiny inputs)
-        edit_btn <- sprintf(
-          '<button class="pasivos-list-btn text-primary" title="Editar" onclick="Shiny.setInputValue(\'pasivos_edit_liability\',\'%s\',{priority:\'event\'})">&#9998;</button>',
-          htmltools::htmlEscape(lid, attribute = TRUE)
-        )
         estado <- r$estado[1] %||% "active"
         is_deleted <- identical(estado, "deleted")
+        # Button HTML (fires global Shiny inputs). No ✎ on an archived row:
+        # editing one used to reactivate it; it is restored with ↻ (T18a).
+        edit_btn <- if (!is_deleted) sprintf(
+          '<button class="pasivos-list-btn text-primary" title="Editar" onclick="Shiny.setInputValue(\'pasivos_edit_liability\',\'%s\',{priority:\'event\'})">&#9998;</button>',
+          htmltools::htmlEscape(lid, attribute = TRUE)
+        ) else ""
         # found 2026-09-05: pause/resume and archive were both always
         # rendered regardless of estado -- clicking "Reanudar" (resume) on
         # an already-archived row would silently flip estado straight to

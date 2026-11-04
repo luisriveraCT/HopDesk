@@ -18,7 +18,8 @@ if (!exists("CURRENCIES")) CURRENCIES <- c("MXN", "USD", "EUR")
 for (f in c("R/pasivos_schemas.R", "R/bancos_persistence.R", "R/pasivos_persistence.R",
             "R/pasivos_capabilities.R", "R/pasivos_audit.R", "R/forecasting_service.R",
             "R/policy_engine.R", "R/pasivos_engine.R", "R/pasivos_wizard_validate.R",
-            "R/pasivos_wizard_module.R", "R/pasivos_edit_confirm_module.R"))
+            "R/pasivos_wizard_module.R", "R/pasivos_edit_confirm_module.R",
+            "R/i18n.R", "R/pasivos_list_module.R"))
   suppressMessages(source(f))
 has_capability    <- function(user, cap) TRUE
 bump_sync_version <- function(...) invisible(NULL)
@@ -42,18 +43,18 @@ P1 <- provs0$id[3]                                   # a future one, edited by h
 provs0$amount_pago_override[provs0$id == P1] <- 150
 
 # The session's copies, as reactive values; the wizard reads and writes them.
-nuevo_shared <- function() {
-  L <- reactiveVal(liab0); P <- reactiveVal(provs0)
+nuevo_shared <- function(liab = liab0, provs = provs0) {
+  L <- reactiveVal(liab); P <- reactiveVal(provs)
   list(pasivos_liabilities_db = L, pasivos_provisions_db = P,
        company_map = function() list(NG = "Nuevo Grupo"),
        holiday_overrides_db = function() list(),
        effective_client_id = function() CID, current_user = function() "ana",
        suppress_ledger_prov_refresh = function(...) invisible(NULL))
 }
-sembrar <- function() {
+sembrar <- function(liab = liab0, provs = provs0) {
   s3_memoria_reset()
-  save_pasivos_liabilities(liab0, client_id = CID)
-  .s3_write(provs0, S3_KEYS$pasivos_provisions, client_id = CID)
+  save_pasivos_liabilities(liab, client_id = CID)
+  .s3_write(provs, S3_KEYS$pasivos_provisions, client_id = CID)
 }
 en_s3 <- function() load_pasivos_provisions(client_id = CID)
 
@@ -61,12 +62,12 @@ en_s3 <- function() load_pasivos_provisions(client_id = CID)
 abierto <- NULL
 pasivos_edit_confirm_open <- function(session, conflicts, replacement, shared, liability_id)
   abierto <<- list(conflicts = conflicts, replacement = replacement, liability_id = liability_id)
-guardar_asistente <- function(shared) {
-  draft <- pasivos_liability_to_draft(liab0); draft$amount_default <- 120
-  wiz <- list(mode = "edit", edit_target_id = "L1", draft = draft)
+guardar_asistente <- function(shared, liab = liab0, user = "ana") {
+  draft <- pasivos_liability_to_draft(liab); draft$amount_default <- 120
+  wiz <- list(mode = "edit", edit_target_id = liab$id, draft = draft)
   res <- NULL
   testServer(function(input, output, session) {
-    res <<- .pasivos_wizard_save(wiz, shared, session, "ana")
+    res <<- .pasivos_wizard_save(wiz, shared, session, user)
   }, {})
   res
 }
@@ -143,6 +144,62 @@ B$setInputs(pec_all_nuevo = 1); B$setInputs(pec_save = 1)
 r <- en_s3(); r <- r[r$id == P1, , drop = FALSE]
 ok(is.na(r$amount_pago_override) && isTRUE(r$amount_pago == 120),
    "B3: B's Guardar decisiones applies B's choice to P1")
+
+# ── C: editing keeps estado and creator; no ✎ on an archived row ─────────────
+pasivos_edit_confirm_open <- function(...) invisible(NULL)
+# What the save wrote, read raw: load_pasivos_liabilities() turns every
+# POSIXct column into NA (methods::as() with a two-class target; reported
+# apart in T18a, not changed here), so the creation time is checked as stored.
+liab_en_s3 <- function(id) {
+  l <- get(paste0(CID, "/", S3_KEYS$pasivos_liabilities), envir = .mem)
+  l[l$id == id, , drop = FALSE]
+}
+creado <- Sys.time() - 90 * 86400                 # local time, as the app writes it
+
+# C1: a paused liability (pausing removed its future provisions) edited by beto
+pausado <- liab0; pausado$id <- "L2"; pausado$estado <- "paused"
+pausado$created_by <- "ana"; pausado$created_at <- creado
+sembrar(pausado, provs0[0, ])
+res <- guardar_asistente(nuevo_shared(pausado, provs0[0, ]), pausado, user = "beto")
+l <- liab_en_s3("L2")
+ok(isTRUE(res$ok), "C1: editing a paused liability saves")
+ok(identical(l$estado, "paused"), "C1: and it stays paused")
+ok(isTRUE(l$amount_default == 120), "C1: with its new amount")
+ok(identical(l$created_by, "ana") && isTRUE(as.numeric(l$created_at) == as.numeric(creado)),
+   "C1: its creator and creation time are kept")
+ok(identical(l$updated_by, "beto"), "C1: beto is the one who updated it")
+ok(!nrow(en_s3()), "C1: no provisions are generated for it while paused")
+
+# C2: an active one edited by beto keeps its creator (and stays active)
+activo <- liab0; activo$created_by <- "ana"; activo$created_at <- creado
+sembrar(activo)
+guardar_asistente(nuevo_shared(activo), activo, user = "beto")
+l <- liab_en_s3("L1")
+ok(identical(l$estado, "active") && identical(l$created_by, "ana"),
+   "C2: an edited active liability stays active, created by ana")
+
+# C3: an archived one is not saved by the wizard at all
+archivado <- liab0; archivado$id <- "L3"; archivado$estado <- "deleted"
+sembrar(archivado, provs0[0, ])
+antes <- .mem_escrituras
+res <- guardar_asistente(nuevo_shared(archivado, provs0[0, ]), archivado, user = "beto")
+ok(!isTRUE(res$ok) && .mem_escrituras == antes && identical(liab_en_s3("L3")$estado, "deleted"),
+   "C3: the wizard refuses to save an archived liability, and writes nothing")
+
+# C4: the Lista shows ✎ on the active row, not on the archived one
+liabs_lista <- dplyr::bind_rows(liab0, archivado)
+strip_accents <- function(x) stringi::stri_trans_general(x %||% "", "Latin-ASCII")
+testServer(pasivos_list_module_server, args = list(shared = list(
+  pasivos_liabilities_db = function() liabs_lista,
+  pasivos_provisions_db  = function() provs0[0, ],
+  visible_initials       = function() NULL)), {
+  session$setInputs(categoria_sel = c("regular", "financiero", "tarjeta"), show_archived = TRUE)
+  df <- display_df()
+  arch <- df$Estado == "Archivado"
+  ok(sum(arch) == 1L && !grepl("pasivos_edit_liability", df$Acciones[arch]) &&
+       !nzchar(df[["✏"]][arch]), "C4: no ✎ on the archived row")
+  ok(grepl("pasivos_edit_liability", df$Acciones[!arch]), "C4: ✎ still on the active row")
+})
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 s3_memoria_restaurar()

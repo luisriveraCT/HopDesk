@@ -92,8 +92,16 @@ pasivos_liability_to_draft <- function(row) {
 
 # Convert draft to a single-row tibble matching .schema_pasivos_liability().
 pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
-                                               edit_target_id = NULL, user = "system") {
+                                               edit_target_id = NULL, user = "system",
+                                               previo = NULL) {
   now <- Sys.time()
+  # Editing keeps what the wizard does not ask for: the liability's estado
+  # and who created it, when. It used to write "active" and the editor as
+  # creator, so editing a paused or archived liability reactivated it
+  # without a word (found 2026-11-04, T18a).
+  edita <- identical(mode, "edit") && !is.null(previo) && nrow(previo) > 0L
+  estado_previo <- if (edita) previo$estado[1] else NA_character_
+  if (is.na(estado_previo %||% NA_character_)) estado_previo <- "active"
   id  <- if (mode == "edit" && !is.null(edit_target_id)) edit_target_id
          else uuid::UUIDgenerate()
 
@@ -193,10 +201,10 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
     cargos_iniciales         = cargos,
     valor_residual           = residual,
     modifier_ids             = list(character(0)),
-    estado                   = "active",
+    estado                   = estado_previo,
     notas                    = draft$notas %||% NA_character_,
-    created_by               = user,
-    created_at               = now,
+    created_by               = if (edita) previo$created_by[1] else user,
+    created_at               = if (edita) previo$created_at[1] else now,
     updated_by               = user,
     updated_at               = now
   )
@@ -226,12 +234,23 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
     return(list(ok = FALSE, msg = "Hay errores. Revisa los campos resaltados."))
   }
 
+  liabs <- tryCatch(shared$pasivos_liabilities_db(),
+                    error = function(e) .schema_pasivos_liability())
+  # Snapshot pre-edit: the row the edit keeps estado and creator from, and the
+  # audit's `before` -- taken before the filter-out below replaces it.
+  before_row <- if (wiz$mode == "edit")
+    liabs[!is.na(liabs$id) & liabs$id == (wiz$edit_target_id %||% ""), , drop = FALSE] else NULL
+  # An archived liability is restored from the Lista, never by editing it.
+  if (!is.null(before_row) && nrow(before_row) && identical(before_row$estado[1], "deleted"))
+    return(list(ok = FALSE, msg = tr("tablas.pasivos.no_editar_borrado")))
+
   liab_row <- tryCatch(
     pasivos_wizard_draft_to_liability(
       wiz$draft,
       mode           = wiz$mode,
       edit_target_id = wiz$edit_target_id,
-      user           = user
+      user           = user,
+      previo         = before_row
     ),
     error = function(e) e
   )
@@ -241,11 +260,6 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
   }
 
   # Persist liability
-  liabs <- tryCatch(shared$pasivos_liabilities_db(),
-                    error = function(e) .schema_pasivos_liability())
-  # Snapshot pre-edit for the audit entry below -- must come before the
-  # filter-out on the next line replaces this row in `liabs`.
-  before_row <- if (wiz$mode == "edit") liabs[liabs$id == liab_row$id, , drop = FALSE] else NULL
   if (wiz$mode == "edit") {
     liabs <- liabs[liabs$id != liab_row$id, , drop = FALSE]
   }
@@ -272,6 +286,27 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
                                  client_id = shared$effective_client_id()),
         error = function(e) warning("[wizard] forecasting_set_estimate failed: ", conditionMessage(e))
       )
+  }
+
+  # A paused liability keeps no future provisions (pausing removed them), so
+  # editing one saves its terms only; resuming and editing it again generates
+  # them, as the resume notice says (T18a).
+  if (!identical(liab_row$estado, "active")) {
+    tryCatch(pasivos_log_audit(
+      action_type = "liability.edited",
+      user        = user,
+      empresa     = liab_row$empresa,
+      target_kind = "liability",
+      target_id   = liab_row$id,
+      before      = if (!is.null(before_row) && nrow(before_row)) as.list(before_row) else NULL,
+      after       = as.list(liab_row),
+      notes       = sprintf("estado %s: no provisions generated", liab_row$estado),
+      client_id   = shared$effective_client_id()
+    ), error = function(e) NULL)
+    shiny::removeModal()
+    shiny::showNotification(tr("tablas.pasivos.guardado_sin_provisiones"),
+                            type = "message", duration = 5)
+    return(list(ok = TRUE))
   }
 
   # Generate provisions
@@ -965,6 +1000,9 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     row <- liabs[liabs$id == lid, , drop = FALSE]
     if (!nrow(row)) {
       shiny::showNotification("Pasivo no encontrado.", type = "error"); return()
+    }
+    if (identical(row$estado[1], "deleted")) {
+      shiny::showNotification(tr("tablas.pasivos.no_editar_borrado"), type = "error"); return()
     }
     draft <- pasivos_liability_to_draft(row)
     wiz$mode             <- "edit"
