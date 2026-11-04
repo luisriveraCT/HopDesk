@@ -32,7 +32,8 @@ cargar <- function(archivo, nombres) {
       eval(e, envir = globalenv())
 }
 cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", ".schema_ctas_cuentas", "load_ctas_bancos",
-                                          "load_ctas_cuentas", "save_ctas_bancos", "save_ctas_cuentas", ".BANCOS_MX_CHOICES"))
+                                          "load_ctas_cuentas", "modificar_ctas_bancos", "modificar_ctas_cuentas",
+                                          ".BANCOS_MX_CHOICES"))
 cargar("R/data_pipeline.R", "scan_ic_candidates")
 for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R",
             "R/settings/settings_cuentas.R", "R/settings/settings_bp.R", "R/settings/settings_hub.R"))

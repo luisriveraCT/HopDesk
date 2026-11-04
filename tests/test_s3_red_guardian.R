@@ -52,7 +52,8 @@ if (length(def) == 1L) {
 permitidos <- c(
   "R/pasivos_module.R"      = "save_pasivos_provisions(cleaned",        # pasivos_admin_purge_closed(): intended purge
   "R/pasivos_persistence.R" = "permitir_reduccion = TRUE)",             # save_pasivos_provisions passes its flag on
-  "R/persistence.R"         = "if (isTRUE(permitir_reduccion)) .s3_write(" # modificar_tabla / .s3_write_with pass it on
+  "R/persistence.R"         = "if (isTRUE(permitir_reduccion)) .s3_write(", # modificar_tabla / .s3_write_with pass it on
+  "R/settings/settings_cuentas.R" = "client_id = shared$effective_client_id(), permitir_reduccion = TRUE)" # banco_delete: removes one bank; the last empties the catalog (CM12)
 )
 usos <- do.call(rbind, lapply(archivos, function(f) {
   x <- codigo(f); i <- grep("permitir_reduccion = TRUE", x, fixed = TRUE)
