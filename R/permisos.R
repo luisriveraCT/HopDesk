@@ -49,7 +49,7 @@ PERMISOS <- list(
   can_manage_proveedores         = list(grupo = "tesoreria"),
   can_manage_bancos              = list(grupo = "tesoreria"),
   # Saving or applying payment policies reschedules invoices (save_moves).
-  can_manage_policies            = list(grupo = "tesoreria", pendiente = "T"),
+  can_manage_policies            = list(grupo = "tesoreria"),
   # ── Panorama ────────────────────────────────────────────────────────────
   can_publish_panorama           = list(grupo = "panorama", pendiente = "B"),
   # ── Internos de Hopdesk ─────────────────────────────────────────────────
