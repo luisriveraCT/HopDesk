@@ -318,6 +318,15 @@ rebase_por_id <- function(nuevo, base, fresco, id_col) {
   df
 }
 
+# `filas` appended to `df` the way the old saves did (rbind: base R
+# coercion, so a <json> or POSIXct value lands as before), after lining up
+# columns: S3's table may carry columns the new rows do not, and vice versa.
+.hd_admin_agregar <- function(df, filas) {
+  for (col in setdiff(names(df), names(filas))) filas[[col]] <- rep(NA, nrow(filas))
+  for (col in setdiff(names(filas), names(df))) df[[col]] <- rep(NA, nrow(df))
+  rbind(df, filas[, names(df), drop = FALSE])
+}
+
 # Strict read (a failed read stop()s), for a check made right before a change.
 leer_hd_admin <- function(key, schema_fn)
   .hd_admin_completar(.s3_leer_para_escribir(key, .HD_ADMIN_CID), schema_fn)
@@ -413,11 +422,14 @@ read_emergency_lock <- function() {
   raw
 }
 
-write_emergency_lock <- function(df) {
-  aws.s3::s3saveRDS(df, object = "hd-admin/emergency_lock.rds", bucket = .s3_bucket())
+# cambio(locks) -> locks, on S3's current list (CM13). Unlocking removes a
+# row, so this key is outside the write net (.S3_SIN_RED); the strict read
+# keeps a failed read from saving a list without the other locks.
+modificar_emergency_lock <- function(cambio) {
+  df <- modificar_hd_admin("emergency_lock.rds", .schema_emergency_lock, cambio)
   .emergency_lock_cache$data <- df
   .emergency_lock_cache$ts   <- proc.time()[["elapsed"]]
-  invisible(TRUE)
+  invisible(df)
 }
 
 .schema_emergency_lock <- function() {
@@ -2550,9 +2562,21 @@ read_hd_notifications <- function() {
   raw
 }
 
-write_hd_notifications <- function(df) {
-  aws.s3::s3saveRDS(df, object = "hd-admin/notifications.rds", bucket = .s3_bucket())
-  invisible(TRUE)
+# cambio(notifications) -> notifications, on S3's current table (CM13).
+modificar_hd_notifications <- function(cambio)
+  modificar_hd_admin("notifications.rds", .schema_notifications, cambio)
+
+# Adds `viewer` to read_by of the notifications whose id is in `ids` (all of
+# them when ids is NULL). Pure: no I/O.
+hd_notifications_marcar_leidas <- function(notifs, viewer, ids = NULL) {
+  for (i in which(if (is.null(ids)) rep(TRUE, nrow(notifs)) else notifs$id %in% ids)) {
+    # fromJSON("[]") is list(): unlist, or c(list(), viewer) saves [["viewer"]]
+    ya <- tryCatch(as.character(unlist(jsonlite::fromJSON(notifs$read_by[i] %||% "[]"))),
+                   error = function(e) character(0))
+    if (!viewer %in% ya)
+      notifs$read_by[i] <- as.character(jsonlite::toJSON(c(ya, viewer), auto_unbox = FALSE))
+  }
+  notifs
 }
 
 # ── initialize_client_folder() ───────────────────────────────────────────────
@@ -2622,7 +2646,6 @@ update_client_user_count <- function(client_id) {
 
 append_hd_notification <- function(type, client_id, message_text, metadata = list()) {
   tryCatch({
-    existing <- read_hd_notifications()
     new_row <- data.frame(
       id         = uuid::UUIDgenerate(),
       type       = type,
@@ -2634,7 +2657,7 @@ append_hd_notification <- function(type, client_id, message_text, metadata = lis
                              error = function(e) "{}"),
       stringsAsFactors = FALSE
     )
-    write_hd_notifications(rbind(existing, new_row))
+    modificar_hd_notifications(function(n) .hd_admin_agregar(n, new_row))
     invisible(TRUE)
   }, error = function(e) {
     message("[CLIENT] append_hd_notification failed: ", e$message)
@@ -2701,7 +2724,7 @@ create_invite <- function(email, display_name, client_id, tier, invited_by,
     status       = "pending",
     stringsAsFactors = FALSE
   )
-  modificar_pending_invites(function(inv) dplyr::bind_rows(inv, new_row))
+  modificar_pending_invites(function(inv) .hd_admin_agregar(inv, new_row))
   token
 }
 

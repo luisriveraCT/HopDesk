@@ -192,6 +192,72 @@ ok("resolve_invite: an expired invite is marked expired on S3, others kept",
    nrow(get(k_inv, envir = .mem)) == 4L)
 ok("no write_pending_invites() left", !any(grepl("write_pending_invites(", codigo, fixed = TRUE)))
 
+# ── 5. Staff notifications ────────────────────────────────────────────────────
+k_nt <- "hd-admin/notifications.rds"
+aviso <- function(id, read_by = "[]")
+  data.frame(id = id, type = "hop_request", client_id = "hd-admin", message = id,
+             created_at = "2026-11-01", read_by = read_by, metadata = "{}", stringsAsFactors = FALSE)
+s3_memoria_reset()
+assign(k_nt, rbind(aviso("n1"), aviso("n2")), envir = .mem)
+.mem_falla <- k_nt
+ok("notifications, failed read: append writes nothing (and says FALSE)",
+   identical(append_hd_notification("x", "hd-admin", "m"), FALSE) && .mem_escrituras == 0L)
+.mem_falla <- character()
+append_hd_notification("x", "hd-admin", "nueva")                                       # B
+modificar_hd_notifications(function(n) hd_notifications_marcar_leidas(n, "luis", "n1"))  # A
+n <- get(k_nt, envir = .mem)
+ok("notifications, two sessions: B's new one and A's read mark both kept",
+   nrow(n) == 3L && "luis" %in% jsonlite::fromJSON(n$read_by[n$id == "n1"]))
+modificar_hd_notifications(function(n) hd_notifications_marcar_leidas(n, "luis"))
+n <- get(k_nt, envir = .mem)
+ok("mark all read: every notification, no duplicate reader",
+   all(vapply(n$read_by, function(x) sum(jsonlite::fromJSON(x) == "luis") == 1L, logical(1))))
+ok("no write_hd_notifications() left", !any(grepl("write_hd_notifications(", codigo, fixed = TRUE)))
+
+# ── 6. Emergency locks ────────────────────────────────────────────────────────
+k_lk <- "hd-admin/emergency_lock.rds"
+candado <- function(u) data.frame(username = u, locked_at = as.POSIXct("2026-11-01", tz = "UTC"),
+                                  locked_by = "luis", reason = "r", stringsAsFactors = FALSE)
+s3_memoria_reset()
+assign(k_lk, rbind(candado("ana"), candado("beto")), envir = .mem)
+.mem_falla <- k_lk
+ok("locks, failed read: an unlock writes nothing (it could drop every other lock)",
+   falla(modificar_emergency_lock(function(l) l[l$username != "ana", , drop = FALSE])) &&
+   .mem_escrituras == 0L)
+.mem_falla <- character()
+modificar_emergency_lock(function(l) rbind(l, candado("caro")))                  # B locks
+modificar_emergency_lock(function(l) l[l$username != "ana", , drop = FALSE])     # A unlocks
+l <- get(k_lk, envir = .mem)
+ok("locks, two sessions: B's lock kept, only A's user unlocked",
+   identical(sort(l$username), c("beto", "caro")))
+modificar_emergency_lock(function(l) l[0, , drop = FALSE])
+ok("locks: unlocking the last one is allowed (outside the net, by design)",
+   nrow(get(k_lk, envir = .mem)) == 0L)
+ok("no write_emergency_lock() left", !any(grepl("write_emergency_lock(", codigo, fixed = TRUE)))
+
+# ── 7. Appending rows the way the module builds them ─────────────────────────
+# The module's new rows carry <json> values (jsonlite::toJSON) and S3's
+# table may have columns they do not: dplyr::bind_rows refused both.
+s3_memoria_reset()
+assign(k_hr, pedido, envir = .mem)
+nuevo_hr <- data.frame(id = "h2", requester = "bunny", requester_name = "Bunny",
+                       clients_json = jsonlite::toJSON(c("networks"), auto_unbox = FALSE),
+                       decisions_json = jsonlite::toJSON(list(networks = "pending"), auto_unbox = TRUE),
+                       message = "", requested_at = Sys.time(), status = "pending", stringsAsFactors = FALSE)
+ok("hop request with <json> values appends",
+   !falla(modificar_hop_requests(function(r) .hd_admin_agregar(r, nuevo_hr))) &&
+   nrow(get(k_hr, envir = .mem)) == 2L && is.character(get(k_hr, envir = .mem)$clients_json))
+extra <- registro("networks"); extra$erp <- "sap"
+assign(k_reg, extra, envir = .mem)
+ok("a new client appends to a registry with an extra column",
+   !falla(modificar_client_registry(function(r) .hd_admin_agregar(r, cliente("acme")))) &&
+   identical(get(k_reg, envir = .mem)$erp, c("sap", NA)))
+
+# ── 8. No direct s3saveRDS on any hd-admin table but the dev-bucket copy ──────
+directos <- grep("s3saveRDS\\(.*hd-admin/(client_registry|client_requests|notifications|pending_invites|emergency_lock|hop_)",
+                 codigo, value = TRUE)
+ok("only global.R's dev-bucket copy still writes an hd-admin table directly", length(directos) <= 1L)
+
 s3_memoria_restaurar()
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)

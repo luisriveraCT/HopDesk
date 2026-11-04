@@ -1338,9 +1338,15 @@ tiersServer <- function(id, shared) {
         reason    = reason,
         stringsAsFactors = FALSE
       )
-      updated <- rbind(existing, new_row)
       tryCatch({
-        write_emergency_lock(updated)
+        ya <- FALSE
+        modificar_emergency_lock(function(l) {
+          if (any(tolower(l$username) == username)) { ya <<- TRUE; return(l) }
+          .hd_admin_agregar(l, new_row)
+        })
+        if (ya) {
+          showNotification(paste0("'", username, "' ya está bloqueado."), type = "warning"); return()
+        }
         security_lock_refresh(security_lock_refresh() + 1L)
         updateSelectizeInput(session, "sec_lock_user", selected = character(0))
         updateTextInput(session, "sec_lock_reason", value = "")
@@ -1365,11 +1371,9 @@ tiersServer <- function(id, shared) {
       username <- tolower(trimws(input$sec_unlock_user %||% ""))
       req(nzchar(username))
       current_viewer <- shared$current_user() %||% "unknown"
-      existing <- tryCatch(read_emergency_lock(), error = function(e) NULL)
-      if (is.null(existing) || !nrow(existing)) return()
-      updated <- existing[tolower(existing$username) != username, , drop = FALSE]
       tryCatch({
-        write_emergency_lock(updated)
+        # On S3's current list (CM13): only this user's lock is removed.
+        modificar_emergency_lock(function(l) l[tolower(l$username) != username, , drop = FALSE])
         security_lock_refresh(security_lock_refresh() + 1L)
         showNotification(paste0("Cuenta '", username, "' desbloqueada."),
                          type = "message", duration = 4)
@@ -1746,7 +1750,7 @@ tiersServer <- function(id, shared) {
       saved <- tryCatch({
         modificar_client_requests(function(r) {
           if (any(r$client_id_proposed == cid_prop & r$status == "pending")) { dup <<- TRUE; return(r) }
-          dplyr::bind_rows(r, new_req)
+          .hd_admin_agregar(r, new_req)
         }); TRUE
       }, error = function(e) { message("[CLIENTS] request save failed: ", e$message); FALSE })
 
@@ -1859,7 +1863,7 @@ tiersServer <- function(id, shared) {
       saved_reg <- tryCatch({
         modificar_client_registry(function(registry) {
           if (new_entry$client_id %in% registry$client_id) return(registry)
-          dplyr::bind_rows(registry, new_entry)
+          .hd_admin_agregar(registry, new_entry)
         }); TRUE
       }, error = function(e) { message("[CLIENTS] registry save failed: ", e$message); FALSE })
       if (!saved_reg) {
@@ -3407,7 +3411,7 @@ tiersServer <- function(id, shared) {
         stringsAsFactors = FALSE
       )
       tryCatch({
-        modificar_hop_requests(function(r) dplyr::bind_rows(r, new_req))
+        modificar_hop_requests(function(r) .hd_admin_agregar(r, new_req))
         append_hd_notification(
           type         = "hop_request",
           client_id    = "hd-admin",
@@ -3492,7 +3496,7 @@ tiersServer <- function(id, shared) {
           revoked    = FALSE,
           stringsAsFactors = FALSE
         )
-        updated_grants <- modificar_hop_grants(function(g) dplyr::bind_rows(g, new_g))
+        updated_grants <- modificar_hop_grants(function(g) .hd_admin_agregar(g, new_g))
         bump_sync_version("hop_grants_db")
         shared$hop_grants_db(updated_grants)
         # Record the decision; resolve the request when all clients decided
@@ -3749,7 +3753,7 @@ tiersServer <- function(id, shared) {
             stringsAsFactors = FALSE
           )
         }))
-        updated <- modificar_hop_grants(function(g) dplyr::bind_rows(g, new_rows))
+        updated <- modificar_hop_grants(function(g) .hd_admin_agregar(g, new_rows))
         bump_sync_version("hop_grants_db")
         shared$hop_grants_db(updated)
         labels <- paste(vapply(to_grant, `[[`, character(1), "label"), collapse = ", ")
@@ -3893,35 +3897,24 @@ tiersServer <- function(id, shared) {
       viewer <- shared$current_user() %||% ""
       req(nzchar(nid), nzchar(viewer))
       tryCatch({
-        notifs <- read_hd_notifications()
-        idx <- which(notifs$id == nid)
-        if (!length(idx)) return()
-        existing <- tryCatch(jsonlite::fromJSON(notifs$read_by[idx[1]] %||% "[]"),
-                             error = function(e) character(0))
-        if (!viewer %in% existing) {
-          notifs$read_by[idx[1]] <- jsonlite::toJSON(c(existing, viewer),
-                                                      auto_unbox = FALSE)
-          write_hd_notifications(notifs)
-        }
+        modificar_hd_notifications(function(n) hd_notifications_marcar_leidas(n, viewer, ids = nid))
         notif_refresh(notif_refresh() + 1L)
-      }, error = function(e) message("[NOTIF] mark read failed: ", e$message))
+      }, error = function(e) {
+        message("[NOTIF] mark read failed: ", e$message)
+        showNotification(tr("cm.hdadmin.no_se_guardo"), type = "error")
+      })
     }, ignoreInit = TRUE)
 
     observeEvent(input$btn_mark_all_read, {
       viewer <- shared$current_user() %||% ""
       req(nzchar(viewer))
       tryCatch({
-        notifs <- read_hd_notifications()
-        for (i in seq_len(nrow(notifs))) {
-          existing <- tryCatch(jsonlite::fromJSON(notifs$read_by[i] %||% "[]"),
-                               error = function(e) character(0))
-          if (!viewer %in% existing)
-            notifs$read_by[i] <- jsonlite::toJSON(c(existing, viewer),
-                                                   auto_unbox = FALSE)
-        }
-        write_hd_notifications(notifs)
+        modificar_hd_notifications(function(n) hd_notifications_marcar_leidas(n, viewer))
         notif_refresh(notif_refresh() + 1L)
-      }, error = function(e) message("[NOTIF] mark-all failed: ", e$message))
+      }, error = function(e) {
+        message("[NOTIF] mark-all failed: ", e$message)
+        showNotification(tr("cm.hdadmin.no_se_guardo"), type = "error")
+      })
     }, ignoreInit = TRUE)
 
     # ── Bitácora Global panel (Stage 4 Part A/B/C) ────────────────────────────
