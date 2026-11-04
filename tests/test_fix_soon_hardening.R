@@ -183,7 +183,7 @@ after <- mock_s3readRDS("networks/app_audit.rds", "mock-bucket")
 # in this test's reconstruction of the pattern.
 {
   txt   <- readLines("R/bancos_module.R", warn = FALSE)
-  start <- grep("observeEvent\\(input\\$undo_conf,", txt)[1]
+  start <- grep("\\.bnc_deshacer_confirmacion <- function\\(conf_id\\)", txt)[1]   # a function of the id since T12b
   block <- paste(txt[start:min(start + 55, length(txt))], collapse = "\n")
   # CM09: the recovery runs on S3's table inside modificar_bancos_confirmados(),
   # and that whole call is what the tryCatch wraps now.

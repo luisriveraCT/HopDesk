@@ -134,13 +134,14 @@ cat("── Minor hardening (post-review) ────────────�
   .chk(grepl("elim_ids_rv\\(NULL\\)", blk), TRUE,
        "R/bancos_module.R: do_eliminar_confirm clears elim_ids_rv() after consuming it")
 
-  # Per-row dynamic buttons (onclick + nonce, no persistent DOM id) --
-  # protected via an idempotency check instead of shinyjs::disable().
-  blk <- block_after("observeEvent\\(input\\$undo_mov_delete,", n = 15)
+  # Per-row buttons (the Historial's and the Papelera's ↶ since T12b: engine
+  # row actions that call these functions with the row's id) -- protected
+  # via an idempotency check instead of shinyjs::disable().
+  blk <- block_after("\\.bnc_deshacer_eliminacion <- function\\(mov_id\\)", n = 15)
   .chk(grepl('if \\(!isTRUE\\(movs\\$eliminado\\[idx\\[1\\]\\]\\)\\) return\\(\\)', blk), TRUE,
        "R/bancos_module.R: undo_mov_delete guards against re-processing an already-restored row")
 
-  blk <- block_after("observeEvent\\(input\\$undo_abono,", n = 9)  # +1: the can_manage_bancos check comes first
+  blk <- block_after("\\.bnc_deshacer_abono <- function\\(ab_id\\)", n = 9)  # +1: the can_manage_bancos check comes first
   .chk(grepl('ab\\$status\\[ab\\$id == ab_id\\]\\[1\\], "voided"', blk), TRUE,
        "R/bancos_module.R: undo_abono guards against re-voiding an already-voided abono")
 
