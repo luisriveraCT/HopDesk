@@ -174,7 +174,9 @@ suppressPackageStartupMessages(library(shiny))
   # liability.edited call is now the SECOND pasivos_log_audit() site in
   # this handler, not the first.
   list_txt <- readLines("R/pasivos_list_module.R", warn = FALSE)
-  b3 <- .scan_block(list_txt, "pasivos_list_pause, ignoreInit = TRUE", occurrence = 2L)
+  # Since T18 the handlers' bodies are functions of the id
+  # (pasivos_cambiar_pausa, pasivos_borrar): scan those.
+  b3 <- .scan_block(list_txt, "^pasivos_cambiar_pausa <- function", occurrence = 2L)
   ok("C3 liability pause/resume: found the handler to scan", !is.na(b3))
   if (!is.na(b3)) {
     ok("C3: captures old_estado before flipping it", grepl("old_estado <- liabs\\$estado\\[idx\\[1\\]\\]", b3))
@@ -184,7 +186,7 @@ suppressPackageStartupMessages(library(shiny))
   }
 
   # C4: liability archive/delete (liability.deleted) -- had no metadata at all.
-  b4 <- .scan_block(list_txt, "plist_confirm_archive, ignoreInit = TRUE")
+  b4 <- .scan_block(list_txt, "^pasivos_borrar <- function")
   ok("C4 liability archive/delete: found the handler to scan", !is.na(b4))
   if (!is.na(b4)) {
     ok("C4: captures old_estado before the soft-delete mutation", grepl("old_estado <- liabs\\$estado\\[idx\\[1\\]\\]", b4))
