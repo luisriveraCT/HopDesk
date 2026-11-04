@@ -1830,10 +1830,10 @@ tiersServer <- function(id, shared) {
         row$client_id_proposed %in% leer_hd_admin("client_registry.rds", .schema_client_registry)$client_id,
         error = function(e) { message("[CLIENTS] registry read failed: ", e$message); NA })
       if (is.na(existe)) {
-        showNotification(tr("cm.hdadmin.no_se_leyo"), type = "error"); return()
+        showNotification(tr("niveles.hdadmin.no_se_leyo"), type = "error"); return()
       }
       if (existe) {
-        showNotification(tr("cm.hdadmin.cliente_existe", cliente = row$client_id_proposed),
+        showNotification(tr("niveles.hdadmin.cliente_existe", cliente = row$client_id_proposed),
                          type = "error"); return()
       }
 
@@ -1881,7 +1881,7 @@ tiersServer <- function(id, shared) {
         }); TRUE
       }, error = function(e) { message("[CLIENTS] request update failed: ", e$message); FALSE })
       # The client exists already; only the request's status could not be saved.
-      if (!req_ok) showNotification(tr("cm.hdadmin.no_se_guardo"), type = "warning", duration = 6)
+      if (!req_ok) showNotification(tr("niveles.hdadmin.no_se_guardo"), type = "warning", duration = 6)
 
       removeModal()
       clients_refresh(clients_refresh()   + 1L)
@@ -2857,7 +2857,7 @@ tiersServer <- function(id, shared) {
           }); TRUE
         }, error = function(e) { message("[INVITES] revoke save failed: ", e$message); FALSE })
         if (!revocada) {
-          showNotification(tr("cm.hdadmin.no_se_guardo"), type = "error", duration = 6)
+          showNotification(tr("niveles.hdadmin.no_se_guardo"), type = "error", duration = 6)
           return()
         }
         tryCatch(log_action(
@@ -3901,7 +3901,7 @@ tiersServer <- function(id, shared) {
         notif_refresh(notif_refresh() + 1L)
       }, error = function(e) {
         message("[NOTIF] mark read failed: ", e$message)
-        showNotification(tr("cm.hdadmin.no_se_guardo"), type = "error")
+        showNotification(tr("niveles.hdadmin.no_se_guardo"), type = "error")
       })
     }, ignoreInit = TRUE)
 
@@ -3913,7 +3913,7 @@ tiersServer <- function(id, shared) {
         notif_refresh(notif_refresh() + 1L)
       }, error = function(e) {
         message("[NOTIF] mark-all failed: ", e$message)
-        showNotification(tr("cm.hdadmin.no_se_guardo"), type = "error")
+        showNotification(tr("niveles.hdadmin.no_se_guardo"), type = "error")
       })
     }, ignoreInit = TRUE)
 
