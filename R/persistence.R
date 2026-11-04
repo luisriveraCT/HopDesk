@@ -2266,29 +2266,43 @@ load_grupos <- function(client_id = NULL) {
   if (!is.null(raw) && is.data.frame(raw) && nrow(raw)) {
     df <- .normalize(raw, .schema_grupos)
 
-    # Backfill client_id for grupos created before this field existed
-    needs_cid <- is.na(df$client_id) | !nzchar(trimws(df$client_id))
-    if (any(needs_cid)) {
-      for (i in which(needs_cid)) {
-        df$client_id[i] <- if (tolower(trimws(df$name[i])) == "hopdesk") {
-          "hopdesk"
-        } else {
-          tolower(client_id %||% Sys.getenv("CLIENT_ID"))
-        }
-      }
-      tryCatch(
-        .s3_write(df, S3_KEYS$grupos, client_id = client_id),
-        error = function(e) message("[GRP] client_id backfill save failed: ", e$message)
-      )
-      message(sprintf("[GRP] client_id backfilled for %d grupo(s)", sum(needs_cid)))
-    }
-
-    return(df)
+    # Grupos that pre-date client_id get it once. The tenant is the prefix of
+    # the file just read, so it can never be another client's (a jump reads
+    # with the jumped-to client_id, and NULL resolves like the read did).
+    inquilino <- tryCatch(sub("/.*$", "", .s3_key(S3_KEYS$grupos, client_id = client_id)),
+                          error = function(e) NA_character_)
+    lleno <- .grupos_rellenar(df, inquilino)
+    if (identical(lleno, df)) return(df)
+    # The fill is applied on S3's current table, not on this read, so it never
+    # undoes another session's write made since (modificar_tabla rereads; with
+    # no client_id it refuses, and the read still returns the filled copy).
+    out <- tryCatch(
+      modificar_tabla(S3_KEYS$grupos, client_id, .schema_grupos,
+                      function(fresco) .grupos_rellenar(fresco, inquilino)),
+      error = function(e) { message("[GRP] client_id backfill save failed: ", e$message); lleno }
+    )
+    return(out)
   }
 
   # No grupos.rds — return empty schema. Groups are created via the UI.
   message("[GRP] No grupos.rds found — returning empty schema.")
   .schema_grupos()
+}
+
+# Fills empty client_id: a grupo named "hopdesk" is HopDesk's own; any other
+# gets inquilino, and stays empty when inquilino is unknown. Pure: no I/O.
+.grupos_rellenar <- function(df, inquilino) {
+  falta <- is.na(df$client_id) | !nzchar(trimws(df$client_id))
+  if (!any(falta)) return(df)
+  es_hd <- falta & tolower(trimws(df$name)) %in% "hopdesk"
+  df$client_id[es_hd] <- "hopdesk"
+  resto <- falta & !es_hd
+  if (any(resto)) {
+    if (is.na(inquilino) || !nzchar(inquilino))
+      message(sprintf("[GRP] %d grupo(s) without client_id left empty: tenant unknown", sum(resto)))
+    else df$client_id[resto] <- tolower(inquilino)
+  }
+  df
 }
 
 save_grupos <- function(df, client_id = NULL) {
