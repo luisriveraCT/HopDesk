@@ -1,0 +1,510 @@
+{
+  "columnas": [
+    {
+      "clave": "d-7",
+      "hoy": false
+    },
+    {
+      "clave": "d-6",
+      "hoy": false
+    },
+    {
+      "clave": "d-5",
+      "hoy": false
+    },
+    {
+      "clave": "d-4",
+      "hoy": false
+    },
+    {
+      "clave": "d-3",
+      "hoy": false
+    },
+    {
+      "clave": "d-2",
+      "hoy": false
+    },
+    {
+      "clave": "d-1",
+      "hoy": false
+    },
+    {
+      "clave": "d+0",
+      "hoy": true
+    },
+    {
+      "clave": "d+1",
+      "hoy": false
+    },
+    {
+      "clave": "d+2",
+      "hoy": false
+    },
+    {
+      "clave": "d+3",
+      "hoy": false
+    },
+    {
+      "clave": "d+4",
+      "hoy": false
+    },
+    {
+      "clave": "d+5",
+      "hoy": false
+    },
+    {
+      "clave": "d+6",
+      "hoy": false
+    },
+    {
+      "clave": "d+7",
+      "hoy": false
+    },
+    {
+      "clave": "d+8",
+      "hoy": false
+    },
+    {
+      "clave": "d+9",
+      "hoy": false
+    },
+    {
+      "clave": "d+10",
+      "hoy": false
+    },
+    {
+      "clave": "d+11",
+      "hoy": false
+    },
+    {
+      "clave": "d+12",
+      "hoy": false
+    },
+    {
+      "clave": "d+13",
+      "hoy": false
+    },
+    {
+      "clave": "d+14",
+      "hoy": false
+    },
+    {
+      "clave": "d+15",
+      "hoy": false
+    },
+    {
+      "clave": "d+16",
+      "hoy": false
+    },
+    {
+      "clave": "d+17",
+      "hoy": false
+    },
+    {
+      "clave": "d+18",
+      "hoy": false
+    },
+    {
+      "clave": "d+19",
+      "hoy": false
+    },
+    {
+      "clave": "d+20",
+      "hoy": false
+    },
+    {
+      "clave": "d+21",
+      "hoy": false
+    },
+    {
+      "clave": "d+22",
+      "hoy": false
+    },
+    {
+      "clave": "d+23",
+      "hoy": false
+    },
+    {
+      "clave": "d+24",
+      "hoy": false
+    },
+    {
+      "clave": "d+25",
+      "hoy": false
+    },
+    {
+      "clave": "d+26",
+      "hoy": false
+    },
+    {
+      "clave": "d+27",
+      "hoy": false
+    },
+    {
+      "clave": "d+28",
+      "hoy": false
+    },
+    {
+      "clave": "d+29",
+      "hoy": false
+    },
+    {
+      "clave": "d+30",
+      "hoy": false
+    },
+    {
+      "clave": "d+31",
+      "hoy": false
+    },
+    {
+      "clave": "d+32",
+      "hoy": false
+    },
+    {
+      "clave": "d+33",
+      "hoy": false
+    },
+    {
+      "clave": "d+34",
+      "hoy": false
+    },
+    {
+      "clave": "d+35",
+      "hoy": false
+    },
+    {
+      "clave": "d+36",
+      "hoy": false
+    },
+    {
+      "clave": "d+37",
+      "hoy": false
+    },
+    {
+      "clave": "d+38",
+      "hoy": false
+    },
+    {
+      "clave": "d+39",
+      "hoy": false
+    },
+    {
+      "clave": "d+40",
+      "hoy": false
+    },
+    {
+      "clave": "d+41",
+      "hoy": false
+    },
+    {
+      "clave": "d+42",
+      "hoy": false
+    },
+    {
+      "clave": "d+43",
+      "hoy": false
+    },
+    {
+      "clave": "d+44",
+      "hoy": false
+    },
+    {
+      "clave": "d+45",
+      "hoy": false
+    },
+    {
+      "clave": "d+46",
+      "hoy": false
+    },
+    {
+      "clave": "d+47",
+      "hoy": false
+    },
+    {
+      "clave": "d+48",
+      "hoy": false
+    },
+    {
+      "clave": "d+49",
+      "hoy": false
+    },
+    {
+      "clave": "d+50",
+      "hoy": false
+    },
+    {
+      "clave": "d+51",
+      "hoy": false
+    },
+    {
+      "clave": "d+52",
+      "hoy": false
+    },
+    {
+      "clave": "d+53",
+      "hoy": false
+    }
+  ],
+  "filas": [
+    {
+      "tipo": "moneda",
+      "moneda": "MXN"
+    },
+    {
+      "tipo": "fila",
+      "etiqueta": "Papelería Centro",
+      "parte": "Papelería Centro",
+      "moneda": "MXN",
+      "comision": false,
+      "urgencia": "pronto",
+      "editar": null,
+      "editar_funciona": null,
+      "celdas": {
+        "d+4": {
+          "texto": "$ 80.00",
+          "marca": "",
+          "boton": "convertir",
+          "boton_id": "p0",
+          "clic_id": "p0",
+          "estado": "provision",
+          "a_mano": false,
+          "vence_hoy": false
+        }
+      }
+    },
+    {
+      "tipo": "fila",
+      "etiqueta": "Arrendamiento archivado",
+      "parte": "Arrendadora",
+      "moneda": "MXN",
+      "comision": false,
+      "urgencia": "vencida",
+      "editar": "lib6",
+      "editar_funciona": true,
+      "celdas": {
+        "d-5": {
+          "texto": "$ 666.00",
+          "marca": "",
+          "boton": "convertir",
+          "boton_id": "p6",
+          "clic_id": "p6",
+          "estado": "provision_vencida",
+          "a_mano": false,
+          "vence_hoy": false
+        }
+      }
+    },
+    {
+      "tipo": "fila",
+      "etiqueta": "Renta oficina",
+      "parte": "Inmobiliaria Sol",
+      "moneda": "MXN",
+      "comision": false,
+      "urgencia": "vencida",
+      "editar": "lib1",
+      "editar_funciona": true,
+      "celdas": {
+        "d-3": {
+          "texto": "$ 1,000.00",
+          "marca": "",
+          "boton": "convertir",
+          "boton_id": "p1a",
+          "clic_id": "p1a",
+          "estado": "provision_vencida",
+          "a_mano": false,
+          "vence_hoy": false
+        },
+        "d+0": {
+          "texto": "$ 1,100.00",
+          "marca": "",
+          "boton": "convertir",
+          "boton_id": "p1b",
+          "clic_id": "p1b",
+          "estado": "provision",
+          "a_mano": false,
+          "vence_hoy": true
+        },
+        "d+1": {
+          "texto": "$ 1,200.00",
+          "marca": "",
+          "boton": "convertir",
+          "boton_id": "p1c",
+          "clic_id": "p1c",
+          "estado": "provision",
+          "a_mano": false,
+          "vence_hoy": false
+        },
+        "d+5": {
+          "texto": "$ 1,300.00",
+          "marca": "",
+          "boton": "convertir",
+          "boton_id": "p1d",
+          "clic_id": "p1d",
+          "estado": "provision",
+          "a_mano": false,
+          "vence_hoy": false
+        },
+        "d+20": {
+          "texto": "$ 1,950.00",
+          "marca": "",
+          "boton": "convertir",
+          "boton_id": "p1e",
+          "clic_id": "p1e",
+          "estado": "provision",
+          "a_mano": true,
+          "vence_hoy": false
+        },
+        "d+30": {
+          "texto": "$ 1,500.00",
+          "marca": "",
+          "boton": "convertir",
+          "boton_id": "p1f",
+          "clic_id": "p1f",
+          "estado": "provision",
+          "a_mano": true,
+          "vence_hoy": false
+        }
+      }
+    },
+    {
+      "tipo": "moneda",
+      "moneda": "USD"
+    },
+    {
+      "tipo": "fila",
+      "etiqueta": "Crédito Banorte",
+      "parte": "Banorte",
+      "moneda": "USD",
+      "comision": false,
+      "urgencia": "vencida",
+      "editar": "lib2",
+      "editar_funciona": true,
+      "celdas": {
+        "d-4": {
+          "texto": "$ 730.00",
+          "marca": "vencido",
+          "boton": "comprobante",
+          "boton_id": "p2e",
+          "clic_id": "p2e",
+          "estado": "pendiente_vencido",
+          "a_mano": false,
+          "vence_hoy": false
+        },
+        "d-2": {
+          "texto": "$ 720.00",
+          "marca": "confirmado",
+          "boton": "",
+          "boton_id": null,
+          "clic_id": "p2c",
+          "estado": "confirmado",
+          "a_mano": false,
+          "vence_hoy": false
+        },
+        "d-1": {
+          "texto": "$ 710.00",
+          "marca": "vencido",
+          "boton": "comprobante",
+          "boton_id": "p2v",
+          "clic_id": "p2v",
+          "estado": "pendiente_vencido",
+          "a_mano": false,
+          "vence_hoy": false
+        },
+        "d+3": {
+          "texto": "$ 700.00",
+          "marca": "pendiente",
+          "boton": "comprobante",
+          "boton_id": "p2p",
+          "clic_id": "p2p",
+          "estado": "pendiente",
+          "a_mano": false,
+          "vence_hoy": false
+        },
+        "d+10": {
+          "texto": "$ 5,000.00",
+          "marca": "",
+          "boton": "convertir",
+          "boton_id": "p2m",
+          "clic_id": "p2m",
+          "estado": "provision",
+          "a_mano": false,
+          "vence_hoy": false
+        }
+      }
+    },
+    {
+      "tipo": "fila",
+      "etiqueta": "Comisión por apertura",
+      "parte": "",
+      "moneda": "",
+      "comision": true,
+      "urgencia": "",
+      "editar": null,
+      "editar_funciona": null,
+      "celdas": {
+        "d+2": {
+          "texto": "$ 250.00",
+          "marca": "",
+          "boton": "convertir",
+          "boton_id": "p2f1",
+          "clic_id": "p2f1",
+          "estado": "provision",
+          "a_mano": false,
+          "vence_hoy": false
+        }
+      }
+    },
+    {
+      "tipo": "fila",
+      "etiqueta": "Comisión por disposición",
+      "parte": "",
+      "moneda": "",
+      "comision": true,
+      "urgencia": "",
+      "editar": null,
+      "editar_funciona": null,
+      "celdas": {
+        "d+2": {
+          "texto": "$ 120.00",
+          "marca": "",
+          "boton": "convertir",
+          "boton_id": "p2f2",
+          "clic_id": "p2f2",
+          "estado": "provision",
+          "a_mano": false,
+          "vence_hoy": false
+        }
+      }
+    },
+    {
+      "tipo": "moneda",
+      "moneda": "EUR"
+    },
+    {
+      "tipo": "moneda",
+      "moneda": "CAD"
+    },
+    {
+      "tipo": "fila",
+      "etiqueta": "Licencias <b>Ñandú<\/b> & 'Co'",
+      "parte": "Proveedor \"X\" <i>",
+      "moneda": "CAD",
+      "comision": false,
+      "urgencia": "pronto",
+      "editar": "lib'4",
+      "editar_funciona": false,
+      "celdas": {
+        "d+3": {
+          "texto": "$ 60.00",
+          "marca": "",
+          "boton": "convertir",
+          "boton_id": "p4",
+          "clic_id": "p4",
+          "estado": "provision",
+          "a_mano": false,
+          "vence_hoy": false
+        }
+      }
+    }
+  ]
+}
