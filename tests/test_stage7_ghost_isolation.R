@@ -61,7 +61,7 @@ suppressPackageStartupMessages(library(DT))
   .chk(d$.acciones[d$.bloqueada], c("", ""), "dia_datos: a confirmed invoice offers no ＋/✎")
   js <- paste(readLines("www/hdtable.js", warn = FALSE), collapse = "\n")
   .chk(grepl("var libres = u.filas.filter(function (i) { return !st.bloq[i]; })", js, fixed = TRUE) &&
-         grepl("libres.forEach(function (i) { var mo = st.moneda[i] || ''; s[mo] = (s[mo] || 0) + (Number(o[i]) || 0); });", js, fixed = TRUE),
+         grepl("libres.forEach(function (i) { var mo = st.moneda[i] || ''; s[mo] = (s[mo] || 0) + montoFila(st, i); });", js, fixed = TRUE),
        TRUE, "engine: a group's sum counts only its free (unlocked) rows -- a mixed group keeps its real open balance")
   .chk(grepl("if (st.bloq[i]) { if (cb) cb.checked = false; return; }", js, fixed = TRUE), TRUE,
        "engine: a click never marks a locked row")
