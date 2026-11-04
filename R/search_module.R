@@ -192,6 +192,27 @@ mostrar_datos_sap <- function(raw) {
 }
 
 # =============================================================================
+# Confirmar siempre cierra (Luis, 2026-11-04): the Agenda rows for what
+# Vencidos and the lupa send. An ERP invoice goes through
+# agenda_filas_factura(), which carries its posting date (the close key) and
+# refuses, on the server, one already confirmed (attr "rechazadas"). A manual
+# row keeps the row built by hand: it leaves the views on its own path once
+# confirmed. keys: handle_invoice_action()'s keys_df (from
+# facturas_payload()); a_mano: the rows built by hand for them, same order.
+facturas_filas_agenda <- function(keys, a_mano, usuario, confirmaciones) {
+  erp   <- is_erp_sourced(a_mano$source)
+  libro <- data.frame(ledger = keys$ledger, Empresa = keys$Empresa, Moneda = keys$Moneda,
+                      Documento = keys$Documento, Parte = keys$Parte, Codigo = keys$Codigo,
+                      Importe = keys$Importe, FechaEff = a_mano$FechaVenc, source = a_mano$source,
+                      confirmed = keys$confirmed %||% FALSE, stringsAsFactors = FALSE)
+  fecha <- as.character(keys$fecha_factura %||% rep("", nrow(keys)))
+  libro[["Fecha de contabilización"]] <- as.Date(ifelse(!is.na(fecha) & nzchar(fecha), fecha, NA_character_))
+  filas_erp <- agenda_filas_factura(libro[erp, , drop = FALSE], usuario, confirmaciones = confirmaciones)
+  out <- dplyr::bind_rows(filas_erp, a_mano[!erp, , drop = FALSE])
+  attr(out, "rechazadas") <- unique(attr(filas_erp, "rechazadas"))
+  out
+}
+
 # handle_invoice_action — shared handler called by search and vencidos modules.
 # payload: list with $action, $rows, optionally $move_to
 # =============================================================================
@@ -216,6 +237,8 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
     Importe   = vapply(rows, `[[`, numeric(1),   "importe"),
     Fecha     = vapply(rows, `[[`, character(1), "fecha"),
     tipo      = vapply(rows, function(r) r[["tipo"]] %||% "", character(1)),
+    fecha_factura = vapply(rows, function(r) as.character(r[["fecha_factura"]] %||% ""), character(1)),
+    confirmed = vapply(rows, function(r) isTRUE(r[["confirmed"]]), logical(1)),
     stringsAsFactors = FALSE
   )
 
@@ -515,11 +538,19 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
       stringsAsFactors = FALSE
     )
     # Skip rows with blank Documento (can't key them)
-    new_rows <- new_rows[nzchar(new_rows$Documento), , drop = FALSE]
+    con_doc  <- nzchar(new_rows$Documento)
+    new_rows <- new_rows[con_doc, , drop = FALSE]
     if (!nrow(new_rows)) {
       showNotification("No se encontraron facturas con documento válido.", type = "warning")
       return()
     }
+    new_rows <- facturas_filas_agenda(keys_df[con_doc, , drop = FALSE], new_rows, current_user,
+                                      tryCatch(shared$bancos_confirmados(), error = function(e) NULL))
+    rechazadas <- attr(new_rows, "rechazadas")
+    if (length(rechazadas))
+      showNotification(tr("tablas.agenda.ya_confirmadas", documentos = paste(rechazadas, collapse = ", ")),
+                       type = "warning", duration = 6)
+    if (!nrow(new_rows)) return()
     # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
     # 2026-07-25); a stale base here would silently drop another session's
     # concurrent stage/unstage.

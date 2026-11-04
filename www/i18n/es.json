@@ -89,6 +89,7 @@
   "tablas.copiar_valor": "Copiar valor completo",
   "tablas.cobros": "Cobros",
   "tablas.error_datos": "No se pudieron cargar los datos.",
+  "tablas.agenda.ya_confirmadas": "Ya están confirmadas y no se mandan otra vez a la Agenda: {documentos}.",
   "tablas.pagos": "Pagos",
   "tablas.sumador.visible": "Visible",
   "tablas.sumador.seleccion.uno": "{n} seleccionada",

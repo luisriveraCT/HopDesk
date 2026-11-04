@@ -921,8 +921,17 @@ ledgerModuleServer <- function(id, config, shared) {
       } else {
         new_rows[["source"]] <- SAP_B1_ERP_TYPE
       }
+      new_rows <- dia_filas_agenda(new_rows, tryCatch(as.data.frame(df_combined()), error = function(e) NULL) %||% detail,
+                                   shared$current_user(), ledger,
+                                   tryCatch(shared$bancos_confirmados(), error = function(e) NULL))
+      rechazadas <- attr(new_rows, "rechazadas")
+      if (length(rechazadas))
+        showNotification(tr("tablas.agenda.ya_confirmadas", documentos = paste(rechazadas, collapse = ", ")),
+                         type = "warning", duration = 6)
+      if (!nrow(new_rows)) return()
       new_rows <- new_rows[, c("id","ledger","Empresa","Moneda","Documento",
-                                "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source"), drop = FALSE]
+                                "Parte","Codigo","tipo_item","Importe","FechaVenc","staged_by","staged_at","status","source",
+                                "fecha_factura"), drop = FALSE]
       # Read fresh from S3 first, not this session's possibly-stale in-memory
       # copy -- this writes the whole table back, so a stale base would
       # silently drop another session's concurrent stage/unstage. Must be
@@ -2003,6 +2012,29 @@ ledgerModuleServer <- function(id, config, shared) {
 # another process, or an offline-queue replay, never reaches it. A failed
 # read stop()s, so the save retries and then reports the failure instead of
 # writing this session's whole copy.
+# Confirmar siempre cierra (Luis, 2026-11-04): the Agenda rows for what the
+# day sends (Agregar todo, Agregar selección, a row's or a group's ＋). An ERP
+# invoice goes through agenda_filas_factura(), with its posting date taken
+# from the ledger (`fuente`, by Empresa + Moneda + Documento) as the close
+# key; it refuses, on the server, one already confirmed (attr "rechazadas").
+# A manual row keeps the row built by hand: it leaves the views on its own
+# path once confirmed. a_mano: the rows .dia_agregar built (with FechaEff).
+dia_filas_agenda <- function(a_mano, fuente, usuario, ledger, confirmaciones) {
+  FC <- "Fecha de contabilización"
+  if (!is.null(fuente) && FC %in% names(fuente)) {
+    k_f <- paste(fuente$Empresa, fuente$Moneda, fuente$Documento, sep = "\u001f")
+    a_mano[[FC]] <- as.Date(fuente[[FC]])[match(paste(a_mano$Empresa, a_mano$Moneda, a_mano$Documento,
+                                                      sep = "\u001f"), k_f)]
+  }
+  erp <- is_erp_sourced(a_mano[["source"]])
+  filas_erp <- agenda_filas_factura(a_mano[erp, , drop = FALSE], usuario, ledger = ledger,
+                                    confirmaciones = confirmaciones)
+  out <- dplyr::bind_rows(filas_erp, a_mano[!erp, , drop = FALSE])
+  if (!"fecha_factura" %in% names(out)) out[["fecha_factura"]] <- as.Date(rep(NA, nrow(out)))
+  attr(out, "rechazadas") <- unique(attr(filas_erp, "rechazadas"))
+  out
+}
+
 .moves_read_live <- function(client_id = NULL) {
   .normalize(.s3_leer_para_escribir(S3_KEYS$moves, client_id), .schema_moves) |>
     dplyr::filter(ledger %in% c("AR", "AP"), !is.na(Empresa), !is.na(Moneda), !is.na(Documento))

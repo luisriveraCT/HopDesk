@@ -123,9 +123,9 @@ ok("confirming AP and AR in the Agenda writes fecha_factura (2 sites)",
 # entry (app.R), Pasivos' provisions, the partial abono (out of scope).
 EXCEPCIONES <- c("R/persistence.R", "R/pagar_hoy_module.R", "app.R", "R/pasivos_module.R",
                  "R/staging_browse_module.R")
-# Owned by other fronts until they adopt it: ejecutor 2 (Vencidos, lupa, day).
-# Intercompany and the Mapa IC adopted it (T13).
-PENDIENTES <- c("R/search_module.R", "R/ledger_module.R")
+# Every path adopted it: Vencidos, the lupa and the day (ejecutor 2),
+# Intercompany and the Mapa IC (ejecutor 3, T13).
+PENDIENTES <- character()
 archivos <- setdiff(c(list.files("R", pattern = "\\.R$", full.names = TRUE, recursive = TRUE), "app.R"), EXCEPCIONES)
 sin_helper <- Filter(function(f) {
   x <- readLines(f, warn = FALSE, encoding = "UTF-8"); x <- x[!grepl("^\\s*#", x)]
@@ -136,6 +136,57 @@ ok("no new path sends ERP invoices to the Agenda without agenda_filas_factura()"
    length(setdiff(sin_helper, PENDIENTES)) == 0L)
 ok("PENDIENTES only goes down: a file that adopted the helper must leave the list",
    length(setdiff(PENDIENTES, sin_helper)) == 0L)
+
+# ── 6. Ejecutor 2's paths: Vencidos and the lupa, and the day ────────────────
+# Each path's rows built as the app builds them, confirmed, then sent again.
+cargar("R/vencidos_module.R", "facturas_payload")
+cargar("R/search_module.R", "facturas_filas_agenda")
+cargar("R/ledger_module.R", "dia_filas_agenda")
+a_mano <- function(df, ledger = "AP") data.frame(
+  id = paste0("m", seq_len(nrow(df))), ledger = ledger, Empresa = df$Empresa, Moneda = df$Moneda,
+  Documento = df$Documento, Parte = df$Parte, Codigo = df$Codigo, tipo_item = "factura", Importe = df$Importe,
+  FechaVenc = as.Date(df$FechaEff), staged_by = "luis", staged_at = Sys.time(), status = "pending",
+  source = ifelse(df$source == "manual", "manual", SAP_B1_ERP_TYPE), stringsAsFactors = FALSE)
+# Vencidos / lupa: the table's rows -> facturas_payload() -> keys_df, as in
+# handle_invoice_action().
+de_vencidos <- function(df, conf = NULL) {
+  df$Ledger <- "AP"; df$Fecha <- df$FechaEff; df$.id_tabla <- paste0("t", seq_len(nrow(df)))
+  p <- facturas_payload(df, df$.id_tabla)
+  keys <- data.frame(ledger = vapply(p, `[[`, "", "ledger"), Empresa = vapply(p, `[[`, "", "empresa"),
+                     Moneda = vapply(p, `[[`, "", "moneda"), Documento = vapply(p, `[[`, "", "documento"),
+                     Parte = vapply(p, `[[`, "", "parte"), Codigo = vapply(p, `[[`, "", "codigo"),
+                     Importe = vapply(p, `[[`, 0, "importe"), source = vapply(p, `[[`, "", "source"),
+                     fecha_factura = vapply(p, `[[`, "", "fecha_factura"),
+                     confirmed = vapply(p, `[[`, FALSE, "confirmed"), stringsAsFactors = FALSE)
+  facturas_filas_agenda(keys, a_mano(df), "luis", conf)
+}
+v <- de_vencidos(libro())
+ok("Vencidos/lupa: the rows carry the invoice's posting date (the close key)",
+   nrow(v) == 2L && identical(as.Date(v$fecha_factura), libro()[[FC]]))
+conf_v <- confirmar(v)
+ok("Vencidos/lupa: confirmed, the invoices are closed -- also after the ERP moves the balance",
+   all(cerradas(libro(), conf_v)) && all(cerradas(libro(saldo = c(10, 20)), conf_v)))
+v2 <- de_vencidos(libro(), conf_v)
+ok("Vencidos/lupa: sending them again is refused on the server (both named)",
+   nrow(v2) == 0L && setequal(attr(v2, "rechazadas"), c("9001", "9002")))
+vc <- libro(); vc$confirmed <- c(TRUE, FALSE)
+ok("Vencidos/lupa: a row the view shows confirmed is refused too", identical(de_vencidos(vc)$Documento, "9002"))
+vm <- libro(); vm$source[2] <- "manual"
+r <- de_vencidos(vm)
+ok("Vencidos/lupa: a manual row keeps its own row (it leaves on its own path), nothing is lost",
+   setequal(r$Documento, c("9001", "9002")) && identical(r$source[r$Documento == "9002"], "manual"))
+# The day: the rows .dia_agregar() built, the ledger as `fuente` (posting date).
+dia <- dia_filas_agenda(a_mano(libro()), libro(), "luis", "AP", NULL)
+ok("day: the rows carry the posting date from the ledger", identical(as.Date(dia$fecha_factura), libro()[[FC]]))
+conf_d <- confirmar(dia)
+ok("day: confirmed, the invoices are closed", all(cerradas(libro(), conf_d)))
+dia2 <- dia_filas_agenda(a_mano(libro()), libro(), "luis", "AP", conf_d)
+ok("day: sending them again is refused on the server",
+   nrow(dia2) == 0L && setequal(attr(dia2, "rechazadas"), c("9001", "9002")))
+dm <- libro(); dm$source[1] <- "manual"
+r <- dia_filas_agenda(a_mano(dm), dm, "luis", "AP", conf_d[2, ])
+ok("day: a manual row keeps its own row; the confirmed ERP one is refused",
+   identical(r$Documento, "9001") && identical(r$source, "manual") && identical(attr(r, "rechazadas"), "9002"))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)

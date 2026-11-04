@@ -89,6 +89,7 @@
   "tablas.copiar_valor": "Copy full value",
   "tablas.cobros": "Collections",
   "tablas.error_datos": "The data couldn't be loaded.",
+  "tablas.agenda.ya_confirmadas": "Already confirmed, not sent to the Agenda again: {documentos}.",
   "tablas.pagos": "Payments",
   "tablas.sumador.visible": "Visible",
   "tablas.sumador.seleccion.uno": "{n} selected",

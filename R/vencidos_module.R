@@ -218,7 +218,12 @@ facturas_payload <- function(df, ids) {
     codigo       = txt(df$Codigo[i] %||% ""),
     importe      = as.numeric(df$Importe[i]),
     fecha        = format(as.Date(df$Fecha[i]), "%d/%m/%Y"),
-    tipo         = if (identical(df$Ledger[i], "AR")) "Cobro" else "Pago"
+    tipo         = if (identical(df$Ledger[i], "AR")) "Cobro" else "Pago",
+    # The invoice's identity for "confirmar siempre cierra" (its posting
+    # date) and whether it's already confirmed: agenda_filas_factura().
+    fecha_factura = if ("Fecha de contabilización" %in% names(df))
+                      txt(format(as.Date(df[["Fecha de contabilización"]][i]))) else "",
+    confirmed    = isTRUE(as.logical(df$confirmed[i]))
   ))
 }
 
