@@ -96,7 +96,9 @@ facturas_datos <- function(df, tags_df, agenda_df = NULL, puede_convertir = FALS
     Documento     = documento,
     Origen        = origen,
     FechaOriginal = if ("FechaOriginal" %in% names(df)) as.Date(df$FechaOriginal) else as.Date(NA),
-    Importe       = as.numeric(df$Importe),
+    # A confirmed ERP invoice stays, locked, in $0 (Luis, 2026-11-04:
+    # confirmar siempre cierra); a HopDesk-made one leaves on its own path.
+    Importe       = ifelse(confirmed & is_erp_sourced(source), 0, as.numeric(df$Importe)),
     Moneda        = moneda,
     Etiqueta      = etiqueta,
     .tipo         = ifelse(ledger == "AR", "cobro", "pago"),

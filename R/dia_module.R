@@ -61,7 +61,9 @@ dia_datos <- function(detail, ledger, tags_df, agenda_df = NULL, puede_convertir
     Referencia    = col("Factura"),
     # Synthetic PROV_ keys are internal: shown as nothing, as the day always did.
     Documento     = ifelse(startsWith(documento, "PROV_"), "", documento),
-    Importe       = importe,
+    # A confirmed ERP invoice stays, locked, in $0 (Luis, 2026-11-04);
+    # `importe` (its balance) still keys "already in the Agenda" above.
+    Importe       = ifelse(confirmed & is_erp_sourced(source), 0, importe),
     Moneda        = col("Moneda"),
     FechaOriginal = if ("FechaVenc_Original" %in% names(d)) as.Date(d$FechaVenc_Original) else as.Date(NA),
     Movida        = ifelse(movida == "Manual", "manual", ifelse(movida == "Políticas", "politicas", "")),

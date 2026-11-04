@@ -99,6 +99,8 @@ suppressPackageStartupMessages(library(dplyr))
               "R/vencidos_module.R", "R/dia_module.R")) source(f)
   `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
   SAP_B1_ERP_TYPE <- "sap_b1_service_layer"
+  # is_erp_sourced(): the views lock a confirmed ERP invoice in $0 (only ERP ones).
+  for (e in parse("R/global.R", keep.source = FALSE)) if (is.call(e) && length(e) > 1L && identical(e[[2]], as.name("is_erp_sourced"))) eval(e)
   dia <- as.data.frame(detail)
   dia$source <- "manual"; dia$id <- c("MAN-1", "MAN-2")
   agenda <- data.frame(ledger = "AP", Empresa = "Networks & Logistics", Moneda = "MXN", Documento = "test",

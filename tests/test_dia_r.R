@@ -6,6 +6,8 @@ suppressPackageStartupMessages({ library(testthat); library(shiny) })
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/vencidos_module.R", "R/dia_module.R", "R/policy_engine.R")) source(f)
 SAP_B1_ERP_TYPE <- "sap_b1_service_layer"
+# is_erp_sourced(): the views lock a confirmed ERP invoice in $0 (only ERP ones).
+for (e in parse("R/global.R", keep.source = FALSE)) if (is.call(e) && length(e) > 1L && identical(e[[2]], as.name("is_erp_sourced"))) eval(e)
 
 DIA <- as.Date("2026-11-03")
 detalle <- data.frame(
@@ -25,7 +27,9 @@ agenda <- data.frame(ledger = "AP", Empresa = "NTS", Moneda = "MXN", Documento =
 
 test_that("dia_datos: one row per invoice, largest first, with its control columns", {
   d <- dia_datos(detalle, "AP", tags, agenda, puede_convertir = TRUE)
-  expect_identical(d$Importe, sort(detalle$Importe, decreasing = TRUE))
+  # The paid ERP invoice (3006) stays, locked, in $0 (confirmar siempre cierra).
+  expect_identical(d$Importe, sort(ifelse(detalle$confirmed, 0, detalle$Importe), decreasing = TRUE))
+  expect_identical(d$Importe[d$Documento == "3006"], 0)
   expect_identical(d$Etiqueta[d$Documento == "3001" & d$Parte == "ACEROS"], "urgent")
   expect_identical(d$.agregado, d$Documento == "3002")                 # the Agenda's key has Importe
   expect_identical(d$.bloqueada, d$Documento == "3006")

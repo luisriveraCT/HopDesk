@@ -42,7 +42,7 @@ if (!exists(".usuario_de_sesion")) assign(".usuario_de_sesion", function() "luis
 # HD_SIN_AGENDA = 1: a user without can_register_payments (no Agregar / ＋).
 if (!exists("puede")) assign("puede", function(usuario, permiso, ...)
   !(identical(Sys.getenv("HD_SIN_AGENDA"), "1") && identical(permiso, "can_register_payments")), envir = globalenv())
-cargar("R/global.R", "fmt_money")
+cargar("R/global.R", c("fmt_money", "is_erp_sourced"))
 cargar("R/persistence.R", c("tag_label", "add_tag_labels", "normalize_code"))
 cargar("R/ui_components.R", "app_styles")
 local({

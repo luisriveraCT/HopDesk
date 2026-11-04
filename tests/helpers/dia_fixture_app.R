@@ -28,7 +28,7 @@ cargar <- function(archivo, nombres) {
       eval(e, envir = globalenv())
 }
 cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
-cargar("R/global.R", c("fmt_money", "CURRENCIES"))
+cargar("R/global.R", c("fmt_money", "is_erp_sourced", "CURRENCIES"))
 cargar("R/persistence.R", c("tag_label", "set_invoice_tags"))
 cargar("R/pasivos_capabilities.R", c("PASIVOS_CAPABILITIES", "has_capability"))
 cargar("R/ui_components.R", "app_styles")

@@ -51,6 +51,8 @@ suppressPackageStartupMessages(library(DT))
   for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
               "R/vencidos_module.R", "R/dia_module.R")) source(f, local = TRUE)
   SAP_B1_ERP_TYPE <- "sap_b1_service_layer"
+  # is_erp_sourced(): the views lock a confirmed ERP invoice in $0 (only ERP ones).
+  for (e in parse("R/global.R", keep.source = FALSE)) if (is.call(e) && length(e) > 1L && identical(e[[2]], as.name("is_erp_sourced"))) eval(e)
   dia <- data.frame(Empresa = "NTS", Moneda = "MXN", Documento = c("1", "2", "3"), Factura = "",
                     Parte = c("MIXTA", "MIXTA", "PAGADA"), Importe = c(100, 200, 300),
                     source = SAP_B1_ERP_TYPE, confirmed = c(FALSE, TRUE, TRUE), stringsAsFactors = FALSE)

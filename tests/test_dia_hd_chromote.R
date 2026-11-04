@@ -177,6 +177,10 @@ ok("P7: Detalle shows Documento, Venc. original and Movida too",
    identical(titulos(D), c("Empresa", "Parte", "Referencia", "Documento", "Venc. original", "Movida", "Importe", "Etiqueta", "Origen")))
 ok("O1: Movida as a pill (BODEGAS: Manual)", identical(ev(sprintf("%s.children[5].textContent", fila(D, id_de(D, "3010")))), "Manual"))
 ok("Detalle is flat: one row per invoice, no groups", !any(startsWith(unlist(estado(D)$lista), "grupo:")))
+ok("D2/confirmar siempre cierra: in Detalle, the paid ERP invoice (3006) shows $0.00 in Importe",
+   identical(ev(sprintf("(function(){ var ths = [].slice.call(document.querySelectorAll('#%s thead th'));
+     var j = ths.findIndex(function (th) { return th.firstChild && th.firstChild.textContent === 'Importe'; });
+     var tr = %s; return tr ? tr.children[j].textContent : 'sin fila'; })()", D, fila(D, id_de(D, "3006")))), "$0.00"))
 k <- n_reg(); clic(barra(D, "agregar_todo"))
 ok("Dif2: 'Agregar todo' asks first, then sends every open invoice (never the paid one)",
    identical(conf_texto(D), "¿Agregar 8 facturas a la Agenda del día?"))

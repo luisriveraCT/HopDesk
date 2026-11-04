@@ -161,6 +161,10 @@ deseleccionar()
 clic(celda(acme[3]))
 ok("L4: a paid (ghost) invoice is struck through and can't be marked",
    !length(sel()) && isTRUE(ev(sprintf("%s.classList.contains('hdt-bloq')", fila(acme[3])))))
+ok("L4/confirmar siempre cierra: the paid ERP invoice shows $0.00 in Importe",
+   identical(ev(sprintf("(function(){ var ths = [].slice.call(document.querySelectorAll('#%s thead th'));
+     var j = ths.findIndex(function (th) { return th.firstChild && th.firstChild.textContent === 'Importe'; });
+     return %s.children[j].textContent; })()", A, fila(acme[3]))), "$0.00"))
 clic(sprintf("document.querySelector('#%s .hdt-todos')", A))
 ok("L5: Seleccionar todos takes the 13 open invoices, closed groups included, never the paid one",
    length(sel()) == 13L && !acme[3] %in% sel())
