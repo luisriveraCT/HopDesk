@@ -8,7 +8,7 @@
 #                        piezas = c("densidad"), id_col = "id")
 #   t$seleccion()   # ids marked, in the order they're shown
 #   t$visibles()    # with visibles = TRUE: ids a search/filter/chip leaves, NULL if none narrows
-#   t$accion()      # list(accion, ids, nonce) or NULL
+#   t$accion()      # list(accion, ids, nonce) or NULL; from a cell (accion_celda): celda, columna, de = "celda"
 #   t$periodo()     # "AAAA-MM" shown (with `periodo`), else NULL
 #   t$ir_mes(m)     # show month m, as if chosen in the bar (with `periodo`)
 #   t$ediciones()   # with edicion_celda: data.frame(id, valor, valido), every amount typed
@@ -49,8 +49,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=26"),
-    htmltools::tags$script(src = "hdtable.js?v=37")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=27"),
+    htmltools::tags$script(src = "hdtable.js?v=38")
   ))
 }
 
@@ -579,6 +579,7 @@ hd_columnas_piezas <- function(columnas, tabla, piezas) {
   exigir("columna_fija", function(c) isTRUE(c$fija), "is fija")
   exigir("tono_celda", function(c) !is.null(c$tono) || isTRUE(c$destacar), "has a tono or destacar")
   exigir("dinero_compacto", function(c) !is.null(c$formato) || !is.null(c$cero), "is compacto or cero = \"vacio\"")
+  exigir("accion_celda", function(c) isTRUE(c$accion), "has accion = TRUE")
   fija <- vapply(columnas, function(c) isTRUE(c$fija), logical(1))
   if (any(fija)) {
     if (any(diff(fija) > 0) || !fija[1])
@@ -727,6 +728,25 @@ hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "dat
 # can_register_payments. Their buttons don't show, and an action that comes
 # anyway is ignored (t$accion() never gives it). The module still checks the
 # permission where it writes; this is what the user sees.
+# ── accion_celda (T17b) ─────────────────────────────────────────────────────
+# accion_celda = list(clic = "<action>"): what a click on a cell with an id
+# sends (Pasivos: the provision's editor); without clic, cells only respond
+# through their buttons. What travels to the browser: the click's action and
+# the marks' and buttons' icons and titles. NULL for a table without the
+# piece, so no other table's message changes.
+hd_accion_celda_meta <- function(accion_celda, tabla, piezas) {
+  if (!is.null(accion_celda) && !"accion_celda" %in% piezas)
+    stop(sprintf("hd_table '%s': `accion_celda` needs the 'accion_celda' piece.", tabla), call. = FALSE)
+  if (!"accion_celda" %in% piezas) return(NULL)
+  clic <- accion_celda$clic
+  if (!is.null(accion_celda) && (!is.list(accion_celda) || length(setdiff(names(accion_celda), "clic")) ||
+                                 !(is.null(clic) || (is.character(clic) && length(clic) == 1L && grepl("^[a-z_]+$", clic)))))
+    stop(sprintf("hd_table '%s': `accion_celda` must be list(clic = \"<action name>\").", tabla), call. = FALSE)
+  list(clic = clic,
+       marcas  = lapply(HD_CELDA_MARCAS, function(m) list(icono = m$icono, titulo = tr(m$clave))),
+       botones = lapply(HD_CELDA_BOTONES, function(b) list(icono = b$icono, titulo = tr(b$clave))))
+}
+
 # sin_confirmar: row actions (of acciones_fila) that reach accion() on the
 # click, without the bar's confirmation, because the module asks in its own
 # modal -- one that says more than the bar can (Bancos' Historial: deleting
@@ -736,7 +756,8 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
                             fichas = NULL, acciones_fila = NULL, acciones_barra = NULL,
                             filtros = NULL, periodo = NULL, aviso = NULL, encabezado = NULL,
                             secciones = NULL, vacio = NULL, grupo = NULL, textos = NULL,
-                            visibles = FALSE, acciones_ocultas = NULL, sin_confirmar = NULL) {
+                            visibles = FALSE, acciones_ocultas = NULL, sin_confirmar = NULL,
+                            accion_celda = NULL) {
   if (!is.null(acciones_ocultas) && !is.function(acciones_ocultas))
     stop("hd_table: `acciones_ocultas` must be a function or reactive giving action names.", call. = FALSE)
   piezas_tabla <- hd_piezas_de(tabla, piezas)
@@ -749,6 +770,12 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
   hd_columna_editable(cols_fijas, tabla, piezas_tabla)
   hd_columnas_piezas(cols_fijas, tabla, piezas_tabla)
   hd_columna_opcion(cols_fijas, tabla, piezas_tabla)
+  celda_meta <- hd_accion_celda_meta(accion_celda, tabla, piezas_tabla)
+  # sangria: a child row follows its parent in the module's order; sorting
+  # would separate them.
+  if ("sangria" %in% piezas_tabla && "ordenar" %in% piezas_tabla)
+    stop(sprintf("hd_table '%s': 'sangria' keeps the module's row order; the table can't have 'ordenar' too.", tabla),
+         call. = FALSE)
   # textos =list(contador = <plural key>, sin_bloqueadas = TRUE): the
   # table's own counter text ("594 facturas vencidas o con vencimiento hoy")
   # instead of its class's -- section bands keep the class's ("10 facturas")
@@ -814,7 +841,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         if (is.function(columnas)) hd_columna_editable(cols, tabla, piezas_tabla)
         if (is.function(columnas)) hd_columnas_piezas(cols, tabla, piezas_tabla)
         if (is.function(columnas)) hd_columna_opcion(cols, tabla, piezas_tabla)
-        list(
+        c(list(
         id       = ns("hdt"),
         tabla    = tabla,
         filas    = hd_filas(df, cols, id_col),
@@ -834,7 +861,9 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         grupo      = hd_grupo_payload(grupo, df, cols),
         acciones_fila  = acc_fila_meta,
         acciones_barra = barra_meta()
-        )
+        ),
+        # accion_celda only: no other table's message changes.
+        if (!is.null(celda_meta)) list(celda = celda_meta))
       }, error = function(e) {
         if (inherits(e, "shiny.silent.error")) stop(e)
         .hd_falla_datos(tabla, e, session, ns("hdt"))
@@ -1003,7 +1032,10 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         # valor: what the action's own field holds (campo = "fecha": "AAAA-MM-DD").
         list(accion = as.character(a$accion), ids = as.character(unlist(a$ids)), nonce = a$nonce,
              valor = if (!is.null(a$valor)) as.character(a$valor),
-             de = if (!is.null(a$de)) as.character(a$de))
+             de = if (!is.null(a$de)) as.character(a$de),
+             # accion_celda: which cell (its <campo>.id) and which column.
+             celda = if (!is.null(a$celda)) as.character(a$celda),
+             columna = if (!is.null(a$columna)) as.character(a$columna))
       })
     )
   })

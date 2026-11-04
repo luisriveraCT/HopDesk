@@ -174,6 +174,17 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 /* Provision rows (before the selection rules, which win over them). */
 .hdt-tabla tr.hdt-prov td { background: var(--hdt-prov-soft); }
 .hdt-tabla tr.hdt-prov td:first-child { box-shadow: inset 3px 0 0 var(--hdt-prov); }
+/* semaforo (T17b): how urgent the row is -- overdue, due within 2 days,
+   within 7 -- a bar on the left and a tint, before the selection rules. */
+.hdt-tabla tr.hdt-sem-vencida td    { background: var(--hdt-danger-soft); }
+.hdt-tabla tr.hdt-sem-muy_pronto td { background: var(--hdt-warn-soft); }
+.hdt-tabla tr.hdt-sem-pronto td     { background: #fffaf0; }
+.hdt-tabla tr.hdt-sem-vencida td:first-child    { box-shadow: inset 3px 0 0 var(--hdt-danger); }
+.hdt-tabla tr.hdt-sem-muy_pronto td:first-child { box-shadow: inset 3px 0 0 var(--hdt-warn); }
+.hdt-tabla tr.hdt-sem-pronto td:first-child     { box-shadow: inset 3px 0 0 #e8b86a; }
+/* sangria (T17b): a child row (a liability's fee) hangs from the one above. */
+.hdt-tabla td.hdt-sangria { padding-left: 22px; color: var(--hdt-muted); font-size: .95em; }
+.hdt-sangria-flecha { margin-right: 4px; opacity: .7; }
 .hdt-ins-prov { margin-right: 6px; }
 .hdt-tabla tr.hdt-sel td { background: var(--hdt-sel) !important; }
 .hdt-tabla tr.hdt-sel td:first-child { box-shadow: inset 3px 0 0 var(--hdt-accent); }
@@ -213,6 +224,19 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-op-b:focus-visible { outline: 2px solid var(--hdt-accent); outline-offset: -2px; }
 .hdt-tabla td.hdt-ed-fuera { color: var(--hdt-muted); font-weight: 400; text-decoration: line-through; }
 .hdt-tabla td.hdt-ed-fuera::before { background: var(--hdt-line); }
+/* accion_celda (T17b): a cell that is something of its own -- its mark
+   before the amount, how many it adds up and its button after it. */
+.hdt-tabla td.hdt-celda-clic { cursor: pointer; }
+.hdt-tabla td.hdt-celda-clic:hover { text-decoration: underline dotted var(--hdt-muted); text-underline-offset: 3px; }
+.hdt-celda-marca { margin-right: 3px; font-weight: 700; }
+.hdt-celda-vencida { color: var(--hdt-danger); }
+.hdt-celda-confirmada { color: var(--hdt-t-exito); }
+.hdt-celda-pendiente { color: var(--hdt-muted); }
+.hdt-celda-n { display: inline-block; margin-left: 4px; padding: 0 4px; border-radius: 8px; font-size: .7em; font-weight: 700;
+  line-height: 1.4; color: var(--hdt-accent); background: var(--hdt-accent-soft); vertical-align: middle; }
+.hdt-celda-btn { font: inherit; font-size: .8em; line-height: 1; margin-left: 4px; padding: 0 2px; border: 0; background: none;
+  cursor: pointer; opacity: .75; }
+.hdt-celda-btn:hover { opacity: 1; }
 
 /* Matrix base (T17a). columna_fija: the first columns stay at the left while
    the table scrolls sideways (left = var(--hdt-fija-k), measured by

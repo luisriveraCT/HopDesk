@@ -44,6 +44,17 @@
 # The tones a cell can take (tono_celda): the badges' own (www/hdtable.css).
 HD_TONOS_CELDA <- c("exito", "aviso", "peligro", "info", "neutro", "morado")
 
+# accion_celda (T17b): the marks a cell can carry before its amount, and the
+# buttons it can carry after it (each sends its name as the action). Icons
+# are escapes, like HD_ACCIONES_FILA's.
+HD_CELDA_MARCAS <- list(
+  pendiente  = list(icono = "◷", clave = "tablas.celda.pendiente"),
+  vencida    = list(icono = "!",      clave = "tablas.celda.vencida"),
+  confirmada = list(icono = "✓", clave = "tablas.celda.confirmada"))
+HD_CELDA_BOTONES <- list(
+  provision   = list(icono = "⚡", clave = "tablas.accion.provision"),
+  comprobante = list(icono = "↩", clave = "tablas.accion.comprobante"))
+
 # Dictionary key -> text; anything that isn't a key is used as-is.
 .hd_texto <- function(x) {
   if (is.character(x) && length(x) == 1L && !is.null(i18n_dict("es")[[x]])) tr(x) else x
@@ -99,9 +110,17 @@ col_texto <- function(campo, titulo = NULL, recorte = TRUE, opcional = FALSE, vi
 #                         it tints the cell too
 #   destacar = TRUE       (tono_celda) the whole column shaded (today's)
 #   fija = TRUE           (columna_fija) see .hd_fija()
+#   accion = TRUE         (piece accion_celda, T17b) each cell is something of
+#                         its own (a provision of a liability on a date). The
+#                         row's fields <campo>.id (what a click on the cell
+#                         sends; empty: the cell doesn't respond), <campo>.marca
+#                         (HD_CELDA_MARCAS: pendiente ◷ / vencida ! /
+#                         confirmada ✓), <campo>.boton (HD_CELDA_BOTONES: ⚡ /
+#                         ↩, in the cell) and <campo>.n (how many things the
+#                         cell adds up: above 1 it says so). Any missing: none.
 col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, opcional = FALSE, visible = TRUE,
                        editable = NULL, fija = FALSE, formato = "completo", cero = "cifra", tono = NULL,
-                       destacar = FALSE) {
+                       destacar = FALSE, accion = FALSE) {
   donde <- sprintf("col_dinero(\"%s\")", campo)
   if (!(is.character(formato) && length(formato) == 1L && formato %in% c("completo", "compacto")))
     stop(donde, ": `formato` must be \"completo\" or \"compacto\".", call. = FALSE)
@@ -144,6 +163,9 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, op
   if (cero != "cifra") col$cero <- cero
   if (!is.null(tono)) col$tono <- tono
   if (destacar) col$destacar <- TRUE
+  if (!is.logical(accion) || length(accion) != 1L || is.na(accion))
+    stop(donde, ": `accion` must be TRUE or FALSE.", call. = FALSE)
+  if (accion) col$accion <- TRUE
   col
 }
 
@@ -493,6 +515,7 @@ hd_columnas_meta <- function(columnas) {
    }
    # Likewise (T17a): only a fixed or shaded column says so.
    if (isTRUE(col$fija)) m$fija <- TRUE
+   if (isTRUE(col$accion)) m$accion <- TRUE
    if (isTRUE(col$destacar)) m$destacar <- TRUE
    # The sign colours the text; a state (a field) tints the cell too.
    if (!is.null(col$tono)) m$tono <- if (identical(col$tono, "signo")) "signo" else "estado"
@@ -576,6 +599,19 @@ hd_filas <- function(datos, columnas, id_col = "id") {
         v$min <- I(.hd_editable_limite(col$editable$min, datos))
         v$max <- I(.hd_editable_limite(col$editable$max, datos))
       }
+      # accion_celda (T17b): what each cell is, from <campo>.id / .marca /
+      # .boton / .n; only the closed lists, anything else is nothing.
+      if (isTRUE(col$accion)) {
+        campo_de <- function(sufijo, vacio) {
+          x <- datos[[paste0(col$campo, sufijo)]]
+          if (is.null(x)) rep(vacio, n) else x
+        }
+        cid <- as.character(campo_de(".id", "")); cid[is.na(cid)] <- ""
+        ma  <- as.character(campo_de(".marca", "")); ma[is.na(ma) | !ma %in% names(HD_CELDA_MARCAS)] <- ""
+        bo  <- as.character(campo_de(".boton", "")); bo[is.na(bo) | !bo %in% names(HD_CELDA_BOTONES)] <- ""
+        nn  <- suppressWarnings(as.integer(campo_de(".n", 0L))); nn[is.na(nn) | nn < 0L] <- 0L
+        v$cid <- I(cid); v$marca <- I(ma); v$boton <- I(bo); v$n <- I(nn)
+      }
       # tono = "<campo>" (tono_celda, T17a): the row's own tone, only from
       # the closed list; anything else paints none.
       if (!is.null(col$tono) && !identical(col$tono, "signo")) {
@@ -588,5 +624,20 @@ hd_filas <- function(datos, columnas, id_col = "id") {
   ) -> out
   # Only when the column exists: list(x = NULL) would serialize as {}.
   if (!is.null(acciones)) out$acciones <- I(acciones)
+  # semaforo (T17b): .semaforo, how urgent the row is -- "vencida",
+  # "muy_pronto", "pronto" or nothing: a bar and a tint (Pasivos: overdue,
+  # due within 2 days, within 7).
+  if (".semaforo" %in% names(datos)) {
+    s <- as.character(datos[[".semaforo"]])
+    s[is.na(s) | !s %in% c("vencida", "muy_pronto", "pronto")] <- ""
+    out$semaforo <- I(s)
+  }
+  # sangria (T17b): .nivel, 1 = a child of the row above it (a liability's
+  # fee), shown indented with "↳"; 0 or nothing = a row of its own.
+  if (".nivel" %in% names(datos)) {
+    nv <- suppressWarnings(as.integer(datos[[".nivel"]]))
+    nv[is.na(nv) | nv < 0L] <- 0L
+    out$nivel <- I(pmin(nv, 1L))
+  }
   out
 }

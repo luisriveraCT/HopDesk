@@ -48,11 +48,13 @@ test_that("a piece the table removes can't be turned back on by the caller", {
 })
 
 test_that("pieces not built yet are dropped with one message per table", {
-  # Class F (the time grid) still has pieces for after T04 (semaforo, columna_fija).
-  p <- hd_piezas_de("pasivos_tabla")
-  expect_message(m <- hd_piezas_motor("pasivos_tabla", p), "not built yet")
+  # Class C still has pieces for later (carga_bloques, multilinea); class F's
+  # were the last ones before (semaforo, columna_fija), built in T17a/T17b.
+  p <- hd_piezas_de("libro_banco")
+  expect_message(m <- hd_piezas_motor("libro_banco", p), "not built yet")
   expect_true(all(m %in% HD_PIEZAS_MOTOR))
-  expect_silent(hd_piezas_motor("pasivos_tabla", p))
+  expect_silent(hd_piezas_motor("libro_banco", p))
+  expect_silent(hd_piezas_motor("pasivos_tabla", hd_piezas_de("pasivos_tabla")))
   # Since T03c every piece Vencidos uses is built.
   expect_silent(hd_piezas_motor("vencidos", hd_piezas_de("vencidos")))
 })

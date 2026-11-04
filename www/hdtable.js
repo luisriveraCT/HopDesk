@@ -985,6 +985,11 @@
     st.adj = arr(f.adjuntos);
     st.fijar = arr(f.fijar);
     st.hayFijas = st.fijar.some(Boolean);
+    // T17b: how urgent each row is (semaforo), whether it's a child of the
+    // row above (sangria) and what a cell click sends (accion_celda).
+    st.sem = st.p.semaforo && f.semaforo ? arr(f.semaforo) : null;
+    st.niv = st.p.sangria && f.nivel ? arr(f.nivel) : null;
+    st.celdaCfg = st.p.accion_celda ? msg.celda || null : null;
     st.meses = st.mes && msg.periodo ? arr(msg.periodo.meses) : null;
     st.fijarTitulo = msg.periodo ? msg.periodo.fijar_titulo : null;
     // Sections (agrupar): per level, each row's value, its rank in the
@@ -1006,6 +1011,8 @@
     st.celdas = arr(f.celdas).map(function (c) {
       return { mostrar: arr(c.mostrar), orden: arr(c.orden), copiar: arr(c.copiar), tono: c.tono ? arr(c.tono) : null,
                completo: c.completo ? arr(c.completo) : null, valor: c.valor ? arr(c.valor) : null,
+               cid: c.cid ? arr(c.cid) : null, marca: c.marca ? arr(c.marca) : null,
+               boton: c.boton ? arr(c.boton) : null, cn: c.n ? arr(c.n) : null,
                min: c.min ? arr(c.min) : null, max: c.max ? arr(c.max) : null };
     });
     st.idx = {};
@@ -1192,10 +1199,12 @@
     return td;
   }
 
-  function enviarAccion(st, accion, ids, valor, de) {
+  // extra: more fields for the server (a cell's: celda, columna).
+  function enviarAccion(st, accion, ids, valor, de, extra) {
     var a = { accion: accion, ids: ids, nonce: Math.random() };
     if (valor != null) a.valor = valor;
     if (de) a.de = de;
+    if (extra) Object.keys(extra).forEach(function (k) { a[k] = extra[k]; });
     if (window.Shiny && Shiny.setInputValue) Shiny.setInputValue(st.ns + 'accion', a, { priority: 'event' });
   }
 
@@ -1217,6 +1226,10 @@
       tr.appendChild(td0);
     }
     if (st.miembro && st.miembro[i]) tr.classList.add('hdt-miembro');
+    var sem = st.sem && st.sem[i];
+    if (sem) tr.classList.add('hdt-sem-' + String(sem).replace(/[^a-z_]/g, ''));
+    var hija = st.niv && st.niv[i] > 0;
+    if (hija) tr.classList.add('hdt-hija');
     var et = tonoEtiqueta(st, i);
     if (et) tr.classList.add('hdt-et-' + et);
     for (var k = 0; k < st.ver.length; k++) {
@@ -1226,6 +1239,8 @@
       if (prov && k === 0) td.appendChild(nodo('span', 'hdt-ins hdt-tono-morado hdt-ins-prov', t('tablas.provision')));
       // Without a row-actions column, the marks go in the first one.
       if (k === 0 && !st.accFila.length) { var marcas = marcasFila(st, i); if (marcas) td.appendChild(marcas); }
+      // sangria: a child row (a liability's fee) hangs from the row above.
+      if (k === 0 && hija) { td.classList.add('hdt-sangria'); td.appendChild(nodo('span', 'hdt-sangria-flecha', '↳')); }
       if (j === st.colEd) pintarEditable(st, td, i);
       else if (j === st.colOp) pintarOpcion(st, td, i);
       else pintarCelda(st, td, j, i);
@@ -1309,6 +1324,45 @@
       var tono = String((st.celdas[j].tono || [])[i] || 'neutro').replace(/[^a-z_]/g, '');
       td.appendChild(nodo('span', 'hdt-ins hdt-tono-' + tono, v));
     } else td.appendChild(document.createTextNode(v == null ? '' : v));
+    if (st.celdaCfg && c.accion && st.celdas[j].cid) pintarCeldaAccion(st, td, j, i);
+  }
+
+  // ── A cell that is something of its own (accion_celda, T17b) ─────────────
+  // Pasivos: one provision of a liability on a date. Before the amount, its
+  // mark (◷ pending, ! overdue, ✓ paid); after it, how many it adds up when
+  // more than one, and its button (⚡ convert, ↩ receipt). A click on a cell
+  // with an id sends accion_celda$clic; a button sends its own name. Neither
+  // marks the row. Ids travel as data, never as code.
+  function pintarCeldaAccion(st, td, j, i) {
+    var cel = st.celdas[j], cfg = st.celdaCfg;
+    var ma = cel.marca && cel.marca[i], bo = cel.boton && cel.boton[i], n = Number(cel.cn && cel.cn[i]) || 0;
+    if (ma && cfg.marcas[ma]) {
+      var m = nodo('span', 'hdt-celda-marca hdt-celda-' + String(ma).replace(/[^a-z_]/g, ''), cfg.marcas[ma].icono);
+      m.title = cfg.marcas[ma].titulo;
+      td.insertBefore(m, td.firstChild);
+    }
+    if (n > 1) {
+      var cuenta = nodo('span', 'hdt-celda-n', FMT_N.format(n));
+      cuenta.title = tn('tablas.celda.varias', n, { n: FMT_N.format(n) });
+      td.appendChild(cuenta);
+    }
+    // A button whose action is hidden (acciones_ocultas: no permission) isn't
+    // painted; the server ignores it all the same.
+    var oc = OCULTAS[st.root.id];
+    if (bo && cfg.botones[bo] && !st.bloq[i] && !(oc && oc.indexOf(bo) >= 0)) {
+      var b = nodo('button', 'hdt-celda-btn', cfg.botones[bo].icono);
+      b.type = 'button';
+      b.dataset.accion = bo;
+      b.title = cfg.botones[bo].titulo;
+      b.setAttribute('aria-label', b.title);
+      td.appendChild(b);
+    }
+    if (cfg.clic && cel.cid[i] && !st.bloq[i] && !(oc && oc.indexOf(cfg.clic) >= 0)) td.classList.add('hdt-celda-clic');
+  }
+  function enviarCelda(st, i, j, accion) {
+    var cid = st.celdas[j].cid[i];
+    if (!cid || st.bloq[i]) return;
+    enviarAccion(st, accion, [st.ids[i]], null, 'celda', { celda: cid, columna: st.cols[j].campo });
   }
 
   // ── Filter, sort, paint ──────────────────────────────────────────────────
@@ -2345,6 +2399,10 @@
         else enviarAccion(st, btn.dataset.accion, [st.ids[i]]);
         return;
       }
+      // accion_celda: a cell's button or the cell itself; never the row.
+      var bc = e.target.closest('button.hdt-celda-btn'), tdc = e.target.closest('td');
+      if (bc && tdc && tdc._c != null) { enviarCelda(st, i, tdc._c, bc.dataset.accion); return; }
+      if (tdc && tdc.classList.contains('hdt-celda-clic')) { enviarCelda(st, i, tdc._c, st.celdaCfg.clic); return; }
       // opcion_fila: it never marks the row nor opens the detail. The mouse
       // already chose on mousedown; a click from the keyboard (Enter, Space:
       // detail 0) chooses here.
@@ -2384,7 +2442,7 @@
     if (st.p.detalle) {
       st.tbody.addEventListener('dblclick', function (e) {
         var tr = e.target.closest('tr');
-        if (!tr || tr._i == null || e.target.closest('input, button, td.hdt-editable')) return;
+        if (!tr || tr._i == null || e.target.closest('input, button, td.hdt-editable, td.hdt-celda-clic')) return;
         if (st.antesClic) {
           st.sel = st.antesClic.sel;
           st.ancla = st.antesClic.ancla;
