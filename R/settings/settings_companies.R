@@ -34,6 +34,19 @@
 # SOCIOS COMERCIALES (COMPANIES) — UI helpers
 # =============================================================================
 
+# Document key of a policy move. Includes ledger so an AR and an AP document
+# with the same number are distinct.
+.policy_move_llave <- function(d) paste(d$ledger, d$Empresa, d$Moneda, d$Documento, sep = "·")
+
+# `fresco` plus the rows of `nuevos` whose document it does not have yet.
+# Never removes or rewrites an existing row. Pure: no I/O.
+.policy_moves_sumar <- function(fresco, nuevos) {
+  faltan <- nuevos[!.policy_move_llave(nuevos) %in% .policy_move_llave(fresco), , drop = FALSE]
+  faltan <- faltan[!duplicated(.policy_move_llave(faltan)), , drop = FALSE]
+  if (!nrow(faltan)) return(fresco)
+  dplyr::bind_rows(fresco, faltan)
+}
+
 .companies_panel_ui <- function() {
   div(
     div(class = "d-flex align-items-center gap-2 mb-2",
@@ -989,13 +1002,15 @@ settings_companies_observer <- function(input, output, session, shared) {
     .refresh_add_sel()
   }, ignoreInit = TRUE)
 
-  # ── Auto-apply "Solo nuevas" on every SAP data refresh ────────────────────
-  # Whenever new SAP data arrives (live fetch, cache hit, or snapshot seed after
-  # the initial flush), compute policy dates for any document that does not yet
-  # have one.  Existing policy dates are NEVER overwritten by this path.
-  observeEvent(shared$sap_data(), {
-    sap     <- tryCatch(shared$sap_data(), error = function(e) list())
-    pp_all  <- tryCatch(shared$partner_policies_db(), error = function(e) NULL)
+  # ── Auto-apply "Solo nuevas" ──────────────────────────────────────────────
+  # Computes policy dates for any document that does not have one yet.
+  # Existing policy dates are NEVER overwritten or removed by this path: the
+  # new documents are added on S3's current table (modificar_tabla rereads it
+  # strictly), never on this session's copy, which may be stale or empty.
+  # A failed read writes nothing. `origen` only labels the log.
+  .auto_aplicar_politicas <- function(origen) {
+    sap     <- tryCatch(shared$sap_data(),             error = function(e) list())
+    pp_all  <- tryCatch(shared$partner_policies_db(),  error = function(e) NULL)
     catalog <- tryCatch(shared$policy_catalog_db(),    error = function(e) NULL)
     ov      <- tryCatch(shared$holiday_overrides_db(), error = function(e) NULL)
 
@@ -1007,153 +1022,80 @@ settings_companies_observer <- function(input, output, session, shared) {
     pp    <- pp_all[!is_ic, , drop = FALSE]
     if (!nrow(pp)) return()
 
-    existing_moves <- tryCatch(shared$policy_moves_db(), error = function(e) NULL)
-    if (is.null(existing_moves)) existing_moves <- .schema_policy_moves()[0L, ]
-
-    new_moves <- dplyr::bind_rows(
-      if (!is.null(sap$AP) && nrow(sap$AP))
-        tryCatch(
-          compute_policy_moves(sap$AP, pp, catalog, overrides_df = ov,
-                               ledger = "AP", applied_by = "auto"),
-          error = function(e) {
-            message("[POLICY_AUTO_ERROR] AP: ", conditionMessage(e))
-            NULL
-          }
-        )
-      else NULL,
-      if (!is.null(sap$AR) && nrow(sap$AR))
-        tryCatch(
-          compute_policy_moves(sap$AR, pp, catalog, overrides_df = ov,
-                               ledger = "AR", applied_by = "auto"),
-          error = function(e) {
-            message("[POLICY_AUTO_ERROR] AR: ", conditionMessage(e))
-            NULL
-          }
-        )
-      else NULL
-    )
-
+    calcular <- function(df, ledger) {
+      if (is.null(df) || !nrow(df)) return(NULL)
+      tryCatch(
+        compute_policy_moves(df, pp, catalog, overrides_df = ov,
+                             ledger = ledger, applied_by = "auto"),
+        error = function(e) {
+          message(sprintf("[POLICY_AUTO_ERROR] %s (%s): %s", ledger, origen, conditionMessage(e)))
+          NULL
+        }
+      )
+    }
+    new_moves <- dplyr::bind_rows(calcular(sap$AP, "AP"), calcular(sap$AR, "AR"))
     if (is.null(new_moves) || !nrow(new_moves)) return()
 
-    # Keep all existing policy dates; add only documents not yet computed.
-    # Key includes ledger so an AR and AP document with the same number are
-    # treated as distinct and both receive their policy dates.
-    if (nrow(existing_moves)) {
-      exist_keys <- paste(existing_moves$ledger, existing_moves$Empresa,
-                          existing_moves$Moneda, existing_moves$Documento, sep = "·")
-      new_keys   <- paste(new_moves$ledger, new_moves$Empresa,
-                          new_moves$Moneda, new_moves$Documento, sep = "·")
-      truly_new <- new_moves[!new_keys %in% exist_keys, , drop = FALSE]
-      if (!nrow(truly_new)) return()
-      moves <- dplyr::bind_rows(existing_moves, truly_new)
-    } else {
-      truly_new <- new_moves
-      moves <- new_moves
-    }
-
-    tryCatch({
-      save_policy_moves(moves, client_id = shared$effective_client_id())
-      bump_sync_version("policy_moves_db")
-      shared$policy_moves_db(moves)
-      policies_dirty(FALSE)
-      log_action(
-        user        = "system",
-        module      = "settings_companies",
-        action      = "auto_aplicar_politicas",
-        description = sprintf("Auto-aplicación de políticas tras refresco SAP: %d documento(s) nuevo(s) calculados (%d socio(s))",
-                              nrow(truly_new), length(unique(truly_new$Parte))),
-        metadata    = local({
-          pol_info <- .policy_names_from_moves(
-            truly_new, tryCatch(shared$policy_catalog_db(), error = function(e) NULL))
-          list(n_moves = nrow(truly_new), partes = unique(truly_new$Parte),
-               policy_ids = pol_info$ids, policy_names = pol_info$names)
-        }),
-        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-      )
-    }, error = function(e) NULL)
-  }, ignoreInit = TRUE)
-
-  # ── Retry auto-apply when partner policies first become available ─────────
-  # Fixes startup race: the SAP dispatch (priority=-1) fires sap_data() before
-  # Phase 2 (priority=-2) loads partner_policies_db, so the observer above
-  # finds pp_all=NULL and returns early.  This observer catches the Phase-2
-  # load and fills in policy dates for any document not yet computed.
-  observeEvent(shared$partner_policies_db(), {
-    sap     <- tryCatch(shared$sap_data(),            error = function(e) list())
-    pp_all  <- tryCatch(shared$partner_policies_db(), error = function(e) NULL)
-    catalog <- tryCatch(shared$policy_catalog_db(),   error = function(e) NULL)
-    ov      <- tryCatch(shared$holiday_overrides_db(),error = function(e) NULL)
-
-    if (is.null(sap) || (is.null(sap$AP) && is.null(sap$AR))) return()
-    if (is.null(pp_all) || !nrow(pp_all))                      return()
-    if (is.null(catalog) || !nrow(catalog))                    return()
-
-    is_ic <- !is.na(pp_all$is_interco) & pp_all$is_interco
-    pp    <- pp_all[!is_ic, , drop = FALSE]
-    if (!nrow(pp)) return()
-
+    # Nothing new against this session's copy: skip the S3 reread.
     existing_moves <- tryCatch(shared$policy_moves_db(), error = function(e) NULL)
-    if (is.null(existing_moves)) existing_moves <- .schema_policy_moves()[0L, ]
+    if (!is.null(existing_moves) && nrow(existing_moves) &&
+        all(.policy_move_llave(new_moves) %in% .policy_move_llave(existing_moves))) return()
 
-    new_moves <- dplyr::bind_rows(
-      if (!is.null(sap$AP) && nrow(sap$AP))
-        tryCatch(
-          compute_policy_moves(sap$AP, pp, catalog, overrides_df = ov,
-                               ledger = "AP", applied_by = "auto"),
-          error = function(e) {
-            message("[POLICY_AUTO_ERROR] AP (pp_load): ", conditionMessage(e))
-            NULL
-          }
-        )
-      else NULL,
-      if (!is.null(sap$AR) && nrow(sap$AR))
-        tryCatch(
-          compute_policy_moves(sap$AR, pp, catalog, overrides_df = ov,
-                               ledger = "AR", applied_by = "auto"),
-          error = function(e) {
-            message("[POLICY_AUTO_ERROR] AR (pp_load): ", conditionMessage(e))
-            NULL
-          }
-        )
-      else NULL
+    cid       <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
+    viewer    <- tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    antes     <- NULL
+    escrito <- tryCatch(
+      modificar_tabla(S3_KEYS$policy_moves, cid, .schema_policy_moves, function(fresco) {
+        antes <<- fresco
+        .policy_moves_sumar(fresco, new_moves)
+      }),
+      error = function(e) {
+        message(sprintf("[POLICY_AUTO_ERROR] save (%s): %s", origen, conditionMessage(e)))
+        tryCatch(log_action(
+          user        = "system",
+          module      = "settings_companies",
+          action      = "auto_aplicar_politicas_fallido",
+          description = sprintf("Auto-aplicación de políticas (%s) no guardada: %s",
+                                origen, conditionMessage(e)),
+          client_id             = cid,
+          viewer_home_client_id = viewer
+        ), error = function(e2) message("[POLICY_AUTO_ERROR] log: ", conditionMessage(e2)))
+        NULL
+      }
     )
+    if (is.null(escrito) || is.null(antes)) return()
+    truly_new <- escrito[!.policy_move_llave(escrito) %in% .policy_move_llave(antes), , drop = FALSE]
+    if (!nrow(truly_new)) return()
 
-    if (is.null(new_moves) || !nrow(new_moves)) return()
+    if (exists(".cache_set", mode = "function")) .cache_set("policy_moves", escrito, cid)
+    bump_sync_version("policy_moves_db")
+    shared$policy_moves_db(escrito)
+    policies_dirty(FALSE)
+    tryCatch(log_action(
+      user        = "system",
+      module      = "settings_companies",
+      action      = "auto_aplicar_politicas",
+      description = sprintf("Auto-aplicación de políticas (%s): %d documento(s) nuevo(s) calculados (%d socio(s))",
+                            origen, nrow(truly_new), length(unique(truly_new$Parte))),
+      metadata    = local({
+        pol_info <- .policy_names_from_moves(
+          truly_new, tryCatch(shared$policy_catalog_db(), error = function(e) NULL))
+        list(n_moves = nrow(truly_new), partes = unique(truly_new$Parte),
+             policy_ids = pol_info$ids, policy_names = pol_info$names)
+      }),
+      client_id             = cid,
+      viewer_home_client_id = viewer
+    ), error = function(e) message("[POLICY_AUTO_ERROR] log: ", conditionMessage(e)))
+  }
 
-    if (nrow(existing_moves)) {
-      exist_keys <- paste(existing_moves$ledger, existing_moves$Empresa,
-                          existing_moves$Moneda, existing_moves$Documento, sep = "·")
-      new_keys   <- paste(new_moves$ledger, new_moves$Empresa,
-                          new_moves$Moneda, new_moves$Documento, sep = "·")
-      truly_new  <- new_moves[!new_keys %in% exist_keys, , drop = FALSE]
-      if (!nrow(truly_new)) return()
-      moves <- dplyr::bind_rows(existing_moves, truly_new)
-    } else {
-      truly_new <- new_moves
-      moves <- new_moves
-    }
+  # Whenever new SAP data arrives (live fetch, cache hit, or snapshot seed after
+  # the initial flush).
+  observeEvent(shared$sap_data(), .auto_aplicar_politicas("tras refresco SAP"),
+               ignoreInit = TRUE)
 
-    tryCatch({
-      save_policy_moves(moves, client_id = shared$effective_client_id())
-      bump_sync_version("policy_moves_db")
-      shared$policy_moves_db(moves)
-      policies_dirty(FALSE)
-      log_action(
-        user        = "system",
-        module      = "settings_companies",
-        action      = "auto_aplicar_politicas",
-        description = sprintf("Auto-aplicación de políticas (retry al cargar socios): %d documento(s) nuevo(s) calculados (%d socio(s))",
-                              nrow(truly_new), length(unique(truly_new$Parte))),
-        metadata    = local({
-          pol_info <- .policy_names_from_moves(
-            truly_new, tryCatch(shared$policy_catalog_db(), error = function(e) NULL))
-          list(n_moves = nrow(truly_new), partes = unique(truly_new$Parte),
-               policy_ids = pol_info$ids, policy_names = pol_info$names)
-        }),
-        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-      )
-    }, error = function(e) NULL)
-  }, ignoreInit = TRUE)
+  # Retry when partner policies first become available. Fixes a startup race:
+  # the SAP dispatch (priority=-1) fires sap_data() before Phase 2 (priority=-2)
+  # loads partner_policies_db, so the observer above finds pp_all=NULL.
+  observeEvent(shared$partner_policies_db(), .auto_aplicar_politicas("retry al cargar socios"),
+               ignoreInit = TRUE)
 }
