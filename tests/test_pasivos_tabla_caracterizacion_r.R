@@ -23,8 +23,10 @@ cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALS
 cargar("R/global.R", c("strip_accents", "fmt_money", "CURRENCIES"))
 cargar("R/persistence.R", "confirmaciones_vigentes")
 cargar("R/pasivos_observers.R", "isTRUE_safe")
-for (f in c("R/pasivos_schemas.R", "R/pasivos_table_pivot.R", "R/pasivos_table_styles.R",
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+            "R/pasivos_schemas.R", "R/pasivos_table_pivot.R", "R/pasivos_table_styles.R",
             "R/pasivos_table_module.R", "R/pasivos_list_module.R")) source(f)
+assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 source("tests/helpers/pasivos_datos_prueba.R")
 source("tests/helpers/pasivos_tabla_adaptador.R")
 
@@ -47,15 +49,30 @@ nuevo_shared <- function(d = D) list(
   proveedores_db = reactiveVal(NULL), current_user = reactiveVal("tester"), effective_client_id = function() "prueba",
   suppress_ledger_prov_refresh = reactiveVal(FALSE))
 
-# Runs the module, applies `entradas` (list of setInputs calls, in order) and
-# gives back the grid and the summary line as text.
-ver <- function(entradas = list(), granularidad = "day", shared = nuevo_shared()) {
+# Runs the module, applies `entradas` (list of setInputs calls, in order, as
+# today's inputs) and gives back the grid and the summary line as text.
+# Today's table (master) or the engine's (T17b): the module says which by
+# what it returns. On the engine the filters and search are the table's, so
+# they go through the adapter, and the browser's report of what shows
+# (tabla-vis) is set as the browser would.
+MOTOR <- NA
+ver <- function(entradas = list(), vista = "day", shared = nuevo_shared()) {
   out <- NULL
   suppressWarnings(testServer(pasivos_table_module_server, args = list(shared = shared), {
     session$flushReact()
-    for (e in entradas) do.call(session$setInputs, e)
+    ret <- session$getReturned()
+    motor <- is.list(ret) && !is.null(ret$filas)
+    MOTOR <<- motor
+    te <- if (motor) pt_traducir_entradas(entradas) else list(resto = entradas, filtros = list(), busqueda = "")
+    for (e in te$resto) do.call(session$setInputs, e)
     session$flushReact()
-    out <<- list(rejilla = pt_rejilla(output$pasivos_table$html, HOY, granularidad),
+    rej <- if (motor) pt_rejilla_motor(ret$filas(), ret$columnas(), ret$wide(), HOY, vista, te$filtros, te$busqueda)
+           else pt_rejilla(output$pasivos_table$html, HOY, vista)
+    if (motor && isTRUE(rej$filtrada)) {
+      session$setInputs(`tabla-vis` = list(filtrada = TRUE, ids = as.list(rej$ids)))
+      session$flushReact()
+    }
+    out <<- list(rejilla = rej,
                  resumen = gsub("[[:space:]]+", " ", trimws(xml2::xml_text(xml2::read_html(paste0("<div>", output$summary_line$html, "</div>"))))))
   }))
   out
@@ -75,12 +92,15 @@ test_that("C2: one currency band before its first row", {
   tipos <- vapply(R0$filas, function(f) if (f$tipo == "moneda") paste0("=", f$moneda) else "f", character(1))
   expect_identical(tipos, c("=MXN", "f", "f", "f", "=USD", "f", "f", "f", "=EUR", "f", "=CAD", "f"))
 })
-test_that("C3: the initial fees go under their liability, in index order, without ✎, part or pill, never tinted", {
+test_that("C3: the initial fees go under their liability, in index order, without ✎ or pill, never tinted", {
   for (e in c("Comisión por apertura", "Comisión por disposición")) {
     f <- pt_buscar_fila(R0, e)
-    expect_true(f$comision); expect_true(is.na(f$editar)); expect_identical(f$parte, ""); expect_identical(f$urgencia, "")
+    expect_true(f$comision); expect_true(is.na(f$editar)); expect_identical(f$urgencia, "")
+    # [CAMBIA, Buscar] today a fee shows no part; on the engine, its liability's name (whose it is,
+    # and searching the liability finds it).
+    expect_identical(f$parte, if (MOTOR) "Crédito Banorte" else "")
   }
-  expect_identical(celda(R0, "Comisión por apertura", "d+2")$texto, "$ 250.00")
+  expect_identical(celda(R0, "Comisión por apertura", "d+2")$texto, "$250.00")
 })
 test_that("C4: Día shows today - 7 .. today + 53; Semana / Mes / Año group", {
   expect_identical(vapply(R0$columnas, `[[`, character(1), "clave"), sprintf("d%+d", -7:53))
@@ -97,8 +117,8 @@ test_that("C5: today's column is marked, only it", {
 test_that("C6: ← 60 / 60 → widen the window; -8 and +54 show only then", {
   expect_null(celda(R0, "Renta oficina", "d-8")); expect_null(celda(R0, "Renta oficina", "d+54"))
   r <- ver(list(list(extend_left = 1), list(extend_right = 1)))$rejilla
-  expect_identical(celda(r, "Renta oficina", "d-8")$texto, "$ 900.00")
-  expect_identical(celda(r, "Renta oficina", "d+54")$texto, "$ 950.00")
+  expect_identical(celda(r, "Renta oficina", "d-8")$texto, "$900.00")
+  expect_identical(celda(r, "Renta oficina", "d+54")$texto, "$950.00")
   expect_identical(vapply(r$columnas, `[[`, character(1), "clave")[c(1, length(r$columnas))], c("d-67", "d+113"))
 })
 
@@ -106,7 +126,7 @@ test_that("C6: ← 60 / 60 → widen the window; -8 and +54 show only then", {
 test_that("C7: a future provision: amount + ⚡ (convertir) with its id", {
   c1 <- celda(R0, "Renta oficina", "d+5")
   expect_identical(c1[c("texto", "estado", "marca", "boton", "boton_id")],
-                   list(texto = "$ 1,300.00", estado = "provision", marca = "", boton = "convertir", boton_id = "p1d"))
+                   list(texto = "$1,300.00", estado = "provision", marca = "", boton = "convertir", boton_id = "p1d"))
 })
 test_that("C8: an overdue provision: amber, still ⚡", {
   expect_identical(celda(R0, "Renta oficina", "d-3")[c("estado", "boton", "boton_id")],
@@ -114,9 +134,9 @@ test_that("C8: an overdue provision: amber, still ⚡", {
 })
 test_that("C9: an item pending ◷ ↩, overdue ! ↩, with the provision's id", {
   expect_identical(celda(R0, "Crédito Banorte", "d+3")[c("texto", "estado", "marca", "boton", "boton_id")],
-                   list(texto = "$ 700.00", estado = "pendiente", marca = "pendiente", boton = "comprobante", boton_id = "p2p"))
+                   list(texto = "$700.00", estado = "pendiente", marca = "pendiente", boton = "comprobante", boton_id = "p2p"))
   expect_identical(celda(R0, "Crédito Banorte", "d-1")[c("texto", "estado", "marca", "boton", "boton_id")],
-                   list(texto = "$ 710.00", estado = "pendiente_vencido", marca = "vencido", boton = "comprobante", boton_id = "p2v"))
+                   list(texto = "$710.00", estado = "pendiente_vencido", marca = "vencido", boton = "comprobante", boton_id = "p2v"))
 })
 test_that("C10: a confirmed item: ✓, no button; a deleted confirmation doesn't confirm", {
   expect_identical(celda(R0, "Crédito Banorte", "d-2")[c("estado", "marca", "boton")],
@@ -139,15 +159,18 @@ test_that("C13: the row is tinted by its most urgent: overdue > within 2 days > 
   expect_identical(pt_buscar_fila(R0, "Tarjeta Amex")$urgencia, if (D$lunes - HOY <= 2L) "muy_pronto" else "pronto")
   expect_identical(celda(R0, "Renta oficina", "d+0")$vence_hoy, TRUE)
 })
-test_that("C14 [CAMBIA, P4]: one liability, one day, two kinds: amounts summed, kind and id of the first", {
-  expect_identical(celda(R0, "Renta oficina", "d+20")[c("texto", "estado", "boton_id")],
-                   list(texto = "$ 1,950.00", estado = "provision", boton_id = "p1e"))
+test_that("C14 [CAMBIA, P4]: one liability, one day, two kinds: amounts summed, kind and click of the first", {
+  c20 <- celda(R0, "Renta oficina", "d+20")
+  expect_identical(c20[c("texto", "estado", "clic_id")], list(texto = "$1,950.00", estado = "provision", clic_id = "p1e"))
+  # Today the first one's ⚡ shows on the sum; on the engine a cell of several has no button of its own.
+  if (MOTOR) expect_identical(c20$boton, "") else expect_identical(c20[c("boton", "boton_id")], list(boton = "convertir", boton_id = "p1e"))
 })
-test_that("C15 [CAMBIA, P4]: Semana with two in one week: summed, kind and id of the first", {
+test_that("C15 [CAMBIA, P4]: Semana with two in one week: summed, kind and click of the first", {
   s <- ver(list(list(granularity = "week")), "week")$rejilla
   k <- .pt_clave_periodo(format(D$lunes, "%G-W%V"), HOY, "week")
-  expect_identical(celda(s, "Tarjeta Amex", k)[c("texto", "estado", "boton_id")],
-                   list(texto = "$ 350.00", estado = "provision", boton_id = "p3a"))
+  cs <- celda(s, "Tarjeta Amex", k)
+  expect_identical(cs[c("texto", "estado", "clic_id")], list(texto = "$350.00", estado = "provision", clic_id = "p3a"))
+  if (MOTOR) expect_identical(cs$boton, "") else expect_identical(cs$boton_id, "p3a")
 })
 
 # ── Row ─────────────────────────────────────────────────────────────────────
@@ -164,16 +187,20 @@ test_that("C17: the part under the name, the currency pill beside it", {
 test_that("C18: Empresa, Categoría, Subcategoría, Moneda, Provisiones and Buscar (no accents)", {
   expect_identical(pt_etiquetas(ver(list(list(empresa_sel = "BOD")))$rejilla),
                    c("Crédito Banorte", "Comisión por apertura", "Comisión por disposición"))
-  expect_identical(pt_etiquetas(ver(list(list(categoria_sel = "tarjeta")))$rejilla), c("Papelería Centro", "Tarjeta Amex"))
+  # [CAMBIA, Luis] today Categoría and Subcategoría never filter orphan provisions; on the engine an
+  # orphan has none and shows only without a filter or with "(Sin valor)".
+  huerfana <- if (MOTOR) character(0) else "Papelería Centro"
+  expect_identical(pt_etiquetas(ver(list(list(categoria_sel = "tarjeta")))$rejilla), c(huerfana, "Tarjeta Amex"))
   expect_identical(pt_etiquetas(ver(list(list(subcategoria_sel = "software")))$rejilla),
-                   c("Papelería Centro", "Licencias <b>Ñandú</b> & 'Co'"))
+                   c(huerfana, "Licencias <b>Ñandú</b> & 'Co'"))
   expect_identical(pt_etiquetas(ver(list(list(currency_sel = "USD")))$rejilla),
                    c("Crédito Banorte", "Comisión por apertura", "Comisión por disposición"))
   expect_identical(pt_etiquetas(ver(list(list(provision_type = "manuales")))$rejilla), "Papelería Centro")
   expect_false("Papelería Centro" %in% pt_etiquetas(ver(list(list(provision_type = "programadas")))$rejilla))
+  # Searching a liability finds its fees on both; the orphan only today (C18b).
   expect_identical(pt_etiquetas(ver(list(list(search_text = "credito")))$rejilla),
-                   c("Papelería Centro", "Crédito Banorte", "Comisión por apertura", "Comisión por disposición"))
-  expect_identical(pt_etiquetas(ver(list(list(search_text = "american")))$rejilla), c("Papelería Centro", "Tarjeta Amex"))
+                   c(huerfana, "Crédito Banorte", "Comisión por apertura", "Comisión por disposición"))
+  expect_identical(pt_etiquetas(ver(list(list(search_text = "american")))$rejilla), c(huerfana, "Tarjeta Amex"))
 })
 test_that("C19: an orphan passes the company filter by its own company", {
   expect_true("Papelería Centro" %in% pt_etiquetas(ver(list(list(empresa_sel = "NRS")))$rejilla))
@@ -186,14 +213,17 @@ test_that("C20: the summary line: counts, and per currency what is due in the ne
   expect_identical(BASE$resumen, paste(
     "Mostrando 8 pasivos · 15 provisiones · 5 items",
     "MXN $ 3,680.00 · 4 próx.", "USD $ 370.00 · 2 próx.", "EUR $ 300.00 · 1 próx.", "CAD $ 60.00 · 1 próx."))
-  expect_match(ver(list(list(provision_type = "manuales")))$resumen, "^Mostrando 1 provisiones manuales · 0 items")
+  # [CAMBIA] today Manuales says "provisiones manuales"; on the engine the filter is the table's and
+  # the line counts what it shows, the same words as always.
+  expect_match(ver(list(list(provision_type = "manuales")))$resumen,
+               if (MOTOR) "^Mostrando 1 pasivos · 1 provisiones · 0 items" else "^Mostrando 1 provisiones manuales · 0 items")
   expect_identical(ver(NADA)$resumen, "Sin datos para los filtros seleccionados.")
 })
 test_that("C21: no rows: 'No hay pasivos para los filtros seleccionados.'", {
   expect_identical(ver(NADA)$rejilla$vacio, "No hay pasivos para los filtros seleccionados.")
 })
-test_that("C18b [visto de paso]: Buscar filters liabilities only: an orphan provision shows whatever is searched", {
-  expect_identical(pt_etiquetas(ver(list(list(search_text = "zzz")))$rejilla), "Papelería Centro")
+test_that("C18b [CAMBIA, Luis]: today Buscar never filters orphan provisions; on the engine it does", {
+  expect_identical(pt_etiquetas(ver(list(list(search_text = "zzz")))$rejilla), if (MOTOR) character(0) else "Papelería Centro")
 })
 
 # ── + Provisión manual ──────────────────────────────────────────────────────
@@ -207,7 +237,9 @@ alta <- function(permitido) {
                       ppm_importe = 321.5, ppm_fecha = HOY + 9L, ppm_documento = "", ppm_referencia = "", ppm_notas = "")
     session$setInputs(ppm_save = 1)
     session$flushReact()
-    GUARDADAS$rejilla <- pt_rejilla(output$pasivos_table$html, HOY)
+    ret <- session$getReturned()
+    GUARDADAS$rejilla <- if (is.list(ret) && !is.null(ret$filas)) pt_rejilla_motor(ret$filas(), ret$columnas(), ret$wide(), HOY)
+                         else pt_rejilla(output$pasivos_table$html, HOY)
   }))
   GUARDADAS
 }
@@ -217,7 +249,7 @@ test_that("C23: + Provisión manual saves an orphan provision and its cell shows
   nueva <- g$df[!g$df$id %in% D$provisions$id, ]
   expect_identical(c(nrow(nueva), nueva$origin, nueva$estado, nueva$parte), c("1", "manual", "provisional", "Papelería Nueva"))
   expect_true(is.na(nueva$liability_id))
-  expect_identical(celda(g$rejilla, "Papelería Nueva", "d+9")$texto, "$ 321.50")
+  expect_identical(celda(g$rejilla, "Papelería Nueva", "d+9")$texto, "$321.50")
 })
 test_that("C24: without pasivos.create_provision_manual it doesn't save", {
   expect_null(alta(FALSE)$df)
@@ -229,11 +261,11 @@ test_that("C25: names, parts and references are text, never HTML", {
   f <- pt_buscar_fila(R0, "Licencias <b>Ñandú</b> & 'Co'")
   expect_identical(f$parte, "Proveedor \"X\" <i>")
 })
-test_that("C26 [falla conocida]: a ' in a liability id breaks the ✎ (htmlEscape inside onclick, PENDIENTES)", {
+test_that("C26 [CAMBIA, falla conocida]: today a ' in a liability id breaks the ✎; on the engine it works", {
   # The onclick reads ...('pasivos_edit_liability','lib'4',...): the ' closes
   # the string early and the click does nothing. Other ids work. Step 3 turns
   # this expectation around (the engine sends ids, not code).
-  expect_false(pt_buscar_fila(R0, "Licencias <b>Ñandú</b> & 'Co'")$editar_funciona)
+  expect_identical(pt_buscar_fila(R0, "Licencias <b>Ñandú</b> & 'Co'")$editar_funciona, isTRUE(MOTOR))
   expect_true(pt_buscar_fila(R0, "Renta oficina")$editar_funciona)
 })
 test_that("C27: a company outside visible_initials shows nowhere", {
@@ -245,7 +277,9 @@ test_that("C28: closed, deleted, unknown and dateless provisions don't show; the
   expect_false(any(c("d+6", "d+7", "d+8", "d+9") %in% names(f$celdas)))
   sh <- nuevo_shared()
   expect_warning(testServer(pasivos_table_module_server, args = list(shared = sh), {
-    session$flushReact(); output$pasivos_table
+    session$flushReact()
+    ret <- session$getReturned()
+    if (is.list(ret) && !is.null(ret$filas)) ret$filas() else output$pasivos_table
   }), "unknown estado values seen: en_revision")
 })
 test_that("C29 [Luis decide]: an ARCHIVED liability's overdue provision still shows, with ⚡ (the Calendar hides it since CM06)", {
@@ -254,11 +288,33 @@ test_that("C29 [Luis decide]: an ARCHIVED liability's overdue provision still sh
 })
 
 # ── The whole grid, against the reference ───────────────────────────────────
+# The reference is today's grid (master). On the engine, the [CAMBIA] are put
+# on it one by one, by name; anything else that differs fails.
+pt_cambios_motor <- function(ref) {
+  ref$filas <- lapply(ref$filas, function(f) {
+    if (!identical(f$tipo, "fila")) return(f)
+    if (identical(f$etiqueta, "Licencias <b>Ñandú</b> & 'Co'")) f$editar_funciona <- TRUE       # C26
+    if (isTRUE(f$comision)) f$parte <- "Crédito Banorte"                                          # Buscar (fees)
+    if (identical(f$etiqueta, "Renta oficina")) {                                                 # C14, P4
+      f$celdas[["d+20"]]$boton <- ""
+      f$celdas[["d+20"]]["boton_id"] <- list(NULL)
+    }
+    f
+  })
+  ref
+}
 test_that("the whole Día grid is the reference's (all but L3, whose Monday moves with the weekday: C13, C15)", {
   # Semana's columns move with the weekday too; C4 and C15 cover it.
-  ahora <- R0
+  ahora <- R0[c("columnas", "filas")]   # the engine's adapter also says which ids show
   ahora$filas <- Filter(function(f) !identical(f$etiqueta, "Tarjeta Amex"), ahora$filas)
   json <- jsonlite::toJSON(ahora, auto_unbox = TRUE, null = "null", na = "null", pretty = TRUE)
+  if (isTRUE(MOTOR)) {
+    ref <- jsonlite::fromJSON("tests/fixtures/pasivos_tabla_antes.json", simplifyVector = FALSE)
+    ref <- pt_cambios_motor(ref)
+    nuevo <- jsonlite::fromJSON(json, simplifyVector = FALSE)
+    expect_identical(nuevo, ref)
+    return(invisible())
+  }
   archivo <- "tests/fixtures/pasivos_tabla_antes.json"
   if (identical(Sys.getenv("PT_GENERAR"), "1")) writeLines(json, archivo, useBytes = TRUE)
   expect_identical(as.character(json), paste(readLines(archivo, warn = FALSE, encoding = "UTF-8"), collapse = "\n"))

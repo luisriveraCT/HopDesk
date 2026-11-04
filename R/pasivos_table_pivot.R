@@ -419,12 +419,25 @@ pasivos_tabla_datos <- function(wide, liabilities = NULL) {
   bandera <- function(x) { x <- as.logical(x %||% rep(FALSE, n)); x[is.na(x)] <- FALSE; x }
   ov <- bandera(meta$has_overdue); vs <- bandera(meta$has_very_soon); ds <- bandera(meta$has_due_soon)
   reales <- if (!is.null(liabilities) && nrow(liabilities)) as.character(liabilities$id) else character(0)
+  # For the engine's filters: an orphan (a manual provision, no liability)
+  # has no category -- it shows under "(Sin valor)" (Luis: one filter, like
+  # Buscar) -- and is "Manual"; the rest are "Programada".
+  huerfana <- startsWith(as.character(meta$row_id), "orphan_")
+  cat_txt <- vapply(as.character(meta$row_categoria %||% rep("", n)), function(k)
+    if (is.na(k) || !k %in% c("regular", "financiero", "tarjeta")) "" else tr(paste0("tablas.pasivos.cat.", k)),
+    character(1), USE.NAMES = FALSE)
   d <- data.frame(
     id = as.character(meta$row_id),
     Pasivo = ifelse(is.na(meta$row_display_label), meta$row_label, meta$row_display_label),
-    Parte = ifelse(fee, "", meta$row_parte %||% ""),
+    # A fee's Parte is its liability's name (row_label is "<name>\001<index>"):
+    # it says whose it is, and searching the liability finds its fees, as
+    # today's search (by liability) did.
+    Parte = ifelse(fee, sub("\001.*$", "", meta$row_label), meta$row_parte %||% ""),
     Empresa = meta$row_empresa %||% "",
     Moneda = meta$row_moneda %||% "",
+    Categoria = ifelse(huerfana, "", cat_txt),
+    Subcategoria = ifelse(huerfana | is.na(meta$row_subcategoria), "", meta$row_subcategoria),
+    Tipo = ifelse(huerfana, tr("tablas.pasivos.tipo.manual"), tr("tablas.pasivos.tipo.programada")),
     .semaforo = ifelse(fee, "", ifelse(ov, "vencida", ifelse(vs, "muy_pronto", ifelse(ds, "pronto", "")))),
     .nivel = as.integer(fee),
     .acciones = ifelse(!fee & meta$row_id %in% reales, "editar", ""),

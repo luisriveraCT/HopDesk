@@ -30,134 +30,33 @@ pasivos_table_module_ui <- function(id) {
       selected = "tabla",
 
       # ── Tabla sub-tab ───────────────────────────────────────────────────
+      # The table engine (T17b): filters, search, Copiar and Excel are the
+      # table's own; above it stay what only Pasivos has -- the granularity,
+      # the window (← 60 / 60 →) and the summary line.
       shiny::tabPanel(
         "Tabla", value = "tabla",
         shiny::div(
-          # Filters bar — single compact row
           shiny::div(
-            class = "d-flex flex-nowrap gap-3 align-items-end px-3 py-2 border-bottom bg-white",
-            style = "overflow-x: auto;",
-            shiny::div(class = "flex-shrink-0",
-              shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Empresa"),
-              shiny::selectizeInput(ns("empresa_sel"), label = NULL,
-                choices = character(0), multiple = TRUE,
-                options = list(placeholder = "Todas"), width = "160px")
+            class = "d-flex flex-wrap gap-2 align-items-center px-3 py-2 border-bottom bg-white",
+            shinyWidgets::radioGroupButtons(
+              inputId      = ns("granularity"), label = NULL,
+              choiceValues = c("day", "week", "month", "year"),
+              choiceNames  = list(
+                shiny::tags$span("Día",    title = "Ver cada provisión en su fecha exacta"),
+                shiny::tags$span("Semana", title = "Agrupar provisiones por semana"),
+                shiny::tags$span("Mes",    title = "Agrupar provisiones por mes"),
+                shiny::tags$span("Año",    title = "Agrupar provisiones por año")
+              ),
+              selected = "day", size = "sm", status = "outline-secondary"
             ),
-            shiny::div(class = "flex-shrink-0",
-              shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Categoría"),
-              shinyWidgets::checkboxGroupButtons(
-                inputId      = ns("categoria_sel"), label = NULL,
-                choiceValues = c("regular", "financiero", "tarjeta"),
-                choiceNames  = list(
-                  shiny::tags$span("Regular",    title = "Pagos recurrentes: servicios, suscripciones y arrendamientos operativos"),
-                  shiny::tags$span("Financiero", title = "Créditos, arrendamientos financieros y líneas de crédito"),
-                  shiny::tags$span("Tarjeta",    title = "Liquidaciones de tarjeta corporativa")
-                ),
-                selected = c("regular", "financiero", "tarjeta"),
-                size = "sm", status = "outline-secondary"
-              )
-            ),
-            shiny::div(class = "flex-shrink-0",
-              shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Sub-categoría"),
-              shiny::selectizeInput(ns("subcategoria_sel"), label = NULL,
-                choices = character(0), multiple = TRUE,
-                options = list(placeholder = "Todas"), width = "130px")
-            ),
-            shiny::div(class = "flex-shrink-0",
-              shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Moneda"),
-              shiny::selectInput(ns("currency_sel"), label = NULL,
-                choices = c("All", "MXN", "USD"), selected = "All", width = "80px")
-            ),
-            shiny::div(class = "flex-shrink-0",
-              shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Granularidad"),
-              shinyWidgets::radioGroupButtons(
-                inputId      = ns("granularity"), label = NULL,
-                choiceValues = c("day", "week", "month", "year"),
-                choiceNames  = list(
-                  shiny::tags$span("Día",    title = "Ver cada provisión en su fecha exacta"),
-                  shiny::tags$span("Semana", title = "Agrupar provisiones por semana"),
-                  shiny::tags$span("Mes",    title = "Agrupar provisiones por mes"),
-                  shiny::tags$span("Año",    title = "Agrupar provisiones por año")
-                ),
-                selected = "day", size = "sm", status = "outline-secondary"
-              )
-            ),
-            shiny::div(class = "flex-shrink-0",
-              shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Provisiones"),
-              shinyWidgets::radioGroupButtons(
-                inputId      = ns("provision_type"), label = NULL,
-                choiceValues = c("todas", "programadas", "manuales"),
-                choiceNames  = list(
-                  shiny::tags$span("Todas",       title = "Mostrar todas las provisiones"),
-                  shiny::tags$span("Programadas", title = "Solo provisiones generadas desde un pasivo configurado (+ Agregar pasivo)"),
-                  shiny::tags$span("Manuales",    title = "Solo provisiones creadas individualmente (+ Provisión manual)")
-                ),
-                selected = "todas", size = "sm", status = "outline-secondary"
-              )
-            ),
-            shiny::div(class = "flex-grow-1",
-              shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Buscar"),
-              shiny::textInput(ns("search_text"), label = NULL,
-                placeholder = "Nombre o Parte...", width = "100%")
-            )
-          ),
-
-          # Summary line with per-currency badges
-          shiny::div(
-            class = "d-flex flex-wrap align-items-center gap-2 px-3 py-1 small border-bottom",
-            shiny::uiOutput(ns("summary_line"))
-          ),
-
-          # Table + extend buttons
-          shiny::div(
-            class = "d-flex align-items-start gap-1 px-2 py-1",
             shiny::actionButton(ns("extend_left"), "← 60 días",
                                 class = "btn btn-outline-secondary btn-sm pasivos-extend-btn"),
-            shiny::div(
-              class = "flex-grow-1 pasivos-tbl-col",
-              shiny::div(class = "pasivos-table-wrap",
-                         id    = ns("pasivos_tbl_wrap"),
-                         shiny::uiOutput(ns("pasivos_table"))),
-              shiny::div(class = "pasivos-scroll-bar",
-                         id    = ns("pasivos_scroll_bar"),
-                         shiny::div(class = "pasivos-scroll-bar-inner",
-                                    id    = ns("pasivos_scroll_bar_inner")))
-            ),
             shiny::actionButton(ns("extend_right"), "60 días →",
-                                class = "btn btn-outline-secondary btn-sm pasivos-extend-btn")
+                                class = "btn btn-outline-secondary btn-sm pasivos-extend-btn"),
+            shiny::div(class = "d-flex flex-wrap align-items-center gap-2 small ms-2",
+                       shiny::uiOutput(ns("summary_line"), inline = TRUE))
           ),
-          shiny::tags$script(shiny::HTML(sprintf("
-(function() {
-  var wId = '%s', bId = '%s', iId = '%s';
-  function init() {
-    var wrap  = document.getElementById(wId);
-    var bar   = document.getElementById(bId);
-    var inner = document.getElementById(iId);
-    if (!wrap || !bar || !inner) { setTimeout(init, 300); return; }
-    function syncWidth() {
-      var tbl = wrap.querySelector('table');
-      inner.style.width = (tbl ? tbl.scrollWidth : wrap.scrollWidth) + 'px';
-    }
-    syncWidth();
-    new MutationObserver(syncWidth).observe(wrap, { childList: true, subtree: true });
-    var busy = false;
-    bar.addEventListener('scroll', function() {
-      if (!busy) { busy = true; wrap.scrollLeft = bar.scrollLeft; busy = false; }
-    });
-    wrap.addEventListener('scroll', function() {
-      if (!busy) { busy = true; bar.scrollLeft = wrap.scrollLeft; busy = false; }
-    });
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
-  $(document).on('shiny:value', function(e) {
-    if (e.name && e.name.indexOf('pasivos_table') !== -1) setTimeout(init, 200);
-  });
-})();
-", ns("pasivos_tbl_wrap"), ns("pasivos_scroll_bar"), ns("pasivos_scroll_bar_inner"))))
+          shiny::div(class = "px-2 py-1", hd_table_ui(ns("tabla"), alto = "ventana"))
         )
       ),
 
@@ -357,56 +256,31 @@ pasivos_table_module_server <- function(id, shared) {
     shiny::observeEvent(input$extend_left, {
       w <- vis_window(); w$start <- w$start - 60L; vis_window(w)
     })
-
-    # ── Populate choices ────────────────────────────────────────────────────
-    shiny::observe({
-      liabs   <- tryCatch(shared$pasivos_liabilities_db(), error = function(e) NULL)
-      allowed <- tryCatch(shared$visible_initials(), error = function(e) NULL)
-      if (!is.null(allowed) && !is.null(liabs) && nrow(liabs) && "empresa" %in% names(liabs))
-        liabs <- liabs[liabs$empresa %in% allowed, , drop = FALSE]
-      emps <- if (!is.null(liabs) && nrow(liabs) && "empresa" %in% names(liabs))
-        sort(unique(liabs$empresa[!is.na(liabs$empresa)])) else character(0)
-      shiny::updateSelectizeInput(session, "empresa_sel", choices = emps)
-    })
-
-    shiny::observe({
-      liabs <- tryCatch(shared$pasivos_liabilities_db(), error = function(e) NULL)
-      subs <- if (!is.null(liabs) && nrow(liabs) && "subcategoria" %in% names(liabs))
-        sort(unique(liabs$subcategoria[!is.na(liabs$subcategoria) &
-                                         nzchar(liabs$subcategoria %||% "")])) else character(0)
-      shiny::updateSelectizeInput(session, "subcategoria_sel", choices = subs)
-    })
-
-    # ── Filters ─────────────────────────────────────────────────────────────
-    filters <- shiny::reactive({
-      list(
-        empresa        = input$empresa_sel       %||% character(0),
-        categorias     = input$categoria_sel     %||% c("regular", "financiero", "tarjeta"),
-        subcategorias  = input$subcategoria_sel  %||% character(0),
-        currency       = input$currency_sel      %||% "All",
-        search         = input$search_text       %||% "",
-        granularity    = input$granularity       %||% "day",
-        provision_type = input$provision_type    %||% "todas"
-      )
-    })
+    granularidad <- shiny::reactive(input$granularity %||% "day")
 
     # ── Long-form data ──────────────────────────────────────────────────────
+    # Everything the user may see (company visibility); the table engine
+    # filters and searches it in the browser (T17b).
+    liabs_visibles <- shiny::reactive({
+      liabs <- tryCatch(shared$pasivos_liabilities_db(), error = function(e) NULL)
+      if (is.null(liabs)) liabs <- .schema_pasivos_liability()
+      allowed <- tryCatch(shared$visible_initials(), error = function(e) NULL)
+      if (!is.null(allowed) && nrow(liabs) && "empresa" %in% names(liabs))
+        liabs <- liabs[liabs$empresa %in% allowed, , drop = FALSE]
+      liabs
+    })
     long_df <- shiny::reactive({
       provs <- tryCatch(shared$pasivos_provisions_db(), error = function(e) NULL)
-      liabs <- tryCatch(shared$pasivos_liabilities_db(), error = function(e) NULL)
       mi    <- tryCatch(shared$manual_inv(),             error = function(e) NULL)
       bc    <- tryCatch(shared$bancos_confirmados(),     error = function(e) NULL)
 
       if (is.null(provs)) provs <- .schema_pasivos_provision()
-      if (is.null(liabs)) liabs <- .schema_pasivos_liability()
       if (is.null(mi))    mi    <- data.frame()
       if (is.null(bc))    bc    <- data.frame()
 
       # Respect group-based company visibility (NULL = no filter; character(0) = none)
       allowed <- tryCatch(shared$visible_initials(), error = function(e) NULL)
       if (!is.null(allowed)) {
-        if (nrow(liabs) && "empresa" %in% names(liabs))
-          liabs <- liabs[liabs$empresa %in% allowed, , drop = FALSE]
         if (nrow(provs) && "empresa" %in% names(provs))
           provs <- provs[provs$empresa %in% allowed, , drop = FALSE]
         if (nrow(mi) && "empresa" %in% names(mi))
@@ -422,52 +296,88 @@ pasivos_table_module_server <- function(id, shared) {
           provisions         = provs,
           manual_items       = mi_ap,
           bancos_confirmados = bc_ok,
-          liabilities        = liabs,
-          filters            = filters()
+          liabilities        = liabs_visibles(),
+          filters            = list(empresa = character(0), categorias = c("regular", "financiero", "tarjeta"),
+                                    subcategorias = character(0), currency = "All", search = "",
+                                    granularity = granularidad(), provision_type = "todas")
         ),
         error = function(e) {
           message("[pasivos_table] build_long error: ", conditionMessage(e))
-          tibble::tibble(
-            row_id = character(), row_label = character(), row_empresa = character(),
-            row_categoria = character(), row_subcategoria = character(),
-            row_parte = character(), row_moneda = character(), fecha = as.Date(character()),
-            cell_kind = character(), cell_amount = numeric(), cell_currency = character(),
-            cell_provision_id = character(), cell_manual_id = character(),
-            cell_bancos_conf_id = character(), cell_has_override = logical(),
-            cell_overdue_severity = character()
-          )
+          pasivos_table_build_long(.schema_pasivos_provision(), data.frame(), data.frame(),
+                                   .schema_pasivos_liability(), list())
         }
       )
     })
 
-    # ── Wide form ────────────────────────────────────────────────────────────
+    # ── Wide form, and the engine's rows and columns ────────────────────────
     wide <- shiny::reactive({
       w <- vis_window()
       pasivos_table_pivot_wide(
         long_df      = long_df(),
-        granularity  = filters()$granularity,
+        granularity  = granularidad(),
         window_start = w$start,
         window_end   = w$end
       )
     })
+    filas_tabla <- shiny::reactive(pasivos_tabla_datos(wide(), liabs_visibles()))
+    cols_tabla  <- shiny::reactive(pasivos_tabla_columnas(wide(), Sys.Date(), granularidad()))
+
+    tabla <- hd_table_server(
+      "tabla", tabla = "pasivos_tabla", datos = filas_tabla, columnas = cols_tabla,
+      piezas = c("accion_celda", "tono_celda", "sangria", "copiar_celda", "copiar_tsv"),
+      accion_celda = list(clic = "editar_celda"),
+      acciones_fila = "editar",
+      secciones = list(list(campo = "Moneda", orden = c("MXN", "USD", "EUR"))),
+      filtros = list(
+        list(campo = "Empresa", titulo = "tablas.pasivos.filtro.empresa"),
+        list(campo = "Categoria", titulo = "tablas.pasivos.filtro.categoria",
+             ayuda = stats::setNames(paste0("tablas.pasivos.cat_ayuda.", c("regular", "financiero", "tarjeta")),
+                                     vapply(paste0("tablas.pasivos.cat.", c("regular", "financiero", "tarjeta")), tr, character(1)))),
+        list(campo = "Subcategoria", titulo = "tablas.pasivos.filtro.subcategoria"),
+        list(campo = "Moneda", titulo = "tablas.pasivos.filtro.moneda"),
+        list(campo = "Tipo", titulo = "tablas.pasivos.filtro.tipo",
+             ayuda = stats::setNames(paste0("tablas.pasivos.tipo_ayuda.", c("programada", "manual")),
+                                     vapply(paste0("tablas.pasivos.tipo.", c("programada", "manual")), tr, character(1))))),
+      vacio = "tablas.pasivos.vacio",
+      visibles = TRUE)
+
+    # ── The table's actions, to the same global inputs as before ────────────
+    # The cell's click, ⚡ / ↩ and ✎ keep sending what the rest of Pasivos
+    # already listens to (pasivos_module.R, the wizard of T18): the same
+    # input, the same value. The id goes as JSON, never written into code.
+    .pt_emitir <- function(input_id, valor)
+      shinyjs::runjs(sprintf("Shiny.setInputValue(%s, %s, {priority: 'event'});",
+                             jsonlite::toJSON(input_id, auto_unbox = TRUE),
+                             jsonlite::toJSON(as.character(valor), auto_unbox = TRUE)))
+    shiny::observeEvent(tabla$accion(), {
+      a <- tabla$accion()
+      if (is.null(a)) return()
+      switch(a$accion,
+        editar_celda = {
+          # A cell that adds up several opens its first one, as before (P4's
+          # list comes in its own commit).
+          ids <- pasivos_tabla_ids_celda(wide(), a$celda %||% "")
+          if (length(ids)) .pt_emitir("pasivos_cell_click", ids[1])
+        },
+        provision = , comprobante = .pt_emitir("pasivos_convert_request", a$celda),
+        editar = if (length(a$ids)) .pt_emitir("pasivos_edit_liability", a$ids[1]),
+        NULL)
+    }, ignoreInit = TRUE)
 
     # ── Summary ──────────────────────────────────────────────────────────────
+    # Over what the table shows (its search and filters).
     output$summary_line <- shiny::renderUI({
       ldf <- long_df()
+      vis <- tabla$visibles()
+      if (!is.null(vis)) ldf <- ldf[ldf$row_id %in% vis, , drop = FALSE]
       if (!nrow(ldf))
         return(shiny::tags$span(class = "text-muted", "Sin datos para los filtros seleccionados."))
 
-      ptype   <- filters()$provision_type %||% "todas"
       n_provs <- sum(ldf$cell_kind %in% c("provision", "overdue_provision"), na.rm = TRUE)
       n_items <- sum(ldf$cell_kind %in%
                        c("manual_item", "confirmed_item", "overdue_manual"), na.rm = TRUE)
-
-      summary_text <- if (ptype == "manuales") {
-        sprintf("Mostrando %d provisiones manuales · %d items", n_provs, n_items)
-      } else {
-        n_liabs <- length(unique(ldf$row_id))
-        sprintf("Mostrando %d pasivos · %d provisiones · %d items", n_liabs, n_provs, n_items)
-      }
+      n_liabs <- length(unique(ldf$row_id))
+      summary_text <- sprintf("Mostrando %d pasivos · %d provisiones · %d items", n_liabs, n_provs, n_items)
 
       # Per-currency badges: provisions due in the next 7 natural days
       today <- Sys.Date()
@@ -496,15 +406,7 @@ pasivos_table_module_server <- function(id, shared) {
       )
     })
 
-    # ── Table render ─────────────────────────────────────────────────────────
-    output$pasivos_table <- shiny::renderUI({
-      liabs <- tryCatch(shared$pasivos_liabilities_db(),
-                        error = function(e) .schema_pasivos_liability())
-      pasivos_render_table(wide(), today = Sys.Date(), ns = ns,
-                           liabilities = liabs)
-    })
-
-    invisible(NULL)
+    invisible(list(tabla = tabla, filas = filas_tabla, columnas = cols_tabla, wide = wide, long = long_df))
   })
 }
 
@@ -549,212 +451,5 @@ pasivos_table_module_server <- function(id, shared) {
       shiny::actionButton(ns("ppm_save"), "Agregar a calendario",
                           class = "btn btn-primary")
     )
-  )
-}
-
-
-# ── pasivos_render_table ───────────────────────────────────────────────────────
-# Pure function — builds the tags$table from the wide pivot.
-# Stage 4 additions:
-#   - Pencil icon in the sticky label cell (fires pasivos_edit_liability globally)
-#   - Cell-click div wrapper (fires pasivos_cell_click globally, excluding bolt)
-pasivos_render_table <- function(wide, today = Sys.Date(), ns = identity,
-                                  liabilities = NULL) {
-  meta  <- wide$metadata_cols
-  dcols <- wide$date_cols
-  cells <- wide$cells
-
-  if (!nrow(meta) || !length(dcols)) {
-    return(shiny::div(class = "text-muted p-3",
-                      "No hay pasivos para los filtros seleccionados."))
-  }
-
-  today_col <- as.character(today)
-
-  # Build a lookup: row_id -> liability_id (for pencil visibility)
-  liability_ids <- if (!is.null(liabilities) && nrow(liabilities))
-    setNames(liabilities$id, liabilities$id)
-  else
-    list()
-
-  # ── Header ────────────────────────────────────────────────────────────────
-  meta_th <- shiny::tags$th(
-    class = "pasivos-meta-col",
-    style = "min-width:200px; max-width:360px;",
-    "Pasivo"
-  )
-  date_ths <- lapply(dcols, function(d) {
-    cls <- paste(c("text-center",
-                   if (d == today_col) "pasivos-table-today-col" else NULL),
-                 collapse = " ")
-    shiny::tags$th(class = cls, style = "min-width:80px;", d)
-  })
-  header <- shiny::tags$thead(shiny::tags$tr(meta_th, date_ths))
-
-  # ── Body ─────────────────────────────────────────────────────────────────
-  body_rows <- unlist(lapply(seq_len(nrow(meta)), function(r) {
-    rid          <- meta$row_id[r]
-    row_label    <- meta$row_display_label[r] %||% meta$row_label[r]
-    row_cur      <- meta$row_moneda[r] %||% ""
-    is_fee_row   <- isTRUE(meta$row_is_fee[r])
-    has_ov       <- isTRUE_safe(meta$has_overdue[r])
-    has_v_soon   <- !has_ov && isTRUE_safe(meta$has_very_soon[[r]])
-    has_soon     <- !has_ov && !has_v_soon && isTRUE_safe(meta$has_due_soon[r])
-    tr_cls       <- paste(c("pasivos-data-row",
-                            if (is_fee_row)  "pasivos-fee-row"
-                            else if (has_ov)     "has-overdue"
-                            else if (has_v_soon) "has-very-soon"
-                            else if (has_soon)   "has-due-soon"
-                            else NULL),
-                          collapse = " ")
-
-    # Currency group separator — only before non-fee rows when currency changes
-    prev_cur <- if (r > 1L) (meta$row_moneda[r - 1L] %||% "") else ""
-    sep_row <- if (!is_fee_row && (r == 1L || !identical(row_cur, prev_cur))) {
-      col <- .pasivos_cur_color(row_cur)
-      shiny::tags$tr(
-        class = "pasivos-currency-group-row",
-        shiny::tags$td(
-          class = "pasivos-currency-group-cell pasivos-meta-col",
-          style = sprintf("border-left: 3px solid %s;", col),
-          shiny::tags$span(
-            style = sprintf("color:%s; font-size:11px; font-weight:600; letter-spacing:.5px;",
-                            col),
-            row_cur
-          )
-        ),
-        shiny::tags$td(
-          colspan = length(dcols),
-          class   = "pasivos-currency-group-cell"
-        )
-      )
-    } else NULL
-
-    if (is_fee_row) {
-      # Fee sub-row: indented, smaller, no pencil, no currency pill, no parte
-      label_td <- shiny::tags$td(
-        class = "pasivos-meta-col",
-        style = "max-width:360px; overflow:hidden; text-overflow:ellipsis; padding-left:28px;",
-        shiny::div(
-          class = "d-flex align-items-center gap-1",
-          style = "font-size:11px; color:#6d28d9;",
-          shiny::tags$span(style = "opacity:.6; margin-right:2px;", "↳"),
-          shiny::tags$span(class = "text-truncate", row_label)
-        )
-      )
-    } else {
-      # Pencil icon — only on real liability rows, not orphan provisions
-      is_real_liability <- nzchar(rid %||% "") && rid %in% names(liability_ids)
-      pencil_html <- if (is_real_liability) {
-        shiny::HTML(sprintf(
-          '<button class="pasivos-row-edit-btn" title="Editar pasivo" onclick="Shiny.setInputValue(\'pasivos_edit_liability\',\'%s\',{priority:\'event\'})">&#9998;</button>',
-          htmltools::htmlEscape(rid, attribute = TRUE)
-        ))
-      } else NULL
-
-      # Tiny currency pill next to the liability name
-      cur_pill <- shiny::HTML(sprintf(
-        '<span class="pasivos-cur-pill" style="background:%s;">%s</span>',
-        .pasivos_cur_color(row_cur),
-        htmltools::htmlEscape(row_cur)
-      ))
-
-      label_td <- shiny::tags$td(
-        class = "pasivos-meta-col",
-        style = "max-width:360px; overflow:hidden; text-overflow:ellipsis;",
-        shiny::div(
-          class = "d-flex flex-column gap-0",
-          shiny::div(
-            class = "d-flex align-items-center gap-1",
-            pencil_html,
-            shiny::tags$span(class = "fw-semibold text-truncate", row_label),
-            cur_pill
-          ),
-          shiny::tags$span(class = "text-muted small text-truncate",
-                           meta$row_parte[r] %||% "")
-        )
-      )
-    }
-
-    # Date cells — wrapped in a div that fires pasivos_cell_click (not on bolt)
-    date_tds <- lapply(dcols, function(d) {
-      cell    <- cells[[rid]][[d]]
-      col_cls <- if (d == today_col) "pasivos-table-today-col" else ""
-      if (is.null(cell))
-        return(shiny::tags$td(class = col_cls, style = "min-width:80px;", ""))
-      css_classes <- paste(c(col_cls, pasivos_cell_classes(cell, today)), collapse = " ")
-      content <- .pasivos_cell_content(cell)
-      prov_id <- cell$cell_provision_id %||% ""
-      shiny::tags$td(
-        class = css_classes,
-        style = "min-width:80px; text-align:right; position:relative;",
-        if (nzchar(prov_id)) {
-          shiny::div(
-            style  = "cursor:pointer;",
-            onclick = sprintf(
-              "Shiny.setInputValue('pasivos_cell_click','%s',{priority:'event'})",
-              htmltools::htmlEscape(prov_id, attribute = TRUE)
-            ),
-            content
-          )
-        } else content
-      )
-    })
-
-    data_row <- shiny::tags$tr(class = tr_cls, label_td, date_tds)
-    if (!is.null(sep_row)) list(sep_row, data_row) else list(data_row)
-  }), recursive = FALSE)
-
-  shiny::tags$table(
-    class = "pasivos-table",
-    header,
-    shiny::tags$tbody(body_rows)
-  )
-}
-
-
-# ── Internal: cell content builder ────────────────────────────────────────────
-.pasivos_cell_content <- function(cell) {
-  kind   <- cell$cell_kind   %||% ""
-  amount <- cell$cell_amount %||% NA_real_
-  amt_fmt <- if (!is.na(amount)) fmt_money(amount) else ""
-
-  switch(kind,
-    provision = shiny::tagList(
-      amt_fmt, " ",
-      shiny::HTML(sprintf(
-        '<button class="pasivos-convert-btn" title="Convertir provisión" onclick="event.stopPropagation();Shiny.setInputValue(\'pasivos_convert_request\',\'%s\',{priority:\'event\'})">&#x26A1;</button>',
-        htmltools::htmlEscape(cell$cell_provision_id %||% "", attribute = TRUE)
-      ))
-    ),
-    overdue_provision = shiny::tagList(
-      amt_fmt, " ",
-      shiny::HTML(sprintf(
-        '<button class="pasivos-convert-btn" title="Provisión vencida — convertir" onclick="event.stopPropagation();Shiny.setInputValue(\'pasivos_convert_request\',\'%s\',{priority:\'event\'})">&#x26A1;</button>',
-        htmltools::htmlEscape(cell$cell_provision_id %||% "", attribute = TRUE)
-      ))
-    ),
-    manual_item = {
-      prov_id_m <- cell$cell_provision_id %||% ""
-      shiny::tagList(
-        shiny::tags$span(style = "margin-right:3px;", "◷"), amt_fmt, " ",
-        if (nzchar(prov_id_m)) shiny::HTML(sprintf(
-          '<button class="pasivos-convert-btn" title="Gestionar comprobante" style="font-size:0.75em;" onclick="event.stopPropagation();Shiny.setInputValue(\'pasivos_convert_request\',\'%s\',{priority:\'event\'})">&#x21A9;</button>',
-          htmltools::htmlEscape(prov_id_m, attribute = TRUE)
-        )) else NULL
-      )
-    },
-    overdue_manual = {
-      prov_id_o <- cell$cell_provision_id %||% ""
-      shiny::tagList(
-        shiny::tags$span(style = "margin-right:3px;color:#c00;", "!"), amt_fmt, " ",
-        if (nzchar(prov_id_o)) shiny::HTML(sprintf(
-          '<button class="pasivos-convert-btn" title="Gestionar comprobante (vencido)" style="font-size:0.75em;" onclick="event.stopPropagation();Shiny.setInputValue(\'pasivos_convert_request\',\'%s\',{priority:\'event\'})">&#x21A9;</button>',
-          htmltools::htmlEscape(prov_id_o, attribute = TRUE)
-        )) else NULL
-      )
-    },
-    confirmed_item = shiny::tagList(shiny::tags$span(style = "margin-right:3px;", "✓"), amt_fmt),
-    amt_fmt
   )
 }

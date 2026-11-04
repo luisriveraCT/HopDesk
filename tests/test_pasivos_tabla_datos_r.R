@@ -38,8 +38,8 @@ test_that("the pivot counts what each cell adds up and keeps all its provisions 
 })
 test_that("rows: one per liability, orphan or fee, in the pivot's order, with what the engine needs", {
   expect_identical(X$id, c("orphan_p0", "lib6", "lib1", "lib2", "lib2_fee_1", "lib2_fee_2", "lib3", "lib'4"))
-  expect_identical(fila("lib2_fee_1")[, c("Pasivo", "Parte", ".nivel", ".semaforo", ".acciones")],
-                   data.frame(Pasivo = "Comisión por apertura", Parte = "", .nivel = 1L, .semaforo = "", .acciones = "",
+  expect_identical(fila("lib2_fee_1")[, c("Pasivo", "Parte", ".nivel", ".semaforo", ".acciones")],  # Parte: its liability
+                   data.frame(Pasivo = "Comisión por apertura", Parte = "Crédito Banorte", .nivel = 1L, .semaforo = "", .acciones = "",
                               row.names = 5L, check.names = FALSE))
   expect_identical(fila("lib1")$.semaforo, "vencida")
   expect_identical(fila("orphan_p0")$.semaforo, "pronto")

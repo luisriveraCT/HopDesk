@@ -261,7 +261,7 @@
       "editar_funciona": null,
       "celdas": {
         "d+4": {
-          "texto": "$ 80.00",
+          "texto": "$80.00",
           "marca": "",
           "boton": "convertir",
           "boton_id": "p0",
@@ -283,7 +283,7 @@
       "editar_funciona": true,
       "celdas": {
         "d-5": {
-          "texto": "$ 666.00",
+          "texto": "$666.00",
           "marca": "",
           "boton": "convertir",
           "boton_id": "p6",
@@ -305,7 +305,7 @@
       "editar_funciona": true,
       "celdas": {
         "d-3": {
-          "texto": "$ 1,000.00",
+          "texto": "$1,000.00",
           "marca": "",
           "boton": "convertir",
           "boton_id": "p1a",
@@ -315,7 +315,7 @@
           "vence_hoy": false
         },
         "d+0": {
-          "texto": "$ 1,100.00",
+          "texto": "$1,100.00",
           "marca": "",
           "boton": "convertir",
           "boton_id": "p1b",
@@ -325,7 +325,7 @@
           "vence_hoy": true
         },
         "d+1": {
-          "texto": "$ 1,200.00",
+          "texto": "$1,200.00",
           "marca": "",
           "boton": "convertir",
           "boton_id": "p1c",
@@ -335,7 +335,7 @@
           "vence_hoy": false
         },
         "d+5": {
-          "texto": "$ 1,300.00",
+          "texto": "$1,300.00",
           "marca": "",
           "boton": "convertir",
           "boton_id": "p1d",
@@ -345,7 +345,7 @@
           "vence_hoy": false
         },
         "d+20": {
-          "texto": "$ 1,950.00",
+          "texto": "$1,950.00",
           "marca": "",
           "boton": "convertir",
           "boton_id": "p1e",
@@ -355,7 +355,7 @@
           "vence_hoy": false
         },
         "d+30": {
-          "texto": "$ 1,500.00",
+          "texto": "$1,500.00",
           "marca": "",
           "boton": "convertir",
           "boton_id": "p1f",
@@ -381,7 +381,7 @@
       "editar_funciona": true,
       "celdas": {
         "d-4": {
-          "texto": "$ 730.00",
+          "texto": "$730.00",
           "marca": "vencido",
           "boton": "comprobante",
           "boton_id": "p2e",
@@ -391,7 +391,7 @@
           "vence_hoy": false
         },
         "d-2": {
-          "texto": "$ 720.00",
+          "texto": "$720.00",
           "marca": "confirmado",
           "boton": "",
           "boton_id": null,
@@ -401,7 +401,7 @@
           "vence_hoy": false
         },
         "d-1": {
-          "texto": "$ 710.00",
+          "texto": "$710.00",
           "marca": "vencido",
           "boton": "comprobante",
           "boton_id": "p2v",
@@ -411,7 +411,7 @@
           "vence_hoy": false
         },
         "d+3": {
-          "texto": "$ 700.00",
+          "texto": "$700.00",
           "marca": "pendiente",
           "boton": "comprobante",
           "boton_id": "p2p",
@@ -421,7 +421,7 @@
           "vence_hoy": false
         },
         "d+10": {
-          "texto": "$ 5,000.00",
+          "texto": "$5,000.00",
           "marca": "",
           "boton": "convertir",
           "boton_id": "p2m",
@@ -443,7 +443,7 @@
       "editar_funciona": null,
       "celdas": {
         "d+2": {
-          "texto": "$ 250.00",
+          "texto": "$250.00",
           "marca": "",
           "boton": "convertir",
           "boton_id": "p2f1",
@@ -465,7 +465,7 @@
       "editar_funciona": null,
       "celdas": {
         "d+2": {
-          "texto": "$ 120.00",
+          "texto": "$120.00",
           "marca": "",
           "boton": "convertir",
           "boton_id": "p2f2",
@@ -495,7 +495,7 @@
       "editar_funciona": false,
       "celdas": {
         "d+3": {
-          "texto": "$ 60.00",
+          "texto": "$60.00",
           "marca": "",
           "boton": "convertir",
           "boton_id": "p4",
