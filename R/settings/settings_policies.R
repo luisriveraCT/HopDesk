@@ -8,6 +8,15 @@
 # POLÍTICAS DE PAGO — UI helpers
 # =============================================================================
 
+# Whether this session's user may manage payment policies (T16b): the
+# buttons that write are drawn only then. settings_policies_observer() keeps
+# the answer in session$userData; a UI drawn outside a session (a test)
+# shows them. Every save checks can_manage_policies on the server anyway.
+.puede_politicas <- function() {
+  f <- tryCatch(shiny::getDefaultReactiveDomain()$userData$puede_politicas, error = function(e) NULL)
+  if (is.function(f)) isTRUE(f()) else TRUE
+}
+
 .policy_type_badge <- function(type) {
   cfg <- switch(type,
     "weekdays"      = list(label = "hábiles", cls = "bg-primary"),
@@ -41,8 +50,9 @@
 
   header_actions <- if (identical(active_tab, "reglas"))
     div(class = "ms-auto",
-      actionButton("pol_btn_new", tagList(icon("plus"), " Nueva política"),
-                   class = "btn btn-sm btn-outline-primary"))
+      if (.puede_politicas())
+        actionButton("pol_btn_new", tagList(icon("plus"), " Nueva política"),
+                     class = "btn btn-sm btn-outline-primary"))
   else
     div(class = "ms-auto d-flex align-items-center gap-2",
       uiOutput("cmp_revert_btn_ui"),
@@ -104,8 +114,9 @@
                 width = "100%",
                 options = list(placeholder = "Buscar política...", maxOptions = 100))
             ),
-            actionButton("cmp_btn_add", tagList(icon("plus"), " Agregar"),
-                         class = "btn btn-sm btn-outline-primary")
+            if (.puede_politicas())
+              actionButton("cmp_btn_add", tagList(icon("plus"), " Agregar"),
+                           class = "btn btn-sm btn-outline-primary")
           ),
           tags$hr(class = "my-2"),
           div(class = "row g-2 mb-3",
@@ -122,8 +133,9 @@
               uiOutput("cmp_interco_toggle_ui")
             )
           ),
-          actionButton("cmp_btn_save", tagList(icon("floppy-disk"), " Guardar cambios"),
-                       class = "btn btn-outline-secondary btn-sm")
+          if (.puede_politicas())
+            actionButton("cmp_btn_save", tagList(icon("floppy-disk"), " Guardar cambios"),
+                         class = "btn btn-outline-secondary btn-sm")
         )
       )
     )
@@ -142,6 +154,7 @@
     ))
   }
 
+  editar <- .puede_politicas()   # without it: the list and ✎ (read-only form), no assign or delete
   rows <- lapply(seq_len(nrow(catalog_df)), function(i) {
     pol      <- catalog_df[i, ]
     pol_id   <- pol$id
@@ -151,7 +164,7 @@
       tags$span(class = "flex-grow-1 small", pol$name),
       tags$small(class = "text-muted me-1",
                  .policy_roll_label(pol$roll_direction)),
-      tags$button(
+      if (editar) tags$button(
         class = "btn btn-sm btn-outline-success py-0 px-2",
         title = "Asignar a socios",
         onclick = sprintf(
@@ -167,7 +180,7 @@
           pol_id, pol_name),
         icon("pen-to-square")
       ),
-      tags$button(
+      if (editar) tags$button(
         class = "btn btn-sm btn-outline-danger py-0 px-2",
         title = "Eliminar",
         onclick = sprintf(
@@ -267,9 +280,10 @@
 
     tags$hr(class = "my-3"),
     div(class = "d-flex gap-2",
-      actionButton("pol_btn_save",
-        tagList(icon("floppy-disk"), " Guardar"),
-        class = "btn btn-primary btn-sm"),
+      if (.puede_politicas())
+        actionButton("pol_btn_save",
+          tagList(icon("floppy-disk"), " Guardar"),
+          class = "btn btn-primary btn-sm"),
       actionButton("pol_btn_cancel",
         tagList(icon("xmark"), " Cancelar"),
         class = "btn btn-outline-secondary btn-sm")
@@ -682,9 +696,10 @@
     ),
 
     div(class = "d-flex gap-2",
-      actionButton("pol_assign_save",
-        tagList(icon("floppy-disk"), " Guardar asignaciones"),
-        class = "btn btn-primary btn-sm"),
+      if (.puede_politicas())
+        actionButton("pol_assign_save",
+          tagList(icon("floppy-disk"), " Guardar asignaciones"),
+          class = "btn btn-primary btn-sm"),
       actionButton("pol_assign_cancel",
         tagList(icon("xmark"), " Cancelar"),
         class = "btn btn-outline-secondary btn-sm")
@@ -696,6 +711,9 @@
 # settings_policies_observer
 # =============================================================================
 settings_policies_observer <- function(input, output, session, shared) {
+
+  session$userData$puede_politicas <- function()
+    puede(tryCatch(isolate(shared$usuario()), error = function(e) NULL), "can_manage_policies")
 
   pol_mode         <- reactiveVal("list")       # "list" | "new" | "edit"
   pol_editing      <- reactiveVal(NULL)         # named list of the policy being edited
@@ -870,6 +888,7 @@ settings_policies_observer <- function(input, output, session, shared) {
 
   # Save -----------------------------------------------------------------------
   observeEvent(input$pol_btn_save, {
+    if (!puede_o_avisa(shared, "can_manage_policies")) return()
     nm <- trimws(input$pol_name %||% "")
     if (!nzchar(nm)) {
       showNotification("El nombre de la política es requerido.", type = "warning")
@@ -954,6 +973,7 @@ settings_policies_observer <- function(input, output, session, shared) {
 
   # Assign: save ---------------------------------------------------------------
   observeEvent(input$pol_assign_save, {
+    if (!puede_o_avisa(shared, "can_manage_policies")) return()
     pol   <- isolate(pol_editing())
     req(!is.null(pol$id))
     pol_id  <- pol$id
@@ -1038,6 +1058,7 @@ settings_policies_observer <- function(input, output, session, shared) {
 
   # Delete confirm -------------------------------------------------------------
   observeEvent(input$pol_delete_confirm, {
+    if (!puede_o_avisa(shared, "can_manage_policies")) return()
     del_id   <- isolate(pol_editing())$id
     db       <- .get_catalog()
     del_name <- { m <- db$name[db$id == del_id]; if (length(m)) m[1] else del_id }
