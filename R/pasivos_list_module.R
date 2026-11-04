@@ -332,7 +332,7 @@ pasivos_list_module_server <- function(id, shared) {
       if (!length(idx)) return()
       old_estado <- liabs$estado[idx[1]]
       if (identical(old_estado, "deleted")) return()  # archived -- use restore instead
-      if (!identical(old_estado, "active")) return(.cambiar_pausa(lid, user, "active"))
+      if (!identical(old_estado, "active")) return(pasivos_cambiar_pausa(shared, lid, user, "active"))
       pause_target_rv(lid)
       shiny::showModal(shiny::modalDialog(
         tr("tablas.pasivos.pausar_pregunta"),
@@ -351,14 +351,72 @@ pasivos_list_module_server <- function(id, shared) {
       shiny::removeModal()
       if (!nzchar(lid %||% "")) return()
       user <- tryCatch(shared$current_user(), error = function(e) "system")
-      .cambiar_pausa(lid, user, "paused")
+      pasivos_cambiar_pausa(shared, lid, user, "paused")
     })
 
-    # Sets an active liability to "paused" (dropping its future provisional
-    # provisions) or a paused one back to "active". Does nothing if the
-    # liability is deleted or already in `new_estado` (e.g. another session
-    # changed it while the confirm was open).
-    .cambiar_pausa <- function(lid, user, new_estado) {
+    # ── Archive ─────────────────────────────────────────────────────────────
+    shiny::observeEvent(input$pasivos_list_archive, ignoreInit = TRUE, {
+      lid <- input$pasivos_list_archive %||% ""
+      if (!nzchar(lid)) return()
+      user <- tryCatch(shared$current_user(), error = function(e) "system")
+      if (!has_capability(user, "pasivos.delete_liability")) {
+        shiny::showNotification("Sin permiso para archivar.", type = "error"); return()
+      }
+      archive_target_rv(lid)
+      provs <- tryCatch(shared$pasivos_provisions_db(),
+                        error = function(e) .schema_pasivos_provision())
+      n_agenda <- pasivos_pagos_en_agenda(provs, lid)
+      shiny::showModal(shiny::modalDialog(
+        shiny::p(tr("tablas.pasivos.borrar_pregunta")),
+        if (n_agenda > 0L) shiny::p(class = "text-warning mb-0",
+          if (n_agenda == 1L) tr("tablas.pasivos.borrar_agenda_uno")
+          else tr("tablas.pasivos.borrar_agenda_otros", n = n_agenda)),
+        footer = shiny::tagList(
+          shiny::modalButton(tr("tablas.pasivos.cancelar")),
+          shiny::actionButton(ns("plist_confirm_archive"), tr("tablas.pasivos.borrar"),
+                              class = "btn btn-danger")
+        ),
+        size = "s"
+      ))
+    })
+
+    shiny::observeEvent(input$plist_confirm_archive, ignoreInit = TRUE, {
+      if (!pasivos_autoriza("pasivos.delete_liability")) return()
+      lid  <- archive_target_rv()
+      if (!nzchar(lid %||% "")) { shiny::removeModal(); return() }
+      user <- tryCatch(shared$current_user(), error = function(e) "system")
+      pasivos_borrar(shared, lid, user)
+    })
+
+    # ── Restore ─────────────────────────────────────────────────────────────
+    # "liability.restored" existed in PASIVOS_ACTION_TYPES (R/pasivos_audit.R)
+    # with zero call sites anywhere -- there was no UI to un-archive a
+    # liability once deleted. Added 2026-09-05 for audit completeness. No
+    # confirmation modal (unlike archive) since restoring destroys nothing;
+    # matches the no-confirm pattern pause/resume already uses.
+    shiny::observeEvent(input$pasivos_list_restore, ignoreInit = TRUE, {
+      lid <- input$pasivos_list_restore %||% ""
+      if (!nzchar(lid)) return()
+      user <- tryCatch(shared$current_user(), error = function(e) "system")
+      if (!has_capability(user, "pasivos.delete_liability")) {
+        shiny::showNotification("Sin permiso para restaurar.", type = "error"); return()
+      }
+      pasivos_recuperar(shared, lid, user)
+    })
+
+    invisible(NULL)
+  })
+}
+
+# ── What the Lista's actions save, as functions of the liability id ──────────
+# (T18: so the motor's row actions and the Papelera call the same code. The
+# bodies are the handlers' own, unchanged.)
+
+# Sets an active liability to "paused" (dropping its future provisional
+# provisions) or a paused one back to "active". Does nothing if the
+# liability is deleted or already in `new_estado` (e.g. another session
+# changed it while the confirm was open).
+pasivos_cambiar_pausa <- function(shared, lid, user, new_estado) {
       liabs <- tryCatch(shared$pasivos_liabilities_db(),
                         error = function(e) .schema_pasivos_liability())
       idx <- which(liabs$id == lid)
@@ -425,39 +483,11 @@ pasivos_list_module_server <- function(id, shared) {
         client_id   = shared$effective_client_id()
       ), error = function(e) NULL)
       invisible(NULL)
-    }
+}
 
-    # ── Archive ─────────────────────────────────────────────────────────────
-    shiny::observeEvent(input$pasivos_list_archive, ignoreInit = TRUE, {
-      lid <- input$pasivos_list_archive %||% ""
-      if (!nzchar(lid)) return()
-      user <- tryCatch(shared$current_user(), error = function(e) "system")
-      if (!has_capability(user, "pasivos.delete_liability")) {
-        shiny::showNotification("Sin permiso para archivar.", type = "error"); return()
-      }
-      archive_target_rv(lid)
-      provs <- tryCatch(shared$pasivos_provisions_db(),
-                        error = function(e) .schema_pasivos_provision())
-      n_agenda <- pasivos_pagos_en_agenda(provs, lid)
-      shiny::showModal(shiny::modalDialog(
-        shiny::p(tr("tablas.pasivos.borrar_pregunta")),
-        if (n_agenda > 0L) shiny::p(class = "text-warning mb-0",
-          if (n_agenda == 1L) tr("tablas.pasivos.borrar_agenda_uno")
-          else tr("tablas.pasivos.borrar_agenda_otros", n = n_agenda)),
-        footer = shiny::tagList(
-          shiny::modalButton(tr("tablas.pasivos.cancelar")),
-          shiny::actionButton(ns("plist_confirm_archive"), tr("tablas.pasivos.borrar"),
-                              class = "btn btn-danger")
-        ),
-        size = "s"
-      ))
-    })
-
-    shiny::observeEvent(input$plist_confirm_archive, ignoreInit = TRUE, {
-      if (!pasivos_autoriza("pasivos.delete_liability")) return()
-      lid  <- archive_target_rv()
-      if (!nzchar(lid %||% "")) { shiny::removeModal(); return() }
-      user <- tryCatch(shared$current_user(), error = function(e) "system")
+# Marks a liability "deleted" ("Borrar"), keeping all its provisions (T18).
+# The caller checked the permission and confirmed.
+pasivos_borrar <- function(shared, lid, user) {
       liabs <- tryCatch(shared$pasivos_liabilities_db(),
                         error = function(e) .schema_pasivos_liability())
       idx <- which(liabs$id == lid)
@@ -499,21 +529,11 @@ pasivos_list_module_server <- function(id, shared) {
 
       shiny::removeModal()
       shiny::showNotification(tr("tablas.pasivos.borrado_ok"), type = "message", duration = 3)
-    })
+}
 
-    # ── Restore ─────────────────────────────────────────────────────────────
-    # "liability.restored" existed in PASIVOS_ACTION_TYPES (R/pasivos_audit.R)
-    # with zero call sites anywhere -- there was no UI to un-archive a
-    # liability once deleted. Added 2026-09-05 for audit completeness. No
-    # confirmation modal (unlike archive) since restoring destroys nothing;
-    # matches the no-confirm pattern pause/resume already uses.
-    shiny::observeEvent(input$pasivos_list_restore, ignoreInit = TRUE, {
-      lid <- input$pasivos_list_restore %||% ""
-      if (!nzchar(lid)) return()
-      user <- tryCatch(shared$current_user(), error = function(e) "system")
-      if (!has_capability(user, "pasivos.delete_liability")) {
-        shiny::showNotification("Sin permiso para restaurar.", type = "error"); return()
-      }
+# Brings a deleted liability back to "active" ("Recuperar"). The caller
+# checked the permission.
+pasivos_recuperar <- function(shared, lid, user) {
       liabs <- tryCatch(shared$pasivos_liabilities_db(),
                         error = function(e) .schema_pasivos_liability())
       idx <- which(liabs$id == lid)
@@ -542,8 +562,4 @@ pasivos_list_module_server <- function(id, shared) {
 
       # Its provisions were never removed (T18), so they are back as they were.
       shiny::showNotification(tr("tablas.pasivos.recuperado_ok"), type = "message", duration = 5)
-    })
-
-    invisible(NULL)
-  })
 }

@@ -175,14 +175,18 @@ list_txt <- readLines("R/pasivos_list_module.R", warn = FALSE)
 .chk_true(any(grepl('acciones\\s*=\\s*paste0\\(edit_btn, " ", pause_btn, " ", archive_btn, " ", restore_btn\\)', list_txt)),
      "the acciones column includes restore_btn alongside the other action buttons")
 
-restore_start <- grep("observeEvent\\(input\\$pasivos_list_restore, ignoreInit = TRUE", list_txt)
-.chk_true(length(restore_start) == 1, "found exactly one pasivos_list_restore observer")
+# Since T18 the restore's body is pasivos_recuperar(), a function of the id
+# (the Lista and the Papelera call it); its callers check the permission
+# (tests/test_pasivos_papelera.R R2 checks it by behavior).
+.chk_true(any(grepl('has_capability\\(user, "pasivos\\.delete_liability"\\)', list_txt)) &&
+            any(grepl("pasivos_recuperar\\(shared, lid, user\\)", list_txt)),
+     "restore is gated behind the same capability as archive/delete (un-archiving is at least as privileged)")
+restore_start <- grep("^pasivos_recuperar <- function", list_txt)
+.chk_true(length(restore_start) == 1, "found exactly one pasivos_recuperar() (the restore's body)")
 
 if (length(restore_start) == 1) {
   restore_block <- paste(list_txt[restore_start[1]:min(restore_start[1] + 40, length(list_txt))], collapse = "\n")
 
-  .chk_true(grepl('has_capability\\(user, "pasivos\\.delete_liability"\\)', restore_block),
-       "restore is gated behind the same capability as archive/delete (un-archiving is at least as privileged)")
   .chk_true(grepl('if \\(!identical\\(old_estado, "deleted"\\)\\) return\\(\\)', restore_block),
        "guards against restoring a liability that isn't actually archived")
   .chk_true(grepl('liabs\\$estado\\[idx\\[1\\]\\]\\s*<-\\s*"active"', restore_block),

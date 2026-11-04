@@ -314,10 +314,12 @@ ok <- function(label, expr) {
 
   # Liability-level delete (archive) and pause/resume -- these mutate
   # save_pasivos_liabilities(), a different store than provisions.
-  arch_start <- grep("plist_confirm_archive, ignoreInit = TRUE", list_txt)
-  ok("found plist_confirm_archive (delete/archive a liability) to scan", length(arch_start) > 0)
+  # Since T18 these bodies are top-level functions of the id (pasivos_borrar,
+  # pasivos_cambiar_pausa), called by the Lista's actions: scan them there.
+  arch_start <- grep("^pasivos_borrar <- function", list_txt)
+  ok("found pasivos_borrar() (delete a liability) to scan", length(arch_start) > 0)
   if (length(arch_start)) {
-    end <- grep("^\\s*\\}\\)$", list_txt); end <- end[end > arch_start[1]][1]
+    end <- grep("^\\}$", list_txt); end <- end[end > arch_start[1]][1]
     block <- paste(list_txt[arch_start[1]:end], collapse = "\n")
     ok("liability archive/delete calls pasivos_log_audit()", grepl("pasivos_log_audit\\(", block))
     ok("liability archive/delete uses action_type = \"liability.deleted\"",
@@ -326,12 +328,12 @@ ok <- function(label, expr) {
     ok("liability delete reads that liability's provisions (to count those it keeps, T18)",
        grepl("pasivos_provisions_db\\(\\)", block))
   }
-  # Since T18 the click only asks (pausing) and .cambiar_pausa() does the
-  # change, for the confirm and for resuming: that is where the log must be.
-  pause_start <- grep("\\.cambiar_pausa <- function", list_txt)
-  ok("found .cambiar_pausa() (pause/resume a liability) to scan", length(pause_start) > 0)
+  # Since T18 the click only asks (pausing) and pasivos_cambiar_pausa() does
+  # the change, for the confirm and for resuming: that is where the log must be.
+  pause_start <- grep("^pasivos_cambiar_pausa <- function", list_txt)
+  ok("found pasivos_cambiar_pausa() (pause/resume a liability) to scan", length(pause_start) > 0)
   if (length(pause_start)) {
-    end <- grep("^    \\}$", list_txt); end <- end[end > pause_start[1]][1]   # the function's own brace
+    end <- grep("^\\}$", list_txt); end <- end[end > pause_start[1]][1]   # the function's own brace
     block <- paste(list_txt[pause_start[1]:end], collapse = "\n")
     ok("pause/resume calls pasivos_log_audit() with liability.edited",
        grepl("pasivos_log_audit\\(", block) && grepl('action_type = "liability\\.edited"', block))
