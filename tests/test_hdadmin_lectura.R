@@ -160,6 +160,38 @@ ok("hop requests: resolved only once all clients are decided",
 ok("no write_client_requests()/save_hop_requests() left",
    !any(grepl("write_client_requests\\(|save_hop_requests\\(", codigo)))
 
+# ── 4. Pending invites ────────────────────────────────────────────────────────
+k_inv <- "hd-admin/pending_invites.rds"
+invitacion <- function(tok, status = "pending", exp = "2099-01-01T00:00:00Z")
+  data.frame(token = tok, email = paste0(tok, "@x.mx"), display_name = tok, client_id = "networks",
+             tier = "finance", invited_by = "luis", created_at = "2026-11-01T00:00:00Z",
+             expires_at = exp, accepted_at = NA_character_, status = status, stringsAsFactors = FALSE)
+s3_memoria_reset()
+assign(k_inv, rbind(invitacion("t1"), invitacion("t2")), envir = .mem)
+.mem_falla <- k_inv
+ok("invites, failed read: create_invite writes nothing",
+   falla(create_invite("n@x.mx", "Nuevo", "networks", "finance", "luis")) && .mem_escrituras == 0L)
+ok("invites, failed read: accept_invite writes nothing",
+   falla(accept_invite("t1")) && .mem_escrituras == 0L)
+.mem_falla <- character()
+viejo <- read_pending_invites()                       # session A's copy
+tok <- create_invite("n@x.mx", "Nuevo", "networks", "finance", "luis")   # session B
+accept_invite("t1")                                   # A accepts on fresh
+inv <- get(k_inv, envir = .mem)
+ok("invites, two sessions: B's new invite and A's acceptance both kept",
+   nrow(inv) == 3L && tok %in% inv$token && identical(inv$status[inv$token == "t1"], "accepted"))
+ok("accept_invite: FALSE for an unknown token, nothing written",
+   { n0 <- .mem_escrituras; identical(accept_invite("nope"), FALSE) && .mem_escrituras == n0 })
+assign(k_inv, rbind(get(k_inv, envir = .mem), invitacion("t9", exp = "2020-01-01T00:00:00Z")), envir = .mem)
+s3_memoria_reset_caches <- function()
+  for (env in list(.s3_preload_cache, .s3_missing_cache)) rm(list = ls(env), envir = env)
+s3_memoria_reset_caches()
+ok("resolve_invite: an expired invite is marked expired on S3, others kept",
+   is.null(resolve_invite("t9")) &&
+   identical(get(k_inv, envir = .mem)$status[get(k_inv, envir = .mem)$token == "t9"], "expired") &&
+   nrow(get(k_inv, envir = .mem)) == 4L)
+ok("no write_pending_invites() left", !any(grepl("write_pending_invites(", codigo, fixed = TRUE)))
+
 s3_memoria_restaurar()
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)
