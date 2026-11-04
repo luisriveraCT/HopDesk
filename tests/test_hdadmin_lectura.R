@@ -113,6 +113,53 @@ ok("grants only grow", "hop_grants.rds" %in% .S3_SOLO_CRECEN() &&
    falla(modificar_hop_grants(function(g) g[g$id != "g2", , drop = FALSE])))
 ok("no save_hop_grants() left", !any(grepl("save_hop_grants(", codigo, fixed = TRUE)))
 
+# ── 3. Client requests and hop requests ───────────────────────────────────────
+k_cr <- "hd-admin/client_requests.rds"
+solicitud <- function(id, cid, status = "pending")
+  data.frame(id = id, requested_by = "t", client_id_proposed = cid, display_name = cid,
+             contact_email = NA_character_, max_users = 5L, notes = "", status = status,
+             requested_at = "2026-11-01", reviewed_by = NA_character_, reviewed_at = NA_character_,
+             rejection_reason = NA_character_, stringsAsFactors = FALSE)
+s3_memoria_reset()
+assign(k_cr, rbind(solicitud("r1", "acme"), solicitud("r2", "beta")), envir = .mem)
+.mem_falla <- k_cr
+ok("client requests, failed read: nothing written",
+   falla(modificar_client_requests(function(r) rbind(r, solicitud("r3", "gama")))) && .mem_escrituras == 0L)
+.mem_falla <- character()
+modificar_client_requests(function(r) rbind(r, solicitud("r3", "gama")))           # B adds
+modificar_client_requests(function(r) { r$status[r$id == "r1"] <- "rejected"; r }) # A rejects
+r <- get(k_cr, envir = .mem)
+ok("client requests, two sessions: B's request and A's rejection both kept",
+   nrow(r) == 3L && identical(r$status[r$id == "r1"], "rejected"))
+
+k_hr <- "hd-admin/hop_requests.rds"
+pedido <- data.frame(id = "h1", requester = "bunny", requester_name = "Bunny",
+                     clients_json = '["networks","hopdesk"]',
+                     decisions_json = '{"networks":"pending","hopdesk":"pending"}',
+                     message = "", requested_at = as.POSIXct("2026-11-01", tz = "UTC"),
+                     status = "pending", stringsAsFactors = FALSE)
+s3_memoria_reset()
+assign(k_hr, pedido, envir = .mem)
+.mem_falla <- k_hr
+ok("hop requests, failed read: nothing written",
+   falla(modificar_hop_requests(function(r) hop_request_decidir(r, "h1", "networks",
+                                 c("networks", "hopdesk"), "approved")$requests)) && .mem_escrituras == 0L)
+.mem_falla <- character()
+# Two principals decide the two clients of one request from the same stale
+# copy: each decision is applied to S3's current request, so both stay.
+cl <- c("networks", "hopdesk")
+d1 <- NULL; d2 <- NULL
+modificar_hop_requests(function(r) { x <- hop_request_decidir(r, "h1", "networks", cl, "approved"); d1 <<- x; x$requests })
+modificar_hop_requests(function(r) { x <- hop_request_decidir(r, "h1", "hopdesk", cl, "denied");  d2 <<- x; x$requests })
+h <- get(k_hr, envir = .mem)
+dec <- jsonlite::fromJSON(h$decisions_json)
+ok("hop requests, two principals: both decisions kept",
+   identical(dec$networks, "approved") && identical(dec$hopdesk, "denied"))
+ok("hop requests: resolved only once all clients are decided",
+   !d1$all_done && d2$all_done && identical(h$status, "resolved"))
+ok("no write_client_requests()/save_hop_requests() left",
+   !any(grepl("write_client_requests\\(|save_hop_requests\\(", codigo)))
+
 s3_memoria_restaurar()
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)
