@@ -3273,9 +3273,8 @@ bancosServer <- function(id, shared) {
     # (2026-07-30, part of the Vantage Bank manual-entry correction tool --
     # scoped to fuente=="manual" only, see the Acciones column in
     # papelera_tbl above; a TXT-imported row never gets this button at all).
-    observeEvent(input$undo_mov_delete, {
+    .bnc_deshacer_eliminacion <- function(mov_id) {
       if (!puede_o_avisa(shared, "can_manage_bancos")) return()
-      mov_id <- input$undo_mov_delete$id
       req(mov_id)
       movs <- movs_all()
       movs_base <- movs   # session copy before this change (CM09)
@@ -3332,7 +3331,8 @@ bancosServer <- function(id, shared) {
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
-    }, ignoreInit = TRUE)
+    }
+    observeEvent(input$undo_mov_delete, .bnc_deshacer_eliminacion(input$undo_mov_delete$id), ignoreInit = TRUE)
 
     # \u2500\u2500 Deshacer abono \u2014 void it, restoring the invoice's balance \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     # void_abono() (R/persistence.R) already existed but nothing called it
@@ -3340,9 +3340,8 @@ bancosServer <- function(id, shared) {
     # "voided", same permanent-record convention as every other undo in this
     # module) -- the invoice's Saldo vencido nets back up automatically on
     # the next render, since active_abonos_summary() only sums status=="active".
-    observeEvent(input$undo_abono, {
+    .bnc_deshacer_abono <- function(ab_id) {
       if (!puede_o_avisa(shared, "can_manage_bancos")) return()
-      ab_id <- input$undo_abono$id
       req(ab_id)
       ab <- tryCatch(shared$abonos_db(), error = function(e) NULL) %||% tibble::tibble()
       if (!nrow(ab) || !ab_id %in% ab[["id"]]) return()
@@ -3374,10 +3373,10 @@ bancosServer <- function(id, shared) {
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
-    }, ignoreInit = TRUE)
+    }
+    observeEvent(input$undo_abono, .bnc_deshacer_abono(input$undo_abono$id), ignoreInit = TRUE)
 
-    observeEvent(input$delete_conf, {
-      conf_id <- input$delete_conf$id
+    .bnc_pedir_eliminar_conf <- function(conf_id) {
       conf    <- confirmados()
       idx_c   <- which(conf$confirmacion_id == conf_id)
       if (!length(idx_c)) return()
@@ -3411,7 +3410,8 @@ bancosServer <- function(id, shared) {
         ),
         easyClose = TRUE
       ))
-    }, ignoreInit = TRUE)
+    }
+    observeEvent(input$delete_conf, .bnc_pedir_eliminar_conf(input$delete_conf$id), ignoreInit = TRUE)
 
     observeEvent(input$do_delete_conf_confirm, {
       if (!puede_o_avisa(shared, "can_manage_bancos")) return()
@@ -3491,9 +3491,8 @@ bancosServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     # ── Deshacer confirmación — restore to calendar as pending ───────────────
-    observeEvent(input$undo_conf, {
+    .bnc_deshacer_confirmacion <- function(conf_id) {
       if (!puede_o_avisa(shared, "can_manage_bancos")) return()
-      conf_id <- input$undo_conf$id
       conf    <- confirmados()
       conf_base <- conf   # session copy before this change (CM09/C5)
       idx_c   <- which(conf$confirmacion_id == conf_id)
@@ -3666,7 +3665,8 @@ bancosServer <- function(id, shared) {
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
-    }, ignoreInit = TRUE)
+    }
+    observeEvent(input$undo_conf, .bnc_deshacer_confirmacion(input$undo_conf$id), ignoreInit = TRUE)
 
     # ── Tab 3: Papelera ───────────────────────────────────────────────────────
     output$papelera_tbl <- DT::renderDataTable({

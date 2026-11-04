@@ -218,10 +218,12 @@ full <- paste(txt, collapse = "\n")
        !is.na(start) && any(grepl("nonce:Math\\.random", txt[max(1, start-4):start]))
      })
 
-  start <- grep("observeEvent\\(input\\$undo_mov_delete,", txt)
+  # The handler is a function of the row's id since T12b (the Papelera's
+  # engine table calls it with its id).
+  start <- grep("\\.bnc_deshacer_eliminacion <- function\\(mov_id\\)", txt)
   ok("found the undo_mov_delete observer to scan", length(start) > 0)
   if (length(start)) {
-    end <- grep("^    \\}, ignoreInit = TRUE\\)$", txt)
+    end <- grep("^    \\}$", txt)
     end <- end[end > start[1]][1]
     block <- paste(txt[start[1]:end], collapse = "\n")
     ok("undo_mov_delete only restores rows matching fuente==\"manual\" (never a TXT-imported row, even if somehow requested)",

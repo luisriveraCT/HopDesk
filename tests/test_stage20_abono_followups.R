@@ -192,7 +192,7 @@ suppressPackageStartupMessages({ library(dplyr); library(tibble) })
   .chk(any(grepl('Tipo\\s*=\\s*.*badge bg-warning text-dark.*Abono', txt)), TRUE,
        "active abonos are shown with a distinct 'Abono' badge, not confused with Pago/Cobro")
 
-  start <- grep("observeEvent\\(input\\$undo_abono,", txt)
+  start <- grep("\\.bnc_deshacer_abono <- function\\(ab_id\\)", txt)   # a function of the id since T12b
   .chk(length(start) > 0, TRUE, "found the undo_abono observer to scan")
   if (length(start)) {
     block <- paste(.strip_comments(txt[start[1]:min(start[1] + 20, length(txt))]), collapse = "\n")

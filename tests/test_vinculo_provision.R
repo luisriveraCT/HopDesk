@@ -199,7 +199,7 @@ test_that("Bancos y Pasivos usan confirmaciones vigentes al deshacer y eliminar"
   obs <- lineas("R/pasivos_observers.R")
   expect_match(obs, "bc <- confirmaciones_vigentes(bc)", fixed = TRUE)
   ban <- lineas("R/bancos_module.R")
-  undo <- regmatches(ban, regexpr("observeEvent\\(input\\$undo_conf,[\\s\\S]*?ignoreInit = TRUE\\)", ban, perl = TRUE))
+  undo <- regmatches(ban, regexpr("\\.bnc_deshacer_confirmacion <- function\\(conf_id\\)[\\s\\S]*?\\n    \\}\\n", ban, perl = TRUE))
   expect_match(undo, "pasivos_provision_item_reversed(", fixed = TRUE)
   del <- regmatches(ban, regexpr("observeEvent\\(input\\$do_delete_conf_confirm,[\\s\\S]*?ignoreInit = TRUE\\)", ban, perl = TRUE))
   expect_match(del, "pasivos_provision_revive(", fixed = TRUE)

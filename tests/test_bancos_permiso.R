@@ -12,9 +12,9 @@ HANDLERS <- c("observeEvent(input$do_eliminar_confirm, {", ".do_vin_keep_a <- fu
               "observeEvent(input$vin_keep_b, {", "observeEvent(input$do_add_manual, {",
               "observeEvent(input$sug_keep_a, {", "observeEvent(input$sug_keep_b, {",
               "observeEvent(input$do_reasignar_confirm, {", "observeEvent(input$do_eliminar_sesion_confirm, {",
-              "observeEvent(input$do_import, {", "observeEvent(input$undo_mov_delete, {",
-              "observeEvent(input$undo_abono, {", "observeEvent(input$do_delete_conf_confirm, {",
-              "observeEvent(input$undo_conf, {")
+              "observeEvent(input$do_import, {", ".bnc_deshacer_eliminacion <- function(mov_id) {",
+              ".bnc_deshacer_abono <- function(ab_id) {", "observeEvent(input$do_delete_conf_confirm, {",
+              ".bnc_deshacer_confirmacion <- function(conf_id) {")
 
 test_that("cada handler de Bancos que escribe empieza revisando el permiso", {
   for (h in HANDLERS) {
