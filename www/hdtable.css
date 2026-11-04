@@ -199,6 +199,20 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
   box-sizing: border-box; line-height: 1.25; padding: 1px 4px; border: 1px solid var(--hdt-accent); border-radius: 3px;
   background: var(--hdt-surface); color: var(--hdt-ink); outline: none; }
 .hdt-ed-mal .hdt-ed-input { border-color: var(--hdt-t-peligro); }
+/* opcion_fila: a one-line segmented control, the row's choice highlighted.
+   An amount typed on a row whose choice is another option is greyed: it
+   doesn't count. */
+.hdt-tabla td.hdt-op-celda { padding-top: 1px; padding-bottom: 1px; }
+.hdt-op { display: inline-flex; border: 1px solid var(--hdt-line); border-radius: 6px; overflow: hidden; vertical-align: middle; }
+.hdt-op-b { font: inherit; font-size: .76rem; line-height: 1.35; padding: 0 8px; border: 0; background: var(--hdt-surface);
+  color: var(--hdt-muted); cursor: pointer; white-space: nowrap; }
+.hdt-op-b + .hdt-op-b { border-left: 1px solid var(--hdt-line); }
+.hdt-op-b:hover:not(:disabled) { color: var(--hdt-accent); }
+.hdt-op-b.hdt-op-si { background: var(--hdt-accent-soft); color: var(--hdt-accent); font-weight: 600; }
+.hdt-op-b:disabled { cursor: default; opacity: .6; }
+.hdt-op-b:focus-visible { outline: 2px solid var(--hdt-accent); outline-offset: -2px; }
+.hdt-tabla td.hdt-ed-fuera { color: var(--hdt-muted); font-weight: 400; text-decoration: line-through; }
+.hdt-tabla td.hdt-ed-fuera::before { background: var(--hdt-line); }
 
 /* Matrix base (T17a). columna_fija: the first columns stay at the left while
    the table scrolls sideways (left = var(--hdt-fija-k), measured by

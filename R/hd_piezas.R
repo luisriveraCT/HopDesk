@@ -32,7 +32,9 @@ HD_PIEZAS_MOTOR <- c(
   # T14
   "edicion_celda",
   # T17a: the base of a matrix of periods (class F)
-  "columna_fija", "tono_celda", "dinero_compacto"
+  "columna_fija", "tono_celda", "dinero_compacto",
+  # opcion_fila (Luis, T18 §6)
+  "opcion_fila"
 )
 
 HD_REGLAS_NUCLEO <- c(

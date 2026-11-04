@@ -334,6 +334,42 @@ col_empresa <- function(campo = "Empresa", titulo = NULL, opcional = FALSE, visi
   col
 }
 
+# opcion_fila: one choice per row, a one-line segmented control
+# ("[ Nuevo | Mantener | Otro ]"; the conflicts of a Pasivos edit, T18).
+#   opciones    c(<value> = "<key or text>"), 2 to 4, short
+#   al_escribir the option that typing in the table's editable column
+#               (edicion_celda) picks; with any other, what was typed doesn't
+#               count (t$ediciones() says valido = FALSE)
+#   burbuja     c(<value> = "<field>"): that option's button shows, on hover,
+#               the row's value of that column ("Nuevo": the suggested amount)
+# The data's value is where each row starts; after that the choice is the
+# person's, by id (t$opciones(), t$poner_opcion()). One per table (checked
+# by hd_table_server, like the piece).
+col_opcion <- function(campo, titulo = NULL, opciones, al_escribir = NULL, burbuja = NULL,
+                       opcional = FALSE, visible = TRUE) {
+  donde <- sprintf("col_opcion(\"%s\")", campo)
+  if (!is.character(opciones) || length(opciones) < 2L || length(opciones) > 4L || is.null(names(opciones)) ||
+      any(!nzchar(names(opciones))) || anyDuplicated(names(opciones)) || any(!nzchar(opciones)))
+    stop(donde, ": `opciones` must be c(<value> = \"<key or text>\"), 2 to 4 of them.", call. = FALSE)
+  if (!is.null(al_escribir) && !(is.character(al_escribir) && length(al_escribir) == 1L && al_escribir %in% names(opciones)))
+    stop(donde, ": `al_escribir` must be one of its opciones.", call. = FALSE)
+  if (!is.null(burbuja) && (!is.character(burbuja) || is.null(names(burbuja)) || !all(names(burbuja) %in% names(opciones))))
+    stop(donde, ": `burbuja` must be c(<option> = \"<field>\").", call. = FALSE)
+  col <- .hd_opcional(.hd_col("opcion", campo, titulo, "izquierda", recorte = FALSE,
+    opciones = opciones, al_escribir = al_escribir, burbuja = burbuja,
+    valores = function(x) {
+      raw <- as.character(x)
+      malas <- unique(raw[is.na(raw) | !raw %in% names(opciones)])
+      if (length(malas))
+        stop(sprintf("%s: value(s) %s not among its opciones (%s).", donde,
+                     paste(ifelse(is.na(malas), "NA", malas), collapse = ", "), paste(names(opciones), collapse = ", ")),
+             call. = FALSE)
+      texto <- vapply(opciones[raw], .hd_texto, character(1), USE.NAMES = FALSE)
+      list(mostrar = texto, orden = match(raw, names(opciones)), copiar = texto, valor = raw)
+    }), opcional, visible)
+  col
+}
+
 # ── Tags (etiquetas) ────────────────────────────────────────────────────────
 # The one map for invoice tags: from it come the label, the pill's colour,
 # the row's background (by tone, in www/hdtable.css) and the order. The
@@ -460,6 +496,15 @@ hd_columnas_meta <- function(columnas) {
    if (isTRUE(col$destacar)) m$destacar <- TRUE
    # The sign colours the text; a state (a field) tints the cell too.
    if (!is.null(col$tono)) m$tono <- if (identical(col$tono, "signo")) "signo" else "estado"
+   # opcion_fila: the options in order, and what typing / the bubble tie to.
+   if (identical(col$tipo, "opcion")) {
+     m$opciones <- lapply(names(col$opciones), function(v) {
+       o <- list(valor = v, texto = .hd_texto(col$opciones[[v]]))
+       if (!is.null(col$burbuja) && !is.na(col$burbuja[v])) o$burbuja <- col$burbuja[[v]]
+       o
+     })
+     if (!is.null(col$al_escribir)) m$al_escribir <- col$al_escribir
+   }
    m
   })
 }

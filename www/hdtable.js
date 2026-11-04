@@ -111,7 +111,7 @@
       textos: msg.textos || {}, cols: [], n: 0, ids: [], idx: {}, bloq: [], moneda: [], tipo: [],
       celdas: [], busq: [], trs: [], vis: [], sel: new Set(), ancla: null,
       filtros: [], fsel: {}, trasBusq: [], gTodos: false, gExcepto: {}, grupos: [], lista: [],
-      editando: false, valores: {}, ed: {}, colEd: -1, editor: null,
+      editando: false, valores: {}, ed: {}, colEd: -1, editor: null, op: {}, colOp: -1,
       orden: { col: -1, dir: 1 }, q: '', abajo: null, medidas: {}
     };
     root.textContent = '';
@@ -679,6 +679,8 @@
       l.appendChild(cb);
       l.appendChild(nodo('span', 'hdt-menu-texto', op.texto));
       l.appendChild(nodo('span', 'hdt-menu-n'));
+      // filtros[[k]]$ayuda: what the option means, on hover only (no space taken).
+      if (op.ayuda) l.title = op.ayuda;
       m.appendChild(l);
     });
     m.addEventListener('change', function (e) {
@@ -1003,7 +1005,7 @@
     if (st.filtrosEl) cargarFiltros(st, msg.filtros);
     st.celdas = arr(f.celdas).map(function (c) {
       return { mostrar: arr(c.mostrar), orden: arr(c.orden), copiar: arr(c.copiar), tono: c.tono ? arr(c.tono) : null,
-               completo: c.completo ? arr(c.completo) : null,
+               completo: c.completo ? arr(c.completo) : null, valor: c.valor ? arr(c.valor) : null,
                min: c.min ? arr(c.min) : null, max: c.max ? arr(c.max) : null };
     });
     st.idx = {};
@@ -1014,6 +1016,16 @@
     // against their new bounds.
     st.colEd = -1;
     if (st.p.edicion_celda) st.cols.forEach(function (c, j) { if (st.colEd < 0 && c.editable) st.colEd = j; });
+    // opcion_fila: the choices live by id too. A row that's gone or locked
+    // loses its own; one the data now says the same is no choice any more.
+    st.colOp = -1;
+    if (st.p.opcion_fila) st.cols.forEach(function (c, j) { if (st.colOp < 0 && c.tipo === 'opcion') st.colOp = j; });
+    var opAntes = JSON.stringify(st.op);
+    Object.keys(st.op).forEach(function (id) {
+      var k = st.idx[id];
+      if (st.colOp < 0 || k == null || st.bloq[k] || st.celdas[st.colOp].valor[k] === st.op[id]) delete st.op[id];
+    });
+    if (JSON.stringify(st.op) !== opAntes) enviarOpciones(st);
     var edAntes = JSON.stringify(st.ed);
     Object.keys(st.ed).forEach(function (id) {
       var k = st.idx[id];
@@ -1215,6 +1227,7 @@
       // Without a row-actions column, the marks go in the first one.
       if (k === 0 && !st.accFila.length) { var marcas = marcasFila(st, i); if (marcas) td.appendChild(marcas); }
       if (j === st.colEd) pintarEditable(st, td, i);
+      else if (j === st.colOp) pintarOpcion(st, td, i);
       else pintarCelda(st, td, j, i);
       tr.appendChild(td);
     }
@@ -1998,8 +2011,10 @@
     if (e) return e.valido ? e.valor : 0;
     return Number(st.celdas[st.suma].orden[i]) || 0;
   }
-  // What copying cell (j, i) gives: the amount typed, or the data's value.
+  // What copying cell (j, i) gives: the amount typed, the option chosen, or
+  // the data's value.
   function copiaCelda(st, j, i) {
+    if (j === st.colOp) return textoOpcion(st, opcionDe(st, i));
     var e = j === st.colEd ? st.ed[st.ids[i]] : null;
     return e ? String(e.valor) : st.celdas[j].copiar[i];
   }
@@ -2013,7 +2028,13 @@
   function edValido(st, i, v) {
     var l = limitesFila(st, i);
     return (l.min == null || v >= l.min - 1e-9) && (l.max == null || v <= l.max + 1e-9) &&
-           (v >= 0 || (l.min != null && l.min < 0));
+           (v >= 0 || (l.min != null && l.min < 0)) && !fueraDeOpcion(st, i);
+  }
+  // opcion_fila with al_escribir: on a row whose choice is another option,
+  // what was typed doesn't count (greyed; hd_table_server says so too).
+  function fueraDeOpcion(st, i) {
+    var a = st.colOp >= 0 ? st.cols[st.colOp].al_escribir : null;
+    return !!a && opcionDe(st, i) !== a;
   }
   function avisoRango(st, i, v) {
     var c = st.cols[st.colEd].editable || {}, l = limitesFila(st, i);
@@ -2027,8 +2048,84 @@
     if (!st.bloq[i]) td.classList.add('hdt-editable');
     if (!e) { pintarCelda(st, td, st.colEd, i); return; }
     td.classList.add('hdt-editada');
-    if (!e.valido) td.classList.add('hdt-ed-mal');
+    if (fueraDeOpcion(st, i)) td.classList.add('hdt-ed-fuera');
+    else if (!e.valido) td.classList.add('hdt-ed-mal');
     td.appendChild(document.createTextNode(dinero(e.valor)));
+  }
+
+  // ── One choice per row (opcion_fila) ─────────────────────────────────────
+  // A one-line segmented control: "[ Nuevo | Mantener | Otro ]", the chosen
+  // one highlighted. The data's value is where a row starts; st.op holds the
+  // person's choices by id. A click chooses (it never marks the row); ← / →
+  // move the choice; typing in the editable column picks al_escribir.
+  function opcionDe(st, i) {
+    var id = st.ids[i];
+    return id in st.op ? st.op[id] : st.celdas[st.colOp].valor[i];
+  }
+  function textoOpcion(st, v) {
+    var o = (st.cols[st.colOp].opciones || []).filter(function (x) { return x.valor === v; })[0];
+    return o ? o.texto : '';
+  }
+  function pintarOpcion(st, td, i) {
+    var c = st.cols[st.colOp], elegida = opcionDe(st, i);
+    var g = nodo('span', 'hdt-op');
+    g.setAttribute('role', 'radiogroup');
+    g.setAttribute('aria-label', c.titulo);
+    (c.opciones || []).forEach(function (o) {
+      var si = o.valor === elegida;
+      var b = nodo('button', 'hdt-op-b' + (si ? ' hdt-op-si' : ''), o.texto);
+      b.type = 'button';
+      b.dataset.valor = o.valor;
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', si ? 'true' : 'false');
+      b.tabIndex = si ? 0 : -1;
+      b.disabled = !!st.bloq[i];
+      // burbuja: what this option means for the row ("Nuevo": the amount).
+      if (o.burbuja) {
+        var jb = st.cols.map(function (x) { return x.campo; }).indexOf(o.burbuja);
+        if (jb >= 0 && st.celdas[jb].mostrar[i]) b.title = st.celdas[jb].mostrar[i];
+      }
+      g.appendChild(b);
+    });
+    td.classList.add('hdt-op-celda');
+    td.appendChild(g);
+  }
+  function elegirOpcion(st, i, v, foco) {
+    var id = st.ids[i];
+    if (st.bloq[i] || opcionDe(st, i) === v) return;
+    if (st.celdas[st.colOp].valor[i] === v) delete st.op[id]; else st.op[id] = v;
+    // What was typed on the row counts again (or stops counting).
+    if (st.ed[id]) st.ed[id].valido = edValido(st, i, st.ed[id].valor);
+    rehacerFila(st, i);
+    refrescarTotales(st, i);
+    enviarOpciones(st);
+    if (st.ed[id]) enviarEdiciones(st);
+    if (foco) {
+      var b = st.trs[i] && st.trs[i].querySelector('.hdt-op-b[data-valor="' + String(v).replace(/["\\]/g, '') + '"]');
+      if (b) b.focus({ preventScroll: true });
+    }
+  }
+  function enviarOpciones(st) {
+    var ids = Object.keys(st.op);
+    if (window.Shiny && Shiny.setInputValue)
+      Shiny.setInputValue(st.ns + 'opciones', { ids: ids, valores: ids.map(function (id) { return st.op[id]; }),
+                                                nonce: Math.random() }, { priority: 'event' });
+  }
+  // t$poner_opcion(op, ids) (hdt-opciones): those rows (all, without ids) to op.
+  function recibirOpciones(msg) {
+    var st = TABLAS[msg.id];
+    if (!st || st.colOp < 0 || st.root !== document.getElementById(msg.id)) return;
+    var ids = msg.ids ? arr(msg.ids).map(String) : st.ids;
+    ids.forEach(function (id) {
+      var i = st.idx[id];
+      if (i == null || st.bloq[i]) return;
+      if (st.celdas[st.colOp].valor[i] === msg.opcion) delete st.op[id]; else st.op[id] = msg.opcion;
+      if (st.ed[id]) st.ed[id].valido = edValido(st, i, st.ed[id].valor);
+    });
+    st.trs = new Array(st.n);
+    aplicar(st, true);
+    enviarOpciones(st);
+    if (Object.keys(st.ed).length) enviarEdiciones(st);
   }
   // "1,250.50", "$1250.5", " 1250 " -> 1250.5; "" -> "" (back to the
   // data's value); anything else -> null.
@@ -2145,8 +2242,16 @@
     var i = ed.i, id = ed.id, o = st.celdas[st.colEd].orden[i];
     var antes = JSON.stringify(st.ed[id] || null);
     // The data's own value (or empty) is no edit: the row goes back to it.
-    if (v === '' || (o != null && o !== '' && Math.abs(v - Number(o)) < 0.005)) delete st.ed[id];
+    var esDato = v === '' || (o != null && o !== '' && Math.abs(v - Number(o)) < 0.005);
+    // opcion_fila: typing an amount chooses al_escribir ("Otro") first.
+    var al = st.colOp >= 0 ? st.cols[st.colOp].al_escribir : null, opCambia = false;
+    if (al && !esDato && opcionDe(st, i) !== al) {
+      if (st.celdas[st.colOp].valor[i] === al) delete st.op[id]; else st.op[id] = al;
+      opCambia = true;
+    }
+    if (esDato) delete st.ed[id];
     else st.ed[id] = { valor: v, valido: edValido(st, i, v) };
+    if (opCambia) enviarOpciones(st);
     st.editor = null;
     if (TIP && TIP.classList.contains('hdt-tip-mal')) TIP.hidden = true;
     // P1: typing an amount marks its row (taking it back to the data's
@@ -2205,6 +2310,17 @@
       if (st.p.detalle && e.detail > 1 && !e.target.closest('input, button')) e.preventDefault();
     });
 
+    // opcion_fila: ← / → move the row's choice, like any radio group.
+    st.tbody.addEventListener('keydown', function (e) {
+      var b = e.target.closest && e.target.closest('button.hdt-op-b');
+      if (!b || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+      var tr = b.closest('tr'), bs = Array.prototype.slice.call(b.parentNode.querySelectorAll('button.hdt-op-b'));
+      var k = bs.indexOf(b) + (e.key === 'ArrowRight' ? 1 : -1);
+      e.preventDefault();
+      e.stopPropagation();
+      if (tr && tr._i != null && bs[k]) elegirOpcion(st, tr._i, bs[k].dataset.valor, true);
+    });
+
     st.tbody.addEventListener('click', function (e) {
       var tr = e.target.closest('tr');
       if (tr && tr._g) {
@@ -2222,6 +2338,12 @@
         var a = st.accFila.filter(function (x) { return x.accion === btn.dataset.accion; })[0];
         if (a && a.confirmar) pedirConfirmacion(st, a.accion, a.titulo, [st.ids[i]], a.peligro);
         else enviarAccion(st, btn.dataset.accion, [st.ids[i]]);
+        return;
+      }
+      // opcion_fila: a click chooses; it never marks the row nor opens the detail.
+      if (e.target.closest('.hdt-op')) {
+        var bo = e.target.closest('button.hdt-op-b');
+        if (bo && !bo.disabled) elegirOpcion(st, i, bo.dataset.valor, true);
         return;
       }
       // edicion_celda: a click on the editable cell types in it; it doesn't
@@ -2371,6 +2493,7 @@
   function tipAbrir(st, td) {
     var i = td.parentNode._i, j = td._c;
     if (td.querySelector('input.hdt-ed-input')) return;   // being typed in
+    if (j === st.colOp) return;                         // its buttons have their own title
     // A shortened value (a company's initials) shows whole in the bubble.
     var texto = (st.celdas[j].completo && st.celdas[j].completo[i]) || st.celdas[j].mostrar[i];
     // An amount typed by hand: that amount, and why it's out of range.
@@ -2585,7 +2708,8 @@
         modo: st.modo, pintadas: st.tbody.querySelectorAll('tr:not(.hdt-esp)').length,
         altoFila: st.altoFila, ventana: [st.vIni, st.vFin],
         bloqueadas: st.ids.filter(function (id, i) { return !!st.bloq[i]; }),
-        ediciones: JSON.parse(JSON.stringify(st.ed)), editando: st.editor ? st.editor.id : null
+        ediciones: JSON.parse(JSON.stringify(st.ed)), editando: st.editor ? st.editor.id : null,
+        opciones: JSON.parse(JSON.stringify(st.op))
       };
     }
   };
@@ -2599,6 +2723,7 @@
       Shiny.addCustomMessageHandler('hdt-ocultas', recibirOcultas);
       Shiny.addCustomMessageHandler('hdt-mes', recibirMes);
       Shiny.addCustomMessageHandler('hdt-ediciones', recibirEdiciones);
+      Shiny.addCustomMessageHandler('hdt-opciones', recibirOpciones);
       pedirPerdidos();
     }
     else setTimeout(registrar, 20);

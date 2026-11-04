@@ -13,6 +13,8 @@
 #   t$ir_mes(m)     # show month m, as if chosen in the bar (with `periodo`)
 #   t$ediciones()   # with edicion_celda: data.frame(id, valor, valido), every amount typed
 #   t$limpiar_ediciones()   # back to the data's own values (after sending them)
+#   t$opciones()    # with opcion_fila: data.frame(id, opcion), every row's choice
+#   t$poner_opcion(op, ids = NULL)   # set it on those rows (NULL: all)
 #
 # Server -> browser: one "hdt-datos" custom message each time `datos`
 # changes (and "hdt-mes" from t$ir_mes()). Browser -> server: ns("sel") and ns("accion"), priority "event".
@@ -47,8 +49,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=25"),
-    htmltools::tags$script(src = "hdtable.js?v=36")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=26"),
+    htmltools::tags$script(src = "hdtable.js?v=37")
   ))
 }
 
@@ -168,13 +170,28 @@ hd_filtros_validar <- function(filtros) {
     f <- filtros[[k]]
     if (!is.character(f$campo) || length(f$campo) != 1L || !nzchar(f$campo))
       stop(sprintf("hd_table: filtros[[%d]] needs `campo` (one column name).", k), call. = FALSE)
-    otros <- setdiff(names(f), c("campo", "titulo"))
+    otros <- setdiff(names(f), c("campo", "titulo", "ayuda"))
     if (length(otros))
       stop(sprintf("hd_table: filtro '%s': unknown field(s) %s.", f$campo, paste(otros, collapse = ", ")),
            call. = FALSE)
     if (!is.null(f$titulo) && (!is.character(f$titulo) || length(f$titulo) != 1L || !nzchar(f$titulo)))
       stop(sprintf("hd_table: filtro '%s': `titulo` must be a dictionary key or text.", f$campo), call. = FALSE)
-    list(campo = f$campo, titulo = f$titulo)
+    # ayuda = c(valor = "<key>"): what each option means, shown only on hover
+    # in the filter's menu (Luis: "el espacio es oro"). Keys, never text, so
+    # it comes in both languages.
+    if (!is.null(f$ayuda)) {
+      a <- f$ayuda
+      if (!is.character(a) || !length(a) || is.null(names(a)) || any(!nzchar(names(a))) || anyDuplicated(names(a)))
+        stop(sprintf("hd_table: filtro '%s': `ayuda` must be c(<value> = \"<dictionary key>\", ...).", f$campo),
+             call. = FALSE)
+      faltan <- a[vapply(a, function(k) is.null(i18n_dict("es")[[k]]), logical(1))]
+      if (length(faltan))
+        stop(sprintf("hd_table: filtro '%s': ayuda key(s) not in the dictionary: %s.", f$campo,
+                     paste(faltan, collapse = ", ")), call. = FALSE)
+    }
+    out_f <- list(campo = f$campo, titulo = f$titulo)
+    if (!is.null(f$ayuda)) out_f$ayuda <- f$ayuda
+    out_f
   })
   campos <- vapply(out, `[[`, character(1), "campo")
   if (anyDuplicated(campos))
@@ -197,7 +214,11 @@ hd_filtros_payload <- function(filtros, datos, columnas) {
     presentes <- unique(valores[nzchar(valores)])
     resto <- setdiff(presentes, names(mapa))
     orden <- c(intersect(names(mapa), presentes), resto[order(.hd_plano(resto), resto)])
-    opciones <- lapply(orden, function(v) list(valor = v, texto = .hd_texto(mapa[[v]]$texto %||% v)))
+    opciones <- lapply(orden, function(v) {
+      op <- list(valor = v, texto = .hd_texto(mapa[[v]]$texto %||% v))
+      if (!is.null(f$ayuda) && !is.na(f$ayuda[v])) op$ayuda <- tr(f$ayuda[[v]])   # only where there is one
+      op
+    })
     if (!all(nzchar(valores)))
       opciones <- c(opciones, list(list(valor = "", texto = tr("tablas.filtros.vacio"))))
     list(campo = f$campo, titulo = .hd_texto(f$titulo %||% col$titulo %||% f$campo),
@@ -571,6 +592,48 @@ hd_columnas_piezas <- function(columnas, tabla, piezas) {
   invisible(TRUE)
 }
 
+# ── opcion_fila ─────────────────────────────────────────────────────────────
+# The table's col_opcion(), or NULL. At most one, with the piece; an
+# al_escribir needs the editable column it ties to; a burbuja names columns
+# of the table.
+hd_columna_opcion <- function(columnas, tabla, piezas) {
+  op <- Filter(function(col) identical(col$tipo, "opcion"), columnas)
+  if (!length(op)) return(NULL)
+  if (!"opcion_fila" %in% piezas)
+    stop(sprintf("hd_table '%s': col_opcion(\"%s\") needs the 'opcion_fila' piece.", tabla, op[[1]]$campo), call. = FALSE)
+  if (length(op) > 1L)
+    stop(sprintf("hd_table '%s': only one col_opcion() per table.", tabla), call. = FALSE)
+  op <- op[[1]]
+  if (!is.null(op$al_escribir) && is.null(hd_columna_editable(columnas, tabla, piezas)))
+    stop(sprintf("hd_table '%s': col_opcion(\"%s\") al_escribir needs an editable column (edicion_celda).",
+                 tabla, op$campo), call. = FALSE)
+  campos <- vapply(columnas, `[[`, character(1), "campo")
+  if (length(setdiff(unname(op$burbuja), campos)))
+    stop(sprintf("hd_table '%s': col_opcion(\"%s\") burbuja names a field that isn't a column: %s.", tabla, op$campo,
+                 paste(setdiff(unname(op$burbuja), campos), collapse = ", ")), call. = FALSE)
+  op
+}
+
+# Each row's choice now: the data's, unless the person chose another (the
+# browser's ns("opciones"): ids and valores). Checked again here: only rows
+# that exist and aren't locked, only values among the options.
+hd_opciones <- function(o, datos, col, id_col) {
+  vacia <- data.frame(id = character(0), opcion = character(0), stringsAsFactors = FALSE)
+  if (is.null(col) || is.null(datos) || !nrow(datos)) return(vacia)
+  datos <- as.data.frame(datos, stringsAsFactors = FALSE)
+  out <- data.frame(id = as.character(datos[[id_col]]), opcion = as.character(datos[[col$campo]]),
+                    stringsAsFactors = FALSE)
+  if (is.null(o) || !length(o$ids)) return(out)
+  ids <- as.character(unlist(o$ids)); val <- as.character(unlist(o$valores))
+  if (length(ids) != length(val)) return(out)
+  bloq <- if (".bloqueada" %in% names(datos)) datos[[".bloqueada"]] %in% TRUE else rep(FALSE, nrow(datos))
+  k <- match(ids, out$id)
+  ok <- !is.na(k) & !duplicated(ids) & val %in% names(col$opciones)
+  ok[ok] <- !bloq[k[ok]]
+  out$opcion[k[ok]] <- val[ok]
+  out
+}
+
 # The amounts typed (the browser's ns("ediciones"): ids and valores), checked
 # again against the data as it is now: ids no longer there, or locked, drop
 # out (like the selection), and `valido` comes from each row's current
@@ -612,8 +675,14 @@ hd_neutralizar <- function(x) {
 # ediciones: hd_ediciones() -- the file has what the screen shows, so the
 # editable column carries what was typed (T14, P3).
 hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "datos", campos = NULL,
-                              ediciones = NULL) {
+                              ediciones = NULL, opciones = NULL) {
   datos <- as.data.frame(datos, stringsAsFactors = FALSE)
+  # opciones: hd_opciones() -- each row's choice, as on screen.
+  op_col <- Find(function(col) identical(col$tipo, "opcion"), columnas)
+  if (!is.null(op_col) && is.data.frame(opciones) && nrow(opciones)) {
+    k <- match(as.character(opciones$id), as.character(datos[[id_col]]))
+    datos[[op_col$campo]][k[!is.na(k)]] <- opciones$opcion[!is.na(k)]
+  }
   ed_col <- Find(function(col) !is.null(col$editable), columnas)
   if (!is.null(ed_col) && is.data.frame(ediciones) && nrow(ediciones)) {
     k <- match(as.character(ediciones$id), as.character(datos[[id_col]]))
@@ -679,6 +748,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
   if (!is.function(columnas)) hd_columnas_meta(columnas)   # fails early on a bad spec
   hd_columna_editable(cols_fijas, tabla, piezas_tabla)
   hd_columnas_piezas(cols_fijas, tabla, piezas_tabla)
+  hd_columna_opcion(cols_fijas, tabla, piezas_tabla)
   # textos =list(contador = <plural key>, sin_bloqueadas = TRUE): the
   # table's own counter text ("594 facturas vencidas o con vencimiento hoy")
   # instead of its class's -- section bands keep the class's ("10 facturas")
@@ -743,6 +813,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         if (is.function(columnas) && !is.null(periodo)) hd_periodo_validar(periodo, cols)
         if (is.function(columnas)) hd_columna_editable(cols, tabla, piezas_tabla)
         if (is.function(columnas)) hd_columnas_piezas(cols, tabla, piezas_tabla)
+        if (is.function(columnas)) hd_columna_opcion(cols, tabla, piezas_tabla)
         list(
         id       = ns("hdt"),
         tabla    = tabla,
@@ -818,12 +889,34 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
 
     # edicion_celda: every amount typed, checked against the data as it is
     # now (hd_ediciones). A failure here is the table's, never the session's.
+    # opcion_fila: each row's choice (hd_opciones), the same way.
+    opciones <- shiny::reactive({
+      if (!"opcion_fila" %in% piezas_tabla) return(hd_opciones(NULL, NULL, NULL, id_col))
+      o <- input$opciones
+      tryCatch({
+        df <- datos()
+        hd_opciones(o, df, hd_columna_opcion(columnas_r(), tabla, piezas_tabla), id_col)
+      }, error = function(err) {
+        if (inherits(err, "shiny.silent.error")) stop(err)
+        message(sprintf("hd_table '%s': the row choices couldn't be checked: %s", tabla, conditionMessage(err)))
+        hd_opciones(NULL, NULL, NULL, id_col)
+      })
+    })
+
     ediciones <- shiny::reactive({
       if (!"edicion_celda" %in% piezas_tabla) return(hd_ediciones(NULL, NULL, NULL, id_col))
       e <- input$ediciones
       tryCatch({
         df <- datos()
-        hd_ediciones(e, df, hd_columna_editable(columnas_r(), tabla, piezas_tabla), id_col)
+        out <- hd_ediciones(e, df, hd_columna_editable(columnas_r(), tabla, piezas_tabla), id_col)
+        # opcion_fila with al_escribir: an amount typed on a row whose choice
+        # is another option doesn't count.
+        op <- if ("opcion_fila" %in% piezas_tabla) hd_columna_opcion(columnas_r(), tabla, piezas_tabla)
+        if (!is.null(op$al_escribir) && nrow(out)) {
+          o <- opciones()
+          out$valido <- out$valido & o$opcion[match(out$id, o$id)] %in% op$al_escribir
+        }
+        out
       }, error = function(err) {
         if (inherits(err, "shiny.silent.error")) stop(err)
         message(sprintf("hd_table '%s': the typed amounts couldn't be checked: %s", tabla, conditionMessage(err)))
@@ -845,7 +938,8 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
           v <- shiny::isolate(vista())
           hd_excel_escribir(shiny::isolate(datos()), shiny::isolate(columnas_r()), v$ids %||% character(0),
                             id_col, file, hoja = tabla, campos = v$campos,
-                            ediciones = shiny::isolate(ediciones()))
+                            ediciones = shiny::isolate(ediciones()),
+                            opciones = if ("opcion_fila" %in% piezas_tabla) shiny::isolate(opciones()))
           exportado(list(formato = "excel", ids = v$ids %||% character(0), nonce = stats::runif(1)))
         }
       )
@@ -890,6 +984,17 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
       ediciones = ediciones,
       limpiar_ediciones = function()
         session$sendCustomMessage("hdt-ediciones", list(id = ns("hdt"), limpiar = TRUE)),
+      # opcion_fila: data.frame(id, opcion), every row's choice now (the
+      # data's until the person picks another); poner_opcion(op, ids = NULL)
+      # sets it for those rows (NULL: all), like "Aplicar todos: Mantener".
+      opciones = opciones,
+      poner_opcion = function(opcion, ids = NULL) {
+        op <- hd_columna_opcion(shiny::isolate(columnas_r()), tabla, piezas_tabla)
+        if (is.null(op) || !(is.character(opcion) && length(opcion) == 1L && opcion %in% names(op$opciones)))
+          stop(sprintf("hd_table '%s': poner_opcion() takes one of the col_opcion() options.", tabla), call. = FALSE)
+        session$sendCustomMessage("hdt-opciones", list(id = ns("hdt"), opcion = opcion,
+                                                       ids = if (!is.null(ids)) I(as.character(ids))))
+      },
       accion    = shiny::reactive({
         a <- input$accion
         if (is.null(a)) return(NULL)
