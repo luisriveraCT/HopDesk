@@ -723,7 +723,7 @@ bancosUI <- function(id) {
                            onclick = "Shiny.setInputValue('btn_settings', Math.random(), {priority:'event'})")
             )
           ),
-          DT::dataTableOutput(ns("cuentas_tbl"))
+          hd_table_ui(ns("cuentas"))
         )
       )
 
@@ -3834,34 +3834,21 @@ bancosServer <- function(id, shared) {
 
     # ── Tab 4: Cuentas — read-only view of Settings → Cuentas de Empresa ────────
     # cuenta_id here = ctas_cuentas$id. Edit/add/deactivate via ⚙ Settings.
-    output$cuentas_tbl <- DT::renderDataTable({
-      cts <- dplyr::filter(cuentas(), activa == TRUE) |>
-        dplyr::arrange(empresa, banco, moneda)
-
-      if (!nrow(cts)) {
-        return(DT::datatable(
-          data.frame(Empresa = character(), Banco = character(),
-                     Moneda  = character(), Alias = character(),
-                     Cuenta  = character(), CLABE = character()),
-          escape = FALSE, rownames = FALSE,
-          options = list(dom = "t",
-                         language = list(emptyTable =
-                           "Sin cuentas — agrega una en \u2699 Configuraci\u00f3n \u2192 Cuentas de Empresa"))
-        ))
-      }
-
-      tbl <- cts |>
-        dplyr::transmute(
-          Empresa = htmltools::htmlEscape(empresa),
-          Banco   = htmltools::htmlEscape(banco),
-          Moneda  = moneda,
-          Alias   = htmltools::htmlEscape(alias %||% ""),
-          Cuenta  = htmltools::htmlEscape(numero_cuenta %||% ""),
-          CLABE   = htmltools::htmlEscape(clabe %||% "")
-        )
-
-      DT::datatable(tbl, escape = FALSE, rownames = FALSE, selection = "none",
-        options = list(pageLength = 25, dom = "lrtip", scrollX = TRUE))
-    }, server = FALSE)
+    # ── Cuentas (hd_table "cuentas_bancos", T12b): read only, with Excel ──
+    t_cuentas <- hd_table_server("cuentas", tabla = "cuentas_bancos",
+      datos = reactive({
+        cts <- dplyr::filter(cuentas(), activa == TRUE) |> dplyr::arrange(empresa, banco, moneda)
+        data.frame(id = as.character(cts$cuenta_id), Empresa = as.character(cts$empresa),
+                   Banco = as.character(cts$banco), Moneda = as.character(cts$moneda),
+                   Alias = as.character(cts$alias %||% ""), Cuenta = as.character(cts$numero_cuenta %||% ""),
+                   CLABE = as.character(cts$clabe %||% ""), stringsAsFactors = FALSE)
+      }),
+      columnas = list(col_empresa("Empresa", "tablas.facturas.empresa"),
+                      col_texto("Banco", "tablas.bancos.banco"),
+                      col_texto("Moneda", "tablas.facturas.moneda", recorte = FALSE),
+                      col_texto("Alias", "tablas.bancos.alias"),
+                      col_texto("Cuenta", "tablas.bancos.cuenta", recorte = FALSE),
+                      col_texto("CLABE", "tablas.bancos.clabe", recorte = FALSE)),
+      vacio = "tablas.bancos.vacio_cuentas")
   }) # end moduleServer
 }
