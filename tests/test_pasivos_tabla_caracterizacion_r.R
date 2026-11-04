@@ -83,14 +83,16 @@ BASE <- ver()
 R0 <- BASE$rejilla
 
 # ── Rows and columns ────────────────────────────────────────────────────────
+# [CAMBIA (a), Luis] today an archived liability still shows; on the engine it doesn't.
+arch <- function() if (isTRUE(MOTOR)) character(0) else "Arrendamiento archivado"
 test_that("C1: rows by currency (MXN, USD, EUR, others), then company, category, name", {
-  expect_identical(pt_etiquetas(R0), c("Papelería Centro", "Arrendamiento archivado", "Renta oficina", "Crédito Banorte",
+  expect_identical(pt_etiquetas(R0), c("Papelería Centro", arch(), "Renta oficina", "Crédito Banorte",
                                        "Comisión por apertura", "Comisión por disposición", "Tarjeta Amex",
                                        "Licencias <b>Ñandú</b> & 'Co'"))
 })
 test_that("C2: one currency band before its first row", {
   tipos <- vapply(R0$filas, function(f) if (f$tipo == "moneda") paste0("=", f$moneda) else "f", character(1))
-  expect_identical(tipos, c("=MXN", "f", "f", "f", "=USD", "f", "f", "f", "=EUR", "f", "=CAD", "f"))
+  expect_identical(tipos, c("=MXN", "f", if (!length(arch())) NULL else "f", "f", "=USD", "f", "f", "f", "=EUR", "f", "=CAD", "f"))
 })
 test_that("C3: the initial fees go under their liability, in index order, without ✎ or pill, never tinted", {
   for (e in c("Comisión por apertura", "Comisión por disposición")) {
@@ -211,7 +213,7 @@ NADA <- list(list(empresa_sel = "BOD"), list(provision_type = "manuales"))
 test_that("C20: the summary line: counts, and per currency what is due in the next 7 days", {
   # L3's Monday is always within today + 1 .. today + 7.
   expect_identical(BASE$resumen, paste(
-    "Mostrando 8 pasivos · 15 provisiones · 5 items",
+    if (isTRUE(MOTOR)) "Mostrando 7 pasivos · 14 provisiones · 5 items" else "Mostrando 8 pasivos · 15 provisiones · 5 items",
     "MXN $ 3,680.00 · 4 próx.", "USD $ 370.00 · 2 próx.", "EUR $ 300.00 · 1 próx.", "CAD $ 60.00 · 1 próx."))
   # [CAMBIA] today Manuales says "provisiones manuales"; on the engine the filter is the table's and
   # the line counts what it shows, the same words as always.
@@ -282,7 +284,8 @@ test_that("C28: closed, deleted, unknown and dateless provisions don't show; the
     if (is.list(ret) && !is.null(ret$filas)) ret$filas() else output$pasivos_table
   }), "unknown estado values seen: en_revision")
 })
-test_that("C29 [Luis decide]: an ARCHIVED liability's overdue provision still shows, with ⚡ (the Calendar hides it since CM06)", {
+test_that("C29 [CAMBIA (a), Luis]: an ARCHIVED liability's overdue provision shows today (with ⚡); on the engine it doesn't, as in the Calendar", {
+  if (isTRUE(MOTOR)) return(expect_null(pt_buscar_fila(R0, "Arrendamiento archivado")))
   expect_identical(celda(R0, "Arrendamiento archivado", "d-5")[c("estado", "boton_id")],
                    list(estado = "provision_vencida", boton_id = "p6"))
 })
@@ -291,6 +294,7 @@ test_that("C29 [Luis decide]: an ARCHIVED liability's overdue provision still sh
 # The reference is today's grid (master). On the engine, the [CAMBIA] are put
 # on it one by one, by name; anything else that differs fails.
 pt_cambios_motor <- function(ref) {
+  ref$filas <- Filter(function(f) !identical(f$etiqueta, "Arrendamiento archivado"), ref$filas)   # (a)
   ref$filas <- lapply(ref$filas, function(f) {
     if (!identical(f$tipo, "fila")) return(f)
     if (identical(f$etiqueta, "Licencias <b>Ñandú</b> & 'Co'")) f$editar_funciona <- TRUE       # C26

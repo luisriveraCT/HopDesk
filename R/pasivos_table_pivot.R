@@ -22,7 +22,11 @@ pasivos_table_build_long <- function(provisions, manual_items,
   today <- Sys.Date()
 
   # ── 1. Apply liability filters ───────────────────────────────────────────────
+  # An archived liability (estado "deleted") is out, provisions and all, as
+  # in the Calendario since CM06 (Luis, 2026-11-04: T17b (a)).
   liabs_in_scope <- liabilities
+  if (nrow(liabs_in_scope) && "estado" %in% names(liabs_in_scope))
+    liabs_in_scope <- liabs_in_scope[is.na(liabs_in_scope$estado) | liabs_in_scope$estado != "deleted", , drop = FALSE]
   if (length(filters$empresa) > 0L) {
     liabs_in_scope <- liabs_in_scope[liabs_in_scope$empresa %in% filters$empresa, , drop = FALSE]
   }

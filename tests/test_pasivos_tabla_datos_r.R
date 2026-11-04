@@ -37,10 +37,11 @@ test_that("the pivot counts what each cell adds up and keeps all its provisions 
   expect_identical(sort(strsplit(s$cell_ids, ",")[[1]]), c("p3a", "p3b"))
 })
 test_that("rows: one per liability, orphan or fee, in the pivot's order, with what the engine needs", {
-  expect_identical(X$id, c("orphan_p0", "lib6", "lib1", "lib2", "lib2_fee_1", "lib2_fee_2", "lib3", "lib'4"))
+  expect_identical(X$id, c("orphan_p0", "lib1", "lib2", "lib2_fee_1", "lib2_fee_2", "lib3", "lib'4"))
+  expect_false("lib6" %in% X$id)   # archived (estado "deleted"): out, as in the Calendario (T17b (a))
   expect_identical(fila("lib2_fee_1")[, c("Pasivo", "Parte", ".nivel", ".semaforo", ".acciones")],  # Parte: its liability
                    data.frame(Pasivo = "Comisión por apertura", Parte = "Crédito Banorte", .nivel = 1L, .semaforo = "", .acciones = "",
-                              row.names = 5L, check.names = FALSE))
+                              row.names = 4L, check.names = FALSE))
   expect_identical(fila("lib1")$.semaforo, "vencida")
   expect_identical(fila("orphan_p0")$.semaforo, "pronto")
   expect_identical(X$.acciones[X$id %in% c("lib1", "orphan_p0", "lib'4")], c("", "editar", "editar"))
