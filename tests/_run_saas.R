@@ -208,7 +208,8 @@ tryCatch({
     tryCatch(mock_s3readRDS(paste0(tolower(cid), "/usuarios.rds"), "mock-bucket"),
              error = function(e) auth_schema_usuarios())
   }
-  auth_save_usuarios <- function(df, client_id = NULL) {
+  # base / alta_inicial are accepted like the real one (CM15) and ignored here.
+  auth_save_usuarios <- function(df, client_id = NULL, alta_inicial = FALSE, base = NULL) {
     cid <- client_id %||% Sys.getenv("CLIENT_ID")
     mock_s3saveRDS(df, paste0(tolower(cid), "/usuarios.rds"), "mock-bucket")
     invisible(TRUE)

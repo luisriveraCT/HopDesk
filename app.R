@@ -909,7 +909,7 @@ server <- function(input, output, session) {
         deleted_at               = NA_character_,
         stringsAsFactors = FALSE
       )
-      auth_save_usuarios(rbind(usuarios, new_user), client_id = invite$client_id)
+      auth_save_usuarios(rbind(usuarios, new_user), client_id = invite$client_id, base = usuarios)
       accept_invite(token)
       register_username(username, invite$client_id, new_user$account_code)
       update_client_user_count(invite$client_id)
@@ -1220,10 +1220,11 @@ server <- function(input, output, session) {
     if (is.null(usuarios)) return()
     idx <- which(tolower(usuarios$username) == tolower(info$user))
     if (!length(idx)) return()
+    base_usuarios <- usuarios
     usuarios$password_hash[idx]            <- hash_password(pw1)
     usuarios$requires_password_change[idx] <- FALSE
     tryCatch({
-      auth_save_usuarios(usuarios)
+      auth_save_usuarios(usuarios, base = base_usuarios)
       removeModal()
       showNotification("Contraseña actualizada. Bienvenido.", type = "message", duration = 4)
     }, error = function(e) {

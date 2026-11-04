@@ -427,7 +427,11 @@ usuarios_niveles_perdidos <- function(antes, despues) {
 # legitimate limit change still passes; what it stops is a save built on a
 # table that was read empty. It reads S3 first, strictly: if that read fails,
 # the save fails too (fail closed).
-auth_save_usuarios <- function(df, client_id = NULL, alta_inicial = FALSE) {
+# base: the table the caller started from. With it, only the caller's own
+# changes (rows added, changed or removed against base, by username) are
+# applied on S3's current table, so another session's accounts saved since
+# are kept (lost update, CM15). The checks below then run on that result.
+auth_save_usuarios <- function(df, client_id = NULL, alta_inicial = FALSE, base = NULL) {
   cid <- tolower(trimws(client_id %||% Sys.getenv("CLIENT_ID")))
   key <- paste0(cid, "/usuarios.rds")
   if (!isTRUE(alta_inicial)) {
@@ -435,6 +439,8 @@ auth_save_usuarios <- function(df, client_id = NULL, alta_inicial = FALSE) {
       stop("[AUTH] refusing to save an empty user table for ", cid,
            " (alta_inicial = TRUE if that is really intended)", call. = FALSE)
     actual <- .usuarios_leer_estricto(key)
+    if (is.data.frame(base) && is.data.frame(actual) && nrow(actual))
+      df <- rebase_por_id(df, base, actual, "username")
     # Every path (demote, deactivate, delete, limit change, a stale table
     # from another session) ends here, so the "last live account of a
     # unico_vivo tier" lock lives here too, against S3 as it is now.
