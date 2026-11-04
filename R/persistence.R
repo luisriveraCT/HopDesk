@@ -404,6 +404,12 @@ s3_init <- function() {
 # needed here (same note as username_index.rds functions in Stage 2).
 .emergency_lock_cache <- new.env(parent = emptyenv())
 
+# The lock list as a data.frame (0 rows: nobody is locked, also when the file
+# does not exist). It used to return NULL both for "no file" and for a failed
+# read, and callers let a locked account in (CM14). Now, if S3 cannot be read,
+# it returns the last list read well in this process, with attr "vieja" =
+# TRUE (a failure never replaces it); with none, it stop()s and the login is
+# denied. Decided by Luis, 2026-11-04.
 read_emergency_lock <- function() {
   now <- proc.time()[["elapsed"]]
   if (!is.null(.emergency_lock_cache$data) &&
@@ -411,15 +417,18 @@ read_emergency_lock <- function() {
       (now - .emergency_lock_cache$ts) < 60) {
     return(.emergency_lock_cache$data)
   }
-  raw <- tryCatch(
-    suppressMessages(suppressWarnings(
-      aws.s3::s3readRDS(object = "hd-admin/emergency_lock.rds", bucket = .s3_bucket())
-    )),
-    error = function(e) NULL
-  )
-  .emergency_lock_cache$data <- raw
+  raw <- tryCatch(suppressMessages(.s3_leer_para_escribir("emergency_lock.rds", .HD_ADMIN_CID)),
+                  error = function(e) e)
+  if (inherits(raw, "error")) {
+    message("[LOCK] could not read the lock list: ", conditionMessage(raw))
+    if (is.null(.emergency_lock_cache$data))
+      stop("[LOCK] lock list unreadable and none read before in this process", call. = FALSE)
+    return(structure(.emergency_lock_cache$data, vieja = TRUE))
+  }
+  df <- .hd_admin_completar(raw, .schema_emergency_lock)
+  .emergency_lock_cache$data <- df
   .emergency_lock_cache$ts   <- now
-  raw
+  df
 }
 
 # cambio(locks) -> locks, on S3's current list (CM13). Unlocking removes a

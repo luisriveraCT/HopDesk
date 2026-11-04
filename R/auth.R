@@ -480,6 +480,13 @@ auth_check_credentials <- function() {
     # separately via the app.R session observer.
     if (isTRUE(res$result)) {
       lock <- tryCatch(read_emergency_lock(), error = function(e) NULL)
+      # Unreadable and no list read before: deny rather than let a locked
+      # account in because S3 failed (CM14). A stale list is used as is.
+      if (is.null(lock)) {
+        message("[AUTH] Login denied: the lock list could not be verified for ", user)
+        return(list(result = FALSE,
+                    user_info = list(user = user, message = tr("niveles.hdadmin.login_sin_verificar"))))
+      }
       if (is.data.frame(lock) && nrow(lock) > 0 &&
           any(tolower(lock$username) == tolower(trimws(user)))) {
         message("[AUTH] Login blocked by emergency lock: ", user)
