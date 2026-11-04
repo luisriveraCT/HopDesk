@@ -208,7 +208,10 @@ settings_observers <- function(input, output, session, shared) {
       })
     } else if (action == "cuentas") {
       show_settings_modal(input, output, session, shared)
-      output$settings_panel <- renderUI({ .cuentas_panel_ui(cmap = shared$company_map()) })
+      output$settings_panel <- renderUI({
+        .cuentas_panel_ui(cmap = shared$company_map(),
+                          editar = puede(isolate(shared$usuario()), "can_manage_bancos"))
+      })
     } else if (action == "policies") {
       show_settings_modal(input, output, session, shared)
       output$settings_panel <- renderUI({ .policies_merged_panel_ui("reglas") })
@@ -379,19 +382,19 @@ settings_observers <- function(input, output, session, shared) {
         do.call(bslib::accordion,
           c(list(id = "ic_empresa_accordion", open = FALSE), panels)
         ),
-        div(class = "mt-3 d-flex align-items-center gap-2 flex-wrap",
-          actionButton("save_interco_v2", tagList(icon("floppy-disk"), " Guardar"),
-                       class = "btn btn-primary btn-sm"),
-          if (puede(isolate(shared$usuario()), "can_configure_erp"))
-            tagList(
-              tags$span(class = "text-muted", "|"),
-              actionButton("scan_ic_btn",
-                           tagList(icon("magnifying-glass"), " Esc\u00e1ner SAP"),
-                           class = "btn btn-outline-secondary btn-sm"),
-              tags$span(class = "text-muted small",
-                        "Detecta c\u00f3digos IC desde las facturas cargadas en memoria.")
-            )
-        )
+        # Guardar and the scanner write the IC registry: only with
+        # can_configure_erp (each save checks again on the server).
+        if (puede(isolate(shared$usuario()), "can_configure_erp"))
+          div(class = "mt-3 d-flex align-items-center gap-2 flex-wrap",
+            actionButton("save_interco_v2", tagList(icon("floppy-disk"), " Guardar"),
+                         class = "btn btn-primary btn-sm"),
+            tags$span(class = "text-muted", "|"),
+            actionButton("scan_ic_btn",
+                         tagList(icon("magnifying-glass"), " Esc\u00e1ner SAP"),
+                         class = "btn btn-outline-secondary btn-sm"),
+            tags$span(class = "text-muted small",
+                      "Detecta c\u00f3digos IC desde las facturas cargadas en memoria.")
+          )
       )
     })
   }
@@ -402,6 +405,7 @@ settings_observers <- function(input, output, session, shared) {
 
   # ── Save ─────────────────────────────────────────────────────────────────────
   observeEvent(input$save_interco_v2, {
+    if (!puede_o_avisa(shared, "can_configure_erp")) return()
     cmap <- isolate(shared$company_map())
 
     parse_code <- function(val) {
@@ -591,9 +595,10 @@ settings_observers <- function(input, output, session, shared) {
         "Para eliminar un c\u00f3digo, borra su campo en la pesta\u00f1a Intercompany."),
       DT::DTOutput("ic_scan_tbl"),
       footer = tagList(
-        actionButton("ic_scan_apply",
-                     tagList(icon("check"), " Aplicar selecci\u00f3n"),
-                     class = "btn btn-primary btn-sm"),
+        if (puede(isolate(shared$usuario()), "can_configure_erp"))
+          actionButton("ic_scan_apply",
+                       tagList(icon("check"), " Aplicar selecci\u00f3n"),
+                       class = "btn btn-primary btn-sm"),
         tags$span("\u00a0"),
         modalButton("Cancelar")
       )
@@ -614,6 +619,7 @@ settings_observers <- function(input, output, session, shared) {
   })
 
   observeEvent(input$ic_scan_apply, {
+    if (!puede_o_avisa(shared, "can_configure_erp")) return()
     sel        <- input$ic_scan_tbl_rows_selected
     candidates <- ic_scan_candidates()
     removeModal()
@@ -766,6 +772,7 @@ settings_observers <- function(input, output, session, shared) {
 
   # Apply selected BP rows as IC codes
   observeEvent(input$bp_apply_ic_btn, {
+    if (!puede_o_avisa(shared, "can_configure_erp")) return()
     sel      <- input$tbl_bp_sap_rows_selected
     sorted_c <- bp_sorted_candidates()
     if (is.null(sorted_c) || !length(sel)) {
@@ -882,7 +889,10 @@ settings_observers <- function(input, output, session, shared) {
       return()
     }
     ic_panel_active(FALSE)
-    output$settings_panel <- renderUI({ .cuentas_panel_ui(cmap = shared$company_map()) })
+    output$settings_panel <- renderUI({
+        .cuentas_panel_ui(cmap = shared$company_map(),
+                          editar = puede(isolate(shared$usuario()), "can_manage_bancos"))
+      })
   }, ignoreInit = TRUE)
 
   proveedoresServer("prov_mod", shared)
