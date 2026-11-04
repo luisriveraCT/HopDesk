@@ -16,17 +16,20 @@
 # `conflicts` and `replacement` are tibbles from pasivos_reconcile_provisions().
 pasivos_edit_confirm_open <- function(session, conflicts, replacement,
                                        shared, liability_id) {
-  # Store in a package-level env so the module server can read them
-  .pec_state$conflicts    <- conflicts
-  .pec_state$replacement  <- replacement
-  .pec_state$liability_id <- liability_id
-  .pec_state$open_trigger <- (.pec_state$open_trigger %||% 0L) + 1L
+  # The panel's state lives in this session, set up by
+  # setup_pasivos_edit_confirm(). It used to be an environment of the package,
+  # one for every session of the R process, so a user could see (and save
+  # decisions on) another user's conflicts (found 2026-11-04, T18a).
+  st <- session$userData$pec_state
+  if (is.null(st))
+    stop("pasivos_edit_confirm_open(): setup_pasivos_edit_confirm() did not run in this session",
+         call. = FALSE)
+  st$conflicts    <- conflicts
+  st$replacement  <- replacement
+  st$liability_id <- liability_id
 
   shiny::showModal(.pec_modal_ui())
 }
-
-# Shared state (environment acts as mutable singleton within the session)
-.pec_state <- new.env(parent = emptyenv())
 
 # ── Modal UI ──────────────────────────────────────────────────────────────────
 .pec_modal_ui <- function() {
@@ -171,7 +174,8 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
 }
 
 # ── Apply decisions ────────────────────────────────────────────────────────────
-.pec_apply_decisions <- function(conflicts, replacement, decisions, shared, user) {
+.pec_apply_decisions <- function(conflicts, replacement, decisions, shared, user,
+                                 liability_id = NA_character_) {
   provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()),
                     error = function(e) .schema_pasivos_provision())
   provs_base <- provs   # CM09: the save applies only these decisions on S3 as it is now
@@ -227,7 +231,7 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
     action_type = "bulk.aplicar_pagos_futuros",
     user        = user,
     target_kind = "bulk",
-    target_id   = .pec_state$liability_id %||% NA_character_,
+    target_id   = liability_id %||% NA_character_,
     after       = list(n_conflicts = nrow(conflicts), decisions = decision_log),
     notes       = sprintf("Edit-confirm: %d conflicts resolved", nrow(conflicts)),
     client_id   = shared$effective_client_id()
@@ -237,13 +241,18 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
 # ── Setup ─────────────────────────────────────────────────────────────────────
 setup_pasivos_edit_confirm <- function(input, output, session, shared) {
 
+  # This session's open panel: its conflicts, their generated rows and the
+  # liability (pasivos_edit_confirm_open() fills it).
+  st <- shiny::reactiveValues(conflicts = NULL, replacement = NULL, liability_id = NULL)
+  session$userData$pec_state <- st
+
   # Per-provision decision tracking: named list prov_id -> "aplicar"|"mantener"|"personalizar"
   decisions <- shiny::reactiveValues()
 
   # Render conflicts table
   output$pec_conflicts_table <- shiny::renderUI({
-    conf <- .pec_state$conflicts
-    repl <- .pec_state$replacement
+    conf <- st$conflicts
+    repl <- st$replacement
     if (is.null(conf) || !nrow(conf)) return(NULL)
 
     # Collect current decision values from the decisions reactiveValues
@@ -254,7 +263,7 @@ setup_pasivos_edit_confirm <- function(input, output, session, shared) {
   # Observe per-row decision inputs (JS fires pec_decision_<uuid_with_underscores>)
   # We use a broad observe that checks all conflicts
   shiny::observe({
-    conf <- .pec_state$conflicts
+    conf <- st$conflicts
     if (is.null(conf) || !nrow(conf)) return()
     for (i in seq_len(nrow(conf))) {
       prov_id <- conf$id[i]
@@ -268,14 +277,14 @@ setup_pasivos_edit_confirm <- function(input, output, session, shared) {
 
   # Mass: mantener all
   shiny::observeEvent(input$pec_all_mantener, ignoreInit = TRUE, {
-    conf <- .pec_state$conflicts
+    conf <- st$conflicts
     if (is.null(conf) || !nrow(conf)) return()
     for (i in seq_len(nrow(conf))) decisions[[conf$id[i]]] <- "mantener"
   })
 
   # Mass: apply new value for all
   shiny::observeEvent(input$pec_all_nuevo, ignoreInit = TRUE, {
-    conf <- .pec_state$conflicts
+    conf <- st$conflicts
     if (is.null(conf) || !nrow(conf)) return()
     for (i in seq_len(nrow(conf))) decisions[[conf$id[i]]] <- "aplicar"
   })
@@ -283,8 +292,8 @@ setup_pasivos_edit_confirm <- function(input, output, session, shared) {
   # Save decisions
   shiny::observeEvent(input$pec_save, ignoreInit = TRUE, {
     if (!pasivos_autoriza("pasivos.edit_liability")) return()
-    conf <- .pec_state$conflicts
-    repl <- .pec_state$replacement
+    conf <- st$conflicts
+    repl <- st$replacement
     if (is.null(conf) || !nrow(conf)) { shiny::removeModal(); return() }
 
     user <- tryCatch(shared$current_user(), error = function(e) "system")
@@ -296,7 +305,7 @@ setup_pasivos_edit_confirm <- function(input, output, session, shared) {
     }
 
     tryCatch(
-      .pec_apply_decisions(conf, repl, dec_list, shared, user),
+      .pec_apply_decisions(conf, repl, dec_list, shared, user, liability_id = st$liability_id),
       error = function(e) shiny::showNotification(conditionMessage(e), type = "error")
     )
     shiny::removeModal()

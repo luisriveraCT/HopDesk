@@ -110,6 +110,40 @@ ok(nrow(r) == 1L && isTRUE(r$amount_pago_override == 135),
    "A3: Personalizar 135 sets P1's override to 135")
 # Cancelar writes nothing: after the save alone P1 is as it was (A1).
 
+# ── B: two sessions, each with its own panel ──────────────────────────────────
+# Real pasivos_edit_confirm_open() again (A stubbed it to capture its input).
+sembrar(); abierto <- NULL
+sh <- nuevo_shared(); guardar_asistente(sh)          # B's conflict: P1 of L1
+conf_B <- abierto$conflicts; rep_B <- abierto$replacement
+suppressMessages(source("R/pasivos_edit_confirm_module.R"))
+
+sesion <- function() {
+  s <- MockShinySession$new()
+  withReactiveDomain(s, setup_pasivos_edit_confirm(s$input, s$output, s, nuevo_shared()))
+  s
+}
+A <- sesion(); B <- sesion()
+withReactiveDomain(B, pasivos_edit_confirm_open(B, conf_B, rep_B, sh, "L1"))
+B$flushReact()
+ok(identical(isolate(B$userData$pec_state$conflicts$id), P1),
+   "B1: B's panel holds B's conflict")
+ok(is.null(isolate(A$userData$pec_state$conflicts)),
+   "B1: A's panel is still empty after B opens one")
+
+# A clicks "Aplicar todos: Nuevo valor" and "Guardar decisiones": with nothing
+# open in A, nothing may be written -- above all not B's conflict.
+antes <- .mem_escrituras
+A$setInputs(pec_all_nuevo = 1); A$setInputs(pec_save = 1)
+r <- en_s3(); r <- r[r$id == P1, , drop = FALSE]
+ok(.mem_escrituras == antes, "B2: A's Guardar decisiones writes nothing")
+ok(isTRUE(r$amount_pago_override == 150), "B2: B's P1 keeps its 150 after A's save")
+
+# B decides on its own conflict: that one does apply.
+B$setInputs(pec_all_nuevo = 1); B$setInputs(pec_save = 1)
+r <- en_s3(); r <- r[r$id == P1, , drop = FALSE]
+ok(is.na(r$amount_pago_override) && isTRUE(r$amount_pago == 120),
+   "B3: B's Guardar decisiones applies B's choice to P1")
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 s3_memoria_restaurar()
 if (.fail > 0L) quit(status = 1L)
