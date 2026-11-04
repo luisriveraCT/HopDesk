@@ -485,6 +485,35 @@ pasivos_tabla_ids_celda <- function(wide, celda) {
   strsplit(c1$cell_ids, ",", fixed = TRUE)[[1]]
 }
 
+# The rows of provisiones_celda (Luis, P4): what a cell of several adds up,
+# one row per provision -- its date, liability (or part), amount (the item's
+# for a converted one, else the override or the amount), currency and state;
+# ✎ opens it, ⚡ converts a provisional one, ↩ handles a converted one's
+# receipt (the same as the table's cells).
+pasivos_tabla_lista_celda <- function(ids, provisions, liabilities = NULL, manual_items = NULL, hoy = Sys.Date()) {
+  vacia <- data.frame(id = character(0), Fecha = as.Date(character(0)), Pasivo = character(0), Importe = numeric(0),
+                      Moneda = character(0), Estado = character(0), .provision = logical(0), .acciones = character(0),
+                      stringsAsFactors = FALSE, check.names = FALSE)
+  if (!length(ids) || is.null(provisions) || !nrow(provisions)) return(vacia)
+  p <- provisions[match(ids, provisions$id), , drop = FALSE]
+  p <- p[!is.na(p$id), , drop = FALSE]
+  if (!nrow(p)) return(vacia)
+  nombre <- if (!is.null(liabilities) && nrow(liabilities)) liabilities$nombre[match(p$liability_id, liabilities$id)] else NA_character_
+  convertida <- p$estado %in% c("converted", "item_confirmed")
+  item <- if (!is.null(manual_items) && nrow(manual_items) && "provision_id" %in% names(manual_items))
+    manual_items[match(p$id, manual_items$provision_id), , drop = FALSE] else NULL
+  fecha_item <- if (!is.null(item)) as.Date(item[["FechaVenc"]] %||% item[["Fecha de vencimiento"]]) else as.Date(rep(NA, nrow(p)))
+  fecha <- as.Date(ifelse(convertida & !is.na(fecha_item), fecha_item, p$fecha_efectiva), origin = "1970-01-01")
+  importe <- ifelse(convertida & !is.null(item) & !is.na(item$Importe %||% NA), item$Importe %||% NA,
+                    ifelse(is.na(p$amount_pago_override), p$amount_pago, p$amount_pago_override))
+  estado <- ifelse(!convertida, "provision", ifelse(!is.na(fecha) & fecha < as.Date(hoy), "vencido", "pendiente"))
+  data.frame(
+    id = p$id, Fecha = fecha, Pasivo = ifelse(is.na(nombre), p$parte %||% "", nombre), Importe = as.numeric(importe),
+    Moneda = p$moneda_pago %||% "", Estado = vapply(estado, function(e) tr(paste0("tablas.pasivos.estado.", e)), character(1)),
+    .provision = !convertida, .acciones = ifelse(convertida, "editar,comprobante", "editar,provision"),
+    stringsAsFactors = FALSE, check.names = FALSE, row.names = NULL)
+}
+
 # The columns: the liability fixed at the left, its part and company, then
 # one money column per period (today's shaded), titled with its label.
 pasivos_tabla_columnas <- function(wide, hoy = Sys.Date(), granularidad = "day") {

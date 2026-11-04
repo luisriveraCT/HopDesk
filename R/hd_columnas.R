@@ -48,12 +48,12 @@ HD_TONOS_CELDA <- c("exito", "aviso", "peligro", "info", "neutro", "morado")
 # buttons it can carry after it (each sends its name as the action). Icons
 # are escapes, like HD_ACCIONES_FILA's.
 HD_CELDA_MARCAS <- list(
-  pendiente  = list(icono = "◷", clave = "tablas.celda.pendiente"),
+  pendiente  = list(icono = "\u25f7", clave = "tablas.celda.pendiente"),
   vencida    = list(icono = "!",      clave = "tablas.celda.vencida"),
-  confirmada = list(icono = "✓", clave = "tablas.celda.confirmada"))
+  confirmada = list(icono = "\u2713", clave = "tablas.celda.confirmada"))
 HD_CELDA_BOTONES <- list(
-  provision   = list(icono = "⚡", clave = "tablas.accion.provision"),
-  comprobante = list(icono = "↩", clave = "tablas.accion.comprobante"))
+  provision   = list(icono = "\u26a1", clave = "tablas.accion.provision"),
+  comprobante = list(icono = "\u21a9", clave = "tablas.accion.comprobante"))
 
 # Dictionary key -> text; anything that isn't a key is used as-is.
 .hd_texto <- function(x) {

@@ -380,6 +380,8 @@ HD_ACCIONES_FILA <- list(
   buscar          = list(icono = "\U0001f50d", clave = "tablas.accion.buscar", estilo = "icono"),
   editar          = list(icono = "\u270e", clave = "tablas.accion.editar",    estilo = "icono"),
   provision       = list(icono = "\u26a1", clave = "tablas.accion.provision", estilo = "icono"),
+  # T17b (P4): a converted provision's receipt (the return arrow of Pasivos' cells), on a row.
+  comprobante     = list(icono = "\u21a9", clave = "tablas.accion.comprobante", estilo = "icono"),
   inactivar       = list(icono = "\U0001f6ab", clave = "tablas.accion.inactivar", estilo = "icono"),
   reactivar       = list(icono = "\U0001f504", clave = "tablas.accion.reactivar", estilo = "icono"),
   erp             = list(icono = "\U0001f50c", clave = "tablas.accion.erp",   estilo = "icono"),

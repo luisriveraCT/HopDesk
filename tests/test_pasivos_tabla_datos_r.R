@@ -82,3 +82,21 @@ test_that("columns: the liability fixed at the left; one money column per period
   expect_identical(length(f$ids), nrow(X))
   expect_identical(unclass(f$nivel), X$.nivel)
 })
+
+test_that("P4: the list behind a cell of several -- one row per provision, its amount and state, ✎ and ⚡ or ↩", {
+  ids <- pasivos_tabla_ids_celda(W, paste0("agg:lib1\t", lbl(20)))
+  l <- pasivos_tabla_lista_celda(ids, D$provisions, LIABS, D$manual_inv, HOY)
+  expect_identical(l$id, c("p1e", "p1h"))
+  expect_identical(l$Pasivo, c("Renta oficina", "Renta oficina"))
+  expect_identical(l$Importe, c(1450, 500))          # the override; the converted one's item
+  expect_identical(l$Fecha, rep(HOY + 20L, 2))
+  expect_identical(l$Estado, c(tr("tablas.pasivos.estado.provision"), tr("tablas.pasivos.estado.pendiente")))
+  expect_identical(l$.acciones, c("editar,provision", "editar,comprobante"))
+  expect_identical(l$.provision, c(TRUE, FALSE))
+  v <- pasivos_tabla_lista_celda(c("p2v", "nada"), D$provisions, LIABS, D$manual_inv, HOY)
+  expect_identical(c(v$id, v$Estado), c("p2v", tr("tablas.pasivos.estado.vencido")))
+  expect_identical(nrow(pasivos_tabla_lista_celda(character(0), D$provisions)), 0L)
+  expect_silent(hd_columnas_piezas(list(col_fecha("Fecha"), col_texto("Pasivo"), col_dinero("Importe", sumar = FALSE),
+                                        col_texto("Estado")), "provisiones_celda", hd_piezas_de("provisiones_celda", "acc_fila")))
+  expect_true(all(c("editar", "provision", "comprobante") %in% hd_acciones_fila_validar(c("editar", "provision", "comprobante"))))
+})

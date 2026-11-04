@@ -341,6 +341,26 @@ pasivos_table_module_server <- function(id, shared) {
       vacio = "tablas.pasivos.vacio",
       visibles = TRUE)
 
+    # ── The list behind a cell of several (provisiones_celda, Luis P4) ──────
+    lista_celda <- shiny::reactiveVal(NULL)
+    t_lista <- hd_table_server(
+      "lista_celda", tabla = "provisiones_celda",
+      datos = shiny::reactive({ d <- lista_celda(); shiny::req(!is.null(d)); d }),
+      columnas = list(col_fecha("Fecha", "tablas.pasivos.col.fecha"),
+                      col_texto("Pasivo", "tablas.pasivos.col.pasivo"),
+                      col_dinero("Importe", "tablas.pasivos.col.importe", sumar = FALSE),
+                      col_texto("Estado", "tablas.pasivos.col.estado")),
+      piezas = "acc_fila", acciones_fila = c("editar", "provision", "comprobante"))
+    shiny::observeEvent(t_lista$accion(), {
+      a <- t_lista$accion()
+      if (is.null(a) || !length(a$ids)) return()
+      shiny::removeModal()
+      switch(a$accion,
+        editar = .pt_emitir("pasivos_cell_click", a$ids[1]),
+        provision = , comprobante = .pt_emitir("pasivos_convert_request", a$ids[1]),
+        NULL)
+    }, ignoreInit = TRUE)
+
     # ── The table's actions, to the same global inputs as before ────────────
     # The cell's click, ⚡ / ↩ and ✎ keep sending what the rest of Pasivos
     # already listens to (pasivos_module.R, the wizard of T18): the same
@@ -354,10 +374,16 @@ pasivos_table_module_server <- function(id, shared) {
       if (is.null(a)) return()
       switch(a$accion,
         editar_celda = {
-          # A cell that adds up several opens its first one, as before (P4's
-          # list comes in its own commit).
+          # One provision: its editor, as before. A cell that adds up
+          # several: the list of them (Luis, P4).
           ids <- pasivos_tabla_ids_celda(wide(), a$celda %||% "")
-          if (length(ids)) .pt_emitir("pasivos_cell_click", ids[1])
+          if (length(ids) == 1L) .pt_emitir("pasivos_cell_click", ids)
+          else if (length(ids) > 1L) {
+            lista_celda(pasivos_tabla_lista_celda(
+              ids, tryCatch(shared$pasivos_provisions_db(), error = function(e) NULL), liabs_visibles(),
+              tryCatch(shared$manual_inv(), error = function(e) NULL)))
+            shiny::showModal(hd_modal(titulo = tr("tablas.pasivos.lista_celda"), hd_table_ui(ns("lista_celda"))))
+          }
         },
         provision = , comprobante = .pt_emitir("pasivos_convert_request", a$celda),
         editar = if (length(a$ids)) .pt_emitir("pasivos_edit_liability", a$ids[1]),

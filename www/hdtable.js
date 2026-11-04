@@ -1240,7 +1240,7 @@
       // Without a row-actions column, the marks go in the first one.
       if (k === 0 && !st.accFila.length) { var marcas = marcasFila(st, i); if (marcas) td.appendChild(marcas); }
       // sangria: a child row (a liability's fee) hangs from the row above.
-      if (k === 0 && hija) { td.classList.add('hdt-sangria'); td.appendChild(nodo('span', 'hdt-sangria-flecha', '↳')); }
+      if (k === 0 && hija) { td.classList.add('hdt-sangria'); td.appendChild(nodo('span', 'hdt-sangria-flecha', '\u21b3')); }
       if (j === st.colEd) pintarEditable(st, td, i);
       else if (j === st.colOp) pintarOpcion(st, td, i);
       else pintarCelda(st, td, j, i);
