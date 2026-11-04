@@ -224,7 +224,7 @@ settings_companies_observer <- function(input, output, session, shared) {
   # Revert button — only shown when policy moves exist
   output$cmp_revert_btn_ui <- renderUI({
     pm <- tryCatch(shared$policy_moves_db(), error = function(e) NULL)
-    if (!is.null(pm) && nrow(pm) > 0L)
+    if (!is.null(pm) && nrow(pm) > 0L && .puede_politicas())
       actionButton("cmp_btn_revert",
                    tagList(icon("rotate-left"), " Revertir"),
                    class = "btn btn-sm btn-outline-warning")
@@ -250,6 +250,7 @@ settings_companies_observer <- function(input, output, session, shared) {
 
   # Revert: confirm
   observeEvent(input$cmp_revert_confirm, {
+    if (!puede_o_avisa(shared, "can_manage_policies")) return()
     sel <- input$cmp_revert_partes_sel
     if (!length(sel)) { removeModal(); return() }
     pm <- tryCatch(shared$policy_moves_db(), error = function(e) NULL)
@@ -321,6 +322,7 @@ settings_companies_observer <- function(input, output, session, shared) {
   })
 
   output$cmp_apply_btn_ui <- renderUI({
+    if (!.puede_politicas()) return(NULL)   # Aplicar writes the policy dates (T16b)
     dirty <- policies_dirty()
     tagList(
       if (dirty)
@@ -596,6 +598,7 @@ settings_companies_observer <- function(input, output, session, shared) {
 
   # ── Save partner policies ─────────────────────────────────────────────────
   observeEvent(input$cmp_btn_save, {
+    if (!puede_o_avisa(shared, "can_manage_policies")) return()
     parte <- isolate(cmp_active_parte())
     if (is.null(parte) || !nzchar(parte)) {
       showNotification("No hay socio seleccionado.", type = "warning")
@@ -742,6 +745,7 @@ settings_companies_observer <- function(input, output, session, shared) {
 
   # ── Apply: confirmed → compute and save ───────────────────────────────────
   observeEvent(input$cmp_apply_confirm, {
+    if (!puede_o_avisa(shared, "can_manage_policies")) return()
     # scope default (fixed 2026-09-26): this used to fall back to "all", the
     # ONE scope that deletes manual date overrides (see the prune block at the
     # end of this handler). A Shiny radio that has not rendered yet reports
