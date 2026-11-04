@@ -56,7 +56,9 @@ intercoServer <- function(id, shared) {
     ic_detail_sub <- reactive({
       pair <- selected_pair(); req(pair)
       dat  <- ic_invoices();   req(dat)
-      df   <- if (pair$ledger == "AR") dat$ar else dat$ap
+      # The open invoices and, locked at $0, the already confirmed ones.
+      df   <- if (pair$ledger == "AR") dplyr::bind_rows(dat$ar, dat$ar_pagadas)
+              else dplyr::bind_rows(dat$ap, dat$ap_pagadas)
       req(!is.null(df), nrow(df) > 0)
       sub  <- df[df$.ini == pair$ini & df$Parte == pair$counterpart, , drop = FALSE]
       req(nrow(sub) > 0)
@@ -130,7 +132,12 @@ intercoServer <- function(id, shared) {
       snap_ar <- isolate(shared$sap_data()$AR)
       snap_ap <- isolate(shared$sap_data()$AP)
 
-      .filter_ic <- function(df, ledger) {
+      # pagadas = TRUE: the ERP invoices already confirmed (or trashed as a SAP
+      # ghost) instead of the open ones, at $0 and flagged .pagada. Luis
+      # (2026-11-04): what comes from the ERP is never removed from a view;
+      # confirmed, it stays locked at $0. The invoice lists show them; the
+      # totals, the matrix and the Mapa's graph count only the open ones.
+      .filter_ic <- function(df, ledger, pagadas = FALSE) {
         if (is.null(df) || !is.data.frame(df) || nrow(df) == 0) return(NULL)
         code_col <- if (ledger == "AR") "C\u00f3digo de cliente" else "C\u00f3digo de proveedor"
         if (!"Empresa" %in% names(df) || !code_col %in% names(df)) return(NULL)
@@ -205,10 +212,13 @@ intercoServer <- function(id, shared) {
         # entirely. The dead pagar_hoy_db.status=="confirmed" source (no
         # code path can produce it since Stage 4) is retired along with it.
         df <- compute_confirmed_flags(df, ledger, conf_db, papelera_raw)
-        keep <- keep & !(df[["confirmed"]] %in% TRUE)
+        pagada <- df[["confirmed"]] %in% TRUE
+        keep <- keep & (if (pagadas) pagada else !pagada)
 
         out <- df[keep, , drop = FALSE]
         if (nrow(out) == 0) return(NULL)
+        if (pagadas && amt_col %in% names(out)) out[[amt_col]] <- 0
+        out$.pagada  <- pagadas
         out$CardCode <- out[[code_col]]
         out$Ledger   <- ledger
         out
@@ -216,7 +226,9 @@ intercoServer <- function(id, shared) {
 
       list(
         ar = .filter_ic(snap_ar, "AR"),
-        ap = .filter_ic(snap_ap, "AP")
+        ap = .filter_ic(snap_ap, "AP"),
+        ar_pagadas = .filter_ic(snap_ar, "AR", pagadas = TRUE),
+        ap_pagadas = .filter_ic(snap_ap, "AP", pagadas = TRUE)
       )
     }
 
@@ -440,8 +452,6 @@ intercoServer <- function(id, shared) {
       if (!puede_o_avisa(shared, "can_register_payments")) return(NA_integer_)
       pair    <- isolate(selected_pair()); req(pair)
       req(!is.null(rows), nrow(rows) > 0)
-      amt_col <- if ("Saldo vencido" %in% names(rows)) "Saldo vencido" else "DocTotal"
-      due_col <- "Fecha de vencimiento"
 
       # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
       # 2026-07-25); a stale base here would silently drop another session's
@@ -458,40 +468,24 @@ intercoServer <- function(id, shared) {
 
       user_id <- tryCatch(as.character(shared$current_user()), error = function(e) "ic_table")
 
-      new_rows <- dplyr::bind_rows(lapply(seq_len(nrow(rows)), function(i) {
-        r   <- rows[i, ]
-        doc <- tryCatch(as.character(r[["Documento"]][1]),
-                        error = function(e) tryCatch(as.character(r[["Factura"]][1]),
-                                                     error = function(e) ""))
-        mon <- tryCatch(as.character(r[["Moneda"]][1]), error = function(e) "MXN")
-        # IC table data comes from raw SAP snapshots — read codigo from whichever
-        # column name is present (harmonized or original SAP name).
-        codigo_val <- tryCatch({
-          cc <- if ("Codigo" %in% names(r)) r[["Codigo"]][1]
-                else if ("Código de proveedor" %in% names(r)) r[["Código de proveedor"]][1]
-                else if ("Código de cliente"   %in% names(r)) r[["Código de cliente"]][1]
-                else ""
-          trimws(as.character(cc %||% ""))
-        }, error = function(e) "")
-        tibble::tibble(
-          # A UUID, as Abono parcial's rows: it was IC_<ini>_<doc>_<seconds + i>,
-          # which two sends in neighbouring seconds could repeat.
-          id        = uuid::UUIDgenerate(),
-          ledger    = pair$ledger,
-          Empresa   = pair$empresa,
-          Moneda    = mon,
-          Documento = doc,
-          Parte     = pair$counterpart,
-          Codigo    = codigo_val,
-          tipo_item = "factura",
-          Importe   = as.numeric(r[[amt_col]][1] %||% 0),
-          FechaVenc = tryCatch(as.Date(r[[due_col]][1]), error = function(e) Sys.Date()),
-          staged_by = user_id,
-          staged_at = Sys.time(),
-          status    = "pending",
-          source    = SAP_B1_ERP_TYPE
-        )
-      }))
+      # The Agenda row comes from agenda_filas_factura() (Luis, 2026-11-04:
+      # confirming ALWAYS closes the invoice): it carries the invoice's own
+      # identity, posting date included, which the confirmation copies, and
+      # refuses on the server what is already confirmed. IC rows come from
+      # the raw SAP snapshot, so the code is under its SAP column name.
+      f <- as.data.frame(rows, stringsAsFactors = FALSE)
+      cod <- if ("Codigo" %in% names(f)) f[["Codigo"]]
+             else if (identical(pair$ledger, "AR")) f[["Código de cliente"]]
+             else f[["Código de proveedor"]]
+      f$Codigo <- trimws(as.character(cod %||% rep("", nrow(f))))
+      new_rows <- agenda_filas_factura(f, user_id, ledger = pair$ledger,
+                                       confirmaciones = tryCatch(isolate(shared$bancos_confirmados()),
+                                                                 error = function(e) NULL))
+      rech <- attr(new_rows, "rechazadas")
+      if (length(rech))
+        showNotification(tr("tablas.interco.ya_confirmadas", n = length(rech), docs = paste(rech, collapse = ", ")),
+                         type = "warning", duration = 8)
+      if (!nrow(new_rows)) return(NA_integer_)   # nothing left to send; it said why
 
       combined <- upsert_pagar_hoy(ph, new_rows)
       # A failed save is never silent (it was tryCatch(..., NULL), and the
@@ -542,6 +536,9 @@ intercoServer <- function(id, shared) {
       col <- function(n, def = NA) if (n %in% names(sub)) sub[[n]] else rep(def, nrow(sub))
       dias  <- as.integer(Sys.Date() - as.Date(col(due_col)))
       tramo <- ifelse(is.na(dias), "", ifelse(dias <= 0, "al_dia", ifelse(dias <= 30, "d1_30", "mas_30")))
+      # Confirmed ERP invoices: locked at $0 (not selectable, no ＋).
+      pagada <- col(".pagada", FALSE) %in% TRUE
+      tramo[pagada] <- "pagada"
       data.frame(
         id          = facturas_ids(sub),
         Documento   = as.character(col("Documento", "")),
@@ -552,7 +549,8 @@ intercoServer <- function(id, shared) {
         Moneda      = as.character(col("Moneda", "")),
         Tramo       = tramo,
         Dias        = dias,
-        .acciones   = rep("agregar", nrow(sub)),
+        .bloqueada  = pagada,
+        .acciones   = ifelse(pagada, "", "agregar"),
         stringsAsFactors = FALSE
       )
     })
@@ -568,7 +566,8 @@ intercoServer <- function(id, shared) {
         col_insignia("Tramo",   "tablas.interco.tramo", mapa = list(
           al_dia = list(texto = "tablas.interco.al_dia", tono = "neutro"),
           d1_30  = list(texto = "tablas.interco.d1_30",  tono = "amarillo"),
-          mas_30 = list(texto = "tablas.interco.mas_30", tono = "rojo"))),
+          mas_30 = list(texto = "tablas.interco.mas_30", tono = "rojo"),
+          pagada = list(texto = "tablas.interco.pagada", tono = "exito"))),
         col_numero("Dias",      "tablas.interco.dias", opcional = TRUE, visible = TRUE)
       ),
       acciones_fila  = "agregar",

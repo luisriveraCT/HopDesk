@@ -35,7 +35,7 @@ cargar <- function(archivo, nombres) {
       eval(e, envir = globalenv())
 }
 suppressPackageStartupMessages({ library(dplyr); library(shinyjs); library(tibble) })
-cargar("R/global.R", c("S3_KEYS", "S3_KEYS_CRITICAL", "CURRENCIES"))
+cargar("R/global.R", c("S3_KEYS", "S3_KEYS_CRITICAL", "CURRENCIES", "is_erp_sourced"))
 cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 cargar("R/ui_components.R", "app_styles")
 cargar("R/vencidos_module.R", "facturas_ids")
@@ -63,6 +63,9 @@ assign(".s3_write", function(obj, key, client_id = NULL) {
   anotar(sprintf("escribe %s %d %s", key, if (is.data.frame(obj)) nrow(obj) else length(obj),
                  if (is.data.frame(obj) && "Documento" %in% names(obj)) paste(sort(obj$Documento), collapse = ",") else ""))
   if (is.data.frame(obj) && "id" %in% names(obj)) anotar(paste("ids", key, paste(obj$id, collapse = ",")))
+  # The Agenda row's posting date: what the confirmation copies to close the invoice.
+  if (is.data.frame(obj) && "fecha_factura" %in% names(obj))
+    anotar(paste("fechas", key, paste(obj$Documento, format(as.Date(obj$fecha_factura)), sep = "=", collapse = ",")))
   invisible(TRUE)
 }, envir = globalenv())
 assign("bump_sync_version", function(...) invisible(NULL), envir = globalenv())
