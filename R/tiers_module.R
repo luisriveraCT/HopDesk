@@ -848,7 +848,7 @@ tiersServer <- function(id, shared) {
       )
 
       updated <- dplyr::bind_rows(all_u, new_row)
-      saved <- tryCatch({ auth_save_usuarios(updated, client_id = current_client_id()); TRUE },
+      saved <- tryCatch({ auth_save_usuarios(updated, client_id = current_client_id(), base = all_u); TRUE },
                         error = function(e) { message("[TIERS] create user save failed: ", e$message); FALSE })
       if (!saved) {
         showNotification("No se pudo guardar la cuenta. Verifica la conexión e intenta de nuevo.",
@@ -985,7 +985,8 @@ tiersServer <- function(id, shared) {
         all_u[row_idx, "deleted_at"] <- as.character(Sys.time())
         all_u[row_idx, "activo"]     <- FALSE
       }
-      saved <- tryCatch({ auth_save_usuarios(all_u, client_id = current_client_id()); TRUE },
+      saved <- tryCatch({ auth_save_usuarios(all_u, client_id = current_client_id(),
+                                             base = all_usuarios_rv()); TRUE },
                         error = function(e) { message("[TIERS] delete save failed: ", e$message); FALSE })
       if (!saved) {
         showNotification("No se pudo guardar el cambio. Verifica la conexión e intenta de nuevo.",
@@ -1142,7 +1143,8 @@ tiersServer <- function(id, shared) {
           return()
         }
 
-        saved <- tryCatch({ auth_save_usuarios(all_u, client_id = current_client_id()); TRUE },
+        saved <- tryCatch({ auth_save_usuarios(all_u, client_id = current_client_id(),
+                                               base = all_usuarios_rv()); TRUE },
                           error = function(e) { message("[TIERS] save perms failed: ", e$message); FALSE })
         if (!saved) {
           showNotification("No se pudieron guardar los permisos. Verifica la conexión e intenta de nuevo.",
@@ -2133,7 +2135,7 @@ tiersServer <- function(id, shared) {
           return()
         }
         ok_users <- tryCatch({
-          auth_save_usuarios(usuarios_new, client_id = cid); TRUE
+          auth_save_usuarios(usuarios_new, client_id = cid, base = usuarios_orig); TRUE
         }, error = function(e) { message("[CLIENTS] deact save failed: ", e$message); FALSE })
         if (!ok_users) {
           showNotification("Error al desactivar usuarios. Ningún cambio guardado.",
@@ -2171,7 +2173,7 @@ tiersServer <- function(id, shared) {
       if (!ok_reg) {
         # Rollback Step A: restore original usuarios
         if (isTRUE(p$needs_deact)) {
-          tryCatch(auth_save_usuarios(usuarios_orig, client_id = cid),
+          tryCatch(auth_save_usuarios(usuarios_orig, client_id = cid, base = usuarios_new),
                    error = function(e) message("[CLIENTS] rollback failed: ", e$message))
         }
         showNotification("Error al guardar el registro. Los cambios fueron revertidos.",
