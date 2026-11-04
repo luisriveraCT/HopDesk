@@ -249,6 +249,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
 
   # ── Confirm ACTIVATE ─────────────────────────────────────────────────────────
   observeEvent(input$do_sincro_activar, {
+    if (!puede_o_avisa(shared, "can_manage_sync")) return()
     u <- tryCatch(input$sincro_src_selected$user, error = function(e) NULL)
     if (is.null(u) || !nzchar(u %||% "")) {
       showNotification("Selecciona un usuario primero.", type = "warning"); return()
@@ -300,6 +301,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
 
   # ── Confirm DEACTIVATE ───────────────────────────────────────────────────────
   observeEvent(input$do_sincro_desactivar, {
+    if (!puede_o_avisa(shared, "can_manage_sync")) return()
     cid <- shared$effective_client_id()
     # The shared agenda every account gets a copy of. A failed read must stop
     # here: it used to become an empty agenda, copied to every account.
