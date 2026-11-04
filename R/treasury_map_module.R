@@ -720,7 +720,9 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
     .arista_tabla <- reactive({
       edge <- selected_edge()
       dat  <- tryCatch(ic_invoices_rv(), error = function(e) NULL)
-      ar   <- if (!is.null(dat)) dat$ar else NULL
+      # The open invoices and, locked at $0, the already confirmed ones (the
+      # ERP's are never removed from a view; Luis, 2026-11-04).
+      ar   <- if (!is.null(dat)) dplyr::bind_rows(dat$ar, dat$ar_pagadas) else NULL
       sub  <- if (!is.null(edge) && is.data.frame(ar) && nrow(ar))
                 edge_invoices(edge, ar, input$map_cur %||% "MXN") else NULL
       if (is.null(sub)) sub <- tibble::tibble(Empresa = character(), Moneda = character(), Documento = character())
@@ -728,6 +730,8 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       col <- function(n, def = NA) if (n %in% names(sub)) sub[[n]] else rep(def, nrow(sub))
       dias  <- as.integer(Sys.Date() - as.Date(col("Fecha de vencimiento")))
       tramo <- ifelse(is.na(dias), "", ifelse(dias <= 0, "al_dia", ifelse(dias <= 30, "d1_30", "mas_30")))
+      pagada <- col(".pagada", FALSE) %in% TRUE   # locked at $0: not selectable
+      tramo[pagada] <- "pagada"
       data.frame(
         id        = facturas_ids(sub),
         Documento = as.character(col("Documento", "")),
@@ -738,6 +742,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
         Moneda    = as.character(col("Moneda", "")),
         Tramo     = tramo,
         Dias      = dias,
+        .bloqueada = pagada,
         stringsAsFactors = FALSE
       )
     })
@@ -753,7 +758,8 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
         col_insignia("Tramo",   "tablas.interco.tramo", mapa = list(
           al_dia = list(texto = "tablas.interco.al_dia", tono = "neutro"),
           d1_30  = list(texto = "tablas.interco.d1_30",  tono = "amarillo"),
-          mas_30 = list(texto = "tablas.interco.mas_30", tono = "rojo"))),
+          mas_30 = list(texto = "tablas.interco.mas_30", tono = "rojo"),
+          pagada = list(texto = "tablas.interco.pagada", tono = "exito"))),
         col_numero("Dias",      "tablas.interco.dias", opcional = TRUE, visible = TRUE)
       ),
       vacio = "tablas.interco.detalle_vacio"
@@ -879,25 +885,28 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       if (all(sin_ap)) return()
       ap_de <- ap_de[!sin_ap]
 
-      new_rows <- dplyr::bind_rows(lapply(seq_along(ap_de), function(i) {
+      # The Agenda row comes from agenda_filas_factura() (Luis, 2026-11-04:
+      # confirming ALWAYS closes the invoice), built from the debtor's own AP
+      # invoice that ic_mapa_ap_deudor() found: it carries that invoice's
+      # identity, posting date included, which the confirmation copies, and
+      # refuses on the server what is already confirmed.
+      filas_ap <- dplyr::bind_rows(lapply(seq_along(ap_de), function(i) {
         x <- plan[!sin_ap][[i]]; a <- ap_de[[i]]
-        tibble::tibble(
-          id        = paste0("IC_", x$from_ini, "_", a$Documento, "_", as.integer(Sys.time())),
-          ledger    = "AP",
-          Empresa   = x$from_full,   # the PAYER (debtor, "from" node)
-          Moneda    = x$Moneda,
-          Documento = a$Documento,   # the debtor's own AP invoice
-          Parte     = x$to_full,     # the RECIPIENT (creditor, "to" node)
-          Codigo    = a$Codigo,
-          tipo_item = "factura",
-          Importe   = a$Importe %||% 0,
-          FechaVenc = tryCatch(as.Date(a$FechaVenc %||% x$FechaVenc), error = function(e) Sys.Date()),
-          staged_by = user_id,
-          staged_at = Sys.time(),
-          status    = "pending",
-          source    = SAP_B1_ERP_TYPE
-        )
+        r <- ap_ic[ap_ic$.ini == x$from_ini & ap_ic$Moneda == x$Moneda &
+                     as.character(ap_ic$Documento) == a$Documento, , drop = FALSE][1, , drop = FALSE]
+        r$Codigo <- a$Codigo
+        r
       }))
+      new_rows <- agenda_filas_factura(filas_ap, user_id, ledger = "AP",
+                                       confirmaciones = tryCatch(isolate(shared$bancos_confirmados()),
+                                                                 error = function(e) NULL))
+      rech <- attr(new_rows, "rechazadas")
+      if (length(rech))
+        showNotification(tr("tablas.interco.ya_confirmadas", n = length(rech), docs = paste(rech, collapse = ", ")),
+                         type = "warning", duration = 8)
+      # All confirmed already: they leave the plan, the unmatched ones stay.
+      quedan <- plan[sin_ap]
+      if (!nrow(new_rows)) { payment_plan(quedan); return() }
 
       combined <- upsert_pagar_hoy(ph, new_rows)
       # A failed save used to be swallowed and announced as "enviadas": the

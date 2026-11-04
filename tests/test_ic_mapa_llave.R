@@ -87,8 +87,12 @@ src <- paste(readLines("R/treasury_map_module.R", warn = FALSE, encoding = "UTF-
 envio <- substr(src, regexpr("observeEvent(input$send_to_agenda", src, fixed = TRUE), nchar(src))
 envio <- substr(envio, 1, regexpr("}, ignoreInit = TRUE)", envio, fixed = TRUE))
 ok("the send resolves each item with ic_mapa_ap_deudor()", grepl("lapply(plan, ic_mapa_ap_deudor", envio, fixed = TRUE))
+# Since T13 the row is agenda_filas_factura() of the debtor's own AP invoice
+# (the one ic_mapa_ap_deudor() found), with its Codigo.
 ok("the Agenda row carries the debtor's Documento and Codigo",
-   grepl("Documento = a$Documento", envio, fixed = TRUE) && grepl("Codigo    = a$Codigo", envio, fixed = TRUE) &&
+   grepl("as.character(ap_ic$Documento) == a$Documento", envio, fixed = TRUE) &&
+     grepl("r$Codigo <- a$Codigo", envio, fixed = TRUE) &&
+     grepl("agenda_filas_factura(filas_ap", envio, fixed = TRUE) &&
      !grepl("Documento = x$Documento", envio, fixed = TRUE))
 ok("items without their AP stay in the plan, with a warning",
    grepl("payment_plan(plan[sin_ap])", envio, fixed = TRUE) && grepl('tr("comun.ic_sin_ap_deudor")', envio, fixed = TRUE))

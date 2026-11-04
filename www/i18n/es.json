@@ -216,6 +216,8 @@
   "tablas.interco.detalle_vacio": "Este par ya no tiene facturas abiertas.",
   "tablas.interco.contador_pares.uno": "{n} saldo",
   "tablas.interco.contador_pares.otros": "{n} saldos",
+  "tablas.interco.ya_confirmadas": "No se mandaron {n} factura(s) ya confirmada(s): {docs}.",
+  "tablas.interco.pagada": "Pagada",
   "tablas.pronosticos.metodos.id": "ID",
   "tablas.pronosticos.metodos.nombre": "Nombre",
   "tablas.pronosticos.metodos.tipo": "Tipo",

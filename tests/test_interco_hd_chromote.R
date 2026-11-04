@@ -133,13 +133,17 @@ ok("P2: how overdue, as a badge by the old colour cuts (40 → +30, 30 and 20 �
 ok("D: Saldo is money ($3,000.50 for P-3)", grepl("$3,000.50", texto_fila(D, id_doc("P-3")), fixed = TRUE))
 
 # Seen in passing 4: the row's ＋ sends THAT invoice even after another
-# session confirmed one above it and every position shifted.
+# session confirmed one above it. Confirmed ERP invoices stay, locked at $0
+# (Luis, 2026-11-04): P-1 keeps its place as "Pagada", with no ＋.
 clic("document.getElementById('otra_sesion_confirma')"); Sys.sleep(1.5)
-ok("VP4: another session confirms P-1 -- it leaves the list, the rest move up",
-   identical(doc_de(vis(D)), paste0("P-", 2:5)))
+ok("VP4: another session confirms P-1 -- it stays, locked at $0 as Pagada, with no ＋",
+   identical(doc_de(vis(D)), paste0("P-", 1:5)) && grepl("$0.00", texto_fila(D, id_doc("P-1")), fixed = TRUE) &&
+   grepl("Pagada", texto_fila(D, id_doc("P-1"))) && !isTRUE(ev(sprintf("!!%s", boton(D, id_doc("P-1"), "agregar")))))
 clic(boton(D, id_doc("P-3"), "agregar")); Sys.sleep(1.2)
-ok("VP4: the ＋ of P-3 sends P-3 to the Agenda, not the invoice now in its old position (P-4)",
+ok("VP4: the ＋ of P-3 sends P-3 to the Agenda, not another invoice",
    identical(agenda(), "P-3") && grepl("1 factura añadida a Agenda de Hoy", aviso()))
+ok("Helper: the Agenda row carries P-3's posting date, the key that closes it when confirmed",
+   any(grepl(sprintf("^fechas pagar_hoy[^ ]* .*P-3=%s", format(Sys.Date() - 40)), registro())))
 p <- centro(fila(D, id_doc("P-4"), ".children[0]")); raton("mouseMoved", p); raton("mousePressed", p, 1L); raton("mouseReleased", p); Sys.sleep(0.3)
 q <- centro(fila(D, id_doc("P-5"), ".children[0]")); raton("mouseMoved", q)
 b$Input$dispatchMouseEvent(type = "mousePressed", x = q[[1]], y = q[[2]], button = "left", buttons = 1L, clickCount = 1L, modifiers = 8L)
@@ -205,16 +209,18 @@ ok("M: a click marks A-1, by its id", identical(unlist(estado(M)$seleccion), id_
 clic("document.getElementById('ic-icmap-add_to_plan')"); Sys.sleep(1)
 ok("M: Agregar al plan takes the marked invoice (A-1), and Enviar shows", grepl("A-1", plan_texto()) && envio_visible())
 clic("document.getElementById('ic-icmap-send_to_agenda')"); Sys.sleep(1.5)
-ok("M: Enviar pays the debtor's AP invoice found by folio (P-1), as 0ea8e37 does",
-   any(grepl("^escribe pagar_hoy[^ ]* 1 P-1$", registro())) && !any(grepl("^permiso ", registro())))
+ok("M: Enviar pays the debtor's AP invoice found by folio (P-1), as 0ea8e37 does, with its posting date",
+   any(grepl("^escribe pagar_hoy[^ ]* 1 P-1$", registro())) && !any(grepl("^permiso ", registro())) &&
+   any(grepl(sprintf("^fechas pagar_hoy[^ ]* P-1=%s$", format(Sys.Date() - 40)), registro())))
 
-# Two sessions: the user marks A-2; another session collects A-1, so the
-# edge loses its first row and A-2 moves up. The mark follows A-2 (by id),
-# and Agregar al plan takes A-2 -- with DT positions it was row 2, now empty.
+# Two sessions: the user marks A-2; another session collects A-1, which the
+# edge keeps locked at $0 (an ERP invoice is never removed from a view). The
+# mark stays on A-2 (by id) and Agregar al plan takes A-2.
 marcar("A-2")
 clic("document.getElementById('otra_sesion_cobra')"); Sys.sleep(1.5)
-ok("M (two sessions): another session collects A-1 -- it leaves the edge, A-2 moves up and stays marked",
-   identical(doc_de(vis(M)), "A-2") && identical(unlist(estado(M)$seleccion), id_m("A-2")))
+ok("M (two sessions): another session collects A-1 -- it stays at $0 as Pagada, and A-2 stays marked",
+   identical(doc_de(vis(M)), c("A-1", "A-2")) && grepl("$0.00", texto_fila(M, id_m("A-1")), fixed = TRUE) &&
+   grepl("Pagada", texto_fila(M, id_m("A-1"))) && identical(unlist(estado(M)$seleccion), id_m("A-2")))
 clic("document.getElementById('ic-icmap-add_to_plan')"); Sys.sleep(1)
 ok("M (two sessions): Agregar al plan takes A-2, the invoice the user marked",
    grepl("A-2", plan_texto()) && !grepl("A-1", plan_texto()))

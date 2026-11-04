@@ -123,9 +123,9 @@ ok("confirming AP and AR in the Agenda writes fecha_factura (2 sites)",
 # entry (app.R), Pasivos' provisions, the partial abono (out of scope).
 EXCEPCIONES <- c("R/persistence.R", "R/pagar_hoy_module.R", "app.R", "R/pasivos_module.R",
                  "R/staging_browse_module.R")
-# Owned by other fronts until they adopt it: ejecutor 2 (Vencidos, lupa, day),
-# ejecutor 3 (Intercompany, Mapa IC).
-PENDIENTES <- c("R/search_module.R", "R/ledger_module.R", "R/interco_module.R", "R/treasury_map_module.R")
+# Owned by other fronts until they adopt it: ejecutor 2 (Vencidos, lupa, day).
+# Intercompany and the Mapa IC adopted it (T13).
+PENDIENTES <- c("R/search_module.R", "R/ledger_module.R")
 archivos <- setdiff(c(list.files("R", pattern = "\\.R$", full.names = TRUE, recursive = TRUE), "app.R"), EXCEPCIONES)
 sin_helper <- Filter(function(f) {
   x <- readLines(f, warn = FALSE, encoding = "UTF-8"); x <- x[!grepl("^\\s*#", x)]
