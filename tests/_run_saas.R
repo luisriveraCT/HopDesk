@@ -173,9 +173,11 @@ tryCatch({
     mock_s3saveRDS(df, "hd-admin/username_index.rds", "mock-bucket")
     invisible(TRUE)
   }
+  # No lock file = nobody locked: an empty list, as the real one returns
+  # (CM14: NULL now means "could not be verified" and denies the login).
   read_emergency_lock <- function() {
     tryCatch(mock_s3readRDS("hd-admin/emergency_lock.rds", "mock-bucket"),
-             error = function(e) NULL)
+             error = function(e) .schema_emergency_lock())
   }
   read_pending_invites <- function() {
     tryCatch(mock_s3readRDS("hd-admin/pending_invites.rds", "mock-bucket"),
