@@ -8,9 +8,8 @@ library(testthat)
 src <- readLines("R/bancos_module.R", encoding = "UTF-8")
 CHECK <- 'if (!puede_o_avisa(shared, "can_manage_bancos")) return()'
 
-HANDLERS <- c("observeEvent(input$do_eliminar_confirm, {", ".do_vin_keep_a <- function() {",
-              "observeEvent(input$vin_keep_b, {", "observeEvent(input$do_add_manual, {",
-              "observeEvent(input$sug_keep_a, {", "observeEvent(input$sug_keep_b, {",
+# (Vincular's and Conciliar's handlers, inert in if (FALSE), were removed in T12b.)
+HANDLERS <- c("observeEvent(input$do_eliminar_confirm, {", "observeEvent(input$do_add_manual, {",
               "observeEvent(input$do_reasignar_confirm, {", "observeEvent(input$do_eliminar_sesion_confirm, {",
               "observeEvent(input$do_import, {", ".bnc_deshacer_eliminacion <- function(mov_id) {",
               ".bnc_deshacer_abono <- function(ab_id) {", "observeEvent(input$do_delete_conf_confirm, {",

@@ -46,38 +46,18 @@ txt <- readLines("R/bancos_module.R", warn = FALSE)
 full <- paste(txt, collapse = "\n")
 
 # ── Stage 3: Vincular retirement ────────────────────────────────────────────
+# T12b removed the retired Vincular and Conciliar code, kept inert in
+# if (FALSE) blocks until then (it is in git history).
 {
-  ok("the retired Vincular block is tagged VINCULAR_RETIRED (findable, documented, not silently disabled)",
-     any(grepl("VINCULAR_RETIRED", txt)))
   ok("the toolbar no longer renders an ACTIVE tags$button for btn_vincular (only inside comments)",
      {
        active_lines <- txt[!grepl("^\\s*#", txt)]
        !any(grepl('id = ns\\("btn_vincular"\\)', active_lines))
      })
-  n_if_false_vincular <- sum(grepl("if \\(FALSE\\) \\{", txt) &
-                             (seq_along(txt) %in% grep("VINCULAR_RETIRED", txt) |
-                              vapply(seq_along(txt), function(i)
-                                any(grepl("VINCULAR_RETIRED", txt[max(1,i-4):min(i+1,length(txt))])), logical(1))))
-  ok("exactly 2 if(FALSE) blocks were added for Vincular (reactive-state decls + main modal block)",
-     n_if_false_vincular == 2L)
-  ok("the main Vincular modal header ('Vincular modal') is immediately followed by if(FALSE) (retirement wraps the whole block right after its own header comment)",
-     {
-       start <- grep("VINCULAR_RETIRED: Vincular modal", txt)[1]
-       nearby <- txt[start:min(start + 8, length(txt))]
-       any(grepl("if \\(FALSE\\)", nearby))
-     })
-  ok("score_vincular_match() is still defined (code kept, not deleted)",
-     any(grepl("^score_vincular_match <- function", txt)))
-  ok(".do_vinculation() is still defined (code kept, not deleted)",
-     any(grepl("\\.do_vinculation <- function", txt)))
-  ok(".do_vin_keep_a() is still defined (code kept, not deleted)",
-     any(grepl("\\.do_vin_keep_a <- function", txt)))
-  ok("vincular_item_rv/vin_confirm_rv reactiveVal declarations are inside an if(FALSE) block",
-     {
-       start <- grep('vincular_item_rv\\s*<-\\s*reactiveVal', txt)[1]
-       preceding <- txt[max(1, start - 2):start]
-       any(grepl("if \\(FALSE\\)", preceding))
-     })
+  ok("no if (FALSE) block is left in R/bancos_module.R (T12b: the retired code is gone)",
+     !any(grepl("if \\(FALSE\\) \\{", txt)))
+  ok("none of the retired Vincular / Conciliar handlers or state is left",
+     !any(grepl("vin_keep_|sug_keep_|\\.do_vinculation|\\.do_vin_keep_a|vincular_item_rv|sug_state_rv|\\.compute_sug_pairs", txt)))
   # T12a: the Libro's selection JS went to the table engine, and the retired
   # Vincular / Conciliar JS (kept in /* */ until then) went with it.
   ok("the Libro's JS keeps no Vincular mode at all (T12a: the retired JS is gone, not just commented)",
@@ -86,24 +66,10 @@ full <- paste(txt, collapse = "\n")
        j <- grep("^# ── Match scoring", txt)[1]
        !is.na(i) && !is.na(j) && !any(grepl("vinMode|deactivateVin|vincular_row_id", txt[i:j]))
      })
-  ok("R/bancos_module.R still parses as valid R after the retirement (structural sanity -- a misplaced brace would corrupt everything after it, not just Vincular)",
+  ok("R/bancos_module.R still parses as valid R after the removal (a misplaced brace would corrupt everything after it)",
      !inherits(tryCatch(parse("R/bancos_module.R"), error = function(e) e), "error"))
-  ok("the Manual entry modal section (right after Vincular) is genuinely OUTSIDE the if(FALSE) block, not accidentally swallowed",
-     {
-       vinc_start <- grep("VINCULAR_RETIRED: Vincular modal", txt)[1]
-       vinc_close <- grep("END VINCULAR_RETIRED", txt)
-       vinc_close <- vinc_close[vinc_close > vinc_start][1]
-       manual_start <- grep("Manual entry modal", txt)[1]
-       !is.na(manual_start) && !is.na(vinc_close) && manual_start > vinc_close && vinc_close > vinc_start
-     })
-  ok("observeEvent(input$add_mov_manual, ...) is genuinely active code, not inside the retired block",
-     {
-       vinc_close <- grep("END VINCULAR_RETIRED", txt)[1]
-       add_start  <- grep("observeEvent\\(input\\$add_mov_manual,", txt)[1]
-       !is.na(add_start) && add_start > vinc_close
-     })
-  ok("the existing static Vincular test (test_stage8_vincular_warning.R) still finds its target text (regression guard on a pre-existing test)",
-     any(grepl("observeEvent\\(input\\$vin_keep_a,", txt)))
+  ok("the Manual entry modal and observeEvent(input$add_mov_manual, ...) are still there",
+     length(grep("Manual entry modal", txt)) >= 1L && length(grep("observeEvent\\(input\\$add_mov_manual,", txt)) == 1L)
 }
 
 # ── Stage 4a: Add now logs ───────────────────────────────────────────────────
