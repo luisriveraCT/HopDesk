@@ -55,10 +55,15 @@ src <- paste(readLines("R/settings/settings_companies.R", warn = FALSE), collaps
           "el borrado sigue encerrado tras la guarda de scope == 'all'")
 
 # ── 4. El camino automatico tras refresco SAP jamas borra ───────────────────
-auto <- sub('.*Auto-aplicación de políticas tras refresco SAP.*', '', src)
-blk  <- regmatches(src, regexpr("Keep all existing policy dates.*?truly_new", src))
+# Since CM12a both triggers (SAP refresh, partner policies load) run one
+# function, which adds on S3's current table through modificar_tabla.
+blk  <- regmatches(src, regexpr("\\.auto_aplicar_politicas <- function.*?observeEvent\\(shared\\$sap_data\\(\\)", src))
 .chk_true(length(blk) == 1 && !grepl("save_moves", blk, fixed = TRUE),
           "el bloque automatico post-SAP es aditivo: no llama save_moves()")
+.chk_true(length(blk) == 1 && grepl("modificar_tabla(S3_KEYS$policy_moves", blk, fixed = TRUE) &&
+            grepl(".policy_moves_sumar(fresco, new_moves)", blk, fixed = TRUE) &&
+            !grepl("save_policy_moves(", blk, fixed = TRUE),
+          "el bloque automatico suma sobre lo fresco de S3, nunca guarda la copia de la sesion")
 
 # ── 5. Precedencia: el movimiento manual gana sobre la politica ─────────────
 dp <- paste(readLines("R/data_pipeline.R", warn = FALSE), collapse = "\n")
