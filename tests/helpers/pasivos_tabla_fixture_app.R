@@ -16,8 +16,10 @@ cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALS
 cargar("R/global.R", c("strip_accents", "fmt_money", "CURRENCIES"))
 cargar("R/persistence.R", "confirmaciones_vigentes")
 cargar("R/pasivos_observers.R", "isTRUE_safe")
-for (f in c("R/pasivos_schemas.R", "R/pasivos_table_pivot.R", "R/pasivos_table_styles.R",
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+            "R/pasivos_schemas.R", "R/pasivos_table_pivot.R", "R/pasivos_table_styles.R",
             "R/pasivos_table_module.R", "R/pasivos_list_module.R")) source(f)
+assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 source("tests/helpers/pasivos_datos_prueba.R")
 
 has_capability <- function(user, cap) TRUE
@@ -49,4 +51,10 @@ server <- function(input, output, session) {
   output$eco <- renderText(as.character(jsonlite::toJSON(ultimo(), auto_unbox = TRUE)))
 }
 app <- shinyApp(ui, server)
+# The engine's assets (www/hdtable.*, the dictionary) from the repo.
+local({
+  repo_www <- shiny:::staticHandler(file.path(getwd(), "www"))
+  propio   <- app$httpHandler
+  app$httpHandler <<- function(req) repo_www(req) %||% propio(req)
+})
 app
