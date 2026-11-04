@@ -235,10 +235,12 @@ empty_bpap <- .schema_bancos_papelera() |> dplyr::slice(0)
 # =============================================================================
 {
   mod_txt <- readLines("R/bancos_module.R", warn = FALSE)
-  undo_start <- grep("observeEvent\\(input\\$undo_mov_delete,", mod_txt)
+  # T12b: the handler is .bnc_deshacer_eliminacion(mov_id), called by the
+  # Papelera's engine table (H3 checks that wiring); same body.
+  undo_start <- grep("\\.bnc_deshacer_eliminacion <- function\\(mov_id\\)", mod_txt)
   .chk_true(length(undo_start) > 0, "G1: found undo_mov_delete to scan")
   if (length(undo_start)) {
-    end <- grep("^    \\}, ignoreInit = TRUE\\)$", mod_txt)
+    end <- grep("^    \\}$", mod_txt)
     end <- end[end > undo_start[1]][1]
     block <- paste(mod_txt[undo_start[1]:end], collapse = "\n")
 
@@ -261,15 +263,18 @@ empty_bpap <- .schema_bancos_papelera() |> dplyr::slice(0)
 # =============================================================================
 {
   mod_txt <- readLines("R/bancos_module.R", warn = FALSE)
-  rows_mov_start <- grep("rows_mov\\s*<-\\s*if\\s*\\(nrow\\(movs_del\\)\\)", mod_txt)
+  # T12b: the Papelera is an engine table; its rows come from papelera_datos()
+  # and its ↶ (action "deshacer" on a "mov:" row) reaches the same undo.
+  rows_mov_start <- grep("papelera_datos <- reactive\\(\\{", mod_txt)
   .chk_true(length(rows_mov_start) > 0, "H1: found the rows_mov papelera-display block to scan")
   if (length(rows_mov_start)) {
-    end <- grep("^      \\} else NULL$", mod_txt)
+    end <- grep("^    \\}\\)$", mod_txt)
     end <- end[end > rows_mov_start[1]][1]
     block <- paste(mod_txt[rows_mov_start[1]:end], collapse = "\n")
-    .chk_true(grepl('fuente == "manual"', block),
+    .chk_true(grepl('.bnc_pap_filas("mov", movs_del$id', block, fixed = TRUE) &&
+                grepl('ifelse(movs_del$fuente %in% "manual" & escribe, "deshacer", "")', block, fixed = TRUE),
               "H2 (regression guard): Deshacer button still restricted to fuente=='manual' rows")
-    .chk_true(grepl("undo_mov_delete", block),
+    .chk_true(any(grepl('identical(a$accion, "deshacer") && startsWith(id, "mov:")) .bnc_deshacer_eliminacion(', mod_txt, fixed = TRUE)),
               "H3 (regression guard): Deshacer button still wired to undo_mov_delete")
   }
 }
