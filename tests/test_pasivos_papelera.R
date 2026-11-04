@@ -16,7 +16,8 @@ for (f in c("R/pasivos_schemas.R", "R/bancos_persistence.R", "R/pasivos_persiste
             "R/pasivos_capabilities.R", "R/pasivos_audit.R", "R/forecasting_service.R",
             "R/policy_engine.R", "R/pasivos_engine.R", "R/pasivos_wizard_validate.R",
             "R/pasivos_wizard_module.R", "R/pasivos_calendar_glue.R",
-            "R/i18n.R", "R/pasivos_list_module.R"))
+            "R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+            "R/pasivos_list_module.R"))
   suppressMessages(source(f))
 PERMITIDO <- TRUE
 has_capability    <- function(user, cap) PERMITIDO
@@ -83,7 +84,7 @@ ok(pasivos_pagos_en_agenda(provs0[0, ], "L1") == 0L, "D0: none with no provision
 sembrar(); sh <- nuevo_shared()
 testServer(pasivos_list_module_server, args = list(shared = sh), {
   session$flushReact()   # observers start here, so the click below is not their ignored first run
-  session$setInputs(pasivos_list_archive = "L1")
+  session$setInputs(`lista-accion` = list(accion = "eliminar", ids = "L1", nonce = runif(1)))
   session$setInputs(plist_confirm_archive = 1)
 })
 ok(identical(liab_s3()$estado, "deleted"), "D1: L1 is deleted on S3")
@@ -110,7 +111,7 @@ sembrar(); sh <- nuevo_shared()
 antes <- .mem_escrituras
 testServer(pasivos_list_module_server, args = list(shared = sh), {
   session$flushReact()   # observers start here, so the click below is not their ignored first run
-  session$setInputs(pasivos_list_archive = "L1")
+  session$setInputs(`lista-accion` = list(accion = "eliminar", ids = "L1", nonce = runif(1)))
   PERMITIDO <<- FALSE
   session$setInputs(plist_confirm_archive = 1)
 })
@@ -122,9 +123,19 @@ ok(.mem_escrituras == antes && identical(liab_s3()$estado, "active"),
 sembrar(); sh <- nuevo_shared()
 testServer(pasivos_list_module_server, args = list(shared = sh), {
   session$flushReact()
-  session$setInputs(pasivos_list_archive = "L1")
+  session$setInputs(`lista-accion` = list(accion = "eliminar", ids = "L1", nonce = runif(1)))
   session$setInputs(plist_confirm_archive = 1)
-  session$setInputs(pasivos_list_restore = "L1")
+  ok(!"L1" %in% lista_datos()$id, "R1: once deleted, L1 leaves the Lista")
+})
+# ↶ in the Papelera (the engine's undo, already confirmed in its bar)
+testServer(pasivos_papelera_server, args = list(shared = sh), {
+  session$flushReact()
+  ok(identical(papelera_datos()$id, "L1") && identical(papelera_datos()$.acciones, "deshacer"),
+     "R1: and is in the Papelera, with its ↶")
+  ok(papelera_datos()$n_prov == sum(provs0$liability_id %in% "L1" & provs0$estado %in% "provisional"),
+     "R1: which says how many provisions come back with it")
+  session$setInputs(`papelera-accion` = list(accion = "deshacer", ids = "L1", nonce = runif(1)))
+  ok(!nrow(papelera_datos()), "R1: after ↶ the Papelera is empty")
 })
 ok(identical(liab_s3()$estado, "active"), "R1: L1 is active again on S3")
 ok(identical(firma(provs_s3()), firma(provs0)),
@@ -140,9 +151,11 @@ ok(length(r) == 1L && identical(r[[1]]$target_id, "L1"), "R1: one liability.rest
 borrado_s3 <- liab0; borrado_s3$estado <- "deleted"
 sembrar(borrado_s3); sh <- nuevo_shared(borrado_s3); PERMITIDO <- FALSE
 antes <- .mem_escrituras
-testServer(pasivos_list_module_server, args = list(shared = sh), {
+testServer(pasivos_papelera_server, args = list(shared = sh), {
   session$flushReact()
-  session$setInputs(pasivos_list_restore = "L1")
+  ok(identical(papelera_datos()$.acciones, ""), "R2: without the permission the Papelera shows no ↶")
+  # ...and a forged click is refused on the server
+  session$setInputs(`papelera-accion` = list(accion = "deshacer", ids = "L1", nonce = runif(1)))
 })
 PERMITIDO <- TRUE
 ok(.mem_escrituras == antes && identical(liab_s3()$estado, "deleted"),
@@ -154,7 +167,7 @@ futuras_l1 <- provs0$id[provs0$liability_id == "L1" & provs0$estado == "provisio
 sembrar(); sh <- nuevo_shared(); antes <- .mem_escrituras
 testServer(pasivos_list_module_server, args = list(shared = sh), {
   session$flushReact()
-  session$setInputs(pasivos_list_pause = "L1")
+  session$setInputs(`lista-accion` = list(accion = if (identical(isolate(sh$pasivos_liabilities_db())$estado, "active")) "inactivar" else "reactivar", ids = "L1", nonce = runif(1)))
   ok(.mem_escrituras == antes && identical(liab_s3()$estado, "active"),
      "P1: clicking Pausar only asks: nothing is written yet")
   session$setInputs(plist_confirm_pause = 1)
@@ -168,14 +181,14 @@ pausado <- liab0; pausado$estado <- "paused"
 sembrar(pausado); sh <- nuevo_shared(pausado)
 testServer(pasivos_list_module_server, args = list(shared = sh), {
   session$flushReact()
-  session$setInputs(pasivos_list_pause = "L1")
+  session$setInputs(`lista-accion` = list(accion = if (identical(isolate(sh$pasivos_liabilities_db())$estado, "active")) "inactivar" else "reactivar", ids = "L1", nonce = runif(1)))
 })
 ok(identical(liab_s3()$estado, "active"), "P3: Reanudar acts at once, without asking")
 
 sembrar(); sh <- nuevo_shared(); antes <- .mem_escrituras
 testServer(pasivos_list_module_server, args = list(shared = sh), {
   session$flushReact()
-  session$setInputs(pasivos_list_pause = "L1")
+  session$setInputs(`lista-accion` = list(accion = if (identical(isolate(sh$pasivos_liabilities_db())$estado, "active")) "inactivar" else "reactivar", ids = "L1", nonce = runif(1)))
   PERMITIDO <<- FALSE
   session$setInputs(plist_confirm_pause = 1)
 })

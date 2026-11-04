@@ -64,8 +64,9 @@ llamadas <- unlist(lapply(archivos, function(f) {
 }))
 sin_base <- llamadas[!grepl("base = ", llamadas, fixed = TRUE) & !grepl("permitir_reduccion = TRUE", llamadas, fixed = TRUE)]
 for (s in sin_base) message("  without base: ", trimws(s))
+# 12 since T18: deleting a liability ("Borrar") no longer saves provisions.
 ok("every provision save passes base (only the purge passes the flag instead)",
-   length(llamadas) == 13L && !length(sin_base))
+   length(llamadas) == 12L && !length(sin_base))
 
 s3_memoria_restaurar()
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")

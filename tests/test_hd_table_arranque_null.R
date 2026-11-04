@@ -29,7 +29,8 @@ FIXTURES <- c(
   "Agenda de Hoy: Pagos y Cobros"                      = "agenda",
   "Detalle del día: Resumen y Detalle"                 = "dia",
   "Vencidos y la lupa"                                 = "vencidos",
-  "Bancos: Libro, Historial, Papelera, Cuentas"        = "bancos"
+  "Bancos: Libro, Historial, Papelera, Cuentas"        = "bancos",
+  "Pasivos: Lista y Papelera"                          = "pasivos_lista"
 )
 
 arrancar <- function(fixture) callr::r(function(repo, fixture) {

@@ -1,75 +1,26 @@
 # =============================================================================
 # R/pasivos_list_module.R
-# Stage 4: "Lista de pasivos" sub-tab — flat one-row-per-liability view.
+# "Lista de pasivos" (lista_pasivos, class D) and "Papelera" (papelera_pasivos,
+# class D): one row per liability, on hd_table (T18).
 #
 # Shiny module entry points:
-#   pasivos_list_module_ui(id)
-#   pasivos_list_module_server(id, shared)
+#   pasivos_list_module_ui(id)     / pasivos_list_module_server(id, shared)
+#   pasivos_papelera_ui(id)        / pasivos_papelera_server(id, shared)
+#
+# The Lista shows active and paused liabilities; the Papelera, the deleted
+# ones ("Borrar" keeps all their provisions, hidden with them, and ↶ brings
+# them back exactly). Every action acts on the row's id.
 # =============================================================================
 
 # ── UI ─────────────────────────────────────────────────────────────────────────
 pasivos_list_module_ui <- function(id) {
   ns <- shiny::NS(id)
-  shiny::div(
-    class = "pasivos-list-module p-2",
+  shiny::div(class = "pasivos-list-module p-2", hd_table_ui(ns("lista")))
+}
 
-    # Filters bar — single compact row
-    shiny::div(
-      class = "d-flex flex-nowrap gap-3 align-items-end py-2 border-bottom mb-2",
-      style = "overflow-x: auto;",
-      shiny::div(class = "flex-shrink-0",
-        shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Empresa"),
-        shiny::selectizeInput(ns("empresa_sel"), label = NULL,
-          choices = character(0), multiple = TRUE,
-          options = list(placeholder = "Todas"), width = "160px")
-      ),
-      shiny::div(class = "flex-shrink-0",
-        shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Categoría"),
-        shinyWidgets::checkboxGroupButtons(
-          inputId      = ns("categoria_sel"), label = NULL,
-          choiceValues = c("regular", "financiero", "tarjeta"),
-          choiceNames  = list(
-            shiny::tags$span("Regular",    title = "Pagos recurrentes: servicios, suscripciones y arrendamientos operativos"),
-            shiny::tags$span("Financiero", title = "Créditos, arrendamientos financieros y líneas de crédito"),
-            shiny::tags$span("Tarjeta",    title = "Liquidaciones de tarjeta corporativa")
-          ),
-          selected = c("regular", "financiero", "tarjeta"),
-          size = "sm", status = "outline-secondary"
-        )
-      ),
-      shiny::div(class = "flex-shrink-0",
-        shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Sub-categoría"),
-        shiny::selectizeInput(ns("subcategoria_sel"), label = NULL,
-          choices = character(0), multiple = TRUE,
-          options = list(placeholder = "Todas"), width = "130px")
-      ),
-      shiny::div(class = "flex-shrink-0",
-        shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Moneda"),
-        shiny::selectInput(ns("currency_sel"), label = NULL,
-          choices = c("All", CURRENCIES), selected = "All", width = "80px")
-      ),
-      shiny::div(class = "flex-grow-1",
-        shiny::tags$label(class = "form-label d-block mb-1 small fw-semibold", "Buscar"),
-        shiny::textInput(ns("search_text"), label = NULL,
-          placeholder = "Nombre, Parte...", width = "100%")
-      ),
-      shiny::div(class = "flex-shrink-0 align-self-end pb-1",
-        shiny::checkboxInput(ns("show_archived"), "Mostrar archivados", value = FALSE)
-      )
-    ),
-
-    # Table
-    shiny::div(
-      class = "pasivos-table-wrap",
-      DT::dataTableOutput(ns("list_table"))
-    ),
-
-    # Inline CSS for action buttons within DT
-    shiny::tags$style(shiny::HTML("
-      .pasivos-list-btn { border:none; background:transparent; cursor:pointer; padding:2px 5px; }
-      .pasivos-list-btn:hover { opacity:.7; }
-    "))
-  )
+pasivos_papelera_ui <- function(id) {
+  ns <- shiny::NS(id)
+  shiny::div(class = "pasivos-papelera-module p-2", hd_table_ui(ns("papelera")))
 }
 
 # How many of a liability's payments are already in the Agenda: provisions
@@ -83,255 +34,164 @@ pasivos_pagos_en_agenda <- function(provs, lid) {
         provs$estado %in% "converted" & !is.na(ph) & nzchar(ph))
 }
 
-# ── Server ────────────────────────────────────────────────────────────────────
+# ✎: the wizard listens to the global pasivos_edit_liability = id (the
+# contract with the Pasivos table, T17b), and checks the permission there.
+pasivos_pedir_editar <- function(lid)
+  shinyjs::runjs(sprintf("Shiny.setInputValue('pasivos_edit_liability', %s, {priority: 'event'})",
+                         jsonlite::toJSON(lid, auto_unbox = TRUE)))
+
+# ── Rows ──────────────────────────────────────────────────────────────────────
+# One row per liability in `estados`, visible to the user (`allowed`: NULL =
+# every company, character(0) = none), sorted by empresa, categoria, nombre.
+# Next provision: the liability's earliest provisional one from today on.
+# `acciones(estado)` gives each row's .acciones (empty = no button).
+pasivos_lista_filas <- function(liabs, provs, allowed = NULL, estados, acciones) {
+  vacio <- data.frame(id = character(), nombre = character(), categoria = character(),
+                      tipo = character(), subcategoria = character(), empresa = character(),
+                      parte = character(), moneda = character(), moneda_pago = character(),
+                      estado = character(), proxima_fecha = as.Date(character()),
+                      proxima_monto = numeric(), borrado_el = as.POSIXct(character()),
+                      borrado_por = character(), n_prov = integer(), .acciones = character(),
+                      stringsAsFactors = FALSE)
+  if (is.null(liabs) || !is.data.frame(liabs) || !nrow(liabs)) return(vacio)
+  if (!is.null(allowed) && "empresa" %in% names(liabs))
+    liabs <- liabs[liabs$empresa %in% allowed, , drop = FALSE]
+  liabs <- liabs[liabs$estado %in% estados, , drop = FALSE]
+  if (!nrow(liabs)) return(vacio)
+  liabs <- liabs[order(liabs$empresa, liabs$categoria, liabs$nombre), , drop = FALSE]
+
+  txt <- function(x) { x <- as.character(x); x[is.na(x)] <- ""; x }
+  n   <- nrow(liabs)
+  if (is.null(provs) || !is.data.frame(provs)) provs <- .schema_pasivos_provision()
+  de  <- function(lid) !is.na(provs$liability_id) & provs$liability_id == lid
+  futura <- provs$estado %in% "provisional" & !is.na(provs$fecha_efectiva) &
+            provs$fecha_efectiva >= Sys.Date()
+  prox_f <- rep(as.Date(NA), n); prox_m <- rep(NA_real_, n); n_prov <- integer(n)
+  for (i in seq_len(n)) {
+    mio <- de(liabs$id[i])
+    n_prov[i] <- sum(mio & provs$estado %in% "provisional")
+    cand <- which(mio & futura)
+    if (length(cand)) {
+      j <- cand[which.min(provs$fecha_efectiva[cand])]
+      prox_f[i] <- provs$fecha_efectiva[j]
+      prox_m[i] <- tryCatch(pasivos_pago_amount(provs[j, , drop = FALSE]), error = function(e) NA_real_)
+    }
+  }
+  flav <- txt(liabs$flavor)
+  tipo <- ifelse(liabs$categoria %in% "financiero" & nzchar(flav),
+                 vapply(flav, function(f) {
+                   clave <- paste0("tablas.pasivos.flavor.", f)
+                   if (is.null(i18n_dict("es")[[clave]])) f else tr(clave)
+                 }, character(1), USE.NAMES = FALSE), "")
+  mp <- txt(liabs$moneda_pago); ce <- txt(liabs$cotizado_en)
+  moneda <- ifelse(nzchar(ce), vapply(seq_len(n), function(i)
+    tr("tablas.pasivos.moneda_cotizada", moneda = mp[i], cotizado = ce[i]), character(1)), mp)
+  borrado_el <- if (inherits(liabs$updated_at, "POSIXct")) liabs$updated_at else as.POSIXct(rep(NA, n))
+
+  data.frame(
+    id            = txt(liabs$id),
+    nombre        = txt(liabs$nombre),
+    categoria     = txt(liabs$categoria),
+    tipo          = tipo,
+    subcategoria  = txt(liabs$subcategoria),
+    empresa       = txt(liabs$empresa),
+    parte         = txt(liabs$parte),
+    moneda        = moneda,
+    moneda_pago   = mp,
+    estado        = txt(liabs$estado),
+    proxima_fecha = prox_f,
+    proxima_monto = prox_m,
+    borrado_el    = borrado_el,
+    borrado_por   = txt(liabs$updated_by),
+    n_prov        = n_prov,
+    .acciones     = vapply(txt(liabs$estado), acciones, character(1), USE.NAMES = FALSE),
+    stringsAsFactors = FALSE
+  )
+}
+
+.pasivos_col_categoria <- function()
+  col_insignia("categoria", "tablas.pasivos.categoria", mapa = list(
+    regular    = list(texto = "tablas.pasivos.cat.regular",    tono = "neutro"),
+    financiero = list(texto = "tablas.pasivos.cat.financiero", tono = "info"),
+    tarjeta    = list(texto = "tablas.pasivos.cat.tarjeta",    tono = "neutro")))
+
+# ── Lista: server ─────────────────────────────────────────────────────────────
 pasivos_list_module_server <- function(id, shared) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
+    usuario <- function() tryCatch(shared$current_user(), error = function(e) "system")
 
-    archive_target_rv <- shiny::reactiveVal("")
-
-    # ── Populate choices ────────────────────────────────────────────────────
-    shiny::observe({
-      liabs   <- tryCatch(shared$pasivos_liabilities_db(), error = function(e) NULL)
-      if (is.null(liabs) || !nrow(liabs)) return()
+    lista_datos <- shiny::reactive({
+      liabs <- tryCatch(shared$pasivos_liabilities_db(), error = function(e) NULL)
+      provs <- tryCatch(shared$pasivos_provisions_db(),  error = function(e) NULL)
       allowed <- tryCatch(shared$visible_initials(), error = function(e) NULL)
-      if (!is.null(allowed) && "empresa" %in% names(liabs))
-        liabs <- liabs[liabs$empresa %in% allowed, , drop = FALSE]
-      emps <- sort(unique(liabs$empresa[!is.na(liabs$empresa)]))
-      shiny::updateSelectizeInput(session, "empresa_sel", choices = emps)
-      subs <- sort(unique(liabs$subcategoria[
-        !is.na(liabs$subcategoria) & nzchar(liabs$subcategoria %||% "")]))
-      shiny::updateSelectizeInput(session, "subcategoria_sel", choices = subs)
+      user <- usuario()
+      edita  <- isTRUE(has_capability(user, "pasivos.edit_liability"))
+      borra  <- isTRUE(has_capability(user, "pasivos.delete_liability"))
+      pasivos_lista_filas(liabs, provs, allowed, estados = c("active", "paused"),
+        acciones = function(estado) paste(c(
+          if (edita) "editar",
+          if (edita) (if (identical(estado, "active")) "inactivar" else "reactivar"),
+          if (borra) "eliminar"), collapse = ","))
     })
 
-    # ── Filtered liabilities ────────────────────────────────────────────────
-    filtered_liabs <- shiny::reactive({
-      liabs <- tryCatch(shared$pasivos_liabilities_db(),
-                        error = function(e) .schema_pasivos_liability())
-      if (!nrow(liabs)) return(liabs)
+    t_lista <- hd_table_server(
+      "lista", tabla = "lista_pasivos", datos = lista_datos,
+      piezas = "columnas_opc",
+      columnas = list(
+        col_texto("nombre", "tablas.pasivos.nombre"),
+        .pasivos_col_categoria(),
+        col_texto("tipo", "tablas.pasivos.tipo"),
+        col_texto("subcategoria", "tablas.pasivos.subcategoria", opcional = TRUE, visible = FALSE),
+        col_texto("empresa", "tablas.pasivos.empresa", recorte = FALSE),
+        col_texto("parte", "tablas.pasivos.parte"),
+        col_texto("moneda", "tablas.pasivos.moneda", recorte = FALSE),
+        col_insignia("estado", "tablas.pasivos.estado", mapa = list(
+          active = list(texto = "tablas.pasivos.activo",  tono = "exito"),
+          paused = list(texto = "tablas.pasivos.pausado", tono = "aviso"))),
+        col_fecha("proxima_fecha", "tablas.pasivos.proxima"),
+        col_dinero("proxima_monto", "tablas.pasivos.proximo_importe", moneda = "moneda_pago", sumar = FALSE)
+      ),
+      filtros = list(list(campo = "empresa"), list(campo = "categoria"),
+                     list(campo = "subcategoria", titulo = "tablas.pasivos.subcategoria"),
+                     list(campo = "moneda_pago", titulo = "tablas.pasivos.moneda"),
+                     list(campo = "estado")),
+      acciones_fila = c("editar", "inactivar", "reactivar", "eliminar"),
+      # ✕ opens Borrar's own confirm (it says how many payments are in the
+      # Agenda), so the engine's bar does not ask a second time (T12b).
+      sin_confirmar = "eliminar",
+      vacio = "tablas.pasivos.vacio_lista"
+    )
 
-      # Respect group-based company visibility (NULL = no filter; character(0) = none)
-      allowed <- tryCatch(shared$visible_initials(), error = function(e) NULL)
-      if (!is.null(allowed) && "empresa" %in% names(liabs))
-        liabs <- liabs[liabs$empresa %in% allowed, , drop = FALSE]
-
-      # Estado filter
-      if (!isTRUE(input$show_archived)) {
-        liabs <- liabs[liabs$estado %in% c("active", "paused"), , drop = FALSE]
-      }
-
-      # Empresa
-      emps <- input$empresa_sel %||% character(0)
-      if (length(emps)) liabs <- liabs[liabs$empresa %in% emps, , drop = FALSE]
-
-      # Categoria
-      cats <- input$categoria_sel %||% c("regular", "financiero", "tarjeta")
-      liabs <- liabs[liabs$categoria %in% cats, , drop = FALSE]
-
-      # Sub-cat
-      subs <- input$subcategoria_sel %||% character(0)
-      if (length(subs)) liabs <- liabs[liabs$subcategoria %in% subs, , drop = FALSE]
-
-      # Currency
-      cur <- input$currency_sel %||% "All"
-      if (!identical(cur, "All")) liabs <- liabs[liabs$moneda_pago == cur, , drop = FALSE]
-
-      # Search (accent-insensitive: strip diacritics from both sides)
-      q <- strip_accents(tolower(trimws(input$search_text %||% "")))
-      if (nzchar(q)) {
-        mask <- grepl(q, strip_accents(tolower(liabs$nombre %||% "")), fixed = TRUE) |
-                grepl(q, strip_accents(tolower(liabs$parte  %||% "")), fixed = TRUE)
-        liabs <- liabs[mask, , drop = FALSE]
-      }
-
-      # Default sort: (empresa, categoria, nombre)
-      if (nrow(liabs))
-        liabs <- liabs[order(liabs$empresa, liabs$categoria, liabs$nombre), , drop = FALSE]
-
-      liabs
+    shiny::observeEvent(t_lista$accion(), {
+      a   <- t_lista$accion()
+      lid <- as.character(a$ids[1] %||% "")
+      if (!nzchar(lid)) return()
+      switch(a$accion,
+        editar    = .editar(lid),
+        inactivar = ,
+        reactivar = .pedir_pausa(lid),
+        eliminar  = .pedir_borrar(lid),
+        NULL)
     })
 
-    # ── Next provision lookup ───────────────────────────────────────────────
-    next_provision <- shiny::reactive({
-      provs <- tryCatch(shared$pasivos_provisions_db(),
-                        error = function(e) .schema_pasivos_provision())
-      liabs <- filtered_liabs()
-      if (!nrow(liabs) || !nrow(provs)) return(tibble::tibble(id = character(),
-                                                               next_fecha = as.Date(character()),
-                                                               next_monto = numeric()))
-      future_provs <- provs[
-        provs$estado == "provisional" & !is.na(provs$fecha_efectiva) &
-        provs$fecha_efectiva >= Sys.Date(), , drop = FALSE
-      ]
-      if (!nrow(future_provs)) return(tibble::tibble(id = character(),
-                                                      next_fecha = as.Date(character()),
-                                                      next_monto = numeric()))
-
-      by_liab <- lapply(liabs$id, function(lid) {
-        rows <- future_provs[!is.na(future_provs$liability_id) &
-                               future_provs$liability_id == lid, , drop = FALSE]
-        if (!nrow(rows)) return(tibble::tibble(id = lid,
-                                               next_fecha = as.Date(NA),
-                                               next_monto = NA_real_))
-        first_row <- rows[which.min(rows$fecha_efectiva), , drop = FALSE]
-        tibble::tibble(id = lid,
-                       next_fecha = first_row$fecha_efectiva[1],
-                       next_monto = tryCatch(pasivos_pago_amount(first_row),
-                                             error = function(e) NA_real_))
-      })
-      do.call(dplyr::bind_rows, by_liab)
-    })
-
-    # ── Build display table ─────────────────────────────────────────────────
-    display_df <- shiny::reactive({
-      liabs <- filtered_liabs()
-      np    <- next_provision()
-
-      if (!nrow(liabs)) return(tibble::tibble(
-        `✏` = character(), Nombre = character(), Categoría = character(),
-        Empresa = character(), Parte = character(), Moneda = character(),
-        Estado = character(), `Próxima provisión` = character(),
-        Acciones = character()
-      ))
-
-      cat_label <- function(cat, flav) {
-        switch(cat,
-          regular    = "Pago regular",
-          financiero = paste0("Financiero — ", switch(flav %||% "",
-            credito_simple  = "Crédito simple",
-            arrendamiento   = "Arrendamiento",
-            linea_revolvente = "Línea revolvente",
-            otro            = "Otro",
-            flav %||% "")),
-          tarjeta    = "Tarjeta",
-          cat
-        )
-      }
-
-      estado_label <- function(e) switch(e %||% "",
-        active  = "Activo", paused = "Pausado",
-        deleted = "Archivado", closed = "Cerrado", e %||% "—"
-      )
-
-      moneda_str <- function(mp, ce) {
-        if (!is.na(ce) && nzchar(ce %||% ""))
-          sprintf("%s (cotizado %s)", mp, ce)
-        else mp
-      }
-
-      np_lookup <- if (nrow(np)) {
-        setNames(as.list(seq_len(nrow(np))), np$id)
-      } else list()
-
-      rows <- lapply(seq_len(nrow(liabs)), function(i) {
-        r  <- liabs[i, , drop = FALSE]
-        lid <- r$id[1]
-
-        np_str <- tryCatch({
-          np_idx <- which(np$id == lid)
-          if (length(np_idx)) {
-            nd <- np$next_fecha[np_idx[1]]
-            nm <- np$next_monto[np_idx[1]]
-            if (!is.na(nd)) sprintf("%s  %s", format(nd, "%Y-%m-%d"),
-                                    if (!is.na(nm)) fmt_money(nm) else "")
-            else "—"
-          } else "—"
-        }, error = function(e) "—")
-
-        estado <- r$estado[1] %||% "active"
-        is_deleted <- identical(estado, "deleted")
-        # Button HTML (fires global Shiny inputs). No ✎ on an archived row:
-        # editing one used to reactivate it; it is restored with ↻ (T18a).
-        edit_btn <- if (!is_deleted) sprintf(
-          '<button class="pasivos-list-btn text-primary" title="Editar" onclick="Shiny.setInputValue(\'pasivos_edit_liability\',\'%s\',{priority:\'event\'})">&#9998;</button>',
-          htmltools::htmlEscape(lid, attribute = TRUE)
-        ) else ""
-        # found 2026-09-05: pause/resume and archive were both always
-        # rendered regardless of estado -- clicking "Reanudar" (resume) on
-        # an already-archived row would silently flip estado straight to
-        # "active" with no restore UI, no capability check tied to
-        # un-archiving, and logged as a plain liability.edited ("estado
-        # changed to active") rather than liability.restored. A dedicated
-        # restore button now replaces both pause and archive once a
-        # liability is archived.
-        pause_btn <- if (!is_deleted) sprintf(
-          '<button class="pasivos-list-btn text-warning" title="%s" onclick="Shiny.setInputValue(\'%s\',\'%s\',{priority:\'event\'})">%s</button>',
-          if (identical(estado, "active")) "Pausar" else "Reanudar",
-          ns("pasivos_list_pause"),
-          htmltools::htmlEscape(lid, attribute = TRUE),
-          if (identical(estado, "active")) "&#9646;&#9646;" else "&#9654;"
-        ) else ""
-        archive_btn <- if (!is_deleted) sprintf(
-          '<button class="pasivos-list-btn text-danger" title="Archivar" onclick="Shiny.setInputValue(\'%s\',\'%s\',{priority:\'event\'})">&#128465;</button>',
-          ns("pasivos_list_archive"),
-          htmltools::htmlEscape(lid, attribute = TRUE)
-        ) else ""
-        restore_btn <- if (is_deleted) sprintf(
-          '<button class="pasivos-list-btn text-success" title="Restaurar" onclick="Shiny.setInputValue(\'%s\',\'%s\',{priority:\'event\'})">&#8635;</button>',
-          ns("pasivos_list_restore"),
-          htmltools::htmlEscape(lid, attribute = TRUE)
-        ) else ""
-
-        # The table renders with escape = FALSE for the button columns, so
-        # every text column is escaped here: they all can carry user text.
-        esc <- function(x) htmltools::htmlEscape(x %||% "")
-        list(
-          pencil      = edit_btn,
-          nombre      = esc(r$nombre[1]),
-          categoria   = esc(cat_label(r$categoria[1] %||% "", r$flavor[1])),
-          empresa     = esc(r$empresa[1]),
-          parte       = esc(r$parte[1]),
-          moneda      = esc(moneda_str(r$moneda_pago[1] %||% "", r$cotizado_en[1])),
-          estado      = esc(estado_label(estado)),
-          next_prov   = esc(np_str),
-          acciones    = paste0(edit_btn, " ", pause_btn, " ", archive_btn, " ", restore_btn)
-        )
-      })
-
-      df <- do.call(dplyr::bind_rows, lapply(rows, as.data.frame, stringsAsFactors = FALSE))
-      names(df) <- c("✏", "Nombre", "Categoría", "Empresa", "Parte",
-                      "Moneda", "Estado", "Próxima provisión", "Acciones")
-      df
-    })
-
-    # ── DT render ───────────────────────────────────────────────────────────
-    output$list_table <- DT::renderDataTable({
-      df <- display_df()
-      DT::datatable(
-        df,
-        rownames  = FALSE,
-        escape    = FALSE,
-        selection = "none",
-        options   = list(
-          dom        = "tp",
-          pageLength = 25,
-          ordering   = TRUE,
-          columnDefs = list(
-            list(orderable = FALSE, targets = c(0, 8)),  # pencil + acciones cols
-            list(width = "30px", targets = 0)
-          )
-        ),
-        class = "table table-sm table-hover"
-      )
-    }, server = TRUE)
+    .editar <- function(lid) pasivos_pedir_editar(lid)
 
     # ── Pause / Resume ──────────────────────────────────────────────────────
     # Pausing asks first (Luis, T18): it removes the liability's future
     # provisions. Resuming does not ask, as before: it removes nothing.
     pause_target_rv <- shiny::reactiveVal("")
-    shiny::observeEvent(input$pasivos_list_pause, ignoreInit = TRUE, {
-      lid  <- input$pasivos_list_pause %||% ""
-      if (!nzchar(lid)) return()
-      user <- tryCatch(shared$current_user(), error = function(e) "system")
+    .pedir_pausa <- function(lid) {
+      user <- usuario()
       if (!has_capability(user, "pasivos.edit_liability")) {
-        shiny::showNotification("Sin permiso.", type = "error"); return()
+        shiny::showNotification(tr("tablas.pasivos.sin_permiso"), type = "error"); return()
       }
       liabs <- tryCatch(shared$pasivos_liabilities_db(),
                         error = function(e) .schema_pasivos_liability())
       idx <- which(liabs$id == lid)
       if (!length(idx)) return()
       old_estado <- liabs$estado[idx[1]]
-      if (identical(old_estado, "deleted")) return()  # archived -- use restore instead
+      if (identical(old_estado, "deleted")) return()  # deleted -- recover it from the Papelera
       if (!identical(old_estado, "active")) return(pasivos_cambiar_pausa(shared, lid, user, "active"))
       pause_target_rv(lid)
       shiny::showModal(shiny::modalDialog(
@@ -343,24 +203,21 @@ pasivos_list_module_server <- function(id, shared) {
         ),
         size = "s"
       ))
-    })
+    }
 
     shiny::observeEvent(input$plist_confirm_pause, ignoreInit = TRUE, {
       if (!pasivos_autoriza("pasivos.edit_liability")) return()
       lid <- pause_target_rv()
       shiny::removeModal()
       if (!nzchar(lid %||% "")) return()
-      user <- tryCatch(shared$current_user(), error = function(e) "system")
-      pasivos_cambiar_pausa(shared, lid, user, "paused")
+      pasivos_cambiar_pausa(shared, lid, usuario(), "paused")
     })
 
-    # ── Archive ─────────────────────────────────────────────────────────────
-    shiny::observeEvent(input$pasivos_list_archive, ignoreInit = TRUE, {
-      lid <- input$pasivos_list_archive %||% ""
-      if (!nzchar(lid)) return()
-      user <- tryCatch(shared$current_user(), error = function(e) "system")
-      if (!has_capability(user, "pasivos.delete_liability")) {
-        shiny::showNotification("Sin permiso para archivar.", type = "error"); return()
+    # ── Borrar ──────────────────────────────────────────────────────────────
+    archive_target_rv <- shiny::reactiveVal("")
+    .pedir_borrar <- function(lid) {
+      if (!has_capability(usuario(), "pasivos.delete_liability")) {
+        shiny::showNotification(tr("tablas.pasivos.sin_permiso"), type = "error"); return()
       }
       archive_target_rv(lid)
       provs <- tryCatch(shared$pasivos_provisions_db(),
@@ -378,33 +235,67 @@ pasivos_list_module_server <- function(id, shared) {
         ),
         size = "s"
       ))
-    })
+    }
 
     shiny::observeEvent(input$plist_confirm_archive, ignoreInit = TRUE, {
       if (!pasivos_autoriza("pasivos.delete_liability")) return()
       lid  <- archive_target_rv()
       if (!nzchar(lid %||% "")) { shiny::removeModal(); return() }
-      user <- tryCatch(shared$current_user(), error = function(e) "system")
-      pasivos_borrar(shared, lid, user)
+      pasivos_borrar(shared, lid, usuario())
     })
 
-    # ── Restore ─────────────────────────────────────────────────────────────
-    # "liability.restored" existed in PASIVOS_ACTION_TYPES (R/pasivos_audit.R)
-    # with zero call sites anywhere -- there was no UI to un-archive a
-    # liability once deleted. Added 2026-09-05 for audit completeness. No
-    # confirmation modal (unlike archive) since restoring destroys nothing;
-    # matches the no-confirm pattern pause/resume already uses.
-    shiny::observeEvent(input$pasivos_list_restore, ignoreInit = TRUE, {
-      lid <- input$pasivos_list_restore %||% ""
-      if (!nzchar(lid)) return()
-      user <- tryCatch(shared$current_user(), error = function(e) "system")
+    invisible(t_lista)
+  })
+}
+
+# ── Papelera: server ──────────────────────────────────────────────────────────
+# The deleted liabilities. ↶ (the engine's undo, which confirms in its bar)
+# recovers one with all its provisions, as they were.
+pasivos_papelera_server <- function(id, shared) {
+  shiny::moduleServer(id, function(input, output, session) {
+    usuario <- function() tryCatch(shared$current_user(), error = function(e) "system")
+
+    papelera_datos <- shiny::reactive({
+      liabs <- tryCatch(shared$pasivos_liabilities_db(), error = function(e) NULL)
+      provs <- tryCatch(shared$pasivos_provisions_db(),  error = function(e) NULL)
+      allowed <- tryCatch(shared$visible_initials(), error = function(e) NULL)
+      recupera <- isTRUE(has_capability(usuario(), "pasivos.delete_liability"))
+      pasivos_lista_filas(liabs, provs, allowed, estados = "deleted",
+                          acciones = function(estado) if (recupera) "deshacer" else "")
+    })
+
+    t_pap <- hd_table_server(
+      "papelera", tabla = "papelera_pasivos", datos = papelera_datos,
+      columnas = list(
+        col_texto("nombre", "tablas.pasivos.nombre"),
+        .pasivos_col_categoria(),
+        col_texto("tipo", "tablas.pasivos.tipo"),
+        col_texto("empresa", "tablas.pasivos.empresa", recorte = FALSE),
+        col_texto("parte", "tablas.pasivos.parte"),
+        col_texto("moneda", "tablas.pasivos.moneda", recorte = FALSE),
+        col_numero("n_prov", "tablas.pasivos.n_provisiones"),
+        col_fecha_hora("borrado_el", "tablas.pasivos.borrado_el"),
+        col_texto("borrado_por", "tablas.pasivos.borrado_por")
+      ),
+      filtros = list(list(campo = "empresa"), list(campo = "categoria")),
+      acciones_fila = "deshacer",
+      vacio = "tablas.pasivos.vacio_papelera"
+    )
+
+    shiny::observeEvent(t_pap$accion(), {
+      a   <- t_pap$accion()
+      lid <- as.character(a$ids[1] %||% "")
+      if (!identical(a$accion, "deshacer") || !nzchar(lid)) return()
+      # The engine's bar already asked; the permission is checked here, on
+      # the server, whatever the browser sent.
+      user <- usuario()
       if (!has_capability(user, "pasivos.delete_liability")) {
-        shiny::showNotification("Sin permiso para restaurar.", type = "error"); return()
+        shiny::showNotification(tr("tablas.pasivos.sin_permiso"), type = "error"); return()
       }
       pasivos_recuperar(shared, lid, user)
     })
 
-    invisible(NULL)
+    invisible(t_pap)
   })
 }
 

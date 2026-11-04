@@ -162,18 +162,17 @@ cat("\n-- Part C: liability restore feature (previously unimplemented) --\n")
 
 list_txt <- readLines("R/pasivos_list_module.R", warn = FALSE)
 
-.chk_true(any(grepl("is_deleted <- identical\\(estado, \"deleted\"\\)", list_txt)),
-     "row-rendering computes is_deleted from the liability's own estado")
-.chk_true(any(grepl('pause_btn <- if \\(!is_deleted\\)', list_txt)),
-     "pause/resume button only renders for a non-archived liability")
-.chk_true(any(grepl('archive_btn <- if \\(!is_deleted\\)', list_txt)),
-     "archive button only renders for a non-archived liability")
-.chk_true(any(grepl('restore_btn <- if \\(is_deleted\\)', list_txt)),
-     "a dedicated restore button renders only for an archived liability")
-.chk_true(any(grepl('pasivos_list_restore', list_txt)),
-     "restore button fires a dedicated pasivos_list_restore input (not reusing pasivos_list_pause)")
-.chk_true(any(grepl('acciones\\s*=\\s*paste0\\(edit_btn, " ", pause_btn, " ", archive_btn, " ", restore_btn\\)', list_txt)),
-     "the acciones column includes restore_btn alongside the other action buttons")
+# Since T18 both tables are on hd_table: the Lista holds only active and
+# paused liabilities (pause/resume and delete), the Papelera only deleted
+# ones, whose one button is ↶ (the engine's undo). By behavior:
+# tests/test_pasivos_lista_hd.R (L1) and tests/test_pasivos_papelera.R (R1).
+.chk_true(any(grepl('estados = c\\("active", "paused"\\)', list_txt)),
+     "the Lista's rows are the active and paused liabilities only (a deleted one is in the Papelera)")
+.chk_true(any(grepl('estados = "deleted"', list_txt)) &&
+            any(grepl('if \\(recupera\\) "deshacer" else ""', list_txt)),
+     "the Papelera's rows are the deleted ones, and their one button is the undo (↶)")
+.chk_true(any(grepl('acciones_fila = "deshacer"', list_txt)),
+     "restore is its own action (the engine's undo), not reusing pause/resume")
 
 # Since T18 the restore's body is pasivos_recuperar(), a function of the id
 # (the Lista and the Papelera call it); its callers check the permission
@@ -205,8 +204,8 @@ if (length(restore_start) == 1) {
 # (previously it would silently flip estado -> "active" via the "Reanudar"
 # label with no restore semantics, no matching capability check, and the
 # wrong action-type/notes).
-pause_start <- grep("observeEvent\\(input\\$pasivos_list_pause, ignoreInit = TRUE", list_txt)
-.chk_true(length(pause_start) == 1, "found exactly one pasivos_list_pause observer")
+pause_start <- grep("\\.pedir_pausa <- function", list_txt)
+.chk_true(length(pause_start) == 1, "found exactly one .pedir_pausa() (the Lista's pause/resume)")
 if (length(pause_start) == 1) {
   pause_head <- paste(list_txt[pause_start[1]:min(pause_start[1] + 15, length(list_txt))], collapse = "\n")
   .chk_true(grepl('if \\(identical\\(old_estado, "deleted"\\)\\) return\\(\\)', pause_head),

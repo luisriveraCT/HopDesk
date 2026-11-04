@@ -19,7 +19,8 @@ for (f in c("R/pasivos_schemas.R", "R/bancos_persistence.R", "R/pasivos_persiste
             "R/pasivos_capabilities.R", "R/pasivos_audit.R", "R/forecasting_service.R",
             "R/policy_engine.R", "R/pasivos_engine.R", "R/pasivos_wizard_validate.R",
             "R/pasivos_wizard_module.R", "R/pasivos_edit_confirm_module.R",
-            "R/i18n.R", "R/pasivos_list_module.R"))
+            "R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+            "R/pasivos_list_module.R"))
   suppressMessages(source(f))
 has_capability    <- function(user, cap) TRUE
 bump_sync_version <- function(...) invisible(NULL)
@@ -186,19 +187,27 @@ res <- guardar_asistente(nuevo_shared(archivado, provs0[0, ]), archivado, user =
 ok(!isTRUE(res$ok) && .mem_escrituras == antes && identical(liab_en_s3("L3")$estado, "deleted"),
    "C3: the wizard refuses to save an archived liability, and writes nothing")
 
-# C4: the Lista shows ✎ on the active row, not on the archived one
+# C4: ✎ on the active row; none for the archived one (since T18 it is not in
+# the Lista at all: it is in the Papelera, whose only button is ↶)
 liabs_lista <- dplyr::bind_rows(liab0, archivado)
-strip_accents <- function(x) stringi::stri_trans_general(x %||% "", "Latin-ASCII")
 testServer(pasivos_list_module_server, args = list(shared = list(
   pasivos_liabilities_db = function() liabs_lista,
   pasivos_provisions_db  = function() provs0[0, ],
-  visible_initials       = function() NULL)), {
-  session$setInputs(categoria_sel = c("regular", "financiero", "tarjeta"), show_archived = TRUE)
-  df <- display_df()
-  arch <- df$Estado == "Archivado"
-  ok(sum(arch) == 1L && !grepl("pasivos_edit_liability", df$Acciones[arch]) &&
-       !nzchar(df[["✏"]][arch]), "C4: no ✎ on the archived row")
-  ok(grepl("pasivos_edit_liability", df$Acciones[!arch]), "C4: ✎ still on the active row")
+  visible_initials       = function() NULL,
+  current_user           = function() "ana")), {
+  session$flushReact()
+  df <- lista_datos()
+  ok(!"L3" %in% df$id, "C4: no ✎ on the archived row (it is not in the Lista)")
+  ok(grepl("editar", df$.acciones[df$id == "L1"]), "C4: ✎ still on the active row")
+})
+testServer(pasivos_papelera_server, args = list(shared = list(
+  pasivos_liabilities_db = function() liabs_lista,
+  pasivos_provisions_db  = function() provs0[0, ],
+  visible_initials       = function() NULL,
+  current_user           = function() "ana")), {
+  session$flushReact()
+  ok(identical(papelera_datos()$.acciones[papelera_datos()$id == "L3"], "deshacer"),
+     "C4: in the Papelera the archived one has ↶ only, no ✎")
 })
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
