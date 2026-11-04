@@ -2060,48 +2060,42 @@ load_empresas <- function(client_id = NULL) {
   }
 
   df <- .normalize(raw, .schema_empresas)
+  vacio <- function(x) is.na(x) | !nzchar(trimws(x))
+  if (!any(vacio(df$account_code)) && !any(vacio(df$group_id))) return(df)
 
-  # Back-fill account_code for records without one
-  if (!"account_code" %in% names(df)) df$account_code <- NA_character_
-  needs_code <- is.na(df$account_code) | !nzchar(trimws(df$account_code))
+  # Records that pre-date account_code / group_id get them once. Records
+  # without a group go to the first (normally only) group of the deployment;
+  # with no group yet they stay empty, so a read never writes for nothing.
+  default_gid <- NA_character_
+  if (any(vacio(df$group_id))) {
+    grp <- tryCatch(load_grupos(client_id = client_id), error = function(e) .schema_grupos())
+    if (nrow(grp)) default_gid <- grp$id[1]
+  }
+  lleno <- .empresas_rellenar(df, default_gid)
+  if (identical(lleno, df)) return(df)
+  # The fill is applied on S3's current table, not on this read, so it never
+  # undoes another session's write made since (modificar_tabla rereads).
+  out <- tryCatch(
+    modificar_tabla(S3_KEYS$empresas, client_id, .schema_empresas,
+                    function(fresco) .empresas_rellenar(fresco, default_gid)),
+    error = function(e) { message("[EMP] backfill save failed: ", e$message); lleno }
+  )
+  out
+}
+
+# Fills empty account_code (next free E0000 number) and, when default_gid is
+# a real group, empty group_id. Pure: no I/O.
+.empresas_rellenar <- function(df, default_gid) {
+  vacio <- function(x) is.na(x) | !nzchar(trimws(x))
+  needs_code <- vacio(df$account_code)
   if (any(needs_code)) {
     existing_nums <- suppressWarnings(as.integer(
       sub("^E0*", "", df$account_code[grepl("^E\\d+$", df$account_code)])))
     existing_nums <- existing_nums[!is.na(existing_nums)]
     next_n <- if (length(existing_nums)) max(existing_nums) + 1L else 1L
-    for (i in which(needs_code)) {
-      df$account_code[i] <- sprintf("E%04d", next_n)
-      next_n <- next_n + 1L
-    }
-    tryCatch(
-      .s3_write(df, S3_KEYS$empresas, client_id = client_id),
-      error = function(e) message("[EMP] account_code backfill failed: ", e$message)
-    )
+    df$account_code[needs_code] <- sprintf("E%04d", next_n - 1L + seq_len(sum(needs_code)))
   }
-
-  # Back-fill group_id for records that pre-date the multi-tenant model.
-  # Assign them to the first (and normally only) group for this deployment.
-  if (!"group_id" %in% names(df) || all(is.na(df$group_id) | !nzchar(trimws(df$group_id)))) {
-    grp <- tryCatch(load_grupos(client_id = client_id), error = function(e) .schema_grupos())
-    default_gid <- if (nrow(grp)) grp$id[1] else NA_character_
-    df$group_id <- default_gid
-    tryCatch(
-      .s3_write(.normalize(df, .schema_empresas), S3_KEYS$empresas, client_id = client_id),
-      error = function(e) message("[EMP] group_id backfill save failed: ", e$message)
-    )
-  } else {
-    needs_gid <- is.na(df$group_id) | !nzchar(trimws(df$group_id))
-    if (any(needs_gid)) {
-      grp <- tryCatch(load_grupos(client_id = client_id), error = function(e) .schema_grupos())
-      default_gid <- if (nrow(grp)) grp$id[1] else NA_character_
-      df$group_id[needs_gid] <- default_gid
-      tryCatch(
-        .s3_write(.normalize(df, .schema_empresas), S3_KEYS$empresas, client_id = client_id),
-        error = function(e) message("[EMP] partial group_id backfill save failed: ", e$message)
-      )
-    }
-  }
-
+  if (!is.na(default_gid)) df$group_id[vacio(df$group_id)] <- default_gid
   df
 }
 
