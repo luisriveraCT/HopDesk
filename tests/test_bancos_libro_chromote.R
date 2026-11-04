@@ -63,6 +63,12 @@ eliminados <- function() { r <- sub("^eliminados: ", "", strsplit(registro(), "
 ")[[1]][1]); if (!is.na(r) && nzchar(r)) strsplit(r, ",")[[1]] else character(0) }
 periodo <- function(v) { invisible(ev(sprintf("document.getElementById('bnc-libro_periodo').selectize.setValue('%s')", v))); Sys.sleep(1.5) }
 cuenta  <- function(v) { invisible(ev(sprintf("document.getElementById('bnc-libro_cuenta').selectize.setValue('%s')", v))); Sys.sleep(1.5) }
+# No modal open or closing: a click sent while Bootstrap is still fading a
+# modal out (or in) lands on its backdrop and is lost.
+sin_modal <- function() {
+  poll_until(function() !isTRUE(ev("!!document.querySelector('.modal.show, .modal-backdrop')")), timeout_s = 15)
+  Sys.sleep(0.3)
+}
 cerrar_modal <- function() {
   Sys.sleep(0.8)
   if (!nzchar(modal())) return(invisible(FALSE))
@@ -152,6 +158,7 @@ ok("C2: the table drops them at once, and nothing stays marked",
    poll_until(function() !any(marcadas %in% vis()) && !length(sel()), timeout_s = 5))
 
 # ══ D · ✎ ════════════════════════════════════════════════════════════════════
+sin_modal()   # C's confirmation is still fading out
 clic(sprintf("HDT.fila('%s','MOV-0030').querySelector('button[data-accion=editar]')", T))
 ok("D1: ✎ opens the manual entry's form, filled in (4500)",
    poll_until(function() nzchar(modal()), timeout_s = 10) &&
@@ -164,7 +171,7 @@ avisos <- function() unlist(ev("Array.from(document.querySelectorAll('.shiny-not
 fallar <- function(...) { invisible(ev(sprintf("Shiny.setInputValue('fallar_escritura', %s, {priority: 'event'})",
                                                jsonlite::toJSON(c(...))))); Sys.sleep(0.5) }
 quitar_avisos <- function() invisible(ev("document.querySelectorAll('.shiny-notification').forEach(function(n){ n.remove(); })"))
-fallar("acme/bancos_movimientos.rds"); quitar_avisos()
+fallar("acme/bancos_movimientos.rds"); quitar_avisos(); sin_modal()
 clic(celda("MOV-0040"))
 clic(sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=eliminar]')", T))
 invisible(poll_until(function() grepl("Eliminar 1 movimiento", modal(), fixed = TRUE), timeout_s = 10)); Sys.sleep(0.8)
@@ -192,6 +199,7 @@ fallar()
 invisible(poll_until(function() !nzchar(modal()), timeout_s = 10)); Sys.sleep(0.5)
 
 # ══ E · Two sessions ═════════════════════════════════════════════════════════
+sin_modal()
 bA <- b
 bB <- new_chromote_session()
 en <- function(s, expr) { b <<- s; on.exit(b <<- bA); force(expr) }
