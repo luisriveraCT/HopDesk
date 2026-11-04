@@ -453,5 +453,6 @@
   "tablas.pasivos.guardado_sin_provisiones": "Pasivo guardado. Está pausado, así que no se generaron provisiones: al reanudarlo, edítalo para generarlas.",
   "niveles.hdadmin.no_se_leyo": "No se pudo leer el registro en S3. Nada se guardó; intenta de nuevo.",
   "niveles.hdadmin.no_se_guardo": "No se pudo guardar en S3. Nada cambió; intenta de nuevo.",
-  "niveles.hdadmin.cliente_existe": "El cliente '{cliente}' ya existe en el registro."
+  "niveles.hdadmin.cliente_existe": "El cliente '{cliente}' ya existe en el registro.",
+  "niveles.hdadmin.login_sin_verificar": "No pudimos verificar tu cuenta. Intenta de nuevo en un minuto."
 }

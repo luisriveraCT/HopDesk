@@ -1125,8 +1125,11 @@ server <- function(input, output, session) {
     info <- current_user_info()
     if (isTRUE(emergency_lock_checked())) return()
     if (is.null(info) || info$user == "unknown") return()
-    emergency_lock_checked(TRUE)
     lock <- tryCatch(read_emergency_lock(), error = function(e) NULL)
+    # Checked once a fresh list is read; while S3 cannot be read (no list,
+    # or only a stale one) it checks again every minute (CM14).
+    if (is.null(lock) || isTRUE(attr(lock, "vieja"))) invalidateLater(60000)
+    else emergency_lock_checked(TRUE)
     if (is.data.frame(lock) && nrow(lock) > 0 &&
         any(tolower(lock$username) == tolower(info$user))) {
       message("[SECURITY] Active session terminated — account locked: ", info$user)

@@ -453,5 +453,6 @@
   "tablas.pasivos.guardado_sin_provisiones": "Liability saved. It is paused, so no provisions were generated: once resumed, edit it to generate them.",
   "niveles.hdadmin.no_se_leyo": "The record could not be read from S3. Nothing was saved; try again.",
   "niveles.hdadmin.no_se_guardo": "It could not be saved to S3. Nothing changed; try again.",
-  "niveles.hdadmin.cliente_existe": "Client '{cliente}' is already in the registry."
+  "niveles.hdadmin.cliente_existe": "Client '{cliente}' is already in the registry.",
+  "niveles.hdadmin.login_sin_verificar": "We could not verify your account. Try again in a minute."
 }
