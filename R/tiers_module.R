@@ -689,8 +689,14 @@ tiersServer <- function(id, shared) {
 
     # Clear local cache whenever the client context changes so the next
     # all_usuarios_rv() call fetches the correct folder from S3.
+    # The account being edited or deleted belongs to the previous client: drop
+    # it too, so no action ever lands on a same-named account of the new one.
     observeEvent(current_client_id(), {
       .usuarios_local(NULL)
+      selected_user(NULL)
+      # Close the delete modal only if it is ours (another modal may be open).
+      if (!is.null(isolate(pending_del_user()))) removeModal()
+      pending_del_user(NULL)
     }, ignoreInit = TRUE)
 
     # Filtered list shown in the table (excludes soft-deleted and tier-filtered)

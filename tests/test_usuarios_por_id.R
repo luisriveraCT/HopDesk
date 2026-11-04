@@ -69,5 +69,25 @@ n_busca <- sum(grepl(".fila_usuario(usuarios", codigo, fixed = TRUE))
 ok(sprintf("delete click, delete confirm, editor and Guardar look the account up by name (%d)", n_busca),
    n_busca >= 4)
 
+# ── 5. A client switch drops the selection (staff jumping between clients) ──
+# The reactiveVals are defined further down the same server function; the
+# observer only runs after it returns, so they are in scope by then.
+cuerpo_cambio <- local({
+  for (e in ex) if (is.call(e) && identical(e[[1]], as.name("<-")) &&
+                    identical(e[[2]], as.name("tiersServer"))) srv <- e[[3]]
+  txt <- paste(deparse(srv, width.cutoff = 500L), collapse = "\n")
+  bloques <- regmatches(txt, gregexpr("observeEvent\\(current_client_id\\(\\), \\{[^}]*\\}", txt))[[1]]
+  paste(bloques, collapse = "\n")
+})
+ok("on a client switch, the account being edited is dropped",
+   grepl("selected_user(NULL)", cuerpo_cambio, fixed = TRUE))
+ok("on a client switch, the account awaiting deletion is dropped",
+   grepl("pending_del_user(NULL)", cuerpo_cambio, fixed = TRUE))
+ok("on a client switch, an open delete modal of ours is closed",
+   grepl("removeModal()", cuerpo_cambio, fixed = TRUE))
+ok("the two reactiveVals exist in tiersServer",
+   any(grepl("selected_user\\s*<-\\s*reactiveVal", codigo)) &&
+   any(grepl("pending_del_user\\s*<-\\s*reactiveVal", codigo)))
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail) quit(status = 1)
