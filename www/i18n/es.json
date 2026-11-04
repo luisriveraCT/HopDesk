@@ -19,6 +19,7 @@
   "permisos.can_manage_empresas": "Gestionar empresas del grupo",
   "permisos.can_manage_invites": "Gestionar invitaciones de usuario",
   "permisos.can_configure_erp": "Configurar la conexión al ERP",
+  "permisos.can_manage_interco": "Editar el registro de Intercompany",
   "permisos.can_manage_sync": "Configurar la sincronización de Agenda",
   "permisos.can_manage_group_branding": "Cambiar nombre y logo del grupo",
   "permisos.can_view_payment_audit": "Ver bitácora de archivos de pago",

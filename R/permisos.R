@@ -29,6 +29,8 @@ PERMISOS <- list(
   can_manage_empresas            = list(grupo = "grupo"),
   can_manage_invites             = list(grupo = "grupo"),
   can_configure_erp              = list(grupo = "grupo"),
+  # The IC registry only: Admin edits it without the ERP connection's secrets.
+  can_manage_interco             = list(grupo = "grupo", pendiente = "T"),
   can_manage_sync                = list(grupo = "grupo"),
   can_manage_group_branding      = list(grupo = "grupo"),
   can_view_payment_audit         = list(grupo = "grupo"),

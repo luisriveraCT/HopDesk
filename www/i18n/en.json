@@ -19,6 +19,7 @@
   "permisos.can_manage_empresas": "Manage group companies",
   "permisos.can_manage_invites": "Manage user invitations",
   "permisos.can_configure_erp": "Configure the ERP connection",
+  "permisos.can_manage_interco": "Edit the intercompany registry",
   "permisos.can_manage_sync": "Configure Agenda sync",
   "permisos.can_manage_group_branding": "Change the group name and logo",
   "permisos.can_view_payment_audit": "View payment-file log",
