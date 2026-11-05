@@ -76,6 +76,7 @@ poner_provision <- function(id, estado = "provisional", monto = 20000, cid = CID
   k <- paste0(cid, "/", S3_KEYS$pasivos_provisions)
   p <- .normalize(.mem[[k]], .schema_pasivos_provision)
   p <- dplyr::bind_rows(p[p$id != id, ], tibble::tibble(id = id, estado = estado, amount_pago = monto,
+                                                         empresa = "NCS", parte = "CFE",
                                                          moneda_pago = "MXN", fecha_efectiva = as.Date("2026-12-15")))
   assign(k, p, envir = .mem)
 }
@@ -586,4 +587,34 @@ test_that("las tablas de Requisiciones no pierden filas y cada escritura es por 
   expect_equal(nrow(tabla("requisiciones")), 1)
   expect_equal(nrow(tabla("requisiciones", "otro_cliente")), 1)
   expect_true(all(grepl(paste0("^(", CID, "|otro_cliente)/requisiciones"), ls(.mem))))
+})
+
+# ── For the screen (E2) ──────────────────────────────────────────────────────
+
+test_that("provisiones_para_evidencia: solo las vivas sin requisición, con su etapa", {
+  reiniciar()
+  poner_provision("p-libre"); poner_provision("p-ligada"); poner_provision("p-borrada", estado = "deleted")
+  poner_provision("p-pagada", estado = "item_confirmed"); poner_confirmacion("p-pagada")
+  requisicion_crear(CID, modifyList(base_req, list(provision_id = "p-ligada")), "dani")
+  d <- provisiones_para_evidencia(CID)
+  expect_setequal(d$id, c("p-libre", "p-pagada"))
+  expect_identical(d$etapa[d$id == "p-pagada"], "pagada")
+  expect_equal(d$monto[d$id == "p-libre"], 20000)
+  expect_identical(d$fecha[d$id == "p-libre"], as.Date("2026-12-15"))
+})
+
+test_that("requisiciones_desde_provisiones crea una requisición ligada por provisión, en la carpeta", {
+  reiniciar()
+  poner_provision("p1"); poner_provision("p2")
+  c1 <- requisiciones_carpeta_crear(CID, list(nombre = "Obra"), "dani")
+  creadas <- requisiciones_desde_provisiones(CID, c("p1", "p2", "p-no-existe"), c1, "caro")
+  expect_length(creadas, 2)
+  r <- tabla("requisiciones")
+  expect_setequal(r$provision_id, c("p1", "p2"))
+  expect_true(all(r$carpeta_id == c1)); expect_true(all(r$creado_por == "caro"))
+  expect_identical(requisiciones_vista(CID)$etapa, c("provisionada", "provisionada"))
+  # already linked: not offered again, not converted twice
+  expect_length(requisiciones_desde_provisiones(CID, "p1", NA, "caro"), 0)
+  expect_equal(nrow(tabla("requisiciones")), 2)
+  expect_equal(nrow(requisiciones_carpetas(CID)), 1)
 })

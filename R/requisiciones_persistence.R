@@ -533,6 +533,13 @@ requisiciones_carpetas_resumen <- function(carpetas, vista) {
   cs
 }
 
+# Folders, strict read (live only unless incluir_papelera), in creation order.
+requisiciones_carpetas <- function(client_id, incluir_papelera = FALSE) {
+  df <- .req_leer("carpetas", .req_cid(client_id))
+  df <- df[incluir_papelera | is.na(df$papelera_en), , drop = FALSE]
+  df[order(df$creado), , drop = FALSE]
+}
+
 # ── Comentarios ──────────────────────────────────────────────────────────────
 
 # Saves the comment, marks it read for its author, and notifies in Panorama
@@ -826,6 +833,50 @@ requisicion_de_provision <- function(client_id, provision_id) {
   provision_id <- as.character(provision_id)
   v <- requisiciones_vista(client_id, incluir_pagadas = TRUE)
   v[!is.na(v$provision_id) & v$provision_id %in% provision_id, , drop = FALSE]
+}
+
+# For "Agregar evidencia a una provisión": provisions with no requisition
+# yet, alive (provisionada, en_pago, or pagada -- a paid one may need its
+# evidence too), with the firmest date and amount the provision itself has.
+# Strict reads.
+provisiones_para_evidencia <- function(client_id) {
+  cid <- .req_cid(client_id)
+  provs <- leer_tabla_para_escribir(S3_KEYS$pasivos_provisions, cid, .schema_pasivos_provision)
+  conf  <- leer_tabla_para_escribir(S3_KEYS$bancos_confirmados, cid, .schema_bancos_confirmados)
+  reqs  <- .req_leer("requisiciones", cid)
+  provs <- provs[!is.na(provs$id) & !(provs$id %in% reqs$provision_id), , drop = FALSE]
+  provs$etapa <- etapa_de_provision_en(provs, conf, provs$id)
+  provs <- provs[provs$etapa %in% c("provisionada", "en_pago", "pagada"), , drop = FALSE]
+  tibble::tibble(
+    id         = provs$id,
+    fecha      = dplyr::coalesce(provs$fecha_efectiva_override, provs$fecha_efectiva, provs$fecha_calculada),
+    empresa    = provs$empresa,
+    parte      = provs$parte,
+    referencia = dplyr::coalesce(provs$referencia, provs$documento, provs$notas),
+    monto      = dplyr::coalesce(provs$amount_pago_override, provs$amount_pago),
+    moneda     = provs$moneda_pago,
+    etapa      = provs$etapa)
+}
+
+# One requisition per provision chosen, as if created from the tab: title
+# from the provision's reference (or its counterpart), linked from birth.
+# Returns the ids created; stops at the first failure (those before it stay).
+requisiciones_desde_provisiones <- function(client_id, provision_ids, carpeta_id, por) {
+  cid <- .req_cid(client_id)
+  disp <- provisiones_para_evidencia(cid)
+  disp <- disp[disp$id %in% provision_ids, , drop = FALSE]
+  creadas <- character()
+  for (i in seq_len(nrow(disp))) {
+    p <- disp[i, ]
+    titulo <- .req_txt(p$referencia) %||% NA_character_
+    if (is.na(titulo)) titulo <- .req_txt(p$parte) %||% NA_character_
+    if (is.na(titulo)) titulo <- p$id
+    r <- requisicion_crear(cid, list(
+      titulo = substr(titulo, 1L, REQ_MAX_TITULO), empresa = p$empresa, proveedor = p$parte,
+      monto = p$monto, moneda = p$moneda, carpeta_id = carpeta_id, provision_id = p$id), por)
+    creadas <- c(creadas, r$id)
+  }
+  creadas
 }
 
 # Counts for the paper clip: one row per requisition given (rows of
