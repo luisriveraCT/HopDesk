@@ -30,17 +30,9 @@ cat("── Email service (live-mode hardening) ──────────�
 # later modules see the environment they expect.
 .orig_key <- Sys.getenv("RESEND_API_KEY")
 
-# Point the queue helpers at the mock store.
-read_email_queue <- function() {
-  raw <- tryCatch(mock_s3readRDS("hd-admin/email_queue.rds", "mock-bucket"),
-                  error = function(e) NULL)
-  if (is.null(raw) || !is.data.frame(raw) || !nrow(raw)) return(.schema_email_queue())
-  raw
-}
-write_email_queue <- function(q) {
-  mock_s3saveRDS(q, "hd-admin/email_queue.rds", "mock-bucket")
-  invisible(TRUE)
-}
+# The real queue helpers run over the mock aws.s3 (CM18: strict read,
+# modificar_email_queue on S3's current queue).
+write_email_queue <- function(q) mock_s3saveRDS(q, "hd-admin/email_queue.rds", "mock-bucket")
 mock_s3saveRDS(.schema_email_queue(), "hd-admin/email_queue.rds", "mock-bucket")
 
 # ── A. email_service_status() ────────────────────────────────────────────────

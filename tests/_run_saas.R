@@ -165,14 +165,8 @@ tryCatch({
 
   # ── Override hd-admin direct-read helpers (they bypass .s3_key()) ─────────
   # Re-point them at the mock store so tests can plant data there.
-  .read_username_index <- function() {
-    tryCatch(mock_s3readRDS("hd-admin/username_index.rds", "mock-bucket"),
-             error = function(e) .schema_username_index())
-  }
-  .write_username_index <- function(df) {
-    mock_s3saveRDS(df, "hd-admin/username_index.rds", "mock-bucket")
-    invisible(TRUE)
-  }
+  # (username_index runs the real strict read and write over the mock
+  # aws.s3 since CM18.)
   # No lock file = nobody locked: an empty list, as the real one returns
   # (CM14: NULL now means "could not be verified" and denies the login).
   read_emergency_lock <- function() {

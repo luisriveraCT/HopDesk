@@ -19,7 +19,6 @@
 # =============================================================================
 
 .RESEND_ENDPOINT <- "https://api.resend.com/emails"
-.EMAIL_QUEUE_KEY <- "hd-admin/email_queue.rds"
 
 # ── Configuration status ──────────────────────────────────────────────────────
 # Single source of truth for "is email actually live?". Used by send_email()
@@ -104,29 +103,31 @@ email_service_status <- function() {
 }
 
 # ── Queue helpers ─────────────────────────────────────────────────────────────
-read_email_queue <- function() {
-  q <- tryCatch(
-    suppressMessages(suppressWarnings(
-      aws.s3::s3readRDS(object = .EMAIL_QUEUE_KEY, bucket = .s3_bucket())
-    )),
-    error = function(e) NULL
-  )
-  if (is.null(q) || !is.data.frame(q) || !nrow(q)) return(.schema_email_queue())
-  for (col in names(.schema_email_queue()))
-    if (!col %in% names(q)) q[[col]] <- .schema_email_queue()[[col]]
-  q
-}
+# Strict (CM18): a failed read stop()s. It used to come back empty and the
+# next save (s3saveRDS, outside the net) left a queue holding only its own
+# row: every other pending invitation was lost.
+read_email_queue <- function() leer_hd_admin("email_queue.rds", .schema_email_queue)
 
-write_email_queue <- function(q) {
-  tryCatch(
-    aws.s3::s3saveRDS(q, object = .EMAIL_QUEUE_KEY, bucket = .s3_bucket()),
-    error = function(e) message("[EMAIL] Could not persist queue: ", e$message)
-  )
-  invisible(TRUE)
+# cambio(queue) -> queue, on S3's current queue; a failed read or write stop()s.
+modificar_email_queue <- function(cambio) modificar_hd_admin("email_queue.rds", .schema_email_queue, cambio)
+
+# Applies `cambios` (list of list(id, status, last_error)) to the queue rows
+# with those ids, on S3's current queue, one more attempt each.
+.email_queue_marcar <- function(cambios, now) {
+  modificar_email_queue(function(q) {
+    for (x in cambios) {
+      i <- which(q$id == x$id)
+      if (!length(i)) next
+      q$last_tried[i] <- now
+      q$attempts[i]   <- ifelse(is.na(q$attempts[i]), 0L, q$attempts[i]) + 1L
+      q$status[i]     <- x$status
+      q$last_error[i] <- x$last_error
+    }
+    q
+  })
 }
 
 .enqueue_email <- function(to, subject, html, error = NA_character_) {
-  q <- read_email_queue()
   now <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   new_row <- data.frame(
     id         = paste0("eq_", format(Sys.time(), "%Y%m%d%H%M%S"), "_",
@@ -141,8 +142,11 @@ write_email_queue <- function(q) {
     status     = "pending",
     stringsAsFactors = FALSE
   )
-  write_email_queue(rbind(q, new_row))
-  message("[EMAIL] Queued (", to, "): ", subject)
+  # The send already failed and the caller says so; a queue that can't be
+  # saved is only logged (this function never throws).
+  guardado <- tryCatch({ modificar_email_queue(function(q) .hd_admin_agregar(q, new_row)); TRUE },
+                       error = function(e) { message("[EMAIL] Could not persist queue: ", e$message); FALSE })
+  if (guardado) message("[EMAIL] Queued (", to, "): ", subject)
 }
 
 # ── Payload ──────────────────────────────────────────────────────────────────
@@ -293,16 +297,18 @@ retry_queued_email <- function(queue_id) {
   idx <- which(q$id == queue_id)
   if (!length(idx)) return(FALSE)
 
-  row <- q[idx, ]
+  row <- q[idx[1], ]
   now <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
-  q[idx, "last_tried"] <- now
-  q[idx, "attempts"]   <- (q[idx, "attempts"] %||% 0L) + 1L
 
   ok <- send_email(row$to, row$subject, row$html, queue_on_fail = FALSE)
 
-  q[idx, "status"]     <- if (isTRUE(ok)) "sent" else "failed"
-  q[idx, "last_error"] <- if (isTRUE(ok)) NA_character_ else email_error_of(ok)
-  write_email_queue(q)
+  # The mail went out (or not) whatever happens to this save: a failed save is
+  # logged, and the result is still the send's, so it is never re-sent as if
+  # it had failed.
+  tryCatch(.email_queue_marcar(list(list(
+    id = queue_id, status = if (isTRUE(ok)) "sent" else "failed",
+    last_error = if (isTRUE(ok)) NA_character_ else email_error_of(ok))), now),
+    error = function(e) message("[EMAIL] Could not persist queue: ", e$message))
   isTRUE(ok)
 }
 
@@ -317,18 +323,17 @@ retry_all_queued_emails <- function(max_attempts = 5L) {
   if (!length(idx)) return(list(sent = 0L, failed = 0L))
 
   now <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
-  sent <- 0L; failed <- 0L
+  sent <- 0L; failed <- 0L; cambios <- list()
   for (i in idx) {
     res <- send_email(q$to[i], q$subject[i], q$html[i], queue_on_fail = FALSE)
-    q[i, "last_tried"] <- now
-    q[i, "attempts"]   <- (q$attempts[i] %||% 0L) + 1L
-    if (isTRUE(res)) {
-      q[i, "status"] <- "sent"; q[i, "last_error"] <- NA_character_; sent <- sent + 1L
-    } else {
-      q[i, "status"] <- "failed"; q[i, "last_error"] <- email_error_of(res); failed <- failed + 1L
-    }
+    if (isTRUE(res)) sent <- sent + 1L else failed <- failed + 1L
+    cambios[[length(cambios) + 1L]] <- list(
+      id = q$id[i], status = if (isTRUE(res)) "sent" else "failed",
+      last_error = if (isTRUE(res)) NA_character_ else email_error_of(res))
   }
-  write_email_queue(q)
+  # On S3's current queue: mail queued by another session meanwhile stays.
+  tryCatch(.email_queue_marcar(cambios, now),
+           error = function(e) message("[EMAIL] Could not persist queue: ", e$message))
   list(sent = sent, failed = failed)
 }
 

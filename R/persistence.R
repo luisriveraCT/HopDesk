@@ -313,7 +313,8 @@ rebase_por_id <- function(nuevo, base, fresco, id_col) {
 # columns added over time that their schema does not list.
 .HD_ADMIN_CID <- "hd-admin"
 .HD_ADMIN_SOLO_CRECEN <- c("client_registry.rds", "client_requests.rds", "hop_requests.rds",
-                           "hop_grants.rds", "pending_invites.rds", "notifications.rds")
+                           "hop_grants.rds", "pending_invites.rds", "notifications.rds",
+                           "username_index.rds", "email_queue.rds")
 
 .hd_admin_completar <- function(df, schema_fn) {
   if (is.null(df) || !is.data.frame(df)) return(schema_fn())
@@ -472,8 +473,6 @@ modificar_emergency_lock <- function(cambio) {
 # regardless of the current CLIENT_ID. With per-client IAM keys, this would
 # require a dedicated cross-client IAM role.
 
-.UINDEX_KEY <- "hd-admin/username_index.rds"
-
 .schema_username_index <- function() {
   data.frame(
     username     = character(),
@@ -485,66 +484,64 @@ modificar_emergency_lock <- function(cambio) {
   )
 }
 
-.read_username_index <- function() {
-  raw <- tryCatch(
-    aws.s3::s3readRDS(object = .UINDEX_KEY, bucket = .s3_bucket()),
-    error = function(e) NULL
-  )
-  if (is.null(raw) || !is.data.frame(raw) || !nrow(raw)) return(.schema_username_index())
-  raw
-}
+# Strict (CM18): a failed read stop()s. It used to come back empty, so
+# check_username_available() said every name was free and register/unregister
+# saved an index holding only their own row (s3saveRDS, outside the net).
+.read_username_index <- function() leer_hd_admin("username_index.rds", .schema_username_index)
 
-.write_username_index <- function(df) {
-  aws.s3::s3saveRDS(df, object = .UINDEX_KEY, bucket = .s3_bucket())
-  invisible(TRUE)
-}
-
-# Returns TRUE when the username is free to claim (absent or previously deleted).
+# Returns TRUE when the username is free to claim (absent or previously deleted),
+# NA when the index could not be read: not verified, the caller refuses.
 # IAM note: this reads hd-admin/username_index.rds regardless of CLIENT_ID.
 # With per-client IAM keys this requires a dedicated cross-client read role —
 # see scripts/iam_policy_client.json "HdAdminSharedReadOnly" for the current
 # read-only workaround that grants the client key access to specific hd-admin files.
 check_username_available <- function(username) {
   username <- tolower(trimws(username))
-  idx <- tryCatch(.read_username_index(), error = function(e) .schema_username_index())
+  idx <- tryCatch(.read_username_index(), error = function(e) {
+    message("[UINDEX] could not read the index: ", conditionMessage(e)); NULL })
+  if (is.null(idx)) return(NA)
   if (!nrow(idx)) return(TRUE)
-  active_matches <- idx[tolower(idx$username) == username & idx$active == TRUE, ]
+  active_matches <- idx[tolower(idx$username) == username & idx$active %in% TRUE, ]
   nrow(active_matches) == 0
 }
 
 #' Claim a username in the global index. Reactivates a soft-deleted entry if one exists.
+#' On S3's current index (CM18); a failed read or write stop()s.
 register_username <- function(username, home_folder, account_code) {
   username <- tolower(trimws(username))
-  idx <- tryCatch(.read_username_index(), error = function(e) .schema_username_index())
-  existing <- which(tolower(idx$username) == username)
-  if (length(existing)) {
-    idx$active[existing]       <- TRUE
-    idx$home_folder[existing]  <- home_folder
-    idx$account_code[existing] <- account_code
-  } else {
-    idx <- rbind(idx, data.frame(
-      username     = username,
-      home_folder  = home_folder,
-      account_code = account_code,
-      created_at   = as.character(Sys.time()),
-      active       = TRUE,
-      stringsAsFactors = FALSE
-    ))
-  }
-  .write_username_index(idx)
+  modificar_hd_admin("username_index.rds", .schema_username_index, function(idx) {
+    existing <- which(tolower(idx$username) == username)
+    if (length(existing)) {
+      idx$active[existing]       <- TRUE
+      idx$home_folder[existing]  <- home_folder
+      idx$account_code[existing] <- account_code
+      idx
+    } else {
+      .hd_admin_agregar(idx, data.frame(
+        username     = username,
+        home_folder  = home_folder,
+        account_code = account_code,
+        created_at   = as.character(Sys.time()),
+        active       = TRUE,
+        stringsAsFactors = FALSE
+      ))
+    }
+  })
   invisible(TRUE)
 }
 
 #' Soft-deactivate a username. Never hard-deletes — preserves the audit trail.
+#' On S3's current index (CM18); FALSE when the name is not in it.
 unregister_username <- function(username) {
   username <- tolower(trimws(username))
-  idx <- tryCatch(.read_username_index(), error = function(e) .schema_username_index())
-  if (!nrow(idx)) return(invisible(FALSE))
-  matches <- tolower(idx$username) == username
-  if (!any(matches)) return(invisible(FALSE))
-  idx$active[matches] <- FALSE
-  .write_username_index(idx)
-  invisible(TRUE)
+  estaba <- FALSE
+  modificar_hd_admin("username_index.rds", .schema_username_index, function(idx) {
+    matches <- tolower(idx$username) == username
+    estaba <<- any(matches)
+    idx$active[matches] <- FALSE
+    idx
+  })
+  invisible(estaba)
 }
 
 # Pre-load cache — populated at startup (global.R) and by Phase-2 per-session.

@@ -825,7 +825,12 @@ tiersServer <- function(id, shared) {
       if (!is.null(all_u) && username %in% tolower(all_u$username)) {
         showNotification("Ya existe un usuario con ese nombre.", type = "error"); return()
       }
-      if (!isTRUE(check_username_available(username))) {
+      # NA: the global index could not be read, so the name is not verified (CM18)
+      disponible <- check_username_available(username)
+      if (is.na(disponible)) {
+        showNotification(tr("niveles.hdadmin.no_se_leyo"), type = "error", duration = 6); return()
+      }
+      if (!isTRUE(disponible)) {
         showNotification("Este nombre de usuario ya está registrado en el sistema.",
                          type = "error", duration = 6); return()
       }

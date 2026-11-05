@@ -911,7 +911,10 @@ server <- function(input, output, session) {
       )
       auth_save_usuarios(rbind(usuarios, new_user), client_id = invite$client_id, base = usuarios)
       accept_invite(token)
-      register_username(username, invite$client_id, new_user$account_code)
+      # The account is already saved: an index that can't be written is
+      # logged, as in Usuarios, and does not undo the welcome (CM18).
+      tryCatch(register_username(username, invite$client_id, new_user$account_code),
+               error = function(e) message("[INVITE] username_index register failed: ", e$message))
       update_client_user_count(invite$client_id)
       tryCatch(notify_user_limit(invite$client_id),
                error = function(e) message("[INVITE] notify_user_limit failed: ", e$message))
