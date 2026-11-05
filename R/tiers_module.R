@@ -3499,7 +3499,7 @@ tiersServer <- function(id, shared) {
           stringsAsFactors = FALSE
         )
         updated_grants <- modificar_hop_grants(function(g) .hd_admin_agregar(g, new_g))
-        bump_sync_version("hop_grants_db")
+        bump_sync_version("hop_grants_db", client_id = .HD_ADMIN_CID)
         shared$hop_grants_db(updated_grants)
         # Record the decision; resolve the request when all clients decided
         dec <- .hop_decidir(req_id, cid, clients_v, "approved")
@@ -3582,7 +3582,7 @@ tiersServer <- function(id, shared) {
         grantee_v  <- grants$grantee[idx[1]]
         cid_v      <- grants$client_id[idx[1]]
         grants <- modificar_hop_grants(function(g) { g$revoked[g$id == grant_id] <- TRUE; g })
-        bump_sync_version("hop_grants_db")
+        bump_sync_version("hop_grants_db", client_id = .HD_ADMIN_CID)
         shared$hop_grants_db(grants)
         showNotification("Acceso revocado.", type = "warning", duration = 3)
         # Same reasoning as hop_access_approved above -- client_id = cid_v.
@@ -3756,7 +3756,7 @@ tiersServer <- function(id, shared) {
           )
         }))
         updated <- modificar_hop_grants(function(g) .hd_admin_agregar(g, new_rows))
-        bump_sync_version("hop_grants_db")
+        bump_sync_version("hop_grants_db", client_id = .HD_ADMIN_CID)
         shared$hop_grants_db(updated)
         labels <- paste(vapply(to_grant, `[[`, character(1), "label"), collapse = ", ")
         append_hd_notification(
