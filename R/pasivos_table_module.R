@@ -331,7 +331,7 @@ pasivos_table_module_server <- function(id, shared) {
       # calendar day modal after this external save.
       tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
       shared$pasivos_provisions_db(new_all)
-      bump_sync_version("pasivos_provisions_db")
+      bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
 
       tryCatch(pasivos_log_audit(
         action_type = "provision.generated", user = user,
