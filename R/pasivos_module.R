@@ -105,13 +105,25 @@ pasivos_manage_converted_modal_ui <- function() {
 # Since T18 a deleted liability keeps its provisional provisions (hidden with
 # it), so converting one would turn a payment nobody will make into an item
 # -- and, with "ingresar a Agenda", a payment in today's Agenda.
+# TRUE: deleted. FALSE: checked on a table read well, and not deleted. NA:
+# could not check (the read failed) -- it is money, so the callers refuse
+# then too. The strict read tells "no table yet" (NULL) from "S3 did not
+# answer" (an error); load_pasivos_liabilities() returns an empty table for
+# both, so it can't be the one asked here.
 pasivos_provision_de_borrado <- function(prov, client_id) {
   lid <- as.character(prov$liability_id[1] %||% NA_character_)
   if (is.na(lid) || !nzchar(lid)) return(FALSE)       # a manual provision has no liability
-  liabs <- tryCatch(load_pasivos_liabilities(client_id = client_id), error = function(e) NULL)
-  if (is.null(liabs) || !nrow(liabs)) return(FALSE)
+  liabs <- tryCatch(.s3_leer_para_escribir(S3_KEYS$pasivos_liabilities, client_id),
+                    error = function(e) e)
+  if (inherits(liabs, "error")) return(NA)
+  if (is.null(liabs)) return(FALSE)                   # no liabilities table at all
+  if (!is.data.frame(liabs) || !all(c("id", "estado") %in% names(liabs))) return(NA)
   any(liabs$id %in% lid & liabs$estado %in% "deleted")
 }
+
+# The notice for a conversion refused by pasivos_provision_de_borrado().
+.pasivos_aviso_borrado <- function(r)
+  if (is.na(r)) tr("tablas.pasivos.convertir_no_verificado") else tr("tablas.pasivos.convertir_borrado")
 
 # Creates manual_inv row + optional pagar_hoy row + flips provision state.
 # Returns list(ok, msg, manual_id, pagar_hoy_id).
@@ -123,8 +135,9 @@ pasivos_provision_de_borrado <- function(prov, client_id) {
   if (!nrow(prov) || prov$estado[1] != "provisional") {
     return(list(ok = FALSE, msg = "Provisión no disponible para conversión."))
   }
-  if (pasivos_provision_de_borrado(prov, shared$effective_client_id()))
-    return(list(ok = FALSE, msg = tr("tablas.pasivos.convertir_borrado")))
+  borrado <- pasivos_provision_de_borrado(prov, shared$effective_client_id())
+  if (!isFALSE(borrado))                              # deleted, or could not check
+    return(list(ok = FALSE, msg = .pasivos_aviso_borrado(borrado)))
 
   # 1. Create manual_inv row
   new_manual_id <- uuid::UUIDgenerate()
@@ -307,10 +320,12 @@ setup_pasivos_module <- function(input, output, session, shared) {
       shiny::showModal(pasivos_manage_converted_modal_ui())
       return()
     }
-    if (identical(prov$estado[1], "provisional") &&
-        pasivos_provision_de_borrado(prov, shared$effective_client_id())) {
-      shiny::showNotification(tr("tablas.pasivos.convertir_borrado"), type = "warning")
-      return()
+    if (identical(prov$estado[1], "provisional")) {
+      borrado <- pasivos_provision_de_borrado(prov, shared$effective_client_id())
+      if (!isFALSE(borrado)) {                        # deleted, or could not check
+        shiny::showNotification(.pasivos_aviso_borrado(borrado), type = "warning")
+        return()
+      }
     }
     if (prov$estado[1] != "provisional") {
       shiny::showNotification(

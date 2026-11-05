@@ -100,6 +100,20 @@ sembrar(liab0); ESCRITURAS <- character(0)
 res <- tryCatch(convertir(), error = function(e) list(ok = FALSE, msg = conditionMessage(e)))
 ok("manual" %in% ESCRITURAS, "V2: (with the liability active, the conversion writes its item)")
 
+# V3: S3 does not answer for the liabilities: it can't be checked, so it is
+# refused too (fail closed: it is money).
+sembrar(liab0); ESCRITURAS <- character(0)
+.mem_falla <- paste0(CID, "/", S3_KEYS$pasivos_liabilities)
+res <- tryCatch(convertir(), error = function(e) list(ok = NA, msg = conditionMessage(e)))
+.mem_falla <- character(0)
+ok(!isTRUE(res$ok) && !length(ESCRITURAS),
+   "V3: with the liabilities unreadable, the conversion is refused and nothing is written")
+ok(identical(res$msg, tr("tablas.pasivos.convertir_no_verificado")), "V3: saying it could not check")
+.mem_falla <- paste0(CID, "/", S3_KEYS$pasivos_liabilities)
+ok(is.na(pasivos_provision_de_borrado(provs0[1, ], CID)), "V3: the check itself says NA (not FALSE) when S3 fails")
+.mem_falla <- character(0)
+ok(isFALSE(pasivos_provision_de_borrado(provs0[1, ], CID)), "V3: and FALSE once the table reads well")
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 s3_memoria_restaurar()
 if (.fail > 0L) quit(status = 1L)

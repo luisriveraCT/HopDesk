@@ -576,5 +576,6 @@
   "tablas.pasivos.amort.vacio": "Sin amortización con los datos de ahora.",
   "tablas.pasivos.amort.reamortizada": "⚠ Re-amortización: el saldo declarado difiere del teórico. Las cuotas se recalcularon.",
   "tablas.pasivos.prov.vacio": "Sin provisiones para mostrar con los datos de ahora.",
-  "tablas.pasivos.convertir_borrado": "Esta provisión es de un pasivo borrado: no se convierte. Recupera el pasivo desde la Papelera si hace falta."
+  "tablas.pasivos.convertir_borrado": "Esta provisión es de un pasivo borrado: no se convierte. Recupera el pasivo desde la Papelera si hace falta.",
+  "tablas.pasivos.convertir_no_verificado": "No se pudo verificar en S3 si el pasivo de esta provisión sigue activo: no se convirtió. Intenta de nuevo en un momento."
 }
