@@ -366,7 +366,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     if (!ok) return()
     tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
     shared$pasivos_provisions_db(provs)
-    bump_sync_version("pasivos_provisions_db")
+    bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
 
     # Archive a copy to the unified papelera (same S3 store used by all modules)
     tryCatch({
@@ -456,7 +456,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
     shared$pasivos_provisions_db(provs)
-    bump_sync_version("pasivos_provisions_db")
+    bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
     tryCatch(pasivos_log_audit(
       action_type = "provision.edited",
       user        = user,
@@ -611,7 +611,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     # Refresh the shared reactive so the AP calendar picks up the new provision.
     tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
     tryCatch(shared$pasivos_provisions_db(provs), error = function(e) NULL)
-    bump_sync_version("pasivos_provisions_db")
+    bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
 
     shiny::removeModal()
     shiny::showNotification("Provisión manual creada.", type = "message")
@@ -858,7 +858,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     if (!ok) return()
     tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
     shared$pasivos_provisions_db(provs)
-    bump_sync_version("pasivos_provisions_db")
+    bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
 
     tryCatch(pasivos_log_audit(
       action_type = "provision.revived",
@@ -1001,7 +1001,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     if (!ok) return()
     tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
     shared$pasivos_provisions_db(provs)
-    bump_sync_version("pasivos_provisions_db")
+    bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
 
     # 4. Archive to papelera
     tryCatch({
