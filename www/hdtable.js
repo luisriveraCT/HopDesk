@@ -1575,7 +1575,10 @@
       u.filas.push(i);
     });
     unidades = unidades.map(function (u) {
-      if (u.grupo && u.filas.length === 1) return { fila: u.filas[0], pos: u.pos };
+      // A group of one is a plain row -- except with sumas_columnas, where
+      // the group's row is the subtotal (the Flujo's Pagos with a single
+      // counterparty still says "Pagos" and adds up).
+      if (u.grupo && u.filas.length === 1 && !st.sumas) return { fila: u.filas[0], pos: u.pos };
       if (u.grupo) u.abierto = !!st.gTodos !== !!st.gExcepto[u.clave];
       return u;
     });
