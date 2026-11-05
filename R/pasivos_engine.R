@@ -929,7 +929,7 @@ pasivos_reconcile_provisions <- function(existing, generated, mode = "regenerate
     all_provs <- dplyr::bind_rows(all_provs, row)
   }
   save_pasivos_provisions(all_provs, client_id = client_id, base = provs_base)
-  bump_sync_version("pasivos_provisions_db")
+  bump_sync_version("pasivos_provisions_db", client_id = client_id)
   invisible(TRUE)
 }
 
