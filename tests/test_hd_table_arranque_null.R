@@ -31,7 +31,8 @@ FIXTURES <- c(
   "Vencidos y la lupa"                                 = "vencidos",
   "Bancos: Libro, Historial, Papelera, Cuentas"        = "bancos",
   "Pasivos: Lista y Papelera"                          = "pasivos_lista",
-  "Pasivos: Tabla"                                     = "pasivos_tabla"
+  "Pasivos: Tabla"                                     = "pasivos_tabla",
+  "Requisiciones: lista, selector y tablas pegadas"    = "requisiciones"
 )
 
 arrancar <- function(fixture) callr::r(function(repo, fixture) {
