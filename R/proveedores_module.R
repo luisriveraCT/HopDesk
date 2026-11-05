@@ -202,7 +202,7 @@ proveedoresServer <- function(id, shared) {
     set_provs <- function(df) {
       .exigir_permiso()
       save_proveedores(df, client_id = shared$effective_client_id(), base = get_provs())
-      bump_sync_version("proveedores_db")
+      bump_sync_version("proveedores_db", client_id = shared$effective_client_id())
       if (!is.null(shared$proveedores_db)) shared$proveedores_db(df)
     }
 
@@ -228,7 +228,7 @@ proveedoresServer <- function(id, shared) {
     set_inac <- function(df) {
       .exigir_permiso()
       save_proveedores_inactivos(df, client_id = shared$effective_client_id(), base = get_inac())
-      bump_sync_version("proveedores_inactivos_db")
+      bump_sync_version("proveedores_inactivos_db", client_id = shared$effective_client_id())
       if (!is.null(shared$proveedores_inactivos_db)) shared$proveedores_inactivos_db(df)
     }
 
