@@ -1,0 +1,971 @@
+{
+  "diario": {
+    "bloques": [
+      {
+        "moneda": "MXN",
+        "secciones": {
+          "cobros": {
+            "titulo": "COBROS — MXN",
+            "filas": [
+              {
+                "parte": "CLIENTE ALFA",
+                "provision": false,
+                "urgente": true,
+                "importante": false,
+                "visible": true,
+                "celdas": {
+                  "c1": {
+                    "texto": "$4.5M",
+                    "valor": 4495962
+                  },
+                  "c2": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c3": {
+                    "texto": "$40K",
+                    "valor": 40000
+                  },
+                  "c4": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c5": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c6": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c7": {
+                    "texto": "",
+                    "valor": 0
+                  }
+                },
+                "total": {
+                  "texto": "$4,535,962",
+                  "valor": 4535962
+                }
+              },
+              {
+                "parte": "CLIENTE BETA",
+                "provision": false,
+                "urgente": false,
+                "importante": true,
+                "visible": true,
+                "celdas": {
+                  "c1": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c2": {
+                    "texto": "$802K",
+                    "valor": 802000
+                  },
+                  "c3": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c4": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c5": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c6": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c7": {
+                    "texto": "",
+                    "valor": 0
+                  }
+                },
+                "total": {
+                  "texto": "$802,000",
+                  "valor": 802000
+                }
+              },
+              {
+                "parte": "CLIENTE GAMA",
+                "provision": true,
+                "urgente": false,
+                "importante": false,
+                "visible": true,
+                "celdas": {
+                  "c1": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c2": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c3": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c4": {
+                    "texto": "$950",
+                    "valor": 950
+                  },
+                  "c5": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c6": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c7": {
+                    "texto": "",
+                    "valor": 0
+                  }
+                },
+                "total": {
+                  "texto": "$950",
+                  "valor": 950
+                }
+              }
+            ],
+            "subtotal": {
+              "titulo": "SUBTOTAL COBROS — MXN",
+              "celdas": {
+                "c1": {
+                  "texto": "$4.5M",
+                  "valor": 4495962
+                },
+                "c2": {
+                  "texto": "$802K",
+                  "valor": 802000
+                },
+                "c3": {
+                  "texto": "$40K",
+                  "valor": 40000
+                },
+                "c4": {
+                  "texto": "$950",
+                  "valor": 950
+                },
+                "c5": {
+                  "texto": "",
+                  "valor": 0
+                },
+                "c6": {
+                  "texto": "",
+                  "valor": 0
+                },
+                "c7": {
+                  "texto": "",
+                  "valor": 0
+                }
+              },
+              "total": {
+                "texto": "$5,338,912",
+                "valor": 5338912
+              }
+            }
+          },
+          "pagos": {
+            "titulo": "PAGOS — MXN",
+            "filas": [
+              {
+                "parte": "PROVEEDOR UNO",
+                "provision": false,
+                "urgente": false,
+                "importante": false,
+                "visible": true,
+                "celdas": {
+                  "c1": {
+                    "texto": "$5.0M",
+                    "valor": 5000000
+                  },
+                  "c2": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c3": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c4": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c5": {
+                    "texto": "$120",
+                    "valor": 120.5
+                  },
+                  "c6": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c7": {
+                    "texto": "",
+                    "valor": 0
+                  }
+                },
+                "total": {
+                  "texto": "$5,000,121",
+                  "valor": 5000120.5
+                }
+              },
+              {
+                "parte": "PROVEEDOR DOS",
+                "provision": false,
+                "urgente": false,
+                "importante": false,
+                "visible": true,
+                "celdas": {
+                  "c1": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c2": {
+                    "texto": "$802K",
+                    "valor": 802000
+                  },
+                  "c3": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c4": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c5": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c6": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c7": {
+                    "texto": "",
+                    "valor": 0
+                  }
+                },
+                "total": {
+                  "texto": "$802,000",
+                  "valor": 802000
+                }
+              }
+            ],
+            "subtotal": {
+              "titulo": "SUBTOTAL PAGOS — MXN",
+              "celdas": {
+                "c1": {
+                  "texto": "$5.0M",
+                  "valor": 5000000
+                },
+                "c2": {
+                  "texto": "$802K",
+                  "valor": 802000
+                },
+                "c3": {
+                  "texto": "",
+                  "valor": 0
+                },
+                "c4": {
+                  "texto": "",
+                  "valor": 0
+                },
+                "c5": {
+                  "texto": "$120",
+                  "valor": 120.5
+                },
+                "c6": {
+                  "texto": "",
+                  "valor": 0
+                },
+                "c7": {
+                  "texto": "",
+                  "valor": 0
+                }
+              },
+              "total": {
+                "texto": "$5,802,121",
+                "valor": 5802120.5
+              }
+            }
+          }
+        },
+        "neto": {
+          "titulo": "FLUJO NETO MXN",
+          "celdas": {
+            "c1": {
+              "texto": "−$504K",
+              "valor": -504038,
+              "tono": "peligro"
+            },
+            "c2": {
+              "texto": "$0",
+              "valor": 0,
+              "tono": "neutro"
+            },
+            "c3": {
+              "texto": "$40K",
+              "valor": 40000,
+              "tono": "exito"
+            },
+            "c4": {
+              "texto": "$950",
+              "valor": 950,
+              "tono": "exito"
+            },
+            "c5": {
+              "texto": "−$120",
+              "valor": -120.5,
+              "tono": "peligro"
+            },
+            "c6": {
+              "texto": "$0",
+              "valor": 0,
+              "tono": "neutro"
+            },
+            "c7": {
+              "texto": "$0",
+              "valor": 0,
+              "tono": "neutro"
+            }
+          },
+          "total": {
+            "texto": "−$463,209",
+            "valor": -463208.5,
+            "tono": "peligro"
+          }
+        },
+        "acumulada": {
+          "titulo": "POS. ACUMULADA MXN",
+          "dia0": {
+            "texto": "$2K",
+            "valor": 1500
+          },
+          "celdas": {
+            "c1": {
+              "texto": "−$503K",
+              "valor": -502538,
+              "tono": "peligro"
+            },
+            "c2": {
+              "texto": "−$503K",
+              "valor": -502538,
+              "tono": "peligro"
+            },
+            "c3": {
+              "texto": "−$463K",
+              "valor": -462538,
+              "tono": "peligro"
+            },
+            "c4": {
+              "texto": "−$462K",
+              "valor": -461588,
+              "tono": "peligro"
+            },
+            "c5": {
+              "texto": "−$462K",
+              "valor": -461708.5,
+              "tono": "peligro"
+            },
+            "c6": {
+              "texto": "−$462K",
+              "valor": -461708.5,
+              "tono": "peligro"
+            },
+            "c7": {
+              "texto": "−$462K",
+              "valor": -461708.5,
+              "tono": "peligro"
+            }
+          },
+          "total": {
+            "texto": "−$461,709",
+            "valor": -461708.5
+          }
+        }
+      },
+      {
+        "moneda": "USD",
+        "secciones": {
+          "cobros": {
+            "titulo": "COBROS — USD",
+            "filas": [
+              {
+                "parte": "CLIENT USA",
+                "provision": false,
+                "urgente": false,
+                "importante": false,
+                "visible": true,
+                "celdas": {
+                  "c1": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c2": {
+                    "texto": "$10K",
+                    "valor": 10000
+                  },
+                  "c3": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c4": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c5": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c6": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c7": {
+                    "texto": "",
+                    "valor": 0
+                  }
+                },
+                "total": {
+                  "texto": "$10,000",
+                  "valor": 10000
+                }
+              }
+            ],
+            "subtotal": {
+              "titulo": "SUBTOTAL COBROS — USD",
+              "celdas": {
+                "c1": {
+                  "texto": "",
+                  "valor": 0
+                },
+                "c2": {
+                  "texto": "$10K",
+                  "valor": 10000
+                },
+                "c3": {
+                  "texto": "",
+                  "valor": 0
+                },
+                "c4": {
+                  "texto": "",
+                  "valor": 0
+                },
+                "c5": {
+                  "texto": "",
+                  "valor": 0
+                },
+                "c6": {
+                  "texto": "",
+                  "valor": 0
+                },
+                "c7": {
+                  "texto": "",
+                  "valor": 0
+                }
+              },
+              "total": {
+                "texto": "$10,000",
+                "valor": 10000
+              }
+            }
+          },
+          "pagos": {
+            "titulo": "PAGOS — USD",
+            "filas": [
+              {
+                "parte": "VENDOR USA",
+                "provision": false,
+                "urgente": false,
+                "importante": false,
+                "visible": true,
+                "celdas": {
+                  "c1": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c2": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c3": {
+                    "texto": "$2K",
+                    "valor": 2500
+                  },
+                  "c4": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c5": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c6": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c7": {
+                    "texto": "",
+                    "valor": 0
+                  }
+                },
+                "total": {
+                  "texto": "$2,500",
+                  "valor": 2500
+                }
+              }
+            ],
+            "subtotal": {
+              "titulo": "SUBTOTAL PAGOS — USD",
+              "celdas": {
+                "c1": {
+                  "texto": "",
+                  "valor": 0
+                },
+                "c2": {
+                  "texto": "",
+                  "valor": 0
+                },
+                "c3": {
+                  "texto": "$2K",
+                  "valor": 2500
+                },
+                "c4": {
+                  "texto": "",
+                  "valor": 0
+                },
+                "c5": {
+                  "texto": "",
+                  "valor": 0
+                },
+                "c6": {
+                  "texto": "",
+                  "valor": 0
+                },
+                "c7": {
+                  "texto": "",
+                  "valor": 0
+                }
+              },
+              "total": {
+                "texto": "$2,500",
+                "valor": 2500
+              }
+            }
+          }
+        },
+        "neto": {
+          "titulo": "FLUJO NETO USD",
+          "celdas": {
+            "c1": {
+              "texto": "$0",
+              "valor": 0,
+              "tono": "neutro"
+            },
+            "c2": {
+              "texto": "$10K",
+              "valor": 10000,
+              "tono": "exito"
+            },
+            "c3": {
+              "texto": "−$2K",
+              "valor": -2500,
+              "tono": "peligro"
+            },
+            "c4": {
+              "texto": "$0",
+              "valor": 0,
+              "tono": "neutro"
+            },
+            "c5": {
+              "texto": "$0",
+              "valor": 0,
+              "tono": "neutro"
+            },
+            "c6": {
+              "texto": "$0",
+              "valor": 0,
+              "tono": "neutro"
+            },
+            "c7": {
+              "texto": "$0",
+              "valor": 0,
+              "tono": "neutro"
+            }
+          },
+          "total": {
+            "texto": "$7,500",
+            "valor": 7500,
+            "tono": "exito"
+          }
+        },
+        "acumulada": {
+          "titulo": "POS. ACUMULADA USD",
+          "dia0": {
+            "texto": "−$250",
+            "valor": -250
+          },
+          "celdas": {
+            "c1": {
+              "texto": "−$250",
+              "valor": -250,
+              "tono": "peligro"
+            },
+            "c2": {
+              "texto": "$10K",
+              "valor": 9750,
+              "tono": "exito"
+            },
+            "c3": {
+              "texto": "$7K",
+              "valor": 7250,
+              "tono": "exito"
+            },
+            "c4": {
+              "texto": "$7K",
+              "valor": 7250,
+              "tono": "exito"
+            },
+            "c5": {
+              "texto": "$7K",
+              "valor": 7250,
+              "tono": "exito"
+            },
+            "c6": {
+              "texto": "$7K",
+              "valor": 7250,
+              "tono": "exito"
+            },
+            "c7": {
+              "texto": "$7K",
+              "valor": 7250,
+              "tono": "exito"
+            }
+          },
+          "total": {
+            "texto": "$7,250",
+            "valor": 7250
+          }
+        }
+      }
+    ]
+  },
+  "semanal_base": {
+    "bloques": [
+      {
+        "moneda": "MXN",
+        "secciones": {
+          "cobros": {
+            "titulo": "COBROS — MXN",
+            "filas": [
+              {
+                "parte": "CLIENTE ALFA",
+                "provision": false,
+                "urgente": true,
+                "importante": false,
+                "visible": true,
+                "celdas": {
+                  "c1": {
+                    "texto": "$4.5M",
+                    "valor": 4535962
+                  },
+                  "c2": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c3": {
+                    "texto": "",
+                    "valor": 0
+                  }
+                },
+                "total": {
+                  "texto": "$4,535,962",
+                  "valor": 4535962
+                }
+              },
+              {
+                "parte": "CLIENTE BETA",
+                "provision": false,
+                "urgente": false,
+                "importante": true,
+                "visible": true,
+                "celdas": {
+                  "c1": {
+                    "texto": "$802K",
+                    "valor": 802000
+                  },
+                  "c2": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c3": {
+                    "texto": "",
+                    "valor": 0
+                  }
+                },
+                "total": {
+                  "texto": "$802,000",
+                  "valor": 802000
+                }
+              },
+              {
+                "parte": "CLIENT USA",
+                "provision": false,
+                "urgente": false,
+                "importante": false,
+                "visible": true,
+                "celdas": {
+                  "c1": {
+                    "texto": "$200K",
+                    "valor": 200000
+                  },
+                  "c2": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c3": {
+                    "texto": "",
+                    "valor": 0
+                  }
+                },
+                "total": {
+                  "texto": "$200,000",
+                  "valor": 200000
+                }
+              },
+              {
+                "parte": "FUERA DESPUES",
+                "provision": false,
+                "urgente": false,
+                "importante": false,
+                "visible": true,
+                "celdas": {
+                  "c1": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c2": {
+                    "texto": "$222",
+                    "valor": 222
+                  },
+                  "c3": {
+                    "texto": "",
+                    "valor": 0
+                  }
+                },
+                "total": {
+                  "texto": "$222",
+                  "valor": 222
+                }
+              },
+              {
+                "parte": "CLIENTE GAMA",
+                "provision": true,
+                "urgente": false,
+                "importante": false,
+                "visible": true,
+                "celdas": {
+                  "c1": {
+                    "texto": "$950",
+                    "valor": 950
+                  },
+                  "c2": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c3": {
+                    "texto": "",
+                    "valor": 0
+                  }
+                },
+                "total": {
+                  "texto": "$950",
+                  "valor": 950
+                }
+              }
+            ],
+            "subtotal": {
+              "titulo": "SUBTOTAL COBROS — MXN",
+              "celdas": {
+                "c1": {
+                  "texto": "$5.5M",
+                  "valor": 5538912
+                },
+                "c2": {
+                  "texto": "$222",
+                  "valor": 222
+                },
+                "c3": {
+                  "texto": "",
+                  "valor": 0
+                }
+              },
+              "total": {
+                "texto": "$5,539,134",
+                "valor": 5539134
+              }
+            }
+          },
+          "pagos": {
+            "titulo": "PAGOS — MXN",
+            "filas": [
+              {
+                "parte": "PROVEEDOR UNO",
+                "provision": false,
+                "urgente": false,
+                "importante": false,
+                "visible": true,
+                "celdas": {
+                  "c1": {
+                    "texto": "$5.0M",
+                    "valor": 5000120.5
+                  },
+                  "c2": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c3": {
+                    "texto": "",
+                    "valor": 0
+                  }
+                },
+                "total": {
+                  "texto": "$5,000,121",
+                  "valor": 5000120.5
+                }
+              },
+              {
+                "parte": "PROVEEDOR DOS",
+                "provision": false,
+                "urgente": false,
+                "importante": false,
+                "visible": true,
+                "celdas": {
+                  "c1": {
+                    "texto": "$802K",
+                    "valor": 802000
+                  },
+                  "c2": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c3": {
+                    "texto": "",
+                    "valor": 0
+                  }
+                },
+                "total": {
+                  "texto": "$802,000",
+                  "valor": 802000
+                }
+              },
+              {
+                "parte": "VENDOR USA",
+                "provision": false,
+                "urgente": false,
+                "importante": false,
+                "visible": true,
+                "celdas": {
+                  "c1": {
+                    "texto": "$50K",
+                    "valor": 50000
+                  },
+                  "c2": {
+                    "texto": "",
+                    "valor": 0
+                  },
+                  "c3": {
+                    "texto": "",
+                    "valor": 0
+                  }
+                },
+                "total": {
+                  "texto": "$50,000",
+                  "valor": 50000
+                }
+              }
+            ],
+            "subtotal": {
+              "titulo": "SUBTOTAL PAGOS — MXN",
+              "celdas": {
+                "c1": {
+                  "texto": "$5.9M",
+                  "valor": 5852120.5
+                },
+                "c2": {
+                  "texto": "",
+                  "valor": 0
+                },
+                "c3": {
+                  "texto": "",
+                  "valor": 0
+                }
+              },
+              "total": {
+                "texto": "$5,852,121",
+                "valor": 5852120.5
+              }
+            }
+          }
+        },
+        "neto": {
+          "titulo": "FLUJO NETO MXN",
+          "celdas": {
+            "c1": {
+              "texto": "−$313K",
+              "valor": -313208.5,
+              "tono": "peligro"
+            },
+            "c2": {
+              "texto": "$222",
+              "valor": 222,
+              "tono": "exito"
+            },
+            "c3": {
+              "texto": "$0",
+              "valor": 0,
+              "tono": "neutro"
+            }
+          },
+          "total": {
+            "texto": "−$312,987",
+            "valor": -312986.5,
+            "tono": "peligro"
+          }
+        },
+        "acumulada": {
+          "titulo": "POS. ACUMULADA MXN",
+          "dia0": {
+            "texto": "$0",
+            "valor": 0
+          },
+          "celdas": {
+            "c1": {
+              "texto": "−$313K",
+              "valor": -313208.5,
+              "tono": "peligro"
+            },
+            "c2": {
+              "texto": "−$313K",
+              "valor": -312986.5,
+              "tono": "peligro"
+            },
+            "c3": {
+              "texto": "−$313K",
+              "valor": -312986.5,
+              "tono": "peligro"
+            }
+          },
+          "total": {
+            "texto": "−$312,987",
+            "valor": -312986.5
+          }
+        }
+      }
+    ]
+  }
+}
