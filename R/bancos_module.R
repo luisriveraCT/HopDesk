@@ -58,8 +58,9 @@
                               Cargo = numeric(), Abono = numeric(), Moneda = character(), stringsAsFactors = FALSE)
 
 # Bancos' movement previews (Importar TXT, Reasignar; hd_table class E, T12b):
-# the movements as they are or will be saved, one row each.
-.BNC_COLUMNAS_PREVIA <- list(
+# the movements as they are or will be saved, one row each. A function, not a
+# list: shiny autoloads R/ alphabetically, before hd_columnas.R defines col_*.
+.bnc_columnas_previa <- function() list(
   col_fecha("Fecha", "tablas.bancos.fecha"),
   col_insignia("Tipo", "tablas.facturas.tipo", mapa = lapply(as.list(.TIPO_LABELS), function(t) list(texto = t, tono = "neutro"))),
   col_texto("Parte", "tablas.facturas.parte"),
@@ -1644,7 +1645,7 @@ bancosServer <- function(id, shared) {
                 !is.na(movs$eliminado) & movs$eliminado == FALSE
         .bnc_previa_datos(movs[mask, , drop = FALSE], cuentas())
       }),
-      columnas = .BNC_COLUMNAS_PREVIA, vacio = "tablas.bancos.vacio_reasignar")
+      columnas = .bnc_columnas_previa(), vacio = "tablas.bancos.vacio_reasignar")
 
     output$reasig_btn_ui <- renderUI({
       sesion_key <- input$reasig_sesion %||% ""
@@ -2110,7 +2111,7 @@ bancosServer <- function(id, shared) {
         if (nzchar(cid_final)) pv$cuenta_id <- cid_final
         .bnc_previa_datos(dedup_movimientos(pv, movs_all())$nuevos, cuentas())
       }),
-      columnas = .BNC_COLUMNAS_PREVIA, vacio = "tablas.bancos.vacio_import")
+      columnas = .bnc_columnas_previa(), vacio = "tablas.bancos.vacio_import")
 
     output$import_btn_ui <- renderUI({
       pv <- parsed_preview()
