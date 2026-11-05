@@ -255,7 +255,7 @@ empresasServer <- function(id, shared) {
     # Helper: save + update local cache + broadcast to shared
     .save_and_broadcast <- function(df) {
       save_empresas(df, client_id = shared$effective_client_id())                         # throws on S3 failure
-      bump_sync_version("empresas_db")
+      bump_sync_version("empresas_db", client_id = shared$effective_client_id())
       .empresas_local(df)
       if (!is.null(shared$empresas_db) && is.function(shared$empresas_db))
         shared$empresas_db(df)
