@@ -121,7 +121,7 @@ full <- paste(txt, collapse = "\n")
     ok("do_add_manual's log_action call passes viewer_home_client_id= (scoping regression guard)",
        grepl("viewer_home_client_id\\s*=", block))
     ok("do_add_manual still calls bump_sync_version(\"bancos_movimientos_db\") (regression guard -- Stage 1 fix intact)",
-       grepl('bump_sync_version\\("bancos_movimientos_db"\\)', block))
+       grepl('bump_sync_version\\("bancos_movimientos_db"[,)]', block))   # CM16: now with client_id
   }
 }
 
@@ -231,7 +231,7 @@ full <- paste(txt, collapse = "\n")
     ok("undo_mov_delete clears eliminado_at (consistent restored-row state, not a half-restored row)",
        grepl("movs\\$eliminado_at\\[idx\\]\\s*<-\\s*as\\.POSIXct\\(NA\\)", block))
     ok("undo_mov_delete calls bump_sync_version (so the restore propagates live, consistent with Stage 1/2 of this effort)",
-       grepl('bump_sync_version\\("bancos_movimientos_db"\\)', block))
+       grepl('bump_sync_version\\("bancos_movimientos_db"[,)]', block))   # CM16: now with client_id
     ok("undo_mov_delete calls log_action (every correction action is auditable, per the general logging mandate)",
        grepl("log_action\\(", block))
     ok("undo_mov_delete's log_action call passes client_id= (scoping regression guard)",

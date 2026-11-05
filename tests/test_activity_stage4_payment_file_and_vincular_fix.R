@@ -217,7 +217,7 @@ save_lines <- grep("save_parte_alias_map\\(am,", ph_src)
 
 for (ln in save_lines) {
   window <- paste(ph_src[ln:min(ln + 12, length(ph_src))], collapse = "\n")
-  .chk_true(grepl('bump_sync_version\\("parte_alias_map_db"\\)', window),
+  .chk_true(grepl('bump_sync_version\\("parte_alias_map_db"[,)]', window),   # CM16: now with client_id
        sprintf("pagar_hoy_module.R:%d -- bump_sync_version(\"parte_alias_map_db\") now follows the save (was missing)", ln))
 }
 
