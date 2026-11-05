@@ -455,7 +455,7 @@ settings_observers <- function(input, output, session, shared) {
       registry <- save_interco_v2(registry, client_id = shared$effective_client_id(),
                                   base = isolate(shared$interco_v2()))
       companies <- registry$companies
-      bump_sync_version("interco_v2")
+      bump_sync_version("interco_v2", client_id = shared$effective_client_id())
       TRUE
     }, error = function(e) {
       showNotification(
@@ -710,7 +710,7 @@ settings_observers <- function(input, output, session, shared) {
       save_interco_v2(new_registry, client_id = shared$effective_client_id(), base = cur),
       error = function(e) { message("[IC_SCAN_APPLY] save failed: ", e$message); NULL })
     if (is.null(guardado)) { showNotification(tr("comun.error_guardar"), type = "error"); return() }
-    bump_sync_version("interco_v2")
+    bump_sync_version("interco_v2", client_id = shared$effective_client_id())
     shared$interco_v2(guardado)
 
     # The scanner modal replaced the settings modal (Shiny supports only one modal at a time).
@@ -831,7 +831,7 @@ settings_observers <- function(input, output, session, shared) {
       save_interco_v2(new_registry, client_id = shared$effective_client_id(), base = cur),
       error = function(e) { message("[BP_APPLY_IC] save failed: ", e$message); NULL })
     if (is.null(guardado)) { showNotification(tr("comun.error_guardar"), type = "error"); return() }
-    bump_sync_version("interco_v2")
+    bump_sync_version("interco_v2", client_id = shared$effective_client_id())
     shared$interco_v2(guardado)
     new_registry <- guardado
 
