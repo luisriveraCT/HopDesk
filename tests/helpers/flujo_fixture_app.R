@@ -56,6 +56,7 @@ ui <- bslib::page_fluid(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),
   shinyjs::useShinyjs(), app_styles(),
   actionButton("abrir_flujo", "Flujo de caja"),
+  actionButton("cambiar_cliente", "Cambiar cliente"),
   tags$link(rel = "stylesheet", type = "text/css", href = "cashflow_preview.css?v=6"),
   div(class = "h-100 cf-slide-wrapper", style = "height:600px;",
       div(id = "cf-panel-calendar", class = "cf-panel cf-panel-calendar h-100", "Calendario"),
@@ -71,10 +72,14 @@ server <- function(input, output, session) {
                          else list(AR = function() "MXN", AP = function() "MXN"),
     ic_mode            = list(AR = function() "exclude"),
     tags_db            = if (PRUEBA) function() DP$tags else function() NULL,
-    empresa_sel        = function() c("NETWORKS TRANS", "NETWORKS CARGO")
+    empresa_sel        = function() c("NETWORKS TRANS", "NETWORKS CARGO"),
+    # The session's client (Día 0 is kept per client); #cambiar_cliente
+    # switches between two, as staff jumping between clients does.
+    effective_client_id = reactiveVal("cliente_a")
   )
   cashflowPreviewServer("cfp", shared)
   observeEvent(input$abrir_flujo, shared$cf_preview_open(TRUE))
+  observeEvent(input$cambiar_cliente, shared$effective_client_id(if (identical(shared$effective_client_id(), "cliente_a")) "cliente_b" else "cliente_a"))
   if (PRUEBA) output$eco <- renderText({
     p <- shared$cf_preview_prefill()
     as.character(jsonlite::toJSON(list(abierto = shared$cf_preview_open(),

@@ -97,7 +97,15 @@ cashflow_tabla_columnas <- function(labels) {
 .CF_STORAGE_KEY  <- "hopdesk_cf_preview_state"
 # Día 0 per currency, {"MXN": 1500, ...}: kept until it is changed, not just
 # for the day like the rest (T17c, Luis resp. 2). Before, it lasted the session.
+# One key per client ("hopdesk_cf_dia0:<client_id>"): staff switching from
+# one client to another in the same browser must never see the first one's
+# balance. No client, no key: nothing is read or kept.
 .CF_DIA0_KEY     <- "hopdesk_cf_dia0"
+# The key as a JavaScript string literal (the id escaped), or NULL.
+.cf_dia0_llave <- function(cliente) {
+  if (!is.character(cliente) || length(cliente) != 1L || is.na(cliente) || !nzchar(cliente)) return(NULL)
+  as.character(jsonlite::toJSON(paste0(.CF_DIA0_KEY, ":", cliente), auto_unbox = TRUE))
+}
 # Today in the BROWSER's own calendar, "AAAA-MM-DD". The saved state is kept
 # for the day, and both the day it was saved and today come from here: the
 # server's Sys.Date() wrote it and toISOString() (UTC) read it, so from 18:00
@@ -360,12 +368,8 @@ cashflowPreviewServer <- function(id, shared) {
                 Shiny.setInputValue('%s', s, {priority:'event'});
               }
             } catch(e) {}
-            try {
-              var d0 = JSON.parse(localStorage.getItem('%s') || '{}');
-              if (d0 && typeof d0 === 'object') Shiny.setInputValue('%s', d0, {priority:'event'});
-            } catch(e) {}
           })();
-        ", .CF_STORAGE_KEY, .CF_HOY_JS, ns("stored_state"), .CF_DIA0_KEY, ns("dia0_guardado")))
+        ", .CF_STORAGE_KEY, .CF_HOY_JS, ns("stored_state")))
       } else {
         shinyjs::removeClass(selector = ".cf-slide-wrapper",
                              class    = "cf-preview-active", asis = TRUE)
@@ -665,7 +669,14 @@ cashflowPreviewServer <- function(id, shared) {
     # ── Día 0: typed in the position row's cell (per currency) ───────────────
     # What was typed becomes the currency's Día 0 and the table is rebuilt
     # from it; the typed values are then let go (the data says it now).
+    # Each send of the browser (its nonce) is taken once: t$ediciones() is
+    # worked out again whenever the data changes (a client switch rebuilds
+    # it), and an edit already taken must not come back as a new Día 0.
+    nonce_tomado <- NULL
     observeEvent(tabla$ediciones(), {
+      n <- input[["tabla-ediciones"]]$nonce
+      if (is.null(n) || identical(n, nonce_tomado)) return()
+      nonce_tomado <<- n
       e <- tabla$ediciones()
       e <- e[e$valido & startsWith(e$id, "acum|"), , drop = FALSE]
       if (!nrow(e)) return()
@@ -673,14 +684,43 @@ cashflowPreviewServer <- function(id, shared) {
       for (k in seq_len(nrow(e))) vals[[ sub("^acum\\|", "", e$id[k]) ]] <- as.numeric(e$valor[k])
       cf_day0_rv(vals)
       tabla$limpiar_ediciones()
-      # [CAMBIA T17c] kept in the browser until it is changed (see .CF_DIA0_KEY).
-      shinyjs::runjs(sprintf("try{localStorage.setItem('%s',%s);}catch(e){}", .CF_DIA0_KEY,
-                             jsonlite::toJSON(vals, auto_unbox = TRUE, digits = NA)))
+      # [CAMBIA T17c] kept in the browser until it is changed, under the
+      # client's own key; without a client, nowhere.
+      llave <- .cf_dia0_llave(cliente())
+      if (!is.null(llave))
+        shinyjs::runjs(sprintf("try{localStorage.setItem(%s,%s);}catch(e){}", llave,
+                               jsonlite::toJSON(vals, auto_unbox = TRUE, digits = NA)))
     }, ignoreInit = TRUE)
 
-    # What the browser kept: only finite numbers under a currency's code.
+    # A Día 0 is a balance of one client: switching client starts from none
+    # and reads that client's key, never another's. Read on opening too.
+    cliente <- reactive({
+      cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
+      if (is.character(cid) && length(cid) == 1L && !is.na(cid) && nzchar(cid)) cid else NULL
+    })
+    cliente_dia0 <- NULL
+    observe({
+      cid <- cliente()
+      if (!identical(cid, cliente_dia0)) {
+        cliente_dia0 <<- cid
+        cf_day0_rv(list())
+      }
+      llave <- .cf_dia0_llave(cid)
+      if (is.null(llave) || !isTRUE(shared$cf_preview_open())) return()
+      shinyjs::runjs(sprintf(
+        "(function(){ try { var d0 = JSON.parse(localStorage.getItem(%s) || '{}');
+           if (d0 && typeof d0 === 'object') Shiny.setInputValue('%s', {cliente: %s, valores: d0}, {priority:'event'});
+         } catch(e) {} })();",
+        llave, ns("dia0_guardado"), jsonlite::toJSON(cid, auto_unbox = TRUE)))
+    })
+
+    # What the browser kept: only for the client it was read for (an answer
+    # that arrives after a switch is dropped), only finite numbers under a
+    # currency's code; what was typed in the session wins.
     observeEvent(input$dia0_guardado, {
       g <- input$dia0_guardado
+      if (!is.list(g) || !identical(g$cliente, cliente())) return()
+      g <- g$valores
       if (!is.list(g) || !length(g) || is.null(names(g))) return()
       vals <- cf_day0_rv()
       for (cur in names(g)) {

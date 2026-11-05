@@ -87,7 +87,7 @@ abrir <- function(limpiar = TRUE) {
   b$Page$navigate(sprintf("http://127.0.0.1:%d", PORT), wait_ = TRUE)
   poll_until(function() isTRUE(ev("!!window.Shiny && !!document.getElementById('abrir_flujo')")), timeout_s = 60)
   Sys.sleep(0.8)
-  if (limpiar) ev("try { localStorage.removeItem('hopdesk_cf_preview_state'); localStorage.removeItem('hopdesk_cf_dia0'); } catch (e) {}; 0")
+  if (limpiar) ev("try { localStorage.removeItem('hopdesk_cf_preview_state'); localStorage.removeItem('hopdesk_cf_dia0:cliente_a'); localStorage.removeItem('hopdesk_cf_dia0:cliente_b'); } catch (e) {}; 0")
   clic("document.getElementById('abrir_flujo')")
   espera(function() isTRUE(ev(sprintf("!!window.HDT && !!HDT.estado('%s') && HDT.estado('%s').lista.length > 0", T, T))), 60)
 }
@@ -142,8 +142,8 @@ ronda <- function(w, h) {
        identical(textos_fila("acum|MXN")[-1], unname(E2$filas[["acum|MXN"]][-1])) &&
          identical(textos_fila("acum|MXN")[3], "$2K") && identical(textos_fila("acum|USD")[3], "$0")
      }, 10))
-  ok(paste(et, "B5b: [CAMBIA] Día 0 is kept in the browser, per currency"),
-     identical(ev("localStorage.getItem('hopdesk_cf_dia0')"), "{\"MXN\":1500}"))
+  ok(paste(et, "B5b: [CAMBIA] Día 0 is kept in the browser, per currency, under the client's own key"),
+     identical(ev("localStorage.getItem('hopdesk_cf_dia0:cliente_a')"), "{\"MXN\":1500}") && is.null(ev("localStorage.getItem('hopdesk_cf_dia0')")))
   clic(dia0("MXN"))
   ok(paste(et, "B6: reopening the cell starts from 1500, not '$2K'"),
      identical(ev("document.activeElement.value"), "1500") || identical(ev("Number(document.activeElement.value)"), 1500L))
@@ -162,6 +162,11 @@ ronda <- function(w, h) {
   abrir(limpiar = FALSE)
   ok(paste(et, "B5c: [CAMBIA] after a reload MXN's Día 0 is still 1,500"),
      espera(function() identical(textos_fila("acum|MXN")[3], "$2K"), 10))
+  clic("document.getElementById('cambiar_cliente')")
+  ok(paste(et, "B5d: switching to another client shows its own Día 0 (none), never this one's"),
+     espera(function() identical(textos_fila("acum|MXN")[3], "$0"), 10))
+  clic("document.getElementById('cambiar_cliente')")
+  ok(paste(et, "B5e: and back, this client's 1,500 again"), espera(function() identical(textos_fila("acum|MXN")[3], "$2K"), 10))
   # Toolbar.
   clic("document.getElementById('cfp-btn_grouping')")
   ok(paste(et, "B9: the grouping button reads Diario after Auto, and the grid keeps 7 days (F13)"),

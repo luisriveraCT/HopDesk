@@ -147,7 +147,8 @@ test_that("F12: nothing in the range: no data, the table has no rows (it then sa
 nuevo_shared <- function() list(
   cf_preview_open = reactiveVal(TRUE), cf_preview_prefill = reactiveVal(NULL),
   currency_choices = list(AR = function() c("MXN", "USD"), AP = function() c("MXN", "USD")),
-  ic_mode = list(AR = function() "exclude"), tags_db = function() D$tags, empresa_sel = function() D$empresas)
+  ic_mode = list(AR = function() "exclude"), tags_db = function() D$tags, empresa_sel = function() D$empresas,
+  effective_client_id = reactiveVal("cliente_a"))
 assign("build_export_combined_df", function(shared, ic_mode_val) D$df, envir = globalenv())
 modulo <- function(cuerpo) {
   sh <- nuevo_shared()
@@ -272,21 +273,72 @@ test_that("the whole grid of two scenarios is the reference's, but for the appro
 })
 
 # ── Step 3 [CAMBIA] ─────────────────────────────────────────────────────────
+# What the module asks the browser to run: shinyjs::runjs, mocked inside each
+# test (con_runjs()); con_js() starts a fresh record and gives a reader.
+JS <- character(0)
+con_runjs <- function(env = parent.frame())
+  testthat::local_mocked_bindings(runjs = function(code) JS <<- c(JS, code), .package = "shinyjs", .env = env)
+con_js <- function(session) { JS <<- character(0); function() JS }
+guardado <- function(cliente, ...) list(cliente = cliente, valores = list(...))
 test_that("[CAMBIA] Día 0 is kept in the browser per currency until it changes (it lasted the session)", {
+  con_runjs()
   # Before: cf_day0_rv only, gone on reload. Now: written to localStorage
-  # (hopdesk_cf_dia0) when typed and read back when the preview opens.
+  # under the client's key (hopdesk_cf_dia0:<client>) when typed, and read
+  # back when the preview opens.
   modulo(function(session, input, output, sh, rv) {
     r <- devuelto(session)
-    session$setInputs(dia0_guardado = list(MXN = 2700, USD = "x", mxn = 5, EUR = NULL))
+    session$setInputs(dia0_guardado = guardado("cliente_a", MXN = 2700, USD = "x", mxn = 5, EUR = NULL))
     expect_identical(r$day0(), list(MXN = 2700))
     expect_identical(r$datos()$Dia0[r$datos()$id == "acum|MXN"], 2700)
     # What was typed in this session wins over what the browser kept.
+    js <- con_js(session)
     session$setInputs(`tabla-ediciones` = list(ids = list("acum|MXN"), valores = list(-750), nonce = 1))
-    session$setInputs(dia0_guardado = list(MXN = 2700))
+    session$setInputs(dia0_guardado = guardado("cliente_a", MXN = 2700))
     expect_identical(r$day0()[["MXN"]], -750)
+    expect_true(any(grepl("localStorage.setItem(\"hopdesk_cf_dia0:cliente_a\",{\"MXN\":-750})", js(), fixed = TRUE)))
   })
-  src <- paste(readLines("R/cashflow_preview_module.R", warn = FALSE), collapse = "\n")
-  expect_true(grepl("localStorage.setItem('%s',%s)", src, fixed = TRUE) && grepl("\"hopdesk_cf_dia0\"", src, fixed = TRUE))
+})
+test_that("Día 0 is one client's: A's never reaches B (staff switching clients in one browser)", {
+  con_runjs()
+  modulo(function(session, input, output, sh, rv) {
+    r <- devuelto(session)
+    js <- con_js(session)
+    session$setInputs(`tabla-ediciones` = list(ids = list("acum|MXN"), valores = list(1500), nonce = 1))
+    expect_identical(r$day0(), list(MXN = 1500))
+    sh$effective_client_id("cliente_b"); session$flushReact()
+    # Switching starts from none and reads B's key, never A's.
+    expect_identical(r$day0(), list())
+    expect_identical(r$datos()$Dia0[r$datos()$id == "acum|MXN"], 0)
+    expect_true(any(grepl("localStorage.getItem(\"hopdesk_cf_dia0:cliente_b\")", js(), fixed = TRUE)))
+    expect_false(any(grepl("getItem(\"hopdesk_cf_dia0:cliente_a\")", js(), fixed = TRUE)))
+    # A's answer arriving after the switch is dropped; B's own is taken.
+    session$setInputs(dia0_guardado = guardado("cliente_a", MXN = 1500))
+    expect_identical(r$day0(), list())
+    session$setInputs(dia0_guardado = guardado("cliente_b", MXN = 42))
+    expect_identical(r$day0(), list(MXN = 42))
+    # What B types is kept under B's key.
+    session$setInputs(`tabla-ediciones` = list(ids = list("acum|USD"), valores = list(7), nonce = 2))
+    expect_true(any(grepl("setItem(\"hopdesk_cf_dia0:cliente_b\",{\"MXN\":42,\"USD\":7})", js(), fixed = TRUE)))
+    expect_false(any(grepl("setItem(\"hopdesk_cf_dia0:cliente_a\",{\"MXN\":42", js(), fixed = TRUE)))
+    # No client: nothing is read or kept.
+    n <- length(js())
+    sh$effective_client_id(NULL); session$flushReact()
+    expect_identical(r$day0(), list())
+    session$setInputs(`tabla-ediciones` = list(ids = list("acum|MXN"), valores = list(9), nonce = 3))
+    expect_false(any(grepl("hopdesk_cf_dia0", js()[-seq_len(n)], fixed = TRUE)))
+  })
+})
+test_that("contraprueba: the step-3 storage (one key for every client) is refused", {
+  modulo(function(session, input, output, sh, rv) {
+    r <- devuelto(session)
+    # What 34d7fb4 read: the bare {MXN: ...} of \"hopdesk_cf_dia0\", whoever the client.
+    session$setInputs(dia0_guardado = list(MXN = 1500))
+    expect_identical(r$day0(), list())
+    session$setInputs(dia0_guardado = list(cliente = NULL, valores = list(MXN = 1500)))
+    expect_identical(r$day0(), list())
+  })
+  expect_null(.cf_dia0_llave(NULL)); expect_null(.cf_dia0_llave("")); expect_null(.cf_dia0_llave(NA_character_))
+  expect_identical(.cf_dia0_llave("a'b\"c"), "\"hopdesk_cf_dia0:a'b\\\"c\"")   # the id escaped, never code
 })
 test_that("[CAMBIA] an Esc that a field or the date picker took doesn't close the preview (it did, B7)", {
   # The browser's (chromote B7, inverted); here, that the listener asks first.
