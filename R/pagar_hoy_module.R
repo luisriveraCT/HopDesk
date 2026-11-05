@@ -1815,7 +1815,7 @@ pagarHoyServer <- function(id, shared) {
           shared$abonos_db(ab_updated)
           tryCatch({
             save_abonos(ab_updated, client_id = shared$effective_client_id())
-            bump_sync_version("abonos_db")
+            bump_sync_version("abonos_db", client_id = shared$effective_client_id())
           }, error = function(e) showNotification(
                      paste("Error al guardar abono:", e$message), type = "warning"))
         }
@@ -2172,7 +2172,7 @@ pagarHoyServer <- function(id, shared) {
           shared$abonos_db(ab_updated)
           tryCatch({
             save_abonos(ab_updated, client_id = shared$effective_client_id())
-            bump_sync_version("abonos_db")
+            bump_sync_version("abonos_db", client_id = shared$effective_client_id())
           }, error = function(e) showNotification(
                      paste("Error al guardar abono:", e$message), type = "warning"))
         }
@@ -2673,7 +2673,7 @@ pagarHoyServer <- function(id, shared) {
       # session -- another open tab, a staff jump, a reload -- ever saw it,
       # since sync_bus's poller only re-reads when the version actually
       # changes. This is the real "doesn't persist / doesn't take effect" bug.
-      bump_sync_version("parte_alias_map_db")
+      bump_sync_version("parte_alias_map_db", client_id = shared$effective_client_id())
 
       # Invalidate annotation cache for this parte so it re-annotates immediately
       rm(list = ls(.annot_cache), envir = .annot_cache)
@@ -2711,7 +2711,7 @@ pagarHoyServer <- function(id, shared) {
       if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db(am)
       # See the link handler's identical comment above -- same missing-
       # bump_sync_version() bug, same fix.
-      bump_sync_version("parte_alias_map_db")
+      bump_sync_version("parte_alias_map_db", client_id = shared$effective_client_id())
       rm(list = ls(.annot_cache), envir = .annot_cache)
       .link_counter(.link_counter() + 1L)
 
