@@ -159,7 +159,7 @@ settings_catalogo_edit_observer <- function(input, output, session, shared) {
       updated <- provs |> dplyr::rows_update(new_row, by = "id", unmatched = "ignore")
     }
     save_proveedores(updated, client_id = shared$effective_client_id(), base = provs)   # CM09: rebased on S3
-    bump_sync_version("proveedores_db")
+    bump_sync_version("proveedores_db", client_id = shared$effective_client_id())
     if (!is.null(shared$proveedores_db)) shared$proveedores_db(updated)
     editing_id(NULL)
     output$catalogo_edit_form <- renderUI({ .catalogo_form_empty() })
@@ -190,7 +190,7 @@ settings_catalogo_edit_observer <- function(input, output, session, shared) {
     deleted_row <- provs[provs$id == eid, ]
     updated <- provs |> dplyr::mutate(activo = dplyr::if_else(id == eid, FALSE, activo))
     save_proveedores(updated, client_id = shared$effective_client_id(), base = provs)   # CM09: rebased on S3
-    bump_sync_version("proveedores_db")
+    bump_sync_version("proveedores_db", client_id = shared$effective_client_id())
     if (!is.null(shared$proveedores_db)) shared$proveedores_db(updated)
     editing_id(NULL)
     output$catalogo_edit_form <- renderUI({ .catalogo_form_empty() })
