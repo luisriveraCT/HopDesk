@@ -272,7 +272,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
   })
   if (!save_ok) return(list(ok = FALSE, msg = "Error al guardar el pasivo en S3. Intenta de nuevo."))
   shared$pasivos_liabilities_db(liabs)
-  bump_sync_version("pasivos_liabilities_db")
+  bump_sync_version("pasivos_liabilities_db", client_id = shared$effective_client_id())
 
   # Record current fetched base rate in the forecasting store so provisions use it
   if (startsWith(liab_row$tasa_tipo %||% "fija", "variable_") &&
@@ -368,7 +368,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
                                        conditionMessage(e)))
   tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
   shared$pasivos_provisions_db(new_provs)
-  bump_sync_version("pasivos_provisions_db")
+  bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
 
   # Audit -- previously captured only 5 identity columns (id/categoria/
   # nombre/empresa/estado), never the actual payment terms (recurrence,
