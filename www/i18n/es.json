@@ -106,6 +106,7 @@
   "tablas.edicion.mayor": "Mayor que el máximo ({max})",
   "tablas.edicion.menor": "Menor que el mínimo ({min})",
   "tablas.edicion.no_numero": "Escribe un importe, por ejemplo 1250.50",
+  "tablas.edicion.no_expresion": "Escribe un importe o una cuenta, por ejemplo 5000 + 1200",
   "tablas.edicion.editable": "Clic para escribir el importe",
   "tablas.dinero.millones": "{n}M",
   "tablas.dinero.miles": "{n}K",

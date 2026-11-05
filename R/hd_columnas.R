@@ -198,7 +198,7 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, op
   donde <- sprintf("col_dinero(\"%s\"): `editable`", campo)
   if (!is.list(editable))
     stop(donde, " must be list(min = , max = , aviso = ).", call. = FALSE)
-  desconocidos <- setdiff(names(editable), c("min", "max", "paso", "aviso"))
+  desconocidos <- setdiff(names(editable), c("min", "max", "paso", "aviso", "expresion", "filas"))
   if (length(desconocidos) || (length(editable) && is.null(names(editable))))
     stop(sprintf("%s: unknown field(s): %s.", donde, paste(desconocidos, collapse = ", ")), call. = FALSE)
   for (k in c("min", "max")) {
@@ -214,7 +214,20 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, op
     stop(donde, "$paso must be a positive number.", call. = FALSE)
   if (!is.null(editable$aviso) && !(is.character(editable$aviso) && length(editable$aviso) == 1L))
     stop(donde, "$aviso must be one dictionary key.", call. = FALSE)
-  list(min = editable$min, max = editable$max, paso = paso, aviso = editable$aviso)
+  # T17c (the Flujo's Día 0), both only when asked, so T14's tables keep
+  # exactly what they had:
+  #   expresion = TRUE   the cell takes arithmetic ("5000 + 1200 * 2"); the
+  #                      browser works it out (numbers, + - * / and
+  #                      parentheses, never code) and sends the number
+  #   filas = "<field>"  only rows whose field is TRUE can be typed in
+  if (!is.null(editable$expresion) && !(is.logical(editable$expresion) && length(editable$expresion) == 1L && !is.na(editable$expresion)))
+    stop(donde, "$expresion must be TRUE or FALSE.", call. = FALSE)
+  if (!is.null(editable$filas) && !(is.character(editable$filas) && length(editable$filas) == 1L && nzchar(editable$filas)))
+    stop(donde, "$filas must be the name of a logical field of the row.", call. = FALSE)
+  out <- list(min = editable$min, max = editable$max, paso = paso, aviso = editable$aviso)
+  if (isTRUE(editable$expresion)) out$expresion <- TRUE
+  if (!is.null(editable$filas)) out$filas <- editable$filas
+  out
 }
 
 # A row's bounds for an editable column: a number for every row, or the
@@ -471,6 +484,13 @@ hd_validar_columnas <- function(columnas, datos) {
       stop(sprintf("hd_table: col_dinero(\"%s\") editable$%s names '%s', which is not in the data.",
                    col$campo, k, lim), call. = FALSE)
   }
+  # editable$filas: the field that says which rows can be typed in.
+  for (col in columnas) {
+    f <- col$editable$filas
+    if (!is.null(f) && !f %in% names(datos))
+      stop(sprintf("hd_table: col_dinero(\"%s\") editable$filas names '%s', which is not in the data.", col$campo, f),
+           call. = FALSE)
+  }
   # tono = "<campo>": each row's tone comes from that field (tono_celda).
   for (col in columnas)
     if (!is.null(col$tono) && !identical(col$tono, "signo") && !col$tono %in% names(datos))
@@ -514,10 +534,14 @@ hd_columnas_meta <- function(columnas) {
      m$editable <- list(paso  = col$editable$paso,
                         mayor = .hd_texto(propio %||% "tablas.edicion.mayor"),
                         menor = .hd_texto(propio %||% "tablas.edicion.menor"))
+     if (isTRUE(col$editable$expresion)) m$editable$expresion <- TRUE   # T17c, only when asked
    }
    # Likewise (T17a): only a fixed or shaded column says so.
    if (isTRUE(col$fija)) m$fija <- TRUE
    if (isTRUE(col$accion)) m$accion <- TRUE
+   # T17c: a compact column's group sums (sumas_columnas) read the same way.
+   if (!is.null(col$formato)) m$formato <- col$formato
+   if (!is.null(col$cero)) m$cero <- col$cero
    if (isTRUE(col$destacar)) m$destacar <- TRUE
    # The sign colours the text; a state (a field) tints the cell too.
    if (!is.null(col$tono)) m$tono <- if (identical(col$tono, "signo")) "signo" else "estado"
@@ -600,6 +624,11 @@ hd_filas <- function(datos, columnas, id_col = "id") {
       if (!is.null(col$editable)) {
         v$min <- I(.hd_editable_limite(col$editable$min, datos))
         v$max <- I(.hd_editable_limite(col$editable$max, datos))
+        # editable$filas (T17c): which rows can be typed in; only then sent.
+        if (!is.null(col$editable$filas)) {
+          ef <- as.logical(datos[[col$editable$filas]]); ef[is.na(ef)] <- FALSE
+          v$edf <- I(ef)
+        }
       }
       # accion_celda (T17b): what each cell is, from <campo>.id / .marca /
       # .boton / .n; only the closed lists, anything else is nothing.
@@ -634,6 +663,15 @@ hd_filas <- function(datos, columnas, id_col = "id") {
     s <- as.character(datos[[".semaforo"]])
     s[is.na(s) | !s %in% c("vencida", "muy_pronto", "pronto")] <- ""
     out$semaforo <- I(s)
+  }
+  # filas_resumen (T17c): .resumen, the kind of a summary row the module
+  # works out (the Flujo's "neto", "acumulada"); "" = a row of the data.
+  # Summary rows go at the end of their section; they are never searched,
+  # filtered, selected, counted or summed. Only when the column exists.
+  if (".resumen" %in% names(datos)) {
+    rs <- as.character(datos[[".resumen"]])
+    rs[is.na(rs) | !grepl("^[a-z_]*$", rs)] <- ""
+    out$resumen <- I(rs)
   }
   # sangria (T17b): .nivel, 1 = a child of the row above it (a liability's
   # fee), shown indented with "↳"; 0 or nothing = a row of its own.

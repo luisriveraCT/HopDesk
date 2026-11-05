@@ -49,8 +49,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=28"),
-    htmltools::tags$script(src = "hdtable.js?v=39")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=29"),
+    htmltools::tags$script(src = "hdtable.js?v=40")
   ))
 }
 
@@ -559,8 +559,11 @@ hd_columna_editable <- function(columnas, tabla, piezas) {
   if (length(ed) > 1L)
     stop(sprintf("hd_table '%s': only one editable column per table (%s).", tabla,
                  paste(vapply(ed, `[[`, character(1), "campo"), collapse = ", ")), call. = FALSE)
+  # If it sums, it's the only one that does (the footer adds what is typed);
+  # one that doesn't sum (the Flujo's Día 0, T17c) can sit among columns
+  # that do.
   suma <- Filter(function(col) identical(col$tipo, "dinero") && isTRUE(col$sumar), columnas)
-  if (length(suma) != 1L || !identical(suma[[1]]$campo, ed[[1]]$campo))
+  if (isTRUE(ed[[1]]$sumar) && (length(suma) != 1L || !identical(suma[[1]]$campo, ed[[1]]$campo)))
     stop(sprintf(paste0("hd_table '%s': the editable col_dinero(\"%s\") must be the only one with sumar = TRUE",
                         " (the footer adds what is typed); give the others sumar = FALSE."),
                  tabla, ed[[1]]$campo), call. = FALSE)
@@ -653,6 +656,11 @@ hd_ediciones <- function(e, datos, col, id_col) {
   bloq <- if (".bloqueada" %in% names(datos)) as.logical(datos[[".bloqueada"]]) %in% TRUE else rep(FALSE, nrow(datos))
   sigue <- !is.na(fila) & !is.na(val) & !duplicated(ids)
   sigue[sigue] <- !bloq[fila[sigue]]
+  # editable$filas (T17c): a row that can't be typed in drops out too.
+  if (!is.null(col$editable$filas)) {
+    ef <- as.logical(datos[[col$editable$filas]]) %in% TRUE
+    sigue[sigue] <- ef[fila[sigue]]
+  }
   if (!any(sigue)) return(vacia)
   ids <- ids[sigue]; val <- round(val[sigue], 2); fila <- fila[sigue]
   mn <- .hd_editable_limite(col$editable$min, datos)[fila]
@@ -774,6 +782,14 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
   hd_columnas_piezas(cols_fijas, tabla, piezas_tabla)
   hd_columna_opcion(cols_fijas, tabla, piezas_tabla)
   celda_meta <- hd_accion_celda_meta(accion_celda, tabla, piezas_tabla)
+  # sumas_columnas (T17c): every summed column adds up in its group's row --
+  # several sums, so nothing that shows one total can come with it.
+  if ("sumas_columnas" %in% piezas_tabla) {
+    choca <- intersect(c("sumador_sel", "sumador_vis"), piezas_tabla)
+    if (length(choca) || identical(fichas$mostrar, "monto"))
+      stop(sprintf("hd_table '%s': 'sumas_columnas' adds up every summed column; it can't come with %s.", tabla,
+                   if (length(choca)) paste(choca, collapse = ", ") else "fichas$mostrar = \"monto\""), call. = FALSE)
+  }
   # sangria: a child row follows its parent in the module's order; sorting
   # would separate them.
   if ("sangria" %in% piezas_tabla && "ordenar" %in% piezas_tabla)

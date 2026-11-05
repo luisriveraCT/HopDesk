@@ -988,6 +988,9 @@
     // T17b: how urgent each row is (semaforo), whether it's a child of the
     // row above (sangria) and what a cell click sends (accion_celda).
     st.sem = st.p.semaforo && f.semaforo ? arr(f.semaforo) : null;
+    // filas_resumen (T17c): rows the module works out (the Flujo's net and
+    // position), "" = a row of the data.
+    st.res = st.p.filas_resumen && f.resumen ? arr(f.resumen) : null;
     st.niv = st.p.sangria && f.nivel ? arr(f.nivel) : null;
     st.celdaCfg = st.p.accion_celda ? msg.celda || null : null;
     st.meses = st.mes && msg.periodo ? arr(msg.periodo.meses) : null;
@@ -1013,6 +1016,7 @@
                completo: c.completo ? arr(c.completo) : null, valor: c.valor ? arr(c.valor) : null,
                cid: c.cid ? arr(c.cid) : null, marca: c.marca ? arr(c.marca) : null,
                boton: c.boton ? arr(c.boton) : null, cn: c.n ? arr(c.n) : null, mano: c.mano ? arr(c.mano) : null,
+               edf: c.edf ? arr(c.edf) : null,
                min: c.min ? arr(c.min) : null, max: c.max ? arr(c.max) : null };
     });
     st.idx = {};
@@ -1036,7 +1040,7 @@
     var edAntes = JSON.stringify(st.ed);
     Object.keys(st.ed).forEach(function (id) {
       var k = st.idx[id];
-      if (st.colEd < 0 || k == null || st.bloq[k]) delete st.ed[id];
+      if (st.colEd < 0 || k == null || st.bloq[k] || !editableFila(st, k)) delete st.ed[id];
       else st.ed[id].valido = edValido(st, k, st.ed[id].valor);
     });
     if (JSON.stringify(st.ed) !== edAntes) enviarEdiciones(st);
@@ -1045,6 +1049,14 @@
     st.suma = -1;
     for (var j = 0; j < st.cols.length; j++) {
       if (st.cols[j].tipo === 'dinero' && st.cols[j].sumar) { st.suma = j; break; }
+    }
+    // sumas_columnas (T17c): every summed column adds up in its group's row;
+    // with several sums there is no single total (footer, bands, chips).
+    st.sumas = null;
+    if (st.p.sumas_columnas) {
+      st.sumas = [];
+      st.cols.forEach(function (c, j) { if (c.tipo === 'dinero' && c.sumar) st.sumas.push(j); });
+      st.suma = -1;
     }
     columnasVisibles(st);
     if (colsCambian) {
@@ -1230,6 +1242,7 @@
     if (sem) tr.classList.add('hdt-sem-' + String(sem).replace(/[^a-z_]/g, ''));
     var hija = st.niv && st.niv[i] > 0;
     if (hija) tr.classList.add('hdt-hija');
+    if (st.res && st.res[i]) tr.classList.add('hdt-resumen', 'hdt-resumen-' + String(st.res[i]).replace(/[^a-z_]/g, ''));
     var et = tonoEtiqueta(st, i);
     if (et) tr.classList.add('hdt-et-' + et);
     for (var k = 0; k < st.ver.length; k++) {
@@ -1376,7 +1389,16 @@
     // (base: what the chips count), then the chip.
     var mes = st.meses ? st.mes : null;
     var activos = filtrosActivos(st), trasBusq = [], base = [], vis = [];
+    // filas_resumen: summary rows wait apart, by their first section's value;
+    // armarLista() puts them at the end of that section (never searched,
+    // filtered, counted, selected or summed).
+    st.resPor = st.res ? {} : null;
     for (var i = 0; i < st.n; i++) {
+      if (st.res && st.res[i]) {
+        var sv = st.secciones ? String(st.secciones[0].valores[i]) : '';
+        (st.resPor[sv] = st.resPor[sv] || []).push(i);
+        continue;
+      }
       if (mes && !st.fijar[i] && st.meses[i] !== mes) continue;
       if (st.q && st.busq[i].indexOf(st.q) < 0) continue;
       trasBusq.push(i);
@@ -1494,7 +1516,11 @@
       previa = i;
     });
     var bandas = [];
-    bloques.forEach(function (bl) {
+    // filas_resumen: a section's summary rows after its last block (only a
+    // section that shows), in the data's order.
+    function resumenDe(v) { (st.resPor && st.resPor[v] || []).forEach(function (i) { poner(i); }); }
+    bloques.forEach(function (bl, nb) {
+      if (st.resPor && niv && nb > 0 && bl.desde === 0) resumenDe(String(niv[0].valores[bloques[nb - 1].filas[0]]));
       if (niv) {
         for (l = bl.desde; l < niv.length; l++) {
           var v = niv[l].valores[bl.filas[0]];
@@ -1516,6 +1542,8 @@
         });
       });
     });
+    if (st.resPor && bloques.length)
+      resumenDe(niv ? String(niv[0].valores[bloques[bloques.length - 1].filas[0]]) : '');
     st.vis = filas;
     st.lista = lista;
     st.cab = cab;
@@ -1590,6 +1618,8 @@
         td.appendChild(b);
         td.appendChild(nodo('span', 'hdt-grupo-n', FMT_N.format(libres.length)));
         if (comun) pintarCelda(st, td, j, i0);
+      } else if (st.sumas && st.sumas.indexOf(j) >= 0) {
+        td.textContent = sumaColumna(st, j, libres);
       } else if (j === st.suma) {
         var s = {};
         libres.forEach(function (i) { var mo = st.moneda[i] || ''; s[mo] = (s[mo] || 0) + montoFila(st, i); });
@@ -1606,6 +1636,36 @@
     if (tonoG) tr.classList.add('hdt-et-' + tonoG);
     if (st.accFila.length) tr.appendChild(botonesGrupo(st, u));
     return tr;
+  }
+
+  // sumas_columnas (T17c): what rows `filas` add up in column j, per currency,
+  // in the column's own format (compact, empty at 0, when it asks so). An
+  // amount typed in the editable column counts if valid, like the footer.
+  function sumaColumna(st, j, filas) {
+    var c = st.cols[j], o = st.celdas[j].orden, s = {};
+    filas.forEach(function (i) {
+      var e = j === st.colEd ? st.ed[st.ids[i]] : null;
+      var v = e ? (e.valido ? e.valor : 0) : Number(o[i]) || 0;
+      var mo = st.moneda[i] || '';
+      s[mo] = (s[mo] || 0) + v;
+    });
+    var mons = Object.keys(s).sort();
+    if (!mons.length) mons = [''], s[''] = 0;
+    var fmt = function (v) {
+      if (c.cero === 'vacio' && Math.abs(v) < 0.005) return '';
+      return c.formato === 'compacto' ? compacto(v) : dinero(v);
+    };
+    return mons.map(function (mo) { var x = fmt(s[mo]); return (mons.length > 1 && mo && x ? mo + ' ' : '') + x; })
+               .filter(function (x) { return x; }).join(' · ');
+  }
+  // "$4.5M" / "$802K" / "$950": R's .hd_dinero_compacto(), the same rule --
+  // the unit by what the amount rounds to, halves up, units from the dictionary.
+  function compacto(v) {
+    var ax = Math.abs(Math.round(v * 100) / 100), arriba = function (x) { return Math.floor(x + 0.5 + 1e-9); }, txt;
+    if (ax >= 999500) txt = t('tablas.dinero.millones', { n: (arriba(ax / 1e5) / 10).toFixed(1) });
+    else if (ax >= 999.5) txt = t('tablas.dinero.miles', { n: String(arriba(ax / 1e3)) });
+    else txt = FMT_N.format(arriba(ax));
+    return (v < 0 && ax >= 0.5 ? '-' : '') + '$' + txt;
   }
 
   // A group's row buttons: only the row actions with grupo = TRUE (＋),
@@ -2101,7 +2161,7 @@
   }
   function pintarEditable(st, td, i) {
     var e = st.ed[st.ids[i]];
-    if (!st.bloq[i]) td.classList.add('hdt-editable');
+    if (!st.bloq[i] && editableFila(st, i)) td.classList.add('hdt-editable');
     if (!e) { pintarCelda(st, td, st.colEd, i); return; }
     td.classList.add('hdt-editada');
     if (fueraDeOpcion(st, i)) td.classList.add('hdt-ed-fuera');
@@ -2191,6 +2251,47 @@
     if (!/^-?(\d+\.?\d*|\.\d+)$/.test(s)) return null;
     return Math.round(Number(s) * 100) / 100;
   }
+  // editable$filas (T17c): only rows the data allows can be typed in.
+  function editableFila(st, i) {
+    var ef = st.colEd >= 0 ? st.celdas[st.colEd].edf : null;
+    return !ef || !!ef[i];
+  }
+  // editable$expresion (T17c, the Flujo's Día 0): numbers, + - * /,
+  // parentheses and a sign -- "5000 + 1200 * 2"; spaces, $ and thousands
+  // commas are number formatting; the typographic minus is one. Never
+  // Function() or eval: anything else is refused (null). "" goes back to
+  // the data's value.
+  function leerExpresion(txt) {
+    var s = String(txt == null ? '' : txt).replace(/\u2212/g, '-').replace(/[\s$,]/g, '');
+    if (s === '') return '';
+    var p = 0;
+    function num() {
+      var m = /^(\d+(\.\d*)?|\.\d+)/.exec(s.slice(p));
+      if (!m) throw new Error('num');
+      p += m[0].length;
+      return parseFloat(m[0]);
+    }
+    function factor() {
+      var c = s.charAt(p);
+      if (c === '+' || c === '-') { p++; var v = factor(); return c === '-' ? -v : v; }
+      if (c === '(') { p++; var w = suma(); if (s.charAt(p) !== ')') throw new Error('paren'); p++; return w; }
+      return num();
+    }
+    function producto() {
+      var v = factor();
+      while (s.charAt(p) === '*' || s.charAt(p) === '/') { var o = s.charAt(p++), w = factor(); v = o === '*' ? v * w : v / w; }
+      return v;
+    }
+    function suma() {
+      var v = producto();
+      while (s.charAt(p) === '+' || s.charAt(p) === '-') { var o = s.charAt(p++), w = producto(); v = o === '+' ? v + w : v - w; }
+      return v;
+    }
+    try {
+      var v = suma();
+      return p === s.length && isFinite(v) ? Math.round(v * 100) / 100 : null;
+    } catch (e) { return null; }
+  }
   function enviarEdiciones(st) {
     var ids = Object.keys(st.ed);
     if (window.Shiny && Shiny.setInputValue)
@@ -2221,7 +2322,7 @@
   }
   // The next (d = 1) or previous (d = -1) painted row that can be typed in.
   function vecina(st, i, d) {
-    var filas = st.lista.filter(function (it) { return typeof it === 'number' && !st.bloq[it]; });
+    var filas = st.lista.filter(function (it) { return typeof it === 'number' && !st.bloq[it] && editableFila(st, it); });
     var p = filas.indexOf(i);
     return p < 0 || filas[p + d] == null ? null : filas[p + d];
   }
@@ -2241,7 +2342,7 @@
   // amount typed before, or the data's value.
   function abrirEditor(st, i, texto) {
     if (st.editor) guardarEditor(st, 0, true);
-    if (st.colEd < 0 || st.bloq[i]) return;
+    if (st.colEd < 0 || st.bloq[i] || !editableFila(st, i)) return;
     var td = tdEditable(st, i);
     if (!td) {
       // Window mode: the row isn't painted yet; bring it into view.
@@ -2286,11 +2387,12 @@
   function guardarEditor(st, mover, suave) {
     var ed = st.editor;
     if (!ed) return;
-    var v = leerImporte(ed.input.value);
+    var expr = (st.cols[st.colEd].editable || {}).expresion;
+    var v = expr ? leerExpresion(ed.input.value) : leerImporte(ed.input.value);
     if (v === null) {
       if (suave) { cancelarEditor(st, true); return; }
       ed.td.classList.add('hdt-ed-mal');
-      avisoEn(ed.td, t('tablas.edicion.no_numero'));
+      avisoEn(ed.td, t(expr ? 'tablas.edicion.no_expresion' : 'tablas.edicion.no_numero'));
       ed.input.focus({ preventScroll: true });
       ed.input.select();
       return;
@@ -2312,7 +2414,7 @@
     if (TIP && TIP.classList.contains('hdt-tip-mal')) TIP.hidden = true;
     // P1: typing an amount marks its row (taking it back to the data's
     // value doesn't unmark it).
-    var marca = st.ed[id] && !st.sel.has(id) && (st.p.casillas || st.p.sel_fila);
+    var marca = st.ed[id] && !st.sel.has(id) && (st.p.casillas || st.p.sel_fila) && !(st.res && st.res[i]);
     if (marca) { st.sel.add(id); st.ancla = id; st.anclaGrupo = null; }
     rehacerFila(st, i);
     refrescarTotales(st, i);
@@ -2419,6 +2521,8 @@
         if (!e.target.closest('input.hdt-ed-input')) abrirEditor(st, i);
         return;
       }
+      // filas_resumen: a summary row is never marked nor opens the detail.
+      if (st.res && st.res[i]) return;
       // Second click of a double click: the dblclick handler undoes the first.
       if (st.p.detalle && e.detail > 1) return;
       if (st.p.detalle) st.antesClic = { sel: new Set(st.sel), ancla: st.ancla };
@@ -2444,7 +2548,7 @@
     if (st.p.detalle) {
       st.tbody.addEventListener('dblclick', function (e) {
         var tr = e.target.closest('tr');
-        if (!tr || tr._i == null || e.target.closest('input, button, td.hdt-editable, td.hdt-celda-clic')) return;
+        if (!tr || tr._i == null || e.target.closest('input, button, td.hdt-editable, td.hdt-celda-clic') || (st.res && st.res[tr._i])) return;
         if (st.antesClic) {
           st.sel = st.antesClic.sel;
           st.ancla = st.antesClic.ancla;

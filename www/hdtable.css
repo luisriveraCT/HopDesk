@@ -237,6 +237,15 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-celda-btn { font: inherit; font-size: .8em; line-height: 1; margin-left: 4px; padding: 0 2px; border: 0; background: none;
   cursor: pointer; opacity: .75; }
 .hdt-celda-btn:hover { opacity: 1; }
+/* filas_resumen (T17c): rows the module works out (the Flujo's net and
+   position) on a dark band (Luis, 2026-11-04: the engine's tones, dark only
+   here); the sign's tones lighten to read on it. Never hover or selection. */
+.hdt-tabla tr.hdt-resumen td { background: #1e3a5f; color: #e8eef6; font-weight: 600; }
+.hdt-tabla tbody tr.hdt-resumen:hover td { background: #1e3a5f; }
+.hdt-tabla tr.hdt-resumen td.hdt-tc-signo.hdt-tc-exito   { color: #6ee7a0; }
+.hdt-tabla tr.hdt-resumen td.hdt-tc-signo.hdt-tc-peligro { color: #ff8a8a; }
+.hdt-tabla tr.hdt-resumen td.hdt-tc-signo.hdt-tc-neutro  { color: #a9bdd3; }
+.hdt-tabla tr.hdt-resumen td.hdt-editable { text-decoration: underline dotted #a9bdd3; text-underline-offset: 3px; }
 .hdt-tabla td.hdt-celda-mano { position: relative; }
 .hdt-tabla td.hdt-celda-mano::after { content: ""; position: absolute; top: 3px; right: 3px; width: 5px; height: 5px;
   border-radius: 50%; background: var(--hdt-muted); }

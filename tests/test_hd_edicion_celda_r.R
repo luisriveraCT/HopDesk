@@ -37,7 +37,7 @@ test_that("only col_dinero has editable (P4)", {
 })
 
 # ── What hd_table_server checks ─────────────────────────────────────────────
-test_that("an editable column needs the piece, is the only one and is the one that sums", {
+test_that("an editable column needs the piece, is the only one and, if it sums, the only one that sums", {
   expect_identical(hd_columna_editable(cols_abono(), "abono_parcial", hd_piezas_de("abono_parcial", PIEZAS))$campo,
                    "Importe")
   expect_null(hd_columna_editable(cols_abono(NULL), "abono_parcial", hd_piezas_de("abono_parcial")))
@@ -47,8 +47,11 @@ test_that("an editable column needs the piece, is the only one and is the one th
   expect_error(hd_columna_editable(dos, "abono_parcial", PIEZAS), "only one editable column")
   suman_dos <- list(col_dinero("Saldo"), col_dinero("Importe", editable = list(max = "Saldo")))
   expect_error(hd_columna_editable(suman_dos, "abono_parcial", PIEZAS), "must be the only one with sumar = TRUE")
+  # T17c (approved contract, additive): an editable column that doesn't sum
+  # can sit among columns that do -- the Flujo's Día 0 among its periods. It
+  # used to be an error; T14's tables (the editable one sums) don't change.
   no_suma <- list(col_dinero("Saldo"), col_dinero("Importe", sumar = FALSE, editable = list(max = "Saldo")))
-  expect_error(hd_columna_editable(no_suma, "abono_parcial", PIEZAS), "must be the only one with sumar = TRUE")
+  expect_identical(hd_columna_editable(no_suma, "abono_parcial", PIEZAS)$campo, "Importe")
   # At creation, not on the first data (fixed columns).
   expect_error(hd_table_server("t", tabla = "abono_parcial", datos = reactive(facturas), columnas = cols_abono()),
                "edicion_celda")

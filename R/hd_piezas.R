@@ -36,7 +36,9 @@ HD_PIEZAS_MOTOR <- c(
   # opcion_fila (Luis, T18 §6)
   "opcion_fila",
   # T17b: Pasivos · Tabla (class F)
-  "semaforo", "accion_celda", "sangria"
+  "semaforo", "accion_celda", "sangria",
+  # T17c: the Flujo de caja (class F)
+  "sumas_columnas", "filas_resumen"
 )
 
 HD_REGLAS_NUCLEO <- c(
