@@ -157,7 +157,7 @@ notes_handlers <- function(input, output, session, shared,
       showNotification(tr("comun.error_guardar"), type = "error", duration = NULL)
       return(invisible(NULL))
     }
-    bump_sync_version("notes_df")
+    bump_sync_version("notes_df", client_id = shared$effective_client_id())
     removeModal()
     active_note_id(NULL)
     active_note_lgr(NULL)
@@ -232,7 +232,7 @@ notes_handlers <- function(input, output, session, shared,
       showNotification(tr("comun.error_guardar"), type = "error", duration = NULL)
       return(invisible(NULL))
     }
-    bump_sync_version("notes_df")
+    bump_sync_version("notes_df", client_id = shared$effective_client_id())
     removeModal()
     active_note_id(NULL)
     active_note_lgr(NULL)
