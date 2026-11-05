@@ -206,9 +206,14 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
   # Merge provisions — AP only; provisional provisions appear in the ledger
   # as placeholder rows until converted to real manual_inv items.
   # provs_df is passed from a reactive so df_combined() re-fires on provision saves.
+  # Only the provisions the caller passes: without them, none. This used to
+  # fall back to load_pasivos_provisions() with no client_id and no
+  # liabilities. On the shared deployment that read is refused (no tenant),
+  # but with one tenant's CLIENT_ID it loaded them all into the Calendar's
+  # df_base -- which takes its provisions from df_prov_rows() -- so each
+  # showed twice, and the ones of a deleted liability showed at all (T18).
   if (identical(ledger, "AP")) {
-    provs <- if (!is.null(provs_df)) provs_df
-             else tryCatch(load_pasivos_provisions(), error = function(e) NULL)
+    provs <- provs_df
     liabs <- liabs_df
     if (!is.null(provs) && nrow(provs)) {
       prov_rows <- pasivos_provisions_as_ledger_rows(provs, liabs, ledger = "AP")
