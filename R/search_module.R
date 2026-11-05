@@ -337,7 +337,7 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
     tag_result <- s3_save_with_retry(function()
       save_tags(tdb, client_id = shared$effective_client_id(), base = tdb_base))
     if (isTRUE(tag_result$ok)) {
-      bump_sync_version("tags_db")
+      bump_sync_version("tags_db", client_id = shared$effective_client_id())
       showNotification(paste0(nrow(keys_df), " factura(s) etiquetadas."),
                        type = "message", duration = 2)
     } else {
@@ -417,7 +417,7 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
         mask <- !is.na(provs_db$id) & provs_db$id %in% pids_cancel
         if (any(mask)) provs_db$estado[mask] <- "closed"
         tryCatch(shared$pasivos_provisions_db(provs_db), error = function(e) NULL)
-        tryCatch(bump_sync_version("pasivos_provisions_db"), error = function(e) NULL)
+        tryCatch(bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id()), error = function(e) NULL)
       } else {
         tryCatch({ shared$pasivos_provisions_db(load_pasivos_provisions()) }, error = function(e) NULL)
       }
