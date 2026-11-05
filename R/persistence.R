@@ -1400,7 +1400,7 @@ load_interco_v2 <- function(client_id = NULL) {
       out  <- .migrate_interco_v1_to_v2(old, cmap)
       tryCatch({
         save_interco_v2(out)
-        if (exists("bump_sync_version", mode = "function")) bump_sync_version("interco_v2")
+        if (exists("bump_sync_version", mode = "function")) bump_sync_version("interco_v2", client_id = .client_id())
       }, error = function(e)
         message("[IC] auto-migration save failed: ", e$message))
       return(out)
