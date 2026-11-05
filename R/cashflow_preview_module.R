@@ -688,7 +688,7 @@ cashflowPreviewServer <- function(id, shared) {
       # client's own key; without a client, nowhere.
       llave <- .cf_dia0_llave(cliente())
       if (!is.null(llave))
-        shinyjs::runjs(sprintf("try{localStorage.setItem(%s,%s);}catch(e){}", llave,
+        shinyjs::runjs(sprintf("try{localStorage.setItem(%s,JSON.stringify(%s));}catch(e){}", llave,
                                jsonlite::toJSON(vals, auto_unbox = TRUE, digits = NA)))
     }, ignoreInit = TRUE)
 

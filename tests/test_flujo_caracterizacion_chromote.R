@@ -123,7 +123,7 @@ ronda <- function(w, h) {
   ok(paste(et, "B1: every row the browser paints reads what R says (texts; F1-F10 hold there)"),
      all(vapply(names(E$filas), function(id) {
        p <- textos_fila(id)
-       identical(p[-1], unname(E$filas[[id]][-1])) && startsWith(p[1], E$filas[[id]][1])
+       identical(p[-1], unname(E$filas[[id]][-1])) && endsWith(p[1], E$filas[[id]][1])   # a provision's badge goes first
      }, logical(1))))
   ok(paste(et, "B3: net tones -- a negative red, a zero grey, a positive green (F8); counterparties have none"), {
     cls <- function(id, k) ev(sprintf("%s.children[%d].className", fila(id), k))

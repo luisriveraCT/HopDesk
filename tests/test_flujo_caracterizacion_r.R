@@ -295,7 +295,7 @@ test_that("[CAMBIA] Día 0 is kept in the browser per currency until it changes 
     session$setInputs(`tabla-ediciones` = list(ids = list("acum|MXN"), valores = list(-750), nonce = 1))
     session$setInputs(dia0_guardado = guardado("cliente_a", MXN = 2700))
     expect_identical(r$day0()[["MXN"]], -750)
-    expect_true(any(grepl("localStorage.setItem(\"hopdesk_cf_dia0:cliente_a\",{\"MXN\":-750})", js(), fixed = TRUE)))
+    expect_true(any(grepl("localStorage.setItem(\"hopdesk_cf_dia0:cliente_a\",JSON.stringify({\"MXN\":-750}))", js(), fixed = TRUE)))
   })
 })
 test_that("Día 0 is one client's: A's never reaches B (staff switching clients in one browser)", {
@@ -318,8 +318,8 @@ test_that("Día 0 is one client's: A's never reaches B (staff switching clients 
     expect_identical(r$day0(), list(MXN = 42))
     # What B types is kept under B's key.
     session$setInputs(`tabla-ediciones` = list(ids = list("acum|USD"), valores = list(7), nonce = 2))
-    expect_true(any(grepl("setItem(\"hopdesk_cf_dia0:cliente_b\",{\"MXN\":42,\"USD\":7})", js(), fixed = TRUE)))
-    expect_false(any(grepl("setItem(\"hopdesk_cf_dia0:cliente_a\",{\"MXN\":42", js(), fixed = TRUE)))
+    expect_true(any(grepl("setItem(\"hopdesk_cf_dia0:cliente_b\",JSON.stringify({\"MXN\":42,\"USD\":7}))", js(), fixed = TRUE)))
+    expect_false(any(grepl("setItem(\"hopdesk_cf_dia0:cliente_a\",JSON.stringify({\"MXN\":42", js(), fixed = TRUE)))
     # No client: nothing is read or kept.
     n <- length(js())
     sh$effective_client_id(NULL); session$flushReact()
