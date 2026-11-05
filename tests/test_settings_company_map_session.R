@@ -29,7 +29,7 @@ extract <- function(file, names, env) {
 env <- new.env()
 extract("R/settings/settings_cuentas.R",     c(".cuentas_panel_ui", ".cuenta_form_ui"), env)
 extract("R/settings/settings_proveedores.R", c(".catalogo_panel_ui", ".catalogo_form_ui"), env)
-extract("R/settings/settings_bp.R",          ".bp_datatable", env)
+extract("R/settings/settings_bp.R",          ".ic_candidatos_filas", env)
 extract("R/data_pipeline.R",                 "scan_ic_candidates", env)
 env$`%||%` <- `%||%`
 # The accounts panel holds two engine tables (T16); only their container matters here.
@@ -42,7 +42,7 @@ for (global in list(c(), c(HDX = "Otra Empresa"))) {
   etiqueta <- if (length(global)) "another client's map" else "an empty map"
 
   for (fn in c(".cuentas_panel_ui", ".cuenta_form_ui", ".catalogo_panel_ui",
-               ".catalogo_form_ui", ".bp_datatable", "scan_ic_candidates")) {
+               ".catalogo_form_ui", ".ic_candidatos_filas", "scan_ic_candidates")) {
     f <- get(fn, env)
     ok(sprintf("%s: cmap has no default (global holds %s)", fn, etiqueta),
        "cmap" %in% names(formals(f)) && identical(formals(f)$cmap, quote(expr = )))

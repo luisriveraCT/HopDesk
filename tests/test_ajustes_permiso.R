@@ -144,15 +144,14 @@ GUARDADOS <- list(
   ic_scan_apply = list(servidor = settings_observers, permiso = "can_manage_interco",
     clics = function(session, output) {
       session$setInputs(scan_ic_btn = 1)
-      session$setInputs(ic_scan_tbl_rows_selected = 2)   # C2001, the one not yet IC
+      session$setInputs(`escaner_ic_t-sel` = "NTS|AR|C2001")   # the one not yet IC
       session$setInputs(ic_scan_apply = 1)
     },
     escribio = function(r) "2001" %in% r$registro$companies$NTS$ar),
   bp_apply_ic_btn = list(servidor = settings_observers, permiso = "can_manage_interco",
     clics = function(session, output) {
       session$setInputs(bp_refresh_btn = 1)
-      invisible(output$tbl_bp_sap)                       # draws the table: sets the sorted candidates
-      session$setInputs(tbl_bp_sap_rows_selected = 2)
+      session$setInputs(`bp_sap_t-sel` = "NTS|AR|C2001")
       session$setInputs(bp_apply_ic_btn = 1)
     },
     escribio = function(r) "2001" %in% r$registro$companies$NTS$ar)
@@ -189,7 +188,7 @@ ok("formulario de cuenta con permiso: Guardar y Desactivar",
 CANDS <- scan_ic_candidates(SNAP_AR, NULL, REG0, CMAP)
 ok("Business Partners sin can_manage_interco: sin “Aplicar como IC”; la tabla sí",
    { h <- html(isolate(.bp_panel_ui(nuevo_shared(SIN$can_manage_interco), CANDS)))
-     !tiene(h, "bp_apply_ic_btn") && grepl("tbl_bp_sap", h, fixed = TRUE) })
+     !tiene(h, "bp_apply_ic_btn") && tiene(h, "bp_sap_t-hdt") })
 ok("Business Partners con can_manage_interco: “Aplicar como IC”",
    tiene(html(isolate(.bp_panel_ui(nuevo_shared(CON), CANDS))), "bp_apply_ic_btn"))
 

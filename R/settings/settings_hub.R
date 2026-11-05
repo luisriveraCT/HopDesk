@@ -110,8 +110,17 @@ settings_observers <- function(input, output, session, shared) {
   ic_pending_nav  <- reactiveVal(NULL)
   # Business Partners: cached scan of unique SAP codes from invoice snapshots
   bp_candidates        <- reactiveVal(NULL)
-  # Sorted version of bp_candidates (matches DT display order for row-index alignment)
-  bp_sorted_candidates <- reactiveVal(NULL)
+  # The table (bp_sap, T16): "Aplicar como IC" takes the marked ids
+  # (initials|ledger|code), never row positions. No pre-selection: "IC ✓"
+  # shows the codes already in the registry.
+  t_bp <- hd_table_server(
+    "bp_sap_t", tabla = "bp_sap",
+    datos = reactive(.ic_candidatos_filas(bp_candidates(), shared$company_map(),
+                                          tryCatch(shared$proveedores_db(), error = function(e) NULL))),
+    columnas = .ic_candidatos_columnas(catalogo = TRUE),
+    piezas = c("sel_fila", "sel_rango", "sel_todos"),
+    vacio = "tablas.ajustes.candidatos.vacio"
+  )
 
   # ── Saved IC registry (ic_registro, class E) ─────────────────────────────────
   # What is saved, not what the boxes hold: follows shared$interco_v2().
@@ -505,10 +514,27 @@ settings_observers <- function(input, output, session, shared) {
 
   # ── IC Scanner (dev only) ─────────────────────────────────────────────────────
   # Scans loaded SAP snapshots for unique CardCodes + RFCs, presents them in a
-  # selectable DT so the dev can identify IC codes in one pass during setup.
+  # selectable table so the dev can identify IC codes in one pass during setup.
 
   ic_scan_candidates <- reactiveVal(NULL)
   ic_code_lookup     <- reactiveVal(list())   # ledger → ini → code → nombre
+  # The scanner's table (escaner_ic, T16): the same columns as Business
+  # Partners without En catálogo; "Aplicar selección" takes the marked ids.
+  t_esc <- hd_table_server(
+    "escaner_ic_t", tabla = "escaner_ic",
+    datos = reactive(.ic_candidatos_filas(ic_scan_candidates(), shared$company_map())),
+    columnas = .ic_candidatos_columnas(),
+    piezas = c("sel_fila", "sel_rango", "sel_todos"),
+    vacio = "tablas.ajustes.candidatos.vacio"
+  )
+  # The candidates behind the marked ids, in the table's order; ids no longer
+  # there (another scan in between) are dropped.
+  .candidatos_marcados <- function(cands, ids) {
+    if (!is.data.frame(cands) || !nrow(cands) || !length(ids)) return(NULL)
+    rows <- cands[match(ids, paste(cands$initials, cands$ledger, cands$code, sep = "|")), , drop = FALSE]
+    rows <- rows[!is.na(rows$code), , drop = FALSE]
+    if (nrow(rows)) rows else NULL
+  }
 
   # Build code→name lookup from S3 snapshots.
   # Used to label IC code inputs with the matched company name.
@@ -569,80 +595,37 @@ settings_observers <- function(input, output, session, shared) {
       return()
     }
 
-    # Sort candidates to EXACTLY match DT display order so rows_selected indices align.
-    # DT col 0 = Empresa string (asc), col 1 = Ledger "CxC"/"CxP" (asc), col 5 = Facturas (desc).
-    # IMPORTANT: sort by the DISPLAY ledger label ("CxC"/"CxP"), NOT internal "AR"/"AP",
-    # because "AP"<"AR" but "CxC"<"CxP" — opposite alphabetical order, which causes index misalignment.
-    cmap          <- shared$company_map()
-    emp_labels    <- paste0(candidates$initials, " \u2014 ",
-                            unname(cmap[candidates$initials]))
-    ledger_labels <- dplyr::if_else(candidates$ledger == "AR", "CxC", "CxP")
-    ord <- order(emp_labels, ledger_labels, -candidates$n_facturas)
-    candidates <- candidates[ord, ]
+    # The table (t_esc) sorts and marks "IC ✓" itself; the rows are read back by id.
     ic_scan_candidates(candidates)
-
-    presel <- which(candidates$is_ic)
-
-    tbl <- candidates |>
-      dplyr::transmute(
-        Empresa     = paste0(initials, " \u2014 ",
-                             unname(cmap[initials]) %||% initials),
-        Ledger      = dplyr::if_else(ledger == "AR", "CxC", "CxP"),
-        Codigo      = code,
-        NombreSAP   = nombre,
-        RFC         = dplyr::if_else(is.na(rfc) | !nzchar(rfc %||% ""), "\u2014", rfc),
-        Facturas    = n_facturas
-      )
-    names(tbl)[3] <- "C\u00f3digo"
-    names(tbl)[4] <- "Nombre SAP"
 
     showModal(modalDialog(
       title     = tagList(icon("magnifying-glass"),
-                          " Esc\u00e1ner IC \u2014 facturas en memoria"),
+                          " Escáner IC — facturas en memoria"),
       size      = "xl",
       easyClose = FALSE,
-      p(class = "text-muted small mb-2",
-        "Selecciona los c\u00f3digos que son Intercompany.",
-        "Los ya configurados aparecen pre-seleccionados.",
-        "Aplicar", strong("agrega"), "los c\u00f3digos seleccionados \u2014 no elimina los existentes.",
-        "Para eliminar un c\u00f3digo, borra su campo en la pesta\u00f1a Intercompany."),
-      DT::DTOutput("ic_scan_tbl"),
+      p(class = "text-muted small mb-2", tr("tablas.ajustes.candidatos.ayuda_escaner")),
+      hd_table_ui("escaner_ic_t", alto = "60vh"),
       footer = tagList(
         if (puede(isolate(shared$usuario()), "can_manage_interco"))
           actionButton("ic_scan_apply",
-                       tagList(icon("check"), " Aplicar selecci\u00f3n"),
+                       tagList(icon("check"), " Aplicar selección"),
                        class = "btn btn-primary btn-sm"),
-        tags$span("\u00a0"),
+        tags$span(" "),
         modalButton("Cancelar")
       )
     ))
-
-    output$ic_scan_tbl <- DT::renderDT({
-      DT::datatable(
-        tbl,
-        selection  = list(mode = "multiple", selected = presel),
-        rownames   = FALSE,
-        class      = "table table-sm table-hover",
-        options    = list(
-          pageLength = 30,
-          order      = list(list(0L, "asc"), list(1L, "asc"), list(5L, "desc"))
-        )
-      )
-    }, server = FALSE)
   })
 
   observeEvent(input$ic_scan_apply, {
     if (!puede_o_avisa(shared, "can_manage_interco")) return()
-    sel        <- input$ic_scan_tbl_rows_selected
-    candidates <- ic_scan_candidates()
+    selected <- .candidatos_marcados(ic_scan_candidates(), t_esc$seleccion())
     removeModal()
 
-    if (is.null(candidates) || !length(sel)) {
-      showNotification("No se seleccionaron c\u00f3digos.", type = "warning")
+    if (is.null(selected)) {
+      showNotification("No se seleccionaron códigos.", type = "warning")
       return()
     }
 
-    selected  <- candidates[sel, ]
     cur       <- shared$interco_v2()
     ar_prefix <- toupper(cur$ar_prefix %||% "C")
     ap_prefix <- toupper(cur$ap_prefix %||% "P")
@@ -786,14 +769,12 @@ settings_observers <- function(input, output, session, shared) {
   # Apply selected BP rows as IC codes
   observeEvent(input$bp_apply_ic_btn, {
     if (!puede_o_avisa(shared, "can_manage_interco")) return()
-    sel      <- input$tbl_bp_sap_rows_selected
-    sorted_c <- bp_sorted_candidates()
-    if (is.null(sorted_c) || !length(sel)) {
+    selected <- .candidatos_marcados(bp_candidates(), t_bp$seleccion())
+    if (is.null(selected)) {
       showNotification("Selecciona al menos un c\u00f3digo primero.", type = "warning")
       return()
     }
 
-    selected  <- sorted_c[sel, ]
     cur       <- shared$interco_v2()
     ar_prefix <- toupper(cur$ar_prefix %||% "C")
     ap_prefix <- toupper(cur$ap_prefix %||% "P")
@@ -844,7 +825,7 @@ settings_observers <- function(input, output, session, shared) {
     shared$interco_v2(guardado)
     new_registry <- guardado
 
-    # Refresh is_ic flags in bp_candidates so preselection updates
+    # Refresh is_ic flags in bp_candidates so "IC ✓" updates
     new_cands <- tryCatch({
       sap_ar <- tryCatch(load_sap_snapshot("AR", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL))$data, error = function(e) NULL)
       sap_ap <- tryCatch(load_sap_snapshot("AP", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL))$data, error = function(e) NULL)
@@ -866,23 +847,6 @@ settings_observers <- function(input, output, session, shared) {
       viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
     )
   })
-
-  # Render SAP BP table with auto-match against catálogo.
-  # Sort to match DT display order so row indices align with bp_sorted_candidates().
-  output$tbl_bp_sap <- DT::renderDT({
-    cands <- bp_candidates()
-    req(!is.null(cands), nrow(cands) > 0)
-    cmap    <- shared$company_map()
-    prov    <- tryCatch(shared$proveedores_db(), error = function(e) NULL)
-    emp_lbl <- paste0(cands$initials, " \u2014 ",
-                      unname(cmap[cands$initials]) %||% cands$initials)
-    ldg_lbl <- dplyr::if_else(cands$ledger == "AR", "CxC", "CxP")
-    ord     <- order(emp_lbl, ldg_lbl, -cands$n_facturas)
-    sorted  <- cands[ord, ]
-    bp_sorted_candidates(sorted)
-    presel  <- which(sorted$is_ic)
-    .bp_datatable(sorted, prov, presel = presel, cmap = cmap)
-  }, server = FALSE)
 
   output$tbl_catalogo <- DT::renderDataTable({
     .catalogo_datatable(shared)
