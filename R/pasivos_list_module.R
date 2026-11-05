@@ -325,7 +325,7 @@ pasivos_list_module_server <- function(id, shared) {
       liabs$updated_by[idx[1]] <- user
       tryCatch(save_pasivos_liabilities(liabs, client_id = shared$effective_client_id()), error = function(e) NULL)
       shared$pasivos_liabilities_db(liabs)
-      bump_sync_version("pasivos_liabilities_db")
+      bump_sync_version("pasivos_liabilities_db", client_id = shared$effective_client_id())
 
       if (identical(new_estado, "paused")) {
         # Remove future provisional provisions -- captured individually
@@ -346,7 +346,7 @@ pasivos_list_module_server <- function(id, shared) {
           tryCatch(save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base), error = function(e) NULL)
           tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
           shared$pasivos_provisions_db(provs)
-          bump_sync_version("pasivos_provisions_db")
+          bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
           for (i in seq_len(nrow(dropped_rows))) {
             tryCatch(pasivos_log_audit(
               action_type = "provision.deleted",
@@ -416,7 +416,7 @@ pasivos_list_module_server <- function(id, shared) {
       liabs$updated_by[idx[1]] <- user
       tryCatch(save_pasivos_liabilities(liabs, client_id = shared$effective_client_id()), error = function(e) NULL)
       shared$pasivos_liabilities_db(liabs)
-      bump_sync_version("pasivos_liabilities_db")
+      bump_sync_version("pasivos_liabilities_db", client_id = shared$effective_client_id())
 
       # Remove future provisions -- captured individually BEFORE filtering,
       # same reasoning as the pause handler above (found 2026-09-05).
@@ -431,7 +431,7 @@ pasivos_list_module_server <- function(id, shared) {
       tryCatch(save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base), error = function(e) NULL)
       tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
       shared$pasivos_provisions_db(provs)
-      bump_sync_version("pasivos_provisions_db")
+      bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
 
       tryCatch(pasivos_log_audit(
         action_type = "liability.deleted",
@@ -488,7 +488,7 @@ pasivos_list_module_server <- function(id, shared) {
       liabs$updated_by[idx[1]] <- user
       tryCatch(save_pasivos_liabilities(liabs, client_id = shared$effective_client_id()), error = function(e) NULL)
       shared$pasivos_liabilities_db(liabs)
-      bump_sync_version("pasivos_liabilities_db")
+      bump_sync_version("pasivos_liabilities_db", client_id = shared$effective_client_id())
 
       tryCatch(pasivos_log_audit(
         action_type = "liability.restored",
