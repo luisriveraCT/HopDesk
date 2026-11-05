@@ -223,12 +223,15 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     bancos  <- tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
     deleted_nombre <- { m <- bancos$nombre[bancos$id == eid]; if (length(m)) m[1] else eid }
     # Removes only this bank, on S3's current catalog (CM12); deleting the
-    # last one empties it on purpose (permitir_reduccion).
-    guardado <- tryCatch({
-      modificar_ctas_bancos(function(b) b[is.na(b$id) | b$id != eid, , drop = FALSE],
-                            client_id = shared$effective_client_id(), permitir_reduccion = TRUE); TRUE
-    }, error = function(e) { message("[CTAS] banco delete failed: ", e$message); FALSE })
-    if (!guardado) { showNotification(tr("comun.error_guardar"), type = "error"); return() }
+    # last one empties it on purpose. A bank some account uses is refused
+    # (CM17) and the accounts are listed, copyable, so they can be changed.
+    res <- tryCatch(borrar_banco_si_libre(eid, client_id = shared$effective_client_id()),
+                    error = function(e) { message("[CTAS] banco delete failed: ", e$message); NULL })
+    if (is.null(res)) { showNotification(tr("comun.error_guardar"), type = "error"); return() }
+    if (!res$borrado) {
+      filas <- .banco_en_uso_filas(res$en_uso, shared$company_map())
+      showModal(.banco_en_uso_modal(deleted_nombre, filas)); return()
+    }
     editing_banco_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
     output$tbl_bancos_cat <- DT::renderDataTable({ .bancos_cat_datatable(client_id = shared$effective_client_id()) }, server = TRUE)
@@ -452,6 +455,34 @@ settings_cuentas_observer <- function(input, output, session, shared) {
                      class = "btn btn-outline-danger btn-sm") else NULL,
       actionButton("cta_cancel", "Cancelar", class = "btn btn-outline-secondary btn-sm")
     )
+  )
+}
+
+# ── Bank in use (CM17) ────────────────────────────────────────────────────────
+# Shown only by the banco_delete observer, after its can_manage_bancos check.
+# "Copiar" copies the tab-separated list; if the browser refuses, the text
+# shows selected so it can be copied by hand.
+.banco_en_uso_modal <- function(banco, filas) {
+  modalDialog(
+    title = tr("comun.banco_en_uso.titulo", banco = banco),
+    tags$p(tr_n("comun.banco_en_uso.explica", nrow(filas))),
+    tags$ul(class = "small mb-2", lapply(seq_len(nrow(filas)), function(i)
+      tags$li(tr("comun.banco_en_uso.linea", empresa = filas$empresa[i], moneda = filas$moneda[i],
+                 cuenta = filas$cuenta[i], activa = filas$activa[i])))),
+    tags$textarea(id = "banco_en_uso_texto", readonly = NA, rows = min(nrow(filas) + 1L, 8L),
+                  class = "form-control form-control-sm font-monospace d-none",
+                  .banco_en_uso_texto(filas)),
+    footer = tagList(
+      tags$button(type = "button", class = "btn btn-outline-primary btn-sm",
+        onclick = paste0(
+          "var b=this,t=document.getElementById('banco_en_uso_texto');",
+          "function bien(){b.textContent=hdT('comun.copiado');}",
+          "function mal(){t.classList.remove('d-none');t.select();}",
+          "try{navigator.clipboard.writeText(t.value).then(bien,mal);}catch(e){mal();}"),
+        icon("copy"), " ", tr("comun.copiar")),
+      modalButton(tr("comun.cerrar"))
+    ),
+    easyClose = TRUE
   )
 }
 

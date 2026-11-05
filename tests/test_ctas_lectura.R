@@ -31,7 +31,9 @@ cargar <- function(archivo, nombres) {
 }
 cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", ".schema_ctas_cuentas", "load_ctas_bancos",
                                           "load_ctas_cuentas", "modificar_ctas_bancos", "modificar_ctas_cuentas",
-                                          ".BANCOS_MX_CHOICES"))
+                                          ".BANCOS_MX_CHOICES", "borrar_banco_si_libre",
+                                          ".banco_en_uso_filas", ".banco_en_uso_texto"))
+cargar("R/adjuntos_s3.R", c(".NUMERO_PURO", ".CELDA_PELIGRO", "neutralizar_celdas", "tabla_a_texto_copiable"))
 for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R", "R/settings/settings_cuentas.R"))
   suppressMessages(source(f))
 
@@ -113,9 +115,10 @@ c <- get(k_c, envir = .mem)
 ok("deactivate: c1 inactive, c2 (the other session's) untouched",
    identical(c$activa[c$id == "c1"], FALSE) && isTRUE(c$activa[c$id == "c2"]))
 
-# 5. Deleting the last bank is allowed (it is the intent), only that bank goes
+# 5. Deleting the last bank is allowed (it is the intent), only that bank goes.
+#    No account uses it: since CM17 a bank in use is never deleted.
 correr(cta("c1", "0100"), function() {
-  assign(k_b, BANCOS0[1, ], envir = .mem); assign(k_c, cta("c1", "0100"), envir = .mem)
+  assign(k_b, BANCOS0[1, ], envir = .mem)
 }, function(s) { s$setInputs(tbl_bancos_cat_rows_selected = 1); s$setInputs(banco_delete = 1) })
 ok("deleting the last bank empties the catalog (was refused by the net)", nrow(get(k_b, envir = .mem)) == 0L)
 

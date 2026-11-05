@@ -183,6 +183,47 @@ modificar_ctas_bancos <- function(cambio, client_id, permitir_reduccion = FALSE)
 modificar_ctas_cuentas <- function(cambio, client_id)
   modificar_tabla_completa(S3_KEYS$ctas_cuentas, client_id, .schema_ctas_cuentas, cambio)
 
+# CM17 (Luis, 2026-11-05): a bank that any account uses (active or not) is
+# never deleted. The accounts are read strictly from S3 inside the bank
+# change, right before the write; a failed read stop()s and nothing is
+# deleted. Returns list(borrado, en_uso = the accounts that use it).
+borrar_banco_si_libre <- function(banco_id, client_id) {
+  en_uso <- .schema_ctas_cuentas()
+  modificar_ctas_bancos(function(b) {
+    cuentas <- .hd_admin_completar(.s3_leer_para_escribir(S3_KEYS$ctas_cuentas, client_id),
+                                   .schema_ctas_cuentas)
+    en_uso <<- cuentas[!is.na(cuentas$banco_id) & cuentas$banco_id == banco_id, , drop = FALSE]
+    if (nrow(en_uso)) b else b[is.na(b$id) | b$id != banco_id, , drop = FALSE]
+  }, client_id = client_id, permitir_reduccion = TRUE)
+  list(borrado = !nrow(en_uso), en_uso = en_uso)
+}
+
+# The accounts of borrar_banco_si_libre()$en_uso as the user reads them:
+# company name, currency, last 4 digits (or the alias) and whether active.
+.banco_en_uso_filas <- function(en_uso, cmap) {
+  if (!nrow(en_uso)) return(data.frame(empresa = character(), moneda = character(),
+                                       cuenta = character(), activa = character()))
+  ultimos4 <- function(x) { d <- gsub("[^0-9]", "", x %||% ""); ifelse(nchar(d) >= 4, paste0("…", substring(d, nchar(d) - 3)), "") }
+  cta  <- ultimos4(ifelse(is.na(en_uso$cuenta), "", en_uso$cuenta))
+  clab <- ultimos4(ifelse(is.na(en_uso$clabe_interbancaria), "", en_uso$clabe_interbancaria))
+  alias <- ifelse(is.na(en_uso$alias), "", trimws(en_uso$alias))
+  ini  <- ifelse(is.na(en_uso$Empresa), "", en_uso$Empresa)
+  nom  <- unname(cmap[ini]); nom[is.na(nom)] <- ini[is.na(nom)]
+  data.frame(
+    empresa = nom,
+    moneda  = ifelse(is.na(en_uso$Moneda), "", en_uso$Moneda),
+    cuenta  = ifelse(nzchar(cta), cta, ifelse(nzchar(clab), clab, alias)),
+    activa  = ifelse(!is.na(en_uso$activa) & en_uso$activa, tr("comun.banco_en_uso.si"), tr("comun.banco_en_uso.no")),
+    stringsAsFactors = FALSE)
+}
+
+# Tab-separated, with a header row and neutralized cells, for "Copiar".
+.banco_en_uso_texto <- function(filas) {
+  enc <- c(tr("comun.banco_en_uso.col_empresa"), tr("comun.banco_en_uso.col_moneda"),
+           tr("comun.banco_en_uso.col_cuenta"),  tr("comun.banco_en_uso.col_activa"))
+  tabla_a_texto_copiable(rbind(enc, as.matrix(filas[, c("empresa", "moneda", "cuenta", "activa")])))
+}
+
 # ── Complete MX bank catalog (BanBajío CECOBAN codes) ─────────────────────────
 # Format: "Nombre|CLAVE" — JS splits on "|" to fill the two text inputs.
 # Source: BanBajío Catálogos BB (89 institutions).
