@@ -790,7 +790,7 @@ bancosServer <- function(id, shared) {
         shared$bancos_movimientos(movs)
         tryCatch({
           save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base)
-          bump_sync_version("bancos_movimientos_db")
+          bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
         }, error = function(e)
           message("[BANCOS] cleanup save error: ", e$message)
         )
@@ -1397,7 +1397,7 @@ bancosServer <- function(id, shared) {
       # same confirmation can try again.
       elim_ids_rv(NULL)
       shared$bancos_movimientos(movs)
-      bump_sync_version("bancos_movimientos_db")
+      bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
 
       # found 2026-08-03 (Stage 9, Issue C): Mouse asked for a dedicated,
       # separate backend store for deleted bank movements (see
@@ -1827,8 +1827,8 @@ bancosServer <- function(id, shared) {
       tryCatch({
         save_bancos_movimientos(result$movs, client_id = shared$effective_client_id(), base = movs_base)
         save_bancos_confirmados(result$conf, client_id = shared$effective_client_id(), base = conf_base)
-        bump_sync_version("bancos_movimientos_db")
-        bump_sync_version("bancos_confirmados_db")
+        bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
+        bump_sync_version("bancos_confirmados_db", client_id = shared$effective_client_id())
       }, error = function(e)
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
 
@@ -1914,8 +1914,8 @@ bancosServer <- function(id, shared) {
       tryCatch({
         save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base)
         save_bancos_confirmados(conf, client_id = shared$effective_client_id(), base = conf_base)
-        bump_sync_version("bancos_movimientos_db")
-        bump_sync_version("bancos_confirmados_db")
+        bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
+        bump_sync_version("bancos_confirmados_db", client_id = shared$effective_client_id())
       }, error = function(e)
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
 
@@ -2087,7 +2087,7 @@ bancosServer <- function(id, shared) {
       if (!.bnc_guardar("guardar_movimiento_manual", paste0(if (is_edit) "Editar" else "Agregar", " movimiento manual"),
                         function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base))) return()
       shared$bancos_movimientos(movs)
-      bump_sync_version("bancos_movimientos_db")
+      bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
       removeModal()
       showNotification(if (is_edit) "Movimiento actualizado." else "Movimiento manual guardado.",
                        type = "message", duration = 2)
@@ -2458,7 +2458,7 @@ bancosServer <- function(id, shared) {
       shared$bancos_confirmados(conf)
       tryCatch({
         save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base); save_bancos_confirmados(conf, client_id = shared$effective_client_id(), base = conf_base)
-        bump_sync_version("bancos_movimientos_db"); bump_sync_version("bancos_confirmados_db")
+        bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id()); bump_sync_version("bancos_confirmados_db", client_id = shared$effective_client_id())
       }, error = function(e)
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
       sug_state_rv("list"); sug_confirm_rv(NULL)
@@ -2498,7 +2498,7 @@ bancosServer <- function(id, shared) {
       shared$bancos_confirmados(conf)
       tryCatch({
         save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base); save_bancos_confirmados(conf, client_id = shared$effective_client_id(), base = conf_base)
-        bump_sync_version("bancos_movimientos_db"); bump_sync_version("bancos_confirmados_db")
+        bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id()); bump_sync_version("bancos_confirmados_db", client_id = shared$effective_client_id())
       }, error = function(e)
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
       sug_state_rv("list"); sug_confirm_rv(NULL)
@@ -2696,7 +2696,7 @@ bancosServer <- function(id, shared) {
                         function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base))) return()
       reasig_confirm_data_rv(NULL)   # only now: a failed save keeps the confirmation's data
       shared$bancos_movimientos(movs)
-      bump_sync_version("bancos_movimientos_db")
+      bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
       removeModal()
       session$sendCustomMessage("bnc_collapse_reasignar",
         list(target = ns("reasignar_panel")))
@@ -2806,7 +2806,7 @@ bancosServer <- function(id, shared) {
       if (!.bnc_guardar("eliminar_sesion", paste0("Eliminar los ", actual_n, " movimiento(s) de una sesión de importación"),
                         function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base))) return()
       shared$bancos_movimientos(movs)
-      bump_sync_version("bancos_movimientos_db")
+      bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
       delete_sesion_confirm_rv(NULL)
       removeModal()
       session$sendCustomMessage("bnc_collapse_reasignar",
@@ -3146,7 +3146,7 @@ bancosServer <- function(id, shared) {
       if (!.bnc_guardar("importar_movimientos", paste0("Importar ", nrow(nuevos), " movimiento(s)"),
                         function() save_bancos_movimientos(movs_new, client_id = shared$effective_client_id(), base = movs_base))) return()
       shared$bancos_movimientos(movs_new)
-      bump_sync_version("bancos_movimientos_db")
+      bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
 
       n_auto  <- sum(nuevos$conciliado, na.rm = TRUE)
       msg     <- paste0(nrow(nuevos), " movimiento(s) importado(s).")
@@ -3327,7 +3327,7 @@ bancosServer <- function(id, shared) {
       if (!.bnc_guardar("deshacer_eliminar_movimiento_manual", "Restaurar un movimiento manual eliminado",
                         function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base))) return()
       shared$bancos_movimientos(movs)
-      bump_sync_version("bancos_movimientos_db")
+      bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
 
       # found 2026-08-03 (Stage 9, Issue C): mirror of the archive write in
       # do_eliminar_confirm above -- records this restore as its own
@@ -3386,7 +3386,7 @@ bancosServer <- function(id, shared) {
       shared$abonos_db(updated)
       tryCatch({
         save_abonos(updated, client_id = shared$effective_client_id())
-        bump_sync_version("abonos_db")
+        bump_sync_version("abonos_db", client_id = shared$effective_client_id())
       }, error = function(e)
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
 
@@ -3473,7 +3473,7 @@ bancosServer <- function(id, shared) {
           shared$bancos_movimientos(movs)
           tryCatch({
             save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base)
-            bump_sync_version("bancos_movimientos_db")
+            bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
           }, error = function(e)
             showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
           )
@@ -3483,7 +3483,7 @@ bancosServer <- function(id, shared) {
       shared$bancos_confirmados(conf)
       tryCatch({
         save_bancos_confirmados(conf, client_id = shared$effective_client_id(), base = conf_base)
-        bump_sync_version("bancos_confirmados_db")
+        bump_sync_version("bancos_confirmados_db", client_id = shared$effective_client_id())
       }, error = function(e)
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
       )
@@ -3548,7 +3548,7 @@ bancosServer <- function(id, shared) {
           shared$bancos_movimientos(movs)
           tryCatch({
             save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base)
-            bump_sync_version("bancos_movimientos_db")
+            bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
           }, error = function(e)
             showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
           )
@@ -3588,7 +3588,7 @@ bancosServer <- function(id, shared) {
       if (is.null(new_conf)) return()
       conf <- new_conf
       shared$bancos_confirmados(conf)
-      bump_sync_version("bancos_confirmados_db")
+      bump_sync_version("bancos_confirmados_db", client_id = shared$effective_client_id())
 
       # ── Philosophy: recovering a CONFIRMED item always recovers the ITEM ──
       # It doesn't matter whether that item originated from a converted
