@@ -41,6 +41,15 @@ cf_df <- dplyr::bind_rows(
   fila("AR", "CLIENTE ALFA", 0, 150000), fila("AR", "CLIENTE ALFA", 2, 40000),
   fila("AR", "CLIENTE BETA", 1, 2500, "NETWORKS CARGO"),
   fila("AP", "PROVEEDOR UNO", 0, 90000), fila("AP", "PROVEEDOR DOS", 3, 12000))
+# FLU_DATOS=prueba (T17c): tests/helpers/flujo_datos_prueba.R instead -- two
+# currencies, tags, a provision -- and #eco shows what Exportar hands the
+# export window. Without it, the fixture is as it was.
+PRUEBA <- identical(Sys.getenv("FLU_DATOS"), "prueba")
+if (PRUEBA) {
+  source(file.path(raiz, "tests", "helpers", "flujo_datos_prueba.R"))
+  DP <- flujo_datos_prueba(lunes)
+  cf_df <- DP$df
+}
 assign("build_export_combined_df", function(shared, ic_mode_val) cf_df, envir = globalenv())
 
 ui <- bslib::page_fluid(
@@ -50,20 +59,28 @@ ui <- bslib::page_fluid(
   tags$link(rel = "stylesheet", type = "text/css", href = "cashflow_preview.css?v=6"),
   div(class = "h-100 cf-slide-wrapper", style = "height:600px;",
       div(id = "cf-panel-calendar", class = "cf-panel cf-panel-calendar h-100", "Calendario"),
-      cashflowPreviewUI("cfp"))
+      cashflowPreviewUI("cfp")),
+  if (PRUEBA) verbatimTextOutput("eco")
 )
 
 server <- function(input, output, session) {
   shared <- list(
     cf_preview_open    = reactiveVal(FALSE),
     cf_preview_prefill = reactiveVal(NULL),
-    currency_choices   = list(AR = function() "MXN", AP = function() "MXN"),
+    currency_choices   = if (PRUEBA) list(AR = function() c("MXN", "USD"), AP = function() c("MXN", "USD"))
+                         else list(AR = function() "MXN", AP = function() "MXN"),
     ic_mode            = list(AR = function() "exclude"),
-    tags_db            = function() NULL,
+    tags_db            = if (PRUEBA) function() DP$tags else function() NULL,
     empresa_sel        = function() c("NETWORKS TRANS", "NETWORKS CARGO")
   )
   cashflowPreviewServer("cfp", shared)
   observeEvent(input$abrir_flujo, shared$cf_preview_open(TRUE))
+  if (PRUEBA) output$eco <- renderText({
+    p <- shared$cf_preview_prefill()
+    as.character(jsonlite::toJSON(list(abierto = shared$cf_preview_open(),
+                                       prefill = if (!is.null(p)) lapply(p, function(x) if (inherits(x, "Date")) as.character(x) else x)),
+                                  auto_unbox = TRUE))
+  })
 }
 
 app <- shinyApp(ui, server)
