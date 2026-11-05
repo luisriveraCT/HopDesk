@@ -71,10 +71,21 @@
       Shiny.setInputValue(ids.texto, { texto: texto, t: Date.now() }, { priority: 'event' });
   }
 
-  function bind(ids) {
+  // The zone may not be in the page yet (a modal still opening): try again
+  // for a couple of seconds.
+  function bind(ids, intento) {
     var zona = document.getElementById(ids.zona);
-    if (!zona || zona.getAttribute('data-hdreq') === '1') return;
+    if (!zona) {
+      if ((intento || 0) < 20) setTimeout(function() { bind(ids, (intento || 0) + 1); }, 100);
+      return;
+    }
+    if (zona.getAttribute('data-hdreq') === '1') return;
     zona.setAttribute('data-hdreq', '1');
+    // Chosen with the file dialog: the 10 MB limit, never the paste one.
+    var input = document.getElementById(ids.archivo);
+    if (input) input.addEventListener('click', function() {
+      if (window.Shiny && ids.origen) Shiny.setInputValue(ids.origen, 'archivo', { priority: 'event' });
+    });
     if (!zona.hasAttribute('tabindex')) zona.setAttribute('tabindex', '0');
     zona.addEventListener('paste', function(e) { alPegar(ids, e); });
     zona.addEventListener('dragover', function(e) {
@@ -90,12 +101,20 @@
 
   window.HDReqPaste = { bind: bind };
 
-  // The screen can ask from R: session$sendCustomMessage("hdreq_bind", ids)
-  if (window.Shiny && Shiny.addCustomMessageHandler)
-    Shiny.addCustomMessageHandler('hdreq_bind', function(ids) { setTimeout(function() { bind(ids); }, 0); });
-  else
-    document.addEventListener('DOMContentLoaded', function() {
-      if (window.Shiny && Shiny.addCustomMessageHandler)
-        Shiny.addCustomMessageHandler('hdreq_bind', function(ids) { setTimeout(function() { bind(ids); }, 0); });
-    });
+  // A download the server prepared (evidence PDF/XLSX/image): it clicks the
+  // module's hidden download link once the bytes are ready on the server.
+  function descargar(msg) {
+    var a = document.getElementById(msg.id);
+    if (a && a.href && a.getAttribute('href') !== '') a.click();
+  }
+
+  // The screen asks from R: session$sendCustomMessage("hdreq_bind", ids)
+  function registrar() {
+    if (!window.Shiny || !Shiny.addCustomMessageHandler || window.__hdreqRegistrado) return !!window.__hdreqRegistrado;
+    window.__hdreqRegistrado = true;
+    Shiny.addCustomMessageHandler('hdreq_bind', function(ids) { setTimeout(function() { bind(ids, 0); }, 0); });
+    Shiny.addCustomMessageHandler('hdreq_descargar', descargar);
+    return true;
+  }
+  if (!registrar()) document.addEventListener('DOMContentLoaded', registrar);
 })();
