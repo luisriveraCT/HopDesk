@@ -32,6 +32,8 @@ extract("R/settings/settings_proveedores.R", c(".catalogo_panel_ui", ".catalogo_
 extract("R/settings/settings_bp.R",          ".bp_datatable", env)
 extract("R/data_pipeline.R",                 "scan_ic_candidates", env)
 env$`%||%` <- `%||%`
+# The accounts panel holds two engine tables (T16); only their container matters here.
+env$hd_table_ui <- function(id, ...) shiny::div(id = id)
 
 session_map <- c(NRS = "Networks Realtors", NTS = "Networks Trucking Services")
 

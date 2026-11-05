@@ -32,8 +32,8 @@
               actionButton("cta_new_banco", tagList(icon("plus"), " Banco"),
                            class = "btn btn-sm btn-outline-primary py-0 px-2")
           ),
-          div(class = "card-body p-0", style = "max-height: 260px; overflow-y: auto;",
-            DT::dataTableOutput("tbl_bancos_cat")
+          div(class = "card-body p-0",
+            hd_table_ui("bancos_cat_t", alto = "auto")
           )
         )
       ),
@@ -55,8 +55,8 @@
                              class = "btn btn-sm btn-outline-primary")
             )
           ),
-          div(class = "card-body p-0", style = "max-height: 260px; overflow-y: auto;",
-            DT::dataTableOutput("tbl_cuentas")
+          div(class = "card-body p-0",
+            hd_table_ui("cuentas_t", alto = "auto")
           )
         )
       )
@@ -67,6 +67,37 @@
   )
 }
 
+# Rows of the bank catalog (bancos_cat, T16): id, nombre, clave.
+.bancos_cat_filas <- function(bancos) {
+  if (!is.data.frame(bancos) || !nrow(bancos))
+    return(data.frame(id = character(), nombre = character(), clave = character(), stringsAsFactors = FALSE))
+  data.frame(id = as.character(bancos$id), nombre = as.character(bancos$nombre),
+             clave = as.character(bancos$clave), stringsAsFactors = FALSE)
+}
+
+# Rows of the company accounts (cuentas_empresa, T16): the active ones of
+# `empresa` ("" = all), with their bank's name and "ppl" on the PPL source
+# account. Selected by id, never by position.
+.cuentas_empresa_filas <- function(ctas, bancos, empresa = "") {
+  vacia <- data.frame(id = character(), ppl = character(), Empresa = character(), banco = character(),
+                      Moneda = character(), alias = character(), cuenta = character(),
+                      razon_social = character(), stringsAsFactors = FALSE)
+  if (!is.data.frame(ctas) || !nrow(ctas)) return(vacia)
+  ctas <- ctas[!is.na(ctas$activa) & ctas$activa, , drop = FALSE]
+  if (nzchar(empresa %||% "")) ctas <- ctas[!is.na(ctas$Empresa) & ctas$Empresa == empresa, , drop = FALSE]
+  if (!nrow(ctas)) return(vacia)
+  banco <- if (is.data.frame(bancos) && nrow(bancos)) bancos$nombre[match(ctas$banco_id, bancos$id)] else NA_character_
+  data.frame(id = as.character(ctas$id),
+             ppl = ifelse(!is.na(ctas$is_ppl_default) & ctas$is_ppl_default, "ppl", NA_character_),
+             Empresa = as.character(ctas$Empresa), banco = as.character(banco),
+             Moneda = as.character(ctas$Moneda), alias = as.character(ctas$alias),
+             cuenta = as.character(ctas$cuenta), razon_social = as.character(ctas$razon_social),
+             stringsAsFactors = FALSE)
+}
+
+# The two DT builders below are only called by the save handlers, which
+# re-render outputs no longer on the page (tbl_bancos_cat, tbl_cuentas): they
+# go with those lines once CM12 is in.
 .bancos_cat_datatable <- function(client_id = NULL) {
   bancos <- tryCatch(load_ctas_bancos(client_id = client_id), error = function(e) .schema_ctas_bancos())
   if (!nrow(bancos)) {
@@ -86,7 +117,7 @@
 .cuentas_datatable <- function(shared, empresa_filter = "", client_id = NULL) {
   ctas <- tryCatch({
     if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas()
-    else load_ctas_cuentas(client_id = client_id)
+    else load_ctas_cuentas()
   }, error = function(e) .schema_ctas_cuentas())
   bancos <- tryCatch(load_ctas_bancos(client_id = client_id), error = function(e) .schema_ctas_bancos())
 
@@ -143,19 +174,47 @@ settings_cuentas_observer <- function(input, output, session, shared) {
   # Without can_manage_bancos the forms open read-only (no Guardar/Eliminar).
   .puede_bancos <- function() puede(tryCatch(isolate(shared$usuario()), error = function(e) NULL), "can_manage_bancos")
 
-  output$tbl_bancos_cat <- DT::renderDataTable({
-    .bancos_cat_datatable(client_id = shared$effective_client_id())
-  }, server = TRUE)
+  # ── The two tables (T16: hd_table, rows by id) ──────────────────────────────
+  # After a save or a delete the tables re-read S3: this observer runs after
+  # the save handlers (lower priority), so they need no line of their own.
+  refrescar <- reactiveVal(0L)
+  observeEvent(list(input$banco_save, input$banco_delete, input$cuenta_save, input$cuenta_delete),
+               refrescar(refrescar() + 1L), ignoreInit = TRUE, priority = -10)
+  .leer_bancos <- function()
+    tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
+  .leer_cuentas <- function() tryCatch({
+    if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas() else load_ctas_cuentas(client_id = shared$effective_client_id())
+  }, error = function(e) .schema_ctas_cuentas())
 
-  output$tbl_cuentas <- DT::renderDataTable({
-    .cuentas_datatable(shared, isolate(input$cta_empresa_filter %||% ""), client_id = shared$effective_client_id())
-  }, server = TRUE)
-
-  observeEvent(input$cta_empresa_filter, {
-    output$tbl_cuentas <- DT::renderDataTable({
-      .cuentas_datatable(shared, input$cta_empresa_filter %||% "", client_id = shared$effective_client_id())
-    }, server = TRUE)
-  }, ignoreInit = TRUE)
+  t_bancos <- hd_table_server(
+    "bancos_cat_t", tabla = "bancos_cat",
+    datos = reactive({ refrescar(); .bancos_cat_filas(.leer_bancos()) }),
+    columnas = list(
+      col_texto("nombre", "tablas.ajustes.bancos.banco"),
+      col_texto("clave",  "tablas.ajustes.bancos.clave", recorte = FALSE)
+    ),
+    acciones_fila = "editar",
+    vacio = "tablas.ajustes.bancos.vacio"
+  )
+  t_cuentas <- hd_table_server(
+    "cuentas_t", tabla = "cuentas_empresa",
+    datos = reactive({
+      refrescar()
+      .cuentas_empresa_filas(.leer_cuentas(), .leer_bancos(), input$cta_empresa_filter %||% "")
+    }),
+    columnas = list(
+      col_insignia("ppl", "tablas.ajustes.cuentas.ppl", mapa = list(
+        ppl = list(texto = "tablas.ajustes.cuentas.ppl", tono = "info"))),
+      col_empresa("Empresa", "tablas.ajustes.cuentas.empresa"),
+      col_texto("banco",        "tablas.ajustes.cuentas.banco"),
+      col_texto("Moneda",       "tablas.ajustes.cuentas.moneda", recorte = FALSE),
+      col_texto("alias",        "tablas.ajustes.cuentas.alias"),
+      col_texto("cuenta",       "tablas.ajustes.cuentas.cuenta", recorte = FALSE),
+      col_texto("razon_social", "tablas.ajustes.cuentas.razon_social")
+    ),
+    acciones_fila = "editar",
+    vacio = "tablas.ajustes.cuentas.vacio"
+  )
 
   # ── + Banco ──────────────────────────────────────────────────────────────────
   observeEvent(input$cta_new_banco, {
@@ -164,18 +223,18 @@ settings_cuentas_observer <- function(input, output, session, shared) {
   }, ignoreInit = TRUE)
 
   # ── Select banco ─────────────────────────────────────────────────────────────
-  observeEvent(input$tbl_bancos_cat_rows_selected, {
-    sel <- input$tbl_bancos_cat_rows_selected
-    if (!length(sel)) {
-      editing_banco_id(NULL)
-      output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() }); return()
-    }
-    bancos <- tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
-    if (!nrow(bancos) || sel > nrow(bancos)) return()
-    row <- bancos[sel, ]
-    editing_banco_id(row$id); editing_cuenta_id(NULL)
-    output$cuentas_edit_form <- renderUI({ .banco_form_ui(row, editar = .puede_bancos()) })
-  }, ignoreInit = TRUE, ignoreNULL = FALSE)
+  # ✎ or a double click opens the bank by its id (it used to take the row's
+  # position in a fresh read: with another session's change in between, it
+  # opened another bank).
+  observeEvent(t_bancos$accion(), {
+    a <- t_bancos$accion()
+    if (!a$accion %in% c("editar", "detalle")) return()
+    bancos <- .leer_bancos()
+    row <- bancos[!is.na(bancos$id) & bancos$id == a$ids[1], , drop = FALSE]
+    if (!nrow(row)) return()
+    editing_banco_id(row$id[1]); editing_cuenta_id(NULL)
+    output$cuentas_edit_form <- renderUI({ .banco_form_ui(row[1, ], editar = .puede_bancos()) })
+  })
 
   # ── Save banco ────────────────────────────────────────────────────────────────
   observeEvent(input$banco_save, {
@@ -249,10 +308,12 @@ settings_cuentas_observer <- function(input, output, session, shared) {
 
   # ── + Cuenta ──────────────────────────────────────────────────────────────────
   observeEvent(input$cta_new_cuenta, {
+    # The bank open in the form (by id) is the new account's bank, as the
+    # selected bank row used to be.
+    pre_b  <- editing_banco_id()
     editing_cuenta_id(NULL); editing_banco_id(NULL)
-    sel_b  <- input$tbl_bancos_cat_rows_selected
-    bancos <- tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
-    pre_b  <- if (length(sel_b) && nrow(bancos) >= sel_b) bancos$id[sel_b] else NULL
+    bancos <- .leer_bancos()
+    if (!is.null(pre_b) && !pre_b %in% bancos$id) pre_b <- NULL
     pre_e  <- isolate(input$cta_empresa_filter %||% "")
     output$cuentas_edit_form <- renderUI({
       .cuenta_form_ui(NULL, bancos, pre_b, pre_e, cmap = shared$company_map(), editar = .puede_bancos())
@@ -260,27 +321,22 @@ settings_cuentas_observer <- function(input, output, session, shared) {
   }, ignoreInit = TRUE)
 
   # ── Select cuenta ─────────────────────────────────────────────────────────────
-  observeEvent(input$tbl_cuentas_rows_selected, {
-    sel <- input$tbl_cuentas_rows_selected
-    if (!length(sel)) {
-      editing_cuenta_id(NULL)
-      output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() }); return()
-    }
-    ctas <- tryCatch({
-      if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas()
-      else load_ctas_cuentas(client_id = shared$effective_client_id())
-    }, error = function(e) .schema_ctas_cuentas())
-    ef <- isolate(input$cta_empresa_filter %||% "")
-    if (nzchar(ef)) ctas <- ctas |> dplyr::filter(Empresa == ef)
-    ctas <- ctas |> dplyr::filter(activa == TRUE)
-    if (!nrow(ctas) || sel > nrow(ctas)) return()
-    row    <- ctas[sel, ]
-    bancos <- tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
+  # ✎ or a double click opens the account by its id. It used to take the row's
+  # position in a list re-read and re-filtered: a change in between opened
+  # another account -- the one whose number goes into the PPL file as source.
+  observeEvent(t_cuentas$accion(), {
+    a <- t_cuentas$accion()
+    if (!a$accion %in% c("editar", "detalle")) return()
+    ctas <- .leer_cuentas()
+    row  <- ctas[!is.na(ctas$id) & ctas$id == a$ids[1], , drop = FALSE]
+    if (!nrow(row)) return()
+    row <- row[1, ]
+    ef  <- isolate(input$cta_empresa_filter %||% "")
     editing_cuenta_id(row$id); editing_banco_id(NULL)
     output$cuentas_edit_form <- renderUI({
-      .cuenta_form_ui(row, bancos, row$banco_id, ef, cmap = shared$company_map(), editar = .puede_bancos())
+      .cuenta_form_ui(row, .leer_bancos(), row$banco_id, ef, cmap = shared$company_map(), editar = .puede_bancos())
     })
-  }, ignoreInit = TRUE, ignoreNULL = FALSE)
+  })
 
   # ── Save cuenta ───────────────────────────────────────────────────────────────
   observeEvent(input$cuenta_save, {

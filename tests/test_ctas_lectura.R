@@ -34,7 +34,8 @@ cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", ".schema_ctas_c
                                           ".BANCOS_MX_CHOICES", "borrar_banco_si_libre",
                                           ".banco_en_uso_filas", ".banco_en_uso_texto"))
 cargar("R/adjuntos_s3.R", c(".NUMERO_PURO", ".CELDA_PELIGRO", "neutralizar_celdas", "tabla_a_texto_copiable"))
-for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R", "R/settings/settings_cuentas.R"))
+for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R",
+            "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R", "R/settings/settings_cuentas.R"))
   suppressMessages(source(f))
 
 AVISOS <- character()
@@ -77,9 +78,9 @@ falla_lectura <- function() { assign(k_b, BANCOS0, envir = .mem); assign(k_c, ct
 cae <- function() .mem_falla <<- c(k_b, k_c)
 CASOS <- list(
   banco_save    = function(s) { s$setInputs(banco_nombre = "Banorte", banco_clave = "072"); cae(); s$setInputs(banco_save = 1) },
-  banco_delete  = function(s) { s$setInputs(tbl_bancos_cat_rows_selected = 1); cae(); s$setInputs(banco_delete = 1) },
+  banco_delete  = function(s) { s$setInputs(`bancos_cat_t-accion` = list(accion = "editar", ids = "b1", nonce = 1)); cae(); s$setInputs(banco_delete = 1) },
   cuenta_save   = function(s) { cae(); nueva_cuenta(s) },
-  cuenta_delete = function(s) { s$setInputs(tbl_cuentas_rows_selected = 1); cae(); s$setInputs(cuenta_delete = 1) })
+  cuenta_delete = function(s) { s$setInputs(`cuentas_t-accion` = list(accion = "editar", ids = "c1", nonce = 1)); cae(); s$setInputs(cuenta_delete = 1) })
 for (nm in names(CASOS)) {
   correr(cta("c1", "0100"), falla_lectura, CASOS[[nm]])
   ok(sprintf("%s, failed read: nothing written", nm), .mem_escrituras == 0L)
@@ -110,7 +111,7 @@ ok("PPL default: exactly one default for NTS MXN (a new default left two)",
 # 4. Deactivating an account changes only that one, on S3's table
 correr(cta("c1", "0100"), function() {
   assign(k_b, BANCOS0, envir = .mem); assign(k_c, rbind(cta("c1", "0100"), cta("c2", "0200")), envir = .mem)
-}, function(s) { s$setInputs(tbl_cuentas_rows_selected = 1); s$setInputs(cuenta_delete = 1) })
+}, function(s) { s$setInputs(`cuentas_t-accion` = list(accion = "editar", ids = "c1", nonce = 1)); s$setInputs(cuenta_delete = 1) })
 c <- get(k_c, envir = .mem)
 ok("deactivate: c1 inactive, c2 (the other session's) untouched",
    identical(c$activa[c$id == "c1"], FALSE) && isTRUE(c$activa[c$id == "c2"]))
@@ -119,7 +120,7 @@ ok("deactivate: c1 inactive, c2 (the other session's) untouched",
 #    No account uses it: since CM17 a bank in use is never deleted.
 correr(cta("c1", "0100"), function() {
   assign(k_b, BANCOS0[1, ], envir = .mem)
-}, function(s) { s$setInputs(tbl_bancos_cat_rows_selected = 1); s$setInputs(banco_delete = 1) })
+}, function(s) { s$setInputs(`bancos_cat_t-accion` = list(accion = "editar", ids = "b1", nonce = 1)); s$setInputs(banco_delete = 1) })
 ok("deleting the last bank empties the catalog (was refused by the net)", nrow(get(k_b, envir = .mem)) == 0L)
 
 # 6. A column S3's table has and the schema does not list is kept

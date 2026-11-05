@@ -31,7 +31,8 @@ cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", ".schema_ctas_c
                                           ".BANCOS_MX_CHOICES", "borrar_banco_si_libre",
                                           ".banco_en_uso_filas", ".banco_en_uso_texto"))
 cargar("R/adjuntos_s3.R", c(".NUMERO_PURO", ".CELDA_PELIGRO", "neutralizar_celdas", "tabla_a_texto_copiable"))
-for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R", "R/settings/settings_cuentas.R"))
+for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R",
+            "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R", "R/settings/settings_cuentas.R"))
   suppressMessages(source(f))
 
 AVISOS <- character(); MODALES <- list()
@@ -71,7 +72,7 @@ borrar <- function(u, fila, sembrar = function() { assign(k_b, BANCOS0, envir = 
                  company_map = reactive(CMAP), ctas_cuentas = reactiveVal(CTAS0))
   testServer(function(input, output, session) settings_cuentas_observer(input, output, session, shared), {
     session$flushReact()
-    session$setInputs(tbl_bancos_cat_rows_selected = fila)
+    session$setInputs(`bancos_cat_t-accion` = list(accion = "editar", ids = BANCOS0$id[fila], nonce = 1))
     session$setInputs(banco_delete = 1)
   })
   .mem_escrituras - antes

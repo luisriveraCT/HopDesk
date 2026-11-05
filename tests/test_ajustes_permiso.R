@@ -119,7 +119,7 @@ GUARDADOS <- list(
   banco_delete = list(servidor = settings_cuentas_observer, permiso = "can_manage_bancos",
     clics = function(session, output) {
       # b2: no account uses it (CTAS0's c1 is on b1, which CM17 refuses).
-      session$setInputs(tbl_bancos_cat_rows_selected = 2)
+      session$setInputs(`bancos_cat_t-accion` = list(accion = "editar", ids = "b2", nonce = 1))   # ✎ on b2
       session$setInputs(banco_delete = 1)
     },
     escribio = function(r) identical(r$bancos$id, "b1")),
@@ -131,7 +131,7 @@ GUARDADOS <- list(
     escribio = function(r) nrow(r$cuentas) == 2L && "0200" %in% r$cuentas$cuenta),
   cuenta_delete = list(servidor = settings_cuentas_observer, permiso = "can_manage_bancos",
     clics = function(session, output) {
-      session$setInputs(tbl_cuentas_rows_selected = 1)
+      session$setInputs(`cuentas_t-accion` = list(accion = "editar", ids = "c1", nonce = 1))     # ✎ on c1
       session$setInputs(cuenta_delete = 1)
     },
     escribio = function(r) identical(r$cuentas$activa, FALSE)),
@@ -174,7 +174,7 @@ tiene <- function(h, ids) vapply(ids, function(i) grepl(sprintf('id="%s"', i), h
 
 ok("Cuentas de Empresa sin permiso: sin “+ Banco” ni “+ Cuenta”; las tablas sí",
    { h <- html(.cuentas_panel_ui(CMAP, editar = FALSE))
-     !any(tiene(h, c("cta_new_banco", "cta_new_cuenta"))) && all(tiene(h, c("tbl_bancos_cat", "tbl_cuentas"))) })
+     !any(tiene(h, c("cta_new_banco", "cta_new_cuenta"))) && all(tiene(h, c("bancos_cat_t-hdt", "cuentas_t-hdt"))) })
 ok("Cuentas de Empresa con permiso: “+ Banco” y “+ Cuenta”",
    all(tiene(html(.cuentas_panel_ui(CMAP)), c("cta_new_banco", "cta_new_cuenta"))))
 ok("formulario de banco sin permiso: solo lectura (sin Guardar ni Eliminar)",
