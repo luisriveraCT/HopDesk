@@ -33,7 +33,9 @@ cargar <- function(archivo, nombres) {
 }
 cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", ".schema_ctas_cuentas", "load_ctas_bancos",
                                           "load_ctas_cuentas", "modificar_ctas_bancos", "modificar_ctas_cuentas",
-                                          ".BANCOS_MX_CHOICES"))
+                                          ".BANCOS_MX_CHOICES", "borrar_banco_si_libre",
+                                          ".banco_en_uso_filas", ".banco_en_uso_texto"))
+cargar("R/adjuntos_s3.R", c(".NUMERO_PURO", ".CELDA_PELIGRO", "neutralizar_celdas", "tabla_a_texto_copiable"))
 cargar("R/data_pipeline.R", "scan_ic_candidates")
 for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R",
             "R/settings/settings_cuentas.R", "R/settings/settings_bp.R", "R/settings/settings_hub.R"))
@@ -115,10 +117,11 @@ GUARDADOS <- list(
     escribio = function(r) nrow(r$bancos) == 3L && "Banorte" %in% r$bancos$nombre),
   banco_delete = list(servidor = settings_cuentas_observer, permiso = "can_manage_bancos",
     clics = function(session, output) {
-      session$setInputs(tbl_bancos_cat_rows_selected = 1)
+      # b2: no account uses it (CTAS0's c1 is on b1, which CM17 refuses).
+      session$setInputs(tbl_bancos_cat_rows_selected = 2)
       session$setInputs(banco_delete = 1)
     },
-    escribio = function(r) identical(r$bancos$id, "b2")),
+    escribio = function(r) identical(r$bancos$id, "b1")),
   cuenta_save = list(servidor = settings_cuentas_observer, permiso = "can_manage_bancos",
     clics = function(session, output) {
       session$setInputs(cta_empresa = "NTS", cta_cuenta = "0200", cta_moneda = "USD", cta_banco_id = "b1")
