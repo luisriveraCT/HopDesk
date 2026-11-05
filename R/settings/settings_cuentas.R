@@ -95,77 +95,6 @@
              stringsAsFactors = FALSE)
 }
 
-# The two DT builders below are only called by the save handlers, which
-# re-render outputs no longer on the page (tbl_bancos_cat, tbl_cuentas): they
-# go with those lines once CM12 is in.
-.bancos_cat_datatable <- function(client_id = NULL) {
-  bancos <- tryCatch(load_ctas_bancos(client_id = client_id), error = function(e) .schema_ctas_bancos())
-  if (!nrow(bancos)) {
-    return(DT::datatable(
-      data.frame(Info = "Sin bancos. Haz clic en '+ Banco'."),
-      options = list(dom = "t"), rownames = FALSE
-    ))
-  }
-  DT::datatable(
-    bancos |> dplyr::select(Banco = nombre, Clave = clave),
-    escape = FALSE, rownames = FALSE, selection = "single",
-    options = list(dom = "t", pageLength = 30,
-      columnDefs = list(list(width = "55px", targets = 1)))
-  )
-}
-
-.cuentas_datatable <- function(shared, empresa_filter = "", client_id = NULL) {
-  ctas <- tryCatch({
-    if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas()
-    else load_ctas_cuentas()
-  }, error = function(e) .schema_ctas_cuentas())
-  bancos <- tryCatch(load_ctas_bancos(client_id = client_id), error = function(e) .schema_ctas_bancos())
-
-  if (!nrow(ctas)) {
-    return(DT::datatable(
-      data.frame(Info = "Sin cuentas. Haz clic en '+ Cuenta'."),
-      options = list(dom = "t"), rownames = FALSE
-    ))
-  }
-  if (nzchar(empresa_filter)) ctas <- ctas |> dplyr::filter(Empresa == empresa_filter)
-  ctas <- ctas |> dplyr::filter(activa == TRUE)
-  if (!nrow(ctas)) {
-    return(DT::datatable(
-      data.frame(Info = "Sin cuentas activas para esa empresa."),
-      options = list(dom = "t"), rownames = FALSE
-    ))
-  }
-
-  if (nrow(bancos)) {
-    ctas <- ctas |>
-      dplyr::left_join(bancos |> dplyr::select(banco_id = id, banco_nombre = nombre),
-                       by = "banco_id")
-  } else { ctas$banco_nombre <- NA_character_ }
-
-  disp <- ctas |> dplyr::mutate(
-    PPL = dplyr::if_else(!is.na(is_ppl_default) & is_ppl_default,
-                         "<span class='badge bg-primary'>PPL</span>", ""),
-    Cuenta_disp = paste0('<span class="font-monospace small">', cuenta, '</span>'),
-    Alias_disp  = dplyr::if_else(
-      !is.na(alias) & nzchar(trimws(alias %||% "")), alias,
-      "<span class='text-muted fst-italic small'>\u2014</span>")
-  ) |> dplyr::select(
-    PPL, Empresa, Banco = banco_nombre, Moneda,
-    Alias = Alias_disp, `Cuenta origen` = Cuenta_disp, `Razon Social` = razon_social
-  )
-
-  DT::datatable(
-    disp, escape = FALSE, rownames = FALSE, selection = "single",
-    options = list(dom = "ftp", pageLength = 10, scrollX = TRUE,
-      columnDefs = list(
-        list(width = "40px",  targets = 0), list(width = "50px",  targets = 1),
-        list(width = "90px",  targets = 2), list(width = "50px",  targets = 3),
-        list(width = "90px",  targets = 4), list(width = "140px", targets = 5)
-      )
-    )
-  )
-}
-
 # ── Cuentas observer (called once from app.R server) ──────────────────────────
 settings_cuentas_observer <- function(input, output, session, shared) {
 
@@ -260,7 +189,6 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     if (!guardado) { showNotification(tr("comun.error_guardar"), type = "error"); return() }
     editing_banco_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
-    output$tbl_bancos_cat <- DT::renderDataTable({ .bancos_cat_datatable(client_id = shared$effective_client_id()) }, server = TRUE)
     showNotification(if (is.null(eid)) "Banco agregado." else "Banco actualizado.",
                      type = "message", duration = 2)
     log_action(
@@ -293,7 +221,6 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     }
     editing_banco_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
-    output$tbl_bancos_cat <- DT::renderDataTable({ .bancos_cat_datatable(client_id = shared$effective_client_id()) }, server = TRUE)
     showNotification("Banco eliminado.", type = "message", duration = 2)
     log_action(
       user        = tryCatch(shared$current_user(), error = function(e) "system"),
@@ -395,9 +322,6 @@ settings_cuentas_observer <- function(input, output, session, shared) {
 
     editing_cuenta_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
-    output$tbl_cuentas <- DT::renderDataTable({
-      .cuentas_datatable(shared, isolate(input$cta_empresa_filter %||% ""), client_id = shared$effective_client_id())
-    }, server = TRUE)
     showNotification(
       if (is.null(eid)) "Cuenta agregada." else "Cuenta actualizada.",
       type = "message", duration = 2)
@@ -429,9 +353,6 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas(updated)
     editing_cuenta_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
-    output$tbl_cuentas <- DT::renderDataTable({
-      .cuentas_datatable(shared, isolate(input$cta_empresa_filter %||% ""), client_id = shared$effective_client_id())
-    }, server = TRUE)
     showNotification("Cuenta desactivada.", type = "message", duration = 2)
     log_action(
       user        = tryCatch(shared$current_user(), error = function(e) "system"),
