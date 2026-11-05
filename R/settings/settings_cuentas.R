@@ -331,7 +331,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
       }, client_id = shared$effective_client_id()),
       error = function(e) { message("[CTAS] cuenta save failed: ", e$message); NULL })
     if (is.null(updated)) { showNotification(tr("comun.error_guardar"), type = "error"); return() }
-    bump_sync_version("ctas_cuentas")
+    bump_sync_version("ctas_cuentas", client_id = shared$effective_client_id())
     if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas(updated)
 
     editing_cuenta_id(NULL)
@@ -366,7 +366,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
       error = function(e) { message("[CTAS] cuenta deactivate failed: ", e$message); NULL })
     if (is.null(updated)) { showNotification(tr("comun.error_guardar"), type = "error"); return() }
     deleted_row <- updated[!is.na(updated$id) & updated$id == eid, , drop = FALSE]
-    bump_sync_version("ctas_cuentas")
+    bump_sync_version("ctas_cuentas", client_id = shared$effective_client_id())
     if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas(updated)
     editing_cuenta_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
