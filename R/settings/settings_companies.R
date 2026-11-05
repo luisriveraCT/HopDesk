@@ -259,7 +259,7 @@ settings_companies_observer <- function(input, output, session, shared) {
       # Only the chosen partners' dates go, on S3's current table (CM12e).
       pm_new <- modificar_policy_moves(function(pm) pm[!tolower(trimws(pm$Parte)) %in% sel_lc, , drop = FALSE],
                                        client_id = cid, permitir_reduccion = TRUE)
-      bump_sync_version("policy_moves_db")
+      bump_sync_version("policy_moves_db", client_id = cid)
       shared$policy_moves_db(pm_new)
       removeModal()
       show_settings_modal(input, output, session, shared)
@@ -630,7 +630,7 @@ settings_companies_observer <- function(input, output, session, shared) {
         pp <- pp[!es_parte(pp$parte), , drop = FALSE]
         if (is.null(new_rows)) pp else dplyr::bind_rows(pp, new_rows)
       }, client_id = cid, permitir_reduccion = TRUE)
-      bump_sync_version("partner_policies_db")
+      bump_sync_version("partner_policies_db", client_id = cid)
       shared$partner_policies_db(pp_new)
 
       # Clear stale policy moves for this partner — they'll recompute on next
@@ -638,7 +638,7 @@ settings_companies_observer <- function(input, output, session, shared) {
       limpio <- tryCatch({
         kept_moves <- modificar_policy_moves(function(pm) pm[!es_parte(pm$Parte), , drop = FALSE],
                                              client_id = cid, permitir_reduccion = TRUE)
-        bump_sync_version("policy_moves_db")
+        bump_sync_version("policy_moves_db", client_id = cid)
         shared$policy_moves_db(kept_moves)
         TRUE
       }, error = function(e) { message("[POLICY_SAVE] clearing old dates failed: ", e$message); FALSE })
@@ -911,7 +911,7 @@ settings_companies_observer <- function(input, output, session, shared) {
     tryCatch({
       moves <- if (identical(scope, "new")) modificar_policy_moves(cambio, client_id = cid)
                else modificar_policy_moves(cambio, client_id = cid, permitir_reduccion = TRUE)
-      bump_sync_version("policy_moves_db")
+      bump_sync_version("policy_moves_db", client_id = cid)
       shared$policy_moves_db(moves)
 
       # "Todos sin excepción": clear manual date overrides for computed docs so
@@ -932,7 +932,7 @@ settings_companies_observer <- function(input, output, session, shared) {
           pruned <- man_db[!man_keys %in% pol_keys, , drop = FALSE]
           if (nrow(pruned) < nrow(man_db)) {
             save_moves(pruned, client_id = cid)
-            bump_sync_version("moves_db")
+            bump_sync_version("moves_db", client_id = cid)
             shared$moves_db(pruned)
           }
         }
@@ -1044,7 +1044,7 @@ settings_companies_observer <- function(input, output, session, shared) {
     if (!nrow(truly_new)) return()
 
     if (exists(".cache_set", mode = "function")) .cache_set("policy_moves", escrito, cid)
-    bump_sync_version("policy_moves_db")
+    bump_sync_version("policy_moves_db", client_id = cid)
     shared$policy_moves_db(escrito)
     policies_dirty(FALSE)
     tryCatch(log_action(
