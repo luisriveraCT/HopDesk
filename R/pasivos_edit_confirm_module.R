@@ -225,7 +225,7 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
   tryCatch(save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base), error = function(e) NULL)
   tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
   shared$pasivos_provisions_db(provs)
-  bump_sync_version("pasivos_provisions_db")
+  bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
 
   tryCatch(pasivos_log_audit(
     action_type = "bulk.aplicar_pagos_futuros",
