@@ -1,11 +1,14 @@
 # =============================================================================
 # tests/test_flujo_caracterizacion_chromote.R
-# The Flujo de caja preview as it is today, in a real headless Chrome (T17c,
-# step 0): what only real clicks and keys show. The fixture is
-# tests/helpers/flujo_fixture_app.R with FLU_DATOS=prueba (the real module and
-# aggregation over tests/helpers/flujo_datos_prueba.R; no S3); the grid is
-# read with the R layer's adapter from what the browser painted. Case
-# numbers (B1..) are those of reportes/T17c_paso0.md.
+# The Flujo de caja preview in a real headless Chrome (T17c): what only real
+# clicks and keys show. Step 0 recorded today's preview here; since step 2
+# the same cases (B1..) run on the engine (table cfp-tabla, "flujo_caja").
+# The fixture is tests/helpers/flujo_fixture_app.R with FLU_DATOS=prueba (the
+# real module and aggregation over tests/helpers/flujo_datos_prueba.R; no
+# S3). What the browser paints is compared with the R layer
+# (tests/helpers/flujo_adaptador_motor.R), which the R characterization holds
+# to the reference flujo_antes.json. Case numbers (B1..) are those of
+# reportes/T17c_paso0.md; [CAMBIA] marks the approved changes.
 # Sizes: Luis's window (1293 x 632) and 1772 x 866; screenshots to
 # FL_CAPTURAS if set.
 #
@@ -30,7 +33,7 @@ for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "
             "R/cashflow_export_module.R", "R/cashflow_preview_module.R")) source(f)
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 source("tests/helpers/flujo_datos_prueba.R")
-source("tests/helpers/flujo_adaptador.R")
+source("tests/helpers/flujo_adaptador_motor.R")
 source("tests/helpers/live_app_harness.R")
 
 LUNES <- lubridate::floor_date(Sys.Date(), "week", week_start = 1)
@@ -71,73 +74,110 @@ tecla <- function(k, code, vk, texto = NULL) {
 }
 espera <- function(f, s = 8) poll_until(function() isTRUE(tryCatch(f(), error = function(e) FALSE)), timeout_s = s)
 eco <- function() jsonlite::fromJSON(ev("document.getElementById('eco').textContent") %||% "{}")
-rejilla <- function(ed = ED, day0 = list()) fl_rejilla(ev("document.querySelector('.cf-table-wrap').outerHTML"), ed, day0)
+T <- "cfp-tabla-hdt"
 abierto <- function() isTRUE(ev("document.body.classList.contains('cf-preview-open')"))
-dia0 <- function(moneda) sprintf("document.querySelector('.cf-day0-cell[data-currency=\"%s\"]')", moneda)
-dialogo <- function() isTRUE(ev("document.getElementById('cf-day0-dlg').style.display === 'block'"))
-abrir <- function() {
+lista <- function() unlist(ev(sprintf("HDT.estado('%s').lista", T)))
+fila <- function(id) sprintf("HDT.fila('%s', '%s')", T, id)
+textos_fila <- function(id) unlist(ev(sprintf("Array.prototype.map.call(%s.children, function (td) { return td.textContent.trim(); })", fila(id))))
+grupo <- function(primera) sprintf("document.querySelector('#%s tr.hdt-grupo[data-primera=\"%s\"]')", T, primera)
+textos_grupo <- function(primera) unlist(ev(sprintf("Array.prototype.map.call(%s.children, function (td) { return td.textContent.trim(); })", grupo(primera))))
+dia0 <- function(moneda) sprintf("%s.children[2]", fila(paste0("acum|", moneda)))   # 0 Contraparte, 1 Etiqueta, 2 Día 0
+todos <- function() clic(sprintf("document.querySelector('#%s .hdt-grupos-todos')", T))
+abrir <- function(limpiar = TRUE) {
   b$Page$navigate(sprintf("http://127.0.0.1:%d", PORT), wait_ = TRUE)
   poll_until(function() isTRUE(ev("!!window.Shiny && !!document.getElementById('abrir_flujo')")), timeout_s = 60)
   Sys.sleep(0.8)
-  ev("try { localStorage.removeItem('hopdesk_cf_preview_state'); } catch (e) {}; 0")
+  if (limpiar) ev("try { localStorage.removeItem('hopdesk_cf_preview_state'); localStorage.removeItem('hopdesk_cf_dia0'); } catch (e) {}; 0")
   clic("document.getElementById('abrir_flujo')")
-  espera(function() !is.null(ev("document.querySelector('.cf-table')")), 60)
+  espera(function() isTRUE(ev(sprintf("!!window.HDT && !!HDT.estado('%s') && HDT.estado('%s').lista.length > 0", T, T))), 60)
+}
+# What R says each row reads (the engine's payload: hd_filas), by id.
+esperado <- function(ed = ED, day0 = list()) {
+  r <- fl_rejilla_motor(ed, day0 = day0, expandido = TRUE)
+  list(r = r, filas = lapply(setNames(seq_len(nrow(r$datos)), r$datos$id), function(i)
+    vapply(r$filas$celdas, function(c) unclass(c$mostrar)[i], character(1))))
 }
 
 ronda <- function(w, h) {
   et <- sprintf("[%dx%d]", w, h)
   pantalla(w, h)
   ok(paste(et, "the preview opens with this week's grid"), abrir())
-  ok(paste(et, "B1: the browser paints the same grid as the R layer (texts and order; F1-F10)"),
-     identical(rejilla()$bloques, fl_rejilla(render_cashflow_preview_html(ED, FALSE, list()), ED)$bloques))
-  ok(paste(et, "B2: counterparties start hidden; the expand button shows them all, and again hides them (F5)"), {
-    oculto <- function() isTRUE(ev("Array.prototype.every.call(document.querySelectorAll('.cf-parte-row'), function (t) { return t.style.display === 'none'; })"))
-    a <- oculto(); clic("document.getElementById('cfp-btn_expand')")
-    v <- espera(function() isTRUE(ev("Array.prototype.every.call(document.querySelectorAll('.cf-parte-row'), function (t) { return t.style.display !== 'none'; })")))
-    clic("document.getElementById('cfp-btn_expand')")
-    a && v && espera(oculto)
+  E <- esperado()
+  ok(paste(et, "B2: [CAMBIA] each currency is a band, Cobros / Pagos a closed group (one row, its sums), then NETO and POS."),
+     identical(lista(), c("banda:1:MXN", "grupo:cerrado:MXN|ar|1,MXN|ar|2,MXN|ar|3", "grupo:cerrado:MXN|ap|1,MXN|ap|2",
+                          "neto|MXN", "acum|MXN", "banda:1:USD", "grupo:cerrado:USD|ar|1", "grupo:cerrado:USD|ap|1",
+                          "neto|USD", "acum|USD")))
+  ok(paste(et, "B1a: a closed group reads its name and each column's sum, the Total in whole pesos (F7)"), {
+    s <- fl_bloque_m(E$r, "MXN")$secciones$cobros$subtotal
+    g <- textos_grupo("MXN|ar|1")
+    grepl("Cobros", g[1], fixed = TRUE) && identical(g[4:10], unname(vapply(s$celdas, `[[`, "", "texto"))) &&
+      identical(g[11], s$total$texto)
   })
-  ok(paste(et, "B3: net tones -- a negative red, a zero grey, a positive green (F8)"), {
-    col <- function(k) ev(sprintf("getComputedStyle(document.querySelectorAll('.cf-net-row')[0].children[%d]).color", k + 1L))
-    identical(c(col(1), col(2), col(3)), c("rgb(255, 107, 107)", "rgb(154, 181, 204)", "rgb(93, 216, 122)"))
+  todos()
+  ok(paste(et, "B2b: the engine's open-all shows every counterparty, and closes them again"), {
+    v <- espera(function() !any(grepl("^grupo:cerrado", lista())))
+    todos()
+    v && espera(function() sum(grepl("^grupo:cerrado", lista())) == 4L)
   })
-  # Día 0: the dialog, an expression, Enter.
+  todos(); espera(function() !any(grepl("^grupo:cerrado", lista())))
+  ok(paste(et, "B1: every row the browser paints reads what R says (texts; F1-F10 hold there)"),
+     all(vapply(names(E$filas), function(id) {
+       p <- textos_fila(id)
+       identical(p[-1], unname(E$filas[[id]][-1])) && startsWith(p[1], E$filas[[id]][1])
+     }, logical(1))))
+  ok(paste(et, "B3: net tones -- a negative red, a zero grey, a positive green (F8); counterparties have none"), {
+    cls <- function(id, k) ev(sprintf("%s.children[%d].className", fila(id), k))
+    grepl("hdt-tc-peligro", cls("neto|MXN", 3)) && grepl("hdt-tc-neutro", cls("neto|MXN", 4)) &&
+      grepl("hdt-tc-exito", cls("neto|MXN", 5)) && !grepl("hdt-tc-", cls("MXN|ap|1", 3))
+  })
+  # Día 0: typed in the position row's cell, an expression, Enter.
+  ok(paste(et, "B4: [CAMBIA] Día 0 is typed in MXN's position row (no dialog); the net row can't be"),
+     isTRUE(ev(sprintf("%s.classList.contains('hdt-editable') && !%s.children[2].classList.contains('hdt-editable')",
+                       dia0("MXN"), fila("neto|MXN")))))
   clic(dia0("MXN"))
-  ok(paste(et, "B4: a click on MXN's Día 0 opens its dialog, empty for a 0"), dialogo() && identical(ev("document.getElementById('cf-day0-input').value"), ""))
-  b$Input$insertText(text = "1000+500"); Sys.sleep(0.2)
-  tecla("Enter", "Enter", 13L, "\r")
-  ok(paste(et, "B5: 1000+500 and Enter: the dialog closes, MXN's Día 0 is 1,500 and its position moves; USD's doesn't (F9, F10)"),
-     espera(function() identical(ev(sprintf("%s.getAttribute('data-valor')", dia0("MXN"))), "1500")) && !dialogo() && {
-       r <- rejilla(day0 = list(MXN = 1500))
-       identical(fl_bloque(r, "MXN")$acumulada$dia0$texto, "$2K") &&
-         identical(fl_bloque(r, "MXN")$acumulada$celdas$c1$texto, "−$503K") &&
-         identical(fl_bloque(r, "USD")$acumulada$dia0$valor, 0)
-     })
+  ev("document.activeElement.select()"); b$Input$insertText(text = "1000+500"); tecla("Enter", "Enter", 13L, "\r")
+  ok(paste(et, "B5: 1000+500 and Enter: MXN's Día 0 is 1,500 and its position moves; USD's doesn't (F9, F10)"),
+     espera(function() {
+       E2 <- esperado(day0 = list(MXN = 1500))
+       identical(textos_fila("acum|MXN")[-1], unname(E2$filas[["acum|MXN"]][-1])) &&
+         identical(textos_fila("acum|MXN")[3], "$2K") && identical(textos_fila("acum|USD")[3], "$0")
+     }, 10))
+  ok(paste(et, "B5b: [CAMBIA] Día 0 is kept in the browser, per currency"),
+     identical(ev("localStorage.getItem('hopdesk_cf_dia0')"), "{\"MXN\":1500}"))
   clic(dia0("MXN"))
-  ok(paste(et, "B6: reopening reads 1500 back, not '$2K'"), identical(ev("document.getElementById('cf-day0-input').value"), "1500"))
+  ok(paste(et, "B6: reopening the cell starts from 1500, not '$2K'"),
+     identical(ev("document.activeElement.value"), "1500") || identical(ev("Number(document.activeElement.value)"), 1500L))
   tecla("Escape", "Escape", 27L)
-  esc_cierra_todo <- !abierto()
-  ok(paste(et, "B7 [visto de paso, PENDIENTES]: Esc in the Día 0 dialog closes it AND the whole preview (Esc's keyup reaches the document)"),
-     !dialogo() && esc_cierra_todo)
-  if (!abierto()) { clic("document.getElementById('abrir_flujo')"); espera(abierto) }
+  # [CAMBIA B7] It used to close the whole preview (Esc's keyup reached the document).
+  ok(paste(et, "B7: [CAMBIA] Esc in the Día 0 cell leaves it as it was and the preview stays open"),
+     abierto() && !isTRUE(ev(sprintf("!!%s.querySelector('input')", dia0("MXN")))))
+  clic("document.getElementById('cfp-btn_date_range')")
+  espera(function() isTRUE(ev("!!document.querySelector('.air-datepicker.-active-')")), 5)
+  tecla("Escape", "Escape", 27L)
+  ok(paste(et, "B7b: [CAMBIA] Esc with the date picker open closes the picker, not the preview"),
+     abierto() && !isTRUE(ev("!!document.querySelector('.air-datepicker.-active-')")))
+  ev("document.activeElement && document.activeElement.blur(); 0")
   tecla("Escape", "Escape", 27L)
   ok(paste(et, "B8: Esc anywhere else closes the preview"), espera(function() !abierto()))
-  clic("document.getElementById('abrir_flujo')"); espera(abierto)
+  abrir(limpiar = FALSE)
+  ok(paste(et, "B5c: [CAMBIA] after a reload MXN's Día 0 is still 1,500"),
+     espera(function() identical(textos_fila("acum|MXN")[3], "$2K"), 10))
   # Toolbar.
   clic("document.getElementById('cfp-btn_grouping')")
   ok(paste(et, "B9: the grouping button reads Diario after Auto, and the grid keeps 7 days (F13)"),
      espera(function() identical(trimws(ev("document.getElementById('cfp-btn_grouping').textContent")), "Diario")) &&
-       ev("document.querySelectorAll('.cf-table thead th').length") == 10L)
+       identical(length(textos_fila("neto|MXN")), 11L))
   clic("document.getElementById('cfp-btn_curmode')")
   ok(paste(et, "B10: Base shows the FX row with USD's rate and no MXN one (F14)"),
      espera(function() isTRUE(ev("!!document.getElementById('cfp-fx_rate_usd') && !document.getElementById('cfp-fx_rate_mxn')"))))
   ev("(function(){ var i = document.getElementById('cfp-fx_rate_usd'); i.focus(); i.value = '20'; i.dispatchEvent(new Event('input', {bubbles: true})); i.blur(); })()")
   ok(paste(et, "B11: a USD rate of 20 turns CLIENT USA's 10,000 into 200,000 MXN in one block (F11)"),
      espera(function() {
-       e <- build_cashflow_export_data(D$df, D$tags, D$empresas, LUNES, LUNES + 6L, "daily", "fused", "MXN", c(USD = 20))
-       r <- rejilla(e)
-       length(r$bloques) == 1L && identical(fl_fila(r, "MXN", "cobros", "CLIENT USA")$celdas$c2$texto, "$200K")
-     }, 10))
+       l <- lista()
+       !any(grepl("USD", l)) && { todos(); TRUE } &&
+         any(vapply(grep("^MXN\\|ar\\|", unlist(ev(sprintf("HDT.estado('%s').visibles", T))), value = TRUE), function(id) {
+           p <- textos_fila(id); startsWith(p[1], "CLIENT USA") && identical(p[5], "$200K") }, logical(1)))
+     }, 12))
   clic("document.getElementById('cfp-btn_export')")
   ok(paste(et, "B12: Exportar hands the export window the preview's settings (F18)"),
      espera(function() {
@@ -149,6 +189,7 @@ ronda <- function(w, h) {
   if (nzchar(CAPTURAS)) { dir.create(CAPTURAS, showWarnings = FALSE, recursive = TRUE)
     b$screenshot(file.path(CAPTURAS, sprintf("flujo_%dx%d.png", w, h)), show = FALSE) }
 }
+fl_bloque_m <- function(r, moneda) { for (x in r$bloques) if (identical(x$moneda, moneda)) return(x); NULL }
 
 ronda(1293, 632)
 ronda(1772, 866)

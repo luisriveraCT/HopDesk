@@ -4,7 +4,8 @@
 # tests/helpers/flujo_fixture_app.R: the real module and aggregation over
 # fixed rows (no S3). Every click and key is a real input event. Blocks follow
 # the T11 inventory (hopdesk_coord/tablas/reportes/T11_inventario.md, seen in
-# passing): D Día 0 (5).
+# passing): D Día 0 (5). Since T17c the table is the engine's: Día 0 is typed in
+# the position row's cell (edicion_celda, arithmetic only), no dialog.
 #
 # Run from project root:  Rscript tests/test_flujo_chromote.R
 # FLU_RAIZ=<older checkout> runs the same test against that checkout's code.
@@ -47,59 +48,59 @@ clic <- function(js_el) {
   raton("mouseMoved", p); raton("mousePressed", p, 1L); raton("mouseReleased", p)
   Sys.sleep(0.5)
 }
-celda   <- "document.querySelector('.cf-day0-cell')"
-entrada <- "document.getElementById('cf-day0-input')"
-dialogo_abierto <- function() isTRUE(ev("document.getElementById('cf-day0-dlg').style.display === 'block'"))
-valor_entrada <- function() ev(sprintf("%s.value", entrada))
-valor_celda <- function() ev(sprintf("%s.getAttribute('data-valor')", celda))
+T <- "cfp-tabla-hdt"
+celda <- sprintf("HDT.fila('%s', 'acum|MXN').children[2]", T)   # 0 Contraparte, 1 Etiqueta, 2 Día 0
+editor <- function() isTRUE(ev(sprintf("!!%s.querySelector('input')", celda)))
 texto_celda <- function() trimws(ev(sprintf("%s.textContent", celda)))
-# Open Día 0, type an expression with real keys, press Aplicar.
+valor_celda <- function() ev(sprintf("HDT.estado('%s').ediciones['acum|MXN'] ? 'editando' : %s.title", T, celda))
+pos <- function() trimws(ev(sprintf("HDT.fila('%s', 'acum|MXN').children[3].textContent", T)))
+# Type an expression in Día 0 with real keys and Enter.
 dia0 <- function(expr) {
   clic(celda); Sys.sleep(0.3)
-  ev(sprintf("var i=%s; i.select(); 0", entrada))
+  ev("document.activeElement.select(); 0")
   b$Input$insertText(text = expr); Sys.sleep(0.2)
-  clic("document.getElementById('cf-day0-ok')"); Sys.sleep(1.5)
+  b$Input$dispatchKeyEvent(type = "keyDown", key = "Enter", code = "Enter", windowsVirtualKeyCode = 13L, text = "\r")
+  b$Input$dispatchKeyEvent(type = "keyUp", key = "Enter", code = "Enter", windowsVirtualKeyCode = 13L)
+  Sys.sleep(1.5)
 }
 
 abrir <- function() {
   invisible(b$Page$navigate(sprintf("http://127.0.0.1:%d", PORT), wait_ = TRUE))
   poll_until(function() isTRUE(ev("!!window.Shiny && !!document.getElementById('abrir_flujo')")), timeout_s = 60)
   Sys.sleep(1)
+  invisible(ev("try { localStorage.removeItem('hopdesk_cf_dia0'); } catch (e) {}; 0"))
   clic("document.getElementById('abrir_flujo')")
 }
 abrir()
 ok("the preview paints this week's grid",
-   poll_until(function() isTRUE(ev(sprintf("!!%s", celda))), timeout_s = 60))
+   poll_until(function() isTRUE(ev(sprintf("!!window.HDT && !!HDT.fila('%s', 'acum|MXN')", T))), timeout_s = 60))
 invisible(ev("window.__alertas = 0; window.alert = function(){ window.__alertas++; }; 0"))
 
 # ── D · Día 0 ───────────────────────────────────────────────────────────────
 dia0("1500*2-300")
-ok("D: 1500*2-300 is applied (2,700, shown compact)",
-   identical(valor_celda(), "2700") && grepl("$3K", texto_celda(), fixed = TRUE))
+ok("D: 1500*2-300 is applied (2,700, shown compact; the full amount in its bubble)",
+   poll_until(function() identical(texto_celda(), "$3K"), timeout_s = 10) && grepl("2,700.00", valor_celda(), fixed = TRUE))
 clic(celda); Sys.sleep(0.3)
-ok("D: reopening reads the stored value back (it read '$3K' and marked an error)",
-   dialogo_abierto() && identical(valor_entrada(), "2700"))
-clic("document.getElementById('cf-day0-cancel')")
+ok("D: reopening starts from the stored value (it read '$3K' and marked an error)",
+   editor() && identical(as.numeric(ev("document.activeElement.value")), 2700))
+b$Input$dispatchKeyEvent(type = "rawKeyDown", key = "Escape", code = "Escape", windowsVirtualKeyCode = 27L)
+b$Input$dispatchKeyEvent(type = "keyUp", key = "Escape", code = "Escape", windowsVirtualKeyCode = 27L); Sys.sleep(0.4)
 dia0("-(500 + 250)")
-ok("D: a negative keeps its sign", identical(valor_celda(), "-750") && grepl("−$750", texto_celda(), fixed = TRUE))
+ok("D: a negative keeps its sign", poll_until(function() identical(texto_celda(), "-$750"), timeout_s = 10))
 clic(celda); Sys.sleep(0.3)
-ok("D: and reopens as -750 (stripping the minus made it 750)", identical(valor_entrada(), "-750"))
-clic("document.getElementById('cf-day0-cancel')")
-dia0("alert(1)")
-ok("D: alert(1) is refused -- nothing runs, the box turns red, the dialog stays",
-   ev("window.__alertas") == 0 && dialogo_abierto() &&
-   identical(ev(sprintf("%s.style.borderColor", entrada)), "rgb(220, 53, 69)"))
-ok("D: and the stored value doesn't change", identical(valor_celda(), "-750"))
-clic("document.getElementById('cf-day0-cancel')")
-ok("D: the evaluator takes $ and thousands commas as number formatting",
-   identical(ev("window.cfEvalArit('$1,500.50 + 499.5')"), 2000L) || identical(ev("window.cfEvalArit('$1,500.50 + 499.5')"), 2000))
-ok("D: and refuses anything that isn't + - * / ( ) and numbers",
-   all(vapply(c("2**3", "1e3", "Math.PI", "1;2", "(1+2", "", "[]+1", "this"),
-              function(x) is.null(ev(sprintf("window.cfEvalArit(%s)", deparse(x)))), logical(1))))
-ok("D: precedence and parentheses", identical(as.numeric(ev("window.cfEvalArit('(1+2)*3 - 8/4')")), 7))
+ok("D: and reopens as -750 (stripping the minus made it 750)", identical(as.numeric(ev("document.activeElement.value")), -750))
+invisible(ev("document.activeElement.select(); 0")); b$Input$insertText(text = "alert(1)"); Sys.sleep(0.2)
+b$Input$dispatchKeyEvent(type = "keyDown", key = "Enter", code = "Enter", windowsVirtualKeyCode = 13L, text = "\r")
+b$Input$dispatchKeyEvent(type = "keyUp", key = "Enter", code = "Enter", windowsVirtualKeyCode = 13L); Sys.sleep(0.6)
+ok("D: alert(1) is refused -- nothing runs, the cell turns red and says how",
+   ev("window.__alertas") == 0 && grepl("hdt-ed-mal", ev(sprintf("%s.className", celda))))
+b$Input$dispatchKeyEvent(type = "rawKeyDown", key = "Escape", code = "Escape", windowsVirtualKeyCode = 27L)
+b$Input$dispatchKeyEvent(type = "keyUp", key = "Escape", code = "Escape", windowsVirtualKeyCode = 27L); Sys.sleep(0.4)
+ok("D: and the stored value doesn't change", identical(texto_celda(), "-$750"))
+# The evaluator itself (\$ and commas, refusals, precedence) is the engine's: test_hd_flujo_piezas_chromote (S7, S8).
 
 # ── H · day letters in the headers (seen in passing 7) ──────────────────────
-letras <- unlist(ev("Array.from(document.querySelectorAll('.cf-table thead th.cf-th-bkt')).map(function(t){ return t.textContent.charAt(0); })"))
+letras <- unlist(ev(sprintf("Array.from(document.querySelectorAll('#%s thead th')).slice(3, 10).map(function(t){ return t.textContent.trim().charAt(0); })", T)))
 ok("H: this week's headers read L M X J V S D (Wednesday was a second M)",
    identical(letras, c("L", "M", "X", "J", "V", "S", "D")))
 
@@ -145,7 +146,7 @@ invisible(b$Page$addScriptToEvaluateOnNewDocument(source = sprintf(paste0(
   "    return new (Function.prototype.bind.apply(RD, [null].concat([].slice.call(arguments))))(); }",
   "  FD.prototype = RD.prototype; FD.now = ahora; FD.UTC = RD.UTC; FD.parse = RD.parse; window.Date = FD; })();"), fijo)))
 abrir()
-invisible(poll_until(function() isTRUE(ev(sprintf("!!%s", celda))), timeout_s = 60))
+invisible(poll_until(function() isTRUE(ev(sprintf("!!window.HDT && !!HDT.fila('%s', 'acum|MXN')", T))), timeout_s = 60))
 ok("R: the browser thinks it is 19:39 here and already the next day in UTC",
    identical(ev("new Date().getHours()"), 19L) && ev("new Date().toISOString().slice(0,10)") > hoy)
 invisible(ev("localStorage.removeItem('hopdesk_cf_preview_state'); 0"))

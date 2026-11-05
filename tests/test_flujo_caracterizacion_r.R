@@ -270,3 +270,27 @@ test_that("the whole grid of two scenarios is the reference's, but for the appro
   antes$diario$bloques <- b
   expect_identical(nuevo, antes)
 })
+
+# ── Step 3 [CAMBIA] ─────────────────────────────────────────────────────────
+test_that("[CAMBIA] Día 0 is kept in the browser per currency until it changes (it lasted the session)", {
+  # Before: cf_day0_rv only, gone on reload. Now: written to localStorage
+  # (hopdesk_cf_dia0) when typed and read back when the preview opens.
+  modulo(function(session, input, output, sh, rv) {
+    r <- devuelto(session)
+    session$setInputs(dia0_guardado = list(MXN = 2700, USD = "x", mxn = 5, EUR = NULL))
+    expect_identical(r$day0(), list(MXN = 2700))
+    expect_identical(r$datos()$Dia0[r$datos()$id == "acum|MXN"], 2700)
+    # What was typed in this session wins over what the browser kept.
+    session$setInputs(`tabla-ediciones` = list(ids = list("acum|MXN"), valores = list(-750), nonce = 1))
+    session$setInputs(dia0_guardado = list(MXN = 2700))
+    expect_identical(r$day0()[["MXN"]], -750)
+  })
+  src <- paste(readLines("R/cashflow_preview_module.R", warn = FALSE), collapse = "\n")
+  expect_true(grepl("localStorage.setItem('%s',%s)", src, fixed = TRUE) && grepl("\"hopdesk_cf_dia0\"", src, fixed = TRUE))
+})
+test_that("[CAMBIA] an Esc that a field or the date picker took doesn't close the preview (it did, B7)", {
+  # The browser's (chromote B7, inverted); here, that the listener asks first.
+  src <- paste(readLines("R/cashflow_preview_module.R", warn = FALSE), collapse = "\n")
+  expect_true(grepl("if(tomada){ tomada = false; return; }", src, fixed = TRUE))
+  expect_true(grepl(".air-datepicker.-active-", src, fixed = TRUE))
+})

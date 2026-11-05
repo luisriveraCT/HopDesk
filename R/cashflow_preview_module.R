@@ -95,6 +95,9 @@ cashflow_tabla_columnas <- function(labels) {
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 .CF_STORAGE_KEY  <- "hopdesk_cf_preview_state"
+# Día 0 per currency, {"MXN": 1500, ...}: kept until it is changed, not just
+# for the day like the rest (T17c, Luis resp. 2). Before, it lasted the session.
+.CF_DIA0_KEY     <- "hopdesk_cf_dia0"
 # Today in the BROWSER's own calendar, "AAAA-MM-DD". The saved state is kept
 # for the day, and both the day it was saved and today come from here: the
 # server's Sys.Date() wrote it and toISOString() (UTC) read it, so from 18:00
@@ -308,14 +311,26 @@ cashflowPreviewServer <- function(id, shared) {
     # ── Stage 6: Esc key closes preview ─────────────────────────────────────
     # Inject a document-level keyup listener once; fires Shiny.setInputValue
     # so the observer below can call shared$cf_preview_open(FALSE).
+    # [CAMBIA T17c] An Esc that something else already took doesn't close it:
+    # leaving a cell being typed in (Día 0), any field, or the open date
+    # picker. It used to close the whole preview too. Seen on keydown, in the
+    # capture phase: by keyup the editor or the picker is already gone.
     observe({
       if (isTRUE(shared$cf_preview_open())) {
         shinyjs::runjs(sprintf(
           "(function(){
             if(window._cfEscBound) return;
             window._cfEscBound = true;
+            var tomada = false;
+            document.addEventListener('keydown', function(e){
+              if(e.key!=='Escape') return;
+              var t = e.target, tag = t && t.tagName;
+              tomada = tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT' || !!(t && t.isContentEditable) ||
+                       !!document.querySelector('.air-datepicker.-active-');
+            }, true);
             document.addEventListener('keyup', function(e){
               if(e.key==='Escape'){
+                if(tomada){ tomada = false; return; }
                 Shiny.setInputValue('%s', Date.now(), {priority:'event'});
               }
             });
@@ -345,8 +360,12 @@ cashflowPreviewServer <- function(id, shared) {
                 Shiny.setInputValue('%s', s, {priority:'event'});
               }
             } catch(e) {}
+            try {
+              var d0 = JSON.parse(localStorage.getItem('%s') || '{}');
+              if (d0 && typeof d0 === 'object') Shiny.setInputValue('%s', d0, {priority:'event'});
+            } catch(e) {}
           })();
-        ", .CF_STORAGE_KEY, .CF_HOY_JS, ns("stored_state")))
+        ", .CF_STORAGE_KEY, .CF_HOY_JS, ns("stored_state"), .CF_DIA0_KEY, ns("dia0_guardado")))
       } else {
         shinyjs::removeClass(selector = ".cf-slide-wrapper",
                              class    = "cf-preview-active", asis = TRUE)
@@ -654,6 +673,21 @@ cashflowPreviewServer <- function(id, shared) {
       for (k in seq_len(nrow(e))) vals[[ sub("^acum\\|", "", e$id[k]) ]] <- as.numeric(e$valor[k])
       cf_day0_rv(vals)
       tabla$limpiar_ediciones()
+      # [CAMBIA T17c] kept in the browser until it is changed (see .CF_DIA0_KEY).
+      shinyjs::runjs(sprintf("try{localStorage.setItem('%s',%s);}catch(e){}", .CF_DIA0_KEY,
+                             jsonlite::toJSON(vals, auto_unbox = TRUE, digits = NA)))
+    }, ignoreInit = TRUE)
+
+    # What the browser kept: only finite numbers under a currency's code.
+    observeEvent(input$dia0_guardado, {
+      g <- input$dia0_guardado
+      if (!is.list(g) || !length(g) || is.null(names(g))) return()
+      vals <- cf_day0_rv()
+      for (cur in names(g)) {
+        v <- suppressWarnings(as.numeric(g[[cur]]))
+        if (grepl("^[A-Z]{3}$", cur) && length(v) == 1L && is.finite(v) && is.null(vals[[cur]])) vals[[cur]] <- v
+      }
+      cf_day0_rv(vals)
     }, ignoreInit = TRUE)
 
     # ── Export shortcut (Stage 5) ─────────────────────────────────────────────
