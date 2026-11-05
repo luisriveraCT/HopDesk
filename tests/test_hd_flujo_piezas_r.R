@@ -87,3 +87,32 @@ test_that("the dictionary has the expression's message in both languages", {
   for (lang in c("es", "en"))
     expect_true("tablas.edicion.no_expresion" %in% names(jsonlite::fromJSON(file.path("www", "i18n", paste0(lang, ".json")))))
 })
+
+# ── Step 2 additions (T17c): the Total's whole pesos, summary rows, the group's name ──
+test_that("formato = \"entero\": whole pesos, halves up; the bubble and Copiar keep the cents; only then in the metadata", {
+  v <- col_dinero("Total", formato = "entero")$valores(c(5000120.5, -463208.5, 802000, 0.4, -0.4, NA))
+  expect_identical(v$mostrar, c("$5,000,121", "-$463,209", "$802,000", "$0", "$0", ""))
+  expect_identical(v$completo[1], "$5,000,120.50")
+  expect_identical(v$copiar[1], "5000120.5")
+  expect_identical(hd_columnas_meta(list(col_dinero("x", formato = "entero")))[[1]]$formato, "entero")
+  expect_error(col_dinero("x", formato = "redondo"), "completo\\\", \\\"compacto\\\" or \\\"entero")
+})
+test_that("with .resumen: a summary row keeps its 0 in a compact cero-vacio column, and only summary rows take the sign's tone", {
+  cols <- list(col_texto("Contraparte"), col_dinero("c1", formato = "compacto", cero = "vacio", tono = "signo"))
+  d <- data.frame(id = c("a", "n"), Contraparte = c("A", "NETO"), c1 = c(0, 0), .resumen = c("", "neto"),
+                  stringsAsFactors = FALSE)
+  f <- hd_filas(d, cols)$celdas[[2]]
+  expect_identical(unclass(f$mostrar), c("", "$0"))
+  expect_identical(unclass(f$tono), c("", "neutro"))
+  # Without .resumen nothing changes: a 0 is empty and every row has its tone.
+  f0 <- hd_filas(d[, c("id", "Contraparte", "c1")], cols)$celdas[[2]]
+  expect_identical(unclass(f0$mostrar), c("", ""))
+  expect_identical(unclass(f0$tono), c("neutro", "neutro"))
+})
+test_that("the group's row says its name (the last grupo field) only with sumas_columnas", {
+  d <- data.frame(id = c("a", "b"), Moneda = "MXN", Tipo = c("Cobros", "Cobros"), Contraparte = c("A", "B"),
+                  stringsAsFactors = FALSE)
+  cols <- list(col_texto("Contraparte"))
+  expect_identical(unclass(hd_grupo_payload(c("Moneda", "Tipo"), d, cols, titulos = TRUE)$titulos), c("Cobros", "Cobros"))
+  expect_false("titulos" %in% names(hd_grupo_payload(c("Moneda", "Tipo"), d, cols)))
+})

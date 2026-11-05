@@ -174,8 +174,8 @@ hd_registro <- list(
     agregar = character(), quitar = character(),
     notas = character()),
   flujo_caja = list(nombre = "Flujo de caja (vista previa)", clase = "F", archivo = "cashflow_preview_module.R",
-    agregar = character(), quitar = character(),
-    notas = character()),
+    agregar = character(), quitar = c("excel"),
+    notas = c("Quitar: Excel: El Flujo exporta a Word, PDF y Excel con su propio exportador (build_cashflow_export_data), el mismo de siempre; el Excel del motor sería otro distinto (T17c, resp. 6).")),
   # T17b (Luis, P4; coordinator 2026-11-04: here, not on the design page):
   # the provisions behind one cell of Pasivos · Tabla that adds up several.
   provisiones_celda = list(nombre = "Provisiones de una celda (Pasivos)", clase = "E", archivo = "pasivos_table_module.R",

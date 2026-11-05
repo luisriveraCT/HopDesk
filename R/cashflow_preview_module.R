@@ -5,215 +5,91 @@
 # Stage 1 : Animation shell — arrow toggles panels, placeholder content.
 # Stage 2 : Preview controls toolbar (date range, grouping, currency, FX).
 # Stage 3 : Data pipeline wiring (build_export_combined_df + build_cashflow_export_data).
-# Stage 4 : HTML table renderer (collapsed/expanded, tags, sticky columns).
+# Stage 4 : The table is the hd_table engine (T17c, table "flujo_caja"):
+#           cashflow_tabla_datos() / cashflow_tabla_columnas() below.
 # Stage 5 : Export shortcut — pre-fills the export modal from preview settings.
 # Stage 6 : Polish (Esc key, responsive, performance, WCAG).
 # =============================================================================
 
-# ── Stage 4: HTML table renderer ─────────────────────────────────────────────
-
-# Compact formatter: "" for 0, "$4.5M", "$802K", "$4,321"
-.cf_fmt_corto <- function(x, show_zero = FALSE) {
-  if (is.na(x) || (!show_zero && x == 0)) return("")
-  ax  <- abs(x); sgn <- if (x < 0) "−" else ""
-  if      (ax >= 1e6) paste0(sgn, "$", formatC(ax / 1e6, digits = 1, format = "f"), "M")
-  else if (ax >= 1e3) paste0(sgn, "$", formatC(ax / 1e3, digits = 0, format = "f"), "K")
-  else                paste0(sgn, "$", formatC(ax,        digits = 0, format = "f",
-                                               big.mark = ","))
-}
-
-# Full formatter for Total column: "$4,495,962"
-.cf_fmt_full <- function(x) {
-  if (is.na(x) || x == 0) return("")
-  sgn <- if (x < 0) "−" else ""
-  paste0(sgn, "$", formatC(abs(x), digits = 0, format = "f", big.mark = ","))
-}
-
-# Net cell color — bright enough to read on the dark navy net-row background
-.cf_net_col <- function(x) {
-  if (is.na(x) || x == 0) "#9ab5cc" else if (x > 0) "#5dd87a" else "#ff6b6b"
-}
-
-render_cashflow_preview_html <- function(ed, expanded = FALSE, day0_vals = list()) {
-  labels  <- ed$bucket_labels
-  n_bkts  <- length(labels)
-  n_cols  <- n_bkts + 3L          # sticky-name + Day0 + N buckets + Total
-
-  # ── Helpers ──────────────────────────────────────────────────────────────
-  h <- function(x) htmltools::htmlEscape(as.character(x))
-
-  # The marks keep their shapes; the title names the tag, A / B / C
-  # (HD_ETIQUETAS in R/hd_columnas.R).
-  tag_badge <- function(urgent, important) {
-    tit <- h(tag_label(c(if (isTRUE(urgent)) "urgent", if (isTRUE(important)) "important")))
-    paste0(
-      if (isTRUE(urgent))    paste0('<span class="cf-tag-u" title="', tit, '">&#9679;</span>') else "",
-      if (isTRUE(important)) paste0('<span class="cf-tag-i" title="', tit, '">&#9733;</span>') else ""
-    )
+# ── Stage 4: the table, for the engine ───────────────────────────────────────
+# The numbers are the module's (build_cashflow_export_data(), what the
+# exports use too); here they only change shape. One row per counterparty
+# (a provision its own row), grouped by currency (the band) and Cobros /
+# Pagos (the group: closed, it is one row with each column's sum), then each
+# currency's FLUJO NETO and POS. ACUMULADA as summary rows (.resumen) at the
+# end of its band. Día 0 lives on the position row, the only one it can be
+# typed in (.dia0); the position adds it to the running net.
+#
+# Ids: "<moneda>|<ar|ap>|<n>" for a counterparty (they last one build, which
+# is all a preview needs), "neto|<moneda>" and "acum|<moneda>".
+cashflow_tabla_datos <- function(ed, day0_vals = list()) {
+  labels <- ed$bucket_labels %||% character(0)
+  n_b <- length(labels)
+  b   <- paste0("b", seq_len(n_b))
+  vacia <- function() {
+    d <- data.frame(id = character(0), Contraparte = character(0), Etiqueta = character(0),
+                    Moneda = character(0), Tipo = character(0), Dia0 = numeric(0),
+                    stringsAsFactors = FALSE)
+    for (k in b) d[[k]] <- numeric(0)
+    d$Total <- numeric(0); d$.resumen <- character(0); d$.dia0 <- logical(0); d$.provision <- logical(0)
+    d
   }
-
-  num_td <- function(v, cls = "", show_zero = FALSE) {
-    paste0('<td class="cf-num ', cls, '">', .cf_fmt_corto(v, show_zero), '</td>')
+  if (is.null(ed) || !length(ed$data)) return(vacia())
+  # A data.frame from columns that are each one value or one per row.
+  bloque <- function(id, nombre, etiqueta, moneda, tipo, dia0, valores, total, resumen, puede_dia0, provision) {
+    d <- data.frame(id = id, Contraparte = nombre, Etiqueta = etiqueta, Moneda = moneda, Tipo = tipo,
+                    Dia0 = dia0, stringsAsFactors = FALSE)
+    for (j in seq_len(n_b)) d[[b[j]]] <- valores[[j]]
+    d$Total <- total; d$.resumen <- resumen; d$.dia0 <- puede_dia0; d$.provision <- provision
+    d
   }
-
-  subtot_from_wide <- function(wide_df) {
-    if (is.null(wide_df) || !nrow(wide_df)) return(rep(0, n_bkts))
-    vapply(labels, function(lbl) {
-      if (lbl %in% names(wide_df)) sum(as.numeric(wide_df[[lbl]]), na.rm = TRUE) else 0
-    }, numeric(1))
-  }
-
-  # ── Header row ────────────────────────────────────────────────────────────
-  hdr_html <- paste0(
-    '<thead><tr class="cf-thead-row">',
-    '<th class="cf-th cf-th-name">Contraparte</th>',
-    '<th class="cf-th cf-th-day0" title="Saldo inicial editable">Día 0</th>',
-    paste0('<th class="cf-th cf-th-bkt">', labels, '</th>', collapse = ""),
-    '<th class="cf-th cf-th-total">Total</th>',
-    '</tr></thead>'
-  )
-
-  # ── Section builder (AR or AP) ────────────────────────────────────────────
-  build_section <- function(wide_df, sec_label, hdr_cls, subtot_label) {
-    out <- paste0(
-      '<tr class="cf-sec-hdr ', hdr_cls, '">',
-      '<td class="cf-sec-name">', h(sec_label), '</td>',
-      paste0(rep('<td></td>', n_cols - 1L), collapse = ""),
-      '</tr>'
-    )
-
-    # Counterparty detail rows
-    if (!is.null(wide_df) && nrow(wide_df)) {
-      disp <- if (expanded) "" else ' style="display:none"'
-      for (i in seq_len(nrow(wide_df))) {
-        r     <- wide_df[i, ]
-        pname <- h(as.character(r$Parte))
-        badge <- tag_badge(isTRUE(r$tag_urgent), isTRUE(r$tag_important))
-        prov  <- isTRUE(r$is_provision)
-        rcls  <- paste0("cf-parte-row", if (prov) " cf-prov-row" else "",
-                        if (i %% 2 == 0) " cf-row-alt" else "")
-
-        bkt_cells <- paste0(vapply(labels, function(lbl) {
-          v <- if (lbl %in% names(r)) as.numeric(r[[lbl]]) else 0
-          num_td(v)
-        }, character(1)), collapse = "")
-
-        out <- paste0(out,
-          '<tr class="', rcls, '"', disp, '>',
-          '<td class="cf-td-name sticky-col">', pname, badge, '</td>',
-          '<td class="cf-day0-empty"></td>',
-          bkt_cells,
-          '<td class="cf-num cf-total-cell">', .cf_fmt_full(as.numeric(r$Total)), '</td>',
-          '</tr>'
-        )
-      }
+  partes <- list()
+  for (cd in ed$data) {
+    cur <- cd$currency
+    for (lado in c("ar", "ap")) {
+      w <- cd[[paste0(lado, "_wide")]]
+      if (is.null(w) || !nrow(w)) next
+      et <- vapply(seq_len(nrow(w)), function(i)
+        hd_etiqueta_clave(c(if (isTRUE(w$tag_urgent[i])) "urgent", if (isTRUE(w$tag_important[i])) "important")),
+        character(1))
+      prov <- if ("is_provision" %in% names(w)) as.logical(w$is_provision) else rep(FALSE, nrow(w))
+      prov[is.na(prov)] <- FALSE
+      partes[[length(partes) + 1L]] <- bloque(
+        id = sprintf("%s|%s|%d", cur, lado, seq_len(nrow(w))), nombre = as.character(w$Parte), etiqueta = et,
+        moneda = cur, tipo = tr(if (lado == "ar") "tablas.cobros" else "tablas.pagos"), dia0 = NA_real_,
+        valores = lapply(labels, function(l) if (l %in% names(w)) as.numeric(w[[l]]) else rep(0, nrow(w))),
+        total = as.numeric(w$Total), resumen = "", puede_dia0 = FALSE, provision = prov)
     }
-
-    # Subtotal row — always visible
-    sub_bkts  <- subtot_from_wide(wide_df)
-    sub_total <- sum(sub_bkts, na.rm = TRUE)
-    sub_cells <- paste0(vapply(sub_bkts, function(v) num_td(v, "cf-subtot-num"),
-                               character(1)), collapse = "")
-    out <- paste0(out,
-      '<tr class="cf-subtot-row">',
-      '<td class="cf-td-name sticky-col cf-subtot-name">', h(subtot_label), '</td>',
-      '<td class="cf-day0-empty"></td>',
-      sub_cells,
-      '<td class="cf-num cf-subtot-num cf-total-cell">', .cf_fmt_full(sub_total), '</td>',
-      '</tr>'
-    )
-    out
-  }
-
-  # ── Per-currency blocks ───────────────────────────────────────────────────
-  body_rows <- character(0)
-
-  for (cur_data in ed$data) {
-    cur  <- cur_data$currency
-    smry <- cur_data$summary
-
-    # Currency spacer between blocks (Separadas mode, multiple currencies)
-    if (length(ed$currencies) > 1) {
-      body_rows <- c(body_rows, paste0(
-        '<tr class="cf-cur-spacer"><td colspan="', n_cols, '"></td></tr>'
-      ))
-    }
-
-    # AR block
-    body_rows <- c(body_rows,
-      build_section(cur_data$ar_wide,
-                    paste0("COBROS — ", cur), "cf-ar-hdr",
-                    paste0("SUBTOTAL COBROS — ", cur)))
-
-    # AP block
-    body_rows <- c(body_rows,
-      build_section(cur_data$ap_wide,
-                    paste0("PAGOS — ", cur), "cf-ap-hdr",
-                    paste0("SUBTOTAL PAGOS — ", cur)))
-
-    # Net flow row
-    if (!is.null(smry) && nrow(smry)) {
-      net_cells <- paste0(vapply(seq_along(labels), function(j) {
-        v <- if (j <= nrow(smry)) smry$net_day[j] else 0
-        col <- .cf_net_col(v)
-        paste0('<td class="cf-num cf-net-cell" style="color:', col, ';font-weight:600">',
-               .cf_fmt_corto(v, show_zero = TRUE), '</td>')
-      }, character(1)), collapse = "")
-
-      net_tot <- sum(smry$net_day, na.rm = TRUE)
-      net_col <- .cf_net_col(net_tot)
-
-      body_rows <- c(body_rows, paste0(
-        '<tr class="cf-net-row">',
-        '<td class="cf-td-name sticky-col cf-net-name">FLUJO NETO ', h(cur), '</td>',
-        '<td class="cf-day0-empty"></td>',
-        net_cells,
-        '<td class="cf-num cf-net-cell cf-total-cell" style="color:', net_col,
-          ';font-weight:700">', .cf_fmt_full(net_tot), '</td>',
-        '</tr>'
-      ))
-
-      # Cumulative position row — includes Day 0 starting balance
-      if ("net_cum" %in% names(smry)) {
-        d0_val  <- day0_vals[[cur]] %||% 0
-
-        d0_col  <- .cf_net_col(d0_val)
-        d0_cell <- paste0(
-          '<td class="cf-num cf-cum-cell cf-day0-cell" data-currency="', h(cur),
-          '" data-valor="', format(d0_val, scientific = FALSE, digits = 15), '">',
-          '<span class="cf-day0-val" style="color:', d0_col, ';font-weight:600;">',
-          .cf_fmt_corto(d0_val, show_zero = TRUE), '</span></td>')
-
-        cum_cells <- paste0(vapply(seq_along(labels), function(j) {
-          v <- (if (j <= nrow(smry)) smry$net_cum[j] else 0) + d0_val
-          col <- .cf_net_col(v)
-          paste0('<td class="cf-num cf-cum-cell" style="color:', col, ';font-weight:600">',
-                 .cf_fmt_corto(v, show_zero = TRUE), '</td>')
-        }, character(1)), collapse = "")
-
-        cum_last <- smry$net_cum[nrow(smry)] + d0_val
-        cum_col  <- .cf_net_col(cum_last)
-
-        body_rows <- c(body_rows, paste0(
-          '<tr class="cf-cum-row">',
-          '<td class="cf-td-name sticky-col cf-cum-name">POS. ACUMULADA ', h(cur), '</td>',
-          d0_cell,
-          cum_cells,
-          '<td class="cf-num cf-cum-cell cf-total-cell" style="color:', cum_col,
-            ';font-weight:700">', .cf_fmt_full(cum_last), '</td>',
-          '</tr>'
-        ))
-      }
+    s <- cd$summary
+    if (!is.null(s) && nrow(s)) {
+      en <- function(v, j) if (j <= length(v)) v[j] else 0
+      d0 <- as.numeric(day0_vals[[cur]] %||% 0)
+      partes[[length(partes) + 1L]] <- bloque(
+        id = paste0("neto|", cur), nombre = tr("tablas.flujo.neto", moneda = cur), etiqueta = "",
+        moneda = cur, tipo = "", dia0 = NA_real_, valores = lapply(seq_len(n_b), function(j) en(s$net_day, j)),
+        total = sum(s$net_day, na.rm = TRUE), resumen = "neto", puede_dia0 = FALSE, provision = FALSE)
+      if ("net_cum" %in% names(s))
+        partes[[length(partes) + 1L]] <- bloque(
+          id = paste0("acum|", cur), nombre = tr("tablas.flujo.acumulada", moneda = cur), etiqueta = "",
+          moneda = cur, tipo = "", dia0 = d0, valores = lapply(seq_len(n_b), function(j) en(s$net_cum, j) + d0),
+          total = s$net_cum[nrow(s)] + d0, resumen = "acumulada", puede_dia0 = TRUE, provision = FALSE)
     }
   }
+  if (!length(partes)) return(vacia())
+  do.call(rbind, partes)
+}
 
-  HTML(paste0(
-    '<div class="cf-table-wrap">',
-    '<table class="cf-table">',
-    hdr_html,
-    '<tbody>', paste(body_rows, collapse = ""), '</tbody>',
-    '</table></div>'
-  ))
+# The columns: the counterparty (fixed on the left), its tag, Día 0, one per
+# period (compact, empty at 0; a summary row's tone by its sign) and the
+# Total in whole pesos (halves up). A function: the periods change with the range.
+cashflow_tabla_columnas <- function(labels) {
+  c(list(col_texto("Contraparte", tr("tablas.flujo.contraparte"), fija = TRUE),
+         col_etiqueta("Etiqueta", tr("tablas.flujo.etiqueta")),
+         col_dinero("Dia0", tr("tablas.flujo.dia0"), sumar = FALSE, formato = "compacto", tono = "signo",
+                    editable = list(expresion = TRUE, filas = ".dia0", min = -1e15))),
+    lapply(seq_along(labels), function(j)
+      col_dinero(paste0("b", j), labels[j], formato = "compacto", cero = "vacio", tono = "signo")),
+    list(col_dinero("Total", tr("tablas.flujo.total"), formato = "entero", cero = "vacio", tono = "signo")))
 }
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -225,9 +101,11 @@ render_cashflow_preview_html <- function(ed, expanded = FALSE, day0_vals = list(
 # in Mexico (already tomorrow in UTC) it was never restored.
 .CF_HOY_JS <- paste0("(function(d){return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+",
                      "('0'+d.getDate()).slice(-2);})(new Date())")
-.GRP_LABELS      <- c(auto = "Auto", daily = "Diario", weekly = "Semanal")
 .GRP_CYCLE       <- c(auto = "daily", daily = "weekly", weekly = "auto")
-.CUR_LABELS      <- c(separate = "Separadas", fused = "Base")
+# The buttons' texts: tablas.flujo.agrupacion.<auto|daily|weekly> and
+# tablas.flujo.moneda_modo.<separate|fused>.
+.cf_txt_agrupacion <- function(g) tr(paste0("tablas.flujo.agrupacion.", g))
+.cf_txt_moneda     <- function(m) tr(paste0("tablas.flujo.moneda_modo.", m))
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -291,7 +169,7 @@ cashflowPreviewUI <- function(id) {
         icon("chevron-left"),
         label = NULL,
         class = "btn btn-link cf-back-arrow p-0 me-1",
-        title = "Volver al calendario",
+        title = tr("tablas.flujo.volver"),
         style = "color:#1E3A5F; font-size:1.15rem; line-height:1; flex-shrink:0;"
       ),
 
@@ -364,163 +242,36 @@ cashflowPreviewUI <- function(id) {
       ),
 
       # Grouping toggle (cycles Auto → Diario → Semanal)
-      actionButton(ns("btn_grouping"), label = "Auto",
+      actionButton(ns("btn_grouping"), label = .cf_txt_agrupacion("auto"),
                    class = "btn btn-outline-secondary btn-sm cf-ctrl cf-grp-btn",
-                   title = "Cambiar agrupación"),
+                   title = tr("tablas.flujo.agrupacion_ayuda")),
 
       # Currency mode toggle (Separadas ↔ Base)
-      actionButton(ns("btn_curmode"), label = "Separadas",
+      actionButton(ns("btn_curmode"), label = .cf_txt_moneda("separate"),
                    class = "btn btn-outline-secondary btn-sm cf-ctrl cf-cur-btn",
-                   title = "Cambiar modo de moneda"),
+                   title = tr("tablas.flujo.moneda_modo_ayuda")),
 
-      # Expand / Collapse all (Stage 4 wires the table; button state tracked here)
-      actionButton(ns("btn_expand"), icon("table-cells"), label = NULL,
-                   class = "btn btn-outline-secondary btn-sm cf-ctrl",
-                   title = "Expandir todo"),
+      # Opening / closing every group is the engine's own button, in the table.
 
       # Export shortcut — pre-fills the export modal (wired in Stage 5)
       actionButton(ns("btn_export"),
-                   tagList(icon("file-export"), " Exportar"),
+                   tagList(icon("file-export"), " ", tr("tablas.flujo.exportar")),
                    class = "btn btn-outline-primary btn-sm cf-ctrl ms-auto",
-                   title = "Exportar con esta configuración")
+                   title = tr("tablas.flujo.exportar_ayuda"))
     ),
 
     # ── FX sub-row (visible only in Base / fused mode) ───────────────────────
     uiOutput(ns("fx_section_ui")),
 
-    # ── Preview body (Stage 3: data status; Stage 4: cash-flow table) ───────
+    # ── Preview body: the engine (T17c) ──────────────────────────────────────
+    # Día 0 is typed in its cell (edicion_celda, arithmetic only); the
+    # dialog and its own evaluator are gone.
     div(
       class = "cf-preview-body",
       style = "flex:1; overflow:auto; min-height:0;",
-      uiOutput(ns("preview_body"))
+      hd_table_ui(ns("tabla"), alto = "ventana")
     )
-  ),
-
-  # ── Day 0 dialog (singleton, injected outside renderUI so it survives re-renders) ──
-  tags$div(
-    id    = "cf-day0-dlg",
-    style = "display:none; position:fixed; z-index:9998;"
-  ),
-
-  tags$script(HTML(sprintf("
-    (function() {
-      var inputId = '%s';
-      var curCurrency = null;
-
-      // Build dialog content once
-      var dlg = document.getElementById('cf-day0-dlg');
-      if (dlg && !dlg.dataset.ready) {
-        dlg.dataset.ready = '1';
-        dlg.innerHTML =
-          '<div class=\"cf-day0-dlg-inner\">' +
-            '<div class=\"cf-day0-dlg-title\">Saldo Inicial \\u2014 D\\u00eda 0</div>' +
-            '<input id=\"cf-day0-input\" type=\"text\" class=\"cf-day0-input\" ' +
-                   'placeholder=\"ej: 5000 + 1200 + 840\" autocomplete=\"off\">' +
-            '<div class=\"cf-day0-dlg-hint\">N\\u00famero o expresi\\u00f3n aritm\\u00e9tica (e.g. 5+20+7000)</div>' +
-            '<div class=\"cf-day0-dlg-btns\">' +
-              '<button class=\"btn btn-sm btn-outline-secondary\" id=\"cf-day0-cancel\">Cancelar</button>' +
-              '<button class=\"btn btn-sm btn-primary\" id=\"cf-day0-ok\">Aplicar</button>' +
-            '</div>' +
-          '</div>';
-
-        document.getElementById('cf-day0-cancel').addEventListener('click', function() {
-          dlg.style.display = 'none';
-        });
-        document.getElementById('cf-day0-ok').addEventListener('click', submitDay0);
-        document.getElementById('cf-day0-input').addEventListener('keydown', function(e) {
-          if (e.key === 'Enter') submitDay0();
-          if (e.key === 'Escape') dlg.style.display = 'none';
-        });
-        document.addEventListener('mousedown', function(e) {
-          if (dlg.style.display !== 'none' &&
-              !dlg.contains(e.target) &&
-              !e.target.closest('.cf-day0-cell')) {
-            dlg.style.display = 'none';
-          }
-        });
-      }
-
-      // Arithmetic only: numbers, + - * /, parentheses and a sign. Spaces,
-      // $ and thousands commas are number formatting and are dropped; the
-      // typographic minus counts as one. Anything else is refused (null) --
-      // it used to go through Function(), which ran any JavaScript.
-      function evalArit(txt) {
-        var s = String(txt == null ? '' : txt).replace(/\\u2212/g, '-').replace(/[\\s$,]/g, '');
-        if (!s) return null;
-        var i = 0;
-        function num() {
-          var m = /^(\\d+(\\.\\d*)?|\\.\\d+)/.exec(s.slice(i));
-          if (!m) throw new Error('num');
-          i += m[0].length;
-          return parseFloat(m[0]);
-        }
-        function factor() {
-          var c = s.charAt(i);
-          if (c === '+' || c === '-') { i++; var v = factor(); return c === '-' ? -v : v; }
-          if (c === '(') {
-            i++; var w = suma();
-            if (s.charAt(i) !== ')') throw new Error('paren');
-            i++; return w;
-          }
-          return num();
-        }
-        function producto() {
-          var v = factor();
-          while (s.charAt(i) === '*' || s.charAt(i) === '/') {
-            var o = s.charAt(i++), w = factor();
-            v = o === '*' ? v * w : v / w;
-          }
-          return v;
-        }
-        function suma() {
-          var v = producto();
-          while (s.charAt(i) === '+' || s.charAt(i) === '-') {
-            var o = s.charAt(i++), w = producto();
-            v = o === '+' ? v + w : v - w;
-          }
-          return v;
-        }
-        try {
-          var v = suma();
-          return (i === s.length && isFinite(v)) ? v : null;
-        } catch (e) { return null; }
-      }
-      window.cfEvalArit = evalArit;
-
-      function submitDay0() {
-        var expr = (document.getElementById('cf-day0-input').value || '').trim();
-        if (!expr) return;
-        var val = evalArit(expr);
-        if (val === null) {
-          document.getElementById('cf-day0-input').style.borderColor = '#dc3545';
-          return;
-        }
-        document.getElementById('cf-day0-input').style.borderColor = '';
-        dlg.style.display = 'none';
-        if (window.Shiny && curCurrency !== null) {
-          Shiny.setInputValue(inputId, {currency: curCurrency, value: val}, {priority: 'event'});
-        }
-      }
-
-      $(document).off('click.day0').on('click.day0', '.cf-day0-cell', function(e) {
-        e.stopPropagation();
-        curCurrency = $(this).data('currency');
-        var rect = this.getBoundingClientRect();
-        dlg.style.display = 'block';
-        var top  = Math.min(rect.bottom + 4, window.innerHeight - 200);
-        var left = Math.max(4, Math.min(rect.left - 60, window.innerWidth - 270));
-        dlg.style.top  = top  + 'px';
-        dlg.style.left = left + 'px';
-        // The stored value, not the cell's compact text: '$1.5K' couldn't be
-        // read back, and stripping the minus lost a negative's sign.
-        var inp = document.getElementById('cf-day0-input');
-        var cur = Number(this.getAttribute('data-valor'));
-        inp.value = (!isFinite(cur) || cur === 0) ? '' : String(cur);
-        inp.style.borderColor = '';
-        setTimeout(function() { inp.focus(); inp.select(); }, 50);
-      });
-    })();
-  ", ns("cf_day0_submit"))))
+  )
   ) # close tagList
 }
 
@@ -542,8 +293,7 @@ cashflowPreviewServer <- function(id, shared) {
       base_cur      = "MXN",
       fx_rates      = c(),         # named numeric: e.g. c(USD = 18.5)
       fx_modes      = list(),      # named list: cur -> "live" | "date"
-      fx_dates      = list(),      # named list: cur -> Date
-      expanded      = FALSE        # TRUE = all counterparty rows visible
+      fx_dates      = list()       # named list: cur -> Date
     )
 
     # Tracks which currency inputs have had observers registered (Stage 2)
@@ -578,15 +328,6 @@ cashflowPreviewServer <- function(id, shared) {
     observeEvent(input$esc_key, {
       if (isTRUE(shared$cf_preview_open())) shared$cf_preview_open(FALSE)
     }, ignoreInit = TRUE)
-
-    # ── Day 0 expression handler ─────────────────────────────────────────────
-    observeEvent(input$cf_day0_submit, {
-      sub <- input$cf_day0_submit
-      req(!is.null(sub$currency), !is.null(sub$value), is.numeric(sub$value))
-      cur_vals <- cf_day0_rv()
-      cur_vals[[ sub$currency ]] <- as.numeric(sub$value)
-      cf_day0_rv(cur_vals)
-    }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
     observe({
       if (isTRUE(shared$cf_preview_open())) {
@@ -628,15 +369,15 @@ cashflowPreviewServer <- function(id, shared) {
             shinyjs::html("btn_date_range", .cf_range_label(d1, d2))
           }
         }
-        if (!is.null(s$grouping) && s$grouping %in% names(.GRP_LABELS)) {
+        if (!is.null(s$grouping) && s$grouping %in% names(.GRP_CYCLE)) {
           rv$grouping <- s$grouping
           shiny::updateActionButton(session, "btn_grouping",
-                                    label = .GRP_LABELS[[ s$grouping ]])
+                                    label = .cf_txt_agrupacion(s$grouping))
         }
-        if (!is.null(s$currency_mode) && s$currency_mode %in% names(.CUR_LABELS)) {
+        if (!is.null(s$currency_mode) && s$currency_mode %in% c("separate", "fused")) {
           rv$currency_mode <- s$currency_mode
           shiny::updateActionButton(session, "btn_curmode",
-                                    label = .CUR_LABELS[[ s$currency_mode ]])
+                                    label = .cf_txt_moneda(s$currency_mode))
         }
         if (!is.null(s$base_cur) && nzchar(s$base_cur)) {
           rv$base_cur <- s$base_cur
@@ -685,7 +426,7 @@ cashflowPreviewServer <- function(id, shared) {
     observeEvent(input$btn_grouping, {
       rv$grouping <- .GRP_CYCLE[[ rv$grouping ]]
       shiny::updateActionButton(session, "btn_grouping",
-                                label = .GRP_LABELS[[ rv$grouping ]])
+                                label = .cf_txt_agrupacion(rv$grouping))
     }, ignoreInit = TRUE)
 
     # ── Currency mode toggle ──────────────────────────────────────────────────
@@ -693,18 +434,7 @@ cashflowPreviewServer <- function(id, shared) {
     observeEvent(input$btn_curmode, {
       rv$currency_mode <- if (rv$currency_mode == "separate") "fused" else "separate"
       shiny::updateActionButton(session, "btn_curmode",
-                                label = .CUR_LABELS[[ rv$currency_mode ]])
-    }, ignoreInit = TRUE)
-
-    # ── Expand / collapse all toggle ──────────────────────────────────────────
-
-    observeEvent(input$btn_expand, {
-      rv$expanded <- !rv$expanded
-      shiny::updateActionButton(
-        session, "btn_expand",
-        icon  = if (rv$expanded) icon("table-cells-large") else icon("table-cells"),
-        label = NULL
-      )
+                                label = .cf_txt_moneda(rv$currency_mode))
     }, ignoreInit = TRUE)
 
     # ── Base currency selector ────────────────────────────────────────────────
@@ -730,7 +460,7 @@ cashflowPreviewServer <- function(id, shared) {
 
         # Base currency selector
         div(class = "d-flex align-items-center gap-1",
-          tags$small("Base:", style = "color:#5a7596; white-space:nowrap;"),
+          tags$small(tr("tablas.flujo.base"), style = "color:#5a7596; white-space:nowrap;"),
           selectInput(ns("base_cur"), label = NULL,
                       choices  = base_choices,
                       selected = base_sel,
@@ -757,7 +487,7 @@ cashflowPreviewServer <- function(id, shared) {
             #   ref_date > today               → forecasting_get_estimate(pair, ref_date, type="forecast")
             actionButton(
               ns(paste0("fx_mode_", tolower(cur))),
-              label = if (mode == "live") "Live"
+              label = if (mode == "live") tr("tablas.flujo.fx_vivo")
                       else format(rv$fx_dates[[cur]] %||% Sys.Date(), "%d %b"),
               class = paste0(
                 "btn btn-xs cf-fx-mode-btn ",
@@ -892,40 +622,39 @@ cashflowPreviewServer <- function(id, shared) {
       )
     }) |> debounce(400)
 
-    # ── Stage 3: Preview body output (spinner → data → empty state) ───────────
-    # Stage 4 replaces the placeholder div with the actual HTML table.
-    # req() inside preview_export_data() throws shiny.silent.error while the
-    # panel is opening / data not yet ready — treat that as a loading state,
-    # not a real error.
-
-    output$preview_body <- renderUI({
-      if (!isTRUE(shared$cf_preview_open())) return(NULL)
-
-      ed <- tryCatch(preview_export_data(), error = function(e) {
-        if (inherits(e, "shiny.silent.error")) return("loading")
+    # ── Stage 4: the table (engine) ───────────────────────────────────────────
+    # A pipeline error is logged and shows as no rows ("Sin movimientos ..."),
+    # as before; while the data isn't ready the engine says it is loading.
+    ed_tabla <- reactive({
+      tryCatch(preview_export_data(), error = function(e) {
+        if (inherits(e, "shiny.silent.error")) stop(e)
         message("[CF_PREVIEW] pipeline error: ", conditionMessage(e))
         NULL
       })
-
-      if (identical(ed, "loading")) {
-        div(
-          class = "d-flex align-items-center justify-content-center h-100 gap-2",
-          style = "color:#8ca0b8; font-size:0.9rem;",
-          tags$span(class = "spinner-border spinner-border-sm", role = "status"),
-          tags$span("Calculando flujo…")
-        )
-      } else if (is.null(ed) || !length(ed$currencies)) {
-        div(
-          class = "d-flex flex-column align-items-center justify-content-center h-100 gap-2",
-          style = "color:#8ca0b8;",
-          icon("inbox", style = "font-size:2rem;"),
-          tags$span("Sin movimientos en el período seleccionado",
-                    style = "font-size:0.9rem;")
-        )
-      } else {
-        render_cashflow_preview_html(ed, expanded = isTRUE(rv$expanded), day0_vals = cf_day0_rv())
-      }
     })
+    filas_tabla <- reactive(cashflow_tabla_datos(ed_tabla(), cf_day0_rv()))
+    cols_tabla  <- reactive(cashflow_tabla_columnas(ed_tabla()$bucket_labels %||% character(0)))
+
+    tabla <- hd_table_server(
+      "tabla", tabla = "flujo_caja", datos = filas_tabla, columnas = cols_tabla,
+      piezas = c("sumas_columnas", "filas_resumen", "edicion_celda", "dinero_compacto", "tono_celda",
+                 "expandir", "etiquetas"),
+      secciones = list(list(campo = "Moneda", orden = c("MXN", "USD", "EUR"))),
+      grupo = c("Moneda", "Tipo"),
+      vacio = "tablas.flujo.vacio")
+
+    # ── Día 0: typed in the position row's cell (per currency) ───────────────
+    # What was typed becomes the currency's Día 0 and the table is rebuilt
+    # from it; the typed values are then let go (the data says it now).
+    observeEvent(tabla$ediciones(), {
+      e <- tabla$ediciones()
+      e <- e[e$valido & startsWith(e$id, "acum|"), , drop = FALSE]
+      if (!nrow(e)) return()
+      vals <- cf_day0_rv()
+      for (k in seq_len(nrow(e))) vals[[ sub("^acum\\|", "", e$id[k]) ]] <- as.numeric(e$valor[k])
+      cf_day0_rv(vals)
+      tabla$limpiar_ediciones()
+    }, ignoreInit = TRUE)
 
     # ── Export shortcut (Stage 5) ─────────────────────────────────────────────
     # Fires shared$cf_preview_prefill with the current preview settings so that
@@ -941,5 +670,7 @@ cashflowPreviewServer <- function(id, shared) {
       ))
     }, ignoreInit = TRUE)
 
+    # For tests (testServer): what the table gets.
+    invisible(list(datos = filas_tabla, columnas = cols_tabla, tabla = tabla, day0 = cf_day0_rv))
   })
 }

@@ -351,7 +351,7 @@ hd_grupo_validar <- function(grupo) {
   grupo
 }
 
-hd_grupo_payload <- function(grupo, datos, columnas) {
+hd_grupo_payload <- function(grupo, datos, columnas, titulos = FALSE) {
   if (is.null(grupo)) return(NULL)
   faltan <- setdiff(grupo, names(datos))
   if (length(faltan))
@@ -366,7 +366,12 @@ hd_grupo_payload <- function(grupo, datos, columnas) {
   claves[vacia] <- ""
   campos <- vapply(columnas, `[[`, character(1), "campo")
   mostrados <- intersect(rev(grupo), campos)
-  list(claves = I(claves), columna = if (length(mostrados)) match(mostrados[1], campos) - 1L else 0L)
+  out <- list(claves = I(claves), columna = if (length(mostrados)) match(mostrados[1], campos) - 1L else 0L)
+  # sumas_columnas (T17c): the group's row is its subtotal, so it says which
+  # group it is -- the last field's value (the Flujo's "Cobros" / "Pagos"),
+  # whatever its rows' names. Only then sent.
+  if (isTRUE(titulos)) out$titulos <- I(partes[[length(partes)]])
+  out
 }
 
 # ── Row actions (acc_fila) ──────────────────────────────────────────────────
@@ -583,7 +588,7 @@ hd_columnas_piezas <- function(columnas, tabla, piezas) {
   }
   exigir("columna_fija", function(c) isTRUE(c$fija), "is fija")
   exigir("tono_celda", function(c) !is.null(c$tono) || isTRUE(c$destacar), "has a tono or destacar")
-  exigir("dinero_compacto", function(c) !is.null(c$formato) || !is.null(c$cero), "is compacto or cero = \"vacio\"")
+  exigir("dinero_compacto", function(c) !is.null(c$formato) || !is.null(c$cero), "is compacto or entero, or cero = \"vacio\"")
   exigir("accion_celda", function(c) isTRUE(c$accion), "has accion = TRUE")
   fija <- vapply(columnas, function(c) isTRUE(c$fija), logical(1))
   if (any(fija)) {
@@ -877,7 +882,7 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         # decided; toggling it sends accion "encabezado" with ids "si"/"no".
         encabezado = if (!is.null(encabezado)) isTRUE(encabezado()),
         secciones  = hd_secciones_payload(secciones, df, cols),
-        grupo      = hd_grupo_payload(grupo, df, cols),
+        grupo      = hd_grupo_payload(grupo, df, cols, titulos = "sumas_columnas" %in% piezas_motor),
         acciones_fila  = acc_fila_meta,
         acciones_barra = barra_meta()
         ),

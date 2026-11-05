@@ -27,7 +27,7 @@ cargar <- function(archivo, nombres) {
 }
 cargar("R/persistence.R", "tag_label")
 cargar("R/cashflow_export_module.R", c(".cf_etiqueta", ".cf_lbl"))
-cargar("R/cashflow_preview_module.R", c(".cf_fmt_corto", ".cf_fmt_full", ".cf_net_col", "render_cashflow_preview_html"))
+cargar("R/cashflow_preview_module.R", c("cashflow_tabla_datos", "cashflow_tabla_columnas"))
 
 ok("the export's glossary names the tags A, B and C, in Spanish",
    identical(c(.cf_lbl("g_tag_urg", "es"), .cf_lbl("g_tag_both", "es"), .cf_lbl("g_tag_imp", "es")),
@@ -44,14 +44,13 @@ ok("no old tag names left in the export or the preview",
 
 wide <- function(u, i) data.frame(Parte = "ACME", `Sem 1` = 100, Total = 100, Pct = 1, tag_urgent = u, tag_important = i,
                                   is_provision = FALSE, check.names = FALSE)
-html <- render_cashflow_preview_html(list(bucket_labels = "Sem 1", currencies = "MXN", data = list(
+# T17c: the preview is the table engine; the tag is its own column (col_etiqueta).
+d <- cashflow_tabla_datos(list(bucket_labels = "Sem 1", currencies = "MXN", data = list(
   list(currency = "MXN", ar_wide = rbind(wide(TRUE, FALSE), wide(TRUE, TRUE), wide(FALSE, TRUE)), ap_wide = NULL,
        summary = NULL))))
-html <- paste(as.character(html), collapse = "")
-ok("the preview's marks are titled with the invoice's tag: A, B (both marks), C",
-   grepl('class="cf-tag-u" title="A"', html, fixed = TRUE) &&
-     grepl('class="cf-tag-u" title="B"', html, fixed = TRUE) && grepl('class="cf-tag-i" title="B"', html, fixed = TRUE) &&
-     grepl('class="cf-tag-i" title="C"', html, fixed = TRUE))
+et <- Find(function(c) identical(c$campo, "Etiqueta"), cashflow_tabla_columnas("Sem 1"))
+ok("the preview's tag column shows the invoice's tag: A, B (both), C",
+   identical(d$Etiqueta, c("urgent", "both", "important")) && identical(et$valores(d$Etiqueta)$mostrar, c("A", "B", "C")))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)

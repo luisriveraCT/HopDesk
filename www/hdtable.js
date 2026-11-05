@@ -981,6 +981,7 @@
     // that shows ▶/▼, the count and the name.
     st.grupoClave = st.p.expandir && msg.grupo ? arr(msg.grupo.claves) : null;
     st.grupoCol = st.grupoClave ? msg.grupo.columna : -1;
+    st.grupoTit = st.grupoClave && msg.grupo.titulos ? arr(msg.grupo.titulos) : null;
     st.agr = arr(f.agregado);
     st.adj = arr(f.adjuntos);
     st.fijar = arr(f.fijar);
@@ -1620,7 +1621,8 @@
         b.setAttribute('aria-expanded', u.abierto ? 'true' : 'false');
         td.appendChild(b);
         td.appendChild(nodo('span', 'hdt-grupo-n', FMT_N.format(libres.length)));
-        if (comun) pintarCelda(st, td, j, i0);
+        if (st.grupoTit) td.appendChild(nodo('span', 'hdt-grupo-titulo', st.grupoTit[i0] || ''));
+        else if (comun) pintarCelda(st, td, j, i0);
       } else if (st.sumas && st.sumas.indexOf(j) >= 0) {
         td.textContent = sumaColumna(st, j, libres);
       } else if (j === st.suma) {
@@ -1656,13 +1658,18 @@
     if (!mons.length) mons = [''], s[''] = 0;
     var fmt = function (v) {
       if (c.cero === 'vacio' && Math.abs(v) < 0.005) return '';
-      return c.formato === 'compacto' ? compacto(v) : dinero(v);
+      return c.formato === 'compacto' ? compacto(v) : c.formato === 'entero' ? entero(v) : dinero(v);
     };
     return mons.map(function (mo) { var x = fmt(s[mo]); return (mons.length > 1 && mo && x ? mo + ' ' : '') + x; })
                .filter(function (x) { return x; }).join(' · ');
   }
   // "$4.5M" / "$802K" / "$950": R's .hd_dinero_compacto(), the same rule --
   // the unit by what the amount rounds to, halves up, units from the dictionary.
+  // "$5,000,121" (formato entero): R's .hd_dinero_entero(), halves up.
+  function entero(v) {
+    var e = Math.floor(Math.abs(Math.round(v * 100) / 100) + 0.5 + 1e-9);
+    return (v < 0 && e > 0 ? '-' : '') + '$' + FMT_N.format(e);
+  }
   function compacto(v) {
     var ax = Math.abs(Math.round(v * 100) / 100), arriba = function (x) { return Math.floor(x + 0.5 + 1e-9); }, txt;
     if (ax >= 999500) txt = t('tablas.dinero.millones', { n: (arriba(ax / 1e5) / 10).toFixed(1) });

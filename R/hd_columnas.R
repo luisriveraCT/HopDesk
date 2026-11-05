@@ -102,6 +102,9 @@ col_texto <- function(campo, titulo = NULL, recorte = TRUE, opcional = FALSE, vi
 # A matrix of periods (T17a; Flujo de caja, Pasivos):
 #   formato = "compacto"  (piece dinero_compacto) "$4.5M", "$802K", "$950";
 #                         the bubble, Copiar and the Excel keep the full amount
+#   formato = "entero"    (dinero_compacto, T17c) whole pesos, halves up:
+#                         "$5,000,121" for 5,000,120.50 (the Flujo's Total);
+#                         the bubble, Copiar and the Excel keep the cents
 #   cero = "vacio"        (dinero_compacto) a 0 paints nothing (it still
 #                         copies and exports 0)
 #   tono = "signo"        (piece tono_celda) green above 0, red below, grey at 0
@@ -124,8 +127,8 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, op
                        editable = NULL, fija = FALSE, formato = "completo", cero = "cifra", tono = NULL,
                        destacar = FALSE, accion = FALSE) {
   donde <- sprintf("col_dinero(\"%s\")", campo)
-  if (!(is.character(formato) && length(formato) == 1L && formato %in% c("completo", "compacto")))
-    stop(donde, ": `formato` must be \"completo\" or \"compacto\".", call. = FALSE)
+  if (!(is.character(formato) && length(formato) == 1L && formato %in% c("completo", "compacto", "entero")))
+    stop(donde, ": `formato` must be \"completo\", \"compacto\" or \"entero\".", call. = FALSE)
   if (!(is.character(cero) && length(cero) == 1L && cero %in% c("cifra", "vacio")))
     stop(donde, ": `cero` must be \"cifra\" or \"vacio\".", call. = FALSE)
   if (!is.null(tono) && !(is.character(tono) && length(tono) == 1L && !is.na(tono) && nzchar(tono)))
@@ -151,6 +154,9 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, op
       if (formato == "compacto") {
         v$completo <- mostrar
         v$mostrar  <- .hd_dinero_compacto(x)
+      } else if (formato == "entero") {
+        v$completo <- mostrar
+        v$mostrar  <- .hd_dinero_entero(x)
       }
       if (cero == "vacio") {
         v$mostrar[ok & x == 0] <- ""
@@ -177,6 +183,17 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, op
 # (2,500 is "$3K"): sprintf alone rounds them to even, and 1,500 and 2,500
 # both read "$2K". One dictionary lookup per unit, filled in vectorized (a
 # matrix has tens of thousands of cells).
+# "$5,000,121" (formato = "entero", T17c): whole pesos, halves up like
+# .hd_dinero_compacto() (sprintf alone would take 120.5 to "$120").
+.hd_dinero_entero <- function(x) {
+  out <- character(length(x))
+  ok  <- !is.na(x)
+  ent <- floor(abs(x[ok]) + 0.5 + 1e-9)
+  out[ok] <- paste0(ifelse(x[ok] < 0 & ent > 0, "-", ""), "$",
+                    gsub("(\\d)(?=(\\d{3})+$)", "\\1,", sprintf("%.0f", ent), perl = TRUE))
+  out
+}
+
 .hd_dinero_compacto <- function(x) {
   out <- character(length(x))
   ok  <- !is.na(x)
@@ -679,6 +696,26 @@ hd_filas <- function(datos, columnas, id_col = "id") {
     nv <- suppressWarnings(as.integer(datos[[".nivel"]]))
     nv[is.na(nv) | nv < 0L] <- 0L
     out$nivel <- I(pmin(nv, 1L))
+  }
+  # filas_resumen (T17c): a summary row is a result, so a 0 in a compact
+  # column with cero = "vacio" still reads "$0" (a position of $0 is not an
+  # absence), and the sign's tone is theirs alone: the data rows of such a
+  # table are flows of one direction (the Flujo's Pagos are positive amounts
+  # going out), green would say the wrong thing.
+  if (!is.null(out$resumen)) {
+    es_res <- nzchar(unclass(out$resumen))
+    for (j in seq_along(columnas)) {
+      col <- columnas[[j]]; v <- out$celdas[[j]]
+      if (identical(col$formato, "compacto") && identical(col$cero, "vacio")) {
+        cero <- es_res & !is.na(v$orden) & v$orden == 0
+        if (any(cero)) {
+          v$mostrar <- I(replace(unclass(v$mostrar), cero, .hd_dinero_compacto(0)))
+          v$completo <- I(replace(unclass(v$completo), cero, "$0.00"))
+        }
+      }
+      if (identical(col$tono, "signo") && !is.null(v$tono)) v$tono <- I(replace(unclass(v$tono), !es_res, ""))
+      out$celdas[[j]] <- v
+    }
   }
   out
 }

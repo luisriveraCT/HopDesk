@@ -55,7 +55,7 @@ test_that(".schema_proveedores() vive solo en persistence.R", {
 # later (app.R) it made the exported PDF/HTML show "$1.2M" and blank zeros.
 test_that("el exportador del Flujo formatea con su propia .cf_fmt (cifra completa)", {
   expect_identical(defs$archivo[defs$nombre == ".cf_fmt"], "R/cashflow_export_module.R")
-  expect_identical(defs$archivo[defs$nombre == ".cf_fmt_corto"], "R/cashflow_preview_module.R")
+  expect_false(".cf_fmt_corto" %in% defs$nombre)   # T17c: the preview paints with the engine now
   ex <- parse("R/cashflow_export_module.R", keep.source = FALSE)
   env <- new.env()
   for (e in as.list(ex))
