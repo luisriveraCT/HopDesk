@@ -100,6 +100,19 @@ pasivos_manage_converted_modal_ui <- function() {
 
 # ── Shared conversion logic ────────────────────────────────────────────────────
 
+# Is this provision's liability deleted ("Borrar", T18)? Read fresh from S3:
+# another session may have deleted it while this one had the provision open.
+# Since T18 a deleted liability keeps its provisional provisions (hidden with
+# it), so converting one would turn a payment nobody will make into an item
+# -- and, with "ingresar a Agenda", a payment in today's Agenda.
+pasivos_provision_de_borrado <- function(prov, client_id) {
+  lid <- as.character(prov$liability_id[1] %||% NA_character_)
+  if (is.na(lid) || !nzchar(lid)) return(FALSE)       # a manual provision has no liability
+  liabs <- tryCatch(load_pasivos_liabilities(client_id = client_id), error = function(e) NULL)
+  if (is.null(liabs) || !nrow(liabs)) return(FALSE)
+  any(liabs$id %in% lid & liabs$estado %in% "deleted")
+}
+
 # Creates manual_inv row + optional pagar_hoy row + flips provision state.
 # Returns list(ok, msg, manual_id, pagar_hoy_id).
 .pasivos_perform_conversion <- function(input, shared, prov_id, stage_to_agenda, user) {
@@ -110,6 +123,8 @@ pasivos_manage_converted_modal_ui <- function() {
   if (!nrow(prov) || prov$estado[1] != "provisional") {
     return(list(ok = FALSE, msg = "Provisión no disponible para conversión."))
   }
+  if (pasivos_provision_de_borrado(prov, shared$effective_client_id()))
+    return(list(ok = FALSE, msg = tr("tablas.pasivos.convertir_borrado")))
 
   # 1. Create manual_inv row
   new_manual_id <- uuid::UUIDgenerate()
@@ -290,6 +305,11 @@ setup_pasivos_module <- function(input, output, session, shared) {
       rv$conv_prov_id   <- prov_id
       rv$conv_mgmt_view <- "main"
       shiny::showModal(pasivos_manage_converted_modal_ui())
+      return()
+    }
+    if (identical(prov$estado[1], "provisional") &&
+        pasivos_provision_de_borrado(prov, shared$effective_client_id())) {
+      shiny::showNotification(tr("tablas.pasivos.convertir_borrado"), type = "warning")
       return()
     }
     if (prov$estado[1] != "provisional") {

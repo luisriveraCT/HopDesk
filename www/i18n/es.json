@@ -575,5 +575,6 @@
   "tablas.pasivos.amort.monto": "Monto",
   "tablas.pasivos.amort.vacio": "Sin amortización con los datos de ahora.",
   "tablas.pasivos.amort.reamortizada": "⚠ Re-amortización: el saldo declarado difiere del teórico. Las cuotas se recalcularon.",
-  "tablas.pasivos.prov.vacio": "Sin provisiones para mostrar con los datos de ahora."
+  "tablas.pasivos.prov.vacio": "Sin provisiones para mostrar con los datos de ahora.",
+  "tablas.pasivos.convertir_borrado": "Esta provisión es de un pasivo borrado: no se convierte. Recupera el pasivo desde la Papelera si hace falta."
 }

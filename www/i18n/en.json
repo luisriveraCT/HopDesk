@@ -575,5 +575,6 @@
   "tablas.pasivos.amort.monto": "Amount",
   "tablas.pasivos.amort.vacio": "No schedule with the data entered so far.",
   "tablas.pasivos.amort.reamortizada": "⚠ Re-amortization: the stated balance differs from the expected one. Payments were recalculated.",
-  "tablas.pasivos.prov.vacio": "No provisions to show with the data entered so far."
+  "tablas.pasivos.prov.vacio": "No provisions to show with the data entered so far.",
+  "tablas.pasivos.convertir_borrado": "This provision belongs to a deleted liability: it is not converted. Recover the liability from the Trash if needed."
 }
