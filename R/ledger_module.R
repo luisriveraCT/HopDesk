@@ -1566,7 +1566,7 @@ ledgerModuleServer <- function(id, config, shared) {
       tag_result <- s3_save_with_retry(function()
         save_tags(tags_db, client_id = shared$effective_client_id(), base = tags_base))
       if (isTRUE(tag_result$ok)) {
-        bump_sync_version("tags_db")
+        bump_sync_version("tags_db", client_id = shared$effective_client_id())
         showNotification("Etiquetas actualizadas.", type = "message", duration = 2)
       } else {
         showNotification(
@@ -1796,7 +1796,7 @@ ledgerModuleServer <- function(id, config, shared) {
       shared$sap_ov_db(updated_ov)
       tryCatch({
         save_sap_overrides(updated_ov, client_id = shared$effective_client_id())
-        bump_sync_version("sap_ov_db")
+        bump_sync_version("sap_ov_db", client_id = shared$effective_client_id())
       },
         error = function(e) warning("[sap_edit_save] save_sap_overrides: ", e$message)
       )
