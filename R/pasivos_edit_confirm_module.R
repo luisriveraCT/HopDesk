@@ -2,8 +2,14 @@
 # R/pasivos_edit_confirm_module.R
 # Stage 4: Edit-confirmation panel for reconciliation conflicts.
 #
-# Opened automatically after wizard save or "Apply to future" in the cell
-# editor when pasivos_reconcile_provisions() returns conflicts.
+# Opened after the wizard saves an edit (pasivos_wizard_module.R) when
+# pasivos_reconcile_provisions() returns conflicts: future provisions edited
+# by hand that the new terms would change.
+#
+# The table is the engine's (hd_table "conflictos_pasivo", class E, T20): one
+# row per conflict, by its provision id, with the choice per row (opcion_fila:
+# Nuevo / Mantener / Otro) and the amount for "Otro" typed in its cell
+# (edicion_celda; typing picks "Otro").
 #
 # Public entry point:
 #   pasivos_edit_confirm_open(session, conflicts, replacement, shared, liability_id)
@@ -12,8 +18,8 @@
 # =============================================================================
 
 # ── Open entry point ──────────────────────────────────────────────────────────
-# Called from the wizard save handler and from the cell editor's apply-to-future.
-# `conflicts` and `replacement` are tibbles from pasivos_reconcile_provisions().
+# `conflicts` and `replacement` are tibbles from pasivos_reconcile_provisions()
+# and pasivos_conflictos_reemplazo().
 pasivos_edit_confirm_open <- function(session, conflicts, replacement,
                                        shared, liability_id) {
   # The panel's state lives in this session, set up by
@@ -27,6 +33,10 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
   st$conflicts    <- conflicts
   st$replacement  <- replacement
   st$liability_id <- liability_id
+  # Every opening starts on "Mantener" (T20): nothing chosen in an earlier
+  # panel -- cancelled, or another liability's -- carries over.
+  st$restaurado   <- NULL
+  st$apertura     <- (shiny::isolate(st$apertura) %||% 0L) + 1L
 
   shiny::showModal(.pec_modal_ui())
 }
@@ -34,143 +44,110 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
 # ── Modal UI ──────────────────────────────────────────────────────────────────
 .pec_modal_ui <- function() {
   shiny::modalDialog(
-    title     = "Confirmación de cambios",
+    title     = tr("tablas.pasivos.conflictos.titulo"),
     size      = "l",
     easyClose = FALSE,
-    shiny::div(
-      class = "mb-3 text-muted small",
-      "El pasivo cambió. Las siguientes provisiones tienen ediciones manuales
-       y NO se actualizaron automáticamente. Decide qué hacer con cada una:"
-    ),
-    shiny::uiOutput("pec_conflicts_table"),
+    shiny::div(class = "mb-3 text-muted small", tr("tablas.pasivos.conflictos.ayuda")),
+    hd_table_ui("pec_tabla", alto = "320px"),
     shiny::div(
       class = "mt-2 d-flex gap-2",
-      shiny::actionButton("pec_all_mantener", "Aplicar todos: Mantener",
+      shiny::actionButton("pec_all_mantener", tr("tablas.pasivos.conflictos.todos_mantener"),
                           class = "btn btn-outline-secondary btn-sm"),
-      shiny::actionButton("pec_all_nuevo",    "Aplicar todos: Nuevo valor",
+      shiny::actionButton("pec_all_nuevo",    tr("tablas.pasivos.conflictos.todos_nuevo"),
                           class = "btn btn-outline-primary btn-sm")
     ),
     footer = shiny::tagList(
-      shiny::actionButton("pec_cancel", "Cancelar", class = "btn btn-secondary"),
-      shiny::actionButton("pec_save",   "Guardar decisiones", class = "btn btn-primary")
+      shiny::actionButton("pec_cancel", tr("tablas.pasivos.conflictos.cancelar"), class = "btn btn-secondary"),
+      shiny::actionButton("pec_save",   tr("tablas.pasivos.conflictos.guardar"),  class = "btn btn-primary")
     )
   )
 }
 
-# ── Conflicts table ────────────────────────────────────────────────────────────
-.pec_render_conflicts <- function(conflicts, replacement, decisions) {
-  if (!nrow(conflicts))
-    return(shiny::div(class = "text-muted small", "Sin conflictos."))
+# ── The table ─────────────────────────────────────────────────────────────────
+.pec_columnas <- function() list(
+  col_fecha("fecha", "tablas.pasivos.conflictos.col.fecha"),
+  col_texto("antes", "tablas.pasivos.conflictos.col.antes", recorte = FALSE),
+  col_texto("nuevo", "tablas.pasivos.conflictos.col.nuevo", recorte = FALSE),
+  col_opcion("decision", "tablas.pasivos.conflictos.col.decision",
+             opciones = c(aplicar      = "tablas.pasivos.conflictos.op.nuevo",
+                          mantener     = "tablas.pasivos.conflictos.op.mantener",
+                          personalizar = "tablas.pasivos.conflictos.op.otro"),
+             al_escribir = "personalizar", burbuja = c(aplicar = "nuevo")),
+  col_dinero("otro", "tablas.pasivos.conflictos.col.otro", sumar = FALSE, editable = list(min = 0))
+)
 
-  header <- shiny::tags$thead(
-    shiny::tags$tr(
-      shiny::tags$th("Fecha"),
-      shiny::tags$th("Antes"),
-      shiny::tags$th("Nuevo (sugerido)"),
-      shiny::tags$th("Acción")
-    )
-  )
+# "fecha · monto", in the engine's own date and money formats. Antes and Nuevo
+# show the date too (T20): a provision whose date was moved by hand is a
+# conflict even when its amount wasn't touched, and showing amounts alone made
+# it look like an amount conflict.
+.pec_fecha_monto <- function(fecha, monto) {
+  f <- col_fecha("f")$valores(fecha)$mostrar
+  m <- col_dinero("m")$valores(monto)$mostrar
+  f[!nzchar(f)] <- "—"; m[!nzchar(m)] <- "—"
+  paste(f, m, sep = " · ")
+}
 
-  rows <- lapply(seq_len(nrow(conflicts)), function(i) {
-    row     <- conflicts[i, , drop = FALSE]
-    prov_id <- row$id[1]
-    before_amt <- tryCatch(pasivos_pago_amount(row), error = function(e) NA_real_)
-    moneda     <- row$moneda_pago[1] %||% "MXN"
+# The table's rows: one per conflict, sorted by date. `id` is the opening's
+# number and the provision's id ("<apertura>:<prov_id>"), so a choice the
+# browser still holds from an earlier panel never lands on this one; prov_id
+# is what is saved. restaurado: list(decision = c(<prov_id> = op),
+# otro = c(<prov_id> = amount)), what the person had chosen before
+# "Continuar revisando" rebuilt the panel.
+pasivos_conflictos_filas <- function(conflicts, replacement, apertura = 1L, restaurado = NULL) {
+  vacia <- data.frame(id = character(0), prov_id = character(0), fecha = as.Date(character(0)),
+                      antes = character(0), nuevo = character(0), decision = character(0),
+                      otro = numeric(0), Moneda = character(0), stringsAsFactors = FALSE)
+  if (is.null(conflicts) || !nrow(conflicts)) return(vacia)
+  conflicts <- as.data.frame(conflicts, stringsAsFactors = FALSE)
+  pid <- as.character(conflicts$id)
+  monto_antes <- vapply(seq_len(nrow(conflicts)), function(i)
+    tryCatch(as.numeric(pasivos_pago_amount(conflicts[i, , drop = FALSE])), error = function(e) NA_real_), numeric(1))
+  k <- if (!is.null(replacement) && nrow(replacement)) match(pid, as.character(replacement$id)) else rep(NA_integer_, length(pid))
+  rep <- if (!is.null(replacement) && nrow(replacement)) as.data.frame(replacement, stringsAsFactors = FALSE) else NULL
+  fecha_nueva <- if (is.null(rep)) as.Date(rep(NA, length(pid))) else as.Date(rep$fecha_efectiva[k])
+  monto_nuevo <- vapply(seq_along(pid), function(i)
+    if (is.na(k[i])) NA_real_ else tryCatch(as.numeric(pasivos_pago_amount(rep[k[i], , drop = FALSE])),
+                                            error = function(e) NA_real_), numeric(1))
+  dec <- rep("mantener", length(pid))
+  otro <- rep(NA_real_, length(pid))
+  if (!is.null(restaurado)) {
+    d <- restaurado$decision[pid]; dec[!is.na(d)] <- d[!is.na(d)]
+    o <- restaurado$otro[pid];     otro[!is.na(o)] <- o[!is.na(o)]
+  }
+  out <- data.frame(
+    id       = paste0(apertura, ":", pid),
+    prov_id  = pid,
+    fecha    = as.Date(conflicts$fecha_efectiva),
+    antes    = .pec_fecha_monto(as.Date(conflicts$fecha_efectiva), monto_antes),
+    nuevo    = .pec_fecha_monto(fecha_nueva, monto_nuevo),
+    decision = unname(dec),
+    otro     = unname(otro),
+    Moneda   = as.character(conflicts$moneda_pago %||% "MXN"),
+    stringsAsFactors = FALSE)
+  out[order(out$fecha, out$prov_id), , drop = FALSE]
+}
 
-    # Suggested new amount from replacement table
-    rep_row <- if (!is.null(replacement) && nrow(replacement))
-      replacement[replacement$id == prov_id, , drop = FALSE]
-    else
-      NULL
-    new_amt <- if (!is.null(rep_row) && nrow(rep_row))
-      tryCatch(pasivos_pago_amount(rep_row), error = function(e) NA_real_)
-    else NA_real_
-
-    dec <- decisions[[prov_id]] %||% "mantener"
-    sel_ap <- if (dec == "aplicar") "checked" else NULL
-    sel_mn <- if (dec == "mantener") "checked" else NULL
-    sel_pe <- if (dec == "personalizar") "checked" else NULL
-
-    fecha_str <- tryCatch(
-      format(row$fecha_efectiva[1], "%Y-%m-%d"), error = function(e) "—")
-
-    shiny::tags$tr(
-      shiny::tags$td(fecha_str),
-      shiny::tags$td(class = "text-muted",
-                     if (!is.na(before_amt)) fmt_money(before_amt) else "—"),
-      shiny::tags$td(class = "fw-semibold text-primary",
-                     if (!is.na(new_amt)) fmt_money(new_amt) else "—"),
-      shiny::tags$td(
-        shiny::div(
-          class = "d-flex flex-column gap-1",
-          shiny::div(
-            class = "form-check",
-            shiny::tags$input(type = "radio",
-                              class = "form-check-input",
-                              id    = paste0("pec_dec_ap_", prov_id),
-                              name  = paste0("pec_dec_", prov_id),
-                              value = "aplicar",
-                              checked = sel_ap,
-                              onchange = sprintf(
-                                "Shiny.setInputValue('pec_decision_%s', 'aplicar', {priority:'event'})",
-                                gsub("-", "_", prov_id)
-                              )),
-            shiny::tags$label(class = "form-check-label small",
-                              `for` = paste0("pec_dec_ap_", prov_id),
-                              sprintf("Aplicar %s", if (!is.na(new_amt)) fmt_money(new_amt) else "nuevo valor"))
-          ),
-          shiny::div(
-            class = "form-check",
-            shiny::tags$input(type = "radio",
-                              class = "form-check-input",
-                              id    = paste0("pec_dec_mn_", prov_id),
-                              name  = paste0("pec_dec_", prov_id),
-                              value = "mantener",
-                              checked = sel_mn,
-                              onchange = sprintf(
-                                "Shiny.setInputValue('pec_decision_%s', 'mantener', {priority:'event'})",
-                                gsub("-", "_", prov_id)
-                              )),
-            shiny::tags$label(class = "form-check-label small",
-                              `for` = paste0("pec_dec_mn_", prov_id), "Mantener")
-          ),
-          shiny::div(
-            class = "form-check",
-            shiny::tags$input(type = "radio",
-                              class = "form-check-input",
-                              id    = paste0("pec_dec_pe_", prov_id),
-                              name  = paste0("pec_dec_", prov_id),
-                              value = "personalizar",
-                              checked = sel_pe,
-                              onchange = sprintf(
-                                "Shiny.setInputValue('pec_decision_%s', 'personalizar', {priority:'event'})",
-                                gsub("-", "_", prov_id)
-                              )),
-            shiny::tags$label(class = "form-check-label small",
-                              `for` = paste0("pec_dec_pe_", prov_id), "Personalizar:"),
-            shiny::tags$input(
-              type  = "number",
-              class = "form-control form-control-sm d-inline-block",
-              style = "width:120px;",
-              id    = paste0("pec_custom_", gsub("-", "_", prov_id)),
-              value = if (is.null(decisions[[paste0(prov_id, "_custom")]])) ""
-                      else decisions[[paste0(prov_id, "_custom")]],
-              oninput = sprintf(
-                "Shiny.setInputValue('pec_custom_%s', this.value, {priority:'event'})",
-                gsub("-", "_", prov_id)
-              )
-            )
-          )
-        )
-      )
-    )
-  })
-
-  shiny::tags$table(
-    class = "table table-sm table-bordered small",
-    header,
-    shiny::tags$tbody(rows)
-  )
+# Each conflict's decision, by provision id, from the table as it is now:
+# the row's choice (t$opciones()) and, for "Otro", the amount typed in its
+# cell (t$ediciones(); one restored by "Continuar revisando" counts until it is
+# typed over). Returns list(decisions = <what .pec_apply_decisions() takes>,
+# sin_monto = prov_ids on "Otro" without a valid amount).
+pasivos_conflictos_decisiones <- function(filas, opciones, ediciones) {
+  decisions <- list(); sin_monto <- character(0)
+  if (is.null(filas) || !nrow(filas)) return(list(decisions = decisions, sin_monto = sin_monto))
+  for (i in seq_len(nrow(filas))) {
+    id <- filas$id[i]; pid <- filas$prov_id[i]
+    op <- if (!is.null(opciones) && nrow(opciones)) opciones$opcion[match(id, opciones$id)] else NA_character_
+    if (is.na(op)) op <- filas$decision[i]
+    decisions[[pid]] <- op
+    if (!identical(op, "personalizar")) next
+    e <- if (!is.null(ediciones) && nrow(ediciones)) ediciones[ediciones$id == id, , drop = FALSE] else NULL
+    valor <- if (!is.null(e) && nrow(e)) { if (isTRUE(e$valido[1])) e$valor[1] else NA_real_ }
+             else if (!is.na(filas$otro[i]) && filas$otro[i] >= 0) filas$otro[i] else NA_real_
+    if (is.na(valor)) sin_monto <- c(sin_monto, pid)
+    else decisions[[paste0(pid, "_custom")]] <- valor
+  }
+  list(decisions = decisions, sin_monto = sin_monto)
 }
 
 # ── Apply decisions ────────────────────────────────────────────────────────────
@@ -246,51 +223,27 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
 setup_pasivos_edit_confirm <- function(input, output, session, shared) {
 
   # This session's open panel: its conflicts, their generated rows and the
-  # liability (pasivos_edit_confirm_open() fills it).
-  st <- shiny::reactiveValues(conflicts = NULL, replacement = NULL, liability_id = NULL)
+  # liability (pasivos_edit_confirm_open() fills it); apertura numbers each
+  # opening, restaurado holds the choices "Continuar revisando" gives back.
+  st <- shiny::reactiveValues(conflicts = NULL, replacement = NULL, liability_id = NULL,
+                              apertura = 0L, restaurado = NULL)
   session$userData$pec_state <- st
 
-  # Per-provision decision tracking: named list prov_id -> "aplicar"|"mantener"|"personalizar"
-  decisions <- shiny::reactiveValues()
+  filas <- shiny::reactive(
+    pasivos_conflictos_filas(st$conflicts, st$replacement, st$apertura, st$restaurado))
+  t <- hd_table_server("pec_tabla", tabla = "conflictos_pasivo", datos = filas,
+                       columnas = .pec_columnas(), piezas = c("opcion_fila", "edicion_celda"),
+                       vacio = "tablas.pasivos.conflictos.vacio")
 
-  # Render conflicts table
-  output$pec_conflicts_table <- shiny::renderUI({
-    conf <- st$conflicts
-    repl <- st$replacement
-    if (is.null(conf) || !nrow(conf)) return(NULL)
-
-    # Collect current decision values from the decisions reactiveValues
-    dec_list <- as.list(decisions)
-    .pec_render_conflicts(conf, repl, dec_list)
-  })
-
-  # Observe per-row decision inputs (JS fires pec_decision_<uuid_with_underscores>)
-  # We use a broad observe that checks all conflicts
-  shiny::observe({
-    conf <- st$conflicts
-    if (is.null(conf) || !nrow(conf)) return()
-    for (i in seq_len(nrow(conf))) {
-      prov_id <- conf$id[i]
-      key     <- gsub("-", "_", prov_id)
-      dec_val <- input[[paste0("pec_decision_", key)]]
-      if (!is.null(dec_val)) decisions[[prov_id]] <- dec_val
-      cust_val <- input[[paste0("pec_custom_", key)]]
-      if (!is.null(cust_val)) decisions[[paste0(prov_id, "_custom")]] <- cust_val
-    }
-  })
-
-  # Mass: mantener all
+  # Mass choices: the table's, in the browser (the person sees them and can
+  # still change any row before saving).
   shiny::observeEvent(input$pec_all_mantener, ignoreInit = TRUE, {
-    conf <- st$conflicts
-    if (is.null(conf) || !nrow(conf)) return()
-    for (i in seq_len(nrow(conf))) decisions[[conf$id[i]]] <- "mantener"
+    if (!nrow(filas())) return()
+    t$poner_opcion("mantener")
   })
-
-  # Mass: apply new value for all
   shiny::observeEvent(input$pec_all_nuevo, ignoreInit = TRUE, {
-    conf <- st$conflicts
-    if (is.null(conf) || !nrow(conf)) return()
-    for (i in seq_len(nrow(conf))) decisions[[conf$id[i]]] <- "aplicar"
+    if (!nrow(filas())) return()
+    t$poner_opcion("aplicar")
   })
 
   # Save decisions
@@ -301,17 +254,19 @@ setup_pasivos_edit_confirm <- function(input, output, session, shared) {
     if (is.null(conf) || !nrow(conf)) { shiny::removeModal(); return() }
 
     user <- tryCatch(shared$current_user(), error = function(e) "system")
-    dec_list <- as.list(decisions)
-    # Default missing decisions to "mantener"
-    for (i in seq_len(nrow(conf))) {
-      pid <- conf$id[i]
-      if (is.null(dec_list[[pid]])) dec_list[[pid]] <- "mantener"
+    d <- pasivos_conflictos_decisiones(filas(), t$opciones(), t$ediciones())
+    # "Otro" needs its amount (T20): nothing is saved while one is missing or
+    # not valid (it used to save the rest and say "saved").
+    if (length(d$sin_monto)) {
+      shiny::showNotification(tr("tablas.pasivos.conflictos.otro_sin_monto", n = length(d$sin_monto)),
+                              type = "warning", duration = 6)
+      return()
     }
 
     # Saved, or nothing: on a failed read or write the panel stays open with
     # the choices as they are, so the person can try again (regla 17).
     guardado <- tryCatch({
-      .pec_apply_decisions(conf, repl, dec_list, shared, user, liability_id = st$liability_id)
+      .pec_apply_decisions(conf, repl, d$decisions, shared, user, liability_id = st$liability_id)
       TRUE
     }, error = function(e) {
       message("pasivos_edit_confirm: decisions not saved: ", conditionMessage(e))
@@ -320,30 +275,41 @@ setup_pasivos_edit_confirm <- function(input, output, session, shared) {
     })
     if (!guardado) return()
     shiny::removeModal()
-    shiny::showNotification("Decisiones guardadas.", type = "message", duration = 3)
+    shiny::showNotification(tr("tablas.pasivos.conflictos.guardado"), type = "message", duration = 3)
   })
 
-  # Cancel: confirm and default all to "mantener" (no writes)
+  # Cancel: confirm and default all to "mantener" (no writes). The table goes
+  # away with the panel, so what the person chose is kept here first.
   shiny::observeEvent(input$pec_cancel, ignoreInit = TRUE, {
+    f <- filas()
+    if (nrow(f)) {
+      d <- pasivos_conflictos_decisiones(f, t$opciones(), t$ediciones())
+      dec  <- vapply(f$prov_id, function(p) d$decisions[[p]] %||% "mantener", character(1))
+      otro <- vapply(f$prov_id, function(p) as.numeric(d$decisions[[paste0(p, "_custom")]] %||% NA_real_), numeric(1))
+      st$restaurado_pendiente <- list(decision = setNames(dec, f$prov_id), otro = setNames(otro, f$prov_id))
+    }
     shiny::showModal(shiny::modalDialog(
-      "¿Cancelar? Las provisiones marcadas se mantendrán con sus valores actuales.",
+      tr("tablas.pasivos.conflictos.cancelar_pregunta"),
       footer = shiny::tagList(
-        shiny::actionButton("pec_cancel_no",  "Continuar revisando", class = "btn btn-secondary"),
-        shiny::actionButton("pec_cancel_yes", "Sí, mantener todo",   class = "btn btn-danger")
+        shiny::actionButton("pec_cancel_no",  tr("tablas.pasivos.conflictos.seguir"),        class = "btn btn-secondary"),
+        shiny::actionButton("pec_cancel_yes", tr("tablas.pasivos.conflictos.mantener_todo"), class = "btn btn-danger")
       ),
       size = "s"
     ))
   })
 
+  # "Continuar revisando": the panel again, with the choices it had (T20).
+  # A new opening number, so the browser's old choices can't land on it.
   shiny::observeEvent(input$pec_cancel_no, ignoreInit = TRUE, {
+    st$restaurado <- st$restaurado_pendiente
+    st$apertura   <- st$apertura + 1L
     shiny::removeModal()
     shiny::showModal(.pec_modal_ui())
   })
 
   shiny::observeEvent(input$pec_cancel_yes, ignoreInit = TRUE, {
     shiny::removeModal()
-    shiny::showNotification("Cambios cancelados. Las provisiones mantienen sus valores.",
-                            type = "message", duration = 3)
+    shiny::showNotification(tr("tablas.pasivos.conflictos.cancelado"), type = "message", duration = 3)
   })
 
   invisible(NULL)

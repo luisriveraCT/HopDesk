@@ -140,8 +140,13 @@ r <- en_s3(); r <- r[r$id == P1, , drop = FALSE]
 ok(.mem_escrituras == antes, "B2: A's Guardar decisiones writes nothing")
 ok(isTRUE(r$amount_pago_override == 150), "B2: B's P1 keeps its 150 after A's save")
 
-# B decides on its own conflict: that one does apply.
-B$setInputs(pec_all_nuevo = 1); B$setInputs(pec_save = 1)
+# B decides on its own conflict: that one does apply. Since T20 the panel is
+# hd_table "conflictos_pasivo": "Aplicar todos: Nuevo" sets the choice in the
+# browser, whose answer (the table's opciones, by row id) is what is saved.
+B$setInputs(pec_all_nuevo = 1)
+B$setInputs(`pec_tabla-opciones` = list(
+  ids = list(paste0(isolate(B$userData$pec_state$apertura), ":", P1)), valores = list("aplicar")))
+B$setInputs(pec_save = 1)
 r <- en_s3(); r <- r[r$id == P1, , drop = FALSE]
 ok(is.na(r$amount_pago_override) && isTRUE(r$amount_pago == 120),
    "B3: B's Guardar decisiones applies B's choice to P1")
