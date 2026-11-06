@@ -144,27 +144,60 @@ decidir <- function(session, opciones, montos = list(), ids = NULL) {
   do.call(session$setInputs, l)
 }
 
-# D1: Nuevo on both -- P1 takes 120 and loses its override; P2 takes 120 but
-# keeps its hand date and its date override (the save is unchanged in T20).
-sembrar()
+# What the audit entry records, per provision (pasivos_log_audit's `after`).
+auditorias <- list()
+pasivos_log_audit <- function(...) { auditorias[[length(auditorias) + 1L]] <<- list(...); invisible(NULL) }
+decision_auditada <- function(pid) {
+  d <- auditorias[[length(auditorias)]]$after$decisions
+  Filter(function(x) identical(x$provision_id, pid), d)[[1]]
+}
+G2_GEN <- as.Date(REPL$fecha_efectiva[REPL$id == P2])
+
+# D1: Nuevo on both -- P1 takes 120 and loses its override.
+# [CAMBIA] (Luis, T20 option A): Nuevo on P2 (a date moved by hand) takes the
+# generated amount AND date, and clears the date override. Until 28b3f3d it
+# kept the hand date and its override.
+sembrar(); auditorias <- list()
 panel(function(session, sh) {
   abrir(session, sh); decidir(session, setNames(list("aplicar", "aplicar"), c(P1, P2)))
   session$setInputs(pec_save = 1)
 })
 p1 <- en_s3(P1); p2 <- en_s3(P2)
 ok(isTRUE(p1$amount_pago == 120) && is.na(p1$amount_pago_override), "D1: Nuevo on P1 -> 120, override cleared")
-ok(isTRUE(p2$amount_pago == 120) && identical(p2$fecha_efectiva, F2_MANO) &&
-     identical(p2$fecha_efectiva_override, F2_MANO),
-   "D1: Nuevo on P2 -> 120, its hand date and date override stay")
+ok(isTRUE(p2$amount_pago == 120) && identical(p2$fecha_efectiva, G2_GEN) && is.na(p2$fecha_efectiva_override),
+   "D1: Nuevo on P2 -> 120 and the generated date; its date override is cleared")
+a2 <- decision_auditada(P2)
+ok(identical(a2$decision, "aplicar") && identical(a2$fecha_antes, format(F2_MANO)) &&
+     identical(a2$fecha_despues, format(G2_GEN)),
+   "D1: the audit entry records P2's date before (the hand one) and after (the generated one)")
+ok(identical(decision_auditada(P1)$fecha_antes, format(F1)) && identical(decision_auditada(P1)$fecha_despues, format(F1)),
+   "D1: and P1's, the same before and after (only its amount was in conflict)")
 
-# D2: Otro 135 sets P1's override; P2, left on Mantener, is as it was.
-sembrar()
+# D2: Otro 135 sets P1's override; P2, left on Mantener, keeps its hand date
+# and its override (and its amount).
+sembrar(); auditorias <- list()
 panel(function(session, sh) {
   abrir(session, sh); decidir(session, setNames(list("personalizar"), P1), setNames(list(135), P1))
   session$setInputs(pec_save = 1)
 })
 ok(isTRUE(en_s3(P1)$amount_pago_override == 135), "D2: Otro 135 -> P1's override 135")
-ok(identical(en_s3(P2)$fecha_efectiva_override, F2_MANO), "D2: P2, left on Mantener, is as it was")
+p2 <- en_s3(P2)
+ok(identical(p2$fecha_efectiva, F2_MANO) && identical(p2$fecha_efectiva_override, F2_MANO) && isTRUE(p2$amount_pago == 100),
+   "D2: P2, left on Mantener, keeps its hand date, its override and its amount")
+ok(identical(decision_auditada(P2)$fecha_antes, format(F2_MANO)) && identical(decision_auditada(P2)$fecha_despues, format(F2_MANO)),
+   "D2: the audit records P2's date unchanged")
+
+# D2b (option A): Otro on P2 changes only its amount; Antes' date (the hand
+# one) and its override stay.
+sembrar()
+panel(function(session, sh) {
+  abrir(session, sh); decidir(session, setNames(list("personalizar"), P2), setNames(list(90), P2))
+  session$setInputs(pec_save = 1)
+})
+p2 <- en_s3(P2)
+ok(isTRUE(p2$amount_pago_override == 90) && identical(p2$fecha_efectiva, F2_MANO) &&
+     identical(p2$fecha_efectiva_override, F2_MANO),
+   "D2b: Otro 90 on P2 -> its amount 90, its hand date and override stay")
 
 # [CAMBIA] D3 (T20, hallazgo 4): Otro without a valid amount saves nothing --
 # not even the other rows -- keeps the panel open and says so. It used to

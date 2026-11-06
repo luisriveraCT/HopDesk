@@ -170,14 +170,12 @@ pasivos_conflictos_decisiones <- function(filas, opciones, ediciones) {
     dec     <- decisions[[prov_id]] %||% "mantener"
     idx     <- which(provs$id == prov_id)
     if (!length(idx)) next
-    decision_log[[length(decision_log) + 1L]] <- list(
-      provision_id = prov_id, decision = dec,
-      custom_value = if (identical(dec, "personalizar"))
-        as.numeric(decisions[[paste0(prov_id, "_custom")]] %||% NA) else NA_real_
-    )
+    fecha_antes <- provs$fecha_efectiva[idx[1]]
 
     if (identical(dec, "aplicar")) {
-      # Clear the override, apply generated value
+      # "Nuevo": the generated amount AND date (Luis, T20 option A). A date
+      # moved by hand is a conflict too; Nuevo used to clear only the amount
+      # override, so the hand date and its override stayed.
       rep_row <- if (!is.null(replacement) && nrow(replacement))
         replacement[replacement$id == prov_id, , drop = FALSE]
       else NULL
@@ -186,6 +184,12 @@ pasivos_conflictos_decisiones <- function(filas, opciones, ediciones) {
         provs$amount_pago[idx[1]]          <- rep_row$amount_pago[1]
         provs$amount_cotizado[idx[1]]      <- rep_row$amount_cotizado[1]
         provs$amount_pago_override[idx[1]] <- NA_real_
+        if (!is.na(rep_row$fecha_efectiva[1])) {
+          provs$fecha_efectiva[idx[1]]  <- as.Date(rep_row$fecha_efectiva[1])
+          if (!is.na(rep_row$fecha_calculada[1]))
+            provs$fecha_calculada[idx[1]] <- as.Date(rep_row$fecha_calculada[1])
+          provs$fecha_efectiva_override[idx[1]] <- as.Date(NA)
+        }
         provs$last_edited_by[idx[1]]       <- user
         provs$last_edited_at[idx[1]]       <- Sys.time()
       }
@@ -198,7 +202,15 @@ pasivos_conflictos_decisiones <- function(filas, opciones, ediciones) {
         provs$last_edited_at[idx[1]]       <- Sys.time()
       }
     }
-    # "mantener" → do nothing (keep existing override)
+    # "mantener" → do nothing (keep existing overrides, amount and date);
+    # "personalizar" ("Otro") changes the amount only and keeps Antes' date.
+    decision_log[[length(decision_log) + 1L]] <- list(
+      provision_id = prov_id, decision = dec,
+      custom_value = if (identical(dec, "personalizar"))
+        as.numeric(decisions[[paste0(prov_id, "_custom")]] %||% NA) else NA_real_,
+      fecha_antes   = format(as.Date(fecha_antes)),
+      fecha_despues = format(as.Date(provs$fecha_efectiva[idx[1]]))
+    )
   }
 
   # Regla 17: a failed save stop()s before the session's copy, the bump or the
