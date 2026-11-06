@@ -993,6 +993,12 @@ ledgerModuleServer <- function(id, config, shared) {
     }
 
     # ── Raw data diagnostic viewer ("Ver datos SAP", both views) ───────────────
+    # Two engine tables (datos_sap, T21), made once here: the day's rows as
+    # processed, and every raw SAP field of those invoices.
+    crudos_proc <- reactiveVal(NULL)
+    crudos_sap  <- reactiveVal(NULL)
+    datos_sap_tabla("dia_crudos_proc", crudos_proc)
+    datos_sap_tabla("dia_crudos_sap",  crudos_sap)
     .dia_crudos <- function() {
       ctx <- modal_ctx()
       req(ctx)
@@ -1015,61 +1021,26 @@ ledgerModuleServer <- function(id, config, shared) {
               as.Date(raw[["Fecha de vencimiento"]]) == ctx$sel_date, , drop = FALSE]
         }
       } else NULL
+      con_ledger <- function(x) { if (!is.null(x) && nrow(x)) x[["Ledger"]] <- ledger; x }
+      crudos_proc(con_ledger(d))
+      crudos_sap(con_ledger(raw_day))
 
       # The table's window (T09): the counts go in the header, no footer.
       showModal(hd_modal(
         titulo = tr("tablas.dia.crudos_titulo", fecha = format(ctx$sel_date, "%d %b %Y"), moneda = ctx$cur),
         encabezado = tags$small(class = "text-muted",
-            paste0(nrow(d), " filas en detail | ",
-                   if (!is.null(raw_day)) nrow(raw_day) else "?",
-                   " filas en SAP raw para este día")
-          ),
+            tr("tablas.sap.dia_conteo", detalle = nrow(d),
+               sap = if (!is.null(raw_day)) nrow(raw_day) else "?")),
         tagList(
-          tags$h6("Campos procesados (moneda y amount_col aplicados)", class = "text-muted mb-1"),
-          DT::dataTableOutput(ns("raw_detail_tbl")),
+          tags$h6(tr("tablas.sap.dia_procesados"), class = "text-muted mb-1"),
+          hd_table_ui(ns("dia_crudos_proc")),
           tags$hr(),
           if (!is.null(raw_day) && nrow(raw_day)) tagList(
-            tags$h6("SAP raw — todos los campos originales de las facturas de este d\u00eda",
-                    class = "text-muted mb-1"),
-            DT::dataTableOutput(ns("raw_sap_tbl"))
+            tags$h6(tr("tablas.sap.dia_crudos"), class = "text-muted mb-1"),
+            hd_table_ui(ns("dia_crudos_sap"))
           ) else NULL
         )
       ))
-
-      output$raw_detail_tbl <- DT::renderDataTable({
-        # Priority columns first, then all remaining columns
-        pri  <- intersect(c("Empresa","Moneda","Documento","Factura","Parte","Importe","source"), names(d))
-        rest <- setdiff(names(d), pri)
-        DT::datatable(
-          d[, c(pri, rest), drop = FALSE],
-          rownames   = FALSE, escape = FALSE,
-          extensions = "Buttons",
-          options    = list(
-            pageLength = 20, scrollX = TRUE,
-            dom     = "Bfrtip",
-            buttons = list(list(extend = "csv", text = "\u2B07 CSV"),
-                           list(extend = "excel", text = "\u2B07 Excel"))
-          )
-        )
-      }, server = FALSE)
-
-      output$raw_sap_tbl <- DT::renderDataTable({
-        req(!is.null(raw_day) && nrow(raw_day))
-        # Show ALL SAP columns — priority columns first
-        pri  <- intersect(c("Empresa","Moneda","Documento","Parte","Fecha de vencimiento"), names(raw_day))
-        rest <- setdiff(names(raw_day), pri)
-        DT::datatable(
-          raw_day[, c(pri, rest), drop = FALSE],
-          rownames   = FALSE, escape = FALSE,
-          extensions = "Buttons",
-          options    = list(
-            pageLength = 20, scrollX = TRUE,
-            dom     = "Bfrtip",
-            buttons = list(list(extend = "csv", text = "\u2B07 CSV"),
-                           list(extend = "excel", text = "\u2B07 Excel"))
-          )
-        )
-      }, server = FALSE)
     }
 
     # ── Agenda: take out (a row's ✓) ───────────────────────────────────────────

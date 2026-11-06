@@ -624,6 +624,7 @@ pagarHoyServer <- function(id, shared) {
     # in the same viewer as Vencidos and the lupa. By company AND document:
     # the same number exists in two companies. SAP may name the company by
     # its full name or its initials (shared$company_map()).
+    ver_sap <- datos_sap_visor()   # the viewer's table, made once (T21)
     .ph_crudos <- function(libro, emp, d, ids) {
       docs <- d$Documento[if (length(ids)) d$id %in% ids else TRUE]
       raw  <- tryCatch(shared$sap_data()[[libro]], error = function(e) NULL)
@@ -633,7 +634,7 @@ pagarHoyServer <- function(id, shared) {
         raw <- raw[de_emp & trimws(as.character(raw[["Documento"]])) %in% trimws(as.character(docs)), , drop = FALSE]
         if (nrow(raw)) raw[["Ledger"]] <- libro
       } else raw <- NULL
-      mostrar_datos_sap(raw)
+      ver_sap(raw)
     }
     .ph_ap_vacia <- data.frame(id = character(), Archivo = character(), Proveedor = character(),
                                Cuenta = character(), Tipo = character(), Referencia = character(),

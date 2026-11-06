@@ -93,9 +93,10 @@ lupaServer <- function(id, shared, abrir, mes, accion_factura = handle_invoice_a
       cargado(m)
     }
 
+    ver_sap <- datos_sap_visor()
     t <- facturas_tabla_server(
       "tabla", tabla = "facturas_lupa", datos = datos, shared = shared,
-      crudos  = function(ids, df) mostrar_datos_sap(lupa_crudos(shared, isolate(cargado()))),
+      crudos  = function(ids, df) ver_sap(lupa_crudos(shared, isolate(cargado()))),
       accion_factura = accion_factura,
       vacio   = list(texto = "tablas.lupa.vacio"),
       textos  = list(contador = "tablas.contador.facturas", sin_bloqueadas = TRUE),
@@ -149,46 +150,82 @@ etiquetas_frescas <- function(shared) {
   if (!isTRUE(r$ok)) return(shared$tags_db())
   dplyr::filter(.normalize(r$value, .schema_tags), tag %in% c("important", "urgent"))
 }
+# =============================================================================
+# The raw SAP viewer (datos_sap, T21): every raw SAP column of the rows given,
+# as SAP sends them (dates, text, numbers with their own decimals, no money
+# format), Ledger / Empresa / Parte / Documento / Moneda first; search,
+# filters by Ledger / Empresa / Moneda, Excel and copy. "Ver datos SAP" in the
+# lupa, Vencidos and the Agenda (datos_sap_visor()); the day's two tables
+# (ledger_module.R) use datos_sap_tabla() directly.
+# =============================================================================
+# The rows: list columns flattened to text; Ledger / Empresa / Moneda always
+# there (the filters need them); hd_id = Ledger|Empresa|Documento|n, n the
+# occurrence (installments repeat the Documento). Read only: nothing acts on a
+# row, so the id only has to be unique.
+.datos_sap_filas <- function(raw) {
+  if (is.null(raw) || !is.data.frame(raw) || !nrow(raw))
+    return(data.frame(hd_id = character(), Ledger = character(), Empresa = character(),
+                      Moneda = character(), stringsAsFactors = FALSE))
+  d <- as.data.frame(raw, stringsAsFactors = FALSE, check.names = FALSE)
+  for (n in names(d)) if (is.list(d[[n]]))
+    d[[n]] <- vapply(d[[n]], function(v) paste(as.character(unlist(v)), collapse = ", "), character(1))
+  for (n in c("Ledger", "Empresa", "Moneda")) if (!n %in% names(d)) d[[n]] <- NA_character_
+  pri <- intersect(c("Ledger", "Empresa", "Parte", "Documento", "Moneda"), names(d))
+  d   <- d[, c(pri, setdiff(names(d), c(pri, "hd_id"))), drop = FALSE]
+  base <- paste(d$Ledger, d$Empresa, if ("Documento" %in% names(d)) d$Documento else "", sep = "|")
+  d$hd_id <- paste(base, stats::ave(seq_along(base), base, FUN = seq_along), sep = "|")
+  d
+}
 
-# =============================================================================
-# mostrar_datos_sap — the raw SAP viewer ("Ver datos SAP" in the lupa and in
-# Vencidos): every raw SAP column of the rows given,
-# Ledger / Empresa / Parte / Documento / Moneda first, filterable, with CSV and
-# Excel download.
-# =============================================================================
-mostrar_datos_sap <- function(raw) {
-  if (is.null(raw) || !nrow(raw)) {
-    showNotification(tr("tablas.datos_sap.vacio"), type = "warning")
-    return(invisible(NULL))
+# One column per field, by its type; the title is SAP's own name.
+.datos_sap_columnas <- function(filas) {
+  decimales <- function(x) {
+    x <- x[is.finite(x)]
+    if (!length(x)) return(0L)
+    d <- nchar(sub("^[^.]*\\.?", "", format(x, scientific = FALSE, drop0trailing = TRUE, trim = TRUE)))
+    as.integer(min(max(d), 6L))
   }
-  disp <- as.data.frame(raw)
-  priority_cols <- intersect(c("Ledger","Empresa","Parte","Documento","Moneda"), names(disp))
-  rest_cols     <- setdiff(names(disp), priority_cols)
-  disp          <- disp[, c(priority_cols, rest_cols), drop = FALSE]
-  # The table's window (T09); the size goes in the header, the table gets the
-  # rest of the screen (still DT until its migration).
-  showModal(hd_modal(
-    titulo     = tr("tablas.datos_sap.titulo", n = nrow(disp)),
-    encabezado = tags$small(class = "text-muted",
-                            tr("tablas.datos_sap.tamano", filas = nrow(disp), columnas = ncol(disp))),
-    div(style = "max-height: calc(97vh - 70px); overflow: auto;",
-      DT::datatable(
-        disp,
-        rownames   = FALSE,
-        filter     = "top",
-        extensions = "Buttons",
-        options    = list(
-          pageLength = 25,
-          scrollX    = TRUE,
-          dom        = "Bfrtip",
-          buttons    = list(
-            list(extend = "csv",   text = tr("tablas.datos_sap.csv")),
-            list(extend = "excel", text = tr("tablas.datos_sap.excel"))
-          )
-        )
-      )
-    )
-  ))
+  lapply(setdiff(names(filas), "hd_id"), function(n) {
+    x <- filas[[n]]
+    if (inherits(x, "POSIXt")) col_fecha_hora(n, n)
+    else if (inherits(x, "Date")) col_fecha(n, n)
+    else if (is.numeric(x)) col_numero(n, n, decimales = decimales(x))
+    else col_texto(n, n)
+  })
+}
+
+# The engine table over a reactive of raw rows (one server per table, made
+# once in its module).
+datos_sap_tabla <- function(id, raw) {
+  filas <- shiny::reactive(.datos_sap_filas(raw()))
+  hd_table_server(
+    id, tabla = "datos_sap", id_col = "hd_id",
+    datos = filas,
+    columnas = shiny::reactive(.datos_sap_columnas(filas())),
+    piezas = "buscar",
+    filtros = list(list(campo = "Ledger"), list(campo = "Empresa"), list(campo = "Moneda")),
+    vacio = "tablas.datos_sap.vacio"
+  )
+}
+
+# "Ver datos SAP": made once in the caller's module; returns mostrar(raw),
+# which opens the modal with those rows (or says there are none).
+datos_sap_visor <- function(id = "datos_sap_t", session = shiny::getDefaultReactiveDomain()) {
+  raw <- shiny::reactiveVal(NULL)
+  datos_sap_tabla(id, raw)
+  function(datos) {
+    if (is.null(datos) || !nrow(datos)) {
+      showNotification(tr("tablas.datos_sap.vacio"), type = "warning")
+      return(invisible(NULL))
+    }
+    raw(datos)
+    showModal(hd_modal(
+      titulo     = tr("tablas.datos_sap.titulo", n = nrow(datos)),
+      encabezado = tags$small(class = "text-muted",
+                              tr("tablas.datos_sap.tamano", filas = nrow(datos), columnas = ncol(datos))),
+      hd_table_ui(session$ns(id), alto = "ventana")
+    ))
+  }
 }
 
 # =============================================================================

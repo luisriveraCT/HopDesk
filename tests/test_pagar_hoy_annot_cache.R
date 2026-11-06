@@ -35,6 +35,11 @@ fmt_money <- function(x) paste0("$ ", formatC(x, format = "f", digits = 2, big.m
 
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R", "R/ppl_generator.R"))
   source(f)
+# The raw SAP viewer the module makes once (search_module.R, T21).
+for (e in parse("R/search_module.R", keep.source = FALSE))
+  if (is.call(e) && identical(e[[1]], as.name("<-")) &&
+      as.character(e[[2]]) %in% c(".datos_sap_filas", ".datos_sap_columnas", "datos_sap_tabla", "datos_sap_visor"))
+    eval(e, globalenv())
 source(Sys.getenv("PH_MODULE", "R/pagar_hoy_module.R"))
 
 # Stubs (after sourcing, so they win over the module's own top-level helpers).

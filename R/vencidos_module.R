@@ -442,9 +442,10 @@ vencidosServer <- function(id, shared, accion_factura = handle_invoice_action) {
     # ── The table's data ───────────────────────────────────────────────────
     datos <- reactive(facturas_llenar_empresa(vencidos_df(), shared))
 
+    ver_sap <- datos_sap_visor()
     facturas_tabla_server(
       "tabla", tabla = "vencidos", datos = datos, shared = shared,
-      crudos = function(ids, df) mostrar_datos_sap(vencidos_crudos(shared)),
+      crudos = function(ids, df) ver_sap(vencidos_crudos(shared)),
       accion_factura = accion_factura,
       vacio  = list(texto = "tablas.vencidos.vacio", tono = "exito"),
       # The counter, like the tab's badge, leaves paid rows out.

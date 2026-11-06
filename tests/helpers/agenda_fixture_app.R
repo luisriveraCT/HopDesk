@@ -36,7 +36,7 @@ cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 cargar("R/global.R", c("fmt_money", "is_erp_sourced", "CURRENCIES"))
 cargar("R/persistence.R", "unstage_pagar_hoy")
 cargar("R/ui_components.R", "app_styles")
-cargar("R/search_module.R", "mostrar_datos_sap")
+cargar("R/search_module.R", c(".datos_sap_filas", ".datos_sap_columnas", "datos_sap_tabla", "datos_sap_visor"))
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/ppl_generator.R", "R/pagar_hoy_module.R"))
   sys.source(file.path(raiz, f), envir = globalenv())
