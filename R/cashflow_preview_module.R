@@ -94,7 +94,16 @@ cashflow_tabla_columnas <- function(labels) {
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
+# The preview's state (range, grouping, currency mode, base currency and FX
+# rates), kept for the day. One key per client ("hopdesk_cf_preview_state:
+# <client_id>", T27): it was one key for every client, so staff switching
+# clients in the same browser got the first one's FX rates. The old key is
+# removed on opening (it may hold another client's rates) and never read.
 .CF_STORAGE_KEY  <- "hopdesk_cf_preview_state"
+.cf_estado_llave <- function(cliente) {
+  if (!is.character(cliente) || length(cliente) != 1L || is.na(cliente) || !nzchar(cliente)) return(NULL)
+  as.character(jsonlite::toJSON(paste0(.CF_STORAGE_KEY, ":", cliente), auto_unbox = TRUE))
+}
 # Día 0 per currency, {"MXN": 1500, ...}: kept until it is changed, not just
 # for the day like the rest (T17c, Luis resp. 2). Before, it lasted the session.
 # One key per client ("hopdesk_cf_dia0:<client_id>"): staff switching from
@@ -307,6 +316,34 @@ cashflowPreviewServer <- function(id, shared) {
       fx_dates      = list()       # named list: cur -> Date
     )
 
+    # The session's client. The preview's state and Día 0 belong to one client.
+    cliente <- reactive({
+      cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
+      if (is.character(cid) && length(cid) == 1L && !is.na(cid) && nzchar(cid)) cid else NULL
+    })
+
+    # T27: switching client starts the preview's state over (A's range and FX
+    # rates are A's), and nothing is saved for the new client until its own
+    # saved state has been read back (listo_para): a save still pending from
+    # A, or the defaults, never land under B's key.
+    cliente_estado <- NULL
+    listo_para     <- NULL
+    observe({
+      cid <- cliente()
+      if (identical(cid, cliente_estado)) return()
+      cliente_estado <<- cid
+      listo_para     <<- NULL
+      isolate({
+        rv$date_from <- .cf_default_from(); rv$date_to <- .cf_default_to()
+        rv$grouping <- "auto"; rv$currency_mode <- "separate"; rv$base_cur <- "MXN"
+        rv$fx_rates <- c(); rv$fx_modes <- list(); rv$fx_dates <- list()
+      })
+      shinyWidgets::updateAirDateInput(session, "date_range", value = c(isolate(rv$date_from), isolate(rv$date_to)))
+      shinyjs::html("btn_date_range", .cf_range_label(isolate(rv$date_from), isolate(rv$date_to)))
+      shiny::updateActionButton(session, "btn_grouping", label = .cf_txt_agrupacion("auto"))
+      shiny::updateActionButton(session, "btn_curmode",  label = .cf_txt_moneda("separate"))
+    })
+
     # Tracks which currency inputs have had observers registered (Stage 2)
     .registered_curs <- character(0)
 
@@ -358,18 +395,6 @@ cashflowPreviewServer <- function(id, shared) {
                           class    = "cf-preview-active", asis = TRUE)
         shinyjs::addClass(selector = "body",
                           class    = "cf-preview-open",   asis = TRUE)
-        # Load persisted state from localStorage on first open each day
-        shinyjs::runjs(sprintf("
-          (function() {
-            try {
-              var s = JSON.parse(localStorage.getItem('%s') || '{}');
-              var today = %s;
-              if (s && s.saved_date === today) {
-                Shiny.setInputValue('%s', s, {priority:'event'});
-              }
-            } catch(e) {}
-          })();
-        ", .CF_STORAGE_KEY, .CF_HOY_JS, ns("stored_state")))
       } else {
         shinyjs::removeClass(selector = ".cf-slide-wrapper",
                              class    = "cf-preview-active", asis = TRUE)
@@ -380,8 +405,36 @@ cashflowPreviewServer <- function(id, shared) {
 
     # ── Restore state from localStorage ──────────────────────────────────────
 
+    # Read on opening and when the client changes: this client's key only
+    # (saved today), and the old shared key removed. The answer always comes,
+    # with the client it was read for and the state or null.
+    observe({
+      if (!isTRUE(shared$cf_preview_open())) return()
+      cid   <- cliente()
+      llave <- .cf_estado_llave(cid)
+      shinyjs::runjs(sprintf(
+        "(function(){ try { localStorage.removeItem('%s'); } catch(e) {} })();", .CF_STORAGE_KEY))
+      if (is.null(llave)) return()
+      shinyjs::runjs(sprintf("
+          (function() {
+            var s = null;
+            try {
+              var g = JSON.parse(localStorage.getItem(%s) || '{}');
+              if (g && g.saved_date === %s) s = g;
+            } catch(e) {}
+            Shiny.setInputValue('%s', {cliente: %s, estado: s}, {priority:'event'});
+          })();
+        ", llave, .CF_HOY_JS, ns("stored_state"), jsonlite::toJSON(cid, auto_unbox = TRUE)))
+    })
+
+    # The answer: only for the client it was read for (one that arrives after
+    # a switch is dropped). From then on this client's state is saved.
     observeEvent(input$stored_state, {
-      s <- input$stored_state
+      m <- input$stored_state
+      if (!is.list(m) || is.null(cliente()) || !identical(m$cliente, cliente())) return()
+      listo_para <<- m$cliente
+      s <- m$estado
+      if (!is.list(s) || !length(s)) return()
       tryCatch({
         if (!is.null(s$date_from) && !is.null(s$date_to)) {
           d1 <- as.Date(s$date_from); d2 <- as.Date(s$date_to)
@@ -420,9 +473,13 @@ cashflowPreviewServer <- function(id, shared) {
     }) |> debounce(800)
 
     observeEvent(.state_to_save(), {
+      # Under this client's key, and only once its saved state was read back.
+      cid   <- cliente()
+      llave <- .cf_estado_llave(cid)
+      if (is.null(llave) || !identical(cid, listo_para)) return()
       shinyjs::runjs(sprintf(
-        "try{localStorage.setItem('%s',JSON.stringify({date_from:'%s',date_to:'%s',grouping:'%s',currency_mode:'%s',base_cur:'%s',fx_rates:%s,saved_date:%s}));}catch(e){}",
-        .CF_STORAGE_KEY,
+        "try{localStorage.setItem(%s,JSON.stringify({date_from:'%s',date_to:'%s',grouping:'%s',currency_mode:'%s',base_cur:'%s',fx_rates:%s,saved_date:%s}));}catch(e){}",
+        llave,
         format(rv$date_from, "%Y-%m-%d"),
         format(rv$date_to,   "%Y-%m-%d"),
         rv$grouping,
@@ -694,10 +751,7 @@ cashflowPreviewServer <- function(id, shared) {
 
     # A Día 0 is a balance of one client: switching client starts from none
     # and reads that client's key, never another's. Read on opening too.
-    cliente <- reactive({
-      cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
-      if (is.character(cid) && length(cid) == 1L && !is.na(cid) && nzchar(cid)) cid else NULL
-    })
+    # (cliente() is defined with the preview's state, above.)
     cliente_dia0 <- NULL
     observe({
       cid <- cliente()

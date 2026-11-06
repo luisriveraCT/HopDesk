@@ -200,13 +200,18 @@ test_that("F16: opening and closing every group is the engine's (expandir); the 
   expect_false(grepl("btn_expand", paste(as.character(cashflowPreviewUI("cf")), collapse = ""), fixed = TRUE))
 })
 test_that("F17: a saved state comes back (range, grouping, currency mode, base, rates); a bad one is ignored", {
+  # [CAMBIA T27] The browser's answer says which client it was read for:
+  # list(cliente, estado). It used to be the state alone, from one key for
+  # every client.
   modulo(function(session, input, output, sh, rv) {
-    session$setInputs(stored_state = list(date_from = as.character(LUNES + 7L), date_to = as.character(LUNES + 13L),
+    session$setInputs(stored_state = list(cliente = "cliente_a", estado = list(
+                                          date_from = as.character(LUNES + 7L), date_to = as.character(LUNES + 13L),
                                           grouping = "weekly", currency_mode = "fused", base_cur = "USD",
-                                          fx_rates = list(MXN = 0.05)))
+                                          fx_rates = list(MXN = 0.05))))
     expect_identical(list(rv$date_from, rv$date_to, rv$grouping, rv$currency_mode, rv$base_cur, rv$fx_rates[["MXN"]]),
                      list(LUNES + 7L, LUNES + 13L, "weekly", "fused", "USD", 0.05))
-    session$setInputs(stored_state = list(date_from = as.character(LUNES + 13L), date_to = as.character(LUNES), grouping = "x"))
+    session$setInputs(stored_state = list(cliente = "cliente_a", estado = list(
+                                          date_from = as.character(LUNES + 13L), date_to = as.character(LUNES), grouping = "x")))
     expect_identical(list(rv$date_from, rv$grouping), list(LUNES + 7L, "weekly"))
   })
 })
@@ -326,6 +331,48 @@ test_that("Día 0 is one client's: A's never reaches B (staff switching clients 
     expect_identical(r$day0(), list())
     session$setInputs(`tabla-ediciones` = list(ids = list("acum|MXN"), valores = list(9), nonce = 3))
     expect_false(any(grepl("hopdesk_cf_dia0", js()[-seq_len(n)], fixed = TRUE)))
+  })
+})
+# T27: the preview's state (range, grouping, currency mode, base, FX rates)
+# was kept under one key for every client ("hopdesk_cf_preview_state"), and
+# switching client kept A's state in the session, saved right away as B's.
+estado <- function(cliente, ...) list(cliente = cliente, estado = list(saved_date = "x", ...))
+test_that("T27: the preview's state is one client's: A's FX rates never reach B", {
+  con_runjs()
+  modulo(function(session, input, output, sh, rv) {
+    js <- con_js(session)
+    # Opening reads A's key only, and removes the old shared one.
+    sh$cf_preview_open(FALSE); session$flushReact(); sh$cf_preview_open(TRUE); session$flushReact()
+    expect_true(any(grepl("localStorage.removeItem('hopdesk_cf_preview_state')", js(), fixed = TRUE)))
+    expect_true(any(grepl("localStorage.getItem(\"hopdesk_cf_preview_state:cliente_a\")", js(), fixed = TRUE)))
+    expect_false(any(grepl("getItem('hopdesk_cf_preview_state')", js(), fixed = TRUE)))
+    # A's answer (nothing saved today), then A sets a rate: saved under A's key.
+    session$setInputs(stored_state = list(cliente = "cliente_a", estado = NULL))
+    session$setInputs(btn_curmode = 1, fx_rate_usd_blur = 19.5); session$elapse(1000)
+    expect_true(any(grepl("setItem(\"hopdesk_cf_preview_state:cliente_a\",JSON.stringify({", js(), fixed = TRUE) &
+                      grepl("\"USD\":19.5", js(), fixed = TRUE)))
+    expect_false(any(grepl("setItem('hopdesk_cf_preview_state'", js(), fixed = TRUE)))
+    # A changes the rate and switches to B before the save (800 ms) fires.
+    session$setInputs(fx_rate_usd_blur = 20)
+    sh$effective_client_id("cliente_b"); session$flushReact(); session$elapse(1000)
+    expect_identical(list(rv$grouping, rv$currency_mode, rv$base_cur, length(rv$fx_rates)), list("auto", "separate", "MXN", 0L))
+    expect_true(any(grepl("localStorage.getItem(\"hopdesk_cf_preview_state:cliente_b\")", js(), fixed = TRUE)))
+    expect_false(any(grepl("hopdesk_cf_preview_state:cliente_b\",JSON", js(), fixed = TRUE)))   # nothing saved as B's
+    expect_false(any(grepl("setItem", js(), fixed = TRUE) & grepl("\"USD\":20", js(), fixed = TRUE)))   # the pending save is dropped
+    # A's answer arriving now is dropped; B's own is taken.
+    session$setInputs(stored_state = estado("cliente_a", currency_mode = "fused", base_cur = "MXN", fx_rates = list(USD = 19.5)))
+    expect_identical(list(rv$currency_mode, length(rv$fx_rates)), list("separate", 0L))
+    session$setInputs(stored_state = estado("cliente_b", currency_mode = "fused", base_cur = "MXN", fx_rates = list(USD = 17)))
+    expect_identical(list(rv$currency_mode, rv$fx_rates[["USD"]]), list("fused", 17))
+    # What B changes is saved under B's key, never with A's rate.
+    session$setInputs(fx_rate_usd_blur = 17.5); session$elapse(1000)
+    b <- js()[grepl("setItem(\"hopdesk_cf_preview_state:cliente_b\"", js(), fixed = TRUE)]
+    expect_true(length(b) >= 1L && any(grepl("\"USD\":17.5", b, fixed = TRUE)) && !any(grepl("19.5", b, fixed = TRUE)))
+    # No client: nothing is read or kept.
+    n <- length(js())
+    sh$effective_client_id(NULL); session$flushReact()
+    session$setInputs(btn_grouping = 1); session$elapse(1000)
+    expect_false(any(grepl("hopdesk_cf_preview_state:", js()[-seq_len(n)], fixed = TRUE)))
   })
 })
 test_that("contraprueba: the step-3 storage (one key for every client) is refused", {
