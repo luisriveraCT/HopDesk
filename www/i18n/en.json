@@ -732,6 +732,7 @@
   "tablas.pasivos.vacio_lista": "No active or paused liabilities.",
   "tablas.pasivos.vacio_papelera": "The liabilities trash is empty.",
   "tablas.pasivos.sin_permiso": "You don't have permission for this.",
+  "tablas.pasivos.tasa_no_guardada": "The liability was saved, but today's rate could not be recorded in Forecasting: {error}",
   "tablas.pasivos.amort.periodo": "#",
   "tablas.pasivos.amort.fecha": "Date",
   "tablas.pasivos.amort.capital": "Principal",

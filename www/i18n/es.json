@@ -732,6 +732,7 @@
   "tablas.pasivos.vacio_lista": "No hay pasivos activos ni pausados.",
   "tablas.pasivos.vacio_papelera": "La papelera de pasivos está vacía.",
   "tablas.pasivos.sin_permiso": "No tienes permiso para esto.",
+  "tablas.pasivos.tasa_no_guardada": "El pasivo se guardó, pero la tasa del día no se pudo registrar en Pronósticos: {error}",
   "tablas.pasivos.amort.periodo": "#",
   "tablas.pasivos.amort.fecha": "Fecha",
   "tablas.pasivos.amort.capital": "Capital",

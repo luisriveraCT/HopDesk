@@ -199,6 +199,23 @@ save_pasivos_estimates <- function(df, client_id = NULL) {
   invisible(TRUE)
 }
 
+# Changes the estimates on S3 as they are now (T26), like
+# modificar_pasivos_liabilities(): a strict read (a read that fails stop()s,
+# never an empty table), `cambio(fresco)` applied to it, and a write only if
+# something changed. Returns the table now on S3. The estimates feed Pasivos'
+# amounts: their writers used to read with error -> empty schema and save the
+# whole table, so a failed read saved just the new row over every other
+# metric's estimate.
+modificar_pasivos_estimates <- function(client_id, cambio) {
+  if (is.null(client_id) || !nzchar(client_id))
+    stop("modificar_pasivos_estimates: sin client_id", call. = FALSE)
+  fresco <- .normalize(.s3_leer_para_escribir(S3_KEYS$pasivos_estimates, client_id), .schema_pasivos_estimates)
+  nuevo  <- cambio(fresco)
+  if (identical(nuevo, fresco)) return(invisible(fresco))
+  save_pasivos_estimates(nuevo, client_id = client_id)
+  invisible(nuevo)
+}
+
 # ── pasivos_card_expenses ─────────────────────────────────────────────────────
 
 load_pasivos_card_expenses <- function(client_id = NULL) {

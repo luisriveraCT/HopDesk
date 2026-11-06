@@ -288,7 +288,11 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
         forecasting_set_estimate(fc_metric, Sys.Date(), liab_row$tasa_actual,
                                  source_method = "wizard_save", user = user,
                                  client_id = shared$effective_client_id()),
-        error = function(e) warning("[wizard] forecasting_set_estimate failed: ", conditionMessage(e))
+        # A failed read now saves nothing (T26): say so, not only in the log.
+        error = function(e) {
+          warning("[wizard] forecasting_set_estimate failed: ", conditionMessage(e))
+          showNotification(tr("tablas.pasivos.tasa_no_guardada", error = conditionMessage(e)), type = "warning")
+        }
       )
   }
 

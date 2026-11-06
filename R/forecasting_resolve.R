@@ -160,21 +160,19 @@ forecasting_set_estimate <- function(metric, fecha, value,
     ]
     updated <- dplyr::bind_rows(existing, obs)
     save_forecasting_series_observations(updated, client_id = client_id)
-    # Also maintain old pasivos_estimates store for Stage 0-5 backward compat
-    old_est <- tryCatch(load_pasivos_estimates(client_id = client_id), error = function(e) .schema_pasivos_estimates())
-    idx <- which(old_est$metric == metric & !is.na(old_est$fecha) & old_est$fecha == as.Date(fecha))
+    # Also maintain old pasivos_estimates store for Stage 0-5 backward compat,
+    # on S3's estimates as they are now (T26): a failed read saves nothing.
     new_row <- tibble::tibble(
       metric = as.character(metric), fecha = as.Date(fecha),
       value = as.numeric(value), source_method = as.character(source_method),
       is_frozen = isTRUE(is_frozen), updated_by = as.character(user),
       updated_at = Sys.time()
     )
-    if (length(idx)) {
-      old_est[idx[1], ] <- new_row
-    } else {
-      old_est <- dplyr::bind_rows(old_est, new_row)
-    }
-    save_pasivos_estimates(old_est, client_id = client_id)
+    modificar_pasivos_estimates(client_id, function(old_est) {
+      idx <- which(old_est$metric == metric & !is.na(old_est$fecha) & old_est$fecha == as.Date(fecha))
+      if (length(idx)) { old_est[idx[1], ] <- new_row; old_est }
+      else dplyr::bind_rows(old_est, new_row)
+    })
     tryCatch(
       log_action(
         user        = user, module = "forecasting",
@@ -203,9 +201,10 @@ forecasting_freeze_metric <- function(metric, value, user = "system", client_id 
 
 forecasting_unfreeze_metric <- function(metric, user = "system", client_id = NULL) {
   tryCatch({
-    current <- load_pasivos_estimates(client_id = client_id)
-    current$is_frozen[current$metric == metric] <- FALSE
-    save_pasivos_estimates(current, client_id = client_id)
+    modificar_pasivos_estimates(client_id, function(current) {   # on S3's estimates as they are now (T26)
+      current$is_frozen[current$metric == metric] <- FALSE
+      current
+    })
     tryCatch(
       log_action(
         user        = user, module = "forecasting", action = "descongelar_metrica",

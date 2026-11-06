@@ -56,11 +56,6 @@ forecasting_set_estimate <- function(metric, fecha, value,
                                       user          = "system",
                                       client_id     = NULL) {
   fecha   <- as.Date(fecha)
-  current <- tryCatch(load_pasivos_estimates(client_id = client_id), error = function(e) .schema_pasivos_estimates())
-
-  existing_idx <- which(current$metric == metric & !is.na(current$fecha) &
-                          current$fecha == fecha)
-
   new_row <- tibble::tibble(
     metric        = as.character(metric),
     fecha         = fecha,
@@ -70,19 +65,23 @@ forecasting_set_estimate <- function(metric, fecha, value,
     updated_by    = as.character(user),
     updated_at    = Sys.time()
   )
+  before_est <- NULL
 
-  # Snapshot before overwrite -- previously only `after` was logged, so
-  # overwriting an existing estimate had no recorded "changed from" value.
-  before_est <- if (length(existing_idx)) as.list(current[existing_idx[1], ]) else NULL
-
-  if (length(existing_idx)) {
-    current[existing_idx[1], ] <- new_row
-    updated <- current
-  } else {
-    updated <- dplyr::bind_rows(current, new_row)
-  }
-
-  save_pasivos_estimates(updated, client_id = client_id)
+  # On S3's estimates as they are now (T26): a failed read stop()s and
+  # nothing is saved -- it used to save just this row over every other one.
+  modificar_pasivos_estimates(client_id, function(current) {
+    existing_idx <- which(current$metric == metric & !is.na(current$fecha) &
+                            current$fecha == fecha)
+    # Snapshot before overwrite -- previously only `after` was logged, so
+    # overwriting an existing estimate had no recorded "changed from" value.
+    before_est <<- if (length(existing_idx)) as.list(current[existing_idx[1], ]) else NULL
+    if (length(existing_idx)) {
+      current[existing_idx[1], ] <- new_row
+      current
+    } else {
+      dplyr::bind_rows(current, new_row)
+    }
+  })
 
   pasivos_log_audit(
     action_type = "estimate.changed",
@@ -104,11 +103,6 @@ forecasting_set_estimate <- function(metric, fecha, value,
 # @param value   numeric
 # @param user    character
 forecasting_freeze_metric <- function(metric, value, user = "system", client_id = NULL) {
-  current <- tryCatch(load_pasivos_estimates(client_id = client_id), error = function(e) .schema_pasivos_estimates())
-
-  # Unfreeze any existing rows for this metric, then insert a synthetic frozen row.
-  current$is_frozen[current$metric == metric] <- FALSE
-
   frozen_row <- tibble::tibble(
     metric        = as.character(metric),
     fecha         = Sys.Date(),
@@ -118,8 +112,12 @@ forecasting_freeze_metric <- function(metric, value, user = "system", client_id 
     updated_by    = as.character(user),
     updated_at    = Sys.time()
   )
-  updated <- dplyr::bind_rows(current, frozen_row)
-  save_pasivos_estimates(updated, client_id = client_id)
+  # On S3's estimates as they are now (T26): unfreeze this metric's rows,
+  # then add the synthetic frozen row.
+  modificar_pasivos_estimates(client_id, function(current) {
+    current$is_frozen[current$metric == metric] <- FALSE
+    dplyr::bind_rows(current, frozen_row)
+  })
 
   pasivos_log_audit(
     action_type = "estimate.frozen",
@@ -137,10 +135,12 @@ forecasting_freeze_metric <- function(metric, value, user = "system", client_id 
 # @param metric  character
 # @param user    character
 forecasting_unfreeze_metric <- function(metric, user = "system", client_id = NULL) {
-  current <- tryCatch(load_pasivos_estimates(client_id = client_id), error = function(e) .schema_pasivos_estimates())
-
-  current$is_frozen[current$metric == metric] <- FALSE
-  save_pasivos_estimates(current, client_id = client_id)
+  # On S3's estimates as they are now (T26): a failed read saves nothing --
+  # it used to save an empty table.
+  modificar_pasivos_estimates(client_id, function(current) {
+    current$is_frozen[current$metric == metric] <- FALSE
+    current
+  })
 
   pasivos_log_audit(
     action_type = "estimate.unfrozen",
