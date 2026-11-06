@@ -134,6 +134,12 @@ clic(sprintf("document.querySelector('#%s .hdt-editar')", AP))
 clic(sprintf("document.querySelector('#%s .hdt-acciones button[data-accion=crudos]')", AP))
 ok("H1: Editar -> Ver datos de origen shows the raw SAP rows of the marked payment only (1 of 4: not 4002, not 4999, not the other company's 4001)",
    poll_until(function() grepl("Datos SAP crudos — 1 filas", modal(), fixed = TRUE), timeout_s = 10))
+SAP <- "ph-datos_sap_t-hdt"
+ok("H1b: the viewer is the engine's table (datos_sap): one row, the raw amount as a number (15,000, no $), Excel",
+   poll_until(function() isTRUE(ev(sprintf("!!document.querySelector('.modal.show #%s') && !!HDT.estado('%s')", SAP, SAP))), timeout_s = 10) &&
+     length(vis(SAP)) == 1L && grepl("15,000", ev(sprintf("document.getElementById('%s').innerText", SAP)), fixed = TRUE) &&
+     !grepl("$15,000", ev(sprintf("document.getElementById('%s').innerText", SAP)), fixed = TRUE) &&
+     isTRUE(ev(sprintf("!!document.querySelector('#%s .hdt-excel, #%s [data-accion=excel]')", SAP, SAP))))
 cerrar_modal()
 clic(sprintf("document.querySelector('#%s .hdt-editar')", AP))
 clic(celda(AP, "P1", 1L))
@@ -224,6 +230,17 @@ poll_until(function() !isTRUE(ev("!!document.querySelector('.modal.show, .modal-
 clic("document.getElementById('ph-preview_all')")
 ok("J5: the .zip preview (every company) gives each company's 4001 its own Factura",
    poll_until(function() grepl("F-OTRA", modal(), fixed = TRUE), timeout_s = 10))
+DZ <- "ph-descargar_t-hdt"
+fila_txt <- function(id) ev(sprintf("HDT.fila('%s', '%s').textContent", DZ, id))
+# (P1-P4 were confirmed above: P5, P6 and Q1 are left.)
+ok("J6: the preview is the engine's table; what the ZIP leaves out says why (BODEGAS USD: sin CLABE)",
+   poll_until(function() isTRUE(ev(sprintf("!!HDT.estado('%s')", DZ))), timeout_s = 10) &&
+     identical(vis(DZ), c("P5", "P6", "Q1")) &&
+     grepl("Se omite: sin CLABE", fila_txt("P6"), fixed = TRUE) && !grepl("Se omite", fila_txt("P5"), fixed = TRUE))
+entran <- sum(!vapply(vis(DZ), function(id) grepl("Se omite", fila_txt(id), fixed = TRUE), logical(1)))
+ok(sprintf("J7: the button counts only what goes in the ZIP (%d of %d)", entran, length(vis(DZ))),
+   entran < length(vis(DZ)) &&
+     grepl(sprintf("Descargar ZIP (%d pagos)", entran), ev("document.getElementById('ph-download_all').textContent"), fixed = TRUE))
 if (nzchar(modal())) cerrar_modal()
 
 # ══ G · 850 payments ═════════════════════════════════════════════════════════
