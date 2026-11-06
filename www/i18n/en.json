@@ -799,5 +799,17 @@
   "tablas.abono.error": "Something went wrong sending the partial payments to the agenda. Try again; if it keeps happening, tell support.",
   "tablas.pasivos.no_guardado": "The change was not saved: S3 could not be read or written. The liability is as it was; try again in a moment.",
   "tablas.pasivos.provisiones_no_quitadas": "The liability is paused, but its future provisions could not be removed (S3 failed). Resume it and pause it again in a moment.",
-  "tablas.pasivos.provisiones_no_guardadas": "The liability was saved, but its provisions were not (S3 failed). Open it with ✎ and save it again in a moment to generate them."
+  "tablas.pasivos.provisiones_no_guardadas": "The liability was saved, but its provisions were not (S3 failed). Open it with ✎ and save it again in a moment to generate them.",
+  "tablas.pasivos.hay_errores": "There are errors. Check the highlighted fields.",
+  "tablas.pasivos.error_construir": "Error building the liability: {detalle}",
+  "tablas.pasivos.sin_filas_generadas": "No rows generated (check the console)",
+  "tablas.pasivos.error_generar": "Liability saved. Error generating provisions: {detalle}",
+  "tablas.pasivos.guardado_conflictos": "Liability saved. {n} provisions need your confirmation.",
+  "tablas.pasivos.guardado_generadas": "Liability saved. {n} provisions generated.",
+  "tablas.pasivos.sin_permiso_crear": "You don't have permission to create liabilities.",
+  "tablas.pasivos.sin_permiso_editar": "You don't have permission to edit liabilities.",
+  "tablas.pasivos.no_encontrado": "Liability not found.",
+  "tablas.pasivos.error_inesperado": "Unexpected error while saving: {detalle}",
+  "tablas.pasivos.pausado_ok": "Liability paused. Future provisions removed.",
+  "tablas.pasivos.reanudado_ok": "Liability resumed. Use '+ Add liability' or the pencil to regenerate provisions."
 }

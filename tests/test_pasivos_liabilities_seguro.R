@@ -271,6 +271,27 @@ ok(isTRUE(fila_s3("L1")$amount_default == 120) && identical(isolate(sh$pasivos_p
 ok(any(vapply(avisos, function(v) identical(v$texto, tr("tablas.pasivos.provisiones_no_guardadas")) && identical(v$tipo, "error"), logical(1))) &&
      !any(vapply(avisos, function(v) grepl("provisiones generadas", v$texto), logical(1))),
    "C6: it says the provisions were not saved, never \"N provisiones generadas\"")
+# ── D: the notices come from the dictionary (es and en) ───────────────────────
+dijo <- function(clave, ...) any(vapply(avisos, function(v) identical(v$texto, tr(clave, ...)), logical(1)))
+sembrar_todo(LIABS_B); sh <- sesion(LIABS_B)
+correr(function() pasivos_cambiar_pausa(sh, "L1", "beto", "paused"))
+ok(dijo("tablas.pasivos.pausado_ok"), "D1: pausing says tablas.pasivos.pausado_ok")
+avisos <- list(); correr(function() pasivos_cambiar_pausa(sh, "L1", "beto", "active"))
+ok(dijo("tablas.pasivos.reanudado_ok"), "D1: resuming says tablas.pasivos.reanudado_ok")
+sembrar_todo(LIABS_B); sh <- sesion_wiz(); asistente(sh)
+ok(any(vapply(avisos, function(v) grepl("^Pasivo guardado\\. [0-9]+ provisiones generadas\\.$", v$texto), logical(1))) &&
+     !dijo("tablas.pasivos.guardado_generadas", n = -1),
+   "D2: the wizard says tablas.pasivos.guardado_generadas with its count")
+claves_d <- c("hay_errores", "error_construir", "sin_filas_generadas", "error_generar", "guardado_conflictos",
+              "guardado_generadas", "sin_permiso_crear", "sin_permiso_editar", "no_encontrado", "error_inesperado",
+              "pausado_ok", "reanudado_ok", "no_guardado", "provisiones_no_quitadas", "provisiones_no_guardadas")
+es <- jsonlite::fromJSON("www/i18n/es.json"); en <- jsonlite::fromJSON("www/i18n/en.json")
+k <- paste0("tablas.pasivos.", claves_d)
+ok(all(k %in% names(es)) && all(k %in% names(en)) && !any(unlist(es[k]) == unlist(en[k])),
+   "D3: every T22 key is in es and en, translated")
+codigo <- c(readLines("R/pasivos_wizard_module.R", encoding = "UTF-8"), readLines("R/pasivos_list_module.R", encoding = "UTF-8"))
+ok(!any(grepl('showNotification\\(\\s*"', codigo)) && !any(grepl('msg = (paste0\\()?"', codigo)),
+   "D4: no notice or error message written by hand in the wizard and the Lista")
 untrace("showNotification", where = asNamespace("shiny"))
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))

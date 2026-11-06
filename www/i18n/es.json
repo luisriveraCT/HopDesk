@@ -799,5 +799,17 @@
   "tablas.abono.error": "Ocurrió un error al enviar los abonos a Agenda. Intenta de nuevo; si persiste, avisa a soporte.",
   "tablas.pasivos.no_guardado": "No se guardó el cambio: no se pudo leer o escribir en S3. El pasivo sigue como estaba; intenta de nuevo en un momento.",
   "tablas.pasivos.provisiones_no_quitadas": "El pasivo quedó pausado, pero sus provisiones futuras no se pudieron quitar (falló S3). Reanúdalo y vuelve a pausarlo en un momento.",
-  "tablas.pasivos.provisiones_no_guardadas": "El pasivo se guardó, pero sus provisiones no (falló S3). Ábrelo con ✎ y guárdalo de nuevo en un momento para generarlas."
+  "tablas.pasivos.provisiones_no_guardadas": "El pasivo se guardó, pero sus provisiones no (falló S3). Ábrelo con ✎ y guárdalo de nuevo en un momento para generarlas.",
+  "tablas.pasivos.hay_errores": "Hay errores. Revisa los campos resaltados.",
+  "tablas.pasivos.error_construir": "Error al construir el pasivo: {detalle}",
+  "tablas.pasivos.sin_filas_generadas": "Sin filas generadas (revisa consola)",
+  "tablas.pasivos.error_generar": "Pasivo guardado. Error generando provisiones: {detalle}",
+  "tablas.pasivos.guardado_conflictos": "Pasivo guardado. {n} provisiones requieren tu confirmación.",
+  "tablas.pasivos.guardado_generadas": "Pasivo guardado. {n} provisiones generadas.",
+  "tablas.pasivos.sin_permiso_crear": "Sin permiso para crear pasivos.",
+  "tablas.pasivos.sin_permiso_editar": "Sin permiso para editar pasivos.",
+  "tablas.pasivos.no_encontrado": "Pasivo no encontrado.",
+  "tablas.pasivos.error_inesperado": "Error inesperado al guardar: {detalle}",
+  "tablas.pasivos.pausado_ok": "Pasivo pausado. Provisiones futuras eliminadas.",
+  "tablas.pasivos.reanudado_ok": "Pasivo reanudado. Usa '+ Agregar pasivo' o el lápiz para regenerar provisiones."
 }

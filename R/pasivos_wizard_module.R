@@ -231,7 +231,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
   validation <- pasivos_wizard_validate_final(wiz$draft, empresa_choices)
   if (!validation$ok) {
     wiz$validation_errors <- validation$errors
-    return(list(ok = FALSE, msg = "Hay errores. Revisa los campos resaltados."))
+    return(list(ok = FALSE, msg = tr("tablas.pasivos.hay_errores")))
   }
 
   # The liability is saved on S3's table as it is now (T22): the row the edit
@@ -274,7 +274,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
     return(list(ok = FALSE, msg = tr("tablas.pasivos.no_editar_borrado")))
   }
   if (inherits(motivo, "error"))
-    return(list(ok = FALSE, msg = paste0("Error al construir el pasivo: ", conditionMessage(motivo))))
+    return(list(ok = FALSE, msg = tr("tablas.pasivos.error_construir", detalle = conditionMessage(motivo))))
   shared$pasivos_liabilities_db(liabs)
   bump_sync_version("pasivos_liabilities_db", client_id = cid)
 
@@ -332,9 +332,9 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
     }
   )
   if (!nrow(generated)) {
-    err_detail <- if (length(gen_err)) gen_err else "Sin filas generadas (revisa consola)"
+    err_detail <- if (length(gen_err)) gen_err else tr("tablas.pasivos.sin_filas_generadas")
     shiny::showNotification(
-      paste0("Pasivo guardado. Error generando provisiones: ", err_detail),
+      tr("tablas.pasivos.error_generar", detalle = err_detail),
       type = "error", duration = 15
     )
     return(list(ok = TRUE))
@@ -424,7 +424,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
   n_ins <- nrow(result$insert) + nrow(result$update)
   if (nrow(conflicts)) {
     shiny::showNotification(
-      sprintf("Pasivo guardado. %d provisiones requieren tu confirmación.", nrow(conflicts)),
+      tr("tablas.pasivos.guardado_conflictos", n = nrow(conflicts)),
       type = "warning", duration = 5
     )
     pasivos_edit_confirm_open(
@@ -436,7 +436,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
     )
   } else {
     shiny::showNotification(
-      sprintf("Pasivo guardado. %d provisiones generadas.", n_ins),
+      tr("tablas.pasivos.guardado_generadas", n = n_ins),
       type = "message", duration = 3
     )
   }
@@ -994,7 +994,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
   shiny::observeEvent(input$pasivos_add_liability, ignoreInit = TRUE, {
     user <- tryCatch(shared$current_user(), error = function(e) "")
     if (!has_capability(user, "pasivos.create_liability")) {
-      shiny::showNotification("Sin permiso para crear pasivos.", type = "error"); return()
+      shiny::showNotification(tr("tablas.pasivos.sin_permiso_crear"), type = "error"); return()
     }
     wiz$mode             <- "create"
     wiz$step_id          <- "categoria"
@@ -1015,13 +1015,13 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     if (!nzchar(lid)) return()
     user <- tryCatch(shared$current_user(), error = function(e) "")
     if (!has_capability(user, "pasivos.edit_liability")) {
-      shiny::showNotification("Sin permiso para editar pasivos.", type = "error"); return()
+      shiny::showNotification(tr("tablas.pasivos.sin_permiso_editar"), type = "error"); return()
     }
     liabs <- tryCatch(shared$pasivos_liabilities_db(),
                       error = function(e) .schema_pasivos_liability())
     row <- liabs[liabs$id == lid, , drop = FALSE]
     if (!nrow(row)) {
-      shiny::showNotification("Pasivo no encontrado.", type = "error"); return()
+      shiny::showNotification(tr("tablas.pasivos.no_encontrado"), type = "error"); return()
     }
     if (identical(row$estado[1], "deleted")) {
       shiny::showNotification(tr("tablas.pasivos.no_editar_borrado"), type = "error"); return()
@@ -1443,7 +1443,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
       .pasivos_wizard_save(wiz, shared, session, user),
       error = function(e) {
         message("[wizard] unhandled error in save: ", conditionMessage(e))
-        list(ok = FALSE, msg = paste0("Error inesperado al guardar: ", conditionMessage(e)))
+        list(ok = FALSE, msg = tr("tablas.pasivos.error_inesperado", detalle = conditionMessage(e)))
       }
     )
     if (!res$ok) {

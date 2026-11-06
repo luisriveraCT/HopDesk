@@ -393,11 +393,11 @@ pasivos_cambiar_pausa <- function(shared, lid, user, new_estado) {
             }
           }
         }
-        shiny::showNotification("Pasivo pausado. Provisiones futuras eliminadas.",
+        shiny::showNotification(tr("tablas.pasivos.pausado_ok"),
                                 type = "message", duration = 3)
       } else {
         shiny::showNotification(
-          "Pasivo reanudado. Usa '+ Agregar pasivo' o el lápiz para regenerar provisiones.",
+          tr("tablas.pasivos.reanudado_ok"),
           type = "message", duration = 5)
       }
 
