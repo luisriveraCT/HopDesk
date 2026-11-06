@@ -152,7 +152,11 @@ provisiones_pagadas <- function(provs, prov_ids) {
 # for an id this client does not have. "pagada" comes ONLY from a live
 # bancos_confirmados row carrying the provision_id -- never from `estado`,
 # which has drifted from the payment before. Pure core + a fresh-read wrapper.
-etapa_de_provision_en <- function(provs, conf, provision_id) {
+# liabs (optional, the liabilities table): since T18 a deleted liability
+# keeps its provisional provisions, hidden with it -- a payment nobody will
+# make, so each of those is "borrada", not "provisionada". One already
+# converted or paid keeps its stage (its item or payment exists).
+etapa_de_provision_en <- function(provs, conf, provision_id, liabs = NULL) {
   provision_id <- as.character(provision_id)
   vivas  <- confirmaciones_vigentes(conf)
   pagado <- if (!is.null(vivas) && nrow(vivas) && "provision_id" %in% names(vivas))
@@ -165,6 +169,11 @@ etapa_de_provision_en <- function(provs, conf, provision_id) {
             ifelse(estado %in% "provisional", "provisionada", NA_character_))))
   # A closed provision with no live payment was cancelled, not paid.
   etapa[estado %in% "closed" & !(provision_id %in% pagado)] <- "borrada"
+  if (is.data.frame(liabs) && nrow(liabs) && all(c("id", "estado") %in% names(liabs)) &&
+      "liability_id" %in% names(provs)) {
+    borrados <- liabs$id[liabs$estado %in% "deleted"]
+    etapa[provs$liability_id[idx] %in% borrados & etapa %in% "provisionada"] <- "borrada"
+  }
   etapa[is.na(idx)] <- NA_character_
   unname(etapa)
 }
@@ -173,7 +182,8 @@ etapa_de_provision <- function(client_id, provision_id) {
   if (is.null(client_id) || !nzchar(client_id)) stop("etapa_de_provision: sin client_id")
   etapa_de_provision_en(load_pasivos_provisions(client_id = client_id),
                         load_bancos_confirmados(client_id = client_id),
-                        provision_id)
+                        provision_id,
+                        liabs = load_pasivos_liabilities(client_id = client_id))
 }
 
 # ── pasivos_modifiers ─────────────────────────────────────────────────────────

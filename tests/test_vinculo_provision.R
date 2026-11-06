@@ -109,6 +109,18 @@ test_that("etapa: pagada solo con una confirmación vigente", {
   expect_error(etapa_de_provision(NULL, "p1"), "client_id")
 })
 
+test_that("etapa: la provisión de un pasivo borrado (T18) es borrada, salvo convertida o pagada", {
+  pv <- tibble(id = c("q1", "q2", "q3", "q4", "q5"), liability_id = c("L-borrado", "L-borrado", "L-borrado", "L-vivo", NA),
+               estado = c("provisional", "converted", "item_confirmed", "provisional", "provisional"))
+  lb <- tibble(id = c("L-borrado", "L-vivo"), estado = c("deleted", "active"))
+  cf <- .normalize(tibble(confirmacion_id = "a", provision_id = "q3", eliminado = FALSE, action = "confirmed"),
+                   .schema_bancos_confirmados)
+  expect_equal(etapa_de_provision_en(pv, cf, c("q1", "q2", "q3", "q4", "q5"), liabs = lb),
+               c("borrada", "en_pago", "pagada", "provisionada", "provisionada"))
+  # without the liabilities table it answers as before
+  expect_equal(etapa_de_provision_en(pv, cf, "q1"), "provisionada")
+})
+
 test_that("deshacer la confirmación regresa la provisión a convertida", {
   .mem <- new.env()
   .s3_key       <<- function(key, client_id = NULL) paste0(client_id, "/", key)
