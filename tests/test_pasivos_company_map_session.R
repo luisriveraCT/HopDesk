@@ -20,6 +20,9 @@ ok <- function(label, expr) {
 
 # Extract the real save handler (no S3, no app) and stop it at validation.
 env <- new.env()
+# Its notices are tr() texts since T22: the dictionary, in the same environment.
+sys.source("R/i18n.R", envir = env)
+env$.i18n_dir <- file.path(getwd(), "www", "i18n")
 for (e in parse("R/pasivos_wizard_module.R"))
   if (is.call(e) && identical(e[[1]], as.name("<-")) &&
       identical(as.character(e[[2]]), ".pasivos_wizard_save"))
