@@ -172,7 +172,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     nombre <- trimws(input$banco_nombre %||% "")
     clave  <- trimws(input$banco_clave  %||% "")
     if (!nzchar(nombre)) {
-      showNotification("El nombre del banco es obligatorio.", type = "warning"); return()
+      showNotification(tr("tablas.ajustes.bancos.falta_nombre"), type = "warning"); return()
     }
     new_row <- tibble::tibble(
       id = if (is.null(eid)) uuid::UUIDgenerate() else eid,
@@ -189,7 +189,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     if (!guardado) { showNotification(tr("comun.error_guardar"), type = "error"); return() }
     editing_banco_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
-    showNotification(if (is.null(eid)) "Banco agregado." else "Banco actualizado.",
+    showNotification(tr(if (is.null(eid)) "tablas.ajustes.bancos.agregado" else "tablas.ajustes.bancos.actualizado"),
                      type = "message", duration = 2)
     log_action(
       user        = tryCatch(shared$current_user(), error = function(e) "system"),
@@ -221,7 +221,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     }
     editing_banco_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
-    showNotification("Banco eliminado.", type = "message", duration = 2)
+    showNotification(tr("tablas.ajustes.bancos.eliminado"), type = "message", duration = 2)
     log_action(
       user        = tryCatch(shared$current_user(), error = function(e) "system"),
       module      = "settings_cuentas",
@@ -277,10 +277,10 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     moneda_val  <- input$cta_moneda  %||% "MXN"
 
     if (!nzchar(empresa_val)) {
-      showNotification("Selecciona una empresa.", type = "warning"); return()
+      showNotification(tr("tablas.ajustes.cuentas.falta_empresa"), type = "warning"); return()
     }
     if (!nzchar(cuenta_val)) {
-      showNotification("El n\u00famero de cuenta es obligatorio.", type = "warning"); return()
+      showNotification(tr("tablas.ajustes.cuentas.falta_cuenta"), type = "warning"); return()
     }
 
     is_default <- isTRUE(input$cta_is_ppl_default)
@@ -323,7 +323,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     editing_cuenta_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
     showNotification(
-      if (is.null(eid)) "Cuenta agregada." else "Cuenta actualizada.",
+      tr(if (is.null(eid)) "tablas.ajustes.cuentas.agregada" else "tablas.ajustes.cuentas.actualizada"),
       type = "message", duration = 2)
     log_action(
       user        = tryCatch(shared$current_user(), error = function(e) "system"),
@@ -353,7 +353,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas(updated)
     editing_cuenta_id(NULL)
     output$cuentas_edit_form <- renderUI({ .cuentas_form_empty() })
-    showNotification("Cuenta desactivada.", type = "message", duration = 2)
+    showNotification(tr("tablas.ajustes.cuentas.desactivada"), type = "message", duration = 2)
     log_action(
       user        = tryCatch(shared$current_user(), error = function(e) "system"),
       module      = "settings_cuentas",

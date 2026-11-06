@@ -408,10 +408,10 @@ settings_observers <- function(input, output, session, shared) {
                          class = "btn btn-primary btn-sm"),
             tags$span(class = "text-muted", "|"),
             actionButton("scan_ic_btn",
-                         tagList(icon("magnifying-glass"), " Esc\u00e1ner SAP"),
+                         tagList(icon("magnifying-glass"), " ", tr("tablas.ajustes.escaner.boton")),
                          class = "btn btn-outline-secondary btn-sm"),
             tags$span(class = "text-muted small",
-                      "Detecta c\u00f3digos IC desde las facturas cargadas en memoria.")
+                      tr("tablas.ajustes.escaner.boton_ayuda"))
           )
       )
     })
@@ -615,7 +615,7 @@ settings_observers <- function(input, output, session, shared) {
     sap_ap <- snaps$AP
 
     if (is.null(sap_ar) && is.null(sap_ap)) {
-      showNotification("No hay datos SAP disponibles. Refresca los datos primero.",
+      showNotification(tr("tablas.ajustes.sap.sin_datos"),
                        type = "warning")
       return()
     }
@@ -623,7 +623,7 @@ settings_observers <- function(input, output, session, shared) {
     candidates <- scan_ic_candidates(sap_ar, sap_ap, shared$interco_v2(), shared$company_map())
 
     if (!nrow(candidates)) {
-      showNotification("No se encontraron c\u00f3digos en las facturas cargadas.",
+      showNotification(tr("tablas.ajustes.sap.sin_codigos"),
                        type = "warning")
       return()
     }
@@ -633,7 +633,7 @@ settings_observers <- function(input, output, session, shared) {
 
     showModal(modalDialog(
       title     = tagList(icon("magnifying-glass"),
-                          " Escáner IC — facturas en memoria"),
+                          " ", tr("tablas.ajustes.escaner.titulo")),
       size      = "xl",
       easyClose = FALSE,
       p(class = "text-muted small mb-2", tr("tablas.ajustes.candidatos.ayuda_escaner")),
@@ -641,10 +641,10 @@ settings_observers <- function(input, output, session, shared) {
       footer = tagList(
         if (puede(isolate(shared$usuario()), "can_manage_interco"))
           actionButton("ic_scan_apply",
-                       tagList(icon("check"), " Aplicar selección"),
+                       tagList(icon("check"), " ", tr("tablas.ajustes.escaner.aplicar")),
                        class = "btn btn-primary btn-sm"),
         tags$span(" "),
-        modalButton("Cancelar")
+        modalButton(tr("comun.cancelar"))
       )
     ))
   })
@@ -655,7 +655,7 @@ settings_observers <- function(input, output, session, shared) {
     removeModal()
 
     if (is.null(selected)) {
-      showNotification("No se seleccionaron códigos.", type = "warning")
+      showNotification(tr("tablas.ajustes.escaner.ninguno"), type = "warning")
       return()
     }
 
@@ -786,13 +786,13 @@ settings_observers <- function(input, output, session, shared) {
     sap_ar <- snaps$AR
     sap_ap <- snaps$AP
     if (is.null(sap_ar) && is.null(sap_ap)) {
-      showNotification("No hay snapshots SAP disponibles.", type = "warning")
+      showNotification(tr("tablas.ajustes.sap.sin_datos"), type = "warning")
       return()
     }
     cands <- scan_ic_candidates(sap_ar, sap_ap, isolate(shared$interco_v2()), isolate(shared$company_map()))
     bp_candidates(cands)
     output$settings_panel <- renderUI({ .bp_panel_ui(shared, bp_candidates()) })
-    showNotification("Tabla de Business Partners actualizada.", type = "message", duration = 3)
+    showNotification(tr("tablas.ajustes.bp.actualizada"), type = "message", duration = 3)
   })
 
   # Apply selected BP rows as IC codes
@@ -800,7 +800,7 @@ settings_observers <- function(input, output, session, shared) {
     if (!puede_o_avisa(shared, "can_manage_interco")) return()
     selected <- .candidatos_marcados(bp_candidates(), t_bp$seleccion())
     if (is.null(selected)) {
-      showNotification("Selecciona al menos un c\u00f3digo primero.", type = "warning")
+      showNotification(tr("tablas.ajustes.bp.ninguno"), type = "warning")
       return()
     }
 

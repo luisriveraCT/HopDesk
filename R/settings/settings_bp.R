@@ -14,18 +14,17 @@
     div(class = "bp-sap-seccion",
     div(class = "d-flex align-items-center gap-2 mb-2",
       tags$h6(class = "fw-semibold mb-0",
-              tagList(icon("building"), " Business Partners (SAP)")),
+              tagList(icon("building"), " ", tr("tablas.ajustes.bp.titulo"))),
       tags$span(class = "text-muted small",
-        "— C\u00f3digos \u00fanicos extra\u00eddos de los snapshots de facturas"),
+        tr("tablas.ajustes.bp.subtitulo")),
       div(class = "ms-auto",
-        actionButton("bp_refresh_btn", tagList(icon("rotate"), " Actualizar"),
+        actionButton("bp_refresh_btn", tagList(icon("rotate"), " ", tr("tablas.ajustes.bp.actualizar")),
                      class = "btn btn-sm btn-outline-secondary")
       )
     ),
     if (is.null(candidates) || !nrow(candidates)) {
       div(class = "alert alert-secondary small py-2 mb-3",
-          icon("circle-info"), " No hay datos SAP cargados. ",
-          "Haz clic en \u201cActualizar\u201d o carga facturas primero.")
+          icon("circle-info"), " ", tr("tablas.ajustes.bp.sin_datos"))
     } else {
       tagList(
         tags$p(class = "text-muted small mb-1", tr("tablas.ajustes.candidatos.ayuda_bp")),
@@ -33,7 +32,7 @@
         # Writes the IC registry: only with can_manage_interco (the server checks too).
         if (puede(tryCatch(isolate(shared$usuario()), error = function(e) NULL), "can_manage_interco"))
           actionButton("bp_apply_ic_btn",
-                       tagList(icon("arrows-left-right"), " Aplicar como IC"),
+                       tagList(icon("arrows-left-right"), " ", tr("tablas.ajustes.bp.aplicar")),
                        class = "btn btn-primary btn-sm mb-3")
       )
     },
