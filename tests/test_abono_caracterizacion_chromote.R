@@ -103,7 +103,13 @@ buscar    <- function(q) {
               e.dispatchEvent(new Event('input', {bubbles: true})); })()", T, jsonlite::toJSON(q, auto_unbox = TRUE)))
   Sys.sleep(0.4)
 }
-escribe_en <- function(doc, valor) { clic(celda(doc)); escribe(valor); tecla("Enter"); tecla("Escape") }
+# Enter keeps it and opens the next row's cell, which Esc leaves untouched;
+# on the last row Enter hands the focus back to the table, where Esc would
+# close the modal -- so Esc only while a cell is open.
+escribe_en <- function(doc, valor) {
+  clic(celda(doc)); escribe(valor); tecla("Enter")
+  if (!is.null(estado()$editando)) tecla("Escape")
+}
 enviar    <- function() clic("document.getElementById('ab_stage')")
 avisos    <- function(tipo) vapply(Filter(function(a) identical(a$tipo, tipo), eco()$avisos), `[[`, "", "texto")
 
