@@ -760,42 +760,10 @@ bancosServer <- function(id, shared) {
       }
     })
 
-    # ── One-time cleanup: soft-delete any fuente="agenda" ghost rows ─────────
-    # These were written by the old Confirmar pagos/cobros flow before the
-    # wire-cut. They are excluded from movs_active() already, but this makes
-    # the S3 file clean for any direct inspection or future data migration.
-    # Runs once per session; no-op if no ghost rows exist.
-    .agenda_cleanup_done <- FALSE
-    observe({
-      if (.agenda_cleanup_done) return()
-      movs <- shared$bancos_movimientos()
-      if (is.null(movs)) return()             # not loaded yet — wait
-      movs_base <- movs   # session copy before this change (CM09)
-      .agenda_cleanup_done <<- TRUE
-      isolate({
-        ghost_idx <- which(
-          !is.na(movs$fuente) &
-          movs$fuente == "agenda" &
-          !movs$eliminado
-        )
-        if (!length(ghost_idx)) {
-          message("[BANCOS] cleanup: no fuente='agenda' ghost rows found")
-          return()
-        }
-        message(sprintf("[BANCOS] cleanup: soft-deleting %d fuente='agenda' ghost row(s)",
-                        length(ghost_idx)))
-        movs$eliminado[ghost_idx]    <- TRUE
-        movs$eliminado_at[ghost_idx] <- Sys.time()
-        shared$bancos_movimientos(movs)
-        tryCatch({
-          save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base)
-          bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
-        }, error = function(e)
-          message("[BANCOS] cleanup save error: ", e$message)
-        )
-        message("[BANCOS] cleanup: done — ghost rows marked eliminado=TRUE in S3")
-      })
-    })
+    # A fuente="agenda" ghost row (written by the old Confirmar pagos/cobros
+    # flow before the wire-cut) is only left out of movs_active() below.
+    # Opening Bancos used to mark them eliminado and save the table: reading
+    # never writes (CM19). Nothing creates such rows any more.
 
     # ctas_bancos loaded once for bank-name resolution (not in shared)
     ctas_bancos_rv <- reactiveVal(NULL)
