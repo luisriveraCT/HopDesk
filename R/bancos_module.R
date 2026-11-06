@@ -2426,8 +2426,7 @@ bancosServer <- function(id, shared) {
           # notice, no log, nothing else changed. The confirmation is
           # untouched, so deleting it again retries the whole thing.
           if (!.bnc_guardar("eliminar_confirmacion_movimiento", "Eliminar el movimiento de una confirmación",
-                            function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(),
-                                                               base = movs_base))) {
+                            function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base))) {
             removeModal(); return()
           }
           shared$bancos_movimientos(movs)
@@ -2438,8 +2437,7 @@ bancosServer <- function(id, shared) {
       # Same for the confirmation; its movement, if any, is already hidden
       # and stays so (a retry marks it again, idempotent).
       if (!.bnc_guardar("eliminar_confirmacion", "Mover una confirmación a la papelera",
-                        function() save_bancos_confirmados(conf, client_id = shared$effective_client_id(),
-                                                           base = conf_base))) {
+                        function() save_bancos_confirmados(conf, client_id = shared$effective_client_id(), base = conf_base))) {
         removeModal(); return()
       }
       shared$bancos_confirmados(conf)

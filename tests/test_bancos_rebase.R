@@ -115,7 +115,8 @@ ok("recover twice: exactly one 'recovered' row", sum(s3$action %in% "recovered")
 movs_saves <- unlist(lapply(c("R/bancos_module.R", "R/pasivos_module.R"), function(f)
   grep("save_bancos_movimientos(", readLines(f, warn = FALSE), fixed = TRUE, value = TRUE)))
 ok("every bancos_movimientos save in Bancos and Pasivos passes base = movs_base",
-   length(movs_saves) == 10L && all(grepl("base = movs_base", movs_saves, fixed = TRUE)))
+   # 9: CM19 removed the save Bancos made on opening (the fuente="agenda" cleanup)
+   length(movs_saves) == 9L && all(grepl("base = movs_base", movs_saves, fixed = TRUE)))
 
 s3_memoria_restaurar()
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
