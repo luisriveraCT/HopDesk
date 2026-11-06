@@ -297,7 +297,8 @@ pasivos_table_pivot_wide <- function(long_df, granularity = "day",
         row_display_label = character(), row_is_fee = logical(),
         row_empresa = character(), row_categoria = character(),
         row_subcategoria = character(), row_parte = character(),
-        row_moneda = character(), has_overdue = logical(), has_due_soon = logical()
+        row_moneda = character(), has_overdue = logical(), has_due_soon = logical(),
+        has_very_soon = logical()
       ),
       date_cols = date_cols,
       cells     = list()
