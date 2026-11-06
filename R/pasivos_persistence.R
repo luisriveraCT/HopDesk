@@ -13,6 +13,20 @@
 # because methods::as() coerces lists to character. This helper applies the same
 # fix as load_policy_catalog(): rebuild non-list cols via schema[NA] coercion,
 # then ensure list cols are actual lists.
+# One stored column as the schema's class. POSIXct goes through
+# as.POSIXct(): methods::as() with its two-class target (POSIXct, POSIXt)
+# fails, and the tryCatch below left every created_at / updated_at as NA --
+# which each save of the session's copy then wrote back to S3 for every
+# liability (found 2026-11-06, T22).
+.pasivos_como_columna <- function(x, destino) {
+  if (inherits(destino, "POSIXct")) {
+    if (inherits(x, "POSIXct")) return(x)
+    if (is.logical(x)) return(as.POSIXct(rep(NA_real_, length(x))))
+    return(as.POSIXct(x))
+  }
+  methods::as(x, class(destino))
+}
+
 .pasivos_load_with_list_cols <- function(key, schema_fn, list_col_names, client_id = NULL) {
   obj <- tryCatch(.s3_read_with(key, client_id = client_id), error = function(e) NULL)
   if (is.null(obj) || !is.data.frame(obj) || !nrow(obj)) return(schema_fn())
@@ -23,7 +37,7 @@
       obj[[col]] <- schema[[col]][NA_integer_]
     } else {
       obj[[col]] <- tryCatch(
-        methods::as(obj[[col]], class(schema[[col]])),
+        .pasivos_como_columna(obj[[col]], schema[[col]]),
         error = function(e) schema[[col]][NA_integer_]
       )
     }
