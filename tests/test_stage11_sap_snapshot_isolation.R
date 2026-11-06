@@ -148,9 +148,11 @@ load_snap_calls <- grep("load_sap_snapshot\\(", app_txt, value = TRUE)
 
 hub_txt <- readLines("R/settings/settings_hub.R", warn = FALSE)
 hub_calls <- grep("load_sap_snapshot\\(", hub_txt, value = TRUE)
-.chk_true(length(hub_calls) >= 8, "sanity: settings_hub.R still has its multiple load_sap_snapshot() call sites")
-.chk_true(all(grepl("client_id\\s*=", hub_calls)),
-     "every load_sap_snapshot() call site in settings_hub.R now passes client_id=")
+# T23: the 10 call sites became one reader, .sap_snapshots() (AR and AP),
+# which reads nothing without the session's client.
+.chk_true(length(hub_calls) == 2L, "sanity: settings_hub.R reads the snapshots in one place (AR and AP)")
+.chk_true(all(grepl("client_id\\s*=\\s*cid", hub_calls)),
+     "every load_sap_snapshot() call site in settings_hub.R passes the session's client (client_id = cid)")
 
 # =============================================================================
 # Part E -- the actual write-side gap (found 2026-09-01): every check above
