@@ -54,7 +54,7 @@ hd_registro <- list(
     agregar = character(), quitar = character(),
     notas = c("Quitar: Seleccionar una fila abre el detalle: La selección se usa para navegar. Mejor un botón o doble clic para abrir el detalle (pieza Abrir detalle).")),
   descargar_pagos = list(nombre = "Descargar todos los pagos", clase = "B", archivo = "pagar_hoy_module.R",
-    agregar = character(), quitar = character(),
+    agregar = c("opcion_fila"), quitar = c("tachado"),
     notas = character()),
   libro_banco = list(nombre = "Libro de Banco", clase = "C", archivo = "bancos_module.R",
     agregar = c("sel_todos"), quitar = character(),

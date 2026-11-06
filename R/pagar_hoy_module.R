@@ -2803,17 +2803,25 @@ pagarHoyServer <- function(id, shared) {
     # ── Download all — Step 1: preview modal ─────────────────────────────────
     # The preview (descargar_pagos, T21) is what the ZIP will hold: each AP
     # row gets the ZIP's own test -- .annotate_ap_cached() by company and
-    # currency, ppl_status == "ok" -- and the rows that fail it say why
-    # ("Se omite"). The pills and the button count and add up only what goes
-    # in. download_all below is untouched (test_descargar_pagos_zip_bytes).
-    .descargar_vista <- reactiveVal(NULL)
-    hd_table_server(
+    # currency, ppl_status == "ok". The rows that pass go in (locked, "Entra");
+    # the ones without an account say what is missing and start in "Omitir"
+    # -- "Incluir sin cuenta" puts them in a separate _002 file, for the bank's
+    # platform (T21b, Luis). The pills and the button count what goes in plus
+    # what is included. The choices live on the server by id; each opening
+    # gives its rows new ids ("<id>#<opening>"), so a choice from an earlier
+    # opening matches nothing and every opening starts in "Omitir".
+    .descargar_vista    <- reactiveVal(NULL)   # the table's rows
+    .descargar_base     <- reactiveVal(NULL)   # the AP rows opened, with their ZIP test
+    .descargar_apertura <- reactiveVal(0L)
+    t_descargar <- hd_table_server(
       "descargar_t", tabla = "descargar_pagos",
       datos = reactive(.descargar_vista()),
       columnas = list(
-        col_insignia("zip", "tablas.pagos.zip", mapa = list(
-          no_match = list(texto = "tablas.pagos.omite_sin_alias", tono = "peligro"),
-          no_clabe = list(texto = "tablas.pagos.omite_sin_clabe", tono = "aviso"))),
+        col_opcion("zip", "tablas.pagos.zip", opciones = c(
+          entra = "tablas.pagos.entra", omitir = "tablas.pagos.omitir", incluir = "tablas.pagos.incluir")),
+        col_insignia("motivo", "tablas.pagos.motivo", mapa = list(
+          no_match = list(texto = "tablas.pagos.falta_alias", tono = "peligro"),
+          no_clabe = list(texto = "tablas.pagos.falta_clabe", tono = "aviso"))),
         col_texto("Empresa", "tablas.pagos.empresa"),
         col_insignia("Moneda", "tablas.pagos.moneda", mapa = list(
           MXN = list(texto = "MXN", tono = "info"), USD = list(texto = "USD", tono = "exito"))),
@@ -2823,6 +2831,38 @@ pagarHoyServer <- function(id, shared) {
       ),
       vacio = "tablas.pagos.vacio"
     )
+    # The staged ids marked "Incluir sin cuenta" in this opening, among the
+    # ones that had no account when it opened.
+    .descargar_incluidos <- reactive({
+      b <- .descargar_base(); o <- t_descargar$opciones()
+      if (is.null(b) || is.null(o) || !nrow(o)) return(character(0))
+      intersect(sub("#[0-9]+$", "", o$id[o$opcion == "incluir"]), as.character(b$id[b$estado != "ok"]))
+    })
+    output$descargar_resumen <- renderUI({
+      b <- .descargar_base(); req(b)
+      inc <- .descargar_incluidos()
+      lapply(sort(unique(b$Moneda)), function(m) {
+        e <- b[b$Moneda == m & b$estado == "ok", , drop = FALSE]
+        i <- b[b$Moneda == m & as.character(b$id) %in% inc, , drop = FALSE]
+        if (!nrow(e) && !nrow(i)) return(NULL)
+        tags$span(class = "badge bg-secondary me-1",
+          tr("tablas.pagos.pildora", n = nrow(e), moneda = m, total = fmt_money(sum(e$Importe, na.rm = TRUE))),
+          if (nrow(i)) paste0(" ", tr("tablas.pagos.pildora_sin_cuenta", n = nrow(i),
+                                      total = fmt_money(sum(i$Importe, na.rm = TRUE)))))
+      })
+    })
+    output$descargar_boton <- renderUI({
+      b <- .descargar_base(); req(b)
+      n_e <- sum(b$estado == "ok"); m <- length(.descargar_incluidos())
+      tagList(
+        if (m) tags$small(class = "text-warning me-2", tr("tablas.pagos.aviso_sin_cuenta", m = m)),
+        downloadButton(ns("download_all"),
+          tagList(icon("file-zipper"), " ",
+                  if (m) tr("tablas.pagos.descargar_zip_sin_cuenta", n = n_e + m, m = m)
+                  else tr("tablas.pagos.descargar_zip", n = n_e)),
+          class = "btn btn-primary")
+      )
+    })
     observeEvent(input$preview_all, {
       s <- staged() |> dplyr::filter(ledger == "AP")
       if (!nrow(s)) {
@@ -2848,30 +2888,27 @@ pagarHoyServer <- function(id, shared) {
           estado[as.character(ann$id)] <- ann$ppl_status
         }
       }
+      b <- s; b$estado <- unname(estado[as.character(s$id)])
+      apertura <- .descargar_apertura() + 1L
+      .descargar_apertura(apertura)
+      .descargar_base(b)
 
       # One row per AP item, sorted by Empresa then FechaVenc
-      tbl <- s |>
+      tbl <- b |>
         dplyr::arrange(Empresa, Moneda, FechaVenc) |>
         dplyr::transmute(
-          id         = as.character(id),
-          zip        = dplyr::if_else(estado[as.character(id)] == "ok", NA_character_, unname(estado[as.character(id)])),
+          id         = paste0(as.character(id), "#", apertura),
+          zip        = dplyr::if_else(estado == "ok", "entra", "omitir"),
+          motivo     = dplyr::if_else(estado == "ok", NA_character_, estado),
           Empresa    = Empresa,
           Moneda     = Moneda,
           Parte      = Parte,
           Referencia = unname(mapply(.ref_pv, Empresa, Documento)),
           Importe    = Importe
-        )
-      .descargar_vista(as.data.frame(tbl))
-
-      # Totals by currency, of what goes in the ZIP
-      entra  <- s[estado[as.character(s$id)] == "ok", , drop = FALSE]
-      totals <- entra |>
-        dplyr::group_by(Moneda) |>
-        dplyr::summarise(total = sum(Importe, na.rm = TRUE), n = dplyr::n(), .groups = "drop")
-      total_pills <- lapply(seq_len(nrow(totals)), function(i)
-        tags$span(class = "badge bg-secondary me-1",
-          tr("tablas.pagos.pildora", n = totals$n[i], moneda = totals$Moneda[i], total = fmt_money(totals$total[i])))
-      )
+        ) |>
+        as.data.frame()
+      tbl$.bloqueada <- tbl$zip == "entra"   # what goes in has no choice
+      .descargar_vista(tbl)
 
       showModal(modalDialog(
         title = tagList(icon("file-zipper"), " ", tr("tablas.pagos.titulo")),
@@ -2879,16 +2916,14 @@ pagarHoyServer <- function(id, shared) {
         easyClose = TRUE,
         div(class = "d-flex align-items-center gap-2 mb-3",
           tags$span(class = "fw-semibold small text-muted", tr("tablas.pagos.resumen")),
-          !!!total_pills
+          uiOutput(ns("descargar_resumen"), inline = TRUE)
         ),
         hd_table_ui(ns("descargar_t")),
         tags$p(class = "small text-muted mt-2 mb-0",
           icon("circle-info"), " ", tr("tablas.pagos.nota_alias")),
         footer = tagList(
           modalButton(tr("comun.cancelar")),
-          downloadButton(ns("download_all"),
-            tagList(icon("file-zipper"), " ", tr("tablas.pagos.descargar_zip", n = nrow(entra))),
-            class = "btn btn-primary")
+          uiOutput(ns("descargar_boton"), inline = TRUE)
         )
       ))
     }, ignoreInit = TRUE)
@@ -2975,6 +3010,86 @@ pagarHoyServer <- function(id, shared) {
               )
             )
           }
+        }
+
+        # T21b (Luis): the payments marked "Incluir sin cuenta" in the
+        # preview go in a separate _002 file per company and currency, so the
+        # _001 above never changes and a line the bank refuses can't take the
+        # good ones down. Only ids still in the Agenda and still without an
+        # account now (the same test as above, run again): a payment that got
+        # its account since the preview went in _001 and never comes here.
+        # The line: alias blank, CLABE in zeros (the app's own "no account"),
+        # SPI or SPD by currency; the origin account by company AND currency.
+        incluidos <- isolate(.descargar_incluidos())
+        inc <- s[as.character(s$id) %in% incluidos, , drop = FALSE]
+        sin_cuenta <- character(0)
+        for (emp in unique(inc$Empresa)) {
+          for (cur in unique(inc$Moneda[inc$Empresa == emp])) {
+            ann_i <- .annotate_ap_cached(inc[inc$Empresa == emp & inc$Moneda == cur, , drop = FALSE], emp)
+            sin_cuenta <- c(sin_cuenta, as.character(ann_i$id[ann_i$ppl_status != "ok"]))
+          }
+        }
+        inc <- inc[as.character(inc$id) %in% sin_cuenta, , drop = FALSE]
+        if (nrow(inc)) {
+          fallo_auditoria <- NULL
+          withCallingHandlers({
+            for (emp in unique(inc$Empresa)) {
+              for (cur in unique(inc$Moneda[inc$Empresa == emp])) {
+                rows_i  <- inc[inc$Empresa == emp & inc$Moneda == cur, , drop = FALSE]
+                origen  <- get_cuenta_ppl(emp, cur, shared)
+                datos_c <- get_cuentas_ppl_data(emp, cur, shared)
+                banco_o <- if (!is.null(datos_c) && nrow(datos_c)) {
+                  b <- datos_c$banco[datos_c$cuenta == origen]
+                  if (length(b)) b[1L] else NA_character_
+                } else NA_character_
+                ref_i <- .ph_ref_lookup(emp)
+                doc_i <- trimws(as.character(rows_i$Documento))
+                con_i <- if (length(ref_i)) as.character(ref_i[doc_i]) else rep("", length(doc_i))
+                con_i[is.na(con_i)] <- ""
+                ppl_i <- tibble::tibble(
+                  alias = "", clabe_dest = "000000000000000000", banco_dest = "",
+                  medio_pago = if (toupper(cur) == "USD") "SPD" else "SPI",
+                  importe = rows_i$Importe,
+                  concepto = substr(ifelse(nzchar(con_i), con_i, doc_i), 1, 75))
+                fname_i <- file.path(tmpdir,
+                  paste0("pagos_", emp, "_", cur, "_", format(Sys.Date(), "%d%m%Y"), "_002.txt"))
+                .log_pago_generado(shared, emp, cur, origen, ppl_i, fname = basename(fname_i),
+                                   source_type = "zip_bulk_sin_cuenta", banco_origen = banco_o)
+                write_ppl(generate_ppl(ppl_i, origen, Sys.Date(), 2L), fname_i)
+                results[[length(results) + 1L]] <- list(
+                  fname = fname_i,
+                  summary = list(
+                    empresa = emp, moneda = cur,
+                    cuenta_origen = as.character(origen  %||% NA_character_),
+                    banco_origen  = as.character(banco_o %||% NA_character_),
+                    n_pagos = nrow(ppl_i), total = sum(as.numeric(ppl_i$importe), na.rm = TRUE),
+                    archivo = basename(fname_i),
+                    beneficiarios = lapply(seq_len(nrow(ppl_i)), function(k) list(
+                      alias = "", clabe = "000000000000000000", banco = "",
+                      importe = as.numeric(ppl_i$importe[k]), concepto = as.character(ppl_i$concepto[k])))))
+              }
+            }
+          }, message = function(m) {
+            # .log_pago_generado() only message()s its failures: here the user sees them.
+            if (grepl(".log_pago_generado failed", conditionMessage(m), fixed = TRUE))
+              fallo_auditoria <<- sub("^.*failed: ", "", trimws(conditionMessage(m)))
+          })
+          # Who included which payments without an account (and when).
+          tryCatch(
+            log_action(
+              tryCatch(shared$current_user(), error = function(e) NULL) %||% "unknown",
+              "pagar_hoy", "incluir_sin_cuenta",
+              sprintf("Pagos incluidos sin cuenta en el ZIP: %d", nrow(inc)),
+              target_id = paste(unique(inc$Empresa), collapse = ", "),
+              metadata  = list(pagos = lapply(seq_len(nrow(inc)), function(k) list(
+                id = as.character(inc$id[k]), empresa = as.character(inc$Empresa[k]),
+                documento = as.character(inc$Documento[k]), parte = as.character(inc$Parte[k]),
+                importe = as.numeric(inc$Importe[k]), moneda = as.character(inc$Moneda[k])))),
+              client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+              viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)),
+            error = function(e) fallo_auditoria <<- conditionMessage(e))
+          if (!is.null(fallo_auditoria))
+            showNotification(tr("tablas.pagos.auditoria_falla", error = fallo_auditoria), type = "warning", duration = 10)
         }
 
         # Stage: aggregate "Descargar todos" summary -- one entry reflecting

@@ -62,7 +62,7 @@ catalogo_zip <- dplyr::bind_rows(catalogo, tibble::tibble(
 agenda_zip <- dplyr::bind_rows(agenda0, pago("P7", "SERVICIOS BAJIO SA", "4007", 2500.75, "2026-11-04"))
 MODAL <- NULL
 showModal <- function(ui, ...) { MODAL <<- ui; invisible(NULL) }
-vista <- NULL; lineas <- NULL
+vista <- NULL; lineas <- NULL; html_salidas <- ""
 shared <- list(
   company_map = reactiveVal(c(NTS = EMP, OTR = OTR)), proveedores_db = reactiveVal(catalogo_zip),
   parte_alias_map_db = reactiveVal(NULL), pagar_hoy_db = reactiveVal(agenda_zip),
@@ -75,6 +75,8 @@ error <- tryCatch({
     session$flushReact()
     session$setInputs(preview_all = 1)
     vista <<- .descargar_vista()
+    # The pills and the button follow the choices (T21b): their own outputs.
+    html_salidas <<- paste(as.character(output$descargar_resumen$html), as.character(output$descargar_boton$html))
     dir <- tempfile(); dir.create(dir)
     utils::unzip(output$download_all, exdir = dir)
     # Payment lines (type 02) per file.
@@ -83,17 +85,17 @@ error <- tryCatch({
   }))); NULL
 }, error = function(e) conditionMessage(e))
 if (!is.null(error)) message("  ", error)
-html <- paste(as.character(MODAL), collapse = "")
+html <- paste(paste(as.character(MODAL), collapse = ""), html_salidas)
 
 ok("la vista previa lista todos los pagos AP (8), cada uno por su id",
    is.null(error) && is.data.frame(vista) && nrow(vista) == 8L && !anyDuplicated(vista$id))
-ok("los que el ZIP omite dicen por qué: BODEGAS sin CLABE, TRANSPORTES sin alias",
-   identical(sort(vista$zip[!is.na(vista$zip)]), c("no_clabe", "no_clabe", "no_match")) &&
-     all(vista$zip[vista$Parte == "BODEGAS DEL NORTE SA"] == "no_clabe") &&
-     identical(vista$zip[vista$Parte == "TRANSPORTES DESCONOCIDOS"], "no_match"))
+ok("los que el ZIP omite dicen qué les falta: BODEGAS sin CLABE, TRANSPORTES sin alias",
+   identical(sort(vista$motivo[!is.na(vista$motivo)]), c("no_clabe", "no_clabe", "no_match")) &&
+     all(vista$motivo[vista$Parte == "BODEGAS DEL NORTE SA"] == "no_clabe") &&
+     identical(vista$motivo[vista$Parte == "TRANSPORTES DESCONOCIDOS"], "no_match"))
 ok("el botón cuenta solo lo que entra: 5 pagos, igual que las líneas del ZIP",
    grepl(tr("tablas.pagos.descargar_zip", n = 5), html, fixed = TRUE) && identical(lineas, 5L) &&
-     sum(is.na(vista$zip)) == 5L)
+     sum(vista$zip == "entra") == 5L)
 ok("las píldoras suman solo lo que entra (MXN 4 por $18,600.75; USD 1 por $1,200.00)",
    grepl(tr("tablas.pagos.pildora", n = 4, moneda = "MXN", total = fmt_money(18600.75)), html, fixed = TRUE) &&
      grepl(tr("tablas.pagos.pildora", n = 1, moneda = "USD", total = fmt_money(1200)), html, fixed = TRUE))
