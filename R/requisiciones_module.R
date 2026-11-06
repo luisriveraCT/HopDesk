@@ -55,16 +55,16 @@
   papelera      = list(texto = "requisiciones.etapa.papelera",      tono = "neutro"))
 
 .reqm_columnas <- function(iniciales) list(
-  col_texto("folio", "requisiciones.col.folio", recorte = FALSE, ancho = 112),
+  col_texto("folio", "requisiciones.col.folio", recorte = FALSE, ancho = 124),
   col_texto("titulo", "requisiciones.col.titulo"),
   .reqm_col_prioridad(),
-  col_texto("carpeta_nombre", "requisiciones.col.carpeta", opcional = TRUE),
+  col_texto("carpeta_nombre", "requisiciones.col.carpeta", opcional = TRUE, visible = FALSE),
   col_texto("proveedor", "requisiciones.col.proveedor"),
   col_empresa("empresa", "requisiciones.col.empresa", iniciales = iniciales),
   col_dinero("monto_mostrado", "requisiciones.col.monto", moneda = "moneda_mostrada"),
   col_insignia("etapa", "requisiciones.col.etapa", mapa = .reqm_mapa_etapas()),
   col_fecha("fecha_mes", "requisiciones.col.fecha"),
-  col_numero("dias_sin_provision", "requisiciones.col.dias", opcional = TRUE),
+  col_numero("dias_sin_provision", "requisiciones.col.dias", opcional = TRUE, visible = FALSE),
   col_texto("comentarios_txt", "requisiciones.col.comentarios", recorte = FALSE, opcional = TRUE),
   col_texto("creado_por", "requisiciones.col.creado_por", opcional = TRUE, visible = FALSE)
 )
@@ -128,7 +128,7 @@ requisicionesUI <- function(id) {
   ns <- shiny::NS(id)
   htmltools::tagList(
     htmltools::tags$head(
-      htmltools::tags$link(rel = "stylesheet", href = "requisiciones.css?v=1"),
+      htmltools::tags$link(rel = "stylesheet", href = "requisiciones.css?v=2"),
       htmltools::tags$script(src = "requisiciones_paste.js?v=2")),
     htmltools::div(class = "hdreq",
       htmltools::div(class = "hdreq-lado", shiny::uiOutput(ns("carpetas"))),

@@ -119,7 +119,7 @@ usuario <- Sys.getenv("REQ_USUARIO", "dani")
 ui <- bslib::page_fillable(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),
   padding = 0,
-  htmltools::div(class = "d-flex gap-2 px-2 pt-1", style = "font-size:.7rem;",
+  htmltools::div(class = "d-flex gap-2", style = "font-size:.65rem; position:fixed; right:6px; bottom:2px; z-index:5; opacity:.6;",
     actionLink("otra_sesion", "Otra sesión: crea una requisición"),
     actionLink("otra_sesion_paga", "Otra sesión: confirma el pago de Luz bodega 3")),
   requisicionesUI("req")

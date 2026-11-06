@@ -3,7 +3,7 @@
    the tables themselves (www/hdtable.css does). No horizontal page scroll:
    every block can shrink (min-width: 0) and wraps below 768 px. */
 
-.hdreq { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 12px;
+.hdreq { display: grid; grid-template-columns: 172px minmax(0, 1fr); gap: 10px;
   height: 100%; min-height: 0; padding: 8px 12px; box-sizing: border-box; }
 .hdreq-principal { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .hdreq-principal > .hdt { flex: 1 1 auto; min-height: 0; }
