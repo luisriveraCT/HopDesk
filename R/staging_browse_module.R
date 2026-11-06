@@ -645,10 +645,18 @@ setup_abono_browse <- function(input, output, session,
         ph <- upsert_pagar_hoy(ph, new_row, keys = "id")
       }
 
+      # Rule 17: a save that failed never says "enviados", never logs a
+      # success and never closes the modal; the session's copy changes only
+      # once S3 has it (it said "enviados" after the warning, T13).
+      guardado <- tryCatch({
+        save_pagar_hoy(ph, current_user(), client_id = client_id(), base = ph_base)
+        TRUE
+      }, error = function(e) {
+        showNotification(paste("No se pudo guardar en Agenda:", e$message), type = "error", duration = 8)
+        FALSE
+      })
+      if (!guardado) return()
       pagar_hoy_db(ph)
-      tryCatch(save_pagar_hoy(ph, current_user(), client_id = client_id(), base = ph_base),
-               error = function(e) showNotification(
-                 paste("No se pudo guardar en Agenda:", e$message), type = "warning"))
 
       n <- length(accepted)
       showNotification(

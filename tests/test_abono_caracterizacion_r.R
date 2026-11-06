@@ -266,15 +266,17 @@ test_that("[CAMBIA C2] E8 the balance checked is the one the browser sent, not t
   })
 })
 
-test_that("[CAMBIA regla 17] E9 the save fails: a warning, and still 'enviados', the log and the modal closing", {
+test_that("[CAMBIA regla 17] E9 the save fails: only the error -- no 'enviados', no log, the modal stays, the session's Agenda unchanged", {
+  # Before (master): a warning, and then "1 abono enviado", the log and the
+  # modal closing, with F-101 only in this session's copy.
   reiniciar(falla_guardado = TRUE)
   correr({
     filtros(session)
     enviar(session, output, c("F-101" = 400))
-    expect_identical(textos("warning"), "No se pudo guardar en Agenda: S3 write failed")
-    expect_identical(textos("message"), "1 abono enviado a Agenda de hoy. Confirma para aplicar al saldo.")
-    expect_length(R$bitacora, 1L)
-    expect_identical(R$cierres, 1L)
-    expect_true("F-101" %in% session$userData$ph()$Documento)    # only in this session
+    expect_identical(textos("error"), "No se pudo guardar en Agenda: S3 write failed")
+    expect_length(textos("message"), 0L)
+    expect_length(R$bitacora, 0L)
+    expect_identical(R$cierres, 0L)
+    expect_false("F-101" %in% session$userData$ph()$Documento)
   })
 })
