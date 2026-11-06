@@ -2365,13 +2365,15 @@ bancosServer <- function(id, shared) {
       if (identical(ab$status[ab$id == ab_id][1], "voided")) return()
 
       ab_row  <- ab[ab$id == ab_id, , drop = FALSE][1, ]
-      # Voided on S3's whole current table, by id (CM19).
-      tryCatch({
-        shared$abonos_db(modificar_abonos(function(ab) void_abono(ab, ab_id),
-                                          client_id = shared$effective_client_id()))
-        bump_sync_version("abonos_db", client_id = shared$effective_client_id())
-      }, error = function(e)
-        showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
+      # Voided on S3's whole current table, by id (CM19). A failed save is
+      # told once and stops here: no success notice, no log, the session's
+      # abonos untouched.
+      vista <- NULL
+      if (!.bnc_guardar("deshacer_abono", "Deshacer abono parcial", function() {
+        vista <<- modificar_abonos(function(ab) void_abono(ab, ab_id), client_id = shared$effective_client_id())
+      })) return()
+      shared$abonos_db(vista)
+      bump_sync_version("abonos_db", client_id = shared$effective_client_id())
 
       showNotification("Abono deshecho \u2014 el saldo del comprobante se restaur\u00f3.",
                        type = "message", duration = 3)
@@ -2452,23 +2454,28 @@ bancosServer <- function(id, shared) {
         if (length(idx_m)) {
           movs$eliminado[idx_m]    <- TRUE
           movs$eliminado_at[idx_m] <- Sys.time()
+          # A failed save is told once and stops here (CM19): no success
+          # notice, no log, nothing else changed. The confirmation is
+          # untouched, so deleting it again retries the whole thing.
+          if (!.bnc_guardar("eliminar_confirmacion_movimiento", "Eliminar el movimiento de una confirmación",
+                            function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(),
+                                                               base = movs_base))) {
+            removeModal(); return()
+          }
           shared$bancos_movimientos(movs)
-          tryCatch({
-            save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base)
-            bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
-          }, error = function(e)
-            showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
-          )
+          bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
         }
       }
 
+      # Same for the confirmation; its movement, if any, is already hidden
+      # and stays so (a retry marks it again, idempotent).
+      if (!.bnc_guardar("eliminar_confirmacion", "Mover una confirmación a la papelera",
+                        function() save_bancos_confirmados(conf, client_id = shared$effective_client_id(),
+                                                           base = conf_base))) {
+        removeModal(); return()
+      }
       shared$bancos_confirmados(conf)
-      tryCatch({
-        save_bancos_confirmados(conf, client_id = shared$effective_client_id(), base = conf_base)
-        bump_sync_version("bancos_confirmados_db", client_id = shared$effective_client_id())
-      }, error = function(e)
-        showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
-      )
+      bump_sync_version("bancos_confirmados_db", client_id = shared$effective_client_id())
 
       # Deleting a provision's confirmation leaves it unpaid with no item
       # (the item was archived at confirm time and is not restored here), so
