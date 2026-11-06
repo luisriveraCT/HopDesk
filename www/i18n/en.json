@@ -795,5 +795,6 @@
   "tablas.abono.rechazados.uno": "{n} partial payment not sent, it exceeds the available balance: {facturas}",
   "tablas.abono.rechazados.otros": "{n} partial payments not sent, they exceed the available balance: {facturas}",
   "tablas.abono.error_guardar": "Could not save to the agenda: {error}",
+  "tablas.abono.error_leer": "Could not read the agenda; nothing was sent. Try again.",
   "tablas.abono.error": "Something went wrong sending the partial payments to the agenda. Try again; if it keeps happening, tell support."
 }

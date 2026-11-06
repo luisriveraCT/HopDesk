@@ -272,14 +272,21 @@ test_that("E6 without can_register_payments nothing happens", {
   }, autorizado = FALSE)
 })
 
-test_that("E7 the Agenda read fails: the session's copy is the base", {
+test_that("[CAMBIA] E7 the Agenda read fails: nothing is saved, an error says so, the session and the modal stay", {
+  # Before: the session's copy became the base of the save (a stale base
+  # could overwrite what another session staged) -- the pattern T23 removed
+  # from Vencidos / the lupa.
   reiniciar(falla_lectura = TRUE)
   sesion <- D$pagar_hoy; sesion$id <- "ph_sesion"
   correr({
     filtros(session)
     enviar(session, c("F-101" = 400))
-    expect_identical(R$guardados[[1]]$base$id, "ph_sesion")
-    expect_true("ph_sesion" %in% R$guardados[[1]]$df$id)
+    expect_length(R$guardados, 0L)
+    expect_identical(textos("error"), "No se pudo leer la Agenda; no se envió nada. Intenta de nuevo.")
+    expect_length(textos("message"), 0L)
+    expect_length(R$bitacora, 0L)
+    expect_identical(R$cierres, 0L)
+    expect_identical(session$userData$ph()$id, "ph_sesion")
   }, agenda_sesion = sesion)
 })
 

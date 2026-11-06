@@ -211,9 +211,15 @@ setup_abono_browse <- function(input, output, session,
     ledger <- input$ab_ledger %||% "AP"
     # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
     # 2026-07-25); a stale base here would silently drop another session's
-    # concurrent stage/unstage.
-    ph     <- tryCatch(safe_load_pagar_hoy(username = current_user(), client_id = client_id()),
-                       error = function(e) NULL) %||% pagar_hoy_db()
+    # concurrent stage/unstage. A failed read saves nothing: the session's
+    # copy is never the base (it was until T25, as in Vencidos / the lupa
+    # until T23); the error says so and the session and the modal stay.
+    ph <- tryCatch(safe_load_pagar_hoy(username = current_user(), client_id = client_id()),
+                   error = function(e) NULL)
+    if (is.null(ph)) {
+      showNotification(tr("tablas.abono.error_leer"), type = "error", duration = 8)
+      return()
+    }
     ph_base <- ph   # CM09: the save applies only the accepted rows on S3 (A2)
 
     # The browser only warns (the cell turns red); the server checks again,
