@@ -154,6 +154,24 @@ r <- correr(function(session) {
 ok("escáner: un código marcado que ya no está se descarta; sin nada, no escribe y avisa",
    is.null(r$error) && r$escrituras == 0L && any(grepl("No se seleccionaron", AVISOS)))
 
+# T23 · 3: the notice counts only the codes it added. C1027 is already IC.
+r <- correr(function(session) {
+  session$setInputs(bp_refresh_btn = 1)
+  session$setInputs(`bp_sap_t-sel` = c("NTS|AR|C1027", "NTS|AR|C2001"))
+  session$setInputs(bp_apply_ic_btn = 1)
+})
+ok("Business Partners: con C1027 (ya IC) y C2001 marcados, el aviso dice 1 código nuevo, no 2",
+   is.null(r$error) && tr("tablas.ajustes.ic.nuevos_bp", n = 1) %in% AVISOS &&
+     !tr("tablas.ajustes.ic.nuevos_bp", n = 2) %in% AVISOS)
+r <- correr(function(session) {
+  session$setInputs(scan_ic_btn = 1)
+  session$setInputs(`escaner_ic_t-sel` = "NTS|AR|C1027")
+  session$setInputs(ic_scan_apply = 1)
+})
+ok("escáner: solo C1027 (ya IC) marcado, el aviso dice que no se agregó ninguno",
+   is.null(r$error) && tr("tablas.ajustes.ic.ninguno_nuevo") %in% AVISOS &&
+     !any(grepl("nuevos guardados", AVISOS, fixed = TRUE)))
+
 # Nothing marked: nothing written (the pre-selected codes used to go along).
 r <- correr(function(session) {
   session$setInputs(bp_refresh_btn = 1)

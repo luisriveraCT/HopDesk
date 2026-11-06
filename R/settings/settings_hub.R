@@ -529,6 +529,20 @@ settings_observers <- function(input, output, session, shared) {
   )
   # The candidates behind the marked ids, in the table's order; ids no longer
   # there (another scan in between) are dropped.
+  # The codes "Aplicar" really added (T23): in what it asked for, in what got
+  # saved, and not in the registry before. "Aplicar" joins, so marking codes
+  # already there adds nothing -- the notice counted every marked row.
+  .ic_codigos_nuevos <- function(antes, pedido, guardado) {
+    sum(vapply(names(pedido$companies %||% list()), function(ini) {
+      sum(vapply(c("ar", "ap"), function(l) length(setdiff(
+        intersect(pedido$companies[[ini]][[l]] %||% character(), guardado$companies[[ini]][[l]] %||% character()),
+        antes$companies[[ini]][[l]] %||% character())), integer(1)))
+    }, integer(1)))
+  }
+  .avisar_codigos_nuevos <- function(n, clave) {
+    if (n > 0L) showNotification(tr(clave, n = n), type = "message", duration = 4)
+    else showNotification(tr("tablas.ajustes.ic.ninguno_nuevo"), type = "message", duration = 4)
+  }
   .candidatos_marcados <- function(cands, ids) {
     if (!is.data.frame(cands) || !nrow(cands) || !length(ids)) return(NULL)
     rows <- cands[match(ids, paste(cands$initials, cands$ledger, cands$code, sep = "|")), , drop = FALSE]
@@ -730,10 +744,7 @@ settings_observers <- function(input, output, session, shared) {
     show_settings_modal(input, output, session, shared)
     .show_ic_panel()
 
-    showNotification(
-      sprintf("%d c\u00f3digo(s) IC guardados.", nrow(selected)),
-      type = "message", duration = 4
-    )
+    .avisar_codigos_nuevos(.ic_codigos_nuevos(cur, new_registry, guardado), "tablas.ajustes.ic.nuevos")
     log_action(
       user        = tryCatch(shared$current_user(), error = function(e) "system"),
       module      = "settings_hub",
@@ -841,6 +852,7 @@ settings_observers <- function(input, output, session, shared) {
     if (is.null(guardado)) { showNotification(tr("comun.error_guardar"), type = "error"); return() }
     bump_sync_version("interco_v2", client_id = shared$effective_client_id())
     shared$interco_v2(guardado)
+    pedido       <- new_registry   # what was asked for: the notice counts what it added
     new_registry <- guardado
 
     # Refresh is_ic flags in bp_candidates so "IC ✓" updates
@@ -850,10 +862,7 @@ settings_observers <- function(input, output, session, shared) {
     }, error = function(e) NULL)
     if (!is.null(new_cands) && nrow(new_cands)) bp_candidates(new_cands)
 
-    showNotification(
-      sprintf("%d c\u00f3digo(s) IC guardados desde Business Partners.", nrow(selected)),
-      type = "message", duration = 4
-    )
+    .avisar_codigos_nuevos(.ic_codigos_nuevos(cur, pedido, guardado), "tablas.ajustes.ic.nuevos_bp")
     log_action(
       user        = tryCatch(shared$current_user(), error = function(e) "system"),
       module      = "settings_hub",
