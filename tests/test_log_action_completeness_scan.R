@@ -227,6 +227,13 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     # the fresh-read-then-write wrapper around save_bancos_confirmados(); its
     # callers (the Agenda AP/AR confirm handlers) log their own action.
     "modificar_bancos_confirmados",
+    # modificar_pasivos_liabilities() (T22, R/pasivos_persistence.R): the
+    # fresh-read-then-write wrapper around save_pasivos_liabilities(), and
+    # .pasivos_cambiar_estado() (R/pasivos_list_module.R), which changes one
+    # liability's estado through it. Their callers (pasivos_cambiar_pausa,
+    # pasivos_borrar, pasivos_recuperar, .pasivos_wizard_save) log their own
+    # action (liability.edited / .deleted / .restored / .created).
+    "modificar_pasivos_liabilities", ".pasivos_cambiar_estado",
     # save_pagar_hoy_with_retry() (found 2026-08-05, R/persistence.R) is a
     # generic retry wrapper around save_pagar_hoy() -- same shape as
     # .sync_staged above: called from multiple contexts (the AP and AR

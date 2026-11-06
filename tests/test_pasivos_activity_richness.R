@@ -179,7 +179,8 @@ suppressPackageStartupMessages(library(shiny))
   b3 <- .scan_block(list_txt, "^pasivos_cambiar_pausa <- function", occurrence = 2L)
   ok("C3 liability pause/resume: found the handler to scan", !is.na(b3))
   if (!is.na(b3)) {
-    ok("C3: captures old_estado before flipping it", grepl("old_estado <- liabs\\$estado\\[idx\\[1\\]\\]", b3))
+    # Since T22 the estado before is S3's row (.pasivos_cambiar_estado()'s `antes`).
+    ok("C3: captures old_estado before flipping it", grepl("old_estado <- r\\$antes\\$estado\\[1\\]", b3))
     ok("C3: pasivos_log_audit() now receives before=/after= (was notes-only)",
        grepl("before      = list\\(nombre = nombre, estado = old_estado\\)", b3) &&
        grepl("after       = list\\(nombre = nombre, estado = new_estado\\)", b3))
@@ -189,7 +190,7 @@ suppressPackageStartupMessages(library(shiny))
   b4 <- .scan_block(list_txt, "^pasivos_borrar <- function")
   ok("C4 liability archive/delete: found the handler to scan", !is.na(b4))
   if (!is.na(b4)) {
-    ok("C4: captures old_estado before the soft-delete mutation", grepl("old_estado <- liabs\\$estado\\[idx\\[1\\]\\]", b4))
+    ok("C4: captures old_estado before the soft-delete mutation", grepl("old_estado <- r\\$antes\\$estado\\[1\\]", b4))
     ok("C4: pasivos_log_audit() now receives before=/after= (was metadata-free)",
        grepl('after       = list\\(nombre = nombre, estado = "deleted"\\)', b4))
   }
