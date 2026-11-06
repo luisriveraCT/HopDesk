@@ -248,13 +248,16 @@ REQ_COLOR_DEFECTO  <- "#607d8b"
   invisible(TRUE)
 }
 
+# Liabilities, strict: a deleted one's provisional provisions are "borrada" (T18).
+.req_liabs <- function(cid) leer_tabla_para_escribir(S3_KEYS$pasivos_liabilities, cid, .schema_pasivos_liability)
+
 # Stage of the provision(s) behind requisitions, from strict reads.
 .req_etapa_provision <- function(cid, provision_id) {
   provision_id <- as.character(provision_id)
   if (!length(provision_id) || all(is.na(provision_id))) return(rep(NA_character_, length(provision_id)))
   provs <- leer_tabla_para_escribir(S3_KEYS$pasivos_provisions, cid, .schema_pasivos_provision)
   conf  <- leer_tabla_para_escribir(S3_KEYS$bancos_confirmados, cid, .schema_bancos_confirmados)
-  etapa_de_provision_en(provs, conf, provision_id)
+  etapa_de_provision_en(provs, conf, provision_id, liabs = .req_liabs(cid))
 }
 
 # A requisition that can still be changed: exists, not paid, not in the trash.
@@ -739,12 +742,12 @@ requisicion_historial <- function(client_id, requisicion_id) {
 #   n_adjuntos, n_imagenes, n_tablas, primera_imagen_id,
 #   n_comentarios, comentarios_sin_leer.
 requisiciones_vista_en <- function(reqs, provs, conf, manual, carpetas, evid, coms,
-                                   leidos = NULL, usuario = NULL, hoy = .req_hoy()) {
+                                   leidos = NULL, usuario = NULL, hoy = .req_hoy(), liabs = NULL) {
   n <- nrow(reqs)
   pid <- reqs$provision_id
   ep <- rep(NA_character_, n)
   con <- !is.na(pid)
-  if (any(con)) ep[con] <- etapa_de_provision_en(provs, conf, pid[con])
+  if (any(con)) ep[con] <- etapa_de_provision_en(provs, conf, pid[con], liabs = liabs)
   etapa <- ifelse(ep %in% "pagada", "pagada",
            ifelse(!is.na(reqs$papelera_en), "papelera",
            ifelse(ep %in% c("provisionada", "en_pago"), ep, "sin_provision")))
@@ -821,6 +824,7 @@ requisiciones_vista <- function(client_id, usuario = NULL, incluir_pagadas = FAL
     evid     = .req_leer("evidencia", cid),
     coms     = .req_leer("comentarios", cid),
     leidos   = if (is.null(usuario)) NULL else .req_leer("leidos", cid),
+    liabs    = .req_liabs(cid),
     usuario  = usuario)
   if (!incluir_pagadas) v <- v[v$etapa != "pagada", , drop = FALSE]
   v
@@ -845,7 +849,7 @@ provisiones_para_evidencia <- function(client_id) {
   conf  <- leer_tabla_para_escribir(S3_KEYS$bancos_confirmados, cid, .schema_bancos_confirmados)
   reqs  <- .req_leer("requisiciones", cid)
   provs <- provs[!is.na(provs$id) & !(provs$id %in% reqs$provision_id), , drop = FALSE]
-  provs$etapa <- etapa_de_provision_en(provs, conf, provs$id)
+  provs$etapa <- etapa_de_provision_en(provs, conf, provs$id, liabs = .req_liabs(cid))
   provs <- provs[provs$etapa %in% c("provisionada", "en_pago", "pagada"), , drop = FALSE]
   tibble::tibble(
     id         = provs$id,

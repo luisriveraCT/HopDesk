@@ -589,6 +589,24 @@ test_that("las tablas de Requisiciones no pierden filas y cada escritura es por 
   expect_true(all(grepl(paste0("^(", CID, "|otro_cliente)/requisiciones"), ls(.mem))))
 })
 
+test_that("la provisión de un pasivo borrado (T18) cuenta como borrada", {
+  reiniciar()
+  r <- requisicion_crear(CID, base_req, "dani")
+  poner_provision("p1")
+  requisicion_ligar_provision(CID, r$id, "p1", "caro")
+  k <- paste0(CID, "/", S3_KEYS$pasivos_provisions)
+  p <- .mem[[k]]; p$liability_id[p$id == "p1"] <- "L1"; assign(k, p, envir = .mem)
+  assign(paste0(CID, "/", S3_KEYS$pasivos_liabilities),
+         .normalize(tibble::tibble(id = "L1", estado = "active"), .schema_pasivos_liability), envir = .mem)
+  expect_identical(requisiciones_vista(CID)$etapa, "provisionada")
+  assign(paste0(CID, "/", S3_KEYS$pasivos_liabilities),
+         .normalize(tibble::tibble(id = "L1", estado = "deleted"), .schema_pasivos_liability), envir = .mem)
+  v <- requisiciones_vista(CID)
+  expect_identical(v$etapa, "sin_provision"); expect_true(v$provision_perdida)
+  poner_provision("p2"); p <- .mem[[k]]; p$liability_id[p$id == "p2"] <- "L1"; assign(k, p, envir = .mem)
+  expect_false("p2" %in% provisiones_para_evidencia(CID)$id)   # never offered
+})
+
 # ── For the screen (E2) ──────────────────────────────────────────────────────
 
 test_that("provisiones_para_evidencia: solo las vivas sin requisición, con su etapa", {
