@@ -440,8 +440,8 @@ pasivos_tabla_datos <- function(wide, liabilities = NULL) {
     # it says whose it is, and searching the liability finds its fees, as
     # today's search (by liability) did.
     Parte = ifelse(fee, sub("\001.*$", "", meta$row_label), meta$row_parte %||% ""),
-    Empresa = meta$row_empresa %||% "",
-    Moneda = meta$row_moneda %||% "",
+    Empresa = meta$row_empresa %||% rep("", n),
+    Moneda = meta$row_moneda %||% rep("", n),
     Categoria = ifelse(huerfana, "", cat_txt),
     Subcategoria = ifelse(huerfana | is.na(meta$row_subcategoria), "", meta$row_subcategoria),
     Tipo = ifelse(huerfana, tr("tablas.pasivos.tipo.manual"), tr("tablas.pasivos.tipo.programada")),
