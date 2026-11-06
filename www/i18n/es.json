@@ -103,6 +103,8 @@
   "tablas.cobros": "Cobros",
   "tablas.error_datos": "No se pudieron cargar los datos.",
   "tablas.agenda.ya_confirmadas": "Ya están confirmadas y no se mandan otra vez a la Agenda: {documentos}.",
+  "tablas.agenda.error_leer": "No se pudo leer la Agenda; no se envió nada: {error}",
+  "tablas.agenda.error_guardar": "No se pudo guardar en la Agenda; no se envió nada: {error}",
   "tablas.edicion.mayor": "Mayor que el máximo ({max})",
   "tablas.edicion.menor": "Menor que el mínimo ({min})",
   "tablas.edicion.no_numero": "Escribe un importe, por ejemplo 1250.50",

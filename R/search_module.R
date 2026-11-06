@@ -590,14 +590,25 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
     if (!nrow(new_rows)) return()
     # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
     # 2026-07-25); a stale base here would silently drop another session's
-    # concurrent stage/unstage.
+    # concurrent stage/unstage. Regla 17 (T23): a failed read saves nothing
+    # (it used to fall back to the session's copy); save, and only once it
+    # is saved does the session show it and say so -- a failed save said
+    # the error AND "✓ enviadas", with the session already showing them.
     ph_base <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
                                             client_id = shared$effective_client_id()),
-                        error = function(e) NULL) %||% shared$pagar_hoy_db()
+                        error = function(e) e)
+    if (inherits(ph_base, "error")) {
+      showNotification(tr("tablas.agenda.error_leer", error = conditionMessage(ph_base)), type = "error")
+      return()
+    }
     updated <- upsert_pagar_hoy(ph_base, new_rows)
-    shared$pagar_hoy_db(updated)
-    tryCatch(save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id(), base = ph_base), error = function(e)
-      showNotification(paste("Error guardando agenda:", e$message), type = "warning"))
+    guardado <- tryCatch(save_pagar_hoy(updated, shared$current_user(), client_id = shared$effective_client_id(),
+                                        base = ph_base), error = function(e) e)
+    if (inherits(guardado, "error")) {
+      showNotification(tr("tablas.agenda.error_guardar", error = conditionMessage(guardado)), type = "error")
+      return()
+    }
+    shared$pagar_hoy_db(guardado)
     # Build a descriptive notification: count, companies, ledger type, total amount
     emp_str  <- paste(unique(new_rows$Empresa), collapse = ", ")
     total    <- sum(new_rows$Importe, na.rm = TRUE)
