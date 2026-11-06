@@ -29,6 +29,10 @@ pasivos_log_audit <- function(...) invisible(NULL)
 find_proveedor_matches <- function(...) NULL
 
 D <- pasivos_datos_prueba()
+# HD_ARRANQUE_NULL = 1: the sources start NULL, as before S3 loads at
+# startup (tests/test_hd_table_arranque_null.R).
+if (identical(Sys.getenv("HD_ARRANQUE_NULL"), "1"))
+  D[c("provisions", "liabilities", "manual_inv", "bancos_confirmados")] <- list(NULL)
 ui <- fluidPage(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly"),
   shinyjs::useShinyjs(),

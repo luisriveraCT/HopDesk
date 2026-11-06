@@ -30,7 +30,8 @@ FIXTURES <- c(
   "Detalle del día: Resumen y Detalle"                 = "dia",
   "Vencidos y la lupa"                                 = "vencidos",
   "Bancos: Libro, Historial, Papelera, Cuentas"        = "bancos",
-  "Pasivos: Lista y Papelera"                          = "pasivos_lista"
+  "Pasivos: Lista y Papelera"                          = "pasivos_lista",
+  "Pasivos: Tabla"                                     = "pasivos_tabla"
 )
 
 arrancar <- function(fixture) callr::r(function(repo, fixture) {
@@ -39,11 +40,23 @@ arrancar <- function(fixture) callr::r(function(repo, fixture) {
   avisos <- character(0)
   error <- tryCatch(withCallingHandlers({
     app <- suppressWarnings(source(sprintf("tests/helpers/%s_fixture_app.R", fixture))$value)
+    # The app's own %||% (R/global.R), not the fixture's or base R's: it also
+    # swaps a length-0 value for the default, so `df$col %||% ""` on 0 rows
+    # gives one "" -- what made cuentas_bancos and pasivos_tabla fail at
+    # startup (T24) while this test passed.
+    for (e in parse("R/global.R", keep.source = FALSE))
+      if (is.call(e) && identical(as.character(e[[1]]), "<-") && identical(as.character(e[[2]]), "%||%"))
+        eval(e, envir = globalenv())
     shiny::testServer(app, { session$flushReact(); session$flushReact() })
     NULL
   }, message = function(m) {
     avisos <<- c(avisos, conditionMessage(m))
     invokeRestart("muffleMessage")
+  }, warning = function(w) {
+    # A column read that isn't there ("Unknown or uninitialised column",
+    # has_very_soon on an empty Pasivos pivot, T24) counts as a failure.
+    if (grepl("Unknown or uninitialised column", conditionMessage(w), fixed = TRUE))
+      avisos <<- c(avisos, paste("the datos failed:", conditionMessage(w)))
   }), error = function(e) conditionMessage(e))
   list(error = error, fallas = grep("the (datos|aviso) failed", avisos, value = TRUE))
 }, args = list(repo = repo, fixture = fixture), timeout = 180)   # a hang fails, it never blocks the run

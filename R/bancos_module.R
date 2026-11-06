@@ -2777,8 +2777,8 @@ bancosServer <- function(id, shared) {
         cts <- dplyr::filter(cuentas(), activa == TRUE) |> dplyr::arrange(empresa, banco, moneda)
         data.frame(id = as.character(cts$cuenta_id), Empresa = as.character(cts$empresa),
                    Banco = as.character(cts$banco), Moneda = as.character(cts$moneda),
-                   Alias = as.character(cts$alias %||% ""), Cuenta = as.character(cts$numero_cuenta %||% ""),
-                   CLABE = as.character(cts$clabe %||% ""), stringsAsFactors = FALSE)
+                   Alias = as.character(cts$alias), Cuenta = as.character(cts$numero_cuenta),
+                   CLABE = as.character(cts$clabe), stringsAsFactors = FALSE)
       }),
       columnas = list(col_empresa("Empresa", "tablas.facturas.empresa"),
                       col_texto("Banco", "tablas.bancos.banco"),
