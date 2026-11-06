@@ -1811,10 +1811,11 @@ pagarHoyServer <- function(id, shared) {
             created_at  = Sys.time(),
             status      = "active"
           )
-          ab_updated <- upsert_abono(shared$abonos_db() %||% load_abonos(), ab_new)
-          shared$abonos_db(ab_updated)
+          # Added on S3's whole current table (CM19); the session's copy
+          # changes only once it is saved.
           tryCatch({
-            save_abonos(ab_updated, client_id = shared$effective_client_id())
+            shared$abonos_db(modificar_abonos(function(ab) upsert_abono(ab, ab_new),
+                                              client_id = shared$effective_client_id()))
             bump_sync_version("abonos_db", client_id = shared$effective_client_id())
           }, error = function(e) showNotification(
                      paste("Error al guardar abono:", e$message), type = "warning"))
@@ -2168,10 +2169,11 @@ pagarHoyServer <- function(id, shared) {
             created_at  = Sys.time(),
             status      = "active"
           )
-          ab_updated <- upsert_abono(shared$abonos_db() %||% load_abonos(), ab_new)
-          shared$abonos_db(ab_updated)
+          # Added on S3's whole current table (CM19); the session's copy
+          # changes only once it is saved.
           tryCatch({
-            save_abonos(ab_updated, client_id = shared$effective_client_id())
+            shared$abonos_db(modificar_abonos(function(ab) upsert_abono(ab, ab_new),
+                                              client_id = shared$effective_client_id()))
             bump_sync_version("abonos_db", client_id = shared$effective_client_id())
           }, error = function(e) showNotification(
                      paste("Error al guardar abono:", e$message), type = "warning"))

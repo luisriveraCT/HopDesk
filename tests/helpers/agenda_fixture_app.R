@@ -72,7 +72,7 @@ stubs <- list(
     .anota(sprintf("abonos: %s", paste(nuevo$Documento, collapse = ",")))
     dplyr::bind_rows(db, nuevo)
   },
-  save_abonos = function(...) invisible(TRUE)
+  modificar_abonos = function(cambio, client_id) cambio(tibble::tibble())
 )
 for (n in names(stubs)) assign(n, stubs[[n]], envir = globalenv())
 

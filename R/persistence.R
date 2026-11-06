@@ -195,12 +195,13 @@
 # ("Vaciar agenda", purges, log rotation) pass permitir_reduccion = TRUE.
 # options(hopdesk.s3_red = "aviso") logs instead of refusing (an operational
 # escape hatch if a false positive ever shows up in production).
+# Abonos too (CM19): voiding is a status, never a removal.
 # The hd-admin control-plane tables (CM13) only grow too: rows change status
 # (approved, revoked, read...) but are never removed.
 # Requisiciones' 6 tables too (front E): trashing is a mark, never a removal.
 # REQ_KEYS lives in R/requisiciones_persistence.R; scripts that source this
 # file alone simply do not have it.
-.S3_SOLO_CRECEN <- function() c(unname(unlist(S3_KEYS[c("pasivos_audit", "papelera", "bancos_confirmados")])),
+.S3_SOLO_CRECEN <- function() c(unname(unlist(S3_KEYS[c("pasivos_audit", "papelera", "bancos_confirmados", "abonos")])),
                                 .HD_ADMIN_SOLO_CRECEN,
                                 if (exists("REQ_KEYS")) unname(unlist(REQ_KEYS)))
 # Keys outside the net, each for a reason:
@@ -2457,14 +2458,25 @@ rename_empresa_initials <- function(old_ini, new_ini, client_id = NULL) {
   status      = character()          # "active" | "voided"
 )
 
+# What the screens show: active and voided abonos. A filter for reading only,
+# never applied to what is written (CM19).
+.abonos_vista <- function(df)
+  .normalize(df, .schema_abonos) |> dplyr::filter(status %in% c("active", "voided"))
+
 load_abonos <- function(client_id = NULL) {
-  .normalize(.s3_read_with(S3_KEYS$abonos, client_id = client_id), .schema_abonos) |>
-    dplyr::filter(status %in% c("active", "voided"))
+  .abonos_vista(.s3_read_with(S3_KEYS$abonos, client_id = client_id))
 }
 
-save_abonos <- function(df, client_id = NULL) {
-  .s3_write(.normalize(df, .schema_abonos), S3_KEYS$abonos, client_id = client_id)
-  if (exists(".cache_set", mode = "function")) .cache_set("abonos", df, client_id)
+# cambio(abonos) -> abonos, on S3's whole current table (CM19): strict read
+# (a failed read stop()s, nothing is written), no status filter and no column
+# dropped. They used to save the session's filtered copy: a second session's
+# abono, or any row of another status, was lost. Returns the screens' view of
+# the table written (cached), for shared$abonos_db.
+modificar_abonos <- function(cambio, client_id) {
+  escrita <- modificar_tabla_completa(S3_KEYS$abonos, client_id, .schema_abonos, cambio)
+  vista <- .abonos_vista(escrita)
+  if (exists(".cache_set", mode = "function")) .cache_set("abonos", vista, client_id)
+  vista
 }
 
 # Add new abono records (each has a fresh UUID — never replaces existing)

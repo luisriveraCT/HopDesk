@@ -135,7 +135,7 @@ for (key in names(LOADER_OF)) {
 # accepts client_id (except save_hop_grants(), which is deliberately global-
 # scoped, not per-client -- the one confirmed, intentional exception) ───────
 SAVE_OF <- c(
-  abonos_db                = "save_abonos",
+  abonos_db                = "modificar_abonos",
   interco_v2                = "save_interco_v2",
   sap_ov_db                 = "save_sap_overrides",
   proveedores_inactivos_db  = "save_proveedores_inactivos",

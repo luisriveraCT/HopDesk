@@ -2366,10 +2366,10 @@ bancosServer <- function(id, shared) {
       if (identical(ab$status[ab$id == ab_id][1], "voided")) return()
 
       ab_row  <- ab[ab$id == ab_id, , drop = FALSE][1, ]
-      updated <- void_abono(ab, ab_id)
-      shared$abonos_db(updated)
+      # Voided on S3's whole current table, by id (CM19).
       tryCatch({
-        save_abonos(updated, client_id = shared$effective_client_id())
+        shared$abonos_db(modificar_abonos(function(ab) void_abono(ab, ab_id),
+                                          client_id = shared$effective_client_id()))
         bump_sync_version("abonos_db", client_id = shared$effective_client_id())
       }, error = function(e)
         showNotification("Error al guardar. Intenta de nuevo.", type = "warning"))
