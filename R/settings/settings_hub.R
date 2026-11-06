@@ -539,15 +539,19 @@ settings_observers <- function(input, output, session, shared) {
   # The session's SAP snapshots, list(AR, AP), read with its own client (T23).
   # Without an effective client (or if it fails) nothing is read and the user
   # is told: a NULL client_id falls to the deployment's default key, which can
-  # be another client's (or the shared one's) snapshots.
+  # be another client's (or the shared one's) snapshots. Where a snapshot is
+  # missing, the session's own SAP data (shared$sap_data(), already this
+  # client's) stands in -- for every caller, so Business Partners and the
+  # scanner see the same codes (only the scanner fell back before).
   .sap_snapshots <- function() {
     cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
     if (!is.character(cid) || length(cid) != 1L || is.na(cid) || !nzchar(cid)) {
       showNotification(tr("tablas.ajustes.sap.sin_cliente"), type = "error")
       return(NULL)
     }
-    list(AR = tryCatch(load_sap_snapshot("AR", client_id = cid)$data, error = function(e) NULL),
-         AP = tryCatch(load_sap_snapshot("AP", client_id = cid)$data, error = function(e) NULL))
+    en_sesion <- tryCatch(shared$sap_data(), error = function(e) NULL)
+    list(AR = tryCatch(load_sap_snapshot("AR", client_id = cid)$data, error = function(e) NULL) %||% en_sesion[["AR"]],
+         AP = tryCatch(load_sap_snapshot("AP", client_id = cid)$data, error = function(e) NULL) %||% en_sesion[["AP"]])
   }
 
   # Build code→name lookup from S3 snapshots.
@@ -593,8 +597,8 @@ settings_observers <- function(input, output, session, shared) {
     # this session.  Fall back to in-memory session data when snapshots are absent.
     snaps <- .sap_snapshots()
     if (is.null(snaps)) return()
-    sap_ar <- snaps$AR %||% shared$sap_data()[["AR"]]
-    sap_ap <- snaps$AP %||% shared$sap_data()[["AP"]]
+    sap_ar <- snaps$AR
+    sap_ap <- snaps$AP
 
     if (is.null(sap_ar) && is.null(sap_ap)) {
       showNotification("No hay datos SAP disponibles. Refresca los datos primero.",

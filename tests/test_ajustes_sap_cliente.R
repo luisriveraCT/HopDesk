@@ -111,6 +111,39 @@ ok("después de “Aplicar como IC”, la relectura también lleva el cliente",
    is.null(r$error) && length(r$lecturas) > n0 &&
      all(vapply(r$lecturas, function(l) identical(l$client_id, CID), logical(1))))
 
+# ── 2b. T23 · 2: Business Partners and the scanner read the same ────────────
+# No snapshot on S3, but the session has its SAP data: both stand on it (only
+# the scanner did; Business Partners said "no hay snapshots").
+snap_real <- load_sap_snapshot
+load_sap_snapshot <- function(ledger, client_id = NULL) {
+  LECTURAS[[length(LECTURAS) + 1L]] <<- list(ledger = ledger, client_id = client_id); NULL
+}
+# What each place hands scan_ic_candidates() (the codes it will show).
+scan_real <- scan_ic_candidates
+VISTOS <- NULL
+scan_ic_candidates <- function(sap_ar, sap_ap, ...) {
+  r <- scan_real(sap_ar, sap_ap, ...); VISTOS <<- sort(r$code); r
+}
+codigos <- function(boton) {
+  VISTOS <<- NULL
+  s3_memoria_reset(); AVISOS <<- character(); LECTURAS <<- list()
+  assign(paste0(CID, "/", S3_KEYS$interco_v2), REG0, envir = .mem)
+  shared <- list(usuario = reactiveVal(USR), current_user = function() "admin",
+                 effective_client_id = function() CID, home_client_id = function() CID,
+                 company_map = reactive(CMAP), ctas_cuentas = reactiveVal(NULL),
+                 interco_v2 = reactiveVal(REG0), proveedores_db = reactiveVal(NULL),
+                 sap_data = function() list(AR = SNAP))
+  tryCatch(testServer(function(input, output, session) settings_observers(input, output, session, shared), {
+    session$flushReact()
+    do.call(session$setInputs, stats::setNames(list(1), boton))
+  }), error = function(e) message("  ERROR: ", conditionMessage(e)))
+  VISTOS
+}
+bp <- codigos("bp_refresh_btn"); esc <- codigos("scan_ic_btn")
+ok("sin snapshot, con datos de la sesión: Business Partners y el escáner ven los mismos códigos (C1027, C2001)",
+   identical(bp, c("C1027", "C2001")) && identical(esc, bp))
+load_sap_snapshot <- snap_real; scan_ic_candidates <- scan_real
+
 # ── 3. Static ────────────────────────────────────────────────────────────────
 src <- paste(readLines("R/settings/settings_hub.R", encoding = "UTF-8"), collapse = "\n")
 llamadas <- regmatches(src, gregexpr("load_sap_snapshot\\([^)]*\\)", src))[[1]]
