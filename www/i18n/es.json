@@ -389,6 +389,7 @@
   "tablas.ajustes.candidatos.vacio": "Sin códigos en las facturas cargadas.",
   "tablas.ajustes.candidatos.ayuda_bp": "Marca los códigos IC y haz clic en “Aplicar como IC”. “IC ✓” = ya configurados. Aplicar agrega códigos; para quitar uno, borra su campo en Intercompany.",
   "tablas.ajustes.candidatos.ayuda_escaner": "Marca los códigos que son Intercompany. “IC ✓” = ya configurados. Aplicar agrega los marcados y no quita los existentes; para quitar un código, borra su campo en la pestaña Intercompany.",
+  "tablas.ajustes.sap.sin_cliente": "No se pudo identificar el cliente de esta sesión: no se leyeron los datos de SAP.",
   "tablas.flujo.dia.1": "L",
   "tablas.flujo.dia.2": "M",
   "tablas.flujo.dia.3": "X",

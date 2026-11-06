@@ -536,11 +536,26 @@ settings_observers <- function(input, output, session, shared) {
     if (nrow(rows)) rows else NULL
   }
 
+  # The session's SAP snapshots, list(AR, AP), read with its own client (T23).
+  # Without an effective client (or if it fails) nothing is read and the user
+  # is told: a NULL client_id falls to the deployment's default key, which can
+  # be another client's (or the shared one's) snapshots.
+  .sap_snapshots <- function() {
+    cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
+    if (!is.character(cid) || length(cid) != 1L || is.na(cid) || !nzchar(cid)) {
+      showNotification(tr("tablas.ajustes.sap.sin_cliente"), type = "error")
+      return(NULL)
+    }
+    list(AR = tryCatch(load_sap_snapshot("AR", client_id = cid)$data, error = function(e) NULL),
+         AP = tryCatch(load_sap_snapshot("AP", client_id = cid)$data, error = function(e) NULL))
+  }
+
   # Build code→name lookup from S3 snapshots.
   # Used to label IC code inputs with the matched company name.
   .build_code_lookup <- function() {
-    snap_ar <- tryCatch(load_sap_snapshot("AR", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL))$data, error = function(e) NULL)
-    snap_ap <- tryCatch(load_sap_snapshot("AP", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL))$data, error = function(e) NULL)
+    snaps   <- .sap_snapshots()
+    snap_ar <- snaps$AR
+    snap_ap <- snaps$AP
     cmap    <- shared$company_map()
     inv_map <- setNames(names(cmap), unname(cmap))
 
@@ -576,10 +591,10 @@ settings_observers <- function(input, output, session, shared) {
   observeEvent(input$scan_ic_btn, {
     # Prefer S3 snapshots — they include ALL companies even when SAP was unreachable
     # this session.  Fall back to in-memory session data when snapshots are absent.
-    sap_ar <- tryCatch(load_sap_snapshot("AR", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL))$data, error = function(e) NULL) %||%
-              shared$sap_data()[["AR"]]
-    sap_ap <- tryCatch(load_sap_snapshot("AP", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL))$data, error = function(e) NULL) %||%
-              shared$sap_data()[["AP"]]
+    snaps <- .sap_snapshots()
+    if (is.null(snaps)) return()
+    sap_ar <- snaps$AR %||% shared$sap_data()[["AR"]]
+    sap_ap <- snaps$AP %||% shared$sap_data()[["AP"]]
 
     if (is.null(sap_ar) && is.null(sap_ap)) {
       showNotification("No hay datos SAP disponibles. Refresca los datos primero.",
@@ -736,10 +751,9 @@ settings_observers <- function(input, output, session, shared) {
     ic_panel_active(FALSE)
     # Populate bp_candidates on first open (or if empty)
     if (is.null(bp_candidates())) {
-      snap_ar <- tryCatch(load_sap_snapshot("AR", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL)), error = function(e) NULL)
-      snap_ap <- tryCatch(load_sap_snapshot("AP", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL)), error = function(e) NULL)
-      sap_ar  <- snap_ar$data
-      sap_ap  <- snap_ap$data
+      snaps  <- .sap_snapshots()
+      sap_ar <- snaps$AR
+      sap_ap <- snaps$AP
       if (!is.null(sap_ar) || !is.null(sap_ap)) {
         cands <- scan_ic_candidates(sap_ar, sap_ap, isolate(shared$interco_v2()), isolate(shared$company_map()))
         bp_candidates(cands)
@@ -752,10 +766,10 @@ settings_observers <- function(input, output, session, shared) {
 
   # Refresh SAP BP table
   observeEvent(input$bp_refresh_btn, {
-    snap_ar <- tryCatch(load_sap_snapshot("AR", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL)), error = function(e) NULL)
-    snap_ap <- tryCatch(load_sap_snapshot("AP", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL)), error = function(e) NULL)
-    sap_ar  <- snap_ar$data
-    sap_ap  <- snap_ap$data
+    snaps  <- .sap_snapshots()
+    if (is.null(snaps)) return()
+    sap_ar <- snaps$AR
+    sap_ap <- snaps$AP
     if (is.null(sap_ar) && is.null(sap_ap)) {
       showNotification("No hay snapshots SAP disponibles.", type = "warning")
       return()
@@ -827,9 +841,8 @@ settings_observers <- function(input, output, session, shared) {
 
     # Refresh is_ic flags in bp_candidates so "IC ✓" updates
     new_cands <- tryCatch({
-      sap_ar <- tryCatch(load_sap_snapshot("AR", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL))$data, error = function(e) NULL)
-      sap_ap <- tryCatch(load_sap_snapshot("AP", client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL))$data, error = function(e) NULL)
-      scan_ic_candidates(sap_ar, sap_ap, new_registry, isolate(shared$company_map()))
+      snaps <- .sap_snapshots()
+      scan_ic_candidates(snaps$AR, snaps$AP, new_registry, isolate(shared$company_map()))
     }, error = function(e) NULL)
     if (!is.null(new_cands) && nrow(new_cands)) bp_candidates(new_cands)
 
