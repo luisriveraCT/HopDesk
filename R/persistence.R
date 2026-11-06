@@ -195,13 +195,14 @@
 # ("Vaciar agenda", purges, log rotation) pass permitir_reduccion = TRUE.
 # options(hopdesk.s3_red = "aviso") logs instead of refusing (an operational
 # escape hatch if a false positive ever shows up in production).
-# Abonos too (CM19): voiding is a status, never a removal.
+# Abonos and Bancos' papelera too (CM19): voiding is a status and restoring
+# adds an event; neither removes rows.
 # The hd-admin control-plane tables (CM13) only grow too: rows change status
 # (approved, revoked, read...) but are never removed.
 # Requisiciones' 6 tables too (front E): trashing is a mark, never a removal.
 # REQ_KEYS lives in R/requisiciones_persistence.R; scripts that source this
 # file alone simply do not have it.
-.S3_SOLO_CRECEN <- function() c(unname(unlist(S3_KEYS[c("pasivos_audit", "papelera", "bancos_confirmados", "abonos")])),
+.S3_SOLO_CRECEN <- function() c(unname(unlist(S3_KEYS[c("pasivos_audit", "papelera", "bancos_confirmados", "abonos", "bancos_papelera")])),
                                 .HD_ADMIN_SOLO_CRECEN,
                                 if (exists("REQ_KEYS")) unname(unlist(REQ_KEYS)))
 # Keys outside the net, each for a reason:

@@ -221,8 +221,8 @@ empty_bpap <- .schema_bancos_papelera() |> dplyr::slice(0)
               "F3: del_rows is captured BEFORE the eliminado flag flips (archive reflects pre-delete state, not post-mutation)")
     .chk_true(grepl("add_to_bancos_papelera\\(", block),
               "F4: calls add_to_bancos_papelera()")
-    .chk_true(grepl("save_bancos_papelera\\(", block),
-              "F5: calls save_bancos_papelera() (the archive is actually persisted, not just built in memory)")
+    .chk_true(grepl("modificar_bancos_papelera\\(", block),
+              "F5: calls modificar_bancos_papelera() (the archive is persisted on S3's current table, CM19)")
     .chk_true(grepl("log_action\\(", block),
               "F6 (regression guard): still calls log_action() -- Issue C's fix didn't remove Stage 6's existing logging")
     .chk_true(grepl("movs\\$eliminado\\[idx\\]\\s*<-\\s*TRUE", block),
@@ -246,7 +246,7 @@ empty_bpap <- .schema_bancos_papelera() |> dplyr::slice(0)
 
     .chk_true(grepl("restore_from_bancos_papelera\\(", block),
               "G2: calls restore_from_bancos_papelera()")
-    .chk_true(grepl("save_bancos_papelera\\(", block),
+    .chk_true(grepl("modificar_bancos_papelera\\(", block),
               "G3: persists the restore event")
     .chk_true(grepl("fuente\\s*==\\s*\"manual\"", block),
               "G4 (regression guard): still restricted to fuente=='manual' -- Issue C's fix didn't quietly widen the existing deliberate restore-eligibility restriction (open design question flagged back in this stage's report, not decided unilaterally)")

@@ -290,13 +290,17 @@ recover_confirmacion <- function(conf_db, confirmacion_id, actor = "user") {
   original_data = list()        # full pre-delete movement row, for restore + audit
 )
 
+# Strict (CM19): a failed read stop()s. It came back as an empty table, and
+# the archive saved over it held only the new event.
 load_bancos_papelera <- function(client_id = NULL) {
-  .normalize(.s3_read_with(S3_KEYS$bancos_papelera, client_id = client_id), .schema_bancos_papelera)
+  leer_tabla_para_escribir(S3_KEYS$bancos_papelera, client_id, .schema_bancos_papelera)
 }
 
-save_bancos_papelera <- function(df, client_id = NULL) {
-  .s3_write(.normalize(df, .schema_bancos_papelera), S3_KEYS$bancos_papelera, client_id = client_id)
-}
+# cambio(papelera) -> papelera, on S3's current table (CM19): strict read,
+# never from a copy. Archiving and restoring only add events, so the table
+# only grows (.S3_SOLO_CRECEN).
+modificar_bancos_papelera <- function(cambio, client_id)
+  modificar_tabla(S3_KEYS$bancos_papelera, client_id, .schema_bancos_papelera, cambio)
 
 # Archive one or more just-deleted bancos_movimientos rows as their own
 # permanent "archived" event. mov_rows is a plain data.frame/tibble slice of

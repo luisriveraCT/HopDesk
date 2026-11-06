@@ -1367,15 +1367,12 @@ bancosServer <- function(id, shared) {
       # writes a genuinely separate, permanent, restorable archive event.
       # The movements are already deleted; if their archive can't be written
       # the user is told so and it is logged (it used to fail silently).
-      # (A failed read inside load_bancos_papelera() still comes back as an
-      # empty table: that, and saving without a base, is the integrator's
-      # VP3 in persistence, not this module's.)
+      # On S3's current archive, read strictly (CM19).
       .bnc_guardar("archivar_movimientos_eliminados",
                    sprintf("Archivar %d movimiento(s) eliminados en la papelera de Bancos", nrow(del_rows)),
                    function() {
-                     bpap <- load_bancos_papelera(client_id = shared$effective_client_id())
-                     bpap <- add_to_bancos_papelera(bpap, del_rows, actor = actor)
-                     save_bancos_papelera(bpap, client_id = shared$effective_client_id())
+                     modificar_bancos_papelera(function(bpap) add_to_bancos_papelera(bpap, del_rows, actor = actor),
+                                               client_id = shared$effective_client_id())
                    }, aviso = "tablas.bancos.error_archivar")
 
       removeModal()
@@ -2327,11 +2324,13 @@ bancosServer <- function(id, shared) {
       # it is logged (it used to be a message() on the console).
       .bnc_guardar("registrar_restauracion_papelera", "Registrar la restauración en la papelera de Bancos",
                    function() {
-                     bpap <- load_bancos_papelera(client_id = shared$effective_client_id())
-                     res  <- tryCatch(restore_from_bancos_papelera(bpap, mov_id,
-                                        actor = tryCatch(shared$current_user(), error = function(e) "system")),
-                                      error = function(e) NULL)
-                     if (!is.null(res)) save_bancos_papelera(res$papelera_df, client_id = shared$effective_client_id())
+                     # On S3's current archive (CM19); no archived event: unchanged, nothing written.
+                     modificar_bancos_papelera(function(bpap) {
+                       res <- tryCatch(restore_from_bancos_papelera(bpap, mov_id,
+                                         actor = tryCatch(shared$current_user(), error = function(e) "system")),
+                                       error = function(e) NULL)
+                       if (is.null(res)) bpap else res$papelera_df
+                     }, client_id = shared$effective_client_id())
                    }, aviso = "tablas.bancos.error_archivar_restauracion")
 
       showNotification("Movimiento restaurado.", type = "message", duration = 3)
