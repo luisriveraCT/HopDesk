@@ -303,24 +303,50 @@ pasivos_papelera_server <- function(id, shared) {
 # (T18: so the motor's row actions and the Papelera call the same code. The
 # bodies are the handlers' own, unchanged.)
 
+# One liability's estado, changed on S3 as it is now (T22). The decision
+# ("is it still in an estado it can leave?") is taken on S3's row, not on the
+# session's copy, and only that row is written. On a failed read or write it
+# says so and changes nothing here: not the session, no bump, nothing after
+# it (regla 17). It used to write the session's whole copy, swallow the error
+# and go on as saved; a row another session had just changed went back to
+# what this session held.
+#   desde  the estados the row may leave (anything else: no change)
+# Returns list(ok, cambio, antes = S3's row before, NULL if it isn't there).
+.pasivos_cambiar_estado <- function(shared, lid, user, nuevo, desde) {
+  cid   <- shared$effective_client_id()
+  antes <- NULL
+  liabs <- tryCatch(modificar_pasivos_liabilities(cid, function(fresco) {
+    idx <- which(fresco$id %in% lid)
+    if (!length(idx)) return(fresco)
+    antes <<- fresco[idx[1], , drop = FALSE]
+    if (!antes$estado[1] %in% desde || identical(antes$estado[1], nuevo)) return(fresco)
+    fresco$estado[idx[1]]     <- nuevo
+    fresco$updated_at[idx[1]] <- Sys.time()
+    fresco$updated_by[idx[1]] <- user
+    fresco
+  }), error = function(e) e)
+  if (inherits(liabs, "error")) {
+    message("[pasivos] liability ", lid, " -> ", nuevo, " not saved: ", conditionMessage(liabs))
+    shiny::showNotification(tr("tablas.pasivos.no_guardado"), type = "error", duration = 8)
+    return(list(ok = FALSE, cambio = FALSE, antes = NULL))
+  }
+  # The session takes what S3 holds now, other sessions' changes included.
+  shared$pasivos_liabilities_db(liabs)
+  cambio <- !is.null(antes) && antes$estado[1] %in% desde && !identical(antes$estado[1], nuevo)
+  if (cambio) bump_sync_version("pasivos_liabilities_db", client_id = cid)
+  list(ok = TRUE, cambio = cambio, antes = antes)
+}
+
 # Sets an active liability to "paused" (dropping its future provisional
-# provisions) or a paused one back to "active". Does nothing if the
+# provisions) or a paused one back to "active". Does nothing if, on S3, the
 # liability is deleted or already in `new_estado` (e.g. another session
 # changed it while the confirm was open).
 pasivos_cambiar_pausa <- function(shared, lid, user, new_estado) {
-      liabs <- tryCatch(shared$pasivos_liabilities_db(),
-                        error = function(e) .schema_pasivos_liability())
-      idx <- which(liabs$id == lid)
-      if (!length(idx)) return(invisible(NULL))
-      old_estado <- liabs$estado[idx[1]]
-      if (identical(old_estado, "deleted") || identical(old_estado, new_estado)) return(invisible(NULL))
-      nombre     <- liabs$nombre[idx[1]]
-      liabs$estado[idx[1]] <- new_estado
-      liabs$updated_at[idx[1]] <- Sys.time()
-      liabs$updated_by[idx[1]] <- user
-      tryCatch(save_pasivos_liabilities(liabs, client_id = shared$effective_client_id()), error = function(e) NULL)
-      shared$pasivos_liabilities_db(liabs)
-      bump_sync_version("pasivos_liabilities_db", client_id = shared$effective_client_id())
+      r <- .pasivos_cambiar_estado(shared, lid, user, new_estado,
+                                   desde = if (identical(new_estado, "paused")) "active" else "paused")
+      if (!isTRUE(r$cambio)) return(invisible(NULL))
+      old_estado <- r$antes$estado[1]
+      nombre     <- r$antes$nombre[1]
 
       if (identical(new_estado, "paused")) {
         # Remove future provisional provisions -- captured individually
@@ -338,20 +364,33 @@ pasivos_cambiar_pausa <- function(shared, lid, user, new_estado) {
         dropped_rows <- provs[drop_mask, , drop = FALSE]
         if (nrow(dropped_rows)) {
           provs <- provs[!drop_mask, , drop = FALSE]
-          tryCatch(save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base), error = function(e) NULL)
-          tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
-          shared$pasivos_provisions_db(provs)
-          bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
-          for (i in seq_len(nrow(dropped_rows))) {
-            tryCatch(pasivos_log_audit(
-              action_type = "provision.deleted",
-              user        = user,
-              target_kind = "provision",
-              target_id   = dropped_rows$id[i],
-              before      = as.list(dropped_rows[i, , drop = FALSE]),
-              notes       = sprintf("removed as future provisional provision when liability '%s' was paused", nombre),
-              client_id   = shared$effective_client_id()
-            ), error = function(e) NULL)
+          # Regla 17 (T22): this save's error was swallowed too, and the
+          # provisions stayed on S3 while the session and the notice said
+          # they were gone. The liability is paused already; say so.
+          quitadas <- tryCatch({
+            save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base)
+            TRUE
+          }, error = function(e) {
+            message("[pasivos] future provisions of ", lid, " not removed: ", conditionMessage(e))
+            FALSE
+          })
+          if (!quitadas) {
+            shiny::showNotification(tr("tablas.pasivos.provisiones_no_quitadas"), type = "error", duration = 10)
+          } else {
+            tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
+            shared$pasivos_provisions_db(provs)
+            bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
+            for (i in seq_len(nrow(dropped_rows))) {
+              tryCatch(pasivos_log_audit(
+                action_type = "provision.deleted",
+                user        = user,
+                target_kind = "provision",
+                target_id   = dropped_rows$id[i],
+                before      = as.list(dropped_rows[i, , drop = FALSE]),
+                notes       = sprintf("removed as future provisional provision when liability '%s' was paused", nombre),
+                client_id   = shared$effective_client_id()
+              ), error = function(e) NULL)
+            }
           }
         }
         shiny::showNotification("Pasivo pausado. Provisiones futuras eliminadas.",
@@ -365,7 +404,7 @@ pasivos_cambiar_pausa <- function(shared, lid, user, new_estado) {
       tryCatch(pasivos_log_audit(
         action_type = "liability.edited",
         user        = user,
-        empresa     = liabs$empresa[idx[1]],
+        empresa     = r$antes$empresa[1],
         target_kind = "liability",
         target_id   = lid,
         before      = list(nombre = nombre, estado = old_estado),
@@ -379,18 +418,11 @@ pasivos_cambiar_pausa <- function(shared, lid, user, new_estado) {
 # Marks a liability "deleted" ("Borrar"), keeping all its provisions (T18).
 # The caller checked the permission and confirmed.
 pasivos_borrar <- function(shared, lid, user) {
-      liabs <- tryCatch(shared$pasivos_liabilities_db(),
-                        error = function(e) .schema_pasivos_liability())
-      idx <- which(liabs$id == lid)
-      if (!length(idx)) { shiny::removeModal(); return() }
-      old_estado <- liabs$estado[idx[1]]
-      nombre     <- liabs$nombre[idx[1]]
-      liabs$estado[idx[1]]     <- "deleted"
-      liabs$updated_at[idx[1]] <- Sys.time()
-      liabs$updated_by[idx[1]] <- user
-      tryCatch(save_pasivos_liabilities(liabs, client_id = shared$effective_client_id()), error = function(e) NULL)
-      shared$pasivos_liabilities_db(liabs)
-      bump_sync_version("pasivos_liabilities_db", client_id = shared$effective_client_id())
+      r <- .pasivos_cambiar_estado(shared, lid, user, "deleted", desde = c("active", "paused"))
+      shiny::removeModal()
+      if (!isTRUE(r$cambio)) return()
+      old_estado <- r$antes$estado[1]
+      nombre     <- r$antes$nombre[1]
 
       # Its provisions are NOT removed (Luis, T18): a deleted liability leaves
       # every view together with all of them -- the Calendar, the Agenda and
@@ -408,7 +440,7 @@ pasivos_borrar <- function(shared, lid, user) {
       tryCatch(pasivos_log_audit(
         action_type = "liability.deleted",
         user        = user,
-        empresa     = liabs$empresa[idx[1]],
+        empresa     = r$antes$empresa[1],
         target_kind = "liability",
         target_id   = lid,
         before      = list(nombre = nombre, estado = old_estado),
@@ -418,31 +450,21 @@ pasivos_borrar <- function(shared, lid, user) {
         client_id   = shared$effective_client_id()
       ), error = function(e) NULL)
 
-      shiny::removeModal()
       shiny::showNotification(tr("tablas.pasivos.borrado_ok"), type = "message", duration = 3)
 }
 
 # Brings a deleted liability back to "active" ("Recuperar"). The caller
-# checked the permission.
+# checked the permission. Only a liability that is deleted on S3 comes back.
 pasivos_recuperar <- function(shared, lid, user) {
-      liabs <- tryCatch(shared$pasivos_liabilities_db(),
-                        error = function(e) .schema_pasivos_liability())
-      idx <- which(liabs$id == lid)
-      if (!length(idx)) return()
-      old_estado <- liabs$estado[idx[1]]
-      if (!identical(old_estado, "deleted")) return()  # nothing to restore
-      nombre <- liabs$nombre[idx[1]]
-      liabs$estado[idx[1]]     <- "active"
-      liabs$updated_at[idx[1]] <- Sys.time()
-      liabs$updated_by[idx[1]] <- user
-      tryCatch(save_pasivos_liabilities(liabs, client_id = shared$effective_client_id()), error = function(e) NULL)
-      shared$pasivos_liabilities_db(liabs)
-      bump_sync_version("pasivos_liabilities_db", client_id = shared$effective_client_id())
+      r <- .pasivos_cambiar_estado(shared, lid, user, "active", desde = "deleted")
+      if (!isTRUE(r$cambio)) return()   # not saved, or nothing to restore
+      old_estado <- r$antes$estado[1]
+      nombre     <- r$antes$nombre[1]
 
       tryCatch(pasivos_log_audit(
         action_type = "liability.restored",
         user        = user,
-        empresa     = liabs$empresa[idx[1]],
+        empresa     = r$antes$empresa[1],
         target_kind = "liability",
         target_id   = lid,
         before      = list(nombre = nombre, estado = old_estado),

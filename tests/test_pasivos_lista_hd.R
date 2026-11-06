@@ -114,7 +114,11 @@ sembrar(); sh <- nuevo_shared()
 testServer(pasivos_list_module_server, args = list(shared = sh), {
   session$flushReact()
   antes <- lista_datos()$id
-  sh$pasivos_liabilities_db(dplyr::bind_rows(pasivo("L0", "Agua", "AAA"), isolate(sh$pasivos_liabilities_db())))
+  # The other session saved it (on S3) and the sync bus brought it here.
+  # Since T22 the save works on S3's table, so L0 must be there as it would.
+  con_l0 <- dplyr::bind_rows(pasivo("L0", "Agua", "AAA"), isolate(sh$pasivos_liabilities_db()))
+  save_pasivos_liabilities(con_l0, client_id = CID)
+  sh$pasivos_liabilities_db(con_l0)
   session$flushReact()
   ok(!identical(lista_datos()$id, antes) && identical(lista_datos()$id[1], "L0"), "L3: the rows moved (L0 sorts first)")
   session$setInputs(`lista-accion` = list(accion = "eliminar", ids = "L2", nonce = runif(1)))

@@ -186,12 +186,16 @@ restore_start <- grep("^pasivos_recuperar <- function", list_txt)
 if (length(restore_start) == 1) {
   restore_block <- paste(list_txt[restore_start[1]:min(restore_start[1] + 40, length(list_txt))], collapse = "\n")
 
-  .chk_true(grepl('if \\(!identical\\(old_estado, "deleted"\\)\\) return\\(\\)', restore_block),
-       "guards against restoring a liability that isn't actually archived")
-  .chk_true(grepl('liabs\\$estado\\[idx\\[1\\]\\]\\s*<-\\s*"active"', restore_block),
-       "restore sets estado back to 'active'")
-  .chk_true(grepl('save_pasivos_liabilities\\(liabs,', restore_block),
-       "restore persists the liability change")
+  # Since T22 the change goes through .pasivos_cambiar_estado(): the row's
+  # estado on S3 (not the session's copy) decides, only that row is written,
+  # and a failed save stops before the audit. By behavior:
+  # tests/test_pasivos_liabilities_seguro.R (B1, B4, B5).
+  .chk_true(grepl('\\.pasivos_cambiar_estado\\(shared, lid, user, "active", desde = "deleted"\\)', restore_block),
+       "guards against restoring a liability that isn't actually archived (on S3: desde = \"deleted\")")
+  .chk_true(grepl('if \\(!isTRUE\\(r\\$cambio\\)\\) return\\(\\)', restore_block),
+       "restore sets estado back to 'active', and goes on only if it was saved")
+  .chk_true(any(grepl("modificar_pasivos_liabilities\\(cid,", list_txt)),
+       "restore persists the liability change (on S3's table as it is now)")
   .chk_true(grepl('action_type = "liability.restored"', restore_block),
        "restore logs the (previously dead) liability.restored action type")
   .chk_true(grepl("before      = list\\(nombre = nombre, estado = old_estado\\)", restore_block),

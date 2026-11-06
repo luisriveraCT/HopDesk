@@ -71,6 +71,127 @@ x <- LIABS0; x$created_at <- format(CREADO, "%Y-%m-%d %H:%M:%S")
 sembrar(x); l <- load_pasivos_liabilities(client_id = CID)
 ok(all(as.numeric(l$created_at) == as.numeric(CREADO)), "A6: a timestamp stored as text loads as that time")
 
+# ── B: Pausar, Borrar and Recuperar save on S3 as it is now ───────────────────
+assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
+bumps <- character(); auditorias <- list(); avisos <- list()
+bump_sync_version <- function(name, client_id = NULL) bumps <<- c(bumps, name)
+pasivos_log_audit <- function(...) { auditorias[[length(auditorias) + 1L]] <<- list(...); invisible(NULL) }
+trace("showNotification", where = asNamespace("shiny"), print = FALSE,
+      tracer = quote(avisos[[length(avisos) + 1L]] <<- list(texto = paste(ui, collapse = ""), tipo = type[1])))
+NO_GUARDADO <- tr("tablas.pasivos.no_guardado")
+aviso_error <- function() any(vapply(avisos, function(a) identical(a$texto, NO_GUARDADO) && identical(a$tipo, "error"), logical(1)))
+
+PROVS0 <- dplyr::bind_rows(lapply(seq_len(nrow(LIABS0)), function(i)
+  pasivos_generate_provisions(LIABS0[i, ], window_start = Sys.Date())))
+sembrar_todo <- function(liabs = LIABS0, provs = PROVS0) {
+  sembrar(liabs); callado(.s3_write(provs, S3_KEYS$pasivos_provisions, client_id = CID))
+  bumps <<- character(); auditorias <<- list(); avisos <<- list()
+}
+# A session's copies (what it loaded, possibly old by now).
+sesion <- function(liabs = LIABS0, provs = PROVS0) {
+  L <- reactiveVal(liabs); P <- reactiveVal(provs)
+  list(pasivos_liabilities_db = L, pasivos_provisions_db = P,
+       effective_client_id = function() CID,
+       suppress_ledger_prov_refresh = function(...) invisible(NULL))
+}
+correr <- function(f) testServer(function(input, output, session) NULL, { f() })
+fila_s3 <- function(id) { l <- en_s3(); l[l$id == id, , drop = FALSE] }
+provs_s3 <- function() load_pasivos_provisions(client_id = CID)
+futuras <- function(p, lid) sum(p$liability_id == lid & p$estado == "provisional" & p$fecha_efectiva >= Sys.Date())
+
+ACCIONES <- list(
+  pausar    = list(f = function(sh) pasivos_cambiar_pausa(sh, "L1", "beto", "paused"), lid = "L1", queda = "paused"),
+  reanudar  = list(f = function(sh) pasivos_cambiar_pausa(sh, "L3", "beto", "active"), lid = "L3", queda = "active"),
+  borrar    = list(f = function(sh) pasivos_borrar(sh, "L1", "beto"),                  lid = "L1", queda = "deleted"),
+  recuperar = list(f = function(sh) pasivos_recuperar(sh, "L4", "beto"),               lid = "L4", queda = "active"))
+LIABS_B <- dplyr::bind_rows(LIABS0, pasivo("L4", "Viejo", "deleted"))
+
+# B1: each one changes its row on S3, and only that row; the others keep
+# their timestamps; the session takes S3's table; one bump; its audit entry.
+for (nm in names(ACCIONES)) {
+  a <- ACCIONES[[nm]]
+  sembrar_todo(LIABS_B); sh <- sesion(LIABS_B)
+  correr(function() a$f(sh))
+  s3 <- en_s3(); fila <- s3[s3$id == a$lid, ]
+  otros <- s3[s3$id != a$lid, ]
+  ok(identical(fila$estado, a$queda) && identical(fila$updated_by, "beto") &&
+       as.numeric(fila$created_at) == as.numeric(CREADO),
+     sprintf("B1 %s: %s is %s on S3, updated by beto, its created_at kept", nm, a$lid, a$queda))
+  ok(identical(otros$estado, LIABS_B$estado[LIABS_B$id != a$lid]) &&
+       all(as.numeric(otros$updated_at) == as.numeric(CAMBIADO)),
+     sprintf("B1 %s: the other liabilities are as they were, timestamps included", nm))
+  ok(identical(isolate(sh$pasivos_liabilities_db())$estado, s3$estado) && "pasivos_liabilities_db" %in% bumps &&
+       length(auditorias) >= 1L && !aviso_error(),
+     sprintf("B1 %s: the session holds S3's table, one bump, audited, no error", nm))
+  if (nm == "pausar")
+    ok(futuras(provs_s3(), "L1") == 0L && futuras(PROVS0, "L1") > 0L,
+       "B1 pausar: L1's future provisional provisions left S3 (as before)")
+}
+
+# B2 (two sessions): B paused L2 meanwhile; A, whose copy still has L2
+# active, deletes L1. L2 stays paused on S3, and A's session now has it so.
+x <- LIABS_B; x$estado[x$id == "L2"] <- "paused"
+sembrar_todo(x); sh <- sesion(LIABS_B)
+correr(function() pasivos_borrar(sh, "L1", "ana"))
+ok(identical(fila_s3("L2")$estado, "paused") && identical(fila_s3("L1")$estado, "deleted"),
+   "B2: A deletes L1 and B's pause of L2 stays (A's old copy said active)")
+ok(identical(isolate(sh$pasivos_liabilities_db())$estado[isolate(sh$pasivos_liabilities_db())$id == "L2"], "paused"),
+   "B2: A's session now shows L2 paused")
+
+# B3: another session created L9 (on S3, not in A's copy). A pauses L1: L9
+# stays, and the write is not refused.
+x <- dplyr::bind_rows(LIABS_B, pasivo("L9", "Nuevo de otra sesión"))
+sembrar_todo(x); sh <- sesion(LIABS_B)
+correr(function() pasivos_cambiar_pausa(sh, "L1", "ana", "paused"))
+ok("L9" %in% en_s3()$id && identical(fila_s3("L1")$estado, "paused") && !aviso_error(),
+   "B3: A pauses L1 and L9 (created by another session) is still on S3")
+
+# B4: the decision is taken on S3's row. Another session already restored L4:
+# A's Recuperar (its copy says deleted) changes nothing and logs nothing.
+x <- LIABS_B; x$estado[x$id == "L4"] <- "active"
+sembrar_todo(x); sh <- sesion(LIABS_B); escrituras <- .mem_escrituras
+correr(function() pasivos_recuperar(sh, "L4", "ana"))
+ok(.mem_escrituras == escrituras && !length(auditorias) && !length(bumps),
+   "B4: restoring what S3 already has active writes nothing, logs nothing, no bump")
+ok(identical(isolate(sh$pasivos_liabilities_db())$estado[isolate(sh$pasivos_liabilities_db())$id == "L4"], "active"),
+   "B4: and A's session now shows it active")
+
+# B5-B6: a failed read, then a failed write: nothing on S3, the session as it
+# was, no bump, no audit, no provisions removed, and it says so.
+guardar_real <- save_pasivos_liabilities
+for (falla in c("lectura", "escritura")) for (nm in names(ACCIONES)) {
+  a <- ACCIONES[[nm]]
+  sembrar_todo(LIABS_B); sh <- sesion(LIABS_B); antes <- en_s3(); escrituras <- .mem_escrituras
+  if (falla == "lectura") {
+    .mem_falla <- .s3_key(S3_KEYS$pasivos_liabilities, client_id = CID)
+    for (env in list(.s3_preload_cache, .s3_missing_cache)) rm(list = ls(env), envir = env)
+  } else save_pasivos_liabilities <- function(...) stop("simulated S3 write failure")
+  correr(function() a$f(sh))
+  .mem_falla <- character(); save_pasivos_liabilities <- guardar_real
+  ok(identical(en_s3(), antes) && .mem_escrituras == escrituras,
+     sprintf("B5 %s, failed %s: nothing written", nm, falla))
+  ok(identical(isolate(sh$pasivos_liabilities_db()), LIABS_B) && identical(isolate(sh$pasivos_provisions_db()), PROVS0) &&
+       !length(bumps) && !length(auditorias),
+     sprintf("B5 %s, failed %s: the session as it was, no bump, no audit", nm, falla))
+  ok(aviso_error() && !any(vapply(avisos, function(v) identical(v$tipo, "message"), logical(1))),
+     sprintf("B5 %s, failed %s: it says it was not saved, and nothing says it was", nm, falla))
+}
+
+# B7: pausing saves the liability but the provisions' save fails: S3 keeps
+# them, the session too, and it says so (the liability is paused).
+sembrar_todo(LIABS_B); sh <- sesion(LIABS_B)
+guardar_p <- save_pasivos_provisions
+save_pasivos_provisions <- function(...) stop("simulated S3 write failure")
+correr(function() pasivos_cambiar_pausa(sh, "L1", "ana", "paused"))
+save_pasivos_provisions <- guardar_p
+ok(identical(fila_s3("L1")$estado, "paused") && futuras(provs_s3(), "L1") == futuras(PROVS0, "L1") &&
+     identical(isolate(sh$pasivos_provisions_db()), PROVS0),
+   "B7: the provisions' save fails: they stay on S3 and in the session")
+ok(any(vapply(avisos, function(v) identical(v$texto, tr("tablas.pasivos.provisiones_no_quitadas")) && identical(v$tipo, "error"), logical(1))) &&
+     !any(vapply(auditorias, function(v) identical(v$action_type, "provision.deleted"), logical(1))),
+   "B7: it says the provisions were not removed, and logs none as deleted")
+untrace("showNotification", where = asNamespace("shiny"))
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 s3_memoria_restaurar()
 if (.fail > 0L) quit(status = 1L)

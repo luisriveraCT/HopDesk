@@ -8,11 +8,6 @@
 # persistence.R:257) to preserve list columns through the round-trip.
 # =============================================================================
 
-# ── Internal list-column loader helper ────────────────────────────────────────
-# For a schema with list columns, .normalize() cannot round-trip them correctly
-# because methods::as() coerces lists to character. This helper applies the same
-# fix as load_policy_catalog(): rebuild non-list cols via schema[NA] coercion,
-# then ensure list cols are actual lists.
 # One stored column as the schema's class. POSIXct goes through
 # as.POSIXct(): methods::as() with its two-class target (POSIXct, POSIXt)
 # fails, and the tryCatch below left every created_at / updated_at as NA --
@@ -27,8 +22,19 @@
   methods::as(x, class(destino))
 }
 
+# ── Internal list-column loader helper ────────────────────────────────────────
+# For a schema with list columns, .normalize() cannot round-trip them correctly
+# because methods::as() coerces lists to character. This helper applies the same
+# fix as load_policy_catalog(): rebuild non-list cols via schema[NA] coercion,
+# then ensure list cols are actual lists.
 .pasivos_load_with_list_cols <- function(key, schema_fn, list_col_names, client_id = NULL) {
   obj <- tryCatch(.s3_read_with(key, client_id = client_id), error = function(e) NULL)
+  .pasivos_con_list_cols(obj, schema_fn, list_col_names)
+}
+
+# What was read, as the schema (the loader's conversion; also the strict read
+# of modificar_pasivos_liabilities()).
+.pasivos_con_list_cols <- function(obj, schema_fn, list_col_names) {
   if (is.null(obj) || !is.data.frame(obj) || !nrow(obj)) return(schema_fn())
 
   schema <- schema_fn()
@@ -68,7 +74,11 @@ load_pasivos_liabilities <- function(client_id = NULL) {
     .PASIVOS_LIABILITY_LIST_COLS,
     client_id = client_id
   )
-  # Backward-compat: pre-frecuencia_pago records load as NA → default to mensual
+  .pasivos_liabs_compat(df)
+}
+
+# Backward-compat: pre-frecuencia_pago records load as NA → default to mensual
+.pasivos_liabs_compat <- function(df) {
   if ("frecuencia_pago" %in% names(df))
     df$frecuencia_pago <- dplyr::coalesce(df$frecuencia_pago, "mensual")
   df
@@ -77,6 +87,24 @@ load_pasivos_liabilities <- function(client_id = NULL) {
 save_pasivos_liabilities <- function(df, client_id = NULL) {
   .s3_write(df, S3_KEYS$pasivos_liabilities, client_id = client_id)
   invisible(TRUE)
+}
+
+# Changes the liabilities on S3 as they are now (T22): a strict read (a read
+# that fails stop()s, never an empty table), `cambio(fresco)` applied to it,
+# and a write only if something changed. Returns the table now on S3. A
+# failed read or write stop()s. The Lista and the wizard used to write the
+# session's whole copy: a row another session had just changed went back to
+# what this session held.
+modificar_pasivos_liabilities <- function(client_id, cambio) {
+  if (is.null(client_id) || !nzchar(client_id))
+    stop("modificar_pasivos_liabilities: sin client_id", call. = FALSE)
+  fresco <- .pasivos_liabs_compat(.pasivos_con_list_cols(
+    .s3_leer_para_escribir(S3_KEYS$pasivos_liabilities, client_id),
+    .schema_pasivos_liability, .PASIVOS_LIABILITY_LIST_COLS))
+  nuevo <- cambio(fresco)
+  if (identical(nuevo, fresco)) return(invisible(fresco))
+  save_pasivos_liabilities(nuevo, client_id = client_id)
+  invisible(nuevo)
 }
 
 # ── pasivos_provisions ────────────────────────────────────────────────────────
