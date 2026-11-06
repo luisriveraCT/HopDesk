@@ -874,16 +874,6 @@ settings_observers <- function(input, output, session, shared) {
     )
   })
 
-  output$tbl_catalogo <- DT::renderDataTable({
-    .catalogo_datatable(shared)
-  }, server = TRUE)
-
-  observeEvent(input$cat_empresa_filter, {
-    output$tbl_catalogo <- DT::renderDataTable({
-      .catalogo_datatable(shared, empresa_filter = input$cat_empresa_filter)
-    }, server = TRUE)
-  }, ignoreInit = TRUE)
-
   # ── Cuentas de Empresa ────────────────────────────────────────────────────────
   observeEvent(input$stg_btn_cuentas, {
     if (.ic_has_changes()) {

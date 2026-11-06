@@ -28,7 +28,7 @@ extract <- function(file, names, env) {
 }
 env <- new.env()
 extract("R/settings/settings_cuentas.R",     c(".cuentas_panel_ui", ".cuenta_form_ui"), env)
-extract("R/settings/settings_proveedores.R", c(".catalogo_panel_ui", ".catalogo_form_ui"), env)
+# (The old supplier editor of settings_proveedores.R is gone, T23.)
 extract("R/settings/settings_bp.R",          ".ic_candidatos_filas", env)
 extract("R/data_pipeline.R",                 "scan_ic_candidates", env)
 env$`%||%` <- `%||%`
@@ -41,8 +41,7 @@ for (global in list(c(), c(HDX = "Otra Empresa"))) {
   env$COMPANY_MAP <- global
   etiqueta <- if (length(global)) "another client's map" else "an empty map"
 
-  for (fn in c(".cuentas_panel_ui", ".cuenta_form_ui", ".catalogo_panel_ui",
-               ".catalogo_form_ui", ".ic_candidatos_filas", "scan_ic_candidates")) {
+  for (fn in c(".cuentas_panel_ui", ".cuenta_form_ui", ".ic_candidatos_filas", "scan_ic_candidates")) {
     f <- get(fn, env)
     ok(sprintf("%s: cmap has no default (global holds %s)", fn, etiqueta),
        "cmap" %in% names(formals(f)) && identical(formals(f)$cmap, quote(expr = )))
@@ -52,12 +51,7 @@ for (global in list(c(), c(HDX = "Otra Empresa"))) {
   html <- tryCatch(as.character(env$.cuentas_panel_ui(cmap = session_map)), error = function(e) "")
   ok(sprintf("accounts panel lists the session's companies, not %s", etiqueta),
      grepl("Networks Realtors", html) && !grepl("Otra Empresa", html))
-  html <- tryCatch(as.character(env$.catalogo_form_ui(NULL, cmap = session_map)), error = function(e) "")
-  ok(sprintf("supplier form lists the session's companies, not %s", etiqueta),
-     grepl("Networks Trucking Services", html) && !grepl("Otra Empresa", html))
-  # Without a map, the forms do not fall back to the global.
-  html <- tryCatch(as.character(env$.catalogo_form_ui(NULL)), error = function(e) "")
-  ok(sprintf("supplier form without a map never shows %s", etiqueta), !grepl("Otra Empresa", html))
+  # Without a map, the panel does not fall back to the global.
   html <- tryCatch(as.character(env$.cuentas_panel_ui()), error = function(e) "")
   ok(sprintf("accounts panel without a map never shows %s", etiqueta), !grepl("Otra Empresa", html))
 }

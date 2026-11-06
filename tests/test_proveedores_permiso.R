@@ -58,9 +58,9 @@ test_that("ningún guardado del catálogo queda fuera de set_provs()/set_inac()"
   expect_length(dentro, 2)
 })
 
-test_that("el editor viejo de Ajustes también revisa el permiso y usa el cliente de la sesión", {
-  for (n in c("cat_save_row", "cat_delete_row"))
-    expect_identical(primera_linea(leg, n),
-                     'if (!puede_o_avisa(shared, "can_manage_proveedores", session)) return()', info = n)
-  expect_false(any(grepl("load_proveedores()", leg, fixed = TRUE)))
+# T23: the old Ajustes editor answered only crafted inputs (nothing drew it);
+# it is gone. No observer, no read and no write of the catalog is left there.
+test_that("el editor viejo de Ajustes ya no escucha ni escribe nada", {
+  expect_false(any(grepl("observeEvent(", leg, fixed = TRUE)))
+  expect_false(any(grepl("save_proveedores|load_proveedores|DT::", leg)))
 })
