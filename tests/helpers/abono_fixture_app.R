@@ -1,9 +1,9 @@
 # =============================================================================
 # tests/helpers/abono_fixture_app.R
 # Abono parcial (R/staging_browse_module.R, the real show_abono_modal() and
-# setup_abono_browse()) as app.R wires them: a "pick_abono" button opens the
-# modal in the top-level session. Data: tests/helpers/abono_datos_prueba.R.
-# Never S3: the Agenda read/save and log_action are stubs in this process.
+# setup_abono_browse(); hd_table "abono_parcial" since T25) as app.R wires
+# them: a "pick_abono" button opens the modal in the top-level session.
+# Data: tests/helpers/abono_datos_prueba.R. Never S3: the Agenda read/save and log_action are stubs in this process.
 # #eco shows, as JSON, what was saved (Documento, Importe per new row), the
 # notifications and how many times the modal closed by itself.
 # =============================================================================
@@ -15,7 +15,9 @@ cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALS
     eval(e, envir = globalenv())
 cargar("R/global.R", "CURRENCIES")
 cargar("R/persistence.R", c("active_abonos_summary", "upsert_pagar_hoy"))
-source("R/staging_browse_module.R")
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+            "R/staging_browse_module.R")) source(f)
+assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 source("tests/helpers/abono_datos_prueba.R")
 
 D <- abono_datos_prueba(Sys.Date())
@@ -27,12 +29,13 @@ log_action <- function(...) invisible(NULL)
 
 ui <- fluidPage(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly"),
+  hd_table_deps(),
   actionButton("pick_abono", "Abono parcial", class = "btn btn-warning"),
   verbatimTextOutput("eco")
 )
 server <- function(input, output, session) {
   ALMACEN$ph <- D$pagar_hoy   # each session (each screen size) starts from the same Agenda
-  eco <-reactiveVal(list(guardado = list(), avisos = list(), cierres = 0L))
+  eco <- reactiveVal(list(guardado = list(), avisos = list(), cierres = 0L))
   anota <- function(campo, valor) { e <- eco(); e[[campo]] <- valor; eco(e) }
   # The module's notifications and removeModal(), also recorded.
   showNotification <- function(ui, ..., type = "default") {
@@ -53,4 +56,11 @@ server <- function(input, output, session) {
   observeEvent(input$pick_abono, show_abono_modal(reactive(D$sap), session, empresa_vals = c("NCS", "NTS")))
   output$eco <- renderText(as.character(jsonlite::toJSON(eco(), auto_unbox = TRUE)))
 }
-shinyApp(ui, server)
+app <- shinyApp(ui, server)
+# The engine's assets (www/hdtable.*, the dictionary) from the repo.
+local({
+  repo_www <- shiny:::staticHandler(file.path(getwd(), "www"))
+  propio   <- app$httpHandler
+  app$httpHandler <<- function(req) repo_www(req) %||% propio(req)
+})
+app
