@@ -2801,10 +2801,32 @@ pagarHoyServer <- function(id, shared) {
     observeEvent(input$ph_cycle_alias, .ph_ciclar_alias(input$ph_cycle_alias), ignoreInit = TRUE, ignoreNULL = TRUE)
 
     # ── Download all — Step 1: preview modal ─────────────────────────────────
+    # The preview (descargar_pagos, T21) is what the ZIP will hold: each AP
+    # row gets the ZIP's own test -- .annotate_ap_cached() by company and
+    # currency, ppl_status == "ok" -- and the rows that fail it say why
+    # ("Se omite"). The pills and the button count and add up only what goes
+    # in. download_all below is untouched (test_descargar_pagos_zip_bytes).
+    .descargar_vista <- reactiveVal(NULL)
+    hd_table_server(
+      "descargar_t", tabla = "descargar_pagos",
+      datos = reactive(.descargar_vista()),
+      columnas = list(
+        col_insignia("zip", "tablas.pagos.zip", mapa = list(
+          no_match = list(texto = "tablas.pagos.omite_sin_alias", tono = "peligro"),
+          no_clabe = list(texto = "tablas.pagos.omite_sin_clabe", tono = "aviso"))),
+        col_texto("Empresa", "tablas.pagos.empresa"),
+        col_insignia("Moneda", "tablas.pagos.moneda", mapa = list(
+          MXN = list(texto = "MXN", tono = "info"), USD = list(texto = "USD", tono = "exito"))),
+        col_texto("Parte", "tablas.pagos.parte"),
+        col_texto("Referencia", "tablas.pagos.referencia", recorte = FALSE),
+        col_dinero("Importe", "tablas.pagos.importe", moneda = "Moneda")
+      ),
+      vacio = "tablas.pagos.vacio"
+    )
     observeEvent(input$preview_all, {
       s <- staged() |> dplyr::filter(ledger == "AP")
       if (!nrow(s)) {
-        showNotification("No hay pagos en la agenda.", type = "warning"); return()
+        showNotification(tr("tablas.pagos.sin_pagos"), type = "warning"); return()
       }
 
       # Build Referencia lookup (Documento → Factura) same as download content fn
@@ -2817,68 +2839,55 @@ pagarHoyServer <- function(id, shared) {
         if (nzchar(r)) r else d
       }
 
-      # Summary table: one row per AP item, sorted by Empresa then FechaVenc
+      # The ZIP's test, row by row: the same function and the same grouping
+      # (company, then currency) as download_all.
+      estado <- stats::setNames(rep("no_match", nrow(s)), as.character(s$id))
+      for (emp in unique(s$Empresa)) {
+        for (cur in unique(dplyr::filter(s, Empresa == emp)$Moneda)) {
+          ann <- .annotate_ap_cached(s |> dplyr::filter(Empresa == emp, Moneda == cur), emp)
+          estado[as.character(ann$id)] <- ann$ppl_status
+        }
+      }
+
+      # One row per AP item, sorted by Empresa then FechaVenc
       tbl <- s |>
         dplyr::arrange(Empresa, Moneda, FechaVenc) |>
         dplyr::transmute(
+          id         = as.character(id),
+          zip        = dplyr::if_else(estado[as.character(id)] == "ok", NA_character_, unname(estado[as.character(id)])),
           Empresa    = Empresa,
           Moneda     = Moneda,
           Parte      = Parte,
           Referencia = unname(mapply(.ref_pv, Empresa, Documento)),
-          Importe    = fmt_money(Importe)
+          Importe    = Importe
         )
+      .descargar_vista(as.data.frame(tbl))
 
-      # Totals by currency
-      totals <- s |>
+      # Totals by currency, of what goes in the ZIP
+      entra  <- s[estado[as.character(s$id)] == "ok", , drop = FALSE]
+      totals <- entra |>
         dplyr::group_by(Moneda) |>
         dplyr::summarise(total = sum(Importe, na.rm = TRUE), n = dplyr::n(), .groups = "drop")
       total_pills <- lapply(seq_len(nrow(totals)), function(i)
         tags$span(class = "badge bg-secondary me-1",
-          paste0(totals$n[i], " pago(s) ", totals$Moneda[i],
-                 " ", fmt_money(totals$total[i])))
-      )
-
-      # Build a plain HTML table — DT::renderDataTable can't be used inline in showModal
-      tbl_rows <- lapply(seq_len(nrow(tbl)), function(i)
-        tags$tr(
-          tags$td(tbl$Empresa[i]),
-          tags$td(class = "text-center",
-            tags$span(class = if (tbl$Moneda[i] == "MXN") "ph-ctr-pill ph-ctr-mxn"
-                               else "ph-ctr-pill ph-ctr-usd",
-              tbl$Moneda[i])),
-          tags$td(tbl$Parte[i]),
-          tags$td(class = "text-muted small", tbl$Referencia[i]),
-          tags$td(class = "text-end fw-semibold", tbl$Importe[i])
-        )
+          tr("tablas.pagos.pildora", n = totals$n[i], moneda = totals$Moneda[i], total = fmt_money(totals$total[i])))
       )
 
       showModal(modalDialog(
-        title = tagList(icon("file-zipper"), " Descargar todos los pagos"),
+        title = tagList(icon("file-zipper"), " ", tr("tablas.pagos.titulo")),
         size  = "l",
         easyClose = TRUE,
         div(class = "d-flex align-items-center gap-2 mb-3",
-          tags$span(class = "fw-semibold small text-muted", "Resumen:"),
+          tags$span(class = "fw-semibold small text-muted", tr("tablas.pagos.resumen")),
           !!!total_pills
         ),
-        div(style = "max-height:420px; overflow-y:auto;",
-          tags$table(class = "table table-sm table-hover small mb-0",
-            tags$thead(class = "table-light",
-              tags$tr(
-                tags$th("Empresa"), tags$th(""), tags$th("Parte"),
-                tags$th("Referencia"), tags$th(class = "text-end", "Importe")
-              )
-            ),
-            tags$tbody(!!!tbl_rows)
-          )
-        ),
+        hd_table_ui(ns("descargar_t")),
         tags$p(class = "small text-muted mt-2 mb-0",
-          icon("circle-info"),
-          " Solo se incluyen proveedores con alias en el catálogo de Bancos.",
-          " Los demás se omiten del ZIP."),
+          icon("circle-info"), " ", tr("tablas.pagos.nota_alias")),
         footer = tagList(
-          modalButton("Cancelar"),
+          modalButton(tr("comun.cancelar")),
           downloadButton(ns("download_all"),
-            tagList(icon("file-zipper"), paste0(" Descargar ZIP (", nrow(s), " pagos)")),
+            tagList(icon("file-zipper"), " ", tr("tablas.pagos.descargar_zip", n = nrow(entra))),
             class = "btn btn-primary")
         )
       ))
