@@ -176,8 +176,10 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
 # ── Apply decisions ────────────────────────────────────────────────────────────
 .pec_apply_decisions <- function(conflicts, replacement, decisions, shared, user,
                                  liability_id = NA_character_) {
-  provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()),
-                    error = function(e) .schema_pasivos_provision())
+  # Strict read (T20): a read that fails stop()s here. It used to come back as
+  # an empty table, and the session's provisions were replaced by it below.
+  provs <- leer_tabla_para_escribir(S3_KEYS$pasivos_provisions, shared$effective_client_id(),
+                                    .schema_pasivos_provision)
   provs_base <- provs   # CM09: the save applies only these decisions on S3 as it is now
 
   # Per-provision decision detail for the audit entry (2026-09-03) -- this
@@ -222,7 +224,9 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
     # "mantener" → do nothing (keep existing override)
   }
 
-  tryCatch(save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base), error = function(e) NULL)
+  # Regla 17: a failed save stop()s before the session's copy, the bump or the
+  # audit (it used to be swallowed, and the panel said "saved" anyway).
+  save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base)
   tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
   shared$pasivos_provisions_db(provs)
   bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
@@ -304,10 +308,17 @@ setup_pasivos_edit_confirm <- function(input, output, session, shared) {
       if (is.null(dec_list[[pid]])) dec_list[[pid]] <- "mantener"
     }
 
-    tryCatch(
-      .pec_apply_decisions(conf, repl, dec_list, shared, user, liability_id = st$liability_id),
-      error = function(e) shiny::showNotification(conditionMessage(e), type = "error")
-    )
+    # Saved, or nothing: on a failed read or write the panel stays open with
+    # the choices as they are, so the person can try again (regla 17).
+    guardado <- tryCatch({
+      .pec_apply_decisions(conf, repl, dec_list, shared, user, liability_id = st$liability_id)
+      TRUE
+    }, error = function(e) {
+      message("pasivos_edit_confirm: decisions not saved: ", conditionMessage(e))
+      shiny::showNotification(tr("tablas.pasivos.conflictos.no_guardado"), type = "error", duration = 8)
+      FALSE
+    })
+    if (!guardado) return()
     shiny::removeModal()
     shiny::showNotification("Decisiones guardadas.", type = "message", duration = 3)
   })

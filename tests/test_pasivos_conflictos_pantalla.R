@@ -191,30 +191,56 @@ v <- local({
 ok(isTRUE(v$amount_pago == 120), "D5: after Cancelar and opening again, Guardar applies the old Aplicar on P1")
 
 # ── The save (regla 17) ───────────────────────────────────────────────────────
-# G1 (today): a failed write still says "Decisiones guardadas.".
-sembrar(); avisos <- list()
+# [CAMBIA] G1-G2 (T20, regla 17). Until 80bfa1a a failed write still said
+# "Decisiones guardadas." and put the change in the session's copy, and a
+# failed read replaced the session's provisions with an empty table. Now
+# either one saves nothing, leaves the session as it was, keeps the panel
+# open (no removeModal: the choices stay) and says so.
+cerrados <- 0L
+trace("removeModal", where = asNamespace("shiny"), print = FALSE, tracer = quote(cerrados <<- cerrados + 1L))
+NO_GUARDADO <- tr("tablas.pasivos.conflictos.no_guardado")
+
+# G1: a failed write.
+sembrar(); avisos <- list(); cerrados <- 0L
 guardar_real <- save_pasivos_provisions
 save_pasivos_provisions <- function(...) stop("simulated S3 write failure")
 panel(function(session, sh) {
   abrir(session, sh); decidir(session, setNames(list("aplicar"), P1))
   session$setInputs(pec_save = 1)
   p <- shiny::isolate(sh$pasivos_provisions_db())
-  ok(is.na(p$amount_pago_override[p$id == P1]), "G1: the session's copy takes the change anyway")
+  ok(isTRUE(p$amount_pago_override[p$id == P1] == 150), "G1: the session's copy is as it was (150)")
 })
 save_pasivos_provisions <- guardar_real
 ok(isTRUE(en_s3(P1)$amount_pago_override == 150), "G1: S3 has nothing (the write failed)")
-ok(identical(ultimo_aviso()$texto, "Decisiones guardadas."), "G1: yet it says \"Decisiones guardadas.\"")
+ok(identical(ultimo_aviso()$texto, NO_GUARDADO) && identical(ultimo_aviso()$tipo, "error"),
+   "G1: it says the decisions were not saved")
+ok(!any(vapply(avisos, function(a) identical(a$texto, "Decisiones guardadas."), logical(1))),
+   "G1: and never \"Decisiones guardadas.\"")
+ok(cerrados == 0L, "G1: the panel stays open")
 
-# G2 (today): a failed read empties the session's provisions.
-sembrar()
+# G2: a failed read.
+sembrar(); avisos <- list(); cerrados <- 0L; antes <- NULL
 panel(function(session, sh) {
   abrir(session, sh)
+  antes <<- shiny::isolate(sh$pasivos_provisions_db())
   .mem_falla <<- .s3_key(S3_KEYS$pasivos_provisions, client_id = CID)
   for (env in list(.s3_preload_cache, .s3_missing_cache)) rm(list = ls(env), envir = env)
+  escrituras <- .mem_escrituras
   decidir(session, setNames(list("aplicar"), P1)); session$setInputs(pec_save = 1)
   .mem_falla <<- character()
-  ok(!nrow(shiny::isolate(sh$pasivos_provisions_db())), "G2: a failed read leaves the session with no provisions")
+  ok(identical(shiny::isolate(sh$pasivos_provisions_db()), antes), "G2: a failed read leaves the session's provisions as they were")
+  ok(.mem_escrituras == escrituras, "G2: and writes nothing")
 })
+ok(identical(ultimo_aviso()$texto, NO_GUARDADO) && cerrados == 0L, "G2: it says so and the panel stays open")
+
+# G3: the save that works still closes the panel and says so.
+sembrar(); avisos <- list(); cerrados <- 0L
+panel(function(session, sh) {
+  abrir(session, sh); decidir(session, setNames(list("aplicar"), P1)); session$setInputs(pec_save = 1)
+})
+ok(identical(ultimo_aviso()$texto, "Decisiones guardadas.") && cerrados == 1L && isTRUE(en_s3(P1)$amount_pago == 120),
+   "G3: a save that works writes, closes the panel and says \"Decisiones guardadas.\"")
+untrace("removeModal", where = asNamespace("shiny"))
 
 untrace("showNotification", where = asNamespace("shiny"))
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
