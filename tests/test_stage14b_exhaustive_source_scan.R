@@ -108,8 +108,8 @@ hits <- do.call(rbind, lapply(r_files, function(f) {
 # untested (source is inert here, but must stay explicitly set, not NA) ────
 {
   txt <- readLines("R/staging_browse_module.R", warn = FALSE)
-  start <- grep("observeEvent\\(input\\$ab_rows,", txt)
-  .chk(length(start) > 0, TRUE, "found the ab_rows (abono staging) observer to scan")
+  start <- grep("observeEvent\\(input\\$ab_stage,", txt)   # ab_rows until T25
+  .chk(length(start) > 0, TRUE, "found the ab_stage (abono staging) observer to scan")
   if (length(start)) {
     block <- paste(txt[start[1]:min(start[1] + 90, length(txt))], collapse = "\n")
     .chk(grepl('source\\s*=\\s*"manual"', block), TRUE,

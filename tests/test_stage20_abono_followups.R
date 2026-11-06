@@ -51,17 +51,19 @@ suppressPackageStartupMessages({ library(dplyr); library(tibble) })
   stop(sprintf("%s not found in %s", fn_name, file))
 }
 
-# ── 1a. Static scan: ab_rows uses the real due date, not Sys.Date() alone ──
+# ── 1a. Static scan: the staged row uses the real due date, not Sys.Date() ──
+# Since T25 it is the server's invoice row (abono_facturas()$Vence, a Date),
+# no longer parsed from what the browser sent.
 {
   txt <- readLines("R/staging_browse_module.R", warn = FALSE)
-  start <- grep("observeEvent\\(input\\$ab_rows,", txt)
-  .chk(length(start) > 0, TRUE, "found the ab_rows observer to scan")
+  start <- grep("observeEvent\\(input\\$ab_stage,", txt)
+  .chk(length(start) > 0, TRUE, "found the ab_stage observer to scan")
   if (length(start)) {
     block <- paste(.strip_comments(txt[start[1]:min(start[1] + 90, length(txt))]), collapse = "\n")
-    .chk(grepl("FechaVenc\\s*=\\s*tryCatch\\(as\\.Date\\(r_raw\\$fecha_venc\\)", block), TRUE,
-         "the staged abono row's FechaVenc parses the real invoice due date (r_raw$fecha_venc)")
-    .chk(grepl("error = function\\(e\\) Sys\\.Date\\(\\)", block), TRUE,
-         "falls back to Sys.Date() only if the real date is unparseable, never left NA")
+    .chk(grepl("FechaVenc\\s*=\\s*accepted\\$Vence\\[i\\]", block), TRUE,
+         "the staged abono row's FechaVenc is the invoice's real due date (the server's row)")
+    .chk(grepl("FechaVenc\\s*=\\s*Sys\\.Date\\(\\)", block), FALSE,
+         "never the staging date")
   }
 }
 

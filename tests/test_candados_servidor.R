@@ -29,7 +29,7 @@ CANDADOS <- list(
   list("R/pasivos_list_module.R", "shiny::observeEvent(input$plist_confirm_archive, ignoreInit = TRUE, {", "pasivos.delete_liability"),
   list("R/pasivos_wizard_module.R", "shiny::observeEvent(input$pwiz_save, ignoreInit = TRUE, {", "pasivos.edit_liability"),
   list("R/pasivos_edit_confirm_module.R", "shiny::observeEvent(input$pec_save, ignoreInit = TRUE, {", "pasivos.edit_liability"),
-  list("R/staging_browse_module.R", "observeEvent(input$ab_rows, {", "autorizado()")
+  list("R/staging_browse_module.R", "observeEvent(input$ab_stage, {", "autorizado()")
 )
 
 test_that("cada escritura revisa su permiso antes de hacer nada", {

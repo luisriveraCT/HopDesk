@@ -96,15 +96,18 @@ suppressPackageStartupMessages({
 # ── 1c. Static scan: the modal actually reads abonos_db() now ───────────────
 {
   txt <- readLines("R/staging_browse_module.R", warn = FALSE)
-  start <- grep("output\\$ab_table <- renderUI", txt)
-  .chk(length(start) > 0, TRUE, "found output$ab_table to scan")
+  # Since T25 the table is hd_table "abono_parcial"; its rows are abono_facturas().
+  start <- grep("^abono_facturas <- function", txt)
+  .chk(length(start) > 0, TRUE, "found abono_facturas() to scan")
+  .chk(any(grepl("abono_facturas\\(.*abonos_db\\(\\)", txt)), TRUE,
+       "setup_abono_browse() passes abonos_db() to abono_facturas() -- the parameter is not dead")
   if (length(start)) {
-    end <- grep('Stage abono rows to pagar_hoy ONLY', txt)
+    end <- grep('^\\.ab_columnas <- function', txt)
     end <- end[end > start[1]][1] %||% (start[1] + 120)
     block <- paste(sub("#.*$", "", txt[start[1]:end]), collapse = "\n")
-    .chk(grepl("active_abonos_summary\\(\\s*abonos_db\\(\\)", block), TRUE,
-         "output$ab_table calls active_abonos_summary(abonos_db()) -- the parameter is no longer dead")
-    .chk(grepl('`Saldo vencido`\\s*=\\s*pmax\\(0,\\s*`Saldo vencido`\\s*-\\s*abono_total\\)', block), TRUE,
+    .chk(grepl("active_abonos_summary\\(\\s*abonos", block), TRUE,
+         "abono_facturas() nets against active_abonos_summary() of the abonos it is given")
+    .chk(grepl('df\\[\\["Saldo vencido"\\]\\]\\s*<-\\s*pmax\\(0,\\s*df\\[\\["Saldo vencido"\\]\\]\\s*-\\s*abono_total\\)', block), TRUE,
          "Saldo vencido is netted against abono_total using the same pmax(0, ...) rule as build_ledger_df()")
     .chk(grepl('df\\[df\\[\\["Saldo vencido"\\]\\]\\s*>\\s*0,', block), TRUE,
          "invoices fully covered by confirmed abonos (netted balance <= 0) are dropped from the table")
@@ -138,17 +141,17 @@ suppressPackageStartupMessages({
   .chk(.would_reject(100.0000001, 100), FALSE, "floating-point noise within the epsilon does not falsely reject an exact match")
 }
 
-# ── 3b. Static scan: the ab_rows observer enforces the guard server-side ────
+# ── 3b. Static scan: the ab_stage observer enforces the guard server-side ───
 {
   txt <- readLines("R/staging_browse_module.R", warn = FALSE)
-  start <- grep("observeEvent\\(input\\$ab_rows,", txt)
-  .chk(length(start) > 0, TRUE, "found the ab_rows observer to scan")
+  start <- grep("observeEvent\\(input\\$ab_stage,", txt)   # ab_rows until T25
+  .chk(length(start) > 0, TRUE, "found the ab_stage observer to scan")
   if (length(start)) {
     end <- grep("\\}, ignoreInit = TRUE\\)", txt)
     end <- end[end > start[1]][1] %||% (start[1] + 80)
     block <- paste(sub("#.*$", "", txt[start[1]:end]), collapse = "\n")
-    .chk(grepl("importe\\s*>\\s*saldo", block), TRUE,
-         "the observer compares importe against saldo before staging")
+    .chk(grepl("importe\\s*<=\\s*filas\\$Saldo", block), TRUE,
+         "the observer compares importe against the server's Saldo before staging")
     .chk(grepl("rejected", block), TRUE,
          "rejected rows are tracked separately from accepted ones")
     .chk(grepl('type\\s*=\\s*"warning"', block), TRUE,
