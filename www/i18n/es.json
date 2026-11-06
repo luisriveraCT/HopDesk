@@ -240,6 +240,7 @@
   "tablas.sap.dia_procesados": "Campos procesados (moneda e importe aplicados)",
   "tablas.sap.dia_crudos": "SAP crudo — todos los campos originales de las facturas de este día",
   "tablas.pagos.titulo": "Descargar todos los pagos",
+  "tablas.pagos.boton_todos": "Descargar todos (.zip)",
   "tablas.pagos.resumen": "Resumen:",
   "tablas.pagos.pildora": "{n} pago(s) {moneda} {total}",
   "tablas.pagos.descargar_zip": "Descargar ZIP ({n} pagos)",

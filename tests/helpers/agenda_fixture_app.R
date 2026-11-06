@@ -48,6 +48,7 @@ suppressPackageStartupMessages({ library(dplyr) })
 .anota <- function(...) shiny::getDefaultReactiveDomain()$userData$anota(...)
 stubs <- list(
   puede_o_avisa = function(shared, permiso, ...) TRUE,
+  puede = function(usuario, permiso) TRUE,
   log_action = function(...) invisible(NULL),
   bump_sync_version = function(...) invisible(NULL),
   safe_load_pagar_hoy = function(...) NULL,          # falls back to shared$pagar_hoy_db()
@@ -141,6 +142,7 @@ server <- function(input, output, session) {
                                                 `Saldo vencido` = c(15000, 8200, 1, 7), check.names = FALSE))), sap_ov_db = reactiveVal(NULL), manual_inv = reactiveVal(NULL),
     bancos_confirmados = reactiveVal(tibble::tibble()), abonos_db = reactiveVal(NULL),
     effective_client_id = function() "dev", current_user = function() "luis",
+    usuario = reactiveVal(list(user = "luis", permisos = list(can_register_payments = TRUE))),
     home_client_id = function() "dev")
   # Quitar and the PPL leave a trace too: watch the in-memory Agenda.
   observeEvent(ph(), {

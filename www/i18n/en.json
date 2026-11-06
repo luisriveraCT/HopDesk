@@ -240,6 +240,7 @@
   "tablas.sap.dia_procesados": "Processed fields (currency and amount applied)",
   "tablas.sap.dia_crudos": "Raw SAP — every original field of this day's invoices",
   "tablas.pagos.titulo": "Download all payments",
+  "tablas.pagos.boton_todos": "Download all (.zip)",
   "tablas.pagos.resumen": "Summary:",
   "tablas.pagos.pildora": "{n} payment(s) {moneda} {total}",
   "tablas.pagos.descargar_zip": "Download ZIP ({n} payments)",

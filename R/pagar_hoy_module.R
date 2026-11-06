@@ -125,8 +125,7 @@ pagarHoyUI <- function(id) {
         class = "btn btn-sm btn-outline-info"
       ),
       div(class = "ms-auto d-flex gap-2",
-        actionButton(ns("preview_all"), tagList(icon("file-zipper"), " Descargar todos (.zip)"),
-                     class = "btn btn-sm btn-outline-primary"),
+        uiOutput(ns("preview_all_ui"), inline = TRUE),
         actionButton(ns("clear_all"), "\U0001f5d1 Vaciar agenda",
                      class = "btn btn-sm btn-outline-danger")
       )
@@ -2863,7 +2862,17 @@ pagarHoyServer <- function(id, shared) {
           class = "btn btn-primary")
       )
     })
+    # "Descargar todos" is can_register_payments: no button without it, and
+    # the preview and the ZIP check it again on the server.
+    .puede_descargar <- function()
+      isTRUE(tryCatch(puede(shared$usuario(), "can_register_payments"), error = function(e) FALSE))
+    output$preview_all_ui <- renderUI({
+      if (!.puede_descargar()) return(NULL)
+      actionButton(ns("preview_all"), tagList(icon("file-zipper"), " ", tr("tablas.pagos.boton_todos")),
+                   class = "btn btn-sm btn-outline-primary")
+    })
     observeEvent(input$preview_all, {
+      if (!puede_o_avisa(shared, "can_register_payments")) return()
       s <- staged() |> dplyr::filter(ledger == "AP")
       if (!nrow(s)) {
         showNotification(tr("tablas.pagos.sin_pagos"), type = "warning"); return()
@@ -2932,6 +2941,9 @@ pagarHoyServer <- function(id, shared) {
     output$download_all <- downloadHandler(
       filename = function() paste0("pagos_todos_", format(Sys.Date(), "%d%m%Y"), ".zip"),
       content  = function(file) {
+        # No file at all without the permission: stop() before anything is built.
+        if (!puede_o_avisa(shared, "can_register_payments")) stop(tr("permisos.denegado",
+          permiso = permiso_nombre("can_register_payments")), call. = FALSE)
         s <- staged() |> dplyr::filter(ledger == "AP")
         if (!nrow(s)) { writeLines("", file); return() }
         tmpdir <- tempfile(); dir.create(tmpdir)

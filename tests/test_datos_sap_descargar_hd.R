@@ -68,7 +68,8 @@ shared <- list(
   parte_alias_map_db = reactiveVal(NULL), pagar_hoy_db = reactiveVal(agenda_zip),
   sap_data = reactiveVal(NULL), sap_ov_db = reactiveVal(NULL), manual_inv = reactiveVal(NULL),
   bancos_confirmados = reactiveVal(tibble::tibble()), abonos_db = reactiveVal(NULL),
-  effective_client_id = function() "dev", current_user = function() "luis", home_client_id = function() "dev")
+  effective_client_id = function() "dev", current_user = function() "luis",
+    usuario = reactiveVal(list(user = "luis", permisos = list(can_register_payments = TRUE))), home_client_id = function() "dev")
 error <- tryCatch({
   invisible(capture.output(testServer(pagarHoyServer, args = list(shared = shared), {
     session$userData$anota <- function(...) invisible(NULL)

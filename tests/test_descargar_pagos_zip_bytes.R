@@ -43,7 +43,8 @@ descargar <- function() {
                                                 check.names = FALSE))),
     sap_ov_db = reactiveVal(NULL), manual_inv = reactiveVal(NULL),
     bancos_confirmados = reactiveVal(tibble::tibble()), abonos_db = reactiveVal(NULL),
-    effective_client_id = function() "dev", current_user = function() "luis", home_client_id = function() "dev")
+    effective_client_id = function() "dev", current_user = function() "luis",
+    usuario = reactiveVal(list(user = "luis", permisos = list(can_register_payments = TRUE))), home_client_id = function() "dev")
   invisible(capture.output(testServer(pagarHoyServer, args = list(shared = shared), {
     session$userData$anota <- function(...) invisible(NULL)
     session$flushReact()
