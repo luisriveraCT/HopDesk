@@ -482,10 +482,13 @@ ph_txt <- readLines("R/pagar_hoy_module.R", warn = FALSE)
      ".log_pago_generado() is defined exactly once, at module scope")
 
 # The definition line uses " <- function(", not a literal call shape, so
-# this pattern only matches the two actual call sites (not the definition).
+# this pattern only matches the actual call sites (not the definition).
+# T21b added the third: the ZIP's _002 file of payments without an account.
 call_hits <- grep('^\\s*\\.log_pago_generado\\(', ph_txt)
-.chk(length(call_hits), 2L,
-     "exactly 2 call sites invoke .log_pago_generado() (individual handler + ZIP bulk handler)")
+.chk(length(call_hits), 3L,
+     "exactly 3 call sites invoke .log_pago_generado() (individual handler + ZIP bulk _001 + ZIP _002 sin cuenta)")
+.chk(length(grep('source_type = "zip_bulk_sin_cuenta"', ph_txt)), 1L,
+     "the ZIP's _002 (payments without an account) logs with source_type=\"zip_bulk_sin_cuenta\"")
 
 .chk(length(grep('source_type = "individual"', ph_txt)), 1L,
      "the individual PPL download handler logs with source_type=\"individual\"")
