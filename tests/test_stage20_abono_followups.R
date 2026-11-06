@@ -202,8 +202,8 @@ suppressPackageStartupMessages({ library(dplyr); library(tibble) })
     block <- paste(.strip_comments(txt[start[1]:min(start[1] + 20, length(txt))]), collapse = "\n")
     .chk(grepl("void_abono\\(ab, ab_id\\)", block), TRUE,
          "the undo_abono observer calls the real void_abono(), not a reimplementation")
-    .chk(grepl("save_abonos\\(updated", block), TRUE,
-         "the undo_abono observer persists the voided status via save_abonos()")
+    .chk(grepl("modificar_abonos\\(function\\(ab\\) void_abono\\(ab, ab_id\\)", block), TRUE,
+         "the undo_abono observer voids on S3's current table via modificar_abonos() (CM19)")
   }
 }
 
