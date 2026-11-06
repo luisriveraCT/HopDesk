@@ -231,16 +231,32 @@ clic("document.getElementById('ph-preview_all')")
 ok("J5: the .zip preview (every company) gives each company's 4001 its own Factura",
    poll_until(function() grepl("F-OTRA", modal(), fixed = TRUE), timeout_s = 10))
 DZ <- "ph-descargar_t-hdt"
-fila_txt <- function(id) ev(sprintf("HDT.fila('%s', '%s').textContent", DZ, id))
+# Each opening gives its rows new ids ("<id>#<opening>", T21b).
+dz_id <- function(id) { v <- vis(DZ); v[sub("#.*$", "", v) == id][1] }
+fila_txt <- function(id) ev(sprintf("HDT.fila('%s', '%s').textContent", DZ, dz_id(id)))
+op_boton <- function(id, texto) sprintf("Array.prototype.find.call(HDT.fila('%s', '%s').querySelectorAll('button.hdt-op-b'), function (b) { return b.textContent === '%s'; })", DZ, dz_id(id), texto)
+elegida <- function(id) ev(sprintf("(function(){ var b = HDT.fila('%s', '%s').querySelector('button.hdt-op-si'); return b ? b.textContent : null; })()", DZ, dz_id(id)))
+boton_zip <- function() ev("(document.getElementById('ph-download_all')||{}).textContent || ''")
 # (P1-P4 were confirmed above: P5, P6 and Q1 are left.)
-ok("J6: the preview is the engine's table; what the ZIP leaves out says why (BODEGAS USD: sin CLABE)",
+ok("J6: the preview is the engine's table; what the ZIP leaves out says what is missing (BODEGAS USD: sin CLABE)",
    poll_until(function() isTRUE(ev(sprintf("!!HDT.estado('%s')", DZ))), timeout_s = 10) &&
-     identical(vis(DZ), c("P5", "P6", "Q1")) &&
-     grepl("Se omite: sin CLABE", fila_txt("P6"), fixed = TRUE) && !grepl("Se omite", fila_txt("P5"), fixed = TRUE))
-entran <- sum(!vapply(vis(DZ), function(id) grepl("Se omite", fila_txt(id), fixed = TRUE), logical(1)))
+     identical(sub("#.*$", "", vis(DZ)), c("P5", "P6", "Q1")) &&
+     grepl("Sin CLABE", fila_txt("P6"), fixed = TRUE) && !grepl("Sin ", fila_txt("P5"), fixed = TRUE))
+entran <- sum(!vapply(c("P5", "P6", "Q1"), function(id) grepl("Sin ", fila_txt(id), fixed = TRUE), logical(1)))
 ok(sprintf("J7: the button counts only what goes in the ZIP (%d of %d)", entran, length(vis(DZ))),
    entran < length(vis(DZ)) &&
-     grepl(sprintf("Descargar ZIP (%d pagos)", entran), ev("document.getElementById('ph-download_all').textContent"), fixed = TRUE))
+     poll_until(function() grepl(sprintf("Descargar ZIP (%d pagos)", entran), boton_zip(), fixed = TRUE), timeout_s = 10))
+ok("J8 (T21b): what goes in shows Entra; the one without CLABE starts in Omitir",
+   identical(elegida("P5"), "Entra") && identical(elegida("P6"), "Omitir"))
+clic(op_boton("P6", "Incluir sin cuenta"))
+ok("J9 (T21b): Incluir sin cuenta -- the button counts it, says so, and warns about the _002",
+   poll_until(function() grepl(sprintf("Descargar ZIP (%d pagos · 1 sin cuenta)", entran + 1L), boton_zip(), fixed = TRUE), timeout_s = 10) &&
+     identical(elegida("P6"), "Incluir sin cuenta") && grepl("_002", modal(), fixed = TRUE))
+if (isTRUE(ev(sprintf("!!(%s)", op_boton("P5", "Omitir"))))) clic(op_boton("P5", "Omitir"))   # locked: may not be drawn
+ok("J10 (T21b): a payment that goes in can't be switched to Omitir", identical(elegida("P5"), "Entra"))
+clic(op_boton("P6", "Omitir"))
+ok("J11 (T21b): back to Omitir, the button is as before",
+   poll_until(function() grepl(sprintf("Descargar ZIP (%d pagos)", entran), boton_zip(), fixed = TRUE), timeout_s = 10))
 if (nzchar(modal())) cerrar_modal()
 
 # ══ G · 850 payments ═════════════════════════════════════════════════════════
