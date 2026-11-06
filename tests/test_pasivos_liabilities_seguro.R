@@ -190,6 +190,87 @@ ok(identical(fila_s3("L1")$estado, "paused") && futuras(provs_s3(), "L1") == fut
 ok(any(vapply(avisos, function(v) identical(v$texto, tr("tablas.pasivos.provisiones_no_quitadas")) && identical(v$tipo, "error"), logical(1))) &&
      !any(vapply(auditorias, function(v) identical(v$action_type, "provision.deleted"), logical(1))),
    "B7: it says the provisions were not removed, and logs none as deleted")
+# ── C: the wizard saves the liability on S3 as it is now ──────────────────────
+pasivos_edit_confirm_open <- function(...) invisible(NULL)
+sesion_wiz <- function(liabs = LIABS_B, provs = PROVS0) {
+  s <- sesion(liabs, provs)
+  c(s, list(company_map = function() list(NG = "Nuevo Grupo"), holiday_overrides_db = function() list(),
+            current_user = function() "beto"))
+}
+asistente <- function(sh, lid = "L1", monto = 120, mode = "edit") {
+  base <- if (mode == "edit") LIABS_B[LIABS_B$id == lid, ] else pasivo("LX", "Nuevo")
+  draft <- pasivos_liability_to_draft(base); draft$amount_default <- monto
+  wiz <- list(mode = mode, edit_target_id = if (mode == "edit") lid, draft = draft)
+  res <- NULL
+  testServer(function(input, output, session) res <<- .pasivos_wizard_save(wiz, sh, session, "beto"), {})
+  res
+}
+
+# C1: editing L1 changes L1 on S3 (amount 120, creator kept) and nothing
+# else; the session holds S3's table; its provisions are saved.
+sembrar_todo(LIABS_B); sh <- sesion_wiz()
+res <- asistente(sh)
+l1 <- fila_s3("L1"); otros <- en_s3()[en_s3()$id != "L1", ]
+ok(isTRUE(res$ok) && isTRUE(l1$amount_default == 120) && identical(l1$created_by, "ana") &&
+     as.numeric(l1$created_at) == as.numeric(CREADO),
+   "C1: the wizard saves L1 with 120, its creator and creation time kept")
+ok(all(as.numeric(otros$updated_at) == as.numeric(CAMBIADO)) && setequal(otros$id, c("L2", "L3", "L4")),
+   "C1: the other liabilities are as they were, timestamps included")
+ok(identical(sort(isolate(sh$pasivos_liabilities_db())$id), sort(en_s3()$id)) && "pasivos_liabilities_db" %in% bumps &&
+     "pasivos_provisions_db" %in% bumps && any(provs_s3()$liability_id == "L1" & provs_s3()$amount_pago == 120),
+   "C1: the session holds S3's table; liabilities and provisions bumped; L1's provisions take 120")
+
+# C2 (two sessions): B paused L2; A (old copy: L2 active) edits L1. L2 stays paused.
+x <- LIABS_B; x$estado[x$id == "L2"] <- "paused"
+sembrar_todo(x); sh <- sesion_wiz()
+asistente(sh)
+ok(identical(fila_s3("L2")$estado, "paused") && isTRUE(fila_s3("L1")$amount_default == 120),
+   "C2: A edits L1 and B's pause of L2 stays")
+
+# C3: another session created L9; A creates LX: L9 stays, and so does LX.
+sembrar_todo(dplyr::bind_rows(LIABS_B, pasivo("L9", "De otra sesión"))); sh <- sesion_wiz()
+res <- asistente(sh, mode = "create")
+ok(isTRUE(res$ok) && "L9" %in% en_s3()$id && sum(en_s3()$nombre == "Nuevo") == 1L && nrow(en_s3()) == nrow(LIABS_B) + 2L,
+   "C3: A creates a liability (a new id) and L9 (another session's) is still on S3")
+
+# C4: another session deleted L1 meanwhile; A's copy has it active. A's edit
+# is refused (decided on S3's row) and writes nothing.
+x <- LIABS_B; x$estado[x$id == "L1"] <- "deleted"
+sembrar_todo(x); sh <- sesion_wiz(); escrituras <- .mem_escrituras
+res <- asistente(sh)
+ok(!isTRUE(res$ok) && identical(res$msg, tr("tablas.pasivos.no_editar_borrado")) && .mem_escrituras == escrituras &&
+     identical(fila_s3("L1")$estado, "deleted"),
+   "C4: editing a liability another session deleted is refused, nothing written")
+
+# C5: a failed read, then a failed write: nothing written, the session as it
+# was, no bump, it says so.
+for (falla in c("lectura", "escritura")) {
+  sembrar_todo(LIABS_B); sh <- sesion_wiz(); antes <- en_s3(); escrituras <- .mem_escrituras
+  if (falla == "lectura") {
+    .mem_falla <- .s3_key(S3_KEYS$pasivos_liabilities, client_id = CID)
+    for (env in list(.s3_preload_cache, .s3_missing_cache)) rm(list = ls(env), envir = env)
+  } else save_pasivos_liabilities <- function(...) stop("simulated S3 write failure")
+  res <- asistente(sh)
+  .mem_falla <- character(); save_pasivos_liabilities <- guardar_real
+  ok(!isTRUE(res$ok) && identical(res$msg, NO_GUARDADO) && identical(en_s3(), antes) && .mem_escrituras == escrituras,
+     sprintf("C5 failed %s: not saved, says so, nothing written", falla))
+  ok(identical(isolate(sh$pasivos_liabilities_db()), LIABS_B) && identical(isolate(sh$pasivos_provisions_db()), PROVS0) &&
+       !length(bumps) && !length(auditorias),
+     sprintf("C5 failed %s: the session as it was, no bump, no audit", falla))
+}
+
+# C6: the liability saves but its provisions' save fails: S3's provisions and
+# the session's stay, no provisions bump, and it says so (not "guardado").
+sembrar_todo(LIABS_B); sh <- sesion_wiz()
+save_pasivos_provisions <- function(...) stop("simulated S3 write failure")
+res <- asistente(sh)
+save_pasivos_provisions <- guardar_p
+ok(isTRUE(fila_s3("L1")$amount_default == 120) && identical(isolate(sh$pasivos_provisions_db()), PROVS0) &&
+     !"pasivos_provisions_db" %in% bumps && !any(provs_s3()$amount_pago == 120),
+   "C6: the provisions' save fails: L1 is saved, its provisions are not (S3 and the session as they were)")
+ok(any(vapply(avisos, function(v) identical(v$texto, tr("tablas.pasivos.provisiones_no_guardadas")) && identical(v$tipo, "error"), logical(1))) &&
+     !any(vapply(avisos, function(v) grepl("provisiones generadas", v$texto), logical(1))),
+   "C6: it says the provisions were not saved, never \"N provisiones generadas\"")
 untrace("showNotification", where = asNamespace("shiny"))
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))

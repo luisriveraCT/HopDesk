@@ -234,45 +234,49 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
     return(list(ok = FALSE, msg = "Hay errores. Revisa los campos resaltados."))
   }
 
-  liabs <- tryCatch(shared$pasivos_liabilities_db(),
-                    error = function(e) .schema_pasivos_liability())
-  # Snapshot pre-edit: the row the edit keeps estado and creator from, and the
-  # audit's `before` -- taken before the filter-out below replaces it.
-  before_row <- if (wiz$mode == "edit")
-    liabs[!is.na(liabs$id) & liabs$id == (wiz$edit_target_id %||% ""), , drop = FALSE] else NULL
-  # An archived liability is restored from the Lista, never by editing it.
-  if (!is.null(before_row) && nrow(before_row) && identical(before_row$estado[1], "deleted"))
+  # The liability is saved on S3's table as it is now (T22): the row the edit
+  # keeps estado and creator from (and the audit's `before`) is S3's, and only
+  # this row is replaced or added. It used to write the session's whole copy:
+  # a liability another session had just changed went back to what this
+  # session held. A failed read or write saves nothing and touches nothing.
+  cid        <- shared$effective_client_id()
+  before_row <- NULL
+  liab_row   <- NULL
+  motivo     <- NULL   # why the row was not built: "borrado" or the builder's error
+  liabs <- tryCatch(modificar_pasivos_liabilities(cid, function(fresco) {
+    if (wiz$mode == "edit")
+      before_row <<- fresco[!is.na(fresco$id) & fresco$id == (wiz$edit_target_id %||% ""), , drop = FALSE]
+    # An archived liability is restored from the Papelera, never by editing it.
+    if (!is.null(before_row) && nrow(before_row) && identical(before_row$estado[1], "deleted")) {
+      motivo <<- "borrado"; return(fresco)
+    }
+    fila <- tryCatch(
+      pasivos_wizard_draft_to_liability(
+        wiz$draft,
+        mode           = wiz$mode,
+        edit_target_id = wiz$edit_target_id,
+        user           = user,
+        previo         = before_row
+      ),
+      error = function(e) e
+    )
+    if (inherits(fila, "error")) { motivo <<- fila; return(fresco) }
+    liab_row <<- fila
+    if (wiz$mode == "edit") fresco <- fresco[fresco$id != fila$id, , drop = FALSE]
+    dplyr::bind_rows(fresco, fila)
+  }), error = function(e) e)
+  if (inherits(liabs, "error")) {
+    message("[wizard] liability not saved: ", conditionMessage(liabs))
+    return(list(ok = FALSE, msg = tr("tablas.pasivos.no_guardado")))
+  }
+  if (identical(motivo, "borrado")) {
+    shared$pasivos_liabilities_db(liabs)
     return(list(ok = FALSE, msg = tr("tablas.pasivos.no_editar_borrado")))
-
-  liab_row <- tryCatch(
-    pasivos_wizard_draft_to_liability(
-      wiz$draft,
-      mode           = wiz$mode,
-      edit_target_id = wiz$edit_target_id,
-      user           = user,
-      previo         = before_row
-    ),
-    error = function(e) e
-  )
-  if (inherits(liab_row, "error")) {
-    return(list(ok = FALSE,
-                msg = paste0("Error al construir el pasivo: ", conditionMessage(liab_row))))
   }
-
-  # Persist liability
-  if (wiz$mode == "edit") {
-    liabs <- liabs[liabs$id != liab_row$id, , drop = FALSE]
-  }
-  liabs <- dplyr::bind_rows(liabs, liab_row)
-  save_ok <- tryCatch({
-    save_pasivos_liabilities(liabs, client_id = shared$effective_client_id()); TRUE
-  }, error = function(e) {
-    message("[wizard] save_pasivos_liabilities failed: ", conditionMessage(e))
-    FALSE
-  })
-  if (!save_ok) return(list(ok = FALSE, msg = "Error al guardar el pasivo en S3. Intenta de nuevo."))
+  if (inherits(motivo, "error"))
+    return(list(ok = FALSE, msg = paste0("Error al construir el pasivo: ", conditionMessage(motivo))))
   shared$pasivos_liabilities_db(liabs)
-  bump_sync_version("pasivos_liabilities_db", client_id = shared$effective_client_id())
+  bump_sync_version("pasivos_liabilities_db", client_id = cid)
 
   # Record current fetched base rate in the forecasting store so provisions use it
   if (startsWith(liab_row$tasa_tipo %||% "fija", "variable_") &&
@@ -363,9 +367,33 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
   ]
   new_provs <- dplyr::bind_rows(others, result$keep, result$conflicts,
                                 result$update, result$insert)
-  tryCatch(save_pasivos_provisions(new_provs, client_id = shared$effective_client_id(), base = existing),
-           error = function(e) warning("[wizard] save_pasivos_provisions failed: ",
-                                       conditionMessage(e)))
+  # Regla 17 (T22): this error was only a warning, and the session, the bump
+  # and "Pasivo guardado. N provisiones generadas." went on as saved. The
+  # liability is saved; its provisions are not, and it says so (editing it
+  # again generates them).
+  prov_ok <- tryCatch({
+    save_pasivos_provisions(new_provs, client_id = shared$effective_client_id(), base = existing)
+    TRUE
+  }, error = function(e) {
+    message("[wizard] save_pasivos_provisions failed: ", conditionMessage(e))
+    FALSE
+  })
+  if (!prov_ok) {
+    tryCatch(pasivos_log_audit(
+      action_type = if (wiz$mode == "create") "liability.created" else "liability.edited",
+      user        = user,
+      empresa     = liab_row$empresa,
+      target_kind = "liability",
+      target_id   = liab_row$id,
+      before      = if (!is.null(before_row) && nrow(before_row)) as.list(before_row) else NULL,
+      after       = as.list(liab_row),
+      notes       = "provisions not saved (S3 failed)",
+      client_id   = shared$effective_client_id()
+    ), error = function(e) NULL)
+    shiny::removeModal()
+    shiny::showNotification(tr("tablas.pasivos.provisiones_no_guardadas"), type = "error", duration = 15)
+    return(list(ok = TRUE))
+  }
   tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
   shared$pasivos_provisions_db(new_provs)
   bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())

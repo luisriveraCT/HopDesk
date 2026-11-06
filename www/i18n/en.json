@@ -798,5 +798,6 @@
   "tablas.abono.error_leer": "Could not read the agenda; nothing was sent. Try again.",
   "tablas.abono.error": "Something went wrong sending the partial payments to the agenda. Try again; if it keeps happening, tell support.",
   "tablas.pasivos.no_guardado": "The change was not saved: S3 could not be read or written. The liability is as it was; try again in a moment.",
-  "tablas.pasivos.provisiones_no_quitadas": "The liability is paused, but its future provisions could not be removed (S3 failed). Resume it and pause it again in a moment."
+  "tablas.pasivos.provisiones_no_quitadas": "The liability is paused, but its future provisions could not be removed (S3 failed). Resume it and pause it again in a moment.",
+  "tablas.pasivos.provisiones_no_guardadas": "The liability was saved, but its provisions were not (S3 failed). Open it with ✎ and save it again in a moment to generate them."
 }

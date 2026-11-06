@@ -159,8 +159,10 @@ suppressPackageStartupMessages(library(shiny))
   b2 <- .scan_block(wiz_txt, "^\\.pasivos_wizard_save <- function")
   ok("C2 liability.created/edited: found .pasivos_wizard_save() to scan", !is.na(b2))
   if (!is.na(b2)) {
+    # Since T22 the snapshot is S3's row, taken inside the save's change
+    # (modificar_pasivos_liabilities), before the row is replaced.
     ok("C2: captures before_row from the pre-replace liabs snapshot on edit",
-       grepl('before_row <- if \\(wiz\\$mode == "edit"\\)', b2))
+       grepl('before_row <<- fresco\\[', b2) && grepl('if \\(wiz\\$mode == "edit"\\)', b2))
     ok("C2: pasivos_log_audit() now receives a real before= (not omitted)",
        grepl("before      = if \\(!is\\.null\\(before_row\\)", b2))
     ok("C2: `after` is the FULL liability row (all payment-terms columns), not 5 hand-picked identity fields",

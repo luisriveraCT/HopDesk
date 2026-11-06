@@ -798,5 +798,6 @@
   "tablas.abono.error_leer": "No se pudo leer la Agenda; no se envió nada. Intenta de nuevo.",
   "tablas.abono.error": "Ocurrió un error al enviar los abonos a Agenda. Intenta de nuevo; si persiste, avisa a soporte.",
   "tablas.pasivos.no_guardado": "No se guardó el cambio: no se pudo leer o escribir en S3. El pasivo sigue como estaba; intenta de nuevo en un momento.",
-  "tablas.pasivos.provisiones_no_quitadas": "El pasivo quedó pausado, pero sus provisiones futuras no se pudieron quitar (falló S3). Reanúdalo y vuelve a pausarlo en un momento."
+  "tablas.pasivos.provisiones_no_quitadas": "El pasivo quedó pausado, pero sus provisiones futuras no se pudieron quitar (falló S3). Reanúdalo y vuelve a pausarlo en un momento.",
+  "tablas.pasivos.provisiones_no_guardadas": "El pasivo se guardó, pero sus provisiones no (falló S3). Ábrelo con ✎ y guárdalo de nuevo en un momento para generarlas."
 }
