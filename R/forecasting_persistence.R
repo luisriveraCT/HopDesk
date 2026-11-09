@@ -121,6 +121,25 @@ save_forecasting_subscriptions <- function(df, client_id = NULL) {
   invisible(NULL)
 }
 
+# Changes the subscriptions on S3 as they are now (T26): a strict read (a
+# read that fails stop()s, never an empty table), `cambio(fresco)` applied to
+# it, and a write only if something changed. Returns the table now on S3.
+# load_forecasting_subscriptions() turns a failed read into an empty table --
+# fine to show, but its writers saved on it: creating one global subscription
+# with the read down rewrote them all, and the start-up seed took a failed
+# read for "no subscriptions" and wrote the defaults over the real ones.
+modificar_forecasting_subscriptions <- function(client_id, cambio) {
+  if (is.null(client_id) || !nzchar(client_id))
+    stop("modificar_forecasting_subscriptions: sin client_id", call. = FALSE)
+  raw <- .s3_leer_para_escribir(S3_KEYS$forecasting_subscriptions, client_id)
+  fresco <- if (is.null(raw) || !nrow(raw)) .schema_forecasting_subscriptions()
+            else .fcp_unpack_list_col(.normalize(raw, .schema_forecasting_subscriptions), "method_params")
+  nuevo <- cambio(fresco)
+  if (identical(nuevo, fresco)) return(invisible(fresco))
+  save_forecasting_subscriptions(nuevo, client_id = client_id)
+  invisible(nuevo)
+}
+
 # ── manual_curves ─────────────────────────────────────────────────────────────
 
 load_forecasting_manual_curves <- function(client_id = NULL) {

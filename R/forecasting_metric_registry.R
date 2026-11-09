@@ -164,13 +164,15 @@ forecasting_seed_if_empty <- function(client_id = NULL) {
     seeded <- c(seeded, "methods")
   }
 
-  subs_db <- load_forecasting_subscriptions(client_id = client_id)
-  if (!nrow(subs_db)) {
+  # Seeded only on a table read as really empty (T26): a failed read stop()s
+  # here -- it used to look empty and the defaults were written over the
+  # client's subscriptions.
+  modificar_forecasting_subscriptions(client_id, function(subs_db) {
+    if (nrow(subs_db)) return(subs_db)
     message("[forecasting] seeding global-default subscriptions")
-    subs <- .seed_forecasting_global_subscriptions(metrics_db)
-    save_forecasting_subscriptions(subs, client_id = client_id)
-    seeded <- c(seeded, "subscriptions")
-  }
+    seeded <<- c(seeded, "subscriptions")
+    .seed_forecasting_global_subscriptions(metrics_db)
+  })
 
   if (length(seeded)) {
     tryCatch(

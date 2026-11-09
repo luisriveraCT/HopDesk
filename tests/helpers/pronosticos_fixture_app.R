@@ -99,6 +99,15 @@ assign("save_forecasting_subscriptions", function(df, client_id = NULL) {
   anotar(paste("guardar", paste(sprintf("%s:%s", df$subscription_id, df$method_id), collapse = " | ")))
   invisible(NULL)
 }, envir = globalenv())
+# The module's writes go through it (T26): the change on the subscriptions as
+# they are now, saved only if something changed. PRO_FALLA = 1 fails it.
+assign("modificar_forecasting_subscriptions", function(client_id, cambio) {
+  if (falla) stop("S3 no disponible (fixture)")
+  nuevo <- cambio(almacen$subs)
+  if (identical(nuevo, almacen$subs)) return(invisible(nuevo))
+  save_forecasting_subscriptions(nuevo, client_id = client_id)
+  invisible(nuevo)
+}, envir = globalenv())
 assign("load_forecasting_fetch_log", function() almacen$log, envir = globalenv())
 assign("fcs_flush_caches", function() invisible(NULL), envir = globalenv())
 assign("fcs_fetch_and_store", function(metric_id, ...) {

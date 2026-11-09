@@ -397,12 +397,14 @@ forecastingServer <- function(id, shared) {
       vacio         = "tablas.pronosticos.subs.vacio"
     )
 
-    # A failed save is never silent: the user is told, it is logged, and the
-    # open modal stays so Guardar / Crear can be tried again.
-    .guardar_subs <- function(subs, accion, target_id, que) {
-      ok <- tryCatch({ save_forecasting_subscriptions(subs, client_id = shared$effective_client_id()); TRUE },
+    # `cambio(fresco)` on S3's subscriptions as they are now (T26): a failed
+    # read or save writes nothing. Returns the table saved, or NULL. A failure
+    # is never silent: the user is told, it is logged, and the open modal
+    # stays so Guardar / Crear can be tried again.
+    .guardar_subs <- function(cambio, accion, target_id, que) {
+      ok <- tryCatch(modificar_forecasting_subscriptions(shared$effective_client_id(), cambio),
                      error = function(e) { message("[FC] ", accion, " failed: ", conditionMessage(e)); e })
-      if (isTRUE(ok)) return(TRUE)
+      if (!inherits(ok, "error")) return(ok)
       shiny::showNotification(tr("comun.error_guardar"), type = "error", duration = 6)
       tryCatch(log_action(
         user        = tryCatch(shared$current_user(), error = function(e) "system"),
@@ -413,7 +415,7 @@ forecastingServer <- function(id, shared) {
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       ), error = function(e) NULL)
-      FALSE
+      NULL
     }
 
     # The subscription the editor is open on, by id -- what Guardar saves.
@@ -472,14 +474,18 @@ forecastingServer <- function(id, shared) {
       if (!nzchar(sub_id) || !nzchar(new_meth)) { shiny::removeModal(); return() }
 
       user <- tryCatch(shared$current_user(), error = function(e) "system")
-      subs <- load_forecasting_subscriptions(client_id = shared$effective_client_id())
-      idx  <- which(subs$subscription_id == sub_id)
-      if (!length(idx)) { shiny::removeModal(); return() }
-      old_meth <- subs$method_id[idx[1]]
-      subs$method_id[idx[1]]  <- new_meth
-      subs$updated_at[idx[1]] <- Sys.time()
-      if (!.guardar_subs(subs, "editar_suscripcion", sub_id,
-                         sprintf('el método de la suscripción de "%s"', subs$metric_id[idx[1]]))) return()
+      old_meth <- NA_character_; metrica <- NA_character_
+      # By id, on S3's subscriptions as they are now (T26).
+      subs <- .guardar_subs(function(subs) {
+        idx <- which(subs$subscription_id == sub_id)
+        if (!length(idx)) return(subs)
+        old_meth <<- subs$method_id[idx[1]]; metrica <<- subs$metric_id[idx[1]]
+        subs$method_id[idx[1]]  <- new_meth
+        subs$updated_at[idx[1]] <- Sys.time()
+        subs
+      }, "editar_suscripcion", sub_id, "el método de la suscripción")
+      if (is.null(subs)) return()
+      if (is.na(metrica)) { shiny::removeModal(); return() }   # no longer there
       tryCatch(shared$forecasting_subscriptions_db(subs), error = function(e) NULL)
       shiny::removeModal()
       shiny::showNotification("Suscripción actualizada.", type = "message", duration = 3)
@@ -488,9 +494,9 @@ forecastingServer <- function(id, shared) {
         module      = "forecasting",
         action      = "editar_suscripcion",
         description = sprintf('Suscripción de "%s" actualizada: método %s -> %s',
-                              subs$metric_id[idx[1]], old_meth, new_meth),
+                              metrica, old_meth, new_meth),
         target_id   = sub_id,
-        metadata    = list(subscription_id = sub_id, metric_id = subs$metric_id[idx[1]],
+        metadata    = list(subscription_id = sub_id, metric_id = metrica,
                            old_method = old_meth, new_method = new_meth),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
@@ -545,10 +551,12 @@ forecastingServer <- function(id, shared) {
         updated_at      = now,
         notes           = NA_character_
       )
-      subs    <- load_forecasting_subscriptions(client_id = shared$effective_client_id())
-      updated <- dplyr::bind_rows(subs, new_sub)
-      if (!.guardar_subs(updated, "crear_suscripcion_global", new_sub$subscription_id,
-                         sprintf('la suscripción global de "%s"', metric_id))) return()
+      # Added to S3's subscriptions as they are now (T26): with the read
+      # down it used to save only this one over all the others.
+      updated <- .guardar_subs(function(subs) dplyr::bind_rows(subs, new_sub),
+                               "crear_suscripcion_global", new_sub$subscription_id,
+                               sprintf('la suscripción global de "%s"', metric_id))
+      if (is.null(updated)) return()
       tryCatch(shared$forecasting_subscriptions_db(updated), error = function(e) NULL)
       shiny::removeModal()
       shiny::showNotification("Suscripción global creada.", type = "message", duration = 3)
