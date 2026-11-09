@@ -526,9 +526,12 @@ tiers_solicitudes_server <- function(id, permitido, refresh) {
                       col_numero("limite", "niveles.tablas.solicitudes.limite")),
       acciones_fila = "detalle",
       vacio = "niveles.tablas.solicitudes.vacio")
+    # NULL, never req(), when nothing is named: an observeEvent(..., ignoreInit
+    # = TRUE) on a reactive that fails at start-up drops the first real click
+    # (Shiny only marks it initialized once it gives a value; integrator, T28).
     revisar <- reactive({
       a <- t$accion()
-      req(!is.null(a), identical(a$accion, "detalle"), isTRUE(permitido()), length(a$ids) >= 1L)
+      if (is.null(a) || !identical(a$accion, "detalle") || !isTRUE(permitido()) || !length(a$ids)) return(NULL)
       list(id = a$ids[1], nonce = a$nonce)
     })
     list(datos = datos, revisar = revisar)
@@ -574,9 +577,11 @@ tiers_cola_server <- function(id, permitido, refresh) {
       acciones_barra = list(list(accion = "reintentar_todo", texto = "niveles.tablas.cola.reintentar_todo",
                                  sin_seleccion = TRUE)),
       vacio = list(texto = "niveles.tablas.cola.vacio", tono = "exito"))
+    # NULL, never req(), when it isn't this action (see revisar() above: a
+    # req() at start-up makes ignoreInit drop the first real click).
     accion <- function(nombre) reactive({
       a <- t$accion()
-      req(!is.null(a), identical(a$accion, nombre), isTRUE(permitido()))
+      if (is.null(a) || !identical(a$accion, nombre) || !isTRUE(permitido())) return(NULL)
       list(id = a$ids[1] %||% NA_character_, nonce = a$nonce)
     })
     list(datos = datos, reintentar = accion("reintentar"), reintentar_todo = accion("reintentar_todo"))
