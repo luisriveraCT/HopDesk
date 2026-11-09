@@ -25,10 +25,11 @@ repo <- normalizePath(".", winslash = "/")
 PORT <- 38993L
 app <- NULL; b <- NULL
 on.exit({ try(if (!is.null(b)) b$close(), silent = TRUE); stop_bg_app(app) }, add = TRUE)
-arrancar <- function(falla = FALSE) {
+arrancar <- function(falla = FALSE, sin_permiso = FALSE) {
   if (!is.null(app)) stop_bg_app(app)
-  app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(PRO_FALLA = "%s", PRO_RAIZ = "%s"); setwd("%s"); source("tests/helpers/pronosticos_fixture_app.R")$value',
-                                        if (falla) "1" else "0", Sys.getenv("PRO_RAIZ", repo), repo), PORT, timeout_s = 90),
+  app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(PRO_FALLA = "%s", PRO_SIN_PERMISO = "%s", PRO_RAIZ = "%s"); setwd("%s"); source("tests/helpers/pronosticos_fixture_app.R")$value',
+                                        if (falla) "1" else "0", if (sin_permiso) "1" else "0",
+                                        Sys.getenv("PRO_RAIZ", repo), repo), PORT, timeout_s = 90),
                    error = function(e) { message(conditionMessage(e)); NULL })
   !is.null(app)
 }
@@ -227,6 +228,25 @@ ok("F: a failed Crear (global subscription) tells the user, is logged, and the d
    any(grepl("^log crear_suscripcion_global_fallido ", registro())) &&
    !any(grepl("^log crear_suscripcion_global ", registro())))
 cerrar_modal()
+
+# ── P · without the permissions (T26) ───────────────────────────────────────
+# A user without can_refresh_forecasting(_all) / can_edit_forecasting_subscriptions
+# does not see the buttons that write, nor the pencil; a double click on a
+# subscription opens nothing.
+oculto <- function(id) ev(sprintf("(function(){ var e = document.getElementById('%s'); return !!e && e.offsetParent === null; })()", id))
+ok("fixture app restarted with a user without the permissions", arrancar(sin_permiso = TRUE) && abrir())
+pestana("Series"); Sys.sleep(1)
+ok("P: Actualizar is hidden", poll_until(function() oculto("fc-btn_refresh"), timeout_s = 10))
+pestana("Métodos y suscripciones"); invisible(listo(S))
+ok("P: + Suscripción global is hidden, and no subscription row has a pencil",
+   oculto("fc-btn_add_global_sub") && length(vis(S)) == 3L &&
+   all(vapply(vis(S), function(id) isTRUE(ev(sprintf("!%s", boton(S, id, "editar")))), logical(1))))
+n_reg <- length(registro())
+doble(fila(S, "s-usd", ".children[3]"))
+ok("P: a double click on a subscription opens no editor, says nothing and writes nothing",
+   !nzchar(modal_titulo()) && !nzchar(aviso()) && length(registro()) == n_reg)
+pestana("Registro de consultas"); Sys.sleep(0.8)
+ok("P: Actualizar todas las métricas is hidden", oculto("fc-btn_refresh_all"))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)

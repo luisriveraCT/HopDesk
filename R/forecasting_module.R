@@ -128,6 +128,18 @@ forecastingServer <- function(id, shared) {
       )
     })
 
+    # Who may see the buttons that write (T26): without the permission they
+    # are hidden; each handler checks again on the server (puede_o_avisa).
+    .puede_fc <- function(k) shiny::reactive(isTRUE(tryCatch(puede(shared$usuario(), k), error = function(e) FALSE)))
+    .puede_refrescar       <- .puede_fc("can_refresh_forecasting")
+    .puede_refrescar_todas <- .puede_fc("can_refresh_forecasting_all")
+    .puede_editar_subs     <- .puede_fc("can_edit_forecasting_subscriptions")
+    shiny::observe({
+      shinyjs::toggle("btn_refresh",        condition = .puede_refrescar())
+      shinyjs::toggle("btn_refresh_all",    condition = .puede_refrescar_todas())
+      shinyjs::toggle("btn_add_global_sub", condition = .puede_editar_subs())
+    })
+
     .observations <- shiny::reactive({
       tryCatch(
         shared$forecasting_series_observations_db() %||% load_forecasting_series_observations(client_id = shared$effective_client_id()),
@@ -379,7 +391,7 @@ forecastingServer <- function(id, shared) {
         tipo            = as.character(s$consumer_type),
         metrica         = ifelse(is.na(metrica), s$metric_id, metrica),
         metodo          = as.character(s$method_id),
-        .acciones       = rep("editar", nrow(s)),
+        .acciones       = rep(if (.puede_editar_subs()) "editar" else "", nrow(s)),
         stringsAsFactors = FALSE
       )
     })
@@ -428,7 +440,9 @@ forecastingServer <- function(id, shared) {
     shiny::observeEvent(subs_t$accion(), {
       a <- subs_t$accion()
       if (!a$accion %in% c("editar", "detalle") || !length(a$ids)) return()
-      # The editor it opens saves: no permission, no editor (sub_save checks again).
+      # The editor it opens saves: no permission, no editor (sub_save checks
+      # again). A double click (detalle) without it just does nothing.
+      if (identical(a$accion, "detalle") && !shiny::isolate(.puede_editar_subs())) return()
       if (!puede_o_avisa(shared, "can_edit_forecasting_subscriptions")) return()
       d      <- .subs_tabla()
       sub_id <- d$subscription_id[match(a$ids[1], d$id)]

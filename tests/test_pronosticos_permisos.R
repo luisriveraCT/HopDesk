@@ -111,6 +111,48 @@ for (nivel in c("finance", "admin")) {
   ok(x$denegados == 0L, sprintf("S %s: sin avisos de permiso", nivel))
 }
 
+# ── V: what each level sees ──────────────────────────────────────────────────
+# Without the permission the buttons that write are hidden (shinyjs::toggle)
+# and the subscriptions' rows carry no pencil (.acciones); a double click
+# opens nothing and says nothing.
+toggles <- list()
+local({
+  ns_js <- asNamespace("shinyjs")
+  unlockBinding("toggle", ns_js)
+  assign("toggle", function(id = NULL, ..., condition = NULL) { toggles[[id]] <<- condition; invisible(NULL) }, envir = ns_js)
+})
+vista <- function(nivel) {
+  toggles <<- list(); avisos <<- character()
+  usr <- list(user = paste0("u_", nivel), tier = nivel, permisos = permisos_resueltos(nivel))
+  shared <- list(
+    forecasting_metrics_db             = reactiveVal(METRICAS),
+    forecasting_subscriptions_db       = reactiveVal(SUBS0),
+    forecasting_series_observations_db = reactiveVal(.schema_forecasting_series_observations()),
+    effective_client_id = function() CID, home_client_id = function() CID,
+    current_user = function() usr$user, usuario = reactiveVal(usr))
+  acciones <- NULL; editor <- NULL
+  invisible(utils::capture.output(suppressMessages(suppressWarnings(
+    testServer(forecastingServer, args = list(shared = shared), {
+      session$flushReact()
+      acciones <<- tryCatch(.subs_tabla()$.acciones, error = function(e) NA)
+      session$setInputs(`subs_t-accion` = list(accion = "detalle", ids = list("s1"), nonce = 1))
+      editor <<- sub_editando()
+    })))))
+  list(toggles = toggles, acciones = acciones, editor = editor, avisos = length(avisos))
+}
+BOTONES <- c("btn_refresh", "btn_refresh_all", "btn_add_global_sub")
+for (nivel in c("analysis", "compras")) {
+  v <- vista(nivel)
+  ok(all(BOTONES %in% names(v$toggles)) && !any(unlist(v$toggles[BOTONES])),
+     sprintf("V %s: Actualizar, Actualizar todas y + Global quedan escondidos", nivel))
+  ok(identical(unique(v$acciones), ""), sprintf("V %s: las suscripciones no traen lápiz", nivel))
+  ok(is.null(v$editor) && v$avisos == 0L, sprintf("V %s: doble clic no abre el editor ni avisa", nivel))
+}
+v <- vista("finance")
+ok(all(BOTONES %in% names(v$toggles)) && all(unlist(v$toggles[BOTONES])), "V finance: ve los 3 botones")
+ok(identical(unique(v$acciones), "editar") && identical(v$editor, "s1"),
+   "V finance: lápiz en cada suscripción y el doble clic abre el editor")
+
 # ── R: the levels ────────────────────────────────────────────────────────────
 NUEVOS <- c("can_refresh_forecasting", "can_refresh_forecasting_all", "can_edit_forecasting_subscriptions")
 con <- vapply(c("hopdesk", "dev", "admin", "finance", "analysis", "compras"),
