@@ -279,6 +279,16 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     # UI call sites (btn_refresh, btn_refresh_all) already log a single
     # summary entry (action="refrescar_metrica"/"refrescar_todas_metricas").
     "fcs_fetch_and_store",
+    # modificar_forecasting_subscriptions() (T26, forecasting_persistence.R)
+    # and modificar_pasivos_estimates() (T26, pasivos_persistence.R): the
+    # fresh-read-then-write wrappers around save_forecasting_subscriptions()
+    # and save_pasivos_estimates(). Their callers log their own action:
+    # forecasting_seed_if_empty ("seed_catalog"), forecasting_module.R's
+    # .guardar_subs callers (sub_save, global_sub_save, plus the *_fallido
+    # row on a failed write), and forecasting_set_estimate /
+    # forecasting_freeze_metric / forecasting_unfreeze_metric
+    # (pasivos_log_audit) and their forecasting_resolve.R twins (log_action).
+    "modificar_forecasting_subscriptions", "modificar_pasivos_estimates",
     # Found 2026-09-03: .apply_move/.clear_moves (R/ledger_module.R) no
     # longer call log_action() directly in their own body -- they now pass a
     # log_info list into .save_moves_deferred() (already a KNOWN_FINE_HELPERS
