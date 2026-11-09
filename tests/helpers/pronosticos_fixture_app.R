@@ -33,7 +33,7 @@ cargar("R/ui_components.R", "app_styles")
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
   for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
-              "R/forecasting_schemas.R", "R/forecasting_module.R"))
+              "R/tier_registry.R", "R/permisos.R", "R/forecasting_schemas.R", "R/forecasting_module.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
 })
 assign(".i18n_dir", file.path(raiz, "www", "i18n"), envir = globalenv())
@@ -142,7 +142,10 @@ server <- function(input, output, session) {
     forecasting_series_observations_db = reactiveVal(.schema_forecasting_series_observations()),
     effective_client_id = function() "fixture",
     home_client_id      = function() "fixture",
-    current_user        = function() "luis"
+    current_user        = function() "luis",
+    # The module checks these on the server (T26). PRO_SIN_PERMISO = 1: none.
+    usuario             = reactiveVal(list(user = "luis", tier = "finance", permisos = if (identical(Sys.getenv("PRO_SIN_PERMISO"), "1")) list() else
+      list(can_refresh_forecasting = TRUE, can_refresh_forecasting_all = TRUE, can_edit_forecasting_subscriptions = TRUE)))
   )
   forecastingServer("fc", shared)
   observeEvent(input$otra_sesion, {

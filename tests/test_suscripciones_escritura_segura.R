@@ -21,7 +21,7 @@
 suppressPackageStartupMessages({ library(shiny); library(dplyr); library(tibble) })
 source("tests/helpers/s3_memoria.R")
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/forecasting_schemas.R", "R/forecasting_persistence.R", "R/forecasting_metric_registry.R",
             "R/forecasting_module.R"))
   if (file.exists(f)) suppressMessages(source(f))
@@ -119,8 +119,8 @@ hacer_shared <- function() list(
   effective_client_id = function() CID,
   home_client_id      = function() CID,
   current_user        = function() "ana",
-  user_info           = function() list(user = "ana", tier = "dev"),
-  current_user_info   = function() list(user = "ana", tier = "dev"))
+  # A Finanzas user, with that level's real permissions (T26 · 3).
+  usuario             = reactiveVal(list(user = "ana", tier = "finance", permisos = permisos_resueltos("finance"))))
 crear_global <- function(fallar) {
   sembrar(); if (fallar) falla_lectura()
   antes <- .mem_escrituras; avisos <<- character()

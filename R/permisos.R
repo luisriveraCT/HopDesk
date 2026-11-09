@@ -50,6 +50,11 @@ PERMISOS <- list(
   can_manage_bancos              = list(grupo = "tesoreria"),
   # Saving or applying payment policies reschedules invoices (save_moves).
   can_manage_policies            = list(grupo = "tesoreria"),
+  # Pronósticos (T26): refreshing a series, refreshing all, and editing a
+  # subscription change the rates Pasivos uses for its amounts.
+  can_refresh_forecasting             = list(grupo = "tesoreria"),
+  can_refresh_forecasting_all         = list(grupo = "tesoreria"),
+  can_edit_forecasting_subscriptions  = list(grupo = "tesoreria"),
   # ── Panorama ────────────────────────────────────────────────────────────
   can_publish_panorama           = list(grupo = "panorama", pendiente = "B"),
   # ── Internos de Hopdesk ─────────────────────────────────────────────────

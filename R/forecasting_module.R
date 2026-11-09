@@ -3,10 +3,10 @@
 # Forecasting tab — three sub-tabs: Series viewer, Methods & Subscriptions, Fetch log.
 # =============================================================================
 
-# ── Capability constants ──────────────────────────────────────────────────────
-.FC_CAP_REFRESH_METRIC  <- "forecasting.refresh_metric"
-.FC_CAP_REFRESH_ALL     <- "forecasting.refresh_all"
-.FC_CAP_EDIT_SUB        <- "forecasting.edit_subscription"
+# Permissions (T26, R/permisos.R): can_refresh_forecasting (Actualizar),
+# can_refresh_forecasting_all (Actualizar todas) and
+# can_edit_forecasting_subscriptions (edit / + Global). Checked in each
+# handler, on the server, with the key written out (test_permisos_vivos).
 
 # Row ids for the tables (hd_table): the stored id, or one made up for a row
 # written without it, and never repeated -- the engine refuses both, and one
@@ -252,6 +252,7 @@ forecastingServer <- function(id, shared) {
 
     # ── Refresh button ────────────────────────────────────────────────────────
     shiny::observeEvent(input$btn_refresh, {
+      if (!puede_o_avisa(shared, "can_refresh_forecasting")) return()
       metric_id <- input$metric_sel %||% ""
       if (!nzchar(metric_id)) return()
       user <- tryCatch(shared$current_user(), error = function(e) "system")
@@ -296,6 +297,7 @@ forecastingServer <- function(id, shared) {
 
     # ── Refresh all button ────────────────────────────────────────────────────
     shiny::observeEvent(input$btn_refresh_all, {
+      if (!puede_o_avisa(shared, "can_refresh_forecasting_all")) return()
       user <- tryCatch(shared$current_user(), error = function(e) "system")
       metrics <- .metrics()
       active_metrics <- metrics[!is.na(metrics$active) & metrics$active, , drop = FALSE]
@@ -426,6 +428,8 @@ forecastingServer <- function(id, shared) {
     shiny::observeEvent(subs_t$accion(), {
       a <- subs_t$accion()
       if (!a$accion %in% c("editar", "detalle") || !length(a$ids)) return()
+      # The editor it opens saves: no permission, no editor (sub_save checks again).
+      if (!puede_o_avisa(shared, "can_edit_forecasting_subscriptions")) return()
       d      <- .subs_tabla()
       sub_id <- d$subscription_id[match(a$ids[1], d$id)]
       if (is.na(sub_id) || !nzchar(sub_id)) return()
@@ -469,6 +473,7 @@ forecastingServer <- function(id, shared) {
     })
 
     shiny::observeEvent(input$sub_save, {
+      if (!puede_o_avisa(shared, "can_edit_forecasting_subscriptions")) return()
       sub_id    <- sub_editando() %||% ""
       new_meth  <- input$sub_method_new %||% ""
       if (!nzchar(sub_id) || !nzchar(new_meth)) { shiny::removeModal(); return() }
@@ -505,6 +510,7 @@ forecastingServer <- function(id, shared) {
 
     # ── Add global subscription ───────────────────────────────────────────────
     shiny::observeEvent(input$btn_add_global_sub, {
+      if (!puede_o_avisa(shared, "can_edit_forecasting_subscriptions")) return()
       m     <- .metrics()
       subs  <- .subs()
       # Metrics that already have a global_default sub
@@ -533,6 +539,7 @@ forecastingServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     shiny::observeEvent(input$global_sub_save, {
+      if (!puede_o_avisa(shared, "can_edit_forecasting_subscriptions")) return()
       metric_id <- input$global_sub_metric %||% ""
       method_id <- input$global_sub_method %||% ""
       if (!nzchar(metric_id) || !nzchar(method_id)) { shiny::removeModal(); return() }
