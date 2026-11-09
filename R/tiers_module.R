@@ -420,6 +420,73 @@ tiersUI <- function(id) {
   htmltools::htmlEscape(as.character(jsonlite::toJSON(as.character(u), auto_unbox = TRUE)),
                         attribute = TRUE)
 
+# ── Cuentas bloqueadas on the table engine (T28) ─────────────────────────────
+# One row per locked account; its id is the lower-case username, the same key
+# the unlock removes (all its spellings), so the action names the account,
+# never a row position. No lock list (NULL) or an empty one: 0 rows.
+.bloqueadas_filas <- function(lock_df) {
+  vacia <- data.frame(id = character(0), usuario = character(0), bloqueado_el = as.POSIXct(character(0)),
+                      por = character(0), motivo = character(0), stringsAsFactors = FALSE)
+  if (is.null(lock_df) || !is.data.frame(lock_df) || !nrow(lock_df)) return(vacia)
+  id <- tolower(trimws(as.character(lock_df$username)))
+  quedan <- !is.na(id) & nzchar(id) & !duplicated(id)
+  lock_df <- lock_df[quedan, , drop = FALSE]
+  data.frame(id = id[quedan], usuario = as.character(lock_df$username),
+             bloqueado_el = as.POSIXct(lock_df$locked_at), por = as.character(lock_df$locked_by),
+             motivo = as.character(lock_df$reason), stringsAsFactors = FALSE)
+}
+
+tiers_bloqueadas_ui <- function(id) hd_table_ui(shiny::NS(id, "tabla"))
+
+# The table and its 🔓. permitido(): Principal (checked here, on the server:
+# without it the table gets no rows and an unlock that arrives anyway does
+# nothing). refresh / actividad: the tab's reactiveVals, bumped as before.
+# Returns list(datos) for the tests.
+tiers_bloqueadas_server <- function(id, shared, permitido, refresh, actividad) {
+  moduleServer(id, function(input, output, session) {
+    datos <- reactive({
+      if (!isTRUE(permitido())) return(NULL)
+      refresh()
+      .bloqueadas_filas(read_emergency_lock())   # a failed read is the table's notice, never "no locks"
+    })
+    t <- hd_table_server("tabla", tabla = "cuentas_bloqueadas", datos = datos,
+      columnas = list(col_texto("usuario", "niveles.tablas.bloqueadas.usuario"),
+                      col_fecha_hora("bloqueado_el", "niveles.tablas.bloqueadas.bloqueado_el"),
+                      col_texto("por", "niveles.tablas.bloqueadas.por"),
+                      col_texto("motivo", "niveles.tablas.bloqueadas.motivo")),
+      acciones_fila = "desbloquear",
+      vacio = list(texto = "niveles.tablas.bloqueadas.vacio", tono = "exito"))
+
+    observeEvent(t$accion(), {
+      a <- t$accion()
+      req(identical(a$accion, "desbloquear"), isTRUE(permitido()))
+      username <- tolower(trimws(a$ids[1] %||% ""))
+      req(nzchar(username))
+      current_viewer <- shared$current_user() %||% "unknown"
+      tryCatch({
+        # On S3's current list (CM13): only this user's lock is removed.
+        modificar_emergency_lock(function(l) l[tolower(l$username) != username, , drop = FALSE])
+        refresh(refresh() + 1L)
+        showNotification(paste0("Cuenta '", username, "' desbloqueada."),
+                         type = "message", duration = 4)
+        log_action(user        = shared$current_user(),
+                   module      = "seguridad",
+                   action      = "emergency_unlock",
+                   description = paste0("Lock removed from '", username, "' by ", current_viewer),
+                   target_id   = username,
+                   s3_key      = "hd-admin/emergency_lock.rds",
+                   client_id             = "hd-admin",
+                   viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
+        actividad(actividad() + 1L)
+      }, error = function(e) {
+        showNotification(paste0("Error al desbloquear: ", e$message), type = "error")
+      })
+    }, ignoreInit = TRUE)
+
+    list(datos = datos)
+  })
+}
+
 tiersServer <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -1211,11 +1278,9 @@ tiersServer <- function(id, shared) {
                    icon("lock"), " Esta sección solo está disponible para cuentas Principal."))
       }
 
-      security_lock_refresh()   # reactive dependency
-
-      lock_df <- tryCatch(read_emergency_lock(), error = function(e) NULL)
-      locked_rows <- if (is.data.frame(lock_df) && nrow(lock_df)) lock_df else NULL
-
+      # Depends on the tier only: the locked accounts are a table of the
+      # engine (tiers_bloqueadas_server), refreshed through its datos(), so
+      # ↻ or a lock never rebuilds it (T28 P6).
       ns <- session$ns
 
       div(
@@ -1281,40 +1346,7 @@ tiersServer <- function(id, shared) {
               tagList(icon("shield-halved"), " Cuentas bloqueadas actualmente"),
               actionButton(ns("btn_sec_refresh"), tagList(icon("arrows-rotate")),
                            class = "btn btn-sm btn-outline-secondary")),
-          div(class = "card-body p-0",
-            if (is.null(locked_rows)) {
-              div(class = "p-3 text-muted small", icon("check-circle", class = "text-success"),
-                  " No hay cuentas bloqueadas.")
-            } else {
-              tags$table(class = "table table-sm table-hover mb-0",
-                tags$thead(tags$tr(
-                  tags$th("Usuario"), tags$th("Bloqueado el"),
-                  tags$th("Bloqueado por"), tags$th("Motivo"), tags$th("")
-                )),
-                tags$tbody(
-                  lapply(seq_len(nrow(locked_rows)), function(i) {
-                    r <- locked_rows[i, , drop = FALSE]
-                    tags$tr(
-                      tags$td(tags$strong(r$username)),
-                      tags$td(class = "small", format(r$locked_at, "%d/%m/%Y %H:%M")),
-                      tags$td(class = "small text-muted", r$locked_by),
-                      tags$td(class = "small", r$reason),
-                      tags$td(
-                        tags$button(
-                          class   = "btn btn-sm btn-outline-success",
-                          type    = "button",
-                          onclick = sprintf(
-                            "Shiny.setInputValue('%s','%s',{priority:'event'})",
-                            ns("sec_unlock_user"), r$username),
-                          tagList(icon("unlock"), " Desbloquear")
-                        )
-                      )
-                    )
-                  })
-                )
-              )
-            }
-          )
+          div(class = "card-body p-0", tiers_bloqueadas_ui(ns("bloq")))
         )
       )
     })
@@ -1374,37 +1406,17 @@ tiersServer <- function(id, shared) {
       })
     }, ignoreInit = TRUE)
 
-    observeEvent(input$sec_unlock_user, {
-      req(is_principal())
-      username <- tolower(trimws(input$sec_unlock_user %||% ""))
-      req(nzchar(username))
-      current_viewer <- shared$current_user() %||% "unknown"
-      tryCatch({
-        # On S3's current list (CM13): only this user's lock is removed.
-        modificar_emergency_lock(function(l) l[tolower(l$username) != username, , drop = FALSE])
-        security_lock_refresh(security_lock_refresh() + 1L)
-        showNotification(paste0("Cuenta '", username, "' desbloqueada."),
-                         type = "message", duration = 4)
-        log_action(user        = shared$current_user(),
-                   module      = "seguridad",
-                   action      = "emergency_unlock",
-                   description = paste0("Lock removed from '", username, "' by ", current_viewer),
-                   target_id   = username,
-                   s3_key      = "hd-admin/emergency_lock.rds",
-                   client_id             = "hd-admin",
-                   viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
-        activity_refresh(activity_refresh() + 1L)
-      }, error = function(e) {
-        showNotification(paste0("Error al desbloquear: ", e$message), type = "error")
-      })
-    }, ignoreInit = TRUE)
-
     # ── Clientes panel (principal + hopdesk) ─────────────────────────────────
 
     clients_refresh         <- reactiveVal(0L)
     requests_refresh        <- reactiveVal(0L)
     activity_refresh        <- reactiveVal(0L)
     solicitar_usuarios_sent <- reactiveVal(FALSE)  # session-level: TRUE after request sent
+
+    # Seguridad › Cuentas bloqueadas: the table and its 🔓 (T28). Here, once
+    # activity_refresh exists. Principal only, checked on the server.
+    tiers_bloqueadas_server("bloq", shared, permitido = is_principal,
+                            refresh = security_lock_refresh, actividad = activity_refresh)
 
     # ── New-user button: dynamic based on client's remaining user slots ────────
     output$new_user_btn_ui <- renderUI({

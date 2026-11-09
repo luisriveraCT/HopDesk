@@ -1,5 +1,10 @@
 {
   "niveles.usuarios.ya_no_esta": "Esa cuenta ya no está en la lista; no se cambió nada.",
+  "niveles.tablas.bloqueadas.usuario": "Usuario",
+  "niveles.tablas.bloqueadas.bloqueado_el": "Bloqueado el",
+  "niveles.tablas.bloqueadas.por": "Bloqueado por",
+  "niveles.tablas.bloqueadas.motivo": "Motivo",
+  "niveles.tablas.bloqueadas.vacio": "No hay cuentas bloqueadas.",
   "niveles.nombre.principal": "Principal",
   "niveles.nombre.hopdesk": "Hopdesk",
   "niveles.nombre.dev": "Dev",
