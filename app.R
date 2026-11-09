@@ -42,6 +42,7 @@ source("R/pagos_audit_viewer_module.R")
 source("R/tiers_module.R")
 source("R/empresas_module.R")
 source("R/interco_module.R")
+source("R/requisiciones_module.R")
 source("R/staging_browse_module.R")
 source("R/pasivos_table_pivot.R")
 source("R/pasivos_table_styles.R")
@@ -330,6 +331,15 @@ ui <- bslib::page_navbar(
     value = "PSV",
     div(class = "h-100 overflow-auto",
       pasivos_table_module_ui("pt")
+    )
+  ),
+  # Requisiciones (front E): shown only with can_view_requisiciones (see the
+  # "Pestañas por nivel" observer); the module also checks it on the server.
+  bslib::nav_panel(
+    title = tagList(icon("clipboard-list"), " ", tr("requisiciones.pestana")),
+    value = "REQ",
+    div(class = "h-100 overflow-auto",
+      requisicionesUI("req")
     )
   ),
   bslib::nav_panel(
@@ -1664,6 +1674,10 @@ server <- function(input, output, session) {
   # ── Stage 6.1: Forecasting module ─────────────────────────────────────────
   forecastingServer("fc", shared)
 
+  # ── Requisiciones (front E) ───────────────────────────────────────────────
+  # Reads S3 only while its tab is open.
+  requisicionesServer("req", shared, activa = reactive(identical(input$nav, "REQ")))
+
   # ── Show GRUPO menu and control per-panel visibility ─────────────────────────
   # GRUPO toggle is hidden by default via CSS (display:none!important).
   # Empresas  → dev + admin  (can_manage_empresas permission, TRUE for both by default).
@@ -1709,10 +1723,13 @@ server <- function(input, output, session) {
   # ── Pestañas por nivel (registro) ───────────────────────────────────────────
   # A tier with a `pestanas` list sees only those client tabs. Runs after the
   # admin-deployment rule below, and only ever hides.
-  .TABS_CLIENTE <- c("CAL", "VEN", "PH", "BNC", "IC", "PSV", "FC", "RPT")
+  # A tab tied to a permission (REQ) is also hidden without it.
+  .TABS_CLIENTE <- c("CAL", "VEN", "PH", "BNC", "IC", "PSV", "REQ", "FC", "RPT")
   observe({
     lista <- nivel_pestanas(tier_efectivo())
     ocultas <- if (is.null(lista)) character() else setdiff(.TABS_CLIENTE, lista)
+    u_req <- tryCatch(shared$usuario(), error = function(e) NULL)
+    if (!puede(u_req, "can_view_requisiciones")) ocultas <- union(ocultas, "REQ")
     for (tab in .TABS_CLIENTE) {
       oculta <- tab %in% ocultas
       shinyjs::runjs(sprintf("
@@ -1734,7 +1751,7 @@ server <- function(input, output, session) {
   # Uses runjs with setProperty(...,'important') to override the initial CSS rule
   # that also uses !important — shinyjs::show/hide cannot beat !important stylesheets.
   if (IS_ADMIN_DEPLOYMENT) {
-    FINANCIAL_TABS <- c("CAL", "VEN", "PH", "BNC", "IC", "PSV", "FC", "RPT")
+    FINANCIAL_TABS <- c("CAL", "VEN", "PH", "BNC", "IC", "PSV", "REQ", "FC", "RPT")
 
     observe({
       tier <- tryCatch(shared$current_user_info()$tier, error = function(e) "")

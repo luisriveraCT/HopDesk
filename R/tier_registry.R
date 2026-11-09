@@ -91,8 +91,8 @@ TIER_REGISTRY <- list(
                    pestanas = NULL, permisos = character(), bloqueados = character()),
   compras   = list(rango = 10L, interno = FALSE, color = "#b8860b",
                    invitable = TRUE, ti = FALSE, unico_vivo = FALSE, alta = FALSE,
-                   # Panorama and Requisiciones join this list when their tabs exist.
-                   pestanas = c("CAL", "PSV"), calendario = "AP",
+                   # Panorama joins this list when its tab exists.
+                   pestanas = c("CAL", "PSV", "REQ"), calendario = "AP",
                    permisos = c("can_view_requisiciones", "can_create_requisiciones",
                                 "can_edit_requisiciones", "can_trash_own_requisiciones",
                                 "can_trash_others_requisiciones", "can_edit_provisiones"),
