@@ -815,5 +815,11 @@
   "tablas.pasivos.no_encontrado": "Pasivo no encontrado.",
   "tablas.pasivos.error_inesperado": "Error inesperado al guardar: {detalle}",
   "tablas.pasivos.pausado_ok": "Pasivo pausado. Provisiones futuras eliminadas.",
-  "tablas.pasivos.reanudado_ok": "Pasivo reanudado. Usa '+ Agregar pasivo' o el lápiz para regenerar provisiones."
+  "tablas.pasivos.reanudado_ok": "Pasivo reanudado. Usa '+ Agregar pasivo' o el lápiz para regenerar provisiones.",
+  "tablas.agenda.no_enviado": "No se pudo enviar a Agenda tras {n} intento(s) (posible problema de conexión). Actualiza la página e intenta de nuevo.",
+  "tablas.agenda.sin_facturas_provisiones": "No se encontraron facturas; las provisiones se convierten con ⚡.",
+  "tablas.agenda.enviadas_cobros": "✓ {n} factura(s) enviadas a Agenda del día (Cobros) — {empresas}.",
+  "tablas.agenda.enviadas_pagos": "✓ {n} factura(s) enviadas a Agenda del día (Pagos) — {empresas}.",
+  "tablas.interco.anadida_una": "{n} factura añadida a Agenda de Hoy.",
+  "tablas.interco.anadidas": "{n} factura(s) añadida(s) a Agenda de Hoy."
 }

@@ -494,10 +494,8 @@ intercoServer <- function(id, shared) {
       res <- save_pagar_hoy_with_retry(combined, shared$current_user(),
                                        client_id = shared$effective_client_id(), base = ph)
       if (!isTRUE(res$ok)) {
-        showNotification(
-          paste0("No se pudo enviar a Agenda tras ", res$attempts,
-                 " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
-          type = "error", duration = 15)
+        showNotification(tr("tablas.agenda.no_enviado", n = res$attempts),
+                         type = "error", duration = 15)
         tryCatch(log_action(
           user        = tryCatch(shared$current_user(), error = function(e) "system"),
           module      = "interco",
@@ -587,8 +585,8 @@ intercoServer <- function(id, shared) {
       added <- .ic_send_rows(rows)
       if (is.na(added)) return()   # it said so already
       showNotification(if (identical(a$accion, "agregar"))
-                         paste0(added, " factura a\u00f1adida a Agenda de Hoy.")
-                       else paste0(added, " factura(s) a\u00f1adida(s) a Agenda de Hoy."),
+                         tr("tablas.interco.anadida_una", n = added)
+                       else tr("tablas.interco.anadidas", n = added),
                        type = "message", duration = 2)
     }, ignoreInit = TRUE)
 

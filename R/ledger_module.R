@@ -882,7 +882,7 @@ ledgerModuleServer <- function(id, config, shared) {
       # actually works on a post-selection keys object.
       keys <- pasivos_exclude_provision_keys(keys, detail)
       if (is.null(keys) || !nrow(keys)) {
-        showNotification("No se encontraron facturas; las provisiones se convierten con ⚡.", type = "warning")
+        showNotification(tr("tablas.agenda.sin_facturas_provisiones"), type = "warning")
         return()
       }
       detail_np <- pasivos_filter_out_provisions(detail)
@@ -955,11 +955,8 @@ ledgerModuleServer <- function(id, config, shared) {
                                                 client_id = shared$effective_client_id(),
                                                 base = ph_base)   # CM09: rebased on S3 (A2)
       if (!isTRUE(stage_result$ok)) {
-        showNotification(
-          paste0("No se pudo enviar a Agenda tras ", stage_result$attempts,
-                 " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
-          type = "error", duration = 15
-        )
+        showNotification(tr("tablas.agenda.no_enviado", n = stage_result$attempts),
+                         type = "error", duration = 15)
         tryCatch(log_action(
           user = tryCatch(shared$current_user(), error = function(e) "system"),
           module = paste0("ledger_", ledger), action = "enviar_a_agenda_dia_incompleto",
@@ -977,8 +974,8 @@ ledgerModuleServer <- function(id, config, shared) {
       lbl <- if (ledger == "AR") "Agenda del d\u00eda (Cobros)" else "Agenda del d\u00eda (Pagos)"
       emps <- paste(unique(new_rows[["Empresa"]]), collapse = ", ")
       showNotification(
-        paste0("✓ ", nrow(new_rows), " factura(s) enviadas a ", lbl,
-               " — ", emps, "."),
+        tr(if (ledger == "AR") "tablas.agenda.enviadas_cobros" else "tablas.agenda.enviadas_pagos",
+           n = nrow(new_rows), empresas = emps),
         type = "message", duration = 3)
       log_action(
         user        = tryCatch(shared$current_user(), error = function(e) "system"),
