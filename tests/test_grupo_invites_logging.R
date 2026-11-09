@@ -74,7 +74,8 @@ if (!is.na(b_send)) {
 
 cat("\n-- Part B: inv_revoke_token --\n")
 
-b_revoke <- .handler_block(tm_txt, "inv_revoke_token", "^\\s*\\}, ignoreInit = TRUE\\)\\s*$")
+b_revoke <- .handler_block(tm_txt, "inv_revoke_token", "^\\s*\\}, ignoreInit = TRUE\\)\\s*$",
+                           ancla = "observeEvent\\(invitaciones_t\\$revocar\\(\\),")   # T28: from the table
 if (!is.na(b_revoke)) {
   ok("inv_revoke_token calls log_action()", grepl("log_action\\(", b_revoke))
   ok("inv_revoke_token: action=\"revocar_invitacion\"", grepl('action\\s*=\\s*"revocar_invitacion"', b_revoke))

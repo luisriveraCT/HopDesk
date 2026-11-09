@@ -107,7 +107,7 @@ vs <- .inside("viewer_is_staff <- reactive(", 260)
 
 # ── E. Revocar y reintentar están acotados ───────────────────────────────────
 
-rev_h <- .inside("observeEvent(input$inv_revoke_token, {", 1400)
+rev_h <- .inside("observeEvent(invitaciones_t$revocar(), {", 1400)   # T28: ⊘ comes from the table
 .chk(grepl("is_dev()", rev_h, fixed = TRUE), TRUE,
      "revocar: tiene gate de tier")
 .chk(grepl("identical(inv_client, current_client_id())", rev_h, fixed = TRUE), TRUE,
@@ -131,8 +131,15 @@ cola_srv <- .inside("cola_t <- tiers_cola_server(", 200)
 
 ui_blk <- .inside("staff_view <- isTRUE(viewer_is_staff())", 1500)
 .chk(nzchar(ui_blk), TRUE, "la UI calcula staff_view")
-.chk(grepl("invites$client_id == own_client", ui_blk, fixed = TRUE), TRUE,
-     "la tabla de pendientes se filtra al propio cliente cuando no es staff")
+# T28: the pending invitations are a table of the engine; its rows are
+# filtered on the server by .invitaciones_filas(), fed the viewer's staff
+# flag and own client.
+filas_blk <- .inside(".invitaciones_filas <- function(", 1400)
+.chk(grepl("p$client_id == own_client", filas_blk, fixed = TRUE) && grepl("if (!isTRUE(staff))", filas_blk, fixed = TRUE),
+     TRUE, "la tabla de pendientes se filtra al propio cliente cuando no es staff")
+inv_srv <- .inside("invitaciones_t <- tiers_invitaciones_server(", 400)
+.chk(grepl("staff      = viewer_is_staff, own_client = current_client_id", inv_srv, fixed = TRUE), TRUE,
+     "la tabla recibe el staff y el cliente propio del servidor, no del navegador")
 cola_ui <- .inside("# ── Email queue panel", 1400)
 .chk(grepl("if (staff_view) {", cola_ui, fixed = TRUE) && grepl("tiers_cola_ui(", cola_ui, fixed = TRUE), TRUE,
      "el panel de cola de emails es staff-only")

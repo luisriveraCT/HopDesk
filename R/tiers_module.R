@@ -588,6 +588,66 @@ tiers_cola_server <- function(id, permitido, refresh) {
   })
 }
 
+# ── Invitaciones pendientes on the table engine (T28) ───────────────────────
+# pending_invites.rds is ONE global file in hd-admin/ with a client_id per
+# row. Staff sees every client's (its job is onboarding clients); anyone else
+# only its own client's -- a row with no client_id goes to nobody. Done here,
+# on the server: the browser never gets another client's emails. id = the
+# invite's token (what the ✕ button already carried); the client shows by
+# its name and the tier by its name.
+.invitaciones_filas <- function(invites, registry, staff, own_client) {
+  vacia <- data.frame(id = character(0), email = character(0), nombre = character(0), cliente = character(0),
+                      nivel = character(0), expira = as.Date(character(0)), stringsAsFactors = FALSE)
+  if (is.null(invites) || !is.data.frame(invites) || !nrow(invites)) return(vacia)
+  p <- invites[!is.na(invites$status) & invites$status == "pending" & !is.na(invites$token) &
+                 nzchar(invites$token), , drop = FALSE]
+  if (!isTRUE(staff))
+    p <- p[!is.na(p$client_id) & p$client_id == own_client, , drop = FALSE]
+  p <- p[!duplicated(p$token), , drop = FALSE]
+  if (!nrow(p)) return(vacia)
+  etiqueta <- function(cid) {
+    nm <- if (is.data.frame(registry) && nrow(registry)) registry$display_name[match(cid, registry$client_id)] else NA
+    ifelse(is.na(nm) | !nzchar(nm), cid, nm)
+  }
+  data.frame(id = as.character(p$token), email = as.character(p$email), nombre = as.character(p$display_name),
+             cliente = etiqueta(as.character(p$client_id)),
+             nivel = vapply(as.character(p$tier), function(t) if (is.na(t)) "" else nivel_nombre(t), character(1),
+                            USE.NAMES = FALSE),
+             expira = as.Date(substr(as.character(p$expires_at), 1, 10)), stringsAsFactors = FALSE)
+}
+
+tiers_invitaciones_ui <- function(id) hd_table_ui(shiny::NS(id, "tabla"))
+
+# The table only; revoking stays in tiersServer (with its tenant check).
+# revocar(): list(id = token, nonce) once ⊘ is confirmed in the bar -- NULL
+# (never req(): see tiers_solicitudes_server) for anyone permitido() doesn't
+# allow (Dev, HopDesk, Principal) or for any other action.
+tiers_invitaciones_server <- function(id, permitido, staff, own_client, refresh) {
+  moduleServer(id, function(input, output, session) {
+    datos <- reactive({
+      if (!isTRUE(permitido())) return(NULL)
+      refresh()
+      registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())   # names only
+      .invitaciones_filas(leer_hd_admin("pending_invites.rds", .schema_pending_invites),   # strict (P7)
+                          registry, staff = isTRUE(staff()), own_client = own_client())
+    })
+    t <- hd_table_server("tabla", tabla = "invitaciones", datos = datos,
+      columnas = list(col_texto("email", "niveles.tablas.invitaciones.email"),
+                      col_texto("nombre", "niveles.tablas.invitaciones.nombre"),
+                      col_texto("cliente", "niveles.tablas.invitaciones.cliente"),
+                      col_texto("nivel", "niveles.tablas.invitaciones.nivel"),
+                      col_fecha("expira", "niveles.tablas.invitaciones.expira")),
+      acciones_fila = "revocar",
+      vacio = "niveles.tablas.invitaciones.vacio")
+    revocar <- reactive({
+      a <- t$accion()
+      if (is.null(a) || !identical(a$accion, "revocar") || !isTRUE(permitido()) || !length(a$ids)) return(NULL)
+      list(id = a$ids[1], nonce = a$nonce)
+    })
+    list(datos = datos, revocar = revocar)
+  })
+}
+
 tiersServer <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -2569,8 +2629,10 @@ tiersServer <- function(id, shared) {
         return(div(class = "alert alert-warning mt-3",
                    icon("lock"), " No tienes permiso para gestionar invitaciones."))
       }
-      invites_refresh()
-      invites <- tryCatch(read_pending_invites(), error = function(e) .schema_pending_invites())
+      # The pending invitations and the email queue are tables of the engine
+      # (tiers_invitaciones_server, tiers_cola_server), refreshed through
+      # invites_refresh in their own datos(): ↻ or a revoke never rebuilds
+      # this form (T28 P6).
       registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
       active_clients <- registry[registry$status == "active", , drop = FALSE]
 
@@ -2591,10 +2653,8 @@ tiersServer <- function(id, shared) {
         setNames(active_clients$client_id, active_clients$display_name)
       else
         setNames(own_client, own_label)
-
-      if (!staff_view)
-        invites <- invites[!is.na(invites$client_id) & invites$client_id == own_client,
-                           , drop = FALSE]
+      # The invitations a client sees are filtered on the server too, in
+      # .invitaciones_filas() (the table's datos()), never in the browser.
 
       # Delivery mode is invisible from the UI otherwise: in sandbox or with a
       # missing key the form looks identical while nobody receives anything.
@@ -2672,43 +2732,7 @@ tiersServer <- function(id, shared) {
                 class = "card border-0 shadow-sm mb-3",
                 div(class = "card-header bg-white py-2 fw-semibold",
                     tagList(icon("clock"), " Invitaciones pendientes")),
-                div(
-                  class = "card-body p-0",
-                  if (!nrow(invites[invites$status == "pending", ])) {
-                    div(class = "p-3 text-muted small", "Sin invitaciones pendientes.")
-                  } else {
-                    pending_inv <- invites[invites$status == "pending", , drop = FALSE]
-                    tags$table(
-                      class = "table table-sm table-hover mb-0",
-                      tags$thead(tags$tr(
-                        tags$th("Email"), tags$th("Nombre"), tags$th("Cliente"),
-                        tags$th("Tier"), tags$th("Expira"), tags$th("")
-                      )),
-                      tags$tbody(
-                        lapply(seq_len(nrow(pending_inv)), function(i) {
-                          r <- pending_inv[i, ]
-                          tags$tr(
-                            tags$td(r$email),
-                            tags$td(r$display_name),
-                            tags$td(r$client_id),
-                            tags$td(r$tier),
-                            tags$td(substr(r$expires_at, 1, 10)),
-                            tags$td(
-                              tags$button(
-                                class = "btn btn-outline-danger btn-sm py-0",
-                                onclick = sprintf(
-                                  "Shiny.setInputValue('%s','%s',{priority:'event'})",
-                                  ns("inv_revoke_token"), r$token
-                                ),
-                                icon("xmark")
-                              )
-                            )
-                          )
-                        })
-                      )
-                    )
-                  }
-                )
+                div(class = "card-body p-0", tiers_invitaciones_ui(ns("invit")))
               ),
               # ── Email queue panel ──────────────────────────────────────────
               # Sólo staff. La cola vive en hd-admin/email_queue.rds y es
@@ -2887,9 +2911,15 @@ tiersServer <- function(id, shared) {
 
     observeEvent(input$btn_inv_refresh, { invites_refresh(invites_refresh() + 1L) })
 
-    observeEvent(input$inv_revoke_token, {
+    # The pending invitations' table (T28): ⊘, confirmed in its bar, names
+    # the invite by its token. Tenant-scoped rows in its datos().
+    invitaciones_t <- tiers_invitaciones_server("invit", refresh = invites_refresh,
+      permitido  = reactive(isTRUE(is_hopdesk()) || isTRUE(is_principal()) || isTRUE(is_dev())),
+      staff      = viewer_is_staff, own_client = current_client_id)
+
+    observeEvent(invitaciones_t$revocar(), {
       req(isTRUE(is_hopdesk()) || isTRUE(is_principal()) || isTRUE(is_dev()))
-      token <- input$inv_revoke_token
+      token <- invitaciones_t$revocar()$id
       req(nzchar(token %||% ""))
       invites <- tryCatch(read_pending_invites(), error = function(e) NULL)
       req(!is.null(invites))
@@ -2897,8 +2927,8 @@ tiersServer <- function(id, shared) {
       if (length(idx)) {
         inv_client <- invites$client_id[idx[1]]
         inv_email  <- invites$email[idx[1]]
-        # El token viaja en el onclick del botón, así que cualquiera puede
-        # mandar uno arbitrario. Sin esta comprobación, un cliente podía
+        # El token llega del navegador (el id de la fila), así que cualquiera
+        # puede mandar uno arbitrario. Sin esta comprobación, un cliente podía
         # revocar la invitación de OTRO cliente con sólo conocer su token.
         if (!isTRUE(viewer_is_staff()) && !identical(inv_client, current_client_id())) {
           showNotification("Esa invitación no pertenece a tu empresa.",
