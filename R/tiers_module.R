@@ -487,6 +487,102 @@ tiers_bloqueadas_server <- function(id, shared, permitido, refresh, actividad) {
   })
 }
 
+# ── Solicitudes pendientes (client requests) on the table engine (T28) ──────
+# The pending requests only, newest last as stored; id = the request's id.
+.solicitudes_filas <- function(reqs) {
+  vacia <- data.frame(id = character(0), propuesto = character(0), nombre = character(0),
+                      solicitado_por = character(0), fecha = as.POSIXct(character(0)),
+                      limite = integer(0), stringsAsFactors = FALSE)
+  if (is.null(reqs) || !is.data.frame(reqs) || !nrow(reqs)) return(vacia)
+  p <- reqs[!is.na(reqs$status) & reqs$status == "pending" & !is.na(reqs$id) & nzchar(reqs$id), , drop = FALSE]
+  p <- p[!duplicated(p$id), , drop = FALSE]
+  if (!nrow(p)) return(vacia)
+  data.frame(id = as.character(p$id), propuesto = as.character(p$client_id_proposed),
+             nombre = as.character(p$display_name), solicitado_por = as.character(p$requested_by),
+             fecha = as.POSIXct(as.character(p$requested_at), tz = "America/Mexico_City"),
+             limite = suppressWarnings(as.integer(p$max_users)), stringsAsFactors = FALSE)
+}
+
+tiers_solicitudes_ui <- function(id) hd_table_ui(shiny::NS(id, "tabla"))
+
+# The table only; what a row opens (the review modal, which approves or
+# rejects) stays in tiersServer. revisar(): list(id, nonce) each time ℹ or a
+# double click names a request -- only for permitido() (Principal), checked
+# here on the server; otherwise the table has no rows and nothing is named.
+tiers_solicitudes_server <- function(id, permitido, refresh) {
+  moduleServer(id, function(input, output, session) {
+    datos <- reactive({
+      if (!isTRUE(permitido())) return(NULL)
+      refresh()
+      # The strict reader (read_client_requests() turns a failed read into
+      # "no requests"): a failure is the table's notice (P7).
+      .solicitudes_filas(leer_hd_admin("client_requests.rds", .schema_client_requests))
+    })
+    t <- hd_table_server("tabla", tabla = "solicitudes", datos = datos,
+      columnas = list(col_texto("propuesto", "niveles.tablas.solicitudes.propuesto"),
+                      col_texto("nombre", "niveles.tablas.solicitudes.nombre"),
+                      col_texto("solicitado_por", "niveles.tablas.solicitudes.solicitado_por"),
+                      col_fecha_hora("fecha", "niveles.tablas.solicitudes.fecha"),
+                      col_numero("limite", "niveles.tablas.solicitudes.limite")),
+      acciones_fila = "detalle",
+      vacio = "niveles.tablas.solicitudes.vacio")
+    revisar <- reactive({
+      a <- t$accion()
+      req(!is.null(a), identical(a$accion, "detalle"), isTRUE(permitido()), length(a$ids) >= 1L)
+      list(id = a$ids[1], nonce = a$nonce)
+    })
+    list(datos = datos, revisar = revisar)
+  })
+}
+
+# ── Cola de correos (hd-admin's email queue) on the table engine (T28) ──────
+# What is still to go out: pending and failed emails, id = the queue's id.
+.cola_filas <- function(q) {
+  vacia <- data.frame(id = character(0), para = character(0), asunto = character(0),
+                      estado = character(0), intentos = integer(0), stringsAsFactors = FALSE)
+  if (is.null(q) || !is.data.frame(q) || !nrow(q)) return(vacia)
+  q <- q[!is.na(q$status) & q$status %in% c("pending", "failed") & !is.na(q$id) & nzchar(q$id), , drop = FALSE]
+  q <- q[!duplicated(q$id), , drop = FALSE]
+  if (!nrow(q)) return(vacia)
+  data.frame(id = as.character(q$id), para = as.character(q$to), asunto = as.character(q$subject),
+             estado = as.character(q$status), intentos = suppressWarnings(as.integer(q$attempts)),
+             stringsAsFactors = FALSE)
+}
+
+tiers_cola_ui <- function(id) hd_table_ui(shiny::NS(id, "tabla"))
+
+# The table only; sending again stays in tiersServer. reintentar():
+# list(id, nonce) for ↻ on a row; reintentar_todo(): the bar's "Reintentar
+# todo" (the whole queue, as before). Both only for permitido() (HopDesk
+# staff: the queue is global, every client's mail), checked here on the
+# server; otherwise the table has no rows and nothing is retried.
+tiers_cola_server <- function(id, permitido, refresh) {
+  moduleServer(id, function(input, output, session) {
+    datos <- reactive({
+      if (!isTRUE(permitido())) return(NULL)
+      refresh()
+      .cola_filas(read_email_queue())   # strict: a failed read is the table's notice (P7)
+    })
+    t <- hd_table_server("tabla", tabla = "cola_correos", datos = datos, piezas = c("acc_fila", "barra_acc"),
+      columnas = list(col_texto("para", "niveles.tablas.cola.para"),
+                      col_texto("asunto", "niveles.tablas.cola.asunto"),
+                      col_insignia("estado", "niveles.tablas.cola.estado", mapa = list(
+                        pending = list(texto = "niveles.tablas.cola.pendiente", tono = "aviso"),
+                        failed  = list(texto = "niveles.tablas.cola.fallido", tono = "peligro"))),
+                      col_numero("intentos", "niveles.tablas.cola.intentos")),
+      acciones_fila = "reintentar",
+      acciones_barra = list(list(accion = "reintentar_todo", texto = "niveles.tablas.cola.reintentar_todo",
+                                 sin_seleccion = TRUE)),
+      vacio = list(texto = "niveles.tablas.cola.vacio", tono = "exito"))
+    accion <- function(nombre) reactive({
+      a <- t$accion()
+      req(!is.null(a), identical(a$accion, nombre), isTRUE(permitido()))
+      list(id = a$ids[1] %||% NA_character_, nonce = a$nonce)
+    })
+    list(datos = datos, reintentar = accion("reintentar"), reintentar_todo = accion("reintentar_todo"))
+  })
+}
+
 tiersServer <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -1533,14 +1629,12 @@ tiersServer <- function(id, shared) {
       }
 
       clients_refresh()
-      requests_refresh()
+      # The pending requests are a table of the engine (tiers_solicitudes_server),
+      # refreshed through requests_refresh in its own datos() (T28 P6).
 
       registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
-      requests <- tryCatch(read_client_requests(),  error = function(e) .schema_client_requests())
 
       ns <- session$ns
-
-      pending <- requests[!is.na(requests$status) & requests$status == "pending", , drop = FALSE]
 
       div(
         class = "mt-3",
@@ -1556,43 +1650,13 @@ tiersServer <- function(id, shared) {
         ),
 
         # ── Pending requests (principal only) ─────────────────────────────
-        if (isTRUE(is_principal()) && nrow(pending) > 0) {
+        # Always there for Principal, with its own "none" message (T28 P8).
+        if (isTRUE(is_principal())) {
           div(class = "card border-warning shadow-sm mb-3",
             div(class = "card-header py-2 fw-semibold",
                 style = "background:#fff3cd;",
-                tagList(icon("clock"), sprintf(" Solicitudes pendientes (%d)", nrow(pending)))),
-            div(class = "card-body p-0",
-              tags$table(class = "table table-sm table-hover mb-0",
-                tags$thead(tags$tr(
-                  tags$th("ID propuesto"), tags$th("Nombre"), tags$th("Solicitado por"),
-                  tags$th("Fecha"), tags$th("Límite"), tags$th("")
-                )),
-                tags$tbody(
-                  lapply(seq_len(nrow(pending)), function(i) {
-                    r <- pending[i, , drop = FALSE]
-                    tags$tr(
-                      tags$td(tags$code(r$client_id_proposed)),
-                      tags$td(r$display_name),
-                      tags$td(class = "text-muted small", r$requested_by),
-                      tags$td(class = "small",
-                              format(as.POSIXct(r$requested_at), "%d/%m/%Y %H:%M",
-                                     tz = "America/Mexico_City")),
-                      tags$td(r$max_users),
-                      tags$td(
-                        tags$button(
-                          class   = "btn btn-sm btn-outline-primary",
-                          type    = "button",
-                          onclick = sprintf(
-                            "Shiny.setInputValue('%s','%s',{priority:'event'})",
-                            ns("review_request_id"), r$id),
-                          tagList(icon("magnifying-glass"), " Revisar")
-                        )
-                      )
-                    )
-                  })
-                )
-              )
-            )
+                tagList(icon("clock"), " ", tr("niveles.tablas.solicitudes.titulo"))),
+            div(class = "card-body p-0", tiers_solicitudes_ui(ns("solic")))
           )
         },
 
@@ -1798,9 +1862,12 @@ tiersServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     # ── Review request modal (principal only) ─────────────────────────────────
-    observeEvent(input$review_request_id, {
+    # Opened by ℹ or a double click on a pending request (T28): the table
+    # names the request by its id.
+    solicitudes_t <- tiers_solicitudes_server("solic", permitido = is_principal, refresh = requests_refresh)
+    observeEvent(solicitudes_t$revisar(), {
       req(is_principal())
-      rid <- input$review_request_id
+      rid <- solicitudes_t$revisar()$id
       req(nzchar(rid %||% ""))
       reqs <- tryCatch(read_client_requests(), error = function(e) NULL)
       req(!is.null(reqs))
@@ -2524,10 +2591,6 @@ tiersServer <- function(id, shared) {
         invites <- invites[!is.na(invites$client_id) & invites$client_id == own_client,
                            , drop = FALSE]
 
-      email_q <- tryCatch(read_email_queue(), error = function(e) .schema_email_queue())
-      pending_q <- email_q[!is.na(email_q$status) & email_q$status == "pending", , drop = FALSE]
-      failed_q  <- email_q[!is.na(email_q$status) & email_q$status == "failed",  , drop = FALSE]
-
       # Delivery mode is invisible from the UI otherwise: in sandbox or with a
       # missing key the form looks identical while nobody receives anything.
       esvc <- tryCatch(email_service_status(),
@@ -2645,47 +2708,16 @@ tiersServer <- function(id, shared) {
               # ── Email queue panel ──────────────────────────────────────────
               # Sólo staff. La cola vive en hd-admin/email_queue.rds y es
               # global: muestra destinatarios y asuntos de TODOS los clientes.
-              if (staff_view && nrow(pending_q) + nrow(failed_q) > 0) {
+              # Always there for staff, with its own "empty" message (T28
+              # P8): a table of the engine (tiers_cola_server), with ↻ per
+              # row and "Reintentar todo" in its bar.
+              if (staff_view) {
                 div(
                   class = "card border-0 shadow-sm",
-                  div(class = "card-header bg-white py-2 fw-semibold d-flex justify-content-between align-items-center",
-                      tagList(icon("triangle-exclamation", style = "color:#e65100"),
-                              sprintf(" Cola de emails (%d)",
-                                      nrow(pending_q) + nrow(failed_q))),
-                      actionButton(ns("btn_email_retry_all"),
-                                   tagList(icon("rotate"), " Reintentar todo"),
-                                   class = "btn btn-outline-primary btn-sm py-0")),
-                  div(
-                    class = "card-body p-0",
-                    tags$table(
-                      class = "table table-sm mb-0",
-                      tags$thead(tags$tr(
-                        tags$th("Para"), tags$th("Asunto"), tags$th("Estado"),
-                        tags$th("Intentos"), tags$th("")
-                      )),
-                      tags$tbody(
-                        lapply(seq_len(nrow(email_q[email_q$status %in% c("pending","failed"), ])), function(i) {
-                          r <- email_q[email_q$status %in% c("pending","failed"), ][i, ]
-                          tags$tr(
-                            tags$td(r$to),
-                            tags$td(r$subject),
-                            tags$td(r$status),
-                            tags$td(r$attempts),
-                            tags$td(
-                              tags$button(
-                                class = "btn btn-outline-primary btn-sm py-0",
-                                onclick = sprintf(
-                                  "Shiny.setInputValue('%s','%s',{priority:'event'})",
-                                  ns("email_retry_id"), r$id
-                                ),
-                                "Reintentar"
-                              )
-                            )
-                          )
-                        })
-                      )
-                    )
-                  )
+                  div(class = "card-header bg-white py-2 fw-semibold",
+                      tagList(icon("triangle-exclamation", style = "color:#e65100"), " ",
+                              tr("niveles.tablas.cola.titulo"))),
+                  div(class = "card-body p-0", tiers_cola_ui(ns("cola")))
                 )
               }
             )
@@ -2896,7 +2928,12 @@ tiersServer <- function(id, shared) {
 
     # Drains everything that piled up while email was unconfigured — the
     # normal first action after installing the Resend key.
-    observeEvent(input$btn_email_retry_all, {
+    # The queue's table (T28): ↻ on a row and the bar's "Reintentar todo"
+    # reach these two handlers, staff only (checked in the table and here).
+    cola_t <- tiers_cola_server("cola", refresh = invites_refresh,
+                                permitido = reactive(isTRUE(is_hopdesk()) || isTRUE(is_principal())))
+
+    observeEvent(cola_t$reintentar_todo(), {
       req(isTRUE(is_hopdesk()) || isTRUE(is_principal()))
       res <- tryCatch(retry_all_queued_emails(),
                       error = function(e) list(sent = 0L, failed = 0L))
@@ -2916,12 +2953,12 @@ tiersServer <- function(id, shared) {
       ), error = function(e) NULL)
     }, ignoreInit = TRUE)
 
-    observeEvent(input$email_retry_id, {
+    observeEvent(cola_t$reintentar(), {
       # La cola es global de hd-admin: reintentar desde aquí reenvía correo de
-      # cualquier cliente. El panel ya es staff-only, pero el input llega por
-      # un onclick y el gate tiene que estar tambien en el servidor.
+      # cualquier cliente. El panel ya es staff-only, pero la acción llega del
+      # navegador y el gate tiene que estar tambien en el servidor.
       req(isTRUE(is_hopdesk()) || isTRUE(is_principal()))
-      queue_id <- input$email_retry_id
+      queue_id <- cola_t$reintentar()$id
       req(nzchar(queue_id %||% ""))
       ok <- tryCatch(retry_queued_email(queue_id), error = function(e) FALSE)
       showNotification(

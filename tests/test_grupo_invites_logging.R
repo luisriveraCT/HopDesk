@@ -39,8 +39,11 @@ ok("R/tiers_module.R still parses without syntax errors",
 # Handler-body extractor: from an observeEvent(input$X, { start line
 # through the next line matching end_pattern (each handler here has its
 # own distinctive close -- verified individually below, not assumed).
-.handler_block <- function(txt, input_id, end_pattern) {
-  s <- grep(sprintf("observeEvent\\(input\\$%s,", input_id), txt)
+# ancla: the handler's opening line, when it isn't observeEvent(input$X
+# (T28: the email retry comes from the queue's table, cola_t$reintentar()).
+.handler_block <- function(txt, input_id, end_pattern,
+                           ancla = sprintf("observeEvent\\(input\\$%s,", input_id)) {
+  s <- grep(ancla, txt)
   ok(sprintf("found observeEvent(input$%s, ...) to scan", input_id), length(s) >= 1)
   if (!length(s)) return(NA_character_)
   e <- grep(end_pattern, txt); e <- e[e > s[1]][1]
@@ -90,7 +93,8 @@ if (!is.na(b_revoke)) {
 
 cat("\n-- Part C: email_retry_id --\n")
 
-b_retry <- .handler_block(tm_txt, "email_retry_id", "^\\s*\\}, ignoreInit = TRUE\\)\\s*$")
+b_retry <- .handler_block(tm_txt, "email_retry_id", "^\\s*\\}, ignoreInit = TRUE\\)\\s*$",
+                          ancla = "observeEvent\\(cola_t\\$reintentar\\(\\),")
 if (!is.na(b_retry)) {
   ok("email_retry_id calls log_action()", grepl("log_action\\(", b_retry))
   ok("email_retry_id: action=\"reintentar_email\"", grepl('action\\s*=\\s*"reintentar_email"', b_retry))

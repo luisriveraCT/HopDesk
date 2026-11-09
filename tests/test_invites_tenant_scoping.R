@@ -113,13 +113,19 @@ rev_h <- .inside("observeEvent(input$inv_revoke_token, {", 1400)
 .chk(grepl("identical(inv_client, current_client_id())", rev_h, fixed = TRUE), TRUE,
      "revocar: un cliente no puede revocar la invitación de otro tenant")
 
-retry_h <- .inside("observeEvent(input$email_retry_id, {", 700)
+# T28: ↻ and "Reintentar todo" come from the queue's table (cola_t), whose
+# own server only lets staff through; the handlers keep their gate too.
+retry_h <- .inside("observeEvent(cola_t$reintentar(), {", 700)
 .chk(grepl("req(isTRUE(is_hopdesk()) || isTRUE(is_principal()))", retry_h, fixed = TRUE),
      TRUE, "reintentar email: staff-only (la cola es global de hd-admin)")
 
-retry_all <- .inside("observeEvent(input$btn_email_retry_all, {", 500)
+retry_all <- .inside("observeEvent(cola_t$reintentar_todo(), {", 500)
 .chk(grepl("req(isTRUE(is_hopdesk()) || isTRUE(is_principal()))", retry_all, fixed = TRUE),
      TRUE, "reintentar todo: staff-only")
+
+cola_srv <- .inside("cola_t <- tiers_cola_server(", 200)
+.chk(grepl("permitido = reactive(isTRUE(is_hopdesk()) || isTRUE(is_principal()))", cola_srv, fixed = TRUE),
+     TRUE, "la tabla de la cola solo da filas y acciones a staff")
 
 # ── F. La UI filtra lo que un cliente puede ver ──────────────────────────────
 
@@ -127,7 +133,8 @@ ui_blk <- .inside("staff_view <- isTRUE(viewer_is_staff())", 1500)
 .chk(nzchar(ui_blk), TRUE, "la UI calcula staff_view")
 .chk(grepl("invites$client_id == own_client", ui_blk, fixed = TRUE), TRUE,
      "la tabla de pendientes se filtra al propio cliente cuando no es staff")
-.chk(grepl("staff_view && nrow(pending_q)", src, fixed = TRUE), TRUE,
+cola_ui <- .inside("# ── Email queue panel", 700)
+.chk(grepl("if (staff_view) {", cola_ui, fixed = TRUE) && grepl("tiers_cola_ui(", cola_ui, fixed = TRUE), TRUE,
      "el panel de cola de emails es staff-only")
 
 # ── G. La lógica de filtrado, ejercitada de verdad ───────────────────────────
