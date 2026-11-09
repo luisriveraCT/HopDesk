@@ -133,7 +133,7 @@ ui_blk <- .inside("staff_view <- isTRUE(viewer_is_staff())", 1500)
 .chk(nzchar(ui_blk), TRUE, "la UI calcula staff_view")
 .chk(grepl("invites$client_id == own_client", ui_blk, fixed = TRUE), TRUE,
      "la tabla de pendientes se filtra al propio cliente cuando no es staff")
-cola_ui <- .inside("# ── Email queue panel", 700)
+cola_ui <- .inside("# ── Email queue panel", 1400)
 .chk(grepl("if (staff_view) {", cola_ui, fixed = TRUE) && grepl("tiers_cola_ui(", cola_ui, fixed = TRUE), TRUE,
      "el panel de cola de emails es staff-only")
 
