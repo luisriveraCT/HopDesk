@@ -602,7 +602,7 @@ tiers_cola_server <- function(id, permitido, refresh) {
   p <- invites[!is.na(invites$status) & invites$status == "pending" & !is.na(invites$token) &
                  nzchar(invites$token), , drop = FALSE]
   if (!isTRUE(staff))
-    p <- p[!is.na(p$client_id) & p$client_id == own_client, , drop = FALSE]
+    p <- p[!is.na(p$client_id) & p$client_id %in% own_client, , drop = FALSE]   # own_client NA/NULL: none
   p <- p[!duplicated(p$token), , drop = FALSE]
   if (!nrow(p)) return(vacia)
   etiqueta <- function(cid) {
@@ -2656,28 +2656,9 @@ tiersServer <- function(id, shared) {
       # The invitations a client sees are filtered on the server too, in
       # .invitaciones_filas() (the table's datos()), never in the browser.
 
-      # Delivery mode is invisible from the UI otherwise: in sandbox or with a
-      # missing key the form looks identical while nobody receives anything.
-      esvc <- tryCatch(email_service_status(),
-                       error = function(e) list(mode = "unconfigured",
-                                                label = "Estado desconocido",
-                                                detail = ""))
-
       tagList(
-        div(
-          class = paste0("alert d-flex align-items-start gap-2 mt-3 mb-0 py-2 ",
-                         if (isTRUE(esvc$mode == "live")) "alert-success" else "alert-warning"),
-          icon(if (isTRUE(esvc$mode == "live")) "circle-check" else "triangle-exclamation",
-               class = "mt-1"),
-          div(
-            tags$strong(esvc$label),
-            tags$div(class = "small", esvc$detail),
-            if (!isTRUE(esvc$mode == "live"))
-              tags$div(class = "small text-muted mt-1",
-                       "Las invitaciones se siguen creando y el enlace se muestra al enviarlas, ",
-                       "pero hay que compartirlo a mano. Ver docs/EMAIL_SERVICE_RUNBOOK.md.")
-          )
-        ),
+        # The delivery mode, checked again on ↻ (its own output, T28).
+        uiOutput(ns("inv_estado_correo")),
         div(
           class = "mt-3",
           fluidRow(
@@ -2755,7 +2736,42 @@ tiersServer <- function(id, shared) {
       )
     })
 
-    output$inv_send_error <- renderUI(NULL)
+    # Delivery mode is invisible from the UI otherwise: in sandbox or with a
+    # missing key the form looks identical while nobody receives anything.
+    # Its own output, so ↻ (invites_refresh) checks it again -- as when the
+    # whole tab was rebuilt -- without rebuilding the form or the tables.
+    output$inv_estado_correo <- renderUI({
+      invites_refresh()
+      esvc <- tryCatch(email_service_status(),
+                       error = function(e) list(mode = "unconfigured",
+                                                label = "Estado desconocido",
+                                                detail = ""))
+      div(
+        class = paste0("alert d-flex align-items-start gap-2 mt-3 mb-0 py-2 ",
+                       if (isTRUE(esvc$mode == "live")) "alert-success" else "alert-warning"),
+        icon(if (isTRUE(esvc$mode == "live")) "circle-check" else "triangle-exclamation",
+             class = "mt-1"),
+        div(
+          tags$strong(esvc$label),
+          tags$div(class = "small", esvc$detail),
+          if (!isTRUE(esvc$mode == "live"))
+            tags$div(class = "small text-muted mt-1",
+                     "Las invitaciones se siguen creando y el enlace se muestra al enviarlas, ",
+                     "pero hay que compartirlo a mano. Ver docs/EMAIL_SERVICE_RUNBOOK.md.")
+        )
+      )
+    })
+
+    # Staff's "Cliente destino": ↻ brings clients approved since the form was
+    # drawn (it used to rebuild the form), keeping the one chosen.
+    observeEvent(invites_refresh(), {
+      req(isTRUE(viewer_is_staff()))
+      registry <- tryCatch(read_client_registry(), error = function(e) NULL)
+      req(is.data.frame(registry))
+      activos <- registry[!is.na(registry$status) & registry$status == "active", , drop = FALSE]
+      updateSelectInput(session, "inv_client_id", choices = setNames(activos$client_id, activos$display_name),
+                        selected = isolate(input$inv_client_id) %||% current_client_id())
+    }, ignoreInit = TRUE)
 
     observeEvent(input$btn_send_invite, {
       # La UI dejaba entrar a dev (un cliente onboardea a su propio equipo),
@@ -2815,6 +2831,12 @@ tiersServer <- function(id, shared) {
           tags$p(class = "text-danger small mt-1", "Error al crear la invitación."))
         return()
       }
+      # The invite exists: empty the form so a second "Enviar" can't send the
+      # same person another one. The refresh used to rebuild the form and do
+      # this; since T28 it only re-reads the tables. A failed create keeps
+      # what was typed, to fix and send again.
+      updateTextInput(session, "inv_email", value = "")
+      updateTextInput(session, "inv_display_name", value = "")
       # Build the invite URL. NOT from this session's address bar: on
       # shinyapps.io that path carries a /_w_<hex>/ worker segment and
       # shinymanager's ?token=, so the mailed link pointed at the inviter's

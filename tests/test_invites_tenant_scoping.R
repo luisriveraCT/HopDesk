@@ -135,7 +135,7 @@ ui_blk <- .inside("staff_view <- isTRUE(viewer_is_staff())", 1500)
 # filtered on the server by .invitaciones_filas(), fed the viewer's staff
 # flag and own client.
 filas_blk <- .inside(".invitaciones_filas <- function(", 1400)
-.chk(grepl("p$client_id == own_client", filas_blk, fixed = TRUE) && grepl("if (!isTRUE(staff))", filas_blk, fixed = TRUE),
+.chk(grepl("p$client_id %in% own_client", filas_blk, fixed = TRUE) && grepl("if (!isTRUE(staff))", filas_blk, fixed = TRUE),
      TRUE, "la tabla de pendientes se filtra al propio cliente cuando no es staff")
 inv_srv <- .inside("invitaciones_t <- tiers_invitaciones_server(", 400)
 .chk(grepl("staff      = viewer_is_staff, own_client = current_client_id", inv_srv, fixed = TRUE), TRUE,

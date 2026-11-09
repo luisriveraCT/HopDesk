@@ -60,6 +60,8 @@ ok("el cliente con su nombre, el nivel con su nombre y la fecha de expiración",
    identical(stf$cliente[1:2], c("Acme Logística", "Beta Transportes")) &&
      identical(cli$nivel, c(nivel_nombre("finance"), nivel_nombre("analysis"))) &&
      identical(cli$expira[1], as.Date("2026-11-13")))
+ok("un cliente sin cliente propio (NA o NULL) no ve ninguna, ni filas vacías",
+   !nrow(.invitaciones_filas(INVS, REG, FALSE, NA_character_)) && !nrow(.invitaciones_filas(INVS, REG, FALSE, NULL)))
 ok("sin registro de clientes, el cliente sale con su id (no falla)",
    identical(.invitaciones_filas(INVS, NULL, TRUE, "x")$cliente[1], "acme"))
 for (caso in list(list("NULL", NULL), list("vacías", INVS[0, ]), list("solo revocadas", INVS[5, ])))
