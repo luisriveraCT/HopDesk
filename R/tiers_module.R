@@ -618,6 +618,123 @@ tiers_cola_server <- function(id, permitido, refresh) {
 
 tiers_invitaciones_ui <- function(id) hd_table_ui(shiny::NS(id, "tabla"))
 
+# ── Clientes registrados on the table engine (T28) ──────────────────────────
+# Each client's last activity: the newest ts of its active audit chunk
+# (app_audit.rds only, never the historical ones), NA without one. Read as
+# before -- one object per client, on each refresh.
+.clientes_ultima_actividad <- function(cids) {
+  vapply(as.character(cids), function(cid) tryCatch({
+    df <- suppressMessages(suppressWarnings(
+      aws.s3::s3readRDS(object = paste0(cid, "/app_audit.rds"), bucket = .s3_bucket())))
+    if (is.data.frame(df) && nrow(df) && "ts" %in% names(df)) {
+      ts <- suppressWarnings(as.POSIXct(df$ts)); ts <- ts[!is.na(ts)]
+      if (length(ts)) as.numeric(max(ts)) else NA_real_
+    } else NA_real_
+  }, error = function(e) NA_real_), numeric(1), USE.NAMES = FALSE)
+}
+
+# One row per registered client, id = client_id. cupo: "lleno" with no seat
+# left, "pocos" with 2 or fewer (the old red / yellow row), "" otherwise
+# (T28 P3: a badge, not a tinted row). ultima: .clientes_ultima_actividad().
+.clientes_filas <- function(registry, ultima = NULL) {
+  vacia <- data.frame(id = character(0), nombre = character(0), cupo = character(0), usuarios = character(0),
+                      contacto = character(0), ultima = as.POSIXct(character(0)), estado = character(0),
+                      stringsAsFactors = FALSE)
+  if (is.null(registry) || !is.data.frame(registry) || !nrow(registry)) return(vacia)
+  r <- registry[!is.na(registry$client_id) & nzchar(registry$client_id) & !duplicated(registry$client_id), , drop = FALSE]
+  if (!nrow(r)) return(vacia)
+  maxu <- suppressWarnings(as.integer(r$max_users)); cur <- suppressWarnings(as.integer(r$current_users))
+  resta <- maxu - cur
+  if (is.null(ultima)) ultima <- rep(NA_real_, nrow(r))
+  data.frame(id = as.character(r$client_id), nombre = as.character(r$display_name),
+             cupo = ifelse(is.na(resta), "", ifelse(resta <= 0, "lleno", ifelse(resta <= 2, "pocos", ""))),
+             usuarios = sprintf("%s / %s", ifelse(is.na(cur), "?", cur), ifelse(is.na(maxu), "?", maxu)),
+             contacto = as.character(r$contact_email),
+             ultima = as.POSIXct(as.numeric(ultima), origin = "1970-01-01"),
+             estado = ifelse(r$status %in% "active", "active", "archived"), stringsAsFactors = FALSE)
+}
+
+tiers_clientes_ui <- function(id) hd_table_ui(shiny::NS(id, "tabla"))
+
+# The table only; editing a client and its contacts stay in tiersServer.
+# editar() / contactos(): list(id = client_id, nonce) for ✎ / 📇 -- NULL
+# (never req(): see tiers_solicitudes_server) for anyone permitido() doesn't
+# allow (HopDesk, Principal) or for any other action.
+tiers_clientes_server <- function(id, permitido, refresh) {
+  moduleServer(id, function(input, output, session) {
+    datos <- reactive({
+      if (!isTRUE(permitido())) return(NULL)
+      refresh()
+      registry <- leer_hd_admin("client_registry.rds", .schema_client_registry)   # strict (P7)
+      .clientes_filas(registry, .clientes_ultima_actividad(registry$client_id))
+    })
+    t <- hd_table_server("tabla", tabla = "clientes", datos = datos,
+      columnas = list(col_texto("id", "niveles.tablas.clientes.id"),
+                      col_texto("nombre", "niveles.tablas.clientes.nombre"),
+                      col_insignia("cupo", "niveles.tablas.clientes.cupo", mapa = list(
+                        lleno = list(texto = "niveles.tablas.clientes.lleno", tono = "peligro"),
+                        pocos = list(texto = "niveles.tablas.clientes.pocos", tono = "aviso"))),
+                      col_texto("usuarios", "niveles.tablas.clientes.usuarios"),
+                      col_texto("contacto", "niveles.tablas.clientes.contacto"),
+                      col_fecha_hora("ultima", "niveles.tablas.clientes.ultima"),
+                      col_insignia("estado", "niveles.tablas.clientes.estado", mapa = list(
+                        active   = list(texto = "niveles.tablas.clientes.activo", tono = "exito"),
+                        archived = list(texto = "niveles.tablas.clientes.archivado", tono = "neutro")))),
+      acciones_fila = c("editar", "contactos"),
+      vacio = "niveles.tablas.clientes.vacio")
+    accion <- function(nombre) reactive({
+      a <- t$accion()
+      if (is.null(a) || !identical(a$accion, nombre) || !isTRUE(permitido()) || !length(a$ids)) return(NULL)
+      list(id = a$ids[1], nonce = a$nonce)
+    })
+    list(datos = datos, editar = accion("editar"), contactos = accion("contactos"))
+  })
+}
+
+# ── Contactos activos (one client's, in its modal) on the table engine (T28) ─
+.contactos_filas <- function(contacts) {
+  vacia <- data.frame(id = character(0), nombre = character(0), email = character(0), cargo = character(0),
+                      alertas = character(0), stringsAsFactors = FALSE)
+  if (is.null(contacts) || !is.data.frame(contacts) || !nrow(contacts)) return(vacia)
+  a <- contacts[contacts$active %in% TRUE & !is.na(contacts$id) & nzchar(contacts$id) & !duplicated(contacts$id), ,
+                drop = FALSE]
+  if (!nrow(a)) return(vacia)
+  data.frame(id = as.character(a$id), nombre = as.character(a$name), email = as.character(a$email),
+             cargo = as.character(a$role), alertas = ifelse(a$receives_limit_alerts %in% TRUE, "si", ""),
+             stringsAsFactors = FALSE)
+}
+
+tiers_contactos_ui <- function(id) hd_table_ui(shiny::NS(id, "tabla"))
+
+# cliente(): the client whose contacts are open. desactivar(): list(id,
+# nonce) once ⊘ is confirmed in the bar; NULL otherwise or without
+# permitido(). The contacts are read strictly, so a failed read is the
+# table's notice, never "no contacts" (P7).
+tiers_contactos_server <- function(id, permitido, cliente, refresh) {
+  moduleServer(id, function(input, output, session) {
+    datos <- reactive({
+      cid <- cliente()
+      if (!isTRUE(permitido()) || is.null(cid) || !nzchar(cid)) return(NULL)
+      refresh()
+      .contactos_filas(.hd_admin_completar(.s3_leer_para_escribir("contacts.rds", cid), .schema_contacts))
+    })
+    t <- hd_table_server("tabla", tabla = "contactos", datos = datos,
+      columnas = list(col_texto("nombre", "niveles.tablas.contactos.nombre"),
+                      col_texto("email", "niveles.tablas.contactos.email"),
+                      col_texto("cargo", "niveles.tablas.contactos.cargo"),
+                      col_insignia("alertas", "niveles.tablas.contactos.alertas", mapa = list(
+                        si = list(texto = "niveles.tablas.contactos.si", tono = "exito")))),
+      acciones_fila = "desactivar",
+      vacio = "niveles.tablas.contactos.vacio")
+    desactivar <- reactive({
+      a <- t$accion()
+      if (is.null(a) || !identical(a$accion, "desactivar") || !isTRUE(permitido()) || !length(a$ids)) return(NULL)
+      list(id = a$ids[1], nonce = a$nonce)
+    })
+    list(datos = datos, desactivar = desactivar)
+  })
+}
+
 # The table only; revoking stays in tiersServer (with its tenant check).
 # revocar(): list(id = token, nonce) once ⊘ is confirmed in the bar -- NULL
 # (never req(): see tiers_solicitudes_server) for anyone permitido() doesn't
@@ -1693,12 +1810,10 @@ tiersServer <- function(id, shared) {
                    icon("lock"), " Esta sección solo está disponible para Hopdesk y Principal."))
       }
 
-      clients_refresh()
-      # The pending requests are a table of the engine (tiers_solicitudes_server),
-      # refreshed through requests_refresh in its own datos() (T28 P6).
-
-      registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
-
+      # Depends on the tier only: the pending requests and the registered
+      # clients are tables of the engine (tiers_solicitudes_server,
+      # tiers_clientes_server), refreshed through requests_refresh and
+      # clients_refresh in their own datos() (T28 P6).
       ns <- session$ns
 
       div(
@@ -1726,99 +1841,10 @@ tiersServer <- function(id, shared) {
         },
 
         # ── Client registry table ─────────────────────────────────────────
-        {
-          # Tail-read the active audit chunk for each client to show last activity.
-          # Reads only app_audit.rds (active chunk) — skips historical chunks for speed.
-          last_activity <- setNames(
-            lapply(registry$client_id, function(cid) {
-              tryCatch({
-                key <- paste0(cid, "/app_audit.rds")
-                df  <- suppressMessages(suppressWarnings(
-                  aws.s3::s3readRDS(object = key, bucket = .s3_bucket())
-                ))
-                if (!is.null(df) && is.data.frame(df) && nrow(df) && "ts" %in% names(df)) {
-                  ts <- suppressWarnings(as.POSIXct(df$ts))
-                  ts <- ts[!is.na(ts)]
-                  if (length(ts)) max(ts) else NA
-                } else NA
-              }, error = function(e) NA)
-            }),
-            registry$client_id
-          )
-
-          div(class = "card border-0 shadow-sm",
-            div(class = "card-header py-2 fw-semibold",
-                tagList(icon("list"), " Clientes registrados")),
-            div(class = "card-body p-0",
-              if (!nrow(registry)) {
-                div(class = "p-3 text-muted small",
-                    icon("info-circle"), " No hay clientes registrados aún.")
-              } else {
-                tags$table(class = "table table-sm table-hover mb-0",
-                  tags$thead(tags$tr(
-                    tags$th("ID"), tags$th("Nombre"), tags$th("Usuarios"),
-                    tags$th("Contacto"), tags$th("Últ. actividad"),
-                    tags$th("Estado"), tags$th("")
-                  )),
-                  tags$tbody(
-                    lapply(seq_len(nrow(registry)), function(i) {
-                      r   <- registry[i, , drop = FALSE]
-                      rem <- r$max_users - r$current_users
-                      row_style <- if (rem <= 0) "background:#ffe0e0;"
-                                   else if (rem <= 2) "background:#fff8e1;" else ""
-                      badge <- if (rem <= 0)
-                        tags$span(class = "badge bg-danger ms-1", "Lleno")
-                      else if (rem <= 2)
-                        tags$span(class = "badge bg-warning text-dark ms-1",
-                                  tagList(icon("triangle-exclamation"), " ", rem, " restantes"))
-                      else NULL
-                      last_ts <- last_activity[[r$client_id]]
-                      last_ts_str <- if (!is.na(last_ts) && !is.null(last_ts))
-                        format(last_ts, "%d/%m/%Y %H:%M", tz = "America/Mexico_City")
-                      else "—"
-                      tags$tr(
-                        style = row_style,
-                        tags$td(tags$code(r$client_id)),
-                        tags$td(r$display_name, badge),
-                        tags$td(sprintf("%d / %d", r$current_users, r$max_users)),
-                        tags$td(class = "small text-muted", r$contact_email %||% "—"),
-                        tags$td(class = "small text-muted", last_ts_str),
-                        tags$td(
-                          if (identical(r$status, "active"))
-                            tags$span(class = "badge bg-success", "Activo")
-                          else
-                            tags$span(class = "badge bg-secondary", "Archivado")
-                        ),
-                        tags$td(
-                          div(class = "d-flex gap-1",
-                            tags$button(
-                              class   = "btn btn-sm btn-outline-primary",
-                              type    = "button",
-                              title   = "Editar cliente",
-                              onclick = sprintf(
-                                "Shiny.setInputValue('%s','%s',{priority:'event'})",
-                                ns("edit_client_id"), r$client_id),
-                              icon("pencil")
-                            ),
-                            tags$button(
-                              class   = "btn btn-sm btn-outline-secondary",
-                              type    = "button",
-                              title   = "Gestionar contactos",
-                              onclick = sprintf(
-                                "Shiny.setInputValue('%s','%s',{priority:'event'})",
-                                ns("open_contacts_modal"), r$client_id),
-                              icon("address-book")
-                            )
-                          )
-                        )
-                      )
-                    })
-                  )
-                )
-              }
-            )
-          )
-        }
+        div(class = "card border-0 shadow-sm",
+          div(class = "card-header py-2 fw-semibold",
+              tagList(icon("list"), " ", tr("niveles.tablas.clientes.titulo"))),
+          div(class = "card-body p-0", tiers_clientes_ui(ns("clientes"))))
       )
     })
 
@@ -2109,9 +2135,13 @@ tiersServer <- function(id, shared) {
     # ── Client edit modal (display_name, contact_email, max_users) ───────────
     pending_client_edit <- reactiveVal(NULL)   # stores validated edit before confirmation
 
-    observeEvent(input$edit_client_id, {
+    # The registered clients' table (T28): ✎ and 📇 name the client by its id.
+    clientes_t <- tiers_clientes_server("clientes", refresh = clients_refresh,
+                                        permitido = reactive(isTRUE(is_hopdesk()) || isTRUE(is_principal())))
+
+    observeEvent(clientes_t$editar(), {
       req(is_hopdesk() || is_principal())
-      cid <- input$edit_client_id
+      cid <- clientes_t$editar()$id
       req(nzchar(cid %||% ""))
       ns <- session$ns
 
@@ -2429,9 +2459,14 @@ tiersServer <- function(id, shared) {
     contacts_client_rv <- reactiveVal(NULL)  # client_id whose contacts are open
     contacts_refresh   <- reactiveVal(0L)
 
-    observeEvent(input$open_contacts_modal, {
+    # The open client's active contacts (T28): ⊘ desactivar, confirmed in the
+    # bar, names the contact by its id.
+    contactos_t <- tiers_contactos_server("contactos", cliente = contacts_client_rv, refresh = contacts_refresh,
+                                          permitido = reactive(isTRUE(is_hopdesk()) || isTRUE(is_principal())))
+
+    observeEvent(clientes_t$contactos(), {
       req(is_hopdesk() || is_principal())
-      cid <- input$open_contacts_modal
+      cid <- clientes_t$contactos()$id
       req(nzchar(cid %||% ""))
       contacts_client_rv(cid)
       contacts_refresh(contacts_refresh() + 1L)
@@ -2441,74 +2476,18 @@ tiersServer <- function(id, shared) {
       row      <- registry[registry$client_id == cid, , drop = FALSE]
       dname    <- if (nrow(row)) row$display_name[1] else cid
 
-      showModal(modalDialog(
-        title  = tagList(icon("address-book"),
-                         sprintf(" Contactos — %s", dname)),
-        footer = modalButton("Cerrar"),
-        size   = "l",
-        easyClose = TRUE,
-
-        uiOutput(ns("contacts_modal_body"))
+      # hd_modal (T28 P5): almost the whole window, ✕ at the top. The table
+      # is fixed (its datos() follows contacts_refresh); the form below is
+      # never rebuilt -- adding a contact empties it.
+      showModal(hd_modal(
+        titulo = tagList(icon("address-book"), " ",
+                         gsub("{cliente}", dname, tr("niveles.tablas.contactos.titulo"), fixed = TRUE)),
+        div(class = "mb-3", tiers_contactos_ui(ns("contactos"))),
+        .tiers_contactos_form(ns)
       ))
     }, ignoreInit = TRUE)
 
-    output$contacts_modal_body <- renderUI({
-      contacts_refresh()
-      cid <- contacts_client_rv()
-      req(nzchar(cid %||% ""))
-      ns  <- session$ns
-
-      contacts <- tryCatch(read_contacts(cid), error = function(e) .schema_contacts())
-      active   <- contacts[!is.na(contacts$active) & contacts$active == TRUE, , drop = FALSE]
-
-      div(
-        # ── Current contacts table ───────────────────────────────────────
-        if (!nrow(active)) {
-          div(class = "alert alert-light border mb-3",
-              icon("info-circle"), " No hay contactos registrados para este cliente.")
-        } else {
-          div(class = "card border-0 shadow-sm mb-4",
-            div(class = "card-header py-2 fw-semibold small",
-                tagList(icon("users"), sprintf(" Contactos activos (%d)", nrow(active)))),
-            div(class = "card-body p-0",
-              tags$table(class = "table table-sm table-hover mb-0",
-                tags$thead(tags$tr(
-                  tags$th("Nombre"), tags$th("Email"), tags$th("Cargo"),
-                  tags$th(class = "text-center", "Alertas límite"),
-                  tags$th("")
-                )),
-                tags$tbody(
-                  lapply(seq_len(nrow(active)), function(i) {
-                    r <- active[i, , drop = FALSE]
-                    tags$tr(
-                      tags$td(tags$strong(r$name)),
-                      tags$td(class = "small", r$email),
-                      tags$td(class = "small text-muted", if (nzchar(r$role %||% "")) r$role else "—"),
-                      tags$td(class = "text-center",
-                        if (isTRUE(r$receives_limit_alerts))
-                          tags$span(class = "badge bg-success", icon("check"), " Sí")
-                        else
-                          tags$span(class = "text-muted small", "—")
-                      ),
-                      tags$td(
-                        tags$button(
-                          class   = "btn btn-sm btn-outline-danger",
-                          type    = "button",
-                          title   = "Desactivar contacto",
-                          onclick = sprintf(
-                            "Shiny.setInputValue('%s','%s',{priority:'event'})",
-                            ns("contact_deactivate_id"), r$id),
-                          icon("user-minus")
-                        )
-                      )
-                    )
-                  })
-                )
-              )
-            )
-          )
-        },
-
+    .tiers_contactos_form <- function(ns) {
         # ── Add new contact form ─────────────────────────────────────────
         div(class = "card border-0 shadow-sm",
           div(class = "card-header py-2 fw-semibold small",
@@ -2538,8 +2517,7 @@ tiersServer <- function(id, shared) {
             )
           )
         )
-      )
-    })
+    }
 
     observeEvent(input$btn_add_contact, {
       req(is_hopdesk() || is_principal())
@@ -2585,10 +2563,10 @@ tiersServer <- function(id, shared) {
       activity_refresh(activity_refresh() + 1L)
     }, ignoreInit = TRUE)
 
-    observeEvent(input$contact_deactivate_id, {
+    observeEvent(contactos_t$desactivar(), {
       req(is_hopdesk() || is_principal())
       cid        <- contacts_client_rv()
-      contact_id <- input$contact_deactivate_id
+      contact_id <- contactos_t$desactivar()$id
       req(nzchar(cid %||% ""), nzchar(contact_id %||% ""))
 
       contacts <- tryCatch(read_contacts(cid), error = function(e) NULL)
