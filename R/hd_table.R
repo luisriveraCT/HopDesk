@@ -384,15 +384,25 @@ HD_ACCIONES_FILA <- list(
   cambiar_cuenta  = list(icono = "\u21d5", clave = "tablas.accion.cambiar_cuenta", estilo = "icono"),
   buscar          = list(icono = "\U0001f50d", clave = "tablas.accion.buscar", estilo = "icono"),
   editar          = list(icono = "\u270e", clave = "tablas.accion.editar",    estilo = "icono"),
+  # T28 (Administration): a client's contacts, after its edit button.
+  contactos       = list(icono = "\U0001f4c7", clave = "tablas.accion.contactos", estilo = "icono"),
   provision       = list(icono = "\u26a1", clave = "tablas.accion.provision", estilo = "icono"),
   # T17b (P4): a converted provision's receipt (the return arrow of Pasivos' cells), on a row.
   comprobante     = list(icono = "\u21a9", clave = "tablas.accion.comprobante", estilo = "icono"),
   inactivar       = list(icono = "\U0001f6ab", clave = "tablas.accion.inactivar", estilo = "icono"),
   reactivar       = list(icono = "\U0001f504", clave = "tablas.accion.reactivar", estilo = "icono"),
+  # T28: unlock an account (Seguridad); its own word, "Reactivar" there confuses.
+  desbloquear     = list(icono = "\U0001f513", clave = "tablas.accion.desbloquear", estilo = "icono"),
   erp             = list(icono = "\U0001f50c", clave = "tablas.accion.erp",   estilo = "icono"),
   deshacer        = list(icono = "\u21b6", clave = "tablas.accion.deshacer",  estilo = "icono",
                          confirmar = TRUE),
   detalle         = list(icono = "\u2139", clave = "tablas.accion.detalle",   estilo = "icono"),
+  # T28: send a queued email again.
+  reintentar      = list(icono = "\u21bb", clave = "tablas.accion.reintentar", estilo = "icono"),
+  # T28: revoke an invitation or a hop access -- it takes access away, so it
+  # confirms like eliminar (Luis, P2).
+  revocar         = list(icono = "\u2298", clave = "tablas.accion.revocar",   estilo = "icono",
+                         confirmar = TRUE, peligro = TRUE),
   desactivar      = list(icono = "\u2298", clave = "tablas.accion.desactivar", estilo = "icono",
                          confirmar = TRUE, peligro = TRUE),
   eliminar        = list(icono = "\u2715", clave = "tablas.accion.eliminar",  estilo = "icono",
@@ -400,7 +410,8 @@ HD_ACCIONES_FILA <- list(
 )
 # cambiar_cuenta, buscar (Agenda: the payee's account and the catalog
 # lookup), inactivar/reactivar (Proveedores), erp and desactivar (Empresas, a
-# soft delete that confirms like eliminar) only hand the server the row's id;
+# soft delete that confirms like eliminar), contactos, desbloquear, reintentar
+# and revocar (Administración, T28; revocar confirms) only hand the server the row's id;
 # what opens next (a modal of its own) is the module's.
 # crear_provision is the only button with text: it opens the provision form
 # (it is neither "provision" = convert to payment, nor "agregar" = send to

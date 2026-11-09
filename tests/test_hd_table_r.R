@@ -282,6 +282,30 @@ test_that("deshacer confirms (Bancos, T12 P5: one click put a paid item back in 
   expect_true(hd_acciones_fila_meta("deshacer")[[1]]$confirmar)
 })
 
+test_that("row actions for Administración (T28): contactos, desbloquear, reintentar, revocar", {
+  nuevas <- c("contactos", "desbloquear", "reintentar", "revocar")
+  expect_true(all(nuevas %in% names(HD_ACCIONES_FILA)))
+  expect_identical(utf8ToInt(HD_ACCIONES_FILA$contactos$icono),   0x1f4c7L)   # 📇
+  expect_identical(utf8ToInt(HD_ACCIONES_FILA$desbloquear$icono), 0x1f513L)   # 🔓
+  expect_identical(utf8ToInt(HD_ACCIONES_FILA$reintentar$icono),  0x21bbL)    # ↻
+  expect_identical(utf8ToInt(HD_ACCIONES_FILA$revocar$icono),     0x2298L)    # ⊘
+  # revocar takes access away: it confirms, like eliminar (Luis, T28 P2);
+  # the other three don't
+  expect_true(HD_ACCIONES_FILA$revocar$confirmar && HD_ACCIONES_FILA$revocar$peligro)
+  expect_false(any(vapply(HD_ACCIONES_FILA[c("contactos", "desbloquear", "reintentar")],
+                          function(a) isTRUE(a$confirmar) || isTRUE(a$peligro), logical(1))))
+  # titled in both languages, from the dictionary
+  for (a in nuevas) {
+    clave <- HD_ACCIONES_FILA[[a]]$clave
+    expect_identical(clave, paste0("tablas.accion.", a))
+    expect_true(nzchar(i18n_dict("es")[[clave]] %||% ""), info = a)
+    expect_true(nzchar(i18n_dict("en")[[clave]] %||% ""), info = a)
+  }
+  # Clientes: ✎ then 📇; the destructive ones stay last
+  expect_identical(hd_acciones_fila_validar(c("contactos", "editar")), c("editar", "contactos"))
+  expect_identical(tail(names(HD_ACCIONES_FILA), 3), c("revocar", "desactivar", "eliminar"))
+})
+
 test_that("sin_confirmar: a row action that asks in the module's own modal skips the bar", {
   meta <- hd_acciones_fila_meta(c("deshacer", "eliminar"))
   conf <- function(m) setNames(vapply(m, `[[`, logical(1), "confirmar"), vapply(m, `[[`, character(1), "accion"))
