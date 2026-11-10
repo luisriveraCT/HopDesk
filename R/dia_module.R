@@ -34,8 +34,9 @@ dia_llaves <- function(detail, ids) {
 # The tables' data: one row per invoice of the day, in the factory order
 # (largest amount first; Resumen's groups follow it), with the control
 # columns. agenda_df: the Agenda's pending queue (the same one its ✓ reads,
-# keyed with Importe as the day always did).
-dia_datos <- function(detail, ledger, tags_df, agenda_df = NULL, puede_convertir = FALSE) {
+# keyed with Importe as the day always did). clip: shared$req_clip()'s
+# answer for the day's provisions (E3b-C), NULL = no clip.
+dia_datos <- function(detail, ledger, tags_df, agenda_df = NULL, puede_convertir = FALSE, clip = NULL) {
   if (is.null(detail) || !nrow(detail)) return(NULL)
   d <- as.data.frame(detail, stringsAsFactors = FALSE)
   col <- function(n, def = "") { v <- d[[n]]; if (is.null(v)) rep(def, nrow(d)) else { v <- as.character(v); v[is.na(v)] <- def; v } }
@@ -79,9 +80,24 @@ dia_datos <- function(detail, ledger, tags_df, agenda_df = NULL, puede_convertir
     .acciones     = ifelse(confirmed, "", ifelse(provision, ifelse(nzchar(prov_id) & puede_convertir, "provision", ""),
                                                  "agregar,editar")),
     .agregado     = agregado,
+    # The evidence clip: a provision's row, or an item converted from one.
+    .adjuntos     = dia_clip_totales(prov_id, clip),
     stringsAsFactors = FALSE
   )
   out[order(-out$Importe), , drop = FALSE]
+}
+
+# The evidence clip (E3b-C): per row, how many pieces of evidence its
+# provision's requisition has, from shared$req_clip()'s answer
+# (provision_id, total); 0 = no clip (no provision, no requisition, no
+# permission -- the contract answers 0 rows -- or no answer).
+dia_clip_totales <- function(provision_id, clip) {
+  provision_id <- as.character(provision_id)
+  n <- rep(0L, length(provision_id))
+  if (!is.data.frame(clip) || !nrow(clip) || !all(c("provision_id", "total") %in% names(clip))) return(n)
+  tot <- suppressWarnings(as.integer(clip$total[match(provision_id, as.character(clip$provision_id))]))
+  tot[is.na(tot) | tot < 0L | is.na(provision_id) | !nzchar(provision_id)] <- 0L
+  tot
 }
 
 # vista: "resumen" or "detalle". Both have the same columns; what shows by
@@ -191,11 +207,28 @@ dia_server <- function(input, output, session, ctx, ledger, shared, manejadores)
   ns <- session$ns
   puede_convertir <- shiny::reactive(isTRUE(tryCatch(
     has_capability(shared$current_user(), "pasivos.convert_to_item"), error = function(e) FALSE)))
+  # E3b-C: the evidence clip. req_clip() costs two S3 reads: it is asked
+  # again only when the day's set of provisions or req_version() change,
+  # never on a plain refresh of the day (a reactiveVal does not fire when
+  # set to the same value). Which provision each row is stays here.
+  ids_clip <- shiny::reactiveVal(character(0))
+  shiny::observe({
+    c <- ctx()
+    p <- if (is.null(c) || is.null(c$detail$provision_id)) character(0) else as.character(c$detail$provision_id)
+    p <- sort(unique(p[!is.na(p) & nzchar(p)]))
+    if (!identical(p, shiny::isolate(ids_clip()))) ids_clip(p)
+  })
+  clips <- shiny::reactive({
+    if (is.function(shared$req_version)) shared$req_version()
+    ids <- ids_clip()
+    if (!length(ids) || !is.function(shared$req_clip)) return(NULL)
+    tryCatch(shared$req_clip(ids), error = function(e) NULL)
+  })
   datos <- shiny::reactive({
     c <- ctx()
     if (is.null(c)) return(NULL)
     dia_datos(c$detail, ledger, tryCatch(shared$tags_db(), error = function(e) NULL),
-              tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), puede_convertir())
+              tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), puede_convertir(), clips())
   })
   dia_siguiente <- shiny::reactive({ c <- ctx(); if (!is.null(c)) c$sel_date + 1 })
   # The date in "Mover" while the edit bar shows it (the table reports it
@@ -220,7 +253,7 @@ dia_server <- function(input, output, session, ctx, ledger, shared, manejadores)
                 textos = list(contador = "tablas.contador.facturas", sin_bloqueadas = TRUE))
   iniciales <- shiny::reactive(tryCatch(shared$company_map(), error = function(e) NULL))
   tablas <- list(
-    resumen = do.call(hd_table_server, c(list("resumen", tabla = "detalle_dia_resumen",
+    resumen = do.call(hd_table_server, c(list("resumen", tabla = "detalle_dia_resumen", piezas = "adjuntos",
                                              columnas = function() dia_columnas("resumen", iniciales()),
                                              grupo = c("Empresa", "Parte")), comun)),
     detalle = do.call(hd_table_server, c(list("detalle", tabla = "detalle_dia_detalle",
@@ -234,6 +267,14 @@ dia_server <- function(input, output, session, ctx, ledger, shared, manejadores)
     if (is.null(c)) return()
     if (identical(a$accion, "campo")) { fecha_mover(if (nzchar(a$valor %||% "")) a$valor); return() }
     if (identical(a$accion, "crudos")) { manejadores$crudos(); return() }
+    # The clip: only a row that had it in req_clip()'s last answer opens its
+    # requisition; whether this user may is the contract's to check.
+    if (identical(a$accion, "adjuntos")) {
+      pid <- as.character(dia_llaves(c$detail, utils::head(as.character(a$ids), 1L))$provision_id)[1]
+      if (!is.na(pid) && dia_clip_totales(pid, clips()) > 0L && is.function(shared$req_abrir_evidencia))
+        shared$req_abrir_evidencia(pid)
+      return()
+    }
     llaves <- dia_llaves(c$detail, a$ids)
     if (!nrow(llaves)) return()
     if (identical(a$accion, "provision")) {
@@ -254,5 +295,6 @@ dia_server <- function(input, output, session, ctx, ledger, shared, manejadores)
       editar            = manejadores$editar(c$detail[match(a$ids[1], dia_ids(c$detail)), , drop = FALSE]),
       NULL)
   }))
-  invisible(tablas)
+  # datos: what both views show (for the tests).
+  invisible(structure(tablas, datos = datos))
 }
