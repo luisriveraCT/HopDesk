@@ -32,7 +32,7 @@
   "niveles.tablas.clientes.nombre": "Name",
   "niveles.tablas.clientes.cupo": "Seats",
   "niveles.tablas.clientes.lleno": "Full",
-  "niveles.tablas.clientes.pocos": "Few left",
+  "niveles.tablas.clientes.quedan": "{n} left",
   "niveles.tablas.clientes.usuarios": "Users",
   "niveles.tablas.clientes.contacto": "Contact",
   "niveles.tablas.clientes.ultima": "Last activity",

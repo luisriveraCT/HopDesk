@@ -32,7 +32,7 @@
   "niveles.tablas.clientes.nombre": "Nombre",
   "niveles.tablas.clientes.cupo": "Cupo",
   "niveles.tablas.clientes.lleno": "Lleno",
-  "niveles.tablas.clientes.pocos": "Quedan pocos",
+  "niveles.tablas.clientes.quedan": "Quedan {n}",
   "niveles.tablas.clientes.usuarios": "Usuarios",
   "niveles.tablas.clientes.contacto": "Contacto",
   "niveles.tablas.clientes.ultima": "Últ. actividad",

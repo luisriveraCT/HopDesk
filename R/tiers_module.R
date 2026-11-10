@@ -694,8 +694,11 @@ tiers_invitaciones_ui <- function(id) hd_table_ui(shiny::NS(id, "tabla"))
 }
 
 # One row per registered client, id = client_id. cupo: "lleno" with no seat
-# left, "pocos" with 2 or fewer (the old red / yellow row), "" otherwise
-# (T28 P3: a badge, not a tinted row). ultima: .clientes_ultima_actividad().
+# left, "quedan_<n>" with n = 1..CUPO_POCOS seats left (the old red /
+# yellow row, which said "⚠ N restantes"), "" otherwise (T28 P3: a badge,
+# not a tinted row; the number stays, coordinator's review of 209dc08).
+# ultima: .clientes_ultima_actividad().
+.CUPO_POCOS <- 2L
 .clientes_filas <- function(registry, ultima = NULL) {
   vacia <- data.frame(id = character(0), nombre = character(0), cupo = character(0), usuarios = character(0),
                       contacto = character(0), ultima = as.POSIXct(character(0)), estado = character(0),
@@ -707,7 +710,8 @@ tiers_invitaciones_ui <- function(id) hd_table_ui(shiny::NS(id, "tabla"))
   resta <- maxu - cur
   if (is.null(ultima)) ultima <- rep(NA_real_, nrow(r))
   data.frame(id = as.character(r$client_id), nombre = as.character(r$display_name),
-             cupo = ifelse(is.na(resta), "", ifelse(resta <= 0, "lleno", ifelse(resta <= 2, "pocos", ""))),
+             cupo = ifelse(is.na(resta), "", ifelse(resta <= 0, "lleno",
+                           ifelse(resta <= .CUPO_POCOS, paste0("quedan_", resta), ""))),
              usuarios = sprintf("%s / %s", ifelse(is.na(cur), "?", cur), ifelse(is.na(maxu), "?", maxu)),
              contacto = as.character(r$contact_email),
              ultima = as.POSIXct(as.numeric(ultima), origin = "1970-01-01"),
@@ -731,9 +735,13 @@ tiers_clientes_server <- function(id, permitido, refresh) {
     t <- hd_table_server("tabla", tabla = "clientes", datos = datos,
       columnas = list(col_texto("id", "niveles.tablas.clientes.id"),
                       col_texto("nombre", "niveles.tablas.clientes.nombre"),
-                      col_insignia("cupo", "niveles.tablas.clientes.cupo", mapa = list(
-                        lleno = list(texto = "niveles.tablas.clientes.lleno", tono = "peligro"),
-                        pocos = list(texto = "niveles.tablas.clientes.pocos", tono = "aviso"))),
+                      col_insignia("cupo", "niveles.tablas.clientes.cupo", mapa = c(
+                        list(lleno = list(texto = "niveles.tablas.clientes.lleno", tono = "peligro")),
+                        # "Quedan 1" / "Quedan 2": the number in the text,
+                        # built here in the session's language.
+                        stats::setNames(lapply(seq_len(.CUPO_POCOS), function(n)
+                          list(texto = tr("niveles.tablas.clientes.quedan", n = n), tono = "aviso")),
+                          paste0("quedan_", seq_len(.CUPO_POCOS))))),
                       col_texto("usuarios", "niveles.tablas.clientes.usuarios"),
                       col_texto("contacto", "niveles.tablas.clientes.contacto"),
                       col_fecha_hora("ultima", "niveles.tablas.clientes.ultima"),

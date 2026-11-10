@@ -2,7 +2,7 @@
 # tests/test_admin_clientes_hd.R
 # Clientes › Clientes registrados and a client's Contactos on the table
 # engine (T28, class D):
-#   1. the rows: one per client (id = client_id), Cupo "lleno" / "pocos"
+#   1. the rows: one per client (id = client_id), Cupo "Lleno" / "Quedan N"
 #      instead of a tinted row (P3); the active contacts (id = contact id);
 #   2. ✎ / 📇 / ⊘ name the row by its id, also when another session added
 #      one ahead of it after drawing;
@@ -28,7 +28,7 @@ ok <- function(label, expr) {
 source("tests/helpers/s3_memoria.R")
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R"))
   suppressMessages(source(f))
-NOMBRES <- c(".clientes_ultima_actividad", ".clientes_filas", "tiers_clientes_ui", "tiers_clientes_server",
+NOMBRES <- c(".CUPO_POCOS", ".clientes_ultima_actividad", ".clientes_filas", "tiers_clientes_ui", "tiers_clientes_server",
              ".contactos_filas", "tiers_contactos_ui", "tiers_contactos_server", "tiersServer")
 for (e in parse("R/tiers_module.R", keep.source = FALSE))
   if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% NOMBRES)
@@ -54,8 +54,12 @@ sembrar <- function(reg = REG, cons = CONS) {
 # ── 1. The rows ──────────────────────────────────────────────────────────────
 f <- .clientes_filas(REG, c(1, NA, NA, NA))
 ok("una fila por cliente; el id es el client_id", identical(f$id, c("acme", "beta", "gamma", "delta")))
-ok("Cupo: lleno sin lugares, pocos con 2 o menos, nada con lugar (en vez de teñir la fila)",
-   identical(f$cupo, c("", "lleno", "pocos", "")))
+ok("Cupo: lleno sin lugares, 'quedan N' con 2 o menos, nada con lugar (en vez de teñir la fila)",
+   identical(f$cupo, c("", "lleno", "quedan_1", "")) &&
+     identical(.clientes_filas(rbind(cliente("x", 5L, 3L)))$cupo, "quedan_2"))
+ok("la insignia dice cuántos quedan, con el número (antes: '⚠ N restantes')",
+   identical(tr("niveles.tablas.clientes.quedan", n = 1, idioma = "es"), "Quedan 1") &&
+     identical(tr("niveles.tablas.clientes.quedan", n = 2, idioma = "en"), "2 left"))
 ok("Usuarios dice “usados / límite” y Estado activo o archivado",
    identical(f$usuarios[1], "2 / 5") && identical(f$estado, c("active", "active", "active", "archived")))
 ok("contactos: solo los activos, con su id; las alertas como insignia",
