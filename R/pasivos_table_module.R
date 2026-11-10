@@ -89,13 +89,43 @@ pasivos_table_module_server <- function(id, shared) {
     pasivos_papelera_server("papelera", shared)
 
     # ── Action: + Provisión manual ──────────────────────────────────────────
+    # E3b: what to call with the saved provision's id when the modal was
+    # opened from a requisition. Per session; a plain "+ Provisión manual"
+    # clears it, and ppm_save takes it (once) only after a successful save.
+    ppm_estado <- new.env(parent = emptyenv())
+    ppm_estado$al_guardar <- NULL
+
     shiny::observeEvent(input$btn_add_provision_manual, ignoreInit = TRUE, {
+      ppm_estado$al_guardar <- NULL   # a plain provision links nothing
       # Use full names (same as show_combined_entry_modal) so stored empresa matches
       # the full-name empresa_sel_rv filter in df_combined → Calendario picks it up.
       empresa_choices <- tryCatch(sort(unique(shared$empresa_sel())),
                                   error = function(e) character(0))
       shiny::showModal(.ppm_modal_ui(empresa_choices, ns = ns))
     })
+
+    # E3b: the same modal, filled from a requisition (prefill: what
+    # requisicion_prefill_provision() gives). al_guardar(provision_id) is
+    # called once, only after the provision was saved; if it fails or says
+    # FALSE the provision stays (Requisiciones gives the notice). The
+    # requisition keeps the empresa's initials: turned into the full name
+    # with the session's company map, among every company the session sees.
+    abrir_provision_manual <- function(prefill, al_guardar) {
+      if (!pasivos_autoriza("pasivos.create_provision_manual")) return(invisible(FALSE))
+      cmap <- tryCatch(shared$company_map(), error = function(e) NULL)
+      choices <- sort(unique(unname(as.character(cmap %||% character(0)))))
+      ini <- prefill$empresa %||% NA_character_
+      nombre <- if (length(ini) != 1L || is.na(ini) || !nzchar(ini)) NA_character_
+                else if (ini %in% names(cmap)) unname(cmap[[ini]])
+                else if (ini %in% choices) ini
+                else NA_character_
+      p <- as.list(prefill %||% list()); p$empresa <- nombre
+      ppm_estado$al_guardar <- if (is.function(al_guardar)) al_guardar else NULL
+      shiny::showModal(.ppm_modal_ui(choices, ns = ns, prefill = p))
+      if (is.na(nombre))
+        shiny::showNotification(tr("tablas.pasivos.manual.elegir_empresa_aviso"), type = "warning", duration = 8)
+      invisible(TRUE)
+    }
 
     # Vendor suggestions for the manual provision modal
     output$ppm_parte_suggestions <- shiny::renderUI({
@@ -207,6 +237,11 @@ pasivos_table_module_server <- function(id, shared) {
       if (!has_capability(user, "pasivos.create_provision_manual")) {
         shiny::showNotification(tr("tablas.pasivos.sin_permiso"), type = "error"); return()
       }
+      # E3b: a requisition whose company could not be matched opens with none
+      # selected -- never saved under another company without a notice.
+      if (!nzchar(empresa)) {
+        shiny::showNotification(tr("tablas.pasivos.manual.elegir_empresa_aviso"), type = "error"); return()
+      }
 
       shinyjs::disable("ppm_save")
       on.exit(shinyjs::enable("ppm_save"), add = TRUE)
@@ -249,6 +284,14 @@ pasivos_table_module_server <- function(id, shared) {
 
       shiny::removeModal()
       shiny::showNotification(tr("tablas.pasivos.manual_creada"), type = "message", duration = 3)
+
+      # E3b: the requisition behind this modal, once, after the save. Taken
+      # and cleared before the call, so a second click cannot repeat it.
+      cb <- ppm_estado$al_guardar
+      ppm_estado$al_guardar <- NULL
+      if (is.function(cb))
+        tryCatch(cb(new_id), error = function(e)
+          message("[pasivos] al_guardar failed for provision ", new_id, ": ", conditionMessage(e)))
     })
 
     # ── Visible window ──────────────────────────────────────────────────────
@@ -326,7 +369,46 @@ pasivos_table_module_server <- function(id, shared) {
         window_end   = w$end
       )
     })
-    filas_tabla <- shiny::reactive(pasivos_tabla_datos(wide(), liabs_visibles()))
+    # ── The requisition clip (E3b) ──────────────────────────────────────────
+    # Only orphan rows (a manual provision: row_id "orphan_<provision_id>",
+    # the provision and its converted item alike) can come from a
+    # requisition. Which provision each row is lives here, on the server;
+    # the browser only sends the row's id.
+    mapa_clip <- shiny::reactive({
+      ldf <- long_df()
+      h <- ldf[startsWith(as.character(ldf$row_id), "orphan_") & !(ldf$row_is_fee %in% TRUE) &
+                 !is.na(ldf$cell_provision_id), c("row_id", "cell_provision_id"), drop = FALSE]
+      h <- h[!duplicated(h$row_id), , drop = FALSE]
+      data.frame(row_id = as.character(h$row_id), provision_id = as.character(h$cell_provision_id),
+                 stringsAsFactors = FALSE)
+    })
+    # req_clip() costs two S3 reads: it is asked again only when the set of
+    # orphan provisions or req_version() change, never on a plain refresh of
+    # the table (a reactiveVal does not fire when set to the same value).
+    ids_clip <- shiny::reactiveVal(character(0))
+    shiny::observe({
+      ids <- sort(unique(mapa_clip()$provision_id))
+      if (!identical(ids, shiny::isolate(ids_clip()))) ids_clip(ids)
+    })
+    clips <- shiny::reactive({
+      if (is.function(shared$req_version)) shared$req_version()
+      ids <- ids_clip()
+      if (!length(ids) || !is.function(shared$req_clip)) return(NULL)
+      tryCatch(shared$req_clip(ids), error = function(e) NULL)
+    })
+    filas_tabla <- shiny::reactive({
+      d <- pasivos_tabla_datos(wide(), liabs_visibles())
+      cl <- clips()
+      d$.adjuntos <- rep(0L, nrow(d))
+      if (nrow(d) && is.data.frame(cl) && nrow(cl)) {
+        m <- mapa_clip()
+        pid <- m$provision_id[match(d$id, m$row_id)]
+        tot <- suppressWarnings(as.integer(cl$total[match(pid, as.character(cl$provision_id))]))
+        tot[is.na(tot) | tot < 0L] <- 0L
+        d$.adjuntos <- tot
+      }
+      d
+    })
     cols_tabla  <- shiny::reactive(pasivos_tabla_columnas(wide(), Sys.Date(), granularidad()))
 
     tabla <- hd_table_server(
@@ -394,6 +476,13 @@ pasivos_table_module_server <- function(id, shared) {
         },
         provision = , comprobante = .pt_emitir("pasivos_convert_request", a$celda),
         editar = if (length(a$ids)) .pt_emitir("pasivos_edit_liability", a$ids[1]),
+        # E3b: the clip. Only a row of the server's map opens anything; the
+        # permission is checked by the contract (shared$req_abrir_evidencia).
+        adjuntos = {
+          m <- mapa_clip()
+          pid <- if (length(a$ids)) m$provision_id[match(as.character(a$ids[1]), m$row_id)] else NA_character_
+          if (!is.na(pid) && is.function(shared$req_abrir_evidencia)) shared$req_abrir_evidencia(pid)
+        },
         NULL)
     }, ignoreInit = TRUE)
 
@@ -439,13 +528,27 @@ pasivos_table_module_server <- function(id, shared) {
       )
     })
 
-    invisible(list(tabla = tabla, filas = filas_tabla, columnas = cols_tabla, wide = wide, long = long_df))
+    invisible(list(tabla = tabla, filas = filas_tabla, columnas = cols_tabla, wide = wide, long = long_df,
+                   abrir_provision_manual = abrir_provision_manual))
   })
 }
 
 
 # ── Manual provision modal UI ─────────────────────────────────────────────────
-.ppm_modal_ui <- function(empresa_choices = character(), ns = identity) {
+# prefill (E3b): what requisicion_prefill_provision() gives, empresa already
+# turned into its full name (or NA when it could not be). With it, every
+# field starts with the requisition's value and can be changed; an empresa
+# that could not be turned into a name selects none (ppm_save then asks for
+# one), never another company.
+.ppm_modal_ui <- function(empresa_choices = character(), ns = identity, prefill = NULL) {
+  val <- function(campo, defecto) {
+    v <- prefill[[campo]]
+    if (is.null(v) || !length(v) || is.na(v[1])) defecto else v[1]
+  }
+  emp_sel <- if (is.null(prefill)) empresa_choices[1] %||% "" else val("empresa", "")
+  if (!is.null(prefill) && !nzchar(emp_sel))
+    empresa_choices <- c(stats::setNames("", tr("tablas.pasivos.manual.elegir_empresa")), empresa_choices)
+  moneda <- val("moneda", "MXN"); if (!moneda %in% CURRENCIES) moneda <- "MXN"
   shiny::modalDialog(
     title     = tr("tablas.pasivos.manual.titulo"),
     size      = "m",
@@ -454,17 +557,19 @@ pasivos_table_module_server <- function(id, shared) {
       shiny::column(6,
         shiny::selectInput(ns("ppm_empresa"),   tr("tablas.pasivos.manual.empresa"),
                            choices  = empresa_choices,
-                           selected = empresa_choices[1] %||% ""),
+                           selected = emp_sel),
         shiny::selectInput(ns("ppm_moneda"),    tr("tablas.pasivos.manual.moneda"),
-                           choices = CURRENCIES, selected = "MXN"),
+                           choices = CURRENCIES, selected = moneda),
         shiny::textInput(ns("ppm_documento"),   tr("tablas.pasivos.manual.documento"), value = "")
       ),
       shiny::column(6,
-        shiny::textInput(ns("ppm_parte"),       tr("tablas.pasivos.manual.parte"), value = ""),
+        shiny::textInput(ns("ppm_parte"),       tr("tablas.pasivos.manual.parte"), value = val("parte", "")),
         shiny::uiOutput(ns("ppm_parte_suggestions")),
         shiny::textInput(ns("ppm_codigo"),      tr("tablas.pasivos.manual.codigo"),            value = ""),
-        shiny::numericInput(ns("ppm_importe"),  tr("tablas.pasivos.manual.importe"),           value = 0, min = 0),
-        shiny::textInput(ns("ppm_referencia"),  tr("tablas.pasivos.manual.referencia"),        value = "")
+        shiny::numericInput(ns("ppm_importe"),  tr("tablas.pasivos.manual.importe"),
+                            value = val("monto", 0), min = 0),
+        shiny::textInput(ns("ppm_referencia"),  tr("tablas.pasivos.manual.referencia"),
+                         value = val("referencia", ""))
       )
     ),
     shiny::fluidRow(
@@ -473,7 +578,8 @@ pasivos_table_module_server <- function(id, shared) {
                          value = Sys.Date(), weekstart = 1, language = "es")
       ),
       shiny::column(6,
-        shiny::textAreaInput(ns("ppm_notas"), tr("tablas.pasivos.manual.notas"), rows = 3, value = "")
+        shiny::textAreaInput(ns("ppm_notas"), tr("tablas.pasivos.manual.notas"), rows = 3,
+                             value = val("notas", ""))
       )
     ),
     footer = shiny::tagList(

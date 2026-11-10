@@ -746,6 +746,8 @@
   "tablas.pasivos.manual.notas": "Notes",
   "tablas.pasivos.manual.cancelar": "Cancel",
   "tablas.pasivos.manual.guardar": "Add to calendar",
+  "tablas.pasivos.manual.elegir_empresa": "— Choose the company —",
+  "tablas.pasivos.manual.elegir_empresa_aviso": "The requisition's company was not found. Choose the company before saving.",
   "tablas.pasivos.no_editar_borrado": "This liability is deleted. Recover it from the Trash before editing it.",
   "tablas.pasivos.guardado_sin_provisiones": "Liability saved. It is paused, so no provisions were generated: once resumed, edit it to generate them.",
   "niveles.hdadmin.no_se_leyo": "The record could not be read from S3. Nothing was saved; try again.",

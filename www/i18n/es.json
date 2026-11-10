@@ -746,6 +746,8 @@
   "tablas.pasivos.manual.notas": "Notas",
   "tablas.pasivos.manual.cancelar": "Cancelar",
   "tablas.pasivos.manual.guardar": "Agregar a calendario",
+  "tablas.pasivos.manual.elegir_empresa": "— Elige la empresa —",
+  "tablas.pasivos.manual.elegir_empresa_aviso": "No se encontró la empresa de la requisición. Elige la empresa antes de guardar.",
   "tablas.pasivos.no_editar_borrado": "Este pasivo está borrado. Recupéralo desde la Papelera antes de editarlo.",
   "tablas.pasivos.guardado_sin_provisiones": "Pasivo guardado. Está pausado, así que no se generaron provisiones: al reanudarlo, edítalo para generarlas.",
   "niveles.hdadmin.no_se_leyo": "No se pudo leer el registro en S3. Nada se guardó; intenta de nuevo.",
