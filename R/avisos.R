@@ -63,17 +63,6 @@ PREFS_DEFECTO <- list(inicio = NULL, idioma = "es", audiencia = NULL, ultima_vis
 
 .ahora <- function() as.POSIXct(Sys.time(), tz = "UTC")
 
-# Live read: drops this key from the read caches so a write always rebases
-# on what S3 holds now, not on what this process saw earlier.
-.s3_leer_vivo <- function(key, client_id) {
-  full_key <- tryCatch(.s3_key(key, client_id = client_id), error = function(e) NULL)
-  if (!is.null(full_key)) {
-    for (env in list(.s3_preload_cache, .s3_missing_cache))
-      suppressWarnings(rm(list = intersect(full_key, ls(env)), envir = env))
-  }
-  .s3_read_with(key, client_id = client_id)
-}
-
 .normalizar <- function(df, schema) {
   s <- schema()
   if (is.null(df) || !is.data.frame(df)) return(s)
@@ -83,9 +72,13 @@ PREFS_DEFECTO <- list(inicio = NULL, idioma = "es", audiencia = NULL, ultima_vis
 
 # Read fresh, apply `cambio` to the fresh copy, write. One retry on failure,
 # re-reading again, so a concurrent writer's rows survive.
+# The read is strict (C): a read that fails stop()s, and only a file S3 says
+# does not exist starts empty. It used .s3_leer_vivo(), where a failed read
+# was an empty table: prefs_guardar() then rewrote preferencias.rds with the
+# one user's row, and everyone else's preferences were gone.
 .s3_modificar <- function(key, client_id, schema, cambio) {
   for (intento in 1:2) {
-    fresco <- .normalizar(.s3_leer_vivo(key, client_id), schema)
+    fresco <- .normalizar(.s3_leer_para_escribir(key, client_id), schema)
     nuevo  <- cambio(fresco)
     ok <- tryCatch({ .s3_write(nuevo, key, client_id = client_id); TRUE },
                    error = function(e) { message("[avisos] escritura falló (", key, "): ", e$message); FALSE })
@@ -122,9 +115,12 @@ avisos_visibles <- function(client_id, usuario, df = NULL) {
 }
 
 # `aviso`: list(tipo, titulo, cuerpo, severidad, niveles, usuarios, permiso,
-#               clave, enlace, vence). Returns the aviso id.
+#               clave, enlace, vence, ventana_min). Returns the aviso id.
 # A live aviso with the same `clave` is refreshed (contador + 1) instead of
 # duplicated: "3 comentarios nuevos en REQ-2026-0014" is one aviso.
+# With `ventana_min` (C), only one updated in the last ventana_min minutes
+# is refreshed: three payments confirmed in 10 minutes are one aviso, and
+# one confirmed an hour later is a new one.
 avisos_agregar <- function(client_id, aviso, por = "sistema") {
   cid  <- .avisos_cid(client_id)
   tipo <- aviso$tipo %||% "automatico"
@@ -139,7 +135,11 @@ avisos_agregar <- function(client_id, aviso, por = "sistema") {
   .s3_modificar(.AVISOS_KEY, cid, .schema_avisos, function(df) {
     clave <- aviso$clave %||% NA_character_
     if (!is.na(clave)) {
-      i <- which(df$clave %in% clave & .vigente(df, ahora))
+      junta <- df$clave %in% clave & .vigente(df, ahora)
+      if (!is.null(aviso$ventana_min))
+        junta <- junta & !is.na(df$actualizado) &
+          df$actualizado >= ahora - as.numeric(aviso$ventana_min) * 60
+      i <- which(junta)
       if (length(i)) {
         i <- i[1]
         df$contador[i]    <- (df$contador[i] %||% 1L) + 1L
@@ -206,16 +206,20 @@ avisos_personales <- function(client_id, usuarios, aviso) {
 
 # Hook for the team-activity alerts (front C). Called right after one of the
 # tracked actions succeeds. It never throws: an alert failing must never
-# make the user's action fail.
+# make the user's action fail. It publishes only when the Alertas del equipo
+# matrix marks this user for this action (alertas_preparar(), which also
+# sets the aviso's permiso, clave and 10-minute window).
 avisos_actividad <- function(client_id, accion, usuario, params = list()) {
   tryCatch({
+    params <- alertas_preparar(client_id, accion, usuario, params); if (is.null(params)) return(invisible(NULL))
     clave_i18n <- paste0("avisos.actividad.", accion)
     titulo <- params$titulo %||%
       (if (is.null(i18n_dict("es")[[clave_i18n]])) accion else tr(clave_i18n, usuario = usuario %||% ""))
     avisos_agregar(client_id, list(
       tipo = "automatico", titulo = titulo, cuerpo = params$cuerpo %||% "",
       severidad = "info", permiso = params$permiso %||% NA_character_,
-      clave = params$clave %||% NULL, enlace = params$enlace %||% NA_character_),
+      clave = params$clave %||% NULL, enlace = params$enlace %||% NA_character_,
+      ventana_min = params$ventana_min %||% NULL),
       por = usuario %||% "sistema")
   }, error = function(e) {
     message("[avisos] avisos_actividad(", accion, ") falló: ", conditionMessage(e))

@@ -14,7 +14,16 @@ source("R/avisos.R")
 .mem <- new.env()
 .s3_preload_cache <- new.env(); .s3_missing_cache <- new.env()
 .s3_key <- function(key, client_id = NULL) paste0(client_id, "/", key)
-.s3_read_with <- function(key, client_id = NULL) .mem[[paste0(client_id, "/", key)]]
+# Like the real one, a read that fails is NULL here (as a missing file is).
+.fallar_lectura <- FALSE
+.s3_read_with <- function(key, client_id = NULL)
+  if (.fallar_lectura) NULL else .mem[[paste0(client_id, "/", key)]]
+# Writes read strictly (R/persistence.R): a failing read stop()s, a missing
+# file is NULL.
+.s3_leer_para_escribir <- function(key, client_id) {
+  if (.fallar_lectura) stop("[S3] could not read ", key, " before writing it; nothing was saved")
+  .mem[[paste0(client_id, "/", key)]]
+}
 .fallar_escrituras <- 0L
 .s3_write <- function(obj, key, client_id = NULL) {
   if (.fallar_escrituras > 0L) { .fallar_escrituras <<- .fallar_escrituras - 1L; stop("simulada") }
@@ -123,4 +132,38 @@ test_that("preferencias por usuario, sin el usuario en la ruta", {
   expect_identical(prefs_leer(CID, "beto")$inicio, "PSV")
   expect_identical(prefs_leer(CID, "beto")$idioma, "es")
   expect_false(any(grepl("ana|beto", ls(.mem))))
+})
+
+test_that("C: una lectura fallida nunca reescribe preferencias.rds ni avisos.rds", {
+  prefs_guardar(CID, "caro", list(inicio = "Bancos"))
+  pref_antes   <- .mem[[paste0(CID, "/", .PREFERENCIAS_KEY)]]
+  avisos_antes <- .mem[[paste0(CID, "/", .AVISOS_KEY)]]
+  .fallar_lectura <<- TRUE
+  expect_error(prefs_guardar(CID, "ana", list(idioma = "es")), "could not read")
+  expect_error(avisos_agregar(CID, list(titulo = "con S3 caído")), "could not read")
+  .fallar_lectura <<- FALSE
+  expect_identical(.mem[[paste0(CID, "/", .PREFERENCIAS_KEY)]], pref_antes)
+  expect_identical(.mem[[paste0(CID, "/", .AVISOS_KEY)]], avisos_antes)
+  expect_identical(prefs_leer(CID, "beto")$inicio, "PSV")      # nadie perdió nada
+  expect_identical(prefs_leer(CID, "caro")$inicio, "Bancos")
+})
+
+test_that("C: ventana_min junta solo lo actualizado en esa ventana", {
+  k <- paste0(CID, "/", .AVISOS_KEY)
+  id1 <- avisos_agregar(CID, list(titulo = "Pago", clave = "act|confirmar_pago|caro", ventana_min = 10))
+  id2 <- avisos_agregar(CID, list(titulo = "Pago", clave = "act|confirmar_pago|caro", ventana_min = 10))
+  expect_identical(id1, id2)
+  df <- .mem[[k]]
+  expect_equal(df$contador[df$id == id1], 2L)
+  # 11 minutes later: a new aviso, the old one stays as it was
+  df$actualizado[df$id == id1] <- df$actualizado[df$id == id1] - 11 * 60
+  assign(k, df, envir = .mem)
+  id3 <- avisos_agregar(CID, list(titulo = "Pago", clave = "act|confirmar_pago|caro", ventana_min = 10))
+  expect_false(identical(id3, id1))
+  df <- .mem[[k]]
+  expect_equal(df$contador[df$id == id1], 2L)
+  expect_equal(df$contador[df$id == id3], 1L)
+  # without ventana_min, as before: any live aviso with the clave
+  id4 <- avisos_agregar(CID, list(titulo = "x", clave = "act|confirmar_pago|caro"))
+  expect_true(id4 %in% c(id1, id3))
 })

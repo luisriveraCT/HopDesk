@@ -8,6 +8,7 @@ source("R/i18n.R")
 source("R/tier_registry.R")
 source("R/permisos.R")
 source("R/avisos_alertas_module.R")
+source(Sys.getenv("ALERTAS_AVISOS_R", "R/avisos.R"))   # the contraprueba points it at the old file
 
 CID <- "acme"
 KEY <- paste0(CID, "/avisos_alertas.rds")
@@ -98,6 +99,72 @@ test_that("C3. matriz ilegible: no publica y deja un message", {
   alertas_guardar(CID, marca("ana", confirmar_pago = TRUE), por = "ana")
   .mem_falla <<- KEY
   expect_message(expect_null(alertas_preparar(CID, "confirmar_pago", "ana")), "no se pudo leer")
+  .mem_falla <<- character()
+})
+
+# ── D. avisos_actividad() with the matrix (R/avisos.R) ──────────────────────
+AVK <- paste0(CID, "/avisos.rds")
+avisos_mem <- function() if (exists(AVK, envir = .mem)) get(AVK, envir = .mem) else NULL
+usr <- function(user, tier) list(user = user, tier = tier, permisos = permisos_resueltos(tier))
+
+test_that("D1. un usuario sin marcar no publica; el marcado, una vez", {
+  s3_memoria_reset()
+  alertas_guardar(CID, marca("ana", confirmar_pago = TRUE), por = "ana")
+  avisos_actividad(CID, "confirmar_pago", "beto", list(cuerpo = "1 pago(s)"))
+  avisos_actividad(CID, "importar_bancos", "ana", list(cuerpo = "3 movimientos"))
+  expect_null(avisos_mem())
+  avisos_actividad(CID, "confirmar_pago", "ana", list(cuerpo = "1 pago(s)"))
+  a <- avisos_mem()
+  expect_equal(nrow(a), 1L)
+  expect_equal(a$permiso, "can_confirm_payments")
+  expect_equal(a$tipo, "automatico")
+  expect_equal(a$creado_por, "ana")
+})
+
+test_that("D2. tres confirmaciones en 10 minutos son un aviso con contador 3", {
+  s3_memoria_reset()
+  alertas_guardar(CID, marca("ana", confirmar_pago = TRUE, bancos = TRUE), por = "ana")
+  for (i in 1:3) avisos_actividad(CID, "confirmar_pago", "ana", list(cuerpo = paste(i, "pago(s)")))
+  avisos_actividad(CID, "importar_bancos", "ana")   # another action: its own aviso
+  a <- avisos_mem()
+  expect_equal(nrow(a), 2L)
+  expect_equal(a$contador[a$permiso == "can_confirm_payments"], 3L)
+  expect_equal(a$contador[a$permiso == "can_manage_bancos"], 1L)
+  # an hour later: a new one
+  a$actualizado <- a$actualizado - 3600
+  assign(AVK, a, envir = .mem)
+  avisos_actividad(CID, "confirmar_pago", "ana")
+  expect_equal(sum(avisos_mem()$permiso == "can_confirm_payments"), 2L)
+})
+
+test_that("D3. quien no tiene el permiso de la acción no ve el aviso", {
+  s3_memoria_reset()
+  alertas_guardar(CID, marca("ana", bancos = TRUE), por = "ana")
+  avisos_actividad(CID, "importar_bancos", "ana")
+  ve <- function(u) nrow(avisos_visibles(CID, u)) > 0
+  expect_true(ve(usr("beto", "finance")))
+  sin <- usr("caro", "analysis"); sin$permisos["can_manage_bancos"] <- FALSE
+  expect_false(ve(sin))
+})
+
+test_that("D4. nunca tumba la acción: matriz ilegible, alertas_preparar que truena, S3 caído", {
+  s3_memoria_reset()
+  alertas_guardar(CID, marca("ana", confirmar_pago = TRUE), por = "ana")
+  .mem_falla <<- KEY
+  expect_message(r <- avisos_actividad(CID, "confirmar_pago", "ana"), "no se pudo leer")
+  expect_null(r); expect_null(avisos_mem())
+  .mem_falla <<- character()
+
+  orig <- alertas_preparar
+  alertas_preparar <<- function(...) stop("boom")
+  expect_message(r <- avisos_actividad(CID, "confirmar_pago", "ana"), "boom")
+  expect_null(r); expect_null(avisos_mem())
+  alertas_preparar <<- orig
+
+  .mem_falla <<- AVK   # avisos.rds unreadable: avisos_agregar stop()s, caught
+  assign(AVK, tibble::tibble(), envir = .mem)
+  expect_message(r <- avisos_actividad(CID, "confirmar_pago", "ana"), "falló")
+  expect_null(r)
   .mem_falla <<- character()
 })
 
