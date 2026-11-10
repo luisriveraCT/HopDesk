@@ -408,13 +408,16 @@ cashflowPreviewServer <- function(id, shared) {
     # Read on opening and when the client changes: this client's key only
     # (saved today), and the old shared key removed. The answer always comes,
     # with the client it was read for and the state or null.
+    # Once this client's state was read back (listo_para), reopening doesn't
+    # read again: the session holds it, and a change still waiting for its
+    # save (800 ms) would be overwritten by what the browser kept before.
     observe({
       if (!isTRUE(shared$cf_preview_open())) return()
       cid   <- cliente()
       llave <- .cf_estado_llave(cid)
       shinyjs::runjs(sprintf(
         "(function(){ try { localStorage.removeItem('%s'); } catch(e) {} })();", .CF_STORAGE_KEY))
-      if (is.null(llave)) return()
+      if (is.null(llave) || identical(cid, listo_para)) return()
       shinyjs::runjs(sprintf("
           (function() {
             var s = null;

@@ -375,6 +375,32 @@ test_that("T27: the preview's state is one client's: A's FX rates never reach B"
     expect_false(any(grepl("hopdesk_cf_preview_state:", js()[-seq_len(n)], fixed = TRUE)))
   })
 })
+test_that("T27: a change, closed and reopened before its save (800 ms), is kept; reopening doesn't read again", {
+  con_runjs()
+  modulo(function(session, input, output, sh, rv) {
+    js <- con_js(session)
+    sh$cf_preview_open(FALSE); session$flushReact(); sh$cf_preview_open(TRUE); session$flushReact()
+    session$setInputs(stored_state = list(cliente = "cliente_a", estado = NULL))
+    session$setInputs(btn_curmode = 1, fx_rate_usd_blur = 19.5); session$elapse(1000)   # saved: USD 19.5
+    # USD to 20, closed at once and reopened, all within the 800 ms.
+    n <- length(js())
+    session$setInputs(fx_rate_usd_blur = 20)
+    sh$cf_preview_open(FALSE); session$flushReact(); sh$cf_preview_open(TRUE); session$flushReact()
+    leido <- any(grepl("getItem(\"hopdesk_cf_preview_state:cliente_a\")", js()[-seq_len(n)], fixed = TRUE))
+    expect_false(leido)   # the session already holds this client's state
+    # Had it read, the browser would answer with what it still keeps (19.5).
+    if (leido) session$setInputs(stored_state = estado("cliente_a", currency_mode = "fused", base_cur = "MXN",
+                                                      fx_rates = list(USD = 19.5)))
+    session$elapse(1000)
+    expect_identical(rv$fx_rates[["USD"]], 20)
+    a <- js()[grepl("setItem(\"hopdesk_cf_preview_state:cliente_a\"", js(), fixed = TRUE)]
+    expect_true(grepl("\"USD\":20", a[length(a)], fixed = TRUE))
+    # Switching back from another client does read this client's key again.
+    sh$effective_client_id("cliente_b"); session$flushReact()
+    sh$effective_client_id("cliente_a"); session$flushReact()
+    expect_true(sum(grepl("getItem(\"hopdesk_cf_preview_state:cliente_a\")", js(), fixed = TRUE)) >= 2L)
+  })
+})
 test_that("contraprueba: the step-3 storage (one key for every client) is refused", {
   modulo(function(session, input, output, sh, rv) {
     r <- devuelto(session)
