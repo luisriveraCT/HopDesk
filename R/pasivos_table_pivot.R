@@ -83,8 +83,17 @@ pasivos_table_build_long <- function(provisions, manual_items,
     ]
   }
 
+  # CM21: one bad row used to stop the whole build, and long_df()'s tryCatch
+  # then showed an empty table (prod, 2026-11-09: a manual item with no due
+  # date). Now a row that fails is left out alone and said in the log by id;
+  # every other row is still shown.
+  fila_segura <- function(que, id, expr) tryCatch(expr, error = function(e) {
+    message("[pasivos_table] ", que, " ", id %||% "?", " left out: ", conditionMessage(e))
+    NULL
+  })
+
   # ── 3. Build per-provision rows ───────────────────────────────────────────────
-  out_rows <- lapply(seq_len(nrow(provisions_in)), function(k) {
+  out_rows <- lapply(seq_len(nrow(provisions_in)), function(k) fila_segura("provision", provisions_in$id[k], {
     p <- provisions_in[k, , drop = FALSE]
 
     # Skip states that are surfaced via manual_items instead
@@ -145,7 +154,7 @@ pasivos_table_build_long <- function(provisions, manual_items,
                           !is.na(p$fecha_efectiva_override[1]),
       cell_overdue_severity = overdue_sev
     )
-  })
+  }))
 
   # ── 4. Build rows for converted/item_confirmed provisions via manual_items ────
   if (!is.null(manual_items) && nrow(manual_items) &&
@@ -154,10 +163,12 @@ pasivos_table_build_long <- function(provisions, manual_items,
     mi_match   <- manual_items[!is.na(manual_items$provision_id) &
                                 manual_items$provision_id %in% conv_provs$id, , drop = FALSE]
 
-    mi_rows <- lapply(seq_len(nrow(mi_match)), function(k) {
+    mi_id_de <- if ("id" %in% names(mi_match)) mi_match$id else rep(NA_character_, nrow(mi_match))
+    mi_rows <- lapply(seq_len(nrow(mi_match)), function(k) fila_segura("manual item", mi_id_de[k], {
       mi <- mi_match[k, , drop = FALSE]
       p  <- conv_provs[conv_provs$id == mi$provision_id[1], , drop = FALSE]
       if (!nrow(p)) return(NULL)
+      p  <- p[1, , drop = FALSE]   # a repeated provision id must not reach the && below
 
       lib_row <- if (!is.na(p$liability_id) && nzchar(p$liability_id %||% "") &&
                      nrow(liabs_in_scope)) {
@@ -173,7 +184,15 @@ pasivos_table_build_long <- function(provisions, manual_items,
       row_moneda      <- p$moneda_pago[1] %||% "MXN"
 
       fecha_col <- if ("FechaVenc" %in% names(mi)) "FechaVenc" else "Fecha de vencimiento"
-      item_date <- tryCatch(as.Date(mi[[fecha_col]][1]), error = function(e) today)
+      item_date <- tryCatch(as.Date(mi[[fecha_col]][1]), error = function(e) as.Date(NA))
+      # No due date (the convert modal lets the date be cleared): shown on its
+      # provision's date, so an unpaid item is not hidden; with neither, out.
+      if (is.na(item_date)) {
+        item_date <- tryCatch(as.Date(p$fecha_efectiva[1]), error = function(e) as.Date(NA))
+        if (is.na(item_date)) stop("no due date and its provision has none")
+        message("[pasivos_table] manual item ", mi_id_de[k] %||% "?",
+                " has no due date; shown on its provision's date ", format(item_date))
+      }
 
       bc_col  <- if ("id" %in% names(bancos_confirmados)) "id" else
                  if ("confirmacion_id" %in% names(bancos_confirmados)) "confirmacion_id" else ""
@@ -220,7 +239,7 @@ pasivos_table_build_long <- function(provisions, manual_items,
                             !is.na(p$fecha_efectiva_override[1]),
         cell_overdue_severity = overdue_sev
       )
-    })
+    }))
     out_rows <- c(out_rows, mi_rows)
   }
 
