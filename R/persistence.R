@@ -196,13 +196,15 @@
 # options(hopdesk.s3_red = "aviso") logs instead of refusing (an operational
 # escape hatch if a false positive ever shows up in production).
 # Abonos and Bancos' papelera too (CM19): voiding is a status and restoring
-# adds an event; neither removes rows.
+# adds an event; neither removes rows. A client's contacts too (CM20):
+# deactivating is a status.
 # The hd-admin control-plane tables (CM13) only grow too: rows change status
 # (approved, revoked, read...) but are never removed.
 # Requisiciones' 6 tables too (front E): trashing is a mark, never a removal.
 # REQ_KEYS lives in R/requisiciones_persistence.R; scripts that source this
 # file alone simply do not have it.
 .S3_SOLO_CRECEN <- function() c(unname(unlist(S3_KEYS[c("pasivos_audit", "papelera", "bancos_confirmados", "abonos", "bancos_papelera")])),
+                                "contacts.rds",
                                 .HD_ADMIN_SOLO_CRECEN,
                                 if (exists("REQ_KEYS")) unname(unlist(REQ_KEYS)))
 # Keys outside the net, each for a reason:
@@ -2902,14 +2904,11 @@ accept_invite <- function(token) {
   )
 }
 
+# For showing and for the limit alerts only: lenient (a failed read is the
+# empty schema). Same key as the writes and T28's table (.s3_key: client id
+# in lower case), and the cache .s3_write() clears.
 read_contacts <- function(client_id = Sys.getenv("CLIENT_ID")) {
-  key <- paste0(client_id, "/contacts.rds")
-  raw <- tryCatch(
-    suppressMessages(suppressWarnings(
-      aws.s3::s3readRDS(object = key, bucket = .s3_bucket())
-    )),
-    error = function(e) NULL
-  )
+  raw <- .s3_read_with("contacts.rds", client_id = client_id)
   if (is.null(raw) || !is.data.frame(raw) || !nrow(raw))
     return(.schema_contacts())
   schema <- .schema_contacts()
@@ -2921,16 +2920,18 @@ read_contacts <- function(client_id = Sys.getenv("CLIENT_ID")) {
   raw
 }
 
-write_contacts <- function(df, client_id = Sys.getenv("CLIENT_ID")) {
-  key <- paste0(client_id, "/contacts.rds")
-  aws.s3::s3saveRDS(df, object = key, bucket = .s3_bucket())
-  invisible(TRUE)
-}
+# CM20: every change to a client's contacts starts from what S3 holds right
+# now (strict read: a failed read stop()s and nothing is saved) and is saved
+# through .s3_write (the net: contacts only grow, deactivating is a status).
+# No column S3's table carries is dropped. They used to be read leniently and
+# saved with s3saveRDS(): with S3 unreachable, adding one contact left the
+# client with only that one.
+modificar_contacts <- function(client_id, cambio)
+  modificar_tabla_completa("contacts.rds", client_id, .schema_contacts, cambio)
 
 add_contact <- function(client_id, name, email, role = "",
                         receives_limit_alerts    = FALSE,
                         receives_audit_summaries = FALSE) {
-  existing <- read_contacts(client_id)
   new_row  <- data.frame(
     id                       = uuid::UUIDgenerate(),
     name                     = trimws(name),
@@ -2942,17 +2943,24 @@ add_contact <- function(client_id, name, email, role = "",
     created_at               = as.character(Sys.time()),
     stringsAsFactors         = FALSE
   )
-  write_contacts(rbind(existing, new_row), client_id)
+  modificar_contacts(client_id, function(df) .hd_admin_agregar(df, new_row))
   invisible(new_row$id)
 }
 
+# TRUE if the contact was active and is now saved inactive; FALSE (nothing
+# written) if there was nothing to deactivate: already inactive, or no such
+# id. Element-wise: isTRUE() on the column was one FALSE for 2+ contacts, so
+# it never deactivated anything.
 deactivate_contact <- function(client_id, contact_id) {
-  df  <- read_contacts(client_id)
-  idx <- which(df$id == contact_id & isTRUE(df$active))
-  if (!length(idx)) return(invisible(FALSE))
-  df$active[idx] <- FALSE
-  write_contacts(df, client_id)
-  invisible(TRUE)
+  cambio_hecho <- FALSE
+  modificar_contacts(client_id, function(df) {
+    idx <- which(df$id %in% contact_id & df$active %in% TRUE)
+    if (!length(idx)) return(df)
+    df$active[idx] <- FALSE
+    cambio_hecho <<- TRUE
+    df
+  })
+  invisible(cambio_hecho)
 }
 
 # ── get_limit_alert_recipients() ─────────────────────────────────────────────
