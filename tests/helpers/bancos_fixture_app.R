@@ -22,16 +22,9 @@ library(shiny)
 raiz <- normalizePath(".", winslash = "/")
 source(file.path(raiz, "tests/helpers/s3_memoria.R"))
 # Writes that fail on purpose: the input "fallar_escritura" (from the test)
-# lists the S3 keys whose save must fail ("acme/bancos_movimientos.rds").
-# Wraps s3_memoria's own fake; s3_memoria restores aws.s3 when R exits.
-.falla_escritura <- character(0)
-local({
-  guardar_mem <- get("s3saveRDS", asNamespace("aws.s3"))
-  utils::assignInNamespace("s3saveRDS", function(x, object, bucket, ...) {
-    if (object %in% .falla_escritura) stop("simulated S3 write failure")
-    guardar_mem(x, object, bucket, ...)
-  }, "aws.s3")
-})
+# lists the S3 keys whose save must fail ("acme/bancos_movimientos.rds"),
+# set into s3_memoria's .mem_falla_escritura -- which refuses s3saveRDS and
+# .s3_write's put_object fallback alike, as a down S3 (T30).
 cargar <- function(archivo, nombres) {
   ex <- parse(file.path(raiz, archivo), keep.source = FALSE)
   for (e in ex)
@@ -193,7 +186,7 @@ server <- function(input, output, session) {
                                                 sprintf("conf_deshechas: %s", paste(rev_c, collapse = ",")),
                                                 sprintf("abonos_anulados: %s", paste(anul, collapse = ",")), sep = "\n"))
   })
-  observeEvent(input$fallar_escritura, .falla_escritura <<- as.character(unlist(input$fallar_escritura)),
+  observeEvent(input$fallar_escritura, .mem_falla_escritura <<- as.character(unlist(input$fallar_escritura)),
                ignoreNULL = FALSE)
   bancosServer("bnc", shared)
 }

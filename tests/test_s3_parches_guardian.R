@@ -28,7 +28,6 @@ LISTA_BLANCA <- c(
   "helpers/tiers_fixture_app.R"          = "blocks EVERY aws.s3 function from the network, not only the six (T28)",
   "helpers/ajustes_tablas_fixture_app.R" = "writes every save into the page (#registro) for its Chrome test",
   "helpers/arranque_app.R"               = "T15: the real app against dev, its writes refused in that process",
-  "helpers/bancos_fixture_app.R"         = "refused writes driven from its Chrome tests (input fallar_escritura); migrate with a Chrome turn",
   # Group A of reportes/S3_memoria_inventario.md: their own fake S3, without
   # s3_memoria. To migrate, one by one, each giving the same as before.
   "_run_saas.R"                          = "runner: its own store for all its tests (group A)",
