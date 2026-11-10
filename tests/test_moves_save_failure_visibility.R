@@ -62,6 +62,10 @@ cat("── Moves save-failure visibility (critical, 2026-09-01) ─────
 .chk_true  <- function(cond, label) .chk(isTRUE(cond), TRUE, label)
 .chk_false <- function(cond, label) .chk(isTRUE(cond), FALSE, label)
 
+# The failed save's notice now comes from the dictionary (tr(), ledger notices
+# to i18n): the extracted function needs it.
+if (!exists("%||%")) `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
+suppressMessages(source("R/i18n.R"))
 ledger_src <- readLines("R/ledger_module.R", warn = FALSE)
 fn_start   <- grep("^\\.save_moves_deferred <- function", ledger_src)
 fn_end     <- grep("^\\.apply_move <- function", ledger_src)

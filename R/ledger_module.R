@@ -265,7 +265,7 @@ ledgerModuleServer <- function(id, config, shared) {
           warning("[DF_COMBINED] empresa filter ", paste(emp, collapse = ","),
                   " matched 0 of ", nrow(df), " rows — check empresas.rds vs snapshot")
           showNotification(
-            "El filtro de Empresa no coincide con los datos cargados. Verifica la lista de empresas.",
+            tr("tablas.dia.aviso.filtro_empresa"),
             type = "warning", duration = 5)
         }
         df <- df_filtered
@@ -706,7 +706,7 @@ ledgerModuleServer <- function(id, config, shared) {
         error = function(e) {
           message("[modal error] ", conditionMessage(e))
           message("[modal cols] ", paste(names(ctx$detail), collapse = ", "))
-          showNotification(paste("Error al abrir ventana:", conditionMessage(e)),
+          showNotification(tr("tablas.dia.aviso.error_abrir", detalle = conditionMessage(e)),
                            type = "error", duration = 10)
         }
       )
@@ -1062,8 +1062,7 @@ ledgerModuleServer <- function(id, config, shared) {
                                                base = ph_now)   # CM09: rebased on S3 (A2)
       if (!isTRUE(site_result$ok)) {
         showNotification(
-          paste0("No se pudo quitar de la Agenda tras ", site_result$attempts,
-                 " intento(s) (posible problema de conexi\u00f3n). Actualiza la p\u00e1gina e intenta de nuevo."),
+          tr("tablas.dia.aviso.no_quitado", n = as.character(site_result$attempts)),
           type = "error", duration = 15
         )
         tryCatch(log_action(
@@ -1078,7 +1077,7 @@ ledgerModuleServer <- function(id, config, shared) {
         ), error = function(e) NULL)
         return()
       }
-      showNotification("Quitado de la Agenda del día.", type = "message", duration = 2)
+      showNotification(tr("tablas.dia.aviso.quitado"), type = "message", duration = 2)
       log_action(
         user        = tryCatch(shared$current_user(), error = function(e) "system"),
         module      = paste0("ledger_", ledger),
@@ -1116,7 +1115,7 @@ ledgerModuleServer <- function(id, config, shared) {
       tryCatch({
         ctx <- modal_ctx(); req(ctx)
         if (is.null(new_date) || length(new_date) == 0L || anyNA(new_date)) {
-          showNotification("Elige una fecha válida.", type = "warning")
+          showNotification(tr("tablas.dia.aviso.elige_fecha"), type = "warning")
           return()
         }
         detail <- ctx$detail
@@ -1129,13 +1128,13 @@ ledgerModuleServer <- function(id, config, shared) {
         # going through its own Pasivos edit path.
         keys <- pasivos_exclude_provision_keys(keys, detail)
         if (is.null(keys) || !nrow(keys)) {
-          showNotification("No se encontraron facturas reales (sólo provisiones).", type = "warning")
+          showNotification(tr("tablas.dia.aviso.solo_provisiones"), type = "warning")
           return()
         }
         .apply_move(keys, new_date, ledger, shared, session = session)
         .sync_staged(keys, ledger, shared$pagar_hoy_db, new_date = new_date,
                      username = shared$current_user(), client_id = shared$effective_client_id())
-        showNotification(paste0(nrow(keys), " factura(s) movidas."), type = "message", duration = 2)
+        showNotification(tr("tablas.dia.aviso.movidas", n = as.character(nrow(keys))), type = "message", duration = 2)
         cur_ctx <- modal_ctx()
         if (!is.null(cur_ctx)) {
           new_ctx <- tryCatch(.refresh_ctx_detail(cur_ctx), error = function(e) NULL)
@@ -1146,7 +1145,7 @@ ledgerModuleServer <- function(id, config, shared) {
         } else removeModal()
       }, error = function(e) {
         message("[do_move] ERROR: ", conditionMessage(e))
-        showNotification(paste("Error al mover:", conditionMessage(e)),
+        showNotification(tr("tablas.dia.aviso.error_mover", detalle = conditionMessage(e)),
                          type = "error", duration = 8)
       })
     }
@@ -1160,13 +1159,13 @@ ledgerModuleServer <- function(id, config, shared) {
         # pasivos_calendar_glue.R).
         keys <- pasivos_exclude_provision_keys(keys, detail)
         if (is.null(keys) || !nrow(keys)) {
-          showNotification("No se encontraron facturas reales (sólo provisiones).", type = "warning")
+          showNotification(tr("tablas.dia.aviso.solo_provisiones"), type = "warning")
           return()
         }
         .clear_moves(keys, ledger, shared, session = session)
         .sync_staged(keys, ledger, shared$pagar_hoy_db, detail = detail,
                      username = shared$current_user(), client_id = shared$effective_client_id())
-        showNotification("Fecha original restaurada.", type = "message", duration = 2)
+        showNotification(tr("tablas.dia.aviso.restaurada"), type = "message", duration = 2)
         cur_ctx <- modal_ctx()
         if (!is.null(cur_ctx)) {
           new_ctx <- tryCatch(.refresh_ctx_detail(cur_ctx), error = function(e) NULL)
@@ -1177,7 +1176,7 @@ ledgerModuleServer <- function(id, config, shared) {
         } else removeModal()
       }, error = function(e) {
         message("[do_restore] ERROR: ", conditionMessage(e))
-        showNotification(paste("Error al restaurar:", conditionMessage(e)),
+        showNotification(tr("tablas.dia.aviso.error_restaurar", detalle = conditionMessage(e)),
                          type = "error", duration = 8)
       })
     }
@@ -1190,7 +1189,7 @@ ledgerModuleServer <- function(id, config, shared) {
       ctx <- modal_ctx(); req(ctx)
       detail <- ctx$detail
       if (!nrow(keys)) {
-        showNotification("No se encontraron facturas.", type = "warning")
+        showNotification(tr("tablas.dia.aviso.sin_facturas"), type = "warning")
         return()
       }
       n <- nrow(keys)
@@ -1246,15 +1245,14 @@ ledgerModuleServer <- function(id, config, shared) {
             if (!is.null(shared$papelera_rv)) shared$papelera_rv(sap_pap)
           } else {
             showNotification(
-              paste0("No se pudo guardar la papelera (\"", result$error$message,
-                     "\"). Las facturas SAP NO quedaron enviadas a papelera -- vuelve a intentarlo."),
+              tr("tablas.dia.aviso.papelera_sap_error", detalle = result$error$message),
               type = "error", duration = NULL
             )
           }
         }
         if (save_ok) {
           showNotification(
-            paste0(n_sap, " factura(s) SAP tachada(s) y enviada(s) a la papelera."),
+            tr("tablas.dia.aviso.papelera_sap_ok", n = as.character(n_sap)),
             type = "message", duration = 3
           )
         }
@@ -1441,9 +1439,7 @@ ledgerModuleServer <- function(id, config, shared) {
 
       if (length(save_failures)) {
         showNotification(
-          paste0("No se pudo guardar completamente el borrado (", paste(save_failures, collapse = "; "),
-                 "). Puede que quede en un estado parcial -- vuelve a intentarlo en unos minutos y ",
-                 "no cierres la sesion mientras tanto."),
+          tr("tablas.dia.aviso.borrado_parcial", detalle = paste(save_failures, collapse = "; ")),
           type = "error", duration = NULL
         )
       }
@@ -1470,7 +1466,7 @@ ledgerModuleServer <- function(id, config, shared) {
       session$userData[[paste0(ns("pending_delete_keys"))]] <- NULL
       session$userData[[paste0(ns("pending_delete_ctx"))]]  <- NULL
       if (!length(save_failures)) {
-        showNotification(paste0(n_del, " factura(s) enviadas a la papelera."),
+        showNotification(tr("tablas.dia.aviso.papelera_ok", n = as.character(n_del)),
                          type = "message", duration = 3)
       }
       log_action(
@@ -1535,11 +1531,10 @@ ledgerModuleServer <- function(id, config, shared) {
         save_tags(tags_db, client_id = shared$effective_client_id(), base = tags_base))
       if (isTRUE(tag_result$ok)) {
         bump_sync_version("tags_db", client_id = shared$effective_client_id())
-        showNotification("Etiquetas actualizadas.", type = "message", duration = 2)
+        showNotification(tr("tablas.dia.aviso.etiquetas_ok"), type = "message", duration = 2)
       } else {
         showNotification(
-          paste0("No se pudieron guardar las etiquetas (\"", tag_result$error$message,
-                 "\"). El cambio se ve en pantalla pero NO quedo guardado -- vuelve a intentarlo."),
+          tr("tablas.dia.aviso.etiquetas_error", detalle = tag_result$error$message),
           type = "error", duration = NULL
         )
       }
@@ -1682,7 +1677,7 @@ ledgerModuleServer <- function(id, config, shared) {
             .data$Documento == row[["Documento"]]
           )
         if (!nrow(man_row)) {
-          showNotification("Entrada manual no encontrada.", type = "warning")
+          showNotification(tr("tablas.dia.aviso.manual_no_encontrada"), type = "warning")
           return()
         }
         manual_edit_handlers(
@@ -1710,7 +1705,7 @@ ledgerModuleServer <- function(id, config, shared) {
       new_date <- tryCatch(as.Date(input$sap_edit_fecha),
                            error = function(e) NA_Date_)
       if (is.na(new_date)) {
-        showNotification("Fecha inv\u00e1lida.", type = "warning"); return()
+        showNotification(tr("tablas.dia.aviso.fecha_invalida"), type = "warning"); return()
       }
 
       new_parte    <- trimws(input$sap_edit_parte   %||% "")
@@ -1798,7 +1793,7 @@ ledgerModuleServer <- function(id, config, shared) {
       } else {
         removeModal()
       }
-      showNotification("Cambios guardados.", type = "message", duration = 2)
+      showNotification(tr("tablas.dia.aviso.cambios_guardados"), type = "message", duration = 2)
       log_action(
         user        = tryCatch(shared$current_user(), error = function(e) "system"),
         module      = paste0("ledger_", ledger),
@@ -2050,9 +2045,7 @@ dia_filas_agenda <- function(a_mano, fuente, usuario, ledger, confirmaciones) {
       } else {
         if (!is.null(session)) {
           showNotification(
-            paste0("No se pudo guardar el movimiento de fecha en el servidor (\"", e$message,
-                   "\"). El cambio se ve en pantalla pero NO quedo guardado -- vuelve a ",
-                   "intentarlo en unos minutos y NO cierres la sesion mientras tanto."),
+            tr("tablas.dia.aviso.mover_error_servidor", detalle = e$message),
             type = "error", duration = NULL, session = session
           )
         }
