@@ -143,6 +143,133 @@ test_that("Resumen shows the clip too (class B, where it is optional)", {
                'tabla = "detalle_dia_resumen", piezas = "adjuntos"', fixed = TRUE)
 })
 
+# ── The confirmations' history (R/bancos_module.R, "historial_conf") ─────────
+# The real bancosServer in testServer over the in-memory S3 (s3_memoria,
+# restored at the end), as test_bancos_doble_aviso.R does.
+source("tests/helpers/s3_memoria.R")
+cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALSE))
+  if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
+    eval(e, envir = globalenv())
+cargar("R/global.R", "fmt_money")
+cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", "load_ctas_bancos"))
+for (f in c("R/bancos_parser.R", "R/bancos_detect.R", "R/bancos_persistence.R", "R/bancos_formatos.R",
+            "R/bancos_module.R")) suppressMessages(source(f))
+log_action <- function(...) invisible(NULL)
+showNotification <- function(...) invisible("id")
+puede_o_avisa <- function(...) TRUE
+bump_sync_version <- function(...) invisible(NULL)
+
+CID_B <- "acme"
+confirmacion <- function(id, pid, cuando, tipo = "pago", eliminado = FALSE)
+  tibble::tibble(confirmacion_id = id, agenda_item_id = paste0("ag-", id), empresa = "NTS", parte = "PROV",
+                 documento = paste0("D-", id), importe = 100, moneda = "MXN", cuenta_id = "c1",
+                 fecha = as.Date("2026-10-30"), tipo = tipo, mov_id = NA_character_, provision_id = pid,
+                 confirmado_at = as.POSIXct("2026-11-01 10:00:00") + cuando, eliminado = eliminado)
+# k1: a paid provision with evidence; k2: one whose requisition has none;
+# k3: a cobro (no provision); k4: deleted (not in the history).
+conf_h <- .normalize(dplyr::bind_rows(confirmacion("k1", "P1", 3), confirmacion("k2", "P2", 2),
+                                      confirmacion("k3", NA, 1, "cobro"), confirmacion("k4", "P4", 0, eliminado = TRUE)),
+                     .schema_bancos_confirmados)
+legado_h <- tibble::tibble(id = "L1", created_at = as.POSIXct("2026-10-01"), FechaPago = as.Date("2026-10-01"),
+                           Empresa = "NTS", Parte = "OTRO", Documento = "LEG-1", Importe = 50, Moneda = "MXN", tipo = "pago")
+abono_h <- .normalize(tibble::tibble(id = "A1", ledger = "AP", Empresa = "NTS", Moneda = "MXN", Documento = "D-9",
+                                     Parte = "PROV", importe = 50, fecha_abono = as.Date("2026-10-30"), notas = "",
+                                     created_by = "t", created_at = as.POSIXct("2026-10-15"), status = "active"),
+                      .schema_abonos)
+RESP_H <- data.frame(provision_id = c("P1", "P2", "P4"), requisicion_id = c("R1", "R2", "R4"),
+                     total = c(2L, 0L, 5L), stringsAsFactors = FALSE)
+compartido_bancos <- function(conf, permiso = TRUE, contrato = TRUE) {
+  G$clip <- list(); G$abre <- character(0); G$version <- reactiveVal(0L); G$nonce <- 0L
+  G$conf <- reactiveVal(conf)
+  base <- list(
+    effective_client_id = function() CID_B, home_client_id = function() CID_B, current_user = function() "luis",
+    usuario = reactive("luis"), company_map = reactiveVal(c(NTS = "Networks Trucking")),
+    visible_initials = reactiveVal(NULL), bancos_movimientos = reactiveVal(.schema_bancos_movimientos()),
+    bancos_confirmados = G$conf, conciliacion_rv = reactiveVal(legado_h), ctas_cuentas = reactiveVal(tibble::tibble()),
+    papelera_rv = reactiveVal(NULL), abonos_db = reactiveVal(abono_h), manual_inv = reactiveVal(NULL),
+    pasivos_provisions_db = reactiveVal(NULL), sap_data = reactiveVal(list()), empresas_db = reactiveVal(NULL),
+    suppress_ledger_prov_refresh = reactiveVal(FALSE))
+  if (!contrato) return(base)
+  c(base, list(
+    req_version = G$version,
+    req_clip = function(provision_ids) {
+      G$clip[[length(G$clip) + 1L]] <- provision_ids
+      if (permiso) RESP_H[RESP_H$provision_id %in% provision_ids, , drop = FALSE] else RESP_H[0, ]
+    },
+    req_abrir_evidencia = function(provision_id) { G$abre <- c(G$abre, provision_id); invisible(TRUE) }))
+}
+clic_h <- function(session, id) {
+  G$nonce <- G$nonce + 1L
+  session$setInputs(`historial-accion` = list(accion = "adjuntos", ids = id, nonce = G$nonce))
+  session$flushReact()
+}
+clip_de <- function(h) setNames(h$.adjuntos, h$id)
+
+test_that("history: only a live confirmation with a requisition carries the clip; legado and abono, never", {
+  testServer(bancosServer, args = list(shared = compartido_bancos(conf_h)), {
+    session$flushReact()
+    h <- historial_datos()
+    expect_setequal(h$id, c("conf:k1", "conf:k2", "conf:k3", "legado:L1", "abono:A1"))
+    expect_identical(clip_de(h)[c("conf:k1", "conf:k2", "conf:k3", "legado:L1", "abono:A1")],
+                     c(`conf:k1` = 2L, `conf:k2` = 0L, `conf:k3` = 0L, `legado:L1` = 0L, `abono:A1` = 0L))
+    expect_identical(length(G$clip), 1L)
+    expect_identical(G$clip[[1]], c("P1", "P2"))                       # k4 is deleted; k3 has none
+    expect_true(any(grepl('tabla = "historial_conf"', readLines("R/bancos_module.R", encoding = "UTF-8"), fixed = TRUE)) &&
+                any(grepl('piezas = c("acc_fila", "adjuntos")', readLines("R/bancos_module.R", encoding = "UTF-8"), fixed = TRUE)))
+  })
+})
+
+test_that("history: a refresh with the same provisions doesn't ask again; req_version() or a new one does", {
+  testServer(bancosServer, args = list(shared = compartido_bancos(conf_h)), {
+    session$flushReact(); historial_datos()
+    G$conf(conf_h[4:1, ]); session$flushReact(); historial_datos()     # same set, another order
+    expect_identical(length(G$clip), 1L)
+    G$version(1L); session$flushReact(); historial_datos()
+    expect_identical(length(G$clip), 2L)
+    G$conf(.normalize(dplyr::bind_rows(conf_h, confirmacion("k5", "P5", 9)), .schema_bancos_confirmados))
+    session$flushReact(); historial_datos()
+    expect_identical(length(G$clip), 3L)
+    expect_identical(G$clip[[3]], c("P1", "P2", "P5"))
+  })
+})
+
+test_that("history: the clip opens the confirmation's provision by id; other rows and forged ids open nothing", {
+  testServer(bancosServer, args = list(shared = compartido_bancos(conf_h)), {
+    session$flushReact(); historial_datos()
+    clic_h(session, "conf:k1")
+    expect_identical(G$abre, "P1")
+    # A newer confirmation comes on top: the same id is still k1's.
+    G$conf(.normalize(dplyr::bind_rows(confirmacion("k6", "P2", 99), conf_h), .schema_bancos_confirmados))
+    session$flushReact(); historial_datos()
+    clic_h(session, "conf:k1")
+    expect_identical(G$abre, c("P1", "P1"))
+    # No clip: k2 (no evidence), k3 (no provision), k4 (deleted, even if its
+    # provision has a clip), legado and abono with a forged clip, unknown ids.
+    for (id in c("conf:k2", "conf:k3", "conf:k4", "legado:L1", "abono:A1", "conf:nada", "P1", "")) clic_h(session, id)
+    expect_identical(G$abre, c("P1", "P1"))
+  })
+})
+
+test_that("history without can_view_requisiciones (0 rows) or without the contract: no clip, nothing opens", {
+  testServer(bancosServer, args = list(shared = compartido_bancos(conf_h, permiso = FALSE)), {
+    session$flushReact()
+    expect_true(all(historial_datos()$.adjuntos == 0L))
+    clic_h(session, "conf:k1")
+    expect_identical(G$abre, character(0))
+  })
+  testServer(bancosServer, args = list(shared = compartido_bancos(conf_h, contrato = FALSE)), {
+    session$flushReact()
+    expect_true(all(historial_datos()$.adjuntos == 0L))
+    expect_no_error(clic_h(session, "conf:k1"))
+  })
+  # An empty history still builds.
+  testServer(bancosServer, args = list(shared = compartido_bancos(.schema_bancos_confirmados())), {
+    session$flushReact()
+    expect_no_error(historial_datos())
+  })
+})
+s3_memoria_restaurar()
+
 # ── The real contract: requisiciones_clip() over the Requisiciones fixture ───
 # (in-memory S3; p-luz and p-pagada have requisitions, p-libre1 has none).
 Sys.setenv(REQ_NIVEL = "compras", REQ_USUARIO = "dani", HD_ARRANQUE_NULL = "", REQ_FALLA_LECTURA = "",

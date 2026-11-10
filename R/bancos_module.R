@@ -2182,6 +2182,36 @@ bancosServer <- function(id, shared) {
                  Origen = v(origen, as.character, NA), .acciones = v(acciones, as.character, NA),
                  stringsAsFactors = FALSE, check.names = FALSE)
     }
+    # E3b-C: the evidence clip, on a live confirmation whose provision has a
+    # requisition (only "conf:" rows carry a provision_id). req_clip() costs
+    # two S3 reads: it is asked again only when the set of provisions or
+    # req_version() change, never on a plain refresh of the history (a
+    # reactiveVal does not fire when set to the same value).
+    .bnc_hist_pid <- function(conf, claves) {
+      pid <- if ("provision_id" %in% names(conf)) as.character(conf$provision_id) else rep(NA_character_, nrow(conf))
+      pid[match(claves, as.character(conf$confirmacion_id))]
+    }
+    ids_hist_clip <- reactiveVal(character(0))
+    observe({
+      conf <- confirmaciones_vigentes(confirmados())
+      p <- .bnc_hist_pid(conf, as.character(conf$confirmacion_id))
+      p <- sort(unique(p[!is.na(p) & nzchar(p)]))
+      if (!identical(p, isolate(ids_hist_clip()))) ids_hist_clip(p)
+    })
+    hist_clips <- reactive({
+      if (is.function(shared$req_version)) shared$req_version()
+      ids <- ids_hist_clip()
+      if (!length(ids) || !is.function(shared$req_clip)) return(NULL)
+      tryCatch(shared$req_clip(ids), error = function(e) NULL)
+    })
+    # Per provision_id, the clip's count in req_clip()'s last answer; 0 = none.
+    .bnc_hist_clip_total <- function(pid, cl) {
+      n <- rep(0L, length(pid))
+      if (!is.data.frame(cl) || !nrow(cl) || !all(c("provision_id", "total") %in% names(cl))) return(n)
+      tot <- suppressWarnings(as.integer(cl$total[match(pid, as.character(cl$provision_id))]))
+      tot[is.na(tot) | tot < 0L | is.na(pid)] <- 0L
+      tot
+    }
     historial_datos <- reactive({
       escribe <- .bnc_puede_ver_escritura()
       conf <- confirmaciones_vigentes(confirmados())
@@ -2213,6 +2243,9 @@ bancosServer <- function(id, shared) {
                                          if (escribe) "deshacer" else "")
       }
       h <- do.call(rbind, unname(filas))
+      es_conf <- startsWith(h$id, "conf:")
+      h$.adjuntos <- rep(0L, nrow(h))
+      h$.adjuntos[es_conf] <- .bnc_hist_clip_total(.bnc_hist_pid(conf, sub("^conf:", "", h$id[es_conf])), hist_clips())
       h[order(h$ConfirmadoEl, decreasing = TRUE, na.last = TRUE), , drop = FALSE]
     })
 
@@ -2230,7 +2263,7 @@ bancosServer <- function(id, shared) {
                         abono = list(texto = "tablas.bancos.abono_parcial", tono = "aviso"))),
                       col_insignia("Origen", "tablas.bancos.origen", mapa = list(
                         legado = list(texto = "tablas.bancos.legado", tono = "neutro")))),
-      piezas = "acc_fila", acciones_fila = c("deshacer", "eliminar"),
+      piezas = c("acc_fila", "adjuntos"), acciones_fila = c("deshacer", "eliminar"),
       # ✕ asks once, in its own modal, which says the linked movement goes
       # too -- not in the bar first and then again (Luis, 2026-11-04).
       sin_confirmar = "eliminar",
@@ -2247,6 +2280,14 @@ bancosServer <- function(id, shared) {
       if (identical(a$accion, "deshacer") && fuente == "conf") .bnc_deshacer_confirmacion(clave)
       else if (identical(a$accion, "deshacer") && fuente == "abono") .bnc_deshacer_abono(clave)
       else if (identical(a$accion, "eliminar") && fuente == "conf") .bnc_pedir_eliminar_conf(clave)
+      # The clip: a live confirmation's provision, only if it had the clip in
+      # req_clip()'s last answer; the requisition opens paid and read-only,
+      # and whether this user may is the contract's to check.
+      else if (identical(a$accion, "adjuntos") && fuente == "conf") {
+        pid <- .bnc_hist_pid(confirmaciones_vigentes(confirmados()), clave)
+        if (!is.na(pid) && .bnc_hist_clip_total(pid, hist_clips()) > 0L && is.function(shared$req_abrir_evidencia))
+          shared$req_abrir_evidencia(pid)
+      }
     }, ignoreInit = TRUE)
 
     # \u2500\u2500 Deshacer eliminaci\u00f3n de movimiento manual \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
