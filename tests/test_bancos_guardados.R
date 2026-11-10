@@ -25,22 +25,8 @@ ok <- function(label, expr) {
 }
 
 source("tests/helpers/s3_memoria.R")
-.falla_escritura <- character(0)
-local({
-  guardar_mem <- get("s3saveRDS", asNamespace("aws.s3"))
-  utils::assignInNamespace("s3saveRDS", function(x, object, bucket, ...) {
-    if (object %in% .falla_escritura) stop("simulated S3 write failure")
-    guardar_mem(x, object, bucket, ...)
-  }, "aws.s3")
-  # A refused write refuses .s3_write's fallback too (put_object), as a down
-  # S3 would: s3_memoria now stores put_object in memory, where it used to
-  # reach the real aws.s3 -- the network -- and fail there.
-  poner_mem <- get("put_object", asNamespace("aws.s3"))
-  utils::assignInNamespace("put_object", function(file, object, bucket, ...) {
-    if (object %in% .falla_escritura) stop("simulated S3 write failure")
-    poner_mem(file, object, bucket, ...)
-  }, "aws.s3")
-})
+# A refused write: the full keys in s3_memoria's .mem_falla_escritura refuse
+# s3saveRDS and .s3_write's put_object fallback alike, as a down S3 (T30).
 cargar <- function(archivo, nombres) {
   for (e in parse(archivo, keep.source = FALSE))
     if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
@@ -97,14 +83,14 @@ shared <- list(
 # A handler, once with S3 refusing the movements' save and once with S3 back.
 probar <- function(nombre, accion, disparar, cambio_hecho) {
   sembrar(); MOVS(movs0); limpiar()
-  .falla_escritura <<- MK
+  .mem_falla_escritura <<- MK
   disparar()
   ok(sprintf("%s: S3 refuses -> nothing changes in the session or the store", nombre),
      identical(MOVS(), movs0) && identical(en_s3(), movs0))
   ok(sprintf("%s: ...the user is told it wasn't saved, %s_fallido is logged, no success", nombre, accion),
      any(grepl("No se pudo guardar", AVISOS, fixed = TRUE)) && paste0(accion, "_fallido") %in% LOG &&
        !any(grepl("^message: ", AVISOS)) && !any(LOG %in% c(accion, setdiff(LOG, paste0(accion, "_fallido")))))
-  .falla_escritura <<- character(0); limpiar()
+  .mem_falla_escritura <<- character(0); limpiar()
   disparar()
   ok(sprintf("%s: S3 back -> the same action saves", nombre), isTRUE(cambio_hecho(en_s3())) && isTRUE(cambio_hecho(MOVS())))
 }
@@ -126,9 +112,9 @@ testServer(bancosServer, args = list(shared = shared), {
     session$setInputs(do_reasignar_confirm = runif(1))
   }, function(m) all(m$cuenta_id[m$id %in% c("m1", "m2")] == "c2"))
   ok("2 · do_reasignar_confirm: a failed save keeps the confirmation's data (to try again)", {
-    sembrar(); MOVS(movs0); .falla_escritura <<- MK
+    sembrar(); MOVS(movs0); .mem_falla_escritura <<- MK
     reasig_confirm_data_rv(list(sesion_key = as.character(SES), new_cid = "c2", dest_label = "NTS A2"))
-    session$setInputs(do_reasignar_confirm = runif(1)); .falla_escritura <<- character(0)
+    session$setInputs(do_reasignar_confirm = runif(1)); .mem_falla_escritura <<- character(0)
     !is.null(reasig_confirm_data_rv())
   })
 
@@ -138,9 +124,9 @@ testServer(bancosServer, args = list(shared = shared), {
     session$setInputs(do_eliminar_sesion_confirm = runif(1))
   }, function(m) all(m$eliminado[m$id %in% c("m1", "m2")]))
   ok("3 · do_eliminar_sesion_confirm: a failed save keeps the confirmation's data (to try again)", {
-    sembrar(); MOVS(movs0); .falla_escritura <<- MK
+    sembrar(); MOVS(movs0); .mem_falla_escritura <<- MK
     delete_sesion_confirm_rv(list(sesion_key = as.character(SES)))
-    session$setInputs(do_eliminar_sesion_confirm = runif(1)); .falla_escritura <<- character(0)
+    session$setInputs(do_eliminar_sesion_confirm = runif(1)); .mem_falla_escritura <<- character(0)
     !is.null(delete_sesion_confirm_rv())
   })
 
@@ -151,10 +137,10 @@ testServer(bancosServer, args = list(shared = shared), {
     session$setInputs(import_cuenta = "c1", do_import = runif(1))
   }, function(m) any(m$cargo == 4321))
   ok("4 · do_import: a failed save keeps the preview (to try again)", {
-    sembrar(); MOVS(movs0); .falla_escritura <<- MK
+    sembrar(); MOVS(movs0); .mem_falla_escritura <<- MK
     nuevo <- mov("TMP", cargo = 4321); nuevo$recibo <- "999001"; nuevo$id <- NULL
     parsed_preview(nuevo); session$setInputs(import_cuenta = "c1", do_import = runif(1))
-    .falla_escritura <<- character(0)
+    .mem_falla_escritura <<- character(0)
     !is.null(parsed_preview())
   })
 
@@ -164,9 +150,9 @@ testServer(bancosServer, args = list(shared = shared), {
     session$setInputs(`papelera-accion` = list(accion = "deshacer", ids = "mov:m3", nonce = runif(1)))
   }, function(m) isFALSE(m$eliminado[m$id == "m3"]))
   ok("5 · undo_mov_delete: the trash's restore record fails -> restored, and the user is told the record failed", {
-    sembrar(); MOVS(movs0); limpiar(); .falla_escritura <<- PK
+    sembrar(); MOVS(movs0); limpiar(); .mem_falla_escritura <<- PK
     session$setInputs(`papelera-accion` = list(accion = "deshacer", ids = "mov:m3", nonce = runif(1)))
-    .falla_escritura <<- character(0)
+    .mem_falla_escritura <<- character(0)
     isFALSE(en_s3()$eliminado[en_s3()$id == "m3"]) &&
       any(grepl("no se pudo registrar en la papelera", AVISOS, fixed = TRUE)) &&
       "registrar_restauracion_papelera_fallido" %in% LOG

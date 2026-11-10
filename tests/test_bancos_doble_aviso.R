@@ -25,22 +25,8 @@ ok <- function(label, expr) {
 }
 
 source("tests/helpers/s3_memoria.R")
-.falla_escritura <- character(0)
-local({
-  guardar_mem <- get("s3saveRDS", asNamespace("aws.s3"))
-  utils::assignInNamespace("s3saveRDS", function(x, object, bucket, ...) {
-    if (object %in% .falla_escritura) stop("simulated S3 write failure")
-    guardar_mem(x, object, bucket, ...)
-  }, "aws.s3")
-  # A refused write refuses .s3_write's fallback too (put_object), as a down
-  # S3 would: s3_memoria now stores put_object in memory, where it used to
-  # reach the real aws.s3 -- the network -- and fail there.
-  poner_mem <- get("put_object", asNamespace("aws.s3"))
-  utils::assignInNamespace("put_object", function(file, object, bucket, ...) {
-    if (object %in% .falla_escritura) stop("simulated S3 write failure")
-    poner_mem(file, object, bucket, ...)
-  }, "aws.s3")
-})
+# A refused write: the full keys in s3_memoria's .mem_falla_escritura refuse
+# s3saveRDS and .s3_write's put_object fallback alike, as a down S3 (T30).
 cargar <- function(archivo, nombres) {
   for (e in parse(archivo, keep.source = FALSE))
     if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
@@ -107,7 +93,7 @@ testServer(bancosServer, args = list(shared = shared), {
   }
 
   # 1. Deshacer abono, S3 refuses the save
-  sembrar(); .falla_escritura <<- AK
+  sembrar(); .mem_falla_escritura <<- AK
   .bnc_deshacer_abono("a1")
   ok("deshacer abono, failed save: no success notice", !exito())
   ok("deshacer abono, failed save: told once", sum(grepl("^error: ", AVISOS)) == 1L && !any(grepl("^warning: ", AVISOS)))
@@ -115,14 +101,14 @@ testServer(bancosServer, args = list(shared = shared), {
      !"deshacer_abono" %in% LOG && "deshacer_abono_fallido" %in% LOG)
   ok("deshacer abono, failed save: the session's abonos untouched", identical(ABON()$status, "active"))
   ok("deshacer abono, failed save: S3 untouched", identical(get(AK, envir = .mem)$status, "active"))
-  .falla_escritura <<- character(0); limpiar()
+  .mem_falla_escritura <<- character(0); limpiar()
   .bnc_deshacer_abono("a1")
   ok("deshacer abono, S3 back: voided in S3 and in the session, success told and logged",
      identical(get(AK, envir = .mem)$status, "voided") && identical(ABON()$status, "voided") &&
        exito() && "deshacer_abono" %in% LOG)
 
   # 2. Eliminar confirmación, S3 refuses the linked movement's save
-  sembrar(); .falla_escritura <<- MK
+  sembrar(); .mem_falla_escritura <<- MK
   borrar_conf()
   ok("delete conf, movement save fails: no success notice, told once",
      !exito() && sum(grepl("^error: ", AVISOS)) == 1L && !any(grepl("^warning: ", AVISOS)))
@@ -131,7 +117,7 @@ testServer(bancosServer, args = list(shared = shared), {
      !CONF()$eliminado && !MOVS()$eliminado && !get(CK, envir = .mem)$eliminado && !get(MK, envir = .mem)$eliminado)
 
   # 3. Eliminar confirmación, S3 refuses the confirmation's save
-  sembrar(); .falla_escritura <<- CK
+  sembrar(); .mem_falla_escritura <<- CK
   borrar_conf()
   ok("delete conf, confirmation save fails: no success notice, told once",
      !exito() && sum(grepl("^error: ", AVISOS)) == 1L && !any(grepl("^warning: ", AVISOS)))
@@ -140,7 +126,7 @@ testServer(bancosServer, args = list(shared = shared), {
   ok("delete conf, confirmation save fails: the session's confirmation untouched", !CONF()$eliminado)
 
   # 4. S3 back: both saved, success told once and logged
-  .falla_escritura <<- character(0); sembrar()
+  .mem_falla_escritura <<- character(0); sembrar()
   borrar_conf()
   ok("delete conf, S3 back: confirmation and movement deleted in S3",
      isTRUE(get(CK, envir = .mem)$eliminado) && isTRUE(get(MK, envir = .mem)$eliminado))

@@ -20,14 +20,8 @@ ok <- function(label, expr) {
 }
 
 source("tests/helpers/s3_memoria.R")
-.falla_escritura <- character(0)
-local({
-  guardar_mem <- get("s3saveRDS", asNamespace("aws.s3"))
-  utils::assignInNamespace("s3saveRDS", function(x, object, bucket, ...) {
-    if (object %in% .falla_escritura) stop("simulated S3 write failure")
-    guardar_mem(x, object, bucket, ...)
-  }, "aws.s3")
-})
+# A refused write: the full keys in s3_memoria's .mem_falla_escritura refuse
+# s3saveRDS and .s3_write's put_object fallback alike, as a down S3 (T30).
 cargar <- function(archivo, nombres) {
   for (e in parse(archivo, keep.source = FALSE))
     if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
