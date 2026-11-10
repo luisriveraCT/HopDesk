@@ -2666,26 +2666,35 @@ tiersServer <- function(id, shared) {
       contact_id <- contactos_t$desactivar()$id
       req(nzchar(cid %||% ""), nzchar(contact_id %||% ""))
 
-      contacts <- tryCatch(read_contacts(cid), error = function(e) NULL)
-      req(!is.null(contacts))
-      row <- contacts[contacts$id == contact_id, , drop = FALSE]
-      if (!nrow(row)) return()
+      # CM20b: the name comes from the row the table showed (its strict
+      # read, by id), not from another lenient read -- that one never
+      # failed loudly, so a failed read made the click do nothing at all.
+      # If the table moved on meanwhile, the id stands for the name.
+      filas  <- tryCatch(contactos_t$datos(), error = function(e) NULL)
+      nombre <- if (is.data.frame(filas)) filas$nombre[match(contact_id, filas$id)] else NA_character_
+      if (is.na(nombre) || !nzchar(nombre)) nombre <- contact_id
 
-      saved <- tryCatch({
-        deactivate_contact(cid, contact_id); TRUE
-      }, error = function(e) { message("[CONTACTS] deactivate failed: ", e$message); FALSE })
+      # TRUE: saved inactive. FALSE: nothing to deactivate (already
+      # inactive, e.g. by another session): no success, no log. NA: failed.
+      res <- tryCatch(isTRUE(deactivate_contact(cid, contact_id)),
+                      error = function(e) { message("[CONTACTS] deactivate failed: ", e$message); NA })
 
-      if (!saved) {
-        showNotification("Error al desactivar el contacto.", type = "error"); return()
+      if (is.na(res)) {
+        showNotification(tr("niveles.contactos.desactivar_error"), type = "error"); return()
       }
       contacts_refresh(contacts_refresh() + 1L)
-      showNotification(paste0("Contacto '", row$name[1], "' desactivado."),
+      if (!res) {
+        showNotification(gsub("{nombre}", nombre, tr("niveles.contactos.ya_inactivo"), fixed = TRUE),
+                         type = "message", duration = 3)
+        return()
+      }
+      showNotification(gsub("{nombre}", nombre, tr("niveles.contactos.desactivado"), fixed = TRUE),
                        type = "warning", duration = 3)
       # Same fix as agregar_contacto above -- client_id is the target client.
       log_action(user        = shared$current_user(),
                  module      = "clientes",
                  action      = "desactivar_contacto",
-                 description = paste0("Contacto '", row$name[1], "' desactivado de '", cid, "'"),
+                 description = paste0("Contacto '", nombre, "' desactivado de '", cid, "'"),
                  target_id   = cid,
                  s3_key      = paste0(cid, "/contacts.rds"),
                  client_id             = cid,
