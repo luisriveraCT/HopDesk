@@ -43,6 +43,14 @@ tiersUI <- function(id) {
     class = "p-3",
     style = "overflow-y: auto; max-height: calc(100vh - 65px);",
 
+    # The table engine from the start (T28): every table of these tabs sits
+    # in a renderUI of a tab not shown yet, and each sends its data when the
+    # session starts. Loaded with the first table drawn instead, the engine
+    # missed the other tabs' first messages and they stayed "Cargando…"
+    # (found in the T28 screenshots: Principal opening Seguridad, then
+    # Clientes). With it here, every message is kept until its table shows.
+    hd_table_deps(),
+
     # Header
     div(
       class = "tiers-header",
