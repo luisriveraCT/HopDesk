@@ -453,7 +453,13 @@ tiers_usuarios_ui <- function(id) hd_table_ui(shiny::NS(id, "tabla"))
 # module's own modal says more (the lock, the protected tier).
 tiers_usuarios_server <- function(id, usuarios, con_codigo, permitido) {
   moduleServer(id, function(input, output, session) {
-    datos <- reactive(.usuarios_filas(usuarios()))
+    # permitido() first: usuarios_rv() answers from the session's local copy
+    # (.usuarios_local) before it checks req_authorized(), so the list alone
+    # is no gate (integrator's review of 8b9355d).
+    datos <- reactive({
+      if (!isTRUE(permitido())) return(NULL)
+      .usuarios_filas(usuarios())
+    })
     columnas <- reactive(c(
       if (isTRUE(con_codigo())) list(col_texto("codigo", "niveles.tablas.usuarios.codigo", ancho = 70)),
       list(col_texto("nombre", "niveles.tablas.usuarios.nombre"),

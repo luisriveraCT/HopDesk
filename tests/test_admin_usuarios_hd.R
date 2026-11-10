@@ -86,6 +86,13 @@ ok("✎, doble clic y ✕ nombran la cuenta por username, aunque otra llegó arr
    is.null(r$error) && identical(r$hechos, c("editar carla", "editar beto", "eliminar ana")))
 r <- servidor(FALSE, FALSE, function(session, lista) { accion(session, "editar", "ana", 1); accion(session, "eliminar", "ana", 2) })
 ok("sin permitido(): ✎ y ✕ mandados a mano no nombran nada", is.null(r$error) && !length(r$hechos))
+# The list full (as the session's local copy answers, before req_authorized())
+# but no permission: no rows reach the browser.
+filas_sin_permiso <- "sin leer"
+r <- servidor(FALSE, FALSE, function(session, lista) {
+  filas_sin_permiso <<- tryCatch(session$returned$datos(), error = function(e) paste("error:", conditionMessage(e)))
+})
+ok("sin permitido() y con la lista local llena: la tabla no recibe filas", is.null(filas_sin_permiso))
 
 # ── 3. The real tiersServer ──────────────────────────────────────────────────
 KEY <- "acme/usuarios.rds"
