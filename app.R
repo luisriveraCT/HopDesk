@@ -1451,7 +1451,23 @@ server <- function(input, output, session) {
   # since nothing reloaded it for a native client, kept it for the whole session.
   group_config_rv <- reactiveVal(.schema_group_config())
 
+  # ── Requisiciones ↔ Calendario / Pasivos / historial (E3b) ────────────────
+  # The tabs that show the evidence clip start before requisicionesServer(),
+  # and each module keeps its own copy of `shared`: so these entries are in
+  # the list from the start and reach Requisiciones through req_puente,
+  # filled in once it starts. Contract: requisiciones/E3b_tareas.md.
+  req_puente  <- new.env(parent = emptyenv())
+  req_version <- reactiveVal(0L)
+
   shared <- list(
+    req_version         = req_version,
+    req_clip            = function(provision_ids)
+      requisiciones_clip(tryCatch(effective_client_id(), error = function(e) NULL),
+                         tryCatch(usuario_sesion(), error = function(e) NULL), provision_ids),
+    req_abrir_evidencia = function(provision_id) {
+      f <- req_puente$abrir
+      if (is.function(f)) f(provision_id) else invisible(FALSE)
+    },
     sap_data          = sap_data,
     sap_loading       = sap_loading,
     moves_db             = moves_db,
@@ -1676,7 +1692,16 @@ server <- function(input, output, session) {
 
   # ── Requisiciones (front E) ───────────────────────────────────────────────
   # Reads S3 only while its tab is open.
-  requisicionesServer("req", shared, activa = reactive(identical(input$nav, "REQ")))
+  req_srv <- requisicionesServer("req", shared, activa = reactive(identical(input$nav, "REQ")))
+  req_puente$abrir <- req_srv$abrir_por_provision
+  # shared$req_version(): moves when this process wrote requisitions or their
+  # evidence (the same in-memory counter the tab polls), so other tabs'
+  # clips refresh. Cheap: no S3.
+  observe({
+    invalidateLater(5000)
+    v <- .reqm_version(tryCatch(effective_client_id(), error = function(e) NULL))
+    if (!identical(v, isolate(req_version()))) req_version(v)
+  })
 
   # ── Show GRUPO menu and control per-panel visibility ─────────────────────────
   # GRUPO toggle is hidden by default via CSS (display:none!important).

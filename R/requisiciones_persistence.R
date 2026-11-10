@@ -924,6 +924,38 @@ requisicion_prefill_provision <- function(fila) {
 # 2026-11-10). Without it the clip is not even shown.
 requisiciones_puede_ver_evidencia <- function(usuario) puede(usuario, "can_view_requisiciones")
 
+# The clip for other tabs' rows (Calendario, Pasivos, confirmation history):
+# per provision with a live (not trashed) requisition, how many pieces of
+# evidence it has. Cheap: two strict reads. A provision without a
+# requisition has no row.
+requisiciones_clip_por_provision <- function(client_id, provision_ids) {
+  cid <- .req_cid(client_id)
+  vacia <- tibble::tibble(provision_id = character(), requisicion_id = character(), total = integer())
+  pids <- unique(stats::na.omit(as.character(provision_ids)))
+  if (!length(pids)) return(vacia)
+  reqs <- .req_leer("requisiciones", cid)
+  reqs <- reqs[!is.na(reqs$provision_id) & reqs$provision_id %in% pids & is.na(reqs$papelera_en), , drop = FALSE]
+  reqs <- reqs[!duplicated(reqs$provision_id), , drop = FALSE]
+  if (!nrow(reqs)) return(vacia)
+  ev <- .req_leer("evidencia", cid)
+  ev <- ev[is.na(ev$papelera_en) & ev$requisicion_id %in% reqs$id, , drop = FALSE]
+  tibble::tibble(provision_id = reqs$provision_id, requisicion_id = reqs$id,
+                 total = as.integer(vapply(reqs$id, function(k) sum(ev$requisicion_id == k), numeric(1))))
+}
+
+# What shared$req_clip() answers: only for whoever sees Requisiciones (Luis,
+# 2026-11-10), and never an error -- no client, no permission or a failed
+# read is "no clip" (the other tab must keep working).
+requisiciones_clip <- function(client_id, usuario, provision_ids) {
+  vacia <- tibble::tibble(provision_id = character(), requisicion_id = character(), total = integer())
+  if (!requisiciones_puede_ver_evidencia(usuario)) return(vacia)
+  if (is.null(client_id) || !length(client_id) || is.na(client_id[1]) || !nzchar(client_id[1])) return(vacia)
+  tryCatch(requisiciones_clip_por_provision(client_id[1], provision_ids), error = function(e) {
+    message("[requisiciones] clip: ", conditionMessage(e))
+    vacia
+  })
+}
+
 # Translated stage name, for badges and chips.
 requisiciones_etapa_nombre <- function(etapa)
   vapply(etapa, function(e) tr(paste0("requisiciones.etapa.", e)), character(1), USE.NAMES = FALSE)
