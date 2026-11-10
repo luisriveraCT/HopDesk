@@ -30,13 +30,10 @@ ok <- function(label, expr) {
 }
 q <- function(expr) suppressMessages(expr)
 
-# put_object (the replay's direct upload) goes to the same in-memory store;
-# restored at the end.
-.orig_put <- get("put_object", asNamespace("aws.s3"))
-.subidas <- 0L
-utils::assignInNamespace("put_object", function(file, object, bucket, ...) {
-  .subidas <<- .subidas + 1L; assign(object, readRDS(file), envir = .mem); invisible(TRUE)
-}, "aws.s3")
+# put_object (the replay's direct upload) goes to s3_memoria's store, which
+# counts it in .mem_subidas and keeps its bytes as S3 does: read MK back
+# through s3readRDS (T30: no stub of its own).
+leer <- function(k) aws.s3::s3readRDS(object = k, bucket = "fake-bucket")
 
 .LOG <- list()
 log_action <- function(user, module, action, description, ...) {
@@ -61,7 +58,7 @@ encolar <- function(df, sesion, version = 5L, permitir = FALSE) {
   unlink(tf); r
 }
 empezar <- function(filas_s3 = 1:6) {
-  s3_memoria_reset(); .subidas <<- 0L; .LOG <<- list()
+  s3_memoria_reset(); .LOG <<- list()
   unlink(.queue_root_dir(), recursive = TRUE)
   assign(MK, tabla(filas_s3), envir = .mem)
   assign(VK, list(moves_db = 5L), envir = .mem)
@@ -74,7 +71,7 @@ ok("setup: two entries from the same session staged",
    encolar(tabla(1:7), "s1") && encolar(tabla(1:8), "s1"))
 q(.queue_flush_client("acme"))
 ok("same session: seq 1 is superseded and seq 2 synced", identical(estado(), c("superseded", "synced")))
-ok("same session: one upload, and S3 holds seq 2", .subidas == 1L && nrow(get(MK, envir = .mem)) == 8L)
+ok("same session: one upload, and S3 holds seq 2", .mem_subidas == 1L && nrow(leer(MK)) == 8L)
 ok("same session: no false conflict is logged", !"_conflict_replay" %in% acciones() &&
      "_queue_superseded" %in% acciones())
 ok("same session: the superseded payload stays on disk",
@@ -84,8 +81,8 @@ ok("same session: the superseded payload stays on disk",
 empezar()
 encolar(tabla(1:7), "s1"); encolar(tabla(c(1:6, 9)), "s2")
 q(.queue_flush_client("acme"))
-ok("different sessions: both are replayed", identical(estado(), c("synced", "synced")) && .subidas == 2L)
-ok("different sessions: the second one wins", "9" %in% get(MK, envir = .mem)$id)
+ok("different sessions: both are replayed", identical(estado(), c("synced", "synced")) && .mem_subidas == 2L)
+ok("different sessions: the second one wins", "9" %in% leer(MK)$id)
 ok("different sessions: a conflict is logged for the second",
    sum(acciones() == "_conflict_replay") == 1L)
 bk <- .queue_conflict_backup_path("acme", 2L)
@@ -98,7 +95,7 @@ encolar(tabla(1), "s1", permitir = TRUE)
 ok("the entry keeps the flag", isTRUE(.queue_read_manifest("acme")$permitir_reduccion))
 q(.queue_flush_client("acme"))
 ok("a queued purge with the flag is synced and S3 holds 1 row",
-   identical(estado(), "synced") && nrow(get(MK, envir = .mem)) == 1L)
+   identical(estado(), "synced") && nrow(leer(MK)) == 1L)
 
 # 4. A drastic shrink without the flag is blocked
 empezar(1:10)
@@ -106,7 +103,7 @@ encolar(tabla(1), "s1")
 q(.queue_flush_client("acme"))
 ok("a drastic shrink without the flag is blocked", identical(estado(), "blocked"))
 ok("... S3 keeps its 10 rows, and the refusal is logged",
-   nrow(get(MK, envir = .mem)) == 10L && "_queue_red_refused" %in% acciones() && .subidas == 0L)
+   nrow(leer(MK)) == 10L && "_queue_red_refused" %in% acciones() && .mem_subidas == 0L)
 
 # 5. A queue left on disk before session_id/permitir_reduccion existed
 empezar()
@@ -122,24 +119,21 @@ viejo <- rbind(viejo, data.frame(seq = 1L, s3_key = MK, bucket = .s3_bucket(), t
 .queue_mark_client_pending("acme")
 ok("an old manifest still takes a new entry", encolar(tabla(1:8), NA_character_))
 q(.queue_flush_client("acme"))
-ok("old/no-session entries replay one by one, as before", identical(estado(), c("synced", "synced")) && .subidas == 2L)
+ok("old/no-session entries replay one by one, as before", identical(estado(), c("synced", "synced")) && .mem_subidas == 2L)
 
 # 6. .s3_write stages the flag and the session when the upload fails
 empezar(1:10)
-.mem_falla_subida <- function(...) stop("simulated upload failure")
-.orig_save <- get("s3saveRDS", asNamespace("aws.s3")); .put_mem <- get("put_object", asNamespace("aws.s3"))
-utils::assignInNamespace("s3saveRDS", .mem_falla_subida, "aws.s3")
-utils::assignInNamespace("put_object", .mem_falla_subida, "aws.s3")
+# S3 refuses this table's upload, both ways (s3saveRDS and the put_object
+# fallback): s3_memoria's .mem_falla_escritura.
+.mem_falla_escritura <- .s3_key("invoice_moves.rds", client_id = "acme")
 r <- tryCatch(q(shiny::withReactiveDomain(list(token = "tok1"),
         .s3_write(tabla(1), "invoice_moves.rds", "acme", permitir_reduccion = TRUE))), error = function(e) e)
-utils::assignInNamespace("s3saveRDS", .orig_save, "aws.s3")
-utils::assignInNamespace("put_object", .put_mem, "aws.s3")
+.mem_falla_escritura <- character(0)
 m <- .queue_read_manifest("acme")
 ok(".s3_write: the failed upload raised its error and was queued", inherits(r, "error") && nrow(m) == 1L)
 ok(".s3_write: the entry keeps permitir_reduccion", isTRUE(m$permitir_reduccion))
 ok(".s3_write: the entry records the session (pid:token)", identical(m$session_id, paste0(Sys.getpid(), ":tok1")))
 
-utils::assignInNamespace("put_object", .orig_put, "aws.s3")
 s3_memoria_restaurar()
 unlink(.queue_root_dir(), recursive = TRUE)
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")

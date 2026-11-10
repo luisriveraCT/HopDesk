@@ -125,10 +125,9 @@ ok("queue, retry all: statuses and errors land on S3's rows",
 
 # 2e. A save that fails after sending: the result is still the send's
 s3_memoria_reset(); assign(k_q, COLA0, envir = .mem)
-orig_save <- get("s3saveRDS", asNamespace("aws.s3"))
-utils::assignInNamespace("s3saveRDS", function(...) stop("simulated write failure"), "aws.s3")
+.mem_falla_escritura <- k_q   # the queue's save is refused (T30: s3_memoria, no own stub)
 res <- tryCatch(retry_queued_email("eq_1"), error = function(e) "error")
-utils::assignInNamespace("s3saveRDS", orig_save, "aws.s3")
+.mem_falla_escritura <- character(0)
 ok("queue, failed save after a good send: still TRUE (not re-sent as failed)", isTRUE(res))
 
 ok("email_queue is in .S3_SOLO_CRECEN", "email_queue.rds" %in% .S3_SOLO_CRECEN())

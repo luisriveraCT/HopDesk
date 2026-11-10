@@ -10,10 +10,9 @@
 # =============================================================================
 cat("=== test_borrar_partidas_cm23 ===\n\n")
 source("tests/helpers/s3_memoria.R")
-.mock <- list(s3readRDS = get("s3readRDS", asNamespace("aws.s3")),
-              s3saveRDS = get("s3saveRDS", asNamespace("aws.s3")),
-              object_exists = get("object_exists", asNamespace("aws.s3")))
-reinstalar <- function() for (nm in names(.mock)) utils::assignInNamespace(nm, .mock[[nm]], "aws.s3")
+# The script's dry run swaps aws.s3's writes for stop(): s3_memoria's six
+# fakes go back after each run (T30: the helper's own, not a copy of three).
+reinstalar <- s3_memoria_reinstalar
 
 .pass <- 0L; .fail <- 0L
 ok <- function(label, expr) {
