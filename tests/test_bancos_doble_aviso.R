@@ -32,6 +32,14 @@ local({
     if (object %in% .falla_escritura) stop("simulated S3 write failure")
     guardar_mem(x, object, bucket, ...)
   }, "aws.s3")
+  # A refused write refuses .s3_write's fallback too (put_object), as a down
+  # S3 would: s3_memoria now stores put_object in memory, where it used to
+  # reach the real aws.s3 -- the network -- and fail there.
+  poner_mem <- get("put_object", asNamespace("aws.s3"))
+  utils::assignInNamespace("put_object", function(file, object, bucket, ...) {
+    if (object %in% .falla_escritura) stop("simulated S3 write failure")
+    poner_mem(file, object, bucket, ...)
+  }, "aws.s3")
 })
 cargar <- function(archivo, nombres) {
   for (e in parse(archivo, keep.source = FALSE))
