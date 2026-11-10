@@ -72,4 +72,9 @@ test_that("app.R pone el contrato en shared desde el inicio y conecta el puente"
     expect_match(lista, paste0("\n    ", k, " +="), info = k)
   expect_match(src, "req_puente$abrir <- req_srv$abrir_por_provision", fixed = TRUE)
   expect_match(lista, "requisiciones_clip(", fixed = TRUE)
+  # E3b-1: "Crear provisión" opens Pasivos' manual provision form
+  expect_match(src, "pt <- pasivos_table_module_server(\"pt\", shared)", fixed = TRUE)
+  expect_match(src, "abrir_provision = pt$abrir_provision_manual", fixed = TRUE)
+  expect_lt(regexpr("pt <- pasivos_table_module_server", src, fixed = TRUE),
+            regexpr("req_srv <- requisicionesServer", src, fixed = TRUE))
 })

@@ -1681,7 +1681,9 @@ server <- function(input, output, session) {
   # ── Pasivos lifecycle observers and module ────────────────────────────────────
   setup_pasivos_observers(input, output, session, shared)
   setup_pasivos_module(input, output, session, shared)
-  pasivos_table_module_server("pt", shared)
+  # pt$abrir_provision_manual: the "+ Provisión manual" form, prefilled from a
+  # requisition (E3b); Requisiciones' "Crear provisión" opens it.
+  pt <- pasivos_table_module_server("pt", shared)
 
   # ── Stage 4: wizard, edit-confirm ─────────────────────────────────────────
   setup_pasivos_wizard(input, output, session, shared)
@@ -1692,7 +1694,8 @@ server <- function(input, output, session) {
 
   # ── Requisiciones (front E) ───────────────────────────────────────────────
   # Reads S3 only while its tab is open.
-  req_srv <- requisicionesServer("req", shared, activa = reactive(identical(input$nav, "REQ")))
+  req_srv <- requisicionesServer("req", shared, activa = reactive(identical(input$nav, "REQ")),
+                                 abrir_provision = pt$abrir_provision_manual)
   req_puente$abrir <- req_srv$abrir_por_provision
   # shared$req_version(): moves when this process wrote requisitions or their
   # evidence (the same in-memory counter the tab polls), so other tabs'
