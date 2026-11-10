@@ -133,7 +133,7 @@ tiersUI <- function(id) {
                 )
               ),
               div(class = "card-body p-0",
-                  DT::dataTableOutput(ns("usuarios_tbl")))
+                  tiers_usuarios_ui(ns("usuarios")))
             )
           ),
           column(width = 5, uiOutput(ns("perm_editor_ui")))
@@ -423,10 +423,56 @@ tiersUI <- function(id) {
   if (length(i) == 1) i else NULL
 }
 
-# A username as a JS string literal, escaped for an HTML attribute.
-.usuario_js <- function(u)
-  htmltools::htmlEscape(as.character(jsonlite::toJSON(as.character(u), auto_unbox = TRUE)),
-                        attribute = TRUE)
+# ── Usuarios on the table engine (T28) ──────────────────────────────────────
+# The viewer's list (usuarios_rv(): no deleted accounts, only the tiers it
+# may see -- decided on the server) as rows, id = the username: the same key
+# .fila_usuario() looks every action up by. The tier by its name; Estado
+# "activo" only when activo is TRUE (an NA reads Inactivo, not "NA").
+.usuarios_filas <- function(usuarios) {
+  vacia <- data.frame(id = character(0), codigo = character(0), nombre = character(0), nivel = character(0),
+                      estado = character(0), stringsAsFactors = FALSE)
+  if (is.null(usuarios) || !is.data.frame(usuarios) || !nrow(usuarios)) return(vacia)
+  u <- usuarios[!is.na(usuarios$username) & nzchar(usuarios$username) & !duplicated(usuarios$username), , drop = FALSE]
+  if (!nrow(u)) return(vacia)
+  data.frame(id = as.character(u$username),
+             codigo = as.character(if ("account_code" %in% names(u)) u$account_code else NA_character_),
+             nombre = as.character(u$display_name),
+             nivel = vapply(as.character(u$tier), function(t) if (is.na(t)) "" else nivel_nombre(t), character(1),
+                            USE.NAMES = FALSE),
+             estado = ifelse(u$activo %in% TRUE, "activo", "inactivo"), stringsAsFactors = FALSE)
+}
+
+tiers_usuarios_ui <- function(id) hd_table_ui(shiny::NS(id, "tabla"))
+
+# The table only: what ✎ and ✕ do (the permissions editor; the delete modal
+# with the last-live-Dev lock) stays in tiersServer. usuarios(): the
+# viewer's list; con_codigo(): staff sees the "#" column. editar() /
+# eliminar(): list(id = username, nonce) for ✎ (or a double click) / ✕ --
+# NULL (never req(): see tiers_solicitudes_server) for any other action or
+# without permitido(). ✕ skips the bar's confirmation (sin_confirmar): the
+# module's own modal says more (the lock, the protected tier).
+tiers_usuarios_server <- function(id, usuarios, con_codigo, permitido) {
+  moduleServer(id, function(input, output, session) {
+    datos <- reactive(.usuarios_filas(usuarios()))
+    columnas <- reactive(c(
+      if (isTRUE(con_codigo())) list(col_texto("codigo", "niveles.tablas.usuarios.codigo", ancho = 70)),
+      list(col_texto("nombre", "niveles.tablas.usuarios.nombre"),
+           col_texto("nivel", "niveles.tablas.usuarios.nivel"),
+           col_insignia("estado", "niveles.tablas.usuarios.estado", mapa = list(
+             activo   = list(texto = "niveles.tablas.usuarios.activo", tono = "exito"),
+             inactivo = list(texto = "niveles.tablas.usuarios.inactivo", tono = "neutro"))))))
+    t <- hd_table_server("tabla", tabla = "usuarios", datos = datos, columnas = columnas,
+      acciones_fila = c("editar", "eliminar"), sin_confirmar = "eliminar",
+      filtros = list(list(campo = "nivel"), list(campo = "estado")),
+      vacio = "niveles.tablas.usuarios.vacio")
+    accion <- function(nombres) reactive({
+      a <- t$accion()
+      if (is.null(a) || !a$accion %in% nombres || !isTRUE(permitido()) || !length(a$ids)) return(NULL)
+      list(id = a$ids[1], nonce = a$nonce)
+    })
+    list(datos = datos, editar = accion(c("editar", "detalle")), eliminar = accion("eliminar"))
+  })
+}
 
 # ── Cuentas bloqueadas on the table engine (T28) ─────────────────────────────
 # One row per locked account; its id is the lower-case username, the same key
@@ -1147,55 +1193,13 @@ tiersServer <- function(id, shared) {
       df
     })
 
-    # ── Users table ───────────────────────────────────────────────────────────
-    output$usuarios_tbl <- DT::renderDataTable({
-      req(req_authorized())
-      usuarios <- usuarios_rv()
-      req(!is.null(usuarios) && nrow(usuarios) > 0)
-
-      edit_input_id <- ns("trs_edit_click")
-      del_input_id  <- ns("trs_del_click")
-
-      tier_labels <- c(principal = "Principal", hopdesk = "Hopdesk", dev = "Dev",
-                       admin = "Admin", finance = "Finanzas", analysis = "Análisis")
-
-      df <- data.frame(
-        Nombre  = usuarios$display_name,
-        Tier    = tier_labels[usuarios$tier] %||% usuarios$tier,
-        Estado  = ifelse(isTRUE(usuarios$activo) | usuarios$activo == TRUE,
-                         "Activo", "Inactivo"),
-        # Each button sends the account's username, never its row position:
-        # a position names another account as soon as the list changes.
-        Editar  = vapply(usuarios$username, function(u) {
-          sprintf(
-            '<button class="btn btn-outline-primary btn-sm" onclick="Shiny.setInputValue(\'%s\',%s,{priority:\'event\'})">Editar</button>',
-            edit_input_id, .usuario_js(u))
-        }, character(1), USE.NAMES = FALSE),
-        Eliminar = vapply(usuarios$username, function(u) {
-          sprintf(
-            '<button class="btn btn-outline-danger btn-sm" onclick="Shiny.setInputValue(\'%s\',%s,{priority:\'event\'})"><i class=\"fa fa-trash\"></i></button>',
-            del_input_id, .usuario_js(u))
-        }, character(1), USE.NAMES = FALSE),
-        stringsAsFactors = FALSE,
-        check.names      = FALSE
-      )
-
-      if (is_hopdesk() || is_principal()) {
-        df <- cbind(
-          data.frame(`#` = usuarios$account_code, stringsAsFactors = FALSE, check.names = FALSE),
-          df
-        )
-      }
-
-      DT::datatable(df, escape = FALSE, selection = "none", rownames = FALSE,
-                    options = list(
-                      pageLength = 15, dom = "tp",
-                      language   = list(
-                        zeroRecords = "No se encontraron usuarios",
-                        info        = "Mostrando _START_ a _END_ de _TOTAL_ usuarios",
-                        infoEmpty   = "Sin registros",
-                        paginate    = list(previous = "Anterior", `next` = "Siguiente"))))
-    })
+    # ── Users table (T28: on the table engine) ────────────────────────────────
+    # The rows are usuarios_rv() -- already filtered on the server (deleted
+    # accounts out, only the tiers this viewer may see) -- by username. ✎ /
+    # double click and ✕ name the account; the two handlers below look it up
+    # with .fila_usuario() as before. "#" (account code) for staff only.
+    usuarios_t <- tiers_usuarios_server("usuarios", usuarios = usuarios_rv, permitido = req_authorized,
+                                        con_codigo = reactive(isTRUE(is_hopdesk()) || isTRUE(is_principal())))
 
     # ── New user form ─────────────────────────────────────────────────────────
     # shinyjs in a module server auto-prepends the namespace — use bare IDs here
@@ -1321,9 +1325,9 @@ tiersServer <- function(id, shared) {
     # pending_del_user holds the username awaiting confirmation
     pending_del_user <- reactiveVal(NULL)
 
-    observeEvent(input$trs_del_click, {
+    observeEvent(usuarios_t$eliminar(), {
       usuarios <- usuarios_rv()
-      idx      <- .fila_usuario(usuarios, input$trs_del_click)
+      idx      <- .fila_usuario(usuarios, usuarios_t$eliminar()$id)
       req(!is.null(idx))
 
       row      <- usuarios[idx, ]
@@ -1455,7 +1459,7 @@ tiersServer <- function(id, shared) {
     # The username being edited, never a row position.
     selected_user <- reactiveVal(NULL)
 
-    observeEvent(input$trs_edit_click, { selected_user(input$trs_edit_click) })
+    observeEvent(usuarios_t$editar(), { selected_user(usuarios_t$editar()$id) })
     observeEvent(input$btn_cancel_perms, { selected_user(NULL) })
 
     output$perm_editor_ui <- renderUI({

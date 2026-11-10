@@ -75,7 +75,8 @@ res <- tryCatch(testServer(tiersServer, args = list(shared = shared), {
   session$flushReact()
 
   # ── Editor open on "x" of A, then jump to B ────────────────────────────────
-  session$setInputs(trs_edit_click = "x")
+  # T28: ✎ on the engine's table (it names the account by username).
+  session$setInputs(`usuarios-tabla-accion` = list(accion = "editar", ids = "x", nonce = 1))
   ok("A: Editar on 'x' selects 'x'", identical(selected_user(), "x"))
   ok("A: the editor finds the 'x' of client A",
      identical(usuarios_rv()$display_name[.fila_usuario(usuarios_rv(), selected_user())], "x a"))
@@ -87,7 +88,7 @@ res <- tryCatch(testServer(tiersServer, args = list(shared = shared), {
      !nzchar(paste(output$perm_editor_ui$html %||% "", collapse = "")))
 
   # ── An account awaiting deletion, then jump back to A ─────────────────────
-  session$setInputs(trs_del_click = "x")
+  session$setInputs(`usuarios-tabla-accion` = list(accion = "eliminar", ids = "x", nonce = 2))   # T28: ✕
   ok("B: the trash on 'x' leaves 'x' awaiting confirmation", identical(pending_del_user(), "x"))
   cid("a"); session$flushReact()
   ok("after switching back to A, nothing awaits deletion", is.null(pending_del_user()))

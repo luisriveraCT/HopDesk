@@ -20,10 +20,10 @@ codigo <- readLines("R/tiers_module.R", encoding = "UTF-8", warn = FALSE)
 ex <- parse("R/tiers_module.R", keep.source = FALSE)
 for (e in ex) {
   if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
-      as.character(e[[2]]) %in% c(".fila_usuario", ".usuario_js"))
+      as.character(e[[2]]) %in% c(".fila_usuario"))
     eval(e, envir = globalenv())
 }
-ok("the helpers exist in tiers_module.R", exists(".fila_usuario") && exists(".usuario_js"))
+ok("the helper exists in tiers_module.R", exists(".fila_usuario"))
 
 # ── 1. The T19 scenario: the editor follows the account, not the row ─────────
 u <- data.frame(username = c("ana", "beto", "carla"),
@@ -51,11 +51,14 @@ ok("an empty or NULL list matches nothing",
 dup <- rbind(u, data.frame(username = "ana", tier = "dev"))
 ok("a username twice in the list matches nothing (never guess)", is.null(.fila_usuario(dup, "ana")))
 
-# ── 3. The button carries a safe JS string ──────────────────────────────────
-ok("plain username → quoted JS string, escaped for the attribute",
-   identical(.usuario_js("carla"), "&quot;carla&quot;"))
-ok("quotes and markup in a username cannot break out of the attribute",
-   !grepl("[<>\"']", .usuario_js("a\"b'<x>")))
+# ── 3. T28: the table is the engine's; ✎ and ✕ come with the row's id ───────
+# (the hand-made Editar/🗑 buttons and their JS string, .usuario_js, are gone:
+# the engine sends the username, never HTML built here)
+ok("no hand-made Editar/🗑 button is left (no setInputValue for trs_edit/del_click)",
+   !any(grepl("trs_(edit|del)_click|\\.usuario_js|DT::", codigo)))
+ok("✎ and ✕ reach the handlers from the table, by the row's id (the username)",
+   any(grepl("selected_user(usuarios_t$editar()$id)", codigo, fixed = TRUE)) &&
+   any(grepl(".fila_usuario(usuarios, usuarios_t$eliminar()$id)", codigo, fixed = TRUE)))
 
 # ── 4. Guardian on the source: no position comes back ───────────────────────
 ok("no Editar/🗑 button sends a row number (%d)",
