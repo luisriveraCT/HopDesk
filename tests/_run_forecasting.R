@@ -12,7 +12,6 @@ rscript_bin <- file.path(R.home("bin"), "Rscript")
 .modules <- c(
   "tests/test_forecasting_schemas.R",
   "tests/test_forecasting_methods.R",
-  "tests/test_forecasting_resolve.R",
   "tests/test_forecasting_sources.R"
 )
 

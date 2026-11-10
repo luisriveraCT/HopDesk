@@ -2,16 +2,16 @@
 # tests/test_estimaciones_escritura_segura.R
 # T26 · 1: the Pasivos estimates (pasivos_estimates, they feed Pasivos'
 # amounts) are written on S3's table as it is now, through
-# modificar_pasivos_estimates(). Their writers -- forecasting_service.R's
-# set_estimate / freeze / unfreeze, the ones the app runs (shinyapps.io loads
-# R/ alphabetically), and forecasting_resolve.R's -- read with
+# modificar_pasivos_estimates(). Their writers -- set_estimate / freeze /
+# unfreeze, in forecasting_resolve.R (the only definition since
+# pron-duplicadas; they were forecasting_service.R's) -- read with
 # error -> empty table and saved the whole table: a failed read saved just
 # the new row over every other metric's estimate (unfreeze saved it empty).
 # On the in-memory S3 of tests/helpers/s3_memoria.R.
 #   A  a failed read: nothing is written, the estimates stay, and the error
 #      reaches the caller (set / freeze / unfreeze);
 #   B  a good read: only that metric changes, the others stay;
-#   C  forecasting_resolve.R's two writers: a failed read writes nothing;
+#   (C, the second copy of the writers, went with pron-duplicadas)
 #   D  no client: nothing is read or written;
 #   E  the Pasivos wizard tells the user when the rate could not be recorded.
 # Run from project root:  Rscript tests/test_estimaciones_escritura_segura.R
@@ -19,7 +19,7 @@
 suppressPackageStartupMessages({ library(shiny); library(dplyr); library(tibble) })
 source("tests/helpers/s3_memoria.R")
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
-for (f in c("R/pasivos_schemas.R", "R/bancos_persistence.R", "R/pasivos_persistence.R", "R/forecasting_service.R"))
+for (f in c("R/pasivos_schemas.R", "R/bancos_persistence.R", "R/pasivos_persistence.R", "R/forecasting_resolve.R"))
   suppressMessages(source(f))
 pasivos_log_audit <- function(...) invisible(NULL)
 log_action <- function(...) invisible(NULL)
@@ -42,7 +42,7 @@ en_s3   <- function() get(KEY, envir = .mem)
 falla_lectura <- function() .mem_falla <<- KEY
 intento <- function(expr) tryCatch({ callado(expr); NULL }, error = function(e) conditionMessage(e))
 
-# ── A: a failed read writes nothing (service.R, what the app runs) ───────────
+# ── A: a failed read writes nothing ──────────────────────────────────────────
 CASOS <- list(
   "set_estimate" = function() forecasting_set_estimate("cetes", Sys.Date(), 11.1, client_id = CID),
   "freeze"       = function() forecasting_freeze_metric("sofr", 5, client_id = CID),
@@ -74,25 +74,6 @@ callado(forecasting_freeze_metric("sofr", 5, client_id = CID))
 s <- en_s3()
 ok("udis" %in% s$metric && sum(s$metric == "sofr" & s$is_frozen) == 1L,
    "B4 freeze sobre lo fresco: conserva la estimación que otra sesión agregó")
-
-# ── C: forecasting_resolve.R's writers ───────────────────────────────────────
-r <- new.env(parent = globalenv())
-for (e in parse("R/forecasting_resolve.R", keep.source = FALSE))
-  if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) &&
-      as.character(e[[2]]) %in% c("forecasting_set_estimate", "forecasting_unfreeze_metric", ".normalize_legacy_metric_id", ".fcs_legacy_map"))
-    eval(e, r)
-r$load_forecasting_series_observations <- function(...) tibble::tibble(metric_id = character(), fecha = as.Date(character()),
-                                                                          source_id = character())
-r$save_forecasting_series_observations <- function(...) invisible(NULL)
-if (is.null(r$.normalize_legacy_metric_id)) r$.normalize_legacy_metric_id <- function(x) x
-for (n in c("forecasting_set_estimate", "forecasting_unfreeze_metric")) {
-  sembrar(); antes <- .mem_escrituras; falla_lectura()
-  suppressWarnings(callado(if (n == "forecasting_set_estimate") r[[n]]("cetes", Sys.Date(), 11.1, client_id = CID)
-                           else r[[n]]("tiie28", client_id = CID)))
-  .mem_falla <- character()
-  ok(.mem_escrituras == antes && identical(nrow(en_s3()), 3L),
-     sprintf("C resolve.R %s, lectura fallida: no escribe y las 3 estimaciones siguen", n))
-}
 
 # ── D: no client ─────────────────────────────────────────────────────────────
 sembrar(); antes <- .mem_escrituras

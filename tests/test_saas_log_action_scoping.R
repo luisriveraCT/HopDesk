@@ -32,8 +32,9 @@ cat("── log_action() call-site scoping (static) ─────────�
   "R/pasivos_audit.R",
   # Stage 6 completeness-sweep additions (2026-07-31): every file that gained
   # log_action() calls while closing the punch list. Excluded on purpose:
-  # R/forecasting_metric_registry.R, R/forecasting_resolve.R,
-  # R/staging_browse_module.R -- their log_action() calls are inside plain
+  # R/forecasting_metric_registry.R, R/staging_browse_module.R (and
+  # R/forecasting_resolve.R until pron-duplicadas took its log_action() calls
+  # out, 2026-11-10) -- their log_action() calls are inside plain
   # functions with no `shared` object in scope (system/background actions or
   # a client_id-only reactive param), so they pass client_id/
   # viewer_home_client_id as explicit NULL literals rather than threading a

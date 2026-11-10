@@ -27,7 +27,7 @@ cargar("R/global.R", c("fmt_money", "CURRENCIES"))
 cargar("R/ui_components.R", "app_styles")
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/pasivos_schemas.R", "R/bancos_persistence.R", "R/pasivos_persistence.R",
-            "R/pasivos_capabilities.R", "R/pasivos_audit.R", "R/forecasting_service.R",
+            "R/pasivos_capabilities.R", "R/pasivos_audit.R", "R/forecasting_resolve.R",
             "R/policy_engine.R", "R/pasivos_engine.R", "R/pasivos_wizard_validate.R",
             "R/pasivos_wizard_module.R", "R/pasivos_list_module.R"))
   suppressMessages(sys.source(file.path(raiz, f), envir = globalenv()))

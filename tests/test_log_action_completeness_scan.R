@@ -266,8 +266,7 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     #   and forecasting_module.R's sub_save/global_sub_save handlers
     #   (action="editar_suscripcion"/"crear_suscripcion_global").
     #   save_forecasting_series_observations is called from
-    #   forecasting_set_estimate (action="set_estimate"/"congelar_metrica")
-    #   and fcs_fetch_and_store (logged at ITS OWN call sites below).
+    #   fcs_fetch_and_store (logged at ITS OWN call sites below).
     #   save_forecasting_manual_curves has no live call site yet (manual-curve
     #   editor UI is "Etapa 6.2" -- not built); log at that call site when it
     #   ships, not inside this generic writer.
@@ -287,7 +286,7 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     # .guardar_subs callers (sub_save, global_sub_save, plus the *_fallido
     # row on a failed write), and forecasting_set_estimate /
     # forecasting_freeze_metric / forecasting_unfreeze_metric
-    # (pasivos_log_audit) and their forecasting_resolve.R twins (log_action).
+    # (pasivos_log_audit).
     "modificar_forecasting_subscriptions", "modificar_pasivos_estimates",
     # Found 2026-09-03: .apply_move/.clear_moves (R/ledger_module.R) no
     # longer call log_action() directly in their own body -- they now pass a

@@ -42,7 +42,7 @@ source("R/bancos_persistence.R")   # for .schema_bancos_confirmados in group 3
 source("R/pasivos_persistence.R")
 source("R/pasivos_capabilities.R")
 source("R/pasivos_audit.R")
-source("R/forecasting_service.R")
+source("R/forecasting_resolve.R")
 
 # ── Test runner helpers ───────────────────────────────────────────────────────
 .pass <- 0L

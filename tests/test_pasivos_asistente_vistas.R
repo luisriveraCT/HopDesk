@@ -15,7 +15,7 @@ suppressPackageStartupMessages({
 if (!exists("CURRENCIES")) CURRENCIES <- c("MXN", "USD", "EUR")
 source("R/persistence.R")
 for (f in c("R/pasivos_schemas.R", "R/bancos_persistence.R", "R/pasivos_persistence.R",
-            "R/pasivos_capabilities.R", "R/pasivos_audit.R", "R/forecasting_service.R",
+            "R/pasivos_capabilities.R", "R/pasivos_audit.R", "R/forecasting_resolve.R",
             "R/policy_engine.R", "R/pasivos_engine.R", "R/pasivos_observers.R",
             "R/pasivos_wizard_validate.R", "R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R",
             "R/hd_columnas.R", "R/hd_table.R", "R/pasivos_wizard_module.R"))

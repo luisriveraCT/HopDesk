@@ -1,227 +1,171 @@
 # =============================================================================
 # R/forecasting_resolve.R
-# Subscription-aware forecasting resolver. Replaces forecasting_service.R.
-# Public signature is backward-compatible with Stage 0.
+# Public API of the Forecasting estimates. The ONLY way other modules read or
+# write estimate values (Pasivos' engine and wizard, Flujo's export, app.R's
+# SOFR/TIIE28 refresh).
+#
+# One definition (pron-duplicadas, 2026-11-10). These five functions used to
+# be defined twice, here and in forecasting_service.R, with different
+# behavior; shinyapps.io loads R/ alphabetically, so prod ran
+# forecasting_service.R's while source("app.R") (T15, dev) ran this file's.
+# This file now holds forecasting_service.R's bodies, unchanged, so prod
+# behaves as before and every way of starting the app runs the same code.
+# The subscription-aware resolver that was here (.resolve_method & co.) had
+# no caller prod reached; it is in git history (see the commit message).
+# Guarded by tests/test_pronosticos_una_version.R.
+#
+# Behavior contract:
+#   forecasting_get_estimate() always returns numeric scalar or NA. Never throws.
+#   Frozen values override everything.
+#   Never blocks on I/O for more than one S3 read.
 # =============================================================================
 
-# ── Legacy metric ID normalization ────────────────────────────────────────────
+# Get an estimate for a metric on a specific date.
+# @param metric  character: "fx_usd_mxn" | "sofr" | "tiie28" | future
+# @param fecha   Date: the date this estimate applies to
+# @param method  character or NULL: method override; ignored in Stage 0 stub
+# @return numeric scalar; NA_real_ if no estimate available
+forecasting_get_estimate <- function(metric, fecha, method = NULL, client_id = NULL) {
+  est <- tryCatch(load_pasivos_estimates(client_id = client_id), error = function(e) NULL)
+  if (is.null(est) || !nrow(est)) return(NA_real_)
 
-.fcs_legacy_map <- c(
-  fx_usd_mxn  = "usd_mxn",
-  fx_eur_usd  = "eur_usd",
-  fx_eur_mxn  = "eur_mxn",
-  fx_gbp_usd  = "gbp_usd",
-  fx_gbp_mxn  = "gbp_mxn",
-  fx_jpy_mxn  = "jpy_mxn",
-  fx_cad_mxn  = "cad_mxn"
-  # Rate metrics (sofr, tiie28, etc.) already match their canonical IDs.
-)
+  matches <- est[est$metric == metric, , drop = FALSE]
+  if (!nrow(matches)) return(NA_real_)
 
-.normalize_legacy_metric_id <- function(metric) {
-  mapped <- .fcs_legacy_map[metric]
-  if (!is.na(mapped)) unname(mapped) else metric
+  # Frozen wins over everything
+  frozen <- matches[!is.na(matches$is_frozen) & matches$is_frozen, , drop = FALSE]
+  if (nrow(frozen)) return(frozen$value[1])
+
+  fecha <- as.Date(fecha)
+
+  # Exact date match
+  exact <- matches[!is.na(matches$fecha) & matches$fecha == fecha, , drop = FALSE]
+  if (nrow(exact)) return(exact$value[1])
+
+  # Most recent value on or before fecha
+  past <- matches[!is.na(matches$fecha) & matches$fecha <= fecha, , drop = FALSE]
+  if (nrow(past)) return(past$value[order(past$fecha, decreasing = TRUE)[1]])
+
+  # No data on or before fecha; return earliest known value as placeholder
+  ord <- order(matches$fecha)
+  matches$value[ord[1]]
 }
 
-# ── Method resolution ─────────────────────────────────────────────────────────
-
-.resolve_method <- function(metric_id, method_override, consumer_type, consumer_id,
-                             client_id = NULL) {
-  methods_catalog <- tryCatch(load_forecasting_methods(),
-                               error = function(e) .schema_forecasting_methods())
-
-  # a) Explicit override
-  if (!is.null(method_override) && nzchar(method_override %||% "")) {
-    m <- methods_catalog[methods_catalog$method_id == method_override, , drop = FALSE]
-    if (nrow(m)) {
-      return(list(method = m[1, ], params = list(), subscription_id = NA_character_))
-    }
-  }
-
-  subs <- tryCatch(
-    {
-      s <- load_forecasting_subscriptions(client_id = client_id)
-      s[!is.na(s$active) & s$active, , drop = FALSE]
-    },
-    error = function(e) .schema_forecasting_subscriptions()
-  )
-
-  # b) Consumer-specific subscription
-  if (!is.null(consumer_type) && !is.null(consumer_id) &&
-      nzchar(consumer_type %||% "") && nzchar(consumer_id %||% "")) {
-    s <- subs[
-      !is.na(subs$consumer_type) & subs$consumer_type == consumer_type &
-      !is.na(subs$consumer_id)   & subs$consumer_id   == consumer_id &
-      !is.na(subs$metric_id)     & subs$metric_id     == metric_id,
-      , drop = FALSE
-    ]
-    if (nrow(s)) {
-      m <- methods_catalog[methods_catalog$method_id == s$method_id[1], , drop = FALSE]
-      if (nrow(m)) {
-        return(list(method          = m[1, ],
-                    params          = s$method_params[[1]] %||% list(),
-                    subscription_id = s$subscription_id[1]))
-      }
-    }
-  }
-
-  # c) Global-default subscription
-  s <- subs[
-    !is.na(subs$consumer_type) & subs$consumer_type == "global_default" &
-    !is.na(subs$metric_id)     & subs$metric_id     == metric_id,
-    , drop = FALSE
-  ]
-  if (nrow(s)) {
-    m <- methods_catalog[methods_catalog$method_id == s$method_id[1], , drop = FALSE]
-    if (nrow(m)) {
-      return(list(method          = m[1, ],
-                  params          = s$method_params[[1]] %||% list(),
-                  subscription_id = s$subscription_id[1]))
-    }
-  }
-
-  # d) Metric default_method_id
-  metrics <- tryCatch(load_forecasting_metrics(client_id = client_id), error = function(e) .schema_forecasting_metrics())
-  metric_row <- metrics[metrics$metric_id == metric_id, , drop = FALSE]
-  if (!nrow(metric_row)) return(NULL)
-  m <- methods_catalog[methods_catalog$method_id == metric_row$default_method_id[1], , drop = FALSE]
-  if (!nrow(m)) return(NULL)
-  list(method = m[1, ], params = list(), subscription_id = NA_character_)
-}
-
-# ── Public API ────────────────────────────────────────────────────────────────
-
-#' Get a forecast estimate for a metric at a specific date.
-#'
-#' Backward-compatible with Stage 0 signature. New: subscription-aware resolution.
-#'
-#' @param metric        Metric ID (e.g. "usd_mxn") or legacy name (e.g. "fx_usd_mxn").
-#' @param fecha         Date for the estimate.
-#' @param method        Optional method override; NULL = use subscription resolver.
-#' @param consumer_type Optional consumer type for per-consumer subscriptions.
-#' @param consumer_id   Optional consumer ID for per-consumer subscriptions.
-#' @return numeric scalar; NA_real_ if no estimate available.
-forecasting_get_estimate <- function(metric, fecha,
-                                      method        = NULL,
-                                      consumer_type = NULL,
-                                      consumer_id   = NULL,
-                                      client_id     = NULL) {
-  tryCatch({
-    metric_id <- .normalize_legacy_metric_id(metric)
-    fecha     <- as.Date(fecha)
-
-    resolved <- .resolve_method(metric_id, method, consumer_type, consumer_id,
-                                client_id = client_id)
-    if (is.null(resolved)) return(NA_real_)
-
-    obs_all <- tryCatch(load_forecasting_series_observations(client_id = client_id),
-                        error = function(e) .schema_forecasting_series_observations())
-    obs <- obs_all[!is.na(obs_all$metric_id) & obs_all$metric_id == metric_id, , drop = FALSE]
-
-    apply_fn <- get(resolved$method$apply_fn, envir = globalenv(), inherits = TRUE)
-    apply_fn(
-      metric_id   = metric_id,
-      target_date = fecha,
-      params      = c(resolved$params, list(subscription_id = resolved$subscription_id)),
-      observations = obs
-    )
-  }, error = function(e) {
-    warning("[forecasting] forecasting_get_estimate error: ", conditionMessage(e))
-    NA_real_
-  })
-}
-
-# ── Backward-compatible helpers from Stage 0 ─────────────────────────────────
-# These shim the old pasivos_estimates.rds interface so Stage 0-5 code continues
-# to work. In 6.2, pasivos_wizard_module.R will be updated to use the new store.
-
+# Set or update an estimate. Upserts by (metric, fecha).
+# @param metric        character
+# @param fecha         Date
+# @param value         numeric
+# @param source_method character; default "manual"
+# @param is_frozen     logical; default FALSE
+# @param user          character; default "system"
+# @return invisible(TRUE)
 forecasting_set_estimate <- function(metric, fecha, value,
                                       source_method = "manual",
                                       is_frozen     = FALSE,
                                       user          = "system",
                                       client_id     = NULL) {
-  metric_id <- .normalize_legacy_metric_id(metric)
-  obs <- tibble::tibble(
-    metric_id        = metric_id,
-    fecha            = as.Date(fecha),
-    value            = as.numeric(value),
-    source_id        = "manual",
-    observation_type = "manual_entry",
-    fetched_at       = Sys.time(),
-    fetched_by       = as.character(user),
-    notes            = as.character(source_method)
+  fecha   <- as.Date(fecha)
+  new_row <- tibble::tibble(
+    metric        = as.character(metric),
+    fecha         = fecha,
+    value         = as.numeric(value),
+    source_method = as.character(source_method),
+    is_frozen     = isTRUE(is_frozen),
+    updated_by    = as.character(user),
+    updated_at    = Sys.time()
   )
-  tryCatch({
-    existing <- load_forecasting_series_observations(client_id = client_id)
-    # Upsert: remove same (metric_id, fecha, source_id) then add new
-    existing <- existing[
-      !(existing$metric_id == metric_id &
-        !is.na(existing$fecha) & existing$fecha == obs$fecha &
-        existing$source_id == "manual"), , drop = FALSE
-    ]
-    updated <- dplyr::bind_rows(existing, obs)
-    save_forecasting_series_observations(updated, client_id = client_id)
-    # Also maintain old pasivos_estimates store for Stage 0-5 backward compat,
-    # on S3's estimates as they are now (T26): a failed read saves nothing.
-    new_row <- tibble::tibble(
-      metric = as.character(metric), fecha = as.Date(fecha),
-      value = as.numeric(value), source_method = as.character(source_method),
-      is_frozen = isTRUE(is_frozen), updated_by = as.character(user),
-      updated_at = Sys.time()
-    )
-    modificar_pasivos_estimates(client_id, function(old_est) {
-      idx <- which(old_est$metric == metric & !is.na(old_est$fecha) & old_est$fecha == as.Date(fecha))
-      if (length(idx)) { old_est[idx[1], ] <- new_row; old_est }
-      else dplyr::bind_rows(old_est, new_row)
-    })
-    tryCatch(
-      log_action(
-        user        = user, module = "forecasting",
-        action      = if (isTRUE(is_frozen)) "congelar_metrica" else "set_estimate",
-        description = sprintf('Estimado manual para "%s" en %s = %s (método: %s)%s',
-                              metric_id, format(as.Date(fecha), "%d/%m/%Y"), value, source_method,
-                              if (isTRUE(is_frozen)) " [congelado]" else ""),
-        target_id   = metric_id,
-        metadata    = list(metric_id = metric_id, fecha = as.character(as.Date(fecha)),
-                           value = as.numeric(value), source_method = source_method,
-                           is_frozen = isTRUE(is_frozen)),
-        client_id             = client_id,
-        viewer_home_client_id = NULL
-      ),
-      error = function(e) NULL
-    )
-  }, error = function(e) warning("[forecasting] forecasting_set_estimate: ", conditionMessage(e)))
-  invisible(TRUE)
-}
+  before_est <- NULL
 
-forecasting_freeze_metric <- function(metric, value, user = "system", client_id = NULL) {
-  forecasting_set_estimate(metric, Sys.Date(), value, "manual", is_frozen = TRUE, user = user,
-                           client_id = client_id)
-  invisible(TRUE)
-}
-
-forecasting_unfreeze_metric <- function(metric, user = "system", client_id = NULL) {
-  tryCatch({
-    modificar_pasivos_estimates(client_id, function(current) {   # on S3's estimates as they are now (T26)
-      current$is_frozen[current$metric == metric] <- FALSE
+  # On S3's estimates as they are now (T26): a failed read stop()s and
+  # nothing is saved -- it used to save just this row over every other one.
+  modificar_pasivos_estimates(client_id, function(current) {
+    existing_idx <- which(current$metric == metric & !is.na(current$fecha) &
+                            current$fecha == fecha)
+    # Snapshot before overwrite -- previously only `after` was logged, so
+    # overwriting an existing estimate had no recorded "changed from" value.
+    before_est <<- if (length(existing_idx)) as.list(current[existing_idx[1], ]) else NULL
+    if (length(existing_idx)) {
+      current[existing_idx[1], ] <- new_row
       current
-    })
-    tryCatch(
-      log_action(
-        user        = user, module = "forecasting", action = "descongelar_metrica",
-        description = sprintf('Métrica "%s" descongelada (vuelve a estimado automático)', metric),
-        target_id   = metric,
-        metadata    = list(metric = metric),
-        client_id             = client_id,
-        viewer_home_client_id = NULL
-      ),
-      error = function(e) NULL
-    )
-  }, error = function(e) NULL)
+    } else {
+      dplyr::bind_rows(current, new_row)
+    }
+  })
+
+  pasivos_log_audit(
+    action_type = "estimate.changed",
+    user        = user,
+    target_kind = "estimate",
+    target_id   = paste0(metric, "@", as.character(fecha)),
+    before      = before_est,
+    after       = list(metric = metric, fecha = as.character(fecha),
+                       value = value, source_method = source_method,
+                       is_frozen = is_frozen),
+    client_id   = client_id
+  )
+
   invisible(TRUE)
 }
 
+# Pin a metric to a single hypothetical value (all dates share this frozen value).
+# @param metric  character
+# @param value   numeric
+# @param user    character
+forecasting_freeze_metric <- function(metric, value, user = "system", client_id = NULL) {
+  frozen_row <- tibble::tibble(
+    metric        = as.character(metric),
+    fecha         = Sys.Date(),
+    value         = as.numeric(value),
+    source_method = "manual",
+    is_frozen     = TRUE,
+    updated_by    = as.character(user),
+    updated_at    = Sys.time()
+  )
+  # On S3's estimates as they are now (T26): unfreeze this metric's rows,
+  # then add the synthetic frozen row.
+  modificar_pasivos_estimates(client_id, function(current) {
+    current$is_frozen[current$metric == metric] <- FALSE
+    dplyr::bind_rows(current, frozen_row)
+  })
+
+  pasivos_log_audit(
+    action_type = "estimate.frozen",
+    user        = user,
+    target_kind = "estimate",
+    target_id   = metric,
+    after       = list(metric = metric, frozen_value = value),
+    client_id   = client_id
+  )
+
+  invisible(TRUE)
+}
+
+# Remove the freeze on a metric so live/interpolated values are used again.
+# @param metric  character
+# @param user    character
+forecasting_unfreeze_metric <- function(metric, user = "system", client_id = NULL) {
+  # On S3's estimates as they are now (T26): a failed read saves nothing --
+  # it used to save an empty table.
+  modificar_pasivos_estimates(client_id, function(current) {
+    current$is_frozen[current$metric == metric] <- FALSE
+    current
+  })
+
+  pasivos_log_audit(
+    action_type = "estimate.unfrozen",
+    user        = user,
+    target_kind = "estimate",
+    target_id   = metric,
+    client_id   = client_id
+  )
+
+  invisible(TRUE)
+}
+
+# List all known metrics in the estimates store.
+# @return character vector (may be empty)
 forecasting_list_metrics <- function(client_id = NULL) {
-  m <- tryCatch(load_forecasting_metrics(client_id = client_id), error = function(e) NULL)
-  if (!is.null(m) && nrow(m)) return(m$metric_id)
-  character(0)
+  est <- tryCatch(load_pasivos_estimates(client_id = client_id), error = function(e) NULL)
+  if (is.null(est) || !nrow(est)) return(character(0))
+  unique(est$metric)
 }

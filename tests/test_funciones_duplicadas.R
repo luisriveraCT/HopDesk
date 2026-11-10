@@ -7,11 +7,10 @@
 # Run from the repo root:  Rscript tests/test_funciones_duplicadas.R
 library(testthat)
 
-# forecasting_service.R was replaced by forecasting_resolve.R and the app no
-# longer sources it, but eight Pasivos tests still do; its five functions are
-# known duplicates until those tests move to forecasting_resolve.R.
-KNOWN <- c("forecasting_freeze_metric", "forecasting_get_estimate", "forecasting_list_metrics",
-           "forecasting_set_estimate", "forecasting_unfreeze_metric")
+# None left. The last five (forecasting_get_estimate & co., in
+# forecasting_service.R and forecasting_resolve.R) went with pron-duplicadas,
+# 2026-11-10: shinyapps.io ran one copy, source("app.R") the other.
+KNOWN <- character(0)
 
 definiciones <- function(f) {
   ex <- tryCatch(parse(f, keep.source = FALSE), error = function(e) NULL)

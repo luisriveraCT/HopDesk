@@ -220,7 +220,7 @@ suppressPackageStartupMessages(library(shiny))
   }
 
   # C7: forecasting_set_estimate (estimate.changed) -- overwrite lost the old value.
-  fc_txt <- readLines("R/forecasting_service.R", warn = FALSE)
+  fc_txt <- readLines("R/forecasting_resolve.R", warn = FALSE)
   b7 <- .scan_block(fc_txt, "^forecasting_set_estimate <- function")
   ok("C7 estimate.changed: found forecasting_set_estimate() to scan", !is.na(b7))
   if (!is.na(b7)) {
