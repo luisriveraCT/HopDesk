@@ -691,6 +691,77 @@ tiers_clientes_server <- function(id, permitido, refresh) {
   })
 }
 
+# ── Accesos de salto activos on the table engine (T28) ──────────────────────
+# What is left of each access, in words (what the old .fmt_remaining() said,
+# now from the dictionary): no expiry, expired, minutes, hours and minutes,
+# or days.
+.accesos_quedan <- function(expira, ahora = Sys.time()) {
+  secs <- as.numeric(difftime(expira, ahora, units = "secs"))
+  vapply(seq_along(secs), function(i) {
+    s <- secs[i]
+    if (is.na(expira[i])) return(tr("niveles.tablas.accesos.sin_expiracion"))
+    if (!is.finite(s) || s <= 0) return(tr("niveles.tablas.accesos.expirado"))
+    if (s < 3600) return(gsub("{n}", round(s / 60), tr("niveles.tablas.accesos.min"), fixed = TRUE))
+    if (s < 86400)
+      return(gsub("{m}", sprintf("%02.0f", floor((s %% 3600) / 60)),
+                  gsub("{h}", floor(s / 3600), tr("niveles.tablas.accesos.horas"), fixed = TRUE), fixed = TRUE))
+    gsub("{n}", floor(s / 86400), tr("niveles.tablas.accesos.dias"), fixed = TRUE)
+  }, character(1))
+}
+
+# The active accesses (not revoked, not expired), id = the grant's id.
+# Principal sees everyone's; any other staff only its own (grantee == me),
+# decided here on the server.
+.accesos_filas <- function(grants, registry, principal, me, ahora = Sys.time()) {
+  vacia <- data.frame(id = character(0), usuario = character(0), cliente = character(0), quedan = character(0),
+                      expira = as.POSIXct(character(0)), stringsAsFactors = FALSE)
+  if (is.null(grants) || !is.data.frame(grants) || !nrow(grants)) return(vacia)
+  expira <- as.POSIXct(grants$expires_at)
+  g <- grants[!(grants$revoked %in% TRUE) & (is.na(expira) | expira > ahora) & !is.na(grants$id) &
+                nzchar(grants$id), , drop = FALSE]
+  if (!isTRUE(principal)) g <- g[!is.na(g$grantee) & g$grantee %in% me, , drop = FALSE]
+  g <- g[!duplicated(g$id), , drop = FALSE]
+  if (!nrow(g)) return(vacia)
+  nm <- if (is.data.frame(registry) && nrow(registry)) registry$display_name[match(g$client_id, registry$client_id)] else NA
+  exp_g <- as.POSIXct(g$expires_at)
+  data.frame(id = as.character(g$id), usuario = as.character(g$grantee),
+             cliente = ifelse(is.na(nm) | !nzchar(nm), as.character(g$client_id), nm),
+             quedan = .accesos_quedan(exp_g, ahora), expira = exp_g, stringsAsFactors = FALSE)
+}
+
+tiers_accesos_ui <- function(id) hd_table_ui(shiny::NS(id, "tabla"))
+
+# permitido(): HopDesk staff (the tab). principal(): sees everyone's, with
+# the Usuario column; anyone else only its own. me(): the viewer's user.
+# puede_revocar(): who gets ⊘ (Principal with can_manage_hopdesk_perms);
+# for anyone else the button is hidden and revocar() stays NULL.
+tiers_accesos_server <- function(id, permitido, principal, me, puede_revocar, refresh) {
+  moduleServer(id, function(input, output, session) {
+    datos <- reactive({
+      if (!isTRUE(permitido())) return(NULL)
+      refresh()
+      registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())   # names only
+      .accesos_filas(leer_hd_admin("hop_grants.rds", .schema_hop_grants),   # strict (P7)
+                     registry, principal = isTRUE(principal()), me = me())
+    })
+    columnas <- reactive(c(
+      if (isTRUE(principal())) list(col_texto("usuario", "niveles.tablas.accesos.usuario")),
+      list(col_texto("cliente", "niveles.tablas.accesos.cliente"),
+           col_texto("quedan", "niveles.tablas.accesos.quedan"),
+           col_fecha_hora("expira", "niveles.tablas.accesos.expira"))))
+    t <- hd_table_server("tabla", tabla = "accesos_salto", datos = datos, columnas = columnas,
+      acciones_fila = "revocar",
+      acciones_ocultas = reactive(if (isTRUE(puede_revocar())) character(0) else "revocar"),
+      vacio = "niveles.tablas.accesos.vacio")
+    revocar <- reactive({
+      a <- t$accion()
+      if (is.null(a) || !identical(a$accion, "revocar") || !isTRUE(puede_revocar()) || !length(a$ids)) return(NULL)
+      list(id = a$ids[1], nonce = a$nonce)
+    })
+    list(datos = datos, revocar = revocar)
+  })
+}
+
 # ── Contactos activos (one client's, in its modal) on the table engine (T28) ─
 .contactos_filas <- function(contacts) {
   vacia <- data.frame(id = character(0), nombre = character(0), email = character(0), cargo = character(0),
@@ -3117,15 +3188,6 @@ tiersServer <- function(id, shared) {
       "Sin límite" = "0"
     )
 
-    .fmt_remaining <- function(exp_time) {
-      if (length(exp_time) == 1L && is.na(exp_time)) return("Sin expiración")
-      secs <- as.numeric(difftime(exp_time, Sys.time(), units = "secs"))
-      if (!is.finite(secs) || secs <= 0) return("expirado")
-      if (secs < 3600)  return(sprintf("%d min",  round(secs / 60)))
-      if (secs < 86400) return(sprintf("%.0fh %02.0fmin", floor(secs / 3600), (secs %% 3600) / 60))
-      sprintf("%d días", floor(secs / 86400))
-    }
-
     .client_label <- function(cid, registry) {
       nm <- registry$display_name[registry$client_id == cid]
       if (length(nm) && nzchar(nm[1])) nm[1] else cid
@@ -3139,23 +3201,15 @@ tiersServer <- function(id, shared) {
       nms[which.min(abs(lut - secs))]
     }
 
+    # The tab's frame depends on the role only (T28 P6): the active accesses
+    # are a table of the engine (tiers_accesos_server), fixed here; the
+    # request cards and the forms (hop_dinamico) follow hop_refresh.
     output$hop_section <- renderUI({
       can_see <- isTRUE(shared$current_user_info()$is_staff)
       if (!can_see) {
         return(div(class = "alert alert-warning mt-3",
                    icon("lock"), " Solo disponible para cuentas Hopdesk y Principal."))
       }
-      hop_refresh()
-
-      me        <- shared$current_user() %||% ""
-      principal <- isTRUE(is_principal())
-      reqs      <- tryCatch(load_hop_requests(), error = function(e) .schema_hop_requests())
-      grants    <- tryCatch(load_hop_grants(),   error = function(e) .schema_hop_grants())
-      registry  <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
-      active_reg <- registry[
-        !is.na(registry$status) & registry$status == "active" &
-        registry$client_id != "hd-admin", , drop = FALSE]
-
       header_row <- div(
         class = "d-flex align-items-center justify-content-between mt-3 mb-3",
         tags$h6(class = "fw-semibold mb-0",
@@ -3163,6 +3217,26 @@ tiersServer <- function(id, shared) {
         actionButton(ns("btn_hop_refresh"), icon("rotate"),
                      class = "btn btn-sm btn-outline-secondary")
       )
+      tabla <- div(class = "mb-3",
+        tags$p(class = "small fw-semibold text-muted mb-1", tr("niveles.tablas.accesos.titulo")),
+        tiers_accesos_ui(ns("accesos")))
+      # Principal: requests and the direct grant first, the accesses last;
+      # staff: its accesses first, then its request form and history.
+      if (isTRUE(is_principal())) tagList(header_row, uiOutput(ns("hop_dinamico")), tags$hr(), tabla)
+      else tagList(header_row, tabla, uiOutput(ns("hop_dinamico")))
+    })
+
+    output$hop_dinamico <- renderUI({
+      if (!isTRUE(shared$current_user_info()$is_staff)) return(NULL)
+      hop_refresh()
+
+      me        <- shared$current_user() %||% ""
+      principal <- isTRUE(is_principal())
+      reqs      <- tryCatch(load_hop_requests(), error = function(e) .schema_hop_requests())
+      registry  <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
+      active_reg <- registry[
+        !is.na(registry$status) & registry$status == "active" &
+        registry$client_id != "hd-admin", , drop = FALSE]
 
       if (principal) {
         # ── Principal view ────────────────────────────────────────────────────
@@ -3173,11 +3247,6 @@ tiersServer <- function(id, shared) {
         else data.frame()
         if (nrow(pending_reqs))
           pending_reqs <- pending_reqs[order(pending_reqs$requested_at, decreasing = TRUE), , drop = FALSE]
-
-        active_grants <- if (is.data.frame(grants) && nrow(grants))
-          grants[(is.na(grants$expires_at) | grants$expires_at > now) &
-                 (is.na(grants$revoked) | grants$revoked != TRUE), , drop = FALSE]
-        else data.frame()
 
         req_cards <- if (nrow(pending_reqs)) {
           do.call(tagList, lapply(seq_len(nrow(pending_reqs)), function(ri) {
@@ -3265,43 +3334,6 @@ tiersServer <- function(id, shared) {
               icon("inbox", class = "text-muted"), " Sin solicitudes pendientes.")
         }
 
-        grants_table <- if (nrow(active_grants)) {
-          tagList(
-            tags$hr(),
-            tags$p(class = "small fw-semibold text-muted mb-2",
-                   sprintf("Accesos activos (%d)", nrow(active_grants))),
-            div(
-              style = "overflow-x:auto;",
-              tags$table(
-                class = "table table-sm table-hover mb-0",
-                style = "font-size:.82rem;",
-                tags$thead(tags$tr(
-                  tags$th("Usuario"), tags$th("Cliente"), tags$th("Expira"), tags$th("")
-                )),
-                tags$tbody(do.call(tagList, lapply(seq_len(nrow(active_grants)), function(i) {
-                  g         <- active_grants[i, ]
-                  remaining <- tryCatch(.fmt_remaining(g$expires_at), error = function(e) "?")
-                  tags$tr(
-                    tags$td(g$grantee %||% ""),
-                    tags$td(.client_label(g$client_id %||% "", active_reg)),
-                    tags$td(remaining),
-                    tags$td(
-                      tags$button(
-                        class   = "btn btn-sm btn-outline-danger py-0",
-                        style   = "font-size:.74rem;",
-                        onclick = sprintf(
-                          "Shiny.setInputValue('%s','%s',{priority:'event'});",
-                          ns("hop_revoke"), g$id %||% ""),
-                        tagList(icon("ban"), " Revocar")
-                      )
-                    )
-                  )
-                })))
-              )
-            )
-          )
-        } else NULL
-
         # Staff list for direct grant form
         all_staff <- tryCatch(auth_load_usuarios(client_id = "hd-admin"),
                               error = function(e) NULL)
@@ -3350,49 +3382,19 @@ tiersServer <- function(id, shared) {
         )
 
         tagList(
-          header_row,
           tags$p(class = "small fw-semibold text-muted mb-2",
                  sprintf("Solicitudes pendientes (%d)", nrow(pending_reqs))),
           req_cards,
-          direct_section,
-          grants_table
+          direct_section
         )
 
       } else {
         # ── Staff view ────────────────────────────────────────────────────────
-        now <- Sys.time()
-        my_grants <- if (is.data.frame(grants) && nrow(grants))
-          grants[!is.na(grants$grantee) & grants$grantee == me &
-                 (is.na(grants$revoked) | grants$revoked != TRUE) &
-                 (is.na(grants$expires_at) | grants$expires_at > now), , drop = FALSE]
-        else data.frame()
-
         my_reqs <- if (is.data.frame(reqs) && nrow(reqs))
           reqs[!is.na(reqs$requester) & reqs$requester == me, , drop = FALSE]
         else data.frame()
         if (nrow(my_reqs))
           my_reqs <- my_reqs[order(my_reqs$requested_at, decreasing = TRUE), , drop = FALSE]
-        grants_section <- if (nrow(my_grants)) {
-          tagList(
-            tags$p(class = "small fw-semibold text-muted mb-1", "Accesos activos:"),
-            div(
-              style = "overflow-x:auto;",
-              tags$table(
-                class = "table table-sm mb-3",
-                style = "font-size:.83rem;",
-                tags$thead(tags$tr(tags$th("Cliente"), tags$th("Expira en"))),
-                tags$tbody(do.call(tagList, lapply(seq_len(nrow(my_grants)), function(i) {
-                  g <- my_grants[i, ]
-                  tags$tr(
-                    tags$td(tagList(icon("building-user", style = "color:#1976d2"), " ",
-                                    .client_label(g$client_id %||% "", active_reg))),
-                    tags$td(tryCatch(.fmt_remaining(g$expires_at), error = function(e) "?"))
-                  )
-                })))
-              )
-            )
-          )
-        } else NULL
 
         client_choices <- if (nrow(active_reg))
           setNames(active_reg$client_id, active_reg$display_name)
@@ -3475,7 +3477,7 @@ tiersServer <- function(id, shared) {
           )
         } else NULL
 
-        tagList(header_row, grants_section, form_section, history_section)
+        tagList(form_section, history_section)
       }
     })
 
@@ -3661,9 +3663,17 @@ tiersServer <- function(id, shared) {
     }, ignoreInit = TRUE)
 
     # Principal revokes an active grant
-    observeEvent(input$hop_revoke, {
+    # The active accesses' table (T28): ⊘, confirmed in its bar, names the
+    # grant by its id; only Principal with the permission gets it.
+    accesos_t <- tiers_accesos_server("accesos", refresh = hop_refresh,
+      permitido     = reactive(isTRUE(shared$current_user_info()$is_staff)),
+      principal     = is_principal,
+      me            = reactive(shared$current_user() %||% ""),
+      puede_revocar = reactive(isTRUE(is_principal()) && isTRUE(staff_perms()$can_manage_hopdesk_perms)))
+
+    observeEvent(accesos_t$revocar(), {
       req(isTRUE(staff_perms()$can_manage_hopdesk_perms))
-      grant_id <- input$hop_revoke
+      grant_id <- accesos_t$revocar()$id
       req(nzchar(grant_id %||% ""))
       tryCatch({
         grants <- load_hop_grants()
