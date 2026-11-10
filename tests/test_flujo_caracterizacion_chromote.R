@@ -87,7 +87,8 @@ abrir <- function(limpiar = TRUE) {
   b$Page$navigate(sprintf("http://127.0.0.1:%d", PORT), wait_ = TRUE)
   poll_until(function() isTRUE(ev("!!window.Shiny && !!document.getElementById('abrir_flujo')")), timeout_s = 60)
   Sys.sleep(0.8)
-  if (limpiar) ev("try { localStorage.removeItem('hopdesk_cf_preview_state'); localStorage.removeItem('hopdesk_cf_dia0:cliente_a'); localStorage.removeItem('hopdesk_cf_dia0:cliente_b'); } catch (e) {}; 0")
+  if (limpiar) ev("try { ['hopdesk_cf_preview_state', 'hopdesk_cf_preview_state:cliente_a', 'hopdesk_cf_preview_state:cliente_b',
+                   'hopdesk_cf_dia0:cliente_a', 'hopdesk_cf_dia0:cliente_b'].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}; 0")
   clic("document.getElementById('abrir_flujo')")
   espera(function() isTRUE(ev(sprintf("!!window.HDT && !!HDT.estado('%s') && HDT.estado('%s').lista.length > 0", T, T))), 60)
 }
@@ -191,6 +192,33 @@ ronda <- function(w, h) {
                  list(date_from = as.character(LUNES), date_to = as.character(LUNES + 6L), grouping = "daily",
                       currency_mode = "fused", base_cur = "MXN")) && identical(as.numeric(p$fx_rates$USD), 20)
      }))
+  # T27: the preview's state (range, grouping, Base and FX rates) is kept per
+  # client. Staff switching to B must never see, nor save under B, A's rate.
+  estado <- function(cl) { s <- ev(sprintf("localStorage.getItem('hopdesk_cf_preview_state:%s')", cl))
+    if (is.null(s)) NULL else jsonlite::fromJSON(s) }
+  ok(paste(et, "B5f-0: A's state (Base, USD at 20) is kept under A's own key, not the shared one"),
+     espera(function() { s <- estado("cliente_a"); identical(s$currency_mode, "fused") && identical(as.numeric(s$fx_rates$USD), 20) }, 5) &&
+       is.null(ev("localStorage.getItem('hopdesk_cf_preview_state')")))
+  clic("document.getElementById('cambiar_cliente')")
+  ok(paste(et, "B5f: switching to another client starts over: Auto, no FX row, and A's rate is not saved under B"),
+     espera(function() identical(trimws(ev("document.getElementById('cfp-btn_grouping').textContent")), "Auto") &&
+              isTRUE(ev("!document.getElementById('cfp-fx_rate_usd')")), 10) &&
+       { Sys.sleep(1.5); s <- estado("cliente_b"); is.null(s) || (!identical(s$currency_mode, "fused") && !length(s$fx_rates)) })
+  clic("document.getElementById('cambiar_cliente')")
+  ok(paste(et, "B5g: and back, this client's Base and USD at 20 again"),
+     espera(function() isTRUE(ev("!!document.getElementById('cfp-fx_rate_usd')")) &&
+              identical(as.numeric(ev("document.getElementById('cfp-fx_rate_usd').value")), 20), 10))
+  # A change closed and reopened before its 800 ms save is kept: reopening
+  # for the same client doesn't read the browser's older state again. The
+  # three clicks go in one script so they land well inside the 800 ms.
+  espera(function() identical(trimws(ev("document.getElementById('cfp-btn_grouping').textContent")), "Diario"), 10)
+  ev("(function(){ document.getElementById('cfp-btn_grouping').click();
+       setTimeout(function(){ document.getElementById('cfp-btn_back').click(); }, 100);
+       setTimeout(function(){ document.getElementById('abrir_flujo').click(); }, 250); })(); 0")
+  ok(paste(et, "B5h: Semanal, closed and reopened at once, is still Semanal and is what gets saved"),
+     espera(function() abierto() && identical(trimws(ev("document.getElementById('cfp-btn_grouping').textContent")), "Semanal"), 10) &&
+       { Sys.sleep(1.5); identical(trimws(ev("document.getElementById('cfp-btn_grouping').textContent")), "Semanal") &&
+           identical(estado("cliente_a")$grouping, "weekly") })
   if (nzchar(CAPTURAS)) { dir.create(CAPTURAS, showWarnings = FALSE, recursive = TRUE)
     b$screenshot(file.path(CAPTURAS, sprintf("flujo_%dx%d.png", w, h)), show = FALSE) }
 }
