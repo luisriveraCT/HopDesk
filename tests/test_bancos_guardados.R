@@ -43,6 +43,7 @@ for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "
 # Recorders (after the module, so they win)
 LOG <- character(0); AVISOS <- character(0)
 log_action <- function(user, module, action, description = "", ...) LOG <<- c(LOG, action)
+avisos_actividad <- function(...) invisible(NULL)   # R/avisos.R; the Alertas del equipo hook (C)
 showNotification <- function(ui, ..., type = "default") { AVISOS <<- c(AVISOS, paste0(type, ": ", as.character(ui))); invisible("id") }
 removeModal <- function(...) invisible(NULL)
 showModal <- function(...) invisible(NULL)

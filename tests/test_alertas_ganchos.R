@@ -66,6 +66,30 @@ ok(length(lc) == 1L && length(gc) == 1L && gc > lc && gc - lc <= 15L && gc < ar[
    "S confirmar pago: después de su log_action de éxito, antes de Confirm AR")
 ok(length(inc) == 1L && ret < lc, "S confirmar pago: la rama incompleta sale (return) antes del gancho")
 
+# ── S: bancos_module.R ───────────────────────────────────────────────────────
+F_BN <- Sys.getenv("ALERTAS_BANCOS_R", "R/bancos_module.R")
+bn   <- readLines(F_BN, warn = FALSE, encoding = "UTF-8")
+gb   <- ganchos(F_BN)
+ok(nrow(gb) == 2L && setequal(gb$accion, c("importar_bancos", "movimiento_manual")),
+   "S bancos: 2 ganchos (importar y movimiento manual)")
+# Import: after its success log, inside the same observer; the save comes
+# first and returns on failure (.bnc_guardar).
+li <- grep('action      = "importar_movimientos",', bn, fixed = TRUE)
+gi <- gb$linea[gb$accion == "importar_bancos"]
+gu <- grep('if (!.bnc_guardar("importar_movimientos"', bn, fixed = TRUE)
+ok(length(li) == 1L && length(gi) == 1L && gi > li && gi - li <= 12L && grepl("}, ignoreInit = TRUE)", bn[gi + 1L], fixed = TRUE),
+   "S importar: después de su log, al final del observer: un aviso por clic")
+ok(length(gu) == 1L && gu < li && grepl("return()", paste(bn[gu:(gu + 1L)], collapse = " "), fixed = TRUE),
+   "S importar: si guardar falla, sale antes del gancho")
+# Manual: only a new movement (an edit does not alert), after the success log.
+lm <- grep('action      = if (is_edit) "editar_movimiento_manual" else "agregar_movimiento_manual",', bn, fixed = TRUE)
+gm <- gb$linea[gb$accion == "movimiento_manual"]
+gg <- grep('if (!.bnc_guardar("guardar_movimiento_manual"', bn, fixed = TRUE)
+ok(length(lm) == 1L && length(gm) == 1L && gm > lm && gm - lm <= 12L && grepl("if (!is_edit) avisos_actividad(", bn[gm], fixed = TRUE),
+   "S movimiento manual: después de su log y solo si es nuevo (editar no avisa)")
+ok(length(gg) == 1L && gg < lm && grepl("return()", paste(bn[gg:(gg + 1L)], collapse = " "), fixed = TRUE),
+   "S movimiento manual: si guardar falla, sale antes del gancho")
+
 # Hooks only through avisos_actividad().
 directos <- unlist(lapply(setdiff(list.files("R", "\\.R$", full.names = TRUE, recursive = TRUE),
                                   c("R/avisos.R", "R/avisos_alertas_module.R")), function(f) {

@@ -1551,6 +1551,7 @@ bancosServer <- function(id, shared) {
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
+      if (!is_edit) avisos_actividad(shared$effective_client_id(), "movimiento_manual", shared$current_user(), list(cuerpo = log_desc))
       editing_mov_id(NULL)
     }, ignoreInit = TRUE)
 
@@ -2158,6 +2159,7 @@ bancosServer <- function(id, shared) {
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
+      avisos_actividad(shared$effective_client_id(), "importar_bancos", shared$current_user(), list(cuerpo = msg))
     }, ignoreInit = TRUE)
 
     # ── Historial de confirmaciones (hd_table "historial_conf", T12b) ───────
