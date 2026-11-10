@@ -95,6 +95,16 @@ aws.s3::s3saveRDS(pago("p-otro"), object = "beta/pagos_generados.rds", bucket = 
 ok("read_pagos_generados() junta las partes de su cliente por get_bucket (no las de otro)",
    setequal(read_pagos_generados(client_id = "acme")$id, c("p-nuevo", "p-viejo")))
 
+s3_memoria_reset()
+aws.s3::put_object(file = tf, object = "acme/u1.rds", bucket = "b"); aws.s3::s3saveRDS(df, object = "acme/s1.rds", bucket = "b")
+ok(".mem_subidas cuenta solo lo que subió put_object (y reset lo vuelve a 0)",
+   .mem_subidas == 1L && .mem_escrituras == 2L && { s3_memoria_reset(); .mem_subidas == 0L })
+utils::assignInNamespace("put_object", function(...) stop("DRY RUN"), "aws.s3")   # as a dry-run script does
+s3_memoria_reinstalar()
+ok("s3_memoria_reinstalar() vuelve a poner los seis falsos tras un código que cambió aws.s3",
+   isTRUE(aws.s3::put_object(file = bytes, object = "acme/r.bin", bucket = "b")) &&
+     identical(aws.s3::get_object(object = "acme/r.bin", bucket = "b"), bytes))
+
 # ── 4. Back to the real ones ─────────────────────────────────────────────────
 s3_memoria_restaurar()
 ok("s3_memoria_restaurar() devuelve las seis funciones reales de aws.s3",

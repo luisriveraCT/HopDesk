@@ -5,12 +5,15 @@
 #     fails; .mem_escrituras: how many writes reached the store;
 #     .mem_falla_escritura: full keys whose WRITE fails (s3saveRDS and
 #     put_object; nothing is stored, nothing counted); .mem_falla_lista:
-#     prefixes whose listing (get_bucket) fails;
+#     prefixes whose listing (get_bucket) fails; .mem_subidas: how many
+#     put_object calls stored something;
 #   - aws.s3's s3readRDS / s3saveRDS / object_exists, and the three the app
 #     also uses -- put_object, get_object, get_bucket -- are swapped and
 #     restored when the test's R process exits (reg.finalizer on .mem,
 #     onexit = TRUE) and by s3_memoria_restaurar(), which every test should
-#     call at the end. None of the six ever reaches the network;
+#     call at the end. None of the six ever reaches the network.
+#     s3_memoria_reinstalar() puts the six fakes back after code that swaps
+#     aws.s3 itself (a dry-run script);
 #   - R/persistence.R is sourced, with S3_KEYS from R/global.R.
 #
 # The six keep aws.s3's contract, only as far as the app uses it:
@@ -30,7 +33,7 @@
 # =============================================================================
 suppressMessages({ library(dplyr); library(tibble) })
 `%||%` <- function(a, b) if (is.null(a)) b else a
-.mem <- new.env(); .mem_falla <- character(); .mem_escrituras <- 0L
+.mem <- new.env(); .mem_falla <- character(); .mem_escrituras <- 0L; .mem_subidas <- 0L
 .mem_falla_escritura <- character(); .mem_falla_lista <- character()
 .mem_orig <- lapply(stats::setNames(nm = c("s3readRDS", "s3saveRDS", "object_exists", "put_object", "get_object",
                                            "get_bucket")),
@@ -56,24 +59,31 @@ reg.finalizer(.mem, function(e) s3_memoria_restaurar(), onexit = TRUE)
   .mem_escrituras <<- .mem_escrituras + 1L; assign(object, valor, envir = .mem); invisible(TRUE)
 }
 
-utils::assignInNamespace("s3readRDS", function(object, bucket, ...) {
+# The six fakes, kept in .mem_falsos so s3_memoria_reinstalar() can put them
+# back after code that swaps aws.s3 itself (a dry-run script replaces the
+# writes with stop()).
+.mem_falsos <- list()
+.mem_falsos$s3readRDS <- function(object, bucket, ...) {
   x <- .mem_leer(object)
   if (!inherits(x, "s3_memoria_bytes")) return(x)
   tf <- tempfile(fileext = ".rds"); on.exit(unlink(tf))
   writeBin(x$bytes, tf); readRDS(tf)
-}, "aws.s3")
-utils::assignInNamespace("s3saveRDS", function(x, object, bucket, ...) .mem_escribir(object, x), "aws.s3")
-utils::assignInNamespace("object_exists", function(object, bucket, ...)
-  exists(object, envir = .mem, inherits = FALSE), "aws.s3")
-utils::assignInNamespace("put_object", function(file, object, bucket, ...) {
+}
+.mem_falsos$s3saveRDS <- function(x, object, bucket, ...) .mem_escribir(object, x)
+.mem_falsos$object_exists <- function(object, bucket, ...) exists(object, envir = .mem, inherits = FALSE)
+# .mem_subidas: how many put_object calls stored something (the offline
+# queue's replay and .s3_write's fallback upload this way).
+.mem_falsos$put_object <- function(file, object, bucket, ...) {
   b <- if (is.raw(file)) file else readBin(file, "raw", file.info(file)$size)
   .mem_escribir(object, .mem_bytes(b))
-}, "aws.s3")
-utils::assignInNamespace("get_object", function(object, bucket, ...) {
+  .mem_subidas <<- .mem_subidas + 1L
+  invisible(TRUE)
+}
+.mem_falsos$get_object <- function(object, bucket, ...) {
   x <- .mem_leer(object)
   if (inherits(x, "s3_memoria_bytes")) x$bytes else .mem_rds_bytes(x)
-}, "aws.s3")
-utils::assignInNamespace("get_bucket", function(bucket, prefix = NULL, max = NULL, ...) {
+}
+.mem_falsos$get_bucket <- function(bucket, prefix = NULL, max = NULL, ...) {
   prefix <- prefix %||% ""
   if (prefix %in% .mem_falla_lista) stop("simulated S3 timeout (listing)")
   llaves <- sort(ls(.mem, all.names = TRUE), method = "radix")   # by bytes, as S3 lists (not the locale's order)
@@ -86,7 +96,10 @@ utils::assignInNamespace("get_bucket", function(bucket, prefix = NULL, max = NUL
                    ETag = "", Size = tam, StorageClass = "STANDARD", Bucket = bucket), class = "s3_object")
   })
   structure(stats::setNames(objetos, rep("Contents", length(objetos))), class = "s3_bucket")
-}, "aws.s3")
+}
+s3_memoria_reinstalar <- function()
+  for (nm in names(.mem_falsos)) utils::assignInNamespace(nm, .mem_falsos[[nm]], "aws.s3")
+s3_memoria_reinstalar()
 
 Sys.setenv(S3_BUCKET = "fake-bucket", CLIENT_ID = "acme")
 for (e in parse("R/global.R"))
@@ -96,6 +109,7 @@ suppressMessages(source("R/persistence.R"))
 
 s3_memoria_reset <- function() {
   rm(list = ls(.mem, all.names = TRUE), envir = .mem); .mem_falla <<- character(); .mem_escrituras <<- 0L
+  .mem_subidas <<- 0L
   .mem_falla_escritura <<- character(); .mem_falla_lista <<- character()
   for (env in Filter(Negate(is.null), list(get0(".s3_preload_cache"), get0(".s3_missing_cache"), get0(".s3_filas"))))
     rm(list = ls(env), envir = env)
