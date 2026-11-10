@@ -54,7 +54,18 @@ clic <- function(js_el) {
     var r = e.getBoundingClientRect(); return [r.left + r.width/2, r.top + r.height/2]; })()", js_el))
   raton("mouseMoved", p); raton("mousePressed", p, 1L); raton("mouseReleased", p); Sys.sleep(0.4)
 }
-pestana <- function(valor) { clic(sprintf("document.querySelector('a[data-value=\"%s\"]')", valor)); Sys.sleep(0.6) }
+# Switching tabs isn't what's under test: a mouse click, and if the tab
+# didn't become active (after a modal closed, the click could land on the
+# fading backdrop), Bootstrap's own click. Then wait until it IS active --
+# a table's state survives a tab switch, so "the rows are there" alone
+# doesn't prove the tab is showing.
+pestana <- function(valor) {
+  sel <- sprintf("document.querySelector('a[data-value=\"%s\"]')", valor)
+  activa <- function() isTRUE(ev(sprintf("%s.classList.contains('active')", sel)))
+  clic(sel)
+  if (!espera(activa, 3)) ev(sprintf("%s.click()", sel))
+  espera(activa, 10); Sys.sleep(0.6)
+}
 tabla   <- function(nombre) sprintf("tiers-%s-tabla-hdt", nombre)
 vis     <- function(nombre) unlist(ev(sprintf("(HDT.estado('%s') || {}).visibles", tabla(nombre))))
 cargando <- function() unlist(ev("Array.from(document.querySelectorAll('.tab-pane.active .hdt')).filter(function(e){ return !!e.querySelector('.hdt-cargando'); }).map(function(e){ return e.id; })"))
@@ -106,7 +117,15 @@ ok("A4 📇 en acme abre sus contactos (2) en el modal, con el formulario abajo"
    espera(function() isTRUE(ev("!!document.querySelector('.modal.show .hd-modal')"))) && carga("contactos", c("c-1", "c-2")) &&
      isTRUE(ev("!!document.querySelector('.modal.show input[id$=\"contact_name\"]')")))
 captura("A4_principal_contactos.png")
-clic("document.querySelector('.modal.show .hd-modal-cerrar')"); espera(function() !isTRUE(ev("!!document.querySelector('.modal.show')")))
+# Close it for real: ✕ with the mouse, and if the modal is still there,
+# Bootstrap's own hide. Then wait until no modal or backdrop is left: an
+# open (or half-closed) modal left its form ON TOP of the Usuarios table,
+# and A5's click on ✎ landed on the contact's email field instead.
+abierto <- function() isTRUE(ev("(function(){ var m = document.getElementById('shiny-modal'); return !!document.querySelector('.modal-backdrop') || !!(m && m.offsetParent); })()"))
+clic("document.querySelector('.modal.show .hd-modal-cerrar')")
+if (!espera(function() !abierto(), 3))
+  ev("(function(){ var m = document.querySelector('.modal.show'); if (m) bootstrap.Modal.getOrCreateInstance(m).hide(); })()")
+ok("A4 el modal de contactos se cierra (y no deja nada encima de la página)", espera(function() !abierto(), 10))
 
 # A5: ✎ on caro in Usuarios.
 pestana("usuarios"); carga("usuarios", c("devacme", "ana", "beto", "caro"))
