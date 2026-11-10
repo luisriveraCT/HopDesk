@@ -2979,10 +2979,33 @@ server <- function(input, output, session) {
       )
       mi_base <- manual_inv()   # CM09: only this row is applied on S3 as it is now
       df <- upsert_manual(mi_base, new_row)
+      # Saved first (R17, C): if S3 fails, nothing changes in the session,
+      # nothing is sent to the Agenda and nothing says "Entrada agregada";
+      # the modal stays so Guardar can be tried again.
+      guardado <- tryCatch({ save_manual(df, client_id = effective_client_id(), base = mi_base); TRUE },
+                           error = function(e) e)
+      if (!isTRUE(guardado)) {
+        showNotification(tr("comun.error_guardar"), type = "error", duration = 6)
+        tryCatch(log_action(current_user(), paste0("ledger_", ledger), "agregar_item_fallido",
+                            paste0("Falló al guardar la entrada ", doc, ": ", conditionMessage(guardado)),
+                            target_id = new_row$id,
+                            metadata = list(empresa = input$me_empresa, documento = doc, ledger = ledger),
+                            client_id = effective_client_id(), viewer_home_client_id = home_client_id()),
+                 error = function(e) NULL)
+        return()
+      }
       manual_inv(df)
-      tryCatch(save_manual(df, client_id = effective_client_id(), base = mi_base),
-               error = function(e) showNotification(
-                 "No se pudieron guardar los cambios.", type = "warning"))
+      tryCatch(log_action(current_user(), paste0("ledger_", ledger), "agregar_item",
+                          sprintf("Entrada agregada: %s %s por %s %s", new_row$Empresa, doc,
+                                  format(new_row$Importe, big.mark = ",", nsmall = 2), new_row$Moneda),
+                          target_id = new_row$id,
+                          metadata = list(empresa = new_row$Empresa, documento = doc, ledger = ledger,
+                                          parte = new_row$Parte, importe = new_row$Importe,
+                                          moneda = new_row$Moneda,
+                                          fecha = as.character(new_row$`Fecha de vencimiento`)),
+                          client_id = effective_client_id(), viewer_home_client_id = home_client_id()),
+               error = function(e) NULL)
+      avisos_actividad(effective_client_id(), "crear_item", current_user(), list(cuerpo = paste(new_row$Empresa, doc, sep = " · ")))
 
       # ── Stage to Agenda de hoy if toggle is active ───────────────────────
       # Re-derive the staged row from the manual_inv row that now actually

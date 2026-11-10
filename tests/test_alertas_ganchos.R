@@ -90,6 +90,27 @@ ok(length(lm) == 1L && length(gm) == 1L && gm > lm && gm - lm <= 12L && grepl("i
 ok(length(gg) == 1L && gg < lm && grepl("return()", paste(bn[gg:(gg + 1L)], collapse = " "), fixed = TRUE),
    "S movimiento manual: si guardar falla, sale antes del gancho")
 
+# ── S: app.R, Agregar Item (me_save, insert mode) ────────────────────────────
+F_APP <- Sys.getenv("ALERTAS_APP_R", "app.R")
+ap  <- readLines(F_APP, warn = FALSE, encoding = "UTF-8")
+ga  <- ganchos(F_APP)
+ins <- grep("# ── Insert mode", ap, fixed = TRUE)
+age <- siguiente(ap, "# ── Stage to Agenda de hoy if toggle is active", ins)
+sv  <- siguiente(ap, "save_manual(df, client_id = effective_client_id(), base = mi_base)", ins)
+fal <- siguiente(ap, "if (!isTRUE(guardado)) {", ins)
+rt  <- siguiente(ap, "return()", fal)
+mi  <- siguiente(ap, "manual_inv(df)", ins)
+lg  <- siguiente(ap, '"agregar_item",', ins)
+gi  <- ga$linea[ga$accion == "crear_item"]
+ok(nrow(ga) == 1L && length(gi) == 1L, "S app.R: un gancho, crear_item")
+ok(length(ins) == 1L && !is.na(sv) && !is.na(fal) && sv < fal && fal < rt && rt < mi,
+   "S Agregar Item: guarda primero; si falla, sale (return) antes de tocar la sesión")
+ok(!grepl("tryCatch(save_manual", ap[sv], fixed = TRUE) || grepl("guardado <-", ap[sv], fixed = TRUE),
+   "S Agregar Item: el resultado de save_manual se revisa (bandera), no solo se avisa")
+ok(!is.na(lg) && mi < lg && lg < gi && gi < age, "S Agregar Item: log agregar_item y gancho después del éxito, antes de la Agenda")
+ok(any(grepl('"agregar_item_fallido"', ap[fal:rt], fixed = TRUE)) && any(grepl('tr("comun.error_guardar")', ap[fal:rt], fixed = TRUE)),
+   "S Agregar Item: la falla se dice y queda en Actividad (agregar_item_fallido)")
+
 # Hooks only through avisos_actividad().
 directos <- unlist(lapply(setdiff(list.files("R", "\\.R$", full.names = TRUE, recursive = TRUE),
                                   c("R/avisos.R", "R/avisos_alertas_module.R")), function(f) {
