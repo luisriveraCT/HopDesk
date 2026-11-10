@@ -920,12 +920,9 @@ requisicion_prefill_provision <- function(fila) {
 }
 
 # Who may open a requisition's evidence read-only from Calendario, Pasivos or
-# the confirmation history: whoever sees Requisiciones, or works the payment
-# the clip sits on. Pending Luis's confirmation before E3b mounts the clip.
-requisiciones_puede_ver_evidencia <- function(usuario) {
-  puede(usuario, "can_view_requisiciones") || puede(usuario, "can_edit_provisiones") ||
-    puede(usuario, "can_register_payments") || puede(usuario, "can_confirm_payments")
-}
+# the confirmation history: only whoever sees Requisiciones (Luis,
+# 2026-11-10). Without it the clip is not even shown.
+requisiciones_puede_ver_evidencia <- function(usuario) puede(usuario, "can_view_requisiciones")
 
 # Translated stage name, for badges and chips.
 requisiciones_etapa_nombre <- function(etapa)

@@ -107,27 +107,27 @@ test_that("si la sesión cambió de cliente antes de guardar, no se liga en ning
 })
 
 test_that("Ver evidencia desde una provisión: pagada incluida, solo lectura", {
-  app <- cargar_app(nivel = "finance", usuario = "fer")      # works payments, no Requisiciones tab
+  app <- cargar_app(nivel = "compras")
   testServer(app, {
     session$flushReact()
     expect_true(mod$abrir_por_provision("p-pagada"))
     expect_identical(mod$detalle_id(), fila("Papelería octubre")$id)
     expect_true(mod$lectura())
     expect_false(mod$abrir_por_provision("p-libre2"))         # no requisition behind it
-  })
-  app <- cargar_app(nivel = "compras")
-  testServer(app, {
-    session$flushReact()
     expect_true(mod$abrir_por_provision("p-luz"))              # provisionada, from outside: still read-only
     expect_true(mod$lectura())
   })
 })
 
-test_that("Ver evidencia: quien no trabaja pagos ni Requisiciones no la abre (Análisis)", {
-  app <- cargar_app(nivel = "analysis", usuario = "ana")
-  testServer(app, {
-    session$flushReact()
-    expect_false(mod$abrir_por_provision("p-pagada"))
-    expect_null(mod$detalle_id())
-  })
+test_that("Ver evidencia: solo quien ve Requisiciones (Luis, 2026-11-10); Finanzas y Análisis no", {
+  for (nv in c("finance", "analysis")) {
+    app <- cargar_app(nivel = nv, usuario = "ana")
+    testServer(app, {
+      session$flushReact()
+      expect_false(mod$abrir_por_provision("p-pagada"))
+      expect_null(mod$detalle_id())
+    })
+  }
+  expect_false(requisiciones_puede_ver_evidencia(list(tier = "finance", permisos = permisos_resueltos("finance"))))
+  expect_true(requisiciones_puede_ver_evidencia(list(tier = "compras", permisos = permisos_resueltos("compras"))))
 })
