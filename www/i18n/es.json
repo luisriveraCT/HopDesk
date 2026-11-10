@@ -1008,5 +1008,8 @@
   "requisiciones.selector.omitidas_n.uno": "{n} provisión ya no estaba disponible y no se convirtió.",
   "requisiciones.selector.omitidas_n.otros": "{n} provisiones ya no estaban disponibles y no se convirtieron.",
   "requisiciones.error.guardar": "No se pudo guardar. Nada cambió; intenta de nuevo.",
-  "requisiciones.error.leer": "No se pudieron leer las requisiciones. Nada se muestra vacío por error; intenta de nuevo en un momento."
+  "requisiciones.error.leer": "No se pudieron leer las requisiciones. Nada se muestra vacío por error; intenta de nuevo en un momento.",
+  "requisiciones.ligada": "Provisión creada y ligada a {folio}.",
+  "requisiciones.error.sin_requisicion": "Esta provisión no tiene requisición.",
+  "requisiciones.error.otro_cliente": "Cambiaste de cliente: la provisión se guardó, pero no se ligó a {folio}. Lígala desde el cliente correcto."
 }

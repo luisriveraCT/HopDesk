@@ -1008,5 +1008,8 @@
   "requisiciones.selector.omitidas_n.uno": "{n} provision was no longer available and was not converted.",
   "requisiciones.selector.omitidas_n.otros": "{n} provisions were no longer available and were not converted.",
   "requisiciones.error.guardar": "It could not be saved. Nothing changed; try again.",
-  "requisiciones.error.leer": "The requisitions could not be read. Nothing is shown empty by mistake; try again in a moment."
+  "requisiciones.error.leer": "The requisitions could not be read. Nothing is shown empty by mistake; try again in a moment.",
+  "requisiciones.ligada": "Provision created and linked to {folio}.",
+  "requisiciones.error.sin_requisicion": "This provision has no requisition.",
+  "requisiciones.error.otro_cliente": "You switched clients: the provision was saved but not linked to {folio}. Link it from the right client."
 }

@@ -898,6 +898,35 @@ adjuntos_resumen <- function(requisicion) {
     primera_imagen_id = as.character(requisicion$primera_imagen_id %||% NA_character_))
 }
 
+# ── Liga con Pasivos y Calendario (E3) ───────────────────────────────────────
+
+# What the provision form starts with when "Crear provisión" is pressed on a
+# requisition (a row of requisiciones_vista()). Only the requisition's own
+# data; the form decides what it keeps and the person can change all of it.
+# NA where the requisition has nothing.
+requisicion_prefill_provision <- function(fila) {
+  txt <- function(x) if (is.null(x) || !length(x) || is.na(x[1]) || !nzchar(trimws(x[1]))) NA_character_ else trimws(x[1])
+  num <- function(x) if (is.null(x) || !length(x) || is.na(x[1])) NA_real_ else as.numeric(x[1])
+  folio <- txt(fila$folio); titulo <- txt(fila$titulo)
+  list(
+    requisicion_id = txt(fila$id),
+    folio          = folio,
+    empresa        = txt(fila$empresa),
+    parte          = txt(fila$proveedor),
+    monto          = num(fila$monto),
+    moneda         = txt(fila$moneda),
+    referencia     = substr(paste(stats::na.omit(c(folio, titulo)), collapse = " · "), 1L, REQ_MAX_TITULO),
+    notas          = txt(fila$notas))
+}
+
+# Who may open a requisition's evidence read-only from Calendario, Pasivos or
+# the confirmation history: whoever sees Requisiciones, or works the payment
+# the clip sits on. Pending Luis's confirmation before E3b mounts the clip.
+requisiciones_puede_ver_evidencia <- function(usuario) {
+  puede(usuario, "can_view_requisiciones") || puede(usuario, "can_edit_provisiones") ||
+    puede(usuario, "can_register_payments") || puede(usuario, "can_confirm_payments")
+}
+
 # Translated stage name, for badges and chips.
 requisiciones_etapa_nombre <- function(etapa)
   vapply(etapa, function(e) tr(paste0("requisiciones.etapa.", e)), character(1), USE.NAMES = FALSE)

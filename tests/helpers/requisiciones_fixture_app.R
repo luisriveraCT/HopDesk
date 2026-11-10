@@ -13,6 +13,8 @@
 #   HD_ARRANQUE_NULL  1 = the client id and the company map start NULL, as
 #                     before the session knows them (incident 2026-11-03)
 #   REQ_VACIO         1 = no seed data
+#   REQ_ABRIR_PROVISION 1 = wire a stand-in provision form (E3): each call
+#                     is kept in .req_llamadas (prefill + al_guardar)
 #
 # Buttons outside the module play "another session": #otra_sesion creates a
 # requisition and #otra_sesion_paga confirms the payment of REQ-…-0002's
@@ -136,7 +138,12 @@ server <- function(input, output, session) {
     currency_choices = list(AP = reactiveVal(c("MXN", "USD")), AR = reactiveVal(c("MXN", "USD"))),
     proveedores_db = reactiveVal(NULL)
   )
-  mod <- requisicionesServer("req", shared, activa = reactive(TRUE))
+  abrir <- if (identical(Sys.getenv("REQ_ABRIR_PROVISION"), "1")) function(prefill, al_guardar)
+    assign(".req_llamadas", c(get0(".req_llamadas", envir = globalenv(), ifnotfound = list()),
+                              list(list(prefill = prefill, al_guardar = al_guardar))), envir = globalenv())
+  assign(".req_llamadas", list(), envir = globalenv())
+  mod <- requisicionesServer("req", shared, activa = reactive(TRUE), abrir_provision = abrir)
+  observeEvent(input$cambiar_cliente, cid_rv(input$cambiar_cliente))
   observeEvent(input$otra_sesion, {
     requisicion_crear(CID, list(titulo = "Creada en otra sesión", empresa = "NTS", monto = 500, moneda = "MXN"), "eli")
     .reqm_tocar(CID)

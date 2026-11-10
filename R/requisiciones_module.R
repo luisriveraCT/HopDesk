@@ -4,7 +4,17 @@
 # R/requisiciones_persistence.R and R/adjuntos_s3.R.
 #
 #   requisicionesUI("req")
-#   requisicionesServer("req", shared, activa = reactive(input$nav == "REQ"))
+#   requisicionesServer("req", shared, activa = reactive(input$nav == "REQ"),
+#                       abrir_provision = NULL)
+#
+# Liga con Pasivos (E3): abrir_provision(prefill, al_guardar) is how the app
+# opens Pasivos' provision form. prefill is requisicion_prefill_provision();
+# the form calls al_guardar(provision_id) once the provision is saved, and
+# that links it to the requisition. Without abrir_provision the row action
+# "Crear provisión" is not offered at all.
+# The returned abrir_por_provision(provision_id) opens a requisition's
+# detail read-only (paid ones too) for Calendario, Pasivos and the
+# confirmation history.
 #
 # Tables only through hd_table(): "requisiciones" (the list), "provisiones"
 # (the "Agregar evidencia a una provisión" picker) and "evidencia_excel" (a
@@ -70,7 +80,9 @@
 )
 
 # Rows for the list: the vista plus the engine's control columns.
-.reqm_filas <- function(v) {
+# crear: offer "Crear provisión" on Sin provisión rows (the app wired a
+# provision form and the user may create provisions).
+.reqm_filas <- function(v, crear = FALSE) {
   if (!nrow(v)) {
     v$fecha_mes <- as.Date(character()); v$prioridad_txt <- character(); v$comentarios_txt <- character()
     v$.fijar <- logical(); v$.adjuntos <- integer(); v$.acciones <- character()
@@ -85,7 +97,7 @@
            as.character(v$n_comentarios)))
   v$.fijar <- v$etapa == "sin_provision"      # Sin provisión: always shown, on top, whatever the month
   v$.adjuntos <- as.integer(v$n_adjuntos + v$n_tablas)
-  v$.acciones <- "detalle"
+  v$.acciones <- ifelse(isTRUE(crear) & v$etapa == "sin_provision", "detalle,crear_provision", "detalle")
   v
 }
 
@@ -147,7 +159,7 @@ requisicionesUI <- function(id) {
 
 # ── Server ───────────────────────────────────────────────────────────────────
 
-requisicionesServer <- function(id, shared, activa = NULL) {
+requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -159,6 +171,9 @@ requisicionesServer <- function(id, shared, activa = NULL) {
     yo  <- function() shiny::isolate(usr()$user %||% "")
     activa_ok <- shiny::reactive(is.null(activa) || isTRUE(tryCatch(activa(), error = function(e) FALSE)))
     puede_ver <- shiny::reactive(puede(usr(), "can_view_requisiciones"))
+    # "Crear provisión" exists only with a provision form wired in and the
+    # permission to create provisions (both checked again on the server).
+    puede_crear_prov <- shiny::reactive(is.function(abrir_provision) && puede(usr(), "can_edit_provisiones"))
 
     # Reload: after this session writes (version) and when another session of
     # this process wrote (poll of the in-memory counter, only while the tab
@@ -223,7 +238,7 @@ requisicionesServer <- function(id, shared, activa = NULL) {
       cs <- carpeta_sel()
       if (identical(cs, "sin")) v <- v[is.na(v$carpeta_nombre), , drop = FALSE]
       else if (!identical(cs, "todas")) v <- v[v$carpeta_id %in% cs, , drop = FALSE]
-      .reqm_filas(v)
+      .reqm_filas(v, crear = puede_crear_prov())
     })
 
     iniciales <- shiny::reactive(tryCatch(shared$company_map(), error = function(e) c()) %||% c())
@@ -235,7 +250,7 @@ requisicionesServer <- function(id, shared, activa = NULL) {
       fichas = list(campo = "etapa", orden = c("sin_provision", "provisionada", "en_pago", "papelera"),
                     mostrar = "conteo"),
       periodo = list(campo = "fecha_mes", inicial = Sys.Date(), fijar_titulo = "requisiciones.fijadas"),
-      acciones_fila = "detalle",
+      acciones_fila = c("detalle", "crear_provision"),
       acciones_barra = list(
         list(accion = "mover", texto = "requisiciones.accion.mover"),
         list(accion = "papelera", texto = "requisiciones.accion.papelera", confirmar = TRUE, peligro = TRUE,
@@ -245,7 +260,8 @@ requisicionesServer <- function(id, shared, activa = NULL) {
         u <- usr()
         c(if (ver_papelera()) c("mover", "papelera") else "restaurar",
           if (!puede(u, "can_edit_requisiciones")) "mover",
-          if (!puede_papelera(u)) c("papelera", "restaurar"))
+          if (!puede_papelera(u)) c("papelera", "restaurar"),
+          if (!puede_crear_prov()) "crear_provision")
       }),
       textos = list(contador = "requisiciones.contador"),
       vacio = "requisiciones.vacio")
@@ -584,7 +600,8 @@ requisicionesServer <- function(id, shared, activa = NULL) {
     # Downloads: always an attachment, with the stored type.
     descarga <- shiny::reactiveVal(NULL)
     shiny::observeEvent(input$descargar_id, {
-      if (!puede_o_avisa(shared, "can_view_requisiciones")) return()
+      # Read-only openers (Calendario, Pasivos, history) may download too.
+      if (!requisiciones_puede_ver_evidencia(usr())) { puede_o_avisa(shared, "can_view_requisiciones"); return() }
       b <- tryCatch(evidencia_bytes(cid(), as.character(input$descargar_id)), error = function(e) NULL)
       if (is.null(b)) { shiny::showNotification(tr("requisiciones.error.leer"), type = "error"); return() }
       descarga(b)
@@ -713,16 +730,23 @@ requisicionesServer <- function(id, shared, activa = NULL) {
       f <- v[v$id == id, , drop = FALSE]
       if (nrow(f)) f else NULL
     })
-    abrir_detalle <- function(id, pestana = "datos") {
-      if (!puede_o_avisa(shared, "can_view_requisiciones")) return()
-      v <- vista_segura()
-      f <- if (!is.null(v)) v[v$id == id, , drop = FALSE]
+    # externa: a row given by abrir_por_provision() (Calendario, Pasivos, the
+    # confirmation history), shown read-only whatever its stage.
+    abrir_detalle <- function(id, pestana = "datos", externa = NULL) {
+      if (is.null(externa)) {
+        if (!puede_o_avisa(shared, "can_view_requisiciones")) return()
+        v <- vista_segura()
+        f <- if (!is.null(v)) v[v$id == id, , drop = FALSE]
+      } else f <- externa
       if (is.null(f) || !nrow(f)) { shiny::showNotification(tr("requisiciones.error.no_existe"), type = "warning"); return() }
+      f <- f[1, , drop = FALSE]
       detalle_id(id); ev_destino(id); pegado(NULL); imagen_ver(NULL); tabla_ver_id(NULL)
-      solo_ver <- f$etapa %in% c("pagada", "papelera") || !puede(usr(), "can_edit_requisiciones")
-      lectura(f$etapa %in% c("pagada", "papelera"))
-      tryCatch(requisiciones_marcar_leido(cid(), id, yo()), error = function(e)
-        message("[requisiciones] marca de leído falló: ", conditionMessage(e)))
+      solo_lectura <- !is.null(externa) || f$etapa %in% c("pagada", "papelera")
+      solo_ver <- solo_lectura || !puede(usr(), "can_edit_requisiciones")
+      lectura(solo_lectura)
+      if (puede(usr(), "can_view_requisiciones"))   # a write: only for whoever works the list
+        tryCatch(requisiciones_marcar_leido(cid(), id, yo()), error = function(e)
+          message("[requisiciones] marca de leído falló: ", conditionMessage(e)))
       ins <- .reqm_mapa_etapas()[[f$etapa]]
       shiny::showModal(hd_modal(
         titulo = htmltools::tagList(htmltools::tags$span(class = "hdreq-folio", f$folio), " ", f$titulo),
@@ -802,6 +826,10 @@ requisicionesServer <- function(id, shared, activa = NULL) {
         abrir_detalle(a$ids[1], if (identical(a$accion, "adjuntos")) "evidencia" else "datos")
         return()
       }
+      if (identical(a$accion, "crear_provision")) {
+        crear_provision(a$ids[1])
+        return()
+      }
       if (identical(a$accion, "mover")) {
         if (!puede_o_avisa(shared, "can_edit_requisiciones")) return()
         pend_mover(a$ids)
@@ -832,6 +860,51 @@ requisicionesServer <- function(id, shared, activa = NULL) {
           shiny::showNotification(tr_n("requisiciones.sin_permiso_otros_n", length(negadas)), type = "warning", duration = 8)
       }
     })
+    # ── Liga con Pasivos (E3) ───────────────────────────────────────────────
+    # "Crear provisión": checked on the server again (the form wired, the
+    # permission, and on S3's current data that the requisition still has no
+    # provision); then Pasivos' form opens prefilled. Its al_guardar links the
+    # provision it saved -- to the client of the click, never another one a
+    # staff session jumped to in between.
+    crear_provision <- function(req_id) {
+      if (!is.function(abrir_provision)) return()
+      if (!puede_o_avisa(shared, "can_edit_provisiones")) return()
+      if (!puede_o_avisa(shared, "can_view_requisiciones")) return()
+      c0 <- cid(); if (is.null(c0)) return()
+      v <- tryCatch(requisiciones_vista(c0), error = function(e) NULL)
+      if (is.null(v)) { shiny::showNotification(tr("requisiciones.error.leer"), type = "error"); return() }
+      f <- v[v$id %in% req_id, , drop = FALSE]
+      if (!nrow(f)) { shiny::showNotification(tr("requisiciones.error.no_existe"), type = "warning"); return() }
+      if (!identical(f$etapa[1], "sin_provision")) {
+        shiny::showNotification(tr("requisiciones.error.ya_ligada"), type = "warning"); recargar(); return()
+      }
+      folio <- f$folio[1]
+      al_guardar <- function(provision_id) {
+        if (!identical(shiny::isolate(cid()), c0)) {
+          shiny::showNotification(tr("requisiciones.error.otro_cliente", folio = folio), type = "error", duration = 10)
+          return(invisible(FALSE))
+        }
+        if (!puede_o_avisa(shared, "can_edit_provisiones")) return(invisible(FALSE))
+        ok <- escribir(function() requisicion_ligar_provision(c0, req_id, provision_id, yo()),
+                       tr("requisiciones.ligada", folio = folio))
+        invisible(!is.null(ok))
+      }
+      abrir_provision(requisicion_prefill_provision(f[1, , drop = FALSE]), al_guardar)
+    }
+
+    # Read-only detail from Calendario, Pasivos or the confirmation history:
+    # the requisition behind a provision, paid or trashed ones included.
+    # Returns TRUE when it opened.
+    abrir_por_provision <- function(provision_id) {
+      if (!requisiciones_puede_ver_evidencia(usr())) { puede_o_avisa(shared, "can_view_requisiciones"); return(invisible(FALSE)) }
+      c0 <- cid(); if (is.null(c0)) return(invisible(FALSE))
+      f <- tryCatch(requisicion_de_provision(c0, provision_id), error = function(e) NULL)
+      if (is.null(f)) { shiny::showNotification(tr("requisiciones.error.leer"), type = "error"); return(invisible(FALSE)) }
+      if (!nrow(f)) { shiny::showNotification(tr("requisiciones.error.sin_requisicion"), type = "warning"); return(invisible(FALSE)) }
+      abrir_detalle(f$id[1], "evidencia", externa = f[1, , drop = FALSE])
+      invisible(TRUE)
+    }
+
     shiny::observeEvent(input$mover_ok, {
       if (!puede_o_avisa(shared, "can_edit_requisiciones")) return()
       ids <- pend_mover(); if (!length(ids)) return()
@@ -889,6 +962,7 @@ requisicionesServer <- function(id, shared, activa = NULL) {
     })
     # For tests and for the integrator's wiring.
     invisible(list(tabla = t, detalle_id = detalle_id, vista = vista, datos = datos_lista,
-                   carpeta_sel = carpeta_sel, ver_papelera = ver_papelera, pegado = pegado))
+                   carpeta_sel = carpeta_sel, ver_papelera = ver_papelera, pegado = pegado,
+                   lectura = lectura, abrir_por_provision = abrir_por_provision))
   })
 }
