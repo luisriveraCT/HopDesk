@@ -2910,30 +2910,54 @@
     else setTimeout(registrar, 20);
   })();
 
-  // This script arriving with the session already running (the first table
-  // came inside a renderUI): the server's first message for those tables
-  // came before there was a handler and was lost. Ask for it again
-  // (hdt_pedir); the server sends it as on a data change. Their containers
-  // may be inserted just after this script runs, so watch for them until
-  // the first one shows (5 s at most): any table after that gets its
-  // message with the handler already in place. On a normal page load the
-  // session isn't connected yet and the first message arrives after this.
-  // (T09)
-  function pedirPerdidos() {
+  // A table's server sends its data when the session starts, and again only
+  // when the data changes. If this script arrives later than that -- with the
+  // first table drawn inside a renderUI of a tab not shown yet -- those first
+  // messages came before there was a handler and were lost, and any table
+  // drawn after them stayed "Cargando…" (T09; again in T28, Administración).
+  // So, for as long as the page lives: every table container that shows up
+  // without a message kept for it (ULTIMO) asks for its data again
+  // (hdt_pedir; the server sends it as on a data change) -- ONCE per
+  // container element, so a table whose datos() gives nothing (no
+  // permission, req) never asks in a loop. A short wait first: a message
+  // usually arrives just before its container, and then nothing is asked.
+  // On a normal page load (session not connected yet) nothing is asked: the
+  // first messages come after this script. (T29)
+  var HDT_PEDIR_ESPERA = 250;   // ms
+  function conectada() {
     var app = window.Shiny && Shiny.shinyapp;
-    if (!app || !app.isConnected || !app.isConnected() || !Shiny.setInputValue) return;
-    var pedir = function () {
-      var hay = false;
-      Array.prototype.forEach.call(document.querySelectorAll('.hdt[data-ns]'), function (el) {
-        hay = true;
-        if (!el.id || ULTIMO[el.id]) return;
-        Shiny.setInputValue(el.getAttribute('data-ns') + 'hdt_pedir', Date.now(), { priority: 'event' });
-      });
-      return hay;
-    };
-    if (pedir() || !window.MutationObserver) return;
-    var obs = new MutationObserver(function () { if (pedir()) obs.disconnect(); });
-    obs.observe(document.body, { childList: true, subtree: true });
-    setTimeout(function () { obs.disconnect(); }, 5000);
+    return !!(app && app.isConnected && app.isConnected() && Shiny.setInputValue);
+  }
+  function pedirSiFalta(el) {
+    if (!el.id || ULTIMO[el.id] || el.hdtPedido || !conectada()) return;
+    el.hdtPedido = true;
+    Shiny.setInputValue(el.getAttribute('data-ns') + 'hdt_pedir', Date.now(), { priority: 'event' });
+  }
+  function revisarLuego(els) {
+    if (!els.length) return;
+    setTimeout(function () {
+      els.forEach(function (el) { if (document.body.contains(el)) pedirSiFalta(el); });
+    }, HDT_PEDIR_ESPERA);
+  }
+  function pedirPerdidos() {
+    // From <head> on a normal page load there's no <body> yet.
+    if (!document.body) { document.addEventListener('DOMContentLoaded', pedirPerdidos); return; }
+    revisarLuego(Array.prototype.slice.call(document.querySelectorAll('.hdt[data-ns]')));
+    if (!window.MutationObserver) return;
+    // Cheap: only nodes just added, and only element nodes that are or hold
+    // a table container.
+    new MutationObserver(function (cambios) {
+      var nuevos = [];
+      for (var i = 0; i < cambios.length; i++) {
+        var agregados = cambios[i].addedNodes;
+        for (var j = 0; j < agregados.length; j++) {
+          var n = agregados[j];
+          if (n.nodeType !== 1) continue;
+          if (n.matches && n.matches('.hdt[data-ns]')) nuevos.push(n);
+          else if (n.querySelectorAll) Array.prototype.push.apply(nuevos, n.querySelectorAll('.hdt[data-ns]'));
+        }
+      }
+      revisarLuego(nuevos);
+    }).observe(document.body, { childList: true, subtree: true });
   }
 })();
