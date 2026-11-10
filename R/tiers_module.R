@@ -316,7 +316,8 @@ tiersUI <- function(id) {
       div(class = "border rounded", perm_rows),
 
       # ── Allowed clients (principal editing hopdesk/principal with can_jump_clients) ──
-      if (isTRUE(current_perms$can_jump_clients) &&
+      # [[ ]]: permisos_resueltos() is a named logical vector; `$` on it throws.
+      if (isTRUE(current_perms[["can_jump_clients"]]) &&
           nivel_es_tope(viewer_tier) &&
           !is.null(registry) && is.data.frame(registry) && nrow(registry)) {
         active_clients  <- registry[registry$status == "active", , drop = FALSE]
