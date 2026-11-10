@@ -60,7 +60,7 @@ hd_registro <- list(
     agregar = c("sel_todos"), quitar = character(),
     notas = c("Quitar: Clic en el espacio vacío borra la selección: Un clic sin querer fuera de las filas borra todo lo marcado.", "Agregar: Seleccionar todos: para poder quitar selección, también.")),
   historial_conf = list(nombre = "Historial de confirmaciones", clase = "C", archivo = "bancos_module.R",
-    agregar = character(), quitar = character(),
+    agregar = c("adjuntos"), quitar = character(),
     notas = character()),
   papelera = list(nombre = "Papelera", clase = "C", archivo = "bancos_module.R",
     agregar = character(), quitar = character(),
