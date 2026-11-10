@@ -50,6 +50,7 @@ stubs <- list(
   puede_o_avisa = function(shared, permiso, ...) TRUE,
   puede = function(usuario, permiso) TRUE,
   log_action = function(...) invisible(NULL),
+  avisos_actividad = function(...) invisible(NULL),   # R/avisos.R; the Alertas del equipo hook (C)
   bump_sync_version = function(...) invisible(NULL),
   safe_load_pagar_hoy = function(...) NULL,          # falls back to shared$pagar_hoy_db()
   save_pagar_hoy_with_retry = function(...) list(ok = TRUE, attempts = 1L),

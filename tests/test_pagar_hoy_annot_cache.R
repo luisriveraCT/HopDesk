@@ -46,6 +46,7 @@ source(Sys.getenv("PH_MODULE", "R/pagar_hoy_module.R"))
 ultimo_ppl <- NULL; ultimo_modal <- NULL
 .log_pago_generado <- function(shared, emp, moneda, cuenta_origen, ppl_rows, ...) ultimo_ppl <<- ppl_rows
 log_action <- function(...) invisible(NULL)
+avisos_actividad <- function(...) invisible(NULL)   # R/avisos.R; the Alertas del equipo hook (C)
 bump_sync_version <- function(...) invisible(NULL)
 showModal <- function(ui, ...) ultimo_modal <<- as.character(ui)
 removeModal <- function(...) invisible(NULL)

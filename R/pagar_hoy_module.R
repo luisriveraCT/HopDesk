@@ -1328,6 +1328,7 @@ pagarHoyServer <- function(id, shared) {
           )
           lines <- generate_ppl(ppl_rows, cuenta_origen, Sys.Date(), 1L)
           write_ppl(lines, file)
+          avisos_actividad(shared$effective_client_id(), "generar_archivo_pago", shared$current_user(), list(cuerpo = paste0(emp, " · ", nrow(ppl_rows), " pago(s) · ", cur_sel)))
           removeModal()
         }
       )
@@ -1983,6 +1984,7 @@ pagarHoyServer <- function(id, shared) {
                                        conditionMessage(secondary_err_ap) else NA_character_),
                      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
                      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
+          avisos_actividad(shared$effective_client_id(), "confirmar_pago", shared$current_user(), list(cuerpo = paste(c(emp, msg), collapse = " · ")))
         }
       }, ignoreInit = TRUE)
 
@@ -3148,6 +3150,7 @@ pagarHoyServer <- function(id, shared) {
         fnames <- vapply(results, function(r) r$fname, character(1))
         if (length(fnames)) zip(file, fnames, flags = "-j")
         else writeLines("", file)
+        if (length(fnames)) avisos_actividad(shared$effective_client_id(), "generar_archivo_pago", shared$current_user(), list(cuerpo = paste0(length(fnames), " archivo(s) en un ZIP")))
       }
     )
 
