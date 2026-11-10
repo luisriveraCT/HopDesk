@@ -43,11 +43,7 @@ suppressMessages({
 })
 IS_ADMIN_DEPLOYMENT <- TRUE
 log_action <- function(...) invisible(NULL)
-.net_orig <- list(get_bucket = get("get_bucket", asNamespace("aws.s3")),
-                  put_object = get("put_object", asNamespace("aws.s3")))
-utils::assignInNamespace("get_bucket", function(...) list(), "aws.s3")
-utils::assignInNamespace("put_object", function(...) invisible(TRUE), "aws.s3")
-.net_restaurar <- function() for (nm in names(.net_orig)) utils::assignInNamespace(nm, .net_orig[[nm]], "aws.s3")
+# get_bucket and put_object stay in s3_memoria's store, off the network (T30).
 
 DEV <- niveles_unico_vivo()[1]
 u <- function(name, tier = "admin", activo = TRUE)
@@ -142,6 +138,6 @@ res <- tryCatch(testServer(tiersServer, args = list(shared = shared), {
 }), error = function(e) { message("  ERROR testServer: ", conditionMessage(e)); FALSE })
 ok("el módulo corrió hasta el final", isTRUE(.al_final))
 
-s3_memoria_restaurar(); .net_restaurar()
+s3_memoria_restaurar()
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail) quit(status = 1)

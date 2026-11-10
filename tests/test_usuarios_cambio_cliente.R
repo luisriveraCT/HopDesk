@@ -40,14 +40,8 @@ suppressMessages({
 tr <- function(k, ...) k
 IS_ADMIN_DEPLOYMENT <- TRUE   # staff deployment: the one that switches clients
 log_action <- function(...) invisible(NULL)
-# s3_memoria swaps the reads and writes but not these two: keep them off the
-# network too (put_object is .s3_write's backup, get_bucket the audit lists).
-.net_orig <- list(get_bucket = get("get_bucket", asNamespace("aws.s3")),
-                  put_object = get("put_object", asNamespace("aws.s3")))
-utils::assignInNamespace("get_bucket", function(...) list(), "aws.s3")
-utils::assignInNamespace("put_object", function(...) invisible(TRUE), "aws.s3")
-.net_restaurar <- function()
-  for (nm in names(.net_orig)) utils::assignInNamespace(nm, .net_orig[[nm]], "aws.s3")
+# get_bucket and put_object (.s3_write's backup, the audit lists) stay in
+# s3_memoria's store, off the network (T30).
 
 usuario <- function(u, tier, cid)
   data.frame(username = u, display_name = paste(u, cid), tier = tier, activo = TRUE,
@@ -98,6 +92,6 @@ res <- tryCatch(testServer(tiersServer, args = list(shared = shared), {
 }), error = function(e) { message("  ERROR testServer: ", conditionMessage(e)); FALSE })
 ok("the module ran to the end", isTRUE(.al_final))
 
-s3_memoria_restaurar(); .net_restaurar()
+s3_memoria_restaurar()
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail) quit(status = 1)
