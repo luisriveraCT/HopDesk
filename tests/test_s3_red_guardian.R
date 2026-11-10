@@ -56,7 +56,10 @@ permitidos <- c(
   "R/settings/settings_helpers.R" = "}, client_id = client_id, permitir_reduccion = TRUE)", # borrar_banco_si_libre: removes one bank no account uses; the last empties the catalog (CM12, CM17)
   # CM12e, each on S3's current table: Revertir (the chosen partners' dates),
   # saving a partner (its rows, then its stale dates) and Aplicar "skip_manual"/"all".
-  "R/settings/settings_companies.R" = "client_id = cid, permitir_reduccion = TRUE)"
+  "R/settings/settings_companies.R" = "client_id = cid, permitir_reduccion = TRUE)",
+  # alertas_guardar() (C): unmarking every action of a user removes that
+  # user's row from avisos_alertas.rds, on S3's matrix as it is now.
+  "R/avisos_alertas_module.R" = "}, permitir_reduccion = TRUE)"
 )
 usos <- do.call(rbind, lapply(archivos, function(f) {
   x <- codigo(f); i <- grep("permitir_reduccion = TRUE", x, fixed = TRUE)
