@@ -340,17 +340,17 @@ empresasServer <- function(id, shared) {
       rfc          <- toupper(trimws(input$new_rfc          %||% ""))
 
       if (!nzchar(initials) || !grepl("^[A-Z0-9]+$", initials)) {
-        showNotification("Iniciales inválidas (solo letras mayúsculas y números).",
+        showNotification(tr("tablas.empresas.aviso.iniciales_invalidas"),
                          type = "error"); return()
       }
       if (!nzchar(razon_social)) {
-        showNotification("La Razón Social es obligatoria.", type = "error"); return()
+        showNotification(tr("tablas.empresas.aviso.razon_social_obligatoria"), type = "error"); return()
       }
 
       all_e <- all_empresas_rv()
       if (!is.null(all_e) && nrow(all_e) &&
           initials %in% toupper(trimws(all_e$initials))) {
-        showNotification("Ya existe una empresa con esas iniciales.", type = "error"); return()
+        showNotification(tr("tablas.empresas.aviso.iniciales_existe"), type = "error"); return()
       }
 
       alt_lines <- trimws(strsplit(input$new_nombres_alt %||% "", "\n")[[1]])
@@ -377,7 +377,7 @@ empresasServer <- function(id, shared) {
                         error = function(e) { message("[EMP] create failed: ", e$message); FALSE })
       if (!saved) {
         showNotification(
-          "No se pudo guardar la empresa. Verifica la conexión e intenta de nuevo.",
+          tr("tablas.empresas.aviso.no_guardada"),
           type = "error", duration = 6)
         return()
       }
@@ -387,7 +387,7 @@ empresasServer <- function(id, shared) {
       updateTextInput(session, "new_nombre_corto", value = "")
       updateTextInput(session, "new_rfc",          value = "")
       showNotification(
-        paste0("Empresa '", initials, "' (", new_row$account_code, ") creada."),
+        tr("tablas.empresas.aviso.creada", iniciales = initials, codigo = as.character(new_row$account_code)),
         type = "message", duration = 3)
       log_action(
         user        = tryCatch(shared$current_user(), error = function(e) "system"),
@@ -430,7 +430,7 @@ empresasServer <- function(id, shared) {
       new_ini <- toupper(trimws(input$edit_initials %||% ""))
 
       if (!nzchar(new_ini) || !grepl("^[A-Z0-9]+$", new_ini)) {
-        showNotification("Iniciales inválidas (solo letras mayúsculas y números).",
+        showNotification(tr("tablas.empresas.aviso.iniciales_invalidas"),
                          type = "error"); return()
       }
 
@@ -442,13 +442,13 @@ empresasServer <- function(id, shared) {
       if (new_ini != old_ini) {
         others <- all_e[-full_idx, , drop = FALSE]
         if (new_ini %in% toupper(trimws(others$initials[!is.na(others$initials)]))) {
-          showNotification("Ya existe otra empresa con esas iniciales.", type = "error")
+          showNotification(tr("tablas.empresas.aviso.iniciales_otra"), type = "error")
           return()
         }
         cascade_err <- tryCatch({ rename_empresa_initials(old_ini, new_ini, client_id = shared$effective_client_id()); NULL },
                                 error = function(e) e$message)
         if (!is.null(cascade_err)) {
-          showNotification(paste0("Error actualizando tablas relacionadas: ", cascade_err),
+          showNotification(tr("tablas.empresas.aviso.error_cascada", error = cascade_err),
                            type = "error", duration = 8)
           return()
         }
@@ -468,7 +468,7 @@ empresasServer <- function(id, shared) {
       saved <- tryCatch({ .save_and_broadcast(all_e); TRUE },
                         error = function(e) { message("[EMP] edit failed: ", e$message); FALSE })
       if (!saved) {
-        showNotification("No se pudieron guardar los cambios. Intenta de nuevo.",
+        showNotification(tr("tablas.empresas.aviso.cambios_no_guardados"),
                          type = "error", duration = 6)
         return()
       }
@@ -546,12 +546,12 @@ empresasServer <- function(id, shared) {
       saved <- tryCatch({ .save_and_broadcast(all_e); TRUE },
                         error = function(e) { message("[EMP] delete failed: ", e$message); FALSE })
       if (!saved) {
-        showNotification("No se pudo guardar el cambio. Intenta de nuevo.",
+        showNotification(tr("tablas.empresas.aviso.cambio_no_guardado"),
                          type = "error", duration = 6)
         return()
       }
       if (identical(selected_id(), id)) selected_id(NULL)
-      showNotification(paste0("Empresa '", target_initials, "' desactivada."),
+      showNotification(tr("tablas.empresas.aviso.desactivada", iniciales = target_initials),
                        type = "message", duration = 4)
       log_action(
         user        = tryCatch(shared$current_user(), error = function(e) "system"),
@@ -582,7 +582,7 @@ empresasServer <- function(id, shared) {
     erp_access <- reactive(erp_access_allowed(current_tier(), erp_is_staff(), erp_jumped(), shared$usuario()))
 
     .reject_erp_action <- function() {
-      showNotification("No tienes permisos para administrar conexiones ERP.",
+      showNotification(tr("tablas.empresas.aviso.erp_sin_permiso"),
                        type = "error", duration = 5)
     }
 
@@ -900,7 +900,7 @@ empresasServer <- function(id, shared) {
       editing  <- tryCatch(editing_erp_row(), error = function(e) NULL)
       erp_type <- if (!is.null(editing)) editing$erp_type[1] else "sap_b1_service_layer"
       label    <- trimws(input$erp_label %||% "")
-      if (!nzchar(label)) { showNotification("El nombre es obligatorio.", type = "error"); return() }
+      if (!nzchar(label)) { showNotification(tr("tablas.empresas.aviso.erp_nombre_obligatorio"), type = "error"); return() }
 
       cfg_fields <- erp_connector_config_fields(erp_type)
       config <- setNames(lapply(cfg_fields, function(f) {
@@ -915,10 +915,10 @@ empresasServer <- function(id, shared) {
       all_secret_filled <- all(vapply(secret_inputs, nzchar, logical(1)))
 
       if (is.null(editing) && !all_secret_filled) {
-        showNotification("Completa todos los campos de credenciales.", type = "error"); return()
+        showNotification(tr("tablas.empresas.aviso.erp_credenciales_completas"), type = "error"); return()
       }
       if (any_secret_filled && !all_secret_filled) {
-        showNotification("Completa todos los campos de credenciales, o déjalos todos en blanco para no modificarlas.",
+        showNotification(tr("tablas.empresas.aviso.erp_credenciales_todas_o_ninguna"),
                          type = "error", duration = 6)
         return()
       }
@@ -971,7 +971,7 @@ empresasServer <- function(id, shared) {
 
       erp_modal$form_open <- FALSE
       erp_modal$editing_id <- NULL
-      showNotification(paste0("Conexión '", label, "' guardada."), type = "message", duration = 3)
+      showNotification(tr("tablas.empresas.aviso.erp_guardada", nombre = label), type = "message", duration = 3)
     })
 
     observeEvent(input$erp_test_click, {
@@ -981,7 +981,7 @@ empresasServer <- function(id, shared) {
       cid <- shared$effective_client_id()
       current <- tryCatch(load_erp_connections(cid), error = function(e) NULL)
       if (is.null(current) || !any(current$id == test_id)) {
-        showNotification("Esta conexión ya no existe (fue eliminada o modificada en otra sesión).",
+        showNotification(tr("tablas.empresas.aviso.erp_ya_no_existe"),
                          type = "error", duration = 6)
         return()
       }
@@ -1047,7 +1047,7 @@ empresasServer <- function(id, shared) {
       })
       erp_modal$confirm_delete_id <- NULL
       if (!saved) return()
-      showNotification("Conexión eliminada.", type = "message", duration = 3)
+      showNotification(tr("tablas.empresas.aviso.erp_eliminada"), type = "message", duration = 3)
     })
 
     # ── Restore (Stage 3b §2) ──────────────────────────────────────────────────
@@ -1077,7 +1077,7 @@ empresasServer <- function(id, shared) {
       })
       if (!saved) return()
       showNotification(
-        "Conexión restaurada. Verifica que los datos sigan siendo correctos antes de usarla.",
+        tr("tablas.empresas.aviso.erp_restaurada"),
         type = "message", duration = 6)
     })
 
@@ -1142,11 +1142,11 @@ empresasServer <- function(id, shared) {
     observeEvent(input$btn_save_group_config, {
       name <- trimws(input$group_name_input %||% "")
       if (!nzchar(name)) {
-        showNotification("El nombre del grupo no puede estar vacío.", type = "warning")
+        showNotification(tr("tablas.empresas.aviso.grupo_nombre_vacio"), type = "warning")
         return()
       }
       if (nchar(name) > 100) {
-        showNotification("El nombre del grupo no puede superar 100 caracteres.", type = "warning")
+        showNotification(tr("tablas.empresas.aviso.grupo_nombre_largo"), type = "warning")
         return()
       }
 
@@ -1158,12 +1158,12 @@ empresasServer <- function(id, shared) {
       if (!is.null(logo_file) && file.exists(logo_file$datapath)) {
         ext <- tolower(tools::file_ext(logo_file$name))
         if (!ext %in% c("png", "jpg", "jpeg")) {
-          showNotification("Formato inválido. Usa PNG o JPG.", type = "error")
+          showNotification(tr("tablas.empresas.aviso.logo_formato"), type = "error")
           return()
         }
         size_mb <- file.size(logo_file$datapath) / 1024 / 1024
         if (size_mb > 2) {
-          showNotification("El logo supera 2 MB. Usa una imagen más pequeña.", type = "error")
+          showNotification(tr("tablas.empresas.aviso.logo_grande"), type = "error")
           return()
         }
         cfg$logo_raw <- readBin(logo_file$datapath, "raw",
@@ -1174,7 +1174,7 @@ empresasServer <- function(id, shared) {
       tryCatch({
         save_group_config(cfg, client_id = shared$effective_client_id())
         shared$group_config(cfg)
-        showNotification("Configuración del grupo guardada correctamente.",
+        showNotification(tr("tablas.empresas.aviso.grupo_guardado"),
                          type = "message", duration = 4)
         log_action(
           user        = tryCatch(shared$current_user(), error = function(e) "system"),
@@ -1187,7 +1187,7 @@ empresasServer <- function(id, shared) {
           viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
         )
       }, error = function(e) {
-        showNotification(paste("Error al guardar:", conditionMessage(e)),
+        showNotification(tr("tablas.empresas.aviso.error_guardar", error = conditionMessage(e)),
                          type = "error", duration = 6)
       })
     })
