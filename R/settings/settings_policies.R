@@ -891,7 +891,7 @@ settings_policies_observer <- function(input, output, session, shared) {
     if (!puede_o_avisa(shared, "can_manage_policies")) return()
     nm <- trimws(input$pol_name %||% "")
     if (!nzchar(nm)) {
-      showNotification("El nombre de la política es requerido.", type = "warning")
+      showNotification(tr("tablas.ajustes.aviso.politica_nombre_requerido"), type = "warning")
       return()
     }
     type <- input$pol_type %||% "weekdays"
@@ -922,7 +922,7 @@ settings_policies_observer <- function(input, output, session, shared) {
       pid <- isolate(pol_editing())$id
       idx <- which(db$id == pid)
       if (!length(idx)) {
-        showNotification("No se encontró la política. Recarga el panel.", type = "error")
+        showNotification(tr("tablas.ajustes.aviso.politica_no_encontrada_recarga"), type = "error")
         return()
       }
       db$name[idx]           <- nm
@@ -955,7 +955,7 @@ settings_policies_observer <- function(input, output, session, shared) {
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
     }, error = function(e) {
-      showNotification(paste("Error al guardar:", e$message), type = "error", duration = 5)
+      showNotification(tr("tablas.ajustes.aviso.error_guardar", error = e$message), type = "error", duration = 5)
     })
   }, ignoreInit = TRUE)
 
@@ -1046,7 +1046,7 @@ settings_policies_observer <- function(input, output, session, shared) {
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
     }, error = function(e) {
-      showNotification(paste("Error al guardar asignaciones:", e$message),
+      showNotification(tr("tablas.ajustes.aviso.error_guardar_asignaciones", error = e$message),
                        type = "error", duration = 5)
     })
   }, ignoreInit = TRUE)
@@ -1084,7 +1084,7 @@ settings_policies_observer <- function(input, output, session, shared) {
       removeModal()
       show_settings_modal(input, output, session, shared)
       output$settings_panel <- renderUI({ .policies_merged_panel_ui("reglas") })
-      showNotification("Política eliminada.", type = "message", duration = 3)
+      showNotification(tr("tablas.ajustes.aviso.politica_eliminada"), type = "message", duration = 3)
       log_action(
         user        = tryCatch(shared$current_user(), error = function(e) "system"),
         module      = "settings_policies",
@@ -1098,7 +1098,7 @@ settings_policies_observer <- function(input, output, session, shared) {
       removeModal()
       show_settings_modal(input, output, session, shared)
       output$settings_panel <- renderUI({ .policies_merged_panel_ui("reglas") })
-      showNotification(paste("Error al eliminar:", e$message), type = "error", duration = 5)
+      showNotification(tr("tablas.ajustes.aviso.error_eliminar", error = e$message), type = "error", duration = 5)
     })
   }, ignoreInit = TRUE)
 
@@ -1109,4 +1109,3 @@ settings_policies_observer <- function(input, output, session, shared) {
     output$settings_panel <- renderUI({ .policies_merged_panel_ui("reglas") })
   }, ignoreInit = TRUE)
 }
-
