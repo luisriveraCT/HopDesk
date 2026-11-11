@@ -269,7 +269,7 @@ forecastingServer <- function(id, shared) {
       if (!nzchar(metric_id)) return()
       user <- tryCatch(shared$current_user(), error = function(e) "system")
 
-      shiny::showNotification("Actualizando datos…", id = "fc_refresh", duration = NULL,
+      shiny::showNotification(tr("tablas.pronosticos.aviso.actualizando"), id = "fc_refresh", duration = NULL,
                               type = "message")
       days <- as.integer(input$period_sel %||% "90")
       n_added <- tryCatch(
@@ -279,13 +279,13 @@ forecastingServer <- function(id, shared) {
                             triggered_by = "manual_ui",
                             user         = user),
         error = function(e) {
-          shiny::showNotification(paste("Error:", e$message), type = "error")
+          shiny::showNotification(tr("tablas.pronosticos.aviso.error", error = e$message), type = "error")
           0L
         }
       )
       shiny::removeNotification("fc_refresh")
       shiny::showNotification(
-        paste0(n_added, " observación(es) nuevas para ", metric_id, "."),
+        tr("tablas.pronosticos.aviso.observaciones_metrica", n = as.character(n_added), metrica = metric_id),
         type = "message", duration = 3
       )
       # Refresh in-memory cache so reactive updates
@@ -314,10 +314,10 @@ forecastingServer <- function(id, shared) {
       metrics <- .metrics()
       active_metrics <- metrics[!is.na(metrics$active) & metrics$active, , drop = FALSE]
       if (!nrow(active_metrics)) {
-        shiny::showNotification("No hay métricas activas.", type = "warning"); return()
+        shiny::showNotification(tr("tablas.pronosticos.aviso.sin_metricas"), type = "warning"); return()
       }
       shiny::showNotification(
-        paste0("Actualizando ", nrow(active_metrics), " métricas…"),
+        tr("tablas.pronosticos.aviso.actualizando_n", n = as.character(nrow(active_metrics))),
         id = "fc_refresh_all", duration = NULL, type = "message"
       )
       total <- 0L
@@ -330,7 +330,7 @@ forecastingServer <- function(id, shared) {
       }
       shiny::removeNotification("fc_refresh_all")
       shiny::showNotification(
-        paste0(total, " observación(es) nuevas en ", nrow(active_metrics), " métricas."),
+        tr("tablas.pronosticos.aviso.observaciones_total", n = as.character(total), m = as.character(nrow(active_metrics))),
         type = "message", duration = 4
       )
       fcs_flush_caches()
@@ -507,7 +507,7 @@ forecastingServer <- function(id, shared) {
       if (is.na(metrica)) { shiny::removeModal(); return() }   # no longer there
       tryCatch(shared$forecasting_subscriptions_db(subs), error = function(e) NULL)
       shiny::removeModal()
-      shiny::showNotification("Suscripción actualizada.", type = "message", duration = 3)
+      shiny::showNotification(tr("tablas.pronosticos.aviso.suscripcion_actualizada"), type = "message", duration = 3)
       log_action(
         user        = user,
         module      = "forecasting",
@@ -533,7 +533,7 @@ forecastingServer <- function(id, shared) {
       uncovered <- m[!m$metric_id %in% covered, , drop = FALSE]
       if (!nrow(uncovered)) {
         shiny::showNotification(
-          "Todas las métricas ya tienen suscripción global.", type = "message"); return()
+          tr("tablas.pronosticos.aviso.todas_con_global"), type = "message"); return()
       }
       methods <- tryCatch(load_forecasting_methods(), error = function(e) .schema_forecasting_methods())
       mc <- stats::setNames(methods$method_id, methods$label)
@@ -580,7 +580,7 @@ forecastingServer <- function(id, shared) {
       if (is.null(updated)) return()
       tryCatch(shared$forecasting_subscriptions_db(updated), error = function(e) NULL)
       shiny::removeModal()
-      shiny::showNotification("Suscripción global creada.", type = "message", duration = 3)
+      shiny::showNotification(tr("tablas.pronosticos.aviso.global_creada"), type = "message", duration = 3)
       log_action(
         user        = user,
         module      = "forecasting",
