@@ -365,7 +365,7 @@ pagosAuditViewerServer <- function(id, shared) {
             client_label    = effective_cid()
           )),
           error = function(e) {
-            showNotification(paste("Error generando el documento:", conditionMessage(e)),
+            showNotification(tr("tablas.archivos_pago.aviso.error_documento", error = conditionMessage(e)),
                              type = "error", duration = 10); NULL
           })
         if (is.null(html_path)) stop("Error al generar el documento HTML.")

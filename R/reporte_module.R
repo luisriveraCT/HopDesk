@@ -925,7 +925,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
             verbose = 0
           )
           showNotification(
-            "\u2713 PDF generado correctamente.",
+            tr("tablas.reporte.aviso.pdf_generado"),
             type = "message", duration = 3
           )
 

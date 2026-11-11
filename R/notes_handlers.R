@@ -161,8 +161,8 @@ notes_handlers <- function(input, output, session, shared,
     removeModal()
     active_note_id(NULL)
     active_note_lgr(NULL)
-    lbl <-if (visibility == "personal") "personal" else "pública"
-    showNotification(paste0("Nota ", lbl, " guardada."), type = "message", duration = 2)
+    showNotification(tr(if (visibility == "personal") "tablas.notas.aviso.guardada.personal" else "tablas.notas.aviso.guardada.publica"),
+                     type = "message", duration = 2)
   }
 
   observeEvent(input$add_note,           { .show_note_modal()          }, ignoreInit = TRUE)
@@ -236,7 +236,7 @@ notes_handlers <- function(input, output, session, shared,
     removeModal()
     active_note_id(NULL)
     active_note_lgr(NULL)
-    showNotification("Nota eliminada.", type = "message", duration = 2)
+    showNotification(tr("tablas.notas.aviso.eliminada"), type = "message", duration = 2)
     log_action(
       user        = tryCatch(current_user(), error = function(e) "system"),
       module      = "notes",

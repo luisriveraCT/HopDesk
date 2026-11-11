@@ -770,7 +770,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       edge    <- selected_edge(); req(edge)
       sel_ids <- arista_t$seleccion()
       if (!length(sel_ids)) {
-        showNotification("Selecciona al menos una factura.", type = "warning", duration = 2)
+        showNotification(tr("tablas.interco.aviso.elige_factura"), type = "warning", duration = 2)
         return()
       }
 
@@ -813,7 +813,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
         if (!key %in% exist) { plan <- c(plan, list(r)); exist <- c(exist, key); added <- added + 1L }
       }
       payment_plan(plan)
-      showNotification(paste0(added, " factura(s) a\u00f1adida(s) al plan."), type = "message", duration = 2)
+      showNotification(tr("tablas.interco.aviso.anadidas_plan", n = as.character(added)), type = "message", duration = 2)
     }, ignoreInit = TRUE)
 
     observeEvent(input$clear_plan, { payment_plan(list()) }, ignoreInit = TRUE)
@@ -921,7 +921,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       }
       shared$pagar_hoy_db(combined)
       payment_plan(plan[sin_ap])     # the unsent ones stay, for the user to see
-      showNotification(paste0(nrow(new_rows), " factura(s) enviada(s) a Agenda de Hoy."),
+      showNotification(tr("tablas.interco.aviso.enviadas_agenda", n = as.character(nrow(new_rows))),
                        type = "message", duration = 3)
       log_action(
         user        = user_id,
