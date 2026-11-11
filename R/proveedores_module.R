@@ -501,7 +501,7 @@ proveedoresServer <- function(id, shared) {
       removeModal()
       if (!guardado) return()
       inactivar_id_rv(NULL)
-      showNotification("Proveedor movido a inactivos.", type = "message", duration = 2)
+      showNotification(tr("tablas.proveedores.aviso.movido_inactivos"), type = "message", duration = 2)
     }, ignoreInit = TRUE)
 
     # ✕ (already confirmed in the table's bar)
@@ -511,7 +511,7 @@ proveedoresServer <- function(id, shared) {
       updated <- provs[provs$id != id, ]
       if (!.guardar("eliminar_proveedor", "Falló al eliminar el proveedor", id,
                     function() set_provs(updated))) return()
-      showNotification("Proveedor eliminado.", type = "message", duration = 2)
+      showNotification(tr("tablas.proveedores.aviso.eliminado"), type = "message", duration = 2)
     }
 
     # Bulk inactivar: the table's bar sends the marked ids (by id, never by
@@ -559,7 +559,7 @@ proveedoresServer <- function(id, shared) {
                         error = function(e) { message("[PROV] bulk inactivar failed: ", e$message); e })
       if (!isTRUE(saved)) {
         removeModal()
-        showNotification("No se pudieron inactivar los proveedores. Verifica la conexión e intenta de nuevo.",
+        showNotification(tr("tablas.proveedores.aviso.inactivar_error"),
                          type = "error", duration = 6)
         tryCatch(log_action(
           user        = tryCatch(shared$current_user(), error = function(e) "system"),
@@ -575,7 +575,7 @@ proveedoresServer <- function(id, shared) {
       }
       bulk_inactivar_ids(character(0))
       removeModal()
-      showNotification(paste0(nrow(rows_to_move), " proveedor(es) inactivados."),
+      showNotification(tr("tablas.proveedores.aviso.inactivados", n = as.character(nrow(rows_to_move))),
                        type = "message", duration = 2)
     }, ignoreInit = TRUE)
 
@@ -607,7 +607,7 @@ proveedoresServer <- function(id, shared) {
       }
 
       if (!nzchar(nom)) {
-        showNotification("El Nombre es obligatorio.", type = "warning"); return()
+        showNotification(tr("tablas.proveedores.aviso.nombre_obligatorio"), type = "warning"); return()
       }
 
       # Determine status (use ban_clave so empty-bank counts as incomplete)
@@ -1253,7 +1253,7 @@ proveedoresServer <- function(id, shared) {
       reactivar_id_rv(NULL)
       removeModal()
       if (!guardado) return()
-      showNotification("Proveedor reactivado.", type = "message", duration = 2)
+      showNotification(tr("tablas.proveedores.aviso.reactivado"), type = "message", duration = 2)
     }, ignoreInit = TRUE)
 
     # ✕ on an inactive one (already confirmed in the table's bar).
@@ -1263,7 +1263,7 @@ proveedoresServer <- function(id, shared) {
       updated <- inac[inac$id != id, ]
       if (!.guardar("eliminar_proveedor_inactivo", "Falló al eliminar el proveedor inactivo", id,
                     function() set_inac(updated))) return()
-      showNotification("Proveedor eliminado permanentemente.", type = "message", duration = 2)
+      showNotification(tr("tablas.proveedores.aviso.eliminado_permanente"), type = "message", duration = 2)
     }
 
   }) # end moduleServer
