@@ -564,6 +564,7 @@
   "tablas.ajustes.aviso.error_guardar_asignaciones": "Error al guardar asignaciones: {error}",
   "tablas.ajustes.aviso.politica_eliminada": "Política eliminada.",
   "tablas.ajustes.aviso.error_eliminar": "Error al eliminar: {error}",
+  "tablas.ajustes.aviso.error_guardar_s3": "❌ Error al guardar en S3: {error}",
   "tablas.flujo.dia.1": "L",
   "tablas.flujo.dia.2": "M",
   "tablas.flujo.dia.3": "X",

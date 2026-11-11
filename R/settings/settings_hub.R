@@ -477,7 +477,7 @@ settings_observers <- function(input, output, session, shared) {
       TRUE
     }, error = function(e) {
       showNotification(
-        paste("\u274c Error al guardar en S3:", e$message),
+        tr("tablas.ajustes.aviso.error_guardar_s3", error = e$message),
         type = "error", duration = 10
       )
       FALSE
@@ -913,4 +913,3 @@ settings_observers <- function(input, output, session, shared) {
   }, ignoreInit = TRUE)
 
 }
-
