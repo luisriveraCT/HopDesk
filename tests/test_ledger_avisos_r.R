@@ -23,21 +23,10 @@ suppressMessages(source("R/i18n.R"))
 # ── 1. No fixed text ─────────────────────────────────────────────────────────
 # A showNotification() whose message (its first argument) is a string literal,
 # or a paste/paste0/sprintf with a literal holding words, is fixed text.
-ex <- parse("R/ledger_module.R", keep.source = FALSE)
-fijos <- character(0)
-tiene_palabras <- function(x) is.character(x) && length(x) == 1L && grepl("[[:alpha:]]{3,}", x)
-recorrer <- function(x) {
-  if (!is.call(x)) return(invisible())
-  if (identical(x[[1]], as.name("showNotification")) && length(x) >= 2L) {
-    m <- x[[2]]
-    if (tiene_palabras(m) ||
-        (is.call(m) && as.character(m[[1]])[1] %in% c("paste", "paste0", "sprintf") &&
-         any(vapply(as.list(m)[-1], tiene_palabras, logical(1)))))
-      fijos <<- c(fijos, paste(deparse(m, width.cutoff = 120L)[1]))
-  }
-  xs <- as.list(x); for (k in seq_along(xs)) if (is.call(xs[[k]])) recorrer(xs[[k]])
-}
-for (e in ex) recorrer(e)
+# The common detector (tests/helpers/avisos_guardiana.R): it also sees
+# shiny::showNotification(), which the copy that lived here did not.
+source("tests/helpers/avisos_guardiana.R")
+fijos <- avisos_fijos("R/ledger_module.R")
 ok(sprintf("ningún aviso de ledger_module.R con texto fijo (quedan %d)", length(fijos)),
    { if (length(fijos)) message("  fijos: ", paste(utils::head(fijos, 5), collapse = " | ")); !length(fijos) })
 
