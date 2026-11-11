@@ -1346,7 +1346,7 @@ bancosServer <- function(id, shared) {
       removeModal()
       n <- length(idx)
       showNotification(
-        sprintf("%d movimiento%s eliminado%s.", n, if (n==1)"" else "s", if (n==1)"" else "s"),
+        tr_n("tablas.bancos.aviso.eliminados", as.character(n)),
         type = "message", duration = 3
       )
       log_action(
@@ -1443,7 +1443,7 @@ bancosServer <- function(id, shared) {
       row  <- movs[!is.na(movs$id) & movs$id == mov_id &
                    movs$fuente == "manual" & !movs$eliminado, , drop = FALSE]
       if (!nrow(row)) {
-        showNotification("Solo se pueden editar movimientos manuales (no importados de TXT).",
+        showNotification(tr("tablas.bancos.aviso.solo_manuales"),
                          type = "warning")
         return()
       }
@@ -1470,7 +1470,7 @@ bancosServer <- function(id, shared) {
       if (is_edit) {
         idx <- which(!is.na(movs$id) & movs$id == edit_id & movs$fuente == "manual")
         if (!length(idx)) {
-          showNotification("El movimiento ya no existe (pudo haber sido eliminado en otra sesión).",
+          showNotification(tr("tablas.bancos.aviso.ya_no_existe"),
                            type = "warning")
           removeModal(); editing_mov_id(NULL)
           return()
@@ -1845,8 +1845,7 @@ bancosServer <- function(id, shared) {
       session$sendCustomMessage("bnc_collapse_reasignar",
         list(target = ns("reasignar_panel")))
       showNotification(
-        paste0(actual_n, " movimiento", if (actual_n == 1) "" else "s",
-               " enviado", if (actual_n == 1) "" else "s", " a papelera."),
+        tr_n("tablas.bancos.aviso.a_papelera", as.character(actual_n)),
         type = "message", duration = 5)
       log_action(
         user        = user,
@@ -1981,7 +1980,7 @@ bancosServer <- function(id, shared) {
       )
 
       if (is.null(lines) || length(lines) < 3L) {
-        showNotification("No se pudo leer el archivo TXT.", type = "error")
+        showNotification(tr("tablas.bancos.aviso.txt_no_leido"), type = "error")
         parsed_preview(NULL)
         return()
       }
@@ -1995,7 +1994,7 @@ bancosServer <- function(id, shared) {
       result <- tryCatch(
         parse_banbajio_txt(lines, cuenta_id_sel),
         error = function(e) {
-          showNotification(paste("Error al parsear:", e$message), type = "error")
+          showNotification(tr("tablas.bancos.aviso.error_parsear", error = e$message), type = "error")
           NULL
         }
       )
@@ -2112,7 +2111,7 @@ bancosServer <- function(id, shared) {
       dedup_res  <- dedup_movimientos(pv, existentes)
       nuevos     <- dedup_res$nuevos
       if (!nrow(nuevos)) {
-        showNotification("No hay movimientos nuevos.", type = "warning"); return()
+        showNotification(tr("tablas.bancos.aviso.sin_nuevos"), type = "warning"); return()
       }
 
       # Auto-match against confirmados
@@ -2344,7 +2343,7 @@ bancosServer <- function(id, shared) {
                      }, client_id = shared$effective_client_id())
                    }, aviso = "tablas.bancos.error_archivar_restauracion")
 
-      showNotification("Movimiento restaurado.", type = "message", duration = 3)
+      showNotification(tr("tablas.bancos.aviso.restaurado"), type = "message", duration = 3)
       log_action(
         user        = tryCatch(shared$current_user(), error = function(e) "system"),
         module      = "bancos",
@@ -2386,7 +2385,7 @@ bancosServer <- function(id, shared) {
       shared$abonos_db(vista)
       bump_sync_version("abonos_db", client_id = shared$effective_client_id())
 
-      showNotification("Abono deshecho \u2014 el saldo del comprobante se restaur\u00f3.",
+      showNotification(tr("tablas.bancos.aviso.abono_deshecho"),
                        type = "message", duration = 3)
       log_action(
         user        = tryCatch(shared$current_user(), error = function(e) "system"),
@@ -2503,7 +2502,7 @@ bancosServer <- function(id, shared) {
       }
 
       removeModal()
-      showNotification("Confirmaci\u00f3n movida a papelera.", type = "message", duration = 2)
+      showNotification(tr("tablas.bancos.aviso.confirmacion_papelera"), type = "message", duration = 2)
       log_action(
         user        = tryCatch(shared$current_user(), error = function(e) "system"),
         module      = "bancos",
@@ -2547,7 +2546,7 @@ bancosServer <- function(id, shared) {
             save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base)
             bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
           }, error = function(e)
-            showNotification("Error al guardar. Intenta de nuevo.", type = "warning")
+            showNotification(tr("tablas.bancos.aviso.error_guardar"), type = "warning")
           )
         }
       }
@@ -2574,7 +2573,7 @@ bancosServer <- function(id, shared) {
           if (grepl("already recovered", conditionMessage(e), fixed = TRUE)) {
             message("[bancos] recover_confirmacion failed (likely an already-recovered double-click): ",
                     conditionMessage(e))
-            showNotification("Esta confirmación ya fue recuperada.", type = "warning", duration = 3)
+            showNotification(tr("tablas.bancos.aviso.ya_recuperada"), type = "warning", duration = 3)
           } else {
             message("[bancos] recover_confirmacion save failed: ", conditionMessage(e))
             showNotification(tr("comun.error_guardar"), type = "error", duration = NULL)
@@ -2611,7 +2610,7 @@ bancosServer <- function(id, shared) {
           restore_from_papelera(pap, row$archive_event_id,
                                 actor = tryCatch(shared$current_user(), error = function(e) "user")),
           error = function(e) {
-            showNotification(paste("Error al recuperar la entrada original:", e$message), type = "warning")
+            showNotification(tr("tablas.bancos.aviso.error_recuperar", error = e$message), type = "warning")
             NULL
           }
         )
@@ -2645,7 +2644,7 @@ bancosServer <- function(id, shared) {
           shared$manual_inv(mi_updated)
           tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi),
                    error = function(e) showNotification(
-                     paste("Error al restaurar entrada manual:", e$message), type = "warning"))
+                     tr("tablas.bancos.aviso.error_restaurar_manual", error = e$message), type = "warning"))
           if ("Fecha de vencimiento" %in% names(restored_row))
             restored_fecha <- as.Date(restored_row[["Fecha de vencimiento"]][1])
         }
@@ -2671,12 +2670,10 @@ bancosServer <- function(id, shared) {
         }, error = function(e) NULL)
       }
 
-      cal_label <- if (isTRUE(row$tipo == "cobro")) "CxC" else "CxP"
       fecha_fmt <- format(restored_fecha, "%d/%m/%Y")
       showNotification(
-        paste0("\u21a9 ", if (isTRUE(row$tipo == "cobro")) "Cobro" else "Pago",
-               " devuelto al calendario ",
-               cal_label, " \u2014 para el ", fecha_fmt),
+        tr(if (isTRUE(row$tipo == "cobro")) "tablas.bancos.aviso.devuelto.cobro" else "tablas.bancos.aviso.devuelto.pago",
+           fecha = fecha_fmt),
         type = "message", duration = 5
       )
       log_action(

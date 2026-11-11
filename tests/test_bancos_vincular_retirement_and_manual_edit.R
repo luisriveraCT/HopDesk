@@ -154,7 +154,7 @@ full <- paste(txt, collapse = "\n")
   ok("the edit branch re-validates the row still exists AND is still fuente==\"manual\" at save time (not trusting the snapshot from when the modal opened -- same staleness discipline as .pasivos_perform_conversion())",
      grepl('which\\(!is\\.na\\(movs\\$id\\) & movs\\$id == edit_id & movs\\$fuente == "manual"\\)', block))
   ok("the edit branch handles the row having vanished since the modal opened (shows a warning, doesn't crash)",
-     grepl("El movimiento ya no existe", block))
+     grepl("tablas.bancos.aviso.ya_no_existe", block, fixed = TRUE))   # "El movimiento ya no existe ..." (bancos-avisos)
   ok("the edit branch captures 'before' values prior to mutating (audit trail input)",
      grepl("before <- as\\.list\\(movs\\[idx\\[1\\], ", block))
   ok("the insert branch (else) still generates a fresh UUID for a genuinely new row (unchanged from before this stage)",
