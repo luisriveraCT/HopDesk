@@ -2461,7 +2461,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       combined_df <- tryCatch(
         build_export_combined_df(shared, ic_val),
         error = function(e) {
-          showNotification(paste("Error en datos:", conditionMessage(e)),
+          showNotification(tr("tablas.flujo.aviso.error_datos", error = conditionMessage(e)),
                            type = "error", duration = 8)
           NULL
         }
@@ -2469,8 +2469,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
 
       if (is.null(combined_df) || !nrow(combined_df)) {
         showNotification(
-          paste0("Sin datos para el período seleccionado (",
-                 date_from, " – ", date_to, ")."),
+          tr("tablas.flujo.aviso.sin_datos_periodo", desde = as.character(date_from), hasta = as.character(date_to)),
           type = "warning", duration = 8)
         stop("Sin datos disponibles.")
       }
@@ -2491,7 +2490,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
           idioma        = input$export_lang_primary %||% "es"
         ),
         error = function(e) {
-          showNotification(paste("Error al agregar datos:", conditionMessage(e)),
+          showNotification(tr("tablas.flujo.aviso.error_agregar_datos", error = conditionMessage(e)),
                            type = "error", duration = 8)
           NULL
         }
@@ -2534,7 +2533,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
           group_logo_ext = g_logo_ext
         ),
         error = function(e) {
-          showNotification(paste("Error generando Word:", conditionMessage(e)),
+          showNotification(tr("tablas.flujo.aviso.error_word", error = conditionMessage(e)),
                            type = "error", duration = 10)
           NULL
         }
@@ -2616,14 +2615,14 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
     combined_df <- tryCatch(
       build_export_combined_df(shared, ic_val),
       error = function(e) {
-        showNotification(paste("Error en datos:", conditionMessage(e)),
+        showNotification(tr("tablas.flujo.aviso.error_datos", error = conditionMessage(e)),
                          type = "error", duration = 8)
         NULL
       }
     )
     if (is.null(combined_df) || !nrow(combined_df)) {
       showNotification(
-        paste0("Sin datos para el período (", date_from, " – ", date_to, ")."),
+        tr("tablas.flujo.aviso.sin_datos_rango", desde = as.character(date_from), hasta = as.character(date_to)),
         type = "warning", duration = 8)
       return()
     }
@@ -2724,9 +2723,9 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
           type = "message", duration = 12)
       } else {
         err <- tryCatch(trimws(job$read_all_error_text()), error = function(e) "")
-        if (!nzchar(err)) err <- "Error desconocido al generar el archivo."
+        if (!nzchar(err)) err <- tr("tablas.flujo.aviso.error_desconocido")
         .xl_state("error")
-        showNotification(paste("Error al generar Excel:", err),
+        showNotification(tr("tablas.flujo.aviso.error_excel", error = err),
                          type = "error", duration = 12)
       }
       if (file.exists(info$snap_path)) unlink(info$snap_path)
@@ -2760,7 +2759,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       .xl_state("error")
       removeModal()
       showNotification(
-        "El proceso superó 5 minutos y fue cancelado. Reduzca el rango de fechas e intente de nuevo.",
+        tr("tablas.flujo.aviso.tiempo_agotado"),
         type = "error", duration = 15)
     }
   })
@@ -2775,7 +2774,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
     .xl_job(NULL)
     .xl_state("cancelled")
     removeModal()
-    showNotification("Exportación cancelada.", type = "warning", duration = 5)
+    showNotification(tr("tablas.flujo.aviso.cancelada"), type = "warning", duration = 5)
   }, ignoreInit = TRUE)
 
   # ── Continue waiting (dismiss timeout dialog, stay in building) ───────────
@@ -2921,12 +2920,11 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       combined_df <- tryCatch(
         build_export_combined_df(shared, ic_val),
         error = function(e) {
-          showNotification(paste("Error en datos:", conditionMessage(e)),
+          showNotification(tr("tablas.flujo.aviso.error_datos", error = conditionMessage(e)),
                            type = "error", duration = 8); NULL })
       if (is.null(combined_df) || !nrow(combined_df)) {
         showNotification(
-          paste0("Sin datos para el período seleccionado (",
-                 date_from, " – ", date_to, ")."),
+          tr("tablas.flujo.aviso.sin_datos_periodo", desde = as.character(date_from), hasta = as.character(date_to)),
           type = "warning", duration = 8)
         stop("Sin datos disponibles.")
       }
@@ -2939,7 +2937,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
           base_cur = base_cur, fx_rates = fx_rates,
           idioma = input$export_lang_primary %||% "es"),
         error = function(e) {
-          showNotification(paste("Error al agregar:", conditionMessage(e)),
+          showNotification(tr("tablas.flujo.aviso.error_agregar", error = conditionMessage(e)),
                            type = "error", duration = 8); NULL })
       if (is.null(export_data)) stop("Error al procesar los datos.")
 
@@ -2974,7 +2972,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
           group_logo_ext = g_logo_ext
         ),
         error = function(e) {
-          showNotification(paste("Error generando HTML:", conditionMessage(e)),
+          showNotification(tr("tablas.flujo.aviso.error_html", error = conditionMessage(e)),
                            type = "error", duration = 10); NULL })
       if (is.null(html_path)) stop("Error al generar el documento HTML.")
 
@@ -3027,7 +3025,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
                              marginLeft = 0.59, marginRight = 0.59)
         )
       }, error = function(e) {
-        showNotification(paste("Error al generar PDF:", conditionMessage(e)),
+        showNotification(tr("tablas.flujo.aviso.error_pdf", error = conditionMessage(e)),
                          type = "error", duration = 10)
         stop(conditionMessage(e))
       }, finally = {
