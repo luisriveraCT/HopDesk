@@ -192,6 +192,10 @@
 
   "comun.cerrar": "Close",
   "comun.cancelar": "Cancel",
+  "avisos.umbral.cxc_sube.titulo": "Past-due receivables at {empresa} ({moneda}) rose {pts} pts",
+  "avisos.umbral.cxc_sube.cuerpo": "They are now at {pct}%, above their usual variation.",
+  "avisos.umbral.cxc_baja.titulo": "Past-due receivables at {empresa} ({moneda}) fell {pts} pts",
+  "avisos.umbral.cxc_baja.cuerpo": "They are now at {pct}%, a larger drop than usual.",
   "comun.guardar": "Save",
   "comun.aviso.fecha_requerida": "Set the due date before saving.",
   "comun.confirmar": "Confirm",

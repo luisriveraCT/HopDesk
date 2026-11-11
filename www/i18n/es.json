@@ -192,6 +192,10 @@
 
   "comun.cerrar": "Cerrar",
   "comun.cancelar": "Cancelar",
+  "avisos.umbral.cxc_sube.titulo": "Los vencidos de CxC de {empresa} ({moneda}) subieron {pts} pts",
+  "avisos.umbral.cxc_sube.cuerpo": "Ahora están en {pct}%, por encima de su variación habitual.",
+  "avisos.umbral.cxc_baja.titulo": "Los vencidos de CxC de {empresa} ({moneda}) bajaron {pts} pts",
+  "avisos.umbral.cxc_baja.cuerpo": "Ahora están en {pct}%, una bajada mayor que la habitual.",
   "comun.guardar": "Guardar",
   "comun.aviso.fecha_requerida": "Pon la fecha de vencimiento antes de guardar.",
   "comun.confirmar": "Confirmar",
