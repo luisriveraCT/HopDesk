@@ -297,7 +297,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     user <- tryCatch(shared$current_user(), error = function(e) "")
 
     if (!has_capability(user, "pasivos.convert_to_item")) {
-      shiny::showNotification("No tienes permiso para convertir provisiones.", type = "error")
+      shiny::showNotification(tr("tablas.pasivos.aviso.sin_permiso_convertir"), type = "error")
       tryCatch(pasivos_log_audit(
         action_type = "capability.denied",
         user        = user,
@@ -310,12 +310,12 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (is.null(provs)) {
-      shiny::showNotification("Error cargando provisiones.", type = "error")
+      shiny::showNotification(tr("tablas.pasivos.aviso.error_cargar"), type = "error")
       return()
     }
     prov <- provs[provs$id == prov_id, , drop = FALSE]
     if (!nrow(prov)) {
-      shiny::showNotification("Provisión no encontrada.", type = "error")
+      shiny::showNotification(tr("tablas.pasivos.aviso.no_encontrada"), type = "error")
       return()
     }
     if (prov$estado[1] %in% c("converted", "item_confirmed")) {
@@ -333,7 +333,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     }
     if (prov$estado[1] != "provisional") {
       shiny::showNotification(
-        "Esta provisión ya no está disponible para conversión.", type = "warning")
+        tr("tablas.pasivos.aviso.no_disponible_conversion"), type = "warning")
       return()
     }
 
@@ -373,17 +373,17 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (is.null(provs)) {
-      shiny::showNotification("Error cargando provisiones.", type = "error"); return()
+      shiny::showNotification(tr("tablas.pasivos.aviso.error_cargar"), type = "error"); return()
     }
     provs_base <- provs   # CM09: the save applies only this change on S3 as it is now
     idx <- which(provs$id == prov_id)
     if (!length(idx)) {
-      shiny::showNotification("Provisión no encontrada.", type = "error")
+      shiny::showNotification(tr("tablas.pasivos.aviso.no_encontrada"), type = "error")
       shiny::removeModal(); return()
     }
     if (provs$estado[idx[1]] != "provisional") {
       shiny::showNotification(
-        "Solo se pueden eliminar provisiones en estado 'provisional'.", type = "warning")
+        tr("tablas.pasivos.aviso.solo_provisional"), type = "warning")
       shiny::removeModal(); return()
     }
 
@@ -399,7 +399,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base); TRUE },
                    error = function(e) {
-                     shiny::showNotification(paste0("Error: ", conditionMessage(e)),
+                     shiny::showNotification(tr("tablas.pasivos.aviso.error", error = conditionMessage(e)),
                                              type = "error"); FALSE
                    })
     if (!ok) return()
@@ -438,7 +438,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     rv$pending_provision_id <- NULL
     shiny::removeModal()
-    shiny::showNotification("Provisión eliminada.", type = "message", duration = 3)
+    shiny::showNotification(tr("tablas.pasivos.aviso.eliminada"), type = "message", duration = 3)
   })
 
   # ── pcm_save_provision: Save edits back to the provision without converting ─
@@ -455,12 +455,12 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (is.null(provs)) {
-      shiny::showNotification("Error cargando provisiones.", type = "error"); return()
+      shiny::showNotification(tr("tablas.pasivos.aviso.error_cargar"), type = "error"); return()
     }
     provs_base <- provs   # CM09: the save applies only this change on S3 as it is now
     idx <- which(provs$id == prov_id)
     if (!length(idx)) {
-      shiny::showNotification("Provisión no encontrada.", type = "error"); return()
+      shiny::showNotification(tr("tablas.pasivos.aviso.no_encontrada"), type = "error"); return()
     }
 
     # Snapshot before mutation -- same as pasivos_engine.R's convert/confirm/
@@ -493,7 +493,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base); TRUE },
                    error = function(e) {
-                     shiny::showNotification(paste0("Error: ", conditionMessage(e)),
+                     shiny::showNotification(tr("tablas.pasivos.aviso.error", error = conditionMessage(e)),
                                              type = "error"); FALSE
                    })
     if (!ok) return()
@@ -513,7 +513,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     rv$pending_provision_id <- NULL
     shiny::removeModal()
-    shiny::showNotification("Provisión actualizada.", type = "message", duration = 3)
+    shiny::showNotification(tr("tablas.pasivos.aviso.actualizada"), type = "message", duration = 3)
   })
 
   # ── pcm_save_only: Guardar como item (no agenda staging) ─────────────────
@@ -523,7 +523,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     user <- tryCatch(shared$current_user(), error = function(e) "system")
 
     if (!has_capability(user, "pasivos.convert_to_item")) {
-      shiny::showNotification("Sin permiso.", type = "error"); return()
+      shiny::showNotification(tr("tablas.pasivos.aviso.sin_permiso"), type = "error"); return()
     }
 
     res <- .pasivos_perform_conversion(input, shared, prov_id,
@@ -537,7 +537,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       shared$pasivos_provisions_db(load_pasivos_provisions(client_id = shared$effective_client_id()))
     }, error = function(e) NULL)
     shiny::removeModal()
-    shiny::showNotification("Provisión convertida a comprobante.", type = "message")
+    shiny::showNotification(tr("tablas.pasivos.aviso.convertida"), type = "message")
   })
 
   # ── pcm_save_and_stage: Guardar y agregar a Agenda de hoy ────────────────
@@ -547,7 +547,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     user <- tryCatch(shared$current_user(), error = function(e) "system")
 
     if (!has_capability(user, "pasivos.convert_to_item")) {
-      shiny::showNotification("Sin permiso.", type = "error"); return()
+      shiny::showNotification(tr("tablas.pasivos.aviso.sin_permiso"), type = "error"); return()
     }
 
     res <- .pasivos_perform_conversion(input, shared, prov_id,
@@ -562,7 +562,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     }, error = function(e) NULL)
     shiny::removeModal()
     shiny::showNotification(
-      "Provisión convertida a comprobante e ingresada a Agenda de hoy.", type = "message")
+      tr("tablas.pasivos.aviso.convertida_agenda"), type = "message")
   })
 
   # ── me_save_as_provision: Create orphan provision from Agregar Item modal ─
@@ -570,7 +570,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     user <- tryCatch(shared$current_user(), error = function(e) "")
 
     if (!has_capability(user, "pasivos.create_provision_manual")) {
-      shiny::showNotification("No tienes permiso para crear provisiones.", type = "error")
+      shiny::showNotification(tr("tablas.pasivos.aviso.sin_permiso_crear"), type = "error")
       return()
     }
     # CM22: a provision with no date never shows in the Tabla or Calendario.
@@ -633,7 +633,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       TRUE
     }, error = function(e) {
       shiny::showNotification(
-        paste0("Error al guardar la provisión: ", conditionMessage(e)),
+        tr("tablas.pasivos.aviso.error_guardar", error = conditionMessage(e)),
         type = "error", duration = 15
       )
       FALSE
@@ -662,7 +662,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
 
     shiny::removeModal()
-    shiny::showNotification("Provisión manual creada.", type = "message")
+    shiny::showNotification(tr("tablas.pasivos.manual_creada"), type = "message")
   })
 
   # ── Cell click → open the same convert/edit modal ────────────────────────
@@ -676,11 +676,11 @@ setup_pasivos_module <- function(input, output, session, shared) {
 
     provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (is.null(provs)) {
-      shiny::showNotification("Error cargando provisiones.", type = "error"); return()
+      shiny::showNotification(tr("tablas.pasivos.aviso.error_cargar"), type = "error"); return()
     }
     prov <- provs[provs$id == prov_id, , drop = FALSE]
     if (!nrow(prov)) {
-      shiny::showNotification("Provisión no encontrada.", type = "error"); return()
+      shiny::showNotification(tr("tablas.pasivos.aviso.no_encontrada"), type = "error"); return()
     }
     if (prov$estado[1] %in% c("converted", "item_confirmed")) {
       rv$conv_prov_id   <- prov_id
@@ -690,11 +690,11 @@ setup_pasivos_module <- function(input, output, session, shared) {
     }
     if (!prov$estado[1] %in% c("provisional")) {
       shiny::showNotification(
-        "Esta provisión ya no está disponible para conversión.", type = "warning"); return()
+        tr("tablas.pasivos.aviso.no_disponible_conversion"), type = "warning"); return()
     }
 
     if (!has_capability(user, "pasivos.convert_to_item")) {
-      shiny::showNotification("No tienes permiso para convertir provisiones.", type = "error")
+      shiny::showNotification(tr("tablas.pasivos.aviso.sin_permiso_convertir"), type = "error")
       return()
     }
 
@@ -821,10 +821,10 @@ setup_pasivos_module <- function(input, output, session, shared) {
     now  <- Sys.time()
 
     provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
-    if (is.null(provs)) { shiny::showNotification("Error cargando provisiones.", type = "error"); return() }
+    if (is.null(provs)) { shiny::showNotification(tr("tablas.pasivos.aviso.error_cargar"), type = "error"); return() }
     provs_base <- provs   # CM09: the save applies only this change on S3 as it is now
     idx <- which(provs$id == prov_id)
-    if (!length(idx)) { shiny::showNotification("Provisión no encontrada.", type = "error"); return() }
+    if (!length(idx)) { shiny::showNotification(tr("tablas.pasivos.aviso.no_encontrada"), type = "error"); return() }
     # Paid: the UI hides this button, but the server must refuse too, or the
     # Bancos confirmation is left with no provision (see PROVISION_PAGADA).
     if (length(provisiones_pagadas(provs[idx[1], , drop = FALSE], prov_id))) {
@@ -832,7 +832,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       shiny::removeModal(); return()
     }
     if (!provs$estado[idx[1]] %in% c("converted", "item_confirmed")) {
-      shiny::showNotification("La provisión no puede ser revertida en este estado.", type = "warning")
+      shiny::showNotification(tr("tablas.pasivos.aviso.no_revertible"), type = "warning")
       shiny::removeModal(); return()
     }
 
@@ -847,7 +847,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       if (!nrow(mi_details)) mi_details <- NULL
       mi_new <- mi[!(!is.na(mi$id) & mi$id == manual_inv_id), , drop = FALSE]
       tryCatch(save_manual(mi_new, client_id = shared$effective_client_id(), base = mi), error = function(e)
-        shiny::showNotification(paste("Error al guardar manual_inv:", e$message), type = "warning"))
+        shiny::showNotification(tr("tablas.pasivos.aviso.error_manual_inv", error = e$message), type = "warning"))
       if (!is.null(shared$manual_inv)) shared$manual_inv(mi_new)
     }
 
@@ -880,7 +880,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       if (any(rm_mask)) {
         ph_new <- ph[!rm_mask, , drop = FALSE]
         tryCatch(save_pagar_hoy(ph_new, user, client_id = shared$effective_client_id(), base = ph), error = function(e)
-          shiny::showNotification(paste("Error al guardar agenda:", e$message), type = "warning"))
+          shiny::showNotification(tr("tablas.pasivos.aviso.error_agenda", error = e$message), type = "warning"))
         if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db(ph_new)
       }
     }
@@ -902,7 +902,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     after <- as.list(provs[idx[1], ])
 
     ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base); TRUE }, error = function(e) {
-      shiny::showNotification(paste("Error:", e$message), type = "error"); FALSE })
+      shiny::showNotification(tr("tablas.pasivos.aviso.error", error = e$message), type = "error"); FALSE })
     if (!ok) return()
     tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
     shared$pasivos_provisions_db(provs)
@@ -920,7 +920,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     rv$conv_prov_id   <- NULL
     rv$conv_mgmt_view <- "main"
     shiny::removeModal()
-    shiny::showNotification("Conversión deshecha. La provisión fue restaurada.", type = "message", duration = 4)
+    shiny::showNotification(tr("tablas.pasivos.aviso.conversion_deshecha"), type = "message", duration = 4)
   })
 
   # ── pcm_do_delete_converted: fully delete a converted provision ───────────────
@@ -932,10 +932,10 @@ setup_pasivos_module <- function(input, output, session, shared) {
     now  <- Sys.time()
 
     provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
-    if (is.null(provs)) { shiny::showNotification("Error cargando provisiones.", type = "error"); return() }
+    if (is.null(provs)) { shiny::showNotification(tr("tablas.pasivos.aviso.error_cargar"), type = "error"); return() }
     provs_base <- provs   # CM09: the save applies only this change on S3 as it is now
     idx <- which(provs$id == prov_id)
-    if (!length(idx)) { shiny::showNotification("Provisión no encontrada.", type = "error"); return() }
+    if (!length(idx)) { shiny::showNotification(tr("tablas.pasivos.aviso.no_encontrada"), type = "error"); return() }
 
     manual_inv_id <- provs$manual_inv_id[idx[1]]
     pagar_hoy_id  <- provs$pagar_hoy_id[idx[1]]
@@ -950,7 +950,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       if (!nrow(mi_details)) mi_details <- NULL
       mi_new <- mi[!(!is.na(mi$id) & mi$id == manual_inv_id), , drop = FALSE]
       tryCatch(save_manual(mi_new, client_id = shared$effective_client_id(), base = mi), error = function(e)
-        shiny::showNotification(paste("Error al guardar manual_inv:", e$message), type = "warning"))
+        shiny::showNotification(tr("tablas.pasivos.aviso.error_manual_inv", error = e$message), type = "warning"))
       if (!is.null(shared$manual_inv)) shared$manual_inv(mi_new)
     }
 
@@ -983,7 +983,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       if (any(rm_mask)) {
         ph_new <- ph[!rm_mask, , drop = FALSE]
         tryCatch(save_pagar_hoy(ph_new, user, client_id = shared$effective_client_id(), base = ph), error = function(e)
-          shiny::showNotification(paste("Error al guardar agenda:", e$message), type = "warning"))
+          shiny::showNotification(tr("tablas.pasivos.aviso.error_agenda", error = e$message), type = "warning"))
         if (!is.null(shared$pagar_hoy_db)) shared$pagar_hoy_db(ph_new)
       }
     }
@@ -1045,7 +1045,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     after <- as.list(provs[idx[1], ])
 
     ok <- tryCatch({ save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base); TRUE }, error = function(e) {
-      shiny::showNotification(paste("Error:", e$message), type = "error"); FALSE })
+      shiny::showNotification(tr("tablas.pasivos.aviso.error", error = e$message), type = "error"); FALSE })
     if (!ok) return()
     tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
     shared$pasivos_provisions_db(provs)
@@ -1078,7 +1078,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     rv$conv_prov_id   <- NULL
     rv$conv_mgmt_view <- "main"
     shiny::removeModal()
-    shiny::showNotification("Provisión y comprobante eliminados.", type = "message", duration = 4)
+    shiny::showNotification(tr("tablas.pasivos.aviso.eliminados_ambos"), type = "message", duration = 4)
   })
 
   invisible(NULL)
