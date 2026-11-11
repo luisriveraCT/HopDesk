@@ -6,6 +6,17 @@
 # List-column schemas require custom loaders — see pasivos_persistence.R.
 # =============================================================================
 
+# CM22: a date a form may save. A cleared dateInput reaches the server as NA
+# (or a zero-length Date), and `%||% Sys.Date()` does not catch NA: a
+# provision or manual item saved with it never shows in Calendario,
+# Vencidos or the search, and cannot be deleted from the app. Every save of
+# one asks this first, and with FALSE says comun.aviso.fecha_requerida and
+# writes nothing.
+fecha_valida <- function(x) {
+  d <- tryCatch(suppressWarnings(as.Date(x)), error = function(e) as.Date(NA))
+  length(d) == 1L && !is.na(d)
+}
+
 .schema_pasivos_liability <- function() tibble::tibble(
   id                 = character(),
   categoria          = character(),   # "regular" | "financiero" | "tarjeta"

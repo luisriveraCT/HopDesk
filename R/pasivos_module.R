@@ -128,6 +128,10 @@ pasivos_provision_de_borrado <- function(prov, client_id) {
 # Creates manual_inv row + optional pagar_hoy row + flips provision state.
 # Returns list(ok, msg, manual_id, pagar_hoy_id).
 .pasivos_perform_conversion <- function(input, shared, prov_id, stage_to_agenda, user) {
+  # CM22: without a due date nothing is read or written -- the item would
+  # never show anywhere and the provision would stay "converted". Both
+  # buttons show res$msg and keep the modal open.
+  if (!fecha_valida(input$pcm_fecha)) return(list(ok = FALSE, msg = tr("comun.aviso.fecha_requerida")))
   provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
   if (is.null(provs)) return(list(ok = FALSE, msg = "No se pudo cargar la tabla de provisiones."))
 
@@ -443,6 +447,11 @@ setup_pasivos_module <- function(input, output, session, shared) {
     prov_id <- rv$pending_provision_id
     if (is.null(prov_id)) return()
     user <- tryCatch(shared$current_user(), error = function(e) "system")
+    # CM22: a cleared date used to keep the old one and still say
+    # "actualizada"; now it is said and nothing is saved.
+    if (!fecha_valida(input$pcm_fecha)) {
+      shiny::showNotification(tr("comun.aviso.fecha_requerida"), type = "error"); return()
+    }
 
     provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (is.null(provs)) {
@@ -563,6 +572,10 @@ setup_pasivos_module <- function(input, output, session, shared) {
     if (!has_capability(user, "pasivos.create_provision_manual")) {
       shiny::showNotification("No tienes permiso para crear provisiones.", type = "error")
       return()
+    }
+    # CM22: a provision with no date never shows in the Tabla or Calendario.
+    if (!fecha_valida(input$me_fecha)) {
+      shiny::showNotification(tr("comun.aviso.fecha_requerida"), type = "error"); return()
     }
 
     shinyjs::disable("me_save_as_provision")

@@ -242,6 +242,10 @@ pasivos_table_module_server <- function(id, shared) {
       if (!nzchar(empresa)) {
         shiny::showNotification(tr("tablas.pasivos.manual.elegir_empresa_aviso"), type = "error"); return()
       }
+      # CM22: `%||% Sys.Date()` below does not catch a cleared date (NA).
+      if (!fecha_valida(input$ppm_fecha)) {
+        shiny::showNotification(tr("comun.aviso.fecha_requerida"), type = "error"); return()
+      }
 
       shinyjs::disable("ppm_save")
       on.exit(shinyjs::enable("ppm_save"), add = TRUE)

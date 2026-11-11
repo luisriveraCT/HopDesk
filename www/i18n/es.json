@@ -121,6 +121,7 @@
   "comun.cerrar": "Cerrar",
   "comun.cancelar": "Cancelar",
   "comun.guardar": "Guardar",
+  "comun.aviso.fecha_requerida": "Pon la fecha de vencimiento antes de guardar.",
   "comun.confirmar": "Confirmar",
   "comun.copiar": "Copiar",
   "comun.copiado": "Copiado",

@@ -121,6 +121,7 @@
   "comun.cerrar": "Close",
   "comun.cancelar": "Cancel",
   "comun.guardar": "Save",
+  "comun.aviso.fecha_requerida": "Set the due date before saving.",
   "comun.confirmar": "Confirm",
   "comun.copiar": "Copy",
   "comun.copiado": "Copied",
