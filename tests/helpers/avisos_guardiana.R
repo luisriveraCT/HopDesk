@@ -41,3 +41,21 @@ avisos_claves <- function(f, pre) {
 }
 
 clave_en_es_y_en <- function(k) !is.null(i18n_dict("es")[[k]]) && !is.null(i18n_dict("en")[[k]])
+
+# ── Added by settings-avisos ─────────────────────────────────────────────────
+#   avisos_claves_n(f, pre)       avisos_claves(), but a key passed to tr_n()
+#                                 counts as its two siblings, .uno and .otros;
+#   avisos_claves_faltan(claves)  those missing from es or en;
+#   avisos_distintos(iguales)     the list(now, before) pairs that differ.
+avisos_claves_n <- function(f, pre) {
+  codigo <- paste(readLines(f, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+  patron <- paste0('tr_n\\("', gsub(".", "\\.", pre, fixed = TRUE), '[a-z0-9_]+"')
+  pl <- unique(regmatches(codigo, gregexpr(patron, codigo, useBytes = TRUE))[[1]])
+  pl <- sub('^tr_n\\("', "", sub('"$', "", pl))
+  # paste0(character(0), ...) would give ".uno"/".otros" alone: only when there are plurals.
+  c(setdiff(avisos_claves(f, pre), pl), if (length(pl)) paste0(rep(pl, each = 2L), c(".uno", ".otros")))
+}
+
+avisos_claves_faltan <- function(claves) claves[!vapply(claves, clave_en_es_y_en, logical(1))]
+
+avisos_distintos <- function(iguales) Filter(function(p) !identical(p[[1]], p[[2]]), iguales)

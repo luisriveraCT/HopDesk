@@ -267,8 +267,7 @@ settings_companies_observer <- function(input, output, session, shared) {
       .refresh_partner_choices()
       .refresh_add_sel()
       showNotification(
-        sprintf("Fechas de política revertidas para %d socio%s.",
-                length(sel), if (length(sel) == 1L) "" else "s"),
+        tr_n("tablas.ajustes.aviso.politicas_revertidas", as.character(length(sel))),
         type = "message", duration = 4)
       log_action(
         user        = tryCatch(shared$current_user(), error = function(e) "system"),
@@ -282,7 +281,7 @@ settings_companies_observer <- function(input, output, session, shared) {
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
     }, error = function(e) {
-      showNotification(paste("Error al revertir:", conditionMessage(e)),
+      showNotification(tr("tablas.ajustes.aviso.error_revertir", error = conditionMessage(e)),
                        type = "error", duration = 5)
     })
   }, ignoreInit = TRUE)
@@ -601,7 +600,7 @@ settings_companies_observer <- function(input, output, session, shared) {
     if (!puede_o_avisa(shared, "can_manage_policies")) return()
     parte <- isolate(cmp_active_parte())
     if (is.null(parte) || !nzchar(parte)) {
-      showNotification("No hay socio seleccionado.", type = "warning")
+      showNotification(tr("tablas.ajustes.aviso.sin_socio"), type = "warning")
       return()
     }
 
@@ -653,7 +652,7 @@ settings_companies_observer <- function(input, output, session, shared) {
       shinyjs::hide("cmp_editor_section")
       shinyjs::show("cmp_list_section")
       showNotification(
-        sprintf('Políticas de "%s" guardadas.', parte),
+        tr("tablas.ajustes.aviso.politicas_guardadas", parte = parte),
         type = "message", duration = 3
       )
       log_action(
@@ -668,7 +667,7 @@ settings_companies_observer <- function(input, output, session, shared) {
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
     }, error = function(e) {
-      showNotification(paste("Error al guardar:", e$message), type = "error", duration = 5)
+      showNotification(tr("tablas.ajustes.aviso.error_guardar", error = e$message), type = "error", duration = 5)
     })
   }, ignoreInit = TRUE)
 
@@ -678,11 +677,11 @@ settings_companies_observer <- function(input, output, session, shared) {
     catalog <- .get_catalog_cmp()
 
     if (is.null(pp) || !nrow(pp)) {
-      showNotification("No hay políticas asignadas a ningún socio.", type = "warning")
+      showNotification(tr("tablas.ajustes.aviso.sin_asignadas"), type = "warning")
       return()
     }
     if (is.null(catalog) || !nrow(catalog)) {
-      showNotification("El catálogo de políticas está vacío.", type = "warning")
+      showNotification(tr("tablas.ajustes.aviso.catalogo_vacio"), type = "warning")
       return()
     }
 
@@ -763,7 +762,7 @@ settings_companies_observer <- function(input, output, session, shared) {
     .refresh_add_sel()
 
     if (!nrow(pp)) {
-      showNotification("Solo hay socios intercompañía configurados.", type = "warning")
+      showNotification(tr("tablas.ajustes.aviso.solo_intercompania"), type = "warning")
       return()
     }
 
@@ -790,7 +789,7 @@ settings_companies_observer <- function(input, output, session, shared) {
           error = function(e) {
             msg <- conditionMessage(e)
             message("[POLICY_ERROR] AP: ", msg)
-            showNotification(paste("[Políticas AP]", msg),
+            showNotification(tr("tablas.ajustes.aviso.error_politicas_ap", error = msg),
                              type = "error", duration = 15)
             NULL
           }
@@ -803,7 +802,7 @@ settings_companies_observer <- function(input, output, session, shared) {
           error = function(e) {
             msg <- conditionMessage(e)
             message("[POLICY_ERROR] AR: ", msg)
-            showNotification(paste("[Políticas AR]", msg),
+            showNotification(tr("tablas.ajustes.aviso.error_politicas_ar", error = msg),
                              type = "error", duration = 15)
             NULL
           }
@@ -823,20 +822,16 @@ settings_companies_observer <- function(input, output, session, shared) {
 
       if (length(sap_partes_lc) == 0L) {
         showNotification(
-          paste0("Sin fechas: columna Parte no encontrada en datos SAP. ",
-                 "Revisa si los datos han cargado (AP rows=",
-                 if (!is.null(sap$AP)) nrow(sap$AP) else "NULL",
-                 ", AR rows=",
-                 if (!is.null(sap$AR)) nrow(sap$AR) else "NULL", ")."),
+          tr("tablas.ajustes.aviso.sin_columna_parte",
+             ap = if (!is.null(sap$AP)) as.character(nrow(sap$AP)) else "NULL",
+             ar = if (!is.null(sap$AR)) as.character(nrow(sap$AR)) else "NULL"),
           type = "error", duration = 15
         )
       } else if (length(matched) == 0L) {
         sap_s <- paste0('"', paste(head(sort(sap_partes_lc), 3L), collapse='","'), '"')
         pp_s  <- paste0('"', paste(head(sort(pp_partes_lc),  3L), collapse='","'), '"')
         showNotification(
-          paste0("Sin coincidencias de Socio: SAP tiene [", sap_s,
-                 "] pero políticas tienen [", pp_s,
-                 "]. Verifica el nombre del socio en Empresas y Socios."),
+          tr("tablas.ajustes.aviso.sin_coincidencias", sap = sap_s, politicas = pp_s),
           type = "error", duration = 15
         )
       } else {
@@ -845,8 +840,7 @@ settings_companies_observer <- function(input, output, session, shared) {
         broken_ids  <- unique(pp$policy_id[!pp$policy_id %in% catalog_ids])
         if (length(broken_ids)) {
           showNotification(
-            paste0("Política no encontrada en catálogo (UUID inválido). ",
-                   "Edita el socio, elimina la política marcada con '?' y reasígnala."),
+            tr("tablas.ajustes.aviso.politica_no_encontrada"),
             type = "error", duration = 15
           )
         } else {
@@ -854,13 +848,12 @@ settings_companies_observer <- function(input, output, session, shared) {
           ar_partes_lc <- tolower(trimws(unique(pp$parte[pp$ledger == "AR"])))
           if (length(ar_partes_lc) && (is.null(sap$AR) || !nrow(sap$AR))) {
             showNotification(
-              paste0("Sin fechas: socios con ledger AR pero no hay datos AR cargados. ",
-                     "Verifica que los datos de Cobrar estén disponibles."),
+              tr("tablas.ajustes.aviso.sin_datos_ar"),
               type = "warning", duration = 10
             )
           } else {
             showNotification(
-              "No se generaron fechas (sin documentos con socio asignado).",
+              tr("tablas.ajustes.aviso.sin_fechas"),
               type = "warning"
             )
           }
@@ -966,7 +959,7 @@ settings_companies_observer <- function(input, output, session, shared) {
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
     }, error = function(e) {
-      showNotification(paste("Error al guardar:", e$message), type = "error", duration = 5)
+      showNotification(tr("tablas.ajustes.aviso.error_guardar", error = e$message), type = "error", duration = 5)
     })
   }, ignoreInit = TRUE)
 
