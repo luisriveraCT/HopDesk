@@ -97,6 +97,13 @@ test_that("las listas de permisos del registro de niveles existen", {
   }
 })
 
+test_that("Correo semanal de Panorama: por nivel solo Dev y Admin (Luis, 2026-11-11)", {
+  for (t in c(TI, "admin")) expect_true(puede(u(t), "can_receive_weekly_email"), info = t)
+  for (t in c("finance", "analysis", "compras", "hopdesk")) expect_false(puede(u(t), "can_receive_weekly_email"), info = t)
+  expect_true(puede(u("finance", '{"can_receive_weekly_email": true}'), "can_receive_weekly_email"))   # per user
+  expect_false(permiso_interno("can_receive_weekly_email"))
+})
+
 test_that("Proveedores: solo Finanzas, Admin y Dev administran el catálogo de inicio (decisión de Luis, 2026-11-01)", {
   for (t in c("finance", "admin", TI)) expect_true(puede(u(t), "can_manage_proveedores"), info = t)
   for (t in c("analysis", "compras", "hopdesk")) expect_false(puede(u(t), "can_manage_proveedores"), info = t)

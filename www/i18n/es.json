@@ -110,6 +110,7 @@
   "permisos.can_edit_forecasting_subscriptions": "Editar suscripciones de Pronósticos",
   "comun.ic_sin_ap_deudor": "%d factura(s) del plan no se mandaron: no encontré en los libros del deudor una sola factura de proveedor con el mismo folio (%s). Siguen en el plan; confirmarlas no cerraría ninguna factura.",
   "permisos.can_publish_panorama": "Publicar en Panorama",
+  "permisos.can_receive_weekly_email": "Recibir el correo semanal de Panorama",
   "permisos.can_approve_clients": "Aprobar nuevos clientes",
   "permisos.can_manage_hopdesk_perms": "Gestionar permisos del staff de Hopdesk",
   "permisos.can_jump_clients": "Entrar a contextos de clientes",

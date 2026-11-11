@@ -110,6 +110,7 @@
   "permisos.can_edit_forecasting_subscriptions": "Edit forecasting subscriptions",
   "comun.ic_sin_ap_deudor": "%d plan invoice(s) were not sent: the debtor's books have no single supplier invoice with the same folio (%s). They stay in the plan; confirming them would close no invoice.",
   "permisos.can_publish_panorama": "Publish in Panorama",
+  "permisos.can_receive_weekly_email": "Receive the weekly Panorama email",
   "permisos.can_approve_clients": "Approve new clients",
   "permisos.can_manage_hopdesk_perms": "Manage Hopdesk staff permissions",
   "permisos.can_jump_clients": "Enter client contexts",
