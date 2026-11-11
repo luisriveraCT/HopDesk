@@ -1094,7 +1094,7 @@ pagarHoyServer <- function(id, shared) {
         cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
         if (!toupper(cur_sel) %in% c("MXN", "USD")) {
           showNotification(
-            paste0("Solo MXN y USD están soportados para el archivo de pagos. Moneda: ", cur_sel, "."),
+            tr("tablas.agenda.aviso.moneda_no_soportada", moneda = cur_sel),
             type = "error", duration = 6)
           return()
         }
@@ -1104,7 +1104,7 @@ pagarHoyServer <- function(id, shared) {
         if (.ph_marcas_ausentes(ann, m_ap)) return()
         parcial <- .ph_marcas_parcial(ann)
         if (!nrow(ann)) {
-          showNotification("Selecciona facturas primero.", type = "warning"); return()
+          showNotification(tr("tablas.agenda.aviso.selecciona_facturas_primero"), type = "warning"); return()
         }
 
         ok   <- ann |> dplyr::filter(ppl_status == "ok")
@@ -1342,7 +1342,7 @@ pagarHoyServer <- function(id, shared) {
         m_ap$propias(sel)
         if (!length(sel)) {
           showNotification(
-            "Selecciona al menos una fila en la tabla de pagos para quitar.",
+            tr("tablas.agenda.aviso.selecciona_pago_quitar"),
             type = "warning", duration = 3)
           return()
         }
@@ -1376,8 +1376,7 @@ pagarHoyServer <- function(id, shared) {
                                                     base = ph_base)
         if (!isTRUE(remove_result$ok)) {
           showNotification(
-            paste0("No se pudo quitar de la Agenda tras ", remove_result$attempts,
-                   " intento(s) (posible problema de conexión). Actualiza la página e intenta de nuevo."),
+            tr("tablas.agenda.aviso.no_quitado", n = as.character(remove_result$attempts)),
             type = "error", duration = 15
           )
           tryCatch(log_action(
@@ -1466,13 +1465,12 @@ pagarHoyServer <- function(id, shared) {
         }, error = function(e) e)
         if (inherits(secondary_err_rmap, "error")) {
           showNotification(
-            paste0("Pago(s) quitado(s) correctamente, pero algo falló al revertir la provisión relacionada: ",
-                   conditionMessage(secondary_err_rmap)),
+            tr("tablas.agenda.aviso.quitado_provision_error", error = conditionMessage(secondary_err_rmap)),
             type = "warning", duration = 10
           )
         }
 
-        showNotification(paste0(nrow(rows), " pago(s) quitado(s)."), type = "message", duration = 2)
+        showNotification(tr("tablas.agenda.aviso.pagos_quitados", n = as.character(nrow(rows))), type = "message", duration = 2)
         log_action(shared$current_user(), "pagar_hoy", "quitar_pagos",
                    sprintf("%d pago(s) quitado(s) de %s", nrow(rows), emp),
                    target_id = emp,
@@ -1492,7 +1490,7 @@ pagarHoyServer <- function(id, shared) {
         m_ar$propias(sel)
         if (!length(sel)) {
           showNotification(
-            "Selecciona al menos una fila en la tabla de cobros para quitar.",
+            tr("tablas.agenda.aviso.selecciona_cobro_quitar"),
             type = "warning", duration = 3)
           return()
         }
@@ -1522,8 +1520,7 @@ pagarHoyServer <- function(id, shared) {
                                                     base = ph_base)
         if (!isTRUE(remove_result$ok)) {
           showNotification(
-            paste0("No se pudo quitar de la Agenda tras ", remove_result$attempts,
-                   " intento(s) (posible problema de conexión). Actualiza la página e intenta de nuevo."),
+            tr("tablas.agenda.aviso.no_quitado", n = as.character(remove_result$attempts)),
             type = "error", duration = 15
           )
           tryCatch(log_action(
@@ -1540,7 +1537,7 @@ pagarHoyServer <- function(id, shared) {
           ), error = function(e) NULL)
           return()
         }
-        showNotification(paste0(nrow(rows), " cobro(s) quitado(s)."), type = "message", duration = 2)
+        showNotification(tr("tablas.agenda.aviso.cobros_quitados", n = as.character(nrow(rows))), type = "message", duration = 2)
         log_action(shared$current_user(), "pagar_hoy", "quitar_cobros",
                    sprintf("%d cobro(s) quitado(s) de %s", nrow(rows), emp),
                    target_id = emp,
@@ -1610,7 +1607,7 @@ pagarHoyServer <- function(id, shared) {
         s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
         rows     <- .ph_filas_confirmar(s_sorted, "AP")
         if (.ph_marcas_ausentes(rows, m_ap)) return()
-        if (!nrow(rows)) { showNotification("Selecciona facturas.", type = "warning"); return() }
+        if (!nrow(rows)) { showNotification(tr("tablas.agenda.aviso.selecciona_facturas"), type = "warning"); return() }
 
         cuenta_choices <- .bancos_cuenta_choices_for(emp, cur)
 
@@ -1759,9 +1756,7 @@ pagarHoyServer <- function(id, shared) {
                                                   client_id = shared$effective_client_id())
         if (!isTRUE(save_result$ok)) {
           showNotification(
-            paste0("La confirmación se registró, pero no se pudo actualizar la Agenda tras ",
-                   save_result$attempts, " intento(s) (posible problema de conexión). ",
-                   "Actualiza la página; si el ítem sigue en Agenda, vuelve a confirmarlo."),
+            tr("tablas.agenda.aviso.confirmada_agenda_no", n = as.character(save_result$attempts)),
             type = "error", duration = 15
           )
           tryCatch(log_action(
@@ -1819,7 +1814,7 @@ pagarHoyServer <- function(id, shared) {
                                               client_id = shared$effective_client_id()))
             bump_sync_version("abonos_db", client_id = shared$effective_client_id())
           }, error = function(e) showNotification(
-                     paste("Error al guardar abono:", e$message), type = "warning"))
+                     tr("tablas.agenda.aviso.error_abono", error = e$message), type = "warning"))
         }
 
         # Plain manual entries (no provision_id): archive instead of
@@ -1883,7 +1878,7 @@ pagarHoyServer <- function(id, shared) {
                 shared$papelera_rv(pap)
                 tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
                          error = function(e) {
-                           showNotification(paste("Error al archivar entrada manual:", e$message), type = "warning")
+                           showNotification(tr("tablas.agenda.aviso.error_archivar_manual", error = e$message), type = "warning")
                            tryCatch(log_action(
                              shared$current_user(), "pagar_hoy", "archivar_manual_fallo_guardado",
                              conditionMessage(e),
@@ -1898,7 +1893,7 @@ pagarHoyServer <- function(id, shared) {
                 shared$manual_inv(mi)
                 tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base),
                          error = function(e) showNotification(
-                           paste("Error al eliminar entrada manual:", e$message), type = "warning"))
+                           tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message), type = "warning"))
               }
             }
 
@@ -1931,7 +1926,7 @@ pagarHoyServer <- function(id, shared) {
                 shared$papelera_rv(pap)
                 tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
                          error = function(e) {
-                           showNotification(paste("Error al archivar entrada manual:", e$message), type = "warning")
+                           showNotification(tr("tablas.agenda.aviso.error_archivar_manual", error = e$message), type = "warning")
                            tryCatch(log_action(
                              shared$current_user(), "pagar_hoy", "archivar_manual_fallo_guardado",
                              conditionMessage(e),
@@ -1947,7 +1942,7 @@ pagarHoyServer <- function(id, shared) {
                 shared$manual_inv(mi_updated)
                 tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi_base),
                          error = function(e) showNotification(
-                           paste("Error al eliminar entrada manual:", e$message), type = "warning"))
+                           tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message), type = "warning"))
               }
             }
           }
@@ -1956,8 +1951,7 @@ pagarHoyServer <- function(id, shared) {
         }, error = function(e) e)
         if (inherits(secondary_err_ap, "error")) {
           showNotification(
-            paste0("Pago(s) confirmado(s) correctamente, pero algo falló al procesar ",
-                   "abonos/archivado relacionado: ", conditionMessage(secondary_err_ap)),
+            tr("tablas.agenda.aviso.pagos_confirmados_error", error = conditionMessage(secondary_err_ap)),
             type = "warning", duration = 10
           )
         }
@@ -1997,7 +1991,7 @@ pagarHoyServer <- function(id, shared) {
         s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
         rows  <- .ph_filas_confirmar(s_sorted, "AR")
         if (.ph_marcas_ausentes(rows, m_ar)) return()
-        if (!nrow(rows)) { showNotification("Selecciona facturas.", type = "warning"); return() }
+        if (!nrow(rows)) { showNotification(tr("tablas.agenda.aviso.selecciona_facturas"), type = "warning"); return() }
 
         cuenta_choices <- .bancos_cuenta_choices_for(emp, cur)
 
@@ -2127,9 +2121,7 @@ pagarHoyServer <- function(id, shared) {
                                                   client_id = shared$effective_client_id())
         if (!isTRUE(save_result$ok)) {
           showNotification(
-            paste0("La confirmación se registró, pero no se pudo actualizar la Agenda tras ",
-                   save_result$attempts, " intento(s) (posible problema de conexión). ",
-                   "Actualiza la página; si el ítem sigue en Agenda, vuelve a confirmarlo."),
+            tr("tablas.agenda.aviso.confirmada_agenda_no", n = as.character(save_result$attempts)),
             type = "error", duration = 15
           )
           tryCatch(log_action(
@@ -2178,7 +2170,7 @@ pagarHoyServer <- function(id, shared) {
                                               client_id = shared$effective_client_id()))
             bump_sync_version("abonos_db", client_id = shared$effective_client_id())
           }, error = function(e) showNotification(
-                     paste("Error al guardar abono:", e$message), type = "warning"))
+                     tr("tablas.agenda.aviso.error_abono", error = e$message), type = "warning"))
         }
 
         # Plain manual entries (no provision_id): archive instead of
@@ -2242,7 +2234,7 @@ pagarHoyServer <- function(id, shared) {
                 shared$papelera_rv(pap)
                 tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
                          error = function(e) {
-                           showNotification(paste("Error al archivar entrada manual:", e$message), type = "warning")
+                           showNotification(tr("tablas.agenda.aviso.error_archivar_manual", error = e$message), type = "warning")
                            tryCatch(log_action(
                              shared$current_user(), "pagar_hoy", "archivar_manual_fallo_guardado",
                              conditionMessage(e),
@@ -2257,7 +2249,7 @@ pagarHoyServer <- function(id, shared) {
                 shared$manual_inv(mi)
                 tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base),
                          error = function(e) showNotification(
-                           paste("Error al eliminar entrada manual:", e$message), type = "warning"))
+                           tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message), type = "warning"))
               }
             }
 
@@ -2290,7 +2282,7 @@ pagarHoyServer <- function(id, shared) {
                 shared$papelera_rv(pap)
                 tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
                          error = function(e) {
-                           showNotification(paste("Error al archivar entrada manual:", e$message), type = "warning")
+                           showNotification(tr("tablas.agenda.aviso.error_archivar_manual", error = e$message), type = "warning")
                            tryCatch(log_action(
                              shared$current_user(), "pagar_hoy", "archivar_manual_fallo_guardado",
                              conditionMessage(e),
@@ -2306,7 +2298,7 @@ pagarHoyServer <- function(id, shared) {
                 shared$manual_inv(mi_updated)
                 tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi_base),
                          error = function(e) showNotification(
-                           paste("Error al eliminar entrada manual:", e$message), type = "warning"))
+                           tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message), type = "warning"))
               }
             }
           }
@@ -2315,8 +2307,7 @@ pagarHoyServer <- function(id, shared) {
         }, error = function(e) e)
         if (inherits(secondary_err_ar, "error")) {
           showNotification(
-            paste0("Cobro(s) confirmado(s) correctamente, pero algo falló al procesar ",
-                   "abonos/archivado relacionado: ", conditionMessage(secondary_err_ar)),
+            tr("tablas.agenda.aviso.cobros_confirmados_error", error = conditionMessage(secondary_err_ar)),
             type = "warning", duration = 10
           )
         }
@@ -2684,7 +2675,7 @@ pagarHoyServer <- function(id, shared) {
       .link_counter(.link_counter() + 1L)
 
       showNotification(
-        paste0("✓ Vinculado: \"", parte, "\" → ", ali),
+        tr("tablas.agenda.aviso.vinculado", parte = parte, alias = ali),
         type = "message", duration = 3)
       removeModal()
       log_action(tryCatch(shared$current_user(), error = function(e) "unknown"), "pagar_hoy", "vincular_proveedor",
@@ -2719,7 +2710,7 @@ pagarHoyServer <- function(id, shared) {
       rm(list = ls(.annot_cache), envir = .annot_cache)
       .link_counter(.link_counter() + 1L)
 
-      showNotification(paste0("Vínculo eliminado para: ", parte),
+      showNotification(tr("tablas.agenda.aviso.vinculo_eliminado", parte = parte),
                        type = "message", duration = 3)
       removeModal()
       log_action(tryCatch(shared$current_user(), error = function(e) "unknown"), "pagar_hoy", "desvincular_proveedor",
@@ -3141,8 +3132,7 @@ pagarHoyServer <- function(id, shared) {
           }, error = function(e) {
             message("[PAGAR_HOY] ZIP aggregate log_action call failed: ", conditionMessage(e))
             showNotification(
-              paste("Aviso: el ZIP se generó correctamente, pero no se pudo registrar el resumen en Actividad:",
-                   conditionMessage(e)),
+              tr("tablas.agenda.aviso.zip_sin_actividad", error = conditionMessage(e)),
               type = "warning", duration = 10)
           })
         }
@@ -3185,14 +3175,14 @@ pagarHoyServer <- function(id, shared) {
       if (isTRUE(saved)) {
         shared$pagar_hoy_db(ph)
         removeModal()
-        showNotification("Agenda vaciada.", type = "message", duration = 2)
+        showNotification(tr("tablas.agenda.aviso.vaciada"), type = "message", duration = 2)
         log_action(tryCatch(shared$current_user(), error = function(e) "system"), "pagar_hoy", "vaciar_agenda",
                    "Agenda de hoy vaciada (todos los pendientes eliminados)",
                    client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
                    viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
       } else {
         removeModal()
-        showNotification("No se pudo guardar. Verifica la conexión e intenta de nuevo.",
+        showNotification(tr("tablas.agenda.aviso.no_guardado"),
                          type = "error", duration = 6)
       }
     }, ignoreInit = TRUE)
@@ -3213,14 +3203,14 @@ pagarHoyServer <- function(id, shared) {
 
       if (is.null(ctas) || !nrow(ctas)) {
         showNotification(
-          "No hay cuentas registradas en Configuración > Cuentas.",
+          tr("tablas.agenda.aviso.sin_cuentas"),
           type = "warning", duration = 4)
         return()
       }
 
       cts_active <- ctas[!is.na(ctas$activa) & ctas$activa == TRUE, , drop = FALSE]
       if (!nrow(cts_active)) {
-        showNotification("No hay cuentas activas en Configuración > Cuentas.",
+        showNotification(tr("tablas.agenda.aviso.sin_cuentas_activas"),
                          type = "warning")
         return()
       }
@@ -3297,7 +3287,7 @@ pagarHoyServer <- function(id, shared) {
       }
 
       showNotification(
-        paste0("Saldos cargados desde Bancos: ", n_updated, " cuenta(s) actualizada(s)."),
+        tr("tablas.agenda.aviso.saldos_cargados", n = as.character(n_updated)),
         type = "message", duration = 3)
       log_action(tryCatch(shared$current_user(), error = function(e) "system"), "pagar_hoy", "cargar_saldos_bancos",
                  sprintf("Saldos de apertura cargados desde Bancos: %d cuenta(s) actualizada(s)", n_updated),

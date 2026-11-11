@@ -138,7 +138,8 @@ assign("%||%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) ==
       ok(sprintf("%s handler checks save_result$ok before proceeding", blk$name),
          grepl("isTRUE\\(save_result\\$ok\\)", blk$code))
       ok(sprintf("%s handler shows a distinct, clear error notification on total failure", blk$name),
-         grepl("posible problema de conexión", blk$code))
+         # avisos-varios: the text lives in the dictionary now, under this key
+         grepl('tr("tablas.agenda.aviso.confirmada_agenda_no"', blk$code, fixed = TRUE))
       ok(sprintf("%s handler logs the failure itself via log_action() on total failure (the safeguard)", blk$name),
          grepl(sprintf('action = "%s_incompleto"', blk$action), blk$code))
       ok(sprintf("%s handler stops (return()) after a total failure -- does not fall through to abono activation or a false success log", blk$name),
@@ -148,7 +149,7 @@ assign("%||%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) ==
       ok(sprintf("%s handler wraps abono/manual_inv secondary processing in an outer tryCatch (the decoupling fix)", blk$name),
          grepl("secondary_err_(ap|ar) <- tryCatch\\(\\{", blk$code))
       ok(sprintf("%s handler surfaces a secondary-processing failure without blocking the primary success log", blk$name),
-         grepl("algo falló al procesar", blk$code))
+         grepl('tr\\("tablas\\.agenda\\.aviso\\.(pagos|cobros)_confirmados_error"', blk$code))
     }
 
     # Regression guard: the bancos_confirmados write's OWN pre-existing
