@@ -209,7 +209,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
       # ── Turning ON: load each user's personal agenda for selection ──────────
       all_users <- tryCatch(auth_load_usuarios(client_id = shared$effective_client_id()), error = function(e) NULL)
       if (is.null(all_users) || !nrow(all_users)) {
-        showNotification("No se pudo cargar la lista de usuarios.", type = "error")
+        showNotification(tr("tablas.sincro.aviso.error_usuarios"), type = "error")
         return()
       }
       active_users <- all_users[
@@ -252,7 +252,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
     if (!puede_o_avisa(shared, "can_manage_sync")) return()
     u <- tryCatch(input$sincro_src_selected$user, error = function(e) NULL)
     if (is.null(u) || !nzchar(u %||% "")) {
-      showNotification("Selecciona un usuario primero.", type = "warning"); return()
+      showNotification(tr("tablas.sincro.aviso.elige_usuario"), type = "warning"); return()
     }
     cid <- shared$effective_client_id()
     # The chosen account's agenda: a failed read must not start the sync from
@@ -285,7 +285,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
     show_settings_modal(input, output, session, shared)
     output$settings_panel <- renderUI({ .sincro_panel_ui(cfg_new) })
     showNotification(
-      paste0("Sincronización activada con la agenda de «", u, "»."),
+      tr("tablas.sincro.aviso.activada", usuario = u),
       type = "message", duration = 4)
     log_action(
       user        = actor,
@@ -358,7 +358,7 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
     show_settings_modal(input, output, session, shared)
     output$settings_panel <- renderUI({ .sincro_panel_ui(cfg_new) })
     showNotification(
-      "Sincronización desactivada. Cada cuenta mantiene su propia Agenda de hoy.",
+      tr("tablas.sincro.aviso.desactivada"),
       type = "message", duration = 4)
     log_action(
       user        = actor,
@@ -370,4 +370,3 @@ settings_sincro_observer <- function(input, output, session, shared, pagar_hoy_d
     )
   }, ignoreInit = TRUE)
 }
-
