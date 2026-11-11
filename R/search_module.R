@@ -375,12 +375,11 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
       save_tags(tdb, client_id = shared$effective_client_id(), base = tdb_base))
     if (isTRUE(tag_result$ok)) {
       bump_sync_version("tags_db", client_id = shared$effective_client_id())
-      showNotification(paste0(nrow(keys_df), " factura(s) etiquetadas."),
+      showNotification(tr("tablas.lupa.aviso.etiquetadas", n = as.character(nrow(keys_df))),
                        type = "message", duration = 2)
     } else {
       showNotification(
-        paste0("No se pudieron guardar las etiquetas (\"", tag_result$error$message,
-               "\"). El cambio se ve en pantalla pero NO quedo guardado -- vuelve a intentarlo."),
+        tr("tablas.lupa.aviso.etiquetas_no_guardadas", error = tag_result$error$message %||% ""),
         type = "error", duration = NULL
       )
     }
@@ -394,7 +393,7 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
   } else if (action == "move") {
     new_date <- tryCatch(as.Date(payload$move_to), error = function(e) NULL)
     if (is.null(new_date) || is.na(new_date)) {
-      showNotification("Fecha inv\u00e1lida.", type = "warning"); return()
+      showNotification(tr("tablas.lupa.aviso.fecha_invalida"), type = "warning"); return()
     }
     # Only keep schema columns — extra columns from keys_df (Fecha string, source,
     # inv_id, Parte, Importe, tipo) must NOT enter moves_db or they corrupt the
@@ -412,7 +411,7 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
     shared$moves_db(updated)
     .save_moves_deferred(updated, client_id = shared$effective_client_id(), session = session)
     showNotification(
-      paste0(nrow(keys_df), " factura(s) movidas a ", format(new_date, "%d/%m/%Y"), "."),
+      tr("tablas.lupa.aviso.movidas", n = as.character(nrow(keys_df)), fecha = format(new_date, "%d/%m/%Y")),
       type = "message", duration = 2)
     .log_ledger_action(keys_df, "mover_fecha", function(sub)
       sprintf("%d factura(s) movida(s) a %s", nrow(sub), format(new_date, "%d/%m/%Y")))
@@ -431,7 +430,7 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
     shared$moves_db(updated)
     .save_moves_deferred(updated, client_id = shared$effective_client_id(), session = session)
     showNotification(
-      paste0(nrow(keys_df), " factura(s) restauradas a fecha original."),
+      tr("tablas.lupa.aviso.restauradas", n = as.character(nrow(keys_df))),
       type = "message", duration = 2)
     .log_ledger_action(keys_df, "restaurar_fecha", function(sub)
       sprintf("%d factura(s) restaurada(s) a su fecha original", nrow(sub)))
@@ -458,7 +457,7 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
       } else {
         tryCatch({ shared$pasivos_provisions_db(load_pasivos_provisions()) }, error = function(e) NULL)
       }
-      showNotification(paste0(nrow(prov_rows), " provisión(es) cerrada(s)."),
+      showNotification(tr("tablas.lupa.aviso.provisiones_cerradas", n = as.character(nrow(prov_rows))),
                        type = "message", duration = 3)
     }
 
@@ -509,13 +508,11 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
       }
       if (length(item_save_failures)) {
         showNotification(
-          paste0("No se pudo guardar completamente el borrado (", paste(item_save_failures, collapse = "; "),
-                 "). Puede que quede en un estado parcial -- vuelve a intentarlo en unos minutos y ",
-                 "no cierres la sesion mientras tanto."),
+          tr("tablas.lupa.aviso.borrado_parcial", fallas = paste(item_save_failures, collapse = "; ")),
           type = "error", duration = NULL
         )
       } else {
-        showNotification(paste0(nrow(item_rows), " factura(s) enviadas a la papelera."),
+        showNotification(tr("tablas.lupa.aviso.papelera", n = as.character(nrow(item_rows))),
                          type = "message", duration = 3)
       }
     }
@@ -535,7 +532,7 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
     # Silently exclude provision rows — they cannot be staged as regular items.
     keys_df <- pasivos_filter_out_provisions(keys_df)
     if (!nrow(keys_df)) {
-      showNotification("No hay facturas válidas para agregar (se excluyeron provisiones).",
+      showNotification(tr("tablas.lupa.aviso.sin_validas"),
                        type = "warning", duration = 3)
       return()
     }
@@ -578,7 +575,7 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
     con_doc  <- nzchar(new_rows$Documento)
     new_rows <- new_rows[con_doc, , drop = FALSE]
     if (!nrow(new_rows)) {
-      showNotification("No se encontraron facturas con documento válido.", type = "warning")
+      showNotification(tr("tablas.lupa.aviso.sin_documento"), type = "warning")
       return()
     }
     new_rows <- facturas_filas_agenda(keys_df[con_doc, , drop = FALSE], new_rows, current_user,
@@ -617,8 +614,7 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
                 else if (all(new_rows$ledger == "AP")) "Pagos"
                 else "Agenda del día"
     showNotification(
-      paste0("\u2713 ", nrow(new_rows), " factura(s) enviadas a ", ledg_str,
-             " \u2014 ", cur_str, " ", fmt_money(total), "."),
+      tr("tablas.lupa.aviso.enviadas", n = as.character(nrow(new_rows)), ledger = ledg_str, moneda = cur_str, total = fmt_money(total)),
       type = "message", duration = 4)
   }
 }
