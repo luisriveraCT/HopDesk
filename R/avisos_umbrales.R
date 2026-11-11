@@ -55,12 +55,30 @@ umbral_fin_semana <- function(fecha) {
   as.POSIXct(format(as.POSIXct(paste(dom, "23:59:59"), tz = UMBRAL_TZ), tz = "UTC"), tz = "UTC")
 }
 
-# One row per empresa and moneda from the AR ledger (build_ledger_df(..., "AR")):
-# open balance = `Saldo vencido` (what is still owed, after abonos), past due
-# when its contractual due date (FechaVenc_Original) is before `hoy`.
-umbral_metricas <- function(ar_df, hoy) {
+# Intercompany CxC is left out (integrador, 2026-11-11): a past-due invoice
+# between group companies is no collection risk and would move the % for
+# nothing. The same detection the app applies with ic_mode = "exclude"
+# (cashflow export): the interco v2 registry's CardCodes and RFCs through
+# apply_ic_filter(), which falls back to the company names when none are
+# registered. `interco` = load_interco_v2(cid), `cmap` = the client's
+# initials -> name map.
+umbral_ar_sin_ic <- function(ar_df, interco, cmap) {
+  if (is.null(ar_df) || !is.data.frame(ar_df) || !nrow(ar_df)) return(ar_df)
+  rfcs  <- unique(toupper(trimws(unname(interco$rfcs %||% character()))))
+  codes <- build_ic_fullcodes(interco, "AR")
+  apply_ic_filter(ar_df, mode = "exclude", code_col = "Código de cliente",
+                  ic_codes = codes, ic_rfcs = rfcs[nzchar(rfcs)], cmap = cmap)
+}
+
+# One row per empresa and moneda from the AR ledger (build_ledger_df(..., "AR")),
+# intercompany out: open balance = `Saldo vencido` (what is still owed,
+# after abonos), past due when its contractual due date (FechaVenc_Original)
+# is before `hoy`. `interco` and `cmap` are required, so no caller can
+# forget the IC filter.
+umbral_metricas <- function(ar_df, hoy, interco, cmap) {
   hoy <- as.Date(hoy)
   vacio <- .schema_metricas()
+  ar_df <- umbral_ar_sin_ic(ar_df, interco, cmap)
   if (is.null(ar_df) || !is.data.frame(ar_df) || !nrow(ar_df)) return(vacio)
   df <- tibble::tibble(
     empresa = as.character(ar_df$Empresa),

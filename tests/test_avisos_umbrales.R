@@ -16,6 +16,7 @@ source("R/i18n.R")
 source("R/tier_registry.R")
 source("R/permisos.R")
 source("R/avisos.R")
+suppressMessages(source("R/data_pipeline.R"))   # apply_ic_filter, build_ic_fullcodes
 source("R/avisos_umbrales.R")
 
 .pass <- 0L; .fail <- 0L
@@ -89,13 +90,37 @@ ok("% vencido por empresa y moneda, con saldo después de abonos y fecha origina
     Empresa = c("NL", "NL", "NL", "NL", "NG"), Moneda = c("MXN", "MXN", "MXN", "USD", "MXN"),
     `Saldo vencido` = c(300, 700, 0, 50, 80),
     FechaVenc_Original = as.Date(c("2026-11-10", "2026-11-20", "2026-11-01", "2026-11-15", NA)))
-  m <- umbral_metricas(ar, LUNES)
+  m <- umbral_metricas(ar, LUNES, interco = NULL, cmap = character())
   nl <- m[m$empresa == "NL" & m$moneda == "MXN", ]
   nrow(m) == 3 && nl$saldo_abierto == 1000 && nl$saldo_vencido == 300 && nl$facturas == 2L &&
     m$saldo_vencido[m$moneda == "USD"] == 50 && m$saldo_vencido[m$empresa == "NG"] == 0 &&
     all(m$semana == "2026-W47") && all(m$lunes == LUNES)
 })
-ok("un ledger vacío da cero filas", nrow(umbral_metricas(NULL, LUNES)) == 0)
+ok("un ledger vacío da cero filas", nrow(umbral_metricas(NULL, LUNES, NULL, character())) == 0)
+
+# Intercompany: a past-due IC invoice must not move the %.
+ar_ic <- tibble::tibble(
+  Empresa = "NL", Moneda = "MXN", Parte = c("Cliente A", "Cliente B", "NG Logística", "Cliente C"),
+  `Código de cliente` = c("C100", "C200", "C1027", "C300"), RFC = c("AAA010101AA1", "", "", ""),
+  `Saldo vencido` = c(300, 700, 5000, 100),
+  FechaVenc_Original = as.Date(c("2026-11-10", "2026-11-20", "2026-10-01", "2026-11-01")))
+pct_nl <- function(m) 100 * m$saldo_vencido / m$saldo_abierto
+ok("una factura IC vencida (código del registro interco) no mueve el %", {
+  reg <- list(ar_prefix = "C", ap_prefix = "P", companies = list(NG = list(ar = "1027", ap = character())))
+  m <- umbral_metricas(ar_ic, LUNES, interco = reg, cmap = c(NL = "NL Transportes", NG = "NG Logística"))
+  nrow(m) == 1 && m$saldo_abierto == 1100 && m$facturas == 3L && abs(pct_nl(m) - 400 / 11) < 1e-9
+})
+ok("un RFC del registro también la saca, aunque su código no esté", {
+  reg <- list(ar_prefix = "C", companies = list(NG = list(ar = "1027")), rfcs = c(XX = "AAA010101AA1"))
+  m <- umbral_metricas(ar_ic, LUNES, interco = reg, cmap = character())
+  m$saldo_abierto == 800 && m$facturas == 2L
+})
+ok("sin registro, la saca por el nombre de la empresa del grupo (el mismo respaldo de la app)", {
+  m <- umbral_metricas(ar_ic, LUNES, interco = NULL, cmap = c(NG = "NG Logística"))
+  m$saldo_abierto == 1100 && m$facturas == 3L
+})
+ok("umbral_metricas exige interco y cmap (nadie se salta el filtro IC)",
+   falla(umbral_metricas(ar_ic, LUNES)))
 
 cat("\n-- la serie en S3 --\n")
 k_met <- paste0(CID, "/avisos/metricas.rds")
