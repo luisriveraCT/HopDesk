@@ -96,6 +96,11 @@ conf_texto <- function() ev(sprintf("document.querySelector('#%s .hdt-confirmar-
 si <- function() clic(sprintf("document.querySelector('#%s .hdt-confirmar-si')", A))
 aviso <- function() ev("Array.from(document.querySelectorAll('.shiny-notification')).map(function(n){ return n.textContent; }).join(' / ')")
 otra_sesion <- function(btn = "otra_sesion") { clic(sprintf("document.getElementById('%s')", btn)); Sys.sleep(0.6) }
+# Waits for what a click should bring about (the server's round trip), up to
+# `s` seconds, instead of a fixed sleep: under load (another battery running)
+# 0.5 s was not enough for the edit panel to open, and E6 failed with E7/E11
+# behind it. TRUE as soon as cond() holds; FALSE if it never does.
+llega <- function(cond, s = 10) poll_until(function() isTRUE(tryCatch(cond(), error = function(e) FALSE)), timeout_s = s)
 
 ok("Empresas loads on the engine", abrir())
 
@@ -128,30 +133,31 @@ invisible(abrir())
 
 # ── E6/E7 · edit by id ──────────────────────────────────────────────────────
 clic(boton("e-ncs", "editar"))
-ok("E6: ✎ on NCS opens the side panel for NCS", identical(panel_iniciales(), "NCS"))
+ok("E6: ✎ on NCS opens the side panel for NCS", llega(function() identical(panel_iniciales(), "NCS")))
 otra_sesion()
 ok("ids: another session puts a company first -- the table shows it, and the panel STILL edits NCS",
-   identical(vis()[1], "e-new") && identical(panel_iniciales(), "NCS"))
+   llega(function() identical(vis()[1], "e-new")) && identical(panel_iniciales(), "NCS"))
 invisible(ev("var i=document.getElementById('emp-edit_razon_social'); i.value='NCS Editada SA'; $(i).trigger('change'); 0"))
 Sys.sleep(0.5)
 k <- n_reg()
 clic("document.getElementById('emp-btn_save_edit')")
 Sys.sleep(0.6)
 ok("E7: Guardar saves NCS's new razón social, and nothing else changes",
-   identical(guardado_de("e-ncs"), "NCS:NCS Editada SA:TRUE:FALSE") &&
+   llega(function() identical(guardado_de("e-ncs"), "NCS:NCS Editada SA:TRUE:FALSE")) &&
    identical(guardado_de("e-nts"), "NTS:Networks Trucking Services S.A. de C.V.:TRUE:FALSE") &&
    identical(guardado_de("e-new"), "AAA:Alfa Nueva SA:TRUE:FALSE"))
 ok("E7: log_action editar_empresa with NCS's id; the panel closes",
-   any(grepl("^log editar_empresa e-ncs$", registro())) && identical(panel_iniciales(), ""))
-ok("E11: the table shows the saved value", grepl("NCS Editada SA", ev(sprintf("%s.textContent", fila("e-ncs")))))
+   llega(function() any(grepl("^log editar_empresa e-ncs$", registro())) && identical(panel_iniciales(), "")))
+ok("E11: the table shows the saved value",
+   llega(function() grepl("NCS Editada SA", ev(sprintf("%s.textContent", fila("e-ncs"))))))
 
 # ── detalle · double click = Editar ─────────────────────────────────────────
 doble(fila("e-nts", ".children[2]"))
-ok("detalle: a double click on NTS opens its edit panel", identical(panel_iniciales(), "NTS"))
+ok("detalle: a double click on NTS opens its edit panel", llega(function() identical(panel_iniciales(), "NTS")))
 otra_sesion("otra_sesion_borra")   # the first one (AAA) goes: every position shifts back
 ok("ids: another session drops the first company -- the panel stays on NTS", identical(panel_iniciales(), "NTS"))
 clic("document.getElementById('emp-btn_cancel_edit')")
-ok("Cancelar closes the panel", identical(panel_iniciales(), ""))
+ok("Cancelar closes the panel", llega(function() identical(panel_iniciales(), "")))
 
 # ── E8 · Desactivar by id, confirmed in the table's bar ─────────────────────
 k <- length(guardados())
