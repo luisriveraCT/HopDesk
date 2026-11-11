@@ -2915,6 +2915,12 @@ server <- function(input, output, session) {
       showNotification("El campo Documento es obligatorio.", type = "warning")
       return()
     }
+    # CM22: a cleared date saved the item with no due date (it then never
+    # shows and cannot be deleted) and, when editing, gave Agenda's row NA.
+    if (!fecha_valida(input$me_fecha)) {
+      showNotification(tr("comun.aviso.fecha_requerida"), type = "warning")
+      return()
+    }
 
     if (nzchar(edit_id)) {
       # ── Edit mode: replace existing row by id ────────────────────────────
