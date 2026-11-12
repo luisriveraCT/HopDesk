@@ -827,6 +827,7 @@
   "tablas.proveedores.importar.motivo_numero": "Excel stored the account as a number and may have lost digits: type it as text (“{cuenta}”).",
   "tablas.proveedores.importar.motivo_dv": "The CLABE doesn't check out: review the number “{cuenta}”.",
   "tablas.proveedores.importar.motivo_cero": "The leading 0 Excel dropped was put back; the check digit matches.",
+  "tablas.proveedores.importar.motivo_cero_bb": "The leading zeros Excel dropped were put back: BanBajío accounts have 12 digits.",
   "tablas.proveedores.importar.motivo_17": "The account “{cuenta}” has 17 digits and isn't a valid CLABE, even with a leading 0.",
   "tablas.proveedores.importar.motivo_banco": "Unknown bank “{banco}”.",
   "tablas.proveedores.importar.cambio": "{campo}: {antes} → {despues}",

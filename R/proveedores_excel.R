@@ -241,6 +241,16 @@ prov_cuenta <- function(texto, es_numero = FALSE) {
   list(valor = t, estado = "ok", motivo = NA_character_)
 }
 
+# A BanBajío account has 12 digits (56 of 59 in prod and dev, 2026-11-11; the
+# 2 of 11 are 12-digit accounts that lost their 0). One of 10-11 digits gets
+# its zeros back on the left; any other length or bank is left as it is.
+# `es_bb`: the row is BanBajío (bank 030, or "Cuenta BB").
+prov_cuenta_bb12 <- function(cuenta, es_bb) {
+  corta <- es_bb %in% TRUE & !is.na(cuenta) & grepl("^[0-9]{10,11}$", cuenta)
+  cuenta[corta] <- paste0(strrep("0", 12L - nchar(cuenta[corta])), cuenta[corta])
+  cuenta
+}
+
 # A CLABE's first 3 digits ARE its bank's key: when the file's bank says
 # another, one of the two is a typing error.
 prov_banco_coincide <- function(cuenta, banco) {
@@ -460,6 +470,15 @@ prov_clasificar <- function(filas, activos, inactivos, tipo = "activos", catalog
   motivo[is.na(motivo) & sin_nombre]  <- "tablas.proveedores.importar.motivo_banco"
   nota[de_clabe] <- ifelse(is.na(nota[de_clabe]), "tablas.proveedores.importar.nota_banco_clabe",
                            paste(nota[de_clabe], "tablas.proveedores.importar.nota_banco_clabe", sep = "|"))
+  # A BanBajío account Excel had as a number, with 10-11 digits: its leading
+  # zeros back, to 12, and said in the row. Only when the cell was a number
+  # ("aviso"): typed as text it is left as written.
+  tipo_bb  <- !is.na(f$tipo_cuenta) & grepl("^cuenta bb$", prov_normalizar_encabezado(f$tipo_cuenta))
+  bb_corta <- est_cuenta == "aviso" & (banco %in% "030" | tipo_bb) & !is.na(f$no_cuenta) &
+              grepl("^[0-9]{10,11}$", f$no_cuenta)
+  f$no_cuenta[bb_corta] <- prov_cuenta_bb12(f$no_cuenta[bb_corta], TRUE)
+  banco[bb_corta & is.na(banco)] <- "030"
+  nota[bb_corta] <- "tablas.proveedores.importar.motivo_cero_bb"
   f$banco <- banco
   f$.banco_archivo <- texto_banco
   f$.banco_clabe   <- ifelse(es_bb, "030", clave_clabe)
@@ -481,7 +500,11 @@ prov_clasificar <- function(filas, activos, inactivos, tipo = "activos", catalog
     comp <- list(banco = bk, moneda = prov_moneda(col("moneda")), no_cuenta = prov_cuenta_existente(df),
                  tipo_cuenta = prov_tipo_cuenta(col("tipo_cuenta")))
     for (campo in setdiff(PROV_EXCEL_ACTUALIZA, names(comp))) comp[[campo]] <- prov_limpiar_campo(campo, col(campo))
-    list(df = df, llave = comp$no_cuenta, comp = comp, crudo = lapply(stats::setNames(PROV_EXCEL_ACTUALIZA, PROV_EXCEL_ACTUALIZA),
+    # The key compares a BanBajío account at its 12 digits, so the same account
+    # with and without its leading 0 is one supplier (an update), not two.
+    # comp keeps the stored value: a re-import with the 0 shows it as a change.
+    es_bb_cat <- bk %in% "030" | (!is.na(comp$tipo_cuenta) & grepl("^cuenta bb$", prov_normalizar_encabezado(comp$tipo_cuenta)))
+    list(df = df, llave = prov_cuenta_bb12(comp$no_cuenta, es_bb_cat), comp = comp, crudo = lapply(stats::setNames(PROV_EXCEL_ACTUALIZA, PROV_EXCEL_ACTUALIZA),
          function(k) if (k == "no_cuenta") comp$no_cuenta else col(k)))
   }
   act <- prep(activos); ina <- prep(inactivos)
