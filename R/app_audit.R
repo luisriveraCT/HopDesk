@@ -55,7 +55,9 @@
     suppressMessages(suppressWarnings(aws.s3::s3readRDS(object = key, bucket = .s3_bucket()))),
     error = function(e) { err <<- e; NULL })
   if (!is.null(x)) return(x)
-  existe <- tryCatch(isTRUE(aws.s3::object_exists(key, bucket = .s3_bucket())), error = function(e) NA)
+  # TRUE / FALSE (only a 404) / NA (a 403, the network...): R/persistence.R.
+  # A 403 used to read as "no chunk yet", and the flush started from empty.
+  existe <- s3_objeto_existe(key, .s3_bucket())
   if (identical(existe, FALSE)) return(NULL)
   stop("[APP_AUDIT] could not read ", key, " before appending to it",
        if (!is.null(err)) paste0(": ", conditionMessage(err)), call. = FALSE)

@@ -93,6 +93,16 @@ s3_memoria_reset(); .mem_prohibido <- KU
 ok("D2 usuarios.rds 403: stop() -- it used to be NULL, and a save would erase every account",
    falla(.usuarios_leer_estricto(KU, intentos = 1L, espera = 0)))
 
+# ── E: app_audit.R's strict read of a log chunk ─────────────────────────────
+for (e in parse("R/app_audit.R", keep.source = FALSE))
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(as.character(e[[2]]), ".audit_read_chunk_para_escribir"))
+    eval(e, globalenv())
+KA <- "acme/app_audit.rds"
+s3_memoria_reset()
+ok("E1 audit chunk 404: NULL (a new log)", is.null(.audit_read_chunk_para_escribir(KA)))
+s3_memoria_reset(); .mem_prohibido <- KA
+ok("E2 audit chunk 403: stop() -- it used to start the log from empty", falla(.audit_read_chunk_para_escribir(KA)))
+
 s3_memoria_restaurar()
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)
