@@ -311,7 +311,11 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
             a <- f[i, ]
             icono <- switch(a$tipo_feed, ale = "triangle-exclamation", act = "user-check",
                             sol = "clipboard-check", "bullhorn")
-            meta <- c(tr(paste0("panorama.feed.tipo.", a$tipo_feed)),
+            # A published recordatorio or reconocimiento says so (its chip is
+            # still Comunicados).
+            etiqueta <- if (a$tipo_feed == "com" && isTRUE(a$clase_ok %in% c("recordatorio", "reconocimiento")))
+              paste0("panorama.clase.", a$clase_ok) else paste0("panorama.feed.tipo.", a$tipo_feed)
+            meta <- c(tr(etiqueta),
                       if (nzchar(a$cuerpo %||% "")) a$cuerpo,
                       if ((a$contador %||% 1L) > 1L) tr("panorama.feed.veces", n = as.character(a$contador)))
             enlace <- if (!is.na(a$enlace) && grepl("^[A-Z]{2,6}$", a$enlace)) a$enlace else NULL
