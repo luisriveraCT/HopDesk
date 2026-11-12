@@ -11,6 +11,16 @@
 # Sourced by tests/_run_agenda.R — do not run directly.
 # =============================================================================
 
+# Run on its own (Rscript tests/test_agenda_persistence.R) it has none of the
+# runner's setup -- register_synced(), the S3 mock -- and stopped at
+# "could not find function" (listed in PENDIENTES as failing on master too).
+# The runner gives each module its own .pass/.fail; without them, hand the
+# run to the runner, which sources this file back with its setup.
+if (!exists(".pass", envir = environment(), inherits = FALSE)) {
+  source("tests/_run_agenda.R")
+  quit(save = "no", status = 0L)   # the runner stop()s, and so exits non-zero, on any failure
+}
+
 cat("── Agenda de Hoy Persistence ───────────────────────────────────────────\n")
 
 # ── assertion helper (follows project convention) ─────────────────────────────
