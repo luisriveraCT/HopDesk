@@ -157,7 +157,8 @@ app_src <- paste(readLines("app.R", warn = FALSE), collapse = "\n")
 
 .chk(grepl("secured_ui <- shinymanager::secure_app\\(", app_src), TRUE,
      "secure_app() ya no se asigna directo a `ui`")
-.chk(grepl("\\.invite_page_shell <- function\\(\\)", app_src), TRUE,
+# T31: the shell takes the page title (it also serves ?olvide= and ?reset=).
+.chk(grepl("\\.invite_page_shell <- function\\(", app_src), TRUE,
      "existe la página de activación")
 .chk(grepl('uiOutput\\("invite_body"\\)', app_src), TRUE,
      "la página monta invite_body")
@@ -183,7 +184,7 @@ for (id in c("invite_pw_new", "invite_pw_conf", "invite_pw_submit")) {
 }
 
 # La página NO debe montar la app: un invitado sin cuenta no tiene tenant.
-.shell <- sub("(?s).*\\.invite_page_shell <- function\\(\\) \\{(.*?)\\n\\}\\n(?s).*",
+.shell <- sub("(?s).*\\.invite_page_shell <- function\\([^\\n]*\\) \\{(.*?)\\n\\}\\n(?s).*",
               "\\1", app_src, perl = TRUE)
 .chk(grepl("page_navbar|mod_.*_ui\\(", .shell), FALSE,
      "la página de activación no monta la UI de la aplicación")
@@ -200,7 +201,8 @@ for (id in c("invite_pw_new", "invite_pw_conf", "invite_pw_submit")) {
 .chk(.pos_return < .pos_mods, TRUE,
      "el corte ocurre antes de registrar los módulos")
 # El corte depende de que el token exista; sin token la app arranca normal.
-.chk(grepl("if \\(nzchar\\(isolate\\(invite_token_rv\\(\\)\\) %\\|\\|% \"\"\\)\\)", app_src),
+# T31: ...or ?reset= / ?olvide=, the same page (nobody is signed in there).
+.chk(grepl("if \\(nzchar\\(isolate\\(invite_token_rv\\(\\)\\) %\\|\\|% \"\"\\) \\|\\| !is.null\\(isolate\\(reset_token_rv\\(\\)\\)\\) \\|\\|\\s*!is.null\\(isolate\\(olvide_rv\\(\\)\\)\\)\\)", app_src),
      TRUE, "el corte sólo aplica cuando hay token en la URL")
 
 # ── E. El parser del token tolera la barra de direcciones real ───────────────

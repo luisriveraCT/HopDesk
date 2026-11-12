@@ -607,10 +607,15 @@ secured_ui <- shinymanager::secure_app(
 
     .hopdesk_brandmark("Acceda a su cuenta")
   ),
-  tags_bottom = tags$p(
-    style = paste0("text-align:center; color:#1b2e40; font-size:0.7rem; ",
-                   "padding-top:10px; letter-spacing:0.08em;"),
-    paste0("\u00a9 ", format(Sys.Date(), "%Y"), " HopDesk")
+  tags_bottom = tagList(
+    # T31: "forgot password" opens its own page above secure_app (?olvide=1).
+    tags$p(style = "text-align:center; font-size:0.8rem; padding-top:6px;",
+           tags$a(href = "?olvide=1", style = "color:#b49444;", tr("cuentas.olvide.enlace"))),
+    tags$p(
+      style = paste0("text-align:center; color:#1b2e40; font-size:0.7rem; ",
+                     "padding-top:10px; letter-spacing:0.08em;"),
+      paste0("\u00a9 ", format(Sys.Date(), "%Y"), " HopDesk")
+    )
   ),
   head_auth = tags$style(HTML("
     /* ── HopDesk login skin ───────────────────────────────────────── */
@@ -699,12 +704,14 @@ secured_ui <- shinymanager::secure_app(
 # So ?invite= is intercepted one level ABOVE secure_app and answered with its
 # own page. No login, no application UI, no data -- just the account setup.
 # Everything else still goes through shinymanager untouched.
-.invite_page_shell <- function() {
+# T31: the same page answers ?olvide= ("forgot password") and ?reset=<token>
+# (the mailed link); only its title changes.
+.invite_page_shell <- function(titulo = tr("cuentas.activacion.titulo_pagina")) {
   fluidPage(
     theme = bslib::bs_theme(version = 5, bootswatch = "flatly",
                             primary = "#0A58CA"),
     tags$head(
-      tags$title(tr("cuentas.activacion.titulo_pagina")),
+      tags$title(titulo),
       # The address carries a one-time token (?invite=, ?reset=): no
       # Referer leaves this page, and it loads nothing from a third party.
       tags$meta(name = "referrer", content = "no-referrer"),
@@ -770,6 +777,8 @@ secured_ui <- shinymanager::secure_app(
 ui <- function(request) {
   query <- shiny::parseQueryString(request$QUERY_STRING %||% "")
   if (nzchar(query[["invite"]] %||% "")) return(.invite_page_shell())
+  if (nzchar(query[["reset"]] %||% "") || nzchar(query[["olvide"]] %||% ""))
+    return(.invite_page_shell(tr("cuentas.olvide.titulo_pagina")))
   secured_ui(request)
 }
 
@@ -810,7 +819,7 @@ server <- function(input, output, session) {
   # followed by an early return: the invitee has no account yet, so nothing
   # below this belongs to them.
   # The token is single-use: marked "accepted" after the account is created.
-  invite_token_rv <- reactive({
+  .param_url <- function(nombre) {
     qs <- session$clientData$url_search
     if (!nzchar(qs %||% "")) return(NULL)
     # shiny::parseQueryString, not a hand-rolled strsplit(pairs, "="): the
@@ -818,17 +827,92 @@ server <- function(input, output, session) {
     # and any value containing "=" -- or a bare flag with none -- made the old
     # `[[`(kv, 2) throw, which the tryCatch turned into "no invite token".
     params <- tryCatch(shiny::parseQueryString(qs), error = function(e) list())
-    tok <- params[["invite"]] %||% NULL
-    if (is.null(tok) || !nzchar(tok)) NULL else tok
-  })
+    v <- params[[nombre]] %||% NULL
+    if (!is.character(v) || length(v) != 1L || !nzchar(v)) NULL else v
+  }
+  invite_token_rv <- reactive(.param_url("invite"))
+  # T31: ?reset=<token> (the mailed link) and ?olvide=1 ("forgot password").
+  # The token is only ever read here, from the address: the page never puts
+  # it in a field, and nothing below prints it.
+  reset_token_rv <- reactive(if (is.null(invite_token_rv())) .param_url("reset"))
+  olvide_rv      <- reactive(if (is.null(invite_token_rv()) && is.null(reset_token_rv())) .param_url("olvide"))
 
   # Set once the account exists, so the page can switch to the success state
   # without a reload -- the user name the invitee chose is shown once more.
   invite_done_rv <- reactiveVal(NULL)
 
+  # ── "¿Olvidaste tu contraseña?" (T31) ──────────────────────────────────────
+  # The page says the same thing whatever happens -- an e-mail with or
+  # without an account, a limit reached, a failed read -- and never shows
+  # the e-mail back. The request runs after the page answers
+  # (later::later), so its time tells nothing either: reset_solicitar()
+  # (R/auth_reset.R) does the lookup, the limits, the mail, log and alerts.
+  olvide_hecho <- reactiveVal(FALSE)
+  .titulo_acceso <- function(clave) tags$h5(style = "color:#b49444; letter-spacing:0.04em;", tr(clave))
+  .volver_login <- function()
+    tags$p(class = "hd-activate-note mt-3", tags$a(href = "./", tr("cuentas.olvide.volver")))
+  .sin_token_en_barra <- function()
+    tags$script(HTML("history.replaceState(null, '', location.pathname);"))
+  .pagina_olvide <- function() {
+    if (isTRUE(olvide_hecho())) return(tagList(
+      .titulo_acceso("cuentas.olvide.titulo"),
+      tags$p(class = "hd-activate-lead", tr("cuentas.olvide.respuesta")),
+      .volver_login()))
+    tagList(
+      .titulo_acceso("cuentas.olvide.titulo"),
+      tags$p(class = "hd-activate-lead", tr("cuentas.olvide.intro")),
+      textInput("olvide_correo", tr("cuentas.olvide.correo")),
+      actionButton("olvide_enviar", tr("cuentas.olvide.boton"), class = "btn btn-primary"),
+      .volver_login())
+  }
+  observeEvent(input$olvide_enviar, {
+    if (is.null(olvide_rv()) || isTRUE(olvide_hecho())) return()
+    correo <- input$olvide_correo   # as typed: reset_solicitar() checks it
+    olvide_hecho(TRUE)
+    later::later(function() tryCatch(reset_solicitar(correo),
+                                     error = function(e) message("[RESET] request failed: ", conditionMessage(e))), 0)
+  }, ignoreInit = TRUE)
+
+  # ── The mailed link (?reset=<token>) ─────────────────────────────────────
+  # An expired, used, unknown or malformed token all read the same.
+  reset_hecho <- reactiveVal(FALSE)
+  output$reset_error <- renderUI(NULL)
+  .pagina_reset <- function() {
+    if (isTRUE(reset_hecho())) return(tagList(
+      .titulo_acceso("cuentas.reset.titulo_hecho"),
+      tags$p(class = "hd-activate-lead", tr("cuentas.reset.nota_hecho")),
+      tags$a(href = "./", class = "btn btn-primary mt-2", tr("cuentas.activacion.ir")),
+      .sin_token_en_barra()))
+    if (is.null(reset_resolver(isolate(reset_token_rv())))) return(tagList(
+      .titulo_acceso("cuentas.activacion.invalido_titulo"),
+      tags$p(class = "hd-activate-lead", tr("cuentas.reset.enlace_invalido")),
+      tags$a(href = "./?olvide=1", class = "btn btn-primary mt-2", tr("cuentas.reset.pedir_otro")),
+      .sin_token_en_barra()))
+    tagList(
+      .titulo_acceso("cuentas.reset.titulo"),
+      passwordInput("reset_pw_new",  tr("cuentas.activacion.contrasena")),
+      passwordInput("reset_pw_conf", tr("cuentas.activacion.confirmar")),
+      tags$p(class = "hd-activate-note", tr("cuentas.activacion.regla")),
+      uiOutput("reset_error"),
+      actionButton("reset_enviar", tr("cuentas.reset.boton"), class = "btn btn-primary"))
+  }
+  observeEvent(input$reset_enviar, {
+    token <- reset_token_rv()
+    if (is.null(token) || isTRUE(reset_hecho())) return()
+    r <- tryCatch(reset_aplicar(token, input$reset_pw_new, input$reset_pw_conf),
+                  error = function(e) { message("[RESET] change failed: ", conditionMessage(e))
+                                        list(ok = FALSE, error = "comun.reintentar") })
+    if (isTRUE(r$ok)) reset_hecho(TRUE)
+    else output$reset_error <- renderUI(tags$p(class = "hd-activate-err", tr(r$error)))
+  }, ignoreInit = TRUE)
+
   output$invite_body <- renderUI({
     token <- invite_token_rv()
-    if (!nzchar(token %||% "")) return(NULL)
+    if (!nzchar(token %||% "")) {
+      if (!is.null(reset_token_rv())) return(.pagina_reset())
+      if (!is.null(olvide_rv())) return(.pagina_olvide())
+      return(NULL)
+    }
 
     done <- invite_done_rv()
     if (!is.null(done)) {
@@ -975,8 +1059,10 @@ server <- function(input, output, session) {
   # The block above is registered first, unconditionally, so a session whose
   # clientData has not arrived yet degrades to the old full boot rather than
   # to an empty page.
-  if (nzchar(isolate(invite_token_rv()) %||% "")) {
-    message("[INVITE] activation page -- application boot skipped (session #", .sn, ")")
+  # ?olvide= and ?reset= (T31) are that same page: nobody is signed in.
+  if (nzchar(isolate(invite_token_rv()) %||% "") || !is.null(isolate(reset_token_rv())) ||
+      !is.null(isolate(olvide_rv()))) {
+    message("[INVITE] account page -- application boot skipped (session #", .sn, ")")
     return(invisible(NULL))
   }
 
