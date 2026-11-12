@@ -15,7 +15,8 @@
 # unreadable cache, or a newest FIX older than FX_FIX_MAX_DIAS business days
 # all give NULL. Nothing is shown then; no figure is ever made up.
 #
-# fx_fix() -> NULL or list(valor, fecha, cambio_pct, serie, fuente):
+# fx_fix() -> NULL or list(valor, fecha, cambio_pct, serie, fuente), kept
+# 10 minutes in memory per process (NULL too):
 #   cambio_pct  % change against the previous FIX in the cache (NA if none).
 # =============================================================================
 
@@ -25,6 +26,7 @@ FX_FIX_MAX_DIAS <- 3L          # business days a FIX may be old and still shown
 FX_FIX_HORA     <- "12:30"     # Banxico determines the FIX around 12:00 CDMX
 FX_FIX_TZ       <- "America/Mexico_City"
 FX_FIX_REINTENTO_SEG <- 3600   # one Banxico request an hour per process, at most
+FX_FIX_MEMO_SEG      <- 600    # fx_fix() remembers its answer 10 minutes (NULL too)
 
 .schema_fx_fix <- function() data.frame(fecha = as.Date(character()), valor = numeric(), serie = character(),
                                         obtenido_en = character(), stringsAsFactors = FALSE)
@@ -76,7 +78,7 @@ fx_fix_esperado <- function(ahora = Sys.time()) {
   }), error = function(e) NULL)
 }
 
-fx_fix <- function(ahora = Sys.time()) {
+.fx_fix_calcular <- function(ahora) {
   esperado <- fx_fix_esperado(ahora)
   cache <- .fx_fix_leer()
   if (is.null(cache)) cache <- .schema_fx_fix()   # unreadable: try Banxico, never invent
@@ -103,4 +105,17 @@ fx_fix <- function(ahora = Sys.time()) {
        cambio_pct = if (!is.na(previo) && previo > 0) (cache$valor[i] / previo - 1) * 100 else NA_real_,
        serie      = FX_FIX_SERIE,
        fuente     = "Banxico FIX")
+}
+
+# The last answer is kept FX_FIX_MEMO_SEG in this process, NULL too (the
+# integrator, 2026-11-12): Panorama's Cinta redraws every minute in every
+# session, and the FIX changes once a day -- a read of S3 per redraw was
+# N reads a minute for nothing.
+fx_fix <- function(ahora = Sys.time()) {
+  m <- .fx_fix_estado$memo
+  if (!is.null(m) && as.numeric(difftime(ahora, m$cuando, units = "secs")) < FX_FIX_MEMO_SEG &&
+      as.numeric(difftime(ahora, m$cuando, units = "secs")) >= 0) return(m$valor)
+  r <- .fx_fix_calcular(ahora)
+  .fx_fix_estado$memo <- list(cuando = ahora, valor = r)
+  r
 }

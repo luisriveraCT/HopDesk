@@ -100,6 +100,28 @@ ok("no se puede guardar la caché: muestra lo que sí está guardado (ayer), no 
 ok("el código no tiene un tipo de cambio fijo de respaldo",
    !grepl("18\\.5", paste(readLines("R/fx_banxico.R", warn = FALSE), collapse = "\n")))
 
+# ── 6. Remembered 10 minutes in the process, NULL too (the integrator) ─────
+# Panorama's Cinta redraws every minute per session: S3 is read once.
+lecturas <- 0L
+leer_orig <- leer_hd_admin
+leer_hd_admin <- function(...) { lecturas <<- lecturas + 1L; leer_orig(...) }
+empezar(cache(c("2026-11-11", "2026-11-12"), c(20.00, 20.10)))
+r1 <- fx_fix(cdmx("2026-11-12 13:00")); r2 <- fx_fix(cdmx("2026-11-12 13:01"))
+ok("dos llamadas seguidas leen S3 una sola vez y dan lo mismo", lecturas == 1L && identical(r1, r2) && identical(r1$valor, 20.10))
+fx_fix(cdmx("2026-11-12 13:09"))
+ok("dentro de los 10 minutos, ninguna lectura más", lecturas == 1L)
+fx_fix(cdmx("2026-11-12 13:10"))
+ok("a los 10 minutos, vuelve a leer", lecturas == 2L)
+lecturas <- 0L; empezar(NULL, token = FALSE)
+n1 <- fx_fix(cdmx("2026-11-12 13:00")); n2 <- fx_fix(cdmx("2026-11-12 13:05"))
+ok("el NULL también se recuerda (sin dato: una sola lectura)", is.null(n1) && is.null(n2) && lecturas == 1L)
+lecturas <- 0L; empezar(cache("2026-11-11", 20.00)); falla <- TRUE
+viejo <- fx_fix(cdmx("2026-11-12 13:00"))
+assign(KEY, cache(c("2026-11-11", "2026-11-12"), c(20.00, 20.10)), envir = .mem)   # another process adds today's
+ok("lo que otro proceso guarda en esos 10 minutos se ve al vencer la memoria",
+   identical(fx_fix(cdmx("2026-11-12 13:05"))$valor, 20.00) && identical(fx_fix(cdmx("2026-11-12 13:11"))$valor, 20.10))
+leer_hd_admin <- leer_orig
+
 s3_memoria_restaurar(); Sys.unsetenv("BANXICO_TOKEN")
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
