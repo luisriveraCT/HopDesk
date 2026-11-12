@@ -247,7 +247,7 @@ test_that("a non-CLABE account that came as a number imports, with a visible war
   # Cuenta sin 0 inicial (2026-11-11): a BanBajío account of 11 digits that
   # Excel had as a number gets its 0 back, to 12 -- it used to import as
   # "12345678901" with only a warning. tests/test_proveedores_cuenta_bb.R.
-  expect_identical(r$filas$.nota, "tablas.proveedores.importar.motivo_cero_bb")
+  expect_identical(r$filas$.nota, "tablas.proveedores.importar.nota_cero_bb")
   expect_identical(c(r$activos$no_cuenta, r$activos$medio_pago), c("012345678901", "BCO"))
 })
 

@@ -24,7 +24,7 @@ fila <- function(nombre, banco, cuenta, tipo = NA_character_, numero = TRUE) {
   f
 }
 clasificar <- function(filas, activos = NULL) suppressMessages(prov_clasificar(filas, activos, NULL))
-NOTA_BB <- "tablas.proveedores.importar.motivo_cero_bb"
+NOTA_BB <- "tablas.proveedores.importar.nota_cero_bb"
 
 test_that("1 prov_cuenta_bb12: 10-11 digits of a BanBajío account to 12, nothing else", {
   if (!exists("prov_cuenta_bb12")) fail("prov_cuenta_bb12() does not exist")
@@ -32,6 +32,13 @@ test_that("1 prov_cuenta_bb12: 10-11 digits of a BanBajío account to 12, nothin
                                     c(TRUE, TRUE, TRUE, TRUE, FALSE)),
                    c("012345678901", "001234567890", "012345678901", "1234567890123", "12345678901"))
   expect_identical(prov_cuenta_bb12(c(NA, "ABC12345678"), TRUE), c(NA, "ABC12345678"))
+})
+
+test_that("1b a row's notes: the new one is joined to another note, and replaces aviso_numero", {
+  if (!exists("prov_nota_agregar")) fail("prov_nota_agregar() does not exist")
+  clabe <- "tablas.proveedores.importar.nota_banco_clabe"; aviso <- "tablas.proveedores.importar.aviso_numero"
+  expect_identical(prov_nota_agregar(c(NA, clabe, aviso, paste(clabe, aviso, sep = "|")), NOTA_BB, quitar = aviso),
+                   c(NOTA_BB, paste(clabe, NOTA_BB, sep = "|"), NOTA_BB, paste(clabe, NOTA_BB, sep = "|")))
 })
 
 test_that("2a BanBajío by its bank, 11 digits as a number: 12, said in the row", {

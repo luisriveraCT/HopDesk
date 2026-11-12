@@ -251,6 +251,15 @@ prov_cuenta_bb12 <- function(cuenta, es_bb) {
   cuenta
 }
 
+# A row's notes are keys joined by "|" (proveedores_module.R splits them).
+# Adds `clave` to each, after dropping `quitar` (a note it replaces).
+prov_nota_agregar <- function(nota, clave, quitar = character(0)) {
+  if (!length(nota)) return(character(0))
+  previa <- vapply(strsplit(ifelse(is.na(nota), "", nota), "|", fixed = TRUE),
+                   function(x) paste(setdiff(x[nzchar(x)], quitar), collapse = "|"), "")
+  ifelse(nzchar(previa), paste(previa, clave, sep = "|"), clave)
+}
+
 # A CLABE's first 3 digits ARE its bank's key: when the file's bank says
 # another, one of the two is a typing error.
 prov_banco_coincide <- function(cuenta, banco) {
@@ -478,7 +487,10 @@ prov_clasificar <- function(filas, activos, inactivos, tipo = "activos", catalog
               grepl("^[0-9]{10,11}$", f$no_cuenta)
   f$no_cuenta[bb_corta] <- prov_cuenta_bb12(f$no_cuenta[bb_corta], TRUE)
   banco[bb_corta & is.na(banco)] <- "030"
-  nota[bb_corta] <- "tablas.proveedores.importar.motivo_cero_bb"
+  # Joined to any other note of the row; aviso_numero ("may be missing
+  # zeros") is replaced: the zeros are back.
+  nota[bb_corta] <- prov_nota_agregar(nota[bb_corta], "tablas.proveedores.importar.nota_cero_bb",
+                                      quitar = "tablas.proveedores.importar.aviso_numero")
   f$banco <- banco
   f$.banco_archivo <- texto_banco
   f$.banco_clabe   <- ifelse(es_bb, "030", clave_clabe)

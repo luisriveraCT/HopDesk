@@ -827,7 +827,7 @@
   "tablas.proveedores.importar.motivo_numero": "Excel guardó la cuenta como número y pudo perder dígitos: escríbela como texto («{cuenta}»).",
   "tablas.proveedores.importar.motivo_dv": "La CLABE no cuadra: revisa el número «{cuenta}».",
   "tablas.proveedores.importar.motivo_cero": "Se agregó el 0 inicial que Excel quitó; el dígito verificador cuadra.",
-  "tablas.proveedores.importar.motivo_cero_bb": "Se agregaron los ceros que Excel quitó: las cuentas BanBajío tienen 12 dígitos.",
+  "tablas.proveedores.importar.nota_cero_bb":"Se agregaron los ceros que Excel quitó: las cuentas BanBajío tienen 12 dígitos.",
   "tablas.proveedores.importar.motivo_17": "La cuenta «{cuenta}» tiene 17 dígitos y no es una CLABE válida, ni con el 0 inicial.",
   "tablas.proveedores.importar.motivo_banco": "No se reconoce el banco «{banco}».",
   "tablas.proveedores.importar.cambio": "{campo}: {antes} → {despues}",
