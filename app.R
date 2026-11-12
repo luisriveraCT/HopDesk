@@ -47,6 +47,10 @@ source("R/requisiciones_module.R")
 # and the screen. T15 sources app.R directly, so a module missing here is a
 # start-up failure there even when shinyapps' autoload would have found it.
 source("R/avisos_alertas_module.R")
+# Banxico FIX (USD/MXN): Panorama's Cinta, Exportar, the Pasivos wizard and the
+# approximate USD amounts. Without this line T15 would not see it, and every
+# caller (each wraps it in tryCatch) would quietly show nothing.
+source("R/fx_banxico.R")
 source("R/panorama_datos.R")
 source("R/panorama_publicar_module.R")
 source("R/panorama_module.R")
@@ -1566,9 +1570,9 @@ server <- function(input, output, session) {
     cf_preview_open   = cf_preview_open,
     cf_preview_prefill = cf_preview_prefill,
     # Banxico FIX for Panorama's Cinta: list(valor, cambio_pct, fecha), or
-    # NULL when there is no figure (nothing is shown then). The connector is
-    # a separate task; it replaces this function, nothing else changes.
-    fx_fix            = function() NULL
+    # NULL when there is no figure (nothing is shown then). R/fx_banxico.R:
+    # one global daily cache, kept 10 minutes per process, failing closed.
+    fx_fix            = function() fx_fix()
   )
 
   # ── Cash Flow Preview toggle ─────────────────────────────────────────────────
