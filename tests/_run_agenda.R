@@ -27,6 +27,7 @@ suppressPackageStartupMessages({
 .orig_s3saveRDS  <- aws.s3::s3saveRDS
 .orig_put_object <- aws.s3::put_object
 .orig_get_bucket <- aws.s3::get_bucket
+.orig_object_exists <- aws.s3::object_exists
 
 .restore_aws_s3_namespace <- function() {
   suppressWarnings({
@@ -34,6 +35,7 @@ suppressPackageStartupMessages({
     utils::assignInNamespace("s3saveRDS",  .orig_s3saveRDS,  "aws.s3")
     utils::assignInNamespace("put_object", .orig_put_object, "aws.s3")
     utils::assignInNamespace("get_bucket", .orig_get_bucket, "aws.s3")
+    utils::assignInNamespace("object_exists", .orig_object_exists, "aws.s3")
   })
 }
 
@@ -65,12 +67,21 @@ tryCatch({
     matched  <- all_keys[startsWith(all_keys, prefix)]
     lapply(matched, function(k) list(Key = k))
   }
+  # The strict reads before a write ask whether a missing key really does not
+  # exist. Unmocked, this asked the real S3 (a fake bucket: 403 or no network)
+  # and passed only because object_exists() took any failure for "no such
+  # file" (S3 existe, 2026-11-11). As aws.s3's HEAD: the status in a message.
+  mock_object_exists <- function(object, bucket, ...) {
+    if (exists(object, envir = .mock_s3_store, inherits = FALSE)) return(TRUE)
+    message("Client error: (404) Not Found"); FALSE
+  }
 
   suppressWarnings({
     utils::assignInNamespace("s3readRDS",  mock_s3readRDS,   "aws.s3")
     utils::assignInNamespace("s3saveRDS",  mock_s3saveRDS,   "aws.s3")
     utils::assignInNamespace("put_object", mock_put_object,  "aws.s3")
     utils::assignInNamespace("get_bucket", mock_s3getbucket, "aws.s3")
+    utils::assignInNamespace("object_exists", mock_object_exists, "aws.s3")
   })
 
   # ── Env vars ─────────────────────────────────────────────────────────────────
