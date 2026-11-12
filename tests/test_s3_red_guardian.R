@@ -59,7 +59,10 @@ permitidos <- c(
   "R/settings/settings_companies.R" = "client_id = cid, permitir_reduccion = TRUE)",
   # alertas_guardar() (C): unmarking every action of a user removes that
   # user's row from avisos_alertas.rds, on S3's matrix as it is now.
-  "R/avisos_alertas_module.R" = "}, permitir_reduccion = TRUE)"
+  "R/avisos_alertas_module.R" = "}, permitir_reduccion = TRUE)",
+  # avisos_archivar() (D): the monthly archive removes from avisos.rds only
+  # the avisos it already wrote to avisos/archivo/AAAA-MM.rds and read back.
+  "R/avisos_archivo.R" = "}, permitir_reduccion = TRUE)"
 )
 usos <- do.call(rbind, lapply(archivos, function(f) {
   x <- codigo(f); i <- grep("permitir_reduccion = TRUE", x, fixed = TRUE)

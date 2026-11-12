@@ -4,7 +4,7 @@
 #   Rscript --vanilla scripts/avisos_job.R            (from the repo root)
 #
 # Environment (the workflow, .github/workflows/avisos.yml, sets it):
-#   AVISOS_MODO     lunes | viernes
+#   AVISOS_MODO     lunes | viernes | archivo
 #   AVISOS_PRUEBA   "true" (the default; anything but "false" counts as true):
 #                   nothing is sent; each email's HTML goes to
 #                   <cliente>/avisos/prueba/<fecha>_<modo>_<n>.html instead
@@ -18,6 +18,8 @@
 #            recipient (R/avisos_correos.R)
 #   viernes  semana.rds + the rows now -> logros and radar (R/avisos_logros.R)
 #            -> one email per recipient
+#   archivo  avisos expired over 30 days -> <cliente>/avisos/archivo/AAAA-MM.rds
+#            (R/avisos_archivo.R); no email, AVISOS_PRUEBA does not apply
 # A client that cannot be read whole is left out (avisos_cliente_datos()).
 # Writes only under <cliente>/avisos/ (the role allows nothing else).
 #
@@ -38,13 +40,14 @@ AVISOS_JOB_ARCHIVOS <- c(
   "R/data_pipeline.R", "R/pasivos_engine.R", "R/pasivos_schemas.R", "R/pasivos_calendar_glue.R",
   "R/pasivos_persistence.R", "R/bancos_persistence.R", "R/cashflow_export_module.R", "R/fx_banxico.R",
   "R/email_service.R", "R/avisos.R", "R/panorama_datos.R",
-  "R/avisos_umbrales.R", "R/avisos_correos.R", "R/avisos_datos.R", "R/avisos_logros.R")
+  "R/avisos_umbrales.R", "R/avisos_correos.R", "R/avisos_datos.R", "R/avisos_logros.R", "R/avisos_archivo.R")
 
 # The only things the log may count.
 JOB_EVENTOS <- c(
   "clientes", "clientes_ok", "omitido_lectura", "omitido_sin_sap", "omitido_sap_viejo",
   "omitido_calculo", "omitido_sin_lunes", "omitido_destinatarios", "error_cliente",
-  "destinatarios", "enviado", "fallido", "ya_enviado", "prueba_html", "alertas_umbral")
+  "destinatarios", "enviado", "fallido", "ya_enviado", "prueba_html", "alertas_umbral",
+  "archivados", "sin_llave_nueva")
 
 .job <- new.env(parent = emptyenv())
 job_reiniciar <- function() .job$cuenta <- stats::setNames(integer(length(JOB_EVENTOS)), JOB_EVENTOS)
@@ -182,13 +185,20 @@ job_viernes <- function(cid, hoy, ahora, prueba, url) {
   job_contar("clientes_ok")
 }
 
+job_archivo <- function(cid, ahora) {
+  r <- avisos_archivar(cid, ahora)
+  if (!is.na(r$motivo)) return(job_contar(r$motivo))
+  job_contar("archivados", r$archivados)
+  job_contar("clientes_ok")
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 # Runs the job silently and returns the log lines. stop()s only when the run
 # cannot start (bad mode, unreadable client registry).
 job_correr <- function(modo = Sys.getenv("AVISOS_MODO"), prueba = !identical(tolower(Sys.getenv("AVISOS_PRUEBA")), "false"),
                        hoy = NULL, ahora = Sys.time()) {
-  if (!modo %in% c("lunes", "viernes")) stop("AVISOS_MODO must be lunes or viernes", call. = FALSE)
+  if (!modo %in% c("lunes", "viernes", "archivo")) stop("AVISOS_MODO must be lunes, viernes or archivo", call. = FALSE)
   hoy <- as.Date(hoy %||% (if (nzchar(Sys.getenv("AVISOS_FECHA"))) Sys.getenv("AVISOS_FECHA")
                            else format(ahora, tz = UMBRAL_TZ, "%Y-%m-%d")))
   url <- tryCatch(app_public_url(), error = function(e) "")
@@ -200,7 +210,9 @@ job_correr <- function(modo = Sys.getenv("AVISOS_MODO"), prueba = !identical(tol
     clientes <- job_clientes()
     job_contar("clientes", length(clientes))
     for (cid in clientes)
-      tryCatch(if (modo == "lunes") job_lunes(cid, hoy, ahora, prueba, url) else job_viernes(cid, hoy, ahora, prueba, url),
+      tryCatch(switch(modo, lunes = job_lunes(cid, hoy, ahora, prueba, url),
+                            viernes = job_viernes(cid, hoy, ahora, prueba, url),
+                            archivo = job_archivo(cid, ahora)),
                error = function(e) job_error(cid, modo, e))
   }), type = "output")
   job_log()
