@@ -81,13 +81,19 @@ es_la_de_resolve <- function(llegan) all(vapply(names(llegan), function(k) {
 for (como in c("shinyapps", "source_app")) {
   llegan <- tryCatch(arrancar(como), error = function(e) { message("  ERROR: ", conditionMessage(e)); NULL })
   ok(sprintf("%s: the app starts and its forecasting callers are found (%d)", como, length(llegan)),
-     length(llegan) >= 4L)
+     length(llegan) >= 3L)
   ok(sprintf("%s: every caller reaches forecasting_resolve.R's definition", como),
      !is.null(llegan) && es_la_de_resolve(llegan))
+  # Since banxico-fix Flujo's Exportar (.suggest_fx_rate) and the wizard's FX
+  # line take the Banxico FIX (fx_fix()), not these functions; the engine of
+  # Pasivos, the wizard's save and app.R's rate refresh still call them.
   if (como == "shinyapps")
-    ok("shinyapps: Pasivos' engine and wizard, Flujo's export and app.R are among the callers",
-       all(c("pasivos_generate_schedule -> forecasting_get_estimate", ".pasivos_wizard_save -> forecasting_set_estimate",
-             ".suggest_fx_rate -> forecasting_get_estimate", "app.R -> forecasting_set_estimate") %in% names(llegan)))
+    ok("shinyapps: Pasivos' engine, the wizard's save and app.R are among the callers",
+       all(c("pasivos_generate_schedule -> forecasting_get_estimate",
+             "pasivos_recompute_pago_from_cotizado -> forecasting_get_estimate",
+             ".pasivos_wizard_save -> forecasting_set_estimate", "app.R -> forecasting_set_estimate") %in% names(llegan)))
+  ok(sprintf("%s: Exportar's suggestion no longer goes through them (it uses the FIX)", como),
+     !is.null(llegan) && !any(startsWith(names(llegan), ".suggest_fx_rate ->")))
 }
 
 # ── 2. forecasting_get_estimate reads as prod did ─────────────────────────────
