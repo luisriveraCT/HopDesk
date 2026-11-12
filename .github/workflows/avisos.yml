@@ -1,0 +1,99 @@
+name: Avisos semanales (D)
+
+# The weekly Panorama emails and the monthly archive (scripts/avisos_job.R).
+#
+# Started by hand only (workflow_dispatch) until the integrador reviews a
+# real run; the schedule is added after that, as its own change:
+#   lunes    Monday 8:00 Mexico      cron "0 14 * * 1"
+#   viernes  Friday 17:00 Mexico     cron "0 23 * * 5"
+#   archivo  Saturday 5:30 UTC       cron "30 5 * * 6"
+#
+# Test mode is the default: "prueba" sends nothing and leaves each email's
+# HTML in <cliente>/avisos/prueba/ for review.
+#
+# THE LOG IS PUBLIC. The job prints only "evento=<count>" lines. Nothing here
+# echoes a variable, and inputs reach the script through env, never pasted
+# into a command line. AWS is reached only through the OIDC role, which may
+# read the bucket and write only <cliente>/avisos/*. No stored AWS keys.
+# tests/test_avisos_workflow.R guards all of this.
+
+on:
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "lunes, viernes o archivo"
+        required: true
+        type: choice
+        options: [lunes, viernes, archivo]
+      prueba:
+        description: "Modo prueba: no envía nada, deja el HTML en avisos/prueba/"
+        required: true
+        type: boolean
+        default: true
+      fecha:
+        description: "Opcional, AAAA-MM-DD: el día con que corre (por defecto, hoy en México)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: avisos
+  cancel-in-progress: false
+
+jobs:
+  avisos:
+    runs-on: ubuntu-latest
+    environment: produccion
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.5.2'
+          use-public-rspm: true
+
+      - name: Install R packages
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::dplyr
+            any::tibble
+            any::tidyr
+            any::stringr
+            any::lubridate
+            any::jsonlite
+            any::aws.s3
+            any::httr
+            any::uuid
+            any::htmltools
+            any::shiny
+            any::digest
+            any::openssl
+
+      - name: AWS role (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::496973234684:role/hopdesk-avisos-github
+          role-session-name: hopdesk-avisos
+          aws-region: us-east-1
+
+      - name: Run the job
+        env:
+          AVISOS_MODO: ${{ inputs.modo }}
+          AVISOS_PRUEBA: ${{ inputs.prueba }}
+          AVISOS_FECHA: ${{ inputs.fecha }}
+          S3_BUCKET: antiguedad-rds-prod
+          AWS_REGION: us-east-1
+          AWS_DEFAULT_REGION: us-east-1
+          HOPDESK_APP_URL: ${{ vars.HOPDESK_APP_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+          RESEND_FROM_NAME: ${{ secrets.RESEND_FROM_NAME }}
+        run: Rscript --vanilla scripts/avisos_job.R
