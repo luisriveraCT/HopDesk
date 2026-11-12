@@ -85,7 +85,10 @@ tryCatch({
     # Strict reads before a write (.s3_leer_para_escribir, CM13's hd-admin
     # tables) ask whether a missing object really does not exist.
     utils::assignInNamespace("object_exists",
-                             function(object, bucket, ...) !is.null(.mock_s3_store[[object]]), "aws.s3")
+                             function(object, bucket, ...) {   # as aws.s3's HEAD: the status in a message
+                               if (!is.null(.mock_s3_store[[object]])) return(TRUE)
+                               message("Client error: (404) Not Found"); FALSE
+                             }, "aws.s3")
   })
 
   # ── Env vars ─────────────────────────────────────────────────────────────────

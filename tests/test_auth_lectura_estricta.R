@@ -36,7 +36,10 @@ fake_read   <- function(object, bucket, ...) {
   get(object, envir = store)
 }
 fake_save   <- function(x, object, bucket, ...) { writes <<- writes + 1L; assign(object, x, envir = store); invisible(TRUE) }
-fake_exists <- function(object, bucket, ...) exists(object, envir = store, inherits = FALSE)
+fake_exists <- function(object, bucket, ...) {   # as aws.s3's HEAD: the status in a message
+  if (exists(object, envir = store, inherits = FALSE)) return(TRUE)
+  message("Client error: (404) Not Found"); FALSE
+}
 ns <- asNamespace("aws.s3")
 orig <- list(s3readRDS = get("s3readRDS", ns), s3saveRDS = get("s3saveRDS", ns),
              object_exists = get("object_exists", ns))
@@ -48,6 +51,9 @@ utils::assignInNamespace("object_exists", fake_exists, "aws.s3")
 
 # ── The real functions (no app) ───────────────────────────────────────────────
 source("R/tier_registry.R")   # niveles_unico_vivo(), for the last-live-account lock
+for (e in parse("R/persistence.R", keep.source = FALSE))   # .usuarios_existe() asks it
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(as.character(e[[2]]), "s3_objeto_existe"))
+    eval(e, globalenv())
 env <- new.env()
 for (e in parse("R/auth.R"))
   if (is.call(e) && identical(e[[1]], as.name("<-")) &&

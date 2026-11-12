@@ -33,6 +33,9 @@ env$S3_KEYS <- list(pasivos_audit = "pasivos_audit.rds")
 env$.s3_key <- function(key, client_id = NULL) paste0(client_id, "/", key)
 env$.s3_preload_cache <- new.env(); env$.s3_missing_cache <- new.env()
 env$.s3_bucket <- function() "fake"
+for (e in parse("R/persistence.R", keep.source = FALSE))   # .pasivos_audit_existe() asks it
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(as.character(e[[2]]), "s3_objeto_existe"))
+    eval(e, env)
 
 five <- tibble::tibble(id = paste0("a", 1:5), ts = Sys.time(), user = "u", empresa = "NCS",
                        action_type = "provision.generated", target_kind = "provision",

@@ -28,14 +28,19 @@
 #   get_bucket(bucket, prefix, max) the objects under prefix, sorted by key,
 #                                  at most max; each has [["Key"]], Size,
 #                                  LastModified (what the app reads: Key)
-#   object_exists(object, bucket)  TRUE/FALSE
+#   object_exists(object, bucket)  TRUE/FALSE, saying the HTTP status the
+#                                  way aws.s3 does: a missing key messages
+#                                  "Client error: (404) Not Found"; a key in
+#                                  .mem_prohibido answers 403 (and its read
+#                                  fails), as S3 without permission does
 # A missing key stops with "NoSuchKey", as S3 does.
 # =============================================================================
 suppressMessages({ library(dplyr); library(tibble) })
 `%||%` <- function(a, b) if (is.null(a)) b else a
 .mem <- new.env(); .mem_falla <- character(); .mem_escrituras <- 0L; .mem_subidas <- 0L
-.mem_falla_escritura <- character(); .mem_falla_lista <- character()
-.mem_orig <- lapply(stats::setNames(nm = c("s3readRDS", "s3saveRDS", "object_exists", "put_object", "get_object",
+.mem_falla_escritura <- character(); .mem_falla_lista <- character(); .mem_prohibido <- character()
+.mem_falla_cabeza <- character()   # keys whose HEAD (object_exists) fails like the network
+.mem_orig <-lapply(stats::setNames(nm = c("s3readRDS", "s3saveRDS", "object_exists", "put_object", "get_object",
                                            "get_bucket")),
                     function(nm) get(nm, asNamespace("aws.s3")))
 s3_memoria_restaurar <- function()
@@ -51,6 +56,7 @@ reg.finalizer(.mem, function(e) s3_memoria_restaurar(), onexit = TRUE)
 }
 .mem_leer <- function(object) {
   if (object %in% .mem_falla) stop("simulated S3 timeout")
+  if (object %in% .mem_prohibido) stop("simulated S3 AccessDenied (403)")
   if (!exists(object, envir = .mem, inherits = FALSE)) stop("NoSuchKey")
   get(object, envir = .mem)
 }
@@ -70,7 +76,13 @@ reg.finalizer(.mem, function(e) s3_memoria_restaurar(), onexit = TRUE)
   writeBin(x$bytes, tf); readRDS(tf)
 }
 .mem_falsos$s3saveRDS <- function(x, object, bucket, ...) .mem_escribir(object, x)
-.mem_falsos$object_exists <- function(object, bucket, ...) exists(object, envir = .mem, inherits = FALSE)
+# As aws.s3's HEAD: FALSE for any non-success, with the status in a message.
+.mem_falsos$object_exists <- function(object, bucket, ...) {
+  if (object %in% .mem_falla_cabeza) stop("simulated network error (HEAD)")
+  if (object %in% .mem_prohibido) { message("Client error: (403) Forbidden"); return(FALSE) }
+  if (exists(object, envir = .mem, inherits = FALSE)) return(TRUE)
+  message("Client error: (404) Not Found"); FALSE
+}
 # .mem_subidas: how many put_object calls stored something (the offline
 # queue's replay and .s3_write's fallback upload this way).
 .mem_falsos$put_object <- function(file, object, bucket, ...) {
@@ -110,7 +122,8 @@ suppressMessages(source("R/persistence.R"))
 s3_memoria_reset <- function() {
   rm(list = ls(.mem, all.names = TRUE), envir = .mem); .mem_falla <<- character(); .mem_escrituras <<- 0L
   .mem_subidas <<- 0L
-  .mem_falla_escritura <<- character(); .mem_falla_lista <<- character()
+  .mem_falla_escritura <<- character(); .mem_falla_lista <<- character(); .mem_prohibido <<- character()
+  .mem_falla_cabeza <<- character()
   for (env in Filter(Negate(is.null), list(get0(".s3_preload_cache"), get0(".s3_missing_cache"), get0(".s3_filas"))))
     rm(list = ls(env), envir = env)
   if (exists(".app_data_cache")) {   # a list in the app (R/global.R); an env in some tests

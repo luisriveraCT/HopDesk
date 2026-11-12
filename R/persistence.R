@@ -159,9 +159,39 @@
 # reads for the whole process -- and any save in that minute started from
 # nothing. Now only a key S3 confirms does not exist is cached as missing;
 # if S3 cannot answer, nothing is cached (the next read tries again).
-.s3_existe_full <- function(full_key, bucket = .s3_bucket()) {
-  tryCatch(isTRUE(aws.s3::object_exists(full_key, bucket = bucket)), error = function(e) NA)
+# Does an S3 object exist? TRUE, FALSE or NA -- the one function every "may I
+# start from an empty table?" check asks (here, auth.R, app_audit.R and
+# pasivos_audit.R). aws.s3::object_exists() is a HEAD that returns FALSE for
+# ANY non-success answer: 404 (no such object) and 403 (no permission)
+# alike, and the strict reads before a write took that FALSE for "a new
+# file" -- credentials that lost read access would have saved a table with
+# only the new rows over the real one (found 2026-11-11). aws.s3 says the
+# status only in a message ("Client error: (403) Forbidden"), so it is read:
+#   TRUE   the object exists;
+#   FALSE  S3 answered 404 / NoSuchKey: it really does not exist;
+#   NA     anything else -- 403, another status, a network error, or a FALSE
+#          with no status at all. Callers take NA as "it may exist": a write
+#          stops, nothing is cached as missing.
+# Assumption: the roles that read prod (the app's key and D's OIDC role) have
+# s3:ListBucket. Without it S3 answers 403 even for a key that does not
+# exist; that is NA here: fail closed, so a first file could not be created
+# -- the safe side (tests/test_s3_existe.R). Calls nothing of another file:
+# tests that load auth.R or app_audit.R alone take it by name.
+s3_objeto_existe <- function(full_key, bucket, cabeza = aws.s3::object_exists) {
+  avisos <- character()
+  r <- tryCatch(
+    withCallingHandlers(cabeza(full_key, bucket = bucket),
+                        message = function(m) {
+                          avisos <<- c(avisos, conditionMessage(m))
+                          invokeRestart("muffleMessage")
+                        }),
+    error = function(e) NA)
+  if (isTRUE(r)) return(TRUE)
+  if (identical(as.logical(r)[1], FALSE) && any(grepl("\\(404\\)|NoSuchKey|Not Found", avisos)))
+    return(FALSE)
+  NA
 }
+.s3_existe_full <- function(full_key, bucket = .s3_bucket()) s3_objeto_existe(full_key, bucket)
 .s3_missing_si_no_existe <- function(full_key, bucket = .s3_bucket()) {
   if (identical(.s3_existe_full(full_key, bucket), FALSE)) .s3_missing_cache_set(full_key)
   invisible(NULL)
@@ -256,11 +286,11 @@
 # built on that NULL replaces the whole file with only its own new rows (the
 # usuarios.rds incident of 2026-11-01, in every other table). This one reads
 # past the caches and stop()s unless S3 says the object really does not
-# exist; if S3 cannot say, it assumes it exists (fail closed).
-.s3_existe <- function(key, client_id) {
-  tryCatch(isTRUE(aws.s3::object_exists(.s3_key(key, client_id = client_id), bucket = .s3_bucket())),
-           error = function(e) NA)
-}
+# exist; if S3 cannot say, it assumes it exists (fail closed). A 403 is
+# "cannot say" too (s3_objeto_existe() above): object_exists() alone took it
+# for "does not exist".
+.s3_existe <- function(key, client_id)
+  s3_objeto_existe(.s3_key(key, client_id = client_id), .s3_bucket())
 
 .s3_leer_para_escribir <- function(key, client_id) {
   full_key <- .s3_key(key, client_id = client_id)

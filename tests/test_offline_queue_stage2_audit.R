@@ -210,7 +210,7 @@ register_synced("manual_inv", "manual_invoices.rds", function(client_id = NULL) 
   orig_save <- aws.s3::s3saveRDS
   orig_put  <- aws.s3::put_object
   orig_exists <- aws.s3::object_exists   # CM09 write net: S3 says "new key"
-  utils::assignInNamespace("object_exists", function(...) FALSE, "aws.s3")
+  utils::assignInNamespace("object_exists", function(...) { message("Client error: (404) Not Found"); FALSE }, "aws.s3")
   orig_read <- aws.s3::s3readRDS
   utils::assignInNamespace("s3saveRDS", fake_save, "aws.s3")
   utils::assignInNamespace("put_object", fake_put, "aws.s3")

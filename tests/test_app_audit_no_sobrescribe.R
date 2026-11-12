@@ -31,7 +31,10 @@ fake_read   <- function(object, bucket, ...) {
   get(object, envir = store)
 }
 fake_save   <- function(x, object, bucket, ...) { writes <<- writes + 1L; assign(object, x, envir = store); invisible(TRUE) }
-fake_exists <- function(object, bucket, ...) exists(object, envir = store, inherits = FALSE)
+fake_exists <- function(object, bucket, ...) {   # as aws.s3's HEAD: the status in a message
+  if (exists(object, envir = store, inherits = FALSE)) return(TRUE)
+  message("Client error: (404) Not Found"); FALSE
+}
 ns <- asNamespace("aws.s3")
 orig <- list(s3readRDS = get("s3readRDS", ns), s3saveRDS = get("s3saveRDS", ns),
              object_exists = get("object_exists", ns))
@@ -42,6 +45,9 @@ utils::assignInNamespace("s3saveRDS", fake_save, "aws.s3")
 utils::assignInNamespace("object_exists", fake_exists, "aws.s3")
 
 .s3_bucket <- function() "fake-bucket"
+for (e in parse("R/persistence.R", keep.source = FALSE))   # the chunk's existence check asks it
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(as.character(e[[2]]), "s3_objeto_existe"))
+    eval(e, globalenv())
 suppressMessages(source("R/app_audit.R"))
 reintentos <- 0L
 later_stub <- function(f, delay = 0) { reintentos <<- reintentos + 1L; invisible(NULL) }

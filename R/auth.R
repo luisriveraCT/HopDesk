@@ -275,9 +275,9 @@ auth_invalidate_credentials <- function() {
 # saved that empty table plus their change, erasing every account of the
 # client (found 2026-11-01, CM07/CM08). If S3 cannot say whether the object
 # exists, it is assumed to exist (fail closed).
-.usuarios_existe <- function(key) {
-  tryCatch(isTRUE(aws.s3::object_exists(key, bucket = .s3_bucket())), error = function(e) NA)
-}
+# TRUE / FALSE (only a 404) / NA (a 403, the network...): s3_objeto_existe()
+# in R/persistence.R.
+.usuarios_existe <- function(key) s3_objeto_existe(key, .s3_bucket())
 
 .usuarios_leer_estricto <- function(key, intentos = 3L, espera = 0.5) {
   ultimo_error <- NULL

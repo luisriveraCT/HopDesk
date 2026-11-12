@@ -36,7 +36,8 @@ fake_read <- function(object, bucket, ...) {
 fake_save <- function(x, object, bucket, ...) { writes <<- writes + 1L; assign(object, x, envir = store); invisible(TRUE) }
 fake_exists <- function(object, bucket, ...) {
   if (exists_unknown) stop("simulated HEAD failure")
-  exists(object, envir = store, inherits = FALSE)
+  if (exists(object, envir = store, inherits = FALSE)) return(TRUE)
+  message("Client error: (404) Not Found"); FALSE   # as aws.s3's HEAD: the status in a message
 }
 ns <- asNamespace("aws.s3")
 orig <- list(s3readRDS = get("s3readRDS", ns), s3saveRDS = get("s3saveRDS", ns),
