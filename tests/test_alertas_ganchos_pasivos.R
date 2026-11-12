@@ -15,8 +15,10 @@
 cat("=== test_alertas_ganchos_pasivos ===\n\n")
 suppressPackageStartupMessages({ library(shiny); library(dplyr); library(tibble) })
 source("tests/helpers/s3_memoria.R")
+source("tests/helpers/aislar_global.R")   # own instance lock, no network: before global.R loads
 Sys.unsetenv("HOPDESK_PRODUCTION")
 suppressWarnings(suppressMessages(shiny::loadSupport(".", renv = globalenv(), globalrenv = NULL)))
+stopifnot("global.R se cargó con red hacia AWS" = aislar_global_sin_red())
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 
 .pass <- 0L; .fail <- 0L
