@@ -146,3 +146,78 @@ reservar_usuario <- function(username, client_id, account_code, ocupados = chara
   })
   invisible(u)
 }
+
+# Adds the account `fila` (one row) to the client's table `usuarios` (read
+# strictly by the caller): reserve its user name, save, and give the name
+# back if the save fails -- one path for the activation and for Usuarios'
+# "Nueva cuenta". `ocupados`: see reservar_usuario(); the client's own user
+# names are added here. Errors as reservar_usuario() and auth_save_usuarios().
+guardar_cuenta_nueva <- function(usuarios, fila, client_id, ocupados = character()) {
+  u <- reservar_usuario(fila$username, client_id, fila$account_code,
+                        ocupados = c(as.character(usuarios$username), ocupados))
+  tryCatch(auth_save_usuarios(.hd_admin_agregar(usuarios, fila), client_id = client_id, base = usuarios),
+           error = function(e) {
+             tryCatch(unregister_username(u), error = function(e2)
+               message("[UINDEX] could not give back '", u, "': ", conditionMessage(e2)))
+             stop(e)
+           })
+  invisible(u)
+}
+
+# The logins loaded now, as a safety net for reservar_usuario(); never the
+# authority (a failed load is just "nothing more to add").
+.usuarios_en_credenciales <- function()
+  tryCatch(as.character(auth_get_credentials()$user), error = function(e) character())
+
+# ── Activation (?invite=) ────────────────────────────────────────────────────
+# campos: list(nombre, puesto, usuario, contrasena, confirmar) as typed.
+# Returns list(ok = FALSE, errores = list(<campo> = <key>)) when a field is
+# wrong or the user name is taken, or list(ok = TRUE, username, nombre,
+# account_code) once the account is saved and the invitation used. A failed
+# read or write stop()s: the page says "try again", nothing half-saved.
+activar_invitacion <- function(invite, campos) {
+  errores <- list()
+  for (campo in c("nombre", "puesto", "usuario", "contrasena")) {
+    e <- switch(campo, nombre = nombre_error(campos$nombre), puesto = puesto_error(campos$puesto),
+                usuario = usuario_error(campos$usuario), contrasena = contrasena_error(campos$contrasena))
+    if (!is.null(e)) errores[[campo]] <- e
+  }
+  if (is.null(errores$contrasena) && !identical(campos$contrasena, campos$confirmar))
+    errores$confirmar <- "cuentas.error.contrasenas_distintas"
+  if (length(errores)) return(list(ok = FALSE, errores = errores))
+
+  cid <- invite$client_id
+  usuarios <- auth_load_usuarios(client_id = cid)   # stop()s on a failed read
+  ahora <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+  fila <- data.frame(
+    id = uuid::UUIDgenerate(), account_code = .next_account_code(usuarios),
+    username = usuario_normalizar(campos$usuario), password_hash = hash_password(campos$contrasena),
+    display_name = texto_limpio(campos$nombre), tier = invite$tier, client_id = cid,
+    permisos = "{}", group_ids = "[]", allowed_clients = "[]", email = invite$email,
+    requires_password_change = FALSE, puesto = texto_limpio(campos$puesto),
+    password_changed_at = ahora, activo = TRUE, created_at = ahora, last_login = NA_character_,
+    deleted = FALSE, deleted_at = NA_character_, stringsAsFactors = FALSE)
+  r <- tryCatch(guardar_cuenta_nueva(usuarios, fila, cid, ocupados = .usuarios_en_credenciales()),
+                usuario_ocupado = function(e) e)
+  if (inherits(r, "usuario_ocupado"))
+    return(list(ok = FALSE, errores = list(usuario = "cuentas.error.usuario_ocupado")))
+  accept_invite(invite$token)
+  list(ok = TRUE, username = fila$username, nombre = fila$display_name, account_code = fila$account_code)
+}
+
+# A dictionary sentence with some values in bold, every piece escaped:
+# tr_negritas("cuentas.activacion.saludo", nombre = x, cliente = y) gives
+# "Hola <strong>x</strong>. ...". The values go in after the template is
+# escaped, each escaped itself, so nothing typed by anyone becomes markup.
+tr_negritas <- function(clave, ...) {
+  vals <- list(...)
+  marcas <- stats::setNames(as.list(sprintf("\u0001%d\u0001", seq_along(vals))), names(vals))
+  txt <- htmltools::htmlEscape(do.call(tr, c(list(clave), marcas)))
+  for (i in seq_along(vals)) {
+    pieza <- paste0("<strong>", htmltools::htmlEscape(as.character(vals[[i]])), "</strong>")
+    # gsub reads "\\" in a replacement even with fixed = TRUE: doubled, a
+    # backslash someone typed stays one backslash.
+    txt <- gsub(marcas[[i]], gsub("\\", "\\\\", pieza, fixed = TRUE), txt, fixed = TRUE)
+  }
+  htmltools::HTML(txt)
+}

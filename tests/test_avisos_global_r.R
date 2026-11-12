@@ -83,5 +83,17 @@ vistos <- avisos_fijos(muestra)
 ok("el detector ve el texto fijo que llega por una variable (a tr() o como mensaje), y solo ese",
    length(vistos) == 2L && any(grepl("ledger = ledg_str", vistos, fixed = TRUE)) && "msg" %in% vistos)
 
+# T31: an error list may hold a dictionary KEY (the screen passes it to
+# tr()); a sentence, or a key that does not exist, is still fixed text.
+muestra2 <- tempfile(fileext = ".R")
+writeLines(c('v <- function(errores) {',
+             '  errores$a <- "cuentas.error.contrasenas_distintas"',
+             '  errores$b <- "cuentas.error.no_existe"',
+             '  errores$c <- "Las contraseñas no coinciden."',
+             '  errores }'), muestra2, useBytes = TRUE)
+vistos2 <- avisos_errores_fijos(muestra2)
+ok("en una lista de errores, una clave del diccionario no es texto fijo; una frase o una clave inventada sí",
+   length(vistos2) == 2L && !any(grepl("contrasenas_distintas", vistos2, fixed = TRUE)))
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

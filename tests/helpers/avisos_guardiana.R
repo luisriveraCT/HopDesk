@@ -121,6 +121,16 @@ avisos_distintos <- function(iguales) Filter(function(p) !identical(p[[1]], p[[2
 #                            validators (pasivos_wizard_validate.R) give their
 #                            messages: avisos_fijos() never sees them, they are
 #                            not showNotification().
+#                            A literal that IS a dictionary key (it exists in
+#                            es.json) is not fixed text: the screen passes it
+#                            to tr() (T31: cuentas.error.*). A made-up key is.
+.clave_del_diccionario <- function(x) {
+  if (!is.character(x) || length(x) != 1L || !grepl("^[a-z]+(\\.[a-z0-9_]+)+$", x)) return(FALSE)
+  if (is.null(.avisos_dic_es$claves))
+    .avisos_dic_es$claves <- names(jsonlite::fromJSON(file.path("www", "i18n", "es.json")))
+  x %in% .avisos_dic_es$claves
+}
+.avisos_dic_es <- new.env()
 avisos_errores_fijos <- function(f) {
   es_lista_errores <- function(lhs) is.call(lhs) && as.character(lhs[[1]])[1] %in% c("$", "[[") &&
     is.name(lhs[[2]]) && grepl("err", as.character(lhs[[2]]), ignore.case = TRUE)
@@ -129,7 +139,7 @@ avisos_errores_fijos <- function(f) {
     if (!is.call(x)) return(invisible())
     if (as.character(x[[1]])[1] %in% c("<-", "=") && length(x) == 3L && es_lista_errores(x[[2]])) {
       m <- x[[3]]
-      if (.tiene_palabras(m) ||
+      if ((.tiene_palabras(m) && !.clave_del_diccionario(m)) ||
           (is.call(m) && as.character(m[[1]])[1] %in% c("paste", "paste0", "sprintf") &&
            any(vapply(as.list(m)[-1], .tiene_palabras, logical(1)))))
         fijos <<- c(fijos, paste(deparse(m, width.cutoff = 120L)[1]))

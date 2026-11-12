@@ -141,7 +141,8 @@ loaded <- real_auth_load_usuarios(client_id = "networks")
 
 .WRITE_SITES <- list(
   list(file = "app.R", pattern = "usuarios\\$password_hash\\[idx\\]\\s*<-"),
-  list(file = "app.R", pattern = "password_hash\\s*=\\s*hash_password\\(pw1\\)"),
+  # T31: the activation builds the account in activar_invitacion().
+  list(file = "R/usuarios_cuentas.R", pattern = "password_hash\\s*=\\s*hash_password\\(campos\\$contrasena\\)"),
   list(file = "R/tiers_module.R", pattern = "password_hash\\s*=\\s*hash_password\\(password\\)"),
   list(file = "R/tiers_module.R", pattern = 'all_u\\[full_idx, "password_hash"\\]\\s*<-'),
   list(file = "scripts/recover_mouse.R", pattern = "raw\\$password_hash\\[mouse_rows\\]\\s*<-"),

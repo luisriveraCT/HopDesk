@@ -16,7 +16,7 @@ ok <- function(label, expr) {
   else                { cat(" FAIL:", label, "\n"); .fail <<- .fail + 1L }
 }
 # file -> how many places set a password there
-PANTALLAS <- c("R/tiers_module.R" = 2L)
+PANTALLAS <- c("R/tiers_module.R" = 2L, "R/usuarios_cuentas.R" = 1L, "app.R" = 1L)
 reales <- names(PANTALLAS)
 otros <- strsplit(Sys.getenv("T31_ARCHIVOS", ""), ";", fixed = TRUE)[[1]]
 if (length(otros)) reales <- otros

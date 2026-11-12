@@ -121,9 +121,14 @@ ok("alta_inicial = TRUE lets an empty table through on purpose",
 # 4. The three write paths in the app
 app   <- paste(readLines("app.R", warn = FALSE), collapse = "\n")
 tiers <- paste(readLines("R/tiers_module.R", warn = FALSE), collapse = "\n")
+# T31: activar_invitacion() reads strictly before saving (a failed read
+# stop()s; tests/test_t31_activacion.R checks nothing is written) and the
+# page catches that error with its generic message.
+cuentas <- paste(readLines("R/usuarios_cuentas.R", warn = FALSE), collapse = "\n")
 ok("invitation: the read is caught and returns before saving",
-   grepl("usuarios <- tryCatch(auth_load_usuarios(client_id = invite$client_id),", app, fixed = TRUE) &&
-     grepl("if (is.null(usuarios)) return()", app, fixed = TRUE))
+   grepl("usuarios <- auth_load_usuarios(client_id = cid)", cuentas, fixed = TRUE) &&
+     grepl("}, error = invite_reintentar)", app, fixed = TRUE) &&
+     grepl("res <- activar_invitacion(invite,", app, fixed = TRUE))
 ok("invitation: the invitee only sees the generic message, no internal detail",
    !grepl('paste("Error:", e$message)', app, fixed = TRUE) && grepl('tr("comun.reintentar")', app, fixed = TRUE))
 ok("create user: all_usuarios_rv() cancels its consumers when the read fails",

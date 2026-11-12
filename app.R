@@ -702,9 +702,13 @@ secured_ui <- shinymanager::secure_app(
     theme = bslib::bs_theme(version = 5, bootswatch = "flatly",
                             primary = "#0A58CA"),
     tags$head(
-      tags$title("Activar cuenta — HopDesk"),
+      tags$title(tr("cuentas.activacion.titulo_pagina")),
+      # The address carries a one-time token (?invite=, ?reset=): no
+      # Referer leaves this page, and it loads nothing from a third party.
+      tags$meta(name = "referrer", content = "no-referrer"),
       tags$style(HTML("
         body { background:#07090d !important; color:#d8e4f0; }
+        .hd-activate-err { color:#e8837a; font-size:0.78rem; margin:-8px 0 10px; }
         .hd-activate-wrap {
           max-width: 420px; margin: 0 auto; padding: 54px 20px 40px;
         }
@@ -817,8 +821,7 @@ server <- function(input, output, session) {
   })
 
   # Set once the account exists, so the page can switch to the success state
-  # without a reload -- the username is derived server-side and is the one
-  # thing the invitee cannot look up anywhere else.
+  # without a reload -- the user name the invitee chose is shown once more.
   invite_done_rv <- reactiveVal(NULL)
 
   output$invite_body <- renderUI({
@@ -828,29 +831,24 @@ server <- function(input, output, session) {
     done <- invite_done_rv()
     if (!is.null(done)) {
       return(tagList(
-        tags$h5(style = "color:#b49444; letter-spacing:0.04em;", "Cuenta activada"),
+        tags$h5(style = "color:#b49444; letter-spacing:0.04em;", tr("cuentas.activacion.titulo_hecho")),
         tags$p(class = "hd-activate-lead",
-               HTML("Anota tu nombre de usuario. <strong>No es tu correo</strong>:")),
+               tr("cuentas.activacion.anota_usuario"), tags$strong(tr("cuentas.activacion.no_es_correo"))),
         tags$div(class = "hd-activate-user", done$username),
-        tags$p(class = "hd-activate-note",
-               "Te lo enviamos también por correo. Entra con este usuario y la ",
-               "contraseña que acabas de crear."),
-        tags$a(href = done$app_url, class = "btn btn-primary mt-2",
-               "Ir a HopDesk")
+        tags$p(class = "hd-activate-note", tr("cuentas.activacion.nota_hecho")),
+        tags$a(href = done$app_url, class = "btn btn-primary mt-2", tr("cuentas.activacion.ir")),
+        # The one-time token leaves the address bar (and the history).
+        tags$script(HTML("history.replaceState(null, '', location.pathname);"))
       ))
     }
 
     invite <- tryCatch(resolve_invite(token), error = function(e) NULL)
     if (is.null(invite)) {
       return(tagList(
-        tags$h5(style = "color:#b49444; letter-spacing:0.04em;", "Enlace no válido"),
-        tags$p(class = "hd-activate-lead",
-               "Esta invitación expiró o ya fue utilizada."),
-        tags$p(class = "hd-activate-note",
-               "Pide una nueva a quien te invitó; los enlaces duran 48 horas ",
-               "y sólo sirven una vez."),
-        tags$a(href = app_public_url(session), class = "btn btn-primary mt-2",
-               "Ir a HopDesk")
+        tags$h5(style = "color:#b49444; letter-spacing:0.04em;", tr("cuentas.activacion.invalido_titulo")),
+        tags$p(class = "hd-activate-lead", tr("cuentas.activacion.invalido_texto")),
+        tags$p(class = "hd-activate-note", tr("cuentas.activacion.invalido_nota")),
+        tags$a(href = app_public_url(session), class = "btn btn-primary mt-2", tr("cuentas.activacion.ir"))
       ))
     }
 
@@ -860,54 +858,56 @@ server <- function(input, output, session) {
       if (length(idx)) reg$display_name[idx[1]] else invite$client_id
     }, error = function(e) invite$client_id)
 
+    # Every field is required (T31). The name comes filled with what the
+    # inviter wrote, and the user name with a suggestion from it: both can
+    # be changed. Under each field, its own error (invite_err_<campo>).
+    campo_err <- function(campo) uiOutput(paste0("invite_err_", campo))
     tagList(
-      tags$h5(style = "color:#b49444; letter-spacing:0.04em;", "Activa tu cuenta"),
-      # Un solo nodo de texto, no tags$strong(x) seguido de ".": Shiny mete un
-      # espacio entre hijos y sale "Hola Maria Jose Nunez ." con el punto
-      # suelto. El nombre y el cliente los escribe quien invita, asi que van
-      # escapados aunque vengan de dentro.
+      tags$h5(style = "color:#b49444; letter-spacing:0.04em;", tr("cuentas.activacion.titulo")),
+      # One text node, not tags$strong(x) followed by ".": Shiny puts a space
+      # between children. Name and client are typed by people: tr_negritas()
+      # escapes every piece.
       tags$p(class = "hd-activate-lead",
-             HTML(sprintf("Hola <strong>%s</strong>. Te unes al equipo de <strong>%s</strong>.",
-                          htmltools::htmlEscape(invite$display_name),
-                          htmltools::htmlEscape(client_label)))),
-      tags$p(class = "hd-activate-note", "Cuenta: ", invite$email),
+             tr_negritas("cuentas.activacion.saludo", nombre = invite$display_name, cliente = client_label)),
+      tags$p(class = "hd-activate-note", tr("cuentas.activacion.cuenta", correo = invite$email)),
       tags$hr(style = "border-color:rgba(180,148,68,0.15);"),
-      passwordInput("invite_pw_new",  "Nueva contraseña"),
-      passwordInput("invite_pw_conf", "Confirmar contraseña"),
-      tags$p(class = "hd-activate-note",
-             "Mínimo 6 caracteres, con al menos un número y un símbolo."),
+      textInput("invite_nombre", tr("cuentas.activacion.nombre"), value = invite$display_name %||% ""),
+      campo_err("nombre"),
+      textInput("invite_puesto", tr("cuentas.activacion.puesto")),
+      campo_err("puesto"),
+      textInput("invite_usuario", tr("cuentas.activacion.usuario"),
+                value = substr(derive_username(invite$display_name), 1, USUARIO_MAX)),
+      tags$p(class = "hd-activate-note", tr("cuentas.activacion.usuario_ayuda")),
+      campo_err("usuario"),
+      passwordInput("invite_pw_new",  tr("cuentas.activacion.contrasena")),
+      campo_err("contrasena"),
+      passwordInput("invite_pw_conf", tr("cuentas.activacion.confirmar")),
+      campo_err("confirmar"),
+      tags$p(class = "hd-activate-note", tr("cuentas.activacion.regla")),
       uiOutput("invite_pw_error"),
-      actionButton("invite_pw_submit", "Activar cuenta", class = "btn btn-primary")
+      actionButton("invite_pw_submit", tr("cuentas.activacion.boton"), class = "btn btn-primary")
     )
   })
 
   output$invite_pw_error <- renderUI(NULL)
+  .invite_campos <- c("nombre", "puesto", "usuario", "contrasena", "confirmar")
+  invite_mostrar_errores <- function(errores = list()) {
+    for (campo in .invite_campos) local({
+      clave <- errores[[campo]]
+      output[[paste0("invite_err_", campo)]] <- renderUI(
+        if (!is.null(clave)) tags$p(class = "hd-activate-err", tr(clave)))
+    })
+  }
 
   observeEvent(input$invite_pw_submit, {
     token <- invite_token_rv()
     req(nzchar(token %||% ""))
-    pw1 <- input$invite_pw_new
-    pw2 <- input$invite_pw_conf
-    if (!nzchar(pw1) || nchar(pw1) < 6 ||
-        !grepl("[0-9]", pw1) || !grepl("[^A-Za-z0-9]", pw1)) {
-      output$invite_pw_error <- renderUI(
-        tags$p(class = "text-danger small mt-1",
-               "La contraseña debe tener al menos 6 caracteres, un número y un símbolo.")
-      )
-      return()
-    }
-    if (pw1 != pw2) {
-      output$invite_pw_error <- renderUI(
-        tags$p(class = "text-danger small mt-1", "Las contraseñas no coinciden.")
-      )
-      return()
-    }
+    output$invite_pw_error <- renderUI(NULL)
     invite <- tryCatch(resolve_invite(token), error = function(e) NULL)
     if (is.null(invite)) {
+      invite_mostrar_errores()
       output$invite_pw_error <- renderUI(
-        tags$p(class = "text-danger small mt-1",
-               "El enlace ya no es válido. Solicita una nueva invitación.")
-      )
+        tags$p(class = "text-danger small mt-1", tr("cuentas.activacion.enlace_ya_no")))
       return()
     }
     # Create the user account in the target client's folder
@@ -919,56 +919,28 @@ server <- function(input, output, session) {
       output$invite_pw_error <- renderUI(
         tags$p(class = "text-danger small mt-1", tr("comun.reintentar")))
     }
-    usuarios <- tryCatch(auth_load_usuarios(client_id = invite$client_id),
-                         error = function(e) { invite_reintentar(e); NULL })
-    if (is.null(usuarios)) return()
     tryCatch({
-      username <- derive_username(invite$display_name)
-      # A name of only punctuation/accents could strip to nothing, and an
-      # empty username is unloggable-in and would collide with the next one.
-      if (!nzchar(username)) username <- paste0("usuario", substr(token, 1, 6))
-      # Ensure unique username
-      if (username %in% tolower(usuarios$username)) {
-        username <- paste0(username, substr(token, 1, 4))
-      }
-      new_user <- data.frame(
-        # The global id (T31) and the next free code: "u_<second>" could
-        # repeat across clients, and nrow + 1 repeated a code after a delete.
-        id                       = uuid::UUIDgenerate(),
-        account_code             = .next_account_code(usuarios),
-        username                 = username,
-        password_hash            = hash_password(pw1),
-        display_name             = invite$display_name,
-        tier                     = invite$tier,
-        client_id                = invite$client_id,
-        permisos                 = "{}",
-        group_ids                = "[]",
-        allowed_clients          = "[]",
-        email                    = invite$email,
-        requires_password_change = FALSE,
-        puesto                   = NA_character_,
-        password_changed_at      = NA_character_,
-        activo                   = TRUE,
-        created_at               = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
-        last_login               = NA_character_,
-        deleted                  = FALSE,
-        deleted_at               = NA_character_,
-        stringsAsFactors = FALSE
-      )
-      auth_save_usuarios(rbind(usuarios, new_user), client_id = invite$client_id, base = usuarios)
-      accept_invite(token)
-      # The account is already saved: an index that can't be written is
-      # logged, as in Usuarios, and does not undo the welcome (CM18).
-      tryCatch(register_username(username, invite$client_id, new_user$account_code),
-               error = function(e) message("[INVITE] username_index register failed: ", e$message))
+      # T31: the invitee types name, job title and user name. The account
+      # (UUID, next free code) is saved only after its user name is reserved
+      # in the global index; a taken name or a wrong field comes back here,
+      # under its field, with nothing saved.
+      res <- activar_invitacion(invite, list(
+        nombre = input$invite_nombre, puesto = input$invite_puesto, usuario = input$invite_usuario,
+        contrasena = input$invite_pw_new, confirmar = input$invite_pw_conf))
+      invite_mostrar_errores(res$errores %||% list())
+      if (!isTRUE(res$ok)) return()
+      username <- res$username
+      tryCatch(log_action(user = username, module = "auth", action = "activacion_usuario",
+                          description = tr("cuentas.activacion.log", usuario = username),
+                          target_id = res$account_code, client_id = invite$client_id,
+                          viewer_home_client_id = invite$client_id),
+               error = function(e) message("[INVITE] log failed: ", conditionMessage(e)))
       update_client_user_count(invite$client_id)
       tryCatch(notify_user_limit(invite$client_id),
                error = function(e) message("[INVITE] notify_user_limit failed: ", e$message))
 
-      # The username is derived here, server-side, from the display name --
-      # the invitee has no way to guess it. A 6-second showNotification was
-      # the only place it ever appeared. Show it in a modal they must dismiss
-      # AND mail it to them.
+      # The user name is shown on the page and mailed too: it is the one
+      # credential that is not the e-mail.
       # Same scrubbed, pinned address the invitation itself used -- never the
       # worker-specific, token-carrying URL of whatever session is running.
       app_url <- app_public_url(session)
@@ -981,8 +953,8 @@ server <- function(input, output, session) {
 
       tryCatch(
         send_email(to      = invite$email,
-                   subject = "Tu cuenta de HopDesk está activa",
-                   html    = email_welcome_html(invite$display_name, username,
+                   subject = tr("cuentas.activacion.asunto_bienvenida"),
+                   html    = email_welcome_html(res$nombre, username,
                                                 client_label, app_url)),
         error = function(e) message("[INVITE] welcome email failed: ", e$message)
       )
@@ -1250,18 +1222,11 @@ server <- function(input, output, session) {
   observeEvent(input$force_pw_submit, {
     pw1 <- input$force_pw_new
     pw2 <- input$force_pw_conf
-    if (!nzchar(pw1) || nchar(pw1) < 6 ||
-        !grepl("[0-9]", pw1) || !grepl("[^A-Za-z0-9]", pw1)) {
-      output$force_pw_error <- renderUI(
-        tags$p(class = "text-danger small mt-1",
-               "La contraseña debe tener al menos 6 caracteres, un número y un símbolo.")
-      )
-      return()
-    }
-    if (pw1 != pw2) {
-      output$force_pw_error <- renderUI(
-        tags$p(class = "text-danger small mt-1", "Las contraseñas no coinciden.")
-      )
+    # The one password rule (T31), the same as every other screen.
+    err_pass <- contrasena_error(pw1)
+    if (is.null(err_pass) && !identical(pw1, pw2)) err_pass <- "cuentas.error.contrasenas_distintas"
+    if (!is.null(err_pass)) {
+      output$force_pw_error <- renderUI(tags$p(class = "text-danger small mt-1", tr(err_pass)))
       return()
     }
     info     <- current_user_info()
@@ -1272,14 +1237,15 @@ server <- function(input, output, session) {
     base_usuarios <- usuarios
     usuarios$password_hash[idx]            <- hash_password(pw1)
     usuarios$requires_password_change[idx] <- FALSE
+    usuarios$password_changed_at[idx]      <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
     tryCatch({
       auth_save_usuarios(usuarios, base = base_usuarios)
       removeModal()
       showNotification(tr("niveles.usuarios.aviso.contrasena_actualizada"), type = "message", duration = 4)
     }, error = function(e) {
-      output$force_pw_error <- renderUI(
-        tags$p(class = "text-danger small mt-1", paste("Error al guardar:", e$message))
-      )
+      # The reason stays in the server's log; the person gets "try again".
+      message("[AUTH] forced password change not saved for ", info$user, ": ", conditionMessage(e))
+      output$force_pw_error <- renderUI(tags$p(class = "text-danger small mt-1", tr("comun.reintentar")))
     })
   }, ignoreInit = TRUE)
 

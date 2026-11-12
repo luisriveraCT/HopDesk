@@ -237,10 +237,16 @@ for (id in c("invite_pw_new", "invite_pw_conf", "invite_pw_submit")) {
 .chk(grepl("[^a-z0-9]", derive_username("J. O'Brien-Smíth Jr.")), FALSE,
      "el resultado siempre es [a-z0-9]")
 
-# Y el fallback para un nombre que se reduce a nada.
-.chk(grepl('if \\(!nzchar\\(username\\)\\) username <- paste0\\("usuario"',
-           paste(readLines("app.R", warn = FALSE), collapse = "\n")), TRUE,
-     "un nombre que se reduce a nada recibe un usuario de respaldo")
+# T31: derive_username() is only the suggestion that fills the field; the
+# invitee types the user name and the server checks it (usuario_error() in
+# activar_invitacion()), so a name that reduces to nothing gets an error
+# under the field, not a made-up "usuario<token>".
+.chk(grepl("usuario = usuario_error(campos$usuario)",
+           paste(readLines("R/usuarios_cuentas.R", warn = FALSE), collapse = "\n"), fixed = TRUE), TRUE,
+     "el usuario que escribe el invitado se valida en el servidor")
+.chk(grepl("value = substr(derive_username(invite$display_name), 1, USUARIO_MAX)",
+           paste(readLines("app.R", warn = FALSE), collapse = "\n"), fixed = TRUE), TRUE,
+     "derive_username() solo propone el usuario en el campo")
 
 # ── G. El enlace se arma en un solo lugar ────────────────────────────────────
 

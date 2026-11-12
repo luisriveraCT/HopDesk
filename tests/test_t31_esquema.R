@@ -67,14 +67,18 @@ ok("resolve_invite() encuentra la invitación con ese token",
    identical(resolve_invite(t1)$email, "a@x.mx"))
 
 # ── 4. The activation's new account ─────────────────────────────────────────
-app <- readLines(F_APP, warn = FALSE, encoding = "UTF-8")
-ini <- grep("new_user <- data.frame\\(", app); fin <- grep("auth_save_usuarios\\(rbind\\(usuarios, new_user\\)", app)
-bloque <- if (length(ini) == 1 && length(fin) == 1) paste(app[ini:fin], collapse = "\n") else ""
-ok("la activación crea el id con uuid::UUIDgenerate()", grepl("id\\s*=\\s*uuid::UUIDgenerate\\(\\)", bloque))
+# The activation builds the account in activar_invitacion() (R/usuarios_cuentas.R;
+# its behaviour is in tests/test_t31_activacion.R). app.R keeps no copy.
+app <- paste(readLines(F_APP, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+act <- paste(deparse(body(local({ source(Sys.getenv("CUENTAS_R", "R/usuarios_cuentas.R"), local = TRUE)
+                                  activar_invitacion }))), collapse = "\n")
+ok("la activación crea el id con uuid::UUIDgenerate()",
+   grepl("id = uuid::UUIDgenerate()", act, fixed = TRUE) && !grepl('paste0("u_", format(Sys.time()', app, fixed = TRUE))
 ok("la activación toma el código con .next_account_code(usuarios)",
-   grepl("account_code\\s*=\\s*\\.next_account_code\\(usuarios\\)", bloque) && !grepl("nrow\\(usuarios\\) \\+ 1", bloque))
-ok("la cuenta nueva trae las dos columnas (rbind no falla contra la tabla leída)",
-   grepl("puesto\\s*=", bloque) && grepl("password_changed_at\\s*=", bloque))
+   grepl("account_code = .next_account_code(usuarios)", act, fixed = TRUE) &&
+     !grepl("nrow(usuarios) + 1", app, fixed = TRUE))
+ok("la cuenta nueva trae las dos columnas", grepl("puesto = ", act, fixed = TRUE) &&
+     grepl("password_changed_at = ", act, fixed = TRUE))
 tiers <- parse("R/tiers_module.R", keep.source = FALSE)
 for (e in tiers) if (is.call(e) && identical(e[[1]], as.name("<-")) &&
                      identical(as.character(e[[2]]), ".next_account_code")) eval(e, globalenv())
