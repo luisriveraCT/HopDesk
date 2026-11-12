@@ -60,7 +60,7 @@ PERMISOS <- list(
   # Receives the Monday and Friday Panorama emails (Luis, 2026-11-11: by
   # tier dev and admin; per user for whoever else he names). Read by the
   # scheduled job (front D).
-  can_receive_weekly_email       = list(grupo = "panorama", pendiente = "D"),
+  can_receive_weekly_email       = list(grupo = "panorama"),
   # ── Internos de Hopdesk ─────────────────────────────────────────────────
   can_approve_clients            = list(grupo = "interno", interno = TRUE),
   can_manage_hopdesk_perms       = list(grupo = "interno", interno = TRUE),
