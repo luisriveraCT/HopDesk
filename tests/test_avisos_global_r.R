@@ -25,8 +25,9 @@ source("tests/helpers/avisos_guardiana.R")
 raiz <- Sys.getenv("AVISOS_RAIZ", ".")
 
 # The integrator's (avisos-sueltos, 2026-11-11). 10 and 75 then; one more each
-# since the detector also sees if/else messages (avisos-integrador).
-PENDIENTES <- c("app.R" = 11L, "R/tiers_module.R" = 76L)
+# since the detector also sees if/else messages (avisos-integrador). app.R
+# reached 0 and left (avisos-integrador 2/3).
+PENDIENTES <- c("R/tiers_module.R" = 76L)
 
 archivos <- c(list.files(file.path(raiz, "R"), "\\.R$", recursive = TRUE), "app.R")
 archivos <- ifelse(archivos == "app.R", "app.R", file.path("R", archivos))

@@ -1239,7 +1239,7 @@ server <- function(input, output, session) {
     tryCatch({
       auth_save_usuarios(usuarios, base = base_usuarios)
       removeModal()
-      showNotification("Contraseña actualizada. Bienvenido.", type = "message", duration = 4)
+      showNotification(tr("niveles.usuarios.aviso.contrasena_actualizada"), type = "message", duration = 4)
     }, error = function(e) {
       output$force_pw_error <- renderUI(
         tags$p(class = "text-danger small mt-1", paste("Error al guardar:", e$message))
@@ -1964,7 +1964,7 @@ server <- function(input, output, session) {
     .sap_running <<- TRUE
     sap_loading(TRUE)
     session$sendCustomMessage("refresh_start", list())
-    showNotification("Conectando al ERP…", id = "erp_load",
+    showNotification(tr("tablas.datos_sap.aviso.conectando"), id = "erp_load",
                      duration = NULL, type = "message")
     on.exit({
       .sap_running   <<- FALSE
@@ -1983,7 +1983,7 @@ server <- function(input, output, session) {
           NULL
         },
         error = function(e) {
-          showNotification(paste("SAP", ledger_name, ":", e$message), type = "warning")
+          showNotification(tr("tablas.datos_sap.aviso.error_ledger", ledger = ledger_name, error = e$message), type = "warning")
           NULL
         }
       )
@@ -2005,7 +2005,7 @@ server <- function(input, output, session) {
       if (!is.null(snap)) {
         lbl <- format(snap$saved_at, "%d %b %Y %H:%M", tz = (input$client_tz %||% "America/Mexico_City"))
         showNotification(
-          paste0("SAP no disponible — ", ledger_name, " mostrando datos del ", lbl),
+          tr("tablas.datos_sap.aviso.respaldo", ledger = ledger_name, fecha = lbl),
           type = "warning", duration = 8
         )
         info <- sap_snapshot_info()
@@ -2041,7 +2041,7 @@ server <- function(input, output, session) {
     if (ar_changed || ap_changed) {
       sap_data(list(AR = ar, AP = ap))
       if (!is.null(ar) || !is.null(ap))
-        showNotification("Datos actualizados.", type = "message", duration = 3)
+        showNotification(tr("tablas.datos_sap.aviso.actualizados"), type = "message", duration = 3)
     }
     # Always cache at process level — even when data didn't change.
     # This is the only way session #2 knows session #1 already ran the fetch.
@@ -2737,7 +2737,7 @@ server <- function(input, output, session) {
       shared$bancos_confirmados_db(load_bancos_confirmados(client_id = effective_client_id()))
       shared$conciliacion_rv(load_conciliacion(client_id = effective_client_id()))
     }, error = function(e)
-      showNotification(paste0("Error al leer desde S3: ", e$message),
+      showNotification(tr("comun.aviso.error_leer_s3", error = e$message),
                        type = "warning", duration = 6)
     )
 
@@ -2912,7 +2912,7 @@ server <- function(input, output, session) {
     edit_id <- session$userData[["me_edit_id"]] %||% ""
     doc     <- trimws(input$me_documento %||% "")
     if (!nzchar(doc)) {
-      showNotification("El campo Documento es obligatorio.", type = "warning")
+      showNotification(tr("tablas.manual.aviso.documento_obligatorio"), type = "warning")
       return()
     }
     # CM22: a cleared date saved the item with no due date (it then never
@@ -2947,7 +2947,7 @@ server <- function(input, output, session) {
       manual_inv(df)
       tryCatch(save_manual(df, client_id = effective_client_id(), base = mi_base),
                error = function(e) showNotification(
-                 "No se pudieron guardar los cambios.", type = "warning"))
+                 tr("tablas.manual.aviso.no_guardada"), type = "warning"))
       .sync_staged(
         data.frame(Empresa   = input$me_empresa,
                    Moneda    = toupper(trimws(input$me_moneda)),
@@ -2963,7 +2963,7 @@ server <- function(input, output, session) {
       session$userData[["me_edit_id"]] <- ""
       removeModal()
       active_entry_ledger(NULL)
-      showNotification("Entrada actualizada.", type = "message", duration = 2)
+      showNotification(tr("tablas.manual.aviso.actualizada"), type = "message", duration = 2)
 
     } else {
       # ── Insert mode ──────────────────────────────────────────────────────
@@ -3036,14 +3036,14 @@ server <- function(input, output, session) {
         tryCatch(save_pagar_hoy(ph_updated, current_user(), client_id = effective_client_id(),
                                 base = ph_base),   # CM09: rebased on S3 (A2)
                  error = function(e) showNotification(
-                   paste("No se pudo guardar en Agenda:", e$message), type = "warning"))
+                   tr("tablas.manual.aviso.error_agenda", error = e$message), type = "warning"))
       }
 
       removeModal()
       active_entry_ledger(NULL)
       showNotification(
-        if (send_to_agenda) "Entrada agregada y enviada a Agenda de hoy."
-        else "Entrada agregada.",
+        if (send_to_agenda) tr("tablas.manual.aviso.agregada_agenda")
+        else tr("tablas.manual.aviso.agregada"),
         type = "message", duration = 2)
     }
   }, ignoreInit = TRUE)
