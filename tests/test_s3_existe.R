@@ -103,6 +103,21 @@ ok("E1 audit chunk 404: NULL (a new log)", is.null(.audit_read_chunk_para_escrib
 s3_memoria_reset(); .mem_prohibido <- KA
 ok("E2 audit chunk 403: stop() -- it used to start the log from empty", falla(.audit_read_chunk_para_escribir(KA)))
 
+# ── F: pasivos_audit.R before an append ─────────────────────────────────────
+suppressMessages({ source("R/pasivos_schemas.R"); source("R/pasivos_persistence.R") })
+for (e in parse("R/pasivos_audit.R", keep.source = FALSE))
+  if (is.call(e) && identical(e[[1]], as.name("<-")) &&
+      as.character(e[[2]]) %in% c(".pasivos_audit_leer_para_agregar", ".pasivos_audit_existe"))
+    eval(e, globalenv())
+KP <- paste0(CID, "/", S3_KEYS$pasivos_audit)
+s3_memoria_reset()
+ok("F1 pasivos_audit 404: an empty table to append to (a new log)",
+   identical(nrow(.pasivos_audit_leer_para_agregar(CID)), 0L))
+s3_memoria_reset(); .mem_prohibido <- KP
+ok("F2 pasivos_audit 403: stop() -- it used to rewrite the audit from empty", falla(.pasivos_audit_leer_para_agregar(CID)))
+s3_memoria_reset(); .mem_falla <- KP; .mem_falla_cabeza <- KP
+ok("F3 pasivos_audit, read and HEAD both failing: stop() (as before)", falla(.pasivos_audit_leer_para_agregar(CID)))
+
 s3_memoria_restaurar()
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)

@@ -31,10 +31,10 @@ PASIVOS_ACTION_TYPES <- c(
   existing
 }
 
-# Fails closed: if S3 cannot answer, assume the object exists.
-.pasivos_audit_existe <- function(full_key) {
-  isTRUE(tryCatch(aws.s3::object_exists(full_key, bucket = .s3_bucket()), error = function(e) TRUE))
-}
+# Fails closed: if S3 cannot answer, assume the object exists. Only a 404 is
+# "does not exist" (s3_objeto_existe(), R/persistence.R): a 403 used to read
+# as FALSE here, and the audit was rewritten from empty.
+.pasivos_audit_existe <- function(full_key) !identical(s3_objeto_existe(full_key, .s3_bucket()), FALSE)
 
 # Write one audit row and return its id.
 # before / after: any R object; serialized to JSON automatically.
