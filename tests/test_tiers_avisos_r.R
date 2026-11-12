@@ -101,7 +101,7 @@ iguales <- list(
   list(s("error_guardar"), "Error al guardar la solicitud. Intenta de nuevo."),
   list(s("enviada", id = cid), paste0("Solicitud para '", cid, "' enviada.")),
   # "S3" -> "el servidor": the wording Luis approved in textos-visibles (d321e67), not the old text
-  list(s("error_folder"), "Error al inicializar el folder del cliente en el servidor."),
+  list(s("error_folder"), "Error al inicializar la carpeta del cliente en el servidor."),   # and "folder" -> "carpeta"
   list(s("error_registro"), "Error al guardar el registro del cliente."),
   list(s("aprobado", id = cid), paste0("Cliente '", cid, "' aprobado y activado.")),
   list(s("error_rechazo"), "Error al guardar el rechazo."),
@@ -120,8 +120,9 @@ iguales <- list(
        sprintf("Límite de '%s' actualizado a %d usuarios.", "ACME SA", n)),
   # Contactos
   list(co("nombre_obligatorio"), "El nombre es obligatorio."),
-  list(co("email_obligatorio"), "El email es obligatorio."),
-  list(co("email_invalido"), "El email no parece válido."),
+  # "email" -> "correo": the rule Luis approved in textos-visibles ("Email" -> "Correo"), not the old text
+  list(co("email_obligatorio"), "El correo es obligatorio."),
+  list(co("email_invalido"), "El correo no parece válido."),
   list(co("error_guardar"), "Error al guardar el contacto."),
   list(co("agregado", nombre = name), paste0("Contacto '", name, "' agregado.")),
   # Invitaciones
@@ -129,7 +130,7 @@ iguales <- list(
   # Cola de correo
   list(q("reintento", enviados = as.character(n), fallidos = as.character(m)),
        sprintf("Reintento de cola: %d enviado(s), %d fallido(s).", n, m)),
-  list(q("enviado"), "Email enviado."),
+  list(q("enviado"), "Correo enviado."),   # "Email" -> "Correo" (textos-visibles)
   list(q("reintento_fallido"), "Reintento fallido — revisa la clave API."),
   # Configuración de niveles
   list(g("guardada", nivel = tier_label), paste0("Configuración de «", tier_label, "» guardada.")),
