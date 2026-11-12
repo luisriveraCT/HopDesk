@@ -81,7 +81,10 @@ iguales <- list(
   list(es("tablas.bancos.aviso.error_restaurar_manual", error = "S3"), paste("Error al restaurar entrada manual:", "S3")),
   list(ahora_devuelto("cobro", fecha), antes_devuelto("cobro", fecha)),
   list(ahora_devuelto("pago", fecha), antes_devuelto("pago", fecha)),
-  list(ahora_devuelto(NA, fecha), antes_devuelto(NA, fecha)))
+  list(ahora_devuelto(NA, fecha), antes_devuelto(NA, fecha)),
+  # the if/else of the manual movement's save (avisos-integrador)
+  list(es("tablas.bancos.aviso.movimiento_actualizado"), "Movimiento actualizado."),
+  list(es("tablas.bancos.aviso.movimiento_guardado"), "Movimiento manual guardado."))
 distintos <- Filter(function(p) !identical(p[[1]], p[[2]]), iguales)
 ok(sprintf("el español de los %d avisos dice exactamente lo mismo que antes", length(iguales)),
    { for (p in distintos) message("  ahora: ", p[[1]], "\n  antes: ", p[[2]]); !length(distintos) })

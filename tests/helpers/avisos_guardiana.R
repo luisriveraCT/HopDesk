@@ -5,12 +5,29 @@
 # tests/test_ledger_avisos_r.R):
 #   avisos_fijos(f)        the showNotification() calls in f whose message
 #                          (first argument) is fixed text: a literal with
-#                          words, or a paste/paste0/sprintf holding one;
+#                          words, a paste/paste0/sprintf holding one, or an
+#                          if/else with one in a branch (.es_fijo);
 #   avisos_claves(f, pre)  the keys starting with `pre` that f uses;
 #   clave_en_es_y_en(k)    k exists in both dictionaries.
 # The caller sources R/i18n.R first.
 # =============================================================================
 .tiene_palabras <- function(x) is.character(x) && length(x) == 1L && grepl("[[:alpha:]]{3,}", x)
+
+# A message is fixed text when it is a literal with words, a
+# paste/paste0/sprintf holding one, or an if/else with such a message in any
+# branch: showNotification(if (ok) "Guardado." else "Error.") was invisible
+# to the guards until avisos-integrador (2026-11-11), and 6 of them were left
+# in R/ and app.R. Parentheses around the message are looked through.
+.es_fijo <- function(m) {
+  if (.tiene_palabras(m)) return(TRUE)
+  if (!is.call(m)) return(FALSE)
+  f <- as.character(m[[1]])[1]
+  if (f %in% c("paste", "paste0", "sprintf"))
+    return(any(vapply(as.list(m)[-1], .tiene_palabras, logical(1))))
+  if (f == "if") return(any(vapply(as.list(m)[-(1:2)], .es_fijo, logical(1))))
+  if (f == "(") return(.es_fijo(m[[2]]))
+  FALSE
+}
 
 avisos_fijos <- function(f) {
   fijos <- character(0)
@@ -18,13 +35,8 @@ avisos_fijos <- function(f) {
     if (!is.call(x)) return(invisible())
     if (identical(x[[1]], as.name("showNotification")) ||
         (is.call(x[[1]]) && identical(x[[1]][[1]], as.name("::")) && identical(x[[1]][[3]], as.name("showNotification")))) {
-      if (length(x) >= 2L) {
-        m <- x[[2]]
-        if (.tiene_palabras(m) ||
-            (is.call(m) && as.character(m[[1]])[1] %in% c("paste", "paste0", "sprintf") &&
-             any(vapply(as.list(m)[-1], .tiene_palabras, logical(1)))))
-          fijos <<- c(fijos, paste(deparse(m, width.cutoff = 120L)[1]))
-      }
+      if (length(x) >= 2L && .es_fijo(x[[2]]))
+        fijos <<- c(fijos, paste(deparse(x[[2]], width.cutoff = 120L)[1]))
     }
     xs <- as.list(x); for (k in seq_along(xs)) if (is.call(xs[[k]])) recorrer(xs[[k]])
   }

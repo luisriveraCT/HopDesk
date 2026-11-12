@@ -661,7 +661,7 @@ proveedoresServer <- function(id, shared) {
       editing_id_cat(NULL)
       removeModal()
       showNotification(
-        if (is.null(eid)) "Proveedor agregado." else "Proveedor actualizado.",
+        if (is.null(eid)) tr("tablas.proveedores.aviso.agregado") else tr("tablas.proveedores.aviso.actualizado"),
         type = "message", duration = 2)
     }, ignoreInit = TRUE)
 

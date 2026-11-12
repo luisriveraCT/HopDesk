@@ -29,7 +29,7 @@ ok(sprintf("ningún aviso de empresas_module.R con texto fijo (quedan %d)", leng
 # ── 2. The keys exist in es and en ──────────────────────────────────────────
 claves <- avisos_claves(F, PRE)
 ok(sprintf("las %d claves %s* existen en es y en", length(claves), PRE),
-   length(claves) == 24L && all(vapply(claves, clave_en_es_y_en, logical(1))))
+   length(claves) == 26L && all(vapply(claves, clave_en_es_y_en, logical(1))))
 
 # ── 3. The Spanish reads exactly as before ──────────────────────────────────
 es <- function(k, ...) tr(paste0(PRE, k), ..., idioma = "es")
@@ -60,7 +60,11 @@ iguales <- list(
   list(es("logo_formato"), "Formato inválido. Usa PNG o JPG."),
   list(es("logo_grande"), "El logo supera 2 MB. Usa una imagen más pequeña."),
   list(es("grupo_guardado"), "Configuración del grupo guardada correctamente."),
-  list(es("error_guardar", error = err), paste("Error al guardar:", err)))
+  list(es("error_guardar", error = err), paste("Error al guardar:", err)),
+  # the if/else of the edit (avisos-integrador): one key per branch
+  list(es("iniciales_actualizadas", antes = "NRS", despues = "NRX"),
+       paste0("Iniciales actualizadas: '", "NRS", "' → '", "NRX", "'. Tablas relacionadas sincronizadas.")),
+  list(es("actualizada"), "Empresa actualizada."))
 dif <- Filter(function(p) !identical(p[[1]], p[[2]]), iguales)
 ok(sprintf("el español de los %d avisos es idéntico al de antes", length(iguales)),
    { for (p in dif) message("  ahora: ", p[[1]], "\n  antes: ", p[[2]]); !length(dif) && length(iguales) == length(claves) })

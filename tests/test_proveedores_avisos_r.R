@@ -27,7 +27,7 @@ ok(sprintf("ningún aviso de proveedores_module.R con texto fijo (quedan %d)", l
 
 claves <- avisos_claves(F, PRE)
 ok(sprintf("las %d claves %s* existen en es y en", length(claves), PRE),
-   length(claves) == 7L && all(vapply(claves, clave_en_es_y_en, logical(1))))
+   length(claves) == 9L && all(vapply(claves, clave_en_es_y_en, logical(1))))
 
 es <- function(k, ...) tr(paste0(PRE, k), ..., idioma = "es")
 n <- 1234L   # with 4 digits: no thousands separator, as paste0 never put one
@@ -38,7 +38,10 @@ iguales <- list(
   list(es("inactivados", n = as.character(n)), paste0(n, " proveedor(es) inactivados.")),
   list(es("nombre_obligatorio"), "El Nombre es obligatorio."),
   list(es("reactivado"), "Proveedor reactivado."),
-  list(es("eliminado_permanente"), "Proveedor eliminado permanentemente."))
+  list(es("eliminado_permanente"), "Proveedor eliminado permanentemente."),
+  # the if/else of the save (avisos-integrador): one key per branch
+  list(es("agregado"), "Proveedor agregado."),
+  list(es("actualizado"), "Proveedor actualizado."))
 dif <- Filter(function(p) !identical(p[[1]], p[[2]]), iguales)
 ok(sprintf("el español de los %d avisos es idéntico al de antes", length(iguales)),
    { for (p in dif) message("  ahora: ", p[[1]], "\n  antes: ", p[[2]]); !length(dif) && length(iguales) == length(claves) })

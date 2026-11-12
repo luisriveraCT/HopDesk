@@ -1524,7 +1524,7 @@ bancosServer <- function(id, shared) {
       shared$bancos_movimientos(movs)
       bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
       removeModal()
-      showNotification(if (is_edit) "Movimiento actualizado." else "Movimiento manual guardado.",
+      showNotification(if (is_edit) tr("tablas.bancos.aviso.movimiento_actualizado") else tr("tablas.bancos.aviso.movimiento_guardado"),
                        type = "message", duration = 2)
 
       log_desc <- sprintf("Movimiento manual %s: %s %s por $%s",

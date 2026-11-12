@@ -34,7 +34,10 @@ iguales <- list(
   list(es("tablas.ajustes.aviso.error_guardar", error = "S3"), paste("Error al guardar:", "S3")),
   list(es("tablas.ajustes.aviso.error_guardar_asignaciones", error = "S3"), paste("Error al guardar asignaciones:", "S3")),
   list(es("tablas.ajustes.aviso.politica_eliminada"), "Política eliminada."),
-  list(es("tablas.ajustes.aviso.error_eliminar", error = "S3"), paste("Error al eliminar:", "S3")))
+  list(es("tablas.ajustes.aviso.error_eliminar", error = "S3"), paste("Error al eliminar:", "S3")),
+  # the if/else of the policy's save (avisos-integrador)
+  list(es("tablas.ajustes.aviso.politica_creada"), "Política creada."),
+  list(es("tablas.ajustes.aviso.politica_actualizada"), "Política actualizada."))
 distintos <- avisos_distintos(iguales)
 ok(sprintf("el español de los %d avisos dice exactamente lo mismo que antes", length(iguales)),
    { for (p in distintos) message("  ahora: ", p[[1]], "\n  antes: ", p[[2]]); !length(distintos) })

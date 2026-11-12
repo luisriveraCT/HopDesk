@@ -505,10 +505,9 @@ empresasServer <- function(id, shared) {
       selected_id(NULL)
       showNotification(
         if (new_ini != old_ini)
-          paste0("Iniciales actualizadas: '", old_ini, "' \u2192 '", new_ini,
-                 "'. Tablas relacionadas sincronizadas.")
+          tr("tablas.empresas.aviso.iniciales_actualizadas", antes = old_ini, despues = new_ini)
         else
-          "Empresa actualizada.",
+          tr("tablas.empresas.aviso.actualizada"),
         type = "message", duration = 3)
       log_action(
         user        = tryCatch(shared$current_user(), error = function(e) "system"),

@@ -940,7 +940,7 @@ settings_policies_observer <- function(input, output, session, shared) {
       pol_trigger(pol_trigger() + 1L)
       .close_editor()
       showNotification(
-        if (mode == "new") "Política creada." else "Política actualizada.",
+        if (mode == "new") tr("tablas.ajustes.aviso.politica_creada") else tr("tablas.ajustes.aviso.politica_actualizada"),
         type = "message", duration = 3
       )
       log_action(
