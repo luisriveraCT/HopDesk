@@ -30,6 +30,19 @@ pasivos_log_audit <- function(...) invisible(NULL)
 find_proveedor_matches <- function(...) NULL
 
 D <- pasivos_datos_prueba()
+# PASIVOS_FX = 1 (banxico-fix): R/fx_banxico.R with a fake FIX of 18, and one
+# more provision of lib1 quoted in USD 100, paid in MXN, no stored amount, on
+# a day of its own (hoy + 12): its cell shows ≈ 1,800 (tests/test_hd_aprox_chromote.R).
+if (identical(Sys.getenv("PASIVOS_FX"), "1")) {
+  source("R/fx_banxico.R")
+  fx_fix <- function(ahora = Sys.time()) list(valor = 18, fecha = Sys.Date(), cambio_pct = NA_real_,
+                                              serie = "SF43718", fuente = "Banxico FIX")
+  usd <- D$provisions[D$provisions$id == "p1d", , drop = FALSE]
+  usd$id <- "pusd"; usd$cotizado_en <- "USD"; usd$moneda_pago <- "MXN"; usd$amount_cotizado <- 100
+  usd$amount_pago <- NA_real_; usd$amount_pago_override <- NA_real_
+  usd$fecha_efectiva <- Sys.Date() + 12L; usd$fecha_calculada <- Sys.Date() + 12L
+  D$provisions <- dplyr::bind_rows(D$provisions, usd)
+}
 # HD_ARRANQUE_NULL = 1: the sources start NULL, as before S3 loads at
 # startup (tests/test_hd_table_arranque_null.R).
 if (identical(Sys.getenv("HD_ARRANQUE_NULL"), "1"))
