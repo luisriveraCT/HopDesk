@@ -2652,6 +2652,8 @@ active_abonos_summary <- function(db) {
     allowed_clients          = character(),
     email                    = character(),
     requires_password_change = logical(),
+    puesto                   = character(),
+    password_changed_at      = character(),
     activo                   = logical(),
     created_at               = character(),
     last_login               = character(),
@@ -2848,7 +2850,9 @@ modificar_pending_invites <- function(cambio)
 
 create_invite <- function(email, display_name, client_id, tier, invited_by,
                           expires_hours = 48) {
-  token    <- paste0(sample(c(letters, LETTERS, 0:9), 32, replace = TRUE), collapse = "")
+  # 32 bytes from the operating system's generator, in hex (T31): sample() is
+  # R's Mersenne Twister, predictable once a few outputs are seen.
+  token    <- paste(as.character(openssl::rand_bytes(32)), collapse = "")
   now      <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   exp_time <- format(Sys.time() + expires_hours * 3600,
                      "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")

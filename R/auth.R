@@ -313,6 +313,8 @@ auth_load_usuarios <- function(client_id = NULL) {
       allowed_clients          = character(),
       email                    = character(),
       requires_password_change = logical(),
+      puesto                   = character(),
+      password_changed_at      = character(),
       activo                   = logical(),
       created_at               = character(),
       last_login               = character(),
@@ -327,7 +329,11 @@ auth_load_usuarios <- function(client_id = NULL) {
                    deleted = FALSE, deleted_at = NA_character_,
                    account_code = NA_character_, group_ids = "[]",
                    allowed_clients = "[]",
-                   email = NA_character_, requires_password_change = FALSE)
+                   email = NA_character_, requires_password_change = FALSE,
+                   # T31: job title, and when the password last changed (a session
+                   # older than that is closed). NA for accounts that predate them;
+                   # nothing is rewritten in S3 to add them.
+                   puesto = NA_character_, password_changed_at = NA_character_)
   for (col in names(defaults))
     if (!col %in% names(raw)) raw[[col]] <- defaults[[col]]
 

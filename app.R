@@ -932,8 +932,10 @@ server <- function(input, output, session) {
         username <- paste0(username, substr(token, 1, 4))
       }
       new_user <- data.frame(
-        id                       = paste0("u_", format(Sys.time(), "%Y%m%d%H%M%S")),
-        account_code             = sprintf("U%04d", nrow(usuarios) + 1L),
+        # The global id (T31) and the next free code: "u_<second>" could
+        # repeat across clients, and nrow + 1 repeated a code after a delete.
+        id                       = uuid::UUIDgenerate(),
+        account_code             = .next_account_code(usuarios),
         username                 = username,
         password_hash            = hash_password(pw1),
         display_name             = invite$display_name,
@@ -944,6 +946,8 @@ server <- function(input, output, session) {
         allowed_clients          = "[]",
         email                    = invite$email,
         requires_password_change = FALSE,
+        puesto                   = NA_character_,
+        password_changed_at      = NA_character_,
         activo                   = TRUE,
         created_at               = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
         last_login               = NA_character_,
