@@ -179,6 +179,88 @@ ok("un monto aproximado (provisión en USD al FIX) va con ≈, en el mosaico y e
     !grepl("&#8776; $45,000.00", h, fixed = TRUE)
 })
 
+cat("
+-- comunicados por destinatario --
+")
+cargar()
+usuarios <- data.frame(username = c("ti", "jefa"), tier = c(nivel_ti(), "admin"),
+                       email = c("ti@x.mx", "jefa@x.mx"), permisos = "{}", stringsAsFactors = FALSE)
+dest <- correo_destinatarios(usuarios)
+VENCE <- Sys.time() + 7 * 86400
+avisos_agregar(CID, list(tipo = "publicado", titulo = "Solo para dev", niveles = nivel_ti(), vence = VENCE), por = "x")
+avisos_agregar(CID, list(tipo = "publicado", titulo = "Para todos", niveles = niveles_cliente(), vence = VENCE), por = "x")
+avisos_agregar(CID, list(tipo = "personal", clase = "solicitud", titulo = "Firma la requisición",
+                         usuarios = "jefa", vence = VENCE), por = "x")
+av <- avisos_leer(CID)
+tam <- function(u) vapply(correo_tambien(av, dest[dest$usuario == u, ], CID), function(x) paste(x$tipo, x$texto), "")
+ok("cada correo lleva solo los avisos que su destinatario ve: el de Dev no le llega a Admin", {
+  ti <- tam("ti"); jefa <- tam("jefa")
+  "comunicado Solo para dev" %in% ti && !"comunicado Solo para dev" %in% jefa &&
+    "comunicado Para todos" %in% jefa && "comunicado Para todos" %in% ti
+})
+ok("la solicitud personal va solo a quien se le pidió", {
+  "solicitud Firma la requisición" %in% tam("jefa") && !any(grepl("Firma", tam("ti")))
+})
+ok("los destinatarios traen sus permisos resueltos (para avisos_visibles)",
+   is.list(dest$permisos) && isTRUE(dest$permisos[[1]][["can_receive_weekly_email"]]))
+
+cat("
+-- semana.rds y viernes --
+")
+VIERNES <- LUNES + 4L
+cargar()
+pon(S3_KEYS$pasivos_provisions, tibble::tibble(id = "pv1", estado = "provisional", moneda_pago = "MXN",
+                                               amount_pago = 45000, fecha_efectiva = as.Date("2026-11-20")))
+r <- avisos_cliente_datos(CID, AHORA)
+dl <- correo_datos_lunes(r$df, r$shared, LUNES, serie, alertas, r$sap_fecha)
+correo_semana_guardar(CID, r$df, dl)
+ok("el lunes guarda sus filas de la semana en <c>/avisos/semana.rds, y solo ahí escribe", {
+  x <- get(llave("avisos/semana.rds"), envir = .mem)
+  identical(ls(.mem)[!ls(.mem) %in% llave(c(.avisos_llaves_ledger(), "avisos/avisos.rds"))], llave("avisos/semana.rds")) &&
+    x$lunes == LUNES && nrow(x$filas) == 10 && "provision" %in% x$filas$source && abs(x$vencidos_pct - 10) < 1e-9
+})
+ok("si semana.rds no se puede leer, el lunes no la pisa", {
+  .mem_prohibido <<- llave("avisos/semana.rds"); n0 <- .mem_escrituras
+  f <- inherits(tryCatch(correo_semana_guardar(CID, r$df, dl), error = function(e) e), "error")
+  .mem_prohibido <<- character(); f && .mem_escrituras == n0
+})
+# By Friday: P1 paid and A1 (400 of the 590 MXN expected) collected.
+b <- get(llave(S3_KEYS$bancos_confirmados), envir = .mem)
+pon(S3_KEYS$bancos_confirmados, dplyr::bind_rows(b, tibble::tibble(
+  empresa = "NL Transportes", documento = c("P1", "A1"), moneda = "MXN", tipo = c("pago", "cobro"),
+  eliminado = FALSE, importe = c(300, 400))))
+VIE_AHORA <- AHORA + 4 * 86400
+pon(S3_KEYS_CRITICAL$sap_snap_ar, list(data = ar, saved_at = VIE_AHORA - 3600))
+pon(S3_KEYS_CRITICAL$sap_snap_ap, list(data = ap, saved_at = VIE_AHORA - 3600))
+sl <- correo_semana_leer(CID, VIERNES)
+rv <- avisos_cliente_datos(CID, VIE_AHORA)
+dv <- correo_datos_viernes(sl$semana, rv$df, rv$shared, VIERNES, rv$sap_fecha)
+ok("una fila que la regla quita en vez de marcar (manual confirmada) cuenta como confirmada", {
+  f <- compute_confirmed_flags
+  assign("compute_confirmed_flags", function(df, ledger, b, p) { df$confirmed <- FALSE; df[-1, , drop = FALSE] },
+         envir = globalenv())
+  x <- tryCatch(.avisos_confirmadas(data.frame(Documento = c("M1", "S1")), "AP", NULL, NULL),
+                finally = assign("compute_confirmed_flags", f, envir = globalenv()))
+  identical(x, c(TRUE, FALSE))
+})
+ok("el viernes lee la semana del lunes", sl$ok && is.na(sl$motivo))
+ok("pagos confirmados contra los del lunes, por la regla de la app; sin provisiones", {
+  dv$pagos_conf == 1L && dv$pagos_total == 1L
+})
+ok("cobros recibidos: % de lo que el lunes esperaba en moneda base (400 de 590)",
+   abs(dv$cobros_pct - 100 * 400 / 590) < 1e-9)
+ok("vencidos del viernes contra los del lunes", !is.na(dv$vencidos_pct) && !is.na(dv$vencidos_delta) &&
+     abs(dv$vencidos_delta - (dv$vencidos_pct - 10)) < 1e-9)
+ok("el correo del viernes con esos datos no lleva montos", {
+  h <- correo_viernes_html(dv, list(idioma = "es", ver_cxc = TRUE))
+  !grepl("$", h, fixed = TRUE) && grepl("100%", h, fixed = TRUE)
+})
+ok("sin la semana de este lunes: omitido_sin_lunes; ilegible: omitido_lectura", {
+  a <- correo_semana_leer(CID, VIERNES + 7L)
+  .mem_prohibido <<- llave("avisos/semana.rds"); b2 <- correo_semana_leer(CID, VIERNES); .mem_prohibido <<- character()
+  !a$ok && a$motivo == "omitido_sin_lunes" && !b2$ok && b2$motivo == "omitido_lectura"
+})
+
 s3_memoria_restaurar()
 cat(sprintf("\n%d passed, %d failed\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

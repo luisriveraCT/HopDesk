@@ -33,11 +33,12 @@ CORREO_COLORES  <- list(
 
 # `usuarios`: auth_load_usuarios(cid). `config`: the client's tiers_config.rds
 # (or NULL). `prefs`: preferencias.rds as a data frame (usuario, datos).
-# Returns one row per recipient: usuario, email, tier, idioma, ver_cxc.
+# Returns one row per recipient: usuario, email, tier, idioma, ver_cxc, and
+# permisos (a list column: the resolved permissions, for avisos_visibles()).
 # Pure: the job reads the three files (strictly) and passes them in.
 correo_destinatarios <- function(usuarios, config = NULL, prefs = NULL) {
-  vacio <- data.frame(usuario = character(), email = character(), tier = character(),
-                      idioma = character(), ver_cxc = logical(), stringsAsFactors = FALSE)
+  vacio <- tibble::tibble(usuario = character(), email = character(), tier = character(),
+                          idioma = character(), ver_cxc = logical(), permisos = list())
   if (!is.data.frame(usuarios) || !nrow(usuarios)) return(vacio)
   col <- function(n, def) if (n %in% names(usuarios)) usuarios[[n]] else rep(def, nrow(usuarios))
   vivo  <- !(col("deleted", FALSE) %in% TRUE) & !(col("activo", TRUE) %in% FALSE)
@@ -53,11 +54,13 @@ correo_destinatarios <- function(usuarios, config = NULL, prefs = NULL) {
     p <- .correo_prefs(prefs, user[i])
     if (identical(p$correos_semana, FALSE)) return(NULL)
     idioma <- p$idioma %||% "es"
-    data.frame(usuario = user[i], email = email[i], tier = tier[i],
-               idioma = if (idioma %in% i18n_idiomas()) idioma else "es",
-               ver_cxc = is.null(nivel_calendario(tier[i])), stringsAsFactors = FALSE)
+    # Values first: inside tibble() a name refers to the column just made.
+    t_i <- tier[i]; cxc <- is.null(nivel_calendario(t_i))
+    tibble::tibble(usuario = user[i], email = email[i], tier = t_i,
+                   idioma = if (idioma %in% i18n_idiomas()) idioma else "es",
+                   ver_cxc = cxc, permisos = list(u$permisos))
   })
-  rbind(vacio, do.call(rbind, filas))
+  dplyr::bind_rows(vacio, filas)
 }
 
 .correo_prefs <- function(prefs, usuario) {

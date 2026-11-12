@@ -201,3 +201,95 @@ correo_datos_lunes <- function(df, sh, lunes, serie, alertas, sap_fecha, url = "
        top_cobros = .avisos_top(ar, cmap), top_pagos = .avisos_top(ap, cmap),
        datos_sap = sap_fecha, moneda_base = moneda_base, url = url)
 }
+
+# ── Por destinatario ─────────────────────────────────────────────────────────
+
+CORREO_MAX_SOLICITUDES <- 2L
+
+# "También esta semana" for one recipient (a row of correo_destinatarios()):
+# their open solicitudes and the client's destacados, from the avisos THIS
+# recipient may see -- avisos_visibles() first, as Panorama does, then B's
+# panorama_mis_solicitudes() / panorama_destacados(). Never the unfiltered
+# list: an aviso for Dev must not reach Admin by email (integrador).
+correo_tambien <- function(avisos_df, dest, cid) {
+  u <- list(user = dest$usuario, tier = dest$tier, permisos = dest$permisos[[1]])
+  vis <- avisos_visibles(cid, u, avisos_df)
+  if (!nrow(vis)) return(list())
+  sol <- utils::head(panorama_mis_solicitudes(vis, dest$usuario), CORREO_MAX_SOLICITUDES)
+  des <- panorama_destacados(vis)
+  c(lapply(sol$titulo, function(t) list(tipo = "solicitud", texto = t)),
+    lapply(des$titulo, function(t) list(tipo = "comunicado", texto = t)))
+}
+
+# ── Semana: lo que el lunes esperaba ─────────────────────────────────────────
+# Monday keeps the week's rows in <cliente>/avisos/semana.rds, so Friday
+# measures against what Monday expected, not against a Monday recomputed
+# after the week changed it. Only the columns compute_confirmed_flags()
+# reads. A list, written whole each Monday (no rows to merge), after a
+# strict read: an unreadable key is never overwritten blind.
+
+.SEMANA_KEY <- "avisos/semana.rds"
+.SEMANA_COLS <- c("Tipo", "Empresa", "Documento", "Moneda", "Fecha de contabilización",
+                  "Saldo_original", "Saldo vencido", "source", "id", "FechaEff")
+
+correo_semana_guardar <- function(cid, df, d) {
+  sem <- .avisos_semana(df, d$lunes)
+  obj <- list(lunes = as.Date(d$lunes), moneda_base = d$moneda_base %||% "MXN",
+              vencidos_pct = d$vencidos_pct,
+              filas = sem[, intersect(.SEMANA_COLS, names(sem)), drop = FALSE])
+  .s3_leer_para_escribir(.SEMANA_KEY, cid)
+  .s3_write(obj, .SEMANA_KEY, client_id = cid)
+  invisible(obj)
+}
+
+# This week's Monday record, or why there is none: list(ok, motivo, semana).
+correo_semana_leer <- function(cid, viernes) {
+  x <- tryCatch(.s3_leer_para_escribir(.SEMANA_KEY, cid), error = function(e) e)
+  if (inherits(x, "error")) return(list(ok = FALSE, motivo = "omitido_lectura", semana = NULL))
+  if (!is.list(x) || is.null(x$lunes) || !identical(as.Date(x$lunes), umbral_lunes(viernes)))
+    return(list(ok = FALSE, motivo = "omitido_sin_lunes", semana = NULL))
+  list(ok = TRUE, motivo = NA_character_, semana = x)
+}
+
+# ── Viernes ──────────────────────────────────────────────────────────────────
+
+# Which of Monday's rows are confirmed now, by the app's own rule
+# (compute_confirmed_flags: bancos_confirmados and the papelera), whether it
+# flags the row or drops it (a confirmed manual row).
+.avisos_confirmadas <- function(filas, ledger, bancos, papelera) {
+  if (!nrow(filas)) return(logical())
+  filas$.fila <- seq_len(nrow(filas))
+  r <- compute_confirmed_flags(filas, ledger, bancos, papelera)
+  !(filas$.fila %in% r$.fila[!(r$confirmed %in% TRUE)])
+}
+
+# The Friday email's numbers (correo_viernes_html()'s `d`, without logros
+# and radar). Counts and percentages only: Friday has no amounts (Luis).
+#   pagos: Monday's scheduled payments of the week, confirmed / all.
+#          Provisions are left out: they only change through their own
+#          conversion, never by a confirmation.
+#   cobros_pct: % of Monday's expected collections, base currency, confirmed.
+#   vencidos: the client's CxC % past due now (`df`, Friday's rows) and its
+#          change since Monday's.
+correo_datos_viernes <- function(semana, df, sh, viernes, sap_fecha, url = "") {
+  base <- semana$moneda_base %||% "MXN"
+  f <- semana$filas
+  fuente <- if ("source" %in% names(f)) f$source else rep(NA_character_, nrow(f))
+  ap <- f[f$Tipo %in% "AP" & !(fuente %in% "provision"), , drop = FALSE]
+  ar <- f[f$Tipo %in% "AR" & f$Moneda %in% base, , drop = FALSE]
+  bancos <- sh$bancos_confirmados(); pap <- sh$papelera_rv()
+  conf_ar <- .avisos_confirmadas(ar, "AR", bancos, pap)
+  esperado <- sum(.avisos_monto(ar))
+  ar_hoy <- if (is.null(df) || !nrow(df)) df else df[df$Tipo %in% "AR", , drop = FALSE]
+  m <- umbral_metricas(ar_hoy, viernes, sh$interco_v2(), sh$company_map())
+  ahora <- correo_vencidos(m, umbral_lunes(viernes), base)$pct
+  antes <- semana$vencidos_pct %||% NA_real_
+  list(viernes = as.Date(viernes),
+       pagos_conf = as.integer(sum(.avisos_confirmadas(ap, "AP", bancos, pap))),
+       pagos_total = nrow(ap),
+       cobros_pct = if (esperado > 0) 100 * sum(.avisos_monto(ar)[conf_ar]) / esperado else NA_real_,
+       vencidos_pct = ahora,
+       vencidos_delta = if (is.na(ahora) || is.na(antes)) NA_real_ else ahora - antes,
+       logros = character(), radar = character(),
+       datos_sap = sap_fecha, url = url)
+}
