@@ -100,7 +100,8 @@ iguales <- list(
   list(s("pendiente", id = cid), paste0("Ya hay una solicitud pendiente para '", cid, "'.")),
   list(s("error_guardar"), "Error al guardar la solicitud. Intenta de nuevo."),
   list(s("enviada", id = cid), paste0("Solicitud para '", cid, "' enviada.")),
-  list(s("error_folder"), "Error al inicializar el folder del cliente en S3."),
+  # "S3" -> "el servidor": the wording Luis approved in textos-visibles (d321e67), not the old text
+  list(s("error_folder"), "Error al inicializar el folder del cliente en el servidor."),
   list(s("error_registro"), "Error al guardar el registro del cliente."),
   list(s("aprobado", id = cid), paste0("Cliente '", cid, "' aprobado y activado.")),
   list(s("error_rechazo"), "Error al guardar el rechazo."),

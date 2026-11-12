@@ -43,7 +43,8 @@ iguales <- list(
   list(es("tablas.datos_sap.aviso.respaldo", ledger = ledger_name, fecha = lbl),
        paste0("SAP no disponible — ", ledger_name, " mostrando datos del ", lbl)),
   list(es("tablas.datos_sap.aviso.actualizados"), "Datos actualizados."),
-  list(es("comun.aviso.error_leer_s3", error = err), paste0("Error al leer desde S3: ", err)),
+  # "S3" -> "el servidor": the wording Luis approved in textos-visibles (d321e67), not the old text
+  list(es("comun.aviso.error_leer_s3", error = err), paste0("Error al leer desde el servidor: ", err)),
   list(es("tablas.manual.aviso.documento_obligatorio"), "El campo Documento es obligatorio."),
   list(es("tablas.manual.aviso.no_guardada"), "No se pudieron guardar los cambios."),
   list(es("tablas.manual.aviso.actualizada"), "Entrada actualizada."),
