@@ -1317,13 +1317,13 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     cot_en  <- input$pwiz_cotizado_en %||% ""
     mon_pag <- input$pwiz_moneda_pago %||% "MXN"
     if (!nzchar(cot_en)) return(NULL)
-    metric <- paste0("fx_", tolower(cot_en), "_", tolower(mon_pag))
-    rate <- tryCatch(forecasting_get_estimate(metric, Sys.Date(),
-                                              client_id = shared$effective_client_id()),
-                     error = function(e) NA_real_)
+    # The Banxico FIX (R/fx_banxico.R) for USD -> MXN; any other pair has none.
+    fx <- if (identical(toupper(cot_en), "USD") && identical(toupper(mon_pag), "MXN"))
+      tryCatch(fx_fix(), error = function(e) NULL) else NULL
     shiny::tags$small(class = "text-muted",
-      if (!is.na(rate)) sprintf("FX usado: %.4f  (estimación: spot)", rate)
-      else "FX no disponible para esta par."
+      if (is.list(fx)) tr("tablas.pasivos.asistente.fx_fix", valor = formatC(fx$valor, format = "f", digits = 4),
+                          fecha = format(fx$fecha, "%d/%m/%Y"))
+      else tr("tablas.pasivos.asistente.fx_sin")
     )
   })
 

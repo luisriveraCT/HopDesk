@@ -88,12 +88,12 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
 # hard-coded market-order approximations for other pairs.
 .suggest_fx_rate <- function(from_cur, to_cur) {
   if (from_cur == "USD" && to_cur == "MXN") {
-    v <- tryCatch(
-      forecasting_get_estimate("usd_mxn", Sys.Date()),
-      error = function(e) NA_real_
-    )
-    if (!is.na(v) && v > 0) return(round(v, 2))
-    return(18.50)
+    # The Banxico FIX (R/fx_banxico.R). Without one, NA: the field stays empty
+    # and the export asks for the rate (.fx_tasas_completas) -- it used to
+    # suggest 18.50 forever, since nothing ever wrote the estimate it read.
+    fx <- tryCatch(fx_fix(), error = function(e) NULL)
+    if (is.list(fx) && is.numeric(fx$valor) && !is.na(fx$valor) && fx$valor > 0) return(round(fx$valor, 4))
+    return(NA_real_)
   }
   fallbacks <- c(
     EUR_MXN = 20.00, GBP_MXN = 23.50, CAD_MXN = 13.50,
@@ -104,6 +104,20 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
   key <- paste0(from_cur, "_", to_cur)
   v   <- fallbacks[ key ]
   if (is.na(v)) 1.00 else unname(v)
+}
+
+# TRUE when every exchange rate of a fused-currency export is a positive
+# number; else tells the user which are missing and gives FALSE, so the
+# export stops instead of converting with NA (banxico-fix: USD/MXN has no
+# fixed fallback any more).
+.fx_tasas_completas <- function(fx_rates, base_cur) {
+  if (!length(fx_rates)) return(TRUE)
+  v <- suppressWarnings(as.numeric(fx_rates))
+  faltan <- names(fx_rates)[is.na(v) | v <= 0]
+  if (!length(faltan)) return(TRUE)
+  showNotification(tr("tablas.flujo.aviso.tc_faltante", monedas = paste(paste0(faltan, "/", base_cur), collapse = ", ")),
+                   type = "warning", duration = 8)
+  FALSE
 }
 
 # ── Stage 2: Data pipeline helpers ───────────────────────────────────────────
@@ -2456,6 +2470,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
         }, numeric(1))
         setNames(rates, other_curs)
       } else c()
+      if (!.fx_tasas_completas(fx_rates, base_cur)) stop("Falta el tipo de cambio.")
 
       # ── Run pipeline ────────────────────────────────────────────────────
       combined_df <- tryCatch(
@@ -2610,6 +2625,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
         numeric(1))
       setNames(rates, other_curs)
     } else c()
+    if (!.fx_tasas_completas(fx_rates, base_cur)) return()
 
     # ── Build combined_df synchronously (fast: ~2-3 s, uses cached SAP data)
     combined_df <- tryCatch(
@@ -2916,6 +2932,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
         }, numeric(1))
         setNames(rates, other_curs)
       } else c()
+      if (!.fx_tasas_completas(fx_rates, base_cur)) stop("Falta el tipo de cambio.")
 
       combined_df <- tryCatch(
         build_export_combined_df(shared, ic_val),
