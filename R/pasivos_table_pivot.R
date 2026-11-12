@@ -18,7 +18,7 @@
 # Returns: tibble with one row per (liability + date) combination.
 pasivos_table_build_long <- function(provisions, manual_items,
                                      bancos_confirmados, liabilities,
-                                     filters) {
+                                     filters, fx = if (exists(".fx_para_mostrar", mode = "function")) .fx_para_mostrar() else NULL) {
   today <- Sys.Date()
 
   # ── 1. Apply liability filters ───────────────────────────────────────────────
@@ -128,6 +128,10 @@ pasivos_table_build_long <- function(provisions, manual_items,
     eff_date  <- tryCatch(as.Date(p$fecha_efectiva[1]), error = function(e) as.Date(NA))
     if (is.na(eff_date)) return(NULL)
     amount    <- if (!is.na(p$amount_pago_override[1])) p$amount_pago_override[1] else p$amount_pago[1]
+    # banxico-fix: quoted in USD, paid in MXN -> today's FIX, "≈" (display only)
+    ax        <- if (exists("fx_monto_aprox", mode = "function")) fx_monto_aprox(p$amount_cotizado[1], p$cotizado_en[1], p$moneda_pago[1],
+                                p$amount_pago_override[1], fx) else list(aprox = FALSE, importe_aprox = NA_real_)
+    if (isTRUE(ax$aprox)) amount <- ax$importe_aprox
 
     cell_kind   <- if (eff_date < today) "overdue_provision" else "provision"
     overdue_sev <- if (eff_date < today) "overdue_provision" else
@@ -152,6 +156,7 @@ pasivos_table_build_long <- function(provisions, manual_items,
       cell_bancos_conf_id = NA_character_,
       cell_has_override = !is.na(p$amount_pago_override[1]) ||
                           !is.na(p$fecha_efectiva_override[1]),
+      cell_aprox        = isTRUE(ax$aprox),
       cell_overdue_severity = overdue_sev
     )
   }))
@@ -237,6 +242,7 @@ pasivos_table_build_long <- function(provisions, manual_items,
         cell_bancos_conf_id = bc_id_val,
         cell_has_override = !is.na(p$amount_pago_override[1]) ||
                             !is.na(p$fecha_efectiva_override[1]),
+        cell_aprox        = FALSE,
         cell_overdue_severity = overdue_sev
       )
     }))
@@ -255,7 +261,7 @@ pasivos_table_build_long <- function(provisions, manual_items,
       cell_kind = character(), cell_amount = numeric(), cell_currency = character(),
       cell_provision_id = character(), cell_manual_id = character(),
       cell_bancos_conf_id = character(), cell_has_override = logical(),
-      cell_overdue_severity = character()
+      cell_aprox = logical(), cell_overdue_severity = character()
     ))
   }
   long_df <- dplyr::bind_rows(rows_bind)
@@ -277,6 +283,7 @@ pasivos_table_build_long <- function(provisions, manual_items,
       cell_manual_id    = dplyr::first(cell_manual_id),
       cell_bancos_conf_id = dplyr::first(cell_bancos_conf_id),
       cell_has_override = any(cell_has_override, na.rm = TRUE),
+      cell_aprox        = any(cell_aprox, na.rm = TRUE),
       cell_overdue_severity = dplyr::first(cell_overdue_severity),
       .groups = "drop"
     )
@@ -304,6 +311,8 @@ pasivos_table_build_long <- function(provisions, manual_items,
 # [[row_id]][[date_col_label]].
 pasivos_table_pivot_wide <- function(long_df, granularity = "day",
                                      window_start, window_end) {
+  # A long frame from before banxico-fix (no cell_aprox): nothing approximate.
+  if (!"cell_aprox" %in% names(long_df)) long_df$cell_aprox <- rep(FALSE, nrow(long_df))
 
   # Generate date column labels for the window
   date_cols <- .pasivos_date_seq(window_start, window_end, granularity)
@@ -348,6 +357,7 @@ pasivos_table_pivot_wide <- function(long_df, granularity = "day",
         cell_manual_id    = dplyr::first(cell_manual_id),
         cell_bancos_conf_id = dplyr::first(cell_bancos_conf_id),
         cell_has_override = any(cell_has_override, na.rm = TRUE),
+        cell_aprox        = any(cell_aprox, na.rm = TRUE),
         cell_overdue_severity = dplyr::first(cell_overdue_severity),
         cell_n            = sum(cell_n),
         cell_ids          = paste(unique(unlist(strsplit(cell_ids[nzchar(cell_ids)], ",", fixed = TRUE))), collapse = ","),
@@ -408,6 +418,7 @@ pasivos_table_pivot_wide <- function(long_df, granularity = "day",
       cell_manual_id      = long_df$cell_manual_id[k],
       cell_bancos_conf_id = long_df$cell_bancos_conf_id[k],
       cell_has_override   = long_df$cell_has_override[k],
+      cell_aprox          = if ("cell_aprox" %in% names(long_df)) long_df$cell_aprox[k] else FALSE,
       cell_overdue_severity = long_df$cell_overdue_severity[k],
       fecha               = long_df$fecha[k],
       cell_n              = long_df$cell_n[k],
@@ -439,7 +450,8 @@ pasivos_table_pivot_wide <- function(long_df, granularity = "day",
 .pasivos_celda_tono  <- c(provision = "morado", overdue_provision = "aviso", overdue_manual = "peligro",
                           manual_item = "neutro", confirmed_item = "exito")
 
-pasivos_tabla_datos <- function(wide, liabilities = NULL) {
+pasivos_tabla_datos <- function(wide, liabilities = NULL, fx = if (exists(".fx_para_mostrar", mode = "function")) .fx_para_mostrar() else NULL) {
+  ayuda_aprox <- if (exists("fx_aprox_ayuda", mode = "function")) fx_aprox_ayuda(fx) else ""   # the help of a "≈" cell (banxico-fix)
   meta <- wide$metadata_cols
   n <- nrow(meta)
   fee <- as.logical(meta$row_is_fee %||% rep(FALSE, n)); fee[is.na(fee)] <- FALSE
@@ -489,6 +501,7 @@ pasivos_tabla_datos <- function(wide, liabilities = NULL) {
              ifelse(tipo %in% c("manual_item", "overdue_manual"), "comprobante", "")))
     d[[paste0(campo, ".n")]] <- ifelse(hay, cuant, 0L)
     d[[paste0(campo, ".mano")]] <- toma("cell_has_override", FALSE)
+    d[[paste0(campo, ".aprox")]] <- ifelse(toma("cell_aprox", FALSE) & nzchar(ayuda_aprox), ayuda_aprox, "")
     d[[paste0(campo, ".tono")]] <- unname(ifelse(tipo %in% names(.pasivos_celda_tono), .pasivos_celda_tono[tipo], ""))
   }
   d

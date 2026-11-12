@@ -734,6 +734,13 @@ setup_pasivos_module <- function(input, output, session, shared) {
     moneda   <- prov$moneda_pago[1] %||% "MXN"
     estado   <- prov$estado[1]
     is_conf  <- estado == "item_confirmed"
+    # banxico-fix: quoted in USD, paid in MXN -> today's FIX, "≈" (display only)
+    fx_hoy   <- if (exists(".fx_para_mostrar", mode = "function")) .fx_para_mostrar() else NULL
+    ax       <- if (exists("fx_monto_aprox", mode = "function")) fx_monto_aprox(prov$amount_cotizado[1], prov$cotizado_en[1],
+                  prov$moneda_pago[1], prov$amount_pago_override[1], fx_hoy) else list(aprox = FALSE)
+    importe_txt <- if (isTRUE(ax$aprox))
+      shiny::span(title = fx_aprox_ayuda(fx_hoy), "≈ ", paste(moneda, fmt_money(ax$importe_aprox)))
+    else paste(moneda, fmt_money(amount))
 
     manual_df <- tryCatch(shared$manual_inv(), error = function(e) NULL)
     man_row <- if (!is.null(manual_df) && "provision_id" %in% names(manual_df))
@@ -749,7 +756,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
             shiny::tags$dt(class = "col-5", "Parte"),
             shiny::tags$dd(class = "col-7 mb-0", prov$parte[1] %||% "—"),
             shiny::tags$dt(class = "col-5", "Importe"),
-            shiny::tags$dd(class = "col-7 mb-0", paste(moneda, fmt_money(amount))),
+            shiny::tags$dd(class = "col-7 mb-0", importe_txt),
             shiny::tags$dt(class = "col-5", "Fecha"),
             shiny::tags$dd(class = "col-7 mb-0", format(as.Date(prov$fecha_efectiva[1]), "%d/%m/%Y")),
             if (nrow(man_row)) shiny::tagList(

@@ -1017,6 +1017,7 @@
                completo: c.completo ? arr(c.completo) : null, valor: c.valor ? arr(c.valor) : null,
                cid: c.cid ? arr(c.cid) : null, marca: c.marca ? arr(c.marca) : null,
                boton: c.boton ? arr(c.boton) : null, cn: c.n ? arr(c.n) : null, mano: c.mano ? arr(c.mano) : null,
+               aprox: c.aprox ? arr(c.aprox) : null,
                edf: c.edf ? arr(c.edf) : null,
                min: c.min ? arr(c.min) : null, max: c.max ? arr(c.max) : null };
     });
@@ -1350,6 +1351,14 @@
   function pintarCeldaAccion(st, td, j, i) {
     var cel = st.celdas[j], cfg = st.celdaCfg;
     var ma = cel.marca && cel.marca[i], bo = cel.boton && cel.boton[i], n = Number(cel.cn && cel.cn[i]) || 0;
+    // An approximate amount (Pasivos: USD converted with today's FIX): "≈"
+    // before it, its help on hover. Before the mark, so the mark stays first.
+    var ax = cel.aprox && cel.aprox[i];
+    if (ax) {
+      var a = nodo('span', 'hdt-celda-aprox', '≈');
+      a.title = String(ax);
+      td.insertBefore(a, td.firstChild);
+    }
     if (ma && cfg.marcas[ma]) {
       var m = nodo('span', 'hdt-celda-marca hdt-celda-' + String(ma).replace(/[^a-z_]/g, ''), cfg.marcas[ma].icono);
       m.title = cfg.marcas[ma].titulo;

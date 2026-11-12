@@ -119,3 +119,33 @@ fx_fix <- function(ahora = Sys.time()) {
   .fx_fix_estado$memo <- list(cuando = ahora, valor = r)
   r
 }
+
+# ── Approximate amounts, for display only (banxico-fix 3/3, Luis) ──────────
+# A provision quoted in USD and paid in MXN shows its amount converted with
+# today's FIX, marked approximate ("≈"), wherever the converted amount is
+# displayed (Pasivos' table and detail, Flujo's preview and Exportar). It is
+# never written anywhere: the stored amount -- and Importe, part of the
+# Agenda's key -- stay as they are. A hand-set amount (override) is not
+# approximate. Without a FIX nothing is approximated: it shows as before.
+#
+# The FIX for display: NULL when fx_fix() is missing or fails.
+.fx_para_mostrar <- function()
+  if (exists("fx_fix", mode = "function")) tryCatch(fx_fix(), error = function(e) NULL) else NULL
+
+.fx_valido <- function(fx) is.list(fx) && is.numeric(fx$valor) && length(fx$valor) == 1L &&
+  !is.na(fx$valor) && fx$valor > 0
+
+# Vectorised over provisions: list(aprox = logical, importe_aprox = numeric).
+fx_monto_aprox <- function(amount_cotizado, cotizado_en, moneda_pago, override, fx) {
+  cot <- toupper(as.character(cotizado_en)); pag <- toupper(as.character(moneda_pago))
+  monto <- suppressWarnings(as.numeric(amount_cotizado))
+  aprox <- .fx_valido(fx) & !is.na(cot) & cot == "USD" & !is.na(pag) & pag == "MXN" &
+           is.na(suppressWarnings(as.numeric(override))) & !is.na(monto)
+  aprox[is.na(aprox)] <- FALSE
+  list(aprox = aprox, importe_aprox = ifelse(aprox, monto * (if (.fx_valido(fx)) fx$valor else NA_real_), NA_real_))
+}
+
+# "Aproximado: FIX del {fecha} ({valor})", for a tooltip next to the "≈".
+fx_aprox_ayuda <- function(fx) if (!.fx_valido(fx)) "" else
+  tr("tablas.fx.aprox_ayuda", fecha = format(as.Date(fx$fecha), "%d/%m/%Y"),
+     valor = formatC(fx$valor, format = "f", digits = 4))

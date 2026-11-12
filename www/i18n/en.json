@@ -714,6 +714,7 @@
   "tablas.flujo.aviso.error_html": "Error generating HTML: {error}",
   "tablas.flujo.aviso.error_pdf": "Error generating the PDF: {error}",
   "tablas.flujo.aviso.tc_faltante": "The exchange rate {monedas} is missing. Enter it to export.",
+  "tablas.fx.aprox_ayuda": "Approximate: converted with the FIX of {fecha} ({valor}). The actual amount is the payment's.",
   "tablas.accion.crudos": "See source data",
   "tablas.agregado": "Already in Today's Agenda",
   "tablas.accion.adjuntos": "See evidence",

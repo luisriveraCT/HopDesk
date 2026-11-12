@@ -49,8 +49,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=29"),
-    htmltools::tags$script(src = "hdtable.js?v=41")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=30"),
+    htmltools::tags$script(src = "hdtable.js?v=42")
   ))
 }
 

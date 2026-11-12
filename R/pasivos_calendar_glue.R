@@ -27,7 +27,10 @@
     provision_id           = character(),
     liability_id           = character(),
     pasivos_categoria      = character(),
-    pasivos_subcategoria   = character()
+    pasivos_subcategoria   = character(),
+    # banxico-fix: display only, never saved (Importe is the Agenda's key)
+    importe_aprox          = numeric(),
+    aprox                  = logical()
   )
 }
 
@@ -38,7 +41,10 @@
 # @param ledger       "AP" — provisions are always payables
 # @param user         character or NULL; NULL skips the capability gate
 # @return tibble with source = "provision"; filtered to provisional estado only
-pasivos_provisions_as_ledger_rows <- function(provisions, liabilities, ledger = "AP", user = NULL) {
+# @param fx           the Banxico FIX to approximate USD->MXN amounts for display
+#                     (importe_aprox / aprox); NULL: none. Importe never changes.
+pasivos_provisions_as_ledger_rows <- function(provisions, liabilities, ledger = "AP", user = NULL,
+                                              fx = if (exists(".fx_para_mostrar", mode = "function")) .fx_para_mostrar() else NULL) {
   if (!is.null(user) && !has_capability(user, "pasivos.view")) {
     return(.empty_provision_ledger_rows())
   }
@@ -83,6 +89,9 @@ pasivos_provisions_as_ledger_rows <- function(provisions, liabilities, ledger = 
     pasivos_subcategoria <- if (!is.null(liability) && nrow(liability)) liability$subcategoria[1] else NA_character_
 
     saldo     <- tryCatch(pasivos_pago_amount(p),    error = function(e) NA_real_)
+    # Without R/fx_banxico.R loaded (some tests), nothing is approximated.
+    ax        <- if (exists("fx_monto_aprox", mode = "function")) fx_monto_aprox(p$amount_cotizado[1], p$cotizado_en[1], p$moneda_pago[1],
+                                p$amount_pago_override[1], fx) else list(aprox = FALSE, importe_aprox = NA_real_)
     mon       <- tryCatch(pasivos_pago_currency(p),  error = function(e) NA_character_)
     fecha_ef  <- as.Date(p$fecha_efectiva[1])
     fecha_ca  <- as.Date(p$fecha_calculada[1])
@@ -117,7 +126,9 @@ pasivos_provisions_as_ledger_rows <- function(provisions, liabilities, ledger = 
       provision_id           = as.character(p$id[1]),
       liability_id           = as.character(p$liability_id[1] %||% NA_character_),
       pasivos_categoria      = as.character(pasivos_categoria    %||% NA_character_),
-      pasivos_subcategoria   = as.character(pasivos_subcategoria %||% NA_character_)
+      pasivos_subcategoria   = as.character(pasivos_subcategoria %||% NA_character_),
+      importe_aprox          = ax$importe_aprox,
+      aprox                  = ax$aprox
     )
   })
 

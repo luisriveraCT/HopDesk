@@ -120,9 +120,10 @@ col_texto <- function(campo, titulo = NULL, recorte = TRUE, opcional = FALSE, vi
 #                         (HD_CELDA_MARCAS: pendiente ◷ / vencida ! /
 #                         confirmada ✓), <campo>.boton (HD_CELDA_BOTONES: ⚡ /
 #                         ↩, in the cell), <campo>.n (how many things the
-#                         cell adds up: above 1 it says so) and <campo>.mano
-#                         (TRUE: changed by hand, a dot in its corner). Any
-#                         missing: none.
+#                         cell adds up: above 1 it says so), <campo>.mano
+#                         (TRUE: changed by hand, a dot in its corner) and
+#                         <campo>.aprox ("" or the help of an approximate
+#                         amount: "≈" before it). Any missing: none.
 col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, opcional = FALSE, visible = TRUE,
                        editable = NULL, fija = FALSE, formato = "completo", cero = "cifra", tono = NULL,
                        destacar = FALSE, accion = FALSE) {
@@ -659,7 +660,10 @@ hd_filas <- function(datos, columnas, id_col = "id") {
         bo  <- as.character(campo_de(".boton", "")); bo[is.na(bo) | !bo %in% names(HD_CELDA_BOTONES)] <- ""
         nn  <- suppressWarnings(as.integer(campo_de(".n", 0L))); nn[is.na(nn) | nn < 0L] <- 0L
         mano <- as.logical(campo_de(".mano", FALSE)); mano[is.na(mano)] <- FALSE
-        v$cid <- I(cid); v$marca <- I(ma); v$boton <- I(bo); v$n <- I(nn); v$mano <- I(mano)
+        # .aprox (banxico-fix): "" or the help of an approximate amount; the
+        # cell shows "≈" before it, the help on hover (text, never code).
+        ax <- as.character(campo_de(".aprox", "")); ax[is.na(ax)] <- ""
+        v$cid <- I(cid); v$marca <- I(ma); v$boton <- I(bo); v$n <- I(nn); v$mano <- I(mano); v$aprox <- I(ax)
       }
       # tono = "<campo>" (tono_celda, T17a): the row's own tone, only from
       # the closed list; anything else paints none.

@@ -245,6 +245,15 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
     tibble::tibble(Parte = character(), is_provision = logical(), orig_cur = character())
   }
 
+  # Rows with an approximate amount (banxico-fix): their name says "≈"
+  aprox_by_parte <- if ("aprox" %in% names(df)) {
+    df |>
+      dplyr::group_by(Parte, is_provision) |>
+      dplyr::summarise(.aprox = any(.data$aprox %in% TRUE), .groups = "drop")
+  } else {
+    tibble::tibble(Parte = character(), is_provision = logical(), .aprox = logical())
+  }
+
   # Pivot to wide
   wide <- agg_long |>
     dplyr::select(Parte, is_provision, bucket_label, amount) |>
@@ -271,7 +280,9 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
 
   dplyr::left_join(wide, tag_by_parte, by = c("Parte", "is_provision")) |>
     dplyr::left_join(orig_cur_by_parte, by = c("Parte", "is_provision")) |>
+    dplyr::left_join(aprox_by_parte, by = c("Parte", "is_provision")) |>
     dplyr::mutate(
+      Parte         = dplyr::if_else(.aprox %in% TRUE, paste0("≈ ", Parte), Parte),
       tag_urgent    = dplyr::coalesce(tag_urgent,    FALSE),
       tag_important = dplyr::coalesce(tag_important, FALSE),
       orig_cur      = dplyr::if_else(!is.na(orig_cur) & nzchar(orig_cur), orig_cur, NA_character_)
@@ -418,7 +429,16 @@ build_export_combined_df <- function(shared, ic_mode_val) {
   ar_df <- .ic_filter(ar_df, "AR", "Código de cliente")
   ap_df <- .ic_filter(ap_df, "AP", "Código de proveedor")
 
-  dplyr::bind_rows(ar_df, ap_df)
+  out <- dplyr::bind_rows(ar_df, ap_df)
+  # banxico-fix: a provision quoted in USD and paid in MXN counts with its
+  # amount converted at today's FIX (aprox, importe_aprox from the provision
+  # bridge), and its row says "≈" (.aggregate_to_wide). This frame is only
+  # read -- the preview and Exportar -- so nothing approximate is ever saved.
+  if (!is.null(out) && nrow(out) && all(c("aprox", "importe_aprox") %in% names(out))) {
+    ax <- out$aprox %in% TRUE & !is.na(out$importe_aprox)
+    out[["Saldo vencido"]][ax] <- out$importe_aprox[ax]
+  }
+  out
 }
 
 # ── Stage 2: Main aggregation function ───────────────────────────────────────
