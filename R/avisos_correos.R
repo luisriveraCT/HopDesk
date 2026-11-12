@@ -327,8 +327,10 @@ correo_lunes_html <- function(d, dest) {
 #   pagos_conf, pagos_total     payments of the week confirmed / scheduled (counts)
 #   cobros_pct       % of the week's expected collections received (NA = none expected)
 #   vencidos_pct, vencidos_delta   client-level CxC % past due and its Δ over the week
-#   logros           character, already in the recipient's language (at most 2 shown)
+#   logros           character, already in the recipient's language (at most 2 shown);
+#                    without it, from `items` (correo_items_viernes(), R/avisos_logros.R)
 #   radar            character, the same ("En el radar", at most 3 shown)
+#   items            see logros
 #   datos_sap, url)
 # Logros and radar lines that speak of CxC are left out by the caller for
 # recipients without CxC; this function drops the CxC tiles for them.
@@ -360,7 +362,8 @@ correo_viernes_html <- function(d, dest) {
     m <- c(m, list(.cr_mosaico(.cr_t("avisos.correo.viernes.mosaico.vencidos", idioma),
                             .cr_e(sprintf("%.1f%%", d$vencidos_pct)), "borde", det, chico = TRUE)))
   }
-  logros <- utils::head(as.character(d$logros %||% character()), CORREO_MAX_LOGROS)
+  logros <- utils::head(as.character(d$logros %||% (if (is.null(d$items)) character() else correo_items_texto(d$items, "logro", dest, CORREO_MAX_LOGROS))),
+                        CORREO_MAX_LOGROS)
   logros_html <- if (length(logros)) paste0(
     '<tr><td style="padding:20px 30px 0">', .cr_tabla(paste0(
       '<tr><td style="background:', .cr_C$logro, ';border:1px solid ', .cr_C$logro_borde, ';border-radius:14px;padding:16px 18px">',
@@ -368,7 +371,8 @@ correo_viernes_html <- function(d, dest) {
       .cr_t("avisos.correo.viernes.logros", idioma), '</div>',
       .cr_tabla(.cr_vinetas(as.list(.cr_e(logros)), "&#9733;", "14px"), estilo = "font-size:14px;line-height:1.5"),
       '</td></tr>')), '</td></tr>') else ""
-  radar <- utils::head(as.character(d$radar %||% character()), CORREO_MAX_RADAR)
+  radar <- utils::head(as.character(d$radar %||% (if (is.null(d$items)) character() else correo_items_texto(d$items, "radar", dest, CORREO_MAX_RADAR))),
+                       CORREO_MAX_RADAR)
   radar_html <- if (length(radar)) paste0(
     .cr_titulo_seccion(.cr_t("avisos.correo.viernes.radar", idioma), "24px 30px 4px"),
     .cr_tabla(.cr_vinetas(as.list(.cr_e(radar))), estilo = "font-size:14px;line-height:1.5"), '</td></tr>') else ""

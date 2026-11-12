@@ -290,6 +290,7 @@ correo_datos_viernes <- function(semana, df, sh, viernes, sap_fecha, url = "") {
        cobros_pct = if (esperado > 0) 100 * sum(.avisos_monto(ar)[conf_ar]) / esperado else NA_real_,
        vencidos_pct = ahora,
        vencidos_delta = if (is.na(ahora) || is.na(antes)) NA_real_ else ahora - antes,
-       logros = character(), radar = character(),
+       metricas = m,   # Friday's per-empresa rows, for the logros (R/avisos_logros.R)
+       logros = NULL, radar = NULL,
        datos_sap = sap_fecha, url = url)
 }
