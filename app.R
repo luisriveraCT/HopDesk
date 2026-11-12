@@ -42,6 +42,8 @@ source("R/pagos_audit_viewer_module.R")
 # T31: the account checks (user name, name, job title, e-mail, password) and
 # the unique user name, shared by the activation page and Usuarios.
 source("R/usuarios_cuentas.R")
+# T31: "¿Olvidaste tu contraseña?" -- request, link, new password, alerts.
+source("R/auth_reset.R")
 source("R/tiers_module.R")
 source("R/empresas_module.R")
 source("R/interco_module.R")

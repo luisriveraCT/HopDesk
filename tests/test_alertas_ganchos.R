@@ -122,7 +122,8 @@ directos <- unlist(lapply(setdiff(list.files("R", "\\.R$", full.names = TRUE, re
 # (Requisiciones was listed here for its comments and mentions, but it no
 # longer calls avisos_agregar(): the list must stay honest, checked below.)
 NO_ACTIVIDAD <- c(
-  "R/panorama_publicar_module.R"  = "what a person publishes in Panorama › Publicar (publicado / solicitud)")
+  "R/panorama_publicar_module.R"  = "what a person publishes in Panorama › Publicar (publicado / solicitud)",
+  "R/auth_reset.R"                = "security alert on password resets (T31): staff in hd-admin, a client's Dev; never switched off")
 ok(!length(setdiff(directos, names(NO_ACTIVIDAD))),
    sprintf("S nadie llama avisos_agregar() directo para la actividad (%s)",
            paste(setdiff(directos, names(NO_ACTIVIDAD)), collapse = ", ")))
