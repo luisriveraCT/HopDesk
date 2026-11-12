@@ -349,59 +349,6 @@ bancos_libro_js <- function(id) {
   tags$script(HTML(js))
 }
 
-# ── Match scoring ─────────────────────────────────────────────────────────────
-# item:      one-row tibble from bancos_movimientos (has cargo/abono/fecha/rfc/
-#            referencia/concepto/descripcion_raw fields)
-# candidate: standardised list (rfc, importe, fecha, parte, concepto,
-#            referencia, descripcion_raw — all optional)
-# Returns integer score; threshold for display is 15.
-score_vincular_match <- function(item, candidate) {
-  score <- 0L
-
-  # ── Importe / monto — highest weight ──────────────────────────────────────
-  imp_a <- abs(as.numeric(item$cargo %||% 0) + as.numeric(item$abono %||% 0))
-  # Candidates may carry either `importe` (confirmados/SAP) or cargo/abono (movimientos)
-  imp_b <- if (!is.null(candidate$importe) && !is.na(candidate$importe)) {
-    abs(as.numeric(candidate$importe))
-  } else {
-    abs(as.numeric(candidate$cargo %||% 0) + as.numeric(candidate$abono %||% 0))
-  }
-  if (imp_a > 0 && !is.na(imp_b) && imp_b > 0) {
-    if (isTRUE(abs(imp_a - imp_b) < 0.01))              score <- score + 40L
-    else if (isTRUE(abs(imp_a - imp_b) / imp_a < 0.01)) score <- score + 25L
-    else if (isTRUE(abs(imp_a - imp_b) / imp_a < 0.05)) score <- score + 10L
-  }
-
-  # ── Document number overlap — extract 4+ digit tokens ─────────────────────
-  doc_a <- tolower(paste(
-    item$referencia %||% "", item$concepto %||% "",
-    item$descripcion_raw %||% "", collapse = " "))
-  doc_b <- tolower(paste(
-    candidate$referencia %||% "", candidate$concepto %||% "",
-    candidate$descripcion_raw %||% candidate$concepto %||% "",
-    collapse = " "))
-  nums_a <- regmatches(doc_a, gregexpr("[0-9]{4,}", doc_a))[[1]]
-  nums_b <- regmatches(doc_b, gregexpr("[0-9]{4,}", doc_b))[[1]]
-  if (length(nums_a) > 0 && length(nums_b) > 0 && any(nums_a %in% nums_b))
-    score <- score + 30L
-
-  # ── RFC exact match ────────────────────────────────────────────────────────
-  rfc_a <- trimws(toupper(item$rfc %||% ""))
-  rfc_b <- trimws(toupper(candidate$rfc %||% ""))
-  if (!is.na(rfc_a) && nzchar(rfc_a) && !is.na(rfc_b) && nzchar(rfc_b) && rfc_a == rfc_b) score <- score + 20L
-
-  # ── Date proximity — low weight, never a disqualifier ─────────────────────
-  fecha_a <- tryCatch(as.Date(item$fecha),      error = function(e) NA)
-  fecha_b <- tryCatch(as.Date(candidate$fecha), error = function(e) NA)
-  if (isTRUE(!is.na(fecha_a)) && isTRUE(!is.na(fecha_b))) {
-    diff_days <- abs(as.integer(fecha_b - fecha_a))
-    if (isTRUE(diff_days <= 3))      score <- score + 10L
-    else if (isTRUE(diff_days <= 7)) score <- score + 5L
-  }
-
-  score
-}
-
 # ── Helper: account choices vector ───────────────────────────────────────────
 .cuenta_choices <- function(cuentas_df, include_sin_cuenta = TRUE, include_todas = FALSE) {
   if (is.null(cuentas_df) || !nrow(cuentas_df)) {

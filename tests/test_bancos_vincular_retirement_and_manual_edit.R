@@ -63,7 +63,9 @@ full <- paste(txt, collapse = "\n")
   ok("the Libro's JS keeps no Vincular mode at all (T12a: the retired JS is gone, not just commented)",
      {
        i <- grep("^bancos_libro_js <- function", txt)[1]
-       j <- grep("^# ── Match scoring", txt)[1]
+       # The JS ends where the next helper starts (it was "# ── Match scoring",
+       # removed with score_vincular_match(), which had no callers).
+       j <- grep("^# ── Helper: account choices vector", txt)[1]
        !is.na(i) && !is.na(j) && !any(grepl("vinMode|deactivateVin|vincular_row_id", txt[i:j]))
      })
   ok("R/bancos_module.R still parses as valid R after the removal (a misplaced brace would corrupt everything after it)",
