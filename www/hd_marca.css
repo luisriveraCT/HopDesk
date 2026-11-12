@@ -1,0 +1,74 @@
+/* ============================================================================
+   www/hd_marca.css — HopDesk brand tokens (navy, gold, Fraunces).
+   Luis, 2026-11-10: the whole app moves to this look little by little;
+   Panorama is the first screen to use it. Only variables and the font live
+   here, under the root class .hd-marca: a screen takes the brand by adding
+   that class, and nothing outside it changes.
+   Screen styles (www/panorama.css, ...) use only these variables.
+   ========================================================================== */
+
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('fonts/fraunces-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+                 U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+                 U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('fonts/fraunces-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+                 U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+                 U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+.hd-marca {
+  /* Ink and surfaces */
+  --hd-marino:     #13213A;   /* navy: headings, the dark bar, selected chips */
+  --hd-tinta:      #1A2233;   /* body text */
+  --hd-pizarra:    #3B4558;
+  --hd-gris:       #5A6474;   /* secondary text */
+  --hd-niebla:     #B7C2D4;
+  --hd-linea:      #E3E8F0;
+  --hd-papel:      #F7F6F2;   /* page background */
+  --hd-crema:      #F3F1EA;
+  --hd-borde:      #D9D4C6;
+  --hd-blanco:     #FFFFFF;
+
+  /* Gold */
+  --hd-oro:        #C9AE6E;
+  --hd-oro-osc:    #B0924F;   /* "new" marks */
+  --hd-oro-claro:  #E4CF9B;
+  --hd-oro-velo:   rgba(201, 174, 110, 0.14);
+
+  /* Tones, one per kind of aviso: background / border / tag / text */
+  --hd-ambar-bg:  #F7E9E1; --hd-ambar-bd:  #E8CBBB; --hd-ambar-tag:  #F0D6C8; --hd-ambar-fg:  #9A4524;
+  --hd-salvia-bg: #E2EEEF; --hd-salvia-bd: #C6DDDF; --hd-salvia-tag: #D0E5E7; --hd-salvia-fg: #1E5B63;
+  --hd-lila-bg:   #F3E8EE; --hd-lila-bd:   #E6CFDC; --hd-lila-tag:   #EBD8E3; --hd-lila-fg:   #6B3358;
+  --hd-olivo-bg:  #EEF0E2; --hd-olivo-bd:  #DADFC6; --hd-olivo-tag:  #E2E6CF; --hd-olivo-fg:  #56602F;
+
+  /* Signals on the dark bar */
+  --hd-sube:       #E6A383;
+  --hd-baja:       #A9C3D6;
+
+  /* Type */
+  --hd-serif: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --hd-sans:  'Lato', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Shape */
+  --hd-radio:     24px;
+  --hd-radio-md:  18px;
+  --hd-radio-sm:  12px;
+  --hd-pildora:   999px;
+  --hd-sombra:    0 1px 2px rgba(19, 33, 58, 0.06), 0 8px 24px rgba(19, 33, 58, 0.06);
+  --hd-foco:      0 0 0 3px rgba(201, 174, 110, 0.55);
+
+  font-family: var(--hd-sans);
+  color: var(--hd-tinta);
+}
