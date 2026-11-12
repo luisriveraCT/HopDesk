@@ -162,7 +162,7 @@ test_that("A7 empty states: no SAP data, nothing in range, nothing left to pay",
   reiniciar()
   correr({
     filtros(session, ledger = "AR")
-    expect_identical(ab_vacio(datos(session)), "Sin datos SAP para este tipo de ledger.")
+    expect_identical(ab_vacio(datos(session)), "Sin datos SAP para este tipo (CxP o CxC).")
   }, sap = list(AP = D$sap$AP, AR = NULL))
   correr({
     filtros(session, desde = HOY + 30L, hasta = HOY + 40L)
@@ -367,7 +367,7 @@ test_that("A0 startup: SAP and abonos still NULL, the modal never opened -- no t
         current_user = function() "tester", client_id = function() "cliente_a", autorizado = function() TRUE)
     }, {
       session$flushReact()
-      expect_identical(ab_vacio(session$userData$ab$facturas()), "Sin datos SAP para este tipo de ledger.")
+      expect_identical(ab_vacio(session$userData$ab$facturas()), "Sin datos SAP para este tipo (CxP o CxC).")
     }),
     message = function(m) { avisos <<- c(avisos, conditionMessage(m)); invokeRestart("muffleMessage") })
   expect_false(any(grepl("the (datos|aviso) failed", avisos)))

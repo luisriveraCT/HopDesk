@@ -26,7 +26,7 @@ ok(sprintf("las %d claves tablas.ajustes.aviso.* existen en es y en", length(cla
    { falta <- avisos_claves_faltan(claves); if (length(falta)) message("  faltan: ", paste(falta, collapse = ", "))
      length(claves) >= 1L && !length(falta) })
 iguales <- list(list(tr("tablas.ajustes.aviso.error_guardar_s3", error = "Forbidden", idioma = "es"),
-                     paste("❌ Error al guardar en S3:", "Forbidden")))
+                     paste("❌ Error al guardar en el servidor:", "Forbidden")))
 distintos <- avisos_distintos(iguales)
 ok("el español del aviso dice exactamente lo mismo que antes",
    { for (p in distintos) message("  ahora: ", p[[1]], "\n  antes: ", p[[2]]); !length(distintos) })

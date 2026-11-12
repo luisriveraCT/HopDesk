@@ -59,7 +59,7 @@ iguales <- list(
   list(es("tablas.pasivos.aviso.error_guardar", error = "S3"), paste0("Error al guardar la provisión: ", "S3")),
   list(es("tablas.pasivos.manual_creada"), "Provisión manual creada."),
   list(es("tablas.pasivos.aviso.no_revertible"), "La provisión no puede ser revertida en este estado."),
-  list(es("tablas.pasivos.aviso.error_manual_inv", error = "S3"), paste("Error al guardar manual_inv:", "S3")),
+  list(es("tablas.pasivos.aviso.error_manual_inv", error = "S3"), paste("Error al guardar la entrada manual:", "S3")),
   list(es("tablas.pasivos.aviso.error_agenda", error = "S3"), paste("Error al guardar agenda:", "S3")),
   list(es("tablas.pasivos.aviso.conversion_deshecha"), "Conversión deshecha. La provisión fue restaurada."),
   list(es("tablas.pasivos.aviso.eliminados_ambos"), "Provisión y comprobante eliminados."))

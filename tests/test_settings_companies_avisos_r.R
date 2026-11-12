@@ -34,10 +34,10 @@ es   <- function(k, ...) tr(k, ..., idioma = "es")
 es_n <- function(k, n, ...) tr_n(k, as.character(n), ..., idioma = "es")
 revertidas <- function(sel) sprintf("Fechas de política revertidas para %d socio%s.",
                                     length(sel), if (length(sel) == 1L) "" else "s")
-columna_parte <- function(sap) paste0("Sin fechas: columna Parte no encontrada en datos SAP. ",
-                                      "Revisa si los datos han cargado (AP rows=",
+columna_parte <- function(sap) paste0("Sin fechas: no se encontró la columna Parte en los datos SAP. ",
+                                      "Revisa si ya cargaron (filas CxP: ",
                                       if (!is.null(sap$AP)) nrow(sap$AP) else "NULL",
-                                      ", AR rows=",
+                                      ", filas CxC: ",
                                       if (!is.null(sap$AR)) nrow(sap$AR) else "NULL", ").")
 columna_parte_ahora <- function(sap) es("tablas.ajustes.aviso.sin_columna_parte",
                                         ap = if (!is.null(sap$AP)) as.character(nrow(sap$AP)) else "NULL",
@@ -54,18 +54,18 @@ iguales <- list(
   list(es("tablas.ajustes.aviso.sin_asignadas"), "No hay políticas asignadas a ningún socio."),
   list(es("tablas.ajustes.aviso.catalogo_vacio"), "El catálogo de políticas está vacío."),
   list(es("tablas.ajustes.aviso.solo_intercompania"), "Solo hay socios intercompañía configurados."),
-  list(es("tablas.ajustes.aviso.error_politicas_ap", error = "x"), paste("[Políticas AP]", "x")),
-  list(es("tablas.ajustes.aviso.error_politicas_ar", error = "x"), paste("[Políticas AR]", "x")),
+  list(es("tablas.ajustes.aviso.error_politicas_ap", error = "x"), paste("[Políticas CxP]", "x")),
+  list(es("tablas.ajustes.aviso.error_politicas_ar", error = "x"), paste("[Políticas CxC]", "x")),
   list(columna_parte_ahora(sap1), columna_parte(sap1)),                     # 1500 rows: no thousands separator
   list(columna_parte_ahora(list()), columna_parte(list())),
   list(es("tablas.ajustes.aviso.sin_coincidencias", sap = sap_s, politicas = pp_s),
        paste0("Sin coincidencias de Socio: SAP tiene [", sap_s, "] pero políticas tienen [", pp_s,
               "]. Verifica el nombre del socio en Empresas y Socios.")),
   list(es("tablas.ajustes.aviso.politica_no_encontrada"),
-       paste0("Política no encontrada en catálogo (UUID inválido). ",
+       paste0("Política no encontrada en el catálogo (identificador inválido). ",
               "Edita el socio, elimina la política marcada con '?' y reasígnala.")),
   list(es("tablas.ajustes.aviso.sin_datos_ar"),
-       paste0("Sin fechas: socios con ledger AR pero no hay datos AR cargados. ",
+       paste0("Sin fechas: hay socios con CxC, pero no hay datos de CxC cargados. ",
               "Verifica que los datos de Cobrar estén disponibles.")),
   list(es("tablas.ajustes.aviso.sin_fechas"), "No se generaron fechas (sin documentos con socio asignado)."))
 distintos <- avisos_distintos(iguales)
