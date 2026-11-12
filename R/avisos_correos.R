@@ -21,7 +21,6 @@
 # Never prints: the job runs in a public repo's logs (see avisos_job.R).
 # =============================================================================
 
-CORREO_PERMISO  <- "can_receive_weekly_email"
 CORREO_COLORES  <- list(
   fondo = "#EDEBE4", papel = "#FFFFFF", tinta = "#1A2233", gris = "#5A6474",
   marino = "#13213A", dorado = "#C9AE6E", dorado_osc = "#B0924F", linea = "#E4E1D8",
@@ -50,7 +49,7 @@ correo_destinatarios <- function(usuarios, config = NULL, prefs = NULL) {
                           grepl(.CORREO_EMAIL_RE, email) & !is.na(user) & nzchar(user)), function(i) {
     u <- list(user = user[i], tier = tier[i],
               permisos = permisos_resueltos(tier[i], if (is.na(perm[i])) "{}" else perm[i], config))
-    if (!puede(u, CORREO_PERMISO)) return(NULL)
+    if (!puede(u, "can_receive_weekly_email")) return(NULL)
     p <- .correo_prefs(prefs, user[i])
     if (identical(p$correos_semana, FALSE)) return(NULL)
     idioma <- p$idioma %||% "es"
@@ -255,9 +254,11 @@ correo_lunes_asunto <- function(d, idioma)
 correo_lunes_html <- function(d, dest) {
   idioma <- dest$idioma %||% "es"; cxc <- isTRUE(dest$ver_cxc)
   base <- d$moneda_base %||% "MXN"
-  tot <- function(x) sum(unlist(x %||% list()), na.rm = TRUE)
+  # The headline compares the base currency only: amounts in different
+  # currencies are never added up (integrador, 2026-11-12).
+  en_base <- function(x) { v <- if (base %in% names(x)) as.numeric(x[[base]]) else NA; if (is.na(v)) 0 else v }
   titulo <- if (!cxc) .cr_t("avisos.correo.lunes.titulo.sin_cxc", idioma)
-            else if (tot(d$cobros) >= tot(d$pagos)) .cr_t("avisos.correo.lunes.titulo.cobros", idioma)
+            else if (en_base(d$cobros) >= en_base(d$pagos)) .cr_t("avisos.correo.lunes.titulo.cobros", idioma)
             else .cr_t("avisos.correo.lunes.titulo.pagos", idioma)
   m <- list()
   if (cxc) m <- c(m, list(.cr_mosaico(.cr_t("avisos.correo.lunes.mosaico.cobros", idioma), .cr_montos(d$cobros, base), "arena")))

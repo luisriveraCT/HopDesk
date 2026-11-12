@@ -99,6 +99,12 @@ ok("en inglés, en inglés", grepl("THE WEEK AHEAD", he, fixed = TRUE) && grepl(
      grepl("Open Panorama", he, fixed = TRUE) && !grepl("Abrir Panorama", he, fixed = TRUE))
 ok("si los pagos superan a los cobros, el título lo dice",
    grepl("Pagos superan a cobros", correo_lunes_html(modifyList(lunes, list(pagos = c(MXN = 5e6))), fin), fixed = TRUE))
+ok("el título nunca suma monedas distintas: compara solo la moneda base", {
+  # MXN: cobros 100 > pagos 90. Adding the USD would flip it (90 + 1,000,000).
+  x <- correo_lunes_html(modifyList(lunes, list(cobros = c(MXN = 100), pagos = c(MXN = 90, USD = 1e6))), fin)
+  y <- correo_lunes_html(modifyList(lunes, list(cobros = c(USD = 5e6), pagos = c(MXN = 90))), fin)
+  grepl("Cobros superan a pagos", x, fixed = TRUE) && grepl("Pagos superan a cobros", y, fixed = TRUE)
+})
 ok("una semana que cruza de mes", correo_rango(as.Date("2026-11-30"), as.Date("2026-12-04"), "es") == "30 de noviembre al 4 de diciembre")
 ok("sin historia de vencidos, el mosaico va sin flecha",
    !grepl("&#9650;|&#9660;", correo_lunes_html(modifyList(lunes, list(vencidos_delta = NA)), fin)))
