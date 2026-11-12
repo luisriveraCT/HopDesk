@@ -15,8 +15,10 @@
 # here that is NA ("can't tell"), so a write stops and the first file of a
 # new client could not be created. That is the safe side, but it would show
 # as "could not read ... before writing it". Checked for the app's prod key
-# on 2026-11-11 (a HEAD of a missing key answered 404); D's OIDC role still
-# to be confirmed by whoever holds its policy.
+# on 2026-11-11 (a HEAD of a missing key answered 404). D's OIDC role has it
+# too: Luis set it up on 2026-11-06 with List and Get on antiguedad-rds-prod
+# and Put only on */avisos/* (source: the configuration of the role
+# hopdesk-avisos-github, as the coordinator reported it on 2026-11-11).
 #
 #   A  s3_objeto_existe() alone, with stand-in HEADs (no aws.s3 patched):
 #      TRUE; FALSE + 404 -> FALSE; FALSE + 403 -> NA; FALSE without a status
