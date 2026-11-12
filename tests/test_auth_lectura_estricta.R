@@ -124,7 +124,8 @@ ok("create user: all_usuarios_rv() cancels its consumers when the read fails",
    grepl("req(!is.null(u))", tiers, fixed = TRUE))
 ok("user limit: the read is caught and stops with a notice",
    grepl("auth_load_usuarios(client_id = cid), error = function(e) NULL)", tiers, fixed = TRUE) &&
-     grepl("No se pudo leer usuarios del cliente.", tiers, fixed = TRUE))
+     # avisos-integrador: the notice's text lives in the dictionary, under this key
+     grepl('tr("niveles.clientes.aviso.error_leer_usuarios")', tiers, fixed = TRUE))
 
 restore()
 ok("aws.s3 is restored", identical(get("s3readRDS", ns), orig$s3readRDS) &&

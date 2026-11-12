@@ -527,7 +527,7 @@ tiers_bloqueadas_server <- function(id, shared, permitido, refresh, actividad) {
         # On S3's current list (CM13): only this user's lock is removed.
         modificar_emergency_lock(function(l) l[tolower(l$username) != username, , drop = FALSE])
         refresh(refresh() + 1L)
-        showNotification(paste0("Cuenta '", username, "' desbloqueada."),
+        showNotification(tr("niveles.bloqueadas.aviso.desbloqueada", usuario = username),
                          type = "message", duration = 4)
         log_action(user        = shared$current_user(),
                    module      = "seguridad",
@@ -539,7 +539,7 @@ tiers_bloqueadas_server <- function(id, shared, permitido, refresh, actividad) {
                    viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
         actividad(actividad() + 1L)
       }, error = function(e) {
-        showNotification(paste0("Error al desbloquear: ", e$message), type = "error")
+        showNotification(tr("niveles.bloqueadas.aviso.error_desbloquear", error = e$message), type = "error")
       })
     }, ignoreInit = TRUE)
 
@@ -1083,7 +1083,7 @@ tiersServer <- function(id, shared) {
         else data.frame()
         if (!nrow(active_rows)) {
           showNotification(
-            sprintf("Sin acceso a '%s'. Solicita un permiso en la pestaña 'Accesos de Salto'.", new_cid),
+            tr("niveles.accesos.aviso.sin_acceso", cliente = new_cid),
             type = "error", duration = 5
           )
           removeModal()
@@ -1241,17 +1241,17 @@ tiersServer <- function(id, shared) {
       tier         <- input$new_tier      %||% ""
 
       if (!nzchar(display_name)) {
-        showNotification("El nombre para mostrar es obligatorio.", type = "error"); return()
+        showNotification(tr("niveles.usuarios.aviso.nombre_mostrar_obligatorio"), type = "error"); return()
       }
       if (!nzchar(username) || !grepl("^[a-z0-9_]+$", username)) {
-        showNotification("Usuario inv\u00e1lido (solo letras min\u00fasculas, n\u00fameros y _).",
+        showNotification(tr("niveles.usuarios.aviso.usuario_invalido"),
                          type = "error"); return()
       }
       if (nchar(password) < 8) {
-        showNotification("La contrase\u00f1a debe tener al menos 8 caracteres.", type = "error"); return()
+        showNotification(tr("niveles.usuarios.aviso.contrasena_corta"), type = "error"); return()
       }
       if (!identical(password, password2)) {
-        showNotification("Las contrase\u00f1as no coinciden.", type = "error"); return()
+        showNotification(tr("niveles.usuarios.aviso.contrasenas_distintas"), type = "error"); return()
       }
       # ── HARD WALL: tier assignment gates ────────────────────────────────────────
       # Generic rank-based rule: a viewer may only assign a tier at or below
@@ -1261,12 +1261,12 @@ tiersServer <- function(id, shared) {
       # cannot bypass it. Anything not assignable is refused.
       viewer_is_staff <- isTRUE(shared$current_user_info()$is_staff)
       if (!tier_assignment_allowed(tier, current_tier(), viewer_is_staff)) {
-        showNotification("No puedes asignar ese nivel.", type = "error"); return()
+        showNotification(tr("niveles.usuarios.aviso.nivel_no_permitido"), type = "error"); return()
       }
 
       all_u <- all_usuarios_rv()
       if (!is.null(all_u) && username %in% tolower(all_u$username)) {
-        showNotification("Ya existe un usuario con ese nombre.", type = "error"); return()
+        showNotification(tr("niveles.usuarios.aviso.usuario_existe"), type = "error"); return()
       }
       # NA: the global index could not be read, so the name is not verified (CM18)
       disponible <- check_username_available(username)
@@ -1274,7 +1274,7 @@ tiersServer <- function(id, shared) {
         showNotification(tr("niveles.hdadmin.no_se_leyo"), type = "error", duration = 6); return()
       }
       if (!isTRUE(disponible)) {
-        showNotification("Este nombre de usuario ya está registrado en el sistema.",
+        showNotification(tr("niveles.usuarios.aviso.usuario_registrado"),
                          type = "error", duration = 6); return()
       }
 
@@ -1299,7 +1299,7 @@ tiersServer <- function(id, shared) {
       saved <- tryCatch({ auth_save_usuarios(updated, client_id = current_client_id(), base = all_u); TRUE },
                         error = function(e) { message("[TIERS] create user save failed: ", e$message); FALSE })
       if (!saved) {
-        showNotification("No se pudo guardar la cuenta. Verifica la conexión e intenta de nuevo.",
+        showNotification(tr("niveles.usuarios.aviso.no_guardada"),
                          type = "error", duration = 6)
         return()
       }
@@ -1319,7 +1319,7 @@ tiersServer <- function(id, shared) {
       shinyjs::hide("create_form_wrap")
       updateTextInput(session, "new_display_name", value = "")
       updateTextInput(session, "new_username",      value = "")
-      showNotification(paste0("Cuenta '\u200b", username, "' (", new_row$account_code, ") creada."),
+      showNotification(tr("niveles.usuarios.aviso.creada", usuario = username, codigo = as.character(new_row$account_code)),
                        type = "message", duration = 3)
       log_action(
         user        = shared$current_user(),
@@ -1355,8 +1355,7 @@ tiersServer <- function(id, shared) {
       sin_fila   <- all_u[all_u$username != uname, , drop = FALSE]
       if (length(usuarios_niveles_perdidos(all_u, sin_fila))) {
         showNotification(
-          paste0("No se puede eliminar '\u200b", uname,
-                 "': debe existir al menos una cuenta ", nivel_nombre(tier), " en el sistema."),
+          tr("niveles.usuarios.aviso.no_eliminar_ultima", usuario = uname, nivel = nivel_nombre(tier)),
           type = "error", duration = 5)
         return()
       }
@@ -1418,8 +1417,7 @@ tiersServer <- function(id, shared) {
       if (nivel_unico_vivo(target_tier)) {
         if (length(usuarios_niveles_perdidos(all_u, all_u[all_u$username != target_user, , drop = FALSE]))) {
           showNotification(
-            paste0("Eliminaci\u00f3n cancelada: debe existir al menos una cuenta ",
-                   nivel_nombre(target_tier), "."),
+            tr("niveles.usuarios.aviso.eliminacion_cancelada", nivel = nivel_nombre(target_tier)),
             type = "error", duration = 5)
           pending_del_user(NULL)
           return()
@@ -1437,7 +1435,7 @@ tiersServer <- function(id, shared) {
                                              base = all_usuarios_rv()); TRUE },
                         error = function(e) { message("[TIERS] delete save failed: ", e$message); FALSE })
       if (!saved) {
-        showNotification("No se pudo guardar el cambio. Verifica la conexión e intenta de nuevo.",
+        showNotification(tr("niveles.usuarios.aviso.cambio_no_guardado"),
                          type = "error", duration = 6)
         pending_del_user(NULL)
         return()
@@ -1453,7 +1451,7 @@ tiersServer <- function(id, shared) {
       .usuarios_local(all_u)
       pending_del_user(NULL)
       selected_user(NULL)
-      showNotification(paste0("Cuenta '\u200b", target_user, "' desactivada."),
+      showNotification(tr("niveles.usuarios.aviso.desactivada", usuario = target_user),
                        type = "message", duration = 4)
       log_action(
         user        = shared$current_user(),
@@ -1513,7 +1511,7 @@ tiersServer <- function(id, shared) {
       # rule as the create-user handler above; see comment there).
       viewer_is_staff <- isTRUE(shared$current_user_info()$is_staff)
       if (!tier_assignment_allowed(new_tier, current_tier(), viewer_is_staff)) {
-        showNotification("No puedes asignar ese nivel.", type = "error"); return()
+        showNotification(tr("niveles.usuarios.aviso.nivel_no_permitido"), type = "error"); return()
       }
 
       base_perms <- get_tier_defaults(new_tier)
@@ -1546,10 +1544,10 @@ tiersServer <- function(id, shared) {
       new_pass2 <- trimws(input$edit_password2 %||% "")
       if (nzchar(new_pass)) {
         if (nchar(new_pass) < 8) {
-          showNotification("La contraseña debe tener al menos 8 caracteres.", type = "error"); return()
+          showNotification(tr("niveles.usuarios.aviso.contrasena_corta"), type = "error"); return()
         }
         if (!identical(new_pass, new_pass2)) {
-          showNotification("Las contraseñas no coinciden.", type = "error"); return()
+          showNotification(tr("niveles.usuarios.aviso.contrasenas_distintas"), type = "error"); return()
         }
       }
 
@@ -1557,10 +1555,10 @@ tiersServer <- function(id, shared) {
       new_username <- tolower(trimws(input$edit_username %||% ""))
       original_username <- usuarios[idx, "username"]
       if (!nzchar(new_username) || !grepl("^[a-z0-9_]+$", new_username)) {
-        showNotification("Usuario inválido (solo letras minúsculas, números y _).", type = "error"); return()
+        showNotification(tr("niveles.usuarios.aviso.usuario_invalido"), type = "error"); return()
       }
       if (!identical(new_username, original_username) && new_username %in% tolower(all_u$username)) {
-        showNotification("Ya existe un usuario con ese nombre.", type = "error"); return()
+        showNotification(tr("niveles.usuarios.aviso.usuario_existe"), type = "error"); return()
       }
 
       if (length(full_idx) == 1) {
@@ -1585,8 +1583,7 @@ tiersServer <- function(id, shared) {
         perdidos <- usuarios_niveles_perdidos(all_usuarios_rv(), all_u)
         if (length(perdidos)) {
           showNotification(
-            paste0("No se puede guardar: debe existir al menos una cuenta ",
-                   nivel_nombre(perdidos[[1]]), " activa en este cliente."),
+            tr("niveles.usuarios.aviso.falta_nivel_activo", nivel = nivel_nombre(perdidos[[1]])),
             type = "error", duration = 5)
           return()
         }
@@ -1595,7 +1592,7 @@ tiersServer <- function(id, shared) {
                                                base = all_usuarios_rv()); TRUE },
                           error = function(e) { message("[TIERS] save perms failed: ", e$message); FALSE })
         if (!saved) {
-          showNotification("No se pudieron guardar los permisos. Verifica la conexión e intenta de nuevo.",
+          showNotification(tr("niveles.usuarios.aviso.permisos_no_guardados"),
                            type = "error", duration = 6)
           return()
         }
@@ -1604,7 +1601,7 @@ tiersServer <- function(id, shared) {
       }
 
       selected_user(NULL)
-      showNotification("Cambios guardados.", type = "message", duration = 2)
+      showNotification(tr("niveles.usuarios.aviso.cambios_guardados"), type = "message", duration = 2)
       log_action(
         user        = shared$current_user(),
         module      = "usuarios",
@@ -1735,16 +1732,16 @@ tiersServer <- function(id, shared) {
       username <- tolower(trimws(input$sec_lock_user  %||% ""))
       reason   <- trimws(input$sec_lock_reason %||% "")
       if (!nzchar(username)) {
-        showNotification("Especifica el nombre de usuario a bloquear.", type = "error"); return()
+        showNotification(tr("niveles.bloqueadas.aviso.falta_usuario"), type = "error"); return()
       }
       if (!nzchar(reason)) {
-        showNotification("Especifica el motivo del bloqueo.", type = "error"); return()
+        showNotification(tr("niveles.bloqueadas.aviso.falta_motivo"), type = "error"); return()
       }
       current_viewer <- shared$current_user() %||% "unknown"
       existing <- tryCatch(read_emergency_lock(), error = function(e) .schema_emergency_lock())
       if (is.null(existing)) existing <- .schema_emergency_lock()
       if (any(tolower(existing$username) == username)) {
-        showNotification(paste0("'", username, "' ya está bloqueado."), type = "warning"); return()
+        showNotification(tr("niveles.bloqueadas.aviso.ya_bloqueado", usuario = username), type = "warning"); return()
       }
       new_row <- data.frame(
         username  = username,
@@ -1760,12 +1757,12 @@ tiersServer <- function(id, shared) {
           .hd_admin_agregar(l, new_row)
         })
         if (ya) {
-          showNotification(paste0("'", username, "' ya está bloqueado."), type = "warning"); return()
+          showNotification(tr("niveles.bloqueadas.aviso.ya_bloqueado", usuario = username), type = "warning"); return()
         }
         security_lock_refresh(security_lock_refresh() + 1L)
         updateSelectizeInput(session, "sec_lock_user", selected = character(0))
         updateTextInput(session, "sec_lock_reason", value = "")
-        showNotification(paste0("Cuenta '", username, "' bloqueada."),
+        showNotification(tr("niveles.bloqueadas.aviso.bloqueada", usuario = username),
                          type = "message", duration = 4)
         log_action(user        = shared$current_user(),
                    module      = "seguridad",
@@ -1777,7 +1774,7 @@ tiersServer <- function(id, shared) {
                    viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
         activity_refresh(activity_refresh() + 1L)
       }, error = function(e) {
-        showNotification(paste0("Error al bloquear: ", e$message), type = "error")
+        showNotification(tr("niveles.bloqueadas.aviso.error_bloquear", error = e$message), type = "error")
       })
     }, ignoreInit = TRUE)
 
@@ -1885,7 +1882,7 @@ tiersServer <- function(id, shared) {
 
       solicitar_usuarios_sent(TRUE)
       showNotification(
-        "Tu solicitud fue enviada al equipo HopDesk. Te contactarán a la brevedad.",
+        tr("niveles.solicitudes.aviso.enviada_equipo"),
         type = "message", duration = 6
       )
       log_action(
@@ -1982,22 +1979,22 @@ tiersServer <- function(id, shared) {
       notes     <- trimws(input$req_notes %||% "")
 
       if (!nzchar(cid_prop) || grepl("[^a-z0-9_-]", cid_prop)) {
-        showNotification("El ID solo puede contener letras minúsculas, números, _ y -.",
+        showNotification(tr("niveles.solicitudes.aviso.id_invalido"),
                          type = "error"); return()
       }
       if (!nzchar(dname)) {
-        showNotification("El nombre del cliente es obligatorio.", type = "error"); return()
+        showNotification(tr("niveles.solicitudes.aviso.nombre_obligatorio"), type = "error"); return()
       }
 
       existing_reg <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
       if (any(existing_reg$client_id == cid_prop)) {
-        showNotification(paste0("El ID '", cid_prop, "' ya existe en el registro."),
+        showNotification(tr("niveles.solicitudes.aviso.id_existe", id = cid_prop),
                          type = "error"); return()
       }
       existing_req <- tryCatch(read_client_requests(), error = function(e) .schema_client_requests())
       if (any(existing_req$client_id_proposed == cid_prop &
               existing_req$status == "pending")) {
-        showNotification(paste0("Ya hay una solicitud pendiente para '", cid_prop, "'."),
+        showNotification(tr("niveles.solicitudes.aviso.pendiente", id = cid_prop),
                          type = "warning"); return()
       }
 
@@ -2027,16 +2024,16 @@ tiersServer <- function(id, shared) {
       }, error = function(e) { message("[CLIENTS] request save failed: ", e$message); FALSE })
 
       if (!saved) {
-        showNotification("Error al guardar la solicitud. Intenta de nuevo.", type = "error")
+        showNotification(tr("niveles.solicitudes.aviso.error_guardar"), type = "error")
         return()
       }
       if (dup) {
-        showNotification(paste0("Ya hay una solicitud pendiente para '", cid_prop, "'."),
+        showNotification(tr("niveles.solicitudes.aviso.pendiente", id = cid_prop),
                          type = "warning"); return()
       }
       removeModal()
       requests_refresh(requests_refresh() + 1L)
-      showNotification(paste0("Solicitud para '", cid_prop, "' enviada."),
+      showNotification(tr("niveles.solicitudes.aviso.enviada", id = cid_prop),
                        type = "message", duration = 4)
       log_action(user        = shared$current_user(),
                  module      = "clientes",
@@ -2119,7 +2116,7 @@ tiersServer <- function(id, shared) {
         message("[CLIENTS] initialize_client_folder failed: ", e$message); FALSE
       })
       if (!init_ok) {
-        showNotification("Error al inicializar el folder del cliente en S3.", type = "error")
+        showNotification(tr("niveles.solicitudes.aviso.error_folder"), type = "error")
         return()
       }
 
@@ -2142,7 +2139,7 @@ tiersServer <- function(id, shared) {
         }); TRUE
       }, error = function(e) { message("[CLIENTS] registry save failed: ", e$message); FALSE })
       if (!saved_reg) {
-        showNotification("Error al guardar el registro del cliente.", type = "error"); return()
+        showNotification(tr("niveles.solicitudes.aviso.error_registro"), type = "error"); return()
       }
 
       # 3. Update request status
@@ -2161,7 +2158,7 @@ tiersServer <- function(id, shared) {
       removeModal()
       clients_refresh(clients_refresh()   + 1L)
       requests_refresh(requests_refresh() + 1L)
-      showNotification(paste0("Cliente '", row$client_id_proposed, "' aprobado y activado."),
+      showNotification(tr("niveles.solicitudes.aviso.aprobado", id = row$client_id_proposed),
                        type = "message", duration = 5)
       # client_id is the NEW client (row$client_id_proposed), not "hd-admin" --
       # initialize_client_folder() above has already created that client's
@@ -2210,11 +2207,11 @@ tiersServer <- function(id, shared) {
       },
                         error = function(e) { message("[CLIENTS] reject save failed: ", e$message); FALSE })
       if (!saved) {
-        showNotification("Error al guardar el rechazo.", type = "error"); return()
+        showNotification(tr("niveles.solicitudes.aviso.error_rechazo"), type = "error"); return()
       }
       removeModal()
       requests_refresh(requests_refresh() + 1L)
-      showNotification(paste0("Solicitud para '", row$client_id_proposed, "' rechazada."),
+      showNotification(tr("niveles.solicitudes.aviso.rechazada", id = row$client_id_proposed),
                        type = "warning", duration = 4)
       log_action(user        = reviewer,
                  module      = "clientes",
@@ -2280,10 +2277,10 @@ tiersServer <- function(id, shared) {
       new_max     <- as.integer(input$edit_max_users  %||% 1L)
 
       if (!nzchar(new_dname)) {
-        showNotification("El nombre no puede estar vacío.", type = "error"); return()
+        showNotification(tr("niveles.clientes.aviso.nombre_vacio"), type = "error"); return()
       }
       if (is.na(new_max) || new_max < 1L) {
-        showNotification("El límite debe ser al menos 1.", type = "error"); return()
+        showNotification(tr("niveles.clientes.aviso.limite_minimo"), type = "error"); return()
       }
 
       registry <- tryCatch(read_client_registry(), error = function(e) NULL)
@@ -2418,13 +2415,13 @@ tiersServer <- function(id, shared) {
         keep_codes <- input$limit_confirm_keep %||% character(0)
         if (length(keep_codes) > new_max) {
           showNotification(
-            sprintf("Selecciona como máximo %d cuentas.", new_max), type = "error")
+            tr("niveles.clientes.aviso.maximo_cuentas", n = as.character(new_max)), type = "error")
           return()
         }
         usuarios_orig <- tryCatch(
           auth_load_usuarios(client_id = cid), error = function(e) NULL)
         if (is.null(usuarios_orig)) {
-          showNotification("No se pudo leer usuarios del cliente.", type = "error"); return()
+          showNotification(tr("niveles.clientes.aviso.error_leer_usuarios"), type = "error"); return()
         }
         usuarios_new  <- usuarios_orig
         active_codes  <- p$active_users$account_code
@@ -2444,8 +2441,7 @@ tiersServer <- function(id, shared) {
         perdidos <- usuarios_niveles_perdidos(usuarios_orig, usuarios_new)
         if (length(perdidos)) {
           showNotification(
-            paste0("Mant\u00e9n activa al menos una cuenta ", nivel_nombre(perdidos[[1]]),
-                   " del cliente. Ning\u00fan cambio guardado."),
+            tr("niveles.clientes.aviso.falta_nivel", nivel = nivel_nombre(perdidos[[1]])),
             type = "error", duration = 6)
           return()
         }
@@ -2453,7 +2449,7 @@ tiersServer <- function(id, shared) {
           auth_save_usuarios(usuarios_new, client_id = cid, base = usuarios_orig); TRUE
         }, error = function(e) { message("[CLIENTS] deact save failed: ", e$message); FALSE })
         if (!ok_users) {
-          showNotification("Error al desactivar usuarios. Ningún cambio guardado.",
+          showNotification(tr("niveles.clientes.aviso.error_desactivar"),
                            type = "error"); return()
         }
         # Per-user audit entries
@@ -2490,7 +2486,7 @@ tiersServer <- function(id, shared) {
           tryCatch(auth_save_usuarios(usuarios_orig, client_id = cid, base = usuarios_new),
                    error = function(e) message("[CLIENTS] rollback failed: ", e$message))
         }
-        showNotification("Cliente no encontrado en el registro.", type = "error"); return()
+        showNotification(tr("niveles.clientes.aviso.no_encontrado"), type = "error"); return()
       }
       if (!ok_reg) {
         # Rollback Step A: restore original usuarios
@@ -2498,7 +2494,7 @@ tiersServer <- function(id, shared) {
           tryCatch(auth_save_usuarios(usuarios_orig, client_id = cid, base = usuarios_new),
                    error = function(e) message("[CLIENTS] rollback failed: ", e$message))
         }
-        showNotification("Error al guardar el registro. Los cambios fueron revertidos.",
+        showNotification(tr("niveles.clientes.aviso.error_revertido"),
                          type = "error"); return()
       }
 
@@ -2535,7 +2531,7 @@ tiersServer <- function(id, shared) {
       clients_refresh(clients_refresh() + 1L)
       activity_refresh(activity_refresh() + 1L)
       showNotification(
-        sprintf("Límite de '%s' actualizado a %d usuarios.", p$display_name, new_max),
+        tr("niveles.clientes.aviso.limite_actualizado", cliente = p$display_name, n = as.character(new_max)),
         type = "message", duration = 4)
 
       # ── 3.7: notify all principal-tier accounts ───────────────────────────
@@ -2625,9 +2621,9 @@ tiersServer <- function(id, shared) {
       role  <- trimws(input$contact_role  %||% "")
       alerts <- isTRUE(input$contact_limit_alerts)
 
-      if (!nzchar(name))  { showNotification("El nombre es obligatorio.", type = "error"); return() }
-      if (!nzchar(email)) { showNotification("El email es obligatorio.", type = "error"); return() }
-      if (!grepl("@", email)) { showNotification("El email no parece válido.", type = "error"); return() }
+      if (!nzchar(name))  { showNotification(tr("niveles.contactos.aviso.nombre_obligatorio"), type = "error"); return() }
+      if (!nzchar(email)) { showNotification(tr("niveles.contactos.aviso.email_obligatorio"), type = "error"); return() }
+      if (!grepl("@", email)) { showNotification(tr("niveles.contactos.aviso.email_invalido"), type = "error"); return() }
 
       saved <- tryCatch({
         add_contact(cid, name = name, email = email, role = role,
@@ -2635,13 +2631,13 @@ tiersServer <- function(id, shared) {
       }, error = function(e) { message("[CONTACTS] add failed: ", e$message); FALSE })
 
       if (!saved) {
-        showNotification("Error al guardar el contacto.", type = "error"); return()
+        showNotification(tr("niveles.contactos.aviso.error_guardar"), type = "error"); return()
       }
       contacts_refresh(contacts_refresh() + 1L)
       updateTextInput(session, "contact_name",  value = "")
       updateTextInput(session, "contact_email", value = "")
       updateTextInput(session, "contact_role",  value = "")
-      showNotification(paste0("Contacto '", name, "' agregado."),
+      showNotification(tr("niveles.contactos.aviso.agregado", nombre = name),
                        type = "message", duration = 3)
       # client_id must be the TARGET client (cid), not "hd-admin" -- contacts
       # genuinely live at <cid>/contacts.rds (s3_key below already says so
@@ -2684,11 +2680,11 @@ tiersServer <- function(id, shared) {
       }
       contacts_refresh(contacts_refresh() + 1L)
       if (!res) {
-        showNotification(gsub("{nombre}", nombre, tr("niveles.contactos.ya_inactivo"), fixed = TRUE),
+        showNotification(tr("niveles.contactos.ya_inactivo", nombre = nombre),
                          type = "message", duration = 3)
         return()
       }
-      showNotification(gsub("{nombre}", nombre, tr("niveles.contactos.desactivado"), fixed = TRUE),
+      showNotification(tr("niveles.contactos.desactivado", nombre = nombre),
                        type = "warning", duration = 3)
       # Same fix as agregar_contacto above -- client_id is the target client.
       log_action(user        = shared$current_user(),
@@ -3037,7 +3033,7 @@ tiersServer <- function(id, shared) {
         # puede mandar uno arbitrario. Sin esta comprobación, un cliente podía
         # revocar la invitación de OTRO cliente con sólo conocer su token.
         if (!isTRUE(viewer_is_staff()) && !identical(inv_client, current_client_id())) {
-          showNotification("Esa invitación no pertenece a tu empresa.",
+          showNotification(tr("niveles.invitaciones.aviso.otra_empresa"),
                            type = "error", duration = 5)
           return()
         }
@@ -3079,7 +3075,7 @@ tiersServer <- function(id, shared) {
       res <- tryCatch(retry_all_queued_emails(),
                       error = function(e) list(sent = 0L, failed = 0L))
       showNotification(
-        sprintf("Reintento de cola: %d enviado(s), %d fallido(s).", res$sent, res$failed),
+        tr("niveles.cola.aviso.reintento", enviados = as.character(res$sent), fallidos = as.character(res$failed)),
         type = if (res$failed > 0L) "warning" else "message", duration = 6
       )
       invites_refresh(invites_refresh() + 1L)
@@ -3103,7 +3099,7 @@ tiersServer <- function(id, shared) {
       req(nzchar(queue_id %||% ""))
       ok <- tryCatch(retry_queued_email(queue_id), error = function(e) FALSE)
       showNotification(
-        if (ok) "Email enviado." else "Reintento fallido — revisa la clave API.",
+        if (ok) tr("niveles.cola.aviso.enviado") else tr("niveles.cola.aviso.reintento_fallido"),
         type = if (ok) "message" else "error", duration = 4
       )
       invites_refresh(invites_refresh() + 1L)
@@ -3184,7 +3180,7 @@ tiersServer <- function(id, shared) {
       if (!nrow(non_revoked)) {
         # Grant was explicitly revoked (or no record at all) — kick immediately
         showNotification(
-          sprintf("Tu acceso a '%s' fue revocado. Regresando al contexto de administración.", cid),
+          tr("niveles.accesos.aviso.revocado", cliente = cid),
           type = "error", duration = 8
         )
         hop_grace_start(NULL)
@@ -3197,14 +3193,14 @@ tiersServer <- function(id, shared) {
       if (is.null(grace)) {
         hop_grace_start(now)
         showNotification(
-          sprintf("Tu acceso a '%s' ha expirado. Tienes 30 minutos adicionales antes de ser regresado al área de administración.", cid),
+          tr("niveles.accesos.aviso.expirado", cliente = cid),
           type = "warning", duration = 15
         )
       } else {
         elapsed_mins <- as.numeric(difftime(now, grace, units = "mins"))
         if (elapsed_mins >= 30) {
           showNotification(
-            sprintf("Período de gracia terminado. Regresando desde '%s' al contexto de administración.", cid),
+            tr("niveles.accesos.aviso.gracia_terminada", cliente = cid),
             type = "error", duration = 8
           )
           hop_grace_start(NULL)
@@ -3551,7 +3547,7 @@ tiersServer <- function(id, shared) {
                               clients    = clients_sel,
                               message    = msg_txt)
         )
-        showNotification("Solicitud enviada.", type = "message", duration = 3)
+        showNotification(tr("niveles.accesos.aviso.solicitud_enviada"), type = "message", duration = 3)
         log_action(user        = me,
                    module      = "tiers",
                    action      = "hop_access_requested",
@@ -3564,7 +3560,7 @@ tiersServer <- function(id, shared) {
         activity_refresh(activity_refresh() + 1L)
         hop_refresh(hop_refresh() + 1L)
       }, error = function(e)
-        showNotification(paste("Error:", e$message), type = "error", duration = 5))
+        showNotification(tr("niveles.accesos.aviso.error", error = e$message), type = "error", duration = 5))
     }, ignoreInit = TRUE)
 
     # Records one client's decision on S3's current request (CM13), so two
@@ -3632,8 +3628,7 @@ tiersServer <- function(id, shared) {
         dec <- .hop_decidir(req_id, cid, clients_v, "approved")
         if (dec$all_done) .hop_aviso_resuelta(row, req_id, clients_v, dec$decisions)
         showNotification(
-          sprintf("Aprobado: %s → %s (%s).",
-                  row$requester_name %||% row$requester, cid, .dur_label(dur_secs)),
+          tr("niveles.accesos.aviso.aprobado", usuario = row$requester_name %||% row$requester, cliente = cid, duracion = .dur_label(dur_secs)),
           type = "message", duration = 3
         )
         # client_id is the granted client (cid), not "hd-admin" -- per Mouse's
@@ -3657,7 +3652,7 @@ tiersServer <- function(id, shared) {
         activity_refresh(activity_refresh() + 1L)
         hop_refresh(hop_refresh() + 1L)
       }, error = function(e)
-        showNotification(paste("Error al aprobar:", e$message), type = "error", duration = 5))
+        showNotification(tr("niveles.accesos.aviso.error_aprobar", error = e$message), type = "error", duration = 5))
     }, ignoreInit = TRUE)
 
     # Principal denies one client within a request
@@ -3679,7 +3674,7 @@ tiersServer <- function(id, shared) {
         req(cid %in% clients_v)
         dec <- .hop_decidir(req_id, cid, clients_v, "denied")
         if (dec$all_done) .hop_aviso_resuelta(row, req_id, clients_v, dec$decisions)
-        showNotification(sprintf("Denegado: %s → %s.", row$requester_name %||% row$requester, cid),
+        showNotification(tr("niveles.accesos.aviso.denegado", usuario = row$requester_name %||% row$requester, cliente = cid),
                          type = "warning", duration = 3)
         # Same reasoning as hop_access_approved above -- client_id = cid.
         log_action(user        = shared$current_user() %||% "",
@@ -3694,7 +3689,7 @@ tiersServer <- function(id, shared) {
         activity_refresh(activity_refresh() + 1L)
         hop_refresh(hop_refresh() + 1L)
       }, error = function(e)
-        showNotification(paste("Error al denegar:", e$message), type = "error", duration = 5))
+        showNotification(tr("niveles.accesos.aviso.error_denegar", error = e$message), type = "error", duration = 5))
     }, ignoreInit = TRUE)
 
     # Principal revokes an active grant
@@ -3719,7 +3714,7 @@ tiersServer <- function(id, shared) {
         grants <- modificar_hop_grants(function(g) { g$revoked[g$id == grant_id] <- TRUE; g })
         bump_sync_version("hop_grants_db", client_id = .HD_ADMIN_CID)
         shared$hop_grants_db(grants)
-        showNotification("Acceso revocado.", type = "warning", duration = 3)
+        showNotification(tr("niveles.accesos.aviso.acceso_revocado"), type = "warning", duration = 3)
         # Same reasoning as hop_access_approved above -- client_id = cid_v.
         log_action(user        = shared$current_user() %||% "",
                    module      = "tiers",
@@ -3733,7 +3728,7 @@ tiersServer <- function(id, shared) {
         activity_refresh(activity_refresh() + 1L)
         hop_refresh(hop_refresh() + 1L)
       }, error = function(e)
-        showNotification(paste("Error al revocar:", e$message), type = "error", duration = 5))
+        showNotification(tr("niveles.accesos.aviso.error_revocar", error = e$message), type = "error", duration = 5))
     }, ignoreInit = TRUE)
 
     # ── Direct grant: client list renderUI ───────────────────────────────────
@@ -3870,7 +3865,7 @@ tiersServer <- function(id, shared) {
       }))
 
       if (!length(to_grant)) {
-        showNotification("Sin clientes para conceder.", type = "warning", duration = 3)
+        showNotification(tr("niveles.accesos.aviso.sin_clientes"), type = "warning", duration = 3)
         return()
       }
 
@@ -3901,7 +3896,7 @@ tiersServer <- function(id, shared) {
           metadata     = list(grantee = grantee, clients = labels, granted_by = me)
         )
         showNotification(
-          sprintf("Acceso concedido a %s (%d cliente(s)).", grantee, length(to_grant)),
+          tr("niveles.accesos.aviso.concedido", usuario = grantee, n = as.character(length(to_grant))),
           type = "message", duration = 4
         )
         # Unlike hop_approve/hop_deny/hop_revoke (always exactly one target
@@ -3939,7 +3934,7 @@ tiersServer <- function(id, shared) {
         dg_selected(list())
         hop_refresh(hop_refresh() + 1L)
       }, error = function(e)
-        showNotification(paste("Error al conceder:", e$message), type = "error", duration = 5))
+        showNotification(tr("niveles.accesos.aviso.error_conceder", error = e$message), type = "error", duration = 5))
     }, ignoreInit = TRUE)
 
     # ── Notificaciones panel ──────────────────────────────────────────────────
@@ -4295,7 +4290,7 @@ tiersServer <- function(id, shared) {
         tier_config_locked(TRUE)
         tryCatch(shared$permisos_version(shared$permisos_version() + 1L), error = function(e) NULL)
         showNotification(
-          paste0("Configuración de «", TIER_META[[tk]], "» guardada."),
+          tr("niveles.config.aviso.guardada", nivel = TIER_META[[tk]]),
           type = "message", duration = 2)
         tryCatch(log_action(
           user        = shared$current_user() %||% "",
@@ -4308,7 +4303,7 @@ tiersServer <- function(id, shared) {
           viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
         ), error = function(e) NULL)
       }, error = function(e) {
-        showNotification(paste0("Error al guardar: ", e$message), type = "error")
+        showNotification(tr("niveles.config.aviso.error_guardar", error = e$message), type = "error")
       })
     })
 

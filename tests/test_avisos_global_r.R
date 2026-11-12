@@ -26,8 +26,9 @@ raiz <- Sys.getenv("AVISOS_RAIZ", ".")
 
 # The integrator's (avisos-sueltos, 2026-11-11). 10 and 75 then; one more each
 # since the detector also sees if/else messages (avisos-integrador). app.R
-# reached 0 and left (avisos-integrador 2/3).
-PENDIENTES <- c("R/tiers_module.R" = 76L)
+# reached 0 and left (avisos-integrador 2/3); tiers_module.R too (3/3). The
+# list is empty: every file in R/ and app.R is held to 0.
+PENDIENTES <- setNames(integer(0), character(0))
 
 archivos <- c(list.files(file.path(raiz, "R"), "\\.R$", recursive = TRUE), "app.R")
 archivos <- ifelse(archivos == "app.R", "app.R", file.path("R", archivos))
