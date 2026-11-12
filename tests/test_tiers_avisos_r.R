@@ -34,7 +34,7 @@ ok(sprintf("ningún aviso de tiers_module.R con texto fijo (quedan %d)", length(
 claves <- unlist(lapply(SECC, function(s) avisos_claves(F, paste0("niveles.", s, ".aviso."))))
 falta <- avisos_claves_faltan(claves)
 ok(sprintf("las %d claves niveles.<sección>.aviso.* existen en es y en", length(claves)),
-   { if (length(falta)) message("  faltan: ", paste(falta, collapse = ", ")); length(claves) == 70L && !length(falta) })
+   { if (length(falta)) message("  faltan: ", paste(falta, collapse = ", ")); length(claves) == 69L && !length(falta) })
 
 es <- function(k, ...) tr(k, ..., idioma = "es")
 u <- function(k, ...) es(paste0("niveles.usuarios.aviso.", k), ...)
@@ -51,7 +51,8 @@ iguales <- list(
   # Usuarios
   list(u("nombre_mostrar_obligatorio"), "El nombre para mostrar es obligatorio."),
   list(u("usuario_invalido"), "Usuario inválido (solo letras minúsculas, números y _)."),
-  list(u("contrasena_corta"), "La contraseña debe tener al menos 8 caracteres."),
+  # contrasena_corta left with T31: one password rule for every screen, from
+  # contrasena_error() (cuentas.error.*, tests/test_t31_validaciones.R).
   list(u("contrasenas_distintas"), "Las contraseñas no coinciden."),
   list(u("nivel_no_permitido"), "No puedes asignar ese nivel."),
   list(u("usuario_existe"), "Ya existe un usuario con ese nombre."),

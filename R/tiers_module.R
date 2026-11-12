@@ -1247,8 +1247,10 @@ tiersServer <- function(id, shared) {
         showNotification(tr("niveles.usuarios.aviso.usuario_invalido"),
                          type = "error"); return()
       }
-      if (nchar(password) < 8) {
-        showNotification(tr("niveles.usuarios.aviso.contrasena_corta"), type = "error"); return()
+      # The one password rule (T31): 8 to 128, a digit and a symbol.
+      err_pass <- contrasena_error(password)
+      if (!is.null(err_pass)) {
+        showNotification(tr(err_pass), type = "error"); return()
       }
       if (!identical(password, password2)) {
         showNotification(tr("niveles.usuarios.aviso.contrasenas_distintas"), type = "error"); return()
@@ -1543,8 +1545,10 @@ tiersServer <- function(id, shared) {
       new_pass  <- trimws(input$edit_password  %||% "")
       new_pass2 <- trimws(input$edit_password2 %||% "")
       if (nzchar(new_pass)) {
-        if (nchar(new_pass) < 8) {
-          showNotification(tr("niveles.usuarios.aviso.contrasena_corta"), type = "error"); return()
+        # The one password rule (T31): only a NEW password is checked.
+        err_pass <- contrasena_error(new_pass)
+        if (!is.null(err_pass)) {
+          showNotification(tr(err_pass), type = "error"); return()
         }
         if (!identical(new_pass, new_pass2)) {
           showNotification(tr("niveles.usuarios.aviso.contrasenas_distintas"), type = "error"); return()

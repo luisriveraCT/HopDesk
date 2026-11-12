@@ -3,7 +3,6 @@
   "niveles.usuarios.aviso.contrasena_actualizada": "Password updated. Welcome.",
   "niveles.usuarios.aviso.nombre_mostrar_obligatorio": "The display name is required.",
   "niveles.usuarios.aviso.usuario_invalido": "Invalid username (lowercase letters, digits and _ only).",
-  "niveles.usuarios.aviso.contrasena_corta": "The password must have at least 8 characters.",
   "niveles.usuarios.aviso.contrasenas_distintas": "The passwords do not match.",
   "niveles.usuarios.aviso.nivel_no_permitido": "You cannot assign that level.",
   "niveles.usuarios.aviso.usuario_existe": "A user with that name already exists.",

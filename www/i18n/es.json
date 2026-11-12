@@ -3,7 +3,6 @@
   "niveles.usuarios.aviso.contrasena_actualizada": "Contraseña actualizada. Bienvenido.",
   "niveles.usuarios.aviso.nombre_mostrar_obligatorio": "El nombre para mostrar es obligatorio.",
   "niveles.usuarios.aviso.usuario_invalido": "Usuario inválido (solo letras minúsculas, números y _).",
-  "niveles.usuarios.aviso.contrasena_corta": "La contraseña debe tener al menos 8 caracteres.",
   "niveles.usuarios.aviso.contrasenas_distintas": "Las contraseñas no coinciden.",
   "niveles.usuarios.aviso.nivel_no_permitido": "No puedes asignar ese nivel.",
   "niveles.usuarios.aviso.usuario_existe": "Ya existe un usuario con ese nombre.",
