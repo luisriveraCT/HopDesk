@@ -77,7 +77,7 @@ sites <- list(
   list(file = "R/ledger_module.R", anchor = "\\.dia_quitar <- function\\(keys\\)", occurrence = 1L,
        label = ".dia_quitar (a row's ✓)", window = 25),
   list(file = "R/ledger_module.R", anchor = "^\\.sync_staged <- function", occurrence = 1L, label = ".sync_staged (shared helper)", window = 20),
-  list(file = "R/search_module.R", anchor = 'action %in% c\\("stage_all", "stage_selected"\\)', occurrence = 1L, label = "handle_invoice_action stage_all/stage_selected", window = 50),
+  list(file = "R/search_module.R", anchor = 'action %in% c\\("stage_all", "stage_selected"\\)', occurrence = 1L, label = "handle_invoice_action stage_all/stage_selected", window = 80),   # T23 grew the block: the fresh read is 63 lines in
   list(file = "R/staging_browse_module.R", anchor = "observeEvent\\(input\\$ab_stage,", occurrence = 1L, label = "ab_stage (abono staging)", window = 50),
   list(file = "R/treasury_map_module.R", anchor = "observeEvent\\(input\\$send_to_agenda,", occurrence = 1L, label = "send_to_agenda", window = 10),
   list(file = "R/interco_module.R", anchor = "\\.ic_send_rows <- function", occurrence = 1L, label = ".ic_send_rows", window = 10),
