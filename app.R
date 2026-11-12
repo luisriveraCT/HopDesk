@@ -74,6 +74,11 @@ AP_CONFIG <- list(
   sap_endpoint = "PurchaseInvoices"
 )
 
+# Panorama (front B). Luis, 2026-11-10: Panorama is everyone's home screen.
+# Stays FALSE (the app opens on the Calendar) until he approves Panorama in
+# production; then this one line changes (B4).
+PANORAMA_ES_INICIO <- FALSE
+
 # ── UI ─────────────────────────────────────────────────────────────────────────
 ui <- bslib::page_navbar(
   title    = "HopDesk",
@@ -81,18 +86,23 @@ ui <- bslib::page_navbar(
                               primary = "#0A58CA"),
   fillable = TRUE,
   id       = "nav",
-  selected = "CAL",
+  selected = if (PANORAMA_ES_INICIO) "PAN" else "CAL",
   header   = tagList(
     shinyjs::useShinyjs(),
     app_styles(),
     app_scripts(),
     tags$link(rel = "stylesheet", type = "text/css", href = "cashflow_preview.css?v=6"),
+    # Brand tokens (navy, gold, Fraunces) and Panorama, each under its root class.
+    tags$link(rel = "stylesheet", type = "text/css", href = "hd_marca.css?v=1"),
+    tags$link(rel = "stylesheet", type = "text/css", href = "panorama.css?v=1"),
+    tags$script(src = "panorama.js?v=1"),
     # Hide shinymanager's default floating session/logout widget (uses .mfb-* classes)
     tags$style(HTML("[id*=shinymanager],[class*=shinymanager],[class*=mfb-]{display:none!important}")),
     # Hide GRUPO menu by default — server shows it only for dev / admin tier
     tags$style(HTML(".navbar .nav-link[data-value='GRUPO']{display:none!important}")),
     # In admin deployment: hide all financial tabs until a client context is jumped into
     if (IS_ADMIN_DEPLOYMENT) tags$style(HTML(paste0(
+      ".navbar .nav-link[data-value='PAN'],",
       ".navbar .nav-link[data-value='CAL'],",
       ".navbar .nav-link[data-value='VEN'],",
       ".navbar .nav-link[data-value='PH'],",
@@ -147,7 +157,7 @@ ui <- bslib::page_navbar(
           var navbar  = document.querySelector('nav.navbar');
           var rptWrap = document.getElementById('rpt-rpt_main_wrap');
           var rptFab  = document.getElementById('rpt-fab_root');
-          var noBar   = val === 'RPT' || val === 'TIERS' || val === 'EMP';
+          var noBar   = val === 'RPT' || val === 'TIERS' || val === 'EMP' || val === 'PAN';
           if (bar)     bar.style.display    = noBar ? 'none' : '';
           if (bar)     bar.classList.toggle('cb-mode-cal', val === 'CAL');
           if (navbar)  navbar.style.display = (val === 'RPT') ? 'none' : '';
@@ -268,6 +278,15 @@ ui <- bslib::page_navbar(
                    class = "notes-bar-btn")
     ),
     uiOutput("notes_panel")
+  ),
+
+  # Panorama (front B): every tier sees it; each user receives only the avisos
+  # meant for them (filtered on the server, R/avisos.R avisos_visibles()).
+  bslib::nav_panel(
+    title = tagList(icon("compass"), " ", tr("panorama.pestana")), value = "PAN",
+    div(class = "h-100 overflow-auto",
+      panoramaUI("pan")
+    )
   ),
 
   bslib::nav_panel(
@@ -1539,7 +1558,11 @@ server <- function(input, output, session) {
     group_logo_raw = reactive({ group_config_rv()$logo_raw }),
     group_logo_ext = reactive({ group_config_rv()$logo_ext %||% "png" }),
     cf_preview_open   = cf_preview_open,
-    cf_preview_prefill = cf_preview_prefill
+    cf_preview_prefill = cf_preview_prefill,
+    # Banxico FIX for Panorama's Cinta: list(valor, cambio_pct, fecha), or
+    # NULL when there is no figure (nothing is shown then). The connector is
+    # a separate task; it replaces this function, nothing else changes.
+    fx_fix            = function() NULL
   )
 
   # ── Cash Flow Preview toggle ─────────────────────────────────────────────────
@@ -1752,7 +1775,7 @@ server <- function(input, output, session) {
   # A tier with a `pestanas` list sees only those client tabs. Runs after the
   # admin-deployment rule below, and only ever hides.
   # A tab tied to a permission (REQ) is also hidden without it.
-  .TABS_CLIENTE <- c("CAL", "VEN", "PH", "BNC", "IC", "PSV", "REQ", "FC", "RPT")
+  .TABS_CLIENTE <- c("PAN", "CAL", "VEN", "PH", "BNC", "IC", "PSV", "REQ", "FC", "RPT")
   observe({
     lista <- nivel_pestanas(tier_efectivo())
     ocultas <- if (is.null(lista)) character() else setdiff(.TABS_CLIENTE, lista)
@@ -1779,7 +1802,7 @@ server <- function(input, output, session) {
   # Uses runjs with setProperty(...,'important') to override the initial CSS rule
   # that also uses !important — shinyjs::show/hide cannot beat !important stylesheets.
   if (IS_ADMIN_DEPLOYMENT) {
-    FINANCIAL_TABS <- c("CAL", "VEN", "PH", "BNC", "IC", "PSV", "REQ", "FC", "RPT")
+    FINANCIAL_TABS <- c("PAN", "CAL", "VEN", "PH", "BNC", "IC", "PSV", "REQ", "FC", "RPT")
 
     observe({
       tier <- tryCatch(shared$current_user_info()$tier, error = function(e) "")
@@ -2851,6 +2874,12 @@ server <- function(input, output, session) {
   shared$df_combined_AR <- ar_state$df_combined
   shared$df_combined_AP <- ap_state$df_combined
   cashflowPreviewServer("cfp", shared = shared)
+  # Panorama after df_combined_AR exists in `shared` (its Cobros de hoy card
+  # reads the Calendar's own CxC rows). Reads S3 only while its tab is open.
+  panoramaServer("pan", shared,
+                 activa = reactive(identical(input$nav, "PAN")),
+                 ir_a   = function(tab) updateNavbarPage(session, "nav", selected = tab),
+                 tz     = reactive(input$client_tz %||% "America/Mexico_City"))
   message(sprintf("[SERVER] ledger AP registered in %.2fs (session #%d)",
                   (proc.time() - t0_mod)[["elapsed"]], .sn))
   t0_mod <- proc.time()
