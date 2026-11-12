@@ -98,11 +98,19 @@ auth_save_usuarios(tabla(u("dev1", dev), u("ana"), u("beto")), client_id = "acme
 ok("without base: the table is written as given", identical(sort(s3()$username), c("ana", "beto", "dev1")))
 
 # 6. Every caller passes base
+# T31 moved two callers out of app.R and tiers_module.R: the activation and
+# Usuarios' "Nueva cuenta" save through guardar_cuenta_nueva()
+# (R/usuarios_cuentas.R), and the reset link saves in R/auth_reset.R.
+# USUARIOS_BASE_ARCHIVOS="a.R;b.R;..." reads other copies (contraprueba).
 fuente <- function(f) { x <- readLines(f, warn = FALSE); x[!grepl("^\\s*#", x)] }
-src <- paste(c(fuente("app.R"), fuente("R/tiers_module.R")), collapse = "\n")
+archivos <- c("app.R", "R/tiers_module.R", "R/usuarios_cuentas.R", "R/auth_reset.R")
+otros <- strsplit(Sys.getenv("USUARIOS_BASE_ARCHIVOS", ""), ";", fixed = TRUE)[[1]]
+if (length(otros)) archivos <- otros
+src <- paste(unlist(lapply(archivos, fuente)), collapse = "\n")
 llamadas <- regmatches(src, gregexpr("auth_save_usuarios\\((?:[^()]|\\((?:[^()]|\\([^()]*\\))*\\))*\\)", src, perl = TRUE))[[1]]
-ok(sprintf("all %d auth_save_usuarios() calls in app.R and tiers_module.R pass base", length(llamadas)),
-   length(llamadas) >= 7L && all(grepl("base = ", llamadas, fixed = TRUE)))
+ok(sprintf("all %d auth_save_usuarios() calls in app.R, tiers_module.R, usuarios_cuentas.R and auth_reset.R pass base",
+           length(llamadas)),
+   length(llamadas) >= 8L && all(grepl("base = ", llamadas, fixed = TRUE)))
 
 s3_memoria_restaurar()
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
