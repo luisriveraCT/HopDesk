@@ -117,8 +117,22 @@ directos <- unlist(lapply(setdiff(list.files("R", "\\.R$", full.names = TRUE, re
   x <- readLines(f, warn = FALSE, encoding = "UTF-8")
   if (any(grepl("avisos_agregar(", x[!grepl("^\\s*#", x)], fixed = TRUE))) f
 }))
-ok(!length(setdiff(directos, c("R/requisiciones_persistence.R", "R/requisiciones_module.R"))),
-   sprintf("S nadie llama avisos_agregar() directo para la actividad (%s)", paste(directos, collapse = ", ")))
+# Files that write avisos that are NOT team activity, with why. Team activity
+# always goes through avisos_actividad().
+# (Requisiciones was listed here for its comments and mentions, but it no
+# longer calls avisos_agregar(): the list must stay honest, checked below.)
+NO_ACTIVIDAD <- c(
+  "R/panorama_publicar_module.R"  = "what a person publishes in Panorama › Publicar (publicado / solicitud)")
+ok(!length(setdiff(directos, names(NO_ACTIVIDAD))),
+   sprintf("S nadie llama avisos_agregar() directo para la actividad (%s)",
+           paste(setdiff(directos, names(NO_ACTIVIDAD)), collapse = ", ")))
+ok(all(names(NO_ACTIVIDAD) %in% directos),
+   sprintf("S la lista de quien escribe avisos que no son actividad está al día (%s)",
+           paste(setdiff(names(NO_ACTIVIDAD), directos), collapse = ", ")))
+# Publicar writes only what a person publishes: never an automatic aviso.
+pub <- readLines("R/panorama_publicar_module.R", warn = FALSE, encoding = "UTF-8")
+ok(!any(grepl('tipo *= *"automatico"', pub)),
+   "S Publicar nunca escribe un aviso automático (eso es avisos_actividad())")
 
 # ── V: a hook never makes the action fail ────────────────────────────────────
 CID <- "acme"
