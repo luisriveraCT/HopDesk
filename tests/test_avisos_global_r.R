@@ -50,5 +50,13 @@ for (f in names(PENDIENTES)) {
   ok(sprintf("PENDIENTES %s: todavía tiene alguno (con 0 sale de la lista)", f), n > 0L)
 }
 
+# Validators' messages (errors$x <- "..."): not showNotification(), but the
+# person reads them just the same (fix/pasivos-asistente-fecha). None left.
+err_fijos <- vapply(archivos, function(f) length(avisos_errores_fijos(file.path(raiz, f))), integer(1))
+ok(sprintf("ningún validador pone texto fijo en su lista de errores (%d archivo(s) con alguno)", sum(err_fijos > 0L)),
+   { for (f in names(err_fijos)[err_fijos > 0L]) message("  ", f, ": ",
+       paste(utils::head(avisos_errores_fijos(file.path(raiz, f)), 3), collapse = " | "))
+     !any(err_fijos > 0L) })
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

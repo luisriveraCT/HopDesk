@@ -71,3 +71,29 @@ avisos_claves_n <- function(f, pre) {
 avisos_claves_faltan <- function(claves) claves[!vapply(claves, clave_en_es_y_en, logical(1))]
 
 avisos_distintos <- function(iguales) Filter(function(p) !identical(p[[1]], p[[2]]), iguales)
+
+# ── Added by fix/pasivos-asistente-fecha ─────────────────────────────────────
+#   avisos_errores_fijos(f)  fixed text put into an error list -- errors$x <-
+#                            "...", errors[["x"]] <- paste0("...", ...), any
+#                            list whose name has "err" -- which is how the
+#                            validators (pasivos_wizard_validate.R) give their
+#                            messages: avisos_fijos() never sees them, they are
+#                            not showNotification().
+avisos_errores_fijos <- function(f) {
+  es_lista_errores <- function(lhs) is.call(lhs) && as.character(lhs[[1]])[1] %in% c("$", "[[") &&
+    is.name(lhs[[2]]) && grepl("err", as.character(lhs[[2]]), ignore.case = TRUE)
+  fijos <- character(0)
+  recorrer <- function(x) {
+    if (!is.call(x)) return(invisible())
+    if (as.character(x[[1]])[1] %in% c("<-", "=") && length(x) == 3L && es_lista_errores(x[[2]])) {
+      m <- x[[3]]
+      if (.tiene_palabras(m) ||
+          (is.call(m) && as.character(m[[1]])[1] %in% c("paste", "paste0", "sprintf") &&
+           any(vapply(as.list(m)[-1], .tiene_palabras, logical(1)))))
+        fijos <<- c(fijos, paste(deparse(m, width.cutoff = 120L)[1]))
+    }
+    xs <- as.list(x); for (k in seq_along(xs)) if (is.call(xs[[k]])) recorrer(xs[[k]])
+  }
+  for (e in parse(f, keep.source = FALSE, encoding = "UTF-8")) recorrer(e)
+  fijos
+}
