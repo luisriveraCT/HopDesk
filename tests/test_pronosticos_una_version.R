@@ -40,14 +40,13 @@ ok("the five are defined once each, all in R/forecasting_resolve.R",
    length(donde) == 5L && all(donde == "R/forecasting_resolve.R"))
 ok("R/forecasting_service.R is gone", !file.exists("R/forecasting_service.R"))
 
-# Boot the app in a fresh R (offline: no AWS keys, a dead proxy) and report,
-# for every function that calls one of the five, the body it reaches.
-arrancar <- function(como) callr::r(function(raiz, como, FN) {
+# Boot the app in a fresh R and report, for every function that calls one of
+# the five, the body it reaches. The child inherits aislar_global.R's
+# environment: its own instance lock and no network (candado, 2026-11-11).
+source("tests/helpers/aislar_global.R")
+arrancar <- function(como) callr::r(function(raiz, como, FN, sin_red) {
   setwd(raiz); options(keep.source = FALSE)
-  for (v in c("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_DEFAULT_REGION", "HOPDESK_PRODUCTION"))
-    Sys.unsetenv(v)
-  Sys.setenv(http_proxy = "http://127.0.0.1:9", https_proxy = "http://127.0.0.1:9",
-             HTTP_PROXY = "http://127.0.0.1:9", HTTPS_PROXY = "http://127.0.0.1:9")
+  Sys.unsetenv("HOPDESK_PRODUCTION")
   if (como == "shinyapps") {
     # shiny:::shinyAppDir_appR, as shinyapps.io (and runApp) starts it.
     shared <- new.env(parent = globalenv())
@@ -59,6 +58,8 @@ arrancar <- function(como) callr::r(function(raiz, como, FN) {
     suppressMessages(suppressWarnings(source("app.R")))
     app_env <- globalenv(); shared <- globalenv()
   }
+  # Checked after global.R ran its readRenviron(): still no way out.
+  if (!sin_red()) stop("global.R se cargó con red hacia AWS")
   out <- list()
   for (env in unique(list(shared, globalenv()))) for (n in ls(env, all.names = TRUE)) {
     f <- get(n, env)
@@ -68,7 +69,7 @@ arrancar <- function(como) callr::r(function(raiz, como, FN) {
   }
   out[["app.R -> forecasting_set_estimate"]] <- deparse(body(get("forecasting_set_estimate", envir = app_env)))
   out
-}, args = list(raiz = normalizePath(".", winslash = "/"), como = como, FN = FN))
+}, args = list(raiz = normalizePath(".", winslash = "/"), como = como, FN = FN, sin_red = aislar_global_sin_red))
 
 ref <- new.env()
 for (e in parse("R/forecasting_resolve.R", keep.source = FALSE))

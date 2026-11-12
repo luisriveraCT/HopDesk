@@ -37,6 +37,10 @@ stopifnot(rol %in% c("principal", "hopdesk", "dev", "cliente"))
 .sin_llaves()
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
+  # Its own instance lock (LOCALAPPDATA of this process) and a dead proxy,
+  # before R/global.R loads: it used to take the instance__.lock every
+  # session shares (candado, 2026-11-11). aws.s3 is blocked below anyway.
+  source("tests/helpers/aislar_global.R", local = globalenv())
   source("tests/helpers/s3_memoria.R", local = globalenv())
 })
 local({
@@ -55,6 +59,7 @@ local({
   Sys.unsetenv("HOPDESK_PRODUCTION")
   shiny::loadSupport(raiz, renv = globalenv(), globalrenv = NULL)
 })
+stopifnot("global.R se cargó con red hacia AWS" = aislar_global_sin_red())
 .sin_llaves()
 Sys.setenv(S3_BUCKET = "fake-bucket", CLIENT_ID = "acme")
 Sys.unsetenv("HOPDESK_PRODUCTION")

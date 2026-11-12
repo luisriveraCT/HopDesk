@@ -5,7 +5,9 @@
 # Run with: source("tests/test_papelera_filtering.R")
 # =============================================================================
 
-# Load app dependencies without starting Shiny
+# Load app dependencies without starting Shiny. global.R loads whole: its own
+# instance lock and no network first (candado, 2026-11-11).
+source("tests/helpers/aislar_global.R")
 suppressMessages({
   if (!exists("S3_KEYS")) {
     source(file.path(dirname(getwd()), "Antiguedad_App", "R", "global.R"),
