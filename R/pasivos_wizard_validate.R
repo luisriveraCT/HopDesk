@@ -54,9 +54,14 @@ pasivos_wizard_validate_recurrencia <- function(draft) {
     if (is.na(monto) || monto <= 0)
       errors$amount_default <- "El monto debe ser mayor que cero."
 
-    fi <- draft$fecha_inicio %||% NA
-    if (is.na(fi))
-      errors$fecha_inicio <- "La fecha de inicio es obligatoria."
+    # fecha_valida() (CM22): NA, "" and a zero-length Date (a cleared
+    # dateInput) all say "missing" -- is.na() threw on the last one.
+    if (!fecha_valida(draft$fecha_inicio))
+      errors$fecha_inicio <- tr("tablas.pasivos.asistente.fecha_inicio")
+    # "Cada N días" counts from its anchor: without one the engine stopped
+    # generating, after the liability was already saved.
+    if (identical(rt, "interval_days") && !fecha_valida(draft$recurrence_params$anchor_date))
+      errors$anchor_date <- tr("tablas.pasivos.asistente.fecha_ancla")
   }
 
   if (identical(draft$categoria, "tarjeta")) {
@@ -117,9 +122,8 @@ pasivos_wizard_validate_terminos <- function(draft) {
   }
   # diaria: no dia_pago validation needed
 
-  fi <- draft$fecha_inicio %||% NA
-  if (is.na(fi))
-    errors$fecha_inicio <- "La fecha de inicio del contrato es obligatoria."
+  if (!fecha_valida(draft$fecha_inicio))
+    errors$fecha_inicio <- tr("tablas.pasivos.asistente.fecha_inicio_contrato")
 
   pg <- as.integer(draft$periodo_gracia %||% 0L)
   if (!is.na(pg) && pg < 0L)
@@ -153,6 +157,26 @@ pasivos_wizard_validate_terminos <- function(draft) {
   list(ok = length(errors) == 0L, errors = errors)
 }
 
+# Validate the "cargos" step (financiero): initial fees and the residual.
+# A fee with an amount needs its date -- with NA it became a provision with
+# no date (never in Calendario or Vencidos, no way to delete it). A fee row
+# with amount 0 is an empty row the user left: it is ignored. A residual
+# paid apart ("separate") needs its own date; without one the engine fell
+# back to the last payment's date without a word.
+pasivos_wizard_validate_cargos <- function(draft) {
+  errors <- list()
+  cargos <- draft$cargos_iniciales %||% list()
+  for (i in seq_along(cargos)) {
+    monto <- suppressWarnings(as.numeric(cargos[[i]]$monto %||% 0))
+    if (length(monto) == 1L && !is.na(monto) && monto != 0 && !fecha_valida(cargos[[i]]$fecha))
+      errors[[paste0("cargo_fecha_", i)]] <- tr("tablas.pasivos.asistente.cargo_fecha", n = as.character(i))
+  }
+  vr <- draft$valor_residual
+  if (!is.null(vr) && identical(vr$behavior, "separate") && !fecha_valida(vr$fecha))
+    errors$residual_fecha <- tr("tablas.pasivos.asistente.residual_fecha")
+  list(ok = length(errors) == 0L, errors = errors)
+}
+
 # Final validation pass — all required fields regardless of which step set them.
 pasivos_wizard_validate_final <- function(draft, empresa_choices = character()) {
   all_errors <- list()
@@ -172,6 +196,7 @@ pasivos_wizard_validate_final <- function(draft, empresa_choices = character()) 
   if (identical(cat_val, "financiero")) {
     v_ter <- pasivos_wizard_validate_terminos(draft)
     all_errors <- c(all_errors, v_ter$errors)
+    all_errors <- c(all_errors, pasivos_wizard_validate_cargos(draft)$errors)
   }
 
   list(ok = length(all_errors) == 0L, errors = all_errors)

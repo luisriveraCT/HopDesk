@@ -1405,6 +1405,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
       },
       recurrencia = pasivos_wizard_validate_recurrencia(wiz$draft)$errors,
       terminos    = pasivos_wizard_validate_terminos(wiz$draft)$errors,
+      cargos      = pasivos_wizard_validate_cargos(wiz$draft)$errors,
       list()
     )
     if (length(errs)) {
