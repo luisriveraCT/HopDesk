@@ -18,10 +18,17 @@
 .AVISOS_KEY       <- "avisos.rds"
 .PREFERENCIAS_KEY <- "preferencias.rds"
 AVISOS_TIPOS      <- c("publicado", "automatico", "personal")
+# What a person publishes (B, Luis 2026-11-12): each has its own tone and tag
+# in Panorama. A solicitud also goes to named people (Mis solicitudes). Rows
+# written before the column existed read as NA: a publicado with no clase is
+# a comunicado (avisos_clase()).
+AVISOS_CLASES     <- c("comunicado", "recordatorio", "reconocimiento", "solicitud")
 
 .schema_avisos <- function() tibble::tibble(
   id          = character(),
   tipo        = character(),
+  clase       = character(),   # AVISOS_CLASES; NA for automatic ones
+                               # (and for comments/mentions)
   titulo      = character(),
   cuerpo      = character(),
   severidad   = character(),   # info | atencion | urgente
@@ -129,6 +136,9 @@ avisos_agregar <- function(client_id, aviso, por = "sistema") {
   niveles <- intersect(niveles, niveles_todos())
   if (tipo == "publicado" && !length(niveles))
     stop("[avisos] un aviso publicado necesita al menos un nivel", call. = FALSE)
+  clase <- aviso$clase %||% (if (tipo == "publicado") "comunicado" else NA_character_)
+  if (!is.na(clase) && !clase %in% AVISOS_CLASES)
+    stop("[avisos] clase desconocida: ", clase, call. = FALSE)
   id_nuevo <- uuid::UUIDgenerate()
   id_final <- id_nuevo
   ahora <- .ahora()
@@ -152,8 +162,8 @@ avisos_agregar <- function(client_id, aviso, por = "sistema") {
       }
     }
     fila <- tibble::tibble(
-      id = id_nuevo, tipo = tipo,
-      titulo = aviso$titulo %||% "", cuerpo = aviso$cuerpo %||% "",
+      id = id_nuevo, tipo = tipo, clase = clase,
+      titulo =aviso$titulo %||% "", cuerpo = aviso$cuerpo %||% "",
       severidad = aviso$severidad %||% "info",
       niveles = .json(niveles), usuarios = .json(aviso$usuarios),
       permiso = aviso$permiso %||% NA_character_, clave = clave, contador = 1L,

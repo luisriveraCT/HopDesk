@@ -24,7 +24,10 @@ www/hdtable.*	T
 dev/hd_table_demo/*	T
 R/panorama_module.R	B
 R/panorama_publicar_module.R	B
+R/panorama_datos.R	B
 www/panorama.*	B
+www/hd_marca.css	B
+www/fonts/*	B
 R/avisos_alertas_module.R	C
 scripts/avisos_job.R	D
 scripts/adjuntos_compresion.R	D
