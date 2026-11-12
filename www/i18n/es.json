@@ -1533,5 +1533,18 @@
   "panorama.publicar.error.fecha_pasada": "La fecha ya pasó. Elige hoy o una fecha futura.",
   "panorama.publicar.error.fecha": "Un recordatorio o una solicitud necesita fecha límite.",
   "panorama.publicar.error.responsables": "Elige al menos a una persona para la solicitud.",
-  "panorama.publicar.error.niveles": "Elige al menos un nivel."
+  "panorama.publicar.error.niveles": "Elige al menos un nivel.",
+  "cuentas.error.usuario_obligatorio": "Escribe un nombre de usuario.",
+  "cuentas.error.usuario_correo": "El usuario no puede ser un correo.",
+  "cuentas.error.usuario_formato": "El usuario debe tener de 3 a 30 caracteres: letras minúsculas, números o _.",
+  "cuentas.error.usuario_ocupado": "Ese usuario ya existe. Prueba otro.",
+  "cuentas.error.nombre_obligatorio": "Escribe tu nombre.",
+  "cuentas.error.nombre_largo": "El nombre no puede pasar de 80 caracteres.",
+  "cuentas.error.puesto_obligatorio": "Escribe tu puesto.",
+  "cuentas.error.puesto_largo": "El puesto no puede pasar de 80 caracteres.",
+  "cuentas.error.caracteres": "Este campo tiene caracteres que no se permiten, como < > { }.",
+  "cuentas.error.correo_formato": "Escribe un correo válido.",
+  "cuentas.error.contrasena_regla": "La contraseña debe tener al menos 8 caracteres, un número y un símbolo.",
+  "cuentas.error.contrasena_larga": "La contraseña no puede pasar de 128 caracteres.",
+  "cuentas.error.contrasenas_distintas": "Las contraseñas no coinciden."
 }

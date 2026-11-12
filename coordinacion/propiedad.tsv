@@ -12,6 +12,8 @@ R/permisos.R	integrador
 R/avisos.R	integrador
 R/tiers_module.R	integrador
 R/tiers_tab_config.R	integrador
+R/usuarios_cuentas.R	integrador
+R/auth_reset.R	integrador
 R/pagar_hoy_module.R	integrador
 coordinacion/propiedad.tsv	integrador
 .githooks/*	integrador

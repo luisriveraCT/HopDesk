@@ -1533,5 +1533,18 @@
   "panorama.publicar.error.fecha_pasada": "That date has passed. Choose today or a later date.",
   "panorama.publicar.error.fecha": "A reminder or a request needs a deadline.",
   "panorama.publicar.error.responsables": "Choose at least one person for the request.",
-  "panorama.publicar.error.niveles": "Choose at least one tier."
+  "panorama.publicar.error.niveles": "Choose at least one tier.",
+  "cuentas.error.usuario_obligatorio": "Enter a user name.",
+  "cuentas.error.usuario_correo": "The user name cannot be an e-mail address.",
+  "cuentas.error.usuario_formato": "The user name must have 3 to 30 characters: lowercase letters, digits or _.",
+  "cuentas.error.usuario_ocupado": "That user name is taken. Try another one.",
+  "cuentas.error.nombre_obligatorio": "Enter your name.",
+  "cuentas.error.nombre_largo": "The name cannot be longer than 80 characters.",
+  "cuentas.error.puesto_obligatorio": "Enter your job title.",
+  "cuentas.error.puesto_largo": "The job title cannot be longer than 80 characters.",
+  "cuentas.error.caracteres": "This field has characters that are not allowed, such as < > { }.",
+  "cuentas.error.correo_formato": "Enter a valid e-mail address.",
+  "cuentas.error.contrasena_regla": "The password must have at least 8 characters, a digit and a symbol.",
+  "cuentas.error.contrasena_larga": "The password cannot be longer than 128 characters.",
+  "cuentas.error.contrasenas_distintas": "The passwords do not match."
 }
