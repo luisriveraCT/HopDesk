@@ -34,14 +34,22 @@ es   <- function(k, ...) tr(k, ..., idioma = "es")
 es_n <- function(k, n, ...) tr_n(k, as.character(n), ..., idioma = "es")
 revertidas <- function(sel) sprintf("Fechas de política revertidas para %d socio%s.",
                                     length(sel), if (length(sel) == 1L) "" else "s")
+# With no data loaded the count reads 0, not the word "NULL" (textos-codigo,
+# a change Luis asked for in the visible-text review: not the old text).
 columna_parte <- function(sap) paste0("Sin fechas: no se encontró la columna Parte en los datos SAP. ",
                                       "Revisa si ya cargaron (filas CxP: ",
-                                      if (!is.null(sap$AP)) nrow(sap$AP) else "NULL",
+                                      if (!is.null(sap$AP)) nrow(sap$AP) else 0L,
                                       ", filas CxC: ",
-                                      if (!is.null(sap$AR)) nrow(sap$AR) else "NULL", ").")
+                                      if (!is.null(sap$AR)) nrow(sap$AR) else 0L, ").")
 columna_parte_ahora <- function(sap) es("tablas.ajustes.aviso.sin_columna_parte",
-                                        ap = if (!is.null(sap$AP)) as.character(nrow(sap$AP)) else "NULL",
-                                        ar = if (!is.null(sap$AR)) as.character(nrow(sap$AR)) else "NULL")
+                                        ap = if (!is.null(sap$AP)) as.character(nrow(sap$AP)) else "0",
+                                        ar = if (!is.null(sap$AR)) as.character(nrow(sap$AR)) else "0")
+ok("sin datos SAP el conteo dice 0, no \"NULL\" (en el código del módulo)",
+   { cod <- paste(readLines("R/settings/settings_companies.R", warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+     # (the "NULL" of the [POLICY_APPLY] server log line is not visible text)
+     grepl('as.character(nrow(sap$AP)) else "0"', cod, fixed = TRUE) &&
+       grepl('as.character(nrow(sap$AR)) else "0"', cod, fixed = TRUE) &&
+       !grepl('as.character(nrow(sap$A[PR])) else "NULL"', cod) })
 sap1 <- list(AP = data.frame(x = seq_len(1500)), AR = NULL)
 sap_s <- paste0('"', paste(c("acme", "beta"), collapse = '","'), '"'); pp_s <- '"gamma"'
 iguales <- list(

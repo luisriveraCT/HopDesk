@@ -610,9 +610,9 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
     emp_str  <- paste(unique(new_rows$Empresa), collapse = ", ")
     total    <- sum(new_rows$Importe, na.rm = TRUE)
     cur_str  <- paste(unique(new_rows$Moneda), collapse = "/")
-    ledg_str <- if (all(new_rows$ledger == "AR")) "Cobros"
-                else if (all(new_rows$ledger == "AP")) "Pagos"
-                else "Agenda del día"
+    ledg_str <- if (all(new_rows$ledger == "AR")) tr("tablas.lupa.aviso.destino_cobros")
+                else if (all(new_rows$ledger == "AP")) tr("tablas.lupa.aviso.destino_pagos")
+                else tr("tablas.lupa.aviso.destino_agenda")
     showNotification(
       tr("tablas.lupa.aviso.enviadas", n = as.character(nrow(new_rows)), ledger = ledg_str, moneda = cur_str, total = fmt_money(total)),
       type = "message", duration = 4)

@@ -27,7 +27,7 @@ ok(sprintf("ningún aviso de search_module.R con texto fijo (quedan %d)", length
 
 claves <- avisos_claves(F, PRE)
 ok(sprintf("las %d claves %s* existen en es y en", length(claves), PRE),
-   length(claves) == 11L && all(vapply(claves, clave_en_es_y_en, logical(1))))
+   length(claves) == 14L && all(vapply(claves, clave_en_es_y_en, logical(1))))
 
 es <- function(k, ...) tr(paste0(PRE, k), ..., idioma = "es")
 n <- 1234L; err <- "sin red"; new_date <- as.Date("2026-11-30")
@@ -51,7 +51,11 @@ iguales <- list(
   list(es("sin_validas"), "No hay facturas válidas para agregar (se excluyeron provisiones)."),
   list(es("sin_documento"), "No se encontraron facturas con documento válido."),
   list(es("enviadas", n = as.character(n), ledger = ledg_str, moneda = cur_str, total = total),
-       paste0("✓ ", n, " factura(s) enviadas a ", ledg_str, " — ", cur_str, " ", total, ".")))
+       paste0("✓ ", n, " factura(s) enviadas a ", ledg_str, " — ", cur_str, " ", total, ".")),
+  # where the send went, in the same notice (textos-codigo: was fixed text in ledg_str)
+  list(es("destino_cobros"), "Cobros"),
+  list(es("destino_pagos"), "Pagos"),
+  list(es("destino_agenda"), "Agenda del día"))
 dif <- Filter(function(p) !identical(p[[1]], p[[2]]), iguales)
 ok(sprintf("el español de los %d avisos es idéntico al de antes", length(iguales)),
    { for (p in dif) message("  ahora: ", p[[1]], "\n  antes: ", p[[2]]); !length(dif) && length(iguales) == length(claves) })

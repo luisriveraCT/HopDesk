@@ -823,8 +823,9 @@ settings_companies_observer <- function(input, output, session, shared) {
       if (length(sap_partes_lc) == 0L) {
         showNotification(
           tr("tablas.ajustes.aviso.sin_columna_parte",
-             ap = if (!is.null(sap$AP)) as.character(nrow(sap$AP)) else "NULL",
-             ar = if (!is.null(sap$AR)) as.character(nrow(sap$AR)) else "NULL"),
+             # No data loaded is 0 rows, not the word "NULL" (textos-codigo)
+             ap = if (!is.null(sap$AP)) as.character(nrow(sap$AP)) else "0",
+             ar = if (!is.null(sap$AR)) as.character(nrow(sap$AR)) else "0"),
           type = "error", duration = 15
         )
       } else if (length(matched) == 0L) {
