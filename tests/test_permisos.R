@@ -16,7 +16,7 @@ test_that("Compras: requisiciones y provisiones sí; convertir, pagos, confirmar
   for (k in c("can_convert_provisiones", "can_register_payments", "can_confirm_payments",
               "can_manage_pasivos", "can_publish_panorama", "can_view_tiers"))
     expect_false(puede(c, k), info = k)
-  expect_identical(nivel_pestanas("compras"), c("CAL", "PSV", "REQ"))
+  expect_identical(nivel_pestanas("compras"), c("PAN", "CAL", "PSV", "REQ"))
 })
 
 test_that("Análisis queda de solo lectura en provisiones, pagos y pasivos", {

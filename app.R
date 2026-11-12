@@ -81,10 +81,9 @@ AP_CONFIG <- list(
   sap_endpoint = "PurchaseInvoices"
 )
 
-# Panorama (front B). Luis, 2026-11-10: Panorama is everyone's home screen.
-# Stays FALSE (the app opens on the Calendar) until he approves Panorama in
-# production; then this one line changes (B4).
-PANORAMA_ES_INICIO <- FALSE
+# Panorama (front B). Luis, 2026-11-10: Panorama is everyone's home screen;
+# he approved it on 2026-11-12 (B4). FALSE puts the Calendar back as home.
+PANORAMA_ES_INICIO <- TRUE
 
 # ── UI ─────────────────────────────────────────────────────────────────────────
 ui <- bslib::page_navbar(

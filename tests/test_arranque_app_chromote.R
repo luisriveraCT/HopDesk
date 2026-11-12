@@ -197,6 +197,16 @@ for (modo in modos) for (quien in quienes) {
   ok(paste(et, "the session is still connected"), conectado())
   e <- errores(); ok(paste(et, "no 'Warning: Error in' / 'Execution halted' in the R output"), !length(e)); mostrar(e)
 
+  # Panorama is every client tier's home screen (Luis, 2026-11-10; on since
+  # B4). Staff at home land on Grupo instead (app.R moves them there).
+  if (identical(quien, "cliente")) {
+    poll_until(function() identical(tryCatch(ev("(function(){ var a = document.querySelector('.navbar .nav-link.active');
+      return a ? a.getAttribute('data-value') : ''; })()"), error = function(x) ""), "PAN"), timeout_s = 30, interval_s = 1)
+    activa <- tryCatch(ev("(function(){ var a = document.querySelector('.navbar .nav-link.active');
+      return a ? a.getAttribute('data-value') : ''; })()"), error = function(x) "")
+    ok(sprintf("%s the client lands on Panorama (it is home)", et), identical(activa, "PAN"))
+  }
+
   # The server reveals the tabs a user may see after the overlay goes (GRUPO
   # for staff, app.R): give it a moment on a busy machine.
   poll_until(function() isTRUE(tryCatch(ev(sprintf("[%s].some(function(v){
