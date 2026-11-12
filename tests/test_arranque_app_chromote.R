@@ -89,7 +89,7 @@ carga_terminada <- function() dentro() && isTRUE(tryCatch(ev(
 pct <- function() tryCatch(ev("(document.getElementById('hld-pct')||{}).textContent || ''"), error = function(e) "?")
 mostrar <- function(lineas) if (length(lineas)) cat(paste0("      | ", utils::head(lineas, 8)), sep = "\n")
 
-PESTANAS <- c(CAL = "Calendario", VEN = "Vencidos", PH = "Agenda de Hoy", BNC = "Bancos", IC = "Intercompany",
+PESTANAS <- c(PAN = "Panorama", CAL = "Calendario", VEN = "Vencidos", PH = "Agenda de Hoy", BNC = "Bancos", IC = "Intercompany",
               PSV = "Pasivos", FC = "Pronósticos", RPT = "Reporte", GRUPO = "Grupo")
 tiempos <- list()
 

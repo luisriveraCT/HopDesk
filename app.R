@@ -43,6 +43,13 @@ source("R/tiers_module.R")
 source("R/empresas_module.R")
 source("R/interco_module.R")
 source("R/requisiciones_module.R")
+# Panorama (front B): its data, Publicar (with front C's Alertas del equipo),
+# and the screen. T15 sources app.R directly, so a module missing here is a
+# start-up failure there even when shinyapps' autoload would have found it.
+source("R/avisos_alertas_module.R")
+source("R/panorama_datos.R")
+source("R/panorama_publicar_module.R")
+source("R/panorama_module.R")
 source("R/staging_browse_module.R")
 source("R/pasivos_table_pivot.R")
 source("R/pasivos_table_styles.R")
