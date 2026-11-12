@@ -175,7 +175,8 @@ correo_hora <- function(t, idioma) {
     '<tr><td style="padding:9px 8px 9px 0;', td, '">', .cr_e(df$contraparte[i]), '</td>',
     '<td style="', td, '">', .cr_e(df$empresa[i]), '</td>',
     '<td style="', td, '">', .cr_e(correo_fecha(df$fecha[i], idioma, "corta")), '</td>',
-    '<td align="right" style="', td, ';font-weight:700">', .cr_e(correo_monto(df$monto[i], df$moneda[i], moneda_base)), '</td></tr>'),
+    '<td align="right" style="', td, ';font-weight:700">',
+    .cr_aprox(.cr_e(correo_monto(df$monto[i], df$moneda[i], moneda_base)), isTRUE(df$aprox[i])), '</td></tr>'),
     character(1))
   paste0(.cr_titulo_seccion(titulo),
          .cr_tabla(paste0('<tr style="color:', .cr_C$gris, ';font-size:11px;letter-spacing:.1em">',
@@ -215,11 +216,17 @@ correo_hora <- function(t, idioma) {
   '<table role="presentation" width="568" cellpadding="0" cellspacing="0" border="0" style="width:568px;max-width:100%;background:',
   .cr_C$papel, ';border-radius:18px;overflow:hidden">', cuerpo, '</table></td></tr></table></body></html>')
 
+# "≈ " before an approximate amount (a provision quoted in USD at today's
+# FIX, banxico-fix): it is never shown as an exact figure.
+.cr_aprox <- function(txt, aprox) paste0(ifelse(aprox, "&#8776; ", ""), txt)
+
 # Several currencies in one tile: the base one large, the rest below it.
-.cr_montos <- function(montos, moneda_base) {
+# `aprox`: the currencies whose total holds an approximate amount.
+.cr_montos <- function(montos, moneda_base, aprox = character()) {
   if (!length(montos)) return(.cr_e(correo_monto(0, moneda_base, moneda_base)))
   orden <- c(intersect(moneda_base, names(montos)), setdiff(names(montos), moneda_base))
-  txt <- vapply(orden, function(m) .cr_e(correo_monto(montos[[m]], m, moneda_base)), character(1))
+  txt <- vapply(orden, function(m) .cr_aprox(.cr_e(correo_monto(montos[[m]], m, moneda_base)), m %in% aprox),
+                character(1))
   if (length(txt) == 1) return(txt[[1]])
   paste0(txt[[1]], paste0('<div style="font-family:', .cr_SANS, ';font-size:13px;font-weight:700">',
                           txt[-1], '</div>', collapse = ""))
@@ -234,14 +241,26 @@ correo_hora <- function(t, idioma) {
 
 .cr_flecha <- function(delta) if (delta > 0) "&#9650;" else if (delta < 0) "&#9660;" else "&#8226;"
 
+# The "Para revisión" lines: each umbral alert, in the recipient's language.
+correo_revision <- function(alertas, idioma = "es") {
+  if (is.null(alertas) || !nrow(alertas)) return(character())
+  vapply(seq_len(nrow(alertas)), function(i)
+    tr(paste0("avisos.umbral.cxc_", alertas$direccion[i], ".titulo"), idioma = idioma,
+       empresa = alertas$empresa[i], moneda = alertas$moneda[i], pts = sprintf("%.1f", abs(alertas$delta[i]))),
+    character(1))
+}
+
 # ── Lunes · Panorama de la semana ────────────────────────────────────────────
 # `d`: list(
 #   lunes            Date of the Monday
 #   cobros, pagos    named numeric by moneda (expected this week)
 #   pasivos_n, pasivos  count and named numeric by moneda
 #   vencidos_pct, vencidos_delta   client-level CxC % past due and its Δ (pts; NA = no history)
-#   revision         character: "Para revisión" lines (umbral alerts, CxC)
-#   top_cobros, top_pagos   data frames (contraparte, empresa, fecha, monto, moneda)
+#   cobros_aprox, pagos_aprox  currencies whose total is approximate ("≈")
+#   revision         character: "Para revisión" lines; without it, they come
+#                    from `alertas` (umbral_evaluar()) in the recipient's language
+#   alertas          see revision
+#   top_cobros, top_pagos   data frames (contraparte, empresa, fecha, monto, moneda[, aprox])
 #   tambien          list of list(tipo = "pasivos"|"solicitud"|"comunicado", texto)
 #   datos_sap        POSIXct of the snapshot
 #   moneda_base      default "MXN"
@@ -261,8 +280,8 @@ correo_lunes_html <- function(d, dest) {
             else if (en_base(d$cobros) >= en_base(d$pagos)) .cr_t("avisos.correo.lunes.titulo.cobros", idioma)
             else .cr_t("avisos.correo.lunes.titulo.pagos", idioma)
   m <- list()
-  if (cxc) m <- c(m, list(.cr_mosaico(.cr_t("avisos.correo.lunes.mosaico.cobros", idioma), .cr_montos(d$cobros, base), "arena")))
-  m <- c(m, list(.cr_mosaico(.cr_t("avisos.correo.lunes.mosaico.pagos", idioma), .cr_montos(d$pagos, base), "marino")))
+  if (cxc) m <- c(m, list(.cr_mosaico(.cr_t("avisos.correo.lunes.mosaico.cobros", idioma), .cr_montos(d$cobros, base, d$cobros_aprox %||% character()), "arena")))
+  m <- c(m, list(.cr_mosaico(.cr_t("avisos.correo.lunes.mosaico.pagos", idioma), .cr_montos(d$pagos, base, d$pagos_aprox %||% character()), "marino")))
   m <- c(m, list(.cr_mosaico(.cr_t("avisos.correo.lunes.mosaico.pasivos", idioma),
                           .cr_t("avisos.correo.lunes.pasivos_valor", idioma, n = as.integer(d$pasivos_n %||% 0L),
                              monto = .cr_montos_linea(d$pasivos, base)),
@@ -276,11 +295,12 @@ correo_lunes_html <- function(d, dest) {
                     .cr_t("avisos.correo.pts", idioma, pts = .cr_pts(delta)), '</span>'))
     m <- c(m, list(.cr_mosaico(.cr_t("avisos.correo.lunes.mosaico.vencidos", idioma), val, "borde")))
   }
-  revision <- if (cxc && length(d$revision)) paste0(
+  lineas <- d$revision %||% correo_revision(d$alertas, idioma)
+  revision <- if (cxc && length(lineas)) paste0(
     '<tr><td style="padding:14px 30px 0">', .cr_tabla(paste0(
       '<tr><td style="padding:14px 16px;border-radius:14px;background:', .cr_C$revision, ';color:', .cr_C$revision_tinta,
       ';font-size:14px;line-height:1.5"><b>', .cr_t("avisos.correo.lunes.para_revision", idioma), '</b> ',
-      paste(.cr_e(d$revision), collapse = "<br>"), '</td></tr>')), '</td></tr>') else ""
+      paste(.cr_e(lineas), collapse = "<br>"), '</td></tr>')), '</td></tr>') else ""
   tambien <- d$tambien %||% list()
   tambien_html <- if (length(tambien)) paste0(
     .cr_titulo_seccion(.cr_t("avisos.correo.lunes.tambien", idioma), "20px 30px"),
