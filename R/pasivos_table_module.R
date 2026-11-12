@@ -285,6 +285,8 @@ pasivos_table_module_server <- function(id, shared) {
         notes = "manual orphan provision via Pasivos tab",
         client_id = shared$effective_client_id()
       ), error = function(e) NULL)
+      # C (Alertas del equipo): only after the save; never throws.
+      avisos_actividad(shared$effective_client_id(), "crear_provision", user, list(cuerpo = empresa))
 
       shiny::removeModal()
       shiny::showNotification(tr("tablas.pasivos.manual_creada"), type = "message", duration = 3)

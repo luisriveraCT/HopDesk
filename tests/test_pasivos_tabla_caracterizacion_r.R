@@ -35,6 +35,7 @@ source("tests/helpers/pasivos_tabla_adaptador.R")
 GUARDADAS <- new.env()
 PERMITIDO <- TRUE
 has_capability <- function(user, cap) PERMITIDO
+avisos_actividad <- function(...) invisible(TRUE)   # the manual provision's hook (C); avisos.R is not loaded here
 save_pasivos_provisions <- function(df, client_id, base = NULL) { GUARDADAS$df <- df; GUARDADAS$client_id <- client_id; invisible(TRUE) }
 bump_sync_version <- function(...) invisible(NULL)
 pasivos_log_audit <- function(...) invisible(NULL)

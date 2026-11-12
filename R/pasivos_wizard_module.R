@@ -394,6 +394,8 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
       notes       = "provisions not saved (S3 failed)",
       client_id   = shared$effective_client_id()
     ), error = function(e) NULL)
+    # C (P5): the liability itself is saved, so it is announced; never throws.
+    if (wiz$mode == "create") avisos_actividad(shared$effective_client_id(), "crear_pasivo", user, list(cuerpo = liab_row$nombre %||% liab_row$empresa))
     shiny::removeModal()
     shiny::showNotification(tr("tablas.pasivos.provisiones_no_guardadas"), type = "error", duration = 15)
     return(list(ok = TRUE))
@@ -421,6 +423,8 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
                           nrow(result$conflicts)),
     client_id   = shared$effective_client_id()
   ), error = function(e) NULL)
+  # C (Alertas del equipo): only on create, after the full save; never throws.
+  if (wiz$mode == "create") avisos_actividad(shared$effective_client_id(), "crear_pasivo", user, list(cuerpo = liab_row$nombre %||% liab_row$empresa))
 
   shiny::removeModal()
 

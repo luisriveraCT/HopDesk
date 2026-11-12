@@ -45,6 +45,7 @@ ok <- function(label, expr) {
 G <- new.env(); G$guardados <- 0L; G$falla <- FALSE
 PERMITIDO <- TRUE
 has_capability <- function(user, cap, empresa = NULL) PERMITIDO
+avisos_actividad <- function(...) invisible(TRUE)   # the manual provision's hook (C); avisos.R is not loaded here
 permiso_nombre <- function(p) p
 save_pasivos_provisions <- function(df, client_id, base = NULL) {
   if (isTRUE(G$falla)) stop("simulated S3 failure")

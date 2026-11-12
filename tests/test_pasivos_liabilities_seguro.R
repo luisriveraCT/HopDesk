@@ -75,6 +75,7 @@ ok(all(as.numeric(l$created_at) == as.numeric(CREADO)), "A6: a timestamp stored 
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 bumps <- character(); auditorias <- list(); avisos <- list()
 bump_sync_version <- function(name, client_id = NULL) bumps <<- c(bumps, name)
+avisos_actividad <- function(...) invisible(TRUE)   # the wizard's hook (C); avisos.R is not loaded here
 pasivos_log_audit <- function(...) { auditorias[[length(auditorias) + 1L]] <<- list(...); invisible(NULL) }
 trace("showNotification", where = asNamespace("shiny"), print = FALSE,
       tracer = quote(avisos[[length(avisos) + 1L]] <<- list(texto = paste(ui, collapse = ""), tipo = type[1])))

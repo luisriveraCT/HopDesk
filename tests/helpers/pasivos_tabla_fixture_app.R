@@ -23,6 +23,7 @@ assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 source("tests/helpers/pasivos_datos_prueba.R")
 
 has_capability <- function(user, cap) TRUE
+avisos_actividad <- function(...) invisible(TRUE)   # the manual provision's hook (C); avisos.R is not loaded here
 save_pasivos_provisions <- function(df, client_id, base = NULL) invisible(TRUE)
 bump_sync_version <- function(...) invisible(NULL)
 pasivos_log_audit <- function(...) invisible(NULL)

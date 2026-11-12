@@ -655,6 +655,8 @@ setup_pasivos_module <- function(input, output, session, shared) {
       notes     = "manual orphan provision via Agregar modal",
       client_id = shared$effective_client_id()
     ), error = function(e) NULL)
+    # C (Alertas del equipo): only after the save; never throws.
+    avisos_actividad(shared$effective_client_id(), "crear_provision", user, list(cuerpo = empresa))
 
     # Refresh the shared reactive so the AP calendar picks up the new provision.
     tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)

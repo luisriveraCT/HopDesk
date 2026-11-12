@@ -33,6 +33,8 @@ for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "
   suppressMessages(sys.source(file.path(raiz, f), envir = globalenv()))
 assign(".i18n_dir", file.path(raiz, "www", "i18n"), envir = globalenv())
 assign("bump_sync_version", function(...) invisible(NULL), envir = globalenv())
+# The wizard's Alertas del equipo hook (C); avisos.R is not loaded here.
+assign("avisos_actividad", function(...) invisible(TRUE), envir = globalenv())
 assign("pasivos_log_audit", function(...) invisible(NULL), envir = globalenv())
 SIN_PERMISO <- identical(Sys.getenv("PASIVOS_SIN_PERMISO"), "1")
 assign("has_capability", function(user, cap) !SIN_PERMISO, envir = globalenv())
