@@ -46,7 +46,9 @@ for (e in parse(text = app, keep.source = FALSE))
 URL_SEARCH <- ""
 pedidos <- list(); aplicados <- list(); resolver_ok <- TRUE
 reset_solicitar <- function(correo, ...) { pedidos[[length(pedidos) + 1L]] <<- correo; list(motivo = "x") }
-reset_resolver <- function(token, ...) if (isTRUE(resolver_ok) && identical(token, TOKEN)) data.frame(username = "ana") else NULL
+resoluciones <- 0L   # each call logs (and counts toward the alert) in the real one
+reset_resolver <- function(token, ...) { resoluciones <<- resoluciones + 1L
+  if (isTRUE(resolver_ok) && identical(token, TOKEN)) data.frame(username = "ana") else NULL }
 respuesta_aplicar <- list(ok = TRUE)
 reset_aplicar <- function(token, contrasena, confirmar, ...) {
   aplicados[[length(aplicados) + 1L]] <<- list(token = token, pw = contrasena); respuesta_aplicar }
@@ -112,6 +114,14 @@ for (t in c(strrep("cd", 32), "<script>alert(1)</script>", "' OR 1=1 --", strrep
          grepl("history.replaceState", h, fixed = TRUE) && !grepl("reset_pw_new", h, fixed = TRUE))
   })
 ok("reset: todos los enlaces inválidos se ven igual", length(unique(invalidos)) == 1L)
+# The integrator's review: the page re-renders (here: reset_hecho flips and
+# back), and each render used to resolve -- and log -- the link again.
+URL_SEARCH <- paste0("?reset=", strrep("cd", 32)); resoluciones <- 0L
+testServer(servidor, { session$flushReact(); html_de(session)
+  for (k in 1:3) { reset_hecho(TRUE); session$flushReact(); reset_hecho(FALSE); session$flushReact(); html_de(session) }
+  ok("reset: el enlace se resuelve (y se registra) una sola vez por sesión, aunque la página se pinte de nuevo",
+     resoluciones <= 1L && grepl(tr("cuentas.reset.enlace_invalido"), html_de(session), fixed = TRUE))
+})
 
 # ── 3. ?invite= ──────────────────────────────────────────────────────────────
 correr("?invite=tok_invite", function(session, input) {

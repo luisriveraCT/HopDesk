@@ -84,6 +84,14 @@ ok("... el usuario queda reservado en el índice global",
    any(indice()$username == "mjnunez" & indice()$active & indice()$home_folder == "acme"))
 ok("... y la invitación queda usada", identical(inv_estado(inv$token), "accepted"))
 
+# The integrator's review: one invitation, two tabs. The second activation
+# finds the invitation already taken and saves nothing.
+r2 <- activar_invitacion(inv, con(usuario = "otra_pestana"))
+u2 <- get(K_U, envir = .mem)
+ok("una invitación ya usada (otra pestaña) no crea una segunda cuenta",
+   !isTRUE(r2$ok) && identical(r2$errores, list(invitacion = "cuentas.activacion.enlace_ya_no")) &&
+     !any(u2$username == "otra_pestana") && nrow(u2) == nrow(u))
+
 # ── 2. Field errors ──────────────────────────────────────────────────────────
 inv <- reiniciar()
 r <- activar_invitacion(inv, list(nombre = "", puesto = "  ", usuario = "a b", contrasena = "corta",
@@ -117,10 +125,13 @@ inv <- reiniciar(); .mem_falla <- K_U; antes <- .mem_escrituras
 r <- tryCatch(activar_invitacion(inv, buenos), error = function(e) e)
 ok("si no se leen los usuarios del cliente: error y nada escrito",
    inherits(r, "error") && .mem_escrituras == antes)
-inv <- reiniciar(); .mem_falla <- K_I; antes <- .mem_escrituras
+inv <- reiniciar(); .mem_falla <- K_I; idx_antes <- get(K_I, envir = .mem)
 r <- tryCatch(activar_invitacion(inv, buenos), error = function(e) e)
-ok("si no se lee el índice: error (nunca 'libre') y nada escrito",
-   inherits(r, "error") && !inherits(r, "usuario_ocupado") && .mem_escrituras == antes && nada_guardado())
+# The invitation is taken and given back (two writes to pending_invites);
+# what must hold: no account, the index untouched, the invitation usable.
+ok("si no se lee el índice: error (nunca 'libre'), ninguna cuenta, índice intacto, invitación pendiente",
+   inherits(r, "error") && !inherits(r, "usuario_ocupado") && nada_guardado() &&
+     identical(get(K_I, envir = .mem), idx_antes) && identical(inv_estado(inv$token), "pending"))
 inv <- reiniciar(); .mem_falla_escritura <- K_U
 r <- tryCatch(activar_invitacion(inv, buenos), error = function(e) e)
 ok("si falla el guardado: error, el usuario se libera y la invitación sigue pendiente",

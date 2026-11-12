@@ -197,13 +197,41 @@ activar_invitacion <- function(invite, campos) {
     requires_password_change = FALSE, puesto = texto_limpio(campos$puesto),
     password_changed_at = ahora, activo = TRUE, created_at = ahora, last_login = NA_character_,
     deleted = FALSE, deleted_at = NA_character_, stringsAsFactors = FALSE)
+  # The invitation is taken FIRST, only if it is still pending, inside one
+  # change of pending_invites (the integrator's review): two tabs, or a
+  # retry after a failure, can no longer make two accounts from one
+  # invitation. It is given back if the account is not saved.
+  if (!.tomar_invitacion(invite$token))
+    return(list(ok = FALSE, errores = list(invitacion = "cuentas.activacion.enlace_ya_no")))
   r <- tryCatch(guardar_cuenta_nueva(usuarios, fila, cid, ocupados = .usuarios_en_credenciales()),
-                usuario_ocupado = function(e) e)
-  if (inherits(r, "usuario_ocupado"))
+                usuario_ocupado = function(e) e,
+                error = function(e) { .devolver_invitacion(invite$token); stop(e) })
+  if (inherits(r, "usuario_ocupado")) {
+    .devolver_invitacion(invite$token)
     return(list(ok = FALSE, errores = list(usuario = "cuentas.error.usuario_ocupado")))
-  accept_invite(invite$token)
+  }
   list(ok = TRUE, username = fila$username, nombre = fila$display_name, account_code = fila$account_code)
 }
+
+# pending -> accepted on S3's current table; FALSE if it was not pending.
+.tomar_invitacion <- function(token) {
+  tomada <- FALSE
+  modificar_pending_invites(function(inv) {
+    i <- which(inv$token == token & inv$status %in% "pending")
+    if (!length(i)) return(inv)
+    inv$status[i[1]] <- "accepted"
+    inv$accepted_at[i[1]] <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+    tomada <<- TRUE
+    inv
+  })
+  tomada
+}
+.devolver_invitacion <- function(token)
+  tryCatch(modificar_pending_invites(function(inv) {
+    i <- which(inv$token == token & inv$status %in% "accepted")
+    if (length(i)) { inv$status[i[1]] <- "pending"; inv$accepted_at[i[1]] <- NA_character_ }
+    inv
+  }), error = function(e) message("[INVITE] could not give the invitation back: ", conditionMessage(e)))
 
 # A dictionary sentence with some values in bold, every piece escaped:
 # tr_negritas("cuentas.activacion.saludo", nombre = x, cliente = y) gives

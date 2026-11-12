@@ -876,6 +876,7 @@ server <- function(input, output, session) {
   # ── The mailed link (?reset=<token>) ─────────────────────────────────────
   # An expired, used, unknown or malformed token all read the same.
   reset_hecho <- reactiveVal(FALSE)
+  .reset_vigente <- NULL   # TRUE / FALSE once the link was resolved (once per session)
   output$reset_error <- renderUI(NULL)
   .pagina_reset <- function() {
     if (isTRUE(reset_hecho())) return(tagList(
@@ -883,7 +884,11 @@ server <- function(input, output, session) {
       tags$p(class = "hd-activate-lead", tr("cuentas.reset.nota_hecho")),
       tags$a(href = "./", class = "btn btn-primary mt-2", tr("cuentas.activacion.ir")),
       .sin_token_en_barra()))
-    if (is.null(reset_resolver(isolate(reset_token_rv())))) return(tagList(
+    # Resolved once per session: every re-render would log another
+    # "enlace_invalido" and count toward the 5-in-15-minutes alert.
+    if (is.null(.reset_vigente))
+      .reset_vigente <<- !is.null(reset_resolver(isolate(reset_token_rv())))
+    if (!.reset_vigente) return(tagList(
       .titulo_acceso("cuentas.activacion.invalido_titulo"),
       tags$p(class = "hd-activate-lead", tr("cuentas.reset.enlace_invalido")),
       tags$a(href = "./?olvide=1", class = "btn btn-primary mt-2", tr("cuentas.reset.pedir_otro")),
@@ -1014,6 +1019,9 @@ server <- function(input, output, session) {
         nombre = input$invite_nombre, puesto = input$invite_puesto, usuario = input$invite_usuario,
         contrasena = input$invite_pw_new, confirmar = input$invite_pw_conf))
       invite_mostrar_errores(res$errores %||% list())
+      # Taken meanwhile (another tab, a retry): the message under the button.
+      if (!is.null(res$errores$invitacion))
+        output$invite_pw_error <- renderUI(tags$p(class = "text-danger small mt-1", tr(res$errores$invitacion)))
       if (!isTRUE(res$ok)) return()
       username <- res$username
       tryCatch(log_action(user = username, module = "auth", action = "activacion_usuario",
