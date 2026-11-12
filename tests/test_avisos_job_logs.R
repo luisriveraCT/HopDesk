@@ -29,7 +29,7 @@ IMPRIME <- "\\b(cat|print|message|writeLines|warning|printf|str|show)\\s*\\("
 job <- codigo("scripts/avisos_job.R")
 salidas <- trimws(job[grepl(IMPRIME, job)])
 ok(sprintf("avisos_job.R solo imprime el log (%s)", paste(salidas, collapse = " | ")),
-   setequal(salidas, c('lineas <- tryCatch(job_correr(), error = function(e) { cat("job_no_arranco=1\\n"); quit(status = 1L) })',
+   setequal(salidas, c('error = function(e) { cat("job_no_arranco=1\\n"); quit(status = 1L) })',
                        'cat(lineas, sep = "\\n")')))
 for (f in c("R/avisos_umbrales.R", "R/avisos_correos.R", "R/avisos_datos.R", "R/avisos_logros.R")) {
   x <- codigo(f)
@@ -84,9 +84,17 @@ env <- c(AVISOS_MODO = "lunes", S3_BUCKET = "hopdesk-prueba-no-existe", AWS_ACCE
          HOPDESK_APP_URL = "https://ejemplo.invalid")
 viejo <- Sys.getenv(names(env), unset = NA); do.call(Sys.setenv, as.list(env))
 salida <- suppressWarnings(system2(rscript, c("--vanilla", "scripts/avisos_job.R"), stdout = TRUE, stderr = TRUE))
+# Loading fails: the same script run from an empty folder, where R/global.R
+# and the app's files do not exist (as a missing file or a failed library()).
+vacia <- tempfile("job_sin_codigo"); dir.create(vacia)
+script <- normalizePath("scripts/avisos_job.R")
+salida2 <- local({ antes <- setwd(vacia); on.exit(setwd(antes))
+  suppressWarnings(system2(rscript, c("--vanilla", shQuote(script)), stdout = TRUE, stderr = TRUE)) })
 for (k in names(viejo)) if (is.na(viejo[[k]])) Sys.unsetenv(k) else do.call(Sys.setenv, stats::setNames(list(viejo[[k]]), k))
 ok(sprintf("sin S3, imprime solo job_no_arranco=1 y sale con error (%s)", paste(salida, collapse = " | ")),
    identical(as.character(salida), "job_no_arranco=1") && identical(attr(salida, "status"), 1L))
+ok(sprintf("si la carga falla (falta un archivo), imprime solo job_no_arranco=1 (%s)", paste(salida2, collapse = " | ")),
+   identical(as.character(salida2), "job_no_arranco=1") && identical(attr(salida2, "status"), 1L))
 
 cat(sprintf("\n%d passed, %d failed\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

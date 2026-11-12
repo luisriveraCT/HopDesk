@@ -206,9 +206,11 @@ job_correr <- function(modo = Sys.getenv("AVISOS_MODO"), prueba = !identical(tol
   job_log()
 }
 
+# Loading is inside the same guard: a failed library() or sys.source() would
+# otherwise print its error (and a package's startup warnings) to the log.
 if (sys.nframe() == 0L) {
-  job_cargar()
-  lineas <- tryCatch(job_correr(), error = function(e) { cat("job_no_arranco=1\n"); quit(status = 1L) })
+  lineas <- tryCatch(suppressWarnings(suppressMessages({ job_cargar(); job_correr() })),
+                     error = function(e) { cat("job_no_arranco=1\n"); quit(status = 1L) })
   cat(lineas, sep = "\n")
   if (.job$cuenta[["error_cliente"]] > 0L || .job$cuenta[["fallido"]] > 0L) quit(status = 1L)
 }
