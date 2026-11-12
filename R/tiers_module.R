@@ -111,6 +111,10 @@ tiersUI <- function(id) {
                                 placeholder = "Ej: tesoreria")
                     )
                   ),
+                  # T31: job title, required for every new account.
+                  fluidRow(
+                    column(6, textInput(ns("new_puesto"), tr("cuentas.usuarios.puesto")))
+                  ),
                   fluidRow(
                     column(6, passwordInput(ns("new_password"),  "Contraseña")),
                     column(6, passwordInput(ns("new_password2"), "Confirmar contraseña"))
@@ -301,12 +305,21 @@ tiersUI <- function(id) {
     div(
       class = "card-body p-3",
       tags$h6(class = "fw-semibold mb-2 small text-muted text-uppercase", "Datos del usuario"),
+      # T31: the user name is shown, not edited (no input: the server never
+      # reads one). Job title and e-mail are edited here, next to the name.
       div(class = "mb-2",
-          textInput(ns("edit_username"), "Usuario",
-                    value = row$username %||% "", width = "100%")),
+          tags$label(class = "form-label", tr("cuentas.usuarios.usuario")),
+          tags$div(class = "form-control-plaintext fw-semibold", row$username %||% ""),
+          tags$small(class = "text-muted", tr("cuentas.usuarios.usuario_fijo"))),
       div(class = "mb-2",
-          textInput(ns("edit_display_name"), "Nombre para mostrar",
+          textInput(ns("edit_display_name"), tr("cuentas.usuarios.nombre"),
                     value = row$display_name %||% "", width = "100%")),
+      div(class = "mb-2",
+          textInput(ns("edit_puesto"), tr("cuentas.usuarios.puesto"),
+                    value = if (is.na(row$puesto %||% NA)) "" else row$puesto, width = "100%")),
+      div(class = "mb-2",
+          textInput(ns("edit_email"), tr("cuentas.usuarios.correo"),
+                    value = if (is.na(row$email %||% NA)) "" else row$email, width = "100%")),
       div(class = "mb-2",
           passwordInput(ns("edit_password"), "Nueva contraseña (vacío = sin cambio)",
                         value = "", width = "100%")),
@@ -429,14 +442,18 @@ tiersUI <- function(id) {
 # .fila_usuario() looks every action up by. The tier by its name; Estado
 # "activo" only when activo is TRUE (an NA reads Inactivo, not "NA").
 .usuarios_filas <- function(usuarios) {
-  vacia <- data.frame(id = character(0), codigo = character(0), nombre = character(0), nivel = character(0),
-                      estado = character(0), stringsAsFactors = FALSE)
+  vacia <- data.frame(id = character(0), codigo = character(0), nombre = character(0), usuario = character(0),
+                      puesto = character(0), nivel = character(0), estado = character(0), stringsAsFactors = FALSE)
   if (is.null(usuarios) || !is.data.frame(usuarios) || !nrow(usuarios)) return(vacia)
   u <- usuarios[!is.na(usuarios$username) & nzchar(usuarios$username) & !duplicated(usuarios$username), , drop = FALSE]
   if (!nrow(u)) return(vacia)
   data.frame(id = as.character(u$username),
              codigo = as.character(if ("account_code" %in% names(u)) u$account_code else NA_character_),
              nombre = as.character(u$display_name),
+             # T31: who manages users sees name, user name and job title
+             # (an old account's empty job title reads as an empty cell).
+             usuario = as.character(u$username),
+             puesto = as.character(if ("puesto" %in% names(u)) u$puesto else NA_character_),
              nivel = vapply(as.character(u$tier), function(t) if (is.na(t)) "" else nivel_nombre(t), character(1),
                             USE.NAMES = FALSE),
              estado = ifelse(u$activo %in% TRUE, "activo", "inactivo"), stringsAsFactors = FALSE)
@@ -463,6 +480,8 @@ tiers_usuarios_server <- function(id, usuarios, con_codigo, permitido) {
     columnas <- reactive(c(
       if (isTRUE(con_codigo())) list(col_texto("codigo", "niveles.tablas.usuarios.codigo", ancho = 70)),
       list(col_texto("nombre", "niveles.tablas.usuarios.nombre"),
+           col_texto("usuario", "niveles.tablas.usuarios.usuario"),
+           col_texto("puesto", "niveles.tablas.usuarios.puesto"),
            col_texto("nivel", "niveles.tablas.usuarios.nivel"),
            col_insignia("estado", "niveles.tablas.usuarios.estado", mapa = list(
              activo   = list(texto = "niveles.tablas.usuarios.activo", tono = "exito"),
@@ -1243,6 +1262,12 @@ tiersServer <- function(id, shared) {
       if (!nzchar(display_name)) {
         showNotification(tr("niveles.usuarios.aviso.nombre_mostrar_obligatorio"), type = "error"); return()
       }
+      # T31: name and job title are required for every new account, with
+      # the same checks as the activation page.
+      err_dato <- c(nombre_error(display_name), puesto_error(input$new_puesto))
+      if (length(err_dato)) {
+        showNotification(tr(err_dato[[1]]), type = "error"); return()
+      }
       if (!nzchar(username) || !grepl("^[a-z0-9_]+$", username)) {
         showNotification(tr("niveles.usuarios.aviso.usuario_invalido"),
                          type = "error"); return()
@@ -1296,19 +1321,26 @@ tiersServer <- function(id, shared) {
         deleted_at    = NA_character_,
         stringsAsFactors = FALSE
       )
+      new_row$puesto              <- texto_limpio(input$new_puesto)
+      new_row$password_changed_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
 
-      updated <- dplyr::bind_rows(all_u, new_row)
-      saved <- tryCatch({ auth_save_usuarios(updated, client_id = current_client_id(), base = all_u); TRUE },
-                        error = function(e) { message("[TIERS] create user save failed: ", e$message); FALSE })
-      if (!saved) {
+      # T31: reserve the name in the global index, save, and give the name
+      # back if the save fails (guardar_cuenta_nueva). The check above is a
+      # courtesy; this is the one that counts, read inside the change.
+      updated <- .hd_admin_agregar(all_u, new_row)
+      saved <- tryCatch({ guardar_cuenta_nueva(all_u, new_row, current_client_id(),
+                                               ocupados = .usuarios_en_credenciales()); "ok" },
+                        usuario_ocupado = function(e) "ocupado",
+                        error = function(e) { message("[TIERS] create user save failed: ", e$message); "error" })
+      if (identical(saved, "ocupado")) {
+        showNotification(tr("niveles.usuarios.aviso.usuario_registrado"), type = "error", duration = 6)
+        return()
+      }
+      if (!identical(saved, "ok")) {
         showNotification(tr("niveles.usuarios.aviso.no_guardada"),
                          type = "error", duration = 6)
         return()
       }
-      tryCatch(
-        register_username(username, current_client_id(), new_row$account_code),
-        error = function(e) message("[TIERS] username_index register failed: ", e$message)
-      )
       tryCatch(
         update_client_user_count(current_client_id()),
         error = function(e) message("[TIERS] user count update failed: ", e$message)
@@ -1321,6 +1353,7 @@ tiersServer <- function(id, shared) {
       shinyjs::hide("create_form_wrap")
       updateTextInput(session, "new_display_name", value = "")
       updateTextInput(session, "new_username",      value = "")
+      updateTextInput(session, "new_puesto",        value = "")
       showNotification(tr("niveles.usuarios.aviso.creada", usuario = username, codigo = as.character(new_row$account_code)),
                        type = "message", duration = 3)
       log_action(
@@ -1555,22 +1588,36 @@ tiersServer <- function(id, shared) {
         }
       }
 
-      # Validate username change
-      new_username <- tolower(trimws(input$edit_username %||% ""))
-      original_username <- usuarios[idx, "username"]
-      if (!nzchar(new_username) || !grepl("^[a-z0-9_]+$", new_username)) {
-        showNotification(tr("niveles.usuarios.aviso.usuario_invalido"), type = "error"); return()
-      }
-      if (!identical(new_username, original_username) && new_username %in% tolower(all_u$username)) {
-        showNotification(tr("niveles.usuarios.aviso.usuario_existe"), type = "error"); return()
+      # The user name is NOT edited here (T31): it is the key of the audit
+      # log, the notices and the preferences, and unique in all of HopDesk.
+      # input$edit_username is never read, so a forged value changes nothing.
+      # Name, job title and e-mail: checked only when they change, so an
+      # old account whose fields are empty can still be edited; job title
+      # and e-mail may be left empty (Luis fills them in later).
+      .viejo <- function(col) if (length(full_idx) == 1 && col %in% names(all_u)) all_u[[col]][full_idx] else NA
+      new_display <- trimws(input$edit_display_name %||% "")
+      new_puesto  <- trimws(input$edit_puesto %||% "")
+      new_email   <- trimws(input$edit_email %||% "")
+      err_dato <- c(
+        if (nzchar(new_display) && !identical(new_display, .viejo("display_name"))) nombre_error(new_display),
+        if (nzchar(new_puesto) && !identical(new_puesto, .viejo("puesto"))) puesto_error(new_puesto),
+        if (nzchar(new_email) && !identical(tolower(new_email), .viejo("email"))) correo_error(new_email))
+      if (length(err_dato)) {
+        showNotification(tr(err_dato[[1]]), type = "error"); return()
       }
 
       if (length(full_idx) == 1) {
         # Basic user fields
-        all_u[full_idx, "username"]  <- new_username
-        new_display <- trimws(input$edit_display_name %||% "")
         if (nzchar(new_display)) all_u[full_idx, "display_name"] <- new_display
-        if (nzchar(new_pass)) all_u[full_idx, "password_hash"] <- hash_password(new_pass)
+        # A field that never reached the server (NULL) leaves its value alone.
+        if (!is.null(input$edit_puesto))
+          all_u[full_idx, "puesto"] <- if (nzchar(new_puesto)) new_puesto else NA_character_
+        if (!is.null(input$edit_email))
+          all_u[full_idx, "email"]  <- if (nzchar(new_email)) correo_normalizar(new_email) else NA_character_
+        if (nzchar(new_pass)) {
+          all_u[full_idx, "password_hash"]       <- hash_password(new_pass)
+          all_u[full_idx, "password_changed_at"] <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+        }
         all_u[full_idx, "activo"] <- isTRUE(input$edit_activo)
 
         all_u[full_idx, "tier"]     <- new_tier

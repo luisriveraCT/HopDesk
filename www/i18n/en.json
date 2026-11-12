@@ -138,6 +138,8 @@
   "niveles.tablas.usuarios.activo": "Active",
   "niveles.tablas.usuarios.inactivo": "Inactive",
   "niveles.tablas.usuarios.vacio": "No users found.",
+  "niveles.tablas.usuarios.usuario": "User name",
+  "niveles.tablas.usuarios.puesto": "Job title",
   "niveles.nombre.principal": "Principal",
   "niveles.nombre.hopdesk": "HopDesk",
   "niveles.nombre.dev": "Dev",
@@ -1568,5 +1570,10 @@
   "cuentas.activacion.invalido_texto": "This invitation expired or was already used.",
   "cuentas.activacion.invalido_nota": "Ask the person who invited you for a new one; links last 48 hours and work only once.",
   "cuentas.activacion.asunto_bienvenida": "Your HopDesk account is active",
-  "cuentas.activacion.log": "Account activated by invitation: {usuario}"
+  "cuentas.activacion.log": "Account activated by invitation: {usuario}",
+  "cuentas.usuarios.usuario": "User name",
+  "cuentas.usuarios.usuario_fijo": "The user name cannot change: everything the account does is recorded under it.",
+  "cuentas.usuarios.nombre": "Name",
+  "cuentas.usuarios.puesto": "Job title",
+  "cuentas.usuarios.correo": "E-mail"
 }
