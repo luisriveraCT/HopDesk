@@ -36,6 +36,8 @@ scripts/adjuntos_compresion.R	D
 .github/workflows/avisos.yml	D
 R/avisos_umbrales.R	D
 R/avisos_correos.R	D
+R/avisos_datos.R	D
+R/avisos_logros.R	D
 R/requisiciones_*.R	E
 R/adjuntos_s3.R	E
 www/requisiciones*	E

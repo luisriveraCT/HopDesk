@@ -152,15 +152,15 @@ ok(identical(corre(avisos_actividad(sano$effective_client_id(), "confirmar_pago"
    "V usuario que truena: no lanza error")
 ok(identical(corre(avisos_actividad(CID, "confirmar_pago", "ana", list(cuerpo = stop("cuerpo roto")))), "ok"),
    "V parámetros que truenan: no lanza error")
-.mem_falla <<- paste0(CID, "/avisos.rds"); assign(paste0(CID, "/avisos.rds"), tibble::tibble(), envir = .mem)
+.mem_falla <<- paste0(CID, "/", .AVISOS_KEY); assign(paste0(CID, "/", .AVISOS_KEY), tibble::tibble(), envir = .mem)
 ok(identical(corre(avisos_actividad(CID, "confirmar_pago", "ana")), "ok"), "V avisos.rds ilegible: no lanza error")
 .mem_falla <<- character()
 orig <- alertas_preparar; alertas_preparar <- function(...) stop("boom")
 ok(identical(corre(avisos_actividad(CID, "confirmar_pago", "ana")), "ok"), "V alertas_preparar que truena: no lanza error")
 alertas_preparar <- orig
-rm(list = paste0(CID, "/avisos.rds"), envir = .mem)
+rm(list = paste0(CID, "/", .AVISOS_KEY), envir = .mem)
 avisos_actividad(CID, "confirmar_pago", "ana", list(cuerpo = "1 pago(s)"))
-ok(nrow(get(paste0(CID, "/avisos.rds"), envir = .mem)) == 1L, "V con todo sano, el gancho sí publica")
+ok(nrow(get(paste0(CID, "/", .AVISOS_KEY), envir = .mem)) == 1L, "V con todo sano, el gancho sí publica")
 
 s3_memoria_restaurar()
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))

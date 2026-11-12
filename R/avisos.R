@@ -15,7 +15,12 @@
 #   personal    comments and mentions; reaches named users, never a tier
 # =============================================================================
 
-.AVISOS_KEY       <- "avisos.rds"
+# Avisos live under <cliente>/avisos/ since D (2026-11): the scheduled job's
+# AWS role may only write there. The old key is read until the new one
+# exists, and its rows become the new file on the first write; it is never
+# written again and never deleted (Luis: nothing is deleted; the role cannot).
+.AVISOS_KEY       <- "avisos/avisos.rds"
+.AVISOS_KEY_VIEJA <- "avisos.rds"
 .PREFERENCIAS_KEY <- "preferencias.rds"
 AVISOS_TIPOS      <- c("publicado", "automatico", "personal")
 # What a person publishes (B, Luis 2026-11-12): each has its own tone and tag
@@ -85,7 +90,9 @@ PREFS_DEFECTO <- list(inicio = NULL, idioma = "es", audiencia = NULL, ultima_vis
 # one user's row, and everyone else's preferences were gone.
 .s3_modificar <- function(key, client_id, schema, cambio) {
   for (intento in 1:2) {
-    fresco <- .normalizar(.s3_leer_para_escribir(key, client_id), schema)
+    leido  <- if (identical(key, .AVISOS_KEY)) .avisos_leer_para_escribir(client_id)
+              else .s3_leer_para_escribir(key, client_id)
+    fresco <- .normalizar(leido, schema)
     nuevo  <- cambio(fresco)
     ok <- tryCatch({ .s3_write(nuevo, key, client_id = client_id); TRUE },
                    error = function(e) { message("[avisos] escritura falló (", key, "): ", e$message); FALSE })
@@ -96,8 +103,23 @@ PREFS_DEFECTO <- list(inicio = NULL, idioma = "es", audiencia = NULL, ultima_vis
 
 # ── Avisos ───────────────────────────────────────────────────────────────────
 
+# Strict read for a write: the new key; only when S3 says it does not exist,
+# the old one (strict too). A failed read of either stop()s, so a first write
+# never starts from an empty table while the old file holds avisos.
+.avisos_leer_para_escribir <- function(client_id) {
+  x <- .s3_leer_para_escribir(.AVISOS_KEY, client_id)
+  if (is.null(x)) x <- .s3_leer_para_escribir(.AVISOS_KEY_VIEJA, client_id)
+  x
+}
+
 avisos_leer <- function(client_id) {
-  .normalizar(.s3_read_with(.AVISOS_KEY, client_id = .avisos_cid(client_id)), .schema_avisos)
+  cid <- .avisos_cid(client_id)
+  x <- .s3_read_with(.AVISOS_KEY, client_id = cid)
+  # The old key only while the new one does not exist (S3 says so), never
+  # because a read of the new one failed: that would show stale avisos.
+  if (is.null(x) && identical(.s3_existe(.AVISOS_KEY, cid), FALSE))
+    x <- .s3_read_with(.AVISOS_KEY_VIEJA, client_id = cid)
+  .normalizar(x, .schema_avisos)
 }
 
 .vigente <- function(df, ahora = .ahora()) {

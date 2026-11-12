@@ -103,7 +103,7 @@ test_that("C3. matriz ilegible: no publica y deja un message", {
 })
 
 # ── D. avisos_actividad() with the matrix (R/avisos.R) ──────────────────────
-AVK <- paste0(CID, "/avisos.rds")
+AVK <- paste0(CID, "/", .AVISOS_KEY)
 avisos_mem <- function() if (exists(AVK, envir = .mem)) get(AVK, envir = .mem) else NULL
 usr <- function(user, tier) list(user = user, tier = tier, permisos = permisos_resueltos(tier))
 
