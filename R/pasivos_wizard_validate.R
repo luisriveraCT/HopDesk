@@ -90,7 +90,7 @@ pasivos_wizard_validate_terminos <- function(draft) {
   # data but the wizard must not create new liabilities with it.
   valid_tasa_tipos <- c("fija", "variable_sofr", "variable_tiie28")
   if (!is.null(draft$tasa_tipo) && !draft$tasa_tipo %in% valid_tasa_tipos)
-    errors$tasa_tipo <- tr("tablas.pasivos.asistente.tasa_tipo_no_disponible", tipo = draft$tasa_tipo)
+    errors$tasa_tipo <- tr("tablas.pasivos.asistente.tasa_tipo_no_disponible")
 
   t <- draft$tasa_actual %||% NA_real_
   if (!identical(draft$flavor %||% "", "arrendamiento_puro")) {
