@@ -25,7 +25,11 @@ panoramaUI <- function(id) {
   ns <- shiny::NS(id)
   shiny::div(
     class = "hd-marca hd-panorama", id = ns("raiz"),
-    shiny::div(class = "pan-pagina",
+    # Publicar (B2): its own view in the same tab; the server shows it only to
+    # can_publish_panorama.
+    shiny::div(id = ns("vista_publicar"), class = "pan-pagina", style = "display:none",
+      panoramaPublicarUI(ns("pub"))),
+    shiny::div(class = "pan-pagina", id = ns("vista_inicio"),
       shiny::uiOutput(ns("encabezado")),
       shiny::uiOutput(ns("sap_franja")),
       shiny::div(class = "pan-rejilla",
@@ -112,6 +116,10 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       linea_sap <- if (isTRUE(s$cargado))
         tr("panorama.sap.al", fecha = .pan_fecha_hora(s$ts, zona())) else tr("panorama.sap.sin_datos")
       n_nuevos <- sum(feed()$nuevo)
+      boton_publicar <- if (puede_pub()) shiny::tags$button(
+        type = "button", class = "pan-boton",
+        onclick = sprintf("Shiny.setInputValue('%s', Date.now(), {priority: 'event'})", ns("abrir_publicar")),
+        shiny::icon("pen-to-square"), " ", tr("panorama.publicar.abrir"))
       shiny::div(class = "pan-encabezado",
         shiny::div(
           shiny::div(class = "pan-kicker", tr("panorama.kicker", fecha = panorama_fecha_larga(hoy()))),
@@ -121,13 +129,35 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
           shiny::div(class = "pan-sap-linea",
             shiny::tags$span(class = paste("pan-punto", if (isTRUE(s$viejo)) "pan-punto--viejo")),
             linea_sap)),
-        shiny::tags$button(
-          type = "button", class = "pan-campana", id = ns("campana"),
-          `aria-label` = tr("panorama.campana.ayuda", n = as.character(n_nuevos)),
-          onclick = sprintf("hdPanorama.irA('%s')", ns("feed_ancla")),
-          shiny::icon("bell"),
-          if (n_nuevos > 0) shiny::tags$span(class = "pan-campana-n", n_nuevos)))
+        shiny::div(class = "pan-encabezado-acciones",
+          boton_publicar,
+          shiny::tags$button(
+            type = "button", class = "pan-campana", id = ns("campana"),
+            `aria-label` = tr("panorama.campana.ayuda", n = as.character(n_nuevos)),
+            onclick = sprintf("hdPanorama.irA('%s')", ns("feed_ancla")),
+            shiny::icon("bell"),
+            if (n_nuevos > 0) shiny::tags$span(class = "pan-campana-n", n_nuevos))))
     })
+
+    # ── Publicar (B2) ─────────────────────────────────────────────────────────
+    puede_pub <- shiny::reactive(isTRUE(tryCatch(puede(usr(), "can_publish_panorama"), error = function(e) FALSE)))
+    modo <- shiny::reactiveVal("inicio")
+    shiny::observeEvent(input$abrir_publicar, {
+      if (!puede_o_avisa(shared, "can_publish_panorama")) return()
+      modo("publicar")
+    }, ignoreInit = TRUE)
+    # Losing the permission (or a staff "ver como") closes it.
+    shiny::observe({ if (!puede_pub() && shiny::isolate(modo()) == "publicar") modo("inicio") })
+    shiny::observe({
+      pub <- identical(modo(), "publicar")
+      shinyjs::toggle("vista_publicar", condition = pub)
+      shinyjs::toggle("vista_inicio", condition = !pub)
+    })
+    panoramaPublicarServer("pub", shared,
+      abierta     = shiny::reactive(isTRUE(activa()) && identical(modo(), "publicar") && puede_pub()),
+      al_volver   = function() modo("inicio"),
+      al_publicar = function() version(version() + 1L),
+      tz          = zona)
 
     output$sap_franja <- shiny::renderUI({
       s <- sap()

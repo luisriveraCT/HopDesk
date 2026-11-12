@@ -44,7 +44,35 @@
     tarjeta.dataset.filtro = tipo;
   }
 
+  // Publicar: its three sections (Nueva, Publicadas, Alertas del equipo).
+  function seccion(boton) {
+    var grupo = boton.closest('.pan-publicar');
+    if (!grupo) return;
+    grupo.querySelectorAll('.pan-pestana').forEach(function (b) {
+      var on = b === boton;
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+      var s = document.getElementById(b.getAttribute('data-seccion'));
+      if (s) s.hidden = !on;
+    });
+    // hd_table measures itself when shown.
+    $(window).trigger('resize');
+  }
+
+  // Title and message counters ("12 / 80").
+  function contar(e) {
+    var el = e.target;
+    if (!el.closest || !el.closest('.hd-panorama')) return;
+    var id = el.getAttribute('data-contador');
+    if (!id) return;
+    var c = document.getElementById(id);
+    if (c) c.textContent = el.value.length + ' / ' + el.getAttribute('maxlength');
+  }
+  document.addEventListener('input', contar);
+  document.addEventListener('change', contar);   // emptied by the server after publishing
+
   document.addEventListener('click', function (e) {
+    var pestana = e.target.closest('.hd-panorama .pan-pestana');
+    if (pestana) { seccion(pestana); return; }
     var chip = e.target.closest('.hd-panorama .pan-chip');
     if (chip) { filtrar(chip); return; }
     var punto = e.target.closest('.hd-panorama .pan-punto-nav');

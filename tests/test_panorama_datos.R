@@ -11,8 +11,11 @@ source("R/i18n.R")
 source("R/tier_registry.R")
 source("R/permisos.R")
 source("R/avisos.R")
-source("R/panorama_datos.R")
-source("R/panorama_module.R")
+for (f in c("R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+            "R/avisos_alertas_module.R", "R/panorama_datos.R", "R/panorama_publicar_module.R",
+            "R/panorama_module.R"))
+  suppressMessages(source(f))
+leer_tabla_para_escribir <- function(key, client_id, schema) .mem[[paste0(client_id, "/", key)]] %||% schema()
 
 .mem <- new.env()
 .s3_read_with <- function(key, client_id = NULL) .mem[[paste0(client_id, "/", key)]]

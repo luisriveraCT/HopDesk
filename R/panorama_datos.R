@@ -215,3 +215,132 @@ panorama_cuando <- function(t, ahora = Sys.time(), tz = "America/Mexico_City") {
   if (d == hoy - 1) return(tr("panorama.cuando.ayer"))
   paste(as.integer(format(d, "%d")), tr(paste0("comun.mes.", as.integer(format(d, "%m")))))
 }
+
+# ── Publicar: the audience bar ───────────────────────────────────────────────
+# The bar lists the client tiers highest first (niveles_cliente()). Its state
+# is a range [desde, hasta] (positions in that list) plus the tiers skipped
+# inside it. Plan "Audiencia por niveles" (Luis, 2026-10-28): no limit on
+# skipped tiers, no Desde/Hasta sliders.
+#   - a tier outside the range widens it up to that tier;
+#   - an end of the range trims it by one (a range never goes empty);
+#   - a tier inside toggles skipped.
+# An end is never a skipped tier: trimming walks past skipped ones.
+
+audiencia_estado <- function(sel, todos) {
+  i <- which(todos %in% sel)
+  if (!length(i)) return(list(desde = 1L, hasta = length(todos), omitidos = integer()))
+  rango <- seq.int(min(i), max(i))
+  list(desde = min(i), hasta = max(i), omitidos = setdiff(rango, i))
+}
+
+audiencia_click <- function(e, i) {
+  i <- as.integer(i)
+  if (is.na(i) || i < 1L) return(e)
+  if (i < e$desde) e$desde <- i
+  else if (i > e$hasta) e$hasta <- i
+  else if (e$desde == e$hasta) return(e)                  # the only one: stays
+  else if (i == e$desde) { e$desde <- i + 1L; while (e$desde %in% e$omitidos) e$desde <- e$desde + 1L }
+  else if (i == e$hasta) { e$hasta <- i - 1L; while (e$hasta %in% e$omitidos) e$hasta <- e$hasta - 1L }
+  else e$omitidos <- if (i %in% e$omitidos) setdiff(e$omitidos, i) else sort(c(e$omitidos, i))
+  e$omitidos <- e$omitidos[e$omitidos > e$desde & e$omitidos < e$hasta]
+  e
+}
+
+audiencia_seleccion <- function(e, todos) {
+  i <- setdiff(seq.int(e$desde, e$hasta), e$omitidos)
+  todos[i[i >= 1L & i <= length(todos)]]
+}
+
+# "Admin a Compras, sin Finanzas" -- names from the registry, words from the
+# dictionary.
+audiencia_resumen <- function(e, todos, idioma = hd_idioma()) {
+  nom <- function(i) nivel_nombre(todos[i])
+  rango <- if (e$desde == e$hasta) nom(e$desde) else
+    tr("panorama.publicar.rango", idioma = idioma, desde = nom(e$desde), hasta = nom(e$hasta))
+  if (!length(e$omitidos)) return(rango)
+  tr("panorama.publicar.rango_sin", idioma = idioma, rango = rango,
+     omitidos = paste(vapply(e$omitidos, nom, character(1)),
+                      collapse = paste0(" ", tr("panorama.publicar.ni", idioma = idioma), " ")))
+}
+
+# ── Publicar: what gets written ──────────────────────────────────────────────
+PANORAMA_TITULO_MAX  <- 80L
+PANORAMA_MENSAJE_MAX <- 500L
+# The kinds the form offers. "urgente" is a comunicado with severity urgente
+# (Design's fourth card); the others are AVISOS_CLASES.
+PANORAMA_TIPOS_PUBLICAR <- c("comunicado", "recordatorio", "solicitud", "reconocimiento", "urgente")
+# Tabs a Destacado's button may open.
+PANORAMA_ENLACES <- c("PH", "BNC", "PSV", "CAL", "VEN", "REQ")
+
+# Checks the form and returns list(ok = TRUE, aviso = <for avisos_agregar or
+# avisos_personales>, responsables) or list(ok = FALSE, error = <dictionary
+# key>). `vivos`: usernames who may be given a solicitud; `niveles`: the
+# tiers the bar chose; `vence`: Date (end of that day in `tz`) or NA.
+panorama_publicacion <- function(tipo, titulo, mensaje, niveles, responsables = character(),
+                                 vence = NA, enlace = "", vivos = character(),
+                                 tz = "America/Mexico_City", ahora = Sys.time()) {
+  mal <- function(clave) list(ok = FALSE, error = clave)
+  if (!isTRUE(tipo %in% PANORAMA_TIPOS_PUBLICAR)) return(mal("panorama.publicar.error.tipo"))
+  titulo  <- trimws(titulo %||% ""); mensaje <- trimws(mensaje %||% "")
+  if (!nzchar(titulo)) return(mal("panorama.publicar.error.titulo"))
+  if (nchar(titulo) > PANORAMA_TITULO_MAX) return(mal("panorama.publicar.error.titulo_largo"))
+  if (nchar(mensaje) > PANORAMA_MENSAJE_MAX) return(mal("panorama.publicar.error.mensaje_largo"))
+  enlace <- if (isTRUE(enlace %in% PANORAMA_ENLACES)) enlace else NA_character_
+  fin <- if (length(vence) && !is.na(vence))
+    as.POSIXct(paste(as.Date(vence), "23:59:59"), tz = tz) else as.POSIXct(NA)
+  if (!is.na(fin) && fin <= ahora) return(mal("panorama.publicar.error.fecha_pasada"))
+  if (tipo %in% c("recordatorio", "solicitud") && is.na(fin)) return(mal("panorama.publicar.error.fecha"))
+  base <- list(titulo = titulo, cuerpo = mensaje, enlace = enlace,
+               vence = if (is.na(fin)) NA else format(fin, tz = "UTC", usetz = TRUE),
+               severidad = if (tipo == "urgente") "urgente" else "info",
+               clase = if (tipo == "urgente") "comunicado" else tipo)
+  if (tipo == "solicitud") {
+    resp <- intersect(unique(tolower(responsables %||% character())), tolower(vivos))
+    if (!length(resp)) return(mal("panorama.publicar.error.responsables"))
+    return(list(ok = TRUE, aviso = c(base, list(tipo = "personal")), responsables = resp))
+  }
+  niveles <- intersect(niveles %||% character(), niveles_cliente())
+  if (!length(niveles)) return(mal("panorama.publicar.error.niveles"))
+  list(ok = TRUE, aviso = c(base, list(tipo = "publicado", niveles = niveles)), responsables = character())
+}
+
+# The Publicadas list: one row per publication. A solicitud is one aviso per
+# person, grouped by its clave ("sol:<id>|<user>") into one row.
+panorama_publicadas <- function(df, ahora = Sys.time()) {
+  vacia <- data.frame(id = character(), tipo = character(), titulo = character(), para = character(),
+                      por = character(), creado = as.POSIXct(character()), vence = as.POSIXct(character()),
+                      ids = character(), stringsAsFactors = FALSE)
+  if (is.null(df) || !nrow(df)) return(vacia)
+  vig <- !is.na(df$id) & !(df$retirado %in% TRUE) & (is.na(df$vence) | df$vence > ahora)
+  cl <- avisos_clase(df)
+  pub <- df[vig & df$tipo %in% "publicado", , drop = FALSE]
+  sol <- df[vig & df$tipo %in% "personal" & cl %in% "solicitud" &
+              grepl("^sol:", df$clave %||% ""), , drop = FALSE]
+  filas <- list()
+  if (nrow(pub)) filas[[1]] <- data.frame(
+    id = pub$id,
+    tipo = ifelse(pub$severidad %in% "urgente", "urgente", avisos_clase(pub)),
+    titulo = pub$titulo,
+    para = vapply(pub$niveles, function(s) paste(vapply(.pan_hechos_raw(s), nivel_nombre, character(1)),
+                                                 collapse = ", "), character(1)),
+    por = pub$creado_por, creado = pub$creado, vence = pub$vence, ids = pub$id,
+    stringsAsFactors = FALSE)
+  if (nrow(sol)) {
+    grupo <- sub("[|].*$", "", sol$clave)
+    filas[[length(filas) + 1L]] <- do.call(rbind, lapply(split(seq_len(nrow(sol)), grupo), function(k) {
+      s <- sol[k, , drop = FALSE]
+      data.frame(id = sub("[|].*$", "", s$clave[1]), tipo = "solicitud", titulo = s$titulo[1],
+                 para = paste(sort(unique(unlist(lapply(s$usuarios, .pan_hechos_raw)))), collapse = ", "),
+                 por = s$creado_por[1], creado = min(s$creado), vence = s$vence[1],
+                 ids = paste(s$id, collapse = ","), stringsAsFactors = FALSE)
+    }))
+  }
+  if (!length(filas)) return(vacia)
+  out <- do.call(rbind, filas)
+  out[order(out$creado, decreasing = TRUE), , drop = FALSE]
+}
+
+.pan_hechos_raw <- function(s) {
+  if (is.null(s) || is.na(s) || !nzchar(s)) return(character())
+  tryCatch(as.character(unlist(jsonlite::fromJSON(s))), error = function(e) character())
+}
