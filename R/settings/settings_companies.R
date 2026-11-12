@@ -937,13 +937,15 @@ settings_companies_observer <- function(input, output, session, shared) {
       # Diagnostic: which partners had matching invoices vs which didn't
       expected_partes_lc <- tolower(trimws(unique(pp$parte)))
       unmatched          <- expected_partes_lc[!expected_partes_lc %in% computed_partes_lc]
-      scope_lbl <- switch(scope, new = "nuevos", skip_manual = "sin modificar", "todos")
-      msg <- sprintf("Políticas aplicadas (%s): %d documentos calculados (%d socios).",
-                     scope_lbl, nrow(new_moves), length(computed_partes_lc))
+      scope_lbl <- switch(scope, new = tr("tablas.ajustes.aviso.alcance_nuevos"),
+                          skip_manual = tr("tablas.ajustes.aviso.alcance_sin_modificar"),
+                          tr("tablas.ajustes.aviso.alcance_todos"))
+      msg <- tr("tablas.ajustes.aviso.politicas_aplicadas", alcance = scope_lbl,
+                documentos = as.character(nrow(new_moves)), socios = as.character(length(computed_partes_lc)))
       if (length(unmatched)) {
         display <- paste(sort(unmatched)[seq_len(min(3L, length(unmatched)))], collapse = ", ")
         if (length(unmatched) > 3L) display <- paste0(display, "…")
-        msg <- paste0(msg, sprintf(" Sin documentos: %s", display))
+        msg <- paste0(msg, tr("tablas.ajustes.aviso.politicas_sin_documentos", partes = display))
       }
       showNotification(msg, type = "message", duration = 6)
       pol_catalog <- tryCatch(shared$policy_catalog_db(), error = function(e) NULL)

@@ -1681,13 +1681,9 @@ bancosServer <- function(id, shared) {
       session$sendCustomMessage("bnc_collapse_reasignar",
         list(target = ns("reasignar_panel")))
       n_kept <- actual_n - n_deduped
-      msg <- paste0(n_kept, " movimiento", if (n_kept == 1) "" else "s",
-                    " reasignado", if (n_kept == 1) "" else "s",
-                    " a ", dest_label, ".")
+      msg <- tr_n("tablas.bancos.aviso.reasignados", as.character(n_kept), destino = dest_label)
       if (n_deduped > 0)
-        msg <- paste0(msg, " (", n_deduped, " duplicado",
-                      if (n_deduped == 1) "" else "s", " eliminado",
-                      if (n_deduped == 1) "" else "s", ".)")
+        msg <- paste0(msg, tr_n("tablas.bancos.aviso.reasignados_duplicados", as.character(n_deduped)))
       showNotification(msg, type = "message", duration = 5)
       log_action(
         user        = tryCatch(shared$current_user(), error = function(e) "system"),
@@ -2089,9 +2085,9 @@ bancosServer <- function(id, shared) {
       bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
 
       n_auto  <- sum(nuevos$conciliado, na.rm = TRUE)
-      msg     <- paste0(nrow(nuevos), " movimiento(s) importado(s).")
+      msg     <- tr("tablas.bancos.aviso.importados", n = as.character(nrow(nuevos)))
       if (n_auto > 0)
-        msg <- paste0(msg, " ", n_auto, " conciliado(s) autom\u00e1ticamente.")
+        msg <- paste0(msg, " ", tr("tablas.bancos.aviso.conciliados_auto", n = as.character(n_auto)))
 
       showNotification(msg, type = "message", duration = 4)
       parsed_preview(NULL)  # clear preview

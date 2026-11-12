@@ -496,9 +496,9 @@ settings_observers <- function(input, output, session, shared) {
     ic_trigger(ic_trigger() + 1L)
 
     msg <- if (had_prefix)
-      "\u2705 Guardado. Se eliminaron prefijos de letra autom\u00e1ticamente."
+      tr("tablas.ajustes.aviso.ic_guardada_prefijos")
     else
-      "\u2705 Configuraci\u00f3n intercompany guardada en S3."
+      tr("tablas.ajustes.aviso.ic_guardada")
     showNotification(msg, type = "message", duration = 4)
     log_action(
       user        = tryCatch(shared$current_user(), error = function(e) "system"),

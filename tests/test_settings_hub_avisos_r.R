@@ -26,9 +26,15 @@ ok(sprintf("las %d claves tablas.ajustes.aviso.* existen en es y en", length(cla
    { falta <- avisos_claves_faltan(claves); if (length(falta)) message("  faltan: ", paste(falta, collapse = ", "))
      length(claves) >= 1L && !length(falta) })
 iguales <- list(list(tr("tablas.ajustes.aviso.error_guardar_s3", error = "Forbidden", idioma = "es"),
-                     paste("❌ Error al guardar en el servidor:", "Forbidden")))
+                     paste("❌ Error al guardar en el servidor:", "Forbidden")),
+                # the intercompany save, an if/else in a variable (textos-codigo); "S3" ->
+                # "el servidor" is the wording Luis approved in textos-visibles
+                list(tr("tablas.ajustes.aviso.ic_guardada_prefijos", idioma = "es"),
+                     "✅ Guardado. Se eliminaron prefijos de letra automáticamente."),
+                list(tr("tablas.ajustes.aviso.ic_guardada", idioma = "es"),
+                     "✅ Configuración intercompany guardada en el servidor."))
 distintos <- avisos_distintos(iguales)
-ok("el español del aviso dice exactamente lo mismo que antes",
+ok(sprintf("el español de los %d avisos dice exactamente lo mismo que antes", length(iguales)),
    { for (p in distintos) message("  ahora: ", p[[1]], "\n  antes: ", p[[2]]); !length(distintos) })
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))

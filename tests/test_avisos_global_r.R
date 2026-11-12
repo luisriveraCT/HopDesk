@@ -58,5 +58,30 @@ ok(sprintf("ningún validador pone texto fijo en su lista de errores (%d archivo
        paste(utils::head(avisos_errores_fijos(file.path(raiz, f)), 3), collapse = " | "))
      !any(err_fijos > 0L) })
 
+# Fixed text that reaches a notice through a variable (textos-codigo): the
+# detector sees it, within the function that assigns it, and does not take a
+# variable that also gets a computed value for fixed text.
+muestra <- tempfile(fileext = ".R")
+writeLines(c(
+  'a <- function(new_rows) {',
+  '  ledg_str <- if (all(new_rows$ledger == "AR")) "Cobros" else "Pagos"',
+  '  showNotification(tr("tablas.lupa.aviso.enviadas", ledger = ledg_str))',
+  '}',
+  'b <- function(n) {',
+  '  msg <- paste0(n, " movimiento(s) importado(s).")',
+  '  if (n > 1) msg <- paste0(msg, " y más")',
+  '  showNotification(msg)',
+  '}',
+  'c <- function() tryCatch(f(), error = function(e) { msg <- conditionMessage(e)',
+  '  showNotification(tr("comun.aviso.error_leer_s3", error = msg)) })',
+  'd <- function(input) {',
+  '  label <- if (TRUE) "Conexión guardada" else "Respaldo"',
+  '  label <- trimws(input$erp_label)',
+  '  showNotification(tr("tablas.empresas.aviso.erp_guardada", nombre = label))',
+  '}'), muestra, useBytes = TRUE)
+vistos <- avisos_fijos(muestra)
+ok("el detector ve el texto fijo que llega por una variable (a tr() o como mensaje), y solo ese",
+   length(vistos) == 2L && any(grepl("ledger = ledg_str", vistos, fixed = TRUE)) && "msg" %in% vistos)
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

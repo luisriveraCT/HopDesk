@@ -29,18 +29,60 @@
   FALSE
 }
 
+# Fixed text can also come in through a variable: `x <- "Cobros"` (or an
+# if/else of literals) and then showNotification(x) or tr("clave", p = x).
+# A name counts within the function that assigns it fixed text, not in other
+# functions of the file (textos-codigo, 2026-11-12: search_module.R's ledger
+# name reached the Lupa's notice so; the guards did not see it).
+# Only names whose every assignment there is fixed text (one that builds on
+# itself, msg <- paste0(msg, ...), does not count against it): a name that
+# also takes an input or a computed value is not taken for fixed text.
+.variables_fijas <- function(ex) {
+  fijos <- character(0); otros <- character(0)
+  ver <- function(x) {
+    if (!is.call(x)) return(invisible())
+    if (identical(x[[1]], as.name("function"))) return(invisible())   # its own scope
+    if (as.character(x[[1]])[1] %in% c("<-", "=") && length(x) == 3L && is.name(x[[2]])) {
+      n <- as.character(x[[2]])
+      if (.es_fijo(x[[3]])) fijos <<- c(fijos, n)
+      else if (!n %in% all.names(x[[3]])) otros <<- c(otros, n)
+    }
+    xs <- as.list(x); for (k in seq_along(xs)) if (is.call(xs[[k]])) ver(xs[[k]])
+  }
+  for (e in ex) ver(e)
+  setdiff(unique(fijos), otros)
+}
+
 avisos_fijos <- function(f) {
+  ex <- parse(f, keep.source = FALSE, encoding = "UTF-8")
+  fijas <- .variables_fijas(ex)   # the file's top level; each function swaps in its own
+  de_variable <- function(a) is.name(a) && as.character(a) %in% fijas
+  fijo <- function(m) {
+    if (.es_fijo(m) || de_variable(m)) return(TRUE)
+    # tr("clave", p = <fixed text or a variable holding it>)
+    if (is.call(m) && as.character(m[[1]])[1] %in% c("tr", "tr_n") && length(m) > 2L)
+      return(any(vapply(as.list(m)[-(1:2)], function(a) .es_fijo(a) || de_variable(a), logical(1))))
+    if (is.call(m) && identical(as.character(m[[1]])[1], "if"))
+      return(any(vapply(as.list(m)[-(1:2)], fijo, logical(1))))
+    FALSE
+  }
   fijos <- character(0)
   recorrer <- function(x) {
     if (!is.call(x)) return(invisible())
+    if (identical(x[[1]], as.name("function")) && length(x) >= 3L) {
+      antes <- fijas; on.exit(fijas <<- antes)
+      fijas <<- .variables_fijas(list(x[[3]]))
+      recorrer(x[[3]])
+      return(invisible())
+    }
     if (identical(x[[1]], as.name("showNotification")) ||
         (is.call(x[[1]]) && identical(x[[1]][[1]], as.name("::")) && identical(x[[1]][[3]], as.name("showNotification")))) {
-      if (length(x) >= 2L && .es_fijo(x[[2]]))
+      if (length(x) >= 2L && fijo(x[[2]]))
         fijos <<- c(fijos, paste(deparse(x[[2]], width.cutoff = 120L)[1]))
     }
     xs <- as.list(x); for (k in seq_along(xs)) if (is.call(xs[[k]])) recorrer(xs[[k]])
   }
-  for (e in parse(f, keep.source = FALSE, encoding = "UTF-8")) recorrer(e)
+  for (e in ex) recorrer(e)
   fijos
 }
 

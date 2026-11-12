@@ -48,6 +48,17 @@ ok(sprintf("las %d claves tablas.bancos.aviso.* existen en es y en", length(clav
 # ── 3. The Spanish reads exactly as before ──────────────────────────────────
 es   <- function(k, ...) tr(k, ..., idioma = "es")
 es_n <- function(k, n, ...) tr_n(k, as.character(n), ..., idioma = "es")
+# The reassign notice as the old code built it (bancos_module.R before textos-codigo).
+antes_reasignados <- function(n_kept, n_deduped, dest_label) {
+  msg <- paste0(n_kept, " movimiento", if (n_kept == 1) "" else "s",
+                " reasignado", if (n_kept == 1) "" else "s",
+                " a ", dest_label, ".")
+  if (n_deduped > 0)
+    msg <- paste0(msg, " (", n_deduped, " duplicado",
+                  if (n_deduped == 1) "" else "s", " eliminado",
+                  if (n_deduped == 1) "" else "s", ".)")
+  msg
+}
 antes_eliminados <- function(n) sprintf("%d movimiento%s eliminado%s.", n, if (n==1)"" else "s", if (n==1)"" else "s")
 antes_papelera   <- function(actual_n) paste0(actual_n, " movimiento", if (actual_n == 1) "" else "s",
                                               " enviado", if (actual_n == 1) "" else "s", " a papelera.")
@@ -84,7 +95,18 @@ iguales <- list(
   list(ahora_devuelto(NA, fecha), antes_devuelto(NA, fecha)),
   # the if/else of the manual movement's save (avisos-integrador)
   list(es("tablas.bancos.aviso.movimiento_actualizado"), "Movimiento actualizado."),
-  list(es("tablas.bancos.aviso.movimiento_guardado"), "Movimiento manual guardado."))
+  list(es("tablas.bancos.aviso.movimiento_guardado"), "Movimiento manual guardado."),
+  # reassign and TXT import, built in a variable (textos-codigo): the old
+  # pieces, plural by hand, against tr_n / tr
+  list(es_n("tablas.bancos.aviso.reasignados", 1L, destino = "NTS"), antes_reasignados(1L, 0L, "NTS")),
+  list(es_n("tablas.bancos.aviso.reasignados", 3L, destino = "NTS"), antes_reasignados(3L, 0L, "NTS")),
+  list(paste0(es_n("tablas.bancos.aviso.reasignados", 3L, destino = "NTS"),
+              es_n("tablas.bancos.aviso.reasignados_duplicados", 1L)), antes_reasignados(3L, 1L, "NTS")),
+  list(paste0(es_n("tablas.bancos.aviso.reasignados", 1234L, destino = "NTS"),
+              es_n("tablas.bancos.aviso.reasignados_duplicados", 2L)), antes_reasignados(1234L, 2L, "NTS")),
+  list(es("tablas.bancos.aviso.importados", n = "1234"), paste0(1234L, " movimiento(s) importado(s).")),
+  list(paste0(es("tablas.bancos.aviso.importados", n = "5"), " ", es("tablas.bancos.aviso.conciliados_auto", n = "2")),
+       paste0(paste0(5L, " movimiento(s) importado(s)."), " ", 2L, " conciliado(s) automáticamente.")))
 distintos <- Filter(function(p) !identical(p[[1]], p[[2]]), iguales)
 ok(sprintf("el español de los %d avisos dice exactamente lo mismo que antes", length(iguales)),
    { for (p in distintos) message("  ahora: ", p[[1]], "\n  antes: ", p[[2]]); !length(distintos) })

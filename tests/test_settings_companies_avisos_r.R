@@ -75,7 +75,17 @@ iguales <- list(
   list(es("tablas.ajustes.aviso.sin_datos_ar"),
        paste0("Sin fechas: hay socios con CxC, pero no hay datos de CxC cargados. ",
               "Verifica que los datos de Cobrar estén disponibles.")),
-  list(es("tablas.ajustes.aviso.sin_fechas"), "No se generaron fechas (sin documentos con socio asignado)."))
+  list(es("tablas.ajustes.aviso.sin_fechas"), "No se generaron fechas (sin documentos con socio asignado)."),
+  # "Políticas aplicadas", built in a variable (textos-codigo): the old sprintf, scope by scope
+  list(es("tablas.ajustes.aviso.politicas_aplicadas", alcance = es("tablas.ajustes.aviso.alcance_nuevos"),
+          documentos = "1234", socios = "7"),
+       sprintf("Políticas aplicadas (%s): %d documentos calculados (%d socios).", "nuevos", 1234L, 7L)),
+  list(es("tablas.ajustes.aviso.alcance_sin_modificar"), "sin modificar"),
+  list(paste0(es("tablas.ajustes.aviso.politicas_aplicadas", alcance = es("tablas.ajustes.aviso.alcance_todos"),
+                 documentos = "0", socios = "0"),
+              es("tablas.ajustes.aviso.politicas_sin_documentos", partes = "acme, beta…")),
+       paste0(sprintf("Políticas aplicadas (%s): %d documentos calculados (%d socios).", "todos", 0L, 0L),
+              sprintf(" Sin documentos: %s", "acme, beta…"))))
 distintos <- avisos_distintos(iguales)
 ok(sprintf("el español de los %d avisos dice exactamente lo mismo que antes", length(iguales)),
    { for (p in distintos) message("  ahora: ", p[[1]], "\n  antes: ", p[[2]]); !length(distintos) })
