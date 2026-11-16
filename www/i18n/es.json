@@ -1707,5 +1707,10 @@
   "cuentas.olvide.correo": "Correo",
   "cuentas.olvide.boton": "Enviar enlace",
   "cuentas.olvide.respuesta": "Si el correo pertenece a una cuenta activa, te enviamos un enlace. Revisa tu bandeja (y spam). El enlace dura 60 minutos.",
-  "cuentas.olvide.volver": "← Volver a iniciar sesión"
+  "cuentas.olvide.volver": "← Volver a iniciar sesión",
+  "comun.monedas.base.titulo": "Moneda de presentación",
+  "comun.monedas.base.ayuda": "Los reportes y totales se presentan en esta moneda. Las demás aparecen según tus datos.",
+  "comun.monedas.base.automatica_opcion": "Automática (la de más documentos)",
+  "comun.monedas.base.aviso_automatica": "Por ahora se usa {moneda}, la moneda de la mayoría de tus documentos. Elígela para fijarla.",
+  "comun.monedas.base.invalida": "Esa moneda no está en el catálogo; no se guardó nada."
 }

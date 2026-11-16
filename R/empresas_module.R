@@ -1130,6 +1130,29 @@ empresasServer <- function(id, shared) {
                       tags$span(class = "small text-muted ms-1", "Logo guardado"))
               ) } else NULL
             ),
+            # Monedas fase 1: the client's presentation currency (R/monedas.R).
+            # Empty = automatic (the currency of most open documents).
+            {
+              base <- tryCatch(shared$moneda_base_cliente(), error = function(e) NULL) %||%
+                      list(moneda = NA_character_, origen = "ninguna")
+              datos <- tryCatch(monedas_en_datos(monedas_de_sap(shared$sap_data())), error = function(e) character())
+              idioma <- hd_idioma()
+              fluidRow(
+                column(8,
+                  tags$label(tr("comun.monedas.base.titulo"), class = "form-label small fw-semibold"),
+                  tags$p(class = "text-muted small mb-1", tr("comun.monedas.base.ayuda")),
+                  selectizeInput(ns("moneda_base_input"), NULL,
+                                 choices  = c(stats::setNames("", tr("comun.monedas.base.automatica_opcion")),
+                                              monedas_opciones(primero = datos, idioma = idioma)),
+                                 selected = if (identical(base$origen, "ajuste")) base$moneda else "",
+                                 width = "100%"),
+                  if (identical(base$origen, "datos"))
+                    tags$p(class = "small text-warning mb-0",
+                           icon("circle-info"), " ",
+                           tr("comun.monedas.base.aviso_automatica", moneda = base$moneda))
+                )
+              )
+            },
             actionButton(ns("btn_save_group_config"),
                          tagList(icon("floppy-disk"), " Guardar configuración"),
                          class = "btn btn-sm btn-primary mt-2")
@@ -1152,6 +1175,14 @@ empresasServer <- function(id, shared) {
       cfg <- tryCatch(shared$group_config(), error = function(e) NULL) %||%
              list(group_name = "Networks Group", logo_raw = NULL, logo_ext = "png")
       cfg$group_name <- name
+      # "" = automatic; anything else must be a catalog code (never trust the
+      # browser's value).
+      mb <- toupper(trimws(input$moneda_base_input %||% ""))
+      if (nzchar(mb) && !moneda_valida(mb)) {
+        showNotification(tr("comun.monedas.base.invalida"), type = "error")
+        return()
+      }
+      cfg$moneda_base <- if (nzchar(mb)) mb else NA_character_
 
       logo_file <- input$group_logo_upload
       if (!is.null(logo_file) && file.exists(logo_file$datapath)) {

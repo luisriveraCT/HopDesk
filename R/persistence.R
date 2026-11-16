@@ -2348,7 +2348,9 @@ save_grupos <- function(df, client_id = NULL) {
 # ── Group configuration (display name + logo) ──────────────────────────────────
 
 .schema_group_config <- function() {
-  list(group_name = "", logo_raw = NULL, logo_ext = "png")
+  # moneda_base: the client's presentation currency (R/monedas.R); NA until
+  # someone chooses it in Ajustes generales.
+  list(group_name = "", logo_raw = NULL, logo_ext = "png", moneda_base = NA_character_)
 }
 
 load_group_config <- function(client_id = NULL) {

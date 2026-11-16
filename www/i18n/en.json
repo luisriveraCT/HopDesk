@@ -1707,5 +1707,10 @@
   "cuentas.olvide.correo": "E-mail",
   "cuentas.olvide.boton": "Send link",
   "cuentas.olvide.respuesta": "If the e-mail belongs to an active account, we sent you a link. Check your inbox (and spam). The link lasts 60 minutes.",
-  "cuentas.olvide.volver": "← Back to sign in"
+  "cuentas.olvide.volver": "← Back to sign in",
+  "comun.monedas.base.titulo": "Presentation currency",
+  "comun.monedas.base.ayuda": "Reports and totals are shown in this currency. The others appear according to your data.",
+  "comun.monedas.base.automatica_opcion": "Automatic (the one with most documents)",
+  "comun.monedas.base.aviso_automatica": "For now {moneda} is used, the currency of most of your documents. Choose it to fix it.",
+  "comun.monedas.base.invalida": "That currency is not in the catalog; nothing was saved."
 }

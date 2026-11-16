@@ -1,0 +1,161 @@
+# Catálogo de monedas de HopDesk: ISO 4217, lista 1, solo monedas de curso legal vigentes.
+# Version: 2026-11-16 (integrador, monedas fase 1). Fuera a propósito: fondos (BOV, CHE, CHW, CLF, COU, MXV, USN, UYI, UYW), metales y unidades (XAU, XAG, XPT, XPD, XDR, XSU, XUA, XBA-XBD, XTS, XXX).
+# Columnas: codigo (ISO alfabético), numero (ISO numérico), decimales (unidades menores), nombre_es, nombre_en.
+# Cambiar este archivo = cambiar MONEDAS_VERSION en R/monedas.R; tests/test_monedas.R lo revisa.
+codigo,numero,decimales,nombre_es,nombre_en
+AED,784,2,Dírham de los Emiratos Árabes Unidos,UAE dirham
+AFN,971,2,Afgani afgano,Afghan afghani
+ALL,008,2,Lek albanés,Albanian lek
+AMD,051,2,Dram armenio,Armenian dram
+AOA,973,2,Kwanza angoleño,Angolan kwanza
+ARS,032,2,Peso argentino,Argentine peso
+AUD,036,2,Dólar australiano,Australian dollar
+AWG,533,2,Florín arubeño,Aruban florin
+AZN,944,2,Manat azerí,Azerbaijani manat
+BAM,977,2,Marco convertible de Bosnia y Herzegovina,Bosnia and Herzegovina convertible mark
+BBD,052,2,Dólar de Barbados,Barbados dollar
+BDT,050,2,Taka bangladesí,Bangladeshi taka
+BGN,975,2,Lev búlgaro,Bulgarian lev
+BHD,048,3,Dinar bareiní,Bahraini dinar
+BIF,108,0,Franco burundés,Burundian franc
+BMD,060,2,Dólar bermudeño,Bermudian dollar
+BND,096,2,Dólar de Brunéi,Brunei dollar
+BOB,068,2,Boliviano,Boliviano
+BRL,986,2,Real brasileño,Brazilian real
+BSD,044,2,Dólar bahameño,Bahamian dollar
+BTN,064,2,Ngultrum butanés,Bhutanese ngultrum
+BWP,072,2,Pula de Botsuana,Botswana pula
+BYN,933,2,Rublo bielorruso,Belarusian ruble
+BZD,084,2,Dólar beliceño,Belize dollar
+CAD,124,2,Dólar canadiense,Canadian dollar
+CDF,976,2,Franco congoleño,Congolese franc
+CHF,756,2,Franco suizo,Swiss franc
+CLP,152,0,Peso chileno,Chilean peso
+CNY,156,2,Yuan chino,Chinese yuan
+COP,170,2,Peso colombiano,Colombian peso
+CRC,188,2,Colón costarricense,Costa Rican colón
+CUP,192,2,Peso cubano,Cuban peso
+CVE,132,2,Escudo caboverdiano,Cape Verdean escudo
+CZK,203,2,Corona checa,Czech koruna
+DJF,262,0,Franco yibutiano,Djiboutian franc
+DKK,208,2,Corona danesa,Danish krone
+DOP,214,2,Peso dominicano,Dominican peso
+DZD,012,2,Dinar argelino,Algerian dinar
+EGP,818,2,Libra egipcia,Egyptian pound
+ERN,232,2,Nakfa eritreo,Eritrean nakfa
+ETB,230,2,Birr etíope,Ethiopian birr
+EUR,978,2,Euro,Euro
+FJD,242,2,Dólar fiyiano,Fiji dollar
+FKP,238,2,Libra malvinense,Falkland Islands pound
+GBP,826,2,Libra esterlina,Pound sterling
+GEL,981,2,Lari georgiano,Georgian lari
+GHS,936,2,Cedi ghanés,Ghanaian cedi
+GIP,292,2,Libra de Gibraltar,Gibraltar pound
+GMD,270,2,Dalasi gambiano,Gambian dalasi
+GNF,324,0,Franco guineano,Guinean franc
+GTQ,320,2,Quetzal guatemalteco,Guatemalan quetzal
+GYD,328,2,Dólar guyanés,Guyanese dollar
+HKD,344,2,Dólar de Hong Kong,Hong Kong dollar
+HNL,340,2,Lempira hondureño,Honduran lempira
+HTG,332,2,Gourde haitiano,Haitian gourde
+HUF,348,2,Forinto húngaro,Hungarian forint
+IDR,360,2,Rupia indonesia,Indonesian rupiah
+ILS,376,2,Nuevo séquel israelí,Israeli new shekel
+INR,356,2,Rupia india,Indian rupee
+IQD,368,3,Dinar iraquí,Iraqi dinar
+IRR,364,2,Rial iraní,Iranian rial
+ISK,352,0,Corona islandesa,Icelandic króna
+JMD,388,2,Dólar jamaicano,Jamaican dollar
+JOD,400,3,Dinar jordano,Jordanian dinar
+JPY,392,0,Yen japonés,Japanese yen
+KES,404,2,Chelín keniano,Kenyan shilling
+KGS,417,2,Som kirguís,Kyrgyzstani som
+KHR,116,2,Riel camboyano,Cambodian riel
+KMF,174,0,Franco comorense,Comoro franc
+KPW,408,2,Won norcoreano,North Korean won
+KRW,410,0,Won surcoreano,South Korean won
+KWD,414,3,Dinar kuwaití,Kuwaiti dinar
+KYD,136,2,Dólar de las Islas Caimán,Cayman Islands dollar
+KZT,398,2,Tenge kazajo,Kazakhstani tenge
+LAK,418,2,Kip laosiano,Lao kip
+LBP,422,2,Libra libanesa,Lebanese pound
+LKR,144,2,Rupia de Sri Lanka,Sri Lankan rupee
+LRD,430,2,Dólar liberiano,Liberian dollar
+LSL,426,2,Loti de Lesoto,Lesotho loti
+LYD,434,3,Dinar libio,Libyan dinar
+MAD,504,2,Dírham marroquí,Moroccan dirham
+MDL,498,2,Leu moldavo,Moldovan leu
+MGA,969,2,Ariary malgache,Malagasy ariary
+MKD,807,2,Denar macedonio,Macedonian denar
+MMK,104,2,Kyat birmano,Myanmar kyat
+MNT,496,2,Tugrik mongol,Mongolian tögrög
+MOP,446,2,Pataca de Macao,Macanese pataca
+MRU,929,2,Uguiya mauritana,Mauritanian ouguiya
+MUR,480,2,Rupia mauriciana,Mauritian rupee
+MVR,462,2,Rufiyaa maldiva,Maldivian rufiyaa
+MWK,454,2,Kwacha malauí,Malawian kwacha
+MXN,484,2,Peso mexicano,Mexican peso
+MYR,458,2,Ringit malasio,Malaysian ringgit
+MZN,943,2,Metical mozambiqueño,Mozambican metical
+NAD,516,2,Dólar namibio,Namibian dollar
+NGN,566,2,Naira nigeriano,Nigerian naira
+NIO,558,2,Córdoba nicaragüense,Nicaraguan córdoba
+NOK,578,2,Corona noruega,Norwegian krone
+NPR,524,2,Rupia nepalí,Nepalese rupee
+NZD,554,2,Dólar neozelandés,New Zealand dollar
+OMR,512,3,Rial omaní,Omani rial
+PAB,590,2,Balboa panameño,Panamanian balboa
+PEN,604,2,Sol peruano,Peruvian sol
+PGK,598,2,Kina de Papúa Nueva Guinea,Papua New Guinean kina
+PHP,608,2,Peso filipino,Philippine peso
+PKR,586,2,Rupia pakistaní,Pakistani rupee
+PLN,985,2,Esloti polaco,Polish złoty
+PYG,600,0,Guaraní paraguayo,Paraguayan guaraní
+QAR,634,2,Rial catarí,Qatari riyal
+RON,946,2,Leu rumano,Romanian leu
+RSD,941,2,Dinar serbio,Serbian dinar
+RUB,643,2,Rublo ruso,Russian ruble
+RWF,646,0,Franco ruandés,Rwandan franc
+SAR,682,2,Riyal saudí,Saudi riyal
+SBD,090,2,Dólar de las Islas Salomón,Solomon Islands dollar
+SCR,690,2,Rupia seychelense,Seychelles rupee
+SDG,938,2,Libra sudanesa,Sudanese pound
+SEK,752,2,Corona sueca,Swedish krona
+SGD,702,2,Dólar de Singapur,Singapore dollar
+SHP,654,2,Libra de Santa Elena,Saint Helena pound
+SLE,925,2,Leone sierraleonés,Sierra Leonean leone
+SOS,706,2,Chelín somalí,Somali shilling
+SRD,968,2,Dólar surinamés,Surinamese dollar
+SSP,728,2,Libra sursudanesa,South Sudanese pound
+STN,930,2,Dobra de Santo Tomé y Príncipe,São Tomé and Príncipe dobra
+SVC,222,2,Colón salvadoreño,Salvadoran colón
+SYP,760,2,Libra siria,Syrian pound
+SZL,748,2,Lilangeni suazi,Swazi lilangeni
+THB,764,2,Baht tailandés,Thai baht
+TJS,972,2,Somoni tayiko,Tajikistani somoni
+TMT,934,2,Manat turcomano,Turkmenistan manat
+TND,788,3,Dinar tunecino,Tunisian dinar
+TOP,776,2,Paanga tongano,Tongan paʻanga
+TRY,949,2,Lira turca,Turkish lira
+TTD,780,2,Dólar de Trinidad y Tobago,Trinidad and Tobago dollar
+TWD,901,2,Nuevo dólar taiwanés,New Taiwan dollar
+TZS,834,2,Chelín tanzano,Tanzanian shilling
+UAH,980,2,Grivna ucraniana,Ukrainian hryvnia
+UGX,800,0,Chelín ugandés,Ugandan shilling
+USD,840,2,Dólar estadounidense,US dollar
+UYU,858,2,Peso uruguayo,Uruguayan peso
+UZS,860,2,Som uzbeko,Uzbekistani sum
+VED,926,2,Bolívar digital,Venezuelan digital bolívar
+VES,928,2,Bolívar soberano,Venezuelan sovereign bolívar
+VND,704,0,Dong vietnamita,Vietnamese đồng
+VUV,548,0,Vatu de Vanuatu,Vanuatu vatu
+WST,882,2,Tala samoano,Samoan tālā
+XAF,950,0,Franco CFA de África Central,Central African CFA franc
+XCD,951,2,Dólar del Caribe Oriental,East Caribbean dollar
+XCG,532,2,Florín del Caribe,Caribbean guilder
+XOF,952,0,Franco CFA de África Occidental,West African CFA franc
+XPF,953,0,Franco CFP,CFP franc
+YER,886,2,Rial yemení,Yemeni rial
+ZAR,710,2,Rand sudafricano,South African rand
+ZMW,967,2,Kwacha zambiano,Zambian kwacha
+ZWG,924,2,Oro de Zimbabue,Zimbabwe Gold

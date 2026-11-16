@@ -407,10 +407,14 @@ is_erp_sourced <- function(source) {
   is.na(source) | !(source %in% c("manual", "provision"))
 }
 
+# The old short list. The catalog is now R/monedas.R (ISO 4217); its 23 users
+# move to monedas_opciones() / monedas_en_datos() module by module (monedas
+# fase 3), and this line goes then.
 CURRENCIES <- c("MXN","USD","EUR","GBP","CAD","JPY","CHF","AUD","CNY","BRL")
 
 # ── Source modules ────────────────────────────────────────────────────────────
 source("R/i18n.R")
+source("R/monedas.R")
 source("R/hd_registro.R")
 source("R/hd_piezas.R")
 source("R/hd_columnas.R")
