@@ -353,7 +353,9 @@ rebase_por_id <- function(nuevo, base, fresco, id_col) {
 .hd_admin_completar <- function(df, schema_fn) {
   if (is.null(df) || !is.data.frame(df)) return(schema_fn())
   s <- schema_fn()
-  for (col in setdiff(names(s), names(df))) df[[col]] <- s[[col]][NA_integer_]
+  # One NA per row, typed as the schema (rep() keeps POSIXct's class): a
+  # single NA on a 0-row table threw "replacement has 1 row, data has 0".
+  for (col in setdiff(names(s), names(df))) df[[col]] <- rep(s[[col]][NA_integer_], nrow(df))
   df
 }
 
