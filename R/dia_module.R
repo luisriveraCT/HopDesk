@@ -84,6 +84,14 @@ dia_datos <- function(detail, ledger, tags_df, agenda_df = NULL, puede_convertir
     .adjuntos     = dia_clip_totales(prov_id, clip),
     stringsAsFactors = FALSE
   )
+  # What the money column SHOWS (fix-aprox-pantallas): a provision quoted in
+  # USD and paid in MXN converted at today's FIX, "≈" (ImporteVer.aprox);
+  # the real amount elsewhere. Display only: dia_ids / dia_llaves, the Agenda
+  # and every action read Importe (tests/test_fix_aprox_pantallas_r.R guards it).
+  v <- if (exists("fx_columna_ver", mode = "function"))
+    fx_columna_ver(out$Importe, d$aprox, d$importe_aprox)
+  else list(ver = out$Importe, aprox = rep("", nrow(out)), aprox_total = "")
+  out$ImporteVer <- v$ver; out[["ImporteVer.aprox"]] <- v$aprox; out[["ImporteVer.aprox_total"]] <- v$aprox_total
   out[order(-out$Importe), , drop = FALSE]
 }
 
@@ -115,7 +123,7 @@ dia_columnas <- function(vista, iniciales = NULL) {
     col_insignia("Movida", "tablas.dia.movida", opcional = TRUE, visible = detalle, mapa = list(
       manual    = list(texto = "tablas.dia.movida_manual",    tono = "info"),
       politicas = list(texto = "tablas.dia.movida_politicas", tono = "exito"))),
-    col_dinero("Importe", "tablas.facturas.importe", moneda = "Moneda"),
+    col_dinero("ImporteVer", "tablas.facturas.importe", moneda = "Moneda"),   # Importe as shown (≈)
     col_etiqueta("Etiqueta", "tablas.facturas.etiqueta"),
     col_insignia("Origen", "tablas.facturas.origen", opcional = TRUE, visible = TRUE, mapa = list(
       sap         = list(texto = "tablas.dia.origen_sap",         tono = "neutro"),

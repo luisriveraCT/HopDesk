@@ -665,6 +665,17 @@ hd_filas <- function(datos, columnas, id_col = "id") {
         ax <- as.character(campo_de(".aprox", "")); ax[is.na(ax)] <- ""
         v$cid <- I(cid); v$marca <- I(ma); v$boton <- I(bo); v$n <- I(nn); v$mano <- I(mano); v$aprox <- I(ax)
       }
+      # .aprox on any money column (fix-aprox-pantallas): "" or the help of
+      # an approximate amount -- "≈" before it, the help on hover, as text.
+      # <campo>.aprox_total: the help of a total that includes one (the
+      # footer's sum). Only when the data brings them; nothing else changes.
+      if (identical(col$tipo, "dinero") && !isTRUE(col$accion) && paste0(col$campo, ".aprox") %in% names(datos)) {
+        ax <- as.character(datos[[paste0(col$campo, ".aprox")]]); ax[is.na(ax)] <- ""
+        v$aprox <- I(ax)
+        tot <- as.character(datos[[paste0(col$campo, ".aprox_total")]] %||% character(0))
+        tot <- tot[!is.na(tot) & nzchar(tot)]
+        if (length(tot)) v$aprox_total <- tot[1]
+      }
       # tono = "<campo>" (tono_celda, T17a): the row's own tone, only from
       # the closed list; anything else paints none.
       if (!is.null(col$tono) && !identical(col$tono, "signo")) {

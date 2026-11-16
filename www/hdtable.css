@@ -231,6 +231,7 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-celda-marca { margin-right: 3px; font-weight: 700; }
 /* An approximate amount (banxico-fix): "≈" before it, help on hover. */
 .hdt-celda-aprox { margin-right: 2px; color: var(--hdt-muted); cursor: help; }
+.hdt-pie-monto.hdt-pie-aprox, .hdt-total-aprox { cursor: help; }
 .hdt-celda-vencida { color: var(--hdt-danger); }
 .hdt-celda-confirmada { color: var(--hdt-t-exito); }
 .hdt-celda-pendiente { color: var(--hdt-muted); }

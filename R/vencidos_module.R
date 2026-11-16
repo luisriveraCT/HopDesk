@@ -53,7 +53,7 @@ facturas_datos <- function(df, tags_df, agenda_df = NULL, puede_convertir = FALS
     Documento = character(), Origen = character(), FechaOriginal = as.Date(character()),
     Importe = numeric(), Moneda = character(), Etiqueta = character(),
     .tipo = character(), .bloqueada = logical(), .provision = logical(), .acciones = character(),
-    .agregado = logical(), stringsAsFactors = FALSE)
+    .agregado = logical(), ImporteVer = numeric(), stringsAsFactors = FALSE)
   if (is.null(df) || !nrow(df)) return(vacio)
   df <- as.data.frame(df, stringsAsFactors = FALSE)
   col <- function(n, def = "") { v <- df[[n]]; if (is.null(v)) rep(def, nrow(df)) else { v <- as.character(v); v[is.na(v)] <- def; v } }
@@ -109,6 +109,14 @@ facturas_datos <- function(df, tags_df, agenda_df = NULL, puede_convertir = FALS
     .agregado     = agregado,
     stringsAsFactors = FALSE
   )
+  # What the money column SHOWS (fix-aprox-pantallas): a provision quoted in
+  # USD and paid in MXN converted at today's FIX, "≈" (ImporteVer.aprox);
+  # the real amount elsewhere. Display only: ids, keys, the Agenda and every
+  # action read Importe (tests/test_fix_aprox_pantallas_r.R guards it).
+  v <- if (exists("fx_columna_ver", mode = "function"))
+    fx_columna_ver(out$Importe, df$aprox, df$importe_aprox)
+  else list(ver = out$Importe, aprox = rep("", nrow(out)), aprox_total = "")
+  out$ImporteVer <- v$ver; out[["ImporteVer.aprox"]] <- v$aprox; out[["ImporteVer.aprox_total"]] <- v$aprox_total
   # Factory order: by unit (a group of company + date + counterpart inside
   # its currency and type, or a loose row), strongest tag first, then the
   # unit's amount without paid rows; inside a unit, tag then amount.
@@ -159,7 +167,7 @@ facturas_columnas <- function(visibles = character()) {
     col_texto("Documento", "tablas.facturas.documento", opcional = TRUE, visible = "Documento" %in% visibles, ancho = 80),
     col_texto("Origen", "tablas.facturas.origen", recorte = FALSE, opcional = TRUE, visible = FALSE),
     col_fecha("FechaOriginal", "tablas.facturas.venc_original", opcional = TRUE, visible = FALSE),
-    col_dinero("Importe", "tablas.facturas.importe", moneda = "Moneda"),
+    col_dinero("ImporteVer", "tablas.facturas.importe", moneda = "Moneda"),   # Importe as shown (≈)
     col_texto("Moneda", "tablas.facturas.moneda", recorte = FALSE, opcional = TRUE, visible = FALSE),
     col_etiqueta("Etiqueta", "tablas.facturas.etiqueta")
   )

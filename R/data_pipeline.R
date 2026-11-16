@@ -576,6 +576,17 @@ to_calendar_data <- function(df, amount_col = "Saldo vencido") {
   if (!"has_abono"      %in% names(df)) df$has_abono      <- FALSE
   if (!"Saldo_original" %in% names(df)) df$Saldo_original <- df[[amount_col]]
 
+  # fix-aprox-pantallas: a provision quoted in USD and paid in MXN counts with
+  # its amount converted at today's FIX (the provision bridge's importe_aprox)
+  # instead of 0, and its party says so (aprox). This frame only paints the
+  # Calendar's bubbles: the Agenda's keys never come from it.
+  v <- if (exists("fx_columna_ver", mode = "function"))
+    fx_columna_ver(df[[amount_col]], df$aprox, df$importe_aprox)
+  else list(ver = df[[amount_col]], aprox = rep("", nrow(df)))
+  df$.aprox <- nzchar(v$aprox)
+  df[[amount_col]][df$.aprox] <- v$ver[df$.aprox]
+  df$Saldo_original[df$.aprox] <- v$ver[df$.aprox]
+
   result <- df |>
     mutate(
       Importe        = abs(replace_na(.data[[amount_col]], 0)),
@@ -592,6 +603,7 @@ to_calendar_data <- function(df, amount_col = "Saldo vencido") {
       abono_total    = sum(abono_total,    na.rm = TRUE),
       Saldo_original = sum(Saldo_original, na.rm = TRUE),
       has_abono      = any(has_abono,      na.rm = TRUE),
+      aprox          = any(.aprox,         na.rm = TRUE),
       .groups = "drop"
     )
 

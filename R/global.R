@@ -842,7 +842,16 @@ calendar_html <- function(
     mutate(Moneda = toupper(trimws(Moneda))) |>
     filter(Moneda == cur, Fecha >= ms, Fecha <= me, !is.na(Fecha)) |>
     mutate(Importe = abs(Importe))
-  message("[CAL_HTML] cur=", cur, " data_due_rows=", nrow(data_due), 
+  # fix-aprox-pantallas (integrator's permission, this function only): a party
+  # whose amount includes one converted at today's FIX (aprox, from
+  # to_calendar_data) and the day's total say "\u2248 " (≈), with the help on hover
+  # (escaped as an attribute). Without the column, the HTML is today's.
+  if (!"aprox" %in% names(dcur)) dcur$aprox <- rep(FALSE, nrow(dcur))
+  ayuda_aprox <- tryCatch(if (exists("fx_ayuda_total", mode = "function") && exists(".fx_para_mostrar", mode = "function"))
+    fx_ayuda_total(.fx_para_mostrar()) else "", error = function(e) "")
+  if (!is.character(ayuda_aprox) || length(ayuda_aprox) != 1L || is.na(ayuda_aprox)) ayuda_aprox <- ""
+  titulo_aprox <- if (nzchar(ayuda_aprox)) paste0(' title="', htmltools::htmlEscape(ayuda_aprox, attribute = TRUE), '"') else ""
+  message("[CAL_HTML] cur=", cur, " data_due_rows=", nrow(data_due),
         " dcur_rows=", nrow(dcur),
         " monedas_in=", paste(unique(data_due$Moneda), collapse=","))
 
@@ -852,7 +861,7 @@ calendar_html <- function(
 
   per_party_raw <- dcur |>
     group_by(Fecha, Parte) |>
-    summarise(Importe = sum(Importe, na.rm = TRUE), .groups = "drop")
+    summarise(Importe = sum(Importe, na.rm = TRUE), aprox = any(aprox %in% TRUE), .groups = "drop")
 
   # Fast path: party_tags is almost always empty — avoid per-row list lookups
   per_party <- if (length(party_tags) == 0L) {
@@ -1015,7 +1024,9 @@ calendar_html <- function(
         paste0(
           '<div class="cal-row">',
             '<span class="cal-party">', str_trunc(p$Parte, 18), '</span>',
-            '<span class="cal-amount">$ ', fmt(p$Importe), '</span>',
+            if (isTRUE(p$aprox)) paste0('<span class="cal-amount"', titulo_aprox, '>\u2248 ')
+            else '<span class="cal-amount">',
+            '$ ', fmt(p$Importe), '</span>',
           '</div>'
         )
       }, character(1))
@@ -1029,7 +1040,8 @@ calendar_html <- function(
         '<div class="cal-divider"></div>',
         '<div class="cal-total">',
           '<span>Total</span>',
-          '<span>$ ', fmt(total), '</span>',
+          if (any(parties$aprox %in% TRUE)) paste0('<span', titulo_aprox, '>\u2248 ') else '<span>',
+          '$ ', fmt(total), '</span>',
         '</div>'
       )
     } else ""

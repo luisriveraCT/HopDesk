@@ -149,3 +149,23 @@ fx_monto_aprox <- function(amount_cotizado, cotizado_en, moneda_pago, override, 
 fx_aprox_ayuda <- function(fx) if (!.fx_valido(fx)) "" else
   tr("tablas.fx.aprox_ayuda", fecha = format(as.Date(fx$fecha), "%d/%m/%Y"),
      valor = formatC(fx$valor, format = "f", digits = 4))
+
+# ── The other screens (fix-aprox-pantallas): Calendario, Día, Vencidos, Lupa ─
+# "Incluye montos aproximados (FIX del {fecha})": the help of a total that
+# adds an approximate amount (the Calendar's bubble, Día's Resumen, the
+# tables' footer sum).
+fx_ayuda_total <- function(fx) if (!.fx_valido(fx)) "" else
+  tr("tablas.fx.aprox_total", fecha = format(as.Date(fx$fecha), "%d/%m/%Y"))
+
+# The amount to SHOW for rows of the ledger: the approximate one where the
+# provision bridge marked it (aprox, importe_aprox) and there is a FIX, the
+# real one elsewhere. list(ver, aprox = per-row help or "", aprox_total).
+# Display only: actions, keys and the Agenda keep reading Importe.
+fx_columna_ver <- function(importe, aprox, importe_aprox, fx = .fx_para_mostrar()) {
+  n <- length(importe)
+  ayuda <- fx_aprox_ayuda(fx)
+  ap <- rep_len(as.logical(aprox %||% NA), n); ia <- rep_len(suppressWarnings(as.numeric(importe_aprox %||% NA)), n)
+  ax <- ap %in% TRUE & !is.na(ia) & nzchar(ayuda)
+  list(ver = ifelse(ax, ia, as.numeric(importe)), aprox = ifelse(ax, ayuda, ""),
+       aprox_total = if (any(ax)) fx_ayuda_total(fx) else "")
+}

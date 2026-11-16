@@ -1017,7 +1017,7 @@
                completo: c.completo ? arr(c.completo) : null, valor: c.valor ? arr(c.valor) : null,
                cid: c.cid ? arr(c.cid) : null, marca: c.marca ? arr(c.marca) : null,
                boton: c.boton ? arr(c.boton) : null, cn: c.n ? arr(c.n) : null, mano: c.mano ? arr(c.mano) : null,
-               aprox: c.aprox ? arr(c.aprox) : null,
+               aprox: c.aprox ? arr(c.aprox) : null, aproxTotal: c.aprox_total ? String(c.aprox_total) : '',
                edf: c.edf ? arr(c.edf) : null,
                min: c.min ? arr(c.min) : null, max: c.max ? arr(c.max) : null };
     });
@@ -1339,6 +1339,13 @@
       var tono = String((st.celdas[j].tono || [])[i] || 'neutro').replace(/[^a-z_]/g, '');
       td.appendChild(nodo('span', 'hdt-ins hdt-tono-' + tono, v));
     } else td.appendChild(document.createTextNode(v == null ? '' : v));
+    // An approximate amount on any money column (fix-aprox-pantallas): "≈"
+    // before it, its help on hover, as text. accion_celda paints its own.
+    if (c.tipo === 'dinero' && !c.accion && st.celdas[j].aprox && st.celdas[j].aprox[i]) {
+      var ax = nodo('span', 'hdt-celda-aprox', '≈');
+      ax.title = String(st.celdas[j].aprox[i]);
+      td.insertBefore(ax, td.firstChild);
+    }
     if (st.celdaCfg && c.accion && st.celdas[j].cid) pintarCeldaAccion(st, td, j, i);
   }
 
@@ -1641,6 +1648,7 @@
         td.textContent = mons.length ? mons.map(function (mo) {
           return (mons.length > 1 && mo ? mo + ' ' : '') + dinero(s[mo]);
         }).join(' · ') : dinero(0);
+        marcarAprox(st, td, libres);   // a group total with an approximate amount (Día Resumen)
       } else if (j === st.colEt && st.p.etiquetas) {
         if (fuerte != null) pintarCelda(st, td, j, fuerte);
       } else if (comun) pintarCelda(st, td, j, i0);
@@ -1765,6 +1773,17 @@
     return it.tr || (it.tr = it.sep ? trSeparador(st, it) : it.grupo ? trGrupo(st, it) : trBanda(st, it));
   }
 
+  // A total over rows `filas` that include an approximate amount (an
+  // amount converted with today's FIX, fix-aprox-pantallas): "≈" before it,
+  // the column's help for totals on hover, as text.
+  function marcarAprox(st, el, filas) {
+    var c = st.suma >= 0 ? st.celdas[st.suma] : null;
+    if (!c || !c.aprox || !filas.some(function (i) { return !!c.aprox[i]; })) return;
+    el.insertBefore(document.createTextNode('≈ '), el.firstChild);
+    el.classList.add('hdt-total-aprox');
+    el.title = c.aproxTotal || '';
+  }
+
   // A section's band: its label and, with `subtotales`, how many rows it
   // has and what they add up to per currency (locked rows don't count).
   function trBanda(st, b) {
@@ -1781,8 +1800,10 @@
         var s = {};
         filas.forEach(function (i) { var m = st.moneda[i] || ''; s[m] = (s[m] || 0) + montoFila(st, i); });
         var mons = Object.keys(s).sort();
-        caja.appendChild(nodo('span', 'hdt-banda-suma', mons.length
-          ? mons.map(function (m) { return (m ? m + ' ' : '') + dinero(s[m]); }).join(' · ') : dinero(0)));
+        var bs = nodo('span', 'hdt-banda-suma', mons.length
+          ? mons.map(function (m) { return (m ? m + ' ' : '') + dinero(s[m]); }).join(' · ') : dinero(0));
+        marcarAprox(st, bs, filas);
+        caja.appendChild(bs);
       }
     }
     td.appendChild(caja);
@@ -2099,12 +2120,14 @@
     if (st.suma < 0 || (!conSel && !conVis)) { st.pie.hidden = true; return; }
     var filas = conSel ? st.ids.filter(function (id) { return st.sel.has(id); }).map(function (id) { return st.idx[id]; })
                        : st.vis.filter(function (i) { return !st.bloq[i]; });
-    var grupos = {}, orden = [];
+    var grupos = {}, orden = [], aprox = {}, cs = st.celdas[st.suma];
     filas.forEach(function (i) {
       var tipo = st.tipo[i] === 'cobro' || st.tipo[i] === 'pago' ? st.tipo[i] : '';
       var mon = st.moneda[i] || '';
       if (!grupos[tipo]) { grupos[tipo] = {}; orden.push(tipo); }
       grupos[tipo][mon] = (grupos[tipo][mon] || 0) + montoFila(st, i);
+      // A total that includes an approximate amount says so (fix-aprox-pantallas).
+      if (cs && cs.aprox && cs.aprox[i]) aprox[tipo + '|' + mon] = true;
     });
     orden.sort(function (a, b) { return ['cobro', 'pago', ''].indexOf(a) - ['cobro', 'pago', ''].indexOf(b); });
 
@@ -2116,7 +2139,9 @@
       var g = nodo('span', 'hdt-pie-grupo');
       if (tipo) g.appendChild(nodo('span', 'hdt-pie-tipo hdt-' + tipo, t(tipo === 'cobro' ? 'tablas.cobros' : 'tablas.pagos')));
       Object.keys(grupos[tipo]).sort().forEach(function (mon) {
-        g.appendChild(nodo('span', 'hdt-pie-monto', (mon ? mon + ' ' : '') + dinero(grupos[tipo][mon])));
+        var pm = nodo('span', 'hdt-pie-monto', (aprox[tipo + '|' + mon] ? '≈ ' : '') + (mon ? mon + ' ' : '') + dinero(grupos[tipo][mon]));
+        if (aprox[tipo + '|' + mon]) { pm.classList.add('hdt-pie-aprox'); pm.title = cs.aproxTotal || ''; }
+        g.appendChild(pm);
       });
       st.pie.appendChild(g);
     });
