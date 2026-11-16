@@ -1131,10 +1131,10 @@ empresasServer <- function(id, shared) {
               ) } else NULL
             ),
             # Monedas fase 1: the client's presentation currency (R/monedas.R).
-            # Empty = automatic (the currency of most open documents).
+            # Empty = the default (MONEDA_BASE_OMISION).
             {
               base <- tryCatch(shared$moneda_base_cliente(), error = function(e) NULL) %||%
-                      list(moneda = NA_character_, origen = "ninguna")
+                      moneda_base_resolver(NA)
               datos <- tryCatch(monedas_en_datos(monedas_de_sap(shared$sap_data())), error = function(e) character())
               idioma <- hd_idioma()
               fluidRow(
@@ -1142,14 +1142,15 @@ empresasServer <- function(id, shared) {
                   tags$label(tr("comun.monedas.base.titulo"), class = "form-label small fw-semibold"),
                   tags$p(class = "text-muted small mb-1", tr("comun.monedas.base.ayuda")),
                   selectizeInput(ns("moneda_base_input"), NULL,
-                                 choices  = c(stats::setNames("", tr("comun.monedas.base.automatica_opcion")),
+                                 choices  = c(stats::setNames("", tr("comun.monedas.base.omision_opcion",
+                                                                     moneda = MONEDA_BASE_OMISION)),
                                               monedas_opciones(primero = datos, idioma = idioma)),
                                  selected = if (identical(base$origen, "ajuste")) base$moneda else "",
                                  width = "100%"),
-                  if (identical(base$origen, "datos"))
-                    tags$p(class = "small text-warning mb-0",
+                  if (identical(base$origen, "omision"))
+                    tags$p(class = "small text-muted mb-0",
                            icon("circle-info"), " ",
-                           tr("comun.monedas.base.aviso_automatica", moneda = base$moneda))
+                           tr("comun.monedas.base.aviso_omision", moneda = base$moneda))
                 )
               )
             },

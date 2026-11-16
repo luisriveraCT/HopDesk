@@ -1637,10 +1637,9 @@ server <- function(input, output, session) {
     group_logo_raw = reactive({ group_config_rv()$logo_raw }),
     group_logo_ext = reactive({ group_config_rv()$logo_ext %||% "png" }),
     # The client's base currency: list(moneda, origen) -- "ajuste" (chosen in
-    # Ajustes generales), "datos" (most open documents) or "ninguna" (NA).
-    # R/monedas.R; nothing else decides it (Luis, 2026-11-16).
-    moneda_base_cliente = reactive(moneda_base_resolver(group_config_rv()$moneda_base,
-                                                        monedas_de_sap(sap_data()))),
+    # Ajustes generales) or "omision" (MONEDA_BASE_OMISION). R/monedas.R;
+    # nothing else decides it (Luis, 2026-11-16).
+    moneda_base_cliente = reactive(moneda_base_resolver(group_config_rv()$moneda_base)),
     cf_preview_open   = cf_preview_open,
     cf_preview_prefill = cf_preview_prefill,
     # Banxico FIX for Panorama's Cinta: list(valor, cambio_pct, fecha), or

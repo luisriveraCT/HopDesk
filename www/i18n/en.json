@@ -1710,7 +1710,7 @@
   "cuentas.olvide.volver": "← Back to sign in",
   "comun.monedas.base.titulo": "Presentation currency",
   "comun.monedas.base.ayuda": "Reports and totals are shown in this currency. The others appear according to your data.",
-  "comun.monedas.base.automatica_opcion": "Automatic (the one with most documents)",
-  "comun.monedas.base.aviso_automatica": "For now {moneda} is used, the currency of most of your documents. Choose it to fix it.",
+  "comun.monedas.base.omision_opcion": "Default ({moneda})",
+  "comun.monedas.base.aviso_omision": "{moneda} is used by default. Choose another if your reports are in another currency.",
   "comun.monedas.base.invalida": "That currency is not in the catalog; nothing was saved."
 }

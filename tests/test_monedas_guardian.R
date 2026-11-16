@@ -17,6 +17,9 @@ source("R/monedas.R")
 
 TOPE <- 222L   # 2026-11-16, master 74f10ee + fase 1; lowered by every migration
 
+# R/monedas.R is never counted: it is the catalog, and it holds the one
+# deliberate code, MONEDA_BASE_OMISION = "MXN" (Luis, 2026-11-16: "es una app
+# mexicana"), the base of a client that has not chosen one.
 # Legitimate: a currency that is a rule of the outside world, not a choice.
 # file = reason. Their literals are not counted.
 EXCEPCIONES <- c(

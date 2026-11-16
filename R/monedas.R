@@ -9,8 +9,7 @@
 #     never lets the count grow (it fails at zero's ratchet, phase 3).
 #   - The client's base (presentation) currency lives in its group config
 #     (Ajustes generales, can_manage_group_branding). Until someone sets
-#     it, the currency of most open documents in its data is used, and
-#     Ajustes says so.
+#     it, MONEDA_BASE_OMISION (Luis), and Ajustes says so.
 #   - The other currencies come from the data, base first.
 #
 # Pure functions: the setting is saved with the rest of the group config
@@ -77,21 +76,20 @@ monedas_en_datos <- function(monedas, base = NA_character_) {
 }
 
 # ── Moneda base del cliente ──────────────────────────────────────────────────
+# The default base currency when a client has not chosen one. Luis,
+# 2026-11-16: "es una app mexicana". The one currency code written by hand
+# in the app's logic; it lives here, in the catalog's file, which
+# tests/test_monedas_guardian.R does not count, for this reason.
+MONEDA_BASE_OMISION <- "MXN"
+
 # list(moneda, origen):
-#   origen "ajuste"  the client chose it (group config, a catalog code);
-#          "datos"   nobody chose yet: the currency of most open documents.
-#                    Counted by documents, not by amount: amounts in pesos and
-#                    yen cannot be compared without an exchange rate, and the
-#                    biggest number would win for the wrong reason;
-#          "ninguna" no setting and no data: moneda = NA. The caller shows
-#                    nothing rather than invent a currency.
-moneda_base_resolver <- function(ajuste, monedas_datos = character()) {
+#   origen "ajuste"   the client chose it (group config, a catalog code);
+#          "omision"  nobody chose yet (or the value is not in the catalog):
+#                     MONEDA_BASE_OMISION, and Ajustes says so.
+moneda_base_resolver <- function(ajuste) {
   a <- toupper(trimws(as.character(ajuste %||% NA_character_)))[1]
   if (!is.na(a) && moneda_valida(a)) return(list(moneda = a, origen = "ajuste"))
-  d <- .monedas_por_documentos(monedas_datos)
-  d <- d[moneda_valida(d)]
-  if (length(d)) return(list(moneda = d[[1]], origen = "datos"))
-  list(moneda = NA_character_, origen = "ninguna")
+  list(moneda = MONEDA_BASE_OMISION, origen = "omision")
 }
 
 # The `Moneda` column of every open document in sap_data() (AR and AP).

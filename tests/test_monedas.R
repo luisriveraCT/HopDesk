@@ -51,18 +51,14 @@ test_that("monedas en los datos: por número de documentos, la base primero", {
   expect_identical(monedas_en_datos(character()), character())
 })
 
-test_that("moneda base: ajuste > datos > ninguna, y nunca inventa una", {
-  datos <- c("USD", "USD", "MXN")
-  expect_identical(moneda_base_resolver("EUR", datos), list(moneda = "EUR", origen = "ajuste"))
-  expect_identical(moneda_base_resolver(" eur ", datos), list(moneda = "EUR", origen = "ajuste"))
-  expect_identical(moneda_base_resolver(NA, datos), list(moneda = "USD", origen = "datos"))
-  expect_identical(moneda_base_resolver(NULL, datos), list(moneda = "USD", origen = "datos"))
-  expect_identical(moneda_base_resolver("ZZZ", datos), list(moneda = "USD", origen = "datos"))
-  # by documents, not by amount: many yen would not win over the peso
-  expect_identical(moneda_base_resolver(NA, c("MXN", "MXN", "JPY"))$moneda, "MXN")
-  # a code outside the catalog in the data is never the base
-  expect_identical(moneda_base_resolver(NA, c("XYZ", "XYZ", "MXN"))$moneda, "MXN")
-  expect_identical(moneda_base_resolver(NA, character()), list(moneda = NA_character_, origen = "ninguna"))
+test_that("moneda base: el ajuste del cliente, o la de omisión (Luis: MXN)", {
+  expect_identical(MONEDA_BASE_OMISION, "MXN")
+  expect_true(moneda_valida(MONEDA_BASE_OMISION))
+  expect_identical(moneda_base_resolver("EUR"), list(moneda = "EUR", origen = "ajuste"))
+  expect_identical(moneda_base_resolver(" eur "), list(moneda = "EUR", origen = "ajuste"))
+  expect_identical(moneda_base_resolver("MXN"), list(moneda = "MXN", origen = "ajuste"))
+  for (sin in list(NA, NULL, "", "ZZZ", character()))
+    expect_identical(moneda_base_resolver(sin), list(moneda = "MXN", origen = "omision"))
 })
 
 test_that("monedas_de_sap junta AR y AP y tolera lo que falte", {

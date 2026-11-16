@@ -1710,7 +1710,7 @@
   "cuentas.olvide.volver": "← Volver a iniciar sesión",
   "comun.monedas.base.titulo": "Moneda de presentación",
   "comun.monedas.base.ayuda": "Los reportes y totales se presentan en esta moneda. Las demás aparecen según tus datos.",
-  "comun.monedas.base.automatica_opcion": "Automática (la de más documentos)",
-  "comun.monedas.base.aviso_automatica": "Por ahora se usa {moneda}, la moneda de la mayoría de tus documentos. Elígela para fijarla.",
+  "comun.monedas.base.omision_opcion": "Por omisión ({moneda})",
+  "comun.monedas.base.aviso_omision": "Se usa {moneda} por omisión. Elige otra si tus reportes van en otra moneda.",
   "comun.monedas.base.invalida": "Esa moneda no está en el catálogo; no se guardó nada."
 }
