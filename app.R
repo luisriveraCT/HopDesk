@@ -1266,7 +1266,10 @@ server <- function(input, output, session) {
     if (isTRUE(force_pw_checked())) return()
     if (is.null(info) || info$user == "unknown") return()
     force_pw_checked(TRUE)
-    usuarios <- tryCatch(auth_load_usuarios(), error = function(e) NULL)
+    # The account's own folder (T31 follow-up): without client_id this read
+    # CLIENT_ID's (hd-admin in production), where a client's user has no
+    # row, so the gate never showed for them.
+    usuarios <- tryCatch(auth_load_usuarios(client_id = info$client_id), error = function(e) NULL)
     if (is.null(usuarios) || !nrow(usuarios)) return()
     row <- usuarios[tolower(usuarios$username) == tolower(info$user), , drop = FALSE]
     if (!nrow(row)) return()
@@ -1326,7 +1329,9 @@ server <- function(input, output, session) {
       return()
     }
     info     <- current_user_info()
-    usuarios <- tryCatch(auth_load_usuarios(), error = function(e) NULL)
+    # Read and save in the account's own folder, never CLIENT_ID's (hd-admin
+    # in production): that would save hd-admin's table, not the client's.
+    usuarios <- tryCatch(auth_load_usuarios(client_id = info$client_id), error = function(e) NULL)
     if (is.null(usuarios)) return()
     idx <- which(tolower(usuarios$username) == tolower(info$user))
     if (!length(idx)) return()
@@ -1335,7 +1340,7 @@ server <- function(input, output, session) {
     usuarios$requires_password_change[idx] <- FALSE
     usuarios$password_changed_at[idx]      <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
     tryCatch({
-      auth_save_usuarios(usuarios, base = base_usuarios)
+      auth_save_usuarios(usuarios, client_id = info$client_id, base = base_usuarios)
       removeModal()
       showNotification(tr("niveles.usuarios.aviso.contrasena_actualizada"), type = "message", duration = 4)
     }, error = function(e) {
