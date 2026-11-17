@@ -229,19 +229,13 @@ pasivos_table_css <- function() {
 "))
 }
 
-# Returns a hex color for a given currency code (for badges, pills, separators).
-.pasivos_cur_color <- function(cur) {
-  switch(toupper(cur %||% ""),
-    MXN = "#2563eb",
-    USD = "#16a34a",
-    EUR = "#7c3aed",
-    "#6b7280"
-  )
+# Badge colors by position in .pasivos_cur_order() (T33, Luis: no currency
+# written by hand): the base is blue, the next two green and purple, the
+# rest gray. A client in MXN with MXN, USD and EUR keeps today's colors.
+.PASIVOS_CUR_COLORES <- c("#2563eb", "#16a34a", "#7c3aed")
+.PASIVOS_CUR_GRIS    <- "#6b7280"
+.pasivos_cur_color <- function(cur, orden) {
+  k <- match(cur, orden)
+  if (length(k) != 1L || is.na(k) || k > length(.PASIVOS_CUR_COLORES)) .PASIVOS_CUR_GRIS else .PASIVOS_CUR_COLORES[k]
 }
 
-# Returns currencies sorted in canonical display order (MXN, USD, EUR, then rest).
-.pasivos_cur_order <- function(currencies) {
-  priority <- c("MXN", "USD", "EUR")
-  up <- toupper(unique(currencies[!is.na(currencies)]))
-  c(priority[priority %in% up], sort(up[!up %in% priority]))
-}

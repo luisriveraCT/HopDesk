@@ -11,6 +11,7 @@ cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALS
     eval(e, envir = globalenv())
 cargar("R/global.R", "strip_accents")
 cargar("R/persistence.R", "confirmaciones_vigentes")
+source("R/monedas.R")   # T33: Pasivos orders currencies by the client's base (R/monedas.R)
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/pasivos_schemas.R", "R/pasivos_table_pivot.R")) source(f)
 source("tests/helpers/pasivos_datos_prueba.R")

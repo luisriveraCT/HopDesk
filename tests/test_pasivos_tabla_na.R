@@ -16,6 +16,7 @@ cat("=== test_pasivos_tabla_na ===\n\n")
 suppressPackageStartupMessages({ library(dplyr); library(tibble) })
 `%||%` <- function(a, b) if (is.null(a)) b else a
 source("R/pasivos_schemas.R")
+source("R/monedas.R")   # T33: Pasivos orders currencies by the client's base (R/monedas.R)
 source("R/pasivos_table_pivot.R")
 for (e in parse("R/global.R", keep.source = FALSE))
   if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && identical(e[[2]], as.name("strip_accents"))) eval(e)

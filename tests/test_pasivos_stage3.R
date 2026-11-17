@@ -70,6 +70,7 @@ source("R/bancos_persistence.R")
 source("R/pasivos_persistence.R")
 source("R/pasivos_capabilities.R")
 source("R/pasivos_audit.R")
+source("R/monedas.R")   # T33: Pasivos orders currencies by the client's base (R/monedas.R)
 source("R/pasivos_table_pivot.R")
 source("R/pasivos_table_styles.R")
 # The search filter (pasivos_table_build_long) uses strip_accents() from

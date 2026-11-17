@@ -21,6 +21,7 @@ cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALS
   if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
     eval(e, envir = globalenv())
 cargar("R/global.R", c("strip_accents", "fmt_money", "CURRENCIES"))
+source("R/monedas.R")   # T33: Pasivos orders currencies by the client's base (R/monedas.R)
 cargar("R/persistence.R", "confirmaciones_vigentes")
 cargar("R/pasivos_observers.R", "isTRUE_safe")
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",

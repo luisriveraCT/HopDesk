@@ -84,6 +84,14 @@ pasivos_table_module_server <- function(id, shared) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    # The client's base currency (T33): its rows, sections and badges first.
+    # A reactiveVal, so saving the group config without changing the base
+    # rebuilds nothing (a reactive would invalidate the whole table).
+    leer_base <- function() tryCatch(shared$moneda_base_cliente()$moneda, error = function(e) NULL) %||%
+      MONEDA_BASE_OMISION
+    base <- shiny::reactiveVal(shiny::isolate(leer_base()))
+    shiny::observe(base(leer_base()))
+
     # ── Start the list sub-module ───────────────────────────────────────────
     pasivos_list_module_server("list", shared)
     pasivos_papelera_server("papelera", shared)
@@ -355,7 +363,8 @@ pasivos_table_module_server <- function(id, shared) {
           liabilities        = liabs_visibles(),
           filters            = list(empresa = character(0), categorias = c("regular", "financiero", "tarjeta"),
                                     subcategorias = character(0), currency = "All", search = "",
-                                    granularity = granularidad(), provision_type = "todas")
+                                    granularity = granularidad(), provision_type = "todas"),
+          base               = base()
         ),
         error = function(e) {
           message("[pasivos_table] build_long error: ", conditionMessage(e))
@@ -372,7 +381,8 @@ pasivos_table_module_server <- function(id, shared) {
         long_df      = long_df(),
         granularity  = granularidad(),
         window_start = w$start,
-        window_end   = w$end
+        window_end   = w$end,
+        base         = base()
       )
     })
     # ── The requisition clip (E3b) ──────────────────────────────────────────
@@ -422,7 +432,7 @@ pasivos_table_module_server <- function(id, shared) {
       piezas = c("accion_celda", "tono_celda", "sangria", "copiar_celda", "copiar_tsv"),
       accion_celda = list(clic = "editar_celda"),
       acciones_fila = "editar",
-      secciones = list(list(campo = "Moneda", orden = c("MXN", "USD", "EUR"))),
+      secciones = list(list(campo = "Moneda", orden = function() .pasivos_cur_order(long_df()$row_moneda, base()))),
       filtros = list(
         list(campo = "Empresa", titulo = "tablas.pasivos.filtro.empresa"),
         list(campo = "Categoria", titulo = "tablas.pasivos.filtro.categoria",
@@ -512,13 +522,18 @@ pasivos_table_module_server <- function(id, shared) {
       fut <- ldf[ldf$cell_kind == "provision" & !is.na(ldf$fecha) &
                    ldf$fecha >= today & ldf$fecha <= today + 7L,
                  , drop = FALSE]
-      currencies <- .pasivos_cur_order(unique(fut$cell_currency))
+      # Badges and their colors follow the whole table's order (base first,
+      # present or not), as its sections do, so a currency keeps its place and
+      # color whatever falls in the next 7 days.
+      colores_orden <- unique(c(base(), .pasivos_cur_order(long_df()$row_moneda, base())))
+      presentes  <- unique(fut$cell_currency[!is.na(fut$cell_currency)])
+      currencies <- c(intersect(colores_orden, presentes), setdiff(presentes, colores_orden))
 
       badges <- lapply(currencies, function(cur) {
         rows_cur <- fut[fut$cell_currency == cur, , drop = FALSE]
         total    <- sum(rows_cur$cell_amount, na.rm = TRUE)
         n        <- nrow(rows_cur)
-        col      <- .pasivos_cur_color(cur)
+        col      <- .pasivos_cur_color(cur, colores_orden)
         shiny::tags$span(
           class = "badge rounded-1",
           style = sprintf(

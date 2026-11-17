@@ -33,6 +33,7 @@ tomar <- function(f, nombres) for (e in parse(f, keep.source = FALSE, encoding =
   if (is.call(e) && identical(e[[1]], as.name("<-")) && as.character(e[[2]]) %in% nombres) eval(e, globalenv())
 tomar("R/pasivos_engine.R", c("pasivos_pago_amount", "pasivos_pago_currency"))
 tomar("R/persistence.R", "unstage_pagar_hoy")
+source("R/monedas.R")   # T33: Pasivos orders currencies by the client's base (R/monedas.R)
 suppressMessages({ source("R/pasivos_calendar_glue.R"); source("R/pasivos_table_pivot.R") })
 tomar("R/cashflow_export_module.R", c(".aggregate_to_wide", ".bucket_labels"))
 has_capability <- function(...) TRUE

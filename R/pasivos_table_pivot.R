@@ -4,6 +4,19 @@
 # No I/O, no reactives — fully testable standalone.
 # =============================================================================
 
+# The currencies present in `currencies` (one per row), in display order: the
+# client's base first, then the data's by number of rows (monedas_en_datos(),
+# R/monedas.R). Values come back as they are in the data, so they can be
+# levels of a factor over it; an empty value goes last.
+.pasivos_cur_order <- function(currencies, base = MONEDA_BASE_OMISION) {
+  x <- as.character(currencies)
+  x <- x[!is.na(x)]
+  llenos <- x[nzchar(trimws(x))]
+  orden <- monedas_en_datos(llenos, base)
+  crudos <- unique(llenos)
+  c(crudos[order(match(toupper(trimws(crudos)), orden), crudos)], unique(x[!nzchar(trimws(x))]))
+}
+
 # ── pasivos_table_build_long ──────────────────────────────────────────────────
 # Build a LONG-form tibble of (row, date, cell_payload) used by the renderer.
 #
@@ -14,11 +27,14 @@
 #   liabilities        : tibble matching .schema_pasivos_liability()
 #   filters            : list(empresa, categorias, subcategorias, currency, search, granularity,
 #                             provision_type) — "todas" | "programadas" | "manuales"
+#   base               : the client's base currency (shared$moneda_base_cliente());
+#                        its rows go first, then the data's currencies (R/monedas.R)
 #
 # Returns: tibble with one row per (liability + date) combination.
 pasivos_table_build_long <- function(provisions, manual_items,
                                      bancos_confirmados, liabilities,
-                                     filters, fx = if (exists(".fx_para_mostrar", mode = "function")) .fx_para_mostrar() else NULL) {
+                                     filters, fx = if (exists(".fx_para_mostrar", mode = "function")) .fx_para_mostrar() else NULL,
+                                     base = MONEDA_BASE_OMISION) {
   today <- Sys.Date()
 
   # ── 1. Apply liability filters ───────────────────────────────────────────────
@@ -123,7 +139,7 @@ pasivos_table_build_long <- function(provisions, manual_items,
     row_categoria   <- if (!is.null(lib_row) && nrow(lib_row)) lib_row$categoria[1] else "regular"
     row_subcategoria <- if (!is.null(lib_row) && nrow(lib_row)) lib_row$subcategoria[1] else ""
     row_parte       <- p$parte[1] %||% ""
-    row_moneda      <- p$moneda_pago[1] %||% "MXN"
+    row_moneda      <- p$moneda_pago[1] %||% base
 
     eff_date  <- tryCatch(as.Date(p$fecha_efectiva[1]), error = function(e) as.Date(NA))
     if (is.na(eff_date)) return(NULL)
@@ -186,7 +202,7 @@ pasivos_table_build_long <- function(provisions, manual_items,
       row_categoria   <- if (!is.null(lib_row) && nrow(lib_row)) lib_row$categoria[1] else "regular"
       row_subcategoria <- if (!is.null(lib_row) && nrow(lib_row)) lib_row$subcategoria[1] else ""
       row_parte       <- p$parte[1] %||% ""
-      row_moneda      <- p$moneda_pago[1] %||% "MXN"
+      row_moneda      <- p$moneda_pago[1] %||% base
 
       fecha_col <- if ("FechaVenc" %in% names(mi)) "FechaVenc" else "Fecha de vencimiento"
       item_date <- tryCatch(as.Date(mi[[fecha_col]][1]), error = function(e) as.Date(NA))
@@ -292,12 +308,8 @@ pasivos_table_build_long <- function(provisions, manual_items,
     long_df <- long_df[long_df$cell_currency == filters$currency, , drop = FALSE]
   }
 
-  # ── 6. Sort: currency first (MXN → USD → EUR → others), then by empresa/label ──
-  cur_prio <- c("MXN", "USD", "EUR")
-  cur_fac  <- factor(
-    long_df$row_moneda,
-    levels = c(cur_prio, sort(setdiff(unique(long_df$row_moneda), cur_prio)))
-  )
+  # ── 6. Sort: currency first (the base, then the data's), then by empresa/label ──
+  cur_fac  <- factor(long_df$row_moneda, levels = .pasivos_cur_order(long_df$row_moneda, base))
   long_df <- long_df[order(cur_fac, long_df$row_empresa, long_df$row_categoria,
                             long_df$row_subcategoria, long_df$row_label, long_df$fecha), ]
   long_df
@@ -310,7 +322,7 @@ pasivos_table_build_long <- function(provisions, manual_items,
 # Returns list(metadata_cols, date_cols, cells) where cells is indexed
 # [[row_id]][[date_col_label]].
 pasivos_table_pivot_wide <- function(long_df, granularity = "day",
-                                     window_start, window_end) {
+                                     window_start, window_end, base = MONEDA_BASE_OMISION) {
   # A long frame from before banxico-fix (no cell_aprox): nothing approximate.
   if (!"cell_aprox" %in% names(long_df)) long_df$cell_aprox <- rep(FALSE, nrow(long_df))
 
@@ -395,12 +407,11 @@ pasivos_table_pivot_wide <- function(long_df, granularity = "day",
     )
 
   # summarise() doesn't preserve sort order — re-sort by currency priority then label
-  # so the render loop sees MXN rows first, USD next, etc., producing exactly one
-  # separator per currency group instead of one per adjacent-currency boundary.
-  cur_prio <- c("MXN", "USD", "EUR")
+  # so the render loop sees the base's rows first, then the data's currencies,
+  # producing exactly one separator per currency group instead of one per
+  # adjacent-currency boundary.
   meta_raw <- meta_raw[order(
-    factor(meta_raw$row_moneda,
-           levels = c(cur_prio, sort(setdiff(unique(meta_raw$row_moneda), cur_prio)))),
+    factor(meta_raw$row_moneda, levels = .pasivos_cur_order(long_df$row_moneda, base)),   # the long form's order
     meta_raw$row_empresa, meta_raw$row_categoria,
     meta_raw$row_subcategoria, meta_raw$row_label
   ), ]
