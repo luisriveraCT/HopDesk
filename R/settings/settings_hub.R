@@ -190,21 +190,30 @@ settings_observers <- function(input, output, session, shared) {
   # ── Unsaved-changes helpers ───────────────────────────────────────────────────
 
   # Snapshot of current UI state (codes stripped of any accidental prefix, sorted)
+  # A field the browser has not sent yet (NULL: the editor is still on its way)
+  # counts as what the editor draws there -- the saved value in that slot --
+  # never as emptied: leaving Intercompany before it arrived said "Cambios sin
+  # guardar" with nothing changed (T40). A field the user emptied arrives as ""
+  # and is still a change.
   .ic_current <- function() {
     cmap <- shared$company_map()
+    cur  <- shared$interco_v2()
+    campo <- function(id, guardado) { v <- input[[id]]; if (is.null(v)) guardado else v }
+    en_slot <- function(v, j) if (j <= length(v)) as.character(v[[j]]) else ""
     list(
-      ar_prefix = trimws(input$ic_ar_prefix %||% "C"),
-      ap_prefix = trimws(input$ic_ap_prefix %||% "P"),
+      ar_prefix = trimws(campo("ic_ar_prefix", cur$ar_prefix %||% "C")),
+      ap_prefix = trimws(campo("ic_ap_prefix", cur$ap_prefix %||% "P")),
       companies = setNames(lapply(names(cmap), function(ini) {
         ar_n <- isolate(ic_slots[[paste0(ini, "_ar")]]) %||% 1L
         ap_n <- isolate(ic_slots[[paste0(ini, "_ap")]]) %||% 1L
+        co   <- cur$companies[[ini]] %||% list(ar = character(), ap = character())
         list(
           ar = sort(unique(Filter(nzchar, sub("^[A-Za-z]+", "", trimws(
             vapply(seq_len(ar_n), function(j)
-              input[[paste0("ic_ar_", ini, "_", j)]] %||% "", character(1))))))),
+              campo(paste0("ic_ar_", ini, "_", j), en_slot(co$ar, j)), character(1))))))),
           ap = sort(unique(Filter(nzchar, sub("^[A-Za-z]+", "", trimws(
             vapply(seq_len(ap_n), function(j)
-              input[[paste0("ic_ap_", ini, "_", j)]] %||% "", character(1)))))))
+              campo(paste0("ic_ap_", ini, "_", j), en_slot(co$ap, j)), character(1)))))))
         )
       }), names(cmap))
     )
