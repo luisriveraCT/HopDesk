@@ -47,7 +47,11 @@ td_otro <- function(pid) sprintf("(function(){ var f = %s; return f.children[f.c
 punto <- function(js_el) ev(sprintf("(function(){ var e = %s; e.scrollIntoView({block:'center', behavior:'instant'});
   var r = e.getBoundingClientRect(); return [r.left + r.width/2, r.top + r.height/2]; })()", js_el))
 clic <- function(js_el) {
-  p <- punto(js_el)
+  # A modal slides in (Bootstrap's fade): a point taken mid-way misses the
+  # button, and the click lands on nothing (T38: K9 clicked "Continuar
+  # revisando" while the dialog was still moving). Wait until it stays put.
+  p <- punto(js_el); Sys.sleep(0.12)
+  for (k in 1:25) { q <- punto(js_el); if (identical(p, q)) break; p <- q; Sys.sleep(0.12) }
   for (t in c("mouseMoved", "mousePressed", "mouseReleased"))
     b$Input$dispatchMouseEvent(type = t, x = p[[1]], y = p[[2]], button = if (t == "mouseMoved") "none" else "left",
                                buttons = if (t == "mousePressed") 1L else 0L, clickCount = 1L)
