@@ -789,6 +789,11 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
   # selector starts on when nothing else says. Never a fixed code.
   base_moneda <- function() shiny::isolate(tryCatch(shared$moneda_base_cliente()$moneda,
                                                     error = function(e) NULL)) %||% MONEDA_BASE_OMISION
+  # What a currency selector puts on top: the base, then the currencies of
+  # this client's liabilities and provisions; the rest of the catalog below.
+  monedas_primero <- function() monedas_en_datos(
+    shiny::isolate(tryCatch(c(shared$pasivos_liabilities_db()$moneda_pago, shared$pasivos_provisions_db()$moneda_pago),
+                            error = function(e) character())), base_moneda())
 
   wiz <- shiny::reactiveValues(
     mode             = "create",
@@ -1081,10 +1086,12 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     switch(wiz$step_id,
       categoria   = pasivos_step_ui_categoria(wiz$draft, errs),
       detalles    = pasivos_step_ui_detalles(wiz$draft, empresa_choices,
-                                              existing_subcats, errs, base = base_moneda()),
+                                              existing_subcats, errs, base = base_moneda(),
+                                              primero = monedas_primero()),
       recurrencia = pasivos_step_ui_recurrencia(wiz$draft, errs),
       terminos    = pasivos_step_ui_terminos(wiz$draft, errs),
-      cargos      = pasivos_step_ui_cargos(wiz$draft, wiz$cargos_list, errs, base = base_moneda()),
+      cargos      = pasivos_step_ui_cargos(wiz$draft, wiz$cargos_list, errs, base = base_moneda(),
+                                           primero = monedas_primero()),
       revision    = pasivos_step_ui_revision(wiz$draft, errs),
       NULL
     )
@@ -1190,7 +1197,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     if (!length(cl)) return(shiny::div(class = "text-muted small mb-2",
                                         "Sin cargos iniciales."))
     do.call(shiny::tagList, lapply(seq_along(cl), function(i)
-      pasivos_cargo_row_ui(i, cl[[i]], base = base_moneda())
+      pasivos_cargo_row_ui(i, cl[[i]], base = base_moneda(), primero = monedas_primero())
     ))
   })
 

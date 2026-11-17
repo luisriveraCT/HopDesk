@@ -11,7 +11,7 @@
 # Returns a modalDialog() pre-filled from the provision row.
 # empresa_choices: character vector of Empresa options from shared$empresas_db().
 pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = character(),
-                                     base = MONEDA_BASE_OMISION) {
+                                     base = MONEDA_BASE_OMISION, primero = base) {
   p <- provision[1, , drop = FALSE]
 
   liability <- if (!is.na(p$liability_id[1]) && nzchar(p$liability_id[1] %||% "") &&
@@ -42,7 +42,7 @@ pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = c
                            choices  = choices_emp,
                            selected = p$empresa[1] %||% choices_emp[1]),
         shiny::selectInput("pcm_moneda",    "Moneda",
-                           choices  = CURRENCIES,
+                           choices  = monedas_opciones(primero = primero, idioma = hd_idioma()),
                            selected = pago_cur %||% base),
         shiny::textInput("pcm_documento",   "Documento",
                          value = p$documento[1] %||% ""),
@@ -288,6 +288,11 @@ setup_pasivos_module <- function(input, output, session, shared) {
   # selector starts on when nothing else says. Never a fixed code.
   base_moneda <- function() shiny::isolate(tryCatch(shared$moneda_base_cliente()$moneda,
                                                     error = function(e) NULL)) %||% MONEDA_BASE_OMISION
+  # What a currency selector puts on top: the base, then the currencies of
+  # this client's liabilities and provisions; the rest of the catalog below.
+  monedas_primero <- function() monedas_en_datos(
+    shiny::isolate(tryCatch(c(shared$pasivos_liabilities_db()$moneda_pago, shared$pasivos_provisions_db()$moneda_pago),
+                            error = function(e) character())), base_moneda())
 
   rv <- shiny::reactiveValues(
     pending_provision_id = NULL,
@@ -349,7 +354,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     empresa_choices <- tryCatch(sort(names(shared$company_map())),
                                 error = function(e) character(0))
 
-    shiny::showModal(pasivos_convert_modal_ui(prov, liabs, empresa_choices, base = base_moneda()))
+    shiny::showModal(pasivos_convert_modal_ui(prov, liabs, empresa_choices, base = base_moneda(), primero = monedas_primero()))
   })
 
   # ── pcm_delete_provision: Prompt confirmation before deleting ────────────
@@ -712,7 +717,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     empresa_choices <- tryCatch(sort(names(shared$company_map())),
                                 error = function(e) character(0))
 
-    shiny::showModal(pasivos_convert_modal_ui(prov, liabs, empresa_choices, base = base_moneda()))
+    shiny::showModal(pasivos_convert_modal_ui(prov, liabs, empresa_choices, base = base_moneda(), primero = monedas_primero()))
   })
 
   # ── Manage-converted modal body (rendered reactively inside the open modal) ──

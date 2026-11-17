@@ -222,3 +222,32 @@ test_that("the wizard asks for the FIX only for that pair", {
     expect_identical(G$fix, 1L)
   })))
 })
+
+# ── 7. The selectors offer the whole catalog: base, then the data's, then A-Z ─
+F_VAL <- Sys.getenv("VAL_R", "R/pasivos_wizard_validate.R")
+suppressMessages(source(F_VAL))
+opciones <- function(ui, id) {
+  h <- paste(as.character(ui), collapse = "")
+  s <- regmatches(h, regexpr(sprintf('(?s)id="%s"[^>]*>.*?</select>', id), h, perl = TRUE))
+  m <- regmatches(s, gregexpr('<option value="[^"]*"', s))[[1]]
+  sub('<option value="([^"]*)"', "\\1", m)
+}
+test_that("each Pasivos selector: base, then the data's currencies, then the rest of the catalog", {
+  pr <- c("USD", "EUR", "MXN")
+  todos <- c(pr, setdiff(monedas_catalogo(), pr))
+  expect_identical(opciones(pasivos_step_ui_detalles(list(categoria = "regular"), base = "USD", primero = pr), "pwiz_moneda_pago"), todos)
+  expect_identical(opciones(pasivos_step_ui_detalles(list(categoria = "regular"), base = "USD", primero = pr), "pwiz_cotizado_en"),
+                   c("", todos))
+  expect_identical(opciones(pasivos_cargo_row_ui(1L, list(), base = "USD", primero = pr), "pwiz_cargo_moneda_1"), todos)
+  expect_identical(opciones(pasivos_step_ui_cargos(list(categoria = "financiero"), base = "USD", primero = pr), "pwiz_residual_moneda"), todos)
+  expect_identical(opciones(.ppm_modal_ui(c(NTS = "NTS"), base = "USD", primero = pr), "ppm_moneda"), todos)
+  expect_identical(opciones(pasivos_convert_modal_ui(PROVS[1, ], LIABS, "NTS", base = "USD", primero = pr), "pcm_moneda"), todos)
+  expect_gt(length(todos), 100L)   # the ISO catalog, not the old list of ten
+})
+test_that("a currency outside the old list of ten is valid; a made-up one is not", {
+  expect_null(pasivos_wizard_validate_final(list(categoria = "regular", nombre = "x", empresa = "NTS", parte = "p",
+                                                 moneda_pago = "ZAR"), "NTS")$errors$moneda_pago)
+  expect_false(is.null(pasivos_wizard_validate_final(list(categoria = "regular", nombre = "x", empresa = "NTS", parte = "p",
+                                                          moneda_pago = "XYZ"), "NTS")$errors$moneda_pago))
+  expect_identical(elegida(.ppm_modal_ui(c(NTS = "NTS"), prefill = list(moneda = "XYZ"), base = "USD"), "ppm_moneda"), "USD")
+})

@@ -25,6 +25,7 @@ ok <- function(label, expr) {
 }
 `%||%` <- function(a, b) if (is.null(a)) b else a
 CURRENCIES <- c("MXN", "USD")
+source("R/monedas.R")   # T33: the wizard validates a currency against the catalog (moneda_valida())
 suppressMessages(source("R/i18n.R"))
 source("R/pasivos_schemas.R")
 source(Sys.getenv("VALIDA_R", "R/pasivos_wizard_validate.R"))

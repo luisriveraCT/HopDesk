@@ -91,6 +91,11 @@ pasivos_table_module_server <- function(id, shared) {
       MONEDA_BASE_OMISION
     base <- shiny::reactiveVal(shiny::isolate(leer_base()))
     shiny::observe(base(leer_base()))
+    # What a currency selector puts on top: the base, then the currencies of
+    # this client's liabilities and provisions; the rest of the catalog below.
+    monedas_primero <- function() monedas_en_datos(
+      shiny::isolate(tryCatch(c(shared$pasivos_liabilities_db()$moneda_pago, shared$pasivos_provisions_db()$moneda_pago),
+                              error = function(e) character())), shiny::isolate(base()))
 
     # ── Start the list sub-module ───────────────────────────────────────────
     pasivos_list_module_server("list", shared)
@@ -109,7 +114,7 @@ pasivos_table_module_server <- function(id, shared) {
       # the full-name empresa_sel_rv filter in df_combined → Calendario picks it up.
       empresa_choices <- tryCatch(sort(unique(shared$empresa_sel())),
                                   error = function(e) character(0))
-      shiny::showModal(.ppm_modal_ui(empresa_choices, ns = ns, base = base()))
+      shiny::showModal(.ppm_modal_ui(empresa_choices, ns = ns, base = base(), primero = monedas_primero()))
     })
 
     # E3b: the same modal, filled from a requisition (prefill: what
@@ -129,7 +134,7 @@ pasivos_table_module_server <- function(id, shared) {
                 else NA_character_
       p <- as.list(prefill %||% list()); p$empresa <- nombre
       ppm_estado$al_guardar <- if (is.function(al_guardar)) al_guardar else NULL
-      shiny::showModal(.ppm_modal_ui(choices, ns = ns, prefill = p, base = base()))
+      shiny::showModal(.ppm_modal_ui(choices, ns = ns, prefill = p, base = base(), primero = monedas_primero()))
       if (is.na(nombre))
         shiny::showNotification(tr("tablas.pasivos.manual.elegir_empresa_aviso"), type = "warning", duration = 8)
       invisible(TRUE)
@@ -562,7 +567,7 @@ pasivos_table_module_server <- function(id, shared) {
 # that could not be turned into a name selects none (ppm_save then asks for
 # one), never another company.
 .ppm_modal_ui <- function(empresa_choices = character(), ns = identity, prefill = NULL,
-                          base = MONEDA_BASE_OMISION) {
+                          base = MONEDA_BASE_OMISION, primero = base) {
   val <- function(campo, defecto) {
     v <- prefill[[campo]]
     if (is.null(v) || !length(v) || is.na(v[1])) defecto else v[1]
@@ -570,7 +575,7 @@ pasivos_table_module_server <- function(id, shared) {
   emp_sel <- if (is.null(prefill)) empresa_choices[1] %||% "" else val("empresa", "")
   if (!is.null(prefill) && !nzchar(emp_sel))
     empresa_choices <- c(stats::setNames("", tr("tablas.pasivos.manual.elegir_empresa")), empresa_choices)
-  moneda <- val("moneda", base); if (!moneda %in% CURRENCIES) moneda <- base
+  moneda <- val("moneda", base); if (!moneda_valida(moneda)) moneda <- base
   shiny::modalDialog(
     title     = tr("tablas.pasivos.manual.titulo"),
     size      = "m",
@@ -581,7 +586,7 @@ pasivos_table_module_server <- function(id, shared) {
                            choices  = empresa_choices,
                            selected = emp_sel),
         shiny::selectInput(ns("ppm_moneda"),    tr("tablas.pasivos.manual.moneda"),
-                           choices = CURRENCIES, selected = moneda),
+                           choices = monedas_opciones(primero = primero, idioma = hd_idioma()), selected = moneda),
         shiny::textInput(ns("ppm_documento"),   tr("tablas.pasivos.manual.documento"), value = "")
       ),
       shiny::column(6,

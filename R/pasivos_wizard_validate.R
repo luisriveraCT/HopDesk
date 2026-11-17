@@ -26,7 +26,7 @@ pasivos_wizard_validate_detalles <- function(draft, empresa_choices = character(
     errors$parte <- tr("tablas.pasivos.asistente.parte_obligatoria")
 
   moneda <- draft$moneda_pago %||% ""
-  if (!nzchar(moneda) || !(moneda %in% CURRENCIES))
+  if (!nzchar(moneda) || !moneda_valida(moneda))
     errors$moneda_pago <- tr("tablas.pasivos.asistente.moneda_invalida")
 
   if (identical(draft$categoria, "tarjeta")) {
