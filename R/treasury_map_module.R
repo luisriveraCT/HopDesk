@@ -343,13 +343,13 @@ treasuryMapUI <- function(id) {
     # ── Controls ──────────────────────────────────────────────────────────────
     div(class = "tm-controls",
       div(
-        tags$label("Empresa objetivo:", class = "form-label d-block"),
+        tags$label(tr("tablas.mapa.empresa_objetivo"), class = "form-label d-block"),
         selectInput(ns("target_co"), NULL,
                     choices = character(0),  # filled per session by the observe() in the server
                     width = "230px")
       ),
       div(
-        tags$label("Moneda:", class = "form-label d-block"),
+        tags$label(tr("tablas.mapa.moneda"), class = "form-label d-block"),
         # The base and the data's currencies, filled by the server (T36).
         selectInput(ns("map_cur"), NULL, choices = character(0), width = "90px")
       )
@@ -367,7 +367,7 @@ treasuryMapUI <- function(id) {
       div(class = "tm-panel",
         div(class = "tm-panel-header",
           tags$span(icon("route"), style = "color:#6366f1; font-size:.9rem;"),
-          tags$p(class = "tm-panel-title", "Rutas al objetivo")
+          tags$p(class = "tm-panel-title", tr("tablas.mapa.rutas_titulo"))
         ),
         div(class = "tm-panel-body",
           uiOutput(ns("bfs_routes_ui"))
@@ -378,13 +378,13 @@ treasuryMapUI <- function(id) {
       div(class = "tm-panel",
         div(class = "tm-panel-header",
           tags$span(icon("list-check"), style = "color:#10b981; font-size:.9rem;"),
-          tags$p(class = "tm-panel-title", "Plan de pago")
+          tags$p(class = "tm-panel-title", tr("tablas.mapa.plan_titulo"))
         ),
         div(class = "tm-panel-body",
           uiOutput(ns("payment_plan_ui")),
           div(id = ns("send_btn_wrap"), style = "display:none; margin-top:8px;",
             actionButton(ns("send_to_agenda"),
-                         tagList(icon("calendar-plus"), " Enviar a Agenda de Hoy"),
+                         tagList(icon("calendar-plus"), paste0(" ", tr("tablas.mapa.enviar_agenda"))),
                          class = "btn btn-sm btn-success")
           )
         )
@@ -502,7 +502,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
         full    <- cmap[[ini]]
         bv      <- bal[[ini]][[cur]] %||% NA_real_
         is_tgt  <- identical(ini, target)
-        bal_lbl <- if (!is.na(bv)) .tm_fmt(bv, cur) else "sin datos"
+        bal_lbl <- if (!is.na(bv)) .tm_fmt(bv, cur) else tr("tablas.mapa.sin_datos")
 
         data.frame(
           id    = ini,
@@ -510,7 +510,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
           image = .tm_node_svg(ini, bal_lbl, is_tgt, bv),
           shape = "image",
           title = paste0("<b>", htmltools::htmlEscape(full), "</b><br/>",
-                         "Saldo ", cur, ": <b>", htmltools::htmlEscape(bal_lbl), "</b>"),
+                         tr("tablas.mapa.nodo_saldo", moneda = cur), " <b>", htmltools::htmlEscape(bal_lbl), "</b>"),
           size             = if (is_tgt) 44 else 36,   # vis.js renders at 2×size px
           borderWidth      = 0,
           borderWidthSelected = 0,
@@ -534,7 +534,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
             from  = r$from_ini, to = r$to_ini,
             label = lbl,
             title = paste0("<b>", r$from_ini, " \u2192 ", r$to_ini, "</b><br/>",
-                           .tm_fmt(r$Total, cur), "<br/>", r$Facturas, " factura(s)"),
+                           .tm_fmt(r$Total, cur), "<br/>", tr("tablas.mapa.arista_facturas", n = r$Facturas)),
             arrows = "to",
             width  = 1 + 4 * (r$Total / max_t),
             color  = "#1b3a2a",           # super dark green, almost black
@@ -636,7 +636,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       target <- input$target_co %||% names(shared$company_map())[1]
       esum   <- edges_summary()
       if (is.null(esum) || !nrow(esum))
-        return(tags$p(class = "tm-empty", "No hay saldos IC para esta moneda."))
+        return(tags$p(class = "tm-empty", tr("tablas.mapa.sin_saldos")))
 
       paths <- .tm_bfs_paths(
         data.frame(from = esum$from_ini, to = esum$to_ini, stringsAsFactors = FALSE),
@@ -644,7 +644,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       )
       if (!length(paths))
         return(tags$p(class = "tm-empty",
-                      paste0("Ninguna empresa debe directa o indirectamente a ", target, ".")))
+                      tr("tablas.mapa.sin_rutas", empresa = target)))
 
       paths <- paths[order(vapply(paths, length, integer(1)))]
 
@@ -655,7 +655,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
           r <- esum[esum$from_ini == path[j] & esum$to_ini == path[j + 1], ]
           if (nrow(r)) bottleneck <- min(bottleneck, r$Total[1])
         }
-        hop_lbl   <- if (hops == 1) "directo" else paste0(hops, " pasos")
+        hop_lbl   <- if (hops == 1) tr("tablas.mapa.directo") else tr("tablas.mapa.pasos", n = hops)
         badge_cls <- if (hops == 1) "tm-badge-direct" else if (hops == 2) "tm-badge-2" else "tm-badge-3"
         amt_lbl   <- if (is.finite(bottleneck)) .tm_fmt(bottleneck, moneda_sel()) else ""
 
@@ -663,7 +663,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
           tags$span(class = "tm-route-path", paste(path, collapse = " \u2192 ")),
           tags$span(class = badge_cls, hop_lbl),
           if (nzchar(amt_lbl))
-            tags$span(class = "tm-route-amt", paste0("m\u00e1x\u00a0", amt_lbl))
+            tags$span(class = "tm-route-amt", paste0(tr("tablas.mapa.max"), "\u00a0", amt_lbl))
         )
       }))
     })
@@ -678,11 +678,11 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
             div(class = "tm-edge-panel-header tm-edge-header-empty",
               tags$span(icon("hand-pointer"), style = "color:#9ca3af; font-size:.9rem;"),
               tags$p(class = "tm-panel-title", style = "color:#6b7280; font-weight:500;",
-                     "Detalle de facturas")
+                     tr("tablas.mapa.detalle_titulo"))
             ),
             div(class = "tm-edge-panel-body",
               tags$p(class = "tm-empty",
-                     "Haz clic en una flecha del grafo para ver las facturas de ese par de empresas.")
+                     tr("tablas.mapa.detalle_ayuda"))
             )
           )
         )
@@ -707,24 +707,24 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
                    tags$span(
                      class = "fw-normal ms-2",
                      style = "font-size:.76rem; color:#9ca3af;",
-                     paste0(edge$from_ini, " debe a ", edge$to_ini)
+                     tr("tablas.mapa.debe_a", de = edge$from_ini, a = edge$to_ini)
                    )
                  )),
           actionButton(ns("close_edge_detail"), icon("xmark"),
                        class = "btn btn-sm btn-outline-secondary ms-auto",
                        style = "padding:1px 7px; font-size:.78rem;",
-                       title = "Cerrar")
+                       title = tr("comun.cerrar"))
         ),
         # Without can_register_payments the invoices are only to read: no
         # "Agregar al plan" (the plan feeds "Enviar a Agenda").
         div(class = "tm-edge-panel-body",
           if (.puede_registrar())
             tags$p(class = "small text-muted mb-2",
-                   "Selecciona filas y usa \u2018Agregar al plan\u2019 para incluirlas en el plan de pago."),
+                   tr("tablas.mapa.agregar_ayuda")),
           hd_table_ui(ns("arista_t")),
           if (.puede_registrar())
             actionButton(ns("add_to_plan"),
-                         tagList(icon("plus"), " Agregar al plan"),
+                         tagList(icon("plus"), paste0(" ", tr("tablas.mapa.agregar_plan"))),
                          class = "btn btn-sm btn-outline-primary mt-2",
                          style = "font-size:.8rem;")
         )
@@ -861,7 +861,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       if (!length(plan)) {
         shinyjs::hide("send_btn_wrap")
         return(tags$p(class = "tm-empty",
-                      "Haz clic en una flecha, selecciona facturas y agr\u00e9galas aqu\u00ed."))
+                      tr("tablas.mapa.plan_vacio")))
       }
       if (.puede_registrar()) shinyjs::show("send_btn_wrap") else shinyjs::hide("send_btn_wrap")
 
@@ -882,10 +882,10 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
         })),
         tagList(lapply(names(totales), function(m)
           div(class = "tm-plan-total",
-            tags$span("Total"),
+            tags$span(tr("tablas.mapa.total")),
             tags$span(.tm_fmt(totales[[m]], m))
           ))),
-        actionButton(ns("clear_plan"), tagList(icon("trash"), " Limpiar"),
+        actionButton(ns("clear_plan"), tagList(icon("trash"), paste0(" ", tr("tablas.mapa.limpiar"))),
                      class = "btn btn-sm btn-outline-danger mt-2",
                      style = "font-size:.76rem; padding:2px 8px;")
       )
