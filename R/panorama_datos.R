@@ -12,6 +12,17 @@ PANORAMA_DIAS_PASIVOS <- 3L     # "Pasivos en 3 días"
 PANORAMA_SAP_VIEJO_H  <- 24     # SAP data older than this (or a snapshot) = stale
 PANORAMA_DESTACADOS   <- 3L     # slides in Destacados
 
+# SAP data is stale (Panorama's neblina, the job skips the client's email)
+# when its date, in the client's time zone, is before today - SAP_DIAS_VIEJO:
+# calendar days, so data refreshed on a Monday is still fine all of the next
+# Monday. The one rule for both (T46; SAP is refreshed about once a week).
+SAP_DIAS_VIEJO <- 7L
+sap_viejo <- function(ts, ahora = Sys.time(), tz = "America/Mexico_City") {
+  if (is.null(ts) || !length(ts) || is.na(ts[1])) return(TRUE)   # no date: never trusted
+  dia <- function(t) as.Date(format(as.POSIXct(t, tz = "UTC"), "%Y-%m-%d", tz = tz))
+  dia(ts[1]) < dia(ahora) - SAP_DIAS_VIEJO
+}
+
 # Feed kinds (the chips): comunicado, solicitud, actividad, alerta.
 PANORAMA_TIPOS_FEED <- c("com", "sol", "act", "ale")
 

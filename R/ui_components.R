@@ -114,6 +114,43 @@ monedas_para_filtrar <- function(datos = character(), base = MONEDA_BASE_OMISION
   intersect(monedas_en_datos(d, base), d)
 }
 
+# ── One wording for amounts and for SAP's date (T46) ──────────────────────────
+# Panorama and the weekly emails call these two; nobody keeps a local copy.
+
+# "842,300.00 MXN": the number, then the code, for every currency (no "$":
+# it is wrong for most of them), with the catalog's minor units (2 when the
+# code is not in it) and a true minus sign ("−10,950,296.00 MXN"). Vectorized
+# over x and moneda; a missing moneda leaves the number without a code, so
+# callers pass the client's base for rows that carry none.
+monto_moneda <- function(x, moneda) {
+  n <- max(length(x), length(moneda))
+  if (!n) return(character())
+  x <- rep_len(suppressWarnings(as.numeric(x)), n); x[is.na(x)] <- 0
+  moneda <- rep_len(toupper(trimws(as.character(moneda))), n)
+  dec <- moneda_decimales(moneda); dec[is.na(dec)] <- 2L
+  cifra <- vapply(seq_len(n), function(i)
+    formatC(abs(round(x[i], dec[i])), format = "f", digits = dec[i], big.mark = ","), character(1))
+  signo <- ifelse(round(x, dec) < 0, "−", "")
+  codigo <- ifelse(is.na(moneda) | !nzchar(moneda), "", paste0(" ", moneda))
+  paste0(signo, cifra, codigo)
+}
+
+# "Datos de SAP al martes 17, 08:54": when SAP's data is from, in `tz`. The
+# month is added once the date is past SAP_DIAS_VIEJO (sap_viejo(), R/
+# panorama_datos.R): "martes 10 de nov, 08:54". No date: the "not loaded" line.
+sap_al_texto <- function(ts, tz = "America/Mexico_City", idioma = hd_idioma(), ahora = Sys.time()) {
+  if (is.null(ts) || !length(ts) || is.na(ts[1])) return(tr("comun.sap.sin_datos", idioma = idioma))
+  ts <- as.POSIXct(ts[1], tz = "UTC")
+  d <- as.Date(format(ts, "%Y-%m-%d", tz = tz))
+  forma <- if (sap_viejo(ts, ahora, tz)) "comun.sap.fecha_mes" else "comun.sap.fecha_semana"
+  fecha <- tr(forma, idioma = idioma,
+              dia = tr(paste0("comun.dia.", as.integer(format(d, "%u"))), idioma = idioma),
+              n = as.character(as.integer(format(d, "%d"))),
+              mes = tr(paste0("comun.mes.", as.integer(format(d, "%m"))), idioma = idioma),
+              hora = format(ts, "%H:%M", tz = tz))
+  tr("comun.sap.al", idioma = idioma, fecha = fecha)
+}
+
 # ── Manual entry modal ─────────────────────────────────────────────────────────
 # (No caller today; kept on the same rules as manual_entry_tab_content().)
 manual_entry_modal <- function(ledger, empresas, row = NULL, token = NULL,
