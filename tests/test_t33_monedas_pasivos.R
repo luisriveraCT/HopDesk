@@ -194,3 +194,31 @@ test_that("the conflicts table: a provision with no currency shows the base", {
   expect_identical(unique(pasivos_conflictos_filas(conf, NULL, base = "USD")$Moneda), "USD")
   expect_identical(unique(pasivos_conflictos_filas(PROVS[1:2, ], NULL, base = "USD")$Moneda), unique(PROVS$moneda_pago[1:2]))
 })
+
+# ── 6. The FIX: Banxico's pair, in R/fx_banxico.R ────────────────────────────
+F_FXB <- Sys.getenv("FXB_R", "R/fx_banxico.R")
+suppressMessages(source(F_FXB))
+test_that("fx_fix_aplica(): only an amount quoted in dollars and paid in pesos", {
+  expect_true(fx_fix_aplica("USD", "MXN"))
+  expect_true(fx_fix_aplica(" usd ", "mxn"))
+  expect_false(fx_fix_aplica("EUR", "MXN"))
+  expect_false(fx_fix_aplica("USD", "USD"))
+  expect_false(fx_fix_aplica(NA, "MXN"))
+  expect_false(fx_fix_aplica(NULL, NULL))
+  expect_false(fx_fix_aplica("", "MXN"))
+})
+test_that("the wizard asks for the FIX only for that pair", {
+  G$fix <- 0L
+  fx_fix <- function(...) { G$fix <- G$fix + 1L; list(valor = 18.5, fecha = Sys.Date()) }
+  assign("fx_fix", fx_fix, envir = globalenv())
+  s <- list(moneda_base_cliente = reactive(moneda_base_resolver(NA)), effective_client_id = function() "prueba",
+            company_map = reactive(CMAP))
+  suppressWarnings(suppressMessages(testServer(function(input, output, session) setup_pasivos_wizard(input, output, session, s), {
+    session$setInputs(pwiz_cotizado_en = "USD", pwiz_moneda_pago = "MXN"); session$flushReact()
+    invisible(output$pwiz_fx_info)
+    expect_identical(G$fix, 1L)
+    session$setInputs(pwiz_cotizado_en = "EUR"); session$flushReact()
+    invisible(output$pwiz_fx_info)
+    expect_identical(G$fix, 1L)
+  })))
+})

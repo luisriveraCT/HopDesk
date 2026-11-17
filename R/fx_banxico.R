@@ -263,3 +263,13 @@ fx_columna_ver <- function(importe, aprox, importe_aprox, fx = .fx_para_mostrar(
   list(ver = ifelse(ax, ia, as.numeric(importe)), aprox = ifelse(ax, ayuda, ""),
        aprox_total = if (any(ax)) fx_ayuda_total(fx) else "")
 }
+
+# ── The FIX's pair (T33, monedas fase 3) ─────────────────────────────────────
+# Banxico's FIX is pesos per US dollar and nothing else: FX_FIX_MONEDA and
+# FX_BANXICO_EN (above, monedas fase 2) are its pair.
+
+# TRUE when an amount quoted in `de` and paid in `a` converts with the FIX.
+fx_fix_aplica <- function(de, a) {
+  norm <- function(x) toupper(trimws(as.character(if (length(x)) x[1] else NA_character_)))
+  isTRUE(norm(de) == FX_FIX_MONEDA) && isTRUE(norm(a) == FX_BANXICO_EN)
+}

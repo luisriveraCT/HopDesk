@@ -1324,8 +1324,8 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     cot_en  <- input$pwiz_cotizado_en %||% ""
     mon_pag <- input$pwiz_moneda_pago %||% base_moneda()
     if (!nzchar(cot_en)) return(NULL)
-    # The Banxico FIX (R/fx_banxico.R) for USD -> MXN; any other pair has none.
-    fx <- if (identical(toupper(cot_en), "USD") && identical(toupper(mon_pag), "MXN"))
+    # The Banxico FIX (R/fx_banxico.R, fx_fix_aplica()); any other pair has none.
+    fx <- if (fx_fix_aplica(cot_en, mon_pag))
       tryCatch(fx_fix(), error = function(e) NULL) else NULL
     shiny::tags$small(class = "text-muted",
       if (is.list(fx)) tr("tablas.pasivos.asistente.fx_fix", valor = formatC(fx$valor, format = "f", digits = 4),
