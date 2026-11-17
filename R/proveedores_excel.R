@@ -367,10 +367,9 @@ prov_banco_clave <- function(texto, catalogo = character(0)) {
 
 # ── Currency, payment type, status ───────────────────────────────────────────
 prov_moneda <- function(x) {
-  t <- prov_normalizar_encabezado(x)
   out <- prov_limpiar_texto(x)
-  out[!is.na(t) & grepl("^(mxn|mn|m n|peso|pesos|moneda nacional)$", t)] <- "MXN"
-  out[!is.na(t) & grepl("^(usd|us|dll|dlls|dolar|dolares|dolar americano)$", t)] <- "USD"
+  palabra <- ppl_moneda_palabra(out)          # the bank words, one list (R/ppl_generator.R)
+  out[!is.na(palabra)] <- palabra[!is.na(palabra)]
   out
 }
 
@@ -388,10 +387,9 @@ prov_tipo_cuenta <- function(x) {
   out
 }
 
-# As the edit modal: USD pays SPD, BanBajío (030) BCO, the rest SPI.
-prov_medio_pago <- function(moneda, banco) {
-  ifelse(!is.na(moneda) & moneda == "USD", "SPD", ifelse(!is.na(banco) & banco == "030", "BCO", "SPI"))
-}
+# As the edit modal: BanBajío's rule, ppl_medio_pago() (USD pays SPD, MXN to
+# BanBajío (030) BCO, the rest SPI).
+prov_medio_pago <- function(moneda, banco) ppl_medio_pago(moneda, dplyr::coalesce(banco, ""))
 
 prov_status <- function(nombre, moneda, banco, no_cuenta) {
   lleno <- function(v) !is.na(v) & nzchar(trimws(v))
@@ -580,7 +578,7 @@ prov_clasificar <- function(filas, activos, inactivos, tipo = "activos", catalog
 # Returns list(activos, inactivos, cambia_activos, cambia_inactivos,
 # nuevos, actualizados, movidos, omitidos_alias).
 prov_aplicar <- function(clasificadas, activos, inactivos, decisiones = list(), opciones = list()) {
-  op <- utils::modifyList(list(tipo = "activos", empresa = "", moneda = "MXN", incluir_incompletos = FALSE,
+  op <- utils::modifyList(list(tipo = "activos", empresa = "", moneda = MONEDA_BASE_OMISION, incluir_incompletos = FALSE,
                                incluir_duplicados = FALSE, cambiar_alias = FALSE, lote = NA_character_,
                                ahora = as.character(Sys.time()), nuevo_id = function() uuid::UUIDgenerate()),
                           opciones)

@@ -27,7 +27,7 @@ cargar("R/persistence.R", c(".schema_proveedores", ".normalize"))
 cargar("R/ui_components.R", "app_styles")
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
-  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+  for (f in c("R/i18n.R", "R/monedas.R", "R/ppl_generator.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
               "R/proveedores_excel.R", "R/proveedores_module.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
 })

@@ -177,16 +177,26 @@ ppl_medio_pago <- function(moneda, banco_dest) {
   )
 }
 
+# How a Mexican bank writes a currency in words: its sheets and exports say
+# "Pesos", "M.N.", "Moneda nacional", "Dólares", "DLLS"... A peso is MXN and a
+# dólar is USD, whatever the client's base. The one list of those words (T36:
+# bank accounts and the providers' Excel had one each, and they differed).
+# "MXN" / "USD" for what it recognizes, NA for anything else.
+ppl_moneda_palabra <- function(x) {
+  t <- tolower(stringi::stri_trans_general(as.character(x), "Latin-ASCII"))
+  t <- trimws(gsub("[^a-z0-9]+", " ", t))
+  dplyr::case_when(
+    grepl("peso", t) | t %in% c("mxn", "mn", "m n", "moneda nacional")               ~ "MXN",
+    grepl("d.lar", t) | t %in% c("usd", "us", "dll", "dlls", "dolar americano")      ~ "USD",
+    TRUE                                                                              ~ NA_character_
+  )
+}
+
 # The currency of a company bank account (ctas_cuentas$Moneda). It holds a
 # code ("MXN" | "USD"), but older rows and BanBajío's own sheets say "Pesos" |
-# "Dólares": a Mexican bank's "peso" is MXN and its "dólar" is USD. A catalog
-# code is kept as is; anything else (or nothing) is the client's base.
+# "Dólares" (ppl_moneda_palabra). A catalog code is kept as is; anything else
+# (or nothing) is the client's base.
 ppl_moneda_cuenta <- function(x, base) {
   mon <- toupper(trimws(x %||% base))
-  dplyr::case_when(
-    grepl("peso",  mon, ignore.case = TRUE)              ~ "MXN",
-    grepl("d.lar", mon, ignore.case = TRUE, perl = TRUE) ~ "USD",
-    moneda_valida(mon)                                    ~ mon,
-    TRUE                                                  ~ base
-  )
+  dplyr::coalesce(ppl_moneda_palabra(mon), ifelse(moneda_valida(mon), mon, base))
 }
