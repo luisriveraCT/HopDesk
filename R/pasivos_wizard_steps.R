@@ -159,7 +159,7 @@ pasivos_step_ui_categoria <- function(draft, errors = list()) {
 # ── Step 2: Detalles ───────────────────────────────────────────────────────────
 pasivos_step_ui_detalles <- function(draft, empresa_choices = character(),
                                       existing_subcats = character(),
-                                      errors = list()) {
+                                      errors = list(), base = MONEDA_BASE_OMISION) {
   cat <- draft$categoria %||% "regular"
 
   subcat_choices <- sort(unique(c(
@@ -199,7 +199,7 @@ pasivos_step_ui_detalles <- function(draft, empresa_choices = character(),
                                              placeholder = "Ej. servicios, renta...")),
         shiny::selectInput("pwiz_moneda_pago", "Moneda de pago",
                            choices  = CURRENCIES,
-                           selected = draft$moneda_pago %||% "MXN"),
+                           selected = draft$moneda_pago %||% base),
         shiny::tags$div(
           class = "mb-3",
           shiny::tags$small(class = "text-muted",
@@ -652,14 +652,14 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
 
 # ── Step 5: Cargos iniciales y residual (financiero) ──────────────────────────
 pasivos_step_ui_cargos <- function(draft, cargos_list = list(),
-                                    errors = list()) {
+                                    errors = list(), base = MONEDA_BASE_OMISION) {
   has_res <- !is.null(draft$valor_residual) &&
              is.list(draft$valor_residual) &&
              length(draft$valor_residual) > 0 &&
              !is.null(draft$valor_residual$monto)
 
   res_monto    <- if (has_res) draft$valor_residual$monto    %||% NA_real_ else NA_real_
-  res_moneda   <- if (has_res) draft$valor_residual$moneda   %||% "MXN"    else "MXN"
+  res_moneda   <- if (has_res) draft$valor_residual$moneda   %||% base     else base
   res_fecha    <- if (has_res) draft$valor_residual$fecha    %||% NA       else NA
   res_behavior <- if (has_res) draft$valor_residual$behavior %||% "replace_last" else "replace_last"
 
@@ -836,7 +836,7 @@ pasivos_periodicidad_subfields_ui <- function(periodicidad, draft) {
 
 # ── Cargo row UI ───────────────────────────────────────────────────────────────
 # Returns a single cargo row for the cargos step.
-pasivos_cargo_row_ui <- function(i, cargo = list()) {
+pasivos_cargo_row_ui <- function(i, cargo = list(), base = MONEDA_BASE_OMISION) {
   shiny::div(
     class = "d-flex gap-2 align-items-end mb-2",
     id    = paste0("pwiz_cargo_row_", i),
@@ -851,7 +851,7 @@ pasivos_cargo_row_ui <- function(i, cargo = list()) {
     shiny::div(style = "width:90px;",
       shiny::selectInput(paste0("pwiz_cargo_moneda_", i), if (i == 1L) "Moneda" else NULL,
                          choices = CURRENCIES,
-                         selected = cargo$moneda %||% "MXN")
+                         selected = cargo$moneda %||% base)
     ),
     shiny::div(style = "width:150px;",
       shiny::dateInput(paste0("pwiz_cargo_fecha_", i), if (i == 1L) "Fecha" else NULL,

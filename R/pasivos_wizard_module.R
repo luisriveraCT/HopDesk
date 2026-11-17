@@ -470,7 +470,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
       d$referencia_default  <- input$pwiz_referencia_default  %||% ""
       d$documento_template  <- input$pwiz_documento_template  %||% ""
       d$subcategoria        <- input$pwiz_subcategoria        %||% ""
-      d$moneda_pago         <- input$pwiz_moneda_pago         %||% "MXN"
+      d$moneda_pago         <- input$pwiz_moneda_pago         %||% base_moneda()
       d$cotizado_en         <- input$pwiz_cotizado_en         %||% ""
       if (identical(d$categoria, "tarjeta")) {
         d$tarjeta_closing_day  <- as.integer(input$pwiz_tarjeta_closing_day %||% NA_integer_)
@@ -558,7 +558,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
         list(
           desc   = input[[paste0("pwiz_cargo_desc_", i)]]   %||% "",
           monto  = input[[paste0("pwiz_cargo_monto_", i)]]  %||% 0,
-          moneda = input[[paste0("pwiz_cargo_moneda_", i)]] %||% "MXN",
+          moneda = input[[paste0("pwiz_cargo_moneda_", i)]] %||% base_moneda(),
           fecha  = tryCatch(as.Date(input[[paste0("pwiz_cargo_fecha_", i)]] %||% NA),
                             error = function(e) Sys.Date())
         )
@@ -569,7 +569,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
       if (isTRUE(input$pwiz_has_residual)) {
         d$valor_residual <- list(
           monto    = input$pwiz_residual_monto    %||% NA_real_,
-          moneda   = input$pwiz_residual_moneda   %||% "MXN",
+          moneda   = input$pwiz_residual_moneda   %||% base_moneda(),
           fecha    = tryCatch(as.Date(input$pwiz_residual_fecha %||% NA),
                               error = function(e) as.Date(NA)),
           behavior = input$pwiz_residual_behavior %||% "replace_last"
@@ -782,6 +782,11 @@ pasivos_vista_provisiones <- function(draft) {
 
 # ── Main setup function ────────────────────────────────────────────────────────
 setup_pasivos_wizard <- function(input, output, session, shared) {
+
+  # The client's base currency (T33), read without a dependency: what a
+  # selector starts on when nothing else says. Never a fixed code.
+  base_moneda <- function() shiny::isolate(tryCatch(shared$moneda_base_cliente()$moneda,
+                                                    error = function(e) NULL)) %||% MONEDA_BASE_OMISION
 
   wiz <- shiny::reactiveValues(
     mode             = "create",
@@ -1074,10 +1079,10 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     switch(wiz$step_id,
       categoria   = pasivos_step_ui_categoria(wiz$draft, errs),
       detalles    = pasivos_step_ui_detalles(wiz$draft, empresa_choices,
-                                              existing_subcats, errs),
+                                              existing_subcats, errs, base = base_moneda()),
       recurrencia = pasivos_step_ui_recurrencia(wiz$draft, errs),
       terminos    = pasivos_step_ui_terminos(wiz$draft, errs),
-      cargos      = pasivos_step_ui_cargos(wiz$draft, wiz$cargos_list, errs),
+      cargos      = pasivos_step_ui_cargos(wiz$draft, wiz$cargos_list, errs, base = base_moneda()),
       revision    = pasivos_step_ui_revision(wiz$draft, errs),
       NULL
     )
@@ -1183,7 +1188,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     if (!length(cl)) return(shiny::div(class = "text-muted small mb-2",
                                         "Sin cargos iniciales."))
     do.call(shiny::tagList, lapply(seq_along(cl), function(i)
-      pasivos_cargo_row_ui(i, cl[[i]])
+      pasivos_cargo_row_ui(i, cl[[i]], base = base_moneda())
     ))
   })
 
@@ -1197,7 +1202,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
                                  error = function(e) cl[[i]]$fecha)
     }
     wiz$cargos_list <- c(cl, list(list(desc = "", monto = 0,
-                                       moneda = "MXN", fecha = Sys.Date())))
+                                       moneda = base_moneda(), fecha = Sys.Date())))
   })
 
   shiny::observe({
@@ -1285,7 +1290,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
   # ── Cotizado auto-fill ──────────────────────────────────────────────────────
   shiny::observeEvent(input$pwiz_amount_cotizado, ignoreInit = TRUE, {
     cot_en  <- input$pwiz_cotizado_en %||% ""
-    mon_pag <- input$pwiz_moneda_pago %||% "MXN"
+    mon_pag <- input$pwiz_moneda_pago %||% base_moneda()
     if (!nzchar(cot_en)) return()
     cot_amt <- input$pwiz_amount_cotizado %||% NA_real_
     if (is.na(cot_amt)) return()
@@ -1315,7 +1320,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
 
   output$pwiz_fx_info <- shiny::renderUI({
     cot_en  <- input$pwiz_cotizado_en %||% ""
-    mon_pag <- input$pwiz_moneda_pago %||% "MXN"
+    mon_pag <- input$pwiz_moneda_pago %||% base_moneda()
     if (!nzchar(cot_en)) return(NULL)
     # The Banxico FIX (R/fx_banxico.R) for USD -> MXN; any other pair has none.
     fx <- if (identical(toupper(cot_en), "USD") && identical(toupper(mon_pag), "MXN"))

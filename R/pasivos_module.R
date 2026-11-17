@@ -10,7 +10,8 @@
 
 # Returns a modalDialog() pre-filled from the provision row.
 # empresa_choices: character vector of Empresa options from shared$empresas_db().
-pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = character()) {
+pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = character(),
+                                     base = MONEDA_BASE_OMISION) {
   p <- provision[1, , drop = FALSE]
 
   liability <- if (!is.na(p$liability_id[1]) && nzchar(p$liability_id[1] %||% "") &&
@@ -21,7 +22,7 @@ pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = c
   }
 
   pago_amount <- tryCatch(pasivos_pago_amount(p),   error = function(e) NA_real_)
-  pago_cur    <- tryCatch(pasivos_pago_currency(p), error = function(e) "MXN")
+  pago_cur    <- tryCatch(pasivos_pago_currency(p), error = function(e) base)
 
   choices_emp <- sort(unique(c(p$empresa[1], empresa_choices)))
   choices_emp <- choices_emp[!is.na(choices_emp) & nzchar(choices_emp)]
@@ -42,7 +43,7 @@ pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = c
                            selected = p$empresa[1] %||% choices_emp[1]),
         shiny::selectInput("pcm_moneda",    "Moneda",
                            choices  = CURRENCIES,
-                           selected = pago_cur %||% "MXN"),
+                           selected = pago_cur %||% base),
         shiny::textInput("pcm_documento",   "Documento",
                          value = p$documento[1] %||% ""),
         shiny::textInput("pcm_factura",     "No. Factura",
@@ -283,6 +284,11 @@ pasivos_provision_de_borrado <- function(prov, client_id) {
 # Call once from app.R server.
 setup_pasivos_module <- function(input, output, session, shared) {
 
+  # The client's base currency (T33), read without a dependency: what a
+  # selector starts on when nothing else says. Never a fixed code.
+  base_moneda <- function() shiny::isolate(tryCatch(shared$moneda_base_cliente()$moneda,
+                                                    error = function(e) NULL)) %||% MONEDA_BASE_OMISION
+
   rv <- shiny::reactiveValues(
     pending_provision_id = NULL,
     conv_prov_id         = NULL,   # provision id being managed in convert-mgmt modal
@@ -343,7 +349,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     empresa_choices <- tryCatch(sort(names(shared$company_map())),
                                 error = function(e) character(0))
 
-    shiny::showModal(pasivos_convert_modal_ui(prov, liabs, empresa_choices))
+    shiny::showModal(pasivos_convert_modal_ui(prov, liabs, empresa_choices, base = base_moneda()))
   })
 
   # ── pcm_delete_provision: Prompt confirmation before deleting ────────────
@@ -597,7 +603,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       empresa                  = empresa,
       parte                    = input$me_parte %||% "",
       codigo_parte             = input$me_codigo %||% "",
-      moneda_pago              = input$me_moneda %||% "MXN",
+      moneda_pago              = input$me_moneda %||% base_moneda(),
       cotizado_en              = NA_character_,
       amount_pago              = as.numeric(input$me_importe %||% 0),
       amount_cotizado          = NA_real_,
@@ -648,7 +654,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       target_id   = new_id,
       after       = list(
         id = new_id, origin = "manual", estado = "provisional",
-        empresa = empresa, moneda_pago = input$me_moneda %||% "MXN",
+        empresa = empresa, moneda_pago = input$me_moneda %||% base_moneda(),
         amount_pago = input$me_importe %||% 0,
         fecha_efectiva = as.character(input$me_fecha)
       ),
@@ -706,7 +712,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     empresa_choices <- tryCatch(sort(names(shared$company_map())),
                                 error = function(e) character(0))
 
-    shiny::showModal(pasivos_convert_modal_ui(prov, liabs, empresa_choices))
+    shiny::showModal(pasivos_convert_modal_ui(prov, liabs, empresa_choices, base = base_moneda()))
   })
 
   # ── Manage-converted modal body (rendered reactively inside the open modal) ──

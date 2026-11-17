@@ -122,3 +122,41 @@ test_that("the table's server without moneda_base_cliente (an old shared): MXN, 
     expect_identical(utils::tail(G$bases, 1), "MXN")
   })))
 })
+
+# ── 4. Selectors and new rows start on the client's base (C1, C2) ────────────
+F_WMOD  <- Sys.getenv("WMOD_R",  "R/pasivos_wizard_module.R")
+F_STEPS <- Sys.getenv("STEPS_R", "R/pasivos_wizard_steps.R")
+F_PMOD  <- Sys.getenv("PMOD_R",  "R/pasivos_module.R")
+for (f in c("R/pasivos_engine.R", F_STEPS, F_WMOD)) suppressMessages(source(f))
+cargar(F_PMOD, "pasivos_convert_modal_ui")
+elegida <- function(ui, id) {
+  h <- paste(as.character(ui), collapse = "")
+  s <- regmatches(h, regexpr(sprintf('(?s)id="%s"[^>]*>.*?</select>', id), h, perl = TRUE))
+  sub('(?s).*<option value="([^"]*)" selected>.*', "\\1", s, perl = TRUE)
+}
+test_that("the wizard's steps and the modals: a draft with no currency starts on the base", {
+  expect_identical(elegida(pasivos_step_ui_detalles(list(categoria = "regular"), base = "USD"), "pwiz_moneda_pago"), "USD")
+  expect_identical(elegida(pasivos_step_ui_detalles(list(categoria = "regular")), "pwiz_moneda_pago"), "MXN")
+  expect_identical(elegida(pasivos_step_ui_detalles(list(categoria = "regular", moneda_pago = "EUR"), base = "USD"),
+                           "pwiz_moneda_pago"), "EUR")
+  expect_identical(elegida(pasivos_cargo_row_ui(1L, list(), base = "USD"), "pwiz_cargo_moneda_1"), "USD")
+  expect_identical(elegida(pasivos_step_ui_cargos(list(categoria = "financiero"), base = "USD"), "pwiz_residual_moneda"), "USD")
+  expect_identical(elegida(.ppm_modal_ui(c(NTS = "NTS"), base = "USD"), "ppm_moneda"), "USD")
+  expect_identical(elegida(.ppm_modal_ui(c(NTS = "NTS"), prefill = list(moneda = "EUR"), base = "USD"), "ppm_moneda"), "EUR")
+  p <- PROVS[1, ]; p$moneda_pago <- NA_character_
+  expect_identical(elegida(pasivos_convert_modal_ui(p, LIABS, "NTS", base = "USD"), "pcm_moneda"), "USD")
+})
+nuevo_cargo <- function(moneda_base) {
+  s <- list(moneda_base_cliente = reactive(moneda_base_resolver(moneda_base)), effective_client_id = function() "prueba",
+            company_map = reactive(CMAP))
+  out <- NULL
+  suppressWarnings(suppressMessages(testServer(function(input, output, session) setup_pasivos_wizard(input, output, session, s), {
+    session$flushReact(); session$setInputs(pwiz_add_cargo = 1); session$flushReact()
+    out <<- elegida(paste(unlist(output$pwiz_cargos_table), collapse = ""), "pwiz_cargo_moneda_1")
+  })))
+  out
+}
+test_that("the wizard's server: a new initial fee starts on the base (MXN until one is chosen)", {
+  expect_identical(nuevo_cargo("USD"), "USD")
+  expect_identical(nuevo_cargo(NA_character_), "MXN")
+})
