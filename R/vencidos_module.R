@@ -385,7 +385,7 @@ vencidosServer <- function(id, shared, accion_factura = handle_invoice_action) {
         ic_rfcs  <- ic_rfcs[nzchar(ic_rfcs)]
         code_col <- if (ledger_name == "AR") "Código de cliente" else "Código de proveedor"
         df <- apply_ic_filter(df, mode = ic_mode_val, code_col = code_col, ic_codes = codes, ic_rfcs = ic_rfcs,
-                              cmap = shared$company_map())
+                              cmap = shared$company_map(), empresas = ic_empresas_de(shared))
         if (!is.null(df) && !nrow(df)) return(NULL)
 
         # Layer 2: Parte-name fallback (catches IC when codes not yet registered)

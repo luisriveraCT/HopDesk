@@ -152,7 +152,7 @@ cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALS
     eval(e, envir = globalenv())
 cargar("R/global.R", "fmt_money")
 cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", "load_ctas_bancos"))
-for (f in c("R/bancos_parser.R", "R/bancos_detect.R", "R/bancos_persistence.R", "R/bancos_formatos.R",
+for (f in c("R/bancos_parser.R", "R/empresas_identidad.R", "R/bancos_detect.R", "R/bancos_persistence.R", "R/bancos_formatos.R",
             "R/bancos_module.R")) suppressMessages(source(f))
 log_action <- function(...) invisible(NULL)
 showNotification <- function(...) invisible("id")

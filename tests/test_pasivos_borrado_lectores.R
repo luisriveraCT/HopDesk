@@ -26,7 +26,7 @@ cargar("R/global.R", c("fmt_money"))
 for (f in c("R/i18n.R", "R/pasivos_schemas.R", "R/bancos_persistence.R", "R/pasivos_persistence.R",
             "R/pasivos_capabilities.R", "R/pasivos_audit.R", "R/forecasting_resolve.R",
             "R/policy_engine.R", "R/pasivos_engine.R", "R/pasivos_wizard_validate.R",
-            "R/pasivos_wizard_module.R", "R/pasivos_calendar_glue.R", "R/data_pipeline.R",
+            "R/pasivos_wizard_module.R", "R/pasivos_calendar_glue.R", "R/empresas_identidad.R", "R/data_pipeline.R",
             "R/pasivos_module.R"))
   suppressMessages(source(f))
 has_capability <- function(user, cap) TRUE

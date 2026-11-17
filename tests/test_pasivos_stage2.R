@@ -747,6 +747,7 @@ cat("\n=== Group 10: Stage 2.6 — day-view provision filter ===\n")
 cat("\n=== Group 11: Stage 4.5 — provision empresa translation ===\n")
 
 suppressPackageStartupMessages({ library(stringr); library(tidyr) })
+source("R/empresas_identidad.R")
 source("R/data_pipeline.R")
 
 {

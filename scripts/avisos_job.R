@@ -37,7 +37,7 @@
 
 AVISOS_JOB_ARCHIVOS <- c(
   "R/i18n.R", "R/monedas.R", "R/tier_registry.R", "R/permisos.R", "R/persistence.R", "R/erp_connector_registry.R",
-  "R/data_pipeline.R", "R/pasivos_engine.R", "R/pasivos_schemas.R", "R/pasivos_calendar_glue.R",
+  "R/empresas_identidad.R", "R/data_pipeline.R", "R/pasivos_engine.R", "R/pasivos_schemas.R", "R/pasivos_calendar_glue.R",
   "R/pasivos_persistence.R", "R/bancos_persistence.R", "R/cashflow_export_module.R", "R/fx_banxico.R",
   "R/fx_tipos.R", "R/email_service.R", "R/avisos.R", "R/panorama_datos.R", "R/ui_components.R",
   "R/avisos_umbrales.R", "R/avisos_correos.R", "R/avisos_datos.R", "R/avisos_logros.R", "R/avisos_archivo.R")
@@ -170,7 +170,7 @@ job_lunes <- function(cid, hoy, ahora, prueba, url) {
   sh <- x$shared
   ar <- x$df[x$df$Tipo %in% "AR", , drop = FALSE]
   base <- job_moneda_base(cid)
-  serie <- umbral_serie_guardar(cid, umbral_metricas(ar, hoy, sh$interco_v2(), sh$company_map()))
+  serie <- umbral_serie_guardar(cid, umbral_metricas(ar, hoy, sh$interco_v2(), sh$company_map(), ic_empresas_de(sh)))
   alertas <- umbral_evaluar(serie, hoy)
   job_contar("alertas_umbral", umbral_publicar(cid, alertas, hoy))
   d <- correo_datos_lunes(x$df, sh, umbral_lunes(hoy), serie, alertas, x$sap_fecha, url = url,

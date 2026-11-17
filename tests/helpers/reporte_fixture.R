@@ -20,7 +20,7 @@ suppressPackageStartupMessages({ library(shiny); library(dplyr) })
 REPORTE_HOY <- as.Date("2026-11-17")
 Sys.Date <- function() REPORTE_HOY
 `%||%` <- function(a, b) if (is.null(a)) b else a
-for (f in c("R/i18n.R", "R/monedas.R", "R/data_pipeline.R", "R/reporte_module.R"))
+for (f in c("R/i18n.R", "R/monedas.R", "R/empresas_identidad.R", "R/data_pipeline.R", "R/reporte_module.R"))
   if (file.exists(f)) source(f, local = FALSE)
 if (!exists("fmt_money"))
   fmt_money <- function(x) paste0("$", formatC(x, format = "f", digits = 2, big.mark = ","))

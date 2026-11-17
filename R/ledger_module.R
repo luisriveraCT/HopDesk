@@ -313,7 +313,8 @@ ledgerModuleServer <- function(id, config, shared) {
       df <- apply_ic_filter(df, mode = mode,
                             code_col = config$code_col,
                             ic_codes = codes,
-                            ic_rfcs  = ic_rfcs, cmap = shared$company_map())
+                            ic_rfcs  = ic_rfcs, cmap = shared$company_map(),
+                            empresas = ic_empresas_de(shared))
 
       # Filter to current month before aggregation — to_calendar_data only needs
       # the displayed month's rows; processing all history is wasteful.
@@ -678,7 +679,8 @@ ledgerModuleServer <- function(id, config, shared) {
               abs(tidyr::replace_na(raw_col, 0))
             }
           )
-        d <- apply_ic_filter(d, mode, config$code_col, codes, ic_rfcs = ic_rfcs, cmap = shared$company_map())
+        d <- apply_ic_filter(d, mode, config$code_col, codes, ic_rfcs = ic_rfcs, cmap = shared$company_map(),
+                             empresas = ic_empresas_de(shared))
         d <- add_tag_labels(d, shared$tags_db(), ledger)
         keep <- intersect(
           c("Empresa","Moneda","Documento","Factura","Parte","Importe",
@@ -829,7 +831,8 @@ ledgerModuleServer <- function(id, config, shared) {
           }
         )
 
-      detail <- apply_ic_filter(detail, mode, config$code_col, codes, ic_rfcs = ic_rfcs, cmap = shared$company_map())
+      detail <- apply_ic_filter(detail, mode, config$code_col, codes, ic_rfcs = ic_rfcs, cmap = shared$company_map(),
+                             empresas = ic_empresas_de(shared))
 
       if (!nrow(detail)) {
         showModal(modalDialog(

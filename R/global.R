@@ -425,6 +425,7 @@ source("R/jump_logic.R")
 source("R/tiers_tab_config.R")
 source("R/auth.R")
 source("R/avisos.R")
+source("R/empresas_identidad.R")   # T47: shared by data_pipeline (IC filter) and bancos_detect
 source("R/data_pipeline.R")
 source("R/sap_api.R")
 source("R/secrets_encryption.R")

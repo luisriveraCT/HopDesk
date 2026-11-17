@@ -15,9 +15,12 @@
 #   3. moneda_normalizar() exists once R/data_pipeline.R calls it;
 #   4. monto_moneda() (R/ui_components.R, T46) gives "1,234.50 MXN" for the
 #      default base: the emails use it since T45 (correo_monto() is gone);
-#   5. sap_al_texto() works in the job (it needs sap_viejo(), R/panorama_datos.R).
+#   5. sap_al_texto() works in the job (it needs sap_viejo(), R/panorama_datos.R);
+#   6. the companies' identity for the IC filter (R/empresas_identidad.R, T47):
+#      the job's apply_ic_filter() calls it when a client has no IC registry.
 # Contraprueba: the same list without "R/monedas.R" fails 2 (and 4); without
-# "R/ui_components.R" fails 4 and 5 (T45: the job must load it).
+# "R/ui_components.R" fails 4 and 5 (T45: the job must load it); without
+# "R/empresas_identidad.R" fails 6 (T47).
 # Run from the project root:  Rscript tests/test_avisos_job_carga_monedas.R
 # =============================================================================
 cat("=== test_avisos_job_carga_monedas ===\n\n")
@@ -42,13 +45,14 @@ hijo <- function(quitar = "") {
     'usa <- any(grepl("moneda_normalizar(", readLines("R/data_pipeline.R", warn = FALSE), fixed = TRUE))',
     'cat("NORMALIZAR=", !usa || exists("moneda_normalizar"), "\\n", sep = "")',
     'cat("MONTO=", tryCatch(monto_moneda(1234.5, MONEDA_BASE_OMISION), error = function(e) "error"), "\\n", sep = "")',
+    'cat("IDENT=", tryCatch(isTRUE(ic_por_identidad("NETWORKS LOGISTICS SA DE CV", NA, empresas_identidad(data.frame(initials = "NL", razon_social = "Networks Logistics", nombre_corto = "NL", rfc = NA, activa = TRUE, deleted = FALSE)))), error = function(e) "error"), "\\n", sep = "")',
     'cat("SAP=", tryCatch(startsWith(sap_al_texto(as.POSIXct("2026-11-16 14:54", tz = "UTC"), tz = UMBRAL_TZ, idioma = "es", ahora = as.POSIXct("2026-11-17 14:00", tz = "UTC")), "Datos de SAP al"), error = function(e) "error"), "\\n", sep = "")'
   ), f)
   rs <- file.path(R.home("bin"), "Rscript")
   out <- suppressWarnings(system2(rs, c("--vanilla", shQuote(f)), stdout = TRUE, stderr = TRUE))
   val <- function(k) sub(paste0("^", k, "="), "", grep(paste0("^", k, "="), out, value = TRUE)[1])
   list(carga = val("CARGA"), omision = val("OMISION"), normalizar = val("NORMALIZAR"), monto = val("MONTO"),
-       sap = val("SAP"))
+       sap = val("SAP"), ident = val("IDENT"))
 }
 
 r <- hijo()
@@ -57,11 +61,15 @@ ok("1: the job's load (AVISOS_JOB_ARCHIVOS in order, clean R, from the root) end
 ok("2: MONEDA_BASE_OMISION exists, with the catalog", identical(r$omision, "TRUE"))
 ok("3: moneda_normalizar() exists if R/data_pipeline.R calls it", identical(r$normalizar, "TRUE"))
 ok("4: monto_moneda() for the default base: \"1,234.50 MXN\" (the code always, no $)", identical(r$monto, "1,234.50 MXN"))
+ok("6: the IC filter's identity of the companies works in the job (T47)", identical(r$ident, "TRUE"))
 ok("5: sap_al_texto() works in the job: \"Datos de SAP al ...\"", identical(r$sap, "TRUE"))
 
 sin <- hijo(quitar = "R/monedas.R")
 ok("contraprueba: without R/monedas.R the emails have no default currency",
    identical(sin$omision, "FALSE") && identical(sin$monto, "error"))
+sin_id <- hijo(quitar = "R/empresas_identidad.R")
+ok("contraprueba: without R/empresas_identidad.R the job cannot tell its own companies apart (T47)",
+   identical(sin_id$ident, "error"))
 sin_ui <- hijo(quitar = "R/ui_components.R")
 ok("contraprueba: without R/ui_components.R the emails cannot write an amount or SAP's date",
    identical(sin_ui$monto, "error") && identical(sin_ui$sap, "error"))

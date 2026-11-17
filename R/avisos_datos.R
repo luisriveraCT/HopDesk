@@ -92,8 +92,8 @@ avisos_soltar <- function(cid) {
 # carries sap_guardado: when each snapshot (AR, AP) was saved, NA if missing.
 avisos_shared <- function(cid) {
   snaps <- list(AR = load_sap_snapshot("AR", cid), AP = load_sap_snapshot("AP", cid))
-  cmap  <- .company_map_from_empresas(
-    .normalize(.s3_read_with(S3_KEYS_CRITICAL$empresas, client_id = cid), .schema_empresas))
+  emp   <- .normalize(.s3_read_with(S3_KEYS_CRITICAL$empresas, client_id = cid), .schema_empresas)
+  cmap  <- .company_map_from_empresas(emp)
   t <- list(moves = load_moves(cid), manual = load_manual(cid), abonos = load_abonos(cid),
             policy = load_policy_moves(cid), sap_ov = load_sap_overrides(cid),
             provs = load_pasivos_provisions(cid), liabs = load_pasivos_liabilities(cid),
@@ -102,6 +102,7 @@ avisos_shared <- function(cid) {
   guardado <- vapply(snaps, function(s) if (is.null(s$saved_at)) NA_real_ else as.numeric(s$saved_at), numeric(1))
   list(
     company_map            = function() cmap,
+    empresas_db            = function() emp,   # the IC filter's identity fallback (T47)
     sap_data               = function() list(AR = snaps$AR$data, AP = snaps$AP$data),
     moves_db               = function() t$moves,
     manual_inv             = function() t$manual,
@@ -282,7 +283,8 @@ avisos_banco <- function(cid) {
 # confirmed payments (intercompany out): the measure of
 # scripts/diagnose_cobertura_confirmaciones_readonly.R (pct_pagos). NA
 # without a statement for those weeks.
-.avisos_cobertura <- function(banco, conf, lunes, base, interco = NULL, cmap = character(), k = AVISOS_CONTEXTO) {
+.avisos_cobertura <- function(banco, conf, lunes, base, interco = NULL, cmap = character(), k = AVISOS_CONTEXTO,
+                              empresas = NULL) {
   if (!is.data.frame(banco) || !nrow(banco)) return(NA_real_)
   desde <- lunes - 7L * k; hasta <- lunes - 1L
   b <- banco[!is.na(banco$fecha) & banco$fecha >= desde & banco$fecha <= hasta & banco$moneda %in% base &
@@ -291,7 +293,7 @@ avisos_banco <- function(cid) {
   if (den <= 0) return(NA_real_)
   vig <- confirmaciones_vigentes(conf)
   if (!is.data.frame(vig) || !nrow(vig)) return(0)
-  vig <- vig[!.avisos_es_ic_conf(vig, interco, cmap), , drop = FALSE]
+  vig <- vig[!.avisos_es_ic_conf(vig, interco, cmap, empresas), , drop = FALSE]
   fv <- as.Date(vig$fecha)
   p <- vig[vig$tipo %in% "pago" & toupper(trimws(vig$moneda)) %in% base & !is.na(fv) & fv >= desde & fv <= hasta, , drop = FALSE]
   min(1, sum(abs(as.numeric(p$importe)), na.rm = TRUE) / den)
@@ -305,9 +307,9 @@ avisos_banco <- function(cid) {
 # confirmations are left out, as from the ledger (they are not the group's
 # cash flow).
 .avisos_contexto <- function(df, conf, lunes, base, k = AVISOS_CONTEXTO, interco = NULL, cmap = character(),
-                             mostrar_real = TRUE) {
+                             mostrar_real = TRUE, empresas = NULL) {
   vig <- confirmaciones_vigentes(conf)
-  if (is.data.frame(vig) && nrow(vig)) vig <- vig[!.avisos_es_ic_conf(vig, interco, cmap), , drop = FALSE]
+  if (is.data.frame(vig) && nrow(vig)) vig <- vig[!.avisos_es_ic_conf(vig, interco, cmap, empresas), , drop = FALSE]
   pasadas <- lapply(rev(seq_len(k)), function(i) {
     l <- lunes - 7L * i; r <- .avisos_real_semana(vig, l, base)
     data.frame(lunes = l, cobros = r[["cobros"]], pagos = r[["pagos"]], clase = "real", n = r[["n"]])
@@ -356,7 +358,8 @@ correo_datos_lunes <- function(df, sh, lunes, serie, alertas, sap_fecha, url = "
   venc <- correo_vencidos(serie, lunes, moneda_base)
   top_c <- .avisos_top(ar, cmap, AVISOS_TOP_N, tipos, moneda_base)
   top_p <- .avisos_top(ap, cmap, AVISOS_TOP_N, tipos, moneda_base)
-  cob <- .avisos_cobertura(banco, sh$bancos_confirmados(), lunes, moneda_base, sh$interco_v2(), cmap)
+  cob <- .avisos_cobertura(banco, sh$bancos_confirmados(), lunes, moneda_base, sh$interco_v2(), cmap,
+                           empresas = ic_empresas_de(sh))
   list(lunes = lunes,
        cobros = .avisos_por_moneda(ar, moneda_base), pagos = .avisos_por_moneda(ap, moneda_base),
        cobros_n = nrow(ar), pagos_n = nrow(ap),
@@ -369,7 +372,8 @@ correo_datos_lunes <- function(df, sh, lunes, serie, alertas, sap_fecha, url = "
        cobertura = cob,
        contexto = .avisos_contexto(df, sh$bancos_confirmados(), lunes, moneda_base,
                                    interco = sh$interco_v2(), cmap = cmap,
-                                   mostrar_real = !is.na(cob) && cob >= AVISOS_COBERTURA_MIN),
+                                   mostrar_real = !is.na(cob) && cob >= AVISOS_COBERTURA_MIN,
+                                   empresas = ic_empresas_de(sh)),
        alertas = alertas,
        top_cobros = top_c, top_pagos = top_p,
        sin_tipo = .avisos_sumar_sin_tipo(top_c, top_p),
@@ -596,7 +600,7 @@ avisos_requisiciones_provisiones <- function(cid) {
 # (apply_ic_filter() as the app's "exclude": the interco v2 registry's
 # CardCodes and RFCs, or the company names when none are registered), by
 # side -- cobro against the AR codes, pago against the AP ones.
-.avisos_es_ic_conf <- function(conf, interco = NULL, cmap = character()) {
+.avisos_es_ic_conf <- function(conf, interco = NULL, cmap = character(), empresas = NULL) {
   es_ic <- rep(FALSE, if (is.data.frame(conf)) nrow(conf) else 0L)
   if (!length(es_ic) || is.null(interco)) return(es_ic)
   conf$.fila <- seq_len(nrow(conf))
@@ -609,7 +613,7 @@ avisos_requisiciones_provisiones <- function(cid) {
     x$Parte <- if ("parte" %in% names(x)) as.character(x$parte) else NA_character_
     queda <- suppressMessages(apply_ic_filter(x, mode = "exclude", code_col = col,
                                               ic_codes = build_ic_fullcodes(interco, lado),
-                                              ic_rfcs = rfcs[nzchar(rfcs)], cmap = cmap))
+                                              ic_rfcs = rfcs[nzchar(rfcs)], cmap = cmap, empresas = empresas))
     es_ic[setdiff(x$.fila, queda$.fila)] <- TRUE
   }
   es_ic
@@ -619,7 +623,7 @@ avisos_requisiciones_provisiones <- function(cid) {
 # (same identity, or the provision_id): outside the plan (P6). Intercompany
 # ones go apart: they inflate both sides without being the group's cash flow.
 # list(cobros, pagos, ic_n, ic) amounts by currency.
-.avisos_fuera_del_plan <- function(conf, filas, lunes, base, interco = NULL, cmap = character()) {
+.avisos_fuera_del_plan <- function(conf, filas, lunes, base, interco = NULL, cmap = character(), empresas = NULL) {
   vacio <- stats::setNames(numeric(), character())
   nada <- list(cobros = vacio, pagos = vacio, cobros_n = 0L, pagos_n = 0L, ic = vacio, ic_n = 0L)
   vig <- confirmaciones_vigentes(conf)
@@ -633,7 +637,7 @@ avisos_requisiciones_provisiones <- function(cid) {
   pid <- if ("provision_id" %in% names(s)) as.character(s$provision_id) else rep(NA_character_, nrow(s))
   fuera <- s[!(llave(s$empresa, s$documento, s$moneda) %in% plan) & !(!is.na(pid) & pid %in% pid_plan), , drop = FALSE]
   if (!nrow(fuera)) return(nada)
-  es_ic <- .avisos_es_ic_conf(fuera, interco, cmap)
+  es_ic <- .avisos_es_ic_conf(fuera, interco, cmap, empresas)
   suma <- function(x) {
     if (!nrow(x)) return(vacio)
     r <- .pan_por_moneda(toupper(trimws(x$moneda)), abs(as.numeric(x$importe)), base)
@@ -732,7 +736,7 @@ correo_datos_viernes <- function(semana, df, sh, viernes, sap_fecha, url = "", t
   hechas <- function(x) { if (!nrow(x)) return(0L); t <- tapply(x$clase %in% AVISOS_CLASES_PAGADAS, x$fila, all); sum(t) }
 
   ar_hoy <- if (is.null(df) || !nrow(df)) df else df[df$Tipo %in% "AR", , drop = FALSE]
-  m <- umbral_metricas(ar_hoy, viernes, sh$interco_v2(), cmap)
+  m <- umbral_metricas(ar_hoy, viernes, sh$interco_v2(), cmap, ic_empresas_de(sh))
   ahora <- correo_vencidos(m, lunes, base)$pct
   antes <- semana$vencidos_pct %||% NA_real_
 
@@ -747,7 +751,7 @@ correo_datos_viernes <- function(semana, df, sh, viernes, sap_fecha, url = "", t
     atrasados_pagos  = .avisos_top_clase(pz, "atrasado", "AP", cmap, tipos, base),
     reprogramados = .avisos_top_clase(pz, "reprogramado", c("AR", "AP"), cmap, tipos, base),
     concentracion = c(.avisos_concentracion(pz, "AR"), .avisos_concentracion(pz, "AP")),
-    fuera = .avisos_fuera_del_plan(bancos, f, lunes, base, sh$interco_v2(), cmap),
+    fuera = .avisos_fuera_del_plan(bancos, f, lunes, base, sh$interco_v2(), cmap, ic_empresas_de(sh)),
     # For the logros (R/avisos_logros.R): committed rows done, and atrasado.
     pagos_conf = as.integer(hechas(pagos)), pagos_total = length(unique(pagos$fila)),
     cobros_atrasados_n = as.integer(sum(cobros$clase == "atrasado")), cobros_total = length(unique(cobros$fila)),

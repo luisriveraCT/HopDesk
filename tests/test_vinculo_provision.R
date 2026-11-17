@@ -73,6 +73,7 @@ test_that("deshacer conversión rechaza en el servidor una provisión pagada", {
 
 # ── Undoing a confirmation in Bancos ──────────────────────────────────────────
 source("R/bancos_persistence.R")
+source("R/empresas_identidad.R")
 source("R/data_pipeline.R")
 conf0 <- .normalize(tibble(confirmacion_id = c("c1", "c2"), empresa = "NCS",
                            documento = c("F100", "F200"), moneda = "MXN", importe = c(500, 80),

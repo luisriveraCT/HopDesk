@@ -26,7 +26,7 @@ ok <- function(label, cond) {
 BASE_COMMIT <- "23ffc1f"
 # The code of 23ffc1f, in its own environment (needs git).
 viejo <- new.env()
-for (f in c("R/data_pipeline.R", "R/sap_api.R")) {
+for (f in c("R/empresas_identidad.R", "R/data_pipeline.R", "R/sap_api.R")) {
   src <- system2("git", c("show", paste0(BASE_COMMIT, ":", f)), stdout = TRUE)
   eval(parse(text = src), envir = viejo)
 }

@@ -20,6 +20,7 @@ cat("── detectar_cuenta_banbajio: empresa + moneda + subcuenta del TXT ─�
 suppressPackageStartupMessages({ library(dplyr); library(tibble) })
 `%||%` <- function(a, b) if (is.null(a)) b else a
 source("R/bancos_parser.R")
+source("R/empresas_identidad.R")
 source("R/bancos_detect.R")
 
 .pass <- 0L

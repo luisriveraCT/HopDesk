@@ -42,7 +42,7 @@ lupa_facturas <- function(shared, mes) {
                             r <- unique(toupper(trimws(unname(shared$interco_v2()$rfcs %||% character()))))
                             r[nzchar(r)]
                           }, error = function(e) character()),
-                          cmap = shared$company_map())
+                          cmap = shared$company_map(), empresas = ic_empresas_de(shared))
     if (is.null(df) || !nrow(df)) return(NULL)
     df <- df[!is.na(df$FechaEff) & as.Date(df$FechaEff) >= desde & as.Date(df$FechaEff) <= hasta, , drop = FALSE]
     if (!nrow(df)) return(NULL)

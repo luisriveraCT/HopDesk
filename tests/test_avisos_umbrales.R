@@ -16,6 +16,7 @@ source("R/i18n.R")
 source("R/tier_registry.R")
 source("R/permisos.R")
 source("R/avisos.R")
+suppressMessages(source("R/empresas_identidad.R"))
 suppressMessages(source("R/data_pipeline.R"))   # apply_ic_filter, build_ic_fullcodes
 source("R/avisos_umbrales.R")
 

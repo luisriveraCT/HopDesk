@@ -44,6 +44,7 @@ for (e in parse("R/global.R"))
     eval(e, globalenv())
 source("R/persistence.R")
 suppressMessages(source("R/monedas.R"))
+suppressMessages(source("R/empresas_identidad.R"))
 suppressMessages(source("R/data_pipeline.R"))
 suppressMessages(source("R/bancos_detect.R"))   # .norm_razon(), .empresa_nombres()
 .s3_write <- .ro

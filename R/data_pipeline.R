@@ -404,13 +404,37 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
 # cmap: the SESSION's company map (shared$company_map()), used by the name
 #   fallback below. Required: the global COMPANY_MAP can hold another client's
 #   companies in the shared production process.
+# empresas: the session's empresas table (shared$empresas_db()), optional
+#   (T47). Used ONLY when the client has no intercompany registry (no
+#   CardCodes, no RFCs): then a row is IC when its RFC is one of the
+#   companies', or, without an RFC, when its counterpart is a company's
+#   razón social / short name / alias after .norm_razon() -- exactly, never
+#   approximately (R/empresas_identidad.R). With a registry, or without
+#   `empresas`, the result is identical() to before T47.
 
-apply_ic_filter <- function(df, mode, code_col, ic_codes, ic_rfcs = character(), cmap) {
+# The session's empresas table for apply_ic_filter(), or NULL where the
+# session has none (most test fixtures): then the filter is the pre-T47 one.
+ic_empresas_de <- function(shared) tryCatch(
+  if (is.function(shared$empresas_db)) shared$empresas_db() else NULL, error = function(e) NULL)
+
+apply_ic_filter <- function(df, mode, code_col, ic_codes, ic_rfcs = character(), cmap, empresas = NULL) {
   force(cmap)
   if (mode == "include") return(df)
 
   has_codes <- length(ic_codes) > 0
   has_rfcs  <- length(ic_rfcs) > 0 && "RFC" %in% names(df)
+
+  # No registry, and the companies' identity at hand: legal names and RFCs
+  # ("NETWORKS LOGISTICS SA DE CV" is NL), not only the exact short name.
+  identidad <- if (!has_codes && !has_rfcs && !is.null(empresas) && "Parte" %in% names(df))
+    empresas_identidad(empresas) else NULL
+  if (!is.null(identidad)) {
+    rfc_col <- if ("RFC" %in% names(df)) df[["RFC"]] else NULL
+    es_ic <- ic_por_identidad(df[["Parte"]], rfc_col, identidad)
+    message("[IC_FILTER] mode=", mode, " identity-fallback rows_in=", nrow(df), " rows_ic=", sum(es_ic))
+    if (mode == "exclude") return(df[!es_ic, , drop = FALSE])
+    else                   return(df[ es_ic, , drop = FALSE])
+  }
 
   if (!has_codes && !has_rfcs) {
     # Fallback: when no CardCodes or RFCs are registered, detect IC by matching

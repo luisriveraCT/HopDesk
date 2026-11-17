@@ -49,12 +49,8 @@
   aviso_totales    = "Los totales del archivo no cuadran con los movimientos leídos (cargos %s vs %s, abonos %s vs %s). El archivo podría estar incompleto."
 )
 
-# Legal-form and filler tokens that carry no identity ("S.A. DE C.V.", etc.).
-.BNC_LEGAL_TOKENS <- c(
-  "SA", "S", "A", "DE", "CV", "C", "V", "RL", "SC", "SAPI", "SAB", "SOFOM",
-  "ENR", "ER", "SOCIEDAD", "ANONIMA", "CAPITAL", "VARIABLE",
-  "RESPONSABILIDAD", "LIMITADA", "CIVIL", "Y", "EL", "LA", "LOS", "LAS", "DEL"
-)
+# .norm_razon(), .BNC_LEGAL_TOKENS and .empresa_nombres() live in
+# R/empresas_identidad.R since T47 (the intercompany filter uses them too).
 
 .digits <- function(x) {
   x <- as.character(x %||% "")
@@ -62,19 +58,6 @@
   gsub("[^0-9]", "", x)
 }
 .strip_zeros <- function(x) sub("^0+", "", x)
-
-# Uppercase, ASCII, punctuation -> space, legal-form tokens dropped.
-.norm_razon <- function(x) {
-  x <- as.character(x %||% "")
-  x[is.na(x)] <- ""
-  x <- iconv(x, from = "UTF-8", to = "ASCII//TRANSLIT", sub = "")
-  x[is.na(x)] <- ""
-  x <- toupper(gsub("[^A-Za-z0-9]+", " ", x))
-  vapply(strsplit(trimws(x), "\\s+"), function(tk) {
-    tk <- tk[nzchar(tk) & !tk %in% .BNC_LEGAL_TOKENS]
-    paste(tk, collapse = " ")
-  }, character(1))
-}
 
 # 1 = same normalized name; otherwise token Jaccard, with a floor of 0.9
 # when one multi-word name is fully contained in the other
@@ -172,24 +155,6 @@ leer_encabezado_banbajio <- function(lines) {
     if (nzchar(cta) && startsWith(cta, b)) return(list(match = TRUE, sub_ok = NA))
   }
   list(match = FALSE, sub_ok = NA)
-}
-
-# Names an empresa is known by in the client's registry.
-.empresa_nombres <- function(ini, empresas_df) {
-  if (is.null(empresas_df) || !nrow(empresas_df) || !"initials" %in% names(empresas_df))
-    return(character(0))
-  r <- empresas_df[!is.na(empresas_df$initials) & empresas_df$initials == ini, , drop = FALSE]
-  if (!nrow(r)) return(character(0))
-  nm <- c(r$razon_social %||% character(0), r$nombre_corto %||% character(0))
-  if ("nombres_alt" %in% names(r)) {
-    for (j in r$nombres_alt) {
-      alt <- tryCatch(as.character(jsonlite::fromJSON(j %||% "[]")),
-                      error = function(e) character(0))
-      nm <- c(nm, alt)
-    }
-  }
-  nm <- trimws(as.character(nm))
-  unique(nm[!is.na(nm) & nzchar(nm)])
 }
 
 # =============================================================================

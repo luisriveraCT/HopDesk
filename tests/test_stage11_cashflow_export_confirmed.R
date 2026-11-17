@@ -62,6 +62,7 @@ suppressPackageStartupMessages({
   stop(sprintf("%s not found in %s", fn_name, file))
 }
 "%||%" <- function(a, b) if (!is.null(a)) a else b
+source("R/empresas_identidad.R")
 source("R/data_pipeline.R")
 .extract_fn("R/persistence.R", "active_abonos_summary")
 .extract_fn("R/pasivos_calendar_glue.R", "pasivos_provisions_as_ledger_rows")

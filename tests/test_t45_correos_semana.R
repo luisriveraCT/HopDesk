@@ -30,6 +30,7 @@ source("R/permisos.R")
 source("R/avisos.R")
 source("R/erp_connector_registry.R")
 suppressMessages({
+  source("R/empresas_identidad.R")
   source("R/data_pipeline.R")
   source("R/pasivos_engine.R")
   source("R/pasivos_calendar_glue.R")

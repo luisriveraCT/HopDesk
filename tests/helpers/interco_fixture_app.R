@@ -44,7 +44,7 @@ cargar("R/vencidos_module.R", "facturas_ids")
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
   for (f in c("R/i18n.R", "R/monedas.R", "R/ppl_generator.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
-              "R/persistence.R", "R/data_pipeline.R", "R/ic_mapa_llave.R", "R/treasury_map_module.R", "R/interco_module.R"))
+              "R/persistence.R", "R/empresas_identidad.R", "R/data_pipeline.R", "R/ic_mapa_llave.R", "R/treasury_map_module.R", "R/interco_module.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
 })
 assign(".i18n_dir", file.path(raiz, "www", "i18n"), envir = globalenv())

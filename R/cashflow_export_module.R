@@ -429,7 +429,8 @@ build_export_combined_df <- function(shared, ic_mode_val) {
     codes <- tryCatch(build_ic_fullcodes(interco, led), error = function(e) character())
     tryCatch(
       apply_ic_filter(df, mode = ic_mode_val,
-                      code_col = col, ic_codes = codes, ic_rfcs = ic_rfcs, cmap = shared$company_map()),
+                      code_col = col, ic_codes = codes, ic_rfcs = ic_rfcs, cmap = shared$company_map(),
+                      empresas = ic_empresas_de(shared)),
       error = function(e) df
     )
   }
