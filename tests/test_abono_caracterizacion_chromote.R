@@ -45,7 +45,10 @@ raton <- function(tipo, p, botones = 0L)
   b$Input$dispatchMouseEvent(type = tipo, x = p[[1]], y = p[[2]], button = if (tipo == "mouseMoved" && !botones) "none" else "left",
                              buttons = botones, clickCount = 1L)
 clic <- function(js_el) {
-  p <- centro(js_el)
+  # A modal fading in or a table still settling moves the target: a point
+  # taken mid-way misses it (T38). Wait until it stays put.
+  p <- centro(js_el); Sys.sleep(0.12)
+  for (k in 1:25) { q <- centro(js_el); if (identical(p, q)) break; p <- q; Sys.sleep(0.12) }
   raton("mouseMoved", p); raton("mousePressed", p, 1L); raton("mouseReleased", p)
   Sys.sleep(0.35)
 }
