@@ -149,11 +149,14 @@ abrir()
 invisible(poll_until(function() isTRUE(ev(sprintf("!!window.HDT && !!HDT.fila('%s', 'acum|MXN')", T))), timeout_s = 60))
 ok("R: the browser thinks it is 19:39 here and already the next day in UTC",
    identical(ev("new Date().getHours()"), 19L) && ev("new Date().toISOString().slice(0,10)") > hoy)
-invisible(ev("localStorage.removeItem('hopdesk_cf_preview_state'); 0"))
+# The state is kept per client since T27 ("hopdesk_cf_preview_state:<client>";
+# the fixture's session is cliente_a).
+LLAVE <- "hopdesk_cf_preview_state:cliente_a"
+invisible(ev(sprintf("localStorage.removeItem('%s'); 0", LLAVE)))
 clic("document.getElementById('cfp-btn_grouping')"); Sys.sleep(2)
 ok("R: changing the grouping (Auto -> Diario) saves the state under today's LOCAL date",
-   identical(ev("JSON.parse(localStorage.getItem('hopdesk_cf_preview_state') || '{}').saved_date"), hoy) &&
-   identical(ev("JSON.parse(localStorage.getItem('hopdesk_cf_preview_state') || '{}').grouping"), "daily"))
+   identical(ev(sprintf("JSON.parse(localStorage.getItem('%s') || '{}').saved_date", LLAVE)), hoy) &&
+   identical(ev(sprintf("JSON.parse(localStorage.getItem('%s') || '{}').grouping", LLAVE)), "daily"))
 abrir()
 ok("R: after a reload, opening the preview restores it (the grouping says Diario)",
    poll_until(function() identical(trimws(ev("document.getElementById('cfp-btn_grouping').textContent")), "Diario"),

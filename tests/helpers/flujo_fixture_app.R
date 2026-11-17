@@ -23,11 +23,11 @@ cargar <- function(archivo, nombres) {
       eval(e, envir = globalenv())
 }
 suppressPackageStartupMessages({ library(dplyr); library(shinyjs); library(tibble) })
-cargar("R/ui_components.R", "app_styles")
+cargar("R/ui_components.R", c("app_styles", "monedas_para_filtrar"))
 cargar("R/persistence.R", "tag_label")
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
-  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+  for (f in c("R/i18n.R", "R/monedas.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
               "R/cashflow_export_module.R", "R/cashflow_preview_module.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
 })
