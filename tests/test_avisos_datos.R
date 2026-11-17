@@ -106,12 +106,16 @@ ok("una lectura que falla: omitido_lectura", {
 ok("falta el snapshot de CxP: omitido_sin_sap", {
   cargar(guardado_ap = NULL); x <- avisos_cliente_datos(CID, AHORA); !x$ok && x$motivo == "omitido_sin_sap"
 })
-ok("un snapshot de hace más de 3 días: omitido_sap_viejo (cuenta el más viejo)", {
-  cargar(guardado_ap = AHORA - 3.2 * 86400); x <- avisos_cliente_datos(CID, AHORA)
+# T46: sap_viejo(), days of calendar in Mexico City (AHORA = Monday 16, 08:00 there).
+ok("un snapshot del domingo 8 (día 8): omitido_sap_viejo (cuenta el más viejo)", {
+  cargar(guardado_ap = as.POSIXct("2026-11-08 18:00", tz = UMBRAL_TZ)); x <- avisos_cliente_datos(CID, AHORA)
   !x$ok && x$motivo == "omitido_sap_viejo"
 })
-ok("de 2.9 días todavía sale (el fin de semana)", {
-  cargar(guardado_ar = AHORA - 2.9 * 86400); avisos_cliente_datos(CID, AHORA)$ok
+ok("del lunes 9 a las 08:54 (día 7) todavía sale: SAP semanal", {
+  cargar(guardado_ar = as.POSIXct("2026-11-09 08:54", tz = UMBRAL_TZ)); avisos_cliente_datos(CID, AHORA)$ok
+})
+ok("de 3.2 días ya no se omite (antes la regla era 3 días)", {
+  cargar(guardado_ap = AHORA - 3.2 * 86400); avisos_cliente_datos(CID, AHORA)$ok
 })
 ok("si la tubería truena (su warning), el cliente se omite: omitido_calculo, nunca cobros en $0", {
   cargar(); tipo <- SAP_B1_ERP_TYPE; rm(SAP_B1_ERP_TYPE, envir = globalenv())

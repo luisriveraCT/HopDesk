@@ -16,9 +16,11 @@
 # out of the week's emails when
 #   omitido_lectura    a key could not be read;
 #   omitido_sin_sap    a SAP snapshot (AR or AP) is missing;
-#   omitido_sap_viejo  the oldest snapshot is over AVISOS_SAP_DIAS_MAX days
-#                      old (the job never asks SAP: it reads what the app
-#                      saved; Panorama's "Neblina", lenient for the weekend);
+#   omitido_sap_viejo  the oldest snapshot is stale by sap_viejo() (R/
+#                      panorama_datos.R: before today - SAP_DIAS_VIEJO
+#                      calendar days), the same rule as Panorama's "Neblina"
+#                      (T46; the job never asks SAP: it reads what the app
+#                      saved);
 #   omitido_calculo    the pipeline failed: build_export_combined_df() turns
 #                      a ledger's error into a warning and a NULL ledger, and
 #                      an email with $0 of cobros is worse than none.
@@ -29,7 +31,6 @@
 # Never prints: the job runs in a public repo's logs (see avisos_job.R).
 # =============================================================================
 
-AVISOS_SAP_DIAS_MAX <- 3
 AVISOS_TOP_N        <- 5L
 
 # The keys build_export_combined_df() reads through `shared`.
@@ -85,10 +86,10 @@ avisos_shared <- function(cid) {
 }
 
 # list(ok, motivo, fecha): fecha = the oldest snapshot, what the email says.
-avisos_sap_estado <- function(guardado, ahora = Sys.time()) {
+avisos_sap_estado <- function(guardado, ahora = Sys.time(), tz = UMBRAL_TZ) {
   if (!length(guardado) || anyNA(guardado)) return(list(ok = FALSE, motivo = "omitido_sin_sap", fecha = NULL))
   fecha <- min(guardado)
-  if (as.numeric(difftime(ahora, fecha, units = "days")) > AVISOS_SAP_DIAS_MAX)
+  if (sap_viejo(fecha, ahora, tz))
     return(list(ok = FALSE, motivo = "omitido_sap_viejo", fecha = fecha))
   list(ok = TRUE, motivo = NA_character_, fecha = fecha)
 }

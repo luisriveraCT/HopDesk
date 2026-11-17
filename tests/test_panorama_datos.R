@@ -9,6 +9,7 @@ suppressPackageStartupMessages(library(shiny))
 .i18n_dir <- file.path(getwd(), "www", "i18n")
 source("R/i18n.R")
 source("R/monedas.R")   # MONEDA_BASE_OMISION (T39)
+source("R/ui_components.R")   # monto_moneda(), sap_al_texto() (T46)
 source("R/tier_registry.R")
 source("R/permisos.R")
 source("R/avisos.R")
@@ -146,12 +147,15 @@ test_that("Destacados: urgentes primero, luego lo más nuevo; máximo 3; nunca s
 })
 
 # ── SAP and Clima ────────────────────────────────────────────────────────────
-test_that("SAP: un respaldo o datos de más de 24 h son viejos", {
+test_that("SAP: viejo solo con más de SAP_DIAS_VIEJO días; el respaldo no cuenta (T46)", {
   ahora <- as.POSIXct("2026-11-12 12:00", tz = "UTC")
   vivo <- list(ts = ahora - 3600, is_live = TRUE)
   expect_false(panorama_sap_estado(list(AR = vivo, AP = vivo), ahora)$viejo)
-  expect_true(panorama_sap_estado(list(AR = vivo, AP = list(ts = ahora - 60, is_live = FALSE)), ahora)$viejo)
-  expect_true(panorama_sap_estado(list(AR = list(ts = ahora - 30 * 3600, is_live = TRUE)), ahora)$viejo)
+  expect_false(panorama_sap_estado(list(AR = vivo, AP = list(ts = ahora - 60, is_live = FALSE)), ahora)$viejo)
+  expect_false(panorama_sap_estado(list(AR = list(ts = ahora - 30 * 3600, is_live = TRUE)), ahora)$viejo)
+  viejo <- panorama_sap_estado(list(AR = vivo, AP = list(ts = ahora - 9 * 86400, is_live = FALSE)), ahora)
+  expect_true(viejo$viejo)
+  expect_equal(viejo$ts, ahora - 9 * 86400)      # the oldest ledger is the one shown
   expect_false(panorama_sap_estado(list(AR = NULL, AP = NULL), ahora)$cargado)
 })
 
@@ -172,7 +176,6 @@ test_that("Clima: neblina manda, luego nublado, medio y despejado", {
 })
 
 test_that("formato: monto y fecha larga en los dos idiomas", {
-  expect_identical(panorama_monto(842300), "$842,300.00")
   expect_identical(panorama_fecha_larga(HOY, "es"), "jueves 12 de noviembre")
   expect_identical(panorama_fecha_larga(HOY, "en"), "Thursday, November 12")
   expect_identical(panorama_saludo(9), "panorama.saludo.dias")

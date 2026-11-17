@@ -20,7 +20,20 @@ ok <- function(label, expr) {
 
 source("R/i18n.R")
 source("R/monedas.R")
-source(Sys.getenv("T46_PANORAMA_DATOS_R", "R/panorama_datos.R"))
+source("R/panorama_datos.R")
+# Contraprueba: T46_PANORAMA_DATOS_R=<another panorama_datos.R> takes
+# panorama_sap_estado() (and its old constant) from that file.
+.otro <- Sys.getenv("T46_PANORAMA_DATOS_R", "")
+if (nzchar(.otro)) for (e in parse(.otro, keep.source = FALSE, encoding = "UTF-8"))
+  if (is.call(e) && identical(e[[1]], as.name("<-")) &&
+      as.character(e[[2]]) %in% c("panorama_sap_estado", "PANORAMA_SAP_VIEJO_H"))
+    eval(e, globalenv())
+# The email's side: avisos_sap_estado() and the job's zone.
+for (f in c("R/avisos_datos.R", "R/avisos_umbrales.R"))
+  for (e in parse(f, keep.source = FALSE, encoding = "UTF-8"))
+    if (is.call(e) && identical(e[[1]], as.name("<-")) &&
+        as.character(e[[2]]) %in% c("avisos_sap_estado", "UMBRAL_TZ"))
+      eval(e, globalenv())
 # Only the two formatters from R/ui_components.R (the rest is Shiny UI).
 for (e in parse("R/ui_components.R", keep.source = FALSE))
   if (is.call(e) && identical(e[[1]], as.name("<-")) &&
@@ -81,6 +94,40 @@ ok("a UTC time is shown in the client's zone",
 ok("no date: the \"not loaded\" line",
    identical(sap_al_texto(NULL, MX, "es", AHORA), "Datos de SAP todavía sin cargar") &&
      identical(sap_al_texto(as.POSIXct(NA), MX, "en", AHORA), "SAP data not loaded yet"))
+
+cat("\n-- Panorama and the email use the rule --\n")
+respaldo <- function(t) list(ts = t, is_live = FALSE)
+ok("today's S3 snapshot (is_live = FALSE) is not neblina: only the date counts",
+   !panorama_sap_estado(list(AR = respaldo(mx("2026-11-17 08:54")), AP = respaldo(mx("2026-11-17 08:54"))),
+                        AHORA, MX)$viejo)
+ok("Panorama: day 7 clear, day 8 neblina (the oldest ledger counts)",
+   !panorama_sap_estado(list(AR = respaldo(mx("2026-11-10 08:54")), AP = list(ts = AHORA, is_live = TRUE)),
+                        AHORA, MX)$viejo &&
+     panorama_sap_estado(list(AR = respaldo(mx("2026-11-09 08:54")), AP = list(ts = AHORA, is_live = TRUE)),
+                         AHORA, MX)$viejo)
+ok("the email: day 7 goes out, day 8 is omitido_sap_viejo, in UMBRAL_TZ",
+   isTRUE(avisos_sap_estado(c(mx("2026-11-10 08:54"), AHORA), AHORA)$ok) &&
+     identical(avisos_sap_estado(c(mx("2026-11-09 08:54"), AHORA), AHORA)$motivo, "omitido_sap_viejo"))
+ok("Panorama and the email agree on every day from 0 to 10",
+   all(vapply(0:10, function(d) {
+     t <- AHORA - d * 86400
+     identical(panorama_sap_estado(list(AR = respaldo(t)), AHORA, UMBRAL_TZ)$viejo,
+               !isTRUE(avisos_sap_estado(t, AHORA)$ok))
+   }, logical(1))))
+
+cat("\n-- one rule, one wording, in the code --\n")
+codigo <- function(f) paste(sub("#.*$", "", readLines(f, warn = FALSE, encoding = "UTF-8")), collapse = "\n")
+todo_r <- vapply(c("app.R", list.files("R", "\\.R$", full.names = TRUE)), codigo, character(1))
+ok("no PANORAMA_SAP_VIEJO_H, AVISOS_SAP_DIAS_MAX or panorama_monto left in the app",
+   !any(grepl("PANORAMA_SAP_VIEJO_H|AVISOS_SAP_DIAS_MAX|panorama_monto\\(", todo_r)))
+ok("panorama_datos.R no longer looks at is_live", !grepl("is_live", codigo("R/panorama_datos.R"), fixed = TRUE))
+ok("avisos_datos.R decides with sap_viejo()", grepl("sap_viejo(", codigo("R/avisos_datos.R"), fixed = TRUE))
+ok("panorama_module.R writes no \"$\" and shows SAP's date with sap_al_texto()",
+   !grepl('"$', codigo("R/panorama_module.R"), fixed = TRUE) &&
+     grepl("sap_al_texto(", codigo("R/panorama_module.R"), fixed = TRUE))
+ok("the stale band's text takes the days ({n}) in es and en",
+   all(vapply(c("es", "en"), function(l) grepl("{n}", jsonlite::fromJSON(sprintf("www/i18n/%s.json", l))[["panorama.sap.viejo_texto"]],
+                                                 fixed = TRUE), logical(1))))
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

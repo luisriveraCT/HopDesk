@@ -9,7 +9,6 @@
 # =============================================================================
 
 PANORAMA_DIAS_PASIVOS <- 3L     # "Pasivos en 3 días"
-PANORAMA_SAP_VIEJO_H  <- 24     # SAP data older than this (or a snapshot) = stale
 PANORAMA_DESTACADOS   <- 3L     # slides in Destacados
 
 # SAP data is stale (Panorama's neblina, the job skips the client's email)
@@ -160,15 +159,15 @@ panorama_equipo_hoy <- function(vis, hoy = Sys.Date(), tz = "America/Mexico_City
 
 # ── SAP and Clima de hoy ─────────────────────────────────────────────────────
 
-# list(ts, viejo): the oldest of the loaded ledgers (what the screen relies
-# on), and whether it is a snapshot or older than PANORAMA_SAP_VIEJO_H hours.
-panorama_sap_estado <- function(info, ahora = Sys.time()) {
+# list(ts, viejo, cargado): the oldest of the loaded ledgers (what the screen
+# relies on) and sap_viejo() of it. Whether it came live or from the S3
+# snapshot does not matter, only its date (T46: every session started from
+# the snapshot, so the screen was always in neblina).
+panorama_sap_estado <- function(info, ahora = Sys.time(), tz = "America/Mexico_City") {
   e <- Filter(function(x) !is.null(x) && !is.null(x$ts), list(info$AR, info$AP))
   if (!length(e)) return(list(ts = NULL, viejo = FALSE, cargado = FALSE))
   ts <- e[[which.min(vapply(e, function(x) as.numeric(x$ts), numeric(1)))]]$ts
-  viejo <- any(!vapply(e, function(x) isTRUE(x$is_live), logical(1))) ||
-    as.numeric(difftime(ahora, ts, units = "hours")) > PANORAMA_SAP_VIEJO_H
-  list(ts = ts, viejo = viejo, cargado = TRUE)
+  list(ts = ts, viejo = sap_viejo(ts, ahora, tz), cargado = TRUE)
 }
 
 # Clima de hoy, from what already exists:
@@ -199,8 +198,6 @@ panorama_clima <- function(feed, n_solicitudes = 0L, n_pagos_hoy = 0L, sap = lis
 }
 
 # ── Formatting ───────────────────────────────────────────────────────────────
-
-panorama_monto <- function(x) paste0("$", formatC(.pan_num(x), format = "f", digits = 2, big.mark = ","))
 
 # "MIÉRCOLES 12 DE NOVIEMBRE": weekday and month from the dictionary.
 panorama_fecha_larga <- function(fecha = Sys.Date(), idioma = hd_idioma()) {

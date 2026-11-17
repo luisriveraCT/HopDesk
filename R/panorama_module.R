@@ -111,7 +111,8 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
     })
     pasivos <- shiny::reactive(panorama_pasivos_pronto(
       tryCatch(shared$pasivos_provisions_db(), error = function(e) NULL), hoy(), base = base_cli()))
-    sap <- shiny::reactive({ reloj(); panorama_sap_estado(tryCatch(shared$sap_snapshot_info(), error = function(e) NULL)) })
+    sap <- shiny::reactive({ reloj(); panorama_sap_estado(tryCatch(shared$sap_snapshot_info(), error = function(e) NULL),
+                                                          tz = zona()) })
 
     # ── Encabezado ────────────────────────────────────────────────────────────
     output$encabezado <- shiny::renderUI({
@@ -119,8 +120,8 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       nombre <- strsplit(trimws(info$name %||% u$user %||% ""), "\\s+")[[1]][1] %||% ""
       ahora <- Sys.time(); reloj()
       s <- sap()
-      linea_sap <- if (isTRUE(s$cargado))
-        tr("panorama.sap.al", fecha = .pan_fecha_hora(s$ts, zona())) else tr("panorama.sap.sin_datos")
+      # Always on screen, with or without neblina (T46).
+      linea_sap <- sap_al_texto(if (isTRUE(s$cargado)) s$ts, zona())
       n_nuevos <- sum(feed()$nuevo)
       boton_publicar <- if (puede_pub()) shiny::tags$button(
         type = "button", class = "pan-boton",
@@ -170,7 +171,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       if (!isTRUE(s$cargado) || !isTRUE(s$viejo)) return(NULL)
       shiny::div(class = "pan-franja", role = "status",
         shiny::div(shiny::tags$strong(tr("panorama.sap.viejo_titulo")), " ",
-                   tr("panorama.sap.viejo_texto", fecha = .pan_fecha_hora(s$ts, zona()))),
+                   tr("panorama.sap.viejo_texto", n = as.character(SAP_DIAS_VIEJO))),
         shiny::tags$button(type = "button", class = "pan-boton pan-boton--claro",
                            onclick = "hdPanorama.refrescarSap()", tr("panorama.sap.refrescar")))
     })
@@ -372,8 +373,8 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       p <- pagos(); cb <- cobros()
       if (nrow(p) || (!is.null(cb) && nrow(cb)))
         add(tr("panorama.cinta.hoy"), paste(c(
-          if (nrow(p)) tr("panorama.cinta.pagos", monto = .pan_monto_corto(p, base_cli())),
-          if (!is.null(cb) && nrow(cb)) tr("panorama.cinta.cobros", monto = .pan_monto_corto(cb, base_cli()))),
+          if (nrow(p)) tr("panorama.cinta.pagos", monto = .pan_monto_corto(p)),
+          if (!is.null(cb) && nrow(cb)) tr("panorama.cinta.cobros", monto = .pan_monto_corto(cb))),
           collapse = " · "))
       fx <- tryCatch(if (is.function(shared$fx_fix)) shared$fx_fix() else NULL, error = function(e) NULL)
       if (is.list(fx) && is.numeric(fx$valor) && length(fx$valor) == 1L && !is.na(fx$valor) && fx$valor > 0) {
@@ -409,13 +410,6 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
 
 # ── Helpers (drawing only) ───────────────────────────────────────────────────
 
-.pan_fecha_hora <- function(ts, tz) {
-  if (is.null(ts) || is.na(ts)) return("")
-  paste0(as.integer(format(ts, "%d", tz = tz)), " ",
-         tr(paste0("comun.mes.", as.integer(format(ts, "%m", tz = tz)))), ", ",
-         format(ts, "%H:%M", tz = tz))
-}
-
 .pan_fecha_corta <- function(ts, tz) {
   d <- as.Date(ts, tz = tz)
   paste(tr(paste0("panorama.dia.", as.integer(format(d, "%u")))), as.integer(format(d, "%d")))
@@ -432,19 +426,20 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
   paste(paste(n[-length(n)], collapse = ", "), tr("panorama.y"), n[length(n)])
 }
 
-# The base (or the first currency) in full; others as "+ N más" in the Cinta.
-# A currency other than the client's base carries its code (T39).
-.pan_monto_corto <- function(t, base = MONEDA_BASE_OMISION) {
-  txt <- paste0(panorama_monto(t$total[1]), if (t$moneda[1] != base) paste0(" ", t$moneda[1]))
-  if (nrow(t) > 1) paste(txt, tr("panorama.cinta.mas_monedas", n = as.character(nrow(t) - 1L))) else txt
+# The Cinta: the first two currencies in full (the base first, as
+# .pan_por_moneda() orders them), "y N más" from the third. Every figure
+# carries its code (T46).
+.pan_monto_corto <- function(t) {
+  txt <- paste(monto_moneda(utils::head(t$total, 2L), utils::head(t$moneda, 2L)), collapse = ", ")
+  if (nrow(t) > 2) paste(txt, tr("panorama.cinta.mas_monedas", n = as.character(nrow(t) - 2L))) else txt
 }
 
-# A Hoy card: the base currency large, any other currency underneath (never
-# added together), the count line and the tab it opens.
+# A Hoy card: the first currency (the base when there is any) large, any other
+# currency underneath (never added together), the count line and the tab it
+# opens. Every figure carries its code, the empty card the base's (T46).
 .pan_tarjeta_hoy <- function(titulo, totales, linea, tab, ns, base = MONEDA_BASE_OMISION) {
   vacio <- is.null(totales) || !nrow(totales)
-  principal <- if (vacio) panorama_monto(0) else
-    paste0(panorama_monto(totales$total[1]), if (totales$moneda[1] != base) paste0(" ", totales$moneda[1]))
+  principal <- if (vacio) monto_moneda(0, base) else monto_moneda(totales$total[1], totales$moneda[1])
   shiny::tags$button(
     type = "button", class = paste("pan-tarjeta pan-hoy-tarjeta", if (vacio) "pan-hoy-tarjeta--vacia"),
     onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})", ns("ir"), tab),
@@ -452,6 +447,6 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
     shiny::div(class = "pan-cifra", principal),
     if (!vacio && nrow(totales) > 1) shiny::div(class = "pan-cifra-otras",
       lapply(2:nrow(totales), function(i)
-        shiny::div(paste0("+ ", panorama_monto(totales$total[i]), " ", totales$moneda[i])))),
+        shiny::div(paste0("+ ", monto_moneda(totales$total[i], totales$moneda[i]))))),
     shiny::div(class = "pan-meta", linea, " →"))
 }

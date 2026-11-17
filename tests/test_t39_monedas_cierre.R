@@ -149,10 +149,6 @@ viejo_por_moneda <- function(moneda, importe) {            # panorama_datos.R, 2
                     stringsAsFactors = FALSE, row.names = NULL)
   out[order(out$moneda != "MXN", out$moneda), , drop = FALSE]
 }
-viejo_monto_corto <- function(t) {                         # panorama_module.R, 23ffc1f
-  base <- paste0(panorama_monto(t$total[1]), if (t$moneda[1] != "MXN") paste0(" ", t$moneda[1]))
-  if (nrow(t) > 1) paste(base, tr("panorama.cinta.mas_monedas", n = as.character(nrow(t) - 1L))) else base
-}
 viejo_correo_monto <- function(x, moneda = "MXN", moneda_base = "MXN") {   # avisos_correos.R, 23ffc1f
   n <- formatC(round(as.numeric(x), 2), format = "f", digits = 2, big.mark = ",")
   if (identical(moneda, moneda_base)) paste0("$", n) else paste0("$", n, " ", moneda)
@@ -161,23 +157,29 @@ casos <- list(list(c("USD", "MXN", "mxn", NA, "EUR", ""), c(10, 100, 50, 5, 1, 2
               list(c("USD", "EUR"), c(3, 4)), list("MXN", 7), list(character(), numeric()))
 ok("F1: .pan_por_moneda with base MXN is identical() to 23ffc1f's",
    all(vapply(casos, function(c) identical(.pan_por_moneda(c[[1]], c[[2]]), viejo_por_moneda(c[[1]], c[[2]])), logical(1))))
-ok("F2: .pan_monto_corto with base MXN is identical() to 23ffc1f's",
-   all(vapply(casos[1:3], function(c) { t <- viejo_por_moneda(c[[1]], c[[2]])
-     identical(.pan_monto_corto(t), viejo_monto_corto(t)) }, logical(1))))
+# F2, F4, F5 since T46 (Luis: every figure carries its code, the base too, no
+# "$"): the Cinta shows the first two currencies, "y N más" from the third.
+ok("F2: .pan_monto_corto: the first two currencies with their code, then \"y N más\"",
+   identical(.pan_monto_corto(viejo_por_moneda(c("USD", "MXN", "mxn", NA, "EUR", ""), c(10, 100, 50, 5, 1, 2))),
+             paste("157.00 MXN, 1.00 EUR", tr("panorama.cinta.mas_monedas", n = "1"))) &&
+     identical(.pan_monto_corto(viejo_por_moneda(c("USD", "EUR"), c(3, 4))), "4.00 EUR, 3.00 USD") &&
+     identical(.pan_monto_corto(viejo_por_moneda("MXN", 7)), "7.00 MXN"))
 ok("F3: correo_monto with its defaults (and MXN/USD) is identical() to 23ffc1f's",
    identical(correo_monto(1234.5), viejo_correo_monto(1234.5)) &&
      identical(correo_monto(1234.5, "USD"), viejo_correo_monto(1234.5, "USD")) &&
      identical(correo_monto(9, "USD", "USD"), viejo_correo_monto(9, "USD", "USD")))
 ns <- function(x) paste0("p-", x)
 t_ng <- viejo_por_moneda(c("MXN", "USD"), c(100, 5))
-ok("F4: the Hoy card with base MXN: no code on MXN, '+ $5.00 USD' underneath",
-   grepl('class="pan-cifra">$100.00<', as.character(.pan_tarjeta_hoy("Pagos", t_ng, "2 pagos", "PH", ns)), fixed = TRUE) &&
-     grepl("+ $5.00 USD", as.character(.pan_tarjeta_hoy("Pagos", t_ng, "2 pagos", "PH", ns)), fixed = TRUE))
+ok("F4: the Hoy card with base MXN: '100.00 MXN' large, '+ 5.00 USD' underneath, no '$'",
+   grepl('class="pan-cifra">100.00 MXN<', as.character(.pan_tarjeta_hoy("Pagos", t_ng, "2 pagos", "PH", ns)), fixed = TRUE) &&
+     grepl("+ 5.00 USD", as.character(.pan_tarjeta_hoy("Pagos", t_ng, "2 pagos", "PH", ns)), fixed = TRUE) &&
+     !grepl("$", as.character(.pan_tarjeta_hoy("Pagos", t_ng, "2 pagos", "PH", ns)), fixed = TRUE))
 cop <- .pan_por_moneda(c("USD", "COP", NA), c(5, 100, 1), base = "COP")
-ok("F5: a COP client: COP first (a row without currency is COP), and COP carries no code",
+ok("F5: a COP client: COP first (a row without currency is COP), with its code",
    identical(cop$moneda, c("COP", "USD")) && identical(cop$total, c(101, 5)) &&
-     identical(.pan_monto_corto(cop, "COP"), paste("$101.00", tr("panorama.cinta.mas_monedas", n = "1"))) &&
-     grepl('class="pan-cifra">$101.00<', as.character(.pan_tarjeta_hoy("Pagos", cop, "x", "PH", ns, base = "COP")), fixed = TRUE))
+     identical(.pan_monto_corto(cop), "101.00 COP, 5.00 USD") &&
+     grepl('class="pan-cifra">101.00 COP<', as.character(.pan_tarjeta_hoy("Pagos", cop, "x", "PH", ns, base = "COP")), fixed = TRUE) &&
+     grepl('class="pan-cifra">0.00 COP<', as.character(.pan_tarjeta_hoy("Pagos", cop[0, ], "x", "PH", ns, base = "COP")), fixed = TRUE))
 ok("F6: panorama_pagos_hoy passes the base on",
    identical(panorama_pagos_hoy(data.frame(ledger = "AP", status = "pending", tipo_item = NA, FechaVenc = Sys.Date(),
                                            Moneda = c("USD", "COP"), Importe = c(1, 2)), base = "COP")$moneda, c("COP", "USD")))
