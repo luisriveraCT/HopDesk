@@ -26,7 +26,12 @@ ok <- function(label, expr) {
   if (isTRUE(r)) { cat(" PASS:", label, "\n"); .pass <<- .pass + 1L }
   else           { cat(" FAIL:", label, "\n"); .fail <<- .fail + 1L }
 }
-leer <- function(p) { x <- rawToChar(readBin(p, "raw", file.size(p))); Encoding(x) <- "UTF-8"; x }
+# The references were written with "\n"; a Windows checkout (core.autocrlf)
+# gives them "\r\n". The report itself never has "\r", so it is dropped.
+leer <- function(p) {
+  x <- rawToChar(readBin(p, "raw", file.size(p))); Encoding(x) <- "UTF-8"
+  gsub("\r\n", "\n", x, fixed = TRUE)
+}
 cuenta <- function(patron, x) lengths(regmatches(x, gregexpr(patron, x, fixed = TRUE)))
 tiene <- function(x, ...) all(vapply(c(...), function(p) grepl(p, x, fixed = TRUE), logical(1)))
 nada  <- function(x, ...) !any(vapply(c(...), function(p) grepl(p, x, fixed = TRUE), logical(1)))
