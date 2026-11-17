@@ -71,7 +71,9 @@ sap_creds_source <- function(initials) {
 # Returns a creds list resolved from erp_connections.rds, or NULL to signal
 # "fall through to the legacy env var path" — covers both "no matching row"
 # and "row found but failed to decrypt" (the latter also logs a loud warning).
-.sap_creds_from_store <- function(i, cid) {
+# The active SAP B1 connection row of company `i` in client `cid`'s
+# erp_connections store, or NULL (no store, no row).
+.sap_fila_conexion <- function(i, cid) {
   rows <- tryCatch(load_erp_connections(cid), error = function(e) NULL)
   if (is.null(rows) || !nrow(rows)) return(NULL)
 
@@ -82,8 +84,13 @@ sap_creds_source <- function(initials) {
   active_ok  <- !is.na(rows$active) & rows$active == TRUE
   candidates <- rows[matches & rows$erp_type == "sap_b1_service_layer" & active_ok, , drop = FALSE]
   if (!nrow(candidates)) return(NULL)
+  candidates[1, ]
+}
 
-  row     <- candidates[1, ]
+.sap_creds_from_store <- function(i, cid) {
+  row <- .sap_fila_conexion(i, cid)
+  if (is.null(row)) return(NULL)
+
   config  <- tryCatch(jsonlite::fromJSON(row$config[1]), error = function(e) NULL)
   secrets <- tryCatch(decrypt_secret(row$secrets_encrypted[1]), error = function(e) {
     message(sprintf(
@@ -337,15 +344,25 @@ test_sap_b1_service_layer_connection <- function(config, secrets) {
   "DocCurrency","DocTotal","DocTotalFc","PaidToDate"
 )
 
-# Currency codes SAP sends that should be treated as MXN
-.SAP_CURRENCY_MAP <- c(
-  MXP = "MXN",   # Legacy ISO code SAP B1 sometimes sends for Mexican Peso
-  MXV = "MXN"    # MXV (Mexican Unidad de Inversion) — map defensively
-)
+# Legacy codes SAP sends (MXP, MXV) are mapped by moneda_normalizar()
+# (R/monedas.R, MONEDAS_ALIAS_LEGADO): the catalog's file, not this one.
 
-.normalize_currency <- function(x) {
-  x <- toupper(trimws(as.character(x)))
-  ifelse(x %in% names(.SAP_CURRENCY_MAP), .SAP_CURRENCY_MAP[x], x)
+# The local (system) currency of a company's SAP database: the one its
+# DocTotal and PaidToDate are kept in. It is a fact of that database, not
+# the client's presentation base -- a client that presents in USD still
+# keeps its SAP in pesos. Read from the company's ERP connection
+# (config$moneda_local, a catalog code); until one is written there,
+# MONEDA_BASE_OMISION. Never fails: an unreadable store is the default.
+.sap_moneda_local <- function(initials, client_id = NULL) {
+  cid <- client_id %||% Sys.getenv("CLIENT_ID")
+  m <- if (nzchar(cid)) tryCatch({
+    row <- .sap_fila_conexion(toupper(initials), cid)
+    if (is.null(row)) NULL else {
+      config <- jsonlite::fromJSON(row$config[1])
+      moneda_normalizar(config$moneda_local %||% NA_character_)[1]
+    }
+  }, error = function(e) NULL)
+  if (!is.null(m) && isTRUE(moneda_valida(m))) m else MONEDA_BASE_OMISION
 }
 
 # Case-insensitive column finder — SAP B1 returns mixed-case column names
@@ -356,7 +373,7 @@ test_sap_b1_service_layer_connection <- function(config, secrets) {
   if (length(hit)) df[[hit[1]]] else NULL
 }
 
-.parse_invoices <- function(raw, ledger) {
+.parse_invoices <- function(raw, ledger, moneda_local = MONEDA_BASE_OMISION) {
   if (!nrow(raw)) {
     message("[PARSE] ", ledger, " — raw has 0 rows, returning empty")
     return(tibble())
@@ -385,10 +402,13 @@ test_sap_b1_service_layer_connection <- function(config, secrets) {
   fc_total   <- parse_currency_num(.get_col(raw, "DocTotalFc") %||% rep(NA_real_, nrow(raw)))
   lc_total   <- parse_currency_num(raw$DocTotal)
   lc_paid    <- parse_currency_num(raw$PaidToDate %||% 0)
-  # Domestic = system currency.  Accept both the current ISO code "MXN" and
-  # SAP B1's legacy code "MXP" (still sent by some on-prem versions).
-  # Anything else (USD, EUR, …) is treated as a foreign-currency invoice.
-  is_foreign <- !toupper(trimws(as.character(raw$DocCurrency))) %in% c("MXN", "MXP")
+  # Domestic = the database's local currency (moneda_local), after the
+  # legacy codes are mapped (MXP and MXV are pesos: moneda_normalizar).
+  # Anything else (USD, EUR, …, or no code) is a foreign-currency invoice.
+  # MXV used to count as foreign: its amount came from DocTotalFc (in UDIS)
+  # while Moneda said MXN; now its local amount in pesos is read.
+  moneda_doc <- moneda_normalizar(raw$DocCurrency)
+  is_foreign <- !moneda_doc %in% moneda_local
   fc_ok      <- !is.na(fc_total) & fc_total > 0 & lc_total > 0
 
   # Derive the implied exchange rate per invoice, then convert paid amount
@@ -412,7 +432,7 @@ test_sap_b1_service_layer_connection <- function(config, secrets) {
                                      .get_col(raw, "FederalTaxID") %||% NA_character_))),
       `Fecha de contabilización` = parse_sap_date(as.character(DocDate)),
       `Fecha de vencimiento`     = parse_sap_date(as.character(DocDueDate)),
-      Moneda                     = .normalize_currency(DocCurrency),
+      Moneda                     = moneda_doc,
       `Saldo vencido`            = saldo
     )
 
@@ -438,7 +458,7 @@ fetch_ar <- function(initials, client_id = NULL) {
     select   = .SAP_AR_SELECT,
     client_id = client_id
   )
-  .parse_invoices(raw, "AR")
+  .parse_invoices(raw, "AR", moneda_local = .sap_moneda_local(initials, client_id))
 }
 
 fetch_ap <- function(initials, client_id = NULL) {
@@ -450,7 +470,7 @@ fetch_ap <- function(initials, client_id = NULL) {
     select   = .SAP_AP_SELECT,
     client_id = client_id
   )
-  .parse_invoices(raw, "AP")
+  .parse_invoices(raw, "AP", moneda_local = .sap_moneda_local(initials, client_id))
 }
 
 # ── Multi-company fetcher ──────────────────────────────────────────────────────

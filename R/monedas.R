@@ -99,3 +99,24 @@ monedas_de_sap <- function(sap) {
     if (is.data.frame(df) && "Moneda" %in% names(df)) as.character(df$Moneda) else character()),
     use.names = FALSE)
 }
+
+# ── Códigos heredados ────────────────────────────────────────────────────────
+# Codes an ERP (or its exported files) still sends in place of a catalog code
+# (monedas fase 3, cierre). Facts about the codes, so they live in the
+# catalog's file:
+#   MXP  ISO 4217's historic code of the Mexican peso (until 1993); some SAP
+#        B1 versions still send it as their local currency.
+#   MXV  UDIS (a fund code, out of the catalog). SAP keeps the document's
+#        local amounts in pesos, and those are the ones read (see
+#        R/sap_api.R, .parse_invoices), so the document is a peso document.
+MONEDAS_ALIAS_LEGADO <- c(MXP = "MXN", MXV = "MXN")
+
+# Upper-cased, trimmed, and each legacy code replaced by its catalog code.
+# NA stays NA; any other value is kept as is (data is data).
+moneda_normalizar <- function(x) {
+  x <- toupper(trimws(as.character(x)))
+  alias <- unname(MONEDAS_ALIAS_LEGADO[x])
+  hay <- !is.na(alias)
+  x[hay] <- alias[hay]
+  x
+}

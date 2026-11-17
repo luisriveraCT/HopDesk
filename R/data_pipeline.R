@@ -74,24 +74,21 @@ clean_str <- function(x) {
 # ── Standardization ────────────────────────────────────────────────────────────
 
 # Ensure a Moneda column exists and is normalized
-ensure_moneda <- function(df) {
+# `base`: the currency of a file with no currency column (the client's base;
+# MONEDA_BASE_OMISION until the caller knows it).
+ensure_moneda <- function(df, base = MONEDA_BASE_OMISION) {
   if (!"Moneda" %in% names(df)) {
     col <- guess_col(df,
       preferred = c("Currency","Divisa","Saldo vencido (moneda)"),
       regex     = "moneda|currency|divisa"
     )
-    df$Moneda <- if (!is.null(col)) df[[col]] else "MXN"
+    df$Moneda <- if (!is.null(col)) df[[col]] else base
   }
   df |>
     mutate(
-      Moneda = toupper(trimws(as.character(Moneda))),
-      # SAP B1 sometimes sends "MXP" (legacy ISO 4217 code for Mexican Peso)
-      # or other variants — normalize all to the current standard "MXN"
-      Moneda = dplyr::case_when(
-        Moneda == "MXP" ~ "MXN",
-        Moneda == "MXV" ~ "MXN",
-        TRUE            ~ Moneda
-      )
+      # Upper case, and the legacy codes SAP B1 sends (MXP, MXV) to their
+      # catalog code: moneda_normalizar() in R/monedas.R.
+      Moneda = moneda_normalizar(Moneda)
     ) |>
     fill(Moneda, .direction = "down")
 }
