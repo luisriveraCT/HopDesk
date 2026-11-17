@@ -47,7 +47,7 @@ cargar("R/persistence.R", c("tag_label", "add_tag_labels", "normalize_code"))
 cargar("R/ui_components.R", "app_styles")
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
-  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+  for (f in c("R/i18n.R", "R/monedas.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
               "R/search_module.R", "R/vencidos_module.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
 })

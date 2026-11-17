@@ -39,7 +39,7 @@ if (!exists("puede")) assign("puede", function(usuario, permiso, ...)
   !(identical(Sys.getenv("HD_SIN_AGENDA"), "1") && identical(permiso, "can_register_payments")), envir = globalenv())
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
-  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+  for (f in c("R/i18n.R", "R/monedas.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
               "R/vencidos_module.R", "R/dia_module.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
 })
