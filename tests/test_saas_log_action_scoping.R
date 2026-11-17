@@ -16,6 +16,12 @@
 
 cat("── log_action() call-site scoping (static) ────────────────────────────\n")
 
+# A module of tests/_run_saas.R, which owns .pass/.fail. Alone it had none and
+# stopped at its first check (T43); now it keeps its own count, prints a
+# summary and exits with its status.
+.sola <- !exists(".pass") || !exists(".fail")
+if (.sola) { .pass <- 0L; .fail <- 0L }
+
 .chk <- function(actual, expected, label) {
   ok <- isTRUE(all.equal(actual, expected, check.attributes = FALSE))
   if (ok) { cat(sprintf("  PASS  %s\n", label)); .pass <<- .pass + 1L }
@@ -69,3 +75,7 @@ for (f in .PRODUCTION_FILES) {
 }
 
 cat("\n")
+if (.sola) {
+  cat(sprintf("=== results: %d passed, %d failed ===\n", .pass, .fail))
+  quit(status = if (.fail) 1L else 0L)
+}
