@@ -119,7 +119,31 @@ for (e in parse("R/global.R"))
     eval(e, globalenv())
 suppressMessages(source("R/persistence.R"))
 
+# log_action() queues its audit rows and writes them ~2 s later (later::later,
+# R/app_audit.R). A row queued by one case used to land after the next case's
+# reset and count as that case's write (T38b: test_pasivos_fecha_requerida
+# failed now and then, more under load). The reset flushes the queue first,
+# into the store the row belongs to; if that case left a simulated write
+# failure on, the row goes back to the queue and is flushed again without it.
+.mem_vaciar_auditoria <- function() {
+  if (!exists(".audit_pending", envir = globalenv()) || !exists(".audit_flush_pending", envir = globalenv()))
+    return(invisible())
+  pendientes <- function() Filter(function(cid) !is.null(.audit_pending[[cid]]), ls(.audit_pending))
+  for (intento in 1:2) {
+    cids <- pendientes()
+    if (!length(cids)) break
+    if (intento == 2L) {
+      .mem_falla <<- character(); .mem_falla_escritura <<- character(); .mem_prohibido <<- character()
+      .mem_falla_cabeza <<- character()
+    }
+    for (cid in cids) suppressMessages(.audit_flush_pending(cid))
+  }
+  if (length(pendientes())) message("s3_memoria_reset: audit rows still queued for ", paste(pendientes(), collapse = ", "))
+  invisible()
+}
+
 s3_memoria_reset <- function() {
+  .mem_vaciar_auditoria()
   rm(list = ls(.mem, all.names = TRUE), envir = .mem); .mem_falla <<- character(); .mem_escrituras <<- 0L
   .mem_subidas <<- 0L
   .mem_falla_escritura <<- character(); .mem_falla_lista <<- character(); .mem_prohibido <<- character()
