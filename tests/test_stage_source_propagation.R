@@ -115,26 +115,68 @@ cat("── Staged pagar_hoy rows always carry an explicit source ────�
        "no separate cart_inv_click staging path left to drift")
 }
 
-# ── 5. Static scan: interco_module.R's .ic_send_rows and
-# treasury_map_module.R's send_to_agenda now set source explicitly ────────
+# ── 5. interco_module.R's .ic_send_rows and treasury_map_module.R's
+# send_to_agenda: new pagar_hoy rows always carry an explicit ERP source ────
+# Since f806745 (Luis, 2026-11-04: confirming always closes the invoice) both
+# build their rows with agenda_filas_factura() (R/persistence.R), which sets
+# `source` from the invoice, or SAP_B1_ERP_TYPE when it has none. The old
+# check looked for the literal source = "sap" in each body (T43): now each
+# body must use the helper and build no new row of its own (a new staged row
+# says status = "pending"; the empty-schema fallback does not), and the helper's
+# rows must carry a non-NA ERP source.
 {
-  txt_ic <- readLines("R/interco_module.R", warn = FALSE)
+  # Comments out, so a mention in a comment proves nothing.
+  sin_coment <- function(x) sub("#.*$", "", x)
+  txt_ic <- sin_coment(readLines("R/interco_module.R", warn = FALSE))
   start_ic <- grep("\\.ic_send_rows\\s*<-\\s*function", txt_ic)
   .chk(length(start_ic) > 0, TRUE, "found .ic_send_rows to scan")
   if (length(start_ic)) {
-    block_ic <- paste(txt_ic[start_ic[1]:min(start_ic[1] + 55, length(txt_ic))], collapse = "\n")
-    .chk(grepl('source\\s*=\\s*"sap"', block_ic), TRUE,
-         ".ic_send_rows now sets source = \"sap\" explicitly on new pagar_hoy rows")
+    block_ic <- paste(txt_ic[start_ic[1]:min(start_ic[1] + 60, length(txt_ic))], collapse = "\n")
+    .chk(grepl("agenda_filas_factura\\(", block_ic) && !grepl('status\\s*=\\s*"pending"', block_ic), TRUE,
+         ".ic_send_rows builds its pagar_hoy rows with agenda_filas_factura(), none by hand")
   }
 
-  txt_tm <- readLines("R/treasury_map_module.R", warn = FALSE)
+  txt_tm <- sin_coment(readLines("R/treasury_map_module.R", warn = FALSE))
   start_tm <- grep("observeEvent\\(input\\$send_to_agenda,", txt_tm)
   .chk(length(start_tm) > 0, TRUE, "found send_to_agenda observer to scan")
   if (length(start_tm)) {
-    block_tm <- paste(txt_tm[start_tm[1]:min(start_tm[1] + 40, length(txt_tm))], collapse = "\n")
-    .chk(grepl('source\\s*=\\s*"sap"', block_tm), TRUE,
-         "send_to_agenda now sets source = \"sap\" explicitly on new pagar_hoy rows")
+    block_tm <- paste(txt_tm[start_tm[1]:min(start_tm[1] + 70, length(txt_tm))], collapse = "\n")
+    .chk(grepl("agenda_filas_factura\\(", block_tm) && !grepl('status\\s*=\\s*"pending"', block_tm), TRUE,
+         "send_to_agenda builds its pagar_hoy rows with agenda_filas_factura(), none by hand")
   }
+
+  # The helper itself (SFP_PERSISTENCE_R: another persistence.R, for the
+  # contraprueba). Loaded into an environment of its own: this file is also a
+  # module of tests/_run_confirmed_logic.R, and nothing here may replace the
+  # functions the runner's later modules use.
+  local({
+  E <- new.env(parent = globalenv())
+  E[["%||%"]] <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
+  carga <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALSE))
+    if (is.call(e) && is.name(e[[1]]) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) &&
+        as.character(e[[2]]) %in% nombres) eval(e, envir = E)
+  carga("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
+  carga("R/global.R", "is_erp_sourced")
+  carga(Sys.getenv("SFP_PERSISTENCE_R", "R/persistence.R"), c(".schema_pagar_hoy", "agenda_filas_factura"))
+  agenda_filas_factura <- E$agenda_filas_factura; is_erp_sourced <- E$is_erp_sourced
+  SAP_B1_ERP_TYPE <- E$SAP_B1_ERP_TYPE
+  if (!requireNamespace("tibble", quietly = TRUE)) stop("tibble needed")
+  E$tibble <- tibble::tibble
+  fac <- data.frame(Empresa = "NTS", Moneda = "MXN", Documento = c("D1", "D2"), Parte = "Proveedor",
+                    Codigo = "P1", `Saldo vencido` = c(100, 200), `Fecha de vencimiento` = as.Date("2026-12-01"),
+                    `Fecha de contabilización` = as.Date("2026-11-01"), check.names = FALSE, stringsAsFactors = FALSE)
+  sin <- agenda_filas_factura(fac, "tester", ledger = "AP")
+  .chk(nrow(sin) == 2L && identical(unique(sin$source), SAP_B1_ERP_TYPE), TRUE,
+       "agenda_filas_factura: invoices without a source column -> rows with source = SAP_B1_ERP_TYPE")
+  otro <- agenda_filas_factura(transform(fac, source = "otro_erp"), "tester", ledger = "AP")
+  .chk(nrow(otro) == 2L && identical(unique(otro$source), "otro_erp"), TRUE,
+       "agenda_filas_factura: another ERP's source is kept as is")
+  na <- agenda_filas_factura(transform(fac, source = NA_character_), "tester", ledger = "AP")
+  todas <- c(sin$source, otro$source, na$source)
+  .chk(nrow(na) == 2L && length(todas) == 6L && !anyNA(todas) && all(is_erp_sourced(todas)) &&
+         identical(unique(na$source), SAP_B1_ERP_TYPE), TRUE,
+       "agenda_filas_factura: an NA source becomes SAP_B1_ERP_TYPE; no row ever has an NA source, all are ERP")
+  })
 }
 
 cat(sprintf("\n  Subtotal: %d passed, %d failed\n", .pass, .fail))
