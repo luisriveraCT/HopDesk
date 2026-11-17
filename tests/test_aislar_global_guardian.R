@@ -11,7 +11,10 @@
 #      R/global.R -- sources tests/helpers/aislar_global.R, unless it is on
 #      the list below with its reason; the list stays honest;
 #   2. the helper gives this process its own LOCALAPPDATA and no network to
-#      AWS, still so after the .Renviron files are read as global.R reads them.
+#      AWS, still so after the .Renviron files are read as global.R reads them;
+#   3. the helper, arranque_app.R (T15) and scripts/set_user_email.R set
+#      HOPDESK_SIN_COPIA_DEV=1, so global.R skips the prod->dev copy, and no
+#      .Renviron file sets it (CM24).
 #
 # Run from project root:  Rscript tests/test_aislar_global_guardian.R
 # =============================================================================
@@ -90,6 +93,26 @@ ok("sin red hacia AWS: una petición a S3 falla al conectar (proxy muerto), no r
    aislar_global_sin_red())
 ok("localhost sigue fuera del proxy (Chrome y las apps de fondo)",
    grepl("127.0.0.1", Sys.getenv("no_proxy"), fixed = TRUE) && grepl("localhost", Sys.getenv("no_proxy"), fixed = TRUE))
+
+# ── 3. The prod->dev account copy is skipped, not just cut off (CM24) ────────
+# global.R skips it only on HOPDESK_SIN_COPIA_DEV exactly "1".
+pone_bandera <- function(x) {
+  if (!is.call(x)) return(FALSE)
+  if (nombre_fn(x) == "setenv" || nombre_fn(x) == "Sys.setenv")
+    if (identical(x[["HOPDESK_SIN_COPIA_DEV"]], "1")) return(TRUE)
+  any(vapply(as.list(x), pone_bandera, logical(1)))
+}
+ok("aislar_global.R pone HOPDESK_SIN_COPIA_DEV=1 (sigue así tras leer los .Renviron)",
+   identical(Sys.getenv("HOPDESK_SIN_COPIA_DEV"), "1"))
+for (a in c("tests/helpers/arranque_app.R", "scripts/set_user_email.R"))
+  ok(sprintf("%s pone HOPDESK_SIN_COPIA_DEV = \"1\" (no es un arranque real)", a),
+     any(vapply(as.list(parse(a, keep.source = FALSE, encoding = "UTF-8")), pone_bandera, logical(1))))
+# A flag for harnesses and scripts only: in .Renviron* it would turn the copy
+# off for every real local start. Only the variable's name is looked for; no
+# line of those files is printed.
+for (f in c(".Renviron", ".Renviron.local"))
+  ok(sprintf("%s no define HOPDESK_SIN_COPIA_DEV", f),
+     !file.exists(f) || !any(grepl("^\\s*HOPDESK_SIN_COPIA_DEV\\s*=", readLines(f, warn = FALSE))))
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

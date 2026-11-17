@@ -14,6 +14,8 @@
 #   Rscript --no-init-file scripts/set_user_email.R mouse a@b.com hd-admin --prod
 #
 # Sin --prod escribe en el bucket DEV, que es lo que quieres para probar.
+# No copia las cuentas de producción a dev al arrancar (HOPDESK_SIN_COPIA_DEV,
+# ver abajo): esa copia pisaría justo la cuenta que vas a editar.
 #
 # ANTES DE CORRERLO CONTRA PRODUCCIÓN: cierra la app de HopDesk.
 # auth_save_usuarios() sobreescribe usuarios.rds completo, sin fusionar, así
@@ -40,6 +42,10 @@ if (!grepl("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", correo)) {
 }
 
 if (prod) Sys.setenv(HOPDESK_PRODUCTION = "1")
+# Sin --prod, cargar R/global.R copiaría las cuentas de producción a dev
+# (usuarios.rds incluido) y pisaría justo lo que este script va a editar:
+# HOPDESK_SIN_COPIA_DEV=1 le dice a global.R que se salte esa copia (CM24).
+Sys.setenv(HOPDESK_SIN_COPIA_DEV = "1")
 source("R/global.R")
 
 esperado <- if (prod) "antiguedad-rds-prod" else "antiguedad-rds-dev"

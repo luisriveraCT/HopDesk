@@ -168,7 +168,14 @@ if (Sys.getenv("HOPDESK_PRODUCTION") == "1") {
   readRenviron(".Renviron.local")
   message("[ENV] Local dev override active from .Renviron.local -- using bucket '",
           Sys.getenv("S3_BUCKET"), "', NOT production.")
-  tryCatch(
+  # Test harnesses and one-off scripts load this file whole without being a
+  # real start of the app (tests/helpers/aislar_global.R, arranque_app.R,
+  # scripts/set_user_email.R): they set HOPDESK_SIN_COPIA_DEV=1 so the copy
+  # below does not overwrite dev's accounts (CM24). Exactly "1"; never set it
+  # in .Renviron/.Renviron.local or a deploy.
+  if (identical(Sys.getenv("HOPDESK_SIN_COPIA_DEV"), "1")) {
+    message("[DEV SYNC] omitida (HOPDESK_SIN_COPIA_DEV=1)")
+  } else tryCatch(
     .hopdesk_sync_dev_users_from_prod(
       .hopdesk_prod_bucket_before_override, Sys.getenv("S3_BUCKET"),
       prod_aws_key    = .hopdesk_prod_aws_key_before_override,

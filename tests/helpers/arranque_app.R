@@ -40,7 +40,9 @@ setwd(raiz)
 Sys.setenv(LOCALAPPDATA = normalizePath(file.path(tempdir(), "arranque_lock"), winslash = "\\", mustWork = FALSE))
 dir.create(Sys.getenv("LOCALAPPDATA"), showWarnings = FALSE, recursive = TRUE)
 Sys.unsetenv("HOPDESK_PRODUCTION")
-modo <- Sys.getenv("ARR_MODO", "normal")
+# Not a real start: global.R skips the prod->dev account copy (CM24).
+Sys.setenv(HOPDESK_SIN_COPIA_DEV = "1")
+modo <-Sys.getenv("ARR_MODO", "normal")
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
 
 loadNamespace("aws.s3")

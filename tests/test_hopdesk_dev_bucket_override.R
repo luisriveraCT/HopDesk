@@ -56,15 +56,30 @@ end_line   <- grep('^IS_ADMIN_DEPLOYMENT <-', global_src)
           "located exactly one .Renviron/.Renviron.local override block in R/global.R")
 override_txt <- paste(global_src[start_line:(end_line - 1)], collapse = "\n")
 
-run_case <- function(fake_dir, hopdesk_production) {
+# The prod->dev account copy (.hopdesk_sync_dev_users_from_prod) is replaced
+# by a counter: the block's own definition of it is skipped, so no case here
+# reaches S3, and each case says how many times the block called it (CM24).
+override_exprs <- parse(text = override_txt)
+es_def_copia <- vapply(override_exprs, function(e)
+  is.call(e) && identical(e[[1]], as.name("<-")) &&
+    identical(e[[2]], as.name(".hopdesk_sync_dev_users_from_prod")), logical(1))
+.chk_true(sum(es_def_copia) == 1L, "located the copy's definition inside the override block")
+.orig_sin_copia <- Sys.getenv("HOPDESK_SIN_COPIA_DEV", unset = NA)
+
+run_case <- function(fake_dir, hopdesk_production, sin_copia = NULL) {
   old_wd <- getwd()
   on.exit(setwd(old_wd), add = TRUE)
   setwd(fake_dir)
   if (is.null(hopdesk_production)) Sys.unsetenv("HOPDESK_PRODUCTION")
   else Sys.setenv(HOPDESK_PRODUCTION = hopdesk_production)
+  if (is.null(sin_copia)) Sys.unsetenv("HOPDESK_SIN_COPIA_DEV")
+  else Sys.setenv(HOPDESK_SIN_COPIA_DEV = sin_copia)
   Sys.unsetenv("S3_BUCKET")
-  msgs <- capture.output(eval(parse(text = override_txt), envir = environment()), type = "message")
-  list(bucket = Sys.getenv("S3_BUCKET"), messages = msgs)
+  copias <- 0L
+  .hopdesk_sync_dev_users_from_prod <- function(...) { copias <<- copias + 1L; invisible(TRUE) }
+  msgs <- capture.output(for (e in override_exprs[!es_def_copia]) eval(e, envir = environment()),
+                         type = "message")
+  list(bucket = Sys.getenv("S3_BUCKET"), messages = msgs, copias = copias)
 }
 
 test_dir <- tempfile("hopdesk_env_test_")
@@ -82,6 +97,23 @@ tryCatch({
        "with .Renviron.local present and HOPDESK_PRODUCTION unset, S3_BUCKET is the DEV bucket")
   .chk_true(any(grepl("Local dev override active", r1$messages)),
             "a visible [ENV] message announces the dev override is active")
+  .chk(1L, r1$copias, "a real local start copies the accounts from prod to dev once")
+
+  cat("\n-- CM24: a test harness or script (HOPDESK_SIN_COPIA_DEV=1) skips that copy, nothing else --\n")
+  r1b <- run_case(test_dir, NULL, sin_copia = "1")
+  .chk(0L, r1b$copias, "with HOPDESK_SIN_COPIA_DEV=1 the prod->dev copy is not called")
+  .chk_true(any(grepl("[DEV SYNC] omitida (HOPDESK_SIN_COPIA_DEV=1)", r1b$messages, fixed = TRUE)),
+            "it says the copy was skipped, and why")
+  .chk("fake-dev-bucket", r1b$bucket, "the dev override still applies with the flag")
+  .chk_true(any(grepl("Local dev override active", r1b$messages)),
+            "the [ENV] dev override message still prints with the flag")
+  r1c <- run_case(test_dir, NULL, sin_copia = "0")
+  .chk(1L, r1c$copias, "HOPDESK_SIN_COPIA_DEV=0 does not skip the copy (only exactly \"1\" does)")
+  r1d <- run_case(test_dir, NULL, sin_copia = "true")
+  .chk(1L, r1d$copias, "HOPDESK_SIN_COPIA_DEV=true does not skip the copy either")
+  r2b <- run_case(test_dir, "1", sin_copia = "1")
+  .chk("fake-prod-bucket", r2b$bucket, "with HOPDESK_PRODUCTION=1 the flag changes nothing: production bucket")
+  .chk(0L, r2b$copias, "and production never copies, flag or not")
 
   cat("\n-- hopdesk_start.bat's HOPDESK_PRODUCTION=1 suppresses the override --\n")
   r2 <- run_case(test_dir, "1")
@@ -102,6 +134,7 @@ tryCatch({
   unlink(no_override_dir, recursive = TRUE)
   if (is.na(.orig_s3_bucket)) Sys.unsetenv("S3_BUCKET") else Sys.setenv(S3_BUCKET = .orig_s3_bucket)
   if (is.na(.orig_hopdesk_production)) Sys.unsetenv("HOPDESK_PRODUCTION") else Sys.setenv(HOPDESK_PRODUCTION = .orig_hopdesk_production)
+  if (is.na(.orig_sin_copia)) Sys.unsetenv("HOPDESK_SIN_COPIA_DEV") else Sys.setenv(HOPDESK_SIN_COPIA_DEV = .orig_sin_copia)
 })
 
 cat("\n-- hopdesk_start.bat actually sets HOPDESK_PRODUCTION=1 before launching Rscript --\n")

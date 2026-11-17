@@ -23,6 +23,9 @@
 #     that copy (and anything else) fails to connect -- global.R treats a
 #     failed copy as non-fatal. AWS_* are not relied on: global.R reads them
 #     back from .Renviron. localhost stays reachable (Chrome, background apps).
+#     HOPDESK_SIN_COPIA_DEV=1 has global.R skip that copy outright (CM24); the
+#     dead proxy stays as a second layer. test_aislar_global_guardian checks
+#     this file keeps setting it.
 #
 # aislar_global_sin_red(): TRUE when a request to AWS (through curl) fails to
 # CONNECT (the dead proxy), not with an answer from AWS. It asks for a bucket
@@ -37,6 +40,7 @@ local({
   Sys.setenv(http_proxy = muerto, https_proxy = muerto, HTTP_PROXY = muerto, HTTPS_PROXY = muerto,
              no_proxy = "127.0.0.1,localhost", NO_PROXY = "127.0.0.1,localhost")
   Sys.unsetenv(c("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"))
+  Sys.setenv(HOPDESK_SIN_COPIA_DEV = "1")
 })
 
 aislar_global_sin_red <- function() {

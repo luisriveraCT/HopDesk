@@ -16,7 +16,12 @@ test_that("R/ carga en el orden alfabético de shiny::loadSupport", {
   r <- callr::r(function(raiz, sin_red) {
     Sys.unsetenv("HOPDESK_PRODUCTION")
     tryCatch({
-      shiny::loadSupport(raiz, renv = new.env(parent = globalenv()), globalrenv = NULL)
+      avisos <- character()
+      withCallingHandlers(
+        shiny::loadSupport(raiz, renv = new.env(parent = globalenv()), globalrenv = NULL),
+        message = function(m) avisos <<- c(avisos, conditionMessage(m)))
+      # Not a real start: the prod->dev account copy is skipped (CM24).
+      if (any(grepl("[DEV SYNC] Copying", avisos, fixed = TRUE))) return("global.R intentó copiar prod -> dev")
       # Checked AFTER global.R ran its readRenviron(): still no way out.
       if (sin_red()) "OK" else "global.R cargado CON red hacia AWS"
     }, error = function(e) conditionMessage(e))
