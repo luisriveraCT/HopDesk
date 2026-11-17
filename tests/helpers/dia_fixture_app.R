@@ -127,7 +127,10 @@ if (identical(Sys.getenv("HD_ARRANQUE_NULL"), "1")) { detalle0 <- NULL; tags0 <-
 
 ui <- fluidPage(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),
-  app_styles(), tags$head(tags$script(src = "i18n.js"),
+  # The table engine from the start, as in the app (Vencidos' table is on the
+  # main page): the day's tables then never miss a message sent before their
+  # modal (T38).
+  app_styles(), if (exists("hd_table_deps")) hd_table_deps(), tags$head(tags$script(src = "i18n.js"),
                              if (file.exists(file.path(raiz, "www", "cal_cart.js"))) tags$script(src = "cal_cart.js?v=4")),
   tags$script(HTML("Shiny.addCustomMessageHandler('restoreModalScroll', function(m){});")),
   h4("Calendario (fixture)"),
