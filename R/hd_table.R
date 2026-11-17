@@ -282,7 +282,9 @@ hd_periodo_payload <- function(periodo, datos) {
 
 # ── secciones (agrupar) ─────────────────────────────────────────────────────
 # secciones = c("Moneda", ".tipo"), levels in order; a level can also be
-# list(campo = "Moneda", orden = "MXN") to put some values first. Each
+# list(campo = "Moneda", orden = "MXN") to put some values first (`orden`
+# can be a function, called at each payload, e.g. the client's base
+# currency first: it is read inside the payload's reactive context). Each
 # section gets a band that sticks under the header while scrolling and, with
 # the `subtotales` piece, says how many rows it has and what they add up to
 # -- always over what the search, chips and filters leave.
@@ -302,6 +304,7 @@ hd_secciones_validar <- function(secciones) {
     if (length(otros))
       stop(sprintf("hd_table: seccion '%s': unknown field(s) %s.", s$campo, paste(otros, collapse = ", ")),
            call. = FALSE)
+    if (is.function(s$orden)) return(list(campo = s$campo, orden = s$orden))   # read at each payload
     list(campo = s$campo, orden = as.character(s$orden %||% character(0)))
   })
   campos <- vapply(out, `[[`, character(1), "campo")
@@ -322,7 +325,8 @@ hd_secciones_payload <- function(secciones, datos, columnas) {
     col  <- Find(function(c) identical(c$campo, s$campo), columnas)
     mapa <- if (!is.null(col) && length(col$mapa)) col$mapa else list()   # col_insignia(), col_etiqueta()
     presentes <- unique(valores[nzchar(valores)])
-    primero <- c(s$orden, if (tipo) c("cobro", "pago"), names(mapa))
+    orden_s <- if (is.function(s$orden)) as.character(s$orden() %||% character(0)) else s$orden
+    primero <- c(orden_s, if (tipo) c("cobro", "pago"), names(mapa))
     resto <- setdiff(presentes, primero)
     orden <- c(intersect(unique(primero), presentes), resto[order(.hd_plano(resto), resto)])
     texto <- function(v) {
