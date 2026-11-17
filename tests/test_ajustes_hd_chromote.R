@@ -119,9 +119,10 @@ ok("B: nothing comes marked; “IC ✓” only on C1027",
 ok("B: En catálogo by code on P3003", grepl("✓ Código", texto_fila(BP, "NCS|AP|P3003")))
 marcar(BP, "NTS|AR|C2001")
 ok("B: a click marks C2001, by its id", identical(unlist(estado(BP)$seleccion), "NTS|AR|C2001"))
-clic(por_id("bp_apply_ic_btn")); Sys.sleep(1)
+clic(por_id("bp_apply_ic_btn"))
+# The save can take over a second; wait for it, don't guess (T40).
 ok("B: “Aplicar como IC” saves 2001 next to 1027",
-   any(grepl("^escribe interco_v2.rds NTS ar=1027,2001 ap=;", registro())))
+   poll_until(function() any(grepl("^escribe interco_v2.rds NTS ar=1027,2001 ap=;", registro())), timeout_s = 10))
 ok("B: and C2001 now carries “IC ✓”", poll_until(function() grepl("IC ✓", texto_fila(BP, "NTS|AR|C2001")), timeout_s = 10))
 
 # ── E · the IC scanner ──────────────────────────────────────────────────────
