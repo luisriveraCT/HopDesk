@@ -3066,10 +3066,22 @@ server <- function(input, output, session) {
       new_row <- editar_manual(existing, new_row)
       mi_base <- manual_inv()   # CM09: only this row is applied on S3 as it is now
       df <- upsert_manual(mi_base, new_row)
+      # Saved first, as in insert mode (R17): if S3 fails, nothing changes in
+      # the session, the Agenda is not touched, nothing says "Entrada
+      # actualizada", and the modal stays so Guardar can be tried again.
+      guardado <- tryCatch({ save_manual(df, client_id = effective_client_id(), base = mi_base); TRUE },
+                           error = function(e) e)
+      if (!isTRUE(guardado)) {
+        showNotification(tr("comun.error_guardar"), type = "error", duration = 6)
+        tryCatch(log_action(current_user(), paste0("ledger_", ledger), "editar_item_fallido",
+                            paste0("Falló al guardar la edición de ", doc, ": ", conditionMessage(guardado)),
+                            target_id = edit_id,
+                            metadata = list(empresa = input$me_empresa, documento = doc, ledger = ledger),
+                            client_id = effective_client_id(), viewer_home_client_id = home_client_id()),
+                 error = function(e) NULL)
+        return()
+      }
       manual_inv(df)
-      tryCatch(save_manual(df, client_id = effective_client_id(), base = mi_base),
-               error = function(e) showNotification(
-                 tr("tablas.manual.aviso.no_guardada"), type = "warning"))
       .sync_staged(
         data.frame(Empresa   = input$me_empresa,
                    Moneda    = toupper(trimws(input$me_moneda)),
@@ -3148,17 +3160,18 @@ server <- function(input, output, session) {
       if (send_to_agenda) {
         manual_row <- df[df[["id"]] == new_row$id, , drop = FALSE]
         ph_row     <- stage_manual_row_to_agenda(manual_row, current_user())
-        # Fresh read first, not this session's possibly-stale in-memory copy
-        # (found 2026-07-25 -- this call had the precedence backwards, the
-        # same mistake Stage 16 originally made in pasivos_module.R).
-        ph_base <- tryCatch(safe_load_pagar_hoy(current_user(), client_id = effective_client_id()),
-                            error = function(e) NULL) %||% pagar_hoy_db()
-        ph_updated <- upsert_pagar_hoy(ph_base, ph_row, keys = "id")
-        pagar_hoy_db(ph_updated)
-        tryCatch(save_pagar_hoy(ph_updated, current_user(), client_id = effective_client_id(),
-                                base = ph_base),   # CM09: rebased on S3 (A2)
-                 error = function(e) showNotification(
-                   tr("tablas.manual.aviso.error_agenda", error = e$message), type = "warning"))
+        # The Agenda as S3 holds it now; a failed read is NOT replaced by this
+        # session's copy, and a failed write is not announced as sent. The
+        # entry itself is already saved either way.
+        cid_ag <- effective_client_id(); usr_ag <- current_user()
+        agenda <- agregar_a_agenda(ph_row,
+          leer    = function() safe_load_pagar_hoy(usr_ag, client_id = cid_ag),
+          guardar = function(ph, base) save_pagar_hoy(ph, usr_ag, client_id = cid_ag,
+                                                      base = base))   # CM09: rebased on S3 (A2)
+        if (isTRUE(agenda$ok)) pagar_hoy_db(agenda$ph)
+        else showNotification(tr("tablas.manual.aviso.error_agenda", error = agenda$error),
+                              type = "warning", duration = 8)
+        send_to_agenda <- isTRUE(agenda$ok)
       }
 
       removeModal()

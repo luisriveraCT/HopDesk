@@ -847,3 +847,20 @@ stage_manual_row_to_agenda <- function(manual_row, user) {
     source       = if (has_prov) "provision" else "manual"
   )
 }
+
+# Sends one staged row to the Agenda (Agregar Item → "Enviar a Agenda").
+# `leer()` reads the Agenda as S3 holds it now and stops when it can't;
+# `guardar(df, base)` writes it rebased on `base`. Never falls back to the
+# session's copy (a stale copy used to be saved over other sessions' rows),
+# and never reports success for a failed write.
+# Returns list(ok, ph, error): ph is the Agenda written (NULL when not ok).
+agregar_a_agenda <- function(ph_row, leer, guardar) {
+  ph_base <- tryCatch(leer(), error = function(e) e)
+  if (inherits(ph_base, "error") || !is.data.frame(ph_base))
+    return(list(ok = FALSE, ph = NULL,
+                error = if (inherits(ph_base, "error")) conditionMessage(ph_base) else "no agenda"))
+  ph <- upsert_pagar_hoy(ph_base, ph_row, keys = "id")
+  r <- tryCatch({ guardar(ph, ph_base); NULL }, error = function(e) e)
+  if (!is.null(r)) return(list(ok = FALSE, ph = NULL, error = conditionMessage(r)))
+  list(ok = TRUE, ph = ph, error = NULL)
+}

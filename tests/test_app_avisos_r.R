@@ -28,7 +28,7 @@ ok(sprintf("ningún aviso de app.R con texto fijo (quedan %d)", length(fijos)),
 claves <- c(avisos_claves(F, "tablas.datos_sap.aviso."), avisos_claves(F, "tablas.manual.aviso."),
             "niveles.usuarios.aviso.contrasena_actualizada", "comun.aviso.error_leer_s3")
 ok(sprintf("las %d claves de estos avisos existen en es y en", length(claves)),
-   length(claves) == 12L && all(vapply(claves, clave_en_es_y_en, logical(1))))
+   length(claves) == 11L && all(vapply(claves, clave_en_es_y_en, logical(1))))
 codigo <- paste(readLines(F, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
 ok("app.R usa las dos claves sueltas (contraseña y lectura de S3)",
    grepl('tr("niveles.usuarios.aviso.contrasena_actualizada")', codigo, fixed = TRUE) &&
@@ -46,7 +46,6 @@ iguales <- list(
   # "S3" -> "el servidor": the wording Luis approved in textos-visibles (d321e67), not the old text
   list(es("comun.aviso.error_leer_s3", error = err), paste0("Error al leer desde el servidor: ", err)),
   list(es("tablas.manual.aviso.documento_obligatorio"), "El campo Documento es obligatorio."),
-  list(es("tablas.manual.aviso.no_guardada"), "No se pudieron guardar los cambios."),
   list(es("tablas.manual.aviso.actualizada"), "Entrada actualizada."),
   list(es("tablas.manual.aviso.error_agenda", error = err), paste("No se pudo guardar en Agenda:", err)),
   list(es("tablas.manual.aviso.agregada_agenda"), "Entrada agregada y enviada a Agenda de hoy."),
