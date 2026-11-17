@@ -31,6 +31,10 @@ ledgerModuleServer <- function(id, config, shared) {
   moduleServer(id, function(input, output, session) {
     ns     <- session$ns
     ledger <- config$ledger
+    # The client's base currency (monedas fase 3, T37): first in the currency
+    # selector, and the last resort when nothing else says which one.
+    moneda_base <- reactive(tryCatch(shared$moneda_base_cliente()$moneda, error = function(e) NULL) %||%
+                              MONEDA_BASE_OMISION)
 
     # ── Combined data: SAP + manual + moves ─────────────────────────────────
     # ── SAP + manual base (does NOT depend on provisions or moves) ──────────
@@ -382,22 +386,23 @@ ledgerModuleServer <- function(id, config, shared) {
                         !is.null(mstart_cc) && "FechaEff" %in% names(d)) {
         mend_cc   <- as.Date(lubridate::ceiling_date(mstart_cc, "month") - lubridate::days(1))
         df_dates  <- as.Date(d$FechaEff)
-        unique(d$Moneda[!is.na(df_dates) & df_dates >= mstart_cc & df_dates <= mend_cc])
+        d$Moneda[!is.na(df_dates) & df_dates >= mstart_cc & df_dates <= mend_cc]
       } else if (!is.null(d) && nrow(d) && "Moneda" %in% names(d)) {
-        unique(d$Moneda)  # fallback: no FechaEff column — use all months
+        d$Moneda  # fallback: no FechaEff column — use all months
       } else {
         character()
       }
       manual_curs <- if (nrow(manual) && "Moneda" %in% names(manual)) manual$Moneda else character()
-      raw_curs <- unique(c(month_curs, manual_curs))
-      # MXN first, USD second, rest alphabetically — ensures selector defaults
-      # to MXN even when old snapshots contain other currencies (e.g. EUR).
-      priority <- c("MXN", "USD")
-      data_currencies <- c(
-        intersect(priority, raw_curs),
-        sort(setdiff(raw_curs, priority))
-      )
-      choices <- if (length(data_currencies)) data_currencies else c("MXN", "USD")
+      # One entry per document: the order counts them.
+      docs_curs <- c(as.character(month_curs), as.character(manual_curs))
+      # The base first, then by number of documents (monedas_en_datos(), the
+      # rule of the whole app), so the selector defaults to the base even when
+      # old snapshots carry other currencies (e.g. EUR). The base only when
+      # the month has documents in it: a month with only USD opens on USD,
+      # never on an empty base. No data at all: the base alone.
+      data_currencies <- intersect(monedas_en_datos(docs_curs, moneda_base()),
+                                   toupper(trimws(docs_curs)))
+      choices <- if (length(data_currencies)) data_currencies else moneda_base()
       if (!identical(choices, isolate(shared$currency_choices[[ledger]]()))) {
         shared$currency_choices[[ledger]](choices)
       }
@@ -490,7 +495,7 @@ ledgerModuleServer <- function(id, config, shared) {
         else if (length(available))
           available[[1]]
         else
-          "MXN"
+          moneda_base()
       ))
 
       message("[CAL_RENDER] renderUI fired ledger=", ledger)
@@ -794,7 +799,7 @@ ledgerModuleServer <- function(id, config, shared) {
 
       # Mirror the same currency-fallback logic used in output$calendar so the
       # click handler uses the same effective currency even when the selectInput
-      # hasn't finished binding (returns character(0) instead of "MXN").
+      # hasn't finished binding (returns character(0) instead of a currency).
       available_cur <- shared$currency_choices[[ledger]]()
       sel_cur       <- shared$currency[[ledger]]()
       cur <- toupper(trimws(
@@ -804,7 +809,7 @@ ledgerModuleServer <- function(id, config, shared) {
         else if (length(available_cur))
           available_cur[[1L]]
         else
-          "MXN"
+          moneda_base()
       ))
       amt   <- shared$amount_col()
       mode  <- shared$ic_mode[[ledger]]()
@@ -1589,7 +1594,7 @@ ledgerModuleServer <- function(id, config, shared) {
       prefill_moneda <- {
         v <- if (!is.null(existing_ov) && nrow(existing_ov))
                existing_ov[["Moneda_override"]][1] else NA_character_
-        if (!is.na(v) && nzchar(trimws(v %||% ""))) v else (row[["Moneda"]] %||% "MXN")
+        if (!is.na(v) && nzchar(trimws(v %||% ""))) v else (row[["Moneda"]] %||% moneda_base())
       }
       prefill_importe <- {
         v <- if (!is.null(existing_ov) && nrow(existing_ov))

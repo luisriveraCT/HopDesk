@@ -147,7 +147,7 @@ get_cuentas_ppl_data <- function(empresa, moneda, shared) {
   Empresa             = character(),   # initials: "NTS", "NCS", …
   razon_social        = character(),
   rfc                 = character(),
-  Moneda              = character(),   # "MXN" | "USD"
+  Moneda              = character(),   # a catalog code (R/monedas.R)
   alias               = character(),   # informational (≤15 chars)
   cuenta              = character(),   # 11-digit account used as PPL origen
   clabe_interbancaria = character(),   # 18-digit CLABE for reference / SPEI receipts

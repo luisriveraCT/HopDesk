@@ -32,7 +32,7 @@ cargar <- function(archivo, nombres) {
 }
 cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", ".schema_ctas_cuentas", "load_ctas_bancos",
                                           "load_ctas_cuentas", "save_ctas_bancos", "save_ctas_cuentas", ".BANCOS_MX_CHOICES"))
-for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R",
+for (f in c("R/i18n.R", "R/monedas.R", "R/ppl_generator.R", "R/tier_registry.R", "R/permisos.R",
             "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R", "R/settings/settings_cuentas.R"))
   suppressMessages(source(f))
 log_action <- function(...) invisible(NULL)

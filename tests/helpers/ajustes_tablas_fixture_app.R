@@ -35,7 +35,7 @@ cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", ".schema_ctas_c
 cargar("R/adjuntos_s3.R", c(".NUMERO_PURO", ".CELDA_PELIGRO", "neutralizar_celdas", "tabla_a_texto_copiable"))
 cargar("R/data_pipeline.R", "scan_ic_candidates")
 cargar("R/ui_components.R", "app_styles")
-for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R",
+for (f in c("R/i18n.R", "R/monedas.R", "R/ppl_generator.R", "R/tier_registry.R", "R/permisos.R",
             "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/settings/settings_cuentas.R", "R/settings/settings_bp.R", "R/settings/settings_hub.R"))
   suppressMessages(source(f))

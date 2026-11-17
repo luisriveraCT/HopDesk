@@ -258,7 +258,11 @@ facturas_tabla_server <- function(id, tabla, datos, shared, crudos, accion_factu
       out
     })
     t <- hd_table_server("t", tabla = tabla, datos = tabla_df, columnas = facturas_columnas(visibles),
-                         secciones = list(list(campo = "Moneda", orden = "MXN"), ".tipo"),
+                         # The client's base currency's section first (monedas
+                         # fase 3, T37); the engine reads `orden` at each payload.
+                         secciones = list(list(campo = "Moneda", orden = function()
+                           tryCatch(shared$moneda_base_cliente()$moneda, error = function(e) NULL) %||%
+                             MONEDA_BASE_OMISION), ".tipo"),
                          grupo = c("Empresa", "Fecha", "Parte"),
                          filtros = list(list(campo = "Clase", titulo = "tablas.facturas.tipo"),
                                         list(campo = "Etiqueta")),

@@ -114,6 +114,17 @@ settings_cuentas_observer <- function(input, output, session, shared) {
   .leer_cuentas <- function() tryCatch({
     if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas() else load_ctas_cuentas(client_id = shared$effective_client_id())
   }, error = function(e) .schema_ctas_cuentas())
+  # The client's base currency (monedas fase 3, T37): a new account's, and
+  # what a row without one is. Read once per form, never as a dependency.
+  .moneda_base <- function()
+    tryCatch(isolate(shared$moneda_base_cliente())$moneda, error = function(e) NULL) %||% MONEDA_BASE_OMISION
+  # The currencies the client's accounts already use, the base first: they go
+  # on top of the catalog in the form's selector. Isolated: the form is a
+  # renderUI and must not redraw (losing what is typed) when accounts change.
+  .monedas_cuentas <- function(base) {
+    m <- isolate(.leer_cuentas())$Moneda
+    monedas_en_datos(if (length(m)) ppl_moneda_cuenta(as.character(m), base) else character(), base)
+  }
 
   t_bancos <- hd_table_server(
     "bancos_cat_t", tabla = "bancos_cat",
@@ -243,7 +254,9 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     if (!is.null(pre_b) && !pre_b %in% bancos$id) pre_b <- NULL
     pre_e  <- isolate(input$cta_empresa_filter %||% "")
     output$cuentas_edit_form <- renderUI({
-      .cuenta_form_ui(NULL, bancos, pre_b, pre_e, cmap = shared$company_map(), editar = .puede_bancos())
+      base <- .moneda_base()
+      .cuenta_form_ui(NULL, bancos, pre_b, pre_e, cmap = shared$company_map(), editar = .puede_bancos(),
+                      base = base, primero = .monedas_cuentas(base))
     })
   }, ignoreInit = TRUE)
 
@@ -261,7 +274,9 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     ef  <- isolate(input$cta_empresa_filter %||% "")
     editing_cuenta_id(row$id); editing_banco_id(NULL)
     output$cuentas_edit_form <- renderUI({
-      .cuenta_form_ui(row, .leer_bancos(), row$banco_id, ef, cmap = shared$company_map(), editar = .puede_bancos())
+      base <- .moneda_base()
+      .cuenta_form_ui(row, .leer_bancos(), row$banco_id, ef, cmap = shared$company_map(), editar = .puede_bancos(),
+                      base = base, primero = .monedas_cuentas(base))
     })
   })
 
@@ -274,7 +289,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     eid         <- editing_cuenta_id()
     empresa_val <- input$cta_empresa %||% ""
     cuenta_val  <- trimws(input$cta_cuenta %||% "")
-    moneda_val  <- input$cta_moneda  %||% "MXN"
+    moneda_val  <- input$cta_moneda  %||% .moneda_base()
 
     if (!nzchar(empresa_val)) {
       showNotification(tr("tablas.ajustes.cuentas.falta_empresa"), type = "warning"); return()
@@ -465,7 +480,9 @@ settings_cuentas_observer <- function(input, output, session, shared) {
 
 # ── Account form ──────────────────────────────────────────────────────────────
 .cuenta_form_ui <- function(row = NULL, bancos = NULL, pre_banco_id = NULL,
-                             pre_empresa = "", cmap, editar = TRUE) {
+                             pre_empresa = "", cmap, editar = TRUE,
+                             base = MONEDA_BASE_OMISION, primero = character(),
+                             idioma = hd_idioma()) {
   is_new <- is.null(row)
 
   banco_choices <- if (!is.null(bancos) && nrow(bancos)) {
@@ -476,7 +493,10 @@ settings_cuentas_observer <- function(input, output, session, shared) {
   emp_val     <- if (!is_new) row$Empresa  %||% "" else pre_empresa
   razon_val   <- if (!is_new) row$razon_social %||% "" else ""
   rfc_val     <- if (!is_new) row$rfc  %||% "" else ""
-  moneda_val  <- if (!is_new) row$Moneda   %||% "MXN" else "MXN"
+  # An old row may say "Pesos"/"Dólares": ppl_moneda_cuenta() reads it as the
+  # code (it used to fall to the selector's first option, MXN, even for
+  # "Dólares"). Nothing, or something outside the catalog, is the base.
+  moneda_val  <- if (!is_new) ppl_moneda_cuenta(as.character(row$Moneda %||% NA_character_), base) else base
   alias_val   <- if (!is_new) row$alias    %||% "" else ""
   cuenta_val  <- if (!is_new) row$cuenta   %||% "" else ""
   clabe_val   <- if (!is_new) row$clabe_interbancaria %||% "" else ""
@@ -500,15 +520,18 @@ settings_cuentas_observer <- function(input, output, session, shared) {
                        setNames(names(cmap), unname(cmap))),
           selected = emp_val, width = "100%")
       ),
-      div(class = "col-md-4",
+      div(class = "col-md-3",
         tags$label("Banco", class = "form-label small fw-semibold mb-1"),
         selectInput("cta_banco_id", NULL,
                     choices = banco_choices, selected = sel_banco, width = "100%")
       ),
-      div(class = "col-md-2",
+      # The whole catalog (Luis, T37), the base and the accounts' currencies
+      # on top; "USD — Dólar estadounidense" needs the wider column.
+      div(class = "col-md-3",
         tags$label("Moneda", class = "form-label small fw-semibold mb-1"),
         selectInput("cta_moneda", NULL,
-                    choices = c("MXN","USD","EUR"), selected = moneda_val, width = "100%")
+                    choices = monedas_opciones(primero = c(base, primero), idioma = idioma),
+                    selected = moneda_val, width = "100%")
       ),
       div(class = "col-md-3 d-flex align-items-end pb-1",
         div(class = "form-check",
