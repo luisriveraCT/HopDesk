@@ -25,7 +25,7 @@ pasivos_liability_to_draft <- function(row) {
     referencia_default     = r$referencia_default[1] %||% "",
     documento_template     = r$documento_template[1] %||% "",
     subcategoria           = r$subcategoria[1] %||% "",
-    moneda_pago            = r$moneda_pago[1] %||% "MXN",
+    moneda_pago            = r$moneda_pago[1] %||% NA_character_,   # the selector falls on the base
     cotizado_en            = r$cotizado_en[1] %||% "",
     tarjeta_closing_day    = r$tarjeta_closing_day[1],
     tarjeta_due_day        = r$tarjeta_due_day[1],
@@ -93,7 +93,7 @@ pasivos_liability_to_draft <- function(row) {
 # Convert draft to a single-row tibble matching .schema_pasivos_liability().
 pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
                                                edit_target_id = NULL, user = "system",
-                                               previo = NULL) {
+                                               previo = NULL, base = MONEDA_BASE_OMISION) {
   now <- Sys.time()
   # Editing keeps what the wizard does not ask for: the liability's estado
   # and who created it, when. It used to write "active" and the editor as
@@ -153,7 +153,7 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
     codigo_parte             = draft$codigo_parte %||% NA_character_,
     referencia_default       = if (nzchar(draft$referencia_default %||% "")) draft$referencia_default else NA_character_,
     documento_template       = if (nzchar(draft$documento_template %||% "")) draft$documento_template else NA_character_,
-    moneda_pago              = draft$moneda_pago %||% "MXN",
+    moneda_pago              = draft$moneda_pago %||% base,
     cotizado_en              = if (nzchar(draft$cotizado_en %||% "")) draft$cotizado_en else NA_character_,
     recurrence_type          = if (cat %in% c("regular", "tarjeta"))
                                  (draft$recurrence_type %||% NA_character_) else NA_character_,
@@ -256,7 +256,9 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
         mode           = wiz$mode,
         edit_target_id = wiz$edit_target_id,
         user           = user,
-        previo         = before_row
+        previo         = before_row,
+        base           = tryCatch(shared$moneda_base_cliente()$moneda, error = function(e) NULL) %||%
+                           MONEDA_BASE_OMISION
       ),
       error = function(e) e
     )
@@ -605,7 +607,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
     c("Empresa",       draft$empresa    %||% "—"),
     c("Parte",         draft$parte      %||% "—"),
     c("Moneda de pago", paste0(
-      draft$moneda_pago %||% "MXN",
+      draft$moneda_pago %||% "—",
       if (nzchar(draft$cotizado_en %||% ""))
         sprintf(" (cotizado en %s)", draft$cotizado_en)
       else ""
@@ -710,7 +712,7 @@ pasivos_vista_amortizacion <- function(draft) {
     capital = as.numeric(futuras$capital %||% 0),
     interes = as.numeric(futuras$interes %||% 0),
     total   = as.numeric(futuras$total %||% 0),
-    moneda  = rep(draft$moneda_pago %||% "MXN", nrow(futuras)),
+    moneda  = rep(draft$moneda_pago %||% NA_character_, nrow(futuras)),
     stringsAsFactors = FALSE)
   attr(filas, "reamortizada") <- any(!is.na(sched$re_amortized) & sched$re_amortized, na.rm = TRUE)
   filas
@@ -731,7 +733,7 @@ pasivos_vista_provisiones <- function(draft) {
   if (is.null(provs) || !nrow(provs)) return(NULL)
   p <- head(provs, 12)
   data.frame(id = p$id, fecha = as.Date(p$fecha_efectiva), monto = as.numeric(p$amount_pago %||% 0),
-             moneda = p$moneda_pago %||% (draft$moneda_pago %||% "MXN"), stringsAsFactors = FALSE)
+             moneda = p$moneda_pago %||% (draft$moneda_pago %||% NA_character_), stringsAsFactors = FALSE)
 }
 
 .wiz_vacia_amort <- data.frame(id = character(), periodo = integer(), fecha = as.Date(character()),

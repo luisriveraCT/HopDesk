@@ -521,7 +521,7 @@ pasivos_generate_schedule <- function(liability, today = Sys.Date()) {
         origin     = "initial_fee",
         historico  = as.Date(f$fecha) < today,
         re_amortized = FALSE,
-        moneda     = f$moneda %||% "MXN",
+        moneda     = f$moneda %||% (liability$moneda_pago[1] %||% NA_character_),
         fee_desc   = f$desc   %||% ""
       )
     }))

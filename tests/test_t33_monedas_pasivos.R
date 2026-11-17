@@ -160,3 +160,37 @@ test_that("the wizard's server: a new initial fee starts on the base (MXN until 
   expect_identical(nuevo_cargo("USD"), "USD")
   expect_identical(nuevo_cargo(NA_character_), "MXN")
 })
+
+# ── 5. A stored value with no currency (C3) and the engine ───────────────────
+suppressPackageStartupMessages(library(lubridate))   # the engine uses Date(), as the app
+F_ECM <- Sys.getenv("ECM_R", "R/pasivos_edit_confirm_module.R")
+F_ENG <- Sys.getenv("ENG_R", "R/pasivos_engine.R")
+for (f in c("R/policy_engine.R", F_ENG, F_ECM)) suppressMessages(source(f))
+if (!exists("isTRUE_safe")) cargar("R/pasivos_observers.R", "isTRUE_safe")
+credito <- list(categoria = "financiero", flavor = "credito_simple", nombre = "Crédito", empresa = "NTS",
+                parte = "Banco", moneda_pago = "USD", principal_original = 120000, saldo_capital = 120000,
+                tasa_tipo = "fija", tasa_actual = 12, fecha_inicio = Sys.Date(), plazo_meses = 12L,
+                frecuencia_pago = "mensual", dia_pago = 15L, periodo_gracia = 0L, metodo_amortizacion = "francesa",
+                cargos_iniciales = list(list(desc = "Apertura", monto = 100, fecha = Sys.Date() + 3L)))
+test_that("an initial fee with no currency takes its liability's (USD), not a fixed one", {
+  s <- pasivos_generate_schedule(pasivos_wizard_draft_to_liability(credito, user = "x"), today = Sys.Date())
+  fee <- s[s$origin == "initial_fee", , drop = FALSE]
+  expect_identical(nrow(fee), 1L)
+  expect_identical(fee$moneda, "USD")
+  c2 <- credito; c2$cargos_iniciales[[1]]$moneda <- "EUR"   # one with its own currency keeps it
+  s2 <- pasivos_generate_schedule(pasivos_wizard_draft_to_liability(c2, user = "x"), today = Sys.Date())
+  expect_identical(s2$moneda[s2$origin == "initial_fee"], "EUR")
+})
+test_that("the wizard: a liability with no currency opens with none and is saved in the base", {
+  r <- pasivos_wizard_draft_to_liability(credito, user = "x"); r$moneda_pago <- NA_character_
+  expect_true(is.na(pasivos_liability_to_draft(r)$moneda_pago))
+  d <- credito; d$moneda_pago <- NULL
+  expect_identical(pasivos_wizard_draft_to_liability(d, user = "x", base = "USD")$moneda_pago, "USD")
+  expect_identical(pasivos_wizard_draft_to_liability(d, user = "x")$moneda_pago, "MXN")   # base not chosen: as today
+  expect_identical(pasivos_wizard_draft_to_liability(credito, user = "x", base = "EUR")$moneda_pago, "USD")
+})
+test_that("the conflicts table: a provision with no currency shows the base", {
+  conf <- PROVS[1:2, ]; conf$moneda_pago <- NULL
+  expect_identical(unique(pasivos_conflictos_filas(conf, NULL, base = "USD")$Moneda), "USD")
+  expect_identical(unique(pasivos_conflictos_filas(PROVS[1:2, ], NULL, base = "USD")$Moneda), unique(PROVS$moneda_pago[1:2]))
+})

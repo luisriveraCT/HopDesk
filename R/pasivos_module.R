@@ -420,7 +420,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
         id       = prov_row$id[1],
         source   = "provision",
         Empresa  = prov_row$empresa[1]    %||% "",
-        Moneda   = prov_row$moneda_pago[1] %||% "MXN",
+        Moneda   = prov_row$moneda_pago[1] %||% NA_character_,
         Documento = prov_row$documento[1] %||% "",
         Parte    = prov_row$parte[1]       %||% "",
         Importe  = amount_del              %||% 0,
@@ -737,7 +737,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
     if (!nrow(prov)) return(shiny::p(class = "text-warning", "Provisión no encontrada."))
 
     amount   <- if (!is.na(prov$amount_pago_override[1])) prov$amount_pago_override[1] else prov$amount_pago[1]
-    moneda   <- prov$moneda_pago[1] %||% "MXN"
+    moneda   <- prov$moneda_pago[1] %||% base_moneda()
     estado   <- prov$estado[1]
     is_conf  <- estado == "item_confirmed"
     # banxico-fix: quoted in USD, paid in MXN -> today's FIX, "≈" (display only)
@@ -1071,7 +1071,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       pap <- tryCatch(load_papelera(client_id = shared$effective_client_id()), error = function(e) .schema_papelera())
       pap_detail <- data.frame(
         id = prov_row$id[1], source = "provision",
-        Empresa = prov_row$empresa[1] %||% "", Moneda = prov_row$moneda_pago[1] %||% "MXN",
+        Empresa = prov_row$empresa[1] %||% "", Moneda = prov_row$moneda_pago[1] %||% NA_character_,
         Documento = prov_row$documento[1] %||% "", Parte = prov_row$parte[1] %||% "",
         Importe = amount_del %||% 0, FechaEff = prov_row$fecha_efectiva[1],
         stringsAsFactors = FALSE

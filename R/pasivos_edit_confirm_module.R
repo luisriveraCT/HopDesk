@@ -93,7 +93,8 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
 # is what is saved. restaurado: list(decision = c(<prov_id> = op),
 # otro = c(<prov_id> = amount)), what the person had chosen before
 # "Continuar revisando" rebuilt the panel.
-pasivos_conflictos_filas <- function(conflicts, replacement, apertura = 1L, restaurado = NULL) {
+pasivos_conflictos_filas <- function(conflicts, replacement, apertura = 1L, restaurado = NULL,
+                                     base = MONEDA_BASE_OMISION) {
   vacia <- data.frame(id = character(0), prov_id = character(0), fecha = as.Date(character(0)),
                       antes = character(0), nuevo = character(0), decision = character(0),
                       otro = numeric(0), Moneda = character(0), stringsAsFactors = FALSE)
@@ -122,7 +123,7 @@ pasivos_conflictos_filas <- function(conflicts, replacement, apertura = 1L, rest
     nuevo    = .pec_fecha_monto(fecha_nueva, monto_nuevo),
     decision = unname(dec),
     otro     = unname(otro),
-    Moneda   = as.character(conflicts$moneda_pago %||% "MXN"),
+    Moneda   = as.character(conflicts$moneda_pago %||% base),
     stringsAsFactors = FALSE)
   out[order(out$fecha, out$prov_id), , drop = FALSE]
 }
@@ -242,7 +243,9 @@ setup_pasivos_edit_confirm <- function(input, output, session, shared) {
   session$userData$pec_state <- st
 
   filas <- shiny::reactive(
-    pasivos_conflictos_filas(st$conflicts, st$replacement, st$apertura, st$restaurado))
+    pasivos_conflictos_filas(st$conflicts, st$replacement, st$apertura, st$restaurado,
+                             base = shiny::isolate(tryCatch(shared$moneda_base_cliente()$moneda,
+                                                            error = function(e) NULL)) %||% MONEDA_BASE_OMISION))
   t <- hd_table_server("pec_tabla", tabla = "conflictos_pasivo", datos = filas,
                        columnas = .pec_columnas(), piezas = c("opcion_fila", "edicion_celda"),
                        vacio = "tablas.pasivos.conflictos.vacio")
