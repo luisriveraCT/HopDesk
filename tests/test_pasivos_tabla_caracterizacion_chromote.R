@@ -60,8 +60,13 @@ td <- function(id, dias) sprintf("(function(){ var ths = document.querySelectorA
   var tr = HDT.fila('%s', %s); return tr && k >= 0 ? tr.children[k] : null; })()",
   T, js(as.character(HOY + dias)), T, js(id))
 clic <- function(js_el) {
-  p <- ev(sprintf("(function(){ var e = %s; e.scrollIntoView({block:'center', inline:'center', behavior:'instant'});
+  punto <- function() ev(sprintf("(function(){ var e = %s; e.scrollIntoView({block:'center', inline:'center', behavior:'instant'});
     var r = e.getBoundingClientRect(); return [r.left + Math.min(r.width / 2, 14), r.top + r.height/2]; })()", js_el))
+  # A modal slides in (Bootstrap's fade): a point taken mid-way misses the
+  # button (T38: B13b's ⚡ in the cell's list, and B14 behind it). Wait until
+  # the element stays put.
+  p <- punto(); Sys.sleep(0.12)
+  for (k in 1:25) { q <- punto(); if (identical(p, q)) break; p <- q; Sys.sleep(0.12) }
   for (t in c("mouseMoved", "mousePressed", "mouseReleased"))
     b$Input$dispatchMouseEvent(type = t, x = p[[1]], y = p[[2]], button = if (t == "mouseMoved") "none" else "left",
                                buttons = if (t == "mousePressed") 1L else 0L, clickCount = 1L)
