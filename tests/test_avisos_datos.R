@@ -31,6 +31,8 @@ suppressMessages({
   source("R/cashflow_export_module.R")
 })
 source("R/panorama_datos.R")
+source("R/ui_components.R")   # monto_moneda(), sap_al_texto() (T46)
+suppressMessages({ source("R/fx_banxico.R"); source("R/fx_tipos.R") })
 source("R/avisos_umbrales.R")
 source("R/avisos_correos.R")
 source("R/avisos_datos.R")
@@ -156,13 +158,13 @@ ok("una fila sin contraparte (provisión manual) no dice NA en el correo", {
   h <- correo_lunes_html(d, list(idioma = "es", ver_cxc = TRUE))
   d$top_pagos$contraparte[1] == "—" && !grepl(">NA<", h, fixed = TRUE)
 })
-ok("top 5 de cobros: el mayor primero, con las iniciales de la empresa", {
-  nrow(d$top_cobros) == 5 && d$top_cobros$contraparte[1] == "Cliente Uno" && all(d$top_cobros$empresa == "NL") &&
-    !"Cliente Tres" %in% d$top_cobros$contraparte
+ok("top 10 de cobros (T45): el mayor primero, con las iniciales; sin tipo de cambio solo rankea la base", {
+  # 7 in MXN this week (the IC one and A3, of the 30th, out); the USD one has no rate here
+  nrow(d$top_cobros) == 7 && d$top_cobros$contraparte[1] == "Cliente Uno" && all(d$top_cobros$empresa == "NL") &&
+    !"Cliente Tres" %in% d$top_cobros$contraparte && identical(d$sin_tipo, c(USD = 1L))
 })
-ok("pasivos de la semana con la función de B (panorama_pasivos_pronto), no una copia",
-   d$pasivos_n == 1L && d$pasivos[["MXN"]] == 45000 &&
-     any(grepl("panorama_pasivos_pronto", deparse(body(correo_datos_lunes)), fixed = TRUE)))
+ok("pasivos de la semana: las provisiones de las filas AP, así siempre son parte de 'por pagar' (T45)",
+   d$pasivos_n == 1L && d$pasivos[["MXN"]] == 45000 && d$pagos[["MXN"]] >= d$pasivos[["MXN"]])
 ok("vencidos CxC del cliente en moneda base, con su Δ desde el lunes anterior", {
   abs(d$vencidos_pct - 10) < 1e-9 && abs(d$vencidos_delta - 0) < 1e-9
 })
@@ -178,10 +180,10 @@ ok("un monto aproximado (provisión en USD al FIX) va con ≈, en el mosaico y e
   df2 <- r$df; df2$aprox <- df2$Documento == "P1"
   d2 <- correo_datos_lunes(df2, r$shared, LUNES, serie, alertas, r$sap_fecha)
   h <- correo_lunes_html(d2, list(idioma = "es", ver_cxc = TRUE))
-  # the MXN total holds it (≈ $45,300.00); in the table only its row (≈ $300.00), not the exact provision
+  # the MXN total holds it (≈ 45,300.00 MXN); in the list only its row (≈ 300.00 MXN), not the exact provision
   identical(d2$pagos_aprox, "MXN") && !length(d2$cobros_aprox) &&
-    grepl("&#8776; $45,300.00", h, fixed = TRUE) && grepl("&#8776; $300.00", h, fixed = TRUE) &&
-    !grepl("&#8776; $45,000.00", h, fixed = TRUE)
+    grepl("&#8776; 45,300.00 MXN", h, fixed = TRUE) && grepl("&#8776; 300.00 MXN", h, fixed = TRUE) &&
+    !grepl("&#8776; 45,000.00", h, fixed = TRUE)
 })
 
 cat("
@@ -249,16 +251,18 @@ ok("una fila que la regla quita en vez de marcar (manual confirmada) cuenta como
   identical(x, c(TRUE, FALSE))
 })
 ok("el viernes lee la semana del lunes", sl$ok && is.na(sl$motivo))
-ok("pagos confirmados contra los del lunes, por la regla de la app; sin provisiones", {
-  dv$pagos_conf == 1L && dv$pagos_total == 1L
+ok("pagos confirmados contra los del lunes, por la regla de la app; la provisión manual suelta es plan (P12)", {
+  dv$pagos_conf == 1L && dv$pagos_total == 1L && dv$planes$n == 1L && dv$planes$manual == 1L
 })
-ok("cobros recibidos: % de lo que el lunes esperaba en moneda base (400 de 590)",
-   abs(dv$cobros_pct - 100 * 400 / 590) < 1e-9)
+ok("cobros del plan por partida (T45): 400 cobrado de 590; lo demás sigue abierto en su fecha (atrasado)", {
+  x <- dv$cobros$MXN
+  x$monto[x$clase == "hecho"] == 400 && x$monto[x$clase == "atrasado"] == 190 && sum(x$monto) == 590
+})
 ok("vencidos del viernes contra los del lunes", !is.na(dv$vencidos_pct) && !is.na(dv$vencidos_delta) &&
      abs(dv$vencidos_delta - (dv$vencidos_pct - 10)) < 1e-9)
-ok("el correo del viernes con esos datos no lleva montos", {
+ok("el correo del viernes con esos datos: montos siempre con su código, nunca $ (T45)", {
   h <- correo_viernes_html(dv, list(idioma = "es", ver_cxc = TRUE))
-  !grepl("$", h, fixed = TRUE) && grepl("100%", h, fixed = TRUE)
+  !grepl("$", h, fixed = TRUE) && grepl("PLAN DEL LUNES EN MXN", h, fixed = TRUE) && grepl("400.00 MXN", h, fixed = TRUE)
 })
 ok("sin la semana de este lunes: omitido_sin_lunes; ilegible: omitido_lectura", {
   a <- correo_semana_leer(CID, VIERNES + 7L)

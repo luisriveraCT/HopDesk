@@ -39,7 +39,7 @@ AVISOS_JOB_ARCHIVOS <- c(
   "R/i18n.R", "R/monedas.R", "R/tier_registry.R", "R/permisos.R", "R/persistence.R", "R/erp_connector_registry.R",
   "R/data_pipeline.R", "R/pasivos_engine.R", "R/pasivos_schemas.R", "R/pasivos_calendar_glue.R",
   "R/pasivos_persistence.R", "R/bancos_persistence.R", "R/cashflow_export_module.R", "R/fx_banxico.R",
-  "R/email_service.R", "R/avisos.R", "R/panorama_datos.R",
+  "R/fx_tipos.R", "R/email_service.R", "R/avisos.R", "R/panorama_datos.R", "R/ui_components.R",
   "R/avisos_umbrales.R", "R/avisos_correos.R", "R/avisos_datos.R", "R/avisos_logros.R", "R/avisos_archivo.R")
 
 # The only things the log may count.
@@ -47,7 +47,7 @@ JOB_EVENTOS <- c(
   "clientes", "clientes_ok", "omitido_lectura", "omitido_sin_sap", "omitido_sap_viejo",
   "omitido_calculo", "omitido_sin_lunes", "omitido_destinatarios", "error_cliente",
   "destinatarios", "enviado", "fallido", "ya_enviado", "prueba_html", "alertas_umbral",
-  "archivados", "sin_llave_nueva")
+  "archivados", "sin_llave_nueva", "moneda_base_omision", "historial_fallido")
 
 .job <- new.env(parent = emptyenv())
 job_reiniciar <- function() .job$cuenta <- stats::setNames(integer(length(JOB_EVENTOS)), JOB_EVENTOS)
@@ -152,15 +152,29 @@ job_enviar <- function(cid, modo, fecha, dests, construir, prueba) {
 
 # ── Per client ───────────────────────────────────────────────────────────────
 
+# The client's base currency (Ajustes); the default if its config cannot be
+# read, counted in the log (T45, H1).
+job_moneda_base <- function(cid) {
+  b <- avisos_moneda_base(cid)
+  if (!isTRUE(b$leida)) job_contar("moneda_base_omision")
+  b$moneda
+}
+
+# Today's rates against the base, to order the tops (never to add amounts).
+job_tipos <- function(monedas, base)
+  avisos_tipos(monedas, base, tryCatch(fx_fuentes_hoy(), error = function(e) NULL))
+
 job_lunes <- function(cid, hoy, ahora, prueba, url) {
   x <- avisos_cliente_datos(cid, ahora)
   if (!x$ok) return(job_contar(x$motivo))
   sh <- x$shared
   ar <- x$df[x$df$Tipo %in% "AR", , drop = FALSE]
+  base <- job_moneda_base(cid)
   serie <- umbral_serie_guardar(cid, umbral_metricas(ar, hoy, sh$interco_v2(), sh$company_map()))
   alertas <- umbral_evaluar(serie, hoy)
   job_contar("alertas_umbral", umbral_publicar(cid, alertas, hoy))
-  d <- correo_datos_lunes(x$df, sh, umbral_lunes(hoy), serie, alertas, x$sap_fecha, url = url)
+  d <- correo_datos_lunes(x$df, sh, umbral_lunes(hoy), serie, alertas, x$sap_fecha, url = url,
+                          moneda_base = base, tipos = job_tipos(x$df$Moneda, base), banco = avisos_banco(cid))
   correo_semana_guardar(cid, x$df, d)
   dests <- job_destinatarios(cid)
   if (is.null(dests)) return(job_contar("omitido_destinatarios"))
@@ -179,8 +193,25 @@ job_viernes <- function(cid, hoy, ahora, prueba, url) {
   s <- correo_semana_leer(cid, hoy)
   if (!s$ok) return(job_contar(s$motivo))
   serie <- leer_tabla_para_escribir(.METRICAS_KEY, cid, .schema_metricas)
-  dv <- correo_datos_viernes(s$semana, x$df, x$shared, hoy, x$sap_fecha, url = url)
-  dv$items <- correo_items_viernes(serie, dv$metricas, dv, x$df, s$semana$moneda_base %||% "MXN")
+  # The base Monday used (semana.rds), so Friday compares like with like.
+  base <- s$semana$moneda_base %||% MONEDA_BASE_OMISION
+  leer <- function(k, esquema) tryCatch(leer_tabla_para_escribir(k, cid, esquema), error = function(e) NULL)
+  historial <- leer(.HISTORIAL_KEY, .schema_semana_historial)
+  partidas  <- leer(.PARTIDAS_KEY, .schema_semana_partidas)
+  dv <- correo_datos_viernes(s$semana, x$df, x$shared, hoy, x$sap_fecha, url = url,
+                             tipos = job_tipos(c(s$semana$filas$Moneda, x$df$Moneda), base),
+                             serie = serie, historial = historial, partidas = partidas,
+                             req_ids = avisos_requisiciones_provisiones(cid))
+  dv$items <- correo_items_viernes(serie, dv$metricas, dv, x$df, base)
+  # This week's rows of both histories; a failed read or write never stops
+  # the email (the next Friday simply has one week less to compare with).
+  guardar <- function(f) !inherits(tryCatch(f(), error = function(e) e), "error")
+  # Without a close (SAP not refreshed since Monday) there is nothing to keep.
+  if (!isTRUE(dv$sin_cierre)) {
+    ok_h <- !is.null(historial) && guardar(function() correo_historial_guardar(cid, dv))
+    ok_p <- !is.null(partidas) && guardar(function() correo_partidas_guardar(cid, dv$partidas_fila, dv$lunes))
+    if (!ok_h || !ok_p) job_contar("historial_fallido")
+  }
   dests <- job_destinatarios(cid)
   if (is.null(dests)) return(job_contar("omitido_destinatarios"))
   job_contar("destinatarios", nrow(dests))

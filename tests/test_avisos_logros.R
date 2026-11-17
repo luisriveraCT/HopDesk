@@ -17,6 +17,7 @@ source("R/monedas.R")   # MONEDA_BASE_OMISION (T39)
 source("R/tier_registry.R")
 suppressMessages(source("R/data_pipeline.R"))
 source("R/panorama_datos.R")
+source("R/ui_components.R")   # monto_moneda(), sap_al_texto() (T46)
 source("R/avisos_umbrales.R")
 source("R/avisos_correos.R")
 source("R/avisos_datos.R")
@@ -74,8 +75,10 @@ ok("4: todos los pagos confirmados; con dos sin confirmar, radar 7 con el conteo
 })
 ok("4 no sale en una semana sin pagos programados",
    !4L %in% num(items(dv = modifyList(dv0, list(pagos_conf = 0L, pagos_total = 0L))), "logro"))
-ok("6: el 100% de los cobros esperados", 6L %in% num(items(dv = modifyList(dv0, list(cobros_pct = 100))), "logro") &&
-     !6L %in% num(items(dv = modifyList(dv0, list(cobros_pct = NA))), "logro"))
+ok("6 (T45): ningún cobro esperado quedó atrasado sin fecha nueva",
+   6L %in% num(items(dv = modifyList(dv0, list(cobros_total = 4L, cobros_atrasados_n = 0L))), "logro") &&
+     !6L %in% num(items(dv = modifyList(dv0, list(cobros_total = 4L, cobros_atrasados_n = 1L))), "logro") &&
+     !6L %in% num(items(dv = modifyList(dv0, list(cobros_total = 0L, cobros_atrasados_n = 0L))), "logro"))
 ok("14: tres bajadas seguidas a nivel cliente, aunque ninguna sea fuerte", {
   14L %in% num(items(serie(c(10, 10.2, 9.9, 9.8, 9.6))), "logro") &&
     !14L %in% num(items(serie(c(10, 10.2, 9.9, 10.0, 9.6))), "logro")

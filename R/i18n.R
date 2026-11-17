@@ -7,7 +7,8 @@
 #   www/i18n/en.json   translation; a missing key falls back to Spanish
 #
 # Keys: "<area>.<screen>.<thing>", lowercase, ASCII, dots and underscores only.
-#   areas: comun (shared verbs/nouns), tablas, panorama, requisiciones
+#   areas: comun (shared verbs/nouns), tablas, panorama, requisiciones,
+#   semana (the week's cards, shared by Panorama and the weekly emails, T45)
 #   e.g. "tablas.sumador.seleccionadas", "requisiciones.etapa.provisionada"
 #
 # Placeholders are named, never positional, so a translation can reorder them:

@@ -35,7 +35,7 @@ ok("prueba: 2 clientes activos (el archivado no), nada enviado, un HTML por dest
 })
 ok("el HTML de prueba es el correo (con su asunto) y su ruta no lleva el usuario", {
   h <- rawToChar(get("acme/avisos/prueba/2026-11-16_lunes_1.html", envir = .mem)$bytes)
-  grepl("PANORAMA DE LA SEMANA|THE WEEK AHEAD", h) && !any(grepl("jefa|fin|ti_", ls(.mem)[grepl("prueba", ls(.mem))]))
+  grepl("LA SEMANA QUE EMPIEZA|THE WEEK AHEAD", h) && !any(grepl("jefa|fin|ti_", ls(.mem)[grepl("prueba", ls(.mem))]))
 })
 ok("prueba: no marca nada como enviado", !exists("acme/avisos/correos_enviados.rds", envir = .mem))
 ok("solo escribe bajo <cliente>/avisos/ (lo que el rol permite)", {
@@ -104,15 +104,15 @@ invisible(lunes())
 for (cid in c("acme", "beta")) fx_cliente(cid, FX_AHORA_V - 3600)   # SAP refreshed by Friday
 fx_enviados <<- list()
 v <- viernes()
-ok("el viernes, después del lunes: un correo por destinatario, sin montos", {
+ok("el viernes, después del lunes: un correo por destinatario", {
   c_(v, "enviado") == 4L && c_(v, "clientes_ok") == 2L &&
     any(grepl("Cierre de semana|Week in review", vapply(fx_enviados, function(x) x$subject, ""), ignore.case = TRUE))
 })
-ok("viernes en prueba: el HTML no lleva $", {
+ok("viernes en prueba: el cierre del plan; ninguna cifra sin código (no hay $)", {
   fx_reset(); invisible(lunes()); for (cid in c("acme", "beta")) fx_cliente(cid, FX_AHORA_V - 3600)
   invisible(viernes(prueba = TRUE))
   h <- rawToChar(get("acme/avisos/prueba/2026-11-20_viernes_1.html", envir = .mem)$bytes)
-  !grepl("$", h, fixed = TRUE) && grepl("PAGOS CONFIRMADOS|PAYMENTS CONFIRMED", h)
+  !grepl("$", h, fixed = TRUE) && grepl("PLAN DEL LUNES EN|MONDAY'S PLAN IN|sin plan del lunes|with no Monday plan", h)
 })
 ok("viernes sin el lunes de esa semana: omitido_sin_lunes", {
   fx_reset(FX_AHORA_V - 3600); v <- viernes()

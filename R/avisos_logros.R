@@ -10,7 +10,7 @@
 #           2 lowest of 12 weeks (8+ stored)           alta    CxC
 #           3 an empresa closed with no past due       alta    CxC
 #           4 every payment of the week confirmed      media
-#           6 100% of the expected collections         media   CxC
+#           6 no expected collection left atrasado     media   CxC
 #          14 third weekly fall in a row (client)      normal  CxC
 #   radar   1 unusual rise (Monday's umbral rule)              CxC
 #           3 next week payments over collections 1.3+ to 1    CxC
@@ -97,8 +97,9 @@ correo_items_viernes <- function(serie, m_hoy, dv, df, base = MONEDA_BASE_OMISIO
   if (total > 0L && conf >= total) items[[length(items) + 1L]] <- .item("logro", 4, 2, FALSE)
   if (total > conf) items[[length(items) + 1L]] <- .item("radar", 7, NA, FALSE, pagos = total - conf)
 
-  # Logro 6: every expected collection came in.
-  if (!is.null(dv$cobros_pct) && !is.na(dv$cobros_pct) && dv$cobros_pct >= 100)
+  # Logro 6: no expected collection stayed atrasado (past its date with no
+  # new one) -- T45: a reschedule for a good reason is not a failure.
+  if (as.integer(dv$cobros_total %||% 0L) > 0L && identical(as.integer(dv$cobros_atrasados_n %||% NA_integer_), 0L))
     items[[length(items) + 1L]] <- .item("logro", 6, 2, TRUE)
 
   # Logro 14: three consecutive weekly falls, client level (none has to be strong).

@@ -164,10 +164,13 @@ ok("F2: .pan_monto_corto: the first two currencies with their code, then \"y N m
              paste("157.00 MXN, 1.00 EUR", tr("panorama.cinta.mas_monedas", n = "1"))) &&
      identical(.pan_monto_corto(viejo_por_moneda(c("USD", "EUR"), c(3, 4))), "4.00 EUR, 3.00 USD") &&
      identical(.pan_monto_corto(viejo_por_moneda("MXN", 7)), "7.00 MXN"))
-ok("F3: correo_monto with its defaults (and MXN/USD) is identical() to 23ffc1f's",
-   identical(correo_monto(1234.5), viejo_correo_monto(1234.5)) &&
-     identical(correo_monto(1234.5, "USD"), viejo_correo_monto(1234.5, "USD")) &&
-     identical(correo_monto(9, "USD", "USD"), viejo_correo_monto(9, "USD", "USD")))
+# F3 changed on purpose in T45 (Luis): the emails now write every amount
+# with its code, the base too, through monto_moneda() (R/ui_components.R);
+# correo_monto() and its "$" are gone. The old function stays above as the
+# record of what it did.
+ok("F3 (T45): correo_monto is gone; the emails use monto_moneda, code always, no $",
+   !exists("correo_monto") && exists("viejo_correo_monto") &&
+     identical(monto_moneda(1234.5, "MXN"), "1,234.50 MXN") && identical(monto_moneda(9, "USD"), "9.00 USD"))
 ns <- function(x) paste0("p-", x)
 t_ng <- viejo_por_moneda(c("MXN", "USD"), c(100, 5))
 ok("F4: the Hoy card with base MXN: '100.00 MXN' large, '+ 5.00 USD' underneath, no '$'",

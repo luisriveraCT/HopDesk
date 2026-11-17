@@ -34,7 +34,10 @@ ok <- function(cond, label) {
   else              { cat(" FAIL:", label, "\n"); .fail <<- .fail + 1L }
 }
 
-archivos <- c("app.R", list.files("R", "\\.R$", full.names = TRUE, recursive = TRUE))
+# scripts/ too since T45 (P7): the emails job had a code there that this
+# test did not see (avisos_job.R, `%||% "MXN"`, now MONEDA_BASE_OMISION).
+archivos <- c("app.R", list.files("R", "\\.R$", full.names = TRUE, recursive = TRUE),
+              list.files("scripts", "\\.R$", full.names = TRUE, recursive = TRUE))
 archivos <- setdiff(archivos, c("R/monedas.R", names(EXCEPCIONES)))
 codigos <- monedas_catalogo()
 
