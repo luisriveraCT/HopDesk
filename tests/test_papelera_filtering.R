@@ -10,8 +10,9 @@
 source("tests/helpers/aislar_global.R")
 suppressMessages({
   if (!exists("S3_KEYS")) {
-    source(file.path(dirname(getwd()), "Antiguedad_App", "R", "global.R"),
-           local = FALSE)
+    # This checkout's own global.R (it used to load ../Antiguedad_App's,
+    # another session's checkout, whatever commit that happened to be on).
+    source(file.path("R", "global.R"), local = FALSE)
   }
 })
 
