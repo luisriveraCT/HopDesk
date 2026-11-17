@@ -188,9 +188,15 @@ if (!is.null(app)) {
   poll_until(function() nzchar(mod_state("ar")))
 
   # ── (a) open AR's modal ───────────────────────────────────────────────────
+  # T38: the modal arrives before the state output does, and a hide() sent
+  # while it is still fading in can be lost. Wait for both: the state TRUE
+  # (else (b) below would pass on the stale FALSE) and the modal fully shown.
+  s$Runtime$evaluate("window.__mostrado = false; $(document).one('shown.bs.modal', function () { window.__mostrado = true; });")
   click_selector(s, "#ar-open")
   poll_until(function() grepl("Modal for ar", body_text(s)), timeout_s = 5)
-  ok("AR's modal_open flips TRUE when opened", grepl("modal_open: TRUE", mod_state("ar")))
+  ok("AR's modal_open flips TRUE when opened",
+     poll_until(function() grepl("modal_open: TRUE", mod_state("ar")), timeout_s = 5))
+  poll_until(function() isTRUE(s$Runtime$evaluate("window.__mostrado === true")$result$value), timeout_s = 5)
 
   # ── (b) close it the way a real user would -- Shiny's bundled jQuery modal
   # plugin's own hide() call, which is what backdrop-click/ESC/close-button
