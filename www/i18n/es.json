@@ -1852,5 +1852,6 @@
   "avisos.correo.viernes.racha_ilegible": "No se pudo leer el historial esta semana.",
   "avisos.correo.desempeno.ilegible": "no se pudo leer el historial esta semana",
   "niveles.solicitudes.aviso.carpeta_con_datos": "El cliente '{cliente}' ya tiene datos en el servidor (una carpeta sin registro). No se creó nada: elige otro identificador o revísalo con soporte.",
-  "niveles.solicitudes.aviso.carpeta_no_comprobada": "No se pudo comprobar la carpeta del cliente '{cliente}' en el servidor. No se creó nada: intenta de nuevo en un momento."
+  "niveles.solicitudes.aviso.carpeta_no_comprobada": "No se pudo comprobar la carpeta del cliente '{cliente}' en el servidor. No se creó nada: intenta de nuevo en un momento.",
+  "tablas.empresas.aviso.renombrar_incompleto": "El cambio de iniciales {antes} → {despues} no terminó en: {tablas}. La empresa conserva {antes}; lo demás ya quedó. Vuelve a guardar el mismo cambio para terminar."
 }

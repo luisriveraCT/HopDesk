@@ -85,94 +85,22 @@ suppressPackageStartupMessages({ library(dplyr); library(tibble) })
   end   <- end[end > start[1]][1] %||% (start[1] + 90)
   block <- paste(.strip_comments(txt[start[1]:end]), collapse = "\n")
 
-  .chk(grepl("load_pasivos_provisions\\(client_id = client_id\\)", block), TRUE,
-       "rename_empresa_initials() now reads pasivos_provisions")
-  .chk(grepl("save_pasivos_provisions\\(df, client_id = client_id\\)", block), TRUE,
-       "rename_empresa_initials() now writes pasivos_provisions back")
-  .chk(grepl("load_pasivos_liabilities\\(client_id = client_id\\)", block), TRUE,
-       "rename_empresa_initials() now reads pasivos_liabilities")
-  .chk(grepl("save_pasivos_liabilities\\(df, client_id = client_id\\)", block), TRUE,
-       "rename_empresa_initials() now writes pasivos_liabilities back")
-  .chk(grepl('touched, "pasivos_provisions"', block), TRUE,
-       "pasivos_provisions is recorded in the touched-tables report")
-  .chk(grepl('touched, "pasivos_liabilities"', block), TRUE,
-       "pasivos_liabilities is recorded in the touched-tables report")
+  # CM26 (2026-11-17): each step now changes S3's current table, strictly
+  # read (modificar_*), as a named step whose name is what it reports.
+  .chk(grepl("pasivos_provisions = function", block) &&
+         grepl("S3_KEYS$pasivos_provisions", block, fixed = TRUE), TRUE,
+       "rename_empresa_initials() renames pasivos_provisions, on S3's current table")
+  .chk(grepl("pasivos_liabilities = function", block) &&
+         grepl("modificar_pasivos_liabilities(cid", block, fixed = TRUE), TRUE,
+       "rename_empresa_initials() renames pasivos_liabilities, on S3's current table")
 }
 
-# ── 2b. Behavioral: run the REAL function end-to-end with mocked S3 I/O ───
-# Mocks every load_*/save_* dependency so the real rename_empresa_initials()
-# logic (not a reimplementation) can be exercised without real S3 access.
-# Only pasivos_provisions/pasivos_liabilities carry a matching row here --
-# proves the new blocks actually fire and actually rename in place.
-{
-  # Mocks must NOT leak into the shared global environment other test files
-  # in the same _run_confirmed_logic.R process rely on -- .run_module()
-  # sources each file into its own env(parent = globalenv()), so a bare `<<-`
-  # at top level here would create/overwrite these names in globalenv()
-  # itself, silently breaking any later test file that calls the real
-  # versions (found while writing this test: it broke
-  # test_stage11_cashflow_export_confirmed.R's provisions handling). Run
-  # inside a function so on.exit() has a real frame to attach to; save
-  # whatever was there before (if anything) and restore it no matter how
-  # the test body exits.
-  .run_mocked <- function() {
-    .written <- new.env()
-    .mock_names <- c("load_ctas_cuentas", "modificar_ctas_cuentas", "load_bancos_cuentas",
-                      "save_bancos_cuentas", "load_proveedores", "save_proveedores",
-                      ".s3_read_with", ".s3_write", ".normalize",
-                      "load_interco_v2", "save_interco_v2",
-                      "load_pasivos_provisions", "save_pasivos_provisions",
-                      "load_pasivos_liabilities", "save_pasivos_liabilities")
-    .had_prior <- vapply(.mock_names, exists, logical(1), envir = globalenv(), inherits = FALSE)
-    .prior <- lapply(.mock_names, function(nm) {
-      if (exists(nm, envir = globalenv(), inherits = FALSE)) get(nm, envir = globalenv()) else NULL
-    })
-    names(.prior) <- .mock_names
-    on.exit({
-      for (nm in .mock_names) {
-        if (isTRUE(.had_prior[[nm]])) assign(nm, .prior[[nm]], envir = globalenv())
-        else if (exists(nm, envir = globalenv(), inherits = FALSE)) rm(list = nm, envir = globalenv())
-      }
-    }, add = TRUE)
-
-    assign("load_ctas_cuentas",   function(client_id = NULL) tibble(Empresa = character()), envir = globalenv())
-    # CM12: ctas_cuentas changes through modificar_ctas_cuentas(cambio, client_id)
-    assign("modificar_ctas_cuentas", function(cambio, client_id) invisible(cambio(tibble(Empresa = character()))),
-           envir = globalenv())
-    assign("load_bancos_cuentas", function(client_id = NULL) tibble(empresa = character()), envir = globalenv())
-    assign("save_bancos_cuentas", function(df, client_id = NULL) invisible(TRUE), envir = globalenv())
-    assign("load_proveedores",    function(client_id = NULL) tibble(Empresa = character()), envir = globalenv())
-    assign("save_proveedores",    function(df, client_id = NULL) invisible(TRUE), envir = globalenv())
-    assign(".s3_read_with",       function(key, client_id = NULL) NULL, envir = globalenv())
-    assign(".s3_write",           function(obj, key, client_id = NULL) invisible(TRUE), envir = globalenv())
-    assign(".normalize",          function(df, schema_fn) df, envir = globalenv())
-    assign("load_interco_v2",     function(client_id = NULL) list(companies = list()), envir = globalenv())
-    assign("save_interco_v2",     function(reg, client_id = NULL, base = NULL) invisible(reg), envir = globalenv())
-
-    assign("load_pasivos_provisions", function(client_id = NULL)
-      tibble(id = c("p1", "p2"), empresa = c("NCS", "OTHER")), envir = globalenv())
-    assign("save_pasivos_provisions", function(df, client_id = NULL) {
-      assign("provisions", df, envir = .written); invisible(TRUE)
-    }, envir = globalenv())
-    assign("load_pasivos_liabilities", function(client_id = NULL)
-      tibble(id = c("l1"), empresa = c("NCS")), envir = globalenv())
-    assign("save_pasivos_liabilities", function(df, client_id = NULL) {
-      assign("liabilities", df, envir = .written); invisible(TRUE)
-    }, envir = globalenv())
-
-    touched <- rename_empresa_initials("NCS", "NG", client_id = "test")
-
-    .chk("pasivos_provisions" %in% touched, TRUE,
-         "the real function reports pasivos_provisions as touched when a matching row exists")
-    .chk("pasivos_liabilities" %in% touched, TRUE,
-         "the real function reports pasivos_liabilities as touched when a matching row exists")
-    .chk(.written$provisions$empresa, c("NG", "OTHER"),
-         "pasivos_provisions: only the NCS row is renamed to NG, the unrelated row is untouched")
-    .chk(.written$liabilities$empresa, "NG",
-         "pasivos_liabilities: the NCS row is renamed to NG")
-  }
-  .run_mocked()
-}
+# ── 2b. Behavioral ─────────────────────────────────────────────────────────
+# The mocked run that used to be here (load_*/save_* replaced in globalenv)
+# no longer fits: since CM26 the function reads empresas.rds and every table
+# strictly through modificar_*. tests/test_renombrar_iniciales.R runs the
+# real function against an in-memory S3, both pasivos tables included
+# (cases 1, 4 and 5).
 
 # ── 3. void_abono() finally wired to a real UI (Historial de confirmaciones) ─
 # void_abono() itself already existed and is tested elsewhere by nothing --

@@ -445,13 +445,38 @@ empresasServer <- function(id, shared) {
           showNotification(tr("tablas.empresas.aviso.iniciales_otra"), type = "error")
           return()
         }
-        cascade_err <- tryCatch({ rename_empresa_initials(old_ini, new_ini, client_id = shared$effective_client_id()); NULL },
-                                error = function(e) e$message)
-        if (!is.null(cascade_err)) {
-          showNotification(tr("tablas.empresas.aviso.error_cascada", error = cascade_err),
-                           type = "error", duration = 8)
-          return()
+        # A step that failed (hd_renombrar_incompleto, CM26) leaves this
+        # company with its old initials: saving the same edit again finishes
+        # the tables left. The cascade is recorded either way, with which
+        # tables were done and which failed (initials and table keys only).
+        cascade <- tryCatch(list(hechos = rename_empresa_initials(old_ini, new_ini,
+                                                                  client_id = shared$effective_client_id())),
+                            error = function(e) e)
+        if (inherits(cascade, "error")) {
+          if (inherits(cascade, "hd_renombrar_incompleto")) {
+            showNotification(tr("tablas.empresas.aviso.renombrar_incompleto", antes = old_ini, despues = new_ini,
+                                tablas = paste(cascade$fallidos, collapse = ", ")),
+                             type = "error", duration = 10)
+          } else {
+            showNotification(tr("tablas.empresas.aviso.error_cascada", error = conditionMessage(cascade)),
+                             type = "error", duration = 8)
+          }
         }
+        if (inherits(cascade, "hd_renombrar_incompleto") || !inherits(cascade, "error"))
+          tryCatch(log_action(
+            user        = tryCatch(shared$current_user(), error = function(e) "system"),
+            module      = "empresas",
+            action      = "renombrar_iniciales",
+            description = sprintf("Cambio de iniciales %s → %s: %s", old_ini, new_ini,
+                                  if (inherits(cascade, "error")) "incompleto" else "completo"),
+            target_id   = sel_id,
+            metadata    = list(old_initials = old_ini, new_initials = new_ini,
+                               hechas = cascade$hechos %||% character(0),
+                               fallidas = if (inherits(cascade, "error")) cascade$fallidos else character(0)),
+            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+          ), error = function(e) message("[EMP rename] log: ", conditionMessage(e)))
+        if (inherits(cascade, "error")) return()
         all_e[full_idx, "initials"] <- new_ini
       }
 

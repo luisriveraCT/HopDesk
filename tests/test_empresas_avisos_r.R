@@ -29,7 +29,7 @@ ok(sprintf("ningún aviso de empresas_module.R con texto fijo (quedan %d)", leng
 # ── 2. The keys exist in es and en ──────────────────────────────────────────
 claves <- avisos_claves(F, PRE)
 ok(sprintf("las %d claves %s* existen en es y en", length(claves), PRE),
-   length(claves) == 26L && all(vapply(claves, clave_en_es_y_en, logical(1))))
+   length(claves) == 27L && all(vapply(claves, clave_en_es_y_en, logical(1))))
 
 # ── 3. The Spanish reads exactly as before ──────────────────────────────────
 es <- function(k, ...) tr(paste0(PRE, k), ..., idioma = "es")
@@ -64,7 +64,11 @@ iguales <- list(
   # the if/else of the edit (avisos-integrador): one key per branch
   list(es("iniciales_actualizadas", antes = "NRS", despues = "NRX"),
        paste0("Iniciales actualizadas: '", "NRS", "' → '", "NRX", "'. Tablas relacionadas sincronizadas.")),
-  list(es("actualizada"), "Empresa actualizada."))
+  list(es("actualizada"), "Empresa actualizada."),
+  # CM26: new, not a former fixed text -- its exact wording, pinned here
+  list(es("renombrar_incompleto", antes = "NRS", despues = "NRX", tablas = "proveedores"),
+       paste0("El cambio de iniciales NRS → NRX no terminó en: proveedores. La empresa conserva NRS; ",
+              "lo demás ya quedó. Vuelve a guardar el mismo cambio para terminar.")))
 dif <- Filter(function(p) !identical(p[[1]], p[[2]]), iguales)
 ok(sprintf("el español de los %d avisos es idéntico al de antes", length(iguales)),
    { for (p in dif) message("  ahora: ", p[[1]], "\n  antes: ", p[[2]]); !length(dif) && length(iguales) == length(claves) })

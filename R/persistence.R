@@ -2368,111 +2368,168 @@ save_group_config <- function(cfg, client_id = NULL) {
   invisible(cfg)
 }
 
-# Cascade-rename a company's initials across every S3 table that stores them as
-# a key.  Called by empresas_module.R when the user edits initials in the edit
-# panel.  All operations are best-effort: a failure in one table is logged and
-# does NOT abort the rest.  Returns (invisibly) a character vector of the S3
-# table keys that were actually modified.
+# ── Renaming a company's initials (CM26, 2026-11-17) ─────────────────────────
+# Initials are a key in many tables. rename_empresa_initials() renames them
+# in every live table that stores them:
+#   ctas_cuentas (Empresa), bancos_cuentas (empresa), proveedores and
+#   proveedores_inactivos (Empresa, and each element of the comma list
+#   `empresas`), parte_alias_map (Empresa), interco_v2 (the `companies` list
+#   is keyed by initials), pasivos_provisions and pasivos_liabilities
+#   (empresa), erp_connections (one element of the JSON array
+#   company_initials; config and secrets are not touched) and requisiciones
+#   (empresa).
+# pasivos_audit and app_audit keep the old initials: they are history.
 #
-# Tables updated:
-#   ctas_cuentas     — Empresa column  (uppercase initials, settings_module)
-#   bancos_cuentas   — empresa column  (lowercase; bancos_persistence schema)
-#   proveedores      — Empresa column  (persistence.R schema)
-#   parte_alias_map  — Empresa column  (persistence.R schema)
-#   interco_v2       — companies list  (named list keyed by initials)
-rename_empresa_initials <- function(old_ini, new_ini, client_id = NULL) {
-  touched <- character(0)
+# Every step changes S3's current table, read strictly (modificar_*): a stale
+# session copy used to overwrite other sessions' rows, and the proveedores
+# step read active rows only and dropped legacy activo = FALSE rows for good.
+# Every step is idempotent: once a table has no OLD left, it writes nothing.
+#
+# Before any step, empresas.rds is read strictly: NEW already taken by
+# another company, or neither OLD nor NEW there, stops it with nothing
+# written. Then every step runs even if one fails. If any failed, it stops
+# with class hd_renombrar_incompleto ($hechos, $sin_cambios, $fallidos): the
+# caller keeps the old initials in empresas.rds, and saving the same edit
+# again finishes the job (the steps already done find no OLD). Messages carry
+# table keys and initials only, never a company's name or a client's data.
+# Returns (invisibly) the keys of the tables it changed.
 
-  # Replace old_ini with new_ini in one column of a data frame (exact match).
-  .rni_col <- function(df, col) {
-    if (!col %in% names(df)) return(df)
-    hits <- !is.na(df[[col]]) & df[[col]] == old_ini
-    if (any(hits)) df[[col]][hits] <- new_ini
-    df
+# An exact value -> NEW; anything else as it is.
+.rni_valor <- function(x, old_ini, new_ini) {
+  hits <- !is.na(x) & x == old_ini
+  x[hits] <- new_ini
+  x
+}
+
+# A comma list ("NTS,NCS", "NTS, NCS"): an element equal to OLD becomes NEW,
+# whole elements only ("NTSX" is not "NTS"); order and the spaces around each
+# element are kept.
+.rni_lista_comas <- function(x, old_ini, new_ini) {
+  vapply(x, function(v) {
+    if (is.na(v) || !nzchar(v)) return(v)
+    partes <- strsplit(v, ",", fixed = TRUE)[[1]]
+    cambia <- trimws(partes) == old_ini
+    if (!any(cambia)) return(v)
+    partes[cambia] <- sub(old_ini, new_ini, partes[cambia], fixed = TRUE)
+    paste(partes, collapse = ",")
+  }, character(1), USE.NAMES = FALSE)
+}
+
+# A JSON array of initials ('["NG","NTS"]'): the element OLD becomes NEW; a
+# value without OLD (or that is not a JSON array) is returned as it is.
+.rni_json <- function(x, old_ini, new_ini) {
+  vapply(x, function(v) {
+    if (is.na(v) || !nzchar(v)) return(v)
+    a <- tryCatch(jsonlite::fromJSON(v), error = function(e) NULL)
+    if (!is.character(a) || !old_ini %in% a) return(v)
+    a[a == old_ini] <- new_ini
+    as.character(jsonlite::toJSON(a, auto_unbox = FALSE))
+  }, character(1), USE.NAMES = FALSE)
+}
+
+# cambio(df) for modificar_*: the columns named, renamed with `f`; df itself
+# when nothing changes (so nothing is written).
+.rni_cambio <- function(columnas, old_ini, new_ini, f = .rni_valor) {
+  function(df) {
+    nuevo <- df
+    for (col in intersect(columnas, names(df))) nuevo[[col]] <- f(df[[col]], old_ini, new_ini)
+    if (identical(nuevo, df)) df else nuevo
   }
+}
 
-  # 1. ctas_cuentas — Empresa column stores initials (e.g. "NCS")
-  tryCatch({
-    # On S3's current accounts (CM12); a failed read renames nothing.
-    hubo <- FALSE
-    modificar_ctas_cuentas(function(df) {
-      hubo <<- any(!is.na(df$Empresa) & df$Empresa == old_ini)
-      .rni_col(df, "Empresa")
-    }, client_id = client_id)
-    if (hubo) touched <- c(touched, "ctas_cuentas")
-  }, error = function(e) message("[EMP rename] ctas_cuentas: ", e$message))
+.rni_condicion <- function(old_ini, new_ini, hechos, sin_cambios, fallidos) {
+  structure(class = c("hd_renombrar_incompleto", "error", "condition"),
+            list(message = sprintf("[EMP rename] %s -> %s incomplete; failed: %s; done: %s",
+                                   old_ini, new_ini, paste(fallidos, collapse = ", "),
+                                   if (length(hechos)) paste(hechos, collapse = ", ") else "none"),
+                 call = NULL, hechos = hechos, sin_cambios = sin_cambios, fallidos = fallidos))
+}
 
-  # 2. bancos_cuentas — empresa column (lowercase; bancos_persistence.R schema)
-  tryCatch({
-    df <- load_bancos_cuentas(client_id = client_id)
-    if (nrow(df) && any(!is.na(df$empresa) & df$empresa == old_ini)) {
-      df <- .rni_col(df, "empresa")
-      save_bancos_cuentas(df, client_id = client_id)
-      touched <- c(touched, "bancos_cuentas")
-    }
-  }, error = function(e) message("[EMP rename] bancos_cuentas: ", e$message))
+rename_empresa_initials <- function(old_ini, new_ini, client_id = NULL) {
+  if (is.null(client_id) || !nzchar(client_id))
+    stop("[EMP rename] client_id is required", call. = FALSE)
+  if (identical(old_ini, new_ini)) return(invisible(character(0)))
 
-  # 3. proveedores — Empresa column
-  tryCatch({
-    df <- load_proveedores(client_id = client_id)
-    if (nrow(df) && any(!is.na(df$Empresa) & df$Empresa == old_ini)) {
-      df <- .rni_col(df, "Empresa")
-      save_proveedores(df, client_id = client_id)
-      touched <- c(touched, "proveedores")
-    }
-  }, error = function(e) message("[EMP rename] proveedores: ", e$message))
+  # a. empresas.rds as S3 holds it now (not the session's copy).
+  emp <- .hd_admin_completar(.s3_leer_para_escribir(S3_KEYS$empresas, client_id), .schema_empresas)
+  ini <- toupper(trimws(emp$initials))
+  hay_old <- toupper(old_ini) %in% ini
+  hay_new <- toupper(new_ini) %in% ini
+  if (hay_old && hay_new)
+    stop(sprintf("[EMP rename] %s is already another company's initials; nothing was written", new_ini),
+         call. = FALSE)
+  if (!hay_old && !hay_new)
+    stop(sprintf("[EMP rename] neither %s nor %s is in empresas.rds; nothing was written", old_ini, new_ini),
+         call. = FALSE)
 
-  # 4. parte_alias_map — Empresa column
-  tryCatch({
-    raw <- tryCatch(.s3_read_with(S3_KEYS$parte_alias_map, client_id = client_id), error = function(e) NULL)
-    df  <- if (is.data.frame(raw)) .normalize(raw, .schema_parte_alias_map) else NULL
-    if (!is.null(df) && nrow(df) && any(!is.na(df$Empresa) & df$Empresa == old_ini)) {
-      df <- .rni_col(df, "Empresa")
-      .s3_write(.normalize(df, .schema_parte_alias_map), S3_KEYS$parte_alias_map, client_id = client_id)
-      touched <- c(touched, "parte_alias_map")
-    }
-  }, error = function(e) message("[EMP rename] parte_alias_map: ", e$message))
-
-  # 5. interco_v2 — companies is a named list keyed by initials
-  tryCatch({
-    reg <- load_interco_v2(client_id = client_id)
-    if (!is.null(reg$companies) && old_ini %in% names(reg$companies)) {
+  cid <- client_id
+  # Whether the running step changed its table: set by the step's cambio
+  # (modificar_* write only when it returns something different).
+  hubo <- FALSE
+  marca <- function(f) function(df) { n <- f(df); if (!identical(n, df)) hubo <<- TRUE; n }
+  pasos <- list(
+    ctas_cuentas = function() modificar_ctas_cuentas(marca(.rni_cambio("Empresa", old_ini, new_ini)), client_id = cid),
+    bancos_cuentas = function()
+      modificar_tabla_completa(S3_KEYS$bancos_cuentas, cid, .schema_bancos_cuentas,
+                               marca(.rni_cambio("empresa", old_ini, new_ini))),
+    proveedores = function()
+      modificar_tabla_completa(S3_KEYS$proveedores, cid, .schema_proveedores, marca(function(df)
+        .rni_cambio("empresas", old_ini, new_ini, .rni_lista_comas)(.rni_cambio("Empresa", old_ini, new_ini)(df)))),
+    proveedores_inactivos = function()
+      modificar_tabla_completa(S3_KEYS$proveedores_inactivos, cid, .schema_proveedores, marca(function(df)
+        .rni_cambio("empresas", old_ini, new_ini, .rni_lista_comas)(.rni_cambio("Empresa", old_ini, new_ini)(df)))),
+    parte_alias_map = function()
+      modificar_tabla_completa(S3_KEYS$parte_alias_map, cid, .schema_parte_alias_map,
+                               marca(.rni_cambio("Empresa", old_ini, new_ini))),
+    interco_v2 = function() {
+      reg <- .s3_leer_para_escribir(S3_KEYS$interco_v2, cid)
+      if (!is.list(reg) || !old_ini %in% names(reg$companies)) return(invisible(reg))
       nuevo <- reg
       nuevo$companies[[new_ini]] <- nuevo$companies[[old_ini]]
       nuevo$companies[[old_ini]] <- NULL
-      save_interco_v2(nuevo, client_id = client_id, base = reg)   # onto S3's current (CM12c)
-      if (exists("bump_sync_version", mode = "function")) bump_sync_version("interco_v2", client_id = client_id)
-      touched <- c(touched, "interco_v2")
+      hubo <<- TRUE
+      save_interco_v2(nuevo, client_id = cid, base = reg)   # onto S3's current (CM12c)
+      if (exists("bump_sync_version", mode = "function")) bump_sync_version("interco_v2", client_id = cid)
+      invisible(nuevo)
+    },
+    pasivos_provisions = function()
+      modificar_tabla(S3_KEYS$pasivos_provisions, cid, .schema_pasivos_provision,
+                      marca(.rni_cambio("empresa", old_ini, new_ini))),
+    pasivos_liabilities = function()
+      modificar_pasivos_liabilities(cid, marca(.rni_cambio("empresa", old_ini, new_ini))),
+    erp_connections = function()
+      modificar_tabla_completa(S3_KEYS$erp_connections, cid, .schema_erp_connections, marca(function(df) {
+        .assert_erp_connections_isolated(df, cid, "rename")
+        .rni_cambio("company_initials", old_ini, new_ini, .rni_json)(df)
+      })),
+    requisiciones = function() {
+      if (!exists("REQ_KEYS") || !exists(".REQ_SCHEMAS")) return(invisible(NULL))
+      modificar_tabla_completa(REQ_KEYS$requisiciones, cid, .REQ_SCHEMAS$requisiciones,
+                               marca(.rni_cambio("empresa", old_ini, new_ini)))
     }
-  }, error = function(e) message("[EMP rename] interco_v2: ", e$message))
+  )
 
-  # 6. pasivos_provisions \u2014 empresa column stores initials (found 2026-07-26:
-  # missing from this cascade entirely -- a renamed company's provisions
-  # would silently keep the old initials, breaking the initials-to-full-name
-  # lookup used to stage a converted provision to manual_inv/pagar_hoy).
-  tryCatch({
-    df <- load_pasivos_provisions(client_id = client_id)
-    if (nrow(df) && any(!is.na(df$empresa) & df$empresa == old_ini)) {
-      df <- .rni_col(df, "empresa")
-      save_pasivos_provisions(df, client_id = client_id)
-      touched <- c(touched, "pasivos_provisions")
-    }
-  }, error = function(e) message("[EMP rename] pasivos_provisions: ", e$message))
+  hechos <- character(0); sin_cambios <- character(0); fallidos <- character(0)
+  for (tabla in names(pasos)) {
+    hubo <- FALSE
+    r <- tryCatch({
+      pasos[[tabla]]()
+      list(ok = TRUE, cambio = hubo)
+    }, error = function(e) {
+      message(sprintf("[EMP rename] %s: %s", tabla, conditionMessage(e)))
+      list(ok = FALSE)
+    })
+    if (!isTRUE(r$ok)) fallidos <- c(fallidos, tabla)
+    else if (isTRUE(r$cambio)) hechos <- c(hechos, tabla)
+    else sin_cambios <- c(sin_cambios, tabla)
+  }
 
-  # 7. pasivos_liabilities \u2014 same gap, same reasoning as pasivos_provisions.
-  tryCatch({
-    df <- load_pasivos_liabilities(client_id = client_id)
-    if (nrow(df) && any(!is.na(df$empresa) & df$empresa == old_ini)) {
-      df <- .rni_col(df, "empresa")
-      save_pasivos_liabilities(df, client_id = client_id)
-      touched <- c(touched, "pasivos_liabilities")
-    }
-  }, error = function(e) message("[EMP rename] pasivos_liabilities: ", e$message))
-
-  message(sprintf("[EMP rename] %s \u2192 %s \u2014 touched: %s",
-                  old_ini, new_ini,
-                  if (length(touched)) paste(touched, collapse = ", ") else "nothing"))
-  invisible(touched)
+  message(sprintf("[EMP rename] %s -> %s: changed %s; unchanged %s; failed %s", old_ini, new_ini,
+                  if (length(hechos)) paste(hechos, collapse = ", ") else "nothing",
+                  if (length(sin_cambios)) paste(sin_cambios, collapse = ", ") else "nothing",
+                  if (length(fallidos)) paste(fallidos, collapse = ", ") else "nothing"))
+  if (length(fallidos)) stop(.rni_condicion(old_ini, new_ini, hechos, sin_cambios, fallidos))
+  invisible(hechos)
 }
 
 # ── Abonos parciales — partial payment records ─────────────────────────────────
