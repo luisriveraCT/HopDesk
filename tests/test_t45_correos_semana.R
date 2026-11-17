@@ -201,6 +201,18 @@ ok("semana_partidas guarda 8 semanas como máximo", {
   p <- get("acme/avisos/semana_partidas.rds", envir = .mem)
   !any(p$lunes == LUNES - 63L) && all(p$lunes == LUNES)
 })
+ok("la reducción solo quita semanas fuera de la ventana: esta y las 7 anteriores se quedan completas (T45c)", {
+  s3_memoria_reset()
+  una <- function(k) { x <- dv$partidas_fila; x$lunes <- LUNES - 7L * k; x }
+  previas <- dplyr::bind_rows(lapply(1:9, una))   # weeks 1..7 inside the window, 8 and 9 outside
+  assign("acme/avisos/semana_partidas.rds", previas, envir = .mem)
+  correo_partidas_guardar("acme", dv$partidas_fila, dv$lunes)
+  p <- get("acme/avisos/semana_partidas.rds", envir = .mem)
+  n <- nrow(dv$partidas_fila)
+  dentro <- LUNES - 7L * 0:7
+  all(vapply(dentro, function(l) sum(p$lunes == l) == n, logical(1))) &&
+    !any(p$lunes %in% (LUNES - 7L * 8:9)) && nrow(p) == 8L * n
+})
 
 cat("\n-- viernes: HTML --\n")
 dv$logros <- c("Logro uno", "Logro dos", "Logro tres"); dv$radar <- c("R1", "R2", "R3", "R4")

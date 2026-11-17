@@ -62,7 +62,11 @@ permitidos <- c(
   "R/avisos_alertas_module.R" = "}, permitir_reduccion = TRUE)",
   # avisos_archivar() (D): the monthly archive removes from avisos.rds only
   # the avisos it already wrote to avisos/archivo/AAAA-MM.rds and read back.
-  "R/avisos_archivo.R" = "}, permitir_reduccion = TRUE)"
+  "R/avisos_archivo.R" = "}, permitir_reduccion = TRUE)",
+  # correo_partidas_guardar() (D, T45): semana_partidas.rds is a window of
+  # AVISOS_PARTIDAS_SEMANAS weeks; the older weeks leave, never this week's
+  # or one inside the window (tests/test_t45_correos_semana.R checks it).
+  "R/avisos_datos.R" = "}, permitir_reduccion = TRUE)"
 )
 usos <- do.call(rbind, lapply(archivos, function(f) {
   x <- codigo(f); i <- grep("permitir_reduccion = TRUE", x, fixed = TRUE)
