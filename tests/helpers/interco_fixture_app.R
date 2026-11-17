@@ -21,6 +21,8 @@
 # says so with its notice and returns FALSE; logged as "permiso <key> no").
 # IC_VACIO = 1: no SAP snapshot yet (shared$sap_data() is NULL), the cold start.
 # IC_SIN_IC = 1: snapshots loaded but with no intercompany invoice (only P-90).
+# IC_USD = 1: one more AR invoice, A-9, in USD. IC_BASE: the client's base
+# currency (unset = not chosen). Both T36.
 # IC_RAIZ: the checkout whose R/ and www/ to use (default: this one).
 # =============================================================================
 library(shiny)
@@ -96,7 +98,11 @@ snap_ap <- dplyr::bind_rows(
 # found by folio (R/ic_mapa_llave.R), so A-1 -> P-1; A-2 has no AP and stays.
 snap_ar <- dplyr::bind_rows(
   fila("Networks Trucking Services", "NETWORKS CROSSDOCKING SERVICES", "A-1", "T170501", hoy - 5, 2500, cliente = "C1003"),
-  fila("Networks Trucking Services", "NETWORKS CROSSDOCKING SERVICES", "A-2", "F-2", hoy + 5, 700, cliente = "C1003"))
+  fila("Networks Trucking Services", "NETWORKS CROSSDOCKING SERVICES", "A-2", "F-2", hoy + 5, 700, cliente = "C1003"),
+  # IC_USD = 1 (T36): NTS also bills NCS one invoice in dollars.
+  if (identical(Sys.getenv("IC_USD"), "1"))
+    fila("Networks Trucking Services", "NETWORKS CROSSDOCKING SERVICES", "A-9", "F-9", hoy + 9, 300, cliente = "C1003",
+         moneda = "USD"))
 registro_ic <- list(ar_prefix = "C", ap_prefix = "P",
                     companies = list(NTS = list(ar = "1003", ap = character()), NCS = list(ar = character(), ap = "1039")))
 
@@ -133,7 +139,9 @@ server <- function(input, output, session) {
     effective_client_id = function() CID,
     home_client_id      = function() CID,
     ic_map_target       = reactiveVal(NULL),
-    ctas_cuentas        = NULL
+    ctas_cuentas        = NULL,
+    # IC_BASE (T36): the client's base currency ("" = not chosen, MXN).
+    moneda_base_cliente = reactive(moneda_base_resolver(Sys.getenv("IC_BASE", NA_character_)))
   )
   intercoServer("ic", shared = shared)
   observeEvent(input$otra_sesion_confirma, {
