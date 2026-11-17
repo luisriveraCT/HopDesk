@@ -1848,5 +1848,7 @@
   "avisos.correo.contexto.sin_cobertura": "Actual figures will show once HopDesk confirmations cover the payments (today they cover {pct} of the previous 4 weeks).",
   "avisos.correo.contexto.sin_banco": "Actual figures will show once HopDesk confirmations cover the payments (there is no bank statement for the previous 4 weeks).",
   "avisos.correo.viernes.ic_texto.uno": "{n} movement between group companies for {montos}: left out of collections and payments.",
-  "avisos.correo.viernes.ic_texto.otros": "{n} movements between group companies for {montos}: left out of collections and payments."
+  "avisos.correo.viernes.ic_texto.otros": "{n} movements between group companies for {montos}: left out of collections and payments.",
+  "avisos.correo.viernes.racha_ilegible": "The history could not be read this week.",
+  "avisos.correo.desempeno.ilegible": "the history could not be read this week"
 }

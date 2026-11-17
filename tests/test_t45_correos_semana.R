@@ -171,6 +171,17 @@ pasadas <- dplyr::bind_rows(lapply(1:2, function(k) {
 hist <- tibble::tibble(lunes = LUNES - 7L * 1:4, moneda = "MXN", atrasado_cobros = c(500, 100, 300, 700),
                        atrasado_cobros_n = c(5L, 1L, 3L, 7L), atrasado_pagos = 0, atrasado_pagos_n = 0L, vencidos_pct = NA_real_)
 dh <- correo_datos_viernes(semana, hoy_df, sh, VIERNES, SAP, req_ids = "pv2", historial = hist, partidas = pasadas)
+il <- correo_datos_viernes(semana, hoy_df, sh, VIERNES, SAP, req_ids = "pv2", historial = NULL, partidas = NULL)
+hil <- correo_viernes_html(il, fin)
+ok("si no se pudo leer el historial: lo dice, nunca 'todavía sin historia'",
+   isTRUE(il$racha$ilegible) && isTRUE(il$desempeno$ilegible) && !isTRUE(il$racha$sin_historia) &&
+     !isTRUE(il$desempeno$sin_historia) && tiene(hil, "No se pudo leer el historial esta semana",
+                                                  "no se pudo leer el historial esta semana") &&
+     !grepl("Todavía sin historia|todavía sin semanas anteriores", hil))
+ok("una lectura fallida de solo una de las dos tablas solo afecta su sección", {
+  x <- correo_datos_viernes(semana, hoy_df, sh, VIERNES, SAP, req_ids = "pv2", partidas = NULL)
+  isTRUE(x$racha$ilegible) && isTRUE(x$desempeno$sin_historia) && !isTRUE(x$desempeno$ilegible)
+})
 ok("se ha movido 3 semanas seguidas: A2 (reprogramada esta y las 2 anteriores)",
    !dh$racha$sin_historia && identical(dh$racha$filas$contraparte, "Cliente Dos") && dh$racha$filas$semanas == 3L)
 ok("desempeño: lo atrasado contra la semana pasada (500) y la mediana de 4 (400), sin %",

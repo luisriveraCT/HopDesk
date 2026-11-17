@@ -1848,5 +1848,7 @@
   "avisos.correo.contexto.sin_cobertura": "Lo real aparecerá cuando las confirmaciones en HopDesk cubran los pagos (hoy cubren el {pct} de las 4 semanas anteriores).",
   "avisos.correo.contexto.sin_banco": "Lo real aparecerá cuando las confirmaciones en HopDesk cubran los pagos (no hay estado de cuenta de las 4 semanas anteriores).",
   "avisos.correo.viernes.ic_texto.uno": "{n} movimiento entre empresas del grupo por {montos}: fuera de cobros y pagos.",
-  "avisos.correo.viernes.ic_texto.otros": "{n} movimientos entre empresas del grupo por {montos}: fuera de cobros y pagos."
+  "avisos.correo.viernes.ic_texto.otros": "{n} movimientos entre empresas del grupo por {montos}: fuera de cobros y pagos.",
+  "avisos.correo.viernes.racha_ilegible": "No se pudo leer el historial esta semana.",
+  "avisos.correo.desempeno.ilegible": "no se pudo leer el historial esta semana"
 }

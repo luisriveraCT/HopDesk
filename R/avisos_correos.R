@@ -582,7 +582,8 @@ correo_viernes_asunto <- function(d, idioma)
              .cr_t(if (mejor) "avisos.correo.desempeno.mejor" else "avisos.correo.desempeno.peor", idioma), '</b> &middot; ')
     }
     detalle <- paste0(.cr_tn("avisos.correo.desempeno.partidas", as.integer(x$hoy_n), idioma), ' &middot; ',
-      if (isTRUE(des$sin_historia)) .cr_t("avisos.correo.desempeno.sin_historia", idioma)
+      if (isTRUE(des$ilegible)) .cr_t("avisos.correo.desempeno.ilegible", idioma)
+      else if (isTRUE(des$sin_historia)) .cr_t("avisos.correo.desempeno.sin_historia", idioma)
       else .cr_t("avisos.correo.desempeno.detalle", idioma,
                  semana = if (is.na(x$semana_pasada)) "—" else monto_moneda(x$semana_pasada, base),
                  mediana = if (is.na(x$mediana)) "—" else monto_moneda(x$mediana, base)))
@@ -654,7 +655,8 @@ correo_viernes_html <- function(d, dest) {
   if (!cxc && is.data.frame(rf)) rf <- rf[rf$tipo %in% "AP", , drop = FALSE]
   racha_html <- paste0(.cr_seccion(.cr_t("avisos.correo.viernes.racha", idioma, n = ra$minimo),
                                    .cr_t("avisos.correo.viernes.racha_sub", idioma)),
-    if (isTRUE(ra$sin_historia)) .cr_nota(.cr_t("avisos.correo.viernes.racha_sin_historia", idioma))
+    if (isTRUE(ra$ilegible)) .cr_nota(.cr_t("avisos.correo.viernes.racha_ilegible", idioma))
+    else if (isTRUE(ra$sin_historia)) .cr_nota(.cr_t("avisos.correo.viernes.racha_sin_historia", idioma))
     else if (is.data.frame(rf) && nrow(rf)) .cr_lista_mov(rf, idioma, "racha")
     else .cr_nota(.cr_t("avisos.correo.viernes.racha_ninguna", idioma, n = ra$minimo)))
 

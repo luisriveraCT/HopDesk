@@ -677,10 +677,13 @@ correo_corte <- function(semana, sap_fecha, viernes, tz = UMBRAL_TZ) {
 # The Friday email's numbers (correo_viernes_html()'s `d`, without logros and
 # radar). `semana`: Monday's record (semana.rds); `df`: Friday's ledger;
 # `tipos`: avisos_tipos(); `serie`: metricas.rds; `historial`,
-# `partidas`: the past weeks (semana_historial.rds, semana_partidas.rds;
-# NULL when unreadable); `req_ids`: avisos_requisiciones_provisiones().
+# `partidas`: the past weeks (semana_historial.rds, semana_partidas.rds).
+# An empty table is "no history yet"; NULL is "it could not be read this
+# week", and the email says that instead -- never "no history" when there
+# may be one (Coordinador, T45). `req_ids`: avisos_requisiciones_provisiones().
 correo_datos_viernes <- function(semana, df, sh, viernes, sap_fecha, url = "", tipos = NULL,
-                                 serie = NULL, historial = NULL, partidas = NULL, req_ids = NULL) {
+                                 serie = NULL, historial = .schema_semana_historial(),
+                                 partidas = .schema_semana_partidas(), req_ids = NULL) {
   base <- semana$moneda_base %||% MONEDA_BASE_OMISION
   viernes <- as.Date(viernes); lunes <- umbral_lunes(viernes)
   cmap <- sh$company_map()
@@ -816,8 +819,10 @@ correo_partidas_guardar <- function(cid, filas, lunes) {
 
 # Items rescheduled again this week that were rescheduled the weeks right
 # before too: AVISOS_RACHA_MIN weeks in a row or more. list(sin_historia,
-# filas = data.frame like .avisos_top() plus semanas and fecha_nueva).
+# ilegible, filas = data.frame like .avisos_top() plus semanas and
+# fecha_nueva). `partidas` NULL: the history could not be read (ilegible).
 correo_racha <- function(hoy, partidas, lunes, cmap, tipos, base) {
+  if (is.null(partidas)) return(list(sin_historia = FALSE, ilegible = TRUE, filas = NULL, minimo = AVISOS_RACHA_MIN))
   p <- .normalize(partidas, .schema_semana_partidas)
   sin <- !nrow(p[p$lunes < as.Date(lunes), , drop = FALSE])
   r <- hoy[hoy$clase == "reprogramado", , drop = FALSE]
@@ -842,9 +847,10 @@ correo_racha <- function(hoy, partidas, lunes, cmap, tipos, base) {
 # "Desempeño": what stayed atrasado (amount and count, base currency)
 # against last week and the median of the 4 before -- never a %
 # (rescheduling for a good reason is not a failure). NA where there is no
-# history; `sin_historia` says so.
-correo_desempeno <- function(d, historial = NULL) {
+# history; `sin_historia` says so, `ilegible` when it could not be read.
+correo_desempeno <- function(d, historial = .schema_semana_historial()) {
   b <- d$moneda_base; lunes <- as.Date(d$lunes)
+  ilegible <- is.null(historial)
   h <- .normalize(historial, .schema_semana_historial)
   h <- h[h$moneda %in% b & h$lunes < lunes, , drop = FALSE]
   h <- h[order(h$lunes, decreasing = TRUE), , drop = FALSE]
@@ -854,7 +860,7 @@ correo_desempeno <- function(d, historial = NULL) {
     semana_pasada = if (nrow(h) && h$lunes[1] == lunes - 7L) hm[1] else NA_real_,
     semana_pasada_n = if (nrow(h) && h$lunes[1] == lunes - 7L) hn[1] else NA_integer_,
     mediana = if (nrow(h)) stats::median(utils::head(hm, 4L)) else NA_real_)
-  list(sin_historia = !nrow(h),
+  list(sin_historia = !ilegible && !nrow(h), ilegible = ilegible,
        cobros = linea(hoy$atrasado_cobros, hoy$atrasado_cobros_n, h$atrasado_cobros, h$atrasado_cobros_n),
        pagos = linea(hoy$atrasado_pagos, hoy$atrasado_pagos_n, h$atrasado_pagos, h$atrasado_pagos_n))
 }
