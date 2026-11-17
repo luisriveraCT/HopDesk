@@ -120,6 +120,16 @@
   paste0(cur, "\u00a0", format(round(abs(x)), big.mark = ",", scientific = FALSE))
 }
 
+# The payment plan's total per currency, in the order the currencies first
+# appear in the plan: c(MXN = 3500, USD = 300). Every item has its Moneda
+# (the add sets it from the invoice's currency).
+.tm_plan_totales <- function(plan) {
+  mon <- vapply(plan, function(x) as.character(x$Moneda %||% NA_character_), character(1))
+  imp <- vapply(plan, function(x) as.numeric(x$Importe %||% 0), numeric(1))
+  orden <- unique(mon)
+  stats::setNames(vapply(orden, function(m) sum(imp[mon %in% m], na.rm = TRUE), numeric(1)), orden)
+}
+
 # SVG node image with gradient fill — base64-encoded data URI.
 # vis.js renders on canvas (not CSS), so gradients require SVG embedding.
 # Square canvas (sz×sz) so vis.js aspect-ratio scaling doesn't distort the ellipse.
@@ -828,21 +838,26 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       }
       if (.puede_registrar()) shinyjs::show("send_btn_wrap") else shinyjs::hide("send_btn_wrap")
 
-      cur   <- input$map_cur %||% "MXN"
-      total <- sum(vapply(plan, function(x) x$Importe %||% 0, numeric(1)), na.rm = TRUE)
+      # One Total per currency: each item carries its invoice's Moneda, and the
+      # plan can hold several (add MXN, switch the selector, add USD). With
+      # more than one, each item says its own; with one, it looks as before.
+      totales <- .tm_plan_totales(plan)
+      varias  <- length(totales) > 1L
 
       div(
         tagList(lapply(plan, function(x) {
           div(class = "tm-plan-item",
             tags$span(paste0(x$from_ini, " \u2192 ", x$to_ini, " \u00b7 ", x$Documento)),
             tags$span(class = "tm-plan-amt",
-                      format(round(x$Importe), big.mark = ",", scientific = FALSE))
+                      if (varias) .tm_fmt(x$Importe, x$Moneda)
+                      else format(round(x$Importe), big.mark = ",", scientific = FALSE))
           )
         })),
-        div(class = "tm-plan-total",
-          tags$span("Total"),
-          tags$span(.tm_fmt(total, cur))
-        ),
+        tagList(lapply(names(totales), function(m)
+          div(class = "tm-plan-total",
+            tags$span("Total"),
+            tags$span(.tm_fmt(totales[[m]], m))
+          ))),
         actionButton(ns("clear_plan"), tagList(icon("trash"), " Limpiar"),
                      class = "btn btn-sm btn-outline-danger mt-2",
                      style = "font-size:.76rem; padding:2px 8px;")
