@@ -72,7 +72,8 @@ proveedoresUI <- function(id) {
         # its new providers (never guessed from the account).
         shinyjs::hidden(div(id = ns("excel_moneda_wrap"), class = "col-md-2",
           tags$label(tr("tablas.proveedores.importar.moneda_archivo"), class = "form-label small fw-semibold mb-1"),
-          selectInput(ns("excel_moneda"), NULL, choices = c("MXN", "USD"), selected = "MXN", width = "100%")
+          # The whole catalog, the base and the providers' currencies first (T36).
+          selectInput(ns("excel_moneda"), NULL, choices = character(0), width = "100%")
         ))
       ),
       # Shown once a file with a "Fecha de Registro" column is read (BanBajío's
@@ -153,6 +154,32 @@ proveedoresServer <- function(id, shared) {
       updateSelectInput(session, "excel_empresa",
                         choices = c("Todos (todas las empresas)" = "TODOS",
                                     setNames(names(cmap), unname(cmap))))
+    })
+
+    # ── Currency (T36) ─────────────────────────────────────────────────────
+    # The selectors offer the whole catalog: the base first, then the
+    # currencies the providers already use (a stored "Dólares" counts as USD).
+    leer_base <- function() tryCatch(shared$moneda_base_cliente()$moneda, error = function(e) NULL) %||%
+      MONEDA_BASE_OMISION
+    monedas_de_provs <- function(base) {
+      lee <- function(f) tryCatch(if (is.function(f)) as.character(f()$moneda), error = function(e) NULL)
+      m <- c(lee(shared$proveedores_db), lee(shared$proveedores_inactivos_db))
+      monedas_en_datos(if (length(m)) ppl_moneda_cuenta(m, base), base)
+    }
+    # For the modal, read without a dependency: saving Ajustes doesn't redraw
+    # a half-filled modal.
+    base_moneda     <- function() shiny::isolate(leer_base())
+    monedas_primero <- function() shiny::isolate(monedas_de_provs(leer_base()))
+    excel_monedas <- reactiveVal(NULL)
+    observe({
+      m <- monedas_de_provs(leer_base())
+      if (!identical(m, isolate(excel_monedas()))) excel_monedas(m)
+    })
+    observeEvent(excel_monedas(), {
+      m   <- excel_monedas()
+      sel <- isolate(input$excel_moneda)
+      updateSelectInput(session, "excel_moneda", choices = monedas_opciones(primero = m, idioma = hd_idioma()),
+                        selected = if (!is.null(sel) && moneda_valida(sel)) sel else m[1])
     })
 
     # ── Helpers ────────────────────────────────────────────────────────────
@@ -343,17 +370,10 @@ proveedoresServer <- function(id, shared) {
         }
       }
       cor_val <- if (!is_new) row$correo %||% "" else ""
-      # Normalize stored moneda: legacy Spanish labels → ISO codes
-      mon_raw <- if (!is_new) row$moneda %||% "MXN" else "MXN"
-      mon_val <- if (mon_raw %in% CURRENCIES) {
-        mon_raw
-      } else if (grepl("^peso", mon_raw, ignore.case = TRUE)) {
-        "MXN"
-      } else if (grepl("^d.lar", mon_raw, ignore.case = TRUE)) {
-        "USD"
-      } else {
-        "MXN"
-      }
+      # Normalize stored moneda: a catalog code, a bank's words ("Pesos",
+      # "Dólares") or, for a new provider or anything else, the base.
+      base    <- base_moneda()
+      mon_val <- ppl_moneda_cuenta(if (!is_new) row$moneda else NULL, base)
       tr_val  <- if (!is_new) row$tipo_relacion %||% "" else ""
       emp_val <- if (!is_new) {
         emps <- strsplit(row$empresas %||% row$Empresa %||% "", ",")[[1]]
@@ -405,7 +425,8 @@ proveedoresServer <- function(id, shared) {
           div(class = "col-md-4",
             tags$label("Moneda", class = "form-label small fw-semibold"),
             selectInput(ns("prov_moneda"), NULL,
-                        choices = CURRENCIES, selected = mon_val, width = "100%")
+                        choices = monedas_opciones(primero = monedas_primero(), idioma = hd_idioma()),
+                        selected = mon_val, width = "100%")
           ),
           div(class = "col-md-12",
             tags$label("Tipo de Relación", class = "form-label small fw-semibold"),
@@ -588,15 +609,14 @@ proveedoresServer <- function(id, shared) {
       nc   <- trimws(input$prov_no_cuenta %||% "")
       ban  <- trimws(input$prov_banco     %||% "")
       cor  <- trimws(input$prov_correo    %||% "")
-      mon  <- input$prov_moneda           %||% "MXN"
+      mon  <- input$prov_moneda           %||% base_moneda()
       # Extract 3-digit CECOBAN clave from "Nombre|CLAVE" choice value
       ban_clave <- if (nzchar(ban) && grepl("\\|", ban)) {
         tail(strsplit(ban, "\\|")[[1]], 1)
       } else ban
-      # Derive transaction type from currency + destination bank
-      derived_medio_pago <- if (mon == "USD")                       "SPD"
-                       else if (mon == "MXN" && ban_clave == "030") "BCO"
-                       else                                         "SPI"
+      # Derive transaction type from currency + destination bank: BanBajío's
+      # rule, the same as the PPL's.
+      derived_medio_pago <- ppl_medio_pago(mon, ban_clave)
       tr   <- trimws(input$prov_tipo_relacion %||% "")
       emps <- paste(input$prov_empresas %||% character(0), collapse = ",")
       ah_sel <- input$prov_activo_hasta_sel %||% "indefinido"
@@ -916,7 +936,7 @@ proveedoresServer <- function(id, shared) {
           tags$div(class = "small text-muted prov-mapeo-falta",
             if (length(faltan)) tags$div(tr("tablas.proveedores.importar.columnas_faltan"), " ", paste(faltan, collapse = ", ")),
             if ("moneda" %in% lectura$faltan)
-              tags$div(tr("tablas.proveedores.importar.moneda_selector", moneda = input$excel_moneda %||% "MXN"))))
+              tags$div(tr("tablas.proveedores.importar.moneda_selector", moneda = input$excel_moneda %||% base_moneda()))))
     })
 
     # ✕ (confirmed in the table's bar): the row leaves this upload only;
@@ -1115,7 +1135,7 @@ proveedoresServer <- function(id, shared) {
       ud   <- upload_data_rv()
       if (is.null(ud)) return()
       res <- prov_aplicar(ud$rows, get_provs(), get_inac(), decisiones = conflict_decisions(), opciones = list(
-        tipo = ud$tipo, empresa = ud$empresa, moneda = input$excel_moneda %||% "MXN",
+        tipo = ud$tipo, empresa = ud$empresa, moneda = input$excel_moneda %||% base_moneda(),
         incluir_incompletos = incluir_incompletos_rv(), incluir_duplicados = incluir_duplicados_rv(),
         cambiar_alias = cambiar_alias_rv(), lote = uuid::UUIDgenerate()))
       n_imp <- res$nuevos + res$actualizados + res$movidos

@@ -169,5 +169,84 @@ shiny::testServer(treasuryMapServer, args = list(shared = sh_sin, ic_invoices_rv
 })
 ok(".tm_fmt has no default currency", !"cur" %in% names(Filter(Negate(is.symbol), formals(.tm_fmt))))
 
+# ── 3. Proveedores ───────────────────────────────────────────────────────────
+seccion("3. Proveedores: the base by default, the whole catalog in the selectors")
+source("tests/helpers/proveedores_testserver.R")            # the real module, S3 replaced in memory
+if (nzchar(Sys.getenv("PMOD_R"))) sys.source(Sys.getenv("PMOD_R"), envir = globalenv())
+.modal <- new.env(); .modal$html <- NULL
+showModal <- function(ui, session = NULL) .modal$html <- paste(as.character(ui), collapse = "")
+showNotification <- function(...) invisible(NULL)
+# The <select id="...-prov_moneda">: its options and the one selected.
+select_de <- function(html, id) {
+  s <- regmatches(html, regexpr(paste0('<select id="[^"]*', id, '"[\\s\\S]*?</select>'), html, perl = TRUE))
+  list(n = lengths(regmatches(s, gregexpr("<option ", s))),
+       sel = sub('.*<option value="([^"]*)" selected>.*', "\\1", s),
+       primeros = head(regmatches(s, gregexpr('(?<=<option value=")[^"]*', s, perl = TRUE))[[1]], 3))
+}
+N_CAT <- length(monedas_catalogo())
+prov_shared <- function(base_cfg, activos) list(
+  proveedores_db = reactiveVal(activos), proveedores_inactivos_db = reactiveVal(activos[0, ]),
+  company_map = reactive(c(NTS = "Networks Trucking")), effective_client_id = function() "prueba",
+  home_client_id = function() "prueba", current_user = function() "prueba", usuario = function() "prueba",
+  parte_alias_map_db = reactiveVal(NULL), moneda_base_cliente = reactive(moneda_base_resolver(base_cfg)))
+ACT <- rbind(prov_fila("p-1", "UNO SA", "012180001010101010"), prov_fila("p-2", "DOS SA", "012180001010101011"),
+             prov_fila("p-3", "TRES SA", "012180001010101012", moneda = "EUR"),
+             prov_fila("p-4", "CUATRO SA", "012180001010101013", moneda = "Dólares"),
+             prov_fila("p-5", "CINCO SA", "012180001010101014", moneda = "COP"))
+xlsx <- "tests/fixtures/proveedores_excel/01_reemplazo.xlsx"
+
+.upd$x <- list()
+shiny::testServer(proveedoresServer, args = list(shared = prov_shared(NA, ACT)), {
+  session$flushReact()
+  e <- .upd$x$excel_moneda
+  ok("base not chosen: the Excel's currency selector offers the whole catalog, MXN selected",
+     length(e$choices) == N_CAT && identical(e$selected, "MXN"))
+  ok("... MXN first, then the providers' currencies ('Dólares' counts as USD)",
+     identical(e$choices[1:4], c("MXN", "COP", "EUR", "USD")))
+  .show_edit_modal(NULL)
+  s <- select_de(.modal$html, "prov_moneda")
+  ok("new provider: the modal opens on MXN with the whole catalog (it had 10)", s$n == N_CAT && identical(s$sel, "MXN"))
+  .editar("p-4"); s <- select_de(.modal$html, "prov_moneda")
+  ok("a provider saved as 'Dólares' opens on USD (as before)", identical(s$sel, "USD"))
+  .editar("p-5"); s <- select_de(.modal$html, "prov_moneda")
+  ok("a provider in COP opens on COP (it used to become MXN)", identical(s$sel, "COP"))
+  .editar("p-3"); s <- select_de(.modal$html, "prov_moneda")
+  ok("a provider in EUR opens on EUR", identical(s$sel, "EUR"))
+})
+
+shiny::testServer(proveedoresServer, args = list(shared = prov_shared("USD", ACT)), {
+  session$flushReact()
+  ok("base USD: the Excel's selector starts on USD", identical(.upd$x$excel_moneda$selected, "USD") &&
+       identical(.upd$x$excel_moneda$choices[1], "USD"))
+  .show_edit_modal(NULL); s <- select_de(.modal$html, "prov_moneda")
+  ok("base USD: a new provider's modal opens on USD", identical(s$sel, "USD") && identical(s$primeros[1], "USD"))
+  # Saved without touching the currency (input not reported): the base, and
+  # BanBajío's rule for USD.
+  rm(list = ls(.prov_guardado), envir = .prov_guardado)
+  session$setInputs(prov_nombre = "NUEVO SA", prov_no_cuenta = "030180001010101019", prov_banco = "BANBAJIO|030",
+                    prov_modal_save = 1)
+  n <- .prov_guardado$activos; n <- n[n$nombre == "NUEVO SA", ]
+  ok("base USD, saved without a currency: USD and SPD (it was MXN and BCO)",
+     identical(c(n$moneda, n$medio_pago), c("USD", "SPD")))
+  # The Excel without a Moneda column, the selector untouched: the base.
+  rm(list = ls(.prov_guardado), envir = .prov_guardado)
+  session$setInputs(excel_tipo = "activos", excel_empresa = "TODOS")
+  session$setInputs(excel_file = data.frame(name = basename(xlsx), size = file.size(xlsx), type = "",
+                                            datapath = normalizePath(xlsx), stringsAsFactors = FALSE))
+  session$setInputs(confirmar_upload = 1)
+  m <- .prov_guardado$activos$moneda
+  m <- m[!.prov_guardado$activos$id %in% ACT$id]
+  ok("base USD: an Excel without a Moneda column gives its new providers USD", length(m) > 0 && all(m == "USD"))
+})
+
+rm(list = ls(.prov_guardado), envir = .prov_guardado)
+shiny::testServer(proveedoresServer, args = list(shared = prov_shared(NA, ACT)), {
+  session$flushReact()
+  session$setInputs(prov_nombre = "OTRO SA", prov_no_cuenta = "030180001010101019", prov_banco = "BANBAJIO|030",
+                    prov_moneda = "MXN", prov_modal_save = 1)
+  n <- .prov_guardado$activos; n <- n[n$nombre == "OTRO SA", ]
+  ok("MXN to BanBajío from the modal: BCO (as before)", identical(c(n$moneda, n$medio_pago), c("MXN", "BCO")))
+})
+
 cat(sprintf("\n%d passed, %d failed\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
