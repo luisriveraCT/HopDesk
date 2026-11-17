@@ -2735,28 +2735,79 @@ hd_notifications_marcar_leidas <- function(notifs, viewer, ids = NULL) {
 # scoped to its own prefix. When that's in place, this function would need to
 # use a cross-client IAM role or the principal's admin key to write to
 # arbitrary prefixes.
+#
+# Never over a client's data (CM25, 2026-11-17). The approval only checks the
+# client registry, and a folder can exist without a registry row (a client
+# removed from it, an id used again): writing the five empty tables there gave
+# the new client nothing and erased the old one's accounts. So, before any
+# write, all five are checked:
+#   - one whose existence can't be told (403, HEAD failing like the network),
+#     or that exists and can't be read: stop, class hd_init_no_comprobada;
+#   - one that exists with rows: stop, class hd_init_con_datos (a folder with
+#     data; giving it to a new client would hand it another client's users);
+#   - the ones that exist and are empty (what an approval that failed after
+#     this step leaves behind) are not touched, and only the missing ones are
+#     written, so the approval can be tried again.
+# Either stop happens before anything is written.
+
+.init_cliente_condicion <- function(clase, cliente, archivos, que) {
+  structure(class = c(clase, "error", "condition"),
+            list(message = sprintf("[CLIENT] '%s': %s: %s; nothing was written", cliente, que,
+                                   paste(archivos, collapse = ", ")),
+                 call = NULL, cliente = cliente, archivos = archivos))
+}
+
+# The dictionary key for the notice of a failed initialize_client_folder(),
+# by the condition's class; any other error is the generic error_folder.
+init_cliente_aviso <- function(e) {
+  if (inherits(e, "hd_init_con_datos"))     return("niveles.solicitudes.aviso.carpeta_con_datos")
+  if (inherits(e, "hd_init_no_comprobada")) return("niveles.solicitudes.aviso.carpeta_no_comprobada")
+  "niveles.solicitudes.aviso.error_folder"
+}
 
 initialize_client_folder <- function(client_id, created_by = "system") {
   stopifnot(nzchar(client_id), !grepl("[^a-z0-9_-]", client_id))
   bucket <- .s3_bucket()
 
-  s3_put <- function(suffix, data) {
-    aws.s3::s3saveRDS(data,
-                      object = paste0(client_id, "/", suffix),
-                      bucket = bucket)
-  }
+  iniciales <- list(
+    "usuarios.rds"  = .schema_usuarios_init(),
+    "empresas.rds"  = as.data.frame(.schema_empresas()),
+    "grupos.rds"    = as.data.frame(.schema_grupos()),
+    "contacts.rds"  = .schema_contacts(),
+    "app_audit.rds" = tibble::tibble(
+      id = character(), ts = as.POSIXct(character()),
+      user = character(), module = character(), action = character(),
+      description = character(), target_id = character(), metadata = character()
+    ))
+  llave <- function(suffix) paste0(client_id, "/", suffix)
 
-  s3_put("usuarios.rds",  .schema_usuarios_init())
-  s3_put("empresas.rds",  as.data.frame(.schema_empresas()))
-  s3_put("grupos.rds",    as.data.frame(.schema_grupos()))
-  s3_put("contacts.rds",  .schema_contacts())
-  s3_put("app_audit.rds", tibble::tibble(
-    id = character(), ts = as.POSIXct(character()),
-    user = character(), module = character(), action = character(),
-    description = character(), target_id = character(), metadata = character()
-  ))
+  # 1. Which exist: TRUE, FALSE or NA (cannot tell).
+  existe <- vapply(names(iniciales), function(a) s3_objeto_existe(llave(a), bucket), logical(1))
+  if (anyNA(existe))
+    stop(.init_cliente_condicion("hd_init_no_comprobada", client_id, names(existe)[is.na(existe)],
+                                 "could not check whether these exist"))
 
-  message(sprintf("[CLIENT] Folder initialized for '%s' by '%s'", client_id, created_by))
+  # 2. The ones that exist, read strictly: empty, or the folder has data.
+  filas <- vapply(names(existe)[existe], function(a) {
+    r <- .s3_read_raw_with_retry(llave(a), bucket)
+    if (!isTRUE(r$ok)) return(NA_integer_)
+    v <- r$value
+    if (is.null(v)) 0L else if (is.data.frame(v)) nrow(v) else length(v)
+  }, integer(1))
+  if (anyNA(filas))
+    stop(.init_cliente_condicion("hd_init_no_comprobada", client_id, names(filas)[is.na(filas)],
+                                 "exist but could not be read"))
+  if (any(filas > 0L))
+    stop(.init_cliente_condicion("hd_init_con_datos", client_id, names(filas)[filas > 0L],
+                                 "the folder already has data in"))
+
+  # 3. Only the missing ones; the empty ones already there stay as they are.
+  faltan <- names(existe)[!existe]
+  for (a in faltan) aws.s3::s3saveRDS(iniciales[[a]], object = llave(a), bucket = bucket)
+
+  message(sprintf("[CLIENT] Folder initialized for '%s' by '%s'%s", client_id, created_by,
+                  if (any(existe)) sprintf(" (kept, already empty: %s)",
+                                           paste(names(existe)[existe], collapse = ", ")) else ""))
   invisible(TRUE)
 }
 

@@ -1850,5 +1850,7 @@
   "avisos.correo.viernes.ic_texto.uno": "{n} movement between group companies for {montos}: left out of collections and payments.",
   "avisos.correo.viernes.ic_texto.otros": "{n} movements between group companies for {montos}: left out of collections and payments.",
   "avisos.correo.viernes.racha_ilegible": "The history could not be read this week.",
-  "avisos.correo.desempeno.ilegible": "the history could not be read this week"
+  "avisos.correo.desempeno.ilegible": "the history could not be read this week",
+  "niveles.solicitudes.aviso.carpeta_con_datos": "Client '{cliente}' already has data on the server (a folder with no registry entry). Nothing was created: choose another identifier or check it with support.",
+  "niveles.solicitudes.aviso.carpeta_no_comprobada": "The folder of client '{cliente}' could not be checked on the server. Nothing was created: try again in a moment."
 }

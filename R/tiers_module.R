@@ -2160,14 +2160,15 @@ tiersServer <- function(id, shared) {
                          type = "error"); return()
       }
 
-      # 1. Initialize S3 folder
-      init_ok <- tryCatch({
-        initialize_client_folder(row$client_id_proposed, created_by = reviewer); TRUE
+      # 1. Initialize S3 folder. A folder with data, or one that can't be
+      #    checked, stops here with its own notice (CM25); nothing was written.
+      init_aviso <- tryCatch({
+        initialize_client_folder(row$client_id_proposed, created_by = reviewer); NULL
       }, error = function(e) {
-        message("[CLIENTS] initialize_client_folder failed: ", e$message); FALSE
+        message("[CLIENTS] initialize_client_folder failed: ", e$message); init_cliente_aviso(e)
       })
-      if (!init_ok) {
-        showNotification(tr("niveles.solicitudes.aviso.error_folder"), type = "error")
+      if (!is.null(init_aviso)) {
+        showNotification(tr(init_aviso, cliente = row$client_id_proposed), type = "error")
         return()
       }
 

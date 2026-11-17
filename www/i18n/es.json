@@ -1850,5 +1850,7 @@
   "avisos.correo.viernes.ic_texto.uno": "{n} movimiento entre empresas del grupo por {montos}: fuera de cobros y pagos.",
   "avisos.correo.viernes.ic_texto.otros": "{n} movimientos entre empresas del grupo por {montos}: fuera de cobros y pagos.",
   "avisos.correo.viernes.racha_ilegible": "No se pudo leer el historial esta semana.",
-  "avisos.correo.desempeno.ilegible": "no se pudo leer el historial esta semana"
+  "avisos.correo.desempeno.ilegible": "no se pudo leer el historial esta semana",
+  "niveles.solicitudes.aviso.carpeta_con_datos": "El cliente '{cliente}' ya tiene datos en el servidor (una carpeta sin registro). No se creó nada: elige otro identificador o revísalo con soporte.",
+  "niveles.solicitudes.aviso.carpeta_no_comprobada": "No se pudo comprobar la carpeta del cliente '{cliente}' en el servidor. No se creó nada: intenta de nuevo en un momento."
 }
