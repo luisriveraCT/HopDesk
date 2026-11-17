@@ -12,6 +12,7 @@ library(testthat)
 suppressPackageStartupMessages(library(dplyr))
 `%||%` <- function(a, b) if (is.null(a)) b else a
 source("R/i18n.R")
+source("R/monedas.R")   # MONEDA_BASE_OMISION, the default base of build_cashflow_export_data (monedas fase 2)
 cargar <- function(archivo, nombres) {
   for (e in parse(archivo, keep.source = FALSE))
     if (is.call(e) && is.name(e[[1]]) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) &&

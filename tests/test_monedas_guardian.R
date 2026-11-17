@@ -15,7 +15,7 @@ cat("=== test_monedas_guardian ===\n\n")
 `%||%` <- function(a, b) if (is.null(a)) b else a
 source("R/monedas.R")
 
-TOPE <- 222L   # 2026-11-16, master 74f10ee + fase 1; lowered by every migration
+TOPE <- 194L   # 2026-11-16: 222 (fase 1) -> 194 (fase 2, Flujo + R/fx_banxico.R); lowered by every migration
 
 # R/monedas.R is never counted: it is the catalog, and it holds the one
 # deliberate code, MONEDA_BASE_OMISION = "MXN" (Luis, 2026-11-16: "es una app
@@ -23,7 +23,8 @@ TOPE <- 222L   # 2026-11-16, master 74f10ee + fase 1; lowered by every migration
 # Legitimate: a currency that is a rule of the outside world, not a choice.
 # file = reason. Their literals are not counted.
 EXCEPCIONES <- c(
-  "R/bancos_detect.R" = "BanBajío's statement header names its currencies"
+  "R/bancos_detect.R" = "BanBajío's statement header names its currencies",
+  "R/fx_banxico.R"    = "Banxico: FIX USD→MXN and its series table"
 )
 
 .pass <- 0L; .fail <- 0L

@@ -83,27 +83,26 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-# Suggested exchange rate FROM → TO.
-# Uses forecasting_get_estimate("usd_mxn") when available; falls back to
-# hard-coded market-order approximations for other pairs.
-.suggest_fx_rate <- function(from_cur, to_cur) {
-  if (from_cur == "USD" && to_cur == "MXN") {
-    # The Banxico FIX (R/fx_banxico.R). Without one, NA: the field stays empty
-    # and the export asks for the rate (.fx_tasas_completas) -- it used to
-    # suggest 18.50 forever, since nothing ever wrote the estimate it read.
-    fx <- tryCatch(fx_fix(), error = function(e) NULL)
-    if (is.list(fx) && is.numeric(fx$valor) && !is.na(fx$valor) && fx$valor > 0) return(round(fx$valor, 4))
-    return(NA_real_)
+# Exchange rates (monedas fase 2): no rate is suggested from here any more.
+# The made-up pairs (EUR 20.00, GBP 23.50...) and the 1.00 for any other
+# pair are gone: each rate comes from fx_tipo() (R/fx_tipos.R) -- typed by the
+# user today, Banxico's, or crossed from two of Banxico's -- or the field is
+# required.
+
+# The currencies of the data a report of `emp` converts: SAP's AR and AP and
+# the manual entries, of those companies (all, when none is chosen).
+.cf_monedas_de_datos <- function(shared, emp = character()) {
+  tomar <- function(df) {
+    if (!is.data.frame(df) || !nrow(df) || !"Moneda" %in% names(df)) return(character())
+    if (length(emp) && "Empresa" %in% names(df)) df <- df[df$Empresa %in% emp, , drop = FALSE]
+    as.character(df$Moneda)
   }
-  fallbacks <- c(
-    EUR_MXN = 20.00, GBP_MXN = 23.50, CAD_MXN = 13.50,
-    JPY_MXN = 0.12,  CHF_MXN = 21.00, AUD_MXN = 12.00,
-    CNY_MXN = 2.55,  BRL_MXN =  3.20,
-    EUR_USD =  1.08, GBP_USD =  1.27, CAD_USD =  0.73
-  )
-  key <- paste0(from_cur, "_", to_cur)
-  v   <- fallbacks[ key ]
-  if (is.na(v)) 1.00 else unname(v)
+  sap <- tryCatch(shared$sap_data(), error = function(e) NULL)
+  m <- toupper(trimws(c(tomar(sap[["AR"]]), tomar(sap[["AP"]]), tomar(tryCatch(shared$manual_inv(), error = function(e) NULL)))))
+  # Only code-shaped values: they become element ids and the rows' commands
+  # (JS). Anything else gets no row, and the report stops naming it
+  # (.apply_fx_conversion), never runs as script.
+  m[!is.na(m) & grepl("^[A-Z]{3}$", m)]
 }
 
 # TRUE when every exchange rate of a fused-currency export is a positive
@@ -176,10 +175,19 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
   sv <- "Saldo vencido"
   if (!(sv %in% names(df))) return(df)
 
-  rates_vec <- vapply(df$Moneda %||% "MXN", function(cur) {
-    if (is.na(cur) || cur == base_cur) return(1.0)
-    fx_rates[[ cur ]] %||% 1.0
-  }, numeric(1))
+  # A currency without a positive rate stops the report (monedas fase 2): it
+  # used to be multiplied by 1.0, so 100,000 SEK added up as 100,000 of the
+  # base, silently.
+  if (is.null(df$Moneda)) df$Moneda <- rep(base_cur, nrow(df))
+  tasas   <- suppressWarnings(unlist(fx_rates %||% list()))
+  ajenas  <- unique(df$Moneda[!is.na(df$Moneda) & df$Moneda != base_cur])
+  t_ajena <- suppressWarnings(as.numeric(tasas[ajenas]))
+  faltan  <- ajenas[is.na(t_ajena) | t_ajena <= 0]
+  if (length(faltan))
+    stop(tr("tablas.flujo.aviso.tc_faltante", monedas = paste(paste0(faltan, "/", base_cur), collapse = ", ")),
+         call. = FALSE)
+  rates_vec <- ifelse(is.na(df$Moneda) | df$Moneda == base_cur, 1.0,
+                      suppressWarnings(as.numeric(tasas[df$Moneda])))
 
   df$.orig_moneda  <- df$Moneda                                  # preserve before overwriting
   df$.is_converted <- !is.na(df$Moneda) & (df$Moneda != base_cur)
@@ -462,7 +470,7 @@ build_cashflow_export_data <- function(
     date_from, date_to,
     grouping      = "auto",
     currency_mode = "separate",
-    base_cur      = "MXN",
+    base_cur      = MONEDA_BASE_OMISION,
     fx_rates      = c(),
     idioma        = hd_idioma()
 ) {
@@ -2198,8 +2206,45 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
   .grp_rv      <- reactiveVal("auto")     # "daily" | "weekly" | "auto"
   .cur_mode_rv <- reactiveVal("separate") # "separate" | "fused"
   .sec_lang_rv <- reactiveVal(FALSE)      # secondary language shown?
-  # One-shot FX prefill from preview panel: consumed by export_fx_section_ui renderUI
-  .pending_fx  <- reactiveVal(NULL)       # list(base_cur, fx_rates) or NULL
+  # ── Base and exchange rates (monedas fase 2, propuesta A) ──────────────────
+  # The base: the one chosen here (or brought from the preview), else the
+  # client's (Ajustes). The rates: fx_tipo() for every currency of the data,
+  # each with its origin; typed ones are kept per user for the day (the
+  # preview's too, so both show the same). The rate fields' ids carry the
+  # base: a value typed against one base is never read against another.
+  .base_sel    <- reactiveVal(NULL)
+  .fx_rev      <- reactiveVal(0L)          # bumped after a typed rate is saved or undone
+  .fx_editando <- reactiveVal(character()) # currencies whose Banxico rate is being changed
+  .fx_cid  <- function() tryCatch(shared$effective_client_id(), error = function(e) NULL)
+  .fx_user <- function() tryCatch(shared$current_user(), error = function(e) NULL)
+  .export_base <- reactive({
+    b <- .base_sel()
+    if (is.character(b) && length(b) == 1L && moneda_valida(b)) return(b)
+    tryCatch(shared$moneda_base_cliente()$moneda, error = function(e) NULL) %||% MONEDA_BASE_OMISION
+  })
+  .export_datos_monedas <- reactive(
+    monedas_en_datos(.cf_monedas_de_datos(shared, tryCatch(shared$empresa_sel(), error = function(e) NULL) %||% character()))
+  )
+  .export_tipos <- reactive({
+    .fx_rev()
+    base <- .export_base()
+    esc  <- fx_escritos_de(fx_escritos_leer(.fx_cid()), .fx_user(), base)
+    f    <- fx_fuentes_hoy()
+    fx_tipos(setdiff(.export_datos_monedas(), base), base, esc, f$fix, f$divisas)
+  })
+  .fx_input_id <- function(cur, base) paste0("export_fx_", cur, "_", base)
+  # The rates of a fused export: c(USD = 18.55, EUR = NA, ...), NA where
+  # there is none; a field being typed in wins over the rest.
+  .export_fx_rates <- function() {
+    t <- isolate(.export_tipos()); base <- isolate(.export_base())
+    vals <- stats::setNames(as.numeric(t$valor), t$moneda)
+    abiertos <- t$moneda[t$origen == "sin_fuente" | t$moneda %in% isolate(.fx_editando())]
+    for (cur in abiertos) {
+      v <- suppressWarnings(as.numeric(isolate(input[[.fx_input_id(cur, base)]])))
+      if (length(v) == 1L && !is.na(v) && v > 0) vals[[cur]] <- v
+    }
+    vals
+  }
 
   # ── Async Excel job state ─────────────────────────────────────────────────
   # idle | building | warn60 | done | error | cancelled
@@ -2237,13 +2282,11 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
     if (!is.null(pf$currency_mode) && pf$currency_mode %in% c("separate","fused"))
       .cur_mode_rv(pf$currency_mode)
 
-    # Store FX prefill BEFORE opening modal so renderUI picks it up on first render
-    if (pf$currency_mode == "fused") {
-      .pending_fx(list(
-        base_cur = pf$base_cur %||% "MXN",
-        fx_rates = pf$fx_rates %||% list()
-      ))
-    }
+    # The preview's base, before the modal opens. Its rates need no copy:
+    # both screens read the same fx_tipo() and the same typed rates.
+    if (identical(pf$currency_mode, "fused") && is.character(pf$base_cur) && length(pf$base_cur) == 1L &&
+        moneda_valida(pf$base_cur))
+      .base_sel(pf$base_cur)
 
     show_cashflow_export_modal()
 
@@ -2305,81 +2348,92 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
   })
 
   # ── Render: FX section (only in fused mode) ───────────────────────────────
+  # Propuesta A (Luis, 2026-11-16): one row per currency of the data, with its
+  # rate and where it comes from. "cambiar" opens the field; what is typed is
+  # kept for the day (the ✕ undoes it); a currency without a source asks for
+  # its rate, and the export stops until it has one.
   output$export_fx_section_ui <- renderUI({
     if (.cur_mode_rv() != "fused") return(NULL)
+    base   <- .export_base()
+    tipos  <- .export_tipos()
+    editan <- .fx_editando()
+    cods   <- unique(c(base, .export_datos_monedas()))
+    cods   <- cods[moneda_valida(cods)]
+    opciones <- monedas_opciones(cods, hd_idioma())[seq_along(cods)]
 
-    # Consume any pending prefill from the preview panel (isolate = no dependency,
-    # so this renderUI won't re-run when .pending_fx resets to NULL)
-    pending <- isolate(.pending_fx())
-    if (!is.null(pending)) isolate(.pending_fx(NULL))
-
-    base <- if (!is.null(pending) && !is.null(pending$base_cur) && nzchar(pending$base_cur))
-              pending$base_cur
-            else
-              input$export_base_cur %||% "MXN"
-
-    # Determine which non-base currencies appear in the data for
-    # the currently selected companies (date-range-agnostic).
-    sap     <- shared$sap_data()
-    emp     <- shared$empresa_sel()
-    # sap is list(AR=df, AP=df) — combine both ledgers for currency detection
-    sap_df  <- dplyr::bind_rows(sap[["AR"]], sap[["AP"]])
-    if (nrow(sap_df) > 0L && length(emp) > 0L) {
-      other_curs <- setdiff(
-        intersect(unique(sap_df$Moneda[sap_df$Empresa %in% emp]), CURRENCIES),
-        c(base, NA_character_)
+    fila <- function(i) {
+      cur <- tipos$moneda[i]; org <- tipos$origen[i]; val <- tipos$valor[i]
+      abierto <- org == "sin_fuente" || cur %in% editan
+      cmd <- function(accion, texto, titulo = NULL)
+        tags$a(href = "#", class = "small ms-2", title = titulo,
+               onclick = sprintf("Shiny.setInputValue('export_fx_cmd',{cur:'%s',accion:'%s',t:Date.now()});return false;",
+                                 cur, accion),
+               texto)
+      div(class = "d-flex align-items-center gap-2 mb-1 cf-export-fx-fila",
+        tags$span(class = "small fw-semibold", style = "min-width:72px;", paste0(cur, "/", base)),
+        if (abierto)
+          div(style = "width:120px;",
+              numericInput(.fx_input_id(cur, base), label = NULL,
+                           value = if (is.na(val)) NA else round(val, 4), min = 0, step = 0.0001, width = "100%"))
+        else tags$span(class = "small", style = "min-width:120px; font-variant-numeric:tabular-nums;",
+                       formatC(val, format = "f", digits = 4)),
+        tags$span(class = paste("small", if (org == "sin_fuente") "text-warning" else "text-muted"),
+                  if (org == "sin_fuente") icon("triangle-exclamation") else "●", " ",
+                  fx_origen_texto(org, tipos$fecha[i])),
+        if (org == "escrito") cmd("quitar", "✕", tr("tablas.flujo.fx.quitar"))
+        else if (!abierto) cmd("cambiar", tr("tablas.flujo.fx.cambiar"))
       )
-    } else {
-      other_curs <- setdiff(c("USD", "EUR"), base)
     }
 
     tagList(
       tags$hr(class = "my-3"),
-      tags$label("Moneda base y tipos de cambio",
-                 class = "form-label fw-semibold small mb-1"),
-
-      # Base currency selector
+      tags$label(tr("tablas.flujo.fx.titulo"), class = "form-label fw-semibold small mb-1"),
       fluidRow(
-        column(3,
-          tags$label("Base", class = "form-label small text-muted mb-1"),
-          selectInput("export_base_cur", label = NULL,
-                      choices  = intersect(c("MXN", "USD", "EUR"), CURRENCIES),
-                      selected = base,
-                      width    = "100%")
+        column(5,
+          tags$label(tr("tablas.flujo.fx.base"), class = "form-label small text-muted mb-1"),
+          selectInput("export_base_cur", label = NULL, choices = opciones, selected = base, width = "100%")
         )
       ),
-
-      # One numericInput per non-base currency present in the data
-      if (length(other_curs)) {
-        do.call(fluidRow, lapply(other_curs, function(cur) {
-          # Use prefilled rate if available, otherwise suggest from market data.
-          # Guard pending AND key existence before [[]] — NULL[[key]] is an error.
-          sug <- if (!is.null(pending) &&
-                     cur %in% names(pending$fx_rates) &&
-                     is.numeric(pending$fx_rates[[cur]]) &&
-                     pending$fx_rates[[cur]] > 0)
-                   pending$fx_rates[[cur]]
-                 else
-                   .suggest_fx_rate(cur, base)
-          column(3,
-            tags$label(paste0(cur, "/", base),
-                       class = "form-label small text-muted mb-1"),
-            numericInput(paste0("export_fx_", cur), label = NULL,
-                         value = sug, min = 0.0001, step = 0.0001,
-                         width = "100%"),
-            tags$small(class = "text-muted fst-italic",
-                       paste0("sugerido: ", format(round(sug, 4), nsmall = 2)))
-          )
-        }))
-      },
-
-      tags$small(
-        class = "text-muted mt-1 d-block",
-        icon("circle-info"),
-        " Importes convertidos se marcarán con (*) en el reporte."
-      )
+      if (nrow(tipos)) lapply(seq_len(nrow(tipos)), fila),
+      # A typed rate is kept when the field is left (blur or Enter), not on every key.
+      tags$script(HTML(
+        "$(document).off('focusout.cfexpfx').on('focusout.cfexpfx','.cf-export-fx-fila input',function(){",
+        "var m=this.id.match(/^export_fx_([A-Z]{3})_([A-Z]{3})$/); if(!m) return;",
+        "var v=parseFloat($(this).val()); if(isNaN(v)||v<=0) return;",
+        "Shiny.setInputValue('export_fx_cmd',{cur:m[1],base:m[2],accion:'escribir',v:v,t:Date.now()},{priority:'event'});});"
+      )),
+      tags$small(class = "text-muted mt-1 d-block", icon("circle-info"), " ", tr("tablas.flujo.fx.nota"))
     )
   })
+
+  # The rows' commands: "cambiar" opens the field, "escribir" keeps what was
+  # typed for the day, "quitar" (the ✕) undoes it. Kept on the server; a
+  # failed save says so, and the typed value still serves this export.
+  observeEvent(input$export_fx_cmd, {
+    m <- input$export_fx_cmd
+    cur <- .fx_codigo(m$cur)
+    if (is.na(cur)) return()
+    accion <- m$accion %||% ""
+    if (identical(accion, "cambiar")) { .fx_editando(union(.fx_editando(), cur)); return() }
+    base <- .export_base()
+    if (identical(accion, "escribir")) {
+      if (!identical(.fx_codigo(m$base), base)) return()
+      v <- suppressWarnings(as.numeric(m$v))
+      if (length(v) != 1L || is.na(v) || !(v > 0)) return()
+    } else if (identical(accion, "quitar")) {
+      v <- NA_real_
+    } else return()
+    ok <- tryCatch({ fx_escrito_guardar(.fx_cid(), .fx_user(), cur, base, v); TRUE }, error = function(e) {
+      message("[cashflow_export] tipo escrito no guardado: ", conditionMessage(e)); FALSE })
+    if (!ok) { showNotification(tr("tablas.flujo.fx.no_guardado"), type = "warning", duration = 6); return() }
+    .fx_editando(setdiff(.fx_editando(), cur))
+    .fx_rev(.fx_rev() + 1L)
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$export_base_cur, {
+    b <- input$export_base_cur
+    if (is.character(b) && length(b) == 1L && moneda_valida(b) && !identical(b, .base_sel())) .base_sel(b)
+  }, ignoreInit = TRUE)
 
   # ── Render: language selector ─────────────────────────────────────────────
   output$export_lang_ui <- renderUI({
@@ -2473,23 +2527,12 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       emp_sel   <- shared$empresa_sel()   %||% character(0)
       ic_val    <- input$ic_mode          %||% "exclude"
 
-      base_cur  <- input$export_base_cur  %||% "MXN"
+      base_cur  <- .export_base()
       cur_mode  <- .cur_mode_rv()
       grouping  <- .grp_rv()
 
       # Collect user-edited FX rates for fused mode
-      fx_rates <- if (cur_mode == "fused") {
-        sap <- tryCatch(shared$sap_data(), error = function(e) NULL)
-        other_curs <- if (!is.null(sap)) {
-          setdiff(intersect(unique(c(sap$AR$Moneda, sap$AP$Moneda)), CURRENCIES),
-                  c(base_cur, NA_character_))
-        } else setdiff(c("USD","EUR"), base_cur)
-
-        rates <- vapply(other_curs, function(cur) {
-          input[[ paste0("export_fx_", cur) ]] %||% .suggest_fx_rate(cur, base_cur)
-        }, numeric(1))
-        setNames(rates, other_curs)
-      } else c()
+      fx_rates <- if (cur_mode == "fused") .export_fx_rates() else c()   # monedas fase 2
       if (!.fx_tasas_completas(fx_rates, base_cur)) stop("Falta el tipo de cambio.")
 
       # ── Run pipeline ────────────────────────────────────────────────────
@@ -2630,21 +2673,11 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
                  (lubridate::floor_date(Sys.Date(), "week", week_start = 1) + 6L)
     emp_sel   <- shared$empresa_sel()   %||% character(0)
     ic_val    <- input$ic_mode          %||% "exclude"
-    base_cur  <- input$export_base_cur  %||% "MXN"
+    base_cur  <- .export_base()
     cur_mode  <- .cur_mode_rv()
     grouping  <- .grp_rv()
 
-    fx_rates <- if (cur_mode == "fused") {
-      sap        <- tryCatch(shared$sap_data(), error = function(e) NULL)
-      other_curs <- if (!is.null(sap))
-        setdiff(intersect(unique(c(sap$AR$Moneda, sap$AP$Moneda)), CURRENCIES),
-                c(base_cur, NA_character_))
-      else setdiff(c("USD", "EUR"), base_cur)
-      rates <- vapply(other_curs, function(cur)
-        input[[paste0("export_fx_", cur)]] %||% .suggest_fx_rate(cur, base_cur),
-        numeric(1))
-      setNames(rates, other_curs)
-    } else c()
+    fx_rates <- if (cur_mode == "fused") .export_fx_rates() else c()   # monedas fase 2
     if (!.fx_tasas_completas(fx_rates, base_cur)) return()
 
     # ── Build combined_df synchronously (fast: ~2-3 s, uses cached SAP data)
@@ -2937,21 +2970,11 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       date_to   <- input$export_date_to   %||% (lubridate::floor_date(Sys.Date(), "week", week_start = 1) + 6L)
       emp_sel   <- shared$empresa_sel()   %||% character(0)
       ic_val    <- input$ic_mode          %||% "exclude"
-      base_cur  <- input$export_base_cur  %||% "MXN"
+      base_cur  <- .export_base()
       cur_mode  <- .cur_mode_rv()
       grouping  <- .grp_rv()
 
-      fx_rates <- if (cur_mode == "fused") {
-        sap <- tryCatch(shared$sap_data(), error = function(e) NULL)
-        other_curs <- if (!is.null(sap)) {
-          setdiff(intersect(unique(c(sap$AR$Moneda, sap$AP$Moneda)), CURRENCIES),
-                  c(base_cur, NA_character_))
-        } else setdiff(c("USD","EUR"), base_cur)
-        rates <- vapply(other_curs, function(cur) {
-          input[[ paste0("export_fx_", cur) ]] %||% .suggest_fx_rate(cur, base_cur)
-        }, numeric(1))
-        setNames(rates, other_curs)
-      } else c()
+      fx_rates <- if (cur_mode == "fused") .export_fx_rates() else c()   # monedas fase 2
       if (!.fx_tasas_completas(fx_rates, base_cur)) stop("Falta el tipo de cambio.")
 
       combined_df <- tryCatch(

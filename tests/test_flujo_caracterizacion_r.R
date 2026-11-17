@@ -26,7 +26,7 @@ cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALS
   if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
     eval(e, envir = globalenv())
 cargar("R/persistence.R", "tag_label")
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+for (f in c("R/i18n.R", "R/monedas.R", "R/fx_banxico.R", "R/fx_tipos.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/cashflow_export_module.R", "R/cashflow_preview_module.R")) source(f)
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 source("tests/helpers/flujo_datos_prueba.R")
@@ -355,7 +355,7 @@ test_that("T27: the preview's state is one client's: A's FX rates never reach B"
     # A changes the rate and switches to B before the save (800 ms) fires.
     session$setInputs(fx_rate_usd_blur = 20)
     sh$effective_client_id("cliente_b"); session$flushReact(); session$elapse(1000)
-    expect_identical(list(rv$grouping, rv$currency_mode, rv$base_cur, length(rv$fx_rates)), list("auto", "separate", "MXN", 0L))
+    expect_identical(list(rv$grouping, rv$currency_mode, rv$base_cur, length(rv$fx_rates)), list("auto", "separate", NULL, 0L))   # NULL: the client's base (monedas fase 2)
     expect_true(any(grepl("localStorage.getItem(\"hopdesk_cf_preview_state:cliente_b\")", js(), fixed = TRUE)))
     expect_false(any(grepl("hopdesk_cf_preview_state:cliente_b\",JSON", js(), fixed = TRUE)))   # nothing saved as B's
     expect_false(any(grepl("setItem", js(), fixed = TRUE) & grepl("\"USD\":20", js(), fixed = TRUE)))   # the pending save is dropped

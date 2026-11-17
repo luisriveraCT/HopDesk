@@ -1,9 +1,10 @@
 # =============================================================================
 # tests/test_fx_consumidores_r.R
 # banxico-fix 2/3: who shows the Banxico FIX (R/fx_banxico.R).
-#   1. Flujo's Exportar: .suggest_fx_rate("USD","MXN") suggests the FIX
-#      (4 decimals) and, without one, NA -- never the old 18.50; the other
-#      pairs keep their values (a separate design task);
+#   1. Flujo's Exportar: USD/MXN is the FIX and, without one, NA -- never
+#      the old 18.50. Since monedas fase 2 (.suggest_fx_rate is gone) this is
+#      fx_tipo() (R/fx_tipos.R), and the other pairs are Banxico's or NA,
+#      never the old made-up 20.00 / 1.08 (tests/test_monedas_fase2.R);
 #   2. an export with a missing rate stops and says which one
 #      (.fx_tasas_completas), in the three paths (Word, Excel, PDF);
 #   3. the Pasivos wizard shows the FIX for USD -> MXN, or says there is
@@ -24,23 +25,25 @@ F <- "R/cashflow_export_module.R"
 env <- new.env()
 for (e in parse(F, keep.source = FALSE, encoding = "UTF-8"))
   if (is.call(e) && identical(e[[1]], as.name("<-")) &&
-      as.character(e[[2]]) %in% c(".suggest_fx_rate", ".fx_tasas_completas")) eval(e, env)
+      as.character(e[[2]]) %in% c(".fx_tasas_completas")) eval(e, env)
+suppressMessages({ source("R/monedas.R"); source("R/fx_banxico.R"); source("R/fx_tipos.R") })
 avisos <- character()
 env$showNotification <- function(ui, ...) { avisos <<- c(avisos, as.character(ui)); invisible() }
 env$tr <- function(...) tr(..., idioma = "es")
 FIX <- NULL
 env$fx_fix <- function() FIX
 
-# ── 1. The suggestion ───────────────────────────────────────────────────────
+# ── 1. The suggestion: fx_tipo() ────────────────────────────────────────────
 FIX <- list(valor = 18.23456, fecha = as.Date("2026-11-12"))
-ok("con FIX: sugiere el FIX con 4 decimales", identical(env$.suggest_fx_rate("USD", "MXN"), 18.2346))
-FIX <- NULL
-ok("sin FIX: NA (campo vacío), nunca 18.50", is.na(env$.suggest_fx_rate("USD", "MXN")))
-env$fx_fix <- function() stop("caído")
-ok("fx_fix() con error: NA", is.na(env$.suggest_fx_rate("USD", "MXN")))
-env$fx_fix <- function() FIX
-ok("las otras monedas siguen igual (tarea de diseño aparte)",
-   identical(env$.suggest_fx_rate("EUR", "MXN"), 20) && identical(env$.suggest_fx_rate("EUR", "USD"), 1.08))
+t <- fx_tipo("USD", "MXN", fix = FIX)
+ok("con FIX: USD/MXN es el FIX, con su origen y fecha",
+   identical(t$valor, 18.23456) && identical(t$origen, "banxico_fix") && identical(t$fecha, as.Date("2026-11-12")))
+ok("sin FIX: NA (campo vacío), nunca 18.50", is.na(fx_tipo("USD", "MXN", fix = NULL)$valor))
+ok("las otras monedas sin Banxico: NA, nunca los 20.00 / 1.08 inventados",
+   is.na(fx_tipo("EUR", "MXN", fix = FIX)$valor) && is.na(fx_tipo("EUR", "USD", fix = FIX)$valor))
+ok("el módulo ya no tiene .suggest_fx_rate ni los pares inventados",
+   { l <- sub("#.*$", "", readLines(F, warn = FALSE, encoding = "UTF-8"))
+     !any(grepl(".suggest_fx_rate", l, fixed = TRUE)) && !any(grepl("EUR_MXN|1\\.08|23\\.50", l)) })
 ok("el módulo ya no tiene el 18.50 (fuera de los comentarios)",
    { l <- readLines(F, warn = FALSE); !any(grepl("18\\.50?\\b", sub("#.*$", "", l))) })
 

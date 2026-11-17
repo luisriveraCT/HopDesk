@@ -43,3 +43,4 @@ R/avisos_logros.R	D
 R/requisiciones_*.R	E
 R/adjuntos_s3.R	E
 www/requisiciones*	E
+R/fx_tipos.R	integrador

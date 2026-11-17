@@ -16,7 +16,7 @@
 # (R/empresas_module.R, "Guardar configuración").
 # =============================================================================
 
-MONEDAS_VERSION <- "2026-11-16"
+MONEDAS_VERSION <- "2026-11-16b"
 .MONEDAS_ARCHIVO <- "data/monedas_iso4217.csv"
 
 .monedas_leer <- function(ruta = .MONEDAS_ARCHIVO) {

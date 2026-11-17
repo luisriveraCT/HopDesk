@@ -1,5 +1,5 @@
 # Catálogo de monedas de HopDesk: ISO 4217, lista 1, solo monedas de curso legal vigentes.
-# Version: 2026-11-16 (integrador, monedas fase 1). Fuera a propósito: fondos (BOV, CHE, CHW, CLF, COU, MXV, USN, UYI, UYW), metales y unidades (XAU, XAG, XPT, XPD, XDR, XSU, XUA, XBA-XBD, XTS, XXX).
+# Version: 2026-11-16b (integrador, monedas fase 2; cotejada contra ISO 4217 lista 1 publicada el 2026-09-17: coinciden los 155 códigos, números y decimales; BGN dada de baja). Fuera a propósito: fondos (BOV, CHE, CHW, CLF, COU, MXV, USN, UYI, UYW), metales y unidades (XAU, XAG, XPT, XPD, XDR, XSU, XUA, XBA-XBD, XTS, XXX).
 # Columnas: codigo (ISO alfabético), numero (ISO numérico), decimales (unidades menores), nombre_es, nombre_en.
 # Cambiar este archivo = cambiar MONEDAS_VERSION en R/monedas.R; tests/test_monedas.R lo revisa.
 codigo,numero,decimales,nombre_es,nombre_en
@@ -15,7 +15,6 @@ AZN,944,2,Manat azerí,Azerbaijani manat
 BAM,977,2,Marco convertible de Bosnia y Herzegovina,Bosnia and Herzegovina convertible mark
 BBD,052,2,Dólar de Barbados,Barbados dollar
 BDT,050,2,Taka bangladesí,Bangladeshi taka
-BGN,975,2,Lev búlgaro,Bulgarian lev
 BHD,048,3,Dinar bareiní,Bahraini dinar
 BIF,108,0,Franco burundés,Burundian franc
 BMD,060,2,Dólar bermudeño,Bermudian dollar

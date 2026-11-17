@@ -1713,5 +1713,16 @@
   "comun.monedas.base.ayuda": "Reports and totals are shown in this currency. The others appear according to your data.",
   "comun.monedas.base.omision_opcion": "Default ({moneda})",
   "comun.monedas.base.aviso_omision": "{moneda} is used by default. Choose another if your reports are in another currency.",
-  "comun.monedas.base.invalida": "That currency is not in the catalog; nothing was saved."
+  "comun.monedas.base.invalida": "That currency is not in the catalog; nothing was saved.",
+  "tablas.flujo.fx.titulo": "Base currency and exchange rates",
+  "tablas.flujo.fx.base": "Base",
+  "tablas.flujo.fx.cambiar": "change",
+  "tablas.flujo.fx.quitar": "Remove what you typed and go back to Banxico's",
+  "tablas.flujo.fx.nota": "Converted amounts are marked with (*) in the report.",
+  "tablas.flujo.fx.no_guardado": "The typed rate could not be saved; it is used for this export only.",
+  "tablas.flujo.fx.origen.escrito": "Typed by you · today",
+  "tablas.flujo.fx.origen.banxico_fix": "Banxico FIX · {fecha}",
+  "tablas.flujo.fx.origen.banxico": "Banxico · {fecha}",
+  "tablas.flujo.fx.origen.cruzado": "Banxico (crossed) · {fecha}",
+  "tablas.flujo.fx.origen.sin_fuente": "No source: type it"
 }

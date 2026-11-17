@@ -156,16 +156,18 @@ cashflow_tabla_columnas <- function(labels) {
 
 # Foreign currencies = all detected currencies minus the base currency
 .cf_foreign_curs <- function(shared, base_cur) {
-  ar <- tryCatch(shared$currency_choices[["AR"]](), error = function(e) character(0))
-  ap <- tryCatch(shared$currency_choices[["AP"]](), error = function(e) character(0))
-  setdiff(unique(toupper(c(ar, ap))), toupper(base_cur %||% "MXN"))
+  setdiff(.cf_all_curs(shared), toupper(base_cur %||% MONEDA_BASE_OMISION))
 }
 
-# All detected currencies (for base-cur selector choices)
+# All detected currencies (for base-cur selector choices): the month's of the
+# ledgers, plus every currency of the data the table converts (monedas fase
+# 2: one outside the month used to get no rate field, and counted 1.0).
 .cf_all_curs <- function(shared) {
   ar <- tryCatch(shared$currency_choices[["AR"]](), error = function(e) character(0))
   ap <- tryCatch(shared$currency_choices[["AP"]](), error = function(e) character(0))
-  unique(toupper(c(ar, ap)))
+  datos <- tryCatch(.cf_monedas_de_datos(shared), error = function(e) character(0))
+  m <- unique(toupper(trimws(c(ar, ap, datos))))
+  m[!is.na(m) & grepl("^[A-Z]{3}$", m)]   # code-shaped only: they become ids and JS selectors
 }
 
 # ── UI ────────────────────────────────────────────────────────────────────────
@@ -310,7 +312,7 @@ cashflowPreviewServer <- function(id, shared) {
       date_to       = .cf_default_to(),
       grouping      = "auto",      # "auto" | "daily" | "weekly"
       currency_mode = "separate",  # "separate" | "fused"
-      base_cur      = "MXN",
+      base_cur      = NULL,        # NULL: the client's base (base_ef())
       fx_rates      = c(),         # named numeric: e.g. c(USD = 18.5)
       fx_modes      = list(),      # named list: cur -> "live" | "date"
       fx_dates      = list()       # named list: cur -> Date
@@ -335,7 +337,7 @@ cashflowPreviewServer <- function(id, shared) {
       listo_para     <<- NULL
       isolate({
         rv$date_from <- .cf_default_from(); rv$date_to <- .cf_default_to()
-        rv$grouping <- "auto"; rv$currency_mode <- "separate"; rv$base_cur <- "MXN"
+        rv$grouping <- "auto"; rv$currency_mode <- "separate"; rv$base_cur <- NULL
         rv$fx_rates <- c(); rv$fx_modes <- list(); rv$fx_dates <- list()
       })
       shinyWidgets::updateAirDateInput(session, "date_range", value = c(isolate(rv$date_from), isolate(rv$date_to)))
@@ -458,7 +460,7 @@ cashflowPreviewServer <- function(id, shared) {
           shiny::updateActionButton(session, "btn_curmode",
                                     label = .cf_txt_moneda(s$currency_mode))
         }
-        if (!is.null(s$base_cur) && nzchar(s$base_cur)) {
+        if (is.character(s$base_cur) && length(s$base_cur) == 1L && moneda_valida(s$base_cur)) {
           rv$base_cur <- s$base_cur
         }
         if (!is.null(s$fx_rates) && length(s$fx_rates)) {
@@ -487,7 +489,7 @@ cashflowPreviewServer <- function(id, shared) {
         format(rv$date_to,   "%Y-%m-%d"),
         rv$grouping,
         rv$currency_mode,
-        rv$base_cur,
+        rv$base_cur %||% "",
         .nvec_to_json(rv$fx_rates),
         .CF_HOY_JS
       ))
@@ -522,20 +524,48 @@ cashflowPreviewServer <- function(id, shared) {
 
     # ── Base currency selector ────────────────────────────────────────────────
 
+    # A base chosen here (or restored); NULL means the client's (Ajustes,
+    # monedas fase 1). Changing it drops the rates typed in this session:
+    # they were against the other base (they used to be applied to the new
+    # one, an EUR/MXN rate used as EUR/USD).
     observeEvent(input$base_cur, {
       b <- input$base_cur
-      if (!is.null(b) && nzchar(b)) rv$base_cur <- b
+      if (is.character(b) && length(b) == 1L && moneda_valida(b) && !identical(b, base_ef())) {
+        rv$base_cur <- b
+        rv$fx_rates <- c()
+      }
     }, ignoreInit = TRUE)
+
+    base_ef <- reactive({
+      b <- rv$base_cur
+      if (is.character(b) && length(b) == 1L && moneda_valida(b)) b
+      else tryCatch(shared$moneda_base_cliente()$moneda, error = function(e) NULL) %||% MONEDA_BASE_OMISION
+    })
+
+    # The rate of each foreign currency and where it comes from (monedas
+    # fase 2, R/fx_tipos.R): typed in this session (rv$fx_rates) or by this
+    # user today (kept on the server, Exportar's too), Banxico's, crossed,
+    # or none. The table converts with these; it used to convert with
+    # rv$fx_rates only, so an untouched field (showing the FIX) counted 1.0.
+    tipos_rv <- reactive({
+      base <- base_ef()
+      esc  <- fx_escritos_de(fx_escritos_leer(cliente()), tryCatch(shared$current_user(), error = function(e) NULL), base)
+      loc  <- rv$fx_rates
+      if (length(loc)) esc[names(loc)] <- as.numeric(loc)
+      f <- fx_fuentes_hoy()
+      fx_tipos(.cf_foreign_curs(shared, base), base, esc, f$fix, f$divisas)
+    })
 
     # ── FX section UI (rendered only in fused / Base mode) ───────────────────
 
     output$fx_section_ui <- renderUI({
       if (rv$currency_mode != "fused") return(NULL)
 
-      all_curs     <- .cf_all_curs(shared)
-      base_choices <- if (length(all_curs)) all_curs else c("MXN","USD")
-      base_sel     <- rv$base_cur %||% "MXN"
-      foreign      <- setdiff(base_choices, base_sel)
+      base_sel     <- base_ef()
+      base_choices <- unique(c(base_sel, .cf_all_curs(shared)))
+      base_choices <- base_choices[moneda_valida(base_choices)]
+      tipos        <- tipos_rv()
+      foreign      <- tipos$moneda
 
       div(
         class = "cf-fx-section d-flex align-items-center flex-wrap gap-3 px-3 py-2",
@@ -553,17 +583,16 @@ cashflowPreviewServer <- function(id, shared) {
         # Per-currency FX rows
         lapply(foreign, function(cur) {
           mode <- rv$fx_modes[[cur]] %||% "live"
-          # rv$fx_rates starts as c() (atomic, not list) so [[key]] on empty vector
-          # throws "subscript out of bounds" — guard with a name-check first
-          rate <- if (cur %in% names(rv$fx_rates)) rv$fx_rates[[cur]]
-                  else .suggest_fx_rate(cur, base_sel)
+          i    <- match(cur, tipos$moneda)
+          rate <- tipos$valor[i]          # NA: no source, the field asks for it
+          org  <- tipos$origen[i]
 
           div(class = "d-flex align-items-center gap-1 cf-fx-row",
             tags$small(cur, style = "color:#5a7596; font-weight:600; min-width:28px;"),
 
             # Live / date toggle button
             # TODO(forecasting-fx): when Forecasting exposes FX series, replace
-            # .suggest_fx_rate() with resolve_fx_rate(cur, base_sel, mode, ref_date)
+            # fx_tipo() (today's rate) with resolve_fx_rate(cur, base_sel, mode, ref_date)
             # where resolve_fx_rate() calls:
             #   mode=="live" & ref_date==today → forecasting_get_estimate(pair, today, type="open")
             #   ref_date < today               → forecasting_get_estimate(pair, ref_date, type="close")
@@ -592,11 +621,15 @@ cashflowPreviewServer <- function(id, shared) {
             numericInput(
               ns(paste0("fx_rate_", tolower(cur))),
               label = NULL,
-              value = round(rate, 4),
+              value = if (is.na(rate)) NA else round(rate, 4),
               min   = 0,
               step  = 0.01,
               width = "88px"
-            )
+            ),
+            # Where the rate comes from (propuesta A): "Banxico · 13 nov",
+            # "Escrito por ti · hoy", "Sin fuente: escríbelo".
+            tags$small(class = paste("cf-fx-origen", if (identical(org, "sin_fuente")) "text-warning" else "text-muted"),
+                       style = "white-space:nowrap;", fx_origen_texto(org, tipos$fecha[i]))
           )
         }),
 
@@ -624,7 +657,7 @@ cashflowPreviewServer <- function(id, shared) {
     # Currencies can change as SAP data loads; register observers for new ones.
 
     available_foreign <- reactive({
-      .cf_foreign_curs(shared, rv$base_cur)
+      .cf_foreign_curs(shared, base_ef())
     })
 
     observe({
@@ -664,6 +697,12 @@ cashflowPreviewServer <- function(id, shared) {
             r <- input[[ paste0("fx_rate_", tolower(cur_), "_blur") ]]
             if (!is.null(r) && !is.na(r) && is.numeric(r) && r > 0) {
               rv$fx_rates[[ cur_ ]] <- r
+              # Kept for the day on the server too (monedas fase 2), so
+              # Exportar and a later session show it as "Escrito por ti". A
+              # failed save is logged: this session still uses the rate.
+              tryCatch(fx_escrito_guardar(cliente(), tryCatch(shared$current_user(), error = function(e) NULL),
+                                          cur_, base_ef(), r),
+                       error = function(e) message("[cashflow_preview] tipo escrito no guardado: ", conditionMessage(e)))
             }
           }, ignoreInit = TRUE)
         })
@@ -690,7 +729,9 @@ cashflowPreviewServer <- function(id, shared) {
 
       tags_df  <- tryCatch(shared$tags_db(),      error = function(e) NULL)
       emp_sel  <- tryCatch(shared$empresa_sel(),   error = function(e) character(0)) %||% character(0)
-      fx_vec   <- rv$fx_rates                      # named numeric; empty c() in Separadas mode
+      # Fused: every rate of tipos_rv() (a currency without one stops the
+      # table, never counts 1.0); by currency: none.
+      fx_vec   <- if (identical(rv$currency_mode, "fused")) fx_tipos_valores(tipos_rv()) else c()
 
       build_cashflow_export_data(
         df            = df_raw,
@@ -700,7 +741,7 @@ cashflowPreviewServer <- function(id, shared) {
         date_to       = rv$date_to,
         grouping      = rv$grouping,
         currency_mode = rv$currency_mode,
-        base_cur      = rv$base_cur,
+        base_cur      = base_ef(),
         fx_rates      = fx_vec
       )
     }) |> debounce(400)
@@ -796,7 +837,7 @@ cashflowPreviewServer <- function(id, shared) {
         date_to       = rv$date_to,
         grouping      = rv$grouping,
         currency_mode = rv$currency_mode,
-        base_cur      = rv$base_cur,
+        base_cur      = base_ef(),
         fx_rates      = rv$fx_rates
       ))
     }, ignoreInit = TRUE)

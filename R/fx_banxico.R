@@ -120,6 +120,100 @@ fx_fix <- function(ahora = Sys.time()) {
   r
 }
 
+# ── Other currencies (monedas fase 2: Exportar and Flujo's preview) ────────
+# Banxico publishes daily, in pesos per unit, the currencies of the SDR
+# basket and a few more. FX_DIVISAS_SERIES is Banxico's own table (checked
+# against the SIE API by the integrator, 2026-11-16, figures of 13/11): it is
+# a rule of the outside world, like the FIX, and this whole file is an
+# exception of tests/test_monedas_guardian.R for that reason. A currency
+# outside it has no source: its rate is typed by hand (R/fx_tipos.R).
+# USD here is SF46405 (the same day's FIX figure), used only to cross two
+# currencies when the base is not the peso; USD/MXN itself is always the FIX.
+# Its own global cache, hd-admin/fx/banxico_divisas.rds (fecha, moneda, serie,
+# valor, obtenido_en), one row per day and currency, only growing: the FIX's
+# cache, in production, is never touched. Same rules as the FIX: one Banxico
+# request an hour per process, fails closed, never invents a figure.
+FX_BANXICO_EN     <- "MXN"     # Banxico quotes every series in pesos
+FX_FIX_MONEDA     <- "USD"     # the FIX is pesos per US dollar
+FX_DIVISAS_SERIES <- c(USD = "SF46405", EUR = "SF46410", GBP = "SF46407",
+                       JPY = "SF46406", CNY = "SF290383", CAD = "SF60632")
+FX_DIVISAS_LLAVE  <- "fx/banxico_divisas.rds"
+
+.schema_fx_divisas <- function() data.frame(fecha = as.Date(character()), moneda = character(), serie = character(),
+                                            valor = numeric(), obtenido_en = character(), stringsAsFactors = FALSE)
+.fx_divisas_estado <- new.env(parent = emptyenv())
+
+.fx_divisas_limpiar <- function(df) {
+  df$fecha <- as.Date(df$fecha); df$valor <- suppressWarnings(as.numeric(df$valor))
+  df[!is.na(df$fecha) & !is.na(df$valor) & df$valor > 0 & df$moneda %in% names(FX_DIVISAS_SERIES), , drop = FALSE]
+}
+
+.fx_divisas_leer <- function() tryCatch(.fx_divisas_limpiar(leer_hd_admin(FX_DIVISAS_LLAVE, .schema_fx_divisas)),
+                                        error = function(e) NULL)
+
+# Asks Banxico for the last 14 days of every series and adds the new rows to
+# the cache. Returns the cache after that, or NULL on any failure. A series
+# that fails (or says "N/E") is just missing; the others still count.
+.fx_divisas_bajar <- function(ahora) {
+  if (!nzchar(Sys.getenv("BANXICO_TOKEN", ""))) return(NULL)
+  hoy <- as.Date(format(ahora, tz = FX_FIX_TZ, "%Y-%m-%d"))
+  obtenido <- format(ahora, tz = "UTC", "%Y-%m-%dT%H:%M:%SZ")
+  partes <- lapply(names(FX_DIVISAS_SERIES), function(m) {
+    s <- FX_DIVISAS_SERIES[[m]]
+    r <- tryCatch(fcs_fetch_banxico(list(metric_id = paste0("fx_", tolower(m)), fetch_params = list(list(serie = s))),
+                                    hoy - 14L, hoy),
+                  error = function(e) NULL)
+    if (is.null(r) || !identical(r$status, "ok") || is.null(r$rows) || !nrow(r$rows)) return(NULL)
+    data.frame(fecha = as.Date(r$rows$fecha), moneda = m, serie = s, valor = suppressWarnings(as.numeric(r$rows$value)),
+               obtenido_en = obtenido, stringsAsFactors = FALSE)
+  })
+  nuevas <- do.call(rbind, partes)
+  if (is.null(nuevas)) return(NULL)
+  nuevas <- .fx_divisas_limpiar(nuevas)
+  nuevas <- nuevas[nuevas$fecha <= hoy, , drop = FALSE]
+  if (!nrow(nuevas)) return(NULL)
+  tryCatch(modificar_hd_admin(FX_DIVISAS_LLAVE, .schema_fx_divisas, function(df) {
+    df$fecha <- as.Date(df$fecha)
+    faltan <- nuevas[!paste(nuevas$fecha, nuevas$moneda) %in% paste(df$fecha, df$moneda), , drop = FALSE]
+    if (!nrow(faltan)) return(df)
+    out <- rbind(df, faltan[, names(df), drop = FALSE])
+    out[order(out$fecha, out$moneda), , drop = FALSE]
+  }), error = function(e) NULL)
+}
+
+.fx_divisas_calcular <- function(ahora) {
+  esperado <- fx_fix_esperado(ahora)
+  cache <- .fx_divisas_leer()
+  if (is.null(cache)) cache <- .schema_fx_divisas()   # unreadable: try Banxico, never invent
+  if (!any(cache$fecha >= esperado)) {
+    ultimo <- .fx_divisas_estado$intento
+    if (is.null(ultimo) || as.numeric(difftime(ahora, ultimo, units = "secs")) >= FX_FIX_REINTENTO_SEG) {
+      .fx_divisas_estado$intento <- ahora
+      bajado <- .fx_divisas_bajar(ahora)
+      if (!is.null(bajado)) cache <- .fx_divisas_limpiar(bajado)
+    }
+  }
+  hoy <- as.Date(format(ahora, tz = FX_FIX_TZ, "%Y-%m-%d"))
+  cache <- cache[cache$fecha <= hoy, c("fecha", "moneda", "valor"), drop = FALSE]
+  vigente <- vapply(seq_len(nrow(cache)), function(i) .fx_dias_habiles(cache$fecha[i], esperado) <= FX_FIX_MAX_DIAS,
+                    logical(1))
+  cache <- cache[vigente, , drop = FALSE]
+  rownames(cache) <- NULL
+  cache[order(cache$fecha, cache$moneda), , drop = FALSE]
+}
+
+# The figures still fresh enough to show (no older than FX_FIX_MAX_DIAS
+# business days): data.frame(fecha, moneda, valor), pesos per unit; empty
+# when there are none. Kept FX_FIX_MEMO_SEG in this process, like fx_fix().
+fx_divisas <- function(ahora = Sys.time()) {
+  m <- .fx_divisas_estado$memo
+  if (!is.null(m) && as.numeric(difftime(ahora, m$cuando, units = "secs")) < FX_FIX_MEMO_SEG &&
+      as.numeric(difftime(ahora, m$cuando, units = "secs")) >= 0) return(m$valor)
+  r <- .fx_divisas_calcular(ahora)
+  .fx_divisas_estado$memo <- list(cuando = ahora, valor = r)
+  r
+}
+
 # ── Approximate amounts, for display only (banxico-fix 3/3, Luis) ──────────
 # A provision quoted in USD and paid in MXN shows its amount converted with
 # today's FIX, marked approximate ("≈"), wherever the converted amount is

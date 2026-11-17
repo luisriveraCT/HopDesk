@@ -1713,5 +1713,16 @@
   "comun.monedas.base.ayuda": "Los reportes y totales se presentan en esta moneda. Las demás aparecen según tus datos.",
   "comun.monedas.base.omision_opcion": "Por omisión ({moneda})",
   "comun.monedas.base.aviso_omision": "Se usa {moneda} por omisión. Elige otra si tus reportes van en otra moneda.",
-  "comun.monedas.base.invalida": "Esa moneda no está en el catálogo; no se guardó nada."
+  "comun.monedas.base.invalida": "Esa moneda no está en el catálogo; no se guardó nada.",
+  "tablas.flujo.fx.titulo": "Moneda base y tipos de cambio",
+  "tablas.flujo.fx.base": "Base",
+  "tablas.flujo.fx.cambiar": "cambiar",
+  "tablas.flujo.fx.quitar": "Quitar lo escrito y volver al de Banxico",
+  "tablas.flujo.fx.nota": "Importes convertidos se marcan con (*) en el reporte.",
+  "tablas.flujo.fx.no_guardado": "No se pudo guardar el tipo escrito; se usa solo en esta exportación.",
+  "tablas.flujo.fx.origen.escrito": "Escrito por ti · hoy",
+  "tablas.flujo.fx.origen.banxico_fix": "Banxico FIX · {fecha}",
+  "tablas.flujo.fx.origen.banxico": "Banxico · {fecha}",
+  "tablas.flujo.fx.origen.cruzado": "Banxico (cruzado) · {fecha}",
+  "tablas.flujo.fx.origen.sin_fuente": "Sin fuente: escríbelo"
 }

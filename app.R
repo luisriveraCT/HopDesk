@@ -56,6 +56,9 @@ source("R/avisos_alertas_module.R")
 # approximate USD amounts. Without this line T15 would not see it, and every
 # caller (each wraps it in tryCatch) would quietly show nothing.
 source("R/fx_banxico.R")
+# The rate of each currency against the base, with its origin (Banxico,
+# crossed, typed by the user today): Flujo's preview and Exportar.
+source("R/fx_tipos.R")
 source("R/panorama_datos.R")
 source("R/panorama_publicar_module.R")
 source("R/panorama_module.R")
