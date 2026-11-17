@@ -1724,5 +1724,7 @@
   "tablas.flujo.fx.origen.banxico_fix": "Banxico FIX · {fecha}",
   "tablas.flujo.fx.origen.banxico": "Banxico · {fecha}",
   "tablas.flujo.fx.origen.cruzado": "Banxico (cruzado) · {fecha}",
-  "tablas.flujo.fx.origen.sin_fuente": "Sin fuente: escríbelo"
+  "tablas.flujo.fx.origen.sin_fuente": "Sin fuente: escríbelo",
+  "requisiciones.ppl.agregar_al_catalogo": "Agrega estos proveedores al Catálogo (módulo Bancos) para incluirlos.",
+  "requisiciones.ppl.banbajio_clasificacion": "BanBajío requiere introducir Clasificación de transacción al cargar el archivo en su plataforma."
 }

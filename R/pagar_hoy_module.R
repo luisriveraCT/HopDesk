@@ -217,6 +217,27 @@ pagarHoyServer <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    # The client's base currency (monedas fase 3, T34): Ajustes generales, or
+    # MONEDA_BASE_OMISION while nobody chose one (or when this shared has no
+    # moneda_base_cliente, as in the test apps). Only here, never global.
+    moneda_base <- reactive(tryCatch(shared$moneda_base_cliente()$moneda, error = function(e) NULL) %||%
+                              MONEDA_BASE_OMISION)
+    # The currency a company's selector shows; its base until it is drawn.
+    moneda_sel <- function(emp) input[[paste0("bal_cur_", emp)]] %||% moneda_base()
+    # Currencies of a company's active bank accounts (Settings → Cuentas de
+    # Empresa), alphabetical. Only from shared$ctas_cuentas (already loaded):
+    # never an S3 read inside a renderUI.
+    monedas_cuentas <- function(emp) {
+      ctas <- tryCatch(if (is.function(shared$ctas_cuentas)) shared$ctas_cuentas(), error = function(e) NULL)
+      if (!is.data.frame(ctas) || !nrow(ctas) || !all(c("Empresa", "Moneda") %in% names(ctas))) return(character())
+      cmap <- tryCatch(shared$company_map(), error = function(e) c())
+      ini  <- c(emp, names(cmap)[unname(cmap) == emp])
+      act  <- if ("activa" %in% names(ctas)) ctas$activa %in% TRUE else rep(TRUE, nrow(ctas))
+      m    <- ctas$Moneda[act & trimws(ctas$Empresa) %in% ini]
+      if (!length(m)) return(character())
+      sort(unique(ppl_moneda_cuenta(m, moneda_base())))
+    }
+
     # Reactive company list — sourced from shared$company_map() so adding a new
     # empresa via the Empresas panel updates the tabs without app restart.
     all_companies_rv <- reactive({
@@ -748,8 +769,11 @@ pagarHoyServer <- function(id, shared) {
       # Currency selector — reactive so new currencies appear the instant invoices arrive
       output[[paste0("cur_sel_", emp)]] <- renderUI({
         s    <- staged()
-        curs <- sort(unique(dplyr::filter(s, Empresa == emp)$Moneda))
-        if (!length(curs)) curs <- c("MXN", "USD")
+        # The base first (it opens there), then the documents' currencies by
+        # how many use each, then those of the company's active bank accounts
+        # (T34: a company with no documents still offers its USD account).
+        curs <- unique(c(monedas_en_datos(dplyr::filter(s, Empresa == emp)$Moneda, moneda_base()),
+                         monedas_cuentas(emp)))
         cur_val <- isolate(input[[paste0("bal_cur_", emp)]])
         sel     <- if (!is.null(cur_val) && cur_val %in% curs) cur_val else curs[1]
         selectInput(ns(paste0("bal_cur_", emp)), NULL,
@@ -759,7 +783,7 @@ pagarHoyServer <- function(id, shared) {
       # Balance calc strip — pending-only so confirmed items don't distort position
       output[[paste0("calc_", emp)]] <- renderUI({
         s_emp   <- active_staged() |> dplyr::filter(Empresa == emp)
-        cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        cur_sel <- moneda_sel(emp)
         bal_val <- saldos_apertura()[[emp]][[cur_sel]] %||% 0
         s_ap    <- s_emp |> dplyr::filter(ledger == "AP", Moneda == cur_sel)
         s_ar    <- s_emp |> dplyr::filter(ledger == "AR", Moneda == cur_sel)
@@ -792,7 +816,7 @@ pagarHoyServer <- function(id, shared) {
       # ── Opening balance: sync numericInput ↔ saldos_apertura ────────────────
       # Observer 1 — currency switch: load stored value for new currency
       observeEvent(input[[paste0("bal_cur_", emp)]], {
-        cur    <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        cur    <- moneda_sel(emp)
         stored <- saldos_apertura()[[emp]][[cur]] %||% 0
         updateNumericInput(session, paste0("bal_", emp), value = stored)
       }, ignoreInit = FALSE)
@@ -801,7 +825,7 @@ pagarHoyServer <- function(id, shared) {
       # Dirty-check: if Observer 1 fired updateNumericInput with the same value
       # that's already stored, skip the write to break the Observer1→2 loop.
       observeEvent(input[[paste0("bal_", emp)]], {
-        cur         <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        cur         <- moneda_sel(emp)
         new_val     <- as.numeric(input[[paste0("bal_", emp)]] %||% 0)
         current_val <- saldos_apertura()[[emp]][[cur]] %||% 0
         if (isTRUE(abs(new_val - current_val) < 0.001)) return()
@@ -824,7 +848,7 @@ pagarHoyServer <- function(id, shared) {
       # ── Legend for color codes ──────────────────────────────────────────────
       output[[paste0("legend_", emp)]] <- renderUI({
         s_emp   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
-        cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        cur_sel <- moneda_sel(emp)
         s_cur   <- s_emp |> dplyr::filter(Moneda == cur_sel)
         if (!nrow(s_cur)) return(NULL)
 
@@ -851,7 +875,7 @@ pagarHoyServer <- function(id, shared) {
       # ── AP section header ────────────────────────────────────────────────────
       output[[paste0("hdr_ap_", emp)]] <- renderUI({
         s_emp   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
-        cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        cur_sel <- moneda_sel(emp)
         s_cur   <- s_emp |> dplyr::filter(Moneda == cur_sel)
         s_pend  <- s_cur |> dplyr::filter(status == "pending")
         s_conf  <- s_cur |> dplyr::filter(status == "confirmed")
@@ -898,7 +922,7 @@ pagarHoyServer <- function(id, shared) {
       # ── AR section header ────────────────────────────────────────────────────
       output[[paste0("hdr_ar_", emp)]] <- renderUI({
         s_emp   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
-        cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        cur_sel <- moneda_sel(emp)
         s_cur   <- s_emp |> dplyr::filter(Moneda == cur_sel)
         s_pend  <- s_cur |> dplyr::filter(status == "pending")
         s_conf  <- s_cur |> dplyr::filter(status == "confirmed")
@@ -933,7 +957,7 @@ pagarHoyServer <- function(id, shared) {
       # to be a coloured row and buttons inside the Proveedor cell.
       ap_datos <- reactive({
         .link_counter()   # reactive dependency — re-renders on link/unlink
-        cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        cur_sel <- moneda_sel(emp)
         s_cur   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP", Moneda == cur_sel)
         if (!nrow(s_cur)) return(.ph_ap_vacia)
 
@@ -999,7 +1023,7 @@ pagarHoyServer <- function(id, shared) {
 
       # ── AR table (hd_table "agenda_cobros") ──────────────────────────────
       ar_datos <- reactive({
-        cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        cur_sel <- moneda_sel(emp)
         s_cur   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR", Moneda == cur_sel)
         if (!nrow(s_cur)) return(.ph_ar_vacia)
         s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
@@ -1091,8 +1115,8 @@ pagarHoyServer <- function(id, shared) {
       # Step 1: user clicks "BanBajío (n)" → show match report modal
       observeEvent(input[[paste0("dl_preview_", emp)]], {
         s_emp   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
-        cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
-        if (!toupper(cur_sel) %in% c("MXN", "USD")) {
+        cur_sel <- moneda_sel(emp)
+        if (!ppl_moneda_soportada(cur_sel)) {
           showNotification(
             tr("tablas.agenda.aviso.moneda_no_soportada", moneda = cur_sel),
             type = "error", duration = 6)
@@ -1174,15 +1198,15 @@ pagarHoyServer <- function(id, shared) {
                 )
               ),
               tags$p(class = "small text-muted",
-                     "Agrega estos proveedores al Catálogo (módulo Bancos) para incluirlos.")
+                     tr("requisiciones.ppl.agregar_al_catalogo"))
             ) else NULL,
 
-            if (toupper(cur_sel) != "MXN" &&
+            if (ppl_requiere_clasificacion(cur_sel) &&
                 !is.null(cuenta_data) && nrow(cuenta_data) > 0 &&
                 any(grepl("(?i)baj.o", cuenta_data$banco, perl = TRUE)))
               tags$div(class = "alert alert-info small mb-2",
                 icon("circle-info"),
-                " BanBajío requiere introducir Clasificación de transacción al cargar el archivo en su plataforma.")
+                " ", tr("requisiciones.ppl.banbajio_clasificacion"))
             else NULL,
 
             if (is.null(cuenta_data) || !nrow(cuenta_data))
@@ -1247,7 +1271,7 @@ pagarHoyServer <- function(id, shared) {
         },
         content = function(file) {
           s_emp   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
-          cur_sel <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+          cur_sel <- moneda_sel(emp)
           s_cur   <- s_emp |> dplyr::filter(Moneda == cur_sel)
           # Every marked row gone since the preview: say so (as Confirmar
           # does) and write no payment -- the file holds only that line, and
@@ -1292,14 +1316,7 @@ pagarHoyServer <- function(id, shared) {
               alias      = alias,
               clabe_dest = clabe_dest,
               banco_dest = banco_dest,
-              medio_pago = {
-                is_bajio <- grepl("^030$", trimws(banco_dest))
-                dplyr::case_when(
-                  toupper(cur_sel) == "USD"            ~ "SPD",
-                  toupper(cur_sel) == "MXN" & is_bajio ~ "BCO",
-                  TRUE                                 ~ "SPI"
-                )
-              },
+              medio_pago = ppl_medio_pago(cur_sel, banco_dest),
               importe    = Importe,
               concepto   = {
                 doc <- trimws(as.character(Documento))
@@ -1336,7 +1353,7 @@ pagarHoyServer <- function(id, shared) {
       # ── Remove AP ──────────────────────────────────────────────────────────
       observeEvent(input[[paste0("remove_ap_", emp)]], {
         s_emp <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
-        cur   <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        cur   <- moneda_sel(emp)
         s_cur <- s_emp |> dplyr::filter(Moneda == cur)
         sel   <- intersect(t_ap$seleccion(), s_cur$id)
         m_ap$propias(sel)
@@ -1484,7 +1501,7 @@ pagarHoyServer <- function(id, shared) {
       # ── Remove AR ──────────────────────────────────────────────────────────
       observeEvent(input[[paste0("remove_ar_", emp)]], {
         s_emp <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
-        cur   <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        cur   <- moneda_sel(emp)
         s_cur <- s_emp |> dplyr::filter(Moneda == cur)
         sel   <- intersect(t_ar$seleccion(), s_cur$id)
         m_ar$propias(sel)
@@ -1602,7 +1619,7 @@ pagarHoyServer <- function(id, shared) {
       observeEvent(input[[paste0("confirm_ap_", emp)]], {
         if (!puede_o_avisa(shared, "can_confirm_payments")) return()
         s_emp <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
-        cur   <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        cur   <- moneda_sel(emp)
         s_cur <- s_emp |> dplyr::filter(Moneda == cur)
         s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
         rows     <- .ph_filas_confirmar(s_sorted, "AP")
@@ -1656,7 +1673,7 @@ pagarHoyServer <- function(id, shared) {
       observeEvent(input[[paste0("do_confirm_ap_", emp)]], {
         if (!puede_o_avisa(shared, "can_confirm_payments")) return()
         s_emp    <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
-        cur      <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        cur      <- moneda_sel(emp)
         s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
         s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
         rows <- .ph_filas_confirmar(s_sorted, "AP", propias = TRUE)
@@ -1986,7 +2003,7 @@ pagarHoyServer <- function(id, shared) {
       observeEvent(input[[paste0("confirm_ar_", emp)]], {
         if (!puede_o_avisa(shared, "can_confirm_payments")) return()
         s_emp    <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
-        cur      <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        cur      <- moneda_sel(emp)
         s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
         s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
         rows  <- .ph_filas_confirmar(s_sorted, "AR")
@@ -2040,7 +2057,7 @@ pagarHoyServer <- function(id, shared) {
       observeEvent(input[[paste0("do_confirm_ar_", emp)]], {
         if (!puede_o_avisa(shared, "can_confirm_payments")) return()
         s_emp    <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
-        cur      <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        cur      <- moneda_sel(emp)
         s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
         s_sorted <- s_cur |> dplyr::arrange(FechaVenc)
         rows <- .ph_filas_confirmar(s_sorted, "AR", propias = TRUE)
@@ -2807,22 +2824,32 @@ pagarHoyServer <- function(id, shared) {
     .descargar_vista    <- reactiveVal(NULL)   # the table's rows
     .descargar_base     <- reactiveVal(NULL)   # the AP rows opened, with their ZIP test
     .descargar_apertura <- reactiveVal(0L)
+    # The base, held in a reactiveVal: it only fires when the value really
+    # changes, so the columns (and the table) are never sent again by a
+    # group-config save that left the base as it was -- not while someone
+    # is choosing rows.
+    .descargar_base_mon <- reactiveVal(isolate(moneda_base()))
+    observe(.descargar_base_mon(moneda_base()))
     t_descargar <- hd_table_server(
       "descargar_t", tabla = "descargar_pagos",
       datos = reactive(.descargar_vista()),
-      columnas = list(
+      columnas = reactive(list(
         col_opcion("zip", "tablas.pagos.zip", opciones = c(
           entra = "tablas.pagos.entra", omitir = "tablas.pagos.omitir", incluir = "tablas.pagos.incluir")),
         col_insignia("motivo", "tablas.pagos.motivo", mapa = list(
           no_match = list(texto = "tablas.pagos.falta_alias", tono = "peligro"),
           no_clabe = list(texto = "tablas.pagos.falta_clabe", tono = "aviso"))),
         col_texto("Empresa", "tablas.pagos.empresa"),
-        col_insignia("Moneda", "tablas.pagos.moneda", mapa = list(
-          MXN = list(texto = "MXN", tono = "info"), USD = list(texto = "USD", tono = "exito"))),
+        # Every catalog currency gets its badge: the base "info", the rest
+        # "exito" (T34; it was MXN info / USD exito, written by hand).
+        col_insignia("Moneda", "tablas.pagos.moneda", mapa = {
+          cods <- monedas_catalogo()
+          stats::setNames(lapply(cods, function(m) list(texto = m, tono = if (identical(m, .descargar_base_mon())) "info" else "exito")), cods)
+        }),
         col_texto("Parte", "tablas.pagos.parte"),
         col_texto("Referencia", "tablas.pagos.referencia", recorte = FALSE),
         col_dinero("Importe", "tablas.pagos.importe", moneda = "Moneda")
-      ),
+      )),
       vacio = "tablas.pagos.vacio"
     )
     # The staged ids marked "Incluir sin cuenta" in this opening, among the
@@ -2970,14 +2997,7 @@ pagarHoyServer <- function(id, shared) {
             ppl_rows <- ann |> dplyr::transmute(
               alias = alias, clabe_dest = clabe_dest,
               banco_dest = banco_dest,
-              medio_pago = {
-                is_bajio <- grepl("^030$", trimws(banco_dest))
-                dplyr::case_when(
-                  toupper(cur) == "USD"            ~ "SPD",
-                  toupper(cur) == "MXN" & is_bajio ~ "BCO",
-                  TRUE                             ~ "SPI"
-                )
-              },
+              medio_pago = ppl_medio_pago(cur, banco_dest),
               importe = Importe,
               concepto = {
                 doc <- trimws(as.character(Documento))
@@ -3055,7 +3075,7 @@ pagarHoyServer <- function(id, shared) {
                 con_i[is.na(con_i)] <- ""
                 ppl_i <- tibble::tibble(
                   alias = "", clabe_dest = "000000000000000000", banco_dest = "",
-                  medio_pago = if (toupper(cur) == "USD") "SPD" else "SPI",
+                  medio_pago = ppl_medio_pago(cur, ""),
                   importe = rows_i$Importe,
                   concepto = substr(ifelse(nzchar(con_i), con_i, doc_i), 1, 75))
                 fname_i <- file.path(tmpdir,
@@ -3248,13 +3268,7 @@ pagarHoyServer <- function(id, shared) {
           ""  # unrecognised — skip
         }
 
-        mon <- toupper(trimws(ct$Moneda %||% "MXN"))
-        mon <- dplyr::case_when(
-          grepl("peso",  mon, ignore.case = TRUE)              ~ "MXN",
-          grepl("d.lar", mon, ignore.case = TRUE, perl = TRUE) ~ "USD",
-          mon %in% CURRENCIES                                   ~ mon,
-          TRUE                                                  ~ "MXN"
-        )
+        mon <- ppl_moneda_cuenta(ct$Moneda, moneda_base())
 
         if (nzchar(emp) && emp %in% all_companies_rv()) {
           key <- paste0(emp, "_", mon)
@@ -3265,8 +3279,11 @@ pagarHoyServer <- function(id, shared) {
       # Write into saldos_apertura
       sa        <- saldos_apertura()
       n_updated <- 0L
+      # The currencies that came out of the accounts (any catalog code, not
+      # only the old short list: a COP account stays COP), alphabetical.
+      monedas_saldos <- sort(unique(sub("^.*_", "", names(saldos_por_cuenta))))
       for (emp in all_companies_rv()) {
-        for (mon in CURRENCIES) {
+        for (mon in monedas_saldos) {
           key <- paste0(emp, "_", mon)
           if (!is.null(saldos_por_cuenta[[key]])) {
             sa[[emp]][[mon]] <- saldos_por_cuenta[[key]]
@@ -3281,7 +3298,7 @@ pagarHoyServer <- function(id, shared) {
 
       # Refresh visible numericInputs
       for (emp in all_companies_rv()) {
-        cur <- input[[paste0("bal_cur_", emp)]] %||% "MXN"
+        cur <- moneda_sel(emp)
         updateNumericInput(session, paste0("bal_", emp),
                            value = sa[[emp]][[cur]] %||% 0)
       }

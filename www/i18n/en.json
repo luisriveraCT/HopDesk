@@ -1724,5 +1724,7 @@
   "tablas.flujo.fx.origen.banxico_fix": "Banxico FIX · {fecha}",
   "tablas.flujo.fx.origen.banxico": "Banxico · {fecha}",
   "tablas.flujo.fx.origen.cruzado": "Banxico (crossed) · {fecha}",
-  "tablas.flujo.fx.origen.sin_fuente": "No source: type it"
+  "tablas.flujo.fx.origen.sin_fuente": "No source: type it",
+  "requisiciones.ppl.agregar_al_catalogo": "Add these suppliers to the Catalog (Bancos module) to include them.",
+  "requisiciones.ppl.banbajio_clasificacion": "BanBajío asks for the Transaction classification when the file is loaded on its platform."
 }

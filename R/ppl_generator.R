@@ -150,3 +150,43 @@ validate_ppl <- function(payments, cuenta_origen) {
 
   list(valid = length(problems) == 0, problems = problems)
 }
+# ── BanBajío's PPL rules on currencies (monedas fase 3, T34) ─────────────────
+# These are the bank's rules, not a choice of the app, so the currency codes
+# are written here (tests/test_monedas_guardian.R lists this file as an
+# exception, with this reason): the PPL layout pays MXN by SPEI (SPI) or as
+# an internal BanBajío transfer (BCO, destination bank 030), and USD by SPID
+# (SPD). Nothing else. R/pagar_hoy_module.R asks these functions.
+PPL_MONEDAS <- c("MXN", "USD")
+
+# TRUE when the PPL file can carry payments in `moneda`.
+ppl_moneda_soportada <- function(moneda) toupper(moneda) %in% PPL_MONEDAS
+
+# BanBajío asks for the "Clasificación de transacción" when the file is
+# loaded on its platform for anything that is not MXN.
+ppl_requiere_clasificacion <- function(moneda) toupper(moneda) != "MXN"
+
+# medio_pago of each row: USD -> SPD (SPID); MXN to a BanBajío account
+# (destination bank 030) -> BCO; anything else -> SPI (SPEI). `moneda` is
+# one value or one per row; `banco_dest`, one per row ("" when unknown).
+ppl_medio_pago <- function(moneda, banco_dest) {
+  is_bajio <- grepl("^030$", trimws(banco_dest))
+  dplyr::case_when(
+    toupper(moneda) == "USD"            ~ "SPD",
+    toupper(moneda) == "MXN" & is_bajio ~ "BCO",
+    TRUE                                ~ "SPI"
+  )
+}
+
+# The currency of a company bank account (ctas_cuentas$Moneda). It holds a
+# code ("MXN" | "USD"), but older rows and BanBajío's own sheets say "Pesos" |
+# "Dólares": a Mexican bank's "peso" is MXN and its "dólar" is USD. A catalog
+# code is kept as is; anything else (or nothing) is the client's base.
+ppl_moneda_cuenta <- function(x, base) {
+  mon <- toupper(trimws(x %||% base))
+  dplyr::case_when(
+    grepl("peso",  mon, ignore.case = TRUE)              ~ "MXN",
+    grepl("d.lar", mon, ignore.case = TRUE, perl = TRUE) ~ "USD",
+    moneda_valida(mon)                                    ~ mon,
+    TRUE                                                  ~ base
+  )
+}
