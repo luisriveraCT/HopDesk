@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reporte Financiero &mdash; Networks Group</title>
+<style>
+    @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+    *{box-sizing:border-box;margin:0;padding:0;}
+    html{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    body{font-family:"Inter",system-ui,sans-serif;font-size:11px;color:#1a1a2e;
+         background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;
+         margin:0;padding:0;}
+    .page{width:8.5in;min-height:11in;background:#fff;padding:0;margin:0;
+          break-after:page;
+          display:flex;flex-direction:column;}
+    .page:last-child{break-after:avoid;}
+    .page-body{flex:1;}
+    /* ── Header ── */
+    .rpt-header{
+      background:linear-gradient(120deg,#0d1b3e 0%,#1b3d7a 55%,#163368 100%);
+      -webkit-print-color-adjust:exact;print-color-adjust:exact;
+      color:#fff;padding:26px 40px 22px;
+      display:flex;justify-content:space-between;align-items:center;
+      border-bottom:3px solid #2a5298;
+      break-after:avoid;break-inside:avoid;}
+    .rpt-title{font-size:14px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .rpt-sub{font-size:10px;opacity:0.6;margin-top:4px;letter-spacing:0.2px;}
+    .rpt-meta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;}
+    .rpt-brand{display:flex;align-items:center;gap:8px;}
+    .rpt-logo{width:32px;height:32px;border-radius:6px;background:rgba(255,255,255,0.15);
+      border:1.5px solid rgba(255,255,255,0.3);display:flex;align-items:center;
+      justify-content:center;font-size:14px;font-weight:800;color:#fff;
+      letter-spacing:-0.5px;flex-shrink:0;}
+    .rpt-brand-text{text-align:right;}
+    .rpt-brand-label{font-size:7.5px;opacity:0.5;text-transform:uppercase;
+      letter-spacing:1.2px;}
+    .rpt-brand-name{font-size:11px;font-weight:700;letter-spacing:0.3px;}
+    .rpt-gen{font-size:8px;opacity:0.45;margin-top:2px;}
+    /* ── Section ── */
+    .section{padding:14px 40px 16px;}
+    .sec-title{font-size:9px;font-weight:700;letter-spacing:1.4px;
+      text-transform:uppercase;color:#6b7280;
+      border-bottom:1px solid #e5e7eb;padding-bottom:6px;margin-bottom:12px;
+      break-after:avoid;}
+    /* ── Global totals ── */
+    .totals-row{display:flex;gap:14px;margin-bottom:16px;}
+    .tot-box{flex:1;border-radius:12px;padding:20px 24px 16px;color:#fff;
+      position:relative;overflow:hidden;
+      display:flex;flex-direction:column;gap:0;min-height:140px;}
+    .tot-box.mxn{background:linear-gradient(135deg,#0d1b3e 0%,#1e4080 100%);
+      -webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .tot-box.usd{background:linear-gradient(135deg,#064e3b 0%,#0d9f8a 100%);
+      -webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .tot-top-row{display:flex;justify-content:space-between;align-items:flex-start;
+      margin-bottom:4px;}
+    .tot-left{}
+    .tot-delta{align-self:flex-start;margin-top:2px;}
+    .tot-label{font-size:8.5px;opacity:0.65;text-transform:uppercase;
+      letter-spacing:1px;margin-bottom:5px;}
+    .tot-amount{font-size:28px;font-weight:700;letter-spacing:-0.5px;
+      font-variant-numeric:tabular-nums;}
+    .tot-spark{opacity:0.9;margin-top:12px;line-height:0;}
+    .tot-breakdown{margin-top:8px;border-top:1px solid rgba(255,255,255,0.12);
+      padding-top:8px;}
+    /* ── Account cards ── */
+    .cards-grid{display:grid;gap:10px;margin-bottom:18px;}
+    .cards-3col{grid-template-columns:repeat(3,1fr);}
+    .cards-4col{grid-template-columns:repeat(4,1fr);}
+    .acct-card{border:1px solid #dde4f0;border-radius:10px;padding:10px 12px 9px;
+      box-shadow:0 2px 8px rgba(30,58,95,0.08);display:flex;flex-direction:column;}
+    .acct-top{display:flex;justify-content:space-between;align-items:center;
+      margin-bottom:5px;}
+    .acct-emp{font-size:9px;font-weight:700;color:#374151;
+      text-transform:uppercase;letter-spacing:0.5px;}
+    .acct-badge{font-size:7.5px;font-weight:600;padding:1px 7px;border-radius:20px;}
+    .acct-bal{font-size:13.5px;font-weight:700;margin-bottom:1px;
+      font-variant-numeric:tabular-nums;}
+    .acct-alias{font-size:7.5px;color:#9ca3af;margin-bottom:3px;}
+    .acct-bank{font-size:8px;color:#94a3b8;margin-bottom:6px;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .acct-stats{display:flex;gap:10px;margin-top:6px;
+      border-top:1px solid #e4eaf4;padding-top:6px;}
+    .acct-stat{flex:1;}
+    .acct-stat-lbl{font-size:7px;color:#9ca3af;text-transform:uppercase;
+      letter-spacing:0.4px;display:block;}
+    .acct-stat-val{font-size:8.5px;font-weight:600;font-variant-numeric:tabular-nums;}
+    .acct-spark{line-height:0;margin-top:4px;flex:1;}
+    /* ── Group split: two-column MXN / USD tables ── */
+    .group-split{display:flex;gap:12px;align-items:flex-start;}
+    .group-split-col{flex:1;border:1px solid #e8ecf4;border-radius:10px;overflow:hidden;
+      box-shadow:0 1px 6px rgba(30,58,95,0.05);}
+    .group-col-hdr{font-size:8.5px;font-weight:700;letter-spacing:1px;
+      text-transform:uppercase;padding:6px 12px;
+      -webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .group-col-mxn{background:#e2eafc;color:#1e3a5f;}
+    .group-col-usd{background:#d9f0e8;color:#0d6b5e;}
+    .ctx-badge{font-size:8px;font-weight:700;color:#374151;
+      background:#f1f5f9;padding:1px 5px;border-radius:3px;}
+    /* ── Group split table: fixed layout so IMPORTE column is never clipped ── */
+    .group-split-col .mov-table{table-layout:fixed;}
+    .group-split-col .mov-table th,
+    .group-split-col .mov-table td{padding:5px 9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .group-split-col .mov-date{width:12%;}
+    .group-split-col .mov-desc{width:30%;max-width:none;}
+    .group-split-col .mov-amt{width:38%;text-overflow:clip;overflow:visible;}
+    /* ── Per-account movement blocks (page 2) ── */
+    .mov-block{margin-bottom:14px;break-inside:avoid;page-break-inside:avoid;}
+    .mov-block-inner{display:flex;gap:0;border:1px solid #e8ecf4;border-radius:10px;
+      overflow:hidden;box-shadow:0 1px 4px rgba(30,58,95,0.05);}
+    .mov-card{width:152px;flex-shrink:0;padding:12px 12px 10px;display:flex;
+      flex-direction:column;border-right:1px solid #e8ecf4;
+      -webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .mov-card-top{display:flex;align-items:center;justify-content:space-between;
+      margin-bottom:4px;}
+    .mov-emp{font-size:9px;font-weight:700;color:#1e293b;text-transform:uppercase;
+      letter-spacing:0.4px;}
+    .mov-card-alias{font-size:8px;color:#94a3b8;margin-bottom:6px;}
+    .mov-card-bal{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;
+      margin-bottom:4px;}
+    .mov-card-spark{line-height:0;margin:6px 0;overflow:hidden;}
+    .mov-card-footer{border-top:1px solid #e4eaf4;padding-top:6px;
+      display:flex;flex-direction:column;gap:4px;margin-top:auto;}
+    .mov-card-stat{display:flex;justify-content:space-between;align-items:center;}
+    .mov-card-lbl{font-size:7px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.4px;}
+    .mov-card-val{font-size:8.5px;font-weight:600;font-variant-numeric:tabular-nums;}
+    .mov-block-tbl{flex:1;overflow:hidden;}
+    .badge-mono{font-size:7.5px;font-weight:600;padding:1px 6px;border-radius:20px;
+      white-space:nowrap;}
+    .mov-table{width:100%;border-collapse:collapse;font-size:9.5px;}
+    .mov-table th{text-align:left;font-weight:600;color:#6b7280;font-size:8px;
+      text-transform:uppercase;letter-spacing:0.5px;padding:5px 12px;
+      background:#f9fafb;border-bottom:1px solid #e5e7eb;}
+    .mov-table td{padding:5.5px 12px;border-bottom:1px solid #f3f4f6;color:#374151;}
+    .mov-table tr:last-child td{border-bottom:none;}
+    .mov-table tr:nth-child(even) td{background:#fafbfd;}
+    .mov-date{color:#6b7280;white-space:nowrap;width:44px;}
+    .mov-desc{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .mov-tipo{color:#94a3b8;font-size:8px;text-transform:capitalize;width:68px;}
+    .mov-dir{width:40px;}
+    .dir-badge{font-size:7.5px;font-weight:700;padding:1px 5px;border-radius:3px;
+      letter-spacing:0.3px;}
+    .mov-amt{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;
+      white-space:nowrap;}
+    /* ── Footer ── */
+    .rpt-footer{background:#f8fafc;border-top:1px solid #e5e7eb;
+      padding:8px 40px;display:flex;justify-content:space-between;align-items:center;
+      font-size:8px;color:#9ca3af;margin-top:auto;}
+    @page{size:8.5in 11in;margin:0;}
+    @media print{
+      .page{break-after:page;}
+      .page:last-child{break-after:avoid;}
+    }
+    @media screen{
+      html,body{background:#cdd3e0;}
+      body{display:flex;flex-direction:column;align-items:center;padding:24px 0 40px;}
+      .page{box-shadow:0 3px 20px rgba(0,0,0,0.22);margin-bottom:20px;zoom:0.9;}
+    }
+    /* ── Cash Flow Pulse (pages 3-4) ── */
+    .pulse-section{padding:10px 40px 12px;}
+    .pulse-currency-block{margin-bottom:12px;}
+    .pulse-currency-label{font-size:8.5px;font-weight:700;letter-spacing:1px;
+      text-transform:uppercase;padding:2px 10px;border-radius:4px;
+      display:inline-block;margin-bottom:8px;
+      -webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .pulse-mxn-label{background:#dbeafe;color:#1e3a5f;}
+    .pulse-usd-label{background:#d1fae5;color:#065f46;}
+    .pulse-kpi-row{display:flex;gap:8px;margin-bottom:8px;}
+    .pulse-kpi{flex:1;border-radius:8px;padding:9px 13px;color:#fff;
+      -webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .pulse-kpi-lbl{font-size:7px;font-weight:600;text-transform:uppercase;
+      letter-spacing:0.8px;opacity:0.75;margin-bottom:3px;}
+    .pulse-kpi-val{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;}
+    .pulse-kpi-in{background:linear-gradient(135deg,#064e3b 0%,#0d9f8a 100%);}
+    .pulse-kpi-out{background:linear-gradient(135deg,#78350f 0%,#b45309 100%);}
+    .pulse-kpi-net-pos{background:linear-gradient(135deg,#0d1b3e 0%,#1e4080 100%);}
+    .pulse-kpi-net-neg{background:linear-gradient(135deg,#7f1d1d 0%,#dc2626 100%);}
+    .pulse-chart-wrap{border:1px solid #e8ecf4;border-radius:8px;padding:8px 10px;
+      margin-bottom:8px;background:#fafbff;}
+    .pulse-bottom{display:flex;gap:8px;}
+    .pulse-panel{flex:1;border:1px solid #e8ecf4;border-radius:8px;overflow:hidden;}
+    .pulse-panel-hdr{font-size:7px;font-weight:700;letter-spacing:0.8px;
+      text-transform:uppercase;padding:4px 10px;
+      -webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .pulse-panel-in-hdr{background:#d1fae5;color:#065f46;}
+    .pulse-panel-out-hdr{background:#fee2e2;color:#7f1d1d;}
+    .pulse-item{display:flex;align-items:center;padding:4px 10px;
+      border-bottom:1px solid #f3f4f6;}
+    .pulse-item:last-child{border-bottom:none;}
+    .pulse-item-name{flex:1;font-size:8px;font-weight:600;color:#1e293b;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .pulse-item-amt{font-size:8.5px;font-weight:700;font-variant-numeric:tabular-nums;
+      margin-left:6px;white-space:nowrap;}
+    .pulse-badge{font-size:6px;font-weight:700;padding:1px 4px;border-radius:3px;
+      margin-left:4px;white-space:nowrap;
+      -webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .pulse-badge-urg{background:#dc2626;color:#fff;}
+    .pulse-badge-imp{background:#d97706;color:#fff;}
+    .pulse-badge-both{background:#7c3aed;color:#fff;}
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── HEADER ─────────────────────────────────────────────────────── -->
+  <div class="rpt-header">
+    <div>
+      <div class="rpt-title">Financial Summary Report &mdash; 01 Nov 2026 — 17 Nov 2026</div>
+      <div class="rpt-sub">01 Nov 2026 — 17 Nov 2026</div>
+    </div>
+    <div class="rpt-meta">
+      <div class="rpt-brand">
+        <div class="rpt-brand-text">
+          <div class="rpt-brand-label">Company</div>
+          <div class="rpt-brand-name">NG Finances</div>
+        </div>
+        <div class="rpt-logo">N</div>
+      </div>
+      <div class="rpt-gen">Generado: <GEN> &nbsp;&bull;&nbsp; CONFIDENCIAL</div>
+    </div>
+  </div>
+
+  <div class="page-body">
+  <div class="section">
+
+    <!-- ── POSICIÓN GLOBAL ─────────────────────────────────────────── -->
+    <div class="sec-title" style="margin-top:4px;">Posici&oacute;n Global</div>
+    <div class="totals-row">
+      <div class="tot-box mxn">
+        <div class="tot-top-row">
+          <div class="tot-left">
+            <div class="tot-label">Total Balance MXN</div>
+            <div class="tot-amount">$282,000.00</div>
+          </div>
+          <div class="tot-delta"><span style="font-size:9px;font-weight:600;color:#6ee7b7;
+      background:rgba(255,255,255,0.12);border-radius:20px;
+      padding:2px 8px;white-space:nowrap;">&#x2197; +17.5%</span></div>
+        </div>
+        <div class="tot-spark"><svg width="220" height="44" viewBox="0 0 220 44" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="12" width="10" height="32" fill="#7eb3f5" opacity="0.39" rx="2"/><rect x="14" y="4" width="10" height="40" fill="#7eb3f5" opacity="0.43" rx="2"/><rect x="26" y="4" width="10" height="40" fill="#7eb3f5" opacity="0.46" rx="2"/><rect x="38" y="4" width="10" height="40" fill="#7eb3f5" opacity="0.50" rx="2"/><rect x="50" y="4" width="10" height="40" fill="#7eb3f5" opacity="0.54" rx="2"/><rect x="62" y="4" width="10" height="40" fill="#7eb3f5" opacity="0.58" rx="2"/><rect x="74" y="4" width="10" height="40" fill="#7eb3f5" opacity="0.62" rx="2"/><rect x="86" y="4" width="10" height="40" fill="#7eb3f5" opacity="0.66" rx="2"/><rect x="98" y="4" width="10" height="40" fill="#7eb3f5" opacity="0.69" rx="2"/><rect x="110" y="4" width="10" height="40" fill="#7eb3f5" opacity="0.73" rx="2"/><rect x="122" y="4" width="10" height="40" fill="#7eb3f5" opacity="0.77" rx="2"/><rect x="134" y="4" width="10" height="40" fill="#7eb3f5" opacity="0.81" rx="2"/><rect x="146" y="4" width="10" height="40" fill="#7eb3f5" opacity="0.85" rx="2"/><rect x="158" y="4" width="10" height="40" fill="#7eb3f5" opacity="0.89" rx="2"/><rect x="170" y="4" width="10" height="40" fill="#7eb3f5" opacity="0.92" rx="2"/><rect x="182" y="4" width="10" height="40" fill="#7eb3f5" opacity="0.96" rx="2"/><rect x="194" y="4" width="10" height="40" fill="#7eb3f5" opacity="1.00" rx="2"/></svg></div>
+        <div class="tot-breakdown"><div style="display:flex;justify-content:space-between;
+          align-items:center;margin-bottom:2px;">
+          <span style="font-size:7.5px;opacity:0.7;overflow:hidden;
+            text-overflow:ellipsis;white-space:nowrap;max-width:120px;">NG Operativa</span>
+          <span style="font-size:8px;font-weight:600;color:rgba(255,255,255,0.75);
+            font-variant-numeric:tabular-nums;white-space:nowrap;margin-left:8px;">$189,500.00</span>
+        </div><div style="display:flex;justify-content:space-between;
+          align-items:center;margin-bottom:2px;">
+          <span style="font-size:7.5px;opacity:0.7;overflow:hidden;
+            text-overflow:ellipsis;white-space:nowrap;max-width:120px;">NRS Pesos</span>
+          <span style="font-size:8px;font-weight:600;color:rgba(255,255,255,0.75);
+            font-variant-numeric:tabular-nums;white-space:nowrap;margin-left:8px;">$92,500.00</span>
+        </div></div>
+      </div>
+      <div class="tot-box usd">
+        <div class="tot-top-row">
+          <div class="tot-left">
+            <div class="tot-label">Total Balance USD</div>
+            <div class="tot-amount">$15,900.00</div>
+          </div>
+          <div class="tot-delta"><span style="font-size:9px;font-weight:600;color:#fca5a5;
+      background:rgba(255,255,255,0.12);border-radius:20px;
+      padding:2px 8px;white-space:nowrap;">&#x2198; -14.1%</span></div>
+        </div>
+        <div class="tot-spark"><svg width="220" height="44" viewBox="0 0 220 44" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="4" width="10" height="40" fill="#6ee7c4" opacity="0.39" rx="2"/><rect x="14" y="10" width="10" height="34" fill="#6ee7c4" opacity="0.43" rx="2"/><rect x="26" y="10" width="10" height="34" fill="#6ee7c4" opacity="0.46" rx="2"/><rect x="38" y="10" width="10" height="34" fill="#6ee7c4" opacity="0.50" rx="2"/><rect x="50" y="10" width="10" height="34" fill="#6ee7c4" opacity="0.54" rx="2"/><rect x="62" y="10" width="10" height="34" fill="#6ee7c4" opacity="0.58" rx="2"/><rect x="74" y="10" width="10" height="34" fill="#6ee7c4" opacity="0.62" rx="2"/><rect x="86" y="10" width="10" height="34" fill="#6ee7c4" opacity="0.66" rx="2"/><rect x="98" y="10" width="10" height="34" fill="#6ee7c4" opacity="0.69" rx="2"/><rect x="110" y="10" width="10" height="34" fill="#6ee7c4" opacity="0.73" rx="2"/><rect x="122" y="10" width="10" height="34" fill="#6ee7c4" opacity="0.77" rx="2"/><rect x="134" y="10" width="10" height="34" fill="#6ee7c4" opacity="0.81" rx="2"/><rect x="146" y="10" width="10" height="34" fill="#6ee7c4" opacity="0.85" rx="2"/><rect x="158" y="10" width="10" height="34" fill="#6ee7c4" opacity="0.89" rx="2"/><rect x="170" y="10" width="10" height="34" fill="#6ee7c4" opacity="0.92" rx="2"/><rect x="182" y="10" width="10" height="34" fill="#6ee7c4" opacity="0.96" rx="2"/><rect x="194" y="10" width="10" height="34" fill="#6ee7c4" opacity="1.00" rx="2"/></svg></div>
+        <div class="tot-breakdown"><div style="display:flex;justify-content:space-between;
+          align-items:center;margin-bottom:2px;">
+          <span style="font-size:7.5px;opacity:0.7;overflow:hidden;
+            text-overflow:ellipsis;white-space:nowrap;max-width:120px;">NG Dólares</span>
+          <span style="font-size:8px;font-weight:600;color:rgba(255,255,255,0.75);
+            font-variant-numeric:tabular-nums;white-space:nowrap;margin-left:8px;">$18,200.00</span>
+        </div><div style="display:flex;justify-content:space-between;
+          align-items:center;margin-bottom:2px;">
+          <span style="font-size:7.5px;opacity:0.7;overflow:hidden;
+            text-overflow:ellipsis;white-space:nowrap;max-width:120px;">NRS USD</span>
+          <span style="font-size:8px;font-weight:600;color:#fca5a5;
+            font-variant-numeric:tabular-nums;white-space:nowrap;margin-left:8px;">-$2,300.00</span>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- ── SALDOS POR CUENTA ───────────────────────────────────────── -->
+    <div class="sec-title">Saldos por Cuenta</div>
+    <div class="cards-grid cards-3col">
+    <div class="acct-card" style="border-left:4px solid #1e3a5f;background:linear-gradient(160deg,#e2eafc 0%,#eef3ff 35%,#f8faff 100%);">
+      <div class="acct-top">
+        <span class="acct-emp">NG</span>
+        <span class="acct-badge" style="background:#dbeafe;color:#1e40af;">MXN</span>
+      </div>
+      <div class="acct-bal" style="color:#1e3a5f;">$189,500.00</div>
+      <div class="acct-alias">NG Operativa</div>
+      <div class="acct-bank">BanBajío — NG Operativa — MXN</div>
+      <div class="acct-spark"><svg width="130" height="36" viewBox="0 0 130 36" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="g<ID>" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%%" stop-color="#1e3a5f" stop-opacity="0.18"/>
+            <stop offset="100%%" stop-color="#1e3a5f" stop-opacity="0.01"/>
+          </linearGradient>
+        </defs>
+        <polygon fill="url(#g<ID>)" points="0,36 0,30 8.1,4 16.2,4 24.4,4 32.5,4 40.6,4 48.8,4 56.9,4 65,4 73.1,4 81.2,4 89.4,4 97.5,4 105.6,4 113.8,4 121.9,4 130,4 130,36"/>
+        <polyline fill="none" stroke="#1e3a5f" stroke-width="1.6" points="0,30 8.1,4 16.2,4 24.4,4 32.5,4 40.6,4 48.8,4 56.9,4 65,4 73.1,4 81.2,4 89.4,4 97.5,4 105.6,4 113.8,4 121.9,4 130,4"/>
+        <circle cx="130.0" cy="4.0" r="2.5" fill="#1e3a5f"/>
+      </svg></div>
+      <div class="acct-stats">
+        <div class="acct-stat">
+          <span class="acct-stat-lbl">Ingresos</span>
+          <span class="acct-stat-val" style="color:#059669;">+$54,000.00</span>
+        </div>
+        <div class="acct-stat">
+          <span class="acct-stat-lbl">Egresos</span>
+          <span class="acct-stat-val" style="color:#dc2626;">-$14,500.00</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="acct-card" style="border-left:4px solid #1e3a5f;background:linear-gradient(160deg,#e2eafc 0%,#eef3ff 35%,#f8faff 100%);">
+      <div class="acct-top">
+        <span class="acct-emp">NRS</span>
+        <span class="acct-badge" style="background:#dbeafe;color:#1e40af;">MXN</span>
+      </div>
+      <div class="acct-bal" style="color:#1e3a5f;">$92,500.00</div>
+      <div class="acct-alias">NRS Pesos</div>
+      <div class="acct-bank">BBVA — NRS Pesos — MXN</div>
+      <div class="acct-spark"><svg width="130" height="36" viewBox="0 0 130 36" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="g<ID>" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%%" stop-color="#1e3a5f" stop-opacity="0.18"/>
+            <stop offset="100%%" stop-color="#1e3a5f" stop-opacity="0.01"/>
+          </linearGradient>
+        </defs>
+        <polygon fill="url(#g<ID>)" points="0,36 0,30 8.1,30 16.2,4 24.4,4 32.5,4 40.6,4 48.8,4 56.9,4 65,4 73.1,4 81.2,4 89.4,4 97.5,4 105.6,4 113.8,4 121.9,4 130,4 130,36"/>
+        <polyline fill="none" stroke="#1e3a5f" stroke-width="1.6" points="0,30 8.1,30 16.2,4 24.4,4 32.5,4 40.6,4 48.8,4 56.9,4 65,4 73.1,4 81.2,4 89.4,4 97.5,4 105.6,4 113.8,4 121.9,4 130,4"/>
+        <circle cx="130.0" cy="4.0" r="2.5" fill="#1e3a5f"/>
+      </svg></div>
+      <div class="acct-stats">
+        <div class="acct-stat">
+          <span class="acct-stat-lbl">Ingresos</span>
+          <span class="acct-stat-val" style="color:#059669;">+$7,000.00</span>
+        </div>
+        <div class="acct-stat">
+          <span class="acct-stat-lbl">Egresos</span>
+          <span class="acct-stat-val" style="color:#dc2626;">-$4,500.00</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="acct-card" style="border-left:4px solid #0d6b5e;background:linear-gradient(160deg,#d9f0e8 0%,#e8f7f2 35%,#f4fdf9 100%);">
+      <div class="acct-top">
+        <span class="acct-emp">NG</span>
+        <span class="acct-badge" style="background:#d1fae5;color:#065f46;">USD</span>
+      </div>
+      <div class="acct-bal" style="color:#0d6b5e;">$18,200.00</div>
+      <div class="acct-alias">NG Dólares</div>
+      <div class="acct-bank">BanBajío — NG Dólares — USD</div>
+      <div class="acct-spark"><svg width="130" height="36" viewBox="0 0 130 36" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="g<ID>" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%%" stop-color="#0d6b5e" stop-opacity="0.18"/>
+            <stop offset="100%%" stop-color="#0d6b5e" stop-opacity="0.01"/>
+          </linearGradient>
+        </defs>
+        <polygon fill="url(#g<ID>)" points="0,36 0,4 8.1,30 16.2,30 24.4,19.6 32.5,19.6 40.6,19.6 48.8,19.6 56.9,19.6 65,19.6 73.1,19.6 81.2,19.6 89.4,19.6 97.5,19.6 105.6,19.6 113.8,19.6 121.9,19.6 130,19.6 130,36"/>
+        <polyline fill="none" stroke="#0d6b5e" stroke-width="1.6" points="0,4 8.1,30 16.2,30 24.4,19.6 32.5,19.6 40.6,19.6 48.8,19.6 56.9,19.6 65,19.6 73.1,19.6 81.2,19.6 89.4,19.6 97.5,19.6 105.6,19.6 113.8,19.6 121.9,19.6 130,19.6"/>
+        <circle cx="130.0" cy="19.6" r="2.5" fill="#0d6b5e"/>
+      </svg></div>
+      <div class="acct-stats">
+        <div class="acct-stat">
+          <span class="acct-stat-lbl">Ingresos</span>
+          <span class="acct-stat-val" style="color:#059669;">+$1,200.00</span>
+        </div>
+        <div class="acct-stat">
+          <span class="acct-stat-lbl">Egresos</span>
+          <span class="acct-stat-val" style="color:#dc2626;">-$3,000.00</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="acct-card" style="border-left:4px solid #dc2626;background:linear-gradient(160deg,#d9f0e8 0%,#e8f7f2 35%,#f4fdf9 100%);">
+      <div class="acct-top">
+        <span class="acct-emp">NRS</span>
+        <span class="acct-badge" style="background:#d1fae5;color:#065f46;">USD</span>
+      </div>
+      <div class="acct-bal" style="color:#dc2626;">-$2,300.00</div>
+      <div class="acct-alias">NRS USD</div>
+      <div class="acct-bank">BBVA — NRS USD — USD</div>
+      <div class="acct-spark"><svg width="130" height="36" viewBox="0 0 130 36" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="g<ID>" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%%" stop-color="#dc2626" stop-opacity="0.18"/>
+            <stop offset="100%%" stop-color="#dc2626" stop-opacity="0.01"/>
+          </linearGradient>
+        </defs>
+        <polygon fill="url(#g<ID>)" points="0,36 0,4 8.1,4 16.2,4 24.4,30 32.5,30 40.6,30 48.8,30 56.9,30 65,30 73.1,30 81.2,30 89.4,30 97.5,30 105.6,30 113.8,30 121.9,30 130,30 130,36"/>
+        <polyline fill="none" stroke="#dc2626" stroke-width="1.6" points="0,4 8.1,4 16.2,4 24.4,30 32.5,30 40.6,30 48.8,30 56.9,30 65,30 73.1,30 81.2,30 89.4,30 97.5,30 105.6,30 113.8,30 121.9,30 130,30"/>
+        <circle cx="130.0" cy="30.0" r="2.5" fill="#dc2626"/>
+      </svg></div>
+      <div class="acct-stats">
+        <div class="acct-stat">
+          <span class="acct-stat-lbl">Ingresos</span>
+          <span class="acct-stat-val" style="color:#059669;">+$0.00</span>
+        </div>
+        <div class="acct-stat">
+          <span class="acct-stat-lbl">Egresos</span>
+          <span class="acct-stat-val" style="color:#dc2626;">-$800.00</span>
+        </div>
+      </div>
+    </div></div>
+
+    <!-- ── TOP MOVIMIENTOS DEL GRUPO ──────────────────────────────── -->
+    
+    <div class="sec-title">Top Movimientos del Grupo &mdash; 01 Nov 2026 — 17 Nov 2026</div>
+    <div class="group-split">
+    <div class="group-split-col">
+      <div class="group-col-hdr group-col-mxn">MXN</div>
+      <table class="mov-table">
+        <thead>
+          <tr>
+            <th>Fecha</th><th>Descripci&oacute;n</th><th>Cuenta</th>
+            <th style="text-align:right">Importe</th>
+          </tr>
+        </thead>
+        <tbody>
+            <tr>
+              <td class="mov-date">02/11</td>
+              <td class="mov-desc">Cliente Grande SA de CV</td>
+              <td><span class="ctx-badge">NG</span></td>
+              <td class="mov-amt" style="color:#059669;">+$54,000.00</td>
+            </tr>
+
+            <tr>
+              <td class="mov-date">01/11</td>
+              <td class="mov-desc">Proveedor Uno</td>
+              <td><span class="ctx-badge">NG</span></td>
+              <td class="mov-amt" style="color:#dc2626;">-$12,000.00</td>
+            </tr>
+
+            <tr>
+              <td class="mov-date">03/11</td>
+              <td class="mov-desc">Traspaso entre cuentas</td>
+              <td><span class="ctx-badge">NRS</span></td>
+              <td class="mov-amt" style="color:#059669;">+$7,000.00</td>
+            </tr>
+
+            <tr>
+              <td class="mov-date">03/11</td>
+              <td class="mov-desc">Nómina</td>
+              <td><span class="ctx-badge">NRS</span></td>
+              <td class="mov-amt" style="color:#dc2626;">-$4,500.00</td>
+            </tr></tbody>
+      </table>
+    </div>
+    <div class="group-split-col">
+      <div class="group-col-hdr group-col-usd">USD</div>
+      <table class="mov-table">
+        <thead>
+          <tr>
+            <th>Fecha</th><th>Descripci&oacute;n</th><th>Cuenta</th>
+            <th style="text-align:right">Importe</th>
+          </tr>
+        </thead>
+        <tbody>
+            <tr>
+              <td class="mov-date">02/11</td>
+              <td class="mov-desc">Vendor USA</td>
+              <td><span class="ctx-badge">NG</span></td>
+              <td class="mov-amt" style="color:#dc2626;">-$3,000.00</td>
+            </tr>
+
+            <tr>
+              <td class="mov-date">04/11</td>
+              <td class="mov-desc">US Client</td>
+              <td><span class="ctx-badge">NG</span></td>
+              <td class="mov-amt" style="color:#059669;">+$1,200.00</td>
+            </tr>
+
+            <tr>
+              <td class="mov-date">04/11</td>
+              <td class="mov-desc">Tienda</td>
+              <td><span class="ctx-badge">NRS</span></td>
+              <td class="mov-amt" style="color:#dc2626;">-$800.00</td>
+            </tr></tbody>
+      </table>
+    </div>
+    </div>
+
+  </div>
+  </div>
+
+  <div class="rpt-footer">
+    <span>Networks Group &mdash; Reporte Financiero</span>
+    <span><GEN></span>
+    <span>P&aacute;g. 1 &mdash; CONFIDENCIAL</span>
+  </div>
+</div>
+
+
+<div class="page">
+  <div class="rpt-header">
+    <div>
+      <div class="rpt-title">Financial Summary Report &mdash; 01 Nov 2026 — 17 Nov 2026</div>
+      <div class="rpt-sub">01 Nov 2026 — 17 Nov 2026</div>
+    </div>
+    <div class="rpt-meta">
+      <div class="rpt-brand">
+        <div class="rpt-brand-text">
+          <div class="rpt-brand-label">Company</div>
+          <div class="rpt-brand-name">NG Finances</div>
+        </div>
+        <div class="rpt-logo">N</div>
+      </div>
+      <div class="rpt-gen">Generado: <GEN> &nbsp;&bull;&nbsp; CONFIDENCIAL</div>
+    </div>
+  </div>
+  <div class="page-body">
+  <div class="section">
+    <div class="sec-title">Top Movimientos por Cuenta &mdash; 01 Nov 2026 — 17 Nov 2026</div>
+    
+    <div class="mov-block">
+      <div class="mov-block-inner">
+        <div class="mov-card" style="border-top:3px solid #1e3a5f;background:linear-gradient(160deg,#e2eafc 0%,#eef3ff 35%,#f8faff 100%);">
+          <div class="mov-card-top">
+            <span class="mov-emp">NG</span>
+            <span class="badge-mono" style="background:#dbeafe;color:#1e40af;">MXN</span>
+          </div>
+          <div class="mov-card-alias">NG Operativa</div>
+          <div class="mov-card-bal" style="color:#1e3a5f;">$189,500.00</div>
+          <div class="mov-card-spark"><svg width="122" height="26" viewBox="0 0 122 26" xmlns="http://www.w3.org/2000/svg">
+        <polyline fill="none" stroke="#1e3a5f" stroke-width="1.5" stroke-opacity="0.6" points="0,22 7.6,4 15.2,4 22.9,4 30.5,4 38.1,4 45.8,4 53.4,4 61,4 68.6,4 76.2,4 83.9,4 91.5,4 99.1,4 106.8,4 114.4,4 122,4"/>
+        <circle cx="122.0" cy="4.0" r="2.5" fill="#1e3a5f"/>
+      </svg></div>
+          <div class="mov-card-footer">
+            <div class="mov-card-stat">
+              <span class="mov-card-lbl">Ingresos</span>
+              <span class="mov-card-val" style="color:#059669;">+$54,000.00</span>
+            </div>
+            <div class="mov-card-stat">
+              <span class="mov-card-lbl">Egresos</span>
+              <span class="mov-card-val" style="color:#dc2626;">-$12,000.00</span>
+            </div>
+          </div>
+        </div>
+        <div class="mov-block-tbl">
+          <table class="mov-table">
+            <thead>
+              <tr>
+                <th>Fecha</th><th>Descripci&oacute;n</th><th>Tipo</th>
+                <th>Dir.</th><th style="text-align:right">Importe</th>
+              </tr>
+            </thead>
+            <tbody>
+          <tr>
+            <td class="mov-date">02/11</td>
+            <td class="mov-desc">Cliente Grande SA de CV</td>
+            <td class="mov-tipo">SPEI IN</td>
+            <td class="mov-dir">
+              <span class="dir-badge" style="background:#05966922;color:#059669;">IN</span>
+            </td>
+            <td class="mov-amt" style="color:#059669;">+$54,000.00</td>
+          </tr>
+
+          <tr>
+            <td class="mov-date">01/11</td>
+            <td class="mov-desc">Proveedor Uno</td>
+            <td class="mov-tipo">SPEI OUT</td>
+            <td class="mov-dir">
+              <span class="dir-badge" style="background:#dc262622;color:#dc2626;">OUT</span>
+            </td>
+            <td class="mov-amt" style="color:#dc2626;">-$12,000.00</td>
+          </tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="mov-block">
+      <div class="mov-block-inner">
+        <div class="mov-card" style="border-top:3px solid #0d6b5e;background:linear-gradient(160deg,#d9f0e8 0%,#e8f7f2 35%,#f4fdf9 100%);">
+          <div class="mov-card-top">
+            <span class="mov-emp">NG</span>
+            <span class="badge-mono" style="background:#d1fae5;color:#065f46;">USD</span>
+          </div>
+          <div class="mov-card-alias">NG Dólares</div>
+          <div class="mov-card-bal" style="color:#0d6b5e;">$18,200.00</div>
+          <div class="mov-card-spark"><svg width="122" height="26" viewBox="0 0 122 26" xmlns="http://www.w3.org/2000/svg">
+        <polyline fill="none" stroke="#0d6b5e" stroke-width="1.5" stroke-opacity="0.6" points="0,4 7.6,22 15.2,22 22.9,14.8 30.5,14.8 38.1,14.8 45.8,14.8 53.4,14.8 61,14.8 68.6,14.8 76.2,14.8 83.9,14.8 91.5,14.8 99.1,14.8 106.8,14.8 114.4,14.8 122,14.8"/>
+        <circle cx="122.0" cy="14.8" r="2.5" fill="#0d6b5e"/>
+      </svg></div>
+          <div class="mov-card-footer">
+            <div class="mov-card-stat">
+              <span class="mov-card-lbl">Ingresos</span>
+              <span class="mov-card-val" style="color:#059669;">+$1,200.00</span>
+            </div>
+            <div class="mov-card-stat">
+              <span class="mov-card-lbl">Egresos</span>
+              <span class="mov-card-val" style="color:#dc2626;">-$3,000.00</span>
+            </div>
+          </div>
+        </div>
+        <div class="mov-block-tbl">
+          <table class="mov-table">
+            <thead>
+              <tr>
+                <th>Fecha</th><th>Descripci&oacute;n</th><th>Tipo</th>
+                <th>Dir.</th><th style="text-align:right">Importe</th>
+              </tr>
+            </thead>
+            <tbody>
+          <tr>
+            <td class="mov-date">02/11</td>
+            <td class="mov-desc">Vendor USA</td>
+            <td class="mov-tipo">SPEI OUT</td>
+            <td class="mov-dir">
+              <span class="dir-badge" style="background:#dc262622;color:#dc2626;">OUT</span>
+            </td>
+            <td class="mov-amt" style="color:#dc2626;">-$3,000.00</td>
+          </tr>
+
+          <tr>
+            <td class="mov-date">04/11</td>
+            <td class="mov-desc">US Client</td>
+            <td class="mov-tipo">SPEI IN</td>
+            <td class="mov-dir">
+              <span class="dir-badge" style="background:#05966922;color:#059669;">IN</span>
+            </td>
+            <td class="mov-amt" style="color:#059669;">+$1,200.00</td>
+          </tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="mov-block">
+      <div class="mov-block-inner">
+        <div class="mov-card" style="border-top:3px solid #1e3a5f;background:linear-gradient(160deg,#e2eafc 0%,#eef3ff 35%,#f8faff 100%);">
+          <div class="mov-card-top">
+            <span class="mov-emp">NRS</span>
+            <span class="badge-mono" style="background:#dbeafe;color:#1e40af;">MXN</span>
+          </div>
+          <div class="mov-card-alias">NRS Pesos</div>
+          <div class="mov-card-bal" style="color:#1e3a5f;">$92,500.00</div>
+          <div class="mov-card-spark"><svg width="122" height="26" viewBox="0 0 122 26" xmlns="http://www.w3.org/2000/svg">
+        <polyline fill="none" stroke="#1e3a5f" stroke-width="1.5" stroke-opacity="0.6" points="0,22 7.6,22 15.2,4 22.9,4 30.5,4 38.1,4 45.8,4 53.4,4 61,4 68.6,4 76.2,4 83.9,4 91.5,4 99.1,4 106.8,4 114.4,4 122,4"/>
+        <circle cx="122.0" cy="4.0" r="2.5" fill="#1e3a5f"/>
+      </svg></div>
+          <div class="mov-card-footer">
+            <div class="mov-card-stat">
+              <span class="mov-card-lbl">Ingresos</span>
+              <span class="mov-card-val" style="color:#059669;">+$7,000.00</span>
+            </div>
+            <div class="mov-card-stat">
+              <span class="mov-card-lbl">Egresos</span>
+              <span class="mov-card-val" style="color:#dc2626;">-$4,500.00</span>
+            </div>
+          </div>
+        </div>
+        <div class="mov-block-tbl">
+          <table class="mov-table">
+            <thead>
+              <tr>
+                <th>Fecha</th><th>Descripci&oacute;n</th><th>Tipo</th>
+                <th>Dir.</th><th style="text-align:right">Importe</th>
+              </tr>
+            </thead>
+            <tbody>
+          <tr>
+            <td class="mov-date">03/11</td>
+            <td class="mov-desc">Traspaso entre cuentas</td>
+            <td class="mov-tipo">Traspaso</td>
+            <td class="mov-dir">
+              <span class="dir-badge" style="background:#05966922;color:#059669;">IN</span>
+            </td>
+            <td class="mov-amt" style="color:#059669;">+$7,000.00</td>
+          </tr>
+
+          <tr>
+            <td class="mov-date">03/11</td>
+            <td class="mov-desc">Nómina</td>
+            <td class="mov-tipo">Nómina</td>
+            <td class="mov-dir">
+              <span class="dir-badge" style="background:#dc262622;color:#dc2626;">OUT</span>
+            </td>
+            <td class="mov-amt" style="color:#dc2626;">-$4,500.00</td>
+          </tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="mov-block">
+      <div class="mov-block-inner">
+        <div class="mov-card" style="border-top:3px solid #0d6b5e;background:linear-gradient(160deg,#d9f0e8 0%,#e8f7f2 35%,#f4fdf9 100%);">
+          <div class="mov-card-top">
+            <span class="mov-emp">NRS</span>
+            <span class="badge-mono" style="background:#d1fae5;color:#065f46;">USD</span>
+          </div>
+          <div class="mov-card-alias">NRS USD</div>
+          <div class="mov-card-bal" style="color:#dc2626;">-$2,300.00</div>
+          <div class="mov-card-spark"><svg width="122" height="26" viewBox="0 0 122 26" xmlns="http://www.w3.org/2000/svg">
+        <polyline fill="none" stroke="#0d6b5e" stroke-width="1.5" stroke-opacity="0.6" points="0,4 7.6,4 15.2,4 22.9,22 30.5,22 38.1,22 45.8,22 53.4,22 61,22 68.6,22 76.2,22 83.9,22 91.5,22 99.1,22 106.8,22 114.4,22 122,22"/>
+        <circle cx="122.0" cy="22.0" r="2.5" fill="#0d6b5e"/>
+      </svg></div>
+          <div class="mov-card-footer">
+            <div class="mov-card-stat">
+              <span class="mov-card-lbl">Ingresos</span>
+              <span class="mov-card-val" style="color:#059669;">+$0.00</span>
+            </div>
+            <div class="mov-card-stat">
+              <span class="mov-card-lbl">Egresos</span>
+              <span class="mov-card-val" style="color:#dc2626;">-$800.00</span>
+            </div>
+          </div>
+        </div>
+        <div class="mov-block-tbl">
+          <table class="mov-table">
+            <thead>
+              <tr>
+                <th>Fecha</th><th>Descripci&oacute;n</th><th>Tipo</th>
+                <th>Dir.</th><th style="text-align:right">Importe</th>
+              </tr>
+            </thead>
+            <tbody>
+          <tr>
+            <td class="mov-date">04/11</td>
+            <td class="mov-desc">Tienda</td>
+            <td class="mov-tipo">POS</td>
+            <td class="mov-dir">
+              <span class="dir-badge" style="background:#dc262622;color:#dc2626;">OUT</span>
+            </td>
+            <td class="mov-amt" style="color:#dc2626;">-$800.00</td>
+          </tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+  <div class="rpt-footer">
+    <span>Networks Group &mdash; Reporte Financiero</span>
+    <span><GEN></span>
+    <span>P&aacute;g. 2 &mdash; CONFIDENCIAL</span>
+  </div>
+</div>
+
+<div class="page">
+  <div class="rpt-header">
+    <div>
+      <div class="rpt-title">Daily Forward Cash Flow Pulse &mdash; Semana Actual</div>
+      <div class="rpt-sub">S&iacute;ntesis AP/AR &bull; 16 Nov — 22 Nov 2026</div>
+    </div>
+    <div class="rpt-meta">
+      <div class="rpt-brand">
+        <div class="rpt-brand-text">
+          <div class="rpt-brand-label">Company</div>
+          <div class="rpt-brand-name">NG Finances</div>
+        </div>
+        <div class="rpt-logo">N</div>
+      </div>
+      <div class="rpt-gen">Generado: <GEN> &nbsp;&bull;&nbsp; CONFIDENCIAL</div>
+    </div>
+  </div>
+  <div class="page-body">
+  <div class="pulse-section">
+    <div style="font-size:8px;color:#92400e;background:#fffbeb;
+        border:1px solid #fde68a;border-radius:6px;padding:4px 10px;margin-bottom:10px;">
+        &#9888; Monedas adicionales detectadas: EUR — se muestran solo MXN y USD.</div>
+  <div class="pulse-currency-block">
+    <span class="pulse-currency-label pulse-mxn-label">MXN</span>
+    <div class="pulse-kpi-row">
+      <div class="pulse-kpi pulse-kpi-in">
+        <div class="pulse-kpi-lbl">&#9650; Cobros esperados</div>
+        <div class="pulse-kpi-val">$26,300.00</div>
+      </div>
+      <div class="pulse-kpi pulse-kpi-out">
+        <div class="pulse-kpi-lbl">&#9660; Pagos programados</div>
+        <div class="pulse-kpi-val">$18,000.00</div>
+      </div>
+      <div class="pulse-kpi pulse-kpi-net-pos">
+        <div class="pulse-kpi-lbl">&#9654; Posici&oacute;n neta</div>
+        <div class="pulse-kpi-val">$8,300.00</div>
+      </div>
+    </div>
+    <div class="pulse-chart-wrap"><svg width="436" height="88" viewBox="0 0 436 88" xmlns="http://www.w3.org/2000/svg" style="display:block;"><line x1="38" y1="9.0" x2="430" y2="9.0" stroke="#e5e7eb" stroke-width="0.5"/>
+         <text x="36" y="9.0" text-anchor="end" font-size="5.5" fill="#9ca3af" dominant-baseline="middle">$25k</text>
+<line x1="38" y1="37.5" x2="430" y2="37.5" stroke="#e5e7eb" stroke-width="0.5"/>
+         <text x="36" y="37.5" text-anchor="end" font-size="5.5" fill="#9ca3af" dominant-baseline="middle">$0</text>
+<line x1="38" y1="66.0" x2="430" y2="66.0" stroke="#e5e7eb" stroke-width="0.5"/>
+         <text x="36" y="66.0" text-anchor="end" font-size="5.5" fill="#9ca3af" dominant-baseline="middle">$-25k</text><line x1="38" y1="37.5" x2="430" y2="37.5" stroke="#374151" stroke-width="0.6" opacity="0.3"/>
+<rect x="47.0" y="9.0" width="18" height="28.5" fill="#0d9f8a" opacity="0.85" rx="1.5"/>
+
+<text x="66.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Mon 16</text>
+<line x1="122.0" y1="9" x2="122.0" y2="66" stroke="#f59e0b" stroke-width="0.8" stroke-dasharray="2,1.5" opacity="0.85"/>
+         <text x="122.0" y="7" text-anchor="middle" font-size="5" font-weight="700" fill="#d97706">HOY</text>
+
+<rect x="123.0" y="37.5" width="18" height="20.5" fill="#92400e" opacity="0.72" rx="1.5"/>
+<text x="122.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Tue 17</text>
+
+
+
+<text x="178.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Wed 18</text>
+
+
+
+<text x="234.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Thu 19</text>
+
+<rect x="271.0" y="36.0" width="18" height="1.5" fill="#0d9f8a" opacity="0.85" rx="1.5"/>
+
+<text x="290.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Fri 20</text>
+
+
+
+<text x="346.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Sat 21</text>
+
+
+
+<text x="402.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Sun 22</text><polyline points="66.0,9.0 122.0,29.5 178.0,29.5 234.0,29.5 290.0,28.0 346.0,28.0 402.0,28.0" fill="none" stroke="#f59e0b" stroke-width="1.4" stroke-linejoin="round"/><rect x="312" y="7" width="7" height="5" fill="#0d9f8a" opacity="0.85" rx="1"/>
+       <text x="321" y="10" font-size="5" fill="#374151" dominant-baseline="middle">Cobros</text>
+       <rect x="357" y="7" width="7" height="5" fill="#92400e" opacity="0.72" rx="1"/>
+       <text x="366" y="10" font-size="5" fill="#374151" dominant-baseline="middle">Pagos</text>
+       <line x1="402" y1="10" x2="411" y2="10" stroke="#f59e0b" stroke-width="1.4"/>
+       <text x="413" y="10" font-size="5" fill="#374151" dominant-baseline="middle">Acum.</text></svg></div>
+    <div class="pulse-bottom">
+      <div class="pulse-panel">
+        <div class="pulse-panel-hdr pulse-panel-in-hdr">TOP COBROS &mdash; Hoy</div>
+        <div class="pulse-item"><span class="pulse-item-name" style="color:#9ca3af;font-style:italic;">Sin cobros programados</span></div>
+      </div>
+      <div class="pulse-panel">
+        <div class="pulse-panel-hdr pulse-panel-out-hdr">PAGOS CR&Iacute;TICOS &mdash; Hoy</div>
+        <div class="pulse-item">
+          <span class="pulse-item-name">Proveedor A</span>
+          <span class="pulse-item-amt" style="color:#dc2626;">-$18,000.00</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="pulse-currency-block">
+    <span class="pulse-currency-label pulse-usd-label">USD</span>
+    <div class="pulse-kpi-row">
+      <div class="pulse-kpi pulse-kpi-in">
+        <div class="pulse-kpi-lbl">&#9650; Cobros esperados</div>
+        <div class="pulse-kpi-val">$8,000.00</div>
+      </div>
+      <div class="pulse-kpi pulse-kpi-out">
+        <div class="pulse-kpi-lbl">&#9660; Pagos programados</div>
+        <div class="pulse-kpi-val">$4,100.00</div>
+      </div>
+      <div class="pulse-kpi pulse-kpi-net-pos">
+        <div class="pulse-kpi-lbl">&#9654; Posici&oacute;n neta</div>
+        <div class="pulse-kpi-val">$3,900.00</div>
+      </div>
+    </div>
+    <div class="pulse-chart-wrap"><svg width="436" height="88" viewBox="0 0 436 88" xmlns="http://www.w3.org/2000/svg" style="display:block;"><line x1="38" y1="9.0" x2="430" y2="9.0" stroke="#e5e7eb" stroke-width="0.5"/>
+         <text x="36" y="9.0" text-anchor="end" font-size="5.5" fill="#9ca3af" dominant-baseline="middle">$8k</text>
+<line x1="38" y1="37.5" x2="430" y2="37.5" stroke="#e5e7eb" stroke-width="0.5"/>
+         <text x="36" y="37.5" text-anchor="end" font-size="5.5" fill="#9ca3af" dominant-baseline="middle">$0</text>
+<line x1="38" y1="66.0" x2="430" y2="66.0" stroke="#e5e7eb" stroke-width="0.5"/>
+         <text x="36" y="66.0" text-anchor="end" font-size="5.5" fill="#9ca3af" dominant-baseline="middle">$-8k</text><line x1="38" y1="37.5" x2="430" y2="37.5" stroke="#374151" stroke-width="0.6" opacity="0.3"/>
+
+
+<text x="66.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Mon 16</text>
+<line x1="122.0" y1="9" x2="122.0" y2="66" stroke="#f59e0b" stroke-width="0.8" stroke-dasharray="2,1.5" opacity="0.85"/>
+         <text x="122.0" y="7" text-anchor="middle" font-size="5" font-weight="700" fill="#d97706">HOY</text>
+
+
+<text x="122.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Tue 17</text>
+
+<rect x="159.0" y="9.0" width="18" height="28.5" fill="#0ea5e9" opacity="0.85" rx="1.5"/>
+
+<text x="178.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Wed 18</text>
+
+
+<rect x="235.0" y="37.5" width="18" height="14.6" fill="#92400e" opacity="0.72" rx="1.5"/>
+<text x="234.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Thu 19</text>
+
+
+
+<text x="290.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Fri 20</text>
+
+
+
+<text x="346.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Sat 21</text>
+
+
+
+<text x="402.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Sun 22</text><polyline points="66.0,37.5 122.0,37.5 178.0,9.0 234.0,23.6 290.0,23.6 346.0,23.6 402.0,23.6" fill="none" stroke="#f59e0b" stroke-width="1.4" stroke-linejoin="round"/><rect x="312" y="7" width="7" height="5" fill="#0ea5e9" opacity="0.85" rx="1"/>
+       <text x="321" y="10" font-size="5" fill="#374151" dominant-baseline="middle">Cobros</text>
+       <rect x="357" y="7" width="7" height="5" fill="#92400e" opacity="0.72" rx="1"/>
+       <text x="366" y="10" font-size="5" fill="#374151" dominant-baseline="middle">Pagos</text>
+       <line x1="402" y1="10" x2="411" y2="10" stroke="#f59e0b" stroke-width="1.4"/>
+       <text x="413" y="10" font-size="5" fill="#374151" dominant-baseline="middle">Acum.</text></svg></div>
+    <div class="pulse-bottom">
+      <div class="pulse-panel">
+        <div class="pulse-panel-hdr pulse-panel-in-hdr">TOP COBROS &mdash; Hoy</div>
+        <div class="pulse-item"><span class="pulse-item-name" style="color:#9ca3af;font-style:italic;">Sin cobros programados</span></div>
+      </div>
+      <div class="pulse-panel">
+        <div class="pulse-panel-hdr pulse-panel-out-hdr">PAGOS CR&Iacute;TICOS &mdash; Hoy</div>
+        <div class="pulse-item"><span class="pulse-item-name" style="color:#9ca3af;font-style:italic;">Sin pagos programados</span></div>
+      </div>
+    </div>
+  </div>
+  </div>
+  </div>
+  <div class="rpt-footer">
+    <span>Networks Group &mdash; Reporte Financiero</span>
+    <span><GEN></span>
+    <span>P&aacute;g. 3 &mdash; CONFIDENCIAL</span>
+  </div>
+</div>
+<div class="page">
+  <div class="rpt-header">
+    <div>
+      <div class="rpt-title">Daily Forward Cash Flow Pulse &mdash; Semana Próxima</div>
+      <div class="rpt-sub">S&iacute;ntesis AP/AR &bull; 23 Nov — 29 Nov 2026</div>
+    </div>
+    <div class="rpt-meta">
+      <div class="rpt-brand">
+        <div class="rpt-brand-text">
+          <div class="rpt-brand-label">Company</div>
+          <div class="rpt-brand-name">NG Finances</div>
+        </div>
+        <div class="rpt-logo">N</div>
+      </div>
+      <div class="rpt-gen">Generado: <GEN> &nbsp;&bull;&nbsp; CONFIDENCIAL</div>
+    </div>
+  </div>
+  <div class="page-body">
+  <div class="pulse-section">
+    
+  <div class="pulse-currency-block">
+    <span class="pulse-currency-label pulse-mxn-label">MXN</span>
+    <div class="pulse-kpi-row">
+      <div class="pulse-kpi pulse-kpi-in">
+        <div class="pulse-kpi-lbl">&#9650; Cobros esperados</div>
+        <div class="pulse-kpi-val">$40,000.00</div>
+      </div>
+      <div class="pulse-kpi pulse-kpi-out">
+        <div class="pulse-kpi-lbl">&#9660; Pagos programados</div>
+        <div class="pulse-kpi-val">$9,000.00</div>
+      </div>
+      <div class="pulse-kpi pulse-kpi-net-pos">
+        <div class="pulse-kpi-lbl">&#9654; Posici&oacute;n neta</div>
+        <div class="pulse-kpi-val">$31,000.00</div>
+      </div>
+    </div>
+    <div class="pulse-chart-wrap"><svg width="436" height="88" viewBox="0 0 436 88" xmlns="http://www.w3.org/2000/svg" style="display:block;"><line x1="38" y1="9.0" x2="430" y2="9.0" stroke="#e5e7eb" stroke-width="0.5"/>
+         <text x="36" y="9.0" text-anchor="end" font-size="5.5" fill="#9ca3af" dominant-baseline="middle">$40k</text>
+<line x1="38" y1="37.5" x2="430" y2="37.5" stroke="#e5e7eb" stroke-width="0.5"/>
+         <text x="36" y="37.5" text-anchor="end" font-size="5.5" fill="#9ca3af" dominant-baseline="middle">$0</text>
+<line x1="38" y1="66.0" x2="430" y2="66.0" stroke="#e5e7eb" stroke-width="0.5"/>
+         <text x="36" y="66.0" text-anchor="end" font-size="5.5" fill="#9ca3af" dominant-baseline="middle">$-40k</text><line x1="38" y1="37.5" x2="430" y2="37.5" stroke="#374151" stroke-width="0.6" opacity="0.3"/>
+
+
+<text x="66.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Mon 23</text>
+
+<rect x="103.0" y="9.0" width="18" height="28.5" fill="#0d9f8a" opacity="0.85" rx="1.5"/>
+
+<text x="122.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Tue 24</text>
+
+
+<rect x="179.0" y="37.5" width="18" height="6.4" fill="#92400e" opacity="0.72" rx="1.5"/>
+<text x="178.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Wed 25</text>
+
+
+
+<text x="234.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Thu 26</text>
+
+
+
+<text x="290.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Fri 27</text>
+
+
+
+<text x="346.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Sat 28</text>
+
+
+
+<text x="402.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Sun 29</text><polyline points="66.0,37.5 122.0,9.0 178.0,15.4 234.0,15.4 290.0,15.4 346.0,15.4 402.0,15.4" fill="none" stroke="#f59e0b" stroke-width="1.4" stroke-linejoin="round"/><rect x="312" y="7" width="7" height="5" fill="#0d9f8a" opacity="0.85" rx="1"/>
+       <text x="321" y="10" font-size="5" fill="#374151" dominant-baseline="middle">Cobros</text>
+       <rect x="357" y="7" width="7" height="5" fill="#92400e" opacity="0.72" rx="1"/>
+       <text x="366" y="10" font-size="5" fill="#374151" dominant-baseline="middle">Pagos</text>
+       <line x1="402" y1="10" x2="411" y2="10" stroke="#f59e0b" stroke-width="1.4"/>
+       <text x="413" y="10" font-size="5" fill="#374151" dominant-baseline="middle">Acum.</text></svg></div>
+    <div class="pulse-bottom">
+      <div class="pulse-panel">
+        <div class="pulse-panel-hdr pulse-panel-in-hdr">TOP COBROS &mdash; Sem. Próxima</div>
+        <div class="pulse-item">
+          <span class="pulse-item-name">Cliente D</span>
+          <span class="pulse-item-amt" style="color:#059669;">+$40,000.00</span></div>
+      </div>
+      <div class="pulse-panel">
+        <div class="pulse-panel-hdr pulse-panel-out-hdr">PAGOS CR&Iacute;TICOS &mdash; Sem. Próxima</div>
+        <div class="pulse-item">
+          <span class="pulse-item-name">Proveedor C</span>
+          <span class="pulse-item-amt" style="color:#dc2626;">-$9,000.00</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="pulse-currency-block">
+    <span class="pulse-currency-label pulse-usd-label">USD</span>
+    <div class="pulse-kpi-row">
+      <div class="pulse-kpi pulse-kpi-in">
+        <div class="pulse-kpi-lbl">&#9650; Cobros esperados</div>
+        <div class="pulse-kpi-val">$2,200.00</div>
+      </div>
+      <div class="pulse-kpi pulse-kpi-out">
+        <div class="pulse-kpi-lbl">&#9660; Pagos programados</div>
+        <div class="pulse-kpi-val">$3,300.00</div>
+      </div>
+      <div class="pulse-kpi pulse-kpi-net-neg">
+        <div class="pulse-kpi-lbl">&#9654; Posici&oacute;n neta</div>
+        <div class="pulse-kpi-val">-$1,100.00</div>
+      </div>
+    </div>
+    <div class="pulse-chart-wrap"><svg width="436" height="88" viewBox="0 0 436 88" xmlns="http://www.w3.org/2000/svg" style="display:block;"><line x1="38" y1="9.0" x2="430" y2="9.0" stroke="#e5e7eb" stroke-width="0.5"/>
+         <text x="36" y="9.0" text-anchor="end" font-size="5.5" fill="#9ca3af" dominant-baseline="middle">$3k</text>
+<line x1="38" y1="37.5" x2="430" y2="37.5" stroke="#e5e7eb" stroke-width="0.5"/>
+         <text x="36" y="37.5" text-anchor="end" font-size="5.5" fill="#9ca3af" dominant-baseline="middle">$0</text>
+<line x1="38" y1="66.0" x2="430" y2="66.0" stroke="#e5e7eb" stroke-width="0.5"/>
+         <text x="36" y="66.0" text-anchor="end" font-size="5.5" fill="#9ca3af" dominant-baseline="middle">$-3k</text><line x1="38" y1="37.5" x2="430" y2="37.5" stroke="#374151" stroke-width="0.6" opacity="0.3"/>
+
+
+<text x="66.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Mon 23</text>
+
+
+
+<text x="122.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Tue 24</text>
+
+
+
+<text x="178.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Wed 25</text>
+
+<rect x="215.0" y="18.5" width="18" height="19.0" fill="#0ea5e9" opacity="0.85" rx="1.5"/>
+
+<text x="234.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Thu 26</text>
+
+
+<rect x="291.0" y="37.5" width="18" height="28.5" fill="#92400e" opacity="0.72" rx="1.5"/>
+<text x="290.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Fri 27</text>
+
+
+
+<text x="346.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Sat 28</text>
+
+
+
+<text x="402.0" y="75" text-anchor="middle" font-size="5.5" fill="#6b7280">Sun 29</text><polyline points="66.0,37.5 122.0,37.5 178.0,37.5 234.0,18.5 290.0,47.0 346.0,47.0 402.0,47.0" fill="none" stroke="#f59e0b" stroke-width="1.4" stroke-linejoin="round"/><rect x="312" y="7" width="7" height="5" fill="#0ea5e9" opacity="0.85" rx="1"/>
+       <text x="321" y="10" font-size="5" fill="#374151" dominant-baseline="middle">Cobros</text>
+       <rect x="357" y="7" width="7" height="5" fill="#92400e" opacity="0.72" rx="1"/>
+       <text x="366" y="10" font-size="5" fill="#374151" dominant-baseline="middle">Pagos</text>
+       <line x1="402" y1="10" x2="411" y2="10" stroke="#f59e0b" stroke-width="1.4"/>
+       <text x="413" y="10" font-size="5" fill="#374151" dominant-baseline="middle">Acum.</text></svg></div>
+    <div class="pulse-bottom">
+      <div class="pulse-panel">
+        <div class="pulse-panel-hdr pulse-panel-in-hdr">TOP COBROS &mdash; Sem. Próxima</div>
+        <div class="pulse-item">
+          <span class="pulse-item-name">Client E</span>
+          <span class="pulse-item-amt" style="color:#059669;">+$2,200.00</span></div>
+      </div>
+      <div class="pulse-panel">
+        <div class="pulse-panel-hdr pulse-panel-out-hdr">PAGOS CR&Iacute;TICOS &mdash; Sem. Próxima</div>
+        <div class="pulse-item">
+          <span class="pulse-item-name">Vendor D</span>
+          <span class="pulse-item-amt" style="color:#dc2626;">-$3,300.00</span></div>
+      </div>
+    </div>
+  </div>
+  </div>
+  </div>
+  <div class="rpt-footer">
+    <span>Networks Group &mdash; Reporte Financiero</span>
+    <span><GEN></span>
+    <span>P&aacute;g. 4 &mdash; CONFIDENCIAL</span>
+  </div>
+</div>
+</body>
+</html>

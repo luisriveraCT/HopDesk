@@ -1302,6 +1302,8 @@
   "tablas.interco.aviso.anadidas_plan": "{n} invoice(s) added to the plan.",
   "tablas.interco.aviso.enviadas_agenda": "{n} invoice(s) sent to Today's agenda.",
   "tablas.reporte.aviso.pdf_generado": "✓ PDF generated.",
+  "tablas.reporte.monedas_extra": "Additional currencies found: {otras} — only {mostradas} are shown.",
+  "tablas.reporte.monedas_y": "{a} and {b}",
   "tablas.notas.aviso.guardada.personal": "Personal note saved.",
   "tablas.notas.aviso.guardada.publica": "Public note saved.",
   "tablas.notas.aviso.eliminada": "Note deleted.",

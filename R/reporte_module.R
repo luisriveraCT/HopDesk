@@ -356,6 +356,13 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    # The client's base currency (monedas fase 3, T35): it goes first in the
+    # report, and it is what a document without a currency column is in.
+    # The report's currencies come from the data (monedas_en_datos()), never
+    # a fixed MXN/USD.
+    moneda_base <- reactive(tryCatch(shared$moneda_base_cliente()$moneda, error = function(e) NULL) %||%
+                              MONEDA_BASE_OMISION)
+
     # ── Applied settings (committed values used for rendering) ───────────────
     applied <- reactiveValues(
       desde    = floor_date_month(),
@@ -555,12 +562,13 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           pick(c("Saldo vencido", "DocTotal", "Importe"), 0)
         )))
 
-        # Currency — ensure_moneda should have created "Moneda"
+        # Currency — ensure_moneda() (R/data_pipeline.R) already created
+        # "Moneda" and turned SAP's legacy codes into the current one; without
+        # any currency column the documents are in the client's base.
         moneda_raw <- as.character(
-          pick(c("Moneda", "Currency", "Divisa"), "MXN")
+          pick(c("Moneda", "Currency", "Divisa"), moneda_base())
         )
         moneda_raw <- toupper(trimws(moneda_raw))
-        moneda_raw <- ifelse(moneda_raw %in% c("MXP", "MXV"), "MXN", moneda_raw)
 
         # Party name
         ar_name_cols <- c("Parte","Nombre del cliente","Cliente",
@@ -710,7 +718,13 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         )
       }
 
-      # Build one week panel (both currencies + other-currency detection)
+      # The pulse's currencies: the base first, then the documents' by count.
+      # A letter page holds two blocks; the rest are named in a note. Chosen
+      # once, so both weeks show the same columns.
+      mon_pulso <- utils::head(
+        monedas_en_datos(c(as.character(ar_all$Moneda), as.character(ap_all$Moneda)), moneda_base()), 2L)
+
+      # Build one week panel (one block per shown currency + the note's others)
       mk_week <- function(wk_start, wk_end, focus_start, focus_end, focus_label) {
         hd <- "FechaEff"
         ar_w <- if (nrow(ar_all) && hd %in% names(ar_all))
@@ -723,12 +737,11 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         else tibble::tibble(Moneda = character())
 
         list(
-          mxn              = mk_currency("MXN", wk_start, wk_end,
-                                         focus_start, focus_end, focus_label),
-          usd              = mk_currency("USD", wk_start, wk_end,
-                                         focus_start, focus_end, focus_label),
-          other_currencies = setdiff(unique(c(ar_w$Moneda, ap_w$Moneda)),
-                                     c("MXN", "USD")),
+          bloques          = lapply(mon_pulso, mk_currency, wk_start = wk_start, wk_end = wk_end,
+                                    focus_start = focus_start, focus_end = focus_end,
+                                    focus_label = focus_label),
+          shown            = mon_pulso,
+          other_currencies = setdiff(unique(c(ar_w$Moneda, ap_w$Moneda)), mon_pulso),
           wk_start         = wk_start,
           wk_end           = wk_end
         )
@@ -757,7 +770,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         else NULL
         pulse <- compute_pulse()
         .build_report_html(bals, movs, desde, hasta, Sys.time(), pulse = pulse,
-                           cmap = shared$company_map(), group_name = shared$group_name())
+                           cmap = shared$company_map(), group_name = shared$group_name(),
+                           monedas = monedas_en_datos(bals$moneda, moneda_base()))
       })
     })
 
@@ -789,20 +803,17 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       if (is.null(bals) || !length(emps)) return(NULL)
 
       bals_sel <- dplyr::filter(bals, empresa %in% emps)
-      mxn_tot  <- sum(bals_sel$saldo[bals_sel$moneda == "MXN"], na.rm = TRUE)
-      usd_tot  <- sum(bals_sel$saldo[bals_sel$moneda == "USD"], na.rm = TRUE)
       n_accts  <- nrow(bals_sel)
+      # One total per currency of the chosen accounts, the base first.
+      totales  <- lapply(monedas_en_datos(bals_sel$moneda, moneda_base()), function(m)
+        div(
+          tags$small(class = "text-muted d-block", paste("Total", m)),
+          tags$strong(class = "fs-6", fmt_money(sum(bals_sel$saldo[bals_sel$moneda == m], na.rm = TRUE)))
+        ))
 
       div(class = "alert alert-light border mb-0",
         div(class = "d-flex flex-wrap gap-4",
-          div(
-            tags$small(class = "text-muted d-block", "Total MXN"),
-            tags$strong(class = "fs-6", fmt_money(mxn_tot))
-          ),
-          div(
-            tags$small(class = "text-muted d-block", "Total USD"),
-            tags$strong(class = "fs-6", fmt_money(usd_tot))
-          ),
+          totales,
           div(
             tags$small(class = "text-muted d-block", "Cuentas"),
             tags$strong(class = "fs-6", n_accts)
@@ -997,6 +1008,20 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 # =============================================================================
 # .build_pulse_pages() — pages 3 & 4: current week + next week AP/AR pulse
 # =============================================================================
+# The note for currencies that have data but no column (a letter page holds
+# two): "Monedas adicionales detectadas: EUR — se muestran solo MXN y USD."
+# "" when there are none.
+.reporte_nota_monedas <- function(otras, mostradas) {
+  if (!length(otras)) return("")
+  he <- htmltools::htmlEscape
+  mostradas <- if (length(mostradas) >= 2L)
+    tr("tablas.reporte.monedas_y", a = mostradas[1], b = mostradas[2]) else paste(mostradas, collapse = "")
+  sprintf('<div style="font-size:8px;color:#92400e;background:#fffbeb;
+        border:1px solid #fde68a;border-radius:6px;padding:4px 10px;margin-bottom:10px;">
+        &#9888; %s</div>',
+    he(tr("tablas.reporte.monedas_extra", otras = paste(otras, collapse = ", "), mostradas = mostradas)))
+}
+
 .build_pulse_pages <- function(pulse, gen_label) {
   if (is.null(pulse)) return("")
   he   <- htmltools::htmlEscape
@@ -1104,11 +1129,13 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   }
 
   # ── One currency block (KPIs + chart + focus panels) ──────────────────────
-  build_currency_block <- function(pd, is_current_week) {
+  # `pos`: the currency's place in the report (1 = the base); the colors go
+  # by place, not by code.
+  build_currency_block <- function(pd, is_current_week, pos) {
     currency  <- pd$currency
     net_total <- pd$inflow_total - pd$outflow_total
-    lbl_class <- if (currency == "MXN") "pulse-mxn-label" else "pulse-usd-label"
-    in_col    <- if (currency == "MXN") "#0d9f8a" else "#0ea5e9"
+    lbl_class <- if (pos == 1L) "pulse-mon1-label" else "pulse-mon2-label"
+    in_col    <- if (pos == 1L) "#0d9f8a" else "#0ea5e9"
     net_class <- if (net_total >= 0) "pulse-kpi-net-pos" else "pulse-kpi-net-neg"
 
     chart <- make_pulse_chart(
@@ -1191,12 +1218,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
                          format(wk$wk_end, "%d %b %Y"))
     week_title <- if (is_current_week) "Semana Actual" else "Semana Pr\u00f3xima"
 
-    other_note <- if (length(wk$other_currencies) > 0)
-      sprintf('<div style="font-size:8px;color:#92400e;background:#fffbeb;
-        border:1px solid #fde68a;border-radius:6px;padding:4px 10px;margin-bottom:10px;">
-        &#9888; Monedas adicionales detectadas: %s \u2014 se muestran solo MXN y USD.</div>',
-        he(paste(wk$other_currencies, collapse = ", ")))
-    else ""
+    other_note <- .reporte_nota_monedas(wk$other_currencies, wk$shown)
 
     sprintf('
 <div class="page">
@@ -1218,7 +1240,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   </div>
   <div class="page-body">
   <div class="pulse-section">
-    %s%s%s
+    %s%s
   </div>
   </div>
   <div class="rpt-footer">
@@ -1229,8 +1251,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 </div>',
       he(week_title), he(wk_label), he(gen_label),
       other_note,
-      build_currency_block(wk$mxn, is_current_week),
-      build_currency_block(wk$usd, is_current_week),
+      paste(vapply(seq_along(wk$bloques), function(k)
+        build_currency_block(wk$bloques[[k]], is_current_week, k), character(1)), collapse = ""),
       he(gen_label), page_num
     )
   }
@@ -1248,7 +1270,15 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 # Page 2: Top movements per individual account (preserved exactly)
 # =============================================================================
 .build_report_html <- function(balances, movimientos = NULL, desde, hasta, generated,
-                                pulse = NULL, cmap = c(), group_name = "") {
+                                pulse = NULL, cmap = c(), group_name = "",
+                                monedas = monedas_en_datos(balances$moneda, MONEDA_BASE_OMISION)) {
+
+  # monedas: the accounts' currencies, the base first (monedas_en_datos()).
+  # The page holds two total boxes and two movement columns: the first two
+  # get them, the rest are named in a note. Every account card shows anyway.
+  monedas    <- as.character(monedas)
+  mostradas  <- utils::head(monedas, 2L)
+  nota_extra <- .reporte_nota_monedas(setdiff(monedas, mostradas), mostradas)
 
   he   <- htmltools::htmlEscape
   fmt  <- function(x) formatC(abs(x), format = "f", digits = 2, big.mark = ",")
@@ -1258,9 +1288,15 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 
   col_pos <- "#059669"; col_neg <- "#dc2626"
   col_in  <- "#059669"; col_out <- "#dc2626"
-  moneda_colors <- list(MXN = "#1e3a5f", USD = "#0d6b5e")
-  moneda_light  <- list(MXN = "#dbeafe", USD = "#d1fae5")
-  moneda_text   <- list(MXN = "#1e40af", USD = "#065f46")
+  # Colors by place, not by code: the first currency (the base) blue, the
+  # second green, any other the grey fallback below.
+  por_lugar     <- function(...) stats::setNames(as.list(c(...)[seq_along(mostradas)]), mostradas)
+  moneda_colors <- por_lugar("#1e3a5f", "#0d6b5e")
+  moneda_light  <- por_lugar("#dbeafe", "#d1fae5")
+  moneda_text   <- por_lugar("#1e40af", "#065f46")
+  fondo_tarjeta <- function(mono)
+    if (identical(mono, monedas[1])) "linear-gradient(160deg,#e2eafc 0%,#eef3ff 35%,#f8faff 100%)"
+    else                             "linear-gradient(160deg,#d9f0e8 0%,#e8f7f2 35%,#f4fdf9 100%)"
 
   # Movement type display labels
   tipo_label <- function(tipo) {
@@ -1407,38 +1443,14 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     ))
   }
 
-  mxn_series <- global_series("MXN")
-  usd_series <- global_series("USD")
-
-  # Format account sub-labels for total boxes
-  mxn_accounts <- paste(
-    balances$alias[balances$moneda == "MXN" & !is.na(balances$alias)],
-    collapse = " \u2022 ")
-  usd_accounts <- paste(
-    balances$alias[balances$moneda == "USD" & !is.na(balances$alias)],
-    collapse = " \u2022 ")
-
-  mxn_bar_svg <- make_balance_bars(mxn_series, "#7eb3f5", 220, 44)
-  usd_bar_svg <- make_balance_bars(usd_series, "#6ee7c4", 220, 44)
-  mxn_total   <- sum(balances$saldo[balances$moneda == "MXN"], na.rm = TRUE)
-  usd_total   <- sum(balances$saldo[balances$moneda == "USD"], na.rm = TRUE)
-
   # ── Period-over-period delta ──────────────────────────────────────────────────
-  cur_mxn_net <- if (!is.null(movimientos) && nrow(movimientos))
-    sum(dplyr::filter(movimientos, !is.na(fecha), fecha >= desde, fecha <= hasta,
-        cuenta_id %in% balances$cuenta_id[balances$moneda == "MXN"])$abono, na.rm = TRUE) -
-    sum(dplyr::filter(movimientos, !is.na(fecha), fecha >= desde, fecha <= hasta,
-        cuenta_id %in% balances$cuenta_id[balances$moneda == "MXN"])$cargo, na.rm = TRUE)
-  else 0
-  cur_usd_net <- if (!is.null(movimientos) && nrow(movimientos))
-    sum(dplyr::filter(movimientos, !is.na(fecha), fecha >= desde, fecha <= hasta,
-        cuenta_id %in% balances$cuenta_id[balances$moneda == "USD"])$abono, na.rm = TRUE) -
-    sum(dplyr::filter(movimientos, !is.na(fecha), fecha >= desde, fecha <= hasta,
-        cuenta_id %in% balances$cuenta_id[balances$moneda == "USD"])$cargo, na.rm = TRUE)
-  else 0
-
-  prev_mxn <- mxn_total - cur_mxn_net
-  prev_usd <- usd_total - cur_usd_net
+  # The period's net movement of one currency's accounts.
+  neto_periodo <- function(currency) {
+    if (is.null(movimientos) || !nrow(movimientos)) return(0)
+    mv <- dplyr::filter(movimientos, !is.na(fecha), fecha >= desde, fecha <= hasta,
+                        cuenta_id %in% balances$cuenta_id[balances$moneda == currency])
+    sum(mv$abono, na.rm = TRUE) - sum(mv$cargo, na.rm = TRUE)
+  }
 
   delta_html <- function(cur, prev) {
     if (is.na(prev) || prev == 0) return("")
@@ -1451,9 +1463,6 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       padding:2px 8px;white-space:nowrap;">%s %s%.1f%%</span>',
       col, arrow, sign, pct)
   }
-
-  mxn_delta_html <- delta_html(mxn_total, prev_mxn)
-  usd_delta_html <- delta_html(usd_total, prev_usd)
 
   # ── Per-account breakdown for total boxes ────────────────────────────────────
   make_acct_breakdown <- function(currency) {
@@ -1480,8 +1489,27 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     }, character(1)), collapse = "")
   }
 
-  mxn_breakdown <- make_acct_breakdown("MXN")
-  usd_breakdown <- make_acct_breakdown("USD")
+  # ── One total box per shown currency (place 1 blue, place 2 green) ──────────
+  caja_total <- function(currency, pos) {
+    total <- sum(balances$saldo[balances$moneda == currency], na.rm = TRUE)
+    sprintf('      <div class="tot-box mon%d">
+        <div class="tot-top-row">
+          <div class="tot-left">
+            <div class="tot-label">Total Balance %s</div>
+            <div class="tot-amount">%s</div>
+          </div>
+          <div class="tot-delta">%s</div>
+        </div>
+        <div class="tot-spark">%s</div>
+        <div class="tot-breakdown">%s</div>
+      </div>',
+      pos, he(currency), he(fmts(total)),
+      delta_html(total, total - neto_periodo(currency)),
+      make_balance_bars(global_series(currency), c("#7eb3f5", "#6ee7c4")[pos], 220, 44),
+      make_acct_breakdown(currency))
+  }
+  cajas_html <- paste(vapply(seq_along(mostradas), function(k) caja_total(mostradas[k], k),
+                             character(1)), collapse = "\n")
 
   # ── Account cards ─────────────────────────────────────────────────────────────
   balances_sorted <- balances[order(-balances$saldo, na.last = TRUE), ]
@@ -1494,8 +1522,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     svg    <- make_area_spark(sv, if (is_neg) col_neg else col)
     badge_bg  <- moneda_light[[mono]] %||% "#f3f4f6"
     badge_col <- moneda_text[[mono]]  %||% "#374151"
-    card_bg   <- if (mono == "MXN") "linear-gradient(160deg,#e2eafc 0%,#eef3ff 35%,#f8faff 100%)"
-                 else                "linear-gradient(160deg,#d9f0e8 0%,#e8f7f2 35%,#f4fdf9 100%)"
+    card_bg   <- fondo_tarjeta(mono)
     brd_col   <- if (is_neg) col_neg else col
     # Period inflows/outflows for this account
     if (!is.null(movimientos) && nrow(movimientos)) {
@@ -1610,8 +1637,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       }
 
       split_body <- paste0(
-        make_currency_col("MXN", "group-col-mxn"),
-        make_currency_col("USD", "group-col-usd")
+        paste(vapply(seq_along(mostradas), function(k)
+          make_currency_col(mostradas[k], paste0("group-col-mon", k)), character(1)), collapse = "")
       )
 
       if (nzchar(trimws(split_body))) {
@@ -1682,10 +1709,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         )
       }, character(1)), collapse = "\n")
 
-      card_bg_block <- if (mono == "MXN")
-        "linear-gradient(160deg,#e2eafc 0%,#eef3ff 35%,#f8faff 100%)"
-      else
-        "linear-gradient(160deg,#d9f0e8 0%,#e8f7f2 35%,#f4fdf9 100%)"
+      card_bg_block <- fondo_tarjeta(mono)
       sprintf('
     <div class="mov-block">
       <div class="mov-block-inner">
@@ -1779,9 +1803,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     .tot-box{flex:1;border-radius:12px;padding:20px 24px 16px;color:#fff;
       position:relative;overflow:hidden;
       display:flex;flex-direction:column;gap:0;min-height:140px;}
-    .tot-box.mxn{background:linear-gradient(135deg,#0d1b3e 0%,#1e4080 100%);
+    .tot-box.mon1{background:linear-gradient(135deg,#0d1b3e 0%,#1e4080 100%);
       -webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    .tot-box.usd{background:linear-gradient(135deg,#064e3b 0%,#0d9f8a 100%);
+    .tot-box.mon2{background:linear-gradient(135deg,#064e3b 0%,#0d9f8a 100%);
       -webkit-print-color-adjust:exact;print-color-adjust:exact;}
     .tot-top-row{display:flex;justify-content:space-between;align-items:flex-start;
       margin-bottom:4px;}
@@ -1824,8 +1848,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     .group-col-hdr{font-size:8.5px;font-weight:700;letter-spacing:1px;
       text-transform:uppercase;padding:6px 12px;
       -webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    .group-col-mxn{background:#e2eafc;color:#1e3a5f;}
-    .group-col-usd{background:#d9f0e8;color:#0d6b5e;}
+    .group-col-mon1{background:#e2eafc;color:#1e3a5f;}
+    .group-col-mon2{background:#d9f0e8;color:#0d6b5e;}
     .ctx-badge{font-size:8px;font-weight:700;color:#374151;
       background:#f1f5f9;padding:1px 5px;border-radius:3px;}
     /* ── Group split table: fixed layout so IMPORTE column is never clipped ── */
@@ -1894,8 +1918,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       text-transform:uppercase;padding:2px 10px;border-radius:4px;
       display:inline-block;margin-bottom:8px;
       -webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    .pulse-mxn-label{background:#dbeafe;color:#1e3a5f;}
-    .pulse-usd-label{background:#d1fae5;color:#065f46;}
+    .pulse-mon1-label{background:#dbeafe;color:#1e3a5f;}
+    .pulse-mon2-label{background:#d1fae5;color:#065f46;}
     .pulse-kpi-row{display:flex;gap:8px;margin-bottom:8px;}
     .pulse-kpi{flex:1;border-radius:8px;padding:9px 13px;color:#fff;
       -webkit-print-color-adjust:exact;print-color-adjust:exact;}
@@ -2005,29 +2029,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     <!-- ── POSICIÓN GLOBAL ─────────────────────────────────────────── -->
     <div class="sec-title" style="margin-top:4px;">Posici&oacute;n Global</div>
     <div class="totals-row">
-      <div class="tot-box mxn">
-        <div class="tot-top-row">
-          <div class="tot-left">
-            <div class="tot-label">Total Balance MXN</div>
-            <div class="tot-amount">%s</div>
-          </div>
-          <div class="tot-delta">%s</div>
-        </div>
-        <div class="tot-spark">%s</div>
-        <div class="tot-breakdown">%s</div>
-      </div>
-      <div class="tot-box usd">
-        <div class="tot-top-row">
-          <div class="tot-left">
-            <div class="tot-label">Total Balance USD</div>
-            <div class="tot-amount">%s</div>
-          </div>
-          <div class="tot-delta">%s</div>
-        </div>
-        <div class="tot-spark">%s</div>
-        <div class="tot-breakdown">%s</div>
-      </div>
-    </div>
+%s
+    </div>%s
 
     <!-- ── SALDOS POR CUENTA ───────────────────────────────────────── -->
     <div class="sec-title">Saldos por Cuenta</div>
@@ -2053,10 +2056,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     css,
     # header: period (title), period (subtitle), gen
     he(period_label), he(period_label), he(gen_label),
-    # MXN box: amount, delta, spark, breakdown
-    he(fmts(mxn_total)), mxn_delta_html, mxn_bar_svg, mxn_breakdown,
-    # USD box: amount, delta, spark, breakdown
-    he(fmts(usd_total)), usd_delta_html, usd_bar_svg, usd_breakdown,
+    # one total box per shown currency, then the note for the others
+    cajas_html, nota_extra,
     # cards grid class + cards
     cards_grid_class, cards_html,
     # group top movements
