@@ -72,7 +72,13 @@ centro <- function(js_el) ev(sprintf("(function(){ var e = %s; e.scrollIntoView(
   var r = e.getBoundingClientRect(); return [r.left + r.width/2, r.top + r.height/2]; })()", js_el))
 raton <- function(tipo, p, botones = 0L) b$Input$dispatchMouseEvent(type = tipo, x = p[[1]], y = p[[2]],
   button = if (tipo == "mouseMoved" && !botones) "none" else "left", buttons = botones, clickCount = 1L)
-clic <- function(js_el) { p <- centro(js_el); raton("mouseMoved", p); raton("mousePressed", p, 1L); raton("mouseReleased", p); Sys.sleep(0.4) }
+# A point is taken once the element stays put: a modal sliding in or a table
+# above it changing height moves it between the measure and the click (T38).
+clic <- function(js_el) {
+  p <- centro(js_el); Sys.sleep(0.12)
+  for (k in 1:25) { q <- centro(js_el); if (identical(p, q)) break; p <- q; Sys.sleep(0.12) }
+  raton("mouseMoved", p); raton("mousePressed", p, 1L); raton("mouseReleased", p); Sys.sleep(0.4)
+}
 celda <- function(t, id, k = 2L) sprintf("HDT.fila('%s', '%s').querySelectorAll('td')[%d]", t, id, k)
 boton_fila <- function(t, id, a) sprintf("HDT.fila('%s', '%s').querySelector('button[data-accion=%s]')", t, id, a)
 por_id <- function(id) sprintf("document.getElementById('ph-%s')", id)
