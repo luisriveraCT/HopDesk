@@ -104,8 +104,12 @@ job_error <- function(cid, modo, e) {
            error = function(e2) NULL)
 }
 
+# The HTML goes as raw bytes in `what`: in aws.s3 0.3.22 `file` is a path
+# (file.size(file)), and raw bytes there crashed the first real run with
+# "invalid filename argument" (T42; tests/test_avisos_job_put_object.R runs
+# the real put_object up to the network).
 job_guardar_prueba <- function(cid, nombre, html) {
-  aws.s3::put_object(file = charToRaw(enc2utf8(html)), object = .s3_key(paste0("avisos/prueba/", nombre), cid),
+  aws.s3::put_object(what = charToRaw(enc2utf8(html)), object = .s3_key(paste0("avisos/prueba/", nombre), cid),
                      bucket = .s3_bucket(), headers = list(`Content-Type` = "text/html; charset=utf-8"))
 }
 

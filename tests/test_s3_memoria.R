@@ -39,8 +39,9 @@ ok("put_object de un .rds devuelve TRUE y cuenta como escritura",
 ok("… y s3readRDS lo lee como el objeto de R (el respaldo de .s3_write, la cola fuera de línea)",
    identical(aws.s3::s3readRDS(object = "acme/tabla.rds", bucket = "b"), df))
 bytes <- as.raw(c(0x25, 0x50, 0x44, 0x46, 0x00, 0xff))
+# Bytes go in `what`, as in aws.s3 0.3.22 (T42); `file` is a path.
 ok("put_object de bytes (un adjunto) y get_object devuelve los mismos bytes",
-   isTRUE(aws.s3::put_object(file = bytes, object = "acme/adj/x.pdf", bucket = "b",
+   isTRUE(aws.s3::put_object(what = bytes, object = "acme/adj/x.pdf", bucket = "b",
                              headers = list(`Content-Type` = "application/pdf"))) &&
      identical(aws.s3::get_object(object = "acme/adj/x.pdf", bucket = "b"), bytes))
 aws.s3::s3saveRDS(df, object = "acme/otra.rds", bucket = "b")
@@ -102,7 +103,7 @@ ok(".mem_subidas cuenta solo lo que subió put_object (y reset lo vuelve a 0)",
 utils::assignInNamespace("put_object", function(...) stop("DRY RUN"), "aws.s3")   # as a dry-run script does
 s3_memoria_reinstalar()
 ok("s3_memoria_reinstalar() vuelve a poner los seis falsos tras un código que cambió aws.s3",
-   isTRUE(aws.s3::put_object(file = bytes, object = "acme/r.bin", bucket = "b")) &&
+   isTRUE(aws.s3::put_object(what = bytes, object = "acme/r.bin", bucket = "b")) &&
      identical(aws.s3::get_object(object = "acme/r.bin", bucket = "b"), bytes))
 
 # ── 4. Back to the real ones ─────────────────────────────────────────────────

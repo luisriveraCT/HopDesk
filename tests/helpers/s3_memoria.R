@@ -85,8 +85,17 @@ reg.finalizer(.mem, function(e) s3_memoria_restaurar(), onexit = TRUE)
 }
 # .mem_subidas: how many put_object calls stored something (the offline
 # queue's replay and .s3_write's fallback upload this way).
-.mem_falsos$put_object <- function(file, object, bucket, ...) {
-  b <- if (is.raw(file)) file else readBin(file, "raw", file.info(file)$size)
+# As aws.s3 0.3.22 (T42): `what` takes raw bytes; `file` is a PATH -- raw
+# bytes there fail with the library's own "invalid filename argument" (the
+# job's test HTML did, and this fake used to accept it).
+.mem_falsos$put_object <- function(what, object, bucket, ..., file) {
+  if (!missing(file)) {
+    if (!is.character(file) || length(file) != 1L) stop("invalid filename argument")
+    b <- readBin(file, "raw", file.info(file)$size)
+  } else {
+    if (!is.raw(what)) stop("Invalid payload of `what' - must be a raw vector, character vector or a connection")
+    b <- what
+  }
   .mem_escribir(object, .mem_bytes(b))
   .mem_subidas <<- .mem_subidas + 1L
   invisible(TRUE)
