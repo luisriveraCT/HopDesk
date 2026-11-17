@@ -16,7 +16,7 @@ cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALS
 cargar("R/global.R", c("strip_accents", "fmt_money", "CURRENCIES"))
 cargar("R/persistence.R", "confirmaciones_vigentes")
 cargar("R/pasivos_observers.R", "isTRUE_safe")
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+for (f in c("R/monedas.R", "R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/pasivos_schemas.R", "R/pasivos_table_pivot.R", "R/pasivos_table_styles.R",
             "R/pasivos_table_module.R", "R/pasivos_list_module.R")) source(f)
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
@@ -54,12 +54,17 @@ ui <- fluidPage(
   verbatimTextOutput("eco")
 )
 server <- function(input, output, session) {
+  config_base <- reactiveVal(if (nzchar(Sys.getenv("PASIVOS_BASE"))) Sys.getenv("PASIVOS_BASE") else NA_character_)
+  observeEvent(input$t33_base, config_base(input$t33_base))
   shared <- list(
     pasivos_provisions_db = reactiveVal(D$provisions), pasivos_liabilities_db = reactiveVal(D$liabilities),
     manual_inv = reactiveVal(D$manual_inv), bancos_confirmados = reactiveVal(D$bancos_confirmados),
     visible_initials = reactiveVal(D$visibles), empresa_sel = reactiveVal(D$visibles),
     proveedores_db = reactiveVal(NULL), current_user = reactiveVal("tester"), effective_client_id = function() "prueba",
-    suppress_ledger_prov_refresh = reactiveVal(FALSE))
+    suppress_ledger_prov_refresh = reactiveVal(FALSE),
+    # T33: the client's base currency, PASIVOS_BASE (none = not chosen); the
+    # test can change it live with Shiny.setInputValue('t33_base', 'USD').
+    moneda_base_cliente = reactive(moneda_base_resolver(config_base())))
   pasivos_table_module_server("pt", shared)
   ultimo <- reactiveVal(list(evento = "", valor = "", n = 0L))
   for (ev in c("pasivos_cell_click", "pasivos_convert_request", "pasivos_edit_liability", "pasivos_add_liability")) local({
