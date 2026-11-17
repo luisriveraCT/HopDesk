@@ -27,6 +27,9 @@ for (e in parse("R/treasury_map_module.R"))
       as.character(e[[2]]) %in% c(".tm_parte_to_ini", ".tm_bank_balances", "treasuryMapUI"))
     eval(e, env)
 env$`%||%` <- `%||%`
+# treasuryMapUI()'s text comes from the dictionary (T41): tr() and its files.
+sys.source("R/i18n.R", envir = env)
+env$.i18n_dir <- file.path(getwd(), "www", "i18n")
 
 session_map <- c(NRS = "Networks Realtors", NTS = "Networks Trucking Services")
 shared_err  <- list(company_map = function() stop("not ready"),
