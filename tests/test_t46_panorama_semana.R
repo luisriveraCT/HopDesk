@@ -42,7 +42,10 @@ ok("vectorized over amount and currency",
    identical(monto_moneda(c(1, 2500.5), c("MXN", "USD")), c("1.00 MXN", "2,500.50 USD")))
 ok("the code is normalized (\" usd \" -> USD)", identical(monto_moneda(5, " usd "), "5.00 USD"))
 ok("a code outside the catalog keeps 2 decimals and is shown as is", identical(monto_moneda(5, "ZZZ"), "5.00 ZZZ"))
-ok("NA amount is 0", identical(monto_moneda(NA, "EUR"), "0.00 EUR"))
+ok("no amount is \"—\", never \"0.00\" (in money, no figure is not zero)",
+   identical(monto_moneda(NA, "EUR"), "—") && identical(monto_moneda("abc", "MXN"), "—") &&
+     identical(monto_moneda(c(1, NA), "USD"), c("1.00 USD", "—")))
+ok("zero is still a figure: \"0.00 MXN\"", identical(monto_moneda(0, "MXN"), "0.00 MXN"))
 ok("no currency: the number alone", identical(monto_moneda(5, NA), "5.00"))
 ok("never a \"$\"", !any(grepl("$", monto_moneda(c(1, -2, 3), c("MXN", "USD", "EUR")), fixed = TRUE)))
 ok("empty in, empty out", identical(monto_moneda(numeric(), character()), character()))
