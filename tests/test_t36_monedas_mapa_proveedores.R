@@ -92,5 +92,82 @@ ok("the only change: NA or EUR to BanBajío (030) was BCO, now SPI (as the modal
      identical(ahora[cambia], ppl_medio_pago(g$m[cambia], g$b[cambia])))
 ok("prov_medio_pago on one currency for many rows", identical(prov_medio_pago("MXN", c("030", "012")), c("BCO", "SPI")))
 
+# ── 2. Mapa de tesorería ─────────────────────────────────────────────────────
+seccion("2. Mapa de tesorería: selector, balances, base")
+cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
+cargar("R/vencidos_module.R", "facturas_ids")
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R")) source(f)
+.i18n_dir <- file.path(getwd(), "www", "i18n")
+puede <- function(usuario, permiso) TRUE
+source(Sys.getenv("TMAP_R", "R/treasury_map_module.R"))
+
+# updateSelectInput() as the module calls it: keep what it sent.
+.upd <- new.env(); .upd$x <- list()
+updateSelectInput <- function(session, inputId, label = NULL, choices = NULL, selected = NULL)
+  .upd$x[[inputId]] <- list(choices = unname(as.character(choices)), selected = selected)
+
+ar_map <- data.frame(.ini = "BBB", Parte = "Empresa A", Documento = paste0("D", 1:4),
+                     `Fecha de vencimiento` = as.Date("2026-10-05"), `Saldo vencido` = c(100, 200, 300, 50),
+                     Moneda = c("MXN", "MXN", "MXN", "USD"), check.names = FALSE, stringsAsFactors = FALSE)
+CTAS_MAP <- data.frame(id = c("c1", "c2", "c3", "c4"), Empresa = c("AAA", "AAA", "BBB", "BBB"),
+                       Moneda = c("Pesos", "EUR", "Dólares", "CAD"), activa = c(TRUE, TRUE, TRUE, FALSE),
+                       saldo_inicial = c(1000, 70, 40, 9), stringsAsFactors = FALSE)
+mapa_shared <- function(base_cfg) {
+  n <- new.env(); n$ctas <- 0L
+  cfg <- reactiveVal(base_cfg)
+  list(company_map = function() c(AAA = "Empresa A", BBB = "Empresa B"), current_user = function() "tester",
+       ctas_cuentas = function() { n$ctas <- n$ctas + 1L; CTAS_MAP },
+       bancos_movimientos = function() NULL,
+       moneda_base_cliente = reactive(moneda_base_resolver(cfg())), cfg = cfg, n = n)
+}
+ar_rv <- reactiveVal(ar_map)
+
+sh <- mapa_shared(NA)
+shiny::testServer(treasuryMapServer, args = list(shared = sh, ic_invoices_rv = reactive(list(ar = ar_rv()))), {
+  session$flushReact()
+  ok("base not chosen (MXN): the selector offers MXN, USD (invoices) and EUR (an active account); not CAD (inactive)",
+     identical(.upd$x$map_cur$choices, c("MXN", "USD", "EUR")) && identical(.upd$x$map_cur$selected, "MXN"))
+  ok("before the selector reports a value the map shows the base", identical(moneda_sel(), "MXN"))
+  b <- bank_balances()
+  ok("the EUR account has its own balance (it used to be added to the pesos)",
+     identical(b$AAA$MXN, 1000) && identical(b$AAA$EUR, 70) && identical(b$BBB$USD, 40))
+  ok("a currency with no account has no balance (the map says 'sin datos')", is.null(b$AAA$USD) && is.null(b$BBB$CAD))
+  nodos <- map_data()$nodes
+  ok("the nodes carry the MXN balance label", nrow(nodos) == 2L)
+
+  # The user picks USD; new data brings a GBP invoice: USD stays selected.
+  session$setInputs(map_cur = "USD")
+  ar_rv(rbind(ar_map, transform(ar_map[4, ], Documento = "D5", Moneda = "GBP")))
+  session$flushReact()
+  ok("new currency in the data: the selector adds it and keeps USD",
+     identical(.upd$x$map_cur$choices, c("MXN", "USD", "EUR", "GBP")) && identical(.upd$x$map_cur$selected, "USD"))
+  ok("the edges are the USD ones", identical(edges_summary()$Total, 50))
+  ar_rv(ar_map); session$flushReact()
+
+  # Saving Ajustes with the same base recomputes nothing.
+  antes <- sh$n$ctas
+  sh$cfg("MXN"); session$flushReact()
+  ok("saving the same base (NA -> MXN) does not recompute balances or the selector", identical(sh$n$ctas, antes))
+  # A new base reorders the selector.
+  sh$cfg("USD"); session$flushReact()
+  ok("base USD: USD goes first", identical(.upd$x$map_cur$choices[1], "USD"))
+})
+
+.upd$x <- list()
+sh <- mapa_shared("USD")
+shiny::testServer(treasuryMapServer, args = list(shared = sh, ic_invoices_rv = reactive(list(ar = ar_map))), {
+  session$flushReact()
+  ok("client with base USD: the map opens on USD", identical(moneda_sel(), "USD") &&
+       identical(.upd$x$map_cur$choices, c("USD", "MXN", "EUR")) && identical(.upd$x$map_cur$selected, "USD"))
+  ok("... and its edges are the USD invoices", identical(edges_summary()$Total, 50))
+})
+sh_sin <- list(company_map = function() c(AAA = "Empresa A", BBB = "Empresa B"), current_user = function() "tester")
+.upd$x <- list()
+shiny::testServer(treasuryMapServer, args = list(shared = sh_sin, ic_invoices_rv = reactive(NULL)), {
+  session$flushReact()
+  ok("no base, no accounts, no invoices: only the default base", identical(.upd$x$map_cur$choices, "MXN"))
+})
+ok(".tm_fmt has no default currency", !"cur" %in% names(Filter(Negate(is.symbol), formals(.tm_fmt))))
+
 cat(sprintf("\n%d passed, %d failed\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

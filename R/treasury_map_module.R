@@ -26,13 +26,12 @@
 }
 
 # Bank balance per company per currency.
-# Returns named list: result[[ini]][[currency]] = numeric (NA if no data).
-.tm_bank_balances <- function(shared) {
+# Returns named list: result[[ini]][[currency]] = numeric. A currency with no
+# account is absent (readers use `%||% NA_real_`). `base`: the client's base
+# currency, for an account whose Moneda is empty or unknown.
+.tm_bank_balances <- function(shared, base = MONEDA_BASE_OMISION) {
   cmap   <- tryCatch(shared$company_map(), error = function(e) c())
-  result <- setNames(
-    lapply(names(cmap), function(ini) list(MXN = NA_real_, USD = NA_real_)),
-    names(cmap)
-  )
+  result <- setNames(lapply(names(cmap), function(ini) list()), names(cmap))
 
   ctas <- tryCatch(
     if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas() else NULL,
@@ -54,13 +53,9 @@
            else NA_character_
     if (is.na(ini)) next
 
-    mon_raw <- toupper(trimws(ct$Moneda %||% "MXN"))
-    mon <- dplyr::case_when(
-      grepl("peso",  mon_raw, ignore.case = TRUE)              ~ "MXN",
-      grepl("d.lar", mon_raw, ignore.case = TRUE, perl = TRUE) ~ "USD",
-      mon_raw %in% c("MXN", "USD")                             ~ mon_raw,
-      TRUE                                                      ~ "MXN"
-    )
+    # "Pesos" / "Dólares" / a catalog code; anything else, the base (T36:
+    # an EUR account used to be added to the pesos).
+    mon <- ppl_moneda_cuenta(ct$Moneda, base)
 
     saldo_ini <- as.numeric(ct$saldo_inicial %||% 0)
     if (is.na(saldo_ini)) saldo_ini <- 0
@@ -115,7 +110,7 @@
   paths
 }
 
-.tm_fmt <- function(x, cur = "MXN") {
+.tm_fmt <- function(x, cur) {
   if (is.na(x)) return("\u2014")
   paste0(cur, "\u00a0", format(round(abs(x)), big.mark = ",", scientific = FALSE))
 }
@@ -355,7 +350,8 @@ treasuryMapUI <- function(id) {
       ),
       div(
         tags$label("Moneda:", class = "form-label d-block"),
-        selectInput(ns("map_cur"), NULL, choices = c("MXN", "USD"), width = "90px")
+        # The base and the data's currencies, filled by the server (T36).
+        selectInput(ns("map_cur"), NULL, choices = character(0), width = "90px")
       )
     ),
 
@@ -422,6 +418,37 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
                         selected = sel)
     })
 
+    # ── Currency (T36) ─────────────────────────────────────────────────────────
+    # The client's base, in a reactiveVal: saving Ajustes with the same base
+    # does not recompute the map.
+    leer_base <- function() tryCatch(shared$moneda_base_cliente()$moneda, error = function(e) NULL) %||%
+      MONEDA_BASE_OMISION
+    base <- reactiveVal(isolate(leer_base()))
+    observe(base(leer_base()))
+    # The currency the map shows: the selector's, the base until it is filled.
+    moneda_sel <- reactive(input$map_cur %||% base())
+    # The selector offers the base, then the currencies of the open IC invoices
+    # and of the active bank accounts, by number of documents. A currency with
+    # no balance is no use on a map of balances (Coordinador, T36 P2).
+    monedas_mapa <- reactiveVal(NULL)
+    observe({
+      dat  <- tryCatch(ic_invoices_rv(), error = function(e) NULL)
+      ar   <- if (is.list(dat) && is.data.frame(dat$ar)) dat$ar else NULL
+      ctas <- tryCatch(if (is.function(shared$ctas_cuentas)) shared$ctas_cuentas(), error = function(e) NULL)
+      de_ctas <- if (is.data.frame(ctas) && nrow(ctas) && "Moneda" %in% names(ctas)) {
+        act <- if ("activa" %in% names(ctas)) ctas$activa %in% TRUE else rep(TRUE, nrow(ctas))
+        ppl_moneda_cuenta(ctas$Moneda[act], base())
+      } else character()
+      m <- monedas_en_datos(c(if (!is.null(ar) && "Moneda" %in% names(ar)) as.character(ar$Moneda), de_ctas), base())
+      if (!identical(m, isolate(monedas_mapa()))) monedas_mapa(m)
+    })
+    observeEvent(monedas_mapa(), {
+      m   <- monedas_mapa()
+      sel <- isolate(input$map_cur)
+      updateSelectInput(session, "map_cur", choices = m,
+                        selected = if (!is.null(sel) && sel %in% m) sel else m[1])
+    })
+
     # ── State ──────────────────────────────────────────────────────────────────
     payment_plan  <- reactiveVal(list())
     selected_edge <- reactiveVal(NULL)   # list(from_ini, to_ini) or NULL
@@ -433,7 +460,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
     # ── Edge summary (AR only, by currency) ────────────────────────────────────
     edges_summary <- reactive({
       dat <- tryCatch(ic_invoices_rv(), error = function(e) NULL)
-      cur <- input$map_cur %||% "MXN"
+      cur <- moneda_sel()
       ar  <- if (!is.null(dat)) dat$ar else NULL
       if (is.null(ar) || !nrow(ar)) return(NULL)
 
@@ -459,13 +486,13 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
     # ── Bank balances — recompute when IC data refreshes ───────────────────────
     bank_balances <- reactive({
       ic_invoices_rv()  # reactive dependency: refreshes together with IC data
-      .tm_bank_balances(shared)
+      .tm_bank_balances(shared, base())
     })
 
     # ── visNetwork data ────────────────────────────────────────────────────────
     map_data <- reactive({
       cmap   <- shared$company_map()
-      cur    <- input$map_cur %||% "MXN"
+      cur    <- moneda_sel()
       target <- input$target_co %||% names(cmap)[1]
       bal    <- bank_balances()
       esum   <- edges_summary()
@@ -630,7 +657,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
         }
         hop_lbl   <- if (hops == 1) "directo" else paste0(hops, " pasos")
         badge_cls <- if (hops == 1) "tm-badge-direct" else if (hops == 2) "tm-badge-2" else "tm-badge-3"
-        amt_lbl   <- if (is.finite(bottleneck)) .tm_fmt(bottleneck, input$map_cur) else ""
+        amt_lbl   <- if (is.finite(bottleneck)) .tm_fmt(bottleneck, moneda_sel()) else ""
 
         div(class = "tm-route",
           tags$span(class = "tm-route-path", paste(path, collapse = " \u2192 ")),
@@ -734,7 +761,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       # ERP's are never removed from a view; Luis, 2026-11-04).
       ar   <- if (!is.null(dat)) dplyr::bind_rows(dat$ar, dat$ar_pagadas) else NULL
       sub  <- if (!is.null(edge) && is.data.frame(ar) && nrow(ar))
-                edge_invoices(edge, ar, input$map_cur %||% "MXN") else NULL
+                edge_invoices(edge, ar, moneda_sel()) else NULL
       if (is.null(sub)) sub <- tibble::tibble(Empresa = character(), Moneda = character(), Documento = character())
       amt_col <- if ("Saldo vencido" %in% names(sub)) "Saldo vencido" else "DocTotal"
       col <- function(n, def = NA) if (n %in% names(sub)) sub[[n]] else rep(def, nrow(sub))
@@ -787,7 +814,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
       dat <- tryCatch(ic_invoices_rv(), error = function(e) NULL)
       ar  <- if (!is.null(dat)) dat$ar else NULL; req(!is.null(ar))
 
-      cur     <- input$map_cur %||% "MXN"
+      cur     <- moneda_sel()
       amt_col <- if ("Saldo vencido" %in% names(ar)) "Saldo vencido" else "DocTotal"
       due_col <- "Fecha de vencimiento"
 
