@@ -50,7 +50,7 @@ hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
     htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=31"),
-    htmltools::tags$script(src = "hdtable.js?v=43")
+    htmltools::tags$script(src = "hdtable.js?v=44")
   ))
 }
 
@@ -902,7 +902,19 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         acciones_barra = barra_meta()
         ),
         # accion_celda only: no other table's message changes.
-        if (!is.null(celda_meta)) list(celda = celda_meta))
+        if (!is.null(celda_meta)) list(celda = celda_meta),
+        # acciones_ocultas travel with the data too (T38): their own message
+        # goes once, at the session's start, and an engine that arrives later
+        # (a modal's tables) lost it while its data came again -- a user
+        # without the permission saw ＋ and Agregar todo. Only tables that
+        # have acciones_ocultas; no other table's message changes.
+        if (!is.null(acciones_ocultas)) {
+          oc <- tryCatch(as.character(unlist(acciones_ocultas())), error = function(e) {
+            if (inherits(e, "shiny.silent.error")) stop(e)
+            NULL
+          })
+          if (!is.null(oc)) list(ocultas = I(oc))
+        })
       }, error = function(e) {
         if (inherits(e, "shiny.silent.error")) stop(e)
         .hd_falla_datos(tabla, e, session, ns("hdt"))

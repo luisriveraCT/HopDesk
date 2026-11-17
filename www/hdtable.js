@@ -64,6 +64,9 @@
   // ── Incoming data ────────────────────────────────────────────────────────
   function recibir(msg) {
     recibidos++;
+    // The hidden actions come with the data too (T38): their own message
+    // (hdt-ocultas) may have come before this script and been lost.
+    if (msg.ocultas != null) OCULTAS[msg.id] = arr(msg.ocultas).map(String);
     ULTIMO[msg.id] = msg;
     vigilar();
     pintarDesde(msg);
