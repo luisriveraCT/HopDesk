@@ -10,6 +10,7 @@ cat("=== test_avisos_correos ===\n\n")
 suppressPackageStartupMessages({ library(shiny); library(dplyr) })
 `%||%` <- function(a, b) if (is.null(a)) b else a
 source("R/i18n.R")
+source("R/monedas.R")   # MONEDA_BASE_OMISION (T39)
 source("R/tier_registry.R")
 source("R/permisos.R")
 source("R/avisos_umbrales.R")

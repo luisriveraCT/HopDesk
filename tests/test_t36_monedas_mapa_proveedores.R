@@ -25,7 +25,7 @@ source(Sys.getenv("PPL_R", "R/ppl_generator.R"))
 cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALSE))
   if (is.call(e) && is.name(e[[1]]) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) &&
       as.character(e[[2]]) %in% nombres) eval(e, envir = globalenv())
-cargar("R/global.R", c("strip_accents", "CURRENCIES"))
+cargar("R/global.R", c("strip_accents"))
 source(Sys.getenv("PEXC_R", "R/proveedores_excel.R"))
 
 # ── 1. The bank's words ──────────────────────────────────────────────────────

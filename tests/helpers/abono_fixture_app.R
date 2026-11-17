@@ -13,9 +13,9 @@ suppressPackageStartupMessages({ library(dplyr); library(tibble) })
 cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALSE))
   if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
     eval(e, envir = globalenv())
-cargar("R/global.R", "CURRENCIES")
 cargar("R/persistence.R", c("active_abonos_summary", "upsert_pagar_hoy"))
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+cargar("R/ui_components.R", c("moneda_base_sesion", "monedas_para_capturar", "monedas_para_filtrar"))   # T39
+for (f in c("R/i18n.R", "R/monedas.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/staging_browse_module.R")) source(f)
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 source("tests/helpers/abono_datos_prueba.R")

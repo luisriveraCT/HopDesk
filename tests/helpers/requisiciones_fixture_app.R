@@ -35,9 +35,10 @@ tomar("R/persistence.R", c(".normalize", "leer_tabla_para_escribir", ".s3_leer_p
                            "rebase_por_id", "confirmaciones_vigentes", ".schema_manual"))
 tomar("R/bancos_persistence.R", ".schema_bancos_confirmados")
 tomar("R/pasivos_persistence.R", c("etapa_de_provision_en", "PROVISION_PAGADA"))
+tomar("R/ui_components.R", c("moneda_base_sesion", "monedas_para_capturar", "monedas_para_filtrar"))   # T39
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
-  for (f in c("R/pasivos_schemas.R", "R/i18n.R", "R/tier_registry.R", "R/permisos.R", "R/avisos.R",
+  for (f in c("R/pasivos_schemas.R", "R/i18n.R", "R/monedas.R", "R/tier_registry.R", "R/permisos.R", "R/avisos.R",
               "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
               "R/adjuntos_s3.R", "R/requisiciones_persistence.R", "R/requisiciones_module.R"))
     sys.source(f, envir = globalenv())

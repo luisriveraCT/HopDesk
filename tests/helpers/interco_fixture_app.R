@@ -37,7 +37,7 @@ cargar <- function(archivo, nombres) {
       eval(e, envir = globalenv())
 }
 suppressPackageStartupMessages({ library(dplyr); library(shinyjs); library(tibble) })
-cargar("R/global.R", c("S3_KEYS", "S3_KEYS_CRITICAL", "CURRENCIES", "is_erp_sourced"))
+cargar("R/global.R", c("S3_KEYS", "S3_KEYS_CRITICAL", "is_erp_sourced"))
 cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 cargar("R/ui_components.R", "app_styles")
 cargar("R/vencidos_module.R", "facturas_ids")

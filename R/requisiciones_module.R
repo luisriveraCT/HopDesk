@@ -162,6 +162,13 @@ requisicionesUI <- function(id) {
 requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NULL) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
+    # The currencies a folder or a requisition can be captured in (monedas
+    # fase 3, T39, rule 1): the AP ledger's, the base first, then the whole
+    # catalog. The first is the default.
+    .req_monedas <- function() {
+      base <- tryCatch(shared$moneda_base_cliente()$moneda, error = function(e) NULL) %||% MONEDA_BASE_OMISION
+      monedas_para_capturar(tryCatch(shared$currency_choices$AP(), error = function(e) NULL) %||% character(), base)
+    }
 
     cid <- shiny::reactive({
       x <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
@@ -348,7 +355,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
 
     carpeta_editando <- shiny::reactiveVal(NULL)
     modal_carpeta <- function(fila = NULL) {
-      monedas <- tryCatch(shared$currency_choices$AP(), error = function(e) NULL) %||% c("MXN", "USD")
+      monedas <- .req_monedas()
       hd_modal(titulo = if (is.null(fila)) tr("requisiciones.carpeta.nueva") else tr("requisiciones.carpeta.editar"),
         htmltools::div(class = "hdreq-form",
           shiny::textInput(ns("carp_nombre"), tr("requisiciones.carpeta.nombre"), value = fila$nombre %||% "", width = "100%"),
@@ -652,7 +659,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
       inis <- iniciales()
       empresas <- if (length(inis)) stats::setNames(names(inis), paste0(names(inis), " — ", unname(inis))) else character()
       if (!is.null(fila) && !is.na(fila$empresa) && !fila$empresa %in% empresas) empresas <- c(empresas, stats::setNames(fila$empresa, fila$empresa))
-      monedas <- tryCatch(shared$currency_choices$AP(), error = function(e) NULL) %||% c("MXN", "USD")
+      monedas <- .req_monedas()
       cs <- carpetas_segura()
       carp <- c(stats::setNames("", tr("requisiciones.carpeta.ninguna")),
                 if (!is.null(cs) && nrow(cs)) stats::setNames(cs$id, cs$nombre))

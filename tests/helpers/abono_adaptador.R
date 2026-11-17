@@ -6,8 +6,8 @@
 # hd_table "abono_parcial"):
 #   ab_rejilla(datos) -> tibble(orden, Documento, Referencia, Empresa, Moneda,
 #       Parte, Codigo, FechaVenc, Vence, Saldo, SaldoTxt, Grupo)
-#     one row per invoice in the order painted: currency bands (MXN, USD,
-#     EUR), and within one a group's invoices together where the group first
+#     one row per invoice in the order painted: currency bands (the base,
+#     then by number of invoices), and within one a group's invoices together where the group first
 #     appears; Grupo "Parte|Empresa|Moneda" when 2 or more share it, else NA.
 #   ab_grupos(datos)  -> tibble(Grupo, n)
 #   ab_vacio(datos)   -> why it is empty (the text), or NA.
@@ -19,7 +19,8 @@ ab_rejilla <- function(datos) {
   texto <- function(c, x) cols[[match(c, campo)]]$valores(x)$mostrar
   clave <- paste(datos$Parte, datos$Empresa, datos$Moneda, sep = "|")
   n <- table(clave)[clave]
-  banda <- match(datos$Moneda, CURRENCIES)
+  # The engine's band order (T39): the base first, then by number of invoices.
+  banda <- match(datos$Moneda, monedas_para_filtrar(datos$Moneda, MONEDA_BASE_OMISION))
   primera <- match(clave, clave)                          # where its group first appears
   o <- order(banda, primera, seq_len(nrow(datos)))
   d <- datos[o, , drop = FALSE]; cl <- clave[o]; nn <- as.integer(n[o])

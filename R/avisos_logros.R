@@ -56,7 +56,7 @@ RADAR_SAP_DIAS_HABILES <- 2L     # radar 9
 #   m_hoy  umbral_metricas() of Friday's CxC rows (per empresa and moneda)
 #   dv     correo_datos_viernes()
 #   df     Friday's rows (avisos_ledger), for next week's radar lines
-correo_items_viernes <- function(serie, m_hoy, dv, df, base = "MXN") {
+correo_items_viernes <- function(serie, m_hoy, dv, df, base = MONEDA_BASE_OMISION) {
   viernes <- as.Date(dv$viernes); lunes <- umbral_lunes(viernes)
   serie <- .normalize(serie, .schema_metricas)
   items <- list()

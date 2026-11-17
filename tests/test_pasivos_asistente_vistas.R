@@ -12,7 +12,6 @@ suppressPackageStartupMessages({
   library(shiny); library(dplyr); library(tibble); library(lubridate); library(uuid)
 })
 `%||%` <- function(a, b) if (!is.null(a) && !all(is.na(a))) a else b
-if (!exists("CURRENCIES")) CURRENCIES <- c("MXN", "USD", "EUR")
 source("R/persistence.R")
 for (f in c("R/pasivos_schemas.R", "R/bancos_persistence.R", "R/pasivos_persistence.R",
             "R/pasivos_capabilities.R", "R/pasivos_audit.R", "R/forecasting_resolve.R",

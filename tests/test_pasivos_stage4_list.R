@@ -29,7 +29,6 @@ if (!exists("S3_KEYS")) {
   )
 }
 `%||%` <- function(a, b) if (!is.null(a) && !all(is.na(a))) a else b
-if (!exists("CURRENCIES")) CURRENCIES <- c("MXN","USD","EUR","GBP","CAD","JPY","CHF","AUD","CNY","BRL")
 
 source("R/bancos_persistence.R")
 source("R/pasivos_persistence.R")

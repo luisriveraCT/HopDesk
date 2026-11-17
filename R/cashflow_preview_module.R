@@ -763,7 +763,10 @@ cashflowPreviewServer <- function(id, shared) {
       "tabla", tabla = "flujo_caja", datos = filas_tabla, columnas = cols_tabla,
       piezas = c("sumas_columnas", "filas_resumen", "edicion_celda", "dinero_compacto", "tono_celda",
                  "expandir", "etiquetas"),
-      secciones = list(list(campo = "Moneda", orden = c("MXN", "USD", "EUR"))),
+      # The base first, then by number of documents (T39, rule 2); counted on
+      # the documents, not on the table rows (every currency has the same rows).
+      secciones = list(list(campo = "Moneda", orden = function()
+        monedas_para_filtrar(.cf_monedas_de_datos(shared), base_ef()))),
       grupo = c("Moneda", "Tipo"),
       vacio = "tablas.flujo.vacio")
 

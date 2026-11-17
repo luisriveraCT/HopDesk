@@ -4,15 +4,25 @@
 
 # Returns the UI content (form rows + JS) for the manual entry modal.
 # Used by show_combined_entry_modal() in staging_browse_module.R.
-manual_entry_tab_content <- function(ledger, empresas) {
+# The currencies of one ledger's SAP documents (AR or AP), one per document;
+# nothing when the snapshot is not there.
+.monedas_del_libro <- function(sap_data, ledger) {
+  df <- tryCatch(sap_data()[[ledger]], error = function(e) NULL)
+  if (is.data.frame(df) && "Moneda" %in% names(df)) as.character(df$Moneda) else character()
+}
+
+# `monedas`: the ledger's documents' currencies; the selector offers them
+# first (the base on top), then the whole catalog (monedas fase 3, T39).
+manual_entry_tab_content <- function(ledger, empresas, monedas = character(),
+                                     base = moneda_base_sesion()) {
   party_lbl <- if (ledger == "AR") "Cliente" else "Proveedor"
   tagList(
     fluidRow(
       column(6,
         selectInput("me_empresa",  "Empresa",  choices = empresas,
                     selected = empresas[1]),
-        selectInput("me_moneda",   "Moneda",   choices = CURRENCIES,
-                    selected = "MXN"),
+        selectInput("me_moneda",   "Moneda",   choices = monedas_para_capturar(monedas, base),
+                    selected = base),
         textInput("me_documento",  "No. Documento *", value = ""),
         textInput("me_factura",    "No. Factura",     value = "")
       ),
@@ -103,8 +113,10 @@ manual_edit_handlers <- function(input, output, session,
       column(6,
         selectInput("me_empresa",  "Empresa",  choices = empresas,
                     selected = existing_row$Empresa %||% empresas[1]),
-        selectInput("me_moneda",   "Moneda",   choices = CURRENCIES,
-                    selected = existing_row$Moneda %||% "MXN"),
+        selectInput("me_moneda",   "Moneda",
+                    choices  = monedas_para_capturar(c(existing_row$Moneda, .monedas_del_libro(sap_data, ledger)),
+                                                     moneda_base_sesion(session)),
+                    selected = existing_row$Moneda %||% moneda_base_sesion(session)),
         textInput("me_documento",  "No. Documento *",
                   value = existing_row$Documento %||% ""),
         textInput("me_factura",    "No. Factura",

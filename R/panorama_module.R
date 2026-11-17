@@ -49,6 +49,10 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
                            tz = shiny::reactive("America/Mexico_City")) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
+    # The client's base currency (T39): first in every total, and the one
+    # whose amounts carry no code.
+    base_cli <- shiny::reactive(tryCatch(shared$moneda_base_cliente()$moneda, error = function(e) NULL) %||%
+                                  MONEDA_BASE_OMISION)
     cid <- shiny::reactive(tryCatch(shared$effective_client_id(), error = function(e) NULL))
     usr <- shiny::reactive(tryCatch(shared$usuario(), error = function(e) NULL))
     zona <- shiny::reactive(tz() %||% "America/Mexico_City")
@@ -96,15 +100,17 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
     })
 
     # ── Data already in the session ───────────────────────────────────────────
-    pagos  <- shiny::reactive(panorama_pagos_hoy(tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), hoy()))
+    pagos  <- shiny::reactive(panorama_pagos_hoy(tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), hoy(),
+                                                 base = base_cli()))
     ver_cxc <- shiny::reactive(is.null(nivel_calendario(tryCatch(shared$tier_efectivo(), error = function(e) NULL))))
     cobros <- shiny::reactive({
       if (!ver_cxc()) return(NULL)
       f <- shared$df_combined_AR
-      panorama_cobros_hoy(if (is.function(f)) tryCatch(f(), error = function(e) NULL) else NULL, hoy())
+      panorama_cobros_hoy(if (is.function(f)) tryCatch(f(), error = function(e) NULL) else NULL, hoy(),
+                          base = base_cli())
     })
     pasivos <- shiny::reactive(panorama_pasivos_pronto(
-      tryCatch(shared$pasivos_provisions_db(), error = function(e) NULL), hoy()))
+      tryCatch(shared$pasivos_provisions_db(), error = function(e) NULL), hoy(), base = base_cli()))
     sap <- shiny::reactive({ reloj(); panorama_sap_estado(tryCatch(shared$sap_snapshot_info(), error = function(e) NULL)) })
 
     # ── Encabezado ────────────────────────────────────────────────────────────
@@ -234,15 +240,15 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       pp <- pasivos()
       tarjetas <- list(
         .pan_tarjeta_hoy(tr("panorama.hoy.pagos"), pagos(),
-          tr_n("panorama.hoy.pagos_n", sum(pagos()$n)), "PH", ns),
+          tr_n("panorama.hoy.pagos_n", sum(pagos()$n)), "PH", ns, base = base_cli()),
         if (ver_cxc()) .pan_tarjeta_hoy(tr("panorama.hoy.cobros"), cobros(),
-          tr_n("panorama.hoy.cobros_n", sum(cobros()$n)), "CAL", ns),
+          tr_n("panorama.hoy.cobros_n", sum(cobros()$n)), "CAL", ns, base = base_cli()),
         .pan_tarjeta_hoy(tr("panorama.hoy.pasivos", n = as.character(PANORAMA_DIAS_PASIVOS)), pp$totales,
           if (nrow(pp$totales))
             tr_n("panorama.hoy.pasivos_n", sum(pp$totales$n),
                  fecha = paste(tr(paste0("panorama.dia.", as.integer(format(pp$primera, "%u")))),
                                as.integer(format(pp$primera, "%d"))))
-          else tr("panorama.hoy.pasivos_ninguno"), "PSV", ns))
+          else tr("panorama.hoy.pasivos_ninguno"), "PSV", ns, base = base_cli()))
       shiny::div(class = "pan-hoy", Filter(Negate(is.null), tarjetas))
     })
 
@@ -366,8 +372,8 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       p <- pagos(); cb <- cobros()
       if (nrow(p) || (!is.null(cb) && nrow(cb)))
         add(tr("panorama.cinta.hoy"), paste(c(
-          if (nrow(p)) tr("panorama.cinta.pagos", monto = .pan_monto_corto(p)),
-          if (!is.null(cb) && nrow(cb)) tr("panorama.cinta.cobros", monto = .pan_monto_corto(cb))),
+          if (nrow(p)) tr("panorama.cinta.pagos", monto = .pan_monto_corto(p, base_cli())),
+          if (!is.null(cb) && nrow(cb)) tr("panorama.cinta.cobros", monto = .pan_monto_corto(cb, base_cli()))),
           collapse = " · "))
       fx <- tryCatch(if (is.function(shared$fx_fix)) shared$fx_fix() else NULL, error = function(e) NULL)
       if (is.list(fx) && is.numeric(fx$valor) && length(fx$valor) == 1L && !is.na(fx$valor) && fx$valor > 0) {
@@ -426,18 +432,19 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
   paste(paste(n[-length(n)], collapse = ", "), tr("panorama.y"), n[length(n)])
 }
 
-# MXN (or the first currency) in full; others as "+ N más" in the Cinta.
-.pan_monto_corto <- function(t) {
-  base <- paste0(panorama_monto(t$total[1]), if (t$moneda[1] != "MXN") paste0(" ", t$moneda[1]))
-  if (nrow(t) > 1) paste(base, tr("panorama.cinta.mas_monedas", n = as.character(nrow(t) - 1L))) else base
+# The base (or the first currency) in full; others as "+ N más" in the Cinta.
+# A currency other than the client's base carries its code (T39).
+.pan_monto_corto <- function(t, base = MONEDA_BASE_OMISION) {
+  txt <- paste0(panorama_monto(t$total[1]), if (t$moneda[1] != base) paste0(" ", t$moneda[1]))
+  if (nrow(t) > 1) paste(txt, tr("panorama.cinta.mas_monedas", n = as.character(nrow(t) - 1L))) else txt
 }
 
 # A Hoy card: the base currency large, any other currency underneath (never
 # added together), the count line and the tab it opens.
-.pan_tarjeta_hoy <- function(titulo, totales, linea, tab, ns) {
+.pan_tarjeta_hoy <- function(titulo, totales, linea, tab, ns, base = MONEDA_BASE_OMISION) {
   vacio <- is.null(totales) || !nrow(totales)
   principal <- if (vacio) panorama_monto(0) else
-    paste0(panorama_monto(totales$total[1]), if (totales$moneda[1] != "MXN") paste0(" ", totales$moneda[1]))
+    paste0(panorama_monto(totales$total[1]), if (totales$moneda[1] != base) paste0(" ", totales$moneda[1]))
   shiny::tags$button(
     type = "button", class = paste("pan-tarjeta pan-hoy-tarjeta", if (vacio) "pan-hoy-tarjeta--vacia"),
     onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})", ns("ir"), tab),

@@ -81,7 +81,7 @@ test_that("colors by position: a client in MXN keeps MXN blue, USD green, EUR pu
 
 # ── 3. The table's server: base from shared, and only a real change rebuilds ─
 suppressPackageStartupMessages(library(shiny))
-cargar("R/global.R", c("fmt_money", "CURRENCIES"))
+cargar("R/global.R", c("fmt_money"))
 cargar("R/pasivos_observers.R", "isTRUE_safe")
 cargar("R/pasivos_capabilities.R", c("PASIVOS_CAPABILITIES", "pasivos_autoriza"))
 for (f in c(F_TMOD, "R/pasivos_list_module.R")) suppressMessages(source(f))

@@ -20,7 +20,7 @@ cargar <- function(archivo, nombres) {
       eval(e, envir = globalenv())
 }
 suppressPackageStartupMessages({ library(dplyr); library(shinyjs); library(shinyWidgets); library(readxl) })
-cargar("R/global.R", c("strip_accents", "CURRENCIES"))
+cargar("R/global.R", c("strip_accents"))
 cargar("R/settings/settings_helpers.R", ".BANCOS_MX_CHOICES")
 cargar("R/proveedores_match.R", "parse_activo_hasta")
 cargar("R/persistence.R", c(".schema_proveedores", ".normalize"))

@@ -24,7 +24,7 @@ cargar <- function(archivo, nombres) {
     if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
       eval(e, envir = globalenv())
 }
-cargar("R/global.R", c("fmt_money", "CURRENCIES", "%||%"))
+cargar("R/global.R", c("fmt_money", "%||%"))
 cargar("R/ui_components.R", "app_styles")
 # The currency catalog (R/monedas.R, T33); it reads data/ relative to the repo.
 local({ viejo <- setwd(raiz); on.exit(setwd(viejo)); sys.source("R/monedas.R", envir = globalenv()) })

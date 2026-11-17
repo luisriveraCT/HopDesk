@@ -80,7 +80,7 @@ correo_destinatarios <- function(usuarios, config = NULL, prefs = NULL) {
   gsub("\\*([^*]+)\\*", "<i>\\1</i>", txt)
 }
 
-correo_monto <- function(x, moneda = "MXN", moneda_base = "MXN") {
+correo_monto <- function(x, moneda = moneda_base, moneda_base = MONEDA_BASE_OMISION) {
   n <- formatC(round(as.numeric(x), 2), format = "f", digits = 2, big.mark = ",")
   if (identical(moneda, moneda_base)) paste0("$", n) else paste0("$", n, " ", moneda)
 }
@@ -275,7 +275,7 @@ correo_lunes_asunto <- function(d, idioma)
 
 correo_lunes_html <- function(d, dest) {
   idioma <- dest$idioma %||% "es"; cxc <- isTRUE(dest$ver_cxc)
-  base <- d$moneda_base %||% "MXN"
+  base <- d$moneda_base %||% MONEDA_BASE_OMISION
   # The headline compares the base currency only: amounts in different
   # currencies are never added up (integrador, 2026-11-12).
   en_base <- function(x) { v <- if (base %in% names(x)) as.numeric(x[[base]]) else NA; if (is.na(v)) 0 else v }

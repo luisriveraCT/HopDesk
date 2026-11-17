@@ -141,9 +141,9 @@ avisos_cliente_datos <- function(cid, ahora = Sys.time()) {
 .avisos_aprox <- function(df) if ("aprox" %in% names(df)) df$aprox %in% TRUE else rep(FALSE, nrow(df))
 
 # Named numeric by moneda, one per currency (B's .pan_por_moneda: never
-# added across currencies), MXN first.
-.avisos_por_moneda <- function(df) {
-  t <- .pan_por_moneda(df$Moneda, .avisos_monto(df))
+# added across currencies), the client's base first (T39).
+.avisos_por_moneda <- function(df, base = MONEDA_BASE_OMISION) {
+  t <- .pan_por_moneda(df$Moneda, .avisos_monto(df), base)
   stats::setNames(t$total, t$moneda)
 }
 
@@ -170,7 +170,7 @@ avisos_cliente_datos <- function(cid, ahora = Sys.time()) {
 
 # The client's CxC % past due in the base currency on `lunes`, and its
 # change since the Monday before (NA without that week), from metricas.rds.
-correo_vencidos <- function(serie, lunes, moneda_base = "MXN") {
+correo_vencidos <- function(serie, lunes, moneda_base = MONEDA_BASE_OMISION) {
   serie <- .normalize(serie, .schema_metricas)
   pct <- function(d) {
     s <- serie[serie$lunes == d & serie$moneda == moneda_base, , drop = FALSE]
@@ -184,16 +184,16 @@ correo_vencidos <- function(serie, lunes, moneda_base = "MXN") {
 # The Monday email's numbers for one client (correo_lunes_html()'s `d`,
 # without the per-recipient parts). `df` = avisos_ledger(), `sh` its shared,
 # `serie` = metricas.rds after this Monday's rows, `alertas` = umbral_evaluar().
-correo_datos_lunes <- function(df, sh, lunes, serie, alertas, sap_fecha, url = "", moneda_base = "MXN") {
+correo_datos_lunes <- function(df, sh, lunes, serie, alertas, sap_fecha, url = "", moneda_base = MONEDA_BASE_OMISION) {
   lunes <- as.Date(lunes)
   sem <- .avisos_semana(df, lunes)
   ar <- sem[sem$Tipo %in% "AR", , drop = FALSE]
   ap <- sem[sem$Tipo %in% "AP", , drop = FALSE]
   cmap <- sh$company_map()
-  pas <- panorama_pasivos_pronto(sh$pasivos_provisions_db(), lunes, 6L)
+  pas <- panorama_pasivos_pronto(sh$pasivos_provisions_db(), lunes, 6L, base = moneda_base)
   venc <- correo_vencidos(serie, lunes, moneda_base)
   list(lunes = lunes,
-       cobros = .avisos_por_moneda(ar), pagos = .avisos_por_moneda(ap),
+       cobros = .avisos_por_moneda(ar, moneda_base), pagos = .avisos_por_moneda(ap, moneda_base),
        cobros_aprox = .avisos_monedas_aprox(ar), pagos_aprox = .avisos_monedas_aprox(ap),
        pasivos_n = as.integer(sum(pas$totales$n)), pasivos = stats::setNames(pas$totales$total, pas$totales$moneda),
        vencidos_pct = venc$pct, vencidos_delta = venc$delta,
@@ -234,7 +234,7 @@ correo_tambien <- function(avisos_df, dest, cid) {
 
 correo_semana_guardar <- function(cid, df, d) {
   sem <- .avisos_semana(df, d$lunes)
-  obj <- list(lunes = as.Date(d$lunes), moneda_base = d$moneda_base %||% "MXN",
+  obj <- list(lunes = as.Date(d$lunes), moneda_base = d$moneda_base %||% MONEDA_BASE_OMISION,
               vencidos_pct = d$vencidos_pct,
               filas = sem[, intersect(.SEMANA_COLS, names(sem)), drop = FALSE])
   .s3_leer_para_escribir(.SEMANA_KEY, cid)
@@ -272,7 +272,7 @@ correo_semana_leer <- function(cid, viernes) {
 #   vencidos: the client's CxC % past due now (`df`, Friday's rows) and its
 #          change since Monday's.
 correo_datos_viernes <- function(semana, df, sh, viernes, sap_fecha, url = "") {
-  base <- semana$moneda_base %||% "MXN"
+  base <- semana$moneda_base %||% MONEDA_BASE_OMISION
   f <- semana$filas
   fuente <- if ("source" %in% names(f)) f$source else rep(NA_character_, nrow(f))
   ap <- f[f$Tipo %in% "AP" & !(fuente %in% "provision"), , drop = FALSE]

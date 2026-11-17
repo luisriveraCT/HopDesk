@@ -15,7 +15,7 @@ cat("=== test_monedas_guardian ===\n\n")
 `%||%` <- function(a, b) if (is.null(a)) b else a
 source("R/monedas.R")
 
-TOPE <- 41L    # 2026-11-17: 222 (fase 1) -> 194 (fase 2, Flujo + R/fx_banxico.R) -> 118 (fase 3: T33 Pasivos -43, T34 Pagar hoy -33) -> 92 (T35 Reporte -26) -> 61 (T36 Mapa + Proveedores -31) -> 47 (T37 Cuentas/Ledger/Vencidos -14) -> 41 (cierre: SAP + carga -6); lowered by every migration
+TOPE <- 0L     # 2026-11-17: 222 (fase 1) -> 194 (fase 2, Flujo + R/fx_banxico.R) -> 118 (fase 3: T33 Pasivos -43, T34 Pagar hoy -33) -> 92 (T35 Reporte -26) -> 61 (T36 Mapa + Proveedores -31) -> 47 (T37 Cuentas/Ledger/Vencidos -14) -> 41 (cierre: SAP + carga -6) -> 0 (T39 cierre -41). It stays at 0: a new code goes to R/monedas.R or, if it is a rule of the outside world, to EXCEPCIONES with its reason.
 
 # R/monedas.R is never counted: it is the catalog, and it holds the one
 # deliberate code, MONEDA_BASE_OMISION = "MXN" (Luis, 2026-11-16: "es una app

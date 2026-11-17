@@ -30,7 +30,7 @@ local({
           as.character(e[[2]]) %in% nombres)
         eval(e, envir = globalenv())
   }
-  cargar("R/global.R", c("strip_accents", "CURRENCIES"))
+  cargar("R/global.R", c("strip_accents"))
   cargar("R/settings/settings_helpers.R", ".BANCOS_MX_CHOICES")
   cargar("R/proveedores_match.R", "parse_activo_hasta")
   cargar("R/persistence.R", c(".schema_proveedores", ".normalize"))

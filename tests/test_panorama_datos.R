@@ -8,6 +8,7 @@ suppressPackageStartupMessages(library(shiny))
 `%||%` <- function(a, b) if (is.null(a)) b else a
 .i18n_dir <- file.path(getwd(), "www", "i18n")
 source("R/i18n.R")
+source("R/monedas.R")   # MONEDA_BASE_OMISION (T39)
 source("R/tier_registry.R")
 source("R/permisos.R")
 source("R/avisos.R")

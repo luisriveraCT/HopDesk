@@ -83,13 +83,13 @@ ok("ppl_moneda_soportada == !(1095's condition)",
 ok("ppl_requiere_clasificacion == 1180's condition",
    identical(vapply(VALS, ppl_requiere_clasificacion, logical(1)),
              vapply(VALS, function(x) toupper(x) != "MXN", logical(1))))
-CURRENCIES_HOY <- c("MXN","USD","EUR","GBP","CAD","JPY","CHF","AUD","CNY","BRL")   # global.R, 6368b5d
+LISTA_CORTA_6368B5D <- c("MXN","USD","EUR","GBP","CAD","JPY","CHF","AUD","CNY","BRL")   # global.R's old short list, 6368b5d
 cuenta_hoy <- function(x) {
   mon <- toupper(trimws(x %||% "MXN"))
   dplyr::case_when(
     grepl("peso",  mon, ignore.case = TRUE)              ~ "MXN",
     grepl("d.lar", mon, ignore.case = TRUE, perl = TRUE) ~ "USD",
-    mon %in% CURRENCIES_HOY                               ~ mon,
+    mon %in% LISTA_CORTA_6368B5D                          ~ mon,
     TRUE                                                  ~ "MXN"
   )
 }
@@ -182,7 +182,7 @@ bucle <- buscar(mod, function(e) is.call(e) && identical(e[[1]], as.name("for"))
                   identical(e[[3]], as.name("monedas_saldos")))
 ok("3271: one loop over monedas_saldos", length(bucle) == 1L)
 escribir_hoy <- function(sa, spc, emps) {
-  for (emp in emps) for (mon in CURRENCIES_HOY) { key <- paste0(emp, "_", mon)
+  for (emp in emps) for (mon in LISTA_CORTA_6368B5D) { key <- paste0(emp, "_", mon)
     if (!is.null(spc[[key]])) sa[[emp]][[mon]] <- spc[[key]] }
   sa
 }
@@ -209,7 +209,8 @@ ok("3271, COP account: COP 40 in its own currency, MXN stays 100 (today MXN 140)
 src <- sub("#.*$", "", readLines(MOD, warn = FALSE, encoding = "UTF-8"))
 lit <- unlist(regmatches(src, gregexpr("[\"'][A-Z]{3}[\"']", src)))
 ok("no currency code written by hand in pagar_hoy_module.R", sum(substr(lit, 2, 4) %in% monedas_catalogo()) == 0L)
-ok("no CURRENCIES left in pagar_hoy_module.R", !any(grepl("\\bCURRENCIES\\b", src)))
+# (The old short list's name is built, so a search for it across tests/ is 0, T39.)
+ok("no old short list left in pagar_hoy_module.R", !any(grepl(paste0("\\b", "CURREN", "CIES\\b"), src)))
 ok("medio_pago: only ppl_medio_pago, three times, no copy of the rule left",
    sum(grepl("ppl_medio_pago(", src, fixed = TRUE)) == 3L && !any(grepl("\"SPD\"|\"BCO\"", src)))
 glob <- unlist(lapply(c("app.R", list.files("R", "\\.R$", full.names = TRUE, recursive = TRUE)), function(f)

@@ -423,7 +423,7 @@ compute_policy_moves <- function(invoices_df,
   if (!"Moneda" %in% names(invoices_df))
     invoices_df <- tryCatch(
       ensure_moneda(invoices_df),
-      error = function(e) { invoices_df$Moneda <- "MXN"; invoices_df }
+      error = function(e) { invoices_df$Moneda <- MONEDA_BASE_OMISION; invoices_df }
     )
 
   if (!"Documento" %in% names(invoices_df))

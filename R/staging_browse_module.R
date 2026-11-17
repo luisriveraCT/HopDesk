@@ -68,7 +68,8 @@ show_combined_entry_modal <- function(ledger, sap_data, session,
 
     tags$style(HTML(.sb_css)),
 
-    manual_entry_tab_content(ledger, empresas)
+    manual_entry_tab_content(ledger, empresas, monedas = .monedas_del_libro(sap_data, ledger),
+                             base = moneda_base_sesion(session))
   ))
 }
 
@@ -157,7 +158,11 @@ show_abono_modal <- function(sap_data, session, empresa_vals) {
       campo(tr("tablas.abono.empresa"),
             selectInput("ab_empresa", NULL, choices = c(todas, sort(unique(empresa_vals))), selected = "", width = "200px")),
       campo(tr("tablas.abono.moneda"),
-            selectInput("ab_moneda", NULL, choices = c(todas, CURRENCIES), selected = "", width = "100px"))),
+            # Only the currencies the invoices have, the base first (T39).
+            selectInput("ab_moneda", NULL, selected = "", width = "100px",
+                        choices = c(todas, monedas_para_filtrar(
+                          monedas_de_sap(tryCatch(sap_data(), error = function(e) NULL)),
+                          moneda_base_sesion(session)))))),
     pie = div(class = "d-flex justify-content-between align-items-center w-100",
       div(tags$span(class = "badge bg-warning text-dark", tr("tablas.abono.insignia")),
           tags$small(class = "text-muted ms-2", tr("tablas.abono.nota"))),
@@ -184,7 +189,9 @@ setup_abono_browse <- function(input, output, session,
 
   tabla <- hd_table_server("ab_tabla", tabla = "abono_parcial", datos = facturas, columnas = .ab_columnas(),
     piezas = c("casillas", "edicion_celda"),
-    secciones = list(list(campo = "Moneda", orden = CURRENCIES)),
+    # The base's section first, then by number of invoices (T39).
+    secciones = list(list(campo = "Moneda", orden = function()
+      monedas_para_filtrar(facturas()$Moneda, moneda_base_sesion(session)))),
     grupo = c("Empresa", "Parte"),
     aviso = reactive({ m <- attr(facturas(), "motivo"); if (is.null(m)) NULL else tr(m) }),
     vacio = "tablas.abono.vacio")

@@ -11,7 +11,6 @@ suppressPackageStartupMessages({
 })
 source("tests/helpers/s3_memoria.R")
 `%||%` <- function(a, b) if (!is.null(a) && !all(is.na(a))) a else b
-if (!exists("CURRENCIES")) CURRENCIES <- c("MXN", "USD", "EUR")
 for (f in c("R/pasivos_schemas.R", "R/bancos_persistence.R", "R/pasivos_persistence.R",
             "R/pasivos_capabilities.R", "R/pasivos_audit.R", "R/forecasting_resolve.R",
             "R/policy_engine.R", "R/pasivos_engine.R", "R/pasivos_wizard_validate.R",

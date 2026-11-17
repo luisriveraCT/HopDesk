@@ -1527,9 +1527,10 @@ server <- function(input, output, session) {
     }
   }, ignoreInit = TRUE, ignoreNULL = TRUE)
 
+  # Empty until the data says which (T39); the selector shows the base meanwhile.
   currency_choices <- list(
-    AR = reactiveVal(c("MXN", "USD")),
-    AP = reactiveVal(c("MXN", "USD"))
+    AR = reactiveVal(character()),
+    AP = reactiveVal(character())
   )
 
   ic_map_target <- reactiveVal(NULL)
@@ -1655,6 +1656,8 @@ server <- function(input, output, session) {
     # one global daily cache, kept 10 minutes per process, failing closed.
     fx_fix            = function() fx_fix()
   )
+  # Read by moneda_base_sesion() (R/ui_components.R), for code that has no `shared`.
+  session$userData$moneda_base <- function() shared$moneda_base_cliente()$moneda
 
   # ── Cash Flow Preview toggle ─────────────────────────────────────────────────
   observeEvent(input$btn_preview_open, {
@@ -2937,13 +2940,13 @@ server <- function(input, output, session) {
     ledger_tab <- if (tab == "CAL") active_cal_ledger() else "AR"
     result <- if (ledger_tab == "AR") {
       choices <- currency_choices$AR()
-      if (!length(choices)) choices <- c("MXN", "USD")
+      if (!length(choices)) choices <- moneda_base_sesion(session)
       current <- isolate(input$cur_ar)
       if (is.null(current) || !current %in% choices) current <- choices[1]
       selectInput("cur_ar", NULL, choices = choices, selected = current)
     } else {
       choices <- currency_choices$AP()
-      if (!length(choices)) choices <- c("MXN", "USD")
+      if (!length(choices)) choices <- moneda_base_sesion(session)
       current <- isolate(input$cur_ap)
       if (is.null(current) || !current %in% choices) current <- choices[1]
       selectInput("cur_ap", NULL, choices = choices, selected = current)

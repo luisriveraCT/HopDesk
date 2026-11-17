@@ -94,9 +94,30 @@ note_edit_modal <- function(ledger, note_row = NULL, token = NULL) {
   )
 }
 
-# ── Manual entry modal ─────────────────────────────────────────────────────────
+# ── Currencies to capture and to filter (monedas fase 3, T39) ─────────────────
+# The client's base for code that has no `shared` (the manual-entry and abono
+# modals): app.R leaves it in session$userData$moneda_base, as it does
+# session$userData$usuario; without it, MONEDA_BASE_OMISION.
+moneda_base_sesion <- function(session = shiny::getDefaultReactiveDomain())
+  tryCatch(session$userData$moneda_base(), error = function(e) NULL) %||% MONEDA_BASE_OMISION
 
-manual_entry_modal <- function(ledger, empresas, row = NULL, token = NULL) {
+# Rule 1, a selector to capture a currency (a manual entry, an override): the
+# data's currencies, the base first, then the rest of the catalog -- an option
+# never disappears because no document uses it yet.
+monedas_para_capturar <- function(datos = character(), base = MONEDA_BASE_OMISION)
+  unique(c(monedas_en_datos(datos, base), monedas_catalogo()))
+
+# Rule 2, a filter or an order over what is there: only the data's
+# currencies, the base first when the data has it, then by documents.
+monedas_para_filtrar <- function(datos = character(), base = MONEDA_BASE_OMISION) {
+  d <- toupper(trimws(as.character(datos)))
+  intersect(monedas_en_datos(d, base), d)
+}
+
+# ── Manual entry modal ─────────────────────────────────────────────────────────
+# (No caller today; kept on the same rules as manual_entry_tab_content().)
+manual_entry_modal <- function(ledger, empresas, row = NULL, token = NULL,
+                               monedas = character(), base = moneda_base_sesion()) {
   is_new    <- is.null(row)
   ns_pre    <- tolower(ledger)
   token     <- token %||% uuid::UUIDgenerate()   # fallback if not passed
@@ -121,8 +142,8 @@ manual_entry_modal <- function(ledger, empresas, row = NULL, token = NULL) {
                     choices  = empresas,
                     selected = if (!is_new) row$Empresa else empresas[1]),
         selectInput(paste0("manual_moneda_", ns_pre), "Moneda",
-                    choices  = CURRENCIES,
-                    selected = if (!is_new) row$Moneda else "MXN"),
+                    choices  = monedas_para_capturar(c(if (!is_new) row$Moneda, monedas), base),
+                    selected = if (!is_new) row$Moneda else base),
         textInput(paste0("manual_documento_", ns_pre), "Documento (referencia única)",
                   value = if (!is_new) row$Documento %||% "" else ""),
         textInput(paste0("manual_factura_", ns_pre), "No. Factura",

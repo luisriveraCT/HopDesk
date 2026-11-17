@@ -17,43 +17,45 @@ PANORAMA_TIPOS_FEED <- c("com", "sol", "act", "ale")
 
 .pan_num <- function(x) { x <- suppressWarnings(as.numeric(x)); x[is.na(x)] <- 0; x }
 
-# One row per currency, MXN first, then alphabetical.
-.pan_por_moneda <- function(moneda, importe) {
+# One row per currency, the client's base first, then alphabetical; a row
+# without a currency is in the base (monedas fase 3, T39).
+.pan_por_moneda <- function(moneda, importe, base = MONEDA_BASE_OMISION) {
   vacio <- data.frame(moneda = character(), total = numeric(), n = integer(), stringsAsFactors = FALSE)
   if (!length(moneda)) return(vacio)
-  moneda <- toupper(trimws(ifelse(is.na(moneda) | !nzchar(trimws(moneda)), "MXN", moneda)))
+  moneda <- toupper(trimws(ifelse(is.na(moneda) | !nzchar(trimws(moneda)), base, moneda)))
   t <- tapply(.pan_num(importe), moneda, sum)
   n <- tapply(rep(1L, length(moneda)), moneda, sum)
   out <- data.frame(moneda = names(t), total = as.numeric(t), n = as.integer(n[names(t)]),
                     stringsAsFactors = FALSE, row.names = NULL)
-  out[order(out$moneda != "MXN", out$moneda), , drop = FALSE]
+  out[order(out$moneda != base, out$moneda), , drop = FALSE]
 }
 
 # ── Hoy ──────────────────────────────────────────────────────────────────────
 
 # Pagos de hoy: what the Agenda de Hoy holds to pay today, still pending.
-panorama_pagos_hoy <- function(ph, hoy = Sys.Date()) {
-  if (is.null(ph) || !is.data.frame(ph) || !nrow(ph)) return(.pan_por_moneda(character(), numeric()))
+panorama_pagos_hoy <- function(ph, hoy = Sys.Date(), base = MONEDA_BASE_OMISION) {
+  if (is.null(ph) || !is.data.frame(ph) || !nrow(ph)) return(.pan_por_moneda(character(), numeric(), base))
   f <- ph[ph$ledger %in% "AP" & ph$status %in% "pending" &
             (is.na(ph$tipo_item) | ph$tipo_item != "abono"), , drop = FALSE]
   f <- f[!is.na(f$FechaVenc) & as.Date(f$FechaVenc) <= hoy, , drop = FALSE]
-  .pan_por_moneda(f$Moneda, abs(.pan_num(f$Importe)))
+  .pan_por_moneda(f$Moneda, abs(.pan_num(f$Importe)), base)
 }
 
 # Cobros que vencen hoy: the Calendar's own CxC rows (df_combined_AR, same
 # filters as the Calendar and Vencidos) whose effective date is today.
-panorama_cobros_hoy <- function(df_ar, hoy = Sys.Date()) {
+panorama_cobros_hoy <- function(df_ar, hoy = Sys.Date(), base = MONEDA_BASE_OMISION) {
   if (is.null(df_ar) || !is.data.frame(df_ar) || !nrow(df_ar) || !"FechaEff" %in% names(df_ar))
-    return(.pan_por_moneda(character(), numeric()))
+    return(.pan_por_moneda(character(), numeric(), base))
   f <- df_ar[!is.na(df_ar$FechaEff) & as.Date(df_ar$FechaEff) == hoy, , drop = FALSE]
   monto <- if ("Saldo vencido" %in% names(f)) f[["Saldo vencido"]] else rep(0, nrow(f))
-  .pan_por_moneda(f$Moneda, abs(.pan_num(monto)))
+  .pan_por_moneda(f$Moneda, abs(.pan_num(monto)), base)
 }
 
 # Pasivos en N días: provisions still open whose date (override first) falls
 # from today to today + dias. Returns the totals plus the first date.
-panorama_pasivos_pronto <- function(provs, hoy = Sys.Date(), dias = PANORAMA_DIAS_PASIVOS) {
-  vacio <- list(totales = .pan_por_moneda(character(), numeric()), primera = as.Date(NA))
+panorama_pasivos_pronto <- function(provs, hoy = Sys.Date(), dias = PANORAMA_DIAS_PASIVOS,
+                                    base = MONEDA_BASE_OMISION) {
+  vacio <- list(totales = .pan_por_moneda(character(), numeric(), base), primera = as.Date(NA))
   if (is.null(provs) || !is.data.frame(provs) || !nrow(provs)) return(vacio)
   fecha <- as.Date(provs$fecha_efectiva_override)
   fecha[is.na(fecha)] <- as.Date(provs$fecha_efectiva[is.na(fecha)])
@@ -61,7 +63,7 @@ panorama_pasivos_pronto <- function(provs, hoy = Sys.Date(), dias = PANORAMA_DIA
   monto[is.na(monto)] <- .pan_num(provs$amount_pago[is.na(monto)])
   abiertas <- provs$estado %in% "provisional" & !is.na(fecha) & fecha >= hoy & fecha <= hoy + dias
   if (!any(abiertas)) return(vacio)
-  list(totales = .pan_por_moneda(provs$moneda_pago[abiertas], monto[abiertas]),
+  list(totales = .pan_por_moneda(provs$moneda_pago[abiertas], monto[abiertas], base),
        primera = min(fecha[abiertas]))
 }
 

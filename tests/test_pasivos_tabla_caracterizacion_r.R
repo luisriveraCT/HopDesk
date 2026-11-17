@@ -20,7 +20,7 @@ suppressPackageStartupMessages({ library(testthat); library(shiny); library(dply
 cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALSE))
   if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
     eval(e, envir = globalenv())
-cargar("R/global.R", c("strip_accents", "fmt_money", "CURRENCIES"))
+cargar("R/global.R", c("strip_accents", "fmt_money"))
 source("R/monedas.R")   # T33: Pasivos orders currencies by the client's base (R/monedas.R)
 cargar("R/persistence.R", "confirmaciones_vigentes")
 cargar("R/pasivos_observers.R", "isTRUE_safe")

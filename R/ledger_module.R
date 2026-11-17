@@ -1618,7 +1618,10 @@ ledgerModuleServer <- function(id, config, shared) {
                   style = "pointer-events:none;", row[["Empresa"]] %||% "")
             ),
             selectInput(ns("sap_edit_moneda"), "Moneda",
-                        choices  = CURRENCIES,
+                        # The ledger's currencies (base first), then the
+                        # whole catalog (monedas fase 3, T39).
+                        choices  = monedas_para_capturar(
+                          c(prefill_moneda, isolate(shared$currency_choices[[ledger]]())), moneda_base()),
                         selected = prefill_moneda),
             div(class = "mb-3",
               tags$label("No. Documento", class = "form-label small text-muted"),

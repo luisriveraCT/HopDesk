@@ -32,15 +32,15 @@ extract <- function(file, names, env) {
 env <- new.env()
 # The Abono modal is hd_modal() + hd_table_ui() with tr() texts since T25:
 # the dictionary and the table engine, in the same environment.
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R"))
+for (f in c("R/i18n.R", "R/monedas.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R"))
   sys.source(f, envir = env)
 env$.i18n_dir <- file.path(getwd(), "www", "i18n")
 extract("R/bancos_module.R",         c(".cmap_lookup", ".company_name"), env)
+extract("R/ui_components.R", c("moneda_base_sesion", "monedas_para_capturar", "monedas_para_filtrar"), env)   # T39
 # The staging file holds only definitions; load them all (CSS/JS constants included).
 for (e in parse("R/staging_browse_module.R")) eval(e, env)
 extract("R/proveedores_module.R",    ".prov_importar_tab", env)
 env$`%||%` <- `%||%`
-env$CURRENCIES <- c("MXN", "USD")
 shown <- NULL
 env$showModal <- function(ui, ...) shown <<- as.character(ui)
 

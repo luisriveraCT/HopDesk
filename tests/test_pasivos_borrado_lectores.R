@@ -22,7 +22,7 @@ cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALS
   if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
     eval(e, globalenv())
 cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
-cargar("R/global.R", c("fmt_money", "CURRENCIES"))
+cargar("R/global.R", c("fmt_money"))
 for (f in c("R/i18n.R", "R/pasivos_schemas.R", "R/bancos_persistence.R", "R/pasivos_persistence.R",
             "R/pasivos_capabilities.R", "R/pasivos_audit.R", "R/forecasting_resolve.R",
             "R/policy_engine.R", "R/pasivos_engine.R", "R/pasivos_wizard_validate.R",

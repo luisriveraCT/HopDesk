@@ -32,7 +32,7 @@ cargar <- function(archivo, nombres) {
       eval(e, envir = globalenv())
 }
 cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
-cargar("R/global.R", c("fmt_money", "is_erp_sourced", "CURRENCIES"))
+cargar("R/global.R", c("fmt_money", "is_erp_sourced"))
 cargar("R/ui_components.R", "app_styles")
 cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", "load_ctas_bancos", ".schema_ctas_cuentas", "load_ctas_cuentas"))
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
