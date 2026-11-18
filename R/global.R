@@ -199,7 +199,7 @@ if (Sys.getenv("HOPDESK_PRODUCTION") == "1") {
           format(ahora, "%Y-%m-%d %H:%M", tz = "America/Mexico_City"))
 message(.hopdesk_linea_tz())
 
-IS_ADMIN_DEPLOYMENT <-tolower(trimws(Sys.getenv("CLIENT_ID"))) == "hd-admin"
+IS_ADMIN_DEPLOYMENT <- tolower(trimws(Sys.getenv("CLIENT_ID"))) == "hd-admin"
 
 # ── Single-instance guard (added 2026-09-02) ────────────────────────────────
 # CRITICAL: every save_*() in this app does "read the whole table -> mutate
