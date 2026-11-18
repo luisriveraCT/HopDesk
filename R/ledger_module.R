@@ -1585,6 +1585,17 @@ ledgerModuleServer <- function(id, config, shared) {
                existing_ov[["Importe_override"]][1] else NA_real_
         if (!is.na(v)) v else abs(as.numeric(row[["Importe"]] %||% 0))
       }
+      # What the modal shows, and the invoice's override as it was, so the
+      # save stores only what the user changes in this edit (T52f,
+      # .sap_ov_campos()).
+      session$userData[[ns("pending_sap_edit_prefill")]] <- list(
+        Parte   = .ov("Parte_override",   row[["Parte"]]),
+        Codigo  = .ov("Codigo_override",  row[["Codigo"]]),
+        Factura = .ov("Factura_override", row[["Factura"]]),
+        Notas   = .ov("Notas_override",   row[["notas"]]),
+        Moneda  = prefill_moneda,
+        Importe = prefill_importe)
+      session$userData[[ns("pending_sap_edit_ov")]] <- existing_ov
 
       showModal(modalDialog(
         title     = paste0("Editar \u2014 SAP / ", row[["Documento"]]),
@@ -1643,7 +1654,9 @@ ledgerModuleServer <- function(id, config, shared) {
           tags$span(class = "badge bg-secondary", "\u26d3\ufe0f SAP"),
           tags$small(class = "text-muted",
             "Empresa y Documento son de solo lectura. Los datos originales de SAP se preservan intactos.")
-        )
+        ),
+        # T52f: an emptied field goes back to SAP's value.
+        tags$small(class = "text-muted d-block mt-1", tr("tablas.dia.sap_edit.vacio_es_sap"))
       ))
     }
 
@@ -1707,8 +1720,15 @@ ledgerModuleServer <- function(id, config, shared) {
       new_moneda   <- input$sap_edit_moneda  %||% row[["Moneda"]]
       new_importe  <- tryCatch(as.numeric(input$sap_edit_importe), error = function(e) NA_real_)
 
-      orig_moneda  <- row[["Moneda"]]  %||% ""
-      orig_importe <- abs(as.numeric(row[["Importe"]] %||% 0))
+      # What to store (T52f): only what the user changed in this edit, against
+      # what the modal showed -- never against the row on screen, which
+      # already carries the override (re-editing dropped Importe/Moneda).
+      cambio <- .sap_ov_campos(
+        session$userData[[ns("pending_sap_edit_prefill")]],
+        list(Parte = new_parte, Codigo = new_codigo, Factura = new_factura, Notas = notas,
+             Moneda = new_moneda, Importe = new_importe),
+        session$userData[[ns("pending_sap_edit_ov")]])
+      nuevo <- function(campo, valor) if (campo %in% cambio$cambiados && !is.na(valor) && nzchar(as.character(valor))) valor else NULL
 
       # --- date move (moves_db) ---
       new_move <- data.frame(
@@ -1731,31 +1751,32 @@ ledgerModuleServer <- function(id, config, shared) {
                            rebase = function(fresh) mudanzas_mover(fresh, new_move, facturas_mov))
 
       # --- field overrides (sap_overrides) ---
-      ov_row <- tibble::tibble(
-        id               = paste(ledger, row[["Empresa"]], row[["Moneda"]],
-                                 row[["Documento"]], sep = "|"),
-        ledger           = ledger,
-        Empresa          = row[["Empresa"]],
-        Moneda           = row[["Moneda"]],
-        Documento        = row[["Documento"]],
-        Parte_override   = if (nchar(new_parte)   > 0) new_parte   else NA_character_,
-        Codigo_override  = if (nchar(new_codigo)  > 0) new_codigo  else NA_character_,
-        Factura_override = if (nchar(new_factura) > 0) new_factura else NA_character_,
-        Notas_override   = if (nchar(notas)       > 0) notas       else NA_character_,
-        Moneda_override  = if (nzchar(new_moneda) && new_moneda != orig_moneda)
-                             new_moneda else NA_character_,
-        Importe_override = if (!is.na(new_importe) &&
-                               abs(new_importe - orig_importe) > 0.001)
-                             new_importe else NA_real_,
-        updated_by       = shared$current_user(),
-        updated_at       = Sys.time(),
-        # the invoice's posting date (T52e): the override is this invoice's only
-        fecha_factura    = as.Date(row[["Fecha de contabilización"]] %||% NA_character_)
-      )
-      # Saved per invoice and rebased on S3 (T52e); a failure is shown and
-      # logged by .sap_ov_guardar(), the session keeps its table, and
-      # nothing below runs: no Agenda sync, no "Cambios guardados".
-      if (!isTRUE(.sap_ov_guardar(shared, ov_row, facturas_mov, session))) return(invisible(NULL))
+      # Only when a field changed (T52f): moving the date alone stores none.
+      ov_row <- NULL
+      if (length(cambio$cambiados)) {
+        ov_row <- tibble::tibble(
+          id               = paste(ledger, row[["Empresa"]], row[["Moneda"]],
+                                   row[["Documento"]], sep = "|"),
+          ledger           = ledger,
+          Empresa          = row[["Empresa"]],
+          Moneda           = row[["Moneda"]],
+          Documento        = row[["Documento"]],
+          Parte_override   = cambio$campos$Parte_override,
+          Codigo_override  = cambio$campos$Codigo_override,
+          Factura_override = cambio$campos$Factura_override,
+          Notas_override   = cambio$campos$Notas_override,
+          Moneda_override  = cambio$campos$Moneda_override,
+          Importe_override = cambio$campos$Importe_override,
+          updated_by       = shared$current_user(),
+          updated_at       = Sys.time(),
+          # the invoice's posting date (T52e): the override is this invoice's only
+          fecha_factura    = as.Date(row[["Fecha de contabilización"]] %||% NA_character_)
+        )
+        # Saved per invoice and rebased on S3 (T52e); a failure is shown and
+        # logged by .sap_ov_guardar(), the session keeps its table, and
+        # nothing below runs: no Agenda sync, no "Cambios guardados".
+        if (!isTRUE(.sap_ov_guardar(shared, ov_row, facturas_mov, session))) return(invisible(NULL))
+      }
 
       # --- sync staged queue ---
       tryCatch(
@@ -1766,19 +1787,19 @@ ledgerModuleServer <- function(id, config, shared) {
                      stringsAsFactors = FALSE),
           ledger, shared$pagar_hoy_db,
           new_date    = new_date,
-          new_parte   = if (nchar(new_parte)  > 0) new_parte  else NULL,
-          new_codigo  = if (nchar(new_codigo) > 0) new_codigo else NULL,
-          new_moneda  = if (nzchar(new_moneda) && new_moneda != orig_moneda)
-                          new_moneda else NULL,
-          new_importe = if (!is.na(new_importe) &&
-                            abs(new_importe - orig_importe) > 0.001)
-                          new_importe else NULL,
+          # Only the fields changed in this edit reach the Agenda (T52f).
+          new_parte   = nuevo("Parte",   new_parte),
+          new_codigo  = nuevo("Codigo",  new_codigo),
+          new_moneda  = nuevo("Moneda",  new_moneda),
+          new_importe = nuevo("Importe", new_importe),
           username    = shared$current_user(),
           client_id   = shared$effective_client_id()),
         error = function(e) warning("[sap_edit_save] .sync_staged: ", e$message)
       )
 
       session$userData[[ns("pending_sap_edit_row")]] <- NULL
+      session$userData[[ns("pending_sap_edit_prefill")]] <- NULL
+      session$userData[[ns("pending_sap_edit_ov")]] <- NULL
       ctx <- modal_ctx()
       if (!is.null(ctx)) {
         new_ctx <- tryCatch(.refresh_ctx_detail(ctx), error = function(e) NULL)
@@ -1989,6 +2010,38 @@ dia_filas_agenda <- function(a_mano, fuente, usuario, ledger, confirmaciones) {
   if (!"fecha_factura" %in% names(out)) out[["fecha_factura"]] <- as.Date(rep(NA, nrow(out)))
   attr(out, "rechazadas") <- unique(attr(filas_erp, "rechazadas"))
   out
+}
+
+# What the ✎ stores (T52f): per field, what the user changed in this edit --
+# against what the modal showed (`prefill`), never against the row on
+# screen, which already carries the override -- and, for every field not
+# changed, what the invoice's override (`existente`, one row or NULL) had.
+# An emptied field is NA: back to SAP's value. Spaces around a text are not
+# a change; amounts compare to the cent. Returns list(campos = the six
+# *_override values, cambiados = the fields changed: "Parte", "Codigo",
+# "Factura", "Notas", "Moneda", "Importe").
+.sap_ov_campos <- function(prefill, entrada, existente = NULL) {
+  prefill <- prefill %||% list(); entrada <- entrada %||% list()
+  antes <- function(col) if (is.data.frame(existente) && nrow(existente) && col %in% names(existente))
+    existente[[col]][1] else NA
+  texto <- function(v) { v <- trimws(as.character(v %||% "")); if (!length(v) || is.na(v[1])) "" else v[1] }
+  campos <- list(); cambiados <- character()
+  for (k in c("Parte", "Codigo", "Factura", "Notas", "Moneda")) {
+    col <- paste0(k, "_override")
+    a <- texto(prefill[[k]]); b <- texto(entrada[[k]])
+    if (!identical(a, b)) {
+      cambiados <- c(cambiados, k)
+      campos[[col]] <- if (nzchar(b)) b else NA_character_
+    } else campos[[col]] <- as.character(antes(col))
+  }
+  num <- function(v) { v <- suppressWarnings(as.numeric(v %||% NA)); if (!length(v)) NA_real_ else v[1] }
+  ia <- num(prefill$Importe); ib <- num(entrada$Importe)
+  cambio_imp <- if (is.na(ia) && is.na(ib)) FALSE else if (is.na(ia) || is.na(ib)) TRUE else abs(ia - ib) > 0.001
+  if (cambio_imp) {
+    cambiados <- c(cambiados, "Importe")
+    campos$Importe_override <- if (is.na(ib)) NA_real_ else abs(ib)
+  } else campos$Importe_override <- as.numeric(antes("Importe_override"))
+  list(campos = campos, cambiados = cambiados)
 }
 
 # The ✎'s override save (T52e): the session's table plus ov_row

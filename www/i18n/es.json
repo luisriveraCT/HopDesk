@@ -514,6 +514,7 @@
   "tablas.dia.aviso.manual_no_encontrada": "Entrada manual no encontrada.",
   "tablas.dia.aviso.fecha_invalida": "Fecha inválida.",
   "tablas.dia.aviso.cambios_guardados": "Cambios guardados.",
+  "tablas.dia.sap_edit.vacio_es_sap": "Si vacías un campo, vuelve al valor de SAP. Solo se guarda lo que cambies.",
   "tablas.dia.aviso.sobrescritura_no_guardada": "No se pudieron guardar los cambios de la factura (proveedor, código, No. Factura, notas o importe): {detalle}. No se aplicó nada; intenta de nuevo.",
   "tablas.dia.aviso.mover_error_servidor": "No se pudo guardar el cambio de fecha en el servidor (\"{detalle}\"). El cambio se ve en pantalla, pero no quedó guardado: vuelve a intentarlo en unos minutos y no cierres la sesión mientras tanto.",
   "tablas.datos_sap.ver": "Ver datos SAP",
