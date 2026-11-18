@@ -27,15 +27,35 @@
 # $proc (the processx handle from callr) and $port. Call stop_bg_app() on it
 # when done, always (even on test failure) -- an orphaned background Shiny
 # process holds its port and breaks the next test run.
-start_bg_app <- function(app_code, port, timeout_s = 20) {
+#
+# `www` (T50): the app's www/ is served as the real app serves it
+# (hdtable.css, hd_marca.css, i18n/*.json...). Before, runApp() got the app
+# file alone in tempdir(), served no www/ next to it, and every asset was a
+# 404 unless the fixture served www/ itself.
+# How: the app's own httpHandler answers FIRST, and only what it does not
+# answer is looked up in `www`. Not a copy next to the file: Shiny's static
+# folders answer before any httpHandler, so a copy of this repo's www/ would
+# shadow a fixture that serves ANOTHER repo's (VEN_RAIZ, comparing against
+# master). Nothing is copied or linked, so nothing has to be deleted (the
+# real www/ is only read). `www = NULL`: the old behavior.
+start_bg_app <- function(app_code, port, timeout_s = 20, www = file.path(getwd(), "www")) {
   tmp <- tempfile(fileext = ".R")
   writeLines(app_code, tmp)
 
   proc <- callr::r_bg(
-    function(app_file, port) {
-      shiny::runApp(app_file, port = port, host = "127.0.0.1", launch.browser = FALSE)
+    function(app_file, port, www) {
+      app <- shiny::shinyAppFile(app_file)
+      if (!is.null(www) && dir.exists(www)) {
+        del_repo <- shiny:::staticHandler(www)
+        propio   <- app$httpHandler
+        app$httpHandler <- function(req) {
+          r <- propio(req)
+          if (is.null(r)) del_repo(req) else r
+        }
+      }
+      shiny::runApp(app, port = port, host = "127.0.0.1", launch.browser = FALSE)
     },
-    args = list(app_file = tmp, port = port),
+    args = list(app_file = tmp, port = port, www = if (is.null(www)) NULL else normalizePath(www, mustWork = FALSE)),
     stdout = tempfile(), stderr = tempfile()
   )
 
