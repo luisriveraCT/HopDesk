@@ -59,8 +59,8 @@ s3 <- function() get(MK, envir = .mem)
 fecha_de <- function(doc) as.character(s3()$FechaVenc_Proyectada[s3()$Documento == doc])
 correr <- function() for (i in 1:5) later::run_now()
 
-# Both sessions start from S3 holding A1 and A2 (enough rows that the CM09
-# net never refuses the restore below as a shrink).
+# Both sessions start from S3 holding A1..A4 (enough rows that the CM09 net
+# never refuses the restore below as a shrink).
 inicio <- function() {
   s3_memoria_reset()
   assign(MK, mov(c("A1", "A2", "A3", "A4"), "2026-11-25", "inicio"), envir = .mem)
@@ -83,7 +83,8 @@ handle_invoice_action(list(action = "move", move_to = "2026-12-01", rows = list(
 correr()
 handle_invoice_action(list(action = "restore", rows = list(fila("A1"))), s$A)
 correr()
-ok("restore: A1's move is gone", !"A1" %in% s3()$Documento)
+ok("restore: only A1's move is gone (A2, A3, A4 stay, one row each)",
+   identical(sort(s3()$Documento), c("A2", "A3", "A4")))
 ok("restore: B's move of A2 survives A's restore", identical(fecha_de("A2"), "2026-12-01"))
 
 # 3. A row another session added meanwhile is not removed either

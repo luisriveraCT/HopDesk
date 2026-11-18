@@ -208,7 +208,7 @@ app_txt    <- paste(readLines("app.R", warn = FALSE), collapse = "\n")
           "the invoices table (Vencidos and the lupa) runs its actions through handle_invoice_action()")
 .chk_true(grepl("accion_factura(payload, shared, session = session)", ven_txt, fixed = TRUE),
           "... and forwards its session into it")
-.chk(lengths(regmatches(search_txt, gregexpr(".save_moves_deferred(updated, client_id = shared$effective_client_id(), session = session)",
+.chk(lengths(regmatches(search_txt, gregexpr(".save_moves_deferred(updated, client_id = shared$effective_client_id(), session = session",
                                               search_txt, fixed = TRUE))),
      2L, "both move/restore branches in handle_invoice_action() forward session into .save_moves_deferred()")
 

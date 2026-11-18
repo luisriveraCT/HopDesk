@@ -418,7 +418,11 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
     )
     updated <- upsert_moves(shared$moves_db(), new_rows)
     shared$moves_db(updated)
-    .save_moves_deferred(updated, client_id = shared$effective_client_id(), session = session)
+    # Rebased on S3 as it is now (CM28), as the Calendario's .apply_move():
+    # without it this session's whole copy was written, erasing a date
+    # another session moved after this one loaded.
+    .save_moves_deferred(updated, client_id = shared$effective_client_id(), session = session,
+                         rebase = function(fresh) upsert_moves(fresh, new_rows))
     showNotification(
       tr("tablas.lupa.aviso.movidas", n = as.character(nrow(keys_df)), fecha = format(new_date, "%d/%m/%Y")),
       type = "message", duration = 2)
@@ -437,7 +441,11 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
     updated <- dplyr::anti_join(shared$moves_db(), restore_keys,
                                 by = c("ledger","Empresa","Moneda","Documento"))
     shared$moves_db(updated)
-    .save_moves_deferred(updated, client_id = shared$effective_client_id(), session = session)
+    # Rebased on S3 as it is now (CM28), as the Calendario's .clear_moves():
+    # only these invoices' rows leave, every other session's stay.
+    .save_moves_deferred(updated, client_id = shared$effective_client_id(), session = session,
+                         rebase = function(fresh) dplyr::anti_join(
+                           fresh, restore_keys, by = c("ledger","Empresa","Moneda","Documento")))
     showNotification(
       tr("tablas.lupa.aviso.restauradas", n = as.character(nrow(keys_df))),
       type = "message", duration = 2)

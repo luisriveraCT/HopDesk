@@ -149,5 +149,47 @@ m <- sin_base("save_manual", setdiff(archivos, "R/pagar_hoy_module.R"))
 for (s in m) message("  without base: ", s)
 ok("pagar_hoy_module.R: every save_manual() passes base", !length(m))
 
+# ── 6. Moves are always rebased (CM28) ────────────────────────────────────────
+# invoice_moves.rds is written whole. A .save_moves_deferred() without
+# `rebase` writes the session's copy, erasing dates another session moved
+# (Vencidos and the lupa did, until CM28). No exceptions: every call passes
+# rebase =. A direct save_moves() is only allowed inside .save_moves_deferred
+# itself, or right after a strict read of S3_KEYS$moves in one of its three
+# innermost enclosing blocks (it prunes S3's table, not the session's copy).
+lectura_estricta <- "(leer_tabla_para_escribir|\\.s3_leer_para_escribir)\\(S3_KEYS\\$moves"
+sin_rebase <- character(); moves_sueltos <- character()
+for (f in archivos) {
+  ex <- parse(f, keep.source = TRUE, encoding = "UTF-8")
+  # The calls are met in source order (pre-order walk), so the k-th call
+  # found is the k-th call token: its line.
+  pd <- utils::getParseData(ex)
+  lineas <- function(nombre) pd$line1[pd$token == "SYMBOL_FUNCTION_CALL" & pd$text == nombre]
+  l_def <- lineas(".save_moves_deferred"); l_sm <- lineas("save_moves"); k_def <- 0L; k_sm <- 0L
+  recorrer <- function(x, anc) {
+    if (!is.call(x)) return(invisible())
+    fn <- x[[1]]
+    if (identical(fn, as.name(".save_moves_deferred"))) {
+      k_def <<- k_def + 1L
+      if (!"rebase" %in% names(as.list(x))) sin_rebase <<- c(sin_rebase, sprintf("%s:%d", f, l_def[k_def]))
+    }
+    if (identical(fn, as.name("save_moves"))) {
+      k_sm <<- k_sm + 1L; linea <- l_sm[k_sm]
+      dentro <- any(vapply(anc, function(a) identical(a[[1]], as.name("<-")) &&
+                             identical(a[[2]], as.name(".save_moves_deferred")), logical(1)))
+      bloques <- Filter(function(a) identical(a[[1]], as.name("{")), rev(anc))
+      bloques <- bloques[seq_len(min(3L, length(bloques)))]
+      leida <- any(vapply(bloques, function(b) grepl(lectura_estricta, paste(deparse(b), collapse = " ")), logical(1)))
+      if (!dentro && !leida) moves_sueltos <<- c(moves_sueltos, sprintf("%s:%d", f, linea))
+    }
+    lapply(as.list(x)[-1], function(a) if (!missing(a)) recorrer(a, c(anc, list(x))))
+  }
+  for (e in ex) recorrer(e, list())
+}
+for (s in sin_rebase) message("  .save_moves_deferred without rebase: ", s)
+ok(".save_moves_deferred(): every call passes rebase = (no exceptions)", !length(sin_rebase))
+for (s in moves_sueltos) message("  save_moves() on a copy: ", s)
+ok("save_moves(): only inside .save_moves_deferred or right after a strict read of S3's moves",
+   !length(moves_sueltos))
+
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)
