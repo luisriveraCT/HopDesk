@@ -2269,9 +2269,7 @@
   // An amount typed in a cell, written as the cell's own (T55): its
   // currency's decimals, and its code when the table shows it nowhere else.
   function montoCelda(st, i, x) {
-    var m = st.moneda[i] || '';
-    var txt = dinero(x, m);
-    return celdaLlevaCodigo(st) || !m ? txt : txt.slice(0, -(m.length + 1));
+    return dinero(x, st.moneda[i] || '', !celdaLlevaCodigo(st));
   }
 
   // ── One choice per row (opcion_fila) ─────────────────────────────────────
@@ -2352,7 +2350,7 @@
   // "" -> "" (back to the data's value); anything else -> null. What the
   // table shows (T55: code after, true minus) reads back as typed.
   function leerImporte(s) {
-    s = String(s == null ? '' : s).replace(/[A-Za-z]{3}\s*$/, '').replace(/−/g, '-')
+    s = String(s == null ? '' : s).replace(/(\d)\s*[A-Za-z]{3}\s*$/, '$1').replace(/−/g, '-')   // a code only after a number: "abc" stays wrong
       .replace(/[\s$]/g, '').replace(/,/g, '');
     if (s === '') return '';
     if (!/^-?(\d+\.?\d*|\.\d+)$/.test(s)) return null;

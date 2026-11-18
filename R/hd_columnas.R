@@ -141,20 +141,27 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, op
     # moneda (T55): each row's currency (datos[[col$moneda]]), for the
     # catalog's decimals; NULL (no such column, or a direct call): 2, as before.
     valores = function(x, moneda = NULL) {
-      # Round first: -0.001 must show "0.00" and copy "0", not "-0.00" / "-0"
-      # (and sprintf prints a negative zero as "-0.00", hence the reset).
-      x   <- round(suppressWarnings(as.numeric(x)), 2)
+      # Round first, to each row's currency decimals (the catalog's; 2 without
+      # a currency): what sorts, copies and the JS adds up is what the cell
+      # shows -- JPY 1.499 is 1 everywhere, KWD 1.234 keeps its 3 decimals
+      # (Ejecutor 2, T55). -0.001 must show "0.00" and copy "0", not "-0.00"
+      # / "-0" (sprintf prints a negative zero as "-0.00", hence the reset).
+      x   <- suppressWarnings(as.numeric(x))
+      mon <- if (is.null(moneda)) rep(NA_character_, length(x)) else rep_len(as.character(moneda), length(x))
+      dec <- if (is.null(moneda)) rep(2L, length(x)) else moneda_decimales(toupper(trimws(mon)))
+      dec[is.na(dec)] <- 2L
       ok  <- !is.na(x)
+      if (any(ok)) x[ok] <- round(x[ok], dec[ok])
       x[ok & x == 0] <- 0
       # monto_moneda() (R/monedas.R), the one formatter of an amount (T55):
       # the number alone, no "$" -- the table shows the currency in its band,
       # its column or after the number (hdtable.js decides) -- and the true
       # minus sign. An empty cell stays empty.
       mostrar <- character(length(x))
-      mon <- if (is.null(moneda)) rep(NA_character_, length(x)) else rep_len(as.character(moneda), length(x))
-      mostrar[ok] <- monto_moneda(x[ok], mon[ok], decimales = if (is.null(moneda)) 2L, codigo = FALSE)
+      mostrar[ok] <- monto_moneda(x[ok], mon[ok], decimales = dec[ok], codigo = FALSE)
       copiar <- character(length(x))
-      copiar[ok] <- sub("\\.$", "", sub("0+$", "", sprintf("%.2f", x[ok])))
+      s <- sprintf("%.*f", dec[ok], x[ok])
+      copiar[ok] <- ifelse(grepl(".", s, fixed = TRUE), sub("\\.$", "", sub("0+$", "", s)), s)   # "1500", never "15"
       v <- list(mostrar = mostrar, orden = x, copiar = copiar)
       if (formato == "compacto") {
         v$completo <- mostrar

@@ -78,6 +78,16 @@ ok("…what sorts and what Ctrl+C copies don't change (numbers, no format)",
    identical(v$orden, c(1234.5, -0.5, 1500, NA, 1e6)) && identical(v$copiar, c("1234.5", "-0.5", "1500", "", "1000000")))
 ok("without its rows' currency (no such column, or a direct call): 2 decimals, as before, no \"$\"",
    identical(cd$valores(c(1234.5, 1500))$mostrar, c("1,234.50", "1,500.00")))
+# Ejecutor 2's review: rounding to 2 before formatting showed KWD 1.234 as
+# "1.230" and JPY 1.499 as "2" (while the JS total said "1"). Now each row is
+# rounded to its currency, and what sorts, copies and adds up is the same.
+v3 <- cd$valores(c(1.234, 1.499, -0.0004, 2.5), c("KWD", "JPY", "KWD", "JPY"))
+ok("KWD 1.234 is \"1.234\", JPY 1.499 is \"1\", a KWD -0.0004 is \"0.000\", JPY 2.5 is \"2\" (R's ties to even)",
+   identical(v3$mostrar, c("1.234", "1", "0.000", "2")))
+ok("…and what sorts and copies is that same amount (the JS adds up `orden`)",
+   identical(v3$orden, c(1.234, 1, 0, 2)) && identical(v3$copiar, c("1.234", "1", "0", "2")))
+ok("…a JPY 1500 copies \"1500\" (trailing zeros are only trimmed after a decimal point)",
+   identical(cd$valores(c(1500, 1500.4), c("JPY", "JPY"))$copiar, c("1500", "1500")))
 ent <- col_dinero("x", formato = "entero")$valores(c(5000120.5, -463209.4), "MXN")
 cmp <- col_dinero("x", formato = "compacto")$valores(c(4495962, -802000, 950, -0.4), "MXN")
 ok("formato entero and compacto: no \"$\", the true minus sign",
@@ -103,6 +113,7 @@ ok("Excel: the money column is numeric, the amounts as they are", is.numeric(lei
 
 cat("\n-- the JS writes what R writes --\n")
 js <- paste(readLines("www/hdtable.js", warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+funcion <- function(nombre) regmatches(js, regexpr(paste0("(?s)\\n  function ", nombre, "\\(.*?\\n  }\\n"), js, perl = TRUE))
 pieza <- regmatches(js, regexpr("(?s)  var FMT_N = new Intl.NumberFormat\\('es-MX'\\);.*?\\n  function celdaLlevaCodigo", js, perl = TRUE))
 nodo <- Sys.which("node")
 if (!nzchar(nodo)) nodo <- "node"
@@ -110,8 +121,10 @@ prog <- tempfile(fileext = ".js")
 set.seed(5)
 azar <- c(round(runif(3000, -2e7, 2e7), sample(0:4, 3000, TRUE)),
           cumsum(round(runif(3000, -1e4, 1e4), 2)))      # totals: sums with their float error
-casos <- list(x = c(842300, -10950296, 0, -0.004, 1234.4, 1.5, 2500.5, 0.5, -0.5, 2.5, -2.5, 0.125, 2.675, 999999.995, azar),
+casos <- list(x = c(842300, -10950296, 0, -0.004, 1234.4, 1.5, 2500.5, 0.5, -0.5, 2.5, -2.5, 0.125, 2.675, 999999.995,
+                    1.234, 1.499, -1.0005, azar),
               m = c("MXN", "MXN", "USD", "USD", "JPY", "KWD", "", "JPY", "JPY", "JPY", "JPY", "MXN", "MXN", "MXN",
+                    "KWD", "JPY", "KWD",
                     sample(c("MXN", "USD", "JPY", "KWD", ""), length(azar), TRUE)))
 writeLines(c(sub("\\n  function celdaLlevaCodigo$", "", pieza),
              "DEC = { MXN: 2, USD: 2, JPY: 0, KWD: 3 };",
@@ -121,8 +134,42 @@ salida <- tryCatch(suppressWarnings(system2(nodo, prog, stdout = TRUE, stderr = 
 de_js <- tryCatch(jsonlite::fromJSON(paste(salida, collapse = "")), error = function(e) NULL)
 de_r  <- monto_moneda(casos$x, ifelse(nzchar(casos$m), casos$m, NA))
 if (!identical(de_js, de_r)) { k <- which(de_js != de_r); print(head(data.frame(x = casos$x[k], m = casos$m[k], js = de_js[k], r = de_r[k]))) }
-ok("dinero() in hdtable.js gives exactly monto_moneda()'s text (decimals, minus, code after, ties to even), 6,014 amounts and sums",
+ok("dinero() in hdtable.js gives exactly monto_moneda()'s text (decimals, minus, code after, ties to even), 6,017 amounts and sums",
    identical(de_js, de_r))
+# The same with what a cell's R gives and the JS total of that one row: R
+# rounds the row to its currency (orden), the JS formats that orden.
+v_ej <- col_dinero("x")$valores(casos$x, ifelse(nzchar(casos$m), casos$m, NA))
+ok("…and a cell's R text equals the JS text of its `orden` (a one-row total), for every case",
+   identical(unclass(v_ej$mostrar)[!is.na(casos$x)], sub(" [A-Z]{3}$", "", de_js_orden <- {
+     p <- tempfile(fileext = ".js")
+     writeLines(c(sub("\\n  function celdaLlevaCodigo$", "", pieza), "DEC = { MXN: 2, USD: 2, JPY: 0, KWD: 3 };",
+                  sprintf("var x = %s, m = %s;", paste0("[", paste(sprintf("%.17g", v_ej$orden), collapse = ","), "]"), jsonlite::toJSON(casos$m)),
+                  "console.log(JSON.stringify(x.map(function (v, i) { return dinero(v, m[i]); })));"), p, useBytes = TRUE)
+     jsonlite::fromJSON(paste(suppressWarnings(system2(nodo, p, stdout = TRUE, stderr = TRUE)), collapse = ""))
+   })[!is.na(casos$x)]))
+
+# Point 4 of the review: entero() and compacto() in JS against R's
+# .hd_dinero_entero() / .hd_dinero_compacto(), with ties at the unit, the
+# thousand and the million, on what the JS adds up (sums of 2-decimal rows).
+ec_x <- c(0.5, 1.5, 2.5, -2.5, -0.5, -0.4, 0, 999.5, 999.49, 1499.5, 999499.99, 999500, 4450000, -4450000, 1234.5,
+          12.345, 2.675, 1e9 + 0.5, cumsum(round(runif(2000, -5e5, 5e5), 2)))
+prog_ec <- tempfile(fileext = ".js")
+writeLines(c("var MENOS = '−', FMT_N = new Intl.NumberFormat('es-MX');",
+             "function t(k, o) { return (k === 'tablas.dinero.miles' ? '{n}K' : '{n}M').replace('{n}', o.n); }",
+             vapply(c("conCodigo", "entero", "compacto"), funcion, ""),
+             sprintf("var x = %s;", paste0("[", paste(sprintf("%.17g", ec_x), collapse = ","), "]")),
+             "console.log(JSON.stringify([x.map(function (v) { return entero(v); }), x.map(function (v) { return compacto(v); })]));"),
+           prog_ec, useBytes = TRUE)
+ec_js <- tryCatch(jsonlite::fromJSON(paste(suppressWarnings(system2(nodo, prog_ec, stdout = TRUE, stderr = TRUE)), collapse = "")),
+                  error = function(e) NULL)
+ec_r2 <- round(ec_x, 2)   # what R formats: valores() rounds the row first
+ec_r  <- list(.hd_dinero_entero(ec_r2, "MXN"), .hd_dinero_compacto(ec_r2))
+for (k in 1:2) if (!is.null(ec_js) && !identical(ec_js[k, ], ec_r[[k]])) {
+  d <- which(ec_js[k, ] != ec_r[[k]]); print(head(data.frame(x = ec_x[d], js = ec_js[k, d], r = ec_r[[k]][d]))) }
+ok("entero() in JS gives .hd_dinero_entero()'s text (ties at the unit, sums of rows), 2,018 amounts",
+   !is.null(ec_js) && identical(ec_js[1, ], ec_r[[1]]))
+ok("compacto() in JS gives .hd_dinero_compacto()'s text (ties at K and M), 2,018 amounts",
+   !is.null(ec_js) && identical(ec_js[2, ], ec_r[[2]]))
 
 cat("\n-- the JS: when a cell carries its code --\n")
 ok("a cell says its currency only when no band and no shown column does (celdaLlevaCodigo())",
@@ -138,7 +185,6 @@ ok("totals: the code after, always (fichas, bands, footer); no \"$\" left",
 # A group's sums sit in the column: the cell's rule (Coordinador, T55). The
 # real sumaColumna() and celdaLlevaCodigo(), run in node on a table with and
 # without a currency band.
-funcion <- function(nombre) regmatches(js, regexpr(paste0("(?s)\\n  function ", nombre, "\\(.*?\\n  }\\n"), js, perl = TRUE))
 prog2 <- tempfile(fileext = ".js")
 writeLines(c("var MENOS = '−', DEC = { MXN: 2, JPY: 0 }, FMT_DEC = {}, FMT_N = new Intl.NumberFormat('es-MX');",
              "function t(k, o) { return (k === 'tablas.dinero.miles' ? '{n}K' : '{n}M').replace('{n}', o.n); }",
@@ -159,8 +205,24 @@ ok("…in a table that mixes currencies with no band or column of it: each sum w
 ok("…the compact format, the same rule", identical(sumas[4:5], c("4K", "4K MXN")))
 ok("the group's total in its sum column: the cell's rule too (dinero(s[mo], mo, !codG))",
    grepl("codG = celdaLlevaCodigo(st)", js, fixed = TRUE) && grepl("return dinero(s[mo], mo, !codG);", js, fixed = TRUE))
-ok("editing reads back what the table shows (code, true minus)",
-   grepl(".replace(/[A-Za-z]{3}\\s*$/, '')", js, fixed = TRUE))
+# Editing: the real leerImporte() and montoCelda() in node (review, points 2 and 3).
+prog_ed <- tempfile(fileext = ".js")
+writeLines(c("var MENOS = '−', DEC = { MXN: 2, JPY: 0 }, FMT_DEC = {};",
+             vapply(c("fmtDec", "decimalesDe", "conCodigo", "redondear", "dinero", "celdaLlevaCodigo", "leerImporte", "montoCelda"), funcion, ""),
+             "var banda = { campoMoneda: 'Moneda', secciones: [{ campo: 'Moneda' }], moneda: ['MXN', 'JPY'], cols: [], ver: [] };",
+             "var sin = { campoMoneda: 'Moneda', secciones: [], moneda: ['MXN', 'JPY'], cols: [], ver: [] };",
+             "console.log(JSON.stringify([['1,234.56 MXN', '−1,234.56', '1234.5', ' 10 usd ', 'abc', 'MXN', '', '$1,000.00'].map(leerImporte),",
+             "  [montoCelda(banda, 0, 1234.5), montoCelda(banda, 1, 1499.6), montoCelda(sin, 0, 1234.5), montoCelda(sin, 1, -3)]]));"),
+           prog_ed, useBytes = TRUE)
+ed <- tryCatch(jsonlite::fromJSON(paste(suppressWarnings(system2(nodo, prog_ed, stdout = TRUE, stderr = TRUE)), collapse = ""),
+                                  simplifyVector = FALSE), error = function(e) NULL)
+lee <- if (is.null(ed)) NULL else lapply(ed[[1]], function(v) if (is.null(v)) NA else v)
+ok("editing reads back what the table shows: \"1,234.56 MXN\", the true minus, a code after the number",
+   !is.null(lee) && identical(unlist(lee[1:4]), c(1234.56, -1234.56, 1234.5, 10)))
+ok("…but a word is still wrong (null), not the data's value again: \"abc\" and \"MXN\"; empty stays empty; \"$\" as before",
+   !is.null(lee) && is.na(lee[[5]]) && is.na(lee[[6]]) && identical(lee[[7]], "") && identical(lee[[8]], 1000L))
+ok("the editable cell's text: the cell's rule, with the currency's decimals (montoCelda = dinero(x, m, !celdaLlevaCodigo))",
+   !is.null(ed) && identical(unlist(ed[[2]]), c("1,234.50", "1,500", "1,234.50 MXN", "−3 JPY")))
 
 cat("\n-- part B: the Calendar's month cells and the day's pill --\n")
 gl <- readLines("R/global.R", warn = FALSE, encoding = "UTF-8")
