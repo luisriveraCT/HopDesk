@@ -2641,7 +2641,12 @@ void_abono <- function(db, ids) {
   Moneda_override  = character(),
   Importe_override = numeric(),
   updated_by       = character(),
-  updated_at       = as.POSIXct(character())
+  updated_at       = as.POSIXct(character()),
+  # The invoice's posting date (T52e): an override belongs to one invoice,
+  # not to its number, which SAP may reuse in another year. NA on rows
+  # written before; sobrescrituras_por_factura() (R/data_pipeline.R) is the
+  # only reader.
+  fecha_factura    = as.Date(character())
 )
 
 load_sap_overrides <- function(client_id = NULL) {
@@ -2655,14 +2660,24 @@ save_sap_overrides <- function(df, client_id = NULL) {
   invisible(TRUE)
 }
 
-upsert_sap_override <- function(db, new_row) {
+# new_row with fecha_factura (T52e) replaces the row of that invoice (same
+# document and posting date) and the undated row of its document only while
+# the document is one invoice among `facturas` (the open invoices,
+# politica_facturas(); .mudanza_viejas(), the T52 rule, not a copy of it): on
+# a reused number the undated row may be the other invoice's, so it stays
+# (and reaches neither). Without fecha_factura, as before: every row of the
+# document.
+upsert_sap_override <- function(db, new_row, facturas = NULL) {
   if (is.null(db) || !is.data.frame(db)) db <- .schema_sap_overrides()
-  db <- dplyr::filter(db,
-    !(.data$ledger    == new_row$ledger    &
-      .data$Empresa   == new_row$Empresa   &
-      .data$Moneda    == new_row$Moneda    &
-      .data$Documento == new_row$Documento))
-  dplyr::bind_rows(db, new_row)
+  db      <- .normalize(db, .schema_sap_overrides)
+  new_row <- .normalize(new_row, .schema_sap_overrides)
+  mismo_doc <- db$ledger == new_row$ledger[1] & db$Empresa == new_row$Empresa[1] &
+               db$Moneda == new_row$Moneda[1] & db$Documento == new_row$Documento[1]
+  mismo_doc[is.na(mismo_doc)] <- FALSE
+  f <- new_row$fecha_factura[1]
+  quita <- if (is.na(f)) mismo_doc
+           else (mismo_doc & db$fecha_factura %in% f) | .mudanza_viejas(db, new_row, facturas)
+  dplyr::bind_rows(db[!quita, , drop = FALSE], new_row)
 }
 
 # Convenience: return only active abonos aggregated by invoice key

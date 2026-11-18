@@ -1743,9 +1743,11 @@ ledgerModuleServer <- function(id, config, shared) {
                                abs(new_importe - orig_importe) > 0.001)
                              new_importe else NA_real_,
         updated_by       = shared$current_user(),
-        updated_at       = Sys.time()
+        updated_at       = Sys.time(),
+        # the invoice's posting date (T52e): the override is this invoice's only
+        fecha_factura    = as.Date(row[["Fecha de contabilización"]] %||% NA_character_)
       )
-      updated_ov <- upsert_sap_override(shared$sap_ov_db(), ov_row)
+      updated_ov <- upsert_sap_override(shared$sap_ov_db(), ov_row, facturas_mov)
       shared$sap_ov_db(updated_ov)
       tryCatch({
         save_sap_overrides(updated_ov, client_id = shared$effective_client_id())
