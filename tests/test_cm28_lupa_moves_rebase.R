@@ -25,7 +25,17 @@ for (e in parse("R/global.R"))
 for (f in c("R/ledger_module.R", "R/search_module.R"))
   for (e in parse(f, encoding = "UTF-8"))
     if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
-        as.character(e[[2]]) %in% c(".moves_read_live", ".save_moves_deferred", "handle_invoice_action"))
+        as.character(e[[2]]) %in% c(".moves_read_live", ".save_moves_deferred", "handle_invoice_action",
+                                    ".fecha_factura_de_llaves"))
+      eval(e, globalenv())
+# T52b: Mover/Restaurar write through mudanzas_mover()/mudanzas_restaurar(),
+# which ask the snapshot (politica_facturas()) whether a document is one invoice.
+for (f in c("R/data_pipeline.R", "R/policy_engine.R"))
+  for (e in parse(f, encoding = "UTF-8"))
+    if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
+        as.character(e[[2]]) %in% c("politica_facturas", ".politica_normalizar_facturas", ".politica_fecha",
+                                    ".politica_doc", ".politica_doc_unica", ".mudanza_doc", ".mudanza_fecha",
+                                    ".mudanza_docs_unicos", ".mudanza_viejas", "mudanzas_mover", "mudanzas_restaurar"))
       eval(e, globalenv())
 
 # What the handler calls around the save: no screen, no audit, no sync here.

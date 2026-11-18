@@ -222,5 +222,102 @@ cat("-- 5. upsert_moves --\n")
      nrow(db) == 1L && identical(db$FechaVenc_Proyectada, as.Date("2026-12-31")))
 }
 
+# ── 6. The writers: every move and restore carries the invoice's date ────────
+cat("-- 6. writers --\n")
+{
+  source("R/policy_engine.R")          # politica_facturas()
+  cargar("R/dia_module.R", c("dia_ids", "dia_llaves"))
+  cargar("R/ledger_module.R", c(".apply_move", ".clear_moves"))
+  cargar("R/search_module.R", c(".fecha_factura_de_llaves", "handle_invoice_action"))
+  fact <- politica_facturas(list(AP = raw_ap, AR = NULL))
+
+  # mudanzas_mover(): one row per invoice.
+  db <- mudanzas_mover(mv_2025, mv_2026, fact)
+  ok("mudanzas_mover: moving the 2026 invoice keeps the 2025 invoice's move", nrow(db) == 2L)
+  vieja <- mv_fila("2026-11-25", NA, "vieja")
+  db <- mudanzas_mover(vieja, mv_2026, fact[2, ])
+  ok("mudanzas_mover: one invoice -- its dated row replaces the undated one (no duplicate)",
+     nrow(db) == 1L && identical(format(db$fecha_factura), "2026-10-01"))
+  db <- mudanzas_mover(vieja, mv_2026, fact)
+  ok("mudanzas_mover: reused number -- the undated row stays (reaches nobody, nothing deleted)",
+     nrow(db) == 2L && sum(is.na(db$fecha_factura)) == 1L)
+  otro_ledger <- vieja; otro_ledger$ledger <- "AR"
+  db <- mudanzas_mover(bind_rows(otro_ledger, mv_fila("2026-11-25", NA, doc = "1002")), mv_2026, fact[2, ])
+  ok("mudanzas_mover: never touches another ledger's or document's row", nrow(db) == 3L)
+
+  # mudanzas_restaurar(): each invoice's own row.
+  llave <- function(fecha) tibble::tibble(ledger = "AP", Empresa = "NCS", Moneda = "MXN",
+                                          Documento = "1001", fecha_factura = as.Date(fecha))
+  db <- mudanzas_restaurar(bind_rows(mv_2025, mv_2026), llave("2026-10-01"), fact)
+  ok("restore the 2026 invoice: the 2025 invoice keeps its move",
+     nrow(db) == 1L && identical(format(db$fecha_factura), "2025-03-01"))
+  db <- mudanzas_restaurar(bind_rows(vieja, mv_2026), llave("2026-10-01"), fact[2, ])
+  ok("restore, one invoice: its undated row goes too (or the old move would stay)", nrow(db) == 0L)
+  db <- mudanzas_restaurar(bind_rows(vieja, mv_2026), llave("2026-10-01"), fact)
+  ok("restore, reused number: the undated row is not deleted", nrow(db) == 1L && is.na(db$fecha_factura))
+  db <- mudanzas_restaurar(bind_rows(vieja, mv_2025), llave(NA), fact)
+  ok("restore with an undated key (not an ERP invoice): the undated row goes, as before",
+     nrow(db) == 1L && identical(format(db$fecha_factura), "2025-03-01"))
+
+  # The day's keys carry the posting date (the detail keeps the column).
+  detail <- data.frame(Empresa = "NCS", Moneda = "MXN", Documento = c("1001", "1001"),
+                       `Fecha de contabilización` = as.Date(c("2025-03-01", "2026-10-01")),
+                       Importe = c(100, 200), Parte = c("Dell", "HP"), source = SAP_B1_ERP_TYPE,
+                       check.names = FALSE, stringsAsFactors = FALSE)
+  ll <- dia_llaves(detail, dia_ids(detail)[2])
+  ok("dia_llaves() gives the invoice's posting date", identical(ll$fecha_factura, as.Date("2026-10-01")))
+  src_lm <- readLines("R/ledger_module.R", warn = FALSE, encoding = "UTF-8")
+  ok("the day's detail keeps \"Fecha de contabilización\" (both keep lists)",
+     sum(grepl("\"Fecha de contabilización\"),   # each invoice's tags", enc2utf8(src_lm), fixed = TRUE)) == 2L)
+
+  # .apply_move() / .clear_moves() as the day calls them.
+  guardado <- NULL
+  .save_moves_deferred <- function(updated, client_id = NULL, session = NULL, log_info = NULL, rebase = NULL)
+    guardado <<- list(updated = updated, rebase = rebase)
+  rv <- local({ v <- mv_2025; function(x) if (missing(x)) v else v <<- x })
+  shared <- list(moves_db = rv, current_user = function() "luis", effective_client_id = function() "acme",
+                 home_client_id = function() "acme", sap_data = function() list(AP = raw_ap, AR = NULL))
+  .apply_move(ll, as.Date("2026-12-15"), "AP", shared)
+  ok(".apply_move(): the 2026 invoice is moved with its date, the 2025 move kept",
+     nrow(rv()) == 2L && identical(rv()$FechaVenc_Proyectada[format(rv()$fecha_factura) == "2026-10-01"], as.Date("2026-12-15")))
+  ok(".apply_move(): its rebase on S3's fresh table does the same",
+     is.function(guardado$rebase) && nrow(guardado$rebase(mv_2025)) == 2L)
+  .clear_moves(ll, "AP", shared)
+  ok(".clear_moves(): restores only the 2026 invoice",
+     nrow(rv()) == 1L && identical(format(rv()$fecha_factura), "2025-03-01"))
+
+  # Vencidos and the lupa (handle_invoice_action) store the date too.
+  showNotification <- function(...) invisible(NULL); tr <- function(k, ...) k
+  req <- function(x, ...) invisible(x)
+  .log_ledger_action <- function(...) invisible(NULL)
+  rv(mv_2025)
+  fila <- list(ledger = "AP", empresa = "NCS", moneda = "MXN", documento = "1001", source = SAP_B1_ERP_TYPE,
+               inv_id = "x", provision_id = "", parte = "HP", codigo = "", importe = 200, fecha = "01/11/2026",
+               tipo = "Pago", fecha_factura = "2026-10-01", confirmed = FALSE)
+  r <- tryCatch({ handle_invoice_action(list(action = "move", rows = list(fila), move_to = "2026-12-15"), shared); TRUE },
+                error = function(e) { message("  ", conditionMessage(e)); FALSE })
+  ok("Vencidos · Mover: the 2026 invoice is moved with its date, the 2025 move kept",
+     r && nrow(rv()) == 2L && identical(rv()$FechaVenc_Proyectada[format(rv()$fecha_factura) %in% "2026-10-01"], as.Date("2026-12-15")))
+  r <- tryCatch({ handle_invoice_action(list(action = "restore", rows = list(fila)), shared); TRUE },
+                error = function(e) { message("  ", conditionMessage(e)); FALSE })
+  ok("Vencidos · Restaurar: only the 2026 invoice", r && nrow(rv()) == 1L && identical(format(rv()$fecha_factura), "2025-03-01"))
+
+  # The integrator's condition 2: nobody calls upsert_moves() or anti-joins
+  # moves on the document key outside mudanzas_mover() / mudanzas_restaurar().
+  archivos <- c(list.files("R", pattern = "\\.R$", full.names = TRUE, recursive = TRUE), "app.R")
+  fuera <- character()
+  for (f in archivos) {
+    l <- readLines(f, warn = FALSE, encoding = "UTF-8")
+    hits <- grep("upsert_moves\\(", l)
+    hits <- hits[!grepl("^\\s*#", l[hits]) & !grepl("<- function", l[hits])]
+    if (f == "R/data_pipeline.R") hits <- hits[!grepl("upsert_moves(db, nuevas)", l[hits], fixed = TRUE)]
+    if (length(hits)) fuera <- c(fuera, paste0(f, ":", hits))
+    a <- grep("anti_join\\(.*moves", l)
+    if (length(a)) fuera <- c(fuera, paste0(f, ":", a))
+  }
+  ok("every move and restore goes through mudanzas_mover()/mudanzas_restaurar()", !length(fuera))
+  if (length(fuera)) cat("    ", paste(fuera, collapse = "\n     "), "\n")
+}
+
 cat(sprintf("\n%d passed, %d failed\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

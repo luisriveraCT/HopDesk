@@ -253,6 +253,61 @@ mudanza_por_factura <- function(df, moves_df, ledger) {
             else NULL)
 }
 
+# ── Writing the dates moved by hand (T52b) ────────────────────────────────────
+# Every path that moves or restores a date goes through these two, so the
+# moves table keeps one row per invoice. `facturas`: the open invoices
+# (ledger, Empresa, Moneda, Documento, fecha_factura; politica_facturas() of
+# the SAP snapshot) -- whether a document is one invoice or a reused number.
+# An undated row (written before T52b) is replaced or removed only for a
+# document that is one invoice (.politica_doc_unica(), the T52 rule); with a
+# reused number it stays: it reaches nobody, and nothing is deleted without
+# a decision.
+.mudanza_doc <- function(d) paste(d$ledger, .politica_doc(d$Empresa, d$Moneda, d$Documento), sep = "\r")
+.mudanza_fecha <- function(d)
+  if ("fecha_factura" %in% names(d)) as.Date(d$fecha_factura) else as.Date(rep(NA_character_, nrow(d)))
+
+# Of these documents (.mudanza_doc() keys), which are one invoice among `facturas`.
+.mudanza_docs_unicos <- function(docs, facturas) {
+  if (!length(docs)) return(character())
+  if (!is.data.frame(facturas) || !nrow(facturas)) return(docs)
+  kf    <- .mudanza_doc(facturas)
+  unica <- .politica_doc_unica(kf, .mudanza_fecha(facturas))
+  i     <- match(docs, kf)
+  docs[is.na(i) | unica[i]]
+}
+
+# The undated rows of db for the documents of the dated rows of `de`, when
+# each is one invoice.
+.mudanza_viejas <- function(db, de, facturas) {
+  if (!is.data.frame(db) || !nrow(db) || !is.data.frame(de) || !nrow(de)) return(rep(FALSE, NROW(db)))
+  docs <- unique(.mudanza_doc(de)[!is.na(.mudanza_fecha(de))])
+  is.na(.mudanza_fecha(db)) & .mudanza_doc(db) %in% .mudanza_docs_unicos(docs, facturas)
+}
+
+# db after moving `nuevas` (ledger, Empresa, Moneda, Documento, fecha_factura,
+# FechaVenc_Proyectada, ...): upsert_moves() on the invoice, and each dated
+# row also replaces the undated row of its document when it is one invoice.
+mudanzas_mover <- function(db, nuevas, facturas = NULL) {
+  if (!is.data.frame(nuevas) || !nrow(nuevas)) return(db)
+  viejas <- .mudanza_viejas(db, nuevas, facturas)
+  if (any(viejas)) db <- db[!viejas, , drop = FALSE]
+  upsert_moves(db, nuevas)
+}
+
+# db after restoring `llaves` (ledger, Empresa, Moneda, Documento,
+# fecha_factura) to their original date: the row of each invoice goes, and
+# so does the undated row of its document when it is one invoice. An
+# undated key (a row that is not an ERP invoice, or without the date)
+# removes the undated row of its document, as before.
+mudanzas_restaurar <- function(db, llaves, facturas = NULL) {
+  if (!is.data.frame(db) || !nrow(db) || !is.data.frame(llaves) || !nrow(llaves)) return(db)
+  k_db  <- paste(.mudanza_doc(db), format(.mudanza_fecha(db)), sep = "\r")
+  k_ll  <- paste(.mudanza_doc(llaves), format(.mudanza_fecha(llaves)), sep = "\r")
+  propia <- k_db %in% k_ll                                       # same invoice (or both undated)
+  viejas <- .mudanza_viejas(db, llaves, facturas)
+  db[!(propia | viejas), , drop = FALSE]
+}
+
 # For each key, whether it has at most one distinct posting date among the
 # given rows (rows without a date do not count). The rule that lets a policy
 # row written before T52 reach a document (politica_por_factura() and the

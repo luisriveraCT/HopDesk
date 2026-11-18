@@ -250,6 +250,15 @@ facturas_filas_agenda <- function(keys, a_mano, usuario, confirmaciones) {
   out
 }
 
+# The invoice's posting date from the rows' keys (keys_df$fecha_factura, a
+# "YYYY-MM-DD" string; "" or unreadable = NA), as Date (T52b).
+.fecha_factura_de_llaves <- function(x) {
+  x <- as.character(x)
+  x[is.na(x) | !nzchar(trimws(x))] <- NA_character_
+  d <- tryCatch(as.Date(x), error = function(e) NULL)
+  if (is.null(d) || length(d) != length(x)) as.Date(rep(NA_character_, length(x))) else d
+}
+
 # handle_invoice_action — shared handler called by search and vencidos modules.
 # payload: list with $action, $rows, optionally $move_to
 # =============================================================================
@@ -412,17 +421,20 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
       Empresa              = .data$Empresa,
       Moneda               = .data$Moneda,
       Documento            = .data$Documento,
+      # the invoice's posting date (T52b): the move is this invoice's only
+      fecha_factura        = .fecha_factura_de_llaves(.data$fecha_factura),
       FechaVenc_Proyectada = new_date,
       moved_by             = current_user,
       last_updated         = Sys.time()
     )
-    updated <- upsert_moves(shared$moves_db(), new_rows)
+    facturas <- politica_facturas(tryCatch(shared$sap_data(), error = function(e) list()))
+    updated <- mudanzas_mover(shared$moves_db(), new_rows, facturas)
     shared$moves_db(updated)
     # Rebased on S3 as it is now (CM28), as the Calendario's .apply_move():
     # without it this session's whole copy was written, erasing a date
     # another session moved after this one loaded.
     .save_moves_deferred(updated, client_id = shared$effective_client_id(), session = session,
-                         rebase = function(fresh) upsert_moves(fresh, new_rows))
+                         rebase = function(fresh) mudanzas_mover(fresh, new_rows, facturas))
     showNotification(
       tr("tablas.lupa.aviso.movidas", n = as.character(nrow(keys_df)), fecha = format(new_date, "%d/%m/%Y")),
       type = "message", duration = 2)
@@ -431,21 +443,21 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
 
   } else if (action == "restore") {
     # Remove move records for the selected invoices so they revert to their
-    # original due date. Only the schema keys are needed for the anti_join.
+    # original due date: each invoice's own row (T52b, mudanzas_restaurar()).
     restore_keys <- dplyr::transmute(keys_df,
-      ledger    = .data$ledger,
-      Empresa   = .data$Empresa,
-      Moneda    = .data$Moneda,
-      Documento = .data$Documento
+      ledger        = .data$ledger,
+      Empresa       = .data$Empresa,
+      Moneda        = .data$Moneda,
+      Documento     = .data$Documento,
+      fecha_factura = .fecha_factura_de_llaves(.data$fecha_factura)
     )
-    updated <- dplyr::anti_join(shared$moves_db(), restore_keys,
-                                by = c("ledger","Empresa","Moneda","Documento"))
+    facturas <- politica_facturas(tryCatch(shared$sap_data(), error = function(e) list()))
+    updated <- mudanzas_restaurar(shared$moves_db(), restore_keys, facturas)
     shared$moves_db(updated)
     # Rebased on S3 as it is now (CM28), as the Calendario's .clear_moves():
     # only these invoices' rows leave, every other session's stay.
     .save_moves_deferred(updated, client_id = shared$effective_client_id(), session = session,
-                         rebase = function(fresh) dplyr::anti_join(
-                           fresh, restore_keys, by = c("ledger","Empresa","Moneda","Documento")))
+                         rebase = function(fresh) mudanzas_restaurar(fresh, restore_keys, facturas))
     showNotification(
       tr("tablas.lupa.aviso.restauradas", n = as.character(nrow(keys_df))),
       type = "message", duration = 2)

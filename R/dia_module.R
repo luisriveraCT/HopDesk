@@ -23,13 +23,17 @@ dia_ids <- function(detail) {
 
 # The day's rows of these ids, as the handlers' keys: Empresa, Moneda,
 # Documento, Importe, Parte, provision_id (and source, for deletes), and the
-# posting date (a tag goes to its own invoice, T52d).
+# posting date (a tag goes to its own invoice, T52d), and the same date as
+# fecha_factura (NA when the row has none): the ERP reuses a DocNum in
+# another year, so moving a date needs it (T52b).
 dia_llaves <- function(detail, ids) {
   d <- as.data.frame(detail, stringsAsFactors = FALSE)
   filas <- match(ids, dia_ids(d))
   filas <- filas[!is.na(filas)]
+  fc <- d[["Fecha de contabilización"]]
+  d$fecha_factura <- if (is.null(fc)) as.Date(rep(NA_character_, nrow(d))) else as.Date(fc)
   campos <- intersect(c("Empresa", "Moneda", "Documento", "Importe", "Parte", "provision_id", "source",
-                        "Fecha de contabilización"), names(d))
+                        "fecha_factura", "Fecha de contabilización"), names(d))
   unique(d[filas, campos, drop = FALSE])
 }
 

@@ -1711,16 +1711,19 @@ ledgerModuleServer <- function(id, config, shared) {
         Empresa              = row[["Empresa"]],
         Moneda               = row[["Moneda"]],
         Documento            = row[["Documento"]],
+        # the invoice's posting date (T52b): the move is this invoice's only
+        fecha_factura        = as.Date(row[["Fecha de contabilización"]] %||% NA_character_),
         FechaVenc_Proyectada = new_date,
         notas                = notas,
         moved_by             = shared$current_user(),
         last_updated         = Sys.time(),
         stringsAsFactors     = FALSE
       )
-      updated_moves <- upsert_moves(shared$moves_db(), new_move)
+      facturas_mov  <- politica_facturas(tryCatch(shared$sap_data(), error = function(e) list()))
+      updated_moves <- mudanzas_mover(shared$moves_db(), new_move, facturas_mov)
       shared$moves_db(updated_moves)
       .save_moves_deferred(updated_moves, client_id = shared$effective_client_id(), session = session,
-                           rebase = function(fresh) upsert_moves(fresh, new_move))
+                           rebase = function(fresh) mudanzas_mover(fresh, new_move, facturas_mov))
 
       # --- field overrides (sap_overrides) ---
       ov_row <- tibble::tibble(
@@ -2052,12 +2055,15 @@ dia_filas_agenda <- function(a_mano, fuente, usuario, ledger, confirmaciones) {
       moved_by             = shared$current_user(),
       last_updated         = Sys.time()
     )
-  updated <- upsert_moves(moves, new_rows)
+  # One row per invoice (T52b): the open invoices say whether a document is
+  # one invoice, for the undated row (before T52b) it replaces.
+  facturas <- politica_facturas(tryCatch(shared$sap_data(), error = function(e) list()))
+  updated <- mudanzas_mover(moves, new_rows, facturas)
   shared$moves_db(updated)
   cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
   .save_moves_deferred(
     updated, client_id = cid, session = session,
-    rebase = function(fresh) upsert_moves(fresh, new_rows),
+    rebase = function(fresh) mudanzas_mover(fresh, new_rows, facturas),
     log_info = list(
       user        = tryCatch(shared$current_user(), error = function(e) "system"),
       module      = paste0("ledger_", ledger),
@@ -2073,20 +2079,16 @@ dia_filas_agenda <- function(a_mano, fuente, usuario, ledger, confirmaciones) {
 }
 
 .clear_moves <- function(keys, ledger, shared, session = NULL) {
-  moves   <- shared$moves_db()
-  updated <- dplyr::anti_join(
-    moves,
-    keys |> dplyr::mutate(ledger = !!ledger),
-    by = c("ledger","Empresa","Moneda","Documento")
-  )
+  moves    <- shared$moves_db()
+  # Each invoice's own row (T52b); see mudanzas_restaurar().
+  llaves   <- keys |> dplyr::mutate(ledger = !!ledger)
+  facturas <- politica_facturas(tryCatch(shared$sap_data(), error = function(e) list()))
+  updated  <- mudanzas_restaurar(moves, llaves, facturas)
   shared$moves_db(updated)
   cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
   .save_moves_deferred(
     updated, client_id = cid, session = session,
-    rebase = function(fresh) dplyr::anti_join(
-      fresh, keys |> dplyr::mutate(ledger = !!ledger),
-      by = c("ledger","Empresa","Moneda","Documento")
-    ),
+    rebase = function(fresh) mudanzas_restaurar(fresh, llaves, facturas),
     log_info = list(
       user        = tryCatch(shared$current_user(), error = function(e) "system"),
       module      = paste0("ledger_", ledger),
