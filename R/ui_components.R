@@ -261,7 +261,6 @@ app_styles <- function() {
     nav.navbar .navbar-header { display: flex; align-items: center; gap: 14px; min-width: 0; height: 100%; }
     nav.navbar .navbar-brand { order: 0; flex: none; }
     nav.navbar .navbar-toggle, nav.navbar .navbar-toggler { display: none !important; }
-    nav.navbar .navbar-collapse { display: none !important; }
     .hd-menu-btn {
       order: 1; flex: none; position: relative;
       display: inline-flex; align-items: center; justify-content: center;
@@ -282,16 +281,19 @@ app_styles <- function() {
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     #hd-barra-activa .svg-inline--fa { flex-shrink: 0; height: 1em; width: 1.25em; }
-    /* The open panel */
-    nav.navbar.hd-menu-abierto .navbar-collapse {
-      display: block !important;
-      position: absolute; top: 100%; left: 12px; z-index: 1050;
+    /* The panel: always laid out (Shiny draws the outputs in it), invisible
+       until the menu opens; barra_menu_ui() sets display/visibility inline
+       because bslib's own rules beat a stylesheet here. */
+    nav.navbar .navbar-collapse {
+      visibility: hidden; pointer-events: none;
+      position: absolute !important; top: 100%; left: 12px; z-index: 1050;
       width: 300px; max-width: calc(100vw - 24px);
       max-height: calc(100vh - var(--hd-barra-alto) - 8px); overflow-y: auto;
       background: var(--hd-blanco); border: 1px solid var(--hd-linea);
       border-radius: var(--hd-radio-sm); box-shadow: var(--hd-sombra);
       padding: 6px 0 0;
     }
+    nav.navbar.hd-menu-abierto .navbar-collapse { visibility: visible; pointer-events: auto; }
     nav.navbar .navbar-collapse .navbar-nav {
       flex-direction: column !important; align-items: stretch !important;
       margin: 0 !important; padding: 0 !important; gap: 0 !important;
@@ -311,11 +313,17 @@ app_styles <- function() {
       color: var(--hd-marino) !important; font-weight: 700;
       background: var(--hd-oro-velo); box-shadow: inset 3px 0 0 var(--hd-oro);
     }
+    /* Grupo's items listed under it, always (the approved drawing; the
+       active one may live there and must take the focus). */
     nav.navbar .navbar-collapse .dropdown-menu {
+      display: block !important;
       position: static !important; float: none; transform: none !important;
       border: 0; box-shadow: none; margin: 0; padding: 0 0 0 22px; background: transparent;
     }
     nav.navbar .navbar-collapse .bslib-nav-spacer { display: none; }
+    nav.navbar .navbar-collapse .dropdown-toggle::after,
+    nav.navbar .navbar-collapse .dropdown-toggle .caret { display: none; }
+    nav.navbar .navbar-collapse .dropdown-toggle { cursor: default; }
     /* The user and Salir: a navy foot (their own white text stays readable). */
     nav.navbar .navbar-collapse .bslib-nav-item {
       background: var(--hd-marino); padding: 6px 14px; margin: 0;
@@ -324,7 +332,7 @@ app_styles <- function() {
     nav.navbar .navbar-collapse .bslib-nav-item:last-child { padding-bottom: 10px; }
     @media (max-width: 600px) {
       nav.navbar .navbar-brand { font-size: .8rem; }
-      nav.navbar.hd-menu-abierto .navbar-collapse { left: 0; width: 100vw; max-width: 100vw; border-radius: 0; }
+      nav.navbar .navbar-collapse { left: 0; width: 100vw; max-width: 100vw; border-radius: 0; }
     }
 
     /* ── Control bar — 3-zone grid ──────────────────────────────────────── */
@@ -503,7 +511,10 @@ app_styles <- function() {
     /* ── Calendar container fills remaining height ───────────────────────── */
     .calendar-container {
       width: 100%;
-      height: calc(100vh - var(--hd-barra-alto) - 36px);   /* the bar (T51) + the control bar */
+      /* the bar (T51) + the control bar and its margin: 72 px, measured in
+         Chrome at 1293x632 (the old 84px took the control bar as 36 px, so
+         the calendar ran 36 px past the window). */
+      height: calc(100vh - var(--hd-barra-alto) - 72px);
       min-height: 500px;
       overflow-y: auto;
     }
@@ -1450,12 +1461,30 @@ barra_menu_ui <- function() {
       function panel() { var n = nav(); return n ? n.querySelector('.navbar-collapse') : null; }
       function boton() { return document.getElementById('hd-menu-btn'); }
       function abierto() { var n = nav(); return !!(n && n.classList.contains('hd-menu-abierto')); }
+      // Inline and !important: bslib's own navbar CSS shows .navbar-collapse
+      // with !important rules that beat any stylesheet (seen in Chrome, T51).
+      // Closed is invisible, not display:none: Shiny does not draw an output
+      // it thinks hidden (the user's badge lives in the panel), and an
+      // invisible panel still takes no clicks and no focus.
+      function mostrarPanel(si) {
+        var p = panel(); if (!p) return;
+        p.style.setProperty('display', 'block', 'important');
+        p.style.setProperty('visibility', si ? 'visible' : 'hidden', 'important');
+        p.style.setProperty('pointer-events', si ? 'auto' : 'none', 'important');
+      }
       // Shown = neither the link nor its <li> is display:none (the tier,
       // permission and admin-deployment rules hide one or the other).
+      // An item of a dropdown (Grupo) is shown only if its dropdown is.
       function visible(el) {
         if (!el || getComputedStyle(el).display === 'none') return false;
         var li = el.closest('li');
-        return !(li && getComputedStyle(li).display === 'none');
+        if (li && getComputedStyle(li).display === 'none') return false;
+        var menu = el.closest('.dropdown-menu');
+        if (menu) {
+          var dd = menu.closest('li.dropdown');
+          return !!dd && visible(dd.querySelector('.dropdown-toggle'));
+        }
+        return true;
       }
       function activo() {
         var p = panel(); if (!p) return null;
@@ -1496,6 +1525,7 @@ barra_menu_ui <- function() {
       function abrir() {
         var n = nav(), btn = boton(); if (!n || !btn) return;
         n.classList.add('hd-menu-abierto');
+        mostrarPanel(true);
         btn.setAttribute('aria-expanded', 'true');
         pintarGlobo();
         var a = activo(), p = panel();
@@ -1506,6 +1536,7 @@ barra_menu_ui <- function() {
       function cerrar(devolverFoco) {
         var n = nav(), btn = boton(); if (!n || !btn || !abierto()) return;
         n.classList.remove('hd-menu-abierto');
+        mostrarPanel(false);
         btn.setAttribute('aria-expanded', 'false');
         pintarGlobo();
         if (devolverFoco) btn.focus();
@@ -1533,6 +1564,7 @@ barra_menu_ui <- function() {
         activa.id = 'hd-barra-activa';
         fila.appendChild(btn); fila.appendChild(activa);
         p.classList.add('hd-marca');                       // B's tokens inside the panel
+        mostrarPanel(false);
         btn.addEventListener('click', function() { if (abierto()) cerrar(true); else abrir(); });
         // Choosing a tab (or a Grupo item) closes it.
         p.addEventListener('click', function(e) {

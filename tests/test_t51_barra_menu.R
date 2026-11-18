@@ -29,10 +29,13 @@ cat("-- one row --\n")
 ok("the bar's height is one variable, 48px, and the navbar takes it",
    grepl(":root { --hd-barra-alto: 48px; }", css, fixed = TRUE) &&
      grepl("nav.navbar { height: var(--hd-barra-alto);", css, fixed = TRUE))
-ok("the links' panel is hidden until the ☰ opens it, and Bootstrap's own toggler is not used",
-   grepl("nav.navbar .navbar-collapse { display: none !important; }", css, fixed = TRUE) &&
-     grepl("nav.navbar.hd-menu-abierto .navbar-collapse {", css, fixed = TRUE) &&
-     grepl("nav.navbar .navbar-toggle, nav.navbar .navbar-toggler { display: none !important; }", css, fixed = TRUE))
+ok("the links' panel is invisible (not display:none: Shiny draws its outputs) until the ☰ opens it",
+   grepl("visibility: hidden; pointer-events: none;", css, fixed = TRUE) &&
+     grepl("nav.navbar.hd-menu-abierto .navbar-collapse { visibility: visible; pointer-events: auto; }", css, fixed = TRUE) &&
+     grepl("p.style.setProperty('visibility', si ? 'visible' : 'hidden', 'important')", js, fixed = TRUE) &&
+     !grepl("trigger(si ?", js, fixed = TRUE))
+ok("Bootstrap's own toggler is not used",
+   grepl("nav.navbar .navbar-toggle, nav.navbar .navbar-toggler { display: none !important; }", css, fixed = TRUE))
 # The tier, permission and admin-deployment rules hide links with
 # display:none !important: the menu must never set display on a link.
 reglas <- regmatches(css, gregexpr("[^{}]+\\{[^{}]*\\}", css))[[1]]
@@ -41,7 +44,7 @@ ok("no rule of the menu sets display on a .nav-link or .dropdown-item (the visib
    length(de_enlace) > 0L && !any(grepl("display\\s*:", sub("^[^{]*\\{", "", de_enlace))))
 
 cat("\n-- the three fixed heights read the variable --\n")
-ok("ui_components.R (the calendar)", grepl("calc(100vh - var(--hd-barra-alto) - 36px)", css, fixed = TRUE))
+ok("ui_components.R (the calendar)", grepl("calc(100vh - var(--hd-barra-alto) - 72px)", css, fixed = TRUE))
 for (f in c("R/tiers_module.R", "R/empresas_module.R"))
   ok(f, any(grepl("calc(100vh - var(--hd-barra-alto) - 17px)", readLines(f, warn = FALSE), fixed = TRUE)))
 todo <- paste(vapply(c("app.R", list.files("R", "\\.R$", full.names = TRUE)),
