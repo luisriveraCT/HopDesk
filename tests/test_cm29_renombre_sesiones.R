@@ -71,7 +71,16 @@ sembrar <- function() {
   poner(S3_KEYS$pasivos_liabilities, fila(.schema_pasivos_liability, id = c("l1", "l2"), empresa = c("OLD", "OTRA")))
   poner(REQ_KEYS$requisiciones, fila(.REQ_SCHEMAS$requisiciones, id = c("r1", "r2"), empresa = c("OLD", "OTRA")))
 }
-renombrar <- function() suppressMessages(rename_empresa_initials("OLD", "NEW", client_id = CID))
+# What the Empresas edit does: the cascade, then (complete) empresas.rds with
+# NEW and the earlier initials (.iniciales_anteriores_tras(), CM29 part 2).
+source("R/empresas_module.R", encoding = "UTF-8")
+renombrar <- function() {
+  suppressMessages(rename_empresa_initials("OLD", "NEW", client_id = CID))
+  e <- leer(S3_KEYS$empresas); i <- which(e$initials == "OLD")
+  e$iniciales_anteriores[i] <- .iniciales_anteriores_tras(e$iniciales_anteriores[i], "OLD", "NEW")
+  e$initials[i] <- "NEW"
+  poner(S3_KEYS$empresas, e)
+}
 iniciales_vivas <- function() leer(S3_KEYS$empresas)$initials
 # Every initial a proveedores row names (Empresa and the comma list).
 ini_prov <- function(df) unique(trimws(c(df$Empresa, unlist(strsplit(df$empresas, ",", fixed = TRUE)))))

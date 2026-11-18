@@ -2168,15 +2168,19 @@ load_proveedores <- function(client_id = NULL) {
 # id cannot be rebased, so then the whole table is written, as before.
 .proveedores_guardar <- function(df, key, client_id, base) {
   norm <- .normalize(df, .schema_proveedores)
+  # CM29: never a company's earlier initials, translated AFTER the rebase
+  # (base and norm are compared as they came; translating norm alone would
+  # make every row look changed).
+  tabla <- if (identical(key, S3_KEYS$proveedores_inactivos)) "proveedores_inactivos" else "proveedores"
   if (!is.null(base) && !is.null(client_id) && nzchar(client_id)) {
     base <- .normalize(base, .schema_proveedores)
     ids_ok <- function(d) !anyNA(d$id) && all(nzchar(d$id)) && !anyDuplicated(d$id)
     if (ids_ok(norm) && ids_ok(base))
-      return(invisible(modificar_tabla(key, client_id, .schema_proveedores,
-                                       function(fresco) rebase_por_id(norm, base, fresco, "id"))))
+      return(invisible(modificar_tabla(key, client_id, .schema_proveedores, function(fresco)
+        iniciales_vigentes(rebase_por_id(norm, base, fresco, "id"), tabla, client_id))))
     message("[proveedores] rows without a unique id: whole-table save, no rebase")
   }
-  .s3_write(norm, key, client_id = client_id)
+  .s3_write(iniciales_vigentes(norm, tabla, client_id), key, client_id = client_id)
 }
 
 save_proveedores <- function(df, client_id = NULL, base = NULL) {
@@ -2216,7 +2220,8 @@ load_parte_alias_map <- function(client_id = NULL) {
 }
 
 save_parte_alias_map <- function(df, client_id = NULL) {
-  .s3_write(df, S3_KEYS$parte_alias_map, client_id = client_id)
+  .s3_write(iniciales_vigentes(df, "parte_alias_map", client_id), S3_KEYS$parte_alias_map,   # CM29
+            client_id = client_id)
   invisible(TRUE)
 }
 
@@ -2481,6 +2486,31 @@ save_group_config <- function(cfg, client_id = NULL) {
                  call = NULL, hechos = hechos, sin_cambios = sin_cambios, fallidos = fallidos))
 }
 
+# The initials columns of every table the rename handles, and the form of
+# each (an exact value, a comma list, a JSON array): ONE list for the cascade
+# below and for iniciales_vigentes() (CM29). interco_v2 is keyed by initials
+# in a list, not in a column: its own step in the cascade.
+.INICIALES_COLUMNAS <- list(
+  ctas_cuentas          = c(Empresa = ".rni_valor"),
+  bancos_cuentas        = c(empresa = ".rni_valor"),
+  proveedores           = c(Empresa = ".rni_valor", empresas = ".rni_lista_comas"),
+  proveedores_inactivos = c(Empresa = ".rni_valor", empresas = ".rni_lista_comas"),
+  parte_alias_map       = c(Empresa = ".rni_valor"),
+  pasivos_provisions    = c(empresa = ".rni_valor"),
+  pasivos_liabilities   = c(empresa = ".rni_valor"),
+  erp_connections       = c(company_initials = ".rni_json"),
+  requisiciones         = c(empresa = ".rni_valor"))
+
+# cambio(df) for `tabla`: OLD -> NEW in its initials columns; df itself when
+# nothing changes (so nothing is written).
+.rni_tabla <- function(tabla, old_ini, new_ini) {
+  cols <- .INICIALES_COLUMNAS[[tabla]]
+  function(df) {
+    for (col in names(cols)) df <- .rni_cambio(col, old_ini, new_ini, match.fun(cols[[col]]))(df)
+    df
+  }
+}
+
 # empresas.rds `iniciales_anteriores` (CM29): the JSON array of initials a
 # company had before a complete rename. One character vector per row
 # (character(0) when empty or not an array).
@@ -2489,6 +2519,46 @@ save_group_config <- function(cfg, client_id = NULL) {
   a <- tryCatch(jsonlite::fromJSON(v), error = function(e) NULL)
   if (is.character(a)) unique(toupper(trimws(a[!is.na(a)]))) else character(0)
 })
+
+# Earlier initials -> the company's current ones, from empresas.rds. Left out:
+# an earlier one that is some company's current initials now, or that two
+# companies had (never ambiguous; the Empresas edit refuses taking another
+# company's earlier initials).
+.iniciales_mapa <- function(empresas) {
+  if (!is.data.frame(empresas) || !nrow(empresas) || !"iniciales_anteriores" %in% names(empresas))
+    return(character(0))
+  vivas <- trimws(as.character(empresas$initials))
+  ant   <- .iniciales_anteriores_de(empresas$iniciales_anteriores)
+  old   <- unlist(ant); cur <- rep(vivas, lengths(ant))
+  if (!length(old)) return(character(0))
+  deja  <- !is.na(cur) & nzchar(cur) & !old %in% vivas & !old %in% old[duplicated(old)]
+  stats::setNames(cur[deja], old[deja])
+}
+
+# The safety net of CM29: what is written to `tabla` (a key of
+# .INICIALES_COLUMNAS) never carries a company's earlier initials -- a session
+# that loaded before a rename (a stale copy, a form already open) writes them
+# as the current ones. empresas.rds is read strictly from S3, never the
+# session's copy (that is the stale one); a failed read stop()s and nothing is
+# saved. Each translation is counted in a message (initials and table keys
+# only). Returns df, translated.
+iniciales_vigentes <- function(df, tabla, client_id) {
+  cols <- .INICIALES_COLUMNAS[[tabla]]
+  if (is.null(cols) || !is.data.frame(df) || !nrow(df) || !any(names(cols) %in% names(df))) return(df)
+  mapa <- .iniciales_mapa(.s3_leer_para_escribir(S3_KEYS$empresas, client_id))
+  n <- 0L; pares <- character(0)
+  for (old in names(mapa)) {
+    nuevo <- .rni_tabla(tabla, old, mapa[[old]])(df)
+    if (identical(nuevo, df)) next
+    for (col in intersect(names(cols), names(df)))
+      n <- n + sum(!is.na(df[[col]]) & df[[col]] != nuevo[[col]])
+    pares <- c(pares, paste0(old, "->", mapa[[old]]))
+    df <- nuevo
+  }
+  if (n) message(sprintf("[CM29] %s: %d value(s) with earlier initials written as the current ones (%s)",
+                         tabla, n, paste(pares, collapse = ", ")))
+  df
+}
 
 # After a step changed its table, its sync-bus name (register_synced() in
 # app.R) is bumped so every open session reloads it (CM29). Without it they
@@ -2526,19 +2596,19 @@ rename_empresa_initials <- function(old_ini, new_ini, client_id = NULL) {
   hubo <- FALSE
   marca <- function(f) function(df) { n <- f(df); if (!identical(n, df)) hubo <<- TRUE; n }
   pasos <- list(
-    ctas_cuentas = function() modificar_ctas_cuentas(marca(.rni_cambio("Empresa", old_ini, new_ini)), client_id = cid),
+    ctas_cuentas = function() modificar_ctas_cuentas(marca(.rni_tabla("ctas_cuentas", old_ini, new_ini)), client_id = cid),
     bancos_cuentas = function()
       modificar_tabla_completa(S3_KEYS$bancos_cuentas, cid, .schema_bancos_cuentas,
-                               marca(.rni_cambio("empresa", old_ini, new_ini))),
+                               marca(.rni_tabla("bancos_cuentas", old_ini, new_ini))),
     proveedores = function()
-      modificar_tabla_completa(S3_KEYS$proveedores, cid, .schema_proveedores, marca(function(df)
-        .rni_cambio("empresas", old_ini, new_ini, .rni_lista_comas)(.rni_cambio("Empresa", old_ini, new_ini)(df)))),
+      modificar_tabla_completa(S3_KEYS$proveedores, cid, .schema_proveedores,
+                               marca(.rni_tabla("proveedores", old_ini, new_ini))),
     proveedores_inactivos = function()
-      modificar_tabla_completa(S3_KEYS$proveedores_inactivos, cid, .schema_proveedores, marca(function(df)
-        .rni_cambio("empresas", old_ini, new_ini, .rni_lista_comas)(.rni_cambio("Empresa", old_ini, new_ini)(df)))),
+      modificar_tabla_completa(S3_KEYS$proveedores_inactivos, cid, .schema_proveedores,
+                               marca(.rni_tabla("proveedores_inactivos", old_ini, new_ini))),
     parte_alias_map = function()
       modificar_tabla_completa(S3_KEYS$parte_alias_map, cid, .schema_parte_alias_map,
-                               marca(.rni_cambio("Empresa", old_ini, new_ini))),
+                               marca(.rni_tabla("parte_alias_map", old_ini, new_ini))),
     interco_v2 = function() {
       reg <- .s3_leer_para_escribir(S3_KEYS$interco_v2, cid)
       if (!is.list(reg) || !old_ini %in% names(reg$companies)) return(invisible(reg))
@@ -2551,18 +2621,18 @@ rename_empresa_initials <- function(old_ini, new_ini, client_id = NULL) {
     },
     pasivos_provisions = function()
       modificar_tabla(S3_KEYS$pasivos_provisions, cid, .schema_pasivos_provision,
-                      marca(.rni_cambio("empresa", old_ini, new_ini))),
+                      marca(.rni_tabla("pasivos_provisions", old_ini, new_ini))),
     pasivos_liabilities = function()
-      modificar_pasivos_liabilities(cid, marca(.rni_cambio("empresa", old_ini, new_ini))),
+      modificar_pasivos_liabilities(cid, marca(.rni_tabla("pasivos_liabilities", old_ini, new_ini))),
     erp_connections = function()
       modificar_tabla_completa(S3_KEYS$erp_connections, cid, .schema_erp_connections, marca(function(df) {
         .assert_erp_connections_isolated(df, cid, "rename")
-        .rni_cambio("company_initials", old_ini, new_ini, .rni_json)(df)
+        .rni_tabla("erp_connections", old_ini, new_ini)(df)
       })),
     requisiciones = function() {
       if (!exists("REQ_KEYS") || !exists(".REQ_SCHEMAS")) return(invisible(NULL))
       modificar_tabla_completa(REQ_KEYS$requisiciones, cid, .REQ_SCHEMAS$requisiciones,
-                               marca(.rni_cambio("empresa", old_ini, new_ini)))
+                               marca(.rni_tabla("requisiciones", old_ini, new_ini)))
     }
   )
 

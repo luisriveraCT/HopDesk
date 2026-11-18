@@ -180,8 +180,11 @@ load_ctas_cuentas <- function(client_id = NULL) {
 modificar_ctas_bancos <- function(cambio, client_id, permitir_reduccion = FALSE)
   modificar_tabla_completa(S3_KEYS$ctas_bancos, client_id, .schema_ctas_bancos, cambio,
                            permitir_reduccion = permitir_reduccion)
+# CM29: what is written never carries a company's earlier initials
+# (iniciales_vigentes(), the same net as the other tables of the rename).
 modificar_ctas_cuentas <- function(cambio, client_id)
-  modificar_tabla_completa(S3_KEYS$ctas_cuentas, client_id, .schema_ctas_cuentas, cambio)
+  modificar_tabla_completa(S3_KEYS$ctas_cuentas, client_id, .schema_ctas_cuentas,
+                           function(t) iniciales_vigentes(cambio(t), "ctas_cuentas", client_id))
 
 # CM17 (Luis, 2026-11-05): a bank that any account uses (active or not) is
 # never deleted. The accounts are read strictly from S3 inside the bank

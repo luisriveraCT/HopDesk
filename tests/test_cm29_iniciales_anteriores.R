@@ -121,6 +121,81 @@ editar("e1", "A")
 ok("A7 …but e1 itself may go back to its own earlier initials (B -> A)",
    identical(ini_de("e1"), "A") && identical(anteriores("e1"), "B"))
 
+# ── B. The net: what is written never carries earlier initials ──────────────
+# A session that loaded before the renames writes rows under earlier
+# initials; the real save functions translate them, reading empresas.rds.
+MSG <- character()
+guardar <- function(expr) withCallingHandlers(expr, message = function(m) {
+  MSG <<- c(MSG, conditionMessage(m)); invokeRestart("muffleMessage") })
+prov <- function(id, ini) fila(.schema_proveedores, id = id, nombre = id, Empresa = ini, empresas = ini, activo = TRUE)
+
+sembrar(); editar("e1", "B"); editar("e1", "C")          # A -> B -> C
+base <- leer(S3_KEYS$proveedores)
+MSG <- character()
+guardar(save_proveedores(dplyr::bind_rows(base, prov("pa", "A"), prov("pb", "B")), client_id = CID, base = base))
+p <- leer(S3_KEYS$proveedores)
+ok("B1 a chain A -> B -> C: rows written under A and under B are both saved under C",
+   identical(p$Empresa[p$id %in% c("pa", "pb")], c("C", "C")) && identical(p$empresas[p$id %in% c("pa", "pb")], c("C", "C")))
+ok("B1 …and the translation is counted in a message (table key and initials only)",
+   any(grepl("[CM29] proveedores: 4 value(s)", MSG, fixed = TRUE)) && any(grepl("A->C", MSG, fixed = TRUE)) &&
+     any(grepl("B->C", MSG, fixed = TRUE)))
+
+editar("e1", "B")                                         # going back C -> B
+base <- leer(S3_KEYS$proveedores)
+guardar(save_proveedores(dplyr::bind_rows(base, prov("pc", "C"), prov("pb2", "B")), client_id = CID, base = base))
+p <- leer(S3_KEYS$proveedores)
+ok("B2 going back C -> B: a row under C is saved under B, and one under B stays B",
+   identical(p$Empresa[p$id == "pc"], "B") && identical(p$Empresa[p$id == "pb2"], "B"))
+
+# Legacy: before CM29 refused it, another company may hold initials e1 had.
+sembrar()
+e <- leer(S3_KEYS$empresas); e$initials[e$id == "e1"] <- "N"; e$iniciales_anteriores[e$id == "e1"] <- '["OTRA"]'
+poner(S3_KEYS$empresas, e)
+base <- leer(S3_KEYS$proveedores)
+guardar(save_proveedores(dplyr::bind_rows(base, prov("po", "OTRA")), client_id = CID, base = base))
+p <- leer(S3_KEYS$proveedores)
+ok("B3 earlier initials that are another company's current ones (OTRA) are never translated",
+   identical(p$Empresa[p$id == "po"], "OTRA"))
+
+sembrar(); editar("e1", "B")
+base <- leer(S3_KEYS$proveedores); antes <- base
+.mem_falla <- k(S3_KEYS$empresas)
+r <- tryCatch({ guardar(save_proveedores(dplyr::bind_rows(base, prov("px", "A")), client_id = CID, base = base)); "guardado" },
+              error = function(e) "detenido")
+.mem_falla <- character()
+ok("B4 empresas.rds cannot be read: the save stops (an error for its notice) and nothing is written",
+   identical(r, "detenido") && identical(leer(S3_KEYS$proveedores), antes))
+
+# The other tables of the net, through their real save functions.
+sembrar(); editar("e1", "B")
+guardar(save_parte_alias_map(fila(.schema_parte_alias_map, Parte = "X", Empresa = c("A", "OTRA"), alias = "x"),
+                             client_id = CID))
+ok("B5 parte_alias_map: A -> B, OTRA untouched", identical(leer(S3_KEYS$parte_alias_map)$Empresa, c("B", "OTRA")))
+guardar(modificar_ctas_cuentas(function(t) dplyr::bind_rows(t, fila(.schema_ctas_cuentas, id = "c9", Empresa = "A")),
+                               client_id = CID))
+ok("B5 ctas_cuentas: a new account under A is saved under B",
+   identical(leer(S3_KEYS$ctas_cuentas)$Empresa[leer(S3_KEYS$ctas_cuentas)$id == "c9"], "B"))
+guardar(save_pasivos_liabilities(fila(.schema_pasivos_liability, id = "l9", empresa = "A"), client_id = CID))
+ok("B5 pasivos_liabilities: A -> B", identical(leer(S3_KEYS$pasivos_liabilities)$empresa, "B"))
+base <- leer(S3_KEYS$pasivos_provisions)
+guardar(save_pasivos_provisions(dplyr::bind_rows(base, fila(.schema_pasivos_provision, id = "v9", empresa = "A")),
+                                client_id = CID, base = base))
+v <- leer(S3_KEYS$pasivos_provisions)
+ok("B5 pasivos_provisions: A -> B", identical(v$empresa[v$id == "v9"], "B"))
+inac <- fila(.schema_proveedores, id = "pi9", nombre = "I", Empresa = "A", empresas = "OTRA, A", activo = FALSE)
+guardar(save_proveedores_inactivos(inac, client_id = CID))
+ok("B5 proveedores_inactivos: A -> B, in the comma list too (spaces kept)",
+   identical(leer(S3_KEYS$proveedores_inactivos)$Empresa, "B") &&
+     identical(leer(S3_KEYS$proveedores_inactivos)$empresas, "OTRA, B"))
+
+# Without earlier initials anywhere, a save is exactly what it always was.
+sembrar()
+base <- leer(S3_KEYS$proveedores); MSG <- character()
+nuevo <- dplyr::bind_rows(base, prov("pn", "OTRA"))
+guardar(save_proveedores(nuevo, client_id = CID, base = base))
+ok("B6 no renames: the table written is identical() to what the session saved, and no [CM29] message",
+   identical(leer(S3_KEYS$proveedores), .normalize(nuevo, .schema_proveedores)) && !any(grepl("[CM29]", MSG, fixed = TRUE)))
+
 s3_memoria_restaurar()
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
