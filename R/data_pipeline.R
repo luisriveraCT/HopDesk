@@ -149,6 +149,54 @@ dedupe_invoices <- function(df) {
   bind_rows(with_doc, df[!has_doc, ])
 }
 
+# ── Policy date of each invoice (T52) ─────────────────────────────────────────
+# An ERP DocNum is reused in another year: the invoice is Empresa + Moneda +
+# Documento + its posting date ("Fecha de contabilización"), the identity
+# agenda_filas_factura() already uses. policy_moves rows written since T52
+# carry that date (fecha_factura) and only reach their own invoice. Older rows
+# (fecha_factura NA) reach the document on the old key. A row with any part
+# of the key NA matches nothing (the old join's na_matches = "never").
+# When a key has several rows, the latest FechaVenc_Politica wins, as before.
+# One function for every reader (build_ledger_df(), the ledger module's
+# df_with_moves()), so the two can never disagree again.
+# Returns a Date per row of df.
+.politica_doc <- function(empresa, moneda, documento) {
+  k <- paste(empresa, moneda, documento, sep = "\r")
+  k[is.na(empresa) | is.na(moneda) | is.na(documento)] <- NA_character_
+  k
+}
+
+politica_por_factura <- function(df, policy_moves_df, ledger) {
+  n   <- if (is.data.frame(df)) nrow(df) else 0L
+  out <- as.Date(rep(NA_character_, n))
+  if (!n || !is.data.frame(policy_moves_df) || !nrow(policy_moves_df)) return(out)
+  pm <- policy_moves_df[policy_moves_df$ledger %in% ledger, , drop = FALSE]
+  if (!nrow(pm)) return(out)
+
+  pv <- as.Date(pm$FechaVenc_Politica)
+  pf <- if ("fecha_factura" %in% names(pm)) as.Date(pm$fecha_factura) else as.Date(rep(NA_character_, nrow(pm)))
+  pk <- .politica_doc(pm$Empresa, pm$Moneda, pm$Documento)
+  o  <- order(pv, decreasing = TRUE, na.last = TRUE)       # match() takes the first: the latest
+  pv <- pv[o]; pf <- pf[o]; pk <- pk[o]
+
+  fc <- df[["Fecha de contabilización"]]
+  fc <- if (is.null(fc)) NULL else tryCatch(as.Date(fc), error = function(e) NULL)
+  if (is.null(fc)) fc <- as.Date(rep(NA_character_, n))
+  dk <- .politica_doc(df$Empresa, df$Moneda, df$Documento)
+
+  # Its own row: same document and posting date.
+  propia  <- !is.na(pk) & !is.na(pf)
+  k_prop  <- paste(pk[propia], format(pf[propia]), sep = "\r")
+  dk_prop <- ifelse(is.na(dk) | is.na(fc), NA_character_, paste(dk, format(fc), sep = "\r"))
+  out     <- pv[propia][match(dk_prop, k_prop)]
+
+  # Rows written before T52, on the document alone.
+  vieja <- !is.na(pk) & is.na(pf)
+  usa   <- is.na(out) & !is.na(dk)
+  out[usa] <- pv[vieja][match(dk[usa], pk[vieja])]
+  out
+}
+
 # ── Main pipeline ──────────────────────────────────────────────────────────────
 # Accepts raw data from any source (SAP API response or legacy RDS).
 # Returns a clean data frame ready for the calendar reactive.
@@ -276,26 +324,15 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
            notas = character())
   }
 
-  # Prepare policy moves (same dedup pattern as ledger_moves)
-  ledger_policy_moves <- if (!is.null(policy_moves_df) && nrow(policy_moves_df) > 0) {
-    policy_moves_df |>
-      dplyr::filter(.data$ledger == !!ledger) |>
-      dplyr::select(Empresa, Moneda, Documento, FechaVenc_Politica) |>
-      dplyr::arrange(dplyr::desc(FechaVenc_Politica)) |>
-      dplyr::distinct(Empresa, Moneda, Documento, .keep_all = TRUE)
-  } else {
-    tibble(Empresa = character(), Moneda = character(),
-           Documento = character(), FechaVenc_Politica = as.Date(character()))
-  }
-
   result <- df |>
     # na_matches = "never": provisions often have Documento = NA (no template);
     # without this, dplyr treats NA == NA and accidentally joins all such rows to
     # any moves/policy entry that also has Documento = NA, displacing their dates.
     left_join(ledger_moves,        by = c("Empresa","Moneda","Documento"),
-              na_matches = "never") |>
-    left_join(ledger_policy_moves, by = c("Empresa","Moneda","Documento"),
-              na_matches = "never") |>
+              na_matches = "never")
+  # The policy date of each invoice, on its own identity (T52).
+  result$FechaVenc_Politica <- politica_por_factura(result, policy_moves_df, ledger)
+  result <- result |>
     mutate(
       FechaVenc_Proyectada = as.Date(FechaVenc_Proyectada),
       FechaVenc_Politica   = as.Date(FechaVenc_Politica),

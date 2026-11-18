@@ -36,12 +36,30 @@
 
 # Document key of a policy move. Includes ledger so an AR and an AP document
 # with the same number are distinct.
-.policy_move_llave <- function(d) paste(d$ledger, d$Empresa, d$Moneda, d$Documento, sep = "·")
+.policy_move_doc <- function(d) paste(d$ledger, d$Empresa, d$Moneda, d$Documento, sep = "·")
 
-# `fresco` plus the rows of `nuevos` whose document it does not have yet.
+# Invoice key of a policy move: the document plus its posting date
+# (fecha_factura), because the ERP reuses a DocNum in another year (T52).
+# A row without the date (written before T52) has "" there.
+.policy_move_llave <- function(d) {
+  f <- if ("fecha_factura" %in% names(d)) format(as.Date(d$fecha_factura)) else rep(NA_character_, nrow(d))
+  paste(.policy_move_doc(d), ifelse(is.na(f), "", f), sep = "·")
+}
+
+# Which rows of `nuevos` already have their policy row in `fresco`: their own
+# (same document and posting date), or one written before T52 without the
+# date on the same document (those are never recomputed in bulk).
+.policy_moves_cubiertos <- function(fresco, nuevos) {
+  if (!is.data.frame(fresco) || !nrow(fresco)) return(rep(FALSE, nrow(nuevos)))
+  sin_fecha <- if ("fecha_factura" %in% names(fresco)) is.na(fresco$fecha_factura) else rep(TRUE, nrow(fresco))
+  .policy_move_llave(nuevos) %in% .policy_move_llave(fresco) |
+    .policy_move_doc(nuevos) %in% .policy_move_doc(fresco[sin_fecha, , drop = FALSE])
+}
+
+# `fresco` plus the rows of `nuevos` whose invoice it does not have yet.
 # Never removes or rewrites an existing row. Pure: no I/O.
 .policy_moves_sumar <- function(fresco, nuevos) {
-  faltan <- nuevos[!.policy_move_llave(nuevos) %in% .policy_move_llave(fresco), , drop = FALSE]
+  faltan <- nuevos[!.policy_moves_cubiertos(fresco, nuevos), , drop = FALSE]
   faltan <- faltan[!duplicated(.policy_move_llave(faltan)), , drop = FALSE]
   if (!nrow(faltan)) return(fresco)
   dplyr::bind_rows(fresco, faltan)
@@ -1011,7 +1029,7 @@ settings_companies_observer <- function(input, output, session, shared) {
     # Nothing new against this session's copy: skip the S3 reread.
     existing_moves <- tryCatch(shared$policy_moves_db(), error = function(e) NULL)
     if (!is.null(existing_moves) && nrow(existing_moves) &&
-        all(.policy_move_llave(new_moves) %in% .policy_move_llave(existing_moves))) return()
+        all(.policy_moves_cubiertos(existing_moves, new_moves))) return()
 
     cid       <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
     viewer    <- tryCatch(shared$home_client_id(),      error = function(e) NULL)

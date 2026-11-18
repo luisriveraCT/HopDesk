@@ -801,6 +801,7 @@ unregister_username <- function(username) {
   Moneda             = character(),
   Documento          = character(),
   Parte              = character(),   # carried from SAP — needed for scope/merge logic
+  fecha_factura      = as.Date(character()),   # the invoice's posting date (T52): Documento is reused across years
   FechaVenc_Politica = as.Date(character()),
   policy_ids         = character(),   # comma-joined IDs that produced this date
   applied_by         = character(),

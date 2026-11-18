@@ -96,19 +96,10 @@ ledgerModuleServer <- function(id, config, shared) {
                        Documento = character(), FechaVenc_Proyectada = as.Date(character()))
       }
 
-      lpm <- if (!is.null(policy_moves) && nrow(policy_moves) > 0) {
-        policy_moves |>
-          dplyr::filter(.data$ledger == !!ledger) |>
-          dplyr::select(Empresa, Moneda, Documento, FechaVenc_Politica) |>
-          dplyr::arrange(dplyr::desc(FechaVenc_Politica)) |>
-          dplyr::distinct(Empresa, Moneda, Documento, .keep_all = TRUE)
-      } else {
-        tibble::tibble(Empresa = character(), Moneda = character(),
-                       Documento = character(), FechaVenc_Politica = as.Date(character()))
-      }
+      n_pm <- if (is.data.frame(policy_moves)) sum(policy_moves$ledger %in% ledger) else 0L
 
       # Fast path: no moves exist — df_base already has FechaEff = FechaVenc_Original
-      if (!nrow(lm) && !nrow(lpm)) return(df)
+      if (!nrow(lm) && !n_pm) return(df)
 
       # SAP-override notas (set by build_ledger_df) win over move notas.
       # Save them before the join wipes the column.
@@ -119,8 +110,11 @@ ledgerModuleServer <- function(id, config, shared) {
       df <- df |>
         dplyr::select(-dplyr::any_of(c("FechaVenc_Proyectada", "FechaVenc_Politica",
                                        "FechaEff", "Movida", "notas"))) |>
-        dplyr::left_join(lm,  by = c("Empresa", "Moneda", "Documento"), na_matches = "never") |>
-        dplyr::left_join(lpm, by = c("Empresa", "Moneda", "Documento"), na_matches = "never") |>
+        dplyr::left_join(lm,  by = c("Empresa", "Moneda", "Documento"), na_matches = "never")
+      # The policy date of each invoice, on its own identity: the same
+      # function as build_ledger_df() (T52).
+      df$FechaVenc_Politica <- politica_por_factura(df, policy_moves, ledger)
+      df <- df |>
         dplyr::mutate(
           FechaVenc_Proyectada = as.Date(FechaVenc_Proyectada),
           # Policy dates are computed from SAP invoice terms and apply only to SAP

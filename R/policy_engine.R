@@ -337,10 +337,69 @@ compose_policies <- function(date, policies, holidays_cache = list()) {
 }
 
 # ── Application engine ──────────────────────────────────────────────────────────
+# Normalise invoice columns — raw SAP data uses different column names than the
+# canonical schema (e.g. "Divisa" → "Moneda", "Nº de documento" → "Documento",
+# "Nombre del cliente" → "Parte").  Guards ensure we never overwrite a column
+# that is already present with the correct name (keeps unit tests stable).
+# Also adds fecha_factura, the invoice's posting date ("Fecha de
+# contabilización"; NA when the data has none): the ERP reuses a DocNum in
+# another year, so Empresa + Moneda + Documento alone is not the invoice
+# (T52; the same identity agenda_filas_factura() uses).
+.politica_normalizar_facturas <- function(invoices_df, ledger) {
+  if (!"Parte" %in% names(invoices_df))
+    invoices_df <- tryCatch(
+      standardize_party(invoices_df, ledger),
+      error = function(e) { invoices_df$Parte <- NA_character_; invoices_df }
+    )
+
+  if (!"Moneda" %in% names(invoices_df))
+    invoices_df <- tryCatch(
+      ensure_moneda(invoices_df),
+      error = function(e) { invoices_df$Moneda <- MONEDA_BASE_OMISION; invoices_df }
+    )
+
+  if (!"Documento" %in% names(invoices_df))
+    invoices_df <- tryCatch(
+      ensure_documento(invoices_df),
+      error = function(e) { invoices_df$Documento <- NA_character_; invoices_df }
+    )
+
+  if (!"Empresa" %in% names(invoices_df))
+    invoices_df$Empresa <- NA_character_
+
+  if (!"FechaVenc_Original" %in% names(invoices_df)) {
+    invoices_df <- tryCatch(ensure_dates(invoices_df), error = function(e) invoices_df)
+    fv_col <- intersect(c("Fecha de vencimiento", "FechaVenc"), names(invoices_df))
+    invoices_df$FechaVenc_Original <- if (length(fv_col))
+      tryCatch(as.Date(invoices_df[[fv_col[[1L]]]]), error = function(e) as.Date(NA))
+    else
+      as.Date(NA)
+  }
+
+  if (!"fecha_factura" %in% names(invoices_df)) {
+    fc <- invoices_df[["Fecha de contabilización"]]
+    invoices_df$fecha_factura <- if (is.null(fc)) as.Date(rep(NA_character_, nrow(invoices_df)))
+                                 else .politica_fecha(fc)
+  } else {
+    invoices_df$fecha_factura <- .politica_fecha(invoices_df$fecha_factura)
+  }
+  invoices_df
+}
+
+# A posting date as Date: SAP's own parser when loaded, NA when unreadable.
+.politica_fecha <- function(x) {
+  if (inherits(x, "Date")) return(x)
+  d <- tryCatch(
+    if (exists("parse_sap_date", mode = "function")) as.Date(parse_sap_date(x)) else as.Date(x),
+    error = function(e) NULL)
+  if (is.null(d) || length(d) != length(x)) as.Date(rep(NA_character_, length(x))) else d
+}
+
 # Compute FechaVenc_Politica for every invoice that has a matching policy assignment.
 # Returns a tibble compatible with .schema_policy_moves() (applied_by / applied_at stamped here).
 #
 # invoices_df        must have: Empresa, Moneda, Documento, Parte, FechaVenc_Original
+#                    (and "Fecha de contabilización" or fecha_factura, kept as fecha_factura)
 # partner_policies_df  schema: parte, policy_id, policy_order, ledger, ...
 # policy_catalog_df    schema: id, type, params (list col), roll_direction, ...
 
@@ -359,13 +418,14 @@ compute_policy_moves <- function(invoices_df,
     Moneda             = character(),
     Documento          = character(),
     Parte              = character(),
+    fecha_factura      = as.Date(character()),
     FechaVenc_Politica = as.Date(character()),
     policy_ids         = character(),
     applied_by         = character(),
     applied_at         = as.POSIXct(character())
   )
 
-  if (is.null(invoices_df)       || !nrow(invoices_df)       ||
+  if (is.null(invoices_df)      || !nrow(invoices_df)       ||
       is.null(partner_policies_df) || !nrow(partner_policies_df) ||
       is.null(policy_catalog_df) || !nrow(policy_catalog_df)) {
     return(empty_out)
@@ -410,44 +470,12 @@ compute_policy_moves <- function(invoices_df,
     }
   }
 
-  # Normalise invoice columns — raw SAP data uses different column names than the
-  # canonical schema (e.g. "Divisa" → "Moneda", "Nº de documento" → "Documento",
-  # "Nombre del cliente" → "Parte").  Guards ensure we never overwrite a column
-  # that is already present with the correct name (keeps unit tests stable).
-  if (!"Parte" %in% names(invoices_df))
-    invoices_df <- tryCatch(
-      standardize_party(invoices_df, ledger),
-      error = function(e) { invoices_df$Parte <- NA_character_; invoices_df }
-    )
-
-  if (!"Moneda" %in% names(invoices_df))
-    invoices_df <- tryCatch(
-      ensure_moneda(invoices_df),
-      error = function(e) { invoices_df$Moneda <- MONEDA_BASE_OMISION; invoices_df }
-    )
-
-  if (!"Documento" %in% names(invoices_df))
-    invoices_df <- tryCatch(
-      ensure_documento(invoices_df),
-      error = function(e) { invoices_df$Documento <- NA_character_; invoices_df }
-    )
-
-  if (!"Empresa" %in% names(invoices_df))
-    invoices_df$Empresa <- NA_character_
-
-  if (!"FechaVenc_Original" %in% names(invoices_df)) {
-    invoices_df <- tryCatch(ensure_dates(invoices_df), error = function(e) invoices_df)
-    fv_col <- intersect(c("Fecha de vencimiento", "FechaVenc"), names(invoices_df))
-    invoices_df$FechaVenc_Original <- if (length(fv_col))
-      tryCatch(as.Date(invoices_df[[fv_col[[1L]]]]), error = function(e) as.Date(NA))
-    else
-      as.Date(NA)
-  }
+  invoices_df <- .politica_normalizar_facturas(invoices_df, ledger)
 
   # Join invoices → partner_policies on Parte (case-insensitive + trim)
   inv_keyed <- invoices_df |>
     dplyr::select(dplyr::any_of(
-      c("Empresa", "Moneda", "Documento", "Parte", "FechaVenc_Original")
+      c("Empresa", "Moneda", "Documento", "fecha_factura", "Parte", "FechaVenc_Original")
     )) |>
     dplyr::mutate(.pk = tolower(trimws(.data$Parte)))
 
@@ -467,7 +495,7 @@ compute_policy_moves <- function(invoices_df,
   # Collapse policies per invoice (ordered by policy_order)
   invoice_policies <- joined |>
     dplyr::arrange(.data$Empresa, .data$Moneda, .data$Documento, .data$policy_order) |>
-    dplyr::group_by(.data$Empresa, .data$Moneda, .data$Documento,
+    dplyr::group_by(.data$Empresa, .data$Moneda, .data$Documento, .data$fecha_factura,
                     .data$Parte, .data$FechaVenc_Original) |>
     dplyr::summarise(
       policy_ids      = paste(.data$policy_id, collapse = ","),
@@ -497,7 +525,7 @@ compute_policy_moves <- function(invoices_df,
 
   out <- out[!is.na(out$FechaVenc_Politica), , drop = FALSE]
 
-  out[, c("ledger", "Empresa", "Moneda", "Documento", "Parte",
+  out[, c("ledger", "Empresa", "Moneda", "Documento", "Parte", "fecha_factura",
           "FechaVenc_Politica", "policy_ids", "applied_by", "applied_at"),
       drop = FALSE]
 }
