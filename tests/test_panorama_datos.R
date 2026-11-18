@@ -225,10 +225,10 @@ test_that("el servidor solo manda los avisos del nivel del usuario, y Hecho solo
   expect_false(grepl("panorama.", bajo$feed, fixed = TRUE))   # no raw keys on screen
   expect_false(grepl("Banxico", bajo$cinta %||% ""))           # no FIX: not shown
   # Compras' Calendar is fixed to CxP: no Cobros card.
-  expect_false(grepl(tr("panorama.hoy.cobros"), bajo$hoy, fixed = TRUE))
+  expect_false(grepl(tr("panorama.hoy.por_cobrar"), bajo$hoy, fixed = TRUE))
   ti <- html_de(nivel_ti(), "ana")
   expect_true(grepl("Solo para TI", ti$feed))
-  expect_true(grepl(tr("panorama.hoy.cobros"), ti$hoy, fixed = TRUE))
+  expect_true(grepl(tr("panorama.hoy.por_cobrar"), ti$hoy, fixed = TRUE))
 })
 
 test_that("La Cinta muestra el FIX solo cuando hay dato", {

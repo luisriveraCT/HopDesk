@@ -61,6 +61,17 @@ panorama_cobros_hoy <- function(df_ar, hoy = Sys.Date(), base = MONEDA_BASE_OMIS
   .pan_por_moneda(f$Moneda, abs(.pan_num(monto)), base)
 }
 
+# What "Por cobrar hoy" leaves out: the same CxC rows whose effective date
+# already went by with no new one (the weekly email's "No incluye … ya
+# vencidos sin fecha nueva", T45/T46b).
+panorama_cobros_atrasados <- function(df_ar, hoy = Sys.Date(), base = MONEDA_BASE_OMISION) {
+  if (is.null(df_ar) || !is.data.frame(df_ar) || !nrow(df_ar) || !"FechaEff" %in% names(df_ar))
+    return(.pan_por_moneda(character(), numeric(), base))
+  f <- df_ar[!is.na(df_ar$FechaEff) & as.Date(df_ar$FechaEff) < hoy, , drop = FALSE]
+  monto <- if ("Saldo vencido" %in% names(f)) f[["Saldo vencido"]] else rep(0, nrow(f))
+  .pan_por_moneda(f$Moneda, abs(.pan_num(monto)), base)
+}
+
 # Pasivos en N días: provisions still open whose date (override first) falls
 # from today to today + dias. Returns the totals plus the first date.
 panorama_pasivos_pronto <- function(provs, hoy = Sys.Date(), dias = PANORAMA_DIAS_PASIVOS,

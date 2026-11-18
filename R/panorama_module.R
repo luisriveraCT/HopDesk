@@ -109,6 +109,12 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       panorama_cobros_hoy(if (is.function(f)) tryCatch(f(), error = function(e) NULL) else NULL, hoy(),
                           base = base_cli())
     })
+    cobros_atrasados <- shiny::reactive({
+      if (!ver_cxc()) return(NULL)
+      f <- shared$df_combined_AR
+      panorama_cobros_atrasados(if (is.function(f)) tryCatch(f(), error = function(e) NULL) else NULL, hoy(),
+                                base = base_cli())
+    })
     pasivos <- shiny::reactive(panorama_pasivos_pronto(
       tryCatch(shared$pasivos_provisions_db(), error = function(e) NULL), hoy(), base = base_cli()))
     sap <- shiny::reactive({ reloj(); panorama_sap_estado(tryCatch(shared$sap_snapshot_info(), error = function(e) NULL),
@@ -182,11 +188,20 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       cl <- panorama_clima(f, n_solicitudes = if (is.null(ms)) 0L else nrow(ms),
                            n_pagos_hoy = sum(p$n), sap = sap())
       icono <- switch(cl$clima, despejado = "sun", medio = "cloud-sun", nublado = "cloud", neblina = "smog")
+      # Each thing by its name, never one "pendientes" adding payments and
+      # solicitudes (T46b, E2).
+      n_sol <- if (is.null(ms)) 0L else nrow(ms)
+      partes <- c(if (sum(p$n) > 0) tr_n("panorama.clima.cuenta.pagos", sum(p$n)),
+                  if (n_sol > 0) tr_n("panorama.clima.cuenta.solicitudes", n_sol))
+      urgentes <- if (cl$urgentes > 0) tr_n("panorama.clima.cuenta.urgentes", cl$urgentes)
+                  else tr("panorama.clima.cuenta.ninguno_urgente")
       cuenta <- if (cl$clima == "neblina") tr("panorama.clima.cuenta_sap") else
-        tr_n("panorama.clima.pendientes", cl$pendientes,
-             urgentes = if (cl$urgentes > 0) tr_n("panorama.clima.urgentes", cl$urgentes) else tr("panorama.clima.ninguno_urgente"))
+        if (!length(partes)) tr("panorama.clima.cuenta.nada", urgentes = urgentes) else
+          tr("panorama.clima.cuenta.texto", urgentes = urgentes,
+             que = paste(partes, collapse = paste0(" ", tr("panorama.y"), " ")))
       shiny::div(class = paste0("pan-tarjeta pan-clima pan-clima--", cl$clima),
         shiny::div(class = "pan-etiqueta", tr("panorama.clima.titulo")),
+        shiny::div(class = "pan-explica pan-explica--clima", tr("panorama.clima.explica")),
         shiny::div(class = "pan-clima-fila",
           shiny::span(class = "pan-clima-icono", `aria-hidden` = "true", shiny::icon(icono)),
           shiny::div(
@@ -238,18 +253,29 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
 
     # ── Hoy ───────────────────────────────────────────────────────────────────
     output$hoy <- shiny::renderUI({
+      # The weekly emails' words (semana.tarjeta.*, T45) where the measure is
+      # the same; another measure, another word (T46b): the Agenda's payments
+      # are "Programado para pagar hoy", not the ledger's "Por pagar".
       pp <- pasivos()
+      atras <- if (ver_cxc()) cobros_atrasados() else NULL
+      excluye <- if (!is.null(atras) && nrow(atras) && any(atras$total > 0)) {
+        a <- atras[atras$total > 0, , drop = FALSE]
+        paste(tr("semana.tarjeta.por_cobrar.excluye",
+                 monto = paste(monto_moneda(a$total, a$moneda), collapse = " · ")),
+              "·", tr("semana.tarjeta.por_cobrar.excluye_ver", destino = tr("panorama.destino.ven")))
+      }
       tarjetas <- list(
-        .pan_tarjeta_hoy(tr("panorama.hoy.pagos"), pagos(),
-          tr_n("panorama.hoy.pagos_n", sum(pagos()$n)), "PH", ns, base = base_cli()),
-        if (ver_cxc()) .pan_tarjeta_hoy(tr("panorama.hoy.cobros"), cobros(),
-          tr_n("panorama.hoy.cobros_n", sum(cobros()$n)), "CAL", ns, base = base_cli()),
-        .pan_tarjeta_hoy(tr("panorama.hoy.pasivos", n = as.character(PANORAMA_DIAS_PASIVOS)), pp$totales,
+        .pan_tarjeta_hoy(tr("panorama.hoy.programado"), pagos(),
+          tr_n("semana.tarjeta.por_pagar.n", sum(pagos()$n)), "PH", ns, base = base_cli(),
+          explica = tr("panorama.hoy.programado_explica")),
+        if (ver_cxc()) .pan_tarjeta_hoy(tr("panorama.hoy.por_cobrar"), cobros(),
+          tr_n("semana.tarjeta.por_cobrar.n", sum(cobros()$n)), "CAL", ns, base = base_cli(),
+          explica = tr("semana.tarjeta.por_cobrar.explica", rango = tr("panorama.hoy.rango")), extra = excluye),
+        .pan_tarjeta_hoy(tr("panorama.hoy.pasivos_titulo", n = as.character(PANORAMA_DIAS_PASIVOS)), pp$totales,
           if (nrow(pp$totales))
-            tr_n("panorama.hoy.pasivos_n", sum(pp$totales$n),
-                 fecha = paste(tr(paste0("panorama.dia.", as.integer(format(pp$primera, "%u")))),
-                               as.integer(format(pp$primera, "%d"))))
-          else tr("panorama.hoy.pasivos_ninguno"), "PSV", ns, base = base_cli()))
+            tr_n("panorama.hoy.pasivos_n", sum(pp$totales$n), fecha = .pan_fecha_corta(pp$primera, zona()))
+          else tr("panorama.hoy.pasivos_ninguno"), "PSV", ns, base = base_cli(),
+          explica = tr("panorama.hoy.pasivos_explica", fecha = .pan_fecha_corta(hoy() + PANORAMA_DIAS_PASIVOS, zona()))))
       shiny::div(class = "pan-hoy", Filter(Negate(is.null), tarjetas))
     })
 
@@ -310,6 +336,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
           lapply(chips, function(t) shiny::tags$button(
             type = "button", class = "pan-chip", `data-tipo` = t,
             `aria-pressed` = if (t == "todo") "true" else "false",
+            title = if (t == "ale") tr("panorama.feed.chip.ale_explica"),
             tr(paste0("panorama.feed.chip.", t)),
             shiny::span(class = "pan-chip-n", cuenta(t))))),
         if (!nrow(f)) shiny::p(class = "pan-vacio", tr("panorama.feed.vacio"))
@@ -434,10 +461,13 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
   if (nrow(t) > 2) paste(txt, tr("panorama.cinta.mas_monedas", n = as.character(nrow(t) - 2L))) else txt
 }
 
-# A Hoy card: the first currency (the base when there is any) large, any other
-# currency underneath (never added together), the count line and the tab it
-# opens. Every figure carries its code, the empty card the base's (T46).
-.pan_tarjeta_hoy <- function(titulo, totales, linea, tab, ns, base = MONEDA_BASE_OMISION) {
+# A Hoy card: the label, the first currency (the base when there is any)
+# large, any other currency underneath (never added together), what the
+# figure is (`explica`) with its count, an optional `extra` line, and the tab
+# it opens on a line of its own (T46b: it read as part of the data). Every
+# figure carries its code, the empty card the base's (T46).
+.pan_tarjeta_hoy <- function(titulo, totales, linea, tab, ns, base = MONEDA_BASE_OMISION,
+                             explica = NULL, extra = NULL) {
   vacio <- is.null(totales) || !nrow(totales)
   principal <- if (vacio) monto_moneda(0, base) else monto_moneda(totales$total[1], totales$moneda[1])
   shiny::tags$button(
@@ -448,5 +478,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
     if (!vacio && nrow(totales) > 1) shiny::div(class = "pan-cifra-otras",
       lapply(2:nrow(totales), function(i)
         shiny::div(paste0("+ ", monto_moneda(totales$total[i], totales$moneda[i]))))),
-    shiny::div(class = "pan-meta", linea, " →"))
+    shiny::div(class = "pan-explica", paste(c(explica, linea), collapse = " · ")),
+    if (length(extra) && nzchar(extra)) shiny::div(class = "pan-explica pan-explica--extra", extra),
+    shiny::div(class = "pan-ver", tr("panorama.hoy.ver", destino = tr(paste0("panorama.destino.", tolower(tab))))))
 }

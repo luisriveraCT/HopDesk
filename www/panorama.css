@@ -199,6 +199,12 @@
 .hd-panorama .pan-cifra { font-family: var(--hd-serif); font-size: 30px; color: var(--hd-marino); margin: 6px 0 2px; }
 .hd-panorama .pan-hoy-tarjeta--vacia .pan-cifra { color: var(--hd-niebla); }
 .hd-panorama .pan-cifra-otras { font-size: 13px; color: var(--hd-pizarra); margin-bottom: 4px; }
+/* T46b: what the figure is, then where the card leads, on a line of its own. */
+.hd-panorama .pan-explica { font-size: 13px; color: var(--hd-gris); line-height: 1.4; }
+.hd-panorama .pan-explica--extra { margin-top: 2px; }
+.hd-panorama .pan-explica--clima { color: var(--hd-niebla); margin: 2px 0 8px; }
+.hd-panorama .pan-ver { font-size: 13px; font-weight: 600; color: var(--hd-marino); margin-top: 6px; }
+.hd-panorama .pan-hoy-tarjeta:hover .pan-ver { text-decoration: underline; }
 
 /* ── Mis solicitudes ─────────────────────────────────────────────────────── */
 .hd-panorama .pan-solicitudes { display: flex; flex-direction: column; gap: 12px; }
