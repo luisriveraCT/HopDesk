@@ -34,6 +34,7 @@ cargar <- function(archivo, nombres) {
 }
 cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 cargar("R/global.R", c("fmt_money", "is_erp_sourced"))
+cargar("R/data_pipeline.R", ".politica_doc_unica")   # T52g: the Referencia of each row's own invoice
 cargar("R/persistence.R", "unstage_pagar_hoy")
 cargar("R/ui_components.R", "app_styles")
 cargar("R/search_module.R", c(".datos_sap_filas", ".datos_sap_columnas", "datos_sap_tabla", "datos_sap_visor"))

@@ -42,6 +42,11 @@ for (e in parse("R/search_module.R", keep.source = FALSE))
   if (is.call(e) && identical(e[[1]], as.name("<-")) &&
       as.character(e[[2]]) %in% c(".datos_sap_filas", ".datos_sap_columnas", "datos_sap_tabla", "datos_sap_visor"))
     eval(e, globalenv())
+# T52g: the Referencia of each row's own invoice (.ph_referencias) asks these.
+for (fn in list(c("R/global.R", "is_erp_sourced"), c("R/data_pipeline.R", ".politica_doc_unica")))
+  for (e in parse(fn[1], keep.source = FALSE, encoding = "UTF-8"))
+    if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(as.character(e[[2]]), fn[2]))
+      eval(e, globalenv())
 source(Sys.getenv("PH_MODULE", "R/pagar_hoy_module.R"))
 
 # Stubs (after sourcing, so they win over the module's own top-level helpers).
