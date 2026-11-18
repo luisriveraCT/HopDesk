@@ -2480,6 +2480,19 @@ save_group_config <- function(cfg, client_id = NULL) {
                  call = NULL, hechos = hechos, sin_cambios = sin_cambios, fallidos = fallidos))
 }
 
+# After a step changed its table, its sync-bus name (register_synced() in
+# app.R) is bumped so every open session reloads it (CM29). Without it they
+# kept their copy with OLD -- the `base` their next rebased save works from,
+# so editing another field of a renamed row wrote OLD back.
+.rni_avisar <- function(tabla, client_id) {
+  key <- if (identical(tabla, "requisiciones")) get0("REQ_KEYS")$requisiciones else S3_KEYS[[tabla]]
+  nombre <- if (!is.null(key) && exists(".queue_table_name_for_key", mode = "function"))
+    .queue_table_name_for_key(key)
+  if (!is.null(nombre) && exists("bump_sync_version", mode = "function"))
+    bump_sync_version(nombre, client_id = client_id)
+  invisible(nombre)
+}
+
 rename_empresa_initials <- function(old_ini, new_ini, client_id = NULL) {
   if (is.null(client_id) || !nzchar(client_id))
     stop("[EMP rename] client_id is required", call. = FALSE)
@@ -2523,8 +2536,7 @@ rename_empresa_initials <- function(old_ini, new_ini, client_id = NULL) {
       nuevo$companies[[new_ini]] <- nuevo$companies[[old_ini]]
       nuevo$companies[[old_ini]] <- NULL
       hubo <<- TRUE
-      save_interco_v2(nuevo, client_id = cid, base = reg)   # onto S3's current (CM12c)
-      if (exists("bump_sync_version", mode = "function")) bump_sync_version("interco_v2", client_id = cid)
+      save_interco_v2(nuevo, client_id = cid, base = reg)   # onto S3's current (CM12c); bumped below
       invisible(nuevo)
     },
     pasivos_provisions = function()
@@ -2555,7 +2567,10 @@ rename_empresa_initials <- function(old_ini, new_ini, client_id = NULL) {
       list(ok = FALSE)
     })
     if (!isTRUE(r$ok)) fallidos <- c(fallidos, tabla)
-    else if (isTRUE(r$cambio)) hechos <- c(hechos, tabla)
+    else if (isTRUE(r$cambio)) {
+      hechos <- c(hechos, tabla)
+      .rni_avisar(tabla, cid)   # the open sessions reload it (CM29)
+    }
     else sin_cambios <- c(sin_cambios, tabla)
   }
 

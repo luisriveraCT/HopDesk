@@ -36,6 +36,18 @@ k <- function(key) paste0(CID, "/", key)
 poner <- function(key, df) assign(k(key), df, envir = .mem)
 leer  <- function(key) get(k(key), envir = .mem)
 fila  <- function(schema, ...) .normalize(tibble::as_tibble(list(...)), schema)
+# The sync bus as app.R registers it: the names and S3 keys of its
+# register_synced("name", S3_KEYS$key, ...) calls, and the key -> name lookup.
+source("R/sync_bus.R")
+for (e in parse("R/offline_queue.R", keep.source = FALSE))
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(as.character(e[[2]]), ".queue_table_name_for_key"))
+    eval(e, globalenv())
+app_txt <- paste(readLines("app.R", warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+regs <- regmatches(app_txt, gregexpr('register_synced\\(\\s*"([A-Za-z0-9_]+)",\\s*S3_KEYS\\$([A-Za-z0-9_]+)', app_txt))[[1]]
+for (r in regs) {
+  m <- regmatches(r, regexec('"([A-Za-z0-9_]+)",\\s*S3_KEYS\\$([A-Za-z0-9_]+)', r))[[1]]
+  register_synced(m[2], S3_KEYS[[m[3]]], loader = function(...) NULL)
+}
 BUMPS <- character()
 bump_sync_version <- function(name, client_id = NULL) { BUMPS <<- c(BUMPS, name); invisible(TRUE) }
 
