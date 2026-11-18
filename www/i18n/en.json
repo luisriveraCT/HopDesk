@@ -302,6 +302,8 @@
   "comun.menu.vencidos": "{n} past-due invoices",
   "comun.sap.al": "SAP data as of {fecha}",
   "comun.sap.sin_datos": "SAP data not loaded yet",
+  "comun.calendario.total": "Total",
+  "comun.calendario.mas": "+ {n} more",
   "comun.sap.fecha_semana": "{dia} {n}, {hora}",
   "comun.sap.fecha_mes": "{dia}, {mes} {n}, {hora}",
   "comun.aviso.error_leer_s3": "Error reading from the server: {error}",

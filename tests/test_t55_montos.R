@@ -136,5 +136,16 @@ ok("totals: the code after, always (fichas, group, column sums, bands, footer); 
 ok("editing reads back what the table shows (code, true minus)",
    grepl(".replace(/[A-Za-z]{3}\\s*$/, '')", js, fixed = TRUE))
 
+cat("\n-- part B: the Calendar's month cells and the day's pill --\n")
+gl <- readLines("R/global.R", warn = FALSE, encoding = "UTF-8")
+ini <- grep("^calendar_html <- function", gl); fin <- grep("^[A-Za-z_.][A-Za-z0-9_.]* <- function", gl)
+cal <- paste(gl[ini:(min(c(fin[fin > ini], length(gl) + 1L)) - 1L)], collapse = "\n")   # its source, as written
+ok("calendar_html(): no \"$\" and no formatter of its own; monto_moneda() with the currency of `currency`, whole units",
+   !grepl("'$ '", cal, fixed = TRUE) && !grepl("formatC(", cal, fixed = TRUE) &&
+     grepl("monto_moneda(v, cur, decimales = 0L, codigo = codigo)", cal, fixed = TRUE))
+lm <- paste(readLines("R/ledger_module.R", warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+ok("the day's \"In the Agenda\" pill: the total with its currency (monto_moneda(total, ctx$cur))",
+   grepl("tags$strong(monto_moneda(total, ctx$cur))", lm, fixed = TRUE) && !grepl("tags$strong(fmt_money(total))", lm, fixed = TRUE))
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

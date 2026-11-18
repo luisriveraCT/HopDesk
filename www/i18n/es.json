@@ -302,6 +302,8 @@
   "comun.menu.vencidos": "{n} facturas vencidas",
   "comun.sap.al": "Datos de SAP al {fecha}",
   "comun.sap.sin_datos": "Datos de SAP todavía sin cargar",
+  "comun.calendario.total": "Total",
+  "comun.calendario.mas": "+ {n} más",
   "comun.sap.fecha_semana": "{dia} {n}, {hora}",
   "comun.sap.fecha_mes": "{dia} {n} de {mes}, {hora}",
   "comun.aviso.error_leer_s3": "Error al leer desde el servidor: {error}",

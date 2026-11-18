@@ -851,7 +851,10 @@ calendar_html <- function(
     sprintf("rgba(%d,%d,%d,0.13)", r, g, b)
   })
   today <- Sys.Date()
-  fmt   <- function(x) formatC(round(x), format = "f", digits = 0, big.mark = ",")
+  # T55: the amounts in whole units as monto_moneda() writes them, the
+  # currency's code from `currency` (the selector above names it, so a row
+  # shows the number alone; the day's total carries it).
+  monto_dia <- function(v, codigo) monto_moneda(v, cur, decimales = 0L, codigo = codigo)
 
   # ── Aggregate data ──────────────────────────────────────────────────────────
   dcur <- data_due |>
@@ -1042,22 +1045,22 @@ calendar_html <- function(
             '<span class="cal-party">', str_trunc(p$Parte, 18), '</span>',
             if (isTRUE(p$aprox)) paste0('<span class="cal-amount"', titulo_aprox, '>\u2248 ')
             else '<span class="cal-amount">',
-            '$ ', fmt(p$Importe), '</span>',
+            monto_dia(p$Importe, FALSE), '</span>',
           '</div>'
         )
       }, character(1))
 
       more_html <- if (hidden > 0) {
-        paste0('<div class="cal-more">+ ', hidden, ' m\u00e1s</div>')
+        paste0('<div class="cal-more">', htmltools::htmlEscape(tr("comun.calendario.mas", n = hidden)), '</div>')
       } else ""
 
       paste0(
         '<div class="cal-rows">', paste(rows_html, collapse = ""), more_html, '</div>',
         '<div class="cal-divider"></div>',
         '<div class="cal-total">',
-          '<span>Total</span>',
+          '<span>', htmltools::htmlEscape(tr("comun.calendario.total")), '</span>',
           if (any(parties$aprox %in% TRUE)) paste0('<span', titulo_aprox, '>\u2248 ') else '<span>',
-          '$ ', fmt(total), '</span>',
+          monto_dia(total, TRUE), '</span>',
         '</div>'
       )
     } else ""

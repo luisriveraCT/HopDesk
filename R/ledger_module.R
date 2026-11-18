@@ -1931,7 +1931,7 @@ ledgerModuleServer <- function(id, config, shared) {
       if (total > 0)
         tags$span(class = "cart-total-staged modal-day-pill",
             tags$span(tr(if (ledger == "AR") "tablas.dia.en_agenda_cobros" else "tablas.dia.en_agenda_pagos")),
-            tags$strong(fmt_money(total)))
+            tags$strong(monto_moneda(total, ctx$cur)))
     })
 
     # The view switch remembers its choice for the next day opened.

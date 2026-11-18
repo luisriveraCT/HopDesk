@@ -116,21 +116,53 @@ if (length(src_m)) for (e in parse(text = enc2utf8(paste(src_m, collapse = "\n")
   if (es_funcion(e)) eval(e, maestro)
 burbuja <- function(fn, dd) suppressMessages(fn(dd, as.Date("2026-11-01"), "MXN", title_prefix = "Pagos", ledger = "AP"))
 dd <- data.frame(Fecha = DIA, Moneda = "MXN", Parte = c("ACEROS", "RENTA USD"), Importe = c(22000, 18000), stringsAsFactors = FALSE)
-ok("burbuja sin la columna aprox: el HTML completo es idéntico al de master (74f10ee)",
-   is.function(maestro$calendar_html) && identical(burbuja(calendar_html, dd), burbuja(maestro$calendar_html, dd)))
+# T55: the amounts lose "$" (a party: the number alone; the day's total: the
+# number and the currency's code, from `currency`). The rest of the HTML is
+# master's, byte for byte: t55() applies exactly that change to master's.
+t55 <- function(h, cur = "MXN") {
+  h <- gsub('(<span class="cal-amount"[^>]*>(≈ )?)\\$ ', "\\1", h)
+  gsub('(<div class="cal-total"><span>Total</span><span[^>]*>(≈ )?)\\$ ([0-9,]+)</span>', paste0("\\1\\3 ", cur, "</span>"), h)
+}
+burbuja_en <- function(fn, dd, cur) suppressMessages(fn(dd, as.Date("2026-11-01"), cur, title_prefix = "Pagos", ledger = "AP"))
+h_ma <- burbuja(maestro$calendar_html, dd)
+ok("burbuja sin la columna aprox: el HTML completo es el de master (74f10ee) con el monto como única diferencia",
+   is.function(maestro$calendar_html) && !identical(t55(h_ma), h_ma) && identical(burbuja(calendar_html, dd), t55(h_ma)))
+ok("…el renglón dice el número solo y el total lleva el código; ningún \"$\"",
+   grepl('<span class="cal-amount">22,000</span>', burbuja(calendar_html, dd), fixed = TRUE) &&
+     grepl("<span>Total</span><span>40,000 MXN</span>", burbuja(calendar_html, dd), fixed = TRUE) &&
+     !grepl("$", burbuja(calendar_html, dd), fixed = TRUE))
+dd6 <- data.frame(Fecha = DIA, Moneda = "USD", Parte = paste("SOCIO", 1:6), Importe = c(1500.5, 2500.5, 300, 40, 5, 0.4),
+                  stringsAsFactors = FALSE)
+h_us <- burbuja_en(calendar_html, dd6, "USD")
+ok("en USD, con más socios de los que caben: el HTML de master con el monto como única diferencia, y \"+ 2 más\"",
+   identical(h_us, t55(burbuja_en(maestro$calendar_html, dd6, "USD"), "USD")) &&
+     grepl('<div class="cal-more">+ 2 más</div>', h_us, fixed = TRUE) &&
+     grepl("<span>Total</span><span>4,346 USD</span>", h_us, fixed = TRUE))
+ok("\"Total\" y \"más\" salen del diccionario (es y en)",
+   identical(tr("comun.calendario.total", idioma = "en"), "Total") &&
+     identical(tr("comun.calendario.mas", n = 2, idioma = "en"), "+ 2 more") &&
+     identical(tr("comun.calendario.mas", n = 2, idioma = "es"), "+ 2 más"))
 dda <- dd; dda$aprox <- c(FALSE, FALSE)
-ok("burbuja con aprox todo FALSE: idéntico a master", identical(burbuja(calendar_html, dda), burbuja(maestro$calendar_html, dd)))
+ok("burbuja con aprox todo FALSE: igual que sin la columna", identical(burbuja(calendar_html, dda), t55(h_ma)))
 dda$aprox <- c(FALSE, TRUE)
 h1 <- con_fix(FIX1, burbuja(calendar_html, dda))
 ok("burbuja con aprox: ≈ en la Parte y en el total, con la ayuda (12/11/2026) como title escapado",
-   lengths(regmatches(h1, gregexpr("≈ \\$ ", h1))) == 2L && grepl('title="Incluye montos aproximados (FIX del 12/11/2026).">≈ $ 18,000', h1, fixed = TRUE) &&
-     grepl('<span class="cal-amount">$ 22,000', h1, fixed = TRUE))
+   lengths(regmatches(h1, gregexpr("≈ [0-9]", h1))) == 2L && grepl('title="Incluye montos aproximados (FIX del 12/11/2026).">≈ 18,000</span>', h1, fixed = TRUE) &&
+     grepl('title="Incluye montos aproximados (FIX del 12/11/2026).">≈ 40,000 MXN</span>', h1, fixed = TRUE) &&
+     grepl('<span class="cal-amount">22,000', h1, fixed = TRUE))
+# 74f10ee predates the ≈; the reference for it is the base of T55 (cd2ea9b).
+base55 <- new.env()
+src_b <- tryCatch(system2("git", c("show", "cd2ea9b:R/global.R"), stdout = TRUE, stderr = FALSE), error = function(e) NULL)
+if (length(src_b)) for (e in parse(text = enc2utf8(paste(src_b, collapse = "\n")), keep.source = FALSE))
+  if (es_funcion(e)) eval(e, base55)
+ok("…y es el HTML de antes de T55 (cd2ea9b) con el monto como única diferencia",
+   is.function(base55$calendar_html) && identical(h1, t55(con_fix(FIX1, burbuja(base55$calendar_html, dda)))))
 orig <- .fx_para_mostrar; assign(".fx_para_mostrar", function() stop("caído"), envir = globalenv())
 h2 <- burbuja(calendar_html, dda)
 assign(".fx_para_mostrar", orig, envir = globalenv())
 ok("si la ayuda falla (.fx_para_mostrar con error): sale ≈ sin title",
-   lengths(regmatches(h2, gregexpr("≈ \\$ ", h2))) == 2L && !grepl("Incluye montos aproximados", h2, fixed = TRUE) &&
-     grepl('<span class="cal-amount">≈ $ 18,000', h2, fixed = TRUE))
+   lengths(regmatches(h2, gregexpr("≈ [0-9]", h2))) == 2L && !grepl("Incluye montos aproximados", h2, fixed = TRUE) &&
+     grepl('<span class="cal-amount">≈ 18,000', h2, fixed = TRUE))
 gl <- paste(readLines("R/global.R", warn = FALSE, encoding = "UTF-8"), collapse = "\n")
 ok("en el código, el ≈ de calendar_html va como \\u2248 (no el carácter literal)",
    grepl("'>\\u2248 '", gl, fixed = TRUE) && !grepl("'>≈ '", gl, fixed = TRUE))
