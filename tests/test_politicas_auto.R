@@ -31,7 +31,10 @@ suppressMessages(source(Sys.getenv("POL_ARCHIVO", "R/settings/settings_companies
 for (e in c(parse("R/policy_engine.R", keep.source = FALSE), parse("R/data_pipeline.R", keep.source = FALSE)))
   if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
       as.character(e[[2]]) %in% c("politica_facturas", ".politica_normalizar_facturas",
-                                  ".politica_fecha", ".politica_doc_unica"))
+                                  ".politica_fecha", ".politica_doc_unica",
+                                  # T52b: skip_manual and the "all" prune read moves per invoice.
+                                  ".politica_doc", ".mudanza_doc", ".mudanza_fecha", ".mudanza_docs_unicos",
+                                  ".mudanza_alcanza", ".factura_movida"))
     eval(e, globalenv())
 tr <- function(k, ...) k
 
