@@ -13,13 +13,13 @@
 #   1. the load ends without error;
 #   2. MONEDA_BASE_OMISION exists, with the catalog (monedas_catalogo());
 #   3. moneda_normalizar() exists once R/data_pipeline.R calls it;
-#   4. monto_moneda() (R/ui_components.R, T46) gives "1,234.50 MXN" for the
+#   4. monto_moneda() (R/monedas.R since T55) gives "1,234.50 MXN" for the
 #      default base: the emails use it since T45 (correo_monto() is gone);
 #   5. sap_al_texto() works in the job (it needs sap_viejo(), R/panorama_datos.R);
 #   6. the companies' identity for the IC filter (R/empresas_identidad.R, T47):
 #      the job's apply_ic_filter() calls it when a client has no IC registry.
 # Contraprueba: the same list without "R/monedas.R" fails 2 (and 4); without
-# "R/ui_components.R" fails 4 and 5 (T45: the job must load it); without
+# "R/ui_components.R" fails 5 (T45: the job must load it); without
 # "R/empresas_identidad.R" fails 6 (T47).
 # Run from the project root:  Rscript tests/test_avisos_job_carga_monedas.R
 # =============================================================================
@@ -71,8 +71,10 @@ sin_id <- hijo(quitar = "R/empresas_identidad.R")
 ok("contraprueba: without R/empresas_identidad.R the job cannot tell its own companies apart (T47)",
    identical(sin_id$ident, "error"))
 sin_ui <- hijo(quitar = "R/ui_components.R")
-ok("contraprueba: without R/ui_components.R the emails cannot write an amount or SAP's date",
-   identical(sin_ui$monto, "error") && identical(sin_ui$sap, "error"))
+# Since T55 monto_moneda() lives in R/monedas.R: without R/ui_components.R
+# the amount still works and SAP's date does not.
+ok("contraprueba: without R/ui_components.R the emails cannot write SAP's date (the amount comes from R/monedas.R, T55)",
+   identical(sin_ui$sap, "error") && identical(sin_ui$monto, "1,234.50 MXN"))
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

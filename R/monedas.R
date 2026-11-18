@@ -124,3 +124,38 @@ moneda_normalizar <- function(x) {
   x[hay] <- alias[hay]
   x
 }
+
+# "842,300.00 MXN": the number, then the code, for every currency (no "$":
+# it is wrong for most of them), with the catalog's minor units (2 when the
+# code is not in it) and a true minus sign ("−10,950,296.00 MXN").
+# Vectorized over x and moneda; a missing moneda leaves the number without a
+# code, so callers pass the client's base for rows that carry none. A missing
+# amount is "—", never "0.00": in money, no figure is not zero.
+# The one formatter of an amount (T46; moved here from R/ui_components.R in
+# T55: the engine of tables uses it too, and everything loads this file):
+#   decimales  NULL = the catalog's per currency; a number = that many for all
+#              (the Calendar's cells use 0)
+#   codigo     FALSE = the number alone (a table cell whose currency is in
+#              its band or column)
+# Formatted per group of decimals with sprintf and one regex for the
+# thousands (formatC went element by element; a table sends 5,000 rows).
+monto_moneda <- function(x, moneda, decimales = NULL, codigo = TRUE) {
+  n <- max(length(x), length(moneda))
+  if (!n) return(character())
+  x <- rep_len(suppressWarnings(as.numeric(x)), n)
+  moneda <- rep_len(toupper(trimws(as.character(moneda))), n)
+  dec <- if (is.null(decimales)) moneda_decimales(moneda) else rep_len(as.integer(decimales), n)
+  dec[is.na(dec)] <- 2L
+  ok <- !is.na(x)
+  r  <- x
+  if (any(ok)) r[ok] <- round(x[ok], dec[ok])   # round() refuses empty digits
+  cifra <- character(n)
+  for (d in unique(dec[ok])) {
+    k <- ok & dec == d
+    s <- sprintf(paste0("%.", d, "f"), abs(r[k]))
+    cifra[k] <- gsub(if (d > 0L) "(\\d)(?=(\\d{3})+\\.)" else "(\\d)(?=(\\d{3})+$)", "\\1,", s, perl = TRUE)
+  }
+  signo <- ifelse(ok & r < 0, "\u2212", "")
+  cod <- if (isTRUE(codigo)) ifelse(is.na(moneda) | !nzchar(moneda), "", paste0(" ", moneda)) else rep("", n)
+  ifelse(ok, paste0(signo, cifra, cod), "\u2014")
+}

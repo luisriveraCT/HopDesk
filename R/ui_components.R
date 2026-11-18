@@ -117,24 +117,8 @@ monedas_para_filtrar <- function(datos = character(), base = MONEDA_BASE_OMISION
 # ── One wording for amounts and for SAP's date (T46) ──────────────────────────
 # Panorama and the weekly emails call these two; nobody keeps a local copy.
 
-# "842,300.00 MXN": the number, then the code, for every currency (no "$":
-# it is wrong for most of them), with the catalog's minor units (2 when the
-# code is not in it) and a true minus sign ("−10,950,296.00 MXN"). Vectorized
-# over x and moneda; a missing moneda leaves the number without a code, so
-# callers pass the client's base for rows that carry none. A missing amount
-# is "—", never "0.00": in money, no figure is not zero.
-monto_moneda <- function(x, moneda) {
-  n <- max(length(x), length(moneda))
-  if (!n) return(character())
-  x <- rep_len(suppressWarnings(as.numeric(x)), n)
-  moneda <- rep_len(toupper(trimws(as.character(moneda))), n)
-  dec <- moneda_decimales(moneda); dec[is.na(dec)] <- 2L
-  cifra <- vapply(seq_len(n), function(i) if (is.na(x[i])) "" else
-    formatC(abs(round(x[i], dec[i])), format = "f", digits = dec[i], big.mark = ","), character(1))
-  signo <- ifelse(!is.na(x) & round(x, dec) < 0, "−", "")
-  codigo <- ifelse(is.na(moneda) | !nzchar(moneda), "", paste0(" ", moneda))
-  ifelse(is.na(x), "—", paste0(signo, cifra, codigo))
-}
+# monto_moneda() lives in R/monedas.R since T55 (the engine of tables uses
+# it too, and every app and fixture loads monedas.R).
 
 # "Datos de SAP al martes 17, 08:54": when SAP's data is from, in `tz`. The
 # month is added once the date is past SAP_DIAS_VIEJO (sap_viejo(), R/
