@@ -27,6 +27,12 @@ ok <- function(label, expr) {
 }
 
 suppressMessages(source(Sys.getenv("POL_ARCHIVO", "R/settings/settings_companies.R"), local = FALSE))
+# T52: the "new" merge asks the snapshot whether a document is one invoice.
+for (e in c(parse("R/policy_engine.R", keep.source = FALSE), parse("R/data_pipeline.R", keep.source = FALSE)))
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
+      as.character(e[[2]]) %in% c("politica_facturas", ".politica_normalizar_facturas",
+                                  ".politica_fecha", ".politica_doc_unica"))
+    eval(e, globalenv())
 tr <- function(k, ...) k
 
 .logs <- list()

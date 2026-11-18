@@ -40,7 +40,8 @@ source("R/data_pipeline.R")
 source("R/policy_engine.R")
 cargar("R/persistence.R", c("active_abonos_summary", ".normalize", ".schema_policy_moves"))
 cargar("R/settings/settings_companies.R",
-       c(".policy_move_doc", ".policy_move_llave", ".policy_moves_cubiertos", ".policy_moves_sumar"))
+       c(".policy_move_doc", ".policy_move_llave", ".policy_moves_sin_fecha", ".policy_moves_doc_unica",
+         ".policy_moves_cubiertos", ".policy_moves_sumar"))
 
 FC <- "Fecha de contabilización"
 # Two AP invoices of NCS in MXN with the same number 1001: one of 2025 (Dell),
@@ -202,6 +203,62 @@ cat("-- 6. old policy_moves == master --\n")
   nuevo_n <- build_ledger_df(raw, "AP", empresa = NULL, moves_df = NULL,
                              policy_moves_df = .normalize(viejo, .schema_policy_moves))
   ok("... also after .normalize() adds fecha_factura = NA", !is.null(antes) && identical(nuevo_n, antes))
+}
+
+# ── 7. Rows from before T52: only while the document is one invoice ──────────
+# The Coordinator's rule (P1, B): an undated row reaches its document only
+# when that document has a single posting date among the open invoices.
+# With a reused number nobody can tell whose it is: it reaches neither, and
+# each invoice gets its own dated row on the next apply, which replaces it.
+cat("-- 7. undated rows --\n")
+{
+  legado <- pm_fila("Dell", "2025-04-15", NA, "2025-03-02")
+  df <- build_ledger_df(raw_ap, "AP", empresa = NULL, moves_df = NULL, policy_moves_df = legado)
+  ok("an undated row reaches neither invoice of a reused number (build_ledger_df)",
+     identical(eff(df, "2025-03-01"), as.Date("2025-04-01")) &&
+       identical(eff(df, "2026-10-01"), as.Date("2026-11-01")))
+
+  env <- new.env(parent = globalenv())
+  env$ledger  <- "AP"
+  env$df_base <- function() build_ledger_df(raw_ap, "AP", empresa = NULL, moves_df = NULL, policy_moves_df = NULL)
+  env$shared  <- list(moves_db = function() NULL, policy_moves_db = function() legado)
+  df <- eval(cuerpo, env)
+  ok("... nor in df_with_moves()", identical(eff(df, "2026-10-01"), as.Date("2026-11-01")))
+
+  # The snapshot's open invoices, as the merge sees them.
+  fact <- politica_facturas(list(AP = raw_ap, AR = NULL))
+  ok("politica_facturas() takes each invoice's posting date from the snapshot",
+     nrow(fact) == 2L && setequal(format(fact$fecha_factura), c("2025-03-01", "2026-10-01")) &&
+       all(fact$ledger == "AP"))
+
+  # Merge: both invoices computed, the undated row replaced, not duplicated.
+  r <- .policy_moves_sumar(legado, bind_rows(pm_2025, pm_2026), fact)
+  ok("reused number: each invoice gets its own dated row and the undated one is replaced",
+     nrow(r) == 2L && !any(is.na(r$fecha_factura)) &&
+       setequal(format(r$fecha_factura), c("2025-03-01", "2026-10-01")))
+
+  # Only one of the two has a partner with policies: it is added, the
+  # undated row (whose owner nobody knows) is replaced by it.
+  r <- .policy_moves_sumar(legado, pm_2026, fact)
+  ok("reused number, only one invoice computed: it is added, the undated row replaced",
+     nrow(r) == 1L && identical(format(r$fecha_factura), "2026-10-01"))
+
+  # One invoice: the undated row stays and nothing is recomputed.
+  r <- .policy_moves_sumar(legado, pm_2025, fact[1, ])
+  ok("one invoice: the undated row is kept and nothing is added",
+     nrow(r) == 1L && is.na(r$fecha_factura) && identical(r$FechaVenc_Politica, as.Date("2025-04-15")))
+
+  # The replacement never touches another posting date, ledger or document.
+  otra_fecha <- pm_fila("Dell", "2024-05-01", "2024-04-01", "2024-04-02")
+  otro_ledger <- legado; otro_ledger$ledger <- "AR"
+  otro_doc <- legado; otro_doc$Documento <- "1002"
+  fresco <- bind_rows(legado, otra_fecha, otro_ledger, otro_doc)
+  r <- .policy_moves_sumar(fresco, bind_rows(pm_2025, pm_2026), fact)
+  ok("the replacement removes only the undated row of that ledger and document",
+     nrow(r) == 5L &&
+       sum(format(r$fecha_factura) %in% "2024-04-01") == 1L &&
+       sum(r$ledger == "AR") == 1L && sum(r$Documento == "1002") == 1L &&
+       !any(is.na(r$fecha_factura) & r$ledger == "AP" & r$Documento == "1001"))
 }
 
 cat(sprintf("\n%d passed, %d failed\n", .pass, .fail))

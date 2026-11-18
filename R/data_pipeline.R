@@ -154,7 +154,8 @@ dedupe_invoices <- function(df) {
 # Documento + its posting date ("Fecha de contabilización"), the identity
 # agenda_filas_factura() already uses. policy_moves rows written since T52
 # carry that date (fecha_factura) and only reach their own invoice. Older rows
-# (fecha_factura NA) reach the document on the old key. A row with any part
+# (fecha_factura NA) reach the document on the old key while it is a single
+# invoice (one posting date in df; see .politica_doc_unica()). A row with any part
 # of the key NA matches nothing (the old join's na_matches = "never").
 # When a key has several rows, the latest FechaVenc_Politica wins, as before.
 # One function for every reader (build_ledger_df(), the ledger module's
@@ -190,11 +191,28 @@ politica_por_factura <- function(df, policy_moves_df, ledger) {
   dk_prop <- ifelse(is.na(dk) | is.na(fc), NA_character_, paste(dk, format(fc), sep = "\r"))
   out     <- pv[propia][match(dk_prop, k_prop)]
 
-  # Rows written before T52, on the document alone.
+  # Rows written before T52, on the document alone -- only while the document
+  # is one invoice: a single posting date among df's rows. With two (a
+  # reused number) nobody can tell whose the old row is, so it reaches
+  # neither and each invoice gets its own on the next apply.
   vieja <- !is.na(pk) & is.na(pf)
-  usa   <- is.na(out) & !is.na(dk)
+  unica <- .politica_doc_unica(dk, fc)
+  usa   <- is.na(out) & !is.na(dk) & unica
   out[usa] <- pv[vieja][match(dk[usa], pk[vieja])]
   out
+}
+
+# For each key, whether it has at most one distinct posting date among the
+# given rows (rows without a date do not count). The rule that lets a policy
+# row written before T52 reach a document (politica_por_factura() and the
+# "new" merge in settings_companies.R).
+.politica_doc_unica <- function(k, fecha) {
+  con <- !is.na(k) & !is.na(fecha)
+  if (!any(con)) return(rep(TRUE, length(k)))
+  pares <- unique(data.frame(k = k[con], f = as.numeric(fecha[con])))
+  n_f   <- table(pares$k)
+  n     <- as.integer(n_f[k])
+  is.na(n) | n <= 1L
 }
 
 # ── Main pipeline ──────────────────────────────────────────────────────────────

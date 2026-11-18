@@ -46,22 +46,50 @@
   paste(.policy_move_doc(d), ifelse(is.na(f), "", f), sep = "·")
 }
 
+# A row of fresco without the posting date (written before T52).
+.policy_moves_sin_fecha <- function(d)
+  if ("fecha_factura" %in% names(d)) is.na(d$fecha_factura) else rep(TRUE, nrow(d))
+
+# Whether each row of `nuevos` is a document that is one invoice: a single
+# posting date among `facturas` (the snapshot's open invoices,
+# politica_facturas(); by default `nuevos` itself). The same rule as the
+# join's (.politica_doc_unica(), R/data_pipeline.R).
+.policy_moves_doc_unica <- function(nuevos, facturas = NULL) {
+  if (!is.data.frame(facturas) || !nrow(facturas)) facturas <- nuevos
+  k  <- .policy_move_doc(facturas)
+  ff <- if ("fecha_factura" %in% names(facturas)) as.Date(facturas$fecha_factura) else as.Date(rep(NA_character_, nrow(facturas)))
+  unica <- .politica_doc_unica(k, ff)
+  kn <- .policy_move_doc(nuevos)
+  r  <- unica[match(kn, k)]
+  is.na(r) | r
+}
+
 # Which rows of `nuevos` already have their policy row in `fresco`: their own
 # (same document and posting date), or one written before T52 without the
-# date on the same document (those are never recomputed in bulk).
-.policy_moves_cubiertos <- function(fresco, nuevos) {
+# date on the same document while that document is one invoice (those are
+# never recomputed in bulk).
+.policy_moves_cubiertos <- function(fresco, nuevos, facturas = NULL) {
   if (!is.data.frame(fresco) || !nrow(fresco)) return(rep(FALSE, nrow(nuevos)))
-  sin_fecha <- if ("fecha_factura" %in% names(fresco)) is.na(fresco$fecha_factura) else rep(TRUE, nrow(fresco))
+  sin_fecha <- .policy_moves_sin_fecha(fresco)
   .policy_move_llave(nuevos) %in% .policy_move_llave(fresco) |
-    .policy_move_doc(nuevos) %in% .policy_move_doc(fresco[sin_fecha, , drop = FALSE])
+    (.policy_move_doc(nuevos) %in% .policy_move_doc(fresco[sin_fecha, , drop = FALSE]) &
+       .policy_moves_doc_unica(nuevos, facturas))
 }
 
 # `fresco` plus the rows of `nuevos` whose invoice it does not have yet.
-# Never removes or rewrites an existing row. Pure: no I/O.
-.policy_moves_sumar <- function(fresco, nuevos) {
-  faltan <- nuevos[!.policy_moves_cubiertos(fresco, nuevos), , drop = FALSE]
+# Never rewrites an existing row. The only row it removes is an undated one
+# (before T52) of a document that now gets its dated rows: one row per
+# invoice, the old one replaced rather than left beside them. Pure: no I/O.
+.policy_moves_sumar <- function(fresco, nuevos, facturas = NULL) {
+  faltan <- nuevos[!.policy_moves_cubiertos(fresco, nuevos, facturas), , drop = FALSE]
   faltan <- faltan[!duplicated(.policy_move_llave(faltan)), , drop = FALSE]
   if (!nrow(faltan)) return(fresco)
+  con_fecha <- !.policy_moves_sin_fecha(faltan)
+  if (is.data.frame(fresco) && nrow(fresco) && any(con_fecha)) {
+    reemplazada <- .policy_moves_sin_fecha(fresco) &
+      .policy_move_doc(fresco) %in% .policy_move_doc(faltan[con_fecha, , drop = FALSE])
+    fresco <- fresco[!reemplazada, , drop = FALSE]
+  }
   dplyr::bind_rows(fresco, faltan)
 }
 
@@ -882,6 +910,9 @@ settings_companies_observer <- function(input, output, session, shared) {
     }
 
     computed_partes_lc <- tolower(trimws(unique(new_moves$Parte)))
+    # The snapshot's open invoices: whether a document is one invoice or a
+    # reused number (T52).
+    facturas <- politica_facturas(sap)
 
     # ── Merge new_moves with existing per scope ────────────────────────────
     # "new"         → keep all existing; only add docs not yet computed
@@ -892,7 +923,7 @@ settings_companies_observer <- function(input, output, session, shared) {
     # The merge runs on S3's current policy_moves, never this session's copy
     # (CM12e): each scope removes only what it replaces.
     cambio <- switch(scope,
-      "new" = function(existing_moves) .policy_moves_sumar(existing_moves, new_moves),
+      "new" = function(existing_moves) .policy_moves_sumar(existing_moves, new_moves, facturas),
       "skip_manual" = function(existing_moves) {
         man_db   <- tryCatch(shared$moves_db(), error = function(e) NULL)
         man_keys <- if (!is.null(man_db) && nrow(man_db))
@@ -1025,11 +1056,12 @@ settings_companies_observer <- function(input, output, session, shared) {
     }
     new_moves <- dplyr::bind_rows(calcular(sap$AP, "AP"), calcular(sap$AR, "AR"))
     if (is.null(new_moves) || !nrow(new_moves)) return()
+    facturas <- politica_facturas(sap)   # one invoice or a reused number (T52)
 
     # Nothing new against this session's copy: skip the S3 reread.
     existing_moves <- tryCatch(shared$policy_moves_db(), error = function(e) NULL)
     if (!is.null(existing_moves) && nrow(existing_moves) &&
-        all(.policy_moves_cubiertos(existing_moves, new_moves))) return()
+        all(.policy_moves_cubiertos(existing_moves, new_moves, facturas))) return()
 
     cid       <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
     viewer    <- tryCatch(shared$home_client_id(),      error = function(e) NULL)
@@ -1037,7 +1069,7 @@ settings_companies_observer <- function(input, output, session, shared) {
     escrito <- tryCatch(
       modificar_tabla(S3_KEYS$policy_moves, cid, .schema_policy_moves, function(fresco) {
         antes <<- fresco
-        .policy_moves_sumar(fresco, new_moves)
+        .policy_moves_sumar(fresco, new_moves, facturas)
       }),
       error = function(e) {
         message(sprintf("[POLICY_AUTO_ERROR] save (%s): %s", origen, conditionMessage(e)))

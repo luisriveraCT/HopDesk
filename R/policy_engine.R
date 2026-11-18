@@ -386,6 +386,23 @@ compose_policies <- function(date, policies, holidays_cache = list()) {
   invoices_df
 }
 
+# The open invoices of a SAP snapshot list (list(AP = , AR = )), as policy
+# keys: ledger, Empresa, Moneda, Documento, fecha_factura. What the "new"
+# merge needs to know whether a document is one invoice or a reused number.
+politica_facturas <- function(sap) {
+  una <- function(df, ledger) {
+    if (!is.data.frame(df) || !nrow(df)) return(NULL)
+    d <- tryCatch(.politica_normalizar_facturas(df, ledger), error = function(e) NULL)
+    if (is.null(d)) return(NULL)
+    tibble::tibble(ledger = ledger, Empresa = as.character(d$Empresa), Moneda = as.character(d$Moneda),
+                   Documento = as.character(d$Documento), fecha_factura = d$fecha_factura)
+  }
+  dplyr::bind_rows(
+    tibble::tibble(ledger = character(), Empresa = character(), Moneda = character(),
+                   Documento = character(), fecha_factura = as.Date(character())),
+    una(sap$AP, "AP"), una(sap$AR, "AR"))
+}
+
 # A posting date as Date: SAP's own parser when loaded, NA when unreadable.
 .politica_fecha <- function(x) {
   if (inherits(x, "Date")) return(x)

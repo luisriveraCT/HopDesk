@@ -61,7 +61,7 @@ blk  <- regmatches(src, regexpr("\\.auto_aplicar_politicas <- function.*?observe
 .chk_true(length(blk) == 1 && !grepl("save_moves", blk, fixed = TRUE),
           "el bloque automatico post-SAP es aditivo: no llama save_moves()")
 .chk_true(length(blk) == 1 && grepl("modificar_tabla(S3_KEYS$policy_moves", blk, fixed = TRUE) &&
-            grepl(".policy_moves_sumar(fresco, new_moves)", blk, fixed = TRUE) &&
+            grepl(".policy_moves_sumar(fresco, new_moves, facturas)", blk, fixed = TRUE) &&
             !grepl("save_policy_moves(", blk, fixed = TRUE),
           "el bloque automatico suma sobre lo fresco de S3, nunca guarda la copia de la sesion")
 
