@@ -97,6 +97,13 @@ AP_CONFIG <- list(
 # he approved it on 2026-11-12 (B4). FALSE puts the Calendar back as home.
 PANORAMA_ES_INICIO <- TRUE
 
+# The financial tabs a staff user only sees inside a client context (admin
+# deployment). One list for both places that hide them: the static CSS below,
+# which hides them before the server knows who logged in, and the server's
+# observer that shows them. Two copies drifted: REQ was missing from the CSS,
+# so "Requisiciones" showed alone while the app loaded (T51).
+HD_PESTANAS_FINANCIERAS <- c("PAN", "CAL", "VEN", "PH", "BNC", "IC", "PSV", "REQ", "FC", "RPT")
+
 # ── UI ─────────────────────────────────────────────────────────────────────────
 ui <- bslib::page_navbar(
   title    = "HopDesk",
@@ -120,15 +127,7 @@ ui <- bslib::page_navbar(
     tags$style(HTML(".navbar .nav-link[data-value='GRUPO']{display:none!important}")),
     # In admin deployment: hide all financial tabs until a client context is jumped into
     if (IS_ADMIN_DEPLOYMENT) tags$style(HTML(paste0(
-      ".navbar .nav-link[data-value='PAN'],",
-      ".navbar .nav-link[data-value='CAL'],",
-      ".navbar .nav-link[data-value='VEN'],",
-      ".navbar .nav-link[data-value='PH'],",
-      ".navbar .nav-link[data-value='BNC'],",
-      ".navbar .nav-link[data-value='IC'],",
-      ".navbar .nav-link[data-value='PSV'],",
-      ".navbar .nav-link[data-value='FC'],",
-      ".navbar .nav-link[data-value='RPT']",
+      paste0(".navbar .nav-link[data-value='", HD_PESTANAS_FINANCIERAS, "']", collapse = ","),
       "{display:none!important}"
     ))),
     tags$script(HTML("
@@ -1896,7 +1895,7 @@ server <- function(input, output, session) {
   # Uses runjs with setProperty(...,'important') to override the initial CSS rule
   # that also uses !important — shinyjs::show/hide cannot beat !important stylesheets.
   if (IS_ADMIN_DEPLOYMENT) {
-    FINANCIAL_TABS <- c("PAN", "CAL", "VEN", "PH", "BNC", "IC", "PSV", "REQ", "FC", "RPT")
+    FINANCIAL_TABS <- HD_PESTANAS_FINANCIERAS   # the same list the static CSS hides
 
     observe({
       tier <- tryCatch(shared$current_user_info()$tier, error = function(e) "")
