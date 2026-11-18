@@ -255,7 +255,9 @@ app_styles <- function() {
        the ☰ (barra_menu_ui() opens it). The fixed heights below the bar read
        --hd-barra-alto. Display rules on .nav-link are left alone: the tier
        and permission rules hide links with display:none !important. */
-    :root { --hd-barra-alto: 48px; }
+    /* 43 px: what the old one-row navbar measured at 1772x866 (43.2, Chrome on
+       63c077c, T51b). 48 took 4.8 px from Vencidos' rows on wide screens. */
+    :root { --hd-barra-alto: 43px; }
     nav.navbar { height: var(--hd-barra-alto); flex-wrap: nowrap !important; }
     nav.navbar > .container-fluid { flex-wrap: nowrap !important; height: 100%; position: relative; }
     nav.navbar .navbar-header { display: flex; align-items: center; gap: 14px; min-width: 0; height: 100%; }
@@ -264,7 +266,7 @@ app_styles <- function() {
     .hd-menu-btn {
       order: 1; flex: none; position: relative;
       display: inline-flex; align-items: center; justify-content: center;
-      width: 40px; height: 34px; padding: 0;
+      width: 40px; height: 36px; padding: 0;   /* a click area of 36 px or more (T51b) */
       background: transparent; color: #fff;
       border: 1px solid rgba(255,255,255,.55); border-radius: 8px;
       cursor: pointer;
@@ -273,7 +275,7 @@ app_styles <- function() {
     .hd-menu-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
     .hd-menu-icono::before { content: '\\2630'; font-size: 1.15rem; line-height: 1; }
     nav.navbar.hd-menu-abierto .hd-menu-icono::before { content: '\\2715'; font-size: 1rem; }
-    #hd-menu-globo { position: absolute; top: -6px; right: -10px; font-size: .6rem; }
+    #hd-menu-globo { position: absolute; top: -3px; right: -10px; font-size: .6rem; }   /* inside the 43 px bar */
     #hd-barra-activa {
       order: 2; min-width: 0;
       display: inline-flex; align-items: center; gap: .35em;

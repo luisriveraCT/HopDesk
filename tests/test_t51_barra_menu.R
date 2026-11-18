@@ -26,8 +26,8 @@ css <- as.character(app_styles())
 js  <- paste(as.character(app_scripts()), collapse = "\n")
 
 cat("-- one row --\n")
-ok("the bar's height is one variable, 48px, and the navbar takes it",
-   grepl(":root { --hd-barra-alto: 48px; }", css, fixed = TRUE) &&
+ok("the bar's height is one variable, 43px (the old one-row navbar, T51b), and the navbar takes it",
+   grepl(":root { --hd-barra-alto: 43px; }", css, fixed = TRUE) &&
      grepl("nav.navbar { height: var(--hd-barra-alto);", css, fixed = TRUE))
 ok("the links' panel is invisible (not display:none: Shiny draws its outputs) until the ☰ opens it",
    grepl("visibility: hidden; pointer-events: none;", css, fixed = TRUE) &&
