@@ -964,6 +964,9 @@ save_erp_connections <- function(df, client_id) {
 
   norm <- .normalize(df, .schema_erp_connections)
   .assert_erp_connections_isolated(norm, client_id, "write")
+  # CM29b: a form opened before a rename never leaves the company without its
+  # ERP -- company_initials only; config and secrets are never touched.
+  norm <- iniciales_vigentes(norm, "erp_connections", client_id)
 
   .s3_write(norm, S3_KEYS$erp_connections, client_id = client_id)
   invisible(TRUE)
