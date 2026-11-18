@@ -319,5 +319,38 @@ cat("-- 6. writers --\n")
   if (length(fuera)) cat("    ", paste(fuera, collapse = "\n     "), "\n")
 }
 
+# ── 7. Rows from before T52b: only while the document is one invoice ─────────
+# The T52 rule (closed): an undated move reaches its document only when that
+# document has a single posting date among the open invoices.
+cat("-- 7. undated moves and Ajustes --\n")
+{
+  vieja <- mv_fila("2025-05-05", NA, "vieja")
+  df <- build_ledger_df(raw_ap, "AP", empresa = NULL, moves_df = vieja)
+  ok("an undated move reaches neither invoice of a reused number (build_ledger_df)",
+     identical(de(df, "2025-03-01"), as.Date("2025-04-01")) && identical(de(df, "2026-10-01"), as.Date("2026-11-01")) &&
+       all(is.na(df$notas)))
+  df <- con(vieja)
+  ok("... nor in df_with_moves()", identical(de(df, "2026-10-01"), as.Date("2026-11-01")))
+  df <- build_ledger_df(raw_ap[1, ], "AP", empresa = NULL, moves_df = vieja)
+  ok("... but it does reach a document that is one invoice", identical(df$FechaEff, as.Date("2025-05-05")))
+
+  # Ajustes: skip_manual and the "all" prune, per invoice.
+  cargar("R/settings/settings_companies.R",
+         c(".policy_move_doc", ".policy_move_llave", ".policy_moves_sin_fecha", ".policy_moves_doc_unica",
+           ".policy_moves_cubiertos", ".policy_moves_faltan", ".politica_a_escribir"))
+  pol <- function(fecha, parte) tibble::tibble(ledger = "AP", Empresa = "NCS", Moneda = "MXN", Documento = "1001",
+                                               Parte = parte, fecha_factura = as.Date(fecha),
+                                               FechaVenc_Politica = as.Date("2027-01-01"), policy_ids = "p1",
+                                               applied_by = "auto", applied_at = as.POSIXct("2026-11-18", tz = "UTC"))
+  nuevos <- bind_rows(pol("2025-03-01", "Dell"), pol("2026-10-01", "HP"))
+  r <- .politica_a_escribir("skip_manual", nuevos, manual = mv_2025, facturas = fact)
+  ok("skip_manual: the 2025 invoice (moved by hand) is skipped, the 2026 one gets its policy",
+     nrow(r) == 1L && identical(format(r$fecha_factura), "2026-10-01"))
+  r <- .politica_a_escribir("skip_manual", nuevos, manual = vieja, facturas = fact)
+  ok("skip_manual: an undated move of a reused number skips neither", nrow(r) == 2L)
+  ok("the \"all\" prune removes the moves of the computed invoices only",
+     identical(.mudanza_alcanza(bind_rows(mv_2025, mv_2026), nuevos[2, ], fact), c(FALSE, TRUE)))
+}
+
 cat(sprintf("\n%d passed, %d failed\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

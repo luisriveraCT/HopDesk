@@ -29,7 +29,7 @@ source("R/data_pipeline.R")       # .politica_doc_unica()
 cargar("R/settings/settings_companies.R",
        c(".policy_move_doc", ".policy_move_llave", ".policy_moves_sin_fecha", ".policy_moves_doc_unica",
          ".policy_moves_cubiertos", ".policy_moves_sumar", ".policy_moves_faltan",
-         ".politica_a_escribir", ".politica_docs_manuales"))
+         ".politica_a_escribir"))
 
 fila <- function(ledger, doc, fecha, Empresa = "NL", Moneda = "MXN")
   tibble::tibble(ledger = ledger, Empresa = Empresa, Moneda = Moneda, Documento = doc,
@@ -84,7 +84,7 @@ ok("the modal counts .politica_a_escribir() over .politica_nuevos()",
      grepl("nuevos    <- .politica_nuevos(sap,", src, fixed = TRUE))
 ok("the save computes with .politica_nuevos() and selects skip_manual with .politica_a_escribir()",
    grepl("new_moves <- .politica_nuevos(sap, pp, catalog, ov, user,", src, fixed = TRUE) &&
-     grepl('.politica_a_escribir("skip_manual", new_moves, manual = man_db)', src, fixed = TRUE))
+     grepl('.politica_a_escribir("skip_manual", new_moves, manual = man_db, facturas = facturas)', src, fixed = TRUE))
 ok(".policy_moves_sumar() adds .policy_moves_faltan()",
    grepl("faltan <- .policy_moves_faltan(fresco, nuevos, facturas)", src, fixed = TRUE))
 ok("no document key without the ledger left in the file",

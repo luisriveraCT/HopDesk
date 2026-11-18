@@ -122,14 +122,8 @@
   if (is.null(nuevos) || !nrow(nuevos)) return(nuevos)
   switch(scope,
     new         = .policy_moves_faltan(existentes, nuevos, facturas),
-    skip_manual = nuevos[!.policy_move_doc(nuevos) %in% .politica_docs_manuales(manual), , drop = FALSE],
+    skip_manual = nuevos[!.factura_movida(nuevos, manual, facturas), , drop = FALSE],
     nuevos)
-}
-
-# The documents with a date moved by hand (moves.rds), as .policy_move_doc().
-.politica_docs_manuales <- function(manual) {
-  if (!is.data.frame(manual) || !nrow(manual)) return(character())
-  .policy_move_doc(manual)
 }
 
 .companies_panel_ui <- function() {
@@ -918,12 +912,11 @@ settings_companies_observer <- function(input, output, session, shared) {
       "new" = function(existing_moves) .policy_moves_sumar(existing_moves, new_moves, facturas),
       "skip_manual" = function(existing_moves) {
         man_db   <- tryCatch(shared$moves_db(), error = function(e) NULL)
-        man_keys <- .politica_docs_manuales(man_db)
-        # The same selection the Apply modal counted (T54).
-        apply_these <- .politica_a_escribir("skip_manual", new_moves, manual = man_db)
-        # Keep existing for: manually-dated docs OR uncomputed partners
+        # The same selection the Apply modal counted (T54), per invoice (T52b).
+        apply_these <- .politica_a_escribir("skip_manual", new_moves, manual = man_db, facturas = facturas)
+        # Keep existing for: manually-dated invoices OR uncomputed partners
         keep_ex <- existing_moves[
-          .policy_move_doc(existing_moves) %in% man_keys |
+          .factura_movida(existing_moves, man_db, facturas) |
             !tolower(trimws(existing_moves$Parte)) %in% computed_partes_lc, ,
           drop = FALSE
         ]
@@ -955,11 +948,10 @@ settings_companies_observer <- function(input, output, session, shared) {
           # prune built a weaker one. AR and AP legitimately reuse the same
           # document number, so an AR policy silently matched, and deleted,
           # the manual move of the SAME-numbered AP invoice (and vice versa).
-          pol_keys <- paste(new_moves$ledger, new_moves$Empresa,
-                            new_moves$Moneda, new_moves$Documento, sep = "·")
-          man_keys <- paste(man_db$ledger, man_db$Empresa,
-                            man_db$Moneda, man_db$Documento, sep = "·")
-          pruned <- man_db[!man_keys %in% pol_keys, , drop = FALSE]
+          # Per invoice (T52b): the move of the other invoice with the same
+          # number (another year) is never pruned; an undated move only for
+          # a document that is one invoice (the readers' rule).
+          pruned <- man_db[!.mudanza_alcanza(man_db, new_moves, facturas), , drop = FALSE]
           if (nrow(pruned) < nrow(man_db)) {
             save_moves(pruned, client_id = cid)
             bump_sync_version("moves_db", client_id = cid)

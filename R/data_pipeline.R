@@ -243,8 +243,11 @@ fila_por_factura <- function(df, tabla, ledger, valor, solo_unica = TRUE) {
 # The date moved by hand (moves.rds) of each row of df, and its note: a list
 # of FechaVenc_Proyectada (Date) and notas (character, or NULL when the
 # moves table has no notas column), one per row (T52b; see fila_por_factura()).
+# An undated move (before T52b) reaches its document only while it is one
+# invoice: with a reused number nobody can tell whose it is, so it reaches
+# neither and the user moves the right one again.
 mudanza_por_factura <- function(df, moves_df, ledger) {
-  i <- fila_por_factura(df, moves_df, ledger, "FechaVenc_Proyectada", solo_unica = FALSE)
+  i <- fila_por_factura(df, moves_df, ledger, "FechaVenc_Proyectada", solo_unica = TRUE)
   hay <- is.data.frame(moves_df)
   list(
     FechaVenc_Proyectada = (if (hay) as.Date(moves_df$FechaVenc_Proyectada) else as.Date(character()))[i],
@@ -299,6 +302,38 @@ mudanzas_mover <- function(db, nuevas, facturas = NULL) {
 # so does the undated row of its document when it is one invoice. An
 # undated key (a row that is not an ERP invoice, or without the date)
 # removes the undated row of its document, as before.
+# Moves vs invoices, by the readers' rule (fila_por_factura()): a dated move
+# reaches its own invoice; an undated one its document while it is one
+# invoice among `facturas`. An undated invoice row (no posting date, e.g. a
+# policy row written before T52) is reached by any move of its document, as
+# before. Used by Ajustes (skip_manual and the "all" prune).
+# Per row of `moves`: does it reach one of the invoices `d`?
+.mudanza_alcanza <- function(moves, d, facturas = NULL) {
+  if (!is.data.frame(moves) || !nrow(moves) || !is.data.frame(d) || !nrow(d)) return(rep(FALSE, NROW(moves)))
+  km <- .mudanza_doc(moves); fm <- .mudanza_fecha(moves)
+  kd <- .mudanza_doc(d);     fd <- .mudanza_fecha(d)
+  doc_sin  <- kd[is.na(fd)]
+  doc_con  <- kd[!is.na(fd)]
+  inv_con  <- paste(kd, format(fd), sep = "\r")[!is.na(fd)]
+  unicos   <- .mudanza_docs_unicos(unique(km[is.na(fm)]), facturas)
+  ifelse(!is.na(fm),
+         paste(km, format(fm), sep = "\r") %in% inv_con | km %in% doc_sin,
+         km %in% doc_sin | (km %in% doc_con & km %in% unicos))
+}
+
+# Per row of `d` (invoices): does some move of `moves` reach it?
+.factura_movida <- function(d, moves, facturas = NULL) {
+  if (!is.data.frame(d) || !nrow(d) || !is.data.frame(moves) || !nrow(moves)) return(rep(FALSE, NROW(d)))
+  km <- .mudanza_doc(moves); fm <- .mudanza_fecha(moves)
+  kd <- .mudanza_doc(d);     fd <- .mudanza_fecha(d)
+  mov_con <- paste(km, format(fm), sep = "\r")[!is.na(fm)]
+  doc_sin <- unique(km[is.na(fm)])
+  unicos  <- .mudanza_docs_unicos(doc_sin, facturas)
+  ifelse(!is.na(fd),
+         paste(kd, format(fd), sep = "\r") %in% mov_con | (kd %in% doc_sin & kd %in% unicos),
+         kd %in% km)
+}
+
 mudanzas_restaurar <- function(db, llaves, facturas = NULL) {
   if (!is.data.frame(db) || !nrow(db) || !is.data.frame(llaves) || !nrow(llaves)) return(db)
   k_db  <- paste(.mudanza_doc(db), format(.mudanza_fecha(db)), sep = "\r")

@@ -36,15 +36,36 @@ src <- paste(readLines("R/settings/settings_companies.R", warn = FALSE), collaps
 .chk_true(!grepl('isolate(input$cmp_apply_scope) %||% "all"', src, fixed = TRUE),
           'ya no queda ningun default a "all" en el handler')
 
-# ── 2. La poda usa la llave completa, con ledger ────────────────────────────
-.chk_true(grepl("pol_keys <- paste(new_moves$ledger, new_moves$Empresa", src, fixed = TRUE),
-          "pol_keys incluye ledger")
-.chk_true(grepl("man_keys <- paste(man_db$ledger, man_db$Empresa", src, fixed = TRUE),
-          "man_keys incluye ledger")
+# ── 2. La poda usa la llave completa: ledger y, desde T52b, la factura ──────
+# The prune selects with .mudanza_alcanza() (R/data_pipeline.R), the readers'
+# rule: ledger + Empresa + Moneda + Documento + the invoice's posting date.
+# Executed here, not only read.
+.chk_true(grepl("pruned <- man_db[!.mudanza_alcanza(man_db, new_moves, facturas), , drop = FALSE]", src, fixed = TRUE),
+          "la poda selecciona con .mudanza_alcanza() (la regla de los lectores)")
 .chk_true(!grepl('pol_keys <- paste(new_moves$Empresa, new_moves$Moneda', src, fixed = TRUE),
           "no queda ninguna pol_keys sin ledger")
 .chk_true(!grepl('man_keys <- paste(man_db$Empresa, man_db$Moneda', src, fixed = TRUE),
           "no queda ninguna man_keys sin ledger")
+for (e in parse("R/data_pipeline.R", keep.source = FALSE))
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
+      as.character(e[[2]]) %in% c(".politica_doc", ".politica_doc_unica", ".mudanza_doc", ".mudanza_fecha",
+                                  ".mudanza_docs_unicos", ".mudanza_alcanza"))
+    eval(e, globalenv())
+{
+  mov <- function(ledger, fecha) data.frame(ledger = ledger, Empresa = "NCS", Moneda = "MXN", Documento = "100",
+                                            fecha_factura = as.Date(fecha), stringsAsFactors = FALSE)
+  man  <- rbind(mov("AP", "2025-03-01"), mov("AP", "2026-10-01"))
+  fact <- man
+  .chk_true(identical(.mudanza_alcanza(man, mov("AR", "2026-10-01"), fact), c(FALSE, FALSE)),
+            "una politica AR no poda el movimiento AP del mismo numero")
+  .chk_true(identical(.mudanza_alcanza(man, mov("AP", "2026-10-01"), fact), c(FALSE, TRUE)),
+            "la politica de la factura de 2026 no poda el movimiento de la de 2025 (mismo numero)")
+  sin_fecha <- mov("AP", NA)
+  .chk_true(identical(.mudanza_alcanza(sin_fecha, mov("AP", "2026-10-01"), fact), FALSE),
+            "un movimiento sin fecha de un numero reusado no se poda (no llega a nadie)")
+  .chk_true(identical(.mudanza_alcanza(sin_fecha, mov("AP", "2026-10-01"), fact[2, ]), TRUE),
+            "un movimiento sin fecha de una sola factura se poda, como antes")
+}
 
 # ── 3. save_moves() sigue siendo exclusivo del scope destructivo ────────────
 # Si aparece una segunda llamada, alguien amplio el borrado y hay que revisarlo
