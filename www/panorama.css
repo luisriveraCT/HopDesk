@@ -281,6 +281,8 @@
 .hd-panorama .pan-equipo-linea { margin: 0; font-size: 15px; }
 
 /* ── La Cinta ────────────────────────────────────────────────────────────── */
+/* Its height, shared with the rule below that lifts "Notas del mes". */
+:root { --pan-cinta-alto: 44px; }
 .hd-panorama .pan-cinta {
   position: sticky;
   bottom: 0;
@@ -288,7 +290,7 @@
   display: flex;
   align-items: center;
   gap: 16px;
-  height: 44px;
+  height: var(--pan-cinta-alto);
   padding: 0 0 0 20px;
   background: var(--hd-marino);
   color: var(--hd-blanco);
@@ -316,9 +318,29 @@
 .hd-panorama .pan-cinta-delta.baja { color: var(--hd-baja); }
 @keyframes pan-cinta { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 
+/* T49: the app's floating "Notas del mes" (R/ui_components.R, fixed 16 px
+   from the bottom on every tab) fell on the Cinta's name. Only while the
+   active tab shows a Cinta it sits just above it; on any other tab, or with
+   no Cinta (nothing to show), it stays where it is. The one rule of this
+   file outside .hd-panorama, and it only moves that button. No transition.
+   + 28px: the Cinta ends 16 px above the window's bottom (the page's own
+   padding, measured at 1293x632), then 12 px of air. */
+body:has(.tab-pane.active .hd-panorama .pan-cinta) .notes-toggle-bar {
+  bottom: calc(var(--pan-cinta-alto) + 28px);
+}
+/* Up there it floats over the navy Clima card, where the transparent button
+   could not be read: an opaque face, only here (open and hover keep theirs).
+   The button lives outside .hd-marca, so not --hd-blanco: the theme's own
+   page background, global. */
+body:has(.tab-pane.active .hd-panorama .pan-cinta) .notes-bar-btn:not(.notes-open):not(:hover) {
+  background: var(--bs-body-bg);
+}
+
 /* Reduce motion: no moving ribbon (it wraps instead) and no carousel. */
 @media (prefers-reduced-motion: reduce) {
   .hd-panorama .pan-cinta { height: auto; padding: 8px 20px; }
+  /* The wrapped Cinta grows: a fixed, higher place for "Notas del mes". */
+  body:has(.tab-pane.active .hd-panorama .pan-cinta) .notes-toggle-bar { bottom: 90px; }
   .hd-panorama .pan-cinta-pista { animation: none; width: auto; }
   .hd-panorama .pan-cinta-tramo { flex-wrap: wrap; row-gap: 6px; }
   .hd-panorama .pan-cinta-tramo[aria-hidden="true"] { display: none; }
