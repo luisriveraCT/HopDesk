@@ -40,27 +40,32 @@ if (exists("agregar_a_agenda")) {
                             Documento = "D1", Importe = 10)
   fila    <- tibble::tibble(id = "nueva", ledger = "AP", Empresa = "E", Moneda = "MXN",
                             Documento = "D2", Importe = 20)
+  up <- function(ph) upsert_pagar_hoy(ph, fila, keys = "id")
   llamadas <- list()
   guardar_ok <- function(ph, base) { llamadas[[length(llamadas) + 1L]] <<- list(ph = ph, base = base); invisible(TRUE) }
 
-  r <- agregar_a_agenda(fila, leer = function() vigente, guardar = guardar_ok)
+  r <- agregar_a_agenda(leer = function() vigente, cambio = up, guardar = guardar_ok)
   ok(isTRUE(r$ok) && setequal(r$ph$id, c("otra-sesion", "nueva")),
      "ok: the new row is added to the Agenda as S3 holds it (the other session's row stays)")
   ok(length(llamadas) == 1L && identical(llamadas[[1]]$base, vigente),
      "ok: written once, rebased on what was read")
 
   llamadas <- list()
-  r <- agregar_a_agenda(fila, leer = function() stop("S3 caído"), guardar = guardar_ok)
+  r <- agregar_a_agenda(leer = function() stop("S3 caído"), cambio = up, guardar = guardar_ok)
   ok(!isTRUE(r$ok) && is.null(r$ph) && identical(r$error, "S3 caído"),
      "failed read: not ok, no Agenda, the error is given back")
   ok(length(llamadas) == 0L, "failed read: nothing is written (no fallback to the session's copy)")
 
-  r <- agregar_a_agenda(fila, leer = function() NULL, guardar = guardar_ok)
+  r <- agregar_a_agenda(leer = function() NULL, cambio = up, guardar = guardar_ok)
   ok(!isTRUE(r$ok) && length(llamadas) == 0L, "a read that gives no table: not ok, nothing written")
 
-  r <- agregar_a_agenda(fila, leer = function() vigente, guardar = function(ph, base) stop("403"))
+  r <- agregar_a_agenda(leer = function() vigente, cambio = up, guardar = function(ph, base) stop("403"))
   ok(!isTRUE(r$ok) && is.null(r$ph) && identical(r$error, "403"),
      "failed write: not ok and no Agenda to put in the session")
+  llamadas <- list()
+  r <- agregar_a_agenda(leer = function() vigente, cambio = function(ph) stop("mala fila"), guardar = guardar_ok)
+  ok(!isTRUE(r$ok) && identical(r$error, "mala fila") && length(llamadas) == 0L,
+     "a change that fails: not ok, nothing written")
 }
 
 # ── 2. app.R, me_save ────────────────────────────────────────────────────────
@@ -96,6 +101,11 @@ ok(!any(grepl("tablas.manual.aviso.no_guardada", edit, fixed = TRUE)),
 ok(!any(grepl("%||% pagar_hoy_db()", ins, fixed = TRUE)),
    "agenda: a failed read never falls back to the session's copy")
 ok(any(grepl("agregar_a_agenda(", ins, fixed = TRUE)), "agenda: through agregar_a_agenda()")
+ok(any(grepl('cambio  = function(ph_base) upsert_pagar_hoy(ph_base, ph_row, keys = "id")', ins, fixed = TRUE)),
+   "agenda: the upsert stays in app.R (the Agenda guardians see its permission check)")
+dp <- sub("#.*$", "", readLines("R/data_pipeline.R", warn = FALSE, encoding = "UTF-8"))
+ok(!any(grepl("upsert_pagar_hoy(", dp, fixed = TRUE)),
+   "R/data_pipeline.R writes no Agenda row itself (no new path for test_agenda_permiso / test_confirmar_cierra)")
 ok(any(grepl("if (isTRUE(agenda$ok)) pagar_hoy_db(agenda$ph)", ins, fixed = TRUE)),
    "agenda: the session takes the Agenda only when it was saved")
 ok(any(grepl("send_to_agenda <- isTRUE(agenda$ok)", ins, fixed = TRUE)),

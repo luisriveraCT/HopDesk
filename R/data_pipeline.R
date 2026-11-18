@@ -848,18 +848,21 @@ stage_manual_row_to_agenda <- function(manual_row, user) {
   )
 }
 
-# Sends one staged row to the Agenda (Agregar Item → "Enviar a Agenda").
+# Writes one change to the Agenda (Agregar Item → "Enviar a Agenda").
 # `leer()` reads the Agenda as S3 holds it now and stops when it can't;
+# `cambio(ph)` returns it with the change (the caller's upsert, so the
+# Agenda guardians see the caller -- its permission check and its rows);
 # `guardar(df, base)` writes it rebased on `base`. Never falls back to the
 # session's copy (a stale copy used to be saved over other sessions' rows),
 # and never reports success for a failed write.
 # Returns list(ok, ph, error): ph is the Agenda written (NULL when not ok).
-agregar_a_agenda <- function(ph_row, leer, guardar) {
+agregar_a_agenda <- function(leer, cambio, guardar) {
   ph_base <- tryCatch(leer(), error = function(e) e)
   if (inherits(ph_base, "error") || !is.data.frame(ph_base))
     return(list(ok = FALSE, ph = NULL,
                 error = if (inherits(ph_base, "error")) conditionMessage(ph_base) else "no agenda"))
-  ph <- upsert_pagar_hoy(ph_base, ph_row, keys = "id")
+  ph <- tryCatch(cambio(ph_base), error = function(e) e)
+  if (inherits(ph, "error")) return(list(ok = FALSE, ph = NULL, error = conditionMessage(ph)))
   r <- tryCatch({ guardar(ph, ph_base); NULL }, error = function(e) e)
   if (!is.null(r)) return(list(ok = FALSE, ph = NULL, error = conditionMessage(r)))
   list(ok = TRUE, ph = ph, error = NULL)
