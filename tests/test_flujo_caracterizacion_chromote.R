@@ -139,16 +139,17 @@ ronda <- function(w, h) {
                        dia0("MXN"), fila("neto|MXN")))))
   clic(dia0("MXN"))
   ev("document.activeElement.select()"); b$Input$insertText(text = "1000+500"); tecla("Enter", "Enter", 13L, "\r")
+  # [CAMBIA T55] the compact amounts without "$" ("2K", "0", "200K").
   ok(paste(et, "B5: 1000+500 and Enter: MXN's Día 0 is 1,500 and its position moves; USD's doesn't (F9, F10)"),
      espera(function() {
        E2 <- esperado(day0 = list(MXN = 1500))
        identical(textos_fila("acum|MXN")[-1], unname(E2$filas[["acum|MXN"]][-1])) &&
-         identical(textos_fila("acum|MXN")[3], "$2K") && identical(textos_fila("acum|USD")[3], "$0")
+         identical(textos_fila("acum|MXN")[3], "2K") && identical(textos_fila("acum|USD")[3], "0")
      }, 10))
   ok(paste(et, "B5b: [CAMBIA] Día 0 is kept in the browser, per currency, under the client's own key"),
      identical(ev("localStorage.getItem('hopdesk_cf_dia0:cliente_a')"), "{\"MXN\":1500}") && is.null(ev("localStorage.getItem('hopdesk_cf_dia0')")))
   clic(dia0("MXN"))
-  ok(paste(et, "B6: reopening the cell starts from 1500, not '$2K'"),
+  ok(paste(et, "B6: reopening the cell starts from 1500, not '2K'"),
      identical(ev("document.activeElement.value"), "1500") || identical(ev("Number(document.activeElement.value)"), 1500L))
   tecla("Escape", "Escape", 27L)
   # [CAMBIA B7] It used to close the whole preview (Esc's keyup reached the document).
@@ -164,12 +165,12 @@ ronda <- function(w, h) {
   ok(paste(et, "B8: Esc anywhere else closes the preview"), espera(function() !abierto()))
   abrir(limpiar = FALSE)
   ok(paste(et, "B5c: [CAMBIA] after a reload MXN's Día 0 is still 1,500"),
-     espera(function() identical(textos_fila("acum|MXN")[3], "$2K"), 10))
+     espera(function() identical(textos_fila("acum|MXN")[3], "2K"), 10))
   clic("document.getElementById('cambiar_cliente')")
   ok(paste(et, "B5d: switching to another client shows its own Día 0 (none), never this one's"),
-     espera(function() identical(textos_fila("acum|MXN")[3], "$0"), 10))
+     espera(function() identical(textos_fila("acum|MXN")[3], "0"), 10))
   clic("document.getElementById('cambiar_cliente')")
-  ok(paste(et, "B5e: and back, this client's 1,500 again"), espera(function() identical(textos_fila("acum|MXN")[3], "$2K"), 10))
+  ok(paste(et, "B5e: and back, this client's 1,500 again"), espera(function() identical(textos_fila("acum|MXN")[3], "2K"), 10))
   # Toolbar.
   clic("document.getElementById('cfp-btn_grouping')")
   ok(paste(et, "B9: the grouping button reads Diario after Auto, and the grid keeps 7 days (F13)"),
@@ -184,7 +185,7 @@ ronda <- function(w, h) {
        l <- lista()
        !any(grepl("USD", l)) && { todos(); TRUE } &&
          any(vapply(grep("^MXN\\|ar\\|", unlist(ev(sprintf("HDT.estado('%s').visibles", T))), value = TRUE), function(id) {
-           p <- textos_fila(id); startsWith(p[1], "CLIENT USA") && identical(p[5], "$200K") }, logical(1)))
+           p <- textos_fila(id); startsWith(p[1], "CLIENT USA") && identical(p[5], "200K") }, logical(1)))
      }, 12))
   clic("document.getElementById('cfp-btn_export')")
   ok(paste(et, "B12: Exportar hands the export window the preview's settings (F18)"),

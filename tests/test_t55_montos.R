@@ -130,9 +130,35 @@ ok("a cell says its currency only when no band and no shown column does (celdaLl
      grepl("s.campo === cm || s.campo === '.moneda'", js, fixed = TRUE) &&
      grepl("st.cols[j].campo === cm", js, fixed = TRUE) &&
      grepl("if (c.tipo === 'dinero' && v && celdaLlevaCodigo(st)) v = conCodigo(v, st.moneda[i] || '')", js, fixed = TRUE))
-ok("totals: the code after, always (fichas, group, column sums, bands, footer); no \"$\" left",
+ok("totals: the code after, always (fichas, bands, footer); no \"$\" left",
    !grepl("+ '$'", js, fixed = TRUE) && !grepl("mons.length > 1 && m", js, fixed = TRUE) &&
-     grepl("dinero(grupos[tipo][mon], mon)", js, fixed = TRUE))
+     grepl("dinero(grupos[tipo][mon], mon)", js, fixed = TRUE) &&
+     grepl("return mons.map(function (m) { return dinero(s[m], m); })", js, fixed = TRUE))
+
+# A group's sums sit in the column: the cell's rule (Coordinador, T55). The
+# real sumaColumna() and celdaLlevaCodigo(), run in node on a table with and
+# without a currency band.
+funcion <- function(nombre) regmatches(js, regexpr(paste0("(?s)\\n  function ", nombre, "\\(.*?\\n  }\\n"), js, perl = TRUE))
+prog2 <- tempfile(fileext = ".js")
+writeLines(c("var MENOS = '−', DEC = { MXN: 2, JPY: 0 }, FMT_DEC = {}, FMT_N = new Intl.NumberFormat('es-MX');",
+             "function t(k, o) { return (k === 'tablas.dinero.miles' ? '{n}K' : '{n}M').replace('{n}', o.n); }",
+             vapply(c("fmtDec", "decimalesDe", "conCodigo", "redondear", "dinero", "celdaLlevaCodigo", "sumaColumna",
+                      "entero", "compacto"), funcion, ""),
+             "function tabla(conBanda, formato) { return { cols: [{ campo: 'Importe', formato: formato }, { campo: 'Moneda' }],",
+             "  celdas: [{ orden: [1500.5, 2500, 300] }], moneda: ['MXN', 'MXN', 'JPY'], ids: ['a', 'b', 'c'], ed: {}, colEd: -1,",
+             "  campoMoneda: 'Moneda', ver: [0], secciones: conBanda ? [{ campo: 'Moneda' }] : [] }; }",
+             "console.log(JSON.stringify([sumaColumna(tabla(true), 0, [0, 1]), sumaColumna(tabla(true), 0, [2]),",
+             "  sumaColumna(tabla(false), 0, [0, 1, 2]), sumaColumna(tabla(true, 'compacto'), 0, [0, 1]),",
+             "  sumaColumna(tabla(false, 'compacto'), 0, [0, 1])]));"), prog2, useBytes = TRUE)
+sumas <- tryCatch(jsonlite::fromJSON(paste(suppressWarnings(system2(nodo, prog2, stdout = TRUE, stderr = TRUE)), collapse = "")),
+                  error = function(e) NULL)
+ok("a group's sums under a currency band: the number alone, with the currency's decimals (JPY whole)",
+   identical(sumas[1:2], c("4,000.50", "300")))
+ok("…in a table that mixes currencies with no band or column of it: each sum with its code",
+   identical(sumas[3], paste0("300 JPY", " · ", "4,000.50 MXN")))   # the currencies in order, like the footer
+ok("…the compact format, the same rule", identical(sumas[4:5], c("4K", "4K MXN")))
+ok("the group's total in its sum column: the cell's rule too (dinero(s[mo], mo, !codG))",
+   grepl("codG = celdaLlevaCodigo(st)", js, fixed = TRUE) && grepl("return dinero(s[mo], mo, !codG);", js, fixed = TRUE))
 ok("editing reads back what the table shows (code, true minus)",
    grepl(".replace(/[A-Za-z]{3}\\s*$/, '')", js, fixed = TRUE))
 

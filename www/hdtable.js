@@ -78,11 +78,14 @@
     var r = (du < dd || (du === dd && i10 % 2 === 1)) ? xu : xd;
     return x < 0 ? -r : r;
   }
-  function dinero(x, m) {
+  // sinCodigo: the currency's decimals, without its code (a group's sums
+  // under a band that already names it).
+  function dinero(x, m, sinCodigo) {
     var d = decimalesDe(m);
     x = redondear(x, d);
     if (x === 0) x = 0;                                   // no "-0.00"
-    return conCodigo((x < 0 ? MENOS : '') + fmtDec(d).format(Math.abs(x)), m);
+    var txt = (x < 0 ? MENOS : '') + fmtDec(d).format(Math.abs(x));
+    return sinCodigo ? txt : conCodigo(txt, m);
   }
   // A cell says its currency only when nothing else on screen does: no band
   // grouping by it and no column of it shown (Coordinador, T55: never a
@@ -1689,9 +1692,9 @@
       } else if (j === st.suma) {
         var s = {};
         libres.forEach(function (i) { var mo = st.moneda[i] || ''; s[mo] = (s[mo] || 0) + montoFila(st, i); });
-        var mons = Object.keys(s).sort();
+        var mons = Object.keys(s).sort(), codG = celdaLlevaCodigo(st);
         td.textContent = mons.length ? mons.map(function (mo) {
-          return dinero(s[mo], mo);   // the code after, always (T55)
+          return dinero(s[mo], mo, !codG);   // a group's sum: the cell's rule (T55)
         }).join(' · ') : dinero(0);
         marcarAprox(st, td, libres);   // a group total with an approximate amount (Día Resumen)
       } else if (j === st.colEt && st.p.etiquetas) {
@@ -1720,9 +1723,13 @@
     if (!mons.length) mons = [''], s[''] = 0;
     var fmt = function (v, mo) {
       if (c.cero === 'vacio' && Math.abs(v) < 0.005) return '';
-      return c.formato === 'compacto' ? compacto(v, mo) : c.formato === 'entero' ? entero(v, mo) : dinero(v, mo);
+      return c.formato === 'compacto' ? compacto(v, cod ? mo : '') : c.formato === 'entero' ? entero(v, cod ? mo : '') : dinero(v, mo, !cod);
     };
-    return mons.map(function (mo) { return fmt(s[mo], mo); })   // the code after, always (T55)
+    // A group's sums sit in the column, under its cells: the cell's rule, the
+    // code only when no band and no column says the currency (Coordinador,
+    // T55). The band, the footer and the fichas always carry it.
+    var cod = celdaLlevaCodigo(st);
+    return mons.map(function (mo) { return fmt(s[mo], mo); })
                .filter(function (x) { return x; }).join(' · ');
   }
   // "4.5M" / "802K" / "950": R's .hd_dinero_compacto(), the same rule --
