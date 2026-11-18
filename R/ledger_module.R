@@ -1112,6 +1112,7 @@ ledgerModuleServer <- function(id, config, shared) {
         }
         .apply_move(keys, new_date, ledger, shared, session = session)
         .sync_staged(keys, ledger, shared$pagar_hoy_db, new_date = new_date,
+                     facturas = politica_facturas(tryCatch(shared$sap_data(), error = function(e) list())),
                      username = shared$current_user(), client_id = shared$effective_client_id())
         showNotification(tr("tablas.dia.aviso.movidas", n = as.character(nrow(keys))), type = "message", duration = 2)
         cur_ctx <- modal_ctx()
@@ -1143,6 +1144,7 @@ ledgerModuleServer <- function(id, config, shared) {
         }
         .clear_moves(keys, ledger, shared, session = session)
         .sync_staged(keys, ledger, shared$pagar_hoy_db, detail = detail,
+                     facturas = politica_facturas(tryCatch(shared$sap_data(), error = function(e) list())),
                      username = shared$current_user(), client_id = shared$effective_client_id())
         showNotification(tr("tablas.dia.aviso.restaurada"), type = "message", duration = 2)
         cur_ctx <- modal_ctx()
@@ -1784,8 +1786,11 @@ ledgerModuleServer <- function(id, config, shared) {
           data.frame(Empresa   = row[["Empresa"]],
                      Moneda    = row[["Moneda"]],
                      Documento = row[["Documento"]],
+                     # this invoice's Agenda rows only (T52f)
+                     fecha_factura = as.Date(row[["Fecha de contabilización"]] %||% NA_character_),
                      stringsAsFactors = FALSE),
           ledger, shared$pagar_hoy_db,
+          facturas    = facturas_mov,
           new_date    = new_date,
           # Only the fields changed in this edit reach the Agenda (T52f).
           new_parte   = nuevo("Parte",   new_parte),
@@ -2207,7 +2212,8 @@ dia_filas_agenda <- function(a_mano, fuente, usuario, ledger, confirmaciones) {
                          new_moneda  = NULL,
                          new_importe = NULL,
                          username    = NULL,
-                         client_id   = NULL) {
+                         client_id   = NULL,
+                         facturas    = NULL) {
   # Read fresh from S3 first (safe_load_pagar_hoy -- mode-aware, found
   # 2026-07-25); this edits a row in place and writes the whole table back,
   # so a stale base could silently drop another session's concurrent
@@ -2216,6 +2222,14 @@ dia_filas_agenda <- function(a_mano, fuente, usuario, ledger, confirmaciones) {
   ph <- tryCatch(safe_load_pagar_hoy(username = username, client_id = client_id),
                  error = function(e) NULL) %||% ph_rv()
   if (is.null(ph) || !nrow(ph)) return(invisible(list(changed = FALSE, ok = TRUE, error = NULL)))
+  # keys$fecha_factura (T52f): a key with the invoice's posting date reaches
+  # the Agenda rows of THAT invoice only (same number and fecha_factura); an
+  # Agenda row without the date (written before) only while the document is
+  # one invoice among `facturas` (the open invoices, politica_facturas();
+  # .mudanza_docs_unicos(), the T52 rule). On a reused number the old row
+  # could be the other invoice's -- its Código is a bank account -- so it is
+  # left as it was. A key without the date (the manual entry) reaches every
+  # pending row of the number, as before.
   ph_base <- ph   # CM09: if the read failed this is ph_rv(); the save rebases on S3 (A2)
   changed <- FALSE
   for (i in seq_len(nrow(keys))) {
@@ -2229,6 +2243,13 @@ dia_filas_agenda <- function(a_mano, fuente, usuario, ledger, confirmaciones) {
         detail[["Empresa"]]   == emp &
         detail[["Moneda"]]    == mon &
         detail[["Documento"]] == doc, , drop = FALSE]
+      # The key's own invoice when it carries the date (T52f): on a reused
+      # number the first row could be the other invoice's original date.
+      fk <- if ("fecha_factura" %in% names(keys)) suppressWarnings(as.Date(keys[["fecha_factura"]][i])) else as.Date(NA)
+      if (!is.na(fk) && nrow(d_row) > 1L && "Fecha de contabilización" %in% names(d_row)) {
+        propia <- suppressWarnings(as.Date(d_row[["Fecha de contabilización"]])) %in% fk
+        if (any(propia)) d_row <- d_row[propia, , drop = FALSE]
+      }
       if (!nrow(d_row)) next
       as.Date(d_row[["FechaVenc_Original"]][1L])
     } else next
@@ -2236,6 +2257,14 @@ dia_filas_agenda <- function(a_mano, fuente, usuario, ledger, confirmaciones) {
     idx <- which(ph[["ledger"]] == ledger & ph[["status"]] == "pending" &
                  ph[["Empresa"]] == emp & ph[["Moneda"]] == mon &
                  ph[["Documento"]] == doc)
+    f <- if ("fecha_factura" %in% names(keys)) suppressWarnings(as.Date(keys[["fecha_factura"]][i])) else as.Date(NA)
+    if (length(idx) && !is.na(f)) {
+      fph <- if ("fecha_factura" %in% names(ph)) suppressWarnings(as.Date(ph[["fecha_factura"]][idx]))
+             else as.Date(rep(NA_character_, length(idx)))
+      d   <- data.frame(ledger = ledger, Empresa = emp, Moneda = mon, Documento = doc, stringsAsFactors = FALSE)
+      unica <- length(.mudanza_docs_unicos(.mudanza_doc(d), facturas)) == 1L
+      idx <- idx[fph %in% f | (is.na(fph) & unica)]
+    }
     if (!length(idx)) next
     ph[["FechaVenc"]][idx] <- eff_date
     if (!is.null(new_imp))     ph[["Importe"]][idx] <- new_imp
