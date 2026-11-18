@@ -888,6 +888,7 @@
   "tablas.empresas.aviso.no_guardada": "The company could not be saved. Check the connection and try again.",
   "tablas.empresas.aviso.creada": "Company '{iniciales}' ({codigo}) created.",
   "tablas.empresas.aviso.iniciales_otra": "Another company with those initials already exists.",
+  "tablas.empresas.aviso.iniciales_de_antes": "Another company used those initials before. Choose others, so what was saved under them is not mixed up.",
   "tablas.empresas.aviso.error_cascada": "Error updating related tables: {error}",
   "tablas.empresas.aviso.cambios_no_guardados": "The changes could not be saved. Try again.",
   "tablas.empresas.aviso.cambio_no_guardado": "The change could not be saved. Try again.",

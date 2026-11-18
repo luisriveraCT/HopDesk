@@ -888,6 +888,7 @@
   "tablas.empresas.aviso.no_guardada": "No se pudo guardar la empresa. Verifica la conexión e intenta de nuevo.",
   "tablas.empresas.aviso.creada": "Empresa '{iniciales}' ({codigo}) creada.",
   "tablas.empresas.aviso.iniciales_otra": "Ya existe otra empresa con esas iniciales.",
+  "tablas.empresas.aviso.iniciales_de_antes": "Otra empresa usó antes esas iniciales. Elige otras, para que lo guardado con ellas no se confunda.",
   "tablas.empresas.aviso.error_cascada": "Error actualizando tablas relacionadas: {error}",
   "tablas.empresas.aviso.cambios_no_guardados": "No se pudieron guardar los cambios. Intenta de nuevo.",
   "tablas.empresas.aviso.cambio_no_guardado": "No se pudo guardar el cambio. Intenta de nuevo.",

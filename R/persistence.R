@@ -2238,7 +2238,8 @@ save_parte_alias_map <- function(df, client_id = NULL) {
   deleted_at   = character(),
   created_at   = character(),
   updated_at   = character(),
-  group_id     = character()    # FK → grupos$id; which conglomerate owns this company
+  group_id     = character(),   # FK → grupos$id; which conglomerate owns this company
+  iniciales_anteriores = character()   # JSON: ["OLD"], the initials it had before a complete rename (CM29)
 )
 
 # Load empresas from S3. Returns the empty schema on first run (no auto-seeding).
@@ -2479,6 +2480,15 @@ save_group_config <- function(cfg, client_id = NULL) {
                                    if (length(hechos)) paste(hechos, collapse = ", ") else "none"),
                  call = NULL, hechos = hechos, sin_cambios = sin_cambios, fallidos = fallidos))
 }
+
+# empresas.rds `iniciales_anteriores` (CM29): the JSON array of initials a
+# company had before a complete rename. One character vector per row
+# (character(0) when empty or not an array).
+.iniciales_anteriores_de <- function(x) lapply(x, function(v) {
+  if (is.null(v) || is.na(v) || !nzchar(trimws(v))) return(character(0))
+  a <- tryCatch(jsonlite::fromJSON(v), error = function(e) NULL)
+  if (is.character(a)) unique(toupper(trimws(a[!is.na(a)]))) else character(0)
+})
 
 # After a step changed its table, its sync-bus name (register_synced() in
 # app.R) is bumped so every open session reloads it (CM29). Without it they

@@ -18,6 +18,25 @@
   sprintf("E%04d", max(nums) + 1L)
 }
 
+# iniciales_anteriores after a COMPLETE rename OLD -> NEW (CM29): OLD goes in
+# and NEW comes out, so a chain A -> B -> C keeps A and B, and going back
+# B -> A takes A out and puts B in. Written only when the cascade finished:
+# with hd_renombrar_incompleto the company keeps OLD and nothing is added.
+.iniciales_anteriores_tras <- function(x, old_ini, new_ini) {
+  a <- .iniciales_anteriores_de(x)[[1]]
+  a <- setdiff(unique(c(a, toupper(trimws(old_ini)))), toupper(trimws(new_ini)))
+  as.character(jsonlite::toJSON(a, auto_unbox = FALSE))
+}
+
+# Initials another company had before (every row but `id`'s own). Taking
+# them is refused: what tables still hold under them would be translated to
+# that other company (iniciales_vigentes()).
+.iniciales_de_antes_ajenas <- function(all_e, id = NULL) {
+  if (is.null(all_e) || !nrow(all_e) || !"iniciales_anteriores" %in% names(all_e)) return(character(0))
+  otras <- if (is.null(id)) rep(TRUE, nrow(all_e)) else as.character(all_e$id) != id
+  unique(unlist(.iniciales_anteriores_de(all_e$iniciales_anteriores[otras])))
+}
+
 # ── UI ────────────────────────────────────────────────────────────────────────
 
 empresasUI <- function(id) {
@@ -352,6 +371,9 @@ empresasServer <- function(id, shared) {
           initials %in% toupper(trimws(all_e$initials))) {
         showNotification(tr("tablas.empresas.aviso.iniciales_existe"), type = "error"); return()
       }
+      if (initials %in% .iniciales_de_antes_ajenas(all_e)) {   # CM29
+        showNotification(tr("tablas.empresas.aviso.iniciales_de_antes"), type = "error"); return()
+      }
 
       alt_lines <- trimws(strsplit(input$new_nombres_alt %||% "", "\n")[[1]])
       alt_lines <- alt_lines[nzchar(alt_lines)]
@@ -445,6 +467,12 @@ empresasServer <- function(id, shared) {
           showNotification(tr("tablas.empresas.aviso.iniciales_otra"), type = "error")
           return()
         }
+        # Another company's earlier initials: never (CM29). Its own are fine
+        # (going back B -> A).
+        if (new_ini %in% .iniciales_de_antes_ajenas(all_e, sel_id)) {
+          showNotification(tr("tablas.empresas.aviso.iniciales_de_antes"), type = "error")
+          return()
+        }
         # A step that failed (hd_renombrar_incompleto, CM26) leaves this
         # company with its old initials: saving the same edit again finishes
         # the tables left. The cascade is recorded either way, with which
@@ -478,6 +506,9 @@ empresasServer <- function(id, shared) {
           ), error = function(e) message("[EMP rename] log: ", conditionMessage(e)))
         if (inherits(cascade, "error")) return()
         all_e[full_idx, "initials"] <- new_ini
+        if (!"iniciales_anteriores" %in% names(all_e)) all_e$iniciales_anteriores <- NA_character_
+        all_e[full_idx, "iniciales_anteriores"] <-
+          .iniciales_anteriores_tras(all_e$iniciales_anteriores[full_idx], old_ini, new_ini)   # CM29
       }
 
       alt_lines <- trimws(strsplit(input$edit_nombres_alt %||% "", "\n")[[1]])
