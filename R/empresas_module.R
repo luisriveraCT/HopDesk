@@ -25,7 +25,7 @@ empresasUI <- function(id) {
 
   div(
     class = "p-3",
-    style = "overflow-y: auto; max-height: calc(100vh - 65px);",
+    style = "overflow-y: auto; max-height: calc(100vh - var(--hd-barra-alto) - 17px);",   # the bar's height (T51)
 
     # Header — same structure as tiers module
     div(

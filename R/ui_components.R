@@ -250,6 +250,83 @@ app_styles <- function() {
       width: 1.25em;
     }
 
+    /* ── Barra en un renglón: marca · ☰ · pestaña activa (T51) ───────────────
+       The links live in bslib's own .navbar-collapse, shown as a panel under
+       the ☰ (barra_menu_ui() opens it). The fixed heights below the bar read
+       --hd-barra-alto. Display rules on .nav-link are left alone: the tier
+       and permission rules hide links with display:none !important. */
+    :root { --hd-barra-alto: 48px; }
+    nav.navbar { height: var(--hd-barra-alto); flex-wrap: nowrap !important; }
+    nav.navbar > .container-fluid { flex-wrap: nowrap !important; height: 100%; position: relative; }
+    nav.navbar .navbar-header { display: flex; align-items: center; gap: 14px; min-width: 0; height: 100%; }
+    nav.navbar .navbar-brand { order: 0; flex: none; }
+    nav.navbar .navbar-toggle, nav.navbar .navbar-toggler { display: none !important; }
+    nav.navbar .navbar-collapse { display: none !important; }
+    .hd-menu-btn {
+      order: 1; flex: none; position: relative;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 40px; height: 34px; padding: 0;
+      background: transparent; color: #fff;
+      border: 1px solid rgba(255,255,255,.55); border-radius: 8px;
+      cursor: pointer;
+    }
+    .hd-menu-btn:hover { background: rgba(255,255,255,.12); }
+    .hd-menu-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+    .hd-menu-icono::before { content: '\\2630'; font-size: 1.15rem; line-height: 1; }
+    nav.navbar.hd-menu-abierto .hd-menu-icono::before { content: '\\2715'; font-size: 1rem; }
+    #hd-menu-globo { position: absolute; top: -6px; right: -10px; font-size: .6rem; }
+    #hd-barra-activa {
+      order: 2; min-width: 0;
+      display: inline-flex; align-items: center; gap: .35em;
+      color: #fff; font-weight: 600; font-size: .95rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    #hd-barra-activa .svg-inline--fa { flex-shrink: 0; height: 1em; width: 1.25em; }
+    /* The open panel */
+    nav.navbar.hd-menu-abierto .navbar-collapse {
+      display: block !important;
+      position: absolute; top: 100%; left: 12px; z-index: 1050;
+      width: 300px; max-width: calc(100vw - 24px);
+      max-height: calc(100vh - var(--hd-barra-alto) - 8px); overflow-y: auto;
+      background: var(--hd-blanco); border: 1px solid var(--hd-linea);
+      border-radius: var(--hd-radio-sm); box-shadow: var(--hd-sombra);
+      padding: 6px 0 0;
+    }
+    nav.navbar .navbar-collapse .navbar-nav {
+      flex-direction: column !important; align-items: stretch !important;
+      margin: 0 !important; padding: 0 !important; gap: 0 !important;
+    }
+    nav.navbar .navbar-collapse .nav-link,
+    nav.navbar .navbar-collapse .dropdown-item {
+      width: 100%; justify-content: flex-start;
+      color: var(--hd-tinta) !important; border: 0 !important;
+      padding: 8px 18px !important; border-radius: 0;
+    }
+    nav.navbar .navbar-collapse .nav-link:hover,
+    nav.navbar .navbar-collapse .dropdown-item:hover,
+    nav.navbar .navbar-collapse .nav-link:focus-visible,
+    nav.navbar .navbar-collapse .dropdown-item:focus-visible { background: var(--hd-crema); outline: none; }
+    nav.navbar .navbar-collapse .nav-link.active,
+    nav.navbar .navbar-collapse .dropdown-item.active {
+      color: var(--hd-marino) !important; font-weight: 700;
+      background: var(--hd-oro-velo); box-shadow: inset 3px 0 0 var(--hd-oro);
+    }
+    nav.navbar .navbar-collapse .dropdown-menu {
+      position: static !important; float: none; transform: none !important;
+      border: 0; box-shadow: none; margin: 0; padding: 0 0 0 22px; background: transparent;
+    }
+    nav.navbar .navbar-collapse .bslib-nav-spacer { display: none; }
+    /* The user and Salir: a navy foot (their own white text stays readable). */
+    nav.navbar .navbar-collapse .bslib-nav-item {
+      background: var(--hd-marino); padding: 6px 14px; margin: 0;
+    }
+    nav.navbar .navbar-collapse .bslib-nav-item:has(#navbar_user_badge) { margin-top: 6px; padding-top: 10px; }
+    nav.navbar .navbar-collapse .bslib-nav-item:last-child { padding-bottom: 10px; }
+    @media (max-width: 600px) {
+      nav.navbar .navbar-brand { font-size: .8rem; }
+      nav.navbar.hd-menu-abierto .navbar-collapse { left: 0; width: 100vw; max-width: 100vw; border-radius: 0; }
+    }
+
     /* ── Control bar — 3-zone grid ──────────────────────────────────────── */
     .control-bar {
       border-bottom: 1px solid #dce3ef;
@@ -426,7 +503,7 @@ app_styles <- function() {
     /* ── Calendar container fills remaining height ───────────────────────── */
     .calendar-container {
       width: 100%;
-      height: calc(100vh - 84px);
+      height: calc(100vh - var(--hd-barra-alto) - 36px);   /* the bar (T51) + the control bar */
       min-height: 500px;
       overflow-y: auto;
     }
@@ -1118,7 +1195,7 @@ app_styles <- function() {
 # Initializes Bootstrap 5 tooltips after every Shiny output update.
 # Cal tiles use data-bs-toggle="tooltip" for the abono breakdown.
 app_scripts <- function() {
-  tags$script(HTML("
+  tagList(barra_menu_ui(), tags$script(HTML("
     $(document).on('shiny:connected', function() {
       Shiny.setInputValue('client_tz', Intl.DateTimeFormat().resolvedOptions().timeZone);
     });
@@ -1348,5 +1425,141 @@ app_scripts <- function() {
         }
       });
     })();
-  "))
+  ")))
+}
+
+# ── The navbar as one row with a ☰ menu (T51) ─────────────────────────────────
+# Luis, 2026-11-17: "pasar toda esa barra a un menú de hamburguesa… para
+# ahorrar espacio vertical". The row keeps the brand, the ☰ (with Vencidos'
+# count in a bubble) and the active tab's name; everything else (tabs, Grupo,
+# the user and Salir) lives in a panel under the ☰. bslib's navbar stays as
+# it is: the panel is its own .navbar-collapse, so the .nav-link elements and
+# every rule that hides or shows them by tier and permission (app.R) are the
+# same. The menu shows exactly the links that are visible today and adds no
+# logic of its own. Styles in app_styles() ("Barra en un renglón").
+# Keyboard: the ☰ is a <button> with aria-expanded/aria-controls; opening
+# moves the focus to the active tab, Esc closes and gives the focus back,
+# choosing a tab, clicking outside or tabbing out closes it.
+barra_menu_ui <- function() {
+  tagList(
+    htmltools::singleton(tags$head(i18n_head())),   # hdT(), as hd_table() does
+    tags$script(HTML("
+    (function() {
+      function t(k, v) { return window.hdT ? window.hdT(k, v) : k; }
+      function nav()   { return document.querySelector('nav.navbar'); }
+      function panel() { var n = nav(); return n ? n.querySelector('.navbar-collapse') : null; }
+      function boton() { return document.getElementById('hd-menu-btn'); }
+      function abierto() { var n = nav(); return !!(n && n.classList.contains('hd-menu-abierto')); }
+      // Shown = neither the link nor its <li> is display:none (the tier,
+      // permission and admin-deployment rules hide one or the other).
+      function visible(el) {
+        if (!el || getComputedStyle(el).display === 'none') return false;
+        var li = el.closest('li');
+        return !(li && getComputedStyle(li).display === 'none');
+      }
+      function activo() {
+        var p = panel(); if (!p) return null;
+        return p.querySelector('.dropdown-item.active[data-value]') ||
+               p.querySelector('.nav-link.active[data-value]:not(.dropdown-toggle)');
+      }
+      // The active tab's icon and name next to the ☰ (copied from its link,
+      // already translated); nothing while it is hidden (the app loading).
+      function pintarActiva() {
+        var span = document.getElementById('hd-barra-activa'), p = panel();
+        if (!span || !p) return;
+        var a = activo();
+        span.textContent = '';
+        if (a && visible(a)) a.childNodes.forEach(function(n) {
+          if (n.nodeType === 1 && n.id === 'ven_tab_badge') return;
+          var c = n.cloneNode(true);
+          if (c.nodeType === 1) c.removeAttribute('id');
+          span.appendChild(c);
+        });
+        p.querySelectorAll('[data-value]').forEach(function(l) {
+          if (l === a) l.setAttribute('aria-current', 'page'); else l.removeAttribute('aria-current');
+        });
+      }
+      // Vencidos' count also outside the menu, in a bubble on the ☰.
+      function pintarGlobo() {
+        var g = document.getElementById('hd-menu-globo'), b = document.getElementById('ven_tab_badge');
+        var p = panel(), btn = boton();
+        if (!g || !p || !btn) return;
+        var n = (b && b.style.display !== 'none') ? b.textContent.trim() : '';
+        var ok = n !== '' && visible(p.querySelector('.nav-link[data-value=VEN]'));
+        g.textContent = ok ? n : '';
+        g.style.display = ok ? '' : 'none';
+        var etiqueta = abierto() ? t('comun.menu.cerrar') : t('comun.menu.abrir');
+        if (ok) etiqueta += ' · ' + t('comun.menu.vencidos', { n: n });
+        btn.setAttribute('aria-label', etiqueta);
+        btn.title = etiqueta;
+      }
+      function abrir() {
+        var n = nav(), btn = boton(); if (!n || !btn) return;
+        n.classList.add('hd-menu-abierto');
+        btn.setAttribute('aria-expanded', 'true');
+        pintarGlobo();
+        var a = activo(), p = panel();
+        var destino = (a && visible(a)) ? a :
+          Array.from(p.querySelectorAll('.nav-link, button')).filter(visible)[0];
+        if (destino) destino.focus();
+      }
+      function cerrar(devolverFoco) {
+        var n = nav(), btn = boton(); if (!n || !btn || !abierto()) return;
+        n.classList.remove('hd-menu-abierto');
+        btn.setAttribute('aria-expanded', 'false');
+        pintarGlobo();
+        if (devolverFoco) btn.focus();
+      }
+      function iniciar() {
+        var n = nav(), p = panel();
+        if (!n || !p || boton()) return;
+        var fila = n.querySelector('.navbar-header') || n.querySelector('.container-fluid');
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'hd-menu-btn';
+        btn.className = 'hd-menu-btn';
+        btn.setAttribute('aria-expanded', 'false');
+        btn.setAttribute('aria-controls', p.id);
+        var icono = document.createElement('span');
+        icono.className = 'hd-menu-icono';
+        icono.setAttribute('aria-hidden', 'true');
+        var globo = document.createElement('span');
+        globo.id = 'hd-menu-globo';
+        globo.className = 'badge rounded-pill bg-danger';
+        globo.setAttribute('aria-hidden', 'true');
+        globo.style.display = 'none';
+        btn.appendChild(icono); btn.appendChild(globo);
+        var activa = document.createElement('span');
+        activa.id = 'hd-barra-activa';
+        fila.appendChild(btn); fila.appendChild(activa);
+        p.classList.add('hd-marca');                       // B's tokens inside the panel
+        btn.addEventListener('click', function() { if (abierto()) cerrar(true); else abrir(); });
+        // Choosing a tab (or a Grupo item) closes it.
+        p.addEventListener('click', function(e) {
+          if (e.target.closest('a[data-bs-toggle=tab], a[data-toggle=tab]')) cerrar(false);
+        });
+        document.addEventListener('click', function(e) {
+          if (abierto() && !e.target.closest('nav.navbar')) cerrar(false);
+        });
+        document.addEventListener('keydown', function(e) {
+          if (e.key === 'Escape' && abierto()) cerrar(true);
+        });
+        n.addEventListener('focusout', function(e) {
+          if (abierto() && e.relatedTarget && !n.contains(e.relatedTarget)) cerrar(false);
+        });
+        $(document).on('shown.bs.tab', function(e) {
+          if ($(e.target).closest('nav.navbar').length) { pintarActiva(); pintarGlobo(); }
+        });
+        // The server shows and hides links (tier, permission, the admin
+        // deployment) and fills the Vencidos count: repaint on each change.
+        new MutationObserver(function() { pintarActiva(); pintarGlobo(); })
+          .observe(p, { subtree: true, childList: true, characterData: true,
+                        attributes: true, attributeFilter: ['style', 'class'] });
+        pintarActiva(); pintarGlobo();
+      }
+      $(iniciar);
+      $(document).on('shiny:connected', iniciar);
+    })();
+    "))
+  )
 }
