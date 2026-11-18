@@ -628,12 +628,33 @@ pagarHoyServer <- function(id, shared) {
       lk  <- if (!is.null(sap) && all(c("Factura", "Documento") %in% names(sap)))
         stats::setNames(trimws(as.character(sap[["Factura"]] %||% "")), trimws(as.character(sap[["Documento"]])))
       else character(0)
-      if (overrides) {
-        ov <- tryCatch(shared$sap_ov_db(), error = function(e) NULL)
-        if (!is.null(ov) && nrow(ov) && all(c("ledger", "Documento", "Factura_override") %in% names(ov))) {
+      if (!isFALSE(overrides)) {
+        # `overrides`: the Agenda rows on screen. Each takes the override of
+        # ITS invoice (T52e): sobrescrituras_por_factura() on number and
+        # posting date (fecha_factura), never the number alone, which SAP may
+        # reuse -- the old invoice's No. Factura must not label the new one.
+        # Company and currency were never compared here (de_emp() already
+        # keeps this company), so both sides get the same ones. A number
+        # whose rows disagree keeps SAP's reference.
+        ov    <- tryCatch(shared$sap_ov_db(), error = function(e) NULL)
+        filas <- if (is.data.frame(overrides) && nrow(overrides))
+          de_emp(overrides[overrides[["ledger"]] %in% "AP", , drop = FALSE]) else NULL
+        if (!is.null(ov) && nrow(ov) && NROW(filas) &&
+            all(c("ledger", "Documento", "Factura_override") %in% names(ov))) {
           ov <- de_emp(ov[ov[["ledger"]] == "AP" & !is.na(ov[["Factura_override"]]), , drop = FALSE])
-          o  <- pares(ov, "Factura_override")
-          lk[names(o)] <- o
+          if (NROW(ov)) {
+            ov$Empresa <- emp; ov$Moneda <- ""; ov$Documento <- trimws(as.character(ov$Documento))
+            una <- data.frame(Empresa = emp, Moneda = "", Documento = trimws(as.character(filas$Documento)),
+                              `Fecha de contabilización` = as.Date(filas[["fecha_factura"]] %||% rep(NA, nrow(filas))),
+                              check.names = FALSE, stringsAsFactors = FALSE)
+            i <- sobrescrituras_por_factura(una, ov, "AP")
+            v <- trimws(as.character(ov$Factura_override[i]))
+            v[is.na(i) | is.na(v) | !nzchar(v)] <- NA_character_
+            o <- vapply(split(v, una$Documento), function(x)
+              if (all(!is.na(x)) && length(unique(x)) == 1L) x[1] else NA_character_, character(1))
+            o <- o[!is.na(o) & nzchar(names(o))]
+            lk[names(o)] <- o
+          }
         }
       }
       man <- tryCatch(shared$manual_inv(), error = function(e) NULL)
@@ -966,7 +987,7 @@ pagarHoyServer <- function(id, shared) {
         s_cur   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP", Moneda == cur_sel)
         if (!nrow(s_cur)) return(.ph_ap_vacia)
 
-        ref_lkup_tbl <- .ph_ref_lookup(emp, overrides = TRUE)
+        ref_lkup_tbl <- .ph_ref_lookup(emp, overrides = s_cur)   # the rows on screen (T52e)
 
         sess_ovr <- tryCatch(.session_alias_overrides(), error = function(e) list())
         ann <- .annotate_ap_cached(s_cur, emp) |>

@@ -1551,11 +1551,16 @@ ledgerModuleServer <- function(id, config, shared) {
       party_lbl <- if (ledger == "AR") "Cliente" else "Proveedor"
 
       ov_db <- tryCatch(shared$sap_ov_db(), error = function(e) NULL)
+      # This invoice's own override (T52e): sobrescrituras_por_factura(), the
+      # rule build_ledger_df() paints with, never the document number alone.
       existing_ov <- if (!is.null(ov_db) && nrow(ov_db)) {
-        ov_db[ov_db$ledger    == ledger              &
-              ov_db$Empresa   == row[["Empresa"]]    &
-              ov_db$Moneda    == row[["Moneda"]]     &
-              ov_db$Documento == row[["Documento"]], , drop = FALSE]
+        una <- data.frame(Empresa = row[["Empresa"]] %||% NA_character_, Moneda = row[["Moneda"]] %||% NA_character_,
+                          Documento = as.character(row[["Documento"]] %||% NA_character_),
+                          `Fecha de contabilización` = as.Date(row[["Fecha de contabilización"]] %||% NA_character_),
+                          check.names = FALSE, stringsAsFactors = FALSE)
+        i <- sobrescrituras_por_factura(una, ov_db, ledger,
+                                        facturas = tryCatch(.facturas_abiertas(shared, ledger), error = function(e) NULL))
+        if (is.na(i[1])) ov_db[0, , drop = FALSE] else ov_db[i[1], , drop = FALSE]
       } else NULL
       .ov <- function(col, fallback) {
         v <- if (!is.null(existing_ov) && nrow(existing_ov))

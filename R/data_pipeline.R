@@ -424,6 +424,64 @@ etiquetas_por_factura <- function(df, tags_df, ledger, facturas = NULL) {
   out
 }
 
+# ── The ✎ overrides of each invoice (T52e) ───────────────────────────────────
+# The row of sap_ov (sap_overrides.rds) that paints each row of df, as an
+# index into sap_ov (NA = none). The only reader: build_ledger_df(), the ✎'s
+# prefill (ledger_module.R) and the Agenda's Referencia (pagar_hoy_module.R).
+# The rule of etiquetas_por_factura() (T52d, closed by the integrator and the
+# Coordinador), because Codigo_override picks the bank account:
+#   - a dated row reaches its own invoice only (document + posting date);
+#   - an undated one (before T52e) reaches its document only while the
+#     document is one invoice among `facturas` (or df), and not when that
+#     invoice is later than the override's day (updated_at in the client's
+#     zone, hoy_en(); never as.Date(POSIXct)): an edit cannot be about an
+#     invoice that did not exist yet. Without updated_at, the one-invoice
+#     rule alone. A row of df without its posting date gets the one-invoice
+#     rule alone too.
+# When several rows reach one, the latest updated_at wins. `ledger`: one
+# value, or one per row of df.
+sobrescrituras_por_factura <- function(df, sap_ov, ledger, facturas = NULL) {
+  n   <- if (is.data.frame(df)) nrow(df) else 0L
+  out <- rep(NA_integer_, n)
+  if (!n || !is.data.frame(sap_ov) || !nrow(sap_ov)) return(out)
+
+  led <- rep_len(toupper(as.character(ledger)), n)
+  dk  <- .politica_doc(paste(led, df$Empresa, sep = "\r"), df$Moneda, as.character(df$Documento))
+  dk[is.na(led) | is.na(df$Empresa)] <- NA_character_
+  fc  <- df[["Fecha de contabilización"]]
+  fc  <- if (is.null(fc)) as.Date(rep(NA_character_, n)) else suppressWarnings(as.Date(fc))
+
+  m  <- nrow(sap_ov)
+  tk <- .politica_doc(paste(toupper(as.character(sap_ov$ledger)), sap_ov$Empresa, sep = "\r"),
+                      sap_ov$Moneda, as.character(sap_ov$Documento))
+  tk[is.na(sap_ov$ledger) | is.na(sap_ov$Empresa)] <- NA_character_
+  tf <- if ("fecha_factura" %in% names(sap_ov)) suppressWarnings(as.Date(sap_ov$fecha_factura))
+        else as.Date(rep(NA_character_, m))
+  t_at <- if ("updated_at" %in% names(sap_ov)) suppressWarnings(as.POSIXct(sap_ov$updated_at, tz = "UTC"))
+          else as.POSIXct(rep(NA_real_, m), origin = "1970-01-01", tz = "UTC")
+  ta <- as.Date(rep(NA_character_, m))
+  if (any(!is.na(t_at))) ta[!is.na(t_at)] <- hoy_en(ZONA_OMISION, ahora = t_at[!is.na(t_at)])
+  o  <- order(t_at, decreasing = TRUE, na.last = TRUE)       # match() takes the first: the latest
+
+  # Its own invoice.
+  propia <- o[!is.na(tk[o]) & !is.na(tf[o])]
+  if (length(propia)) {
+    k_df <- ifelse(is.na(dk) | is.na(fc), NA_character_, paste(dk, format(fc), sep = "\r"))
+    out  <- propia[match(k_df, paste(tk[propia], format(tf[propia]), sep = "\r"))]
+  }
+  # Older rows, without the posting date.
+  vieja <- o[!is.na(tk[o]) & is.na(tf[o])]
+  if (length(vieja)) {
+    usa <- is.na(out) & !is.na(dk)
+    usa[usa] <- .etiquetas_doc_unica(dk, fc, facturas, led)[usa]
+    j <- vieja[match(dk[usa], tk[vieja])]
+    posterior <- !is.na(j) & !is.na(ta[j]) & !is.na(fc[usa]) & fc[usa] > ta[j]
+    j[posterior] <- NA_integer_
+    out[usa] <- j
+  }
+  out
+}
+
 # For each row (its document key dk and posting date fc), whether its
 # document is one invoice among `facturas` (or among the rows themselves):
 # .politica_doc_unica(), the T52 rule, not a copy of it.
@@ -620,14 +678,15 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
   # instead — see is_erp_sourced()'s own comment in R/global.R.)
   if (!is.null(sap_ov) && is.data.frame(sap_ov) && nrow(sap_ov)) {
     if (!"Factura" %in% names(result)) result[["Factura"]] <- NA_character_
-    ov_filt <- sap_ov |>
-      dplyr::filter(.data$ledger == !!ledger) |>
-      dplyr::select(Empresa, Moneda, Documento,
-                    Parte_override, Codigo_override, Factura_override, Notas_override,
-                    Moneda_override, Importe_override)
+    ov_filt <- sap_ov[sap_ov$ledger %in% ledger, , drop = FALSE]
     if (nrow(ov_filt)) {
-      result <- dplyr::left_join(result, ov_filt,
-                                 by = c("Empresa", "Moneda", "Documento")) |>
+      # Each invoice its own override (T52e): sobrescrituras_por_factura(),
+      # never a join on the document number, which SAP may reuse.
+      i <- sobrescrituras_por_factura(result, ov_filt, ledger)
+      cols <- c("Parte_override", "Codigo_override", "Factura_override", "Notas_override",
+                "Moneda_override", "Importe_override")
+      for (cc in cols) result[[cc]] <- ov_filt[[cc]][i]
+      result <- result |>
         dplyr::mutate(
           has_sap_override = source == SAP_B1_ERP_TYPE & (
             !is.na(Parte_override) | !is.na(Codigo_override) |
