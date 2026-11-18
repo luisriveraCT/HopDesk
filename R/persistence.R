@@ -2653,11 +2653,22 @@ load_sap_overrides <- function(client_id = NULL) {
   .normalize(.s3_read_with(S3_KEYS$sap_overrides, client_id = client_id), .schema_sap_overrides)
 }
 
-save_sap_overrides <- function(df, client_id = NULL) {
+# With `base` (the table the session started from, T52e): the change is
+# rebased on what S3 holds now (modificar_tabla() + rebase_por_id(), as
+# save_tags()), so two sessions editing different invoices keep both edits.
+# Keyed per invoice: ledger, Empresa, Moneda, Documento, fecha_factura.
+# Returns the table written. A failed read or write stop()s.
+save_sap_overrides <- function(df, client_id = NULL, base = NULL) {
   norm <- .normalize(df, .schema_sap_overrides)
-  .s3_write(norm, S3_KEYS$sap_overrides, client_id = client_id)
+  if (!is.null(base) && !is.null(client_id) && nzchar(client_id)) {
+    llave <- function(d) dplyr::mutate(d, .llave = paste(ledger, Empresa, Moneda, Documento,
+      ifelse(is.na(fecha_factura), "", format(fecha_factura)), sep = "\x1f"))
+    norm <- modificar_tabla(S3_KEYS$sap_overrides, client_id, .schema_sap_overrides, function(fresco)
+      dplyr::select(rebase_por_id(llave(norm), llave(.normalize(base, .schema_sap_overrides)), llave(fresco), ".llave"),
+                    -".llave"))
+  } else .s3_write(norm, S3_KEYS$sap_overrides, client_id = client_id)
   if (exists(".cache_set", mode = "function")) .cache_set("sap_overrides", norm, client_id)
-  invisible(TRUE)
+  invisible(norm)
 }
 
 # new_row with fecha_factura (T52e) replaces the row of that invoice (same

@@ -1752,14 +1752,10 @@ ledgerModuleServer <- function(id, config, shared) {
         # the invoice's posting date (T52e): the override is this invoice's only
         fecha_factura    = as.Date(row[["Fecha de contabilización"]] %||% NA_character_)
       )
-      updated_ov <- upsert_sap_override(shared$sap_ov_db(), ov_row, facturas_mov)
-      shared$sap_ov_db(updated_ov)
-      tryCatch({
-        save_sap_overrides(updated_ov, client_id = shared$effective_client_id())
-        bump_sync_version("sap_ov_db", client_id = shared$effective_client_id())
-      },
-        error = function(e) warning("[sap_edit_save] save_sap_overrides: ", e$message)
-      )
+      # Saved per invoice and rebased on S3 (T52e); a failure is shown and
+      # logged by .sap_ov_guardar(), the session keeps its table, and
+      # nothing below runs: no Agenda sync, no "Cambios guardados".
+      if (!isTRUE(.sap_ov_guardar(shared, ov_row, facturas_mov, session))) return(invisible(NULL))
 
       # --- sync staged queue ---
       tryCatch(
@@ -1993,6 +1989,38 @@ dia_filas_agenda <- function(a_mano, fuente, usuario, ledger, confirmaciones) {
   if (!"fecha_factura" %in% names(out)) out[["fecha_factura"]] <- as.Date(rep(NA, nrow(out)))
   attr(out, "rechazadas") <- unique(attr(filas_erp, "rechazadas"))
   out
+}
+
+# The ✎'s override save (T52e): the session's table plus ov_row
+# (upsert_sap_override(), per invoice), rebased on what S3 holds now
+# (save_sap_overrides(base =)) so another session's edit is never lost. Only
+# when the write succeeded does the session take the saved table; a failure
+# changes nothing in the session, says so (showNotification, error) and is
+# logged -- the caller then announces nothing (rules 15 and 17). TRUE / FALSE.
+.sap_ov_guardar <- function(shared, ov_row, facturas = NULL, session = NULL) {
+  base <- tryCatch(shared$sap_ov_db(), error = function(e) NULL)
+  cid  <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
+  res  <- tryCatch(
+    save_sap_overrides(upsert_sap_override(base, ov_row, facturas), client_id = cid,
+                       base = if (is.null(base)) .schema_sap_overrides() else base),
+    error = function(e) e)
+  if (inherits(res, "error")) {
+    showNotification(tr("tablas.dia.aviso.sobrescritura_no_guardada", detalle = conditionMessage(res)),
+                     type = "error", duration = 8)
+    tryCatch(log_action(
+      user        = tryCatch(shared$current_user(), error = function(e) "system"),
+      module      = paste0("ledger_", ov_row$ledger[1]),
+      action      = "editar_factura_sap_fallido",
+      description = paste0("No se guardaron los cambios de la factura ", ov_row$Documento[1], ": ", conditionMessage(res)),
+      target_id   = ov_row$Documento[1],
+      metadata    = list(empresa = ov_row$Empresa[1], error = conditionMessage(res)),
+      client_id   = cid,
+      viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)), error = function(e) NULL)
+    return(FALSE)
+  }
+  shared$sap_ov_db(res)
+  tryCatch(bump_sync_version("sap_ov_db", client_id = cid), error = function(e) NULL)
+  TRUE
 }
 
 .moves_read_live <- function(client_id = NULL) {
