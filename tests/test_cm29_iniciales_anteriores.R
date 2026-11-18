@@ -188,6 +188,31 @@ ok("B5 proveedores_inactivos: A -> B, in the comma list too (spaces kept)",
    identical(leer(S3_KEYS$proveedores_inactivos)$Empresa, "B") &&
      identical(leer(S3_KEYS$proveedores_inactivos)$empresas, "OTRA, B"))
 
+# A new company takes initials that were "earlier" (A -> B, then a new A).
+# The Empresas screen refuses it (A6); if it is there anyway (written outside
+# the screen), the net leaves the new company's rows under A.
+sembrar(); editar("e1", "B")                               # complete rename A -> B
+AVISOS <- character(); crear("A")
+ok("B7 a new company with initials that were earlier (A) is refused on the screen",
+   !"A" %in% leer(S3_KEYS$empresas)$initials && aviso_de_antes())
+e <- leer(S3_KEYS$empresas)
+poner(S3_KEYS$empresas, dplyr::bind_rows(e, fila(.schema_empresas, id = "e3", initials = "A", razon_social = "Nueva",
+                                                 nombre_corto = "Nueva", activa = TRUE, deleted = FALSE)))
+base <- leer(S3_KEYS$proveedores); MSG <- character()
+guardar(save_proveedores(dplyr::bind_rows(base, prov("pn3", "A"), prov("pb3", "B")), client_id = CID, base = base))
+p <- leer(S3_KEYS$proveedores)
+ok("B7 …written anyway: the new company's row stays A, e1's stays B, and nothing says A->",
+   identical(p$Empresa[p$id == "pn3"], "A") && identical(p$empresas[p$id == "pn3"], "A") &&
+     identical(p$Empresa[p$id == "pb3"], "B") && !any(grepl("A->", MSG, fixed = TRUE)))
+guardar(save_parte_alias_map(fila(.schema_parte_alias_map, Parte = "X", Empresa = c("A", "B"), alias = "x"),
+                             client_id = CID))
+base <- leer(S3_KEYS$pasivos_provisions)
+guardar(save_pasivos_provisions(dplyr::bind_rows(base, fila(.schema_pasivos_provision, id = "v3", empresa = "A")),
+                                client_id = CID, base = base))
+v <- leer(S3_KEYS$pasivos_provisions)
+ok("B7 …and in parte_alias_map and pasivos_provisions too: the new company's A is never redirected to B",
+   identical(leer(S3_KEYS$parte_alias_map)$Empresa, c("A", "B")) && identical(v$empresa[v$id == "v3"], "A"))
+
 # Without earlier initials anywhere, a save is exactly what it always was.
 sembrar()
 base <- leer(S3_KEYS$proveedores); MSG <- character()
