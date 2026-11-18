@@ -759,6 +759,8 @@
   "tablas.ajustes.aviso.politica_no_encontrada": "Política no encontrada en el catálogo (identificador inválido). Edita el socio, elimina la política marcada con '?' y reasígnala.",
   "tablas.ajustes.aviso.sin_datos_ar": "Sin fechas: hay socios con CxC, pero no hay datos de CxC cargados. Verifica que los datos de Cobrar estén disponibles.",
   "tablas.ajustes.aviso.sin_fechas": "No se generaron fechas (sin documentos con socio asignado).",
+  "tablas.ajustes.alcance_cuenta.uno": "Se calcularán fechas ajustadas para {n} documento.",
+  "tablas.ajustes.alcance_cuenta.otros": "Se calcularán fechas ajustadas para {n} documentos.",
   "tablas.ajustes.aviso.politica_nombre_requerido": "El nombre de la política es requerido.",
   "tablas.ajustes.aviso.politica_no_encontrada_recarga": "No se encontró la política. Recarga el panel.",
   "tablas.ajustes.aviso.error_guardar_asignaciones": "Error al guardar asignaciones: {error}",

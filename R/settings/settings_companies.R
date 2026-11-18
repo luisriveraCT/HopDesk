@@ -81,8 +81,7 @@
 # (before T52) of a document that now gets its dated rows: one row per
 # invoice, the old one replaced rather than left beside them. Pure: no I/O.
 .policy_moves_sumar <- function(fresco, nuevos, facturas = NULL) {
-  faltan <- nuevos[!.policy_moves_cubiertos(fresco, nuevos, facturas), , drop = FALSE]
-  faltan <- faltan[!duplicated(.policy_move_llave(faltan)), , drop = FALSE]
+  faltan <- .policy_moves_faltan(fresco, nuevos, facturas)
   if (!nrow(faltan)) return(fresco)
   con_fecha <- !.policy_moves_sin_fecha(faltan)
   if (is.data.frame(fresco) && nrow(fresco) && any(con_fecha)) {
@@ -91,6 +90,46 @@
     fresco <- fresco[!reemplazada, , drop = FALSE]
   }
   dplyr::bind_rows(fresco, faltan)
+}
+
+# The rows of `nuevos` that .policy_moves_sumar() adds: not yet covered, one
+# per invoice.
+.policy_moves_faltan <- function(fresco, nuevos, facturas = NULL) {
+  faltan <- nuevos[!.policy_moves_cubiertos(fresco, nuevos, facturas), , drop = FALSE]
+  faltan[!duplicated(.policy_move_llave(faltan)), , drop = FALSE]
+}
+
+# The policy rows Aplicar políticas computes for `pp` (interco already out):
+# AP and AR, each with its ledger. `al_fallar(ledger, mensaje)` runs when a
+# ledger's computation fails, which then counts as no rows.
+.politica_nuevos <- function(sap, pp, catalog, ov, user, al_fallar = function(ledger, mensaje) NULL) {
+  una <- function(df, ledger) {
+    if (is.null(df) || !nrow(df)) return(NULL)
+    tryCatch(compute_policy_moves(df, pp, catalog, overrides_df = ov, ledger = ledger, applied_by = user),
+             error = function(e) { al_fallar(ledger, conditionMessage(e)); NULL })
+  }
+  dplyr::bind_rows(una(sap$AP, "AP"), una(sap$AR, "AR"))
+}
+
+# The rows of `nuevos` that a scope writes (T54): what the Apply modal counts
+# and what the save adds are the same selection, so the notice can never say
+# another number. A document is ledger·Empresa·Moneda·Documento
+# (.policy_move_doc()): an AR and an AP with the same number are two.
+#   new          not covered yet in `existentes` (.policy_moves_faltan())
+#   skip_manual  without a date moved by hand in `manual` (moves.rds)
+#   all          every one
+.politica_a_escribir <- function(scope, nuevos, existentes = NULL, manual = NULL, facturas = NULL) {
+  if (is.null(nuevos) || !nrow(nuevos)) return(nuevos)
+  switch(scope,
+    new         = .policy_moves_faltan(existentes, nuevos, facturas),
+    skip_manual = nuevos[!.policy_move_doc(nuevos) %in% .politica_docs_manuales(manual), , drop = FALSE],
+    nuevos)
+}
+
+# The documents with a date moved by hand (moves.rds), as .policy_move_doc().
+.politica_docs_manuales <- function(manual) {
+  if (!is.data.frame(manual) || !nrow(manual)) return(character())
+  .policy_move_doc(manual)
 }
 
 .companies_panel_ui <- function() {
@@ -387,11 +426,7 @@ settings_companies_observer <- function(input, output, session, shared) {
     ctx   <- apply_ctx()
     if (is.null(ctx)) return(NULL)
     n <- ctx$count_for_scope(scope)
-    tags$p(
-      "Se calcularán fechas ajustadas para",
-      strong(format(n, big.mark = ",")),
-      if (n == 1L) "documento." else "documentos."
-    )
+    tags$p(tr_n("tablas.ajustes.alcance_cuenta", n))
   })
 
   .get_catalog_cmp <- function() {
@@ -731,45 +766,23 @@ settings_companies_observer <- function(input, output, session, shared) {
       return()
     }
 
-    sap     <- .prep_sap(tryCatch(shared$sap_data(), error = function(e) list()))
-    all_inv <- dplyr::bind_rows(
-      if (!is.null(sap$AP) && nrow(sap$AP)) sap$AP else NULL,
-      if (!is.null(sap$AR) && nrow(sap$AR)) sap$AR else NULL
-    )
-    if (!"Parte" %in% names(all_inv)) all_inv$Parte <- NA_character_
+    sap <- .prep_sap(tryCatch(shared$sap_data(), error = function(e) list()))
+    ov  <- tryCatch(shared$holiday_overrides_db(), error = function(e) NULL)
 
     is_ic     <- !is.na(pp$is_interco) & pp$is_interco
     n_interco <- length(unique(pp$parte[is_ic]))
-    non_ic_pp <- pp[!is_ic, , drop = FALSE]
-    non_ic_lc <- tolower(trimws(non_ic_pp$parte))
 
+    # The count is what the save writes (T54): the same rows
+    # (.politica_nuevos()) and the same selection per scope
+    # (.politica_a_escribir()), from this session's tables. It used to count
+    # the partners' invoices by Empresa·Moneda·Documento, without the ledger,
+    # so an AR and an AP with the same number covered each other.
+    nuevos    <- .politica_nuevos(sap, pp[!is_ic, , drop = FALSE], catalog, ov, user = "")
+    facturas  <- politica_facturas(sap)
     ex_moves  <- tryCatch(shared$policy_moves_db(), error = function(e) NULL)
     manual_db <- tryCatch(shared$moves_db(),          error = function(e) NULL)
-
-    all_inv_lc   <- tolower(trimws(all_inv$Parte))
-    has_doc_cols <- all(c("Empresa", "Moneda", "Documento") %in% names(all_inv))
-
-    # Document keys already in policy_moves / manually overridden
-    ex_doc_keys <- if (has_doc_cols && !is.null(ex_moves) && nrow(ex_moves))
-      paste(ex_moves$Empresa, ex_moves$Moneda, ex_moves$Documento, sep = "·")
-    else character()
-    man_doc_keys <- if (has_doc_cols && !is.null(manual_db) && nrow(manual_db))
-      paste(manual_db$Empresa, manual_db$Moneda, manual_db$Documento, sep = "·")
-    else character()
-
-    # Count invoices per scope at document level (falls back to partner-level when
-    # Empresa/Moneda/Documento columns are not present in the raw data)
-    count_for_scope <- function(scope) {
-      base_mask <- all_inv_lc %in% non_ic_lc
-      if (!has_doc_cols) return(sum(base_mask))
-      inv_keys <- paste(all_inv$Empresa, all_inv$Moneda, all_inv$Documento, sep = "·")
-      scope_mask <- switch(scope,
-        "new"         = base_mask & !inv_keys %in% ex_doc_keys,
-        "skip_manual" = base_mask & !inv_keys %in% man_doc_keys,
-        base_mask
-      )
-      sum(scope_mask)
-    }
+    count_for_scope <- function(scope)
+      NROW(.politica_a_escribir(scope, nuevos, ex_moves, manual_db, facturas))
 
     apply_ctx(list(
       count_for_scope = count_for_scope,
@@ -827,34 +840,13 @@ settings_companies_observer <- function(input, output, session, shared) {
     if (!is.null(sap$AP) && nrow(sap$AP))
       message("[POLICY_APPLY] sap$AP cols: ", paste(names(sap$AP), collapse = ", "))
 
-    new_moves <- dplyr::bind_rows(
-      if (!is.null(sap$AP) && nrow(sap$AP))
-        tryCatch(
-          compute_policy_moves(sap$AP, pp, catalog, overrides_df = ov,
-                               ledger = "AP", applied_by = user),
-          error = function(e) {
-            msg <- conditionMessage(e)
-            message("[POLICY_ERROR] AP: ", msg)
-            showNotification(tr("tablas.ajustes.aviso.error_politicas_ap", error = msg),
-                             type = "error", duration = 15)
-            NULL
-          }
-        )
-      else NULL,
-      if (!is.null(sap$AR) && nrow(sap$AR))
-        tryCatch(
-          compute_policy_moves(sap$AR, pp, catalog, overrides_df = ov,
-                               ledger = "AR", applied_by = user),
-          error = function(e) {
-            msg <- conditionMessage(e)
-            message("[POLICY_ERROR] AR: ", msg)
-            showNotification(tr("tablas.ajustes.aviso.error_politicas_ar", error = msg),
-                             type = "error", duration = 15)
-            NULL
-          }
-        )
-      else NULL
-    )
+    # The same rows the Apply modal counted (T54).
+    new_moves <- .politica_nuevos(sap, pp, catalog, ov, user, al_fallar = function(ledger, msg) {
+      message("[POLICY_ERROR] ", ledger, ": ", msg)
+      clave <- if (identical(ledger, "AP")) "tablas.ajustes.aviso.error_politicas_ap"
+               else "tablas.ajustes.aviso.error_politicas_ar"
+      showNotification(tr(clave, error = msg), type = "error", duration = 15)
+    })
 
     if (is.null(new_moves) || !nrow(new_moves)) {
       # Diagnostic: surface the actual Parte values on both sides so mismatch is visible
@@ -926,17 +918,12 @@ settings_companies_observer <- function(input, output, session, shared) {
       "new" = function(existing_moves) .policy_moves_sumar(existing_moves, new_moves, facturas),
       "skip_manual" = function(existing_moves) {
         man_db   <- tryCatch(shared$moves_db(), error = function(e) NULL)
-        man_keys <- if (!is.null(man_db) && nrow(man_db))
-          paste(man_db$ledger, man_db$Empresa, man_db$Moneda, man_db$Documento, sep = "·")
-        else character()
-        new_keys <- paste(new_moves$ledger, new_moves$Empresa,
-                          new_moves$Moneda, new_moves$Documento, sep = "·")
-        apply_these <- new_moves[!new_keys %in% man_keys, , drop = FALSE]
-        exist_keys <- paste(existing_moves$ledger, existing_moves$Empresa,
-                            existing_moves$Moneda, existing_moves$Documento, sep = "·")
+        man_keys <- .politica_docs_manuales(man_db)
+        # The same selection the Apply modal counted (T54).
+        apply_these <- .politica_a_escribir("skip_manual", new_moves, manual = man_db)
         # Keep existing for: manually-dated docs OR uncomputed partners
         keep_ex <- existing_moves[
-          exist_keys %in% man_keys |
+          .policy_move_doc(existing_moves) %in% man_keys |
             !tolower(trimws(existing_moves$Parte)) %in% computed_partes_lc, ,
           drop = FALSE
         ]

@@ -41,7 +41,8 @@ source("R/policy_engine.R")
 cargar("R/persistence.R", c("active_abonos_summary", ".normalize", ".schema_policy_moves"))
 cargar("R/settings/settings_companies.R",
        c(".policy_move_doc", ".policy_move_llave", ".policy_moves_sin_fecha", ".policy_moves_doc_unica",
-         ".policy_moves_cubiertos", ".policy_moves_sumar"))
+         ".policy_moves_cubiertos", ".policy_moves_sumar",
+         ".policy_moves_faltan"))   # T54: .policy_moves_sumar() adds these rows
 
 FC <- "Fecha de contabilización"
 # Two AP invoices of NCS in MXN with the same number 1001: one of 2025 (Dell),

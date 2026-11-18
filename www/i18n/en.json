@@ -759,6 +759,8 @@
   "tablas.ajustes.aviso.politica_no_encontrada": "Policy not found in the catalog (invalid identifier). Edit the partner, remove the policy marked with '?' and assign it again.",
   "tablas.ajustes.aviso.sin_datos_ar": "No dates: there are partners with receivables, but no receivables data is loaded. Check that the Receivables data is available.",
   "tablas.ajustes.aviso.sin_fechas": "No dates were generated (no documents with an assigned partner).",
+  "tablas.ajustes.alcance_cuenta.uno": "Adjusted dates will be computed for {n} document.",
+  "tablas.ajustes.alcance_cuenta.otros": "Adjusted dates will be computed for {n} documents.",
   "tablas.ajustes.aviso.politica_nombre_requerido": "The policy name is required.",
   "tablas.ajustes.aviso.politica_no_encontrada_recarga": "The policy was not found. Reload the panel.",
   "tablas.ajustes.aviso.error_guardar_asignaciones": "Error saving the assignments: {error}",
