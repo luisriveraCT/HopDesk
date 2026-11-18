@@ -2,14 +2,20 @@ name: Avisos semanales (D)
 
 # The weekly Panorama emails and the monthly archive (scripts/avisos_job.R).
 #
-# Started by hand only (workflow_dispatch) until the integrador reviews a
-# real run; the schedule is added after that, as its own change:
-#   lunes    Monday 8:00 Mexico      cron "0 14 * * 1"
-#   viernes  Friday 17:00 Mexico     cron "0 23 * * 5"
-#   archivo  Saturday 5:30 UTC       cron "30 5 * * 6"
-#
-# Test mode is the default: "prueba" sends nothing and leaves each email's
-# HTML in <cliente>/avisos/prueba/ for review.
+# Two ways to start (the schedule since the first real Monday was reviewed
+# and approved, 2026-11-17):
+#   - on schedule (UTC; Mexico has no daylight saving time since 2022):
+#       lunes    Monday 8:00 Mexico      cron "0 14 * * 1"
+#       viernes  Friday 17:00 Mexico     cron "0 23 * * 5"
+#       archivo  Saturday 5:30 UTC       cron "30 5 * * 6"
+#     A scheduled run has no inputs: its mode comes from the cron that
+#     started it, and it SENDS (it is the real weekly email). GitHub may
+#     start a scheduled run late, or skip it under load.
+#   - by hand (workflow_dispatch), where test mode is the default:
+#     "prueba" sends nothing and leaves each email's HTML in
+#     <cliente>/avisos/prueba/ for review.
+# The job never resends what it already sent (correos_enviados.rds), so a
+# manual run on the same day as a scheduled one does not duplicate it.
 #
 # THE LOG IS PUBLIC. The job prints only "evento=<count>" lines. Nothing here
 # echoes a variable, and inputs reach the script through env, never pasted
@@ -18,6 +24,10 @@ name: Avisos semanales (D)
 # tests/test_avisos_workflow.R guards all of this.
 
 on:
+  schedule:
+    - cron: "0 14 * * 1"
+    - cron: "0 23 * * 5"
+    - cron: "30 5 * * 6"
   workflow_dispatch:
     inputs:
       modo:
@@ -86,8 +96,10 @@ jobs:
 
       - name: Run the job
         env:
-          AVISOS_MODO: ${{ inputs.modo }}
-          AVISOS_PRUEBA: ${{ inputs.prueba }}
+          # By hand: the inputs. On schedule: the mode of the cron that
+          # started it, and a real send (prueba false).
+          AVISOS_MODO: ${{ github.event_name == 'schedule' && (github.event.schedule == '0 14 * * 1' && 'lunes' || github.event.schedule == '0 23 * * 5' && 'viernes' || github.event.schedule == '30 5 * * 6' && 'archivo' || 'desconocido') || inputs.modo }}
+          AVISOS_PRUEBA: ${{ github.event_name == 'schedule' && 'false' || inputs.prueba }}
           AVISOS_FECHA: ${{ inputs.fecha }}
           S3_BUCKET: antiguedad-rds-prod
           AWS_REGION: us-east-1
