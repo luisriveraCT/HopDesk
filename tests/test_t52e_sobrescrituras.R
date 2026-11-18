@@ -129,13 +129,15 @@ ok("a1: ten one-invoice documents, five old overrides written after them: identi
 ok("a2: …and with no overrides at all",
    identical(lib(diez, NULL), q(viejo$build_ledger_df(diez, "AP", empresa = NULL, moves_df = NULL, sap_ov = NULL))))
 
-# ── The Agenda's Referencia (pagar_hoy_module.R, .ph_ref_lookup()) ────────────
+# ── The Agenda's Referencia (pagar_hoy_module.R) ─────────────────────────────
 cat("-- the Agenda's Referencia --\n")
-# .ph_ref_lookup() lives inside the module's server: take its definition from
-# the parsed file (this branch's or cd2ea9b's) and run it on a stub `shared`.
-ref_lookup_de <- function(texto, shared) {
+# The function lives inside the module's server: take its definition from the
+# parsed file (this branch's or cd2ea9b's) and run it on a stub `shared`. Since
+# T52g it is .ph_referencias(emp, filas, overrides), one Referencia per Agenda
+# row; cd2ea9b's is .ph_ref_lookup(emp, overrides), a map by Documento.
+ref_lookup_de <- function(texto, shared, nombre = ".ph_referencias") {
   busca <- function(x) {
-    if (is.call(x) && identical(x[[1]], as.name("<-")) && identical(x[[2]], as.name(".ph_ref_lookup"))) return(x[[3]])
+    if (is.call(x) && identical(x[[1]], as.name("<-")) && identical(x[[2]], as.name(nombre))) return(x[[3]])
     if (is.call(x) || is.expression(x))
       for (k in seq_along(x)) if (is.call(x[[k]])) { r <- busca(x[[k]]); if (!is.null(r)) return(r) }
     NULL
@@ -156,16 +158,17 @@ ov_ph <- q(.normalize(bind_rows(
   ov(doc = "2002", codigo = NA_character_, at = "2026-06-01 18:00:00", quita_fecha = TRUE) |> dplyr::mutate(Factura_override = "F-2002-EDIT")),
   .schema_sap_overrides))
 lm_txt <- readLines("R/pagar_hoy_module.R", warn = FALSE, encoding = "UTF-8")
-lk_new <- s(ref_lookup_de(lm_txt, sh_ph(ov_ph))("NCS", overrides = agenda))
+lk_new <- s(stats::setNames(ref_lookup_de(lm_txt, sh_ph(ov_ph))("NCS", agenda, overrides = TRUE), agenda$Documento))
 viejo_txt <- system2("git", c("show", sprintf("%s:R/pagar_hoy_module.R", base_commit)), stdout = TRUE)
-lk_old <- s(ref_lookup_de(viejo_txt, sh_ph(ov_ph))("NCS", overrides = TRUE))
+lk_old <- s(ref_lookup_de(viejo_txt, sh_ph(ov_ph), ".ph_ref_lookup")("NCS", overrides = TRUE))
 ok("p1: a reused number (1001, the old edit from before the 2026 invoice) keeps SAP's reference, never the old No. Factura",
    identical(unname(lk_new["1001"]), "F-2026"))
 ok("p2: …where the code before T52e showed the old one (the bug)", identical(unname(lk_old["1001"]), "F-DELL-2025"))
 ok("p3: a number that does not repeat (2002, edited after its invoice): identical() to cd2ea9b for what the Agenda shows",
    identical(unname(lk_new["2002"]), unname(lk_old["2002"])) && identical(unname(lk_new["2002"]), "F-2002-EDIT"))
 ok("p4: without the Agenda rows (overrides = FALSE), the plain SAP map as before",
-   identical(s(ref_lookup_de(lm_txt, sh_ph(ov_ph))("NCS")), s(ref_lookup_de(viejo_txt, sh_ph(ov_ph))("NCS"))))
+   identical(s(ref_lookup_de(lm_txt, sh_ph(ov_ph))("NCS", agenda)),
+             unname(s(ref_lookup_de(viejo_txt, sh_ph(ov_ph), ".ph_ref_lookup")("NCS"))[agenda$Documento])))
 
 # ── Writing: upsert_sap_override() per invoice ────────────────────────────────
 cat("-- writing: upsert_sap_override() --\n")

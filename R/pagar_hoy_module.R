@@ -605,64 +605,110 @@ pagarHoyServer <- function(id, shared) {
       col_texto("Documento", "tablas.facturas.documento", recorte = FALSE),
       col_fecha("Vencimiento", "tablas.agenda.vencimiento"),
       col_dinero("Importe", "tablas.facturas.importe", moneda = "Moneda"))
-    # Referencia -- the Pagos table's column and the PPL's concepto:
-    # Documento -> Factura for ONE company, since the same number exists in
-    # two (found in T06; it used to take whichever company came first). SAP
-    # rows first, then (overrides = TRUE, the table) the SAP field overrides,
-    # then manual entries. A source without an Empresa column isn't
-    # filtered. SAP and the stores may name the company in full or by its
-    # initials (shared$company_map()).
-    .ph_ref_lookup <- function(emp, overrides = FALSE) {
+    # Referencia -- the Pagos table's column and the PPL's concepto, the text
+    # the supplier sees in its bank: ONE per Agenda row of `filas`, from that
+    # row's own invoice, "" when there is none (each caller falls back to the
+    # Documento). T52g: a lookup by Documento alone could hand a reused number
+    # ANOTHER invoice's Factura (another year, another currency, a manual with
+    # the same number). For one company, since the same number exists in two
+    # (T06); SAP and the stores may name it in full or by its initials
+    # (shared$company_map()); a source without an Empresa column isn't
+    # filtered. By the row's source:
+    #   - ERP row: SAP's row with the same Moneda, Documento and "Fecha de
+    #     contabilización" = fecha_factura. A row without fecha_factura (older
+    #     than agenda_filas_factura) takes its document's Factura only while
+    #     the document is one invoice (.politica_doc_unica, the T52 rule). A
+    #     SAP without the Moneda or the date column doesn't filter on it.
+    #   - overrides = TRUE (the table): over that, the ✎'s override of ITS
+    #     invoice (T52e: sobrescrituras_por_factura on number and posting
+    #     date, never the number alone). Company and currency were never
+    #     compared there (de_emp already keeps this company).
+    #   - manual row: its manual_inv row by id (stage_manual_row_to_agenda
+    #     copies the id); an older row whose id matches none, Moneda +
+    #     Documento while the manuals have one Factura for it.
+    #   - source NA (older Agenda rows): SAP by invoice first; without a SAP
+    #     invoice, the manual as a manual row. Never a manual over a SAP
+    #     invoice that matches.
+    # A manual no longer overrides a SAP row: the ✎ corrects a SAP invoice's
+    # Referencia (integrator, 2026-11-18).
+    .ph_referencias <- function(emp, filas, overrides = FALSE) {
+      n   <- NROW(filas)
+      out <- rep("", n)
+      if (!n) return(out)
       cmap   <- shared$company_map()
       claves <- c(emp, names(cmap)[unname(cmap) == emp])
       de_emp <- function(df) {
         if (is.null(df) || !nrow(df) || !"Empresa" %in% names(df)) return(df)
         df[trimws(as.character(df[["Empresa"]])) %in% claves, , drop = FALSE]
       }
-      pares <- function(df, valor) {
-        if (is.null(df) || !nrow(df)) return(character(0))
-        lk <- stats::setNames(trimws(as.character(df[[valor]] %||% "")), trimws(as.character(df[["Documento"]])))
-        lk[nzchar(names(lk))]
-      }
+      col <- function(df, nm) if (nm %in% names(df)) df[[nm]] else rep(NA, NROW(df))
+      txt <- function(x) { x <- trimws(as.character(x)); x[is.na(x)] <- ""; x }
+      doc <- txt(filas[["Documento"]])
+      mon <- txt(col(filas, "Moneda"))
+      fec <- suppressWarnings(as.Date(col(filas, "fecha_factura")))
+      src <- as.character(col(filas, "source"))
+      es_manual <- !is.na(src) & !is_erp_sourced(src)
+      en_sap    <- rep(FALSE, n)
+
+      # SAP, by invoice.
       sap <- de_emp(tryCatch(shared$sap_data()[["AP"]], error = function(e) NULL))
-      lk  <- if (!is.null(sap) && all(c("Factura", "Documento") %in% names(sap)))
-        stats::setNames(trimws(as.character(sap[["Factura"]] %||% "")), trimws(as.character(sap[["Documento"]])))
-      else character(0)
-      if (!isFALSE(overrides)) {
-        # `overrides`: the Agenda rows on screen. Each takes the override of
-        # ITS invoice (T52e): sobrescrituras_por_factura() on number and
-        # posting date (fecha_factura), never the number alone, which SAP may
-        # reuse -- the old invoice's No. Factura must not label the new one.
-        # Company and currency were never compared here (de_emp() already
-        # keeps this company), so both sides get the same ones. A number
-        # whose rows disagree keeps SAP's reference.
-        ov    <- tryCatch(shared$sap_ov_db(), error = function(e) NULL)
-        filas <- if (is.data.frame(overrides) && nrow(overrides))
-          de_emp(overrides[overrides[["ledger"]] %in% "AP", , drop = FALSE]) else NULL
-        if (!is.null(ov) && nrow(ov) && NROW(filas) &&
+      if (!is.null(sap) && nrow(sap) && all(c("Factura", "Documento") %in% names(sap))) {
+        s_doc <- txt(sap$Documento); s_fac <- txt(sap$Factura)
+        s_mon <- if ("Moneda" %in% names(sap)) txt(sap$Moneda) else NULL
+        s_fec <- if ("Fecha de contabilización" %in% names(sap))
+          suppressWarnings(as.Date(sap[["Fecha de contabilización"]])) else as.Date(rep(NA_character_, nrow(sap)))
+        unica <- .politica_doc_unica(paste(s_mon %||% "", s_doc, sep = "\r"), s_fec)
+        for (i in which(!es_manual & nzchar(doc))) {
+          c_i <- s_doc == doc[i] & (if (is.null(s_mon)) TRUE else s_mon == mon[i])
+          if (!any(c_i)) next
+          j <- which(c_i & !is.na(s_fec) & s_fec == fec[i])          # its own invoice
+          if (!length(j) && (if (is.na(fec[i])) all(unica[c_i]) else all(is.na(s_fec[c_i]))))
+            j <- which(c_i)                                           # undated: one invoice only
+          if (length(j)) { out[i] <- s_fac[j[1L]]; en_sap[i] <- TRUE }
+        }
+      }
+
+      if (isTRUE(overrides)) {
+        ov  <- tryCatch(shared$sap_ov_db(), error = function(e) NULL)
+        sel <- which(!es_manual & col(filas, "ledger") %in% "AP")
+        if (!is.null(ov) && nrow(ov) && length(sel) &&
             all(c("ledger", "Documento", "Factura_override") %in% names(ov))) {
           ov <- de_emp(ov[ov[["ledger"]] == "AP" & !is.na(ov[["Factura_override"]]), , drop = FALSE])
           if (NROW(ov)) {
             ov$Empresa <- emp; ov$Moneda <- ""; ov$Documento <- trimws(as.character(ov$Documento))
-            una <- data.frame(Empresa = emp, Moneda = "", Documento = trimws(as.character(filas$Documento)),
-                              `Fecha de contabilización` = as.Date(filas[["fecha_factura"]] %||% rep(NA, nrow(filas))),
+            una <- data.frame(Empresa = emp, Moneda = "", Documento = doc[sel],
+                              `Fecha de contabilización` = fec[sel],
                               check.names = FALSE, stringsAsFactors = FALSE)
-            i <- sobrescrituras_por_factura(una, ov, "AP")
-            v <- trimws(as.character(ov$Factura_override[i]))
-            v[is.na(i) | is.na(v) | !nzchar(v)] <- NA_character_
-            o <- vapply(split(v, una$Documento), function(x)
-              if (all(!is.na(x)) && length(unique(x)) == 1L) x[1] else NA_character_, character(1))
-            o <- o[!is.na(o) & nzchar(names(o))]
-            lk[names(o)] <- o
+            k <- sobrescrituras_por_factura(una, ov, "AP")
+            v <- txt(ov$Factura_override[k])
+            out[sel][nzchar(v)] <- v[nzchar(v)]
           }
         }
       }
+
       man <- tryCatch(shared$manual_inv(), error = function(e) NULL)
       if (!is.null(man) && nrow(man) && all(c("Documento", "Factura", "ledger") %in% names(man))) {
-        m <- pares(de_emp(man[man$ledger == "AP", , drop = FALSE]), "Factura")
-        lk[names(m)] <- m   # manual entries override SAP
+        man <- de_emp(man[man$ledger %in% "AP", , drop = FALSE])
+        busca <- which((es_manual | is.na(src)) & !en_sap)
+        if (NROW(man) && length(busca)) {
+          m_fac <- txt(man$Factura)
+          hecho <- integer(0)
+          if ("id" %in% names(man)) {
+            ids <- as.character(col(filas, "id"))[busca]
+            j   <- match(ids, as.character(man$id))
+            j[is.na(ids)] <- NA_integer_
+            out[busca[!is.na(j)]] <- m_fac[j[!is.na(j)]]
+            hecho <- busca[!is.na(j)]
+          }
+          m_doc <- txt(man$Documento)
+          m_mon <- if ("Moneda" %in% names(man)) txt(man$Moneda) else NULL
+          for (i in setdiff(busca, hecho)) {
+            f <- unique(m_fac[m_doc == doc[i] & (if (is.null(m_mon)) TRUE else m_mon == mon[i])])
+            if (length(f) == 1L) out[i] <- f
+          }
+        }
       }
-      lk
+      out
     }
 
     # "Ver datos de origen" (the class's crudos, in the Editar bar): the raw
@@ -987,13 +1033,12 @@ pagarHoyServer <- function(id, shared) {
         s_cur   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP", Moneda == cur_sel)
         if (!nrow(s_cur)) return(.ph_ap_vacia)
 
-        ref_lkup_tbl <- .ph_ref_lookup(emp, overrides = s_cur)   # the rows on screen (T52e)
-
         sess_ovr <- tryCatch(.session_alias_overrides(), error = function(e) list())
         ann <- .annotate_ap_cached(s_cur, emp) |>
           dplyr::arrange(FechaVenc)
         if (!"Codigo"     %in% names(ann)) ann[["Codigo"]]     <- NA_character_
         if (!"tipo_item" %in% names(ann)) ann[["tipo_item"]] <- NA_character_
+        ref_tbl <- .ph_referencias(emp, ann, overrides = TRUE)   # one per row, with the ✎ (T52e/T52g)
         ann <- ann |> dplyr::mutate(
             live_alias = {
               keys <- paste0(emp, "|", toupper(trimws(Parte)))
@@ -1007,11 +1052,7 @@ pagarHoyServer <- function(id, shared) {
               }
               resolved
             },
-            Referencia = {
-              doc <- trimws(as.character(Documento))
-              ref <- if (length(ref_lkup_tbl)) trimws(ref_lkup_tbl[doc] %||% "") else rep("", length(doc))
-              dplyr::if_else(nzchar(ref) & !is.na(ref), ref, Documento)
-            })
+            Referencia = dplyr::if_else(nzchar(ref_tbl), ref_tbl, Documento))
         data.frame(
           id          = ann$id,
           Archivo     = ann$ppl_status,
@@ -1162,14 +1203,13 @@ pagarHoyServer <- function(id, shared) {
 
         # Build Referencia lookup (Documento → Factura) — same logic as download handler
         # so the preview shows the concepto that will actually appear in the PPL file.
-        ref_lkup_prev <- .ph_ref_lookup(emp)
-        # Helper: resolve Referencia for a Documento; falls back to Documento
-        .ref_label <- function(doc) {
+        # One per row, by id (T52g): a row's own invoice, not its number's.
+        ref_prev <- stats::setNames(.ph_referencias(emp, ann), as.character(ann$id))
+        # Helper: resolve Referencia for a row; falls back to Documento
+        .ref_label <- function(id, doc) {
           d <- trimws(as.character(doc))
-          r <- if (length(ref_lkup_prev)) {
-            rv <- ref_lkup_prev[d]; if (is.na(rv)) "" else as.character(rv)
-          } else ""
-          if (nzchar(r)) r else d
+          r <- unname(ref_prev[as.character(id)])
+          if (length(r) && !is.na(r) && nzchar(r)) r else d
         }
 
         # Origin accounts for selector
@@ -1203,7 +1243,7 @@ pagarHoyServer <- function(id, shared) {
                     tags$span(class = "badge bg-success me-1", ok$alias[i]),
                     ok$Parte[i], " — ", fmt_money(ok$Importe[i]),
                     tags$span(class = "text-muted ms-1",
-                              paste0("[", .ref_label(ok$Documento[i]), "]"))
+                              paste0("[", .ref_label(ok$id[i], ok$Documento[i]), "]"))
                   )
                 )
               )
@@ -1219,7 +1259,7 @@ pagarHoyServer <- function(id, shared) {
                     icon("triangle-exclamation"),
                     skip$Parte[i], " — ", fmt_money(skip$Importe[i]),
                     tags$span(class = "text-muted ms-1",
-                              paste0("[", .ref_label(skip$Documento[i]), "]"))
+                              paste0("[", .ref_label(skip$id[i], skip$Documento[i]), "]"))
                   )
                 )
               ),
@@ -1335,7 +1375,7 @@ pagarHoyServer <- function(id, shared) {
           }
           # Look up Factura (Referencia) from live SAP data to use as concepto.
           # Falls back to Documento if Factura is missing or blank.
-          ref_lkup <- .ph_ref_lookup(emp)
+          ref_ind <- .ph_referencias(emp, ann)   # one per row, its own invoice (T52g)
 
           ppl_rows <- ann |>
             dplyr::transmute(
@@ -1346,9 +1386,7 @@ pagarHoyServer <- function(id, shared) {
               importe    = Importe,
               concepto   = {
                 doc <- trimws(as.character(Documento))
-                ref <- if (length(ref_lkup)) as.character(ref_lkup[doc]) else rep("", length(doc))
-                ref[is.na(ref)] <- ""
-                substr(ifelse(nzchar(ref), ref, doc), 1, 75)
+                substr(ifelse(nzchar(ref_ind), ref_ind, doc), 1, 75)
               }
             )
 
@@ -2926,15 +2964,6 @@ pagarHoyServer <- function(id, shared) {
         showNotification(tr("tablas.pagos.sin_pagos"), type = "warning"); return()
       }
 
-      # Build Referencia lookup (Documento → Factura) same as download content fn
-      # One lookup per company: the same number exists in two.
-      lk_pv <- lapply(stats::setNames(nm = unique(s$Empresa)), .ph_ref_lookup)
-      .ref_pv <- function(emp, doc) {
-        d  <- trimws(as.character(doc))
-        rv <- lk_pv[[emp]][d]
-        r  <- if (length(rv) && !is.na(rv)) as.character(rv) else ""
-        if (nzchar(r)) r else d
-      }
 
       # The ZIP's test, row by row: the same function and the same grouping
       # (company, then currency) as download_all.
@@ -2950,6 +2979,15 @@ pagarHoyServer <- function(id, shared) {
       .descargar_apertura(apertura)
       .descargar_base(b)
 
+      # Referencia, as the download writes it: one per row, its own invoice,
+      # per company since the same number exists in two (T52g).
+      r_pv <- character(nrow(b))
+      for (emp in unique(b$Empresa)) {
+        i <- which(b$Empresa == emp)
+        r_pv[i] <- .ph_referencias(emp, b[i, , drop = FALSE])
+      }
+      b$ref_pv <- ifelse(nzchar(r_pv), r_pv, trimws(as.character(b$Documento)))   # a column: arrange() keeps it on its row
+
       # One row per AP item, sorted by Empresa then FechaVenc
       tbl <- b |>
         dplyr::arrange(Empresa, Moneda, FechaVenc) |>
@@ -2960,7 +2998,7 @@ pagarHoyServer <- function(id, shared) {
           Empresa    = Empresa,
           Moneda     = Moneda,
           Parte      = Parte,
-          Referencia = unname(mapply(.ref_pv, Empresa, Documento)),
+          Referencia = ref_pv,
           Importe    = Importe
         ) |>
         as.data.frame()
@@ -3018,7 +3056,7 @@ pagarHoyServer <- function(id, shared) {
               b <- cuenta_data_z$banco[cuenta_data_z$cuenta == cuenta_origen]
               if (length(b)) b[1L] else NA_character_
             } else NA_character_
-            ref_lkup_z <- .ph_ref_lookup(emp)
+            ref_z <- .ph_referencias(emp, ann)   # one per row, its own invoice (T52g)
 
             ppl_rows <- ann |> dplyr::transmute(
               alias = alias, clabe_dest = clabe_dest,
@@ -3027,9 +3065,7 @@ pagarHoyServer <- function(id, shared) {
               importe = Importe,
               concepto = {
                 doc <- trimws(as.character(Documento))
-                ref <- if (length(ref_lkup_z)) as.character(ref_lkup_z[doc]) else rep("", length(doc))
-                ref[is.na(ref)] <- ""
-                substr(ifelse(nzchar(ref), ref, doc), 1, 75)
+                substr(ifelse(nzchar(ref_z), ref_z, doc), 1, 75)
               })
             fname <- file.path(tmpdir,
               paste0("pagos_", emp, "_", cur, "_", format(hoy(), "%d%m%Y"), "_001.txt"))
@@ -3095,10 +3131,8 @@ pagarHoyServer <- function(id, shared) {
                   b <- datos_c$banco[datos_c$cuenta == origen]
                   if (length(b)) b[1L] else NA_character_
                 } else NA_character_
-                ref_i <- .ph_ref_lookup(emp)
                 doc_i <- trimws(as.character(rows_i$Documento))
-                con_i <- if (length(ref_i)) as.character(ref_i[doc_i]) else rep("", length(doc_i))
-                con_i[is.na(con_i)] <- ""
+                con_i <- .ph_referencias(emp, rows_i)   # one per row, its own invoice (T52g)
                 ppl_i <- tibble::tibble(
                   alias = "", clabe_dest = "000000000000000000", banco_dest = "",
                   medio_pago = ppl_medio_pago(cur, ""),
