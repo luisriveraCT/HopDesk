@@ -63,8 +63,9 @@ panorama_cobros_hoy <- function(df_ar, hoy = Sys.Date(), base = MONEDA_BASE_OMIS
 
 # What "Por cobrar hoy" leaves out: the same CxC rows whose effective date
 # already went by with no new one (the weekly email's "No incluye … ya
-# vencidos sin fecha nueva", T45/T46b).
-panorama_cobros_atrasados <- function(df_ar, hoy = Sys.Date(), base = MONEDA_BASE_OMISION) {
+# vencidos sin fecha nueva", T45/T46b). `hoy` has no default: it is the
+# client's day, which the caller knows (the server's Sys.Date() is not, CM27).
+panorama_cobros_atrasados <- function(df_ar, hoy, base = MONEDA_BASE_OMISION) {
   if (is.null(df_ar) || !is.data.frame(df_ar) || !nrow(df_ar) || !"FechaEff" %in% names(df_ar))
     return(.pan_por_moneda(character(), numeric(), base))
   f <- df_ar[!is.na(df_ar$FechaEff) & as.Date(df_ar$FechaEff) < hoy, , drop = FALSE]

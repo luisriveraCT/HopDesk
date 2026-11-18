@@ -64,6 +64,8 @@ at <- panorama_cobros_atrasados(ar, HOY)
 ok("panorama_cobros_atrasados: the CxC rows whose date already went by, by currency (the email's rule)",
    identical(at$moneda, c("MXN", "USD")) && identical(at$total, c(500, 7)))
 ok("panorama_cobros_atrasados: nothing without FechaEff", nrow(panorama_cobros_atrasados(data.frame(x = 1), HOY)) == 0)
+ok("panorama_cobros_atrasados: `hoy` has no default (the client's day, never the server's Sys.Date(); CM27)",
+   identical(formals(panorama_cobros_atrasados)$hoy, quote(expr = )))
 
 cat("\n-- Panorama's cards, drawn by the server --\n")
 ph <- data.frame(ledger = "AP", status = "pending", tipo_item = "factura", Moneda = "MXN",
