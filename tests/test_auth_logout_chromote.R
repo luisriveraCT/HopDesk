@@ -103,6 +103,12 @@ server <- function(input, output, session) {
     req(res_auth$user)
     paste("Logged in as:", res_auth$user)
   })
+  # The logout block of app.R calls .log_logout_once() first (761ad92), a closure of
+  # the real server (app.R, log_action of the session length). This app has
+  # none of what it reads; without it the observer stopped before firing
+  # .shinymanager_logout and Salir did nothing here (T53). What this test
+  # guards is the revocation, not that log line.
+  .log_logout_once <- function() invisible(NULL)
 
 %s
 }
