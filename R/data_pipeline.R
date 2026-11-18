@@ -134,19 +134,42 @@ standardize_party <- function(df, ledger) {
 }
 
 # ── Deduplication ──────────────────────────────────────────────────────────────
-# Keep the newest snapshot per (Empresa, Moneda, Documento, due date).
-# Rows without a Documento are kept as-is (cannot safely collapse them).
-
+# One row per invoice: the same invoice twice (e.g. a page SAP sends again
+# while it paginates) is one. The invoice is Empresa + Moneda + Documento +
+# its posting date ("Fecha de contabilización") + due date + Parte (T52c):
+# the ERP reuses a DocNum in another year, and two numbering series can give
+# the same DocNum to two partners; the old key (without posting date and
+# Parte) merged those and lost one balance. Installments (another due date)
+# stay apart, as before. A snapshot without the posting date (NA) is keyed as
+# before. Rows without a Documento are kept as-is (cannot safely collapse
+# them). The first row of each invoice stays; when its copies carry other
+# balances, a [DEDUPE] line says how many (counts only, no client data).
+# The new key parts go after the due date in group_by(), so without a
+# collision the rows come out in the same order as before (T52's identical()
+# check against master).
 dedupe_invoices <- function(df) {
-  has_doc  <- !is.na(df$Documento) & nzchar(df$Documento)
+  has_doc <- !is.na(df$Documento) & nzchar(df$Documento)
+  # A snapshot may lack them (NA: keyed as before); taken out again below.
+  faltan <- setdiff(c("Fecha de contabilización", "Parte"), names(df))
+  for (n in faltan) df[[n]] <- NA
 
   with_doc <- df[has_doc, ] |>
     arrange(desc(!is.na(FechaVenc_Original)), desc(FechaVenc_Original)) |>
-    group_by(Empresa, Moneda, Documento, FechaVenc_Original) |>
-    slice_head(n = 1) |>
-    ungroup()
+    group_by(Empresa, Moneda, Documento, FechaVenc_Original, `Fecha de contabilización`, Parte)
 
-  bind_rows(with_doc, df[!has_doc, ])
+  if ("Saldo vencido" %in% names(df)) {
+    copias <- with_doc |>
+      summarise(n = n(), saldos = dplyr::n_distinct(.data[["Saldo vencido"]], na.rm = TRUE), .groups = "drop")
+    distintas <- sum(copias$n > 1L & copias$saldos > 1L)
+    if (distintas > 0L) {
+      tipo <- unique(stats::na.omit(as.character(df$Tipo)))
+      message(sprintf("[DEDUPE] %s: %d invoice(s) arrived more than once with different balances; kept the first row",
+                      if (length(tipo)) paste(tipo, collapse = "/") else "?", distintas))
+    }
+  }
+
+  out <- bind_rows(with_doc |> slice_head(n = 1) |> ungroup(), df[!has_doc, ])
+  out[, setdiff(names(out), faltan), drop = FALSE]
 }
 
 # ── Policy date of each invoice (T52) ─────────────────────────────────────────
