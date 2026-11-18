@@ -586,7 +586,9 @@ pasivos_table_module_server <- function(id, shared) {
                            choices  = empresa_choices,
                            selected = emp_sel),
         shiny::selectInput(ns("ppm_moneda"),    tr("tablas.pasivos.manual.moneda"),
-                           choices = monedas_opciones(primero = primero, idioma = hd_idioma()), selected = moneda),
+                           # a "m" modal's half column (~220 px): only the code (T48)
+                           choices = monedas_opciones(primero = primero, idioma = hd_idioma(), etiqueta = "codigo"),
+                           selected = moneda),
         shiny::textInput(ns("ppm_documento"),   tr("tablas.pasivos.manual.documento"), value = "")
       ),
       shiny::column(6,

@@ -689,7 +689,8 @@ pasivos_step_ui_cargos <- function(draft, cargos_list = list(),
         ),
         shiny::column(4,
           shiny::selectInput("pwiz_residual_moneda", "Moneda",
-                             choices  = monedas_opciones(primero = primero, idioma = hd_idioma()),
+                             # a column of 4 (~230 px): only the code (T48)
+                             choices  = monedas_opciones(primero = primero, idioma = hd_idioma(), etiqueta = "codigo"),
                              selected = res_moneda)
         ),
         shiny::column(4,
@@ -850,7 +851,8 @@ pasivos_cargo_row_ui <- function(i, cargo = list(), base = MONEDA_BASE_OMISION, 
     ),
     shiny::div(style = "width:90px;",
       shiny::selectInput(paste0("pwiz_cargo_moneda_", i), if (i == 1L) "Moneda" else NULL,
-                         choices = monedas_opciones(primero = primero, idioma = hd_idioma()),
+                         # 90 px: only the code fits ("USD"), T48
+                         choices = monedas_opciones(primero = primero, idioma = hd_idioma(), etiqueta = "codigo"),
                          selected = cargo$moneda %||% base)
     ),
     shiny::div(style = "width:150px;",

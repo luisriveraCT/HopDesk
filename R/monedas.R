@@ -49,10 +49,14 @@ moneda_nombre <- function(x, idioma = "es") {
 
 # Choices for a selector: "MXN — Peso mexicano" = "MXN". `primero` go on
 # top in that order (the base, then the data's), the rest alphabetical.
-monedas_opciones <- function(primero = character(), idioma = "es") {
+# `etiqueta`: "nombre" (the default, the code and the currency's name) or
+# "codigo" (only the code, "USD" = "USD") for a narrow selector -- the same
+# values in the same order either way (T48, integrador's OK).
+monedas_opciones <- function(primero = character(), idioma = "es", etiqueta = c("nombre", "codigo")) {
+  etiqueta <- match.arg(etiqueta)
   primero <- unique(primero[moneda_valida(primero)])
   cods <- c(primero, setdiff(.MONEDAS$codigo, primero))
-  stats::setNames(cods, paste0(cods, " — ", moneda_nombre(cods, idioma)))
+  stats::setNames(cods, if (etiqueta == "codigo") cods else paste0(cods, " — ", moneda_nombre(cods, idioma)))
 }
 
 # ── Monedas en los datos ─────────────────────────────────────────────────────
