@@ -429,6 +429,7 @@ is_erp_sourced <- function(source) {
 # ── Source modules ────────────────────────────────────────────────────────────
 source("R/i18n.R")
 source("R/monedas.R")
+source("R/zona.R")
 source("R/hd_registro.R")
 source("R/hd_piezas.R")
 source("R/hd_columnas.R")

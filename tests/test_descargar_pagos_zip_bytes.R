@@ -27,6 +27,9 @@ ok <- function(label, expr) {
 
 invisible(capture.output(source("tests/helpers/agenda_fixture_app.R")))
 Sys.Date <- function() as.Date(Sys.getenv("ZIP_FECHA", "2026-11-05"))   # the module's functions live here too
+# Since CM27 the files are dated with the client's day (hoy_en(), from the
+# clock): noon in Mexico of that same date.
+Sys.time <- function() as.POSIXct(paste(Sys.getenv("ZIP_FECHA", "2026-11-05"), "12:00:00"), tz = "America/Mexico_City")
 catalogo_zip <- dplyr::bind_rows(catalogo, tibble::tibble(
   nombre = "SERVICIOS BAJIO SA", alias = "SERVBAJIO", clabe = "030180003333333333",
   medio_pago = "SPEI", banco = "030", Empresa = NA_character_))

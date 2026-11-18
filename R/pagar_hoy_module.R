@@ -222,6 +222,11 @@ pagarHoyServer <- function(id, shared) {
     # moneda_base_cliente, as in the test apps). Only here, never global.
     moneda_base <- reactive(tryCatch(shared$moneda_base_cliente()$moneda, error = function(e) NULL) %||%
                               MONEDA_BASE_OMISION)
+    # The client's zone (CM27): its business day dates the bank payment files
+    # and the proposed payment date, not the server's clock. ZONA_OMISION
+    # until the client setting exists (CM27 fase 1: only the source changes).
+    zona <- reactive(tryCatch(shared$zona_cliente()$zona, error = function(e) NULL) %||% ZONA_OMISION)
+    hoy  <- function() hoy_en(isolate(zona()))
     # The currency a company's selector shows; its base until it is drawn.
     moneda_sel <- function(emp) input[[paste0("bal_cur_", emp)]] %||% moneda_base()
     # Currencies of a company's active bank accounts (Settings → Cuentas de
@@ -1267,7 +1272,7 @@ pagarHoyServer <- function(id, shared) {
       output[[paste0("dl_ppl_", emp)]] <- downloadHandler(
         filename = function() {
           paste0("pagos_", emp, "_",
-                 format(Sys.Date(), "%d%m%Y"), "_001.txt")
+                 format(hoy(), "%d%m%Y"), "_001.txt")
         },
         content = function(file) {
           s_emp   <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
@@ -1340,10 +1345,10 @@ pagarHoyServer <- function(id, shared) {
           # entry -- the log always exists first.
           .log_pago_generado(
             shared, emp, cur_sel, cuenta_origen, ppl_rows,
-            fname = paste0("pagos_", emp, "_", format(Sys.Date(), "%d%m%Y"), "_001.txt"),
+            fname = paste0("pagos_", emp, "_", format(hoy(), "%d%m%Y"), "_001.txt"),
             source_type = "individual", banco_origen = banco_origen
           )
-          lines <- generate_ppl(ppl_rows, cuenta_origen, Sys.Date(), 1L)
+          lines <- generate_ppl(ppl_rows, cuenta_origen, hoy(), 1L)
           write_ppl(lines, file)
           avisos_actividad(shared$effective_client_id(), "generar_archivo_pago", shared$current_user(), list(cuerpo = paste0(emp, " · ", nrow(ppl_rows), " pago(s) · ", cur_sel)))
           removeModal()
@@ -1660,7 +1665,7 @@ pagarHoyServer <- function(id, shared) {
             div(class = "col-md-5",
               tags$label("Fecha de pago", class = "form-label small"),
               dateInput(ns(paste0("conf_fecha_ap_", emp)), NULL,
-                        value = Sys.Date(), format = "dd/mm/yyyy",
+                        value = hoy(), format = "dd/mm/yyyy",
                         language = "es", width = "100%")
             )
           ),
@@ -1682,7 +1687,7 @@ pagarHoyServer <- function(id, shared) {
         cuenta_sel_raw <- input[[paste0("conf_cuenta_ap_", emp)]]
         cuenta_sel <- if (!is.null(cuenta_sel_raw) && nzchar(trimws(as.character(cuenta_sel_raw)))) cuenta_sel_raw else NA_character_
         fecha_pago <- tryCatch(as.Date(input[[paste0("conf_fecha_ap_", emp)]]),
-                               error = function(e) Sys.Date())
+                               error = function(e) hoy())
 
         # Split: abono rows go to abonos_db; invoice rows go through normal path
         abono_rows   <- rows |> dplyr::filter(!is.na(tipo_item) & tipo_item == "abono")
@@ -2044,7 +2049,7 @@ pagarHoyServer <- function(id, shared) {
             div(class = "col-md-5",
               tags$label("Fecha de cobro", class = "form-label small"),
               dateInput(ns(paste0("conf_fecha_ar_", emp)), NULL,
-                        value = Sys.Date(), format = "dd/mm/yyyy",
+                        value = hoy(), format = "dd/mm/yyyy",
                         language = "es", width = "100%")
             )
           ),
@@ -2066,7 +2071,7 @@ pagarHoyServer <- function(id, shared) {
         cuenta_sel_raw <- input[[paste0("conf_cuenta_ar_", emp)]]
         cuenta_sel <- if (!is.null(cuenta_sel_raw) && nzchar(trimws(as.character(cuenta_sel_raw)))) cuenta_sel_raw else NA_character_
         fecha_cobro<- tryCatch(as.Date(input[[paste0("conf_fecha_ar_", emp)]]),
-                               error = function(e) Sys.Date())
+                               error = function(e) hoy())
 
         # Split: abono rows go to abonos_db; invoice rows go through normal path
         abono_rows   <- rows |> dplyr::filter(!is.na(tipo_item) & tipo_item == "abono")
@@ -2961,7 +2966,7 @@ pagarHoyServer <- function(id, shared) {
 
     # ── Download all — Step 2: ZIP content ───────────────────────────────────
     output$download_all <- downloadHandler(
-      filename = function() paste0("pagos_todos_", format(Sys.Date(), "%d%m%Y"), ".zip"),
+      filename = function() paste0("pagos_todos_", format(hoy(), "%d%m%Y"), ".zip"),
       content  = function(file) {
         # No file at all without the permission: stop() before anything is built.
         if (!puede_o_avisa(shared, "can_register_payments")) stop(tr("permisos.denegado",
@@ -3006,7 +3011,7 @@ pagarHoyServer <- function(id, shared) {
                 substr(ifelse(nzchar(ref), ref, doc), 1, 75)
               })
             fname <- file.path(tmpdir,
-              paste0("pagos_", emp, "_", cur, "_", format(Sys.Date(), "%d%m%Y"), "_001.txt"))
+              paste0("pagos_", emp, "_", cur, "_", format(hoy(), "%d%m%Y"), "_001.txt"))
             # Logged BEFORE write_ppl() writes this PPL file to disk -- same
             # "log exists even before the document is produced" ordering as
             # the per-company handler above. This is the per-FILE record
@@ -3017,7 +3022,7 @@ pagarHoyServer <- function(id, shared) {
               shared, emp, cur, cuenta_origen, ppl_rows,
               fname = basename(fname), source_type = "zip_bulk", banco_origen = banco_origen_z
             )
-            write_ppl(generate_ppl(ppl_rows, cuenta_origen, Sys.Date(), 1L), fname)
+            write_ppl(generate_ppl(ppl_rows, cuenta_origen, hoy(), 1L), fname)
             results[[length(results) + 1L]] <- list(
               fname = fname,
               summary = list(
@@ -3079,10 +3084,10 @@ pagarHoyServer <- function(id, shared) {
                   importe = rows_i$Importe,
                   concepto = substr(ifelse(nzchar(con_i), con_i, doc_i), 1, 75))
                 fname_i <- file.path(tmpdir,
-                  paste0("pagos_", emp, "_", cur, "_", format(Sys.Date(), "%d%m%Y"), "_002.txt"))
+                  paste0("pagos_", emp, "_", cur, "_", format(hoy(), "%d%m%Y"), "_002.txt"))
                 .log_pago_generado(shared, emp, cur, origen, ppl_i, fname = basename(fname_i),
                                    source_type = "zip_bulk_sin_cuenta", banco_origen = banco_o)
-                write_ppl(generate_ppl(ppl_i, origen, Sys.Date(), 2L), fname_i)
+                write_ppl(generate_ppl(ppl_i, origen, hoy(), 2L), fname_i)
                 results[[length(results) + 1L]] <- list(
                   fname = fname_i,
                   summary = list(

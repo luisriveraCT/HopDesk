@@ -32,6 +32,7 @@ ok <- function(label, expr) {
 
 invisible(capture.output(source("tests/helpers/agenda_fixture_app.R")))
 Sys.Date <- function() as.Date("2026-11-05")
+Sys.time <- function() as.POSIXct("2026-11-05 12:00:00", tz = "America/Mexico_City")   # CM27: the client's day
 catalogo_zip <- dplyr::bind_rows(catalogo, tibble::tibble(
   nombre = "SERVICIOS BAJIO SA", alias = "SERVBAJIO", clabe = "030180003333333333",
   medio_pago = "SPEI", banco = "030", Empresa = NA_character_))

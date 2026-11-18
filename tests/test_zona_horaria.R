@@ -45,7 +45,8 @@ ok("the line carries no client data (zone, clock and days only)",
 # Kept on purpose, with their reason:
 EXCEPCIONES <- c(
   "R/fx_banxico.R"   = "FX_FIX_TZ: Banxico publishes the FIX on Mexico's clock, whoever the user is",
-  "R/global.R"       = ".hopdesk_linea_tz(): the startup log shows Mexico's day next to the server's")
+  "R/global.R"       = ".hopdesk_linea_tz(): the startup log shows Mexico's day next to the server's",
+  "R/zona.R"         = "ZONA_OMISION: the one place the default zone is written (CM27-ppl)")
 `%||0%` <- function(x, y) ifelse(is.na(x), y, x)
 # as.Date(Sys.time(), ...) calls in an expression (as.Date of a POSIXct
 # ignores TZ: its tz defaults to "UTC", R 4.5).

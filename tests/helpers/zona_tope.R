@@ -12,6 +12,7 @@ list(
     "R/requisiciones_persistence.R" = 1L,
     "R/tiers_module.R" = 3L,
     "R/ui_components.R" = 1L,
+    "R/zona.R" = 1L,
     "app.R" = 3L),
   hoy = c(
     "R/bancos_formatos.R" = 1L,
@@ -29,7 +30,7 @@ list(
     "R/ledger_module.R" = 1L,
     "R/manual_entry_handlers.R" = 2L,
     "R/notes_handlers.R" = 3L,
-    "R/pagar_hoy_module.R" = 13L,
+    "R/pagar_hoy_module.R" = 1L,
     "R/panorama_datos.R" = 5L,
     "R/pasivos_engine.R" = 2L,
     "R/pasivos_list_module.R" = 2L,
