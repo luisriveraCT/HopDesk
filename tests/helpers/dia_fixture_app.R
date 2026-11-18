@@ -32,6 +32,13 @@ cargar("R/global.R", c("fmt_money", "is_erp_sourced"))
 cargar("R/persistence.R", c("tag_label", "set_invoice_tags"))
 cargar("R/pasivos_capabilities.R", c("PASIVOS_CAPABILITIES", "has_capability"))
 cargar("R/ui_components.R", "app_styles")
+# Tags by posting date since T52d: etiquetas_por_factura() and its day, hoy_en() (R/zona.R) (T53)
+cargar("R/data_pipeline.R", c("etiquetas_por_factura", ".etiquetas_doc_unica", ".politica_doc", ".politica_doc_unica"))
+# Policies by the invoice's posting date since T52: policy_engine.R's .politica_fecha() and
+# .politica_normalizar_facturas() call these from data_pipeline.R (T53)
+cargar("R/data_pipeline.R", c("parse_sap_date", "ensure_dates", "ensure_documento", "ensure_moneda",
+                              "standardize_party", "guess_doc_col", "guess_col", "clean_str"))
+if (file.exists(file.path(raiz, "R/zona.R"))) sys.source(file.path(raiz, "R/zona.R"), envir = globalenv())
 sys.source(file.path(raiz, "R/policy_engine.R"), envir = globalenv())   # only definitions
 if (!exists(".usuario_de_sesion")) assign(".usuario_de_sesion", function() "luis", envir = globalenv())
 # HD_SIN_AGENDA = 1: a user without can_register_payments (no Agregar / ＋).

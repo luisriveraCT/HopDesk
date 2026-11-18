@@ -24,6 +24,9 @@ cargar <- function(archivo, nombres) {
 }
 suppressPackageStartupMessages({ library(dplyr); library(shinyjs); library(tibble) })
 cargar("R/ui_components.R", c("app_styles", "monedas_para_filtrar"))
+# Tags by posting date since T52d: etiquetas_por_factura() and its day, hoy_en() (R/zona.R) (T53)
+cargar("R/data_pipeline.R", c("etiquetas_por_factura", ".etiquetas_doc_unica", ".politica_doc", ".politica_doc_unica"))
+if (file.exists(file.path(raiz, "R/zona.R"))) sys.source(file.path(raiz, "R/zona.R"), envir = globalenv())
 cargar("R/persistence.R", "tag_label")
 # The FX row's rates (monedas fase 2, R/fx_tipos.R) need these from
 # fx_banxico.R, and nothing else: without fx_fix()/fx_divisas(),

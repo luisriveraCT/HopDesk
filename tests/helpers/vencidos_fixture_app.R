@@ -35,7 +35,8 @@ cargar <- function(archivo, nombres) {
 cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 # ic_empresas_de(): Vencidos and the lupa pass it to apply_ic_filter() since
 # T47; without it every datos() failed and the table came out empty (T53).
-cargar("R/data_pipeline.R", c("apply_ic_filter", "build_ic_fullcodes", "ic_empresas_de"))
+cargar("R/data_pipeline.R", c("apply_ic_filter", "build_ic_fullcodes", "ic_empresas_de",
+                              "etiquetas_por_factura", ".etiquetas_doc_unica", ".politica_doc", ".politica_doc_unica"))
 cargar("R/pasivos_capabilities.R", c("PASIVOS_CAPABILITIES", "has_capability"))
 # has_capability() asks the session's user through the permissions registry
 # (R/permisos.R, which needs a logged-in session): here, a user who may do
@@ -47,6 +48,8 @@ if (!exists("puede")) assign("puede", function(usuario, permiso, ...)
 cargar("R/global.R", c("fmt_money", "is_erp_sourced"))
 cargar("R/persistence.R", c("tag_label", "add_tag_labels", "normalize_code"))
 cargar("R/ui_components.R", "app_styles")
+# Tags by posting date since T52d: etiquetas_por_factura() and its day, hoy_en() (R/zona.R) (T53)
+if (file.exists(file.path(raiz, "R/zona.R"))) sys.source(file.path(raiz, "R/zona.R"), envir = globalenv())
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
   for (f in c("R/i18n.R", "R/monedas.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",

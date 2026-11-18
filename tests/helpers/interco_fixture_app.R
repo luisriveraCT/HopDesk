@@ -40,6 +40,8 @@ suppressPackageStartupMessages({ library(dplyr); library(shinyjs); library(tibbl
 cargar("R/global.R", c("S3_KEYS", "S3_KEYS_CRITICAL", "is_erp_sourced"))
 cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 cargar("R/ui_components.R", "app_styles")
+# Tags by posting date since T52d: etiquetas_por_factura() and its day, hoy_en() (R/zona.R) (T53)
+if (file.exists(file.path(raiz, "R/zona.R"))) sys.source(file.path(raiz, "R/zona.R"), envir = globalenv())
 cargar("R/vencidos_module.R", "facturas_ids")
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))

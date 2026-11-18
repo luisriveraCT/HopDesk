@@ -25,6 +25,13 @@ cargar <- function(archivo, nombres) {
 }
 cargar("R/global.R", c("fmt_money"))
 cargar("R/ui_components.R", "app_styles")
+# Tags by posting date since T52d: etiquetas_por_factura() and its day, hoy_en() (R/zona.R) (T53)
+cargar("R/data_pipeline.R", c("etiquetas_por_factura", ".etiquetas_doc_unica", ".politica_doc", ".politica_doc_unica"))
+# Policies by the invoice's posting date since T52: policy_engine.R's .politica_fecha() and
+# .politica_normalizar_facturas() call these from data_pipeline.R (T53)
+cargar("R/data_pipeline.R", c("parse_sap_date", "ensure_dates", "ensure_documento", "ensure_moneda",
+                              "standardize_party", "guess_doc_col", "guess_col", "clean_str"))
+if (file.exists(file.path(raiz, "R/zona.R"))) sys.source(file.path(raiz, "R/zona.R"), envir = globalenv())
 # The currency catalog (R/monedas.R, T33); it reads data/ relative to the repo.
 local({ viejo <- setwd(raiz); on.exit(setwd(viejo)); sys.source("R/monedas.R", envir = globalenv()) })
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
