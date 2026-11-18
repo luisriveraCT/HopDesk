@@ -7,7 +7,7 @@ suppressPackageStartupMessages({ library(testthat); library(shiny) })
 `%||%` <- function(x, y) {
   if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
 }
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R")) source(f)
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R")) source(f)
 
 facturas <- data.frame(
   id = c("a", "b", "c", "d"), Referencia = c("F1", "F2", "F3", "F4"), Moneda = "MXN",

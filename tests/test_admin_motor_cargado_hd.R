@@ -19,7 +19,7 @@ ok <- function(label, expr) {
   else                { cat(" FAIL:", label, "\n"); .fail <<- .fail + 1L }
 }
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R"))
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R"))
   suppressMessages(source(f))
 for (e in parse("R/tiers_module.R", keep.source = FALSE))
   if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(e[[2]], as.name("tiersUI")))

@@ -39,7 +39,7 @@ cargar("R/persistence.R", c(".normalize", ".schema_pagar_hoy", ".schema_agenda_s
                             "load_agenda_sync_config", "save_agenda_sync_config"))
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
-  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
               "R/settings/settings_sincro.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
 })

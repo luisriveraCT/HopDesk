@@ -9,7 +9,7 @@ suppressPackageStartupMessages({ library(testthat); library(shiny) })
 `%||%` <- function(x, y) {
   if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
 }
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R")) source(f)
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R")) source(f)
 
 # A small Flujo: two periods, a Día 0 column typed only on the position row.
 D <- data.frame(id = c("a1", "a2", "p1", "neto", "acum"), Contraparte = c("ALFA", "BETA", "UNO", "FLUJO NETO", "POS. ACUMULADA"),
@@ -91,8 +91,8 @@ test_that("the dictionary has the expression's message in both languages", {
 # ── Step 2 additions (T17c): the Total's whole pesos, summary rows, the group's name ──
 test_that("formato = \"entero\": whole pesos, halves up; the bubble and Copiar keep the cents; only then in the metadata", {
   v <- col_dinero("Total", formato = "entero")$valores(c(5000120.5, -463208.5, 802000, 0.4, -0.4, NA))
-  expect_identical(v$mostrar, c("$5,000,121", "-$463,209", "$802,000", "$0", "$0", ""))
-  expect_identical(v$completo[1], "$5,000,120.50")
+  expect_identical(v$mostrar, c("5,000,121", "−463,209", "802,000", "0", "0", ""))
+  expect_identical(v$completo[1], "5,000,120.50")
   expect_identical(v$copiar[1], "5000120.5")
   expect_identical(hd_columnas_meta(list(col_dinero("x", formato = "entero")))[[1]]$formato, "entero")
   expect_error(col_dinero("x", formato = "redondo"), "completo\\\", \\\"compacto\\\" or \\\"entero")
@@ -102,7 +102,7 @@ test_that("with .resumen: a summary row keeps its 0 in a compact cero-vacio colu
   d <- data.frame(id = c("a", "n"), Contraparte = c("A", "NETO"), c1 = c(0, 0), .resumen = c("", "neto"),
                   stringsAsFactors = FALSE)
   f <- hd_filas(d, cols)$celdas[[2]]
-  expect_identical(unclass(f$mostrar), c("", "$0"))
+  expect_identical(unclass(f$mostrar), c("", "0"))
   expect_identical(unclass(f$tono), c("", "neutro"))
   # Without .resumen nothing changes: a 0 is empty and every row has its tone.
   f0 <- hd_filas(d[, c("id", "Contraparte", "c1")], cols)$celdas[[2]]

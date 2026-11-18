@@ -34,7 +34,7 @@ cargar("R/pagos_generados_persistence.R", c(".schema_pagos_generados", "mask_cla
                                              "parse_pago_beneficiarios", "parse_pago_detalle"))
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
-  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
               "R/audit_sticky_ui.R", "R/audit_log_viewer_module.R", "R/pagos_audit_viewer_module.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
 })

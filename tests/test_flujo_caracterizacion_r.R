@@ -12,7 +12,7 @@
 #
 # Every exact number is the reference's. What the person reads changes only
 # where the coordinator approved it, each marked [CAMBIA] with its reason:
-#   F6   halves round up ("$121" for 120.5, "$3K" for 2,500), the engine's rule
+#   F6   halves round up ("121" for 120.5, "3K" for 2,500), the engine's rule
 #   T    the Total in whole pesos with the same rule (formato "entero")
 #   S    the minus is the engine's "-" (it was "−")
 #   TIT  "COBROS — MXN" / "SUBTOTAL COBROS — MXN" are the band (MXN) and the
@@ -91,45 +91,45 @@ test_that("F5: the counterparties are a group (Moneda + Tipo) that starts closed
 # ── Amounts ─────────────────────────────────────────────────────────────────
 test_that("F6: cells compact ($4.5M / $802K / $950, empty for 0); Total in whole pesos [CAMBIA F6: halves up]", {
   alfa <- fl_fila(R0, "MXN", "cobros", "CLIENTE ALFA")
-  expect_identical(textos(alfa), c("$4.5M", "", "$40K", "", "", "", ""))
-  expect_identical(alfa$total$texto, "$4,535,962")
-  expect_identical(textos(fl_fila(R0, "MXN", "cobros", "CLIENTE GAMA"))[4], "$950")
+  expect_identical(textos(alfa), c("4.5M", "", "40K", "", "", "", ""))
+  expect_identical(alfa$total$texto, "4,535,962")
+  expect_identical(textos(fl_fila(R0, "MXN", "cobros", "CLIENTE GAMA"))[4], "950")
   # [CAMBIA F6] (coordinator, approved): halves go UP now, the engine's rule.
-  # Before: 120.5 read "$120" (formatC to even) next to its Total "$5,000,121",
-  # and 2,500 read "$2K" like 1,500. The exact number doesn't change.
+  # Before: 120.5 read "120" (formatC to even) next to its Total "5,000,121",
+  # and 2,500 read "2K" like 1,500. The exact number doesn't change.
   uno <- fl_fila(R0, "MXN", "pagos", "PROVEEDOR UNO")
-  expect_identical(c(textos(uno)[5], uno$total$texto), c("$121", "$5,000,121"))
+  expect_identical(c(textos(uno)[5], uno$total$texto), c("121", "5,000,121"))
   expect_identical(celda(uno, 5)$valor, 120.5)
-  expect_identical(textos(fl_fila(R0, "USD", "pagos", "VENDOR USA"))[3], "$3K")
+  expect_identical(textos(fl_fila(R0, "USD", "pagos", "VENDOR USA"))[3], "3K")
 })
 test_that("F7: each group's row adds up its rows per column; its Total in whole pesos", {
   s <- fl_bloque(R0, "MXN")$secciones$cobros$subtotal
   expect_identical(s$titulo, "Cobros")   # [CAMBIA TIT] was "SUBTOTAL COBROS — MXN"
   expect_identical(valores(s), c(4495962, 802000, 40000, 950, 0, 0, 0))
-  expect_identical(textos(s), c("$4.5M", "$802K", "$40K", "$950", "", "", ""))
-  expect_identical(s$total$texto, "$5,338,912")
+  expect_identical(textos(s), c("4.5M", "802K", "40K", "950", "", "", ""))
+  expect_identical(s$total$texto, "5,338,912")
 })
 test_that("F8: FLUJO NETO = cobros - pagos per column, a 0 shows $0, green / red / grey by sign; Total whole [CAMBIA S]", {
   n <- fl_bloque(R0, "MXN")$neto
   expect_identical(n$titulo, "FLUJO NETO MXN")
   expect_identical(valores(n), c(-504038, 0, 40000, 950, -120.5, 0, 0))
   # [CAMBIA S] the minus was "−"; [CAMBIA F6] -120.5 read "−$120".
-  expect_identical(textos(n), c("-$504K", "$0", "$40K", "$950", "-$121", "$0", "$0"))
+  expect_identical(textos(n), c("−504K", "0", "40K", "950", "−121", "0", "0"))
   expect_identical(unname(vapply(n$celdas, `[[`, "", "tono")), c("peligro", "neutro", "exito", "exito", "peligro", "neutro", "neutro"))
-  expect_identical(c(n$total$texto, n$total$tono), c("-$463,209", "peligro"))
+  expect_identical(c(n$total$texto, n$total$tono), c("−463,209", "peligro"))
 })
 test_that("F9: POS. ACUMULADA = Día 0 + running net; the last one is its Total", {
   a <- fl_bloque(R0, "MXN")$acumulada
   expect_identical(a$titulo, "POS. ACUMULADA MXN")
-  expect_identical(a$dia0, list(texto = "$2K", valor = 1500))
+  expect_identical(a$dia0, list(texto = "2K", valor = 1500))
   expect_identical(valores(a), 1500 + cumsum(c(-504038, 0, 40000, 950, -120.5, 0, 0)))
-  expect_identical(a$total$texto, "-$461,709")
+  expect_identical(a$total$texto, "−461,709")
   expect_identical(a$total$valor, valores(a)[7])
 })
 test_that("F10: Día 0 is per currency: MXN's doesn't move USD's; only the position rows can be typed in", {
   u <- fl_bloque(R0, "USD")$acumulada
   expect_identical(u$dia0$valor, 0)
-  expect_identical(u$dia0$texto, "$0")
+  expect_identical(u$dia0$texto, "0")
   expect_identical(valores(u), cumsum(c(0, 10000, -2500, 0, 0, 0, 0)))
   expect_identical(R0$datos$id[R0$datos$.dia0], c("acum|MXN", "acum|USD"))
   expect_identical(unclass(R0$filas$celdas[[3]]$edf), R0$datos$.dia0)
@@ -265,11 +265,15 @@ test_that("the whole grid of two scenarios is the reference's, but for the appro
       return(x)
     }
     if (is.character(x)) x <- gsub("−", "-", x, fixed = TRUE)                             # [CAMBIA S]
+    if (is.character(x)) {                                                                 # [CAMBIA T55]
+      x <- gsub("-\\$(?=\\d)", intToUtf8(0x2212L), x, perl = TRUE)   # no "$", the true minus sign
+      x <- gsub("\\$(?=\\d)", "", x, perl = TRUE)
+    }
     x
   }
   antes <- cambia(antes)
   # [CAMBIA F6] the only texts the new rounding moves in these two scenarios (halves up):
-  f6 <- function(r) { r$texto <- c("$120" = "$121", "-$120" = "-$121", "$2K" = "$3K", "-$2K" = "-$3K")[[r$texto]]; r }
+  f6 <- function(r) { r$texto <- c("120" = "121", "−120" = "−121", "2K" = "3K", "−2K" = "−3K")[[r$texto]]; r }
   b <- antes$diario$bloques
   b[[1]]$secciones$pagos$filas[[1]]$celdas$c5 <- f6(b[[1]]$secciones$pagos$filas[[1]]$celdas$c5)
   b[[1]]$secciones$pagos$subtotal$celdas$c5 <- f6(b[[1]]$secciones$pagos$subtotal$celdas$c5)

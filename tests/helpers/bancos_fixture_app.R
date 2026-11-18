@@ -38,7 +38,7 @@ cargar("R/ui_components.R", "app_styles")
 cargar("R/data_pipeline.R", c("etiquetas_por_factura", ".etiquetas_doc_unica", ".politica_doc", ".politica_doc_unica"))
 if (file.exists(file.path(raiz, "R/zona.R"))) sys.source(file.path(raiz, "R/zona.R"), envir = globalenv())
 cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", "load_ctas_bancos", ".schema_ctas_cuentas", "load_ctas_cuentas"))
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/bancos_parser.R", "R/empresas_identidad.R", "R/bancos_detect.R", "R/bancos_persistence.R", "R/bancos_formatos.R",
             "R/bancos_module.R"))
   sys.source(file.path(raiz, f), envir = globalenv())

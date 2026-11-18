@@ -29,7 +29,7 @@ ok <- function(label, expr) {
 
 source("tests/helpers/s3_memoria.R")   # persistence.R (schemas) over an in-memory S3
 for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R", "R/policy_engine.R",
-            "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+            "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/settings/settings_policies.R", "R/settings/settings_companies.R", "R/settings/settings_sincro.R"))
   suppressMessages(source(f))
 

@@ -7,7 +7,7 @@ suppressPackageStartupMessages(library(testthat))
 source("R/i18n.R")
 source("R/hd_registro.R")
 source("R/hd_piezas.R")
-source("R/hd_columnas.R")
+source("R/monedas.R"); source("R/hd_columnas.R")
 source("R/hd_table.R")
 
 # ── Pieces ──────────────────────────────────────────────────────────────────
@@ -76,17 +76,17 @@ test_that("counter noun: class default, per-table exception, key exists", {
 # ── Columns: the three values of every cell ─────────────────────────────────
 test_that("col_dinero: shown in Spanish money format, sorted by number, copied raw", {
   v <- col_dinero("Importe")$valores(c(1234.5, -0.5, 1000, NA, 1e6))
-  expect_identical(v$mostrar, c("$1,234.50", "-$0.50", "$1,000.00", "", "$1,000,000.00"))
+  expect_identical(v$mostrar, c("1,234.50", "−0.50", "1,000.00", "", "1,000,000.00"))
   expect_identical(v$orden, c(1234.5, -0.5, 1000, NA, 1e6))
   expect_identical(v$copiar, c("1234.5", "-0.5", "1000", "", "1000000"))
 })
 
 test_that("col_dinero: near-zero amounts never show or copy a minus sign", {
   v <- col_dinero("Importe")$valores(c(-0.001, 0.004, -0.005, -0.006))
-  expect_identical(v$mostrar[1:2], c("$0.00", "$0.00"))
+  expect_identical(v$mostrar[1:2], c("0.00", "0.00"))
   expect_identical(v$copiar[1:2], c("0", "0"))
-  expect_false(any(v$mostrar %in% c("-$0.00", "-0")) || any(v$copiar %in% c("-0", "-0.00")))
-  expect_identical(v$mostrar[4], "-$0.01")
+  expect_false(any(v$mostrar %in% c("−0.00", "-0")) || any(v$copiar %in% c("-0", "-0.00")))
+  expect_identical(v$mostrar[4], "−0.01")
 })
 
 test_that("col_fecha: a POSIXct keeps its own time zone's date", {
@@ -196,7 +196,7 @@ test_that("payload is column by column, with control columns and defaults", {
   expect_identical(unclass(f$moneda), c("MXN", "USD", "MXN"))     # from col_dinero's `moneda`
   expect_true(all(is.na(f$tipo)))
   expect_length(f$celdas, 4)
-  expect_identical(unclass(f$celdas[[3]]$mostrar), c("$10.00", "$20.50", "$30.00"))
+  expect_identical(unclass(f$celdas[[3]]$mostrar), c("10.00", "20.50", "30.00"))
 
   d2 <- df; d2$.bloqueada <- c(NA, TRUE, FALSE); d2$.moneda <- "EUR"
   d2$.tipo <- c("cobro", "pago", "otro")

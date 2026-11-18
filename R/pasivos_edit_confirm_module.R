@@ -80,10 +80,12 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
 # show the date too (T20): a provision whose date was moved by hand is a
 # conflict even when its amount wasn't touched, and showing amounts alone made
 # it look like an amount conflict.
-.pec_fecha_monto <- function(fecha, monto) {
+# The amount with its currency (T55: "150.00 MXN", never a figure without it;
+# monto_moneda() writes a missing one as the dash).
+.pec_fecha_monto <- function(fecha, monto, moneda) {
   f <- col_fecha("f")$valores(fecha)$mostrar
-  m <- col_dinero("m")$valores(monto)$mostrar
-  f[!nzchar(f)] <- "—"; m[!nzchar(m)] <- "—"
+  m <- monto_moneda(monto, moneda)
+  f[!nzchar(f)] <- "—"
   paste(f, m, sep = " · ")
 }
 
@@ -115,15 +117,16 @@ pasivos_conflictos_filas <- function(conflicts, replacement, apertura = 1L, rest
     d <- restaurado$decision[pid]; dec[!is.na(d)] <- d[!is.na(d)]
     o <- restaurado$otro[pid];     otro[!is.na(o)] <- o[!is.na(o)]
   }
+  moneda <- rep_len(as.character(conflicts$moneda_pago %||% base), length(pid))
   out <- data.frame(
     id       = paste0(apertura, ":", pid),
     prov_id  = pid,
     fecha    = as.Date(conflicts$fecha_efectiva),
-    antes    = .pec_fecha_monto(as.Date(conflicts$fecha_efectiva), monto_antes),
-    nuevo    = .pec_fecha_monto(fecha_nueva, monto_nuevo),
+    antes    = .pec_fecha_monto(as.Date(conflicts$fecha_efectiva), monto_antes, moneda),
+    nuevo    = .pec_fecha_monto(fecha_nueva, monto_nuevo, moneda),
     decision = unname(dec),
     otro     = unname(otro),
-    Moneda   = as.character(conflicts$moneda_pago %||% base),
+    Moneda   = moneda,
     stringsAsFactors = FALSE)
   out[order(out$fecha, out$prov_id), , drop = FALSE]
 }

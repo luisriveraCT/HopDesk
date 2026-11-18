@@ -15,7 +15,7 @@
 suppressPackageStartupMessages({ library(shiny); library(dplyr); library(tibble) })
 source("tests/helpers/s3_memoria.R")
 for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R", "R/hd_registro.R", "R/hd_piezas.R",
-            "R/hd_columnas.R", "R/hd_table.R", "R/avisos_alertas_module.R"))
+            "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R", "R/avisos_alertas_module.R"))
   suppressMessages(source(f))
 
 .pass <- 0L; .fail <- 0L

@@ -23,7 +23,7 @@ ok <- function(label, expr) {
 }
 
 source("tests/helpers/s3_memoria.R")
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R"))
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R"))
   suppressMessages(source(f))
 for (archivo in c("R/email_service.R", "R/tiers_module.R"))
   for (e in parse(archivo, keep.source = FALSE))

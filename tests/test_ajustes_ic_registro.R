@@ -26,7 +26,7 @@ ok <- function(label, expr) {
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
 for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R",
-            "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+            "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/settings/settings_cuentas.R", "R/settings/settings_bp.R", "R/settings/settings_hub.R"))
   suppressMessages(source(f))
 log_action <- function(...) invisible(NULL)

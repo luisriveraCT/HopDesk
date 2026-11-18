@@ -126,7 +126,7 @@ test_that("[CAMBIA C3] A4 formats: the engine's money with cents and its date", 
   correr({
     filtros(session)
     g <- rejilla(session)
-    expect_identical(g$SaldoTxt[g$Documento == "F-102"], "$2,500.50")
+    expect_identical(g$SaldoTxt[g$Documento == "F-102"], "2,500.50")
     expect_identical(g$Vence[g$Documento == "F-101"], .ab_columnas()[[5]]$valores(HOY - 3L)$mostrar)
     expect_identical(g$FechaVenc[g$Documento == "F-101"], as.character(HOY - 3L))
   })

@@ -9,7 +9,7 @@ suppressPackageStartupMessages({ library(testthat); library(shiny) })
 `%||%` <- function(x, y) {
   if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
 }
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R")) source(f)
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R")) source(f)
 source("tests/helpers/hd_matriz_muestra.R")
 
 # ── Nothing changes for a table that doesn't ask ────────────────────────────

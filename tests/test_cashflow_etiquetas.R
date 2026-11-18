@@ -18,7 +18,7 @@ ok <- function(label, expr) {
 
 source("R/i18n.R")
 HTML <- htmltools::HTML
-source("R/hd_columnas.R")
+source("R/monedas.R"); source("R/hd_columnas.R")
 # Only these definitions (the files' other code needs the app).
 cargar <- function(archivo, nombres) {
   for (e in parse(archivo, keep.source = FALSE))

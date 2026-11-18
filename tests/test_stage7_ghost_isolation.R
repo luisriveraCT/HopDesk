@@ -48,7 +48,7 @@ suppressPackageStartupMessages(library(DT))
 # every invoice confirmed has no free row: nothing in it can be marked.
 {
   `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
-  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
               "R/vencidos_module.R", "R/dia_module.R")) source(f, local = TRUE)
   SAP_B1_ERP_TYPE <- "sap_b1_service_layer"
   # is_erp_sourced(): the views lock a confirmed ERP invoice in $0 (only ERP ones).

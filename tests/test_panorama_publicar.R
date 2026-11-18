@@ -8,7 +8,7 @@ suppressPackageStartupMessages({ library(shiny); library(dplyr); library(tibble)
 `%||%` <- function(a, b) if (is.null(a)) b else a
 .i18n_dir <- file.path(getwd(), "www", "i18n")
 for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R", "R/avisos.R", "R/hd_registro.R", "R/hd_piezas.R",
-            "R/hd_columnas.R", "R/hd_table.R", "R/avisos_alertas_module.R", "R/panorama_datos.R",
+            "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R", "R/avisos_alertas_module.R", "R/panorama_datos.R",
             "R/panorama_publicar_module.R"))
   suppressMessages(source(f))
 

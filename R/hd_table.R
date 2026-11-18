@@ -50,7 +50,7 @@ hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
     htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=31"),
-    htmltools::tags$script(src = "hdtable.js?v=44")
+    htmltools::tags$script(src = "hdtable.js?v=45")
   ))
 }
 
@@ -725,7 +725,9 @@ hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "dat
   filas <- filas[!is.na(filas)]
   d <- datos[filas, , drop = FALSE]
   salida <- lapply(columnas, function(col) {
-    v <- col$valores(d[[col$campo]])
+    # Money exports its number (v$orden), whatever the screen shows (T55).
+    v <- if (identical(col$tipo, "dinero")) col$valores(d[[col$campo]], d[[col$moneda %||% ""]])
+         else col$valores(d[[col$campo]])
     switch(col$tipo,
       dinero = v$orden,
       numero = v$orden,

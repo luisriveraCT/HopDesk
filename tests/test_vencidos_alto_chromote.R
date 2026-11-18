@@ -25,7 +25,7 @@ ok <- function(label, expr) {
 
 # ── R: col_texto(ancho) ─────────────────────────────────────────────────────
 local({
-  for (f in c("R/i18n.R", "R/hd_columnas.R")) source(f, local = TRUE)
+  for (f in c("R/i18n.R", "R/monedas.R", "R/hd_columnas.R")) source(f, local = TRUE)
   m <- hd_columnas_meta(list(col_texto("Documento", ancho = 80), col_texto("Parte")))
   ok("R: col_texto(ancho = 80) sends ancho = 80 to the browser", identical(m[[1]]$ancho, 80))
   ok("R: a column without ancho sends NA (null)", is.na(m[[2]]$ancho))

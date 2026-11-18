@@ -32,7 +32,7 @@ library(shiny)
 raiz <- "%s"
 assign("%%||%%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x, envir = globalenv())
 local({ owd <- setwd(raiz); on.exit(setwd(owd))
-  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R")) sys.source(f, envir = globalenv()) })
+  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R")) sys.source(f, envir = globalenv()) })
 assign(".i18n_dir", file.path(raiz, "www", "i18n"), envir = globalenv())
 cols <- list(col_texto("nombre", "Nombre"))
 ui <- bslib::page_navbar(id = "nav", selected = "A",

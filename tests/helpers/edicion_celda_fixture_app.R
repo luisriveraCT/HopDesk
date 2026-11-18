@@ -14,7 +14,7 @@
 # =============================================================================
 library(shiny)
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R"))
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R"))
   sys.source(f, envir = globalenv())
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 

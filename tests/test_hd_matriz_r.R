@@ -9,7 +9,7 @@ suppressPackageStartupMessages({ library(testthat); library(shiny) })
 `%||%` <- function(x, y) {
   if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
 }
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R")) source(f)
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R")) source(f)
 source("tests/helpers/hd_matriz_muestra.R")
 
 PIEZAS <- c("tono_celda", "dinero_compacto")   # columna_fija comes with class F
@@ -38,25 +38,25 @@ test_that("no table outside class F gets the new pieces, and in F they are optio
 test_that("compacto: $4.5M / $802K / $950, unit by what it rounds to; the full amount in the bubble, copy and sort", {
   x <- c(4495962, 802000, 999600, 999499, 999.6, 950, -1500, 1234567890, 0, NA)
   v <- col_dinero("v", formato = "compacto")$valores(x)
-  expect_identical(v$mostrar, c("$4.5M", "$802K", "$1.0M", "$999K", "$1K", "$950", "-$2K", "$1234.6M", "$0", ""))
-  # Halves round up, never to even: 1,500 and 2,500 don't both read "$2K".
+  expect_identical(v$mostrar, c("4.5M", "802K", "1.0M", "999K", "1K", "950", "−2K", "1234.6M", "0", ""))
+  # Halves round up, never to even: 1,500 and 2,500 don't both read "2K".
   expect_identical(col_dinero("v", formato = "compacto")$valores(c(1500, 2500, 4450000, 4550000, 2.5, 3.5))$mostrar,
-                   c("$2K", "$3K", "$4.5M", "$4.6M", "$3", "$4"))
-  expect_identical(v$completo, c("$4,495,962.00", "$802,000.00", "$999,600.00", "$999,499.00", "$999.60", "$950.00",
-                                 "-$1,500.00", "$1,234,567,890.00", "$0.00", ""))
+                   c("2K", "3K", "4.5M", "4.6M", "3", "4"))
+  expect_identical(v$completo, c("4,495,962.00", "802,000.00", "999,600.00", "999,499.00", "999.60", "950.00",
+                                 "−1,500.00", "1,234,567,890.00", "0.00", ""))
   expect_identical(v$copiar, c("4495962", "802000", "999600", "999499", "999.6", "950", "-1500", "1234567890", "0", ""))
   expect_identical(v$orden, c(4495962, 802000, 999600, 999499, 999.6, 950, -1500, 1234567890, 0, NA))
 })
 
 test_that("cero = \"vacio\": a 0 paints nothing (it still copies and sorts as 0); other amounts as always", {
   v <- col_dinero("v", cero = "vacio")$valores(c(0, -0.001, 12.5, NA))
-  expect_identical(v$mostrar, c("", "", "$12.50", ""))
+  expect_identical(v$mostrar, c("", "", "12.50", ""))
   expect_identical(v$copiar, c("0", "0", "12.5", ""))
   expect_identical(v$orden, c(0, 0, 12.5, NA))
   expect_null(v$completo)
   w <- col_dinero("v", formato = "compacto", cero = "vacio")$valores(c(0, 2500))
-  expect_identical(w$mostrar, c("", "$3K"))
-  expect_identical(w$completo, c("", "$2,500.00"))
+  expect_identical(w$mostrar, c("", "3K"))
+  expect_identical(w$completo, c("", "2,500.00"))
 })
 
 test_that("the compact units come from the dictionary, in each language", {
@@ -147,7 +147,7 @@ test_that("a class F table with all three sends its columns and rows", {
                col_dinero("est", tono = "Estado", sumar = FALSE))
   expect_silent(hd_columnas_piezas(cols, "flujo_caja", hd_piezas_de("flujo_caja", PIEZAS)))
   f <- hd_filas(d, cols)
-  expect_identical(unclass(f$celdas[[3]]$mostrar), c("$4.5M", ""))
+  expect_identical(unclass(f$celdas[[3]]$mostrar), c("4.5M", ""))
   expect_identical(unclass(f$celdas[[3]]$tono), c("exito", "neutro"))
   expect_identical(unclass(f$celdas[[4]]$tono), c("aviso", ""))
 })

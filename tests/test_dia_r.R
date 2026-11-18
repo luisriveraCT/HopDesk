@@ -3,7 +3,7 @@
 # Run from the repo root: Rscript tests/test_dia_r.R
 suppressPackageStartupMessages({ library(testthat); library(shiny) })
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/vencidos_module.R", "R/dia_module.R", "R/policy_engine.R")) source(f)
 # The tags of each invoice (T52d): etiquetas_por_factura() and its helpers,
 # and the client's day for a tag (hoy_en()).

@@ -12,7 +12,7 @@
 # =============================================================================
 suppressPackageStartupMessages(library(shiny))
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
-source("R/i18n.R"); source("R/hd_registro.R"); source("R/hd_piezas.R"); source("R/hd_columnas.R")
+source("R/i18n.R"); source("R/hd_registro.R"); source("R/hd_piezas.R"); source("R/monedas.R"); source("R/hd_columnas.R")
 source(Sys.getenv("HD_TABLE_R", "R/hd_table.R"))
 .i18n_dir <- file.path(getwd(), "www", "i18n")
 

@@ -53,11 +53,45 @@
     return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   }
   var FMT_N = new Intl.NumberFormat('es-MX');
-  var FMT_D = new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  function dinero(x) {
-    x = Math.round(x * 100) / 100;
-    if (x === 0) x = 0;                                   // no "-$0.00"
-    return (x < 0 ? '-' : '') + '$' + FMT_D.format(Math.abs(x));
+  // T55: an amount as R's monto_moneda() writes it -- "21,625,809.77 MXN":
+  // the number, then the code, no "$", the true minus sign, and the
+  // catalog's decimals of that currency (DEC, sent with each table's data
+  // by hd_columnas.R; a currency it doesn't name, 2). Without a currency,
+  // the number alone.
+  var MENOS = '−', DEC = {}, FMT_DEC = {};
+  function fmtDec(d) {
+    return FMT_DEC[d] || (FMT_DEC[d] = new Intl.NumberFormat('es-MX', { minimumFractionDigits: d, maximumFractionDigits: d }));
+  }
+  function decimalesDe(m) { return m && DEC[m] != null ? DEC[m] : 2; }
+  function conCodigo(txt, m) { return m && txt ? txt + ' ' + m : txt; }
+  // R's round(x, d) (src/nmath/fround.c, R >= 4.0): of the two candidates
+  // with d decimals, the one nearer x as a double; a tie to the even digit
+  // (0.5 -> 0, 2.5 -> 2, 2.675 -> 2.67), the same for negatives. Math.round()
+  // and Intl would round some of these the other way, and then a total in
+  // the browser would differ by a cent from the same amount written by R.
+  function redondear(x, d) {
+    var a = Math.abs(x);
+    if (!isFinite(a) || a === 0) return x;
+    if (0.30102999566398120 * (0.5 + Math.floor(Math.log2(a))) + d > 15) return x;
+    var p = Math.pow(10, d), x10 = p * a, i10 = Math.floor(x10),
+        xd = i10 / p, xu = Math.ceil(x10) / p, du = xu - a, dd = a - xd;
+    var r = (du < dd || (du === dd && i10 % 2 === 1)) ? xu : xd;
+    return x < 0 ? -r : r;
+  }
+  function dinero(x, m) {
+    var d = decimalesDe(m);
+    x = redondear(x, d);
+    if (x === 0) x = 0;                                   // no "-0.00"
+    return conCodigo((x < 0 ? MENOS : '') + fmtDec(d).format(Math.abs(x)), m);
+  }
+  // A cell says its currency only when nothing else on screen does: no band
+  // grouping by it and no column of it shown (Coordinador, T55: never a
+  // figure without its currency in sight).
+  function celdaLlevaCodigo(st) {
+    var cm = st.campoMoneda;
+    if (!cm) return true;
+    if (st.secciones && st.secciones.some(function (s) { return s.campo === cm || s.campo === '.moneda'; })) return false;
+    return !(st.ver || []).some(function (j) { return st.cols[j] && st.cols[j].campo === cm; });
   }
   function arr(x) { return x == null ? [] : (Array.isArray(x) ? x : [x]); }
 
@@ -593,7 +627,7 @@
       var s = (v == null ? sumas.__todas : sumas[v]) || {};
       var mons = Object.keys(s).sort();
       if (!mons.length) return dinero(0);
-      return mons.map(function (m) { return (mons.length > 1 && m ? m + ' ' : '') + dinero(s[m]); }).join(' · ');
+      return mons.map(function (m) { return dinero(s[m], m); }).join(' · ');   // the code after, always (T55)
     }
     function chip(texto, valor) {
       var activa = valor == null ? st.ficha == null : st.ficha === valor;
@@ -977,6 +1011,10 @@
     st.n = st.ids.length;
     st.bloq = arr(f.bloqueada);
     st.moneda = arr(f.moneda);
+    // T55: the decimals of each currency (a catalog fact, the same for every
+    // table) and the field that holds the currency.
+    if (f.decimales) Object.keys(f.decimales).forEach(function (m) { DEC[m] = Number(f.decimales[m]); });
+    st.campoMoneda = f.campo_moneda || '';
     st.tipo = arr(f.tipo);
     st.prov = arr(f.provision);
     if (st.cbEncabezado && typeof msg.encabezado === 'boolean') st.cbEncabezado.checked = msg.encabezado;
@@ -1341,7 +1379,11 @@
     else if (((st.p.insignias && c.tipo === 'insignia') || (st.p.etiquetas && c.tipo === 'etiqueta')) && v) {
       var tono = String((st.celdas[j].tono || [])[i] || 'neutro').replace(/[^a-z_]/g, '');
       td.appendChild(nodo('span', 'hdt-ins hdt-tono-' + tono, v));
-    } else td.appendChild(document.createTextNode(v == null ? '' : v));
+    } else {
+      // T55: a money cell says its currency when the table shows it nowhere else.
+      if (c.tipo === 'dinero' && v && celdaLlevaCodigo(st)) v = conCodigo(v, st.moneda[i] || '');
+      td.appendChild(document.createTextNode(v == null ? '' : v));
+    }
     // An approximate amount on any money column (fix-aprox-pantallas): "≈"
     // before it, its help on hover, as text. accion_celda paints its own.
     if (c.tipo === 'dinero' && !c.accion && st.celdas[j].aprox && st.celdas[j].aprox[i]) {
@@ -1649,7 +1691,7 @@
         libres.forEach(function (i) { var mo = st.moneda[i] || ''; s[mo] = (s[mo] || 0) + montoFila(st, i); });
         var mons = Object.keys(s).sort();
         td.textContent = mons.length ? mons.map(function (mo) {
-          return (mons.length > 1 && mo ? mo + ' ' : '') + dinero(s[mo]);
+          return dinero(s[mo], mo);   // the code after, always (T55)
         }).join(' · ') : dinero(0);
         marcarAprox(st, td, libres);   // a group total with an approximate amount (Día Resumen)
       } else if (j === st.colEt && st.p.etiquetas) {
@@ -1676,26 +1718,27 @@
     });
     var mons = Object.keys(s).sort();
     if (!mons.length) mons = [''], s[''] = 0;
-    var fmt = function (v) {
+    var fmt = function (v, mo) {
       if (c.cero === 'vacio' && Math.abs(v) < 0.005) return '';
-      return c.formato === 'compacto' ? compacto(v) : c.formato === 'entero' ? entero(v) : dinero(v);
+      return c.formato === 'compacto' ? compacto(v, mo) : c.formato === 'entero' ? entero(v, mo) : dinero(v, mo);
     };
-    return mons.map(function (mo) { var x = fmt(s[mo]); return (mons.length > 1 && mo && x ? mo + ' ' : '') + x; })
+    return mons.map(function (mo) { return fmt(s[mo], mo); })   // the code after, always (T55)
                .filter(function (x) { return x; }).join(' · ');
   }
-  // "$4.5M" / "$802K" / "$950": R's .hd_dinero_compacto(), the same rule --
+  // "4.5M" / "802K" / "950": R's .hd_dinero_compacto(), the same rule --
   // the unit by what the amount rounds to, halves up, units from the dictionary.
-  // "$5,000,121" (formato entero): R's .hd_dinero_entero(), halves up.
-  function entero(v) {
+  // "5,000,121" (formato entero): R's .hd_dinero_entero(), halves up.
+  // No "$", the true minus sign, and the code after when `m` is given (T55).
+  function entero(v, m) {
     var e = Math.floor(Math.abs(Math.round(v * 100) / 100) + 0.5 + 1e-9);
-    return (v < 0 && e > 0 ? '-' : '') + '$' + FMT_N.format(e);
+    return conCodigo((v < 0 && e > 0 ? MENOS : '') + FMT_N.format(e), m);
   }
-  function compacto(v) {
+  function compacto(v, m) {
     var ax = Math.abs(Math.round(v * 100) / 100), arriba = function (x) { return Math.floor(x + 0.5 + 1e-9); }, txt;
     if (ax >= 999500) txt = t('tablas.dinero.millones', { n: (arriba(ax / 1e5) / 10).toFixed(1) });
     else if (ax >= 999.5) txt = t('tablas.dinero.miles', { n: String(arriba(ax / 1e3)) });
     else txt = FMT_N.format(arriba(ax));
-    return (v < 0 && ax >= 0.5 ? '-' : '') + '$' + txt;
+    return conCodigo((v < 0 && ax >= 0.5 ? MENOS : '') + txt, m);
   }
 
   // A group's row buttons: only the row actions with grupo = TRUE (＋),
@@ -1804,7 +1847,7 @@
         filas.forEach(function (i) { var m = st.moneda[i] || ''; s[m] = (s[m] || 0) + montoFila(st, i); });
         var mons = Object.keys(s).sort();
         var bs = nodo('span', 'hdt-banda-suma', mons.length
-          ? mons.map(function (m) { return (m ? m + ' ' : '') + dinero(s[m]); }).join(' · ') : dinero(0));
+          ? mons.map(function (m) { return dinero(s[m], m); }).join(' · ') : dinero(0));   // the code after (T55)
         marcarAprox(st, bs, filas);
         caja.appendChild(bs);
       }
@@ -2142,7 +2185,7 @@
       var g = nodo('span', 'hdt-pie-grupo');
       if (tipo) g.appendChild(nodo('span', 'hdt-pie-tipo hdt-' + tipo, t(tipo === 'cobro' ? 'tablas.cobros' : 'tablas.pagos')));
       Object.keys(grupos[tipo]).sort().forEach(function (mon) {
-        var pm = nodo('span', 'hdt-pie-monto', (aprox[tipo + '|' + mon] ? '≈ ' : '') + (mon ? mon + ' ' : '') + dinero(grupos[tipo][mon]));
+        var pm = nodo('span', 'hdt-pie-monto', (aprox[tipo + '|' + mon] ? '≈ ' : '') + dinero(grupos[tipo][mon], mon));   // the code after (T55)
         if (aprox[tipo + '|' + mon]) { pm.classList.add('hdt-pie-aprox'); pm.title = cs.aproxTotal || ''; }
         g.appendChild(pm);
       });
@@ -2203,8 +2246,9 @@
     var c = st.cols[st.colEd].editable || {}, l = limitesFila(st, i);
     var arriba = l.max != null && v > l.max;
     var texto = String((arriba ? c.mayor : c.menor) || '');
-    return texto.split('{max}').join(l.max == null ? '' : dinero(l.max))
-                .split('{min}').join(dinero(l.min == null ? 0 : l.min));
+    var m = st.moneda[i] || '';   // a bound says its currency (T55)
+    return texto.split('{max}').join(l.max == null ? '' : dinero(l.max, m))
+                .split('{min}').join(dinero(l.min == null ? 0 : l.min, m));
   }
   function pintarEditable(st, td, i) {
     var e = st.ed[st.ids[i]];
@@ -2213,7 +2257,14 @@
     td.classList.add('hdt-editada');
     if (fueraDeOpcion(st, i)) td.classList.add('hdt-ed-fuera');
     else if (!e.valido) td.classList.add('hdt-ed-mal');
-    td.appendChild(document.createTextNode(dinero(e.valor)));
+    td.appendChild(document.createTextNode(montoCelda(st, i, e.valor)));
+  }
+  // An amount typed in a cell, written as the cell's own (T55): its
+  // currency's decimals, and its code when the table shows it nowhere else.
+  function montoCelda(st, i, x) {
+    var m = st.moneda[i] || '';
+    var txt = dinero(x, m);
+    return celdaLlevaCodigo(st) || !m ? txt : txt.slice(0, -(m.length + 1));
   }
 
   // ── One choice per row (opcion_fila) ─────────────────────────────────────
@@ -2290,10 +2341,12 @@
     enviarOpciones(st);
     if (Object.keys(st.ed).length) enviarEdiciones(st);
   }
-  // "1,250.50", "$1250.5", " 1250 " -> 1250.5; "" -> "" (back to the
-  // data's value); anything else -> null.
+  // "1,250.50", "$1250.5", " 1250 ", "1,250.50 MXN", "−50" -> the number;
+  // "" -> "" (back to the data's value); anything else -> null. What the
+  // table shows (T55: code after, true minus) reads back as typed.
   function leerImporte(s) {
-    s = String(s == null ? '' : s).replace(/[\s$]/g, '').replace(/,/g, '');
+    s = String(s == null ? '' : s).replace(/[A-Za-z]{3}\s*$/, '').replace(/−/g, '-')
+      .replace(/[\s$]/g, '').replace(/,/g, '');
     if (s === '') return '';
     if (!/^-?(\d+\.?\d*|\.\d+)$/.test(s)) return null;
     return Math.round(Number(s) * 100) / 100;
@@ -2716,7 +2769,7 @@
     var texto = (st.celdas[j].completo && st.celdas[j].completo[i]) || st.celdas[j].mostrar[i];
     // An amount typed by hand: that amount, and why it's out of range.
     var e = j === st.colEd ? st.ed[st.ids[i]] : null;
-    if (e) texto = dinero(e.valor);
+    if (e) texto = montoCelda(st, i, e.valor);
     if (texto == null || texto === '') return;
     var b = tip();
     b.classList.remove('hdt-tip-mal');

@@ -16,7 +16,7 @@ test_that("the history of confirmations has the clip piece (class C only has it 
 })
 
 # ── The day's detail (R/dia_module.R) ────────────────────────────────────────
-for (f in c("R/hd_columnas.R", "R/hd_table.R", "R/vencidos_module.R", "R/dia_module.R", "R/policy_engine.R")) source(f)
+for (f in c("R/monedas.R", "R/hd_columnas.R", "R/hd_table.R", "R/vencidos_module.R", "R/dia_module.R", "R/policy_engine.R")) source(f)
 SAP_B1_ERP_TYPE <- "sap_b1_service_layer"
 for (e in parse("R/global.R", keep.source = FALSE))
   if (is.call(e) && length(e) > 1L && identical(e[[2]], as.name("is_erp_sourced"))) eval(e)

@@ -10,7 +10,7 @@ suppressPackageStartupMessages({ library(testthat); library(shiny) })
 `%||%` <- function(x, y) {
   if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
 }
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R")) source(f)
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R")) source(f)
 
 D <- data.frame(id = c("r1", "r2", "r3", "r4"), Nombre = c("Renta", "Comisión", "Crédito", "Luz"),
                 d1 = c(1000, 250, 700, 0), `d1.id` = c("p1", "p2", "", "p4"),

@@ -32,7 +32,7 @@ suppressPackageStartupMessages({ library(dplyr); library(shinyjs) })
 cargar("R/ui_components.R", "app_styles")
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
-  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
               "R/tier_registry.R", "R/permisos.R", "R/forecasting_schemas.R", "R/forecasting_module.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
 })

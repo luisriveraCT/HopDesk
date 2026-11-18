@@ -104,7 +104,7 @@ test_that("C3: the initial fees go under their liability, in index order, withou
     # and searching the liability finds it).
     expect_identical(f$parte, if (MOTOR) "Crédito Banorte" else "")
   }
-  expect_identical(celda(R0, "Comisión por apertura", "d+2")$texto, "$250.00")
+  expect_identical(celda(R0, "Comisión por apertura", "d+2")$texto, "250.00")
 })
 test_that("C4: Día shows today - 7 .. today + 53; Semana / Mes / Año group", {
   expect_identical(vapply(R0$columnas, `[[`, character(1), "clave"), sprintf("d%+d", -7:53))
@@ -121,8 +121,8 @@ test_that("C5: today's column is marked, only it", {
 test_that("C6: ← 60 / 60 → widen the window; -8 and +54 show only then", {
   expect_null(celda(R0, "Renta oficina", "d-8")); expect_null(celda(R0, "Renta oficina", "d+54"))
   r <- ver(list(list(extend_left = 1), list(extend_right = 1)))$rejilla
-  expect_identical(celda(r, "Renta oficina", "d-8")$texto, "$900.00")
-  expect_identical(celda(r, "Renta oficina", "d+54")$texto, "$950.00")
+  expect_identical(celda(r, "Renta oficina", "d-8")$texto, "900.00")
+  expect_identical(celda(r, "Renta oficina", "d+54")$texto, "950.00")
   expect_identical(vapply(r$columnas, `[[`, character(1), "clave")[c(1, length(r$columnas))], c("d-67", "d+113"))
 })
 
@@ -130,7 +130,7 @@ test_that("C6: ← 60 / 60 → widen the window; -8 and +54 show only then", {
 test_that("C7: a future provision: amount + ⚡ (convertir) with its id", {
   c1 <- celda(R0, "Renta oficina", "d+5")
   expect_identical(c1[c("texto", "estado", "marca", "boton", "boton_id")],
-                   list(texto = "$1,300.00", estado = "provision", marca = "", boton = "convertir", boton_id = "p1d"))
+                   list(texto = "1,300.00", estado = "provision", marca = "", boton = "convertir", boton_id = "p1d"))
 })
 test_that("C8: an overdue provision: amber, still ⚡", {
   expect_identical(celda(R0, "Renta oficina", "d-3")[c("estado", "boton", "boton_id")],
@@ -138,9 +138,9 @@ test_that("C8: an overdue provision: amber, still ⚡", {
 })
 test_that("C9: an item pending ◷ ↩, overdue ! ↩, with the provision's id", {
   expect_identical(celda(R0, "Crédito Banorte", "d+3")[c("texto", "estado", "marca", "boton", "boton_id")],
-                   list(texto = "$700.00", estado = "pendiente", marca = "pendiente", boton = "comprobante", boton_id = "p2p"))
+                   list(texto = "700.00", estado = "pendiente", marca = "pendiente", boton = "comprobante", boton_id = "p2p"))
   expect_identical(celda(R0, "Crédito Banorte", "d-1")[c("texto", "estado", "marca", "boton", "boton_id")],
-                   list(texto = "$710.00", estado = "pendiente_vencido", marca = "vencido", boton = "comprobante", boton_id = "p2v"))
+                   list(texto = "710.00", estado = "pendiente_vencido", marca = "vencido", boton = "comprobante", boton_id = "p2v"))
 })
 test_that("C10 [CAMBIA (b), Luis]: a confirmed item shows ✓ today, on the engine it leaves; a deleted confirmation doesn't confirm", {
   if (isTRUE(MOTOR)) expect_null(celda(R0, "Crédito Banorte", "d-2")) else
@@ -166,7 +166,7 @@ test_that("C13: the row is tinted by its most urgent: overdue > within 2 days > 
 })
 test_that("C14 [CAMBIA, P4]: one liability, one day, two kinds: amounts summed, kind and click of the first", {
   c20 <- celda(R0, "Renta oficina", "d+20")
-  expect_identical(c20[c("texto", "estado", "clic_id")], list(texto = "$1,950.00", estado = "provision", clic_id = "p1e"))
+  expect_identical(c20[c("texto", "estado", "clic_id")], list(texto = "1,950.00", estado = "provision", clic_id = "p1e"))
   # Today the first one's ⚡ shows on the sum; on the engine a cell of several has no button of its own.
   if (MOTOR) expect_identical(c20$boton, "") else expect_identical(c20[c("boton", "boton_id")], list(boton = "convertir", boton_id = "p1e"))
 })
@@ -174,7 +174,7 @@ test_that("C15 [CAMBIA, P4]: Semana with two in one week: summed, kind and click
   s <- ver(list(list(granularity = "week")), "week")$rejilla
   k <- .pt_clave_periodo(format(D$lunes, "%G-W%V"), HOY, "week")
   cs <- celda(s, "Tarjeta Amex", k)
-  expect_identical(cs[c("texto", "estado", "clic_id")], list(texto = "$350.00", estado = "provision", clic_id = "p3a"))
+  expect_identical(cs[c("texto", "estado", "clic_id")], list(texto = "350.00", estado = "provision", clic_id = "p3a"))
   if (MOTOR) expect_identical(cs$boton, "") else expect_identical(cs$boton_id, "p3a")
 })
 
@@ -254,7 +254,7 @@ test_that("C23: + Provisión manual saves an orphan provision and its cell shows
   nueva <- g$df[!g$df$id %in% D$provisions$id, ]
   expect_identical(c(nrow(nueva), nueva$origin, nueva$estado, nueva$parte), c("1", "manual", "provisional", "Papelería Nueva"))
   expect_true(is.na(nueva$liability_id))
-  expect_identical(celda(g$rejilla, "Papelería Nueva", "d+9")$texto, "$321.50")
+  expect_identical(celda(g$rejilla, "Papelería Nueva", "d+9")$texto, "321.50")
 })
 test_that("C24: without pasivos.create_provision_manual it doesn't save", {
   expect_null(alta(FALSE)$df)
@@ -309,6 +309,14 @@ pt_cambios_motor <- function(ref) {
     }
     f
   })
+  # T55: the engine writes amounts without "$" and with the true minus sign.
+  sin_pesos <- function(x) {
+    if (is.list(x)) return(lapply(x, sin_pesos))
+    if (!is.character(x)) return(x)
+    x <- gsub("-\\$(?=\\d)", intToUtf8(0x2212L), x, perl = TRUE)
+    gsub("\\$(?=\\d)", "", x, perl = TRUE)
+  }
+  ref$filas <- sin_pesos(ref$filas)
   ref
 }
 test_that("the whole Día grid is the reference's (all but L3, whose Monday moves with the weekday: C13, C15)", {

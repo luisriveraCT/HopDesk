@@ -138,17 +138,21 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, op
     stop(donde, ": `destacar` must be TRUE or FALSE.", call. = FALSE)
   col <- .hd_fija(.hd_opcional(.hd_col("dinero", campo, titulo, "derecha", recorte = FALSE,
     moneda = moneda, sumar = isTRUE(sumar), editable = .hd_editable_validar(editable, campo),
-    valores = function(x) {
-      # Round first: -0.001 must show "$0.00" and copy "0", not "-$0.00" / "-0"
+    # moneda (T55): each row's currency (datos[[col$moneda]]), for the
+    # catalog's decimals; NULL (no such column, or a direct call): 2, as before.
+    valores = function(x, moneda = NULL) {
+      # Round first: -0.001 must show "0.00" and copy "0", not "-0.00" / "-0"
       # (and sprintf prints a negative zero as "-0.00", hence the reset).
       x   <- round(suppressWarnings(as.numeric(x)), 2)
       ok  <- !is.na(x)
       x[ok & x == 0] <- 0
-      # sprintf + one regex for the thousands commas: formatC(big.mark =)
-      # formats element by element and dominated the 5,000-row build.
+      # monto_moneda() (R/monedas.R), the one formatter of an amount (T55):
+      # the number alone, no "$" -- the table shows the currency in its band,
+      # its column or after the number (hdtable.js decides) -- and the true
+      # minus sign. An empty cell stays empty.
       mostrar <- character(length(x))
-      miles <- gsub("(\\d)(?=(\\d{3})+\\.)", "\\1,", sprintf("%.2f", abs(x[ok])), perl = TRUE)
-      mostrar[ok] <- paste0(ifelse(x[ok] < 0, "-", ""), "$", miles)
+      mon <- if (is.null(moneda)) rep(NA_character_, length(x)) else rep_len(as.character(moneda), length(x))
+      mostrar[ok] <- monto_moneda(x[ok], mon[ok], decimales = if (is.null(moneda)) 2L, codigo = FALSE)
       copiar <- character(length(x))
       copiar[ok] <- sub("\\.$", "", sub("0+$", "", sprintf("%.2f", x[ok])))
       v <- list(mostrar = mostrar, orden = x, copiar = copiar)
@@ -157,7 +161,7 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, op
         v$mostrar  <- .hd_dinero_compacto(x)
       } else if (formato == "entero") {
         v$completo <- mostrar
-        v$mostrar  <- .hd_dinero_entero(x)
+        v$mostrar  <- .hd_dinero_entero(x, mon)
       }
       if (cero == "vacio") {
         v$mostrar[ok & x == 0] <- ""
@@ -178,20 +182,20 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, op
   col
 }
 
-# "$4.5M" / "$802K" / "$950" (dinero_compacto): one decimal in millions, none
+# "4.5M" / "802K" / "950" (dinero_compacto): one decimal in millions, none
 # below. The unit is chosen by what the amount rounds to, so 999,600 is
-# "$1.0M", not "$1000K", and 999.6 is "$1K", not "$1,000". Halves round up
-# (2,500 is "$3K"): sprintf alone rounds them to even, and 1,500 and 2,500
-# both read "$2K". One dictionary lookup per unit, filled in vectorized (a
-# matrix has tens of thousands of cells).
-# "$5,000,121" (formato = "entero", T17c): whole pesos, halves up like
-# .hd_dinero_compacto() (sprintf alone would take 120.5 to "$120").
-.hd_dinero_entero <- function(x) {
+# "1.0M", not "1000K", and 999.6 is "1K", not "1,000". Halves round up
+# (2,500 is "3K"): sprintf alone rounds them to even, and 1,500 and 2,500
+# both read "2K". One dictionary lookup per unit, filled in vectorized (a
+# matrix has tens of thousands of cells). No "$" since T55.
+# "5,000,121" (formato = "entero", T17c): whole units, halves up like
+# .hd_dinero_compacto() (sprintf alone would take 120.5 to 120); written by
+# monto_moneda() with no decimals and no code (T55).
+.hd_dinero_entero <- function(x, moneda = NA_character_) {
   out <- character(length(x))
   ok  <- !is.na(x)
-  ent <- floor(abs(x[ok]) + 0.5 + 1e-9)
-  out[ok] <- paste0(ifelse(x[ok] < 0 & ent > 0, "-", ""), "$",
-                    gsub("(\\d)(?=(\\d{3})+$)", "\\1,", sprintf("%.0f", ent), perl = TRUE))
+  ent <- sign(x[ok]) * floor(abs(x[ok]) + 0.5 + 1e-9)
+  out[ok] <- monto_moneda(ent, rep_len(moneda, length(x))[ok], decimales = 0L, codigo = FALSE)
   out
 }
 
@@ -207,7 +211,8 @@ col_dinero <- function(campo, titulo = NULL, moneda = "Moneda", sumar = TRUE, op
   txt[m] <- stringi::stri_replace_all_fixed(tr("tablas.dinero.millones"), "{n}", sprintf("%.1f", arriba(ax[m] / 1e5) / 10))
   txt[k] <- stringi::stri_replace_all_fixed(tr("tablas.dinero.miles"), "{n}", sprintf("%.0f", arriba(ax[k] / 1e3)))
   txt[u] <- gsub("(\\d)(?=(\\d{3})+$)", "\\1,", sprintf("%.0f", arriba(ax[u])), perl = TRUE)
-  out[ok] <- paste0(ifelse(x[ok] < 0, "-", ""), "$", txt)
+  # No "$" and the true minus sign, as monto_moneda() (T55).
+  out[ok] <- paste0(ifelse(x[ok] < 0 & ax >= 0.5, intToUtf8(0x2212L), ""), txt)
   out
 }
 
@@ -637,7 +642,10 @@ hd_filas <- function(datos, columnas, id_col = "id") {
     agregado  = I(agregado),
     adjuntos  = I(adjuntos),
     celdas   = lapply(columnas, function(col) {
-      v <- lapply(col$valores(datos[[col$campo]]), I)
+      # A money column gets its rows' currency (its `moneda` field, when the
+      # data has it) for the catalog's decimals (T55); the others, as before.
+      v <- lapply(if (identical(col$tipo, "dinero")) col$valores(datos[[col$campo]], datos[[col$moneda %||% ""]])
+                  else col$valores(datos[[col$campo]]), I)
       # An editable column: each row's bounds (edicion_celda, T14).
       if (!is.null(col$editable)) {
         v$min <- I(.hd_editable_limite(col$editable$min, datos))
@@ -688,6 +696,15 @@ hd_filas <- function(datos, columnas, id_col = "id") {
   ) -> out
   # Only when the column exists: list(x = NULL) would serialize as {}.
   if (!is.null(acciones)) out$acciones <- I(acciones)
+  # T55: the catalog's decimals of each currency in the data (the totals,
+  # written in JS) and the field that holds it (a table that shows that
+  # field as a column, or groups by it, leaves the code out of each cell).
+  mons <- unique(moneda[!is.na(moneda) & nzchar(moneda)])
+  if (length(mons)) {
+    dec <- moneda_decimales(mons); dec[is.na(dec)] <- 2L
+    out$decimales <- as.list(stats::setNames(as.integer(dec), mons))
+  }
+  out$campo_moneda <- if (".moneda" %in% names(datos)) ".moneda" else campo_mon %||% ""
   # semaforo (T17b): .semaforo, how urgent the row is -- "vencida",
   # "muy_pronto", "pronto" or nothing: a bar and a tint (Pasivos: overdue,
   # due within 2 days, within 7).

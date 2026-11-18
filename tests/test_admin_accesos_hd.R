@@ -25,7 +25,7 @@ ok <- function(label, expr) {
 }
 
 source("tests/helpers/s3_memoria.R")
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R"))
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R"))
   suppressMessages(source(f))
 for (e in parse("R/tiers_module.R", keep.source = FALSE))
   if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) &&

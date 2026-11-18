@@ -15,7 +15,7 @@ suppressPackageStartupMessages({ library(shiny); library(dplyr); library(tibble)
 }
 fmt_money <- function(x) format(x, nsmall = 2)
 has_capability <- function(user, cap) TRUE
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/pasivos_schemas.R", "R/pasivos_list_module.R"))
   suppressMessages(source(f))
 

@@ -95,7 +95,7 @@ suppressPackageStartupMessages(library(dplyr))
 # dia_datos()'s .agregado (R/dia_module.R), with the same four-column key.
 # The real function, with the incident's two invoices.
 {
-  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
               "R/vencidos_module.R", "R/dia_module.R")) source(f)
   `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
   SAP_B1_ERP_TYPE <- "sap_b1_service_layer"

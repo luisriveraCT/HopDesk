@@ -104,17 +104,17 @@ ok(identical(v$fecha, sort(v$fecha)), "H2: sorted by date")
 r1 <- v[v$prov_id == P1, ]; r2 <- v[v$prov_id == P2, ]
 G1 <- as.Date(REPL$fecha_efectiva[REPL$id == P1]); G2 <- as.Date(REPL$fecha_efectiva[REPL$id == P2])
 # [CAMBIA] H3 (T20): Antes and Nuevo are "fecha · monto" (they were amounts only).
-ok(identical(r1$fecha, F1) && identical(r1$antes, paste(fecha_txt(F1), "· $150.00")) &&
-     identical(r1$nuevo, paste(fecha_txt(G1), "· $120.00")),
-   "H3: P1 shows its date, Antes <date> · $150.00 (the hand edit) and Nuevo <date> · $120.00")
+ok(identical(r1$fecha, F1) && identical(r1$antes, paste(fecha_txt(F1), "· 150.00 MXN")) &&
+     identical(r1$nuevo, paste(fecha_txt(G1), "· 120.00 MXN")),
+   "H3: P1 shows its date, Antes <date> · 150.00 MXN (the hand edit) and Nuevo <date> · 120.00 MXN (T55: with its currency)")
 ok(identical(v$decision, c("mantener", "mantener")) && all(is.na(v$otro)),
    "H4: every row starts on Mantener, with no Otro amount")
 ok(identical(unname(vapply(names(op_col$opciones), function(o) .hd_texto(op_col$opciones[[o]]), character(1))),
              c("Nuevo", "Mantener", "Otro")) && identical(op_col$burbuja, c(aplicar = "nuevo")),
    "H5: [CAMBIA] options Nuevo / Mantener / Otro (T17a's names); Nuevo's bubble is the suggested value")
 # [CAMBIA] H6 (T20, hallazgo 1, view only): the date conflict shows both dates.
-ok(identical(r2$fecha, F2_MANO) && identical(r2$antes, paste(fecha_txt(F2_MANO), "· $100.00")) &&
-     identical(r2$nuevo, paste(fecha_txt(G2), "· $120.00")) && !identical(G2, F2_MANO),
+ok(identical(r2$fecha, F2_MANO) && identical(r2$antes, paste(fecha_txt(F2_MANO), "· 100.00 MXN")) &&
+     identical(r2$nuevo, paste(fecha_txt(G2), "· 120.00 MXN")) && !identical(G2, F2_MANO),
    "H6: P2 (a date conflict) shows its hand date in Antes and the generated one in Nuevo")
 
 # ── What the panel does (its server, one session) ─────────────────────────────

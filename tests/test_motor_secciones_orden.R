@@ -13,7 +13,7 @@ suppressPackageStartupMessages(library(testthat))
 source("R/i18n.R")
 source("R/hd_registro.R")
 source("R/hd_piezas.R")
-source("R/hd_columnas.R")
+source("R/monedas.R"); source("R/hd_columnas.R")
 source(Sys.getenv("HD_TABLE_R", "R/hd_table.R"))
 
 d <- data.frame(Moneda = c("EUR", "MXN", "USD", "MXN"), stringsAsFactors = FALSE)
