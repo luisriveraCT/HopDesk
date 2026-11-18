@@ -59,7 +59,7 @@ list(
     "R/panorama_publicar_module.R" = 2L),
   hora = c(
     "R/audit_log_viewer_module.R" = 6L,
-    "R/avisos_correos.R" = 1L,
+    "R/avisos_correos.R" = 0L,
     "R/bancos_module.R" = 2L,
     "R/cashflow_export_module.R" = 3L,
     "R/empresas_module.R" = 1L,
