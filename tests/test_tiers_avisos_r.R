@@ -32,9 +32,26 @@ ok(sprintf("ningún aviso de tiers_module.R con texto fijo (quedan %d)", length(
    { if (length(fijos)) message("  fijos: ", paste(utils::head(fijos, 5), collapse = " | ")); !length(fijos) })
 
 claves <- unlist(lapply(SECC, function(s) avisos_claves(F, paste0("niveles.", s, ".aviso."))))
+# CM25: the approval's folder notice is chosen by init_cliente_aviso()
+# (R/persistence.R) from the condition's class, and tiers_module.R shows
+# tr(init_aviso, ...): its keys are written there, not in this file. Only that
+# function's source is scanned, not all of persistence.R.
+local({
+  def <- Filter(function(e) is.call(e) && identical(e[[1]], as.name("<-")) &&
+                  identical(e[[2]], as.name("init_cliente_aviso")),
+                as.list(parse("R/persistence.R", keep.source = FALSE, encoding = "UTF-8")))
+  stopifnot(length(def) == 1L)
+  tf <- tempfile(fileext = ".R"); on.exit(unlink(tf))
+  writeLines(deparse(def[[1]]), tf, useBytes = TRUE)
+  claves_init <- avisos_claves(tf, "niveles.solicitudes.aviso.")
+  ok("init_cliente_aviso() da las 3 claves del aviso de carpeta (error_folder y las 2 de CM25)",
+     setequal(claves_init, paste0("niveles.solicitudes.aviso.",
+                                  c("error_folder", "carpeta_con_datos", "carpeta_no_comprobada"))))
+  claves <<- unique(c(claves, claves_init))
+})
 falta <- avisos_claves_faltan(claves)
 ok(sprintf("las %d claves niveles.<sección>.aviso.* existen en es y en", length(claves)),
-   { if (length(falta)) message("  faltan: ", paste(falta, collapse = ", ")); length(claves) == 69L && !length(falta) })
+   { if (length(falta)) message("  faltan: ", paste(falta, collapse = ", ")); length(claves) == 71L && !length(falta) })
 
 es <- function(k, ...) tr(k, ..., idioma = "es")
 u <- function(k, ...) es(paste0("niveles.usuarios.aviso.", k), ...)
@@ -103,6 +120,13 @@ iguales <- list(
   list(s("enviada", id = cid), paste0("Solicitud para '", cid, "' enviada.")),
   # "S3" -> "el servidor": the wording Luis approved in textos-visibles (d321e67), not the old text
   list(s("error_folder"), "Error al inicializar la carpeta del cliente en el servidor."),   # and "folder" -> "carpeta"
+  # CM25: new, not a former fixed text -- their exact wording, pinned here
+  list(s("carpeta_con_datos", cliente = cid),
+       paste0("El cliente '", cid, "' ya tiene datos en el servidor (una carpeta sin registro). ",
+              "No se creó nada: elige otro identificador o revísalo con soporte.")),
+  list(s("carpeta_no_comprobada", cliente = cid),
+       paste0("No se pudo comprobar la carpeta del cliente '", cid, "' en el servidor. ",
+              "No se creó nada: intenta de nuevo en un momento.")),
   list(s("error_registro"), "Error al guardar el registro del cliente."),
   list(s("aprobado", id = cid), paste0("Cliente '", cid, "' aprobado y activado.")),
   list(s("error_rechazo"), "Error al guardar el rechazo."),
