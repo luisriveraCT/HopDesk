@@ -3164,8 +3164,9 @@ server <- function(input, output, session) {
         # session's copy, and a failed write is not announced as sent. The
         # entry itself is already saved either way.
         cid_ag <- effective_client_id(); usr_ag <- current_user()
-        agenda <- agregar_a_agenda(ph_row,
+        agenda <- agregar_a_agenda(
           leer    = function() safe_load_pagar_hoy(usr_ag, client_id = cid_ag),
+          cambio  = function(ph_base) upsert_pagar_hoy(ph_base, ph_row, keys = "id"),
           guardar = function(ph, base) save_pagar_hoy(ph, usr_ag, client_id = cid_ag,
                                                       base = base))   # CM09: rebased on S3 (A2)
         if (isTRUE(agenda$ok)) pagar_hoy_db(agenda$ph)

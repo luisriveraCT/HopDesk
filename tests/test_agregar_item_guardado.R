@@ -111,5 +111,36 @@ ok(any(grepl("if (isTRUE(agenda$ok)) pagar_hoy_db(agenda$ph)", ins, fixed = TRUE
 ok(any(grepl("send_to_agenda <- isTRUE(agenda$ok)", ins, fixed = TRUE)),
    "agenda: 'enviada a Agenda' only when it was saved; otherwise just 'Entrada agregada'")
 
+# ── 3. app.R's own call, run ─────────────────────────────────────────────────
+# The statement `agenda <- agregar_a_agenda(...)` is taken from app.R as it is
+# and evaluated with the Agenda's I/O stubbed: a call that does not match the
+# helper's signature fails here (a static check alone passed with it broken).
+llamada <- NULL
+buscar <- function(e) {
+  if (!is.null(llamada) || !is.call(e)) return(invisible())
+  if (identical(e[[1]], as.name("<-")) && identical(e[[2]], as.name("agenda")) &&
+      is.call(e[[3]]) && identical(e[[3]][[1]], as.name("agregar_a_agenda"))) { llamada <<- e; return(invisible()) }
+  for (i in seq_along(e)[-1])   # an empty argument (x[, 1]) is skipped, never touched
+    if (!identical(e[[i]], quote(expr = )) && is.call(e[[i]])) buscar(e[[i]])
+}
+for (e in parse(text = src, keep.source = FALSE)) buscar(e)
+ok(!is.null(llamada), "app.R's agenda <- agregar_a_agenda(...) found")
+if (!is.null(llamada) && exists("agregar_a_agenda")) {
+  ent <- new.env(parent = globalenv())
+  ent$usr_ag <- "u"; ent$cid_ag <- "cli"
+  ent$ph_row <- tibble::tibble(id = "nueva", ledger = "AP", Empresa = "E", Moneda = "MXN", Documento = "D2", Importe = 20)
+  vig <- tibble::tibble(id = "otra-sesion", ledger = "AP", Empresa = "E", Moneda = "MXN", Documento = "D1", Importe = 10)
+  escrito <- NULL
+  ent$safe_load_pagar_hoy <- function(username, client_id) { stopifnot(identical(client_id, "cli")); vig }
+  ent$save_pagar_hoy <- function(df, username, client_id, base) {
+    stopifnot(identical(client_id, "cli"), identical(base, vig)); escrito <<- df; invisible(df) }
+  r <- tryCatch({ eval(llamada, ent); ent$agenda }, error = function(e) list(ok = FALSE, error = conditionMessage(e)))
+  ok(isTRUE(r$ok) && setequal(r$ph$id, c("otra-sesion", "nueva")) && identical(escrito, r$ph),
+     "app.R's call works: reads S3's Agenda, adds the row, saves it rebased (\"Enviar a Agenda\")")
+  ent$safe_load_pagar_hoy <- function(username, client_id) stop("S3 caído"); escrito <- NULL
+  r <- tryCatch({ eval(llamada, ent); ent$agenda }, error = function(e) list(ok = TRUE))
+  ok(!isTRUE(r$ok) && is.null(escrito), "app.R's call with a failed read: not ok, nothing saved")
+}
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
