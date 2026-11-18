@@ -149,6 +149,36 @@ a <- lee()
 ok("s8: restoring the 2026 invoice takes ITS original date (not the 2025 one's), on its row only",
    identical(a$FechaVenc[a$id == "PH-2026"], as.Date("2026-11-01")) && identical(a$FechaVenc[a$id == "PH-2025"], as.Date("2026-11-10")))
 
+# The prod case (Coordinador): ONE undated Agenda row, a normal ✎ edit (the
+# key carries the invoice's date), the number is one open invoice -> it
+# reaches the Agenda as before: date, Código and amount.
+ph_rv <- arranca(vieja)
+s(.sync_staged(llave("2026-10-01"), "AP", ph_rv, new_date = as.Date("2026-12-11"), new_codigo = "P-HP-NUEVO",
+               new_importe = 333, username = USR, client_id = CID, facturas = una))
+a <- lee()
+ok("s9: a normal ✎ edit with one undated Agenda row (one-invoice number) reaches it as before: date, Código, amount",
+   identical(a$FechaVenc, as.Date("2026-12-11")) && identical(a$Codigo, "P-HP-NUEVO") && identical(a$Importe, 333))
+# Two undated rows on one number (prod has one such number): the rule looks at
+# SAP's open invoices, not at how many Agenda rows there are.
+dos_viejas <- q(.normalize(bind_rows(fila_ph("PH-V1", NA, "P-HP", 120), fila_ph("PH-V2", NA, "P-HP", 80)), .schema_pagar_hoy))
+ph_rv <- arranca(dos_viejas)
+s(.sync_staged(llave("2026-10-01"), "AP", ph_rv, new_date = as.Date("2026-12-13"), new_codigo = "P-HP-NUEVO",
+               username = USR, client_id = CID, facturas = una))
+a <- lee()
+ok("s10: two undated rows, the number is ONE open invoice -> both follow the edit (as before)",
+   all(a$FechaVenc == as.Date("2026-12-13")) && all(a$Codigo == "P-HP-NUEVO"))
+ph_rv <- arranca(dos_viejas)
+s(.sync_staged(llave("2026-10-01"), "AP", ph_rv, new_date = as.Date("2026-12-13"), new_codigo = "P-HP-NUEVO",
+               username = USR, client_id = CID, facturas = dos))
+a <- lee()
+ok("s11: two undated rows, the number is TWO open invoices -> neither is touched (on purpose: can't tell whose)",
+   all(a$FechaVenc == as.Date("2026-11-10")) && all(a$Codigo == "P-HP"))
+ph_rv <- arranca(dos_viejas)
+s(.sync_staged(llave("2026-10-01"), "AP", ph_rv, new_date = as.Date("2026-12-13"), username = USR, client_id = CID,
+               facturas = NULL))
+ok("s12: without SAP's invoices (read failed / not passed) -> as before: every undated row of the number",
+   all(lee()$FechaVenc == as.Date("2026-12-13")))
+
 # ── 3 · The ✎ handler's code ──────────────────────────────────────────────────
 cat("-- 3. the ✎ handler --\n")
 lm  <- readLines("R/ledger_module.R", warn = FALSE, encoding = "UTF-8")
