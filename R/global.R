@@ -187,7 +187,19 @@ if (Sys.getenv("HOPDESK_PRODUCTION") == "1") {
   )
 }
 
-IS_ADMIN_DEPLOYMENT <- tolower(trimws(Sys.getenv("CLIENT_ID"))) == "hd-admin"
+# The process's clock, in one line of the startup log (CM27, 2026-11-17):
+# every Sys.Date() in the app is the SERVER's day, nothing sets TZ, and
+# shinyapps.io most likely runs on UTC -- from 18:00 to 23:59 in Mexico that
+# "today" would already be tomorrow. This line shows it next to Mexico's day.
+# No client data.
+.hopdesk_linea_tz <- function(ahora = Sys.time())
+  sprintf("[ENV] TZ: Sys.timezone()=%s TZ='%s' ahora=%s Sys.Date()=%s Mexico=%s",
+          Sys.timezone(), Sys.getenv("TZ"), format(ahora, "%Y-%m-%d %H:%M %Z"),
+          format(ahora, "%Y-%m-%d"),   # = Sys.Date(): the day on this process's clock
+          format(ahora, "%Y-%m-%d %H:%M", tz = "America/Mexico_City"))
+message(.hopdesk_linea_tz())
+
+IS_ADMIN_DEPLOYMENT <-tolower(trimws(Sys.getenv("CLIENT_ID"))) == "hd-admin"
 
 # ── Single-instance guard (added 2026-09-02) ────────────────────────────────
 # CRITICAL: every save_*() in this app does "read the whole table -> mutate
