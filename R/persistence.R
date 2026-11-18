@@ -747,7 +747,11 @@ unregister_username <- function(username) {
   Documento = character(),
   tag       = character(),   # "important" | "urgent"
   tagged_by = character(),
-  tagged_at = as.POSIXct(character())
+  tagged_at = as.POSIXct(character()),
+  # The invoice's posting date (T52d): a DocNum is reused in another year.
+  # NA on rows written before; etiquetas_por_factura() (R/data_pipeline.R)
+  # says which invoice those reach.
+  fecha_factura = as.Date(character())
 )
 
 .schema_manual <- function() tibble(
@@ -1061,11 +1065,14 @@ load_tags <- function(client_id = NULL) {
 }
 
 # `base`: as in save_notes(). A tag row has no id; it is keyed by invoice and
-# tag (ledger, Empresa, Moneda, Documento, tag).
+# tag (ledger, Empresa, Moneda, Documento, posting date, tag; T52d: two
+# sessions tagging the two invoices of a reused number do not overwrite each
+# other). A row without the date (written before T52d) keys it as "".
 save_tags <- function(df, client_id = NULL, base = NULL) {
   norm <- .normalize(df, .schema_tags)
   if (!is.null(base) && !is.null(client_id) && nzchar(client_id)) {
-    llave <- function(d) dplyr::mutate(d, .llave = paste(ledger, Empresa, Moneda, Documento, tag, sep = "\x1f"))
+    llave <- function(d) dplyr::mutate(d, .llave = paste(ledger, Empresa, Moneda, Documento,
+      ifelse(is.na(fecha_factura), "", format(fecha_factura)), tag, sep = "\x1f"))
     norm <- modificar_tabla(S3_KEYS$tags, client_id, .schema_tags, function(fresco)
       dplyr::select(rebase_por_id(llave(norm), llave(.normalize(base, .schema_tags)), llave(fresco), ".llave"),
                     -".llave"))
@@ -1074,13 +1081,29 @@ save_tags <- function(df, client_id = NULL, base = NULL) {
   invisible(norm)
 }
 
-# Set tags for one invoice (replaces all existing tags for that invoice)
+# Set tags for one invoice (replaces its existing tags).
 # new_tags: character vector, e.g. c("urgent"), c("important","urgent"), character(0) to clear
+# fecha_factura: the invoice's posting date (T52d). It replaces the rows of
+# that invoice (same document and date) and the undated ones (before T52d)
+# of the document only while the document is one invoice among `facturas`
+# (the ledger's open invoices; .etiquetas_doc_unica(), the T52 rule): on a
+# reused number an undated row could be the other invoice's, so it stays
+# (and reaches neither, etiquetas_por_factura()). Without fecha_factura, as
+# before: every row of the document.
 set_invoice_tags <- function(tags_df, ledger, empresa, moneda, documento,
-                              new_tags, tagged_by = "user") {
-  tags_df <- tags_df |>
-    filter(!(ledger == !!ledger & Empresa == !!empresa &
-             Moneda == !!moneda & Documento == !!documento))
+                              new_tags, tagged_by = "user", fecha_factura = NA, facturas = NULL) {
+  tags_df <- .normalize(tags_df, .schema_tags)
+  fecha_factura <- suppressWarnings(as.Date(fecha_factura))[1]
+  del_doc <- tags_df$ledger == ledger & tags_df$Empresa == empresa &
+             tags_df$Moneda == moneda & tags_df$Documento == documento
+  del_doc[is.na(del_doc)] <- FALSE
+  quitar <- if (is.na(fecha_factura)) del_doc else {
+    unica <- .etiquetas_doc_unica(
+      .politica_doc(paste(ledger, empresa, sep = "\r"), moneda, documento), fecha_factura, facturas, ledger)
+    del_doc & ((!is.na(tags_df$fecha_factura) & tags_df$fecha_factura == fecha_factura) |
+                 (is.na(tags_df$fecha_factura) & isTRUE(unica)))
+  }
+  tags_df <- tags_df[!quitar, , drop = FALSE]
 
   if (length(new_tags)) {
     new_rows <- tibble(
@@ -1090,7 +1113,8 @@ set_invoice_tags <- function(tags_df, ledger, empresa, moneda, documento,
       Documento = documento,
       tag       = new_tags,
       tagged_by = tagged_by,
-      tagged_at = Sys.time()
+      tagged_at = Sys.time(),
+      fecha_factura = fecha_factura
     )
     tags_df <- bind_rows(tags_df, new_rows)
   }

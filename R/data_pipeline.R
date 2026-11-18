@@ -238,6 +238,88 @@ politica_por_factura <- function(df, policy_moves_df, ledger) {
   is.na(n) | n <= 1L
 }
 
+# ── Tags of each invoice (T52d) ───────────────────────────────────────────────
+# The urgent / important tags (invoice_tags.rds) of each row of df, as
+# data.frame(urgent, important). One function for every reader (the
+# Calendar's label and day dots, Vencidos and the day modal, Exportar/Flujo,
+# the Reporte), as politica_por_factura() is for the policy date.
+#   - A row written since T52d carries fecha_factura: it reaches its own
+#     invoice only (same document and posting date).
+#   - An older row (fecha_factura NA) reaches its document as before T52d
+#     while the document is one invoice (.politica_doc_unica() over
+#     `facturas`), except when that invoice is later than the tag (posting
+#     date > tagged_at): a tag cannot be about an invoice that did not exist
+#     yet -- the number reused after the tagged one was paid. On a document
+#     with two or more invoices it reaches none (nobody can tell whose it
+#     is), as the policy row in T52. Without tagged_at, as before.
+#     (Integrator and Coordinador, 2026-11-18.)
+# `ledger`: one value for every row, or one per row. `facturas`: the
+# ledger's open invoices (Empresa, Moneda, Documento, posting date, and
+# Ledger/Tipo or the same `ledger`), to tell one invoice from a reused
+# number when df is only part of them (a day, the overdue ones); by default
+# df itself. A row of df without Documento, Empresa or Moneda gets no tag.
+etiquetas_por_factura <- function(df, tags_df, ledger, facturas = NULL) {
+  n   <- if (is.data.frame(df)) nrow(df) else 0L
+  out <- data.frame(urgent = rep(FALSE, n), important = rep(FALSE, n))
+  if (!n || !is.data.frame(tags_df) || !nrow(tags_df)) return(out)
+  tg <- tags_df[tags_df$tag %in% c("urgent", "important"), , drop = FALSE]
+  if (!nrow(tg)) return(out)
+
+  led <- rep_len(as.character(ledger), n)
+  dk  <- .politica_doc(paste(led, df$Empresa, sep = "\r"), df$Moneda, as.character(df$Documento))
+  dk[is.na(led) | is.na(df$Empresa)] <- NA_character_
+  fc  <- df[["Fecha de contabilización"]]
+  fc  <- if (is.null(fc)) as.Date(rep(NA_character_, n)) else suppressWarnings(as.Date(fc))
+  tk  <- .politica_doc(paste(tg$ledger, tg$Empresa, sep = "\r"), tg$Moneda, as.character(tg$Documento))
+  tk[is.na(tg$ledger) | is.na(tg$Empresa)] <- NA_character_
+  tf  <- if ("fecha_factura" %in% names(tg)) suppressWarnings(as.Date(tg$fecha_factura)) else as.Date(rep(NA_character_, nrow(tg)))
+  # The tag's day in the client's zone (hoy_en(), R/zona.R), never
+  # as.Date(POSIXct), which is the UTC day.
+  ta <- as.Date(rep(NA_character_, nrow(tg)))
+  if ("tagged_at" %in% names(tg)) {
+    t_at <- suppressWarnings(as.POSIXct(tg$tagged_at, tz = "UTC"))
+    hay  <- !is.na(t_at)
+    if (any(hay)) ta[hay] <- hoy_en(ZONA_OMISION, ahora = t_at[hay])
+  }
+
+  pon <- function(filas, tag) {
+    if (tag == "urgent") out$urgent[filas] <<- TRUE else out$important[filas] <<- TRUE
+  }
+  # Its own invoice.
+  propia <- !is.na(tk) & !is.na(tf)
+  if (any(propia)) {
+    k_df <- ifelse(is.na(dk) | is.na(fc), NA_character_, paste(dk, format(fc), sep = "\r"))
+    k_tg <- paste(tk[propia], format(tf[propia]), sep = "\r")
+    for (i in which(propia)) pon(which(k_df %in% paste(tk[i], format(tf[i]), sep = "\r")), tg$tag[i])
+  }
+  # Older rows, without the posting date.
+  vieja <- which(!is.na(tk) & is.na(tf))
+  if (length(vieja)) {
+    unica <- .etiquetas_doc_unica(dk, fc, facturas, led)
+    for (i in vieja) {
+      filas <- which(dk %in% tk[i] & unica)
+      if (!length(filas)) next
+      if (!is.na(ta[i]) && any(!is.na(fc[filas]) & fc[filas] > ta[i])) next   # later than the tag
+      pon(filas, tg$tag[i])
+    }
+  }
+  out
+}
+
+# For each row (its document key dk and posting date fc), whether its
+# document is one invoice among `facturas` (or among the rows themselves):
+# .politica_doc_unica(), the T52 rule, not a copy of it.
+.etiquetas_doc_unica <- function(dk, fc, facturas, led) {
+  if (!is.data.frame(facturas) || !nrow(facturas)) return(.politica_doc_unica(dk, fc))
+  fl <- facturas[["Ledger"]] %||% facturas[["Tipo"]] %||% facturas[["ledger"]]
+  fl <- if (is.null(fl)) rep(led[1], nrow(facturas)) else as.character(fl)
+  fk <- .politica_doc(paste(fl, facturas$Empresa, sep = "\r"), facturas$Moneda, as.character(facturas$Documento))
+  ff <- facturas[["Fecha de contabilización"]]
+  ff <- if (is.null(ff)) as.Date(rep(NA_character_, nrow(facturas))) else suppressWarnings(as.Date(ff))
+  u  <- .politica_doc_unica(c(fk, dk), c(ff, fc))
+  u[nrow(facturas) + seq_along(dk)]
+}
+
 # ── Main pipeline ──────────────────────────────────────────────────────────────
 # Accepts raw data from any source (SAP API response or legacy RDS).
 # Returns a clean data frame ready for the calendar reactive.

@@ -349,6 +349,13 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
     )
     tdb <- etiquetas_frescas(shared)   # not the session's copy: another session may have just tagged
     tdb_base <- tdb   # CM09: if that read failed this is the session's copy; save rebases on S3
+    # Each invoice by its posting date, and the ledger's open invoices to
+    # tell a reused number (T52d).
+    facturas_de <- function(lg) {
+      f <- shared[[paste0("df_combined_", lg)]]
+      if (is.function(f)) tryCatch(isolate(f()), error = function(e) NULL) else NULL
+    }
+    facturas <- lapply(stats::setNames(nm = unique(keys_df$ledger)), facturas_de)
     for (i in seq_len(nrow(keys_df))) {
       tdb <- set_invoice_tags(tdb,
                ledger    = keys_df$ledger[i],
@@ -356,7 +363,9 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
                moneda    = keys_df$Moneda[i],
                documento = keys_df$Documento[i],
                new_tags  = new_tags,
-               tagged_by = current_user)
+               tagged_by = current_user,
+               fecha_factura = if (nzchar(keys_df$fecha_factura[i])) keys_df$fecha_factura[i] else NA,
+               facturas  = facturas[[keys_df$ledger[i]]])
     }
     # The session sees its own change now, as the Calendario's tag handler
     # does. Before (found 2026-10-31, Luis): only S3 got it, and the session

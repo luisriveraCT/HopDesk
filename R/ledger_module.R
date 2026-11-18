@@ -1517,9 +1517,14 @@ ledgerModuleServer <- function(id, config, shared) {
       # R/search_module.R): another session may have just tagged.
       tags_db <- etiquetas_frescas(shared)
       tags_base <- tags_db   # CM09: if that read failed this is the session's copy; save rebases on S3
+      # Each invoice by its posting date, and the ledger's open invoices to
+      # tell a reused number (T52d).
+      fc_rows  <- rows[["Fecha de contabilización"]] %||% rep(NA, nrow(rows))
+      facturas <- tryCatch(isolate(df_combined()), error = function(e) NULL)
       for (i in seq_len(nrow(rows))) {
         tags_db <- set_invoice_tags(tags_db, ledger, rows[["Empresa"]][i], rows[["Moneda"]][i],
-                                    rows[["Documento"]][i], new_tags, tagged_by=shared$current_user())
+                                    rows[["Documento"]][i], new_tags, tagged_by=shared$current_user(),
+                                    fecha_factura = fc_rows[i], facturas = facturas)
       }
       # BUG (found 2026-09-03, same class already fixed for
       # .save_moves_deferred()): save_tags() used to have NO error handling
