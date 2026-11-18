@@ -33,7 +33,9 @@ cargar <- function(archivo, nombres) {
   }
 }
 cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
-cargar("R/data_pipeline.R", c("apply_ic_filter", "build_ic_fullcodes"))
+# ic_empresas_de(): Vencidos and the lupa pass it to apply_ic_filter() since
+# T47; without it every datos() failed and the table came out empty (T53).
+cargar("R/data_pipeline.R", c("apply_ic_filter", "build_ic_fullcodes", "ic_empresas_de"))
 cargar("R/pasivos_capabilities.R", c("PASIVOS_CAPABILITIES", "has_capability"))
 # has_capability() asks the session's user through the permissions registry
 # (R/permisos.R, which needs a logged-in session): here, a user who may do
