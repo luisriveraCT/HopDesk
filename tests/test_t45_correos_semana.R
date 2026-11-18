@@ -117,9 +117,9 @@ dv <- correo_datos_viernes(semana, hoy_df, sh, VIERNES, SAP, url = "https://x", 
 comp <- function(lado, k, campo = "monto") { x <- dv[[lado]][["MXN"]]; x[[campo]][x$clase == k] }
 ok("cobrado: la confirmada por la regla de la app (A1, 400)", comp("cobros", "hecho") == 400 && comp("cobros", "hecho", "n") == 1)
 ok("reprogramado: con fecha nueva después del viernes, y a cuándo (A2 → 2 dic)",
-   comp("cobros", "reprogramado") == 300 && identical(dv$reprogramados$fecha_nueva[dv$reprogramados$contraparte == "Cliente Dos"], as.Date("2026-12-02")))
+   comp("cobros", "reprogramado") == 300 && identical(dv$reprog_cobros$fecha_nueva[dv$reprog_cobros$contraparte == "Cliente Dos"], as.Date("2026-12-02")))
 ok("vence el fin de semana: sigue abierta, en la semana, después del viernes; nunca 'reprogramada' a la misma fecha (A6)",
-   comp("cobros", "por_vencer") == 60 && !"Cliente Seis" %in% dv$reprogramados$contraparte &&
+   comp("cobros", "por_vencer") == 60 && !"Cliente Seis" %in% dv$reprog_cobros$contraparte &&
      !"Cliente Seis" %in% dv$atrasados_cobros$contraparte)
 ok("atrasado: sigue abierta, su fecha pasó, sin fecha nueva (A3 200 y el resto de A7, 150)",
    comp("cobros", "atrasado") == 350 && identical(dv$atrasados_cobros$contraparte, c("Cliente Tres", "Cliente Siete")))
@@ -163,6 +163,24 @@ ok("SAP refrescado a media semana: el corte es ese día; lo que vence después t
      mie$titular$cobros_atrasado == 350)
 ok("y el titular dice a qué día", tiene(correo_viernes_html(mie, fin), "Al miércoles 18, se cobraron"))
 ok("la semana que entra: lo programado hoy", dv$siguiente$cobros[["MXN"]] == 900 && dv$siguiente$pagos[["MXN"]] == 700)
+ok("T45d-3: la semana que entra trae top de cobros y top de pagos por separado (como el lunes)",
+   identical(dv$siguiente$top_cobros$contraparte, "Cliente Sig") && identical(dv$siguiente$top_pagos$contraparte, "Proveedor Sig") &&
+     is.null(dv$siguiente$top))
+mar <- correo_datos_viernes(semana, hoy_df, sh, LUNES + 1L, SAP, req_ids = "pv2")
+ok("T45d-2: corrido un martes, el cierre es de lunes a viernes de esa semana (16 al 20), nunca 'Vie 13 al Mar 17'",
+   mar$viernes == VIERNES && mar$lunes == LUNES &&
+     correo_viernes_asunto(mar, "es") == "Cierre de semana · 16 al 20 de noviembre" &&
+     tiene(correo_viernes_html(mar, fin), "Del Lun 16 al Vie 20") && !grepl("Vie 13", correo_viernes_html(mar, fin), fixed = TRUE))
+muchos <- semana
+muchos$filas <- dplyr::bind_rows(semana$filas, dplyr::bind_rows(lapply(1:12, function(i)
+  fila("AR", paste0("Z", i), paste("Atrasado", i), 10 + i, LUNES + 1))))
+hoy_m <- dplyr::bind_rows(hoy_df, dplyr::bind_rows(lapply(1:12, function(i) fila("AR", paste0("Z", i), paste("Atrasado", i), 10 + i, LUNES + 1))))
+dm <- correo_datos_viernes(muchos, hoy_m, sh, VIERNES, SAP, req_ids = "pv2")
+hm <- correo_viernes_html(dm, fin)
+ok("T45d-3: con 14 cobros atrasados, el correo muestra 10 y dice 'y 4 más'",
+   nrow(dm$atrasados_cobros) == 14 && tiene(hm, "y 4 más en HopDesk") &&
+     sum(vapply(dm$atrasados_cobros$contraparte[1:10], function(p) grepl(p, hm, fixed = TRUE), logical(1))) == 10 &&
+     !grepl(">Atrasado 1<", hm, fixed = TRUE))
 
 cat("\n-- viernes: historia --\n")
 ok("sin historia: la racha y el desempeño lo dicen",
@@ -251,8 +269,12 @@ serie <- tibble::tibble(semana = umbral_semana(LUNES), lunes = LUNES, empresa = 
                         saldo_abierto = c(1000, 500), saldo_vencido = c(150, 40), facturas = 5L)
 bancos_ant <- bancos; bancos_ant$fecha <- bancos_ant$fecha - 7L   # last week: the context's real weeks
 sh_l <- modifyList(sh, list(bancos_confirmados = function() bancos_ant))
-banco <- function(cargo) data.frame(fecha = LUNES - 6L, tipo = c("spei_out", "traspaso"), cargo = c(cargo, 5000),
-                                     abono = 0, moneda = "MXN")
+# A bank statement in each of the 4 weeks before (a commission each week:
+# internal, so it is never a payment, but the statement is there -- T45d).
+banco <- function(cargo, semanas = 1:4) data.frame(
+  fecha = c(LUNES - 6L, LUNES - 6L, LUNES - 7L * semanas + 1L),
+  tipo = c("spei_out", "traspaso", rep("comision", length(semanas))), cargo = c(cargo, 5000, rep(1, length(semanas))),
+  abono = 0, moneda = "MXN")
 dl <- correo_datos_lunes(df_l, sh_l, LUNES, serie, NULL, SAP, url = "https://x", moneda_base = "MXN",
                          tipos = c(MXN = 1, USD = 20), banco = banco(600))
 ok("top 10 de cobros", nrow(dl$top_cobros) == 10 && dl$top_cobros$monto[1] == 1200)
@@ -274,6 +296,12 @@ ok("cobertura bajo el umbral (6%) o sin estado de cuenta: sin semanas reales",
 ok("y la línea dice por qué y cuándo aparecerá lo real",
    tiene(correo_lunes_html(dl_baja, fin), "Lo real aparecerá cuando las confirmaciones en HopDesk cubran los pagos", "hoy cubren el 6%") &&
      tiene(correo_lunes_html(dl_sin, fin), "no hay estado de cuenta"))
+dl_huecos <- correo_datos_lunes(df_l, sh_l, LUNES, serie, NULL, SAP, banco = banco(600, semanas = 3:4))
+ok("T45d-1: sin estado de cuenta en la semana del 2 nov (las otras 3 sí), no hay %: la línea nombra la que falta",
+   is.na(dl_huecos$cobertura) && identical(dl_huecos$cobertura_faltan, LUNES - 14L) &&
+     identical(dl_huecos$contexto$clase, c("esta", rep("programado", 4))) &&
+     tiene(correo_lunes_html(dl_huecos, fin), "falta el estado de cuenta de las semanas del 2 nov)") &&
+     !grepl("hoy cubren", correo_lunes_html(dl_huecos, fin), fixed = TRUE))
 ok("sin confirmaciones en las 4 semanas anteriores: solo lo programado",
    identical(correo_datos_lunes(df_l, modifyList(sh, list(bancos_confirmados = function() NULL)), LUNES, serie, NULL, SAP)$contexto$clase,
              c("esta", rep("programado", 4))))
@@ -286,6 +314,32 @@ ok("día por día y contexto", tiene(h, "Día por día", "Esta semana en context
 ok("la caja del correo es fluida (no width=568 fijo fuera de Outlook)",
    tiene(h, "max-width:568px", "<!--[if mso]>") && !grepl('width="568" cellpadding="0" cellspacing="0" border="0" style="width:568px', h, fixed = TRUE))
 ok("nota del orden por equivalente cuando hay varias monedas", tiene(h, "su equivalente en MXN"))
+
+cat("\n-- modo claro (T45d-4) --\n")
+# Every <td>/<table> with a CSS background carries the same color as bgcolor;
+# no <div> keeps a background (bgcolor is not valid there); the meta tags ask
+# for light; no <style>.
+fondos_ok <- function(h) {
+  tags <- regmatches(h, gregexpr("<(td|table)[^>]*background:#[0-9A-Fa-f]{6}[^>]*>", h, perl = TRUE))[[1]]
+  length(tags) > 0 && all(vapply(tags, function(t) {
+    css <- sub('.*background:(#[0-9A-Fa-f]{6}).*', "\\1", t, perl = TRUE)
+    grepl(paste0('bgcolor="', css, '"'), t, fixed = TRUE)
+  }, logical(1)))
+}
+sin_div_fondo <- function(h) !grepl("<div[^>]*background:#", h, perl = TRUE)
+meta_claro <- function(h) all(vapply(c('<meta name="color-scheme" content="light">',
+                                        '<meta name="supported-color-schemes" content="light">', "color-scheme:light"),
+                                      function(x) grepl(x, h, fixed = TRUE), logical(1)))
+for (cual in list(list("lunes", h), list("viernes con cierre", v), list("viernes sin cierre", hsc))) {
+  ok(paste0("T45d-4 (", cual[[1]], "): cada fondo de tabla o celda también como bgcolor, ningún div con fondo"),
+     fondos_ok(cual[[2]]) && sin_div_fondo(cual[[2]]))
+  ok(paste0("T45d-4 (", cual[[1]], "): pide modo claro (meta color-scheme y supported-color-schemes) y sin <style>"),
+     meta_claro(cual[[2]]) && !grepl("<style", cual[[2]], fixed = TRUE))
+}
+ok("T45d-4: el encabezado azul marino y la tarjeta 'por pagar' llevan bgcolor del marino",
+   grepl(paste0('bgcolor="', CORREO_COLORES$marino, '"'), h, fixed = TRUE) &&
+     length(gregexpr(paste0('bgcolor="', CORREO_COLORES$marino, '"'), h, fixed = TRUE)[[1]]) >= 2)
+ok("T45d-4: el body también lleva su bgcolor", grepl(paste0('<body bgcolor="', CORREO_COLORES$fondo, '"'), h, fixed = TRUE))
 
 cat("\n-- base EUR --\n")
 df_e <- df_l; df_e$Moneda[df_e$Moneda == "MXN"] <- "EUR"

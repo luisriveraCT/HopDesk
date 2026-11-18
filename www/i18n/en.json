@@ -1801,7 +1801,6 @@
   "avisos.correo.viernes.desempeno_sub": "What stayed overdue with no new date, against last week and the 4-week median",
   "avisos.correo.viernes.desempeno_nota": "No completion %: rescheduling for a good reason is not a failure. Less overdue is better.",
   "avisos.correo.viernes.siguiente": "The week ahead",
-  "avisos.correo.viernes.flujos": "The {n} largest flows of the week ahead",
   "avisos.correo.desempeno.mejor": "better",
   "avisos.correo.desempeno.peor": "worse",
   "avisos.correo.desempeno.detalle": "last week {semana} · 4-week median {mediana}",
@@ -1867,5 +1866,7 @@
   "avisos.correo.desempeno.ilegible": "the history could not be read this week",
   "niveles.solicitudes.aviso.carpeta_con_datos": "Client '{cliente}' already has data on the server (a folder with no registry entry). Nothing was created: choose another identifier or check it with support.",
   "niveles.solicitudes.aviso.carpeta_no_comprobada": "The folder of client '{cliente}' could not be checked on the server. Nothing was created: try again in a moment.",
-  "tablas.empresas.aviso.renombrar_incompleto": "The initials change {antes} → {despues} did not finish in: {tablas}. The company keeps {antes}; the rest is done. Save the same change again to finish."
+  "tablas.empresas.aviso.renombrar_incompleto": "The initials change {antes} → {despues} did not finish in: {tablas}. The company keeps {antes}; the rest is done. Save the same change again to finish.",
+  "avisos.correo.contexto.sin_banco_semanas": "Actual figures will show once HopDesk confirmations cover the payments (the bank statement is missing for the weeks of {semanas}).",
+  "avisos.correo.viernes.y_mas": "and {n} more in HopDesk."
 }

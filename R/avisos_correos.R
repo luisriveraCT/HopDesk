@@ -285,18 +285,30 @@ correo_revision <- function(alertas, idioma = "es") {
 
 .cr_sap <- function(datos_sap, idioma) sap_al_texto(datos_sap, tz = UMBRAL_TZ, idioma = idioma)
 
-.cr_documento <- function(asunto, cuerpo) paste0(
-  '<!DOCTYPE html><html><head><meta charset="utf-8">',
+# Light only (T45d, point 4: on a phone the mail app's dark mode lightened
+# the navy and dropped some backgrounds). The meta tags and color-scheme ask
+# for light; every background of a <table>/<td> also goes as a bgcolor
+# attribute, which the apps that strip CSS still honor. No <style> (Gmail
+# cuts it). Gmail on Android in dark mode may still invert: there is no full
+# control from the email.
+.cr_con_bgcolor <- function(html)
+  gsub('<(td|table)((?:(?!bgcolor=)[^>])*?) style="([^"]*?)background:(#[0-9A-Fa-f]{6})',
+       '<\\1\\2 bgcolor="\\4" style="\\3background:\\4', html, perl = TRUE)
+
+.cr_documento <- function(asunto, cuerpo) .cr_con_bgcolor(paste0(
+  '<!DOCTYPE html><html style="color-scheme:light;supported-color-schemes:light"><head><meta charset="utf-8">',
   '<meta name="viewport" content="width=device-width,initial-scale=1">',
+  '<meta name="color-scheme" content="light">',
+  '<meta name="supported-color-schemes" content="light">',
   '<title>', .cr_e(asunto), '</title>',
   '<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,500;1,400&amp;family=Lato:wght@400;700;900&amp;display=swap" rel="stylesheet">',
-  '</head><body style="margin:0;padding:0;background:', .cr_C$fondo, '">',
+  '</head><body bgcolor="', .cr_C$fondo, '" style="margin:0;padding:0;color-scheme:light;background:', .cr_C$fondo, '">',
   '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:', .cr_C$fondo,
   ';font-family:', .cr_SANS, ';color:', .cr_C$tinta, '"><tr><td align="center" style="padding:24px 10px">',
   '<!--[if mso]><table role="presentation" width="568" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->',
   '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:568px;background:',
   .cr_C$papel, ';border-radius:18px;overflow:hidden">', cuerpo,
-  '</table><!--[if mso]></td></tr></table><![endif]--></td></tr></table></body></html>')
+  '</table><!--[if mso]></td></tr></table><![endif]--></td></tr></table></body></html>'))
 
 # ── Gráficas de barras (tablas, nunca SVG) ───────────────────────────────────
 
@@ -324,15 +336,17 @@ correo_revision <- function(alertas, idioma = "es") {
   .cr_t(clave, idioma, base = base))
 
 # Context: real weeks, this one, scheduled ones -- small columns, base only.
-.cr_contexto <- function(ctx, base, idioma, cxc, cobertura = NA_real_) {
+.cr_contexto <- function(ctx, base, idioma, cxc, cobertura = NA_real_, faltan = as.Date(character()), k = 4L) {
   if (!is.data.frame(ctx) || !nrow(ctx)) return("")
   alto <- 70
   mx <- max(c(if (cxc) ctx$cobros, ctx$pagos, 0))
   if (mx <= 0) return("")
   col <- function(v, color, claro) {
     h <- max(2, round(alto * v / mx))
-    paste0('<td valign="bottom" width="8" style="padding:0 1px"><div style="width:8px;height:', h, 'px;line-height:', h,
-           'px;font-size:1px;background:', color, ';', if (claro) "opacity:.45;" else "", '">&nbsp;</div></td>')
+    paste0('<td valign="bottom" width="8" style="padding:0 1px">',
+           '<table role="presentation" width="8" cellpadding="0" cellspacing="0" border="0"><tr>',
+           '<td height="', h, '" style="width:8px;height:', h, 'px;line-height:', h, 'px;font-size:1px;background:', color, ';',
+           if (claro) "opacity:.45;" else "", '">&nbsp;</td></tr></table></td>')
   }
   fondo <- function(i) if (ctx$clase[i] == "esta") paste0("background:", .cr_C$pie, ";") else ""
   idx <- seq_len(nrow(ctx))
@@ -364,6 +378,9 @@ correo_revision <- function(alertas, idioma = "es") {
                     '<span style="color:', .cr_C$cobre, '">&#9660;</span> ', .cr_t("avisos.correo.contexto.baja", idioma), ' '),
     .cr_t("avisos.correo.contexto.escala", idioma, base = base), ' ', .cr_m(mx, base), '. ',
     if (n_real) .cr_t("avisos.correo.contexto.real_nota", idioma)
+    else if (length(faltan) && length(faltan) < k) .cr_t("avisos.correo.contexto.sin_banco_semanas", idioma,
+      semanas = paste(vapply(sort(faltan), function(l) paste(as.integer(format(l, "%d")),
+        tr(paste0("comun.mes.", as.integer(format(l, "%m"))), idioma = idioma)), character(1)), collapse = ", "))
     else if (is.na(cobertura)) .cr_t("avisos.correo.contexto.sin_banco", idioma)
     else .cr_t("avisos.correo.contexto.sin_cobertura", idioma, pct = sprintf("%.0f%%", 100 * cobertura)))
   paste0(.cr_fila(.cr_tabla(paste0(cab, '<tr>', celdas, '</tr><tr>', etis, '</tr>', netos),
@@ -470,7 +487,7 @@ correo_lunes_html <- function(d, dest) {
     .cr_por_dia(d$por_dia, base, idioma, cxc),
     if (is.data.frame(d$contexto) && nrow(d$contexto)) paste0(
       .cr_seccion(.cr_t("avisos.correo.lunes.contexto", idioma), .cr_t("avisos.correo.lunes.contexto_sub", idioma, base = base)),
-      .cr_contexto(d$contexto, base, idioma, cxc, d$cobertura %||% NA_real_)),
+      .cr_contexto(d$contexto, base, idioma, cxc, d$cobertura %||% NA_real_, d$cobertura_faltan %||% as.Date(character()))),
     if (cxc && is.data.frame(d$top_cobros) && nrow(d$top_cobros)) paste0(
       .cr_seccion(.cr_t("avisos.correo.lunes.top_cobros", idioma, n = nrow(d$top_cobros))), .cr_lista(d$top_cobros, idioma)),
     if (is.data.frame(d$top_pagos) && nrow(d$top_pagos)) paste0(
@@ -479,6 +496,13 @@ correo_lunes_html <- function(d, dest) {
     tambien_html,
     .cr_boton_y_pie(d$url %||% "", d$datos_sap, idioma))
   .cr_documento(correo_lunes_asunto(d, idioma), cuerpo)
+}
+
+# Rows left out of the tops for lack of an exchange rate, by currency.
+.avisos_sin_tipo_de <- function(...) {
+  x <- unlist(lapply(list(...), function(t) attr(t, "sin_tipo")))
+  if (!length(x)) return(stats::setNames(integer(), character()))
+  t <- tapply(x, names(x), sum); stats::setNames(as.integer(t), names(t))
 }
 
 # ── Viernes · cómo cerró la semana ───────────────────────────────────────────
@@ -543,8 +567,12 @@ correo_viernes_asunto <- function(d, idioma)
 
 # A list whose second line says the date and what happened to it:
 # "vencía jue 19 nov · sin fecha nueva", "jue 19 nov → mié 9 dic".
-.cr_lista_mov <- function(df, idioma, como) {
+CORREO_MAX_LISTA <- 10L   # per side; the rest is "y N más" (Luis, T45d)
+
+.cr_lista_mov <- function(df, idioma, como, max = CORREO_MAX_LISTA) {
   if (!is.data.frame(df) || !nrow(df)) return("")
+  resto <- nrow(df) - max
+  if (resto > 0) df <- df[seq_len(max), , drop = FALSE]
   filas <- vapply(seq_len(nrow(df)), function(i) {
     borde <- if (i > 1) paste0("border-top:1px solid ", .cr_C$linea_tabla, ";") else ""
     f <- correo_fecha(df$fecha[i], idioma, "corta")
@@ -564,7 +592,8 @@ correo_viernes_asunto <- function(d, idioma)
                             '<tr><td colspan="2" style="font-size:12px;color:', .cr_C$gris, ';padding-top:2px">', tipo,
                             .cr_e(df$empresa[i]), ' &middot; ', detalle, '</td></tr>')), '</td></tr>')
   }, character(1))
-  .cr_fila(.cr_tabla(paste(filas, collapse = "")), "0 28px 4px")
+  paste0(.cr_fila(.cr_tabla(paste(filas, collapse = "")), "0 28px 4px"),
+         if (resto > 0) .cr_nota(.cr_t("avisos.correo.viernes.y_mas", idioma, n = resto), "0 28px 6px"))
 }
 
 .cr_renglon <- function(etiqueta, texto) paste0(
@@ -631,12 +660,12 @@ correo_viernes_html <- function(d, dest) {
     .cr_cierre(.cr_t("semana.tarjeta.cierre_pagos.etiqueta", idioma), .cr_t("semana.tarjeta.cierre_pagos.explica", idioma),
                d[["pagos"]], "AP", base, idioma))
   conc <- Filter(function(x) cxc || identical(x$tipo, "AP"), d$concentracion %||% list())
-  conc_html <- if (length(conc)) .cr_fila(paste0(
-    '<div style="padding:12px 16px;border-radius:12px;background:', .cr_C$revision, ';color:', .cr_C$revision_tinta,
+  conc_html <- if (length(conc)) .cr_fila(.cr_tabla(paste0(
+    '<tr><td style="padding:12px 16px;border-radius:12px;background:', .cr_C$revision, ';color:', .cr_C$revision_tinta,
     ';font-size:14px;line-height:1.5"><b>', .cr_t("avisos.correo.viernes.concentracion", idioma), '</b> ',
     paste(vapply(conc, function(x) .cr_t(paste0("avisos.correo.viernes.concentracion_", tolower(x$tipo)), idioma,
       contraparte = x$contraparte, pct = sprintf("%.0f%%", x$pct), moneda = x$moneda), character(1)), collapse = " "),
-    '</div>'), "0 28px 6px") else ""
+    '</td></tr>')), "0 28px 6px") else ""
 
   # Lo que hay que ver: what stayed atrasado (the ERP's settlements count as
   # collected / paid, P3).
@@ -648,11 +677,13 @@ correo_viernes_html <- function(d, dest) {
   ver_html <- paste0(.cr_seccion(.cr_t("avisos.correo.viernes.ver", idioma), .cr_t("avisos.correo.viernes.ver_sub", idioma)),
                      if (nzchar(ver)) ver else .cr_nota(.cr_t("avisos.correo.viernes.nada_que_ver", idioma)))
 
-  rep <- d$reprogramados
-  if (!cxc && is.data.frame(rep)) rep <- rep[rep$tipo %in% "AP", , drop = FALSE]
-  rep_html <- if (is.data.frame(rep) && nrow(rep)) paste0(
+  lado <- function(df, clave, color, como) if (is.data.frame(df) && nrow(df))
+    paste0(.cr_sub(.cr_t(clave, idioma), color), .cr_lista_mov(df, idioma, como)) else ""
+  rep <- paste0("", if (cxc) lado(d$reprog_cobros, "semana.tarjeta.cierre_cobros.etiqueta", .cr_C$arena_tinta, "reprogramado"),
+                lado(d$reprog_pagos, "semana.tarjeta.cierre_pagos.etiqueta", .cr_C$marino, "reprogramado"))
+  rep_html <- if (nzchar(rep)) paste0(
     .cr_seccion(.cr_t("avisos.correo.viernes.reprogramados", idioma), .cr_t("avisos.correo.viernes.reprogramados_sub", idioma)),
-    .cr_lista_mov(rep, idioma, "reprogramado")) else ""
+    rep) else ""
 
   ra <- d$racha %||% list(sin_historia = TRUE)
   rf <- ra$filas
@@ -661,7 +692,9 @@ correo_viernes_html <- function(d, dest) {
                                    .cr_t("avisos.correo.viernes.racha_sub", idioma)),
     if (isTRUE(ra$ilegible)) .cr_nota(.cr_t("avisos.correo.viernes.racha_ilegible", idioma))
     else if (isTRUE(ra$sin_historia)) .cr_nota(.cr_t("avisos.correo.viernes.racha_sin_historia", idioma))
-    else if (is.data.frame(rf) && nrow(rf)) .cr_lista_mov(rf, idioma, "racha")
+    else if (is.data.frame(rf) && nrow(rf)) paste0("",
+      if (cxc) lado(rf[rf$tipo %in% "AR", , drop = FALSE], "semana.tarjeta.cierre_cobros.etiqueta", .cr_C$arena_tinta, "racha"),
+      lado(rf[rf$tipo %in% "AP", , drop = FALSE], "semana.tarjeta.cierre_pagos.etiqueta", .cr_C$marino, "racha"))
     else .cr_nota(.cr_t("avisos.correo.viernes.racha_ninguna", idioma, n = ra$minimo)))
 
   fu <- d$fuera %||% list(); pl <- d$planes %||% list(n = 0L)
@@ -703,14 +736,15 @@ correo_viernes_html <- function(d, dest) {
   sig_neto <- .cr_tarjeta(.cr_t("semana.tarjeta.neto.etiqueta_proyectado", idioma),
     .cr_renglones(.cr_neto(s$cobros %||% numeric(), s$pagos %||% numeric(), base), base, NULL, 20, signo = TRUE, colorear = TRUE),
     .cr_t("semana.tarjeta.neto.explica", idioma))
-  top <- s$top
-  if (!cxc && is.data.frame(top)) top <- top[top$tipo %in% "AP", , drop = FALSE]
+  tc <- if (cxc) s$top_cobros else NULL; tp <- s$top_pagos
   sig_html <- paste0(
     .cr_seccion(.cr_t("avisos.correo.viernes.siguiente", idioma), .cr_e(.cr_mayus(.cr_del_al(sl, sl + 4L, idioma)))),
     if (cxc) paste0(.cr_dos(sig_cobrar, sig_pagar), .cr_fila(sig_neto)) else .cr_dos(sig_pagar),
-    if (is.data.frame(top) && nrow(top)) paste0(.cr_seccion(.cr_t("avisos.correo.viernes.flujos", idioma, n = nrow(top))),
-                                                .cr_lista(top, idioma, con_tipo = cxc)),
-    .cr_nota_orden(list(top), integer(), base, idioma))
+    if (is.data.frame(tc) && nrow(tc)) paste0(.cr_seccion(.cr_t("avisos.correo.lunes.top_cobros", idioma, n = nrow(tc))),
+                                              .cr_lista(tc, idioma)),
+    if (is.data.frame(tp) && nrow(tp)) paste0(.cr_seccion(.cr_t("avisos.correo.lunes.top_pagos", idioma, n = nrow(tp))),
+                                              .cr_lista(tp, idioma)),
+    .cr_nota_orden(list(tc, tp), .avisos_sin_tipo_de(tc, tp), base, idioma))
 
   # SAP not refreshed since Monday: no close at all, only the week ahead.
   if (isTRUE(d$sin_cierre)) {

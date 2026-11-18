@@ -32,7 +32,9 @@
 # =============================================================================
 
 AVISOS_TOP_N        <- 10L   # Monday's top cobros and pagos (Luis, T45)
-AVISOS_TOP_VIERNES  <- 5L    # Friday: what stayed pending, next week's flows
+# Friday's lists (atrasados, reprogramados, moved several weeks) show up to
+# AVISOS_TOP_N per side with "y N más"; next week has the top 10 cobros and
+# the top 10 pagos, as Monday (Luis, T45d: "10 flujos por cuenta para quedar en 20").
 AVISOS_CONTEXTO     <- 4L    # weeks of context on Monday: 4 real before, 4 scheduled after
 # The real weeks show only when the confirmations in HopDesk cover this
 # share of what the bank statement paid in those 4 weeks (base currency,
@@ -283,9 +285,24 @@ avisos_banco <- function(cid) {
 # confirmed payments (intercompany out): the measure of
 # scripts/diagnose_cobertura_confirmaciones_readonly.R (pct_pagos). NA
 # without a statement for those weeks.
+# The weeks (their Mondays) among the AVISOS_CONTEXTO before `lunes` with no
+# bank statement at all in the base currency (T45d: networks' statements
+# stopped on 26 oct, and the % still read "61%" as if those weeks were
+# covered).
+.avisos_semanas_sin_banco <- function(banco, lunes, base, k = AVISOS_CONTEXTO) {
+  semanas <- lunes - 7L * rev(seq_len(k))
+  if (!is.data.frame(banco) || !nrow(banco)) return(semanas)
+  f <- as.Date(banco$fecha[banco$moneda %in% base & !is.na(banco$fecha)])
+  semanas[!vapply(seq_along(semanas), function(i) any(f >= semanas[i] & f <= semanas[i] + 6L), logical(1))]
+}
+
+# NA, with attr "faltan" (the Mondays of the weeks with no statement), unless
+# EVERY one of the AVISOS_CONTEXTO weeks has a bank statement: a week without
+# one can never count as covered (T45d).
 .avisos_cobertura <- function(banco, conf, lunes, base, interco = NULL, cmap = character(), k = AVISOS_CONTEXTO,
                               empresas = NULL) {
-  if (!is.data.frame(banco) || !nrow(banco)) return(NA_real_)
+  faltan <- .avisos_semanas_sin_banco(banco, lunes, base, k)
+  if (length(faltan)) return(structure(NA_real_, faltan = faltan))
   desde <- lunes - 7L * k; hasta <- lunes - 1L
   b <- banco[!is.na(banco$fecha) & banco$fecha >= desde & banco$fecha <= hasta & banco$moneda %in% base &
                !(banco$tipo %in% AVISOS_BANCO_INTERNOS) & !is.na(banco$cargo) & banco$cargo > 0, , drop = FALSE]
@@ -369,7 +386,7 @@ correo_datos_lunes <- function(df, sh, lunes, serie, alertas, sap_fecha, url = "
        vencidos_pct = venc$pct, vencidos_delta = venc$delta,
        vencido = .avisos_vencido_monto(serie, lunes, moneda_base),
        por_dia = .avisos_por_dia(ar, ap, lunes, moneda_base),
-       cobertura = cob,
+       cobertura = as.numeric(cob), cobertura_faltan = attr(cob, "faltan") %||% as.Date(character()),
        contexto = .avisos_contexto(df, sh$bancos_confirmados(), lunes, moneda_base,
                                    interco = sh$interco_v2(), cmap = cmap,
                                    mostrar_real = !is.na(cob) && cob >= AVISOS_COBERTURA_MIN,
@@ -652,7 +669,7 @@ avisos_requisiciones_provisiones <- function(cid) {
 
 # The largest pieces of one class and side, for a list (.avisos_top() plus
 # the new date of a rescheduled one).
-.avisos_top_clase <- function(pz, clase, tipo, cmap, tipos, base, n = AVISOS_TOP_VIERNES) {
+.avisos_top_clase <- function(pz, clase, tipo, cmap, tipos, base, n = Inf) {   # every row: the email cuts and says "y N más"
   s <- pz[pz$clase %in% clase & pz$Tipo %in% tipo, , drop = FALSE]
   t <- .avisos_top(s, cmap, n, tipos, base)
   if (nrow(t)) {
@@ -669,7 +686,7 @@ avisos_requisiciones_provisiones <- function(cid) {
 # than Monday's date). list(ok, corte): corte = the close's date, Friday or
 # the day of the last data when it is earlier (a mid-week refresh).
 correo_corte <- function(semana, sap_fecha, viernes, tz = UMBRAL_TZ) {
-  viernes <- as.Date(viernes); lunes <- umbral_lunes(viernes)
+  lunes <- umbral_lunes(as.Date(viernes)); viernes <- lunes + 4L   # the week of today, whatever the day (T45d)
   if (is.null(sap_fecha) || !length(sap_fecha) || is.na(sap_fecha[1])) return(list(ok = FALSE, corte = NA))
   dia <- as.Date(format(as.POSIXct(sap_fecha[1], tz = "UTC"), tz = tz, "%Y-%m-%d"))
   previo <- semana$sap_fecha
@@ -689,7 +706,7 @@ correo_datos_viernes <- function(semana, df, sh, viernes, sap_fecha, url = "", t
                                  serie = NULL, historial = .schema_semana_historial(),
                                  partidas = .schema_semana_partidas(), req_ids = NULL) {
   base <- semana$moneda_base %||% MONEDA_BASE_OMISION
-  viernes <- as.Date(viernes); lunes <- umbral_lunes(viernes)
+  lunes <- umbral_lunes(as.Date(viernes)); viernes <- lunes + 4L   # the week of today, whatever the day (T45d)
   cmap <- sh$company_map()
   sig <- .avisos_semana(df, lunes + 7L)
   sig_ar <- sig[sig$Tipo %in% "AR", , drop = FALSE]; sig_ap <- sig[sig$Tipo %in% "AP", , drop = FALSE]
@@ -697,7 +714,8 @@ correo_datos_viernes <- function(semana, df, sh, viernes, sap_fecha, url = "", t
             siguiente = list(lunes = lunes + 7L,
                              cobros = .avisos_por_moneda(sig_ar, base), pagos = .avisos_por_moneda(sig_ap, base),
                              cobros_n = nrow(sig_ar), pagos_n = nrow(sig_ap),
-                             top = .avisos_top(sig, cmap, AVISOS_TOP_VIERNES, tipos, base)),
+                             top_cobros = .avisos_top(sig_ar, cmap, AVISOS_TOP_N, tipos, base),
+                             top_pagos = .avisos_top(sig_ap, cmap, AVISOS_TOP_N, tipos, base)),
             logros = NULL, radar = NULL, datos_sap = sap_fecha, url = url)
   corte <- correo_corte(semana, sap_fecha, viernes)
   # Without SAP data newer than Monday's there is no close: the email says
@@ -749,7 +767,8 @@ correo_datos_viernes <- function(semana, df, sh, viernes, sap_fecha, url = "", t
                    hay_cobros = nrow(cobros) > 0, hay_pagos = nrow(pagos) > 0),
     atrasados_cobros = .avisos_top_clase(pz, "atrasado", "AR", cmap, tipos, base),
     atrasados_pagos  = .avisos_top_clase(pz, "atrasado", "AP", cmap, tipos, base),
-    reprogramados = .avisos_top_clase(pz, "reprogramado", c("AR", "AP"), cmap, tipos, base),
+    reprog_cobros = .avisos_top_clase(pz, "reprogramado", "AR", cmap, tipos, base),
+    reprog_pagos  = .avisos_top_clase(pz, "reprogramado", "AP", cmap, tipos, base),
     concentracion = c(.avisos_concentracion(pz, "AR"), .avisos_concentracion(pz, "AP")),
     fuera = .avisos_fuera_del_plan(bancos, f, lunes, base, sh$interco_v2(), cmap, ic_empresas_de(sh)),
     # For the logros (R/avisos_logros.R): committed rows done, and atrasado.
@@ -839,7 +858,7 @@ correo_racha <- function(hoy, partidas, lunes, cmap, tipos, base) {
   }, integer(1))
   r <- r[semanas >= AVISOS_RACHA_MIN, , drop = FALSE]; semanas <- semanas[semanas >= AVISOS_RACHA_MIN]
   if (!nrow(r)) return(vacio)
-  o <- utils::head(order(-semanas, -r$monto), AVISOS_TOP_VIERNES)
+  o <- order(-semanas, -r$monto)   # every one: the email shows up to 10 per side
   emp <- r$empresa[o]; ini <- names(cmap)[match(emp, unname(cmap))]
   list(sin_historia = FALSE, minimo = AVISOS_RACHA_MIN, filas = data.frame(
     contraparte = ifelse(is.na(r$parte[o]) | !nzchar(trimws(r$parte[o])), "—", r$parte[o]),
