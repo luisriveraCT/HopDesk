@@ -42,9 +42,19 @@ ACCIONES <- list(
   flujo = list(inputs = list(`cfp-btn_curmode` = 1), leer = "cfp-fx_section_ui")   # Base: the FX row (monedas fase 2)
 )
 
+# Time limits (T53b): a fixture gets 90 s; one that runs out of time -- a busy
+# machine, not a missing function: TANDA39's tiers took 92.8 s with every
+# fixture 3-12x slower, and 15.8 s alone -- runs once more, alone, with 300 s.
+# A missing function fails on the first run (it is an error, not a timeout),
+# so it never waits for the second. The environment variables only exist to
+# test this guard (its own prueba / contraprueba); left unset, these limits.
+LIMITE     <- as.numeric(Sys.getenv("HD_GUARDIANA_LIMITE", "90"))
+REINTENTO  <- as.numeric(Sys.getenv("HD_GUARDIANA_REINTENTO", "300"))
+
 # One fixture in its own process. Returns list(res = "ok" | "ERROR: ...",
-# faltan = the "missing" messages seen).
-correr_fixture <- function(archivo, accion = NULL) {
+# faltan = the "missing" messages seen, sin_tiempo = TRUE when callr's time
+# limit killed it).
+correr_fixture <- function(archivo, accion = NULL, limite = LIMITE) {
   tryCatch(callr::r(function(repo, archivo, accion) {
     setwd(repo)
     Sys.setenv(FLU_DATOS = "prueba", CUENTAS_DIR = tempfile("cuentas_"), HOPDESK_APP_URL = "http://127.0.0.1:9")
@@ -70,10 +80,22 @@ correr_fixture <- function(archivo, accion = NULL) {
     message = function(m) { nota(conditionMessage(m)); invokeRestart("muffleMessage") },
     warning = function(w) { nota(conditionMessage(w)); invokeRestart("muffleWarning") })
     list(res = res, faltan = unique(trimws(faltan)))
-  }, args = list(repo = repo, archivo = archivo, accion = accion), timeout = 90,
+  }, args = list(repo = repo, archivo = archivo, accion = accion), timeout = limite,
      env = c(callr::rcmd_safe_env(), AWS_ACCESS_KEY_ID = "", AWS_SECRET_ACCESS_KEY = "", AWS_SESSION_TOKEN = "",
              http_proxy = "http://127.0.0.1:9", https_proxy = "http://127.0.0.1:9", no_proxy = "127.0.0.1,localhost")),
-    error = function(e) list(res = paste("ERROR:", conditionMessage(e)), faltan = character()))
+    error = function(e) list(res = paste("ERROR:", conditionMessage(e)), faltan = character(),
+                             sin_tiempo = inherits(e, "callr_timeout_error")))
+}
+
+# correr_fixture(), and once more with REINTENTO only when the first run ran
+# out of time (T53b). Adds dt (seconds, both runs) and repetida.
+correr_con_reintento <- function(archivo, accion = NULL) {
+  t0 <- Sys.time()
+  r  <- correr_fixture(archivo, accion)
+  r$repetida <- isTRUE(r$sin_tiempo)
+  if (r$repetida) r <- c(correr_fixture(archivo, accion, limite = REINTENTO)[c("res", "faltan", "sin_tiempo")], repetida = TRUE)
+  r$dt <- as.numeric(Sys.time() - t0, units = "secs")
+  r
 }
 
 # ── Self-check: the guard sees the T47 and T52d cases ─────────────────────────
@@ -88,24 +110,27 @@ quitar <- function(texto, nombre) {
 for (caso in c("ic_empresas_de", "etiquetas_por_factura")) {
   copia <- tempfile(sprintf("vencidos_sin_%s_", caso), fileext = ".R")
   writeLines(quitar(readLines(ven, warn = FALSE, encoding = "UTF-8"), caso), copia, useBytes = TRUE)
-  r <- correr_fixture(copia)
+  r <- correr_con_reintento(copia)
   unlink(copia)
-  ok(sprintf("contraprueba: Vencidos without %s is caught", caso),
+  ok(sprintf("contraprueba: Vencidos without %s is caught (%.1fs)", caso, r$dt),
      any(grepl(sprintf('"%s"', caso), r$faltan, fixed = TRUE)))
 }
 
 # ── Every fixture, in zero ─────────────────────────────────────────────────────
 fixtures <- sort(list.files(file.path(repo, "tests", "helpers"), "^[a-z].*_fixture_app\\.R$", full.names = TRUE))
 ok(sprintf("finds the fixtures (%d)", length(fixtures)), length(fixtures) >= 20L)
+solo <- Sys.getenv("HD_GUARDIANA_SOLO", "")   # testing this guard only: one fixture by name
+if (nzchar(solo)) fixtures <- fixtures[sub("_fixture_app\\.R$", "", basename(fixtures)) == solo]
 for (f in fixtures) {
   nombre <- sub("_fixture_app\\.R$", "", basename(f))
-  t0 <- Sys.time()
-  r <- correr_fixture(f, ACCIONES[[nombre]])
-  dt <- as.numeric(Sys.time() - t0, units = "secs")
+  r <- correr_con_reintento(f, ACCIONES[[nombre]])
   limpio <- identical(r$res, "ok") && !length(r$faltan)
-  ok(sprintf("%s starts with every function it calls (%.1fs)", nombre, dt), limpio)
+  ok(sprintf("%s starts with every function it calls (%.1fs%s)", nombre, r$dt,
+             if (r$repetida) sprintf(", slow: out of %.0fs once, repeated", LIMITE) else ""), limpio)
   if (!limpio) {
-    if (!identical(r$res, "ok")) cat("      ", substr(r$res, 1, 200), "\n")
+    if (isTRUE(r$sin_tiempo))
+      cat(sprintf("       out of time twice (%.0fs, then %.0fs): a slow machine, NOT a missing function\n", LIMITE, REINTENTO))
+    else if (!identical(r$res, "ok")) cat("      ", substr(r$res, 1, 200), "\n")
     if (length(r$faltan)) cat(paste0("       ", substr(r$faltan, 1, 200)), sep = "\n")
   }
 }
