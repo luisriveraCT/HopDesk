@@ -417,9 +417,13 @@ correo_lunes_html <- function(d, dest) {
     .cr_renglones(cobros, base, .cr_C$marino, aprox = d$cobros_aprox %||% character()),
     paste0(.cr_t("semana.tarjeta.por_cobrar.explica", idioma, rango = rango), ' &middot; ',
            .cr_tn("semana.tarjeta.por_cobrar.n", as.integer(d$cobros_n %||% 0L), idioma),
+           # "No incluye … · ver Cartera vencida": two keys since T46b, so
+           # Panorama says the same and points to its own place.
            if (length(d$cobros_atrasados)) paste0('<br>', .cr_t("semana.tarjeta.por_cobrar.excluye", idioma,
              monto = paste(vapply(.cr_orden(d$cobros_atrasados, base), function(m) monto_moneda(d$cobros_atrasados[[m]], m),
-                                  character(1)), collapse = " · ")))), "arena")
+                                  character(1)), collapse = " · ")), " · ",
+             .cr_t("semana.tarjeta.por_cobrar.excluye_ver", idioma,
+                   destino = tr("semana.tarjeta.cartera_vencida.etiqueta", idioma = idioma)))), "arena")
   pasivos_linea <- if (as.integer(d$pasivos_n %||% 0L) > 0) paste0(
     .cr_esp(8), '<div style="font-size:13px;color:#FFFFFF;border-top:1px solid #2A3A58;padding-top:8px">',
     .cr_tn("semana.tarjeta.por_pagar.pasivos", as.integer(d$pasivos_n), idioma), ' &middot; ',
