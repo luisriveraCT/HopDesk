@@ -223,6 +223,10 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     "load_interco_v2", ".save_provision_row", "fetch_all_companies",
     ".save_moves_deferred", ".sync_staged", ".pasivos_perform_conversion",
     "rename_empresa_initials",
+    # .rni_avisar() (CM29, R/persistence.R): bumps the sync bus for each
+    # table rename_empresa_initials() changed; it saves nothing, and the
+    # rename is logged by its caller (the Empresas edit handler).
+    ".rni_avisar",
     # modificar_bancos_confirmados() (2026-11-01, R/bancos_persistence.R):
     # the fresh-read-then-write wrapper around save_bancos_confirmados(); its
     # callers (the Agenda AP/AR confirm handlers) log their own action.

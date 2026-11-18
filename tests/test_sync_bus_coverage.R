@@ -52,8 +52,12 @@ for (key in NEWLY_SYNCED) {
 
 ok("abonos_db: bump_sync_version(\"abonos_db\") appears at 3 real save sites",
    .count_bump("abonos_db") == 3L)
-ok("interco_v2: bump_sync_version(\"interco_v2\") appears at 5 real save sites",
-   .count_bump("interco_v2") == 5L)
+# CM29: the rename cascade no longer bumps interco_v2 by name -- it bumps every
+# table it changes through .rni_avisar(), which looks the bus name up from the
+# S3 key (behaviour checked in tests/test_cm29_renombre_sesiones.R, section 1).
+ok("interco_v2: bump_sync_version(\"interco_v2\") appears at 4 real save sites, plus the rename's .rni_avisar()",
+   .count_bump("interco_v2") == 4L &&
+     any(grepl(".rni_avisar(tabla, cid)", readLines("R/persistence.R", warn = FALSE), fixed = TRUE)))
 ok("sap_ov_db: bump_sync_version(\"sap_ov_db\") appears at its real save site",
    .count_bump("sap_ov_db") >= 1L)
 ok("hop_grants_db: bump_sync_version(\"hop_grants_db\") appears at all 3 real save sites",

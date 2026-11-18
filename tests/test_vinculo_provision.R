@@ -129,7 +129,10 @@ test_that("deshacer la confirmación regresa la provisión a convertida", {
   .s3_write     <<- function(obj, key, client_id = NULL) assign(paste0(client_id, "/", key), obj, envir = .mem)
   bump_sync_version <<- function(...) invisible(TRUE)
   pasivos_log_audit <<- function(...) invisible("audit")
-  S3_KEYS <<- list(pasivos_provisions = "pasivos_provisions.rds")
+  # empresas.rds: save_pasivos_provisions() reads it strictly (CM29,
+  # iniciales_vigentes()); here it does not exist, so nothing is translated.
+  S3_KEYS <<- list(pasivos_provisions = "pasivos_provisions.rds", empresas = "empresas.rds")
+  .s3_existe <<- function(key, client_id) !is.null(.mem[[paste0(client_id, "/", key)]])
   if (!exists(".schema_pasivos_provision")) source("R/pasivos_schemas.R")
   source("R/pasivos_engine.R")
   save_pasivos_provisions(tibble(id = c("p3", "p1"), estado = c("item_confirmed", "provisional"),
