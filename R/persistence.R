@@ -720,6 +720,7 @@ unregister_username <- function(username) {
   Empresa              = character(),
   Moneda               = character(),
   Documento            = character(),
+  fecha_factura        = as.Date(character()),   # the invoice's posting date (T52b): Documento is reused across years
   FechaVenc_Proyectada = as.Date(character()),
   notas                = character(),
   moved_by             = character(),
@@ -1013,14 +1014,22 @@ save_moves <- function(df, client_id = NULL) {
   if (exists(".cache_set", mode = "function")) .cache_set("moves", norm, client_id)
 }
 
-# Upsert rows into moves table (matched on Empresa + Moneda + Documento + ledger)
+# Upsert rows into the moves table, one row per invoice: matched on ledger +
+# Empresa + Moneda + Documento + fecha_factura (the posting date, T52b: the
+# ERP reuses a DocNum in another year). Rows without the date (written
+# before T52b, or rows that are not ERP invoices) match each other as before.
 upsert_moves <- function(db, new_rows) {
   if (!nrow(new_rows)) return(db)
-  keys <- c("ledger","Empresa","Moneda","Documento")
+  sin_fecha <- function(d) as.Date(rep(NA_character_, nrow(d)))
+  if (!"fecha_factura" %in% names(new_rows)) new_rows$fecha_factura <- sin_fecha(new_rows)
+  if (!"fecha_factura" %in% names(db))       db$fecha_factura       <- sin_fecha(db)
+  new_rows$fecha_factura <- as.Date(new_rows$fecha_factura)
+  db$fecha_factura       <- as.Date(db$fecha_factura)
+  keys <- c("ledger","Empresa","Moneda","Documento","fecha_factura")
   # Dedup new_rows before upserting — if the same invoice appears twice (e.g.,
   # two Vencidos rows with different FechaVenc_Original), keep the latest date.
   new_rows <- dplyr::arrange(new_rows, dplyr::desc(FechaVenc_Proyectada))
-  new_rows <- dplyr::distinct(new_rows, ledger, Empresa, Moneda, Documento,
+  new_rows <- dplyr::distinct(new_rows, ledger, Empresa, Moneda, Documento, fecha_factura,
                                .keep_all = TRUE)
   db <- anti_join(db, new_rows, by = keys)
   bind_rows(db, new_rows)

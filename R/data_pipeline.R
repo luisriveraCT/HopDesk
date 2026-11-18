@@ -191,17 +191,32 @@ dedupe_invoices <- function(df) {
 }
 
 politica_por_factura <- function(df, policy_moves_df, ledger) {
-  n   <- if (is.data.frame(df)) nrow(df) else 0L
-  out <- as.Date(rep(NA_character_, n))
-  if (!n || !is.data.frame(policy_moves_df) || !nrow(policy_moves_df)) return(out)
-  pm <- policy_moves_df[policy_moves_df$ledger %in% ledger, , drop = FALSE]
-  if (!nrow(pm)) return(out)
+  i <- fila_por_factura(df, policy_moves_df, ledger, "FechaVenc_Politica")
+  v <- if (is.data.frame(policy_moves_df)) as.Date(policy_moves_df$FechaVenc_Politica) else as.Date(character())
+  v[i]
+}
 
-  pv <- as.Date(pm$FechaVenc_Politica)
-  pf <- if ("fecha_factura" %in% names(pm)) as.Date(pm$fecha_factura) else as.Date(rep(NA_character_, nrow(pm)))
-  pk <- .politica_doc(pm$Empresa, pm$Moneda, pm$Documento)
-  o  <- order(pv, decreasing = TRUE, na.last = TRUE)       # match() takes the first: the latest
-  pv <- pv[o]; pf <- pf[o]; pk <- pk[o]
+# The row of `tabla` (policy_moves, moves: ledger, Empresa, Moneda,
+# Documento, fecha_factura and the date column `valor`) that belongs to each
+# row of df, as an index into `tabla` (NA = none). The rule of
+# politica_por_factura() above, for every table keyed on the invoice (T52b
+# extends it to the dates moved by hand): a dated row reaches only its own
+# invoice; an undated one (written before the table had the date) reaches
+# its document -- with solo_unica, only while the document is one invoice.
+# When several rows reach a row, the latest `valor` wins, as the old joins'
+# arrange(desc()) |> distinct().
+fila_por_factura <- function(df, tabla, ledger, valor, solo_unica = TRUE) {
+  n   <- if (is.data.frame(df)) nrow(df) else 0L
+  out <- rep(NA_integer_, n)
+  if (!n || !is.data.frame(tabla) || !nrow(tabla)) return(out)
+  idx <- which(tabla$ledger %in% ledger)
+  if (!length(idx)) return(out)
+
+  tv <- as.Date(tabla[[valor]][idx])
+  tf <- if ("fecha_factura" %in% names(tabla)) as.Date(tabla$fecha_factura[idx]) else as.Date(rep(NA_character_, length(idx)))
+  tk <- .politica_doc(tabla$Empresa[idx], tabla$Moneda[idx], tabla$Documento[idx])
+  o  <- order(tv, decreasing = TRUE, na.last = TRUE)       # match() takes the first: the latest
+  idx <- idx[o]; tf <- tf[o]; tk <- tk[o]
 
   fc <- df[["Fecha de contabilización"]]
   fc <- if (is.null(fc)) NULL else tryCatch(as.Date(fc), error = function(e) NULL)
@@ -209,20 +224,33 @@ politica_por_factura <- function(df, policy_moves_df, ledger) {
   dk <- .politica_doc(df$Empresa, df$Moneda, df$Documento)
 
   # Its own row: same document and posting date.
-  propia  <- !is.na(pk) & !is.na(pf)
-  k_prop  <- paste(pk[propia], format(pf[propia]), sep = "\r")
+  propia  <- !is.na(tk) & !is.na(tf)
+  k_prop  <- paste(tk[propia], format(tf[propia]), sep = "\r")
   dk_prop <- ifelse(is.na(dk) | is.na(fc), NA_character_, paste(dk, format(fc), sep = "\r"))
-  out     <- pv[propia][match(dk_prop, k_prop)]
+  out     <- idx[propia][match(dk_prop, k_prop)]
 
-  # Rows written before T52, on the document alone -- only while the document
-  # is one invoice: a single posting date among df's rows. With two (a
-  # reused number) nobody can tell whose the old row is, so it reaches
-  # neither and each invoice gets its own on the next apply.
-  vieja <- !is.na(pk) & is.na(pf)
-  unica <- .politica_doc_unica(dk, fc)
-  usa   <- is.na(out) & !is.na(dk) & unica
-  out[usa] <- pv[vieja][match(dk[usa], pk[vieja])]
+  # Undated rows, on the document alone -- with solo_unica only while the
+  # document is one invoice: a single posting date among df's rows. With two
+  # (a reused number) nobody can tell whose the old row is, so it reaches
+  # neither.
+  vieja <- !is.na(tk) & is.na(tf)
+  usa   <- is.na(out) & !is.na(dk)
+  if (solo_unica) usa <- usa & .politica_doc_unica(dk, fc)
+  out[usa] <- idx[vieja][match(dk[usa], tk[vieja])]
   out
+}
+
+# The date moved by hand (moves.rds) of each row of df, and its note: a list
+# of FechaVenc_Proyectada (Date) and notas (character, or NULL when the
+# moves table has no notas column), one per row (T52b; see fila_por_factura()).
+mudanza_por_factura <- function(df, moves_df, ledger) {
+  i <- fila_por_factura(df, moves_df, ledger, "FechaVenc_Proyectada", solo_unica = FALSE)
+  hay <- is.data.frame(moves_df)
+  list(
+    FechaVenc_Proyectada = (if (hay) as.Date(moves_df$FechaVenc_Proyectada) else as.Date(character()))[i],
+    notas = if (!hay || !nrow(moves_df)) rep(NA_character_, length(i))
+            else if ("notas" %in% names(moves_df)) as.character(moves_df$notas)[i]
+            else NULL)
 }
 
 # For each key, whether it has at most one distinct posting date among the
@@ -430,29 +458,14 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
   # rows do not — add an NA column so .data$FechaEff is always resolvable.
   if (!"FechaEff" %in% names(df)) df[["FechaEff"]] <- as.Date(NA_character_)
 
-  # Apply date moves (moves_df may be NULL if .data_loaded hasn't completed yet)
-  ledger_moves <- if (!is.null(moves_df) && nrow(moves_df) > 0) {
-    moves_df |>
-      dplyr::filter(.data$ledger == !!ledger) |>
-      dplyr::select(Empresa, Moneda, Documento, FechaVenc_Proyectada,
-                    dplyr::any_of("notas")) |>
-      # Defensive dedup: duplicate (Empresa, Moneda, Documento) keys in moves_df
-      # cause a dplyr 1.1+ many-to-many join error and silently wipe the calendar.
-      # Keep the row with the latest projected date when duplicates exist.
-      dplyr::arrange(dplyr::desc(FechaVenc_Proyectada)) |>
-      dplyr::distinct(Empresa, Moneda, Documento, .keep_all = TRUE)
-  } else {
-    tibble(Empresa = character(), Moneda = character(),
-           Documento = character(), FechaVenc_Proyectada = as.Date(character()),
-           notas = character())
-  }
-
-  result <- df |>
-    # na_matches = "never": provisions often have Documento = NA (no template);
-    # without this, dplyr treats NA == NA and accidentally joins all such rows to
-    # any moves/policy entry that also has Documento = NA, displacing their dates.
-    left_join(ledger_moves,        by = c("Empresa","Moneda","Documento"),
-              na_matches = "never")
+  # Apply date moves (moves_df may be NULL if .data_loaded hasn't completed
+  # yet), each to its own invoice (T52b). A row with Documento NA (provisions
+  # often have no template) matches nothing; with several rows the latest
+  # projected date wins.
+  result <- df
+  mudanza <- mudanza_por_factura(result, moves_df, ledger)
+  result$FechaVenc_Proyectada <- mudanza$FechaVenc_Proyectada
+  if (!is.null(mudanza$notas)) result$notas <- mudanza$notas
   # The policy date of each invoice, on its own identity (T52).
   result$FechaVenc_Politica <- politica_por_factura(result, policy_moves_df, ledger)
   result <- result |>

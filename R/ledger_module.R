@@ -83,23 +83,11 @@ ledgerModuleServer <- function(id, config, shared) {
       moves        <- shared$moves_db()
       policy_moves <- tryCatch(shared$policy_moves_db(), error = function(e) NULL)
 
-      # Per-ledger move tables (same dedup logic as build_ledger_df)
-      lm <- if (!is.null(moves) && nrow(moves) > 0) {
-        moves |>
-          dplyr::filter(.data$ledger == !!ledger) |>
-          dplyr::select(Empresa, Moneda, Documento, FechaVenc_Proyectada,
-                        dplyr::any_of("notas")) |>
-          dplyr::arrange(dplyr::desc(FechaVenc_Proyectada)) |>
-          dplyr::distinct(Empresa, Moneda, Documento, .keep_all = TRUE)
-      } else {
-        tibble::tibble(Empresa = character(), Moneda = character(),
-                       Documento = character(), FechaVenc_Proyectada = as.Date(character()))
-      }
-
+      n_mv <- if (is.data.frame(moves))        sum(moves$ledger %in% ledger)        else 0L
       n_pm <- if (is.data.frame(policy_moves)) sum(policy_moves$ledger %in% ledger) else 0L
 
       # Fast path: no moves exist — df_base already has FechaEff = FechaVenc_Original
-      if (!nrow(lm) && !n_pm) return(df)
+      if (!n_mv && !n_pm) return(df)
 
       # SAP-override notas (set by build_ledger_df) win over move notas.
       # Save them before the join wipes the column.
@@ -109,10 +97,12 @@ ledgerModuleServer <- function(id, config, shared) {
       # because build_ledger_df was called with moves_df = NULL).
       df <- df |>
         dplyr::select(-dplyr::any_of(c("FechaVenc_Proyectada", "FechaVenc_Politica",
-                                       "FechaEff", "Movida", "notas"))) |>
-        dplyr::left_join(lm,  by = c("Empresa", "Moneda", "Documento"), na_matches = "never")
-      # The policy date of each invoice, on its own identity: the same
-      # function as build_ledger_df() (T52).
+                                       "FechaEff", "Movida", "notas")))
+      # The date moved by hand and the policy date of each invoice, on its
+      # own identity: the same functions as build_ledger_df() (T52, T52b).
+      mudanza <- mudanza_por_factura(df, moves, ledger)
+      df$FechaVenc_Proyectada <- mudanza$FechaVenc_Proyectada
+      if (is.data.frame(moves) && nrow(moves) && "notas" %in% names(moves)) df$notas <- mudanza$notas
       df$FechaVenc_Politica <- politica_por_factura(df, policy_moves, ledger)
       df <- df |>
         dplyr::mutate(
@@ -167,25 +157,15 @@ ledgerModuleServer <- function(id, config, shared) {
       }
 
       # Apply date moves so provisions with a real Documento respect user-entered
-      # projected dates.  na_matches = "never" mirrors build_ledger_df behaviour.
-      # Notas are excluded from the join — provision notas come from the provision
-      # itself (pasivos_calendar_glue) and must not be overwritten by move notas.
+      # projected dates, with the same function as build_ledger_df() (T52b; a
+      # provision has no posting date, so it matches on its document, and
+      # Documento NA matches nothing). Notas are not taken -- provision notas
+      # come from the provision itself (pasivos_calendar_glue) and must not be
+      # overwritten by move notas.
       moves <- shared$moves_db()
-      ledger_moves <- if (!is.null(moves) && nrow(moves)) {
-        moves |>
-          dplyr::filter(.data$ledger == "AP") |>
-          dplyr::select(Empresa, Moneda, Documento, FechaVenc_Proyectada) |>
-          dplyr::arrange(dplyr::desc(FechaVenc_Proyectada)) |>
-          dplyr::distinct(Empresa, Moneda, Documento, .keep_all = TRUE)
-      } else {
-        tibble::tibble(Empresa = character(), Moneda = character(),
-                       Documento = character(),
-                       FechaVenc_Proyectada = as.Date(character()))
-      }
+      prov_rows$FechaVenc_Proyectada <- mudanza_por_factura(prov_rows, moves, "AP")$FechaVenc_Proyectada
 
       prov_rows <- prov_rows |>
-        dplyr::left_join(ledger_moves, by = c("Empresa", "Moneda", "Documento"),
-                         na_matches = "never") |>
         dplyr::mutate(
           FechaVenc_Proyectada = as.Date(FechaVenc_Proyectada),
           FechaVenc_Politica   = as.Date(NA_character_),
