@@ -25,9 +25,14 @@ cargar <- function(archivo, nombres) {
 suppressPackageStartupMessages({ library(dplyr); library(shinyjs); library(tibble) })
 cargar("R/ui_components.R", c("app_styles", "monedas_para_filtrar"))
 cargar("R/persistence.R", "tag_label")
+# The FX row's rates (monedas fase 2, R/fx_tipos.R) need these from
+# fx_banxico.R, and nothing else: without fx_fix()/fx_divisas(),
+# fx_fuentes_hoy() gives NULL and nothing reads S3 (T53).
+if (file.exists(file.path(raiz, "R/fx_banxico.R")))
+  cargar("R/fx_banxico.R", c(".schema_fx_divisas", ".fx_valido", "FX_FIX_TZ", "FX_FIX_MONEDA", "FX_BANXICO_EN"))
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
-  for (f in c("R/i18n.R", "R/monedas.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+  for (f in c("R/i18n.R", "R/monedas.R", "R/fx_tipos.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
               "R/cashflow_export_module.R", "R/cashflow_preview_module.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
 })
