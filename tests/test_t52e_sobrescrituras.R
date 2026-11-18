@@ -169,6 +169,26 @@ ok("p3: a number that does not repeat (2002, edited after its invoice): identica
 ok("p4: without the Agenda rows (overrides = FALSE), the plain SAP map as before",
    identical(s(ref_lookup_de(lm_txt, sh_ph(ov_ph))("NCS", agenda)),
              unname(s(ref_lookup_de(viejo_txt, sh_ph(ov_ph), ".ph_ref_lookup")("NCS"))[agenda$Documento])))
+# T52g (integrator, 2026-11-18): the override is applied per row, from the
+# row's own origin.
+dos_ov <- q(.normalize(bind_rows(
+  ov(fecha = "2025-03-01", at = "2025-03-05 18:00:00") |> dplyr::mutate(Factura_override = "F-1001-2025"),
+  ov(fecha = "2026-10-01", at = "2026-10-05 18:00:00") |> dplyr::mutate(Factura_override = "F-1001-2026")),
+  .schema_sap_overrides))
+dos_filas <- tibble::tibble(ledger = "AP", Empresa = "NCS", Moneda = "MXN", Documento = "1001",
+                            fecha_factura = as.Date(c("2025-03-01", "2026-10-01")))
+ok("p5: two Agenda rows with the same number and different dates each take their own invoice's override",
+   identical(s(ref_lookup_de(lm_txt, sh_ph(dos_ov))("NCS", dos_filas, overrides = TRUE)),
+             c("F-1001-2025", "F-1001-2026")))
+sh_man <- sh_ph(ov_ph)
+sh_man$manual_inv <- function() tibble::tibble(id = "m-2002", ledger = "AP", Empresa = "NCS", Moneda = "MXN",
+                                               Documento = "2002", Factura = "F-MAN-2002")
+fila_man <- tibble::tibble(id = "m-2002", ledger = "AP", Empresa = "NCS", Moneda = "MXN", Documento = "2002",
+                           source = "manual", fecha_factura = as.Date("2026-01-02"))   # p3's date: the override reaches it
+ok("p6: a manual row never takes a SAP override with its number (F-2002-EDIT): it keeps its manual's Factura",
+   identical(s(ref_lookup_de(lm_txt, sh_man)("NCS", fila_man, overrides = TRUE)), "F-MAN-2002"))
+ok("p7: …and with no manual found it stays empty (the caller shows the Documento), never the SAP override",
+   identical(s(ref_lookup_de(lm_txt, sh_ph(ov_ph))("NCS", fila_man, overrides = TRUE)), ""))
 
 # ── Writing: upsert_sap_override() per invoice ────────────────────────────────
 cat("-- writing: upsert_sap_override() --\n")
