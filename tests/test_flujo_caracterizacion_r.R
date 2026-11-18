@@ -26,6 +26,10 @@ cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALS
   if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
     eval(e, envir = globalenv())
 cargar("R/persistence.R", "tag_label")
+# The tags of each invoice (T52d): etiquetas_por_factura() and its helpers,
+# and the client's day for a tag (hoy_en()).
+source("R/zona.R")
+cargar("R/data_pipeline.R", c("etiquetas_por_factura", ".etiquetas_doc_unica", ".politica_doc", ".politica_doc_unica"))
 for (f in c("R/i18n.R", "R/monedas.R", "R/fx_banxico.R", "R/fx_tipos.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/cashflow_export_module.R", "R/cashflow_preview_module.R")) source(f)
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())

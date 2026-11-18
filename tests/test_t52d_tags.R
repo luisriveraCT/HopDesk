@@ -99,6 +99,86 @@ ok("set_invoice_tags() is called from ledger_module.R and search_module.R",
 ok("…and every call passes fecha_factura and facturas",
    all(vapply(llamadas, function(l) all(c("fecha_factura", "facturas") %in% l$args), logical(1))))
 
+cat("\n-- reading: etiquetas_por_factura(), the closed rule --\n")
+cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALSE))
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
+    eval(e, globalenv())
+suppressPackageStartupMessages(library(shiny))
+source("R/i18n.R"); .i18n_dir <- file.path(getwd(), "www", "i18n")
+cargar("R/hd_columnas.R", c("HD_ETIQUETAS", "hd_etiqueta_clave"))
+cargar("R/vencidos_module.R", c("facturas_etiquetas", ".fecha_contab", ".facturas_abiertas"))
+cargar("R/cashflow_export_module.R", ".attach_tags_to_df")
+urg <- function(df, tags, facturas = NULL) etiquetas_por_factura(df, tags, "AR", facturas)$urgent
+
+pagada <- etq("500", "urgent", at = "2025-03-05 18:00:00")          # tagged the 2025 invoice, since paid
+ok("1. a paid invoice's tag never reaches the 2026 invoice that reuses its number (later than the tag)",
+   identical(urg(una, pagada), FALSE))
+ok("…the same in the five readers: Calendar label, Vencidos/day, Exportar",
+   identical(add_tag_labels(una, pagada, "AR")$Etiqueta, "") &&
+     identical(facturas_etiquetas(una, pagada), "") &&
+     identical(.attach_tags_to_df(dplyr::mutate(una, Tipo = "AR"), pagada)$tag_urgent, FALSE))
+despues <- etq("500", "urgent", at = "2026-03-02 18:00:00")         # tagged after the invoice existed
+ok("1. one invoice, tagged on or after its posting date: it still reaches it", identical(urg(una, despues), TRUE))
+ok("2. a document with two open invoices: an undated tag reaches none", identical(urg(dos, despues), c(FALSE, FALSE)))
+ok("…a dated tag reaches only its own invoice",
+   identical(urg(dos, etq("500", "urgent", fecha = "2026-03-01")), c(FALSE, TRUE)))
+ok("…and with a day's rows (only the 2026 one), `facturas` still tells the reused number",
+   identical(urg(una, despues, facturas = dos), FALSE) && identical(urg(una, despues), TRUE))
+sin_at <- etq("500", "urgent"); sin_at$tagged_at <- as.POSIXct(NA)
+ok("3. without tagged_at: one invoice gets it (no exception), two get none",
+   identical(urg(una, sin_at), TRUE) && identical(urg(dos, sin_at), c(FALSE, FALSE)))
+ok("4. by day in the client's zone, not UTC: 05:00 UTC of Mar 1 is Feb 28 in Mexico City (no), 07:00 UTC is Mar 1 (yes)",
+   identical(urg(una, etq("500", "urgent", at = "2026-03-01 05:00:00")), FALSE) &&
+     identical(urg(una, etq("500", "urgent", at = "2026-03-01 07:00:00")), TRUE))
+futura <- fact("500", "2026-04-01")
+ok("the accepted risk, pinned: an invoice posted with a future date, tagged before it, loses an UNDATED tag",
+   identical(urg(futura, etq("500", "urgent", at = "2026-03-10 18:00:00")), FALSE) &&
+     identical(urg(futura, etq("500", "urgent", fecha = "2026-04-01", at = "2026-03-10 18:00:00")), TRUE))
+
+cat("\n-- identical() to bb800d5 for old tags, except the enumerated rows --\n")
+base_p <- tempfile(fileext = ".R")
+leida  <- tryCatch(system2("git", c("show", "bb800d5:R/persistence.R"), stdout = base_p, stderr = FALSE) == 0L,
+                   error = function(e) FALSE)
+ok("bb800d5's R/persistence.R can be read with git show", isTRUE(leida))
+env_b <- new.env(parent = globalenv())
+if (isTRUE(leida)) for (e in parse(base_p, keep.source = FALSE))
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(as.character(e[[2]]), "add_tag_labels")) eval(e, env_b)
+# Ten single-invoice documents with old tags (no fecha_factura column at all):
+# tagged after their invoice, the same day, or without tagged_at; and one
+# document whose invoice is later than its tag (the exception, enumerated).
+df10 <- dplyr::bind_rows(lapply(1:10, function(i) fact(sprintf("D%02d", i), "2026-02-01")),
+                         fact("EXC", "2026-03-15"))
+viejas10 <- dplyr::bind_rows(
+  lapply(1:4,  function(i) etq(sprintf("D%02d", i), "urgent",    at = "2026-02-05 18:00:00")),
+  lapply(5:7,  function(i) etq(sprintf("D%02d", i), "important", at = "2026-02-01 20:00:00")),
+  lapply(8:10, function(i) { t <- etq(sprintf("D%02d", i), "urgent"); t$tagged_at <- as.POSIXct(NA); t }),
+  list(etq("EXC", "urgent", at = "2026-03-01 18:00:00")))
+viejas10 <- viejas10[, setdiff(names(viejas10), "fecha_factura")]        # as written before T52d
+excepcion <- df10$Documento == "EXC"
+nuevo <- add_tag_labels(df10, viejas10, "AR")
+antes <- tryCatch(env_b$add_tag_labels(df10, viejas10, "AR"), error = function(e) NULL)
+ok("the labels are identical() to bb800d5's on every row but the enumerated exception",
+   !is.null(antes) && identical(nuevo$Etiqueta[!excepcion], antes$Etiqueta[!excepcion]) &&
+     any(nzchar(nuevo$Etiqueta[!excepcion])))
+ok("…and the exception (EXC: invoice of Mar 15, tag of Mar 1) is the only difference",
+   identical(which(nuevo$Etiqueta != antes$Etiqueta), which(excepcion)) && nuevo$Etiqueta[excepcion] == "")
+
+cat("\n-- the readers: one function --\n")
+codigo <- function(f) paste(sub("#.*$", "", readLines(f, warn = FALSE, encoding = "UTF-8")), collapse = "\n")
+ok("add_tag_labels, facturas_etiquetas, .attach_tags_to_df, the Calendar's day dots and the Reporte call etiquetas_por_factura()",
+   grepl("etiquetas_por_factura(df, tags_df, ledger, facturas)", codigo("R/persistence.R"), fixed = TRUE) &&
+     grepl("etiquetas_por_factura(df, tags_df, df$Ledger, facturas)", codigo("R/vencidos_module.R"), fixed = TRUE) &&
+     grepl("etiquetas_por_factura(df, tags_df, df$Tipo)", codigo("R/cashflow_export_module.R"), fixed = TRUE) &&
+     grepl("etiquetas_por_factura(df_month, tdb, ledger, facturas = df_full)", codigo("R/ledger_module.R"), fixed = TRUE) &&
+     grepl("etiquetas_por_factura(ap_all, tags_raw, \"AP\")", codigo("R/reporte_module.R"), fixed = TRUE))
+ok("no join of tags by document is left (group_by over the tags' Empresa/Moneda/Documento)",
+   !any(vapply(c("R/persistence.R", "R/ledger_module.R", "R/cashflow_export_module.R", "R/reporte_module.R"),
+               function(f) grepl("(tags_df|tdb|tags_raw)[^\n]*\n?[^\n]*group_by\\((ledger, )?Empresa, Moneda, Documento", codigo(f)),
+               logical(1))))
+ok("the day's rows keep their posting date (keep lists and dia_llaves())",
+   lengths(regmatches(codigo("R/ledger_module.R"), gregexpr('"Fecha de contabilización"\\)', codigo("R/ledger_module.R")))) >= 2L &&
+     grepl('"Fecha de contabilización"), names(d))', codigo("R/dia_module.R"), fixed = TRUE))
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 s3_memoria_restaurar()
 if (.fail > 0L) quit(status = 1L)

@@ -16,21 +16,15 @@
 # ── Shared with the lupa: one table of invoices ────────────────────────────────
 
 # Stored tag of each row (urgent / both / important / ""), from tags_db, by
-# ledger + Empresa + Moneda + Documento -- the same join add_tag_labels() does.
-facturas_etiquetas <- function(df, tags_df) {
+# etiquetas_por_factura() (T52d): each invoice's own tags, by its posting
+# date ("Fecha de contabilización" in df, NA when it has none). `facturas`:
+# the ledgers' open invoices when df is only part of them, to tell a reused
+# number.
+facturas_etiquetas <- function(df, tags_df, facturas = NULL) {
   out <- rep("", nrow(df))
   if (is.null(tags_df) || !nrow(tags_df) || !nrow(df)) return(out)
-  llave <- function(l, e, m, d) paste(l, e, m, d, sep = "\u001f")
-  tg <- split(as.character(tags_df$tag), llave(tags_df$ledger, tags_df$Empresa, tags_df$Moneda, tags_df$Documento))
-  k  <- llave(df$Ledger, df$Empresa, df$Moneda, df$Documento)
-  vapply(k, function(x) {
-    t <- tg[[x]]
-    if (is.null(t)) ""
-    else if (all(c("urgent", "important") %in% t)) "both"
-    else if ("urgent" %in% t) "urgent"
-    else if ("important" %in% t) "important"
-    else ""
-  }, character(1), USE.NAMES = FALSE)
+  et <- etiquetas_por_factura(df, tags_df, df$Ledger, facturas)
+  ifelse(et$urgent & et$important, "both", ifelse(et$urgent, "urgent", ifelse(et$important, "important", "")))
 }
 
 # Each invoice's id in the table: its ledger + company + currency + document
@@ -46,7 +40,30 @@ facturas_ids <- function(df) {
 # The order is the factory one (D3/G12): groups and loose rows by their
 # strongest tag (A, B, C, none), then by amount, largest first; inside a group
 # the same. The table's third click on a title comes back to it.
-facturas_datos <- function(df, tags_df, agenda_df = NULL, puede_convertir = FALSE) {
+# The ledgers' open invoices (shared$df_combined_AR / _AP), each with its
+# Ledger: what tells a reused number for the tags (T52d). NULL when the
+# session has none yet.
+.facturas_abiertas <- function(shared, ledgers = c("AR", "AP")) {
+  partes <- lapply(ledgers, function(l) {
+    f <- shared[[paste0("df_combined_", l)]]
+    d <- if (is.function(f)) tryCatch(shiny::isolate(f()), error = function(e) NULL) else NULL
+    if (!is.data.frame(d) || !nrow(d)) return(NULL)
+    data.frame(Ledger = l, Empresa = d$Empresa, Moneda = d$Moneda, Documento = as.character(d$Documento),
+               `Fecha de contabilización` = .fecha_contab(d), check.names = FALSE, stringsAsFactors = FALSE)
+  })
+  partes <- Filter(Negate(is.null), partes)
+  if (length(partes)) do.call(rbind, partes) else NULL
+}
+
+# A row's posting date, or NA (manual rows, provisions, an old snapshot).
+.fecha_contab <- function(df) {
+  f <- df[["Fecha de contabilización"]]
+  if (is.null(f)) as.Date(rep(NA_character_, nrow(df))) else suppressWarnings(as.Date(f))
+}
+
+# `facturas`: the ledgers' open invoices, to tell a reused number for the
+# tags (T52d); by default the rows themselves.
+facturas_datos <- function(df, tags_df, agenda_df = NULL, puede_convertir = FALSE, facturas = NULL) {
   vacio <- data.frame(
     id = character(), Tipo = character(), Clase = character(), Empresa = character(),
     Fecha = as.Date(character()), Parte = character(), Referencia = character(),
@@ -75,8 +92,9 @@ facturas_datos <- function(df, tags_df, agenda_df = NULL, puede_convertir = FALS
     "manual"    = tr("tablas.facturas.manual"),
     "provision" = tr("tablas.provision"),
     "SAP"), character(1), USE.NAMES = FALSE)
-  etiqueta <- facturas_etiquetas(data.frame(Ledger = ledger, Empresa = empresa, Moneda = moneda, Documento = documento),
-                                 tags_df)
+  etiqueta <- facturas_etiquetas(data.frame(Ledger = ledger, Empresa = empresa, Moneda = moneda, Documento = documento,
+                                            `Fecha de contabilización` = .fecha_contab(df), check.names = FALSE),
+                                 tags_df, facturas)
   # Already in Agenda de Hoy: the same pending queue the Agenda reads.
   agregado <- rep(FALSE, nrow(df))
   if (!is.null(agenda_df) && nrow(agenda_df) && "status" %in% names(agenda_df)) {
@@ -254,7 +272,8 @@ facturas_tabla_server <- function(id, tabla, datos, shared, crudos, accion_factu
     tabla_df <- reactive({
       df <- base()
       out <- facturas_datos(df, tryCatch(shared$tags_db(), error = function(e) NULL),
-                            tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), puede_convertir())
+                            tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), puede_convertir(),
+                            facturas = .facturas_abiertas(shared))
       out
     })
     t <- hd_table_server("t", tabla = tabla, datos = tabla_df, columnas = facturas_columnas(visibles),

@@ -5,6 +5,13 @@ suppressPackageStartupMessages({ library(testthat); library(shiny) })
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/vencidos_module.R", "R/dia_module.R", "R/policy_engine.R")) source(f)
+# The tags of each invoice (T52d): etiquetas_por_factura() and its helpers,
+# and the client's day for a tag (hoy_en()).
+source("R/zona.R")
+for (e in parse("R/data_pipeline.R", keep.source = FALSE))
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
+      as.character(e[[2]]) %in% c("etiquetas_por_factura", ".etiquetas_doc_unica", ".politica_doc", ".politica_doc_unica"))
+    eval(e, globalenv())
 SAP_B1_ERP_TYPE <- "sap_b1_service_layer"
 # is_erp_sourced(): the views lock a confirmed ERP invoice in $0 (only ERP ones).
 for (e in parse("R/global.R", keep.source = FALSE)) if (is.call(e) && length(e) > 1L && identical(e[[2]], as.name("is_erp_sourced"))) eval(e)

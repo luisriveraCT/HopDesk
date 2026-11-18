@@ -150,23 +150,13 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
   if (is.null(tags_df) || !is.data.frame(tags_df) || !nrow(tags_df)) return(empty())
   if (!all(c("ledger","Empresa","Moneda","Documento","tag") %in% names(tags_df)))
     return(empty())
+  if (!nrow(df)) return(empty())
 
-  tag_sum <- tags_df |>
-    dplyr::group_by(ledger, Empresa, Moneda, Documento) |>
-    dplyr::summarise(
-      tag_urgent    = any(tag == "urgent",    na.rm = TRUE),
-      tag_important = any(tag == "important", na.rm = TRUE),
-      .groups = "drop"
-    ) |>
-    dplyr::rename(Tipo = ledger)
-
+  # Each invoice's own tags (T52d), df being the whole export (both ledgers).
+  et <- etiquetas_por_factura(df, tags_df, df$Tipo)
   df |>
     dplyr::select(-dplyr::any_of(c("tag_urgent", "tag_important"))) |>
-    dplyr::left_join(tag_sum, by = c("Tipo", "Empresa", "Moneda", "Documento")) |>
-    dplyr::mutate(
-      tag_urgent    = dplyr::coalesce(tag_urgent,    FALSE),
-      tag_important = dplyr::coalesce(tag_important, FALSE)
-    )
+    dplyr::mutate(tag_urgent = et$urgent, tag_important = et$important)
 }
 
 # Convert all non-base currencies to base_cur using fx_rates.

@@ -585,13 +585,18 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         documento <- as.character(pick(c("Documento","Nº de documento",
                                          "DocNum","DocEntry"), NA_character_))
 
+        # The posting date: a tag reaches its own invoice (T52d).
+        contab <- if ("Fecha de contabilización" %in% names(df))
+          suppressWarnings(as.Date(df[["Fecha de contabilización"]])) else as.Date(rep(NA_character_, nrow(df)))
+
         tibble::tibble(
           FechaEff        = fecha_eff,
           Parte           = parte,
           Moneda          = moneda_raw,
           `Saldo vencido` = importe,
           Empresa         = empresa,
-          Documento       = documento
+          Documento       = documento,
+          `Fecha de contabilización` = contab
         )
       }
 
@@ -624,20 +629,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       if (!is.null(tags_raw) && is.data.frame(tags_raw) && nrow(tags_raw) > 0 &&
           nrow(ap_all) > 0 &&
           all(c("Empresa", "Moneda", "Documento") %in% names(ap_all))) {
-        tag_sum <- tags_raw |>
-          dplyr::filter(ledger == "AP") |>
-          dplyr::group_by(Empresa, Moneda, Documento) |>
-          dplyr::summarise(
-            is_urgent    = any(tag == "urgent",    na.rm = TRUE),
-            is_important = any(tag == "important", na.rm = TRUE),
-            .groups = "drop"
-          )
-        ap_all <- dplyr::left_join(ap_all, tag_sum,
-                                   by = c("Empresa", "Moneda", "Documento")) |>
-          dplyr::mutate(
-            is_urgent    = dplyr::coalesce(is_urgent,    FALSE),
-            is_important = dplyr::coalesce(is_important, FALSE)
-          )
+        # Each invoice's own tags (T52d).
+        et <- etiquetas_por_factura(ap_all, tags_raw, "AP")
+        ap_all <- dplyr::mutate(ap_all, is_urgent = et$urgent, is_important = et$important)
       } else {
         if (nrow(ap_all) > 0)
           ap_all <- dplyr::mutate(ap_all, is_urgent = FALSE, is_important = FALSE)

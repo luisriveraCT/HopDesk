@@ -430,16 +430,10 @@ ledgerModuleServer <- function(id, config, shared) {
           dplyr::mutate(Fecha = as.Date(FechaEff)) |>
           dplyr::filter(Fecha >= mstart, Fecha <= me)
         if (!nrow(df_month)) return(list())
+        # Each invoice's own tags (T52d), the month's rows against the whole ledger.
+        et <- etiquetas_por_factura(df_month, tdb, ledger, facturas = df_full)
         day_tags <- df_month |>
-          dplyr::left_join(
-            tdb |> dplyr::filter(.data$ledger == !!ledger) |>
-              dplyr::group_by(Empresa, Moneda, Documento) |>
-              dplyr::summarise(
-                has_urg = "urgent"    %in% tag,
-                has_imp = "important" %in% tag,
-                .groups = "drop"),
-            by = c("Empresa", "Moneda", "Documento")
-          ) |>
+          dplyr::mutate(has_urg = et$urgent, has_imp = et$important) |>
           dplyr::group_by(Fecha) |>
           dplyr::summarise(
             day_tag = dplyr::case_when(
@@ -675,12 +669,13 @@ ledgerModuleServer <- function(id, config, shared) {
           )
         d <- apply_ic_filter(d, mode, config$code_col, codes, ic_rfcs = ic_rfcs, cmap = shared$company_map(),
                              empresas = ic_empresas_de(shared))
-        d <- add_tag_labels(d, shared$tags_db(), ledger)
+        d <- add_tag_labels(d, shared$tags_db(), ledger, facturas = df_combined())   # T52d
         keep <- intersect(
           c("Empresa","Moneda","Documento","Factura","Parte","Importe",
             "FechaEff","FechaVenc_Original","FechaVenc_Proyectada",
             "Movida","Etiqueta","source","Tipo","Codigo","notas","confirmed",
-            "has_sap_override","provision_id","id","is_ghost","is_paid_ghost"),
+            "has_sap_override","provision_id","id","is_ghost","is_paid_ghost",
+            "Fecha de contabilización"),   # each invoice's tags by its posting date (T52d)
           names(d)
         )
         as.data.frame(d)[, keep, drop = FALSE]
@@ -838,7 +833,8 @@ ledgerModuleServer <- function(id, config, shared) {
         return()
       }
 
-      detail <- add_tag_labels(detail, shared$tags_db(), ledger)
+      detail <- add_tag_labels(detail, shared$tags_db(), ledger,
+                               facturas = tryCatch(df_combined(), error = function(e) NULL))   # T52d
 
       # Narrow to only the columns the modal uses, then coerce to a plain
       # data.frame.  Tibbles with non-syntactic column names (e.g. "Abono futuro",
@@ -849,7 +845,8 @@ ledgerModuleServer <- function(id, config, shared) {
         c("Empresa","Moneda","Documento","Factura","Parte","Importe",
           "FechaEff","FechaVenc_Original","FechaVenc_Proyectada",
           "Movida","Etiqueta","source","Tipo","Codigo","notas","confirmed",
-          "has_sap_override","provision_id","id","is_ghost","is_paid_ghost"),
+          "has_sap_override","provision_id","id","is_ghost","is_paid_ghost",
+          "Fecha de contabilización"),   # each invoice's tags by its posting date (T52d)
         names(detail)
       )
       detail <- as.data.frame(detail)[, keep, drop = FALSE]

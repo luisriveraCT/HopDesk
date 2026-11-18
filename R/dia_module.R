@@ -22,12 +22,14 @@ dia_ids <- function(detail) {
 }
 
 # The day's rows of these ids, as the handlers' keys: Empresa, Moneda,
-# Documento, Importe, Parte, provision_id (and source, for deletes).
+# Documento, Importe, Parte, provision_id (and source, for deletes), and the
+# posting date (a tag goes to its own invoice, T52d).
 dia_llaves <- function(detail, ids) {
   d <- as.data.frame(detail, stringsAsFactors = FALSE)
   filas <- match(ids, dia_ids(d))
   filas <- filas[!is.na(filas)]
-  campos <- intersect(c("Empresa", "Moneda", "Documento", "Importe", "Parte", "provision_id", "source"), names(d))
+  campos <- intersect(c("Empresa", "Moneda", "Documento", "Importe", "Parte", "provision_id", "source",
+                        "Fecha de contabilización"), names(d))
   unique(d[filas, campos, drop = FALSE])
 }
 
@@ -36,7 +38,10 @@ dia_llaves <- function(detail, ids) {
 # columns. agenda_df: the Agenda's pending queue (the same one its ✓ reads,
 # keyed with Importe as the day always did). clip: shared$req_clip()'s
 # answer for the day's provisions (E3b-C), NULL = no clip.
-dia_datos <- function(detail, ledger, tags_df, agenda_df = NULL, puede_convertir = FALSE, clip = NULL) {
+# `facturas`: the ledger's open invoices, to tell a reused number for the
+# tags (T52d); by default the day's rows.
+dia_datos <- function(detail, ledger, tags_df, agenda_df = NULL, puede_convertir = FALSE, clip = NULL,
+                      facturas = NULL) {
   if (is.null(detail) || !nrow(detail)) return(NULL)
   d <- as.data.frame(detail, stringsAsFactors = FALSE)
   col <- function(n, def = "") { v <- d[[n]]; if (is.null(v)) rep(def, nrow(d)) else { v <- as.character(v); v[is.na(v)] <- def; v } }
@@ -69,7 +74,8 @@ dia_datos <- function(detail, ledger, tags_df, agenda_df = NULL, puede_convertir
     FechaOriginal = if ("FechaVenc_Original" %in% names(d)) as.Date(d$FechaVenc_Original) else as.Date(NA),
     Movida        = ifelse(movida == "Manual", "manual", ifelse(movida == "Políticas", "politicas", "")),
     Etiqueta      = facturas_etiquetas(data.frame(Ledger = ledger, Empresa = col("Empresa"), Moneda = col("Moneda"),
-                                                  Documento = documento), tags_df),
+                                                  Documento = documento, `Fecha de contabilización` = .fecha_contab(d),
+                                                  check.names = FALSE), tags_df, facturas),
     Origen        = ifelse(provision, "provision", ifelse(source == "manual", "manual", ifelse(override, "sap_editada", "sap"))),
     .tipo         = if (identical(ledger, "AR")) "cobro" else "pago",
     .bloqueada    = confirmed,
@@ -236,7 +242,8 @@ dia_server <- function(input, output, session, ctx, ledger, shared, manejadores)
     c <- ctx()
     if (is.null(c)) return(NULL)
     dia_datos(c$detail, ledger, tryCatch(shared$tags_db(), error = function(e) NULL),
-              tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), puede_convertir(), clips())
+              tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), puede_convertir(), clips(),
+              facturas = .facturas_abiertas(shared, ledger))
   })
   dia_siguiente <- shiny::reactive({ c <- ctx(); if (!is.null(c)) c$sel_date + 1 })
   # The date in "Mover" while the edit bar shows it (the table reports it

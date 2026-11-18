@@ -1128,18 +1128,19 @@ tag_label <- function(tags) {
   if (nzchar(k)) tr(HD_ETIQUETAS[[k]]$texto) else ""
 }
 
-# Join tag labels onto an invoice data frame
-add_tag_labels <- function(df, tags_df, ledger) {
+# Join tag labels onto an invoice data frame: each row's tags by
+# etiquetas_por_factura() (T52d: its own invoice, not every invoice with its
+# number). `facturas`: the ledger's open invoices when df is only part of
+# them (a day), to tell a reused number.
+add_tag_labels <- function(df, tags_df, ledger, facturas = NULL) {
   if (is.null(tags_df) || !nrow(tags_df)) {
     df[["Etiqueta"]] <- ""
     return(df)
   }
-  summary <- tags_df |>
-    filter(.data$ledger == !!ledger) |>
-    group_by(Empresa, Moneda, Documento) |>
-    summarise(Etiqueta = tag_label(tag), .groups = "drop")
-  left_join(df, summary, by = c("Empresa","Moneda","Documento")) |>
-    mutate(Etiqueta = replace_na(Etiqueta, ""))
+  et <- etiquetas_por_factura(df, tags_df, ledger, facturas)
+  df[["Etiqueta"]] <- vapply(seq_len(nrow(df)), function(i)
+    tag_label(c(if (et$urgent[i]) "urgent", if (et$important[i]) "important")), character(1))
+  df
 }
 
 # ── Manual invoices ────────────────────────────────────────────────────────────
