@@ -71,6 +71,38 @@ v2 <- leer("acme", S3_KEYS$interco_v2)
 ok("1b …and keeps the RFCs and the prefixes the client already had",
    identical(v2$rfcs, c(CL9 = "AAA010101AA1")) && identical(v2$ar_prefix, "CL") && identical(v2$ap_prefix, "PR"))
 
+# ── 1c. Idempotent: once migrated, a load writes nothing ────────────────────
+n <- .mem_escrituras
+reg2 <- suppressMessages(load_interco_v2(client_id = "acme"))
+ok("1c a second load after the migration writes nothing and gives the same codes",
+   identical(.mem_escrituras, n) && identical(codigos(reg2), c("100", "200", "300")))
+s3_memoria_reset()
+sembrar_ic("acme", v2 = list(ar_prefix = "C", ap_prefix = "P", rfcs = character(),
+                             companies = list(AA = list(ar = "999", ap = character()))))
+n <- .mem_escrituras
+reg3 <- suppressMessages(load_interco_v2(client_id = "acme"))
+ok("1c a v2 that already has codes is never migrated over (no write, its own codes)",
+   identical(.mem_escrituras, n) && identical(codigos(reg3), "999"))
+
+# ── 1d. Never on the shared deployment without a client ─────────────────────
+s3_memoria_reset(); Sys.setenv(CLIENT_ID = "hd-admin")
+sembrar_ic("hd-admin")
+n <- .mem_escrituras
+r <- tryCatch(suppressMessages(.interco_v2_migrar(NULL)), error = function(e) e)
+ok("1d no client_id on hd-admin: no migration, nothing written", is.null(r) && identical(.mem_escrituras, n))
+
+# ── 1e. After save_interco_v2() the next read is the new registry ───────────
+s3_memoria_reset(); Sys.setenv(CLIENT_ID = "otro")
+sembrar_ic("acme", v2 = list(ar_prefix = "C", ap_prefix = "P", rfcs = character(),
+                             companies = list(AA = list(ar = "1", ap = character()))))
+invisible(suppressMessages(load_interco_v2(client_id = "acme")))           # read once (preload filled)
+nuevo <- list(ar_prefix = "C", ap_prefix = "P", rfcs = character(), companies = list(AA = list(ar = "2", ap = character())))
+suppressMessages(save_interco_v2(nuevo, client_id = "acme"))
+ok("1e after save_interco_v2() the next read of that client gives the new codes",
+   identical(codigos(suppressMessages(load_interco_v2(client_id = "acme"))), "2"))
+ok("1e …and nothing is left in the preload cache under the bare key (no client)",
+   !exists(S3_KEYS$interco_v2, envir = .s3_preload_cache, inherits = FALSE))
+
 # ── 2. The rename with REQ_KEYS not loaded ──────────────────────────────────
 s3_memoria_reset()
 cid <- "acme"
