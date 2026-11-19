@@ -20,10 +20,12 @@ suppressPackageStartupMessages({ library(shiny); library(dplyr) })
 REPORTE_HOY <- as.Date("2026-11-17")
 Sys.Date <- function() REPORTE_HOY
 `%||%` <- function(a, b) if (is.null(a)) b else a
-for (f in c("R/i18n.R", "R/monedas.R", "R/empresas_identidad.R", "R/data_pipeline.R", "R/reporte_module.R"))
+# hd_columnas.R: the Pulse's axis uses the engine's compact format (T55b);
+# the amounts are monto_moneda()'s (monedas.R), so no fmt_money() here.
+for (f in c("R/i18n.R", "R/monedas.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R",
+            "R/empresas_identidad.R", "R/data_pipeline.R", "R/reporte_module.R"))
   if (file.exists(f)) source(f, local = FALSE)
-if (!exists("fmt_money"))
-  fmt_money <- function(x) paste0("$", formatC(x, format = "f", digits = 2, big.mark = ","))
+.i18n_dir <- file.path(getwd(), "www", "i18n")
 load_ctas_bancos <- function(client_id = NULL)
   data.frame(id = c("b1", "b2"), nombre = c("BanBajío", "BBVA"), stringsAsFactors = FALSE)
 log_action <- function(...) invisible(NULL)

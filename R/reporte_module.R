@@ -1020,9 +1020,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 .build_pulse_pages <- function(pulse, gen_label) {
   if (is.null(pulse)) return("")
   he   <- htmltools::htmlEscape
-  fmt  <- function(x) formatC(abs(x), format = "f", digits = 2, big.mark = ",")
-  fmts <- function(x) paste0(if (x < 0) "-$" else "$",
-                              formatC(abs(x), format = "f", digits = 2, big.mark = ","))
+  fmt  <- function(x, m) monto_moneda(abs(x), m, codigo = FALSE)   # the currency is beside it (T55b)
+  fmts <- function(x, m) monto_moneda(x, m, codigo = FALSE)   # signed, the true minus sign (T55b)
   today <- pulse$today
 
   # ── SVG daily bar chart ────────────────────────────────────────────────────
@@ -1030,7 +1029,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
                                 inflow_color  = "#0d9f8a",
                                 outflow_color = "#92400e",
                                 net_color     = "#f59e0b",
-                                w = 436L, h = 88L) {
+                                w = 436L, h = 88L, moneda = "") {
     padL <- 38L; padR <- 6L; padT <- 9L; padB <- 22L
     pw   <- w - padL - padR
     ph   <- h - padT - padB
@@ -1046,12 +1045,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     sc_bar <- function(v) max(0, round(v / max_val * half_ph, 1))
     sc_net <- function(v) round(y0 - v / max_val * half_ph, 1)
 
-    fmt_k <- function(v) {
-      av <- abs(v)
-      if (av >= 1e6) sprintf("$%.1fM", v / 1e6)
-      else if (av >= 1e3) sprintf("$%.0fk", v / 1e3)
-      else sprintf("$%.0f", v)
-    }
+    fmt_k <- function(v) .hd_dinero_compacto(v)   # "1.2M", "350K", without a dollar sign: the currency is the axis title (T55b)
 
     # Y-axis grid (top / zero / bottom)
     grid_svg <- paste(vapply(c(max_val, 0, -max_val), function(v) {
@@ -1061,6 +1055,10 @@ reporteServer <- function(id, shared, active_tab = NULL) {
          <text x="%d" y="%.1f" text-anchor="end" font-size="5.5" fill="#9ca3af" dominant-baseline="middle">%s</text>',
         padL, yp, w - padR, yp, padL - 2L, yp, fmt_k(v))
     }, character(1)), collapse = "\n")
+    # The axis title: the block's currency, top left, apart from the values (T55b).
+    if (nzchar(moneda)) grid_svg <- paste0(grid_svg, sprintf(
+      '\n<text x="2" y="%.1f" font-size="5.5" font-weight="600" fill="#6b7280">%s</text>',
+      padT - 3, htmltools::htmlEscape(moneda)))
 
     grp_w <- pw / n
     bw    <- max(3L, floor(grp_w * 0.33))
@@ -1136,7 +1134,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     chart <- make_pulse_chart(
       daily        = pd$daily,
       today_date   = if (is_current_week) today else as.Date(NA_character_),
-      inflow_color = in_col
+      inflow_color = in_col, moneda = currency
     )
 
     # Top inflow rows
@@ -1145,8 +1143,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         r <- pd$focus_ar[j, ]
         sprintf('<div class="pulse-item">
           <span class="pulse-item-name">%s</span>
-          <span class="pulse-item-amt" style="color:#059669;">+$%s</span></div>',
-          he(r$Parte %||% "\u2014"), fmt(r$.a))
+          <span class="pulse-item-amt" style="color:#059669;">+%s</span></div>',
+          he(r$Parte %||% "\u2014"), fmt(r$.a, currency))
       }, character(1)), collapse = "\n")
     else '<div class="pulse-item"><span class="pulse-item-name" style="color:#9ca3af;font-style:italic;">Sin cobros programados</span></div>'
 
@@ -1164,8 +1162,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         else ""
         sprintf('<div class="pulse-item">
           <span class="pulse-item-name">%s</span>%s
-          <span class="pulse-item-amt" style="color:#dc2626;">-$%s</span></div>',
-          he(r$Parte %||% "\u2014"), badge, fmt(r$.a))
+          <span class="pulse-item-amt" style="color:#dc2626;">&minus;%s</span></div>',
+          he(r$Parte %||% "\u2014"), badge, fmt(r$.a, currency))
       }, character(1)), collapse = "\n")
     else '<div class="pulse-item"><span class="pulse-item-name" style="color:#9ca3af;font-style:italic;">Sin pagos programados</span></div>'
 
@@ -1175,11 +1173,11 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     <div class="pulse-kpi-row">
       <div class="pulse-kpi pulse-kpi-in">
         <div class="pulse-kpi-lbl">&#9650; Cobros esperados</div>
-        <div class="pulse-kpi-val">$%s</div>
+        <div class="pulse-kpi-val">%s</div>
       </div>
       <div class="pulse-kpi pulse-kpi-out">
         <div class="pulse-kpi-lbl">&#9660; Pagos programados</div>
-        <div class="pulse-kpi-val">$%s</div>
+        <div class="pulse-kpi-val">%s</div>
       </div>
       <div class="pulse-kpi %s">
         <div class="pulse-kpi-lbl">&#9654; Posici&oacute;n neta</div>
@@ -1199,8 +1197,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     </div>
   </div>',
       lbl_class, he(currency),
-      fmt(pd$inflow_total), fmt(pd$outflow_total),
-      net_class, he(fmts(net_total)),
+      monto_moneda(pd$inflow_total, currency), monto_moneda(pd$outflow_total, currency),
+      net_class, he(monto_moneda(net_total, currency)),
       chart,
       he(pd$focus_label), in_rows,
       he(pd$focus_label), out_rows
@@ -1276,8 +1274,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   nota_extra <- .reporte_nota_monedas(setdiff(monedas, mostradas), mostradas)
 
   he   <- htmltools::htmlEscape
-  fmt  <- function(x) formatC(abs(x), format = "f", digits = 2, big.mark = ",")
-  fmts <- function(x) if (x < 0) paste0("-$", fmt(x)) else paste0("$", fmt(x))
+  fmt  <- function(x, m) monto_moneda(abs(x), m, codigo = FALSE)   # the currency is beside it (T55b)
+  fmts <- function(x, m) monto_moneda(x, m, codigo = FALSE)   # signed, the true minus sign (T55b)
   period_label <- paste0(format(desde, "%d %b %Y"), " \u2014 ", format(hasta, "%d %b %Y"))
   gen_label    <- format(generated, "%d/%m/%Y %H:%M")
 
@@ -1468,9 +1466,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       r   <- rows[i, ]
       col <- if (r$saldo < 0) "#fca5a5" else "rgba(255,255,255,0.75)"
       amt <- if (r$saldo < 0)
-        paste0("-$", formatC(abs(r$saldo), format = "f", digits = 2, big.mark = ","))
+        fmts(r$saldo, currency)
       else
-        paste0("$",  formatC(r$saldo,      format = "f", digits = 2, big.mark = ","))
+        fmts(r$saldo, currency)
       sprintf(
         '<div style="display:flex;justify-content:space-between;
           align-items:center;margin-bottom:2px;">
@@ -1498,7 +1496,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         <div class="tot-spark">%s</div>
         <div class="tot-breakdown">%s</div>
       </div>',
-      pos, he(currency), he(fmts(total)),
+      pos, he(currency), he(monto_moneda(total, currency)),
       delta_html(total, total - neto_periodo(currency)),
       make_balance_bars(global_series(currency), c("#7eb3f5", "#6ee7c4")[pos], 220, 44),
       make_acct_breakdown(currency))
@@ -1543,11 +1541,11 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       <div class="acct-stats">
         <div class="acct-stat">
           <span class="acct-stat-lbl">Ingresos</span>
-          <span class="acct-stat-val" style="color:#059669;">+$%s</span>
+          <span class="acct-stat-val" style="color:#059669;">+%s</span>
         </div>
         <div class="acct-stat">
           <span class="acct-stat-lbl">Egresos</span>
-          <span class="acct-stat-val" style="color:#dc2626;">-$%s</span>
+          <span class="acct-stat-val" style="color:#dc2626;">&minus;%s</span>
         </div>
       </div>
     </div>',
@@ -1555,12 +1553,12 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       he(row$empresa),
       badge_bg, badge_col, he(mono),
       if (is_neg) col_neg else col,
-      he(fmts(row$saldo)),
+      he(fmts(row$saldo, mono)),
       he(row$alias %||% ""),
       banco_display,
       svg,
-      formatC(card_abono, format = "f", digits = 2, big.mark = ","),
-      formatC(card_cargo, format = "f", digits = 2, big.mark = ",")
+      fmt(card_abono, mono),
+      fmt(card_cargo, mono)
     )
   }, character(1)), collapse = "\n")
 
@@ -1593,7 +1591,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           m    <- mv_cur[j, ]
           dir  <- m$direction
           dcol <- if (dir == "OUT") col_out else col_in
-          dsgn <- if (dir == "OUT") "-" else "+"
+          dsgn <- if (dir == "OUT") "&minus;" else "+"
           lbl  <- trimws(m$parte %||% "")
           if (!nzchar(lbl)) lbl <- trimws(m$concepto %||% "\u2014")
           if (nchar(lbl) > 28) lbl <- paste0(substr(lbl, 1, 26), "\u2026")
@@ -1602,12 +1600,12 @@ reporteServer <- function(id, shared, active_tab = NULL) {
               <td class="mov-date">%s</td>
               <td class="mov-desc">%s</td>
               <td><span class="ctx-badge">%s</span></td>
-              <td class="mov-amt" style="color:%s;">%s$%s</td>
+              <td class="mov-amt" style="color:%s;">%s%s</td>
             </tr>',
             he(format(m$fecha, "%d/%m")),
             he(lbl),
             he(m$empresa %||% ""),
-            dcol, dsgn, he(fmt(m$amount))
+            dcol, dsgn, he(fmt(m$amount, currency))
           )
         }, character(1)), collapse = "\n")
       }
@@ -1683,7 +1681,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         m    <- mv_top[j, ]
         dir  <- m$direction
         dcol <- if (dir == "OUT") col_out else col_in
-        dsgn <- if (dir == "OUT") "-" else "+"
+        dsgn <- if (dir == "OUT") "&minus;" else "+"
         lbl  <- trimws(m$parte %||% "")
         if (!nzchar(lbl)) lbl <- trimws(m$concepto %||% "\u2014")
         if (nchar(lbl) > 32) lbl <- paste0(substr(lbl, 1, 30), "\u2026")
@@ -1695,12 +1693,12 @@ reporteServer <- function(id, shared, active_tab = NULL) {
             <td class="mov-dir">
               <span class="dir-badge" style="background:%s22;color:%s;">%s</span>
             </td>
-            <td class="mov-amt" style="color:%s;">%s$%s</td>
+            <td class="mov-amt" style="color:%s;">%s%s</td>
           </tr>',
           he(format(m$fecha, "%d/%m")),
           he(lbl), he(tipo_label(m$tipo)),
           dcol, dcol, dir,
-          dcol, dsgn, he(fmt(m$amount))
+          dcol, dsgn, he(fmt(m$amount, mono))
         )
       }, character(1)), collapse = "\n")
 
@@ -1719,11 +1717,11 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           <div class="mov-card-footer">
             <div class="mov-card-stat">
               <span class="mov-card-lbl">Ingresos</span>
-              <span class="mov-card-val" style="color:#059669;">+$%s</span>
+              <span class="mov-card-val" style="color:#059669;">+%s</span>
             </div>
             <div class="mov-card-stat">
               <span class="mov-card-lbl">Egresos</span>
-              <span class="mov-card-val" style="color:#dc2626;">-$%s</span>
+              <span class="mov-card-val" style="color:#dc2626;">&minus;%s</span>
             </div>
           </div>
         </div>
@@ -1743,10 +1741,10 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         col, card_bg_block,
         he(row$empresa), badge_bg, badge_col, he(mono),
         he(row$alias %||% ""),
-        if (row$saldo < 0) col_neg else col, he(fmts(row$saldo)),
+        if (row$saldo < 0) col_neg else col, he(fmts(row$saldo, mono)),
         svg,
-        he(fmt(tot_abono)),
-        he(fmt(tot_cargo)),
+        he(fmt(tot_abono, mono)),
+        he(fmt(tot_cargo, mono)),
         mov_rows
       )
     }, character(1)), collapse = "\n")

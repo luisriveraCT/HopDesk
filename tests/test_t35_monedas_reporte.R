@@ -43,10 +43,34 @@ ref <- leer("tests/fixtures/t35/ng_reporte_a5c696a.html")
 for (k in c("tot-box mxn", "tot-box usd", ".tot-box.mxn{", ".tot-box.usd{", "group-col-mxn",
             "group-col-usd", "pulse-mxn-label", "pulse-usd-label"))
   ref <- gsub(k, sub("usd", "mon2", sub("mxn", "mon1", k, fixed = TRUE), fixed = TRUE), ref, fixed = TRUE)
-ok("A1: NG's report (4 pages) is byte-for-byte a5c696a's (classes mxn/usd -> mon1/mon2)",
-   identical(enc2utf8(a$html), enc2utf8(ref)))
-ok("A2: NG's settings summary (Total MXN, Total USD, Cuentas, Período) is a5c696a's",
-   identical(enc2utf8(a$resumen), enc2utf8(leer("tests/fixtures/t35/ng_resumen_a5c696a.html"))))
+# [CAMBIA T55b] The amounts are monto_moneda()'s now ("282,000.00 MXN",
+# "−2,300.00", "&minus;14,500.00", the axis "25K"), and each Pulse chart has
+# its currency as the axis title. The rest is still a5c696a's, byte for byte:
+# split into tags and texts, the two sides differ only where both are an
+# amount -- the old one with "$", the new one without -- and the new one only
+# adds the axis titles.
+tokens <- function(s) { s <- gsub("(<[^>]+>)", "\n\\1\n", s); s <- trimws(unlist(strsplit(s, "\n"))); s[nzchar(s)] }
+monto_viejo <- "^[+-]?\\$-?[0-9][0-9,]*(\\.[0-9]+)?k?$"
+monto_nuevo <- paste0("^(\\+|", intToUtf8(0x2212L), "|&minus;)?[0-9][0-9,]*(\\.[0-9]+)?[KM]?( [A-Z]{3})?$")
+TITULO_EJE  <- '<text x="2" y="6.0" font-size="5.5" font-weight="600" fill="#6b7280">'
+solo_montos <- function(nuevo, viejo) {
+  n <- tokens(enc2utf8(nuevo)); v <- tokens(enc2utf8(viejo))
+  k <- which(n == TITULO_EJE)                                 # the axis titles: <text>, its code, </text>
+  if (length(k)) n <- n[-c(k, k + 1L, k + 2L)]
+  if (length(n) != length(v)) return(FALSE)
+  d <- which(n != v)
+  length(d) > 0L && all(grepl(monto_viejo, v[d])) && all(grepl(monto_nuevo, n[d]))
+}
+ok("A1: NG's report (4 pages) is a5c696a's (classes mxn/usd -> mon1/mon2) with the amounts as the only change [T55b]",
+   solo_montos(a$html, ref))
+ok("A2: NG's settings summary (Total MXN, Total USD, Cuentas, Período) is a5c696a's with the amounts as the only change [T55b]",
+   solo_montos(a$resumen, leer("tests/fixtures/t35/ng_resumen_a5c696a.html")))
+ok("A1c: …and the rule catches anything else: one word changed, or an amount moved to another place, fails it",
+   !solo_montos(sub("Cobros esperados", "Cobros previstos", a$html, fixed = TRUE), ref) &&
+     !solo_montos(sub("282,000.00 MXN", "Total", a$html, fixed = TRUE), ref))
+ok("A1b: no \"$\" before a figure anywhere in the report; each Pulse chart titles its axis with its currency (MXN, USD)",
+   !grepl("\\$ ?-?[0-9]", a$html) && cuenta(paste0(TITULO_EJE, "MXN</text>"), a$html) >= 1L &&
+     cuenta(paste0(TITULO_EJE, "USD</text>"), a$html) >= 1L)
 ok("A3: NG's pulse still names EUR in its note, with 'se muestran solo MXN y USD'",
    tiene(a$html, "Monedas adicionales detectadas: EUR — se muestran solo MXN y USD."))
 
