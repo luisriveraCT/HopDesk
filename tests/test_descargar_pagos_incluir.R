@@ -114,10 +114,11 @@ ok("_002 USD: SPD, CLABE en ceros, 300.00", length(det_u) == 1L && campo(det_u, 
 ok("botón: 8 pagos (5 que entran + 3 sin cuenta), con su aviso",
    grepl(tr("tablas.pagos.descargar_zip_sin_cuenta", n = 8, m = 3), r$salidas, fixed = TRUE) &&
      grepl(tr("tablas.pagos.aviso_sin_cuenta", m = 3), r$salidas, fixed = TRUE))
-ok("píldoras: MXN 4 que entran + 2 sin cuenta ($11,300.00); USD 1 + 1 sin cuenta ($300.00)",
-   grepl(tr("tablas.pagos.pildora_sin_cuenta", n = 2, total = fmt_money(11300)), r$salidas, fixed = TRUE) &&
-     grepl(tr("tablas.pagos.pildora_sin_cuenta", n = 1, total = fmt_money(300)), r$salidas, fixed = TRUE) &&
-     grepl(tr("tablas.pagos.pildora", n = 4, moneda = "MXN", total = fmt_money(18600.75)), r$salidas, fixed = TRUE))
+# [CAMBIA T55b] each total with its code after it, no "$".
+ok("píldoras: MXN 4 que entran + 2 sin cuenta (11,300.00 MXN); USD 1 + 1 sin cuenta (300.00 USD)",
+   grepl(tr("tablas.pagos.pildora_sin_cuenta", n = 2, total = monto_moneda(11300, "MXN")), r$salidas, fixed = TRUE) &&
+     grepl(tr("tablas.pagos.pildora_sin_cuenta", n = 1, total = monto_moneda(300, "USD")), r$salidas, fixed = TRUE) &&
+     grepl(tr("tablas.pagos.pildora", n = 4, total = monto_moneda(18600.75, "MXN")), r$salidas, fixed = TRUE))
 inc_log <- Filter(function(l) identical(l$action, "incluir_sin_cuenta"), LOGS)
 ok("auditoría: un incluir_sin_cuenta de luis con los tres pagos",
    length(inc_log) == 1L && identical(inc_log[[1]]$user, "luis") &&

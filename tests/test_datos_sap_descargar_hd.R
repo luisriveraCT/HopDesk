@@ -97,9 +97,10 @@ ok("los que el ZIP omite dicen qué les falta: BODEGAS sin CLABE, TRANSPORTES si
 ok("el botón cuenta solo lo que entra: 5 pagos, igual que las líneas del ZIP",
    grepl(tr("tablas.pagos.descargar_zip", n = 5), html, fixed = TRUE) && identical(lineas, 5L) &&
      sum(vista$zip == "entra") == 5L)
-ok("las píldoras suman solo lo que entra (MXN 4 por $18,600.75; USD 1 por $1,200.00)",
-   grepl(tr("tablas.pagos.pildora", n = 4, moneda = "MXN", total = fmt_money(18600.75)), html, fixed = TRUE) &&
-     grepl(tr("tablas.pagos.pildora", n = 1, moneda = "USD", total = fmt_money(1200)), html, fixed = TRUE))
+# [CAMBIA T55b] the pill's total with its code after it ("18,600.75 MXN"), no "$".
+ok("las píldoras suman solo lo que entra (MXN 4 por 18,600.75 MXN; USD 1 por 1,200.00 USD)",
+   grepl(tr("tablas.pagos.pildora", n = 4, total = monto_moneda(18600.75, "MXN")), html, fixed = TRUE) &&
+     grepl(tr("tablas.pagos.pildora", n = 1, total = monto_moneda(1200, "USD")), html, fixed = TRUE))
 ok("la tabla es la del motor (descargar_t), no HTML a mano", grepl("descargar_t-hdt", html, fixed = TRUE) &&
      !grepl("<tbody>", html, fixed = TRUE))
 
