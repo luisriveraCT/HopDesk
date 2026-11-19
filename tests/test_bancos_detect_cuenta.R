@@ -19,6 +19,7 @@ cat("── detectar_cuenta_banbajio: empresa + moneda + subcuenta del TXT ─�
 
 suppressPackageStartupMessages({ library(dplyr); library(tibble) })
 `%||%` <- function(a, b) if (is.null(a)) b else a
+source("R/monedas.R")   # the totals warning writes its amounts with monto_moneda() (T55c)
 source("R/bancos_parser.R")
 source("R/empresas_identidad.R")
 source("R/bancos_detect.R")
@@ -135,6 +136,9 @@ r <- run(ln)
 .chk(r$sugerida, "nrs_mxn", "sigue identificando NRS MXN")
 .chk(r$confianza, "alta", "identidad alta")
 .chk(any(grepl("no cuadran", r$avisos)), TRUE, "avisa totales")
+# T55c: the warning's amounts with the file's currency, the code after the number.
+.chk(any(grepl("no cuadran", r$avisos) & grepl("cargos [0-9][0-9,]*\\.[0-9]{2} MXN vs [0-9][0-9,]*\\.[0-9]{2} MXN", r$avisos)), TRUE,
+     "el aviso dice los montos con su moneda (MXN)")
 
 cat("\n[7] Conglomerado: 60 empresas casi iguales, mismo banco\n")
 set.seed(1)

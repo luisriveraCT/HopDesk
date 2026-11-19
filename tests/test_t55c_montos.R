@@ -106,5 +106,26 @@ ok("…and its grace payment, in the chosen currency", lengths(regmatches(wz, gr
   "monto_moneda(", wz, fixed = TRUE))) >= 4L && !grepl("nsmall", wz, fixed = TRUE))
 ok("both files parse", parsea("R/requisiciones_module.R") && parsea("R/pasivos_wizard_module.R"))
 
+cat("\n-- 6. Bancos' TXT totals warning, and the guardian --\n")
+ok("the TXT totals warning: the file's amounts with its currency (test_bancos_detect_cuenta checks the text)",
+   grepl("f <- function(x) monto_moneda(x, if (length(moneda) && !is.na(moneda[1])) moneda[1] else NA_character_)",
+         leer("R/bancos_detect.R"), fixed = TRUE) && parsea("R/bancos_detect.R"))
+# Where an amount may still be written by hand with big.mark, and why:
+PERMITIDOS <- c("R/monedas.R"         = "monto_moneda() itself",
+                "R/hd_columnas.R"     = "the engine's compact and whole formats",
+                "R/i18n.R"            = "tr() formats its numbers",
+                "R/global.R"          = "fmt_money(), only for the activity log's text (T55b)",
+                "R/bancos_module.R"   = "a movement's log text (log_action, T55c P1)")
+llamadas <- unlist(lapply(c("app.R", list.files("R", "\\.R$", full.names = TRUE, recursive = TRUE)), function(f) {
+  x <- readLines(f, warn = FALSE, encoding = "UTF-8")
+  k <- grep("big.mark", x, fixed = TRUE); k <- k[!grepl("^\\s*#", x[k])]
+  if (length(k)) paste0(f, ":", k)
+}))
+fuera <- llamadas[!sub(":[0-9]+$", "", llamadas) %in% c(names(PERMITIDOS), "app.R")]
+app_r <- llamadas[startsWith(llamadas, "app.R:")]
+ok(sprintf("the guardian: big.mark only where allowed (%d lines; app.R only its log text)", length(llamadas)),
+   { if (length(fuera)) message("  fuera de lo permitido: ", paste(fuera, collapse = ", "))
+     !length(fuera) && length(app_r) <= 1L })
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

@@ -184,7 +184,8 @@ detectar_cuenta_banbajio <- function(lines, cuentas_df, empresas_df = NULL,
     sc <- round(sum(parsed$cargo, na.rm = TRUE), 2)
     sa <- round(sum(parsed$abono, na.rm = TRUE), 2)
     if (abs(sc - enc$total_cargos) > 0.005 || abs(sa - enc$total_abonos) > 0.005) {
-      f <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+      # The file's amounts with its currency, read from its header (T55c).
+      f <- function(x) monto_moneda(x, if (length(moneda) && !is.na(moneda[1])) moneda[1] else NA_character_)
       avisos_archivo <- sprintf(T_$aviso_totales, f(enc$total_cargos), f(sc),
                                 f(enc$total_abonos), f(sa))
     }
