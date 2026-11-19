@@ -65,10 +65,11 @@ shiny::testServer(treasuryMapServer,
   filas <- .arista_tabla()
   session$setInputs(`arista_t-sel` = filas$id[match(c("M-1", "M-2"), filas$Documento)], add_to_plan = 1L)
 
-  # One currency: as before ("Total" + "MXN 3,500", items without a code).
+# [CAMBIA T55c] the IC Map's amounts: the code after the number ("1,000 MXN").
+  # One currency: as before ("Total" + "3,500 MXN", items without a code).
   v <- leer(html())
   cat("  MXN only:", paste(v$totales, collapse = " | "), "/", paste(v$montos, collapse = ", "), "\n")
-  .chk(identical(v$totales, "MXN 3,500"), "one currency: a single Total, MXN 3,500 (as before)")
+  .chk(identical(v$totales, "3,500 MXN"), "one currency: a single Total, 3,500 MXN (as before)")
   .chk(identical(v$montos, c("1,000", "2,500")), "one currency: items show the bare amount (as before)")
 
   # Switch to USD and add the USD invoice.
@@ -81,13 +82,13 @@ shiny::testServer(treasuryMapServer,
 
   v <- leer(html())
   cat("  MXN + USD:", paste(v$totales, collapse = " | "), "/", paste(v$montos, collapse = ", "), "\n")
-  .chk(!"USD 3,800" %in% v$totales, "the Total no longer adds pesos to dollars (it said USD 3,800)")
-  .chk(identical(v$totales, c("MXN 3,500", "USD 300")), "one Total per currency, in the plan's order: MXN 3,500 and USD 300")
-  .chk(identical(v$montos, c("MXN 1,000", "MXN 2,500", "USD 300")), "with two currencies each item says its own")
+  .chk(!"3,800 USD" %in% v$totales, "the Total no longer adds pesos to dollars (it said 3,800 USD)")
+  .chk(identical(v$totales, c("3,500 MXN", "300 USD")), "one Total per currency, in the plan's order: 3,500 MXN and 300 USD")
+  .chk(identical(v$montos, c("1,000 MXN", "2,500 MXN", "300 USD")), "with two currencies each item says its own")
 
   # Back on MXN the totals don't depend on the selector.
   session$setInputs(map_cur = "MXN")
-  .chk(identical(leer(html())$totales, c("MXN 3,500", "USD 300")), "the totals don't follow the selector")
+  .chk(identical(leer(html())$totales, c("3,500 MXN", "300 USD")), "the totals don't follow the selector")
 })
 
 cat(sprintf("\n%d passed, %d failed\n", .pass, .fail))

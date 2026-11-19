@@ -335,7 +335,7 @@ floor_date_month <- function() {
 # permanent instruction to a bank -- the live data can always be
 # re-generated from the same filters).
 # The balances of the accounts in the report, one total per currency in order
-# (a named list, "MXN" -> 182000.5): never pesos and dollars summed into one
+# (a named list: currency code -> total): never pesos and dollars summed into one
 # figure, which is what total_saldo used to store (T55c).
 .reporte_saldo_por_moneda <- function(bals) {
   if (is.null(bals) || !nrow(bals)) return(list())

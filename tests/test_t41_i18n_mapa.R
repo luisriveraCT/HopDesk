@@ -120,11 +120,12 @@ salidas <- function(lang) {
   r
 }
 s <- salidas("es")
-ok("es: node bubble 'Saldo MXN: <b>MXN 1,000</b>' as before", grepl("Saldo MXN: <b>MXN 1,000</b>", s$nodos, fixed = TRUE))
+# [CAMBIA T55c] the IC Map's amounts: the code after the number ("1,000 MXN").
+ok("es: node bubble 'Saldo MXN: <b>1,000 MXN</b>' as before", grepl("Saldo MXN: <b>1,000 MXN</b>", s$nodos, fixed = TRUE))
 ok("es: a node with no balance in EUR says 'sin datos'", grepl("Saldo EUR: <b>sin datos</b>", s$nodos_eur, fixed = TRUE))
 ok("es: edge bubble ends with '2 factura(s)'", grepl("<br/>2 factura(s)", s$aristas, fixed = TRUE))
-ok("es: the route says 'directo' and 'máx MXN 300'",
-   grepl(">directo<", s$rutas, fixed = TRUE) && grepl("máx MXN 300", s$rutas, fixed = TRUE))
+ok("es: the route says 'directo' and 'máx 300 MXN'",
+   grepl(">directo<", s$rutas, fixed = TRUE) && grepl("máx 300 MXN", s$rutas, fixed = TRUE))
 ok("es: nobody owes AAA: 'Ninguna empresa debe directa o indirectamente a AAA.'",
    grepl("Ninguna empresa debe directa o indirectamente a AAA.", s$sin_rutas, fixed = TRUE))
 ok("es: EUR has no edges: 'No hay saldos IC para esta moneda.'", grepl("No hay saldos IC para esta moneda.", s$sin_saldos, fixed = TRUE))
@@ -136,9 +137,9 @@ ok("es: the plan's Total and Limpiar", grepl(">Total<", s$plan_lleno, fixed = TR
 
 s <- salidas("en")
 ok("en: node bubble 'Balance MXN:' and 'no data'",
-   grepl("Balance MXN: <b>MXN 1,000</b>", s$nodos, fixed = TRUE) && grepl("Balance EUR: <b>no data</b>", s$nodos_eur, fixed = TRUE))
+   grepl("Balance MXN: <b>1,000 MXN</b>", s$nodos, fixed = TRUE) && grepl("Balance EUR: <b>no data</b>", s$nodos_eur, fixed = TRUE))
 ok("en: edge bubble '2 invoice(s)'", grepl("<br/>2 invoice(s)", s$aristas, fixed = TRUE))
-ok("en: route 'direct' and 'max MXN 300'", grepl(">direct<", s$rutas, fixed = TRUE) && grepl("max MXN 300", s$rutas, fixed = TRUE))
+ok("en: route 'direct' and 'max 300 MXN'", grepl(">direct<", s$rutas, fixed = TRUE) && grepl("max 300 MXN", s$rutas, fixed = TRUE))
 ok("en: 'No company owes AAA, directly or indirectly.' and 'No IC balances in this currency.'",
    grepl("No company owes AAA, directly or indirectly.", s$sin_rutas, fixed = TRUE) &&
      grepl("No IC balances in this currency.", s$sin_saldos, fixed = TRUE))
