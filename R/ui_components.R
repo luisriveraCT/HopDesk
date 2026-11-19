@@ -572,7 +572,12 @@ app_styles <- function() {
       border-color: #4a6fa5;
       color: #1a3a6b;
     }
-    .notes-bar-btn.notes-open {
+    /* T59: \"open\" while the notes panel is there (the server draws it into
+       #notes_panel), on both buttons: the floating one and the Calendar
+       header's, which is redrawn often and could not keep a class. No JS.
+       #toggle_notes by id, so it outweighs panorama.css's opaque face (T49). */
+    body:has(#notes_panel .notes-panel-wrapper) #toggle_notes,
+    body:has(#notes_panel .notes-panel-wrapper) .cal-notes-btn {
       background: #4a6fa5;
       border-color: #4a6fa5;
       color: #fff;
@@ -1303,10 +1308,6 @@ app_scripts <- function() {
       if (window.Shiny) Shiny.setInputValue('cal_day_modal_closed', Math.random(), {priority: 'event'});
     });
 
-    /* ── Notes bar toggle: highlight button when panel is open ── */
-    $(document).on('click', '#toggle_notes_ar, #toggle_notes_ap', function() {
-      $(this).toggleClass('notes-open');
-    });
     $(document).on('shiny:value', function() {
       requestAnimationFrame(function() {
         document.querySelectorAll('[data-bs-toggle=\"tooltip\"]:not(.tt-init)')
