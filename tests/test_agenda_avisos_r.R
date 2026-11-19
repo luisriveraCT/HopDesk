@@ -27,7 +27,7 @@ ok(sprintf("ningún aviso de pagar_hoy_module.R con texto fijo (quedan %d)", len
 
 claves <- avisos_claves(F, PRE)
 ok(sprintf("las %d claves %s* existen en es y en", length(claves), PRE),
-   length(claves) == 23L && all(vapply(claves, clave_en_es_y_en, logical(1))))
+   length(claves) == 24L && all(vapply(claves, clave_en_es_y_en, logical(1))))
 
 es <- function(k, ...) tr(paste0(PRE, k), ..., idioma = "es")
 cur_sel <- "EUR"; n <- 1234L; err <- "sin red"; parte <- "ACME SA"; ali <- "ACME"
@@ -62,7 +62,11 @@ iguales <- list(
   list(es("vinculo_eliminado", parte = parte), paste0("Vínculo eliminado para: ", parte)),
   list(es("zip_sin_actividad", error = err),
        paste("Aviso: el ZIP se generó correctamente, pero no se pudo registrar el resumen en Actividad:", err)),
-  list(es("vaciada"), "Agenda vaciada."),
+  # CM33: Vaciar says how many it removed, and how many another session's
+  # rows remain (they survive: the user never saw them).
+  list(es("vaciada", n = as.character(n)), paste0("Se quitaron ", n, " pendiente(s) de la Agenda.")),
+  list(es("vaciada_quedan", n = as.character(n), m = "2"),
+       paste0("Se quitaron ", n, " pendiente(s) de la Agenda. Quedan 2 que otra sesión agregó mientras tanto.")),
   list(es("no_guardado"), "No se pudo guardar. Verifica la conexión e intenta de nuevo."),
   list(es("sin_cuentas"), "No hay cuentas registradas en Configuración > Cuentas."),
   list(es("sin_cuentas_activas"), "No hay cuentas activas en Configuración > Cuentas."),
