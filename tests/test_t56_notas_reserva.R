@@ -16,6 +16,7 @@ ok <- function(label, expr) {
   if (isTRUE(r)) { cat(" PASS:", label, "\n"); .pass <<- .pass + 1L }
   else           { cat(" FAIL:", label, "\n"); .fail <<- .fail + 1L }
 }
+`%||%` <- function(a, b) if (is.null(a)) b else a
 leer <- function(f) paste(readLines(f, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
 
 ui  <- leer(Sys.getenv("T56_UI", "R/ui_components.R"))
@@ -31,9 +32,35 @@ k <- which(grepl("padding-bottom:\\s*var\\(--hd-notas-reserva\\)", body))
 ok("exactly one rule gives that room, and it only sets padding-bottom",
    length(k) == 1L && grepl("^\\s*padding-bottom:\\s*var\\(--hd-notas-reserva\\);\\s*$", body[k]))
 cajas <- if (length(k) == 1L) sel_lista(gsub("\\s+", " ", sel[k])) else character(0)
-for (s in c(".calendar-container", ".ph-company-panel", ".hd-scroll-pestana",
+for (s in c(".ph-company-panel", ".hd-scroll-pestana",
             ".tab-pane > .overflow-auto:not(:has(.pan-cinta))"))
   ok(sprintf("the rule covers %s", s), s %in% cajas)
+ok("the Calendar keeps its height and gets no room (its last week already ends clear)",
+   !".calendar-container" %in% cajas &&
+     grepl("\\.calendar-container \\{[^}]*height: calc\\(100vh - var\\(--hd-barra-alto\\) - 72px\\);\\s*min-height: 500px;", css))
+
+# On the Calendar, "Notas del mes" lives in its header (calendar_html(),
+# R/global.R) and the floating one hides -- but not with the Flujo slid in.
+OCULTA <- "body:has(.tab-pane.active .cf-slide-wrapper:not(.cf-preview-active)) .notes-toggle-bar"
+ok("one rule hides the floating button only on the Calendar without the Flujo preview, and only hides it",
+   sum(sel == OCULTA) == 1L && grepl("^\\s*display:\\s*none;\\s*$", body[sel == OCULTA][1]))
+ok("no other rule hides the floating button",
+   sum(grepl("notes-toggle-bar", sel, fixed = TRUE) & grepl("display:\\s*none", body)) == 1L)
+g <- leer("R/global.R")
+cal <- regmatches(g, regexpr("(?s)calendar_html <- function.*?\n}\n", g, perl = TRUE))
+ok("calendar_html() builds the header button: the floating one's look, a click on the app's one #toggle_notes (guarded)",
+   grepl("class=\"notes-bar-btn cal-notes-btn\"", cal, fixed = TRUE) &&
+     grepl("onclick=\"var b=document.getElementById(\\'toggle_notes\\'); if(b) b.click();\"", cal, fixed = TRUE))
+ok("…its text from the dictionary (comun.calendario.notas), escaped",
+   grepl("htmltools::htmlEscape(tr(\"comun.calendario.notas\"))", cal, fixed = TRUE))
+ok("…and it sits in the header's left group, after the Flujo arrow",
+   grepl("preview_arrow_html,\\s*\n\\s*notes_btn_html,\\s*\n\\s*'</div>',", cal))
+for (idioma in c("es", "en")) {
+  d <- jsonlite::fromJSON(file.path("www/i18n", paste0(idioma, ".json")))
+  ok(sprintf("the key exists in %s.json", idioma), nzchar(d[["comun.calendario.notas"]] %||% ""))
+}
+ok("the Spanish text is the floating button's: \"Notas del mes\"",
+   identical(jsonlite::fromJSON("www/i18n/es.json")[["comun.calendario.notas"]], "Notas del mes"))
 ok("only a Panorama showing its Cinta stays out (the Cinta lifts the button, T49); without it Panorama gets the room",
    any(grepl(":not\\(:has\\(\\.pan-cinta\\)\\)", cajas)) && !any(grepl("hd-panorama", cajas, fixed = TRUE)))
 ok("the button itself did not move (fixed, bottom 16px, left 16px)",

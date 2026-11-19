@@ -536,11 +536,19 @@ app_styles <- function() {
        too: measured at 1293x632, its last card ended under the button. */
     :root { --hd-notas-reserva: 56px; }
     .tab-pane > .overflow-auto:not(:has(.pan-cinta)),
-    .calendar-container,
     .ph-company-panel,
     .hd-scroll-pestana {
       padding-bottom: var(--hd-notas-reserva);
     }
+    /* T56: on the Calendar the button lives in its header, next to the month
+       (calendar_html(), R/global.R: .cal-notes-btn clicks #toggle_notes), and
+       the floating one hides -- except with the Flujo preview slid in, where
+       that header is out of view. The Calendar keeps its height: scrolled to
+       the end its last week already ended clear (measured at 1293x632). */
+    body:has(.tab-pane.active .cf-slide-wrapper:not(.cf-preview-active)) .notes-toggle-bar {
+      display: none;
+    }
+    .cal-notes-btn { margin-left: 8px; flex: none; }
     .notes-bar-btn {
       background: transparent;
       border: 1px solid #c5d0e6;

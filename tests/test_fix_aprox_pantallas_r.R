@@ -119,9 +119,15 @@ dd <- data.frame(Fecha = DIA, Moneda = "MXN", Parte = c("ACEROS", "RENTA USD"), 
 # T55: the amounts lose "$" (a party: the number alone; the day's total: the
 # number and the currency's code, from `currency`). The rest of the HTML is
 # master's, byte for byte: t55() applies exactly that change to master's.
+# T56 adds one more change, also applied here: the header's "Notas del mes"
+# button, right after the Flujo arrow (it clicks the app's #toggle_notes).
+BOTON_NOTAS <- paste0('<button type="button" class="notes-bar-btn cal-notes-btn" ',
+  'onclick="var b=document.getElementById(\'toggle_notes\'); if(b) b.click();">',
+  as.character(shiny::icon("sticky-note")), ' Notas del mes</button>')
 t55 <- function(h, cur = "MXN") {
   h <- gsub('(<span class="cal-amount"[^>]*>(≈ )?)\\$ ', "\\1", h)
-  gsub('(<div class="cal-total"><span>Total</span><span[^>]*>(≈ )?)\\$ ([0-9,]+)</span>', paste0("\\1\\3 ", cur, "</span>"), h)
+  h <- gsub('(<div class="cal-total"><span>Total</span><span[^>]*>(≈ )?)\\$ ([0-9,]+)</span>', paste0("\\1\\3 ", cur, "</span>"), h)
+  sub('(<button class="cf-preview-toggle-btn"[^>]*>&#8250;</button>)', paste0("\\1", BOTON_NOTAS), h)
 }
 burbuja_en <- function(fn, dd, cur) suppressMessages(fn(dd, as.Date("2026-11-01"), cur, title_prefix = "Pagos", ledger = "AP"))
 h_ma <- burbuja(maestro$calendar_html, dd)

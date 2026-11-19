@@ -1163,6 +1163,17 @@ calendar_html <- function(
     '</button>'
   )
 
+  # T56: "Notas del mes" in the header, next to the month: it clicks the
+  # app's one toggle_notes button (app.R), which floats on every other tab
+  # and is hidden on this one (R/ui_components.R).
+  notes_btn_html <- paste0(
+    '<button type="button" class="notes-bar-btn cal-notes-btn" ',
+    'onclick="var b=document.getElementById(\'toggle_notes\'); if(b) b.click();">',
+    as.character(shiny::icon("sticky-note")), ' ',
+    htmltools::htmlEscape(tr("comun.calendario.notas")),
+    '</button>'
+  )
+
   title_bar_html <- paste0(
     '<div class="cal-title-bar">',
     '<div class="cal-title-left">',
@@ -1175,6 +1186,7 @@ calendar_html <- function(
     period_label_html,
     cur_badge_html,
     preview_arrow_html,
+    notes_btn_html,
     '</div>',
     '<div class="cal-title-hint">Haz clic en un d\u00eda para ver el detalle</div>',
     '</div>'
