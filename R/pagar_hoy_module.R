@@ -3311,21 +3311,35 @@ pagarHoyServer <- function(id, shared) {
       # session staged moments ago, since that row was never in this
       # session's copy to begin with and this filter can only keep what's
       # already present.
-      ph      <- (tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
-                                               client_id = shared$effective_client_id()),
-                           error = function(e) NULL) %||% shared$pagar_hoy_db()) |>
-                    dplyr::filter(status != "pending")
+      # Strict (CM33): a failed read saves nothing -- it used to fall back to
+      # this session's copy and write that over S3. The copy read is the
+      # save's `base`: Vaciar removes the pending rows it saw; a row another
+      # session staged after this read survives, and the notice says so.
+      ph_base <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                              client_id = shared$effective_client_id()),
+                          error = function(e) { message("[AGENDA] do_clear_all read failed: ", e$message); NULL })
+      if (is.null(ph_base)) {
+        removeModal()
+        showNotification(tr("tablas.agenda.aviso.no_guardado"), type = "error", duration = 6)
+        return()
+      }
+      ph      <- dplyr::filter(ph_base, status != "pending")
       saved   <- tryCatch({
-        save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id())
-        TRUE
+        save_pagar_hoy(ph, shared$current_user(), client_id = shared$effective_client_id(),
+                       base = ph_base)
       }, error = function(e) {
         message("[AGENDA] do_clear_all save failed: ", e$message)
         FALSE
       })
-      if (isTRUE(saved)) {
-        shared$pagar_hoy_db(ph)
+      if (!isFALSE(saved)) {
+        quitadas <- sum(ph_base$status == "pending", na.rm = TRUE)
+        quedan   <- sum(saved$status == "pending", na.rm = TRUE)
+        shared$pagar_hoy_db(saved)
         removeModal()
-        showNotification(tr("tablas.agenda.aviso.vaciada"), type = "message", duration = 2)
+        showNotification(
+          if (quedan > 0) tr("tablas.agenda.aviso.vaciada_quedan", n = as.character(quitadas), m = as.character(quedan))
+          else tr("tablas.agenda.aviso.vaciada", n = as.character(quitadas)),
+          type = "message", duration = if (quedan > 0) 6 else 2)
         log_action(tryCatch(shared$current_user(), error = function(e) "system"), "pagar_hoy", "vaciar_agenda",
                    "Agenda de hoy vaciada (todos los pendientes eliminados)",
                    client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),

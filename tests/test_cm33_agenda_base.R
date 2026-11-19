@@ -178,11 +178,14 @@ for (ledger in c("AP", "AR")) {
 ag <- sembrar("AP")
 correr("vaciar", ag)
 ok("5 control: Vaciar alone empties the pending rows", identical(ids_s3(), character()))
+ok("5 control: …and says how many it removed (2)", tr("tablas.agenda.aviso.vaciada", n = "2") %in% AVISOS)
 
 ag <- sembrar("AP"); OTRA <- otra_agrega("AP")
 correr("vaciar", ag)
 ok("5 two sessions: a row another session staged after this read (B9, never seen here) survives Vaciar",
    identical(ids_s3(), "B9"))
+ok("5 …and the notice says how many it removed and that 1 added by another session remains",
+   tr("tablas.agenda.aviso.vaciada_quedan", n = "2", m = "1") %in% AVISOS)
 
 ag <- sembrar("AP")
 safe_load_pagar_hoy <- function(...) stop("simulated read failure")
@@ -191,7 +194,7 @@ correr("vaciar", ag)
 ok("5 the Agenda read fails: Vaciar writes nothing and says it could not",
    identical(.mem_escrituras, n) && identical(ids_s3(), c("X1", "Y1")) &&
      !any(LOGS %in% "vaciar_agenda") &&
-     !any(grepl(tr("tablas.agenda.aviso.vaciada"), AVISOS, fixed = TRUE)))
+     identical(AVISOS, tr("tablas.agenda.aviso.no_guardado")))
 
 s3_memoria_restaurar()
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
