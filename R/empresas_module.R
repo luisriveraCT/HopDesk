@@ -8,6 +8,17 @@
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+# The group's logo (group_config.rds: logo_raw + logo_ext) as an <img> of
+# `alto` px, inline (base64), for Ajustes › Configuración del Grupo and the
+# "Empresa" line of a new invitation (T58). NULL without a logo.
+logo_grupo_img <- function(logo_raw, logo_ext = "png", alto = 32) {
+  if (is.null(logo_raw) || !is.raw(logo_raw) || !length(logo_raw)) return(NULL)
+  mime <- if (tolower(logo_ext %||% "png") %in% c("jpg", "jpeg")) "image/jpeg" else "image/png"
+  htmltools::tags$img(src = paste0("data:", mime, ";base64,", base64enc::base64encode(logo_raw)),
+                      alt = "", class = "logo-grupo",
+                      style = sprintf("max-height:%dpx;max-width:%dpx;object-fit:contain;", as.integer(alto), 4L * as.integer(alto)))
+}
+
 .next_empresa_code <- function(all_e) {
   if (is.null(all_e) || !nrow(all_e) || !"account_code" %in% names(all_e))
     return("E0001")
@@ -1178,11 +1189,13 @@ empresasServer <- function(id, shared) {
                           buttonLabel = "Elegir imagen…",
                           width = "100%")
               ),
+              # T58: the saved logo itself, so one can see which it is (the
+              # one the reports carry), not just that there is one.
               if (has_logo) {
                 column(4,
-                  div(class = "mt-4 pt-2",
-                      icon("circle-check", class = "text-success"),
-                      tags$span(class = "small text-muted ms-1", "Logo guardado"))
+                  div(class = "mt-4 pt-1 d-flex align-items-center gap-2",
+                      logo_grupo_img(cfg$logo_raw, cfg$logo_ext, alto = 64),
+                      tags$span(class = "small text-muted", tr("tablas.empresas.logo_guardado")))
               ) } else NULL
             ),
             # Monedas fase 1: the client's presentation currency (R/monedas.R).

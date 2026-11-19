@@ -88,10 +88,14 @@ for (who in c("is_hopdesk()", "is_principal()", "is_dev()")) {
 
 # ── C. El cliente destino se decide en el servidor ───────────────────────────
 
-.chk(grepl("viewer_is_staff", send_h, fixed = TRUE), TRUE,
-     "el handler consulta viewer_is_staff() para decidir el alcance")
-.chk(grepl("current_client_id()", send_h, fixed = TRUE), TRUE,
-     "el handler usa current_client_id() como destino para quien no es staff")
+# T58: no "Cliente destino" any more -- for everyone, staff too, the client
+# being viewed, through inv_destino() (the same the form shows).
+.chk(grepl("destino   <- inv_destino()", send_h, fixed = TRUE) && grepl("client_in <- destino$client_id", send_h, fixed = TRUE),
+     TRUE, "el handler toma el destino de inv_destino(), el mismo que muestra el formulario")
+.chk(grepl(".inv_destino(current_client_id()", src, fixed = TRUE), TRUE,
+     "inv_destino() es el cliente que se está viendo (current_client_id())")
+.chk(grepl("input$inv_client_id", send_h, fixed = TRUE), FALSE,
+     "el handler ya no lee inv_client_id del navegador, para nadie")
 # La regresión exacta: tomar el cliente del navegador sin condicionar.
 .chk(grepl("client_in  <- input$inv_client_id", src, fixed = TRUE), FALSE,
      "ya NO se toma inv_client_id del navegador sin condicionar")
@@ -183,12 +187,11 @@ inv_na <- inv; inv_na$client_id[1] <- NA_character_
 
 # ── H. El destino forzado ignora lo que diga el navegador ────────────────────
 
-.target <- function(is_staff, from_browser, own) {
-  if (isTRUE(is_staff)) trimws(from_browser %||% "") else own
-}
+# T58: the rule is now the same for everyone -- the browser is never asked.
+.target <- function(is_staff, from_browser, own) own
 .chk(.target(FALSE, "hd-admin", "acme"), "acme",
      "no-staff: un inv_client_id forjado a 'hd-admin' se ignora")
 .chk(.target(FALSE, "otro", "acme"), "acme",
      "no-staff: un inv_client_id forjado a otro tenant se ignora")
-.chk(.target(TRUE, "otro", "hd-admin"), "otro",
-     "staff: sí puede elegir el cliente destino")
+.chk(.target(TRUE, "otro", "acme"), "acme",
+     "staff (T58): invita al cliente que está viendo; para otro, entra a ese cliente")

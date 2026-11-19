@@ -701,6 +701,36 @@ tiers_cola_server <- function(id, permitido, refresh) {
 
 tiers_invitaciones_ui <- function(id) hd_table_ui(shiny::NS(id, "tabla"))
 
+# ── Where a new invitation goes (T58) ───────────────────────────────────────
+# The one place that decides it, for the form and for Enviar: the client
+# being viewed (current_client_id()), for staff too -- to invite another
+# client's team, staff enters that client first. Its name and logo are the
+# group's (Ajustes › Empresas, group_config.rds of that client; without a
+# name, the registry's, then the id). en_casa: staff at home (hd-admin),
+# where nobody is invited (Coordinador): the button is off and Enviar refuses.
+.inv_destino <- function(client_id, registry = NULL, group_config = NULL) {
+  cid <- tolower(trimws(as.character(client_id %||% "")))
+  if (length(cid) != 1L || is.na(cid)) cid <- ""
+  nombre <- trimws(as.character(group_config$group_name %||% ""))
+  if (length(nombre) != 1L || is.na(nombre) || !nzchar(nombre)) {
+    nombre <- if (is.data.frame(registry) && nrow(registry) && nzchar(cid))
+      registry$display_name[match(cid, registry$client_id)] else NA_character_
+    if (is.na(nombre) || !nzchar(nombre)) nombre <- cid
+  }
+  list(client_id = cid, nombre = nombre, logo_raw = group_config$logo_raw,
+       logo_ext = group_config$logo_ext %||% "png", en_casa = identical(cid, .HD_ADMIN_CID))
+}
+
+# "Empresa: <name> <logo>", read-only, in place of the old "Cliente destino".
+.inv_destino_ui <- function(d) {
+  div(class = "mb-3",
+      tags$label(class = "form-label", tr("niveles.invitaciones.empresa")),
+      div(class = "d-flex align-items-center gap-2 inv-destino",
+          tags$span(class = "fw-semibold", d$nombre),   # text: escaped by htmltools
+          logo_grupo_img(d$logo_raw, d$logo_ext, alto = 24)),
+      if (isTRUE(d$en_casa)) tags$div(class = "form-text text-warning", tr("niveles.invitaciones.entra_a_cliente")))
+}
+
 # ── Clientes registrados on the table engine (T28) ──────────────────────────
 # Each client's last activity: the newest ts of its active audit chunk
 # (app_audit.rds only, never the historical ones), NA without one. Read as
@@ -2770,7 +2800,6 @@ tiersServer <- function(id, shared) {
       # invites_refresh in their own datos(): ↻ or a revoke never rebuilds
       # this form (T28 P6).
       registry <- tryCatch(read_client_registry(), error = function(e) .schema_client_registry())
-      active_clients <- registry[registry$status == "active", , drop = FALSE]
 
       # ── Alcance por tenant ──────────────────────────────────────────────────
       # pending_invites.rds es UN SOLO archivo global en hd-admin/ con una
@@ -2779,16 +2808,9 @@ tiersServer <- function(id, shared) {
       # elegir cualquier cliente destino -- incluido hd-admin. Staff ve todo
       # porque su trabajo es dar de alta clientes; un cliente ve lo suyo.
       staff_view <- isTRUE(viewer_is_staff())
-      own_client <- current_client_id()
-      own_label  <- {
-        idx <- which(registry$client_id == own_client)
-        if (length(idx)) registry$display_name[idx[1]] else own_client
-      }
-
-      client_choices <- if (staff_view)
-        setNames(active_clients$client_id, active_clients$display_name)
-      else
-        setNames(own_client, own_label)
+      # T58: no "Cliente destino" any more -- the invitation goes to the
+      # client being viewed, shown with its group's name and logo.
+      destino <- inv_destino(registry)
       # The invitations a client sees are filtered on the server too, in
       # .invitaciones_filas() (the table's datos()), never in the browser.
 
@@ -2810,24 +2832,11 @@ tiersServer <- function(id, shared) {
                             placeholder = "usuario@empresa.com"),
                   textInput(ns("inv_display_name"), "Nombre para mostrar",
                             placeholder = "Ej: Ana Martínez"),
-                  # Staff elige el cliente destino porque da de alta clientes.
-                  # Un cliente no: su cuenta vive en su carpeta y no sale de
-                  # ahí. Se muestra de todas formas, en gris, para que quede
-                  # claro dónde va a caer la cuenta. El valor NO se toma del
-                  # navegador — ver el handler de btn_send_invite.
-                  if (staff_view)
-                    selectInput(ns("inv_client_id"), "Cliente destino",
-                                choices = client_choices,
-                                selected = own_client, width = "100%")
-                  else
-                    div(
-                      class = "mb-3",
-                      tags$label(class = "form-label", "Cliente destino"),
-                      tags$input(type = "text", class = "form-control",
-                                 readonly = NA, value = own_label),
-                      tags$div(class = "form-text",
-                               "Las invitaciones que creas pertenecen a tu empresa.")
-                    ),
+                  # T58: where the invitation goes, read-only -- the client
+                  # being viewed, with its group's name and logo. The same
+                  # .inv_destino() decides it in Enviar's handler; nothing
+                  # comes from the browser.
+                  .inv_destino_ui(destino),
                   selectInput(ns("inv_tier"), "Tier inicial",
                               choices = setNames(niveles_invitables_por(current_tier()),
                                                  vapply(niveles_invitables_por(current_tier()), nivel_nombre, character(1))),
@@ -2836,7 +2845,9 @@ tiersServer <- function(id, shared) {
                   div(
                     class = "d-flex gap-2 mt-2",
                     actionButton(ns("btn_send_invite"), tagList(icon("paper-plane"), " Enviar"),
-                                 class = "btn btn-primary btn-sm"),
+                                 class = "btn btn-primary btn-sm",
+                                 disabled = isTRUE(destino$en_casa),
+                                 title = if (isTRUE(destino$en_casa)) tr("niveles.invitaciones.entra_a_cliente")),
                     actionButton(ns("btn_inv_refresh"), icon("rotate"),
                                  class = "btn btn-outline-secondary btn-sm")
                   )
@@ -2898,16 +2909,12 @@ tiersServer <- function(id, shared) {
       )
     })
 
-    # Staff's "Cliente destino": ↻ brings clients approved since the form was
-    # drawn (it used to rebuild the form), keeping the one chosen.
-    observeEvent(invites_refresh(), {
-      req(isTRUE(viewer_is_staff()))
-      registry <- tryCatch(read_client_registry(), error = function(e) NULL)
-      req(is.data.frame(registry))
-      activos <- registry[!is.na(registry$status) & registry$status == "active", , drop = FALSE]
-      updateSelectInput(session, "inv_client_id", choices = setNames(activos$client_id, activos$display_name),
-                        selected = isolate(input$inv_client_id) %||% current_client_id())
-    }, ignoreInit = TRUE)
+    # T58: where a new invitation goes -- the form shows it and Enviar uses
+    # it, from this one function, so what is seen is where it is saved. The
+    # group's name and logo are read for that same client.
+    inv_destino <- function(registry = NULL)
+      .inv_destino(current_client_id(), registry,
+                   tryCatch(load_group_config(client_id = current_client_id()), error = function(e) NULL))
 
     observeEvent(input$btn_send_invite, {
       # La UI dejaba entrar a dev (un cliente onboardea a su propio equipo),
@@ -2920,18 +2927,23 @@ tiersServer <- function(id, shared) {
       dname_in   <- trimws(input$inv_display_name %||% "")
 
       # ── El alcance de tenant se decide AQUÍ, no en el navegador ────────────
-      # Para quien no es staff, input$inv_client_id se ignora por completo.
-      # Esconder el desplegable no es seguridad: un Shiny.setInputValue desde
-      # la consola del navegador bastaría para sembrar una cuenta dentro de
-      # otro cliente, o dentro de hd-admin.
-      client_in <- if (isTRUE(viewer_is_staff()))
-        trimws(input$inv_client_id %||% "")
-      else
-        current_client_id()
+      # T58: for everyone, the client being viewed -- the same inv_destino()
+      # the form shows. Nothing is read from the browser (there is no
+      # client field any more): a Shiny.setInputValue cannot seed an account
+      # in another client, nor in hd-admin.
+      destino   <- inv_destino()
+      client_in <- destino$client_id
 
       if (!nzchar(client_in %||% "")) {
         output$inv_send_error <- renderUI(
           tags$p(class = "text-danger small mt-1", "No se pudo determinar el cliente destino."))
+        return()
+      }
+      # Staff at home (hd-admin) invites nobody (Coordinador, T58): the
+      # button is off there, and a forged click is refused here too.
+      if (isTRUE(destino$en_casa)) {
+        output$inv_send_error <- renderUI(
+          tags$p(class = "text-danger small mt-1", tr("niveles.invitaciones.entra_a_cliente")))
         return()
       }
 
