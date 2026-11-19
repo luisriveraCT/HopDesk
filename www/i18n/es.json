@@ -1319,6 +1319,7 @@
   "tablas.agenda.aviso.zip_sin_actividad": "Aviso: el ZIP se generó correctamente, pero no se pudo registrar el resumen en Actividad: {error}",
   "tablas.agenda.aviso.vaciada": "Se quitaron {n} pendiente(s) de la Agenda.",
   "tablas.agenda.aviso.vaciada_quedan": "Se quitaron {n} pendiente(s) de la Agenda. Quedan {m} que otra sesión agregó mientras tanto.",
+  "tablas.agenda.aviso.no_leida": "No se pudo leer la Agenda y no se guardó nada. Recarga la página antes de confirmar o vaciar.",
   "tablas.agenda.aviso.no_guardado": "No se pudo guardar. Verifica la conexión e intenta de nuevo.",
   "tablas.agenda.aviso.sin_cuentas": "No hay cuentas registradas en Configuración > Cuentas.",
   "tablas.agenda.aviso.sin_cuentas_activas": "No hay cuentas activas en Configuración > Cuentas.",

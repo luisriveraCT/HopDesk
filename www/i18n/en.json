@@ -1319,6 +1319,7 @@
   "tablas.agenda.aviso.zip_sin_actividad": "Note: the ZIP was generated, but its summary could not be recorded in Activity: {error}",
   "tablas.agenda.aviso.vaciada": "{n} pending item(s) removed from the Agenda.",
   "tablas.agenda.aviso.vaciada_quedan": "{n} pending item(s) removed from the Agenda. {m} added by another session in the meantime remain.",
+  "tablas.agenda.aviso.no_leida": "The Agenda could not be read and nothing was saved. Reload the page before confirming or clearing.",
   "tablas.agenda.aviso.no_guardado": "Could not save. Check the connection and try again.",
   "tablas.agenda.aviso.sin_cuentas": "There are no accounts registered in Settings > Accounts.",
   "tablas.agenda.aviso.sin_cuentas_activas": "There are no active accounts in Settings > Accounts.",

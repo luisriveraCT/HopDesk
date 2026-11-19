@@ -2610,19 +2610,26 @@ server <- function(input, output, session) {
     .ctx_load(load_policy_moves,          policy_moves_db,          "policy_moves")
     .ctx_load(load_proveedores_inactivos, proveedores_inactivos_db, "prov_inactivos")
     local({
-      cfg_ctx <- tryCatch(load_agenda_sync_config(client_id = effective_cid),
-                          error = function(e) list(is_enabled = FALSE))
-      if (isTRUE(cfg_ctx$is_enabled)) {
-        ph <- tryCatch(load_pagar_hoy_sync(client_id = effective_cid),
-                       error = function(e) NULL)
+      # CM34a: the previous client's Agenda goes FIRST. A failed read used to
+      # leave ph NULL and pagar_hoy_db() still holding the other client's
+      # rows under this one (shown, and a confirm/Vaciar base). Now the
+      # Agenda is emptied before reading, the reads are strict (a failed
+      # read is never "sync off" nor an empty agenda), and if they fail it
+      # stays empty with a notice. Every Agenda save rereads S3 strictly and
+      # rebases (CM33), so nothing is ever saved from that empty copy.
+      pagar_hoy_db(.schema_pagar_hoy())
+      # safe_load_pagar_hoy() reads the sync config strictly and then the file
+      # that config points to (shared, or this user's) -- both strict.
+      ph <- tryCatch(safe_load_pagar_hoy(username = current_user(), client_id = effective_cid),
+                     error = function(e) {
+        message(sprintf("[CTX]   pagar_hoy NOT LOADED for %s: %s", effective_cid, conditionMessage(e)))
+        NULL
+      })
+      if (is.null(ph)) {
+        showNotification(tr("tablas.agenda.aviso.no_leida"), type = "error", duration = 10)
       } else {
-        ph <- tryCatch(
-          load_pagar_hoy_user(current_user(), client_id = effective_cid),
-          error = function(e) tryCatch(
-            load_pagar_hoy(client_id = effective_cid),
-            error = function(e2) NULL))
+        pagar_hoy_db(ph); message("[CTX]   pagar_hoy OK")
       }
-      if (!is.null(ph)) { pagar_hoy_db(ph); message("[CTX]   pagar_hoy OK") }
     })
     # interco_v2 uses a cache keyed to the native deployment — bypass it with client_id.
     # Wrap result so NULL (no IC config for this client) becomes the empty struct.
