@@ -172,6 +172,20 @@ ok("3 the read before the save fails once: x1, x2 and x4 are all still in S3",
 ok("3 …and the rows that were there come back identical()",
    identical(s3()[s3()$id %in% antes$id, ][order(antes$id), ], antes[order(antes$id), ]))
 
+# A read that fails every time: the save writes nothing at all.
+tres_activas(); antes <- s3()
+sesion(function(session, erp_modal) {
+  session$setInputs(btn_new_erp = 1)
+  .mem_falla <<- k(S3_KEYS$erp_connections)
+  n0 <- .mem_escrituras
+  session$setInputs(erp_label = "Nueva", cfg_url = "https://sl.example:50000", cfg_company = "SBO",
+                    cfg_ssl_verify = TRUE, secret_user = "u", secret_password = "p", btn_save_erp = 1)
+  ESCRITAS <<- .mem_escrituras - n0
+  .mem_falla <<- character()
+})
+ok("3 the read fails every time: nothing is written and S3 is identical()",
+   identical(ESCRITAS, 0L) && identical(s3(), antes))
+
 s3_memoria_restaurar()
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
