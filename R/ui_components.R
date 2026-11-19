@@ -977,8 +977,21 @@ app_styles <- function() {
       flex-shrink: 0;
     }
 
+    /* T59: the company panel fills what is left under the Agenda's summary
+       bar and its company tabs, whatever their height: a flex chain from
+       .ph-container (a column, h-100, overflow hidden) down to the active
+       tab, instead of max-height: calc(100vh - 180px), which guessed it.
+       When the summary wrapped (the net position in several currencies), the
+       panel ran past the window and its end could not be reached at all. */
+    .ph-container > .shiny-html-output,
+    .ph-container > .shiny-html-output > .tabbable {
+      flex: 1 1 auto; min-height: 0;
+      display: flex; flex-direction: column;
+    }
+    .ph-container .tabbable > .tab-content { flex: 1 1 auto; min-height: 0; }
+    .ph-container .tabbable > .tab-content > .tab-pane.active { height: 100%; }
     .ph-company-panel {
-      max-height: calc(100vh - 180px);
+      height: 100%;
       overflow-y: auto;
     }
 
