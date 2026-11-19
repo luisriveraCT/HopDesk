@@ -48,8 +48,11 @@ Sys.sleep(0.6)
 bandas  <- function() grep("^banda", unlist(ev(sprintf("HDT.estado('%s').lista", T))), value = TRUE)
 filas   <- function() unlist(ev(sprintf("HDT.estado('%s').visibles", T)))
 # The summary's badges: "MXN|rgb(37, 99, 235)" (code, background).
+# [CAMBIA T55b] the badge reads "3,680.00 MXN · 4 próx.": the code is the
+# three letters before the "·", no longer the first three characters.
 insignias <- function() unlist(ev("Array.from(document.querySelectorAll('#pt-summary_line .badge')).map(function(e){
-  return e.textContent.trim().slice(0, 3) + '|' + getComputedStyle(e).backgroundColor; })"))
+  var m = e.textContent.match(/([A-Z]{3}) \\u00b7/);
+  return (m ? m[1] : e.textContent.trim().slice(0, 3)) + '|' + getComputedStyle(e).backgroundColor; })"))
 AZUL <- "rgb(37, 99, 235)"; VERDE <- "rgb(22, 163, 74)"; MORADO <- "rgb(124, 58, 237)"
 
 # ── 1. Base not chosen: as before T33 ──
