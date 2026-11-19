@@ -1867,6 +1867,22 @@ load_agenda_sync_config <- function(client_id = NULL) {
        .missing   = FALSE)
 }
 
+# Strict variant (CM34a), for the reads that decide whether to WRITE the
+# Agenda (login and client switch). load_agenda_sync_config() above turns a
+# failed read into .missing = TRUE, and at login .missing ran the first-run
+# migration: the legacy pagar_hoy.rds (or nothing) written over the shared
+# Agenda. Here only S3 saying "no such file" is .missing; a failed read
+# stop()s. The display in Ajustes → Sincro keeps the lenient one.
+leer_agenda_sync_config_estricta <- function(client_id) {
+  if (is.null(client_id) || !nzchar(client_id))
+    stop("leer_agenda_sync_config_estricta: sin client_id", call. = FALSE)
+  x <- .s3_leer_para_escribir(S3_KEYS$agenda_sync_config, client_id)   # NULL = does not exist
+  if (is.null(x)) return(list(is_enabled = FALSE, .missing = TRUE))
+  df <- .normalize(x, .schema_agenda_sync_config)
+  if (!nrow(df)) return(list(is_enabled = FALSE, .missing = TRUE))
+  list(is_enabled = isTRUE(df$is_enabled[1]), .missing = FALSE)
+}
+
 save_agenda_sync_config <- function(is_enabled, enabled_by, client_id = NULL) {
   df <- tibble::tibble(
     is_enabled = isTRUE(is_enabled),

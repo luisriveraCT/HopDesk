@@ -2384,8 +2384,18 @@ server <- function(input, output, session) {
       message(sprintf("[LOAD]   interco_v2       %.1fs", (proc.time() - t1)[["elapsed"]]))
       t1 <- proc.time()
       local({
-        cfg <- tryCatch(load_agenda_sync_config(client_id = cid_lo),
-                        error = function(e) list(is_enabled = FALSE, .missing = TRUE))
+        # Strict (CM34a): "does not exist" is not "could not be read". A
+        # failed read of the config used to count as .missing and run the
+        # first-run migration below, writing the legacy pagar_hoy.rds (or an
+        # empty table) over the shared Agenda. Now a failed read writes
+        # nothing, the session's Agenda is left as it is, and the user is told.
+        .agenda_no_leida <- function(que, e = NULL) {
+          message(sprintf("[LOAD] agenda: %s could not be read for %s -- nothing written%s",
+                          que, cid_lo, if (is.null(e)) "" else paste0(": ", conditionMessage(e))))
+          showNotification(tr("tablas.agenda.aviso.no_leida"), type = "error", duration = 10)
+        }
+        cfg <- tryCatch(leer_agenda_sync_config_estricta(cid_lo), error = function(e) e)
+        if (inherits(cfg, "error")) { .agenda_no_leida("agenda_sync_config", cfg); return(invisible()) }
 
         # Helper: merge any items the user added before Phase 2 finished loading
         # (e.g., from Agregar immediately after login). Takes the S3 data as
@@ -2401,17 +2411,41 @@ server <- function(input, output, session) {
         }
 
         if (isTRUE(cfg$.missing)) {
-          # First deploy: migrate existing shared pagar_hoy.rds → sync file, enable sync
+          # First deploy: migrate existing shared pagar_hoy.rds → sync file,
+          # enable sync. Only when S3 says the sync file does not exist either
+          # (FALSE; NA -- S3 could not answer -- migrates nothing): an existing
+          # shared Agenda is never written over (CM34a).
+          existe_sync <- .s3_existe(S3_KEYS$pagar_hoy_sync, cid_lo)
+          if (!identical(existe_sync, FALSE)) {
+            if (is.na(existe_sync)) { .agenda_no_leida("pagar_hoy_sync (exists?)"); return(invisible()) }
+            # The sync file is there: load it (strictly) and only turn sync on.
+            d <- tryCatch(.pagar_hoy_vivo(TRUE, NULL, cid_lo), error = function(e) e)
+            if (inherits(d, "error")) { .agenda_no_leida("pagar_hoy_sync", d); return(invisible()) }
+            tryCatch(save_agenda_sync_config(TRUE, "system", client_id = cid_lo), error = function(e) NULL)
+            ph <- .merge_early_adds(d)
+            if (!identical(ph, d))   # early adds: persisted rebased on S3, as below
+              ph <- tryCatch(save_pagar_hoy(ph, current_user(), client_id = cid_lo, base = d),
+                             error = function(e) ph)
+            pagar_hoy_db(ph)
+            return(invisible())
+          }
           message("[LOAD] agenda_sync: first run — migrating pagar_hoy.rds to sync")
-          ph <- tryCatch(load_pagar_hoy(client_id = cid_lo), error = function(e) .schema_pagar_hoy())
+          # The legacy file, strictly: a failed read migrates nothing.
+          ph <- tryCatch(.pagar_hoy_vivo(FALSE, NULL, cid_lo), error = function(e) e)
+          if (inherits(ph, "error")) { .agenda_no_leida("pagar_hoy (legacy)", ph); return(invisible()) }
           ph <- .merge_early_adds(ph)
-          tryCatch(save_pagar_hoy_sync(ph, client_id = cid_lo), error = function(e)
-            message("[LOAD] agenda_sync migrate write failed: ", e$message))
-          tryCatch(save_agenda_sync_config(TRUE, "system", client_id = cid_lo), error = function(e) NULL)
+          migrado <- tryCatch({ save_pagar_hoy_sync(ph, client_id = cid_lo); TRUE }, error = function(e) {
+            message("[LOAD] agenda_sync migrate write failed: ", e$message); FALSE })
+          # Sync is turned on only once its file was written (CM34a).
+          if (migrado)
+            tryCatch(save_agenda_sync_config(TRUE, "system", client_id = cid_lo), error = function(e) NULL)
           pagar_hoy_db(ph)
         } else if (isTRUE(cfg$is_enabled)) {
           # Read from S3 on every login; nothing is kept in process memory.
-          d <- tryCatch(load_pagar_hoy_sync(client_id = cid_lo), error = function(e) .schema_pagar_hoy())
+          # Strictly (CM34a): a failed read is not an empty Agenda, and the
+          # early-added rows are never persisted on top of it.
+          d <- tryCatch(.pagar_hoy_vivo(TRUE, NULL, cid_lo), error = function(e) e)
+          if (inherits(d, "error")) { .agenda_no_leida("pagar_hoy_sync", d); return(invisible()) }
           ph <- .merge_early_adds(d)
           if (!identical(ph, d)) {
             # Early-add items were merged in — persist immediately, rebased on
