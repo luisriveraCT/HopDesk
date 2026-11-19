@@ -525,6 +525,20 @@ app_styles <- function() {
       bottom: 16px; left: 16px;
       z-index: 1000;
     }
+    /* T56: the button floats over the bottom-left corner of every tab, so
+       each scrolling box that reaches the window's bottom ends with room for
+       it: scrolled to the end, its last row always shows above the button.
+       At rest nothing moves and no height is lost. 56px = 16 of margin + the
+       button's ~27 + air; the same number as the table engine's own room
+       below a table (HDT_MARGEN_ABAJO, www/hdtable.js): change both together.
+       Panorama is left out: its Cinta lifts the button there (T49). */
+    :root { --hd-notas-reserva: 56px; }
+    .tab-pane > .overflow-auto:not(:has(.hd-panorama)),
+    .calendar-container,
+    .ph-company-panel,
+    .hd-scroll-pestana {
+      padding-bottom: var(--hd-notas-reserva);
+    }
     .notes-bar-btn {
       background: transparent;
       border: 1px solid #c5d0e6;

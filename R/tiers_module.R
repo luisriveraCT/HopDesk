@@ -40,7 +40,7 @@ tiersUI <- function(id) {
   ns <- NS(id)
 
   div(
-    class = "p-3",
+    class = "p-3 hd-scroll-pestana",   # T56: room at the end for "Notas del mes" (R/ui_components.R)
     style = "overflow-y: auto; max-height: calc(100vh - var(--hd-barra-alto) - 17px);",   # the bar's height (T51)
 
     # The table engine from the start (T28): every table of these tabs sits
