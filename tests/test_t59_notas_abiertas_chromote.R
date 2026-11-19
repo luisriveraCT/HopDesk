@@ -29,6 +29,12 @@ if (!nzchar(Sys.getenv("HOPDESK_TEST_USER"))) {
 source("tests/helpers/live_app_harness.R")
 PORT <- 39064L
 repo <- normalizePath(".", winslash = "/")
+# A previous app still answering on this port would be the one tested: wait
+# for the port to be free, and stop if it never is.
+.puerto_libre <- function() inherits(tryCatch(curl::curl_fetch_memory(sprintf("http://127.0.0.1:%d/", PORT),
+  handle = curl::new_handle(TIMEOUT = 2)), error = function(e) e), "error")
+for (i in 1:30) { if (.puerto_libre()) break; Sys.sleep(2) }
+if (!.puerto_libre()) { cat(sprintf("FAIL: port %d still busy with another app; not testing it\n", PORT)); quit(status = 1L) }
 f <- file.path(repo, ".t59b_app.R")
 writeLines(sprintf('Sys.setenv(ARR_MODO = "normal", ARR_RAIZ = "%s"); setwd("%s"); source("tests/helpers/arranque_app.R")$value', repo, repo), f)
 proc <- callr::r_bg(function(app_file, port) shiny::runApp(app_file, port = port, host = "127.0.0.1", launch.browser = FALSE),

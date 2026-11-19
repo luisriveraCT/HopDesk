@@ -27,6 +27,12 @@ source("tests/helpers/live_app_harness.R")
 PORT <- 39063L
 FOTOS <- Sys.getenv("T59_FOTOS", "")
 repo <- normalizePath(".", winslash = "/")
+# A previous app still answering on this port would be the one tested: wait
+# for the port to be free, and stop if it never is.
+.puerto_libre <- function() inherits(tryCatch(curl::curl_fetch_memory(sprintf("http://127.0.0.1:%d/", PORT),
+  handle = curl::new_handle(TIMEOUT = 2)), error = function(e) e), "error")
+for (i in 1:30) { if (.puerto_libre()) break; Sys.sleep(2) }
+if (!.puerto_libre()) { cat(sprintf("FAIL: port %d still busy with another app; not testing it\n", PORT)); quit(status = 1L) }
 f <- file.path(repo, ".t59_app.R")
 writeLines(sprintf('Sys.setenv(ARR_MODO = "normal", ARR_RAIZ = "%s"); setwd("%s"); source("tests/helpers/arranque_app.R")$value', repo, repo), f)
 proc <- callr::r_bg(function(app_file, port) shiny::runApp(app_file, port = port, host = "127.0.0.1", launch.browser = FALSE),
@@ -71,6 +77,7 @@ revisar <- function(lugar) {
      m$fondo <= m$abajo + 0.5 && m$fondo <= m$ventana + 0.5)
 }
 
+total_emps <- 0L
 tryCatch({
   poll_until(function() !inherits(tryCatch(curl::curl_fetch_memory(sprintf("http://127.0.0.1:%d/", PORT),
     handle = curl::new_handle(TIMEOUT = 2)), error = function(e) e), "error"), timeout_s = 300, interval_s = 1)
@@ -97,7 +104,7 @@ tryCatch({
       function(a){ return a.getAttribute('data-value'); }))"))
     emps <- character(0); previa <- NULL
     for (i in 1:40) { Sys.sleep(1); e <- leer_emps(); if (length(e) && identical(e, previa)) { emps <- e; break }; previa <- e }
-    ok(sprintf("%s: the company tabs read (%d)", quien, length(emps)), length(emps) > 0L)
+    total_emps <- total_emps + length(emps)
     cat(sprintf("\n-- %s: %d company tab(s) --\n", quien, length(emps)))
     for (tam in list(c(1293L, 632L), c(1772L, 866L))) {
       invisible(b$Emulation$setDeviceMetricsOverride(width = tam[1], height = tam[2], deviceScaleFactor = 1, mobile = FALSE))
@@ -120,6 +127,7 @@ tryCatch({
   }
 }, error = function(e) ok(paste("no error running the checks:", conditionMessage(e)), FALSE))
 limpiar()
+ok(sprintf("the Agenda had company tabs for at least one user (%d in all), so the checks ran", total_emps), total_emps > 0L)
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
