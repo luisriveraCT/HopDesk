@@ -118,6 +118,10 @@ get_cuentas_ppl_data <- function(empresa, moneda, shared) {
   )
 }
 
+# Only the session's bancos_cuentas (per client, renamed by the cascade).
+# The old bancos.rds fallback is gone (CM30): nothing wrote it, it was read
+# without a client_id, and it exists in no client. "" means "no origin
+# account": the screens say "configure it in Ajustes" and generate nothing.
 .get_cuenta_origen_legacy <- function(empresa, moneda, shared) {
   if (!is.null(shared$bancos_cuentas)) {
     ctas <- tryCatch(shared$bancos_cuentas(), error = function(e) NULL)
@@ -125,11 +129,6 @@ get_cuentas_ppl_data <- function(empresa, moneda, shared) {
       m <- ctas |> dplyr::filter(Empresa == empresa, activa == TRUE) |> dplyr::slice(1)
       if (nrow(m) && nzchar(trimws(m$cuenta[1]))) return(trimws(m$cuenta[1]))
     }
-  }
-  legacy <- tryCatch(load_bancos(), error = function(e) NULL)
-  if (!is.null(legacy) && nrow(legacy)) {
-    m <- legacy |> dplyr::filter(Empresa == empresa, activa == TRUE) |> dplyr::slice(1)
-    if (nrow(m) && nzchar(trimws(m$cuenta[1]))) return(trimws(m$cuenta[1]))
   }
   ""
 }

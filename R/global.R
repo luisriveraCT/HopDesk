@@ -544,7 +544,6 @@ S3_KEYS <- list(
   manual                = "manual_invoices.rds",
   pagar_hoy             = "pagar_hoy.rds",
   conciliacion          = "conciliacion.rds",
-  bancos                = "bancos.rds",
   proveedores           = "proveedores.rds",
   proveedores_inactivos = "proveedores_inactivos.rds",
   interco               = "interco_settings.rds",

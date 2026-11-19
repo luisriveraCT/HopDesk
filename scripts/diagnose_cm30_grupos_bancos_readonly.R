@@ -91,7 +91,7 @@ for (cid in clientes) {
     }
   }
 
-  ban <- leer(S3_KEYS$bancos, cid)
+  ban <- leer("bancos.rds", cid)   # its S3_KEYS entry is gone since CM30
   cat("  bancos.rds          filas:", filas(ban))
   if (is.data.frame(ban) && "activa" %in% names(ban))
     cat(" | activas:", sum(!is.na(ban$activa) & ban$activa))

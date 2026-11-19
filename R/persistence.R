@@ -2096,28 +2096,6 @@ save_conciliacion <- function(df, client_id = NULL) {
   .s3_write(.normalize(df, .schema_conciliacion), S3_KEYS$conciliacion, client_id = client_id)
 }
 
-# ── Bancos — bank account registry ────────────────────────────────────────────
-
-.schema_bancos <- function() tibble(
-  id       = character(),
-  Empresa  = character(),
-  banco    = character(),
-  alias    = character(),
-  clabe    = character(),
-  cuenta   = character(),
-  Moneda   = character(),
-  tipo     = character(),   # "012" | "021"
-  activa   = logical()
-)
-
-load_bancos <- function(client_id = NULL) {
-  .normalize(.s3_read_with(S3_KEYS$bancos, client_id = client_id), .schema_bancos)
-}
-
-save_bancos <- function(df, client_id = NULL) {
-  .s3_write(.normalize(df, .schema_bancos), S3_KEYS$bancos, client_id = client_id)
-}
-
 # ── Proveedores — supplier registry for Bajío file ────────────────────────────
 
 # =============================================================================
@@ -2353,16 +2331,13 @@ save_empresas <- function(df, client_id = NULL) {
 .schema_grupos <- function() tibble::tibble(
   id         = character(),   # UUID
   name       = character(),   # "Networks Group"
-  companies  = character(),   # JSON array of empresa initials e.g. '["NG","NTS"]'
+  # No `companies` list (CM30): which group a company belongs to is
+  # empresas.group_id. The list was never read and the rename cascade did not
+  # touch it; checked in prod before it went (it matched group_id).
   client_id  = character(),   # deployment slug e.g. "networks", "hopdesk"
   created_at = character(),
   updated_at = character()
 )
-
-# Parse the companies JSON field into a character vector.
-grupo_companies <- function(row) {
-  tryCatch(jsonlite::fromJSON(row$companies %||% "[]"), error = function(e) character())
-}
 
 load_grupos <- function(client_id = NULL) {
   raw <- tryCatch(suppressMessages(.s3_read_with(S3_KEYS$grupos, client_id = client_id)), error = function(e) NULL)
