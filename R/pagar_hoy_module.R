@@ -1777,6 +1777,29 @@ pagarHoyServer <- function(id, shared) {
         abono_rows   <- rows |> dplyr::filter(!is.na(tipo_item) & tipo_item == "abono")
         factura_rows <- rows |> dplyr::filter(is.na(tipo_item)  | tipo_item != "abono")
 
+        # Confirming ALWAYS fully removes the item from Agenda, for every
+        # source -- ERP rows are never left behind with status=="confirmed".
+        # Calendario's crossout for ERP rows comes entirely from
+        # bancos_confirmados matching, never from anything lingering here;
+        # removing an item from Agenda is always safe regardless of source,
+        # since Agenda never holds the real data (Mouse, 2026-07-23).
+        # sap_fact_ids/man_fact_ids are still split below, for the
+        # manual_inv-archiving decision, not for what happens here.
+        # The Agenda as S3 holds it now, read strictly BEFORE any write
+        # (CM33): if it cannot be read, nothing is confirmed anywhere --
+        # neither bancos_confirmados nor the Agenda nor the log -- so the
+        # invoice is never closed with its Agenda row left behind, nor the
+        # other way round. This copy is also the save's `base`: only these
+        # ids leave S3's Agenda, whatever another session staged or removed
+        # in the meantime (as Quitar does, CM09).
+        ph_base <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                                client_id = shared$effective_client_id()),
+                            error = function(e) { message("[pagar_hoy] confirm AP, Agenda read: ", conditionMessage(e)); NULL })
+        if (is.null(ph_base)) {
+          showNotification(tr("comun.reintentar"), type = "error", duration = 8)
+          return()
+        }
+
         # Write invoice rows to bancos_confirmados BEFORE unstaging from pagar_hoy.
         # save_pagar_hoy() bumps the cross-session sync version which triggers the poll
         # observer to reload bancos_confirmados from S3. Writing to S3 first ensures
@@ -1816,24 +1839,8 @@ pagarHoyServer <- function(id, shared) {
           bump_sync_version("bancos_confirmados_db", client_id = shared$effective_client_id())
         }
 
-        # Confirming ALWAYS fully removes the item from Agenda, for every
-        # source -- ERP rows are never left behind with status=="confirmed".
-        # Calendario's crossout for ERP rows comes entirely from
-        # bancos_confirmados matching, never from anything lingering here;
-        # removing an item from Agenda is always safe regardless of source,
-        # since Agenda never holds the real data (Mouse, 2026-07-23).
-        # sap_fact_ids/man_fact_ids are still split below, for the
-        # manual_inv-archiving decision, not for what happens here.
-        # Read fresh from S3, not this session's possibly-stale in-memory
-        # copy -- unstaging writes the WHOLE table back, so a stale base
-        # snapshot here would silently drop any row another session staged
-        # or unstaged in the meantime (same race class as the manual_inv
-        # incident fixed 2026-07-24; removal is still strictly by id, so a
-        # fresh base only adds safety, it never changes which rows this
-        # confirm removes).
-        ph  <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
-                                            client_id = shared$effective_client_id()),
-                        error = function(e) NULL) %||% shared$pagar_hoy_db()
+        # Removal by id from the Agenda read above (ph_base), rebased on S3.
+        ph <- ph_base
         sap_fact_ids <- factura_rows$id[is_erp_sourced(factura_rows$source)]
         man_fact_ids <- factura_rows$id[!is_erp_sourced(factura_rows$source)]
         rm_ids <- c(factura_rows$id, abono_rows$id)
@@ -1859,7 +1866,8 @@ pagarHoyServer <- function(id, shared) {
         # a false success), but the failure itself is now logged too, so
         # Actividad shows the inconsistency instead of nothing at all.
         save_result <- save_pagar_hoy_with_retry(ph, shared$current_user(),
-                                                  client_id = shared$effective_client_id())
+                                                  client_id = shared$effective_client_id(),
+                                                  base = ph_base)
         if (!isTRUE(save_result$ok)) {
           showNotification(
             tr("tablas.agenda.aviso.confirmada_agenda_no", n = as.character(save_result$attempts)),
@@ -2161,6 +2169,29 @@ pagarHoyServer <- function(id, shared) {
         abono_rows   <- rows |> dplyr::filter(!is.na(tipo_item) & tipo_item == "abono")
         factura_rows <- rows |> dplyr::filter(is.na(tipo_item)  | tipo_item != "abono")
 
+        # Confirming ALWAYS fully removes the item from Agenda, for every
+        # source -- ERP rows are never left behind with status=="confirmed".
+        # Calendario's crossout for ERP rows comes entirely from
+        # bancos_confirmados matching, never from anything lingering here;
+        # removing an item from Agenda is always safe regardless of source,
+        # since Agenda never holds the real data (Mouse, 2026-07-23).
+        # sap_fact_ids/man_fact_ids are still split below, for the
+        # manual_inv-archiving decision, not for what happens here.
+        # The Agenda as S3 holds it now, read strictly BEFORE any write
+        # (CM33): if it cannot be read, nothing is confirmed anywhere --
+        # neither bancos_confirmados nor the Agenda nor the log -- so the
+        # invoice is never closed with its Agenda row left behind, nor the
+        # other way round. This copy is also the save's `base`: only these
+        # ids leave S3's Agenda, whatever another session staged or removed
+        # in the meantime (as Quitar does, CM09).
+        ph_base <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                                client_id = shared$effective_client_id()),
+                            error = function(e) { message("[pagar_hoy] confirm AR, Agenda read: ", conditionMessage(e)); NULL })
+        if (is.null(ph_base)) {
+          showNotification(tr("comun.reintentar"), type = "error", duration = 8)
+          return()
+        }
+
         # Write invoice rows to bancos_confirmados BEFORE unstaging from pagar_hoy.
         # save_pagar_hoy() bumps the cross-session sync version which triggers the poll
         # observer to reload bancos_confirmados from S3. Writing to S3 first ensures
@@ -2196,24 +2227,8 @@ pagarHoyServer <- function(id, shared) {
           bump_sync_version("bancos_confirmados_db", client_id = shared$effective_client_id())
         }
 
-        # Confirming ALWAYS fully removes the item from Agenda, for every
-        # source -- ERP rows are never left behind with status=="confirmed".
-        # Calendario's crossout for ERP rows comes entirely from
-        # bancos_confirmados matching, never from anything lingering here;
-        # removing an item from Agenda is always safe regardless of source,
-        # since Agenda never holds the real data (Mouse, 2026-07-23).
-        # sap_fact_ids/man_fact_ids are still split below, for the
-        # manual_inv-archiving decision, not for what happens here.
-        # Read fresh from S3, not this session's possibly-stale in-memory
-        # copy -- unstaging writes the WHOLE table back, so a stale base
-        # snapshot here would silently drop any row another session staged
-        # or unstaged in the meantime (same race class as the manual_inv
-        # incident fixed 2026-07-24; removal is still strictly by id, so a
-        # fresh base only adds safety, it never changes which rows this
-        # confirm removes).
-        ph  <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
-                                            client_id = shared$effective_client_id()),
-                        error = function(e) NULL) %||% shared$pagar_hoy_db()
+        # Removal by id from the Agenda read above (ph_base), rebased on S3.
+        ph <- ph_base
         sap_fact_ids <- factura_rows$id[is_erp_sourced(factura_rows$source)]
         man_fact_ids <- factura_rows$id[!is_erp_sourced(factura_rows$source)]
         rm_ids <- c(factura_rows$id, abono_rows$id)
@@ -2224,7 +2239,8 @@ pagarHoyServer <- function(id, shared) {
         # found 2026-08-05: same bare-call bug as the AP handler above (see
         # its comment for the full incident) -- fixed identically here.
         save_result <- save_pagar_hoy_with_retry(ph, shared$current_user(),
-                                                  client_id = shared$effective_client_id())
+                                                  client_id = shared$effective_client_id(),
+                                                  base = ph_base)
         if (!isTRUE(save_result$ok)) {
           showNotification(
             tr("tablas.agenda.aviso.confirmada_agenda_no", n = as.character(save_result$attempts)),
