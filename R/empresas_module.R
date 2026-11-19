@@ -664,14 +664,8 @@ empresasServer <- function(id, shared) {
       df
     })
 
-    .save_erp_and_broadcast <- function(df) {
-      save_erp_connections(df, client_id = shared$effective_client_id())   # throws on failure
-      .erp_connections_local(df)
-      invisible(TRUE)
-    }
-
-    # Every mutation (save/test/delete) MUST go through this, never through
-    # .save_erp_and_broadcast(all_erp_rv()) directly. all_erp_rv()/
+    # Every mutation (save/test/delete/restore) MUST go through this, never
+    # save all_erp_rv() directly. all_erp_rv()/
     # .erp_connections_local() are a per-session display cache — if a write
     # ever merged its change into that cached snapshot instead of the live
     # S3 state, a snapshot that was even briefly stale (a slow reactive
@@ -681,18 +675,23 @@ empresasServer <- function(id, shared) {
     # current live state immediately before merging in `mutate_fn`'s change
     # and writing, so the write can never regress rows that changed since
     # this session's own copy was cached.
-    # `include_deleted`: restore (Stage 3b) needs to find a row that
-    # load_erp_connections() would normally filter out — the one case where
-    # a mutation legitimately needs to see already-deleted rows.
+    # CM31: the reread is the WHOLE table, trash included, and strict (a
+    # failed read stops the save; it is never an empty table). `mutate_fn`
+    # sees only the active connections and the rows in the trash are written
+    # back exactly as read -- before, every save erased the trash. Restore
+    # (`include_deleted`, Stage 3b) is the one mutation that sees them all.
+    # save_erp_connections() rebases on `fresh`, so a row another session
+    # changed between this read and the write is kept.
     .erp_mutate_and_save <- function(mutate_fn, include_deleted = FALSE) {
       cid <- shared$effective_client_id()
-      fresh <- if (include_deleted) {
-        .normalize(.s3_read_with(S3_KEYS$erp_connections, client_id = cid), .schema_erp_connections)
+      fresh <- leer_erp_connections_para_escribir(cid)   # stop()s on a failed read
+      updated <- if (include_deleted) {
+        mutate_fn(fresh)
       } else {
-        load_erp_connections(cid)   # throws on failure — never fall back to a stale df here
+        borrada <- !is.na(fresh$deleted) & fresh$deleted
+        dplyr::bind_rows(mutate_fn(fresh[!borrada, , drop = FALSE]), fresh[borrada, , drop = FALSE])
       }
-      updated <- mutate_fn(fresh)
-      save_erp_connections(updated, client_id = cid)
+      save_erp_connections(updated, client_id = cid, base = fresh)
       .erp_connections_local(updated)
       invisible(updated)
     }
