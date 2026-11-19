@@ -209,7 +209,10 @@
   empty <- data.frame(alias = character(), clabe = character(), banco = character(),
                       importe = double(), concepto = character(), stringsAsFactors = FALSE)
   if (is.null(x) || (is.list(x) && !length(x))) return(empty)
-  df <- tryCatch(as.data.frame(x, stringsAsFactors = FALSE), error = function(e) NULL)
+  # A list of lists (one per beneficiary, before any JSON round trip) is ROWS:
+  # as.data.frame() took each as a column and kept one row. bind_rows() reads
+  # both shapes alike, as .audit_normalize_bancos_rows() below (T59).
+  df <- tryCatch(as.data.frame(dplyr::bind_rows(x), stringsAsFactors = FALSE), error = function(e) NULL)
   if (is.null(df) || !nrow(df)) return(empty)
   for (col in names(empty)) if (!col %in% names(df)) df[[col]] <- empty[[col]][NA_integer_]
   df[, names(empty), drop = FALSE]
