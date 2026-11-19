@@ -1360,7 +1360,7 @@
   "requisiciones.carpeta.nombre": "Name",
   "requisiciones.carpeta.color": "Color",
   "requisiciones.carpeta.presupuesto": "Estimated budget (optional)",
-  "requisiciones.carpeta.presupuesto_de": "{usado} of {total} {moneda}",
+  "requisiciones.carpeta.presupuesto_de": "{usado} of {total}",
   "requisiciones.carpeta.papelera": "Send to trash",
   "requisiciones.carpeta.guardada": "Folder saved.",
   "requisiciones.carpeta.en_papelera": "Folder sent to the trash.",

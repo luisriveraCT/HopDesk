@@ -89,5 +89,22 @@ ok("Intercompañía's totals per currency: \"1,234 MXN\", the code after",
      identical(monto_moneda(c(1234.4, 99.6), c("MXN", "USD"), decimales = 0L), c("1,234 MXN", "100 USD")))
 ok("both files parse", parsea("R/treasury_map_module.R") && parsea("R/interco_module.R"))
 
+cat("\n-- 5. Requisiciones and the Pasivos wizard --\n")
+ok("Requisiciones, the budget hint: \"1,234 de 5,000 MXN\" (es) / \"1,234 of 5,000 MXN\" (en), {moneda} no longer before",
+   identical(tr("requisiciones.carpeta.presupuesto_de", usado = monto_moneda(1234.4, "MXN", decimales = 0L, codigo = FALSE),
+                total = monto_moneda(5000, "MXN", decimales = 0L), idioma = "es"), "1,234 de 5,000 MXN") &&
+     identical(tr("requisiciones.carpeta.presupuesto_de", usado = "1,234", total = "5,000 MXN", idioma = "en"), "1,234 of 5,000 MXN") &&
+     grepl("total = monto_moneda(p, res$moneda[i] %||% NA_character_, decimales = 0L)", leer("R/requisiciones_module.R"), fixed = TRUE))
+for (e in parse("R/pasivos_wizard_module.R", keep.source = FALSE, encoding = "UTF-8"))
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(e[[2]], as.name(".wiz_revision_summary_html"))) eval(e, globalenv())
+wz <- leer("R/pasivos_wizard_module.R")
+ok("the wizard's summary: \"Principal\" and \"Monto\" with separators and their currency (was \"1234.56\")",
+   grepl('c("Principal",    monto_moneda(draft$principal_original %||% NA_real_, draft$moneda_pago %||% NA_character_))', wz, fixed = TRUE) &&
+     grepl('c("Monto", monto_moneda(draft$amount_default %||% NA_real_, draft$moneda_pago %||% NA_character_))', wz, fixed = TRUE) &&
+     !grepl('sprintf("%.2f"', wz, fixed = TRUE))
+ok("…and its grace payment, in the chosen currency", lengths(regmatches(wz, gregexpr(
+  "monto_moneda(", wz, fixed = TRUE))) >= 4L && !grepl("nsmall", wz, fixed = TRUE))
+ok("both files parse", parsea("R/requisiciones_module.R") && parsea("R/pasivos_wizard_module.R"))
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

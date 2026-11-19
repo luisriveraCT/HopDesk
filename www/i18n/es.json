@@ -1360,7 +1360,7 @@
   "requisiciones.carpeta.nombre": "Nombre",
   "requisiciones.carpeta.color": "Color",
   "requisiciones.carpeta.presupuesto": "Presupuesto estimado (opcional)",
-  "requisiciones.carpeta.presupuesto_de": "{usado} de {total} {moneda}",
+  "requisiciones.carpeta.presupuesto_de": "{usado} de {total}",
   "requisiciones.carpeta.papelera": "Mandar a la papelera",
   "requisiciones.carpeta.guardada": "Carpeta guardada.",
   "requisiciones.carpeta.en_papelera": "Carpeta enviada a la papelera.",

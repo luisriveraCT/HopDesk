@@ -659,14 +659,14 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
       else (draft$metodo_amortizacion %||% "")
     )
     rows <- c(rows, list(
-      c("Principal",    sprintf("%.2f", draft$principal_original %||% 0)),
+      c("Principal",    monto_moneda(draft$principal_original %||% NA_real_, draft$moneda_pago %||% NA_character_)),
       c("Tasa",         tasa_label),
       c("Plazo",        plazo_label),
       c("Amortización", metodo_label)
     ))
   } else if (cat %in% c("regular", "tarjeta")) {
     rows <- c(rows, list(
-      c("Monto", sprintf("%.2f", draft$amount_default %||% 0))
+      c("Monto", monto_moneda(draft$amount_default %||% NA_real_, draft$moneda_pago %||% NA_character_))
     ))
   }
 
@@ -1126,7 +1126,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     line2 <- if (pg > 0L) {
       if (has_custom) {
         sprintf("Cuota de gracia: %s / período — monto personalizado",
-                format(round(monto_g, 2), big.mark = ",", nsmall = 2))
+                monto_moneda(monto_g, input$pwiz_moneda_pago %||% wiz$draft$moneda_pago %||% NA_character_))
       } else if (!is.na(principal) && principal > 0) {
         is_puro_flavor <- identical(flavor, "arrendamiento_puro")
         eff_tasa <- if (is_puro_flavor) 0 else (if (is.na(tasa)) NA_real_ else tasa)
@@ -1137,7 +1137,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
         } else {
           grace_pmt <- principal * ((1 + eff_tasa/100)^(1/ppy_bd) - 1)
           sprintf("Cuota de gracia: %s / período — solo interés (auto)",
-                  format(round(grace_pmt, 2), big.mark = ",", nsmall = 2))
+                  monto_moneda(grace_pmt, input$pwiz_moneda_pago %||% wiz$draft$moneda_pago %||% NA_character_))
         }
       } else NULL
     } else NULL

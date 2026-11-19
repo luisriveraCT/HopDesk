@@ -331,8 +331,8 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
         if (is.na(p) || p <= 0) return(NULL)
         pct <- min(100, round(100 * res$comprometido[i] / p))
         htmltools::div(class = "hdreq-presupuesto", title = tr("requisiciones.carpeta.presupuesto_de",
-            usado = format(round(res$comprometido[i]), big.mark = ","), total = format(round(p), big.mark = ","),
-            moneda = res$moneda[i] %||% ""),
+            usado = monto_moneda(res$comprometido[i], res$moneda[i] %||% NA_character_, decimales = 0L, codigo = FALSE),
+            total = monto_moneda(p, res$moneda[i] %||% NA_character_, decimales = 0L)),   # "1,234 de 5,000 MXN" (T55c)
           htmltools::div(class = "hdreq-barra-p", htmltools::div(style = paste0("width:", pct, "%;"))))
       }
       editar <- puede(usr(), "can_edit_requisiciones")
