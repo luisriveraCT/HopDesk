@@ -539,7 +539,7 @@
   "tablas.pagos.titulo": "Descargar todos los pagos",
   "tablas.pagos.boton_todos": "Descargar todos (.zip)",
   "tablas.pagos.resumen": "Resumen:",
-  "tablas.pagos.pildora": "{n} pago(s) {moneda} {total}",
+  "tablas.pagos.pildora": "{n} pago(s) {total}",
   "tablas.pagos.descargar_zip": "Descargar ZIP ({n} pagos)",
   "tablas.pagos.nota_alias": "Solo entran al ZIP los proveedores con alias y CLABE en el catálogo de Bancos; los demás se omiten.",
   "tablas.pagos.sin_pagos": "No hay pagos en la agenda.",

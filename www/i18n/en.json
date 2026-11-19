@@ -539,7 +539,7 @@
   "tablas.pagos.titulo": "Download all payments",
   "tablas.pagos.boton_todos": "Download all (.zip)",
   "tablas.pagos.resumen": "Summary:",
-  "tablas.pagos.pildora": "{n} payment(s) {moneda} {total}",
+  "tablas.pagos.pildora": "{n} payment(s) {total}",
   "tablas.pagos.descargar_zip": "Download ZIP ({n} payments)",
   "tablas.pagos.nota_alias": "Only suppliers with an alias and CLABE in the Banks catalog go into the ZIP; the rest are left out.",
   "tablas.pagos.sin_pagos": "There are no payments in the agenda.",

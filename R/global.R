@@ -747,14 +747,12 @@ CALENDAR_THEME <- list(
 
 # ── Formatting helpers ─────────────────────────────────────────────────────────
 
+# Kept only for the activity log's text (pagar_hoy_module.R, saldo de
+# apertura): what the log already says stays as it was. Any amount on screen
+# goes through monto_moneda() (R/monedas.R) (T55b); a guardian forbids new
+# calls (tests/test_t55b_montos.R).
 fmt_money <- function(x) {
   paste0("$ ", scales::number(x, big.mark = ",", accuracy = 0.01))
-}
-
-currency_formatter <- function(cur) {
-  cur <- toupper(trimws(cur))
-  prefix <- switch(cur, MXN = "$", USD = "$", EUR = "€", GBP = "£", "#")
-  scales::label_dollar(prefix = prefix, big.mark = ",", decimal.mark = ".", accuracy = 0.01)
 }
 
 # Spanish month label: "febrero 2026"

@@ -767,11 +767,11 @@ pagarHoyServer <- function(id, shared) {
         net <- in_ - out
         tagList(
           if (out > 0) tags$span(class = "badge bg-danger me-1",
-            paste0("\u2193 ", cur, " ", fmt_money(out))) else NULL,
+            paste0("\u2193 ", monto_moneda(out, cur))) else NULL,
           if (in_ > 0) tags$span(class = "badge bg-success me-1",
-            paste0("\u2191 ", cur, " ", fmt_money(in_))) else NULL,
+            paste0("\u2191 ", monto_moneda(in_, cur))) else NULL,
           tags$span(class = paste("badge me-2", if (net >= 0) "bg-success" else "bg-danger"),
-            paste0("= ", cur, " ", fmt_money(net)))
+            paste0("= ", monto_moneda(net, cur)))
         )
       })
       div(class = "d-flex align-items-center gap-1 flex-wrap",
@@ -878,17 +878,17 @@ pagarHoyServer <- function(id, shared) {
         div(class = "d-flex gap-4 align-items-center small",
           div(class = "text-center",
             div(class = "text-muted mb-0", "Saldo apertura"),
-            div(class = "fw-bold fs-6", fmt_money(bal_val))),
+            div(class = "fw-bold fs-6", monto_moneda(bal_val, cur_sel))),
           div(class = "text-center",
             div(class = "text-danger mb-0", paste0("\u2212 Pagos (", cur_sel, ")")),
-            div(class = "fw-bold text-danger", fmt_money(tp))),
+            div(class = "fw-bold text-danger", monto_moneda(tp, cur_sel))),
           div(class = "text-center",
             div(class = "text-success mb-0", paste0("+ Cobros (", cur_sel, ")")),
-            div(class = "fw-bold text-success", fmt_money(tc))),
+            div(class = "fw-bold text-success", monto_moneda(tc, cur_sel))),
           div(class = "text-center",
             div(class = "text-muted mb-0", "Posici\u00f3n proyectada"),
             div(class = paste("fw-bold fs-5", if (net < 0) "text-danger" else "text-success"),
-                fmt_money(net))),
+                monto_moneda(net, cur_sel))),
           actionButton(
             ns(paste0("open_icmap_", emp)),
             tagList(icon("diagram-project"), " Mapa IC"),
@@ -983,7 +983,7 @@ pagarHoyServer <- function(id, shared) {
           tags$span(class = "badge bg-danger", "\u2193 Pagos"),
           tags$span(class = "text-muted small",
             if (nrow(s_pend))
-              paste0(nrow(s_pend), " pendiente(s) \u2014 ", cur_sel, " ", fmt_money(tp))
+              paste0(nrow(s_pend), " pendiente(s) \u2014 ", monto_moneda(tp, cur_sel))
             else paste0("Sin pagos pendientes para ", cur_sel)),
           conf_pill,
           if (nrow(s_cur))
@@ -1022,7 +1022,7 @@ pagarHoyServer <- function(id, shared) {
           tags$span(class = "badge bg-success", "\u2191 Cobros esperados"),
           tags$span(class = "text-muted small",
             if (nrow(s_pend))
-              paste0(nrow(s_pend), " pendiente(s) \u2014 ", cur_sel, " ", fmt_money(tc))
+              paste0(nrow(s_pend), " pendiente(s) \u2014 ", monto_moneda(tc, cur_sel))
             else paste0("Sin cobros pendientes para ", cur_sel)),
           conf_pill,
           if (nrow(s_cur))
@@ -1259,7 +1259,7 @@ pagarHoyServer <- function(id, shared) {
                 lapply(seq_len(nrow(ok)), function(i)
                   tags$li(
                     tags$span(class = "badge bg-success me-1", ok$alias[i]),
-                    ok$Parte[i], " — ", fmt_money(ok$Importe[i]),
+                    ok$Parte[i], " — ", monto_moneda(ok$Importe[i], cur_sel),
                     tags$span(class = "text-muted ms-1",
                               paste0("[", .ref_label(ok$id[i], ok$Documento[i]), "]"))
                   )
@@ -1275,7 +1275,7 @@ pagarHoyServer <- function(id, shared) {
                 lapply(seq_len(nrow(skip)), function(i)
                   tags$li(class = "text-danger",
                     icon("triangle-exclamation"),
-                    skip$Parte[i], " — ", fmt_money(skip$Importe[i]),
+                    skip$Parte[i], " — ", monto_moneda(skip$Importe[i], cur_sel),
                     tags$span(class = "text-muted ms-1",
                               paste0("[", .ref_label(skip$id[i], skip$Documento[i]), "]"))
                   )
@@ -1735,8 +1735,8 @@ pagarHoyServer <- function(id, shared) {
             tags$span(class = "fw-semibold", emp),
             tags$span(class = "badge bg-secondary ms-2", cur)
           ),
-          p(paste0(nrow(rows), " factura(s) \u2014 ", cur, " ",
-                   fmt_money(sum(rows$Importe, na.rm = TRUE)))),
+          p(paste0(nrow(rows), " factura(s) \u2014 ",
+                   monto_moneda(sum(rows$Importe, na.rm = TRUE), cur))),
           div(class = "row g-2 mb-2",
             div(class = "col-md-7",
               tags$label("Cuenta bancaria", class = "form-label small"),
@@ -1755,7 +1755,7 @@ pagarHoyServer <- function(id, shared) {
           ),
           tags$ul(lapply(seq_len(min(nrow(rows), 8)), function(i)
             tags$li(paste0("[", rows$Empresa[i], "] ", rows$Parte[i],
-                           " \u2014 ", fmt_money(rows$Importe[i])))))
+                           " \u2014 ", monto_moneda(rows$Importe[i], cur)))))
         ))
       }, ignoreInit = TRUE)
 
@@ -2119,8 +2119,8 @@ pagarHoyServer <- function(id, shared) {
             tags$span(class = "fw-semibold", emp),
             tags$span(class = "badge bg-secondary ms-2", cur)
           ),
-          p(paste0(nrow(rows), " factura(s) \u2014 ", cur, " ",
-                   fmt_money(sum(rows$Importe, na.rm = TRUE)))),
+          p(paste0(nrow(rows), " factura(s) \u2014 ",
+                   monto_moneda(sum(rows$Importe, na.rm = TRUE), cur))),
           div(class = "row g-2 mb-2",
             div(class = "col-md-7",
               tags$label("Cuenta bancaria", class = "form-label small"),
@@ -2139,7 +2139,7 @@ pagarHoyServer <- function(id, shared) {
           ),
           tags$ul(lapply(seq_len(min(nrow(rows), 8)), function(i)
             tags$li(paste0("[", rows$Empresa[i], "] ", rows$Parte[i],
-                           " \u2014 ", fmt_money(rows$Importe[i])))))
+                           " \u2014 ", monto_moneda(rows$Importe[i], cur)))))
         ))
       }, ignoreInit = TRUE)
 
@@ -2958,9 +2958,9 @@ pagarHoyServer <- function(id, shared) {
         i <- b[b$Moneda == m & as.character(b$id) %in% inc, , drop = FALSE]
         if (!nrow(e) && !nrow(i)) return(NULL)
         tags$span(class = "badge bg-secondary me-1",
-          tr("tablas.pagos.pildora", n = nrow(e), moneda = m, total = fmt_money(sum(e$Importe, na.rm = TRUE))),
+          tr("tablas.pagos.pildora", n = nrow(e), total = monto_moneda(sum(e$Importe, na.rm = TRUE), m)),
           if (nrow(i)) paste0(" ", tr("tablas.pagos.pildora_sin_cuenta", n = nrow(i),
-                                      total = fmt_money(sum(i$Importe, na.rm = TRUE)))))
+                                      total = monto_moneda(sum(i$Importe, na.rm = TRUE), m))))
       })
     })
     output$descargar_boton <- renderUI({
