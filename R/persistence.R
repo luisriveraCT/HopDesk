@@ -1441,67 +1441,94 @@ save_interco <- function(lst, client_id = NULL) {
   list(ar_prefix = "C", ap_prefix = "P", rfcs = character(), companies = companies)
 }
 
+# Does an IC registry have any code at all (some company with ar or ap)?
+.interco_v2_tiene_codigos <- function(reg) {
+  is.list(reg) && is.list(reg$companies) && length(reg$companies) > 0 &&
+    any(vapply(reg$companies, function(co) {
+      length(co$ar %||% character()) > 0 || length(co$ap %||% character()) > 0
+    }, logical(1)))
+}
+
+# v1 -> v2 migration (CM32): the legacy interco_settings.rds codes become the
+# registry's, for an explicit client -- the one given, or with none the
+# deployment's own (never the shared hd-admin deployment's). Idempotent: it
+# rereads interco_v2.rds strictly and writes only while that still has no
+# codes; the registry's prefixes, RFCs and companies are kept as they are,
+# only the migrated codes are filled in. A failed read migrates nothing.
+# Returns the registry now in S3 (migrated or already there), or NULL.
+.interco_v2_migrar <- function(client_id = NULL) {
+  cid <- if (!is.null(client_id) && nzchar(client_id)) tolower(trimws(client_id)) else {
+    env <- tolower(trimws(Sys.getenv("CLIENT_ID")))
+    if (!nzchar(env) || identical(env, "hd-admin")) return(NULL)
+    env
+  }
+  old <- tryCatch(load_interco(client_id = cid), error = function(e) NULL)
+  if (is.null(old) || (!length(old$ar_clients) && !length(old$ap_suppliers))) return(NULL)
+  fresco <- tryCatch(.s3_leer_para_escribir(S3_KEYS$interco_v2, cid), error = function(e) {
+    message("[IC] v1 -> v2 migration skipped for ", cid, ": ", conditionMessage(e)); FALSE })
+  if (isFALSE(fresco)) return(NULL)
+  if (.interco_v2_tiene_codigos(fresco)) return(fresco)   # migrated already (another session)
+  message(sprintf("[IC] v2 has no codes — migrating legacy interco_settings.rds for %s (%d AR, %d AP codes)",
+                  cid, length(old$ar_clients), length(old$ap_suppliers)))
+  cmap <- tryCatch(.company_map_from_empresas(load_empresas(client_id = cid)), error = function(e) c())
+  mig  <- .migrate_interco_v1_to_v2(old, cmap)
+  out  <- if (is.list(fresco)) fresco else list()
+  out$ar_prefix <- out$ar_prefix %||% mig$ar_prefix
+  out$ap_prefix <- out$ap_prefix %||% mig$ap_prefix
+  if (is.null(out$rfcs)) out$rfcs <- mig$rfcs
+  comp <- if (is.list(out$companies)) out$companies else list()
+  for (ini in names(mig$companies)) {
+    co <- comp[[ini]] %||% list()
+    co$ar <- mig$companies[[ini]]$ar; co$ap <- mig$companies[[ini]]$ap
+    comp[[ini]] <- co
+  }
+  out$companies <- comp
+  ok <- tryCatch({
+    save_interco_v2(out, client_id = cid)
+    if (exists("bump_sync_version", mode = "function")) bump_sync_version("interco_v2", client_id = cid)
+    TRUE
+  }, error = function(e) { message("[IC] v1 -> v2 migration save failed for ", cid, ": ", e$message); FALSE })
+  if (ok) out else NULL
+}
+
 load_interco_v2 <- function(client_id = NULL) {
   # When a specific client_id is given (context-jump), bypass the in-memory cache
   # (which is keyed to the native deployment) and read directly from S3.
-  if (!is.null(client_id) && nzchar(client_id)) {
+  dado <- !is.null(client_id) && nzchar(client_id)
+  out <- if (dado) {
     raw <- tryCatch(.s3_read_with(S3_KEYS$interco_v2, client_id = client_id),
                     error = function(e) NULL)
     message(sprintf("[IC] load_interco_v2(client_id='%s') — %s from S3",
                     client_id,
                     if (is.list(raw)) paste(length(raw$companies %||% list()), "companies") else "NULL"))
-    if (!is.list(raw) || is.null(raw$companies)) return(.empty_interco_v2())
-    raw$ar_prefix <- raw$ar_prefix %||% "C"
-    raw$ap_prefix <- raw$ap_prefix %||% "P"
-    if (is.null(raw$rfcs)) raw$rfcs <- character()
-    return(raw)
-  }
-
-  # 1. Cross-session in-memory cache (fastest — populated by save or Phase 2 .cache_set)
-  cached <- if (exists(".cache_get", mode = "function")) .cache_get("interco_v2", client_id) else NULL
-  out <- if (is.list(cached) && !is.null(cached$companies)) {
-    message("[IC] load_interco_v2 — hit .app_data_cache")
-    cached
-  } else {
-    # 2. Preload cache or live S3 read. client_id threaded through (2026-09-25):
-    # this read used to go through .s3_read(), which takes no client_id at all,
-    # so it resolved to CLIENT_ID -- reading hd-admin's intercompany settings on
-    # the shared deployment even though the cache lookup one line above was
-    # already correctly scoped per client.
-    raw <- .s3_read_with(S3_KEYS$interco_v2, client_id = client_id)
-    message(sprintf("[IC] load_interco_v2 — %s from S3/preload",
-                    if (is.list(raw)) paste(length(raw$companies %||% list()), "companies") else "NULL"))
     raw
+  } else {
+    # 1. Cross-session in-memory cache (fastest — populated by save or Phase 2 .cache_set)
+    cached <- if (exists(".cache_get", mode = "function")) .cache_get("interco_v2", client_id) else NULL
+    if (is.list(cached) && !is.null(cached$companies)) {
+      message("[IC] load_interco_v2 — hit .app_data_cache")
+      cached
+    } else {
+      # 2. Preload cache or live S3 read. client_id threaded through (2026-09-25):
+      # this read used to go through .s3_read(), which takes no client_id at all,
+      # so it resolved to CLIENT_ID -- reading hd-admin's intercompany settings on
+      # the shared deployment even though the cache lookup one line above was
+      # already correctly scoped per client.
+      raw <- .s3_read_with(S3_KEYS$interco_v2, client_id = client_id)
+      message(sprintf("[IC] load_interco_v2 — %s from S3/preload",
+                      if (is.list(raw)) paste(length(raw$companies %||% list()), "companies") else "NULL"))
+      raw
+    }
   }
 
-  # 3. Fallback: auto-migrate from legacy flat interco_settings.rds when v2 is
-  #    absent, has no companies, or has companies but no IC codes entered yet.
-  #    Saves the migrated registry to v2 so subsequent startups skip this path.
-  .v2_has_codes <- function(reg) {
-    is.list(reg) && is.list(reg$companies) && length(reg$companies) > 0 &&
-      any(vapply(reg$companies, function(co) {
-        length(co$ar %||% character()) > 0 || length(co$ap %||% character()) > 0
-      }, logical(1)))
+  # 3. Fallback: migrate the legacy flat interco_settings.rds when v2 has no
+  #    IC codes yet -- for the client given (a jump too, CM32) or, with none,
+  #    the deployment's own. See .interco_v2_migrar().
+  if (!.interco_v2_tiene_codigos(out)) {
+    migrado <- .interco_v2_migrar(if (dado) client_id else NULL)
+    if (!is.null(migrado)) out <- migrado
   }
-  if (!.v2_has_codes(out)) {
-    old <- tryCatch(load_interco(), error = function(e) NULL)
-    if (!is.null(old) && (length(old$ar_clients) > 0 || length(old$ap_suppliers) > 0)) {
-      message(sprintf("[IC] v2 has no codes — auto-migrating from legacy interco_settings.rds (%d AR, %d AP codes)",
-                      length(old$ar_clients), length(old$ap_suppliers)))
-      # Only reached with no client_id (a given client_id returns above), so
-      # the legacy file, the companies and the save all resolve to the same
-      # default client.
-      cmap <- tryCatch(.company_map_from_empresas(load_empresas()), error = function(e) c())
-      out  <- .migrate_interco_v1_to_v2(old, cmap)
-      tryCatch({
-        save_interco_v2(out)
-        if (exists("bump_sync_version", mode = "function")) bump_sync_version("interco_v2", client_id = .client_id())
-      }, error = function(e)
-        message("[IC] auto-migration save failed: ", e$message))
-      return(out)
-    }
-    if (!is.list(out) || is.null(out$companies)) return(.empty_interco_v2())
-  }
+  if (!is.list(out) || is.null(out$companies)) return(.empty_interco_v2())
 
   out$ar_prefix <- out$ar_prefix %||% "C"
   out$ap_prefix <- out$ap_prefix %||% "P"
@@ -1557,9 +1584,11 @@ save_interco_v2 <- function(registry, client_id = NULL, base = NULL) {
     registry <- interco_v2_rebase(registry, base, fresco)
   }
   .s3_write(registry, S3_KEYS$interco_v2, client_id = client_id)
-  # Populate both in-memory caches so subsequent reads skip S3 entirely
+  # The cross-session cache, per client. (.s3_write() above already dropped
+  # this client's preload entry, so the next read goes to S3. The bare-key
+  # assign that was here, CM32, put the registry under "interco_v2.rds" with
+  # no client -- a key no reader asks for, shared by every client.)
   if (exists(".cache_set", mode = "function")) .cache_set("interco_v2", registry, client_id)
-  assign(S3_KEYS$interco_v2, registry, envir = .s3_preload_cache)
   message(sprintf("[IC] save_interco_v2 — S3 write OK (%d companies)",
                   length(registry$companies %||% list())))
   invisible(registry)
