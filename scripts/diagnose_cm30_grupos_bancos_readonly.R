@@ -65,6 +65,31 @@ for (cid in clientes) {
     cat(" | con lista companies no vacía:", sum(con))
   }
   cat("\n")
+  # Does each group's companies list say the same as empresas.group_id? The
+  # list is dropped from the schema in CM30 (.normalize keeps only schema
+  # columns), so anything it says that group_id does not would be lost.
+  # Counts only: initials in the list, how many are companies whose group_id
+  # is this group, and how many are not (missing company, other group, none).
+  emp <- leer(S3_KEYS$empresas, cid)
+  if (is.data.frame(grp) && nrow(grp) && "companies" %in% names(grp)) {
+    if (!is.data.frame(emp)) {
+      cat("  empresas.rds:", filas(emp), "-- no se puede comparar con group_id\n")
+    } else {
+      ini_emp <- toupper(trimws(as.character(emp$initials)))
+      gid_emp <- as.character(emp$group_id)
+      for (i in seq_len(nrow(grp))) {
+        a <- unique(toupper(trimws(tryCatch(jsonlite::fromJSON(grp$companies[i] %||% "[]"),
+                                            error = function(e) character()))))
+        if (!length(a)) next
+        en_grupo <- vapply(a, function(x) any(ini_emp == x & !is.na(gid_emp) & gid_emp == grp$id[i]), logical(1))
+        sin_emp  <- !a %in% ini_emp
+        cat(sprintf("  grupo %d de %d: %d en companies | coinciden con group_id: %d | empresa inexistente: %d | en otro grupo o sin grupo: %d\n",
+                    i, nrow(grp), length(a), sum(en_grupo), sum(sin_emp), sum(!en_grupo & !sin_emp)))
+      }
+      cat(sprintf("  empresas con group_id de un grupo que existe: %d de %d\n",
+                  sum(!is.na(gid_emp) & gid_emp %in% grp$id), length(gid_emp)))
+    }
+  }
 
   ban <- leer(S3_KEYS$bancos, cid)
   cat("  bancos.rds          filas:", filas(ban))
