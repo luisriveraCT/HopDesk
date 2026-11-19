@@ -3207,14 +3207,29 @@ derive_username <- function(display_name) {
   gsub("[^a-z0-9]", "", x)
 }
 
+# Is an invitation past its expires_at? (T57) The one rule, shared by the
+# link (resolve_invite) and the Invitaciones pendientes table. Vectorized.
+# expires_at as create_invite() writes it ("%Y-%m-%dT%H:%M:%SZ", UTC).
+# TRUE: expired (now > expires_at). FALSE: still valid. NA: unreadable --
+# the link stays closed (resolve_invite) and the table still shows it, so
+# it can be revoked.
+invitacion_vencida <- function(expires_at, ahora = Sys.time()) {
+  exp <- suppressWarnings(as.POSIXct(as.character(expires_at), format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"))
+  ahora > exp
+}
+
 resolve_invite <- function(token) {
   invites <- read_pending_invites()
   idx <- which(invites$token == token & invites$status == "pending")
   if (!length(idx)) return(NULL)
   row <- invites[idx[1], ]
-  exp <- tryCatch(as.POSIXct(row$expires_at, format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
-                  error = function(e) NULL)
-  if (!is.null(exp) && Sys.time() > exp) {
+  vencida <- invitacion_vencida(row$expires_at)
+  if (is.na(vencida)) {
+    # No token nor email in the log (T57): only that the date is unreadable.
+    message("[INVITE] ", row$client_id %||% "?", ": an invitation has an unreadable expiry; its link is refused")
+    return(NULL)
+  }
+  if (vencida) {
     modificar_pending_invites(function(inv) {
       inv$status[inv$token == token & inv$status == "pending"] <- "expired"
       inv

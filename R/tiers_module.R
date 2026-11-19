@@ -674,7 +674,7 @@ tiers_cola_server <- function(id, permitido, refresh) {
 # on the server: the browser never gets another client's emails. id = the
 # invite's token (what the ✕ button already carried); the client shows by
 # its name and the tier by its name.
-.invitaciones_filas <- function(invites, registry, staff, own_client) {
+.invitaciones_filas <- function(invites, registry, staff, own_client, ahora = Sys.time()) {
   vacia <- data.frame(id = character(0), email = character(0), nombre = character(0), cliente = character(0),
                       nivel = character(0), expira = as.Date(character(0)), stringsAsFactors = FALSE)
   if (is.null(invites) || !is.data.frame(invites) || !nrow(invites)) return(vacia)
@@ -683,6 +683,10 @@ tiers_cola_server <- function(id, permitido, refresh) {
   if (!isTRUE(staff))
     p <- p[!is.na(p$client_id) & p$client_id %in% own_client, , drop = FALSE]   # own_client NA/NULL: none
   p <- p[!duplicated(p$token), , drop = FALSE]
+  # T57: past its expiry an invitation is no longer pending -- its link is
+  # refused -- even if nobody opened it to mark it "expired". The link's own
+  # rule (invitacion_vencida); an unreadable date (NA) stays, to be revoked.
+  p <- p[!(invitacion_vencida(p$expires_at, ahora) %in% TRUE), , drop = FALSE]
   if (!nrow(p)) return(vacia)
   etiqueta <- function(cid) {
     nm <- if (is.data.frame(registry) && nrow(registry)) registry$display_name[match(cid, registry$client_id)] else NA

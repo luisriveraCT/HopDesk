@@ -89,6 +89,9 @@ usuario <- function(name, tier, cid, display = name, activo = TRUE, code = paste
              activo = activo, created_at = "2026-10-01", last_login = NA_character_, deleted = FALSE,
              deleted_at = NA_character_, stringsAsFactors = FALSE)
 ahora <- Sys.time()
+# An invitation's expiry n days from now, as create_invite() writes it (T57:
+# the table hides the expired ones, and fixed dates expire).
+vence <- function(n) format(ahora + n * 86400, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
 poner <- function(key, df) assign(key, df, envir = .mem)
 
 if (!identical(Sys.getenv("HD_ARRANQUE_NULL"), "1")) {
@@ -118,13 +121,13 @@ if (!identical(Sys.getenv("HD_ARRANQUE_NULL"), "1")) {
   poner(.INVITES_KEY, tabla(
     fila(.schema_pending_invites, token = "tok-acme-1", email = "nuevo@acme.mx", display_name = "Nuevo Acme",
          client_id = "acme", tier = "finance", invited_by = "devacme", created_at = "2026-11-06",
-         expires_at = "2026-11-13 10:00:00", status = "pending"),
+         expires_at = vence(5), status = "pending"),
     fila(.schema_pending_invites, token = "tok-acme-2", email = "otra@acme.mx", display_name = "Otra Acme",
          client_id = "acme", tier = "analysis", invited_by = "ana", created_at = "2026-11-07",
-         expires_at = "2026-11-14 10:00:00", status = "pending"),
+         expires_at = vence(6), status = "pending"),
     fila(.schema_pending_invites, token = "tok-beta-1", email = "x@beta.mx", display_name = "Beta Uno",
          client_id = "beta", tier = "dev", invited_by = "bunny", created_at = "2026-11-05",
-         expires_at = "2026-11-12 10:00:00", status = "pending"),
+         expires_at = vence(4), status = "pending"),
     fila(.schema_pending_invites, token = "tok-acme-0", email = "vieja@acme.mx", display_name = "Revocada",
          client_id = "acme", tier = "admin", invited_by = "devacme", created_at = "2026-10-01",
          expires_at = "2026-10-08 10:00:00", status = "revoked")))

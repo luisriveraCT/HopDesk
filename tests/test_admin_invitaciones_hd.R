@@ -34,9 +34,12 @@ for (e in parse("R/tiers_module.R", keep.source = FALSE))
     eval(e, envir = globalenv())
 
 KEY <- "hd-admin/pending_invites.rds"
-inv <- function(token, email, cid, tier = "finance", status = "pending")
+# Valid for a week from now, as create_invite() writes it (T57: a fixed date
+# expires, and the table hides the expired ones).
+EXP <- format(Sys.time() + 7 * 86400, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+inv <- function(token, email, cid, tier = "finance", status = "pending", expires_at = EXP)
   data.frame(token = token, email = email, display_name = toupper(substr(email, 1, 3)), client_id = cid, tier = tier,
-             invited_by = "x", created_at = "2026-11-06", expires_at = "2026-11-13 10:00:00", accepted_at = NA_character_,
+             invited_by = "x", created_at = "2026-11-06", expires_at = expires_at, accepted_at = NA_character_,
              status = status, stringsAsFactors = FALSE)
 INVS <- rbind(inv("t-a1", "uno@acme.mx", "acme"), inv("t-b1", "x@beta.mx", "beta", "dev"),
               inv("t-a2", "dos@acme.mx", "acme", "analysis"), inv("t-na", "nadie@x.mx", NA_character_),
@@ -59,7 +62,7 @@ ok("una invitación sin cliente no se le muestra a ningún cliente", !"t-na" %in
 ok("el cliente con su nombre, el nivel con su nombre y la fecha de expiración",
    identical(stf$cliente[1:2], c("Acme Logística", "Beta Transportes")) &&
      identical(cli$nivel, c(nivel_nombre("finance"), nivel_nombre("analysis"))) &&
-     identical(cli$expira[1], as.Date("2026-11-13")))
+     identical(cli$expira[1], as.Date(substr(EXP, 1, 10))))
 ok("un cliente sin cliente propio (NA o NULL) no ve ninguna, ni filas vacías",
    !nrow(.invitaciones_filas(INVS, REG, FALSE, NA_character_)) && !nrow(.invitaciones_filas(INVS, REG, FALSE, NULL)))
 ok("sin registro de clientes, el cliente sale con su id (no falla)",
@@ -67,6 +70,43 @@ ok("sin registro de clientes, el cliente sale con su id (no falla)",
 for (caso in list(list("NULL", NULL), list("vacías", INVS[0, ]), list("solo revocadas", INVS[5, ])))
   ok(sprintf("invitaciones %s: 0 filas, con sus columnas", caso[[1]]),
      { v <- .invitaciones_filas(caso[[2]], REG, TRUE, "x"); is.data.frame(v) && !nrow(v) && identical(names(v), COLS) })
+
+# ── 1b. Expired invitations (T57) ───────────────────────────────────────────
+# Luis's case: one that expired on Oct 30 and nobody opened -- still
+# "pending" in the file -- showed in the table. The table now uses the
+# link's own rule, invitacion_vencida() (R/persistence.R).
+AHORA <- as.POSIXct("2026-11-19 12:00:00", tz = "UTC")
+VEN <- rbind(inv("t-vieja", "vieja@acme.mx", "acme", expires_at = "2026-10-30T18:00:00Z"),
+             inv("t-viva",  "viva@acme.mx",  "acme", expires_at = "2026-11-21T18:00:00Z"),
+             inv("t-justo", "justo@acme.mx", "acme", expires_at = "2026-11-19T12:00:00Z"),
+             inv("t-rara",  "rara@acme.mx",  "acme", expires_at = "pronto"),
+             inv("t-na",    "na@acme.mx",    "acme", expires_at = NA_character_))
+v <- .invitaciones_filas(VEN, REG, staff = TRUE, own_client = "hd-admin", ahora = AHORA)
+ok("T57: an expired invitation (Oct 30, never opened) is not pending", !"t-vieja" %in% v$id)
+ok("T57: a valid one is", "t-viva" %in% v$id)
+ok("T57: the edge is the link's rule (expired only when now > expires_at)", "t-justo" %in% v$id &&
+     !"t-justo" %in% .invitaciones_filas(VEN, REG, TRUE, "hd-admin", ahora = AHORA + 1)$id)
+ok("T57: an unreadable or missing date still shows (to be revoked)", all(c("t-rara", "t-na") %in% v$id))
+ok("T57: the same for a client (its own, unexpired)",
+   identical(.invitaciones_filas(VEN, REG, FALSE, "acme", ahora = AHORA)$id, c("t-viva", "t-justo", "t-rara", "t-na")))
+ok("T57: invitacion_vencida() is TRUE / FALSE / NA, vectorized",
+   identical(invitacion_vencida(c("2026-10-30T18:00:00Z", "2026-11-21T18:00:00Z", "pronto", NA), AHORA),
+             c(TRUE, FALSE, NA, NA)))
+# The link (resolve_invite, R/persistence.R), the same rule. Before T57 an
+# unreadable date made `if (NA)` throw inside it (app.R's tryCatch refused
+# the link): now it refuses without an error and marks nothing.
+sembrar(VEN)
+ok("T57: resolve_invite, unreadable date: NULL, no error, not marked",
+   { r <- tryCatch(suppressMessages(resolve_invite("t-rara")), error = function(e) "error")
+     is.null(r) && identical(get(KEY, envir = .mem)$status[get(KEY, envir = .mem)$token == "t-rara"], "pending") })
+ok("T57: resolve_invite, expired: NULL and marked expired",
+   is.null(suppressMessages(resolve_invite("t-vieja"))) &&
+     identical(get(KEY, envir = .mem)$status[get(KEY, envir = .mem)$token == "t-vieja"], "expired"))
+ok("T57: resolve_invite, valid: the invitation", identical(suppressMessages(resolve_invite("t-viva"))$email, "viva@acme.mx"))
+ok("T57: the log line of an unreadable date names neither token nor email",
+   { m <- character(); withCallingHandlers(resolve_invite("t-rara"),
+       message = function(x) { m <<- c(m, conditionMessage(x)); invokeRestart("muffleMessage") })
+     any(grepl("unreadable expiry", m)) && !any(grepl("t-rara|rara@acme", m)) })
 
 # ── 2-4. On the module ───────────────────────────────────────────────────────
 correr <- function(permitido, staff, own, pasos) {
