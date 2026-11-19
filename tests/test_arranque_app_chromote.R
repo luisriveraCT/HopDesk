@@ -14,8 +14,8 @@
 #   - no "Warning: Error in" / "Execution halted" in the R process's output;
 #   - every main tab (and Ajustes) opens with no new error in that output;
 #   - client user, normal mode: the Flujo de caja preview opens from the
-#     Calendario, and its PDF export downloads with full amounts ("$1,234,567",
-#     never "$1.2M") and visible zeros ("$0") -- the .cf_fmt clash of 3e93b92.
+#     Calendario, and its PDF export downloads with full amounts ("1,234,567",
+#     never "1.2M") and visible zeros ("0") -- the .cf_fmt clash of 3e93b92.
 #
 # Credentials come from the environment (.Renviron.local), never the repo;
 # the passwords are never printed:
@@ -141,16 +141,18 @@ flujo_pdf <- function(et) {
   texto <- tryCatch(system2(PDFTOTEXT, c("-layout", shQuote(pdf), "-"), stdout = TRUE, stderr = FALSE),
                     error = function(x) character())
   if (!ok(sprintf("%s Flujo: the PDF has text (%s, %d lines)", et, basename(pdf), length(texto)), length(texto) > 0L)) return()
-  compactos <- regmatches(texto, gregexpr("\\$ ?-?[0-9]+([.][0-9]+)? ?[KkMm]\\b", texto, perl = TRUE))
+  # [CAMBIA T55b] the amounts carry no "$" any more (monto_moneda(), whole
+  # units): the three checks look for the figure itself, with or without one.
+  compactos <- regmatches(texto, gregexpr("(?<![0-9,.])\\$? ?(-|−)?[0-9]+([.][0-9]+)? ?[KkMm]\\b", texto, perl = TRUE))
   compactos <- unlist(compactos)
   ok(sprintf("%s Flujo: no compact amounts in the PDF (%s)", et,
              if (length(compactos)) paste(utils::head(unique(compactos), 4), collapse = " ") else "none"),
      !length(compactos))
-  completos <- unlist(regmatches(texto, gregexpr("\\$ ?-?[0-9]{1,3}(,[0-9]{3})+([.][0-9]{2})?", texto, perl = TRUE)))
+  completos <- unlist(regmatches(texto, gregexpr("(?<![0-9,.])(-|−)?[0-9]{1,3}(,[0-9]{3})+([.][0-9]{2})?", texto, perl = TRUE)))
   ok(sprintf("%s Flujo: full amounts in the PDF (e.g. %s)", et, paste(utils::head(unique(completos), 3), collapse = " ")),
      length(completos) > 0L)
-  ceros <- unlist(regmatches(texto, gregexpr("\\$ ?0([.]00)?(?![0-9,.])", texto, perl = TRUE)))
-  ok(sprintf("%s Flujo: zeros show as $0 in the PDF (%d)", et, length(ceros)), length(ceros) > 0L)
+  ceros <- unlist(regmatches(texto, gregexpr("(?<=\\s)0(?=\\s|$)", texto, perl = TRUE)))   # a cell that says just "0"
+  ok(sprintf("%s Flujo: zeros show as 0 in the PDF (%d)", et, length(ceros)), length(ceros) > 0L)
   e <- errores(n); ok(paste(et, "Flujo: no new error exporting the PDF"), conectado() && !length(e)); mostrar(e)
   ev("$('.modal').modal('hide'); true")
   if (nzchar(Sys.getenv("ARR_REGISTRO"))) file.copy(pdf, file.path(Sys.getenv("ARR_REGISTRO"), "arranque_flujo.pdf"), overwrite = TRUE)

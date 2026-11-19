@@ -44,6 +44,8 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
   # Excel export stopped at the first tag ("object 'HD_ETIQUETAS' not found").
   source(file.path(app_dir, "R", "i18n.R"), local = e)
   e$.i18n_dir <- file.path(app_dir, "www", "i18n")
+  # monto_moneda(), which .cf_fmt() and the engine's money columns call (T55b).
+  source(file.path(app_dir, "R", "monedas.R"), local = e)
   source(file.path(app_dir, "R", "hd_columnas.R"), local = e)
   source(file.path(app_dir, "R", "cashflow_export_module.R"), local = e)
 
@@ -622,11 +624,12 @@ build_cashflow_export_data <- function(
   v[[ lang ]] %||% v[["es"]]
 }
 
-# Format a money amount for display (no currency symbol — label is in header).
-.cf_fmt <- function(x, prefix = "$") {
-  x <- suppressWarnings(as.numeric(x))
-  if (is.na(x)) return("—")
-  paste0(prefix, format(round(x), big.mark = ",", scientific = FALSE))
+# A money amount for the export, as monto_moneda() writes it in whole units
+# ("1,234,567", "\u2212800", NA "\u2014"; never compact, a zero shows "0"): no
+# "$"; the section's currency (`moneda`), with `codigo` on totals -- the
+# section's header names it for the cells (T55b).
+.cf_fmt <- function(x, moneda = NA_character_, codigo = FALSE) {
+  monto_moneda(suppressWarnings(as.numeric(x)), moneda, decimales = 0L, codigo = codigo)
 }
 
 # ── Group shown on the export ────────────────────────────────────────────────
@@ -796,9 +799,9 @@ build_cashflow_export_data <- function(
 
   # ── KPI row (3-cell mini-table) ───────────────────────────────────────────
   kpi_df <- data.frame(
-    A = c(L("inflows"),  .cf_fmt(total_cobros)),
-    B = c(L("outflows"), .cf_fmt(total_pagos)),
-    C = c(L("net_pos"),  .cf_fmt(net_period)),
+    A = c(L("inflows"),  .cf_fmt(total_cobros, cd$currency, codigo = TRUE)),
+    B = c(L("outflows"), .cf_fmt(total_pagos, cd$currency, codigo = TRUE)),
+    C = c(L("net_pos"),  .cf_fmt(net_period, cd$currency, codigo = TRUE)),
     stringsAsFactors = FALSE
   )
 
@@ -826,10 +829,10 @@ build_cashflow_export_data <- function(
   summ_disp <- summ |>
     dplyr::mutate(
       `_Período`    = bucket_label,
-      `_Cobros`     = sapply(cobros,  .cf_fmt),
-      `_Pagos`      = sapply(pagos,   .cf_fmt),
-      `_Neto`       = sapply(net_day, .cf_fmt),
-      `_Acumulado`  = sapply(net_cum, .cf_fmt)
+      `_Cobros`     = sapply(cobros,  .cf_fmt, moneda = cd$currency),
+      `_Pagos`      = sapply(pagos,   .cf_fmt, moneda = cd$currency),
+      `_Neto`       = sapply(net_day, .cf_fmt, moneda = cd$currency),
+      `_Acumulado`  = sapply(net_cum, .cf_fmt, moneda = cd$currency)
     ) |>
     dplyr::select(`_Período`, `_Cobros`, `_Pagos`, `_Neto`, `_Acumulado`)
 
@@ -868,7 +871,7 @@ build_cashflow_export_data <- function(
 # ── Detail section (CxC or CxP) ──────────────────────────────────────────────
 .add_detail_section <- function(doc, wide_df, header_key,
                                  subtotal_key, lang, bilingual,
-                                 amount_color = "#1A5C2E") {
+                                 amount_color = "#1A5C2E", moneda = NA_character_) {
   L <- function(k) {
     if (bilingual) paste0(.cf_lbl(k, "es"), " / ", .cf_lbl(k, "en"))
     else .cf_lbl(k, lang)
@@ -927,12 +930,12 @@ build_cashflow_export_data <- function(
   # Format all amount columns
   amount_cols <- c(bucket_cols, "Total")
   for (col in amount_cols) {
-    disp[[ col ]] <- sapply(disp[[ col ]], .cf_fmt)
+    disp[[ col ]] <- sapply(disp[[ col ]], .cf_fmt, moneda = moneda)
   }
   disp$Pct <- paste0(round(wide_df$Pct, 1), "%")
 
   sub_row_disp <- sub_row
-  for (col in amount_cols) sub_row_disp[[ col ]] <- .cf_fmt(sub_row[[ col ]])
+  for (col in amount_cols) sub_row_disp[[ col ]] <- .cf_fmt(sub_row[[ col ]], moneda, codigo = TRUE)
   sub_row_disp$Pct <- "100%"
 
   names(disp)[1] <- L("counterparty")
@@ -1099,7 +1102,7 @@ generate_cashflow_word_doc <- function(export_data, emp_initials, emp_full,
                                 header_key   = "cxc_header",
                                 subtotal_key = "subtotal_cxc",
                                 lang = lang, bilingual = bilingual,
-                                amount_color = "#1A5C2E")
+                                amount_color = "#1A5C2E", moneda = cd$currency)
 
     # CxP detail
     doc <- officer::body_add_break(doc)
@@ -1107,7 +1110,7 @@ generate_cashflow_word_doc <- function(export_data, emp_initials, emp_full,
                                 header_key   = "cxp_header",
                                 subtotal_key = "subtotal_cxp",
                                 lang = lang, bilingual = bilingual,
-                                amount_color = "#7B1111")
+                                amount_color = "#7B1111", moneda = cd$currency)
   }
 
   # ── Glossary ─────────────────────────────────────────────────────────────
@@ -1234,9 +1237,9 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
 
     # KPI flextable
     kpi_df <- data.frame(
-      A = c(L("inflows"),  .cf_fmt(total_cobros)),
-      B = c(L("outflows"), .cf_fmt(total_pagos)),
-      C = c(L("net_pos"),  .cf_fmt(net_period)), stringsAsFactors = FALSE)
+      A = c(L("inflows"),  .cf_fmt(total_cobros, cd$currency, codigo = TRUE)),
+      B = c(L("outflows"), .cf_fmt(total_pagos, cd$currency, codigo = TRUE)),
+      C = c(L("net_pos"),  .cf_fmt(net_period, cd$currency, codigo = TRUE)), stringsAsFactors = FALSE)
     kpi_ft <- flextable::flextable(kpi_df) |>
       flextable::delete_part("header") |>
       flextable::width(j = 1:3, width = 5.4, unit = "cm") |>
@@ -1253,10 +1256,10 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
     summ_disp <- summ |>
       dplyr::mutate(
         `_P` = bucket_label,
-        `_C` = sapply(cobros,  .cf_fmt),
-        `_G` = sapply(pagos,   .cf_fmt),
-        `_N` = sapply(net_day, .cf_fmt),
-        `_A` = sapply(net_cum, .cf_fmt)
+        `_C` = sapply(cobros,  .cf_fmt, moneda = cd$currency),
+        `_G` = sapply(pagos,   .cf_fmt, moneda = cd$currency),
+        `_N` = sapply(net_day, .cf_fmt, moneda = cd$currency),
+        `_A` = sapply(net_cum, .cf_fmt, moneda = cd$currency)
       ) |> dplyr::select(`_P`, `_C`, `_G`, `_N`, `_A`)
     names(summ_disp) <- c(L("period_col"), L("daily_inflow"),
                           L("daily_outflow"), L("net_day"), L("net_cum"))
@@ -1303,10 +1306,10 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
       sub_row$Total <- sum(wide_df$Total, na.rm = TRUE)
       sub_row$Pct   <- 100
       amount_cols <- c(bucket_cols, "Total")
-      for (col in amount_cols) disp[[col]] <- sapply(disp[[col]], .cf_fmt)
+      for (col in amount_cols) disp[[col]] <- sapply(disp[[col]], .cf_fmt, moneda = cd$currency)
       disp$Pct <- paste0(round(wide_df$Pct, 1), "%")
       sub_disp <- sub_row
-      for (col in amount_cols) sub_disp[[col]] <- .cf_fmt(sub_row[[col]])
+      for (col in amount_cols) sub_disp[[col]] <- .cf_fmt(sub_row[[col]], cd$currency, codigo = TRUE)
       sub_disp$Pct <- "100%"
       names(disp)[1] <- L("counterparty")
       names(sub_disp)[1] <- L("counterparty")

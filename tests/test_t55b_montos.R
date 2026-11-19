@@ -72,6 +72,47 @@ ok("the payments pill in both languages: the total with its code, no currency be
    identical(tr("tablas.pagos.pildora", n = 3, total = monto_moneda(1500, "USD"), idioma = "es"), "3 pago(s) 1,500.00 USD") &&
      identical(tr("tablas.pagos.pildora", n = 3, total = monto_moneda(1500, "USD"), idioma = "en"), "3 payment(s) 1,500.00 USD"))
 
+cat("\n-- D2: the Flujo export (Word and HTML) --\n")
+suppressPackageStartupMessages({ library(shiny); library(dplyr); library(tibble) })
+cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALSE))
+  if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
+    eval(e, envir = globalenv())
+cargar("R/persistence.R", "tag_label")
+source("R/zona.R")
+cargar("R/data_pipeline.R", c("etiquetas_por_factura", ".etiquetas_doc_unica", ".politica_doc", ".politica_doc_unica"))
+for (f in c("R/fx_banxico.R", "R/fx_tipos.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+            "R/cashflow_export_module.R")) suppressMessages(source(f))
+source("tests/helpers/flujo_datos_prueba.R")
+LUNES <- lubridate::floor_date(Sys.Date(), "week", week_start = 1)
+D <- flujo_datos_prueba(LUNES)
+ED <- build_cashflow_export_data(D$df, D$tags, D$empresas, LUNES, LUNES + 6L, "auto", "separate", "MXN", c())
+html_f <- generate_cashflow_html_doc(ED, "NG", "Networks Group", "Sin IC", "prueba")   # the file's path
+html <- paste(readLines(html_f, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+kpi <- function(cd) { s <- cd$summary; c(sum(s$cobros, na.rm = TRUE), sum(s$pagos, na.rm = TRUE), sum(s$cobros - s$pagos, na.rm = TRUE)) }
+mxn <- Filter(function(cd) identical(cd$currency, "MXN"), ED$data)[[1]]
+ok(".cf_fmt(): monto_moneda() in whole units, the full figure, a visible zero, the code only when asked",
+   identical(.cf_fmt(1234567.4), "1,234,567") && identical(.cf_fmt(0), "0") && identical(.cf_fmt(NA), intToUtf8(0x2014L)) &&
+     identical(.cf_fmt(-800, "USD", codigo = TRUE), paste0(MENOS, "800 USD")))
+ok("the HTML export: no \"$\" before a figure; MXN's KPIs (totals) with the code",
+   !grepl("\\$ ?-?[0-9]", html) &&
+     all(vapply(kpi(mxn), function(v) grepl(.cf_fmt(v, "MXN", codigo = TRUE), html, fixed = TRUE), TRUE)))
+ok("…a counterparty's cell, the number alone (the section's header names the currency)",
+   { v <- mxn$ar_wide$Total[1]; grepl(paste0(">", .cf_fmt(v, "MXN"), "<"), html, fixed = TRUE) })
+if (requireNamespace("officer", quietly = TRUE) && requireNamespace("flextable", quietly = TRUE)) {
+  docx <- tempfile(fileext = ".docx")
+  doc <- generate_cashflow_word_doc(ED, "NG", "Networks Group", "Sin IC", "prueba")
+  print(doc, target = docx)
+  txt <- paste(officer::docx_summary(officer::read_docx(docx))$text, collapse = "\n")
+  ok("the Word export: no \"$\" before a figure; MXN's KPIs with the code",
+     !grepl("\\$ ?-?[0-9]", txt) &&
+       all(vapply(kpi(mxn), function(v) grepl(.cf_fmt(v, "MXN", codigo = TRUE), txt, fixed = TRUE), TRUE)))
+}
+ok("every .cf_fmt() call passes its section's currency", {
+  x <- readLines("R/cashflow_export_module.R", warn = FALSE, encoding = "UTF-8")
+  u <- grep(".cf_fmt", x, fixed = TRUE); u <- u[!grepl("^\\s*#", x[u]) & !grepl(".cf_fmt <- function", x[u], fixed = TRUE)]
+  length(u) == 18L && all(grepl("moneda|cd\\$currency", x[u]))
+})
+
 cat("\n-- the guardian: fmt_money() only for the activity log --\n")
 llamadas <- unlist(lapply(c("app.R", list.files(c("R", "scripts"), "\\.R$", full.names = TRUE, recursive = TRUE)), function(f) {
   x <- readLines(f, warn = FALSE, encoding = "UTF-8")

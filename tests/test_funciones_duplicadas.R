@@ -60,6 +60,10 @@ test_that("el exportador del Flujo formatea con su propia .cf_fmt (cifra complet
   for (e in as.list(ex))
     if (is.call(e) && length(e) == 3L && identical(e[[1]], as.name("<-")) && identical(e[[2]], as.name(".cf_fmt")))
       eval(e, env)
-  expect_identical(env$.cf_fmt(1234567), "$1,234,567")
-  expect_identical(env$.cf_fmt(0), "$0")
+  # [CAMBIA T55b] monto_moneda()'s format in whole units, no "$": still the
+  # full figure (never "1.2M") and a visible zero (never blank).
+  for (e in as.list(parse("R/monedas.R", keep.source = FALSE))) eval(e, env)
+  expect_identical(env$.cf_fmt(1234567), "1,234,567")
+  expect_identical(env$.cf_fmt(0), "0")
+  expect_identical(env$.cf_fmt(-1234567.6, "MXN", codigo = TRUE), paste0(intToUtf8(0x2212L), "1,234,568 MXN"))
 })
