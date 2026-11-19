@@ -94,7 +94,16 @@
   # -- the ERP snapshot is never touched) and for provision-derived ones
   # (deferred to Stage 5). Lets undo_conf() find and restore the exact right
   # archived row instead of reconstructing an approximation.
-  archive_event_id          = character()
+  archive_event_id          = character(),
+  # ── CM35: who. Forward only: NA on rows written before 2026-11-19, which
+  # the requisition timeline shows as "por —" (never guessed from app_audit).
+  #   confirmado_por: the user who confirmed (Agenda AP/AR; a "recovered" row:
+  #                   the user who undid it).
+  #   eliminado_por:  the user who soft-deleted it (Bancos "Eliminar", the
+  #                   original row of a "Recuperar", Pasivos deleting a paid
+  #                   provision).
+  confirmado_por            = character(),
+  eliminado_por             = character()
 )
 
 # ── Shared normalizer (reuses persistence.R's .normalize) ────────────────────
@@ -220,8 +229,11 @@ recover_confirmacion <- function(conf_db, confirmacion_id, actor = "user") {
   }
 
   now <- Sys.time()
+  for (col in c("confirmado_por", "eliminado_por"))   # a table read before CM35
+    if (!col %in% names(conf_db)) conf_db[[col]] <- NA_character_
   conf_db[["eliminado"]][idx]    <- TRUE
   conf_db[["eliminado_at"]][idx] <- now
+  conf_db[["eliminado_por"]][idx] <- as.character(actor)   # CM35: `actor` was never stored
 
   original <- conf_db[idx, , drop = FALSE]
   recovery_row <- original
@@ -231,6 +243,8 @@ recover_confirmacion <- function(conf_db, confirmacion_id, actor = "user") {
   recovery_row[["recovered_at"]]              <- now
   recovery_row[["eliminado"]]                 <- FALSE
   recovery_row[["eliminado_at"]]               <- as.POSIXct(NA)
+  recovery_row[["eliminado_por"]]             <- NA_character_
+  recovery_row[["confirmado_por"]]            <- as.character(actor)
 
   dplyr::bind_rows(conf_db, recovery_row)
 }
