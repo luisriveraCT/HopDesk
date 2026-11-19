@@ -258,7 +258,7 @@ pagosAuditViewerServer <- function(id, shared) {
                     tags$td(ben$alias[i]),
                     tags$td(ben$clabe[i]),
                     tags$td(ben$banco[i]),
-                    tags$td(class = "text-end", formatC(ben$importe[i], format = "f", digits = 2, big.mark = ",")),
+                    tags$td(class = "text-end", monto_moneda(ben$importe[i], row$moneda[1] %||% NA_character_, codigo = FALSE)),
                     tags$td(ben$concepto[i])
                   ))
               )
@@ -438,12 +438,12 @@ pagosAuditViewerServer <- function(id, shared) {
         htmltools::htmlEscape(ben$alias[i] %||% ""),
         htmltools::htmlEscape(ben$clabe[i] %||% ""),
         htmltools::htmlEscape(ben$banco[i] %||% ""),
-        formatC(ben$importe[i], format = "f", digits = 2, big.mark = ","),
+        monto_moneda(ben$importe[i], row$moneda[1] %||% NA_character_, codigo = FALSE),
         htmltools::htmlEscape(ben$concepto[i] %||% "")
       ), character(1)), collapse = "\n")
     ) else "<p style='color:#888;'>Sin beneficiarios registrados.</p>"
     total_html <- sprintf('<div class="total">Total: %s (%d pago(s))</div>',
-                          formatC(row$total[1] %||% 0, format = "f", digits = 2, big.mark = ","),
+                          monto_moneda(row$total[1] %||% NA, row$moneda[1] %||% NA_character_),
                           as.integer(row$n_pagos[1] %||% 0L))
     extra_meta <- sprintf('<div><strong>Cuenta origen:</strong> %s</div>',
                           htmltools::htmlEscape(row$cuenta_origen[1] %||% ""))
@@ -459,7 +459,7 @@ pagosAuditViewerServer <- function(id, shared) {
     else "<p style='color:#888;'>Sin detalle adicional registrado.</p>"
     total_html <- if (!is.na(row$total[1] %||% NA_real_))
       sprintf('<div class="total">Total: %s</div>',
-             formatC(row$total[1], format = "f", digits = 2, big.mark = ",")) else ""
+             monto_moneda(row$total[1], row$moneda[1] %||% NA_character_)) else ""
     extra_meta <- ""
     title_txt <- "Recibo de archivo generado"
   }
@@ -547,7 +547,7 @@ pagosAuditViewerServer <- function(id, shared) {
                             if (identical(row$source[1], "zip_bulk")) "ZIP (todos)" else "Individual"),
       tags$div(tags$strong("Archivo: "), row$archivo[1] %||% ""),
       tags$div(tags$strong("Total: "),
-               formatC(as.numeric(row$total[1] %||% 0), format = "f", digits = 2, big.mark = ","),
+               monto_moneda(as.numeric(row$total[1] %||% NA), row$moneda[1] %||% NA_character_),
                if (is_pago) sprintf(" (%s pago(s))", as.character(row$n_pagos[1] %||% "")) else "")
     )
   )
@@ -560,7 +560,7 @@ pagosAuditViewerServer <- function(id, shared) {
                 tags$th(class = "text-end", "Importe"), tags$th("Concepto"))),
       tags$tbody(lapply(seq_len(nrow(ben)), function(i)
         tags$tr(tags$td(ben$alias[i]), tags$td(ben$clabe[i]), tags$td(ben$banco[i]),
-                tags$td(class = "text-end", formatC(ben$importe[i], format = "f", digits = 2, big.mark = ",")),
+                tags$td(class = "text-end", monto_moneda(ben$importe[i], row$moneda[1] %||% NA_character_, codigo = FALSE)),
                 tags$td(ben$concepto[i]))))
     ))
   } else {

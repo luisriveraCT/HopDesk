@@ -153,7 +153,7 @@
               tags$td(det$parte[i]),
               tags$td(det$documento[i]),
               tags$td(class = "text-end",
-                      formatC(det$importe[i], format = "f", digits = 2, big.mark = ",")),
+                      monto_moneda(det$importe[i], det$moneda[i], codigo = FALSE)),
               tags$td(det$moneda[i])
             ))
         )
@@ -223,7 +223,7 @@
 # Shared beneficiary table -- one payment file's worth of rows, CLABE always
 # masked. Used both by the single-file view and, per bundled file, by the
 # ZIP/bulk aggregate view below.
-.audit_beneficiarios_table <- function(det) {
+.audit_beneficiarios_table <- function(det, moneda = NA_character_) {
   if (!nrow(det)) return(tags$p(class = "text-muted small", "Sin beneficiarios registrados."))
   tags$table(class = "table table-sm table-hover small",
     tags$thead(class = "table-light",
@@ -236,7 +236,7 @@
           tags$td(mask_clabe(det$clabe[i])),
           tags$td(det$banco[i]),
           tags$td(class = "text-end",
-                  formatC(det$importe[i], format = "f", digits = 2, big.mark = ",")),
+                  monto_moneda(det$importe[i], moneda, codigo = FALSE)),
           tags$td(det$concepto[i])
         ))
     )
@@ -254,19 +254,19 @@
     tags$div(tags$strong("Cuenta origen: "), meta$cuenta_origen %||% ""),
     tags$div(tags$strong("Banco origen: "), meta$banco_origen %||% "—"),
     tags$div(tags$strong("Total: "),
-             formatC(as.numeric(meta$total %||% 0), format = "f", digits = 2, big.mark = ","),
+             monto_moneda(as.numeric(meta$total %||% NA), meta$moneda %||% NA_character_),
              sprintf(" (%s pago(s))", as.character(meta$n_pagos %||% nrow(det)))),
     tags$div(tags$strong("Origen: "), source_label),
     tags$div(tags$strong("Archivo: "), meta$archivo %||% "")
   )
   if (!nrow(det)) {
-    tagList(header, .audit_beneficiarios_table(det))
+    tagList(header, .audit_beneficiarios_table(det, meta$moneda %||% NA_character_))
   } else {
     tagList(header,
       tags$p(class = "small text-muted mb-1", icon("circle-info"),
              " Las cuentas se muestran enmascaradas; el recibo completo (con CLABE sin enmascarar) ",
              "está disponible en \"Ver archivos de pago\"."),
-      .audit_beneficiarios_table(det)
+      .audit_beneficiarios_table(det, meta$moneda %||% NA_character_)
     )
   }
 }
@@ -318,11 +318,11 @@
         tags$div(tags$strong("Cuenta origen: "), a$cuenta_origen %||% "",
                  " · ", tags$strong("Banco: "), a$banco_origen %||% "—"),
         tags$div(tags$strong("Total: "),
-                 formatC(as.numeric(a$total %||% 0), format = "f", digits = 2, big.mark = ","),
+                 monto_moneda(as.numeric(a$total %||% NA), a$moneda %||% NA_character_),
                  sprintf(" (%s pago(s))", as.character(a$n_pagos %||% nrow(det)))),
         tags$div(tags$strong("Archivo: "), a$archivo %||% "")
       ),
-      .audit_beneficiarios_table(det)
+      .audit_beneficiarios_table(det, a$moneda %||% NA_character_)
     )
   })
 
@@ -397,9 +397,9 @@
               tags$td(det$concepto[i]),
               tags$td(det$tipo[i]),
               tags$td(class = "text-end",
-                      if (isTRUE(det$cargo[i] > 0)) formatC(det$cargo[i], format = "f", digits = 2, big.mark = ",") else ""),
+                      if (isTRUE(det$cargo[i] > 0)) monto_moneda(det$cargo[i], NA_character_) else ""),
               tags$td(class = "text-end",
-                      if (isTRUE(det$abono[i] > 0)) formatC(det$abono[i], format = "f", digits = 2, big.mark = ",") else "")
+                      if (isTRUE(det$abono[i] > 0)) monto_moneda(det$abono[i], NA_character_) else "")
             ))
         )
       )
@@ -416,8 +416,8 @@
     return(tagList(
       tags$div(tags$strong("Cuenta: "), meta$cuenta_id %||% ""),
       tags$div(tags$strong("Tipo: "), meta$tipo %||% ""),
-      tags$div(tags$strong("Cargo: "), formatC(as.numeric(meta$cargo %||% 0), format = "f", digits = 2, big.mark = ",")),
-      tags$div(tags$strong("Abono: "), formatC(as.numeric(meta$abono %||% 0), format = "f", digits = 2, big.mark = ","))
+      tags$div(tags$strong("Cargo: "), monto_moneda(as.numeric(meta$cargo %||% 0), NA_character_)),
+      tags$div(tags$strong("Abono: "), monto_moneda(as.numeric(meta$abono %||% 0), NA_character_))
     ))
   }
   before <- meta$before %||% list()
