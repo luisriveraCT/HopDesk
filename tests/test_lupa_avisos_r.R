@@ -50,8 +50,10 @@ iguales <- list(
   list(es("papelera", n = as.character(n)), paste0(n, " factura(s) enviadas a la papelera.")),
   list(es("sin_validas"), "No hay facturas válidas para agregar (se excluyeron provisiones)."),
   list(es("sin_documento"), "No se encontraron facturas con documento válido."),
-  list(es("enviadas", n = as.character(n), ledger = ledg_str, moneda = cur_str, total = total),
-       paste0("✓ ", n, " factura(s) enviadas a ", ledg_str, " — ", cur_str, " ", total, ".")),
+  # [CAMBIA T55b] the totals carry their code after the number, one per
+  # currency (.lupa_totales_texto): no currency before them any more.
+  list(es("enviadas", n = as.character(n), ledger = ledg_str, total = total),
+       paste0("✓ ", n, " factura(s) enviadas a ", ledg_str, " — ", total, ".")),
   # where the send went, in the same notice (textos-codigo: was fixed text in ledg_str)
   list(es("destino_cobros"), "Cobros"),
   list(es("destino_pagos"), "Pagos"),

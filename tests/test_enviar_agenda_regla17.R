@@ -28,9 +28,11 @@ cargar <- function(archivo, nombres) {
     if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
       eval(e, envir = globalenv())
 }
-cargar("R/search_module.R", "handle_invoice_action")
+# T55b: the notice's totals per currency (.lupa_totales_texto, with
+# monto_moneda() from R/monedas.R) instead of fmt_money().
+cargar("R/search_module.R", c("handle_invoice_action", ".lupa_totales_texto"))
 cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
-cargar("R/global.R", "fmt_money")
+suppressMessages(source("R/monedas.R"))
 suppressMessages(source("R/i18n.R"))
 
 # Stand-ins: what it reads and writes, and what it says.
