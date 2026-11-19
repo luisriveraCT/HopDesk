@@ -32,22 +32,14 @@
 # NCS USD header says 93 with 105 rows — so the count is not checked).
 # =============================================================================
 
-# User-facing strings in one place so they can be swapped for i18n later.
-.BNC_DETECT_TXT <- list(
-  motivo_numero    = "Coincide el número de cuenta %s",
-  motivo_sub       = "subcuenta %s",
-  motivo_moneda    = "moneda %s",
-  motivo_nombre    = "Coincide la razón social",
-  aviso_sin_numero = "Ninguna cuenta registrada tiene el número %s; sugerencia por nombre. Regístralo en Configuración → Cuentas para detección exacta.",
-  aviso_moneda_no  = "No se pudo confirmar la moneda del archivo.",
-  aviso_moneda_dif = "El archivo parece estar en %s y la cuenta sugerida es %s.",
-  aviso_sub_dif    = "La subcuenta del archivo (%s) no coincide con la cuenta sugerida.",
-  aviso_nombre_dif = "La razón social del archivo no coincide con la empresa %s.",
-  aviso_empate     = "Hay %d cuentas igual de probables; confirma la correcta.",
-  nota_otra_cuenta = "Seleccionaste una cuenta distinta a la sugerida.",
-  aviso_nada       = "No se pudo identificar la cuenta; selecciónala manualmente.",
-  aviso_totales    = "Los totales del archivo no cuadran con los movimientos leídos (cargos %s vs %s, abonos %s vs %s). El archivo podría estar incompleto."
-)
+# The detection's reasons and warnings, from the dictionary (tablas.bancos.detectar.*,
+# {placeholders} instead of sprintf's %s). A function, called when a text is
+# needed: this file loads before R/i18n.R (alphabetical, as shinyapps.io loads
+# R/), so nothing at its top level may call tr() (rule 29). T59.
+.bnc_detect_txt <- function(clave, ...) {
+  vars <- lapply(list(...), as.character)   # tr() would put thousands commas in a bare number
+  do.call(tr, c(list(paste0("tablas.bancos.detectar.", clave)), vars))
+}
 
 # .norm_razon(), .BNC_LEGAL_TOKENS and .empresa_nombres() live in
 # R/empresas_identidad.R since T47 (the intercompany filter uses them too).
@@ -169,7 +161,6 @@ leer_encabezado_banbajio <- function(lines) {
 # =============================================================================
 detectar_cuenta_banbajio <- function(lines, cuentas_df, empresas_df = NULL,
                                      parsed = NULL) {
-  T_   <- .BNC_DETECT_TXT
   lines <- gsub("\r", "", lines, fixed = TRUE)
   lines <- lines[nzchar(trimws(lines))]
   enc   <- leer_encabezado_banbajio(lines)
@@ -186,14 +177,14 @@ detectar_cuenta_banbajio <- function(lines, cuentas_df, empresas_df = NULL,
     if (abs(sc - enc$total_cargos) > 0.005 || abs(sa - enc$total_abonos) > 0.005) {
       # The file's amounts with its currency, read from its header (T55c).
       f <- function(x) monto_moneda(x, if (length(moneda) && !is.na(moneda[1])) moneda[1] else NA_character_)
-      avisos_archivo <- sprintf(T_$aviso_totales, f(enc$total_cargos), f(sc),
-                                f(enc$total_abonos), f(sa))
+      avisos_archivo <- .bnc_detect_txt("aviso_totales", cargos_archivo = f(enc$total_cargos), cargos_leidos = f(sc),
+                                      abonos_archivo = f(enc$total_abonos), abonos_leidos = f(sa))
     }
   }
 
   empty <- list(encabezado = enc, moneda = moneda, ranking = cuentas_df,
                 sugerida = NA_character_, confianza = "baja",
-                motivos = character(0), avisos = c(T_$aviso_nada, avisos_archivo))
+                motivos = character(0), avisos = c(.bnc_detect_txt("aviso_nada"), avisos_archivo))
   if (is.null(cuentas_df) || !nrow(cuentas_df)) return(empty)
 
   k <- nrow(cuentas_df)
@@ -232,27 +223,27 @@ detectar_cuenta_banbajio <- function(lines, cuentas_df, empresas_df = NULL,
 
   motivos <- character(0)
   if (isTRUE(top$det_num)) {
-    m1 <- sprintf(T_$motivo_numero, base_fmt)
-    extra <- c(if (isTRUE(top$det_sub)) sprintf(T_$motivo_sub, enc$subcuenta),
-               if (isTRUE(top$det_moneda)) sprintf(T_$motivo_moneda, moneda))
+    m1 <- .bnc_detect_txt("motivo_numero", cuenta = base_fmt)
+    extra <- c(if (isTRUE(top$det_sub)) .bnc_detect_txt("motivo_sub", sub = enc$subcuenta),
+               if (isTRUE(top$det_moneda)) .bnc_detect_txt("motivo_moneda", moneda = moneda))
     motivos <- paste(c(m1, extra), collapse = " · ")
   } else if (isTRUE(top$det_nombre >= 0.8)) {
-    motivos <- paste(c(T_$motivo_nombre,
-                       if (isTRUE(top$det_moneda)) sprintf(T_$motivo_moneda, moneda)),
+    motivos <- paste(c(.bnc_detect_txt("motivo_nombre"),
+                       if (isTRUE(top$det_moneda)) .bnc_detect_txt("motivo_moneda", moneda = moneda)),
                      collapse = " · ")
   }
 
   if (!any(num_match) && !is.na(enc$numero))
-    avisos <- c(avisos, sprintf(T_$aviso_sin_numero, base_fmt))
-  if (is.na(moneda)) avisos <- c(avisos, T_$aviso_moneda_no)
+    avisos <- c(avisos, .bnc_detect_txt("aviso_sin_numero", cuenta = base_fmt))
+  if (is.na(moneda)) avisos <- c(avisos, .bnc_detect_txt("aviso_moneda_no"))
   if (isFALSE(top$det_moneda))
-    avisos <- c(avisos, sprintf(T_$aviso_moneda_dif, moneda, top$moneda))
+    avisos <- c(avisos, .bnc_detect_txt("aviso_moneda_dif", moneda_archivo = moneda, moneda_cuenta = top$moneda))
   if (isFALSE(top$det_sub))
-    avisos <- c(avisos, sprintf(T_$aviso_sub_dif, enc$subcuenta))
+    avisos <- c(avisos, .bnc_detect_txt("aviso_sub_dif", sub = enc$subcuenta))
   # Number says one company, name says another: worth a second look.
   if (isTRUE(top$det_num) && !is.na(top$det_nombre) && top$det_nombre < 0.34)
-    avisos <- c(avisos, sprintf(T_$aviso_nombre_dif, top$empresa))
-  if (n_empate > 1L) avisos <- c(avisos, sprintf(T_$aviso_empate, n_empate))
+    avisos <- c(avisos, .bnc_detect_txt("aviso_nombre_dif", empresa = top$empresa))
+  if (n_empate > 1L) avisos <- c(avisos, .bnc_detect_txt("aviso_empate", n = n_empate))
 
   confianza <-
     if (isTRUE(top$det_num) && !isFALSE(top$det_moneda) && !isFALSE(top$det_sub) &&
@@ -262,7 +253,7 @@ detectar_cuenta_banbajio <- function(lines, cuentas_df, empresas_df = NULL,
       "media"
     else "baja"
   if (confianza == "baja" && top$det_score <= 0)
-    avisos <- unique(c(avisos, T_$aviso_nada))
+    avisos <- unique(c(avisos, .bnc_detect_txt("aviso_nada")))
 
   list(encabezado = enc, moneda = moneda, ranking = rk,
        sugerida = top$cuenta_id, confianza = confianza,

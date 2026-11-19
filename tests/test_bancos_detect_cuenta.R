@@ -20,6 +20,7 @@ cat("── detectar_cuenta_banbajio: empresa + moneda + subcuenta del TXT ─�
 suppressPackageStartupMessages({ library(dplyr); library(tibble) })
 `%||%` <- function(a, b) if (is.null(a)) b else a
 source("R/monedas.R")   # the totals warning writes its amounts with monto_moneda() (T55c)
+source("R/i18n.R")      # the reasons and warnings come from the dictionary (T59)
 source("R/bancos_parser.R")
 source("R/empresas_identidad.R")
 source("R/bancos_detect.R")

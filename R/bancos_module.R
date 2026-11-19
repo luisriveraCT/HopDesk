@@ -1860,7 +1860,7 @@ bancosServer <- function(id, shared) {
       det_notas <- tagList(
         if (!identical(unname(sel), det$sugerida))
           div(style = "font-size:.75rem; color:#495057; margin-top:2px;",
-              .BNC_DETECT_TXT$nota_otra_cuenta)
+              .bnc_detect_txt("nota_otra_cuenta"))
         else if (length(det$motivos))
           div(style = "font-size:.75rem; color:#495057; margin-top:2px;", det$motivos),
         lapply(det$avisos, function(a)
