@@ -143,6 +143,19 @@ pagarHoyUI <- function(id) {
 # R/pagos_generados_persistence.R for the storage design and why it does
 # not store the file bytes themselves. Never throws -- a logging failure
 # must never block the user's actual download.
+# CM30: one flag per row of `df` (columns Empresa, Moneda): TRUE when its
+# company and currency have no origin account (get_cuenta_ppl() is ""), so
+# no PPL file is generated for it. Asked once per company and currency.
+.ph_sin_origen <- function(df, shared) {
+  if (is.null(df) || !nrow(df)) return(logical(0))
+  par <- paste(df$Empresa, df$Moneda, sep = "\x1f")
+  sin <- vapply(unique(par), function(p) {
+    i <- match(p, par)
+    !nzchar(trimws(get_cuenta_ppl(df$Empresa[i], df$Moneda[i], shared) %||% ""))
+  }, logical(1))
+  unname(sin[par])
+}
+
 .log_pago_generado <- function(shared, emp, moneda, cuenta_origen, ppl_rows,
                                 fname, source_type, banco_origen = NA_character_) {
   if (is.null(ppl_rows) || !nrow(ppl_rows)) return(invisible(NULL))
@@ -1214,6 +1227,11 @@ pagarHoyServer <- function(id, shared) {
 
         # Origin accounts for selector
         cuenta_data <- get_cuentas_ppl_data(emp, cur_sel, shared)
+        # No origin account at all (CM30): the notice says where to set it up
+        # and there is no download button -- the file would debit from
+        # "000000000000". The same fallback content() uses below.
+        origen_ok <- (!is.null(cuenta_data) && nrow(cuenta_data) > 0) ||
+          nzchar(get_cuenta_ppl(emp, cur_sel, shared))
 
         showModal(modalDialog(
           title = tagList(icon("file-arrow-down"),
@@ -1275,11 +1293,12 @@ pagarHoyServer <- function(id, shared) {
                 " ", tr("requisiciones.ppl.banbajio_clasificacion"))
             else NULL,
 
-            if (is.null(cuenta_data) || !nrow(cuenta_data))
+            if (!origen_ok)
               tags$div(class = "alert alert-warning small mb-0",
-                icon("triangle-exclamation"),
-                " Cuenta origen no configurada. Ve a Bancos → Cuentas para registrar la cuenta de ",
-                emp, " (", cur_sel, ").")
+                icon("triangle-exclamation"), " ",
+                tr("tablas.pagos.sin_cuenta_origen", empresa = emp, moneda = cur_sel))
+            else if (is.null(cuenta_data) || !nrow(cuenta_data))
+              NULL
             else if (nrow(cuenta_data) == 1L) {
               cd <- cuenta_data[1L, ]
               tags$div(class = "border rounded px-3 py-2 small d-flex align-items-center gap-2",
@@ -1321,7 +1340,7 @@ pagarHoyServer <- function(id, shared) {
 
           footer = tagList(
             modalButton("Cancelar"),
-            if (nrow(ok) > 0)
+            if (nrow(ok) > 0 && origen_ok)
               downloadButton(ns(paste0("dl_ppl_", emp)),
                              paste0("\u2b07 Descargar (", nrow(ok), " pagos)"),
                              class = "btn btn-primary")
@@ -1372,6 +1391,12 @@ pagarHoyServer <- function(id, shared) {
                 if (length(def)) def[1L] else cd$cuenta[1L]
               } else get_cuenta_ppl(emp, cur_sel, shared)
             }
+          }
+          # No origin account (CM30): only the notice, nothing logged, no
+          # payment written -- as for marks gone since the preview.
+          if (!length(cuenta_origen) || is.na(cuenta_origen[1]) || !nzchar(trimws(cuenta_origen[1]))) {
+            writeLines(paste("#", tr("tablas.pagos.sin_cuenta_origen", empresa = emp, moneda = cur_sel)), file)
+            return()
           }
           # Look up Factura (Referencia) from live SAP data to use as concepto.
           # Falls back to Documento if Factura is missing or blank.
@@ -2902,7 +2927,8 @@ pagarHoyServer <- function(id, shared) {
           entra = "tablas.pagos.entra", omitir = "tablas.pagos.omitir", incluir = "tablas.pagos.incluir")),
         col_insignia("motivo", "tablas.pagos.motivo", mapa = list(
           no_match = list(texto = "tablas.pagos.falta_alias", tono = "peligro"),
-          no_clabe = list(texto = "tablas.pagos.falta_clabe", tono = "aviso"))),
+          no_clabe = list(texto = "tablas.pagos.falta_clabe", tono = "aviso"),
+          sin_origen = list(texto = "tablas.pagos.motivo_sin_origen", tono = "peligro"))),
         col_texto("Empresa", "tablas.pagos.empresa"),
         # Every catalog currency gets its badge: the base "info", the rest
         # "exito" (T34; it was MXN info / USD exito, written by hand).
@@ -2921,7 +2947,8 @@ pagarHoyServer <- function(id, shared) {
     .descargar_incluidos <- reactive({
       b <- .descargar_base(); o <- t_descargar$opciones()
       if (is.null(b) || is.null(o) || !nrow(o)) return(character(0))
-      intersect(sub("#[0-9]+$", "", o$id[o$opcion == "incluir"]), as.character(b$id[b$estado != "ok"]))
+      intersect(sub("#[0-9]+$", "", o$id[o$opcion == "incluir"]),
+                as.character(b$id[b$estado %in% c("no_match", "no_clabe")]))   # never "sin_origen" (CM30)
     })
     output$descargar_resumen <- renderUI({
       b <- .descargar_base(); req(b)
@@ -2939,13 +2966,19 @@ pagarHoyServer <- function(id, shared) {
     output$descargar_boton <- renderUI({
       b <- .descargar_base(); req(b)
       n_e <- sum(b$estado == "ok"); m <- length(.descargar_incluidos())
+      sin_o <- b[b$estado == "sin_origen", , drop = FALSE]
+      pares <- unique(paste0(sin_o$Empresa, " (", sin_o$Moneda, ")"))
       tagList(
+        if (length(pares)) tags$small(class = "text-danger me-2",
+                                      tr("tablas.pagos.omitidas_sin_origen", lista = paste(pares, collapse = ", "))),
         if (m) tags$small(class = "text-warning me-2", tr("tablas.pagos.aviso_sin_cuenta", m = m)),
-        downloadButton(ns("download_all"),
+        # Nothing to put in the ZIP: no button, never an empty ZIP (CM30).
+        if (n_e + m > 0) downloadButton(ns("download_all"),
           tagList(icon("file-zipper"), " ",
                   if (m) tr("tablas.pagos.descargar_zip_sin_cuenta", n = n_e + m, m = m)
                   else tr("tablas.pagos.descargar_zip", n = n_e)),
           class = "btn btn-primary")
+        else if (length(pares)) tags$small(class = "text-muted", tr("tablas.pagos.nada_que_descargar"))
       )
     })
     # "Descargar todos" is can_register_payments: no button without it, and
@@ -2975,6 +3008,9 @@ pagarHoyServer <- function(id, shared) {
         }
       }
       b <- s; b$estado <- unname(estado[as.character(s$id)])
+      # A company and currency with no origin account gets no file (CM30):
+      # its rows say so and cannot go in, not even as "incluir sin cuenta".
+      b$estado[.ph_sin_origen(b, shared)] <- "sin_origen"
       apertura <- .descargar_apertura() + 1L
       .descargar_apertura(apertura)
       .descargar_base(b)
@@ -3002,7 +3038,7 @@ pagarHoyServer <- function(id, shared) {
           Importe    = Importe
         ) |>
         as.data.frame()
-      tbl$.bloqueada <- tbl$zip == "entra"   # what goes in has no choice
+      tbl$.bloqueada <- tbl$zip == "entra" | tbl$motivo %in% "sin_origen"   # what goes in, and what cannot, has no choice
       .descargar_vista(tbl)
 
       showModal(modalDialog(
@@ -3040,12 +3076,17 @@ pagarHoyServer <- function(id, shared) {
         # aggregate log below, so this loop builds `results` explicitly
         # instead.
         results <- list()
+        # CM30: a company and currency with no origin account gets no file --
+        # skipped BEFORE anything is logged, the others still go in, and the
+        # user is told which (the preview already said so).
+        omitidas <- character(0)
         for (emp in unique(s$Empresa)) {
           for (cur in unique(dplyr::filter(s, Empresa == emp)$Moneda)) {
             rows     <- s |> dplyr::filter(Empresa == emp, Moneda == cur)
             ann      <- .annotate_ap_cached(rows, emp) |> dplyr::filter(ppl_status == "ok")
             if (!nrow(ann)) next
             cuenta_origen <- get_cuenta_ppl(emp, cur, shared)
+            if (!nzchar(trimws(cuenta_origen %||% ""))) { omitidas <- c(omitidas, paste0(emp, " (", cur, ")")); next }
             # Same account, fetched a second way purely to resolve the bank
             # NAME for logging -- get_cuenta_ppl() above only returns the
             # account number (needed for generate_ppl()'s own PPL-layout
@@ -3119,6 +3160,13 @@ pagarHoyServer <- function(id, shared) {
           }
         }
         inc <- inc[as.character(inc$id) %in% sin_cuenta, , drop = FALSE]
+        # No origin account: those rows get no _002 either, and are not
+        # logged as included (CM30).
+        sin_o <- .ph_sin_origen(inc, shared)
+        if (any(sin_o)) {
+          omitidas <- c(omitidas, unique(paste0(inc$Empresa[sin_o], " (", inc$Moneda[sin_o], ")")))
+          inc <- inc[!sin_o, , drop = FALSE]
+        }
         if (nrow(inc)) {
           fallo_auditoria <- NULL
           withCallingHandlers({
@@ -3217,7 +3265,13 @@ pagarHoyServer <- function(id, shared) {
           })
         }
 
+        omitidas <- unique(omitidas)
+        if (length(omitidas))
+          showNotification(tr("tablas.pagos.omitidas_sin_origen", lista = paste(omitidas, collapse = ", ")),
+                           type = "warning", duration = 10)
         fnames <- vapply(results, function(r) r$fname, character(1))
+        # Never an empty ZIP: with every file skipped there is nothing to send.
+        if (!length(fnames) && length(omitidas)) stop(tr("tablas.pagos.nada_que_descargar"), call. = FALSE)
         if (length(fnames)) zip(file, fnames, flags = "-j")
         else writeLines("", file)
         if (length(fnames)) avisos_actividad(shared$effective_client_id(), "generar_archivo_pago", shared$current_user(), list(cuerpo = paste0(length(fnames), " archivo(s) en un ZIP")))

@@ -36,6 +36,14 @@
 generate_ppl <- function(payments, cuenta_origen, fecha = Sys.Date(),
                          consecutivo = 1L) {
   stopifnot(is.data.frame(payments), nrow(payments) > 0)
+  # The ORIGIN account is never blank or all zeros (CM30): zpad() below
+  # would turn "" into "000000000000", a file the bank cannot debit from.
+  # The screens check it first and tell the user; this is the last net.
+  # (The destination CLABE in zeros is the "no account" line of _002, on
+  # purpose -- that one is not checked here.)
+  origen_txt <- if (length(cuenta_origen) == 1L && !is.na(cuenta_origen)) trimws(as.character(cuenta_origen)) else ""
+  if (!grepl("[1-9]", origen_txt))
+    stop("generate_ppl: no origin account (blank or zeros); nothing was generated", call. = FALSE)
 
   n        <- nrow(payments)
   fecha_s  <- format(as.Date(fecha), "%Y%m%d")
