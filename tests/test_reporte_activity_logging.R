@@ -105,15 +105,24 @@ cat("\n-- Part B: .audit_detail_kind() --\n")
 cat("\n-- Part C: .audit_detail_reporte_export() --\n")
 
 meta_pdf <- list(formato = "pdf", desde = "2026-08-01", hasta = "2026-08-31",
-                 empresas = c("NCS", "NTS"), n_cuentas = 5L, total_saldo = 123456.789,
+                 empresas = c("NCS", "NTS"), n_cuentas = 5L,
+                 saldo_por_moneda = list(MXN = 123456.789, USD = 50),
                  nota = NA_character_)
 html_pdf <- .html(.audit_detail_reporte_export(meta_pdf))
 .chk_true(grepl("PDF", html_pdf, fixed = TRUE), "formato renders uppercased")
 .chk_true(grepl("2026-08-01", html_pdf, fixed = TRUE) && grepl("2026-08-31", html_pdf, fixed = TRUE),
           "date range renders")
 .chk_true(grepl("NCS, NTS", html_pdf, fixed = TRUE), "empresas list renders comma-joined")
-.chk_true(grepl("123,456.79", html_pdf, fixed = TRUE),
-          "total_saldo renders with thousands separator and 2 decimals")
+# T55c: the log keeps one balance per currency (saldo_por_moneda), never
+# pesos and dollars summed; each total with thousands, its decimals and code.
+.chk_true(grepl("123,456.79 MXN", html_pdf, fixed = TRUE) && grepl("50.00 USD", html_pdf, fixed = TRUE),
+          "saldo_por_moneda renders one total per currency, with thousands separator, 2 decimals and its code")
+# An earlier record has only total_saldo (a sum across currencies): never shown as a figure.
+html_viejo <- .html(.audit_detail_reporte_export(list(formato = "pdf", desde = "2026-08-01", hasta = "2026-08-31",
+  empresas = "NCS", n_cuentas = 5L, total_saldo = 123456.789, nota = NA_character_)))
+.chk_true(!grepl("123,456", html_viejo, fixed = TRUE) &&
+            grepl("no disponible por moneda (registro anterior)", html_viejo, fixed = TRUE),
+          "an earlier record's total_saldo (currencies summed) is never shown: 'no disponible por moneda (registro anterior)'")
 .chk_false(grepl("pagedown", html_pdf, fixed = TRUE),
            "no fallback note rendered when nota is NA (clean success case, no clutter)")
 

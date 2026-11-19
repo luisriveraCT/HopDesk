@@ -151,6 +151,9 @@ tryCatch({
   # their tables with it (T10).
   for (.f in c("R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R"))
     source(.f, local = FALSE)
+  # montos_por_moneda(): the audit viewer writes a ZIP's and a report's totals
+  # one per currency with it (T55c). Only function definitions at top level.
+  source("R/ui_components.R",  local = FALSE)
   source("R/tier_registry.R",  local = FALSE)
   source("R/permisos.R",       local = FALSE)
   source("R/sap_cache.R",      local = FALSE)

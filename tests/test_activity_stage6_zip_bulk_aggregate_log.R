@@ -102,7 +102,12 @@ html_zip <- paste(as.character(.audit_detail_payment_file_zip(meta_zip)), collap
 
 .chk_true(grepl("ACME", html_zip, fixed = TRUE) && grepl("BETA", html_zip, fixed = TRUE),
      "zip detail: both empresas shown in the summary header")
-.chk_true(grepl("3,500.50", html_zip, fixed = TRUE), "zip detail: total_general formatted with thousands separator")
+# T55c: total_general (3,500.50) adds 1,000.50 MXN and 2,500.00 USD -- it is
+# never shown; the "Total general" is one total per currency, from the files.
+.chk_true(grepl("1,000.50 MXN · 2,500.00 USD", html_zip, fixed = TRUE),
+          "zip detail: Total general is one total per currency, with thousands separator and its code")
+.chk_false(grepl("3,500.50", html_zip, fixed = TRUE),
+           "zip detail: the stored total_general (currencies summed) is never shown")
 .chk_true(grepl("PROVEEDOR UNO", html_zip, fixed = TRUE) && grepl("PROVEEDOR DOS", html_zip, fixed = TRUE),
      "zip detail: BOTH files' beneficiaries are shown (same detail density as single-file view)")
 .chk_true(grepl("BBVA", html_zip, fixed = TRUE) && grepl("Santander", html_zip, fixed = TRUE),
