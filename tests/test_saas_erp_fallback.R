@@ -41,6 +41,18 @@ cat("── .sap_creds() Fallback Resolution (Stage 3b) ────────
   )
 }
 
+# networks' store is exactly `df` (a fixture). Planted in the mock S3 the way
+# test_saas_erp_isolation plants its files, with the app's caches for that
+# key dropped: since CM31 save_erp_connections() never shrinks the table, so
+# it cannot be used to replace a store with fewer rows.
+.poner_store <- function(df, client_id = "networks") {
+  full <- paste0(client_id, "/erp_connections.rds")
+  for (env in list(.s3_preload_cache, .s3_missing_cache))
+    suppressWarnings(rm(list = intersect(full, ls(env)), envir = env))
+  mock_s3saveRDS(df, full, "mock-bucket")
+  invisible(df)
+}
+
 .set_env_creds <- function(initials, url, company, user, password) {
   vars <- setNames(
     list(url, company, user, password),
@@ -55,9 +67,8 @@ cat("── .sap_creds() Fallback Resolution (Stage 3b) ────────
 # ── A. Store wins when it decrypts — two deliberately different values ──────
 
 .set_env_creds("ZZA", "https://env-zza.example", "ENV_DB", "env_user", "env_pass")
-save_erp_connections(
-  .mk_erp_row("networks", "ZZA", "https://store-zza.example", "STORE_DB", "store_user", "store_pass"),
-  client_id = "networks"
+.poner_store(
+  .mk_erp_row("networks", "ZZA", "https://store-zza.example", "STORE_DB", "store_user", "store_pass")
 )
 
 creds_a <- .sap_creds("ZZA", client_id = "networks")
@@ -77,7 +88,7 @@ good_row <- .mk_erp_row("networks", "ZZB", "https://store-zzb.example", "STORE_D
 raw_ct <- openssl::base64_decode(good_row$secrets_encrypted[1])
 raw_ct[length(raw_ct)] <- as.raw((as.integer(raw_ct[length(raw_ct)]) + 1L) %% 256L)
 good_row$secrets_encrypted <- openssl::base64_encode(raw_ct)
-save_erp_connections(good_row, client_id = "networks")
+.poner_store(good_row)
 
 creds_b <- NULL
 .chk(tryCatch({ creds_b <- .sap_creds("ZZB", client_id = "networks"); TRUE }, error = function(e) FALSE),
@@ -104,9 +115,8 @@ creds_c <- .sap_creds("ZZC", client_id = "networks")
 # ── E. An inactive (active=FALSE) store row is treated as if absent ──────────
 
 .set_env_creds("ZZE", "https://env-zze.example", "ENV_DB", "env_user5", "env_pass5")
-save_erp_connections(
-  .mk_erp_row("networks", "ZZE", "https://store-zze.example", "STORE_DB", "store_user5", "store_pass5", active = FALSE),
-  client_id = "networks"
+.poner_store(
+  .mk_erp_row("networks", "ZZE", "https://store-zze.example", "STORE_DB", "store_user5", "store_pass5", active = FALSE)
 )
 creds_e <- .sap_creds("ZZE", client_id = "networks")
 .chk(creds_e$url, "https://env-zze.example", "inactive store row is skipped — falls back to env var")
