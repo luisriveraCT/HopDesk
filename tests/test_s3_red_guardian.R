@@ -108,7 +108,7 @@ ok("there is no 'vaciar/purgar papelera' action (add one only with permitir_redu
    !length(acciones))
 
 # ── 4. Ratchet: read-with-empty-fallback sites may only go down ───────────────
-.TRINQUETE <- 52L   # 2026-11-04 VP1: 74; 2026-11-19 CM34: 52 (the real count); lower it as conversions land
+.TRINQUETE <- 50L   # 2026-11-04 VP1: 74; 2026-11-19 CM34: 52 (the real count), CM34a: 50; lower it as conversions land
 patron <- "tryCatch\\(\\s*load_[a-z_]+\\([^)]*\\)\\s*,\\s*error\\s*=\\s*function\\(e\\)\\s*(\\.schema_[a-z_]+\\(\\)|tibble::tibble\\(\\)|NULL)\\)"
 n <- sum(vapply(archivos, function(f) sum(grepl(patron, codigo(f))), integer(1)))
 cat(sprintf("  read-with-empty-fallback sites: %d (ratchet %d)\n", n, .TRINQUETE))
