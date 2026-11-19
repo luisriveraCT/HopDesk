@@ -91,8 +91,13 @@ tryCatch({
     ev("(function(){ var a = document.querySelector(\"nav.navbar a[data-value='PH']\"); if (window.jQuery) jQuery(a).tab('show'); a.click(); return true; })()")
     ok(sprintf("%s: the Agenda shows its company tabs", quien),
        espera("document.querySelectorAll('.tab-pane.active .ph-container .nav-tabs .nav-link[data-value]').length > 0", 120))
-    emps <- jsonlite::fromJSON(ev("JSON.stringify([].map.call(document.querySelectorAll('.tab-pane.active .ph-container .nav-tabs .nav-link[data-value]'),
+    # The Agenda redraws its tabs once more after the first paint: read them
+    # until the list holds still (twice the same, not empty).
+    leer_emps <- function() jsonlite::fromJSON(ev("JSON.stringify([].map.call(document.querySelectorAll('.tab-pane.active .ph-container .nav-tabs .nav-link[data-value]'),
       function(a){ return a.getAttribute('data-value'); }))"))
+    emps <- character(0); previa <- NULL
+    for (i in 1:40) { Sys.sleep(1); e <- leer_emps(); if (length(e) && identical(e, previa)) { emps <- e; break }; previa <- e }
+    ok(sprintf("%s: the company tabs read (%d)", quien, length(emps)), length(emps) > 0L)
     cat(sprintf("\n-- %s: %d company tab(s) --\n", quien, length(emps)))
     for (tam in list(c(1293L, 632L), c(1772L, 866L))) {
       invisible(b$Emulation$setDeviceMetricsOverride(width = tam[1], height = tam[2], deviceScaleFactor = 1, mobile = FALSE))
