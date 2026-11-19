@@ -1819,6 +1819,7 @@ pagarHoyServer <- function(id, shared) {
               tipo            = "pago",
               mov_id          = NA_character_,
               confirmado_at   = Sys.time(),
+              confirmado_por  = autor_registrable(shared$current_user()),   # CM35
               eliminado       = FALSE,
               provision_id    = as.character(factura_rows$provision_id[i] %||% NA_character_),
               # The invoice's identity for compute_confirmed_flags(): closes it
@@ -2211,6 +2212,7 @@ pagarHoyServer <- function(id, shared) {
               tipo            = "cobro",
               mov_id          = NA_character_,
               confirmado_at   = Sys.time(),
+              confirmado_por  = autor_registrable(shared$current_user()),   # CM35
               eliminado       = FALSE,
               fecha_factura   = as.Date(factura_rows$fecha_factura[i] %||% NA)
             )))

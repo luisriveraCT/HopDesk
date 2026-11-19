@@ -131,6 +131,8 @@ for (ledger in c("AP", "AR")) {
   correr("confirmar", ag, ledger)
   ok(sprintf("%s control: confirming alone takes X1 out and closes it (bancos_confirmados), Y1 stays", ledger),
      identical(ids_s3(), "Y1") && "X1" %in% confirmadas())
+  ok(sprintf("%s CM35: the confirmation says who confirmed it (the login user)", ledger),
+     identical(get(paste0(CID, "/", S3_KEYS$bancos_confirmados), envir = .mem)$confirmado_por, "luis"))
 
   # ── 1. Another session stages B9 between the read and the write ─────────
   ag <- sembrar(ledger); OTRA <- otra_agrega(ledger)
