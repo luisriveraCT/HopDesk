@@ -120,6 +120,75 @@ ok("1 a save for B from that session afterwards writes no row of A into B's Agen
    !any(leer("cli-b", "pagar_hoy_sync")$Empresa %in% "A-EMP") &&
      identical(sort(leer("cli-b", "pagar_hoy_sync")$id), sort(antes_b$id)))
 
+# ── 2. Login (a1): the Agenda block of Phase 2 ─────────────────────────────
+# Client "net": a live shared Agenda (S1, S2) and an old legacy pagar_hoy.rds
+# (L1) that the first-run migration would copy over it.
+CARGA <- bloque_app(".merge_early_adds")
+iniciar <- function() { env <- new.env(); env$cid_lo <- "net"; eval(CARGA, env) }
+preparar_login <- function(config = TRUE, sync = TRUE, early = NULL) {
+  s3_memoria_reset(); AVISOS <<- character(); .mem_falla <<- character(); .mem_prohibido <<- character()
+  if (config) sync_on("net")
+  if (sync) poner("net", "pagar_hoy_sync", .normalize(dplyr::bind_rows(fila("S1", "N"), fila("S2", "N")), .schema_pagar_hoy))
+  poner("net", "pagar_hoy", .normalize(fila("L1", "N"), .schema_pagar_hoy))
+  PH <<- early
+}
+ids_sync <- function() sort(leer("net", "pagar_hoy_sync")$id)
+config_on <- function() exists(llave("net", "agenda_sync_config"), envir = .mem) &&
+  isTRUE(.normalize(leer("net", "agenda_sync_config"), .schema_agenda_sync_config)$is_enabled[1])
+no_leida <- function() tr("tablas.agenda.aviso.no_leida") %in% AVISOS
+
+preparar_login()
+iniciar()
+ok("2 control: sync on, the login shows the shared Agenda", identical(sort(PH$id), c("S1", "S2")))
+
+preparar_login()
+.mem_falla <- llave("net", "agenda_sync_config")
+n <- .mem_escrituras
+iniciar()
+ok("2 the sync config cannot be read: the shared Agenda is NOT overwritten (no migration)",
+   identical(ids_sync(), c("S1", "S2")))
+ok("2 …nothing at all is written, and the user is told",
+   identical(.mem_escrituras, n) && no_leida())
+
+preparar_login(config = FALSE)
+iniciar()
+ok("2 no config but the shared Agenda exists: it is loaded, never overwritten by the legacy file",
+   identical(ids_sync(), c("S1", "S2")) && identical(sort(PH$id), c("S1", "S2")) && config_on())
+
+preparar_login(config = FALSE, sync = FALSE)
+iniciar()
+ok("2 control: a real first run (no config, no sync file) migrates the legacy Agenda and turns sync on",
+   identical(ids_sync(), "L1") && config_on())
+
+preparar_login(config = FALSE, sync = FALSE)
+.mem_prohibido <- llave("net", "pagar_hoy_sync")
+n <- .mem_escrituras
+iniciar()
+ok("2 no config and S3 cannot say whether the sync file exists (403): nothing migrated or written, notice",
+   identical(.mem_escrituras, n) && no_leida())
+
+preparar_login(config = FALSE, sync = FALSE)
+.mem_falla <- llave("net", "pagar_hoy")
+n <- .mem_escrituras
+iniciar()
+ok("2 first run but the legacy file cannot be read: nothing migrated or written, notice",
+   identical(.mem_escrituras, n) && no_leida() && !config_on())
+
+early <- .normalize(fila("E1", "N"), .schema_pagar_hoy)
+preparar_login(early = early)
+.mem_falla <- llave("net", "pagar_hoy_sync")
+n <- .mem_escrituras
+iniciar()
+ok("2 sync on but the shared Agenda cannot be read: the early-added row is not saved over it, notice",
+   identical(.mem_escrituras, n) && no_leida())
+.mem_falla <- character()
+ok("2 …and the shared Agenda is intact", identical(ids_sync(), c("S1", "S2")))
+
+preparar_login(early = early)
+iniciar()
+ok("2 control: an early-added row is saved, rebased on the shared Agenda",
+   identical(ids_sync(), c("E1", "S1", "S2")))
+
 s3_memoria_restaurar()
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
