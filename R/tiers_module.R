@@ -3069,6 +3069,39 @@ tiersServer <- function(id, shared) {
 
     observeEvent(input$btn_inv_refresh, { invites_refresh(invites_refresh() + 1L) })
 
+    # T57: the expired invitations are deleted (purgar_invitaciones_vencidas,
+    # R/persistence.R) when someone who sees the table opens Invitaciones --
+    # once per session -- and with ↻. Staff purges every client's; anyone
+    # else only its own client's. The table hides them anyway (the link's
+    # rule), so this never has to finish first, and an error is only logged:
+    # it never takes the tab down.
+    inv_purga <- function() {
+      if (!(isTRUE(is_hopdesk()) || isTRUE(is_principal()) || isTRUE(is_dev()))) return(invisible(NULL))
+      clientes <- if (isTRUE(viewer_is_staff())) NULL else current_client_id()
+      if (!is.null(clientes) && !nzchar(clientes %||% "")) return(invisible(NULL))
+      n <- tryCatch(purgar_invitaciones_vencidas(clientes),
+                    error = function(e) { message("[INVITES] purge of expired invitations failed: ", conditionMessage(e)); NULL })
+      for (cid in names(n))   # counts only: no token, no email
+        tryCatch(log_action(
+          user        = shared$current_user(),
+          module      = "invites",
+          action      = "invitacion_vencida_eliminada",
+          description = sprintf("%d invitación(es) vencida(s) eliminada(s)", n[[cid]]),
+          s3_key      = .INVITES_KEY,
+          metadata    = list(eliminadas = n[[cid]]),
+          client_id             = if (nzchar(cid)) cid else .HD_ADMIN_CID,
+          viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
+        ), error = function(e) NULL)
+      invisible(n)
+    }
+    inv_purgada <- FALSE
+    observeEvent(input$main_tab, {
+      if (inv_purgada || !identical(input$main_tab, "invites")) return()
+      inv_purgada <<- TRUE
+      inv_purga()
+    })
+    observeEvent(input$btn_inv_refresh, inv_purga(), ignoreInit = TRUE)
+
     # The pending invitations' table (T28): ⊘, confirmed in its bar, names
     # the invite by its token. Tenant-scoped rows in its datos().
     invitaciones_t <- tiers_invitaciones_server("invit", refresh = invites_refresh,

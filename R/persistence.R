@@ -3218,6 +3218,28 @@ invitacion_vencida <- function(expires_at, ahora = Sys.time()) {
   ahora > exp
 }
 
+# Deletes the expired invitations from pending_invites.rds (T57, Luis: "que se
+# borre la invitación cuando expira"): the pending ones past their expiry
+# (invitacion_vencida() TRUE) and the ones resolve_invite() already marked
+# "expired". Never a valid one, one with an unreadable date (NA: shown, to
+# be revoked by hand), an accepted or a revoked one.
+# clientes: whose -- NULL every client's (staff), else only those client_ids
+# (a client's user purges only its own). On S3's current file (strict read);
+# writes only when something goes. Returns the count deleted per client_id.
+purgar_invitaciones_vencidas <- function(clientes = NULL, ahora = Sys.time()) {
+  borradas <- integer()
+  modificar_tabla_completa("pending_invites.rds", .HD_ADMIN_CID, .schema_pending_invites, function(inv) {
+    if (!nrow(inv)) return(inv)
+    sale <- (inv$status %in% "pending" & invitacion_vencida(inv$expires_at, ahora) %in% TRUE) |
+            inv$status %in% "expired"
+    if (!is.null(clientes)) sale <- sale & inv$client_id %in% clientes
+    if (!any(sale)) return(inv)
+    borradas <<- c(table(ifelse(is.na(inv$client_id[sale]), "", inv$client_id[sale])))
+    inv[!sale, , drop = FALSE]
+  }, permitir_reduccion = TRUE)   # T57: only the expired invitations leave
+  borradas
+}
+
 resolve_invite <- function(token) {
   invites <- read_pending_invites()
   idx <- which(invites$token == token & invites$status == "pending")

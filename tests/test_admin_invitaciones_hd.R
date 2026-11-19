@@ -103,6 +103,41 @@ ok("T57: resolve_invite, expired: NULL and marked expired",
    is.null(suppressMessages(resolve_invite("t-vieja"))) &&
      identical(get(KEY, envir = .mem)$status[get(KEY, envir = .mem)$token == "t-vieja"], "expired"))
 ok("T57: resolve_invite, valid: the invitation", identical(suppressMessages(resolve_invite("t-viva"))$email, "viva@acme.mx"))
+# ── 1c. Deleting the expired ones (T57, Luis: "que se borre") ───────────────
+PUR <- rbind(VEN[VEN$token %in% c("t-vieja", "t-viva", "t-rara", "t-na"), ],
+             inv("t-marcada", "m@acme.mx", "acme", status = "expired", expires_at = "2026-10-01T00:00:00Z"),
+             inv("t-acept",   "a@acme.mx", "acme", status = "accepted", expires_at = "2026-10-01T00:00:00Z"),
+             inv("t-revoc",   "r@acme.mx", "acme", status = "revoked",  expires_at = "2026-10-01T00:00:00Z"),
+             inv("t-beta-v",  "v@beta.mx", "beta", expires_at = "2026-10-30T18:00:00Z"))
+quedan <- function() get(KEY, envir = .mem)$token
+sembrar(PUR)
+n <- purgar_invitaciones_vencidas("acme", ahora = AHORA)
+ok("T57 purge, a client: its expired pending one and its marked 'expired' one leave",
+   !any(c("t-vieja", "t-marcada") %in% quedan()) && identical(c(n), c(acme = 2L)))
+ok("T57 purge, a client: never a valid one, an unreadable date, accepted or revoked",
+   all(c("t-viva", "t-rara", "t-na", "t-acept", "t-revoc") %in% quedan()))
+ok("T57 purge, a client: another client's expired one stays", "t-beta-v" %in% quedan())
+ok("T57 purge: the rows that stay are unchanged",
+   { a <- get(KEY, envir = .mem); b <- PUR[match(a$token, PUR$token), ]; cc <- c("token", "email", "status", "expires_at")
+     identical(lapply(a[, cc], as.character), lapply(b[, cc], as.character)) })
+n <- purgar_invitaciones_vencidas(NULL, ahora = AHORA)
+ok("T57 purge, staff (NULL): every client's", !"t-beta-v" %in% quedan() && identical(c(n), c(beta = 1L)))
+e0 <- .mem_escrituras
+n <- purgar_invitaciones_vencidas(NULL, ahora = AHORA)
+ok("T57 purge with nothing to delete: no write, no count", .mem_escrituras == e0 && !length(n))
+sembrar(NULL)
+ok("T57 purge with no file: no error, no write",
+   { e0 <- .mem_escrituras; r <- tryCatch(purgar_invitaciones_vencidas(NULL, ahora = AHORA), error = function(e) "error")
+     !identical(r, "error") && .mem_escrituras == e0 })
+# The trigger, in tiersServer: Invitaciones opened (once a session) and ↻,
+# the client's own scope for a non-staff viewer, and the log by counts only.
+tm <- paste(readLines("R/tiers_module.R", warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+ok("T57: tiersServer purges on opening Invitaciones and on ↻, own client unless staff, counts in the log",
+   grepl('identical(input$main_tab, "invites")', tm, fixed = TRUE) &&
+     grepl("observeEvent(input$btn_inv_refresh, inv_purga()", tm, fixed = TRUE) &&
+     grepl("if (isTRUE(viewer_is_staff())) NULL else current_client_id()", tm, fixed = TRUE) &&
+     grepl('action      = "invitacion_vencida_eliminada"', tm, fixed = TRUE))
+sembrar(VEN)
 ok("T57: the log line of an unreadable date names neither token nor email",
    { m <- character(); withCallingHandlers(resolve_invite("t-rara"),
        message = function(x) { m <<- c(m, conditionMessage(x)); invokeRestart("muffleMessage") })

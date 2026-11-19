@@ -66,14 +66,21 @@ permitidos <- c(
   # correo_partidas_guardar() (D, T45): semana_partidas.rds is a window of
   # AVISOS_PARTIDAS_SEMANAS weeks; the older weeks leave, never this week's
   # or one inside the window (tests/test_t45_correos_semana.R checks it).
-  "R/avisos_datos.R" = "}, permitir_reduccion = TRUE)"
+  "R/avisos_datos.R" = "}, permitir_reduccion = TRUE)",
+  # purgar_invitaciones_vencidas() (T57): deletes from pending_invites.rds
+  # only the expired invitations (pending past their expiry, or marked
+  # "expired"); never a valid one, an unreadable date, accepted or revoked
+  # (tests/test_admin_invitaciones_hd.R checks it).
+  "R/persistence.R" = "}, permitir_reduccion = TRUE)   # T57: only the expired invitations leave"
 )
 usos <- do.call(rbind, lapply(archivos, function(f) {
   x <- codigo(f); i <- grep("permitir_reduccion = TRUE", x, fixed = TRUE)
   if (length(i)) data.frame(f = f, txt = x[i], stringsAsFactors = FALSE) else NULL
 }))
 usos <- usos[!grepl("pass permitir_reduccion = TRUE if this is intended", usos$txt, fixed = TRUE), , drop = FALSE]
-fuera <- usos[!mapply(function(f, t) f %in% names(permitidos) && grepl(permitidos[[f]], t, fixed = TRUE),
+# A file may have more than one documented use (T57): any of its entries.
+fuera <- usos[!mapply(function(f, t) any(vapply(permitidos[names(permitidos) == f],
+                                                function(p) grepl(p, t, fixed = TRUE), logical(1))),
                       usos$f, usos$txt), , drop = FALSE]
 for (i in seq_len(nrow(fuera))) message("  undocumented: ", fuera$f[i], ": ", trimws(fuera$txt[i]))
 ok("permitir_reduccion = TRUE appears only in the documented places", nrow(fuera) == 0L)
