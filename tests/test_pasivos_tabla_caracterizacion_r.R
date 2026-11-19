@@ -217,7 +217,8 @@ test_that("C20: the summary line: counts, and per currency what is due in the ne
   # L3's Monday is always within today + 1 .. today + 7.
   expect_identical(BASE$resumen, paste(
     if (isTRUE(MOTOR)) "Mostrando 7 pasivos · 14 provisiones · 4 items" else "Mostrando 8 pasivos · 15 provisiones · 5 items",
-    "MXN $ 3,680.00 · 4 próx.", "USD $ 370.00 · 2 próx.", "EUR $ 300.00 · 1 próx.", "CAD $ 60.00 · 1 próx."))
+    # [CAMBIA T55b] the code after the amount, no "$" (was "MXN $ 3,680.00 · 4 próx.")
+    "3,680.00 MXN · 4 próx.", "370.00 USD · 2 próx.", "300.00 EUR · 1 próx.", "60.00 CAD · 1 próx."))
   # [CAMBIA] today Manuales says "provisiones manuales"; on the engine the filter is the table's and
   # the line counts what it shows, the same words as always.
   expect_match(ver(list(list(provision_type = "manuales")))$resumen,

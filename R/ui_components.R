@@ -120,6 +120,20 @@ monedas_para_filtrar <- function(datos = character(), base = MONEDA_BASE_OMISION
 # monto_moneda() lives in R/monedas.R since T55 (the engine of tables uses
 # it too, and every app and fixture loads monedas.R).
 
+# What several amounts add up to, one total per currency in order --
+# "1,234.56 MXN · 500.00 USD" -- never different currencies summed into one
+# figure (T55b: the Lupa's notice said "MXN/USD $ 1,050.00"). Rows without a
+# currency add up apart, without a code. Bancos' totals and the Lupa use it.
+montos_por_moneda <- function(importe, moneda) {
+  importe <- suppressWarnings(as.numeric(importe))
+  moneda  <- toupper(trimws(as.character(moneda)))
+  moneda[is.na(moneda)] <- ""
+  if (!length(importe)) return(monto_moneda(0, NA))
+  s <- tapply(importe, moneda, sum, na.rm = TRUE)
+  s <- s[order(names(s))]
+  paste(monto_moneda(as.numeric(s), ifelse(nzchar(names(s)), names(s), NA)), collapse = " \u00b7 ")
+}
+
 # "Datos de SAP al martes 17, 08:54": when SAP's data is from, in `tz`. The
 # month is added once the date is past SAP_DIAS_VIEJO (sap_viejo(), R/
 # panorama_datos.R): "martes 10 de nov, 08:54". No date: the "not loaded" line.

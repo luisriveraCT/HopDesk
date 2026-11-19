@@ -19,19 +19,6 @@
 # changes (client-side caching, or a non-Shiny frontend), not before.
 # =============================================================================
 
-# What the invoices sent to the Agenda add up to, one total per currency in
-# order -- "1,234.56 MXN · 500.00 USD" -- never pesos and dollars summed into
-# one figure (T55b). Rows without a currency add up apart, without a code.
-.lupa_totales_texto <- function(importe, moneda) {
-  importe <- suppressWarnings(as.numeric(importe))
-  moneda  <- toupper(trimws(as.character(moneda)))
-  moneda[is.na(moneda)] <- ""
-  if (!length(importe)) return(monto_moneda(0, NA))
-  s <- tapply(importe, moneda, sum, na.rm = TRUE)
-  s <- s[order(names(s))]
-  paste(monto_moneda(as.numeric(s), ifelse(nzchar(names(s)), names(s), NA)), collapse = " \u00b7 ")
-}
-
 # ── The lupa on the table engine ─────────────────────────────────────────────
 # Table "facturas_lupa" of the registry: the same table as Vencidos (the
 # facturas_*() functions in vencidos_module.R), over one month. It keeps the
@@ -652,7 +639,7 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
     emp_str  <- paste(unique(new_rows$Empresa), collapse = ", ")
     # One total per currency, never added together (T55b: "MXN/USD" with
     # pesos and dollars summed into one figure).
-    total    <- .lupa_totales_texto(new_rows$Importe, new_rows$Moneda)
+    total    <- montos_por_moneda(new_rows$Importe, new_rows$Moneda)
     ledg_str <- if (all(new_rows$ledger == "AR")) tr("tablas.lupa.aviso.destino_cobros")
                 else if (all(new_rows$ledger == "AP")) tr("tablas.lupa.aviso.destino_pagos")
                 else tr("tablas.lupa.aviso.destino_agenda")

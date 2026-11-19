@@ -1069,7 +1069,7 @@
   "tablas.pasivos.manual_creada": "Manual provision created.",
   "tablas.pasivos.resumen.sin_datos": "No data for the selected filters.",
   "tablas.pasivos.resumen.texto": "Showing {pasivos} liabilities · {provisiones} provisions · {items} items",
-  "tablas.pasivos.resumen.proximas": "{moneda} {monto} · {n} due",
+  "tablas.pasivos.resumen.proximas": "{monto} · {n} due",
   "tablas.pasivos.manual.titulo": "New manual provision",
   "tablas.pasivos.manual.empresa": "Company",
   "tablas.pasivos.manual.moneda": "Currency",

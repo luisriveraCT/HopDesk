@@ -750,8 +750,8 @@ setup_pasivos_module <- function(input, output, session, shared) {
     ax       <- if (exists("fx_monto_aprox", mode = "function")) fx_monto_aprox(prov$amount_cotizado[1], prov$cotizado_en[1],
                   prov$moneda_pago[1], prov$amount_pago_override[1], fx_hoy) else list(aprox = FALSE)
     importe_txt <- if (isTRUE(ax$aprox))
-      shiny::span(title = fx_aprox_ayuda(fx_hoy), "≈ ", paste(moneda, fmt_money(ax$importe_aprox)))
-    else paste(moneda, fmt_money(amount))
+      shiny::span(title = fx_aprox_ayuda(fx_hoy), "≈ ", monto_moneda(ax$importe_aprox, moneda))
+    else monto_moneda(amount, moneda)   # "1,234.56 MXN", the code after (T55b)
 
     manual_df <- tryCatch(shared$manual_inv(), error = function(e) NULL)
     man_row <- if (!is.null(manual_df) && "provision_id" %in% names(manual_df))

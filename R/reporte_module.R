@@ -802,7 +802,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       totales  <- lapply(monedas_en_datos(bals_sel$moneda, moneda_base()), function(m)
         div(
           tags$small(class = "text-muted d-block", paste("Total", m)),
-          tags$strong(class = "fs-6", fmt_money(sum(bals_sel$saldo[bals_sel$moneda == m], na.rm = TRUE)))
+          # The number alone: "Total MXN" just above names it (T55b).
+          tags$strong(class = "fs-6", monto_moneda(sum(bals_sel$saldo[bals_sel$moneda == m], na.rm = TRUE), m, codigo = FALSE))
         ))
 
       div(class = "alert alert-light border mb-0",

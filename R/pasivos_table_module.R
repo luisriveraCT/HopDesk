@@ -544,7 +544,7 @@ pasivos_table_module_server <- function(id, shared) {
           style = sprintf(
             "background:%s; color:#fff; font-size:11px; font-weight:500; padding:3px 9px;",
             col),
-          tr("tablas.pasivos.resumen.proximas", moneda = cur, monto = fmt_money(total), n = n)
+          tr("tablas.pasivos.resumen.proximas", monto = monto_moneda(total, cur), n = n)   # the code after (T55b)
         )
       })
 

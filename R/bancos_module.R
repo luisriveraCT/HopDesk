@@ -911,10 +911,9 @@ bancosServer <- function(id, shared) {
                    (if (nrow(row)) row$total_abono - row$total_cargo else 0)
         color   <- .currency_color(ct$moneda)
         is_neg  <- saldo < 0
-        bal_lbl <- if (is_neg)
-          paste0("- ", fmt_money(abs(saldo)))
-        else
-          fmt_money(saldo)
+        # The number alone, the true minus sign: the card names its currency
+        # right below ("Banco · MXN · alias") (T55b).
+        bal_lbl <- monto_moneda(saldo, ct$moneda, codigo = FALSE)
 
         spark_vals <- spark_data(ct$cuenta_id)
         spark_svg  <- make_spark_svg(spark_vals, color)
@@ -966,7 +965,7 @@ bancosServer <- function(id, shared) {
             div(class = "bnc-ticker-label",
                 paste0(.company_name(ct$empresa, shared$company_map()), " \u00b7 ", ct$alias)),
             div(
-              tags$span(class = paste("bnc-ticker-val", cls), fmt_money(saldo)),
+              tags$span(class = paste("bnc-ticker-val", cls), monto_moneda(saldo, mon, codigo = FALSE)),   # its code follows
               tags$span(class = "bnc-ticker-mon", mon)
             )
           )
@@ -1202,16 +1201,20 @@ bancosServer <- function(id, shared) {
       rows <- dplyr::filter(movs, id %in% ids, !eliminado)
       if (!nrow(rows)) return()
 
-      total_cargo <- sum(rows$cargo, na.rm = TRUE)
-      total_abono <- sum(rows$abono, na.rm = TRUE)
       n           <- nrow(rows)
 
       mon <- dplyr::left_join(dplyr::select(rows, id, cuenta_id), dplyr::select(cuentas(), cuenta_id, moneda), by = "cuenta_id")
+      mon_fila <- toupper(trimws(dplyr::coalesce(mon$moneda[match(rows$id, mon$id)], "")))
       elim_filas_rv(data.frame(
         id = rows$id, Fecha = rows$fecha, Parte = rows$parte %||% "",
         Cargo = ifelse(rows$cargo > 0, rows$cargo, NA_real_), Abono = ifelse(rows$abono > 0, rows$abono, NA_real_),
-        Moneda = toupper(trimws(dplyr::coalesce(mon$moneda[match(rows$id, mon$id)], ""))),
+        Moneda = mon_fila,
         stringsAsFactors = FALSE))
+      # Movements of accounts in different currencies: one total per currency,
+      # never summed (T55b), each over the rows that have that kind.
+      es_cargo <- rows$cargo > 0 & !is.na(rows$cargo); es_abono <- rows$abono > 0 & !is.na(rows$abono)
+      txt_cargo <- montos_por_moneda(rows$cargo[es_cargo], mon_fila[es_cargo])
+      txt_abono <- montos_por_moneda(rows$abono[es_abono], mon_fila[es_abono])
 
       elim_ids_rv(ids)
 
@@ -1222,8 +1225,8 @@ bancosServer <- function(id, shared) {
           hd_table_ui(ns("elim")),
           tags$hr(),
           div(class = "d-flex justify-content-between small text-muted",
-            span(paste("Total cargos:", fmt_money(total_cargo))),
-            span(paste("Total abonos:", fmt_money(total_abono)))
+            span(paste("Total cargos:", txt_cargo)),
+            span(paste("Total abonos:", txt_abono))
           )
         ),
         footer = tagList(
@@ -2363,7 +2366,7 @@ bancosServer <- function(id, shared) {
           tags$p("Esta acci\u00f3n mover\u00e1 la confirmaci\u00f3n a la papelera."),
           tags$ul(
             tags$li(paste("Parte:", row$parte)),
-            tags$li(paste("Importe:", fmt_money(row$importe))),
+            tags$li(paste("Importe:", monto_moneda(row$importe, row$moneda))),
             tags$li(paste("Fecha:", format(as.Date(row$fecha), "%d/%m/%Y")))
           ),
           if (!is.na(row$mov_id) && nzchar(row$mov_id %||% ""))

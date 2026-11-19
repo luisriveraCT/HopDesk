@@ -1069,7 +1069,7 @@
   "tablas.pasivos.manual_creada": "Provisión manual creada.",
   "tablas.pasivos.resumen.sin_datos": "Sin datos para los filtros seleccionados.",
   "tablas.pasivos.resumen.texto": "Mostrando {pasivos} pasivos · {provisiones} provisiones · {items} items",
-  "tablas.pasivos.resumen.proximas": "{moneda} {monto} · {n} próx.",
+  "tablas.pasivos.resumen.proximas": "{monto} · {n} próx.",
   "tablas.pasivos.manual.titulo": "Nueva provisión manual",
   "tablas.pasivos.manual.empresa": "Empresa",
   "tablas.pasivos.manual.moneda": "Moneda",
