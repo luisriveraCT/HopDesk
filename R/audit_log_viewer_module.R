@@ -275,6 +275,19 @@
 # aggregate entry -- one summary header for the whole click, then every
 # bundled file's own full beneficiary detail (same information density as a
 # single-company download, per Mouse's explicit ask), not just a file count.
+# A ZIP's "Total general", one total per currency from its files (each has
+# its own total and moneda): "1,000.00 MXN · 50.00 USD". The stored
+# total_general added the files' totals whatever their currency, so it is
+# never shown. A record whose files don't all say their total and currency
+# shows "—", never a mixed sum (T55c; the integrator's conditions).
+.audit_zip_total_por_moneda <- function(archivos_list) {
+  if (!length(archivos_list)) return("—")
+  tot <- suppressWarnings(as.numeric(vapply(archivos_list, function(a) as.character(a$total %||% NA)[1], "")))
+  mon <- toupper(trimws(vapply(archivos_list, function(a) as.character(a$moneda %||% NA)[1], "")))
+  if (anyNA(tot) || anyNA(mon) || !all(nzchar(mon))) return("—")
+  montos_por_moneda(tot, mon)
+}
+
 .audit_detail_payment_file_zip <- function(meta) {
   archivos <- meta$archivos
   archivos_list <- if (is.data.frame(archivos))
@@ -287,8 +300,7 @@
     tags$div(tags$strong("Empresas: "),
              paste(meta$empresas %||% character(0), collapse = ", ")),
     tags$div(tags$strong("Pagos totales: "), as.character(meta$n_pagos_total %||% "")),
-    tags$div(tags$strong("Total general: "),
-             formatC(as.numeric(meta$total_general %||% 0), format = "f", digits = 2, big.mark = ","))
+    tags$div(tags$strong("Total general: "), .audit_zip_total_por_moneda(archivos_list))
   )
 
   if (!length(archivos_list))
@@ -494,6 +506,18 @@
 # summary report actually left the app as a file, so this gets its own
 # small view (format, coverage, totals) rather than the generic diff -- an
 # export has no "before", it's a one-shot event, not a state change.
+# A report's balances as logged, one total per currency (saldo_por_moneda,
+# T55c). An earlier record only has total_saldo, a sum of every account
+# whatever its currency: it is never shown as a figure.
+.audit_saldo_por_moneda <- function(meta) {
+  s <- meta$saldo_por_moneda
+  if (is.null(s) || !length(s)) return(tr("comun.bitacora.saldo_no_disponible"))
+  v <- suppressWarnings(as.numeric(unlist(s)))
+  m <- names(unlist(s))
+  if (is.null(m) || anyNA(v) || !all(nzchar(m))) return(tr("comun.bitacora.saldo_no_disponible"))
+  montos_por_moneda(v, m)
+}
+
 .audit_detail_reporte_export <- function(meta) {
   empresas <- meta$empresas %||% character(0)
   tagList(
@@ -503,8 +527,7 @@
     tags$div(tags$strong("Empresas: "),
              if (length(empresas)) paste(empresas, collapse = ", ") else "—"),
     tags$div(tags$strong("Cuentas incluidas: "), as.character(meta$n_cuentas %||% "")),
-    tags$div(tags$strong("Saldo total: "),
-             formatC(as.numeric(meta$total_saldo %||% 0), format = "f", digits = 2, big.mark = ",")),
+    tags$div(tags$strong("Saldo total: "), .audit_saldo_por_moneda(meta)),
     if (!is.null(meta$nota) && !is.na(meta$nota) && nzchar(meta$nota %||% ""))
       tags$div(class = "text-muted small mt-1", icon("circle-info"), " ", meta$nota)
     else NULL

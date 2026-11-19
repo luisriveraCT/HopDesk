@@ -304,6 +304,7 @@
   "comun.sap.sin_datos": "SAP data not loaded yet",
   "comun.calendario.total": "Total",
   "comun.calendario.mas": "+ {n} more",
+  "comun.bitacora.saldo_no_disponible": "not available per currency (earlier record)",
   "comun.sap.fecha_semana": "{dia} {n}, {hora}",
   "comun.sap.fecha_mes": "{dia}, {mes} {n}, {hora}",
   "comun.aviso.error_leer_s3": "Error reading from the server: {error}",

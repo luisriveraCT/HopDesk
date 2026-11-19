@@ -329,13 +329,25 @@ floor_date_month <- function() {
 # gated by a payment-specific permission and never surfaced them in the
 # general Actividad log at all. Uses log_action() directly instead, same as
 # every other export in the app (cashflow_export, pagos_audit). Kept
-# deliberately lean -- desde/hasta/empresas/n_cuentas/total_saldo is enough
+# deliberately lean -- desde/hasta/empresas/n_cuentas/saldo_por_moneda is enough
 # to answer "what exactly did this export cover" without archiving the
 # report's full row-level content (unlike a payment file, this isn't a
 # permanent instruction to a bank -- the live data can always be
 # re-generated from the same filters).
+# The balances of the accounts in the report, one total per currency in order
+# (a named list, "MXN" -> 182000.5): never pesos and dollars summed into one
+# figure, which is what total_saldo used to store (T55c).
+.reporte_saldo_por_moneda <- function(bals) {
+  if (is.null(bals) || !nrow(bals)) return(list())
+  mon <- toupper(trimws(as.character(bals$moneda)))
+  ok  <- !is.na(mon) & nzchar(mon)
+  if (!any(ok)) return(list())
+  s <- tapply(as.numeric(bals$saldo[ok]), mon[ok], sum, na.rm = TRUE)
+  as.list(s[order(names(s))])
+}
+
 .log_reporte_export <- function(shared, formato, desde, hasta, empresas,
-                                n_cuentas, total_saldo, nota = NA_character_) {
+                                n_cuentas, saldo_por_moneda, nota = NA_character_) {
   tryCatch(log_action(
     user        = tryCatch(shared$current_user(), error = function(e) "system"),
     module      = "reporte",
@@ -345,7 +357,7 @@ floor_date_month <- function() {
                           length(empresas)),
     metadata    = list(formato = formato, desde = as.character(desde), hasta = as.character(hasta),
                        empresas = empresas, n_cuentas = n_cuentas,
-                       total_saldo = as.numeric(total_saldo %||% NA_real_), nota = nota),
+                       saldo_por_moneda = saldo_por_moneda, nota = nota),
     client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
     viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
   ), error = function(e) NULL)
@@ -850,7 +862,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 
         .log_reporte_export(shared, formato = "html", desde = desde, hasta = hasta,
                             empresas = emps, n_cuentas = nrow(bals_sel),
-                            total_saldo = sum(bals_sel$saldo, na.rm = TRUE))
+                            saldo_por_moneda = .reporte_saldo_por_moneda(bals_sel))
       }
     )
 
@@ -906,7 +918,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           # that was clicked.
           .log_reporte_export(shared, formato = "html", desde = desde, hasta = hasta,
                               empresas = emps, n_cuentas = nrow(bals_sel),
-                              total_saldo = sum(bals_sel$saldo, na.rm = TRUE),
+                              saldo_por_moneda = .reporte_saldo_por_moneda(bals_sel),
                               nota = "pagedown no instalado; entregado como HTML")
           return()
         }
@@ -937,7 +949,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 
           .log_reporte_export(shared, formato = "pdf", desde = desde, hasta = hasta,
                               empresas = emps, n_cuentas = nrow(bals_sel),
-                              total_saldo = sum(bals_sel$saldo, na.rm = TRUE))
+                              saldo_por_moneda = .reporte_saldo_por_moneda(bals_sel))
         }, error = function(e) {
           # Chrome found but print failed — deliver HTML and show error
           writeLines(html_content, file)
@@ -953,7 +965,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           )
           .log_reporte_export(shared, formato = "html", desde = desde, hasta = hasta,
                               empresas = emps, n_cuentas = nrow(bals_sel),
-                              total_saldo = sum(bals_sel$saldo, na.rm = TRUE),
+                              saldo_por_moneda = .reporte_saldo_por_moneda(bals_sel),
                               nota = paste("error al generar PDF, entregado como HTML:", conditionMessage(e)))
         })
       }
