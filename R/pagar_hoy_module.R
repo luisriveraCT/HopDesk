@@ -331,7 +331,7 @@ pagarHoyServer <- function(id, shared) {
         staged_by=character(), staged_at=as.POSIXct(character()),
         status=character(), source=character(), confirmed_at=as.POSIXct(character())
       ))
-      ph |> dplyr::filter(status == "pending")
+      agenda_pendientes(ph)   # the same rows Panorama counts (R/agenda_filas.R, T60)
     })
 
     active_staged <- reactive({

@@ -267,7 +267,9 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       tarjetas <- list(
         .pan_tarjeta_hoy(tr("panorama.hoy.programado"), pagos(),
           tr_n("semana.tarjeta.por_pagar.n", sum(pagos()$n)), "PH", ns, base = base_cli(),
-          explica = tr("panorama.hoy.programado_explica")),
+          explica = tr("panorama.hoy.programado_explica"),
+          extra = .pan_desglose_texto(panorama_pagos_desglose(
+            tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), hoy(), base = base_cli()))),
         if (ver_cxc()) .pan_tarjeta_hoy(tr("panorama.hoy.por_cobrar"), cobros(),
           tr_n("semana.tarjeta.por_cobrar.n", sum(cobros()$n)), "CAL", ns, base = base_cli(),
           explica = tr("semana.tarjeta.por_cobrar.explica", rango = tr("panorama.hoy.rango")), extra = excluye),
@@ -466,6 +468,18 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
 # figure is (`explica`) with its count, an optional `extra` line, and the tab
 # it opens on a line of its own (T46b: it read as part of the data). Every
 # figure carries its code, the empty card the base's (T46).
+# The line under "Programado para pagar hoy" (T60): "Incluye 2 vencidos
+# (300.00 MXN) · 1 anticipado (2,000.00 MXN)", each part with its amounts by
+# currency (monto_moneda(), never added up across currencies). NULL when the
+# Agenda holds nothing overdue nor ahead.
+.pan_desglose_texto <- function(d) {
+  parte <- function(t, clave) if (!is.null(t) && nrow(t))
+    tr_n(clave, sum(t$n), monto = paste(monto_moneda(t$total, t$moneda), collapse = " · "))
+  partes <- c(parte(d$vencidos, "panorama.hoy.desglose.vencidos"), parte(d$anticipados, "panorama.hoy.desglose.anticipados"))
+  if (!length(partes)) return(NULL)
+  tr("panorama.hoy.desglose", partes = paste(partes, collapse = " · "))
+}
+
 .pan_tarjeta_hoy <- function(titulo, totales, linea, tab, ns, base = MONEDA_BASE_OMISION,
                              explica = NULL, extra = NULL) {
   vacio <- is.null(totales) || !nrow(totales)

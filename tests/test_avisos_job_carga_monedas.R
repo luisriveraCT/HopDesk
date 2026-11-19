@@ -17,7 +17,8 @@
 #      default base: the emails use it since T45 (correo_monto() is gone);
 #   5. sap_al_texto() works in the job (it needs sap_viejo(), R/panorama_datos.R);
 #   6. the companies' identity for the IC filter (R/empresas_identidad.R, T47):
-#      the job's apply_ic_filter() calls it when a client has no IC registry.
+#      the job's apply_ic_filter() calls it when a client has no IC registry;
+#   7. panorama_datos.R's Agenda figures: agenda_pendientes() (R/agenda_filas.R, T60).
 # Contraprueba: the same list without "R/monedas.R" fails 2 (and 4); without
 # "R/ui_components.R" fails 5 (T45: the job must load it); without
 # "R/empresas_identidad.R" fails 6 (T47).
@@ -46,13 +47,14 @@ hijo <- function(quitar = "") {
     'cat("NORMALIZAR=", !usa || exists("moneda_normalizar"), "\\n", sep = "")',
     'cat("MONTO=", tryCatch(monto_moneda(1234.5, MONEDA_BASE_OMISION), error = function(e) "error"), "\\n", sep = "")',
     'cat("IDENT=", tryCatch(isTRUE(ic_por_identidad("NETWORKS LOGISTICS SA DE CV", NA, empresas_identidad(data.frame(initials = "NL", razon_social = "Networks Logistics", nombre_corto = "NL", rfc = NA, activa = TRUE, deleted = FALSE)))), error = function(e) "error"), "\\n", sep = "")',
+    'cat("AGENDA=", tryCatch(identical(panorama_pagos_hoy(data.frame(ledger = "AP", status = "pending", Moneda = "MXN", Importe = 5, FechaVenc = Sys.Date() + 3), base = "MXN")$total, 5), error = function(e) "error"), "\\n", sep = "")',
     'cat("SAP=", tryCatch(startsWith(sap_al_texto(as.POSIXct("2026-11-16 14:54", tz = "UTC"), tz = UMBRAL_TZ, idioma = "es", ahora = as.POSIXct("2026-11-17 14:00", tz = "UTC")), "Datos de SAP al"), error = function(e) "error"), "\\n", sep = "")'
   ), f)
   rs <- file.path(R.home("bin"), "Rscript")
   out <- suppressWarnings(system2(rs, c("--vanilla", shQuote(f)), stdout = TRUE, stderr = TRUE))
   val <- function(k) sub(paste0("^", k, "="), "", grep(paste0("^", k, "="), out, value = TRUE)[1])
   list(carga = val("CARGA"), omision = val("OMISION"), normalizar = val("NORMALIZAR"), monto = val("MONTO"),
-       sap = val("SAP"), ident = val("IDENT"))
+       sap = val("SAP"), ident = val("IDENT"), agenda = val("AGENDA"))
 }
 
 r <- hijo()
@@ -63,6 +65,7 @@ ok("3: moneda_normalizar() exists if R/data_pipeline.R calls it", identical(r$no
 ok("4: monto_moneda() for the default base: \"1,234.50 MXN\" (the code always, no $)", identical(r$monto, "1,234.50 MXN"))
 ok("6: the IC filter's identity of the companies works in the job (T47)", identical(r$ident, "TRUE"))
 ok("5: sap_al_texto() works in the job: \"Datos de SAP al ...\"", identical(r$sap, "TRUE"))
+ok("7: panorama_datos.R's Agenda figures work in the job: agenda_pendientes() (R/agenda_filas.R, T60) is loaded", identical(r$agenda, "TRUE"))
 
 sin <- hijo(quitar = "R/monedas.R")
 ok("contraprueba: without R/monedas.R the emails have no default currency",
@@ -75,6 +78,9 @@ sin_ui <- hijo(quitar = "R/ui_components.R")
 # the amount still works and SAP's date does not.
 ok("contraprueba: without R/ui_components.R the emails cannot write SAP's date (the amount comes from R/monedas.R, T55)",
    identical(sin_ui$sap, "error") && identical(sin_ui$monto, "1,234.50 MXN"))
+
+sin_ag <- hijo(quitar = "R/agenda_filas.R")
+ok("contraprueba: without R/agenda_filas.R panorama_pagos_hoy() cannot read the Agenda's rows (T60)", identical(sin_ag$agenda, "error"))
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

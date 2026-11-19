@@ -42,13 +42,30 @@ PANORAMA_TIPOS_FEED <- c("com", "sol", "act", "ale")
 
 # ── Hoy ──────────────────────────────────────────────────────────────────────
 
-# Pagos de hoy: what the Agenda de Hoy holds to pay today, still pending.
+# Pagos de hoy: what the Agenda de Hoy holds to pay, still pending -- the twin
+# of the Agenda's own "↓ Pagos" (T60): its rows through agenda_pendientes()
+# (R/agenda_filas.R), ledger AP, Importe summed by currency with its sign,
+# whatever the due date (it used to keep FechaVenc <= today, so an item due
+# after today was in the Agenda and not here) and partial payments included.
+# The Hoy card, the Clima's "N pagos" and the Cinta read this. `hoy` is kept
+# for the callers; the breakdown below is what uses the day.
 panorama_pagos_hoy <- function(ph, hoy = Sys.Date(), base = MONEDA_BASE_OMISION) {
-  if (is.null(ph) || !is.data.frame(ph) || !nrow(ph)) return(.pan_por_moneda(character(), numeric(), base))
-  f <- ph[ph$ledger %in% "AP" & ph$status %in% "pending" &
-            (is.na(ph$tipo_item) | ph$tipo_item != "abono"), , drop = FALSE]
-  f <- f[!is.na(f$FechaVenc) & as.Date(f$FechaVenc) <= hoy, , drop = FALSE]
-  .pan_por_moneda(f$Moneda, abs(.pan_num(f$Importe)), base)
+  f <- agenda_pendientes(ph, "AP")
+  if (is.null(f) || !nrow(f)) return(.pan_por_moneda(character(), numeric(), base))
+  .pan_por_moneda(f$Moneda, .pan_num(f$Importe), base)
+}
+
+# Under the card (T60): of those same rows, the overdue ones (due before
+# `hoy`, the user's day) and the ones paid ahead (due after it), each by
+# currency, never added up across currencies.
+panorama_pagos_desglose <- function(ph, hoy, base = MONEDA_BASE_OMISION) {
+  vacio <- .pan_por_moneda(character(), numeric(), base)
+  f <- agenda_pendientes(ph, "AP")
+  if (is.null(f) || !nrow(f)) return(list(vencidos = vacio, anticipados = vacio))
+  venc <- as.Date(f$FechaVenc)
+  parte <- function(k) if (any(k)) .pan_por_moneda(f$Moneda[k], .pan_num(f$Importe[k]), base) else vacio
+  list(vencidos    = parte(!is.na(venc) & venc < hoy),
+       anticipados = parte(!is.na(venc) & venc > hoy))
 }
 
 # Cobros que vencen hoy: the Calendar's own CxC rows (df_combined_AR, same
