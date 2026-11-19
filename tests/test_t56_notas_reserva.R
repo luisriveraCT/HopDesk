@@ -28,10 +28,15 @@ sel_lista <- function(s) trimws(strsplit(s, ",", fixed = TRUE)[[1]])
 
 ok("the room is one variable, 56px (the engine's HDT_MARGEN_ABAJO)",
    grepl(":root\\s*\\{\\s*--hd-notas-reserva:\\s*56px;\\s*\\}", css))
-k <- which(grepl("padding-bottom:\\s*var\\(--hd-notas-reserva\\)", body))
-ok("exactly one rule gives that room, and it only sets padding-bottom",
-   length(k) == 1L && grepl("^\\s*padding-bottom:\\s*var\\(--hd-notas-reserva\\);\\s*$", body[k]))
+k <- which(grepl("var\\(--hd-notas-reserva\\)", body))
+# An empty block after the content, never padding: Bancos' and Intercompany's
+# boxes carry Bootstrap's p-0 (padding 0 !important), which erased it.
+ok("exactly one rule gives that room: an empty block of that height after the content (::after), no padding",
+   length(k) == 1L && grepl('^\\s*content:\\s*\\\\"\\\\";\\s*display:\\s*block;\\s*height:\\s*var\\(--hd-notas-reserva\\);\\s*$', body[k]) &&
+     !any(grepl("padding-bottom:\\s*var\\(--hd-notas-reserva\\)", body)))
 cajas <- if (length(k) == 1L) sel_lista(gsub("\\s+", " ", sel[k])) else character(0)
+ok("…every selector of that rule is an ::after", length(cajas) > 0L && all(grepl("::after$", cajas)))
+cajas <- sub("::after$", "", cajas)
 for (s in c(".ph-company-panel", ".hd-scroll-pestana",
             ".tab-pane > .overflow-auto:not(:has(.pan-cinta))"))
   ok(sprintf("the rule covers %s", s), s %in% cajas)
@@ -75,8 +80,8 @@ for (f in c("R/tiers_module.R", "R/empresas_module.R")) {
   ok(sprintf("%s: its scrolling box has class hd-scroll-pestana, inline scroll kept", f),
      grepl('class = "p-3 hd-scroll-pestana",[^\n]*\n\\s*style = "overflow-y: auto; max-height: calc\\(100vh - var\\(--hd-barra-alto\\) - 17px\\);"', x))
 }
-ok("no other rule styles .hd-scroll-pestana (nothing competes with the inline scroll)",
-   sum(grepl("hd-scroll-pestana", sel, fixed = TRUE)) == 1L)
+ok("no other rule styles .hd-scroll-pestana, and that one only its ::after (nothing competes with the inline scroll)",
+   sum(grepl("hd-scroll-pestana", sel, fixed = TRUE)) == 1L && ".hd-scroll-pestana::after" %in% sel_lista(gsub("\\s+", " ", sel[k])))
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

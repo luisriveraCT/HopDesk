@@ -533,12 +533,15 @@ app_styles <- function() {
        below a table (HDT_MARGEN_ABAJO, www/hdtable.js): change both together.
        Only a Panorama that shows its Cinta is left out: there the Cinta lifts
        the button (T49). Without it (nothing to show) Panorama gets the room
-       too: measured at 1293x632, its last card ended under the button. */
+       too: measured at 1293x632, its last card ended under the button.
+       The room is an empty block after the content, not padding: Bancos'
+       and Intercompany's boxes carry Bootstrap's p-0 (padding 0 !important),
+       which erased a padding-bottom (measured: Bancos' end stayed under it). */
     :root { --hd-notas-reserva: 56px; }
-    .tab-pane > .overflow-auto:not(:has(.pan-cinta)),
-    .ph-company-panel,
-    .hd-scroll-pestana {
-      padding-bottom: var(--hd-notas-reserva);
+    .tab-pane > .overflow-auto:not(:has(.pan-cinta))::after,
+    .ph-company-panel::after,
+    .hd-scroll-pestana::after {
+      content: \"\"; display: block; height: var(--hd-notas-reserva);
     }
     /* T56: on the Calendar the button lives in its header, next to the month
        (calendar_html(), R/global.R: .cal-notes-btn clicks #toggle_notes), and
