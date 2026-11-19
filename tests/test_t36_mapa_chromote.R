@@ -79,8 +79,9 @@ ok("2: USD edge to the plan", agregar_arista())
 plan <- texto("ic-icmap-payment_plan_ui")
 cat("  plan:", gsub("\\s+", " ", plan), "\n")
 b$screenshot(file.path(CAPT, "t36_plan_mixto.png"), show = FALSE)
-ok("2: the plan totals each currency apart: MXN 3,200 and USD 300",
-   grepl("Total\\s*MXN\u00a03,200", plan) && grepl("Total\\s*USD\u00a0300", plan))
+# [CAMBIA T55c] the plan's totals read "3,200 MXN": the code after the number.
+ok("2: the plan totals each currency apart: 3,200 MXN and 300 USD",
+   grepl("Total\\s*3,200 MXN", plan) && grepl("Total\\s*300 USD", plan))
 ok("2: never one total of 3,500", !grepl("3,500", plan))
 
 # ── 3. A USD client ──────────────────────────────────────────────────────────
