@@ -24,7 +24,7 @@ if (!nzchar(Sys.getenv("HOPDESK_TEST_USER")) || !nzchar(Sys.getenv("HOPDESK_TEST
   cat("SKIP: no test credentials in .Renviron.local\n"); quit(status = 0L)
 }
 source("tests/helpers/live_app_harness.R")
-PORT <- 39063L
+PORT <- httpuv::randomPort()   # never a fixed port: an earlier app still alive there would be the one tested
 FOTOS <- Sys.getenv("T59_FOTOS", "")
 repo <- normalizePath(".", winslash = "/")
 # A previous app still answering on this port would be the one tested: wait

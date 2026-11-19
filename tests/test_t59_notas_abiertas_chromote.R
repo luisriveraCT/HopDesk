@@ -27,7 +27,7 @@ if (!nzchar(Sys.getenv("HOPDESK_TEST_USER"))) {
   cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail)); quit(status = as.integer(.fail > 0L))
 }
 source("tests/helpers/live_app_harness.R")
-PORT <- 39064L
+PORT <- httpuv::randomPort()   # never a fixed port: an earlier app still alive there would be the one tested
 repo <- normalizePath(".", winslash = "/")
 # A previous app still answering on this port would be the one tested: wait
 # for the port to be free, and stop if it never is.
