@@ -531,9 +531,11 @@ app_styles <- function() {
        At rest nothing moves and no height is lost. 56px = 16 of margin + the
        button's ~27 + air; the same number as the table engine's own room
        below a table (HDT_MARGEN_ABAJO, www/hdtable.js): change both together.
-       Panorama is left out: its Cinta lifts the button there (T49). */
+       Only a Panorama that shows its Cinta is left out: there the Cinta lifts
+       the button (T49). Without it (nothing to show) Panorama gets the room
+       too: measured at 1293x632, its last card ended under the button. */
     :root { --hd-notas-reserva: 56px; }
-    .tab-pane > .overflow-auto:not(:has(.hd-panorama)),
+    .tab-pane > .overflow-auto:not(:has(.pan-cinta)),
     .calendar-container,
     .ph-company-panel,
     .hd-scroll-pestana {

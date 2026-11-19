@@ -32,10 +32,10 @@ ok("exactly one rule gives that room, and it only sets padding-bottom",
    length(k) == 1L && grepl("^\\s*padding-bottom:\\s*var\\(--hd-notas-reserva\\);\\s*$", body[k]))
 cajas <- if (length(k) == 1L) sel_lista(gsub("\\s+", " ", sel[k])) else character(0)
 for (s in c(".calendar-container", ".ph-company-panel", ".hd-scroll-pestana",
-            ".tab-pane > .overflow-auto:not(:has(.hd-panorama))"))
+            ".tab-pane > .overflow-auto:not(:has(.pan-cinta))"))
   ok(sprintf("the rule covers %s", s), s %in% cajas)
-ok("Panorama stays out (its Cinta lifts the button, T49)",
-   any(grepl(":not\\(:has\\(\\.hd-panorama\\)\\)", cajas)))
+ok("only a Panorama showing its Cinta stays out (the Cinta lifts the button, T49); without it Panorama gets the room",
+   any(grepl(":not\\(:has\\(\\.pan-cinta\\)\\)", cajas)) && !any(grepl("hd-panorama", cajas, fixed = TRUE)))
 ok("the button itself did not move (fixed, bottom 16px, left 16px)",
    grepl("\\.notes-toggle-bar \\{\\s*position: fixed;\\s*bottom: 16px; left: 16px;", ui))
 ok("the engine still reserves the same 56 px below a table",
