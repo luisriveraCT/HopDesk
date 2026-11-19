@@ -83,8 +83,15 @@ mock_s3saveRDS(corrupted, "hopdesk/erp_connections.rds", "mock-bucket")
 .chk_throws(function() load_erp_connections(client_id = "hopdesk"),
             "loading a corrupted file with a stray foreign-client row fails loudly")
 
-# Restore hopdesk's store to a clean state for any tests that run after this one
-save_erp_connections(.mk_row("hopdesk", label = "SAP — HD"), client_id = "hopdesk")
+# CM31: a save rereads the file strictly (with the isolation check) before
+# writing, so it refuses to write over the corrupted one too.
+.chk_throws(function() save_erp_connections(.mk_row("hopdesk", label = "SAP — HD"), client_id = "hopdesk"),
+            "saving over a corrupted file with a stray foreign-client row fails loudly too")
+
+# Restore hopdesk's store to a clean state for any tests that run after this
+# one -- planted the same way as the corruption (save_erp_connections()
+# rightly refuses to touch it).
+mock_s3saveRDS(.mk_row("hopdesk", label = "SAP — HD"), "hopdesk/erp_connections.rds", "mock-bucket")
 
 # ── E. Soft-deleted rows excluded from load ───────────────────────────────────
 
