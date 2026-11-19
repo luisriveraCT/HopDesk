@@ -33,7 +33,9 @@ extract <- function(file, names, env) {
 }
 env <- new.env()
 extract("R/persistence.R", c("load_interco_v2", ".migrate_interco_v1_to_v2", ".empty_interco_v2",
-                             ".company_map_from_empresas"), env)
+                             ".company_map_from_empresas",
+                             # CM32: the migration moved to its own function
+                             ".interco_v2_tiene_codigos", ".interco_v2_migrar"), env)
 extract("R/sap_api.R", c("fetch_all_companies", "sap_companies_available"), env)
 env$`%||%` <- `%||%`
 
@@ -41,6 +43,10 @@ env$`%||%` <- `%||%`
 saved <- NULL
 env$S3_KEYS        <- list(interco_v2 = "interco_v2.rds")
 env$.s3_read_with  <- function(key, client_id = NULL) NULL
+# CM32: the migration rereads v2 strictly (none yet: NULL) and, with no
+# client_id, migrates the deployment's own client -- named in CLIENT_ID.
+env$.s3_leer_para_escribir <- function(key, client_id) NULL
+Sys.setenv(CLIENT_ID = "networks")
 env$load_interco   <- function(client_id = NULL) list(ar_clients = c("C100"), ap_suppliers = c("P200"))
 env$save_interco_v2 <- function(registry, client_id = NULL) { saved <<- registry; invisible(registry) }
 own_empresas <- data.frame(initials = c("NRS", "NTS", "OLD"),

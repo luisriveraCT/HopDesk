@@ -220,7 +220,12 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
   # entry stays true whenever it's touched.
   KNOWN_FINE_HELPERS <- c(
     "save_manual", "save_papelera", "save_pagar_hoy", "save_grupos",
-    "load_interco_v2", ".save_provision_row", "fetch_all_companies",
+    ".save_provision_row", "fetch_all_companies",
+    # .interco_v2_migrar() (CM32, R/persistence.R): load_interco_v2()'s
+    # one-time v1 -> v2 migration, moved out of it (load_interco_v2 itself no
+    # longer writes and left this list) -- a system-side write with no user
+    # action behind it.
+    ".interco_v2_migrar",
     ".save_moves_deferred", ".sync_staged", ".pasivos_perform_conversion",
     "rename_empresa_initials",
     # .rni_avisar() (CM29, R/persistence.R): bumps the sync bus for each
