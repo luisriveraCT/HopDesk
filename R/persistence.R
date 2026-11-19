@@ -2661,7 +2661,11 @@ rename_empresa_initials <- function(old_ini, new_ini, client_id = NULL) {
         .rni_tabla("erp_connections", old_ini, new_ini)(df)
       })),
     requisiciones = function() {
-      if (!exists("REQ_KEYS") || !exists(".REQ_SCHEMAS")) return(invisible(NULL))
+      # Not loaded (a script, a load-order change): this step FAILS, like any
+      # other whose function is missing -- it used to return quietly and the
+      # rename completed with requisiciones still under the old initials (CM32).
+      if (!exists("REQ_KEYS") || !exists(".REQ_SCHEMAS"))
+        stop("R/requisiciones_persistence.R is not loaded (REQ_KEYS)", call. = FALSE)
       modificar_tabla_completa(REQ_KEYS$requisiciones, cid, .REQ_SCHEMAS$requisiciones,
                                marca(.rni_tabla("requisiciones", old_ini, new_ini)))
     }
