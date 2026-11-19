@@ -957,13 +957,37 @@ load_erp_connections <- function(client_id) {
   raw[is.na(raw$deleted) | raw$deleted != TRUE, , drop = FALSE]
 }
 
-save_erp_connections <- function(df, client_id) {
+# For a read-modify-write (CM31): the WHOLE table, rows in the trash
+# included, read strictly -- a failed read stop()s, it is never an empty
+# table; NULL from S3 (no file yet) is the empty schema.
+leer_erp_connections_para_escribir <- function(client_id) {
+  if (missing(client_id) || is.null(client_id) || !nzchar(client_id))
+    stop("leer_erp_connections_para_escribir: client_id is required and must be a non-empty string.",
+         call. = FALSE)
+  df <- .normalize(.s3_leer_para_escribir(S3_KEYS$erp_connections, client_id), .schema_erp_connections)
+  .assert_erp_connections_isolated(df, client_id, "read")
+  df
+}
+
+# `df` is the whole table, trash included (CM31). With `base` (the table the
+# caller started from), the session's changes are rebased by id over what
+# S3 holds now, so a row another session changed or sent to the trash since
+# is kept. Without `base`, a save that would leave S3 with fewer rows stops.
+save_erp_connections <- function(df, client_id, base = NULL) {
   if (missing(client_id) || is.null(client_id) || !nzchar(client_id))
     stop("save_erp_connections: client_id is required and must be a non-empty string — ",
          "this function must never guess whose folder to write.", call. = FALSE)
 
   norm <- .normalize(df, .schema_erp_connections)
   .assert_erp_connections_isolated(norm, client_id, "write")
+  fresco <- leer_erp_connections_para_escribir(client_id)   # stop()s on a failed read
+  if (!is.null(base)) {
+    norm <- rebase_por_id(norm, .normalize(base, .schema_erp_connections), fresco, "id")
+    .assert_erp_connections_isolated(norm, client_id, "write")
+  } else if (nrow(norm) < nrow(fresco)) {
+    stop(sprintf("save_erp_connections: refusing to write %d row(s) over %d -- the table never shrinks; nothing was saved",
+                 nrow(norm), nrow(fresco)), call. = FALSE)
+  }
   # CM29b: a form opened before a rename never leaves the company without its
   # ERP -- company_initials only; config and secrets are never touched.
   norm <- iniciales_vigentes(norm, "erp_connections", client_id)
