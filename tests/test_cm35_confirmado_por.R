@@ -49,6 +49,15 @@ r2 <- tryCatch(recover_confirmacion(pre_cm35, "c1", actor = "ana"), error = func
 ok("2 a table read before CM35 (no such columns) is recovered too, with the actor",
    is.data.frame(r2) && identical(r2$eliminado_por[r2$confirmacion_id == "c1"], "ana"))
 
+# ── 2b. No invented author (integrator's condition) ────────────────────────
+ok("2b autor_registrable(): a real user stays; empty, NULL, anon, unknown, user, system are NA",
+   identical(autor_registrable("ana"), "ana") && identical(autor_registrable(" ana "), "ana") &&
+     all(is.na(vapply(list(NULL, NA, "", "  ", "anon", "unknown", "User", "system"),
+                      autor_registrable, character(1)))))
+r3 <- recover_confirmacion(n, "c1")   # the default actor is "user": not a real one
+ok("2b a recovery with the fallback actor stores NA, not \"user\"",
+   is.na(r3$eliminado_por[r3$confirmacion_id == "c1"]) && is.na(r3$confirmado_por[r3$action %in% "recovered"]))
+
 # ── 3. Every site that confirms or undoes says who ───────────────────────
 codigo <- function(f) { x <- readLines(f, warn = FALSE, encoding = "UTF-8"); x[grepl("^\\s*#", x)] <- ""; x }
 # Soft-deletes of a CONFIRMATION (conf / c), not of a bank movement (movs).

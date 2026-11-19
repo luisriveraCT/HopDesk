@@ -1024,7 +1024,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       idx_c <- which(c$confirmacion_id %in% ids_c)
       c$eliminado[idx_c]    <- TRUE
       c$eliminado_at[idx_c] <- now
-      c$eliminado_por[idx_c] <- as.character(user %||% NA_character_)   # CM35
+      c$eliminado_por[idx_c] <- autor_registrable(user)   # CM35
       mov_ids <<- c$mov_id[idx_c][!is.na(c$mov_id[idx_c]) & nzchar(c$mov_id[idx_c])]
       c
     }), error = function(e) {

@@ -2403,7 +2403,7 @@ bancosServer <- function(id, shared) {
       if (!"eliminado_por" %in% names(conf)) conf$eliminado_por <- NA_character_   # read before CM35
       conf$eliminado[idx_c]    <- TRUE
       conf$eliminado_at[idx_c] <- Sys.time()
-      conf$eliminado_por[idx_c] <- tryCatch(shared$current_user(), error = function(e) NA_character_)   # CM35
+      conf$eliminado_por[idx_c] <- autor_registrable(tryCatch(shared$current_user(), error = function(e) NULL))   # CM35
 
       if (!is.null(mov_id_linked) && !is.na(mov_id_linked) && nzchar(mov_id_linked)) {
         movs <- movs_all()

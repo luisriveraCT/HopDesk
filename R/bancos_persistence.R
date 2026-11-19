@@ -216,6 +216,16 @@ enlazar_archivo_confirmaciones <- function(client_id, enlaces) {
 # walking the chain instead of relying on a single mutable flag. Display
 # fields (empresa/parte/documento/importe/moneda/tipo/provision_id) are
 # copied from the original row for a self-contained recovery record.
+# CM35: the user stored in confirmado_por / eliminado_por -- the login user
+# (shared$current_user()), the same identifier requisiciones_historial.por,
+# pagar_hoy.staged_by and pasivos_audit.user hold. A fallback that is no real
+# user (empty, "anon", "unknown", "user", "system") is stored as NA, like a
+# row written before CM35: an author is never invented.
+autor_registrable <- function(x) {
+  x <- if (is.null(x) || !length(x)) NA_character_ else trimws(as.character(x[[1]]))
+  if (is.na(x) || !nzchar(x) || tolower(x) %in% c("anon", "unknown", "user", "system")) NA_character_ else x
+}
+
 recover_confirmacion <- function(conf_db, confirmacion_id, actor = "user") {
   idx <- which(conf_db[["confirmacion_id"]] == confirmacion_id)
   if (!length(idx)) {
@@ -233,7 +243,7 @@ recover_confirmacion <- function(conf_db, confirmacion_id, actor = "user") {
     if (!col %in% names(conf_db)) conf_db[[col]] <- NA_character_
   conf_db[["eliminado"]][idx]    <- TRUE
   conf_db[["eliminado_at"]][idx] <- now
-  conf_db[["eliminado_por"]][idx] <- as.character(actor)   # CM35: `actor` was never stored
+  conf_db[["eliminado_por"]][idx] <- autor_registrable(actor)   # CM35: `actor` was never stored
 
   original <- conf_db[idx, , drop = FALSE]
   recovery_row <- original
@@ -244,7 +254,7 @@ recover_confirmacion <- function(conf_db, confirmacion_id, actor = "user") {
   recovery_row[["eliminado"]]                 <- FALSE
   recovery_row[["eliminado_at"]]               <- as.POSIXct(NA)
   recovery_row[["eliminado_por"]]             <- NA_character_
-  recovery_row[["confirmado_por"]]            <- as.character(actor)
+  recovery_row[["confirmado_por"]]            <- autor_registrable(actor)
 
   dplyr::bind_rows(conf_db, recovery_row)
 }
