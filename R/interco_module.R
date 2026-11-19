@@ -334,8 +334,7 @@ intercoServer <- function(id, shared) {
           dplyr::group_by(Moneda) |>
           dplyr::summarise(T = sum(.data[[amt_col]], na.rm = TRUE), .groups = "drop") |>
           dplyr::arrange(Moneda) |>
-          dplyr::mutate(lbl = sprintf("%s\u00a0%s", Moneda,
-                                      format(round(T), big.mark = ",", scientific = FALSE))) |>
+          dplyr::mutate(lbl = monto_moneda(T, Moneda, decimales = 0L)) |>   # "1,234 MXN" (T55c)
           dplyr::pull(lbl) |>
           paste(collapse = " \u00b7 ")
       }

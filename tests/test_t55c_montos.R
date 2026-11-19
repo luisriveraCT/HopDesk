@@ -73,5 +73,21 @@ ok("…and its PDF block the same", grepl("1,284.50 USD", pdf, fixed = TRUE) && 
 ok("no formatC() left formatting an amount in either viewer",
    !grepl("formatC(", leer("R/audit_log_viewer_module.R"), fixed = TRUE) && !grepl("formatC(", leer("R/pagos_audit_viewer_module.R"), fixed = TRUE))
 
+cat("\n-- 4. the IC Map and Intercompañía --\n")
+for (e in parse("R/treasury_map_module.R", keep.source = FALSE, encoding = "UTF-8"))
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(e[[2]], as.name(".tm_fmt"))) eval(e, globalenv())
+ok("the IC Map's amounts: the code after the number, whole units, the arrow gives the direction (was \"MXN 1,234\")",
+   identical(.tm_fmt(-1234.4, "MXN"), "1,234 MXN") && identical(.tm_fmt(2500000, "USD"), "2,500,000 USD") &&
+     identical(.tm_fmt(NA, "MXN"), intToUtf8(0x2014L)))
+tm <- leer("R/treasury_map_module.R"); ic <- leer("R/interco_module.R")
+ok("the map's arrows: the engine's compact format (\"350K\", \"1.5M\"), never \"1,500K\"; a one-currency plan the number alone",
+   grepl("lbl <- .hd_dinero_compacto(r$Total)", tm, fixed = TRUE) &&
+     grepl("monto_moneda(x$Importe, x$Moneda, decimales = 0L, codigo = FALSE)", tm, fixed = TRUE) &&
+     !grepl("big.mark", tm, fixed = TRUE))
+ok("Intercompañía's totals per currency: \"1,234 MXN\", the code after",
+   grepl("dplyr::mutate(lbl = monto_moneda(T, Moneda, decimales = 0L))", ic, fixed = TRUE) && !grepl("big.mark", ic, fixed = TRUE) &&
+     identical(monto_moneda(c(1234.4, 99.6), c("MXN", "USD"), decimales = 0L), c("1,234 MXN", "100 USD")))
+ok("both files parse", parsea("R/treasury_map_module.R") && parsea("R/interco_module.R"))
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

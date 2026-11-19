@@ -112,7 +112,7 @@
 
 .tm_fmt <- function(x, cur) {
   if (is.na(x)) return("\u2014")
-  paste0(cur, "\u00a0", format(round(abs(x)), big.mark = ",", scientific = FALSE))
+  monto_moneda(abs(x), cur, decimales = 0L)   # "1,234 MXN": the code after (T55c); the arrow gives the direction
 }
 
 # The payment plan's total per currency, in the order the currencies first
@@ -528,7 +528,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
         max_t <- max(esum$Total, na.rm = TRUE)
         edges <- do.call(rbind, lapply(seq_len(nrow(esum)), function(i) {
           r   <- esum[i, ]
-          lbl <- paste0(format(round(r$Total / 1000), big.mark = ",", scientific = FALSE), "K")
+          lbl <- .hd_dinero_compacto(r$Total)   # "350K", "1.5M" (T55c); the tooltip names the currency
           data.frame(
             id    = i,
             from  = r$from_ini, to = r$to_ini,
@@ -877,7 +877,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
             tags$span(paste0(x$from_ini, " \u2192 ", x$to_ini, " \u00b7 ", x$Documento)),
             tags$span(class = "tm-plan-amt",
                       if (varias) .tm_fmt(x$Importe, x$Moneda)
-                      else format(round(x$Importe), big.mark = ",", scientific = FALSE))
+                      else monto_moneda(x$Importe, x$Moneda, decimales = 0L, codigo = FALSE))
           )
         })),
         tagList(lapply(names(totales), function(m)
