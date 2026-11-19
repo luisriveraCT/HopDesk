@@ -117,10 +117,10 @@ ok("read-with-empty-fallback sites did not go up", n <= .TRINQUETE)
 # ── 5. Whole-copy saves pass `base` (no lost update between sessions) ─────────
 # A save of a table built from a copy (the session's, or a read that may have
 # failed) passes the copy it started from, so only this action's rows are
-# applied on S3 as it is now. Known exceptions, counted so a new one shows up:
-#   - pagar_hoy_module.R: the integrator's file, under T06; quitar/confirmar
-#     (A2's resilience) and "Vaciar agenda" (empties on purpose);
+# applied on S3 as it is now. Known exceptions:
 #   - the purge (permitir_reduccion) and persistence.R's own helpers.
+# (The Agenda's confirmar x2 and "Vaciar agenda" in pagar_hoy_module.R were
+# the last ones; CM33 converted them and the ratchet is 0.)
 sin_base <- function(fn, excluir = character()) {
   unlist(lapply(setdiff(archivos, c("R/persistence.R", "R/bancos_persistence.R",
                                     "R/pasivos_persistence.R", excluir)), function(f) {
@@ -142,9 +142,12 @@ agenda <- function(excluir) c(sin_base("save_pagar_hoy", excluir), sin_base("sav
 m <- agenda("R/pagar_hoy_module.R")
 for (s in m) message("  without base: ", s)
 ok("save_pagar_hoy*(): every Agenda save outside pagar_hoy_module.R passes base", !length(m))
-n_ph <- length(agenda(setdiff(archivos, "R/pagar_hoy_module.R")))
-ok(sprintf("pagar_hoy_module.R: %d Agenda saves still without base (ratchet 3: confirmar x2, Vaciar) -- lower when they convert", n_ph),
-   n_ph <= 3L)
+# Ratchet at 0 since CM33: confirmar (AP and AR) and "Vaciar agenda" pass the
+# Agenda they read as `base`, like quitar. No Agenda save without it is left.
+m <- agenda(setdiff(archivos, "R/pagar_hoy_module.R"))
+for (s in m) message("  without base: ", s)
+ok(sprintf("pagar_hoy_module.R: every Agenda save passes base (ratchet 0 since CM33; found %d)", length(m)),
+   !length(m))
 m <- sin_base("save_manual", setdiff(archivos, "R/pagar_hoy_module.R"))
 for (s in m) message("  without base: ", s)
 ok("pagar_hoy_module.R: every save_manual() passes base", !length(m))
