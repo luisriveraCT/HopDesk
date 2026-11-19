@@ -15,6 +15,7 @@ que se aplica, vive en `coordinacion/propiedad.tsv`.
 | D | Correos, proceso programado, archivo y compresión | `feat/d*` |
 | E | Requisiciones | `feat/e*`, `requisiciones/*` |
 | T | Sistema de Tablas (motor `hd_table`) | `tablas/*` |
+| TEMA | Motor de temas (DISEÑADOR y DISEÑADOR 2) | `tema/*` |
 | compartido | Cualquiera, con su prefijo de claves | — |
 
 Un archivo que no está en el mapa es libre.

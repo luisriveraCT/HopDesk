@@ -19,6 +19,7 @@ frente_de_rama() {
     feat/d*)                      echo "D" ;;
     feat/e*|requisiciones/*)      echo "E" ;;
     tablas/*)                     echo "T" ;;
+    tema/*)                       echo "TEMA" ;;   # DISEÑADOR (motor de temas)
     *)                            echo "libre" ;;
   esac
 }

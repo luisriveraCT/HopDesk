@@ -1,7 +1,7 @@
 # Mapa de propiedad de archivos. Lo leen .githooks/pre-commit y el CI
 # (scripts/verificar_propiedad.sh). Formato: patrón<TAB>dueño
 # Patrones: glob de bash contra la ruta relativa al repo.
-# Dueños: integrador | B | C | D | E | T | compartido
+# Dueños: integrador | B | C | D | E | T | TEMA | compartido
 # Lo que no aparece aquí es libre (cualquier rama lo puede tocar).
 app.R	integrador
 R/auth.R	integrador
@@ -44,3 +44,8 @@ R/requisiciones_*.R	E
 R/adjuntos_s3.R	E
 www/requisiciones*	E
 R/fx_tipos.R	integrador
+R/tema_registro.R	TEMA
+www/hd_temas.css	TEMA
+www/hd_tema_bootstrap.css	TEMA
+scripts/generar_temas_css.R	TEMA
+tests/test_temas_guardian.R	TEMA
