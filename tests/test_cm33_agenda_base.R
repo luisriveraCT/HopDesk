@@ -150,6 +150,7 @@ for (ledger in c("AP", "AR")) {
   assign(KEY, .normalize(dplyr::bind_rows(agenda_s3(), fila("B9", "D7", ledger, emp = "Otra")), .schema_pagar_hoy), envir = .mem)
   OTRA <- NULL
   safe_load_pagar_hoy <- function(...) stop("simulated read failure")
+  n <- .mem_escrituras
   correr("confirmar", ag, ledger)
   safe_load_pagar_hoy <- function(...) {
     x <- safe_load_real(...)
@@ -157,7 +158,11 @@ for (ledger in c("AP", "AR")) {
     x
   }
   ok(sprintf("%s 3 the Agenda read fails: B9 (in S3, not in this session's copy) is not lost", ledger),
-     "B9" %in% ids_s3() && !"X1" %in% ids_s3())
+     "B9" %in% ids_s3())
+  ok(sprintf("%s 3 …and nothing is written anywhere: X1 stays in the Agenda and is NOT closed in bancos_confirmados, no success logged", ledger),
+     identical(.mem_escrituras, n) && identical(ids_s3(), c("B9", "X1", "Y1")) &&
+       !"X1" %in% confirmadas() && !exito_confirmar() &&
+       any(grepl(tr("comun.reintentar"), AVISOS, fixed = TRUE)))
 
   # ── 4. The Agenda write fails: no success is announced ──────────────────
   ag <- sembrar(ledger)
