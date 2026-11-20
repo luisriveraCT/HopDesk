@@ -168,6 +168,14 @@ clic(sprintf("document.querySelector('#%s .hdt-confirmar-no')", A))
 ok("E8: Cancelar in the bar saves nothing", length(guardados()) == k)
 clic(boton("e-tst", "desactivar"))
 otra_sesion()   # positions shift while the confirmation is up
+# The engine closes the bar when the visible rows change (hdtable.js,
+# pedirConfirmacion): nothing confirmed on rows that moved. Before CM38b this
+# was never exercised here: after E7's save the module read its own copy
+# (.empresas_local) and ignored the other session, so the rows did not move.
+ok("E8: another session changes the rows while the bar is up: the bar closes and nothing is saved",
+   llega(function() isTRUE(ev(sprintf("document.querySelector('#%s .hdt-confirmar').hidden", A)))) &&
+     length(guardados()) == k && "e-new" %in% vis())
+clic(boton("e-tst", "desactivar"))   # asked again, over the rows as they are now
 si()
 ok("E8: Confirmar deactivates TEST (soft delete), and only TEST",
    identical(guardado_de("e-tst"), "TEST:TEST EMPRESA SA:FALSE:TRUE") &&
