@@ -15,7 +15,7 @@
 library(testthat)
 suppressPackageStartupMessages({ library(shiny) })
 `%||%` <- function(a, b) if (!is.null(a) && !all(is.na(a))) a else b
-for (f in c("R/i18n.R", "R/ui_components.R")) suppressMessages(source(f))
+for (f in c("R/i18n.R", "R/monedas.R", "R/ui_components.R")) suppressMessages(source(f))
 html <- function(x) paste(as.character(x), collapse = "")
 
 test_that("el campo es de texto, con el mismo id y sin flechas", {

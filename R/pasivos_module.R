@@ -133,9 +133,6 @@ pasivos_provision_de_borrado <- function(prov, client_id) {
   # never show anywhere and the provision would stay "converted". Both
   # buttons show res$msg and keep the modal open.
   if (!fecha_valida(input$pcm_fecha)) return(list(ok = FALSE, msg = tr("comun.aviso.fecha_requerida")))
-  # T66: the number field no longer stops a negative in the browser.
-  if (isTRUE(as.numeric(input$pcm_importe %||% NA_real_) < 0))
-    return(list(ok = FALSE, msg = tr("tablas.pasivos.manual.importe_negativo")))
   provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
   if (is.null(provs)) return(list(ok = FALSE, msg = "No se pudo cargar la tabla de provisiones."))
 
@@ -146,6 +143,9 @@ pasivos_provision_de_borrado <- function(prov, client_id) {
   borrado <- pasivos_provision_de_borrado(prov, shared$effective_client_id())
   if (!isFALSE(borrado))                              # deleted, or could not check
     return(list(ok = FALSE, msg = .pasivos_aviso_borrado(borrado)))
+  # T66: the number field no longer stops a negative in the browser.
+  if (isTRUE(as.numeric(input$pcm_importe %||% NA_real_) < 0))
+    return(list(ok = FALSE, msg = tr("tablas.pasivos.manual.importe_negativo")))
 
   # 1. Create manual_inv row
   new_manual_id <- uuid::UUIDgenerate()

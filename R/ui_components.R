@@ -1676,8 +1676,8 @@ hd_numero_texto <- function(x, formato, decimales = NULL) {
   x <- suppressWarnings(as.numeric(x))
   if (!length(x) || is.na(x[1]) || !is.finite(x[1])) return("")
   x <- x[1]
-  if (identical(formato, "monto"))
-    return(formatC(round(x, d), format = "f", digits = d, big.mark = ","))
+  if (identical(formato, "monto"))   # monto_moneda() (R/monedas.R), with the minus a person types
+    return(sub("−", "-", monto_moneda(x, NA_character_, decimales = d, codigo = FALSE), fixed = TRUE))
   formatC(x, format = "f", digits = max(d, 0L), drop0trailing = TRUE)
 }
 

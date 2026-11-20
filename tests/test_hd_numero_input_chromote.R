@@ -33,7 +33,7 @@ APP <- sprintf('
 setwd(%s)
 library(shiny)
 `%%||%%` <- function(a, b) if (!is.null(a) && !all(is.na(a))) a else b
-for (f in c("R/i18n.R", "R/ui_components.R")) suppressMessages(source(f))
+for (f in c("R/i18n.R", "R/monedas.R", "R/ui_components.R")) suppressMessages(source(f))
 txt <- function(x) if (is.null(x)) "NULL" else if (length(x) != 1L || is.na(x)) "NA" else format(x, digits = 15)
 ui <- fluidPage(
   div(style = "height:250px;"),

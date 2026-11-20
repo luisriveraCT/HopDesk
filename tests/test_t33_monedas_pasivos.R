@@ -85,6 +85,7 @@ cargar("R/global.R", c("fmt_money"))
 cargar("R/pasivos_observers.R", "isTRUE_safe")
 cargar("R/pasivos_capabilities.R", c("PASIVOS_CAPABILITIES", "pasivos_autoriza"))
 for (f in c(F_TMOD, "R/pasivos_list_module.R")) suppressMessages(source(f))
+source("tests/helpers/hd_numero.R")   # T66: hd_numero_input()
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 has_capability <- function(user, cap, empresa = NULL) TRUE
 permiso_nombre <- function(p) p
