@@ -755,12 +755,17 @@ pasivos_step_ui_cargos <- function(draft, cargos_list = list(),
 pasivos_step_ui_revision <- function(draft, errors = list()) {
   shiny::tagList(
     .wiz_error_box(errors),
+    # T63: the summary, then the schedule at the modal's full width: at
+    # 1293 px, side by side, the table ended after "Interés" and each
+    # payment's taxes and total to pay needed a horizontal scroll.
     shiny::fluidRow(
-      shiny::column(6,
+      shiny::column(12,
         shiny::tags$h6("Resumen"),
         shiny::uiOutput("pwiz_revision_summary")
-      ),
-      shiny::column(6,
+      )
+    ),
+    shiny::fluidRow(
+      shiny::column(12, class = "mt-2",
         shiny::tags$h6(
           if (identical(draft$categoria, "financiero"))
             "Amortización (próximas cuotas)"
@@ -882,23 +887,25 @@ pasivos_impuesto_row_ui <- function(i, imp = list(), financiero = FALSE) {
   etiqueta <- function(k) if (i == 1L) tr(k) else NULL
   shiny::div(
     class = "d-flex gap-2 align-items-end mb-2", id = paste0("pwiz_imp_row_", i),
-    shiny::div(class = "flex-grow-1",
+    # T63: every input takes its box's width (Shiny's default 300 px pushed
+    # the remove button out of the modal at 1293 px).
+    shiny::div(style = "flex:1 1 0; min-width:0;",
       shiny::textInput(paste0("pwiz_imp_nombre_", i), etiqueta("tablas.pasivos.impuestos.nombre"),
-                       value = imp$nombre %||% "", placeholder = "IVA")),
-    shiny::div(style = "width:150px;",
-      shiny::selectInput(paste0("pwiz_imp_tipo_", i), etiqueta("tablas.pasivos.impuestos.tipo"),
+                       value = imp$nombre %||% "", placeholder = "IVA", width = "100%")),
+    shiny::div(style = "width:140px; flex:none;",
+      shiny::selectInput(paste0("pwiz_imp_tipo_", i), etiqueta("tablas.pasivos.impuestos.tipo"), width = "100%",
         choices = stats::setNames(c("porcentual", "fijo"),
                                   c(tr("tablas.pasivos.impuestos.porcentual"), tr("tablas.pasivos.impuestos.fijo"))),
         selected = imp$tipo %||% "porcentual")),
-    shiny::div(style = "width:120px;",
+    shiny::div(style = "width:100px; flex:none;",
       shiny::numericInput(paste0("pwiz_imp_valor_", i), etiqueta("tablas.pasivos.impuestos.valor"),
-                          value = imp$valor %||% NA_real_, min = 0)),
-    if (isTRUE(financiero)) shiny::div(style = "width:170px;",
-      shiny::selectInput(paste0("pwiz_imp_base_", i), etiqueta("tablas.pasivos.impuestos.base"),
+                          value = imp$valor %||% NA_real_, min = 0, width = "100%")),
+    if (isTRUE(financiero)) shiny::div(style = "width:160px; flex:none;",
+      shiny::selectInput(paste0("pwiz_imp_base_", i), etiqueta("tablas.pasivos.impuestos.base"), width = "100%",
         choices = stats::setNames(c("pago", "intereses"),
                                   c(tr("tablas.pasivos.impuestos.base_pago"), tr("tablas.pasivos.impuestos.base_intereses"))),
         selected = imp$base %||% "pago")),
-    shiny::div(style = if (i == 1L) "padding-top:24px;" else NULL,
+    shiny::div(style = paste0("flex:none;", if (i == 1L) " padding-top:24px;" else ""),
       shiny::actionButton(paste0("pwiz_imp_rm_", i), "\u00d7", class = "btn btn-outline-danger btn-sm"))
   )
 }

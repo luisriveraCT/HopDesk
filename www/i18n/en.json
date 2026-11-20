@@ -1215,6 +1215,8 @@
   "tablas.pasivos.impuestos.falta_nombre": "Tax {n}: write its name (for example, VAT).",
   "tablas.pasivos.impuestos.valor_invalido": "Tax {n}: the value must be 0 or more (a percentage, up to 100).",
   "tablas.pasivos.impuestos.resumen": "Taxes",
+  "tablas.pasivos.impuestos.total_plazo": "Taxes over the whole term",
+  "tablas.pasivos.impuestos.por_pago": "Taxes on each payment",
   "tablas.pasivos.amort.impuestos": "Taxes",
   "tablas.pasivos.amort.total_pago": "Total to pay",
   "tablas.pasivos.amort.monto": "Amount",

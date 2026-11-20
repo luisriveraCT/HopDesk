@@ -686,6 +686,17 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
                   tr(if (identical(t$base, "intereses")) "tablas.pasivos.impuestos.base_intereses"
                      else "tablas.pasivos.impuestos.base_pago"))
     }, character(1)), collapse = " \u00b7 "))))
+  # T63: what the taxes add up to over the whole term (loans) or on each
+  # payment (regular and tarjeta), by currency, never added across currencies.
+  if (length(imps)) {
+    fin <- identical(cat, "financiero")
+    v <- tryCatch(if (fin) pasivos_vista_amortizacion(draft) else pasivos_vista_provisiones(draft), error = function(e) NULL)
+    if (!is.null(v) && nrow(v)) {
+      t <- tapply(v$impuestos, v$moneda, if (fin) sum else function(x) x[1])
+      rows <- c(rows, list(c(tr(if (fin) "tablas.pasivos.impuestos.total_plazo" else "tablas.pasivos.impuestos.por_pago"),
+                             paste(monto_moneda(as.numeric(t), names(t)), collapse = " \u00b7 "))))
+    }
+  }
 
   shiny::tags$dl(
     class = "row small mb-0",

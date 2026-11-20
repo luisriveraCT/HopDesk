@@ -1215,6 +1215,8 @@
   "tablas.pasivos.impuestos.falta_nombre": "Impuesto {n}: escribe su nombre (por ejemplo, IVA).",
   "tablas.pasivos.impuestos.valor_invalido": "Impuesto {n}: el valor debe ser 0 o mayor (un porcentaje, hasta 100).",
   "tablas.pasivos.impuestos.resumen": "Impuestos",
+  "tablas.pasivos.impuestos.total_plazo": "Impuestos en todo el plazo",
+  "tablas.pasivos.impuestos.por_pago": "Impuestos de cada pago",
   "tablas.pasivos.amort.impuestos": "Impuestos",
   "tablas.pasivos.amort.total_pago": "Total a pagar",
   "tablas.pasivos.amort.monto": "Monto",
