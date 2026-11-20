@@ -73,7 +73,8 @@ ESPERADO_MARCA <- list(
 # Under Clásico the bridge must not reach the sample: flatly as compiled
 # (hd_bs_theme(): primary #0A58CA, warning #f39c12).
 ESPERADO_CLASICO <- list(btn_bg = "rgb(10, 88, 202)", warn_bg = "rgb(243, 156, 18)", check_bg = "rgb(10, 88, 202)",
-                         badge_bg = "rgb(10, 88, 202)")
+                         badge_bg = "rgb(10, 88, 202)",
+                         focus_border = "rgb(133, 172, 229)")   # flatly's #85ace5: proves the input is focused
 
 ev <- function(js) {
   r <- b$Runtime$evaluate(js, returnByValue = TRUE)
@@ -124,7 +125,7 @@ MUESTRA_JS <- "(function(){
 })()"
 LEER_MUESTRA_JS <- "(function(){
   function cs(id){ return getComputedStyle(document.getElementById(id)); }
-  var i = document.getElementById('m-input'); i.focus();
+  var i = document.getElementById('m-input');   // focused by ENFOCAR_JS, a beat before
   var r = {
     tema: document.documentElement.getAttribute('data-hd-tema'),
     bs_primary: getComputedStyle(document.documentElement).getPropertyValue('--bs-primary').trim().toUpperCase(),
@@ -139,9 +140,18 @@ LEER_MUESTRA_JS <- "(function(){
     badge_bg: cs('m-badge').backgroundColor,
     h4_font: cs('m-h4').fontFamily,
     alert_bg: cs('m-alert').backgroundColor, alert_color: cs('m-alert').color };
-  i.blur();
   return JSON.stringify(r);
 })()"
+# .form-control animates border and shadow (0.15 s): read a focused input only
+# after its transition, never in the same call that focuses it (2026-11-20:
+# read at once, it still showed the unfocused border and no shadow).
+ENFOCAR_JS <- "document.getElementById('m-input').focus(); true"
+leer_muestra <- function() {
+  ev(ENFOCAR_JS); Sys.sleep(0.6)
+  r <- jsonlite::fromJSON(ev(LEER_MUESTRA_JS))
+  ev("document.getElementById('m-input').blur(); true")
+  r
+}
 pon_tema <- function(t) ev(sprintf("document.documentElement.setAttribute('data-hd-tema', '%s'); true", t))
 
 captura <- function(nombre) tryCatch({
@@ -187,13 +197,13 @@ for (quien in quienes) {
   # The sample under Clásico, then under Marca.
   ev(MUESTRA_JS)
   pon_tema("clasico"); Sys.sleep(0.5)
-  cl <- jsonlite::fromJSON(ev(LEER_MUESTRA_JS))
+  cl <- leer_muestra()
   for (k in names(ESPERADO_CLASICO))
     ok(sprintf("[%s · clasico] %s = %s (flatly; the bridge does not reach it)", quien, k, cl[[k]]),
        identical(cl[[k]], ESPERADO_CLASICO[[k]]))
   ok(sprintf("[%s · clasico] h4 keeps Lato (%s)", quien, substr(cl$h4_font, 1, 30)), grepl("^\"?Lato", cl$h4_font))
   pon_tema("marca"); Sys.sleep(0.5)
-  ma <- jsonlite::fromJSON(ev(LEER_MUESTRA_JS))
+  ma <- leer_muestra()
   ok(sprintf("[%s · marca] the attribute took", quien), identical(ma$tema, "marca"))
   for (k in names(ESPERADO_MARCA))
     ok(sprintf("[%s · marca] %s = %s (expected %s)", quien, k, ma[[k]], ESPERADO_MARCA[[k]]),
