@@ -78,7 +78,10 @@ tryCatch({
   clima <- ev("(function(){ var c = document.querySelector('.tab-pane.active .pan-clima'); return c ? c.textContent : ''; })()")
   ok("Clima: '12 pagos' (the Agenda's 12 pending AP rows)", grepl("12 pagos", clima, fixed = TRUE))
   cinta <- ev("(function(){ var c = document.querySelector('.tab-pane.active .pan-cinta'); return c ? c.textContent : ''; })()")
-  m <- regmatches(cinta, regexpr("Programado para pagar [^·]*", cinta))
+  # The Cinta repeats its track (the scrolling ribbon): only the first
+  # "Programado para pagar <amount CODE>[, <amount CODE>]".
+  m <- regmatches(cinta, regexpr("Programado para pagar [0-9][0-9,.]* [A-Z]{3}(, [0-9][0-9,.]* [A-Z]{3})?", cinta))
+  cat(" Cinta:", substr(gsub("\\s+", " ", cinta), 1, 300), "\n")
   ok("Cinta 'Programado para pagar …' = the Agenda's figures", length(m) == 1L && mismo(montos(m), ag[names(montos(m))]) &&
        length(montos(m)) == 2L)
   if (nzchar(Sys.getenv("T60_FOTO"))) writeBin(jsonlite::base64_dec(b$Page$captureScreenshot(format = "png")$data), Sys.getenv("T60_FOTO"))
