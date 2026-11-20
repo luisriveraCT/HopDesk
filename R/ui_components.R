@@ -1636,3 +1636,95 @@ barra_menu_ui <- function() {
     "))
   )
 }
+
+# ── hd_numero_input(): a number field with no spinner and no wheel (T66) ──────
+# Luis scrolled down over "Sobretasa (bps)" and the number changed: a
+# <input type="number"> takes the mouse wheel and the arrow keys. This is a
+# text field (inputmode="decimal", the phone shows the number pad) that:
+#   - never changes with the wheel or the arrow keys (the page scrolls);
+#   - takes "608,763.35" or "608763.35" (the comma only as a well-placed
+#     thousands separator: "1,5" is not a number);
+#   - sends the server a NUMBER, or NA when empty or not a number, never text,
+#     under the same inputId (type "shiny.number", as numericInput does), and
+#     only when the field is left or on Enter, never on every key; the same
+#     number is never sent twice;
+#   - formato (required): "monto" (thousands separator when the field is left,
+#     rounded to `decimales`, 2 by default: what is shown is what is sent),
+#     "tasa" (bps, %: no separator, no padding zeros, 4 decimals by default)
+#     or "entero" (no decimals). More decimals than a tasa or entero takes
+#     make it NA.
+# min, max and step are NOT enforced in the browser (numericInput only marked
+# the field): the server validates the range, module by module.
+# JS that reads one of these fields uses hdNumero.valor(el), never parseFloat
+# on its text ("1,234" would be 1). www/hd_numero.js.
+HD_NUMERO_FORMATOS <- c(monto = 2L, tasa = 4L, entero = 0L)
+
+.hd_numero_decimales <- function(formato, decimales = NULL) {
+  if (!is.character(formato) || length(formato) != 1L || !formato %in% names(HD_NUMERO_FORMATOS))
+    stop("hd_numero_input(): formato must be one of ", paste(names(HD_NUMERO_FORMATOS), collapse = ", "), call. = FALSE)
+  if (identical(formato, "entero")) return(0L)
+  if (is.null(decimales)) return(HD_NUMERO_FORMATOS[[formato]])
+  d <- suppressWarnings(as.integer(decimales))
+  if (length(d) != 1L || is.na(d) || d < 0L || d > 10L) stop("hd_numero_input(): decimales must be 0..10", call. = FALSE)
+  d
+}
+
+# The text a value shows: a monto with its thousands separator and exactly
+# `decimales`; a tasa or entero with no separator and no padding zeros.
+hd_numero_texto <- function(x, formato, decimales = NULL) {
+  d <- .hd_numero_decimales(formato, decimales)
+  x <- suppressWarnings(as.numeric(x))
+  if (!length(x) || is.na(x[1]) || !is.finite(x[1])) return("")
+  x <- x[1]
+  if (identical(formato, "monto"))
+    return(formatC(round(x, d), format = "f", digits = d, big.mark = ","))
+  formatC(x, format = "f", digits = max(d, 0L), drop0trailing = TRUE)
+}
+
+hd_numero_deps <- function() {
+  htmltools::singleton(htmltools::tags$head(
+    htmltools::tags$script(src = "hd_numero.js?v=1")
+  ))
+}
+
+hd_numero_input <- function(inputId, label, formato, value = NA, min = NA, max = NA, step = NA,
+                            decimales = NULL, width = NULL, placeholder = NULL) {
+  if (missing(formato)) stop("hd_numero_input(): formato is required (monto, tasa or entero)", call. = FALSE)
+  d <- .hd_numero_decimales(formato, decimales)
+  num_attr <- function(v) { v <- suppressWarnings(as.numeric(v)); if (length(v) && !is.na(v[1])) format(v[1], scientific = FALSE) else NULL }
+  etiqueta <- htmltools::tags$label(class = "control-label", id = paste0(inputId, "-label"), `for` = inputId,
+                                    class = if (is.null(label)) "shiny-label-null", label)
+  htmltools::tagList(
+    hd_numero_deps(),
+    htmltools::div(
+      class = "form-group shiny-input-container",
+      style = if (!is.null(width)) paste0("width:", htmltools::validateCssUnit(width), ";"),
+      etiqueta,
+      htmltools::tags$input(
+        id = inputId, type = "text", class = "form-control hd-numero",
+        inputmode = if (d > 0L) "decimal" else "numeric",
+        autocomplete = "off", spellcheck = "false",
+        value = hd_numero_texto(value, formato, d),
+        placeholder = placeholder,
+        `data-formato` = formato, `data-decimales` = d,
+        `data-min` = num_attr(min), `data-max` = num_attr(max), `data-step` = num_attr(step)
+      )
+    )
+  )
+}
+
+# The updateNumericInput of hd_numero_input(): value = NA empties the field.
+# The same number it already has changes nothing and sends nothing.
+hd_numero_update <- function(session = shiny::getDefaultReactiveDomain(), inputId,
+                             label = NULL, value = NULL, min = NULL, max = NULL) {
+  msg <- list()
+  if (!is.null(label)) msg$label <- as.character(label)
+  if (!is.null(value)) {
+    v <- suppressWarnings(as.numeric(value))
+    if (length(v) && !is.na(v[1]) && is.finite(v[1])) msg$value <- v[1] else msg$vaciar <- TRUE
+  }
+  if (!is.null(min)) msg$min <- if (is.na(min)) "" else format(as.numeric(min), scientific = FALSE)
+  if (!is.null(max)) msg$max <- if (is.na(max)) "" else format(as.numeric(max), scientific = FALSE)
+  session$sendInputMessage(inputId, msg)
+  invisible(msg)
+}
