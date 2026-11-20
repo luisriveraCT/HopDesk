@@ -19,6 +19,13 @@ for (n in names(stubs)) assign(n, stubs[[n]], envir = globalenv())
 assign("avisos_visibles", function(...) NULL, envir = globalenv())
 assign("prefs_leer", function(...) NULL, envir = globalenv())
 assign("prefs_guardar", function(...) invisible(NULL), envir = globalenv())
+# Publicar's "Alertas del equipo" reads the client's users and its matrix from
+# S3 (alertas_usuarios() -> auth_load_usuarios(); alertas_leer() ->
+# leer_tabla_para_escribir()): here, no users and nobody marked
+# (test_fixtures_completas).
+assign("auth_load_usuarios", function(...) data.frame(username = character(), tier = character(),
+  deleted = logical(), activo = logical(), stringsAsFactors = FALSE), envir = globalenv())
+assign("alertas_leer", function(client_id) .schema_avisos_alertas(), envir = globalenv())
 
 HOY_FIX <- as.Date(Sys.time(), tz = "America/Mexico_City")   # Panorama's own day (its tz)
 mas <- dplyr::bind_rows(
