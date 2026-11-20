@@ -374,7 +374,11 @@ requisicion_editar <- function(client_id, id, cambios, por) {
   ahora <- .req_ahora(); cambiados <- character()
   .req_modificar("requisiciones", cid, function(df) {
     i <- .req_fila(df, id)
-    if (revisa) {
+    # Moving it to General without touching its company is always allowed:
+    # General is the safe place, also for a company not recognized
+    # (Coordinador, 2026-11-19). Its folder is still checked on the fresh table.
+    a_general <- "carpeta_id" %in% names(v) && is.na(v$carpeta_id) && !("empresa" %in% names(v))
+    if (revisa && !a_general) {
       emp <- .req_empresa_en_carpeta(v$empresa %||% df$empresa[i],
                                      if ("carpeta_id" %in% names(v)) v$carpeta_id else df$carpeta_id[i],
                                      .req_leer("carpetas", cid), empresas)
@@ -406,7 +410,8 @@ requisiciones_mover <- function(client_id, ids, carpeta_id, por) {
     # none moves (the message says how many to correct first).
     a <- requisiciones_carpetas_arbol(.req_leer("carpetas", cid))
     if (!is.na(carpeta_id) && !any(a$id == carpeta_id & !a$en_papelera)) .req_error("requisiciones.error.carpeta")
-    if (length(i) && !.req_catalogo_vacio(empresas)) {
+    # General takes every requisition, a company not recognized included.
+    if (length(i) && !is.na(carpeta_id) && !.req_catalogo_vacio(empresas)) {
       eid <- empresa_id_de(df$empresa[i], empresas)
       ok <- !is.na(eid) & .req_empresa_cabe(eid, rep(carpeta_id, length(i)), a, empresas)
       if (any(!ok)) .req_error("requisiciones.error.empresa_fuera_mover", n = sum(!ok))

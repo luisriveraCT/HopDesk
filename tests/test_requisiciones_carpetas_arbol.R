@@ -436,4 +436,28 @@ test_that("desde provisión: el nombre completo se guarda como iniciales; sin em
   expect_identical(err(requisiciones_desde_provisiones(CID, "p2", NA, "d")), "requisiciones.error.empresa_no_reconocida")
 })
 
+test_that("empresa no reconocida: a General sí se puede mover (lugar seguro); a una carpeta concreta no, hasta corregirla", {
+  reiniciar()
+  obra <- crear("Obra"); otra <- crear("Otra")
+  r <- requisicion_crear(CID, req(empresa = "Texto libre", carpeta_id = obra), "d")    # before the catalog
+  s <- requisicion_crear(CID, req(empresa = "Otro texto", carpeta_id = obra), "d")
+  catalogo()
+  expect_identical(requisiciones_vista(CID)$empresa_aviso, c("no_reconocida", "no_reconocida"))
+  antes <- tabla("requisiciones")
+  expect_identical(err(requisiciones_mover(CID, r$id, otra, "d")), "requisiciones.error.empresa_fuera_mover")
+  expect_identical(err(requisicion_editar(CID, r$id, list(carpeta_id = otra), "d")), "requisiciones.error.empresa_no_reconocida")
+  expect_identical(tabla("requisiciones"), antes)
+  # To General: by "Mover a carpeta..." and by the form, the company untouched.
+  expect_identical(requisiciones_mover(CID, r$id, NA, "d"), r$id)
+  expect_null(err(requisicion_editar(CID, s$id, list(carpeta_id = NA), "d")))
+  t <- tabla("requisiciones")
+  expect_true(all(is.na(t$carpeta_id))); expect_identical(t$empresa, c("Texto libre", "Otro texto"))
+  # Choosing a company still has to be a real one, also in General.
+  expect_identical(err(requisicion_editar(CID, r$id, list(carpeta_id = NA, empresa = "Nadie"), "d")),
+                   "requisiciones.error.empresa_no_reconocida")
+  # Once corrected it can go into a folder again.
+  requisicion_editar(CID, r$id, list(empresa = "NCS"), "d")
+  expect_identical(requisiciones_mover(CID, r$id, otra, "d"), r$id)
+})
+
 cat("\n=== test_requisiciones_carpetas_arbol: fin ===\n")
