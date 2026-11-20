@@ -838,7 +838,19 @@ pasivos_generate_provisions <- function(liability,
   )
 }
 
-pasivos_reconcile_provisions <- function(existing, generated, mode = "regenerate") {
+# A provision's note (notas) is the person's: editing the liability used to
+# copy the engine's NA over it, so every note written by hand on a pending
+# provision vanished (found 2026-11-20, T70/T71 paso 0). It is replaced only
+# when the provision has none, or still has the liability's previous note
+# (`nota_anterior`): a note of its own is kept.
+.nota_propia <- function(nota, nota_anterior = NULL) {
+  n <- as.character(nota %||% NA_character_)[1]
+  if (is.na(n) || !nzchar(trimws(n))) return(FALSE)
+  a <- as.character(nota_anterior %||% NA_character_)[1]
+  !(!is.na(a) && identical(trimws(n), trimws(a)))
+}
+
+pasivos_reconcile_provisions <- function(existing, generated, mode = "regenerate", nota_anterior = NULL) {
   empty <- existing[0L, , drop = FALSE]
 
   if (!nrow(existing)) {
@@ -951,6 +963,7 @@ pasivos_reconcile_provisions <- function(existing, generated, mode = "regenerate
           ov_col <- .override_col(fld)
           # Skip if this field is protected by a non-NA override
           if (!is.na(ov_col) && ov_col %in% names(row_ex) && !is.na(row_ex[[ov_col]])) next
+          if (identical(fld, "notas") && .nota_propia(row_ex$notas, nota_anterior)) next
           if (fld %in% names(updated_row)) updated_row[[fld]] <- g[[fld]]
         }
         update_rows <- dplyr::bind_rows(update_rows, updated_row)
