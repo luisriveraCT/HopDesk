@@ -204,19 +204,42 @@ for (quien in quienes) {
   ev("document.getElementById('hd-muestra-puente').remove(); true")
 
   # Screenshots of every tab under Marca, at Luis' window and a wide one.
+  # At 1293 px the navbar collapses behind its ☰ (the Diseñador 2's fix to
+  # the Clásico test, e95b26b/bef277e): open it to find and click each tab,
+  # close it before the screenshot, and wait for the user's tabs to show.
+  menu <- function(abrir) tryCatch(ev(sprintf("(function(){
+      var t = document.querySelector('.navbar-toggler'); if (!t || t.offsetParent === null) return false;
+      var c = document.querySelector(t.getAttribute('data-bs-target') || '.navbar-collapse');
+      var abierto = !!c && c.classList.contains('show');
+      if (abierto !== %s) t.click(); return true; })()", if (abrir) "true" else "false")), error = function(x) FALSE)
+  hay_pestana <- function() {
+    menu(TRUE)
+    isTRUE(tryCatch(ev(sprintf("[%s].some(function(v){ var a = document.querySelector(\".nav-link[data-value='\" + v + \"']\");
+      return !!a && a.offsetParent !== null; })", paste0("'", names(PESTANAS), "'", collapse = ","))), error = function(x) FALSE))
+  }
+  poll_until(hay_pestana, timeout_s = LIMITE, interval_s = 2)
+  Sys.sleep(4)
+  vistas <- character()
   for (v in names(PESTANAS)) {
+    menu(TRUE); Sys.sleep(1)
     visible <- isTRUE(tryCatch(ev(sprintf("(function(){ var a = document.querySelector(\".nav-link[data-value='%s']\");
       return !!a && a.offsetParent !== null; })()", v)), error = function(x) FALSE))
     if (!visible) next
     ev(sprintf("document.querySelector(\".nav-link[data-value='%s']\").click(); true", v))
-    Sys.sleep(8)
+    Sys.sleep(1); menu(FALSE)
+    Sys.sleep(7)
     ev("window.scrollTo(0, 0); document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
     pon_tema("marca"); Sys.sleep(1)
+    login <- isTRUE(tryCatch(ev("(function(){ var f = document.getElementById('auth-user_id'); return !!f && f.offsetParent !== null; })()"),
+                             error = function(x) FALSE))
+    if (!ok(sprintf("[%s · %s] no sign-in form on the tab", quien, v), !login)) next
     captura(sprintf("marca_%s_%s_1293", quien, v))
     tamano(1772L, 866L); Sys.sleep(1.5)
     captura(sprintf("marca_%s_%s_1772", quien, v))
     tamano(1293L, 632L); Sys.sleep(1)
+    vistas <- c(vistas, v)
   }
+  ok(sprintf("[%s] at least one tab shot under Marca (%s)", quien, paste(vistas, collapse = ",")), length(vistas) > 0L)
   ok(sprintf("[%s] still Marca after visiting the tabs (nothing resets the attribute)", quien),
      identical(ev("document.documentElement.getAttribute('data-hd-tema')"), "marca"))
 }
