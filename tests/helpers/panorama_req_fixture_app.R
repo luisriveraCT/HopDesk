@@ -34,6 +34,9 @@ USUARIOS <- data.frame(username = c("luis", "ana", "beto"), account_code = c("U0
 PREFS <- new.env()
 assign("avisos_visibles", function(...) FEED, envir = globalenv())
 assign("auth_load_usuarios", function(...) USUARIOS, envir = globalenv())
+# Publicar's "Alertas del equipo" reads its matrix from S3 (alertas_leer() ->
+# leer_tabla_para_escribir()): here, nobody marked (test_fixtures_completas).
+assign("alertas_leer", function(client_id) .schema_avisos_alertas(), envir = globalenv())
 assign("prefs_leer", function(cid, u) utils::modifyList(PREFS_DEFECTO, PREFS[[tolower(u)]] %||% list()), envir = globalenv())
 assign("prefs_guardar", function(cid, u, cambios) {
   PREFS[[tolower(u)]] <- utils::modifyList(PREFS[[tolower(u)]] %||% list(), cambios)
