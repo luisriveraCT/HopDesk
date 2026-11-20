@@ -39,6 +39,7 @@ suppressPackageStartupMessages({
 .extract_fn("R/persistence.R", "restore_from_papelera")
 .extract_fn("R/bancos_persistence.R", ".schema_bancos_confirmados")
 .extract_fn("R/bancos_persistence.R", "recover_confirmacion")
+.extract_fn("R/bancos_persistence.R", "autor_registrable")   # CM35: recover_confirmacion() stores its actor
 .extract_fn("R/bancos_persistence.R", ".schema_bancos_papelera")
 .extract_fn("R/bancos_persistence.R", "add_to_bancos_papelera")
 .extract_fn("R/bancos_persistence.R", "restore_from_bancos_papelera")
