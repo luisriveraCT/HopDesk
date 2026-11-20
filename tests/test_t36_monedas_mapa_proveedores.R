@@ -96,7 +96,7 @@ ok("prov_medio_pago on one currency for many rows", identical(prov_medio_pago("M
 seccion("2. Mapa de tesorería: selector, balances, base")
 cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 cargar("R/vencidos_module.R", "facturas_ids")
-for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R")) source(f)
+for (f in c("R/tema_registro.R", "R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R")) source(f)
 .i18n_dir <- file.path(getwd(), "www", "i18n")
 puede <- function(usuario, permiso) TRUE
 source(Sys.getenv("TMAP_R", "R/treasury_map_module.R"))
