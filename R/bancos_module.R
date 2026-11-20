@@ -1360,13 +1360,13 @@ bancosServer <- function(id, shared) {
           ),
           div(class = "col-md-6",
             tags$label("Cargo ($)", class = "form-label small"),
-            numericInput(ns("man_cargo"), NULL, value = prefill$cargo %||% 0, min = 0, step = 100,
-                         width = "100%")
+            hd_numero_input(ns("man_cargo"), NULL, formato = "monto", value = prefill$cargo %||% 0,
+                            min = 0, step = 100, width = "100%")
           ),
           div(class = "col-md-6",
             tags$label("Abono ($)", class = "form-label small"),
-            numericInput(ns("man_abono"), NULL, value = prefill$abono %||% 0, min = 0, step = 100,
-                         width = "100%")
+            hd_numero_input(ns("man_abono"), NULL, formato = "monto", value = prefill$abono %||% 0,
+                            min = 0, step = 100, width = "100%")
           ),
           div(class = "col-12",
             tags$label("Notas (opcional)", class = "form-label small"),
