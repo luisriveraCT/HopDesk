@@ -36,6 +36,7 @@ cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 cargar("R/global.R", c("fmt_money", "is_erp_sourced"))
 cargar("R/data_pipeline.R", ".politica_doc_unica")   # T52g: the Referencia of each row's own invoice
 cargar("R/persistence.R", "unstage_pagar_hoy")
+cargar("R/bancos_persistence.R", "autor_registrable")   # CM35: Confirmar records who (confirmado_por)
 cargar("R/ui_components.R", "app_styles")
 cargar("R/search_module.R", c(".datos_sap_filas", ".datos_sap_columnas", "datos_sap_tabla", "datos_sap_visor"))
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
@@ -53,7 +54,10 @@ stubs <- list(
   log_action = function(...) invisible(NULL),
   avisos_actividad = function(...) invisible(NULL),   # R/avisos.R; the Alertas del equipo hook (C)
   bump_sync_version = function(...) invisible(NULL),
-  safe_load_pagar_hoy = function(...) NULL,          # falls back to shared$pagar_hoy_db()
+  # The shared Agenda (AGENDA, below) is this fixture's S3. It used to return
+  # NULL "to fall back to the session's copy"; since CM33 a NULL read is a
+  # failed read and Confirmar stops with nothing written, so it must answer.
+  safe_load_pagar_hoy = function(...) shiny::isolate(AGENDA()),
   save_pagar_hoy_with_retry = function(...) list(ok = TRUE, attempts = 1L),
   save_pagar_hoy = function(...) invisible(TRUE),
   modificar_bancos_confirmados = function(cid, f) {
