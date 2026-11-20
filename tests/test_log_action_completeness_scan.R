@@ -243,6 +243,11 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     # pasivos_borrar, pasivos_recuperar, .pasivos_wizard_save) log their own
     # action (liability.edited / .deleted / .restored / .created).
     "modificar_pasivos_liabilities", ".pasivos_cambiar_estado",
+    # modificar_forecasting_metrics() (T63, R/forecasting_persistence.R): the
+    # fresh-read-then-write wrapper around the metrics table; its one caller
+    # is the additive seeding in R/forecasting_metric_registry.R, a system-side
+    # write with no user action behind it (same shape as .interco_v2_migrar).
+    "modificar_forecasting_metrics",
     # save_pagar_hoy_with_retry() (found 2026-08-05, R/persistence.R) is a
     # generic retry wrapper around save_pagar_hoy() -- same shape as
     # .sync_staged above: called from multiple contexts (the AP and AR
