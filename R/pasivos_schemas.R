@@ -63,6 +63,8 @@ fecha_valida <- function(x) {
   schedule_imported    = list(),        # list-column; NULL means compute from terms
 
   cargos_iniciales     = list(),        # list-column; list of named lists
+  impuestos            = list(),        # list-column (T63): list of list(nombre, tipo = "porcentual"|"fijo",
+                                        #   valor, base = "pago"|"intereses"); NULL/missing = none
   valor_residual       = list(),        # list-column; named list or NULL
 
   modifier_ids         = list(),        # list-column; list of character vectors

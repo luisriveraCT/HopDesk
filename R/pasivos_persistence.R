@@ -60,11 +60,12 @@
 
 # ── pasivos_liabilities ────────────────────────────────────────────────────────
 # List columns: recurrence_params, schedule_imported, cargos_iniciales,
-#               valor_residual, modifier_ids
+#               valor_residual, modifier_ids, impuestos (T63; a record
+#               saved before it reads as NULL: no taxes)
 
 .PASIVOS_LIABILITY_LIST_COLS <- c(
   "recurrence_params", "schedule_imported",
-  "cargos_iniciales", "valor_residual", "modifier_ids"
+  "cargos_iniciales", "valor_residual", "modifier_ids", "impuestos"
 )
 
 load_pasivos_liabilities <- function(client_id = NULL) {
