@@ -2050,7 +2050,7 @@ tiersServer <- function(id, shared) {
                   placeholder = "Acme Corporation S.A. de C.V."),
         textInput(ns("req_contact_email"), "Correo de contacto",
                   placeholder = "admin@acmecorp.com"),
-        numericInput(ns("req_max_users"), "Límite de usuarios", value = 5, min = 1, max = 500),
+        hd_numero_input(ns("req_max_users"), "Límite de usuarios", formato = "entero", value = 5, min = 1, max = 500),
         textAreaInput(ns("req_notes"), "Notas (opcional)", rows = 2)
       ))
     }, ignoreInit = TRUE)
@@ -2342,8 +2342,8 @@ tiersServer <- function(id, shared) {
                   value = row$display_name[1]),
         textInput(ns("edit_contact_email"), "Email de contacto",
                   value = row$contact_email[1] %||% ""),
-        numericInput(ns("edit_max_users"), "Límite de usuarios",
-                     value = row$max_users[1], min = 1L, max = 500L, step = 1L),
+        hd_numero_input(ns("edit_max_users"), "Límite de usuarios", formato = "entero",
+                        value = row$max_users[1], min = 1L, max = 500L, step = 1L),
         tags$p(class = "text-muted small mt-2",
                tagList(icon("info-circle"),
                        " Si el nuevo límite es menor que los usuarios activos, se mostrará un ",
