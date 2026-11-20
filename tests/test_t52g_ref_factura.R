@@ -50,6 +50,7 @@ for (e in parse("R/search_module.R", keep.source = FALSE))
       as.character(e[[2]]) %in% c(".datos_sap_filas", ".datos_sap_columnas", "datos_sap_tabla", "datos_sap_visor"))
     eval(e, globalenv())
 MODULO <- Sys.getenv("PH_MODULE", "R/pagar_hoy_module.R")
+source("R/agenda_filas.R")   # staged() reads agenda_pendientes() (T60)
 source(MODULO)
 
 # Stubs (after the module). Every payment file's rows are recorded.

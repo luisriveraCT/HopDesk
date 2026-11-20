@@ -45,6 +45,7 @@ for (e in parse("R/search_module.R", keep.source = FALSE))
   if (is.call(e) && identical(e[[1]], as.name("<-")) &&
       as.character(e[[2]]) %in% c(".datos_sap_filas", ".datos_sap_columnas", "datos_sap_tabla", "datos_sap_visor"))
     eval(e, globalenv())
+source("R/agenda_filas.R")   # staged() reads agenda_pendientes() (T60)
 source("R/pagar_hoy_module.R")
 
 # Stubs (after the module): no UI, no audit, no sync bus.

@@ -14,7 +14,7 @@ source("R/tier_registry.R")
 source("R/permisos.R")
 source("R/avisos.R")
 for (f in c("R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
-            "R/avisos_alertas_module.R", "R/panorama_datos.R", "R/panorama_publicar_module.R",
+            "R/avisos_alertas_module.R", "R/agenda_filas.R", "R/panorama_datos.R", "R/panorama_publicar_module.R",
             "R/panorama_module.R"))
   suppressMessages(source(f))
 leer_tabla_para_escribir <- function(key, client_id, schema) .mem[[paste0(client_id, "/", key)]] %||% schema()
@@ -41,7 +41,10 @@ test_that("cada moneda es su propio renglón, MXN primero", {
   expect_equal(nrow(.pan_por_moneda(character(), numeric())), 0)
 })
 
-test_that("Pagos de hoy: solo CxP pendiente de hoy o antes, sin abonos", {
+# T60: the twin of the Agenda's "↓ Pagos": every pending AP row whatever its
+# due date (the 13 Nov one too), partial payments included, Importe with its
+# sign (USD -50 stays -50); confirmed and AR rows stay out.
+test_that("Pagos de hoy: lo mismo que '↓ Pagos' de la Agenda (CxP pendiente, cualquier fecha, abonos incluidos, con signo)", {
   ph <- data.frame(
     ledger = c("AP", "AP", "AR", "AP", "AP", "AP"),
     status = c("pending", "confirmed", "pending", "pending", "pending", "pending"),
@@ -52,7 +55,8 @@ test_that("Pagos de hoy: solo CxP pendiente de hoy o antes, sin abonos", {
     stringsAsFactors = FALSE)
   t <- panorama_pagos_hoy(ph, HOY)
   expect_identical(t$moneda, c("MXN", "USD"))
-  expect_equal(t$total, c(100, 50))
+  expect_equal(t$total, c(100 + 400 + 600, -50))
+  expect_equal(t$n, c(3L, 1L))
   expect_equal(nrow(panorama_pagos_hoy(NULL, HOY)), 0)
 })
 

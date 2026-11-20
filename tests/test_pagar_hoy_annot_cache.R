@@ -47,6 +47,7 @@ for (fn in list(c("R/global.R", "is_erp_sourced"), c("R/data_pipeline.R", ".poli
   for (e in parse(fn[1], keep.source = FALSE, encoding = "UTF-8"))
     if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(as.character(e[[2]]), fn[2]))
       eval(e, globalenv())
+source("R/agenda_filas.R")   # staged() reads agenda_pendientes() (T60)
 source(Sys.getenv("PH_MODULE", "R/pagar_hoy_module.R"))
 
 # Stubs (after sourcing, so they win over the module's own top-level helpers).
