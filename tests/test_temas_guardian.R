@@ -78,7 +78,6 @@ archivos <- c("app.R",
   "R/tiers_module.R" = 36L,
   "R/treasury_map_module.R" = 76L,
   "R/ui_components.R" = 237L,
-  "www/cashflow_preview.css" = 70L,
   "www/hdtable.css" = 23L,
   "www/overlay_init.js" = 15L,
   "www/panorama.css" = 4L,
@@ -228,20 +227,28 @@ ok("the generated CSS puts the default theme on :root",
 # A migration (stage 4) may add legacy tokens, but only by removing at least
 # as many hand-written colours: raise .TOPE_LEGADO and lower .TRINQUETE in
 # the same commit. Their sum never grows. Then the legacy only shrinks.
-.TOPE_LEGADO   <- 0L
+.TOPE_LEGADO   <- 22L   # stage 4: www/cashflow_preview.css (70 hand-written -> 0)
 .TOTAL_INICIAL <- 1338L   # sum(.TRINQUETE) + .TOPE_LEGADO on e2d3882 + TEMA stage 1
 leg <- tema$.HD_LEGADO
 ok(sprintf("legacy tokens: %d (ratchet %d)", length(leg), .TOPE_LEGADO), length(leg) <= .TOPE_LEGADO)
 ok(sprintf("hand-written + legacy never grows: %d <= %d", sum(.TRINQUETE) + .TOPE_LEGADO, .TOTAL_INICIAL),
    sum(.TRINQUETE) + .TOPE_LEGADO <= .TOTAL_INICIAL)
-ok("every legacy token is <rol>-<hex> of a real role; a colour role holds that hex, a shadow role a shadow with that colour",
-   all(vapply(names(leg), function(n) {
-     p <- tema$tema_legado_partes(n)
-     !is.null(p) && p$rol %in% roles[[1]] &&
-       (if (p$rol %in% tema$HD_ROLES_SOMBRA)
-          tema$.tema_sombra_con_color(leg[[n]], p$hex) && identical(p$hash, tema$tema_hash_sombra(leg[[n]]))
-        else is.null(p$hash) && identical(toupper(leg[[n]]), p$hex))
-   }, logical(1))))
+# A legacy token points to a theme role or to a common (etq-*), never to the
+# palette. A colour token holds the hex in its name; a shadow token, a shadow
+# with that colour and the hash of its value.
+legado_valido <- function(leg) vapply(names(leg), function(n) {
+  p <- tema$tema_legado_partes(n)
+  !is.null(p) && p$rol %in% c(roles[[1]], names(tema$.HD_COMUNES)) &&
+    (if (p$rol %in% tema$HD_ROLES_SOMBRA)
+       tema$.tema_sombra_con_color(leg[[n]], p$hex) && identical(p$hash, tema$tema_hash_sombra(leg[[n]]))
+     else is.null(p$hash) && identical(toupper(leg[[n]]), p$hex))
+}, logical(1))
+ok("every legacy token is <rol>-<hex> of a real role or common; a colour holds that hex, a shadow role a shadow with that colour",
+   all(legado_valido(leg)))
+ok("legacy check: a common with another hex fails, the palette fails, a common with its hex passes",
+   !legado_valido(list(`etq-a-texto-c62828` = "#B42318")) &&
+     !legado_valido(stats::setNames(list("#123456"), paste0(names(tema$.HD_PALETA)[1], "-123456"))) &&
+     legado_valido(list(`etq-a-texto-c62828` = "#C62828")))
 ok("www/hd_clasico_legado.css is what scripts/generar_temas_css.R generates",
    identical(sin_fin(leer("www/hd_clasico_legado.css")), sin_fin(tema$tema_legado_css())))
 ok("tema_head() links the legacy file too",

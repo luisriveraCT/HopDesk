@@ -35,7 +35,7 @@ if (file.exists(file.path(raiz, "R/fx_banxico.R")))
   cargar("R/fx_banxico.R", c(".schema_fx_divisas", ".fx_valido", "FX_FIX_TZ", "FX_FIX_MONEDA", "FX_BANXICO_EN"))
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
-  for (f in c("R/i18n.R", "R/monedas.R", "R/fx_tipos.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+  for (f in c("R/tema_registro.R", "R/i18n.R", "R/monedas.R", "R/fx_tipos.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
               "R/cashflow_export_module.R", "R/cashflow_preview_module.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
 })
@@ -65,7 +65,9 @@ ui <- bslib::page_fluid(
   shinyjs::useShinyjs(), app_styles(),
   actionButton("abrir_flujo", "Flujo de caja"),
   actionButton("cambiar_cliente", "Cambiar cliente"),
-  tags$link(rel = "stylesheet", type = "text/css", href = "cashflow_preview.css?v=6"),
+  tags$link(rel = "stylesheet", type = "text/css", href = "cashflow_preview.css?v=7"),
+  # The theme tokens the CSS uses (var(--hd-*)), as app.R loads them.
+  if (exists("tema_head", mode = "function")) tema_head(),
   div(class = "h-100 cf-slide-wrapper", style = "height:600px;",
       div(id = "cf-panel-calendar", class = "cf-panel cf-panel-calendar h-100", "Calendario"),
       cashflowPreviewUI("cfp")),

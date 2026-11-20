@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 1L
+HD_TEMAS_CSS_VERSION <- 2L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -211,7 +211,30 @@ HD_TEMAS <- list(
 # is the whole shadow of today, the hex names its colour and a hash of the
 # shadow (tema_hash_sombra()) tells apart two shadows of one colour:
 #     `sombra-000000-<hash>` = "0 4px 20px rgba(0, 0, 0, 0.45)"
-.HD_LEGADO <- list()
+.HD_LEGADO <- list(
+  `borde-dde4ed` = "#DDE4ED",
+  `borde-e8ecf2` = "#E8ECF2",
+  `borde-fuerte-b0c6de` = "#B0C6DE",
+  `encabezado-hover-2563a8` = "#2563A8",
+  `etq-a-texto-c62828` = "#C62828",
+  `etq-b-texto-e65100` = "#E65100",
+  `foco-4a88c7-21e45b` = "0 0 0 2px rgba(74,136,199,0.3)",
+  `foco-color-1e3a5f` = "#1E3A5F",
+  `foco-color-4a88c7` = "#4A88C7",
+  `hover-f0f4fa` = "#F0F4FA",
+  `oscuro-borde-2e4a6e` = "#2E4A6E",
+  `oscuro-borde-3a5a80` = "#3A5A80",
+  `oscuro-fondo-1c2e42` = "#1C2E42",
+  `oscuro-fondo-2-0d1e30` = "#0D1E30",
+  `oscuro-texto-2-7b9ab8` = "#7B9AB8",
+  `oscuro-texto-c8d8ea` = "#C8D8EA",
+  `oscuro-texto-ffffff` = "#FFFFFF",
+  `primario-suave-d8e6f5` = "#D8E6F5",
+  `sombra-000000-44cce5` = "0 4px 20px rgba(0,0,0,0.45)",
+  `texto-0d1b2a` = "#0D1B2A",
+  `texto-0d2240` = "#0D2240",
+  `texto-2-374b5f` = "#374B5F"
+)
 
 # Roles whose value is a whole box-shadow, not a colour.
 HD_ROLES_SOMBRA <- c("sombra", "foco")
@@ -245,7 +268,7 @@ tema_hash_sombra <- function(valor) {
 .tema_legado_valores <- function(tema) {
   if (!length(.HD_LEGADO)) return(list())
   if (identical(tema, "clasico")) return(.HD_LEGADO)
-  roles <- HD_TEMAS[[tema]]$tokens
+  roles <- c(.HD_COMUNES, HD_TEMAS[[tema]]$tokens)   # a legacy token may point to a common (etq-*)
   stats::setNames(lapply(names(.HD_LEGADO), function(n) roles[[tema_legado_partes(n)$rol]]),
                   names(.HD_LEGADO))
 }

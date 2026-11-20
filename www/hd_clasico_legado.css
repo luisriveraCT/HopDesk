@@ -5,5 +5,55 @@
    Can only shrink (tests/test_temas_guardian.R).
    ========================================================================== */
 
-/* (empty) */
+/* Every theme: the role */
+:root {
+  --hd-leg-borde-dde4ed: var(--hd-borde);
+  --hd-leg-borde-e8ecf2: var(--hd-borde);
+  --hd-leg-borde-fuerte-b0c6de: var(--hd-borde-fuerte);
+  --hd-leg-encabezado-hover-2563a8: var(--hd-encabezado-hover);
+  --hd-leg-etq-a-texto-c62828: var(--hd-etq-a-texto);
+  --hd-leg-etq-b-texto-e65100: var(--hd-etq-b-texto);
+  --hd-leg-foco-4a88c7-21e45b: var(--hd-foco);
+  --hd-leg-foco-color-1e3a5f: var(--hd-foco-color);
+  --hd-leg-foco-color-4a88c7: var(--hd-foco-color);
+  --hd-leg-hover-f0f4fa: var(--hd-hover);
+  --hd-leg-oscuro-borde-2e4a6e: var(--hd-oscuro-borde);
+  --hd-leg-oscuro-borde-3a5a80: var(--hd-oscuro-borde);
+  --hd-leg-oscuro-fondo-1c2e42: var(--hd-oscuro-fondo);
+  --hd-leg-oscuro-fondo-2-0d1e30: var(--hd-oscuro-fondo-2);
+  --hd-leg-oscuro-texto-2-7b9ab8: var(--hd-oscuro-texto-2);
+  --hd-leg-oscuro-texto-c8d8ea: var(--hd-oscuro-texto);
+  --hd-leg-oscuro-texto-ffffff: var(--hd-oscuro-texto);
+  --hd-leg-primario-suave-d8e6f5: var(--hd-primario-suave);
+  --hd-leg-sombra-000000-44cce5: var(--hd-sombra);
+  --hd-leg-texto-0d1b2a: var(--hd-texto);
+  --hd-leg-texto-0d2240: var(--hd-texto);
+  --hd-leg-texto-2-374b5f: var(--hd-texto-2);
+}
+
+/* Clasico: today's exact value */
+[data-hd-tema="clasico"], :root:not([data-hd-tema]) {
+  --hd-leg-borde-dde4ed: #DDE4ED;
+  --hd-leg-borde-e8ecf2: #E8ECF2;
+  --hd-leg-borde-fuerte-b0c6de: #B0C6DE;
+  --hd-leg-encabezado-hover-2563a8: #2563A8;
+  --hd-leg-etq-a-texto-c62828: #C62828;
+  --hd-leg-etq-b-texto-e65100: #E65100;
+  --hd-leg-foco-4a88c7-21e45b: 0 0 0 2px rgba(74,136,199,0.3);
+  --hd-leg-foco-color-1e3a5f: #1E3A5F;
+  --hd-leg-foco-color-4a88c7: #4A88C7;
+  --hd-leg-hover-f0f4fa: #F0F4FA;
+  --hd-leg-oscuro-borde-2e4a6e: #2E4A6E;
+  --hd-leg-oscuro-borde-3a5a80: #3A5A80;
+  --hd-leg-oscuro-fondo-1c2e42: #1C2E42;
+  --hd-leg-oscuro-fondo-2-0d1e30: #0D1E30;
+  --hd-leg-oscuro-texto-2-7b9ab8: #7B9AB8;
+  --hd-leg-oscuro-texto-c8d8ea: #C8D8EA;
+  --hd-leg-oscuro-texto-ffffff: #FFFFFF;
+  --hd-leg-primario-suave-d8e6f5: #D8E6F5;
+  --hd-leg-sombra-000000-44cce5: 0 4px 20px rgba(0,0,0,0.45);
+  --hd-leg-texto-0d1b2a: #0D1B2A;
+  --hd-leg-texto-0d2240: #0D2240;
+  --hd-leg-texto-2-374b5f: #374B5F;
+}
 

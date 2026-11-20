@@ -118,7 +118,7 @@ ui <- bslib::page_navbar(
     shinyjs::useShinyjs(),
     app_styles(),
     app_scripts(),
-    tags$link(rel = "stylesheet", type = "text/css", href = "cashflow_preview.css?v=6"),
+    tags$link(rel = "stylesheet", type = "text/css", href = "cashflow_preview.css?v=7"),
     tema_head(),   # theme tokens (www/hd_temas.css) + <html data-hd-tema>, R/tema_registro.R
     # Brand tokens (navy, gold, Fraunces) and Panorama, each under its root class.
     tags$link(rel = "stylesheet", type = "text/css", href = "hd_marca.css?v=1"),
