@@ -221,6 +221,12 @@ for (quien in quienes) {
         AVISOS[[length(AVISOS) + 1L]] <<- data.frame(pestana = nombre, usuario = quien, elemento = k, propiedad = p,
                                                      master = eb[[k]][[p]], rama = er[[k]][[p]], dE = round(r$de, 2))
     }
+    # Never "the same" out of two empty or signed-out screens (Coordinador,
+    # 2026-11-20): past the sign-in page, a visible login form fails, and
+    # every comparison needs more than 20 elements measured.
+    login <- function(e) any(grepl("#auth-user_id", names(e), fixed = TRUE))
+    if (v != "ENTRAR")
+      ok(sprintf("[%s] %s: no sign-in form in master or branch", quien, nombre), !login(eb) && !login(er))
     if (!ok(sprintf("[%s] %s: %d elements compared, same computed style within ΔE %g (only in master %d, only in branch %d)",
                     quien, nombre, length(comunes), DE_MAX, length(setdiff(names(eb), comunes)), length(setdiff(names(er), comunes))),
             length(difs) == 0L && length(comunes) > 20L))
