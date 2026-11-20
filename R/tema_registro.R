@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 2L
+HD_TEMAS_CSS_VERSION <- 3L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
