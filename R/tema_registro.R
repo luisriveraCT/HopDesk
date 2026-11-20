@@ -204,8 +204,9 @@ HD_TEMAS <- list(
 # var(--hd-ROL). The guardian ratchets the count. Entries: "<rol>-<hex>" =
 # "#HEX" (the hex in the name, lower case, without #, is the value). For a
 # shadow role (HD_ROLES_SOMBRA: a whole box-shadow, not a colour) the value
-# is the whole shadow of today and the hex names its colour:
-#     `sombra-000000` = "0 4px 20px rgba(0, 0, 0, 0.45)"
+# is the whole shadow of today, the hex names its colour and a hash of the
+# shadow (tema_hash_sombra()) tells apart two shadows of one colour:
+#     `sombra-000000-<hash>` = "0 4px 20px rgba(0, 0, 0, 0.45)"
 .HD_LEGADO <- list()
 
 # Roles whose value is a whole box-shadow, not a colour.
@@ -219,10 +220,21 @@ HD_ROLES_SOMBRA <- c("sombra", "foco")
 }
 
 # "texto-2-6b7280" -> list(rol = "texto-2", hex = "#6B7280"); NULL if malformed.
+# A shadow role's name also carries a short hash of the whole shadow, since
+# one colour can have several shadows: "sombra-000000-3fa2c1"
+# -> list(rol = "sombra", hex = "#000000", hash = "3fa2c1").
 tema_legado_partes <- function(nombre) {
-  m <- regmatches(nombre, regexec("^(.+)-([0-9a-f]{6})$", nombre))[[1]]
-  if (length(m) != 3L) return(NULL)
-  list(rol = m[2], hex = paste0("#", toupper(m[3])))
+  m <- regmatches(nombre, regexec("^(.+?)-([0-9a-f]{6})(?:-([0-9a-f]{6}))?$", nombre, perl = TRUE))[[1]]
+  if (length(m) != 4L) return(NULL)
+  list(rol = m[2], hex = paste0("#", toupper(m[3])), hash = if (nzchar(m[4])) m[4] else NULL)
+}
+
+# The hash in a legacy shadow's name: the first 6 hex of the MD5 of the
+# shadow, lower case and without spaces ("0 4px 20px rgba(0,0,0,0.45)").
+tema_hash_sombra <- function(valor) {
+  f <- tempfile(); on.exit(unlink(f))
+  writeBin(charToRaw(tolower(gsub("\\s+", "", valor))), f)
+  substr(unname(tools::md5sum(f)), 1L, 6L)
 }
 
 # The value of every legacy token under a theme.
@@ -237,8 +249,25 @@ tema_legado_partes <- function(nombre) {
 # One line of code with the legacy tokens turned into their roles: what
 # scripts/retirar_legado_clasico.R applies to every file.
 tema_legado_retirar <- function(lineas) {
-  lineas <- gsub("var\\(--hd-leg-([a-z0-9-]+?)-[0-9a-f]{6}\\)", "var(--hd-\\1)", lineas, perl = TRUE)
-  gsub("([\"'])leg-([a-z0-9-]+?)-[0-9a-f]{6}([\"'])", "\\1\\2\\3", lineas, perl = TRUE)
+  lineas <- gsub("var\\(--hd-leg-([a-z0-9-]+?)-[0-9a-f]{6}(?:-[0-9a-f]{6})?\\)", "var(--hd-\\1)", lineas, perl = TRUE)
+  gsub("([\"'])leg-([a-z0-9-]+?)-[0-9a-f]{6}(?:-[0-9a-f]{6})?([\"'])", "\\1\\2\\3", lineas, perl = TRUE)
+}
+
+# A role (or legacy token) at N % over transparent, for what cannot take
+# var() or color-mix(): SVG in a data: URI, vis.js canvas, Word, Excel. The
+# same colour as color-mix(in srgb, var(--hd-rol) N%, transparent):
+#   tema_mezcla("provision", 25)                 "rgba(124, 58, 237, 0.25)"
+# `sobre`: a solid background to flatten onto, for places with no alpha
+# (Word, Excel, emails): tema_mezcla("provision", 25, sobre = "#FFFFFF").
+tema_mezcla <- function(rol, pct, tema = HD_TEMA_OMISION, sobre = NULL) {
+  hex <- tema_color(rol, tema)
+  if (!grepl("^#[0-9A-Fa-f]{6}$", hex)) stop("[tema] tema_mezcla needs a #rrggbb role: ", rol, call. = FALSE)
+  a <- max(0, min(100, pct)) / 100
+  rgb <- strtoi(substring(hex, c(2, 4, 6), c(3, 5, 7)), 16L)
+  if (is.null(sobre)) return(sprintf("rgba(%d, %d, %d, %s)", rgb[1], rgb[2], rgb[3], format(a)))
+  f <- strtoi(substring(sobre, c(2, 4, 6), c(3, 5, 7)), 16L)
+  m <- as.integer(round(rgb * a + f * (1 - a)))
+  sprintf("#%02X%02X%02X", m[1], m[2], m[3])
 }
 
 # ── Lectura ──────────────────────────────────────────────────────────────────

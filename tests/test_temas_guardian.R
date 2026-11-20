@@ -229,8 +229,9 @@ ok("every legacy token is <rol>-<hex> of a real role; a colour role holds that h
    all(vapply(names(leg), function(n) {
      p <- tema$tema_legado_partes(n)
      !is.null(p) && p$rol %in% roles[[1]] &&
-       (if (p$rol %in% tema$HD_ROLES_SOMBRA) tema$.tema_sombra_con_color(leg[[n]], p$hex)
-        else identical(toupper(leg[[n]]), p$hex))
+       (if (p$rol %in% tema$HD_ROLES_SOMBRA)
+          tema$.tema_sombra_con_color(leg[[n]], p$hex) && identical(p$hash, tema$tema_hash_sombra(leg[[n]]))
+        else is.null(p$hash) && identical(toupper(leg[[n]]), p$hex))
    }, logical(1))))
 ok("www/hd_clasico_legado.css is what scripts/generar_temas_css.R generates",
    identical(sin_fin(leer("www/hd_clasico_legado.css")), sin_fin(tema$tema_legado_css())))
@@ -239,13 +240,24 @@ ok("tema_head() links the legacy file too",
 
 # The mechanism, on a registry copy with one legacy token.
 prueba <- new.env(); sys.source("R/tema_registro.R", envir = prueba)
-prueba$.HD_LEGADO <- list(`texto-2-0d1b2a` = "#0D1B2A",
-                          `sombra-000000`  = "0 4px 20px rgba(0, 0, 0, 0.45)")
+s1 <- "0 4px 20px rgba(0, 0, 0, 0.45)"; s2 <- "0 2px 6px rgba(0,0,0,0.06)"
+n1 <- paste0("sombra-000000-", tema$tema_hash_sombra(s1)); n2 <- paste0("sombra-000000-", tema$tema_hash_sombra(s2))
+prueba$.HD_LEGADO <- stats::setNames(list("#0D1B2A", s1, s2), c("texto-2-0d1b2a", n1, n2))
+ok("legacy shadows: two shadows of one colour get two names (hash), spaces and case do not matter",
+   n1 != n2 && identical(tema$tema_hash_sombra(s1), tema$tema_hash_sombra("0 4PX 20px  rgba(0,0,0,0.45)")))
+ok("legacy shadows: name parts read back (rol, hex, hash); a colour has no hash",
+   identical(tema$tema_legado_partes(n1)[c("rol", "hex")], list(rol = "sombra", hex = "#000000")) &&
+     identical(tema$tema_legado_partes(n1)$hash, tema$tema_hash_sombra(s1)) &&
+     identical(tema$tema_legado_partes("texto-2-0d1b2a"), list(rol = "texto-2", hex = "#0D1B2A", hash = NULL)))
 ok("legacy shadows: the whole shadow is kept and must use the colour in its name",
-   prueba$.tema_sombra_con_color(prueba$.HD_LEGADO[["sombra-000000"]], "#000000") &&
-     !prueba$.tema_sombra_con_color(prueba$.HD_LEGADO[["sombra-000000"]], "#1E3A5F") &&
-     identical(prueba$tema_color("leg-sombra-000000", "clasico"), "0 4px 20px rgba(0, 0, 0, 0.45)") &&
-     identical(prueba$tema_color("leg-sombra-000000", "marca"), prueba$tema_color("sombra", "marca")))
+   prueba$.tema_sombra_con_color(s1, "#000000") && !prueba$.tema_sombra_con_color(s1, "#1E3A5F") &&
+     identical(prueba$tema_color(paste0("leg-", n1), "clasico"), s1) &&
+     identical(prueba$tema_color(paste0("leg-", n2), "marca"), prueba$tema_color("sombra", "marca")))
+ok("tema_mezcla(): rgba like color-mix over transparent; flattened onto a background with `sobre`; leg-* too",
+   identical(tema$tema_mezcla("provision", 25, "clasico"), "rgba(124, 58, 237, 0.25)") &&
+     identical(tema$tema_mezcla("provision", 100, "clasico", sobre = "#FFFFFF"), "#7C3AED") &&
+     identical(tema$tema_mezcla("provision", 0, "clasico", sobre = "#FFFFFF"), "#FFFFFF") &&
+     identical(prueba$tema_mezcla("leg-texto-2-0d1b2a", 50, "clasico"), "rgba(13, 27, 42, 0.5)"))
 css_leg <- paste(prueba$tema_legado_css(), collapse = "\n")
 ok("legacy: Clásico gets today's hex, Marca gets the role (R side)",
    identical(prueba$tema_color("leg-texto-2-0d1b2a", "clasico"), "#0D1B2A") &&
@@ -259,10 +271,12 @@ ok("retiring: var(--hd-leg-ROL-hex) -> var(--hd-ROL), \"leg-ROL-hex\" -> \"ROL\"
        ".x { color: var(--hd-leg-texto-2-0d1b2a); border: 1px solid var(--hd-borde); }",
        "style = \"background:var(--hd-leg-encabezado-1e3a5f)\"",
        "tema_color(\"leg-peligro-texto-b91c1c\", tema)",
+       "box-shadow: var(--hd-leg-sombra-000000-3fa2c1); x <- tema_color('leg-foco-4a88c7-0a1b2c')",
        "color: #0d1b2a; /* leg-texto-0d1b2a in a comment, unquoted */")),
      c(".x { color: var(--hd-texto-2); border: 1px solid var(--hd-borde); }",
        "style = \"background:var(--hd-encabezado)\"",
        "tema_color(\"peligro-texto\", tema)",
+       "box-shadow: var(--hd-sombra); x <- tema_color('foco')",
        "color: #0d1b2a; /* leg-texto-0d1b2a in a comment, unquoted */")))
 ok("the retiring script exists and uses tema_legado_retirar()",
    file.exists("scripts/retirar_legado_clasico.R") &&
