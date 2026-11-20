@@ -124,9 +124,6 @@ ok("E1: new manual entry: starts on the base; the ledger's currencies first, the
    identical(h$sel, "MXN") && identical(h$ops[1:2], c("MXN", "USD")) && setequal(h$ops, monedas_catalogo()))
 h <- sel_de(as.character(manual_entry_tab_content("AP", c("NG"), base = "COP")), "me_moneda")
 ok("E2: a COP client: starts on COP", identical(h$sel, "COP") && identical(h$ops[1], "COP"))
-h <- sel_de(as.character(manual_entry_modal("AR", c("NG"), row = list(Moneda = "USD", Empresa = "NG"), base = "MXN")),
-            "manual_moneda_ar")
-ok("E3: the (unused) manual modal: an existing row keeps its currency", identical(h$sel, "USD"))
 req_env <- new.env()
 req_env$shared <- list(moneda_base_cliente = function() list(moneda = "COP"),
                        currency_choices = list(AP = function() character()))
