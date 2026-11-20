@@ -1,6 +1,7 @@
 # =============================================================================
 # tests/test_tema_clasico_igual_chromote.R
-# TEMA: under Clásico, a branch must look exactly like master. For every user
+# TEMA: under Clásico, a branch must look like master (colours within ΔE
+# TEMA_DE_MAX, 2 by default; everything else exactly). For every user
 # (staff and client) and every main tab, at 1293 x 632 (Luis' window), it
 # reads the COMPUTED style of every visible element (colours, borders, fonts,
 # radius, shadow) in the real app (tests/helpers/arranque_app.R, dev bucket,
@@ -40,6 +41,13 @@ BASE <- normalizePath(BASE, winslash = "/"); RAMA <- normalizePath(RAMA, winslas
 SALIDA <- Sys.getenv("TEMA_SALIDA", file.path(tempdir(), "tema_clasico"))
 dir.create(SALIDA, showWarnings = FALSE, recursive = TRUE)
 LIMITE <- as.numeric(Sys.getenv("ARR_LIMITE", "300"))
+# Colours (tests/helpers/tema_comparar_estilos.R): the same within ΔE76
+# TEMA_DE_MAX (2 by default, Coordinador 2026-11-20; 0 = strict) and alpha
+# 0.01. Each colour that moved but passes is a warning, listed at the end.
+source("tests/helpers/tema_comparar_estilos.R")
+DE_MAX <- as.numeric(Sys.getenv("TEMA_DE_MAX", "2"))
+if (is.na(DE_MAX) || DE_MAX < 0) stop("TEMA_DE_MAX must be a number >= 0")
+AVISOS <- list()
 
 .pass <- 0L; .fail <- 0L
 ok <- function(label, expr) {
@@ -171,6 +179,21 @@ recorrer <- function(raiz, etiqueta, quien) {
     res[[v]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
     captura(sprintf("%s_%s_%s", etiqueta, quien, v))
   }
+  # The cash-flow preview (www/cashflow_preview.css) is not a tab: it opens
+  # from the Calendar's arrow.
+  if ("CAL" %in% names(res)) {
+    ev("document.querySelector(\".nav-link[data-value='CAL']\").click(); true")
+    Sys.sleep(4)
+    abierto <- isTRUE(tryCatch(ev("(function(){ var a = document.querySelector('.cf-preview-toggle-btn');
+      if (!a || a.offsetParent === null) return false; a.click(); return true; })()"), error = function(x) FALSE))
+    if (abierto) {
+      Sys.sleep(10)
+      ev("window.scrollTo(0, 0); document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
+      Sys.sleep(1)
+      res[["FLUJO"]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
+      captura(sprintf("%s_%s_FLUJO", etiqueta, quien))
+    }
+  }
   res
 }
 
@@ -189,14 +212,17 @@ for (quien in quienes) {
     eb[["__html__"]] <- NULL; er[["__html__"]] <- NULL
     comunes <- intersect(names(eb), names(er))
     difs <- character()
-    for (k in comunes) {
-      d <- names(eb[[k]])[vapply(names(eb[[k]]), function(p) !identical(eb[[k]][[p]], er[[k]][[p]]), logical(1))]
-      if (length(d)) difs <- c(difs, sprintf("%s { %s }", k, paste(sprintf("%s: %s -> %s", d,
-                                                     vapply(d, function(p) eb[[k]][[p]], ""), vapply(d, function(p) er[[k]][[p]], "")), collapse = "; ")))
+    nombre <- if (v == "ENTRAR") "sign-in page" else if (v == "FLUJO") "Flujo (vista previa)" else PESTANAS[[v]]
+    for (k in comunes) for (p in names(eb[[k]])) {
+      r <- tema_comparar_valor(p, eb[[k]][[p]], er[[k]][[p]], de_max = DE_MAX, alfa_max = 0.01)
+      if (r$estado == "falla")
+        difs <- c(difs, sprintf("%s { %s: %s -> %s }", k, p, eb[[k]][[p]], er[[k]][[p]]))
+      else if (r$estado == "aviso")
+        AVISOS[[length(AVISOS) + 1L]] <<- data.frame(pestana = nombre, usuario = quien, elemento = k, propiedad = p,
+                                                     master = eb[[k]][[p]], rama = er[[k]][[p]], dE = round(r$de, 2))
     }
-    nombre <- if (v == "ENTRAR") "sign-in page" else PESTANAS[[v]]
-    if (!ok(sprintf("[%s] %s: %d elements compared, same computed style (only in master %d, only in branch %d)",
-                    quien, nombre, length(comunes), length(setdiff(names(eb), comunes)), length(setdiff(names(er), comunes))),
+    if (!ok(sprintf("[%s] %s: %d elements compared, same computed style within ΔE %g (only in master %d, only in branch %d)",
+                    quien, nombre, length(comunes), DE_MAX, length(setdiff(names(eb), comunes)), length(setdiff(names(er), comunes))),
             length(difs) == 0L && length(comunes) > 20L))
       cat(paste0("      | ", utils::head(difs, 12)), sep = "\n")
   }
@@ -204,6 +230,15 @@ for (quien in quienes) {
   ok(sprintf("[%s] the branch shows every tab master shows (%s)", quien, paste(names(base), collapse = ",")), !length(faltan_v))
 }
 
+if (length(AVISOS)) {
+  av <- do.call(rbind, AVISOS)
+  utils::write.csv(av, file.path(SALIDA, "avisos_color.csv"), row.names = FALSE, fileEncoding = "UTF-8")
+  cat(sprintf("\nAvisos de color (Clásico se movió, dentro de ΔE %g):\n", DE_MAX))
+  for (i in seq_len(nrow(av)))
+    cat(sprintf("  AVISO [%s · %s] %s { %s: %s -> %s } ΔE %.2f\n", av$pestana[i], av$usuario[i], av$elemento[i],
+                av$propiedad[i], av$master[i], av$rama[i], av$dE[i]))
+}
+cat(sprintf("\nAvisos de color: %d (lista en %s)\n", length(AVISOS), file.path(SALIDA, "avisos_color.csv")))
 cat(sprintf("\nCapturas y estilos: %s\n", SALIDA))
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)
