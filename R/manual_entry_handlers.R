@@ -30,7 +30,7 @@ manual_entry_tab_content <- function(ledger, empresas, monedas = character(),
         textInput("me_parte",      party_lbl,                     value = ""),
         uiOutput("me_prov_suggestions"),
         textInput("me_codigo",     paste("C\u00f3digo de", party_lbl), value = ""),
-        numericInput("me_importe", "Importe", value = 0, min = 0)
+        hd_numero_input("me_importe", "Importe", formato = "monto", value = 0, min = 0)
       )
     ),
     fluidRow(
@@ -128,8 +128,8 @@ manual_edit_handlers <- function(input, output, session,
         uiOutput("me_prov_suggestions"),
         textInput("me_codigo", paste("C\u00f3digo de", party_lbl),
                   value = existing_row$Codigo %||% ""),
-        numericInput("me_importe", "Importe",
-                     value = existing_row$Importe %||% 0, min = 0)
+        hd_numero_input("me_importe", "Importe", formato = "monto",
+                        value = existing_row$Importe %||% 0, min = 0)
       )
     ),
     fluidRow(
