@@ -109,6 +109,9 @@ utils::assignInNamespace("s3read_using", function(FUN, ..., object, bucket = NUL
   .arr_using_real(FUN, ..., object = object, bucket = bucket, opts = opts)
 }, "aws.s3")
 
+# ARR_TRACE (T69b): Shiny writes every message it sends ("send") to this
+# process's log, to tell "never written" from "lost on the way".
+if (nzchar(Sys.getenv("ARR_TRACE"))) options(shiny.trace = Sys.getenv("ARR_TRACE"))
 app <- source(file.path(raiz, "app.R"))$value   # app.R expects the global env (S3_KEYS, ...)
 cubeta <- tryCatch(.s3_bucket(), error = function(e) Sys.getenv("S3_BUCKET"))
 if (!identical(cubeta, "antiguedad-rds-dev"))

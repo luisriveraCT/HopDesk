@@ -76,12 +76,13 @@ correr <- function(et, nivel) {
   if (!ok(paste(et, "the real app starts on dev"), !is.null(app))) return(invisible())
   b <<- new_chromote_session()
   invisible(b$Emulation$setDeviceMetricsOverride(width = 1293L, height = 632L, deviceScaleFactor = 1, mobile = FALSE))
-  tablas <- character(); quitar_msgs <- character(); n_marcos <- 0L; claves_marcos <- character()
+  tablas <- character(); quitar_msgs <- character(); n_marcos <- 0L; claves_marcos <- character(); n_oculta <- 0L
   invisible(b$Network$enable())
   b$Network$webSocketFrameReceived(callback_ = function(m) {
     p <- m$response$payloadData %||% ""; n_marcos <<- n_marcos + 1L
     claves_marcos <<- c(claves_marcos, regmatches(p, regexpr('^\\{"[A-Za-z_-]+"', p)))
     if (grepl("remove-tab", p, fixed = TRUE)) quitar_msgs <<- c(quitar_msgs, substr(p, 1, 160))
+    if (grepl("ocultaNivel", p, fixed = TRUE)) n_oculta <<- n_oculta + 1L
     if (grepl("t69_quitadas", p, fixed = TRUE)) quitar_msgs <<- c(quitar_msgs, paste("runjs T69 recibido:", substr(p, 1, 80)))
     if (grepl("hdt-datos", p, fixed = TRUE)) {
       t <- regmatches(p, gregexpr('"tabla":"[a-z_0-9]+"', p))[[1]]
@@ -108,16 +109,25 @@ correr <- function(et, nivel) {
     return(invisible())
   Sys.sleep(40)   # R loads the data ~35 s after signing in: let every table push what it would push
   pres <- en_dom()
-  # The tabs a person can SEE, by geometry (not by class): the menu (☰ at
-  # 1293 px) is opened first, each link must have a size and not be hidden.
-  ev("var m = document.querySelector('.navbar-toggler'); if (m && getComputedStyle(m).display !== 'none' && m.getAttribute('aria-expanded') !== 'true') m.click(); true")
-  Sys.sleep(1)
-  vistas_tabs <- tryCatch(unlist(ev("Array.from(document.querySelectorAll('.navbar .nav-link[data-value]')).filter(function(a){
-      var r = a.getBoundingClientRect(), s = getComputedStyle(a), li = a.closest('li');
-      return r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden' &&
-             (!li || getComputedStyle(li).display !== 'none'); }).map(function(a){ return a.getAttribute('data-value'); })")),
-      error = function(e) character())
-  cat("      | pestañas VISIBLES:", paste(vistas_tabs, collapse = " "), "\n")
+  # The tabs a person can see: the link and its <li> are not display:none
+  # (the tier's hiding sets that on both). Not by size: inside the collapsed
+  # ☰ menu at 1293 px every link measures 0 and the check measured nothing.
+  visibles_js <- "Array.from(document.querySelectorAll('.navbar .nav-link[data-value]')).filter(function(a){
+      var li = a.closest('li');
+      return getComputedStyle(a).display !== 'none' && (!li || getComputedStyle(li).display !== 'none'); })
+      .map(function(a){ return a.getAttribute('data-value'); })"
+  ver_tabs <- function() tryCatch(unlist(ev(visibles_js)), error = function(e) character())
+  # The tier's hiding is sent from an observer that runs after the session's
+  # long first load (R does one thing at a time): seen in the shiny.trace
+  # log, the "hide" messages leave R minutes after signing in. Wait for them,
+  # never measure at a fixed time (that is what made T69 look broken).
+  t0 <- Sys.time()
+  if (nzchar(nivel))   # only a forced (limited) tier has tabs to wait for
+    poll_until(function() !length(intersect(ver_tabs(), TESORERIA_TABS)) && length(ver_tabs()) > 0L,
+               timeout_s = as.numeric(Sys.getenv("T69_ESPERA_PESTANAS", "300")), interval_s = 2)
+  vistas_tabs <- ver_tabs()
+  cat(sprintf("      | pestañas VISIBLES: %s (tras %.0f s de espera)\n", paste(vistas_tabs, collapse = " "),
+              as.numeric(Sys.time() - t0, units = "secs")))
   cat("      | pestañas en la página:", paste(pres, collapse = " "), "\n")
   cat("      | #nav:", tryCatch(ev("(function(){ var n = document.getElementById('nav'); if (!n) return 'no existe';
       return n.tagName + ' class=' + n.className + ' tabsetid=' + n.getAttribute('data-tabsetid') +
@@ -129,6 +139,7 @@ correr <- function(et, nivel) {
       return a ? getComputedStyle(a).display + ' oculta=' + a.dataset.ocultaNivel : 'no'; })()"), error = function(e) "?"),
       "| shinyjs:", tryCatch(ev("typeof shinyjs"), error = function(e) "?"),
       "| t69_quitadas:", tryCatch(ev("String((Shiny.shinyapp.$inputValues || {}).t69_quitadas)"), error = function(e) "?"), "\n")
+  cat("      | marcos con el CSS de ocultar (ocultaNivel):", n_oculta, "\n")
   tt <- table(claves_marcos)
   cat("      | marcos totales:", n_marcos, "| tipos:", paste(names(tt), tt, collapse = " "), "\n")
   cat("      | mensajes remove-tab / runjs T69:", length(quitar_msgs), if (length(quitar_msgs)) quitar_msgs[1] else "", "\n")
@@ -162,9 +173,8 @@ correr <- function(et, nivel) {
 r <- correr("[compras]", "compras")
 if (is.list(r)) {
   ok("[compras] Panorama and Requisiciones are in the page", all(c("PAN", "REQ") %in% r$tabs))
-  # T69b (open): the page still shows the other tabs to Compras -- empty of
-  # treasury data (the check below), but shown. This fails until T69b.
-  ok(sprintf("[compras][T69b] no tab other than PAN and REQ is visible (visible: %s)",
+  # The tier's hiding reaches the page once R has sent it (waited for above).
+  ok(sprintf("[compras] no tab other than PAN and REQ is visible (visible: %s)",
              paste(setdiff(intersect(r$visibles, c(TESORERIA_TABS, "PAN", "REQ")), c("PAN", "REQ")), collapse = ",")),
      length(r$visibles) > 0L && !length(setdiff(intersect(r$visibles, c(TESORERIA_TABS, "PAN", "REQ")), c("PAN", "REQ"))))
   ok(sprintf("[compras] no treasury table's data crossed the websocket (%s)",
