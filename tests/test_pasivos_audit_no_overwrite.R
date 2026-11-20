@@ -71,5 +71,23 @@ ok("... it warns that it refuses to overwrite", !is.null(r$warning) && grepl("re
 r <- scenario(function(client_id = NULL) env$.schema_pasivos_audit(), exists = FALSE)
 ok("an empty read with no file yet starts the audit with 1 row", !is.null(r$saved) && nrow(r$saved) == 1L)
 
+# T72 (A1): the WRITE of pasivos_audit.rds fails (S3, the safety net). It
+# used to stop() before log_action, and every caller swallows errors: the
+# action was in no log at all. Now app_audit gets it first, and nothing stops.
+orden <- character(); logged <- 0L; w <- NULL
+env$load_pasivos_audit <- function(client_id = NULL) five
+env$.pasivos_audit_existe <- function(full_key) TRUE
+env$save_pasivos_audit <- function(df, client_id = NULL) { orden <<- c(orden, "pasivos_audit"); stop("[S3_RED] refusing to write") }
+env$log_action <- function(...) { orden <<- c(orden, "app_audit"); logged <<- logged + 1L }
+res <- tryCatch(withCallingHandlers(
+  suppressMessages(env$pasivos_log_audit("liability.created", user = "luis", target_kind = "liability",
+                                         target_id = "l1", client_id = "networks")),
+  warning = function(cond) { w <<- conditionMessage(cond); invokeRestart("muffleWarning") }),
+  error = function(e) e)
+ok("T72 a failed write of pasivos_audit no longer stops pasivos_log_audit (it threw, and callers swallowed it)",
+   !inherits(res, "error"))
+ok("T72 ...the action reaches app_audit, and BEFORE the pasivos_audit write", logged == 1L && identical(orden[1], "app_audit"))
+ok("T72 ...and it warns that pasivos_audit was not written", !is.null(w) && grepl("not written", w))
+
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)

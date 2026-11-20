@@ -96,20 +96,11 @@ pasivos_log_audit <- function(action_type,
     notes          = as.character(notes %||% NA_character_)
   )
 
-  # Append on a fresh, strict read. This used to fall back to an EMPTY table
-  # when the read failed and then save that plus the new row -- overwriting the
-  # whole pasivos audit with one row (found 2026-10-31, CM05/CM06). A read that
-  # fails, or comes back empty for an object that exists, now skips this table
-  # (and says so); the app_audit dual-write below still records the action.
-  existing <- tryCatch(.pasivos_audit_leer_para_agregar(client_id), error = function(e) e)
-  if (inherits(existing, "error")) {
-    msg <- sprintf("[pasivos] pasivos_audit not written (%s): %s", action_type, conditionMessage(existing))
-    message(msg)
-    warning(msg, call. = FALSE)
-  } else {
-    save_pasivos_audit(dplyr::bind_rows(existing, new_row), client_id = client_id)
-  }
-
+  # The Actividad log FIRST (T72). It used to come after save_pasivos_audit(),
+  # which stop()s on any S3 failure or the safety net (.s3_write); every
+  # caller wraps this function in tryCatch(..., error = function(e) NULL), so
+  # one failed write of pasivos_audit.rds left the action in NO log at all --
+  # Luis created and edited a liability and Actividad showed nothing.
   notes_txt   <- if (!is.na(notes) && nzchar(notes)) notes else NULL
   description <- if (!is.null(notes_txt)) sprintf("%s: %s", action_type, notes_txt) else action_type
   tryCatch(
@@ -126,6 +117,23 @@ pasivos_log_audit <- function(action_type,
     ),
     error = function(e) warning("[pasivos] log_action dual-write failed: ", e$message)
   )
+
+  # Then the module's own table, never able to stop anything (T72): append on
+  # a fresh, strict read. This used to fall back to an EMPTY table when the
+  # read failed and then save that plus the new row -- overwriting the whole
+  # pasivos audit with one row (found 2026-10-31, CM05/CM06). A read or a
+  # write that fails now skips this table and says so; the entry above is
+  # already in the Actividad log.
+  escrito <- tryCatch({
+    existing <- .pasivos_audit_leer_para_agregar(client_id)
+    save_pasivos_audit(dplyr::bind_rows(existing, new_row), client_id = client_id)
+    TRUE
+  }, error = function(e) e)
+  if (inherits(escrito, "error")) {
+    msg <- sprintf("[pasivos] pasivos_audit not written (%s): %s", action_type, conditionMessage(escrito))
+    message(msg)
+    warning(msg, call. = FALSE)
+  }
 
   invisible(row_id)
 }
