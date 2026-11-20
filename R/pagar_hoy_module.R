@@ -928,12 +928,20 @@ pagarHoyServer <- function(id, shared) {
         if (isTRUE(abs(new_val - current_val) < 0.001)) return()
         sa <- saldos_apertura()
         sa[[emp]][[cur]] <- new_val
-        saldos_apertura(sa)
-        tryCatch(
+        # Saved first (rule 17): save_saldos_apertura_user() gives FALSE when
+        # S3 refuses. Then the session keeps what S3 has, the field goes back
+        # to it (observer 2 sees it equal and writes nothing), the user is
+        # told, and no "actualizado" is logged.
+        guardado <- isTRUE(tryCatch(
           save_saldos_apertura_user(sa, shared$current_user(),
                                     client_id = shared$effective_client_id()),
-          error = function(e) NULL
-        )
+          error = function(e) FALSE))
+        if (!guardado) {
+          showNotification(tr("comun.error_guardar"), type = "error")
+          hd_numero_update(session, paste0("bal_", emp), value = current_val)
+          return()
+        }
+        saldos_apertura(sa)
         log_action(shared$current_user(), "pagar_hoy", "editar_saldo_apertura",
                    sprintf("Saldo de apertura de %s (%s) actualizado a %s", emp, cur, fmt_money(new_val)),
                    target_id = emp,

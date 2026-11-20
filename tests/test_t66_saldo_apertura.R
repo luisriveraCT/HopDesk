@@ -10,8 +10,11 @@
 #   2. an edit saves and logs; a negative is accepted (an overdraft);
 #   3. empty or a text (NA, which used to become 0 and be saved): one aviso,
 #      nothing saved, nothing logged;
+#   4. S3 refuses the save (the integrador's 3rd commit): the user is told,
+#      no "editar_saldo_apertura" log, the session keeps what S3 has.
 # Run from project root:  Rscript tests/test_t66_saldo_apertura.R
-# Contraprueba: on 5e102e3 case 3 fails (NA saved as 0).
+# Contraprueba: on 5e102e3 cases 3 and 4 fail (NA saved as 0; a refused
+# save logged as "actualizado").
 # =============================================================================
 cat("=== test_t66_saldo_apertura ===\n\n")
 suppressPackageStartupMessages({ library(shiny); library(dplyr) })
@@ -99,6 +102,12 @@ r <- correr(function(bal, moneda) bal(NA_real_))
 ok("3 NA: one aviso 'Saldo apertura: escribe un número.'", identical(AVISOS, "Saldo apertura: escribe un número."))
 ok("3 NA: nothing saved, nothing logged, the session keeps 1,000",
    r$escrituras == 0L && identical(sa_s3(), SA0) && !length(LOGS) && identical(r$sa$Networks$MXN, 1000))
+
+# 4. S3 refuses the save
+r <- correr(function(bal, moneda) bal(777), falla = TRUE)
+ok("4 S3 refuses: the user is told it was not saved", tr("comun.error_guardar") %in% AVISOS)
+ok("4 S3 refuses: no 'editar_saldo_apertura' log", !"editar_saldo_apertura" %in% LOGS)
+ok("4 S3 refuses: S3 and the session keep 1,000", identical(sa_s3(), SA0) && identical(r$sa$Networks$MXN, 1000))
 
 s3_memoria_restaurar()
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
