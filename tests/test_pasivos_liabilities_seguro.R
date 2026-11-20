@@ -242,6 +242,8 @@ res <- asistente(sh)
 ok(!isTRUE(res$ok) && identical(res$msg, tr("tablas.pasivos.no_editar_borrado")) && .mem_escrituras == escrituras &&
      identical(fila_s3("L1")$estado, "deleted"),
    "C4: editing a liability another session deleted is refused, nothing written")
+ok(identical(vapply(auditorias, function(v) v$action_type %||% "", ""), "liability.save_refused") && identical(auditorias[[1]]$target_id, "L1"),
+   "C4 (T72): the refusal is in the log (liability.save_refused, L1)")
 
 # C5: a failed read, then a failed write: nothing written, the session as it
 # was, no bump, it says so.
@@ -256,9 +258,24 @@ for (falla in c("lectura", "escritura")) {
   ok(!isTRUE(res$ok) && identical(res$msg, NO_GUARDADO) && identical(en_s3(), antes) && .mem_escrituras == escrituras,
      sprintf("C5 failed %s: not saved, says so, nothing written", falla))
   ok(identical(isolate(sh$pasivos_liabilities_db()), LIABS_B) && identical(isolate(sh$pasivos_provisions_db()), PROVS0) &&
-       !length(bumps) && !length(auditorias),
-     sprintf("C5 failed %s: the session as it was, no bump, no audit", falla))
+       !length(bumps),
+     sprintf("C5 failed %s: the session as it was, no bump", falla))
+  ok(identical(vapply(auditorias, function(v) v$action_type %||% "", ""), "liability.save_failed"),
+     sprintf("C5 failed %s (T72): the failed save is in the log, once (liability.save_failed), nothing else", falla))
 }
+
+# C5b (T72): the liability saves but its provisions come out empty (the
+# wizard's early return): it was in no log; now liability.edited, with why.
+sembrar_todo(LIABS_B); sh <- sesion_wiz()
+generar_real <- pasivos_generate_provisions
+pasivos_generate_provisions <- function(...) .schema_pasivos_provision()
+res <- asistente(sh)
+pasivos_generate_provisions <- generar_real
+ok(isTRUE(res$ok) && isTRUE(fila_s3("L1")$amount_default == 120),
+   "C5b: no provisions generated: L1 is still saved (as before)")
+ok(identical(vapply(auditorias, function(v) v$action_type %||% "", ""), "liability.edited") && grepl("no provisions generated", auditorias[[1]]$notes, fixed = TRUE) &&
+     identical(auditorias[[1]]$after$amount_default, 120),
+   "C5b (T72): ...and now it is in the log: liability.edited, its after, and why no provisions")
 
 # C6: the liability saves but its provisions' save fails: S3's provisions and
 # the session's stay, no provisions bump, and it says so (not "guardado").

@@ -310,16 +310,30 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
     if (wiz$mode == "edit") fresco <- fresco[fresco$id != fila$id, , drop = FALSE]
     dplyr::bind_rows(fresco, fila)
   }), error = function(e) e)
+  # T72: every exit of this save is in the log, also the ones that save
+  # nothing (what was tried, and why it did not happen).
+  .wiz_log <- function(tipo, notas, after = liab_row) tryCatch(pasivos_log_audit(
+    action_type = tipo, user = user,
+    empresa     = (after %||% before_row %||% list(empresa = NA_character_))$empresa[1] %||% NA_character_,
+    target_kind = "liability",
+    target_id   = (after$id %||% wiz$edit_target_id) %||% NA_character_,
+    before      = if (!is.null(before_row) && nrow(before_row)) as.list(before_row) else NULL,
+    after       = if (!is.null(after)) as.list(after) else NULL,
+    notes       = notas, client_id = cid), error = function(e) NULL)
   if (inherits(liabs, "error")) {
     message("[wizard] liability not saved: ", conditionMessage(liabs))
+    .wiz_log("liability.save_failed", paste0(wiz$mode, ": ", conditionMessage(liabs)))
     return(list(ok = FALSE, msg = tr("tablas.pasivos.no_guardado")))
   }
   if (identical(motivo, "borrado")) {
     shared$pasivos_liabilities_db(liabs)
+    .wiz_log("liability.save_refused", "edit of a liability already in the Papelera (another session)")
     return(list(ok = FALSE, msg = tr("tablas.pasivos.no_editar_borrado")))
   }
-  if (inherits(motivo, "error"))
+  if (inherits(motivo, "error")) {
+    .wiz_log("liability.save_refused", paste0(wiz$mode, ", the row could not be built: ", conditionMessage(motivo)))
     return(list(ok = FALSE, msg = tr("tablas.pasivos.error_construir", detalle = conditionMessage(motivo))))
+  }
   shared$pasivos_liabilities_db(liabs)
   bump_sync_version("pasivos_liabilities_db", client_id = cid)
 
@@ -385,6 +399,10 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
     liab_row$categoria %in% c("regular", "tarjeta")
   if (!nrow(generated) && !sin_filas_por_fin) {
     err_detail <- if (length(gen_err)) gen_err else tr("tablas.pasivos.sin_filas_generadas")
+    # T72: the liability IS saved here (above); it left no trace when its
+    # provisions came out empty.
+    .wiz_log(if (wiz$mode == "create") "liability.created" else "liability.edited",
+             paste0("no provisions generated: ", err_detail))
     shiny::showNotification(
       tr("tablas.pasivos.error_generar", detalle = err_detail),
       type = "error", duration = 15

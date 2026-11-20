@@ -6,6 +6,7 @@
 
 PASIVOS_ACTION_TYPES <- c(
   "liability.created", "liability.edited", "liability.deleted", "liability.restored",
+  "liability.save_failed", "liability.save_refused",   # T72: the wizard's exits that save nothing
   "provision.generated", "provision.edited", "provision.deleted", "provision.cancelled",
   "provision.converted_to_item", "provision.item_confirmed",
   "provision.item_reversed", "provision.revived",

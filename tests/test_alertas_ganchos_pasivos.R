@@ -55,8 +55,13 @@ pw <- readLines("R/pasivos_wizard_module.R", warn = FALSE, encoding = "UTF-8"); 
 aud <- grep('"liability.created" else "liability.edited"', pw, fixed = TRUE)
 ok("S wizard: two crear_pasivo hooks, only on create",
    nrow(g) == 2L && all(g$accion == "crear_pasivo") && all(grepl('if (wiz$mode == "create")', pw[g$linea], fixed = TRUE)))
+# T72 added a third such audit (no provisions generated, the liability is
+# saved): each hook still comes right after its OWN audit -- the nearest one
+# above it -- and the second hook's audit lies after the first hook.
+propia <- function(l) { a <- aud[aud < l]; if (length(a)) max(a) else NA_integer_ }
 ok("S wizard: each one after its own liability.created audit (provisions failed, and full success)",
-   length(aud) == 2L && g$linea[1] > aud[1] && g$linea[1] < aud[2] && g$linea[2] > aud[2])
+   length(aud) >= 2L && nrow(g) == 2L && !anyNA(vapply(g$linea, propia, 1L)) &&
+     propia(g$linea[2]) > g$linea[1])
 
 # ── B: when they fire ──────────────────────────────────────────────────────
 G <- new.env()
