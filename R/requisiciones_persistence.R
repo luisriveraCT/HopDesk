@@ -945,7 +945,7 @@ requisicion_comentar <- function(client_id, requisicion_id, texto, por) {
       titulo = tr("requisiciones.aviso.comentario", folio = fila$folio),
       cuerpo = if (nchar(t) > 140L) paste0(substr(t, 1L, 140L), "…") else t,
       severidad = "info", clave = paste0("req:", requisicion_id),
-      enlace = "requisiciones", autor = por))
+      enlace = "REQ", autor = por))   # the Requisiciones tab's value: Panorama's feed only links tabs (T62)
     TRUE
   }, error = function(e) { message("[requisiciones] aviso de comentario falló: ", conditionMessage(e)); FALSE })
   list(id = id, aviso_ok = aviso_ok)

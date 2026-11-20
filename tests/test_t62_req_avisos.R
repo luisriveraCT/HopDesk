@@ -194,6 +194,17 @@ test_that("reintentar no duplica: el mismo evento publicado dos veces deja un av
   expect_identical(nrow(para("beto")), 1L); expect_identical(para("beto")$contador, 1L)
 })
 
+test_that("el aviso de un comentario enlaza la pestaña Requisiciones (REQ): el feed solo enlaza valores de pestaña", {
+  reiniciar(); gente()
+  r <- requisicion_crear(CID, base_req, "ana")
+  requisicion_comentar(CID, r$id, "¿Ya llegó?", "beto")
+  a <- para("ana")
+  a <- a[grepl("^req:", a$clave), , drop = FALSE]
+  expect_identical(nrow(a), 1L)
+  expect_identical(a$enlace, "REQ")
+  expect_true(grepl("^[A-Z]{2,6}$", a$enlace))        # what panorama_module.R's feed links
+})
+
 test_that("Panorama: el chip Requisiciones existe y un comentario de requisición también cae ahí", {
   expect_true("req" %in% PANORAMA_TIPOS_FEED)
   df <- data.frame(tipo = c("personal", "personal", "automatico"), clase = NA_character_, severidad = "info",
