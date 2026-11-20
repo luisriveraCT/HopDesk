@@ -295,19 +295,40 @@ prefs_leer <- function(client_id, usuario) {
   utils::modifyList(PREFS_DEFECTO, as.list(guardadas))
 }
 
-prefs_guardar <- function(client_id, usuario, cambios) {
+# Preferences that are not logged (T72): they change on their own, by the
+# volume of use, not by a decision -- like the "leído" marks (the
+# Coordinador's call). Panorama writes ultima_visita on every visit.
+PREFS_SIN_LOG <- c("ultima_visita")
+
+# home: the actor's own client (T72; staff jumping in), NULL = the client.
+prefs_guardar <- function(client_id, usuario, cambios, home = NULL) {
   cid <- .avisos_cid(client_id)
   u <- tolower(usuario %||% "")
   if (!nzchar(u)) stop("[prefs] usuario es obligatorio", call. = FALSE)
+  cambio_log <- list()
   .s3_modificar(.PREFERENCIAS_KEY, cid, .schema_preferencias, function(df) {
     i <- which(tolower(df$usuario) == u)
     actuales <- if (length(i)) tryCatch(jsonlite::fromJSON(df$datos[i[1]], simplifyVector = TRUE),
                                         error = function(e) list()) else list()
+    # T72: only what really changed, with its antes and despues (computed
+    # again on .s3_modificar's retry, on what it reads then).
+    cambio_log <<- list()
+    for (k in setdiff(names(cambios), PREFS_SIN_LOG))
+      if (!identical(actuales[[k]], cambios[[k]]))
+        cambio_log[[k]] <<- list(antes = actuales[[k]], despues = cambios[[k]])
     datos <- as.character(jsonlite::toJSON(utils::modifyList(as.list(actuales), cambios),
                                            auto_unbox = TRUE, null = "null"))
     if (length(i)) { df$datos[i[1]] <- datos; df$actualizado[i[1]] <- .ahora() }
     else df <- dplyr::bind_rows(df, tibble::tibble(usuario = u, datos = datos, actualizado = .ahora()))
     df
   })
+  # After the write; a log that fails never fails the save (T72, category
+  # "preferencias": avisos, "De quién recibo avisos", Panorama).
+  if (length(cambio_log))
+    tryCatch(log_action(user = u, module = "preferencias", action = "guardar_preferencias",
+                        description = tr("avisos.log.preferencias", claves = paste(names(cambio_log), collapse = ", ")),
+                        target_id = u, metadata = list(cambios = cambio_log),
+                        client_id = cid, viewer_home_client_id = home %||% cid),
+             error = function(e) message("[prefs] log_action fall\u00f3: ", conditionMessage(e)))
   invisible(TRUE)
 }

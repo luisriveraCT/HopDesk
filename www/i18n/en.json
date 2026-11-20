@@ -2028,5 +2028,6 @@
   "requisiciones.log.adjuntar_evidencia": "Evidence attached to a requisition",
   "requisiciones.log.agregar_tabla_evidencia": "Table pasted as a requisition's evidence",
   "requisiciones.log.papelera_evidencia": "Evidence sent to the trash",
-  "requisiciones.log.restaurar_evidencia": "Evidence restored from the trash"
+  "requisiciones.log.restaurar_evidencia": "Evidence restored from the trash",
+  "avisos.log.preferencias": "Preferences changed: {claves}"
 }

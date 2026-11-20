@@ -2028,5 +2028,6 @@
   "requisiciones.log.adjuntar_evidencia": "Evidencia adjuntada a una requisición",
   "requisiciones.log.agregar_tabla_evidencia": "Tabla pegada como evidencia de una requisición",
   "requisiciones.log.papelera_evidencia": "Evidencia enviada a la papelera",
-  "requisiciones.log.restaurar_evidencia": "Evidencia restaurada de la papelera"
+  "requisiciones.log.restaurar_evidencia": "Evidencia restaurada de la papelera",
+  "avisos.log.preferencias": "Preferencias cambiadas: {claves}"
 }
