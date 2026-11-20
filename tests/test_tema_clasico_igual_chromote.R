@@ -246,7 +246,7 @@ for (quien in quienes) {
       if (r$estado == "falla")
         difs <- c(difs, sprintf("%s { %s: %s -> %s }", k, p, eb[[k]][[p]], er[[k]][[p]]))
       else if (r$estado == "aviso")
-        AVISOS[[length(AVISOS) + 1L]] <- data.frame(   # top-level loop: plain <-pestana = nombre, usuario = quien, elemento = k, propiedad = p,
+        AVISOS[[length(AVISOS) + 1L]] <- data.frame(pestana = nombre, usuario = quien, elemento = k, propiedad = p,
                                                      master = eb[[k]][[p]], rama = er[[k]][[p]], dE = round(r$de, 2))
     }
     # Never "the same" out of two empty or signed-out screens (Coordinador,
