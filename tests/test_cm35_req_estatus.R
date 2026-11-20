@@ -152,6 +152,25 @@ ok("3 a confirmation written before CM35 gives por = NA, never a guess",
 ok("3 R2 keeps both provisions in its trace (P2 and P3)",
    all(c("P2", "P3") %in% es$ref_id[es$requisicion_id == "R2"]))
 
+# ── 3a. Each event's id carries ITS OWN stage, in a mixed batch (Ejecutor 3) ─
+# fila() built the id suffix with ifelse() on a scalar tipo, so every status
+# event of one batch took the first row's stage: creada, papelera and
+# restaurada all ended "|sin_provision".
+r7 <- .normalize(req("R7", "REQ-2026-0007"), .schema_requisiciones)
+h7 <- .normalize(bind_rows(h("R7", "creada", "ana", "2026-11-01 10:00"),
+                           h("R7", "ligada", "ana", "2026-11-01 11:00", "P7"),
+                           h("R7", "papelera", "ana", "2026-11-02 10:00"),
+                           h("R7", "restaurada", "beto", "2026-11-03 10:00"),
+                           h("R7", "editada", "ana", "2026-11-03 11:00"),
+                           h("R7", "comentario", "ana", "2026-11-03 12:00")), .schema_req_historial)
+e7 <- requisiciones_eventos_en(r7, h7, audit[0, ], conf[0, ], agenda = NULL)
+suf <- sub("^.*\\|", "", e7$id[order(e7$en)])
+ok("3a a mixed batch: each id ends with its own stage or tipo (sin_provision, provisionada, papelera, restaurada, edicion, comentario)",
+   identical(suf, c("sin_provision", "provisionada", "papelera", "restaurada", "edicion", "comentario")))
+ok("3a …and the walk still goes sin_provision > provisionada > papelera > provisionada (restored to the stage before the trash)",
+   identical(e7$a[e7$tipo == "estatus"][order(e7$en[e7$tipo == "estatus"])],
+             c("sin_provision", "provisionada", "papelera", "provisionada")))
+
 # ── 3b. "Pending" is the Agenda's own criterion (A2, T60) ─────────────────
 # A row with status NA is not shown by the Agenda (agenda_pendientes()), so it
 # must not make a requisition "en_agenda" either, nor give an event.

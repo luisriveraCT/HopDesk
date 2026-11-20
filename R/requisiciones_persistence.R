@@ -1157,11 +1157,16 @@ requisiciones_eventos_en <- function(reqs, historial, audit, conf, agenda = NULL
                           por = character(), tipo = character(), de = character(), a = character(),
                           fuente = character(), ref_id = character(), detalle = character())
   if (!nrow(reqs)) return(vacio)
-  fila <- function(rid, en, por, tipo, a, fuente, ref_id, src_id, detalle = NA_character_)
+  # tipo and a may come scalar (one stage for the whole batch) or per row: both
+  # are recycled to the batch first. ifelse() on a scalar tipo returned ONE
+  # value, and every id of the batch took the first row's stage (Ejecutor 3).
+  fila <- function(rid, en, por, tipo, a, fuente, ref_id, src_id, detalle = NA_character_) {
+    n <- length(src_id); tipo <- rep_len(as.character(tipo), n); a <- rep_len(as.character(a), n)
     tibble::tibble(id = paste(fuente, src_id, ifelse(tipo == "estatus", a, tipo), sep = "|"),
                    requisicion_id = as.character(rid), en = as.POSIXct(en, tz = "UTC"),
                    por = as.character(por), tipo = tipo, a = as.character(a),
                    fuente = fuente, ref_id = as.character(ref_id), detalle = as.character(detalle))
+  }
   h <- historial[historial$requisicion_id %in% reqs$id, , drop = FALSE]
   partes <- list()
 
