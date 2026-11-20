@@ -1232,9 +1232,50 @@ evidencia_tabla <- function(client_id, evid_id) {
   list(celdas = celdas, encabezado = isTRUE(unlist(x$encabezado)[1]))
 }
 
-requisicion_historial <- function(client_id, requisicion_id) {
-  df <- .req_leer("historial", .req_cid(client_id))
+# A requisition's history (T72, the Coordinador's call): its own table,
+# requisiciones_historial.rds (still written: CM35/T62 ids come from it), and
+# the Actividad log (app_audit, module "requisiciones"), joined without
+# duplicates -- an entry of the log the table already has (same requisition,
+# action and author, within 2 minutes) is left out. So a history row whose
+# write failed (.req_historial() only logs that) still shows. `log`: the
+# read app_audit (read_audit_log()) when the caller has it.
+.REQ_ACCION_DE_LOG <- c(
+  crear_requisicion = "creada", editar_requisicion = "editada", mover_requisiciones = "movida",
+  papelera_requisiciones = "papelera", restaurar_requisiciones = "restaurada", ligar_provision = "ligada",
+  comentar_requisicion = "comentario", adjuntar_evidencia = "evidencia", agregar_tabla_evidencia = "evidencia",
+  papelera_evidencia = "evidencia_papelera", restaurar_evidencia = "evidencia_restaurada")
+
+.req_historial_de_log <- function(lg, requisicion_id, hist) {
+  vacio <- .schema_req_historial()
+  if (!is.data.frame(lg) || !nrow(lg) || !all(c("module", "action", "target_id") %in% names(lg))) return(vacio)
+  lg <- lg[!is.na(lg$module) & lg$module == "requisiciones" & lg$action %in% names(.REQ_ACCION_DE_LOG), , drop = FALSE]
+  if (!nrow(lg)) return(vacio)
+  filas <- list()
+  for (i in seq_len(nrow(lg))) {
+    ids <- intersect(strsplit(as.character(lg$target_id[i] %||% ""), ",", fixed = TRUE)[[1]], requisicion_id)
+    if (!length(ids)) next
+    det <- tryCatch(jsonlite::fromJSON(lg$metadata[i])$detalle, error = function(e) NULL)
+    det <- if (is.null(det) || !length(det) || is.na(det[[1]])) NA_character_ else as.character(det[[1]])
+    filas[[length(filas) + 1L]] <- tibble::tibble(
+      id = paste0("log:", lg$id[i], ":", ids), requisicion_id = ids,
+      accion = unname(.REQ_ACCION_DE_LOG[lg$action[i]]), detalle = det,
+      por = as.character(lg$user[i]), en = as.POSIXct(lg$ts[i], tz = "UTC"))
+  }
+  if (!length(filas)) return(vacio)
+  d <- dplyr::bind_rows(filas)
+  ya <- vapply(seq_len(nrow(d)), function(k) any(
+    hist$requisicion_id == d$requisicion_id[k] & hist$accion == d$accion[k] & hist$por %in% d$por[k] &
+      abs(as.numeric(difftime(hist$en, d$en[k], units = "secs"))) <= 120, na.rm = TRUE), logical(1))
+  d[!ya, , drop = FALSE]
+}
+
+requisicion_historial <- function(client_id, requisicion_id, log = NULL) {
+  cid <- .req_cid(client_id)
+  df <- .req_leer("historial", cid)
   df <- df[df$requisicion_id %in% requisicion_id, , drop = FALSE]
+  lg <- log %||% tryCatch(read_audit_log(cid), error = function(e) {
+    message("[requisiciones] historial: el log de actividad no se pudo leer: ", conditionMessage(e)); NULL })
+  df <- dplyr::bind_rows(df, .req_historial_de_log(lg, requisicion_id, df))
   df[order(df$en), , drop = FALSE]
 }
 

@@ -196,6 +196,36 @@ test_that("una escritura que falla no deja entrada de log", {
   expect_length(LOG, 0L)
 })
 
+test_that("requisicion_historial(): su tabla y el log, unidos y sin duplicados", {
+  reiniciar(); limpiar()
+  log_action <<- function(user, module, action, description, target_id = NA_character_, s3_key = NA_character_,
+                          metadata = NULL, client_id = NULL, viewer_home_client_id = NULL) {
+    LOG[[length(LOG) + 1L]] <<- list(user = user, module = module, action = action, target_id = target_id,
+                                     metadata = as.character(jsonlite::toJSON(metadata, auto_unbox = TRUE, null = "null")),
+                                     ts = Sys.time())
+    invisible(NULL)
+  }
+  r <- requisicion_crear(CID, base_req, "dani")
+  requisicion_editar(CID, r$id, list(monto = 20000), "eli")
+  como_log <- function() dplyr::bind_rows(lapply(seq_along(LOG), function(i) tibble::tibble(
+    id = paste0("e", i), ts = LOG[[i]]$ts, user = LOG[[i]]$user, module = LOG[[i]]$module,
+    action = LOG[[i]]$action, target_id = LOG[[i]]$target_id, metadata = LOG[[i]]$metadata)))
+  h <- requisicion_historial(CID, r$id, log = como_log())
+  expect_identical(h$accion, c("creada", "editada"))            # both in the table and the log: once each
+  # The table loses its "editada" row (its write failed): the log puts it back.
+  k <- paste0(CID, "/", REQ_KEYS$historial)
+  .mem[[k]] <- .mem[[k]][.mem[[k]]$accion != "editada", ]
+  h <- requisicion_historial(CID, r$id, log = como_log())
+  expect_identical(h$accion, c("creada", "editada"))
+  expect_identical(h$detalle[2], "monto")
+  expect_match(h$id[2], "^log:")
+  # Another module, or another requisition, never comes in.
+  otro <- dplyr::bind_rows(como_log(), tibble::tibble(id = "z", ts = Sys.time(), user = "x", module = "bancos",
+                                                      action = "editar_requisicion", target_id = r$id, metadata = "{}"))
+  expect_identical(nrow(requisicion_historial(CID, r$id, log = otro)), 2L)
+  expect_identical(nrow(requisicion_historial(CID, "otra", log = como_log())), 0L)
+})
+
 test_that("las claves requisiciones.log.* existen en es y en", {
   es <- jsonlite::fromJSON("www/i18n/es.json"); en <- jsonlite::fromJSON("www/i18n/en.json")
   cl <- grep("^requisiciones\\.log\\.", names(es), value = TRUE)
