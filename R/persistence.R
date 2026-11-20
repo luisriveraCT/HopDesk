@@ -608,11 +608,28 @@ unregister_username <- function(username) {
   result$value
 }
 
+# T69b: a session whose tier may not READ a treasury table reads it as its
+# empty start value (app.R), so it may not WRITE it either: a save of its
+# whole copy would wipe the table. Asked of the session running this write
+# (session$userData$hd_escritura_permitida, set in app.R from the effective
+# tier; nivel_escritura_permitida() in tier_registry.R). No session (jobs,
+# scripts) or no gate (fixtures): as before.
+.t69b_revisar_escritura <- function(key) {
+  s <- tryCatch(shiny::getDefaultReactiveDomain(), error = function(e) NULL)
+  f <- if (is.null(s)) NULL else tryCatch(s$userData$hd_escritura_permitida, error = function(e) NULL)
+  if (!is.function(f)) return(invisible(TRUE))
+  permitida <- tryCatch(shiny::isolate(f(key)), error = function(e) FALSE)
+  if (!isTRUE(permitida))
+    stop("[T69b] this session's tier may not write ", key, ": nothing was saved", call. = FALSE)
+  invisible(TRUE)
+}
+
 .s3_write <- function(obj, key, client_id = NULL, permitir_reduccion = FALSE) {
   message(sprintf("[S3_WRITE] ── start key='%s'", key))
 
   if (!is.character(key) || !nzchar(key))
     stop("[S3_WRITE] key is NULL or empty — check that S3_KEYS contains this entry")
+  .t69b_revisar_escritura(key)
   full_key <- tryCatch(.s3_key(key, client_id = client_id),  error = function(e) stop("s3_key failed: ", e$message))
   message(sprintf("[S3_WRITE] full_key='%s'", full_key))
 

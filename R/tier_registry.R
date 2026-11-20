@@ -262,6 +262,46 @@ nivel_reactivo_permitido <- function(tier, nombre) {
   is.null(lista) || any(pest %in% lista)
 }
 
+# ── Which treasury tables a tier may write (T69b) ────────────────────────────
+# The read gate gives a gated session the EMPTY start value; a save that
+# writes the whole session copy would then wipe the table. So a session may
+# write a treasury table only if it may read it: .s3_write() asks
+# session$userData$hd_escritura_permitida(key) (app.R) before anything is
+# written. The S3 file (S3_KEYS value, or its per-user pattern) -> the
+# reactive that holds it. pasivos_provisions is not listed on purpose:
+# "Crear provisión" is Compras' own path (from Requisiciones), and every
+# session write of it rebases on its base (an empty base only adds rows).
+HD_ARCHIVOS_TESORERIA <- c(
+  "invoice_moves.rds" = "moves_db", "calendar_notes.rds" = "notes_df", "invoice_tags.rds" = "tags_db",
+  "manual_invoices.rds" = "manual_inv", "pagar_hoy.rds" = "pagar_hoy_db", "pagar_hoy_sync.rds" = "pagar_hoy_db",
+  "agenda_sync_config.rds" = "pagar_hoy_db", "conciliacion.rds" = "conciliacion_rv", "interco_v2.rds" = "interco_v2",
+  "abonos.rds" = "abonos_db", "papelera.rds" = "papelera_rv", "ctas_cuentas.rds" = "ctas_cuentas",
+  "bancos_movimientos.rds" = "bancos_movimientos_db", "bancos_cuentas.rds" = "bancos_cuentas_db",
+  "bancos_confirmados.rds" = "bancos_confirmados_db", "bancos_papelera.rds" = "bancos_movimientos_db",
+  "parte_alias_map.rds" = "parte_alias_map_db", "policy_catalog.rds" = "policy_catalog_db",
+  "partner_policies.rds" = "partner_policies_db", "policy_moves.rds" = "policy_moves_db",
+  "holiday_overrides.rds" = "holiday_overrides_db", "sap_overrides.rds" = "sap_ov_db",
+  "pasivos_liabilities.rds" = "pasivos_liabilities_db",
+  "forecasting_series_observations.rds" = "forecasting_series_observations_db",
+  "forecasting_metrics.rds" = "forecasting_metrics_db",
+  "forecasting_subscriptions.rds" = "forecasting_subscriptions_db",
+  "forecasting_manual_curves.rds" = "forecasting_manual_curves_db")
+HD_ARCHIVOS_TESORERIA_PATRON <- c("^pagar_hoy_user_.*[.]rds$" = "pagar_hoy_db",
+                                  "^saldos_apertura_user_.*[.]rds$" = "pagar_hoy_db")
+
+# TRUE when a session of `tier` may write S3 file `key` (a key relative to
+# the client, as .s3_write() gets it). Not a treasury file: always.
+nivel_escritura_permitida <- function(tier, key) {
+  key <- as.character(key %||% "")[1]
+  nombre <- unname(HD_ARCHIVOS_TESORERIA[key])
+  if (is.na(nombre)) {
+    p <- names(HD_ARCHIVOS_TESORERIA_PATRON)[vapply(names(HD_ARCHIVOS_TESORERIA_PATRON), grepl, logical(1), x = key)]
+    nombre <- if (length(p)) unname(HD_ARCHIVOS_TESORERIA_PATRON[p[1]]) else NA_character_
+  }
+  if (is.na(nombre)) return(TRUE)
+  nivel_reactivo_permitido(tier, nombre)
+}
+
 .nivel_conocido <- function(tier)
   is.character(tier) && length(tier) == 1L && !is.na(tier) && nzchar(tier) && es_nivel(tier)
 

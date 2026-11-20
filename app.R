@@ -1597,6 +1597,10 @@ server <- function(input, output, session) {
     f
   }
   crudo <- function(x) attr(x, "crudo") %||% x
+  # …and a session may write a treasury table only if it may read it:
+  # .s3_write() asks this before writing (a whole-copy save from the empty
+  # value would wipe the table). Fail closed while the tier is unknown.
+  session$userData$hd_escritura_permitida <- function(key) nivel_escritura_permitida(tier_efectivo(), key)
   for (.nm in names(HD_REACTIVOS_TESORERIA))
     if (exists(.nm, envir = environment(), inherits = FALSE))
       assign(.nm, .rv_por_nivel(get(.nm, envir = environment(), inherits = FALSE), .nm), envir = environment())
