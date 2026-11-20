@@ -244,13 +244,40 @@ REQ_COLOR_DEFECTO  <- "#607d8b"
   i[1]
 }
 
-# The carpeta must exist and not be in the trash, itself or through an
-# ancestor (T61). NA = General, the virtual folder: always fine.
-.req_carpeta_ok <- function(cid, carpeta_id) {
-  if (is.na(carpeta_id)) return(invisible(TRUE))
-  c <- requisiciones_carpetas_arbol(.req_leer("carpetas", cid))
-  if (!any(c$id == carpeta_id & !c$en_papelera)) .req_error("requisiciones.error.carpeta")
-  invisible(TRUE)
+# ── Empresa contra carpeta (T61, Luis) ───────────────────────────────────────
+# A requisition's company is one of its folder's (General, carpeta_id NA, has
+# every company). Compared by company id (empresa_id_de(),
+# R/empresas_identidad.R), never by text. With no company in the catalog
+# there is nothing to compare against: only the folder is checked, as before.
+
+# The client's company catalog, strict.
+.req_empresas <- function(cid) leer_tabla_para_escribir(S3_KEYS$empresas, cid, .schema_empresas)
+
+.req_catalogo_vacio <- function(empresas) !any(!(empresas$deleted %in% TRUE) & !is.na(empresas$id))
+
+# TRUE where company `emp_id` is one of folder `carpeta_id`'s (on a tree).
+.req_empresa_cabe <- function(emp_id, carpeta_id, arbol, empresas) {
+  vapply(seq_along(emp_id), function(k) {
+    if (is.na(carpeta_id[k])) return(TRUE)
+    j <- match(carpeta_id[k], arbol$id)
+    if (is.na(j)) return(TRUE)            # its folder is gone: shown in General
+    e <- .req_carpeta_empresas(arbol$empresas[j], existentes = empresas$id)
+    is.null(e) || emp_id[k] %in% e
+  }, logical(1))
+}
+
+# The folder must be live and the company one of its own. `carpetas` is the
+# folder table as just read. Returns the text to store: the company's current
+# initials (one format, whatever the text was), or the text itself with an
+# empty catalog.
+.req_empresa_en_carpeta <- function(texto, carpeta_id, carpetas, empresas) {
+  a <- requisiciones_carpetas_arbol(carpetas)
+  if (!is.na(carpeta_id) && !any(a$id == carpeta_id & !a$en_papelera)) .req_error("requisiciones.error.carpeta")
+  if (.req_catalogo_vacio(empresas)) return(texto)
+  id <- empresa_id_de(texto, empresas)
+  if (is.na(id)) .req_error("requisiciones.error.empresa_no_reconocida")
+  if (!.req_empresa_cabe(id, carpeta_id, a, empresas)) .req_error("requisiciones.error.empresa_fuera_carpeta")
+  empresas$initials[match(id, empresas$id)]
 }
 
 # Liabilities, strict: a deleted one's provisional provisions are "borrada" (T18).
@@ -307,13 +334,15 @@ REQ_COLOR_DEFECTO  <- "#607d8b"
 requisicion_crear <- function(client_id, datos, por) {
   cid <- .req_cid(client_id)
   v <- .req_validar(datos)
-  .req_carpeta_ok(cid, v$carpeta_id)
   provision_id <- .req_txt(datos$provision_id)
   if (!is.na(provision_id)) .req_provision_libre(cid, provision_id)
+  empresas <- .req_empresas(cid)
   id <- uuid::UUIDgenerate(); ahora <- .req_ahora(); folio <- NA_character_
   .req_modificar("requisiciones", cid, function(df) {
     if (!is.na(provision_id) && any(df$provision_id %in% provision_id))
       .req_error("requisiciones.error.provision_ocupada")
+    # T61: live folder and one of its companies, on the folder table as read now.
+    v$empresa <<- .req_empresa_en_carpeta(v$empresa, v$carpeta_id, .req_leer("carpetas", cid), empresas)
     folio <<- .req_siguiente_folio(df$folio, format(ahora, "%Y", tz = .REQ_TZ))
     dplyr::bind_rows(df, tibble::tibble(
       id = id, folio = folio, titulo = v$titulo, empresa = v$empresa, proveedor = v$proveedor,
@@ -338,10 +367,19 @@ requisicion_editar <- function(client_id, id, cambios, por) {
   if (!is.null(cambios$monto) && is.null(cambios$moneda)) cambios$moneda_actual <- actual$moneda
   v <- .req_validar(cambios, parcial = TRUE)
   if (!length(v)) return(invisible(FALSE))
-  if ("carpeta_id" %in% names(v)) .req_carpeta_ok(cid, v$carpeta_id)
+  # T61: changing the company or the folder checks the pair; editing anything
+  # else never forces a requisition already outside its folder to change.
+  revisa <- any(c("empresa", "carpeta_id") %in% names(v))
+  empresas <- if (revisa) .req_empresas(cid)
   ahora <- .req_ahora(); cambiados <- character()
   .req_modificar("requisiciones", cid, function(df) {
     i <- .req_fila(df, id)
+    if (revisa) {
+      emp <- .req_empresa_en_carpeta(v$empresa %||% df$empresa[i],
+                                     if ("carpeta_id" %in% names(v)) v$carpeta_id else df$carpeta_id[i],
+                                     .req_leer("carpetas", cid), empresas)
+      if ("empresa" %in% names(v)) v$empresa <- emp
+    }
     for (k in names(v)) {
       antes <- df[[k]][i]
       if (!identical(antes, v[[k]]) && !(is.na(antes) && is.na(v[[k]]))) {
@@ -359,11 +397,20 @@ requisicion_editar <- function(client_id, id, cambios, por) {
 requisiciones_mover <- function(client_id, ids, carpeta_id, por) {
   cid <- .req_cid(client_id)
   carpeta_id <- .req_txt(carpeta_id)
-  .req_carpeta_ok(cid, carpeta_id)
+  empresas <- .req_empresas(cid)
   ahora <- .req_ahora(); movidas <- character()
   .req_modificar("requisiciones", cid, function(df) {
     # %in% matches NA with NA, so this also covers "no folder".
     i <- which(df$id %in% ids & is.na(df$papelera_en) & !(df$carpeta_id %in% carpeta_id))
+    # T61: every one must be of a company of the destination; if any is not,
+    # none moves (the message says how many to correct first).
+    a <- requisiciones_carpetas_arbol(.req_leer("carpetas", cid))
+    if (!is.na(carpeta_id) && !any(a$id == carpeta_id & !a$en_papelera)) .req_error("requisiciones.error.carpeta")
+    if (length(i) && !.req_catalogo_vacio(empresas)) {
+      eid <- empresa_id_de(df$empresa[i], empresas)
+      ok <- !is.na(eid) & .req_empresa_cabe(eid, rep(carpeta_id, length(i)), a, empresas)
+      if (any(!ok)) .req_error("requisiciones.error.empresa_fuera_mover", n = sum(!ok))
+    }
     df$carpeta_id[i] <- carpeta_id; df$actualizado_por[i] <- por; df$actualizado[i] <- ahora
     movidas <<- df$id[i]
     df
@@ -928,11 +975,16 @@ requisicion_historial <- function(client_id, requisicion_id) {
 #   etapa, provision_perdida (it had a provision that no longer exists),
 #   monto_mostrado / moneda_mostrada / monto_fuente: the firmest figure, never
 #     two summed -- confirmed payment -> item -> provision -> estimate,
-#   fecha_provision, dias_sin_provision, carpeta_nombre / carpeta_color,
+#   fecha_provision, dias_sin_provision, carpeta_nombre / carpeta_ruta /
+#     carpeta_color,
+#   empresa_id, empresa_aviso (T61, with `empresas`, the catalog): NA, or
+#     "no_reconocida" (the text names no company) / "fuera_carpeta" (a
+#     company that is not one of its folder's). Only marked, never rewritten.
 #   n_adjuntos, n_imagenes, n_tablas, primera_imagen_id,
 #   n_comentarios, comentarios_sin_leer.
 requisiciones_vista_en <- function(reqs, provs, conf, manual, carpetas, evid, coms,
-                                   leidos = NULL, usuario = NULL, hoy = .req_hoy(), liabs = NULL) {
+                                   leidos = NULL, usuario = NULL, hoy = .req_hoy(), liabs = NULL,
+                                   empresas = NULL) {
   n <- nrow(reqs)
   pid <- reqs$provision_id
   ep <- rep(NA_character_, n)
@@ -976,6 +1028,12 @@ requisiciones_vista_en <- function(reqs, provs, conf, manual, carpetas, evid, co
   reqs$carpeta_nombre <- cv$nombre[icar]
   reqs$carpeta_ruta   <- cv$ruta[icar]
   reqs$carpeta_color  <- cv$color[icar]
+  reqs$empresa_id <- NA_character_; reqs$empresa_aviso <- NA_character_
+  if (!is.null(empresas) && !.req_catalogo_vacio(empresas) && n) {
+    reqs$empresa_id <- empresa_id_de(reqs$empresa, empresas)
+    cabe <- .req_empresa_cabe(reqs$empresa_id, ifelse(is.na(icar), NA_character_, reqs$carpeta_id), ca, empresas)
+    reqs$empresa_aviso <- ifelse(is.na(reqs$empresa_id), "no_reconocida", ifelse(cabe, NA_character_, "fuera_carpeta"))
+  }
 
   ev <- evid[is.na(evid$papelera_en), , drop = FALSE]
   ev <- ev[order(ev$creado), , drop = FALSE]
@@ -1016,7 +1074,8 @@ requisiciones_vista <- function(client_id, usuario = NULL, incluir_pagadas = FAL
     coms     = .req_leer("comentarios", cid),
     leidos   = if (is.null(usuario)) NULL else .req_leer("leidos", cid),
     liabs    = .req_liabs(cid),
-    usuario  = usuario)
+    usuario  = usuario,
+    empresas = .req_empresas(cid))
   if (!incluir_pagadas) v <- v[v$etapa != "pagada", , drop = FALSE]
   v
 }
@@ -1063,6 +1122,8 @@ requisiciones_desde_provisiones <- function(client_id, provision_ids, carpeta_id
   creadas <- character()
   for (i in seq_len(nrow(disp))) {
     p <- disp[i, ]
+    # T61: a provision with no company cannot say whose it is.
+    if (is.na(.req_txt(p$empresa))) .req_error("requisiciones.error.empresa_no_reconocida")
     titulo <- .req_txt(p$referencia) %||% NA_character_
     if (is.na(titulo)) titulo <- .req_txt(p$parte) %||% NA_character_
     if (is.na(titulo)) titulo <- p$id

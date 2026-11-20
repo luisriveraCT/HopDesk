@@ -16,7 +16,8 @@ suppressPackageStartupMessages({ library(shiny); library(dplyr); library(tibble)
 }
 .tomar("R/global.R", "S3_KEYS")
 .tomar("R/persistence.R", c(".normalize", "leer_tabla_para_escribir", ".s3_leer_para_escribir",
-                            "modificar_tabla", "rebase_por_id", "confirmaciones_vigentes", ".schema_manual"))
+                            "modificar_tabla", "rebase_por_id", "confirmaciones_vigentes", ".schema_manual",
+                            ".schema_empresas"))
 .tomar("R/bancos_persistence.R", ".schema_bancos_confirmados")
 .tomar("R/pasivos_persistence.R", c("etapa_de_provision_en", "PROVISION_PAGADA"))
 source("R/pasivos_schemas.R")
@@ -25,6 +26,7 @@ source("R/tier_registry.R")
 source("R/permisos.R")
 source("R/avisos.R")
 source("R/adjuntos_s3.R")
+source("R/empresas_identidad.R")
 source("R/requisiciones_persistence.R")
 
 # ── In-memory S3 ─────────────────────────────────────────────────────────────
@@ -320,6 +322,118 @@ test_that("General es virtual: carpeta_id NA, nunca una fila en S3", {
   requisiciones_mover(CID, r$id, a, "d"); requisiciones_mover(CID, r$id, NA, "d")
   expect_identical(tabla("carpetas")$id, a)
   expect_true(is.na(tabla("requisiciones")$carpeta_id))
+})
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# T61 (Luis): requisition -> folder -> companies. A requisition's company is
+# one of its folder's, compared by company id, never by text.
+# ═════════════════════════════════════════════════════════════════════════════
+catalogo <- function(cid = CID) {
+  e <- .normalize(tibble::tibble(
+    id = c("e1", "e2", "e3", "e4"), initials = c("NCS", "NTS", "VIE", "BOR"),
+    razon_social = c("Networks Cargo Solutions, S.A. de C.V.", "Networks Transport Services SA de CV",
+                     "Vieja Empresa", "Borrada SA"),
+    nombre_corto = c("Networks Cargo", "Networks Transport", "Vieja", "Borrada"),
+    nombres_alt = c("[\"NetCargo\"]", NA, NA, NA),
+    activa = c(TRUE, TRUE, FALSE, TRUE), deleted = c(FALSE, FALSE, FALSE, TRUE),
+    iniciales_anteriores = c("[\"NC\"]", NA, NA, NA)), .schema_empresas)
+  assign(paste0(cid, "/", S3_KEYS$empresas), e, envir = .mem)
+  e
+}
+req <- function(...) modifyList(base_req, list(...))
+
+test_that("empresa_id_de: iniciales, anteriores, nombre, razón social y alias, exacto; nunca aproxima", {
+  e <- catalogo()
+  expect_identical(empresa_id_de(c("NCS", " ncs ", "NC", "Networks Cargo", "NETWORKS CARGO SOLUTIONS SA DE CV",
+                                   "netcargo", "NTS"), e), c("e1", "e1", "e1", "e1", "e1", "e1", "e2"))
+  expect_identical(empresa_id_de("VIE", e), "e3")                          # inactive: still a company
+  expect_true(all(is.na(empresa_id_de(c("BOR", "Borrada", "", NA, "Networks", "NCS2", "Networks Cargo Sol"), e))))
+  # Two companies answering to the same text: none (never a guess).
+  e2 <- e; e2$nombre_corto[2] <- "Networks Cargo"
+  expect_true(is.na(empresa_id_de("Networks Cargo", e2)))
+  expect_identical(empresa_id_de("NCS", e2), "e1")
+  expect_true(all(is.na(empresa_id_de(c("NCS", "x"), .schema_empresas()))))
+})
+
+test_that("crear: la empresa debe ser de la carpeta (por id); se guarda con sus iniciales; General acepta todas", {
+  reiniciar(); catalogo()
+  solo_ncs <- crear("Solo NCS", empresas = "e1")
+  antes <- tabla("requisiciones")
+  expect_identical(err(requisicion_crear(CID, req(empresa = "NTS", carpeta_id = solo_ncs), "d")),
+                   "requisiciones.error.empresa_fuera_carpeta")
+  expect_identical(err(requisicion_crear(CID, req(empresa = "Nadie SA", carpeta_id = solo_ncs), "d")),
+                   "requisiciones.error.empresa_no_reconocida")
+  expect_identical(tabla("requisiciones"), antes)
+  r <- requisicion_crear(CID, req(empresa = "Networks Cargo", carpeta_id = solo_ncs), "d")
+  expect_identical(tabla("requisiciones")$empresa[tabla("requisiciones")$id == r$id], "NCS")
+  g <- requisicion_crear(CID, req(empresa = "nts"), "d")                    # General
+  expect_identical(tabla("requisiciones")$empresa[tabla("requisiciones")$id == g$id], "NTS")
+  todas <- crear("De todas")
+  expect_null(err(requisicion_crear(CID, req(empresa = "VIE", carpeta_id = todas), "d")))
+})
+
+test_that("se valida sobre la tabla de carpetas recién leída: otra sesión le quitó la empresa", {
+  reiniciar(); catalogo()
+  c1 <- crear("Obra", empresas = c("e1", "e2"))
+  k <- paste0(CID, "/", REQ_KEYS$carpetas); t <- .mem[[k]]
+  t$empresas[t$id == c1] <- "[\"e2\"]"; assign(k, t, envir = .mem)
+  expect_identical(err(requisicion_crear(CID, req(empresa = "NCS", carpeta_id = c1), "d")),
+                   "requisiciones.error.empresa_fuera_carpeta")
+})
+
+test_that("una carpeta que pierde empresas no reescribe requisiciones: solo se marcan; editar otra cosa no obliga", {
+  reiniciar(); catalogo()
+  c1 <- crear("Obra", empresas = c("e1", "e2"))
+  r <- requisicion_crear(CID, req(empresa = "NTS", carpeta_id = c1), "d")
+  reqs_antes <- tabla("requisiciones")
+  requisiciones_carpeta_editar(CID, c1, list(empresas = "e1"), "d")
+  expect_identical(tabla("requisiciones"), reqs_antes)
+  v <- requisiciones_vista(CID)
+  expect_identical(v$empresa_aviso, "fuera_carpeta"); expect_identical(v$empresa_id, "e2")
+  # Editing the title is fine and leaves the company alone.
+  expect_null(err(requisicion_editar(CID, r$id, list(titulo = "Otro título"), "d")))
+  expect_identical(tabla("requisiciones")$empresa, "NTS")
+  # Changing the company to another one outside, or moving it to a folder
+  # without its company, is refused; correcting it works.
+  expect_identical(err(requisicion_editar(CID, r$id, list(empresa = "VIE"), "d")), "requisiciones.error.empresa_fuera_carpeta")
+  c2 <- crear("Solo VIE", empresas = "e3")
+  expect_identical(err(requisicion_editar(CID, r$id, list(carpeta_id = c2), "d")), "requisiciones.error.empresa_fuera_carpeta")
+  expect_null(err(requisicion_editar(CID, r$id, list(empresa = "Networks Cargo"), "d")))
+  expect_identical(tabla("requisiciones")$empresa, "NCS")
+  expect_true(is.na(requisiciones_vista(CID)$empresa_aviso))
+})
+
+test_that("mover varias: si una no es de una empresa de la carpeta destino no se mueve ninguna, y dice cuántas", {
+  reiniciar(); catalogo()
+  a <- requisicion_crear(CID, req(empresa = "NCS"), "d"); b <- requisicion_crear(CID, req(empresa = "NTS"), "d")
+  solo_ncs <- crear("Solo NCS", empresas = "e1")
+  antes <- tabla("requisiciones")
+  e <- tryCatch(requisiciones_mover(CID, c(a$id, b$id), solo_ncs, "d"), req_error = identity)
+  expect_identical(e$clave, "requisiciones.error.empresa_fuera_mover"); expect_match(conditionMessage(e), "^1 ")
+  expect_identical(tabla("requisiciones"), antes)
+  expect_identical(requisiciones_mover(CID, a$id, solo_ncs, "d"), a$id)
+  requisiciones_mover(CID, c(a$id, b$id), NA, "d")                          # General: every company
+  expect_true(all(is.na(tabla("requisiciones")$carpeta_id)))
+})
+
+test_that("lista: empresa no reconocida se marca; sin catálogo no se marca nada ni se exige (como hoy)", {
+  reiniciar()
+  r <- requisicion_crear(CID, req(empresa = "Texto libre"), "d")            # no catalog yet
+  expect_true(is.na(requisiciones_vista(CID)$empresa_aviso))
+  catalogo()
+  expect_identical(requisiciones_vista(CID)$empresa_aviso, "no_reconocida")
+  expect_identical(tabla("requisiciones")$empresa, "Texto libre")          # never rewritten
+})
+
+test_that("desde provisión: el nombre completo se guarda como iniciales; sin empresa, no reconocida", {
+  reiniciar(); catalogo()
+  poner_provision("p1"); poner_provision("p2")
+  k <- paste0(CID, "/", S3_KEYS$pasivos_provisions); p <- .mem[[k]]
+  p$empresa[p$id == "p1"] <- "Networks Transport"; p$empresa[p$id == "p2"] <- NA; assign(k, p, envir = .mem)
+  ids <- requisiciones_desde_provisiones(CID, "p1", NA, "d")
+  expect_identical(tabla("requisiciones")$empresa[tabla("requisiciones")$id == ids], "NTS")
+  expect_identical(err(requisiciones_desde_provisiones(CID, "p2", NA, "d")), "requisiciones.error.empresa_no_reconocida")
 })
 
 cat("\n=== test_requisiciones_carpetas_arbol: fin ===\n")

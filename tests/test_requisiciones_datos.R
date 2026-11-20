@@ -18,7 +18,8 @@ suppressPackageStartupMessages({ library(shiny); library(dplyr); library(tibble)
 }
 .tomar("R/global.R", "S3_KEYS")
 .tomar("R/persistence.R", c(".normalize", "leer_tabla_para_escribir", ".s3_leer_para_escribir",
-                            "modificar_tabla", "rebase_por_id", "confirmaciones_vigentes", ".schema_manual"))
+                            "modificar_tabla", "rebase_por_id", "confirmaciones_vigentes", ".schema_manual",
+                            ".schema_empresas"))
 .tomar("R/bancos_persistence.R", ".schema_bancos_confirmados")
 .tomar("R/pasivos_persistence.R", c("etapa_de_provision_en", "PROVISION_PAGADA"))
 source("R/pasivos_schemas.R")
@@ -27,6 +28,7 @@ source("R/tier_registry.R")
 source("R/permisos.R")
 source("R/avisos.R")
 source("R/adjuntos_s3.R")
+source("R/empresas_identidad.R")
 source("R/requisiciones_persistence.R")
 
 # ── In-memory S3 ─────────────────────────────────────────────────────────────

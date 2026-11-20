@@ -100,3 +100,41 @@ ic_por_identidad <- function(parte, rfc, identidad) {
   por_nombre <- .norm_razon(rep_len(parte, n)) %in% identidad$nombres$nombre
   ifelse(con_rfc, r %in% identidad$rfcs, por_nombre)
 }
+
+# ── Qué empresa del catálogo nombra un texto (T61) ───────────────────────────
+
+# The id (empresas$id) of the company each text names, NA when none or more
+# than one does. Requisiciones compares companies by id, never by text: a
+# requisition typed in the form holds the initials, one made "desde
+# provisión" used to copy the provision's text, which is sometimes the
+# short name. Exact only, never approximate, in this order:
+#   1. current initials (case and spaces aside);
+#   2. initials it had before a complete rename (iniciales_anteriores, CM29);
+#   3. its razón social, short name or an alias, normalized with
+#      .norm_razon() (legal-form tokens and punctuation aside).
+# Deleted companies are left out; inactive ones count (a folder may name one).
+empresa_id_de <- function(texto, empresas) {
+  n <- length(texto)
+  out <- rep(NA_character_, n)
+  if (!n || !is.data.frame(empresas) || !nrow(empresas) || !all(c("id", "initials") %in% names(empresas)))
+    return(out)
+  e <- empresas[!(empresas$deleted %in% TRUE) & !is.na(empresas$id) & !is.na(empresas$initials), , drop = FALSE]
+  if (!nrow(e)) return(out)
+  t <- toupper(trimws(as.character(texto)))
+  ini <- toupper(trimws(e$initials))
+  unico <- function(ids) { ids <- unique(ids); if (length(ids) == 1L) ids else NA_character_ }
+  ant <- if ("iniciales_anteriores" %in% names(e))
+    lapply(e$iniciales_anteriores, function(j) toupper(trimws(tryCatch(as.character(jsonlite::fromJSON(j %||% "[]")),
+                                                                       error = function(x) character()))))
+  else vector("list", nrow(e))
+  nombres <- lapply(e$initials, function(i) { x <- .norm_razon(.empresa_nombres(i, e)); x[nzchar(x)] })
+  tn <- .norm_razon(texto)
+  for (k in seq_len(n)) {
+    if (is.na(t[k]) || !nzchar(t[k])) next
+    id <- unico(e$id[ini == t[k]])
+    if (is.na(id)) id <- unico(e$id[vapply(ant, function(a) t[k] %in% a, logical(1))])
+    if (is.na(id) && nzchar(tn[k])) id <- unico(e$id[vapply(nombres, function(a) tn[k] %in% a, logical(1))])
+    out[k] <- id
+  }
+  out
+}
