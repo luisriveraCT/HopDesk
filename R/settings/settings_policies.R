@@ -904,6 +904,11 @@ settings_policies_observer <- function(input, output, session, shared) {
     now  <- Sys.time()
     user <- tryCatch(shared$current_user_info()$username, error = function(e) "")
 
+    # CM38: after a client jump that could not read the catalog, the session's
+    # copy is empty -- saving it would wipe this client's policies.
+    if ("policy_catalog" %in% tryCatch(isolate(shared$ctx_no_cargadas()), error = function(e) character())) {
+      showNotification(tr("comun.ctx.guardar_bloqueado"), type = "error"); return()
+    }
     db <- .get_catalog()
 
     if (mode == "new") {
@@ -1059,6 +1064,10 @@ settings_policies_observer <- function(input, output, session, shared) {
   # Delete confirm -------------------------------------------------------------
   observeEvent(input$pol_delete_confirm, {
     if (!puede_o_avisa(shared, "can_manage_policies")) return()
+    # CM38: same as saving -- never delete from a copy the jump could not read.
+    if ("policy_catalog" %in% tryCatch(isolate(shared$ctx_no_cargadas()), error = function(e) character())) {
+      showNotification(tr("comun.ctx.guardar_bloqueado"), type = "error"); return()
+    }
     del_id   <- isolate(pol_editing())$id
     db       <- .get_catalog()
     del_name <- { m <- db$name[db$id == del_id]; if (length(m)) m[1] else del_id }

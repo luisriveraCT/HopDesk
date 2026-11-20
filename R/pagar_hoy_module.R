@@ -2757,6 +2757,11 @@ pagarHoyServer <- function(id, shared) {
       ali    <- trimws(click$alias %||% "")
       emp    <- trimws(click$emp   %||% "")
       if (!nzchar(parte) || !nzchar(ali)) return()
+      # CM38: after a client jump that could not read the alias map, the
+      # session's copy is empty -- saving it would wipe this client's links.
+      if ("parte_alias_map" %in% tryCatch(isolate(shared$ctx_no_cargadas()), error = function(e) character())) {
+        showNotification(tr("comun.ctx.guardar_bloqueado"), type = "error"); return()
+      }
 
       am  <- tryCatch(
         if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db()
@@ -2817,6 +2822,10 @@ pagarHoyServer <- function(id, shared) {
       parte <- trimws(click$parte %||% "")
       emp   <- trimws(click$emp   %||% "")
       if (!nzchar(parte)) return()
+      # CM38: same as linking -- never save a copy the jump could not read.
+      if ("parte_alias_map" %in% tryCatch(isolate(shared$ctx_no_cargadas()), error = function(e) character())) {
+        showNotification(tr("comun.ctx.guardar_bloqueado"), type = "error"); return()
+      }
 
       am <- tryCatch(
         if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db()
