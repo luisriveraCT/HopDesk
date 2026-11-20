@@ -578,9 +578,9 @@ settings_cuentas_observer <- function(input, output, session, shared) {
           tagList("Saldo inicial",
             tags$span(class = "text-muted fw-normal", " \u2014 apertura")),
           class = "form-label small fw-semibold mb-1"),
-        numericInput("cta_saldo_inicial", NULL,
-                     value = if (!is_new) (row$saldo_inicial %||% 0) else 0,
-                     min = 0, step = 1000, width = "100%")
+        hd_numero_input("cta_saldo_inicial", NULL, formato = "monto",
+                        value = if (!is_new) (row$saldo_inicial %||% 0) else 0,
+                        min = 0, step = 1000, width = "100%")
       ),
       div(class = "col-md-6",
         tags$label("Raz\u00f3n Social", class = "form-label small fw-semibold mb-1"),
