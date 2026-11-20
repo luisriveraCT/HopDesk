@@ -64,14 +64,16 @@
   pagada        = list(texto = "requisiciones.etapa.pagada",        tono = "exito"),
   papelera      = list(texto = "requisiciones.etapa.papelera",      tono = "neutro"))
 
-.reqm_columnas <- function(iniciales) list(
+# aviso: add "Aviso de empresa" (T61) -- only while some requisition has one,
+# so the list keeps its width the rest of the time (Luis's 1293 px screen).
+.reqm_columnas <- function(iniciales, aviso = FALSE) Filter(Negate(is.null), list(
   col_texto("folio", "requisiciones.col.folio", recorte = FALSE, ancho = 124),
   col_texto("titulo", "requisiciones.col.titulo"),
   .reqm_col_prioridad(),
-  col_texto("carpeta_nombre", "requisiciones.col.carpeta", opcional = TRUE, visible = FALSE),
+  col_texto("carpeta_ruta", "requisiciones.col.carpeta", opcional = TRUE, visible = FALSE),
   col_texto("proveedor", "requisiciones.col.proveedor"),
   col_empresa("empresa", "requisiciones.col.empresa", iniciales = iniciales),
-  col_insignia("empresa_aviso", "requisiciones.col.empresa_aviso", opcional = TRUE, mapa = list(
+  if (isTRUE(aviso)) col_insignia("empresa_aviso", "requisiciones.col.empresa_aviso", opcional = TRUE, mapa = list(
     fuera_carpeta = list(texto = "requisiciones.empresa_aviso.fuera_carpeta", tono = "aviso"),
     no_reconocida = list(texto = "requisiciones.empresa_aviso.no_reconocida", tono = "aviso"))),
   col_dinero("monto_mostrado", "requisiciones.col.monto", moneda = "moneda_mostrada"),
@@ -80,7 +82,7 @@
   col_numero("dias_sin_provision", "requisiciones.col.dias", opcional = TRUE, visible = FALSE),
   col_texto("comentarios_txt", "requisiciones.col.comentarios", recorte = FALSE, opcional = TRUE),
   col_texto("creado_por", "requisiciones.col.creado_por", opcional = TRUE, visible = FALSE)
-)
+))
 
 # Rows for the list: the vista plus the engine's control columns.
 # crear: offer "Crear provisión" on Sin provisión rows (the app wired a
@@ -321,7 +323,10 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
     puede_papelera <- function(u) puede(u, "can_trash_own_requisiciones") || puede(u, "can_trash_others_requisiciones")
 
     t <- hd_table_server("t", tabla = "requisiciones", datos = datos_lista,
-      columnas = shiny::reactive(.reqm_columnas(iniciales())),
+      columnas = shiny::reactive({
+        v <- vista_segura()
+        .reqm_columnas(iniciales(), aviso = !is.null(v) && any(!is.na(v$empresa_aviso)))
+      }),
       piezas = c("fichas", "detalle", "nav_periodo"),
       fichas = list(campo = "etapa", orden = c("sin_provision", "provisionada", "en_pago", "papelera"),
                     mostrar = "conteo"),
@@ -400,7 +405,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
       boton <- function(valor, nombre, n, color = NULL)
         htmltools::tags$button(type = "button", class = "hdreq-carpeta-btn", onclick = clic("carpeta_click", valor),
           if (!is.null(color)) htmltools::tags$span(class = "hdreq-punto", style = paste0("background:", color, ";")),
-          htmltools::tags$span(class = "hdreq-carpeta-nombre", nombre),
+          htmltools::tags$span(class = "hdreq-carpeta-nombre", title = nombre, nombre),
           htmltools::tags$span(class = "hdreq-carpeta-n", n))
       fijo <- function(valor, nombre, n, clase = NULL)
         htmltools::tags$li(class = paste("hdreq-carpeta", clase, if (identical(sel, valor)) "activa"),

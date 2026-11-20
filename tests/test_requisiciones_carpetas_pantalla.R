@@ -164,3 +164,10 @@ test_that("burbujas: la carpeta sin empresa encendida se oculta con su rama y su
     expect_false(grepl("hdreq-ocultas", output$`req-carpetas`$html))   # not "oculta": the fold button says "ocultar"
   })
 })
+
+test_that("la columna 'Aviso de empresa' sale solo mientras alguna requisición tiene aviso (la lista no se ensancha)", {
+  campos <- function(cols) vapply(cols, function(c) c$campo, character(1))
+  expect_false("empresa_aviso" %in% campos(.reqm_columnas(c())))
+  expect_true("empresa_aviso" %in% campos(.reqm_columnas(c(), aviso = TRUE)))
+  expect_true("carpeta_ruta" %in% campos(.reqm_columnas(c())))
+})
