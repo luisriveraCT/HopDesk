@@ -834,15 +834,9 @@ load_policy_moves <- function(client_id = NULL) {
   .normalize(.s3_read_with(S3_KEYS$policy_moves, client_id = client_id), .schema_policy_moves)
 }
 
-save_policy_catalog <- function(df, client_id = NULL) {
-  .s3_write(df, S3_KEYS$policy_catalog, client_id = client_id)
-  if (exists(".cache_set", mode = "function")) .cache_set("policy_catalog", df, client_id)
-}
-
-save_partner_policies <- function(df, client_id = NULL) {
-  .s3_write(df, S3_KEYS$partner_policies, client_id = client_id)
-  if (exists(".cache_set", mode = "function")) .cache_set("partner_policies", df, client_id)
-}
+# save_policy_catalog() and save_partner_policies() wrote the session's copy
+# whole (CM34c): every write of these two tables is a cambio() on S3's
+# current table, below.
 
 # cambio(table) -> table on S3's current table, never the session's copy
 # (CM12e: Revertir, a partner's policies and Aplicar wrote the copy whole).
@@ -858,6 +852,15 @@ modificar_partner_policies <- function(cambio, client_id, permitir_reduccion = F
   escrito <- modificar_tabla(S3_KEYS$partner_policies, client_id, .schema_partner_policies, cambio,
                              permitir_reduccion = permitir_reduccion)
   if (exists(".cache_set", mode = "function")) .cache_set("partner_policies", escrito, client_id)
+  invisible(escrito)
+}
+# The catalog has a list column (params) that .normalize() cannot rebuild, so
+# it goes through modificar_tabla_completa() (columns completed, none
+# dropped) -- the strict read and the net are the same (CM34c).
+modificar_policy_catalog <- function(cambio, client_id, permitir_reduccion = FALSE) {
+  escrito <- modificar_tabla_completa(S3_KEYS$policy_catalog, client_id, .schema_policy_catalog, cambio,
+                                      permitir_reduccion = permitir_reduccion)
+  if (exists(".cache_set", mode = "function")) .cache_set("policy_catalog", escrito, client_id)
   invisible(escrito)
 }
 

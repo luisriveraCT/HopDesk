@@ -39,7 +39,7 @@ for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R", "R/policy_engine.R"
 # puede_o_avisa() are the real ones.
 GUARDADO <- character(0)
 grabar <- function(nombre) { force(nombre); function(...) { GUARDADO <<- c(GUARDADO, nombre); invisible(NULL) } }
-for (s in c("save_policy_catalog", "save_partner_policies", "save_policy_moves", "save_moves",
+for (s in c("modificar_policy_catalog", "save_policy_moves", "save_moves",   # CM34c: no save_policy_catalog / save_partner_policies
             "modificar_partner_policies", "modificar_policy_moves",   # CM12e: on S3's current table
             "save_pagar_hoy_sync", "save_pagar_hoy_user", "save_agenda_sync_config"))
   assign(s, grabar(s))
@@ -95,7 +95,7 @@ HANDLERS <- list(
       session$setInputs(pol_action = list(action = "delete", id = "p2", name = "Quincena", nonce = 1))
       session$setInputs(pol_delete_confirm = 1)
     },
-    con = "save_policy_catalog"),
+    con = "modificar_policy_catalog"),
   cmp_btn_save = list(permiso = "can_manage_policies", archivo = "settings_companies.R",
     clics = function(session, output) session$setInputs(cmp_btn_save = 1)),
   cmp_apply_confirm = list(permiso = "can_manage_policies", archivo = "settings_companies.R",

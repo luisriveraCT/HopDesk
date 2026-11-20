@@ -157,16 +157,16 @@ bloque <- function(archivo, desde, hasta) {
 }
 guarda <- function(lineas, etiqueta) {
   g <- grep(sprintf('"%s" %%in%% tryCatch(isolate(shared$ctx_no_cargadas())', etiqueta), lineas, fixed = TRUE)[1]
-  s <- grep("save_", lineas, fixed = TRUE)[1]
+  s <- grep("save_|modificar_", lineas)[1]   # CM34c: the write is a modificar_*() call
   !is.na(g) && !is.na(s) && g < s && any(grepl("comun.ctx.guardar_bloqueado", lineas[g:(g + 2L)], fixed = TRUE))
 }
 ok(guarda(bloque("R/pagar_hoy_module.R", "observeEvent(input$ph_link_supplier", "save_parte_alias_map("), "parte_alias_map"),
    "alias link: refuses before saving when the alias map was not read")
 ok(guarda(bloque("R/pagar_hoy_module.R", "observeEvent(input$ph_unlink_supplier", "save_parte_alias_map("), "parte_alias_map"),
    "alias unlink: refuses before saving when the alias map was not read")
-ok(guarda(bloque("R/settings/settings_policies.R", "observeEvent(input$pol_btn_save", "save_policy_catalog("), "policy_catalog"),
+ok(guarda(bloque("R/settings/settings_policies.R", "observeEvent(input$pol_btn_save", "modificar_policy_catalog("), "policy_catalog"),
    "policy save: refuses before saving when the catalog was not read")
-ok(guarda(bloque("R/settings/settings_policies.R", "observeEvent(input$pol_delete_confirm", "save_policy_catalog("), "policy_catalog"),
+ok(guarda(bloque("R/settings/settings_policies.R", "observeEvent(input$pol_delete_confirm", "modificar_policy_catalog("), "policy_catalog"),
    "policy delete: refuses before saving when the catalog was not read")
 
 # The guard itself: with no ctx_no_cargadas in `shared` (old fixtures) it lets

@@ -143,7 +143,7 @@ SAVE_OF <- c(
   interco_v2                = "save_interco_v2",
   sap_ov_db                 = "save_sap_overrides",
   proveedores_inactivos_db  = "save_proveedores_inactivos",
-  partner_policies_db       = "save_partner_policies",
+  partner_policies_db       = "modificar_partner_policies",   # CM34c
   policy_moves_db           = "save_policy_moves",
   holiday_overrides_db      = "save_holiday_overrides"
 )

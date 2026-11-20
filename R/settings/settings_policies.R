@@ -919,37 +919,28 @@ settings_policies_observer <- function(input, output, session, shared) {
     if ("policy_catalog" %in% tryCatch(isolate(shared$ctx_no_cargadas()), error = function(e) character())) {
       showNotification(tr("comun.ctx.guardar_bloqueado"), type = "error"); return()
     }
-    db <- .get_catalog()
-
-    if (mode == "new") {
-      new_row <- tibble::tibble(
-        id             = uuid::UUIDgenerate(),
-        name           = nm,
-        type           = type,
-        params         = list(params),
-        roll_direction = roll,
-        created_by     = user,
-        created_at     = now,
-        updated_at     = now
-      )
-      new_db <- dplyr::bind_rows(db, new_row)
-    } else {
-      pid <- isolate(pol_editing())$id
-      idx <- which(db$id == pid)
-      if (!length(idx)) {
-        showNotification(tr("tablas.ajustes.aviso.politica_no_encontrada_recarga"), type = "error")
-        return()
-      }
-      db$name[idx]           <- nm
-      db$type[idx]           <- type
-      db$params[[idx]]       <- params
-      db$roll_direction[idx] <- roll
-      db$updated_at[idx]     <- now
-      new_db <- db
+    # CM34c: the change is applied to S3's catalog as it is now, never to the
+    # session's copy: another session's new or edited policy stays.
+    pid <- if (mode == "new") uuid::UUIDgenerate() else isolate(pol_editing())$id
+    cambio <- function(fresco) {
+      if (mode == "new")
+        return(dplyr::bind_rows(fresco, tibble::tibble(
+          id = pid, name = nm, type = type, params = list(params), roll_direction = roll,
+          created_by = user, created_at = now, updated_at = now)))
+      idx <- which(fresco$id == pid)
+      if (!length(idx))   # deleted by another session meanwhile
+        stop(structure(class = c("politica_no_encontrada", "error", "condition"),
+                       list(message = "policy not found", call = NULL)))
+      fresco$name[idx]           <- nm
+      fresco$type[idx]           <- type
+      fresco$params[idx]         <- list(params)
+      fresco$roll_direction[idx] <- roll
+      fresco$updated_at[idx]     <- now
+      fresco
     }
 
     tryCatch({
-      save_policy_catalog(new_db, client_id = shared$effective_client_id())
+      new_db <- modificar_policy_catalog(cambio, client_id = shared$effective_client_id())
       bump_sync_version("policy_catalog_db", client_id = shared$effective_client_id())
       shared$policy_catalog_db(new_db)
       pol_trigger(pol_trigger() + 1L)
@@ -964,11 +955,13 @@ settings_policies_observer <- function(input, output, session, shared) {
         action      = if (mode == "new") "crear_politica" else "editar_politica",
         description = paste0(if (mode == "new") "Política creada: " else "Política editada: ", nm,
                              " (tipo=", type, ", roll=", roll, ")"),
-        target_id   = if (mode == "new") new_row$id else pid,
+        target_id   = pid,
         metadata    = list(name = nm, type = type, roll_direction = roll, params = params),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
+    }, politica_no_encontrada = function(e) {
+      showNotification(tr("tablas.ajustes.aviso.politica_no_encontrada_recarga"), type = "error")
     }, error = function(e) {
       showNotification(tr("tablas.ajustes.aviso.error_guardar", error = e$message), type = "error", duration = 5)
     })
@@ -1001,44 +994,39 @@ settings_policies_observer <- function(input, output, session, shared) {
                        error = function(e) load_partner_policies(client_id = shared$effective_client_id()))
     if (is.null(pp_old)) pp_old <- .schema_partner_policies()[0L, ]
 
-    # Partes that previously had this policy
+    # Partes that had this policy in the copy the form showed
     had_policy <- unique(pp_old$parte[pp_old$policy_id == pol_id])
 
-    # Partes to ADD (selected now, didn't have it before)
+    # This user's change against that copy: partes to ADD and to REMOVE
     to_add    <- setdiff(sel_now, had_policy)
-    # Partes to REMOVE (had it, not selected now)
     to_remove <- setdiff(had_policy, sel_now)
 
-    # Build updated partner_policies:
-    # 1. Remove this policy from de-selected partes (keep their OTHER policies)
-    pp_new <- pp_old[!(pp_old$parte %in% to_remove & pp_old$policy_id == pol_id), ,
-                     drop = FALSE]
-
-    # 2. Append policy to newly selected partes (at end of their existing stack)
-    if (length(to_add)) {
-      new_rows <- lapply(to_add, function(p) {
-        # Determine next policy_order for this parte
-        existing_p <- pp_new[pp_new$parte == p, , drop = FALSE]
-        next_order <- if (nrow(existing_p)) max(existing_p$policy_order, na.rm = TRUE) + 1L else 1L
-        # Preserve ledger/interco from existing assignments if any
-        p_ledger   <- if (nrow(existing_p)) existing_p$ledger[[1]] %||% ledger else ledger
-        p_interco  <- if (nrow(existing_p)) isTRUE(existing_p$is_interco[[1]]) else FALSE
-        tibble::tibble(
-          parte        = p,
-          policy_id    = pol_id,
-          policy_order = next_order,
-          ledger       = p_ledger,
-          is_interco   = p_interco,
-          is_manual    = FALSE,
-          linked_by    = user,
-          linked_at    = now
-        )
-      })
-      pp_new <- dplyr::bind_rows(pp_new, dplyr::bind_rows(new_rows))
+    # CM34c: applied to S3's assignments as they are now, never to the
+    # session's copy -- another session's assignments (of this policy to
+    # other partes, or of other policies) stay.
+    cambio <- function(fresco) {
+      # 1. Remove this policy from de-selected partes (keep their OTHER policies)
+      out <- fresco[!(fresco$parte %in% to_remove & fresco$policy_id == pol_id), , drop = FALSE]
+      # 2. Append it to newly selected partes that don't have it yet (at the
+      #    end of their existing stack)
+      nuevos <- to_add[!to_add %in% out$parte[out$policy_id == pol_id]]
+      if (length(nuevos)) {
+        new_rows <- lapply(nuevos, function(p) {
+          existing_p <- out[out$parte == p, , drop = FALSE]
+          next_order <- if (nrow(existing_p)) max(existing_p$policy_order, na.rm = TRUE) + 1L else 1L
+          # Preserve ledger/interco from existing assignments if any
+          p_ledger   <- if (nrow(existing_p)) existing_p$ledger[[1]] %||% ledger else ledger
+          p_interco  <- if (nrow(existing_p)) isTRUE(existing_p$is_interco[[1]]) else FALSE
+          tibble::tibble(parte = p, policy_id = pol_id, policy_order = next_order, ledger = p_ledger,
+                         is_interco = p_interco, is_manual = FALSE, linked_by = user, linked_at = now)
+        })
+        out <- dplyr::bind_rows(out, dplyr::bind_rows(new_rows))
+      }
+      out
     }
 
     tryCatch({
-      save_partner_policies(pp_new, client_id = shared$effective_client_id())
+      pp_new <- modificar_partner_policies(cambio, client_id = shared$effective_client_id())
       bump_sync_version("partner_policies_db", client_id = shared$effective_client_id())
       shared$partner_policies_db(pp_new)
       n_add <- length(to_add); n_rem <- length(to_remove)
@@ -1079,24 +1067,22 @@ settings_policies_observer <- function(input, output, session, shared) {
       showNotification(tr("comun.ctx.guardar_bloqueado"), type = "error"); return()
     }
     del_id   <- isolate(pol_editing())$id
+    if (is.null(del_id)) return()   # nothing chosen: nothing deleted, nothing said
     db       <- .get_catalog()
     del_name <- { m <- db$name[db$id == del_id]; if (length(m)) m[1] else del_id }
-    new_db <- if (!is.null(del_id)) db[db$id != del_id, , drop = FALSE] else db
+    cid      <- shared$effective_client_id()
     tryCatch({
-      if (!is.null(del_id)) {
-        save_policy_catalog(new_db, client_id = shared$effective_client_id())
-        bump_sync_version("policy_catalog_db", client_id = shared$effective_client_id())
-        # Cascade: remove deleted policy from all partner assignments
-        pp_old <- tryCatch(shared$partner_policies_db(), error = function(e) NULL)
-        if (!is.null(pp_old) && nrow(pp_old)) {
-          pp_new <- pp_old[pp_old$policy_id != del_id, , drop = FALSE]
-          if (nrow(pp_new) < nrow(pp_old)) {
-            save_partner_policies(pp_new, client_id = shared$effective_client_id())
-            bump_sync_version("partner_policies_db", client_id = shared$effective_client_id())
-            shared$partner_policies_db(pp_new)
-          }
-        }
-      }
+      # CM34c: removed from S3's catalog and assignments as they are now --
+      # only this policy and its assignments leave (a deliberate reduction,
+      # listed in the net's guardian); another session's rows stay.
+      new_db <- modificar_policy_catalog(function(fresco) fresco[!(fresco$id %in% del_id), , drop = FALSE],
+                                         client_id = cid, permitir_reduccion = TRUE)
+      bump_sync_version("policy_catalog_db", client_id = cid)
+      # Cascade: remove the deleted policy from all partner assignments
+      pp_new <- modificar_partner_policies(function(fresco) fresco[!(fresco$policy_id %in% del_id), , drop = FALSE],
+                                           client_id = cid, permitir_reduccion = TRUE)
+      bump_sync_version("partner_policies_db", client_id = cid)
+      shared$partner_policies_db(pp_new)
       shared$policy_catalog_db(new_db)
       pol_trigger(pol_trigger() + 1L)
       pol_editing(NULL)

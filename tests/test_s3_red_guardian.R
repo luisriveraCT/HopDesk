@@ -57,6 +57,9 @@ permitidos <- c(
   # CM12e, each on S3's current table: Revertir (the chosen partners' dates),
   # saving a partner (its rows, then its stale dates) and Aplicar "skip_manual"/"all".
   "R/settings/settings_companies.R" = "client_id = cid, permitir_reduccion = TRUE)",
+  # CM34c, on S3's current tables: deleting a policy removes that one from
+  # policy_catalog.rds and its assignments from partner_policies.rds.
+  "R/settings/settings_policies.R" = "client_id = cid, permitir_reduccion = TRUE)",
   # alertas_guardar() (C): unmarking every action of a user removes that
   # user's row from avisos_alertas.rds, on S3's matrix as it is now.
   "R/avisos_alertas_module.R" = "}, permitir_reduccion = TRUE)",
@@ -143,7 +146,10 @@ for (fn in c("save_manual", "save_notes", "save_tags", "save_pasivos_provisions"
              "save_proveedores", "save_proveedores_inactivos",
              # CM38b: Empresas saves through modificar_tabla + rebase_por_id;
              # a direct save_empresas() of a copy must not come back.
-             "save_empresas")) {
+             "save_empresas",
+             # CM34c: policies are written with modificar_policy_catalog /
+             # modificar_partner_policies; these two whole-copy saves are gone.
+             "save_policy_catalog", "save_partner_policies")) {
   m <- sin_base(fn, "R/pagar_hoy_module.R")
   for (s in m) message("  without base: ", s)
   ok(sprintf("%s(): every save built from a copy passes base (pagar_hoy_module.R aside)", fn), !length(m))
