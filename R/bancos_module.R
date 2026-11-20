@@ -1405,11 +1405,19 @@ bancosServer <- function(id, shared) {
       if (!puede_o_avisa(shared, "can_manage_bancos")) return()
       shinyjs::disable("do_add_manual")
       on.exit(shinyjs::enable("do_add_manual"), add = TRUE)
+      # T66: the field no longer stops a negative or a text; checked here,
+      # before anything is written. Empty is not 0: the field opens on 0.00,
+      # and the component sends NA for empty and for a text alike.
+      rev_cargo <- hd_numero_revisar(input$man_cargo, tr("tablas.bancos.cargo"), min = 0)
+      rev_abono <- hd_numero_revisar(input$man_abono, tr("tablas.bancos.abono"), min = 0)
+      for (rv_n in list(rev_cargo, rev_abono)) if (!rv_n$ok) {
+        showNotification(rv_n$aviso, type = "warning"); return()
+      }
 
       cuenta_id_sel <- input$man_cuenta %||% "__sin_cuenta__"
       tipo_sel      <- input$man_tipo   %||% "manual_in"
-      cargo_v       <- as.numeric(input$man_cargo %||% 0)
-      abono_v       <- as.numeric(input$man_abono %||% 0)
+      cargo_v       <- rev_cargo$valor
+      abono_v       <- rev_abono$valor
       edit_id       <- editing_mov_id()
       is_edit       <- !is.null(edit_id)
 

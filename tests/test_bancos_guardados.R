@@ -11,6 +11,8 @@
 #   3. do_eliminar_sesion_confirm (delete an import session)
 #   4. do_import (import a TXT's movements)
 #   5. undo_mov_delete (restore a deleted manual movement)
+#   6. do_add_manual with a Cargo or Abono the field no longer stops (T66):
+#      negative, empty or not a number -> an aviso, nothing written or logged
 #
 # Run from project root:  Rscript tests/test_bancos_guardados.R
 # =============================================================================
@@ -35,6 +37,7 @@ cargar <- function(archivo, nombres) {
 cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 cargar("R/global.R", c("fmt_money", "is_erp_sourced"))
 cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", "load_ctas_bancos"))
+cargar("R/ui_components.R", c("hd_numero_revisar"))
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/bancos_parser.R", "R/empresas_identidad.R", "R/bancos_detect.R", "R/bancos_persistence.R", "R/bancos_formatos.R",
             "R/bancos_module.R"))
@@ -163,6 +166,25 @@ testServer(bancosServer, args = list(shared = shared), {
     session$setInputs(`papelera-accion` = list(accion = "deshacer", ids = "mov:m3", nonce = runif(1)))
     isFALSE(en_s3()$eliminado[en_s3()$id == "m3"]) && !any(grepl("_fallido$", LOG))
   })
+
+  # 6 · T66: Cargo and Abono are hd_numero_input; the browser no longer stops
+  # a negative or a text (it sends NA), so the save checks them first.
+  manual <- function(cargo, abono) {
+    sembrar(); MOVS(movs0); limpiar(); editing_mov_id(NULL)
+    session$setInputs(man_cuenta = "c1", man_tipo = "manual_in", man_cargo = cargo, man_abono = abono,
+                      man_fecha = as.Date("2026-10-31"), man_parte = "AJUSTE", man_concepto = "x", man_notas = "",
+                      do_add_manual = runif(1))
+  }
+  nada_escrito <- function() identical(MOVS(), movs0) && identical(en_s3(), movs0) && !length(LOG)
+  for (caso in list(list(-50, 0, "Cargo no puede ser negativo."), list(0, -0.01, "Abono no puede ser negativo."),
+                    list(NA, 777, "Cargo: escribe un número."), list(0, NA, "Abono: escribe un número."))) {
+    manual(caso[[1]], caso[[2]])
+    ok(sprintf("6 · do_add_manual cargo=%s abono=%s: '%s', nothing written or logged", caso[[1]], caso[[2]], caso[[3]]),
+       nada_escrito() && identical(AVISOS, paste0("warning: ", caso[[3]])))
+  }
+  manual(1234.56, 0)
+  ok("6 · do_add_manual: a valid Cargo (and Abono 0) still saves, as the number",
+     any(en_s3()$cargo == 1234.56 & en_s3()$fuente == "manual", na.rm = TRUE) && "agregar_movimiento_manual" %in% LOG)
 })
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
