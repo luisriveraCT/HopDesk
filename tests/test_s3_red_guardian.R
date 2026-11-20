@@ -140,7 +140,10 @@ sin_base <- function(fn, excluir = character()) {
 }
 for (fn in c("save_manual", "save_notes", "save_tags", "save_pasivos_provisions",
              "save_bancos_movimientos", "save_bancos_confirmados",
-             "save_proveedores", "save_proveedores_inactivos")) {
+             "save_proveedores", "save_proveedores_inactivos",
+             # CM38b: Empresas saves through modificar_tabla + rebase_por_id;
+             # a direct save_empresas() of a copy must not come back.
+             "save_empresas")) {
   m <- sin_base(fn, "R/pagar_hoy_module.R")
   for (s in m) message("  without base: ", s)
   ok(sprintf("%s(): every save built from a copy passes base (pagar_hoy_module.R aside)", fn), !length(m))
