@@ -127,6 +127,7 @@ HD_TEMAS <- list(
       cobro              = "#1F5FD1",   # the table engine's (--hdt-cobro)
       pago               = "#15804A",   # the table engine's (--hdt-pago)
       provision          = "#7C3AED",   # 8
+      `provision-borde`  = "#E9D5FF",   # Pasivos, commission sub-row's dotted line
       seleccion          = "#D8E5FF",   # the table engine's (--hdt-sel)
       hover              = "#F0F4FF",   # the table engine's (--hdt-hover)
       `fuente-titulos` = .HD_LATO,
@@ -180,6 +181,7 @@ HD_TEMAS <- list(
       cobro              = "#24508F",
       pago               = "#2F6B4F",
       provision          = "#6B3358",   # lila-fg
+      `provision-borde`  = "#DACCD5",   # provision at 25 % over superficie, flattened (tema_mezcla)
       seleccion          = "#E3E8F0",
       hover              = "#F3F1EA",
       `fuente-titulos` = "'Fraunces', Georgia, 'Times New Roman', serif",
@@ -212,6 +214,12 @@ HD_TEMAS <- list(
 # shadow (tema_hash_sombra()) tells apart two shadows of one colour:
 #     `sombra-000000-<hash>` = "0 4px 20px rgba(0, 0, 0, 0.45)"
 .HD_LEGADO <- list(
+  `aviso-suave-fdf3dc` = "#FDF3DC",
+  `aviso-suave-fef3c7` = "#FEF3C7",
+  `aviso-suave-fef9f0` = "#FEF9F0",
+  `aviso-suave-fffbeb` = "#FFFBEB",
+  `aviso-texto-b45309` = "#B45309",
+  `aviso-texto-d97706` = "#D97706",
   `borde-dde4ed` = "#DDE4ED",
   `borde-e8ecf2` = "#E8ECF2",
   `borde-fuerte-b0c6de` = "#B0C6DE",
@@ -229,7 +237,14 @@ HD_TEMAS <- list(
   `oscuro-texto-2-7b9ab8` = "#7B9AB8",
   `oscuro-texto-c8d8ea` = "#C8D8EA",
   `oscuro-texto-ffffff` = "#FFFFFF",
+  `peligro-suave-fdf2f2` = "#FDF2F2",
+  `peligro-suave-fef2f2` = "#FEF2F2",
+  `primario-1d4ed8` = "#1D4ED8",
+  `primario-3b82f6` = "#3B82F6",
   `primario-suave-d8e6f5` = "#D8E6F5",
+  `primario-suave-dbeafe` = "#DBEAFE",
+  `primario-suave-f0f9ff` = "#F0F9FF",
+  `provision-6d28d9` = "#6D28D9",
   `sombra-000000-44cce5` = "0 4px 20px rgba(0,0,0,0.45)",
   `texto-0d1b2a` = "#0D1B2A",
   `texto-0d2240` = "#0D2240",

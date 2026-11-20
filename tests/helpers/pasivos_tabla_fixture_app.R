@@ -16,7 +16,7 @@ cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALS
 cargar("R/global.R", c("strip_accents", "fmt_money"))
 cargar("R/persistence.R", "confirmaciones_vigentes")
 cargar("R/pasivos_observers.R", "isTRUE_safe")
-for (f in c("R/monedas.R", "R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+for (f in c("R/tema_registro.R", "R/monedas.R", "R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/pasivos_schemas.R", "R/pasivos_table_pivot.R", "R/pasivos_table_styles.R",
             "R/pasivos_table_module.R", "R/pasivos_list_module.R")) source(f)
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
@@ -50,6 +50,7 @@ if (identical(Sys.getenv("HD_ARRANQUE_NULL"), "1"))
 ui <- fluidPage(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly"),
   shinyjs::useShinyjs(),
+  tema_head(),   # the theme tokens pasivos_table_css() uses (var(--hd-*)), as app.R loads them
   pasivos_table_module_ui("pt"),
   verbatimTextOutput("eco")
 )

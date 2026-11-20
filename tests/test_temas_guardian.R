@@ -65,7 +65,7 @@ archivos <- c("app.R",
   "R/ledger_module.R" = 3L,
   "R/pagos_audit_viewer_module.R" = 7L,
   "R/pasivos_table_module.R" = 3L,
-  "R/pasivos_table_styles.R" = 39L,
+  "R/pasivos_table_styles.R" = 4L,    # stage 4: only the currency badges (.PASIVOS_CUR_COLORES), with TEMA 4b
   "R/pasivos_wizard_module.R" = 2L,
   "R/pasivos_wizard_steps.R" = 1L,
   "R/proveedores_module.R" = 1L,
@@ -227,7 +227,7 @@ ok("the generated CSS puts the default theme on :root",
 # A migration (stage 4) may add legacy tokens, but only by removing at least
 # as many hand-written colours: raise .TOPE_LEGADO and lower .TRINQUETE in
 # the same commit. Their sum never grows. Then the legacy only shrinks.
-.TOPE_LEGADO   <- 22L   # stage 4: www/cashflow_preview.css (70 hand-written -> 0)
+.TOPE_LEGADO   <- 35L   # stage 4: cashflow_preview.css (70 -> 0) +22, pasivos_table_styles.R (39 -> 4) +13
 .TOTAL_INICIAL <- 1338L   # sum(.TRINQUETE) + .TOPE_LEGADO on e2d3882 + TEMA stage 1
 leg <- tema$.HD_LEGADO
 ok(sprintf("legacy tokens: %d (ratchet %d)", length(leg), .TOPE_LEGADO), length(leg) <= .TOPE_LEGADO)

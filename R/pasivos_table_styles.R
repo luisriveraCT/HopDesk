@@ -66,8 +66,8 @@ pasivos_table_css <- function() {
   overflow-x: scroll;
   overflow-y: hidden;
   height: 14px;
-  background: #f8fafc;
-  border-top: 1px solid #e5e7eb;
+  background: var(--hd-superficie-2);
+  border-top: 1px solid var(--hd-borde);
 }
 .pasivos-scroll-bar-inner { height: 1px; }
 .pasivos-table {
@@ -78,78 +78,78 @@ pasivos_table_css <- function() {
 .pasivos-table th,
 .pasivos-table td {
   padding: 4px 7px;
-  border-right: 1px solid #e5e7eb;
-  border-bottom: 1px solid #e5e7eb;
+  border-right: 1px solid var(--hd-borde);
+  border-bottom: 1px solid var(--hd-borde);
   white-space: nowrap;
   vertical-align: top;
 }
 .pasivos-table thead th {
   position: sticky;
   top: 0;
-  background: #f9fafb;
+  background: var(--hd-superficie-2);
   z-index: 2;
 }
 .pasivos-table .pasivos-meta-col {
   position: sticky;
   left: 0;
-  background: #ffffff;
+  background: var(--hd-superficie);
   z-index: 1;
 }
 .pasivos-table thead th.pasivos-meta-col { z-index: 3; }
 
 /* ── Row highlight for overdue rows ── */
 .pasivos-table tr.has-overdue {
-  background-color: rgba(220, 38, 38, 0.06);
+  background-color: color-mix(in srgb, var(--hd-peligro) 6%, transparent);
 }
 .pasivos-table tr.has-overdue td.pasivos-meta-col {
-  border-left: 4px solid #dc2626;
-  background-color: #fdf2f2;
+  border-left: 4px solid var(--hd-peligro);
+  background-color: var(--hd-leg-peligro-suave-fdf2f2);
 }
 
 /* ── Row highlight for due-soon rows (due within 3–7 days) ── */
 .pasivos-table tr.has-due-soon {
-  background-color: rgba(245, 158, 11, 0.07);
+  background-color: color-mix(in srgb, var(--hd-aviso) 7%, transparent);
 }
 .pasivos-table tr.has-due-soon td.pasivos-meta-col {
-  border-left: 4px solid #f59e0b;
-  background-color: #fef9f0;
+  border-left: 4px solid var(--hd-aviso);
+  background-color: var(--hd-leg-aviso-suave-fef9f0);
 }
 
 /* ── Row highlight for very-soon rows (due today, tomorrow, or day-after) ── */
 .pasivos-table tr.has-very-soon {
-  background-color: rgba(245, 158, 11, 0.18);
+  background-color: color-mix(in srgb, var(--hd-aviso) 18%, transparent);
 }
 .pasivos-table tr.has-very-soon td.pasivos-meta-col {
-  border-left: 4px solid #d97706;
-  background-color: #fdf3dc;
+  border-left: 4px solid var(--hd-aviso-fuerte);
+  background-color: var(--hd-leg-aviso-suave-fdf3dc);
 }
 
 /* ── Cell base ── */
 .pasivos-cell { font-variant-numeric: tabular-nums; }
 
 /* ── Cell states ── */
-.pasivos-cell-provision        { color: #6d28d9; font-style: italic; }
-.pasivos-cell-item-pending     { color: #b45309; }
-.pasivos-cell-item-confirmed   { color: #065f46; }
-.pasivos-cell-due-today        { background: #fef3c7; font-weight: 600; }
-.pasivos-cell-overdue-amber    { background: #fffbeb; color: #d97706; font-weight: 600; }
-.pasivos-cell-overdue-red      { background: #fef2f2; color: #b91c1c; font-weight: 700; }
+.pasivos-cell-provision        { color: var(--hd-leg-provision-6d28d9); font-style: italic; }
+.pasivos-cell-item-pending     { color: var(--hd-leg-aviso-texto-b45309); }
+.pasivos-cell-item-confirmed   { color: var(--hd-exito-texto); }
+.pasivos-cell-due-today        { background: var(--hd-leg-aviso-suave-fef3c7); font-weight: 600; }
+.pasivos-cell-overdue-amber    { background: var(--hd-leg-aviso-suave-fffbeb); color: var(--hd-leg-aviso-texto-d97706); font-weight: 600; }
+.pasivos-cell-overdue-red      { background: var(--hd-leg-peligro-suave-fef2f2); color: var(--hd-peligro-texto); font-weight: 700; }
 .pasivos-cell-has-override::after {
   content: '';
   position: absolute;
   top: 4px; right: 4px;
   width: 6px; height: 6px;
   border-radius: 50%;
-  background: #6b7280;
+  background: var(--hd-texto-2);
 }
 
 /* ── Today column highlight ── */
-.pasivos-table-today-col { background: #f0f9ff; }
+.pasivos-table-today-col { background: var(--hd-leg-primario-suave-f0f9ff); }
 .pasivos-table thead th.pasivos-table-today-col {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--hd-leg-primario-suave-dbeafe);
+  color: var(--hd-leg-primario-1d4ed8);
   font-weight: 700;
-  border-bottom: 2px solid #3b82f6;
+  border-bottom: 2px solid var(--hd-leg-primario-3b82f6);
 }
 
 /* ── Convert bolt button ── */
@@ -184,7 +184,7 @@ pasivos_table_css <- function() {
   height: 14px;
   font-size: 10px;
   background: transparent;
-  color: #7c3aed;
+  color: var(--hd-provision);
   border: none;
   cursor: pointer;
   padding: 0;
@@ -196,20 +196,20 @@ pasivos_table_css <- function() {
 
 /* ── Fee sub-row ── */
 .pasivos-fee-row td {
-  background-color: #faf5ff;
-  border-bottom: 1px dashed #e9d5ff;
+  background-color: color-mix(in srgb, var(--hd-provision) 5%, var(--hd-superficie));
+  border-bottom: 1px dashed var(--hd-provision-borde);
 }
 .pasivos-fee-row td.pasivos-meta-col {
-  background-color: #faf5ff;
+  background-color: color-mix(in srgb, var(--hd-provision) 5%, var(--hd-superficie));
 }
 
 /* ── Currency group separator row ── */
 .pasivos-currency-group-row td {
   vertical-align: middle;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--hd-borde);
 }
 .pasivos-currency-group-cell {
-  background: #f8fafc !important;
+  background: var(--hd-superficie-2) !important;
   padding: 3px 10px !important;
 }
 
@@ -221,7 +221,7 @@ pasivos_table_css <- function() {
   line-height: 1;
   padding: 2px 5px;
   border-radius: 3px;
-  color: #fff;
+  color: var(--hd-texto-inverso);
   vertical-align: middle;
   margin-left: 4px;
   letter-spacing: .3px;
