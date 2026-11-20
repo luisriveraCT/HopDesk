@@ -26,7 +26,7 @@ sel  <- trimws(sub("\\{.*$", "", reglas))
 body <- sub("^[^{]*\\{", "", sub("\\}$", "", reglas))
 sel_lista <- function(s) trimws(strsplit(s, ",", fixed = TRUE)[[1]])
 
-ok("the room is one variable, 56px (the engine's HDT_MARGEN_ABAJO)",
+ok("the room is one variable, 56px (the table engine reads it too, T65)",
    grepl(":root\\s*\\{\\s*--hd-notas-reserva:\\s*56px;\\s*\\}", css))
 k <- which(grepl("var\\(--hd-notas-reserva\\)", body))
 # An empty block after the content, never padding: Bancos' and Intercompany's
@@ -70,8 +70,33 @@ ok("only a Panorama showing its Cinta stays out (the Cinta lifts the button, T49
    any(grepl(":not\\(:has\\(\\.pan-cinta\\)\\)", cajas)) && !any(grepl("hd-panorama", cajas, fixed = TRUE)))
 ok("the button itself did not move (fixed, bottom 16px, left 16px)",
    grepl("\\.notes-toggle-bar \\{\\s*position: fixed;\\s*bottom: 16px; left: 16px;", ui))
-ok("the engine still reserves the same 56 px below a table",
-   grepl("var HDT_MARGEN_ABAJO = 56;", leer("www/hdtable.js"), fixed = TRUE))
+# T65: one source. The engine reads --hd-notas-reserva at each sizing, 56
+# only when the page lacks it; no second copy of the number is used.
+js <- leer("www/hdtable.js")
+ok("the engine reads the room from --hd-notas-reserva, falling back to 56 only without it",
+   grepl("getPropertyValue('--hd-notas-reserva')", js, fixed = TRUE) &&
+     grepl("var HDT_MARGEN_RESPALDO = 56;", js, fixed = TRUE) &&
+     grepl("(isFinite(v) && v >= 0) ? v : HDT_MARGEN_RESPALDO", js, fixed = TRUE))
+ok("…and a table's room below it comes from that reading, not from a constant",
+   grepl("- debajo - margenAbajo());", js, fixed = TRUE) && !grepl("HDT_MARGEN_ABAJO", js, fixed = TRUE))
+# The real margenAbajo() in node, with a stand-in getComputedStyle: the
+# variable's value when it reads, 56 when absent, unreadable or failing.
+pieza <- regmatches(js, regexpr("(?s)  var HDT_MARGEN_RESPALDO = 56;\\n  function margenAbajo\\(\\) \\{.*?\\n  \\}\\n", js, perl = TRUE))
+nodo <- Sys.which("node"); if (!nzchar(nodo)) nodo <- "node"
+prog <- tempfile(fileext = ".js")
+writeLines(c("var document = { documentElement: {} }; var valor = '';",
+             "function getComputedStyle(el) { if (valor === 'falla') throw new Error('no style');",
+             "  return { getPropertyValue: function (k) { return k === '--hd-notas-reserva' ? valor : ''; } }; }",
+             pieza,
+             "var casos = { c56: '56px', c100: ' 100px', vacia: '', ilegible: 'abc', negativa: '-4px', falla: 'falla' };",
+             "var r = {}; Object.keys(casos).forEach(function (k) { valor = casos[k]; r[k] = margenAbajo(); });",
+             "console.log(JSON.stringify(r));"), prog, useBytes = TRUE)
+salida <- tryCatch(suppressWarnings(system2(nodo, prog, stdout = TRUE, stderr = TRUE)), error = function(e) "sin node")
+r <- tryCatch(jsonlite::fromJSON(paste(salida, collapse = "")), error = function(e) NULL)
+ok("margenAbajo() (node): 56px gives 56 and 100px gives 100 -- it reads the variable",
+   length(pieza) == 1L && identical(r$c56, 56L) && identical(r$c100, 100L))
+ok("…empty, unreadable, negative or a failing getComputedStyle: the 56 fallback",
+   identical(unname(unlist(r[c("vacia", "ilegible", "negativa", "falla")])), rep(56L, 4)))
 
 # The two Grupo tabs carry the class; their inline scroll (T51) is untouched,
 # and the class sets no height or overflow that could compete with it.

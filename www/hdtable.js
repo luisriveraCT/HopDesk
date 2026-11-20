@@ -30,9 +30,18 @@
   // (or what fits in the modal around it). On a page, never more than what's
   // left from the table's top to the window's bottom, so the footer under it
   // always shows whole -- above the app's fixed "Notas del mes" button, which
-  // sits 16 px from the bottom (HDT_MARGEN_ABAJO).
+  // sits 16 px from the bottom. Its room is the CSS variable
+  // --hd-notas-reserva (R/ui_components.R, T56), the one source (T65);
+  // HDT_MARGEN_RESPALDO only when the page does not define it.
   var HDT_ALTO_MIN = 8, HDT_ALTO_NORMAL = 15, HDT_ALTO_CRECE = 30, HDT_ALTO_VENTANA = 0.7;
-  var HDT_MARGEN_ABAJO = 56;
+  var HDT_MARGEN_RESPALDO = 56;
+  function margenAbajo() {
+    var v = NaN;
+    try {
+      v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hd-notas-reserva'));
+    } catch (e) { /* no computed style: the fallback */ }
+    return (isFinite(v) && v >= 0) ? v : HDT_MARGEN_RESPALDO;
+  }
 
   var TABLAS = {};        // root element id -> state
   var ULTIMO = {};        // root element id -> last data message received for it
@@ -465,7 +474,7 @@
     if (!dlg) {
       var sr = st.scroll.getBoundingClientRect();
       var debajo = st.root.getBoundingClientRect().bottom - sr.bottom;
-      tope = Math.min(tope, window.innerHeight - Math.max(0, sr.top) - debajo - HDT_MARGEN_ABAJO);
+      tope = Math.min(tope, window.innerHeight - Math.max(0, sr.top) - debajo - margenAbajo());
     }
     var alto = Math.max(minimo, Math.min(contenido, Math.max(tope, minimo)));
     if (!encoger && st.altoActual) alto = Math.max(alto, st.altoActual);

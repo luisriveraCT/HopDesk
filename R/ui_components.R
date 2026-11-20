@@ -529,8 +529,8 @@ app_styles <- function() {
        each scrolling box that reaches the window's bottom ends with room for
        it: scrolled to the end, its last row always shows above the button.
        At rest nothing moves and no height is lost. 56px = 16 of margin + the
-       button's ~27 + air; the same number as the table engine's own room
-       below a table (HDT_MARGEN_ABAJO, www/hdtable.js): change both together.
+       button's ~27 + air. The table engine reads this same variable for its
+       room below a table (www/hdtable.js, T65): one source, keep its name.
        Only a Panorama that shows its Cinta is left out: there the Cinta lifts
        the button (T49). Without it (nothing to show) Panorama gets the room
        too: measured at 1293x632, its last card ended under the button.
