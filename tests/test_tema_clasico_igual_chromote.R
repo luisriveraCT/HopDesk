@@ -133,6 +133,19 @@ recorrer <- function(raiz, etiqueta, quien) {
   poll_until(carga_terminada, timeout_s = LIMITE, interval_s = 1)
   if (!ok(sprintf("[%s · %s] signed in and loaded", etiqueta, quien), carga_terminada())) return(res)
   Sys.sleep(6)
+  recursos <- tryCatch(jsonlite::fromJSON(b$Runtime$evaluate(
+    "(function(){
+       var urls = Array.from(document.querySelectorAll('link[rel=stylesheet][href], script[src]'))
+         .map(function(e){ return e.href || e.src; }).filter(function(u){ return u.indexOf(location.origin) === 0; });
+       return Promise.all(urls.map(function(u){ return fetch(u).then(function(r){ return r.status + ' ' + u.replace(location.origin, ''); },
+         function(){ return 'ERR ' + u.replace(location.origin, ''); }); })).then(function(l){ return JSON.stringify(l); });
+     })()", awaitPromise = TRUE, returnByValue = TRUE, timeout_ = 60)$result$value), error = function(x) character())
+  malos <- recursos[!startsWith(recursos, "200 ")]
+  if (!ok(sprintf("[%s · %s] every local stylesheet and script answers 200 (%d)", etiqueta, quien, length(recursos)),
+          length(recursos) > 5L && !length(malos))) cat(paste0("      | ", malos), sep = "\n")
+  if (identical(etiqueta, "rama"))
+    ok(sprintf("[rama · %s] the page asks for hd_temas.css and hd_clasico_legado.css", quien),
+       any(grepl("hd_temas\\.css", recursos)) && any(grepl("hd_clasico_legado\\.css", recursos)))
   for (v in names(PESTANAS)) {
     visible <- isTRUE(tryCatch(ev(sprintf("(function(){ var a = document.querySelector(\".nav-link[data-value='%s']\");
       return !!a && a.offsetParent !== null; })()", v)), error = function(x) FALSE))
