@@ -607,7 +607,7 @@ pagarHoyServer <- function(id, shared) {
       col_texto("Cuenta", "tablas.agenda.cuenta"),
       col_insignia("Tipo", "tablas.facturas.tipo", mapa = list(
         abono = list(texto = "tablas.agenda.abono", tono = "aviso"))),
-      col_texto("Referencia", "tablas.facturas.referencia"),
+      col_texto("Referencia", "tablas.agenda.concepto"),
       col_texto("Documento", "tablas.facturas.documento", recorte = FALSE, opcional = TRUE, visible = FALSE),
       col_fecha("Vencimiento", "tablas.agenda.vencimiento"),
       col_dinero("Importe", "tablas.facturas.importe", moneda = "Moneda"))

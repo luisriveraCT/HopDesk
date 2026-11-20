@@ -46,7 +46,7 @@ pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = c
                            selected = pago_cur %||% base),
         shiny::textInput("pcm_documento",   "Documento",
                          value = p$documento[1] %||% ""),
-        shiny::textInput("pcm_factura",     "No. Factura",
+        shiny::textInput("pcm_factura",     tr("comun.concepto"),
                          value = p$referencia[1] %||% "")
       ),
       shiny::column(6,

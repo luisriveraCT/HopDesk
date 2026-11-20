@@ -24,7 +24,7 @@ manual_entry_tab_content <- function(ledger, empresas, monedas = character(),
         selectInput("me_moneda",   "Moneda",   choices = monedas_para_capturar(monedas, base),
                     selected = base),
         textInput("me_documento",  "No. Documento *", value = ""),
-        textInput("me_factura",    "No. Factura",     value = "")
+        textInput("me_factura",    tr("comun.concepto"),     value = "")
       ),
       column(6,
         textInput("me_parte",      party_lbl,                     value = ""),
@@ -119,7 +119,7 @@ manual_edit_handlers <- function(input, output, session,
                     selected = existing_row$Moneda %||% moneda_base_sesion(session)),
         textInput("me_documento",  "No. Documento *",
                   value = existing_row$Documento %||% ""),
-        textInput("me_factura",    "No. Factura",
+        textInput("me_factura",    tr("comun.concepto"),
                   value = existing_row$Factura %||% "")
       ),
       column(6,
