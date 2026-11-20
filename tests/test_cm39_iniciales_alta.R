@@ -12,9 +12,12 @@
 #   2  the same with " nt " (case and spaces);
 #   3  B creates "OLD" while S3 holds a company renamed OLD -> NEW that B's
 #      copy never had: refused (iniciales_de_antes), nothing written;
-#   4  a plain create still works: "creada" notice, log, sync bump.
+#   4  a plain create still works: "creada" notice, log, sync bump;
+#   5  two creates at once with different initials both computed the same
+#      account_code on their copies: the second gets the next free one, and
+#      its notice and log name the code written (second commit).
 # The real empresasServer (testServer), two sessions over the in-memory S3.
-# Against 867d251, 1, 2 and 3 fail (both "NT" are written).
+# Against 867d251, 1, 2, 3 and 5 fail (both "NT" are written; both get E0003).
 # Run from project root:  Rscript tests/test_cm39_iniciales_alta.R
 # =============================================================================
 cat("=== test_cm39_iniciales_alta ===\n\n")
@@ -110,6 +113,24 @@ crear(nuevo_shared(), "LG")
 ok("4 a plain create: written, \"creada\" notice, log and sync bump",
    n_ini("LG") == 1L && identical(TIPOS, "message") && length(LOGS) == 1L &&
      LOGS[[1]]$action == "crear_empresa" && BUMPS == 1L)
+
+# ── 5. account_code: two creates at once with different initials ────────────
+# Both copies end at E0002, so both compute E0003. B's is moved to the next
+# free code in S3's table, and everything after the save -- the "creada"
+# notice, the log's description and metadata -- names the code written.
+sembrar()
+sa <- nuevo_shared(); sb <- nuevo_shared()
+crear(sa, "NT")
+limpiar()
+crear(sb, "LG")
+e <- leer()
+cod_nt <- e$account_code[e$initials == "NT"]; cod_lg <- e$account_code[e$initials == "LG"]
+ok("5a both are written, with different account codes (E0003 and E0004)",
+   identical(cod_nt, "E0003") && identical(cod_lg, "E0004") && !anyDuplicated(e$account_code))
+ok("5b B's notice and log name the code written (E0004), never the one computed on its copy (E0003)",
+   identical(AVISOS, es("creada", iniciales = "LG", codigo = "E0004")) && length(LOGS) == 1L &&
+     identical(LOGS[[1]]$metadata$account_code, "E0004") && grepl("(E0004)", LOGS[[1]]$description, fixed = TRUE))
+ok("5c a free code is kept as computed (A's create: E0003, no gap)", identical(cod_nt, "E0003"))
 
 s3_memoria_restaurar()
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))

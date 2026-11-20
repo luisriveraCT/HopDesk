@@ -63,6 +63,18 @@ logo_grupo_img <- function(logo_raw, logo_ext = "png", alto = 32) {
   invisible(TRUE)
 }
 
+# The new company's account_code made free against S3's table (CM39): it was
+# computed on the session's copy, so two creates at once -- even with
+# different initials -- took the same E000N. The user never chose it, so a
+# taken code is moved to the next free one, not refused. Pure.
+.codigo_libre_empresa <- function(id) function(nuevo, fresco) {
+  i <- which(as.character(nuevo$id) == id)
+  usados <- fresco$account_code[!is.na(fresco$account_code)]
+  if (length(i) == 1L && nuevo$account_code[i] %in% usados)
+    nuevo$account_code[i] <- .next_empresa_code(fresco)
+  nuevo
+}
+
 # ── UI ────────────────────────────────────────────────────────────────────────
 
 empresasUI <- function(id) {
@@ -317,7 +329,10 @@ empresasServer <- function(id, shared) {
     # before anything is written; when it refuses (an "empresa_rechazada"
     # condition), the session is shown what S3 holds -- the other session's
     # company included -- and the condition goes on to the caller.
-    .save_and_broadcast <- function(df, validar = NULL) {
+    # `ajustar(nuevo, fresco)` (CM39) may change the action's rows against
+    # S3's table before the rebase (a new company's account_code). Returns
+    # the table written: what the caller reports comes from there.
+    .save_and_broadcast <- function(df, validar = NULL, ajustar = NULL) {
       cid   <- shared$effective_client_id()
       base  <- .normalize(isolate(all_empresas_rv()) %||% .schema_empresas(), .schema_empresas)
       nuevo <- .normalize(df, .schema_empresas)
@@ -328,7 +343,8 @@ empresasServer <- function(id, shared) {
             stop("[EMP] the session's companies are not this client's; nothing was saved", call. = FALSE)
           visto <<- fresco
           if (is.function(validar)) validar(fresco)
-          rebase_por_id(nuevo, base, fresco, "id")
+          propio <- if (is.function(ajustar)) .normalize(ajustar(nuevo, fresco), .schema_empresas) else nuevo
+          rebase_por_id(propio, base, fresco, "id")
         }),
         empresa_rechazada = function(e)
           if (!is.null(visto) && !is.null(shared$empresas_db) && is.function(shared$empresas_db))
@@ -336,7 +352,7 @@ empresasServer <- function(id, shared) {
       bump_sync_version("empresas_db", client_id = cid)
       if (!is.null(shared$empresas_db) && is.function(shared$empresas_db))
         shared$empresas_db(guardado)   # what S3 holds now, other sessions' rows included
-      invisible(TRUE)
+      invisible(guardado)
     }
 
     # Visible (non-deleted) companies, filtered to the user's allowed initials.
@@ -457,7 +473,12 @@ empresasServer <- function(id, shared) {
       # S3's table as the company is written. Refused there (another session
       # took the initials meanwhile): nothing written, the form stays open,
       # the session already shows that other company.
-      saved <- tryCatch({ .save_and_broadcast(updated, validar = .validar_alta_empresa(initials)); "ok" },
+      guardado <- NULL
+      saved <- tryCatch({
+        guardado <- .save_and_broadcast(updated, validar = .validar_alta_empresa(initials),
+                                        ajustar = .codigo_libre_empresa(new_row$id))
+        "ok"
+      },
                         empresa_iniciales_repetidas = function(e) "repetidas",
                         empresa_iniciales_de_antes  = function(e) "de_antes",
                         error = function(e) { message("[EMP] create failed: ", e$message); "error" })
@@ -475,21 +496,23 @@ empresasServer <- function(id, shared) {
           type = "error", duration = 6)
         return()
       }
+      # The code written, which may not be the one computed on the copy (CM39).
+      codigo <- as.character(guardado$account_code[as.character(guardado$id) == new_row$id][1])
       shinyjs::hide("create_form_wrap")
       updateTextInput(session, "new_initials",     value = "")
       updateTextInput(session, "new_razon_social", value = "")
       updateTextInput(session, "new_nombre_corto", value = "")
       updateTextInput(session, "new_rfc",          value = "")
       showNotification(
-        tr("tablas.empresas.aviso.creada", iniciales = initials, codigo = as.character(new_row$account_code)),
+        tr("tablas.empresas.aviso.creada", iniciales = initials, codigo = codigo),
         type = "message", duration = 3)
       log_action(
         user        = tryCatch(shared$current_user(), error = function(e) "system"),
         module      = "empresas",
         action      = "crear_empresa",
-        description = paste0("Empresa creada: ", initials, " (", new_row$account_code, ") — ", razon_social),
+        description = paste0("Empresa creada: ", initials, " (", codigo, ") — ", razon_social),
         target_id   = new_row$id,
-        metadata    = list(initials = initials, account_code = new_row$account_code, razon_social = razon_social),
+        metadata    = list(initials = initials, account_code = codigo, razon_social = razon_social),
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
