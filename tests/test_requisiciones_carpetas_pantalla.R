@@ -61,7 +61,7 @@ test_that("panel: Todas, General y el árbol anidado; elegir una carpeta muestra
     session$setInputs(`req-carpeta_click` = sub)
     expect_identical(mod$datos()$titulo, "Bomba nueva")
     session$setInputs(`req-carpeta_click` = "general")
-    expect_identical(mod$datos()$titulo, "Renta noviembre")
+    expect_setequal(mod$datos()$titulo, c("Renta noviembre", "Papelería octubre"))   # CM35: the paid one stays too
   })
 })
 

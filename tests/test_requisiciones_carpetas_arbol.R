@@ -17,7 +17,11 @@ suppressPackageStartupMessages({ library(shiny); library(dplyr); library(tibble)
 .tomar("R/global.R", "S3_KEYS")
 .tomar("R/persistence.R", c(".normalize", "leer_tabla_para_escribir", ".s3_leer_para_escribir",
                             "modificar_tabla", "rebase_por_id", "confirmaciones_vigentes", ".schema_manual",
-                            ".schema_empresas"))
+                            ".schema_empresas",
+                            # CM35: the view reads the Agenda strictly (en_agenda)
+                            "safe_load_pagar_hoy", "agenda_sync_activa", ".pagar_hoy_vivo",
+                            "s3_key_pagar_hoy_user", ".schema_agenda_sync_config", ".schema_pagar_hoy"))
+.tomar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 .tomar("R/bancos_persistence.R", ".schema_bancos_confirmados")
 .tomar("R/pasivos_persistence.R", c("etapa_de_provision_en", "PROVISION_PAGADA"))
 source("R/pasivos_schemas.R")
