@@ -330,6 +330,11 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       shiny::div(class = "pan-tarjeta pan-feed",
         shiny::div(class = "pan-feed-cabeza",
           shiny::h2(class = "pan-titulo-seccion", tr("panorama.feed.titulo")),
+          # T62: whose requisitions reach me (only with can_view_requisiciones).
+          if (isTRUE(tryCatch(puede(usr(), "can_view_requisiciones"), error = function(e) FALSE)))
+            shiny::tags$button(type = "button", class = "pan-feed-ajustes", title = tr("panorama.req_avisos.titulo"),
+              onclick = sprintf("Shiny.setInputValue('%s', Math.random(), {priority: 'event'})", ns("req_avisos_abrir")),
+              shiny::icon("gear"), " ", tr("panorama.req_avisos.boton")),
           shiny::div(class = "pan-meta",
             if (!is.null(uv) && !is.na(suppressWarnings(as.POSIXct(uv, tz = "UTC"))))
               tr("panorama.feed.desde", cuando = panorama_cuando(as.POSIXct(uv, tz = "UTC"), tz = zona()))
@@ -346,7 +351,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
           lapply(seq_len(min(nrow(f), 30L)), function(i) {
             a <- f[i, ]
             icono <- switch(a$tipo_feed, ale = "triangle-exclamation", act = "user-check",
-                            sol = "clipboard-check", "bullhorn")
+                            sol = "clipboard-check", req = "clipboard-list", "bullhorn")
             # A published recordatorio or reconocimiento says so (its chip is
             # still Comunicados).
             etiqueta <- if (a$tipo_feed == "com" && isTRUE(a$clase_ok %in% c("recordatorio", "reconocimiento")))
@@ -369,6 +374,50 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
               if (isTRUE(a$nuevo)) shiny::span(class = "visually-hidden", tr("panorama.feed.nuevo")))
           })))
     })
+
+    # ── Mis avisos de requisiciones (T62) ─────────────────────────────────────
+    # Each user chooses whose requisitions reach them as avisos
+    # (req_avisos_pref(), R/panorama_datos.R); R/requisiciones_persistence.R
+    # reads it when it publishes. People are chosen by id (account_code),
+    # never by their shown name. Staff inside a client see it, never save it
+    # (as with the last visit).
+    req_staff <- function() isTRUE(tryCatch(shared$current_user_info()$is_staff, error = function(e) FALSE))
+    shiny::observeEvent(input$req_avisos_abrir, {
+      c <- cid(); u <- usr()
+      if (is.null(c) || !nzchar(c) || is.null(u) || !puede(u, "can_view_requisiciones")) return()
+      p <- tryCatch(req_avisos_pref(prefs_leer(c, u$user)$req_avisos), error = function(e) NULL)
+      gente <- tryCatch(req_avisos_personas(auth_load_usuarios(client_id = c)), error = function(e) NULL)
+      if (is.null(p) || is.null(gente)) {
+        shiny::showNotification(tr("panorama.req_avisos.error_leer"), type = "error"); return()
+      }
+      staff <- req_staff()
+      shiny::showModal(shiny::modalDialog(
+        title = tr("panorama.req_avisos.titulo"), easyClose = TRUE,
+        shiny::p(class = "text-muted small", tr("panorama.req_avisos.explica")),
+        shiny::radioButtons(ns("req_modo"), NULL, selected = p$modo, choiceValues = REQ_AVISOS_MODOS,
+          choiceNames = lapply(REQ_AVISOS_MODOS, function(m) tr(paste0("panorama.req_avisos.modo.", m)))),
+        shiny::conditionalPanel("input.req_modo == 'mias_y'", ns = ns,
+          shiny::selectizeInput(ns("req_personas"), tr("panorama.req_avisos.personas"), multiple = TRUE,
+            choices = stats::setNames(gente$id, gente$nombre), selected = p$personas,
+            options = list(placeholder = tr("panorama.req_avisos.personas_vacio")))),
+        if (staff) shiny::p(class = "text-muted small", tr("panorama.req_avisos.staff")),
+        footer = shiny::tagList(shiny::modalButton(tr("comun.cancelar")),
+          if (!staff) shiny::actionButton(ns("req_avisos_guardar"), tr("comun.guardar"), class = "btn btn-primary"))))
+    }, ignoreInit = TRUE)
+    shiny::observeEvent(input$req_avisos_guardar, {
+      c <- cid(); u <- usr()
+      if (is.null(c) || !nzchar(c) || is.null(u) || req_staff() || !puede(u, "can_view_requisiciones")) return()
+      # The ids come from the browser: only live users of this client count.
+      validos <- tryCatch(req_avisos_personas(auth_load_usuarios(client_id = c))$id, error = function(e) NULL)
+      if (is.null(validos)) { shiny::showNotification(tr("panorama.req_avisos.error_leer"), type = "error"); return() }
+      pref <- req_avisos_pref(list(modo = input$req_modo,
+                                   personas = intersect(as.character(input$req_personas %||% character()), validos)))
+      ok <- tryCatch({ prefs_guardar(c, u$user, list(req_avisos = pref)); TRUE }, error = function(e) FALSE)
+      if (ok) {
+        shiny::removeModal()
+        shiny::showNotification(tr("panorama.req_avisos.guardado"), type = "message")
+      } else shiny::showNotification(tr("panorama.req_avisos.error_guardar"), type = "error")
+    }, ignoreInit = TRUE)
 
     # ── Tu equipo hoy ─────────────────────────────────────────────────────────
     output$equipo <- shiny::renderUI({
