@@ -74,7 +74,10 @@ tryCatch({
   ev <- function(js) { r <- b$Runtime$evaluate(js, returnByValue = TRUE); r$result$value }
   espera <- function(js, s = 15) isTRUE(tryCatch({ poll_until(function() isTRUE(tryCatch(ev(js), error = function(e) FALSE)),
     timeout_s = s, interval_s = 0.25); TRUE }, error = function(e) FALSE))
-  eco <- function() { t <- ev("(document.getElementById('eco') || {}).textContent || ''"); if (nzchar(t)) jsonlite::fromJSON(t) else list() }
+  eco <- function() {   # the server's view; empty (or half drawn) -> list()
+    t <- trimws(ev("(document.getElementById('eco_txt') || {}).textContent || ''"))
+    if (nzchar(t)) tryCatch(jsonlite::fromJSON(t), error = function(e) list()) else list()
+  }
   eco_es <- function(campo, valor, s = 8) isTRUE(poll_until(function() identical(eco()[[campo]], valor), timeout_s = s, interval_s = 0.2))
   centro <- function(sel) jsonlite::fromJSON(ev(sprintf("(function(){ var e = document.querySelector(%s);
     var r = e.getBoundingClientRect(); return JSON.stringify([r.left + r.width / 2, r.top + r.height / 2]); })()",

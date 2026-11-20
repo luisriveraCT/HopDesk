@@ -110,10 +110,12 @@ tryCatch({
   s0 <- desplazado()
   p <- jsonlite::fromJSON(ev("(function(){ var r = document.getElementById('pwiz_tasa_spread').getBoundingClientRect();
     return JSON.stringify([r.left + r.width / 2, r.top + r.height / 2]); })()"))
-  for (k in 1:3) { b$Input$dispatchMouseEvent(type = "mouseWheel", x = p[1], y = p[2], deltaX = 0, deltaY = 120); Sys.sleep(0.2) }
+  # Upward: centred, the field sits at the end of the modal, which cannot go
+  # further down (a number input would have gone 200 -> 197 either way).
+  for (k in 1:3) { b$Input$dispatchMouseEvent(type = "mouseWheel", x = p[1], y = p[2], deltaX = 0, deltaY = -120); Sys.sleep(0.2) }
   Sys.sleep(0.5); foto("T66_rueda_sobretasa")
   ok("T66: the wheel over 'Sobretasa (bps)' leaves 200", identical(ev("document.getElementById('pwiz_tasa_spread').value"), "200"))
-  ok("T66: …and the modal scrolls down instead", isTRUE(desplazado() > s0))
+  ok("T66: …and the modal scrolls instead", isTRUE(desplazado() < s0))
   for (t in c("keyDown", "keyUp")) b$Input$dispatchKeyEvent(type = t, key = "ArrowUp", code = "ArrowUp", windowsVirtualKeyCode = 38)
   ok("T66: the up arrow changes nothing", identical(ev("document.getElementById('pwiz_tasa_spread').value"), "200"))
   clic("#pwiz_next"); espera("!!document.getElementById('pwiz_add_impuesto')")
