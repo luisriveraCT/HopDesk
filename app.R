@@ -1945,11 +1945,12 @@ server <- function(input, output, session) {
       updateNavbarPage(session, "nav", selected = lista[1])
   }, priority = -1)
 
-  # T69: removing the other client tabs from the page server-side was tried
-  # (nav_remove, sendRemoveTab, runjs with Shiny.unbindAll) and never took
-  # effect in Chrome against dev -- no message of that kind reached the
-  # browser; the existing CSS hiding above did not show either. Open as T69b.
-  # The data itself never travels: hd_table_server's gate (tier_registry.R).
+  # T69/T69b: the hiding above does reach the page -- it is sent once the
+  # session's first load lets this observer run (seen with shiny.trace), so
+  # it can arrive minutes after signing in on a busy machine. It is only CSS;
+  # what keeps treasury data away from a tier without those tabs is server
+  # side: the table gate (hd_table_server), the read gate on the treasury
+  # reactives and the write gate in .s3_write() (tier_registry.R).
 
   # ── Admin deployment: hide financial tabs until a client context is active ────
   # Uses runjs with setProperty(...,'important') to override the initial CSS rule
