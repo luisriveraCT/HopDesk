@@ -2367,8 +2367,8 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
         tags$span(class = "small fw-semibold", style = "min-width:72px;", paste0(cur, "/", base)),
         if (abierto)
           div(style = "width:120px;",
-              numericInput(.fx_input_id(cur, base), label = NULL,
-                           value = if (is.na(val)) NA else round(val, 4), min = 0, step = 0.0001, width = "100%"))
+              hd_numero_input(.fx_input_id(cur, base), label = NULL, formato = "tasa", decimales = 4,
+                              value = if (is.na(val)) NA else round(val, 4), min = 0, step = 0.0001, width = "100%"))
         else tags$span(class = "small", style = "min-width:120px; font-variant-numeric:tabular-nums;",
                        formatC(val, format = "f", digits = 4)),
         tags$span(class = paste("small", if (org == "sin_fuente") "text-warning" else "text-muted"),
@@ -2393,7 +2393,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       tags$script(HTML(
         "$(document).off('focusout.cfexpfx').on('focusout.cfexpfx','.cf-export-fx-fila input',function(){",
         "var m=this.id.match(/^export_fx_([A-Z]{3})_([A-Z]{3})$/); if(!m) return;",
-        "var v=parseFloat($(this).val()); if(isNaN(v)||v<=0) return;",
+        "var v=hdNumero.valor(this); if(v===null||v<=0) return;",
         "Shiny.setInputValue('export_fx_cmd',{cur:m[1],base:m[2],accion:'escribir',v:v,t:Date.now()},{priority:'event'});});"
       )),
       tags$small(class = "text-muted mt-1 d-block", icon("circle-info"), " ", tr("tablas.flujo.fx.nota"))
