@@ -807,8 +807,8 @@ pagarHoyServer <- function(id, shared) {
                 ),
                 div(
                   tags$label("Saldo apertura", class = "form-label small text-muted mb-1"),
-                  numericInput(ns(paste0("bal_", emp)), NULL,
-                               value = 0, min = 0, step = 1000, width = "180px")
+                  hd_numero_input(ns(paste0("bal_", emp)), NULL, formato = "monto",
+                                  value = 0, min = 0, step = 1000, width = "180px")
                 )
               ),
               tags$div(class = "vr", style = "height:48px;"),
@@ -907,7 +907,7 @@ pagarHoyServer <- function(id, shared) {
       observeEvent(input[[paste0("bal_cur_", emp)]], {
         cur    <- moneda_sel(emp)
         stored <- saldos_apertura()[[emp]][[cur]] %||% 0
-        updateNumericInput(session, paste0("bal_", emp), value = stored)
+        hd_numero_update(session, paste0("bal_", emp), value = stored)
       }, ignoreInit = FALSE)
 
       # Observer 2 — numericInput edit: persist value for current currency
@@ -3458,8 +3458,8 @@ pagarHoyServer <- function(id, shared) {
       # Refresh visible numericInputs
       for (emp in all_companies_rv()) {
         cur <- moneda_sel(emp)
-        updateNumericInput(session, paste0("bal_", emp),
-                           value = sa[[emp]][[cur]] %||% 0)
+        hd_numero_update(session, paste0("bal_", emp),
+                         value = sa[[emp]][[cur]] %||% 0)
       }
 
       showNotification(
