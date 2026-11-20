@@ -1098,6 +1098,8 @@
   "tablas.pasivos.manual.parte": "Party / Vendor",
   "tablas.pasivos.manual.codigo": "Code",
   "tablas.pasivos.manual.importe": "Amount",
+  "tablas.pasivos.manual.importe_negativo": "The amount can't be negative.",
+  "tablas.pasivos.manual.importe_invalido": "Enter a valid amount, 0 or more.",
   "tablas.pasivos.manual.referencia": "Reference",
   "tablas.pasivos.manual.fecha": "Date",
   "tablas.pasivos.manual.notas": "Notes",

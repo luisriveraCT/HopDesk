@@ -259,6 +259,10 @@ pasivos_table_module_server <- function(id, shared) {
       if (!fecha_valida(input$ppm_fecha)) {
         shiny::showNotification(tr("comun.aviso.fecha_requerida"), type = "error"); return()
       }
+      # T66: the number field no longer stops a negative in the browser.
+      if (isTRUE(as.numeric(input$ppm_importe %||% NA_real_) < 0)) {
+        shiny::showNotification(tr("tablas.pasivos.manual.importe_negativo"), type = "error"); return()
+      }
 
       shinyjs::disable("ppm_save")
       on.exit(shinyjs::enable("ppm_save"), add = TRUE)

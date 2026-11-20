@@ -1098,6 +1098,8 @@
   "tablas.pasivos.manual.parte": "Parte / Proveedor",
   "tablas.pasivos.manual.codigo": "Código",
   "tablas.pasivos.manual.importe": "Importe",
+  "tablas.pasivos.manual.importe_negativo": "El importe no puede ser negativo.",
+  "tablas.pasivos.manual.importe_invalido": "Captura un importe válido, 0 o mayor.",
   "tablas.pasivos.manual.referencia": "Referencia",
   "tablas.pasivos.manual.fecha": "Fecha",
   "tablas.pasivos.manual.notas": "Notas",

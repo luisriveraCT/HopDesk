@@ -133,6 +133,9 @@ pasivos_provision_de_borrado <- function(prov, client_id) {
   # never show anywhere and the provision would stay "converted". Both
   # buttons show res$msg and keep the modal open.
   if (!fecha_valida(input$pcm_fecha)) return(list(ok = FALSE, msg = tr("comun.aviso.fecha_requerida")))
+  # T66: the number field no longer stops a negative in the browser.
+  if (isTRUE(as.numeric(input$pcm_importe %||% NA_real_) < 0))
+    return(list(ok = FALSE, msg = tr("tablas.pasivos.manual.importe_negativo")))
   provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
   if (is.null(provs)) return(list(ok = FALSE, msg = "No se pudo cargar la tabla de provisiones."))
 
@@ -463,6 +466,10 @@ setup_pasivos_module <- function(input, output, session, shared) {
     if (!fecha_valida(input$pcm_fecha)) {
       shiny::showNotification(tr("comun.aviso.fecha_requerida"), type = "error"); return()
     }
+    # T66: the number field no longer stops a negative in the browser.
+    if (isTRUE(as.numeric(input$pcm_importe %||% NA_real_) < 0)) {
+      shiny::showNotification(tr("tablas.pasivos.manual.importe_negativo"), type = "error"); return()
+    }
 
     provs <- tryCatch(load_pasivos_provisions(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (is.null(provs)) {
@@ -587,6 +594,12 @@ setup_pasivos_module <- function(input, output, session, shared) {
     # CM22: a provision with no date never shows in the Tabla or Calendario.
     if (!fecha_valida(input$me_fecha)) {
       shiny::showNotification(tr("comun.aviso.fecha_requerida"), type = "error"); return()
+    }
+    # T66: me_importe is a hd_numero_input() (manual entry, E2): the browser no
+    # longer stops a negative, and a text arrives as NA (it used to become 0).
+    me_imp <- suppressWarnings(as.numeric(input$me_importe %||% NA_real_))
+    if (length(me_imp) != 1L || is.na(me_imp) || me_imp < 0) {
+      shiny::showNotification(tr("tablas.pasivos.manual.importe_invalido"), type = "error"); return()
     }
 
     shinyjs::disable("me_save_as_provision")
