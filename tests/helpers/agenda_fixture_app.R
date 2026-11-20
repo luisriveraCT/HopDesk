@@ -38,6 +38,8 @@ cargar("R/data_pipeline.R", ".politica_doc_unica")   # T52g: the Referencia of e
 cargar("R/persistence.R", "unstage_pagar_hoy")
 cargar("R/bancos_persistence.R", "autor_registrable")   # CM35: Confirmar records who (confirmado_por)
 cargar("R/ui_components.R", "app_styles")
+cargar("R/ui_components.R", c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_numero_texto", "hd_numero_deps",
+                              "hd_numero_input", "hd_numero_update", "hd_numero_revisar"))   # T66
 cargar("R/search_module.R", c(".datos_sap_filas", ".datos_sap_columnas", "datos_sap_tabla", "datos_sap_visor"))
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/monedas.R", "R/zona.R", "R/ppl_generator.R", "R/agenda_filas.R", "R/pagar_hoy_module.R"))

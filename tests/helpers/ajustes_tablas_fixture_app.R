@@ -35,6 +35,8 @@ cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", ".schema_ctas_c
 cargar("R/adjuntos_s3.R", c(".NUMERO_PURO", ".CELDA_PELIGRO", "neutralizar_celdas", "tabla_a_texto_copiable"))
 cargar("R/data_pipeline.R", "scan_ic_candidates")
 cargar("R/ui_components.R", "app_styles")
+cargar("R/ui_components.R", c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_numero_texto", "hd_numero_deps",
+                              "hd_numero_input", "hd_numero_update", "hd_numero_revisar"))   # T66
 # Tags by posting date since T52d: etiquetas_por_factura() and its day, hoy_en() (R/zona.R) (T53)
 cargar("R/data_pipeline.R", c("etiquetas_por_factura", ".etiquetas_doc_unica", ".politica_doc", ".politica_doc_unica"))
 if (file.exists(file.path(raiz, "R/zona.R"))) sys.source(file.path(raiz, "R/zona.R"), envir = globalenv())

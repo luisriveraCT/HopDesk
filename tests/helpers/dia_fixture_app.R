@@ -32,6 +32,8 @@ cargar("R/global.R", c("fmt_money", "is_erp_sourced"))
 cargar("R/persistence.R", c("tag_label", "set_invoice_tags"))
 cargar("R/pasivos_capabilities.R", c("PASIVOS_CAPABILITIES", "has_capability"))
 cargar("R/ui_components.R", "app_styles")
+cargar("R/ui_components.R", c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_numero_texto", "hd_numero_deps",
+                              "hd_numero_input", "hd_numero_update", "hd_numero_revisar"))   # T66
 # Tags by posting date since T52d: etiquetas_por_factura() and its day, hoy_en() (R/zona.R) (T53)
 cargar("R/data_pipeline.R", c("etiquetas_por_factura", ".etiquetas_doc_unica", ".politica_doc", ".politica_doc_unica"))
 # Policies by the invoice's posting date since T52: policy_engine.R's .politica_fecha() and
