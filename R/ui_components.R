@@ -1157,13 +1157,6 @@ app_styles <- function() {
       width: 14px; height: 14px;
       text-align: center; line-height: 12px;
     }
-    .pasivos-convert-btn {
-      background-color: #7c3aed;
-      color: white; border: none;
-      border-radius: 4px;
-      padding: 2px 6px; font-size: 11px; cursor: pointer;
-    }
-    .pasivos-convert-btn:hover { background-color: #6d28d9; }
 
     /* ── Cashflow export modal: uniform btn-sm row in footer ─────────────── */
     /* Cancelar button: match btn-sm size */

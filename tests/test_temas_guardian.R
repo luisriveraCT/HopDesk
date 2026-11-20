@@ -82,7 +82,7 @@ archivos <- c("app.R",
   "R/tier_registry.R" = 8L,
   "R/tiers_module.R" = 36L,
   "R/treasury_map_module.R" = 76L,
-  "R/ui_components.R" = 237L,
+  "R/ui_components.R" = 235L,         # TEMA-P1: dead .pasivos-convert-btn rule gone (-2)
   "www/hdtable.css" = 23L,
   "www/overlay_init.js" = 15L,
   "www/panorama.css" = 4L,
