@@ -479,7 +479,7 @@ requisiciones_papelera <- function(client_id, ids, por) {
     df
   })
   h <- .req_historial(cid, hechas, "papelera", por)
-  .req_publicar_evento(cid, hechas, h, "cancelada", por)   # after the write (T62)
+  .req_publicar_evento(cid, hechas, h, "papelera", por)   # after the write (T62)
   invisible(hechas)
 }
 
@@ -831,10 +831,17 @@ requisiciones_carpetas <- function(client_id, incluir_papelera = FALSE) {
 # R/panorama_datos.R). Published right after the event's history row is in
 # S3; a failure only leaves a message() and never fails the action.
 
-# An event's aviso clave: the event's own id in CM35's requisiciones_eventos()
-# ("fuente|ref_id|tipo"), built only here. avisos_personales() appends
-# "|<user>" (one aviso per person).
-req_evento_clave <- function(historial_id) paste("requisiciones", historial_id, "estatus", sep = "|")
+# The stage each history action leads to (CM35): requisiciones_eventos_en()
+# and req_evento_clave() read it here, so an aviso's clave and its event's id
+# can never drift apart.
+REQ_HISTORIAL_ETAPA <- c(creada = "sin_provision", ligada = "provisionada", papelera = "papelera",
+                         restaurada = "restaurada")
+
+# An event's aviso clave: the event's own id in CM35's requisiciones_eventos_en()
+# ("requisiciones|<history id>|<stage>"), built only here from the history row
+# and its action. avisos_personales() appends "|<user>" (one per person).
+req_evento_clave <- function(historial_id, accion)
+  paste("requisiciones", historial_id, unname(REQ_HISTORIAL_ETAPA[accion]), sep = "|")
 
 # Who receives an event's aviso. Pure; the caller reads the files strictly.
 #   usuarios     usuarios.rds as stored (username, tier, permisos, account_code,
@@ -886,9 +893,11 @@ req_avisos_destinatarios <- function(usuarios, config, prefs, interesados, autor
 # in the same order). Reads strictly: usuarios, tier settings, preferences and
 # the requisitions' own tables; any of them unreadable -> nothing is published
 # (never "everyone"), a message without the client's data is left, and the
-# action still returns what it always did. `evento`: creada | cancelada |
-# restaurada (pagada and anulada come with CM35's events).
-.req_publicar_evento <- function(cid, requisicion_ids, historial_ids, evento, por) {
+# action still returns what it always did. `accion`: the history action
+# (creada | papelera | restaurada); its notice says creada / cancelada /
+# restaurada.
+.req_publicar_evento <- function(cid, requisicion_ids, historial_ids, accion, por) {
+  evento <- c(creada = "creada", papelera = "cancelada", restaurada = "restaurada")[[accion]]
   if (!length(historial_ids) || length(historial_ids) != length(requisicion_ids)) return(invisible(FALSE))
   ok <- tryCatch({
     usuarios <- .s3_leer_para_escribir(S3_KEYS$usuarios, cid)
@@ -911,7 +920,7 @@ req_avisos_destinatarios <- function(usuarios, config, prefs, interesados, autor
         titulo = tr(paste0("requisiciones.aviso.", evento), usuario = por %||% "",
                     folio = fila$folio %||% "", titulo = fila$titulo %||% ""),
         cuerpo = fila$empresa %||% "", severidad = "info",
-        clave = req_evento_clave(historial_ids[k]), enlace = "REQ", autor = por, repetir = FALSE))
+        clave = req_evento_clave(historial_ids[k], accion), enlace = "REQ", autor = por, repetir = FALSE))
     }
     TRUE
   }, error = function(e) { message("[requisiciones] aviso de ", evento, " no se publicó"); FALSE })
@@ -1275,8 +1284,7 @@ requisiciones_eventos_en <- function(reqs, historial, audit, conf, agenda = NULL
   partes <- list()
 
   # 1. The requisition's own history.
-  mapa_h <- c(creada = "sin_provision", ligada = "provisionada", papelera = "papelera",
-              restaurada = "restaurada")
+  mapa_h <- REQ_HISTORIAL_ETAPA   # one place for the stage (T62: the avisos' clave reads it too)
   tipo_h <- c(editada = "edicion", movida = "edicion", comentario = "comentario",
               evidencia = "evidencia", evidencia_papelera = "evidencia",
               evidencia_restaurada = "evidencia")

@@ -35,6 +35,7 @@ source("R/pasivos_schemas.R"); source("R/i18n.R"); source("R/tier_registry.R"); 
 source("R/avisos.R"); source("R/adjuntos_s3.R"); source("R/empresas_identidad.R")
 .tomar("R/panorama_datos.R", c("REQ_AVISOS_MODOS", "req_avisos_pref", "req_avisos_personas", "PANORAMA_TIPOS_FEED",
                                "avisos_clase", "panorama_tipo_feed"))
+source("R/agenda_filas.R")   # requisiciones_eventos_en() reads the Agenda through agenda_pendientes() (CM35)
 source("R/requisiciones_persistence.R")
 .tomar("R/avisos_alertas_module.R", c(".ALERTAS_KEY", "ALERTAS_COLUMNAS", "ALERTAS_VENTANA_MIN", "ALERTAS_ACCIONES",
                                       ".schema_avisos_alertas", ".alertas_cid", "alertas_leer", "alertas_preparar"))
@@ -152,12 +153,23 @@ test_that("2/5/6: crear, cancelar y restaurar publican después de escribir, con
   h <- .normalize(tabla(REQ_KEYS$historial), .REQ_SCHEMAS$historial)
   hid <- h$id[h$accion == "creada"]
   a <- para("beto")
-  expect_identical(a$clave, paste0(req_evento_clave(hid), "|beto"))   # 5: the CM35 event id (+ |user)
-  expect_identical(req_evento_clave("H1"), "requisiciones|H1|estatus")
+  expect_identical(a$clave, paste0(req_evento_clave(hid, "creada"), "|beto"))   # 5: the CM35 event id (+ |user)
   expect_identical(a$enlace, "REQ"); expect_true(grepl(r$folio, a$titulo, fixed = TRUE))
   expect_false(grepl("2000|2,000", a$clave))                # no amounts in the clave
   requisiciones_papelera(CID, r$id, "ana"); requisiciones_restaurar(CID, r$id, "ana")
   expect_identical(nrow(para("beto")), 3L)
+  # R1: each aviso's clave IS the id requisiciones_eventos_en() (CM35) gives the
+  # same history row: creada -> sin_provision, papelera, restaurada.
+  h  <- .normalize(tabla(REQ_KEYS$historial), .REQ_SCHEMAS$historial)
+  ev <- requisiciones_eventos_en(.normalize(tabla(REQ_KEYS$requisiciones), .REQ_SCHEMAS$requisiciones), h,
+                                 audit = NULL, conf = NULL, agenda = NULL)
+  for (acc in c("creada", "papelera", "restaurada")) {
+    hid <- h$id[h$accion == acc]
+    id_cm35 <- ev$id[ev$fuente == "requisiciones" & grepl(hid, ev$id, fixed = TRUE)]
+    expect_identical(req_evento_clave(hid, acc), id_cm35)
+    expect_true(paste0(id_cm35, "|beto") %in% para("beto")$clave)
+  }
+  expect_identical(req_evento_clave("H1", "creada"), "requisiciones|H1|sin_provision")
   expect_identical(nrow(para("ana")), 0L)                   # the author never
   expect_identical(panorama_tipo_feed(para("beto")), rep("req", 3L))
 })
@@ -192,6 +204,21 @@ test_that("reintentar no duplica: el mismo evento publicado dos veces deja un av
   h <- .normalize(tabla(REQ_KEYS$historial), .REQ_SCHEMAS$historial)
   .req_publicar_evento(CID, r$id, h$id[h$accion == "creada"], "creada", "ana")
   expect_identical(nrow(para("beto")), 1L); expect_identical(para("beto")$contador, 1L)
+})
+
+# ── CM35: each event's id ends in ITS own stage ──────────────────────────────
+test_that("CM35: en un lote mezclado, cada id de evento termina en su propia etapa (no en la del primero)", {
+  reqs <- .normalize(tibble::tibble(id = "R1", folio = "REQ-1", titulo = "t", empresa = "NCS",
+                                    creado_por = "ana", creado = as.POSIXct("2026-11-19 10:00", tz = "UTC")),
+                     .REQ_SCHEMAS$requisiciones)
+  h <- .normalize(tibble::tibble(id = c("H1", "H2", "H3"), requisicion_id = "R1",
+                                 accion = c("creada", "papelera", "restaurada"), detalle = NA_character_, por = "ana",
+                                 en = as.POSIXct(c("2026-11-19 10:00", "2026-11-19 11:00", "2026-11-19 12:00"), tz = "UTC")),
+                  .REQ_SCHEMAS$historial)
+  ev <- requisiciones_eventos_en(reqs, h, audit = NULL, conf = NULL, agenda = NULL)
+  expect_identical(sort(ev$id), sort(c("requisiciones|H1|sin_provision", "requisiciones|H2|papelera",
+                                       "requisiciones|H3|restaurada")))
+  expect_identical(sort(ev$id), sort(req_evento_clave(h$id, h$accion)))
 })
 
 test_that("el aviso de un comentario enlaza la pestaña Requisiciones (REQ): el feed solo enlaza valores de pestaña", {
