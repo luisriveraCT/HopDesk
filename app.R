@@ -2751,7 +2751,8 @@ server <- function(input, output, session) {
                             action = "ctx_load_fallido",
                             description = paste(fallidas, collapse = ", "),
                             target_id = effective_cid, s3_key = NA_character_,
-                            client_id = effective_cid),
+                            client_id = effective_cid,
+                            viewer_home_client_id = home_client_id()),
                  error = function(e) message("[CTX]   ctx_load_fallido not logged: ", conditionMessage(e)))
       }
     })
