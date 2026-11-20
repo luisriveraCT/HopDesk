@@ -93,6 +93,21 @@ PESTANAS <- c(PAN = "Panorama", CAL = "Calendario", VEN = "Vencidos", PH = "Agen
               PSV = "Pasivos", FC = "Pronósticos", RPT = "Reporte", GRUPO = "Grupo")
 tiempos <- list()
 
+# Every same-origin stylesheet and script the page asks for, with the HTTP
+# status the browser got for it ("sin-registro": no Resource Timing entry).
+# The buffer holds 250 entries by default: widened before every document.
+AMPLIA_BUFER_JS <- "performance.setResourceTimingBufferSize(10000);"
+ESTADO_RECURSOS_JS <- "(function(){
+  var urls = Array.from(document.querySelectorAll('link[rel=stylesheet][href], script[src]'))
+    .map(function(e){ return e.href || e.src; }).filter(function(u){ return u.indexOf(location.origin) === 0; });
+  var ent = performance.getEntriesByType('resource');
+  return JSON.stringify(urls.map(function(u){
+    var e = ent.filter(function(x){ return x.name === u; }).pop();
+    var s = !e ? 'sin-registro' : (typeof e.responseStatus === 'number' && e.responseStatus > 0 ? e.responseStatus : 'sin-estado');
+    return s + ' ' + u.replace(location.origin, '');
+  }));
+})()"
+
 visible_js <- function(sel) sprintf("(function(){ var a = document.querySelector(%s); return !!a && a.offsetParent !== null; })()",
                                     jsonlite::toJSON(sel, auto_unbox = TRUE))
 esperar_visible <- function(sel, timeout_s) poll_until(function() isTRUE(tryCatch(ev(visible_js(sel)), error = function(x) FALSE)),
@@ -170,6 +185,7 @@ for (modo in modos) for (quien in quienes) {
   t_proceso <- as.numeric(Sys.time() - t_arranque, units = "secs")
   b <- new_chromote_session()
   invisible(b$Emulation$setDeviceMetricsOverride(width = 1293L, height = 632L, deviceScaleFactor = 1, mobile = FALSE))
+  invisible(b$Page$addScriptToEvaluateOnNewDocument(source = AMPLIA_BUFER_JS))   # before the page loads
   invisible(b$Page$navigate(sprintf("http://127.0.0.1:%d", PORT), wait_ = TRUE))
   ok(paste(et, "the sign-in form shows"),
      poll_until(function() isTRUE(tryCatch(ev("!!document.getElementById('auth-user_id')"), error = function(e) FALSE)), timeout_s = 60))
@@ -201,18 +217,12 @@ for (modo in modos) for (quien in quienes) {
   # Every stylesheet and script of the app's own the page asks for answers
   # 200 (TEMA, 2026-11-19): a branch that adds www/x.css, run from another
   # checkout, used to get a 404 nobody saw.
-  # The page lists them (synchronous JS); R fetches each one. A failure to
-  # list is a FAIL with its message, never "0 resources".
-  urls <- tryCatch(unlist(jsonlite::fromJSON(ev(
-    "JSON.stringify(Array.from(document.querySelectorAll('link[rel=stylesheet][href], script[src]'))
-       .map(function(e){ return e.href || e.src; }).filter(function(u){ return u.indexOf(location.origin) === 0; }))"))),
-    error = function(x) { message("  ERROR listing resources: ", conditionMessage(x)); character() })
-  recursos <- vapply(urls, function(u) {
-    st <- tryCatch(curl::curl_fetch_memory(u, handle = curl::new_handle(TIMEOUT = 30))$status_code,
-                   error = function(x) conditionMessage(x))
-    paste(st, sub("^https?://[^/]+", "", u))
-  }, character(1), USE.NAMES = FALSE)
-  malos <- recursos[!startsWith(recursos, "200 ")]
+  # The status the browser itself got (Resource Timing's responseStatus), read
+  # synchronously: asking the app again from R timed out while it was busy.
+  # A failure to read is a FAIL with its message, never "0 resources".
+  recursos <- tryCatch(unlist(jsonlite::fromJSON(ev(ESTADO_RECURSOS_JS))),
+                       error = function(x) { message("  ERROR reading resources: ", conditionMessage(x)); character() })
+  malos <- recursos[!grepl("^(200|304) ", recursos)]
   ok(sprintf("%s every local stylesheet and script answers 200 (%d asked)", et, length(recursos)),
      length(recursos) > 5L && !length(malos)); mostrar(malos)
 
