@@ -209,6 +209,59 @@ nivel_pestana_permitida <- function(tier, tab) {
   is.null(lista) || tab %in% lista
 }
 
+# ── Which session data a tier may read (T69b) ────────────────────────────────
+# The table gate keeps hd_table's data in the server; the rest of a treasury
+# tab (calendar cells, balances, the Agenda's totals, charts, modals,
+# Panorama's ribbon) reads these session reactives. app.R wraps each one
+# listed here: for a tier with a tab list that has none of its tabs -- or an
+# unknown tier -- reading it gives its empty start value, whoever reads it
+# (module, output, modal). Writing it is untouched, and so are the loads; a
+# staff "ver como" that goes back to a full tier sees everything again,
+# without reloading. Every synced reactive must be in one of the two lists
+# (tests/test_t69b_datos_por_nivel.R).
+HD_REACTIVOS_TESORERIA <- list(
+  sap_data              = c("CAL", "VEN", "PH", "IC", "FC", "RPT"),
+  sap_snapshot_info     = c("CAL", "VEN", "PH", "IC", "FC", "RPT"),
+  pagar_hoy_db          = "PH",
+  bancos_confirmados_db = c("BNC", "PH"),
+  bancos_movimientos_db = "BNC",
+  bancos_cuentas_db     = c("BNC", "PH"),
+  ctas_cuentas          = c("BNC", "PH"),
+  conciliacion_rv       = "BNC",
+  pasivos_provisions_db = c("PSV", "CAL", "VEN", "PH"),
+  pasivos_liabilities_db = "PSV",
+  papelera_rv           = c("BNC", "CAL", "VEN", "PH", "PSV"),
+  manual_inv            = c("CAL", "VEN", "PH"),
+  notes_df              = c("CAL", "VEN", "PH"),
+  tags_db               = c("CAL", "VEN", "PH"),
+  moves_db              = c("CAL", "VEN", "PH"),
+  policy_moves_db       = c("CAL", "VEN", "PH"),
+  policy_catalog_db     = c("CAL", "VEN", "PH"),
+  partner_policies_db   = c("CAL", "VEN", "PH"),
+  holiday_overrides_db  = c("CAL", "VEN", "PH"),
+  parte_alias_map_db    = c("CAL", "VEN", "PH"),
+  abonos_db             = c("CAL", "VEN", "PH"),
+  sap_ov_db             = c("CAL", "VEN", "PH"),
+  interco_v2            = c("IC", "CAL", "VEN", "PH"),
+  forecasting_series_observations_db = "FC",
+  forecasting_metrics_db             = "FC",
+  forecasting_subscriptions_db       = "FC",
+  forecasting_manual_curves_db       = "FC")
+# Shared by Panorama and Requisiciones (and every screen): never gated.
+HD_REACTIVOS_COMUNES <- c("empresas_db", "grupos_db", "proveedores_db", "proveedores_inactivos_db",
+                          "hop_grants_db")
+
+# TRUE when a session of `tier` may read reactive `nombre`. Unknown tier: no.
+# A name in neither list is not gated by app.R (the guardian test keeps the
+# lists complete); asked here, it answers as common data.
+nivel_reactivo_permitido <- function(tier, nombre) {
+  pest <- HD_REACTIVOS_TESORERIA[[nombre]]
+  if (is.null(pest)) return(TRUE)
+  if (!.nivel_conocido(tier)) return(FALSE)
+  lista <- tryCatch(nivel_pestanas(tier), error = function(e) NULL)
+  is.null(lista) || any(pest %in% lista)
+}
+
 .nivel_conocido <- function(tier)
   is.character(tier) && length(tier) == 1L && !is.na(tier) && nzchar(tier) && es_nivel(tier)
 

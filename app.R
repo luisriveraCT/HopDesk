@@ -1574,6 +1574,33 @@ server <- function(input, output, session) {
   # at the start of every jump; a page reload starts clean.
   ctx_no_cargadas <- reactiveVal(character())
 
+  # ── Treasury data by tier (T69b) ───────────────────────────────────────────
+  # Every treasury reactive listed in HD_REACTIVOS_TESORERIA (tier_registry.R)
+  # is wrapped here, before anything takes it: reading it gives its empty
+  # start value when the effective tier may not see any of its tabs (Compras:
+  # only PAN and REQ) or is not known yet (fail closed). So no output, modal,
+  # badge or Panorama section of a treasury tab has anything to send to that
+  # browser, whoever reads it. Writing goes straight through, and the loads
+  # (Phase 1/2, the client jump, the sync bus) are untouched: a staff "ver
+  # como" back to a full tier sees everything again at once. App.R's own
+  # bookkeeping (process caches, SAP change checks) reads crudo(x)().
+  .rv_por_nivel <- function(rv, nombre) {
+    force(rv); force(nombre)
+    inicial <- isolate(rv())
+    f <- function(value) {
+      if (!missing(value)) return(rv(value))
+      permitido <- tryCatch(nivel_reactivo_permitido(tier_efectivo(), nombre), error = function(e) FALSE)
+      if (!isTRUE(permitido)) return(inicial)
+      rv()
+    }
+    attr(f, "crudo") <- rv
+    f
+  }
+  crudo <- function(x) attr(x, "crudo") %||% x
+  for (.nm in names(HD_REACTIVOS_TESORERIA))
+    if (exists(.nm, envir = environment(), inherits = FALSE))
+      assign(.nm, .rv_por_nivel(get(.nm, envir = environment(), inherits = FALSE), .nm), envir = environment())
+
   # ── Requisiciones ↔ Calendario / Pasivos / historial (E3b) ────────────────
   # The tabs that show the evidence clip start before requisicionesServer(),
   # and each module keeps its own copy of `shared`: so these entries are in
@@ -2061,7 +2088,7 @@ server <- function(input, output, session) {
   # Fires whenever sap_data() is written (snapshot seed, cache hit, live fetch).
   # Two writes in the same session = unnecessary calendar double-render.
   observe({
-    d       <- sap_data()
+    d       <- crudo(sap_data)()
     ar_rows <- if (!is.null(d$AR)) nrow(d$AR) else 0L
     ap_rows <- if (!is.null(d$AP)) nrow(d$AP) else 0L
     t_now   <- proc.time()
@@ -2134,7 +2161,7 @@ server <- function(input, output, session) {
         return(result)
       }
       # SAP failed — reuse already-seeded snapshot data (no second S3 read)
-      cur <- sap_data()[[ledger_name]]
+      cur <- crudo(sap_data)()[[ledger_name]]
       if (!is.null(cur)) {
         message("[SAP] ", ledger_name, " unavailable — keeping seeded snapshot")
         return(cur)
@@ -2173,7 +2200,7 @@ server <- function(input, output, session) {
     # If SAP failed for both ledgers and we're returning the same snapshot
     # data already seeded in .data_loaded, writing again triggers a full
     # calendar re-render for nothing.
-    current    <- sap_data()
+    current    <- crudo(sap_data)()
     ar_changed <- !identical(current$AR, ar)
     ap_changed <- !identical(current$AP, ap)
     message(sprintf("[SAP] identical() check — ar_changed=%s  ap_changed=%s (session #%d)",
@@ -2579,18 +2606,18 @@ server <- function(input, output, session) {
       # would silently fall back to the CLIENT_ID env var (always "hd-admin"
       # in this shared deployment) instead of THIS session's real client,
       # reproducing the exact cross-tenant cache bug that fix closes.
-      .cache_set("moves",        moves_db(),        cid_lo)
-      .cache_set("notes",        notes_df(),        cid_lo)
-      .cache_set("tags",         tags_db(),         cid_lo)
-      .cache_set("manual",       manual_inv(),      cid_lo)
-      .cache_set("sap_overrides", sap_ov_db(),       cid_lo)
-      .cache_set("interco_v2",   interco_v2(),      cid_lo)
-      .cache_set("pagar_hoy",    pagar_hoy_db(),    cid_lo)
-      .cache_set("abonos",       abonos_db(),       cid_lo)
-      .cache_set("papelera",     papelera_rv(),     cid_lo)
+      .cache_set("moves",        crudo(moves_db)(),        cid_lo)
+      .cache_set("notes",        crudo(notes_df)(),        cid_lo)
+      .cache_set("tags",         crudo(tags_db)(),         cid_lo)
+      .cache_set("manual",       crudo(manual_inv)(),      cid_lo)
+      .cache_set("sap_overrides", crudo(sap_ov_db)(),       cid_lo)
+      .cache_set("interco_v2",   crudo(interco_v2)(),      cid_lo)
+      .cache_set("pagar_hoy",    crudo(pagar_hoy_db)(),    cid_lo)
+      .cache_set("abonos",       crudo(abonos_db)(),       cid_lo)
+      .cache_set("papelera",     crudo(papelera_rv)(),     cid_lo)
       .cache_set("proveedores",  proveedores_db(),  cid_lo)
-      .cache_set("ctas_cuentas", ctas_cuentas(),    cid_lo)
-      .cache_set("conciliacion", conciliacion_rv(), cid_lo)
+      .cache_set("ctas_cuentas", crudo(ctas_cuentas)(),    cid_lo)
+      .cache_set("conciliacion", crudo(conciliacion_rv)(), cid_lo)
 
       message(sprintf("[LOAD] Phase 2 done in %.1fs at t+%.1fs (session #%d)",
                       (proc.time() - t0)[["elapsed"]],
@@ -2877,7 +2904,7 @@ server <- function(input, output, session) {
     cache <- .sap_cache_get(effective_client_id())
     if (.sap_cache_fresh(cache)) {
       message("[SAP] Cross-session cache hit for '", effective_client_id(), "' — skipping live fetch")
-      if (!identical(sap_data()$AR, cache$AR) || !identical(sap_data()$AP, cache$AP))
+      if (!identical(crudo(sap_data)()$AR, cache$AR) || !identical(crudo(sap_data)()$AP, cache$AP))
         sap_data(list(AR = cache$AR, AP = cache$AP))
       .sap_ever_done <<- TRUE
       return()
