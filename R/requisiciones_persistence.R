@@ -24,12 +24,14 @@
 # to break, and two people adding evidence to the same requisition at once
 # each add their own row instead of racing for one cell.
 #
-# The stage is deduced on read, never stored (requisiciones_vista_en()):
-#   sin_provision · provisionada · en_pago · pagada · papelera
+# The stage is deduced on read, never stored (requisiciones_vista_en(); the
+# list and the approvals door are at REQ_ETAPAS below):
+#   sin_provision · provisionada · por_pagar · en_agenda · pagada · papelera
 # "pagada" comes only from etapa_de_provision_en(), i.e. a live confirmation
-# in Bancos carrying the provision_id. A paid requisition leaves every view
-# (incluir_pagadas = FALSE) but its row, evidence and comments stay in S3 and
-# requisicion_de_provision() still finds it (read-only, from the history).
+# in Bancos carrying the provision_id. Since CM35 a paid requisition stays in
+# the list, read-only, with its confirmacion_id (incluir_pagadas = FALSE
+# still hides them). Its trace is its id plus provision_id; its events
+# (requisiciones_eventos()) are deduced from tables that only grow.
 # =============================================================================
 
 REQ_KEYS <- list(
@@ -41,8 +43,33 @@ REQ_KEYS <- list(
   historial     = "requisiciones_historial.rds"
 )
 
-REQ_ETAPAS          <- c("sin_provision", "provisionada", "en_pago", "pagada", "papelera")
-REQ_ETAPAS_VISIBLES <- c("sin_provision", "provisionada", "en_pago", "papelera")
+# Stages, in order (CM35). Deduced on read, never stored -- two sessions can
+# never overwrite one -- from the linked provision, the live Agenda and the
+# live confirmations (requisiciones_vista_en()):
+#   sin_provision  "Abierta": no live provision
+#   provisionada   a provisional provision
+#   por_pagar      the provision became an item, no pending Agenda row
+#   en_agenda      a pending Agenda row carries its provision_id
+#   pagada         a live confirmation carries its provision_id (stays listed)
+#   papelera       "Cancelada": in the trash, restorable
+# The codes are the ones the screen, the history and the tests already used;
+# only the names changed ("Abierta", "Cancelada") and en_pago split in two.
+#
+# ── Approvals door (NOT built; CM35, Luis 2026-11-19) ──────────────────────
+# An ERP-style approval flow would enter HERE: two stages between
+# sin_provision and provisionada --
+#     "por_aprobar"  (requested, waiting for an approver)
+#     "aprobada"     (approved; only then can a provision be created)
+# -- deduced like the rest from an approvals table of its own (who asked,
+# who approved, when), never stored on the requisition. The single switch
+# is .req_aprobacion_requerida(): when it returns TRUE for a requisition,
+# requisiciones_vista_en() would place it in those stages and
+# requisicion_ligar_provision() would refuse until "aprobada". Today it
+# returns FALSE and nothing calls it with any effect.
+REQ_ETAPAS          <- c("sin_provision", "provisionada", "por_pagar", "en_agenda", "pagada", "papelera")
+REQ_ETAPAS_VISIBLES <- REQ_ETAPAS   # paid ones stay in the list (CM35, P5)
+
+.req_aprobacion_requerida <- function(requisicion, client_id = NULL) FALSE
 
 REQ_MAX_TITULO     <- 200L
 REQ_MAX_NOTAS      <- 2000L
@@ -988,20 +1015,28 @@ requisicion_historial <- function(client_id, requisicion_id) {
 #     "no_reconocida" (the text names no company) / "fuera_carpeta" (a
 #     company that is not one of its folder's). Only marked, never rewritten.
 #   n_adjuntos, n_imagenes, n_tablas, primera_imagen_id,
-#   n_comentarios, comentarios_sin_leer.
+#   n_comentarios, comentarios_sin_leer,
+#   confirmacion_id: the live confirmation of a paid one (CM35).
+# `agenda` (CM35): the Agenda's rows (normalized pagar_hoy); a pending row
+# carrying the provision_id makes an item "en_agenda" instead of "por_pagar".
+# NULL (e.g. sync off, per-user agendas) -> every item reads por_pagar.
 requisiciones_vista_en <- function(reqs, provs, conf, manual, carpetas, evid, coms,
                                    leidos = NULL, usuario = NULL, hoy = .req_hoy(), liabs = NULL,
-                                   empresas = NULL) {
+                                   empresas = NULL, agenda = NULL) {
   n <- nrow(reqs)
   pid <- reqs$provision_id
   ep <- rep(NA_character_, n)
   con <- !is.na(pid)
   if (any(con)) ep[con] <- etapa_de_provision_en(provs, conf, pid[con], liabs = liabs)
+  # The provision's "en_pago" (an item) splits by the live Agenda (CM35).
+  en_ag <- .req_provisiones_en_agenda(agenda)
+  ep_req <- ifelse(ep %in% "en_pago", ifelse(pid %in% en_ag, "en_agenda", "por_pagar"), ep)
   etapa <- ifelse(ep %in% "pagada", "pagada",
            ifelse(!is.na(reqs$papelera_en), "papelera",
-           ifelse(ep %in% c("provisionada", "en_pago"), ep, "sin_provision")))
+           ifelse(ep_req %in% c("provisionada", "por_pagar", "en_agenda"), ep_req, "sin_provision")))
   reqs$etapa <- etapa
   reqs$provision_perdida <- con & !(ep %in% c("provisionada", "en_pago", "pagada"))
+  reqs$confirmacion_id <- .req_confirmacion_viva(conf, pid, etapa == "pagada")
 
   # Firmest amount.
   monto <- reqs$monto; moneda <- reqs$moneda; fuente <- ifelse(is.na(monto), NA_character_, "estimado")
@@ -1025,7 +1060,7 @@ requisiciones_vista_en <- function(reqs, provs, conf, manual, carpetas, evid, co
   reqs$monto_mostrado <- monto; reqs$moneda_mostrada <- moneda; reqs$monto_fuente <- fuente
 
   f_prov <- dplyr::coalesce(provs$fecha_efectiva_override[ip], provs$fecha_efectiva[ip], provs$fecha_calculada[ip])
-  f_prov[!(etapa %in% c("provisionada", "en_pago", "pagada"))] <- as.Date(NA)
+  f_prov[!(etapa %in% c("provisionada", "por_pagar", "en_agenda", "pagada"))] <- as.Date(NA)
   reqs$fecha_provision <- f_prov
   creado_dia <- as.Date(format(reqs$creado, tz = .REQ_TZ))
   reqs$dias_sin_provision <- ifelse(etapa == "sin_provision", as.integer(hoy - creado_dia), NA_integer_)
@@ -1068,8 +1103,10 @@ requisiciones_vista_en <- function(reqs, provs, conf, manual, carpetas, evid, co
 
 # Everything the list needs, from strict reads (a table that cannot be read
 # stop()s; the screen says so instead of showing an empty list). Paid
-# requisitions are left out unless incluir_pagadas.
-requisiciones_vista <- function(client_id, usuario = NULL, incluir_pagadas = FALSE) {
+# requisitions are listed by default since CM35 (incluir_pagadas = FALSE
+# hides them). One more strict read than before: the Agenda (en_agenda) --
+# one per view, never one per requisition.
+requisiciones_vista <- function(client_id, usuario = NULL, incluir_pagadas = TRUE) {
   cid <- .req_cid(client_id)
   v <- requisiciones_vista_en(
     reqs     = .req_leer("requisiciones", cid),
@@ -1082,9 +1119,198 @@ requisiciones_vista <- function(client_id, usuario = NULL, incluir_pagadas = FAL
     leidos   = if (is.null(usuario)) NULL else .req_leer("leidos", cid),
     liabs    = .req_liabs(cid),
     usuario  = usuario,
-    empresas = .req_empresas(cid))
+    empresas = .req_empresas(cid),
+    agenda   = .req_agenda(cid, usuario))
   if (!incluir_pagadas) v <- v[v$etapa != "pagada", , drop = FALSE]
   v
+}
+
+# ── Events (CM35; Panorama shows them, T62) ──────────────────────────────────
+# Deduced, never stored: from tables that only grow (requisiciones_historial,
+# pasivos_audit, bancos_confirmados) plus the live Agenda. Nothing to lose to
+# concurrent writes, nothing written on the money paths. One row per event:
+#   id             stable: <fuente>|<source row id>|<a or tipo> (T62 can
+#                  remember which ones it already notified)
+#   requisicion_id, folio, titulo, empresa
+#   en             POSIXct UTC (shown in the browser's zone, CM27)
+#   por            the login user, or NA = not recorded (never guessed)
+#   tipo           estatus | edicion | comentario | evidencia
+#   de, a          stages (estatus only; `de` NA on the first)
+#   fuente, ref_id requisiciones | pasivos | bancos | agenda, and the id of
+#                  the record it comes from (a provision, a confirmation...)
+#   detalle        short raw detail (translate when showing, not here)
+# Status sources:
+#   creada -> sin_provision; ligada -> provisionada (ref_id = provision);
+#   provision.converted_to_item -> en_agenda when it was sent to the Agenda
+#   (pagar_hoy_id), else por_pagar; provision.deleted / cancelled ->
+#   sin_provision; provision.revived -> provisionada; a confirmation ->
+#   pagada (confirmado_por), its undo -> por_pagar (eliminado_por); a live
+#   pending Agenda row -> en_agenda (staged_by); papelera / restaurada.
+# Not used: provision.item_confirmed (written by an observer of whichever
+# session has Pasivos open, with that session's user -- not who paid) and
+# provision.item_reversed (the confirmation's own undo already says it).
+# An event that would not change the stage is dropped, so the last event of
+# a requisition always lands on the stage requisiciones_vista_en() shows.
+requisiciones_eventos_en <- function(reqs, historial, audit, conf, agenda = NULL) {
+  vacio <- tibble::tibble(id = character(), requisicion_id = character(), folio = character(),
+                          titulo = character(), empresa = character(), en = .req_t0(),
+                          por = character(), tipo = character(), de = character(), a = character(),
+                          fuente = character(), ref_id = character(), detalle = character())
+  if (!nrow(reqs)) return(vacio)
+  fila <- function(rid, en, por, tipo, a, fuente, ref_id, src_id, detalle = NA_character_)
+    tibble::tibble(id = paste(fuente, src_id, ifelse(tipo == "estatus", a, tipo), sep = "|"),
+                   requisicion_id = as.character(rid), en = as.POSIXct(en, tz = "UTC"),
+                   por = as.character(por), tipo = tipo, a = as.character(a),
+                   fuente = fuente, ref_id = as.character(ref_id), detalle = as.character(detalle))
+  h <- historial[historial$requisicion_id %in% reqs$id, , drop = FALSE]
+  partes <- list()
+
+  # 1. The requisition's own history.
+  mapa_h <- c(creada = "sin_provision", ligada = "provisionada", papelera = "papelera",
+              restaurada = "restaurada")
+  tipo_h <- c(editada = "edicion", movida = "edicion", comentario = "comentario",
+              evidencia = "evidencia", evidencia_papelera = "evidencia",
+              evidencia_restaurada = "evidencia")
+  es_est <- h$accion %in% names(mapa_h)
+  if (any(es_est)) {
+    x <- h[es_est, , drop = FALSE]
+    partes$h_est <- fila(x$requisicion_id, x$en, x$por, "estatus", unname(mapa_h[x$accion]),
+                         "requisiciones", ifelse(x$accion == "ligada", x$detalle, x$requisicion_id),
+                         x$id, x$accion)
+  }
+  es_otro <- h$accion %in% names(tipo_h)
+  if (any(es_otro)) {
+    x <- h[es_otro, , drop = FALSE]
+    partes$h_otro <- fila(x$requisicion_id, x$en, x$por, unname(tipo_h[x$accion]), NA_character_,
+                          "requisiciones", x$requisicion_id, x$id, x$accion)
+  }
+
+  # Every provision a requisition has had: its current one and every "ligada".
+  ligas <- unique(rbind(
+    data.frame(rid = reqs$id, pid = reqs$provision_id, stringsAsFactors = FALSE),
+    data.frame(rid = h$requisicion_id[h$accion %in% "ligada"],
+               pid = h$detalle[h$accion %in% "ligada"], stringsAsFactors = FALSE)))
+  ligas <- ligas[!is.na(ligas$pid) & nzchar(ligas$pid), , drop = FALSE]
+  rid_de <- function(pids) ligas$rid[match(pids, ligas$pid)]
+
+  # 2. Pasivos' audit of those provisions.
+  if (nrow(ligas) && is.data.frame(audit) && nrow(audit)) {
+    au <- audit[audit$target_id %in% ligas$pid & audit$action_type %in%
+                  c("provision.converted_to_item", "provision.deleted", "provision.cancelled",
+                    "provision.revived"), , drop = FALSE]
+    if (nrow(au)) {
+      a_ <- ifelse(au$action_type %in% c("provision.deleted", "provision.cancelled"), "sin_provision",
+            ifelse(au$action_type %in% "provision.revived", "provisionada",
+            ifelse(.req_audit_a_agenda(au$payload_after), "en_agenda", "por_pagar")))
+      partes$audit <- fila(rid_de(au$target_id), au$ts, au$user, "estatus", a_, "pasivos",
+                           au$target_id, au$id, sub("^provision\\.", "", au$action_type))
+    }
+  }
+
+  # 3. Confirmations (not the "recovered" rows: the original's undo says it).
+  if (nrow(ligas) && is.data.frame(conf) && nrow(conf)) {
+    cf <- conf[conf$provision_id %in% ligas$pid & !(conf$action %in% "recovered"), , drop = FALSE]
+    if (nrow(cf)) {
+      partes$pago <- fila(rid_de(cf$provision_id), cf$confirmado_at, cf$confirmado_por, "estatus",
+                          "pagada", "bancos", cf$confirmacion_id, cf$confirmacion_id, "confirmada")
+      un <- cf[cf$eliminado %in% TRUE & !is.na(cf$eliminado_at), , drop = FALSE]
+      if (nrow(un))
+        partes$anulado <- fila(rid_de(un$provision_id), un$eliminado_at, un$eliminado_por, "estatus",
+                               "por_pagar", "bancos", un$confirmacion_id,
+                               paste0(un$confirmacion_id, "-anulada"), "anulada")
+    }
+  }
+
+  # 4. The live Agenda: a pending row sent from anywhere (the Calendario too).
+  if (nrow(ligas) && is.data.frame(agenda) && nrow(agenda) && "provision_id" %in% names(agenda)) {
+    ag <- agenda[agenda$provision_id %in% ligas$pid &
+                   (is.na(agenda$status) | agenda$status %in% "pending"), , drop = FALSE]
+    if (nrow(ag))
+      partes$agenda <- fila(rid_de(ag$provision_id), ag$staged_at, ag$staged_by, "estatus",
+                            "en_agenda", "agenda", ag$id, ag$id, "agenda")
+  }
+
+  ev <- dplyr::bind_rows(partes)
+  if (!nrow(ev)) return(vacio)
+  ev$por[!is.na(ev$por) & tolower(trimws(ev$por)) %in% c("", "anon", "unknown", "user", "system")] <- NA_character_
+  # radix: byte order, not the locale's collation (Windows' is slow on text).
+  ev <- ev[order(ev$requisicion_id, ev$en, ev$id, method = "radix"), , drop = FALSE]
+
+  # The stage walk: from -> to, dropping what changes nothing; "restaurada"
+  # goes back to the stage before the trash.
+  # Indices grouped once (split), plain vectors in the loop: linear in the
+  # number of status events, never requisitions x events.
+  es <- which(ev$tipo == "estatus")
+  a_v <- ev$a; de_v <- rep(NA_character_, nrow(ev)); quedan <- rep(TRUE, nrow(ev))
+  for (k in split(es, ev$requisicion_id[es])) {
+    actual <- NA_character_; antes_papelera <- NA_character_
+    for (j in k) {
+      a_j <- a_v[j]
+      if (a_j == "restaurada") a_j <- if (is.na(antes_papelera)) "sin_provision" else antes_papelera
+      if (a_j == "papelera") antes_papelera <- actual
+      if (!is.na(actual) && a_j == actual) { quedan[j] <- FALSE; next }
+      de_v[j] <- actual; a_v[j] <- a_j; actual <- a_j
+    }
+  }
+  ev$a <- a_v; ev$de <- de_v
+  ev <- ev[quedan, , drop = FALSE]
+
+  i <- match(ev$requisicion_id, reqs$id)
+  ev$folio <- reqs$folio[i]; ev$titulo <- reqs$titulo[i]; ev$empresa <- reqs$empresa[i]
+  ev[, names(vacio)]
+}
+
+# provision.converted_to_item payloads: was it sent to the Agenda too?
+# Vectorized, no JSON parse per row: pasivos_log_audit() serializes with
+# jsonlite (auto_unbox, na = "string"), so a sent item reads
+# "pagar_hoy_id":"<id>" and one not sent reads null or "NA".
+.req_audit_a_agenda <- function(payload) {
+  p <- as.character(payload); p[is.na(p)] <- ""
+  m <- regmatches(p, regexpr('"pagar_hoy_id"\\s*:\\s*"[^"]*"', p))
+  v <- rep(NA_character_, length(p))
+  v[grepl('"pagar_hoy_id"\\s*:\\s*"', p)] <- sub('^.*:\\s*"([^"]*)"$', "\\1", m)
+  !is.na(v) & nzchar(v) & v != "NA"
+}
+
+# Strict reads of every source: if one cannot be read this stop()s, so a
+# timeline is never shown incomplete as if it were complete (the caller says
+# so). `desde`: only events on or after it (the walk still sees the whole
+# history, so `de` is right).
+requisiciones_eventos <- function(client_id, desde = NULL, usuario = NULL) {
+  cid <- .req_cid(client_id)
+  ev <- requisiciones_eventos_en(
+    reqs      = .req_leer("requisiciones", cid),
+    historial = .req_leer("historial", cid),
+    audit     = leer_tabla_para_escribir(S3_KEYS$pasivos_audit, cid, .schema_pasivos_audit),
+    conf      = leer_tabla_para_escribir(S3_KEYS$bancos_confirmados, cid, .schema_bancos_confirmados),
+    agenda    = .req_agenda(cid, usuario))
+  if (!is.null(desde)) ev <- ev[!is.na(ev$en) & ev$en >= as.POSIXct(desde, tz = "UTC"), , drop = FALSE]
+  ev
+}
+
+# ── CM35 helpers: the Agenda, the live confirmation ──────────────────────────
+
+# The Agenda as S3 holds it, strictly: the shared file when sync is on, else
+# this user's (safe_load_pagar_hoy() decides, and stop()s on a failed read).
+.req_agenda <- function(cid, usuario = NULL) safe_load_pagar_hoy(username = usuario, client_id = cid)
+
+# provision_ids with a pending Agenda row.
+.req_provisiones_en_agenda <- function(agenda) {
+  if (!is.data.frame(agenda) || !nrow(agenda) || !"provision_id" %in% names(agenda)) return(character())
+  pend <- is.na(agenda$status) | agenda$status %in% "pending"
+  unique(agenda$provision_id[pend & !is.na(agenda$provision_id)])
+}
+
+# The newest live confirmation carrying each provision_id (only where `cual`).
+.req_confirmacion_viva <- function(conf, provision_id, cual = rep(TRUE, length(provision_id))) {
+  out <- rep(NA_character_, length(provision_id))
+  vivas <- confirmaciones_vigentes(conf)
+  if (is.null(vivas) || !nrow(vivas) || !any(cual)) return(out)
+  vivas <- vivas[!is.na(vivas$provision_id), , drop = FALSE]
+  vivas <- vivas[order(vivas$confirmado_at, decreasing = TRUE), , drop = FALSE]
+  i <- match(provision_id, vivas$provision_id)
+  out[cual] <- vivas$confirmacion_id[i][cual]
+  out
 }
 
 # For Calendario, Pasivos and the confirmation history: the requisition(s)

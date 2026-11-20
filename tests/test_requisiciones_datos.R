@@ -19,7 +19,11 @@ suppressPackageStartupMessages({ library(shiny); library(dplyr); library(tibble)
 .tomar("R/global.R", "S3_KEYS")
 .tomar("R/persistence.R", c(".normalize", "leer_tabla_para_escribir", ".s3_leer_para_escribir",
                             "modificar_tabla", "rebase_por_id", "confirmaciones_vigentes", ".schema_manual",
-                            ".schema_empresas"))
+                            ".schema_empresas",
+                            # CM35: the view reads the Agenda strictly (en_agenda)
+                            "safe_load_pagar_hoy", "agenda_sync_activa", ".pagar_hoy_vivo",
+                            "s3_key_pagar_hoy_user", ".schema_agenda_sync_config", ".schema_pagar_hoy"))
+.tomar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 .tomar("R/bancos_persistence.R", ".schema_bancos_confirmados")
 .tomar("R/pasivos_persistence.R", c("etapa_de_provision_en", "PROVISION_PAGADA"))
 source("R/pasivos_schemas.R")
@@ -214,16 +218,18 @@ test_that("Pagada solo con una confirmación vigente con su provision_id", {
   expect_identical(etapa(), "provisionada")
   # estado says paid, but there is no confirmation: not Pagada
   poner_provision("p1", estado = "item_confirmed")
-  expect_identical(etapa(), "en_pago")
+  expect_identical(etapa(), "por_pagar")   # CM35: en_pago splits; no Agenda row -> por_pagar
   # a deleted confirmation and an undo row are not payments
   poner_confirmacion("p1", eliminado = TRUE)
   poner_confirmacion("p1", action = "recovered")
-  expect_identical(etapa(), "en_pago")
+  expect_identical(etapa(), "por_pagar")
   expect_equal(nrow(requisiciones_vista(CID)), 1)
   poner_confirmacion("p1")
   expect_identical(etapa(), "pagada")
-  # paid: out of every view, but never deleted from S3
-  expect_equal(nrow(requisiciones_vista(CID)), 0)
+  # paid: stays in the list by default since CM35 (Luis: "cambia de estatus
+  # sin desaparecer"); incluir_pagadas = FALSE hides it; never deleted from S3
+  expect_equal(nrow(requisiciones_vista(CID)), 1)
+  expect_equal(nrow(requisiciones_vista(CID, incluir_pagadas = FALSE)), 0)
   expect_equal(nrow(tabla("requisiciones")), 1)
   # still found from the confirmation history, read-only
   d <- requisicion_de_provision(CID, "p1")
@@ -579,7 +585,7 @@ test_that("requisicion_de_provision es vectorizada y adjuntos_resumen cuenta par
   expect_equal(res$imagenes, 1); expect_false(is.na(res$primera_imagen_id))
   expect_equal(nrow(requisicion_de_provision(CID, "p9")), 0)
   expect_equal(nrow(adjuntos_resumen(d[0, ])), 0)
-  expect_identical(unname(requisiciones_etapa_nombre("en_pago")), "En pago")
+  expect_identical(unname(requisiciones_etapa_nombre("por_pagar")), "Por pagar")   # CM35: en_pago splits
 })
 
 test_that("las tablas de Requisiciones no pierden filas y cada escritura es por cliente", {
