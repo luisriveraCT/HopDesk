@@ -617,14 +617,16 @@ cashflowPreviewServer <- function(id, shared) {
               )
             },
 
-            # Rate numeric input — JS focusout handler fires _blur shadow input on blur/Enter
-            numericInput(
+            # Rate field (hd_numero_input, T66) — JS focusout handler fires _blur shadow input on blur/Enter
+            hd_numero_input(
               ns(paste0("fx_rate_", tolower(cur))),
-              label = NULL,
-              value = if (is.na(rate)) NA else round(rate, 4),
-              min   = 0,
-              step  = 0.01,
-              width = "88px"
+              label     = NULL,
+              formato   = "tasa",
+              decimales = 4,
+              value     = if (is.na(rate)) NA else round(rate, 4),
+              min       = 0,
+              step      = 0.01,
+              width     = "88px"
             ),
             # Where the rate comes from (propuesta A): "Banxico · 13 nov",
             # "Escrito por ti · hoy", "Sin fuente: escríbelo".
@@ -643,8 +645,8 @@ cashflowPreviewServer <- function(id, shared) {
               bkey <- paste0(ns(paste0("fx_rate_", tolower(cur))), "_blur")
               paste0(
                 ".on('focusout.cffxblur','", sel, "',function(){",
-                  "var v=parseFloat($(this).val());",
-                  "if(!isNaN(v)&&v>0)Shiny.setInputValue('", bkey, "',v,{priority:'event'});",
+                  "var v=hdNumero.valor(this);",
+                  "if(v!==null&&v>0)Shiny.setInputValue('", bkey, "',v,{priority:'event'});",
                 "})"
               )
             }), collapse = ""),
