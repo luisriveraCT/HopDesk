@@ -164,7 +164,9 @@ ok("B4: the modal says 2 payments", grepl("Confirmar 2 pago(s)", txt, fixed = TR
 r <- nuevas(n0)
 ok("B5: exactly P3 and P1 were confirmed -- not the rows that sat in those positions",
    any(r == "confirmados AP: P3,P1") && any(r == "fuera de la Agenda: P1,P3"))
-ok("B6: what's left: P2 and P4", setequal(vis(AP), c("P2", "P4")))
+# The table repaints after the save's round trip; wait for it (CM37: the
+# immediate read raced on a loaded machine).
+ok("B6: what's left: P2 and P4", poll_until(function() setequal(vis(AP), c("P2", "P4")), timeout_s = 10))
 
 # ══ C · Nothing marked + a search ════════════════════════════════════════════
 buscar(AP, "bodegas")
@@ -204,10 +206,14 @@ ok("D5: the table shows its own empty text", isTRUE(ev(sprintf("/Sin pagos en co
 n0 <- length(registro())
 clic(celda(AR, "C1", 1L))
 clic(por_id(sprintf("remove_ar_%s", EMP)))
-r <- nuevas(n0)
-ok("E1: Quitar takes out exactly the marked collection (C1)", any(r == "fuera de la Agenda: C1") && identical(vis(AR), "C2"))
+# Wait for the removal's note and repaint (CM37: read right after the click,
+# it raced); E2 then starts only once E1's note is in, so a late note can't
+# land in E2's window.
+ok("E1: Quitar takes out exactly the marked collection (C1)",
+   poll_until(function() any(nuevas(n0) == "fuera de la Agenda: C1") && identical(vis(AR), "C2"), timeout_s = 10))
 n0 <- length(registro())
 clic(por_id(sprintf("remove_ar_%s", EMP)))
+Sys.sleep(1.5)   # nothing must arrive: give a wrong removal time to show up
 ok("E2: Quitar with nothing marked takes nothing out (it asks to mark a row)",
    length(nuevas(n0)) == 0L && identical(vis(AR), "C2"))
 
@@ -224,6 +230,9 @@ ok("J1: the other company's tab shows its own 4001 (Q1)",
 ok("J2: its Referencia is its own Factura (F-OTRA), not Networks' F-4001",
    isTRUE(ev(sprintf("/F-OTRA/.test(HDT.fila('%s','Q1').innerText) && !/F-4001/.test(HDT.fila('%s','Q1').innerText)", APO, APO))))
 n0 <- length(registro())
+# The header (and its buttons) renders after the table once the tab shows
+# (CM37: the click found no button yet).
+poll_until(function() isTRUE(ev(sprintf("!!document.getElementById('ph-dl_preview_%s')", OTR))), timeout_s = 10)
 clic(sprintf("document.getElementById('ph-dl_preview_%s')", OTR))
 ok("J3: its payment preview shows F-OTRA",
    poll_until(function() grepl("F-OTRA", modal(), fixed = TRUE), timeout_s = 10) && !grepl("F-4001", modal(), fixed = TRUE))
