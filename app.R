@@ -59,6 +59,8 @@ source("R/fx_banxico.R")
 # The rate of each currency against the base, with its origin (Banxico,
 # crossed, typed by the user today): Flujo's preview and Exportar.
 source("R/fx_tipos.R")
+# The Agenda's rows, read by Panorama and the Agenda alike (T60).
+source("R/agenda_filas.R")
 source("R/panorama_datos.R")
 source("R/panorama_publicar_module.R")
 source("R/panorama_module.R")
