@@ -723,7 +723,7 @@ settings_policies_observer <- function(input, output, session, shared) {
 
   .get_catalog <- function() {
     db <- tryCatch(shared$policy_catalog_db(), error = function(e) NULL)
-    if (!is.null(db) && nrow(db) > 0) db else load_policy_catalog()
+    if (!is.null(db) && nrow(db) > 0) db else load_policy_catalog(client_id = shared$effective_client_id())
   }
 
   .open_editor <- function(pol = NULL, mode = "new") {
@@ -864,7 +864,7 @@ settings_policies_observer <- function(input, output, session, shared) {
 
       # Which partes already have this policy?
       pp         <- tryCatch(shared$partner_policies_db(),
-                             error = function(e) load_partner_policies())
+                             error = function(e) load_partner_policies(client_id = shared$effective_client_id()))
       pp         <- if (is.null(pp)) .schema_partner_policies()[0L,] else pp
       preselected <- unique(pp$parte[pp$policy_id == act$id])
 
@@ -998,7 +998,7 @@ settings_policies_observer <- function(input, output, session, shared) {
     now     <- Sys.time()
 
     pp_old <- tryCatch(shared$partner_policies_db(),
-                       error = function(e) load_partner_policies())
+                       error = function(e) load_partner_policies(client_id = shared$effective_client_id()))
     if (is.null(pp_old)) pp_old <- .schema_partner_policies()[0L, ]
 
     # Partes that previously had this policy

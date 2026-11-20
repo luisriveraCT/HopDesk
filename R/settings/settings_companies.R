@@ -426,13 +426,13 @@ settings_companies_observer <- function(input, output, session, shared) {
   .get_catalog_cmp <- function() {
     db <- tryCatch(shared$policy_catalog_db(), error = function(e) NULL)
     if (!is.null(db) && nrow(db) > 0) db
-    else tryCatch(load_policy_catalog(), error = function(e) .schema_policy_catalog()[0L, ])
+    else tryCatch(load_policy_catalog(client_id = shared$effective_client_id()), error = function(e) .schema_policy_catalog()[0L, ])
   }
 
   .get_pp_cmp <- function() {
     db <- tryCatch(shared$partner_policies_db(), error = function(e) NULL)
     if (!is.null(db)) db
-    else tryCatch(load_partner_policies(), error = function(e) NULL)
+    else tryCatch(load_partner_policies(client_id = shared$effective_client_id()), error = function(e) NULL)
   }
 
   .all_partes <- function() {
