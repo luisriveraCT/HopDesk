@@ -109,8 +109,7 @@ HD_PESTANAS_FINANCIERAS <- c("PAN", "CAL", "VEN", "PH", "BNC", "IC", "PSV", "REQ
 # ── UI ─────────────────────────────────────────────────────────────────────────
 ui <- bslib::page_navbar(
   title    = "HopDesk",
-  theme    = bslib::bs_theme(version = 5, bootswatch = "flatly",
-                              primary = "#0A58CA"),
+  theme    = hd_bs_theme(),
   fillable = TRUE,
   id       = "nav",
   selected = if (PANORAMA_ES_INICIO) "PAN" else "CAL",
@@ -119,6 +118,7 @@ ui <- bslib::page_navbar(
     app_styles(),
     app_scripts(),
     tags$link(rel = "stylesheet", type = "text/css", href = "cashflow_preview.css?v=6"),
+    tema_head(),   # theme tokens (www/hd_temas.css) + <html data-hd-tema>, R/tema_registro.R
     # Brand tokens (navy, gold, Fraunces) and Panorama, each under its root class.
     tags$link(rel = "stylesheet", type = "text/css", href = "hd_marca.css?v=1"),
     tags$link(rel = "stylesheet", type = "text/css", href = "panorama.css?v=1"),
@@ -690,7 +690,7 @@ secured_ui <- shinymanager::secure_app(
     }
   ")),
   enable_admin     = FALSE,
-  theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA")
+  theme = hd_bs_theme()
 )
 
 # ── Invitation activation page ───────────────────────────────────────────────
@@ -712,8 +712,7 @@ secured_ui <- shinymanager::secure_app(
 # (the mailed link); only its title changes.
 .invite_page_shell <- function(titulo = tr("cuentas.activacion.titulo_pagina")) {
   fluidPage(
-    theme = bslib::bs_theme(version = 5, bootswatch = "flatly",
-                            primary = "#0A58CA"),
+    theme = hd_bs_theme(),
     tags$head(
       tags$title(titulo),
       # The address carries a one-time token (?invite=, ?reset=): no

@@ -78,7 +78,7 @@ ok("no actual timeout_session=... assignment remains anywhere in app.R (a mentio
 ok("secure_app() still sets enable_admin = FALSE (regression guard -- the fix didn't touch this)",
    grepl("enable_admin\\s*=\\s*FALSE", sa_block))
 ok("secure_app() still configures a theme (regression guard -- the fix didn't drop unrelated config)",
-   grepl("theme\\s*=\\s*bslib::bs_theme", sa_block))
+   grepl("theme\\s*=\\s*(bslib::bs_theme|hd_bs_theme)\\(", sa_block))   # TEMA: one theme, R/tema_registro.R
 
 # ── Control: confirm this is a real, meaningful change, not a no-op edit ────
 # (guards against a future accidental revert of keep_token going unnoticed;
