@@ -1635,8 +1635,8 @@ ledgerModuleServer <- function(id, config, shared) {
             if (ledger == "AP") uiOutput(ns("sap_prov_suggestions")) else NULL,
             textInput(ns("sap_edit_codigo"), paste("C\u00f3digo de", party_lbl),
                       value = .ov("Codigo_override", row[["Codigo"]])),
-            numericInput(ns("sap_edit_importe"), "Importe",
-                         value = prefill_importe, min = 0)
+            hd_numero_input(ns("sap_edit_importe"), "Importe", formato = "monto",
+                            value = prefill_importe, min = 0)
           )
         ),
         fluidRow(
