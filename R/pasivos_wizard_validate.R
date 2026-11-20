@@ -169,6 +169,15 @@ pasivos_wizard_validate_cargos <- function(draft) {
     if (length(monto) == 1L && !is.na(monto) && monto != 0 && !fecha_valida(cargos[[i]]$fecha))
       errors[[paste0("cargo_fecha_", i)]] <- tr("tablas.pasivos.asistente.cargo_fecha", n = as.character(i))
   }
+  # T63: every tax has a name and a value >= 0 (a percentage up to 100).
+  imps <- draft$impuestos %||% list()
+  for (i in seq_along(imps)) {
+    t <- imps[[i]]; v <- suppressWarnings(as.numeric(t$valor %||% NA_real_))
+    if (!nzchar(trimws(t$nombre %||% "")))
+      errors[[paste0("impuesto_nombre_", i)]] <- tr("tablas.pasivos.impuestos.falta_nombre", n = as.character(i))
+    if (is.na(v) || v < 0 || (identical(t$tipo, "porcentual") && v > 100))
+      errors[[paste0("impuesto_valor_", i)]] <- tr("tablas.pasivos.impuestos.valor_invalido", n = as.character(i))
+  }
   vr <- draft$valor_residual
   if (!is.null(vr) && identical(vr$behavior, "separate") && !fecha_valida(vr$fecha))
     errors$residual_fecha <- tr("tablas.pasivos.asistente.residual_fecha")

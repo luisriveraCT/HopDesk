@@ -675,6 +675,15 @@ pasivos_step_ui_cargos <- function(draft, cargos_list = list(),
 
     shiny::hr(),
 
+    # ── Impuestos (T63): added to each payment of this liability ─────────────
+    shiny::tags$p(class = "fw-semibold mb-1", tr("tablas.pasivos.impuestos.titulo")),
+    shiny::tags$p(class = "text-muted small mb-2", tr("tablas.pasivos.impuestos.explica")),
+    shiny::uiOutput("pwiz_impuestos_table"),
+    shiny::actionButton("pwiz_add_impuesto", tr("tablas.pasivos.impuestos.agregar"),
+                        class = "btn btn-outline-secondary btn-sm mb-3"),
+
+    shiny::hr(),
+
     # ── Valor residual ────────────────────────────────────────────────────────
     shiny::tags$p(class = "fw-semibold mb-2",
                   "Valor residual al final del contrato (opcional)"),
@@ -838,6 +847,34 @@ pasivos_periodicidad_subfields_ui <- function(periodicidad, draft) {
 
 # ── Cargo row UI ───────────────────────────────────────────────────────────────
 # Returns a single cargo row for the cargos step.
+# T63: one tax row -- free name (placeholder "IVA"), percentage (default) or
+# fixed amount per payment, its value, and, for loans, whether a percentage
+# applies to the whole payment or to the interest only.
+pasivos_impuesto_row_ui <- function(i, imp = list(), financiero = FALSE) {
+  etiqueta <- function(k) if (i == 1L) tr(k) else NULL
+  shiny::div(
+    class = "d-flex gap-2 align-items-end mb-2", id = paste0("pwiz_imp_row_", i),
+    shiny::div(class = "flex-grow-1",
+      shiny::textInput(paste0("pwiz_imp_nombre_", i), etiqueta("tablas.pasivos.impuestos.nombre"),
+                       value = imp$nombre %||% "", placeholder = "IVA")),
+    shiny::div(style = "width:150px;",
+      shiny::selectInput(paste0("pwiz_imp_tipo_", i), etiqueta("tablas.pasivos.impuestos.tipo"),
+        choices = stats::setNames(c("porcentual", "fijo"),
+                                  c(tr("tablas.pasivos.impuestos.porcentual"), tr("tablas.pasivos.impuestos.fijo"))),
+        selected = imp$tipo %||% "porcentual")),
+    shiny::div(style = "width:120px;",
+      shiny::numericInput(paste0("pwiz_imp_valor_", i), etiqueta("tablas.pasivos.impuestos.valor"),
+                          value = imp$valor %||% NA_real_, min = 0)),
+    if (isTRUE(financiero)) shiny::div(style = "width:170px;",
+      shiny::selectInput(paste0("pwiz_imp_base_", i), etiqueta("tablas.pasivos.impuestos.base"),
+        choices = stats::setNames(c("pago", "intereses"),
+                                  c(tr("tablas.pasivos.impuestos.base_pago"), tr("tablas.pasivos.impuestos.base_intereses"))),
+        selected = imp$base %||% "pago")),
+    shiny::div(style = if (i == 1L) "padding-top:24px;" else NULL,
+      shiny::actionButton(paste0("pwiz_imp_rm_", i), "\u00d7", class = "btn btn-outline-danger btn-sm"))
+  )
+}
+
 pasivos_cargo_row_ui <- function(i, cargo = list(), base = MONEDA_BASE_OMISION, primero = base) {
   shiny::div(
     class = "d-flex gap-2 align-items-end mb-2",

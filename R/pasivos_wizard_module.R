@@ -51,6 +51,7 @@ pasivos_liability_to_draft <- function(row) {
     metodo_amortizacion    = r$metodo_amortizacion[1] %||% "francesa",
     schedule_csv_raw       = "",
     cargos_iniciales       = r$cargos_iniciales[[1]],
+    impuestos              = if ("impuestos" %in% names(r)) r$impuestos[[1]] else NULL,   # T63
     valor_residual         = r$valor_residual[[1]],
     notas                  = r$notas[1] %||% ""
   )
@@ -133,6 +134,7 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
   }
 
   cargos  <- if (is.null(draft$cargos_iniciales)) list(NULL) else list(draft$cargos_iniciales)
+  imps    <- if (!length(draft$impuestos)) list(NULL) else list(draft$impuestos)   # T63
   residual <- if (is.null(draft$valor_residual) ||
                   (!is.null(draft$valor_residual) && length(draft$valor_residual) == 0))
                list(NULL)
@@ -199,6 +201,7 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
                                  (draft$metodo_amortizacion %||% "francesa") else NA_character_,
     schedule_imported        = sched_imp,
     cargos_iniciales         = cargos,
+    impuestos                = imps,
     valor_residual           = residual,
     modifier_ids             = list(character(0)),
     estado                   = estado_previo,
@@ -566,6 +569,9 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
         )
       })
       d$cargos_iniciales <- if (length(cargos_out)) cargos_out else NULL
+      # T63: the tax rows, as typed (validated by pasivos_wizard_validate_cargos()).
+      d$impuestos <- .wiz_leer_impuestos(input, length(wiz$impuestos_list), d$categoria)
+      if (!length(d$impuestos)) d$impuestos <- NULL
 
       # Residual
       if (isTRUE(input$pwiz_has_residual)) {
@@ -669,6 +675,17 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
       c("Monto", monto_moneda(draft$amount_default %||% NA_real_, draft$moneda_pago %||% NA_character_))
     ))
   }
+  # T63: the liability's taxes, as the engine applies them to each payment.
+  imps <- pasivos_impuestos_de(draft)
+  if (length(imps)) rows <- c(rows, list(c(tr("tablas.pasivos.impuestos.resumen"),
+    paste(vapply(imps, function(t) {
+      v <- as.numeric(t$valor)
+      if (identical(t$tipo, "fijo"))
+        paste(t$nombre, monto_moneda(v, draft$moneda_pago %||% NA_character_), tr("tablas.pasivos.impuestos.fijo"))
+      else paste0(t$nombre, " ", format(v, trim = TRUE), " % \u00b7 ",
+                  tr(if (identical(t$base, "intereses")) "tablas.pasivos.impuestos.base_intereses"
+                     else "tablas.pasivos.impuestos.base_pago"))
+    }, character(1)), collapse = " \u00b7 "))))
 
   shiny::tags$dl(
     class = "row small mb-0",
@@ -712,6 +729,9 @@ pasivos_vista_amortizacion <- function(draft) {
     capital = as.numeric(futuras$capital %||% 0),
     interes = as.numeric(futuras$interes %||% 0),
     total   = as.numeric(futuras$total %||% 0),
+    # T63: each payment's taxes and the payment with them (0 / total with none)
+    impuestos  = if ("impuestos" %in% names(futuras)) as.numeric(futuras$impuestos) else 0,
+    total_pago = if ("total_pago" %in% names(futuras)) as.numeric(futuras$total_pago) else as.numeric(futuras$total %||% 0),
     moneda  = rep(draft$moneda_pago %||% NA_character_, nrow(futuras)),
     stringsAsFactors = FALSE)
   attr(filas, "reamortizada") <- any(!is.na(sched$re_amortized) & sched$re_amortized, na.rm = TRUE)
@@ -732,15 +752,18 @@ pasivos_vista_provisiones <- function(draft) {
   )
   if (is.null(provs) || !nrow(provs)) return(NULL)
   p <- head(provs, 12)
+  iva <- as.numeric(p$componente_iva); iva[is.na(iva)] <- 0   # T63: the tax inside each amount
   data.frame(id = p$id, fecha = as.Date(p$fecha_efectiva), monto = as.numeric(p$amount_pago %||% 0),
+             impuestos = iva,
              moneda = p$moneda_pago %||% (draft$moneda_pago %||% NA_character_), stringsAsFactors = FALSE)
 }
 
 .wiz_vacia_amort <- data.frame(id = character(), periodo = integer(), fecha = as.Date(character()),
                                capital = numeric(), interes = numeric(), total = numeric(),
+                               impuestos = numeric(), total_pago = numeric(),
                                moneda = character(), stringsAsFactors = FALSE)
 .wiz_vacia_prov  <- data.frame(id = character(), fecha = as.Date(character()), monto = numeric(),
-                               moneda = character(), stringsAsFactors = FALSE)
+                               impuestos = numeric(), moneda = character(), stringsAsFactors = FALSE)
 
 # The Revisión step's preview: a notice when the schedule was re-amortized,
 # and the table that fits the draft's categoría.
@@ -768,7 +791,9 @@ pasivos_vista_provisiones <- function(draft) {
       col_fecha("fecha",    "tablas.pasivos.amort.fecha"),
       col_dinero("capital", "tablas.pasivos.amort.capital", moneda = "moneda", sumar = FALSE),
       col_dinero("interes", "tablas.pasivos.amort.interes", moneda = "moneda", sumar = FALSE),
-      col_dinero("total",   "tablas.pasivos.amort.total",   moneda = "moneda", sumar = FALSE)),
+      col_dinero("total",   "tablas.pasivos.amort.total",   moneda = "moneda", sumar = FALSE),
+      col_dinero("impuestos",  "tablas.pasivos.amort.impuestos",  moneda = "moneda", sumar = TRUE),
+      col_dinero("total_pago", "tablas.pasivos.amort.total_pago", moneda = "moneda", sumar = TRUE)),
     vacio = "tablas.pasivos.amort.vacio")
   hd_table_server("pwiz_prov", tabla = "provisiones_asistente",
     datos = shiny::reactive({
@@ -777,9 +802,25 @@ pasivos_vista_provisiones <- function(draft) {
     }),
     columnas = list(
       col_fecha("fecha",  "tablas.pasivos.amort.fecha"),
-      col_dinero("monto", "tablas.pasivos.amort.monto", moneda = "moneda", sumar = FALSE)),
+      col_dinero("monto", "tablas.pasivos.amort.monto", moneda = "moneda", sumar = FALSE),
+      col_dinero("impuestos", "tablas.pasivos.amort.impuestos", moneda = "moneda", sumar = TRUE)),
     vacio = "tablas.pasivos.prov.vacio")
   invisible(NULL)
+}
+
+# T63: the tax rows as typed in the cargos step. `todas`: keep the empty ones
+# too (to redraw the rows while adding or removing one); otherwise a row with
+# no name and no value is dropped. "intereses" only for financiero.
+.wiz_leer_impuestos <- function(input, n, categoria, todas = FALSE) {
+  out <- lapply(seq_len(n), function(i) {
+    nombre <- trimws(input[[paste0("pwiz_imp_nombre_", i)]] %||% "")
+    tipo   <- input[[paste0("pwiz_imp_tipo_", i)]] %||% "porcentual"
+    valor  <- suppressWarnings(as.numeric(input[[paste0("pwiz_imp_valor_", i)]] %||% NA_real_))
+    base   <- if (identical(categoria %||% "", "financiero")) input[[paste0("pwiz_imp_base_", i)]] %||% "pago" else "pago"
+    list(nombre = nombre, tipo = tipo, valor = valor, base = base)
+  })
+  if (todas) return(out)
+  Filter(function(t) nzchar(t$nombre) || !is.na(t$valor), out)
 }
 
 # ── Main setup function ────────────────────────────────────────────────────────
@@ -802,6 +843,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     draft            = list(),
     validation_errors = list(),
     cargos_list      = list(),     # in-progress cargo rows for the cargos step
+    impuestos_list   = list(),     # T63: in-progress tax rows (cargos step)
     custom_dates     = character() # accumulating dates for "custom" recurrence
   )
 
@@ -1024,6 +1066,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     wiz$draft            <- list()
     wiz$validation_errors <- list()
     wiz$cargos_list      <- list()
+    wiz$impuestos_list   <- list()
     wiz$custom_dates     <- character()
     last_tasa_touched("anual")
     pwiz_rate_dia_rv("ayer")
@@ -1058,6 +1101,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     wiz$step_id          <- utils::tail(.wiz_steps_for(draft$categoria)$ids, 1)
     wiz$validation_errors <- list()
     wiz$cargos_list      <- draft$cargos_iniciales %||% list()
+    wiz$impuestos_list   <- draft$impuestos %||% list()
     last_tasa_touched("anual")
     pwiz_rate_dia_rv("ayer")
     pwiz_fetched_rates_rv(list())
@@ -1191,6 +1235,28 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
         })
       })
     })
+  })
+
+  # ── Impuestos rows (T63) ────────────────────────────────────────────────────
+  output$pwiz_impuestos_table <- shiny::renderUI({
+    il <- wiz$impuestos_list
+    if (!length(il)) return(shiny::div(class = "text-muted small mb-2", tr("tablas.pasivos.impuestos.ninguno")))
+    fin <- identical(shiny::isolate(wiz$draft$categoria) %||% "", "financiero")
+    do.call(shiny::tagList, lapply(seq_along(il), function(i) pasivos_impuesto_row_ui(i, il[[i]], financiero = fin)))
+  })
+  shiny::observeEvent(input$pwiz_add_impuesto, ignoreInit = TRUE, {
+    il <- .wiz_leer_impuestos(input, length(wiz$impuestos_list), wiz$draft$categoria, todas = TRUE)
+    wiz$impuestos_list <- c(il, list(list(nombre = "", tipo = "porcentual", valor = NA_real_, base = "pago")))
+  })
+  shiny::observe({
+    n <- length(wiz$impuestos_list)
+    lapply(seq_len(n), function(i) local({
+      idx <- i
+      shiny::observeEvent(input[[paste0("pwiz_imp_rm_", idx)]], ignoreInit = TRUE, once = TRUE, {
+        il <- .wiz_leer_impuestos(input, length(wiz$impuestos_list), wiz$draft$categoria, todas = TRUE)
+        if (idx <= length(il)) wiz$impuestos_list <- il[-idx]
+      })
+    }))
   })
 
   # ── Cargo rows table ────────────────────────────────────────────────────────
