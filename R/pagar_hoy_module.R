@@ -915,7 +915,15 @@ pagarHoyServer <- function(id, shared) {
       # that's already stored, skip the write to break the Observer1→2 loop.
       observeEvent(input[[paste0("bal_", emp)]], {
         cur         <- moneda_sel(emp)
-        new_val     <- as.numeric(input[[paste0("bal_", emp)]] %||% 0)
+        # T66: empty or a text (NA) used to become 0 and be saved; now it is
+        # told and nothing is saved or logged. The field sends only when it
+        # is left (or Enter), so the aviso comes once, not on every key. A
+        # negative is accepted: an overdraft (the old min = 0 is gone).
+        rev_bal <- hd_numero_revisar(input[[paste0("bal_", emp)]], tr("tablas.agenda.saldo_apertura"))
+        if (!rev_bal$ok) {
+          showNotification(rev_bal$aviso, type = "warning"); return()
+        }
+        new_val     <- rev_bal$valor
         current_val <- saldos_apertura()[[emp]][[cur]] %||% 0
         if (isTRUE(abs(new_val - current_val) < 0.001)) return()
         sa <- saldos_apertura()
