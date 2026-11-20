@@ -7,12 +7,6 @@
 
 /* Every theme: the role */
 :root {
-  --hd-leg-aviso-suave-fdf3dc: var(--hd-aviso-suave);
-  --hd-leg-aviso-suave-fef3c7: var(--hd-aviso-suave);
-  --hd-leg-aviso-suave-fef9f0: var(--hd-aviso-suave);
-  --hd-leg-aviso-suave-fffbeb: var(--hd-aviso-suave);
-  --hd-leg-aviso-texto-b45309: var(--hd-aviso-texto);
-  --hd-leg-aviso-texto-d97706: var(--hd-aviso-texto);
   --hd-leg-borde-dde4ed: var(--hd-borde);
   --hd-leg-borde-e8ecf2: var(--hd-borde);
   --hd-leg-borde-fuerte-b0c6de: var(--hd-borde-fuerte);
@@ -30,14 +24,7 @@
   --hd-leg-oscuro-texto-2-7b9ab8: var(--hd-oscuro-texto-2);
   --hd-leg-oscuro-texto-c8d8ea: var(--hd-oscuro-texto);
   --hd-leg-oscuro-texto-ffffff: var(--hd-oscuro-texto);
-  --hd-leg-peligro-suave-fdf2f2: var(--hd-peligro-suave);
-  --hd-leg-peligro-suave-fef2f2: var(--hd-peligro-suave);
-  --hd-leg-primario-1d4ed8: var(--hd-primario);
-  --hd-leg-primario-3b82f6: var(--hd-primario);
   --hd-leg-primario-suave-d8e6f5: var(--hd-primario-suave);
-  --hd-leg-primario-suave-dbeafe: var(--hd-primario-suave);
-  --hd-leg-primario-suave-f0f9ff: var(--hd-primario-suave);
-  --hd-leg-provision-6d28d9: var(--hd-provision);
   --hd-leg-sombra-000000-44cce5: var(--hd-sombra);
   --hd-leg-texto-0d1b2a: var(--hd-texto);
   --hd-leg-texto-0d2240: var(--hd-texto);
@@ -46,12 +33,6 @@
 
 /* Clasico: today's exact value */
 [data-hd-tema="clasico"], :root:not([data-hd-tema]) {
-  --hd-leg-aviso-suave-fdf3dc: #FDF3DC;
-  --hd-leg-aviso-suave-fef3c7: #FEF3C7;
-  --hd-leg-aviso-suave-fef9f0: #FEF9F0;
-  --hd-leg-aviso-suave-fffbeb: #FFFBEB;
-  --hd-leg-aviso-texto-b45309: #B45309;
-  --hd-leg-aviso-texto-d97706: #D97706;
   --hd-leg-borde-dde4ed: #DDE4ED;
   --hd-leg-borde-e8ecf2: #E8ECF2;
   --hd-leg-borde-fuerte-b0c6de: #B0C6DE;
@@ -69,14 +50,7 @@
   --hd-leg-oscuro-texto-2-7b9ab8: #7B9AB8;
   --hd-leg-oscuro-texto-c8d8ea: #C8D8EA;
   --hd-leg-oscuro-texto-ffffff: #FFFFFF;
-  --hd-leg-peligro-suave-fdf2f2: #FDF2F2;
-  --hd-leg-peligro-suave-fef2f2: #FEF2F2;
-  --hd-leg-primario-1d4ed8: #1D4ED8;
-  --hd-leg-primario-3b82f6: #3B82F6;
   --hd-leg-primario-suave-d8e6f5: #D8E6F5;
-  --hd-leg-primario-suave-dbeafe: #DBEAFE;
-  --hd-leg-primario-suave-f0f9ff: #F0F9FF;
-  --hd-leg-provision-6d28d9: #6D28D9;
   --hd-leg-sombra-000000-44cce5: 0 4px 20px rgba(0,0,0,0.45);
   --hd-leg-texto-0d1b2a: #0D1B2A;
   --hd-leg-texto-0d2240: #0D2240;
