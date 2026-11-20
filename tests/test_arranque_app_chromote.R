@@ -198,6 +198,24 @@ for (modo in modos) for (quien in quienes) {
   Sys.sleep(5)   # what the first flush queued after the overlay went
   ok(paste(et, "the session is still connected"), conectado())
   e <- errores(); ok(paste(et, "no 'Warning: Error in' / 'Execution halted' in the R output"), !length(e)); mostrar(e)
+  # Every stylesheet and script of the app's own the page asks for answers
+  # 200 (TEMA, 2026-11-19): a branch that adds www/x.css, run from another
+  # checkout, used to get a 404 nobody saw.
+  r404 <- tryCatch(b$Runtime$evaluate(
+    "(function(){
+       var urls = Array.from(document.querySelectorAll('link[rel=stylesheet][href], script[src]'))
+         .map(function(e){ return e.href || e.src; })
+         .filter(function(u){ return u.indexOf(location.origin) === 0; });
+       return Promise.all(urls.map(function(u){
+         return fetch(u, {credentials: 'same-origin'}).then(function(r){ return r.status + ' ' + u.replace(location.origin, ''); },
+                                                          function(){ return 'ERR ' + u.replace(location.origin, ''); });
+       })).then(function(l){ return JSON.stringify(l); });
+     })()", awaitPromise = TRUE, returnByValue = TRUE, timeout_ = 60)$result$value,
+    error = function(x) { message("  ERROR: ", conditionMessage(x)); NULL })
+  recursos <- tryCatch(jsonlite::fromJSON(r404), error = function(x) character())
+  malos <- recursos[!startsWith(recursos, "200 ")]
+  ok(sprintf("%s every local stylesheet and script answers 200 (%d asked)", et, length(recursos)),
+     length(recursos) > 5L && !length(malos)); mostrar(malos)
 
   # Panorama is every client tier's home screen (Luis, 2026-11-10; on since
   # B4). Staff at home land on Grupo instead (app.R moves them there).
