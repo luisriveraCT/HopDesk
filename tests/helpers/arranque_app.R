@@ -76,7 +76,17 @@ DEV <- "antiguedad-rds-dev"
       permitida <- grepl("^hd-admin/", object) || grepl("/(usuarios|tiers_config)[.]rds$", object)
       if (!permitida) stop("NoSuchKey (ARR_MODO = vacio): ", object)
     }
-    if (is.null(bucket)) real(object = object, ...) else real(object = object, bucket = bucket, ...)
+    r <- if (is.null(bucket)) real(object = object, ...) else real(object = object, bucket = bucket, ...)
+    # ARR_FORZAR_NIVEL + ARR_FORZAR_USUARIO (T69): in THIS process only, that
+    # account reads as that tier (e.g. the client test user as "compras"),
+    # so a tier with no dev account can be tried. Nothing is written.
+    nivel <- Sys.getenv("ARR_FORZAR_NIVEL"); quien <- tolower(trimws(Sys.getenv("ARR_FORZAR_USUARIO")))
+    if (identical(nombre, "s3readRDS") && nzchar(nivel) && nzchar(quien) && grepl("/usuarios[.]rds$", object) &&
+        is.data.frame(r) && all(c("username", "tier") %in% names(r))) {
+      i <- tolower(trimws(r$username)) == quien
+      if (any(i)) { r$tier[i] <- nivel; message("[ARRANQUE] nivel forzado a ", nivel, " para 1 cuenta de ", object) }
+    }
+    r
   }
 }
 for (f in c("s3readRDS", "get_object", "head_object", "object_exists", "save_object", "s3load"))

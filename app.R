@@ -1909,27 +1909,11 @@ server <- function(input, output, session) {
       updateNavbarPage(session, "nav", selected = lista[1])
   }, priority = -1)
 
-  # T69: hiding is only CSS -- a hidden tab can be shown again from the
-  # browser's tools, and Shiny would fill it. A CLIENT session whose tier has
-  # a tab list loses the other client tabs from the page altogether, once,
-  # as soon as its tier is known: with no DOM, none of their outputs binds,
-  # so nothing of theirs is computed or sent. A staff session ("ver como")
-  # keeps hiding only: staff may see everything and must be able to go back.
-  .tabs_quitadas <- FALSE
-  observe({
-    if (.tabs_quitadas) return()
-    info <- tryCatch(current_user_info(), error = function(e) NULL)
-    if (is.null(info) || isTRUE(info$is_staff)) return()
-    tier <- info$tier %||% ""
-    if (!nzchar(tier)) return()
-    .tabs_quitadas <<- TRUE
-    lista <- nivel_pestanas(tier)
-    if (is.null(lista)) return()
-    for (tab in setdiff(.TABS_CLIENTE, lista))
-      bslib::nav_remove("nav", target = tab, session = session)
-    message(sprintf("[T69] tabs removed for tier %s: %s", tier,
-                    paste(setdiff(.TABS_CLIENTE, lista), collapse = ",")))
-  }, priority = -1)
+  # T69: removing the other client tabs from the page server-side was tried
+  # (nav_remove, sendRemoveTab, runjs with Shiny.unbindAll) and never took
+  # effect in Chrome against dev -- no message of that kind reached the
+  # browser; the existing CSS hiding above did not show either. Open as T69b.
+  # The data itself never travels: hd_table_server's gate (tier_registry.R).
 
   # ── Admin deployment: hide financial tabs until a client context is active ────
   # Uses runjs with setProperty(...,'important') to override the initial CSS rule

@@ -11,9 +11,8 @@
 #   4. hd_table_server, run: with the gate set to Compras, a treasury table
 #      never pushes "hdt-datos"; Requisiciones' does; with no gate (old
 #      fixtures) or a full tier, everything as before; a gate that fails = no.
-#   5. app.R: the gate is set from the effective tier; a client tier with a
-#      list loses the other tabs with nav_remove (never a staff session); the
-#      Agenda's badges are gated by tab.
+#   5. app.R: the gates are set from the effective tier; the Agenda's badges
+#      are gated by tab. (Removing the tabs from the page: T69b.)
 # Run from project root:  Rscript tests/test_t69_compras_pestanas.R
 # Counter-proof: on master, 1, 2, 4 and 5 fail (Compras gets the Agenda).
 # =============================================================================
@@ -130,14 +129,6 @@ test_that("app.R sets the gates from the effective tier", {
                         app, fixed = TRUE)))
   expect_true(any(grepl("session$userData$hd_pestana_permitida <- function(tab) nivel_pestana_permitida(tier_efectivo(), tab)",
                         app, fixed = TRUE)))
-})
-test_that("app.R removes the other tabs for a client tier with a list, never for staff", {
-  i <- grep(".tabs_quitadas <- FALSE", app, fixed = TRUE)[1]
-  expect_false(is.na(i))
-  bloque <- app[i:(i + 20L)]
-  expect_true(any(grepl("isTRUE(info$is_staff)) return()", bloque, fixed = TRUE)))
-  expect_true(any(grepl("bslib::nav_remove(\"nav\", target = tab, session = session)", bloque, fixed = TRUE)))
-  expect_true(any(grepl("setdiff(.TABS_CLIENTE, lista)", bloque, fixed = TRUE)))
 })
 test_that("the Agenda's badges are not sent to a tier without the Agenda tab", {
   ph <- codigo("R/pagar_hoy_module.R")
