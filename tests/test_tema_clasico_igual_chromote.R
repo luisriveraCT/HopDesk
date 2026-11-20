@@ -1,0 +1,182 @@
+# =============================================================================
+# tests/test_tema_clasico_igual_chromote.R
+# TEMA: under Clásico, a branch must look exactly like master. For every user
+# (staff and client) and every main tab, at 1293 x 632 (Luis' window), it
+# reads the COMPUTED style of every visible element (colours, borders, fonts,
+# radius, shadow) in the real app (tests/helpers/arranque_app.R, dev bucket,
+# no writes) started from TEMA_BASE (a worktree of master) and from TEMA_RAMA
+# (a worktree of the branch's commit), and compares them element by element.
+# Text and numbers that change between two runs do not matter: only styles.
+# A screenshot of each tab and run goes to TEMA_SALIDA.
+#
+# It also checks the branch puts data-hd-tema="clasico" on <html> and that
+# its tokens load (--hd-primario resolves), and the sign-in page.
+#
+# Needs the test users (.Renviron.local of the checkout that runs it:
+# HOPDESK_TEST_USER/_PASS, HOPDESK_TEST_CLIENTE_USER/_PASS) and Chrome's turn
+# (rule 28). Neither root may have its own .Renviron (arranque_app.R stops).
+#
+#   TEMA_BASE=C:/temp/tema_base_<hash> TEMA_RAMA=C:/temp/tema_<hash> \
+#   TEMA_SALIDA=<folder> Rscript --vanilla tests/test_tema_clasico_igual_chromote.R
+# TEMA_USUARIOS narrows it ("prueba", "cliente").
+# =============================================================================
+cat("=== test_tema_clasico_igual_chromote ===\n\n")
+if (file.exists(".Renviron.local")) readRenviron(".Renviron.local")
+`%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
+
+usuarios <- list(
+  prueba  = c(user = Sys.getenv("HOPDESK_TEST_USER"),         pass = Sys.getenv("HOPDESK_TEST_PASS")),
+  cliente = c(user = Sys.getenv("HOPDESK_TEST_CLIENTE_USER"), pass = Sys.getenv("HOPDESK_TEST_CLIENTE_PASS")))
+quienes <- strsplit(Sys.getenv("TEMA_USUARIOS", "prueba,cliente"), ",")[[1]]
+faltan <- quienes[!vapply(usuarios[quienes], function(u) all(nzchar(u)), logical(1))]
+if (length(faltan)) {
+  cat("SKIP: faltan las credenciales de prueba de:", paste(faltan, collapse = ", "),
+      "en .Renviron.local.\n     Esta prueba NO paso: no se corrio.\n")
+  quit(status = 2L)
+}
+BASE <- Sys.getenv("TEMA_BASE"); RAMA <- Sys.getenv("TEMA_RAMA", ".")
+if (!nzchar(BASE) || !dir.exists(BASE)) { cat("SKIP: TEMA_BASE (worktree de master) no existe.\n"); quit(status = 2L) }
+BASE <- normalizePath(BASE, winslash = "/"); RAMA <- normalizePath(RAMA, winslash = "/")
+SALIDA <- Sys.getenv("TEMA_SALIDA", file.path(tempdir(), "tema_clasico"))
+dir.create(SALIDA, showWarnings = FALSE, recursive = TRUE)
+LIMITE <- as.numeric(Sys.getenv("ARR_LIMITE", "300"))
+
+.pass <- 0L; .fail <- 0L
+ok <- function(label, expr) {
+  result <- tryCatch(expr, error = function(e) { message("  ERROR: ", conditionMessage(e)); FALSE })
+  if (isTRUE(result)) { cat(" PASS:", label, "\n"); .pass <<- .pass + 1L }
+  else                { cat(" FAIL:", label, "\n"); .fail <<- .fail + 1L }
+  invisible(isTRUE(result))
+}
+source("tests/helpers/live_app_harness.R")
+repo <- normalizePath(".", winslash = "/")
+PORT <- 39030L
+app <- NULL; b <- NULL
+on.exit({ try(if (!is.null(b)) b$close(), silent = TRUE); stop_bg_app(app) }, add = TRUE)
+
+ev <- function(js) {
+  r <- b$Runtime$evaluate(js, returnByValue = TRUE)
+  if (!is.null(r$exceptionDetails)) stop("JS: ", r$exceptionDetails$exception$description %||% r$exceptionDetails$text)
+  r$result$value
+}
+dentro <- function() isTRUE(tryCatch(ev(
+  "(function(){ var f = document.getElementById('auth-user_id');
+     return (!f || f.offsetParent === null) && !!document.querySelector('.nav-link[data-value]'); })()"),
+  error = function(e) FALSE))
+carga_terminada <- function() dentro() && isTRUE(tryCatch(ev(
+  "(function(){ var o = document.getElementById('hopdesk-loading');
+     return !o || o.style.display === 'none' || o.classList.contains('hld-fadeout'); })()"), error = function(e) FALSE))
+
+PESTANAS <- c(PAN = "Panorama", CAL = "Calendario", VEN = "Vencidos", PH = "Agenda de Hoy", BNC = "Bancos",
+              IC = "Intercompany", PSV = "Pasivos", FC = "Pronósticos", RPT = "Reporte", GRUPO = "Grupo")
+
+# Every visible element: a stable key (its path of tag#id.class:nth-of-type)
+# and the style properties a theme can touch.
+ESTILOS_JS <- "(function(){
+  var props = ['color','background-color','background-image','border-top-color','border-right-color',
+    'border-bottom-color','border-left-color','border-top-width','border-top-style','font-family','font-size',
+    'font-weight','font-style','border-top-left-radius','border-bottom-right-radius','box-shadow',
+    'outline-color','opacity','text-decoration-color','fill','stroke'];
+  function paso(e){
+    var s = e.tagName.toLowerCase();
+    if (e.id && !/[0-9]{4,}/.test(e.id)) s += '#' + e.id;
+    var c = (typeof e.className === 'string' ? e.className : (e.getAttribute('class')||'')).trim().split(/\\s+/)
+      .filter(function(x){ return x && !/active|show|open|hover|focus|selected|shiny-bound|recalculating|[0-9]{4,}/.test(x); }).sort();
+    if (c.length) s += '.' + c.join('.');
+    var i = 1, h = e; while ((h = h.previousElementSibling)) if (h.tagName === e.tagName) i++;
+    return s + ':' + i;
+  }
+  function clave(e){ var p = [], n = e; for (var k = 0; n && n.nodeType === 1 && k < 6; k++, n = n.parentElement) p.unshift(paso(n)); return p.join('>'); }
+  var out = {};
+  document.querySelectorAll('body *').forEach(function(e){
+    if (!(e.offsetParent !== null || getComputedStyle(e).position === 'fixed')) return;
+    var r = e.getBoundingClientRect(); if (r.width === 0 || r.height === 0) return;
+    if (r.bottom < 0 || r.top > window.innerHeight) return;
+    var s = getComputedStyle(e), v = {};
+    props.forEach(function(p){ v[p] = s.getPropertyValue(p); });
+    out[clave(e)] = v;
+  });
+  var hs = getComputedStyle(document.documentElement);
+  out['__html__'] = { tema: document.documentElement.getAttribute('data-hd-tema') || '',
+                      primario: hs.getPropertyValue('--hd-primario').trim(), body_bg: getComputedStyle(document.body).backgroundColor };
+  return JSON.stringify(out);
+})()"
+
+captura <- function(nombre) tryCatch({
+  s <- b$Page$captureScreenshot(format = "png")
+  writeBin(jsonlite::base64_dec(s$data), file.path(SALIDA, paste0(nombre, ".png")))
+}, error = function(e) message("  (captura ", nombre, ": ", conditionMessage(e), ")"))
+
+# One run: start the app from `raiz`, sign in as `quien`, read every tab.
+recorrer <- function(raiz, etiqueta, quien) {
+  res <- list()
+  if (!is.null(app)) { try(b$close(), silent = TRUE); b <<- NULL; stop_bg_app(app); app <<- NULL }
+  app <<- tryCatch(start_bg_app(sprintf('Sys.setenv(ARR_MODO = "normal", ARR_RAIZ = "%s"); setwd("%s"); source("tests/helpers/arranque_app.R")$value',
+                                        raiz, repo), PORT, timeout_s = 300, www = file.path(raiz, "www")),
+                   error = function(e) { message(conditionMessage(e)); NULL })
+  if (!ok(sprintf("[%s · %s] the real app starts on dev", etiqueta, quien), !is.null(app))) return(res)
+  b <<- new_chromote_session()
+  invisible(b$Emulation$setDeviceMetricsOverride(width = 1293L, height = 632L, deviceScaleFactor = 1, mobile = FALSE))
+  invisible(b$Page$navigate(sprintf("http://127.0.0.1:%d", PORT), wait_ = TRUE))
+  if (!ok(sprintf("[%s · %s] the sign-in form shows", etiqueta, quien),
+          poll_until(function() isTRUE(tryCatch(ev("!!document.getElementById('auth-user_id')"), error = function(e) FALSE)), timeout_s = 60)))
+    return(res)
+  Sys.sleep(2)
+  res[["ENTRAR"]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
+  captura(sprintf("%s_%s_ENTRAR", etiqueta, quien))
+  u <- usuarios[[quien]]
+  ev(sprintf("(function(){ var u = document.getElementById('auth-user_id'), p = document.getElementById('auth-user_pwd');
+     u.value = %s; p.value = %s; $(u).trigger('change'); $(p).trigger('change'); return true; })()",
+     jsonlite::toJSON(u[["user"]], auto_unbox = TRUE), jsonlite::toJSON(u[["pass"]], auto_unbox = TRUE)))
+  Sys.sleep(0.5)
+  ev("document.getElementById('auth-go_auth').click(); true")
+  poll_until(carga_terminada, timeout_s = LIMITE, interval_s = 1)
+  if (!ok(sprintf("[%s · %s] signed in and loaded", etiqueta, quien), carga_terminada())) return(res)
+  Sys.sleep(6)
+  for (v in names(PESTANAS)) {
+    visible <- isTRUE(tryCatch(ev(sprintf("(function(){ var a = document.querySelector(\".nav-link[data-value='%s']\");
+      return !!a && a.offsetParent !== null; })()", v)), error = function(x) FALSE))
+    if (!visible) next
+    ev(sprintf("document.querySelector(\".nav-link[data-value='%s']\").click(); true", v))
+    Sys.sleep(8)   # data drawn (R takes its time on a busy machine)
+    ev("window.scrollTo(0, 0); document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
+    Sys.sleep(1)
+    res[[v]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
+    captura(sprintf("%s_%s_%s", etiqueta, quien, v))
+  }
+  res
+}
+
+for (quien in quienes) {
+  cat(sprintf("\n── %s ──\n", quien))
+  base <- recorrer(BASE, "master", quien)
+  rama <- recorrer(RAMA, "rama", quien)
+  saveRDS(list(base = base, rama = rama), file.path(SALIDA, sprintf("estilos_%s.rds", quien)))
+  if ("PAN" %in% names(rama) || length(rama) > 1L) {
+    h <- rama[[setdiff(names(rama), "ENTRAR")[1]]][["__html__"]]
+    ok(sprintf("[rama · %s] <html data-hd-tema=\"clasico\"> and the tokens load (--hd-primario = %s)", quien, h$primario %||% ""),
+       identical(h$tema, "clasico") && toupper(h$primario %||% "") == "#0A58CA")
+  }
+  for (v in intersect(names(base), names(rama))) {
+    eb <- base[[v]]; er <- rama[[v]]
+    eb[["__html__"]] <- NULL; er[["__html__"]] <- NULL
+    comunes <- intersect(names(eb), names(er))
+    difs <- character()
+    for (k in comunes) {
+      d <- names(eb[[k]])[vapply(names(eb[[k]]), function(p) !identical(eb[[k]][[p]], er[[k]][[p]]), logical(1))]
+      if (length(d)) difs <- c(difs, sprintf("%s { %s }", k, paste(sprintf("%s: %s -> %s", d,
+                                                     vapply(d, function(p) eb[[k]][[p]], ""), vapply(d, function(p) er[[k]][[p]], "")), collapse = "; ")))
+    }
+    nombre <- if (v == "ENTRAR") "sign-in page" else PESTANAS[[v]]
+    if (!ok(sprintf("[%s] %s: %d elements compared, same computed style (only in master %d, only in branch %d)",
+                    quien, nombre, length(comunes), length(setdiff(names(eb), comunes)), length(setdiff(names(er), comunes))),
+            length(difs) == 0L && length(comunes) > 20L))
+      cat(paste0("      | ", utils::head(difs, 12)), sep = "\n")
+  }
+  faltan_v <- setdiff(names(base), names(rama))
+  ok(sprintf("[%s] the branch shows every tab master shows (%s)", quien, paste(names(base), collapse = ",")), !length(faltan_v))
+}
+
+cat(sprintf("\nCapturas y estilos: %s\n", SALIDA))
+cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
+quit(status = if (.fail) 1L else 0L)
