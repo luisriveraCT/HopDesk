@@ -2013,5 +2013,20 @@
   "tablas.flujo.fx.tipo_de": "Exchange rate {par}",
   "comun.actividad.alerta.titulo": "Activity: the log could not be saved",
   "comun.actividad.alerta.rescatadas": "{n} entries could not be added to the activity log of {cliente}. They were saved separately ({archivo}) and still show in Activity. Check the storage connection.",
-  "comun.actividad.alerta.perdidas": "{n} entries of the activity log of {cliente} were lost: they could not be saved even separately. Check the storage connection and the server log."
+  "comun.actividad.alerta.perdidas": "{n} entries of the activity log of {cliente} were lost: they could not be saved even separately. Check the storage connection and the server log.",
+  "requisiciones.log.crear_requisicion": "Requisition {detalle} created",
+  "requisiciones.log.editar_requisicion": "Requisition edited ({detalle})",
+  "requisiciones.log.mover_requisiciones": "{n} requisition(s) moved to another folder",
+  "requisiciones.log.papelera_requisiciones": "{n} requisition(s) sent to the trash",
+  "requisiciones.log.restaurar_requisiciones": "{n} requisition(s) restored from the trash",
+  "requisiciones.log.ligar_provision": "Requisition linked to a provision",
+  "requisiciones.log.crear_carpeta": "Folder “{detalle}” created",
+  "requisiciones.log.editar_carpeta": "Folder edited ({detalle})",
+  "requisiciones.log.papelera_carpeta": "Folder sent to the trash",
+  "requisiciones.log.restaurar_carpeta": "Folder restored from the trash",
+  "requisiciones.log.comentar_requisicion": "Comment on a requisition",
+  "requisiciones.log.adjuntar_evidencia": "Evidence attached to a requisition",
+  "requisiciones.log.agregar_tabla_evidencia": "Table pasted as a requisition's evidence",
+  "requisiciones.log.papelera_evidencia": "Evidence sent to the trash",
+  "requisiciones.log.restaurar_evidencia": "Evidence restored from the trash"
 }

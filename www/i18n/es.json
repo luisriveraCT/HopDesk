@@ -2013,5 +2013,20 @@
   "tablas.flujo.fx.tipo_de": "Tipo de cambio {par}",
   "comun.actividad.alerta.titulo": "Actividad: el registro no se pudo guardar",
   "comun.actividad.alerta.rescatadas": "No se pudieron agregar {n} entradas al registro de actividad de {cliente}. Se guardaron aparte ({archivo}) y siguen visibles en Actividad. Revisa la conexión con el almacenamiento.",
-  "comun.actividad.alerta.perdidas": "Se perdieron {n} entradas del registro de actividad de {cliente}: no se pudieron guardar ni aparte. Revisa la conexión con el almacenamiento y el registro del servidor."
+  "comun.actividad.alerta.perdidas": "Se perdieron {n} entradas del registro de actividad de {cliente}: no se pudieron guardar ni aparte. Revisa la conexión con el almacenamiento y el registro del servidor.",
+  "requisiciones.log.crear_requisicion": "Requisición {detalle} creada",
+  "requisiciones.log.editar_requisicion": "Requisición editada ({detalle})",
+  "requisiciones.log.mover_requisiciones": "{n} requisición(es) movida(s) de carpeta",
+  "requisiciones.log.papelera_requisiciones": "{n} requisición(es) enviada(s) a la papelera",
+  "requisiciones.log.restaurar_requisiciones": "{n} requisición(es) restaurada(s) de la papelera",
+  "requisiciones.log.ligar_provision": "Requisición ligada a una provisión",
+  "requisiciones.log.crear_carpeta": "Carpeta “{detalle}” creada",
+  "requisiciones.log.editar_carpeta": "Carpeta editada ({detalle})",
+  "requisiciones.log.papelera_carpeta": "Carpeta enviada a la papelera",
+  "requisiciones.log.restaurar_carpeta": "Carpeta restaurada de la papelera",
+  "requisiciones.log.comentar_requisicion": "Comentario en una requisición",
+  "requisiciones.log.adjuntar_evidencia": "Evidencia adjuntada a una requisición",
+  "requisiciones.log.agregar_tabla_evidencia": "Tabla pegada como evidencia de una requisición",
+  "requisiciones.log.papelera_evidencia": "Evidencia enviada a la papelera",
+  "requisiciones.log.restaurar_evidencia": "Evidencia restaurada de la papelera"
 }

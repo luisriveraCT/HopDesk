@@ -187,8 +187,75 @@ REQ_COLOR_DEFECTO  <- "#607d8b"
 # says the file does not exist, stop() when it could not be read.
 .req_leer <- function(tabla, cid) leer_tabla_para_escribir(REQ_KEYS[[tabla]], cid, .REQ_SCHEMAS[[tabla]])
 
-.req_modificar <- function(tabla, cid, cambio)
-  modificar_tabla(REQ_KEYS[[tabla]], cid, .REQ_SCHEMAS[[tabla]], cambio)
+# T72: every write keeps, row by row (by id), what it changed -- read right
+# after it by .req_log(), which files it in app_audit (the Actividad log).
+# Requisiciones only wrote its own requisiciones_historial.rds, which no
+# Actividad screen reads, and its folders left no trace at all.
+.req_ultimo <- new.env(parent = emptyenv())
+.req_modificar <- function(tabla, cid, cambio) {
+  antes <- NULL; despues <- NULL
+  .req_ultimo$cambio <- NULL
+  res <- modificar_tabla(REQ_KEYS[[tabla]], cid, .REQ_SCHEMAS[[tabla]], function(df) {
+    antes <<- df; despues <<- cambio(df); despues
+  })
+  .req_ultimo$cambio <- tryCatch(.req_diferencia(antes, despues), error = function(e) NULL)
+  .req_ultimo$tabla  <- tabla
+  invisible(res)
+}
+
+# What changed between two versions of a table, by id, capped so that one
+# entry stays small: list(n = c(nuevas, cambiadas, quitadas), nuevas = whole
+# new rows, cambiadas = {id: {col: {antes, despues}}}, quitadas = ids).
+.REQ_LOG_MAX_FILAS <- 50L
+.REQ_LOG_MAX_CHARS <- 300L
+.req_diferencia <- function(antes, despues) {
+  if (!is.data.frame(antes) || !is.data.frame(despues) || !"id" %in% names(despues)) return(NULL)
+  corta <- function(v) {
+    if (is.null(v) || !length(v)) return(NULL)
+    if (inherits(v, "POSIXct")) return(format(v, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"))
+    if (is.character(v) && !is.na(v) && nchar(v) > .REQ_LOG_MAX_CHARS) return(paste0(substr(v, 1L, .REQ_LOG_MAX_CHARS), "\u2026"))
+    v
+  }
+  igual <- function(a, b) identical(a, b) || (length(a) == 1L && length(b) == 1L && is.na(a) && is.na(b))
+  ids_a <- as.character(antes$id); ids_d <- as.character(despues$id)
+  nuevas <- setdiff(ids_d, ids_a); quitadas <- setdiff(ids_a, ids_d)
+  cols <- intersect(names(despues), names(antes))
+  cambiadas <- list(); n_camb <- 0L
+  for (k in intersect(ids_d, ids_a)) {
+    ia <- match(k, ids_a); id <- match(k, ids_d); d <- list()
+    for (cl in cols) {
+      a <- antes[[cl]][ia]; b <- despues[[cl]][id]
+      if (!igual(a, b)) d[[cl]] <- list(antes = corta(a), despues = corta(b))
+    }
+    if (length(d)) { n_camb <- n_camb + 1L; if (length(cambiadas) < .REQ_LOG_MAX_FILAS) cambiadas[[k]] <- d }
+  }
+  fila <- function(i) lapply(as.list(despues[i, , drop = FALSE]), function(v) corta(v[[1]]))
+  list(n = c(nuevas = length(nuevas), cambiadas = n_camb, quitadas = length(quitadas)),
+       nuevas = lapply(utils::head(match(nuevas, ids_d), .REQ_LOG_MAX_FILAS), fila),
+       cambiadas = cambiadas, quitadas = utils::head(quitadas, .REQ_LOG_MAX_FILAS))
+}
+
+# Files the last write in the Actividad log (module "requisiciones"), after
+# it succeeded; never turns a saved action into a failure. Nothing changed
+# (modificar_tabla wrote nothing) = nothing logged. home: the actor's own
+# client (staff jumping in); NULL = the client itself (a client's own user).
+.req_log <- function(cid, accion, por, ids, detalle = NA_character_, home = NULL) {
+  cambio <- .req_ultimo$cambio; tabla <- .req_ultimo$tabla
+  .req_ultimo$cambio <- NULL
+  if (is.null(cambio) || !sum(cambio$n)) return(invisible(FALSE))
+  tryCatch(log_action(
+    user        = por %||% NA_character_,
+    module      = "requisiciones",
+    action      = accion,
+    description = tr(paste0("requisiciones.log.", accion), n = as.character(length(ids)),
+                     detalle = if (is.na(detalle)) "" else as.character(detalle)),
+    target_id   = paste(ids, collapse = ","),
+    metadata    = list(tabla = tabla, ids = as.list(as.character(ids)), detalle = detalle, cambio = cambio),
+    client_id             = cid,
+    viewer_home_client_id = home %||% cid),
+    error = function(e) message("[requisiciones] log_action fall\u00f3 (", accion, "): ", conditionMessage(e)))
+  invisible(TRUE)
+}
 
 .req_txt <- function(x) {
   x <- if (is.null(x) || !length(x)) NA_character_ else as.character(x[[1]])
@@ -361,7 +428,7 @@ REQ_COLOR_DEFECTO  <- "#607d8b"
 #             carpeta_id, provision_id). Returns list(id, folio).
 # provision_id is for "Agregar evidencia a una provisión": the requisition is
 # born linked; refused if another requisition already has that provision.
-requisicion_crear <- function(client_id, datos, por) {
+requisicion_crear <- function(client_id, datos, por, home = NULL) {
   cid <- .req_cid(client_id)
   v <- .req_validar(datos)
   provision_id <- .req_txt(datos$provision_id)
@@ -383,6 +450,7 @@ requisicion_crear <- function(client_id, datos, por) {
       ligada_por = if (is.na(provision_id)) NA_character_ else por,
       ligada_en = if (is.na(provision_id)) as.POSIXct(NA, tz = "UTC") else ahora))
   })
+  .req_log(cid, "crear_requisicion", por, id, folio, home)
   h <- .req_historial(cid, id, "creada", por, folio)
   if (!is.na(provision_id)) .req_historial(cid, id, "ligada", por, provision_id)
   # After the write is in S3 (T62); a notice failing never fails the action.
@@ -395,7 +463,7 @@ requisicion_crear <- function(client_id, datos, por) {
 
 # cambios: any of titulo, empresa, proveedor, monto, moneda, notas, prioridad,
 # carpeta_id. Other names are ignored. Paid or trashed requisitions refuse.
-requisicion_editar <- function(client_id, id, cambios, por) {
+requisicion_editar <- function(client_id, id, cambios, por, home = NULL) {
   cid <- .req_cid(client_id)
   actual <- .req_editable(cid, id)
   cambios <- as.list(cambios)
@@ -428,12 +496,13 @@ requisicion_editar <- function(client_id, id, cambios, por) {
     if (length(cambiados)) { df$actualizado_por[i] <- por; df$actualizado[i] <- ahora }
     df
   })
+  if (length(cambiados)) .req_log(cid, "editar_requisicion", por, id, paste(cambiados, collapse = ","), home)
   if (length(cambiados)) .req_historial(cid, id, "editada", por, paste(cambiados, collapse = ","))
   invisible(length(cambiados) > 0L)
 }
 
 # "Mover a carpeta…" on several rows; carpeta_id NA = no folder.
-requisiciones_mover <- function(client_id, ids, carpeta_id, por) {
+requisiciones_mover <- function(client_id, ids, carpeta_id, por, home = NULL) {
   cid <- .req_cid(client_id)
   carpeta_id <- .req_txt(carpeta_id)
   empresas <- .req_empresas(cid)
@@ -455,6 +524,7 @@ requisiciones_mover <- function(client_id, ids, carpeta_id, por) {
     movidas <<- df$id[i]
     df
   })
+  .req_log(cid, "mover_requisiciones", por, movidas, carpeta_id, home)
   .req_historial(cid, movidas, "movida", por, carpeta_id)
   invisible(movidas)
 }
@@ -470,7 +540,7 @@ requisiciones_puede_papelera <- function(usuario, filas) {
 }
 
 # Trash is a mark: the row, its evidence and comments stay.
-requisiciones_papelera <- function(client_id, ids, por) {
+requisiciones_papelera <- function(client_id, ids, por, home = NULL) {
   cid <- .req_cid(client_id); ahora <- .req_ahora(); hechas <- character()
   .req_modificar("requisiciones", cid, function(df) {
     i <- which(df$id %in% ids & is.na(df$papelera_en))
@@ -478,12 +548,13 @@ requisiciones_papelera <- function(client_id, ids, por) {
     hechas <<- df$id[i]
     df
   })
+  .req_log(cid, "papelera_requisiciones", por, hechas, home = home)
   h <- .req_historial(cid, hechas, "papelera", por)
   .req_publicar_evento(cid, hechas, h, "papelera", por)   # after the write (T62)
   invisible(hechas)
 }
 
-requisiciones_restaurar <- function(client_id, ids, por) {
+requisiciones_restaurar <- function(client_id, ids, por, home = NULL) {
   cid <- .req_cid(client_id); hechas <- character()
   .req_modificar("requisiciones", cid, function(df) {
     i <- which(df$id %in% ids & !is.na(df$papelera_en))
@@ -491,6 +562,7 @@ requisiciones_restaurar <- function(client_id, ids, por) {
     hechas <<- df$id[i]
     df
   })
+  .req_log(cid, "restaurar_requisiciones", por, hechas, home = home)
   h <- .req_historial(cid, hechas, "restaurada", por)
   .req_publicar_evento(cid, hechas, h, "restaurada", por)   # after the write (T62)
   invisible(hechas)
@@ -507,7 +579,7 @@ requisiciones_restaurar <- function(client_id, ids, por) {
 
 # After "Crear provisión" saves: link the new provision. Refused if the
 # requisition already has a live provision or another requisition holds it.
-requisicion_ligar_provision <- function(client_id, id, provision_id, por) {
+requisicion_ligar_provision <- function(client_id, id, provision_id, por, home = NULL) {
   cid <- .req_cid(client_id)
   provision_id <- .req_txt(provision_id)
   if (is.na(provision_id)) .req_error("requisiciones.error.provision_no_existe")
@@ -526,6 +598,7 @@ requisicion_ligar_provision <- function(client_id, id, provision_id, por) {
     df$actualizado_por[i] <- por; df$actualizado[i] <- ahora
     df
   })
+  .req_log(cid, "ligar_provision", por, id, provision_id, home)
   .req_historial(cid, id, "ligada", por, provision_id)
   invisible(TRUE)
 }
@@ -710,7 +783,7 @@ requisiciones_carpetas_visibles <- function(arbol, activas, existentes = NULL) {
 
 # datos: list(nombre, color, presupuesto, moneda, empresas, padre_id).
 # Returns the id. Every check runs on the freshly read table.
-requisiciones_carpeta_crear <- function(client_id, datos, por) {
+requisiciones_carpeta_crear <- function(client_id, datos, por, home = NULL) {
   cid <- .req_cid(client_id)
   datos <- as.list(datos)
   v <- .req_carpeta_validar(datos)
@@ -726,13 +799,14 @@ requisiciones_carpeta_crear <- function(client_id, datos, por) {
       creado_por = por, creado = ahora, movido_por = NA_character_, movido = as.POSIXct(NA, tz = "UTC"),
       papelera_por = NA_character_, papelera_en = as.POSIXct(NA, tz = "UTC")))
   })
+  .req_log(cid, "crear_carpeta", por, id, v$nombre, home)
   id
 }
 
 # cambios: any of nombre, color, presupuesto, moneda, empresas, padre_id
 # (padre_id present = move it there; NA = top level). Moving touches no
 # requisition: what is inside goes along.
-requisiciones_carpeta_editar <- function(client_id, id, cambios, por) {
+requisiciones_carpeta_editar <- function(client_id, id, cambios, por, home = NULL) {
   cid <- .req_cid(client_id)
   cambios <- as.list(cambios)
   mueve <- "padre_id" %in% names(cambios)
@@ -754,6 +828,7 @@ requisiciones_carpeta_editar <- function(client_id, id, cambios, por) {
     if (se_mueve) { df$padre_id[i] <- padre; df$movido_por[i] <- por; df$movido[i] <- ahora }
     df
   })
+  .req_log(cid, "editar_carpeta", por, id, paste(names(cambios), collapse = ","), home)
   invisible(TRUE)
 }
 
@@ -761,7 +836,7 @@ requisiciones_carpeta_editar <- function(client_id, id, cambios, por) {
 # go to the trash (Luis, 2026-11-04): they must be moved or trashed first.
 # Trashed and paid ones do not count. Only this folder is marked; what is
 # under it is hidden with it and comes back with it.
-requisiciones_carpeta_papelera <- function(client_id, id, por) {
+requisiciones_carpeta_papelera <- function(client_id, id, por, home = NULL) {
   cid <- .req_cid(client_id)
   reqs <- .req_leer("requisiciones", cid)
   vivas <- reqs[!is.na(reqs$carpeta_id) & is.na(reqs$papelera_en), , drop = FALSE]
@@ -774,12 +849,13 @@ requisiciones_carpeta_papelera <- function(client_id, id, por) {
     if (is.na(df$papelera_en[i])) { df$papelera_por[i] <- por; df$papelera_en[i] <- ahora }
     df
   })
+  .req_log(cid, "papelera_carpeta", por, id, home = home)
   invisible(TRUE)
 }
 
 # Back with everything under it. If its parent is still in the trash it goes
 # under the nearest live ancestor (or to the top), in the same write.
-requisiciones_carpeta_restaurar <- function(client_id, id, por) {
+requisiciones_carpeta_restaurar <- function(client_id, id, por, home = NULL) {
   cid <- .req_cid(client_id)
   ahora <- .req_ahora()
   .req_modificar("carpetas", cid, function(df) {
@@ -792,6 +868,7 @@ requisiciones_carpeta_restaurar <- function(client_id, id, por) {
     if (!identical(p, antes)) { df$padre_id[i] <- p; df$movido_por[i] <- por; df$movido[i] <- ahora }
     df
   })
+  .req_log(cid, "restaurar_carpeta", por, id, home = home)
   invisible(TRUE)
 }
 
@@ -970,7 +1047,7 @@ req_publicar_pagos <- function(client_id, confirmacion_ids, por) {
 # (avisos_personales(): the requisition's creator and everyone who commented
 # before, never the author). Returns list(id, aviso_ok): the comment is saved
 # even if the notice fails.
-requisicion_comentar <- function(client_id, requisicion_id, texto, por) {
+requisicion_comentar <- function(client_id, requisicion_id, texto, por, home = NULL) {
   cid <- .req_cid(client_id)
   t <- if (is.null(texto) || !length(texto) || is.na(texto[[1]])) "" else as.character(texto[[1]])
   t <- trimws(gsub("[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F]", "", t))
@@ -982,6 +1059,7 @@ requisicion_comentar <- function(client_id, requisicion_id, texto, por) {
     dplyr::bind_rows(df, tibble::tibble(id = id, requisicion_id = requisicion_id,
                                         autor = por, creado = ahora, texto = t))
   })
+  .req_log(cid, "comentar_requisicion", por, requisicion_id, id, home)
   tryCatch(requisiciones_marcar_leido(cid, requisicion_id, por, hasta = ahora),
            error = function(e) message("[requisiciones] marca de leído falló: ", conditionMessage(e)))
   .req_historial(cid, requisicion_id, "comentario", por, id)
@@ -1027,7 +1105,7 @@ requisiciones_marcar_leido <- function(client_id, requisicion_id, usuario, hasta
 # preparado: the result of adjunto_preparar() (R/adjuntos_s3.R). The bytes go
 # to S3 first under a server-made key; the row is added only once they are
 # there. Returns the evidence id.
-evidencia_adjuntar <- function(client_id, requisicion_id, preparado, por) {
+evidencia_adjuntar <- function(client_id, requisicion_id, preparado, por, home = NULL) {
   cid <- .req_cid(client_id)
   .req_editable(cid, requisicion_id)
   if (.req_evid_vivas(.req_leer("evidencia", cid), requisicion_id, "adjunto") >= ADJ_MAX_POR_REQ)
@@ -1045,13 +1123,14 @@ evidencia_adjuntar <- function(client_id, requisicion_id, preparado, por) {
       tamano = as.numeric(preparado$tamano), ancho = as.integer(preparado$ancho),
       alto = as.integer(preparado$alto), llave = llave, creado_por = por, creado = ahora))
   })
+  .req_log(cid, "adjuntar_evidencia", por, requisicion_id, id, home)
   .req_historial(cid, requisicion_id, "evidencia", por, id)
   id
 }
 
 # preparada: the result of tabla_pegada_preparar(), after the preview.
 # encabezado: what the user left on the "first row is header" switch.
-evidencia_tabla_agregar <- function(client_id, requisicion_id, preparada, titulo, encabezado, por) {
+evidencia_tabla_agregar <- function(client_id, requisicion_id, preparada, titulo, encabezado, por, home = NULL) {
   cid <- .req_cid(client_id)
   .req_editable(cid, requisicion_id)
   t <- .req_txt(titulo)
@@ -1078,6 +1157,7 @@ evidencia_tabla_agregar <- function(client_id, requisicion_id, preparada, titulo
       filas_pegadas = as.integer(preparada$filas_pegadas), columnas_pegadas = as.integer(preparada$columnas_pegadas),
       encabezado = isTRUE(encabezado), creado_por = por, creado = ahora))
   })
+  .req_log(cid, "agregar_tabla_evidencia", por, requisicion_id, id, home)
   .req_historial(cid, requisicion_id, "evidencia", por, id)
   id
 }
@@ -1090,7 +1170,7 @@ requisicion_evidencia <- function(client_id, requisicion_id, incluir_papelera = 
 }
 
 # Removing evidence sends it to the trash; the S3 object stays.
-evidencia_papelera <- function(client_id, evid_id, por) {
+evidencia_papelera <- function(client_id, evid_id, por, home = NULL) {
   cid <- .req_cid(client_id)
   ev <- .req_leer("evidencia", cid)
   fila <- ev[.req_fila(ev, evid_id), , drop = FALSE]
@@ -1100,11 +1180,12 @@ evidencia_papelera <- function(client_id, evid_id, por) {
     if (is.na(df$papelera_en[i])) { df$papelera_por[i] <- por; df$papelera_en[i] <- .req_ahora() }
     df
   })
+  .req_log(cid, "papelera_evidencia", por, fila$requisicion_id, evid_id, home)
   .req_historial(cid, fila$requisicion_id, "evidencia_papelera", por, evid_id)
   invisible(TRUE)
 }
 
-evidencia_restaurar <- function(client_id, evid_id, por) {
+evidencia_restaurar <- function(client_id, evid_id, por, home = NULL) {
   cid <- .req_cid(client_id)
   ev <- .req_leer("evidencia", cid)
   fila <- ev[.req_fila(ev, evid_id), , drop = FALSE]
@@ -1119,6 +1200,7 @@ evidencia_restaurar <- function(client_id, evid_id, por) {
     df$papelera_por[i] <- NA_character_; df$papelera_en[i] <- as.POSIXct(NA, tz = "UTC")
     df
   })
+  .req_log(cid, "restaurar_evidencia", por, fila$requisicion_id, evid_id, home)
   .req_historial(cid, fila$requisicion_id, "evidencia_restaurada", por, evid_id)
   invisible(TRUE)
 }
@@ -1504,7 +1586,7 @@ provisiones_para_evidencia <- function(client_id) {
 # One requisition per provision chosen, as if created from the tab: title
 # from the provision's reference (or its counterpart), linked from birth.
 # Returns the ids created; stops at the first failure (those before it stay).
-requisiciones_desde_provisiones <- function(client_id, provision_ids, carpeta_id, por) {
+requisiciones_desde_provisiones <- function(client_id, provision_ids, carpeta_id, por, home = NULL) {
   cid <- .req_cid(client_id)
   disp <- provisiones_para_evidencia(cid)
   disp <- disp[disp$id %in% provision_ids, , drop = FALSE]
@@ -1518,7 +1600,7 @@ requisiciones_desde_provisiones <- function(client_id, provision_ids, carpeta_id
     if (is.na(titulo)) titulo <- p$id
     r <- requisicion_crear(cid, list(
       titulo = substr(titulo, 1L, REQ_MAX_TITULO), empresa = p$empresa, proveedor = p$parte,
-      monto = p$monto, moneda = p$moneda, carpeta_id = carpeta_id, provision_id = p$id), por)
+      monto = p$monto, moneda = p$moneda, carpeta_id = carpeta_id, provision_id = p$id), por, home = home)
     creadas <- c(creadas, r$id)
   }
   creadas
