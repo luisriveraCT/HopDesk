@@ -183,7 +183,11 @@ HD_ARCHIVOS_SIN_PESTANA <- c("tiers_module.R", "empresas_module.R", "proveedores
 
 # TRUE when `tabla`'s data may travel to a session of `tier`. Never throws:
 # a table it cannot classify, for a tier with a tab list, does not travel.
+# An unknown tier (NULL, "", one not in the registry -- the session's start,
+# before its user is known) gets NOTHING: fail closed. The caller reads the
+# tier inside its observer, so the table goes out once the tier arrives.
 nivel_tabla_permitida <- function(tier, tabla) {
+  if (!.nivel_conocido(tier)) return(FALSE)
   lista <- tryCatch(nivel_pestanas(tier), error = function(e) NULL)
   if (is.null(lista)) return(TRUE)
   arch <- tryCatch(hd_registro[[tabla]]$archivo, error = function(e) NULL)
@@ -193,6 +197,17 @@ nivel_tabla_permitida <- function(tier, tabla) {
   }
   arch[1] %in% unlist(HD_PESTANA_ARCHIVOS[lista], use.names = FALSE)
 }
+
+# TRUE when a session of `tier` may receive what tab `tab` pushes on its own
+# (the Agenda's badges). Same rule: unknown tier = no; no list = every tab.
+nivel_pestana_permitida <- function(tier, tab) {
+  if (!.nivel_conocido(tier)) return(FALSE)
+  lista <- tryCatch(nivel_pestanas(tier), error = function(e) NULL)
+  is.null(lista) || tab %in% lista
+}
+
+.nivel_conocido <- function(tier)
+  is.character(tier) && length(tier) == 1L && !is.na(tier) && nzchar(tier) && es_nivel(tier)
 
 # NULL = the tier switches between Cobros and Pagos freely.
 nivel_calendario <- function(tier) .nivel(tier)$calendario

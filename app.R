@@ -1440,10 +1440,8 @@ server <- function(input, output, session) {
   session$userData$hd_tabla_permitida <- function(tabla) nivel_tabla_permitida(tier_efectivo(), tabla)
   # The same rule for a whole tab, for modules that push something of their
   # own without a bound output (the Agenda's badges).
-  session$userData$hd_pestana_permitida <- function(tab) {
-    lista <- nivel_pestanas(tier_efectivo())
-    is.null(lista) || tab %in% lista
-  }
+  # Both fail closed while the tier is not known yet (the session's start).
+  session$userData$hd_pestana_permitida <- function(tab) nivel_pestana_permitida(tier_efectivo(), tab)
 
   # Bumped by the Usuarios screen after saving permissions or tier config.
   permisos_version <- reactiveVal(0L)

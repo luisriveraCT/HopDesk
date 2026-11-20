@@ -50,7 +50,16 @@ test_that("a tier without a tab list gets every table, as before", {
   expect_false(is.na(TOTAL))
   for (t in c("agenda_pagos", "vencidos", "requisiciones", "no_registrada"))
     expect_true(nivel_tabla_permitida(TOTAL, t), info = t)
-  expect_true(nivel_tabla_permitida(NULL, "agenda_pagos"))   # no tier yet: the old behaviour
+})
+
+test_that("an unknown tier gets nothing (fail closed): NULL, empty, NA, not in the registry", {
+  for (t in list(NULL, "", NA_character_, "no_es_nivel", c("finance", "compras")))
+    expect_false(nivel_tabla_permitida(t, "requisiciones"), info = paste(t, collapse = ","))
+  expect_false(nivel_pestana_permitida(NULL, "PH"))
+  expect_false(nivel_pestana_permitida("", "PAN"))
+  expect_true(nivel_pestana_permitida(TOTAL, "PH"))
+  expect_false(nivel_pestana_permitida(COMPRAS, "PH"))
+  expect_true(nivel_pestana_permitida(COMPRAS, "REQ"))
 })
 
 # ── 3. Every registered table is classified ─────────────────────────────────
@@ -93,6 +102,22 @@ test_that("a full tier, or no gate at all (old fixtures): every table sends, as 
   expect_true("hdt-datos" %in% envios("agenda_pagos", NULL))
 })
 
+test_that("tier not known yet: nothing travels; when a full tier arrives, the table goes out", {
+  nivel <- reactiveVal("")
+  msgs <- list()
+  testServer(function(input, output, session) {
+    session$userData$hd_tabla_permitida <- function(tabla) nivel_tabla_permitida(nivel(), tabla)
+    hd_table_server("tab", tabla = "agenda_pagos", datos = reactive(filas), columnas = cols)
+  }, {
+    session$sendCustomMessage <- function(type, message) msgs[[length(msgs) + 1L]] <<- list(type = type, message = message)
+    session$flushReact()
+    expect_false("hdt-datos" %in% vapply(msgs, function(m) m$type, character(1)))
+    nivel(TOTAL)
+    session$flushReact()
+    expect_true("hdt-datos" %in% vapply(msgs, function(m) m$type, character(1)))
+  })
+})
+
 test_that("a gate that fails counts as no (never sends, never stops the session)", {
   expect_false("hdt-datos" %in% suppressMessages(envios("agenda_pagos", function(tabla) stop("boom"))))
 })
@@ -103,7 +128,8 @@ app <- codigo(Sys.getenv("HD_APP_R", "app.R"))
 test_that("app.R sets the gates from the effective tier", {
   expect_true(any(grepl("session$userData$hd_tabla_permitida <- function(tabla) nivel_tabla_permitida(tier_efectivo(), tabla)",
                         app, fixed = TRUE)))
-  expect_true(any(grepl("session$userData$hd_pestana_permitida <- function(tab)", app, fixed = TRUE)))
+  expect_true(any(grepl("session$userData$hd_pestana_permitida <- function(tab) nivel_pestana_permitida(tier_efectivo(), tab)",
+                        app, fixed = TRUE)))
 })
 test_that("app.R removes the other tabs for a client tier with a list, never for staff", {
   i <- grep(".tabs_quitadas <- FALSE", app, fixed = TRUE)[1]
