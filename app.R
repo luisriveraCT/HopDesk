@@ -1558,6 +1558,12 @@ server <- function(input, output, session) {
   # without a client_id -- the process's (hd-admin's) group name and logo -- and,
   # since nothing reloaded it for a native client, kept it for the whole session.
   group_config_rv <- reactiveVal(.schema_group_config())
+  # CM38: labels of the tables that could not be read on the last client jump
+  # (the context-switch observer below). Their reactive holds an empty copy,
+  # never the previous client's; the saves that still write the session's
+  # copy (alias map, policy catalog) refuse while their label is here. Emptied
+  # at the start of every jump; a page reload starts clean.
+  ctx_no_cargadas <- reactiveVal(character())
 
   # ── Requisiciones ↔ Calendario / Pasivos / historial (E3b) ────────────────
   # The tabs that show the evidence clip start before requisicionesServer(),
@@ -1643,6 +1649,7 @@ server <- function(input, output, session) {
       AP = reactive(input$ic_mode %||% "exclude")
     ),
     group_config   = group_config_rv,
+    ctx_no_cargadas = ctx_no_cargadas,   # CM38: tables not read on the last client jump
     group_name     = reactive({ group_config_rv()$group_name %||% "" }),
     group_logo_raw = reactive({ group_config_rv()$logo_raw }),
     group_logo_ext = reactive({ group_config_rv()$logo_ext %||% "png" }),
@@ -2583,10 +2590,12 @@ server <- function(input, output, session) {
   .load_sap_snapshot_for_client <- function(ledger, client_id) {
     key      <- if (toupper(ledger) == "AR") S3_KEYS_CRITICAL$sap_snap_ar else S3_KEYS_CRITICAL$sap_snap_ap
     full_key <- paste0(tolower(client_id), "/", key)
-    tryCatch(
-      aws.s3::s3readRDS(object = full_key, bucket = .s3_bucket()),
-      error = function(e) NULL
-    )
+    # CM38: a snapshot that is not there is NULL (the client has no SAP data);
+    # one that is there but cannot be read stop()s, so the jump says so
+    # instead of showing "no data".
+    existe <- suppressMessages(aws.s3::object_exists(object = full_key, bucket = .s3_bucket()))
+    if (!isTRUE(existe)) return(NULL)
+    aws.s3::s3readRDS(object = full_key, bucket = .s3_bucket())
   }
 
   # ── Stage 4.4 / Stage 2 Part A: context-switch reload ─────────────────────────
@@ -2602,17 +2611,39 @@ server <- function(input, output, session) {
 
     message(sprintf("[CTX] Switching to client context '%s'", effective_cid))
 
-    .ctx_load <- function(fn, rv, label) {
+    # CM38: this jump starts with nothing marked as not read.
+    ctx_no_cargadas(character())
+
+    # This observer only runs on a jump, so a failed read here is always a
+    # read for the NEW client. It never keeps the previous client's value
+    # (CM38: that showed client A's data under client B, and the saves that
+    # still write the session's copy would have written it into B): the
+    # reactive gets an empty copy -- `vacio`, or the current table with no
+    # rows (its columns, so every reader still works), or NULL -- and the
+    # label goes to ctx_no_cargadas(). One notice for the whole jump, below.
+    .ctx_load <- function(fn, rv, label, vacio = NULL) {
       errored <- FALSE
       result  <- tryCatch(fn(client_id = effective_cid), error = function(e) {
         message(sprintf("[CTX]   %s WARN: %s", label, e$message))
         errored <<- TRUE
         NULL
       })
-      if (!errored) {
+      if (errored) {
+        actual <- isolate(rv())
+        rv(if (!is.null(vacio)) vacio else if (is.data.frame(actual)) actual[0, , drop = FALSE] else NULL)
+        ctx_no_cargadas(union(isolate(ctx_no_cargadas()), label))
+      } else {
         rv(result)   # NULL = client has no data — clears previous client's reactive
         message(sprintf("[CTX]   %s OK", label))
       }
+    }
+    # Some loaders turn a failed read into an empty table (empresas, group
+    # config, policy catalog, alias map): on a jump they are read strictly
+    # first (.s3_leer_para_escribir: NULL when the file is not there, stop()
+    # when it cannot be read), so a failure counts as one (CM38).
+    .estricto <- function(key, fn) function(client_id) {
+      .s3_leer_para_escribir(key, client_id)
+      fn(client_id = client_id)
     }
 
     .ctx_load(load_bancos_confirmados,            bancos_confirmados_db,               "bancos_confirmados")
@@ -2620,7 +2651,7 @@ server <- function(input, output, session) {
     .ctx_load(function(client_id) load_bancos_movimientos(include_deleted = TRUE, client_id = client_id),
                                                   bancos_movimientos_db,               "bancos_movimientos")
     .ctx_load(load_proveedores,                   proveedores_db,                      "proveedores")
-    .ctx_load(load_empresas,                      empresas_db,                         "empresas")
+    .ctx_load(.estricto(S3_KEYS$empresas, load_empresas), empresas_db,               "empresas")
     .ctx_load(load_grupos,                        grupos_db,                           "grupos")
     .ctx_load(load_pasivos_provisions,            pasivos_provisions_db,               "pasivos_provisions")
     .ctx_load(load_pasivos_liabilities,           pasivos_liabilities_db,              "pasivos_liabilities")
@@ -2628,13 +2659,13 @@ server <- function(input, output, session) {
     .ctx_load(load_notes,                         notes_df,                            "notes")
     .ctx_load(load_tags,                          tags_db,                             "tags")
     .ctx_load(load_moves,                         moves_db,                            "moves")
-    .ctx_load(load_policy_catalog,                policy_catalog_db,                   "policy_catalog")
+    .ctx_load(.estricto(S3_KEYS$policy_catalog, load_policy_catalog), policy_catalog_db, "policy_catalog")
     .ctx_load(load_forecasting_series_observations, forecasting_series_observations_db,"forecasting_obs")
     .ctx_load(load_forecasting_metrics,           forecasting_metrics_db,              "forecasting_metrics")
     .ctx_load(load_forecasting_subscriptions,     forecasting_subscriptions_db,        "forecasting_subs")
     .ctx_load(load_forecasting_manual_curves,     forecasting_manual_curves_db,        "forecasting_curves")
     .ctx_load(load_conciliacion,                  conciliacion_rv,                     "conciliacion")
-    .ctx_load(load_parte_alias_map,               parte_alias_map_db,                  "parte_alias_map")
+    .ctx_load(.estricto(S3_KEYS$parte_alias_map, load_parte_alias_map), parte_alias_map_db, "parte_alias_map")
     .ctx_load(load_manual,                        manual_inv,                          "manual_inv")
     .ctx_load(load_abonos,                        abonos_db,                           "abonos")
     .ctx_load(load_sap_overrides,                 sap_ov_db,                           "sap_overrides")
@@ -2676,12 +2707,20 @@ server <- function(input, output, session) {
       interco_v2(result %||% list(ar_prefix = "C", ap_prefix = "P", rfcs = character(), companies = list()))
       message("[CTX]   interco_v2 OK")
     })
-    .ctx_load(load_group_config,                  group_config_rv,                     "group_config")
+    .ctx_load(.estricto(S3_KEYS$group_config, load_group_config), group_config_rv,   "group_config",
+              vacio = .schema_group_config())
 
     # Load SAP snapshots from jumped client — always overwrite so jumping to an
     # empty client clears the calendar (no guard: NULL = no data for this client).
-    snap_ar  <- .load_sap_snapshot_for_client("AR", effective_cid)
-    snap_ap  <- .load_sap_snapshot_for_client("AP", effective_cid)
+    # CM38: one that exists but cannot be read is NULL too (never the previous
+    # client's) and is marked as not read.
+    .ctx_snap <- function(ledger) tryCatch(.load_sap_snapshot_for_client(ledger, effective_cid), error = function(e) {
+      message(sprintf("[CTX]   sap_%s WARN: %s", tolower(ledger), conditionMessage(e)))
+      ctx_no_cargadas(union(isolate(ctx_no_cargadas()), paste0("sap_", tolower(ledger))))
+      NULL
+    })
+    snap_ar  <- .ctx_snap("AR")
+    snap_ap  <- .ctx_snap("AP")
     new_snap <- list(
       AR = if (!is.null(snap_ar)) snap_ar$data else NULL,
       AP = if (!is.null(snap_ap)) snap_ap$data else NULL
@@ -2701,6 +2740,21 @@ server <- function(input, output, session) {
       .sap_cache_set(effective_cid, new_snap$AR, new_snap$AP)
     message(sprintf("[CTX]   sap_data OK (AR=%d AP=%d rows)",
                     nrow(new_snap$AR %||% data.frame()), nrow(new_snap$AP %||% data.frame())))
+
+    # CM38: one notice for every table this jump could not read, and a log
+    # line with their labels (table keys, never their content).
+    local({
+      fallidas <- isolate(ctx_no_cargadas())
+      if (length(fallidas)) {
+        showNotification(tr_n("comun.ctx.no_cargado", length(fallidas)), type = "error", duration = 15)
+        tryCatch(log_action(user = current_user() %||% "unknown", module = "clientes",
+                            action = "ctx_load_fallido",
+                            description = paste(fallidas, collapse = ", "),
+                            target_id = effective_cid, s3_key = NA_character_,
+                            client_id = effective_cid),
+                 error = function(e) message("[CTX]   ctx_load_fallido not logged: ", conditionMessage(e)))
+      }
+    })
 
     # Dual audit log — only when jumping TO another client, not when resetting home
     if (!is.null(jcid)) {
