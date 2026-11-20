@@ -614,6 +614,9 @@ tema_head <- function() {
                          href = paste0("hd_temas.css?v=", HD_TEMAS_CSS_VERSION)),
     htmltools::tags$link(rel = "stylesheet", type = "text/css",
                          href = paste0("hd_clasico_legado.css?v=", HD_TEMAS_CSS_VERSION)),
+    # The Bootstrap bridge: rules only under themes with puente = TRUE.
+    htmltools::tags$link(rel = "stylesheet", type = "text/css",
+                         href = paste0("hd_tema_bootstrap.css?v=", HD_TEMAS_CSS_VERSION)),
     htmltools::tags$script(htmltools::HTML(paste0(
       "document.documentElement.setAttribute('data-hd-tema','", HD_TEMA_OMISION, "');")))
   )

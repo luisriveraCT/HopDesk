@@ -318,6 +318,9 @@ con_puente <- names(tema$HD_TEMAS)[vapply(tema$HD_TEMAS, function(x) isTRUE(x$pu
 ok("every theme says whether it has a bridge; Clásico has none",
    all(vapply(tema$HD_TEMAS, function(x) is.logical(x$puente) && length(x$puente) == 1L && !is.na(x$puente), logical(1))) &&
      identical(tema$HD_TEMAS$clasico$puente, FALSE) && length(con_puente) > 0L)
+ok("tema_head() links the bridge, after the tokens it points at",
+   grepl("hd_tema_bootstrap.css?v=", cab, fixed = TRUE) &&
+     regexpr("hd_temas.css?v=", cab, fixed = TRUE) < regexpr("hd_tema_bootstrap.css?v=", cab, fixed = TRUE))
 ok("www/hd_tema_bootstrap.css is what scripts/generar_temas_css.R generates",
    identical(sin_fin(leer("www/hd_tema_bootstrap.css")), sin_fin(tema$tema_puente_css())))
 puente <- leer("www/hd_tema_bootstrap.css")
