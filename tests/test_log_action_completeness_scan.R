@@ -355,6 +355,230 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
      nrow(gaps_actionable) == 0L)
 }
 
+# ═════════════════════════════════════════════════════════════════════════════
+# T72 (A5): the path. The scan above only counted save_*()/bump_sync_version()
+# as writes and only asked whether a log call appeared ANYWHERE in the block:
+# Requisiciones (.req_modificar -> modificar_tabla), Panorama (prefs_guardar)
+# and every modificar_*() went unseen, and a block that logged in one branch
+# but returned early in another after saving (the Pasivos wizard, 0
+# provisions) passed. This part walks each handler's statements in order,
+# each if-branch on its own (a function definition inside is not entered):
+# after a write, a return() -- or the end of the block -- reached without a
+# log call is a hole.
+#   - writes: save_*, modificar_*, modificar_tabla, .req_modificar, .s3_write,
+#     .s3_modificar, prefs_guardar, bump_sync_version
+#   - logs:   log_action, pasivos_log_audit, .req_log
+#   - base writers (their callers log; pasivos_log_audit is the logger
+#     itself, its log_action goes first since A1): save_*, modificar_*, .s3_*, load_*,
+#     .audit_*, .req_modificar, .req_historial, upsert_*, add_to_*, .save_*,
+#     leer_*, prefs_guardar -- not checked themselves.
+# It cannot tell a write that FAILED from one that worked (an early return
+# after a failed save is fine, though a *_fallido entry is better), so the
+# holes found on 2026-11-20 are a frozen list, DEUDA_CAMINO: a hole not in it
+# fails (new code that writes and leaves without a log), and an entry that is
+# no longer a hole fails too (take it out: the list only goes down).
+# ═════════════════════════════════════════════════════════════════════════════
+`%||%` <- function(a, b) if (is.null(a) || !length(a) || is.na(a[1])) b else a
+.ESCRITURA_T72 <- "^(save_[A-Za-z0-9_.]+|modificar_[A-Za-z0-9_.]+|modificar_tabla|\\.req_modificar|\\.s3_write|\\.s3_modificar|prefs_guardar|bump_sync_version)$"
+.REGISTRO_T72  <- c("log_action", "pasivos_log_audit", ".req_log")
+.BASE_T72      <- "^(save_|modificar_|\\.s3_|\\.req_modificar$|\\.req_historial$|\\.audit_|leer_|upsert_|add_to_|load_|prefs_guardar$|\\.save_|pasivos_log_audit$)"
+
+.t72_nombre <- function(e) {
+  f <- e[[1]]
+  if (is.name(f)) return(as.character(f))
+  if (is.call(f) && identical(f[[1]], as.name("::")) && length(f) == 3L) return(as.character(f[[3]]))
+  ""
+}
+.t72_contiene <- function(e, pat = NULL, nombres = NULL) {
+  if (!is.call(e) || identical(e[[1]], as.name("function"))) return(FALSE)
+  n <- .t72_nombre(e)
+  if ((!is.null(pat) && grepl(pat, n)) || (!is.null(nombres) && n %in% nombres)) return(TRUE)
+  for (i in seq_along(as.list(e))) if (is.call(e[[i]]) && .t72_contiene(e[[i]], pat, nombres)) return(TRUE)
+  FALSE
+}
+.t72_bloque <- function(x) {
+  if (is.call(x) && identical(x[[1]], as.name("{"))) {
+    b <- as.list(x)[-1]; sr <- attr(x, "srcref"); if (!is.null(sr)) attr(b, "srcref") <- sr[-1]; b
+  } else list(x)
+}
+# estado: "limpio" | "escrito" | "registrado" | "fin"; huecos: lines.
+.t72_camino <- function(sts, estado, ln0) {
+  huecos <- integer()
+  for (k in seq_along(sts)) {
+    st <- sts[[k]]
+    ln <- tryCatch(attr(sts, "srcref")[[k]][1], error = function(e) NULL) %||% ln0
+    if (!is.call(st)) next
+    n <- .t72_nombre(st)
+    if (n == "{") { r <- .t72_camino(.t72_bloque(st), estado, ln); huecos <- c(huecos, r$huecos); estado <- r$estado; if (estado == "fin") break; next }
+    if (n == "if") {
+      if (.t72_contiene(st[[2]], .ESCRITURA_T72)) estado <- "escrito"
+      fin <- character()
+      for (rama in list(st[[3]], if (length(st) >= 4) st[[4]] else NULL)) {
+        if (is.null(rama)) { fin <- c(fin, estado); next }
+        r <- .t72_camino(.t72_bloque(rama), estado, ln); huecos <- c(huecos, r$huecos); fin <- c(fin, r$estado)
+      }
+      vivos <- fin[fin != "fin"]
+      estado <- if (!length(vivos)) "fin" else if (any(vivos == "escrito")) "escrito" else if (any(vivos == "registrado")) "registrado" else vivos[1]
+      if (estado == "fin") break
+      next
+    }
+    if (n == "return") {
+      if (length(st) >= 2 && .t72_contiene(st[[2]], .ESCRITURA_T72) && !.t72_contiene(st[[2]], nombres = .REGISTRO_T72)) estado <- "escrito"
+      if (estado == "escrito") huecos <- c(huecos, ln)
+      estado <- "fin"; break
+    }
+    if (.t72_contiene(st, nombres = .REGISTRO_T72)) estado <- "registrado"
+    else if (.t72_contiene(st, .ESCRITURA_T72)) estado <- "escrito"
+  }
+  list(estado = estado, huecos = huecos)
+}
+.t72_cuerpo <- function(cuerpo, ln) {
+  if (!.t72_contiene(cuerpo, .ESCRITURA_T72)) return(integer())
+  r <- .t72_camino(.t72_bloque(cuerpo), "limpio", ln)
+  c(r$huecos, if (identical(r$estado, "escrito")) -1L)        # -1: the block ends without a log
+}
+escanear_camino <- function(f) {
+  ex <- tryCatch(parse(f, keep.source = TRUE), error = function(e) NULL)
+  if (is.null(ex)) return(data.frame())
+  out <- list()
+  rec <- function(e, ln) {
+    if (!is.call(e)) return()
+    if (.t72_nombre(e) == "observeEvent" && length(e) >= 3) {
+      h <- .t72_cuerpo(e[[3]], ln)
+      if (length(h)) out[[length(out) + 1L]] <<- data.frame(file = f, label = paste(deparse(e[[2]])[1]),
+                                                            huecos = paste(h, collapse = ","), stringsAsFactors = FALSE)
+    }
+    for (i in seq_along(as.list(e))) if (is.call(e[[i]])) rec(e[[i]], ln)
+  }
+  sr <- attr(ex, "srcref")
+  for (i in seq_along(ex)) {
+    e <- ex[[i]]; ln <- sr[[i]][1]
+    if (is.call(e) && as.character(e[[1]])[1] %in% c("<-", "=") && is.name(e[[2]]) && is.call(e[[3]]) &&
+        identical(e[[3]][[1]], as.name("function"))) {
+      nm <- as.character(e[[2]])
+      if (!grepl(.BASE_T72, nm) && !.t72_contiene(e[[3]][[3]], nombres = "observeEvent")) {
+        h <- .t72_cuerpo(e[[3]][[3]], ln)
+        if (length(h)) out[[length(out) + 1L]] <- data.frame(file = f, label = nm, huecos = paste(h, collapse = ","),
+                                                             stringsAsFactors = FALSE)
+      }
+    }
+    rec(e, ln)
+  }
+  if (length(out)) do.call(rbind, out) else data.frame()
+}
+
+# The scanner on synthetic handlers first.
+{
+  fx <- function(lineas) { f <- tempfile(fileext = ".R"); writeLines(lineas, f); r <- escanear_camino(f); unlink(f); r }
+  r <- fx(c('h <- function(x) {', '  modificar_tabla("k", cid, s, function(df) df)', '  log_action(user = "u", module = "m", action = "a", description = "d")', '}'))
+  ok("T72 camino: write then log -> no hole", !nrow(r))
+  r <- fx(c('h <- function(x) {', '  .req_modificar("carpetas", cid, function(df) df)', '}'))
+  ok("T72 camino: .req_modificar with no log -> a hole (the old scan never saw it)", nrow(r) == 1L)
+  r <- fx(c('h <- function(x) {', '  prefs_guardar(cid, u, list(a = 1))', '  invisible(TRUE)', '}'))
+  ok("T72 camino: prefs_guardar with no log -> a hole", nrow(r) == 1L)
+  r <- fx(c('h <- function(x) {', '  save_algo(x)', '  if (!nrow(x)) {', '    showNotification("x")', '    return(list(ok = TRUE))', '  }',
+            '  if (x$a) {', '    pasivos_log_audit("liability.edited")', '    return(list(ok = TRUE))', '  }', '  log_action(user = "u")', '}'))
+  ok("T72 camino: the wizard's shape -- a log in one branch, an early return after the save in another -> a hole at that return",
+     nrow(r) == 1L && grepl("^[0-9]+$", r$huecos) )
+  r <- fx(c('h <- function(x) {', '  save_algo(x)', '  if (x$a) log_action(user = "u") else log_action(user = "v")', '}'))
+  ok("T72 camino: a log in both branches -> no hole", !nrow(r))
+  r <- fx(c('h <- function(x) {', '  if (x) return(NULL)', '  tryCatch({ save_algo(x); log_action(user = "u") }, error = function(e) NULL)', '}'))
+  ok("T72 camino: a return before any write is fine", !nrow(r))
+  r <- fx(c('save_algo <- function(x) .s3_write(x, "k", client_id = "c")'))
+  ok("T72 camino: a base writer itself is not checked (its callers log)", !nrow(r))
+}
+
+DEUDA_CAMINO <- c(
+    "R/audit_log_viewer_module.R :: generate_audit_log_html_doc",
+    "R/auth_reset.R :: .reset_modificar",
+    "R/avisos.R :: avisos_agregar",
+    "R/avisos.R :: avisos_retirar",
+    "R/avisos.R :: avisos_marcar_hecho",
+    "R/avisos_alertas_module.R :: alertas_guardar",
+    "R/avisos_archivo.R :: avisos_archivar",
+    "R/avisos_datos.R :: correo_semana_guardar",
+    "R/avisos_datos.R :: correo_historial_guardar",
+    "R/avisos_datos.R :: correo_partidas_guardar",
+    "R/avisos_umbrales.R :: umbral_serie_guardar",
+    "R/bancos_module.R :: input$do_delete_conf_confirm",
+    "R/bancos_persistence.R :: enlazar_archivo_confirmaciones",
+    "R/cashflow_export_module.R :: generate_cashflow_html_doc",
+    "R/email_service.R :: .email_queue_marcar",
+    "R/email_service.R :: .enqueue_email",
+    "R/forecasting_metric_registry.R :: forecasting_completar_catalogo",
+    "R/forecasting_metric_registry.R :: forecasting_seed_if_empty",
+    "R/forecasting_persistence.R :: append_forecasting_fetch_log",
+    "R/forecasting_sources.R :: fcs_fetch_and_store",
+    "R/fx_banxico.R :: .fx_fix_bajar",
+    "R/fx_banxico.R :: .fx_divisas_bajar",
+    "R/fx_tipos.R :: fx_escrito_guardar",
+    "R/ledger_module.R :: .sap_ov_guardar",
+    "R/ledger_module.R :: .sync_staged",
+    "R/notes_handlers.R :: input$note_delete_confirm",
+    "R/offline_queue.R :: .queue_replay_entry",
+    "R/pagar_hoy_module.R :: input[[paste0(\"do_confirm_ap_\", emp)]]",
+    "R/pagar_hoy_module.R :: input[[paste0(\"do_confirm_ar_\", emp)]]",
+    "R/pagar_hoy_module.R :: input$do_clear_all",
+    "R/pagos_audit_viewer_module.R :: generate_pagos_audit_html_doc",
+    "R/panorama_module.R :: input$req_avisos_guardar",
+    "R/panorama_publicar_module.R :: input$publicar",
+    "R/pasivos_list_module.R :: .pasivos_cambiar_estado",
+    "R/pasivos_module.R :: .pasivos_perform_conversion",
+    "R/pasivos_wizard_module.R :: .pasivos_wizard_save",
+    "R/persistence.R :: register_username",
+    "R/persistence.R :: unregister_username",
+    "R/persistence.R :: .interco_v2_migrar",
+    "R/persistence.R :: s3_save_with_retry",
+    "R/persistence.R :: .proveedores_guardar",
+    "R/persistence.R :: .rni_avisar",
+    "R/persistence.R :: update_client_user_count",
+    "R/persistence.R :: append_hd_notification",
+    "R/persistence.R :: create_invite",
+    "R/persistence.R :: purgar_invitaciones_vencidas",
+    "R/persistence.R :: resolve_invite",
+    "R/persistence.R :: accept_invite",
+    "R/persistence.R :: add_contact",
+    "R/persistence.R :: deactivate_contact",
+    "R/requisiciones_persistence.R :: requisicion_editar",
+    "R/requisiciones_persistence.R :: requisiciones_marcar_leido",
+    "R/sap_api.R :: fetch_all_companies",
+    "R/search_module.R :: handle_invoice_action",
+    "R/settings/settings_cuentas.R :: input$banco_save",
+    "R/settings/settings_cuentas.R :: input$cuenta_save",
+    "R/settings/settings_cuentas.R :: input$cuenta_delete",
+    "R/settings/settings_helpers.R :: borrar_banco_si_libre",
+    "R/settings/settings_hub.R :: input$save_interco_v2",
+    "R/settings/settings_hub.R :: input$ic_scan_apply",
+    "R/settings/settings_hub.R :: input$bp_apply_ic_btn",
+    "R/settings/settings_sincro.R :: input$do_sincro_activar",
+    "R/settings/settings_sincro.R :: input$do_sincro_desactivar",
+    "R/sync_bus.R :: bump_sync_version",
+    "R/tiers_module.R :: input$btn_submit_client_req",
+    "R/tiers_module.R :: input$btn_approve_req",
+    "R/tiers_module.R :: input$btn_reject_req",
+    "R/tiers_module.R :: input$btn_confirm_limit_change",
+    "R/tiers_module.R :: invitaciones_t$revocar()",
+    "R/tiers_module.R :: input$mark_notif_read",
+    "R/tiers_module.R :: input$btn_mark_all_read",
+    "R/treasury_map_module.R :: input$send_to_agenda",
+    "R/usuarios_cuentas.R :: reservar_usuario",
+    "R/usuarios_cuentas.R :: .tomar_invitacion",
+    "R/usuarios_cuentas.R :: .devolver_invitacion"
+)
+
+{
+  r_files <- list.files("R", pattern = "\\.R$", recursive = TRUE, full.names = TRUE)
+  cam <- do.call(rbind, lapply(r_files, escanear_camino))
+  hoy <- if (nrow(cam)) unique(paste0(cam$file, " :: ", cam$label)) else character()
+  nuevos <- setdiff(hoy, DEUDA_CAMINO)
+  viejos <- setdiff(DEUDA_CAMINO, hoy)
+  if (length(nuevos)) cat("  NEW holes (write, then leave without a log):\n", paste0("    ", nuevos, "\n"), sep = "")
+  if (length(viejos)) cat("  no longer holes (take them out of DEUDA_CAMINO):\n", paste0("    ", viejos, "\n"), sep = "")
+  ok(sprintf("T72 camino: no new handler writes and leaves without a log (%d new)", length(nuevos)), !length(nuevos))
+  ok(sprintf("T72 camino: DEUDA_CAMINO only goes down -- every entry is still a hole (%d to take out)", length(viejos)), !length(viejos))
+  ok("T72 camino: the real scan found what it should (guard against a broken scanner)", length(hoy) > 0L)
+}
+
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0) stop("Tests FAILED.")
 invisible(NULL)
