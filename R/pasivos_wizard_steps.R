@@ -72,15 +72,43 @@ pasivos_wizard_step_indicator <- function(current_step_id, all_step_ids, all_ste
 }
 
 # ── Error callout helper ──────────────────────────────────────────────────────
+# The input ids a validation error is about (T63): "pwiz_<field>" by default;
+# the rate's error is about any of its inputs.
+.WIZ_ERROR_CAMPOS <- list(
+  tasa_actual = c("pwiz_tasa_anual", "pwiz_tasa_periodo", "pwiz_tasa_tipo", "pwiz_tasa_spread",
+                  "pwiz_tasa_fetched")
+)
+.wiz_error_campos <- function(clave) {
+  ids <- .WIZ_ERROR_CAMPOS[[clave]]
+  if (is.null(ids)) ids <- paste0("pwiz_", sub("^impuesto_", "imp_", clave))   # impuesto_valor_2 -> pwiz_imp_valor_2
+  paste(ids, collapse = " ")
+}
+
+# The errors of the last Siguiente. Each line names its fields' input ids
+# (data-campos): when the user changes one of them the browser hides that line,
+# and the box once it is empty (T63: Luis typed the principal after an empty
+# Siguiente and the box still said "El principal debe ser mayor que cero"). Not
+# redrawn from the server: that would redraw the step from the draft and wipe
+# what is being typed.
 .wiz_error_box <- function(errors) {
   if (!length(errors)) return(NULL)
-  msgs <- unlist(errors, use.names = FALSE)
-  shiny::div(
-    class = "alert alert-danger py-2 mb-3",
-    shiny::tags$ul(
-      class = "mb-0 ps-3",
-      lapply(msgs, function(m) shiny::tags$li(m))
-    )
+  claves <- names(errors) %||% rep("", length(errors))
+  shiny::tagList(
+    shiny::div(
+      class = "alert alert-danger py-2 mb-3 pwiz-errores",
+      shiny::tags$ul(
+        class = "mb-0 ps-3",
+        lapply(seq_along(errors), function(i)
+          shiny::tags$li(`data-campos` = if (nzchar(claves[i])) .wiz_error_campos(claves[i]) else NULL,
+                         unlist(errors[[i]], use.names = FALSE)))
+      )
+    ),
+    shiny::tags$script(shiny::HTML(paste0(
+      "$(document).off('input.pwizerr change.pwizerr').on('input.pwizerr change.pwizerr', '.modal input, .modal select', function () {",
+      "  var id = this.id || this.name; if (!id) return;",
+      "  $('.pwiz-errores li[data-campos]').filter(function () { return (' ' + $(this).attr('data-campos') + ' ').indexOf(' ' + id + ' ') >= 0; }).hide();",
+      "  $('.pwiz-errores').each(function () { if (!$(this).find('li:visible').length) $(this).hide(); });",
+      "});")))
   )
 }
 

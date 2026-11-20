@@ -94,7 +94,11 @@ pasivos_wizard_validate_terminos <- function(draft) {
 
   t <- draft$tasa_actual %||% NA_real_
   if (!identical(draft$flavor %||% "", "arrendamiento_puro")) {
-    if (is.na(t) || t < 0)
+    # T63: an empty rate says so -- it used to read "no puede ser negativa".
+    if (is.na(t))
+      errors$tasa_actual <- tr(if (identical(draft$tasa_tipo %||% "fija", "fija"))
+                                 "tablas.pasivos.asistente.tasa_falta" else "tablas.pasivos.asistente.tasa_variable_falta")
+    else if (t < 0)
       errors$tasa_actual <- tr("tablas.pasivos.asistente.tasa_negativa")
   }
 

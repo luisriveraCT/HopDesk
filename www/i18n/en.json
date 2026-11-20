@@ -1329,6 +1329,8 @@
   "tablas.pasivos.asistente.monto_base_positivo": "The base amount must be greater than zero.",
   "tablas.pasivos.asistente.principal_positivo": "The principal must be greater than zero.",
   "tablas.pasivos.asistente.tasa_negativa": "The rate can't be negative.",
+  "tablas.pasivos.asistente.tasa_falta": "Enter the annual rate (it may be 0).",
+  "tablas.pasivos.asistente.tasa_variable_falta": "The reference rate was not fetched: use “Retry” or pick another date.",
   "tablas.pasivos.asistente.plazo_minimo": "The term must have at least 1 period.",
   "tablas.pasivos.asistente.dia_pago": "The payment day must be between 1 and 31.",
   "tablas.pasivos.asistente.dia_semana": "The weekday must be between 1 (Monday) and 7 (Sunday).",

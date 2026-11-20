@@ -1329,6 +1329,8 @@
   "tablas.pasivos.asistente.monto_base_positivo": "El monto base debe ser mayor que cero.",
   "tablas.pasivos.asistente.principal_positivo": "El principal debe ser mayor que cero.",
   "tablas.pasivos.asistente.tasa_negativa": "La tasa no puede ser negativa.",
+  "tablas.pasivos.asistente.tasa_falta": "Captura la tasa anual (puede ser 0).",
+  "tablas.pasivos.asistente.tasa_variable_falta": "No se obtuvo la tasa de referencia: usa «Reintentar» o elige otra fecha.",
   "tablas.pasivos.asistente.plazo_minimo": "El plazo debe tener al menos 1 período.",
   "tablas.pasivos.asistente.dia_pago": "Día de pago debe ser entre 1 y 31.",
   "tablas.pasivos.asistente.dia_semana": "Día de semana debe ser entre 1 (lunes) y 7 (domingo).",
