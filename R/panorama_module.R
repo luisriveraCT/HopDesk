@@ -394,10 +394,10 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       shiny::showModal(shiny::modalDialog(
         title = tr("panorama.req_avisos.titulo"), easyClose = TRUE,
         shiny::p(class = "text-muted small", tr("panorama.req_avisos.explica")),
-        shiny::radioButtons(ns("req_modo"), NULL, selected = p$modo, choiceValues = REQ_AVISOS_MODOS,
+        shiny::radioButtons(ns("req_modo"), NULL, selected = p$modo, width = "100%", choiceValues = REQ_AVISOS_MODOS,
           choiceNames = lapply(REQ_AVISOS_MODOS, function(m) tr(paste0("panorama.req_avisos.modo.", m)))),
         shiny::conditionalPanel("input.req_modo == 'mias_y'", ns = ns,
-          shiny::selectizeInput(ns("req_personas"), tr("panorama.req_avisos.personas"), multiple = TRUE,
+          shiny::selectizeInput(ns("req_personas"), tr("panorama.req_avisos.personas"), multiple = TRUE, width = "100%",
             choices = stats::setNames(gente$id, gente$nombre), selected = p$personas,
             options = list(placeholder = tr("panorama.req_avisos.personas_vacio")))),
         if (staff) shiny::p(class = "text-muted small", tr("panorama.req_avisos.staff")),

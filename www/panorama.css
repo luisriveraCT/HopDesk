@@ -213,7 +213,9 @@
 
 /* ── Lo que ha pasado ────────────────────────────────────────────────────── */
 .hd-panorama .pan-feed-cabeza { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.hd-panorama .pan-chips { display: flex; gap: 8px; overflow-x: auto; padding: 16px 0 8px; scrollbar-width: none; }
+/* T62: six chips do not fit the feed at 1293 px (the last ones were cut off
+   behind a hidden scrollbar, Alertas already before T62): they wrap. */
+.hd-panorama .pan-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px 0 8px; }
 .hd-panorama .pan-chip {
   flex: none;
   height: 40px;
