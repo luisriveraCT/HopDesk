@@ -22,8 +22,45 @@ sap_viejo <- function(ts, ahora = Sys.time(), tz = "America/Mexico_City") {
   dia(ts[1]) < dia(ahora) - SAP_DIAS_VIEJO
 }
 
-# Feed kinds (the chips): comunicado, solicitud, actividad, alerta.
-PANORAMA_TIPOS_FEED <- c("com", "sol", "act", "ale")
+# Feed kinds (the chips): comunicado, solicitud, actividad, requisiciones
+# (T62), alerta.
+PANORAMA_TIPOS_FEED <- c("com", "sol", "act", "req", "ale")
+
+# ── Mis avisos de requisiciones (T62) ────────────────────────────────────────
+# Each user chooses whose requisitions reach them as avisos, saved in their
+# preferences (prefs_guardar(), key req_avisos):
+#   ninguna  no avisos: they are only seen in Requisiciones
+#   mias     (default) the ones I am part of: I created, commented or acted on it
+#   mias_y   mine plus those of the people I choose (by user id, account_code)
+#   todas    every requisition of the client
+REQ_AVISOS_MODOS <- c("ninguna", "mias", "mias_y", "todas")
+
+# A stored preference (anything: missing, old, hand-edited) as
+# list(modo, personas): an unknown mode is the default; people only count
+# with mias_y, as unique non-empty ids.
+req_avisos_pref <- function(x) {
+  modo <- if (is.list(x)) as.character(x$modo %||% "")[1] else ""
+  if (is.na(modo) || !modo %in% REQ_AVISOS_MODOS) modo <- "mias"
+  personas <- if (is.list(x)) as.character(unlist(x$personas %||% character())) else character()
+  personas <- unique(trimws(personas[!is.na(personas)]))
+  personas <- personas[nzchar(personas)]
+  list(modo = modo, personas = if (identical(modo, "mias_y")) personas else character())
+}
+
+# The people one may choose (the client's live users with a client tier, by
+# id; a HopDesk staff account is never listed), as data.frame(id, nombre).
+req_avisos_personas <- function(u) {
+  vacio <- data.frame(id = character(), nombre = character(), stringsAsFactors = FALSE)
+  if (!is.data.frame(u) || !nrow(u) || !"account_code" %in% names(u)) return(vacio)
+  vivo <- !(u$deleted %in% TRUE) & !(u$activo %in% FALSE) & u$tier %in% niveles_cliente() &
+    !is.na(u$account_code) & nzchar(u$account_code %||% "")
+  u <- u[vivo, , drop = FALSE]
+  if (!nrow(u)) return(vacio)
+  nombre <- if ("display_name" %in% names(u)) u$display_name else rep(NA_character_, nrow(u))
+  out <- data.frame(id = u$account_code, nombre = ifelse(is.na(nombre) | !nzchar(nombre %||% ""), u$username, nombre),
+                    stringsAsFactors = FALSE)
+  out[order(tolower(out$nombre)), , drop = FALSE]
+}
 
 .pan_num <- function(x) { x <- suppressWarnings(as.numeric(x)); x[is.na(x)] <- 0; x }
 
@@ -118,6 +155,7 @@ avisos_clase <- function(df) {
 # Feed kind of each visible aviso:
 #   solicitud (published or personal)            -> sol
 #   automatic with severity atencion / urgente  -> ale (threshold alerts)
+#   a requisition's event or comment (clave "requisiciones|..." or "req:...") -> req (T62)
 #   automatic info, comments and mentions        -> act
 #   any other published one                      -> com
 panorama_tipo_feed <- function(df) {
@@ -125,7 +163,8 @@ panorama_tipo_feed <- function(df) {
   cl <- avisos_clase(df)
   ifelse(cl %in% "solicitud", "sol",
   ifelse(df$tipo %in% "automatico" & df$severidad %in% c("atencion", "urgente"), "ale",
-  ifelse(df$tipo %in% c("automatico", "personal"), "act", "com")))
+  ifelse(grepl("^(requisiciones\\||req:)",df$clave %||% rep(NA_character_, nrow(df))), "req",
+  ifelse(df$tipo %in% c("automatico", "personal"), "act", "com"))))
 }
 
 .pan_hechos <- function(s) {

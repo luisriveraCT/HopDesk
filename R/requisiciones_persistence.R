@@ -334,15 +334,18 @@ REQ_COLOR_DEFECTO  <- "#607d8b"
 .req_historial <- function(cid, requisicion_ids, accion, por, detalle = NA_character_) {
   if (!length(requisicion_ids)) return(invisible(FALSE))
   ahora <- .req_ahora()
+  # The ids it wrote (T62: an event's id, and its aviso's clave, is built
+  # from them); character(0) when the history could not be saved.
+  ids <- vapply(seq_along(requisicion_ids), function(i) uuid::UUIDgenerate(), character(1))
   ok <- tryCatch({
     .req_modificar("historial", cid, function(df) dplyr::bind_rows(df, tibble::tibble(
-      id = vapply(seq_along(requisicion_ids), function(i) uuid::UUIDgenerate(), character(1)),
+      id = ids,
       requisicion_id = as.character(requisicion_ids), accion = accion,
       detalle = as.character(detalle), por = por %||% NA_character_, en = ahora)))
     TRUE
   }, error = function(e) {
     message("[requisiciones] historial no se guardó (", accion, "): ", conditionMessage(e)); FALSE })
-  invisible(ok)
+  invisible(if (ok) ids else character(0))
 }
 
 # Next folio for `anio` on the fresh table: REQ-AAAA-0001, -0002, ...
@@ -380,8 +383,13 @@ requisicion_crear <- function(client_id, datos, por) {
       ligada_por = if (is.na(provision_id)) NA_character_ else por,
       ligada_en = if (is.na(provision_id)) as.POSIXct(NA, tz = "UTC") else ahora))
   })
-  .req_historial(cid, id, "creada", por, folio)
+  h <- .req_historial(cid, id, "creada", por, folio)
   if (!is.na(provision_id)) .req_historial(cid, id, "ligada", por, provision_id)
+  # After the write is in S3 (T62); a notice failing never fails the action.
+  .req_publicar_evento(cid, id, h, "creada", por)
+  tryCatch(avisos_actividad(cid, "crear_requisicion", por,
+                            list(cuerpo = paste(folio, v$titulo, sep = " \u00b7 "), enlace = "REQ")),
+           error = function(e) message("[requisiciones] aviso de equipo (crear) no se publicó"))
   list(id = id, folio = folio)
 }
 
@@ -470,7 +478,8 @@ requisiciones_papelera <- function(client_id, ids, por) {
     hechas <<- df$id[i]
     df
   })
-  .req_historial(cid, hechas, "papelera", por)
+  h <- .req_historial(cid, hechas, "papelera", por)
+  .req_publicar_evento(cid, hechas, h, "cancelada", por)   # after the write (T62)
   invisible(hechas)
 }
 
@@ -482,7 +491,8 @@ requisiciones_restaurar <- function(client_id, ids, por) {
     hechas <<- df$id[i]
     df
   })
-  .req_historial(cid, hechas, "restaurada", por)
+  h <- .req_historial(cid, hechas, "restaurada", por)
+  .req_publicar_evento(cid, hechas, h, "restaurada", por)   # after the write (T62)
   invisible(hechas)
 }
 
@@ -812,6 +822,100 @@ requisiciones_carpetas_resumen <- function(carpetas, vista) {
 requisiciones_carpetas <- function(client_id, incluir_papelera = FALSE) {
   a <- requisiciones_carpetas_arbol(.req_leer("carpetas", .req_cid(client_id)))
   a[incluir_papelera | !a$en_papelera, , drop = FALSE]
+}
+
+# ── Avisos de eventos (T62) ──────────────────────────────────────────────────
+# A requisition's important events reach, as avisos personales, the people
+# who chose them (Panorama › Lo que ha pasado › Requisiciones; "Mis avisos"
+# saves each user's req_avisos preference, req_avisos_pref() in
+# R/panorama_datos.R). Published right after the event's history row is in
+# S3; a failure only leaves a message() and never fails the action.
+
+# An event's aviso clave: the event's own id in CM35's requisiciones_eventos()
+# ("fuente|ref_id|tipo"), built only here. avisos_personales() appends
+# "|<user>" (one aviso per person).
+req_evento_clave <- function(historial_id) paste("requisiciones", historial_id, "estatus", sep = "|")
+
+# Who receives an event's aviso. Pure; the caller reads the files strictly.
+#   usuarios     usuarios.rds as stored (username, tier, permisos, account_code,
+#                deleted, activo); config the client's tier settings; prefs
+#                preferencias.rds (usuario, datos JSON)
+#   interesados  usernames who are part of the requisition (created,
+#                commented or acted on it)
+#   autor        who did it: never notified of their own action
+#   de_quien     usernames the requisition belongs to (creator and author),
+#                for "mias_y" (people chosen by account_code)
+# Only live client users who may see requisitions (puede(), with their own
+# overrides and the client's settings), by their own req_avisos mode.
+req_avisos_destinatarios <- function(usuarios, config, prefs, interesados, autor, de_quien) {
+  if (!is.data.frame(usuarios) || !nrow(usuarios)) return(character())
+  col <- function(n, def) if (n %in% names(usuarios)) usuarios[[n]] else rep(def, nrow(usuarios))
+  user <- tolower(trimws(as.character(col("username", NA_character_))))
+  tier <- as.character(col("tier", NA_character_))
+  perm <- as.character(col("permisos", "{}"))
+  code <- as.character(col("account_code", NA_character_))
+  vivo <- !(col("deleted", FALSE) %in% TRUE) & !(col("activo", TRUE) %in% FALSE) &
+    tier %in% niveles_cliente() & !is.na(user) & nzchar(user)
+  interesados <- tolower(trimws(interesados)); autor <- tolower(trimws(autor %||% ""))
+  codigos_de <- code[user %in% tolower(trimws(de_quien)) & !is.na(code)]
+  pref_de <- function(u) {
+    if (!is.data.frame(prefs) || !nrow(prefs)) return(NULL)
+    i <- which(tolower(prefs$usuario) == u)
+    if (!length(i)) return(NULL)
+    tryCatch(jsonlite::fromJSON(prefs$datos[i[1]], simplifyVector = TRUE)$req_avisos, error = function(e) NULL)
+  }
+  out <- character()
+  for (i in which(vivo)) {
+    if (identical(user[i], autor)) next
+    u <- list(user = user[i], tier = tier[i],
+              permisos = permisos_resueltos(tier[i], if (is.na(perm[i])) "{}" else perm[i], config))
+    if (!puede(u, "can_view_requisiciones")) next
+    pf <- req_avisos_pref(pref_de(user[i]))
+    recibe <- switch(pf$modo,
+      ninguna = FALSE,
+      mias    = user[i] %in% interesados,
+      mias_y  = user[i] %in% interesados || any(codigos_de %in% pf$personas),
+      todas   = TRUE,
+      FALSE)
+    if (isTRUE(recibe)) out <- c(out, user[i])
+  }
+  unique(out)
+}
+
+# Publishes one event per requisition (`historial_ids`, from .req_historial(),
+# in the same order). Reads strictly: usuarios, tier settings, preferences and
+# the requisitions' own tables; any of them unreadable -> nothing is published
+# (never "everyone"), a message without the client's data is left, and the
+# action still returns what it always did. `evento`: creada | cancelada |
+# restaurada (pagada and anulada come with CM35's events).
+.req_publicar_evento <- function(cid, requisicion_ids, historial_ids, evento, por) {
+  if (!length(historial_ids) || length(historial_ids) != length(requisicion_ids)) return(invisible(FALSE))
+  ok <- tryCatch({
+    usuarios <- .s3_leer_para_escribir(S3_KEYS$usuarios, cid)
+    if (!is.null(usuarios) && !is.data.frame(usuarios)) stop("usuarios is not a table", call. = FALSE)
+    config <- .s3_leer_para_escribir(S3_KEYS$tiers_config, cid)
+    prefs  <- .s3_leer_para_escribir(.PREFERENCIAS_KEY, cid)
+    reqs <- .req_leer("requisiciones", cid); hist <- .req_leer("historial", cid); coms <- .req_leer("comentarios", cid)
+    for (k in seq_along(requisicion_ids)) {
+      rid  <- requisicion_ids[k]
+      fila <- reqs[reqs$id %in% rid, , drop = FALSE]
+      if (!nrow(fila)) next
+      fila <- fila[1, ]
+      interesados <- unique(stats::na.omit(c(fila$creado_por, coms$autor[coms$requisicion_id %in% rid],
+                                             hist$por[hist$requisicion_id %in% rid])))
+      dest <- req_avisos_destinatarios(usuarios, if (is.list(config)) config else NULL,
+                                       if (is.data.frame(prefs)) prefs else NULL,
+                                       interesados, por, stats::na.omit(c(fila$creado_por, por)))
+      if (!length(dest)) next
+      avisos_personales(cid, dest, list(
+        titulo = tr(paste0("requisiciones.aviso.", evento), usuario = por %||% "",
+                    folio = fila$folio %||% "", titulo = fila$titulo %||% ""),
+        cuerpo = fila$empresa %||% "", severidad = "info",
+        clave = req_evento_clave(historial_ids[k]), enlace = "REQ", autor = por, repetir = FALSE))
+    }
+    TRUE
+  }, error = function(e) { message("[requisiciones] aviso de ", evento, " no se publicó"); FALSE })
+  invisible(ok)
 }
 
 # ── Comentarios ──────────────────────────────────────────────────────────────
