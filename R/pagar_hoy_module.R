@@ -831,6 +831,10 @@ pagarHoyServer <- function(id, shared) {
 
     # ── Tab badge live-updater — pending-only counts (badges = items needing action)
     observe({
+      # T69: the badges say how many payments each company has in the Agenda
+      # -- treasury, so never sent to a tier without the Agenda tab.
+      permitida <- session$userData$hd_pestana_permitida
+      if (is.function(permitida) && !isTRUE(tryCatch(permitida("PH"), error = function(e) FALSE))) return()
       s   <- active_staged()
       cos <- isolate(all_companies_rv())
       for (emp in cos) {

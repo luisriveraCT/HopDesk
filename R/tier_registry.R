@@ -92,7 +92,10 @@ TIER_REGISTRY <- list(
   compras   = list(rango = 10L, interno = FALSE, color = "#b8860b",
                    invitable = TRUE, ti = FALSE, unico_vivo = FALSE, alta = FALSE,
                    # Panorama first: it is Compras' home screen too (Luis, 2026-11-10).
-                   pestanas = c("PAN", "CAL", "PSV", "REQ"), calendario = "AP",
+                   # Only Panorama and Requisiciones (Luis, 2026-11-20, T69): the
+                   # treasury tabs are confidential for a buyer. can_edit_provisiones
+                   # stays: "Crear provisión" opens its modal from Requisiciones.
+                   pestanas = c("PAN", "REQ"),
                    permisos = c("can_view_requisiciones", "can_create_requisiciones",
                                 "can_edit_requisiciones", "can_trash_own_requisiciones",
                                 "can_trash_others_requisiciones", "can_edit_provisiones"),
@@ -150,6 +153,46 @@ nivel_unico_vivo <- function(tier) isTRUE(.nivel(tier)$unico_vivo)
 
 # NULL = every client tab.
 nivel_pestanas <- function(tier) .nivel(tier)$pestanas
+
+# ── Which tables travel to a tier's browser (T69) ────────────────────────────
+# hd_table_server() pushes a table's data to the browser whenever it changes,
+# visible or not: hiding a tab never kept its data from travelling. A tier
+# with a `pestanas` list only receives the tables whose module file
+# (hd_registro[[tabla]]$archivo) belongs to one of its tabs; any other table
+# -- another tab's, a settings one, or one that cannot be classified -- never
+# travels. A tier with pestanas = NULL receives every table, as before.
+HD_PESTANA_ARCHIVOS <- list(
+  PAN = c("panorama_module.R", "panorama_publicar_module.R", "avisos_alertas_module.R"),
+  CAL = c("ledger_module.R", "search_module.R", "search_module.R · ledger_module.R",
+          "staging_browse_module.R"),
+  VEN = "vencidos_module.R",
+  PH  = c("pagar_hoy_module.R", "pagos_audit_viewer_module.R"),
+  BNC = "bancos_module.R",
+  IC  = c("interco_module.R", "treasury_map_module.R"),
+  PSV = c("pasivos_list_module.R", "pasivos_table_module.R", "pasivos_wizard_module.R",
+          "pasivos_edit_confirm_module.R"),
+  REQ = "requisiciones_module.R",
+  FC  = c("forecasting_module.R", "cashflow_preview_module.R"),
+  RPT = "reporte_module.R")
+# Module files with tables that belong to no client tab (Grupo menu, Ajustes,
+# staff screens): a tier with a `pestanas` list does not receive them either.
+# Listed so that every registered table is classified (test_t69_compras_pestanas).
+HD_ARCHIVOS_SIN_PESTANA <- c("tiers_module.R", "empresas_module.R", "proveedores_module.R",
+                             "audit_log_viewer_module.R", "settings_cuentas.R", "settings_bp.R",
+                             "settings_hub.R", "settings_policies.R", "settings_sincro.R")
+
+# TRUE when `tabla`'s data may travel to a session of `tier`. Never throws:
+# a table it cannot classify, for a tier with a tab list, does not travel.
+nivel_tabla_permitida <- function(tier, tabla) {
+  lista <- tryCatch(nivel_pestanas(tier), error = function(e) NULL)
+  if (is.null(lista)) return(TRUE)
+  arch <- tryCatch(hd_registro[[tabla]]$archivo, error = function(e) NULL)
+  if (is.null(arch) || !length(arch) || is.na(arch[1])) {
+    message("[T69] table '", tabla, "' has no module file in hd_registro: not sent to tier ", tier)
+    return(FALSE)
+  }
+  arch[1] %in% unlist(HD_PESTANA_ARCHIVOS[lista], use.names = FALSE)
+}
 
 # NULL = the tier switches between Cobros and Pagos freely.
 nivel_calendario <- function(tier) .nivel(tier)$calendario

@@ -874,6 +874,13 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
     # before. Here, not in each module: every table gets it.
     shiny::observe({
       input$hdt_pedir
+      # T69: a session whose tier may not receive this table never gets its
+      # data, hidden tab or not (app.R sets the gate from the tier; none =
+      # every table, as before). A gate that fails counts as "no".
+      permitida <- session$userData$hd_tabla_permitida
+      if (is.function(permitida) && !isTRUE(tryCatch(permitida(tabla), error = function(e) {
+        message("[T69] table gate failed for '", tabla, "': ", conditionMessage(e)); FALSE })))
+        return()
       carga <- tryCatch({
         df <- datos()
         shiny::req(!is.null(df))

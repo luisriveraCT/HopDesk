@@ -1433,6 +1433,17 @@ server <- function(input, output, session) {
 
   # Read by has_capability() (R/pasivos_capabilities.R), which has no `shared`.
   session$userData$usuario <- function() usuario_sesion()
+  # T69: which tables' data may travel to this browser (hd_table_server reads
+  # it before every push). By the effective tier, so a staff "ver como" sees
+  # exactly what that tier gets. A tier with a tab list only gets its tabs'
+  # tables (nivel_tabla_permitida(), R/tier_registry.R).
+  session$userData$hd_tabla_permitida <- function(tabla) nivel_tabla_permitida(tier_efectivo(), tabla)
+  # The same rule for a whole tab, for modules that push something of their
+  # own without a bound output (the Agenda's badges).
+  session$userData$hd_pestana_permitida <- function(tab) {
+    lista <- nivel_pestanas(tier_efectivo())
+    is.null(lista) || tab %in% lista
+  }
 
   # Bumped by the Usuarios screen after saving permissions or tier config.
   permisos_version <- reactiveVal(0L)
@@ -1898,6 +1909,28 @@ server <- function(input, output, session) {
     }
     if (length(ocultas) && isTRUE(input$nav %in% ocultas) && length(lista))
       updateNavbarPage(session, "nav", selected = lista[1])
+  }, priority = -1)
+
+  # T69: hiding is only CSS -- a hidden tab can be shown again from the
+  # browser's tools, and Shiny would fill it. A CLIENT session whose tier has
+  # a tab list loses the other client tabs from the page altogether, once,
+  # as soon as its tier is known: with no DOM, none of their outputs binds,
+  # so nothing of theirs is computed or sent. A staff session ("ver como")
+  # keeps hiding only: staff may see everything and must be able to go back.
+  .tabs_quitadas <- FALSE
+  observe({
+    if (.tabs_quitadas) return()
+    info <- tryCatch(current_user_info(), error = function(e) NULL)
+    if (is.null(info) || isTRUE(info$is_staff)) return()
+    tier <- info$tier %||% ""
+    if (!nzchar(tier)) return()
+    .tabs_quitadas <<- TRUE
+    lista <- nivel_pestanas(tier)
+    if (is.null(lista)) return()
+    for (tab in setdiff(.TABS_CLIENTE, lista))
+      bslib::nav_remove("nav", target = tab, session = session)
+    message(sprintf("[T69] tabs removed for tier %s: %s", tier,
+                    paste(setdiff(.TABS_CLIENTE, lista), collapse = ",")))
   }, priority = -1)
 
   # ── Admin deployment: hide financial tabs until a client context is active ────
