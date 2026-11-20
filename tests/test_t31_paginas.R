@@ -28,6 +28,7 @@ ok <- function(label, expr) {
 `%||%` <- function(a, b) if (is.null(a)) b else a
 suppressMessages(source("R/i18n.R"))
 source("R/usuarios_cuentas.R")
+source("R/tema_registro.R")   # .invite_page_shell() takes its theme from hd_bs_theme() (TEMA)
 F_APP <- Sys.getenv("APP_R", "app.R")
 app <- readLines(F_APP, warn = FALSE, encoding = "UTF-8")
 

@@ -37,6 +37,7 @@ for (e in parse("R/tiers_module.R", keep.source = FALSE))
 suppressMessages(source("R/email_service.R"))
 source("R/usuarios_cuentas.R")
 source("R/auth_reset.R")
+source("R/tema_registro.R")   # .invite_page_shell() takes its theme from hd_bs_theme() (TEMA)
 
 DIR <- Sys.getenv("CUENTAS_DIR"); stopifnot(nzchar(DIR))
 dir.create(file.path(DIR, "correos"), showWarnings = FALSE, recursive = TRUE)
