@@ -40,6 +40,8 @@ tomar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 tomar("R/bancos_persistence.R", c(".schema_bancos_confirmados", "autor_registrable"))
 tomar("R/pasivos_persistence.R", c("etapa_de_provision_en", "PROVISION_PAGADA"))
 tomar("R/ui_components.R", c("moneda_base_sesion", "monedas_para_capturar", "monedas_para_filtrar"))   # T39
+tomar("R/ui_components.R", c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_numero_texto",   # T66: the amount fields
+                              "hd_numero_deps", "hd_numero_input", "hd_numero_update"))
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
   for (f in c("R/pasivos_schemas.R", "R/i18n.R", "R/monedas.R", "R/tier_registry.R", "R/permisos.R", "R/avisos.R",
