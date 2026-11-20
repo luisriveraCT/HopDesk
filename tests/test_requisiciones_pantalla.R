@@ -29,16 +29,21 @@ test_that("fuente NULL al arranque: la sesión sigue y ninguna tabla falla", {
   expect_false(any(grepl("the (datos|aviso) failed", avisos)))
 })
 
-test_that("la lista: sin pagadas nunca, papelera solo en su vista, Sin provisión fijas arriba", {
+test_that("la lista: pagadas visibles con filtro, papelera solo en su vista, Abiertas fijas arriba", {
   app <- cargar_app()
   testServer(app, {
     session$flushReact()
     d <- mod$datos()
+    # CM35: a paid one stays in the list (Luis: "cambia de estatus sin
+    # desaparecer"); "Ocultar pagadas" hides it.
     expect_setequal(d$titulo, c("Cemento y varilla para la cimentación de la nave 2", "Luz bodega 3",
-                                "Renta noviembre", "Extintores"))
-    expect_false("Papelería octubre" %in% d$titulo)                     # paid: in no view
+                                "Renta noviembre", "Extintores", "Papelería octubre"))
+    expect_identical(d$etapa[d$titulo == "Papelería octubre"], "pagada")
+    session$setInputs(`req-ocultar_pagadas` = TRUE)
+    expect_false("Papelería octubre" %in% mod$datos()$titulo)
+    session$setInputs(`req-ocultar_pagadas` = FALSE)
     expect_identical(d$.fijar, d$etapa == "sin_provision")
-    expect_identical(d$etapa[d$titulo == "Renta noviembre"], "en_pago")
+    expect_identical(d$etapa[d$titulo == "Renta noviembre"], "por_pagar")   # en_pago splits (no Agenda row)
     expect_identical(d$prioridad_txt[d$titulo == "Extintores"], "4")
     expect_identical(d$.adjuntos[grepl("^Cemento", d$titulo)], 2L)       # 1 image + 1 table
     expect_true(all(d$.acciones == "detalle"))                          # no convert-to-payment, ever
@@ -53,7 +58,7 @@ test_that("la lista: sin pagadas nunca, papelera solo en su vista, Sin provisió
     session$setInputs(`req-carpeta_click` = carp$id[carp$nombre == "Mantenimiento"])
     expect_setequal(mod$datos()$titulo, c("Luz bodega 3", "Extintores"))
     session$setInputs(`req-carpeta_click` = "general")
-    expect_identical(mod$datos()$titulo, "Renta noviembre")
+    expect_setequal(mod$datos()$titulo, c("Renta noviembre", "Papelería octubre"))   # CM35: the paid one too
   })
 })
 
@@ -68,7 +73,8 @@ test_that("selección por id con dos sesiones: la otra agrega y paga, la acción
     session$elapse(5000); session$flushReact()
     d <- mod$datos()
     expect_true("Creada en otra sesión" %in% d$titulo)
-    expect_false("Luz bodega 3" %in% d$titulo)                 # paid elsewhere: out of the list
+    # paid elsewhere: stays, now "pagada" (CM35), and still not among the marked ids
+    expect_identical(d$etapa[d$titulo == "Luz bodega 3"], "pagada")
     carp <- .req_mem[["fixture/requisiciones_carpetas.rds"]]
     destino <- carp$id[carp$nombre == "Obra nave 2"]
     accion(session, "t", "mover", marcados)
@@ -145,6 +151,19 @@ test_that("una lectura fallida se dice y nunca se muestra como lista vacía", {
     session$flushReact()
     expect_error(mod$vista(), "could not read")
     expect_match(output$`req-aviso_lectura`$html, "No se pudieron leer")
+  })
+})
+
+test_that("CM35: el historial del detalle muestra los cambios de estatus deducidos (la pagada, solo lectura)", {
+  app <- cargar_app(usuario = "dani")
+  testServer(app, {
+    session$flushReact()
+    id <- ids_de("Papelería octubre")
+    accion(session, "t", "detalle", id)
+    expect_identical(mod$detalle_id(), id)
+    h <- paste(as.character(output[["req-historial"]]$html), collapse = "")
+    expect_true(grepl(tr("requisiciones.evento.estatus", etapa = requisiciones_etapa_nombre("pagada")), h, fixed = TRUE))
+    expect_true(grepl("hdreq-evento-estatus", h, fixed = TRUE))
   })
 })
 

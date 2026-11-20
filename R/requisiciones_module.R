@@ -60,7 +60,8 @@
 .reqm_mapa_etapas <- function() list(
   sin_provision = list(texto = "requisiciones.etapa.sin_provision", tono = "neutro"),
   provisionada  = list(texto = "requisiciones.etapa.provisionada",  tono = "info"),
-  en_pago       = list(texto = "requisiciones.etapa.en_pago",       tono = "morado"),
+  por_pagar     = list(texto = "requisiciones.etapa.por_pagar",     tono = "morado"),   # CM35: en_pago splits
+  en_agenda     = list(texto = "requisiciones.etapa.en_agenda",     tono = "aviso"),
   pagada        = list(texto = "requisiciones.etapa.pagada",        tono = "exito"),
   papelera      = list(texto = "requisiciones.etapa.papelera",      tono = "neutro"))
 
@@ -196,6 +197,8 @@ requisicionesUI <- function(id) {
           shiny::uiOutput(ns("botones"), inline = TRUE),
           htmltools::div(class = "hdreq-barra-der",
             bslib::input_switch(ns("solo_mias"), tr("requisiciones.solo_mias"), value = FALSE),
+            # CM35: paid ones stay listed (Luis); this hides them.
+            bslib::input_switch(ns("ocultar_pagadas"), tr("requisiciones.ocultar_pagadas"), value = FALSE),
             shiny::uiOutput(ns("boton_papelera"), inline = TRUE))),
         shiny::uiOutput(ns("aviso_lectura")),
         hd_table_ui(ns("t"), alto = "ventana")),
@@ -270,7 +273,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
       version(); otro()
       c <- cid(); u <- usr()
       if (is.null(c) || is.null(u) || !activa_ok() || !puede_ver()) return(NULL)
-      requisiciones_vista(c, usuario = u$user, incluir_pagadas = FALSE)
+      requisiciones_vista(c, usuario = u$user, incluir_pagadas = TRUE)   # CM35: they stay, read-only
     })
     carpetas <- shiny::reactive({
       version(); otro()
@@ -307,6 +310,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
       if (is.null(v)) return(NULL)
       v <- v[if (ver_papelera()) v$etapa == "papelera" else v$etapa != "papelera", , drop = FALSE]
       if (isTRUE(input$solo_mias)) v <- v[tolower(v$creado_por) %in% tolower(yo()), , drop = FALSE]
+      if (isTRUE(input$ocultar_pagadas)) v <- v[v$etapa != "pagada", , drop = FALSE]
       v <- v[!ocultas_burbujas(v), , drop = FALSE]
       # T61: General = no live folder; a folder shows its whole branch.
       sel <- carpeta_sel()
@@ -328,7 +332,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
         .reqm_columnas(iniciales(), aviso = !is.null(v) && any(!is.na(v$empresa_aviso)))
       }),
       piezas = c("fichas", "detalle", "nav_periodo"),
-      fichas = list(campo = "etapa", orden = c("sin_provision", "provisionada", "en_pago", "papelera"),
+      fichas = list(campo = "etapa", orden = REQ_ETAPAS_VISIBLES,
                     mostrar = "conteo"),
       periodo = list(campo = "fecha_mes", inicial = Sys.Date(), fijar_titulo = "requisiciones.fijadas"),
       acciones_fila = c("detalle", "crear_provision"),
@@ -1006,14 +1010,25 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
     output$historial <- shiny::renderUI({
       version(); otro()
       id <- detalle_id(); if (is.null(id) || is.null(cid())) return(NULL)
-      h <- tryCatch(requisicion_historial(cid(), id), error = function(e) "error")
+      # CM35: the requisition's events -- its own history plus the status
+      # changes deduced from Pasivos, the Agenda and Bancos. Only drawn when
+      # this tab is open. A source that cannot be read says so: a timeline is
+      # never shown incomplete as if it were complete.
+      h <- tryCatch(requisiciones_eventos(cid(), usuario = yo()), error = function(e) "error")
       if (identical(h, "error")) return(htmltools::div(class = "alert alert-warning py-1 small", tr("requisiciones.error.leer")))
+      h <- h[h$requisicion_id %in% id, , drop = FALSE]
       if (!nrow(h)) return(NULL)
-      h <- h[rev(seq_len(nrow(h))), , drop = FALSE]
+      h <- h[order(h$en, decreasing = TRUE, method = "radix"), , drop = FALSE]
+      texto <- function(i) {
+        if (h$tipo[i] == "estatus")
+          return(tr("requisiciones.evento.estatus", etapa = requisiciones_etapa_nombre(h$a[i])))
+        tr(paste0("requisiciones.historial.", h$detalle[i]))
+      }
       htmltools::tags$ul(class = "hdreq-historial", lapply(seq_len(nrow(h)), function(i) htmltools::tags$li(
+        class = if (h$tipo[i] == "estatus") "hdreq-evento-estatus",
         htmltools::tags$span(class = "text-muted", .reqm_fecha_hora(h$en[i])), " · ",
-        htmltools::tags$strong(h$por[i]), " ",
-        tr(paste0("requisiciones.historial.", h$accion[i])))))
+        htmltools::tags$strong(if (is.na(h$por[i])) "—" else h$por[i]), " ",
+        texto(i))))
     })
 
     # ── List actions ────────────────────────────────────────────────────────

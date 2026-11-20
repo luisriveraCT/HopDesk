@@ -110,6 +110,8 @@
 .hdreq-com-cab { font-size: .8rem; }
 .hdreq-com-texto { white-space: pre-wrap; overflow-wrap: anywhere; }
 .hdreq-historial li { font-size: .82rem; padding: 2px 0; }
+/* CM35: status changes stand out in the timeline (Panorama tokens). */
+.hdreq-historial li.hdreq-evento-estatus { color: var(--hd-marino); border-left: 2px solid var(--hd-oro); padding-left: 6px; }
 .hdreq-comentar { display: flex; gap: 8px; align-items: flex-end; }
 .hdreq-comentar .shiny-input-container { flex: 1 1 auto; margin: 0; min-width: 0; }
 
