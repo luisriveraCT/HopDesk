@@ -1981,5 +1981,11 @@
   "niveles.solicitudes.aviso.carpeta_no_comprobada": "The folder of client '{cliente}' could not be checked on the server. Nothing was created: try again in a moment.",
   "tablas.empresas.aviso.renombrar_incompleto": "The initials change {antes} → {despues} did not finish in: {tablas}. The company keeps {antes}; the rest is done. Save the same change again to finish.",
   "avisos.correo.contexto.sin_banco_semanas": "Actual figures will show once HopDesk confirmations cover the payments (the bank statement is missing for the weeks of {semanas}).",
-  "avisos.correo.viernes.y_mas": "and {n} more in HopDesk."
+  "avisos.correo.viernes.y_mas": "and {n} more in HopDesk.",
+  "comun.numero.aviso.no_es_numero": "{campo}: type a number.",
+  "comun.numero.aviso.entero": "{campo}: type a whole number, no decimals.",
+  "comun.numero.aviso.negativo": "{campo} cannot be negative.",
+  "comun.numero.aviso.minimo": "{campo} cannot be less than {min}.",
+  "comun.numero.aviso.maximo": "{campo} cannot be more than {max}.",
+  "comun.numero.aviso.rango": "{campo} must be between {min} and {max}."
 }

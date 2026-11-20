@@ -1663,3 +1663,27 @@ hd_numero_update <- function(session = shiny::getDefaultReactiveDomain(), inputI
   session$sendInputMessage(inputId, msg)
   invisible(msg)
 }
+
+# The server-side check of a hd_numero_input() value (T66). The browser no
+# longer enforces min/max (numericInput only marked the field), so each save
+# asks this before writing anything:
+#   hd_numero_revisar(input$x, <the field's name, by tr()>, min = 0)
+# gives list(ok = TRUE, valor = <number>) or list(ok = FALSE, aviso = <text
+# from the dictionary>) for NA (empty or not a number), a decimal where an
+# entero goes, or a number outside [min, max]. It never shows anything itself:
+# the caller shows the aviso and returns.
+hd_numero_revisar <- function(x, campo, min = NA, max = NA, entero = FALSE) {
+  no <- function(clave, ...) list(ok = FALSE, valor = NA_real_, aviso = tr(clave, campo = campo, ...))
+  num <- function(v) format(v, scientific = FALSE, trim = TRUE)   # a limit, not an amount (no separator: T55c)
+  v <- suppressWarnings(as.numeric(x))
+  if (length(v) != 1L || is.na(v) || !is.finite(v)) return(no("comun.numero.aviso.no_es_numero"))
+  if (isTRUE(entero) && v != round(v)) return(no("comun.numero.aviso.entero"))
+  hay_min <- length(min) == 1L && !is.na(min); hay_max <- length(max) == 1L && !is.na(max)
+  if ((hay_min && v < min) || (hay_max && v > max)) {
+    if (hay_min && hay_max) return(no("comun.numero.aviso.rango", min = num(min), max = num(max)))
+    if (hay_min && min == 0) return(no("comun.numero.aviso.negativo"))
+    if (hay_min) return(no("comun.numero.aviso.minimo", min = num(min)))
+    return(no("comun.numero.aviso.maximo", max = num(max)))
+  }
+  list(ok = TRUE, valor = v, aviso = NULL)
+}

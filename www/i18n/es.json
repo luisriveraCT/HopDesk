@@ -1981,5 +1981,11 @@
   "niveles.solicitudes.aviso.carpeta_no_comprobada": "No se pudo comprobar la carpeta del cliente '{cliente}' en el servidor. No se creó nada: intenta de nuevo en un momento.",
   "tablas.empresas.aviso.renombrar_incompleto": "El cambio de iniciales {antes} → {despues} no terminó en: {tablas}. La empresa conserva {antes}; lo demás ya quedó. Vuelve a guardar el mismo cambio para terminar.",
   "avisos.correo.contexto.sin_banco_semanas": "Lo real aparecerá cuando las confirmaciones en HopDesk cubran los pagos (falta el estado de cuenta de las semanas del {semanas}).",
-  "avisos.correo.viernes.y_mas": "y {n} más en HopDesk."
+  "avisos.correo.viernes.y_mas": "y {n} más en HopDesk.",
+  "comun.numero.aviso.no_es_numero": "{campo}: escribe un número.",
+  "comun.numero.aviso.entero": "{campo}: escribe un número entero, sin decimales.",
+  "comun.numero.aviso.negativo": "{campo} no puede ser negativo.",
+  "comun.numero.aviso.minimo": "{campo} no puede ser menor que {min}.",
+  "comun.numero.aviso.maximo": "{campo} no puede ser mayor que {max}.",
+  "comun.numero.aviso.rango": "{campo} debe estar entre {min} y {max}."
 }
