@@ -25,6 +25,7 @@ cargar <- function(archivo, nombres) {
 }
 suppressPackageStartupMessages({ library(dplyr); library(shinyjs) })
 cargar("R/persistence.R", c(".schema_empresas", ".schema_erp_connections", ".normalize", ".company_map_from_empresas",
+                            "rebase_por_id",   # CM38b: a save is rebased on S3's table
                             # CM36: Guardar configuración del grupo
                             ".schema_group_config", ".group_config_completar", ".GROUP_CONFIG_UNIDADES",
                             ".group_config_rebase", "modificar_group_config"))
@@ -49,13 +50,16 @@ assign("erp_access_allowed", function(...) TRUE, envir = globalenv())
 assign("sap_creds_source", function(...) NULL, envir = globalenv())
 assign("load_erp_connections", function(...) .schema_erp_connections(), envir = globalenv())
 assign(".s3_read_with", function(...) NULL, envir = globalenv())
-assign("S3_KEYS", list(erp_connections = "erp_connections.rds"), envir = globalenv())
-assign("save_empresas", function(df, client_id = NULL) {
+assign("S3_KEYS", list(erp_connections = "erp_connections.rds", empresas = "empresas.rds"), envir = globalenv())
+# S3's empresas.rds is almacen$df (set below, with the companies). Since CM38b
+# the module saves with modificar_tabla(): cambio() over S3's current table.
+assign("modificar_tabla", function(key, client_id, schema, cambio, ...) {
   if (falla) stop("S3 no disponible (fixture)")
+  df <- .normalize(cambio(almacen$df), schema)
   almacen$df <- df
   anotar(paste("guardar", paste(sprintf("%s:%s:%s:%s:%s", substr(df$id, 1, 4), df$initials, df$razon_social,
                                         df$activa, df$deleted), collapse = " | ")))
-  invisible(TRUE)
+  invisible(df)
 }, envir = globalenv())
 assign("rename_empresa_initials", function(old, new, client_id = NULL) anotar(sprintf("renombrar %s->%s", old, new)),
        envir = globalenv())
@@ -77,6 +81,7 @@ empresas0 <- .normalize(rbind(
 # HD_ARRANQUE_NULL = 1: the sources start NULL, as before S3 loads at
 # startup (tests/test_hd_table_arranque_null.R; incident 2026-11-03).
 if (identical(Sys.getenv("HD_ARRANQUE_NULL"), "1")) empresas0 <- NULL
+almacen$df <- empresas0 %||% .schema_empresas()
 
 ui <- bslib::page_fluid(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),
@@ -107,11 +112,16 @@ server <- function(input, output, session) {
   empresasServer("emp", shared)
   # "Another session" changes the companies underneath this one, through
   # shared$empresas_db as the sync bus does.
+  # (CM38b) The other session saved to S3 first, then the bus refreshed this one.
   observeEvent(input$otra_sesion, {
     nueva <- .normalize(emp("e-new", "E0009", "AAA", "Alfa Nueva SA", "AAA000000AA0"), .schema_empresas)
+    almacen$df <- rbind(nueva, almacen$df)
     empresas_db(rbind(nueva, empresas_db()))
   })
-  observeEvent(input$otra_sesion_borra, empresas_db(empresas_db()[-1, , drop = FALSE]))
+  observeEvent(input$otra_sesion_borra, {
+    almacen$df <- almacen$df[-1, , drop = FALSE]
+    empresas_db(empresas_db()[-1, , drop = FALSE])
+  })
   observe(session$sendCustomMessage("registro", paste(registro(), collapse = "\n")))
 }
 

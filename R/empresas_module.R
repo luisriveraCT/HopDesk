@@ -247,6 +247,16 @@ empresasUI <- function(id) {
   )
 }
 
+# Is the session's copy (`base`) another client's? (CM38b) A company's id is
+# a UUID made when it is created, and a company is never removed from
+# empresas.rds (deleting marks it). So a copy with companies none of which
+# is in S3's current table (`fresco`) is not this client's -- or so stale it
+# cannot be rebased. An empty copy (a first company) is fine.
+.empresas_copia_ajena <- function(base, fresco) {
+  ids <- as.character(base$id); ids <- ids[!is.na(ids) & nzchar(ids)]
+  length(ids) > 0L && !any(ids %in% as.character(fresco$id))
+}
+
 # ── Server ────────────────────────────────────────────────────────────────────
 
 empresasServer <- function(id, shared) {
@@ -270,11 +280,11 @@ empresasServer <- function(id, shared) {
     })
 
     # ── Data layer ────────────────────────────────────────────────────────────
-    .empresas_local <- reactiveVal(NULL)
-
+    # CM38b: one copy only, shared$empresas_db(), which the context switch
+    # reloads. A module-local copy filled on save (.empresas_local) outlived
+    # a jump: staff saved in A, jumped to B, saw A's companies and the next
+    # save wrote A's list into B/empresas.rds.
     all_empresas_rv <- reactive({
-      ovr <- .empresas_local()
-      if (!is.null(ovr)) return(ovr)
       req(req_authorized())
       # Consume shared$empresas_db — populated by the context-switch observer.
       # Never read from S3 directly here: that would bypass the active client
@@ -282,13 +292,24 @@ empresasServer <- function(id, shared) {
       shared$empresas_db()
     })
 
-    # Helper: save + update local cache + broadcast to shared
+    # Save an action's result (`df`: the copy it started from, changed).
+    # Rebased on S3's current table (CM38b): only the rows this action added,
+    # changed or removed are applied, every other row stays as S3 holds it;
+    # never the session's whole copy. A copy that is not this client's
+    # (.empresas_copia_ajena()) stops it with nothing written. Throws on any
+    # failure; callers notify and say nothing was saved.
     .save_and_broadcast <- function(df) {
-      save_empresas(df, client_id = shared$effective_client_id())                         # throws on S3 failure
-      bump_sync_version("empresas_db", client_id = shared$effective_client_id())
-      .empresas_local(df)
+      cid   <- shared$effective_client_id()
+      base  <- .normalize(isolate(all_empresas_rv()) %||% .schema_empresas(), .schema_empresas)
+      nuevo <- .normalize(df, .schema_empresas)
+      guardado <- modificar_tabla(S3_KEYS$empresas, cid, .schema_empresas, function(fresco) {
+        if (.empresas_copia_ajena(base, fresco))
+          stop("[EMP] the session's companies are not this client's; nothing was saved", call. = FALSE)
+        rebase_por_id(nuevo, base, fresco, "id")
+      })
+      bump_sync_version("empresas_db", client_id = cid)
       if (!is.null(shared$empresas_db) && is.function(shared$empresas_db))
-        shared$empresas_db(df)
+        shared$empresas_db(guardado)   # what S3 holds now, other sessions' rows included
       invisible(TRUE)
     }
 
