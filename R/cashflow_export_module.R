@@ -2393,7 +2393,7 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       tags$script(HTML(
         "$(document).off('focusout.cfexpfx').on('focusout.cfexpfx','.cf-export-fx-fila input',function(){",
         "var m=this.id.match(/^export_fx_([A-Z]{3})_([A-Z]{3})$/); if(!m) return;",
-        "var v=hdNumero.valor(this); if(v===null||v<=0) return;",
+        "if(!String(this.value||'').trim()) return; var v=hdNumero.valor(this);",
         "Shiny.setInputValue('export_fx_cmd',{cur:m[1],base:m[2],accion:'escribir',v:v,t:Date.now()},{priority:'event'});});"
       )),
       tags$small(class = "text-muted mt-1 d-block", icon("circle-info"), " ", tr("tablas.flujo.fx.nota"))
@@ -2412,8 +2412,10 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
     base <- .export_base()
     if (identical(accion, "escribir")) {
       if (!identical(.fx_codigo(m$base), base)) return()
-      v <- suppressWarnings(as.numeric(m$v))
-      if (length(v) != 1L || is.na(v) || !(v > 0)) return()
+      # T66: a text, 0 or a negative is told, not dropped silently.
+      rev_v <- hd_numero_revisar(m$v, tr("tablas.flujo.fx.tipo_de", par = paste0(cur, "/", base)), min = 0.0001)
+      if (!rev_v$ok) { showNotification(rev_v$aviso, type = "warning"); return() }
+      v <- rev_v$valor
     } else if (identical(accion, "quitar")) {
       v <- NA_real_
     } else return()

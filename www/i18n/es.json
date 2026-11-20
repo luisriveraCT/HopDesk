@@ -1991,5 +1991,6 @@
   "tablas.ajustes.cuentas.saldo_inicial": "Saldo inicial",
   "tablas.ajustes.politicas.dias_desplazar": "Días a desplazar",
   "niveles.clientes.limite_usuarios": "Límite de usuarios",
-  "tablas.agenda.saldo_apertura": "Saldo apertura"
+  "tablas.agenda.saldo_apertura": "Saldo apertura",
+  "tablas.flujo.fx.tipo_de": "Tipo de cambio {par}"
 }

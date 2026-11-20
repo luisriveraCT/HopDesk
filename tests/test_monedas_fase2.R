@@ -24,6 +24,8 @@ cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALS
 cargar("R/persistence.R", c("tag_label", ".normalize"))
 for (f in c("R/i18n.R", "R/monedas.R", "R/fx_banxico.R", "R/fx_tipos.R", "R/hd_registro.R", "R/hd_piezas.R",
             "R/hd_columnas.R", "R/hd_table.R", "R/cashflow_export_module.R", "R/cashflow_preview_module.R")) source(f)
+cargar("R/ui_components.R", c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_numero_texto", "hd_numero_deps",
+                              "hd_numero_input", "hd_numero_update", "hd_numero_revisar"))   # T66
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 source("tests/helpers/flujo_datos_prueba.R")
 
@@ -261,6 +263,12 @@ test_that("Exportar: una fila por moneda de los datos con su origen; escribir, q
     expect_true(grepl("Sin fuente", as.character(output$export_fx_section_ui$html), fixed = TRUE))
     session$setInputs(export_fx_cmd = list(cur = "USD", accion = "cambiar", t = 3))
     expect_true(grepl("export_fx_USD_MXN", as.character(output$export_fx_section_ui$html), fixed = TRUE))
+    # T66: a typed text (null -> NA), 0 or a negative is told and not taken
+    for (v in list(NULL, 0, -2)) {
+      session$setInputs(export_fx_cmd = list(cur = "USD", base = "MXN", accion = "escribir", v = v, t = runif(1)))
+      expect_length(fx_escritos_de(fx_escritos_leer("cliente_a"), "ana", "MXN"), 0L)
+    }
+    expect_true(grepl('id="export_fx_USD_MXN" type="text"', as.character(output$export_fx_section_ui$html), fixed = TRUE))
     # a value typed against another base is not taken
     session$setInputs(export_fx_cmd = list(cur = "SEK", base = "USD", accion = "escribir", v = 0.1, t = 4))
     expect_length(fx_escritos_de(fx_escritos_leer("cliente_a"), "ana", "USD"), 0L)

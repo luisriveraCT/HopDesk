@@ -1991,5 +1991,6 @@
   "tablas.ajustes.cuentas.saldo_inicial": "Opening balance",
   "tablas.ajustes.politicas.dias_desplazar": "Days to shift",
   "niveles.clientes.limite_usuarios": "User limit",
-  "tablas.agenda.saldo_apertura": "Opening balance"
+  "tablas.agenda.saldo_apertura": "Opening balance",
+  "tablas.flujo.fx.tipo_de": "Exchange rate {par}"
 }
