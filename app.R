@@ -75,6 +75,7 @@ source("R/pasivos_edit_confirm_module.R")
 source("R/pasivos_list_module.R")
 source("R/pasivos_table_module.R")
 source("R/cashflow_preview_module.R")
+source("R/tema_registro.R")   # TEMA: hd_bs_theme(), tema_head() (used by ui below)
 # bancos_parser.R / bancos_persistence.R / bancos_module.R sourced in global.R
 
 AR_CONFIG <- list(

@@ -205,9 +205,18 @@ ok("hd_bs_theme() is identical() to the theme app.R wrote three times",
    identical(tema$hd_bs_theme(),
              bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA")))
 app <- leer("app.R")
+app_codigo <- sub("#.*$", "", app)   # comments may name the functions
 ok("app.R: no bs_theme() of its own, hd_bs_theme() three times, tema_head() once",
-   !any(grepl("bs_theme\\(", sub("hd_bs_theme\\(", "", app))) &&
-     sum(grepl("hd_bs_theme\\(\\)", app)) == 3L && sum(grepl("tema_head\\(\\)", app)) == 1L)
+   !any(grepl("bs_theme\\(", sub("hd_bs_theme\\(", "", app_codigo))) &&
+     sum(grepl("hd_bs_theme\\(\\)", app_codigo)) == 3L && sum(grepl("tema_head\\(\\)", app_codigo)) == 1L)
+# app.R does not rely on shinyapps' autoload: it source()s each file of R/
+# (T15 and local runs source app.R directly). 2026-11-19: the branch passed
+# test_autocarga_shiny and still failed to start in T15 ("could not find
+# function hd_bs_theme").
+fuente <- grep('^\\s*source\\("R/tema_registro\\.R"\\)', app)
+primer_uso <- grep("hd_bs_theme\\(\\)|tema_head\\(\\)", sub("#.*$", "", app))
+ok("app.R source()s R/tema_registro.R before its first hd_bs_theme() / tema_head()",
+   length(fuente) == 1L && length(primer_uso) > 0L && fuente < min(primer_uso))
 cab <- htmltools::renderTags(tema$tema_head())$head
 ok("tema_head(): the tokens and the attribute go in <head>, with the default theme",
    grepl("hd_temas.css?v=", cab, fixed = TRUE) &&
