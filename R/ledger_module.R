@@ -1714,6 +1714,15 @@ ledgerModuleServer <- function(id, config, shared) {
       if (is.na(new_date)) {
         showNotification(tr("tablas.dia.aviso.fecha_invalida"), type = "warning"); return()
       }
+      # T66: the field no longer stops a negative, which the override's abs()
+      # turned positive silently: told, nothing saved. Empty (NA) keeps its
+      # meaning: back to SAP's value (tablas.dia.sap_edit.vacio_es_sap).
+      if (!is.null(input$sap_edit_importe) && !is.na(input$sap_edit_importe)) {
+        rev_imp <- hd_numero_revisar(input$sap_edit_importe, tr("tablas.facturas.importe"), min = 0)
+        if (!rev_imp$ok) {
+          showNotification(rev_imp$aviso, type = "warning"); return()
+        }
+      }
 
       new_parte    <- trimws(input$sap_edit_parte   %||% "")
       new_codigo   <- trimws(input$sap_edit_codigo  %||% "")
