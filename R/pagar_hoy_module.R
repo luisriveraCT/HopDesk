@@ -808,7 +808,7 @@ pagarHoyServer <- function(id, shared) {
                 div(
                   tags$label("Saldo apertura", class = "form-label small text-muted mb-1"),
                   hd_numero_input(ns(paste0("bal_", emp)), NULL, formato = "monto",
-                                  value = 0, min = 0, step = 1000, width = "180px")
+                                  value = 0, step = 1000, width = "180px")   # no min: an overdraft (T66_E2_min0)
                 )
               ),
               tags$div(class = "vr", style = "height:48px;"),
