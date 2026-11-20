@@ -55,6 +55,10 @@ correo_destinatarios <- function(usuarios, config = NULL, prefs = NULL) {
     u <- list(user = user[i], tier = tier[i],
               permisos = permisos_resueltos(tier[i], if (is.na(perm[i])) "{}" else perm[i], config))
     if (!puede(u, "can_receive_weekly_email")) return(NULL)
+    # T69b: the weekly email is treasury (payments, collections, the Agenda):
+    # a tier with neither the Agenda nor the Calendario (Compras: PAN + REQ)
+    # never gets it, whatever its permissions say.
+    if (!nivel_pestana_permitida(tier[i], "PH") && !nivel_pestana_permitida(tier[i], "CAL")) return(NULL)
     p <- .correo_prefs(prefs, user[i])
     if (identical(p$correos_semana, FALSE)) return(NULL)
     idioma <- p$idioma %||% "es"

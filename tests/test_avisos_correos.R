@@ -45,14 +45,16 @@ prefs <- data.frame(usuario = c("apagado", "ingles", "fin_si"),
 cat("-- destinatarios --\n")
 d <- correo_destinatarios(usuarios, NULL, prefs)
 ok("dev y admin lo reciben por defecto; finanzas solo con el permiso encendido",
-   setequal(d$usuario, c("ti", "jefa", "fin_si", "compra_si", "ingles")))
+   setequal(d$usuario, c("ti", "jefa", "fin_si", "ingles")))
+# T69b: the weekly email is treasury; Compras (PAN + REQ, no Agenda nor
+# Calendario) never gets it, even with the permission on.
+ok("Compras no lo recibe aunque tenga el permiso encendido (T69b)", !"compra_si" %in% d$usuario)
 ok("nunca: borrados, inactivos, sin correo válido, staff, permiso apagado ni preferencia apagada",
    !any(c("borrado", "inactivo", "sin_correo", "staff", "jefa_no", "apagado", "fin") %in% d$usuario))
 ok("el correo se normaliza (minúsculas, sin espacios)", d$email[d$usuario == "jefa"] == "jefa@x.mx")
 ok("idioma de la preferencia; uno desconocido o ausente es español",
    d$idioma[d$usuario == "ingles"] == "en" && d$idioma[d$usuario == "fin_si"] == "es" && d$idioma[d$usuario == "jefa"] == "es")
-ok("Compras (calendario AP) va sin CxC; los demás con CxC",
-   !d$ver_cxc[d$usuario == "compra_si"] && all(d$ver_cxc[d$usuario != "compra_si"]))
+ok("todos los que lo reciben van con CxC (Compras ya no lo recibe)", all(d$ver_cxc))
 ok("la configuración de niveles del cliente cuenta: si apaga admin, admin ya no lo recibe", {
   d2 <- correo_destinatarios(usuarios, list(admin = list(can_receive_weekly_email = FALSE)), prefs)
   !"jefa" %in% d2$usuario && "ti" %in% d2$usuario
