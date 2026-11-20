@@ -33,6 +33,7 @@ source("R/permisos.R")
 source("R/avisos.R")
 source("R/adjuntos_s3.R")
 source("R/empresas_identidad.R")
+source("R/agenda_filas.R")   # CM35 A2: agenda_pendientes(), the Agenda's own "pending"
 source("R/requisiciones_persistence.R")
 
 # ── In-memory S3 ─────────────────────────────────────────────────────────────

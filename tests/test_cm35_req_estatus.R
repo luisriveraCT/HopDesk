@@ -32,6 +32,7 @@ suppressPackageStartupMessages({ library(dplyr); library(tibble) })
 .tomar("R/pasivos_persistence.R", c("etapa_de_provision_en", "PROVISION_PAGADA"))
 source("R/pasivos_schemas.R")
 suppressMessages(source("R/i18n.R"))
+source("R/agenda_filas.R")   # CM35 A2: agenda_pendientes(), the Agenda's own "pending"
 source("R/requisiciones_persistence.R")
 .pass <- 0L; .fail <- 0L
 ok <- function(label, expr) {
@@ -150,6 +151,18 @@ ok("3 a confirmation written before CM35 gives por = NA, never a guess",
    is.na(es$por[es$requisicion_id == "R5" & es$a == "pagada"]))
 ok("3 R2 keeps both provisions in its trace (P2 and P3)",
    all(c("P2", "P3") %in% es$ref_id[es$requisicion_id == "R2"]))
+
+# ── 3b. "Pending" is the Agenda's own criterion (A2, T60) ─────────────────
+# A row with status NA is not shown by the Agenda (agenda_pendientes()), so it
+# must not make a requisition "en_agenda" either, nor give an event.
+agenda_na <- agenda; agenda_na$status <- NA_character_
+v_na  <- requisiciones_vista_en(reqs, provs, conf, vacia(.schema_manual), vacia(.schema_req_carpetas),
+                                vacia(.schema_req_evidencia), vacia(.schema_req_comentarios),
+                                liabs = NULL, agenda = agenda_na)
+ev_na <- requisiciones_eventos_en(reqs, historial, audit, conf, agenda = agenda_na)
+ok("3b an Agenda row with status NA (not shown by the Agenda) leaves R6 por_pagar, with no Agenda event",
+   identical(v_na$etapa[v_na$id == "R6"], "por_pagar") &&
+     !any(ev_na$fuente == "agenda") && nrow(agenda_pendientes(agenda_na)) == 0L)
 
 # ── 4. The approvals door ──────────────────────────────────────────────────
 ok("4 the approvals door exists and does nothing yet", exists(".req_aprobacion_requerida") &&

@@ -52,7 +52,7 @@ for (e in parse("R/erp_connector_registry.R"))
     eval(e, globalenv())
 suppressMessages({
   source("R/persistence.R"); source("R/bancos_persistence.R"); source("R/pasivos_schemas.R")
-  source("R/pasivos_persistence.R"); source("R/requisiciones_persistence.R")
+  source("R/pasivos_persistence.R"); source("R/agenda_filas.R"); source("R/requisiciones_persistence.R")
 })
 .s3_write <- .ro
 for (fn in ls(globalenv(), pattern = "^(save_|modificar_)")) assign(fn, .ro, envir = globalenv())

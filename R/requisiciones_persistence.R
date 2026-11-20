@@ -1222,9 +1222,9 @@ requisiciones_eventos_en <- function(reqs, historial, audit, conf, agenda = NULL
   }
 
   # 4. The live Agenda: a pending row sent from anywhere (the Calendario too).
-  if (nrow(ligas) && is.data.frame(agenda) && nrow(agenda) && "provision_id" %in% names(agenda)) {
-    ag <- agenda[agenda$provision_id %in% ligas$pid &
-                   (is.na(agenda$status) | agenda$status %in% "pending"), , drop = FALSE]
+  pend <- agenda_pendientes(agenda)   # the Agenda's own "pending" (T60)
+  if (nrow(ligas) && is.data.frame(pend) && nrow(pend) && "provision_id" %in% names(pend)) {
+    ag <- pend[pend$provision_id %in% ligas$pid, , drop = FALSE]
     if (nrow(ag))
       partes$agenda <- fila(rid_de(ag$provision_id), ag$staged_at, ag$staged_by, "estatus",
                             "en_agenda", "agenda", ag$id, ag$id, "agenda")
@@ -1294,11 +1294,13 @@ requisiciones_eventos <- function(client_id, desde = NULL, usuario = NULL) {
 # this user's (safe_load_pagar_hoy() decides, and stop()s on a failed read).
 .req_agenda <- function(cid, usuario = NULL) safe_load_pagar_hoy(username = usuario, client_id = cid)
 
-# provision_ids with a pending Agenda row.
+# provision_ids with a pending Agenda row. "Pending" is the Agenda's own
+# criterion, agenda_pendientes() (R/agenda_filas.R, T60): what the Agenda and
+# Panorama show is exactly what makes a requisition "en_agenda".
 .req_provisiones_en_agenda <- function(agenda) {
-  if (!is.data.frame(agenda) || !nrow(agenda) || !"provision_id" %in% names(agenda)) return(character())
-  pend <- is.na(agenda$status) | agenda$status %in% "pending"
-  unique(agenda$provision_id[pend & !is.na(agenda$provision_id)])
+  pend <- agenda_pendientes(agenda)
+  if (is.null(pend) || !nrow(pend) || !"provision_id" %in% names(pend)) return(character())
+  unique(pend$provision_id[!is.na(pend$provision_id)])
 }
 
 # The newest live confirmation carrying each provision_id (only where `cual`).

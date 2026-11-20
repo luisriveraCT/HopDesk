@@ -44,7 +44,7 @@ local({
   owd <- setwd(raiz); on.exit(setwd(owd))
   for (f in c("R/pasivos_schemas.R", "R/i18n.R", "R/monedas.R", "R/tier_registry.R", "R/permisos.R", "R/avisos.R",
               "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
-              "R/adjuntos_s3.R", "R/empresas_identidad.R", "R/requisiciones_persistence.R", "R/requisiciones_module.R"))
+              "R/adjuntos_s3.R", "R/empresas_identidad.R", "R/agenda_filas.R", "R/requisiciones_persistence.R", "R/requisiciones_module.R"))
     sys.source(f, envir = globalenv())
 })
 assign(".i18n_dir", file.path(raiz, "www", "i18n"), envir = globalenv())
