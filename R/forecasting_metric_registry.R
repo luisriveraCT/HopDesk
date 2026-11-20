@@ -48,40 +48,40 @@
   tibble::tibble(
     metric_id = c(
       "usd_mxn", "tiie28", "tiie91", "tiie182", "inpc", "udis",
-      "sofr",
+      "sofr", "prime",
       "eur_usd", "eur_mxn", "gbp_usd", "gbp_mxn", "jpy_mxn", "cad_mxn"
     ),
     label = c(
       "USD/MXN FIX", "TIIE 28d", "TIIE 91d", "TIIE 182d", "INPC", "UDIS",
-      "SOFR",
+      "SOFR", "PRIME",
       "EUR/USD", "EUR/MXN", "GBP/USD", "GBP/MXN", "JPY/MXN", "CAD/MXN"
     ),
     category = c(
       "fx", "interest_rate", "interest_rate", "interest_rate",
       "inflation", "inflation",
-      "interest_rate",
+      "interest_rate", "interest_rate",
       "fx", "fx", "fx", "fx", "fx", "fx"
     ),
     unit = c(
       "currency_per_currency", "percent_annual", "percent_annual", "percent_annual",
       "index", "currency_per_currency",
-      "percent_annual",
+      "percent_annual", "percent_annual",
       "currency_per_currency", "currency_per_currency", "currency_per_currency",
       "currency_per_currency", "currency_per_currency", "currency_per_currency"
     ),
     is_legal_metric = c(
       TRUE, TRUE, TRUE, TRUE, TRUE, TRUE,
-      FALSE,
+      FALSE, FALSE,
       FALSE, FALSE, FALSE, FALSE, FALSE, FALSE
     ),
     primary_source_id = c(
       "banxico", "banxico", "banxico", "banxico", "banxico", "banxico",
-      "fred",
+      "fred", "fred",
       "yahoo", "yahoo", "yahoo", "yahoo", "yahoo", "yahoo"
     ),
     fallback_source_ids = list(
       list(), list(), list(), list(), list(), list(),
-      list(),
+      list(), list(),
       list(), list(), list(), list(), list(), list()
     ),
     fetch_params = list(
@@ -92,6 +92,7 @@
       list(serie = "SP1"),       # inpc
       list(serie = "SP68257"),   # udis
       list(serie = "SOFR"),      # sofr (FRED)
+      list(serie = "DPRIME"),    # prime (FRED, US Prime Rate; T63)
       list(ticker = "EURUSD=X"),
       list(ticker = "EURMXN=X"),
       list(ticker = "GBPUSD=X"),
@@ -102,13 +103,13 @@
     default_method_id = c(
       "yesterday_spot", "yesterday_spot", "yesterday_spot", "yesterday_spot",
       "spot", "spot",
-      "yesterday_spot",
+      "yesterday_spot", "yesterday_spot",
       "yesterday_spot", "yesterday_spot", "yesterday_spot",
       "yesterday_spot", "yesterday_spot", "yesterday_spot"
     ),
-    active     = rep(TRUE, 13L),
-    created_at = rep(now, 13L),
-    notes      = rep(NA_character_, 13L)
+    active     = rep(TRUE, 14L),
+    created_at = rep(now, 14L),
+    notes      = rep(NA_character_, 14L)
   )
 }
 
@@ -129,6 +130,30 @@
     updated_at      = rep(now, nrow(metrics)),
     notes           = rep(NA_character_, nrow(metrics))
   )
+}
+
+# T63: adds the seed's metrics this client's catalog lacks (by metric_id), and a
+# global-default subscription for each one that has none. Never changes or
+# removes a metric or a subscription that is there. Strict: a failed read
+# stop()s before anything is written. Returns the metric_ids it added.
+forecasting_completar_catalogo <- function(client_id) {
+  semilla <- .seed_forecasting_metrics()
+  nuevas <- NULL
+  modificar_forecasting_metrics(client_id, function(m) {
+    if (!nrow(m)) return(m)          # an empty catalog is seeded whole above, never here
+    falta <- semilla[!semilla$metric_id %in% m$metric_id, , drop = FALSE]
+    if (!nrow(falta)) return(m)
+    nuevas <<- falta
+    dplyr::bind_rows(m, falta)
+  })
+  if (is.null(nuevas)) return(character())
+  modificar_forecasting_subscriptions(client_id, function(subs) {
+    tiene <- subs$metric_id[subs$consumer_type %in% "global_default"]
+    falta <- nuevas[!nuevas$metric_id %in% tiene, , drop = FALSE]
+    if (!nrow(subs) || !nrow(falta)) return(subs)
+    dplyr::bind_rows(subs, .seed_forecasting_global_subscriptions(falta))
+  })
+  nuevas$metric_id
 }
 
 # Called during app startup if stores are empty; idempotent.
@@ -173,6 +198,16 @@ forecasting_seed_if_empty <- function(client_id = NULL) {
     seeded <<- c(seeded, "subscriptions")
     .seed_forecasting_global_subscriptions(metrics_db)
   })
+
+  # T63: a metric the seed has and this client's catalog lacks (PRIME, for a
+  # client seeded before it existed) is added, with its global-default
+  # subscription. Only added: a metric already there -- the user's edits
+  # too -- is never changed or removed. Strict re-read right before each
+  # write; a failed read writes nothing. Idempotent.
+  nuevas <- tryCatch(forecasting_completar_catalogo(client_id), error = function(e) {
+    message("[forecasting] no se pudo completar el catálogo"); character()
+  })
+  if (length(nuevas)) seeded <- c(seeded, paste0("metrics+", paste(nuevas, collapse = ",")))
 
   if (length(seeded)) {
     tryCatch(

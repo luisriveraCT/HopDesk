@@ -52,6 +52,22 @@ load_forecasting_metrics <- function(client_id = NULL) {
   raw
 }
 
+# The client's metrics catalog changed on S3 as it is now (T63): strict
+# re-read right before writing (a failed read stop()s: nothing is written),
+# `cambio` applied to that fresh copy, and written only if it changed.
+modificar_forecasting_metrics <- function(client_id, cambio) {
+  if (is.null(client_id) || !nzchar(client_id))
+    stop("modificar_forecasting_metrics: sin client_id", call. = FALSE)
+  raw <- .s3_leer_para_escribir(S3_KEYS$forecasting_metrics, client_id)
+  fresco <- if (is.null(raw) || !nrow(raw)) .schema_forecasting_metrics()
+            else .fcp_unpack_list_col(.fcp_unpack_list_col(.normalize(raw, .schema_forecasting_metrics),
+                                                           "fallback_source_ids"), "fetch_params")
+  nuevo <- cambio(fresco)
+  if (identical(nuevo, fresco)) return(invisible(fresco))
+  save_forecasting_metrics(nuevo, client_id = client_id)
+  invisible(nuevo)
+}
+
 save_forecasting_metrics <- function(df, client_id = NULL) {
   packed <- .fcp_pack_list_col(df, "fallback_source_ids")
   packed <- .fcp_pack_list_col(packed, "fetch_params")
