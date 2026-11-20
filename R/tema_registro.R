@@ -115,6 +115,8 @@ HD_TEMAS <- list(
       `oscuro-borde`     = "#0E1E30",
       `oscuro-texto`     = "#E8EEF5",
       `oscuro-texto-2`   = "#B0C4DE",
+      `oscuro-exito`     = "#3FB950",   # positive / negative on the dark band (Bancos)
+      `oscuro-peligro`   = "#F85149",
       # Fill (stripes, icons) and text are separate: a fill colour need not
       # read as text (TEMA_e4_mapas.md P8).
       exito              = "#198754", `exito-suave`   = "#D1E7DD", `exito-texto`   = "#065F46",
@@ -168,6 +170,8 @@ HD_TEMAS <- list(
       `oscuro-borde`     = "#24365A",
       `oscuro-texto`     = "#F3F1EA",
       `oscuro-texto-2`   = "#B7C2D4",
+      `oscuro-exito`     = "#9CCBA8",
+      `oscuro-peligro`   = "#E6A383",   # Panorama's warm signal on the navy bar
       exito              = "#2F6B4F", `exito-suave`   = "#E3EFE8", `exito-texto`   = "#2F6B4F",
       aviso              = "#C08A3E", `aviso-suave`   = "#F7E9E1", `aviso-texto`   = "#9A4524",
       `aviso-fuerte`     = "#9A4524",
@@ -285,6 +289,15 @@ tema_valido <- function(tema) {
 tema_resolver <- function(usuario = NULL, cliente = NULL) {
   for (t in list(usuario, cliente)) if (tema_valido(t)) return(tolower(trimws(t)))
   HD_TEMA_OMISION
+}
+
+# The theme of a Shiny session, for colours drawn in R (SVG in data: URIs,
+# vis.js, Word...). TEMA stage 3 puts a reactiveVal in
+# session$userData$hd_tema; read inside a render, a change of theme redraws.
+# Until then, and outside a session, the default theme.
+tema_de_sesion <- function(session = shiny::getDefaultReactiveDomain()) {
+  rv <- if (is.null(session)) NULL else session$userData$hd_tema
+  tema_resolver(if (is.function(rv)) rv() else NULL)
 }
 
 # Every --hd-* value of a theme, resolved: paleta + comunes + its roles +

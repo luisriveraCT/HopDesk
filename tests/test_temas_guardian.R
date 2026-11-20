@@ -166,6 +166,7 @@ contraste <- tema$tema_contraste
   c("oscuro-texto", "oscuro-fondo"), c("oscuro-texto", "oscuro-fondo-2"),
   c("oscuro-texto-2", "oscuro-fondo"),
   c("foco-color", "superficie"), c("foco-color", "fondo"),
+  c("oscuro-exito", "oscuro-fondo"), c("oscuro-peligro", "oscuro-fondo"),
   c("cobro", "superficie"), c("pago", "superficie"), c("provision", "superficie"),
   c("texto", "seleccion"), c("texto", "hover"),
   c("etq-a-texto", "etq-a-pastilla"), c("etq-b-texto", "etq-b-pastilla"),
@@ -173,10 +174,9 @@ contraste <- tema$tema_contraste
 )
 # Clásico pairs that fail today (its values are what the app has): they may
 # not get worse, and a migration that fixes one removes it from here.
-# Empty since the -texto roles (TEMA_e4_mapas.md P8): text on a soft fill
-# uses exito-texto / peligro-texto, which pass. The fills alone (#198754 on
-# #D1E7DD, 3.49) are not text pairs. Can only shrink.
-.CLASICO_BAJO_AA <- character()
+# Text on a soft fill uses exito-texto / peligro-texto, which pass (the fills
+# alone, #198754 on #D1E7DD at 3.49, are not text pairs). Can only shrink.
+.CLASICO_BAJO_AA <- c("oscuro-peligro/oscuro-fondo")   # 4.15: Bancos' red on its dark band today (TEMA_e4_mapas2 Q3)
 ok("every listed Clásico exception is a pair this test checks",
    all(.CLASICO_BAJO_AA %in% vapply(.PARES, paste, character(1), collapse = "/")))
 for (t in names(tema$HD_TEMAS)) {
@@ -278,6 +278,13 @@ ok("retiring: var(--hd-leg-ROL-hex) -> var(--hd-ROL), \"leg-ROL-hex\" -> \"ROL\"
        "tema_color(\"peligro-texto\", tema)",
        "box-shadow: var(--hd-sombra); x <- tema_color('foco')",
        "color: #0d1b2a; /* leg-texto-0d1b2a in a comment, unquoted */")))
+sesion <- function(valor) list(userData = list(hd_tema = function() valor))
+ok("tema_de_sesion(): the session's theme; the default with no session, no value or an unknown one",
+   identical(tema$tema_de_sesion(NULL), tema$HD_TEMA_OMISION) &&
+     identical(tema$tema_de_sesion(sesion("marca")), "marca") &&
+     identical(tema$tema_de_sesion(sesion("oscuro")), tema$HD_TEMA_OMISION) &&
+     identical(tema$tema_de_sesion(sesion(NULL)), tema$HD_TEMA_OMISION) &&
+     identical(tema$tema_de_sesion(list(userData = list())), tema$HD_TEMA_OMISION))
 ok("the retiring script exists and uses tema_legado_retirar()",
    file.exists("scripts/retirar_legado_clasico.R") &&
      any(grepl("tema_legado_retirar(", leer("scripts/retirar_legado_clasico.R"), fixed = TRUE)))
