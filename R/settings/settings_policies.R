@@ -897,6 +897,16 @@ settings_policies_observer <- function(input, output, session, shared) {
     type <- input$pol_type %||% "weekdays"
     roll <- input$pol_roll_direction %||% "forward"
     if (type == "last_day") roll <- "backward"
+    # T66: the field no longer stops a text, a decimal or a number out of
+    # -365..365; checked here. Empty or a text (NA) used to become 0 days.
+    if (identical(type, "offset_days")) {
+      rev_n <- hd_numero_revisar(if (is.null(input$pol_param_n)) 0 else input$pol_param_n,
+                                 tr("tablas.ajustes.politicas.dias_desplazar"),
+                                 min = -365, max = 365, entero = TRUE)
+      if (!rev_n$ok) {
+        showNotification(rev_n$aviso, type = "warning"); return()
+      }
+    }
 
     params <- tryCatch(.collect_policy_params(type, input), error = function(e) list())
 

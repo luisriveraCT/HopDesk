@@ -12,6 +12,8 @@
 #   2. with it, the ones a test can drive end to end save;
 #   3. without it, the buttons that write are not drawn (reading still is);
 #   4. static: each handler starts with puede_o_avisa().
+#   5. T66: "Días a desplazar" (offset_days) is checked on the server: a
+#      text, a decimal or a number outside -365..365 saves nothing.
 # The 2 observers of settings_companies.R that save on their own (on
 # sap_data / partner_policies_db) are not here: CM12a.
 #
@@ -28,7 +30,7 @@ ok <- function(label, expr) {
 }
 
 source("tests/helpers/s3_memoria.R")   # persistence.R (schemas) over an in-memory S3
-for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R", "R/policy_engine.R",
+for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R", "R/policy_engine.R", "R/ui_components.R",
             "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/settings/settings_policies.R", "R/settings/settings_companies.R", "R/settings/settings_sincro.R"))
   suppressMessages(source(f))
@@ -118,6 +120,35 @@ for (h in names(HANDLERS)) {
     ok(sprintf("%s con %s: guarda (%s)", h, H$permiso, paste(g, collapse = ", ")), H$con %in% g)
   }
 }
+
+# ── T66: Días a desplazar, checked on the server ────────────────────────────
+AVISOS <- character(0)
+showNotification <- function(ui, ...) { AVISOS <<- c(AVISOS, as.character(ui)); invisible("id") }
+desplazar <- function(n) {
+  AVISOS <<- character(0)
+  cat0 <- CATALOGO; on.exit(CATALOGO <<- cat0)
+  CATALOGO$params <<- replicate(nrow(CATALOGO), list(), simplify = FALSE)   # as S3 keeps it: a list
+  correr(CON, function(session, output) {
+    session$setInputs(pol_btn_new = 1)
+    session$setInputs(pol_name = "Más 10", pol_type = "offset_days", pol_param_n = n,
+                      pol_param_unit = "naturales", pol_btn_save = 1)
+  })
+}
+for (caso in list(list(NA, "Días a desplazar: escribe un número."),
+                  list(2.5, "Días a desplazar: escribe un número entero, sin decimales."),
+                  list(400, "Días a desplazar debe estar entre -365 y 365."),
+                  list(-366, "Días a desplazar debe estar entre -365 y 365."))) {
+  g <- desplazar(caso[[1]])
+  ok(sprintf("T66 offset_days n = %s: '%s', nothing saved", caso[[1]], caso[[2]]),
+     !length(g) && identical(AVISOS, caso[[2]]))
+}
+for (n in c(10, -365, 365)) {
+  g <- desplazar(n)
+  ok(sprintf("T66 offset_days n = %s: saved", n), "save_policy_catalog" %in% g)
+}
+showNotification <- function(...) invisible("id")
+ok("T66 the editor's field is a hd_numero_input entero, no type=number",
+   grepl('id="pol_param_n" type="text"', paste(as.character(.policy_params_ui("offset_days", list(n = 5L))), collapse = ""), fixed = TRUE))
 
 # ── Without the permission the buttons that write are not drawn ────────────
 html <- function(x) paste(as.character(x), collapse = "")
