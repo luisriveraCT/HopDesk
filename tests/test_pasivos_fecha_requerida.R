@@ -93,7 +93,7 @@ correr <- function(expr) {
 }
 me_inputs <- function(session, fecha)
   session$setInputs(me_fecha = fecha, me_empresa = "NTS", me_parte = "Proveedor", me_codigo = "",
-                    me_moneda = "MXN", me_importe = 50, me_documento = "", me_referencia = "", me_notas = "")
+                    me_moneda = "MXN", me_importe = 50, me_documento = "", me_factura = "", me_notas = "")
 
 correr(quote({ me_inputs(session, as.Date(NA)); session$setInputs(me_save_as_provision = 1) }))
 ok("Guardar como provisión, no date: the notice, nothing written", .mem_escrituras == 0L && AVISO %in% G$avisos)

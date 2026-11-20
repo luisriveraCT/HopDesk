@@ -634,7 +634,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       amount_cotizado_override = NA_real_,
       fecha_efectiva_override  = as.Date(NA),
       documento                = input$me_documento %||% "",
-      referencia               = input$me_referencia %||% "",
+      referencia               = input$me_factura %||% "",   # the modal's Concepto (T73: no input is me_referencia)
       notas                    = input$me_notas %||% "",
       manual_inv_id            = NA_character_,
       pagar_hoy_id             = NA_character_,
@@ -674,7 +674,8 @@ setup_pasivos_module <- function(input, output, session, shared) {
         id = new_id, origin = "manual", estado = "provisional",
         empresa = empresa, moneda_pago = input$me_moneda %||% base_moneda(),
         amount_pago = input$me_importe %||% 0,
-        fecha_efectiva = as.character(input$me_fecha)
+        fecha_efectiva = as.character(input$me_fecha),
+        documento = input$me_documento %||% "", referencia = input$me_factura %||% ""
       ),
       notes     = "manual orphan provision via Agregar modal",
       client_id = shared$effective_client_id()
