@@ -1156,6 +1156,8 @@
   "requisiciones.aviso.creada": "{usuario} created {folio} · {titulo}",
   "requisiciones.aviso.cancelada": "{usuario} cancelled {folio} · {titulo}",
   "requisiciones.aviso.restaurada": "{usuario} restored {folio} · {titulo}",
+  "requisiciones.aviso.pagada": "{usuario} paid {folio} · {titulo}",
+  "requisiciones.aviso.anulada": "{usuario} voided the payment of {folio} · {titulo}",
   "tablas.pasivos.borrar": "Delete",
   "tablas.pasivos.cancelar": "Cancel",
   "tablas.pasivos.borrar_pregunta": "Delete this liability? It goes to the Trash with all its provisions, and from there it is recovered just as it was.",

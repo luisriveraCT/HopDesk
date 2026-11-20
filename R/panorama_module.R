@@ -419,6 +419,33 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       } else shiny::showNotification(tr("panorama.req_avisos.error_guardar"), type = "error")
     }, ignoreInit = TRUE)
 
+    # ── Pagada / pago anulado de requisiciones (T62) ──────────────────────────
+    # Published by the session of whoever confirmed or annulled: the
+    # confirmations this session's user made (confirmado_por) or annulled
+    # (eliminado_por) since it started, of a provision, as they reach the
+    # session. Nothing is read in any other session; repetir = FALSE (and
+    # `hechas`) keep each event to one notice.
+    inicio_sesion <- Sys.time()
+    hechas <- character()
+    shiny::observe({
+      cf <- tryCatch(if (is.function(shared$bancos_confirmados)) shared$bancos_confirmados() else NULL,
+                     error = function(e) NULL)
+      u <- shiny::isolate(usr()); c <- shiny::isolate(cid())
+      if (!is.data.frame(cf) || !nrow(cf) || is.null(u) || is.null(c) || !nzchar(c)) return()
+      col <- function(n) if (n %in% names(cf)) cf[[n]] else rep(NA, nrow(cf))
+      yo  <- tolower(trimws(u$user %||% ""))
+      con <- !is.na(col("provision_id")) & nzchar(as.character(col("provision_id")))
+      pago <- con & tolower(trimws(as.character(col("confirmado_por")))) %in% yo &
+        !is.na(col("confirmado_at")) & as.POSIXct(col("confirmado_at")) >= inicio_sesion
+      anul <- con & col("eliminado") %in% TRUE & tolower(trimws(as.character(col("eliminado_por")))) %in% yo &
+        !is.na(col("eliminado_at")) & as.POSIXct(col("eliminado_at")) >= inicio_sesion
+      llaves <- c(paste0(col("confirmacion_id")[pago], "|pagada"), paste0(col("confirmacion_id")[anul], "|anulada"))
+      nuevas <- setdiff(llaves, hechas)
+      if (!length(nuevas)) return()
+      hechas <<- c(hechas, nuevas)
+      req_publicar_pagos(c, unique(sub("\\|(pagada|anulada)$", "", nuevas)), u$user)
+    })
+
     # ── Tu equipo hoy ─────────────────────────────────────────────────────────
     output$equipo <- shiny::renderUI({
       v <- visibles(); e <- panorama_equipo_hoy(v, hoy(), zona())

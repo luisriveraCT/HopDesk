@@ -1156,6 +1156,8 @@
   "requisiciones.aviso.creada": "{usuario} creó {folio} · {titulo}",
   "requisiciones.aviso.cancelada": "{usuario} canceló {folio} · {titulo}",
   "requisiciones.aviso.restaurada": "{usuario} restauró {folio} · {titulo}",
+  "requisiciones.aviso.pagada": "{usuario} pagó {folio} · {titulo}",
+  "requisiciones.aviso.anulada": "{usuario} anuló el pago de {folio} · {titulo}",
   "tablas.pasivos.borrar": "Borrar",
   "tablas.pasivos.cancelar": "Cancelar",
   "tablas.pasivos.borrar_pregunta": "¿Borrar este pasivo? Se va a la Papelera con todas sus provisiones, y desde ahí se recupera tal como estaba.",

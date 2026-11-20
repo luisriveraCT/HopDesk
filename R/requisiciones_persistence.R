@@ -889,41 +889,78 @@ req_avisos_destinatarios <- function(usuarios, config, prefs, interesados, autor
   unique(out)
 }
 
+# What every notice needs, read strictly once: usuarios, tier settings,
+# preferences and the requisitions' own tables. Any of them unreadable stop()s:
+# the caller publishes nothing (never "everyone").
+.req_avisos_contexto <- function(cid) {
+  usuarios <- .s3_leer_para_escribir(S3_KEYS$usuarios, cid)
+  if (!is.null(usuarios) && !is.data.frame(usuarios)) stop("usuarios is not a table", call. = FALSE)
+  config <- .s3_leer_para_escribir(S3_KEYS$tiers_config, cid)
+  prefs  <- .s3_leer_para_escribir(.PREFERENCIAS_KEY, cid)
+  list(usuarios = usuarios, config = if (is.list(config)) config else NULL,
+       prefs = if (is.data.frame(prefs)) prefs else NULL,
+       reqs = .req_leer("requisiciones", cid), hist = .req_leer("historial", cid),
+       coms = .req_leer("comentarios", cid))
+}
+
+# One event of one requisition to whoever chose it (req_avisos_destinatarios()),
+# as avisos personales that never repeat (repetir = FALSE). `autor`: who did it
+# (NA: not recorded -- nobody is left out for it); `clave`: the event's id.
+.req_avisar <- function(cid, ctx, rid, autor, clave, evento) {
+  fila <- ctx$reqs[ctx$reqs$id %in% rid, , drop = FALSE]
+  if (!nrow(fila)) return(invisible(FALSE))
+  fila <- fila[1, ]
+  autor <- if (length(autor) && !is.na(autor[1])) autor[1] else ""
+  interesados <- unique(stats::na.omit(c(fila$creado_por, ctx$coms$autor[ctx$coms$requisicion_id %in% rid],
+                                         ctx$hist$por[ctx$hist$requisicion_id %in% rid])))
+  dest <- req_avisos_destinatarios(ctx$usuarios, ctx$config, ctx$prefs, interesados, autor,
+                                   setdiff(stats::na.omit(c(fila$creado_por, autor)), ""))
+  if (!length(dest)) return(invisible(FALSE))
+  avisos_personales(cid, dest, list(
+    titulo = tr(paste0("requisiciones.aviso.", evento), usuario = if (nzchar(autor)) autor else "\u2014",
+                folio = fila$folio %||% "", titulo = fila$titulo %||% ""),
+    cuerpo = fila$empresa %||% "", severidad = "info",
+    clave = clave, enlace = "REQ", autor = autor, repetir = FALSE))
+  invisible(TRUE)
+}
+
 # Publishes one event per requisition (`historial_ids`, from .req_historial(),
-# in the same order). Reads strictly: usuarios, tier settings, preferences and
-# the requisitions' own tables; any of them unreadable -> nothing is published
-# (never "everyone"), a message without the client's data is left, and the
-# action still returns what it always did. `accion`: the history action
-# (creada | papelera | restaurada); its notice says creada / cancelada /
+# in the same order). A notice failing leaves a message without the client's
+# data and the action still returns what it always did. `accion`: the history
+# action (creada | papelera | restaurada); its notice says creada / cancelada /
 # restaurada.
 .req_publicar_evento <- function(cid, requisicion_ids, historial_ids, accion, por) {
   evento <- c(creada = "creada", papelera = "cancelada", restaurada = "restaurada")[[accion]]
   if (!length(historial_ids) || length(historial_ids) != length(requisicion_ids)) return(invisible(FALSE))
   ok <- tryCatch({
-    usuarios <- .s3_leer_para_escribir(S3_KEYS$usuarios, cid)
-    if (!is.null(usuarios) && !is.data.frame(usuarios)) stop("usuarios is not a table", call. = FALSE)
-    config <- .s3_leer_para_escribir(S3_KEYS$tiers_config, cid)
-    prefs  <- .s3_leer_para_escribir(.PREFERENCIAS_KEY, cid)
-    reqs <- .req_leer("requisiciones", cid); hist <- .req_leer("historial", cid); coms <- .req_leer("comentarios", cid)
-    for (k in seq_along(requisicion_ids)) {
-      rid  <- requisicion_ids[k]
-      fila <- reqs[reqs$id %in% rid, , drop = FALSE]
-      if (!nrow(fila)) next
-      fila <- fila[1, ]
-      interesados <- unique(stats::na.omit(c(fila$creado_por, coms$autor[coms$requisicion_id %in% rid],
-                                             hist$por[hist$requisicion_id %in% rid])))
-      dest <- req_avisos_destinatarios(usuarios, if (is.list(config)) config else NULL,
-                                       if (is.data.frame(prefs)) prefs else NULL,
-                                       interesados, por, stats::na.omit(c(fila$creado_por, por)))
-      if (!length(dest)) next
-      avisos_personales(cid, dest, list(
-        titulo = tr(paste0("requisiciones.aviso.", evento), usuario = por %||% "",
-                    folio = fila$folio %||% "", titulo = fila$titulo %||% ""),
-        cuerpo = fila$empresa %||% "", severidad = "info",
-        clave = req_evento_clave(historial_ids[k], accion), enlace = "REQ", autor = por, repetir = FALSE))
-    }
+    ctx <- .req_avisos_contexto(cid)
+    for (k in seq_along(requisicion_ids))
+      .req_avisar(cid, ctx, requisicion_ids[k], por, req_evento_clave(historial_ids[k], accion), evento)
     TRUE
   }, error = function(e) { message("[requisiciones] aviso de ", evento, " no se publicó"); FALSE })
+  invisible(ok)
+}
+
+# Pagada and pago anulado (with CM35's events): `confirmacion_ids`, the
+# confirmations (bancos_confirmados) this session's user just made or
+# annulled. Their events come from requisiciones_eventos() (strict reads) and
+# each aviso's clave is that event's own id; only confirmations of a
+# provision tied to a requisition produce one. Never throws.
+req_publicar_pagos <- function(client_id, confirmacion_ids, por) {
+  if (!length(confirmacion_ids)) return(invisible(FALSE))
+  ok <- tryCatch({
+    cid <- .req_cid(client_id)
+    ev <- requisiciones_eventos(cid, usuario = por)
+    ev <- ev[ev$fuente %in% "bancos" & ev$ref_id %in% confirmacion_ids &
+               ev$detalle %in% c("confirmada", "anulada"), , drop = FALSE]
+    if (nrow(ev)) {
+      ctx <- .req_avisos_contexto(cid)
+      for (i in seq_len(nrow(ev)))
+        .req_avisar(cid, ctx, ev$requisicion_id[i], ev$por[i], ev$id[i],
+                    if (identical(ev$detalle[i], "anulada")) "anulada" else "pagada")
+    }
+    TRUE
+  }, error = function(e) { message("[requisiciones] aviso de pago no se publicó"); FALSE })
   invisible(ok)
 }
 

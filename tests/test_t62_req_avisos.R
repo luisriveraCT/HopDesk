@@ -221,6 +221,61 @@ test_that("CM35: en un lote mezclado, cada id de evento termina en su propia eta
   expect_identical(sort(ev$id), sort(req_evento_clave(h$id, h$accion)))
 })
 
+# ── Pagada y pago anulado (con los eventos de la CM35) ──────────────────────
+poner_provision <- function(id) {
+  k <- paste0(CID, "/", S3_KEYS$pasivos_provisions)
+  p <- .normalize(.mem[[k]], .schema_pasivos_provision)
+  assign(k, dplyr::bind_rows(p, tibble::tibble(id = id, estado = "provisional", amount_pago = 2000, empresa = "NCS",
+                                               parte = "AMAZON", moneda_pago = "MXN",
+                                               fecha_efectiva = as.Date("2026-11-21"))), envir = .mem)
+}
+poner_confirmacion <- function(conf_id, provision_id, por, anulada_por = NA_character_) {
+  k <- paste0(CID, "/", S3_KEYS$bancos_confirmados)
+  c <- .normalize(.mem[[k]], .schema_bancos_confirmados)
+  c <- c[!c$confirmacion_id %in% conf_id, , drop = FALSE]
+  assign(k, dplyr::bind_rows(c, tibble::tibble(
+    confirmacion_id = conf_id, provision_id = provision_id, importe = 2000, moneda = "MXN", action = "confirmed",
+    confirmado_at = as.POSIXct("2026-11-19 18:00", tz = "UTC"), confirmado_por = por,
+    eliminado = !is.na(anulada_por), eliminado_por = anulada_por,
+    eliminado_at = if (is.na(anulada_por)) as.POSIXct(NA, tz = "UTC") else as.POSIXct("2026-11-19 19:00", tz = "UTC"))),
+    envir = .mem)
+}
+safe_load_pagar_hoy <- function(...) NULL   # requisiciones_eventos() reads the Agenda: none here
+
+test_that("pagada y anulada: a quien eligió la requisición, con la clave = id del evento de la CM35", {
+  reiniciar(); gente(); poner_provision("P1")
+  r <- requisicion_crear(CID, c(base_req, list(provision_id = "P1")), "ana")
+  poner_confirmacion("C1", "P1", "beto")
+  expect_true(req_publicar_pagos(CID, "C1", "beto"))
+  ev <- requisiciones_eventos(CID)
+  id_pago <- ev$id[ev$fuente == "bancos" & ev$detalle == "confirmada"]
+  expect_identical(length(id_pago), 1L)
+  a <- para("ana")                                   # ana created it: "mias"
+  expect_true(paste0(id_pago, "|ana") %in% a$clave)
+  expect_true(any(grepl("beto pagó", a$titulo, fixed = TRUE) & grepl(r$folio, a$titulo, fixed = TRUE)))
+  expect_identical(nrow(para("beto")[grepl("^bancos", para("beto")$clave), ]), 0L)   # the author never
+
+  poner_confirmacion("C1", "P1", "beto", anulada_por = "beto")
+  req_publicar_pagos(CID, "C1", "beto")
+  ev <- requisiciones_eventos(CID)
+  id_anul <- ev$id[ev$fuente == "bancos" & ev$detalle == "anulada"]
+  expect_true(paste0(id_anul, "|ana") %in% para("ana")$clave)
+  n <- nrow(avisos()); req_publicar_pagos(CID, "C1", "beto")
+  expect_identical(nrow(avisos()), n)                # published again: nothing new
+})
+
+test_that("pagos: una confirmación que no es de una requisición no avisa; una lectura fallida tampoco", {
+  reiniciar(); gente(); poner_pref("beto", "todas"); poner_provision("P9")
+  poner_confirmacion("C9", "P9", "ana")              # P9 belongs to no requisition
+  req_publicar_pagos(CID, "C9", "ana")
+  expect_identical(nrow(avisos()), 0L)
+  poner_provision("P1"); requisicion_crear(CID, c(base_req, list(provision_id = "P1")), "ana")
+  n <- nrow(avisos()); poner_confirmacion("C1", "P1", "ana")
+  .no_leer <<- .PREFERENCIAS_KEY
+  expect_message(req_publicar_pagos(CID, "C1", "ana"), "no se publicó")
+  expect_identical(nrow(avisos()), n)
+})
+
 test_that("el aviso de un comentario enlaza la pestaña Requisiciones (REQ): el feed solo enlaza valores de pestaña", {
   reiniciar(); gente()
   r <- requisicion_crear(CID, base_req, "ana")
