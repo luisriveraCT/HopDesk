@@ -45,7 +45,7 @@ if (file.exists(file.path(raiz, "R/zona.R"))) sys.source(file.path(raiz, "R/zona
 cargar("R/vencidos_module.R", "facturas_ids")
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
-  for (f in c("R/i18n.R", "R/monedas.R", "R/ppl_generator.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+  for (f in c("R/tema_registro.R", "R/i18n.R", "R/monedas.R", "R/ppl_generator.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
               "R/persistence.R", "R/empresas_identidad.R", "R/data_pipeline.R", "R/ic_mapa_llave.R", "R/treasury_map_module.R", "R/interco_module.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
 })
@@ -112,6 +112,8 @@ ui <- bslib::page_fluid(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA"),
   # The engine in the head from the start, as in the app (Vencidos).
   shinyjs::useShinyjs(), app_styles(), hd_table_deps(),
+  # The theme tokens the Mapa's CSS uses (var(--hd-*)), as app.R loads them.
+  if (exists("tema_head", mode = "function")) tema_head(),
   actionButton("otra_sesion_confirma", "Otra sesión: confirma P-1"),
   actionButton("otra_sesion_cobra", "Otra sesión: cobra A-1"),
   intercoUI("ic"),

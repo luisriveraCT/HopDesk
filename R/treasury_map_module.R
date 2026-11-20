@@ -128,27 +128,31 @@
 # SVG node image with gradient fill — base64-encoded data URI.
 # vis.js renders on canvas (not CSS), so gradients require SVG embedding.
 # Square canvas (sz×sz) so vis.js aspect-ratio scaling doesn't distort the ellipse.
-.tm_node_svg <- function(ini, bal_lbl, is_tgt, bv) {
+# `tema`: the session's theme. SVG in a data: URI cannot read var(--hd-*),
+# so the colours are resolved here (TEMA stage 4); read inside map_data(),
+# a change of theme redraws.
+.tm_node_svg <- function(ini, bal_lbl, is_tgt, bv, tema = tema_de_sesion()) {
   sz <- 120L; cx <- 60L; cy <- 60L
   rx <- 56L;  ry <- 24L   # wide, flat ellipse inside square canvas
+  col <- function(rol) tema_color(rol, tema)
 
   # ── Color scheme ───────────────────────────────────────────────────────────
   if (is_tgt) {
-    g1 <- "#4a6fa5"; g2 <- "#1a2e5a"   # Reporte navy: steel-blue → deep navy
-    fc <- "#ffffff";  sc <- "#0f1e3d"
-    tc <- "rgba(255,255,255,0.68)"
+    g1 <- col("leg-encabezado-hover-4a6fa5"); g2 <- col("leg-encabezado-1a2e5a")   # navy: light -> deep
+    fc <- col("encabezado-texto");  sc <- col("leg-encabezado-borde-0f1e3d")
+    tc <- tema_mezcla("encabezado-texto", 68, tema)
   } else if (!is.na(bv) && bv > 0) {
-    g1 <- "#6ee7b7"; g2 <- "#059669"   # emerald: mint → deep green
-    fc <- "#064e3b";  sc <- "#047857"
-    tc <- "#065f46"
+    g1 <- col("leg-exito-suave-6ee7b7"); g2 <- col("leg-exito-059669")   # in favour: mint -> deep green
+    fc <- col("leg-exito-texto-064e3b");  sc <- col("leg-exito-047857")
+    tc <- col("exito-texto")
   } else if (!is.na(bv) && bv <= 0) {
-    g1 <- "#fda4af"; g2 <- "#be123c"   # rose: blush → deep rose
-    fc <- "#4c0519";  sc <- "#9f1239"
-    tc <- "#881337"
+    g1 <- col("leg-peligro-suave-fda4af"); g2 <- col("leg-peligro-be123c")   # against: blush -> deep rose
+    fc <- col("leg-peligro-texto-4c0519");  sc <- col("leg-peligro-9f1239")
+    tc <- col("leg-peligro-texto-881337")
   } else {
-    g1 <- "#e2e8f0"; g2 <- "#94a3b8"   # slate: light → medium
-    fc <- "#1e293b";  sc <- "#64748b"
-    tc <- "#475569"
+    g1 <- col("leg-superficie-2-e2e8f0"); g2 <- col("leg-texto-tenue-94a3b8")   # no balance: light -> medium
+    fc <- col("leg-texto-1e293b");  sc <- col("leg-texto-2-64748b")
+    tc <- col("leg-texto-2-475569")
   }
 
   uid <- ini   # company initials are unique alphanumeric — safe as SVG id suffix
@@ -211,17 +215,17 @@ treasuryMapUI <- function(id) {
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: .04em;
-        color: #6b7280;
+        color: var(--hd-texto-2);
         margin-bottom: 4px;
       }
 
       /* ── Graph card ── */
       .tm-graph-card {
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--hd-borde);
         border-radius: 10px;
         overflow: hidden;
-        background: #ffffff;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+        background: var(--hd-superficie);
+        box-shadow: var(--hd-leg-sombra-000000-17659d);
       }
       .tm-graph-card .vis-network canvas {
         background: transparent !important;
@@ -237,16 +241,16 @@ treasuryMapUI <- function(id) {
       /* ── Generic panel card ── */
       .tm-panel {
         flex: 1;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--hd-borde);
         border-radius: 10px;
-        background: #fff;
-        box-shadow: 0 1px 4px rgba(0,0,0,.05);
+        background: var(--hd-superficie);
+        box-shadow: var(--hd-leg-sombra-000000-0504d0);
         min-width: 0;
         overflow: hidden;
       }
       .tm-panel-header {
-        background: #f9fafb;
-        border-bottom: 1px solid #e5e7eb;
+        background: var(--hd-superficie-2);
+        border-bottom: 1px solid var(--hd-borde);
         padding: 9px 14px 8px;
         display: flex;
         align-items: center;
@@ -255,7 +259,7 @@ treasuryMapUI <- function(id) {
       .tm-panel-header .tm-panel-title {
         font-size: .82rem;
         font-weight: 700;
-        color: #374151;
+        color: var(--hd-texto);
         letter-spacing: .01em;
         margin: 0;
       }
@@ -267,17 +271,17 @@ treasuryMapUI <- function(id) {
         align-items: center;
         gap: 6px;
         padding: 5px 0;
-        border-bottom: 1px solid #f3f4f6;
+        border-bottom: 1px solid var(--hd-leg-borde-f3f4f6);
         font-size: .82rem;
       }
       .tm-route:last-child { border-bottom: none; }
-      .tm-route-path { font-weight: 600; color: #1f2937; }
-      .tm-route-amt  { font-size: .75rem; color: #9ca3af; margin-left: auto; }
+      .tm-route-path { font-weight: 600; color: var(--hd-leg-texto-1f2937); }
+      .tm-route-amt  { font-size: .75rem; color: var(--hd-texto-tenue); margin-left: auto; }
 
       /* ── Hop badges ── */
-      .tm-badge-direct { background:#d1fae5; color:#065f46; border:1px solid #6ee7b7; font-size:.7rem; padding:1px 7px; border-radius:99px; font-weight:700; }
-      .tm-badge-2      { background:#fef9c3; color:#854d0e; border:1px solid #fde047; font-size:.7rem; padding:1px 7px; border-radius:99px; font-weight:700; }
-      .tm-badge-3      { background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; font-size:.7rem; padding:1px 7px; border-radius:99px; font-weight:700; }
+      .tm-badge-direct { background:var(--hd-leg-exito-suave-d1fae5); color:var(--hd-exito-texto); border:1px solid var(--hd-leg-exito-suave-6ee7b7); font-size:.7rem; padding:1px 7px; border-radius:99px; font-weight:700; }
+      .tm-badge-2      { background:var(--hd-leg-aviso-suave-fef9c3); color:var(--hd-leg-aviso-texto-854d0e); border:1px solid var(--hd-leg-aviso-fde047); font-size:.7rem; padding:1px 7px; border-radius:99px; font-weight:700; }
+      .tm-badge-3      { background:var(--hd-peligro-suave); color:var(--hd-leg-peligro-texto-991b1b); border:1px solid var(--hd-leg-peligro-suave-fca5a5); font-size:.7rem; padding:1px 7px; border-radius:99px; font-weight:700; }
 
       /* ── Plan items ── */
       .tm-plan-item {
@@ -285,55 +289,55 @@ treasuryMapUI <- function(id) {
         justify-content: space-between;
         align-items: center;
         padding: 4px 0;
-        border-bottom: 1px solid #f3f4f6;
+        border-bottom: 1px solid var(--hd-leg-borde-f3f4f6);
         font-size: .81rem;
-        color: #374151;
+        color: var(--hd-texto);
       }
       .tm-plan-item:last-child { border-bottom: none; }
-      .tm-plan-item .tm-plan-amt { font-variant-numeric: tabular-nums; color: #6b7280; }
+      .tm-plan-item .tm-plan-amt { font-variant-numeric: tabular-nums; color: var(--hd-texto-2); }
       .tm-plan-total {
         display: flex;
         justify-content: space-between;
         align-items: center;
         font-weight: 700;
         font-size: .84rem;
-        color: #111827;
+        color: var(--hd-leg-texto-111827);
         margin-top: 8px;
         padding-top: 8px;
-        border-top: 2px solid #e5e7eb;
+        border-top: 2px solid var(--hd-borde);
       }
 
       /* ── Edge detail panel ── */
       .tm-edge-panel {
         margin-top: 12px;
-        border: 1px solid #e5e7eb;
-        border-left: 4px solid #f97316;
+        border: 1px solid var(--hd-borde);
+        border-left: 4px solid var(--hd-leg-acento-f97316);
         border-radius: 10px;
-        background: #fff;
-        box-shadow: 0 1px 4px rgba(0,0,0,.05);
+        background: var(--hd-superficie);
+        box-shadow: var(--hd-leg-sombra-000000-0504d0);
         overflow: hidden;
       }
       .tm-edge-panel.tm-edge-empty {
-        border-left-color: #d1d5db;
-        background: #f9fafb;
+        border-left-color: var(--hd-leg-borde-fuerte-d1d5db);
+        background: var(--hd-superficie-2);
       }
       .tm-edge-panel-header {
-        background: #fff7ed;
-        border-bottom: 1px solid #fed7aa;
+        background: var(--hd-leg-acento-p8-fff7ed);
+        border-bottom: 1px solid var(--hd-leg-acento-p35-fed7aa);
         padding: 9px 14px 8px;
         display: flex;
         align-items: center;
         gap: 8px;
       }
       .tm-edge-panel-header.tm-edge-header-empty {
-        background: #f9fafb;
-        border-bottom-color: #e5e7eb;
+        background: var(--hd-superficie-2);
+        border-bottom-color: var(--hd-borde);
       }
       .tm-edge-panel-body { padding: 10px 14px 12px; }
 
       /* ── Empty state text ── */
       .tm-empty {
-        color: #9ca3af;
+        color: var(--hd-texto-tenue);
         font-size: .82rem;
         font-style: italic;
         margin: 0;
@@ -366,7 +370,7 @@ treasuryMapUI <- function(id) {
       # Routes panel
       div(class = "tm-panel",
         div(class = "tm-panel-header",
-          tags$span(icon("route"), style = "color:#6366f1; font-size:.9rem;"),
+          tags$span(icon("route"), style = "color:var(--hd-leg-primario-6366f1); font-size:.9rem;"),
           tags$p(class = "tm-panel-title", tr("tablas.mapa.rutas_titulo"))
         ),
         div(class = "tm-panel-body",
@@ -377,7 +381,7 @@ treasuryMapUI <- function(id) {
       # Payment plan panel
       div(class = "tm-panel",
         div(class = "tm-panel-header",
-          tags$span(icon("list-check"), style = "color:#10b981; font-size:.9rem;"),
+          tags$span(icon("list-check"), style = "color:var(--hd-leg-exito-10b981); font-size:.9rem;"),
           tags$p(class = "tm-panel-title", tr("tablas.mapa.plan_titulo"))
         ),
         div(class = "tm-panel-body",
@@ -529,6 +533,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
         edges <- do.call(rbind, lapply(seq_len(nrow(esum)), function(i) {
           r   <- esum[i, ]
           lbl <- .hd_dinero_compacto(r$Total)   # "350K", "1.5M" (T55c); the tooltip names the currency
+          tema <- tema_de_sesion()
           data.frame(
             id    = i,
             from  = r$from_ini, to = r$to_ini,
@@ -537,13 +542,13 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
                            .tm_fmt(r$Total, cur), "<br/>", tr("tablas.mapa.arista_facturas", n = r$Facturas)),
             arrows = "to",
             width  = 1 + 4 * (r$Total / max_t),
-            color  = "#1b3a2a",           # super dark green, almost black
-            color.highlight = "#00c4a7",  # vivid teal on selection
-            color.hover     = "#2d6a4f",  # medium dark green on hover
+            color  = tema_color("leg-exito-texto-1b3a2a", tema),           # very dark green
+            color.highlight = tema_color("leg-acento-00c4a7", tema),       # teal on selection
+            color.hover     = tema_color("leg-exito-texto-2d6a4f", tema),  # dark green on hover
             font.size  = 11,
-            font.color = "#1b3a2a",       # match arrow color
+            font.color = tema_color("leg-exito-texto-1b3a2a", tema),       # match arrow color
             font.strokeWidth = 3,
-            font.strokeColor = "rgba(255,255,255,0.92)",  # white halo for legibility on white bg
+            font.strokeColor = tema_mezcla("superficie", 92, tema),        # halo for legibility on the card
             stringsAsFactors = FALSE
           )
         }))
@@ -594,7 +599,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
 
       # Reset all edges to default dark green
       visNetwork::visUpdateEdges(proxy,
-        data.frame(id = seq_len(nrow(esum)), color = "#1b3a2a", stringsAsFactors = FALSE)
+        data.frame(id = seq_len(nrow(esum)), color = tema_color("leg-exito-texto-1b3a2a", tema_de_sesion()), stringsAsFactors = FALSE)
       )
 
       # Highlight selected edge in orange
@@ -602,7 +607,7 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
         sel_idx <- which(esum$from_ini == edge$from_ini & esum$to_ini == edge$to_ini)
         if (length(sel_idx))
           visNetwork::visUpdateEdges(proxy,
-            data.frame(id = sel_idx[1], color = "#f97316", stringsAsFactors = FALSE)
+            data.frame(id = sel_idx[1], color = tema_color("leg-acento-f97316", tema_de_sesion()), stringsAsFactors = FALSE)
           )
       }
     })
@@ -676,8 +681,8 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
         return(
           div(class = "tm-edge-panel tm-edge-empty",
             div(class = "tm-edge-panel-header tm-edge-header-empty",
-              tags$span(icon("hand-pointer"), style = "color:#9ca3af; font-size:.9rem;"),
-              tags$p(class = "tm-panel-title", style = "color:#6b7280; font-weight:500;",
+              tags$span(icon("hand-pointer"), style = "color:var(--hd-texto-tenue); font-size:.9rem;"),
+              tags$p(class = "tm-panel-title", style = "color:var(--hd-texto-2); font-weight:500;",
                      tr("tablas.mapa.detalle_titulo"))
             ),
             div(class = "tm-edge-panel-body",
@@ -698,15 +703,15 @@ treasuryMapServer <- function(id, shared, ic_invoices_rv) {
 
       div(class = "tm-edge-panel",
         div(class = "tm-edge-panel-header",
-          tags$span(icon("arrow-right-arrow-left"), style = "color:#f97316; font-size:.9rem;"),
+          tags$span(icon("arrow-right-arrow-left"), style = "color:var(--hd-leg-acento-f97316); font-size:.9rem;"),
           tags$p(class = "tm-panel-title",
                  tagList(
                    tags$span(from_full),
-                   tags$span(" \u2192 ", style = "color:#f97316;"),
+                   tags$span(" \u2192 ", style = "color:var(--hd-leg-acento-f97316);"),
                    tags$span(to_full),
                    tags$span(
                      class = "fw-normal ms-2",
-                     style = "font-size:.76rem; color:#9ca3af;",
+                     style = "font-size:.76rem; color:var(--hd-texto-tenue);",
                      tr("tablas.mapa.debe_a", de = edge$from_ini, a = edge$to_ini)
                    )
                  )),

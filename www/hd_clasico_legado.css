@@ -7,12 +7,32 @@
 
 /* Every theme: the role */
 :root {
+  --hd-leg-acento-00c4a7: var(--hd-acento);
+  --hd-leg-acento-f97316: var(--hd-acento);
+  --hd-leg-acento-p35-fed7aa: color-mix(in srgb, var(--hd-acento) 35%, var(--hd-superficie));
+  --hd-leg-acento-p8-fff7ed: color-mix(in srgb, var(--hd-acento) 8%, var(--hd-superficie));
+  --hd-leg-aviso-fde047: var(--hd-aviso);
+  --hd-leg-aviso-suave-fef9c3: var(--hd-aviso-suave);
+  --hd-leg-aviso-texto-854d0e: var(--hd-aviso-texto);
   --hd-leg-borde-dde4ed: var(--hd-borde);
   --hd-leg-borde-e8ecf2: var(--hd-borde);
+  --hd-leg-borde-f3f4f6: var(--hd-borde);
   --hd-leg-borde-fuerte-b0c6de: var(--hd-borde-fuerte);
+  --hd-leg-borde-fuerte-d1d5db: var(--hd-borde-fuerte);
+  --hd-leg-encabezado-1a2e5a: var(--hd-encabezado);
+  --hd-leg-encabezado-borde-0f1e3d: var(--hd-encabezado-borde);
   --hd-leg-encabezado-hover-2563a8: var(--hd-encabezado-hover);
+  --hd-leg-encabezado-hover-4a6fa5: var(--hd-encabezado-hover);
   --hd-leg-etq-a-texto-c62828: var(--hd-etq-a-texto);
   --hd-leg-etq-b-texto-e65100: var(--hd-etq-b-texto);
+  --hd-leg-exito-047857: var(--hd-exito);
+  --hd-leg-exito-059669: var(--hd-exito);
+  --hd-leg-exito-10b981: var(--hd-exito);
+  --hd-leg-exito-suave-6ee7b7: var(--hd-exito-suave);
+  --hd-leg-exito-suave-d1fae5: var(--hd-exito-suave);
+  --hd-leg-exito-texto-064e3b: var(--hd-exito-texto);
+  --hd-leg-exito-texto-1b3a2a: var(--hd-exito-texto);
+  --hd-leg-exito-texto-2d6a4f: var(--hd-exito-texto);
   --hd-leg-foco-4a88c7-21e45b: var(--hd-foco);
   --hd-leg-foco-color-1e3a5f: var(--hd-foco-color);
   --hd-leg-foco-color-4a88c7: var(--hd-foco-color);
@@ -24,21 +44,58 @@
   --hd-leg-oscuro-texto-2-7b9ab8: var(--hd-oscuro-texto-2);
   --hd-leg-oscuro-texto-c8d8ea: var(--hd-oscuro-texto);
   --hd-leg-oscuro-texto-ffffff: var(--hd-oscuro-texto);
+  --hd-leg-peligro-9f1239: var(--hd-peligro);
+  --hd-leg-peligro-be123c: var(--hd-peligro);
+  --hd-leg-peligro-suave-fca5a5: var(--hd-peligro-suave);
+  --hd-leg-peligro-suave-fda4af: var(--hd-peligro-suave);
+  --hd-leg-peligro-texto-4c0519: var(--hd-peligro-texto);
+  --hd-leg-peligro-texto-881337: var(--hd-peligro-texto);
+  --hd-leg-peligro-texto-991b1b: var(--hd-peligro-texto);
+  --hd-leg-primario-6366f1: var(--hd-primario);
   --hd-leg-primario-suave-d8e6f5: var(--hd-primario-suave);
+  --hd-leg-sombra-000000-0504d0: var(--hd-sombra);
+  --hd-leg-sombra-000000-17659d: var(--hd-sombra);
   --hd-leg-sombra-000000-44cce5: var(--hd-sombra);
+  --hd-leg-superficie-2-e2e8f0: var(--hd-superficie-2);
   --hd-leg-texto-0d1b2a: var(--hd-texto);
   --hd-leg-texto-0d2240: var(--hd-texto);
+  --hd-leg-texto-111827: var(--hd-texto);
+  --hd-leg-texto-1e293b: var(--hd-texto);
+  --hd-leg-texto-1f2937: var(--hd-texto);
   --hd-leg-texto-2-374b5f: var(--hd-texto-2);
+  --hd-leg-texto-2-475569: var(--hd-texto-2);
+  --hd-leg-texto-2-64748b: var(--hd-texto-2);
+  --hd-leg-texto-tenue-94a3b8: var(--hd-texto-tenue);
 }
 
 /* Clasico: today's exact value */
 [data-hd-tema="clasico"], :root:not([data-hd-tema]) {
+  --hd-leg-acento-00c4a7: #00C4A7;
+  --hd-leg-acento-f97316: #F97316;
+  --hd-leg-acento-p35-fed7aa: #FED7AA;
+  --hd-leg-acento-p8-fff7ed: #FFF7ED;
+  --hd-leg-aviso-fde047: #FDE047;
+  --hd-leg-aviso-suave-fef9c3: #FEF9C3;
+  --hd-leg-aviso-texto-854d0e: #854D0E;
   --hd-leg-borde-dde4ed: #DDE4ED;
   --hd-leg-borde-e8ecf2: #E8ECF2;
+  --hd-leg-borde-f3f4f6: #F3F4F6;
   --hd-leg-borde-fuerte-b0c6de: #B0C6DE;
+  --hd-leg-borde-fuerte-d1d5db: #D1D5DB;
+  --hd-leg-encabezado-1a2e5a: #1A2E5A;
+  --hd-leg-encabezado-borde-0f1e3d: #0F1E3D;
   --hd-leg-encabezado-hover-2563a8: #2563A8;
+  --hd-leg-encabezado-hover-4a6fa5: #4A6FA5;
   --hd-leg-etq-a-texto-c62828: #C62828;
   --hd-leg-etq-b-texto-e65100: #E65100;
+  --hd-leg-exito-047857: #047857;
+  --hd-leg-exito-059669: #059669;
+  --hd-leg-exito-10b981: #10B981;
+  --hd-leg-exito-suave-6ee7b7: #6EE7B7;
+  --hd-leg-exito-suave-d1fae5: #D1FAE5;
+  --hd-leg-exito-texto-064e3b: #064E3B;
+  --hd-leg-exito-texto-1b3a2a: #1B3A2A;
+  --hd-leg-exito-texto-2d6a4f: #2D6A4F;
   --hd-leg-foco-4a88c7-21e45b: 0 0 0 2px rgba(74,136,199,0.3);
   --hd-leg-foco-color-1e3a5f: #1E3A5F;
   --hd-leg-foco-color-4a88c7: #4A88C7;
@@ -50,10 +107,27 @@
   --hd-leg-oscuro-texto-2-7b9ab8: #7B9AB8;
   --hd-leg-oscuro-texto-c8d8ea: #C8D8EA;
   --hd-leg-oscuro-texto-ffffff: #FFFFFF;
+  --hd-leg-peligro-9f1239: #9F1239;
+  --hd-leg-peligro-be123c: #BE123C;
+  --hd-leg-peligro-suave-fca5a5: #FCA5A5;
+  --hd-leg-peligro-suave-fda4af: #FDA4AF;
+  --hd-leg-peligro-texto-4c0519: #4C0519;
+  --hd-leg-peligro-texto-881337: #881337;
+  --hd-leg-peligro-texto-991b1b: #991B1B;
+  --hd-leg-primario-6366f1: #6366F1;
   --hd-leg-primario-suave-d8e6f5: #D8E6F5;
+  --hd-leg-sombra-000000-0504d0: 0 1px 4px rgba(0,0,0,.05);
+  --hd-leg-sombra-000000-17659d: 0 2px 6px rgba(0,0,0,0.06);
   --hd-leg-sombra-000000-44cce5: 0 4px 20px rgba(0,0,0,0.45);
+  --hd-leg-superficie-2-e2e8f0: #E2E8F0;
   --hd-leg-texto-0d1b2a: #0D1B2A;
   --hd-leg-texto-0d2240: #0D2240;
+  --hd-leg-texto-111827: #111827;
+  --hd-leg-texto-1e293b: #1E293B;
+  --hd-leg-texto-1f2937: #1F2937;
   --hd-leg-texto-2-374b5f: #374B5F;
+  --hd-leg-texto-2-475569: #475569;
+  --hd-leg-texto-2-64748b: #64748B;
+  --hd-leg-texto-tenue-94a3b8: #94A3B8;
 }
 

@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 4L
+HD_TEMAS_CSS_VERSION <- 5L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -223,12 +223,32 @@ HD_TEMAS <- list(
 # (#RRGGBB), and also reads "<rol>-p<N>" without the legacy prefix, which
 # is what the retiring script leaves in R code.
 .HD_LEGADO <- list(
+  `acento-00c4a7` = "#00C4A7",
+  `acento-f97316` = "#F97316",
+  `acento-p35-fed7aa` = "#FED7AA",
+  `acento-p8-fff7ed` = "#FFF7ED",
+  `aviso-fde047` = "#FDE047",
+  `aviso-suave-fef9c3` = "#FEF9C3",
+  `aviso-texto-854d0e` = "#854D0E",
   `borde-dde4ed` = "#DDE4ED",
   `borde-e8ecf2` = "#E8ECF2",
+  `borde-f3f4f6` = "#F3F4F6",
   `borde-fuerte-b0c6de` = "#B0C6DE",
+  `borde-fuerte-d1d5db` = "#D1D5DB",
+  `encabezado-1a2e5a` = "#1A2E5A",
+  `encabezado-borde-0f1e3d` = "#0F1E3D",
   `encabezado-hover-2563a8` = "#2563A8",
+  `encabezado-hover-4a6fa5` = "#4A6FA5",
   `etq-a-texto-c62828` = "#C62828",
   `etq-b-texto-e65100` = "#E65100",
+  `exito-047857` = "#047857",
+  `exito-059669` = "#059669",
+  `exito-10b981` = "#10B981",
+  `exito-suave-6ee7b7` = "#6EE7B7",
+  `exito-suave-d1fae5` = "#D1FAE5",
+  `exito-texto-064e3b` = "#064E3B",
+  `exito-texto-1b3a2a` = "#1B3A2A",
+  `exito-texto-2d6a4f` = "#2D6A4F",
   `foco-4a88c7-21e45b` = "0 0 0 2px rgba(74,136,199,0.3)",
   `foco-color-1e3a5f` = "#1E3A5F",
   `foco-color-4a88c7` = "#4A88C7",
@@ -240,11 +260,28 @@ HD_TEMAS <- list(
   `oscuro-texto-2-7b9ab8` = "#7B9AB8",
   `oscuro-texto-c8d8ea` = "#C8D8EA",
   `oscuro-texto-ffffff` = "#FFFFFF",
+  `peligro-9f1239` = "#9F1239",
+  `peligro-be123c` = "#BE123C",
+  `peligro-suave-fca5a5` = "#FCA5A5",
+  `peligro-suave-fda4af` = "#FDA4AF",
+  `peligro-texto-4c0519` = "#4C0519",
+  `peligro-texto-881337` = "#881337",
+  `peligro-texto-991b1b` = "#991B1B",
+  `primario-6366f1` = "#6366F1",
   `primario-suave-d8e6f5` = "#D8E6F5",
+  `sombra-000000-0504d0` = "0 1px 4px rgba(0,0,0,.05)",
+  `sombra-000000-17659d` = "0 2px 6px rgba(0,0,0,0.06)",
   `sombra-000000-44cce5` = "0 4px 20px rgba(0,0,0,0.45)",
+  `superficie-2-e2e8f0` = "#E2E8F0",
   `texto-0d1b2a` = "#0D1B2A",
   `texto-0d2240` = "#0D2240",
-  `texto-2-374b5f` = "#374B5F"
+  `texto-111827` = "#111827",
+  `texto-1e293b` = "#1E293B",
+  `texto-1f2937` = "#1F2937",
+  `texto-2-374b5f` = "#374B5F",
+  `texto-2-475569` = "#475569",
+  `texto-2-64748b` = "#64748B",
+  `texto-tenue-94a3b8` = "#94A3B8"
 )
 
 # Roles whose value is a whole box-shadow, not a colour.
