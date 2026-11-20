@@ -57,6 +57,7 @@
 .hdreq-barra-p > div { height: 100%; background: var(--hd-oro); }
 .hdreq-otra-moneda { padding: 1px 8px 3px 32px; font-size: .7rem; color: var(--hd-ambar-fg); }
 .hdreq-presupuesto .hdreq-otra-moneda { padding: 2px 0 0; }
+.hdreq-ocultas { padding: 0 6px 4px 18px; font-size: .7rem; color: var(--hd-gris); font-style: italic; }
 .hdreq-papelera-carpetas .hdreq-carpeta-fila { padding: 2px 4px; font-size: .8rem; color: var(--hd-gris); }
 .hdreq-restaurar { padding: 0 4px; font-size: .75rem; color: var(--hd-marino); }
 .hdreq-carp-empresas .shiny-options-group { display: flex; flex-wrap: wrap; gap: 2px 12px; }

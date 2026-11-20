@@ -157,6 +157,17 @@
   op
 }
 
+# T61: the company bubbles as company ids, for requisiciones_carpetas_visibles().
+# empresa_sel holds the active companies' short names (app.R). activas NULL =
+# no filter: no catalog yet, or no bubbles at all.
+.reqm_burbujas <- function(empresas, empresa_sel) {
+  if (!is.data.frame(empresas) || !nrow(empresas) || is.null(empresa_sel))
+    return(list(activas = NULL, existentes = NULL))
+  e <- empresas[!(empresas$deleted %in% TRUE) & !is.na(empresas$id), , drop = FALSE]
+  if (!nrow(e)) return(list(activas = NULL, existentes = NULL))
+  list(activas = e$id[e$nombre_corto %in% empresa_sel | e$initials %in% empresa_sel], existentes = e$id)
+}
+
 .reqm_tamano <- function(bytes) {
   if (is.na(bytes)) return("")
   if (bytes >= 1024^2) sprintf("%.1f MB", bytes / 1024^2) else sprintf("%.0f KB", max(1, bytes / 1024))
@@ -268,6 +279,24 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
     vista_segura    <- shiny::reactive(tryCatch(vista(), error = function(e) NULL))
     carpetas_segura <- shiny::reactive(tryCatch(carpetas(), error = function(e) NULL))
 
+    # T61 (Luis): the company bubbles filter folders only. A folder shows when
+    # it is for every company or shares one with the bubbles on, and its
+    # mother shows; what is inside a hidden folder hides with it, also under
+    # Todas. General never hides. Only this session's view: nothing written.
+    burbujas <- shiny::reactive(.reqm_burbujas(tryCatch(shared$empresas_db(), error = function(e) NULL),
+                                               tryCatch(shared$empresa_sel(), error = function(e) NULL)))
+    carpetas_vis <- shiny::reactive({
+      cs <- carpetas_segura()
+      if (is.null(cs)) return(NULL)
+      b <- burbujas()
+      cs[requisiciones_carpetas_visibles(cs, b$activas, b$existentes), , drop = FALSE]
+    })
+    # Visible requisitions whose folder the bubbles hide.
+    ocultas_burbujas <- function(v) {
+      cs <- carpetas_segura(); cv <- carpetas_vis()
+      if (is.null(cs) || is.null(cv) || is.null(v)) return(rep(FALSE, NROW(v)))
+      v$carpeta_id %in% setdiff(cs$id, cv$id)
+    }
     carpeta_sel  <- shiny::reactiveVal("todas")     # "todas" | "general" | <carpeta id> (T61)
     ver_papelera <- shiny::reactiveVal(FALSE)
 
@@ -276,6 +305,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
       if (is.null(v)) return(NULL)
       v <- v[if (ver_papelera()) v$etapa == "papelera" else v$etapa != "papelera", , drop = FALSE]
       if (isTRUE(input$solo_mias)) v <- v[tolower(v$creado_por) %in% tolower(yo()), , drop = FALSE]
+      v <- v[!ocultas_burbujas(v), , drop = FALSE]
       # T61: General = no live folder; a folder shows its whole branch.
       sel <- carpeta_sel()
       if (identical(sel, "general")) v <- v[is.na(v$carpeta_ruta), , drop = FALSE]
@@ -357,10 +387,12 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
     })
     output$carpetas <- shiny::renderUI({
       if (!puede_ver()) return(NULL)
-      cs <- carpetas_segura(); v <- vista_segura()
+      cs <- carpetas_vis(); v <- vista_segura()
       if (is.null(cs) || is.null(v)) return(NULL)
       res <- requisiciones_carpetas_resumen(cs, v)
       vivas <- v[!(v$etapa %in% c("pagada", "papelera")), , drop = FALSE]
+      ocultas <- ocultas_burbujas(vivas)
+      n_ocultas <- sum(ocultas); vivas <- vivas[!ocultas, , drop = FALSE]
       sel <- carpeta_sel()
       editar <- puede(usr(), "can_edit_requisiciones")
       clic <- function(input_id, valor) sprintf("Shiny.setInputValue('%s', %s, {priority: 'event'})",
@@ -422,6 +454,8 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
           if (editar) shiny::actionLink(ns("carpeta_nueva"), tr("requisiciones.carpeta.nueva"), class = "hdreq-mas")),
         htmltools::tags$ul(class = "hdreq-carpetas hdreq-arbol", `data-cliente` = cid() %||% "",
           fijo("todas", tr("requisiciones.carpeta.todas"), nrow(vivas)),
+          if (n_ocultas > 0L) htmltools::tags$li(class = "hdreq-ocultas",
+            tr_n("requisiciones.carpeta.ocultas_n", n_ocultas)),
           fijo("general", tr("requisiciones.carpeta.general"), sum(is.na(vivas$carpeta_ruta)), clase = "hdreq-general"),
           lapply(hijas(NA_character_), rama)),
         papelera)
@@ -429,7 +463,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
     shiny::observeEvent(input$carpeta_click, carpeta_sel(as.character(input$carpeta_click)))
     # A folder that disappears (trashed in another session) stops filtering.
     shiny::observe({
-      cs <- carpetas_segura(); sel <- carpeta_sel()
+      cs <- carpetas_vis(); sel <- carpeta_sel()      # trashed elsewhere, or hidden by the bubbles
       if (!is.null(cs) && !sel %in% c("todas", "general") && !sel %in% cs$id) carpeta_sel("todas")
     })
 

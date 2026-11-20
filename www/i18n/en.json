@@ -1386,6 +1386,8 @@
   "requisiciones.carpeta.en_la_papelera": "Folders in the trash",
   "requisiciones.carpeta.restaurar": "Restore",
   "requisiciones.carpeta.restaurada": "Folder restored with everything it held.",
+  "requisiciones.carpeta.ocultas_n.uno": "{n} requisition hidden by companies switched off",
+  "requisiciones.carpeta.ocultas_n.otros": "{n} requisitions hidden by companies switched off",
   "requisiciones.carpeta.otra_moneda_n.uno": "{n} requisition in another currency (not added)",
   "requisiciones.carpeta.otra_moneda_n.otros": "{n} requisitions in another currency (not added)",
   "requisiciones.col.empresa_aviso": "Company notice",

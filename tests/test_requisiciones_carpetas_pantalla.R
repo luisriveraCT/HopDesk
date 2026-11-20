@@ -127,3 +127,40 @@ test_that("nueva requisición: la empresa debe ser de la carpeta; si no, no se g
     expect_identical(fila("Dentro")$carpeta_id, solo)
   })
 })
+
+test_that("burbujas: id de las empresas encendidas; sin catálogo o sin burbujas, sin filtro", {
+  e <- .req_fixture_empresas
+  expect_identical(.reqm_burbujas(e, "Networks Trucking Services")$activas, "emp-nts")
+  expect_identical(.reqm_burbujas(e, character())$activas, character())
+  expect_identical(.reqm_burbujas(e, character())$existentes, c("emp-ncs", "emp-nts"))
+  expect_null(.reqm_burbujas(NULL, "x")$activas); expect_null(.reqm_burbujas(e, NULL)$activas)
+})
+
+test_that("burbujas: la carpeta sin empresa encendida se oculta con su rama y sus requisiciones, también en Todas; General nunca", {
+  app <- cargar_app()
+  testServer(app, {
+    session$flushReact()
+    nts <- requisiciones_carpeta_crear("fixture", list(nombre = "Patio NTS", empresas = "emp-nts"), "dani")
+    hija <- requisiciones_carpeta_crear("fixture", list(nombre = "Grúas", padre_id = nts), "dani")   # every company
+    requisicion_crear("fixture", list(titulo = "Grúa", empresa = "NTS", carpeta_id = hija), "dani")
+    .reqm_tocar("fixture"); session$elapse(5000); session$flushReact()
+    n_todas <- nrow(mod$datos())
+    expect_true("Grúa" %in% mod$datos()$titulo)
+    session$setInputs(`req-carpeta_click` = hija)
+    shared$empresa_sel("Networks Crossdocking Services")          # NTS off
+    session$flushReact()
+    expect_identical(mod$carpeta_sel(), "todas")                  # the chosen folder hid: back to Todas
+    d <- mod$datos()
+    expect_false("Grúa" %in% d$titulo)
+    expect_identical(nrow(d), n_todas - 1L)
+    expect_true("Renta noviembre" %in% d$titulo)                  # General never hides
+    h <- output$`req-carpetas`$html
+    expect_false(grepl(sprintf('data-carpeta="%s"', nts), h)); expect_false(grepl(sprintf('data-carpeta="%s"', hija), h))
+    expect_match(h, "1 requisición oculta por empresas apagadas")
+    expect_identical(nrow(.req_mem[["fixture/requisiciones.rds"]][.req_mem[["fixture/requisiciones.rds"]]$titulo == "Grúa", ]), 1L)
+    shared$empresa_sel(c("Networks Crossdocking Services", "Networks Trucking Services"))
+    session$flushReact()
+    expect_true("Grúa" %in% mod$datos()$titulo)
+    expect_false(grepl("hdreq-ocultas", output$`req-carpetas`$html))   # not "oculta": the fold button says "ocultar"
+  })
+})
