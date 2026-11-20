@@ -32,6 +32,8 @@ source("R/zona.R")
 cargar("R/data_pipeline.R", c("etiquetas_por_factura", ".etiquetas_doc_unica", ".politica_doc", ".politica_doc_unica"))
 for (f in c("R/i18n.R", "R/monedas.R", "R/fx_banxico.R", "R/fx_tipos.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/cashflow_export_module.R", "R/cashflow_preview_module.R")) source(f)
+cargar("R/ui_components.R", c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_numero_texto", "hd_numero_deps",
+                              "hd_numero_input", "hd_numero_update", "hd_numero_revisar"))   # T66
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 source("tests/helpers/flujo_datos_prueba.R")
 source("tests/helpers/flujo_adaptador_motor.R")
@@ -180,6 +182,9 @@ test_that("F14: the currency button toggles Separadas ↔ Base; the FX row only 
     expect_true(grepl("fx_rate_usd", fx, fixed = TRUE)); expect_false(grepl("fx_rate_mxn", fx, fixed = TRUE))
     session$setInputs(fx_rate_usd_blur = 19.5); expect_identical(rv$fx_rates[["USD"]], 19.5)
     session$setInputs(fx_rate_usd_blur = 0);    expect_identical(rv$fx_rates[["USD"]], 19.5)   # 0 or less: ignored
+    session$setInputs(fx_rate_usd_blur = "");   expect_identical(rv$fx_rates[["USD"]], 19.5)   # T66: a typed text (the script sends ''): ignored, told
+    session$setInputs(fx_rate_usd_blur = 18.75); expect_identical(rv$fx_rates[["USD"]], 18.75)   # T66: a number still taken
+    expect_true(grepl('type="text"', fx, fixed = TRUE) && !grepl('type="number"', fx, fixed = TRUE))   # T66: hd_numero_input
     session$setInputs(btn_curmode = 2); expect_identical(rv$currency_mode, "separate")
   })
 })

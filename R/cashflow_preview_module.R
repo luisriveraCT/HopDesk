@@ -645,8 +645,9 @@ cashflowPreviewServer <- function(id, shared) {
               bkey <- paste0(ns(paste0("fx_rate_", tolower(cur))), "_blur")
               paste0(
                 ".on('focusout.cffxblur','", sel, "',function(){",
+                  "if(!String(this.value||'').trim()) return;",
                   "var v=hdNumero.valor(this);",
-                  "if(v!==null&&v>0)Shiny.setInputValue('", bkey, "',v,{priority:'event'});",
+                  "Shiny.setInputValue('", bkey, "',v===null?'':v,{priority:'event'});",
                 "})"
               )
             }), collapse = ""),
@@ -697,7 +698,13 @@ cashflowPreviewServer <- function(id, shared) {
           # not on every keystroke). The JS in fx_section_ui sets fx_rate_{cur}_blur.
           observeEvent(input[[ paste0("fx_rate_", tolower(cur_), "_blur") ]], {
             r <- input[[ paste0("fx_rate_", tolower(cur_), "_blur") ]]
-            if (!is.null(r) && !is.na(r) && is.numeric(r) && r > 0) {
+            # T66: a typed text ('' from the script), 0 or a negative is
+            # told, not dropped silently.
+            rev_r <- hd_numero_revisar(r, tr("tablas.flujo.fx.tipo_de", par = paste0(cur_, "/", base_ef())),
+                                       min = 0.0001)
+            if (!rev_r$ok) showNotification(rev_r$aviso, type = "warning")
+            if (rev_r$ok) {
+              r <- rev_r$valor
               rv$fx_rates[[ cur_ ]] <- r
               # Kept for the day on the server too (monedas fase 2), so
               # Exportar and a later session show it as "Escrito por ti". A
