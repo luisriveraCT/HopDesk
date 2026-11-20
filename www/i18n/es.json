@@ -1379,6 +1379,7 @@
   "tablas.agenda.aviso.cobros_confirmados_error": "Cobro(s) confirmado(s) correctamente, pero algo falló al procesar abonos/archivado relacionado: {error}",
   "tablas.agenda.aviso.vinculado": "✓ Vinculado: \"{parte}\" → {alias}",
   "tablas.agenda.aviso.vinculo_eliminado": "Vínculo eliminado para: {parte}",
+  "tablas.agenda.aviso.vinculo_no_guardado": "No se guardó el cambio del vínculo de \"{parte}\": {error}",
   "tablas.agenda.aviso.zip_sin_actividad": "Aviso: el ZIP se generó correctamente, pero no se pudo registrar el resumen en Actividad: {error}",
   "tablas.agenda.aviso.vaciada": "Se quitaron {n} pendiente(s) de la Agenda.",
   "tablas.agenda.aviso.vaciada_quedan": "Se quitaron {n} pendiente(s) de la Agenda. Quedan {m} que otra sesión agregó mientras tanto.",

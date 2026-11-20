@@ -27,7 +27,7 @@ ok(sprintf("ningún aviso de pagar_hoy_module.R con texto fijo (quedan %d)", len
 
 claves <- avisos_claves(F, PRE)
 ok(sprintf("las %d claves %s* existen en es y en", length(claves), PRE),
-   length(claves) == 24L && all(vapply(claves, clave_en_es_y_en, logical(1))))
+   length(claves) == 25L && all(vapply(claves, clave_en_es_y_en, logical(1))))
 
 es <- function(k, ...) tr(paste0(PRE, k), ..., idioma = "es")
 cur_sel <- "EUR"; n <- 1234L; err <- "sin red"; parte <- "ACME SA"; ali <- "ACME"
@@ -60,6 +60,9 @@ iguales <- list(
               "abonos/archivado relacionado: ", err)),
   list(es("vinculado", parte = parte, alias = ali), paste0("✓ Vinculado: \"", parte, "\" → ", ali)),
   list(es("vinculo_eliminado", parte = parte), paste0("Vínculo eliminado para: ", parte)),
+  # CM34c: a link change that could not be saved (new; no fixed text before it).
+  list(es("vinculo_no_guardado", parte = parte, error = err),
+       paste0("No se guardó el cambio del vínculo de \"", parte, "\": ", err)),
   list(es("zip_sin_actividad", error = err),
        paste("Aviso: el ZIP se generó correctamente, pero no se pudo registrar el resumen en Actividad:", err)),
   # CM33: Vaciar says how many it removed, and how many another session's

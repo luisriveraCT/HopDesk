@@ -212,11 +212,11 @@ unlink(html_path_pf)
 cat("\n-- Part C: vincular proveedor fix (static regression guards) --\n")
 
 ph_src <- readLines("R/pagar_hoy_module.R", warn = FALSE)
-save_lines <- grep("save_parte_alias_map\\(am,", ph_src)
-.chk(length(save_lines), 2L, "sanity: exactly 2 save_parte_alias_map(am, ...) call sites found (link + unlink)")
+save_lines <- grep("modificar_parte_alias_map\\(", ph_src)   # CM34c: the write is a cambio() on S3's links
+.chk(length(save_lines), 2L, "sanity: exactly 2 modificar_parte_alias_map(...) call sites found (link + unlink)")
 
 for (ln in save_lines) {
-  window <- paste(ph_src[ln:min(ln + 12, length(ph_src))], collapse = "\n")
+  window <- paste(ph_src[ln:min(ln + 25, length(ph_src))], collapse = "\n")   # CM34c: past the tryCatch
   .chk_true(grepl('bump_sync_version\\("parte_alias_map_db"[,)]', window),   # CM16: now with client_id
        sprintf("pagar_hoy_module.R:%d -- bump_sync_version(\"parte_alias_map_db\") now follows the save (was missing)", ln))
 }
@@ -226,7 +226,7 @@ for (ln in save_lines) {
 .chk_false(any(grepl('am\\$Empresa == emp \\|', ph_src)),
      "the old Empresa-conditional dedup filter (root cause of stale duplicate links) no longer appears anywhere")
 
-link_count  <- length(grep('toupper\\(trimws\\(am\\$Parte\\)\\) != toupper\\(parte\\)', ph_src))
+link_count  <- length(grep('toupper\\(trimws\\(f\\$Parte\\)\\) != toupper\\(parte\\)', ph_src))   # CM34c: on S3's table (f)
 .chk(link_count, 2L, "both link and unlink handlers use the new Parte-only dedup filter")
 
 # ── Demonstrate the filter FIX's actual behavior on synthetic data ──────────

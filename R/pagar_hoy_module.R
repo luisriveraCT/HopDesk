@@ -2783,12 +2783,6 @@ pagarHoyServer <- function(id, shared) {
         showNotification(tr("comun.ctx.guardar_bloqueado"), type = "error"); return()
       }
 
-      am  <- tryCatch(
-        if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db()
-        else load_parte_alias_map(client_id = shared$effective_client_id()),
-        error = function(e) load_parte_alias_map(client_id = shared$effective_client_id())
-      )
-
       # Upsert: remove ANY existing entry for this Parte, add the new one.
       # Previously scoped to Parte+Empresa (only removing a prior row whose
       # Empresa was blank/NA, since emp is always "" from this UI) -- a
@@ -2798,16 +2792,26 @@ pagarHoyServer <- function(id, shared) {
       # could appear to silently do nothing (found 2026-08-26 while
       # investigating "vincular doesn't work"). One link per Parte, always
       # fully replaced.
-      am <- am[toupper(trimws(am$Parte)) != toupper(parte), , drop = FALSE]
-      am <- dplyr::bind_rows(am, tibble::tibble(
+      # CM34c: on S3's links as they are now, never the session's copy
+      # (another session's links stay). A failed write tells the user and
+      # changes nothing here; it used to end the session.
+      fila <- tibble::tibble(
         Parte     = parte,
         Empresa   = emp,
         alias     = ali,
         linked_by = tryCatch(shared$current_user(), error = function(e) "unknown"),
         linked_at = as.character(Sys.time())
-      ))
-
-      save_parte_alias_map(am, client_id = shared$effective_client_id())
+      )
+      am <- tryCatch(
+        modificar_parte_alias_map(function(f)
+          dplyr::bind_rows(f[toupper(trimws(f$Parte)) != toupper(parte) | is.na(f$Parte), , drop = FALSE], fila),
+          client_id = shared$effective_client_id()),
+        error = function(e) {
+          showNotification(tr("tablas.agenda.aviso.vinculo_no_guardado", parte = parte, error = conditionMessage(e)),
+                           type = "error", duration = 8)
+          NULL
+        })
+      if (is.null(am)) return()
       if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db(am)
       # Found 2026-08-26: this write was never followed by a
       # bump_sync_version() call, unlike every other registered-key save in
@@ -2847,15 +2851,20 @@ pagarHoyServer <- function(id, shared) {
         showNotification(tr("comun.ctx.guardar_bloqueado"), type = "error"); return()
       }
 
-      am <- tryCatch(
-        if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db()
-        else load_parte_alias_map(client_id = shared$effective_client_id()),
-        error = function(e) load_parte_alias_map(client_id = shared$effective_client_id())
-      )
       # Same Parte-only match as the link handler above -- see its comment.
-      am <- am[toupper(trimws(am$Parte)) != toupper(parte), , drop = FALSE]
-
-      save_parte_alias_map(am, client_id = shared$effective_client_id())
+      # CM34c: on S3's links as they are now; removing a link is a deliberate
+      # reduction (the last one empties the table -- it used to be refused
+      # and end the session), listed in the net's guardian.
+      am <- tryCatch(
+        modificar_parte_alias_map(function(f)
+          f[toupper(trimws(f$Parte)) != toupper(parte) | is.na(f$Parte), , drop = FALSE],
+          client_id = shared$effective_client_id(), permitir_reduccion = TRUE),
+        error = function(e) {
+          showNotification(tr("tablas.agenda.aviso.vinculo_no_guardado", parte = parte, error = conditionMessage(e)),
+                           type = "error", duration = 8)
+          NULL
+        })
+      if (is.null(am)) return()
       if (!is.null(shared$parte_alias_map_db)) shared$parte_alias_map_db(am)
       # See the link handler's identical comment above -- same missing-
       # bump_sync_version() bug, same fix.

@@ -60,6 +60,9 @@ permitidos <- c(
   # CM34c, on S3's current tables: deleting a policy removes that one from
   # policy_catalog.rds and its assignments from partner_policies.rds.
   "R/settings/settings_policies.R" = "client_id = cid, permitir_reduccion = TRUE)",
+  # CM34c: Desvincular removes that supplier's link from S3's
+  # parte_alias_map.rds (the last one empties it); Vincular never reduces.
+  "R/pagar_hoy_module.R" = "client_id = shared$effective_client_id(), permitir_reduccion = TRUE),",
   # alertas_guardar() (C): unmarking every action of a user removes that
   # user's row from avisos_alertas.rds, on S3's matrix as it is now.
   "R/avisos_alertas_module.R" = "}, permitir_reduccion = TRUE)",
@@ -149,7 +152,7 @@ for (fn in c("save_manual", "save_notes", "save_tags", "save_pasivos_provisions"
              "save_empresas",
              # CM34c: policies are written with modificar_policy_catalog /
              # modificar_partner_policies; these two whole-copy saves are gone.
-             "save_policy_catalog", "save_partner_policies")) {
+             "save_policy_catalog", "save_partner_policies", "save_parte_alias_map")) {
   m <- sin_base(fn, "R/pagar_hoy_module.R")
   for (s in m) message("  without base: ", s)
   ok(sprintf("%s(): every save built from a copy passes base (pagar_hoy_module.R aside)", fn), !length(m))

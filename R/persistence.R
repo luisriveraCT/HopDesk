@@ -2272,10 +2272,15 @@ load_parte_alias_map <- function(client_id = NULL) {
   tibble::as_tibble(obj)
 }
 
-save_parte_alias_map <- function(df, client_id = NULL) {
-  .s3_write(iniciales_vigentes(df, "parte_alias_map", client_id), S3_KEYS$parte_alias_map,   # CM29
-            client_id = client_id)
-  invisible(TRUE)
+# Change the supplier links starting from S3's table as it is now (CM34c):
+# strict read, cambio(fresco), the initials brought up to date (CM29), write.
+# save_parte_alias_map() wrote the session's copy whole. permitir_reduccion
+# only for removing a link (listed in the net's guardian). Returns the table
+# written (or S3's, unchanged).
+modificar_parte_alias_map <- function(cambio, client_id, permitir_reduccion = FALSE) {
+  modificar_tabla_completa(S3_KEYS$parte_alias_map, client_id, .schema_parte_alias_map,
+                           function(fresco) iniciales_vigentes(cambio(fresco), "parte_alias_map", client_id),
+                           permitir_reduccion = permitir_reduccion)
 }
 
 # ── Empresas — company registry ────────────────────────────────────────────────

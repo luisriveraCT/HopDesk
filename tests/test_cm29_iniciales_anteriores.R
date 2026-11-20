@@ -168,8 +168,8 @@ ok("B4 empresas.rds cannot be read: the save stops (an error for its notice) and
 
 # The other tables of the net, through their real save functions.
 sembrar(); editar("e1", "B")
-guardar(save_parte_alias_map(fila(.schema_parte_alias_map, Parte = "X", Empresa = c("A", "OTRA"), alias = "x"),
-                             client_id = CID))
+guardar(modificar_parte_alias_map(function(f) fila(.schema_parte_alias_map, Parte = "X", Empresa = c("A", "OTRA"), alias = "x"),
+                                  client_id = CID))   # CM34c: the links are written with modificar_parte_alias_map()
 ok("B5 parte_alias_map: A -> B, OTRA untouched", identical(leer(S3_KEYS$parte_alias_map)$Empresa, c("B", "OTRA")))
 guardar(modificar_ctas_cuentas(function(t) dplyr::bind_rows(t, fila(.schema_ctas_cuentas, id = "c9", Empresa = "A")),
                                client_id = CID))
@@ -204,8 +204,8 @@ p <- leer(S3_KEYS$proveedores)
 ok("B7 …written anyway: the new company's row stays A, e1's stays B, and nothing says A->",
    identical(p$Empresa[p$id == "pn3"], "A") && identical(p$empresas[p$id == "pn3"], "A") &&
      identical(p$Empresa[p$id == "pb3"], "B") && !any(grepl("A->", MSG, fixed = TRUE)))
-guardar(save_parte_alias_map(fila(.schema_parte_alias_map, Parte = "X", Empresa = c("A", "B"), alias = "x"),
-                             client_id = CID))
+guardar(modificar_parte_alias_map(function(f) fila(.schema_parte_alias_map, Parte = "X", Empresa = c("A", "B"), alias = "x"),
+                                  client_id = CID))
 base <- leer(S3_KEYS$pasivos_provisions)
 guardar(save_pasivos_provisions(dplyr::bind_rows(base, fila(.schema_pasivos_provision, id = "v3", empresa = "A")),
                                 client_id = CID, base = base))
