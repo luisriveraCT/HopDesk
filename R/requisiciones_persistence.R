@@ -773,7 +773,9 @@ requisiciones_carpetas_resumen <- function(carpetas, vista) {
     cs$n_requisiciones[i] <- nrow(x)
     misma <- x$moneda_mostrada %in% cs$moneda[i]
     cs$comprometido[i] <- sum(x$monto_mostrado[misma], na.rm = TRUE)
-    cs$n_otra_moneda[i] <- sum(!misma & !is.na(x$monto_mostrado))
+    # Only a folder with a budget has a currency of its own to compare with.
+    con_presupuesto <- !is.na(cs$moneda[i]) && !is.na(cs$presupuesto[i]) && cs$presupuesto[i] > 0
+    cs$n_otra_moneda[i] <- if (con_presupuesto) sum(!misma & !is.na(x$monto_mostrado)) else 0L
   }
   cs
 }

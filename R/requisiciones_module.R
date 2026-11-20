@@ -415,7 +415,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
         p <- res$presupuesto[i]
         otra <- if (res$n_otra_moneda[i] > 0L)
           htmltools::div(class = "hdreq-otra-moneda", tr_n("requisiciones.carpeta.otra_moneda_n", res$n_otra_moneda[i]))
-        if (is.na(p) || p <= 0) return(otra)
+        if (is.na(p) || p <= 0) return(NULL)
         pct <- min(100, round(100 * res$comprometido[i] / p))
         htmltools::div(class = "hdreq-presupuesto", title = tr("requisiciones.carpeta.presupuesto_de",
             usado = monto_moneda(res$comprometido[i], res$moneda[i] %||% NA_character_, decimales = 0L, codigo = FALSE),

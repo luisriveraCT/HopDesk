@@ -308,6 +308,7 @@ test_that("resumen: cuenta y suma el subárbol solo en la moneda de la carpeta; 
   expect_identical(r$n_requisiciones[r$id == a], 3L)
   expect_equal(r$comprometido[r$id == a], 1250)
   expect_identical(r$n_otra_moneda[r$id == a], 1L)
+  expect_identical(r$n_otra_moneda[r$id == h], 0L)        # no budget, no currency of its own: nothing to flag
   expect_identical(r$n_requisiciones[r$id == h], 2L)
   v <- requisiciones_vista(CID)
   expect_identical(sort(v$carpeta_ruta[!is.na(v$carpeta_ruta)]), c("Obra", "Obra › Importados", "Obra › Importados"))
