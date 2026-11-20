@@ -88,6 +88,8 @@ sembrar <- function() {
   poner(S3_KEYS$bancos_confirmados, .normalize(tibble::tibble(
     confirmacion_id = "c1", provision_id = "p-pagada", importe = 3100, moneda = "MXN",
     eliminado = FALSE, action = "confirmed", confirmado_at = Sys.time()), .schema_bancos_confirmados))
+  # T61: the company catalog (ids), as shared$empresas_db() and empresas.rds hold it.
+  poner(S3_KEYS$empresas, .req_fixture_empresas)
   c1 <- requisiciones_carpeta_crear(CID, list(nombre = "Obra nave 2", color = "#2e7d32", presupuesto = 1500000, moneda = "MXN"), "dani")
   c2 <- requisiciones_carpeta_crear(CID, list(nombre = "Mantenimiento", color = "#b8860b"), "eli")
   r1 <- requisicion_crear(CID, list(titulo = "Cemento y varilla para la cimentación de la nave 2", empresa = "NCS",
@@ -112,6 +114,11 @@ sembrar <- function() {
   requisicion_comentar(CID, r1$id, "¿Ya tiene fecha de pago? La obra arranca el lunes.", "caro")
   invisible(NULL)
 }
+.req_fixture_empresas <- .normalize(tibble::tibble(
+  id = c("emp-ncs", "emp-nts"), initials = c("NCS", "NTS"),
+  nombre_corto = c("Networks Crossdocking Services", "Networks Trucking Services"),
+  razon_social = c("Networks Crossdocking Services SA de CV", "Networks Trucking Services SA de CV"),
+  activa = TRUE, deleted = FALSE), .schema_empresas)
 if (!identical(Sys.getenv("REQ_VACIO"), "1")) suppressMessages(sembrar())
 assign(".req_falla_lectura", identical(Sys.getenv("REQ_FALLA_LECTURA"), "1"), envir = globalenv())
 arranque_null <- identical(Sys.getenv("HD_ARRANQUE_NULL"), "1")
@@ -136,6 +143,8 @@ server <- function(input, output, session) {
     usuario = reactive(list(user = usuario, name = usuario, tier = nivel, is_staff = FALSE,
                             permisos = permisos_resueltos(nivel, if (nzchar(Sys.getenv("REQ_OVERRIDES"))) Sys.getenv("REQ_OVERRIDES") else "{}"))),
     company_map = reactive(mapa_rv()),
+    empresas_db = reactive(if (is.null(mapa_rv())) NULL else .req_fixture_empresas),   # T61
+    empresa_sel = reactiveVal(c("Networks Crossdocking Services", "Networks Trucking Services")),   # T61: bubbles
     currency_choices = list(AP = reactiveVal(c("MXN", "USD")), AR = reactiveVal(c("MXN", "USD"))),
     proveedores_db = reactiveVal(NULL)
   )

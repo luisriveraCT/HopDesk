@@ -52,7 +52,7 @@ test_that("la lista: sin pagadas nunca, papelera solo en su vista, Sin provisió
     carp <- .req_mem[["fixture/requisiciones_carpetas.rds"]]
     session$setInputs(`req-carpeta_click` = carp$id[carp$nombre == "Mantenimiento"])
     expect_setequal(mod$datos()$titulo, c("Luz bodega 3", "Extintores"))
-    session$setInputs(`req-carpeta_click` = "sin")
+    session$setInputs(`req-carpeta_click` = "general")
     expect_identical(mod$datos()$titulo, "Renta noviembre")
   })
 })

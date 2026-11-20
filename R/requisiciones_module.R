@@ -71,6 +71,9 @@
   col_texto("carpeta_nombre", "requisiciones.col.carpeta", opcional = TRUE, visible = FALSE),
   col_texto("proveedor", "requisiciones.col.proveedor"),
   col_empresa("empresa", "requisiciones.col.empresa", iniciales = iniciales),
+  col_insignia("empresa_aviso", "requisiciones.col.empresa_aviso", opcional = TRUE, mapa = list(
+    fuera_carpeta = list(texto = "requisiciones.empresa_aviso.fuera_carpeta", tono = "aviso"),
+    no_reconocida = list(texto = "requisiciones.empresa_aviso.no_reconocida", tono = "aviso"))),
   col_dinero("monto_mostrado", "requisiciones.col.monto", moneda = "moneda_mostrada"),
   col_insignia("etapa", "requisiciones.col.etapa", mapa = .reqm_mapa_etapas()),
   col_fecha("fecha_mes", "requisiciones.col.fecha"),
@@ -124,6 +127,36 @@
   list(datos = df, columnas = cols)
 }
 
+# T61: folder select options -- General (value "") first, then the live
+# folders in tree order, each labelled with its path ("Obra A › Material").
+# `excluir`: ids left out (a folder and its branch when choosing where to move it).
+.reqm_opciones_carpeta <- function(cs, primera = "requisiciones.carpeta.general", excluir = character()) {
+  op <- stats::setNames("", tr(primera))
+  if (is.null(cs) || !nrow(cs)) return(op)
+  cs <- cs[!(cs$id %in% excluir), , drop = FALSE]
+  c(op, stats::setNames(cs$id, cs$ruta))
+}
+
+# T61: the companies a requisition in folder `carpeta_id` can be of, as
+# select choices (initials = "NCS — short name"). `cmap`: initials -> short
+# name of the active companies (shared$company_map()); `empresas`: the
+# catalog (ids). General, a folder for every company, or an unreadable list:
+# all of them. `actual`: a saved requisition's company; when it is not among
+# them it stays, marked, so opening the form never erases it.
+.reqm_empresas_carpeta <- function(cs, carpeta_id, cmap, empresas, actual = NA_character_) {
+  inis <- names(cmap)
+  if (!is.null(carpeta_id) && !is.na(carpeta_id) && nzchar(carpeta_id) && !is.null(cs) &&
+      is.data.frame(empresas) && nrow(empresas)) {
+    j <- match(carpeta_id, cs$id)
+    ids <- if (is.na(j)) NULL else .req_carpeta_empresas(cs$empresas[j], existentes = empresas$id)
+    if (!is.null(ids)) inis <- intersect(inis, empresas$initials[empresas$id %in% ids])
+  }
+  op <- if (length(inis)) stats::setNames(inis, paste0(inis, " — ", unname(cmap[inis]))) else character()
+  if (!is.null(actual) && !is.na(actual) && nzchar(actual) && !actual %in% op)
+    op <- c(op, stats::setNames(actual, tr("requisiciones.empresa_fuera_opcion", empresa = actual)))
+  op
+}
+
 .reqm_tamano <- function(bytes) {
   if (is.na(bytes)) return("")
   if (bytes >= 1024^2) sprintf("%.1f MB", bytes / 1024^2) else sprintf("%.0f KB", max(1, bytes / 1024))
@@ -140,10 +173,11 @@ requisicionesUI <- function(id) {
   ns <- shiny::NS(id)
   htmltools::tagList(
     htmltools::tags$head(
-      htmltools::tags$link(rel = "stylesheet", href = "requisiciones.css?v=2"),
-      htmltools::tags$script(src = "requisiciones_paste.js?v=2")),
+      htmltools::tags$link(rel = "stylesheet", href = "requisiciones.css?v=3"),
+      htmltools::tags$script(src = "requisiciones_paste.js?v=2"),
+      htmltools::tags$script(src = "requisiciones_carpetas.js?v=1")),
     htmltools::div(class = "hdreq",
-      htmltools::div(class = "hdreq-lado", shiny::uiOutput(ns("carpetas"))),
+      htmltools::div(class = "hdreq-lado hd-marca", shiny::uiOutput(ns("carpetas"))),
       htmltools::div(class = "hdreq-principal",
         htmltools::div(class = "hdreq-barra",
           shiny::uiOutput(ns("botones"), inline = TRUE),
@@ -234,7 +268,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
     vista_segura    <- shiny::reactive(tryCatch(vista(), error = function(e) NULL))
     carpetas_segura <- shiny::reactive(tryCatch(carpetas(), error = function(e) NULL))
 
-    carpeta_sel  <- shiny::reactiveVal("todas")     # "todas" | "sin" | <carpeta id>
+    carpeta_sel  <- shiny::reactiveVal("todas")     # "todas" | "general" | <carpeta id> (T61)
     ver_papelera <- shiny::reactiveVal(FALSE)
 
     datos_lista <- shiny::reactive({
@@ -242,13 +276,18 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
       if (is.null(v)) return(NULL)
       v <- v[if (ver_papelera()) v$etapa == "papelera" else v$etapa != "papelera", , drop = FALSE]
       if (isTRUE(input$solo_mias)) v <- v[tolower(v$creado_por) %in% tolower(yo()), , drop = FALSE]
-      cs <- carpeta_sel()
-      if (identical(cs, "sin")) v <- v[is.na(v$carpeta_nombre), , drop = FALSE]
-      else if (!identical(cs, "todas")) v <- v[v$carpeta_id %in% cs, , drop = FALSE]
+      # T61: General = no live folder; a folder shows its whole branch.
+      sel <- carpeta_sel()
+      if (identical(sel, "general")) v <- v[is.na(v$carpeta_ruta), , drop = FALSE]
+      else if (!identical(sel, "todas")) {
+        cs <- carpetas_segura()
+        v <- v[v$carpeta_id %in% (if (is.null(cs)) sel else .req_carpeta_subarbol(cs, sel)), , drop = FALSE]
+      }
       .reqm_filas(v, crear = puede_crear_prov())
     })
 
     iniciales <- shiny::reactive(tryCatch(shared$company_map(), error = function(e) c()) %||% c())
+    empresas_cat <- shiny::reactive(tryCatch(shared$empresas_db(), error = function(e) NULL))   # T61: company ids
     puede_papelera <- function(u) puede(u, "can_trash_own_requisiciones") || puede(u, "can_trash_others_requisiciones")
 
     t <- hd_table_server("t", tabla = "requisiciones", datos = datos_lista,
@@ -304,6 +343,18 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
     })
 
     # ── Folders (left panel) ────────────────────────────────────────────────
+    # T61: Todas, General (the virtual folder: carpeta_id NA, every company,
+    # never hidden, never written) and the folder tree. A folder counts its
+    # whole branch, and its committed amount is only its own currency (the
+    # rest is counted apart, never summed). Folding is the browser's
+    # (www/requisiciones_carpetas.js: localStorage per client and folder id).
+    # With "Ver papelera" on, the trashed folders follow, to restore.
+    carpetas_todas <- shiny::reactive({
+      version(); otro()
+      c <- cid()
+      if (is.null(c) || !activa_ok() || !puede_ver() || !ver_papelera()) return(NULL)
+      tryCatch(requisiciones_carpetas(c, incluir_papelera = TRUE), error = function(e) NULL)
+    })
     output$carpetas <- shiny::renderUI({
       if (!puede_ver()) return(NULL)
       cs <- carpetas_segura(); v <- vista_segura()
@@ -311,54 +362,125 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
       res <- requisiciones_carpetas_resumen(cs, v)
       vivas <- v[!(v$etapa %in% c("pagada", "papelera")), , drop = FALSE]
       sel <- carpeta_sel()
-      item <- function(valor, nombre, n, color = NULL, extra = NULL, editar = FALSE) {
-        htmltools::tags$li(class = paste("hdreq-carpeta", if (identical(sel, valor)) "activa"),
-          htmltools::tags$button(type = "button", class = "hdreq-carpeta-btn",
-            onclick = sprintf("Shiny.setInputValue('%s', %s, {priority: 'event'})",
-                              ns("carpeta_click"), jsonlite::toJSON(valor, auto_unbox = TRUE)),
-            if (!is.null(color)) htmltools::tags$span(class = "hdreq-punto", style = paste0("background:", color, ";")),
-            htmltools::tags$span(class = "hdreq-carpeta-nombre", nombre),
-            htmltools::tags$span(class = "hdreq-carpeta-n", n)),
-          extra,
-          if (editar) htmltools::tags$button(type = "button", class = "hdreq-carpeta-editar",
-            title = tr("requisiciones.carpeta.editar"), `aria-label` = tr("requisiciones.carpeta.editar"),
-            onclick = sprintf("Shiny.setInputValue('%s', %s, {priority: 'event'})",
-                              ns("carpeta_editar"), jsonlite::toJSON(valor, auto_unbox = TRUE)),
-            "✎"))
-      }
+      editar <- puede(usr(), "can_edit_requisiciones")
+      clic <- function(input_id, valor) sprintf("Shiny.setInputValue('%s', %s, {priority: 'event'})",
+                                               ns(input_id), jsonlite::toJSON(valor, auto_unbox = TRUE))
+      boton <- function(valor, nombre, n, color = NULL)
+        htmltools::tags$button(type = "button", class = "hdreq-carpeta-btn", onclick = clic("carpeta_click", valor),
+          if (!is.null(color)) htmltools::tags$span(class = "hdreq-punto", style = paste0("background:", color, ";")),
+          htmltools::tags$span(class = "hdreq-carpeta-nombre", nombre),
+          htmltools::tags$span(class = "hdreq-carpeta-n", n))
+      fijo <- function(valor, nombre, n, clase = NULL)
+        htmltools::tags$li(class = paste("hdreq-carpeta", clase, if (identical(sel, valor)) "activa"),
+          htmltools::div(class = "hdreq-carpeta-fila", htmltools::tags$span(class = "hdreq-plegar-hueco"),
+                         boton(valor, nombre, n)))
       presupuesto <- function(i) {
         p <- res$presupuesto[i]
-        if (is.na(p) || p <= 0) return(NULL)
+        otra <- if (res$n_otra_moneda[i] > 0L)
+          htmltools::div(class = "hdreq-otra-moneda", tr_n("requisiciones.carpeta.otra_moneda_n", res$n_otra_moneda[i]))
+        if (is.na(p) || p <= 0) return(otra)
         pct <- min(100, round(100 * res$comprometido[i] / p))
         htmltools::div(class = "hdreq-presupuesto", title = tr("requisiciones.carpeta.presupuesto_de",
             usado = monto_moneda(res$comprometido[i], res$moneda[i] %||% NA_character_, decimales = 0L, codigo = FALSE),
             total = monto_moneda(p, res$moneda[i] %||% NA_character_, decimales = 0L)),   # "1,234 de 5,000 MXN" (T55c)
-          htmltools::div(class = "hdreq-barra-p", htmltools::div(style = paste0("width:", pct, "%;"))))
+          htmltools::div(class = "hdreq-barra-p", htmltools::div(style = paste0("width:", pct, "%;"))),
+          otra)
       }
-      editar <- puede(usr(), "can_edit_requisiciones")
+      hijas <- function(p) which(if (is.na(p)) is.na(res$padre_ef) else res$padre_ef %in% p)
+      rama <- function(i) {
+        h <- hijas(res$id[i])
+        htmltools::tags$li(class = paste("hdreq-carpeta", if (identical(sel, res$id[i])) "activa", if (length(h)) "con-hijas"),
+          `data-carpeta` = res$id[i],
+          htmltools::div(class = "hdreq-carpeta-fila",
+            if (length(h)) htmltools::tags$button(type = "button", class = "hdreq-plegar", `aria-expanded` = "true",
+                                                  title = tr("requisiciones.carpeta.plegar"), `aria-label` = tr("requisiciones.carpeta.plegar"),
+                                                  onclick = "hdreqPlegar(this)", "▾")
+            else htmltools::tags$span(class = "hdreq-plegar-hueco"),
+            boton(res$id[i], res$nombre[i], res$n_requisiciones[i], color = res$color[i]),
+            if (editar) htmltools::tags$button(type = "button", class = "hdreq-carpeta-editar",
+              title = tr("requisiciones.carpeta.editar"), `aria-label` = tr("requisiciones.carpeta.editar"),
+              onclick = clic("carpeta_editar", res$id[i]), "✎")),
+          presupuesto(i),
+          if (length(h)) htmltools::tags$ul(class = "hdreq-carpetas hdreq-sub", lapply(h, rama)))
+      }
+      papelera <- NULL
+      if (ver_papelera()) {
+        tp <- carpetas_todas()
+        tp <- if (is.null(tp)) NULL else tp[!is.na(tp$papelera_en), , drop = FALSE]
+        if (!is.null(tp) && nrow(tp))
+          papelera <- htmltools::tagList(
+            htmltools::div(class = "hdreq-lado-titulo hdreq-lado-sub", tr("requisiciones.carpeta.en_la_papelera")),
+            htmltools::tags$ul(class = "hdreq-carpetas hdreq-papelera-carpetas",
+              lapply(seq_len(nrow(tp)), function(i) htmltools::tags$li(class = "hdreq-carpeta",
+                htmltools::div(class = "hdreq-carpeta-fila",
+                  htmltools::tags$span(class = "hdreq-carpeta-nombre", title = tp$ruta[i], tp$ruta[i]),
+                  if (editar) htmltools::tags$button(type = "button", class = "btn btn-link btn-sm hdreq-restaurar",
+                    onclick = clic("carpeta_restaurar", tp$id[i]), tr("requisiciones.carpeta.restaurar")))))))
+      }
       htmltools::tagList(
         htmltools::div(class = "hdreq-lado-titulo", tr("requisiciones.carpetas"),
           if (editar) shiny::actionLink(ns("carpeta_nueva"), tr("requisiciones.carpeta.nueva"), class = "hdreq-mas")),
-        htmltools::tags$ul(class = "hdreq-carpetas",
-          item("todas", tr("requisiciones.carpeta.todas"), nrow(vivas)),
-          lapply(seq_len(nrow(res)), function(i)
-            item(res$id[i], res$nombre[i], res$n_requisiciones[i], color = res$color[i],
-                 extra = presupuesto(i), editar = editar)),
-          item("sin", tr("requisiciones.carpeta.sin"), sum(is.na(vivas$carpeta_nombre)))))
+        htmltools::tags$ul(class = "hdreq-carpetas hdreq-arbol", `data-cliente` = cid() %||% "",
+          fijo("todas", tr("requisiciones.carpeta.todas"), nrow(vivas)),
+          fijo("general", tr("requisiciones.carpeta.general"), sum(is.na(vivas$carpeta_ruta)), clase = "hdreq-general"),
+          lapply(hijas(NA_character_), rama)),
+        papelera)
     })
     shiny::observeEvent(input$carpeta_click, carpeta_sel(as.character(input$carpeta_click)))
     # A folder that disappears (trashed in another session) stops filtering.
     shiny::observe({
       cs <- carpetas_segura(); sel <- carpeta_sel()
-      if (!is.null(cs) && !sel %in% c("todas", "sin") && !sel %in% cs$id) carpeta_sel("todas")
+      if (!is.null(cs) && !sel %in% c("todas", "general") && !sel %in% cs$id) carpeta_sel("todas")
     })
 
     carpeta_editando <- shiny::reactiveVal(NULL)
-    modal_carpeta <- function(fila = NULL) {
+    # T61: where a folder goes ("Dentro de": any live folder but itself and its
+    # branch, and only where the branch still fits in REQ_CARPETA_MAX_NIVEL;
+    # the server checks it all again) and its companies. Every company comes
+    # ticked; a new subfolder starts with its mother's. All ticked is saved as
+    # "every company" (NA), so a company added later is in too.
+    carp_destinos <- function(cs, fila = NULL) {
+      if (is.null(cs) || !nrow(cs)) return(.reqm_opciones_carpeta(cs, "requisiciones.carpeta.raiz"))
+      excluir <- character(); alto <- 1L
+      if (!is.null(fila)) {
+        excluir <- .req_carpeta_subarbol(cs, fila$id)
+        alto <- max(cs$nivel[cs$id %in% excluir]) - cs$nivel[match(fila$id, cs$id)] + 1L
+      }
+      excluir <- union(excluir, cs$id[cs$nivel + alto > REQ_CARPETA_MAX_NIVEL])
+      .reqm_opciones_carpeta(cs, "requisiciones.carpeta.raiz", excluir = excluir)
+    }
+    # The active companies, with their ids (NULL without a catalog).
+    carp_empresas <- function() {
+      e <- empresas_cat(); cmap <- iniciales()
+      if (!is.data.frame(e) || !nrow(e) || !length(cmap)) return(NULL)
+      e <- e[!(e$deleted %in% TRUE) & !is.na(e$id) & e$initials %in% names(cmap), , drop = FALSE]
+      if (nrow(e)) e[order(e$initials), , drop = FALSE] else NULL
+    }
+    # Ids ticked for folder `carpeta_id` ("" / NA = every company).
+    carp_marcadas <- function(cs, carpeta_id, emp) {
+      if (is.null(carpeta_id) || is.na(carpeta_id) || !nzchar(carpeta_id) || is.null(cs)) return(emp$id)
+      j <- match(carpeta_id, cs$id)
+      ids <- if (is.na(j)) NULL else .req_carpeta_empresas(cs$empresas[j], existentes = emp$id)
+      if (is.null(ids)) emp$id else intersect(emp$id, ids)
+    }
+    modal_carpeta <- function(fila = NULL, padre = NA_character_) {
       monedas <- .req_monedas()
+      cs <- carpetas_segura(); emp <- carp_empresas()
+      destinos <- carp_destinos(cs, fila)
+      padre_sel <- if (!is.null(fila)) fila$padre_ef else padre
+      if (is.null(padre_sel) || is.na(padre_sel) || !padre_sel %in% destinos) padre_sel <- ""
       hd_modal(titulo = if (is.null(fila)) tr("requisiciones.carpeta.nueva") else tr("requisiciones.carpeta.editar"),
-        htmltools::div(class = "hdreq-form",
+        htmltools::div(class = "hdreq-form hd-marca",
           shiny::textInput(ns("carp_nombre"), tr("requisiciones.carpeta.nombre"), value = fila$nombre %||% "", width = "100%"),
+          shiny::selectInput(ns("carp_padre"), tr("requisiciones.carpeta.dentro_de"), choices = destinos,
+                             selected = padre_sel, width = "100%"),
+          if (!is.null(emp)) htmltools::div(class = "hdreq-carp-empresas",
+            shiny::checkboxGroupInput(ns("carp_empresas"), tr("requisiciones.carpeta.empresas"), inline = TRUE,
+              choiceNames = lapply(seq_len(nrow(emp)), function(i)
+                htmltools::tags$span(title = emp$nombre_corto[i] %||% emp$initials[i], emp$initials[i])),
+              choiceValues = emp$id,
+              selected = carp_marcadas(cs, if (is.null(fila)) padre_sel else fila$id, emp)),
+            htmltools::div(class = "form-text", tr("requisiciones.carpeta.empresas_ayuda"))),
           htmltools::div(class = "hdreq-fila2",
             htmltools::tags$label(class = "form-label", `for` = ns("carp_color"), tr("requisiciones.carpeta.color"),
               htmltools::tags$input(id = ns("carp_color"), type = "color", class = "form-control form-control-color",
@@ -377,8 +499,15 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
     shiny::observeEvent(input$carpeta_nueva, {
       if (!puede_o_avisa(shared, "can_edit_requisiciones")) return()
       carpeta_editando(NULL)
-      shiny::showModal(modal_carpeta())
+      sel <- carpeta_sel()
+      shiny::showModal(modal_carpeta(padre = if (sel %in% c("todas", "general")) NA_character_ else sel))
     })
+    # A new folder takes the companies of the folder it goes into.
+    shiny::observeEvent(input$carp_padre, {
+      if (!is.null(carpeta_editando())) return()
+      emp <- carp_empresas(); if (is.null(emp)) return()
+      shiny::updateCheckboxGroupInput(session, "carp_empresas", selected = carp_marcadas(carpetas_segura(), input$carp_padre, emp))
+    }, ignoreInit = TRUE)
     shiny::observeEvent(input$carpeta_editar, {
       if (!puede_o_avisa(shared, "can_edit_requisiciones")) return()
       cs <- carpetas_segura()
@@ -389,9 +518,18 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
     })
     shiny::observeEvent(input$carp_guardar, {
       if (!puede_o_avisa(shared, "can_edit_requisiciones")) return()
-      datos <- list(nombre = input$carp_nombre, color = input$carp_color %||% REQ_COLOR_DEFECTO,
-                    presupuesto = input$carp_presupuesto, moneda = input$carp_moneda)
       id <- carpeta_editando()
+      datos <- list(nombre = input$carp_nombre, color = input$carp_color %||% REQ_COLOR_DEFECTO,
+                    presupuesto = input$carp_presupuesto, moneda = input$carp_moneda,
+                    padre_id = if (nzchar(input$carp_padre %||% "")) input$carp_padre else NA_character_)
+      emp <- carp_empresas()
+      if (!is.null(emp)) {
+        m <- as.character(input$carp_empresas %||% character())
+        # Companies the folder had that are not offered (inactive) are kept.
+        cs <- carpetas_segura(); j <- if (is.null(id) || is.null(cs)) NA else match(id, cs$id)
+        extra <- setdiff(if (is.na(j)) character() else (.req_carpeta_empresas(cs$empresas[j]) %||% character()), emp$id)
+        datos$empresas <- if (setequal(m, emp$id) && !length(extra)) NA_character_ else c(m, extra)
+      }
       ok <- escribir(function() if (is.null(id)) requisiciones_carpeta_crear(cid(), datos, yo())
                                 else requisiciones_carpeta_editar(cid(), id, datos, yo()),
                      tr("requisiciones.carpeta.guardada"))
@@ -403,6 +541,11 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
       if (is.null(id)) return()
       ok <- escribir(function() requisiciones_carpeta_papelera(cid(), id, yo()), tr("requisiciones.carpeta.en_papelera"))
       if (!is.null(ok)) { shiny::removeModal(); if (identical(carpeta_sel(), id)) carpeta_sel("todas") }
+    })
+    shiny::observeEvent(input$carpeta_restaurar, {
+      if (!puede_o_avisa(shared, "can_edit_requisiciones")) return()
+      escribir(function() requisiciones_carpeta_restaurar(cid(), as.character(input$carpeta_restaurar), yo()),
+               tr("requisiciones.carpeta.restaurada"))
     })
 
     # ── Evidence (shared by "Nueva requisición" and the detail) ─────────────
@@ -656,19 +799,22 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
 
     # ── Nueva requisición ───────────────────────────────────────────────────
     campos_form <- function(fila = NULL, lectura = FALSE) {
-      inis <- iniciales()
-      empresas <- if (length(inis)) stats::setNames(names(inis), paste0(names(inis), " — ", unname(inis))) else character()
-      if (!is.null(fila) && !is.na(fila$empresa) && !fila$empresa %in% empresas) empresas <- c(empresas, stats::setNames(fila$empresa, fila$empresa))
       monedas <- .req_monedas()
       cs <- carpetas_segura()
-      carp <- c(stats::setNames("", tr("requisiciones.carpeta.ninguna")),
-                if (!is.null(cs) && nrow(cs)) stats::setNames(cs$id, cs$nombre))
+      carp <- .reqm_opciones_carpeta(cs)
+      carpeta_ini <- if (!is.null(fila)) (fila$carpeta_id %||% "") else if (carpeta_sel() %in% c("todas", "general")) "" else carpeta_sel()
+      if (is.na(carpeta_ini) || !carpeta_ini %in% carp) carpeta_ini <- ""
+      empresas <- .reqm_empresas_carpeta(cs, carpeta_ini, iniciales(), empresas_cat(), actual = fila$empresa %||% NA_character_)
       prio <- c(stats::setNames("", tr("requisiciones.campo.sin_prioridad")), stats::setNames(as.character(10:1), as.character(10:1)))
       v <- function(k, def = "") { x <- fila[[k]]; if (is.null(x) || is.na(x)) def else x }
       provs <- tryCatch(shared$proveedores_db(), error = function(e) NULL)
       nom_provs <- if (is.data.frame(provs) && "nombre" %in% names(provs)) sort(unique(stats::na.omit(provs$nombre))) else character()
       htmltools::div(class = "hdreq-form", htmltools::tags$fieldset(class = "hdreq-fs", disabled = if (lectura) NA,
         shiny::textInput(ns("f_titulo"), tr("requisiciones.campo.titulo"), value = v("titulo"), width = "100%"),
+        # T61 (Luis): requisition -> folder -> companies. The folder comes
+        # first (General already chosen) and the company is one of its own.
+        shiny::selectInput(ns("f_carpeta"), tr("requisiciones.campo.carpeta"), choices = carp,
+                           selected = carpeta_ini, width = "100%"),
         htmltools::div(class = "hdreq-fila2",
           shiny::selectInput(ns("f_empresa"), tr("requisiciones.campo.empresa"), choices = c(stats::setNames("", ""), empresas),
                              selected = v("empresa"), width = "100%"),
@@ -682,12 +828,19 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
                              selected = v("moneda", monedas[1]), width = "100%"),
           shiny::selectInput(ns("f_prioridad"), tr("requisiciones.campo.prioridad"), choices = prio,
                              selected = if (is.null(fila) || is.na(fila$prioridad)) "" else as.character(fila$prioridad), width = "100%")),
-        shiny::selectInput(ns("f_carpeta"), tr("requisiciones.campo.carpeta"), choices = carp,
-                           selected = v("carpeta_id", if (carpeta_sel() %in% c("todas", "sin")) "" else carpeta_sel()), width = "100%"),
         shiny::textAreaInput(ns("f_notas"), tr("requisiciones.campo.notas"), value = v("notas"), rows = 3, width = "100%",
                              placeholder = tr("requisiciones.campo.notas_ayuda")) |>
           htmltools::tagAppendAttributes(maxlength = REQ_MAX_NOTAS, .cssSelector = "textarea")))
     }
+    # The company choices follow the folder chosen in the form.
+    shiny::observeEvent(input$f_carpeta, {
+      actual <- input$f_empresa %||% ""
+      f <- if (is.null(detalle_id())) NULL else { v <- vista_segura(); v[v$id %in% detalle_id(), , drop = FALSE] }
+      guardada <- if (!is.null(f) && nrow(f)) f$empresa[1] else NA_character_
+      op <- .reqm_empresas_carpeta(carpetas_segura(), input$f_carpeta, iniciales(), empresas_cat(), actual = guardada)
+      shiny::updateSelectInput(session, "f_empresa", choices = c(stats::setNames("", ""), op),
+                               selected = if (actual %in% op) actual else "")
+    }, ignoreInit = TRUE)
     datos_form <- function() list(
       titulo = input$f_titulo, empresa = input$f_empresa, proveedor = input$f_proveedor,
       monto = input$f_monto, moneda = input$f_moneda,
@@ -840,9 +993,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
       if (identical(a$accion, "mover")) {
         if (!puede_o_avisa(shared, "can_edit_requisiciones")) return()
         pend_mover(a$ids)
-        cs <- carpetas_segura()
-        carp <- c(stats::setNames("", tr("requisiciones.carpeta.ninguna")),
-                  if (!is.null(cs) && nrow(cs)) stats::setNames(cs$id, cs$nombre))
+        carp <- .reqm_opciones_carpeta(carpetas_segura())
         shiny::showModal(hd_modal(titulo = tr_n("requisiciones.mover_n", length(a$ids)),
           shiny::selectInput(ns("mover_a"), tr("requisiciones.campo.carpeta"), choices = carp, width = "100%"),
           pie = shiny::actionButton(ns("mover_ok"), tr("requisiciones.accion.mover"), class = "btn btn-primary btn-sm")))
@@ -944,9 +1095,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
     shiny::observeEvent(input$desde_provision, {
       if (!puede_o_avisa(shared, "can_create_requisiciones")) return()
       selector_abierto(TRUE)
-      cs <- carpetas_segura()
-      carp <- c(stats::setNames("", tr("requisiciones.carpeta.ninguna")),
-                if (!is.null(cs) && nrow(cs)) stats::setNames(cs$id, cs$nombre))
+      carp <- .reqm_opciones_carpeta(carpetas_segura())
       shiny::showModal(hd_modal(titulo = tr("requisiciones.desde_provision"),
         encabezado = htmltools::div(class = "hdreq-sel-carpeta",
           shiny::selectInput(ns("sel_carpeta"), NULL, choices = carp, width = "220px")),
