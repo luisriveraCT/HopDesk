@@ -1,0 +1,327 @@
+/* ============================================================================
+   www/hd_tema_bootstrap.css: GENERATED from .HD_PUENTE_BS in R/tema_registro.R
+   by scripts/generar_temas_css.R. Do not edit by hand.
+   Bootstrap (flatly) re-pointed at the theme's roles, only under the themes
+   with puente = TRUE. Clasico has no block: Bootstrap stays as it is.
+   ========================================================================== */
+
+/* marca */
+html[data-hd-tema="marca"] {
+  --bs-primary: var(--hd-primario);
+  --bs-primary-rgb: 19, 33, 58;
+  --bs-primary-text-emphasis: var(--hd-primario);
+  --bs-primary-bg-subtle: var(--hd-primario-suave);
+  --bs-primary-border-subtle: var(--hd-borde-fuerte);
+  --bs-body-color: var(--hd-texto);
+  --bs-body-color-rgb: 26, 34, 51;
+  --bs-body-bg: var(--hd-fondo);
+  --bs-body-bg-rgb: 247, 246, 242;
+  --bs-emphasis-color: var(--hd-texto);
+  --bs-emphasis-color-rgb: 26, 34, 51;
+  --bs-secondary-color: var(--hd-texto-2);
+  --bs-secondary-color-rgb: 90, 100, 116;
+  --bs-heading-color: var(--hd-texto);
+  --bs-border-color: var(--hd-borde);
+  --bs-link-color: var(--hd-enlace);
+  --bs-link-color-rgb: 30, 91, 99;
+  --bs-link-hover-color: var(--hd-primario);
+  --bs-link-hover-color-rgb: 19, 33, 58;
+  --bs-focus-ring-color: rgba(138, 109, 44, 0.35);
+  --bs-font-sans-serif: var(--hd-fuente-texto);
+  --bs-body-font-family: var(--hd-fuente-texto);
+  --bs-success: var(--hd-exito);
+  --bs-success-rgb: 47, 107, 79;
+  --bs-success-text-emphasis: var(--hd-exito-texto);
+  --bs-success-bg-subtle: var(--hd-exito-suave);
+  --bs-success-border-subtle: var(--hd-borde-fuerte);
+  --bs-danger: var(--hd-peligro);
+  --bs-danger-rgb: 180, 35, 24;
+  --bs-danger-text-emphasis: var(--hd-peligro-texto);
+  --bs-danger-bg-subtle: var(--hd-peligro-suave);
+  --bs-danger-border-subtle: var(--hd-borde-fuerte);
+  --bs-warning: var(--hd-aviso);
+  --bs-warning-rgb: 192, 138, 62;
+  --bs-warning-text-emphasis: var(--hd-aviso-texto);
+  --bs-warning-bg-subtle: var(--hd-aviso-suave);
+  --bs-warning-border-subtle: var(--hd-borde-fuerte);
+  --bs-info: var(--hd-info);
+  --bs-info-rgb: 30, 91, 99;
+  --bs-info-text-emphasis: var(--hd-info);
+  --bs-info-bg-subtle: var(--hd-info-suave);
+  --bs-info-border-subtle: var(--hd-borde-fuerte);
+}
+html[data-hd-tema="marca"] h1,
+html[data-hd-tema="marca"] h2,
+html[data-hd-tema="marca"] h3,
+html[data-hd-tema="marca"] h4,
+html[data-hd-tema="marca"] h5,
+html[data-hd-tema="marca"] h6,
+html[data-hd-tema="marca"] .h1,
+html[data-hd-tema="marca"] .h2,
+html[data-hd-tema="marca"] .h3,
+html[data-hd-tema="marca"] .h4,
+html[data-hd-tema="marca"] .h5,
+html[data-hd-tema="marca"] .h6 {
+  font-family: var(--hd-fuente-titulos);
+}
+html[data-hd-tema="marca"] .bg-primary {
+  --bslib-color-bg: var(--hd-primario);
+  --bslib-color-fg: var(--hd-primario-texto);
+}
+html[data-hd-tema="marca"] .text-primary {
+  --bslib-color-fg: var(--hd-primario);
+}
+html[data-hd-tema="marca"] .form-control:focus,
+html[data-hd-tema="marca"] .form-select:focus,
+html[data-hd-tema="marca"] .form-check-input:focus,
+html[data-hd-tema="marca"] .shiny-input-container .checkbox input:focus,
+html[data-hd-tema="marca"] .shiny-input-container .checkbox-inline input:focus,
+html[data-hd-tema="marca"] .shiny-input-container .radio input:focus,
+html[data-hd-tema="marca"] .shiny-input-container .radio-inline input:focus {
+  border-color: var(--hd-foco-color);
+  box-shadow: var(--hd-foco);
+}
+html[data-hd-tema="marca"] .nav-link:focus-visible,
+html[data-hd-tema="marca"] .nav-tabs>li>a:focus-visible,
+html[data-hd-tema="marca"] .nav-pills>li>a:focus-visible {
+  box-shadow: var(--hd-foco);
+}
+html[data-hd-tema="marca"] .form-check-input:checked,
+html[data-hd-tema="marca"] .form-check-input[type="checkbox"]:indeterminate,
+html[data-hd-tema="marca"] .shiny-input-container .checkbox input:checked,
+html[data-hd-tema="marca"] .shiny-input-container .checkbox-inline input:checked,
+html[data-hd-tema="marca"] .shiny-input-container .radio input:checked,
+html[data-hd-tema="marca"] .shiny-input-container .radio-inline input:checked {
+  background-color: var(--hd-primario);
+  border-color: var(--hd-primario);
+}
+html[data-hd-tema="marca"] .form-range::-webkit-slider-thumb {
+  background-color: var(--hd-primario);
+}
+html[data-hd-tema="marca"] .form-range::-moz-range-thumb {
+  background-color: var(--hd-primario);
+}
+html[data-hd-tema="marca"] .nav-tabs {
+  --bs-nav-tabs-border-color: var(--hd-borde);
+  --bs-nav-tabs-link-active-color: var(--hd-primario);
+  --bs-nav-tabs-link-active-bg: var(--hd-superficie);
+  --bs-nav-tabs-link-active-border-color: var(--hd-borde) var(--hd-borde) var(--hd-superficie);
+}
+html[data-hd-tema="marca"] .nav-tabs .nav-link.active,
+html[data-hd-tema="marca"] .nav-tabs>li>a.active {
+  color: var(--hd-primario);
+}
+html[data-hd-tema="marca"] .nav-pills {
+  --bs-nav-pills-link-active-bg: var(--hd-primario);
+  --bs-nav-pills-link-active-color: var(--hd-primario-texto);
+}
+html[data-hd-tema="marca"] .nav-pills>li.active>a,
+html[data-hd-tema="marca"] .dropdown-menu>li.active>a {
+  color: var(--hd-primario-texto);
+  background-color: var(--hd-primario);
+}
+html[data-hd-tema="marca"] .dropdown-menu {
+  --bs-dropdown-bg: var(--hd-superficie);
+  --bs-dropdown-border-color: var(--hd-borde);
+  --bs-dropdown-link-color: var(--hd-texto);
+  --bs-dropdown-link-hover-color: var(--hd-texto);
+  --bs-dropdown-link-hover-bg: var(--hd-hover);
+  --bs-dropdown-link-active-color: var(--hd-primario-texto);
+  --bs-dropdown-link-active-bg: var(--hd-primario);
+}
+html[data-hd-tema="marca"] .list-group {
+  --bs-list-group-active-color: var(--hd-primario-texto);
+  --bs-list-group-active-bg: var(--hd-primario);
+  --bs-list-group-active-border-color: var(--hd-primario);
+  --bs-list-group-action-hover-bg: var(--hd-hover);
+  --bs-list-group-disabled-bg: var(--hd-superficie-2);
+}
+html[data-hd-tema="marca"] .pagination {
+  --bs-pagination-color: var(--hd-enlace);
+  --bs-pagination-bg: var(--hd-superficie);
+  --bs-pagination-border-color: var(--hd-borde);
+  --bs-pagination-hover-color: var(--hd-primario);
+  --bs-pagination-hover-bg: var(--hd-hover);
+  --bs-pagination-focus-box-shadow: var(--hd-foco);
+  --bs-pagination-active-color: var(--hd-primario-texto);
+  --bs-pagination-active-bg: var(--hd-primario);
+  --bs-pagination-active-border-color: var(--hd-primario);
+  --bs-pagination-disabled-color: var(--hd-texto-tenue);
+  --bs-pagination-disabled-bg: var(--hd-superficie);
+}
+html[data-hd-tema="marca"] .progress,
+html[data-hd-tema="marca"] .progress-stacked {
+  --bs-progress-bar-bg: var(--hd-primario);
+}
+html[data-hd-tema="marca"] .progress-bar-primary {
+  background-color: var(--hd-primario);
+  color: var(--hd-primario-texto);
+}
+html[data-hd-tema="marca"] .alert {
+  color: var(--bs-alert-color);
+}
+html[data-hd-tema="marca"] .alert a,
+html[data-hd-tema="marca"] .alert .alert-link {
+  color: inherit;
+}
+html[data-hd-tema="marca"] .alert-primary {
+  background-color: var(--hd-primario-suave);
+  --bs-alert-color: var(--hd-primario);
+}
+html[data-hd-tema="marca"] .alert-success {
+  background-color: var(--hd-exito-suave);
+  --bs-alert-color: var(--hd-exito-texto);
+}
+html[data-hd-tema="marca"] .alert-danger {
+  background-color: var(--hd-peligro-suave);
+  --bs-alert-color: var(--hd-peligro-texto);
+}
+html[data-hd-tema="marca"] .alert-warning {
+  background-color: var(--hd-aviso-suave);
+  --bs-alert-color: var(--hd-aviso-texto);
+}
+html[data-hd-tema="marca"] .alert-info {
+  background-color: var(--hd-info-suave);
+  --bs-alert-color: var(--hd-info);
+}
+html[data-hd-tema="marca"] .btn-primary {
+  --bs-btn-color: var(--hd-primario-texto);
+  --bs-btn-bg: var(--hd-primario);
+  --bs-btn-border-color: var(--hd-primario);
+  --bs-btn-hover-color: var(--hd-primario-texto);
+  --bs-btn-hover-bg: var(--hd-primario-hover);
+  --bs-btn-hover-border-color: var(--hd-primario-hover);
+  --bs-btn-focus-shadow-rgb: 19, 33, 58;
+  --bs-btn-active-color: var(--hd-primario-texto);
+  --bs-btn-active-bg: var(--hd-primario-hover);
+  --bs-btn-active-border-color: var(--hd-primario-hover);
+  --bs-btn-disabled-color: var(--hd-primario-texto);
+  --bs-btn-disabled-bg: var(--hd-primario);
+  --bs-btn-disabled-border-color: var(--hd-primario);
+}
+html[data-hd-tema="marca"] .btn-success {
+  --bs-btn-color: var(--hd-texto-inverso);
+  --bs-btn-bg: var(--hd-exito);
+  --bs-btn-border-color: var(--hd-exito);
+  --bs-btn-hover-color: var(--hd-texto-inverso);
+  --bs-btn-hover-bg: color-mix(in srgb, var(--hd-exito) 85%, black);
+  --bs-btn-hover-border-color: color-mix(in srgb, var(--hd-exito) 85%, black);
+  --bs-btn-focus-shadow-rgb: 47, 107, 79;
+  --bs-btn-active-color: var(--hd-texto-inverso);
+  --bs-btn-active-bg: color-mix(in srgb, var(--hd-exito) 80%, black);
+  --bs-btn-active-border-color: color-mix(in srgb, var(--hd-exito) 80%, black);
+  --bs-btn-disabled-color: var(--hd-texto-inverso);
+  --bs-btn-disabled-bg: var(--hd-exito);
+  --bs-btn-disabled-border-color: var(--hd-exito);
+}
+html[data-hd-tema="marca"] .btn-danger {
+  --bs-btn-color: var(--hd-texto-inverso);
+  --bs-btn-bg: var(--hd-peligro);
+  --bs-btn-border-color: var(--hd-peligro);
+  --bs-btn-hover-color: var(--hd-texto-inverso);
+  --bs-btn-hover-bg: color-mix(in srgb, var(--hd-peligro) 85%, black);
+  --bs-btn-hover-border-color: color-mix(in srgb, var(--hd-peligro) 85%, black);
+  --bs-btn-focus-shadow-rgb: 180, 35, 24;
+  --bs-btn-active-color: var(--hd-texto-inverso);
+  --bs-btn-active-bg: color-mix(in srgb, var(--hd-peligro) 80%, black);
+  --bs-btn-active-border-color: color-mix(in srgb, var(--hd-peligro) 80%, black);
+  --bs-btn-disabled-color: var(--hd-texto-inverso);
+  --bs-btn-disabled-bg: var(--hd-peligro);
+  --bs-btn-disabled-border-color: var(--hd-peligro);
+}
+html[data-hd-tema="marca"] .btn-warning {
+  --bs-btn-color: var(--hd-texto);
+  --bs-btn-bg: var(--hd-aviso);
+  --bs-btn-border-color: var(--hd-aviso);
+  --bs-btn-hover-color: var(--hd-texto);
+  --bs-btn-hover-bg: color-mix(in srgb, var(--hd-aviso) 85%, white);
+  --bs-btn-hover-border-color: color-mix(in srgb, var(--hd-aviso) 85%, white);
+  --bs-btn-focus-shadow-rgb: 192, 138, 62;
+  --bs-btn-active-color: var(--hd-texto);
+  --bs-btn-active-bg: color-mix(in srgb, var(--hd-aviso) 80%, white);
+  --bs-btn-active-border-color: color-mix(in srgb, var(--hd-aviso) 80%, white);
+  --bs-btn-disabled-color: var(--hd-texto);
+  --bs-btn-disabled-bg: var(--hd-aviso);
+  --bs-btn-disabled-border-color: var(--hd-aviso);
+}
+html[data-hd-tema="marca"] .btn-info {
+  --bs-btn-color: var(--hd-texto-inverso);
+  --bs-btn-bg: var(--hd-info);
+  --bs-btn-border-color: var(--hd-info);
+  --bs-btn-hover-color: var(--hd-texto-inverso);
+  --bs-btn-hover-bg: color-mix(in srgb, var(--hd-info) 85%, black);
+  --bs-btn-hover-border-color: color-mix(in srgb, var(--hd-info) 85%, black);
+  --bs-btn-focus-shadow-rgb: 30, 91, 99;
+  --bs-btn-active-color: var(--hd-texto-inverso);
+  --bs-btn-active-bg: color-mix(in srgb, var(--hd-info) 80%, black);
+  --bs-btn-active-border-color: color-mix(in srgb, var(--hd-info) 80%, black);
+  --bs-btn-disabled-color: var(--hd-texto-inverso);
+  --bs-btn-disabled-bg: var(--hd-info);
+  --bs-btn-disabled-border-color: var(--hd-info);
+}
+html[data-hd-tema="marca"] .btn-outline-primary {
+  --bs-btn-color: var(--hd-primario);
+  --bs-btn-border-color: var(--hd-primario);
+  --bs-btn-hover-color: var(--hd-primario-texto);
+  --bs-btn-hover-bg: var(--hd-primario);
+  --bs-btn-hover-border-color: var(--hd-primario);
+  --bs-btn-focus-shadow-rgb: 19, 33, 58;
+  --bs-btn-active-color: var(--hd-primario-texto);
+  --bs-btn-active-bg: var(--hd-primario);
+  --bs-btn-active-border-color: var(--hd-primario);
+  --bs-btn-disabled-color: var(--hd-primario);
+  --bs-btn-disabled-border-color: var(--hd-primario);
+}
+html[data-hd-tema="marca"] .btn-outline-success {
+  --bs-btn-color: var(--hd-exito-texto);
+  --bs-btn-border-color: var(--hd-exito-texto);
+  --bs-btn-hover-color: var(--hd-texto-inverso);
+  --bs-btn-hover-bg: var(--hd-exito);
+  --bs-btn-hover-border-color: var(--hd-exito);
+  --bs-btn-focus-shadow-rgb: 47, 107, 79;
+  --bs-btn-active-color: var(--hd-texto-inverso);
+  --bs-btn-active-bg: var(--hd-exito);
+  --bs-btn-active-border-color: var(--hd-exito);
+  --bs-btn-disabled-color: var(--hd-exito-texto);
+  --bs-btn-disabled-border-color: var(--hd-exito-texto);
+}
+html[data-hd-tema="marca"] .btn-outline-danger {
+  --bs-btn-color: var(--hd-peligro-texto);
+  --bs-btn-border-color: var(--hd-peligro-texto);
+  --bs-btn-hover-color: var(--hd-texto-inverso);
+  --bs-btn-hover-bg: var(--hd-peligro);
+  --bs-btn-hover-border-color: var(--hd-peligro);
+  --bs-btn-focus-shadow-rgb: 180, 35, 24;
+  --bs-btn-active-color: var(--hd-texto-inverso);
+  --bs-btn-active-bg: var(--hd-peligro);
+  --bs-btn-active-border-color: var(--hd-peligro);
+  --bs-btn-disabled-color: var(--hd-peligro-texto);
+  --bs-btn-disabled-border-color: var(--hd-peligro-texto);
+}
+html[data-hd-tema="marca"] .btn-outline-warning {
+  --bs-btn-color: var(--hd-aviso-texto);
+  --bs-btn-border-color: var(--hd-aviso-texto);
+  --bs-btn-hover-color: var(--hd-texto);
+  --bs-btn-hover-bg: var(--hd-aviso);
+  --bs-btn-hover-border-color: var(--hd-aviso);
+  --bs-btn-focus-shadow-rgb: 192, 138, 62;
+  --bs-btn-active-color: var(--hd-texto);
+  --bs-btn-active-bg: var(--hd-aviso);
+  --bs-btn-active-border-color: var(--hd-aviso);
+  --bs-btn-disabled-color: var(--hd-aviso-texto);
+  --bs-btn-disabled-border-color: var(--hd-aviso-texto);
+}
+html[data-hd-tema="marca"] .btn-outline-info {
+  --bs-btn-color: var(--hd-info);
+  --bs-btn-border-color: var(--hd-info);
+  --bs-btn-hover-color: var(--hd-texto-inverso);
+  --bs-btn-hover-bg: var(--hd-info);
+  --bs-btn-hover-border-color: var(--hd-info);
+  --bs-btn-focus-shadow-rgb: 30, 91, 99;
+  --bs-btn-active-color: var(--hd-texto-inverso);
+  --bs-btn-active-bg: var(--hd-info);
+  --bs-btn-active-border-color: var(--hd-info);
+  --bs-btn-disabled-color: var(--hd-info);
+  --bs-btn-disabled-border-color: var(--hd-info);
+}
+

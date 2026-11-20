@@ -84,6 +84,7 @@ HD_TEMAS_CSS_VERSION <- 2L
 HD_TEMAS <- list(
   clasico = list(
     nombre = "tema.clasico",
+    puente = FALSE,   # Bootstrap keeps flatly's colours: Clásico is today's look
     tokens = list(
       # Values: the most used of each group, TEMA_inventario.md §3 (n).
       fondo              = "#FFFFFF",
@@ -142,6 +143,7 @@ HD_TEMAS <- list(
   ),
   marca = list(
     nombre = "tema.marca",
+    puente = TRUE,    # www/hd_tema_bootstrap.css maps Bootstrap onto these roles
     tokens = list(
       fondo              = "#F7F6F2",   # papel
       superficie         = "#FFFFFF",
@@ -406,6 +408,190 @@ tema_legado_css <- function() {
   c(cab, "",
     .tema_bloque(":root", a_rol, "Every theme: the role"), "",
     .tema_bloque(sel, clasico, "Clasico: today's exact value"), "")
+}
+
+# ── Puente con Bootstrap ─────────────────────────────────────────────────────
+# bslib compiles flatly once (hd_bs_theme()); some of its colours are --bs-*
+# variables, others are written into a class (.btn-primary { --bs-btn-bg:
+# #0A58CA }, .form-control:focus { border-color: #85ace5 }). The bridge,
+# www/hd_tema_bootstrap.css, re-points them at the roles, so the ~600
+# Bootstrap classes in the modules follow the theme without touching them.
+# Only themes with puente = TRUE get a block, every rule under
+# html[data-hd-tema="<tema>"] (0,1,1: beats Bootstrap's :root,[data-bs-theme]
+# whatever the load order). Clásico has none: Bootstrap stays as it is.
+#
+# Values are templates, expanded per theme by tema_puente_css():
+#   {rol}           var(--hd-rol)
+#   {rgb:rol}       the role's hex as "r, g, b" (Bootstrap's *-rgb triplets,
+#                   which var() cannot produce)
+#   {rgba:rol:a}    rgba() of the role at alpha a
+# Anything else is literal and may not hold a colour (no #hex, no rgb()):
+# the guardian checks it.
+.HD_PUENTE_BS <- list(
+  list(sel = "", decl = c(
+    `--bs-primary` = "{primario}", `--bs-primary-rgb` = "{rgb:primario}",
+    `--bs-primary-text-emphasis` = "{primario}", `--bs-primary-bg-subtle` = "{primario-suave}",
+    `--bs-primary-border-subtle` = "{borde-fuerte}",
+    `--bs-body-color` = "{texto}", `--bs-body-color-rgb` = "{rgb:texto}",
+    `--bs-body-bg` = "{fondo}", `--bs-body-bg-rgb` = "{rgb:fondo}",
+    `--bs-emphasis-color` = "{texto}", `--bs-emphasis-color-rgb` = "{rgb:texto}",
+    `--bs-secondary-color` = "{texto-2}", `--bs-secondary-color-rgb` = "{rgb:texto-2}",
+    `--bs-heading-color` = "{texto}",
+    `--bs-border-color` = "{borde}",
+    `--bs-link-color` = "{enlace}", `--bs-link-color-rgb` = "{rgb:enlace}",
+    `--bs-link-hover-color` = "{primario}", `--bs-link-hover-color-rgb` = "{rgb:primario}",
+    `--bs-focus-ring-color` = "{rgba:foco-color:0.35}",
+    `--bs-font-sans-serif` = "{fuente-texto}", `--bs-body-font-family` = "{fuente-texto}",
+    `--bs-success` = "{exito}", `--bs-success-rgb` = "{rgb:exito}",
+    `--bs-success-text-emphasis` = "{exito-texto}", `--bs-success-bg-subtle` = "{exito-suave}",
+    `--bs-success-border-subtle` = "{borde-fuerte}",
+    `--bs-danger` = "{peligro}", `--bs-danger-rgb` = "{rgb:peligro}",
+    `--bs-danger-text-emphasis` = "{peligro-texto}", `--bs-danger-bg-subtle` = "{peligro-suave}",
+    `--bs-danger-border-subtle` = "{borde-fuerte}",
+    `--bs-warning` = "{aviso}", `--bs-warning-rgb` = "{rgb:aviso}",
+    `--bs-warning-text-emphasis` = "{aviso-texto}", `--bs-warning-bg-subtle` = "{aviso-suave}",
+    `--bs-warning-border-subtle` = "{borde-fuerte}",
+    `--bs-info` = "{info}", `--bs-info-rgb` = "{rgb:info}",
+    `--bs-info-text-emphasis` = "{info}", `--bs-info-bg-subtle` = "{info-suave}",
+    `--bs-info-border-subtle` = "{borde-fuerte}")),
+  list(sel = c("h1", "h2", "h3", "h4", "h5", "h6", ".h1", ".h2", ".h3", ".h4", ".h5", ".h6"),
+       decl = c(`font-family` = "{fuente-titulos}")),
+  list(sel = c(".bg-primary"), decl = c(`--bslib-color-bg` = "{primario}", `--bslib-color-fg` = "{primario-texto}")),
+  list(sel = c(".text-primary"), decl = c(`--bslib-color-fg` = "{primario}")),
+  # Forms: focus, checked boxes (Shiny's own inputs too), range.
+  list(sel = c(".form-control:focus", ".form-select:focus", ".form-check-input:focus",
+               ".shiny-input-container .checkbox input:focus", ".shiny-input-container .checkbox-inline input:focus",
+               ".shiny-input-container .radio input:focus", ".shiny-input-container .radio-inline input:focus"),
+       decl = c(`border-color` = "{foco-color}", `box-shadow` = "{foco}")),
+  list(sel = c(".nav-link:focus-visible", ".nav-tabs>li>a:focus-visible", ".nav-pills>li>a:focus-visible"),
+       decl = c(`box-shadow` = "{foco}")),
+  list(sel = c(".form-check-input:checked", ".form-check-input[type=\"checkbox\"]:indeterminate",
+               ".shiny-input-container .checkbox input:checked", ".shiny-input-container .checkbox-inline input:checked",
+               ".shiny-input-container .radio input:checked", ".shiny-input-container .radio-inline input:checked"),
+       decl = c(`background-color` = "{primario}", `border-color` = "{primario}")),
+  list(sel = c(".form-range::-webkit-slider-thumb"), decl = c(`background-color` = "{primario}")),
+  list(sel = c(".form-range::-moz-range-thumb"), decl = c(`background-color` = "{primario}")),
+  # Navigation.
+  list(sel = c(".nav-tabs"), decl = c(`--bs-nav-tabs-border-color` = "{borde}",
+                                      `--bs-nav-tabs-link-active-color` = "{primario}",
+                                      `--bs-nav-tabs-link-active-bg` = "{superficie}",
+                                      `--bs-nav-tabs-link-active-border-color` = "{borde} {borde} {superficie}")),
+  list(sel = c(".nav-tabs .nav-link.active", ".nav-tabs>li>a.active"), decl = c(color = "{primario}")),
+  list(sel = c(".nav-pills"), decl = c(`--bs-nav-pills-link-active-bg` = "{primario}",
+                                       `--bs-nav-pills-link-active-color` = "{primario-texto}")),
+  list(sel = c(".nav-pills>li.active>a", ".dropdown-menu>li.active>a"),
+       decl = c(color = "{primario-texto}", `background-color` = "{primario}")),
+  list(sel = c(".dropdown-menu"), decl = c(
+    `--bs-dropdown-bg` = "{superficie}", `--bs-dropdown-border-color` = "{borde}",
+    `--bs-dropdown-link-color` = "{texto}", `--bs-dropdown-link-hover-color` = "{texto}",
+    `--bs-dropdown-link-hover-bg` = "{hover}", `--bs-dropdown-link-active-color` = "{primario-texto}",
+    `--bs-dropdown-link-active-bg` = "{primario}")),
+  list(sel = c(".list-group"), decl = c(
+    `--bs-list-group-active-color` = "{primario-texto}", `--bs-list-group-active-bg` = "{primario}",
+    `--bs-list-group-active-border-color` = "{primario}", `--bs-list-group-action-hover-bg` = "{hover}",
+    `--bs-list-group-disabled-bg` = "{superficie-2}")),
+  list(sel = c(".pagination"), decl = c(
+    `--bs-pagination-color` = "{enlace}", `--bs-pagination-bg` = "{superficie}",
+    `--bs-pagination-border-color` = "{borde}", `--bs-pagination-hover-color` = "{primario}",
+    `--bs-pagination-hover-bg` = "{hover}", `--bs-pagination-focus-box-shadow` = "{foco}",
+    `--bs-pagination-active-color` = "{primario-texto}", `--bs-pagination-active-bg` = "{primario}",
+    `--bs-pagination-active-border-color` = "{primario}", `--bs-pagination-disabled-color` = "{texto-tenue}",
+    `--bs-pagination-disabled-bg` = "{superficie}")),
+  list(sel = c(".progress", ".progress-stacked"), decl = c(`--bs-progress-bar-bg` = "{primario}")),
+  list(sel = c(".progress-bar-primary"), decl = c(`background-color` = "{primario}", color = "{primario-texto}")),
+  # Alerts: flatly paints them solid with white text; a theme gets its soft
+  # fill and the text role that reads on it.
+  list(sel = c(".alert"), decl = c(color = "var(--bs-alert-color)")),
+  list(sel = c(".alert a", ".alert .alert-link"), decl = c(color = "inherit")),
+  list(sel = c(".alert-primary"), decl = c(`background-color` = "{primario-suave}", `--bs-alert-color` = "{primario}")),
+  list(sel = c(".alert-success"), decl = c(`background-color` = "{exito-suave}", `--bs-alert-color` = "{exito-texto}")),
+  list(sel = c(".alert-danger"), decl = c(`background-color` = "{peligro-suave}", `--bs-alert-color` = "{peligro-texto}")),
+  list(sel = c(".alert-warning"), decl = c(`background-color` = "{aviso-suave}", `--bs-alert-color` = "{aviso-texto}")),
+  list(sel = c(".alert-info"), decl = c(`background-color` = "{info-suave}", `--bs-alert-color` = "{info}"))
+)
+
+# Bootstrap's coloured buttons: fill, the text on it, hover fill (NA: the fill
+# mixed 15 % towards `mezcla`, 20 % when pressed: Bootstrap's own rule;
+# black under white text, white under dark text, so the text keeps its
+# contrast) and the colour of the outline variant (it reads as text on white,
+# so a -texto role where the fill is light).
+.HD_PUENTE_BOTONES <- list(
+  clase    = c("primary",        "success",       "danger",        "warning",     "info"),
+  fondo    = c("primario",       "exito",         "peligro",       "aviso",       "info"),
+  texto    = c("primario-texto", "texto-inverso", "texto-inverso", "texto",       "texto-inverso"),
+  hover    = c("primario-hover", NA,              NA,              NA,            NA),
+  mezcla   = c("black",          "black",         "black",         "white",       "black"),
+  contorno = c("primario",       "exito-texto",   "peligro-texto", "aviso-texto", "info")
+)
+
+# Expand one template for a theme (see .HD_PUENTE_BS).
+.tema_puente_valor <- function(tpl, tema) {
+  tok <- c(.HD_COMUNES, HD_TEMAS[[tema]]$tokens)
+  hex_rgb <- function(rol) {
+    h <- tok[[rol]]
+    if (is.null(h) || !grepl("^#[0-9A-Fa-f]{6}$", h)) stop("[tema] puente: ", rol, " is not a #rrggbb role", call. = FALSE)
+    paste(strtoi(substring(h, c(2, 4, 6), c(3, 5, 7)), 16L), collapse = ", ")
+  }
+  m <- gregexpr("\\{[^}]+\\}", tpl)
+  regmatches(tpl, m) <- list(vapply(regmatches(tpl, m)[[1]], function(x) {
+    p <- strsplit(substr(x, 2L, nchar(x) - 1L), ":", fixed = TRUE)[[1]]
+    if (length(p) == 1L) {
+      if (is.null(tok[[p]])) stop("[tema] puente: unknown role ", p, call. = FALSE)
+      paste0("var(--hd-", p, ")")
+    } else if (p[1] == "rgb" && length(p) == 2L) hex_rgb(p[2])
+    else if (p[1] == "rgba" && length(p) == 3L) paste0("rgba(", hex_rgb(p[2]), ", ", p[3], ")")
+    else stop("[tema] puente: bad template ", x, call. = FALSE)
+  }, character(1)))
+  tpl
+}
+
+# Every block of the bridge, buttons included, as list(sel, decl) with the
+# templates still unexpanded.
+.tema_puente_bloques <- function() {
+  b <- .HD_PUENTE_BOTONES
+  botones <- lapply(seq_along(b$clase), function(i) {
+    f <- paste0("{", b$fondo[i], "}"); t <- paste0("{", b$texto[i], "}")
+    h <- if (is.na(b$hover[i])) paste0("color-mix(in srgb, ", f, " 85%, ", b$mezcla[i], ")") else paste0("{", b$hover[i], "}")
+    a <- if (is.na(b$hover[i])) paste0("color-mix(in srgb, ", f, " 80%, ", b$mezcla[i], ")") else h
+    list(sel = paste0(".btn-", b$clase[i]), decl = c(
+      `--bs-btn-color` = t, `--bs-btn-bg` = f, `--bs-btn-border-color` = f,
+      `--bs-btn-hover-color` = t, `--bs-btn-hover-bg` = h, `--bs-btn-hover-border-color` = h,
+      `--bs-btn-focus-shadow-rgb` = paste0("{rgb:", b$fondo[i], "}"),
+      `--bs-btn-active-color` = t, `--bs-btn-active-bg` = a, `--bs-btn-active-border-color` = a,
+      `--bs-btn-disabled-color` = t, `--bs-btn-disabled-bg` = f, `--bs-btn-disabled-border-color` = f))
+  })
+  contornos <- lapply(seq_along(b$clase), function(i) {
+    c0 <- paste0("{", b$contorno[i], "}"); f <- paste0("{", b$fondo[i], "}"); t <- paste0("{", b$texto[i], "}")
+    list(sel = paste0(".btn-outline-", b$clase[i]), decl = c(
+      `--bs-btn-color` = c0, `--bs-btn-border-color` = c0,
+      `--bs-btn-hover-color` = t, `--bs-btn-hover-bg` = f, `--bs-btn-hover-border-color` = f,
+      `--bs-btn-focus-shadow-rgb` = paste0("{rgb:", b$fondo[i], "}"),
+      `--bs-btn-active-color` = t, `--bs-btn-active-bg` = f, `--bs-btn-active-border-color` = f,
+      `--bs-btn-disabled-color` = c0, `--bs-btn-disabled-border-color` = c0))
+  })
+  c(.HD_PUENTE_BS, botones, contornos)
+}
+
+# The text of www/hd_tema_bootstrap.css (scripts/generar_temas_css.R).
+tema_puente_css <- function() {
+  lineas <- c(
+    "/* ============================================================================",
+    "   www/hd_tema_bootstrap.css: GENERATED from .HD_PUENTE_BS in R/tema_registro.R",
+    "   by scripts/generar_temas_css.R. Do not edit by hand.",
+    "   Bootstrap (flatly) re-pointed at the theme's roles, only under the themes",
+    "   with puente = TRUE. Clasico has no block: Bootstrap stays as it is.",
+    "   ========================================================================== */")
+  for (t in names(HD_TEMAS)[vapply(HD_TEMAS, function(x) isTRUE(x$puente), logical(1))]) {
+    raiz <- paste0("html[data-hd-tema=\"", t, "\"]")
+    lineas <- c(lineas, "", paste0("/* ", t, " */"))
+    for (b in .tema_puente_bloques()) {
+      sel <- if (identical(b$sel, "")) raiz else paste(raiz, b$sel)   # one selector per line
+      sel <- c(if (length(sel) > 1L) paste0(sel[-length(sel)], ","), paste0(sel[length(sel)], " {"))
+      val <- vapply(unname(b$decl), .tema_puente_valor, character(1), tema = t)
+      lineas <- c(lineas, sel, paste0("  ", names(b$decl), ": ", val, ";"), "}")
+    }
+  }
+  c(lineas, "")
 }
 
 # ── Para app.R ───────────────────────────────────────────────────────────────

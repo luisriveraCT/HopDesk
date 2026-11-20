@@ -1,8 +1,8 @@
 # =============================================================================
 # scripts/generar_temas_css.R
-# Writes www/hd_temas.css and www/hd_clasico_legado.css from
-# R/tema_registro.R (TEMA). Run it after any change to the registry, bump
-# HD_TEMAS_CSS_VERSION, and commit the three files. tests/test_temas_guardian.R
+# Writes www/hd_temas.css, www/hd_clasico_legado.css and
+# www/hd_tema_bootstrap.css from R/tema_registro.R (TEMA). Run it after any
+# change to the registry, bump HD_TEMAS_CSS_VERSION, and commit the four files. tests/test_temas_guardian.R
 # fails when a committed file and the registry disagree.
 #
 # Run from the repo root:
@@ -19,3 +19,4 @@ escribir <- function(lineas, destino) {
 }
 escribir(e$tema_css(),        "www/hd_temas.css")
 escribir(e$tema_legado_css(), "www/hd_clasico_legado.css")
+escribir(e$tema_puente_css(), "www/hd_tema_bootstrap.css")

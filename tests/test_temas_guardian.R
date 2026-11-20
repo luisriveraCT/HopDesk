@@ -17,6 +17,11 @@
 #   7. R/tema_registro.R does anything at the top other than define literal
 #      data and functions (rule 29: shinyapps.io loads R/ before app.R), or
 #      hd_bs_theme() stops being the theme app.R had (identical()).
+#   8. Clásico's legacy tokens break their rules (see the section);
+#   9. the Bootstrap bridge (www/hd_tema_bootstrap.css) differs from the
+#      registry, has a rule outside html[data-hd-tema="<theme with bridge>"]
+#      (Clásico has none), a colour written by hand, a triplet off its role,
+#      or paints a text pair below AA.
 #
 # Run from project root:  Rscript tests/test_temas_guardian.R
 # =============================================================================
@@ -90,7 +95,8 @@ archivos <- c("app.R",
   "www/hd_temas.css"    = "generated from the registry",
   "R/bancos_formatos.R" = "BanBajío's Excel layout: a bank format, not the app's look",
   "R/tema_contraste.R"  = "the contrast checker: its colours are worked examples in its comments",
-  "www/hd_clasico_legado.css" = "generated from the registry's legacy tokens"
+  "www/hd_clasico_legado.css" = "generated from the registry's legacy tokens",
+  "www/hd_tema_bootstrap.css" = "generated from the registry's Bootstrap bridge (.HD_PUENTE_BS)"
 )
 
 for (f in setdiff(archivos, names(.EXENTOS))) {
@@ -304,6 +310,85 @@ ok("tema_de_sesion(): the session's theme; the default with no session, no value
 ok("the retiring script exists and uses tema_legado_retirar()",
    file.exists("scripts/retirar_legado_clasico.R") &&
      any(grepl("tema_legado_retirar(", leer("scripts/retirar_legado_clasico.R"), fixed = TRUE)))
+
+# ── 9. The Bootstrap bridge (www/hd_tema_bootstrap.css, TEMA stage 2) ───────
+# Clásico must not move: it has no block, so no rule of the bridge can match
+# it. Every rule starts with html[data-hd-tema="<a theme with puente>"].
+con_puente <- names(tema$HD_TEMAS)[vapply(tema$HD_TEMAS, function(x) isTRUE(x$puente), logical(1))]
+ok("every theme says whether it has a bridge; Clásico has none",
+   all(vapply(tema$HD_TEMAS, function(x) is.logical(x$puente) && length(x$puente) == 1L && !is.na(x$puente), logical(1))) &&
+     identical(tema$HD_TEMAS$clasico$puente, FALSE) && length(con_puente) > 0L)
+ok("www/hd_tema_bootstrap.css is what scripts/generar_temas_css.R generates",
+   identical(sin_fin(leer("www/hd_tema_bootstrap.css")), sin_fin(tema$tema_puente_css())))
+puente <- leer("www/hd_tema_bootstrap.css")
+puente_txt <- paste(puente, collapse = "\n")
+puente_txt <- gsub("(?s)/\\*.*?\\*/", "", puente_txt, perl = TRUE)   # comments span lines
+selectores <- trimws(unlist(strsplit(unlist(regmatches(puente_txt, gregexpr("(?<=^|\\})[^{}]+(?=\\{)", puente_txt, perl = TRUE))), ",")))
+selectores <- selectores[nzchar(selectores)]
+raices <- sprintf('html[data-hd-tema="%s"]', con_puente)
+ok(sprintf("bridge: all %d selectors start with html[data-hd-tema=\"<theme with bridge>\"]", length(selectores)),
+   length(selectores) > 50L &&
+     all(vapply(selectores, function(s) any(startsWith(s, raices) &
+                                              (nchar(s) == nchar(raices) | substr(s, nchar(raices) + 1L, nchar(raices) + 1L) == " ")),
+                logical(1))))
+ok("bridge: no theme without a bridge is named in it (Clásico included)",
+   !any(vapply(setdiff(names(tema$HD_TEMAS), con_puente), function(t)
+     grepl(sprintf('data-hd-tema="%s"', t), puente_txt, fixed = TRUE), logical(1))))
+plantillas <- unlist(lapply(tema$.tema_puente_bloques(), function(b) unname(b$decl)))
+fijas <- gsub("\\{[^}]+\\}", "", plantillas)
+ok("bridge: no colour written by hand in a template (only {rol}, {rgb:rol}, {rgba:rol:a})",
+   length(plantillas) > 100L && cuenta(fijas, RE_HEX) == 0L && cuenta(fijas, RE_FUN) == 0L)
+ok("bridge: every var(--hd-*) of the generated file is a role or a común",
+   all(sub("^var\\(--hd-", "", unlist(regmatches(puente, gregexpr("var\\(--hd-[a-zA-Z0-9-]+", puente)))) %in%
+         c(names(tema$.HD_COMUNES), roles[[1]])))
+ok("bridge: each *-rgb triplet is its role's hex in that theme",
+   all(vapply(con_puente, function(t) {
+     tk <- tema$tema_tokens(t)
+     trip <- function(r) paste(strtoi(substring(tk[[r]], c(2, 4, 6), c(3, 5, 7)), 16L), collapse = ", ")
+     blq <- tema$tema_puente_css()
+     identical(sum(grepl(paste0("--bs-primary-rgb: ", trip("primario"), ";"), blq, fixed = TRUE)), 1L) &&
+       identical(sum(grepl(paste0("--bs-danger-rgb: ", trip("peligro"), ";"), blq, fixed = TRUE)), 1L)
+   }, logical(1))))
+ok("bridge: a bad template stops the generator (unknown role, non-hex role, bad form)",
+   inherits(tryCatch(tema$.tema_puente_valor("{no-existe}", "marca"), error = function(e) e), "error") &&
+     inherits(tryCatch(tema$.tema_puente_valor("{rgb:sombra}", "marca"), error = function(e) e), "error") &&
+     inherits(tryCatch(tema$.tema_puente_valor("{hsl:primario}", "marca"), error = function(e) e), "error") &&
+     identical(tema$.tema_puente_valor("{borde} {rgba:primario:0.5}", "marca"), "var(--hd-borde) rgba(19, 33, 58, 0.5)"))
+# A container with data-bs-theme="dark" redefines --bs-* inside it, out of
+# the bridge's reach.
+bs_dark <- unlist(lapply(c("app.R", list.files("R", pattern = "\\.R$", recursive = TRUE, full.names = TRUE)),
+                         function(f) if (any(grepl("data-bs-theme", sub("#.*$", "", leer(f)), fixed = TRUE))) f))
+ok("no data-bs-theme in app.R or R/ (it would hide the bridge)",
+   length(bs_dark) == 0L || { message("  in: ", paste(bs_dark, collapse = ", ")); FALSE })
+# Contrast of what the bridge paints, in every theme that has it: a button's
+# text on its fill and on its hover fill (Bootstrap's 15 % mix where the
+# theme has no hover role), an outline button's colour on the surface, and an
+# alert's text on its soft fill.
+mezclar <- function(hex, pct, con) {   # color-mix(in srgb, hex pct%, con)
+  v <- strtoi(substring(hex, c(2, 4, 6), c(3, 5, 7)), 16L) * pct / 100 + (if (con == "white") 255 else 0) * (100 - pct) / 100
+  sprintf("#%02X%02X%02X", as.integer(round(v[1])), as.integer(round(v[2])), as.integer(round(v[3])))
+}
+b <- tema$.HD_PUENTE_BOTONES
+for (t in con_puente) {
+  tk <- tema$tema_tokens(t)
+  for (i in seq_along(b$clase)) {
+    f <- tk[[b$fondo[i]]]; x <- tk[[b$texto[i]]]
+    h <- if (is.na(b$hover[i])) mezclar(f, 85, b$mezcla[i]) else tk[[b$hover[i]]]
+    a <- if (is.na(b$hover[i])) mezclar(f, 80, b$mezcla[i]) else h
+    for (par in list(c("fill", f), c("hover", h), c("active", a))) {
+      r <- contraste(x, par[2])
+      ok(sprintf("[%s] .btn-%s: %s on %s = %.2f >= 4.5", t, b$clase[i], b$texto[i], par[1], r), r >= 4.5)
+    }
+    r <- contraste(tk[[b$contorno[i]]], tk[["superficie"]])
+    ok(sprintf("[%s] .btn-outline-%s: %s on superficie = %.2f >= 4.5", t, b$clase[i], b$contorno[i], r), r >= 4.5)
+  }
+  for (p in list(c("primario", "primario-suave"), c("exito-texto", "exito-suave"), c("peligro-texto", "peligro-suave"),
+                 c("aviso-texto", "aviso-suave"), c("info", "info-suave"), c("enlace", "fondo"), c("texto-2", "fondo"),
+                 c("primario", "superficie"), c("texto", "hover"))) {
+    r <- contraste(tk[[p[1]]], tk[[p[2]]])
+    ok(sprintf("[%s] bridge %s on %s = %.2f >= 4.5", t, p[1], p[2], r), r >= 4.5)
+  }
+}
 
 cat(sprintf("\n=== %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
