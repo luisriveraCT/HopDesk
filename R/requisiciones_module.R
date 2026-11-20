@@ -186,7 +186,7 @@ requisicionesUI <- function(id) {
   ns <- shiny::NS(id)
   htmltools::tagList(
     htmltools::tags$head(
-      htmltools::tags$link(rel = "stylesheet", href = "requisiciones.css?v=3"),
+      htmltools::tags$link(rel = "stylesheet", href = "requisiciones.css?v=4"),
       htmltools::tags$script(src = "requisiciones_paste.js?v=2"),
       htmltools::tags$script(src = "requisiciones_carpetas.js?v=1")),
     htmltools::div(class = "hdreq",

@@ -62,6 +62,11 @@
 .hdreq-restaurar { padding: 0 4px; font-size: .75rem; color: var(--hd-marino); }
 .hdreq-carp-empresas .shiny-options-group { display: flex; flex-wrap: wrap; gap: 2px 12px; }
 
+/* The list at Luis's 1293 px (T64): amounts carry their currency code since
+   T55 ("185,000.00 MXN", +26 px in Monto), so long text (Título) gives up
+   20 px here instead of the table scrolling sideways. The bubble shows it whole. */
+.hdreq .hdt-recorte { max-width: 240px; }
+
 /* Forms and modals */
 .hdreq-form .form-group, .hdreq-form .shiny-input-container { margin-bottom: 8px; }
 .hdreq-fs { border: 0; padding: 0; margin: 0; min-width: 0; }
