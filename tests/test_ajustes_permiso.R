@@ -37,6 +37,11 @@ cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", ".schema_ctas_c
                                           ".banco_en_uso_filas", ".banco_en_uso_texto"))
 cargar("R/adjuntos_s3.R", c(".NUMERO_PURO", ".CELDA_PELIGRO", "neutralizar_celdas", "tabla_a_texto_copiable"))
 cargar("R/data_pipeline.R", "scan_ic_candidates")
+for (e in parse("R/ui_components.R", keep.source = FALSE, encoding = "UTF-8"))   # T66: hd_numero_*
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
+      as.character(e[[2]]) %in% c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_numero_texto", "hd_numero_deps",
+                                  "hd_numero_input", "hd_numero_update", "hd_numero_revisar"))
+    eval(e, globalenv())
 for (f in c("R/i18n.R", "R/monedas.R", "R/ppl_generator.R", "R/tier_registry.R", "R/permisos.R",
             "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/settings/settings_cuentas.R", "R/settings/settings_bp.R", "R/settings/settings_hub.R"))

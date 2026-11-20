@@ -32,6 +32,11 @@ cargar <- function(archivo, nombres) {
 }
 cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", ".schema_ctas_cuentas", "load_ctas_bancos",
                                           "load_ctas_cuentas", "save_ctas_bancos", "save_ctas_cuentas", ".BANCOS_MX_CHOICES"))
+for (e in parse("R/ui_components.R", keep.source = FALSE, encoding = "UTF-8"))   # T66: hd_numero_*
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
+      as.character(e[[2]]) %in% c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_numero_texto", "hd_numero_deps",
+                                  "hd_numero_input", "hd_numero_update", "hd_numero_revisar"))
+    eval(e, globalenv())
 for (f in c("R/i18n.R", "R/monedas.R", "R/ppl_generator.R", "R/tier_registry.R", "R/permisos.R",
             "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R", "R/settings/settings_cuentas.R"))
   suppressMessages(source(f))

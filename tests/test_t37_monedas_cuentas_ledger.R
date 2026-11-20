@@ -22,6 +22,11 @@ suppressPackageStartupMessages({ library(shiny); library(dplyr) })
 `%||%` <- function(a, b) if (is.null(a)) b else a
 for (f in c("R/i18n.R", "R/monedas.R", "R/ppl_generator.R")) source(f)
 source("R/settings/settings_helpers.R")
+for (e in parse("R/ui_components.R", keep.source = FALSE, encoding = "UTF-8"))   # T66: hd_numero_*
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
+      as.character(e[[2]]) %in% c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_numero_texto", "hd_numero_deps",
+                                  "hd_numero_input", "hd_numero_update", "hd_numero_revisar"))
+    eval(e, globalenv())
 source("R/settings/settings_cuentas.R")
 
 .pass <- 0L; .fail <- 0L

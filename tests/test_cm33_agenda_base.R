@@ -45,6 +45,11 @@ for (e in parse("R/search_module.R", keep.source = FALSE))
   if (is.call(e) && identical(e[[1]], as.name("<-")) &&
       as.character(e[[2]]) %in% c(".datos_sap_filas", ".datos_sap_columnas", "datos_sap_tabla", "datos_sap_visor"))
     eval(e, globalenv())
+for (e in parse("R/ui_components.R", keep.source = FALSE, encoding = "UTF-8"))   # T66: hd_numero_*
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
+      as.character(e[[2]]) %in% c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_numero_texto", "hd_numero_deps",
+                                  "hd_numero_input", "hd_numero_update", "hd_numero_revisar"))
+    eval(e, globalenv())
 source("R/agenda_filas.R")   # staged() reads agenda_pendientes() (T60)
 source("R/pagar_hoy_module.R")
 
