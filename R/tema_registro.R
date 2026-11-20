@@ -200,7 +200,7 @@ HD_TEMAS <- list(
 
 # ── Legado de Clásico ────────────────────────────────────────────────────────
 # A screen moved from hex to roles (TEMA stage 4) unifies a colour with its
-# role when they are close (ΔE <= 5). When today's colour is farther, the
+# role when they are close (ΔE <= 2). When today's colour is farther, the
 # screen still uses the role, through a legacy token that keeps the exact
 # value under Clásico only:
 #     --hd-leg-<rol>-<hex>   e.g. --hd-leg-texto-0d1b2a
@@ -215,6 +215,15 @@ HD_TEMAS <- list(
 # is the whole shadow of today, the hex names its colour and a hash of the
 # shadow (tema_hash_sombra()) tells apart two shadows of one colour:
 #     `sombra-000000-<hash>` = "0 4px 20px rgba(0, 0, 0, 0.45)"
+# A colour that today is a light tint of a role (no ΔE <= 2 mix exists)
+# names the percentage: elsewhere it is the role at N % over the surface,
+# not the solid role (TEMA_e4_mapas2 §v7):
+#     --hd-leg-<rol>-p<N>-<hex>   e.g. --hd-leg-provision-p15-e0cffc
+#     clasico -> #E0CFFC
+#     every other theme -> color-mix(in srgb, var(--hd-provision) 15%, var(--hd-superficie))
+# N is 1..99, colour roles only. From R, tema_color() gives it flattened
+# (#RRGGBB), and also reads "<rol>-p<N>" without the legacy prefix, which
+# is what the retiring script leaves in R code.
 .HD_LEGADO <- list(
   `aviso-suave-fdf3dc` = "#FDF3DC",
   `aviso-suave-fef3c7` = "#FEF3C7",
@@ -267,10 +276,24 @@ HD_ROLES_SOMBRA <- c("sombra", "foco")
 # A shadow role's name also carries a short hash of the whole shadow, since
 # one colour can have several shadows: "sombra-000000-3fa2c1"
 # -> list(rol = "sombra", hex = "#000000", hash = "3fa2c1").
+# A tint names its percentage: "provision-p15-e0cffc" -> list(rol =
+# "provision", hex = "#E0CFFC", hash = NULL, pct = 15L). pct is NULL otherwise.
 tema_legado_partes <- function(nombre) {
-  m <- regmatches(nombre, regexec("^(.+?)-([0-9a-f]{6})(?:-([0-9a-f]{6}))?$", nombre, perl = TRUE))[[1]]
-  if (length(m) != 4L) return(NULL)
-  list(rol = m[2], hex = paste0("#", toupper(m[3])), hash = if (nzchar(m[4])) m[4] else NULL)
+  m <- regmatches(nombre, regexec("^(.+?)-(?:p([1-9][0-9]?)-)?([0-9a-f]{6})(?:-([0-9a-f]{6}))?$", nombre, perl = TRUE))[[1]]
+  if (length(m) != 5L) return(NULL)
+  pct <- if (nzchar(m[3])) as.integer(m[3]) else NULL
+  if (!is.null(pct) && nzchar(m[5])) return(NULL)   # a tint is a colour, never a shadow
+  list(rol = m[2], hex = paste0("#", toupper(m[4])), hash = if (nzchar(m[5])) m[5] else NULL, pct = pct)
+}
+
+# A #rrggbb at pct % over a solid #rrggbb, flattened (what color-mix(in srgb,
+# A pct%, B) paints). Pure: no theme lookup, so the legacy values can use it.
+.tema_mezclar_hex <- function(hex, pct, sobre) {
+  a <- max(0, min(100, pct)) / 100
+  rgb <- strtoi(substring(hex, c(2, 4, 6), c(3, 5, 7)), 16L)
+  f <- strtoi(substring(sobre, c(2, 4, 6), c(3, 5, 7)), 16L)
+  m <- as.integer(round(rgb * a + f * (1 - a)))
+  sprintf("#%02X%02X%02X", m[1], m[2], m[3])
 }
 
 # The hash in a legacy shadow's name: the first 6 hex of the MD5 of the
@@ -286,13 +309,18 @@ tema_hash_sombra <- function(valor) {
   if (!length(.HD_LEGADO)) return(list())
   if (identical(tema, "clasico")) return(.HD_LEGADO)
   roles <- c(.HD_COMUNES, HD_TEMAS[[tema]]$tokens)   # a legacy token may point to a common (etq-*)
-  stats::setNames(lapply(names(.HD_LEGADO), function(n) roles[[tema_legado_partes(n)$rol]]),
-                  names(.HD_LEGADO))
+  stats::setNames(lapply(names(.HD_LEGADO), function(n) {
+    p <- tema_legado_partes(n)
+    if (is.null(p$pct)) roles[[p$rol]] else .tema_mezclar_hex(roles[[p$rol]], p$pct, roles[["superficie"]])
+  }), names(.HD_LEGADO))
 }
 
 # One line of code with the legacy tokens turned into their roles: what
 # scripts/retirar_legado_clasico.R applies to every file.
 tema_legado_retirar <- function(lineas) {
+  # A tint first (the general pattern would leave var(--hd-<rol>-p<N>)).
+  lineas <- gsub("var\\(--hd-leg-([a-z0-9-]+?)-p([1-9][0-9]?)-[0-9a-f]{6}\\)",
+                 "color-mix(in srgb, var(--hd-\\1) \\2%, var(--hd-superficie))", lineas, perl = TRUE)
   lineas <- gsub("var\\(--hd-leg-([a-z0-9-]+?)-[0-9a-f]{6}(?:-[0-9a-f]{6})?\\)", "var(--hd-\\1)", lineas, perl = TRUE)
   gsub("([\"'])leg-([a-z0-9-]+?)-[0-9a-f]{6}(?:-[0-9a-f]{6})?([\"'])", "\\1\\2\\3", lineas, perl = TRUE)
 }
@@ -309,9 +337,7 @@ tema_mezcla <- function(rol, pct, tema = HD_TEMA_OMISION, sobre = NULL) {
   a <- max(0, min(100, pct)) / 100
   rgb <- strtoi(substring(hex, c(2, 4, 6), c(3, 5, 7)), 16L)
   if (is.null(sobre)) return(sprintf("rgba(%d, %d, %d, %s)", rgb[1], rgb[2], rgb[3], format(a)))
-  f <- strtoi(substring(sobre, c(2, 4, 6), c(3, 5, 7)), 16L)
-  m <- as.integer(round(rgb * a + f * (1 - a)))
-  sprintf("#%02X%02X%02X", m[1], m[2], m[3])
+  .tema_mezclar_hex(hex, pct, sobre)
 }
 
 # ── Lectura ──────────────────────────────────────────────────────────────────
@@ -350,8 +376,16 @@ tema_tokens <- function(tema = HD_TEMA_OMISION) {
   c(.HD_PALETA, .HD_COMUNES, HD_TEMAS[[tema]]$tokens, leg)
 }
 
+# "<rol>-p<N>" (no legacy prefix): the role at N % over the surface,
+# flattened; what a retired tint leaves in R code.
 tema_color <- function(rol, tema = HD_TEMA_OMISION) {
-  v <- tema_tokens(tema)[[rol]]
+  tk <- tema_tokens(tema)
+  v <- tk[[rol]]
+  if (is.null(v)) {
+    m <- regmatches(rol, regexec("^(.+)-p([1-9][0-9]?)$", rol))[[1]]
+    if (length(m) == 3L && grepl("^#[0-9A-Fa-f]{6}$", tk[[m[2]]] %||% ""))
+      v <- .tema_mezclar_hex(tk[[m[2]]], as.integer(m[3]), tk[["superficie"]])
+  }
   if (is.null(v)) stop("[tema] rol desconocido: ", rol, call. = FALSE)
   v
 }
@@ -400,8 +434,11 @@ tema_legado_css <- function() {
     "   Can only shrink (tests/test_temas_guardian.R).",
     "   ========================================================================== */")
   if (!length(.HD_LEGADO)) return(c(cab, "", "/* (empty) */", ""))
-  a_rol <- stats::setNames(lapply(names(.HD_LEGADO), function(n)
-    paste0("var(--hd-", tema_legado_partes(n)$rol, ")")), paste0("leg-", names(.HD_LEGADO)))
+  a_rol <- stats::setNames(lapply(names(.HD_LEGADO), function(n) {
+    p <- tema_legado_partes(n)
+    if (is.null(p$pct)) paste0("var(--hd-", p$rol, ")")
+    else sprintf("color-mix(in srgb, var(--hd-%s) %d%%, var(--hd-superficie))", p$rol, p$pct)
+  }), paste0("leg-", names(.HD_LEGADO)))
   clasico <- stats::setNames(.HD_LEGADO, paste0("leg-", names(.HD_LEGADO)))
   sel <- "[data-hd-tema=\"clasico\"]"
   if (identical(HD_TEMA_OMISION, "clasico")) sel <- paste0(sel, ", :root:not([data-hd-tema])")

@@ -245,6 +245,10 @@ ok(sprintf("hand-written + legacy never grows: %d <= %d", sum(.TRINQUETE) + .TOP
 legado_valido <- function(leg) vapply(names(leg), function(n) {
   p <- tema$tema_legado_partes(n)
   !is.null(p) && p$rol %in% c(roles[[1]], names(tema$.HD_COMUNES)) &&
+    # A tint (p<N>): 1..99, a colour role that is #rrggbb in every theme.
+    (is.null(p$pct) || (p$pct >= 1L && p$pct <= 99L && !p$rol %in% tema$HD_ROLES_SOMBRA &&
+       all(vapply(names(tema$HD_TEMAS), function(t)
+         grepl("^#[0-9A-Fa-f]{6}$", c(tema$.HD_COMUNES, tema$HD_TEMAS[[t]]$tokens)[[p$rol]] %||% ""), logical(1))))) &&
     (if (p$rol %in% tema$HD_ROLES_SOMBRA)
        tema$.tema_sombra_con_color(leg[[n]], p$hex) && identical(p$hash, tema$tema_hash_sombra(leg[[n]]))
      else is.null(p$hash) && identical(toupper(leg[[n]]), p$hex))
@@ -270,7 +274,7 @@ ok("legacy shadows: two shadows of one colour get two names (hash), spaces and c
 ok("legacy shadows: name parts read back (rol, hex, hash); a colour has no hash",
    identical(tema$tema_legado_partes(n1)[c("rol", "hex")], list(rol = "sombra", hex = "#000000")) &&
      identical(tema$tema_legado_partes(n1)$hash, tema$tema_hash_sombra(s1)) &&
-     identical(tema$tema_legado_partes("texto-2-0d1b2a"), list(rol = "texto-2", hex = "#0D1B2A", hash = NULL)))
+     identical(tema$tema_legado_partes("texto-2-0d1b2a"), list(rol = "texto-2", hex = "#0D1B2A", hash = NULL, pct = NULL)))
 ok("legacy shadows: the whole shadow is kept and must use the colour in its name",
    prueba$.tema_sombra_con_color(s1, "#000000") && !prueba$.tema_sombra_con_color(s1, "#1E3A5F") &&
      identical(prueba$tema_color(paste0("leg-", n1), "clasico"), s1) &&
@@ -294,12 +298,42 @@ ok("retiring: var(--hd-leg-ROL-hex) -> var(--hd-ROL), \"leg-ROL-hex\" -> \"ROL\"
        "style = \"background:var(--hd-leg-encabezado-1e3a5f)\"",
        "tema_color(\"leg-peligro-texto-b91c1c\", tema)",
        "box-shadow: var(--hd-leg-sombra-000000-3fa2c1); x <- tema_color('leg-foco-4a88c7-0a1b2c')",
-       "color: #0d1b2a; /* leg-texto-0d1b2a in a comment, unquoted */")),
+       "color: #0d1b2a; /* leg-texto-0d1b2a in a comment, unquoted */",
+       ".y { background: var(--hd-leg-provision-p15-e0cffc); } tema_color(\"leg-acento-p8-fff7ed\", t)")),
      c(".x { color: var(--hd-texto-2); border: 1px solid var(--hd-borde); }",
        "style = \"background:var(--hd-encabezado)\"",
        "tema_color(\"peligro-texto\", tema)",
        "box-shadow: var(--hd-sombra); x <- tema_color('foco')",
-       "color: #0d1b2a; /* leg-texto-0d1b2a in a comment, unquoted */")))
+       "color: #0d1b2a; /* leg-texto-0d1b2a in a comment, unquoted */",
+       ".y { background: color-mix(in srgb, var(--hd-provision) 15%, var(--hd-superficie)); } tema_color(\"acento-p8\", t)")))
+# Tints (p<N>), on a copy of the registry with three of them.
+tinte <- new.env(); sys.source("R/tema_registro.R", envir = tinte)
+tinte$.HD_LEGADO <- list(`provision-p15-e0cffc` = "#E0CFFC", `acento-p8-fff7ed` = "#FFF7ED", `texto-2-0d1b2a` = "#0D1B2A")
+sup_m <- tinte$tema_color("superficie", "marca")
+css_t <- paste(tinte$tema_legado_css(), collapse = "\n")
+ok("tint: name parts read back with its pct; a tint with a shadow hash is malformed",
+   identical(tinte$tema_legado_partes("provision-p15-e0cffc"), list(rol = "provision", hex = "#E0CFFC", hash = NULL, pct = 15L)) &&
+     is.null(tinte$tema_legado_partes("sombra-p10-000000-3fa2c1")) &&
+     identical(tinte$tema_legado_partes("texto-2-0d1b2a")$rol, "texto-2"))
+ok("tint: Clásico gets today's hex; Marca the role at N % over its surface (R side, flattened)",
+   identical(tinte$tema_color("leg-provision-p15-e0cffc", "clasico"), "#E0CFFC") &&
+     identical(tinte$tema_color("leg-provision-p15-e0cffc", "marca"),
+               tinte$tema_mezcla("provision", 15, "marca", sobre = sup_m)) &&
+     identical(tinte$tema_color("leg-acento-p8-fff7ed", "marca"), tinte$tema_mezcla("acento", 8, "marca", sobre = sup_m)) &&
+     identical(tinte$tema_color("leg-texto-2-0d1b2a", "marca"), tinte$tema_color("texto-2", "marca")))
+ok("tint: the CSS sends other themes to color-mix(role N%, surface) and Clásico to the hex",
+   grepl("--hd-leg-provision-p15-e0cffc: color-mix(in srgb, var(--hd-provision) 15%, var(--hd-superficie));", css_t, fixed = TRUE) &&
+     grepl("--hd-leg-provision-p15-e0cffc: #E0CFFC;", css_t, fixed = TRUE) &&
+     grepl("--hd-leg-texto-2-0d1b2a: var(--hd-texto-2);", css_t, fixed = TRUE))
+ok("tint: tema_color(\"<rol>-p<N>\") after retiring = the same colour Marca had; unknown or non-colour roles still fail",
+   identical(tinte$tema_color("provision-p15", "marca"), tinte$tema_color("leg-provision-p15-e0cffc", "marca")) &&
+     inherits(tryCatch(tinte$tema_color("noexiste-p15", "marca"), error = function(e) e), "error") &&
+     inherits(tryCatch(tinte$tema_color("sombra-p15", "marca"), error = function(e) e), "error"))
+ok("tint check: pct out of range, a shadow role, a wrong hex all fail; a good one passes",
+   legado_valido(list(`provision-p15-e0cffc` = "#E0CFFC")) &&
+     !legado_valido(list(`provision-p15-e0cffd` = "#E0CFFC")) &&
+     !legado_valido(list(`sombra-p15-000000` = "0 1px 2px rgba(0,0,0,0.1)")) &&
+     !legado_valido(list(`provision-p100-e0cffc` = "#E0CFFC")) && !legado_valido(list(`provision-p0-e0cffc` = "#E0CFFC")))
 sesion <- function(valor) list(userData = list(hd_tema = function() valor))
 ok("tema_de_sesion(): the session's theme; the default with no session, no value or an unknown one",
    identical(tema$tema_de_sesion(NULL), tema$HD_TEMA_OMISION) &&
