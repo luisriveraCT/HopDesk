@@ -45,11 +45,16 @@ valor_js <- function(id, v) ev(sprintf("(function(){ var e = document.getElement
                                        id, jsonlite::toJSON(v, auto_unbox = TRUE)))
 # A selectInput is selectize: set it through its API, as a click would (a jQuery .val() never reaches Shiny).
 elige <- function(id, v) ev(sprintf("(function(){ var s = document.getElementById('%s').selectize; s.setValue('%s'); return s.getValue(); })()", id, v))
-foto <- function(n) if (nzchar(FOTOS)) { dir.create(FOTOS, showWarnings = FALSE, recursive = TRUE)
+foto <- function(n) if (nzchar(FOTOS)) {
+  sin_login(n); dir.create(FOTOS, showWarnings = FALSE, recursive = TRUE)
   writeBin(jsonlite::base64_dec(b$Page$captureScreenshot(format = "png")$data), file.path(FOTOS, paste0(n, ".png"))) }
 lineas <- function() jsonlite::fromJSON(ev("JSON.stringify([].filter.call(document.querySelectorAll('.modal .pwiz-errores li'), function(l){ return l.offsetParent !== null; }).map(function(l){ return l.innerText.trim(); }))"))
 caja_visible <- function() isTRUE(ev("(function(){ var c = document.querySelector('.modal .pwiz-errores'); return !!c && c.offsetParent !== null; })()"))
 
+# The fixture has no login: a login form means the wrong app (an exploratory
+# run against dev once typed into one). Checked before every screenshot.
+sin_login <- function(donde) ok(sprintf("%s: no login form on screen", donde),
+  !isTRUE(ev("!!document.getElementById('auth-user_id') || !!document.querySelector('input[type=password]')")))
 hasta_terminos <- function() {
   ev("$('.modal').modal('hide'); true"); Sys.sleep(0.8)
   clic("#abrir"); espera("!!document.getElementById('pwiz_categoria_financiero')")
@@ -105,6 +110,10 @@ tryCatch({
   clic("#pwiz_add_impuesto"); espera("!!document.getElementById('pwiz_imp_nombre_2')")
   teclea("#pwiz_imp_nombre_2", "Derecho"); elige('pwiz_imp_tipo_2', 'fijo'); valor_js("pwiz_imp_valor_2", 50)
   Sys.sleep(0.6); foto("C2_cargos_impuestos")
+  fuera <- ev("(function(){ var m = document.querySelector('.modal .modal-content').getBoundingClientRect();
+    return [].filter.call(document.querySelectorAll('[id^=pwiz_imp_rm_]'), function(b){ var r = b.getBoundingClientRect();
+      return r.right > m.right - 1 || r.width < 1; }).length; })()")
+  ok(sprintf("C: at 1293 both remove buttons fit inside the modal (outside: %s)", fuera), identical(as.integer(fuera), 0L))
   clic("#pwiz_next")
   ok("C: the Revisión opens", espera("(function(){ return document.querySelectorAll('#pwiz_amort-hdt tbody tr').length > 1; })()", 40))
   Sys.sleep(1.5)
@@ -114,6 +123,12 @@ tryCatch({
   cab <- ev("[].map.call(document.querySelectorAll('#pwiz_amort-hdt th'), function(t){ return t.innerText.trim(); }).join(' | ')")
   cat("   columnas:", cab, "\n")
   ok("C: the schedule shows 'Impuestos' and 'Total a pagar'", grepl("Impuestos", cab) && grepl("Total a pagar", cab))
+  corte <- ev("(function(){ var s = document.querySelector('#pwiz_amort-hdt .hdt-scroll') || document.querySelector('#pwiz_amort-hdt');
+    var v = s.getBoundingClientRect(); var ths = [].filter.call(document.querySelectorAll('#pwiz_amort-hdt th'), function(t){
+      return /Impuestos|Total a pagar/.test(t.innerText); });
+    return ths.length === 2 && ths.every(function(t){ var r = t.getBoundingClientRect(); return r.right <= v.right + 1 && r.left >= v.left - 1; }); })()")
+  ok("C: at 1293 'Impuestos' and 'Total a pagar' are in view without scrolling", isTRUE(corte))
+  ok("C: the summary gives the taxes over the whole term", grepl("Impuestos en todo el plazo", resumen, fixed = TRUE))
   fila <- jsonlite::fromJSON(ev("(function(){ var r = document.querySelector('#pwiz_amort-hdt tbody tr:not(.hdt-esp)');
     return JSON.stringify([].map.call(r.querySelectorAll('td'), function(td){ return td.innerText.trim(); })); })()"))
   cat("   primera fila:", paste(fila, collapse = " | "), "\n")
