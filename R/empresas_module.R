@@ -48,6 +48,21 @@ logo_grupo_img <- function(logo_raw, logo_ext = "png", alto = 32) {
   unique(unlist(.iniciales_anteriores_de(all_e$iniciales_anteriores[otras])))
 }
 
+# A new company checked against S3's table as it is now (`fresco`, CM39), not
+# only against the session's copy: two sessions creating the same initials
+# at once both passed the copy's check and both were written. Stops with a
+# classed condition (nothing is written); the caller tells the user.
+.empresa_rechazo <- function(clase)
+  stop(structure(class = c(clase, "empresa_rechazada", "error", "condition"),
+                 list(message = clase, call = NULL)))
+.validar_alta_empresa <- function(initials) function(fresco) {
+  if (nrow(fresco) && initials %in% toupper(trimws(fresco$initials)))
+    .empresa_rechazo("empresa_iniciales_repetidas")
+  if (initials %in% .iniciales_de_antes_ajenas(fresco))   # CM29
+    .empresa_rechazo("empresa_iniciales_de_antes")
+  invisible(TRUE)
+}
+
 # ── UI ────────────────────────────────────────────────────────────────────────
 
 empresasUI <- function(id) {
@@ -298,15 +313,26 @@ empresasServer <- function(id, shared) {
     # never the session's whole copy. A copy that is not this client's
     # (.empresas_copia_ajena()) stops it with nothing written. Throws on any
     # failure; callers notify and say nothing was saved.
-    .save_and_broadcast <- function(df) {
+    # `validar(fresco)` (CM39) checks the action against S3's current table
+    # before anything is written; when it refuses (an "empresa_rechazada"
+    # condition), the session is shown what S3 holds -- the other session's
+    # company included -- and the condition goes on to the caller.
+    .save_and_broadcast <- function(df, validar = NULL) {
       cid   <- shared$effective_client_id()
       base  <- .normalize(isolate(all_empresas_rv()) %||% .schema_empresas(), .schema_empresas)
       nuevo <- .normalize(df, .schema_empresas)
-      guardado <- modificar_tabla(S3_KEYS$empresas, cid, .schema_empresas, function(fresco) {
-        if (.empresas_copia_ajena(base, fresco))
-          stop("[EMP] the session's companies are not this client's; nothing was saved", call. = FALSE)
-        rebase_por_id(nuevo, base, fresco, "id")
-      })
+      visto <- NULL
+      guardado <- withCallingHandlers(
+        modificar_tabla(S3_KEYS$empresas, cid, .schema_empresas, function(fresco) {
+          if (.empresas_copia_ajena(base, fresco))
+            stop("[EMP] the session's companies are not this client's; nothing was saved", call. = FALSE)
+          visto <<- fresco
+          if (is.function(validar)) validar(fresco)
+          rebase_por_id(nuevo, base, fresco, "id")
+        }),
+        empresa_rechazada = function(e)
+          if (!is.null(visto) && !is.null(shared$empresas_db) && is.function(shared$empresas_db))
+            shared$empresas_db(visto))
       bump_sync_version("empresas_db", client_id = cid)
       if (!is.null(shared$empresas_db) && is.function(shared$empresas_db))
         shared$empresas_db(guardado)   # what S3 holds now, other sessions' rows included
@@ -427,9 +453,23 @@ empresasServer <- function(id, shared) {
       )
 
       updated <- dplyr::bind_rows(all_e, new_row)
-      saved <- tryCatch({ .save_and_broadcast(updated); TRUE },
-                        error = function(e) { message("[EMP] create failed: ", e$message); FALSE })
-      if (!saved) {
+      # CM39: the checks above saw the session's copy; they are made again on
+      # S3's table as the company is written. Refused there (another session
+      # took the initials meanwhile): nothing written, the form stays open,
+      # the session already shows that other company.
+      saved <- tryCatch({ .save_and_broadcast(updated, validar = .validar_alta_empresa(initials)); "ok" },
+                        empresa_iniciales_repetidas = function(e) "repetidas",
+                        empresa_iniciales_de_antes  = function(e) "de_antes",
+                        error = function(e) { message("[EMP] create failed: ", e$message); "error" })
+      if (saved == "repetidas") {
+        showNotification(tr("tablas.empresas.aviso.iniciales_recien_dadas", iniciales = initials),
+                         type = "error", duration = 8)
+        return()
+      }
+      if (saved == "de_antes") {
+        showNotification(tr("tablas.empresas.aviso.iniciales_de_antes"), type = "error"); return()
+      }
+      if (saved != "ok") {
         showNotification(
           tr("tablas.empresas.aviso.no_guardada"),
           type = "error", duration = 6)
