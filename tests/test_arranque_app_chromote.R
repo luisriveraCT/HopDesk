@@ -201,18 +201,17 @@ for (modo in modos) for (quien in quienes) {
   # Every stylesheet and script of the app's own the page asks for answers
   # 200 (TEMA, 2026-11-19): a branch that adds www/x.css, run from another
   # checkout, used to get a 404 nobody saw.
-  r404 <- tryCatch(b$Runtime$evaluate(
-    "(function(){
-       var urls = Array.from(document.querySelectorAll('link[rel=stylesheet][href], script[src]'))
-         .map(function(e){ return e.href || e.src; })
-         .filter(function(u){ return u.indexOf(location.origin) === 0; });
-       return Promise.all(urls.map(function(u){
-         return fetch(u, {credentials: 'same-origin'}).then(function(r){ return r.status + ' ' + u.replace(location.origin, ''); },
-                                                          function(){ return 'ERR ' + u.replace(location.origin, ''); });
-       })).then(function(l){ return JSON.stringify(l); });
-     })()", awaitPromise = TRUE, returnByValue = TRUE, timeout_ = 60)$result$value,
-    error = function(x) { message("  ERROR: ", conditionMessage(x)); NULL })
-  recursos <- tryCatch(jsonlite::fromJSON(r404), error = function(x) character())
+  # The page lists them (synchronous JS); R fetches each one. A failure to
+  # list is a FAIL with its message, never "0 resources".
+  urls <- tryCatch(unlist(jsonlite::fromJSON(ev(
+    "JSON.stringify(Array.from(document.querySelectorAll('link[rel=stylesheet][href], script[src]'))
+       .map(function(e){ return e.href || e.src; }).filter(function(u){ return u.indexOf(location.origin) === 0; }))"))),
+    error = function(x) { message("  ERROR listing resources: ", conditionMessage(x)); character() })
+  recursos <- vapply(urls, function(u) {
+    st <- tryCatch(curl::curl_fetch_memory(u, handle = curl::new_handle(TIMEOUT = 30))$status_code,
+                   error = function(x) conditionMessage(x))
+    paste(st, sub("^https?://[^/]+", "", u))
+  }, character(1), USE.NAMES = FALSE)
   malos <- recursos[!startsWith(recursos, "200 ")]
   ok(sprintf("%s every local stylesheet and script answers 200 (%d asked)", et, length(recursos)),
      length(recursos) > 5L && !length(malos)); mostrar(malos)

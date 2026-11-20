@@ -133,13 +133,17 @@ recorrer <- function(raiz, etiqueta, quien) {
   poll_until(carga_terminada, timeout_s = LIMITE, interval_s = 1)
   if (!ok(sprintf("[%s · %s] signed in and loaded", etiqueta, quien), carga_terminada())) return(res)
   Sys.sleep(6)
-  recursos <- tryCatch(jsonlite::fromJSON(b$Runtime$evaluate(
-    "(function(){
-       var urls = Array.from(document.querySelectorAll('link[rel=stylesheet][href], script[src]'))
-         .map(function(e){ return e.href || e.src; }).filter(function(u){ return u.indexOf(location.origin) === 0; });
-       return Promise.all(urls.map(function(u){ return fetch(u).then(function(r){ return r.status + ' ' + u.replace(location.origin, ''); },
-         function(){ return 'ERR ' + u.replace(location.origin, ''); }); })).then(function(l){ return JSON.stringify(l); });
-     })()", awaitPromise = TRUE, returnByValue = TRUE, timeout_ = 60)$result$value), error = function(x) character())
+  # The page lists them (synchronous JS); R fetches each one. A failure to
+  # list is a FAIL with its message, never "0 resources".
+  urls <- tryCatch(unlist(jsonlite::fromJSON(ev(
+    "JSON.stringify(Array.from(document.querySelectorAll('link[rel=stylesheet][href], script[src]'))
+       .map(function(e){ return e.href || e.src; }).filter(function(u){ return u.indexOf(location.origin) === 0; }))"))),
+    error = function(x) { message("  ERROR listing resources: ", conditionMessage(x)); character() })
+  recursos <- vapply(urls, function(u) {
+    st <- tryCatch(curl::curl_fetch_memory(u, handle = curl::new_handle(TIMEOUT = 30))$status_code,
+                   error = function(x) conditionMessage(x))
+    paste(st, sub("^https?://[^/]+", "", u))
+  }, character(1), USE.NAMES = FALSE)
   malos <- recursos[!startsWith(recursos, "200 ")]
   if (!ok(sprintf("[%s · %s] every local stylesheet and script answers 200 (%d)", etiqueta, quien, length(recursos)),
           length(recursos) > 5L && !length(malos))) cat(paste0("      | ", malos), sep = "\n")
