@@ -107,7 +107,8 @@ en_sesion <- function(tier, expr) {
   }, { res <<- eval(expr) })
   res
 }
-rechaza <- function(expr) { r <- tryCatch({ q(expr); "escrito" }, error = function(e) conditionMessage(e)); grepl("[T69b]", r, fixed = TRUE) }
+# Refused = an error of class "escritura_no_permitida" (never a silent return).
+rechaza <- function(expr) inherits(tryCatch({ q(expr); "escrito" }, error = function(e) e), "escritura_no_permitida")
 
 sembrar(); antes <- huella()
 r <- en_sesion(COMPRAS, quote(list(
@@ -131,6 +132,47 @@ ok("…and it ADDS: the 2 provisions that were there stay", setequal(provs$id, c
 ok(paste("Compras: its preferences are saved:", r$prefs), isTRUE(r$prefs) && exists(paste0("acme/", .PREFERENCIAS_KEY), envir = store))
 ok(paste("Compras: a requisitions file is written:", r$req), isTRUE(r$req))
 ok("every treasury file is byte for byte what it was", identical(huella(), antes))
+
+ok("the refusal leaves a trail with the table and the tier in the server log",
+   any(grepl("[T69b] write refused: table=invoice_moves.rds tier=compras",
+             capture.output(en_sesion(COMPRAS, quote({
+               session$userData$hd_nivel_efectivo <- function() "compras"
+               tryCatch(save_moves(.schema_moves(), client_id = "acme"), error = function(e) NULL) })), type = "message"),
+             fixed = TRUE)))
+
+# ── 3b. A real screen: Políticas, saved by a staff "ver como Compras" ────────
+# (staff holds can_manage_policies; the effective tier is Compras). The save
+# is refused: the screen shows its error and never "Política creada".
+for (f in c("R/i18n.R", "R/permisos.R", "R/settings/settings_policies.R")) suppressMessages(source(f))
+avisos <- list()
+showNotification <- function(ui, ..., type = "default") { avisos[[length(avisos) + 1L]] <<- list(texto = as.character(ui), tipo = type); invisible() }
+log_action <- function(...) invisible(NULL)
+bump_sync_version <- function(...) invisible(NULL)
+sembrar(); antes <- huella()
+STAFF <- names(TIER_REGISTRY)[vapply(TIER_REGISTRY, function(e) isTRUE(e$interno), logical(1))][1]
+tryCatch(testServer(function(input, output, session) {
+  catalogo <- reactiveVal(get(paste0("acme/", S3_KEYS$policy_catalog), envir = store))
+  shared <- list(
+    usuario = function() list(user = "staff", tier = STAFF, permisos = list(can_manage_policies = TRUE)),
+    current_user_info = function() list(username = "staff", is_staff = TRUE, tier = STAFF),
+    effective_client_id = function() "acme", home_client_id = function() "hd-admin",
+    policy_catalog_db = catalogo, partner_policies_db = reactiveVal(NULL))
+  session$userData$hd_escritura_permitida <- function(key) nivel_escritura_permitida(COMPRAS, key)
+  session$userData$hd_nivel_efectivo <- function() COMPRAS
+  settings_policies_observer(input, output, session, shared)
+}, {
+  # Under testServer the first value of an ignoreInit observer is not an
+  # event: the button goes 1 then 2, as two clicks would.
+  session$setInputs(pol_btn_new = 1); session$setInputs(pol_btn_new = 2)
+  session$setInputs(pol_name = "Quincena", pol_type = "weekdays", pol_roll_direction = "forward")
+  session$setInputs(pol_btn_save = 1)
+}), error = function(e) message("  testServer: ", conditionMessage(e)))
+tipos <- vapply(avisos, function(a) a$tipo, character(1)); textos <- vapply(avisos, function(a) a$texto, character(1))
+ok(sprintf("Políticas, refused save: the screen shows the save error with the refusal (%s)", paste(tipos, textos, collapse = " | ")),
+   any(tipos == "error" & grepl("T69b", textos, fixed = TRUE)))
+ok("…and never the success notice", !any(grepl(tr("tablas.ajustes.aviso.politica_creada"), textos, fixed = TRUE)))
+ok("…and the policy catalog is byte for byte what it was", identical(huella(), antes))
+rm(showNotification, log_action, bump_sync_version)
 
 # ── 4. A full tier, and no session at all, as before ─────────────────────────
 sembrar()

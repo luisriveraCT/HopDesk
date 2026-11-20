@@ -619,9 +619,23 @@ unregister_username <- function(username) {
   f <- if (is.null(s)) NULL else tryCatch(s$userData$hd_escritura_permitida, error = function(e) NULL)
   if (!is.function(f)) return(invisible(TRUE))
   permitida <- tryCatch(shiny::isolate(f(key)), error = function(e) FALSE)
-  if (!isTRUE(permitida))
-    stop("[T69b] this session's tier may not write ", key, ": nothing was saved", call. = FALSE)
-  invisible(TRUE)
+  if (isTRUE(permitida)) return(invisible(TRUE))
+  # Refused: never a silent return. A classed error, so every caller that
+  # already shows a failed save shows this one (and no "Guardado" stays on
+  # screen), and a trail with the table and the tier: the server log always,
+  # app_audit when log_action is there (T72's trail).
+  nivel <- tryCatch(as.character(shiny::isolate(s$userData$hd_nivel_efectivo()))[1], error = function(e) NA_character_)
+  usr   <- tryCatch(shiny::isolate(s$userData$usuario())$user %||% NA_character_, error = function(e) NA_character_)
+  message(sprintf("[T69b] write refused: table=%s tier=%s", key, nivel))
+  if (exists("log_action", mode = "function"))
+    tryCatch(log_action(user = usr %||% "unknown", module = "t69b", action = "escritura_no_permitida",
+                        description = sprintf("table=%s tier=%s", key, nivel), target_id = key,
+                        client_id = tryCatch(shiny::isolate(s$userData$hd_cliente()), error = function(e) NULL),
+                        viewer_home_client_id = tryCatch(shiny::isolate(s$userData$hd_cliente_casa()), error = function(e) NULL)),
+             error = function(e) message("[T69b] refusal not logged: ", conditionMessage(e)))
+  stop(structure(class = c("escritura_no_permitida", "error", "condition"),
+                 list(message = sprintf("[T69b] this session's tier (%s) may not write %s: nothing was saved", nivel, key),
+                      call = NULL, tabla = key, nivel = nivel)))
 }
 
 .s3_write <- function(obj, key, client_id = NULL, permitir_reduccion = FALSE) {

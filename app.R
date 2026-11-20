@@ -1601,6 +1601,11 @@ server <- function(input, output, session) {
   # .s3_write() asks this before writing (a whole-copy save from the empty
   # value would wipe the table). Fail closed while the tier is unknown.
   session$userData$hd_escritura_permitida <- function(key) nivel_escritura_permitida(tier_efectivo(), key)
+  # What a refused write records (.t69b_revisar_escritura): the tier and the
+  # tenancy, for the server log and app_audit.
+  session$userData$hd_nivel_efectivo <- function() tier_efectivo()
+  session$userData$hd_cliente      <- function() effective_client_id()
+  session$userData$hd_cliente_casa <- function() home_client_id()
   for (.nm in names(HD_REACTIVOS_TESORERIA))
     if (exists(.nm, envir = environment(), inherits = FALSE))
       assign(.nm, .rv_por_nivel(get(.nm, envir = environment(), inherits = FALSE), .nm), envir = environment())
