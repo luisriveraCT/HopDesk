@@ -3156,6 +3156,13 @@ server <- function(input, output, session) {
       showNotification(tr("comun.aviso.fecha_requerida"), type = "warning")
       return()
     }
+    # T66: the Importe field (hd_numero_input) no longer stops a negative or
+    # a text; checked here. Empty or a text (NA) used to become 0 silently.
+    rev_imp <- hd_numero_revisar(input$me_importe, tr("tablas.facturas.importe"), min = 0)
+    if (!rev_imp$ok) {
+      showNotification(rev_imp$aviso, type = "warning")
+      return()
+    }
 
     if (nzchar(edit_id)) {
       # ── Edit mode: replace existing row by id ────────────────────────────
@@ -3169,7 +3176,7 @@ server <- function(input, output, session) {
         Factura                = trimws(input$me_factura  %||% ""),
         Parte                  = trimws(input$me_parte    %||% ""),
         Codigo                 = trimws(input$me_codigo   %||% ""),
-        Importe                = input$me_importe         %||% 0,
+        Importe                = rev_imp$valor,
         `Fecha de vencimiento` = as.Date(input$me_fecha),
         Notas                  = trimws(input$me_notas    %||% ""),
         created_by             = if (nrow(existing)) existing$created_by[1] else current_user(),
@@ -3203,7 +3210,7 @@ server <- function(input, output, session) {
         ledger     = ledger,
         ph_rv      = pagar_hoy_db,
         new_date   = as.Date(input$me_fecha),
-        new_imp    = input$me_importe  %||% 0,
+        new_imp    = rev_imp$valor,
         new_parte  = trimws(input$me_parte %||% ""),
         username   = current_user(),
         client_id  = effective_client_id())
@@ -3223,7 +3230,7 @@ server <- function(input, output, session) {
         Factura                = trimws(input$me_factura  %||% ""),
         Parte                  = trimws(input$me_parte    %||% ""),
         Codigo                 = trimws(input$me_codigo   %||% ""),
-        Importe                = input$me_importe         %||% 0,
+        Importe                = rev_imp$valor,
         `Fecha de vencimiento` = as.Date(input$me_fecha),
         Notas                  = trimws(input$me_notas    %||% ""),
         created_by             = current_user(),
