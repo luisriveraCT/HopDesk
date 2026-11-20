@@ -167,6 +167,13 @@ avisos_agregar <- function(client_id, aviso, por = "sistema") {
   .s3_modificar(.AVISOS_KEY, cid, .schema_avisos, function(df) {
     clave <- aviso$clave %||% NA_character_
     if (!is.na(clave)) {
+      # aviso$repetir = FALSE (T62): a clave already there -- live, retired or
+      # expired -- is left as it is: an event published twice (two sessions)
+      # never turns "new" again, nor comes back. Default TRUE: today's refresh.
+      if (identical(aviso$repetir, FALSE) && any(df$clave %in% clave)) {
+        id_final <<- df$id[which(df$clave %in% clave)[1]]
+        return(df)
+      }
       junta <- df$clave %in% clave & .vigente(df, ahora)
       if (!is.null(aviso$ventana_min))
         junta <- junta & !is.na(df$actualizado) &
