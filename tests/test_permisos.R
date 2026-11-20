@@ -18,7 +18,8 @@ test_that("Compras: requisiciones y provisiones sí; convertir, pagos, confirmar
     expect_false(puede(c, k), info = k)
   # Only Panorama and Requisiciones since T69 (Luis, 2026-11-20); no fixed Calendario.
   expect_identical(nivel_pestanas("compras"), c("PAN", "REQ"))
-  expect_null(nivel_calendario("compras"))
+  # Calendario stays "AP": it is what keeps CxC out of Panorama and the emails.
+  expect_identical(nivel_calendario("compras"), "AP")
 })
 
 test_that("Análisis queda de solo lectura en provisiones, pagos y pasivos", {

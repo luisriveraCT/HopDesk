@@ -96,6 +96,9 @@ TIER_REGISTRY <- list(
                    # treasury tabs are confidential for a buyer. can_edit_provisiones
                    # stays: "Crear provisión" opens its modal from Requisiciones.
                    pestanas = c("PAN", "REQ"),
+                   # Stays: "no fixed Calendario" means "sees CxC" to Panorama,
+                   # the weekly emails and the thresholds notice (ver_cxc).
+                   calendario = "AP",
                    permisos = c("can_view_requisiciones", "can_create_requisiciones",
                                 "can_edit_requisiciones", "can_trash_own_requisiciones",
                                 "can_trash_others_requisiciones", "can_edit_provisiones"),

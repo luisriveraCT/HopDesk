@@ -27,9 +27,9 @@ TOTAL <- names(TIER_REGISTRY)[vapply(TIER_REGISTRY, function(e) is.null(e$pestan
                                      logical(1))][1]
 
 # ── 1. The registry ──────────────────────────────────────────────────────────
-test_that("Compras: only Panorama and Requisiciones, no fixed Calendario", {
+test_that("Compras: only Panorama and Requisiciones; Calendario stays AP (keeps CxC out)", {
   expect_identical(nivel_pestanas(COMPRAS), c("PAN", "REQ"))
-  expect_null(nivel_calendario(COMPRAS))
+  expect_identical(nivel_calendario(COMPRAS), "AP")
   expect_true("can_edit_provisiones" %in% TIER_REGISTRY[[COMPRAS]]$permisos)
   expect_true("can_view_requisiciones" %in% TIER_REGISTRY[[COMPRAS]]$permisos)
 })
