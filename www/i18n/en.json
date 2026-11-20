@@ -2010,5 +2010,8 @@
   "tablas.ajustes.politicas.dias_desplazar": "Days to shift",
   "niveles.clientes.limite_usuarios": "User limit",
   "tablas.agenda.saldo_apertura": "Opening balance",
-  "tablas.flujo.fx.tipo_de": "Exchange rate {par}"
+  "tablas.flujo.fx.tipo_de": "Exchange rate {par}",
+  "comun.actividad.alerta.titulo": "Activity: the log could not be saved",
+  "comun.actividad.alerta.rescatadas": "{n} entries could not be added to the activity log of {cliente}. They were saved separately ({archivo}) and still show in Activity. Check the storage connection.",
+  "comun.actividad.alerta.perdidas": "{n} entries of the activity log of {cliente} were lost: they could not be saved even separately. Check the storage connection and the server log."
 }

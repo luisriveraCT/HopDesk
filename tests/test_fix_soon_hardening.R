@@ -58,9 +58,14 @@ after <- mock_s3readRDS("networks/app_audit.rds", "mock-bucket")
 # ── D. .audit_flush_pending(): retry is bounded, doesn't grow forever ───────
 {
   # Force every flush attempt to fail, regardless of cause, and count attempts.
-  .attempts <- 0L
+  .attempts <- 0L; .rescates <- 0L
   old_write_chunk <- .audit_write_chunk
-  .audit_write_chunk <<- function(df, key) { .attempts <<- .attempts + 1L; stop("simulated S3 outage") }
+  # T72: after the last retry the batch is written ONCE to a key of its own
+  # (app_audit_pendiente_*, the rescue) -- counted apart, it is not a retry.
+  .audit_write_chunk <<- function(df, key) {
+    if (grepl("app_audit_pendiente_", key, fixed = TRUE)) .rescates <<- .rescates + 1L else .attempts <<- .attempts + 1L
+    stop("simulated S3 outage")
+  }
 
   Sys.setenv(CLIENT_ID = "networks")
   log_action(user = "x", module = "m", action = "will_fail", description = "d", client_id = "networks")
@@ -73,6 +78,7 @@ after <- mock_s3readRDS("networks/app_audit.rds", "mock-bucket")
   # .AUDIT_MAX_RETRIES counts RETRIES after the first attempt, so the total
   # number of real write attempts before giving up is MAX_RETRIES + 1 (one
   # initial attempt + N retries) -- not "not unbounded" via a loose bound.
+  .chk(.rescates, 1L, "T72: after giving up, the batch is rescued once to its own key (not dropped silently)")
   .chk(.attempts <= .AUDIT_MAX_RETRIES + 1L, TRUE,
        sprintf("retry is bounded: %d attempt(s) made (1 initial + up to %d retries = %d max, not unbounded)",
                .attempts, .AUDIT_MAX_RETRIES, .AUDIT_MAX_RETRIES + 1L))

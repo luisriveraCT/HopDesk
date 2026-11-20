@@ -124,7 +124,8 @@ directos <- unlist(lapply(setdiff(list.files("R", "\\.R$", full.names = TRUE, re
 NO_ACTIVIDAD <- c(
   "R/panorama_publicar_module.R"  = "what a person publishes in Panorama › Publicar (publicado / solicitud)",
   "R/auth_reset.R"                = "security alert on password resets (T31): staff in hd-admin, a client's Dev; never switched off",
-  "R/avisos_umbrales.R" = "system alert when a company's past-due CxC moves more than usual (D, umbrales)")
+  "R/avisos_umbrales.R" = "system alert when a company's past-due CxC moves more than usual (D, umbrales)",
+  "R/app_audit.R"       = "system alert when the activity log cannot be saved (T72): staff in hd-admin, once an hour per client")
 ok(!length(setdiff(directos, names(NO_ACTIVIDAD))),
    sprintf("S nadie llama avisos_agregar() directo para la actividad (%s)",
            paste(setdiff(directos, names(NO_ACTIVIDAD)), collapse = ", ")))

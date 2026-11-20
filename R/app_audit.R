@@ -27,6 +27,30 @@
   metadata    = character()
 )
 
+# A chunk or a batch with the schema's columns and types (T72). One chunk
+# whose ts came back as character, or a column read back as logical, made
+# every dplyr::bind_rows() with it fail: the flush retried and then dropped
+# whole batches ("These entries are lost"), and read_audit_log() showed an
+# EMPTY Actividad. Extra columns are kept; missing ones are added as NA.
+.audit_normalizar <- function(df) {
+  esq <- .APP_AUDIT_SCHEMA()
+  if (is.null(df) || !is.data.frame(df)) return(esq)
+  df <- tibble::as_tibble(df)
+  n <- nrow(df)
+  for (col in names(esq)) {
+    if (identical(col, "ts")) {
+      if (!col %in% names(df)) df$ts <- as.POSIXct(rep(NA_real_, n), tz = "UTC")
+      else if (!inherits(df$ts, "POSIXct"))
+        df$ts <- suppressWarnings(as.POSIXct(if (is.numeric(df$ts)) df$ts else as.character(df$ts), tz = "UTC"))
+    } else if (!col %in% names(df)) {
+      df[[col]] <- rep(NA_character_, n)
+    } else if (!is.character(df[[col]])) {
+      df[[col]] <- as.character(df[[col]])
+    }
+  }
+  df
+}
+
 .MAX_AUDIT_ROWS <- 10000L
 
 .audit_current_key <- function(cid) {
@@ -114,11 +138,12 @@ read_audit_log <- function(client_id = NULL, since = NULL, until = NULL) {
 
   result <- if (length(chunks)) tryCatch(
     dplyr::bind_rows(lapply(chunks, function(ch) {
-      for (col in names(.APP_AUDIT_SCHEMA()))
-        if (!col %in% names(ch)) ch[[col]] <- NA
-      ch[, names(.APP_AUDIT_SCHEMA()), drop = FALSE]
+      .audit_normalizar(ch)[, names(.APP_AUDIT_SCHEMA()), drop = FALSE]
     })),
-    error = function(e) .APP_AUDIT_SCHEMA()
+    error = function(e) {
+      message("[APP_AUDIT] read: chunks could not be joined: ", conditionMessage(e))
+      .APP_AUDIT_SCHEMA()
+    }
   ) else .APP_AUDIT_SCHEMA()
 
   # Merge in anything queued but not yet flushed to S3 (see .audit_queue further
@@ -245,15 +270,13 @@ save_app_audit <- function(log_df, client_id = NULL) {
   ok <- tryCatch({
     # Strict: a failed read stop()s here and the rows go back to the queue
     # (below), instead of being appended to an empty table over the live log.
-    current <- .audit_read_chunk_para_escribir(.audit_current_key(write_cid))
-    if (is.null(current) || !is.data.frame(current) || !nrow(current))
-      current <- .APP_AUDIT_SCHEMA()
+    current <- .audit_normalizar(.audit_read_chunk_para_escribir(.audit_current_key(write_cid)))
     rotated <- isTRUE(rotate_log_if_needed(write_cid, current))
     if (rotated) {
       ch <- .audit_read_chunk_para_escribir(.audit_current_key(write_cid))
-      current <- if (is.null(ch) || !nrow(ch)) .APP_AUDIT_SCHEMA() else ch
+      current <- .audit_normalizar(ch)
     }
-    .audit_write_chunk(dplyr::bind_rows(current, pending), .audit_current_key(write_cid))
+    .audit_write_chunk(dplyr::bind_rows(current, .audit_normalizar(pending)), .audit_current_key(write_cid))
     TRUE
   }, error = function(e) {
     message("[APP_AUDIT] flush failed (", write_cid, "), will retry: ", e$message)
@@ -270,12 +293,9 @@ save_app_audit <- function(log_df, client_id = NULL) {
     # bounded loss with a clear log line pointing at S3 connectivity.
     attempt <- (.audit_retry_count[[write_cid]] %||% 0L) + 1L
     if (attempt > .AUDIT_MAX_RETRIES) {
-      message(sprintf(
-        "[APP_AUDIT] Giving up after %d failed attempts to flush %d pending entr%s for %s — check S3 connectivity. These entries are lost.",
-        .AUDIT_MAX_RETRIES, nrow(pending), if (nrow(pending) == 1) "y" else "ies", write_cid
-      ))
       .audit_retry_count[[write_cid]]     <- NULL
       .audit_flush_scheduled[[write_cid]] <- FALSE
+      .audit_rescatar(write_cid, pending)
       return(invisible(FALSE))
     }
     .audit_retry_count[[write_cid]] <- attempt
@@ -289,6 +309,33 @@ save_app_audit <- function(log_df, client_id = NULL) {
     later::later(function() .audit_flush_pending(write_cid), delay = .AUDIT_FLUSH_RETRY_DELAY)
   }
   invisible(ok)
+}
+
+# When a batch cannot be appended after the retries (T72): it is written to
+# a key of its own, <cid>/app_audit_pendiente_<utc>_<rand>.rds -- a plain
+# write, nothing read first -- which read_audit_log() already picks up (same
+# "app_audit" prefix; rotation only counts the numbered chunks), so the
+# entries still show in Actividad. Staff hear it in hd-admin's Panorama
+# either way, once an hour per client (the t31 pattern); if even the rescue
+# write fails, the aviso says the entries are lost. Never throws.
+.audit_rescatar <- function(write_cid, pending) {
+  n   <- nrow(pending)
+  key <- sprintf("%s/app_audit_pendiente_%s_%s.rds", write_cid,
+                 format(Sys.time(), "%Y%m%dT%H%M%S", tz = "UTC"), substr(uuid::UUIDgenerate(), 1, 8))
+  guardado <- tryCatch({ .audit_write_chunk(.audit_normalizar(pending), key); TRUE },
+                       error = function(e) FALSE)
+  message(sprintf("[APP_AUDIT] Gave up appending %d entr%s for %s after %d attempts; %s",
+                  n, if (n == 1) "y" else "ies", write_cid, .AUDIT_MAX_RETRIES,
+                  if (guardado) paste("rescued to", key) else "the rescue write failed too: these entries are lost"))
+  tryCatch(avisos_agregar("hd-admin", list(
+    tipo = "automatico", severidad = "atencion", niveles = niveles_staff(),
+    titulo = tr("comun.actividad.alerta.titulo"),
+    cuerpo = tr(if (guardado) "comun.actividad.alerta.rescatadas" else "comun.actividad.alerta.perdidas",
+                n = as.character(n), cliente = write_cid, archivo = basename(key)),
+    clave = paste("t72", "log", write_cid, sep = ":"),
+    ventana_min = 60)),
+    error = function(e) message("[APP_AUDIT] alert failed (", write_cid, "): ", conditionMessage(e)))
+  invisible(guardado)
 }
 
 # ── Session-duration formatting ──────────────────────────────────────────────
