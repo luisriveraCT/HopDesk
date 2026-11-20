@@ -88,7 +88,7 @@ pasivos_wizard_validate_terminos <- function(draft) {
 
   # "variable_otro" is deferred to Stage 6; the engine still accepts it for existing
   # data but the wizard must not create new liabilities with it.
-  valid_tasa_tipos <- c("fija", "variable_sofr", "variable_tiie28")
+  valid_tasa_tipos <- c("fija", "variable_sofr", "variable_tiie28", "variable_prime")
   if (!is.null(draft$tasa_tipo) && !draft$tasa_tipo %in% valid_tasa_tipos)
     errors$tasa_tipo <- tr("tablas.pasivos.asistente.tasa_tipo_no_disponible")
 

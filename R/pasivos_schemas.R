@@ -48,7 +48,7 @@ fecha_valida <- function(x) {
   principal_original   = numeric(),
   saldo_capital        = numeric(),
   tasa_actual          = numeric(),
-  tasa_tipo            = character(),   # "fija" | "variable_sofr" | "variable_tiie28" | "variable_otro"
+  tasa_tipo            = character(),   # "fija" | "variable_sofr" | "variable_tiie28" | "variable_prime" | "variable_otro"
   tasa_spread          = numeric(),
   tasa_estimate_method = character(),
   fecha_inicio         = as.Date(character()),

@@ -422,14 +422,15 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
                                 choices = c(
                                   "Fija"            = "fija",
                                   "Variable SOFR"   = "variable_sofr",
-                                  "Variable TIIE28" = "variable_tiie28"
+                                  "Variable TIIE28" = "variable_tiie28",
+                                  "Variable PRIME"  = "variable_prime"   # T63: US Prime Rate (FRED DPRIME)
                                 ),
                                 selected = if (identical(tt, "variable_otro")) "fija" else tt,
                                 inline = FALSE),
             if (identical(tt, "variable_otro"))
               shiny::div(class = "alert alert-info small py-2 mt-1",
                 "Este pasivo usa 'Variable otra', opción que se reactivará en una versión futura. ",
-                "Selecciona Fija/SOFR/TIIE28 para convertirla."
+                "Selecciona Fija/SOFR/TIIE28/PRIME para convertirla."
               ),
 
             # ── Fija: dual annual ↔ per-period inputs ───────────────────────

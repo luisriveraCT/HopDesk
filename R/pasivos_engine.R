@@ -338,6 +338,7 @@ pasivos_generate_schedule <- function(liability, today = Sys.Date()) {
       metric_map <- c(
         variable_sofr   = "sofr",
         variable_tiie28 = "tiie28",
+        variable_prime  = "prime",
         variable_otro   = "otro"
       )
       metric <- metric_map[[tasa_tipo]]

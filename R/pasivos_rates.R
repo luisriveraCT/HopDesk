@@ -3,6 +3,7 @@
 # Fetch reference rates for the pasivos wizard variable-rate widget.
 #   .fetch_tiie28() — BANXICO SIE REST API, series SF43783 (TIIE 28 días)
 #   .fetch_sofr()   — FRED REST API, series SOFR
+#   .fetch_prime()  — FRED REST API, series DPRIME (US Prime Rate, T63)
 # Both return:
 #   list(today, yesterday, date_today, date_yesterday)  on success
 #   list(today=NA, yesterday=NA, error="...")            on failure
@@ -71,17 +72,23 @@
   )
 }
 
-# ── SOFR ───────────────────────────────────────────────────────────────────────
+# ── FRED (SOFR, PRIME) ─────────────────────────────────────────────────────────
 # api_key: Sys.getenv("FRED_API_KEY") — register at https://fred.stlouisfed.org/docs/api/api_key.html
-.fetch_sofr <- function(api_key = Sys.getenv("FRED_API_KEY")) {
+.fetch_sofr  <- function(api_key = Sys.getenv("FRED_API_KEY")) .fetch_fred_tasa("SOFR", api_key)
+# T63: the US Prime Rate, FRED series DPRIME (daily), the same way as SOFR.
+.fetch_prime <- function(api_key = Sys.getenv("FRED_API_KEY")) .fetch_fred_tasa("DPRIME", api_key)
+
+# The last two observations of a FRED rate series: list(today, yesterday,
+# date_today, date_yesterday), or list(today = NA, yesterday = NA, error).
+.fetch_fred_tasa <- function(serie, api_key = Sys.getenv("FRED_API_KEY")) {
   if (!nzchar(api_key))
     return(list(today = NA_real_, yesterday = NA_real_,
                 error = "FRED_API_KEY no configurado"))
 
   url <- sprintf(paste0(
     "https://api.stlouisfed.org/fred/series/observations",
-    "?series_id=SOFR&api_key=%s&sort_order=desc&limit=5&file_type=json"
-  ), api_key)
+    "?series_id=%s&api_key=%s&sort_order=desc&limit=5&file_type=json"
+  ), serie, api_key)
 
   resp <- tryCatch(
     httr::GET(url, httr::timeout(10)),
@@ -117,7 +124,7 @@
 
   if (!length(values))
     return(list(today = NA_real_, yesterday = NA_real_,
-                error = "Sin observaciones SOFR válidas"))
+                error = sprintf("Sin observaciones %s válidas", serie)))
 
   list(
     today          = values[1],

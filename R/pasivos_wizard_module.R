@@ -283,7 +283,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
   # Record current fetched base rate in the forecasting store so provisions use it
   if (startsWith(liab_row$tasa_tipo %||% "fija", "variable_") &&
       !is.na(liab_row$tasa_actual %||% NA_real_)) {
-    metric_map <- c(variable_sofr = "sofr", variable_tiie28 = "tiie28")
+    metric_map <- c(variable_sofr = "sofr", variable_tiie28 = "tiie28", variable_prime = "prime")
     fc_metric  <- metric_map[[liab_row$tasa_tipo %||% ""]]
     if (!is.null(fc_metric))
       tryCatch(
@@ -643,7 +643,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
         mensual="mensual", anual="anual", semanal="semanal", diaria="diario", "período")
       tasa_periodo_rev <- round(((1 + tasa_anual/100)^(1/ppy_rev) - 1) * 100, 3)
       if (!identical(tipo_t, "fija")) {
-        ref_lbl <- if (identical(tipo_t, "variable_sofr")) "SOFR" else "TIIE28"
+        ref_lbl <- switch(tipo_t, variable_sofr = "SOFR", variable_prime = "PRIME", "TIIE28")
         sprintf("%s %.3f%% + %.0f bps sobretasa = %.3f%% anual (%.3f%% %s)",
                 ref_lbl, tasa_base, spread_bps, tasa_anual, tasa_periodo_rev, periodo_nombre)
       } else {
@@ -857,6 +857,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
   .do_fetch_rates <- function(tipo) {
     if (identical(tipo, "variable_tiie28")) .fetch_tiie28()
     else if (identical(tipo, "variable_sofr")) .fetch_sofr()
+    else if (identical(tipo, "variable_prime")) .fetch_prime()
     else list()
   }
 
@@ -927,7 +928,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     ppy        <- .periods_per_year(freq)
     spread_bps <- as.numeric(input$pwiz_tasa_spread %||% 0)
     if (is.na(spread_bps)) spread_bps <- 0
-    tipo_lbl   <- if (identical(tipo, "variable_tiie28")) "TIIE 28" else "SOFR"
+    tipo_lbl   <- switch(tipo, variable_tiie28 = "TIIE 28", variable_prime = "PRIME", "SOFR")
     p_nombre   <- switch(freq, mensual="mensual", anual="anual",
                          semanal="semanal", diaria="diaria", "período")
 
@@ -966,7 +967,8 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
         if (identical(tipo, "variable_tiie28"))
           "Fuente: Banco de México — SIE API (serie SF43783). Uso conforme a los términos de uso de Banxico."
         else
-          "Fuente: Federal Reserve Bank of St. Louis — FRED® API (serie SOFR). Uso conforme a FRED Terms of Use."
+          sprintf("Fuente: Federal Reserve Bank of St. Louis — FRED® API (serie %s). Uso conforme a FRED Terms of Use.",
+                  if (identical(tipo, "variable_prime")) "DPRIME" else "SOFR")
       )
     )
   })
