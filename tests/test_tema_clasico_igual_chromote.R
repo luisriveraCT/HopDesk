@@ -176,6 +176,15 @@ recorrer <- function(raiz, etiqueta, quien) {
       var c = document.querySelector(t.getAttribute('data-bs-target') || '.navbar-collapse');
       var abierto = !!c && c.classList.contains('show');
       if (abierto !== %s) t.click(); return true; })()", if (abrir) "true" else "false")), error = function(x) FALSE)
+  # The server reveals each user's tabs once their data loads (~35 s on a
+  # busy machine): wait until one of them shows, menu open.
+  hay_pestana <- function() {
+    menu(TRUE)
+    isTRUE(tryCatch(ev(sprintf("[%s].some(function(v){ var a = document.querySelector(\".nav-link[data-value='\" + v + \"']\");
+      return !!a && a.offsetParent !== null; })", paste0("'", names(PESTANAS), "'", collapse = ","))), error = function(x) FALSE))
+  }
+  poll_until(hay_pestana, timeout_s = LIMITE, interval_s = 2)
+  Sys.sleep(4)
   for (v in names(PESTANAS)) {
     menu(TRUE); Sys.sleep(1)   # the collapse animates; offsetParent is null until it opens
     visible <- isTRUE(tryCatch(ev(sprintf("(function(){ var a = document.querySelector(\".nav-link[data-value='%s']\");
