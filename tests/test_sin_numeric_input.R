@@ -13,8 +13,8 @@
 # =============================================================================
 library(testthat)
 
-TOPE_NUMERIC_INPUT        <- 13L
-TOPE_UPDATE_NUMERIC_INPUT <- 2L
+TOPE_NUMERIC_INPUT        <- 0L
+TOPE_UPDATE_NUMERIC_INPUT <- 0L
 
 archivos <- c(list.files("R", pattern = "\\.R$", recursive = TRUE, full.names = TRUE), "app.R")
 archivos <- archivos[file.exists(archivos)]
