@@ -102,7 +102,8 @@ if (all(c(".rv_por_nivel", "crudo") %in% names(def))) {
     t$ph(data.frame(x = 1:3))                 # a load writes, whatever the tier
     session$flushReact()
     ok("Compras reads the start value (no rows)", nrow(t$lectura()) == 0L)
-    ok("the write went through: crudo() has the 3 rows", nrow(t$crudo(t$ph)()) == 3L)
+    guardado <- t$crudo(t$ph)   # (two steps: test_aislar_global_guardian's parser reads f(x)() badly)
+    ok("the write went through: crudo() has the 3 rows", nrow(guardado()) == 3L)
     t$nivel(TOTAL); session$flushReact()
     ok("the same session back on a full tier sees the 3 rows at once (the reactive re-ran)", nrow(t$lectura()) == 3L)
     t$nivel(""); session$flushReact()
