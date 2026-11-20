@@ -573,8 +573,8 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
         extra <- setdiff(if (is.na(j)) character() else (.req_carpeta_empresas(cs$empresas[j]) %||% character()), emp$id)
         datos$empresas <- if (setequal(m, emp$id) && !length(extra)) NA_character_ else c(m, extra)
       }
-      ok <- escribir(function() if (is.null(id)) requisiciones_carpeta_crear(cid(), datos, yo())
-                                else requisiciones_carpeta_editar(cid(), id, datos, yo()),
+      ok <- escribir(function() if (is.null(id)) requisiciones_carpeta_crear(cid(), datos, yo(), home = .req_home_de(shared))
+                                else requisiciones_carpeta_editar(cid(), id, datos, yo(), home = .req_home_de(shared)),
                      tr("requisiciones.carpeta.guardada"))
       if (!is.null(ok)) shiny::removeModal()
     })
@@ -582,12 +582,12 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
       if (!puede_o_avisa(shared, "can_edit_requisiciones")) return()
       id <- carpeta_editando()
       if (is.null(id)) return()
-      ok <- escribir(function() requisiciones_carpeta_papelera(cid(), id, yo()), tr("requisiciones.carpeta.en_papelera"))
+      ok <- escribir(function() requisiciones_carpeta_papelera(cid(), id, yo(), home = .req_home_de(shared)), tr("requisiciones.carpeta.en_papelera"))
       if (!is.null(ok)) { shiny::removeModal(); if (identical(carpeta_sel(), id)) carpeta_sel("todas") }
     })
     shiny::observeEvent(input$carpeta_restaurar, {
       if (!puede_o_avisa(shared, "can_edit_requisiciones")) return()
-      escribir(function() requisiciones_carpeta_restaurar(cid(), as.character(input$carpeta_restaurar), yo()),
+      escribir(function() requisiciones_carpeta_restaurar(cid(), as.character(input$carpeta_restaurar), yo(), home = .req_home_de(shared)),
                tr("requisiciones.carpeta.restaurada"))
     })
 
@@ -638,7 +638,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
           }
           ev_archivos(c(ev_archivos(), list(p)))
         } else {
-          escribir(function() evidencia_adjuntar(cid(), dest, p, yo()),
+          escribir(function() evidencia_adjuntar(cid(), dest, p, yo(), home = .req_home_de(shared)),
                    tr("requisiciones.evidencia.agregado", nombre = p$nombre))
         }
       }
@@ -692,7 +692,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
         ev_tablas(c(ev_tablas(), list(list(preparada = p, titulo = titulo, encabezado = pegado_enc()))))
         pegado(NULL)
       } else {
-        ok <- escribir(function() evidencia_tabla_agregar(cid(), dest, p, titulo, pegado_enc(), yo()),
+        ok <- escribir(function() evidencia_tabla_agregar(cid(), dest, p, titulo, pegado_enc(), yo(), home = .req_home_de(shared)),
                        tr("requisiciones.tabla.agregada"))
         if (!is.null(ok)) pegado(NULL)
       }
@@ -786,7 +786,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
     })
     shiny::observeEvent(input$ev_quitar, {
       if (!puede_o_avisa(shared, "can_edit_requisiciones")) return()
-      escribir(function() evidencia_papelera(cid(), as.character(input$ev_quitar), yo()),
+      escribir(function() evidencia_papelera(cid(), as.character(input$ev_quitar), yo(), home = .req_home_de(shared)),
                tr("requisiciones.evidencia.quitada"))
     })
 
@@ -904,16 +904,16 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
 
     shiny::observeEvent(input$crear, {
       if (!puede_o_avisa(shared, "can_create_requisiciones")) return()
-      r <- escribir(function() requisicion_crear(cid(), datos_form(), yo()))
+      r <- escribir(function() requisicion_crear(cid(), datos_form(), yo(), home = .req_home_de(shared)))
       if (is.null(r)) return()
       fallas <- character()
       for (p in ev_archivos()) {
-        ok <- tryCatch({ evidencia_adjuntar(cid(), r$id, p, yo()); TRUE }, error = function(e) {
+        ok <- tryCatch({ evidencia_adjuntar(cid(), r$id, p, yo(), home = .req_home_de(shared)); TRUE }, error = function(e) {
           message("[requisiciones] adjunto falló: ", conditionMessage(e)); FALSE })
         if (!ok) fallas <- c(fallas, p$nombre)
       }
       for (tb in ev_tablas()) {
-        ok <- tryCatch({ evidencia_tabla_agregar(cid(), r$id, tb$preparada, tb$titulo, tb$encabezado, yo()); TRUE },
+        ok <- tryCatch({ evidencia_tabla_agregar(cid(), r$id, tb$preparada, tb$titulo, tb$encabezado, yo(), home = .req_home_de(shared)); TRUE },
                        error = function(e) { message("[requisiciones] tabla falló: ", conditionMessage(e)); FALSE })
         if (!ok) fallas <- c(fallas, if (nzchar(tb$titulo)) tb$titulo else tr("requisiciones.tabla.sin_titulo"))
       }
@@ -981,7 +981,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
     shiny::observeEvent(input$guardar_det, {
       if (!puede_o_avisa(shared, "can_edit_requisiciones")) return()
       id <- detalle_id(); if (is.null(id)) return()
-      escribir(function() requisicion_editar(cid(), id, datos_form(), yo()), tr("requisiciones.guardada"))
+      escribir(function() requisicion_editar(cid(), id, datos_form(), yo(), home = .req_home_de(shared)), tr("requisiciones.guardada"))
     })
 
     comentarios_det <- shiny::reactive({
@@ -1001,7 +1001,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
     shiny::observeEvent(input$comentar, {
       if (!puede_o_avisa(shared, "can_view_requisiciones")) return()
       id <- detalle_id(); if (is.null(id)) return()
-      r <- escribir(function() requisicion_comentar(cid(), id, input$comentario, yo()))
+      r <- escribir(function() requisicion_comentar(cid(), id, input$comentario, yo(), home = .req_home_de(shared)))
       if (is.null(r)) return()
       shiny::updateTextAreaInput(session, "comentario", value = "")
       if (!isTRUE(r$aviso_ok)) shiny::showNotification(tr("requisiciones.comentarios.sin_aviso"), type = "warning")
@@ -1062,10 +1062,10 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
         negadas <- setdiff(a$ids, permitidas)
         if (length(permitidas)) {
           if (a$accion == "papelera")
-            escribir(function() requisiciones_papelera(cid(), permitidas, yo()),
+            escribir(function() requisiciones_papelera(cid(), permitidas, yo(), home = .req_home_de(shared)),
                      tr_n("requisiciones.en_papelera_n", length(permitidas)))
           else
-            escribir(function() requisiciones_restaurar(cid(), permitidas, yo()),
+            escribir(function() requisiciones_restaurar(cid(), permitidas, yo(), home = .req_home_de(shared)),
                      tr_n("requisiciones.restauradas_n", length(permitidas)))
         }
         if (length(negadas))
@@ -1097,7 +1097,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
           return(invisible(FALSE))
         }
         if (!puede_o_avisa(shared, "can_edit_provisiones")) return(invisible(FALSE))
-        ok <- escribir(function() requisicion_ligar_provision(c0, req_id, provision_id, yo()),
+        ok <- escribir(function() requisicion_ligar_provision(c0, req_id, provision_id, yo(), home = .req_home_de(shared)),
                        tr("requisiciones.ligada", folio = folio))
         invisible(!is.null(ok))
       }
@@ -1121,7 +1121,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
       if (!puede_o_avisa(shared, "can_edit_requisiciones")) return()
       ids <- pend_mover(); if (!length(ids)) return()
       destino <- if (nzchar(input$mover_a %||% "")) input$mover_a else NA
-      ok <- escribir(function() requisiciones_mover(cid(), ids, destino, yo()), tr_n("requisiciones.movidas_n", length(ids)))
+      ok <- escribir(function() requisiciones_mover(cid(), ids, destino, yo(), home = .req_home_de(shared)), tr_n("requisiciones.movidas_n", length(ids)))
       if (!is.null(ok)) { pend_mover(NULL); shiny::removeModal() }
     })
 
@@ -1162,7 +1162,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
       if (!puede_o_avisa(shared, "can_create_requisiciones")) return()
       carpeta <- if (nzchar(input$sel_carpeta %||% "")) input$sel_carpeta else NA
       n0 <- length(a$ids); creadas <- character()
-      r <- escribir(function() creadas <<- requisiciones_desde_provisiones(cid(), a$ids, carpeta, yo()))
+      r <- escribir(function() creadas <<- requisiciones_desde_provisiones(cid(), a$ids, carpeta, yo(), home = .req_home_de(shared)))
       if (!is.null(r) && length(creadas)) {
         shiny::removeModal(); selector_abierto(FALSE)
         shiny::showNotification(tr_n("requisiciones.selector.creadas_n", length(creadas)), type = "message", duration = 4)

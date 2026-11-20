@@ -235,6 +235,10 @@ REQ_COLOR_DEFECTO  <- "#607d8b"
        cambiadas = cambiadas, quitadas = utils::head(quitadas, .REQ_LOG_MAX_FILAS))
 }
 
+# The acting user's own client, for a writer's home = (staff jumping in).
+# NULL when the session has none (a fixture's shared): the client itself.
+.req_home_de <- function(shared) tryCatch(shared$home_client_id(), error = function(e) NULL)
+
 # Files the last write in the Actividad log (module "requisiciones"), after
 # it succeeded; never turns a saved action into a failure. Nothing changed
 # (modificar_tabla wrote nothing) = nothing logged. home: the actor's own
