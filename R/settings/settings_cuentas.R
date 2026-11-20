@@ -297,6 +297,14 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     if (!nzchar(cuenta_val)) {
       showNotification(tr("tablas.ajustes.cuentas.falta_cuenta"), type = "warning"); return()
     }
+    # T66: checked here, the field no longer stops anything. A negative is
+    # accepted (an overdraft, a credit line); empty or a text (NA) is not --
+    # it used to become 0 silently. A form without the field keeps 0.
+    rev_saldo <- hd_numero_revisar(if (is.null(input$cta_saldo_inicial)) 0 else input$cta_saldo_inicial,
+                                   tr("tablas.ajustes.cuentas.saldo_inicial"))
+    if (!rev_saldo$ok) {
+      showNotification(rev_saldo$aviso, type = "warning"); return()
+    }
 
     is_default <- isTRUE(input$cta_is_ppl_default)
 
@@ -311,7 +319,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
       cuenta              = cuenta_val,
       clabe_interbancaria = trimws(input$cta_clabe        %||% ""),
       is_ppl_default      = is_default,
-      saldo_inicial       = as.numeric(input$cta_saldo_inicial %||% 0),
+      saldo_inicial       = rev_saldo$valor,
       activa              = TRUE
     )
 

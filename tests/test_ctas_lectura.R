@@ -34,6 +34,8 @@ cargar("R/settings/settings_helpers.R", c(".schema_ctas_bancos", ".schema_ctas_c
                                           ".BANCOS_MX_CHOICES", "borrar_banco_si_libre",
                                           ".banco_en_uso_filas", ".banco_en_uso_texto"))
 cargar("R/adjuntos_s3.R", c(".NUMERO_PURO", ".CELDA_PELIGRO", "neutralizar_celdas", "tabla_a_texto_copiable"))
+cargar("R/ui_components.R", c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_numero_texto", "hd_numero_deps",
+                              "hd_numero_input", "hd_numero_update", "hd_numero_revisar"))
 for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R",
             "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R", "R/settings/settings_cuentas.R"))
   suppressMessages(source(f))
@@ -130,7 +132,32 @@ correr(cta("c1", "0100"), function() {
 }, function(s) nueva_cuenta(s))
 ok("an extra column of ctas_cuentas survives a save", "legacy_id" %in% names(get(k_c, envir = .mem)))
 
-# 7. (b) Every load_ctas_cuentas() names its client
+# 7. T66: Saldo inicial is hd_numero_input; the save checks it. A negative
+#    is accepted (an overdraft); empty or a text (NA) is told and not saved
+#    (it used to become 0); a form without the field keeps 0.
+con_saldo <- function(saldo) function(s) {
+  s$setInputs(cta_empresa = "NTS", cta_cuenta = "0300", cta_moneda = "MXN", cta_banco_id = "b1",
+              cta_is_ppl_default = FALSE, cta_saldo_inicial = saldo)
+  s$setInputs(cuenta_save = 1)
+}
+sembrar_c1 <- function() { assign(k_b, BANCOS0, envir = .mem); assign(k_c, cta("c1", "0100"), envir = .mem) }
+correr(cta("c1", "0100"), sembrar_c1, con_saldo(NA))
+ok("T66 saldo inicial NA: 'Saldo inicial: escribe un número.', nothing written",
+   .mem_escrituras == 0L && "Saldo inicial: escribe un número." %in% AVISOS)
+correr(cta("c1", "0100"), sembrar_c1, con_saldo(-25000.5))
+c <- get(k_c, envir = .mem)
+ok("T66 saldo inicial negative: saved as is (an overdraft)", identical(c$saldo_inicial[c$cuenta == "0300"], -25000.5))
+correr(cta("c1", "0100"), sembrar_c1, con_saldo(150000))
+c <- get(k_c, envir = .mem)
+ok("T66 saldo inicial 150,000: saved as the number", identical(c$saldo_inicial[c$cuenta == "0300"], 150000))
+correr(cta("c1", "0100"), sembrar_c1, function(s) nueva_cuenta(s))
+c <- get(k_c, envir = .mem)
+ok("T66 a form without the field: 0, as before", identical(c$saldo_inicial[c$cuenta == "0300"], 0))
+suppressMessages(source("R/ppl_generator.R"))   # the form's currency list (ppl_moneda_*)
+ok("T66 the form's field is a hd_numero_input monto, no type=number",
+   grepl('id="cta_saldo_inicial" type="text"', as.character(.cuenta_form_ui(cta("c1", "0100"), BANCOS0, cmap = CMAP)), fixed = TRUE))
+
+# 8. (b) Every load_ctas_cuentas() names its client
 fuente <- function(f) { x <- readLines(f, warn = FALSE); x[!grepl("^\\s*#", x)] }
 codigo <- unlist(lapply(c("app.R", list.files("R", "\\.R$", recursive = TRUE, full.names = TRUE)), fuente))
 ok("no load_ctas_cuentas() without client_id", !any(grepl("load_ctas_cuentas()", codigo, fixed = TRUE)))

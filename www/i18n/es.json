@@ -1987,5 +1987,6 @@
   "comun.numero.aviso.negativo": "{campo} no puede ser negativo.",
   "comun.numero.aviso.minimo": "{campo} no puede ser menor que {min}.",
   "comun.numero.aviso.maximo": "{campo} no puede ser mayor que {max}.",
-  "comun.numero.aviso.rango": "{campo} debe estar entre {min} y {max}."
+  "comun.numero.aviso.rango": "{campo} debe estar entre {min} y {max}.",
+  "tablas.ajustes.cuentas.saldo_inicial": "Saldo inicial"
 }
