@@ -36,6 +36,8 @@ pasivos_wizard_validate_detalles <- function(draft, empresa_choices = character(
       errors$tarjeta_closing_day <- tr("tablas.pasivos.asistente.dia_corte")
     if (is.na(dd) || dd < 1L || dd > 31L)
       errors$tarjeta_due_day <- tr("tablas.pasivos.asistente.dia_vencimiento")
+    if (.wiz_negativo(draft$tarjeta_credit_limit))
+      errors$tarjeta_credit_limit <- tr("tablas.pasivos.asistente.limite_negativo")
   }
 
   list(ok = length(errors) == 0L, errors = errors)
@@ -53,6 +55,8 @@ pasivos_wizard_validate_recurrencia <- function(draft) {
     monto <- draft$amount_default %||% NA_real_
     if (is.na(monto) || monto <= 0)
       errors$amount_default <- tr("tablas.pasivos.asistente.monto_positivo")
+    if (.wiz_negativo(draft$amount_default_cot))
+      errors$amount_cotizado <- tr("tablas.pasivos.asistente.cotizado_negativo")
 
     # fecha_valida() (CM22): NA, "" and a zero-length Date (a cleared
     # dateInput) all say "missing" -- is.na() threw on the last one.
@@ -76,6 +80,13 @@ pasivos_wizard_validate_recurrencia <- function(draft) {
   }
 
   list(ok = length(errors) == 0L, errors = errors)
+}
+
+# T66: a number field no longer stops a negative in the browser (min = 0 only
+# marked the field); an optional amount that is there must be >= 0.
+.wiz_negativo <- function(x) {
+  v <- suppressWarnings(as.numeric(x %||% NA_real_))
+  length(v) == 1L && !is.na(v) && v < 0
 }
 
 # Validate the "terminos" step (financiero only).
@@ -136,6 +147,15 @@ pasivos_wizard_validate_terminos <- function(draft) {
   if (!is.na(mg) && mg < 0)
     errors$monto_gracia <- tr("tablas.pasivos.asistente.cuota_gracia_negativa")
 
+  if (.wiz_negativo(draft$saldo_capital))
+    errors$saldo_capital <- tr("tablas.pasivos.asistente.saldo_negativo")
+  # The spread may be negative (a loan agreed below its reference, e.g. TIIE
+  # - 25 bps); what may not is the total rate, reference + spread.
+  sp <- suppressWarnings(as.numeric(draft$tasa_spread %||% 0))
+  if (!identical(draft$tasa_tipo %||% "fija", "fija") && length(sp) == 1L && !is.na(sp) &&
+      !is.na(t) && t + sp / 100 < 0)
+    errors$tasa_spread <- tr("tablas.pasivos.asistente.tasa_total_negativa")
+
   if (identical(draft$metodo_amortizacion, "custom")) {
     csv_raw <- draft$schedule_csv_raw %||% ""
     if (!nzchar(trimws(csv_raw))) {
@@ -172,6 +192,8 @@ pasivos_wizard_validate_cargos <- function(draft) {
     monto <- suppressWarnings(as.numeric(cargos[[i]]$monto %||% 0))
     if (length(monto) == 1L && !is.na(monto) && monto != 0 && !fecha_valida(cargos[[i]]$fecha))
       errors[[paste0("cargo_fecha_", i)]] <- tr("tablas.pasivos.asistente.cargo_fecha", n = as.character(i))
+    if (.wiz_negativo(cargos[[i]]$monto))
+      errors[[paste0("cargo_monto_", i)]] <- tr("tablas.pasivos.asistente.cargo_negativo", n = as.character(i))
   }
   # T63: every tax has a name and a value >= 0 (a percentage up to 100).
   imps <- draft$impuestos %||% list()
@@ -185,6 +207,8 @@ pasivos_wizard_validate_cargos <- function(draft) {
   vr <- draft$valor_residual
   if (!is.null(vr) && identical(vr$behavior, "separate") && !fecha_valida(vr$fecha))
     errors$residual_fecha <- tr("tablas.pasivos.asistente.residual_fecha")
+  if (!is.null(vr) && .wiz_negativo(vr$monto))
+    errors$residual_monto <- tr("tablas.pasivos.asistente.residual_negativo")
   list(ok = length(errors) == 0L, errors = errors)
 }
 

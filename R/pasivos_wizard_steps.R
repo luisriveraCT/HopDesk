@@ -509,7 +509,7 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
                 ),
                 shiny::uiOutput("pwiz_rate_dia_buttons"),
                 hd_numero_input("pwiz_tasa_spread", "Sobretasa (bps)",
-                                    formato = "tasa", decimales = 2, value = draft$tasa_spread %||% 0, min = 0, step = 1),
+                                    formato = "tasa", decimales = 2, value = draft$tasa_spread %||% 0, step = 1),   # may be negative (TIIE - 25 bps)
                 shiny::uiOutput("pwiz_variable_rate_preview")
               )
             ),
@@ -535,7 +535,7 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
             shiny::div(style = "display:none;",
               hd_numero_input("pwiz_tasa_anual",   NULL, formato = "tasa", value = 0, min = 0),
               hd_numero_input("pwiz_tasa_periodo", NULL, formato = "tasa", value = 0, min = 0),
-              hd_numero_input("pwiz_tasa_spread",  NULL, formato = "tasa", decimales = 2, value = 0, min = 0),
+              hd_numero_input("pwiz_tasa_spread",  NULL, formato = "tasa", decimales = 2, value = 0),
               hd_numero_input("pwiz_tasa_fetched", NULL, formato = "tasa", decimales = 6, value = NA_real_),
               shiny::radioButtons("pwiz_tasa_tipo",    NULL,
                                   choices = c("fija"), selected = "fija")
