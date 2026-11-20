@@ -54,8 +54,8 @@ pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = c
                          value = p$parte[1] %||% ""),
         shiny::textInput("pcm_codigo",      "Código",
                          value = p$codigo_parte[1] %||% ""),
-        shiny::numericInput("pcm_importe",  "Importe",
-                            value = if (is.na(pago_amount)) 0 else pago_amount,
+        hd_numero_input("pcm_importe",  "Importe",
+                            formato = "monto", value = if (is.na(pago_amount)) 0 else pago_amount,
                             min   = 0)
       )
     ),

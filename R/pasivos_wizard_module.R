@@ -867,14 +867,14 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
   pwiz_fetched_rates_rv <- shiny::reactiveVal(list())  # list(today, yesterday, ...)
 
   # Blur-based cross-update: fires only when user LEAVES the field (tab/click away).
-  # Server-side updateNumericInput calls do NOT trigger blur, so no feedback loop.
+  # Server-side hd_numero_update calls do NOT trigger blur, so no feedback loop.
   shiny::observeEvent(input$pwiz_tasa_anual_blur, {
     last_tasa_touched("anual")
     freq  <- input$pwiz_frecuencia_pago %||% "mensual"
     ppy   <- .periods_per_year(freq)
     anual <- input$pwiz_tasa_anual_blur
     if (!is.null(anual) && !is.na(anual))
-      shiny::updateNumericInput(session, "pwiz_tasa_periodo",
+      hd_numero_update(session, "pwiz_tasa_periodo",
                                 value = round(((1 + anual/100)^(1/ppy) - 1) * 100, 3))
   }, ignoreInit = TRUE)
 
@@ -884,7 +884,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     ppy    <- .periods_per_year(freq)
     period <- input$pwiz_tasa_periodo_blur
     if (!is.null(period) && !is.na(period))
-      shiny::updateNumericInput(session, "pwiz_tasa_anual",
+      hd_numero_update(session, "pwiz_tasa_anual",
                                 value = round(((1 + period/100)^ppy - 1) * 100, 3))
   }, ignoreInit = TRUE)
 
@@ -896,12 +896,12 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
         is.null(input$pwiz_tasa_periodo) || is.na(input$pwiz_tasa_periodo)) {
       anual <- input$pwiz_tasa_anual
       if (!is.null(anual) && !is.na(anual))
-        shiny::updateNumericInput(session, "pwiz_tasa_periodo",
+        hd_numero_update(session, "pwiz_tasa_periodo",
                                   value = round(((1 + anual/100)^(1/ppy) - 1) * 100, 3))
     } else {
       period <- input$pwiz_tasa_periodo
       if (!is.null(period) && !is.na(period))
-        shiny::updateNumericInput(session, "pwiz_tasa_anual",
+        hd_numero_update(session, "pwiz_tasa_anual",
                                   value = round(((1 + period/100)^ppy - 1) * 100, 3))
     }
   }, ignoreInit = TRUE)
@@ -944,7 +944,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
       if (identical(dia, "hoy")) rates$today else rates$yesterday
     } else NA_real_
     if (!is.na(rv)) wiz$tasa_fetched_cache <- rv
-    shiny::updateNumericInput(session, "pwiz_tasa_fetched",
+    hd_numero_update(session, "pwiz_tasa_fetched",
                               value = if (!is.null(rv) && !is.na(rv)) rv else NA_real_)
   })
 
@@ -1387,7 +1387,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
       error = function(e) list(amount_pago = NA_real_, fx_rate_used = NA_real_)
     )
     if (!is.na(res$amount_pago)) {
-      shiny::updateNumericInput(session, "pwiz_amount_default",
+      hd_numero_update(session, "pwiz_amount_default",
                                 value = round(res$amount_pago, 2))
     }
   })

@@ -21,6 +21,7 @@ for (f in c("R/monedas.R", "R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd
             "R/pasivos_engine.R", "R/pasivos_observers.R", "R/pasivos_rates.R",
             "R/pasivos_wizard_validate.R", "R/pasivos_wizard_steps.R", "R/pasivos_wizard_module.R"))
   suppressMessages(source(f))
+source("tests/helpers/hd_numero.R")   # T66: hd_numero_input()
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 
 # Stubs at the boundaries: permissions, S3, audit, the rates' web APIs.

@@ -595,8 +595,8 @@ pasivos_table_module_server <- function(id, shared) {
         shiny::textInput(ns("ppm_parte"),       tr("tablas.pasivos.manual.parte"), value = val("parte", "")),
         shiny::uiOutput(ns("ppm_parte_suggestions")),
         shiny::textInput(ns("ppm_codigo"),      tr("tablas.pasivos.manual.codigo"),            value = ""),
-        shiny::numericInput(ns("ppm_importe"),  tr("tablas.pasivos.manual.importe"),
-                            value = val("monto", 0), min = 0),
+        hd_numero_input(ns("ppm_importe"),  tr("tablas.pasivos.manual.importe"),
+                            formato = "monto", value = val("monto", 0), min = 0),
         shiny::textInput(ns("ppm_referencia"),  tr("tablas.pasivos.manual.referencia"),
                          value = val("referencia", ""))
       )

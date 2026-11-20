@@ -41,6 +41,7 @@ for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "
             "R/policy_engine.R", "R/pasivos_engine.R", "R/pasivos_wizard_validate.R",
             "R/pasivos_wizard_module.R", "R/pasivos_edit_confirm_module.R"))
   suppressMessages(sys.source(file.path(raiz, f), envir = globalenv()))
+source(file.path(raiz, "tests/helpers/hd_numero.R"))   # T66: hd_numero_input()
 assign(".i18n_dir", file.path(raiz, "www", "i18n"), envir = globalenv())
 assign("bump_sync_version", function(...) invisible(NULL), envir = globalenv())
 # The wizard's Alertas del equipo hook (C); avisos.R is not loaded here.

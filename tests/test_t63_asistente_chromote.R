@@ -80,7 +80,7 @@ tryCatch({
   teclea("#pwiz_principal_original", "608763.35")
   l1 <- lineas(); cat("   tras teclear el principal:", paste(l1, collapse = " | "), "\n"); foto("A2_principal_tecleado")
   ok("A: typing the principal hides its line at once (no Siguiente)", !any(grepl("principal", l1)) && any(grepl("tasa", l1, ignore.case = TRUE)))
-  ok("A: …and the typed value stays in the field", identical(ev("document.getElementById('pwiz_principal_original').value"), "608763.35"))
+  ok("A: …and the typed value stays in the field", identical(ev("document.getElementById('pwiz_principal_original').value"), "608,763.35"))   # T66: a monto shows its separator
   teclea("#pwiz_tasa_anual", "12")
   ok("A: typing the rate hides the box", !caja_visible())
   valor_js("pwiz_plazo_meses", 45); valor_js("pwiz_dia_pago", 5)
@@ -91,7 +91,7 @@ tryCatch({
   hasta_terminos()
   v <- teclea("#pwiz_principal_original", "608,763.35")
   cat("   'B' el campo guarda:", sprintf("'%s'", v), "\n"); foto("B_principal_con_coma")
-  ok("B: a comma typed in the principal never becomes a different number", v %in% c("", "608763.35", "608,763.35"))
+  ok("B: a comma typed in the principal never becomes a different number", identical(v, "608,763.35"))   # T66: kept, and the server gets 608763.35
 
   # ── C ──
   hasta_terminos()
@@ -100,6 +100,22 @@ tryCatch({
   ok("C: Variable PRIME shows the reference rate", espera("(function(){ var e = document.getElementById('pwiz_variable_rate_preview'); return !!e && /PRIME/.test(e.innerText) && /DPRIME/.test(e.innerText); })()"))
   valor_js("pwiz_tasa_spread", 200); valor_js("pwiz_plazo_meses", 45); valor_js("pwiz_dia_pago", 5)
   Sys.sleep(1); foto("C1_terminos_prime")
+  # T66: Luis's report. The mouse wheel over "Sobretasa (bps)", focused, never
+  # changes it; what scrolls is the modal (or the page).
+  desplazado <- function() ev("(function(){ var t = window.scrollY, e = document.getElementById('pwiz_tasa_spread');
+    for (; e; e = e.parentElement) t += e.scrollTop || 0; return t; })()")
+  ok("T66: the spread is a text field, no spinner", identical(ev("document.getElementById('pwiz_tasa_spread').type"), "text") &&
+       identical(ev("document.querySelectorAll('.modal input[type=number]').length"), 0L))
+  ev("(function(){ var e = document.getElementById('pwiz_tasa_spread'); e.scrollIntoView({block: 'center'}); e.focus(); return true; })()"); Sys.sleep(0.3)
+  s0 <- desplazado()
+  p <- jsonlite::fromJSON(ev("(function(){ var r = document.getElementById('pwiz_tasa_spread').getBoundingClientRect();
+    return JSON.stringify([r.left + r.width / 2, r.top + r.height / 2]); })()"))
+  for (k in 1:3) { b$Input$dispatchMouseEvent(type = "mouseWheel", x = p[1], y = p[2], deltaX = 0, deltaY = 120); Sys.sleep(0.2) }
+  Sys.sleep(0.5); foto("T66_rueda_sobretasa")
+  ok("T66: the wheel over 'Sobretasa (bps)' leaves 200", identical(ev("document.getElementById('pwiz_tasa_spread').value"), "200"))
+  ok("T66: …and the modal scrolls down instead", isTRUE(desplazado() > s0))
+  for (t in c("keyDown", "keyUp")) b$Input$dispatchKeyEvent(type = t, key = "ArrowUp", code = "ArrowUp", windowsVirtualKeyCode = 38)
+  ok("T66: the up arrow changes nothing", identical(ev("document.getElementById('pwiz_tasa_spread').value"), "200"))
   clic("#pwiz_next"); espera("!!document.getElementById('pwiz_add_impuesto')")
   clic("#pwiz_add_impuesto"); espera("!!document.getElementById('pwiz_imp_nombre_1')")
   ok("C: the tax row's name shows 'IVA' as placeholder, percentage by default",

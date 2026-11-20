@@ -246,18 +246,18 @@ pasivos_step_ui_detalles <- function(draft, empresa_choices = character(),
         shiny::tags$p(class = "fw-semibold mb-2", "Datos de la tarjeta"),
         shiny::fluidRow(
           shiny::column(4,
-            shiny::numericInput("pwiz_tarjeta_closing_day", "Día de corte (1-31)",
-                                value = draft$tarjeta_closing_day %||% 28L,
+            hd_numero_input("pwiz_tarjeta_closing_day", "Día de corte (1-31)",
+                                formato = "entero", value = draft$tarjeta_closing_day %||% 28L,
                                 min = 1, max = 31, step = 1)
           ),
           shiny::column(4,
-            shiny::numericInput("pwiz_tarjeta_due_day", "Día de vencimiento (1-31)",
-                                value = draft$tarjeta_due_day %||% 15L,
+            hd_numero_input("pwiz_tarjeta_due_day", "Día de vencimiento (1-31)",
+                                formato = "entero", value = draft$tarjeta_due_day %||% 15L,
                                 min = 1, max = 31, step = 1)
           ),
           shiny::column(4,
-            shiny::numericInput("pwiz_tarjeta_credit_limit", "Límite de crédito (opcional)",
-                                value = draft$tarjeta_credit_limit %||% NA_real_,
+            hd_numero_input("pwiz_tarjeta_credit_limit", "Límite de crédito (opcional)",
+                                formato = "monto", value = draft$tarjeta_credit_limit %||% NA_real_,
                                 min = 0)
           )
         )
@@ -303,16 +303,16 @@ pasivos_step_ui_recurrencia_regular <- function(draft, errors = list()) {
           shiny::tags$p(class = "fw-semibold mb-2 small", "Monto"),
           shiny::conditionalPanel(
             condition = "input.pwiz_cotizado_en !== ''",
-            shiny::numericInput("pwiz_amount_cotizado",
+            hd_numero_input("pwiz_amount_cotizado",
                                 shiny::uiOutput("pwiz_cotizado_label"),
-                                value = draft$amount_default_cot %||% NA_real_,
+                                formato = "monto", value = draft$amount_default_cot %||% NA_real_,
                                 min = 0)
           ),
           shiny::div(
             class = "d-flex align-items-center gap-2",
             shiny::div(class = "flex-grow-1",
-              shiny::numericInput("pwiz_amount_default", "Monto a pagar",
-                                  value = draft$amount_default %||% NA_real_,
+              hd_numero_input("pwiz_amount_default", "Monto a pagar",
+                                  formato = "monto", value = draft$amount_default %||% NA_real_,
                                   min = 0)
             ),
             shiny::div(
@@ -360,9 +360,9 @@ pasivos_step_ui_recurrencia_tarjeta <- function(draft, errors = list()) {
     ),
     shiny::conditionalPanel(
       condition = "input.pwiz_tarjeta_provision_source == 'manual'",
-      shiny::numericInput("pwiz_amount_default",
+      hd_numero_input("pwiz_amount_default",
                           "Monto base mensual",
-                          value = draft$amount_default %||% NA_real_,
+                          formato = "monto", value = draft$amount_default %||% NA_real_,
                           min   = 0)
     )
   )
@@ -391,22 +391,22 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
 
       # ── Left column ──────────────────────────────────────────────────────────
       shiny::column(6,
-        shiny::numericInput("pwiz_principal_original",
+        hd_numero_input("pwiz_principal_original",
                             if (is_puro) "Contraprestación total del arrendamiento"
                             else "Principal original",
-                            value = draft$principal_original %||% NA_real_, min = 0),
-        shiny::numericInput("pwiz_saldo_capital",
+                            formato = "monto", value = draft$principal_original %||% NA_real_, min = 0),
+        hd_numero_input("pwiz_saldo_capital",
                             "Saldo de capital actual (opcional)",
-                            value = draft$saldo_capital %||% NA_real_, min = 0),
+                            formato = "monto", value = draft$saldo_capital %||% NA_real_, min = 0),
         shiny::tags$small(class = "text-muted",
           "Si el pasivo ya está en curso, ingresa el saldo según tu estado de cuenta más reciente."),
 
         shiny::hr(class = "my-2"),
 
         # ── Período de gracia ───────────────────────────────────────────────
-        shiny::numericInput("pwiz_periodo_gracia",
+        hd_numero_input("pwiz_periodo_gracia",
                             "Períodos de gracia",
-                            value = pg, min = 0, step = 1),
+                            formato = "entero", value = pg, min = 0, step = 1),
         shiny::tags$small(class = "text-muted d-block",
           if (is_puro)
             "Períodos iniciales sin pago alguno (renta = $0). La amortización comienza después."
@@ -426,10 +426,10 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
               shiny::tags$span(class = "badge bg-secondary bg-opacity-50 small fw-normal",
                                "opcional")
             ),
-            shiny::numericInput(
+            hd_numero_input(
               "pwiz_monto_gracia",
               NULL,
-              value = draft$monto_gracia %||% NA_real_,
+              formato = "monto", value = draft$monto_gracia %||% NA_real_,
               min   = 0
             ),
             shiny::tags$small(
@@ -473,8 +473,8 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
                   shiny::div(
                     style = "width: 130px;",
                     shiny::tags$small(class = "text-muted d-block mb-1", "Anual (%)"),
-                    shiny::numericInput("pwiz_tasa_anual", NULL,
-                                        value = draft$tasa_actual %||% NA_real_,
+                    hd_numero_input("pwiz_tasa_anual", NULL,
+                                        formato = "tasa", value = draft$tasa_actual %||% NA_real_,
                                         min = 0, step = 0.001)
                   ),
                   shiny::div(
@@ -485,8 +485,8 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
                   shiny::div(
                     style = "width: 130px;",
                     shiny::uiOutput("pwiz_tasa_periodo_label"),
-                    shiny::numericInput("pwiz_tasa_periodo", NULL,
-                                        value = {
+                    hd_numero_input("pwiz_tasa_periodo", NULL,
+                                        formato = "tasa", value = {
                                           ta <- draft$tasa_actual %||% NA_real_
                                           f  <- draft$frecuencia_pago %||% "mensual"
                                           p  <- switch(f, mensual=12L, anual=1L, semanal=52L, diaria=365L, 12L)
@@ -505,11 +505,11 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
               shiny::div(
                 class = "mb-3",
                 shiny::div(style = "display:none;",
-                  shiny::numericInput("pwiz_tasa_fetched", NULL, value = NA_real_)
+                  hd_numero_input("pwiz_tasa_fetched", NULL, formato = "tasa", decimales = 6, value = NA_real_)
                 ),
                 shiny::uiOutput("pwiz_rate_dia_buttons"),
-                shiny::numericInput("pwiz_tasa_spread", "Sobretasa (bps)",
-                                    value = draft$tasa_spread %||% 0, min = 0, step = 1),
+                hd_numero_input("pwiz_tasa_spread", "Sobretasa (bps)",
+                                    formato = "tasa", decimales = 2, value = draft$tasa_spread %||% 0, min = 0, step = 1),
                 shiny::uiOutput("pwiz_variable_rate_preview")
               )
             ),
@@ -519,12 +519,12 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
               "(function(){
                 $(document).off('.pwizrate')
                   .on('focusout.pwizrate','#pwiz_tasa_anual',function(){
-                    var v=parseFloat($(this).val());
-                    if(!isNaN(v)) Shiny.setInputValue('pwiz_tasa_anual_blur',v,{priority:'event'});
+                    var v=hdNumero.valor(this);   // T66: never parseFloat on the text
+                    if(v!==null) Shiny.setInputValue('pwiz_tasa_anual_blur',v,{priority:'event'});
                   })
                   .on('focusout.pwizrate','#pwiz_tasa_periodo',function(){
-                    var v=parseFloat($(this).val());
-                    if(!isNaN(v)) Shiny.setInputValue('pwiz_tasa_periodo_blur',v,{priority:'event'});
+                    var v=hdNumero.valor(this);   // T66: never parseFloat on the text
+                    if(v!==null) Shiny.setInputValue('pwiz_tasa_periodo_blur',v,{priority:'event'});
                   });
               })();"
             ))
@@ -533,10 +533,10 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
           # Hidden inputs so collection code doesn't error on NULL
           shiny::tagList(
             shiny::div(style = "display:none;",
-              shiny::numericInput("pwiz_tasa_anual",   NULL, value = 0, min = 0),
-              shiny::numericInput("pwiz_tasa_periodo", NULL, value = 0, min = 0),
-              shiny::numericInput("pwiz_tasa_spread",  NULL, value = 0, min = 0),
-              shiny::numericInput("pwiz_tasa_fetched", NULL, value = NA_real_),
+              hd_numero_input("pwiz_tasa_anual",   NULL, formato = "tasa", value = 0, min = 0),
+              hd_numero_input("pwiz_tasa_periodo", NULL, formato = "tasa", value = 0, min = 0),
+              hd_numero_input("pwiz_tasa_spread",  NULL, formato = "tasa", decimales = 2, value = 0, min = 0),
+              hd_numero_input("pwiz_tasa_fetched", NULL, formato = "tasa", decimales = 6, value = NA_real_),
               shiny::radioButtons("pwiz_tasa_tipo",    NULL,
                                   choices = c("fija"), selected = "fija")
             ),
@@ -565,8 +565,8 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
             style = "max-width: 220px;",
             shiny::div(
               style = "flex: 0 0 80px;",
-              shiny::numericInput("pwiz_plazo_meses", NULL,
-                                  value = draft$plazo_meses %||% 60L,
+              hd_numero_input("pwiz_plazo_meses", NULL,
+                                  formato = "entero", value = draft$plazo_meses %||% 60L,
                                   min = 1, step = 1,
                                   width = "80px")
             ),
@@ -590,8 +590,8 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
         # Mensual: single day-of-month input
         shiny::conditionalPanel(
           condition = "input.pwiz_frecuencia_pago === 'mensual'",
-          shiny::numericInput("pwiz_dia_pago", "Día de pago (1-31)",
-                              value = draft$dia_pago %||% 28L,
+          hd_numero_input("pwiz_dia_pago", "Día de pago (1-31)",
+                              formato = "entero", value = draft$dia_pago %||% 28L,
                               min = 1, max = 31, step = 1)
         ),
         # Anual: month select + leap-year-aware day select side by side
@@ -722,8 +722,8 @@ pasivos_step_ui_cargos <- function(draft, cargos_list = list(),
       condition = "input.pwiz_has_residual",
       shiny::fluidRow(
         shiny::column(4,
-          shiny::numericInput("pwiz_residual_monto", "Monto",
-                              value = res_monto, min = 0)
+          hd_numero_input("pwiz_residual_monto", "Monto",
+                              formato = "monto", value = res_monto, min = 0)
         ),
         shiny::column(4,
           shiny::selectInput("pwiz_residual_moneda", "Moneda",
@@ -789,9 +789,9 @@ pasivos_periodicidad_subfields_ui <- function(periodicidad, draft) {
 
   switch(periodicidad %||% "monthly_day",
 
-    monthly_day = shiny::numericInput(
+    monthly_day = hd_numero_input(
       "pwiz_rp_day", "Día del mes (1-31)",
-      value = rp$day %||% 1L, min = 1, max = 31, step = 1
+      formato = "entero", value = rp$day %||% 1L, min = 1, max = 31, step = 1
     ),
 
     monthly_nth_weekday = shiny::tagList(
@@ -812,10 +812,10 @@ pasivos_periodicidad_subfields_ui <- function(periodicidad, draft) {
     # rely on. Pre-selected 15 + 31 to match the standard Mexican-payroll
     # quincena pattern by default.
     biweekly = shiny::tagList(
-      shiny::numericInput("pwiz_rp_day1", "Día 1 del mes",
-                          value = rp$day1 %||% 15L, min = 1, max = 31, step = 1),
-      shiny::numericInput("pwiz_rp_day2", "Día 2 del mes",
-                          value = rp$day2 %||% 31L, min = 1, max = 31, step = 1)
+      hd_numero_input("pwiz_rp_day1", "Día 1 del mes",
+                          formato = "entero", value = rp$day1 %||% 15L, min = 1, max = 31, step = 1),
+      hd_numero_input("pwiz_rp_day2", "Día 2 del mes",
+                          formato = "entero", value = rp$day2 %||% 31L, min = 1, max = 31, step = 1)
     ),
 
     weekly = shiny::selectInput("pwiz_rp_wday", "Día de la semana",
@@ -828,40 +828,40 @@ pasivos_periodicidad_subfields_ui <- function(periodicidad, draft) {
       shiny::dateInput("pwiz_rp_anchor", "Fecha ancla",
                        value     = rp$anchor_date %||% Sys.Date(),
                        weekstart = 1, language = "es"),
-      shiny::numericInput("pwiz_rp_interval_days", "Cada cuántos días",
-                          value = rp$interval_days %||% 30L, min = 1, step = 1)
+      hd_numero_input("pwiz_rp_interval_days", "Cada cuántos días",
+                          formato = "entero", value = rp$interval_days %||% 30L, min = 1, step = 1)
     ),
 
     quarterly = shiny::tagList(
-      shiny::numericInput("pwiz_rp_anchor_month",
+      hd_numero_input("pwiz_rp_anchor_month",
                           "Mes ancla (1-12)",
-                          value = rp$anchor_month %||% 1L,
+                          formato = "entero", value = rp$anchor_month %||% 1L,
                           min = 1, max = 12, step = 1),
-      shiny::numericInput("pwiz_rp_day",
+      hd_numero_input("pwiz_rp_day",
                           "Día del mes",
-                          value = rp$day %||% 1L,
+                          formato = "entero", value = rp$day %||% 1L,
                           min = 1, max = 31, step = 1)
     ),
 
     bimestral = shiny::tagList(
-      shiny::numericInput("pwiz_rp_anchor_month",
+      hd_numero_input("pwiz_rp_anchor_month",
                           "Mes ancla (1-12)",
-                          value = rp$anchor_month %||% 1L,
+                          formato = "entero", value = rp$anchor_month %||% 1L,
                           min = 1, max = 12, step = 1),
-      shiny::numericInput("pwiz_rp_day",
+      hd_numero_input("pwiz_rp_day",
                           "Día del mes",
-                          value = rp$day %||% 1L,
+                          formato = "entero", value = rp$day %||% 1L,
                           min = 1, max = 31, step = 1)
     ),
 
     yearly = shiny::tagList(
-      shiny::numericInput("pwiz_rp_month",
+      hd_numero_input("pwiz_rp_month",
                           "Mes (1-12)",
-                          value = rp$month %||% 1L,
+                          formato = "entero", value = rp$month %||% 1L,
                           min = 1, max = 12, step = 1),
-      shiny::numericInput("pwiz_rp_day",
+      hd_numero_input("pwiz_rp_day",
                           "Día del mes",
-                          value = rp$day %||% 1L,
+                          formato = "entero", value = rp$day %||% 1L,
                           min = 1, max = 31, step = 1)
     ),
 
@@ -898,8 +898,8 @@ pasivos_impuesto_row_ui <- function(i, imp = list(), financiero = FALSE) {
                                   c(tr("tablas.pasivos.impuestos.porcentual"), tr("tablas.pasivos.impuestos.fijo"))),
         selected = imp$tipo %||% "porcentual")),
     shiny::div(style = "width:100px; flex:none;",
-      shiny::numericInput(paste0("pwiz_imp_valor_", i), etiqueta("tablas.pasivos.impuestos.valor"),
-                          value = imp$valor %||% NA_real_, min = 0, width = "100%")),
+      hd_numero_input(paste0("pwiz_imp_valor_", i), etiqueta("tablas.pasivos.impuestos.valor"),
+                          formato = "tasa", value = imp$valor %||% NA_real_, min = 0, width = "100%")),
     if (isTRUE(financiero)) shiny::div(style = "width:160px; flex:none;",
       shiny::selectInput(paste0("pwiz_imp_base_", i), etiqueta("tablas.pasivos.impuestos.base"), width = "100%",
         choices = stats::setNames(c("pago", "intereses"),
@@ -919,8 +919,8 @@ pasivos_cargo_row_ui <- function(i, cargo = list(), base = MONEDA_BASE_OMISION, 
                        value = cargo$desc %||% "")
     ),
     shiny::div(style = "width:130px;",
-      shiny::numericInput(paste0("pwiz_cargo_monto_", i), if (i == 1L) "Monto" else NULL,
-                          value = cargo$monto %||% 0, min = 0)
+      hd_numero_input(paste0("pwiz_cargo_monto_", i), if (i == 1L) "Monto" else NULL,
+                          formato = "monto", value = cargo$monto %||% 0, min = 0)
     ),
     shiny::div(style = "width:90px;",
       shiny::selectInput(paste0("pwiz_cargo_moneda_", i), if (i == 1L) "Moneda" else NULL,

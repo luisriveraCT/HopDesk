@@ -19,6 +19,7 @@ cargar("R/pasivos_observers.R", "isTRUE_safe")
 for (f in c("R/tema_registro.R", "R/monedas.R", "R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/pasivos_schemas.R", "R/pasivos_table_pivot.R", "R/pasivos_table_styles.R",
             "R/pasivos_table_module.R", "R/pasivos_list_module.R")) source(f)
+source("tests/helpers/hd_numero.R")   # T66: hd_numero_input()
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 source("tests/helpers/pasivos_datos_prueba.R")
 

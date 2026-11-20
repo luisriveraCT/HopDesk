@@ -42,6 +42,7 @@ source("R/pasivos_engine.R")
 suppressMessages(source("R/i18n.R"))   # the validators' messages come from the dictionary
 source("R/pasivos_wizard_validate.R")
 source("R/pasivos_wizard_module.R")
+source("tests/helpers/hd_numero.R")   # T66: hd_numero_input()
 
 # ── Test runner ────────────────────────────────────────────────────────────────
 .pass <- 0L; .fail <- 0L
