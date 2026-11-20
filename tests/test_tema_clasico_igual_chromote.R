@@ -168,22 +168,41 @@ recorrer <- function(raiz, etiqueta, quien) {
   if (identical(etiqueta, "rama"))
     ok(sprintf("[rama · %s] the page asks for hd_temas.css and hd_clasico_legado.css", quien),
        any(grepl("hd_temas\\.css", recursos)) && any(grepl("hd_clasico_legado\\.css", recursos)))
+  captura(sprintf("%s_%s_DENTRO", etiqueta, quien))
+  # At 1293 px the navbar collapses behind its ☰ button (2026-11-20): open
+  # it to find and click a tab, close it again before measuring.
+  menu <- function(abrir) tryCatch(ev(sprintf("(function(){
+      var t = document.querySelector('.navbar-toggler'); if (!t || t.offsetParent === null) return false;
+      var c = document.querySelector(t.getAttribute('data-bs-target') || '.navbar-collapse');
+      var abierto = !!c && c.classList.contains('show');
+      if (abierto !== %s) t.click(); return true; })()", if (abrir) "true" else "false")), error = function(x) FALSE)
   for (v in names(PESTANAS)) {
+    menu(TRUE); Sys.sleep(1)   # the collapse animates; offsetParent is null until it opens
     visible <- isTRUE(tryCatch(ev(sprintf("(function(){ var a = document.querySelector(\".nav-link[data-value='%s']\");
       return !!a && a.offsetParent !== null; })()", v)), error = function(x) FALSE))
     if (!visible) next
     ev(sprintf("document.querySelector(\".nav-link[data-value='%s']\").click(); true", v))
-    Sys.sleep(8)   # data drawn (R takes its time on a busy machine)
+    Sys.sleep(1); menu(FALSE)
+    Sys.sleep(7)   # data drawn (R takes its time on a busy machine)
     ev("window.scrollTo(0, 0); document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
     Sys.sleep(1)
     res[[v]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
     captura(sprintf("%s_%s_%s", etiqueta, quien, v))
   }
+  # Signed in but no tab measured would make "the same" out of nothing.
+  if (!ok(sprintf("[%s · %s] at least one tab measured (%s)", etiqueta, quien,
+                  paste(setdiff(names(res), "ENTRAR"), collapse = ",")), length(setdiff(names(res), "ENTRAR")) > 0L)) {
+    menu(TRUE); Sys.sleep(1)
+    cat("      | pestañas:", tryCatch(ev("Array.from(document.querySelectorAll('.nav-link[data-value]')).map(function(a){
+      return a.getAttribute('data-value') + (a.offsetParent === null ? '(oculta)' : ''); }).join(',')"), error = function(x) "?"), "\n")
+  }
   # The cash-flow preview (www/cashflow_preview.css) is not a tab: it opens
   # from the Calendar's arrow.
   if ("CAL" %in% names(res)) {
+    menu(TRUE); Sys.sleep(0.5)
     ev("document.querySelector(\".nav-link[data-value='CAL']\").click(); true")
-    Sys.sleep(4)
+    Sys.sleep(1); menu(FALSE)
+    Sys.sleep(3)
     abierto <- isTRUE(tryCatch(ev("(function(){ var a = document.querySelector('.cf-preview-toggle-btn');
       if (!a || a.offsetParent === null) return false; a.click(); return true; })()"), error = function(x) FALSE))
     if (abierto) {
