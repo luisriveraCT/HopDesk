@@ -291,6 +291,37 @@ pasivos_expand_recurrence <- function(recurrence_type, recurrence_params, from, 
 }
 
 # Generate amortization schedule for a financiero liability.
+# ── Impuestos (T63) ────────────────────────────────────────────────────────────
+# A liability's taxes, from a tibble row (list-column) or a draft (plain list):
+# list of list(nombre, tipo = "porcentual" | "fijo", valor, base = "pago" |
+# "intereses"). Missing, NULL or malformed entries -> none.
+pasivos_impuestos_de <- function(liability) {
+  v <- tryCatch(liability[["impuestos"]], error = function(e) NULL)
+  if (is.null(v) || !length(v)) return(list())
+  lst <- if (is.list(v[[1]]) && !is.null(v[[1]][["tipo"]])) v else if (is.list(v[[1]])) v[[1]] else list()
+  ok <- vapply(lst, function(t) is.list(t) && isTRUE(t[["tipo"]] %in% c("porcentual", "fijo")) &&
+                 is.numeric(suppressWarnings(as.numeric(t[["valor"]]))) &&
+                 !is.na(suppressWarnings(as.numeric(t[["valor"]]))) && as.numeric(t[["valor"]]) >= 0, logical(1))
+  lst[ok]
+}
+
+# The tax of each payment, in the payment's own currency: a percentage of the
+# whole payment (base "pago", the default) or of its interest only (base
+# "intereses", for loans), or a fixed amount per payment. Vectorized over
+# payments; 0 when there are no taxes. Rounded to cents.
+pasivos_impuestos_pago <- function(impuestos, total, interes = 0) {
+  total <- suppressWarnings(as.numeric(total)); total[is.na(total)] <- 0
+  interes <- rep_len(suppressWarnings(as.numeric(interes)), length(total)); interes[is.na(interes)] <- 0
+  imps <- pasivos_impuestos_de(list(impuestos = impuestos))
+  out <- rep(0, length(total))
+  for (t in imps) {
+    v <- as.numeric(t[["valor"]])
+    out <- out + if (identical(t[["tipo"]], "fijo")) v
+                 else (if (identical(t[["base"]], "intereses")) interes else total) * v / 100
+  }
+  round(out, 2)
+}
+
 pasivos_generate_schedule <- function(liability, today = Sys.Date()) {
   today  <- as.Date(today)
   cat_ok <- !is.null(liability$categoria) && !is.na(liability$categoria) &&
@@ -557,6 +588,15 @@ pasivos_generate_schedule <- function(liability, today = Sys.Date()) {
   # Combine and sort
   out <- dplyr::bind_rows(fee_rows, sched_df) |>
     dplyr::arrange(.data$fecha)
+  # T63: with taxes, each scheduled payment's tax and the payment with it (the
+  # same rule as the provisions; initial fees carry none). Without taxes the
+  # schedule is exactly what it was.
+  imps <- pasivos_impuestos_de(liability)
+  if (length(imps) && nrow(out)) {
+    es_fee <- out$origin %in% "initial_fee"
+    out$impuestos  <- ifelse(es_fee, 0, pasivos_impuestos_pago(imps, out$total, out$interes))
+    out$total_pago <- out$total + out$impuestos
+  }
   out
 }
 
@@ -582,6 +622,7 @@ pasivos_generate_provisions <- function(liability,
   if (is.na(window_end)) window_end <- window_start + lubridate::years(2)
 
   schema <- .schema_pasivos_provision()
+  imps   <- pasivos_impuestos_de(liability)   # T63: taxes on each payment (none -> as before)
 
   # ── Build raw date+amount stream ─────────────────────────────────────────
   if (identical(cat, "financiero")) {
@@ -634,6 +675,17 @@ pasivos_generate_provisions <- function(liability,
         tmpl
       }
 
+      # T63: the liability's taxes on each scheduled payment, in its payment
+      # currency (after FX); "intereses" takes the interest converted the same
+      # way. Initial fees (their own currency and amount) carry none. With no
+      # taxes nothing changes: componente_iva NA, amount_pago as before.
+      imp_k <- NA_real_
+      if (!is_fee_row && length(imps)) {
+        conv  <- if (!is.na(amt_cot) && amt_cot != 0) fx_res$amount_pago / amt_cot else 1
+        imp_k <- pasivos_impuestos_pago(imps, fx_res$amount_pago, (row_s$interes %||% 0) * conv)
+        fx_res$amount_pago <- fx_res$amount_pago + imp_k
+      }
+
       tibble::tibble(
         id                   = uuid::UUIDgenerate(),
         liability_id         = liability$id,
@@ -654,7 +706,7 @@ pasivos_generate_provisions <- function(liability,
         componente_capital   = row_s$capital,
         componente_interes   = row_s$interes,
         componente_fees      = row_s$fees,
-        componente_iva       = NA_real_,
+        componente_iva       = imp_k,
         amount_pago_override     = NA_real_,
         amount_cotizado_override = NA_real_,
         fecha_efectiva_override  = as.Date(NA),
@@ -710,6 +762,12 @@ pasivos_generate_provisions <- function(liability,
       fx_res <- pasivos_recompute_pago_from_cotizado(
         amt_default, cot_en, liability$moneda_pago, fecha_ef
       )
+      # T63: taxes on the whole payment (no interest here), in its currency.
+      imp_k <- NA_real_
+      if (length(imps)) {
+        imp_k <- pasivos_impuestos_pago(imps, fx_res$amount_pago)
+        fx_res$amount_pago <- fx_res$amount_pago + imp_k
+      }
 
       tmpl <- liability$documento_template
       tmpl <- if (is.null(tmpl) || length(tmpl) == 0 || is.na(tmpl)) NA_character_ else {
@@ -739,7 +797,7 @@ pasivos_generate_provisions <- function(liability,
         componente_capital   = NA_real_,
         componente_interes   = NA_real_,
         componente_fees      = NA_real_,
-        componente_iva       = NA_real_,
+        componente_iva       = imp_k,
         amount_pago_override     = NA_real_,
         amount_cotizado_override = NA_real_,
         fecha_efectiva_override  = as.Date(NA),
