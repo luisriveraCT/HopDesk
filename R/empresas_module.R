@@ -1241,8 +1241,10 @@ empresasServer <- function(id, shared) {
         return()
       }
 
-      cfg <- tryCatch(shared$group_config(), error = function(e) NULL) %||%
-             list(group_name = "Networks Group", logo_raw = NULL, logo_ext = "png")
+      # CM36: the copy this form started from is the save's `base`; only what
+      # this session changed is written over S3's current config.
+      base <- tryCatch(shared$group_config(), error = function(e) NULL) %||% .schema_group_config()
+      cfg  <- base
       cfg$group_name <- name
       # "" = automatic; anything else must be a catalog code (never trust the
       # browser's value).
@@ -1271,8 +1273,9 @@ empresasServer <- function(id, shared) {
       }
 
       tryCatch({
-        save_group_config(cfg, client_id = shared$effective_client_id())
-        shared$group_config(cfg)
+        guardado <- modificar_group_config(function(fresco) .group_config_rebase(cfg, base, fresco),
+                                           client_id = shared$effective_client_id())
+        shared$group_config(guardado)   # what S3 holds now, other sessions' changes included
         showNotification(tr("tablas.empresas.aviso.grupo_guardado"),
                          type = "message", duration = 4)
         log_action(

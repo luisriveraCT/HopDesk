@@ -2451,9 +2451,47 @@ load_group_config <- function(client_id = NULL) {
   cfg
 }
 
-save_group_config <- function(cfg, client_id = NULL) {
-  .s3_write(cfg, S3_KEYS$group_config, client_id = client_id)
-  invisible(cfg)
+# The config filled in with the defaults of the fields it lacks (an older
+# file has no moneda_base). NULL (no file) is the empty schema; anything that
+# is not a list stop()s: a write never replaces what it cannot understand.
+.group_config_completar <- function(cfg) {
+  if (is.null(cfg)) return(.schema_group_config())
+  if (!is.list(cfg)) stop("[S3] group_config.rds is not a list; nothing was saved", call. = FALSE)
+  d <- .schema_group_config()
+  for (nm in names(d)) if (is.null(cfg[[nm]]) && !is.null(d[[nm]])) cfg[[nm]] <- d[[nm]]
+  cfg
+}
+
+# What a save writes (CM36). Each field this session changed against the copy
+# it started from (`base`) takes its new value; every other field stays as S3
+# holds it now (`fresco`), so one session's name and another's base currency
+# or logo both survive. The logo is one unit, raw bytes and extension
+# together: never one session's bytes with another's extension. Fields this
+# form does not know (a later stage's) are S3's.
+.GROUP_CONFIG_UNIDADES <- list("group_name", "moneda_base", c("logo_raw", "logo_ext"))
+.group_config_rebase <- function(nuevo, base, fresco) {
+  nuevo <- .group_config_completar(nuevo); base <- .group_config_completar(base)
+  out   <- .group_config_completar(fresco)
+  for (u in .GROUP_CONFIG_UNIDADES) {
+    if (identical(lapply(u, function(c) nuevo[[c]]), lapply(u, function(c) base[[c]]))) next
+    for (c in u) if (is.null(nuevo[[c]])) out[[c]] <- NULL else out[[c]] <- nuevo[[c]]
+  }
+  out
+}
+
+# Change the group config starting from what S3 holds right now (CM36): strict
+# read (a failed read stop()s, nothing written; no file yet is the empty
+# schema), cambio(fresco), write only if something changed. Returns the
+# config written (or S3's, unchanged). The only way to write
+# group_config.rds: save_group_config() wrote a session's whole copy over
+# other sessions' changes.
+modificar_group_config <- function(cambio, client_id) {
+  if (is.null(client_id) || !nzchar(client_id)) stop("modificar_group_config: sin client_id", call. = FALSE)
+  fresco <- .group_config_completar(.s3_leer_para_escribir(S3_KEYS$group_config, client_id))
+  nuevo  <- .group_config_completar(cambio(fresco))
+  if (identical(nuevo, fresco)) return(invisible(fresco))
+  .s3_write(nuevo, S3_KEYS$group_config, client_id = client_id)
+  invisible(nuevo)
 }
 
 # ── Renaming a company's initials (CM26, 2026-11-17) ─────────────────────────

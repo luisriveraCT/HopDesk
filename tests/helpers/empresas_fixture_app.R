@@ -24,7 +24,10 @@ cargar <- function(archivo, nombres) {
       eval(e, envir = globalenv())
 }
 suppressPackageStartupMessages({ library(dplyr); library(shinyjs) })
-cargar("R/persistence.R", c(".schema_empresas", ".schema_erp_connections", ".normalize", ".company_map_from_empresas"))
+cargar("R/persistence.R", c(".schema_empresas", ".schema_erp_connections", ".normalize", ".company_map_from_empresas",
+                            # CM36: Guardar configuración del grupo
+                            ".schema_group_config", ".group_config_completar", ".GROUP_CONFIG_UNIDADES",
+                            ".group_config_rebase", "modificar_group_config"))
 cargar("R/erp_connector_registry.R", c("SAP_B1_ERP_TYPE", "erp_connector_label"))
 cargar("R/ui_components.R", "app_styles")
 local({
