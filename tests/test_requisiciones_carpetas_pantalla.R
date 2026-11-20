@@ -180,7 +180,7 @@ test_that("T64: la fixture deja las 4 requisiciones vivas en el mes en curso, se
   testServer(app, {
     session$flushReact()
     d <- mod$datos()
-    vivas <- d[d$etapa != "papelera", , drop = FALSE]
+    vivas <- d[!(d$etapa %in% c("pagada", "papelera")), , drop = FALSE]   # CM35: the paid one stays listed
     expect_identical(nrow(vivas), 4L)
     expect_true(all(format(vivas$fecha_mes, "%Y-%m") == format(Sys.Date(), "%Y-%m")))
   })
