@@ -171,3 +171,17 @@ test_that("la columna 'Aviso de empresa' sale solo mientras alguna requisición 
   expect_true("empresa_aviso" %in% campos(.reqm_columnas(c(), aviso = TRUE)))
   expect_true("carpeta_ruta" %in% campos(.reqm_columnas(c())))
 })
+
+test_that("T64: la fixture deja las 4 requisiciones vivas en el mes en curso, sea el día que sea", {
+  expect_identical(.req_fin_de_mes(as.Date("2026-11-19")), as.Date("2026-11-30"))
+  expect_identical(.req_fin_de_mes(as.Date("2026-12-31")), as.Date("2026-12-31"))
+  expect_identical(.req_fin_de_mes(as.Date("2028-02-10")), as.Date("2028-02-29"))
+  app <- cargar_app()
+  testServer(app, {
+    session$flushReact()
+    d <- mod$datos()
+    vivas <- d[d$etapa != "papelera", , drop = FALSE]
+    expect_identical(nrow(vivas), 4L)
+    expect_true(all(format(vivas$fecha_mes, "%Y-%m") == format(Sys.Date(), "%Y-%m")))
+  })
+})

@@ -74,6 +74,8 @@ assign("auth_load_usuarios", function(client_id = NULL) NULL, envir = globalenv(
 
 CID <- "fixture"
 poner <- function(key, df) assign(paste0(CID, "/", key), df, envir = .req_mem)
+# Last day of d's month.
+.req_fin_de_mes <- function(d) seq(as.Date(format(d, "%Y-%m-01")), by = "month", length.out = 2L)[2] - 1L
 
 # ── Seed ─────────────────────────────────────────────────────────────────────
 sembrar <- function() {
@@ -84,7 +86,11 @@ sembrar <- function() {
     parte = c("CFE", "Inmobiliaria Sur", "Telmex", "Grupo Constructor Norte del Bajío", "Papelería"),
     referencia = c("Luz bodega 3", "Renta noviembre", "Internet oficinas", "Anticipo obra nave 2", "Papelería oct"),
     amount_pago = c(18450.5, 92000, 4300, 250000, 3100), moneda_pago = c("MXN", "MXN", "MXN", "USD", "MXN"),
-    fecha_efectiva = Sys.Date() + c(5, 12, 8, 20, -3)), .schema_pasivos_provision))
+    # T64: inside the month on screen whatever the day (the list shows the
+    # current month; "+ 12" fell into next month after the 19th). The paid
+    # one stays in the past.
+    fecha_efectiva = c(pmin(Sys.Date() + c(5, 12, 8, 20), .req_fin_de_mes(Sys.Date())), Sys.Date() - 3)),
+    .schema_pasivos_provision))
   poner(S3_KEYS$bancos_confirmados, .normalize(tibble::tibble(
     confirmacion_id = "c1", provision_id = "p-pagada", importe = 3100, moneda = "MXN",
     eliminado = FALSE, action = "confirmed", confirmado_at = Sys.time()), .schema_bancos_confirmados))
