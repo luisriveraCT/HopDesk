@@ -76,12 +76,16 @@ REQ_COLOR_DEFECTO  <- "#607d8b"
 
 .schema_req_carpetas <- function() tibble::tibble(
   id           = character(),
+  padre_id     = character(),      # T61: parent folder id; NA = top level
+  empresas     = character(),      # T61: JSON array of company ids; NA = every company
   nombre       = character(),
   color        = character(),      # #rrggbb
   presupuesto  = numeric(),        # optional estimated budget (costing a project)
   moneda       = character(),
   creado_por   = character(),
   creado       = .req_t0(),
+  movido_por   = character(),      # T61: who last moved it, and when
+  movido       = .req_t0(),
   papelera_por = character(),
   papelera_en  = .req_t0()
 )
@@ -240,11 +244,12 @@ REQ_COLOR_DEFECTO  <- "#607d8b"
   i[1]
 }
 
-# The carpeta must exist and not be in the trash (NA = no folder).
+# The carpeta must exist and not be in the trash, itself or through an
+# ancestor (T61). NA = General, the virtual folder: always fine.
 .req_carpeta_ok <- function(cid, carpeta_id) {
   if (is.na(carpeta_id)) return(invisible(TRUE))
-  c <- .req_leer("carpetas", cid)
-  if (!any(c$id == carpeta_id & is.na(c$papelera_en))) .req_error("requisiciones.error.carpeta")
+  c <- requisiciones_carpetas_arbol(.req_leer("carpetas", cid))
+  if (!any(c$id == carpeta_id & !c$en_papelera)) .req_error("requisiciones.error.carpeta")
   invisible(TRUE)
 }
 
@@ -437,6 +442,126 @@ requisicion_ligar_provision <- function(client_id, id, provision_id, por) {
 }
 
 # ── Carpetas ─────────────────────────────────────────────────────────────────
+# T61: folders inside folders, up to REQ_CARPETA_MAX_NIVEL levels, each tied
+# to companies. One flat table: `id` is the only key, `padre_id` the parent
+# (NA = top level), `empresas` a JSON array of company ids (NA = every
+# company, also those added later). Never paths or visible names as keys:
+# renaming or moving changes one cell and nothing inside it. Files written
+# before T61 have neither column; .normalize() reads them as NA (top level,
+# every company) and nothing is migrated.
+# "General" is virtual: a requisition with carpeta_id NA. It has every
+# company, is never hidden and is never written to S3 (no sentinel row).
+# Reading never trusts the tree: a cycle, a parent that does not exist or a
+# branch deeper than the limit (a race, a hand edit, old data) is read with
+# that folder at the top level -- every walk ends and no folder disappears.
+
+REQ_CARPETA_MAX_NIVEL <- 5L
+
+# empresas cell -> company ids, or NULL = every company. Empty, unreadable or
+# broken JSON = every company; so is a list none of whose ids is still in
+# `existentes` (when given), so that a folder never becomes invisible for good.
+.req_carpeta_empresas <- function(x, existentes = NULL) {
+  x <- if (is.null(x) || !length(x)) NA_character_ else as.character(x[[1]])
+  if (is.na(x) || !nzchar(trimws(x))) return(NULL)
+  ids <- tryCatch(jsonlite::fromJSON(x), error = function(e) NULL)
+  ids <- if (is.character(ids)) unique(ids[!is.na(ids) & nzchar(ids)]) else character()
+  if (!length(ids)) return(NULL)
+  if (!is.null(existentes) && !any(ids %in% existentes)) return(NULL)
+  ids
+}
+
+# The tree as it is read, from the whole table (trashed rows too). Adds:
+#   padre_ef     the parent actually used (NA = top level)
+#   nivel        1 = top level
+#   ruta         "A › B › C"
+#   en_papelera  this folder or one of its ancestors is in the trash
+# Rows in tree order: each parent before its children, siblings in creation
+# order. Pure; every loop is bounded by the number of rows.
+requisiciones_carpetas_arbol <- function(carpetas) {
+  n <- nrow(carpetas); ids <- carpetas$id
+  if (!n) {
+    carpetas$padre_ef <- character(); carpetas$nivel <- integer()
+    carpetas$ruta <- character(); carpetas$en_papelera <- logical()
+    return(carpetas)
+  }
+  creado <- as.numeric(carpetas$creado)
+  padre <- as.character(carpetas$padre_id)
+  padre[!(padre %in% ids) | (!is.na(padre) & padre == ids)] <- NA_character_   # orphan or itself
+  arriba <- function(i) match(padre[i], ids)       # NA at the top
+  # Cycles: the member created first goes to the top. Each pass removes one
+  # link, so there are at most n passes.
+  for (pasada in seq_len(n)) {
+    roto <- FALSE
+    for (i in seq_len(n)) {
+      visto <- integer(); j <- i
+      while (!is.na(j) && !(j %in% visto)) { visto <- c(visto, j); j <- arriba(j) }
+      if (!is.na(j)) {
+        ciclo <- visto[match(j, visto):length(visto)]
+        padre[ciclo[order(creado[ciclo], ids[ciclo])[1]]] <- NA_character_
+        roto <- TRUE; break
+      }
+    }
+    if (!roto) break
+  }
+  nivel_de <- function() vapply(seq_len(n), function(i) {
+    k <- 1L; j <- arriba(i)
+    while (!is.na(j) && k <= n) { k <- k + 1L; j <- arriba(j) }
+    k
+  }, integer(1))
+  # Too deep: the first folder past the limit goes to the top, with its branch.
+  for (pasada in seq_len(n)) {
+    nv <- nivel_de(); malo <- which(nv == REQ_CARPETA_MAX_NIVEL + 1L)
+    if (!length(malo)) break
+    padre[malo] <- NA_character_
+  }
+  nv <- nivel_de()
+  papelera <- !is.na(carpetas$papelera_en)
+  ruta <- character(n); en_pap <- logical(n)
+  for (i in seq_len(n)) {
+    cad <- i; j <- arriba(i)
+    while (!is.na(j)) { cad <- c(j, cad); j <- arriba(j) }
+    ruta[i] <- paste(carpetas$nombre[cad], collapse = " › ")
+    en_pap[i] <- any(papelera[cad])
+  }
+  orden <- integer()
+  visita <- function(p) {
+    h <- which(if (is.na(p)) is.na(padre) else padre %in% ids[p])
+    for (k in h[order(creado[h], ids[h])]) if (!(k %in% orden)) { orden <<- c(orden, k); visita(k) }
+  }
+  visita(NA_integer_)
+  orden <- c(orden, setdiff(seq_len(n), orden))   # never needed; never lose a row
+  carpetas$padre_ef <- padre; carpetas$nivel <- nv; carpetas$ruta <- ruta; carpetas$en_papelera <- en_pap
+  carpetas[orden, , drop = FALSE]
+}
+
+# Ids of `id` and everything under it (on a tree from requisiciones_carpetas_arbol()).
+.req_carpeta_subarbol <- function(arbol, id) {
+  dentro <- id
+  repeat {
+    nuevos <- setdiff(arbol$id[arbol$padre_ef %in% dentro], dentro)
+    if (!length(nuevos)) break
+    dentro <- c(dentro, nuevos)
+  }
+  dentro
+}
+
+# Which folders show with the company bubbles: TRUE where the folder is for
+# every company or shares one with `activas` (company ids), and its parent
+# shows. activas NULL = no filter. `existentes` = every company id in the
+# catalog (see .req_carpeta_empresas()). On a tree in tree order.
+requisiciones_carpetas_visibles <- function(arbol, activas, existentes = NULL) {
+  n <- nrow(arbol)
+  if (is.null(activas)) return(rep(TRUE, n))
+  vis <- vapply(seq_len(n), function(i) {
+    e <- .req_carpeta_empresas(arbol$empresas[i], existentes)
+    is.null(e) || any(e %in% activas)
+  }, logical(1))
+  for (i in seq_len(n)) {
+    j <- match(arbol$padre_ef[i], arbol$id)
+    if (!is.na(j)) vis[i] <- vis[i] && vis[j]
+  }
+  vis
+}
 
 .req_carpeta_validar <- function(datos, parcial = FALSE) {
   datos <- as.list(datos); out <- list()
@@ -456,91 +581,156 @@ requisicion_ligar_provision <- function(client_id, id, provision_id, por) {
   if (!parcial || "moneda" %in% names(datos)) out$moneda <- .req_moneda(datos$moneda)
   if (!is.null(out$presupuesto) && !is.na(out$presupuesto) && is.na(out$moneda %||% datos$moneda_actual %||% NA))
     .req_error("requisiciones.error.moneda")
+  # empresas: NA / absent = every company; otherwise at least one id.
+  if (!parcial || "empresas" %in% names(datos)) {
+    e <- datos$empresas
+    out$empresas <- if (is.null(e) || (length(e) == 1L && is.na(e))) NA_character_ else {
+      e <- unique(as.character(e)); e <- e[!is.na(e) & nzchar(e)]
+      if (!length(e)) .req_error("requisiciones.error.carpeta_empresas")
+      as.character(jsonlite::toJSON(sort(e)))
+    }
+  }
   out
 }
 
-.req_carpeta_repetida <- function(df, nombre, salvo = NA_character_) {
-  any(is.na(df$papelera_en) & tolower(df$nombre) == tolower(nombre) & !(df$id %in% salvo))
+# Same name (case aside) among the live folders with the same parent.
+.req_carpeta_repetida <- function(arbol, nombre, padre, salvo = NA_character_) {
+  any(!arbol$en_papelera & arbol$padre_ef %in% padre & tolower(arbol$nombre) == tolower(nombre) &
+        !(arbol$id %in% salvo))
 }
 
-# datos: list(nombre, color, presupuesto, moneda). Returns the id.
+# A folder can go under `padre` (NA = top level): it exists and is live, it
+# is not `mueve` nor under it, and the branch fits in REQ_CARPETA_MAX_NIVEL.
+.req_carpeta_destino <- function(arbol, padre, mueve = NULL) {
+  nivel_padre <- 0L
+  if (!is.na(padre)) {
+    j <- match(padre, arbol$id)
+    if (is.na(j) || arbol$en_papelera[j]) .req_error("requisiciones.error.carpeta_padre")
+    nivel_padre <- arbol$nivel[j]
+  }
+  alto <- 1L
+  if (!is.null(mueve)) {
+    sub <- .req_carpeta_subarbol(arbol, mueve)
+    if (!is.na(padre) && padre %in% sub) .req_error("requisiciones.error.carpeta_ciclo")
+    alto <- max(arbol$nivel[arbol$id %in% sub]) - arbol$nivel[match(mueve, arbol$id)] + 1L
+  }
+  if (nivel_padre + alto > REQ_CARPETA_MAX_NIVEL)
+    .req_error("requisiciones.error.carpeta_nivel", max = REQ_CARPETA_MAX_NIVEL)
+  invisible(TRUE)
+}
+
+# datos: list(nombre, color, presupuesto, moneda, empresas, padre_id).
+# Returns the id. Every check runs on the freshly read table.
 requisiciones_carpeta_crear <- function(client_id, datos, por) {
   cid <- .req_cid(client_id)
+  datos <- as.list(datos)
   v <- .req_carpeta_validar(datos)
+  padre <- .req_txt(datos$padre_id)
   id <- uuid::UUIDgenerate(); ahora <- .req_ahora()
   .req_modificar("carpetas", cid, function(df) {
-    if (.req_carpeta_repetida(df, v$nombre)) .req_error("requisiciones.error.carpeta_repetida")
+    a <- requisiciones_carpetas_arbol(df)
+    .req_carpeta_destino(a, padre)
+    if (.req_carpeta_repetida(a, v$nombre, padre)) .req_error("requisiciones.error.carpeta_repetida")
     dplyr::bind_rows(df, tibble::tibble(
-      id = id, nombre = v$nombre, color = v$color, presupuesto = v$presupuesto, moneda = v$moneda,
-      creado_por = por, creado = ahora, papelera_por = NA_character_,
-      papelera_en = as.POSIXct(NA, tz = "UTC")))
+      id = id, padre_id = padre, empresas = v$empresas,
+      nombre = v$nombre, color = v$color, presupuesto = v$presupuesto, moneda = v$moneda,
+      creado_por = por, creado = ahora, movido_por = NA_character_, movido = as.POSIXct(NA, tz = "UTC"),
+      papelera_por = NA_character_, papelera_en = as.POSIXct(NA, tz = "UTC")))
   })
   id
 }
 
+# cambios: any of nombre, color, presupuesto, moneda, empresas, padre_id
+# (padre_id present = move it there; NA = top level). Moving touches no
+# requisition: what is inside goes along.
 requisiciones_carpeta_editar <- function(client_id, id, cambios, por) {
   cid <- .req_cid(client_id)
   cambios <- as.list(cambios)
+  mueve <- "padre_id" %in% names(cambios)
+  padre <- if (mueve) .req_txt(cambios$padre_id) else NULL
+  ahora <- .req_ahora()
   .req_modificar("carpetas", cid, function(df) {
     i <- .req_fila(df, id)
+    a <- requisiciones_carpetas_arbol(df)
     if (!is.null(cambios$presupuesto) && is.null(cambios$moneda)) cambios$moneda_actual <- df$moneda[i]
     v <- .req_carpeta_validar(cambios, parcial = TRUE)
-    if (!is.null(v$nombre) && .req_carpeta_repetida(df, v$nombre, salvo = id))
+    padre_antes <- a$padre_ef[match(id, a$id)]
+    se_mueve <- mueve && !identical(padre, padre_antes)
+    if (se_mueve) .req_carpeta_destino(a, padre, mueve = id)
+    nombre <- v$nombre %||% df$nombre[i]
+    if ((!is.null(v$nombre) || se_mueve) &&
+        .req_carpeta_repetida(a, nombre, if (se_mueve) padre else padre_antes, salvo = id))
       .req_error("requisiciones.error.carpeta_repetida")
     for (k in names(v)) df[[k]][i] <- v[[k]]
+    if (se_mueve) { df$padre_id[i] <- padre; df$movido_por[i] <- por; df$movido[i] <- ahora }
     df
   })
   invisible(TRUE)
 }
 
-# A folder still holding live requisitions cannot go to the trash (Luis,
-# 2026-11-04): they must be moved or trashed first. Trashed and paid ones do
-# not count; they keep carpeta_id and show without a folder.
+# A folder holding live requisitions -- in it or anywhere under it -- cannot
+# go to the trash (Luis, 2026-11-04): they must be moved or trashed first.
+# Trashed and paid ones do not count. Only this folder is marked; what is
+# under it is hidden with it and comes back with it.
 requisiciones_carpeta_papelera <- function(client_id, id, por) {
   cid <- .req_cid(client_id)
   reqs <- .req_leer("requisiciones", cid)
-  dentro <- reqs[reqs$carpeta_id %in% id & is.na(reqs$papelera_en), , drop = FALSE]
-  if (nrow(dentro)) {
-    etapa <- .req_etapa_provision(cid, dentro$provision_id)
-    if (any(!(etapa %in% "pagada"))) .req_error("requisiciones.error.carpeta_con_requisiciones")
-  }
+  vivas <- reqs[!is.na(reqs$carpeta_id) & is.na(reqs$papelera_en), , drop = FALSE]
+  if (nrow(vivas)) vivas <- vivas[!(.req_etapa_provision(cid, vivas$provision_id) %in% "pagada"), , drop = FALSE]
+  ahora <- .req_ahora()
   .req_modificar("carpetas", cid, function(df) {
     i <- .req_fila(df, id)
-    if (is.na(df$papelera_en[i])) { df$papelera_por[i] <- por; df$papelera_en[i] <- .req_ahora() }
+    n <- sum(vivas$carpeta_id %in% .req_carpeta_subarbol(requisiciones_carpetas_arbol(df), id))
+    if (n) .req_error("requisiciones.error.carpeta_con_requisiciones", n = n)
+    if (is.na(df$papelera_en[i])) { df$papelera_por[i] <- por; df$papelera_en[i] <- ahora }
     df
   })
   invisible(TRUE)
 }
 
+# Back with everything under it. If its parent is still in the trash it goes
+# under the nearest live ancestor (or to the top), in the same write.
 requisiciones_carpeta_restaurar <- function(client_id, id, por) {
   cid <- .req_cid(client_id)
+  ahora <- .req_ahora()
   .req_modificar("carpetas", cid, function(df) {
     i <- .req_fila(df, id)
-    if (.req_carpeta_repetida(df, df$nombre[i], salvo = id)) .req_error("requisiciones.error.carpeta_repetida")
+    a <- requisiciones_carpetas_arbol(df)
+    antes <- a$padre_ef[match(id, a$id)]; p <- antes
+    while (!is.na(p) && a$en_papelera[match(p, a$id)]) p <- a$padre_ef[match(p, a$id)]
+    if (.req_carpeta_repetida(a, df$nombre[i], p, salvo = id)) .req_error("requisiciones.error.carpeta_repetida")
     df$papelera_por[i] <- NA_character_; df$papelera_en[i] <- as.POSIXct(NA, tz = "UTC")
+    if (!identical(p, antes)) { df$padre_id[i] <- p; df$movido_por[i] <- por; df$movido[i] <- ahora }
     df
   })
   invisible(TRUE)
 }
 
-# Live folders with how many visible requisitions each holds and how much
-# they add up to in the folder's currency (amount shown, never two summed).
+# Live folders, in tree order, with what each holds counting everything
+# under it: n_requisiciones (visible ones), comprometido (the shown amounts
+# in the folder's own currency -- never two currencies summed) and
+# n_otra_moneda (those with an amount in another currency: not summed, not
+# hidden either; the panel says so).
 requisiciones_carpetas_resumen <- function(carpetas, vista) {
-  cs <- carpetas[is.na(carpetas$papelera_en), , drop = FALSE]
+  a <- requisiciones_carpetas_arbol(carpetas)
+  cs <- a[!a$en_papelera, , drop = FALSE]
   v <- vista[!(vista$etapa %in% c("pagada", "papelera")), , drop = FALSE]
-  cs$n_requisiciones <- vapply(cs$id, function(k) sum(v$carpeta_id %in% k), integer(1), USE.NAMES = FALSE)
-  cs$comprometido <- vapply(seq_len(nrow(cs)), function(i) {
-    x <- v[v$carpeta_id %in% cs$id[i] & v$moneda_mostrada %in% cs$moneda[i], , drop = FALSE]
-    sum(x$monto_mostrado, na.rm = TRUE)
-  }, numeric(1))
+  cs$n_requisiciones <- integer(nrow(cs)); cs$comprometido <- numeric(nrow(cs)); cs$n_otra_moneda <- integer(nrow(cs))
+  for (i in seq_len(nrow(cs))) {
+    x <- v[v$carpeta_id %in% .req_carpeta_subarbol(cs, cs$id[i]), , drop = FALSE]
+    cs$n_requisiciones[i] <- nrow(x)
+    misma <- x$moneda_mostrada %in% cs$moneda[i]
+    cs$comprometido[i] <- sum(x$monto_mostrado[misma], na.rm = TRUE)
+    cs$n_otra_moneda[i] <- sum(!misma & !is.na(x$monto_mostrado))
+  }
   cs
 }
 
-# Folders, strict read (live only unless incluir_papelera), in creation order.
+# Folders, strict read, in tree order (requisiciones_carpetas_arbol()):
+# live only, unless incluir_papelera.
 requisiciones_carpetas <- function(client_id, incluir_papelera = FALSE) {
-  df <- .req_leer("carpetas", .req_cid(client_id))
-  df <- df[incluir_papelera | is.na(df$papelera_en), , drop = FALSE]
-  df[order(df$creado), , drop = FALSE]
+  a <- requisiciones_carpetas_arbol(.req_leer("carpetas", .req_cid(client_id)))
+  a[incluir_papelera | !a$en_papelera, , drop = FALSE]
 }
 
 # ── Comentarios ──────────────────────────────────────────────────────────────
@@ -781,9 +971,10 @@ requisiciones_vista_en <- function(reqs, provs, conf, manual, carpetas, evid, co
   creado_dia <- as.Date(format(reqs$creado, tz = .REQ_TZ))
   reqs$dias_sin_provision <- ifelse(etapa == "sin_provision", as.integer(hoy - creado_dia), NA_integer_)
 
-  cv <- carpetas[is.na(carpetas$papelera_en), , drop = FALSE]
+  ca <- requisiciones_carpetas_arbol(carpetas); cv <- ca[!ca$en_papelera, , drop = FALSE]
   icar <- match(reqs$carpeta_id, cv$id)
   reqs$carpeta_nombre <- cv$nombre[icar]
+  reqs$carpeta_ruta   <- cv$ruta[icar]
   reqs$carpeta_color  <- cv$color[icar]
 
   ev <- evid[is.na(evid$papelera_en), , drop = FALSE]
