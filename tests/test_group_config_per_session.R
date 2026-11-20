@@ -61,7 +61,9 @@ ok("app.R never calls load_group_config() without a client_id",
 ok("Phase 2 loads the session's own client's group config",
    any(vapply(calls, function(cl) identical(cl$client_id, as.name("cid_lo")), logical(1))))
 ok("the context-switch observer still reloads it on a jump",
-   any(grepl(".ctx_load(load_group_config,", readLines("app.R", warn = FALSE), fixed = TRUE)))
+   any(grepl(".ctx_load(load_group_config,", readLines("app.R", warn = FALSE), fixed = TRUE) |
+       # CM38: on a jump it is read strictly first
+       grepl(".ctx_load(.estricto(S3_KEYS$group_config, load_group_config)", readLines("app.R", warn = FALSE), fixed = TRUE)))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)
