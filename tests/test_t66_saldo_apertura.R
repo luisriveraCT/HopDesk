@@ -12,9 +12,12 @@
 #      nothing saved, nothing logged;
 #   4. S3 refuses the save (the integrador's 3rd commit): the user is told,
 #      no "editar_saldo_apertura" log, the session keeps what S3 has.
+#   5. "Cargar saldos de Bancos" (load_bancos_saldos, the 4th commit): it
+#      loads and says so when saved; when the save gives FALSE or an error,
+#      the user is told, no "cargados", no log, the session keeps its saldos.
 # Run from project root:  Rscript tests/test_t66_saldo_apertura.R
-# Contraprueba: on 5e102e3 cases 3 and 4 fail (NA saved as 0; a refused
-# save logged as "actualizado").
+# Contraprueba: on 5e102e3 cases 3, 4 and 5's failures fail (NA saved as
+# 0; a refused save logged as "actualizado" / "cargados").
 # =============================================================================
 cat("=== test_t66_saldo_apertura ===\n\n")
 suppressPackageStartupMessages({ library(shiny); library(dplyr) })
@@ -68,7 +71,12 @@ correr <- function(clics, falla = FALSE) {
     abonos_db = reactiveVal(NULL),
     effective_client_id = function() CID, current_user = function() "luis",
     usuario = reactiveVal(list(user = "luis", permisos = list())),
-    home_client_id = function() CID)
+    home_client_id = function() CID,
+    # One active MXN account of NTS with 5,000 opening and no movements:
+    # "Cargar saldos de Bancos" gives Networks MXN = 5,000.
+    ctas_cuentas = reactiveVal(tibble::tibble(id = "c1", Empresa = "NTS", Moneda = "MXN",
+                                              saldo_inicial = 5000, activa = TRUE)),
+    bancos_movimientos = reactiveVal(NULL))
   fin <- NULL
   invisible(capture.output(testServer(pagarHoyServer, args = list(shared = shared), {
     session$userData$anota <- function(...) invisible(NULL)
@@ -76,6 +84,7 @@ correr <- function(clics, falla = FALSE) {
     do.call(session$setInputs, setNames(list("MXN"), paste0("bal_cur_", EMP)))
     session$flushReact()
     escrituras0 <- .mem_escrituras
+    cargar_bancos <<- function() session$setInputs(load_bancos_saldos = runif(1))
     if (falla) .mem_falla_escritura <<- KSA
     clics(function(v) do.call(session$setInputs, setNames(list(v), paste0("bal_", EMP))),
           function(m) do.call(session$setInputs, setNames(list(m), paste0("bal_cur_", EMP))))
@@ -108,6 +117,23 @@ r <- correr(function(bal, moneda) bal(777), falla = TRUE)
 ok("4 S3 refuses: the user is told it was not saved", tr("comun.error_guardar") %in% AVISOS)
 ok("4 S3 refuses: no 'editar_saldo_apertura' log", !"editar_saldo_apertura" %in% LOGS)
 ok("4 S3 refuses: S3 and the session keep 1,000", identical(sa_s3(), SA0) && identical(r$sa$Networks$MXN, 1000))
+
+# 5. "Cargar saldos de Bancos"
+r <- correr(function(bal, moneda) cargar_bancos())
+ok("5 load from Bancos: saved (5,000), the session has it, 'cargados' and its log",
+   identical(sa_s3()$Networks$MXN, 5000) && identical(r$sa$Networks$MXN, 5000) &&
+     any(grepl("cargad", AVISOS)) && "cargar_saldos_bancos" %in% LOGS)
+r <- correr(function(bal, moneda) cargar_bancos(), falla = TRUE)
+ok("5 load from Bancos, the save gives FALSE: told, no 'cargados', no log",
+   tr("comun.error_guardar") %in% AVISOS && !any(grepl("cargad", AVISOS)) && !"cargar_saldos_bancos" %in% LOGS)
+ok("5 …S3 and the session keep 1,000", identical(sa_s3(), SA0) && identical(r$sa$Networks$MXN, 1000))
+guardar_real <- save_saldos_apertura_user
+save_saldos_apertura_user <- function(...) stop("S3 down")
+r <- correr(function(bal, moneda) cargar_bancos())
+save_saldos_apertura_user <- guardar_real
+ok("5 load from Bancos, the save errors: told, no 'cargados', no log, the session keeps 1,000",
+   tr("comun.error_guardar") %in% AVISOS && !any(grepl("cargad", AVISOS)) && !"cargar_saldos_bancos" %in% LOGS &&
+     identical(r$sa$Networks$MXN, 1000))
 
 s3_memoria_restaurar()
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))

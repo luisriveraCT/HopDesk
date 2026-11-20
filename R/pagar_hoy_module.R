@@ -3466,10 +3466,17 @@ pagarHoyServer <- function(id, shared) {
           }
         }
       }
-      saldos_apertura(sa)
-      tryCatch(
+      # Saved first (rule 17): a FALSE or an error from the save leaves the
+      # session and the fields as they are, says so, and says nothing was
+      # loaded (no "cargados", no log).
+      guardado <- isTRUE(tryCatch(
         save_saldos_apertura_user(sa, shared$current_user(), client_id = shared$effective_client_id()),
-        error = function(e) NULL)
+        error = function(e) FALSE))
+      if (!guardado) {
+        showNotification(tr("comun.error_guardar"), type = "error")
+        return()
+      }
+      saldos_apertura(sa)
 
       # Refresh visible numericInputs
       for (emp in all_companies_rv()) {
