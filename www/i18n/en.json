@@ -1989,5 +1989,6 @@
   "comun.numero.aviso.maximo": "{campo} cannot be more than {max}.",
   "comun.numero.aviso.rango": "{campo} must be between {min} and {max}.",
   "tablas.ajustes.cuentas.saldo_inicial": "Opening balance",
-  "tablas.ajustes.politicas.dias_desplazar": "Days to shift"
+  "tablas.ajustes.politicas.dias_desplazar": "Days to shift",
+  "niveles.clientes.limite_usuarios": "User limit"
 }

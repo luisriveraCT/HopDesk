@@ -1989,5 +1989,6 @@
   "comun.numero.aviso.maximo": "{campo} no puede ser mayor que {max}.",
   "comun.numero.aviso.rango": "{campo} debe estar entre {min} y {max}.",
   "tablas.ajustes.cuentas.saldo_inicial": "Saldo inicial",
-  "tablas.ajustes.politicas.dias_desplazar": "Días a desplazar"
+  "tablas.ajustes.politicas.dias_desplazar": "Días a desplazar",
+  "niveles.clientes.limite_usuarios": "Límite de usuarios"
 }

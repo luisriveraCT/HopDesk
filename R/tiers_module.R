@@ -2060,8 +2060,16 @@ tiersServer <- function(id, shared) {
       cid_prop  <- tolower(trimws(input$req_client_id    %||% ""))
       dname     <- trimws(input$req_display_name %||% "")
       email     <- trimws(input$req_contact_email %||% "")
-      max_u     <- as.integer(input$req_max_users %||% 5L)
       notes     <- trimws(input$req_notes %||% "")
+      # T66: the field no longer stops a text, a decimal or a number out of
+      # 1..500; checked here. Empty or a text (NA) used to become 5 silently,
+      # a decimal was truncated.
+      rev_max <- hd_numero_revisar(input$req_max_users, tr("niveles.clientes.limite_usuarios"),
+                                   min = 1, max = 500, entero = TRUE)
+      if (!rev_max$ok) {
+        showNotification(rev_max$aviso, type = "error"); return()
+      }
+      max_u     <- as.integer(rev_max$valor)
 
       if (!nzchar(cid_prop) || grepl("[^a-z0-9_-]", cid_prop)) {
         showNotification(tr("niveles.solicitudes.aviso.id_invalido"),
@@ -2360,7 +2368,16 @@ tiersServer <- function(id, shared) {
 
       new_dname   <- trimws(input$edit_display_name  %||% "")
       new_contact <- trimws(input$edit_contact_email %||% "")
-      new_max     <- as.integer(input$edit_max_users  %||% 1L)
+      # T66: the field no longer stops a text, a decimal or more than 500;
+      # checked here. Empty or a text (NA) used to become 1 silently (and
+      # opened the panel to deactivate accounts), a decimal was truncated.
+      # Below 1 keeps its own aviso (limite_minimo) next.
+      rev_max <- hd_numero_revisar(input$edit_max_users, tr("niveles.clientes.limite_usuarios"),
+                                   max = 500, entero = TRUE)
+      if (!rev_max$ok) {
+        showNotification(rev_max$aviso, type = "error"); return()
+      }
+      new_max     <- as.integer(rev_max$valor)
 
       if (!nzchar(new_dname)) {
         showNotification(tr("niveles.clientes.aviso.nombre_vacio"), type = "error"); return()
