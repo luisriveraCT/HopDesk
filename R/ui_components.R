@@ -478,6 +478,19 @@ app_styles <- function() {
     .hd-scroll-pestana::after {
       content: \"\"; display: block; height: var(--hd-notas-reserva);
     }
+    /* T67: no elastic bounce past either end. Scrolled past the end with a
+       touchpad, Chrome bounced the tab's box: the content and its sticky
+       Cinta rose together and the box's empty background (the white body)
+       showed under them, with the fixed Notas button floating there. With
+       none: no bounce and no chaining to the page; normal scrolling and the
+       room above are unchanged. Only y: x keeps the browser's back gesture. */
+    html, body,
+    .tab-pane > .overflow-auto,
+    .ph-company-panel,
+    .hd-scroll-pestana,
+    .cf-panel {
+      overscroll-behavior-y: none;
+    }
     /* T56: on the Calendar the button lives in its header, next to the month
        (calendar_html(), R/global.R: .cal-notes-btn clicks #toggle_notes), and
        the floating one hides -- except with the Flujo preview slid in, where
