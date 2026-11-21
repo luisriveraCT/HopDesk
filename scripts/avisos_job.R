@@ -36,7 +36,7 @@
 # =============================================================================
 
 AVISOS_JOB_ARCHIVOS <- c(
-  "R/i18n.R", "R/monedas.R", "R/tier_registry.R", "R/permisos.R", "R/persistence.R", "R/erp_connector_registry.R",
+  "R/i18n.R", "R/monedas.R", "R/zona.R", "R/tier_registry.R", "R/permisos.R", "R/persistence.R", "R/erp_connector_registry.R",
   "R/empresas_identidad.R", "R/data_pipeline.R", "R/pasivos_engine.R", "R/pasivos_schemas.R", "R/pasivos_calendar_glue.R",
   "R/pasivos_persistence.R", "R/bancos_persistence.R", "R/cashflow_export_module.R", "R/fx_banxico.R",
   "R/fx_tipos.R", "R/email_service.R", "R/avisos.R", "R/agenda_filas.R", "R/panorama_datos.R", "R/ui_components.R",
