@@ -797,10 +797,10 @@ generate_audit_log_html_doc <- function(export_df, meta_info = list()) {
 # browser's zone (input$client_tz, R/ui_components.R); with no zone known it
 # stays as it came.
 .audit_hora_navegador <- function(x, tz = NULL) {
-  if (inherits(x, "POSIXct")) x <- format(x, "%Y-%m-%d %H:%M:%S")
+  x <- as.POSIXct(x)
   if (is.null(tz) || length(tz) != 1L || is.na(tz) || !nzchar(tz) || !tz %in% OlsonNames())
-    return(as.POSIXct(x))
-  as.POSIXct(x, tz = tz)
+    return(x)
+  lubridate::force_tz(x, tzone = tz)   # same wall clock, the browser's zone (CM27)
 }
 
 .audit_rango <- function(input, session, id, dias) {
