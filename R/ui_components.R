@@ -506,9 +506,9 @@ app_styles <- function() {
     .cal-notes-btn { margin-left: 8px; flex: none; }
     .notes-bar-btn {
       background: transparent;
-      border: 1px solid #c5d0e6;
+      border: 1px solid var(--hd-leg-borde-fuerte-c5d0e6);
       border-radius: 20px;
-      color: #4a6fa5;
+      color: var(--hd-leg-encabezado-hover-4a6fa5);
       font-size: 0.78rem;
       font-weight: 500;
       padding: 3px 14px;
@@ -520,9 +520,9 @@ app_styles <- function() {
       gap: 5px;
     }
     .notes-bar-btn:hover {
-      background: #eef2ff;
-      border-color: #4a6fa5;
-      color: #1a3a6b;
+      background: var(--hd-hover);
+      border-color: var(--hd-leg-encabezado-hover-4a6fa5);
+      color: var(--hd-leg-encabezado-1a3a6b);
     }
     /* T59: \"open\" while the notes panel is there (the server draws it into
        #notes_panel), on both buttons: the floating one and the Calendar
@@ -530,9 +530,9 @@ app_styles <- function() {
        #toggle_notes by id, so it outweighs panorama.css's opaque face (T49). */
     body:has(#notes_panel .notes-panel-wrapper) #toggle_notes,
     body:has(#notes_panel .notes-panel-wrapper) .cal-notes-btn {
-      background: #4a6fa5;
-      border-color: #4a6fa5;
-      color: #fff;
+      background: var(--hd-leg-encabezado-hover-4a6fa5);
+      border-color: var(--hd-leg-encabezado-hover-4a6fa5);
+      color: var(--hd-encabezado-texto);
     }
 
     /* ── Notes panel — resizable, slides up from bottom ─────────────────── */
@@ -542,9 +542,9 @@ app_styles <- function() {
       height: 300px;
       max-height: 80vh;
       min-height: 100px;
-      background: #fff;
-      border-top: 2px solid #4a6fa5;
-      box-shadow: 0 -4px 16px rgba(74,111,165,0.12);
+      background: var(--hd-superficie);
+      border-top: 2px solid var(--hd-leg-encabezado-hover-4a6fa5);
+      box-shadow: 0 -4px 16px color-mix(in srgb, var(--hd-leg-encabezado-hover-4a6fa5) 12%, transparent);
       z-index: 999;
       display: flex;
       flex-direction: column;
@@ -553,8 +553,8 @@ app_styles <- function() {
     .notes-resize-handle {
       flex-shrink: 0;
       height: 8px;
-      background: #f4f7fc;
-      border-bottom: 1px solid #dde4f0;
+      background: var(--hd-superficie-2);
+      border-bottom: 1px solid var(--hd-leg-borde-dde4f0);
       cursor: ns-resize;
       display: flex;
       align-items: center;
@@ -565,7 +565,7 @@ app_styles <- function() {
       content: '';
       width: 36px;
       height: 3px;
-      background: #c5d0e6;
+      background: var(--hd-leg-borde-fuerte-c5d0e6);
       border-radius: 2px;
     }
     .notes-panel-scroll {
@@ -576,8 +576,8 @@ app_styles <- function() {
     .notes-panel-header {
       position: sticky;
       top: 0;
-      background: #f4f7fc;
-      border-bottom: 1px solid #dde4f0;
+      background: var(--hd-superficie-2);
+      border-bottom: 1px solid var(--hd-leg-borde-dde4f0);
       padding: 6px 14px;
       display: flex;
       justify-content: space-between;
@@ -594,13 +594,13 @@ app_styles <- function() {
     }
 
     /* ── Note items ──────────────────────────────────────────────────────── */
-    .note-item               { background: #fffdf0; border-color: #ffe58f !important; }
-    .note-item.note-personal { background: #fff8f0; border-color: #f0a05a !important; }
-    .note-badge-public   { background: #92400e; color: #fff; font-size: 0.60rem; padding: 1px 5px; }
-    .note-badge-personal { background: #c05e0e; color: #fff; font-size: 0.60rem; padding: 1px 5px; }
+    .note-item               { background: var(--hd-leg-aviso-p7-fffdf0); border-color: var(--hd-leg-aviso-p51-ffe58f) !important; }
+    .note-item.note-personal { background: var(--hd-leg-aviso-fuerte-p6-fff8f0); border-color: var(--hd-leg-aviso-f0a05a) !important; }
+    .note-badge-public   { background: var(--hd-leg-aviso-texto-92400e); color: var(--hd-texto-inverso); font-size: 0.60rem; padding: 1px 5px; }
+    .note-badge-personal { background: var(--hd-leg-aviso-fuerte-c05e0e); color: var(--hd-texto-inverso); font-size: 0.60rem; padding: 1px 5px; }
     .note-title { font-size: 0.80rem; }
-    .note-body  { font-size: 0.75rem; color: #6b7280; }
-    .note-meta  { font-size: 0.63rem; color: #9ca3af; margin-top: 3px; }
+    .note-body  { font-size: 0.75rem; color: var(--hd-texto-2); }
+    .note-meta  { font-size: 0.63rem; color: var(--hd-texto-tenue); margin-top: 3px; }
 
     /* ── Refresh button animation states ────────────────────────────────── */
     @keyframes hop-spin {
@@ -867,9 +867,9 @@ app_styles <- function() {
       padding: 2px 5px; border-radius: 8px;
       white-space: nowrap; letter-spacing: 0.02em; line-height: 1.4;
     }
-    .cal-badge--urgent    { background: #FDECEA; color: #C62828; border: 1px solid #E57373; }
-    .cal-badge--important { background: #FFF8E1; color: #F57F17; border: 1px solid #F0C040; }
-    .cal-badge--both      { background: #FFF0E6; color: #BF360C; border: 1px solid #E8874A; }
+    .cal-badge--urgent    { background: var(--hd-etq-a-fila); color: var(--hd-leg-etq-a-texto-c62828); border: 1px solid var(--hd-leg-etq-a-texto-p68-e57373); }
+    .cal-badge--important { background: var(--hd-etq-c-fila); color: var(--hd-leg-etq-c-texto-f57f17); border: 1px solid var(--hd-leg-etq-c-texto-p78-f0c040); }
+    .cal-badge--both      { background: var(--hd-etq-b-fila); color: var(--hd-leg-etq-b-texto-bf360c); border: 1px solid var(--hd-leg-etq-b-texto-p79-e8874a); }
 
     /* Invoice rows */
     .cal-rows { flex: 1; display: flex; flex-direction: column; gap: 2px; overflow: hidden; min-height: 0; }
