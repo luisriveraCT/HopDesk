@@ -789,6 +789,20 @@ generate_audit_log_html_doc <- function(export_df, meta_info = list()) {
 # The picker answers every update with its new value: an answer within a
 # minute of what the server wrote is that echo, not a choice, and doesn't
 # set the range again (that would read S3 a second time).
+# The picker (airDatepickerInput, timepicker) sends the browser's wall clock
+# with no zone ("2026-11-20 10:00:00"), and shinyWidgets reads it in the
+# SERVER's zone. Prod runs in UTC, so in Mexico the range ended 6 hours before
+# now and Actividad hid everything recent -- the actions were in the log, the
+# viewer did not show them (T72). The wall clock is read again in the
+# browser's zone (input$client_tz, R/ui_components.R); with no zone known it
+# stays as it came.
+.audit_hora_navegador <- function(x, tz = NULL) {
+  if (inherits(x, "POSIXct")) x <- format(x, "%Y-%m-%d %H:%M:%S")
+  if (is.null(tz) || length(tz) != 1L || is.na(tz) || !nzchar(tz) || !tz %in% OlsonNames())
+    return(as.POSIXct(x))
+  as.POSIXct(x, tz = tz)
+}
+
 .audit_rango <- function(input, session, id, dias) {
   rango    <- reactiveVal(c(Sys.time() - dias * 86400, Sys.time()))
   mostrado <- NULL
@@ -797,7 +811,8 @@ generate_audit_log_html_doc <- function(export_df, meta_info = list()) {
   observeEvent(input[[id]], {
     rng <- input[[id]]
     if (is.null(rng) || length(rng) != 2L || anyNA(rng)) return()
-    nuevo <- as.POSIXct(c(rng[[1]], rng[[2]]))
+    tz <- tryCatch(session$rootScope()$input$client_tz, error = function(e) NULL)
+    nuevo <- .audit_hora_navegador(c(rng[[1]], rng[[2]]), tz)
     if (anyNA(nuevo) || mismo(nuevo, mostrado) || mismo(nuevo, rango())) return()
     rango(nuevo)
   }, ignoreInit = TRUE)
