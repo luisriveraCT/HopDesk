@@ -728,6 +728,29 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
 }
 
 # ── Revision summary renderer ──────────────────────────────────────────────────
+# T77: the Revisión's cost lines -- financiero: the cost of the financing
+# (interest + charges + taxes, never the capital) with its breakdown, and
+# per year; regular and tarjeta: per month and per year, and with an end
+# date the total up to it.
+.wiz_costeo_filas <- function(draft) {
+  liab <- tryCatch(pasivos_wizard_draft_to_liability(draft, mode = "create", user = "preview"), error = function(e) NULL)
+  c <- if (is.null(liab)) NULL else tryCatch(pasivos_costeo(liab), error = function(e) NULL)
+  if (is.null(c) || !nrow(c$filas)) return(list())
+  f <- c$filas
+  mm <- function(x) paste(monto_moneda(x, f$moneda), collapse = " \u00b7 ")
+  if (identical(c$categoria, "financiero")) {
+    desglose <- paste(vapply(seq_len(nrow(f)), function(i) tr("tablas.pasivos.costeo.desglose",
+      intereses = monto_moneda(f$intereses[i], f$moneda[i]), cargos = monto_moneda(f$cargos[i], f$moneda[i]),
+      impuestos = monto_moneda(f$impuestos[i], f$moneda[i])), character(1)), collapse = " \u00b7 ")
+    return(list(c(tr("tablas.pasivos.costeo.total_financiamiento"), mm(f$total)),
+                c(tr("tablas.pasivos.costeo.desglose_titulo"), desglose),
+                c(tr("tablas.pasivos.costeo.por_ano"), mm(f$anual))))
+  }
+  out <- list(c(tr("tablas.pasivos.costeo.por_mes"), mm(f$mes)), c(tr("tablas.pasivos.costeo.por_ano"), mm(f$anual)))
+  if (any(!is.na(f$total))) out <- c(out, list(c(tr("tablas.pasivos.costeo.hasta_fin"), mm(f$total))))
+  out
+}
+
 .wiz_revision_summary_html <- function(draft) {
   cat  <- draft$categoria  %||% ""
   flav <- draft$flavor     %||% ""
@@ -820,6 +843,10 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
   }
   # T71: the note every provision inherits
   if (nzchar(trimws(draft$notas %||% ""))) rows <- c(rows, list(c(tr("tablas.pasivos.nota.resumen"), trimws(draft$notas))))
+  # T77: what it costs (pasivos_costeo(), from the engine; by currency,
+  # never adding currencies). Opening a liability with ✎ lands on this step,
+  # so this is also its detail.
+  rows <- c(rows, .wiz_costeo_filas(draft))
   # T63: the liability's taxes, as the engine applies them to each payment.
   imps <- pasivos_impuestos_de(draft)
   if (length(imps)) rows <- c(rows, list(c(tr("tablas.pasivos.impuestos.resumen"),

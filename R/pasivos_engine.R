@@ -625,6 +625,70 @@ pasivos_provisiones_tras_fin <- function(existing, liability) {
              existing$estado %in% "provisional" & !is.na(f) & f > fin, , drop = FALSE]
 }
 
+# ── T77: what a liability costs ────────────────────────────────────────────────
+# Worked out from the engine each time (never stored), by currency, never
+# adding currencies (Luis, Coordinador 2026-11-21):
+#   financiero: the cost of the financing = interest + charges (initial fees
+#     and any fee in the payments) + taxes over the whole term -- never the
+#     capital -- with its breakdown, and the same over the next 12 months
+#     ("por año"). The schedule's currency is the quoted one (cotizado_en)
+#     when there is one, as the engine computes it; a fee keeps its own.
+#     A variable rate is taken at its current value.
+#   regular / tarjeta: what is paid over the next 12 months ("por año"), a
+#     twelfth of it ("por mes") and, with an end date (T70), everything up
+#     to it ("total"); taxes included (amount_pago carries them, T63).
+# Returns list(categoria, filas = data.frame(moneda, intereses, cargos,
+# impuestos, total, anual, mes)); NA where it does not apply (total without
+# an end date; intereses/cargos/impuestos for regular and tarjeta).
+pasivos_costeo <- function(liability, hoy = hoy_en()) {
+  hoy <- as.Date(hoy)
+  un_ano <- seq(hoy, by = "1 year", length.out = 2L)[2]
+  cat <- as.character(liability$categoria[1] %||% "")
+  vacio <- data.frame(moneda = character(), intereses = numeric(), cargos = numeric(), impuestos = numeric(),
+                      total = numeric(), anual = numeric(), mes = numeric(), stringsAsFactors = FALSE)
+  por_moneda <- function(m, f) { if (!length(m)) return(numeric()); vapply(split(f, m), sum, numeric(1)) }
+
+  if (identical(cat, "financiero")) {
+    s <- pasivos_generate_schedule(liability, today = hoy)
+    if (!nrow(s)) return(list(categoria = cat, filas = vacio))
+    base_m <- as.character(liability$cotizado_en[1] %||% NA_character_)
+    if (is.na(base_m) || !nzchar(base_m)) base_m <- as.character(liability$moneda_pago[1] %||% NA_character_)
+    m <- if ("moneda" %in% names(s)) as.character(s$moneda) else rep(NA_character_, nrow(s))
+    m[is.na(m) | !nzchar(m)] <- base_m
+    num <- function(x) { x <- suppressWarnings(as.numeric(x)); x[is.na(x)] <- 0; x }
+    int <- num(s$interes); car <- num(s$fees)
+    imp <- if ("impuestos" %in% names(s)) num(s$impuestos) else rep(0, nrow(s))
+    costo <- int + car + imp
+    prox <- as.Date(s$fecha) >= hoy & as.Date(s$fecha) < un_ano
+    monedas <- sort(unique(m))
+    filas <- data.frame(moneda = monedas,
+      intereses = unname(por_moneda(m, int)[monedas]), cargos = unname(por_moneda(m, car)[monedas]),
+      impuestos = unname(por_moneda(m, imp)[monedas]), total = unname(por_moneda(m, costo)[monedas]),
+      anual = vapply(monedas, function(x) sum(costo[prox & m == x]), numeric(1), USE.NAMES = FALSE),
+      stringsAsFactors = FALSE)
+    filas$mes <- filas$anual / 12
+    return(list(categoria = cat, filas = filas))
+  }
+
+  if (cat %in% c("regular", "tarjeta")) {
+    fin <- pasivos_fecha_fin(liability)
+    p <- pasivos_generate_provisions(liability, window_start = hoy,
+                                     window_end = if (!is.na(fin)) max(fin, un_ano) else un_ano)
+    if (!nrow(p)) return(list(categoria = cat, filas = vacio))
+    m <- as.character(p$moneda_pago); m[is.na(m)] <- as.character(liability$moneda_pago[1] %||% NA_character_)
+    f <- as.Date(p$fecha_efectiva)
+    monto <- suppressWarnings(as.numeric(p$amount_pago)); monto[is.na(monto)] <- 0
+    prox <- f >= hoy & f < un_ano
+    monedas <- sort(unique(m))
+    anual <- vapply(monedas, function(x) sum(monto[prox & m == x]), numeric(1), USE.NAMES = FALSE)
+    total <- if (is.na(fin)) rep(NA_real_, length(monedas))
+             else vapply(monedas, function(x) sum(monto[f <= fin & m == x]), numeric(1), USE.NAMES = FALSE)
+    return(list(categoria = cat, filas = data.frame(moneda = monedas, intereses = NA_real_, cargos = NA_real_,
+      impuestos = NA_real_, total = total, anual = anual, mes = anual / 12, stringsAsFactors = FALSE)))
+  }
+  list(categoria = cat, filas = vacio)
+}
+
 # ── §2.3 Provision generation ──────────────────────────────────────────────────
 
 pasivos_generate_provisions <- function(liability,

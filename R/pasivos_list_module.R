@@ -128,11 +128,25 @@ pasivos_list_module_server <- function(id, shared) {
       user <- usuario()
       edita  <- isTRUE(has_capability(user, "pasivos.edit_liability"))
       borra  <- isTRUE(has_capability(user, "pasivos.delete_liability"))
-      pasivos_lista_filas(liabs, provs, allowed, estados = c("active", "paused"),
+      filas <- pasivos_lista_filas(liabs, provs, allowed, estados = c("active", "paused"),
         acciones = function(estado) paste(c(
           if (edita) "editar",
           if (edita) (if (identical(estado, "active")) "inactivar" else "reactivar"),
           if (borra) "eliminar"), collapse = ","))
+      # T77: "Costo por año" (pasivos_costeo(), from the engine): financiero, its
+      # interest + charges + taxes of the next 12 months; regular and tarjeta,
+      # what is paid in them. In the liability's payment currency (another
+      # currency's part is in the Revisión's breakdown).
+      if (is.data.frame(filas) && nrow(filas))
+        filas$costo_anual <- vapply(seq_len(nrow(filas)), function(i) {
+          l <- liabs[!is.na(liabs$id) & liabs$id == filas$id[i], , drop = FALSE]
+          if (!nrow(l)) return(NA_real_)
+          c <- tryCatch(pasivos_costeo(l), error = function(e) NULL)
+          if (is.null(c) || !nrow(c$filas)) return(NA_real_)
+          v <- c$filas$anual[c$filas$moneda %in% filas$moneda_pago[i]]
+          if (length(v)) v[1] else NA_real_
+        }, numeric(1))
+      filas
     })
 
     t_lista <- hd_table_server(
@@ -150,7 +164,8 @@ pasivos_list_module_server <- function(id, shared) {
           active = list(texto = "tablas.pasivos.activo",  tono = "exito"),
           paused = list(texto = "tablas.pasivos.pausado", tono = "aviso"))),
         col_fecha("proxima_fecha", "tablas.pasivos.proxima"),
-        col_dinero("proxima_monto", "tablas.pasivos.proximo_importe", moneda = "moneda_pago", sumar = FALSE)
+        col_dinero("proxima_monto", "tablas.pasivos.proximo_importe", moneda = "moneda_pago", sumar = FALSE),
+        col_dinero("costo_anual", "tablas.pasivos.costeo.columna", moneda = "moneda_pago", sumar = FALSE)   # T77
       ),
       filtros = list(list(campo = "empresa"), list(campo = "categoria"),
                      list(campo = "subcategoria", titulo = "tablas.pasivos.subcategoria"),
