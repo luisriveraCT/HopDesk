@@ -130,9 +130,28 @@ cat("── Minor hardening (post-review) ────────────�
   # do_eliminar_confirm must also clear elim_ids_rv after reading it, mirroring
   # the sibling confirm handlers -- otherwise a double-fire (even past the
   # shinyjs guard) would still re-process the same ids.
-  blk <- block_after("observeEvent\\(input\\$do_eliminar_confirm,")
-  .chk(grepl("elim_ids_rv\\(NULL\\)", blk), TRUE,
-       "R/bancos_module.R: do_eliminar_confirm clears elim_ids_rv() after consuming it")
+  # The handler's WHOLE body, parsed (CM41): an 8-line window stopped seeing
+  # the clear once 5a0c70a added the stale-confirmation check above it. The
+  # clear must come after the save (a failed save keeps the ids for a retry).
+  cuerpo_handler <- function(archivo, input_id) {
+    hallado <- NULL
+    buscar <- function(e) {
+      if (!is.call(e) || !is.null(hallado)) return(invisible())
+      if (identical(e[[1]], as.name("observeEvent")) && length(e) >= 3L &&
+          identical(paste(deparse(e[[2]]), collapse = ""), paste0("input$", input_id))) {
+        hallado <<- paste(deparse(e[[3]], width.cutoff = 500L), collapse = "\n"); return(invisible())
+      }
+      # an empty argument (x[, 1]) cannot be taken out: skipped
+      for (k in seq_along(e)[-1]) tryCatch(buscar(e[[k]]), error = function(err) NULL)
+    }
+    for (e in parse(archivo, keep.source = FALSE)) buscar(e)
+    if (is.null(hallado)) "" else hallado
+  }
+  cuerpo <- cuerpo_handler("R/bancos_module.R", "do_eliminar_confirm")
+  pos_save   <- regexpr("save_bancos_movimientos(", cuerpo, fixed = TRUE)
+  pos_limpia <- max(gregexpr("elim_ids_rv(NULL)", cuerpo, fixed = TRUE)[[1]])
+  .chk(nzchar(cuerpo) && pos_save > 0L && pos_limpia > pos_save, TRUE,
+       "R/bancos_module.R: do_eliminar_confirm clears elim_ids_rv() after consuming it (after the save)")
 
   # Per-row buttons (the Historial's and the Papelera's ↶ since T12b: engine
   # row actions that call these functions with the row's id) -- protected
