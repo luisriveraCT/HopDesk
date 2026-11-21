@@ -140,7 +140,8 @@ pasivos_list_module_server <- function(id, shared) {
       if (is.data.frame(filas) && nrow(filas))
         filas$costo_anual <- vapply(seq_len(nrow(filas)), function(i) {
           l <- liabs[!is.na(liabs$id) & liabs$id == filas$id[i], , drop = FALSE]
-          if (!nrow(l)) return(NA_real_)
+          # A paused liability has no payments ahead: no cost per year.
+          if (!nrow(l) || !identical(as.character(l$estado[1]), "active")) return(NA_real_)
           c <- tryCatch(pasivos_costeo(l), error = function(e) NULL)
           if (is.null(c) || !nrow(c$filas)) return(NA_real_)
           v <- c$filas$anual[c$filas$moneda %in% filas$moneda_pago[i]]

@@ -42,6 +42,12 @@ for (tam in list(c(1293L, 632L), c(1772L, 866L))) {
       var j = ths.indexOf('Costo por año'); var r = [].filter.call(t.querySelectorAll('tbody tr'), function(tr){ return /Renta bodega/.test(tr.innerText); })[0];
       return r && j >= 0 ? r.children[j].innerText.trim() : ''; })()")
     ok(sprintf("%s: 'Renta bodega' (100 a month) costs 1,200.00 a year (%s)", et, fila), grepl("1,200.00", fila, fixed = TRUE))
+    celda <- function(nombre) ev(sprintf("(function(){ var t = document.querySelector('#list-lista-hdt'); var ths = [].map.call(t.querySelectorAll('thead th'), function(x){ return x.innerText.trim(); });
+      var j = ths.indexOf('Costo por año'); var r = [].filter.call(t.querySelectorAll('tbody tr'), function(tr){ return tr.innerText.indexOf('%s') >= 0; })[0];
+      return r && j >= 0 ? r.children[j].innerText.trim() : 'NO'; })()", nombre))
+    ok(sprintf("%s: a paused liability has no cost per year (empty)", et), identical(celda("Mantenimiento"), ""))
+    ok(sprintf("%s: one quoted in USD with no exchange rate: unknown, never 0.00 (%s)", et, celda("Licencias")),
+       !grepl("^0\\.00", celda("Licencias")))
     ok(sprintf("%s: the table fits: no horizontal scroll", et),
        isTRUE(ev("(function(){ var s = document.querySelector('#list-lista-hdt .hdt-scroll'); return s.scrollWidth <= s.clientWidth + 1; })()")) &&
          isTRUE(ev("document.documentElement.scrollWidth <= window.innerWidth + 1")))

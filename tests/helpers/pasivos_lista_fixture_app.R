@@ -15,6 +15,7 @@
 # (tests/test_hd_table_arranque_null.R).
 # =============================================================================
 library(shiny)
+suppressPackageStartupMessages(library(lubridate))   # the engine uses %m+% and months() unqualified, as the app (global.R) attaches it
 raiz <- normalizePath(".", winslash = "/")
 source(file.path(raiz, "tests/helpers/s3_memoria.R"))
 cargar <- function(archivo, nombres) {

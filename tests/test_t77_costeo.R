@@ -67,6 +67,15 @@ test_that("C: a regular payment: by month and by year; a total only with an end 
   expect_equal(c2$filas$anual, 40000)                # nothing after the end
 })
 
+test_that("C2: a payment with no amount yet (no exchange rate) makes the cost unknown, never 0", {
+  d <- list(categoria = "regular", nombre = "Licencias", empresa = "NG", parte = "X", moneda_pago = "MXN", cotizado_en = "USD",
+            recurrence_type = "monthly_day", recurrence_params = list(day = 15L), fecha_inicio = HOY, amount_default = 250)
+  l <- pasivos_wizard_draft_to_liability(d, mode = "create", user = "ana"); l$id <- "Q1"
+  c <- pasivos_costeo(l, hoy = HOY)
+  if (any(is.na(pasivos_generate_provisions(l, window_start = HOY)$amount_pago))) expect_true(all(is.na(c$filas$anual)))
+  else expect_true(all(c$filas$anual > 0))
+})
+
 test_that("D: a fee in another currency keeps its own row; currencies are never added", {
   l <- credito(cargos_iniciales = list(list(desc = "Avalúo", monto = 200, fecha = HOY + 1, moneda = "USD")))
   c <- pasivos_costeo(l, hoy = HOY)

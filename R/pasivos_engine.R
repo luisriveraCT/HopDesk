@@ -677,12 +677,15 @@ pasivos_costeo <- function(liability, hoy = hoy_en()) {
     if (!nrow(p)) return(list(categoria = cat, filas = vacio))
     m <- as.character(p$moneda_pago); m[is.na(m)] <- as.character(liability$moneda_pago[1] %||% NA_character_)
     f <- as.Date(p$fecha_efectiva)
-    monto <- suppressWarnings(as.numeric(p$amount_pago)); monto[is.na(monto)] <- 0
+    monto <- suppressWarnings(as.numeric(p$amount_pago))
     prox <- f >= hoy & f < un_ano
     monedas <- sort(unique(m))
-    anual <- vapply(monedas, function(x) sum(monto[prox & m == x]), numeric(1), USE.NAMES = FALSE)
+    # A payment with no amount yet (quoted in another currency without an
+    # exchange rate) makes the sum unknown: NA, never a false 0.
+    suma <- function(k) if (any(is.na(monto[k]))) NA_real_ else sum(monto[k])
+    anual <- vapply(monedas, function(x) suma(prox & m == x), numeric(1), USE.NAMES = FALSE)
     total <- if (is.na(fin)) rep(NA_real_, length(monedas))
-             else vapply(monedas, function(x) sum(monto[f <= fin & m == x]), numeric(1), USE.NAMES = FALSE)
+             else vapply(monedas, function(x) suma(f <= fin & m == x), numeric(1), USE.NAMES = FALSE)
     return(list(categoria = cat, filas = data.frame(moneda = monedas, intereses = NA_real_, cargos = NA_real_,
       impuestos = NA_real_, total = total, anual = anual, mes = anual / 12, stringsAsFactors = FALSE)))
   }
