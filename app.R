@@ -492,8 +492,31 @@ ui <- bslib::page_navbar(
   )
 }
 
+# T69c: the navbar filtered by tier from the first paint. secure_app() calls
+# a function `ui` with the request only once its token is valid, and the
+# token's user row -- the same one res_auth$tier reads in the server -- is in
+# shinymanager's own registry. So the tier is looked up server side, from the
+# token shinymanager has already resolved; nothing the browser sends is taken
+# as the tier. shinymanager:::.tok is internal: on any error there is no CSS,
+# the navbar as before (test_t69c_barra_inicial checks it still exists).
+# is_valid_server(), never is_valid(): is_valid() is single use (it counts
+# each call), secure_app() has just spent it, and a second call here would
+# both fail and spend the token again.
+.t69c_estilo_inicial <- function(request) {
+  css <- tryCatch({
+    token <- gsub("\"", "", shiny::parseQueryString(request$QUERY_STRING %||% "")$token %||% "")
+    tok <- shinymanager:::.tok
+    if (nzchar(token) && isTRUE(tok$is_valid_server(token)))
+      nivel_css_pestanas_iniciales(tok$get(token)$tier, HD_PESTANAS_FINANCIERAS)
+  }, error = function(e) NULL)
+  if (is.null(css)) NULL else tags$head(tags$style(id = "hd-t69c-pestanas", HTML(css)))
+}
+
 secured_ui <- shinymanager::secure_app(
-  ui,
+  local({
+    pagina <- ui   # the page above; `ui` is redefined below as the router
+    function(request) tagList(.t69c_estilo_inicial(request), pagina)
+  }),
   language = "es",
   tags_top = tagList(
     tags$style(HTML("
@@ -1922,9 +1945,10 @@ server <- function(input, output, session) {
   # A tier with a `pestanas` list sees only those client tabs. Runs after the
   # admin-deployment rule below, and only ever hides.
   # A tab tied to a permission (REQ) is also hidden without it.
-  .TABS_CLIENTE <- c("PAN", "CAL", "VEN", "PH", "BNC", "IC", "PSV", "REQ", "FC", "RPT")
+  .TABS_CLIENTE <- HD_PESTANAS_FINANCIERAS
   observe({
-    lista <- nivel_pestanas(tier_efectivo())
+    .tier_pest <- tier_efectivo()
+    lista <- nivel_pestanas(.tier_pest)
     ocultas <- if (is.null(lista)) character() else setdiff(.TABS_CLIENTE, lista)
     u_req <- tryCatch(shared$usuario(), error = function(e) NULL)
     if (!puede(u_req, "can_view_requisiciones")) ocultas <- union(ocultas, "REQ")
@@ -1941,6 +1965,12 @@ server <- function(input, output, session) {
         });
       ", tab, tolower(oculta), tolower(oculta)))
     }
+    # T69c: with the tier known, this observer's inline styles take over from
+    # the first paint's CSS (nivel_css_pestanas_iniciales). Sent after the
+    # loop, in the same flush, so no tab flashes in between. While the tier is
+    # unknown the first paint's CSS stays.
+    if (.nivel_conocido(.tier_pest))
+      shinyjs::runjs("document.documentElement.classList.add('hd-nivel-aplicado');")
     if (length(ocultas) && isTRUE(input$nav %in% ocultas) && length(lista))
       updateNavbarPage(session, "nav", selected = lista[1])
   }, priority = -1)

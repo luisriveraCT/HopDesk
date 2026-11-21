@@ -157,6 +157,28 @@ nivel_unico_vivo <- function(tier) isTRUE(.nivel(tier)$unico_vivo)
 # NULL = every client tab.
 nivel_pestanas <- function(tier) .nivel(tier)$pestanas
 
+# ── The navbar's first paint (T69c) ──────────────────────────────────────────
+# The server's "Pestañas por nivel" observer hides a tier's other tabs, but
+# its message only reaches the page once the session's first load ends
+# (minutes on a busy machine). This CSS goes in the page itself, so a tier
+# with a tab list never sees the other tabs, not even for a frame. It only
+# applies while <html> lacks the class `hd-nivel-aplicado`, which that
+# observer adds on its first run: from then on its inline styles rule, so a
+# later tier change ("ver como", a jump) still works. `tier` must come from
+# the server (the shinymanager token), never from the browser.
+# Returns NULL -- nothing to add, the navbar as before -- for a tier with no
+# list or an unknown one. Pure: no session, no S3.
+nivel_css_pestanas_iniciales <- function(tier, pestanas_cliente) {
+  if (!.nivel_conocido(tier)) return(NULL)
+  lista <- tryCatch(nivel_pestanas(tier), error = function(e) NULL)
+  if (is.null(lista)) return(NULL)
+  ocultas <- setdiff(pestanas_cliente, lista)
+  if (!length(ocultas)) return(NULL)
+  sel <- c(sprintf("html:not(.hd-nivel-aplicado) .navbar .nav-link[data-value='%s']", ocultas),
+           sprintf("html:not(.hd-nivel-aplicado) .navbar li:has(> .nav-link[data-value='%s'])", ocultas))
+  paste0(paste(sel, collapse = ",\n"), "{display:none!important}")
+}
+
 # ── Which tables travel to a tier's browser (T69) ────────────────────────────
 # hd_table_server() pushes a table's data to the browser whenever it changes,
 # visible or not: hiding a tab never kept its data from travelling. A tier
