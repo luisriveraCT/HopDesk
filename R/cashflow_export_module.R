@@ -676,9 +676,11 @@ build_cashflow_export_data <- function(
     tenue            = r("leg-texto-tenue-888888"),      # notes, confidentiality
     tenue_2          = r("leg-texto-tenue-999999"),      # cover: the dates
     marcador         = r("leg-texto-tenue-aaaaaa"),      # the logo's placeholder
-    etq_a            = r("leg-etq-a-texto-8b1a1a"),      # tag A (urgent)
-    etq_b            = r("leg-etq-b-texto-8b0000"),      # tag B (urgent and important)
-    etq_c            = r("acento-texto")                 # tag C (important)
+    # Tags A (red), B (orange), C (yellow): the screen's colours, Luis' rule;
+    # the documents had two near-identical dark reds for A and B (TEMA 4b).
+    etq_a            = r("etq-a-texto"),                 # tag A (urgent)
+    etq_b            = r("etq-b-texto"),                 # tag B (urgent and important)
+    etq_c            = r("etq-c-texto")                  # tag C (important)
   )
 }
 

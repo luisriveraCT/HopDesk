@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 8L
+HD_TEMAS_CSS_VERSION <- 9L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -247,9 +247,7 @@ HD_TEMAS <- list(
   `encabezado-borde-0f1e3d` = "#0F1E3D",
   `encabezado-hover-2563a8` = "#2563A8",
   `encabezado-hover-4a6fa5` = "#4A6FA5",
-  `etq-a-texto-8b1a1a` = "#8B1A1A",
   `etq-a-texto-c62828` = "#C62828",
-  `etq-b-texto-8b0000` = "#8B0000",
   `etq-b-texto-e65100` = "#E65100",
   `exito-047857` = "#047857",
   `exito-059669` = "#059669",
