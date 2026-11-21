@@ -99,7 +99,7 @@ guardar_como_provision <- function(fecha = Sys.Date() + 3, falla = FALSE) {
   inicio(falla); sh <- nuevo_shared()
   quieto(testServer(function(input, output, session) setup_pasivos_module(input, output, session, sh), {
     session$setInputs(me_fecha = fecha, me_empresa = "NTS", me_parte = "Proveedor", me_codigo = "", me_moneda = "MXN",
-                      me_importe = 50, me_documento = "", me_referencia = "", me_notas = "")
+                      me_importe = 50, me_documento = "", me_factura = "", me_notas = "")
     session$setInputs(me_save_as_provision = 1)
   }))
 }
