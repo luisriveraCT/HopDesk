@@ -135,6 +135,13 @@ captura <- function(nombre) tryCatch({
   s <- b$Page$captureScreenshot(format = "png")
   writeBin(jsonlite::base64_dec(s$data), file.path(SALIDA, paste0(nombre, ".png")))
 }, error = function(e) message("  (captura ", nombre, ": ", conditionMessage(e), ")"))
+# The same view under Marca, for a person to look at (not compared): the
+# branch only, then back to Clásico before anything else is measured.
+captura_marca <- function(etiqueta, nombre) if (identical(etiqueta, "rama")) {
+  ev("document.documentElement.setAttribute('data-hd-tema', 'marca'); true"); Sys.sleep(1)
+  captura(paste0(nombre, "_marca"))
+  ev("document.documentElement.setAttribute('data-hd-tema', 'clasico'); true"); Sys.sleep(1)
+}
 
 # One run: start the app from `raiz`, sign in as `quien`, read every tab.
 recorrer <- function(raiz, etiqueta, quien) {
@@ -208,6 +215,7 @@ recorrer <- function(raiz, etiqueta, quien) {
     Sys.sleep(1)
     res[[v]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
     captura(sprintf("%s_%s_%s", etiqueta, quien, v))
+    if (v %in% c("CAL", "PH")) captura_marca(etiqueta, sprintf("%s_%s_%s", etiqueta, quien, v))
   }
   # Signed in but no tab measured would make "the same" out of nothing.
   if (!ok(sprintf("[%s · %s] at least one tab measured (%s)", etiqueta, quien,
@@ -233,6 +241,41 @@ recorrer <- function(raiz, etiqueta, quien) {
       captura(sprintf("%s_%s_FLUJO", etiqueta, quien))
     }
   }
+  # TEMA stage 4 (ui_components.R): the Calendario's Pagos mode and the open
+  # notes panel are styles no tab shows by default. Both must open: a view
+  # that silently fails to open would compare nothing.
+  if ("CAL" %in% names(res)) {
+    menu(TRUE); Sys.sleep(0.5)
+    ev("document.querySelector(\".nav-link[data-value='CAL']\").click(); true")
+    Sys.sleep(1); menu(FALSE)
+    ev("Shiny.setInputValue('cal_ledger_toggle', 'AP', {priority: 'event'}); true")
+    en_pagos <- poll_until(function() isTRUE(tryCatch(ev("(function(){ var c = document.querySelector('.cal-theme-ap');
+      return !!c && c.offsetParent !== null && document.querySelectorAll('.cal-theme-ap .cal-tile').length > 0; })()"),
+      error = function(x) FALSE)), timeout_s = ESPERA_DATOS, interval_s = 1)
+    quieta <- en_pagos && poll_until(function() identical(tryCatch(as.integer(ev(RECALCULANDO_JS)), error = function(x) NA_integer_), 0L),
+                                     timeout_s = ESPERA_DATOS, interval_s = 1)
+    if (ok(sprintf("[%s · %s] Calendario · Pagos: the AP mode opens and settles", etiqueta, quien), quieta)) {
+      Sys.sleep(2)
+      ev("window.scrollTo(0, 0); document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
+      Sys.sleep(1)
+      res[["CAL_AP"]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
+      captura(sprintf("%s_%s_CAL_AP", etiqueta, quien))
+      captura_marca(etiqueta, sprintf("%s_%s_CAL_AP", etiqueta, quien))
+    }
+    abre <- isTRUE(tryCatch(ev("(function(){ var b = Array.from(document.querySelectorAll('.notes-bar-btn'))
+      .filter(function(x){ return x.offsetParent !== null; })[0]; if (!b) return false; b.click(); return true; })()"),
+      error = function(x) FALSE))
+    notas <- abre && poll_until(function() isTRUE(tryCatch(ev("(function(){ var w = document.querySelector('#notes_panel .notes-panel-wrapper');
+      return !!w && w.offsetParent !== null; })()"), error = function(x) FALSE)), timeout_s = 60, interval_s = 1)
+    if (ok(sprintf("[%s · %s] Notas: the notes panel opens", etiqueta, quien), notas)) {
+      Sys.sleep(2)
+      ev("document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
+      Sys.sleep(1)
+      res[["NOTAS"]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
+      captura(sprintf("%s_%s_NOTAS", etiqueta, quien))
+      captura_marca(etiqueta, sprintf("%s_%s_NOTAS", etiqueta, quien))
+    }
+  }
   res
 }
 
@@ -251,7 +294,8 @@ for (quien in quienes) {
     eb[["__html__"]] <- NULL; er[["__html__"]] <- NULL
     comunes <- intersect(names(eb), names(er))
     difs <- character()
-    nombre <- if (v == "ENTRAR") "sign-in page" else if (v == "FLUJO") "Flujo (vista previa)" else PESTANAS[[v]]
+    nombre <- switch(v, ENTRAR = "sign-in page", FLUJO = "Flujo (vista previa)",
+                     CAL_AP = "Calendario · Pagos", NOTAS = "Notas abiertas", PESTANAS[[v]])
     for (k in comunes) for (p in names(eb[[k]])) {
       r <- tema_comparar_valor(p, eb[[k]][[p]], er[[k]][[p]], de_max = DE_MAX, alfa_max = 0.01)
       if (r$estado == "falla")
