@@ -144,7 +144,7 @@ for (caso in list(list(NA, "Días a desplazar: escribe un número."),
 }
 for (n in c(10, -365, 365)) {
   g <- desplazar(n)
-  ok(sprintf("T66 offset_days n = %s: saved", n), "save_policy_catalog" %in% g)
+  ok(sprintf("T66 offset_days n = %s: saved", n), "modificar_policy_catalog" %in% g)   # CM34c: the catalog saves through modificar_policy_catalog
 }
 showNotification <- function(...) invisible("id")
 ok("T66 the editor's field is a hd_numero_input entero, no type=number",
