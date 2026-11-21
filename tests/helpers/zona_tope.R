@@ -38,7 +38,7 @@ list(
     "R/pasivos_rates.R" = 2L,
     "R/pasivos_table_module.R" = 4L,
     "R/pasivos_table_pivot.R" = 4L,
-    "R/pasivos_table_styles.R" = 1L,
+    "R/pasivos_table_styles.R" = 0L,
     "R/pasivos_wizard_module.R" = 6L,
     "R/pasivos_wizard_steps.R" = 0L,
     "R/policy_engine.R" = 1L,
