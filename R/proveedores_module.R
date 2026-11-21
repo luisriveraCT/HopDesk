@@ -295,7 +295,7 @@ proveedoresServer <- function(id, shared) {
         empresas     = ifelse(!is.na(empresas) & nzchar(empresas), empresas, ifelse(is.na(emp_vieja), "", emp_vieja)),
         activo_hasta = ifelse(indef, tr("tablas.proveedores.indefinido"), ah),
         # Only an expired date shows a badge, as before ("EXPIRADO ...").
-        vigencia     = ifelse(!is.na(fecha) & fecha < Sys.Date(), "expirado", ""),
+        vigencia     = ifelse(!is.na(fecha) & fecha < hoy_usuario(), "expirado", ""),
         status       = ifelse(col("status") %in% "completo", "completo", "incompleto"),
         # Empty = no row button (the engine fails closed).
         .acciones    = rep(if (.puede_ver_escritura()) "editar,inactivar,eliminar" else "", nrow(provs)),

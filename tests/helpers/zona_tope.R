@@ -44,7 +44,7 @@ list(
     "R/policy_engine.R" = 1L,
     "R/ppl_generator.R" = 1L,
     "R/proveedores_match.R" = 6L,
-    "R/proveedores_module.R" = 2L,
+    "R/proveedores_module.R" = 1L,
     "R/reporte_module.R" = 4L,
     "R/requisiciones_module.R" = 2L,
     "R/search_module.R" = 3L,
