@@ -215,7 +215,7 @@ recorrer <- function(raiz, etiqueta, quien) {
     Sys.sleep(1)
     res[[v]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
     captura(sprintf("%s_%s_%s", etiqueta, quien, v))
-    if (v %in% c("CAL", "PH")) captura_marca(etiqueta, sprintf("%s_%s_%s", etiqueta, quien, v))
+    if (v %in% c("CAL", "PH", "PSV", "VEN")) captura_marca(etiqueta, sprintf("%s_%s_%s", etiqueta, quien, v))
   }
   # Signed in but no tab measured would make "the same" out of nothing.
   if (!ok(sprintf("[%s · %s] at least one tab measured (%s)", etiqueta, quien,
@@ -239,6 +239,7 @@ recorrer <- function(raiz, etiqueta, quien) {
       Sys.sleep(1)
       res[["FLUJO"]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
       captura(sprintf("%s_%s_FLUJO", etiqueta, quien))
+      captura_marca(etiqueta, sprintf("%s_%s_FLUJO", etiqueta, quien))   # the table engine's summary band
     }
   }
   # TEMA stage 4 (ui_components.R): the Calendario's Pagos mode and the open
@@ -278,6 +279,34 @@ recorrer <- function(raiz, etiqueta, quien) {
       captura_marca(etiqueta, sprintf("%s_%s_NOTAS", etiqueta, quien))
     }
   }
+  # TEMA stage 4 (hdtable.css): the value bubble (.hdt-tip) hangs from body,
+  # outside every .hdt, and shows only after a pointer rests on a cell; no tab
+  # shows it by default. The first tab with a table cell that has text: a
+  # mousemove there, and the bubble must open (hdtable.js waits 350 ms).
+  candidatas <- intersect(c("VEN", "PSV", "PH", "BNC"), names(res))
+  burbuja <- FALSE
+  for (v in candidatas) {
+    menu(TRUE); Sys.sleep(0.5)
+    ev(sprintf("document.querySelector(\".nav-link[data-value='%s']\").click(); true", v))
+    Sys.sleep(1); menu(FALSE)
+    Sys.sleep(3)
+    ev("window.scrollTo(0, 0); document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
+    hay <- isTRUE(tryCatch(ev("(function(){ var td = Array.from(document.querySelectorAll('.hdt-tabla tbody td'))
+      .filter(function(x){ return x.getClientRects().length > 0 && x.textContent.trim() !== '' && !x.querySelector('button'); })[0];
+      if (!td) return false; var r = td.getBoundingClientRect();
+      td.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.left + 4, clientY: r.top + 4 }));
+      return true; })()"), error = function(x) FALSE))
+    if (!hay) next
+    burbuja <- poll_until(function() isTRUE(tryCatch(ev("(function(){ var t = document.querySelector('.hdt-tip');
+      return !!t && !t.hidden && t.getClientRects().length > 0; })()"), error = function(x) FALSE)), timeout_s = 10, interval_s = 0.5)
+    if (burbuja) break
+  }
+  if (ok(sprintf("[%s · %s] Burbuja de valor: it opens over a table cell (%s)", etiqueta, quien,
+                 paste(candidatas, collapse = ",")), burbuja)) {
+    res[["BURBUJA"]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
+    captura(sprintf("%s_%s_BURBUJA", etiqueta, quien))
+    captura_marca(etiqueta, sprintf("%s_%s_BURBUJA", etiqueta, quien))
+  }
   res
 }
 
@@ -297,7 +326,8 @@ for (quien in quienes) {
     comunes <- intersect(names(eb), names(er))
     difs <- character()
     nombre <- switch(v, ENTRAR = "sign-in page", FLUJO = "Flujo (vista previa)",
-                     CAL_AP = "Calendario · Pagos", NOTAS = "Notas abiertas", PESTANAS[[v]])
+                     CAL_AP = "Calendario · Pagos", NOTAS = "Notas abiertas", BURBUJA = "Burbuja de valor",
+                     PESTANAS[[v]])
     for (k in comunes) for (p in names(eb[[k]])) {
       r <- tema_comparar_valor(p, eb[[k]][[p]], er[[k]][[p]], de_max = DE_MAX, alfa_max = 0.01)
       if (r$estado == "falla")
