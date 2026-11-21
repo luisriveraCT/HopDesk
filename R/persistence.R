@@ -608,41 +608,42 @@ unregister_username <- function(username) {
   result$value
 }
 
-# T69b: a session whose tier may not READ a treasury table reads it as its
-# empty start value (app.R), so it may not WRITE it either: a save of its
-# whole copy would wipe the table. Asked of the session running this write
-# (session$userData$hd_escritura_permitida, set in app.R from the effective
-# tier; nivel_escritura_permitida() in tier_registry.R). No session (jobs,
-# scripts) or no gate (fixtures): as before.
-.t69b_revisar_escritura <- function(key) {
-  s <- tryCatch(shiny::getDefaultReactiveDomain(), error = function(e) NULL)
-  f <- if (is.null(s)) NULL else tryCatch(s$userData$hd_escritura_permitida, error = function(e) NULL)
-  if (!is.function(f)) return(invisible(TRUE))
-  permitida <- tryCatch(shiny::isolate(f(key)), error = function(e) FALSE)
-  if (isTRUE(permitida)) return(invisible(TRUE))
-  # Refused: never a silent return. A classed error, so every caller that
-  # already shows a failed save shows this one (and no "Guardado" stays on
-  # screen), and a trail with the table and the tier: the server log always,
-  # app_audit when log_action is there (T72's trail).
-  nivel <- tryCatch(as.character(shiny::isolate(s$userData$hd_nivel_efectivo()))[1], error = function(e) NA_character_)
-  usr   <- tryCatch(shiny::isolate(s$userData$usuario())$user %||% NA_character_, error = function(e) NA_character_)
-  message(sprintf("[T69b] write refused: table=%s tier=%s", key, nivel))
-  if (exists("log_action", mode = "function"))
-    tryCatch(log_action(user = usr %||% "unknown", module = "t69b", action = "escritura_no_permitida",
-                        description = sprintf("table=%s tier=%s", key, nivel), target_id = key,
-                        client_id = tryCatch(shiny::isolate(s$userData$hd_cliente()), error = function(e) NULL),
-                        viewer_home_client_id = tryCatch(shiny::isolate(s$userData$hd_cliente_casa()), error = function(e) NULL)),
-             error = function(e) message("[T69b] refusal not logged: ", conditionMessage(e)))
-  stop(structure(class = c("escritura_no_permitida", "error", "condition"),
-                 list(message = sprintf("[T69b] this session's tier (%s) may not write %s: nothing was saved", nivel, key),
-                      call = NULL, tabla = key, nivel = nivel)))
-}
-
 .s3_write <- function(obj, key, client_id = NULL, permitir_reduccion = FALSE) {
   message(sprintf("[S3_WRITE] ── start key='%s'", key))
 
   if (!is.character(key) || !nzchar(key))
     stop("[S3_WRITE] key is NULL or empty — check that S3_KEYS contains this entry")
+  # T69b: a session whose tier may not READ a treasury table reads it as its
+  # empty start value (app.R), so it may not WRITE it either: a save of its
+  # whole copy would wipe the table. Asked of the session running this write
+  # (session$userData$hd_escritura_permitida, set in app.R from the effective
+  # tier; nivel_escritura_permitida() in tier_registry.R). No session (jobs,
+  # scripts) or no gate (fixtures): as before.
+  # Defined here, inside .s3_write(), on purpose: a test or fixture that takes
+  # .s3_write() alone (cargar() by pieces) takes the gate with it (TANDA51).
+  .t69b_revisar_escritura <- function(key) {
+    s <- tryCatch(shiny::getDefaultReactiveDomain(), error = function(e) NULL)
+    f <- if (is.null(s)) NULL else tryCatch(s$userData$hd_escritura_permitida, error = function(e) NULL)
+    if (!is.function(f)) return(invisible(TRUE))
+    permitida <- tryCatch(shiny::isolate(f(key)), error = function(e) FALSE)
+    if (isTRUE(permitida)) return(invisible(TRUE))
+    # Refused: never a silent return. A classed error, so every caller that
+    # already shows a failed save shows this one (and no "Guardado" stays on
+    # screen), and a trail with the table and the tier: the server log always,
+    # app_audit when log_action is there (T72's trail).
+    nivel <- tryCatch(as.character(shiny::isolate(s$userData$hd_nivel_efectivo()))[1], error = function(e) NA_character_)
+    usr   <- tryCatch(shiny::isolate(s$userData$usuario())$user %||% NA_character_, error = function(e) NA_character_)
+    message(sprintf("[T69b] write refused: table=%s tier=%s", key, nivel))
+    if (exists("log_action", mode = "function"))
+      tryCatch(log_action(user = usr %||% "unknown", module = "t69b", action = "escritura_no_permitida",
+                          description = sprintf("table=%s tier=%s", key, nivel), target_id = key,
+                          client_id = tryCatch(shiny::isolate(s$userData$hd_cliente()), error = function(e) NULL),
+                          viewer_home_client_id = tryCatch(shiny::isolate(s$userData$hd_cliente_casa()), error = function(e) NULL)),
+               error = function(e) message("[T69b] refusal not logged: ", conditionMessage(e)))
+    stop(structure(class = c("escritura_no_permitida", "error", "condition"),
+                   list(message = sprintf("[T69b] this session's tier (%s) may not write %s: nothing was saved", nivel, key),
+                        call = NULL, tabla = key, nivel = nivel)))
+  }
   .t69b_revisar_escritura(key)
   full_key <- tryCatch(.s3_key(key, client_id = client_id),  error = function(e) stop("s3_key failed: ", e$message))
   message(sprintf("[S3_WRITE] full_key='%s'", full_key))

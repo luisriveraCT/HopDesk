@@ -31,30 +31,11 @@ ok <- function(label, expr) {
 }
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
-# ── In-memory S3, swapped in and always restored ──────────────────────────────
-store <- new.env()
-fake_read <- function(object, bucket, ...) {
-  if (!exists(object, envir = store, inherits = FALSE)) stop("NoSuchKey")
-  get(object, envir = store)
-}
-fake_save <- function(x, object, bucket, ...) { assign(object, x, envir = store); invisible(TRUE) }
-fake_exists <- function(object, bucket, ...) {
-  if (exists(object, envir = store, inherits = FALSE)) return(TRUE)
-  message("Client error: (404) Not Found"); FALSE
-}
-ns <- asNamespace("aws.s3")
-orig <- list(s3readRDS = get("s3readRDS", ns), s3saveRDS = get("s3saveRDS", ns), object_exists = get("object_exists", ns))
-restore <- function() for (nm in names(orig)) utils::assignInNamespace(nm, orig[[nm]], "aws.s3")
-on.exit(restore(), add = TRUE)
-utils::assignInNamespace("s3readRDS", fake_read, "aws.s3")
-utils::assignInNamespace("s3saveRDS", fake_save, "aws.s3")
-utils::assignInNamespace("object_exists", fake_exists, "aws.s3")
-
-Sys.setenv(S3_BUCKET = "fake-bucket", CLIENT_ID = "acme")
-for (e in parse("R/global.R"))
-  if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(as.character(e[[2]]), "S3_KEYS"))
-    eval(e, globalenv())
-for (f in c("R/tier_registry.R", "R/persistence.R", "R/pasivos_schemas.R", "R/pasivos_persistence.R", "R/avisos.R"))
+# ── In-memory S3: the project's helper (swaps aws.s3 and restores it) ─────────
+# It sources R/persistence.R with S3_KEYS, on bucket "fake-bucket", client acme.
+source("tests/helpers/s3_memoria.R")
+store <- .mem
+for (f in c("R/tier_registry.R", "R/pasivos_schemas.R", "R/pasivos_persistence.R", "R/avisos.R"))
   suppressMessages(source(f))
 q <- function(expr) suppressMessages(expr)
 
@@ -184,6 +165,6 @@ ok("no session (a job, a script): writes as before",
    isTRUE(tryCatch({ q(.s3_write(vacio[0, ], S3_KEYS$moves, client_id = "acme", permitir_reduccion = TRUE)); TRUE },
                    error = function(e) conditionMessage(e))))
 
-restore()
+s3_memoria_restaurar()
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
