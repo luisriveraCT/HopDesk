@@ -49,9 +49,16 @@
 
 # Relative paths, so the app also works under a sub-path.
 hd_table_deps <- function() {
+  # The engine's palette (--hdt-*) points to the theme tokens (TEMA stage 4):
+  # carry their two sheets, so a table renders the same on any page, with or
+  # without tema_head(). get0: a fixture may load this file without
+  # R/tema_registro.R.
+  v_tema <- get0("HD_TEMAS_CSS_VERSION", ifnotfound = 0L)
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=32"),
+    htmltools::tags$link(rel = "stylesheet", href = paste0("hd_temas.css?v=", v_tema)),
+    htmltools::tags$link(rel = "stylesheet", href = paste0("hd_clasico_legado.css?v=", v_tema)),
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=33"),
     htmltools::tags$script(src = "hdtable.js?v=47")
   ))
 }
