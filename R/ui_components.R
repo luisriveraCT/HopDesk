@@ -200,19 +200,19 @@ app_styles <- function() {
       order: 1; flex: none; position: relative;
       display: inline-flex; align-items: center; justify-content: center;
       width: 40px; height: 36px; padding: 0;   /* a click area of 36 px or more (T51b) */
-      background: transparent; color: #fff;
-      border: 1px solid rgba(255,255,255,.55); border-radius: 8px;
+      background: transparent; color: var(--hd-barra-texto);
+      border: 1px solid color-mix(in srgb, var(--hd-barra-texto) 55%, transparent); border-radius: 8px;
       cursor: pointer;
     }
-    .hd-menu-btn:hover { background: rgba(255,255,255,.12); }
-    .hd-menu-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+    .hd-menu-btn:hover { background: color-mix(in srgb, var(--hd-barra-texto) 12%, transparent); }
+    .hd-menu-btn:focus-visible { outline: 2px solid var(--hd-barra-texto); outline-offset: 2px; }
     .hd-menu-icono::before { content: '\\2630'; font-size: 1.15rem; line-height: 1; }
     nav.navbar.hd-menu-abierto .hd-menu-icono::before { content: '\\2715'; font-size: 1rem; }
     #hd-menu-globo { position: absolute; top: -3px; right: -10px; font-size: .6rem; }   /* inside the 43 px bar */
     #hd-barra-activa {
       order: 2; min-width: 0;
       display: inline-flex; align-items: center; gap: .35em;
-      color: #fff; font-weight: 600; font-size: .95rem;
+      color: var(--hd-barra-texto); font-weight: 600; font-size: .95rem;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
     #hd-barra-activa .svg-inline--fa { flex-shrink: 0; height: 1em; width: 1.25em; }

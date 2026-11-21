@@ -82,7 +82,7 @@ archivos <- c("app.R",
   "R/tier_registry.R" = 8L,
   "R/tiers_module.R" = 36L,
   "R/treasury_map_module.R" = 4L,    # stage 4: only the 4 transparent #00000000 of vis.js (exempt)
-  "R/ui_components.R" = 235L,         # TEMA-P1: dead .pasivos-convert-btn rule gone (-2)
+  "R/ui_components.R" = 230L,         # TEMA-P1 (-2), then TEMA 2b: the top bar to barra-texto (-5)
   "www/hdtable.css" = 23L,
   "www/overlay_init.js" = 15L,
   "www/panorama.css" = 4L,
