@@ -238,6 +238,10 @@ pasivos_step_ui_detalles <- function(draft, empresa_choices = character(),
                            selected = draft$cotizado_en %||% "")
       )
     ),
+    # T71: the liability's note; every provision (and its payment) inherits it.
+    shiny::textAreaInput("pwiz_notas", tr("tablas.pasivos.nota.etiqueta"), value = draft$notas %||% "",
+                         rows = 2, width = "100%", placeholder = tr("tablas.pasivos.nota.marcador")),
+    shiny::tags$small(class = "text-muted d-block mb-2", tr("tablas.pasivos.nota.ayuda")),
 
     # Tarjeta-only fields
     if (identical(cat, "tarjeta")) {
@@ -266,6 +270,17 @@ pasivos_step_ui_detalles <- function(draft, empresa_choices = character(),
   )
 }
 
+# ── T70: the optional end date (regular and tarjeta) ─────────────────────────
+# Blank = no end; the line under it says what that means (pwiz_fecha_fin_ayuda,
+# drawn by the server as the date changes).
+pasivos_fin_ui <- function(draft) {
+  fin <- tryCatch(as.Date(draft$fecha_fin %||% NA), error = function(e) as.Date(NA))
+  shiny::div(class = "mt-3",
+    suppressWarnings(shiny::dateInput("pwiz_fecha_fin", tr("tablas.pasivos.fin.etiqueta"),
+                                      value = if (is.na(fin)) NA else fin, weekstart = 1, language = "es")),
+    shiny::uiOutput("pwiz_fecha_fin_ayuda"))
+}
+
 # ── Step 3a: Recurrencia (regular) ────────────────────────────────────────────
 pasivos_step_ui_recurrencia_regular <- function(draft, errors = list()) {
   rt <- draft$recurrence_type %||% "monthly_day"
@@ -291,7 +306,8 @@ pasivos_step_ui_recurrencia_regular <- function(draft, errors = list()) {
         ),
         shiny::dateInput("pwiz_fecha_inicio", "Fecha de inicio",
                          value     = draft$fecha_inicio %||% Sys.Date(),
-                         weekstart = 1, language = "es")
+                         weekstart = 1, language = "es"),
+        pasivos_fin_ui(draft)   # T70
       ),
       shiny::column(6,
         # Dynamic sub-fields depend on periodicidad — rendered by server
@@ -364,7 +380,8 @@ pasivos_step_ui_recurrencia_tarjeta <- function(draft, errors = list()) {
                           "Monto base mensual",
                           formato = "monto", value = draft$amount_default %||% NA_real_,
                           min   = 0)
-    )
+    ),
+    pasivos_fin_ui(draft)   # T70
   )
 }
 

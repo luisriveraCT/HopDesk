@@ -53,7 +53,9 @@ pasivos_liability_to_draft <- function(row) {
     cargos_iniciales       = r$cargos_iniciales[[1]],
     impuestos              = if ("impuestos" %in% names(r)) r$impuestos[[1]] else NULL,   # T63
     valor_residual         = r$valor_residual[[1]],
-    notas                  = r$notas[1] %||% ""
+    notas                  = r$notas[1] %||% "",
+    # T70: a regular or tarjeta liability's end date (NA = no end)
+    fecha_fin              = if ((r$categoria[1] %||% "") %in% c("regular", "tarjeta")) pasivos_fecha_fin(r) else as.Date(NA)
   )
 }
 
@@ -117,6 +119,9 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
                              (draft$periodo_gracia %||% 0L))) + 32L,
       error = function(e) as.Date(NA)
     )
+  } else if (cat %in% c("regular", "tarjeta")) {
+    # T70: the optional end date the user set (NA = no end)
+    tryCatch(as.Date(draft$fecha_fin %||% NA), error = function(e) as.Date(NA))
   } else as.Date(NA)
 
   # schedule_imported from CSV raw if custom amortization
@@ -228,6 +233,41 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
 }
 
 # ── Save handler ───────────────────────────────────────────────────────────────
+# T70: after the save, each provision the end date removed goes to the
+# Papelera (as a provision deleted by hand) and is logged as provision.deleted.
+# The provisions themselves are already saved as "deleted": a failure here is
+# reported in the log and never undoes the save.
+.pasivos_fin_a_papelera <- function(filas, liab_row, user, shared) {
+  cid <- shared$effective_client_id()
+  tryCatch({
+    pap <- tryCatch(load_papelera(client_id = cid), error = function(e) .schema_papelera())
+    det <- data.frame(
+      id        = filas$id,
+      source    = "provision",
+      Empresa   = filas$empresa %||% "",
+      Moneda    = filas$moneda_pago %||% NA_character_,
+      Documento = filas$documento %||% "",
+      Parte     = filas$parte %||% "",
+      Importe   = ifelse(!is.na(filas$amount_pago_override), filas$amount_pago_override, filas$amount_pago),
+      FechaEff  = filas$fecha_efectiva,
+      stringsAsFactors = FALSE)
+    pap <- add_to_papelera(pap, det, ledger = "AP", deleted_by = user)
+    save_papelera(pap, client_id = cid)
+    if (!is.null(shared$papelera_rv)) shared$papelera_rv(pap)
+  }, error = function(e) message("[wizard] T70 papelera write failed: ", conditionMessage(e)))
+  for (i in seq_len(nrow(filas)))
+    tryCatch(pasivos_log_audit(
+      action_type = "provision.deleted",
+      user        = user,
+      empresa     = liab_row$empresa,
+      target_kind = "provision", target_id = filas$id[i],
+      before      = as.list(filas[i, , drop = FALSE]),
+      notes       = sprintf("T70: after the liability's end date %s; archived to papelera", format(pasivos_fecha_fin(liab_row))),
+      client_id   = cid
+    ), error = function(e) NULL)
+  invisible(nrow(filas))
+}
+
 .pasivos_wizard_save <- function(wiz, shared, session, user) {
   empresa_choices <- tryCatch(sort(names(shared$company_map())),
                               error = function(e) character(0))
@@ -340,7 +380,10 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
       .schema_pasivos_provision()
     }
   )
-  if (!nrow(generated)) {
+  # T70: an end date can leave nothing new to generate; that is not an error.
+  sin_filas_por_fin <- !nrow(generated) && !length(gen_err) && !is.na(pasivos_fecha_fin(liab_row)) &&
+    liab_row$categoria %in% c("regular", "tarjeta")
+  if (!nrow(generated) && !sin_filas_por_fin) {
     err_detail <- if (length(gen_err)) gen_err else tr("tablas.pasivos.sin_filas_generadas")
     shiny::showNotification(
       tr("tablas.pasivos.error_generar", detalle = err_detail),
@@ -357,8 +400,10 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
     , drop = FALSE
   ]
   reco_mode <- if (wiz$mode == "create") "extend" else "regenerate"
+  # T71: a provision with the liability's previous note takes the new one
+  nota_anterior <- if (!is.null(before_row) && nrow(before_row)) pasivos_nota_de(before_row) else NA_character_
   result <- tryCatch(
-    pasivos_reconcile_provisions(existing_for_this, generated, mode = reco_mode),
+    pasivos_reconcile_provisions(existing_for_this, generated, mode = reco_mode, nota_anterior = nota_anterior),
     error = function(e) list(keep = .schema_pasivos_provision(),
                               update = .schema_pasivos_provision(),
                               insert = generated,
@@ -376,6 +421,16 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
   ]
   new_provs <- dplyr::bind_rows(others, result$keep, result$conflicts,
                                 result$update, result$insert)
+  # T70: the pending provisions after the end date go to the Papelera, in the
+  # same write (estado "deleted", as deleting one by hand does); the Revisión
+  # said how many before saving.
+  tras_fin <- pasivos_provisiones_tras_fin(new_provs, liab_row)
+  if (nrow(tras_fin)) {
+    k <- new_provs$id %in% tras_fin$id
+    new_provs$estado[k]         <- "deleted"
+    new_provs$last_edited_by[k] <- user
+    new_provs$last_edited_at[k] <- Sys.time()
+  }
   # Regla 17 (T22): this error was only a warning, and the session, the bump
   # and "Pasivo guardado. N provisiones generadas." went on as saved. The
   # liability is saved; its provisions are not, and it says so (editing it
@@ -408,6 +463,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
   tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
   shared$pasivos_provisions_db(new_provs)
   bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
+  if (nrow(tras_fin)) .pasivos_fin_a_papelera(tras_fin, liab_row, user, shared)   # T70
 
   # Audit -- previously captured only 5 identity columns (id/categoria/
   # nombre/empresa/estado), never the actual payment terms (recurrence,
@@ -457,6 +513,50 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
   list(ok = TRUE)
 }
 
+# T70/T71: the Revisión's notice when editing, before saving: how many pending
+# provisions an earlier end date sends to the Papelera, how many converted
+# payments after it stay, and how many provisions take a new note (those with
+# a note of their own keep it). NULL when there is nothing to say.
+pasivos_aviso_edicion <- function(draft, liability_id, provs, liabs = NULL) {
+  if (is.null(provs) || !nrow(provs) || is.null(liability_id)) return(list())
+  mias <- provs[!is.na(provs$liability_id) & provs$liability_id == liability_id, , drop = FALSE]
+  out <- list()
+  liab <- list(id = liability_id, categoria = draft$categoria %||% "",
+               fecha_vence = tryCatch(as.Date(draft$fecha_fin %||% NA), error = function(e) as.Date(NA)))
+  liab <- as.data.frame(liab, stringsAsFactors = FALSE)
+  n_fin <- nrow(pasivos_provisiones_tras_fin(mias, liab))
+  if (n_fin) out$papelera <- n_fin
+  fin <- pasivos_fecha_fin(liab)
+  if (!is.na(fin) && liab$categoria %in% c("regular", "tarjeta")) {
+    f <- as.Date(mias$fecha_efectiva)
+    n_conv <- sum(mias$estado %in% c("converted", "item_confirmed") & !is.na(f) & f > fin)
+    if (n_conv) out$ya_convertidas <- n_conv
+  }
+  antes <- if (!is.null(liabs) && nrow(liabs)) liabs[!is.na(liabs$id) & liabs$id == liability_id, , drop = FALSE] else NULL
+  nota_ant <- if (!is.null(antes) && nrow(antes)) pasivos_nota_de(antes) else NA_character_
+  nota_nueva <- pasivos_nota_de(data.frame(notas = draft$notas %||% NA_character_, stringsAsFactors = FALSE))
+  if (!identical(nota_ant, nota_nueva)) {
+    pend <- mias[mias$estado %in% "provisional", , drop = FALSE]
+    propias <- vapply(pend$notas %||% rep(NA_character_, nrow(pend)), .nota_propia, logical(1), nota_anterior = nota_ant)
+    if (nrow(pend)) out$nota <- c(n = sum(!propias), m = sum(propias))
+  }
+  out
+}
+pasivos_aviso_edicion_html <- function(draft, liability_id, provs, liabs = NULL) {
+  a <- pasivos_aviso_edicion(draft, liability_id, provs, liabs)
+  if (!length(a)) return(NULL)
+  shiny::div(class = "alert alert-warning py-2 px-3 mt-2 mb-0 small",
+    if (!is.null(a$papelera)) shiny::div(shiny::tags$strong(tr("tablas.pasivos.fin.papelera", n = a$papelera))),
+    if (!is.null(a$ya_convertidas)) shiny::div(tr("tablas.pasivos.fin.ya_convertidas", n = a$ya_convertidas)),
+    if (!is.null(a$nota)) shiny::div(tr("tablas.pasivos.nota.cambio", n = a$nota[["n"]], m = a$nota[["m"]])))
+}
+
+# T70: a dateInput's value as a Date, or NA when blank or not a date.
+.wiz_leer_fecha <- function(v) {
+  if (is.null(v) || !length(v)) return(as.Date(NA))
+  tryCatch(as.Date(v[1]), error = function(e) as.Date(NA))
+}
+
 # ── Read step inputs into draft ────────────────────────────────────────────────
 .wiz_collect_step <- function(input, step_id, wiz) {
   d <- wiz$draft
@@ -477,6 +577,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
       d$subcategoria        <- input$pwiz_subcategoria        %||% ""
       d$moneda_pago         <- input$pwiz_moneda_pago         %||% base_moneda()
       d$cotizado_en         <- input$pwiz_cotizado_en         %||% ""
+      d$notas               <- trimws(input$pwiz_notas        %||% "")   # T71
       if (identical(d$categoria, "tarjeta")) {
         d$tarjeta_closing_day  <- as.integer(input$pwiz_tarjeta_closing_day %||% NA_integer_)
         d$tarjeta_due_day      <- as.integer(input$pwiz_tarjeta_due_day     %||% NA_integer_)
@@ -485,6 +586,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
     },
 
     recurrencia = {
+      d$fecha_fin <- .wiz_leer_fecha(input$pwiz_fecha_fin)   # T70: NA = no end
       if (identical(d$categoria, "tarjeta")) {
         d$tarjeta_provision_source <- input$pwiz_tarjeta_provision_source %||% "registered_expenses"
         if (identical(d$tarjeta_provision_source, "manual")) {
@@ -675,6 +777,14 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
       c("Monto", monto_moneda(draft$amount_default %||% NA_real_, draft$moneda_pago %||% NA_character_))
     ))
   }
+  # T70: the end date (regular and tarjeta)
+  if (cat %in% c("regular", "tarjeta")) {
+    fin <- tryCatch(as.Date(draft$fecha_fin %||% NA), error = function(e) as.Date(NA))
+    rows <- c(rows, list(c(tr("tablas.pasivos.fin.resumen"),
+                           if (is.na(fin)) tr("tablas.pasivos.fin.sin_fin_corto") else format(fin, "%d/%m/%Y"))))
+  }
+  # T71: the note every provision inherits
+  if (nzchar(trimws(draft$notas %||% ""))) rows <- c(rows, list(c(tr("tablas.pasivos.nota.resumen"), trimws(draft$notas))))
   # T63: the liability's taxes, as the engine applies them to each payment.
   imps <- pasivos_impuestos_de(draft)
   if (length(imps)) rows <- c(rows, list(c(tr("tablas.pasivos.impuestos.resumen"),
@@ -1207,6 +1317,14 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
   })
 
   # ── Dynamic periodicidad sub-fields ────────────────────────────────────────
+  # T70: what the end date means, under it, as it changes
+  output$pwiz_fecha_fin_ayuda <- shiny::renderUI({
+    fin <- .wiz_leer_fecha(input$pwiz_fecha_fin)
+    shiny::tags$small(class = "text-muted d-block",
+      if (is.na(fin)) tr("tablas.pasivos.fin.sin_fin")
+      else tr("tablas.pasivos.fin.con_fin", fecha = format(fin, "%d/%m/%Y")))
+  })
+
   output$pwiz_periodicidad_subfields <- shiny::renderUI({
     rt <- input$pwiz_periodicidad %||% (wiz$draft$recurrence_type %||% "monthly_day")
     pasivos_periodicidad_subfields_ui(rt, wiz$draft)
@@ -1452,9 +1570,18 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
   output$pwiz_revision_notice <- shiny::renderUI({
     cat <- wiz$draft$categoria %||% ""
     window <- switch(cat, financiero = "24 meses", "24 meses")
-    shiny::tags$span(
-      sprintf("Al guardar, se generarán provisiones para los próximos %s. ", window),
-      "Las provisiones aparecerán en el calendario y en la tabla de Pasivos inmediatamente."
+    shiny::tagList(
+      shiny::tags$span(
+        sprintf("Al guardar, se generarán provisiones para los próximos %s. ", window),
+        "Las provisiones aparecerán en el calendario y en la tabla de Pasivos inmediatamente."
+      ),
+      # T70/T71, before saving: what an earlier end date and a new note do to
+      # the provisions this liability already has.
+      if (identical(wiz$mode, "edit")) {
+        provs <- tryCatch(shared$pasivos_provisions_db(), error = function(e) NULL)
+        liabs <- tryCatch(shared$pasivos_liabilities_db(), error = function(e) NULL)
+        pasivos_aviso_edicion_html(wiz$draft, wiz$edit_target_id, provs, liabs)
+      }
     )
   })
 

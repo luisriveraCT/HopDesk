@@ -600,6 +600,31 @@ pasivos_generate_schedule <- function(liability, today = Sys.Date()) {
   out
 }
 
+# T70: a regular or tarjeta liability's end date (fecha_vence), or NA (no end).
+# A financiero's fecha_vence is its term's end, computed by the wizard.
+pasivos_fecha_fin <- function(liability) {
+  v <- if ("fecha_vence" %in% names(liability)) liability$fecha_vence[1] else NA
+  tryCatch(as.Date(v), error = function(e) as.Date(NA))
+}
+
+# T71: the liability's note, or NA when it has none.
+pasivos_nota_de <- function(liability) {
+  n <- if ("notas" %in% names(liability)) as.character(liability$notas[1]) else NA_character_
+  if (!length(n) || is.na(n) || !nzchar(trimws(n))) NA_character_ else trimws(n)
+}
+
+# T70: the pending provisions of a liability that fall after its end date:
+# editing the end date earlier sends them to the Papelera. Converted, paid or
+# deleted ones are never touched. Returns their rows (none when no end).
+pasivos_provisiones_tras_fin <- function(existing, liability) {
+  fin <- pasivos_fecha_fin(liability)
+  if (is.na(fin) || !nrow(existing) || !(liability$categoria[1] %in% c("regular", "tarjeta")))
+    return(existing[0, , drop = FALSE])
+  f <- if ("fecha_efectiva" %in% names(existing)) as.Date(existing$fecha_efectiva) else as.Date(NA)
+  existing[!is.na(existing$liability_id) & existing$liability_id == liability$id[1] &
+             existing$estado %in% "provisional" & !is.na(f) & f > fin, , drop = FALSE]
+}
+
 # ── §2.3 Provision generation ──────────────────────────────────────────────────
 
 pasivos_generate_provisions <- function(liability,
@@ -620,6 +645,13 @@ pasivos_generate_provisions <- function(liability,
   }
   window_end <- as.Date(window_end)
   if (is.na(window_end)) window_end <- window_start + lubridate::years(2)
+  # T70: a regular or tarjeta liability may have an end date (fecha_vence; NA =
+  # no end): nothing is generated after it.
+  if (cat %in% c("regular", "tarjeta")) {
+    fin <- pasivos_fecha_fin(liability)
+    if (!is.na(fin) && fin < window_end) window_end <- fin
+  }
+  nota_pasivo <- pasivos_nota_de(liability)   # T71: every provision is born with it
 
   schema <- .schema_pasivos_provision()
   imps   <- pasivos_impuestos_de(liability)   # T63: taxes on each payment (none -> as before)
@@ -712,7 +744,7 @@ pasivos_generate_provisions <- function(liability,
         fecha_efectiva_override  = as.Date(NA),
         documento            = tmpl,
         referencia           = if (is_fee_row) (row_s[["fee_desc"]][[1L]] %||% "") else (liability$referencia_default %||% NA_character_),
-        notas                = NA_character_,
+        notas                = nota_pasivo,
         manual_inv_id        = NA_character_,
         pagar_hoy_id         = NA_character_,
         bancos_conf_id       = NA_character_,
@@ -803,7 +835,7 @@ pasivos_generate_provisions <- function(liability,
         fecha_efectiva_override  = as.Date(NA),
         documento            = tmpl,
         referencia           = liability$referencia_default,
-        notas                = NA_character_,
+        notas                = nota_pasivo,
         manual_inv_id        = NA_character_,
         pagar_hoy_id         = NA_character_,
         bancos_conf_id       = NA_character_,

@@ -79,6 +79,8 @@ pasivos_wizard_validate_recurrencia <- function(draft) {
     }
   }
 
+  fe <- .wiz_error_fin(draft)   # T70
+  if (!is.null(fe)) errors$fecha_fin <- fe
   list(ok = length(errors) == 0L, errors = errors)
 }
 
@@ -87,6 +89,16 @@ pasivos_wizard_validate_recurrencia <- function(draft) {
 .wiz_negativo <- function(x) {
   v <- suppressWarnings(as.numeric(x %||% NA_real_))
   length(v) == 1L && !is.na(v) && v < 0
+}
+
+# T70: the end date, when there is one, is not before a regular liability's
+# start date. Blank is fine (no end).
+.wiz_error_fin <- function(draft) {
+  fin <- tryCatch(as.Date(draft$fecha_fin %||% NA), error = function(e) as.Date(NA))
+  if (is.na(fin) || !(draft$categoria %||% "") %in% c("regular", "tarjeta")) return(NULL)
+  ini <- tryCatch(as.Date(draft$fecha_inicio %||% NA), error = function(e) as.Date(NA))
+  if (identical(draft$categoria, "regular") && !is.na(ini) && fin < ini) return(tr("tablas.pasivos.fin.antes_inicio"))
+  NULL
 }
 
 # Validate the "terminos" step (financiero only).
