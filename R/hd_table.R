@@ -16,6 +16,7 @@
 #   t$opciones()    # with opcion_fila: data.frame(id, opcion), every row's choice
 #   t$poner_opcion(op, ids = NULL)   # set it on those rows (NULL: all)
 #   t$casillas()    # with casillas_columna: data.frame(id, <one logical per col_casilla>), every cell now
+#   t$limpiar_casillas()   # every box back to the data's value (after the module rewrote the data)
 #
 # Server -> browser: one "hdt-datos" custom message each time `datos`
 # changes (and "hdt-mes" from t$ir_mes()). Browser -> server: ns("sel") and ns("accion"), priority "event".
@@ -943,7 +944,9 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         # decided; toggling it sends accion "encabezado" with ids "si"/"no".
         encabezado = if (!is.null(encabezado)) isTRUE(encabezado()),
         secciones  = hd_secciones_payload(secciones, df, cols),
-        grupo      = hd_grupo_payload(grupo, df, cols, titulos = "sumas_columnas" %in% piezas_motor),
+        # casillas_columna (T68): its groups (tier, job title) are not columns, so
+        # the group's row says its name.
+        grupo      = hd_grupo_payload(grupo, df, cols, titulos = any(c("sumas_columnas", "casillas_columna") %in% piezas_motor)),
         acciones_fila  = acc_fila_meta,
         acciones_barra = barra_meta()
         ),
@@ -1128,6 +1131,8 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
       # casillas_columna (T68): data.frame(id, <campo> = logical, ...), every
       # cell now (the data's until the person ticks another).
       casillas = casillas,
+      limpiar_casillas = function()
+        session$sendCustomMessage("hdt-casillas", list(id = ns("hdt"), limpiar = TRUE)),
       poner_opcion = function(opcion, ids = NULL) {
         op <- hd_columna_opcion(shiny::isolate(columnas_r()), tabla, piezas_tabla)
         if (is.null(op) || !(is.character(opcion) && length(opcion) == 1L && opcion %in% names(op$opciones)))

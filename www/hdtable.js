@@ -2681,6 +2681,16 @@
     enviarEdiciones(st);
   }
 
+  // t$limpiar_casillas() (hdt-casillas, T68): every box back to the data's value.
+  function recibirCasillas(msg) {
+    var st = TABLAS[msg.id];
+    if (!st || !msg.limpiar || st.root !== document.getElementById(msg.id)) return;
+    st.cas = {};
+    st.trs = new Array(st.n);
+    aplicar(st, true);
+    enviarCasillas(st);
+  }
+
   // ── Events ───────────────────────────────────────────────────────────────
   function eventos(st) {
     var pendiente = false;
@@ -3144,6 +3154,7 @@
       Shiny.addCustomMessageHandler('hdt-mes', recibirMes);
       Shiny.addCustomMessageHandler('hdt-ediciones', recibirEdiciones);
       Shiny.addCustomMessageHandler('hdt-opciones', recibirOpciones);
+      Shiny.addCustomMessageHandler('hdt-casillas', recibirCasillas);
       pedirPerdidos();
     }
     else setTimeout(registrar, 20);
