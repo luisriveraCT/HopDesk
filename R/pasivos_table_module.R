@@ -71,10 +71,11 @@ pasivos_table_module_ui <- function(id) {
         tr("tablas.pasivos.tab.papelera"), value = "papelera",
         pasivos_papelera_ui(ns("papelera"))
       )
-    ),
-
-    # Hidden modal for orphan provision creation
-    shiny::uiOutput(ns("provision_manual_modal_placeholder"))
+    )
+    # (A uiOutput "provision_manual_modal_placeholder" was here since 28a92aa
+    # with no render: it kept Pasivos in .recalculating forever, so browser
+    # tests never finished measuring it. The manual provision opens with
+    # showModal(); it never needed a placeholder.)
   )
 }
 
