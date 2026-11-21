@@ -1185,12 +1185,14 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       paste(vapply(seq_len(nrow(pd$focus_ap)), function(j) {
         r   <- pd$focus_ap[j, ]
         urg <- isTRUE(r$is_urgent); imp <- isTRUE(r$is_important)
+        # Tags A / B / C as everywhere else (T04): their names from the
+        # dictionary, their colours etq-a/b/c-texto (TEMA 4b).
         badge <- if (urg && imp)
-          '<span class="pulse-badge pulse-badge-both">URG+IMP</span>'
+          sprintf('<span class="pulse-badge pulse-badge-both">%s</span>', he(tr("tablas.etiquetas.b")))
         else if (urg)
-          '<span class="pulse-badge pulse-badge-urg">URG</span>'
+          sprintf('<span class="pulse-badge pulse-badge-urg">%s</span>', he(tr("tablas.etiquetas.a")))
         else if (imp)
-          '<span class="pulse-badge pulse-badge-imp">IMP</span>'
+          sprintf('<span class="pulse-badge pulse-badge-imp">%s</span>', he(tr("tablas.etiquetas.c")))
         else ""
         sprintf('<div class="pulse-item">
           <span class="pulse-item-name">%s</span>%s
@@ -1975,9 +1977,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     .pulse-badge{font-size:6px;font-weight:700;padding:1px 4px;border-radius:3px;
       margin-left:4px;white-space:nowrap;
       -webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    .pulse-badge-urg{background:{{peligro}};color:{{encabezado-texto}};}
-    .pulse-badge-imp{background:{{aviso-fuerte}};color:{{encabezado-texto}};}
-    .pulse-badge-both{background:{{provision}};color:{{encabezado-texto}};}
+    .pulse-badge-urg{background:{{etq-a-texto}};color:{{texto-inverso}};}
+    .pulse-badge-imp{background:{{etq-c-texto}};color:{{texto-inverso}};}
+    .pulse-badge-both{background:{{etq-b-texto}};color:{{texto-inverso}};}
   '
 
   # ── Pulse pages (current week + next week) ───────────────────────────────────
