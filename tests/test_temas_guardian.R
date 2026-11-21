@@ -60,7 +60,7 @@ archivos <- c("app.R",
   "R/auth_reset.R" = 3L,
   "R/avisos_correos.R" = 32L,
   "R/bancos_module.R" = 11L,          # TEMA-Bancos: dead CSS (-50), then the migration: only the 11 currency colours (data, exempt)
-  "R/cashflow_export_module.R" = 203L,
+  "R/cashflow_export_module.R" = 0L,           # TEMA 4b: the documents' colours are roles (.cf_doc_colores)
   "R/cashflow_preview_module.R" = 6L,
   "R/email_service.R" = 79L,
   "R/empresas_module.R" = 8L,
@@ -233,7 +233,7 @@ ok("the generated CSS puts the default theme on :root",
 # A migration (stage 4) may add legacy tokens, but only by removing at least
 # as many hand-written colours: raise .TOPE_LEGADO and lower .TRINQUETE in
 # the same commit. Their sum never grows. Then the legacy only shrinks.
-.TOPE_LEGADO   <- 77L   # stage 4: cashflow_preview.css (70 -> 0) +22, pasivos_table_styles.R (39 -> 4) +13; TEMA-P1: pasivos' dead CSS gone, -13; treasury_map_module.R (76 -> 4) +37; bancos_module.R (62 -> 11) +18
+.TOPE_LEGADO   <- 95L   # stage 4: cashflow_preview.css (70 -> 0) +22, pasivos_table_styles.R (39 -> 4) +13; TEMA-P1: pasivos' dead CSS gone, -13; treasury_map_module.R (76 -> 4) +37; bancos_module.R (62 -> 11) +18; cashflow_export_module.R (203 -> 0) +18
 .TOTAL_INICIAL <- 1338L   # sum(.TRINQUETE) + .TOPE_LEGADO on e2d3882 + TEMA stage 1
 leg <- tema$.HD_LEGADO
 ok(sprintf("legacy tokens: %d (ratchet %d)", length(leg), .TOPE_LEGADO), length(leg) <= .TOPE_LEGADO)

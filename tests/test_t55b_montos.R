@@ -80,8 +80,9 @@ cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALS
 cargar("R/persistence.R", "tag_label")
 source("R/zona.R")
 cargar("R/data_pipeline.R", c("etiquetas_por_factura", ".etiquetas_doc_unica", ".politica_doc", ".politica_doc_unica"))
-for (f in c("R/fx_banxico.R", "R/fx_tipos.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
-            "R/cashflow_export_module.R")) suppressMessages(source(f))
+# R/tema_registro.R: the documents' colours are theme roles (TEMA 4b).
+for (f in c("R/tema_registro.R", "R/fx_banxico.R", "R/fx_tipos.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R",
+            "R/hd_table.R", "R/cashflow_export_module.R")) suppressMessages(source(f))
 source("tests/helpers/flujo_datos_prueba.R")
 LUNES <- lubridate::floor_date(Sys.Date(), "week", week_start = 1)
 D <- flujo_datos_prueba(LUNES)

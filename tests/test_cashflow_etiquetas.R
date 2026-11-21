@@ -37,7 +37,7 @@ ok("B has its description, in both languages",
    grepl("urgentes e importantes", .cf_lbl("g_tag_both_desc", "es")) && grepl("urgent and important", .cf_lbl("g_tag_both_desc", "en")))
 src <- paste(readLines("R/cashflow_export_module.R", warn = FALSE), collapse = "\n")
 ok("every glossary lists A, B, C in that order (Word, HTML, Excel)",
-   lengths(regmatches(src, gregexpr('g_tag_urg"\\),\\s*Lp\\("g_tag_urg_desc"\\),\\s*"#8B1A1A", FALSE\\),\\s*c\\(L\\("g_tag_both"\\),\\s*Lp\\("g_tag_both_desc"\\),\\s*"#8B0000", FALSE\\),\\s*c\\(L\\("g_tag_imp"\\)', src))) == 3L)
+   lengths(regmatches(src, gregexpr('g_tag_urg"\\),\\s*Lp\\("g_tag_urg_desc"\\),\\s*pal\\$etq_a, FALSE\\),\\s*c\\(L\\("g_tag_both"\\),\\s*Lp\\("g_tag_both_desc"\\),\\s*pal\\$etq_b, FALSE\\),\\s*c\\(L\\("g_tag_imp"\\)', src))) == 3L)
 ok("no old tag names left in the export or the preview",
    !any(grepl("Etiqueta: |Tag: Urgent|title=\"Urgente\"|title=\"Importante\"",
               c(src, readLines("R/cashflow_preview_module.R", warn = FALSE)))))

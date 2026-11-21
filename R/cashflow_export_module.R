@@ -47,6 +47,8 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
   # monto_moneda(), which .cf_fmt() and the engine's money columns call (T55b).
   source(file.path(app_dir, "R", "monedas.R"), local = e)
   source(file.path(app_dir, "R", "hd_columnas.R"), local = e)
+  # The theme registry: the workbook's colours are roles (TEMA 4b).
+  source(file.path(app_dir, "R", "tema_registro.R"), local = e)
   source(file.path(app_dir, "R", "cashflow_export_module.R"), local = e)
 
   sn <- readRDS(snapshot_path)
@@ -76,7 +78,8 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
     secondary_lang = sn$lang_secondary,
     group_name     = sn$g_name,
     group_logo_raw = sn$g_logo_raw,
-    group_logo_ext = sn$g_logo_ext
+    group_logo_ext = sn$g_logo_ext,
+    tema           = sn$tema
   )
 
   openxlsx::saveWorkbook(wb, output_path, overwrite = TRUE)
@@ -643,12 +646,49 @@ build_cashflow_export_data <- function(
   "HopDesk"
 }
 
+# ── Colours of the documents (TEMA stage 4b) ──────────────────────────────────
+# The Word, PDF and Excel colours, by role from the theme registry
+# (R/tema_registro.R). Under Clásico they are exactly today's (legacy tokens
+# where the role's value differs); under another theme they follow its roles.
+# Called inside the generators only: scripts/avisos_job.R sources this file
+# without the registry, and the Excel worker loads it itself (.cf_excel_worker).
+.cf_doc_colores <- function(tema = NULL) {
+  tema <- tema %||% HD_TEMA_OMISION
+  r <- function(rol) tema_color(rol, tema)
+  list(
+    encabezado       = r("encabezado"),                  # section and table headers, cover titles
+    encabezado_texto = r("encabezado-texto"),            # text on a header
+    fondo            = r("superficie"),                  # a row without the band
+    banda            = r("superficie-2"),                # every other row
+    borde            = r("borde-fuerte"),                # table borders
+    linea            = r("leg-borde-e0e0e0"),            # thin rules: cover, glossary
+    subtotal         = r("leg-primario-suave-d6e4f0"),   # subtotal row
+    cobro            = r("leg-exito-texto-1a5c2e"),      # receivables, a net >= 0
+    pago             = r("leg-peligro-texto-7b1111"),    # payables, a net < 0
+    pago_kpi         = r("leg-pago-encabezado-8b3a0a"),  # the payables KPI
+    neg_oscuro       = r("leg-oscuro-peligro-ff8080"),   # a negative on the header colour
+    texto            = r("leg-texto-000000"),
+    texto_cuerpo     = r("leg-texto-222222"),            # the PDF's body
+    texto_clave      = r("leg-texto-333333"),            # cover: the keys of the metadata
+    texto_sub        = r("leg-texto-444444"),            # cover: the subtitle
+    texto_nota       = r("leg-texto-555555"),            # glossary: the disclaimer
+    provision        = r("leg-texto-2-606060"),          # provisions (grey, italic)
+    tenue            = r("leg-texto-tenue-888888"),      # notes, confidentiality
+    tenue_2          = r("leg-texto-tenue-999999"),      # cover: the dates
+    marcador         = r("leg-texto-tenue-aaaaaa"),      # the logo's placeholder
+    etq_a            = r("leg-etq-a-texto-8b1a1a"),      # tag A (urgent)
+    etq_b            = r("leg-etq-b-texto-8b0000"),      # tag B (urgent and important)
+    etq_c            = r("acento-texto")                 # tag C (important)
+  )
+}
+
 # ── Cover page ────────────────────────────────────────────────────────────────
 .add_cover_page <- function(doc, export_data, emp_initials,
                              ic_label, user_name, lang, bilingual,
                              group_name = "HopDesk",
                              group_logo_raw = NULL,
-                             group_logo_ext = "png") {
+                             group_logo_ext = "png",
+                             pal = .cf_doc_colores()) {
   L <- function(k) {
     if (bilingual) paste0(.cf_lbl(k, "es"), " / ", .cf_lbl(k, "en"))
     else .cf_lbl(k, lang)
@@ -676,7 +716,7 @@ build_cashflow_export_data <- function(
     }, error = function(e) {
       doc <<- officer::body_add_fpar(doc,
         officer::fpar(officer::ftext("[ Logo ]",
-          officer::fp_text(font.size = 11, font.family = "Yoxall", color = "#999999")),
+          officer::fp_text(font.size = 11, font.family = "Yoxall", color = pal$tenue_2)),
           fp_p = officer::fp_par(text.align = "center")))
     }, finally = {
       if (file.exists(logo_tmp)) unlink(logo_tmp)
@@ -684,7 +724,7 @@ build_cashflow_export_data <- function(
   } else {
     doc <- officer::body_add_fpar(doc,
       officer::fpar(officer::ftext("[ Logo ]",
-        officer::fp_text(font.size = 11, font.family = "Yoxall", color = "#999999")),
+        officer::fp_text(font.size = 11, font.family = "Yoxall", color = pal$tenue_2)),
         fp_p = officer::fp_par(text.align = "center")))
   }
   doc <- officer::body_add_par(doc, "", style = "Normal")
@@ -696,16 +736,16 @@ build_cashflow_export_data <- function(
   doc <- officer::body_add_fpar(doc,
     officer::fpar(officer::ftext(.cf_lbl("title", lang),
       officer::fp_text(font.size = 22, bold = TRUE,
-                       font.family = "Yoxall", color = "#1E3A5F")),
+                       font.family = "Yoxall", color = pal$encabezado)),
       fp_p = officer::fp_par(text.align = "center")))
   doc <- officer::body_add_fpar(doc,
     officer::fpar(officer::ftext(.cf_lbl("subtitle", lang),
-      officer::fp_text(font.size = 12, font.family = "Yoxall", color = "#444444")),
+      officer::fp_text(font.size = 12, font.family = "Yoxall", color = pal$texto_sub)),
       fp_p = officer::fp_par(text.align = "center")))
   doc <- officer::body_add_fpar(doc,
     officer::fpar(officer::ftext(group_display,
       officer::fp_text(font.size = 14, bold = TRUE,
-                       font.family = "Yoxall", color = "#1E3A5F")),
+                       font.family = "Yoxall", color = pal$encabezado)),
       fp_p = officer::fp_par(text.align = "center")))
 
   # ── Metadata table ───────────────────────────────────────────────────────
@@ -751,7 +791,7 @@ build_cashflow_export_data <- function(
     flextable::fontsize(size = 10) |>
     flextable::font(fontname = "Yoxall") |>
     flextable::border_remove() |>
-    flextable::border(border.bottom = officer::fp_border(color = "#E0E0E0", width = 0.5)) |>
+    flextable::border(border.bottom = officer::fp_border(color = pal$linea, width = 0.5)) |>
     flextable::align(j = 1, align = "right") |>
     flextable::align(j = 2, align = "left") |>
     flextable::padding(padding = 4)
@@ -764,14 +804,15 @@ build_cashflow_export_data <- function(
   doc <- officer::body_add_fpar(doc,
     officer::fpar(officer::ftext(L("confidential"),
       officer::fp_text(font.size = 8, italic = TRUE,
-                       font.family = "Yoxall", color = "#888888")),
+                       font.family = "Yoxall", color = pal$tenue)),
       fp_p = officer::fp_par(text.align = "center")))
 
   doc
 }
 
 # ── Executive summary section ─────────────────────────────────────────────────
-.add_summary_section <- function(doc, cd, lang, bilingual) {
+.add_summary_section <- function(doc, cd, lang, bilingual,
+                             pal = .cf_doc_colores()) {
   L <- function(k) {
     if (bilingual) paste0(.cf_lbl(k, "es"), " / ", .cf_lbl(k, "en"))
     else .cf_lbl(k, lang)
@@ -786,8 +827,8 @@ build_cashflow_export_data <- function(
   doc <- officer::body_add_par(doc, "", style = "Normal")
   hdr_ft <- flextable::flextable(data.frame(V = paste0(L("exec_summary"), " — ", cd$currency))) |>
     flextable::delete_part("header") |>
-    flextable::bg(bg = "#1E3A5F") |>
-    flextable::color(color = "#FFFFFF") |>
+    flextable::bg(bg = pal$encabezado) |>
+    flextable::color(color = pal$encabezado_texto) |>
     flextable::bold(bold = TRUE) |>
     flextable::font(fontname = "Yoxall") |>
     flextable::fontsize(size = 11) |>
@@ -805,7 +846,7 @@ build_cashflow_export_data <- function(
     stringsAsFactors = FALSE
   )
 
-  net_bg <- if (net_period >= 0) "#1A5C2E" else "#7B1111"
+  net_bg <- if (net_period >= 0) pal$cobro else pal$pago
 
   kpi_ft <- flextable::flextable(kpi_df) |>
     flextable::delete_part("header") |>
@@ -814,10 +855,10 @@ build_cashflow_export_data <- function(
     flextable::font(fontname = "Yoxall") |>
     flextable::bold(i = 2) |>
     flextable::fontsize(i = 2, size = 14) |>
-    flextable::bg(i = 1:2, j = 1, bg = "#1A5C2E") |>
-    flextable::bg(i = 1:2, j = 2, bg = "#8B3A0A") |>
-    flextable::bg(i = 1:2, j = 3, bg = "#1E3A5F") |>
-    flextable::color(i = 1:2, j = 1:3, color = "#FFFFFF") |>
+    flextable::bg(i = 1:2, j = 1, bg = pal$cobro) |>
+    flextable::bg(i = 1:2, j = 2, bg = pal$pago_kpi) |>
+    flextable::bg(i = 1:2, j = 3, bg = pal$encabezado) |>
+    flextable::color(i = 1:2, j = 1:3, color = pal$encabezado_texto) |>
     flextable::align(i = 1:2, j = 1:3, align = "center") |>
     flextable::padding(padding = 6) |>
     flextable::border_remove()
@@ -845,23 +886,23 @@ build_cashflow_export_data <- function(
     flextable::fontsize(size = 9) |>
     flextable::font(fontname = "Yoxall") |>
     flextable::bold(i = 1, part = "header") |>
-    flextable::bg(part = "header", bg = "#1E3A5F") |>
-    flextable::color(part = "header", color = "#FFFFFF") |>
+    flextable::bg(part = "header", bg = pal$encabezado) |>
+    flextable::color(part = "header", color = pal$encabezado_texto) |>
     flextable::align(j = 2:5, align = "right") |>
     flextable::align(j = 1, align = "left") |>
     flextable::border(part = "all",
-                      border = officer::fp_border(color = "#CCCCCC", width = 0.5)) |>
+                      border = officer::fp_border(color = pal$borde, width = 0.5)) |>
     flextable::padding(padding = 3) |>
     flextable::autofit()
 
   # Color net rows: positive green, negative red
   net_vals <- summ$net_day
   for (i in seq_along(net_vals)) {
-    clr <- if (net_vals[i] >= 0) "#1A5C2E" else "#7B1111"
+    clr <- if (net_vals[i] >= 0) pal$cobro else pal$pago
     summ_ft <- flextable::color(summ_ft, i = i, j = 4, color = clr)
     summ_ft <- flextable::color(summ_ft, i = i, j = 5,
-                                color = if (summ$net_cum[i] >= 0) "#1A5C2E" else "#7B1111")
-    if (i %% 2 == 0) summ_ft <- flextable::bg(summ_ft, i = i, bg = "#F5F8FC")
+                                color = if (summ$net_cum[i] >= 0) pal$cobro else pal$pago)
+    if (i %% 2 == 0) summ_ft <- flextable::bg(summ_ft, i = i, bg = pal$banda)
   }
 
   doc <- flextable::body_add_flextable(doc, summ_ft, align = "center")
@@ -871,7 +912,8 @@ build_cashflow_export_data <- function(
 # ── Detail section (CxC or CxP) ──────────────────────────────────────────────
 .add_detail_section <- function(doc, wide_df, header_key,
                                  subtotal_key, lang, bilingual,
-                                 amount_color = "#1A5C2E", moneda = NA_character_) {
+                                 amount_color = pal$cobro, moneda = NA_character_,
+                             pal = .cf_doc_colores()) {
   L <- function(k) {
     if (bilingual) paste0(.cf_lbl(k, "es"), " / ", .cf_lbl(k, "en"))
     else .cf_lbl(k, lang)
@@ -880,8 +922,8 @@ build_cashflow_export_data <- function(
   doc <- officer::body_add_par(doc, "", style = "Normal")
   sec_ft <- flextable::flextable(data.frame(V = L(header_key))) |>
     flextable::delete_part("header") |>
-    flextable::bg(bg = "#1E3A5F") |>
-    flextable::color(color = "#FFFFFF") |>
+    flextable::bg(bg = pal$encabezado) |>
+    flextable::color(color = pal$encabezado_texto) |>
     flextable::bold(bold = TRUE) |>
     flextable::font(fontname = "Yoxall") |>
     flextable::fontsize(size = 11) |>
@@ -895,7 +937,7 @@ build_cashflow_export_data <- function(
     doc <- officer::body_add_fpar(doc,
       officer::fpar(officer::ftext(paste0("— ", L("no_movements"), " —"),
         officer::fp_text(font.size = 10, italic = TRUE,
-                         font.family = "Calibri", color = "#888888")),
+                         font.family = "Calibri", color = pal$tenue)),
         fp_p = officer::fp_par(text.align = "center")))
     return(doc)
   }
@@ -952,18 +994,18 @@ build_cashflow_export_data <- function(
     flextable::fontsize(size = 9) |>
     flextable::font(fontname = "Yoxall") |>
     flextable::bold(i = 1, part = "header") |>
-    flextable::bg(part = "header", bg = "#1E3A5F") |>
-    flextable::color(part = "header", color = "#FFFFFF") |>
+    flextable::bg(part = "header", bg = pal$encabezado) |>
+    flextable::color(part = "header", color = pal$encabezado_texto) |>
     flextable::align(j = 2:ncol(full_df), align = "right") |>
     flextable::align(j = 1, align = "left") |>
     flextable::border(part = "all",
-                      border = officer::fp_border(color = "#CCCCCC", width = 0.5)) |>
+                      border = officer::fp_border(color = pal$borde, width = 0.5)) |>
     flextable::padding(padding = 3) |>
     # Subtotal row: light blue background, bold
-    flextable::bg(i = nrow(full_df), bg = "#D6E4F0") |>
+    flextable::bg(i = nrow(full_df), bg = pal$subtotal) |>
     flextable::bold(i = nrow(full_df)) |>
     # Alternate row shading
-    flextable::bg(i = which(seq_len(n_data) %% 2 == 0), bg = "#F5F8FC") |>
+    flextable::bg(i = which(seq_len(n_data) %% 2 == 0), bg = pal$banda) |>
     # Amount columns: tinted color (all cols except label and Pct)
     flextable::color(i = seq_len(n_data), j = 2:(ncol(full_df) - 1L), color = amount_color) |>
     flextable::set_table_properties(width = 1, layout = "autofit")
@@ -971,15 +1013,15 @@ build_cashflow_export_data <- function(
   # Tag colors for data rows
   for (i in seq_len(n_data)) {
     if (isTRUE(wide_df$tag_urgent[i]) && isTRUE(wide_df$tag_important[i])) {
-      ft <- flextable::color(ft, i = i, j = 1, color = "#8B0000")
+      ft <- flextable::color(ft, i = i, j = 1, color = pal$etq_b)
     } else if (isTRUE(wide_df$tag_urgent[i])) {
-      ft <- flextable::color(ft, i = i, j = 1, color = "#8B1A1A")
+      ft <- flextable::color(ft, i = i, j = 1, color = pal$etq_a)
     } else if (isTRUE(wide_df$tag_important[i])) {
-      ft <- flextable::color(ft, i = i, j = 1, color = "#8B6914")
+      ft <- flextable::color(ft, i = i, j = 1, color = pal$etq_c)
     }
     # Provision rows: italic gray
     if (isTRUE(wide_df$is_provision[i])) {
-      ft <- flextable::color(ft,  i = i, color = "#606060")
+      ft <- flextable::color(ft,  i = i, color = pal$provision)
       ft <- flextable::italic(ft, i = i)
     }
   }
@@ -989,7 +1031,8 @@ build_cashflow_export_data <- function(
 }
 
 # ── Glossary page ─────────────────────────────────────────────────────────────
-.add_glossary <- function(doc, export_data, lang, bilingual) {
+.add_glossary <- function(doc, export_data, lang, bilingual,
+                             pal = .cf_doc_colores()) {
   L <- function(k) {
     if (bilingual) paste0(.cf_lbl(k, "es"), " / ", .cf_lbl(k, "en"))
     else .cf_lbl(k, lang)
@@ -999,8 +1042,8 @@ build_cashflow_export_data <- function(
   doc <- officer::body_add_break(doc)
   glos_ft <- flextable::flextable(data.frame(V = L("glossary"))) |>
     flextable::delete_part("header") |>
-    flextable::bg(bg = "#1E3A5F") |>
-    flextable::color(color = "#FFFFFF") |>
+    flextable::bg(bg = pal$encabezado) |>
+    flextable::color(color = pal$encabezado_texto) |>
     flextable::bold(bold = TRUE) |>
     flextable::font(fontname = "Yoxall") |>
     flextable::fontsize(size = 11) |>
@@ -1011,12 +1054,12 @@ build_cashflow_export_data <- function(
   doc <- flextable::body_add_flextable(doc, glos_ft)
 
   gloss_rows <- list(
-    c(L("g_tag_urg"), Lp("g_tag_urg_desc"), "#8B1A1A", FALSE),
-    c(L("g_tag_both"), Lp("g_tag_both_desc"), "#8B0000", FALSE),
-    c(L("g_tag_imp"), Lp("g_tag_imp_desc"), "#8B6914", FALSE),
-    c(L("g_prov"),    Lp("g_prov_desc"),    "#606060", TRUE),
-    c(L("g_method"),  Lp("g_method_desc"),  "#000000", FALSE),
-    c(L("g_disclaimer"), Lp("g_disclaimer"),  "#555555", FALSE)
+    c(L("g_tag_urg"), Lp("g_tag_urg_desc"), pal$etq_a, FALSE),
+    c(L("g_tag_both"), Lp("g_tag_both_desc"), pal$etq_b, FALSE),
+    c(L("g_tag_imp"), Lp("g_tag_imp_desc"), pal$etq_c, FALSE),
+    c(L("g_prov"),    Lp("g_prov_desc"),    pal$provision, TRUE),
+    c(L("g_method"),  Lp("g_method_desc"),  pal$texto, FALSE),
+    c(L("g_disclaimer"), Lp("g_disclaimer"),  pal$texto_nota, FALSE)
   )
 
   # FX disclosure (only in fused mode)
@@ -1035,7 +1078,7 @@ build_cashflow_export_data <- function(
     else
       paste0("(*) Montos convertidos usando: ", rates_str,
              ". Estos son estimados y pueden diferir del tipo de cambio de liquidación.")
-    gloss_rows <- c(list(c(fx_label, fx_desc, "#000000", FALSE)), gloss_rows)
+    gloss_rows <- c(list(c(fx_label, fx_desc, pal$texto, FALSE)), gloss_rows)
   }
 
   gdf <- data.frame(
@@ -1052,7 +1095,7 @@ build_cashflow_export_data <- function(
     flextable::font(fontname = "Yoxall") |>
     flextable::bold(j = 1) |>
     flextable::border_remove() |>
-    flextable::border(border.bottom = officer::fp_border(color = "#E0E0E0", width = 0.5)) |>
+    flextable::border(border.bottom = officer::fp_border(color = pal$linea, width = 0.5)) |>
     flextable::align(j = 1, align = "right") |>
     flextable::align(j = 2, align = "left") |>
     flextable::padding(padding = 5)
@@ -1075,7 +1118,9 @@ generate_cashflow_word_doc <- function(export_data, emp_initials, emp_full,
                                         secondary_lang = NULL,
                                         group_name     = "HopDesk",
                                         group_logo_raw = NULL,
-                                        group_logo_ext = "png") {
+                                        group_logo_ext = "png",
+                                        tema           = NULL) {
+  pal <- .cf_doc_colores(tema)   # TEMA 4b: the document's colours, by role
 
   bilingual <- !is.null(secondary_lang) && secondary_lang != primary_lang
   lang      <- primary_lang
@@ -1087,14 +1132,15 @@ generate_cashflow_word_doc <- function(export_data, emp_initials, emp_full,
                           ic_label, user_name, lang, bilingual,
                           group_name     = group_name,
                           group_logo_raw = group_logo_raw,
-                          group_logo_ext = group_logo_ext)
+                          group_logo_ext = group_logo_ext,
+                          pal            = pal)
 
   # ── Per-currency sections ────────────────────────────────────────────────
   for (cd in export_data$data) {
     doc <- officer::body_add_break(doc)
 
     # Executive summary
-    doc <- .add_summary_section(doc, cd, lang, bilingual)
+    doc <- .add_summary_section(doc, cd, lang, bilingual, pal = pal)
 
     # CxC detail
     doc <- officer::body_add_break(doc)
@@ -1102,7 +1148,7 @@ generate_cashflow_word_doc <- function(export_data, emp_initials, emp_full,
                                 header_key   = "cxc_header",
                                 subtotal_key = "subtotal_cxc",
                                 lang = lang, bilingual = bilingual,
-                                amount_color = "#1A5C2E", moneda = cd$currency)
+                                amount_color = pal$cobro, moneda = cd$currency, pal = pal)
 
     # CxP detail
     doc <- officer::body_add_break(doc)
@@ -1110,11 +1156,11 @@ generate_cashflow_word_doc <- function(export_data, emp_initials, emp_full,
                                 header_key   = "cxp_header",
                                 subtotal_key = "subtotal_cxp",
                                 lang = lang, bilingual = bilingual,
-                                amount_color = "#7B1111", moneda = cd$currency)
+                                amount_color = pal$pago, moneda = cd$currency, pal = pal)
   }
 
   # ── Glossary ─────────────────────────────────────────────────────────────
-  doc <- .add_glossary(doc, export_data, lang, bilingual)
+  doc <- .add_glossary(doc, export_data, lang, bilingual, pal = pal)
 
   # Apply landscape + tight margins as the document default section.
   # body_set_default_section writes into <w:sectPr> without a section-break
@@ -1133,25 +1179,32 @@ generate_cashflow_word_doc <- function(export_data, emp_initials, emp_full,
 
 # ── HTML document builder (for PDF export via pagedown) ───────────────────────
 
-.CF_CSS <- "
+.CF_CSS_PLANTILLA <- "
   @page { size: A4 landscape; margin: 1.5cm 1.5cm; }
   body  { font-family: 'Yoxall', Calibri, Arial, sans-serif; font-size: 9pt;
-          margin: 0; color: #222; }
+          margin: 0; color: {{texto_cuerpo}}; }
   .pb   { page-break-after: always; }
   .cover{ text-align:center; padding: 50px 60px 30px; }
-  .cover h1 { font-size:22pt; color:#1E3A5F; font-weight:bold; margin:20px 0 4px; }
-  .cover h2 { font-size:14pt; color:#1E3A5F; font-weight:bold; margin:0 0 20px; }
-  .cover h3 { font-size:12pt; color:#444; font-weight:normal; margin:0 0 16px; }
+  .cover h1 { font-size:22pt; color:{{encabezado}}; font-weight:bold; margin:20px 0 4px; }
+  .cover h2 { font-size:14pt; color:{{encabezado}}; font-weight:bold; margin:0 0 20px; }
+  .cover h3 { font-size:12pt; color:{{texto_sub}}; font-weight:normal; margin:0 0 16px; }
   .meta-tbl { width:100%; border-collapse:collapse; font-size:9pt; margin:16px auto;
               max-width:660px; }
-  .meta-tbl td { padding:3px 8px; border-bottom:1px solid #E0E0E0; }
-  .meta-tbl .k { text-align:right; font-weight:bold; color:#333; width:35%; }
+  .meta-tbl td { padding:3px 8px; border-bottom:1px solid {{linea}}; }
+  .meta-tbl .k { text-align:right; font-weight:bold; color:{{texto_clave}}; width:35%; }
   .meta-tbl .v { text-align:left; }
-  .conf { font-size:8pt; font-style:italic; color:#888; margin-top:20px; }
+  .conf { font-size:8pt; font-style:italic; color:{{tenue}}; margin-top:20px; }
   .sec  { margin: 14px 0 4px; }
   .ft-wrap { overflow-x:auto; margin:4px 0 10px; }
-  .no-data { text-align:center; font-style:italic; color:#888; padding:10px; }
+  .no-data { text-align:center; font-style:italic; color:{{tenue}}; padding:10px; }
 "
+
+# The PDF's CSS with the document's colours (TEMA 4b).
+.cf_css <- function(pal) {
+  css <- .CF_CSS_PLANTILLA
+  for (k in names(pal)) css <- gsub(paste0("{{", k, "}}"), pal[[k]], css, fixed = TRUE)
+  css
+}
 
 generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
                                         ic_label, user_name,
@@ -1159,7 +1212,9 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
                                         secondary_lang = NULL,
                                         group_name     = "HopDesk",
                                         group_logo_raw = NULL,
-                                        group_logo_ext = "png") {
+                                        group_logo_ext = "png",
+                                        tema           = NULL) {
+  pal <- .cf_doc_colores(tema)   # TEMA 4b: the document's colours, by role
 
   bilingual <- !is.null(secondary_lang) && secondary_lang != primary_lang
   lang      <- primary_lang
@@ -1185,7 +1240,7 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
     h$img(src   = paste0("data:", mime, ";base64,", b64),
           style = "max-height:70px; max-width:180px;")
   } else {
-    sp("[ Logo ]", style = "color:#aaa; font-size:11pt;")
+    sp("[ Logo ]", style = paste0("color:", pal$marcador, "; font-size:11pt;"))
   }
 
   # ── Metadata table ────────────────────────────────────────────────────────
@@ -1225,7 +1280,7 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
 
   # ── Helper: section header ────────────────────────────────────────────────
   sec_hdr <- function(txt) dv(
-    style = paste("background:#1E3A5F; color:#fff; font-weight:bold;",
+    style = paste0("background:", pal$encabezado, "; color:", pal$encabezado_texto, "; font-weight:bold; ",
                   "font-size:10pt; padding:5px 10px; margin:10px 0 3px;"), txt)
 
   # ── Per-currency sections ─────────────────────────────────────────────────
@@ -1245,10 +1300,10 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
       flextable::width(j = 1:3, width = 5.4, unit = "cm") |>
       flextable::fontsize(size = 11) |> flextable::font(fontname = "Yoxall") |>
       flextable::bold(i = 2) |> flextable::fontsize(i = 2, size = 14) |>
-      flextable::bg(i = 1:2, j = 1, bg = "#1A5C2E") |>
-      flextable::bg(i = 1:2, j = 2, bg = "#8B3A0A") |>
-      flextable::bg(i = 1:2, j = 3, bg = "#1E3A5F") |>
-      flextable::color(i = 1:2, j = 1:3, color = "#FFFFFF") |>
+      flextable::bg(i = 1:2, j = 1, bg = pal$cobro) |>
+      flextable::bg(i = 1:2, j = 2, bg = pal$pago_kpi) |>
+      flextable::bg(i = 1:2, j = 3, bg = pal$encabezado) |>
+      flextable::color(i = 1:2, j = 1:3, color = pal$encabezado_texto) |>
       flextable::align(i = 1:2, j = 1:3, align = "center") |>
       flextable::padding(padding = 6) |> flextable::border_remove()
 
@@ -1266,19 +1321,19 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
     summ_ft <- flextable::flextable(summ_disp) |>
       flextable::fontsize(size = 9) |> flextable::font(fontname = "Yoxall") |>
       flextable::bold(i = 1, part = "header") |>
-      flextable::bg(part = "header", bg = "#1E3A5F") |>
-      flextable::color(part = "header", color = "#FFFFFF") |>
+      flextable::bg(part = "header", bg = pal$encabezado) |>
+      flextable::color(part = "header", color = pal$encabezado_texto) |>
       flextable::align(j = 1, align = "left") |>
       flextable::align(j = 2:5, align = "right") |>
       flextable::border(part = "all",
-        border = officer::fp_border(color = "#CCCCCC", width = 0.5)) |>
+        border = officer::fp_border(color = pal$borde, width = 0.5)) |>
       flextable::padding(padding = 3) |> flextable::autofit()
     for (i in seq_along(summ$net_day)) {
-      clr <- if (summ$net_day[i] >= 0) "#1A5C2E" else "#7B1111"
+      clr <- if (summ$net_day[i] >= 0) pal$cobro else pal$pago
       summ_ft <- flextable::color(summ_ft, i = i, j = 4, color = clr)
       summ_ft <- flextable::color(summ_ft, i = i, j = 5,
-        color = if (summ$net_cum[i] >= 0) "#1A5C2E" else "#7B1111")
-      if (i %% 2 == 0) summ_ft <- flextable::bg(summ_ft, i = i, bg = "#F5F8FC")
+        color = if (summ$net_cum[i] >= 0) pal$cobro else pal$pago)
+      if (i %% 2 == 0) summ_ft <- flextable::bg(summ_ft, i = i, bg = pal$banda)
     }
 
     # Detail section builder
@@ -1322,28 +1377,28 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
       ft <- flextable::flextable(full_df) |>
         flextable::fontsize(size = 9) |> flextable::font(fontname = "Yoxall") |>
         flextable::bold(i = 1, part = "header") |>
-        flextable::bg(part = "header", bg = "#1E3A5F") |>
-        flextable::color(part = "header", color = "#FFFFFF") |>
+        flextable::bg(part = "header", bg = pal$encabezado) |>
+        flextable::color(part = "header", color = pal$encabezado_texto) |>
         flextable::align(j = 2:ncol(full_df), align = "right") |>
         flextable::align(j = 1, align = "left") |>
         flextable::border(part = "all",
-          border = officer::fp_border(color = "#CCCCCC", width = 0.5)) |>
+          border = officer::fp_border(color = pal$borde, width = 0.5)) |>
         flextable::padding(padding = 3) |>
-        flextable::bg(i = nrow(full_df), bg = "#D6E4F0") |>
+        flextable::bg(i = nrow(full_df), bg = pal$subtotal) |>
         flextable::bold(i = nrow(full_df)) |>
-        flextable::bg(i = which(seq_len(n_data) %% 2 == 0), bg = "#F5F8FC") |>
+        flextable::bg(i = which(seq_len(n_data) %% 2 == 0), bg = pal$banda) |>
         flextable::color(i = seq_len(n_data), j = 2:(ncol(full_df) - 1L),
                          color = amount_color) |>
         flextable::autofit()
       for (i in seq_len(n_data)) {
         if (isTRUE(wide_df$tag_urgent[i]) && isTRUE(wide_df$tag_important[i]))
-          ft <- flextable::color(ft, i = i, j = 1, color = "#8B0000")
+          ft <- flextable::color(ft, i = i, j = 1, color = pal$etq_b)
         else if (isTRUE(wide_df$tag_urgent[i]))
-          ft <- flextable::color(ft, i = i, j = 1, color = "#8B1A1A")
+          ft <- flextable::color(ft, i = i, j = 1, color = pal$etq_a)
         else if (isTRUE(wide_df$tag_important[i]))
-          ft <- flextable::color(ft, i = i, j = 1, color = "#8B6914")
+          ft <- flextable::color(ft, i = i, j = 1, color = pal$etq_c)
         if (isTRUE(wide_df$is_provision[i])) {
-          ft <- flextable::color(ft,  i = i, color = "#606060")
+          ft <- flextable::color(ft,  i = i, color = pal$provision)
           ft <- flextable::italic(ft, i = i)
         }
       }
@@ -1356,21 +1411,21 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
       ft_html(kpi_ft),
       ft_html(summ_ft),
       dv(style = "page-break-before:always;"),
-      make_detail(cd$ar_wide, "cxc_header", "subtotal_cxc", "#1A5C2E"),
+      make_detail(cd$ar_wide, "cxc_header", "subtotal_cxc", pal$cobro),
       dv(style = "page-break-before:always;"),
-      make_detail(cd$ap_wide, "cxp_header", "subtotal_cxp", "#7B1111")
+      make_detail(cd$ap_wide, "cxp_header", "subtotal_cxp", pal$pago)
     )
   })
 
   # ── Glossary ──────────────────────────────────────────────────────────────
   Lp <- function(k) .cf_lbl(k, lang)
   gloss_rows <- list(
-    c(L("g_tag_urg"), Lp("g_tag_urg_desc"), "#8B1A1A", FALSE),
-    c(L("g_tag_both"), Lp("g_tag_both_desc"), "#8B0000", FALSE),
-    c(L("g_tag_imp"), Lp("g_tag_imp_desc"), "#8B6914", FALSE),
-    c(L("g_prov"),    Lp("g_prov_desc"),    "#606060", TRUE),
-    c(L("g_method"),  Lp("g_method_desc"),  "#000000", FALSE),
-    c(L("g_disclaimer"), Lp("g_disclaimer"), "#555555", FALSE)
+    c(L("g_tag_urg"), Lp("g_tag_urg_desc"), pal$etq_a, FALSE),
+    c(L("g_tag_both"), Lp("g_tag_both_desc"), pal$etq_b, FALSE),
+    c(L("g_tag_imp"), Lp("g_tag_imp_desc"), pal$etq_c, FALSE),
+    c(L("g_prov"),    Lp("g_prov_desc"),    pal$provision, TRUE),
+    c(L("g_method"),  Lp("g_method_desc"),  pal$texto, FALSE),
+    c(L("g_disclaimer"), Lp("g_disclaimer"), pal$texto_nota, FALSE)
   )
   if (export_data$currency_mode == "fused" && length(export_data$fx_rates)) {
     r_str    <- paste(mapply(function(c, r)
@@ -1383,7 +1438,7 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
     else
       paste0("(*) Montos convertidos usando: ", r_str,
              ". Estos son estimados y pueden diferir del tipo de cambio de liquidación.")
-    gloss_rows <- c(list(c(fx_label, fx_desc, "#000000", FALSE)), gloss_rows)
+    gloss_rows <- c(list(c(fx_label, fx_desc, pal$texto, FALSE)), gloss_rows)
   }
   gdf <- data.frame(
     Concepto    = sapply(gloss_rows, `[[`, 1),
@@ -1395,7 +1450,7 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
     flextable::width(j = 2, width = 14,  unit = "cm") |>
     flextable::fontsize(size = 9) |> flextable::font(fontname = "Yoxall") |>
     flextable::bold(j = 1) |> flextable::border_remove() |>
-    flextable::border(border.bottom = officer::fp_border(color = "#E0E0E0", width = 0.5)) |>
+    flextable::border(border.bottom = officer::fp_border(color = pal$linea, width = 0.5)) |>
     flextable::align(j = 1, align = "right") |>
     flextable::align(j = 2, align = "left") |>
     flextable::padding(padding = 5)
@@ -1416,7 +1471,7 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
       htmltools::tags$head(
         htmltools::tags$meta(charset = "UTF-8"),
         htmltools::tags$title(paste0(.cf_lbl("title", lang), " — ", group_name)),
-        htmltools::tags$style(htmltools::HTML(.CF_CSS))
+        htmltools::tags$style(htmltools::HTML(.cf_css(pal)))
       ),
       htmltools::tags$body(
         cover,
@@ -1427,7 +1482,7 @@ generate_cashflow_html_doc <- function(export_data, emp_initials, emp_full,
   )
 
   tmp_html <- tempfile(fileext = ".html")
-  htmltools::save_html(html_doc, tmp_html, background = "white")
+  htmltools::save_html(html_doc, tmp_html, background = pal$fondo)
   tmp_html
 }
 
@@ -1498,7 +1553,7 @@ show_cashflow_export_modal <- function() {
         bottom: calc(100% + 2px) !important;
         border-radius: 4px 4px 0 0;
         border-bottom: none;
-        box-shadow: 0 -4px 10px rgba(0,0,0,.12);
+        box-shadow: var(--hd-leg-sombra-000000-0351f6);   /* TEMA 4b */
       }
     ")),
 
@@ -1564,7 +1619,9 @@ generate_cashflow_excel_wb <- function(export_data, emp_initials, emp_full,
                                         secondary_lang = NULL,
                                         group_name     = "HopDesk",
                                         group_logo_raw = NULL,
-                                        group_logo_ext = "png") {
+                                        group_logo_ext = "png",
+                                        tema           = NULL) {
+  pal <- .cf_doc_colores(tema)   # TEMA 4b: the document's colours, by role
 
   bilingual <- !is.null(secondary_lang) && secondary_lang != primary_lang
   lang      <- primary_lang
@@ -1586,92 +1643,92 @@ generate_cashflow_excel_wb <- function(export_data, emp_initials, emp_full,
   # ── Style palette (pre-built once, reused everywhere) ─────────────────────
   ST <- list(
     title       = openxlsx::createStyle(fontSize=22, fontName="Calibri",
-                    fontColour="#1E3A5F", textDecoration="bold",
+                    fontColour=pal$encabezado, textDecoration="bold",
                     halign="center", valign="center"),
     sub         = openxlsx::createStyle(fontSize=12, fontName="Calibri",
-                    fontColour="#444444", halign="center", valign="center"),
+                    fontColour=pal$texto_sub, halign="center", valign="center"),
     grp         = openxlsx::createStyle(fontSize=14, fontName="Calibri",
-                    fontColour="#1E3A5F", textDecoration="bold",
+                    fontColour=pal$encabezado, textDecoration="bold",
                     halign="center", valign="center"),
     conf        = openxlsx::createStyle(fontSize=8,  fontName="Calibri",
-                    fontColour="#888888", textDecoration="italic", halign="center"),
+                    fontColour=pal$tenue, textDecoration="italic", halign="center"),
     meta_k      = openxlsx::createStyle(fontSize=10, fontName="Calibri",
-                    fontColour="#333333", textDecoration="bold", halign="right",
-                    border="Bottom", borderColour="#E0E0E0"),
+                    fontColour=pal$texto_clave, textDecoration="bold", halign="right",
+                    border="Bottom", borderColour=pal$linea),
     meta_v      = openxlsx::createStyle(fontSize=10, fontName="Calibri",
-                    fontColour="#222222", halign="left",
-                    border="Bottom", borderColour="#E0E0E0"),
-    sec_hdr     = openxlsx::createStyle(fgFill="#1E3A5F", fontColour="#FFFFFF",
+                    fontColour=pal$texto_cuerpo, halign="left",
+                    border="Bottom", borderColour=pal$linea),
+    sec_hdr     = openxlsx::createStyle(fgFill=pal$encabezado, fontColour=pal$encabezado_texto,
                     fontSize=11, fontName="Calibri", textDecoration="bold",
                     halign="left", valign="center"),
-    kpi_lbl_g   = openxlsx::createStyle(fgFill="#1A5C2E", fontColour="#FFFFFF",
+    kpi_lbl_g   = openxlsx::createStyle(fgFill=pal$cobro, fontColour=pal$encabezado_texto,
                     fontSize=10, fontName="Calibri", textDecoration="bold",
                     halign="center", valign="center"),
-    kpi_val_g   = openxlsx::createStyle(fgFill="#1A5C2E", fontColour="#FFFFFF",
+    kpi_val_g   = openxlsx::createStyle(fgFill=pal$cobro, fontColour=pal$encabezado_texto,
                     fontSize=14, fontName="Calibri", textDecoration="bold",
                     halign="center", valign="center", numFmt="#,##0"),
-    kpi_lbl_o   = openxlsx::createStyle(fgFill="#8B3A0A", fontColour="#FFFFFF",
+    kpi_lbl_o   = openxlsx::createStyle(fgFill=pal$pago_kpi, fontColour=pal$encabezado_texto,
                     fontSize=10, fontName="Calibri", textDecoration="bold",
                     halign="center", valign="center"),
-    kpi_val_o   = openxlsx::createStyle(fgFill="#8B3A0A", fontColour="#FFFFFF",
+    kpi_val_o   = openxlsx::createStyle(fgFill=pal$pago_kpi, fontColour=pal$encabezado_texto,
                     fontSize=14, fontName="Calibri", textDecoration="bold",
                     halign="center", valign="center", numFmt="#,##0"),
-    kpi_lbl_n   = openxlsx::createStyle(fgFill="#1E3A5F", fontColour="#FFFFFF",
+    kpi_lbl_n   = openxlsx::createStyle(fgFill=pal$encabezado, fontColour=pal$encabezado_texto,
                     fontSize=10, fontName="Calibri", textDecoration="bold",
                     halign="center", valign="center"),
-    kpi_val_n   = openxlsx::createStyle(fgFill="#1E3A5F", fontColour="#FFFFFF",
+    kpi_val_n   = openxlsx::createStyle(fgFill=pal$encabezado, fontColour=pal$encabezado_texto,
                     fontSize=14, fontName="Calibri", textDecoration="bold",
                     halign="center", valign="center", numFmt="#,##0"),
-    kpi_val_n_neg = openxlsx::createStyle(fgFill="#1E3A5F", fontColour="#FF8080",
+    kpi_val_n_neg = openxlsx::createStyle(fgFill=pal$encabezado, fontColour=pal$neg_oscuro,
                       fontSize=14, fontName="Calibri", textDecoration="bold",
                       halign="center", valign="center", numFmt="#,##0"),
-    tbl_hdr_l   = openxlsx::createStyle(fgFill="#1E3A5F", fontColour="#FFFFFF",
+    tbl_hdr_l   = openxlsx::createStyle(fgFill=pal$encabezado, fontColour=pal$encabezado_texto,
                     fontSize=9, fontName="Calibri", textDecoration="bold",
                     halign="left",  valign="center",
-                    border="TopBottomLeftRight", borderColour="#CCCCCC"),
-    tbl_hdr_r   = openxlsx::createStyle(fgFill="#1E3A5F", fontColour="#FFFFFF",
+                    border="TopBottomLeftRight", borderColour=pal$borde),
+    tbl_hdr_r   = openxlsx::createStyle(fgFill=pal$encabezado, fontColour=pal$encabezado_texto,
                     fontSize=9, fontName="Calibri", textDecoration="bold",
                     halign="right", valign="center",
-                    border="TopBottomLeftRight", borderColour="#CCCCCC"),
-    sub_l       = openxlsx::createStyle(fgFill="#D6E4F0", fontColour="#000000",
+                    border="TopBottomLeftRight", borderColour=pal$borde),
+    sub_l       = openxlsx::createStyle(fgFill=pal$subtotal, fontColour=pal$texto,
                     fontSize=9, fontName="Calibri", textDecoration="bold",
-                    halign="left",  border="TopBottomLeftRight", borderColour="#CCCCCC"),
-    sub_r       = openxlsx::createStyle(fgFill="#D6E4F0", fontColour="#000000",
+                    halign="left",  border="TopBottomLeftRight", borderColour=pal$borde),
+    sub_r       = openxlsx::createStyle(fgFill=pal$subtotal, fontColour=pal$texto,
                     fontSize=9, fontName="Calibri", textDecoration="bold",
                     halign="right", numFmt="#,##0",
-                    border="TopBottomLeftRight", borderColour="#CCCCCC"),
-    sub_pct     = openxlsx::createStyle(fgFill="#D6E4F0", fontColour="#000000",
+                    border="TopBottomLeftRight", borderColour=pal$borde),
+    sub_pct     = openxlsx::createStyle(fgFill=pal$subtotal, fontColour=pal$texto,
                     fontSize=9, fontName="Calibri", textDecoration="bold",
                     halign="right", numFmt="0.0%",
-                    border="TopBottomLeftRight", borderColour="#CCCCCC"),
+                    border="TopBottomLeftRight", borderColour=pal$borde),
     dat_l       = openxlsx::createStyle(fontSize=9, fontName="Calibri", halign="left",
-                    border="TopBottomLeftRight", borderColour="#CCCCCC"),
+                    border="TopBottomLeftRight", borderColour=pal$borde),
     dat_r       = openxlsx::createStyle(fontSize=9, fontName="Calibri", halign="right",
-                    numFmt="#,##0", border="TopBottomLeftRight", borderColour="#CCCCCC"),
+                    numFmt="#,##0", border="TopBottomLeftRight", borderColour=pal$borde),
     dat_pct     = openxlsx::createStyle(fontSize=9, fontName="Calibri", halign="right",
-                    numFmt="0.0%", border="TopBottomLeftRight", borderColour="#CCCCCC"),
-    alt_l       = openxlsx::createStyle(fgFill="#F5F8FC", fontSize=9, fontName="Calibri",
-                    halign="left",  border="TopBottomLeftRight", borderColour="#CCCCCC"),
-    alt_r       = openxlsx::createStyle(fgFill="#F5F8FC", fontSize=9, fontName="Calibri",
+                    numFmt="0.0%", border="TopBottomLeftRight", borderColour=pal$borde),
+    alt_l       = openxlsx::createStyle(fgFill=pal$banda, fontSize=9, fontName="Calibri",
+                    halign="left",  border="TopBottomLeftRight", borderColour=pal$borde),
+    alt_r       = openxlsx::createStyle(fgFill=pal$banda, fontSize=9, fontName="Calibri",
                     halign="right", numFmt="#,##0",
-                    border="TopBottomLeftRight", borderColour="#CCCCCC"),
-    alt_pct     = openxlsx::createStyle(fgFill="#F5F8FC", fontSize=9, fontName="Calibri",
+                    border="TopBottomLeftRight", borderColour=pal$borde),
+    alt_pct     = openxlsx::createStyle(fgFill=pal$banda, fontSize=9, fontName="Calibri",
                     halign="right", numFmt="0.0%",
-                    border="TopBottomLeftRight", borderColour="#CCCCCC"),
+                    border="TopBottomLeftRight", borderColour=pal$borde),
     net_pos     = openxlsx::createStyle(fontSize=9, fontName="Calibri", halign="right",
-                    fontColour="#1A5C2E", numFmt="#,##0",
-                    border="TopBottomLeftRight", borderColour="#CCCCCC"),
+                    fontColour=pal$cobro, numFmt="#,##0",
+                    border="TopBottomLeftRight", borderColour=pal$borde),
     net_neg     = openxlsx::createStyle(fontSize=9, fontName="Calibri", halign="right",
-                    fontColour="#7B1111", numFmt="#,##0",
-                    border="TopBottomLeftRight", borderColour="#CCCCCC"),
-    net_pos_alt = openxlsx::createStyle(fgFill="#F5F8FC", fontSize=9, fontName="Calibri",
-                    halign="right", fontColour="#1A5C2E", numFmt="#,##0",
-                    border="TopBottomLeftRight", borderColour="#CCCCCC"),
-    net_neg_alt = openxlsx::createStyle(fgFill="#F5F8FC", fontSize=9, fontName="Calibri",
-                    halign="right", fontColour="#7B1111", numFmt="#,##0",
-                    border="TopBottomLeftRight", borderColour="#CCCCCC"),
+                    fontColour=pal$pago, numFmt="#,##0",
+                    border="TopBottomLeftRight", borderColour=pal$borde),
+    net_pos_alt = openxlsx::createStyle(fgFill=pal$banda, fontSize=9, fontName="Calibri",
+                    halign="right", fontColour=pal$cobro, numFmt="#,##0",
+                    border="TopBottomLeftRight", borderColour=pal$borde),
+    net_neg_alt = openxlsx::createStyle(fgFill=pal$banda, fontSize=9, fontName="Calibri",
+                    halign="right", fontColour=pal$pago, numFmt="#,##0",
+                    border="TopBottomLeftRight", borderColour=pal$borde),
     no_mov      = openxlsx::createStyle(fontSize=9, fontName="Calibri", halign="center",
-                    fontColour="#888888", textDecoration="italic")
+                    fontColour=pal$tenue, textDecoration="italic")
   )
 
   # ── Page setup helper ─────────────────────────────────────────────────────
@@ -1706,7 +1763,7 @@ generate_cashflow_excel_wb <- function(export_data, emp_initials, emp_full,
     openxlsx::writeData(wb, COV, x = "[ Logo ]", startRow = r, startCol = 1)
     openxlsx::mergeCells(wb, COV, cols = 1:N_COV, rows = r)
     openxlsx::addStyle(wb, COV,
-      style = openxlsx::createStyle(fontColour="#AAAAAA", halign="center",
+      style = openxlsx::createStyle(fontColour=pal$marcador, halign="center",
                fontSize=11, fontName="Calibri"),
       rows = r, cols = 1:N_COV, gridExpand = FALSE)
     r <- r + 2L
@@ -1931,31 +1988,27 @@ generate_cashflow_excel_wb <- function(export_data, emp_initials, emp_full,
       # 3 amount-column styles (created once per call, not per row)
       st_amt      <- openxlsx::createStyle(fontSize=9, fontName="Calibri",
                        halign="right", fontColour=amt_hex, numFmt="#,##0",
-                       border="TopBottomLeftRight", borderColour="#CCCCCC")
-      st_amt_alt  <- openxlsx::createStyle(fgFill="#F5F8FC", fontSize=9,
+                       border="TopBottomLeftRight", borderColour=pal$borde)
+      st_amt_alt  <- openxlsx::createStyle(fgFill=pal$banda, fontSize=9,
                        fontName="Calibri", halign="right", fontColour=amt_hex,
-                       numFmt="#,##0", border="TopBottomLeftRight", borderColour="#CCCCCC")
+                       numFmt="#,##0", border="TopBottomLeftRight", borderColour=pal$borde)
       st_amt_prov <- openxlsx::createStyle(fontSize=9, fontName="Calibri",
-                       halign="right", fontColour="#606060", textDecoration="italic",
-                       numFmt="#,##0", border="TopBottomLeftRight", borderColour="#CCCCCC")
+                       halign="right", fontColour=pal$provision, textDecoration="italic",
+                       numFmt="#,##0", border="TopBottomLeftRight", borderColour=pal$borde)
 
       # 10-entry Parte style cache: (font-colour × bg × italic) — no createStyle in the loop
       .mk_p <- function(fc, bg, td)
         openxlsx::createStyle(fontSize=9, fontName="Calibri", halign="left",
           fontColour=fc, textDecoration=td, fgFill=bg,
-          border="TopBottomLeftRight", borderColour="#CCCCCC")
-      pst <- list(
-        `#000000.W` = .mk_p("#000000", "#FFFFFF", NULL),
-        `#000000.A` = .mk_p("#000000", "#F5F8FC", NULL),
-        `#8B0000.W` = .mk_p("#8B0000", "#FFFFFF", NULL),
-        `#8B0000.A` = .mk_p("#8B0000", "#F5F8FC", NULL),
-        `#8B1A1A.W` = .mk_p("#8B1A1A", "#FFFFFF", NULL),
-        `#8B1A1A.A` = .mk_p("#8B1A1A", "#F5F8FC", NULL),
-        `#8B6914.W` = .mk_p("#8B6914", "#FFFFFF", NULL),
-        `#8B6914.A` = .mk_p("#8B6914", "#F5F8FC", NULL),
-        `#606060.W` = .mk_p("#606060", "#FFFFFF", "italic"),
-        `#606060.A` = .mk_p("#606060", "#F5F8FC", "italic")
-      )
+          border="TopBottomLeftRight", borderColour=pal$borde)
+      # keyed by the colour's name in pal, not its value: two roles may share a
+      # value under some theme (TEMA 4b)
+      pst <- list()
+      for (k in c("texto", "etq_a", "etq_b", "etq_c", "provision")) {
+        td <- if (k == "provision") "italic" else NULL
+        pst[[paste0(k, ".W")]] <- .mk_p(pal[[k]], pal$fondo, td)
+        pst[[paste0(k, ".A")]] <- .mk_p(pal[[k]], pal$banda, td)
+      }
 
       # Section header
       openxlsx::writeData(wb, sht, x=L(header_key), startRow=r, startCol=1)
@@ -2058,11 +2111,11 @@ generate_cashflow_excel_wb <- function(export_data, emp_initials, emp_full,
       # ── 8. Parte column styles: batch by style key (≤10 addStyle calls) ────
       urg_vec <- !is.na(wide_df$tag_urgent)    & as.logical(wide_df$tag_urgent)
       imp_vec <- !is.na(wide_df$tag_important) & as.logical(wide_df$tag_important)
-      fc_vec  <- rep("#000000", n_rows)
-      fc_vec[imp_vec]            <- "#8B6914"
-      fc_vec[urg_vec]            <- "#8B1A1A"
-      fc_vec[urg_vec & imp_vec]  <- "#8B0000"
-      fc_vec[prov_vec]           <- "#606060"
+      fc_vec  <- rep("texto", n_rows)
+      fc_vec[imp_vec]            <- "etq_c"
+      fc_vec[urg_vec]            <- "etq_a"
+      fc_vec[urg_vec & imp_vec]  <- "etq_b"
+      fc_vec[prov_vec]           <- "provision"
       sk_vec  <- paste0(fc_vec, ifelse(is_even, ".A", ".W"))
 
       for (sk in unique(sk_vec)) {
@@ -2098,8 +2151,8 @@ generate_cashflow_excel_wb <- function(export_data, emp_initials, emp_full,
       invisible(NULL)
     }
 
-    write_detail(cd$ar_wide, "cxc_header", "subtotal_cxc", "#1A5C2E")
-    write_detail(cd$ap_wide, "cxp_header", "subtotal_cxp", "#7B1111")
+    write_detail(cd$ar_wide, "cxc_header", "subtotal_cxc", pal$cobro)
+    write_detail(cd$ap_wide, "cxp_header", "subtotal_cxp", pal$pago)
 
     openxlsx::setColWidths(wb, sht, cols=1,      widths=32)
     if (N_SHT > 1L)
@@ -2123,12 +2176,12 @@ generate_cashflow_excel_wb <- function(export_data, emp_initials, emp_full,
   r <- r + 1L
 
   gloss_rows <- list(
-    c(L("g_tag_urg"),    Lp("g_tag_urg_desc"),  "#8B1A1A", FALSE),
-    c(L("g_tag_both"),   Lp("g_tag_both_desc"), "#8B0000", FALSE),
-    c(L("g_tag_imp"),    Lp("g_tag_imp_desc"),  "#8B6914", FALSE),
-    c(L("g_prov"),       Lp("g_prov_desc"),     "#606060", TRUE),
-    c(L("g_method"),     Lp("g_method_desc"),   "#000000", FALSE),
-    c(L("g_disclaimer"), Lp("g_disclaimer"),    "#555555", FALSE)
+    c(L("g_tag_urg"),    Lp("g_tag_urg_desc"),  pal$etq_a, FALSE),
+    c(L("g_tag_both"),   Lp("g_tag_both_desc"), pal$etq_b, FALSE),
+    c(L("g_tag_imp"),    Lp("g_tag_imp_desc"),  pal$etq_c, FALSE),
+    c(L("g_prov"),       Lp("g_prov_desc"),     pal$provision, TRUE),
+    c(L("g_method"),     Lp("g_method_desc"),   pal$texto, FALSE),
+    c(L("g_disclaimer"), Lp("g_disclaimer"),    pal$texto_nota, FALSE)
   )
   if (export_data$currency_mode == "fused" && length(export_data$fx_rates)) {
     rs2 <- paste(mapply(function(cu, rt)
@@ -2141,7 +2194,7 @@ generate_cashflow_excel_wb <- function(export_data, emp_initials, emp_full,
     else
       paste0("(*) Montos convertidos usando: ", rs2,
              ". Estos son estimados y pueden diferir del tipo de cambio de liquidación.")
-    gloss_rows <- c(list(c(fx_lbl, fx_dsc, "#000000", FALSE)), gloss_rows)
+    gloss_rows <- c(list(c(fx_lbl, fx_dsc, pal$texto, FALSE)), gloss_rows)
   }
 
   openxlsx::setColWidths(wb, glos_sht, cols=1, widths=30)
@@ -2154,12 +2207,12 @@ generate_cashflow_excel_wb <- function(export_data, emp_initials, emp_full,
     openxlsx::addStyle(wb, glos_sht,
       style=openxlsx::createStyle(fontSize=9, fontName="Calibri", fontColour=clr,
         textDecoration=if(is_ital) c("bold","italic") else "bold",
-        halign="right", border="Bottom", borderColour="#E0E0E0"),
+        halign="right", border="Bottom", borderColour=pal$linea),
       rows=r, cols=1)
     openxlsx::addStyle(wb, glos_sht,
       style=openxlsx::createStyle(fontSize=9, fontName="Calibri", fontColour=clr,
         textDecoration=if(is_ital) "italic" else NULL,
-        halign="left", wrapText=TRUE, border="Bottom", borderColour="#E0E0E0"),
+        halign="left", wrapText=TRUE, border="Bottom", borderColour=pal$linea),
       rows=r, cols=2)
     openxlsx::setRowHeights(wb, glos_sht, rows=r, heights=40)
     r <- r + 1L
@@ -2604,7 +2657,8 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
                            else NULL,
           group_name     = g_name,
           group_logo_raw = g_logo_raw,
-          group_logo_ext = g_logo_ext
+          group_logo_ext = g_logo_ext,
+          tema           = tema_de_sesion()
         ),
         error = function(e) {
           showNotification(tr("tablas.flujo.aviso.error_word", error = conditionMessage(e)),
@@ -2748,7 +2802,8 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       g_logo_raw    = g_logo_raw,
       g_logo_ext    = g_logo_ext,
       lang_primary  = lang_primary,
-      lang_secondary = lang_secondary
+      lang_secondary = lang_secondary,
+      tema          = tema_de_sesion()   # TEMA 4b: the worker has no session
     ), snap_path)
 
     app_dir <- normalizePath(getwd())
@@ -3025,7 +3080,8 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
                              input$export_lang_secondary %||% NULL else NULL,
           group_name     = g_name,
           group_logo_raw = g_logo_raw,
-          group_logo_ext = g_logo_ext
+          group_logo_ext = g_logo_ext,
+          tema           = tema_de_sesion()
         ),
         error = function(e) {
           showNotification(tr("tablas.flujo.aviso.error_html", error = conditionMessage(e)),

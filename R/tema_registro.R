@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 7L
+HD_TEMAS_CSS_VERSION <- 8L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -237,6 +237,7 @@ HD_TEMAS <- list(
   `aviso-texto-997404` = "#997404",
   `borde-dde4ed` = "#DDE4ED",
   `borde-dee2e6` = "#DEE2E6",
+  `borde-e0e0e0` = "#E0E0E0",
   `borde-e8ecf2` = "#E8ECF2",
   `borde-f3f4f6` = "#F3F4F6",
   `borde-fuerte-adb5bd` = "#ADB5BD",
@@ -246,7 +247,9 @@ HD_TEMAS <- list(
   `encabezado-borde-0f1e3d` = "#0F1E3D",
   `encabezado-hover-2563a8` = "#2563A8",
   `encabezado-hover-4a6fa5` = "#4A6FA5",
+  `etq-a-texto-8b1a1a` = "#8B1A1A",
   `etq-a-texto-c62828` = "#C62828",
+  `etq-b-texto-8b0000` = "#8B0000",
   `etq-b-texto-e65100` = "#E65100",
   `exito-047857` = "#047857",
   `exito-059669` = "#059669",
@@ -255,6 +258,7 @@ HD_TEMAS <- list(
   `exito-suave-d1fae5` = "#D1FAE5",
   `exito-texto-064e3b` = "#064E3B",
   `exito-texto-0f5132` = "#0F5132",
+  `exito-texto-1a5c2e` = "#1A5C2E",
   `exito-texto-1b3a2a` = "#1B3A2A",
   `exito-texto-2d6a4f` = "#2D6A4F",
   `foco-4a88c7-21e45b` = "0 0 0 2px rgba(74,136,199,0.3)",
@@ -267,26 +271,32 @@ HD_TEMAS <- list(
   `oscuro-fondo-0d1117` = "#0D1117",
   `oscuro-fondo-1c2e42` = "#1C2E42",
   `oscuro-fondo-2-0d1e30` = "#0D1E30",
+  `oscuro-peligro-ff8080` = "#FF8080",
   `oscuro-texto-2-484f58` = "#484F58",
   `oscuro-texto-2-7b9ab8` = "#7B9AB8",
   `oscuro-texto-2-8b949e` = "#8B949E",
   `oscuro-texto-c8d8ea` = "#C8D8EA",
   `oscuro-texto-ffffff` = "#FFFFFF",
+  `pago-encabezado-8b3a0a` = "#8B3A0A",
   `peligro-9f1239` = "#9F1239",
   `peligro-be123c` = "#BE123C",
   `peligro-dc3545` = "#DC3545",
   `peligro-suave-fca5a5` = "#FCA5A5",
   `peligro-suave-fda4af` = "#FDA4AF",
   `peligro-texto-4c0519` = "#4C0519",
+  `peligro-texto-7b1111` = "#7B1111",
   `peligro-texto-881337` = "#881337",
   `peligro-texto-991b1b` = "#991B1B",
   `peligro-texto-dc3545` = "#DC3545",
   `primario-6366f1` = "#6366F1",
+  `primario-suave-d6e4f0` = "#D6E4F0",
   `primario-suave-d8e6f5` = "#D8E6F5",
+  `sombra-000000-0351f6` = "0 -4px 10px rgba(0,0,0,.12)",
   `sombra-000000-0504d0` = "0 1px 4px rgba(0,0,0,.05)",
   `sombra-000000-17659d` = "0 2px 6px rgba(0,0,0,0.06)",
   `sombra-000000-44cce5` = "0 4px 20px rgba(0,0,0,0.45)",
   `superficie-2-e2e8f0` = "#E2E8F0",
+  `texto-000000` = "#000000",
   `texto-0d1b2a` = "#0D1B2A",
   `texto-0d2240` = "#0D2240",
   `texto-111827` = "#111827",
@@ -296,10 +306,18 @@ HD_TEMAS <- list(
   `texto-2-374b5f` = "#374B5F",
   `texto-2-475569` = "#475569",
   `texto-2-495057` = "#495057",
+  `texto-2-606060` = "#606060",
   `texto-2-64748b` = "#64748B",
   `texto-2-6c757d` = "#6C757D",
   `texto-212529` = "#212529",
-  `texto-tenue-94a3b8` = "#94A3B8"
+  `texto-222222` = "#222222",
+  `texto-333333` = "#333333",
+  `texto-444444` = "#444444",
+  `texto-555555` = "#555555",
+  `texto-tenue-888888` = "#888888",
+  `texto-tenue-94a3b8` = "#94A3B8",
+  `texto-tenue-999999` = "#999999",
+  `texto-tenue-aaaaaa` = "#AAAAAA"
 )
 
 # Roles whose value is a whole box-shadow, not a colour.
