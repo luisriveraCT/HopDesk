@@ -61,8 +61,10 @@ test_that("hd_casillas: the data's cells, then the person's valid changes (row e
             valores = list(FALSE, TRUE, TRUE, TRUE, TRUE, FALSE))
   r <- hd_casillas(o, D, COLS, "id")
   expect_identical(r$req, c(FALSE, FALSE, FALSE))      # u1 off; zz unknown; u3 locked; "nombre" is not a box
-  expect_identical(r$bancos, c(FALSE, TRUE, TRUE))      # u2 on (the second u2|bancos is a duplicate: ignored)
+  expect_identical(r$bancos, c(FALSE, FALSE, TRUE))     # u2|bancos came twice: the last one (FALSE) wins
   expect_identical(hd_casillas(list(ids = list("u1"), campos = list(), valores = list(TRUE)), D, COLS, "id"), base)
+  sin <- hd_casillas(NULL, D[, c("id", "nombre", "req")], COLS, "id")   # a field the data lacks: all FALSE
+  expect_identical(sin$bancos, c(FALSE, FALSE, FALSE))
   vacia <- hd_casillas(NULL, NULL, COLS, "id")
   expect_identical(names(vacia), c("id", "req", "bancos")); expect_identical(nrow(vacia), 0L)
 })

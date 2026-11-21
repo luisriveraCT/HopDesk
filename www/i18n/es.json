@@ -348,6 +348,7 @@
   "tablas.casillas.no": "No",
   "tablas.casillas.columna": "Marcar o quitar toda la columna {columna}",
   "tablas.casillas.grupo": "Marcar o quitar {columna} en este grupo",
+  "tablas.casillas.celda": "{columna}: {fila}",
   "tablas.casillas.todos": "Todos",
   "tablas.casillas.nadie": "Nadie",
   "tablas.casillas.n_de": "{n} de {total}",

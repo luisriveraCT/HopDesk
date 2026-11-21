@@ -677,14 +677,21 @@ hd_casillas <- function(o, datos, columnas, id_col) {
   }
   datos <- as.data.frame(datos, stringsAsFactors = FALSE)
   out <- data.frame(id = as.character(datos[[id_col]]), stringsAsFactors = FALSE)
-  for (f in campos) { v <- as.logical(datos[[f]]); v[is.na(v)] <- FALSE; out[[f]] <- v }
+  for (f in campos) {
+    # A field the data doesn't have is all FALSE (and said), never a table
+    # without the column.
+    if (!f %in% names(datos)) message(sprintf("hd_casillas: field '%s' is not in the data; all FALSE.", f))
+    v <- if (f %in% names(datos)) as.logical(datos[[f]]) else rep(FALSE, nrow(datos))
+    v[is.na(v)] <- FALSE
+    out[[f]] <- v
+  }
   if (is.null(o) || !length(o$ids)) return(out)
   ids <- as.character(unlist(o$ids)); cps <- as.character(unlist(o$campos)); val <- unlist(o$valores)
   if (length(ids) != length(cps) || length(ids) != length(val)) return(out)
   val <- as.logical(val)
   bloq <- if (".bloqueada" %in% names(datos)) datos[[".bloqueada"]] %in% TRUE else rep(FALSE, nrow(datos))
   k <- match(ids, out$id)
-  ok <- !is.na(k) & cps %in% campos & !is.na(val) & !duplicated(paste(ids, cps, sep = "\r"))
+  ok <- !is.na(k) & cps %in% campos & !is.na(val) & !duplicated(paste(ids, cps, sep = "\r"), fromLast = TRUE)   # the last one wins
   ok[ok] <- !bloq[k[ok]]
   for (q in which(ok)) out[[cps[q]]][k[q]] <- val[q]
   out

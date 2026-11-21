@@ -2072,6 +2072,12 @@
 
   function ordenarVis(st, vis) {
     var o = st.celdas[st.orden.col].orden, dir = st.orden.dir;
+    // casillas_columna (T68): by what the boxes show now, not the data's value.
+    if (st.p.casillas_columna && st.cols[st.orden.col].tipo === 'casilla') {
+      var jo = st.orden.col;
+      o = [];
+      vis.forEach(function (i) { o[i] = casillaDe(st, jo, i) ? 1 : 0; });
+    }
     vis.sort(function (a, b) {
       var x = o[a], y = o[b];
       var xn = x == null || x === '', yn = y == null || y === '';
@@ -2343,7 +2349,9 @@
     cb.dataset.col = j;
     cb.checked = casillaDe(st, j, i);
     cb.disabled = !!st.bloq[i];
-    cb.setAttribute('aria-label', st.cols[j].titulo);
+    // Whose box it is, for a screen reader: the column and the row's first text.
+    var j0 = st.ver[0], fila0 = j0 != null && j0 !== j ? st.celdas[j0].mostrar[i] : '';
+    cb.setAttribute('aria-label', fila0 ? t('tablas.casillas.celda', { columna: st.cols[j].titulo, fila: fila0 }) : st.cols[j].titulo);
     td.classList.add('hdt-cas-celda');
     td.appendChild(cb);
   }
