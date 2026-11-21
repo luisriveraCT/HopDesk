@@ -470,6 +470,9 @@ ok("bslib still writes .btn-default's selector as .HD_BTN_DEFAULT_SEL (the :not(
 ok("bslib still paints the bar with var(--bslib-navbar-light-bg), and flatly sets it on .navbar",
    grepl(":where(.navbar){background-color:var(--bslib-navbar-light-bg)}", bs_css, fixed = TRUE) &&
      grepl(".navbar{--bslib-navbar-light-bg:", bs_css, fixed = TRUE))
+ok("the generated bridge sets the bar's --bslib-navbar-light-bg to barra-fondo under each theme with a bridge",
+   all(vapply(con_puente, function(t) grepl(paste0("html\\[data-hd-tema=\"", t, "\"\\] \\.navbar \\{[^}]*--bslib-navbar-light-bg: var\\(--hd-barra-fondo\\);"),
+                                              puente_txt), logical(1))))
 ok("the generated bridge carries the whole chain under each theme with a bridge",
    all(vapply(con_puente, function(t) grepl(paste0("html[data-hd-tema=\"", t, "\"] ", tema$.HD_BTN_DEFAULT_SEL),
                                               puente_txt, fixed = TRUE), logical(1))))
