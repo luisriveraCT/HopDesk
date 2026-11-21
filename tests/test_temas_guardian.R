@@ -83,7 +83,7 @@ archivos <- c("app.R",
   "R/tiers_module.R" = 36L,
   "R/treasury_map_module.R" = 4L,    # stage 4: only the 4 transparent #00000000 of vis.js (exempt)
   "R/ui_components.R" = 6L,           # stage 4: only the currency pills .ph-ctr-* (rest + active), the palette Bancos keeps (exempt)
-  "www/hdtable.css" = 23L,
+  "www/hdtable.css" = 12L,           # stage 4: palette over roles, value bubble on it; the loose ones next
   "www/overlay_init.js" = 15L,
   "www/panorama.css" = 4L,
   "www/requisiciones.css" = 28L
@@ -110,6 +110,17 @@ ok("ratchet lists only existing files",
      { message("  missing: ", paste(names(.TRINQUETE)[!file.exists(names(.TRINQUETE))], collapse = ", ")); FALSE })
 ok("every exempt file exists and says why",
    all(file.exists(names(.EXENTOS))) && all(nzchar(trimws(.EXENTOS))))
+
+# The table engine's palette (--hdt-*) is a layer over the roles: the count
+# above skips --x: definitions, so a hex there would pass unseen and Marca would
+# never reach a table.
+hdt_def <- regmatches(leer("www/hdtable.css"),
+                      gregexpr("--hdt-[a-z0-9-]+\\s*:[^;]*", leer("www/hdtable.css"), perl = TRUE))
+hdt_def <- grep("^--hdt-alto", unlist(hdt_def), value = TRUE, invert = TRUE)
+ok(sprintf("www/hdtable.css: its %d --hdt-* definitions are var(--hd-*) or var(--hdt-*), no hex", length(hdt_def)),
+   length(hdt_def) >= 39L && all(grepl("^--hdt-[a-z0-9-]+\\s*:\\s*var\\(--hdt?-[a-z0-9-]+\\)\\s*$", hdt_def)))
+ok("www/hdtable.css: the palette also covers .hdt-tip (it hangs from body, outside .hdt)",
+   any(grepl("^\\.hdt, \\.hdt-tip \\{", leer("www/hdtable.css"))))
 
 # ── 3. Same roles in every theme, no name defined twice ──────────────────────
 roles <- lapply(tema$HD_TEMAS, function(t) names(t$tokens))
@@ -177,7 +188,12 @@ contraste <- tema$tema_contraste
   c("etq-a-texto", "etq-a-pastilla"), c("etq-b-texto", "etq-b-pastilla"),
   c("etq-c-texto", "etq-c-pastilla"),
   c("modo-pago", "superficie"), c("modo-pago", "modo-pago-suave"),
-  c("primario-texto", "modo-pago")
+  c("primario-texto", "modo-pago"),
+  # The table engine (www/hdtable.css): neutral badge, the dark summary band,
+  # white on the danger button and on the "rows copied" notice.
+  c("texto-2", "superficie-2"), c("oscuro-texto", "encabezado"),
+  c("oscuro-exito", "encabezado"), c("oscuro-texto-2", "encabezado"),
+  c("texto-inverso", "peligro-texto"), c("texto-inverso", "texto")
 )
 # Clásico pairs that fail today (its values are what the app has): they may
 # not get worse, and a migration that fixes one removes it from here.
@@ -235,7 +251,7 @@ ok("the generated CSS puts the default theme on :root",
 # A migration (stage 4) may add legacy tokens, but only by removing at least
 # as many hand-written colours: raise .TOPE_LEGADO and lower .TRINQUETE in
 # the same commit. Their sum never grows. Then the legacy only shrinks.
-.TOPE_LEGADO   <- 176L   # stage 4: cashflow_preview.css (70 -> 0) +22, pasivos_table_styles.R (39 -> 4) +13; TEMA-P1: pasivos' dead CSS gone, -13; treasury_map_module.R (76 -> 4) +37; bancos_module.R (62 -> 11) +18; cashflow_export_module.R (203 -> 0) +18, its tags to etq-* -2; ui_components.R Calendario (-125) +36, Notas (-35) +9; the rest (-64) +9; reporte_module.R (157 -> 0) +31
+.TOPE_LEGADO   <- 194L   # stage 4: cashflow_preview.css (70 -> 0) +22, pasivos_table_styles.R (39 -> 4) +13; TEMA-P1: pasivos' dead CSS gone, -13; treasury_map_module.R (76 -> 4) +37; bancos_module.R (62 -> 11) +18; cashflow_export_module.R (203 -> 0) +18, its tags to etq-* -2; ui_components.R Calendario (-125) +36, Notas (-35) +9; the rest (-64) +9; reporte_module.R (157 -> 0) +31; hdtable.css palette and bubble (23 -> 12) +18
 .TOTAL_INICIAL <- 1338L   # sum(.TRINQUETE) + .TOPE_LEGADO on e2d3882 + TEMA stage 1
 leg <- tema$.HD_LEGADO
 ok(sprintf("legacy tokens: %d (ratchet %d)", length(leg), .TOPE_LEGADO), length(leg) <= .TOPE_LEGADO)
