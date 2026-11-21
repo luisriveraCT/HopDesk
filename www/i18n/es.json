@@ -915,7 +915,7 @@
   "tablas.empresas.estado": "Estado",
   "tablas.empresas.activa": "Activa",
   "tablas.empresas.inactiva": "Inactiva",
-  "tablas.empresas.renombre_pendiente": "Renombre pendiente",
+  "tablas.empresas.renombre_pendiente": "Pendiente",
   "tablas.empresas.renombre_pendiente_detalle": "El cambio de iniciales {antes} → {despues} no terminó.",
   "tablas.empresas.reintentar_renombre": "Reintentar",
   "tablas.empresas.aviso.renombre_en_curso": "Esta empresa ya se está renombrando a {iniciales}. Termina ese cambio con Reintentar antes de hacer otro.",

@@ -915,7 +915,7 @@
   "tablas.empresas.estado": "Status",
   "tablas.empresas.activa": "Active",
   "tablas.empresas.inactiva": "Inactive",
-  "tablas.empresas.renombre_pendiente": "Rename pending",
+  "tablas.empresas.renombre_pendiente": "Pending",
   "tablas.empresas.renombre_pendiente_detalle": "The change of initials {antes} → {despues} did not finish.",
   "tablas.empresas.reintentar_renombre": "Retry",
   "tablas.empresas.aviso.renombre_en_curso": "This company is already being renamed to {iniciales}. Finish that change with Retry before making another.",
