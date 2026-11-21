@@ -219,7 +219,7 @@ html_revertir <- .html(.audit_detail_modal_body(row_revertir, "own_client"))
      "end-to-end revertir_confirmacion: enriched scalar metadata renders via the generic key/value view")
 
 # =============================================================================
-# Part F -- static scan: every one of the 9 bancos log_action() call sites
+# Part F -- static scan: every one of the bancos log_action() call sites
 # passes a non-empty `metadata` argument (regression guard against a future
 # edit accidentally dropping the enrichment this stage added)
 # =============================================================================
@@ -229,12 +229,28 @@ bm_txt <- paste(readLines("R/bancos_module.R", warn = FALSE), collapse = "\n")
 .chk_true({p <- tryCatch({parse("R/bancos_module.R"); TRUE}, error = function(e) FALSE); p},
           "R/bancos_module.R still parses without syntax errors")
 
-call_blocks <- regmatches(bm_txt, gregexpr("log_action\\(\\s*\\n(?:.*?\\n)*?\\s*\\)", bm_txt, perl = TRUE))[[1]]
-bancos_calls <- Filter(function(b) grepl('module\\s*=\\s*"bancos"', b), call_blocks)
-.chk(length(bancos_calls), 10L, "found all 10 log_action(module=\"bancos\", ...) call sites (CM09 added recuperar_papelera_fallo_guardado)")
+# The log_action() calls of the PARSED code (CM41), not a regex over the
+# text: the multi-line lazy PCRE that was here overran one call into the
+# next (a 3 349-char "call") and can blow PCRE's stack. Each call whose
+# module is "bancos", and whether it passes a non-NULL metadata argument.
+llamadas_log <- function(archivo) {
+  out <- list()
+  buscar <- function(e) {
+    if (!is.call(e)) return(invisible())
+    if (identical(e[[1]], as.name("log_action"))) out[[length(out) + 1L]] <<- e
+    # an empty argument (x[, 1]) cannot be taken out: skipped
+    for (k in seq_along(e)[-1]) tryCatch(buscar(e[[k]]), error = function(err) NULL)
+  }
+  for (e in parse(archivo, keep.source = FALSE)) buscar(e)
+  out
+}
+bancos_calls <- Filter(function(cl) identical(cl$module, "bancos"), llamadas_log("R/bancos_module.R"))
+.chk(length(bancos_calls), 11L, paste("found all 11 log_action(module=\"bancos\", ...) call sites (CM09 added",
+                                      "recuperar_papelera_fallo_guardado; 820e5b9 the failed save's <accion>_fallido)"))
 
-n_with_metadata <- sum(vapply(bancos_calls, function(b) grepl("metadata\\s*=", b), logical(1)))
-.chk(n_with_metadata, 10L, "every one of the 10 bancos log_action() calls now passes a metadata argument")
+n_with_metadata <- sum(vapply(bancos_calls, function(cl) "metadata" %in% names(cl) && !is.null(cl$metadata),
+                              logical(1)))
+.chk(n_with_metadata, 11L, "every one of the 11 bancos log_action() calls passes a metadata argument (the _fallido too, CM41)")
 
 for (marker in c(".bancos_audit_rows_summary(del_rows)", ".bancos_audit_rows_summary(reasig_rows)",
                  ".bancos_audit_rows_summary(sesion_rows)", ".bancos_audit_rows_summary(nuevos)")) {

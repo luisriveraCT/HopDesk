@@ -1178,6 +1178,7 @@ bancosServer <- function(id, shared) {
         module      = "bancos",
         action      = paste0(accion, "_fallido"),
         description = paste0(descripcion, ": ", conditionMessage(error)),
+        metadata    = list(accion = accion),   # like every other Bancos log (CM41)
         client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
         viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       ), error = function(e) NULL)
