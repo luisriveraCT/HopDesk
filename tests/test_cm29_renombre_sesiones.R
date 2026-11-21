@@ -71,15 +71,14 @@ sembrar <- function() {
   poner(S3_KEYS$pasivos_liabilities, fila(.schema_pasivos_liability, id = c("l1", "l2"), empresa = c("OLD", "OTRA")))
   poner(REQ_KEYS$requisiciones, fila(.REQ_SCHEMAS$requisiciones, id = c("r1", "r2"), empresa = c("OLD", "OTRA")))
 }
-# What the Empresas edit does: the cascade, then (complete) empresas.rds with
-# NEW and the earlier initials (.iniciales_anteriores_tras(), CM29 part 2).
+# What the Empresas edit does (CM40): reserve NEW in empresas.rds, the
+# cascade, then (complete) empresas.rds with NEW and the earlier initials
+# (.iniciales_anteriores_tras(), CM29 part 2), the reservation cleared.
 source("R/empresas_module.R", encoding = "UTF-8")
 renombrar <- function() {
+  suppressMessages(reservar_renombre_empresa("e1", "OLD", "NEW", CID))
   suppressMessages(rename_empresa_initials("OLD", "NEW", client_id = CID))
-  e <- leer(S3_KEYS$empresas); i <- which(e$initials == "OLD")
-  e$iniciales_anteriores[i] <- .iniciales_anteriores_tras(e$iniciales_anteriores[i], "OLD", "NEW")
-  e$initials[i] <- "NEW"
-  poner(S3_KEYS$empresas, e)
+  suppressMessages(confirmar_renombre_empresa("e1", "OLD", "NEW", CID))
 }
 iniciales_vivas <- function() leer(S3_KEYS$empresas)$initials
 # Every initial a proveedores row names (Empresa and the comma list).
@@ -127,6 +126,14 @@ suppressMessages(save_pasivos_provisions(nuevo, client_id = CID, base = b_pv))
 v <- leer(S3_KEYS$pasivos_provisions)
 ok("3 pasivos: the new provision is saved and no row names an initial empresas.rds no longer has",
    "v3" %in% v$id && all(v$empresa %in% iniciales_vivas()))
+
+# ── CM40: the cascade alone, never reserved, is refused ─────────────────────
+sembrar(); n0 <- .mem_escrituras
+e <- tryCatch({ suppressMessages(rename_empresa_initials("OLD", "NEW", client_id = CID)); NULL },
+              error = function(e) e)
+ok("CM40 without a reservation the cascade stops: nothing written, still OLD",
+   !is.null(e) && grepl("was not reserved", conditionMessage(e), fixed = TRUE) &&
+     .mem_escrituras == n0 && "OLD" %in% iniciales_vivas())
 
 s3_memoria_restaurar()
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))

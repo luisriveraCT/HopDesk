@@ -20,8 +20,13 @@
 #      array (config and secrets identical); proveedores' comma list changes
 #      whole elements only ("NTSX" is not "NTS"); proveedores_inactivos and
 #      requisiciones are renamed; pasivos_audit is not touched;
-#   6  empresas.rds is read from S3 first: NEW taken by another company, or
-#      neither OLD nor NEW there, stops it with nothing written.
+#   6  empresas.rds is read from S3 first: NEW taken by another company, a
+#      rename never reserved (CM40), or neither OLD nor NEW there, stops it
+#      with nothing written;
+#   8  a retry whose row already says NEW (reservation NEW kept) goes on
+#      (CM29b), and NEW as another row's initials still stops it.
+# Every rename here reserves first, the way the Empresas edit does
+# (reservar_renombre_empresa(), CM40).
 # Run from project root:  Rscript tests/test_renombrar_iniciales.R
 # =============================================================================
 suppressPackageStartupMessages(library(testthat))
@@ -41,7 +46,15 @@ limpiar <- function() {
     rm(list = ls(env, all.names = TRUE), envir = env)
 }
 fila <- function(schema, ...) .normalize(tibble::as_tibble(list(...)), schema)
-renombrar <- function(old = "OLD", new = "NEW") suppressMessages(rename_empresa_initials(old, new, client_id = CID))
+source("R/empresas_module.R", encoding = "UTF-8")   # reservar_renombre_empresa() (CM40)
+# The company's row is reserved first, as the Empresas edit does; a rename of
+# initials no company has goes to the cascade unreserved (case 6).
+renombrar <- function(old = "OLD", new = "NEW") {
+  e  <- get0(k(S3_KEYS$empresas), envir = .mem)
+  id <- if (is.data.frame(e)) as.character(e$id[toupper(e$initials) %in% c(old, new)])[1] else NA
+  if (!is.na(id)) suppressMessages(reservar_renombre_empresa(id, old, new, CID))
+  suppressMessages(rename_empresa_initials(old, new, client_id = CID))
+}
 falla_de <- function() tryCatch({ renombrar(); NULL }, error = function(e) e)
 
 SECRETO <- "c2VjcmV0by1jaWZyYWRv"
@@ -183,11 +196,38 @@ test_that("6 empresas.rds first: NEW taken, or neither there, stops with nothing
   e <- tryCatch({ renombrar("NADA", "NUEVA"); NULL }, error = function(e) e)
   expect_false(is.null(e))
   expect_identical(.mem_escrituras, 0L)
+  # A rename never reserved (CM40): the cascade refuses it, nothing written.
+  e <- tryCatch({ suppressMessages(rename_empresa_initials("OLD", "NEW", client_id = CID)); NULL },
+                error = function(e) e)
+  expect_match(conditionMessage(e), "was not reserved", fixed = TRUE)
+  expect_identical(.mem_escrituras, 0L)
+  expect_identical(leer(S3_KEYS$ctas_cuentas)$Empresa, c("OLD", "OTRA"))
   # empresas.rds unreadable: nothing either.
   .mem_falla <<- k(S3_KEYS$empresas)
   e <- falla_de()
   expect_false(is.null(e))
   expect_identical(.mem_escrituras, 0L)
+})
+
+test_that("8 a retry whose row already says NEW goes on; NEW as another row's initials stops it", {
+  limpiar(); sembrar()
+  .mem_falla <<- k(S3_KEYS$pasivos_provisions)
+  e <- falla_de()                                       # reserved, a step failed
+  expect_identical(e$fallidos, "pasivos_provisions")
+  .mem_falla <<- character()
+  emp <- leer(S3_KEYS$empresas)                         # the row says NEW, its reservation kept
+  emp$initials[emp$id == "e1"] <- "NEW"; poner(S3_KEYS$empresas, emp)
+  expect_identical(suppressMessages(rename_empresa_initials("OLD", "NEW", client_id = CID)), "pasivos_provisions")
+  todo_renombrado()
+  # Another row holding NEW stops it, even with this row's reservation.
+  limpiar(); sembrar()
+  suppressMessages(reservar_renombre_empresa("e1", "OLD", "NEW", CID))
+  emp <- leer(S3_KEYS$empresas); emp$initials[emp$id == "e2"] <- "NEW"; poner(S3_KEYS$empresas, emp)
+  n0 <- .mem_escrituras
+  e <- tryCatch({ suppressMessages(rename_empresa_initials("OLD", "NEW", client_id = CID)); NULL },
+                error = function(e) e)
+  expect_match(conditionMessage(e), "already another company's", fixed = TRUE)
+  expect_identical(.mem_escrituras, n0)
 })
 
 test_that("7 the Empresas edit maps hd_renombrar_incompleto to its notice, and the key is in es and en", {

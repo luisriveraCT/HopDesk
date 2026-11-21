@@ -2334,7 +2334,11 @@ modificar_parte_alias_map <- function(cambio, client_id, permitir_reduccion = FA
   created_at   = character(),
   updated_at   = character(),
   group_id     = character(),   # FK → grupos$id; which conglomerate owns this company
-  iniciales_anteriores = character()   # JSON: ["OLD"], the initials it had before a complete rename (CM29)
+  iniciales_anteriores = character(),  # JSON: ["OLD"], the initials it had before a complete rename (CM29)
+  # The initials a rename in progress reserved (CM40): written before the
+  # cascade, cleared when the rename is confirmed; NA otherwise. Older files
+  # without the column read as NA (.normalize), no migration.
+  renombre_pendiente = character()
 )
 
 # Load empresas from S3. Returns the empty schema on first run (no auto-seeding).
@@ -2551,9 +2555,9 @@ modificar_group_config <- function(cambio, client_id) {
 # step read active rows only and dropped legacy activo = FALSE rows for good.
 # Every step is idempotent: once a table has no OLD left, it writes nothing.
 #
-# Before any step, empresas.rds is read strictly: NEW already taken by
-# another company, or neither OLD nor NEW there, stops it with nothing
-# written. Then every step runs even if one fails. If any failed, it stops
+# Before any step, empresas.rds is read strictly: no reservation of OLD -> NEW
+# there (CM40), or NEW already taken by another company, stops it with
+# nothing written. Then every step runs even if one fails. If any failed, it stops
 # with class hd_renombrar_incompleto ($hechos, $sin_cambios, $fallidos): the
 # caller keeps the old initials in empresas.rds, and saving the same edit
 # again finishes the job (the steps already done find no OLD). Messages carry
@@ -2703,16 +2707,22 @@ rename_empresa_initials <- function(old_ini, new_ini, client_id = NULL) {
     stop("[EMP rename] client_id is required", call. = FALSE)
   if (identical(old_ini, new_ini)) return(invisible(character(0)))
 
-  # a. empresas.rds as S3 holds it now (not the session's copy).
-  emp <- .hd_admin_completar(.s3_leer_para_escribir(S3_KEYS$empresas, client_id), .schema_empresas)
-  ini <- toupper(trimws(emp$initials))
-  hay_old <- toupper(old_ini) %in% ini
-  hay_new <- toupper(new_ini) %in% ini
-  if (hay_old && hay_new)
-    stop(sprintf("[EMP rename] %s is already another company's initials; nothing was written", new_ini),
+  # a. empresas.rds as S3 holds it now (not the session's copy). The rename
+  #    must have been reserved there first (CM40, reservar_renombre_empresa()
+  #    in R/empresas_module.R): ONE row whose renombre_pendiente is NEW and
+  #    whose initials are OLD -- or NEW already (a retry after the row was
+  #    confirmed, CM29b). NEW as the initials of any other row stops it.
+  #    Without that, two sessions renaming to the same NEW, or the same
+  #    company to two, both passed and their cascades mixed the tables.
+  emp  <- .hd_admin_completar(.s3_leer_para_escribir(S3_KEYS$empresas, client_id), .schema_empresas)
+  ini  <- toupper(trimws(emp$initials))
+  pend <- toupper(trimws(emp$renombre_pendiente)); pend[is.na(pend)] <- ""
+  suya <- which(pend == toupper(new_ini) & ini %in% toupper(c(old_ini, new_ini)))
+  if (length(suya) != 1L)
+    stop(sprintf("[EMP rename] %s -> %s was not reserved in empresas.rds; nothing was written", old_ini, new_ini),
          call. = FALSE)
-  if (!hay_old && !hay_new)
-    stop(sprintf("[EMP rename] neither %s nor %s is in empresas.rds; nothing was written", old_ini, new_ini),
+  if (toupper(new_ini) %in% ini[-suya])
+    stop(sprintf("[EMP rename] %s is already another company's initials; nothing was written", new_ini),
          call. = FALSE)
 
   cid <- client_id

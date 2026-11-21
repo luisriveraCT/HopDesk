@@ -29,6 +29,7 @@ source("tests/helpers/s3_memoria.R")
 for (f in c("R/bancos_persistence.R", "R/pasivos_schemas.R", "R/pasivos_persistence.R",
             "R/settings/settings_helpers.R"))
   suppressMessages(source(f))
+suppressMessages(source("R/empresas_module.R", encoding = "UTF-8"))   # reservar_renombre_empresa() (CM40)
 .pass <- 0L; .fail <- 0L
 ok <- function(label, expr) {
   result <- tryCatch(expr, error = function(e) { message("  ERROR: ", conditionMessage(e)); FALSE })
@@ -108,6 +109,12 @@ s3_memoria_reset()
 cid <- "acme"
 poner(cid, S3_KEYS$empresas, fila(.schema_empresas, id = "e1", initials = "OLD", activa = TRUE, deleted = FALSE))
 ok("2 setup: REQ_KEYS is not loaded here", !exists("REQ_KEYS"))
+# CM40: unreserved, the cascade is refused before any step; reserved, it runs.
+r <- tryCatch({ suppressMessages(rename_empresa_initials("OLD", "NEW", client_id = cid)); NULL },
+              error = function(e) e)
+ok("2 CM40: without a reservation the cascade is refused, nothing written",
+   inherits(r, "error") && grepl("was not reserved", conditionMessage(r), fixed = TRUE))
+suppressMessages(reservar_renombre_empresa("e1", "OLD", "NEW", cid))
 r <- tryCatch({ suppressMessages(rename_empresa_initials("OLD", "NEW", client_id = cid)); "completo" },
               hd_renombrar_incompleto = function(e) e)
 ok("2 the rename is incomplete (hd_renombrar_incompleto), not 'complete'", inherits(r, "hd_renombrar_incompleto"))
@@ -118,6 +125,7 @@ source("R/requisiciones_persistence.R")
 s3_memoria_reset()
 poner(cid, S3_KEYS$empresas, fila(.schema_empresas, id = "e1", initials = "OLD", activa = TRUE, deleted = FALSE))
 poner(cid, REQ_KEYS$requisiciones, fila(.REQ_SCHEMAS$requisiciones, id = "r1", empresa = "OLD"))
+suppressMessages(reservar_renombre_empresa("e1", "OLD", "NEW", cid))
 r <- tryCatch({ suppressMessages(rename_empresa_initials("OLD", "NEW", client_id = cid)) },
               hd_renombrar_incompleto = function(e) e)
 ok("2 control: with REQ_KEYS loaded, requisiciones is renamed and nothing failed",

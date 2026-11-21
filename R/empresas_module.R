@@ -52,15 +52,75 @@ logo_grupo_img <- function(logo_raw, logo_ext = "png", alto = 32) {
 # only against the session's copy: two sessions creating the same initials
 # at once both passed the copy's check and both were written. Stops with a
 # classed condition (nothing is written); the caller tells the user.
-.empresa_rechazo <- function(clase)
+.empresa_rechazo <- function(clase, ...)
   stop(structure(class = c(clase, "empresa_rechazada", "error", "condition"),
-                 list(message = clase, call = NULL)))
+                 c(list(message = clase, call = NULL), list(...))))
 .validar_alta_empresa <- function(initials) function(fresco) {
   if (nrow(fresco) && initials %in% toupper(trimws(fresco$initials)))
     .empresa_rechazo("empresa_iniciales_repetidas")
   if (initials %in% .iniciales_de_antes_ajenas(fresco))   # CM29
     .empresa_rechazo("empresa_iniciales_de_antes")
+  if (initials %in% .reservas_renombre(fresco))            # CM40: a rename in progress holds them
+    .empresa_rechazo("empresa_iniciales_reservadas", iniciales = initials)
   invisible(TRUE)
+}
+
+# ── Renaming, in three steps (CM40) ──────────────────────────────────────────
+# 1. reservar_renombre_empresa(): NEW is reserved on the company's row in
+#    empresas.rds (renombre_pendiente), checked on S3's table as it is now;
+# 2. rename_empresa_initials() (R/persistence.R): the cascade, which runs only
+#    on a reserved OLD -> NEW;
+# 3. confirmar_renombre_empresa() (or the edit's save, which applies the same
+#    .empresa_aplicar_campos()): initials NEW, OLD among the earlier ones,
+#    the reservation cleared.
+# Two sessions renaming two companies to the same NEW, or one company to two,
+# used to pass the same check and run their cascades over each other. Now
+# the second is refused at step 1, before any table is touched. A cascade
+# that fails leaves the reservation: the same rename again (Reintentar)
+# finishes it; nothing is undone.
+
+# The initials reserved by renames in progress (upper case), every row or all
+# but `id`'s.
+.reservas_renombre <- function(fresco, id = NULL) {
+  if (!is.data.frame(fresco) || !nrow(fresco) || !"renombre_pendiente" %in% names(fresco)) return(character(0))
+  otras <- if (is.null(id)) rep(TRUE, nrow(fresco)) else as.character(fresco$id) != id
+  p <- toupper(trimws(fresco$renombre_pendiente[otras]))
+  unique(p[!is.na(p) & nzchar(p)])
+}
+
+# Step 1. Refused (an "empresa_rechazada" condition, nothing written) when:
+# the company is gone; it is being renamed to other initials
+# (empresa_renombre_en_curso, $iniciales); its initials are no longer OLD
+# (empresa_renombrada_otra_sesion, $iniciales); NEW is another company's
+# initials or reserved by another rename (empresa_iniciales_reservadas);
+# NEW is another company's earlier initials (empresa_iniciales_de_antes).
+# The same reservation again (a retry) writes nothing and goes on. Returns
+# empresas.rds as written.
+reservar_renombre_empresa <- function(id, old_ini, new_ini, client_id) {
+  old_ini <- toupper(trimws(old_ini)); new_ini <- toupper(trimws(new_ini))
+  modificar_tabla(S3_KEYS$empresas, client_id, .schema_empresas, function(fresco) {
+    f <- which(as.character(fresco$id) == id)
+    if (length(f) != 1L) .empresa_rechazo("empresa_no_existe")
+    ini  <- toupper(trimws(fresco$initials))
+    pend <- toupper(trimws(fresco$renombre_pendiente)); pend[is.na(pend)] <- ""
+    if (nzchar(pend[f])) {
+      if (pend[f] == new_ini && ini[f] %in% c(old_ini, new_ini)) return(fresco)   # a retry
+      .empresa_rechazo("empresa_renombre_en_curso", iniciales = pend[f])
+    }
+    if (!identical(ini[f], old_ini)) .empresa_rechazo("empresa_renombrada_otra_sesion", iniciales = ini[f])
+    if (new_ini %in% ini[-f] || new_ini %in% .reservas_renombre(fresco, id))
+      .empresa_rechazo("empresa_iniciales_reservadas", iniciales = new_ini)
+    if (new_ini %in% .iniciales_de_antes_ajenas(fresco, id)) .empresa_rechazo("empresa_iniciales_de_antes")
+    fresco$renombre_pendiente[f] <- new_ini
+    fresco
+  })
+}
+
+# Step 3, outside the edit panel (the edit's save does the same through
+# .save_and_broadcast()). Returns empresas.rds as written.
+confirmar_renombre_empresa <- function(id, old_ini, new_ini, client_id) {
+  aplicar <- .empresa_aplicar_campos(id, list(), toupper(trimws(old_ini)), toupper(trimws(new_ini)))
+  modificar_tabla(S3_KEYS$empresas, client_id, .schema_empresas, function(fresco) aplicar(fresco, fresco))
 }
 
 # The new company's account_code made free against S3's table (CM39): it was
@@ -108,6 +168,7 @@ logo_grupo_img <- function(logo_raw, logo_ext = "png", alto = 32) {
   if (!is.null(new_ini) && !identical(old_ini, new_ini)) {
     fila$initials <- new_ini
     fila$iniciales_anteriores <- .iniciales_anteriores_tras(fila$iniciales_anteriores, old_ini, new_ini)
+    fila$renombre_pendiente <- NA_character_   # confirmed (CM40)
   }
   fila$updated_at <- as.character(Sys.time())
   nuevo[i, names(fila)] <- fila
@@ -265,6 +326,15 @@ empresasUI <- function(id) {
     ),
     div(
       class = "card-body p-3",
+
+      # A rename in progress (CM40): its cascade or its confirmation failed.
+      # Reintentar finishes that same rename; nothing else is offered.
+      if (!is.na(row$renombre_pendiente %||% NA) && nzchar(trimws(row$renombre_pendiente)))
+        div(class = "alert alert-warning d-flex align-items-center gap-2 py-2",
+            tags$span(tr("tablas.empresas.renombre_pendiente_detalle",
+                         antes = row$initials, despues = row$renombre_pendiente)),
+            actionButton(ns("btn_reintentar_renombre"), tr("tablas.empresas.reintentar_renombre"),
+                         class = "btn btn-warning btn-sm ms-auto")),
 
       textInput(ns("edit_razon_social"), "Razón Social",
                 value = row$razon_social %||% "", width = "100%"),
@@ -433,7 +503,10 @@ empresasServer <- function(id, shared) {
         initials     = empresas$initials,
         razon_social = empresas$razon_social,
         rfc          = empresas$rfc,
-        estado       = ifelse(!is.na(empresas$activa) & empresas$activa == TRUE, "activa", "inactiva"),
+        # A rename in progress (CM40) shows first: it needs Reintentar.
+        estado       = ifelse(!is.na(empresas$renombre_pendiente) & nzchar(trimws(empresas$renombre_pendiente)),
+                              "renombre_pendiente",
+                              ifelse(!is.na(empresas$activa) & empresas$activa == TRUE, "activa", "inactiva")),
         .acciones    = rep(paste(acciones, collapse = ","), nrow(empresas)),
         stringsAsFactors = FALSE
       )
@@ -448,7 +521,8 @@ empresasServer <- function(id, shared) {
         col_texto("rfc",          "tablas.empresas.rfc", recorte = FALSE),
         col_insignia("estado",    "tablas.empresas.estado", mapa = list(
           activa   = list(texto = "tablas.empresas.activa",   tono = "exito"),
-          inactiva = list(texto = "tablas.empresas.inactiva", tono = "neutro")))
+          inactiva = list(texto = "tablas.empresas.inactiva", tono = "neutro"),
+          renombre_pendiente = list(texto = "tablas.empresas.renombre_pendiente", tono = "aviso")))
       ),
       acciones_fila = c("editar", "erp", "desactivar"),
       filtros       = list(list(campo = "estado")),
@@ -526,9 +600,15 @@ empresasServer <- function(id, shared) {
       },
                         empresa_iniciales_repetidas = function(e) "repetidas",
                         empresa_iniciales_de_antes  = function(e) "de_antes",
+                        empresa_iniciales_reservadas = function(e) "reservadas",
                         error = function(e) { message("[EMP] create failed: ", e$message); "error" })
       if (saved == "repetidas") {
         showNotification(tr("tablas.empresas.aviso.iniciales_recien_dadas", iniciales = initials),
+                         type = "error", duration = 8)
+        return()
+      }
+      if (saved == "reservadas") {   # a rename in progress holds them (CM40)
+        showNotification(tr("tablas.empresas.aviso.iniciales_reservadas", iniciales = initials),
                          type = "error", duration = 8)
         return()
       }
@@ -587,6 +667,157 @@ empresasServer <- function(id, shared) {
       .empresas_edit_panel_ui(ns, row)
     })
 
+    # The session shown what S3 holds now (after a refused step).
+    .refrescar_empresas <- function() tryCatch(
+      if (!is.null(shared$empresas_db) && is.function(shared$empresas_db))
+        shared$empresas_db(leer_tabla_para_escribir(S3_KEYS$empresas, shared$effective_client_id(), .schema_empresas)),
+      error = function(e) message("[EMP] reload empresas: ", conditionMessage(e)))
+
+    # Steps 1 and 2 of a rename OLD -> NEW (CM40): reserve NEW on S3's table,
+    # then the cascade. TRUE when both are done; otherwise the user was told
+    # why and nothing more is to be done (a refused reservation wrote
+    # nothing; a cascade that failed keeps the reservation for Reintentar).
+    .renombrar <- function(sel_id, old_ini, new_ini) {
+      cid <- shared$effective_client_id()
+      reserva <- tryCatch(reservar_renombre_empresa(sel_id, old_ini, new_ini, cid),
+                          empresa_rechazada = function(e) e,
+                          error = function(e) { message("[EMP rename] reserve: ", conditionMessage(e)); e })
+      if (inherits(reserva, "error")) {
+        aviso <- if (inherits(reserva, "empresa_renombre_en_curso"))
+          tr("tablas.empresas.aviso.renombre_en_curso", iniciales = reserva$iniciales)
+        else if (inherits(reserva, "empresa_renombrada_otra_sesion"))
+          tr("tablas.empresas.aviso.renombrada_otra_sesion", iniciales = reserva$iniciales)
+        else if (inherits(reserva, "empresa_iniciales_reservadas"))
+          tr("tablas.empresas.aviso.iniciales_reservadas", iniciales = reserva$iniciales)
+        else if (inherits(reserva, "empresa_iniciales_de_antes"))
+          tr("tablas.empresas.aviso.iniciales_de_antes")
+        else tr("tablas.empresas.aviso.cambios_no_guardados")
+        showNotification(aviso, type = "error", duration = 8)
+        if (inherits(reserva, "empresa_rechazada")) .refrescar_empresas()
+        return(FALSE)
+      }
+      bump_sync_version("empresas_db", client_id = cid)   # other sessions see the reservation
+      if (!is.null(shared$empresas_db) && is.function(shared$empresas_db)) shared$empresas_db(reserva)
+      tryCatch(log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "empresas",
+        action      = "reservar_renombre",
+        description = sprintf("Reserva de iniciales %s → %s", old_ini, new_ini),
+        target_id   = sel_id,
+        metadata    = list(old_initials = old_ini, new_initials = new_ini),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      ), error = function(e) message("[EMP] log reservar_renombre: ", conditionMessage(e)))
+
+      # A step that failed (hd_renombrar_incompleto, CM26) leaves this
+      # company with its old initials and the reservation: Reintentar (or
+      # saving the same edit again) finishes the tables left. The cascade is
+      # recorded either way, with which tables were done and which failed
+      # (initials and table keys only).
+      cascade <- tryCatch(list(hechos = rename_empresa_initials(old_ini, new_ini, client_id = cid)),
+                          error = function(e) e)
+      if (inherits(cascade, "error")) {
+        if (inherits(cascade, "hd_renombrar_incompleto")) {
+          showNotification(tr("tablas.empresas.aviso.renombrar_incompleto", antes = old_ini, despues = new_ini,
+                              tablas = paste(cascade$fallidos, collapse = ", ")),
+                           type = "error", duration = 10)
+        } else {
+          showNotification(tr("tablas.empresas.aviso.error_cascada", error = conditionMessage(cascade)),
+                           type = "error", duration = 8)
+        }
+      }
+      if (inherits(cascade, "hd_renombrar_incompleto") || !inherits(cascade, "error"))
+        tryCatch(log_action(
+          user        = tryCatch(shared$current_user(), error = function(e) "system"),
+          module      = "empresas",
+          action      = "renombrar_iniciales",
+          description = sprintf("Cambio de iniciales %s → %s: %s", old_ini, new_ini,
+                                if (inherits(cascade, "error")) "incompleto" else "completo"),
+          target_id   = sel_id,
+          metadata    = list(old_initials = old_ini, new_initials = new_ini,
+                             hechas = cascade$hechos %||% character(0),
+                             fallidas = if (inherits(cascade, "error")) cascade$fallidos else character(0)),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        ), error = function(e) message("[EMP] log renombrar_iniciales: ", conditionMessage(e)))
+      !inherits(cascade, "error")
+    }
+
+    # Step 3 and the edit's other fields: set on S3's current row (CM40); a
+    # rename's initials confirmed there, its reservation cleared. If this
+    # write fails, the reservation stays and the same save (or Reintentar)
+    # finishes it.
+    .confirmar_edicion <- function(sel_id, cambios, old_ini, new_ini) {
+      renombra <- !identical(old_ini, new_ini)
+      saved <- tryCatch({ .save_and_broadcast(isolate(all_empresas_rv()), ajustar = .empresa_aplicar_campos(
+                            sel_id, cambios, old_ini, if (renombra) new_ini)); TRUE },
+                        error = function(e) { message("[EMP] edit failed: ", e$message); FALSE })
+      if (!saved) {
+        showNotification(tr("tablas.empresas.aviso.cambios_no_guardados"),
+                         type = "error", duration = 6)
+        return(FALSE)
+      }
+
+      # After initials rename: reload in-memory reactive vals that were updated
+      # in S3 by rename_empresa_initials(), so all modules see the new initials
+      # immediately without requiring a page refresh.
+      if (renombra) {
+        tryCatch(log_action(
+          user        = tryCatch(shared$current_user(), error = function(e) "system"),
+          module      = "empresas",
+          action      = "confirmar_renombre",
+          description = sprintf("Iniciales confirmadas %s → %s", old_ini, new_ini),
+          target_id   = sel_id,
+          metadata    = list(old_initials = old_ini, new_initials = new_ini),
+          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+        ), error = function(e) message("[EMP] log confirmar_renombre: ", conditionMessage(e)))
+        tryCatch(
+          if (!is.null(shared$ctas_cuentas) && is.function(shared$ctas_cuentas))
+            shared$ctas_cuentas(load_ctas_cuentas(client_id = shared$effective_client_id())),
+          error = function(e) message("[EMP rename] reload ctas_cuentas: ", e$message)
+        )
+        tryCatch(
+          if (!is.null(shared$interco_v2) && is.function(shared$interco_v2))
+            shared$interco_v2(
+              load_interco_v2(client_id = shared$effective_client_id()) %||%
+                list(ar_prefix = "C", ap_prefix = "P", companies = list())
+            ),
+          error = function(e) message("[EMP rename] reload interco_v2: ", e$message)
+        )
+        tryCatch(
+          if (!is.null(shared$proveedores_db) && is.function(shared$proveedores_db))
+            shared$proveedores_db(load_proveedores(client_id = shared$effective_client_id())),
+          error = function(e) message("[EMP rename] reload proveedores: ", e$message)
+        )
+        tryCatch(
+          if (!is.null(shared$parte_alias_map_db) && is.function(shared$parte_alias_map_db))
+            shared$parte_alias_map_db(load_parte_alias_map(client_id = shared$effective_client_id())),
+          error = function(e) message("[EMP rename] reload parte_alias_map: ", e$message)
+        )
+      }
+
+      selected_id(NULL)
+      showNotification(
+        if (renombra)
+          tr("tablas.empresas.aviso.iniciales_actualizadas", antes = old_ini, despues = new_ini)
+        else
+          tr("tablas.empresas.aviso.actualizada"),
+        type = "message", duration = 3)
+      tryCatch(log_action(
+        user        = tryCatch(shared$current_user(), error = function(e) "system"),
+        module      = "empresas",
+        action      = "editar_empresa",
+        description = if (renombra) paste0("Empresa editada: iniciales '", old_ini, "' → '", new_ini, "'")
+                      else paste0("Empresa editada: ", new_ini),
+        target_id   = sel_id,
+        metadata    = list(old_initials = old_ini, new_initials = new_ini),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+      ), error = function(e) message("[EMP] log editar_empresa: ", conditionMessage(e)))
+      TRUE
+    }
+
     observeEvent(input$btn_save_edit, {
       sel_id <- selected_id()
       row    <- .empresa_por_id(sel_id)
@@ -633,38 +864,8 @@ empresasServer <- function(id, shared) {
           showNotification(tr("tablas.empresas.aviso.iniciales_de_antes"), type = "error")
           return()
         }
-        # A step that failed (hd_renombrar_incompleto, CM26) leaves this
-        # company with its old initials: saving the same edit again finishes
-        # the tables left. The cascade is recorded either way, with which
-        # tables were done and which failed (initials and table keys only).
-        cascade <- tryCatch(list(hechos = rename_empresa_initials(old_ini, new_ini,
-                                                                  client_id = shared$effective_client_id())),
-                            error = function(e) e)
-        if (inherits(cascade, "error")) {
-          if (inherits(cascade, "hd_renombrar_incompleto")) {
-            showNotification(tr("tablas.empresas.aviso.renombrar_incompleto", antes = old_ini, despues = new_ini,
-                                tablas = paste(cascade$fallidos, collapse = ", ")),
-                             type = "error", duration = 10)
-          } else {
-            showNotification(tr("tablas.empresas.aviso.error_cascada", error = conditionMessage(cascade)),
-                             type = "error", duration = 8)
-          }
-        }
-        if (inherits(cascade, "hd_renombrar_incompleto") || !inherits(cascade, "error"))
-          tryCatch(log_action(
-            user        = tryCatch(shared$current_user(), error = function(e) "system"),
-            module      = "empresas",
-            action      = "renombrar_iniciales",
-            description = sprintf("Cambio de iniciales %s → %s: %s", old_ini, new_ini,
-                                  if (inherits(cascade, "error")) "incompleto" else "completo"),
-            target_id   = sel_id,
-            metadata    = list(old_initials = old_ini, new_initials = new_ini,
-                               hechas = cascade$hechos %||% character(0),
-                               fallidas = if (inherits(cascade, "error")) cascade$fallidos else character(0)),
-            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-          ), error = function(e) message("[EMP rename] log: ", conditionMessage(e)))
-        if (inherits(cascade, "error")) return()
+        # Reserve on S3's table, then the cascade (CM40).
+        if (!.renombrar(sel_id, old_ini, new_ini)) return()
       }
 
       alt_lines <- trimws(strsplit(input$edit_nombres_alt %||% "", "\n")[[1]])
@@ -678,64 +879,25 @@ empresasServer <- function(id, shared) {
         rfc          = toupper(trimws(input$edit_rfc  %||% "")),
         activa       = isTRUE(input$edit_activa),
         nombres_alt  = as.character(jsonlite::toJSON(alt_lines, auto_unbox = FALSE))))
-      saved <- tryCatch({ .save_and_broadcast(all_e, ajustar = .empresa_aplicar_campos(
-                            sel_id, cambios, old_ini, if (new_ini != old_ini) new_ini)); TRUE },
-                        error = function(e) { message("[EMP] edit failed: ", e$message); FALSE })
-      if (!saved) {
-        showNotification(tr("tablas.empresas.aviso.cambios_no_guardados"),
-                         type = "error", duration = 6)
-        return()
-      }
+      .confirmar_edicion(sel_id, cambios, old_ini, new_ini)
+    })
 
-      # After initials rename: reload in-memory reactive vals that were updated
-      # in S3 by rename_empresa_initials(), so all modules see the new initials
-      # immediately without requiring a page refresh.
-      if (new_ini != old_ini) {
-        tryCatch(
-          if (!is.null(shared$ctas_cuentas) && is.function(shared$ctas_cuentas))
-            shared$ctas_cuentas(load_ctas_cuentas(client_id = shared$effective_client_id())),
-          error = function(e) message("[EMP rename] reload ctas_cuentas: ", e$message)
-        )
-        tryCatch(
-          if (!is.null(shared$interco_v2) && is.function(shared$interco_v2))
-            shared$interco_v2(
-              load_interco_v2(client_id = shared$effective_client_id()) %||%
-                list(ar_prefix = "C", ap_prefix = "P", companies = list())
-            ),
-          error = function(e) message("[EMP rename] reload interco_v2: ", e$message)
-        )
-        tryCatch(
-          if (!is.null(shared$proveedores_db) && is.function(shared$proveedores_db))
-            shared$proveedores_db(load_proveedores(client_id = shared$effective_client_id())),
-          error = function(e) message("[EMP rename] reload proveedores: ", e$message)
-        )
-        tryCatch(
-          if (!is.null(shared$parte_alias_map_db) && is.function(shared$parte_alias_map_db))
-            shared$parte_alias_map_db(load_parte_alias_map(client_id = shared$effective_client_id())),
-          error = function(e) message("[EMP rename] reload parte_alias_map: ", e$message)
-        )
-      }
-
-      selected_id(NULL)
-      showNotification(
-        if (new_ini != old_ini)
-          tr("tablas.empresas.aviso.iniciales_actualizadas", antes = old_ini, despues = new_ini)
-        else
-          tr("tablas.empresas.aviso.actualizada"),
-        type = "message", duration = 3)
-      log_action(
-        user        = tryCatch(shared$current_user(), error = function(e) "system"),
-        module      = "empresas",
-        action      = "editar_empresa",
-        description = if (new_ini != old_ini)
-          paste0("Empresa editada: iniciales '", old_ini, "' \u2192 '", new_ini, "'")
-        else
-          paste0("Empresa editada: ", new_ini),
-        target_id   = all_e[full_idx, "id"],
-        metadata    = list(old_initials = old_ini, new_initials = new_ini),
-        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-      )
+    # Reintentar (CM40): a company with a rename in progress (a cascade or a
+    # confirmation that failed) finishes that same rename -- idempotent: the
+    # reservation is its own, the tables already done find no OLD. Only that
+    # rename; cancelling it is not offered.
+    observeEvent(input$btn_reintentar_renombre, {
+      sel_id <- selected_id()
+      row    <- .empresa_por_id(sel_id)
+      req(nrow(row) == 1)
+      pend <- toupper(trimws(row$renombre_pendiente %||% ""))
+      if (is.na(pend) || !nzchar(pend)) return()
+      old_ini <- trimws(row$initials)
+      # Initials already NEW (only the confirmation was left): clear it.
+      if (identical(toupper(old_ini), pend))
+        return(invisible(.confirmar_edicion(sel_id, list(renombre_pendiente = NA_character_), pend, pend)))
+      if (!.renombrar(sel_id, old_ini, pend)) return()
+      .confirmar_edicion(sel_id, list(), old_ini, pend)
     })
 
     # ── Delete (soft) ─────────────────────────────────────────────────────────

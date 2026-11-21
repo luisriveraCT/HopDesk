@@ -65,12 +65,12 @@ sembrar <- function() {
 }
 # Session A: the Empresas edit (cascade, then empresas.rds with NEW and the
 # earlier initials, as the handler writes them).
+# CM40: the edit's three steps -- reserve NEW in empresas.rds, the cascade,
+# confirm (initials NEW, OLD among the earlier ones, reservation cleared).
 renombrar <- function() {
+  suppressMessages(reservar_renombre_empresa("e1", "OLD", "NEW", CID))
   suppressMessages(rename_empresa_initials("OLD", "NEW", client_id = CID))
-  e <- leer(S3_KEYS$empresas); i <- which(e$initials == "OLD")
-  e$iniciales_anteriores[i] <- .iniciales_anteriores_tras(e$iniciales_anteriores[i], "OLD", "NEW")
-  e$initials[i] <- "NEW"
-  poner(S3_KEYS$empresas, e)
+  suppressMessages(confirmar_renombre_empresa("e1", "OLD", "NEW", CID))
 }
 # Session B: opens the ERP modal of `empresa`, then -- after `entre()` (session
 # A's work) -- fills the form of a new connection and saves it.
