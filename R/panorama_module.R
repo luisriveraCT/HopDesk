@@ -446,7 +446,10 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
         shiny::div(class = "pan-avisos-de",
           if (!staff) shiny::checkboxInput(ns("ad_mio"), tr("panorama.avisos_de.mio"), value = isTRUE(leido$pref$mio), width = "100%"),
           shiny::p(class = "text-muted small mb-2", tr(if (staff) "panorama.avisos_de.staff_nota" else "panorama.avisos_de.mio_ayuda")),
+          # Inline: the modal lives outside .hd-panorama, and panorama.css keeps
+          # its rules inside it (test_t49_notas_cinta).
           shiny::div(class = "pan-avisos-de-barra",
+            style = "display:flex; flex-wrap:wrap; align-items:center; gap:var(--hd-esp-2) var(--hd-esp-4); margin-bottom:var(--hd-esp-2);",
             shiny::div(class = "btn-group btn-group-sm", role = "group",
               shiny::actionButton(ns("ad_todos"), tr("panorama.avisos_de.todos"), class = "btn btn-outline-secondary"),
               shiny::actionButton(ns("ad_ninguno"), tr("panorama.avisos_de.ninguno"), class = "btn btn-outline-secondary"),

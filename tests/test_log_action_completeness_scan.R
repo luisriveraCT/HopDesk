@@ -371,7 +371,8 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
 #   - base writers (their callers log; pasivos_log_audit is the logger
 #     itself, its log_action goes first since A1): save_*, modificar_*, .s3_*, load_*,
 #     .audit_*, .req_modificar, .req_historial, upsert_*, add_to_*, .save_*,
-#     leer_*, prefs_guardar -- not checked themselves.
+#     leer_*, prefs_guardar, prefs_reemplazar (T68; it logs its own change,
+#     like prefs_guardar) -- not checked themselves.
 # It cannot tell a write that FAILED from one that worked (an early return
 # after a failed save is fine, though a *_fallido entry is better), so the
 # holes found on 2026-11-20 are a frozen list, DEUDA_CAMINO: a hole not in it
@@ -381,7 +382,7 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
 `%||%` <- function(a, b) if (is.null(a) || !length(a) || is.na(a[1])) b else a
 .ESCRITURA_T72 <- "^(save_[A-Za-z0-9_.]+|modificar_[A-Za-z0-9_.]+|modificar_tabla|\\.req_modificar|\\.s3_write|\\.s3_modificar|prefs_guardar|bump_sync_version)$"
 .REGISTRO_T72  <- c("log_action", "pasivos_log_audit", ".req_log")
-.BASE_T72      <- "^(save_|modificar_|\\.s3_|\\.req_modificar$|\\.req_historial$|\\.audit_|leer_|upsert_|add_to_|load_|prefs_guardar$|\\.save_|pasivos_log_audit$)"
+.BASE_T72      <- "^(save_|modificar_|\\.s3_|\\.req_modificar$|\\.req_historial$|\\.audit_|leer_|upsert_|add_to_|load_|prefs_guardar$|prefs_reemplazar$|\\.save_|pasivos_log_audit$)"
 
 .t72_nombre <- function(e) {
   f <- e[[1]]
@@ -527,7 +528,6 @@ DEUDA_CAMINO <- c(
     "R/pagar_hoy_module.R :: input$ph_unlink_supplier",
     "R/pagar_hoy_module.R :: input$load_bancos_saldos",
     "R/pagos_audit_viewer_module.R :: generate_pagos_audit_html_doc",
-    "R/panorama_module.R :: input$req_avisos_guardar",
     "R/panorama_publicar_module.R :: input$publicar",
     "R/pasivos_list_module.R :: .pasivos_cambiar_estado",
     "R/pasivos_module.R :: .pasivos_perform_conversion",
