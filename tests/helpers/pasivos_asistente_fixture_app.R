@@ -16,7 +16,7 @@ cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALS
     eval(e, envir = globalenv())
 cargar("R/global.R", c("strip_accents", "fmt_money"))
 cargar("R/persistence.R", c("confirmaciones_vigentes", ".normalize"))
-for (f in c("R/monedas.R", "R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+for (f in c("R/monedas.R", "R/zona.R", "R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/pasivos_schemas.R", "R/pasivos_capabilities.R", "R/forecasting_resolve.R", "R/policy_engine.R",
             "R/pasivos_engine.R", "R/pasivos_observers.R", "R/pasivos_rates.R",
             "R/pasivos_wizard_validate.R", "R/pasivos_wizard_steps.R", "R/pasivos_wizard_module.R", "R/zona.R"))

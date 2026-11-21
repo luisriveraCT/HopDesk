@@ -12,6 +12,8 @@
 #   zona_navegador(session)   this session's browser zone (T75).
 #   hoy_usuario(session, ahora)   the day it is for this session's user: the
 #                  value a date field starts at (T75).
+#   hoy_cliente(shared, ahora)   the client's business day (T75b): what a
+#                  calculation shared by every user of the client runs on.
 #
 # as.Date(<POSIXct>) is NOT used: in R 4.5 its tz defaults to "UTC" whatever
 # TZ says. `ahora` is an argument so a test can fix the clock.
@@ -36,3 +38,13 @@ zona_navegador <- function(session = shiny::getDefaultReactiveDomain()) {
 # The day it is for this session's user: what a date field starts at (T75).
 hoy_usuario <- function(session = shiny::getDefaultReactiveDomain(), ahora = Sys.time())
   hoy_en(zona_navegador(session), ahora)
+
+# The client's day (T75b, CM27-ppl): shared$zona_cliente()$zona once the
+# client setting exists (CM27 fase 1), ZONA_OMISION until then -- never the
+# server's. For calculations every user of the client shares (the Pasivos
+# engine, like pagar_hoy), not for what one person sees.
+hoy_cliente <- function(shared = NULL, ahora = Sys.time()) {
+  zona <- tryCatch(shared$zona_cliente()$zona, error = function(e) NULL)
+  if (!(is.character(zona) && length(zona) == 1L && !is.na(zona) && zona %in% OlsonNames())) zona <- ZONA_OMISION
+  hoy_en(zona, ahora)
+}

@@ -383,7 +383,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
   generated <- tryCatch(
     pasivos_generate_provisions(
       liability              = liab_row,
-      window_start           = Sys.Date(),
+      window_start           = hoy_cliente(shared),   # T75b: the client's day
       window_end             = NULL,
       policies_for_liability = list(),
       holidays_cache         = holidays
@@ -902,7 +902,7 @@ pasivos_vista_amortizacion <- function(draft) {
     error = function(e) NULL
   )
   if (is.null(liab_row)) return(NULL)
-  sched <- tryCatch(pasivos_generate_schedule(liab_row, today = Sys.Date()), error = function(e) NULL)
+  sched <- tryCatch(pasivos_generate_schedule(liab_row, today = hoy_cliente()), error = function(e) NULL)
   if (is.null(sched) || !nrow(sched)) return(NULL)
   futuras <- sched[!isTRUE_safe(sched$historico), , drop = FALSE]
   filas <- data.frame(
@@ -928,7 +928,7 @@ pasivos_vista_provisiones <- function(draft) {
   )
   if (is.null(liab_row)) return(NULL)
   provs <- tryCatch(
-    pasivos_generate_provisions(liab_row, window_start = Sys.Date(),
+    pasivos_generate_provisions(liab_row, window_start = hoy_cliente(),
                                  policies_for_liability = list(),
                                  holidays_cache = list()),
     error = function(e) NULL

@@ -322,7 +322,9 @@ pasivos_impuestos_pago <- function(impuestos, total, interes = 0) {
   round(out, 2)
 }
 
-pasivos_generate_schedule <- function(liability, today = Sys.Date()) {
+# today: the client's day (T75b, CM27). Sys.Date() was the server's: on UTC,
+# from 18:00 in Mexico a payment due today already counted as historico.
+pasivos_generate_schedule <- function(liability, today = hoy_en()) {
   today  <- as.Date(today)
   cat_ok <- !is.null(liability$categoria) && !is.na(liability$categoria) &&
     liability$categoria == "financiero"
@@ -694,11 +696,15 @@ pasivos_costeo <- function(liability, hoy = hoy_en()) {
 
 # ── §2.3 Provision generation ──────────────────────────────────────────────────
 
+# window_start / today: the client's day by default (T75b, CM27); `today`
+# is what the financiero schedule calls historico (it used to take the
+# server's day whatever the caller passed).
 pasivos_generate_provisions <- function(liability,
-                                         window_start = Sys.Date(),
+                                         window_start = hoy_en(),
                                          window_end   = NULL,
                                          policies_for_liability = list(),
-                                         holidays_cache = list()) {
+                                         holidays_cache = list(),
+                                         today = window_start) {
   window_start <- as.Date(window_start)
   cat <- liability$categoria
 
@@ -725,7 +731,7 @@ pasivos_generate_provisions <- function(liability,
 
   # ── Build raw date+amount stream ─────────────────────────────────────────
   if (identical(cat, "financiero")) {
-    sched <- pasivos_generate_schedule(liability)
+    sched <- pasivos_generate_schedule(liability, today = today)
     # Filter to non-historico rows in window
     stream <- sched[!sched$historico &
                       sched$fecha >= window_start &

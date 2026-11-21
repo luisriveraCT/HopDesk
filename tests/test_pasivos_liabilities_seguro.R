@@ -12,6 +12,7 @@ suppressPackageStartupMessages({
 source("tests/helpers/s3_memoria.R")
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
 source("R/monedas.R")   # T33: the wizard validates a currency against the catalog (moneda_valida())
+source("R/zona.R")     # T75b: the engine runs on the client's day (hoy_en, hoy_cliente)
 for (f in c("R/pasivos_schemas.R", "R/bancos_persistence.R", "R/pasivos_persistence.R",
             "R/pasivos_capabilities.R", "R/pasivos_audit.R", "R/forecasting_resolve.R",
             "R/policy_engine.R", "R/pasivos_engine.R", "R/pasivos_wizard_validate.R",
