@@ -6,7 +6,10 @@
 #   1. the page asks for hd_tema_bootstrap.css and gets 200;
 #   2. a fixed sample of Bootstrap components, added to the page by the test
 #      (button, outline button, warning button, link, focused input, checked
-#      box, active tab, badge, heading, warning alert), is read with
+#      box, active tab, badge, heading, warning alert; TEMA 2b: an
+#      actionButton's btn-default, btn-secondary and btn-outline-secondary,
+#      at rest and under a forced :hover, and the top bar, its ☰ and the
+#      active tab's name), is read with
 #      <html data-hd-tema="clasico"> and then "marca":
 #        - under Clásico it keeps flatly's colours (the bridge does not reach
 #          it; tests/test_tema_clasico_igual_chromote.R checks the whole app);
@@ -69,11 +72,21 @@ ESPERADO_MARCA <- list(
   tab_color = mc("primario"),
   badge_bg = mc("primario"),
   alert_bg = mc("aviso-suave"), alert_color = mc("aviso-texto"),
-  bs_primary = toupper(M[["primario"]]))
+  bs_primary = toupper(M[["primario"]]),
+  # TEMA 2b: the quiet button (an actionButton() without a class is btn-default)
+  def_bg = mc("superficie"), def_color = mc("texto"), def_border = mc("borde-fuerte"),
+  sec_bg = mc("superficie"), sec_color = mc("texto"), sec_border = mc("borde-fuerte"),
+  osec_color = mc("texto-2"), osec_border = mc("borde-fuerte"),
+  sec_hover_bg = mc("hover"), sec_hover_color = mc("texto"),
+  osec_hover_bg = mc("hover"), osec_hover_color = mc("texto"),
+  # TEMA 2b: the top bar
+  nav_bg = mc("barra-fondo"), nav_brand = mc("barra-texto"), menu_btn = mc("barra-texto"), activa = mc("barra-texto"))
 # Under Clásico the bridge must not reach the sample: flatly as compiled
 # (hd_bs_theme(): primary #0A58CA, warning #f39c12).
 ESPERADO_CLASICO <- list(btn_bg = "rgb(10, 88, 202)", warn_bg = "rgb(243, 156, 18)", check_bg = "rgb(10, 88, 202)",
                          badge_bg = "rgb(10, 88, 202)",
+                         def_bg = "rgb(149, 165, 166)", sec_bg = "rgb(149, 165, 166)",   # flatly's grey #95a5a6
+                         nav_bg = "rgb(10, 88, 202)", menu_btn = "rgb(255, 255, 255)", activa = "rgb(255, 255, 255)",
                          focus_border = "rgb(133, 172, 229)")   # flatly's #85ace5: proves the input is focused
 
 ev <- function(js) {
@@ -119,7 +132,10 @@ MUESTRA_JS <- "(function(){
     '<ul class=\"nav nav-tabs\"><li class=\"nav-item\"><a id=\"m-tab\" class=\"nav-link active\" href=\"#y\">T</a></li></ul>' +
     '<span id=\"m-badge\" class=\"badge bg-primary\">B</span>' +
     '<h4 id=\"m-h4\">Titulo</h4>' +
-    '<div id=\"m-alert\" class=\"alert alert-warning\">A</div>';
+    '<div id=\"m-alert\" class=\"alert alert-warning\">A</div>' +
+    '<button id=\"m-def\" class=\"btn btn-default action-button\">D</button>' +
+    '<button id=\"m-sec\" class=\"btn btn-secondary\">S</button>' +
+    '<button id=\"m-osec\" class=\"btn btn-outline-secondary\">OS</button>';
   document.body.insertBefore(d, document.body.firstChild);
   return true;
 })()"
@@ -139,18 +155,45 @@ LEER_MUESTRA_JS <- "(function(){
     tab_color: cs('m-tab').color,
     badge_bg: cs('m-badge').backgroundColor,
     h4_font: cs('m-h4').fontFamily,
-    alert_bg: cs('m-alert').backgroundColor, alert_color: cs('m-alert').color };
+    alert_bg: cs('m-alert').backgroundColor, alert_color: cs('m-alert').color,
+    def_bg: cs('m-def').backgroundColor, def_color: cs('m-def').color, def_border: cs('m-def').borderTopColor,
+    sec_bg: cs('m-sec').backgroundColor, sec_color: cs('m-sec').color, sec_border: cs('m-sec').borderTopColor,
+    osec_color: cs('m-osec').color, osec_border: cs('m-osec').borderTopColor };
+  var nav = document.querySelector('nav.navbar'), br = document.querySelector('nav.navbar .navbar-brand'),
+      mb = document.querySelector('.hd-menu-btn'), ac = document.getElementById('hd-barra-activa');
+  r.nav_bg = nav ? getComputedStyle(nav).backgroundColor : null;
+  r.nav_brand = br ? getComputedStyle(br).color : null;
+  r.menu_btn = mb ? getComputedStyle(mb).color : null;
+  r.activa = ac ? getComputedStyle(ac).color : null;
   return JSON.stringify(r);
 })()"
 # .form-control animates border and shadow (0.15 s): read a focused input only
 # after its transition, never in the same call that focuses it (2026-11-20:
 # read at once, it still showed the unfocused border and no shadow).
 ENFOCAR_JS <- "document.getElementById('m-input').focus(); true"
+# TEMA 2b: the quiet buttons under :hover, forced through CDP (no mouse in a
+# headless window), read after Bootstrap's 0.15 s button transition.
+leer_hover <- function() {
+  invisible(b$DOM$enable()); invisible(b$CSS$enable())
+  raiz <- b$DOM$getDocument(depth = 0L)$root$nodeId
+  out <- list()
+  for (k in c("sec", "osec")) {
+    sel <- paste0("#m-", k)
+    n <- b$DOM$querySelector(nodeId = raiz, selector = sel)$nodeId
+    invisible(b$CSS$forcePseudoState(nodeId = n, forcedPseudoClasses = list("hover")))
+    Sys.sleep(0.6)
+    v <- jsonlite::fromJSON(ev(sprintf("(function(){ var s = getComputedStyle(document.querySelector('%s'));
+      return JSON.stringify({bg: s.backgroundColor, c: s.color}); })()", sel)))
+    invisible(b$CSS$forcePseudoState(nodeId = n, forcedPseudoClasses = list()))
+    out[[paste0(k, "_hover_bg")]] <- v$bg; out[[paste0(k, "_hover_color")]] <- v$c
+  }
+  out
+}
 leer_muestra <- function() {
   ev(ENFOCAR_JS); Sys.sleep(0.6)
   r <- jsonlite::fromJSON(ev(LEER_MUESTRA_JS))
   ev("document.getElementById('m-input').blur(); true")
-  r
+  c(r, leer_hover())
 }
 pon_tema <- function(t) ev(sprintf("document.documentElement.setAttribute('data-hd-tema', '%s'); true", t))
 
