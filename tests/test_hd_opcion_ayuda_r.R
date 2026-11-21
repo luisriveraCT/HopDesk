@@ -22,11 +22,19 @@ test_that("without ayuda or col_opcion, columns, rows and filters are byte for b
   antes <- readLines("tests/fixtures/hd_opcion_ayuda_antes.json", warn = FALSE, encoding = "UTF-8")
   expect_identical(enc2utf8(ahora), enc2utf8(paste(antes, collapse = "\n")))
 })
-test_that("opcion_fila is optional in class E only, and no table has it unless it asks", {
+test_that("opcion_fila is optional in class E only, and only the listed tables have it", {
   expect_true("opcion_fila" %in% hd_clases$E$opcional)
   expect_true("opcion_fila" %in% HD_PIEZAS_MOTOR)
   for (cl in setdiff(names(hd_clases), "E")) expect_false("opcion_fila" %in% c(hd_clases[[cl]]$siempre, hd_clases[[cl]]$opcional))
-  for (tabla in names(hd_registro)) expect_false("opcion_fila" %in% hd_piezas_de(tabla), info = tabla)
+  # The only tables allowed to carry it, each with its reason. A new one is
+  # added here on purpose, never by a rule like "any table that asks".
+  permitidas <- c(
+    # T21b (580453e): Descargar todos los pagos picks, per payment without an
+    # account, whether it goes into a _002 file.
+    descargar_pagos = "T21b"
+  )
+  for (tabla in names(hd_registro))
+    expect_identical("opcion_fila" %in% hd_piezas_de(tabla), tabla %in% names(permitidas), info = tabla)
 })
 
 # ── ayuda ───────────────────────────────────────────────────────────────────
