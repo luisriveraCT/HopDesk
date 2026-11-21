@@ -202,6 +202,21 @@ test_that("4: with avisos_de it decides ('lo mío' + the req column)", {
   expect_setequal(d, c("caro", "dani"))   # beto: everyone but A1; caro: hers; dani: A1's
 })
 
+test_that("4: an avisos_de saved WITHOUT the req channel: its default is 'nadie' (and 'lo mio' as saved)", {
+  prefs <- prefs_df(caro = list(avisos_de = list(v = 1, mio = FALSE, canales = list(bancos = list(base = "todos", cambia = list())))),
+                    dani = list(avisos_de = list(v = 1, canales = list())))   # mio not saved: TRUE
+  expect_identical(avisos_de_normalizar(list(v = 1, canales = list()))$canales$req, list(base = "nadie", cambia = character()))
+  expect_true(avisos_de_normalizar(list(v = 1, canales = list()))$mio)
+  d <- req_avisos_destinatarios(U, NULL, prefs, interesados = c("caro", "dani"), autor = "ana", de_quien = "ana")
+  expect_identical(d, "dani")             # caro: no req channel and mio FALSE; dani: hers (mio by default)
+})
+
+test_that("4: base 'todos' and an author without account_code: everyone gets it (as T62's 'todas')", {
+  sin <- U; sin$account_code[sin$username == "ana"] <- NA
+  prefs <- prefs_df(caro = list(avisos_de = list(v = 1, mio = FALSE, canales = list(req = list(base = "todos", cambia = list("C1"))))))
+  expect_identical(req_avisos_destinatarios(sin, NULL, prefs, interesados = character(), autor = "ana", de_quien = "ana"), "caro")
+})
+
 test_that("5: Compras saves its avisos_de with the T69b write gate on; the treasury channels are trimmed", {
   sembrar(prefs_df(caro = list(ultima_visita = "x")))
   estado <- data.frame(id = c("A1", "B1"), req = c(TRUE, FALSE), crear = FALSE, bancos = TRUE, confirmar_pago = TRUE)

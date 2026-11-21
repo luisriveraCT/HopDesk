@@ -962,11 +962,21 @@ req_avisos_destinatarios <- function(usuarios, config, prefs, interesados, autor
     # T68: a saved "De quién recibo avisos" decides ("lo mío" + the req
     # column); without one, the T62 mode exactly as before (read only).
     if (is.list(datos) && is.list(datos$avisos_de)) {
-      ad <- avisos_de_normalizar(datos$avisos_de)
-      k <- ad$canales$req
-      de_otros <- if (identical(k$base, "todos")) !length(codigos_de) || any(!codigos_de %in% k$cambia)
-                  else any(codigos_de %in% k$cambia)
-      if ((isTRUE(ad$mio) && user[i] %in% interesados) || isTRUE(de_otros)) out <- c(out, user[i])
+      # Read here, not with avisos_de_normalizar() (R/panorama_datos.R), so
+      # every loader of this file keeps working on its own: "lo mio" TRUE
+      # unless saved FALSE; the req channel "nadie" with no one unless saved
+      # (the same defaults as avisos_de_normalizar()).
+      ad <- datos$avisos_de
+      mio <- if (is.null(ad$mio)) TRUE else isTRUE(as.logical(unlist(ad$mio))[1])
+      k <- if (is.list(ad$canales) && is.list(ad$canales$req)) ad$canales$req else list()
+      base <- as.character(unlist(k$base))[1]
+      if (length(base) != 1L || is.na(base) || !base %in% c("todos", "nadie")) base <- "nadie"
+      cambia <- unique(trimws(as.character(unlist(k$cambia))))
+      # Base "todos" and an author without account_code (codigos_de empty):
+      # everyone gets it, as T62's "todas" did.
+      de_otros <- if (identical(base, "todos")) !length(codigos_de) || any(!codigos_de %in% cambia)
+                  else any(codigos_de %in% cambia)
+      if ((mio && user[i] %in% interesados) || isTRUE(de_otros)) out <- c(out, user[i])
       next
     }
     pf <- req_avisos_pref(datos$req_avisos)
