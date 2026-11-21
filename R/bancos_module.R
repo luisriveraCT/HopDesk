@@ -150,52 +150,10 @@ bancos_styles <- function() {
     }
     .bnc-card .bnc-spark-wrap { flex:none; width:48px; height:16px; }
     .bnc-card .bnc-spark { width:100%; height:16px; display:block; }
-    .bnc-card.bnc-pos  { }
-    .bnc-card.bnc-neg  { }
-    .bnc-card.bnc-zero { }
-    .bnc-tipo-badge {
-      display:inline-block; font-size:.68rem; padding:1px 6px;
-      border-radius:4px; font-weight:600; white-space:nowrap;
-    }
-    .bnc-tipo-spei_out    { background:#fff3cd; color:#664d03; }
-    .bnc-tipo-spei_in     { background:#d1e7dd; color:#0a3622; }
-    .bnc-tipo-comision    { background:#f8f9fa; color:#6c757d; }
-    .bnc-tipo-traspaso    { background:#fff0d6; color:#7d4e00; border:1px solid #fd7e14; }
-    .bnc-tipo-nomina      { background:#e0cffc; color:#3d0a91; }
-    .bnc-tipo-pos         { background:#cfe2ff; color:#084298; }
-    .bnc-tipo-manual_in   { background:#d1ecf1; color:#0c5460; }
-    .bnc-tipo-otro,
-    .bnc-tipo-domiciliacion,
-    .bnc-tipo-cambio,
-    .bnc-tipo-plazo       { background:#e9ecef; color:#495057; }
-    .bnc-row-comision     { opacity:.55; }
-    .bnc-row-conciliado   { background:#f0fff4 !important; }
-    .bnc-row-cargo        { color:#dc3545; font-weight:600; }
-    .bnc-row-abono        { color:#198754; font-weight:600; }
     .bnc-import-badge     {
       display:inline-flex; align-items:center; gap:4px;
       font-size:.8rem; padding:3px 10px; border-radius:20px;
     }
-    .bnc-btn-xs {
-      font-size:.72rem; padding:1px 5px; line-height:1.4;
-      border:1px solid #dee2e6; background:#fff; cursor:pointer;
-      border-radius:3px;
-    }
-    .bnc-btn-xs:hover { background:#f8f9fa; }
-    .bnc-btn-xs--undo {
-      border-color:#ffc107; color:#856404; background:#fffbf0;
-    }
-    .bnc-btn-xs--undo:hover { background:#fff3cd; }
-    /* ── Day group banding (very subtle — must not look like selection) ─── */
-    tr.bnc-day-alt:not(.bnc-row-selected) td { background:#f8f9fa; }
-    /* ── Row selection (clearly distinct blue) ──────────────────────────── */
-    .bnc-libro-wrap tbody tr { cursor:pointer; user-select:none; }
-    tr.bnc-row-selected td  { background:#cfe2ff !important; }
-    tr.bnc-row-selected td:first-child { border-left:3px solid #0d6efd !important; }
-    /* ── Compact libro table ─────────────────────────────────────────────── */
-    .bnc-libro-wrap table.dataTable { font-size:.76rem; }
-    .bnc-libro-wrap table.dataTable.compact thead th,
-    .bnc-libro-wrap table.dataTable.compact tbody td { padding:3px 7px !important; line-height:1.3; }
     /* ── Slim toolbar ────────────────────────────────────────────────────── */
     .bnc-toolbar { border-bottom:1px solid #e9ecef; padding-bottom:6px; margin-bottom:8px; }
     .bnc-toolbar .form-group { margin-bottom:0 !important; }
@@ -217,45 +175,6 @@ bancos_styles <- function() {
     .bnc-flujo-ingresos { background:#198754 !important; border-color:#198754 !important; color:#fff !important; font-weight:600; }
     /* Comisiones visible */
     .bnc-com-active { background:#fd7e14 !important; border-color:#fd7e14 !important; color:#fff !important; font-weight:600; }
-    /* Trash enabled: fill red */
-    .bnc-btn-trash:not([disabled]) { background:#dc3545 !important; color:#fff !important; border-color:#dc3545 !important; }
-    .bnc-btn-trash:not([disabled]):hover { background:#bb2d3b !important; border-color:#b02a37 !important; }
-    /* ── Selection pill ─────────────────────────────────────── */
-    .bnc-sel-pill {
-      display:inline-flex; align-items:center; gap:6px;
-      background:#0d6efd; color:#fff; border-radius:20px;
-      padding:3px 8px 3px 12px; font-size:.8rem; font-weight:500;
-    }
-    .bnc-sel-pill-clear {
-      cursor:pointer; border:none; background:transparent;
-      color:rgba(255,255,255,.8); font-size:1.15rem; line-height:1; padding:0 3px;
-    }
-    .bnc-sel-pill-clear:hover { color:#fff; }
-    /* ── Vincular mode cursor ───────────────────────────────── */
-    .bnc-vincular-mode .bnc-libro-wrap tbody tr { cursor:crosshair !important; }
-    /* ── Vincular / Sugerencias modals ─────────────────────── */
-    .bnc-vin-card {
-      background:#f8f9fa; border:1px solid #dee2e6; border-radius:8px;
-      padding:10px 14px; font-size:.88rem;
-    }
-    .bnc-vin-cand-row {
-      display:flex; justify-content:space-between; align-items:center;
-      padding:8px 10px; border-bottom:1px solid #f0f0f0;
-      cursor:pointer; transition:background .1s;
-    }
-    .bnc-vin-cand-row:hover { background:#f5f7fa; }
-    .bnc-score-badge {
-      font-size:.7rem; color:#6c757d; background:#e9ecef;
-      border-radius:20px; padding:1px 7px; white-space:nowrap; flex-shrink:0;
-    }
-    .bnc-sug-panel {
-      border:1px solid #dee2e6; border-radius:6px;
-      overflow-y:auto; max-height:380px;
-    }
-    .bnc-sug-item { padding:8px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer; }
-    .bnc-sug-item:hover { background:#f8f9fa; }
-    .bnc-sug-item.bnc-sug-active { background:#EBF4FF; border-left:3px solid #0A58CA; padding-left:9px; }
-    .bnc-sug-item.bnc-sug-dim { opacity:.35; pointer-events:none; }
     /* ── Import tab balance band ──────────────────────────────── */
     .bnc-ticker {
       display: flex;
@@ -417,17 +336,6 @@ bancos_libro_js <- function(id) {
   if (!nzchar(ini)) return(ini)
   nm <- .cmap_lookup(cmap, ini)
   if (is.na(nm)) ini else nm
-}
-
-# ── Badge HTML helper ─────────────────────────────────────────────────────────
-.tipo_badge <- function(tipo) {
-  # %||% only substitutes on NULL, not NA -- an NA tipo (e.g. a legacy/manual
-  # row with none set) would otherwise render a literal "NA" badge instead of
-  # falling back to the existing "Otro" bucket.
-  if (is.na(tipo)) tipo <- "otro"
-  lbl <- .TIPO_LABELS[tipo] %||% tipo
-  sprintf('<span class="bnc-tipo-badge bnc-tipo-%s">%s</span>',
-          htmltools::htmlEscape(tipo), htmltools::htmlEscape(lbl))
 }
 
 # =============================================================================

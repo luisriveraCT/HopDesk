@@ -5,7 +5,7 @@
 # (writing a stale full-row snapshot back to S3 can silently revert a
 # concurrent password reset/tier change), plus a batch of Bancos
 # double-click/idempotency gaps and two data-display bugs
-# (.filter_periodo("mes_anterior")'s off-by-one, .tipo_badge()'s NA badge).
+# (.filter_periodo("mes_anterior")'s off-by-one; .tipo_badge() went with its dead CSS, TEMA-Bancos).
 #
 # bancos_module.R is NOT sourced into this harness (too large/UI-coupled --
 # same reason test_fix_soon_hardening.R verified its Bancos fixes via static
@@ -197,16 +197,6 @@ cat("── Minor hardening (post-review) ────────────�
   .chk(ms(fin), as.Date("2026-07-01"), "the fixed formula (inicio <- ms(fin)) gives July 1st")
   .chk(ms(hoy - 32), as.Date("2026-06-01"),
        "the old formula would have wrongly given June 1st (the bug this replaces)")
-}
-
-# ── E. .tipo_badge(): NA tipo falls back to the existing "otro" bucket
-# instead of rendering a literal "NA" badge (static check). ─────────────────
-{
-  txt   <- readLines("R/bancos_module.R", warn = FALSE)
-  start <- grep("^\\.tipo_badge <- function", txt)[1]
-  blk   <- paste(txt[start:min(start + 6, length(txt))], collapse = "\n")
-  .chk(grepl('if \\(is\\.na\\(tipo\\)\\) tipo <- "otro"', blk), TRUE,
-       "R/bancos_module.R: .tipo_badge() maps NA to the existing 'otro' bucket before rendering")
 }
 
 cat("\n")

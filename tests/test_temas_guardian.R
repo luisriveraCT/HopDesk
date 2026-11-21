@@ -59,7 +59,7 @@ archivos <- c("app.R",
   "R/audit_sticky_ui.R" = 4L,
   "R/auth_reset.R" = 3L,
   "R/avisos_correos.R" = 32L,
-  "R/bancos_module.R" = 112L,
+  "R/bancos_module.R" = 62L,          # TEMA-Bancos: 41 dead rules of bancos_styles() gone (-50)
   "R/cashflow_export_module.R" = 203L,
   "R/cashflow_preview_module.R" = 6L,
   "R/email_service.R" = 79L,
