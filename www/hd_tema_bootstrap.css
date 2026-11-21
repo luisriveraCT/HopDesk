@@ -184,6 +184,47 @@ html[data-hd-tema="marca"] .alert-info {
   background-color: var(--hd-info-suave);
   --bs-alert-color: var(--hd-info);
 }
+html[data-hd-tema="marca"] .navbar {
+  --bslib-navbar-light-bg: var(--hd-barra-fondo);
+  --bslib-navbar-dark-bg: var(--hd-barra-fondo);
+  --bs-navbar-color: var(--hd-barra-texto);
+  --bs-navbar-brand-color: var(--hd-barra-texto);
+  --bs-navbar-brand-hover-color: var(--hd-barra-texto);
+  --bs-navbar-hover-color: var(--hd-barra-texto);
+  --bs-navbar-active-color: var(--hd-barra-texto);
+}
+html[data-hd-tema="marca"] .btn-secondary,
+html[data-hd-tema="marca"] .btn-default:not(.btn-primary):not(.btn-info):not(.btn-success):not(.btn-warning):not(.btn-danger):not(.btn-dark):not(.btn-light):not([class*='btn-outline-']) {
+  --bs-btn-color: var(--hd-texto);
+  --bs-btn-bg: var(--hd-superficie);
+  --bs-btn-border-color: var(--hd-borde-fuerte);
+  --bs-btn-hover-color: var(--hd-texto);
+  --bs-btn-hover-bg: var(--hd-hover);
+  --bs-btn-hover-border-color: var(--hd-texto-2);
+  --bs-btn-focus-shadow-rgb: 138, 109, 44;
+  --bs-btn-active-color: var(--hd-texto);
+  --bs-btn-active-bg: var(--hd-seleccion);
+  --bs-btn-active-border-color: var(--hd-texto-2);
+  --bs-btn-disabled-color: var(--hd-texto);
+  --bs-btn-disabled-bg: var(--hd-superficie);
+  --bs-btn-disabled-border-color: var(--hd-borde-fuerte);
+}
+html[data-hd-tema="marca"] .btn-outline-secondary,
+html[data-hd-tema="marca"] .btn-outline-default {
+  --bs-btn-color: var(--hd-texto-2);
+  --bs-btn-bg: transparent;
+  --bs-btn-border-color: var(--hd-borde-fuerte);
+  --bs-btn-hover-color: var(--hd-texto);
+  --bs-btn-hover-bg: var(--hd-hover);
+  --bs-btn-hover-border-color: var(--hd-texto-2);
+  --bs-btn-focus-shadow-rgb: 138, 109, 44;
+  --bs-btn-active-color: var(--hd-texto);
+  --bs-btn-active-bg: var(--hd-seleccion);
+  --bs-btn-active-border-color: var(--hd-texto-2);
+  --bs-btn-disabled-color: var(--hd-texto-2);
+  --bs-btn-disabled-bg: transparent;
+  --bs-btn-disabled-border-color: var(--hd-borde-fuerte);
+}
 html[data-hd-tema="marca"] .btn-primary {
   --bs-btn-color: var(--hd-primario-texto);
   --bs-btn-bg: var(--hd-primario);

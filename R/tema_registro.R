@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 5L
+HD_TEMAS_CSS_VERSION <- 6L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -486,6 +486,9 @@ tema_legado_css <- function() {
 #   {rgba:rol:a}    rgba() of the role at alpha a
 # Anything else is literal and may not hold a colour (no #hex, no rgb()):
 # the guardian checks it.
+# bslib 0.9's selector for a plain .btn-default (as it compiles it, quotes
+# included). The guardian fails if bslib ever writes another one.
+.HD_BTN_DEFAULT_SEL <- ".btn-default:not(.btn-primary):not(.btn-info):not(.btn-success):not(.btn-warning):not(.btn-danger):not(.btn-dark):not(.btn-light):not([class*='btn-outline-'])"
 .HD_PUENTE_BS <- list(
   list(sel = "", decl = c(
     `--bs-primary` = "{primario}", `--bs-primary-rgb` = "{rgb:primario}",
@@ -566,7 +569,35 @@ tema_legado_css <- function() {
   list(sel = c(".alert-success"), decl = c(`background-color` = "{exito-suave}", `--bs-alert-color` = "{exito-texto}")),
   list(sel = c(".alert-danger"), decl = c(`background-color` = "{peligro-suave}", `--bs-alert-color` = "{peligro-texto}")),
   list(sel = c(".alert-warning"), decl = c(`background-color` = "{aviso-suave}", `--bs-alert-color` = "{aviso-texto}")),
-  list(sel = c(".alert-info"), decl = c(`background-color` = "{info-suave}", `--bs-alert-color` = "{info}"))
+  list(sel = c(".alert-info"), decl = c(`background-color` = "{info-suave}", `--bs-alert-color` = "{info}")),
+  # The top bar (TEMA 2b). bslib paints it with --bslib-navbar-light-bg (flatly
+  # compiles .navbar { --bslib-navbar-light-bg: #0A58CA }); nothing in the
+  # repo paints it. Hover and active in barra-texto: the tab links live in the
+  # ☰ panel, which has its own colours (R/ui_components.R, T51).
+  list(sel = c(".navbar"), decl = c(
+    `--bslib-navbar-light-bg` = "{barra-fondo}", `--bslib-navbar-dark-bg` = "{barra-fondo}",
+    `--bs-navbar-color` = "{barra-texto}", `--bs-navbar-brand-color` = "{barra-texto}",
+    `--bs-navbar-brand-hover-color` = "{barra-texto}", `--bs-navbar-hover-color` = "{barra-texto}",
+    `--bs-navbar-active-color` = "{barra-texto}")),
+  # The quiet button (TEMA 2b): .btn-secondary and .btn-default, which Shiny
+  # gives every actionButton() without a class. flatly paints both grey
+  # (#95a5a6, white text: 2.56:1); a theme gets its surface, ink and border.
+  # The .btn-default selector repeats bslib's :not() chain (0,10,0) to beat it;
+  # the guardian checks it against the CSS bslib compiles.
+  list(sel = c(".btn-secondary", .HD_BTN_DEFAULT_SEL), decl = c(
+    `--bs-btn-color` = "{texto}", `--bs-btn-bg` = "{superficie}", `--bs-btn-border-color` = "{borde-fuerte}",
+    `--bs-btn-hover-color` = "{texto}", `--bs-btn-hover-bg` = "{hover}", `--bs-btn-hover-border-color` = "{texto-2}",
+    `--bs-btn-focus-shadow-rgb` = "{rgb:foco-color}",
+    `--bs-btn-active-color` = "{texto}", `--bs-btn-active-bg` = "{seleccion}", `--bs-btn-active-border-color` = "{texto-2}",
+    `--bs-btn-disabled-color` = "{texto}", `--bs-btn-disabled-bg` = "{superficie}",
+    `--bs-btn-disabled-border-color` = "{borde-fuerte}")),
+  list(sel = c(".btn-outline-secondary", ".btn-outline-default"), decl = c(
+    `--bs-btn-color` = "{texto-2}", `--bs-btn-bg` = "transparent", `--bs-btn-border-color` = "{borde-fuerte}",
+    `--bs-btn-hover-color` = "{texto}", `--bs-btn-hover-bg` = "{hover}", `--bs-btn-hover-border-color` = "{texto-2}",
+    `--bs-btn-focus-shadow-rgb` = "{rgb:foco-color}",
+    `--bs-btn-active-color` = "{texto}", `--bs-btn-active-bg` = "{seleccion}", `--bs-btn-active-border-color` = "{texto-2}",
+    `--bs-btn-disabled-color` = "{texto-2}", `--bs-btn-disabled-bg` = "transparent",
+    `--bs-btn-disabled-border-color` = "{borde-fuerte}"))
 )
 
 # Bootstrap's coloured buttons: fill, the text on it, hover fill (NA: the fill

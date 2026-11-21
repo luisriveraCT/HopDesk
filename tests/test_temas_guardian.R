@@ -427,5 +427,52 @@ for (t in con_puente) {
   }
 }
 
+# TEMA 2b · the quiet button (.btn-secondary / .btn-default and their
+# outlines): its text on its fill at rest, hover and active, read from the
+# bridge's own blocks (change a role there and this follows). A transparent
+# fill is checked on the page (fondo) and on a card (superficie).
+rol_de <- function(tpl) { m <- regmatches(tpl, regexec("^\\{([a-z0-9-]+)\\}$", tpl))[[1]]; if (length(m)) m[2] else NA_character_ }
+tranquilos <- Filter(function(bk) any(grepl("btn-(outline-)?secondary", bk$sel)), tema$.HD_PUENTE_BS)
+ok(sprintf("bridge: the quiet button has its two blocks (secondary/default and their outlines): %d", length(tranquilos)),
+   length(tranquilos) == 2L)
+for (t in con_puente) {
+  tk <- tema$tema_tokens(t)
+  for (bk in tranquilos) {
+    for (estado in c("", "hover-", "active-")) {
+      tx <- rol_de(bk$decl[[paste0("--bs-btn-", estado, "color")]])
+      bg <- bk$decl[[paste0("--bs-btn-", estado, "bg")]]
+      fondos <- if (identical(bg, "transparent")) c("fondo", "superficie") else rol_de(bg)
+      for (fd in fondos) {
+        r <- contraste(tk[[tx]], tk[[fd]])
+        ok(sprintf("[%s] %s %s: %s on %s = %.2f >= 4.5", t, bk$sel[1], if (nzchar(estado)) sub("-$", "", estado) else "rest", tx, fd, r),
+           !is.na(tx) && !is.na(fd) && r >= 4.5)
+      }
+    }
+  }
+}
+# The top bar: its text on its fill, in every theme (Clásico's is flatly's).
+for (t in names(tema$HD_TEMAS)) {
+  tk <- tema$tema_tokens(t)
+  r <- contraste(tk[["barra-texto"]], tk[["barra-fondo"]])
+  ok(sprintf("[%s] the top bar: barra-texto on barra-fondo = %.2f >= 4.5", t, r), r >= 4.5)
+}
+# The fragile point: the bridge beats bslib's .btn-default only by repeating
+# its :not() chain, and paints the bar only through --bslib-navbar-light-bg.
+# Both are read from the CSS bslib compiles today: if bslib changes either,
+# this fails instead of the bridge falling behind in silence.
+bs_css <- tryCatch({
+  deps <- bslib::bs_theme_dependencies(tema$hd_bs_theme())
+  d <- deps[[which(vapply(deps, function(x) x$name, "") == "bootstrap")[1]]]
+  paste(readLines(file.path(d$src$file, d$stylesheet)[1], warn = FALSE), collapse = "\n")
+}, error = function(e) { message("  ERROR compiling bslib: ", conditionMessage(e)); "" })
+ok("bslib still writes .btn-default's selector as .HD_BTN_DEFAULT_SEL (the :not() chain the bridge repeats)",
+   grepl(paste0(".btn-secondary,", tema$.HD_BTN_DEFAULT_SEL, "{"), bs_css, fixed = TRUE))
+ok("bslib still paints the bar with var(--bslib-navbar-light-bg), and flatly sets it on .navbar",
+   grepl(":where(.navbar){background-color:var(--bslib-navbar-light-bg)}", bs_css, fixed = TRUE) &&
+     grepl(".navbar{--bslib-navbar-light-bg:", bs_css, fixed = TRUE))
+ok("the generated bridge carries the whole chain under each theme with a bridge",
+   all(vapply(con_puente, function(t) grepl(paste0("html[data-hd-tema=\"", t, "\"] ", tema$.HD_BTN_DEFAULT_SEL),
+                                              puente_txt, fixed = TRUE), logical(1))))
+
 cat(sprintf("\n=== %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
