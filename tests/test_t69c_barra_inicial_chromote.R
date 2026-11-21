@@ -119,9 +119,12 @@ correr <- function(et, nivel) {
   fin <- tryCatch(ev(MUESTRA_JS), error = function(e) NULL)
   vis <- lapply(muestras, function(m) strsplit(m$vis %||% "", " ", fixed = TRUE)[[1]])
   prim <- muestras[[1]]
-  n_cargando <- sum(vapply(muestras, function(m) isTRUE(m$cargando) && !isTRUE(m$aplicado), logical(1)))
+  # The window is every sample before the server took over (hd-nivel-aplicado),
+  # not the loading overlay: that one is not a reliable signal (the first run
+  # saw it as never up, with 229 samples before the take-over).
+  n_cargando <- sum(vapply(muestras, function(m) !isTRUE(m$aplicado), logical(1)))
   t_aplic <- Filter(function(m) isTRUE(m$aplicado), muestras)
-  cat(sprintf("      | muestras: %d en %.0f s | durante la carga y antes del relevo: %d | relevo a los %s s\n",
+  cat(sprintf("      | muestras: %d en %.0f s | antes del relevo: %d | relevo a los %s s\n",
               length(muestras), muestras[[length(muestras)]]$t, n_cargando,
               if (length(t_aplic)) sprintf("%.0f", t_aplic[[1]]$t) else "(nunca)"))
   cat("      | primer marco: visibles =", prim$vis, "| CSS inicial =", prim$css, "\n")
@@ -143,8 +146,8 @@ if (is.list(r)) {
   malas <- unique(intersect(unlist(r$vis), TESORERIA_TABS))
   ok(sprintf("[compras] no sample, from the first frame to the take-over, shows a treasury tab (%s)",
              if (length(malas)) paste(malas, collapse = ",") else "none"), !length(malas))
-  ok(sprintf("[compras] samples were taken while the first load ran (%d): the check measured the window", r$n_cargando),
-     r$n_cargando >= 3L)
+  ok(sprintf("[compras] samples were taken before the server took over (%d): the check measured the window", r$n_cargando),
+     r$n_cargando >= 20L)
   ok("[compras] the server took over (hd-nivel-aplicado)", isTRUE(r$aplicado))
   fin <- strsplit(r$fin$vis %||% "", " ", fixed = TRUE)[[1]]
   ok(sprintf("[compras] after the take-over: PAN and REQ, and no treasury tab (%s)", paste(fin, collapse = " ")),
