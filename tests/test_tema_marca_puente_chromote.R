@@ -173,8 +173,15 @@ LEER_MUESTRA_JS <- "(function(){
 ENFOCAR_JS <- "document.getElementById('m-input').focus(); true"
 # TEMA 2b: the quiet buttons under :hover, forced through CDP (no mouse in a
 # headless window), read after Bootstrap's 0.15 s button transition.
+# CSS.enable walks every stylesheet of the real app: it can take longer than
+# chromote's default 10 s (2026-11-21, timed out), so enable once per page,
+# with room. A new page (each user signs in on its own) needs its own enable.
+.cdp_css_pagina <- NULL
 leer_hover <- function() {
-  invisible(b$DOM$enable()); invisible(b$CSS$enable())
+  if (!identical(.cdp_css_pagina, b)) {
+    invisible(b$DOM$enable(timeout_ = 120)); invisible(b$CSS$enable(timeout_ = 120))
+    .cdp_css_pagina <<- b
+  }
   raiz <- b$DOM$getDocument(depth = 0L)$root$nodeId
   out <- list()
   for (k in c("sec", "osec")) {
