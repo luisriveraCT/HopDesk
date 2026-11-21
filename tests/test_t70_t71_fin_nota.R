@@ -25,7 +25,7 @@ source("R/monedas.R")
 for (f in c("R/pasivos_schemas.R", "R/bancos_persistence.R", "R/pasivos_persistence.R",
             "R/pasivos_capabilities.R", "R/pasivos_audit.R", "R/forecasting_resolve.R",
             "R/policy_engine.R", "R/pasivos_engine.R", "R/pasivos_wizard_validate.R",
-            "R/pasivos_wizard_module.R", "R/pasivos_wizard_steps.R", "R/pasivos_edit_confirm_module.R",
+            "R/pasivos_wizard_module.R", "R/pasivos_wizard_steps.R", "R/pasivos_edit_confirm_module.R", "R/zona.R",
             "R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/pasivos_list_module.R"))
   suppressMessages(source(f))
@@ -155,6 +155,14 @@ pend <- s3[s3$estado == "provisional", ]
 ok(identical(s3$notas[s3$id == provs$id[3]], "Ojo: pagar en efectivo"), "E: the provision with its own note keeps it")
 ok(all(pend$notas[pend$id != provs$id[3]] == "Nueva nota"), "E: every other pending one takes the new note")
 ok(identical(s3$notas[s3$id == provs$id[2]], provs$notas[2]), "E: the converted one keeps its note")
+
+cat("\n-- F. T70b: what the Revisión says saving generates --\n")
+ok(startsWith(pasivos_aviso_generacion(borrador(fecha_fin = NA)), tr("tablas.pasivos.revision.genera_24m")), "F: no end: the next 24 months")
+ok(grepl(format(fin, "%d/%m/%Y"), pasivos_aviso_generacion(borrador(fecha_fin = fin)), fixed = TRUE) &&
+     !grepl("24", pasivos_aviso_generacion(borrador(fecha_fin = fin)), fixed = TRUE), "F: an end date within two years: up to it, never '24 meses'")
+ok(startsWith(pasivos_aviso_generacion(borrador(fecha_fin = HOY + 1000)), tr("tablas.pasivos.revision.genera_24m")), "F: an end date after two years: still the next 24 months")
+ok(startsWith(pasivos_aviso_generacion(list(categoria = "financiero")), tr("tablas.pasivos.revision.genera_plazo")), "F: a financiero: up to the end of its term")
+ok(!grepl("24", tr("tablas.pasivos.revision.genera_plazo"), fixed = TRUE), "F: the term text never says 24 months")
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

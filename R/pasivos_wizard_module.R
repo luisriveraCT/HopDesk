@@ -572,6 +572,20 @@ pasivos_aviso_edicion_html <- function(draft, liability_id, provs, liabs = NULL)
     if (!is.null(a$nota)) shiny::div(tr("tablas.pasivos.nota.cambio", n = a$nota[["n"]], m = a$nota[["m"]])))
 }
 
+# T70b: what saving will generate, as the engine does it: a financiero up to
+# the end of its term, a regular or tarjeta for the next 24 months or up to
+# its end date when that comes first. It used to say "24 meses" for all.
+pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's day (R/zona.R), never the server's
+  cat <- draft$categoria %||% ""
+  fin <- tryCatch(as.Date(draft$fecha_fin %||% NA), error = function(e) as.Date(NA))
+  tope <- as.Date(hoy) + lubridate::years(2)
+  primera <- if (identical(cat, "financiero")) tr("tablas.pasivos.revision.genera_plazo")
+    else if (cat %in% c("regular", "tarjeta") && !is.na(fin) && fin < tope)
+      tr("tablas.pasivos.revision.genera_hasta_fin", fecha = format(fin, "%d/%m/%Y"))
+    else tr("tablas.pasivos.revision.genera_24m")
+  paste(primera, tr("tablas.pasivos.revision.aparecen"))
+}
+
 # T70: a dateInput's value as a Date, or NA when blank or not a date.
 .wiz_leer_fecha <- function(v) {
   if (is.null(v) || !length(v)) return(as.Date(NA))
@@ -1589,13 +1603,8 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
   })
 
   output$pwiz_revision_notice <- shiny::renderUI({
-    cat <- wiz$draft$categoria %||% ""
-    window <- switch(cat, financiero = "24 meses", "24 meses")
     shiny::tagList(
-      shiny::tags$span(
-        sprintf("Al guardar, se generarán provisiones para los próximos %s. ", window),
-        "Las provisiones aparecerán en el calendario y en la tabla de Pasivos inmediatamente."
-      ),
+      shiny::tags$span(pasivos_aviso_generacion(wiz$draft)),   # T70b
       # T70/T71, before saving: what an earlier end date and a new note do to
       # the provisions this liability already has.
       if (identical(wiz$mode, "edit")) {
