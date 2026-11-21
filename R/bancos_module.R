@@ -114,9 +114,9 @@ bancos_styles <- function() {
        bank and the 30-day sparkline on the next; ~48 px a card. */
     .bnc-saldos-titulo {
       border:0; background:none; padding:0 2px; font-size:.78rem; font-weight:600;
-      color:#6c757d; display:inline-flex; align-items:center; gap:4px; cursor:pointer;
+      color:var(--hd-leg-texto-2-6c757d); display:inline-flex; align-items:center; gap:4px; cursor:pointer;
     }
-    .bnc-saldos-titulo:hover { color:#1a1a1a; }
+    .bnc-saldos-titulo:hover { color:var(--hd-leg-texto-1a1a1a); }
     .bnc-saldos-flecha { display:inline-block; transition:transform .15s; }
     .bnc-saldos.bnc-plegado .bnc-saldos-flecha { transform:rotate(-90deg); }
     .bnc-saldos.bnc-plegado .bnc-dashboard,
@@ -126,9 +126,9 @@ bancos_styles <- function() {
       gap:6px; padding:4px 0 2px;
     }
     .bnc-card {
-      background:#fff; border:0.5px solid #dee2e6; border-radius:6px;
+      background:var(--hd-superficie); border:0.5px solid var(--hd-leg-borde-dee2e6); border-radius:6px;
       padding:4px 10px; min-width:0;
-      border-left-width:3px; border-left-style:solid; border-left-color:#adb5bd;
+      border-left-width:3px; border-left-style:solid; border-left-color:var(--hd-leg-borde-fuerte-adb5bd);
       overflow:hidden;
     }
     .bnc-card .bnc-card-l1, .bnc-card .bnc-card-l2 {
@@ -136,14 +136,14 @@ bancos_styles <- function() {
     }
     .bnc-card .bnc-card-l2 { align-items:center; }
     .bnc-card .bnc-card-emp {
-      font-size:.7rem; font-weight:700; color:#1a1a1a;
+      font-size:.7rem; font-weight:700; color:var(--hd-leg-texto-1a1a1a);
       text-transform:uppercase; letter-spacing:.05em; flex:none;
     }
     .bnc-card .bnc-card-bal {
-      font-size:1rem; font-weight:700; color:#1a1a1a; white-space:nowrap;
+      font-size:1rem; font-weight:700; color:var(--hd-leg-texto-1a1a1a); white-space:nowrap;
       margin-left:auto;
     }
-    .bnc-card .bnc-card-bal.bnc-neg-bal { color:#dc3545; }
+    .bnc-card .bnc-card-bal.bnc-neg-bal { color:var(--hd-leg-peligro-texto-dc3545); }
     .bnc-card .bnc-card-mon {
       font-size:.7rem; font-weight:600; flex:1; min-width:0;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
@@ -155,7 +155,7 @@ bancos_styles <- function() {
       font-size:.8rem; padding:3px 10px; border-radius:20px;
     }
     /* ── Slim toolbar ────────────────────────────────────────────────────── */
-    .bnc-toolbar { border-bottom:1px solid #e9ecef; padding-bottom:6px; margin-bottom:8px; }
+    .bnc-toolbar { border-bottom:1px solid var(--hd-borde); padding-bottom:6px; margin-bottom:8px; }
     .bnc-toolbar .form-group { margin-bottom:0 !important; }
     .bnc-toolbar .selectize-control { margin-bottom:0 !important; }
     .bnc-toolbar .selectize-input,
@@ -167,32 +167,32 @@ bancos_styles <- function() {
     }
     .bnc-toolbar .selectize-input > * { white-space:nowrap !important; overflow:hidden !important; text-overflow:ellipsis !important; }
     .bnc-toolbar .selectize-dropdown { font-size:.82rem; }
-    .bnc-toolbar-sep { width:1px; height:20px; background:#dee2e6; flex-shrink:0; align-self:center; }
+    .bnc-toolbar-sep { width:1px; height:20px; background:var(--hd-leg-borde-dee2e6); flex-shrink:0; align-self:center; }
     /* Flujo button states — shows current active filter */
-    .bnc-flujo-todos    { background:transparent !important; border-color:#fd7e14 !important; color:#fd7e14 !important; font-weight:600; }
-    .bnc-flujo-todos:hover { background:#fd7e14 !important; color:#fff !important; }
-    .bnc-flujo-egresos  { background:#dc3545 !important; border-color:#dc3545 !important; color:#fff !important; font-weight:600; }
-    .bnc-flujo-ingresos { background:#198754 !important; border-color:#198754 !important; color:#fff !important; font-weight:600; }
+    .bnc-flujo-todos    { background:transparent !important; border-color:var(--hd-leg-aviso-fuerte-fd7e14) !important; color:var(--hd-leg-aviso-fuerte-fd7e14) !important; font-weight:600; }
+    .bnc-flujo-todos:hover { background:var(--hd-leg-aviso-fuerte-fd7e14) !important; color:var(--hd-texto-inverso) !important; }
+    .bnc-flujo-egresos  { background:var(--hd-leg-peligro-dc3545) !important; border-color:var(--hd-leg-peligro-dc3545) !important; color:var(--hd-texto-inverso) !important; font-weight:600; }
+    .bnc-flujo-ingresos { background:var(--hd-exito) !important; border-color:var(--hd-exito) !important; color:var(--hd-texto-inverso) !important; font-weight:600; }
     /* Comisiones visible */
-    .bnc-com-active { background:#fd7e14 !important; border-color:#fd7e14 !important; color:#fff !important; font-weight:600; }
+    .bnc-com-active { background:var(--hd-leg-aviso-fuerte-fd7e14) !important; border-color:var(--hd-leg-aviso-fuerte-fd7e14) !important; color:var(--hd-texto-inverso) !important; font-weight:600; }
     /* ── Import tab balance band ──────────────────────────────── */
     .bnc-ticker {
       display: flex;
       flex-wrap: wrap;
       gap: 0;
-      background: #0d1117;
+      background: var(--hd-leg-oscuro-fondo-0d1117);
       border-radius: 8px;
       overflow: hidden;
       margin-bottom: 18px;
-      border: 1px solid #1e2733;
+      border: 1px solid var(--hd-leg-oscuro-borde-1e2733);
     }
     .bnc-ticker-item {
       display: flex;
       align-items: center;
       gap: 10px;
       padding: 7px 18px;
-      border-right: 1px solid #1e2733;
-      border-bottom: 1px solid #1e2733;
+      border-right: 1px solid var(--hd-leg-oscuro-borde-1e2733);
+      border-bottom: 1px solid var(--hd-leg-oscuro-borde-1e2733);
       flex: 1 1 auto;
       min-width: 160px;
     }
@@ -200,7 +200,7 @@ bancos_styles <- function() {
     .bnc-ticker-label {
       font-size: .70rem;
       font-weight: 600;
-      color: #8b949e;
+      color: var(--hd-leg-oscuro-texto-2-8b949e);
       text-transform: uppercase;
       letter-spacing: .06em;
       white-space: nowrap;
@@ -211,12 +211,12 @@ bancos_styles <- function() {
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
     }
-    .bnc-ticker-val.pos { color: #3fb950; }
-    .bnc-ticker-val.neg { color: #f85149; }
-    .bnc-ticker-val.zero { color: #8b949e; }
+    .bnc-ticker-val.pos { color: var(--hd-oscuro-exito); }
+    .bnc-ticker-val.neg { color: var(--hd-oscuro-peligro); }
+    .bnc-ticker-val.zero { color: var(--hd-leg-oscuro-texto-2-8b949e); }
     .bnc-ticker-mon {
       font-size: .68rem;
-      color: #484f58;
+      color: var(--hd-leg-oscuro-texto-2-484f58);
       white-space: nowrap;
       margin-left: 2px;
     }
@@ -225,9 +225,9 @@ bancos_styles <- function() {
       border-radius: 50%;
       flex-shrink: 0;
     }
-    .bnc-ticker-dot.pos  { background: #3fb950; }
-    .bnc-ticker-dot.neg  { background: #f85149; }
-    .bnc-ticker-dot.zero { background: #8b949e; }
+    .bnc-ticker-dot.pos  { background: var(--hd-oscuro-exito); }
+    .bnc-ticker-dot.neg  { background: var(--hd-oscuro-peligro); }
+    .bnc-ticker-dot.zero { background: var(--hd-leg-oscuro-texto-2-8b949e); }
   "))
 }
 
@@ -525,7 +525,7 @@ bancosUI <- function(id) {
                                class = "form-label small text-muted mb-1"),
                     div(
                       class = "form-control form-control-sm bg-white",
-                      style = "cursor:default; pointer-events:none; color:#495057; min-height:38px; display:flex; align-items:center;",
+                      style = "cursor:default; pointer-events:none; color:var(--hd-leg-texto-2-495057); min-height:38px; display:flex; align-items:center;",
                       textOutput(ns("reasig_cuenta_actual"), inline = TRUE)
                     )
                   ),
@@ -795,7 +795,7 @@ bancosServer <- function(id, shared) {
         ys <- round(4 + (1 - (vals_clean - mn) / rng) * 20, 1)
         pts <- paste(xs, ys, sep=",", collapse=" ")
         last_x <- xs[n]; last_y <- ys[n]
-        dot_color <- if (vals_clean[n] < 0) "#dc3545" else color
+        dot_color <- if (vals_clean[n] < 0) tema_color("leg-peligro-dc3545", tema_de_sesion()) else color   # SVG: no var() (TEMA-Bancos)
         tags$svg(
           class="bnc-spark", viewBox="0 0 120 28",
           preserveAspectRatio="none",
@@ -1739,8 +1739,8 @@ bancosServer <- function(id, shared) {
 
       if (!nrow(cts_baj))
         return(div(
-          style = "background:#fff3cd; border:1.5px solid #664d03; border-radius:8px; padding:14px 18px; margin-bottom:14px;",
-          icon("triangle-exclamation", style = "color:#997404;"),
+          style = "background:var(--hd-aviso-suave); border:1.5px solid var(--hd-leg-aviso-texto-664d03); border-radius:8px; padding:14px 18px; margin-bottom:14px;",
+          icon("triangle-exclamation", style = "color:var(--hd-leg-aviso-texto-997404);"),
           " No hay cuentas BanBaj\u00edo activas configuradas."
         ))
 
@@ -1763,9 +1763,9 @@ bancosServer <- function(id, shared) {
 
       seguro    <- identical(det$confianza, "alta")
       det_icon  <- if (seguro)
-                     icon("circle-check", style = "color:#198754;")
+                     icon("circle-check", style = "color:var(--hd-exito);")
                    else
-                     icon("circle-exclamation", style = "color:#e0a100;")
+                     icon("circle-exclamation", style = "color:var(--hd-leg-aviso-e0a100);")
       # Pre-select the best-scoring account on every new file upload.
       # Once the user has consciously changed the dropdown (user_picked_cuenta_rv),
       # preserve their choice on subsequent re-renders.
@@ -1776,23 +1776,23 @@ bancosServer <- function(id, shared) {
       # they no longer apply, so say that instead of showing stale evidence.
       det_notas <- tagList(
         if (!identical(unname(sel), det$sugerida))
-          div(style = "font-size:.75rem; color:#495057; margin-top:2px;",
+          div(style = "font-size:.75rem; color:var(--hd-leg-texto-2-495057); margin-top:2px;",
               .bnc_detect_txt("nota_otra_cuenta"))
         else if (length(det$motivos))
-          div(style = "font-size:.75rem; color:#495057; margin-top:2px;", det$motivos),
+          div(style = "font-size:.75rem; color:var(--hd-leg-texto-2-495057); margin-top:2px;", det$motivos),
         lapply(det$avisos, function(a)
-          div(style = "font-size:.75rem; color:#7a5c00; margin-top:2px;",
-              icon("circle-info", style = "color:#e0a100;"), " ", a))
+          div(style = "font-size:.75rem; color:var(--hd-leg-aviso-texto-7a5c00); margin-top:2px;",
+              icon("circle-info", style = "color:var(--hd-leg-aviso-e0a100);"), " ", a))
       )
 
-      div(style = "background:#d1e7dd; border:1.5px solid #0f5132; border-radius:8px; padding:14px 18px; margin-bottom:14px;",
+      div(style = "background:var(--hd-exito-suave); border:1.5px solid var(--hd-leg-exito-texto-0f5132); border-radius:8px; padding:14px 18px; margin-bottom:14px;",
         div(class = "d-flex align-items-start gap-3",
           div(style = "flex:1;",
-            div(style = "font-size:.8rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; color:#212529;",
+            div(style = "font-size:.8rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; color:var(--hd-leg-texto-212529);",
                 det_icon, " Empresa detectada en el archivo"),
-            div(style = "font-size:1rem; font-weight:700; color:#212529; margin-bottom:10px;",
+            div(style = "font-size:1rem; font-weight:700; color:var(--hd-leg-texto-212529); margin-bottom:10px;",
                 if (nzchar(txt_emp)) txt_emp else "(no detectada)"),
-            div(style = "font-size:.8rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px; color:#495057;",
+            div(style = "font-size:.8rem; font-weight:600; text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px; color:var(--hd-leg-texto-2-495057);",
                 "Importar a esta cuenta:"),
             selectInput(ns("import_cuenta"), NULL,
                         choices  = choices,
