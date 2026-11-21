@@ -519,6 +519,13 @@ DEUDA_CAMINO <- c(
     "R/pagar_hoy_module.R :: input[[paste0(\"do_confirm_ap_\", emp)]]",
     "R/pagar_hoy_module.R :: input[[paste0(\"do_confirm_ar_\", emp)]]",
     "R/pagar_hoy_module.R :: input$do_clear_all",
+    # Entered master with the TANDA51 (T66's Saldo apertura / Bancos saldos,
+    # CM34c's supplier links): a refused or failed save is told on screen but
+    # not logged. Phase B's fallido events close them.
+    "R/pagar_hoy_module.R :: input[[paste0(\"bal_\", emp)]]",
+    "R/pagar_hoy_module.R :: input$ph_link_supplier",
+    "R/pagar_hoy_module.R :: input$ph_unlink_supplier",
+    "R/pagar_hoy_module.R :: input$load_bancos_saldos",
     "R/pagos_audit_viewer_module.R :: generate_pagos_audit_html_doc",
     "R/panorama_module.R :: input$req_avisos_guardar",
     "R/panorama_publicar_module.R :: input$publicar",
