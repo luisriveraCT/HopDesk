@@ -137,7 +137,9 @@ pasivos_list_module_server <- function(id, shared) {
       # interest + charges + taxes of the next 12 months; regular and tarjeta,
       # what is paid in them. In the liability's payment currency (another
       # currency's part is in the Revisión's breakdown).
-      if (is.data.frame(filas) && nrow(filas))
+      # The column is always there, an empty list included (the table starts on
+      # NULL sources: test_hd_table_arranque_null).
+      if (is.data.frame(filas))
         filas$costo_anual <- vapply(seq_len(nrow(filas)), function(i) {
           l <- liabs[!is.na(liabs$id) & liabs$id == filas$id[i], , drop = FALSE]
           # A paused liability has no payments ahead: no cost per year.
