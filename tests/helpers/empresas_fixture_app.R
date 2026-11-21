@@ -26,6 +26,8 @@ cargar <- function(archivo, nombres) {
 suppressPackageStartupMessages({ library(dplyr); library(shinyjs) })
 cargar("R/persistence.R", c(".schema_empresas", ".schema_erp_connections", ".normalize", ".company_map_from_empresas",
                             "rebase_por_id",   # CM38b: a save is rebased on S3's table
+                            # CM40: a confirmed rename appends to iniciales_anteriores
+                            ".iniciales_anteriores_de",
                             # CM36: Guardar configuración del grupo
                             ".schema_group_config", ".group_config_completar", ".GROUP_CONFIG_UNIDADES",
                             ".group_config_rebase", "modificar_group_config"))
