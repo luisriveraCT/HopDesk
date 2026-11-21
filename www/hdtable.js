@@ -2382,8 +2382,14 @@
       if (!!st.celdas[j].valor[i] === valor) delete m[id]; else m[id] = valor;
     });
     if (!Object.keys(m).length) delete st.cas[campo];
+    // Repaint in place: a box changes neither the search nor the filters, and
+    // re-sorting now would move the row from under the cursor (a table sorted
+    // by that column takes the new order at the next sort or filter).
     st.trs = new Array(st.n);
-    aplicar(st, true);
+    st.lista.forEach(function (it) { if (typeof it !== 'number') it.tr = null; });
+    pintarFilas(st, st.scroll.scrollTop);
+    pintarSel(st);
+    pintarCasCab(st);
     enviarCasillas(st);
   }
   function enviarCasillas(st) {
