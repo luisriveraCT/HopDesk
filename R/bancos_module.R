@@ -5,6 +5,13 @@
 # =============================================================================
 
 # ── Type labels & choices ─────────────────────────────────────────────────────
+# The Libro's Tipo badge: "comision", "conciliado" or none. A movement with
+# no tipo (NA) and reconciled is "conciliado": `tipo == "comision"` gave NA
+# there and ifelse() kept the NA, so the badge was lost (2026-11-21).
+.libro_tipo <- function(tipo, conciliado) {
+  ifelse(tipo %in% "comision", "comision", ifelse(conciliado %in% TRUE, "conciliado", ""))
+}
+
 .TIPO_LABELS <- c(
   spei_out      = "SPEI Enviado",
   spei_in       = "SPEI Recibido",
@@ -951,8 +958,7 @@ bancosServer <- function(id, shared) {
         Moneda      = toupper(trimws(dplyr::coalesce(movs$moneda, ""))),
         # A commission or a reconciled row used to be a grey or green row;
         # the engine shows it as a badge (Luis, T12 P1).
-        Tipo        = ifelse(movs$tipo == "comision", "comision",
-                        ifelse(!is.na(movs$conciliado) & movs$conciliado, "conciliado", "")),
+        Tipo        = .libro_tipo(movs$tipo, movs$conciliado),
         Descripcion = dplyr::coalesce(dplyr::na_if(trimws(movs$descripcion_raw %||% ""), ""), "\u2014"),
         Recibo      = as.character(movs$recibo),
         Cargo       = ifelse(movs$cargo > 0, movs$cargo, NA_real_),
