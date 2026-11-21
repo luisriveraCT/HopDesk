@@ -50,6 +50,21 @@ if (identical(Sys.getenv("PASIVOS_FX"), "1")) {
 # startup (tests/test_hd_table_arranque_null.R).
 if (identical(Sys.getenv("HD_ARRANQUE_NULL"), "1"))
   D[c("provisions", "liabilities", "manual_inv", "bancos_confirmados")] <- list(NULL)
+# PASIVOS_DEUDA = 1 (T78): two loans with their terms for Costo de la deuda,
+# a French one in MXN with an opening fee and a lease in USD; the base data's
+# loan (lib2) has no terms and stays out.
+if (identical(Sys.getenv("PASIVOS_DEUDA"), "1")) {
+  credito <- function(id, nombre, parte, moneda, principal, tasa, plazo, flavor, inicio, fee = NULL)
+    tibble::add_row(.schema_pasivos_liability(), id = id, nombre = nombre, categoria = "financiero", flavor = flavor,
+      subcategoria = "credito", empresa = "NTS", parte = parte, moneda_pago = moneda, principal_original = principal,
+      tasa_actual = tasa, tasa_tipo = "fija", plazo_meses = as.integer(plazo), frecuencia_pago = "mensual",
+      dia_pago = 5L, fecha_inicio = inicio, metodo_amortizacion = "francesa", periodo_gracia = 0L,
+      cargos_iniciales = list(fee), estado = "active")
+  D$liabilities <- dplyr::bind_rows(D$liabilities,
+    credito("deu1", "Crédito simple capital de trabajo", "BBVA México", "MXN", 1200000, 12, 36, "credito_simple",
+            Sys.Date() - 100, fee = list(list(desc = "Apertura", monto = 24000, fecha = Sys.Date() - 100, moneda = "MXN"))),
+    credito("deu2", "Arrendamiento tractocamión", "Volvo Financial", "USD", 80000, 8, 24, "arrendamiento", Sys.Date() - 40))
+}
 ui <- fluidPage(
   theme = bslib::bs_theme(version = 5, bootswatch = "flatly"),
   shinyjs::useShinyjs(),
