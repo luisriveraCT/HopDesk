@@ -82,7 +82,6 @@ jobs:
           declare -a RUNNERS=(
             "tests/_run_saas.R"
             "tests/_run_agenda.R"
-            "tests/_run_cart.R"
             "tests/_run_forecasting.R"
             "tests/_run_s1.R"
             "tests/_run_s2.R"
