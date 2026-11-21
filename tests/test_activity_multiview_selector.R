@@ -201,7 +201,10 @@ if (length(cycle_start)) {
       val <- current_view
       function(x) { if (missing(x)) val else { result <<- x; val <<- x } }
     })
-    eval(parse(text = cycle_block), envir = env)
+    # Not eval(cycle_block) itself (T76b): outside a session that registered
+    # a real observer on Shiny's global reactive domain, in an env with no
+    # `input`; the next flushReact of any later test fired it ("object
+    # 'input' not found", once per run_cycle() call).
     # The block is `observeEvent(input$activity_view_cycle, { BODY }, ...)`
     # -- extract and run just BODY, since there's no real Shiny reactive
     # context here to fire the observeEvent itself.
