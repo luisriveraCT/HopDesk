@@ -300,6 +300,53 @@ prefs_leer <- function(client_id, usuario) {
 # Coordinador's call). Panorama writes ultima_visita on every visit.
 PREFS_SIN_LOG <- c("ultima_visita")
 
+# T68: one preference block REPLACED whole (datos[[clave]] <- valor), never
+# merged: prefs_guardar() merges with modifyList(), which is recursive -- a
+# channel taken out of avisos_de would survive and a NULL would delete the
+# key. Same strict re-read as prefs_guardar() (.s3_modificar(): a failed read
+# stops and writes nothing); only this user's `clave` changes. Wrap vectors
+# that must stay arrays in I() (auto_unbox).
+# sub: replace only datos[[clave]][[sub]] (a staff member's preference for
+# one client, kept in their home client: avisos_de_clientes[[<client>]]);
+# the block's other entries stay as they are.
+prefs_reemplazar <- function(client_id, usuario, clave, valor, sub = NULL) {
+  cid <- .avisos_cid(client_id)
+  u <- tolower(usuario %||% "")
+  if (!nzchar(u)) stop("[prefs] usuario es obligatorio", call. = FALSE)
+  if (!is.character(clave) || length(clave) != 1L || !nzchar(clave)) stop("[prefs] clave es obligatoria", call. = FALSE)
+  cambio_log <- list()
+  .s3_modificar(.PREFERENCIAS_KEY, cid, .schema_preferencias, function(df) {
+    i <- which(tolower(df$usuario) == u)
+    actuales <- if (length(i)) tryCatch(jsonlite::fromJSON(df$datos[i[1]], simplifyVector = FALSE),
+                                        error = function(e) list()) else list()
+    actuales <- as.list(actuales)
+    antes <- if (is.null(sub)) actuales[[clave]] else if (is.list(actuales[[clave]])) actuales[[clave]][[sub]]
+    nombre <- if (is.null(sub)) clave else paste0(clave, "$", sub)
+    # T72: logged as prefs_guardar() logs, only when something changed.
+    cambio_log <<- list()
+    if (!identical(jsonlite::toJSON(antes, auto_unbox = TRUE, null = "null"), jsonlite::toJSON(valor, auto_unbox = TRUE, null = "null")))
+      cambio_log[[nombre]] <<- list(antes = antes, despues = valor)
+    if (is.null(sub)) actuales[clave] <- list(valor)
+    else {
+      bloque <- actuales[[clave]]
+      bloque <- if (is.list(bloque) && !is.null(names(bloque))) bloque else stats::setNames(list(), character())
+      bloque[sub] <- list(valor)
+      actuales[clave] <- list(bloque)
+    }
+    datos <- as.character(jsonlite::toJSON(actuales, auto_unbox = TRUE, null = "null"))
+    if (length(i)) { df$datos[i[1]] <- datos; df$actualizado[i[1]] <- .ahora() }
+    else df <- dplyr::bind_rows(df, tibble::tibble(usuario = u, datos = datos, actualizado = .ahora()))
+    df
+  })
+  if (length(cambio_log))
+    tryCatch(log_action(user = u, module = "preferencias", action = "guardar_preferencias",
+                        description = tr("avisos.log.preferencias", claves = paste(names(cambio_log), collapse = ", ")),
+                        target_id = u, metadata = list(cambios = cambio_log),
+                        client_id = cid, viewer_home_client_id = cid),
+             error = function(e) message("[prefs] log_action fall\u00f3: ", conditionMessage(e)))
+  invisible(TRUE)
+}
+
 # home: the actor's own client (T72; staff jumping in), NULL = the client.
 prefs_guardar <- function(client_id, usuario, cambios, home = NULL) {
   cid <- .avisos_cid(client_id)

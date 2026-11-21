@@ -436,3 +436,8 @@ body:has(.tab-pane.active .hd-panorama .pan-cinta) .notes-bar-btn:not(.notes-ope
 @media (max-width: 600px) {
   .hd-panorama .pan-campos-fila { grid-template-columns: 1fr; }
 }
+
+/* T68: "De quién recibo avisos" (a modal: outside .hd-panorama). */
+.pan-avisos-de-barra { display: flex; flex-wrap: wrap; align-items: center; gap: var(--hd-esp-2) var(--hd-esp-4); margin-bottom: var(--hd-esp-2); }
+.pan-avisos-de-barra .shiny-input-container { margin-bottom: 0; width: auto; }
+.pan-avisos-de-barra .radio-inline { margin-right: var(--hd-esp-2); }

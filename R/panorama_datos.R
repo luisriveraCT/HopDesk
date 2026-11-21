@@ -62,6 +62,230 @@ req_avisos_personas <- function(u) {
   out[order(tolower(out$nombre)), , drop = FALSE]
 }
 
+# ── De quién recibo avisos (T68) ─────────────────────────────────────────────
+# One preference per person, on the side of who RECEIVES (T68_paso0.md):
+# preferencias.rds, datos$avisos_de =
+#   list(v = 1, mio = TRUE/FALSE,
+#        canales = list(<canal> = list(base = "todos"|"nadie", cambia = <account_codes>)))
+# `cambia`: the people who go against the base ("todos menos dos" is two
+# codes), so whoever joins later gets what the column says. Channels: the
+# requisitions (req) and the activity kinds of ALERTAS_ACCIONES (crear,
+# archivo_pago, confirmar_pago, bancos). Nothing here reads S3.
+AVISOS_DE_CANALES <- c("req", "crear", "archivo_pago", "confirmar_pago", "bancos")
+
+# The actions of an activity channel (ALERTAS_ACCIONES, read when called).
+avisos_de_acciones <- function(canal) {
+  if (identical(canal, "req")) return(character())
+  names(Filter(function(d) identical(d$columna, canal), ALERTAS_ACCIONES))
+}
+
+avisos_de_vacio <- function(mio = TRUE) {
+  list(v = 1L, mio = isTRUE(mio),
+       canales = stats::setNames(lapply(AVISOS_DE_CANALES, function(c) list(base = "nadie", cambia = character())),
+                                 AVISOS_DE_CANALES))
+}
+
+# Any stored value (missing, old, hand-edited) as a clean preference; with
+# `codigos`, people that no longer exist drop out of `cambia`.
+avisos_de_normalizar <- function(x, codigos = NULL) {
+  out <- avisos_de_vacio()
+  if (!is.list(x)) return(out)
+  if (!is.null(x$mio)) out$mio <- isTRUE(as.logical(unlist(x$mio))[1])
+  for (c in AVISOS_DE_CANALES) {
+    k <- if (is.list(x$canales)) x$canales[[c]] else NULL
+    if (!is.list(k)) next
+    base <- as.character(unlist(k$base))[1]
+    if (is.na(base) || !base %in% c("todos", "nadie")) base <- "nadie"
+    cam <- unique(trimws(as.character(unlist(k$cambia))))
+    cam <- cam[!is.na(cam) & nzchar(cam)]
+    if (!is.null(codigos)) cam <- intersect(cam, codigos)
+    out$canales[[c]] <- list(base = base, cambia = cam)
+  }
+  out
+}
+
+# Does this preference take channel `canal` from the author with this code?
+avisos_de_recibe <- function(pref, canal, autor_code) {
+  k <- pref$canales[[canal]]
+  if (is.null(k)) return(FALSE)
+  dentro <- length(autor_code) == 1L && !is.na(autor_code) && autor_code %in% k$cambia
+  if (identical(k$base, "todos")) !dentro else dentro
+}
+
+# Without avisos_de, it is worked out when read (nothing is written until the
+# person saves): "lo mío" and requisitions from req_avisos (T62); each
+# activity channel from the matrix of "Alertas del equipo" (the authors
+# marked in that column; codigo_de maps username -> account_code).
+avisos_de_migrar <- function(req_avisos, matriz, codigo_de) {
+  pf <- req_avisos_pref(req_avisos)
+  out <- avisos_de_vacio(mio = !identical(pf$modo, "ninguna"))
+  out$canales$req <- switch(pf$modo,
+    todas  = list(base = "todos", cambia = character()),
+    mias_y = list(base = "nadie", cambia = pf$personas),
+    list(base = "nadie", cambia = character()))
+  if (is.data.frame(matriz) && nrow(matriz) && "usuario" %in% names(matriz)) {
+    for (c in setdiff(AVISOS_DE_CANALES, "req")) {
+      if (!c %in% names(matriz)) next
+      us <- tolower(trimws(as.character(matriz$usuario[matriz[[c]] %in% TRUE])))
+      cod <- unname(codigo_de[us])
+      cod <- unique(cod[!is.na(cod) & nzchar(cod)])
+      out$canales[[c]] <- list(base = "nadie", cambia = cod)
+    }
+  }
+  out
+}
+
+# A person's preference as it stands: their avisos_de, or the migration.
+# `datos`: their preferencias datos (a list).
+avisos_de_de <- function(datos, matriz = NULL, codigo_de = character(), codigos = NULL) {
+  if (is.list(datos) && is.list(datos$avisos_de)) return(avisos_de_normalizar(datos$avisos_de, codigos))
+  avisos_de_normalizar(avisos_de_migrar(if (is.list(datos)) datos$req_avisos, matriz, codigo_de), codigos)
+}
+
+# The channels a reader may have (T68 condition: permission by ACTION): an
+# activity channel if they hold the permission of at least one of its
+# actions; requisitions with can_view_requisiciones.
+avisos_de_canales_de <- function(usuario) {
+  si <- function(p) isTRUE(tryCatch(puede(usuario, p), error = function(e) FALSE))
+  ok <- vapply(AVISOS_DE_CANALES, function(c) {
+    if (identical(c, "req")) return(si("can_view_requisiciones"))
+    any(vapply(avisos_de_acciones(c), function(a) si(ALERTAS_ACCIONES[[a]]$permiso), logical(1)))
+  }, logical(1))
+  AVISOS_DE_CANALES[ok]
+}
+
+# Saving: a channel the reader may not have goes back to "nadie", whatever
+# came from the browser.
+avisos_de_recortar <- function(pref, canales) {
+  for (c in setdiff(AVISOS_DE_CANALES, canales)) pref$canales[[c]] <- list(base = "nadie", cambia = character())
+  pref
+}
+
+# From the grid (t$casillas(): data.frame(id = account_code, <canal> = logical))
+# to base + exceptions: whichever needs fewer exceptions, so "todos menos
+# dos" is stored as two codes and a newcomer gets "todos".
+avisos_de_desde_tabla <- function(tab, canales, mio) {
+  pref <- avisos_de_vacio(mio)
+  for (c in intersect(canales, names(tab))) {
+    si <- tab[[c]] %in% TRUE
+    pref$canales[[c]] <- if (length(si) && sum(si) * 2L > length(si))
+      list(base = "todos", cambia = as.character(tab$id[!si]))
+    else list(base = "nadie", cambia = as.character(tab$id[si]))
+  }
+  pref
+}
+
+# For JSON: `cambia` always an array, even of one (auto_unbox would make it
+# a string).
+avisos_de_para_guardar <- function(pref) {
+  pref$canales <- lapply(pref$canales, function(k) list(base = k$base, cambia = I(as.character(k$cambia))))
+  pref
+}
+
+# Saving the panel: the server decides the channels again (permission by
+# action), never the browser -- a channel this reader may not have is
+# "nadie" whatever the grid says -- and the block is replaced whole
+# (prefs_reemplazar(), R/avisos.R). `estado`: data.frame(id, <canal> = logical).
+# casa: HopDesk staff save in THEIR home client (Coordinador, 2026-11-20),
+# avisos_de_clientes[[<client seen>]], never in the client's folder; without
+# requisitions nor "lo mio" (they are not one of the client's users).
+avisos_de_guardar <- function(client_id, usuario, estado, mio, casa = NULL) {
+  canales <- avisos_de_canales_de(usuario)
+  if (!is.null(casa)) { canales <- setdiff(canales, "req"); mio <- FALSE }
+  tab <- estado[, c("id", intersect(canales, names(estado))), drop = FALSE]
+  pref <- avisos_de_recortar(avisos_de_desde_tabla(tab, canales, mio), canales)
+  if (is.null(casa)) prefs_reemplazar(client_id, usuario$user, "avisos_de", avisos_de_para_guardar(pref))
+  else prefs_reemplazar(casa, usuario$user, "avisos_de_clientes", avisos_de_para_guardar(pref), sub = tolower(client_id))
+  invisible(pref)
+}
+
+# A staff member's preference for the client they see, from their home's
+# datos: the saved block, or -- never saved -- every activity their
+# permission gives them (as before T68).
+avisos_de_staff_de <- function(datos_casa, client_id) {
+  b <- if (is.list(datos_casa) && is.list(datos_casa$avisos_de_clientes)) datos_casa$avisos_de_clientes[[tolower(client_id)]]
+  if (is.list(b)) return(avisos_de_normalizar(b))
+  p <- avisos_de_vacio(mio = FALSE)
+  for (c in setdiff(AVISOS_DE_CANALES, "req")) p$canales[[c]] <- list(base = "todos", cambia = character())
+  p
+}
+
+# The grid's rows: the people one may choose (req_avisos_personas()) with
+# their tier and job title for the groups, and one logical per channel
+# from the preference.
+avisos_de_filas <- function(u, pref, canales, yo_code = NA_character_) {
+  p <- req_avisos_personas(u)
+  if (!nrow(p)) return(data.frame(id = character(), nombre = character(), nivel = character(), puesto = character(),
+                                  stringsAsFactors = FALSE))
+  k <- match(p$id, u$account_code)
+  p$nivel  <- vapply(as.character(u$tier[k]), function(t) tryCatch(nivel_nombre(t), error = function(e) t), character(1))
+  pu <- if ("puesto" %in% names(u)) as.character(u$puesto[k]) else rep(NA_character_, nrow(p))
+  pu <- trimws(gsub("\\s+", " ", pu))
+  p$puesto <- ifelse(is.na(pu) | !nzchar(pu), tr("panorama.avisos_de.sin_puesto"), tools::toTitleCase(tolower(pu)))
+  if (!is.na(yo_code)) p$nombre[p$id == yo_code] <- paste(p$nombre[p$id == yo_code], tr("panorama.avisos_de.tu"))
+  for (c in canales) p[[c]] <- vapply(p$id, function(id) avisos_de_recibe(pref, c, id), logical(1), USE.NAMES = FALSE)
+  rownames(p) <- NULL
+  p
+}
+
+# The feed's activity, by the reader's preference: an "act" aviso
+# (clave "act|<acción>|<autor>") stays only if the reader takes its channel
+# from that author. Permission already filtered it (avisos_visibles());
+# the preference never opens what the permission closed. Other avisos stay.
+avisos_de_filtrar_feed <- function(df, pref, codigo_de) {
+  if (!is.data.frame(df) || !nrow(df) || !"clave" %in% names(df)) return(df)
+  cl <- as.character(df$clave)
+  m <- regmatches(cl, regexec("^act\\|([a-z_]+)\\|(.+)$", cl))
+  queda <- vapply(m, function(x) {
+    if (length(x) != 3L) return(TRUE)
+    def <- ALERTAS_ACCIONES[[x[2]]]
+    if (is.null(def)) return(TRUE)
+    avisos_de_recibe(pref, def$columna, unname(codigo_de[tolower(x[3])]))
+  }, logical(1))
+  df[queda, , drop = FALSE]
+}
+
+# The client's live readers (usuarios.rds as stored): username, tier,
+# resolved permissions and account_code; staff never.
+avisos_de_lectores <- function(usuarios, config = NULL) {
+  if (!is.data.frame(usuarios) || !nrow(usuarios)) return(list())
+  col <- function(n, def) if (n %in% names(usuarios)) usuarios[[n]] else rep(def, nrow(usuarios))
+  user <- tolower(trimws(as.character(col("username", NA_character_))))
+  tier <- as.character(col("tier", NA_character_))
+  perm <- as.character(col("permisos", "{}"))
+  code <- as.character(col("account_code", NA_character_))
+  vivo <- !(col("deleted", FALSE) %in% TRUE) & !(col("activo", TRUE) %in% FALSE) &
+    tier %in% niveles_cliente() & !is.na(user) & nzchar(user)
+  lapply(which(vivo), function(i) list(
+    user = user[i], tier = tier[i], code = code[i],
+    permisos = permisos_resueltos(tier[i], if (is.na(perm[i])) "{}" else perm[i], config)))
+}
+
+# username -> account_code, for the authors of the feed and the matrix.
+avisos_de_codigos <- function(usuarios) {
+  if (!is.data.frame(usuarios) || !nrow(usuarios) || !all(c("username", "account_code") %in% names(usuarios)))
+    return(character())
+  stats::setNames(as.character(usuarios$account_code), tolower(trimws(as.character(usuarios$username))))
+}
+
+# The gate (T68, Coordinador 2026-11-20): an "act" is published when at
+# least one other live user of the client holds the permission of its
+# action -- permissions only, never preferences, so nothing outside the
+# client is read and what anyone (staff included) chooses always finds it
+# published; the preference filters when shown (avisos_de_filtrar_feed()).
+# One aviso per action, never one per reader. Pure: the caller reads
+# usuarios and config strictly.
+avisos_de_alguien_puede <- function(usuarios, config, accion, autor) {
+  def <- ALERTAS_ACCIONES[[accion %||% ""]]
+  if (is.null(def)) return(FALSE)
+  autor <- tolower(trimws(autor %||% ""))
+  for (l in avisos_de_lectores(usuarios, config)) {
+    if (identical(l$user, autor)) next
+    if (isTRUE(tryCatch(puede(l, def$permiso), error = function(e) FALSE))) return(TRUE)
+  }
+  FALSE
+}
+
 .pan_num <- function(x) { x <- suppressWarnings(as.numeric(x)); x[is.na(x)] <- 0; x }
 
 # One row per currency, the client's base first, then alphabetical; a row

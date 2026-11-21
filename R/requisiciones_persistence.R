@@ -946,11 +946,11 @@ req_avisos_destinatarios <- function(usuarios, config, prefs, interesados, autor
     tier %in% niveles_cliente() & !is.na(user) & nzchar(user)
   interesados <- tolower(trimws(interesados)); autor <- tolower(trimws(autor %||% ""))
   codigos_de <- code[user %in% tolower(trimws(de_quien)) & !is.na(code)]
-  pref_de <- function(u) {
+  datos_de <- function(u) {
     if (!is.data.frame(prefs) || !nrow(prefs)) return(NULL)
     i <- which(tolower(prefs$usuario) == u)
     if (!length(i)) return(NULL)
-    tryCatch(jsonlite::fromJSON(prefs$datos[i[1]], simplifyVector = TRUE)$req_avisos, error = function(e) NULL)
+    tryCatch(jsonlite::fromJSON(prefs$datos[i[1]], simplifyVector = TRUE), error = function(e) NULL)
   }
   out <- character()
   for (i in which(vivo)) {
@@ -958,7 +958,18 @@ req_avisos_destinatarios <- function(usuarios, config, prefs, interesados, autor
     u <- list(user = user[i], tier = tier[i],
               permisos = permisos_resueltos(tier[i], if (is.na(perm[i])) "{}" else perm[i], config))
     if (!puede(u, "can_view_requisiciones")) next
-    pf <- req_avisos_pref(pref_de(user[i]))
+    datos <- datos_de(user[i])
+    # T68: a saved "De quién recibo avisos" decides ("lo mío" + the req
+    # column); without one, the T62 mode exactly as before (read only).
+    if (is.list(datos) && is.list(datos$avisos_de)) {
+      ad <- avisos_de_normalizar(datos$avisos_de)
+      k <- ad$canales$req
+      de_otros <- if (identical(k$base, "todos")) !length(codigos_de) || any(!codigos_de %in% k$cambia)
+                  else any(codigos_de %in% k$cambia)
+      if ((isTRUE(ad$mio) && user[i] %in% interesados) || isTRUE(de_otros)) out <- c(out, user[i])
+      next
+    }
+    pf <- req_avisos_pref(datos$req_avisos)
     recibe <- switch(pf$modo,
       ninguna = FALSE,
       mias    = user[i] %in% interesados,

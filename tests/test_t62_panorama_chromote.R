@@ -4,9 +4,8 @@
 # (tests/helpers/panorama_req_fixture_app.R), at 1293x632:
 #   - the feed's "Requisiciones" chip counts the two requisition avisos and,
 #     pressed, shows only them;
-#   - "Mis avisos" opens the four modes; "mias_y" shows the people picker,
-#     listed by name and chosen by id; Guardar saves
-#     req_avisos = {modo: "mias_y", personas: ["U0002"]} and closes.
+#   - the ⚙ opens "De quién recibo avisos" (T68; its own test is
+#     tests/test_t68_panel_chromote.R).
 # Run from the repo root:  Rscript tests/test_t62_panorama_chromote.R
 # =============================================================================
 cat("=== test_t62_panorama_chromote ===\n\n")
@@ -53,20 +52,13 @@ tryCatch({
   ok(sprintf("pressed, it shows only the two requisition items (%s)", vis), identical(jsonlite::fromJSON(vis), c("req", "req")))
   ok("…with the requisition icon", isTRUE(ev("!!document.querySelector('.pan-item[data-tipo=\"req\"] .pan-icono-req')")))
   foto("t62_feed_req")
-  ok("'Mis avisos' is in the feed's header", isTRUE(ev("!!document.querySelector('.pan-feed-cabeza .pan-feed-ajustes')")))
+  # T68: "Mis avisos" became "De quién recibo avisos" (its own test:
+  # tests/test_t68_panel_chromote.R); here, only that it opens from the feed.
+  ok("the ⚙ is in the feed's header", isTRUE(ev("!!document.querySelector('.pan-feed-cabeza .pan-feed-ajustes')")))
   clic(".pan-feed-cabeza .pan-feed-ajustes")
-  espera("document.querySelectorAll('.modal input[type=radio]').length > 0")
-  ok("it opens the four modes, 'Las mías' chosen", espera("document.querySelectorAll('.modal input[type=radio]').length === 4") &&
-       isTRUE(ev("document.querySelector('.modal input[value=\"mias\"]').checked")))
-  clic('.modal input[value="mias_y"]')
-  ok("'mias_y' shows the people picker", espera("(function(){ var s = document.querySelector('.modal .selectize-control'); return !!s && s.offsetParent !== null; })()"))
-  ev("(function(){ var s = $('.modal select')[0].selectize; s.addItem('U0002'); return true; })()")
+  ok("it opens 'De quién recibo avisos' with its grid",
+     espera("!!document.querySelector('.modal #pan-avisos_de-hdt') && /De quién recibo avisos/.test(document.querySelector('.modal .modal-title').textContent)"))
   foto("t62_mis_avisos")
-  clic(".modal .modal-footer .btn-primary")
-  ok("Guardar saves the mode and the person by id",
-     espera("(function(){ try { var j = JSON.parse(document.getElementById('registro').textContent);
-       return j.req_avisos.modo === 'mias_y' && j.req_avisos.personas.length === 1 && j.req_avisos.personas[0] === 'U0002'; } catch (e) { return false; } })()"))
-  ok("…and closes", espera("!document.querySelector('.modal.show')"))
 }, error = function(e) ok(paste("no error running the checks:", conditionMessage(e)), FALSE))
 limpiar()
 

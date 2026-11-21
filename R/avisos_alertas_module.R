@@ -29,7 +29,6 @@ ALERTAS_ACCIONES <- list(
   crear_item           = list(columna = "crear",          permiso = "can_register_payments"),
   crear_provision      = list(columna = "crear",          permiso = "can_edit_provisiones"),
   crear_pasivo         = list(columna = "crear",          permiso = "can_manage_pasivos"),
-  crear_requisicion    = list(columna = "crear",          permiso = "can_view_requisiciones"),
   generar_archivo_pago = list(columna = "archivo_pago",   permiso = "can_register_payments"),
   confirmar_pago       = list(columna = "confirmar_pago", permiso = "can_confirm_payments"),
   importar_bancos      = list(columna = "bancos",         permiso = "can_manage_bancos"),
@@ -107,7 +106,13 @@ alertas_guardar <- function(client_id, cambios, por) {
 # action, or a matrix that could not be read (fail closed, with a message).
 # Otherwise `params` completed with the action's permiso, a clave per action
 # and user, and the 10-minute window that groups repeats into one aviso.
+# T68: actions that no longer go out as "act". Creating a requisition goes
+# only through the Requisiciones channel (req_avisos_destinatarios()): it
+# used to arrive twice. Its old "act" avisos still show.
+ALERTAS_RETIRADAS <- c("crear_requisicion")
+
 alertas_preparar <- function(client_id, accion, usuario, params = list()) {
+  if (isTRUE(accion %in% ALERTAS_RETIRADAS)) return(NULL)
   def <- ALERTAS_ACCIONES[[accion %||% ""]]
   if (is.null(def)) {
     message("[alertas] acción desconocida: ", accion)
@@ -115,17 +120,29 @@ alertas_preparar <- function(client_id, accion, usuario, params = list()) {
   }
   u <- tolower(trimws(usuario %||% ""))
   if (!nzchar(u)) return(NULL)
-  m <- tryCatch(alertas_leer(client_id), error = function(e) {
-    message("[alertas] no se pudo leer la matriz: ", conditionMessage(e))
-    NULL
+  # T68: published when at least one other user of the client holds this
+  # action's permission (permissions only; each reader's "De quién recibo
+  # avisos" filters when shown). A failed read of the users publishes all the
+  # same: the delivery still filters by permission, and not publishing would
+  # lose notices without a word.
+  hay <- tryCatch(alertas_alguien_puede(client_id, accion, u), error = function(e) {
+    message("[alertas] T68: users unreadable, publishing anyway (delivery filters by permission): ", accion)
+    TRUE
   })
-  if (is.null(m)) return(NULL)
-  fila <- m[m$usuario %in% u, , drop = FALSE]
-  if (!nrow(fila) || !isTRUE(fila[[def$columna]][1])) return(NULL)
+  if (!isTRUE(hay)) return(NULL)
   params$permiso     <- params$permiso %||% def$permiso
   params$clave       <- params$clave %||% paste("act", accion, u, sep = "|")
   params$ventana_min <- params$ventana_min %||% ALERTAS_VENTANA_MIN
   params
+}
+
+# T68: strict reads of this client's users and tier settings (a failure
+# stops; the caller publishes anyway). Nothing of another client is read.
+alertas_alguien_puede <- function(client_id, accion, autor) {
+  cid <- .alertas_cid(client_id)
+  usuarios <- .s3_leer_para_escribir(S3_KEYS$usuarios, cid)
+  config   <- .s3_leer_para_escribir(S3_KEYS$tiers_config, cid)
+  avisos_de_alguien_puede(usuarios, if (is.list(config)) config else NULL, accion, autor)
 }
 
 # ── The screen (front B mounts it inside Panorama › Publicar) ───────────────

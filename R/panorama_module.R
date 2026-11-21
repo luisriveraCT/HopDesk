@@ -91,6 +91,10 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
 
     feed <- shiny::reactive({
       v <- visibles(); if (is.null(v)) return(panorama_feed(NULL))
+      # T68: the activity this reader takes, by their preference (after the
+      # permission avisos_visibles() already applied).
+      fl <- ad_filtro()
+      if (!is.null(fl)) v <- avisos_de_filtrar_feed(v, fl$pref, fl$cod)
       panorama_feed(v, visita())
     })
     mis_sol <- shiny::reactive({
@@ -330,11 +334,11 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       shiny::div(class = "pan-tarjeta pan-feed",
         shiny::div(class = "pan-feed-cabeza",
           shiny::h2(class = "pan-titulo-seccion", tr("panorama.feed.titulo")),
-          # T62: whose requisitions reach me (only with can_view_requisiciones).
-          if (isTRUE(tryCatch(puede(usr(), "can_view_requisiciones"), error = function(e) FALSE)))
-            shiny::tags$button(type = "button", class = "pan-feed-ajustes", title = tr("panorama.req_avisos.titulo"),
+          # T68: "De quién recibo avisos", for whoever has at least one kind of notice.
+          if (length(tryCatch(avisos_de_canales_de(usr()), error = function(e) character())))
+            shiny::tags$button(type = "button", class = "pan-feed-ajustes", title = tr("panorama.avisos_de.titulo"),
               onclick = sprintf("Shiny.setInputValue('%s', Math.random(), {priority: 'event'})", ns("req_avisos_abrir")),
-              shiny::icon("gear"), " ", tr("panorama.req_avisos.boton")),
+              shiny::icon("gear"), " ", tr("panorama.avisos_de.boton")),
           shiny::div(class = "pan-meta",
             if (!is.null(uv) && !is.na(suppressWarnings(as.POSIXct(uv, tz = "UTC"))))
               tr("panorama.feed.desde", cuando = panorama_cuando(as.POSIXct(uv, tz = "UTC"), tz = zona()))
@@ -375,49 +379,139 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
           })))
     })
 
-    # ── Mis avisos de requisiciones (T62) ─────────────────────────────────────
-    # Each user chooses whose requisitions reach them as avisos
-    # (req_avisos_pref(), R/panorama_datos.R); R/requisiciones_persistence.R
-    # reads it when it publishes. People are chosen by id (account_code),
-    # never by their shown name. Staff inside a client see it, never save it
-    # (as with the last visit).
-    req_staff <- function() isTRUE(tryCatch(shared$current_user_info()$is_staff, error = function(e) FALSE))
+    # ── De quién recibo avisos (T68) ──────────────────────────────────────────
+    # One panel, on the side of who receives (it replaces T62's "Mis avisos"
+    # and the "Alertas del equipo" matrix): "Lo mío, siempre", and a grid of
+    # people x kinds of notice (hd_table avisos_de, col_casilla) with search,
+    # groups by tier or job title, Todos / Ninguno / Solo yo and "Ver: todas
+    # / elegidas". Columns by permission of each ACTION (avisos_de_canales_de);
+    # the server trims the channels again when saving. Saved whole with
+    # prefs_reemplazar() as datos$avisos_de (base + exceptions). Staff inside
+    # a client see it, never save it.
+    ad <- shiny::reactiveValues(estado = NULL, canales = character(), ver = "todas", agrupar = "nivel", yo = NA_character_)
+    ad_staff <- function() isTRUE(tryCatch(shared$current_user_info()$is_staff, error = function(e) FALSE))
+    ad_datos <- shiny::reactive({
+      e <- ad$estado
+      shiny::req(is.data.frame(e))
+      e$grupo <- switch(ad$agrupar, nivel = e$nivel, puesto = e$puesto, rep("", nrow(e)))
+      if (identical(ad$ver, "elegidas") && length(ad$canales))
+        e <- e[rowSums(as.matrix(e[, ad$canales, drop = FALSE])) > 0 | e$id %in% ad$yo, , drop = FALSE]
+      e
+    })
+    ad_tabla <- hd_table_server("avisos_de", tabla = "avisos_de", datos = ad_datos, grupo = "grupo",
+      textos = list(contador = "panorama.avisos_de.contador"),
+      columnas = shiny::reactive(c(
+        list(col_texto("nombre", "panorama.avisos_de.persona"), col_texto("puesto", "panorama.avisos_de.puesto")),
+        lapply(ad$canales, function(c) col_casilla(c, paste0("panorama.avisos_de.canal.", c))))))
+    # The grid as it stands: the data plus what was ticked (t$casillas()).
+    ad_actual <- function() {
+      e <- shiny::isolate(ad$estado)
+      cs <- tryCatch(shiny::isolate(ad_tabla$casillas()), error = function(err) NULL)
+      if (is.data.frame(e) && is.data.frame(cs) && nrow(cs)) {
+        k <- match(cs$id, e$id)
+        for (c in intersect(shiny::isolate(ad$canales), names(cs))) e[[c]][k[!is.na(k)]] <- cs[[c]][!is.na(k)]
+      }
+      e
+    }
+    ad_poner <- function(e) { ad$estado <- e; ad_tabla$limpiar_casillas() }
+
     shiny::observeEvent(input$req_avisos_abrir, {
       c <- cid(); u <- usr()
-      if (is.null(c) || !nzchar(c) || is.null(u) || !puede(u, "can_view_requisiciones")) return()
-      p <- tryCatch(req_avisos_pref(prefs_leer(c, u$user)$req_avisos), error = function(e) NULL)
-      gente <- tryCatch(req_avisos_personas(auth_load_usuarios(client_id = c)), error = function(e) NULL)
-      if (is.null(p) || is.null(gente)) {
-        shiny::showNotification(tr("panorama.req_avisos.error_leer"), type = "error"); return()
-      }
-      staff <- req_staff()
+      if (is.null(c) || !nzchar(c) || is.null(u)) return()
+      staff <- ad_staff()
+      casa <- if (staff) tryCatch(shared$home_client_id(), error = function(e) NULL) else NULL
+      if (staff && (is.null(casa) || !nzchar(casa))) return()
+      canales <- avisos_de_canales_de(u)
+      if (staff) canales <- setdiff(canales, "req")   # requisitions reach the client's own users
+      if (!length(canales)) return()
+      leido <- tryCatch({
+        usuarios <- auth_load_usuarios(client_id = c)
+        cod <- avisos_de_codigos(usuarios)
+        pref <- if (staff) avisos_de_staff_de(prefs_leer(casa, u$user), c) else {
+          matriz <- tryCatch(alertas_leer(c), error = function(e) NULL)   # only to work out a preference never saved
+          avisos_de_de(prefs_leer(c, u$user), matriz, cod, codigos = req_avisos_personas(usuarios)$id)
+        }
+        yo <- unname(cod[tolower(u$user)])
+        list(filas = avisos_de_filas(usuarios, pref, canales, yo_code = yo %||% NA_character_), pref = pref, yo = yo)
+      }, error = function(e) NULL)
+      if (is.null(leido)) { shiny::showNotification(tr("panorama.req_avisos.error_leer"), type = "error"); return() }
+      ad$canales <- canales; ad$ver <- "todas"; ad$agrupar <- "nivel"; ad$yo <- leido$yo %||% NA_character_
+      ad_poner(leido$filas)
       shiny::showModal(shiny::modalDialog(
-        title = tr("panorama.req_avisos.titulo"), easyClose = TRUE,
-        shiny::p(class = "text-muted small", tr("panorama.req_avisos.explica")),
-        shiny::radioButtons(ns("req_modo"), NULL, selected = p$modo, width = "100%", choiceValues = REQ_AVISOS_MODOS,
-          choiceNames = lapply(REQ_AVISOS_MODOS, function(m) tr(paste0("panorama.req_avisos.modo.", m)))),
-        shiny::conditionalPanel("input.req_modo == 'mias_y'", ns = ns,
-          shiny::selectizeInput(ns("req_personas"), tr("panorama.req_avisos.personas"), multiple = TRUE, width = "100%",
-            choices = stats::setNames(gente$id, gente$nombre), selected = p$personas,
-            options = list(placeholder = tr("panorama.req_avisos.personas_vacio")))),
-        if (staff) shiny::p(class = "text-muted small", tr("panorama.req_avisos.staff")),
+        title = tr("panorama.avisos_de.titulo"), size = "l", easyClose = TRUE,
+        shiny::div(class = "pan-avisos-de",
+          if (!staff) shiny::checkboxInput(ns("ad_mio"), tr("panorama.avisos_de.mio"), value = isTRUE(leido$pref$mio), width = "100%"),
+          shiny::p(class = "text-muted small mb-2", tr(if (staff) "panorama.avisos_de.staff_nota" else "panorama.avisos_de.mio_ayuda")),
+          shiny::div(class = "pan-avisos-de-barra",
+            shiny::div(class = "btn-group btn-group-sm", role = "group",
+              shiny::actionButton(ns("ad_todos"), tr("panorama.avisos_de.todos"), class = "btn btn-outline-secondary"),
+              shiny::actionButton(ns("ad_ninguno"), tr("panorama.avisos_de.ninguno"), class = "btn btn-outline-secondary"),
+              shiny::actionButton(ns("ad_solo_yo"), tr("panorama.avisos_de.solo_yo"), class = "btn btn-outline-secondary")),
+            shiny::radioButtons(ns("ad_ver"), NULL, inline = TRUE, selected = "todas",
+              choiceValues = c("todas", "elegidas"),
+              choiceNames = list(tr("panorama.avisos_de.ver_todas"), tr("panorama.avisos_de.ver_elegidas"))),
+            shiny::radioButtons(ns("ad_agrupar"), NULL, inline = TRUE, selected = "nivel",
+              choiceValues = c("nivel", "puesto", "ninguno"),
+              choiceNames = list(tr("panorama.avisos_de.por_nivel"), tr("panorama.avisos_de.por_puesto"),
+                                 tr("panorama.avisos_de.sin_agrupar")))),
+          shiny::div(class = "pan-avisos-de-tabla", hd_table_ui(ns("avisos_de"), alto = "ventana"))),
         footer = shiny::tagList(shiny::modalButton(tr("comun.cancelar")),
-          if (!staff) shiny::actionButton(ns("req_avisos_guardar"), tr("comun.guardar"), class = "btn btn-primary"))))
+          shiny::actionButton(ns("ad_guardar"), tr("comun.guardar"), class = "btn btn-primary"))))
     }, ignoreInit = TRUE)
-    shiny::observeEvent(input$req_avisos_guardar, {
+
+    ad_todas <- function(valor) {
+      e <- ad_actual(); if (!is.data.frame(e)) return()
+      for (c in shiny::isolate(ad$canales)) e[[c]] <- rep(valor, nrow(e))
+      ad_poner(e)
+    }
+    shiny::observeEvent(input$ad_todos,   ad_todas(TRUE),  ignoreInit = TRUE)
+    shiny::observeEvent(input$ad_ninguno, ad_todas(FALSE), ignoreInit = TRUE)
+    shiny::observeEvent(input$ad_solo_yo, {   # "Solo yo": nobody's, with "Lo mío" on
+      ad_todas(FALSE)
+      shiny::updateCheckboxInput(session, "ad_mio", value = TRUE)
+    }, ignoreInit = TRUE)
+    shiny::observeEvent(input$ad_ver, {
+      if (identical(input$ad_ver, shiny::isolate(ad$ver))) return()
+      e <- ad_actual(); ad$ver <- input$ad_ver; ad_poner(e)
+    }, ignoreInit = TRUE)
+    shiny::observeEvent(input$ad_agrupar, {
+      if (identical(input$ad_agrupar, shiny::isolate(ad$agrupar))) return()
+      e <- ad_actual(); ad$agrupar <- input$ad_agrupar; ad_poner(e)
+    }, ignoreInit = TRUE)
+
+    shiny::observeEvent(input$ad_guardar, {
       c <- cid(); u <- usr()
-      if (is.null(c) || !nzchar(c) || is.null(u) || req_staff() || !puede(u, "can_view_requisiciones")) return()
-      # The ids come from the browser: only live users of this client count.
-      validos <- tryCatch(req_avisos_personas(auth_load_usuarios(client_id = c))$id, error = function(e) NULL)
-      if (is.null(validos)) { shiny::showNotification(tr("panorama.req_avisos.error_leer"), type = "error"); return() }
-      pref <- req_avisos_pref(list(modo = input$req_modo,
-                                   personas = intersect(as.character(input$req_personas %||% character()), validos)))
-      ok <- tryCatch({ prefs_guardar(c, u$user, list(req_avisos = pref)); TRUE }, error = function(e) FALSE)
+      if (is.null(c) || !nzchar(c) || is.null(u)) return()
+      e <- ad_actual()
+      if (!is.data.frame(e)) return()
+      # Staff: in their home client, never in this one's folder.
+      casa <- if (ad_staff()) tryCatch(shared$home_client_id(), error = function(e) NULL) else NULL
+      if (ad_staff() && (is.null(casa) || !nzchar(casa))) return()
+      ok <- tryCatch({ avisos_de_guardar(c, u, e, isTRUE(input$ad_mio), casa = casa); TRUE },
+                     error = function(err) { message("[panorama] avisos_de no se guardó: ", conditionMessage(err)); FALSE })
       if (ok) {
+        ad_version(ad_version() + 1L)
         shiny::removeModal()
         shiny::showNotification(tr("panorama.req_avisos.guardado"), type = "message")
       } else shiny::showNotification(tr("panorama.req_avisos.error_guardar"), type = "error")
     }, ignoreInit = TRUE)
+
+    # The feed's activity by this reader's preference (after the permission,
+    # never instead of it): read when the tab opens and after saving.
+    ad_version <- shiny::reactiveVal(0L)
+    ad_filtro <- shiny::reactive({
+      if (!isTRUE(activa())) return(NULL)
+      ad_version()
+      c <- cid(); u <- usr()
+      if (is.null(c) || !nzchar(c) || is.null(u)) return(NULL)
+      tryCatch({
+        usuarios <- auth_load_usuarios(client_id = c)
+        cod <- avisos_de_codigos(usuarios)
+        pref <- if (ad_staff()) avisos_de_staff_de(prefs_leer(shared$home_client_id(), u$user), c)
+                else avisos_de_de(prefs_leer(c, u$user), tryCatch(alertas_leer(c), error = function(e) NULL), cod)
+        list(pref = pref, cod = cod)
+      }, error = function(e) { message("[panorama] avisos_de: no se pudo leer la preferencia; el feed no se filtra"); NULL })
+    })
 
     # ── Pagada / pago anulado de requisiciones (T62) ──────────────────────────
     # Published by the session of whoever confirmed or annulled: the

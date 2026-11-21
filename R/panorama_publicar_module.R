@@ -8,7 +8,8 @@
 #                      live preview of the Destacado and the Cinta line
 #   Publicadas         the live publications (hd_table "avisos_publicados")
 #                      with Desactivar: ends its visibility today, never deletes
-#   Alertas del equipo front C's matrix (R/avisos_alertas_module.R)
+#   (T68: the "Alertas del equipo" tab is gone: each person chooses whose
+#   notices they receive, Panorama's "De quién recibo avisos".)
 #
 # Audience (plan "Audiencia por niveles"): a bar of the client tiers; a
 # solicitud goes to named people instead. The last tiers chosen are kept in
@@ -29,9 +30,7 @@ panoramaPublicarUI <- function(id) {
                          `aria-selected` = "true", tr("panorama.publicar.nueva")),
       shiny::tags$button(type = "button", role = "tab", class = "pan-pestana", `data-seccion` = ns("s_publicadas"),
                          `aria-selected` = "false", tr("panorama.publicar.publicadas"),
-                         shiny::span(class = "pan-chip-n", shiny::textOutput(ns("n_vigentes"), inline = TRUE))),
-      shiny::tags$button(type = "button", role = "tab", class = "pan-pestana", `data-seccion` = ns("s_alertas"),
-                         `aria-selected` = "false", tr("avisos.alertas.titulo"))),
+                         shiny::span(class = "pan-chip-n", shiny::textOutput(ns("n_vigentes"), inline = TRUE)))),
 
     shiny::div(id = ns("s_nueva"), class = "pan-seccion",
       shiny::div(class = "pan-rejilla",
@@ -67,10 +66,7 @@ panoramaPublicarUI <- function(id) {
                                tr("panorama.publicar.publicar")))))),
 
     shiny::div(id = ns("s_publicadas"), class = "pan-seccion", hidden = NA,
-      shiny::div(class = "pan-tarjeta", hd_table_ui(ns("tabla")))),
-
-    shiny::div(id = ns("s_alertas"), class = "pan-seccion", hidden = NA,
-      shiny::div(class = "pan-tarjeta", alertas_equipo_ui(ns("alertas")))))
+      shiny::div(class = "pan-tarjeta", hd_table_ui(ns("tabla")))))
 }
 
 panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), al_volver = function() NULL,
@@ -313,8 +309,6 @@ panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), 
       version(version() + 1L)
       al_publicar()
     }, ignoreInit = TRUE)
-
-    alertas_equipo_server("alertas", shared)
 
     invisible(list(tabla = tabla))
   })
