@@ -351,26 +351,6 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-ins.hdt-emp { font-weight: 500; border-color: var(--hdt-line); color: var(--hdt-accent);
   background: var(--hdt-surface); border-radius: 999px; }
 
-/* Dark theme (Bootstrap 5.3's data-bs-theme). The app is light today; this
-   only applies once a page opts in, never from the OS setting alone. */
-[data-bs-theme="dark"] .hdt {
-  --hdt-ink: #e7ebf4; --hdt-muted: #9aa4ba; --hdt-line: #2a3449;
-  --hdt-surface: #161d2c; --hdt-surface-2: #1d2638;
-  --hdt-accent: #6f97ff; --hdt-accent-soft: #1f2c4d;
-  --hdt-sel: #253a6b; --hdt-hover: #1f2a42;
-  --hdt-cobro: #7ea4ff; --hdt-pago: #5fcf92;
-  --hdt-prov: #b794ff; --hdt-prov-soft: #2a2142;
-  --hdt-t-exito: #5fcf92;   --hdt-f-exito: #173326;
-  --hdt-t-aviso: #f0b35a;   --hdt-f-aviso: #3a2c14;
-  --hdt-t-peligro: #ff8080; --hdt-f-peligro: #3d1d22;
-  --hdt-t-info: #7ea4ff;    --hdt-f-info: #1f2c4d;
-  --hdt-t-neutro: #9aa4ba;  --hdt-f-neutro: #1d2638;
-  --hdt-t-morado: #b794ff;  --hdt-f-morado: #2a2142;
-  --hdt-t-rojo: #ff8a80;     --hdt-f-rojo: #3d1d22;     --hdt-fila-rojo: #2a1a1e;
-  --hdt-t-naranja: #ffb066;  --hdt-f-naranja: #3a2614;  --hdt-fila-naranja: #2a2118;
-  --hdt-t-amarillo: #f5d061; --hdt-f-amarillo: #3a3214; --hdt-fila-amarillo: #29261a;
-}
-
 /* Totals footer */
 .hdt-pie { flex: none; border-top: 1px solid var(--hdt-line); background: var(--hdt-surface-2);
   padding: 4px 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; font-size: .8rem;
