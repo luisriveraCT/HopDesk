@@ -147,9 +147,11 @@ loaded <- real_auth_load_usuarios(client_id = "networks")
   list(file = "R/tiers_module.R", pattern = 'all_u\\[full_idx, "password_hash"\\]\\s*<-'),
   list(file = "scripts/recover_mouse.R", pattern = "raw\\$password_hash\\[mouse_rows\\]\\s*<-"),
   list(file = "scripts/recover_mouse.R", pattern = "password_hash\\s*=\\s*hash_password\\(new_pw\\)"),
-  list(file = "scripts/add_bunny.R",     pattern = "password_hash\\s*=\\s*hash_password\\(bunny_pw\\)"),
-  list(file = "scripts/seed_hd_admin.R", pattern = "password_hash\\s*=\\s*hash_password\\(mouse_pw\\)"),
-  list(file = "scripts/seed_hd_admin.R", pattern = 'password_hash\\s*=\\s*hash_password\\("PBunny129!"\\)')
+  list(file = "scripts/add_bunny.R",     pattern = "password_hash\\s*=\\s*hash_password\\(bunny_pw\\)")
+  # Not scripts/seed_hd_admin.R (CM41): it is git-ignored on purpose (a local
+  # script with credentials), so in any clean checkout readLines() failed and
+  # took this whole module down. One of its two patterns also carried a
+  # password in clear text (found in CM02).
 )
 
 for (site in .WRITE_SITES) {
