@@ -483,12 +483,16 @@ app_styles <- function() {
        Cinta rose together and the box's empty background (the white body)
        showed under them, with the fixed Notas button floating there. With
        none: no bounce and no chaining to the page; normal scrolling and the
-       room above are unchanged. Only y: x keeps the browser's back gesture. */
+       room above are unchanged. Only y: x keeps the browser's back gesture.
+       Inner boxes too (the Calendar's .cal-outer, the table engine's
+       .hdt-scroll): measured in Chrome, they scroll on their own. */
     html, body,
     .tab-pane > .overflow-auto,
     .ph-company-panel,
     .hd-scroll-pestana,
-    .cf-panel {
+    .cf-panel,
+    .cal-outer,
+    .hdt-scroll {
       overscroll-behavior-y: none;
     }
     /* T56: on the Calendar the button lives in its header, next to the month
