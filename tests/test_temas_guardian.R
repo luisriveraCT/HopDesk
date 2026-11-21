@@ -494,5 +494,37 @@ ok("the generated bridge carries the whole chain under each theme with a bridge"
    all(vapply(con_puente, function(t) grepl(paste0("html[data-hd-tema=\"", t, "\"] ", tema$.HD_BTN_DEFAULT_SEL),
                                               puente_txt, fixed = TRUE), logical(1))))
 
+# ── Token sheets linked twice (TEMA stage 4, hdtable.css; E2's review) ──────
+# hd_table_deps() links hd_temas.css and hd_clasico_legado.css itself, so a
+# table renders on a page without tema_head(); in the app they are linked
+# twice. Harmless only if (1) both links are the same URL (one download, same
+# order) and (2) no other sheet defines --hd-* on :root or [data-hd-tema]: one
+# linked between tema_head() and the first table would be silently overridden
+# by the repeated copy. Other sheets use their own class (.hd-marca).
+motor <- new.env()
+for (f in c("R/i18n.R", "R/tema_registro.R", "R/hd_table.R")) sys.source(f, envir = motor)
+hojas_tokens <- function(x) {
+  h <- unlist(regmatches(x, gregexpr('href="(hd_temas|hd_clasico_legado)\\.css\\?v=[^"]*"', x, perl = TRUE)))
+  sort(unique(h))
+}
+de_tema  <- hojas_tokens(as.character(htmltools::renderTags(motor$tema_head())$head))
+de_motor <- hojas_tokens(as.character(htmltools::renderTags(motor$hd_table_deps())$head))
+ok(sprintf("hd_table_deps() links the token sheets with the same URLs as tema_head() (%s)", paste(de_motor, collapse = " ")),
+   length(de_tema) == 2L && identical(de_tema, de_motor))
+raiz_hd <- function(f) {
+  x <- paste(leer(f), collapse = "\n")
+  x <- gsub("/\\*.*?\\*/", "", x, perl = TRUE)
+  b <- regmatches(x, gregexpr("([^{}]+)\\{([^{}]*)\\}", x, perl = TRUE))[[1]]
+  any(vapply(b, function(r) {
+    sel <- sub("\\{.*", "", r)
+    grepl(":root|data-hd-tema", sel) && grepl("--hd-[a-zA-Z0-9-]+\\s*:", sub("^[^{]*\\{", "", r), perl = TRUE)
+  }, logical(1)))
+}
+generadas <- c("www/hd_temas.css", "www/hd_clasico_legado.css", "www/hd_tema_bootstrap.css")
+otras <- Filter(raiz_hd, setdiff(list.files("www", "\\.css$", recursive = TRUE, full.names = TRUE), generadas))
+ok(sprintf("no other sheet defines --hd-* on :root or [data-hd-tema] (%s)", paste(otras, collapse = ", ")),
+   length(otras) == 0L)
+ok("the :root check sees a generated sheet (it is not blind)", raiz_hd("www/hd_temas.css"))
+
 cat(sprintf("\n=== %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
