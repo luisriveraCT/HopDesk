@@ -56,7 +56,7 @@
 .hdt-menu { position: fixed; z-index: 2000; min-width: 170px; max-width: min(360px, calc(100vw - 16px));
   max-height: min(320px, calc(100vh - 16px)); overflow: auto; padding: 4px 0;
   background: var(--hdt-surface); color: var(--hdt-ink); border: 1px solid var(--hdt-line); border-radius: 7px;
-  box-shadow: 0 6px 20px rgba(0,0,0,.18); font-size: .82rem; }
+  box-shadow: var(--hd-leg-sombra-000000-b72920); font-size: .82rem; }
 .hdt-menu-op { display: flex; align-items: center; gap: 8px; margin: 0; padding: 3px 10px; cursor: pointer;
   font-weight: normal; white-space: nowrap; }
 .hdt-menu-op:hover { background: var(--hdt-hover); }
@@ -185,10 +185,10 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
    within 7 -- a bar on the left and a tint, before the selection rules. */
 .hdt-tabla tr.hdt-sem-vencida td    { background: var(--hdt-danger-soft); }
 .hdt-tabla tr.hdt-sem-muy_pronto td { background: var(--hdt-warn-soft); }
-.hdt-tabla tr.hdt-sem-pronto td     { background: #fffaf0; }
+.hdt-tabla tr.hdt-sem-pronto td     { background: var(--hd-leg-aviso-suave-fffaf0); }
 .hdt-tabla tr.hdt-sem-vencida td:first-child    { box-shadow: inset 3px 0 0 var(--hdt-danger); }
 .hdt-tabla tr.hdt-sem-muy_pronto td:first-child { box-shadow: inset 3px 0 0 var(--hdt-warn); }
-.hdt-tabla tr.hdt-sem-pronto td:first-child     { box-shadow: inset 3px 0 0 #e8b86a; }
+.hdt-tabla tr.hdt-sem-pronto td:first-child     { box-shadow: inset 3px 0 0 var(--hd-leg-aviso-e8b86a); }
 /* sangria (T17b): a child row (a liability's fee) hangs from the one above. */
 .hdt-tabla td.hdt-sangria { padding-left: 22px; color: var(--hdt-muted); font-size: .95em; }
 .hdt-sangria-flecha { margin-right: 4px; opacity: .7; }
@@ -250,12 +250,12 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 /* filas_resumen (T17c): rows the module works out (the Flujo's net and
    position) on a dark band (Luis, 2026-11-04: the engine's tones, dark only
    here); the sign's tones lighten to read on it. Never hover or selection. */
-.hdt-tabla tr.hdt-resumen td { background: #1e3a5f; color: #e8eef6; font-weight: 600; }
-.hdt-tabla tbody tr.hdt-resumen:hover td { background: #1e3a5f; }
-.hdt-tabla tr.hdt-resumen td.hdt-tc-signo.hdt-tc-exito   { color: #6ee7a0; }
-.hdt-tabla tr.hdt-resumen td.hdt-tc-signo.hdt-tc-peligro { color: #ff8a8a; }
-.hdt-tabla tr.hdt-resumen td.hdt-tc-signo.hdt-tc-neutro  { color: #a9bdd3; }
-.hdt-tabla tr.hdt-resumen td.hdt-editable { text-decoration: underline dotted #a9bdd3; text-underline-offset: 3px; }
+.hdt-tabla tr.hdt-resumen td { background: var(--hd-encabezado); color: var(--hd-oscuro-texto); font-weight: 600; }
+.hdt-tabla tbody tr.hdt-resumen:hover td { background: var(--hd-encabezado); }
+.hdt-tabla tr.hdt-resumen td.hdt-tc-signo.hdt-tc-exito   { color: var(--hd-leg-oscuro-exito-6ee7a0); }
+.hdt-tabla tr.hdt-resumen td.hdt-tc-signo.hdt-tc-peligro { color: var(--hd-leg-oscuro-peligro-ff8a8a); }
+.hdt-tabla tr.hdt-resumen td.hdt-tc-signo.hdt-tc-neutro  { color: var(--hd-leg-oscuro-texto-2-a9bdd3); }
+.hdt-tabla tr.hdt-resumen td.hdt-editable { text-decoration: underline dotted var(--hd-leg-oscuro-texto-2-a9bdd3); text-underline-offset: 3px; }
 .hdt-tabla td.hdt-celda-mano { position: relative; }
 .hdt-tabla td.hdt-celda-mano::after { content: ""; position: absolute; top: 3px; right: 3px; width: 5px; height: 5px;
   border-radius: 50%; background: var(--hdt-muted); }
@@ -324,7 +324,7 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hdt-btn.hdt-tono-amarillo { color: var(--hdt-t-amarillo); background: var(--hdt-f-amarillo); border-color: var(--hdt-t-amarillo); }
 .hdt-btn[class*="hdt-tono-"]:hover { filter: brightness(.96); }
 .hdt-btn.hdt-peligro:hover { background: var(--hdt-danger-soft); }
-.hdt-confirmar-si.hdt-peligro { background: var(--hdt-danger); color: #fff; }
+.hdt-confirmar-si.hdt-peligro { background: var(--hdt-danger); color: var(--hd-texto-inverso); }
 
 /* Sorting */
 .hdt-orden th.hdt-ordenable { cursor: pointer; }
@@ -388,7 +388,7 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 /* Brief notice ("3 filas copiadas"), over the table's bottom-right corner. */
 .hdt-cuerpo { position: relative; }
 .hdt-aviso { position: absolute; right: 10px; bottom: 34px; z-index: 3; font-size: .78rem; font-weight: 700;
-  color: #fff; background: var(--hdt-ink); border-radius: 5px; padding: 3px 9px; opacity: .92; pointer-events: none; }
+  color: var(--hd-texto-inverso); background: var(--hdt-ink); border-radius: 5px; padding: 3px 9px; opacity: .92; pointer-events: none; }
 .hdt-aviso[hidden] { display: none; }
 .hdt-scroll:focus { outline: none; }
 .hdt-scroll:focus-visible { outline: 2px solid var(--hdt-accent); outline-offset: -2px; }
