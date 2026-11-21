@@ -73,7 +73,7 @@ pasivos_liability_to_draft <- function(row) {
     ),
     weekly             = list(wday = as.integer(input$pwiz_rp_wday %||% 1L)),
     interval_days      = list(
-      anchor_date   = as.Date(input$pwiz_rp_anchor %||% Sys.Date()),
+      anchor_date   = as.Date(input$pwiz_rp_anchor %||% hoy_usuario()),
       interval_days = as.integer(input$pwiz_rp_interval_days %||% 30L)
     ),
     quarterly          = list(
@@ -702,7 +702,7 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
           monto  = input[[paste0("pwiz_cargo_monto_", i)]]  %||% 0,
           moneda = input[[paste0("pwiz_cargo_moneda_", i)]] %||% base_moneda(),
           fecha  = tryCatch(as.Date(input[[paste0("pwiz_cargo_fecha_", i)]] %||% NA),
-                            error = function(e) Sys.Date())
+                            error = function(e) hoy_usuario())
         )
       })
       d$cargos_iniciales <- if (length(cargos_out)) cargos_out else NULL

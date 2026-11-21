@@ -62,7 +62,7 @@ pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = c
     shiny::fluidRow(
       shiny::column(6,
         shiny::dateInput("pcm_fecha", "Fecha de vencimiento",
-                         value     = tryCatch(as.Date(p$fecha_efectiva[1]), error = function(e) Sys.Date()),
+                         value     = tryCatch(as.Date(p$fecha_efectiva[1]), error = function(e) hoy_usuario()),
                          weekstart = 1, language = "es")
       ),
       shiny::column(6,

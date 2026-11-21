@@ -36,7 +36,7 @@ manual_entry_tab_content <- function(ledger, empresas, monedas = character(),
     fluidRow(
       column(6,
         dateInput("me_fecha", "Fecha de vencimiento",
-                  value = Sys.Date(), weekstart = 1, language = "es")
+                  value = hoy_usuario(), weekstart = 1, language = "es")
       ),
       column(6,
         textAreaInput("me_notas", "Notas", rows = 3, value = "")
@@ -137,7 +137,7 @@ manual_edit_handlers <- function(input, output, session,
         dateInput("me_fecha", "Fecha de vencimiento",
                   value     = tryCatch(
                     as.Date(existing_row[["Fecha de vencimiento"]]),
-                    error = function(e) Sys.Date()),
+                    error = function(e) hoy_usuario()),
                   weekstart = 1, language = "es")
       ),
       column(6,

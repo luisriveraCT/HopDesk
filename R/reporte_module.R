@@ -140,7 +140,7 @@ reporteUI <- function(id) {
         dateInput(ns("fecha_desde"), NULL, value = floor_date_month(),
                   format = "dd/mm/yyyy", language = "es", width = "100%"),
         tags$label("Hasta", class = "form-label small"),
-        dateInput(ns("fecha_hasta"), NULL, value = Sys.Date(),
+        dateInput(ns("fecha_hasta"), NULL, value = hoy_usuario(),
                   format = "dd/mm/yyyy", language = "es", width = "100%"),
 
         tags$hr(class = "my-3"),
@@ -316,7 +316,7 @@ reporteUI <- function(id) {
 
 # Helper: first day of current month (used for dateInput default)
 floor_date_month <- function() {
-  d <- Sys.Date()
+  d <- hoy_usuario()
   as.Date(format(d, "%Y-%m-01"))
 }
 

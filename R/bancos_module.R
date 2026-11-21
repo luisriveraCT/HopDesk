@@ -485,7 +485,7 @@ bancosUI <- function(id) {
                 shinyWidgets::airDatepickerInput(
                   inputId    = ns("libro_rango"),
                   label      = NULL,
-                  value      = c(Sys.Date() - 30, Sys.Date()),
+                  value      = c(hoy_usuario() - 30, hoy_usuario()),
                   range      = TRUE,
                   dateFormat = "dd-M-yyyy",
                   separator  = " — ",
@@ -1340,7 +1340,7 @@ bancosServer <- function(id, shared) {
           ),
           div(class = "col-md-6",
             tags$label("Fecha", class = "form-label small"),
-            dateInput(ns("man_fecha"), NULL, value = prefill$fecha %||% Sys.Date(), width = "100%",
+            dateInput(ns("man_fecha"), NULL, value = prefill$fecha %||% hoy_usuario(), width = "100%",
                       format = "dd/mm/yyyy", language = "es")
           ),
           div(class = "col-md-6",

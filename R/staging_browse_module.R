@@ -142,7 +142,7 @@ abono_facturas <- function(df_src, abonos, ledger, desde, hasta, empresa = "", m
 # "Enviar a Agenda" in the footer. Search, groups and collapsing are the
 # engine's.
 show_abono_modal <- function(sap_data, session, empresa_vals) {
-  today <- Sys.Date()
+  today <- hoy_usuario()
   campo <- function(etiqueta, control) div(tags$label(etiqueta, class = "form-label mb-0 small text-muted"), control)
   todas <- stats::setNames("", tr("tablas.abono.todas"))
   showModal(hd_modal(

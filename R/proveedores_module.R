@@ -80,7 +80,7 @@ proveedoresUI <- function(id) {
       # export): only the accounts registered since that date are classified.
       shinyjs::hidden(div(id = ns("excel_desde_wrap"), class = "d-flex align-items-center gap-2 mb-2",
         checkboxInput(ns("excel_desde_on"), tr("tablas.proveedores.importar.desde"), value = FALSE),
-        div(class = "prov-desde-fecha", style = "width: 160px;", dateInput(ns("excel_desde"), NULL, value = Sys.Date(), language = "es")),
+        div(class = "prov-desde-fecha", style = "width: 160px;", dateInput(ns("excel_desde"), NULL, value = hoy_usuario(), language = "es")),
         tags$span(class = "small text-muted prov-solo-eleccion", tr("tablas.proveedores.importar.desde_ayuda"))
       )),
       # The template and the format help only matter to choose a file: they
@@ -460,7 +460,7 @@ proveedoresServer <- function(id, shared) {
     output$prov_fecha_personalizada_ui <- renderUI({
       if (input$prov_activo_hasta_sel %||% "indefinido" == "personalizado") {
         dateInput(ns("prov_activo_hasta_date"), "Fecha personalizada",
-                  value = Sys.Date() + 30, width = "100%")
+                  value = hoy_usuario() + 30, width = "100%")
       }
     })
 
@@ -621,7 +621,7 @@ proveedoresServer <- function(id, shared) {
       emps <- paste(input$prov_empresas %||% character(0), collapse = ",")
       ah_sel <- input$prov_activo_hasta_sel %||% "indefinido"
       ah <- if (ah_sel == "personalizado") {
-        as.character(input$prov_activo_hasta_date %||% Sys.Date())
+        as.character(input$prov_activo_hasta_date %||% hoy_usuario())
       } else {
         parse_activo_hasta(ah_sel)
       }

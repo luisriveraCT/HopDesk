@@ -211,8 +211,8 @@ pasivos_table_module_server <- function(id, shared) {
         origin                   = "manual",
         occurrence_index         = NA_integer_,
         estado                   = "provisional",
-        fecha_calculada          = as.Date(input$ppm_fecha %||% Sys.Date()),
-        fecha_efectiva           = as.Date(input$ppm_fecha %||% Sys.Date()),
+        fecha_calculada          = as.Date(input$ppm_fecha %||% hoy_usuario()),
+        fecha_efectiva           = as.Date(input$ppm_fecha %||% hoy_usuario()),
         policy_ids               = NA_character_,
         empresa                  = empresa,
         parte                    = input$ppm_parte       %||% "",
@@ -609,7 +609,7 @@ pasivos_table_module_server <- function(id, shared) {
     shiny::fluidRow(
       shiny::column(6,
         shiny::dateInput(ns("ppm_fecha"), tr("tablas.pasivos.manual.fecha"),
-                         value = Sys.Date(), weekstart = 1, language = "es")
+                         value = hoy_usuario(), weekstart = 1, language = "es")
       ),
       shiny::column(6,
         shiny::textAreaInput(ns("ppm_notas"), tr("tablas.pasivos.manual.notas"), rows = 3,

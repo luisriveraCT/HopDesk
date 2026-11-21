@@ -305,7 +305,7 @@ pasivos_step_ui_recurrencia_regular <- function(draft, errors = list()) {
           selected = rt
         ),
         shiny::dateInput("pwiz_fecha_inicio", "Fecha de inicio",
-                         value     = draft$fecha_inicio %||% Sys.Date(),
+                         value     = draft$fecha_inicio %||% hoy_usuario(),
                          weekstart = 1, language = "es"),
         pasivos_fin_ui(draft)   # T70
       ),
@@ -570,7 +570,7 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
       shiny::column(6,
         shiny::dateInput("pwiz_fecha_inicio",
                          "Fecha de inicio del contrato",
-                         value     = draft$fecha_inicio %||% Sys.Date(),
+                         value     = draft$fecha_inicio %||% hoy_usuario(),
                          weekstart = 1, language = "es"),
         # ── Compound plazo + frecuencia row ──────────────────────────────────
         shiny::div(
@@ -750,7 +750,7 @@ pasivos_step_ui_cargos <- function(draft, cargos_list = list(),
         ),
         shiny::column(4,
           shiny::dateInput("pwiz_residual_fecha", "Fecha",
-                           value     = if (!is.na(res_fecha)) res_fecha else Sys.Date(),
+                           value     = if (!is.na(res_fecha)) res_fecha else hoy_usuario(),
                            weekstart = 1, language = "es")
         )
       ),
@@ -843,7 +843,7 @@ pasivos_periodicidad_subfields_ui <- function(periodicidad, draft) {
 
     interval_days = shiny::tagList(
       shiny::dateInput("pwiz_rp_anchor", "Fecha ancla",
-                       value     = rp$anchor_date %||% Sys.Date(),
+                       value     = rp$anchor_date %||% hoy_usuario(),
                        weekstart = 1, language = "es"),
       hd_numero_input("pwiz_rp_interval_days", "Cada cuántos días",
                           formato = "entero", value = rp$interval_days %||% 30L, min = 1, step = 1)
@@ -947,7 +947,7 @@ pasivos_cargo_row_ui <- function(i, cargo = list(), base = MONEDA_BASE_OMISION, 
     ),
     shiny::div(style = "width:150px;",
       shiny::dateInput(paste0("pwiz_cargo_fecha_", i), if (i == 1L) "Fecha" else NULL,
-                       value = cargo$fecha %||% Sys.Date(),
+                       value = cargo$fecha %||% hoy_usuario(),
                        weekstart = 1, language = "es")
     ),
     shiny::div(

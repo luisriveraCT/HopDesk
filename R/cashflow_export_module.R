@@ -1444,7 +1444,7 @@ show_cashflow_export_modal <- function() {
       column(6,
         tags$label("Desde", class = "form-label fw-semibold small mb-1"),
         dateInput("export_date_from", label = NULL,
-                  value    = lubridate::floor_date(Sys.Date(), "week", week_start = 1),
+                  value    = lubridate::floor_date(hoy_usuario(), "week", week_start = 1),
                   format   = "dd/M/yyyy",
                   language = "es",
                   width    = "100%")
@@ -1452,7 +1452,7 @@ show_cashflow_export_modal <- function() {
       column(6,
         tags$label("Hasta", class = "form-label fw-semibold small mb-1"),
         dateInput("export_date_to", label = NULL,
-                  value    = lubridate::floor_date(Sys.Date(), "week", week_start = 1) + 6L,
+                  value    = lubridate::floor_date(hoy_usuario(), "week", week_start = 1) + 6L,
                   format   = "dd/M/yyyy",
                   language = "es",
                   width    = "100%")
@@ -2497,8 +2497,8 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
   # Stage 3: replace content() body with officer/flextable Word generation.
   output$btn_export_word <- downloadHandler(
     filename = function() {
-      from  <- format(input$export_date_from %||% Sys.Date(), "%d%b%Y")
-      to    <- format(input$export_date_to   %||% (lubridate::floor_date(Sys.Date(), "week", week_start = 1) + 6L), "%d%b%Y")
+      from  <- format(input$export_date_from %||% hoy_usuario(), "%d%b%Y")
+      to    <- format(input$export_date_to   %||% (lubridate::floor_date(hoy_usuario(), "week", week_start = 1) + 6L), "%d%b%Y")
       emp   <- shared$empresa_sel() %||% character(0)
       cmap  <- shared$company_map()
       rev   <- setNames(names(cmap), unname(cmap))
@@ -2518,8 +2518,8 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       on.exit(removeNotification("cf_export_notif"), add = TRUE)
 
       # ── Collect inputs ──────────────────────────────────────────────────
-      date_from <- input$export_date_from %||% Sys.Date()
-      date_to   <- input$export_date_to   %||% (lubridate::floor_date(Sys.Date(), "week", week_start = 1) + 6L)
+      date_from <- input$export_date_from %||% hoy_usuario()
+      date_to   <- input$export_date_to   %||% (lubridate::floor_date(hoy_usuario(), "week", week_start = 1) + 6L)
       emp_sel   <- shared$empresa_sel()   %||% character(0)
       ic_val    <- input$ic_mode          %||% "exclude"
 
@@ -2664,9 +2664,9 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
     .xl_state("idle")
 
     # ── Collect reactive inputs ──────────────────────────────────────────
-    date_from <- input$export_date_from %||% Sys.Date()
+    date_from <- input$export_date_from %||% hoy_usuario()
     date_to   <- input$export_date_to   %||%
-                 (lubridate::floor_date(Sys.Date(), "week", week_start = 1) + 6L)
+                 (lubridate::floor_date(hoy_usuario(), "week", week_start = 1) + 6L)
     emp_sel   <- shared$empresa_sel()   %||% character(0)
     ic_val    <- input$ic_mode          %||% "exclude"
     base_cur  <- .export_base()
@@ -2942,8 +2942,8 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
   # ── PDF download handler (pagedown + Chrome) ─────────────────────────────
   output$btn_export_pdf <- downloadHandler(
     filename = function() {
-      from  <- format(input$export_date_from %||% Sys.Date(), "%d%b%Y")
-      to    <- format(input$export_date_to   %||% (lubridate::floor_date(Sys.Date(), "week", week_start = 1) + 6L), "%d%b%Y")
+      from  <- format(input$export_date_from %||% hoy_usuario(), "%d%b%Y")
+      to    <- format(input$export_date_to   %||% (lubridate::floor_date(hoy_usuario(), "week", week_start = 1) + 6L), "%d%b%Y")
       emp   <- shared$empresa_sel() %||% character(0)
       cmap  <- shared$company_map()
       rev   <- setNames(names(cmap), unname(cmap))
@@ -2962,8 +2962,8 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
         id = "cf_export_notif", type = "message", duration = NULL)
       on.exit(removeNotification("cf_export_notif"), add = TRUE)
 
-      date_from <- input$export_date_from %||% Sys.Date()
-      date_to   <- input$export_date_to   %||% (lubridate::floor_date(Sys.Date(), "week", week_start = 1) + 6L)
+      date_from <- input$export_date_from %||% hoy_usuario()
+      date_to   <- input$export_date_to   %||% (lubridate::floor_date(hoy_usuario(), "week", week_start = 1) + 6L)
       emp_sel   <- shared$empresa_sel()   %||% character(0)
       ic_val    <- input$ic_mode          %||% "exclude"
       base_cur  <- .export_base()

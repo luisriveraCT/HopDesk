@@ -130,7 +130,7 @@ cashflow_tabla_columnas <- function(labels) {
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 # Default date range: Mon–Sun of current week
-.cf_default_from <- function() lubridate::floor_date(Sys.Date(), "week", week_start = 1)
+.cf_default_from <- function() lubridate::floor_date(hoy_usuario(), "week", week_start = 1)
 .cf_default_to   <- function() .cf_default_from() + 6L
 
 # The date range button's text, from the dictionary: "02–08 nov" within a
@@ -612,7 +612,7 @@ cashflowPreviewServer <- function(id, shared) {
               dateInput(
                 ns(paste0("fx_date_", tolower(cur))),
                 label = NULL,
-                value = rv$fx_dates[[cur]] %||% Sys.Date(),
+                value = rv$fx_dates[[cur]] %||% hoy_usuario(),
                 width = "110px"
               )
             },
