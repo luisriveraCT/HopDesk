@@ -86,7 +86,8 @@ PESTANAS <- c("PAN", "CAL", "VEN", "PH", "BNC", "IC", "PSV", "REQ", "FC", "RPT",
 MEDIR_JS <- "(function(v){
   var a0 = document.querySelector(\".nav-link[data-value='\" + v + \"']\");
   var id = a0 ? (a0.getAttribute('data-bs-target') || a0.getAttribute('href') || '').replace(/^#/, '') : '';
-  var pane = id && document.getElementById(id);
+  if (!id) return JSON.stringify({saltar: 'no es una pestaña con panel'});   // e.g. GRUPO: a link, not a tab
+  var pane = document.getElementById(id);
   if (!pane || !pane.classList.contains('active')) return JSON.stringify({error: 'tab-pane no activo (' + id + ')'});
   var todos = [pane].concat(Array.from(pane.querySelectorAll('*')));
   var cajas = todos.filter(function(e){ var s = getComputedStyle(e);
@@ -162,6 +163,7 @@ correr <- function(raiz, cual) {
         tamano(tm[1], tm[2]); Sys.sleep(1.5)
         m <- tryCatch(jsonlite::fromJSON(ev(sprintf("%s('%s')", MEDIR_JS, v)), simplifyVector = FALSE),
                       error = function(e) list(error = conditionMessage(e)))
+        if (!is.null(m$saltar)) { cat(sprintf("  %-5s %4d  saltada: %s\n", v, tm[1], m$saltar)); next }
         if (!is.null(m$error)) { ok(sprintf("[%s · %s · %s · %d] measured (%s)", cual, quien, v, tm[1], m$error), FALSE); next }
         if (identical(cual, "rama")) captura(sprintf("t67_%s_%s_%d", quien, v, tm[1]))
         cajas <- vapply(m$cajas, function(k) paste0(k$el, "=", k$osb), character(1))
