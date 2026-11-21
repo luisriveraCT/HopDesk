@@ -383,6 +383,11 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
 .ESCRITURA_T72 <- "^(save_[A-Za-z0-9_.]+|modificar_[A-Za-z0-9_.]+|modificar_tabla|\\.req_modificar|\\.s3_write|\\.s3_modificar|prefs_guardar|bump_sync_version)$"
 .REGISTRO_T72  <- c("log_action", "pasivos_log_audit", ".req_log")
 .BASE_T72      <- "^(save_|modificar_|\\.s3_|\\.req_modificar$|\\.req_historial$|\\.audit_|leer_|upsert_|add_to_|load_|prefs_guardar$|prefs_reemplazar$|\\.save_|pasivos_log_audit$)"
+# Named writers whose ONE caller logs the action, checked by hand (keep short):
+# reservar_renombre_empresa() and confirmar_renombre_empresa() (CM40,
+# R/empresas_module.R) -- the Empresas rename handler logs "reservar_renombre"
+# and "confirmar_renombre" right after each one succeeds.
+.HELPERS_T72   <- c("reservar_renombre_empresa", "confirmar_renombre_empresa")
 
 .t72_nombre <- function(e) {
   f <- e[[1]]
@@ -457,7 +462,7 @@ escanear_camino <- function(f) {
     if (is.call(e) && as.character(e[[1]])[1] %in% c("<-", "=") && is.name(e[[2]]) && is.call(e[[3]]) &&
         identical(e[[3]][[1]], as.name("function"))) {
       nm <- as.character(e[[2]])
-      if (!grepl(.BASE_T72, nm) && !.t72_contiene(e[[3]][[3]], nombres = "observeEvent")) {
+      if (!grepl(.BASE_T72, nm) && !nm %in% .HELPERS_T72 && !.t72_contiene(e[[3]][[3]], nombres = "observeEvent")) {
         h <- .t72_cuerpo(e[[3]][[3]], ln)
         if (length(h)) out[[length(out) + 1L]] <- data.frame(file = f, label = nm, huecos = paste(h, collapse = ","),
                                                              stringsAsFactors = FALSE)
