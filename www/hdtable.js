@@ -161,6 +161,7 @@
       celdas: [], busq: [], trs: [], vis: [], sel: new Set(), ancla: null,
       filtros: [], fsel: {}, trasBusq: [], gTodos: false, gExcepto: {}, grupos: [], lista: [],
       editando: false, valores: {}, ed: {}, colEd: -1, editor: null, op: {}, colOp: -1,
+      cas: {}, colsCas: [], casCab: {},
       orden: { col: -1, dir: 1 }, q: '', abajo: null, medidas: {}
     };
     root.textContent = '';
@@ -1099,6 +1100,23 @@
       else st.ed[id].valido = edValido(st, k, st.ed[id].valor);
     });
     if (JSON.stringify(st.ed) !== edAntes) enviarEdiciones(st);
+    // casillas_columna (T68): ticked cells live by field and id, so they
+    // survive search, sort, filters and window mode. New data: a cell whose
+    // row is gone or locked, or that the data now says the same, is no
+    // change any more.
+    st.colsCas = [];
+    if (st.p.casillas_columna) st.cols.forEach(function (c, j) { if (c.tipo === 'casilla') st.colsCas.push(j); });
+    var casAntes = JSON.stringify(st.cas), jDe = {};
+    st.colsCas.forEach(function (j) { jDe[st.cols[j].campo] = j; });
+    Object.keys(st.cas).forEach(function (campo) {
+      var jc = jDe[campo];
+      Object.keys(st.cas[campo]).forEach(function (id) {
+        var k = st.idx[id];
+        if (jc == null || k == null || st.bloq[k] || !!st.celdas[jc].valor[k] === st.cas[campo][id]) delete st.cas[campo][id];
+      });
+      if (!Object.keys(st.cas[campo]).length) delete st.cas[campo];
+    });
+    if (JSON.stringify(st.cas) !== casAntes) enviarCasillas(st);
     st.colEt = -1;
     st.cols.forEach(function (c, j) { if (st.colEt < 0 && c.tipo === 'etiqueta') st.colEt = j; });
     st.suma = -1;
@@ -1173,12 +1191,25 @@
     }
     // Only the columns shown (columnas_opc); data-col keeps the column's
     // index among all of them.
+    st.casCab = {};
     st.ths = st.ver.map(function (j) {
       var c = st.cols[j], th = nodo('th', c.alinear === 'derecha' ? 'hdt-der' : '');
       th.dataset.col = j;
       if (st.matriz) matriz(st, th, j);
       if (c.ancho) th.style.width = c.ancho + 'px';
+      // casillas_columna (T68): the whole column's box before its title,
+      // and how many are ticked after it.
+      var casCab = st.p.casillas_columna && c.tipo === 'casilla';
+      if (casCab) {
+        th.classList.add('hdt-cas-th');
+        var cbc = nodo('input', 'hdt-cas-todos');
+        cbc.type = 'checkbox';
+        cbc.dataset.col = j;
+        cbc.setAttribute('aria-label', t('tablas.casillas.columna', { columna: c.titulo }));
+        th.appendChild(cbc);
+      }
       th.appendChild(nodo('span', '', c.titulo));
+      if (casCab) { st.casCab[j] = { cb: cbc, n: nodo('span', 'hdt-cas-n') }; th.appendChild(st.casCab[j].n); }
       if (st.p.ordenar) { th.classList.add('hdt-ordenable'); th.appendChild(nodo('span', 'hdt-flecha')); }
       tr.appendChild(th);
       return th;
@@ -1311,6 +1342,7 @@
       if (k === 0 && hija) { td.classList.add('hdt-sangria'); td.appendChild(nodo('span', 'hdt-sangria-flecha', '\u21b3')); }
       if (j === st.colEd) pintarEditable(st, td, i);
       else if (j === st.colOp) pintarOpcion(st, td, i);
+      else if (st.p.casillas_columna && st.cols[j].tipo === 'casilla') pintarCasilla(st, td, j, i);
       else pintarCelda(st, td, j, i);
       tr.appendChild(td);
     }
@@ -1520,6 +1552,7 @@
         : t('tablas.vacio');
     }
     pintarSel(st);
+    pintarCasCab(st);
     flechas(st);
     if (st.contador) {
       var clave = st.textos.contador || 'tablas.contador.registros', extra = {};
@@ -1685,6 +1718,18 @@
     }
     st.ver.forEach(function (j) {
       var td = celdaVacia(st, j), m = st.celdas[j].mostrar;
+      // casillas_columna (T68): one box per column for the group's rows.
+      if (st.p.casillas_columna && st.cols[j].tipo === 'casilla' && j !== st.grupoColVis) {
+        var gb = nodo('input', 'hdt-cas-grupo');
+        gb.type = 'checkbox';
+        gb.dataset.col = j;
+        gb.setAttribute('aria-label', t('tablas.casillas.grupo', { columna: st.cols[j].titulo }));
+        estadoCas(gb, st, j, libres);
+        td.classList.add('hdt-cas-celda');
+        td.appendChild(gb);
+        tr.appendChild(td);
+        return;
+      }
       var comun = u.filas.every(function (i) { return m[i] === m[i0]; });
       if (j === st.grupoColVis) {
         var b = nodo('button', 'hdt-grupo-abrir', u.abierto ? '▼' : '\u25b6\ufe0e');
@@ -2286,6 +2331,63 @@
   // one highlighted. The data's value is where a row starts; st.op holds the
   // person's choices by id. A click chooses (it never marks the row); ← / →
   // move the choice; typing in the editable column picks al_escribir.
+  // ── Yes/no cells (casillas_columna, T68) ───────────────────────────────
+  // st.cas[campo][id]: the person's tick where it differs from the data.
+  function casillaDe(st, j, i) {
+    var m = st.cas[st.cols[j].campo], id = st.ids[i];
+    return m && Object.prototype.hasOwnProperty.call(m, id) ? m[id] : !!st.celdas[j].valor[i];
+  }
+  function pintarCasilla(st, td, j, i) {
+    var cb = nodo('input', 'hdt-cas');
+    cb.type = 'checkbox';
+    cb.dataset.col = j;
+    cb.checked = casillaDe(st, j, i);
+    cb.disabled = !!st.bloq[i];
+    cb.setAttribute('aria-label', st.cols[j].titulo);
+    td.classList.add('hdt-cas-celda');
+    td.appendChild(cb);
+  }
+  function libresDe(st, filas) { return filas.filter(function (i) { return !st.bloq[i]; }); }
+  // A box over several rows: ticked (all), half (some) or empty; how many.
+  function estadoCas(cb, st, j, filas) {
+    var n = 0;
+    filas.forEach(function (i) { if (casillaDe(st, j, i)) n++; });
+    cb.checked = filas.length > 0 && n === filas.length;
+    cb.indeterminate = n > 0 && n < filas.length;
+    cb.disabled = !filas.length;
+    return n;
+  }
+  function pintarCasCab(st) {
+    if (!st.p.casillas_columna) return;
+    var filas = libresDe(st, st.vis || []), tot = filas.length;
+    Object.keys(st.casCab).forEach(function (j) {
+      var cab = st.casCab[j], n = estadoCas(cab.cb, st, Number(j), filas);
+      cab.n.textContent = !tot ? '' : n === tot ? t('tablas.casillas.todos') : !n ? t('tablas.casillas.nadie')
+        : t('tablas.casillas.n_de', { n: FMT_N.format(n), total: FMT_N.format(tot) });
+    });
+  }
+  function ponerCasillas(st, j, filas, valor) {
+    var campo = st.cols[j].campo, m = st.cas[campo] || (st.cas[campo] = {});
+    filas.forEach(function (i) {
+      if (st.bloq[i]) return;
+      var id = st.ids[i];
+      if (!!st.celdas[j].valor[i] === valor) delete m[id]; else m[id] = valor;
+    });
+    if (!Object.keys(m).length) delete st.cas[campo];
+    st.trs = new Array(st.n);
+    aplicar(st, true);
+    enviarCasillas(st);
+  }
+  function enviarCasillas(st) {
+    var ids = [], campos = [], valores = [];
+    Object.keys(st.cas).forEach(function (campo) {
+      Object.keys(st.cas[campo]).forEach(function (id) { ids.push(id); campos.push(campo); valores.push(st.cas[campo][id]); });
+    });
+    if (window.Shiny && Shiny.setInputValue)
+      Shiny.setInputValue(st.ns + 'casillas', { ids: ids, campos: campos, valores: valores, nonce: Math.random() },
+                          { priority: 'event' });
+  }
+
   function opcionDe(st, i) {
     var id = st.ids[i];
     return id in st.op ? st.op[id] : st.celdas[st.colOp].valor[i];
@@ -2600,6 +2702,16 @@
 
     st.tbody.addEventListener('click', function (e) {
       var tr = e.target.closest('tr');
+      // casillas_columna (T68): a cell's box or a group's; never the row.
+      var cas = st.p.casillas_columna && e.target.closest('input.hdt-cas, input.hdt-cas-grupo');
+      if (cas && tr) {
+        var jc = Number(cas.dataset.col);
+        if (tr._g) {
+          var lg = libresDe(st, tr._g.filas);
+          ponerCasillas(st, jc, lg, !lg.every(function (i) { return casillaDe(st, jc, i); }));
+        } else if (tr._i != null) ponerCasillas(st, jc, [tr._i], cas.checked);
+        return;
+      }
       if (tr && tr._g) {
         // A group's ＋ acts on its rows and never touches the selection.
         var bg = e.target.closest('button.hdt-accion');
@@ -2681,11 +2793,20 @@
         if (e.target.classList.contains('hdt-cbx-todos')) selTodos(st);
       });
     }
+    // casillas_columna (T68): the header's box ticks (or clears) the whole
+    // column -- only the rows the search, filters and chips leave.
+    if (st.p.casillas_columna) {
+      st.thead.addEventListener('change', function (e) {
+        if (!e.target.classList.contains('hdt-cas-todos')) return;
+        var jc = Number(e.target.dataset.col), filas = libresDe(st, st.vis || []);
+        ponerCasillas(st, jc, filas, !(filas.length && filas.every(function (i) { return casillaDe(st, jc, i); })));
+      });
+    }
 
     if (st.p.ordenar) {
       st.thead.addEventListener('click', function (e) {
         var th = e.target.closest('th.hdt-ordenable');
-        if (!th) return;
+        if (!th || e.target.closest('input')) return;   // a header box (casillas_columna) never sorts
         var t0 = performance.now();
         var j = Number(th.dataset.col);
         // Ascending, descending, then back to the order the data came in

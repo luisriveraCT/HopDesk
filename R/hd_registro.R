@@ -11,7 +11,7 @@ hd_clases <- list(
   D = list(siempre = c("texto", "copiar_celda", "recorte", "encabezado_fijo", "contador", "ordenar", "buscar", "filtros", "insignias", "acc_fila", "confirmar", "detalle", "excel"),
        opcional = c("multilinea", "densidad", "sel_fila", "sel_rango", "casillas", "sel_todos", "sel_persistente", "fichas", "columnas_opc", "carga_bloques", "barra_acc", "copiar_tsv")),
   E = list(siempre = c("texto", "copiar_celda", "encabezado_fijo", "contador", "insignias", "confirmar", "copiar_tsv"),
-       opcional = c("recorte", "multilinea", "columna_fija", "casillas", "sumador_vis", "subtotales", "fichas", "ordenar", "buscar", "acc_fila", "edicion_celda", "copiar_tabla", "opcion_fila")),
+       opcional = c("recorte", "multilinea", "columna_fija", "casillas", "sumador_vis", "subtotales", "fichas", "ordenar", "buscar", "acc_fila", "edicion_celda", "copiar_tabla", "opcion_fila", "casillas_columna")),
   F = list(siempre = c("texto", "recorte", "encabezado_fijo", "columna_fija", "subtotales", "fichas", "buscar", "filtros", "agrupar", "nav_periodo", "insignias", "tachado", "provision", "semaforo", "adjuntos", "acc_fila", "confirmar", "detalle", "excel"),
        opcional = c("copiar_celda", "densidad", "contador", "expandir", "etiquetas", "copiar_tsv", "tono_celda", "dinero_compacto", "accion_celda", "sangria", "sumas_columnas", "filas_resumen", "edicion_celda"))
 )
@@ -136,6 +136,11 @@ hd_registro <- list(
     notas = c("Quitar: Seleccionar una fila abre el editor: Al marcar una fila se abre la ventana de edición de inmediato.")),
   alertas_equipo = list(nombre = "Alertas del equipo", clase = "D", archivo = "avisos_alertas_module.R",
     agregar = character(), quitar = character(),
+    notas = character()),
+  # T68: "De quién recibo avisos" (Panorama, the ⚙ of "Lo que ha pasado"): people x kinds of notice,
+  # yes/no cells (casillas_columna) with the column and group boxes, grouped by tier or job title.
+  avisos_de = list(nombre = "De quién recibo avisos (Panorama)", clase = "E", archivo = "panorama_module.R",
+    agregar = c("casillas_columna", "expandir", "buscar"), quitar = c("copiar_celda", "copiar_tsv"),
     notas = character()),
   avisos_publicados = list(nombre = "Avisos publicados (Panorama › Publicar)", clase = "D", archivo = "panorama_publicar_module.R",
     agregar = character(), quitar = character(),

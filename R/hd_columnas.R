@@ -437,6 +437,22 @@ col_opcion <- function(campo, titulo = NULL, opciones, al_escribir = NULL, burbu
   col
 }
 
+# ── casillas_columna (T68) ──────────────────────────────────────────────────
+# A yes/no the person ticks in each cell ("De quién recibo avisos": persona x
+# tipo de aviso). Several per table. The header carries a box for the whole
+# column and its count ("12 de 340", "Todos", "Nadie"), and a group's row
+# one box per column; both act only on the rows the search, filters and
+# chips leave. The data's value is where each cell starts; after that it is
+# the person's, by id and field (t$casillas()), like opcion_fila.
+col_casilla <- function(campo, titulo = NULL, opcional = FALSE, visible = TRUE) {
+  .hd_opcional(.hd_col("casilla", campo, titulo, "centro", recorte = FALSE,
+    valores = function(x) {
+      v <- as.logical(x); v[is.na(v)] <- FALSE
+      list(mostrar = rep("", length(v)), orden = as.integer(v),
+           copiar = ifelse(v, tr("tablas.casillas.si"), tr("tablas.casillas.no")), valor = v)
+    }), opcional, visible)
+}
+
 # ── Tags (etiquetas) ────────────────────────────────────────────────────────
 # The one map for invoice tags: from it come the label, the pill's colour,
 # the row's background (by tone, in www/hdtable.css) and the order. The

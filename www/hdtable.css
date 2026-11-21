@@ -421,3 +421,10 @@ table.hdt-tabla { border-collapse: separate; border-spacing: 0; width: 100%; fon
 .hd-modal-cerrar { margin-left: auto; flex: none; }
 .hd-modal-pie { display: flex; align-items: center; gap: 8px; width: 100%; }
 .modal-dialog:has(.hd-modal) .modal-footer { padding: 6px 12px; }
+
+/* casillas_columna (T68): yes/no cells, the column's box and its count. */
+.hdt td.hdt-cas-celda { text-align: center; }
+.hdt th.hdt-cas-th { text-align: center; white-space: nowrap; }
+.hdt th.hdt-cas-th .hdt-cas-todos { margin-right: 0.35rem; vertical-align: -2px; }
+.hdt .hdt-cas-n { display: block; font-weight: 400; font-size: 0.72rem; color: var(--hdt-muted); }
+.hdt input.hdt-cas, .hdt input.hdt-cas-grupo, .hdt input.hdt-cas-todos { cursor: pointer; width: 1rem; height: 1rem; accent-color: var(--hdt-accent); }

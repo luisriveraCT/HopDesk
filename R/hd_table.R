@@ -15,6 +15,7 @@
 #   t$limpiar_ediciones()   # back to the data's own values (after sending them)
 #   t$opciones()    # with opcion_fila: data.frame(id, opcion), every row's choice
 #   t$poner_opcion(op, ids = NULL)   # set it on those rows (NULL: all)
+#   t$casillas()    # with casillas_columna: data.frame(id, <one logical per col_casilla>), every cell now
 #
 # Server -> browser: one "hdt-datos" custom message each time `datos`
 # changes (and "hdt-mes" from t$ir_mes()). Browser -> server: ns("sel") and ns("accion"), priority "event".
@@ -49,8 +50,8 @@
 hd_table_deps <- function() {
   htmltools::singleton(htmltools::tags$head(
     i18n_head(),
-    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=31"),
-    htmltools::tags$script(src = "hdtable.js?v=46")
+    htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=32"),
+    htmltools::tags$script(src = "hdtable.js?v=47")
   ))
 }
 
@@ -605,6 +606,7 @@ hd_columnas_piezas <- function(columnas, tabla, piezas) {
   exigir("tono_celda", function(c) !is.null(c$tono) || isTRUE(c$destacar), "has a tono or destacar")
   exigir("dinero_compacto", function(c) !is.null(c$formato) || !is.null(c$cero), "is compacto or entero, or cero = \"vacio\"")
   exigir("accion_celda", function(c) isTRUE(c$accion), "has accion = TRUE")
+  exigir("casillas_columna", function(c) identical(c$tipo, "casilla"), "is a col_casilla()")
   fija <- vapply(columnas, function(c) isTRUE(c$fija), logical(1))
   if (any(fija)) {
     if (any(diff(fija) > 0) || !fija[1])
@@ -657,6 +659,34 @@ hd_opciones <- function(o, datos, col, id_col) {
   ok <- !is.na(k) & !duplicated(ids) & val %in% names(col$opciones)
   ok[ok] <- !bloq[k[ok]]
   out$opcion[k[ok]] <- val[ok]
+  out
+}
+
+# casillas_columna (T68): every cell of every col_casilla() now -- the data's,
+# unless the person ticked it otherwise (the browser's ns("casillas"): ids,
+# campos and valores, one entry per cell changed). Checked again here: only
+# rows that exist and aren't locked, only fields that are col_casilla(), only
+# TRUE/FALSE. data.frame(id, <campo> = logical, ...).
+hd_casillas <- function(o, datos, columnas, id_col) {
+  cols <- Filter(function(c) identical(c$tipo, "casilla"), columnas %||% list())
+  campos <- vapply(cols, function(c) c$campo, character(1))
+  if (is.null(datos) || !nrow(datos) || !length(campos)) {
+    vacia <- data.frame(id = character(0), stringsAsFactors = FALSE)
+    for (f in campos) vacia[[f]] <- logical(0)
+    return(vacia)
+  }
+  datos <- as.data.frame(datos, stringsAsFactors = FALSE)
+  out <- data.frame(id = as.character(datos[[id_col]]), stringsAsFactors = FALSE)
+  for (f in campos) { v <- as.logical(datos[[f]]); v[is.na(v)] <- FALSE; out[[f]] <- v }
+  if (is.null(o) || !length(o$ids)) return(out)
+  ids <- as.character(unlist(o$ids)); cps <- as.character(unlist(o$campos)); val <- unlist(o$valores)
+  if (length(ids) != length(cps) || length(ids) != length(val)) return(out)
+  val <- as.logical(val)
+  bloq <- if (".bloqueada" %in% names(datos)) datos[[".bloqueada"]] %in% TRUE else rep(FALSE, nrow(datos))
+  k <- match(ids, out$id)
+  ok <- !is.na(k) & cps %in% campos & !is.na(val) & !duplicated(paste(ids, cps, sep = "\r"))
+  ok[ok] <- !bloq[k[ok]]
+  for (q in which(ok)) out[[cps[q]]][k[q]] <- val[q]
   out
 }
 
@@ -1013,6 +1043,17 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
       })
     })
 
+    # casillas_columna (T68): every ticked cell, checked like the choices.
+    casillas <- shiny::reactive({
+      if (!"casillas_columna" %in% piezas_tabla) return(hd_casillas(NULL, NULL, NULL, id_col))
+      o <- input$casillas
+      tryCatch(hd_casillas(o, datos(), columnas_r(), id_col), error = function(err) {
+        if (inherits(err, "shiny.silent.error")) stop(err)
+        message(sprintf("hd_table '%s': the ticked cells couldn't be checked: %s", tabla, conditionMessage(err)))
+        hd_casillas(NULL, NULL, NULL, id_col)
+      })
+    })
+
     if ("excel" %in% piezas_tabla) {
       vista <- shiny::reactiveVal(NULL)
       shiny::observeEvent(input$vista, {
@@ -1077,6 +1118,9 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
       # data's until the person picks another); poner_opcion(op, ids = NULL)
       # sets it for those rows (NULL: all), like "Aplicar todos: Mantener".
       opciones = opciones,
+      # casillas_columna (T68): data.frame(id, <campo> = logical, ...), every
+      # cell now (the data's until the person ticks another).
+      casillas = casillas,
       poner_opcion = function(opcion, ids = NULL) {
         op <- hd_columna_opcion(shiny::isolate(columnas_r()), tabla, piezas_tabla)
         if (is.null(op) || !(is.character(opcion) && length(opcion) == 1L && opcion %in% names(op$opciones)))
