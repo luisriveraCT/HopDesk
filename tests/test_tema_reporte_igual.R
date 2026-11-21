@@ -30,9 +30,11 @@ BASE <- Sys.getenv("TEMA_BASE")
 if (nzchar(BASE)) BASE <- normalizePath(BASE, winslash = "/")
 
 # The report of one checkout, in a clean process (the branch's fixture).
-reporte <- function(raiz, tema = NULL) callr::r(function(raiz, ayudante, tema) {
+reporte <- function(raiz, tema = NULL, idioma = "es", ui = FALSE) callr::r(function(raiz, ayudante, tema, idioma, ui) {
   setwd(raiz)
+  options(hopdesk.idioma = idioma)
   source(ayudante)
+  if (ui) return(as.character(reporteUI("rpt")))
   ng <- reporte_ng()
   # The pulse's payables panel shows today's (this week) and the whole next
   # week: P1 (today) urgent = A; P3 (next week) both = B; P4 (next week) important = C.
@@ -43,7 +45,8 @@ reporte <- function(raiz, tema = NULL) callr::r(function(raiz, ayudante, tema) {
   if (!is.null(tema)) args$tema <- tema
   if (!"etiquetas" %in% names(formals(reporte_correr))) args$etiquetas <- NULL
   do.call(reporte_correr, args)$html
-}, args = list(raiz = raiz, ayudante = file.path(RAMA, "tests/helpers/reporte_fixture.R"), tema = tema))
+}, args = list(raiz = raiz, ayudante = file.path(RAMA, "tests/helpers/reporte_fixture.R"), tema = tema,
+               idioma = idioma, ui = ui))
 
 # Every colour of an HTML, in order: hex (3, 6 or 8 digits) and rgb[a]().
 RX <- "(?<![&\\w])#(?:[0-9A-Fa-f]{8}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})(?![0-9A-Za-z_-])|rgba?\\([^)]*\\)"
@@ -118,6 +121,32 @@ if (nzchar(BASE)) {
     ok("every colour, pair by pair, within ΔE 2 of the base's and the same alpha (badges apart)", !length(malos))
   }
 } else cat(" (sin TEMA_BASE: no se compara contra la base)\n")
+
+# The report's words come from the dictionary (TEMA 4b): in Spanish no fixed
+# English is left, in English no fixed Spanish; nothing left unresolved.
+INGLES  <- c("Financial Summary Report", "Daily Forward", ">Company<", "Finances", "Total Balance", ">IN<", ">OUT<",
+             "SPEI IN", "SPEI OUT", "CONFIDENTIAL", "Generated", ">Mon ", ">Tue ", ">Wed ", ">Thu ", ">Fri ",
+             " Nov ", " Nov<", ">URG", ">IMP")
+ESPANOL <- c("Resumen financiero", "Pulso diario", ">Empresa<", "Finanzas", "Saldo total", ">Abono<", ">Cargo<",
+             "CONFIDENCIAL", "Generado", "Posición Global", "Saldos por Cuenta", "Cobros esperados",
+             "Semana Actual", "Reporte financiero")
+fijos <- function(html, lista) lista[vapply(lista, function(x) grepl(x, html, fixed = TRUE), TRUE)]
+ok("nothing left unresolved: no [[t:clave]] nor [[idioma]] in the report", !grepl("[[", rama_html, fixed = TRUE))
+quedan <- fijos(rama_html, INGLES)
+ok(sprintf("in Spanish, no fixed English text in the report (%s)", if (length(quedan)) paste(quedan, collapse = ", ") else "none"),
+   !length(quedan) && all(lengths(lapply(ESPANOL, function(x) fijos(rama_html, x))) == 1L) &&
+     grepl('<html lang="es">', rama_html, fixed = TRUE))
+en_html <- reporte(RAMA, idioma = "en")
+quedan <- fijos(en_html, ESPANOL)
+ok(sprintf("in English, the same words in English and no fixed Spanish (%s)", if (length(quedan)) paste(quedan, collapse = ", ") else "none"),
+   !length(quedan) && all(vapply(c("Financial Summary Report", ">Company<", "Total Balance", "Daily Forward"),
+                                 function(x) grepl(x, en_html, fixed = TRUE), TRUE)) &&
+     grepl('<html lang="en">', en_html, fixed = TRUE) && !grepl("[[", en_html, fixed = TRUE))
+ui_es <- reporte(RAMA, ui = TRUE); ui_en <- reporte(RAMA, idioma = "en", ui = TRUE)
+ok("the tab (reporteUI) in both languages: its titles and labels from the dictionary",
+   all(vapply(c("Configuración del reporte", "Volver a Bancos", "Aplicar y generar"), function(x) grepl(x, ui_es, fixed = TRUE), TRUE)) &&
+     all(vapply(c("Report settings", "Back to Banks", "Apply and generate"), function(x) grepl(x, ui_en, fixed = TRUE), TRUE)) &&
+     !grepl("Configuración del reporte", ui_en, fixed = TRUE))
 
 # Under Marca the report follows the theme.
 marca <- reporte(RAMA, tema = "marca")

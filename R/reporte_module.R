@@ -67,11 +67,11 @@ reporteUI <- function(id) {
 
       # Bubble: Back (←)  — top of stack
       tags$button(id = ns("fab_back"), class = "rpt-fab-bubble",
-                  title = "Volver a Bancos", HTML(svg_back)),
+                  title = tr("tablas.reporte.ui.volver"), HTML(svg_back)),
 
       # Bubble: Zoom In
       tags$button(id = ns("fab_zoom_in"), class = "rpt-fab-bubble",
-                  title = "Acercar (+)", HTML(svg_zoom_in)),
+                  title = tr("tablas.reporte.ui.acercar"), HTML(svg_zoom_in)),
 
       # Zoom level indicator
       tags$div(
@@ -87,20 +87,20 @@ reporteUI <- function(id) {
 
       # Bubble: Zoom Out
       tags$button(id = ns("fab_zoom_out"), class = "rpt-fab-bubble",
-                  title = "Alejar (\u2212)", HTML(svg_zoom_out)),
+                  title = tr("tablas.reporte.ui.alejar"), HTML(svg_zoom_out)),
 
       # Bubble: Fullscreen
       tags$button(id = ns("fab_fullscreen"), class = "rpt-fab-bubble",
-                  title = "Pantalla completa",
+                  title = tr("tablas.reporte.ui.pantalla_completa"),
                   HTML(paste0(svg_expand, svg_compress))),
 
       # Bubble: Settings (gear)
       tags$button(id = ns("fab_settings"), class = "rpt-fab-bubble",
-                  title = "Configuración", HTML(svg_gear)),
+                  title = tr("tablas.reporte.ui.configuracion"), HTML(svg_gear)),
 
       # Main FAB button — hamburger / ×
       tags$button(
-        id = ns("fab_main"), class = "rpt-fab-main", title = "Acciones",
+        id = ns("fab_main"), class = "rpt-fab-main", title = tr("tablas.reporte.ui.acciones"),
         HTML(paste0(
           '<span id="', ns("fab_lines"),
           '" style="display:flex;flex-direction:column;gap:3px;align-items:center;">',
@@ -122,7 +122,7 @@ reporteUI <- function(id) {
       # Header
       div(
         style = "display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--hd-leg-borde-f0f0f0);position:sticky;top:0;background:var(--hd-superficie);z-index:1;",
-        tags$span(style = "font-weight:600;font-size:.95rem;", "Configuración del reporte"),
+        tags$span(style = "font-weight:600;font-size:.95rem;", tr("tablas.reporte.ui.titulo_config")),
         tags$button(
           id    = ns("rpt_settings_close"),
           style = "background:none;border:none;cursor:pointer;font-size:22px;color:var(--hd-texto-2);padding:0 4px;line-height:1;",
@@ -135,18 +135,18 @@ reporteUI <- function(id) {
         style = "padding:20px;",
 
         tags$p(style = "font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--hd-texto-2);margin-bottom:8px;",
-               "Período"),
-        tags$label("Desde", class = "form-label small"),
+               tr("tablas.reporte.ui.periodo")),
+        tags$label(tr("tablas.reporte.ui.desde"), class = "form-label small"),
         dateInput(ns("fecha_desde"), NULL, value = floor_date_month(),
-                  format = "dd/mm/yyyy", language = "es", width = "100%"),
-        tags$label("Hasta", class = "form-label small"),
+                  format = "dd/mm/yyyy", language = hd_idioma(), width = "100%"),
+        tags$label(tr("tablas.reporte.ui.hasta"), class = "form-label small"),
         dateInput(ns("fecha_hasta"), NULL, value = hoy_usuario(),
-                  format = "dd/mm/yyyy", language = "es", width = "100%"),
+                  format = "dd/mm/yyyy", language = hd_idioma(), width = "100%"),
 
         tags$hr(class = "my-3"),
 
         tags$p(style = "font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--hd-texto-2);margin-bottom:8px;",
-               "Empresas"),
+               tr("tablas.reporte.ui.empresas")),
         uiOutput(ns("empresa_checks")),
 
         tags$hr(class = "my-3"),
@@ -156,7 +156,7 @@ reporteUI <- function(id) {
         tags$hr(class = "my-3"),
 
         actionButton(ns("btn_apply"),
-                     label = tagList(icon("rotate"), " Aplicar y generar"),
+                     label = tagList(icon("rotate"), paste0(" ", tr("tablas.reporte.ui.aplicar"))),
                      class = "btn btn-primary w-100 mb-3"),
 
         div(class = "d-flex gap-2",
@@ -169,7 +169,7 @@ reporteUI <- function(id) {
         ),
 
         tags$p(style = "font-size:.73rem;color:var(--hd-texto-tenue);margin-top:12px;margin-bottom:0;",
-               tags$em("PDF requiere Chrome/Edge y ", tags$code("pagedown"), "."))
+               tags$em(paste0(tr("tablas.reporte.ui.pdf_requiere"), " "), tags$code("pagedown"), "."))
       )
     ),
 
@@ -755,8 +755,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 
       list(
         today     = today,
-        current   = mk_week(w0_cur,  w1_cur,  today,   today,   "Hoy"),
-        next_week = mk_week(w0_next, w1_next, w0_next, w1_next, "Sem. Pr\u00f3xima")
+        current   = mk_week(w0_cur,  w1_cur,  today,   today,   tr("tablas.reporte.pulso.foco_hoy")),
+        next_week = mk_week(w0_next, w1_next, w0_next, w1_next, tr("tablas.reporte.pulso.foco_proxima"))
       )
     })
 
@@ -790,7 +790,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           style = "display:flex;align-items:center;justify-content:center;height:100vh;",
           div(class = "text-center text-muted",
             div(class = "spinner-border mb-3", role = "status"),
-            tags$p("Generando reporte…")
+            tags$p(tr("tablas.reporte.ui.generando"))
           )
         )
       } else {
@@ -814,7 +814,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       # One total per currency of the chosen accounts, the base first.
       totales  <- lapply(monedas_en_datos(bals_sel$moneda, moneda_base()), function(m)
         div(
-          tags$small(class = "text-muted d-block", paste("Total", m)),
+          tags$small(class = "text-muted d-block", tr("tablas.reporte.ui.total", moneda = m)),
           # The number alone: "Total MXN" just above names it (T55b).
           tags$strong(class = "fs-6", monto_moneda(sum(bals_sel$saldo[bals_sel$moneda == m], na.rm = TRUE), m, codigo = FALSE))
         ))
@@ -823,11 +823,11 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         div(class = "d-flex flex-wrap gap-4",
           totales,
           div(
-            tags$small(class = "text-muted d-block", "Cuentas"),
+            tags$small(class = "text-muted d-block", tr("tablas.reporte.ui.cuentas")),
             tags$strong(class = "fs-6", n_accts)
           ),
           div(
-            tags$small(class = "text-muted d-block", "Período"),
+            tags$small(class = "text-muted d-block", tr("tablas.reporte.ui.periodo")),
             tags$strong(class = "fs-6",
               paste0(format(input$fecha_desde, "%d/%m/%Y"),
                      " — ", format(input$fecha_hasta, "%d/%m/%Y")))
@@ -847,7 +847,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         desde <- isolate(applied$desde)
         hasta <- isolate(applied$hasta)
         if (is.null(res) || !length(emps)) {
-          writeLines("<p>No hay datos.</p>", file); return()
+          writeLines(paste0("<p>", htmltools::htmlEscape(tr("tablas.reporte.ui.sin_datos")), "</p>"), file); return()
         }
         bals_sel <- dplyr::filter(res$balances, empresa %in% emps)
         movs_sel <- if (!is.null(res$movimientos) && nrow(res$movimientos))
@@ -880,7 +880,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         hasta <- isolate(applied$hasta)
 
         if (is.null(res) || !length(emps)) {
-          writeLines("No hay datos para exportar.", file); return()
+          writeLines(tr("tablas.reporte.ui.sin_datos_exportar"), file); return()
         }
 
         bals_sel <- dplyr::filter(res$balances, empresa %in% emps)
@@ -908,11 +908,11 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           writeLines(html_content, file)
           showNotification(
             tagList(
-              tags$strong("Instala pagedown primero:"),
+              tags$strong(tr("tablas.reporte.aviso.instala_pagedown")),
               tags$br(),
               tags$code('install.packages("pagedown")'),
               tags$br(),
-              tags$small("Se descargo el reporte como HTML mientras tanto.")
+              tags$small(tr("tablas.reporte.aviso.html_mientras"))
             ),
             type = "warning", duration = 15
           )
@@ -958,11 +958,11 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           writeLines(html_content, file)
           showNotification(
             tagList(
-              tags$strong("Error al generar PDF: "),
+              tags$strong(paste0(tr("tablas.reporte.aviso.error_pdf"), " ")),
               tags$br(),
               conditionMessage(e),
               tags$br(),
-              tags$small("Se descargo el reporte como HTML.")
+              tags$small(tr("tablas.reporte.aviso.html_entregado"))
             ),
             type = "error", duration = 10
           )
@@ -998,7 +998,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   } else {
     return(html)
   }
-  brand_name   <- paste0(grp_ini, " Finances")
+  brand_name   <- tr("tablas.reporte.doc.marca_finanzas", ini = grp_ini)
   brand_letter <- substr(grp_ini, 1, 1)
 
   html <- gsub('class="rpt-brand-name">HopDesk<',
@@ -1006,13 +1006,37 @@ reporteServer <- function(id, shared, active_tab = NULL) {
                html, fixed = TRUE)
   html <- gsub('class="rpt-logo">H<',
                paste0('class="rpt-logo">', htmltools::htmlEscape(brand_letter), '<'), html, fixed = TRUE)
-  html <- gsub("HopDesk &mdash; Reporte financiero",
-               paste0(htmltools::htmlEscape(grp_name), " &mdash; Reporte Financiero"),
+  # The report's name from the dictionary, as .rpt_textos() wrote it (TEMA 4b).
+  titulo <- htmltools::htmlEscape(tr("tablas.reporte.doc.titulo"))
+  html <- gsub(paste0("HopDesk &mdash; ", titulo),
+               paste0(htmltools::htmlEscape(grp_name), " &mdash; ", titulo),
                html, fixed = TRUE)
-  html <- gsub("Reporte financiero &mdash; HopDesk",
-               paste0("Reporte Financiero &mdash; ", htmltools::htmlEscape(grp_name)),
+  html <- gsub(paste0(titulo, " &mdash; HopDesk"),
+               paste0(titulo, " &mdash; ", htmltools::htmlEscape(grp_name)),
                html, fixed = TRUE)
   html
+}
+
+# The report's fixed words (TEMA 4b). The HTML templates carry [[t:clave]]
+# for each one, resolved from the dictionary (tr(), the session's language)
+# once the page is assembled, so no sprintf changes its arguments; [[idioma]]
+# is the page's lang.
+.rpt_textos <- function(html) {
+  html <- gsub("[[idioma]]", hd_idioma(), html, fixed = TRUE)
+  claves <- unique(regmatches(html, gregexpr("\\[\\[t:[a-z0-9_.]+\\]\\]", html))[[1]])
+  for (mk in claves)
+    html <- gsub(mk, htmltools::htmlEscape(tr(substr(mk, 5L, nchar(mk) - 2L))), html, fixed = TRUE)
+  html
+}
+
+# A date in the report's words: comun.fecha_corta ("17 nov 2026" / "Nov 17,
+# 2026") with the dictionary's month, not the server's locale (%b).
+# anio = FALSE drops the year: "17 nov" / "Nov 17".
+.rpt_fecha <- function(d, anio = TRUE) {
+  lt  <- as.POSIXlt(as.Date(d))
+  txt <- tr("comun.fecha_corta", dia = sprintf("%02d", lt$mday), mes = tr(paste0("comun.mes.", lt$mon + 1L)),
+            anio = if (anio) as.character(lt$year + 1900L) else "")
+  trimws(sub(",\\s*$", "", trimws(txt)))
 }
 
 # The report's colours (TEMA stage 4b). The report is a standalone HTML (the
@@ -1111,11 +1135,11 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         xmid + 1, y0, bw, out_h, outflow_color) else ""
       hoy_m <- if (is_hoy) sprintf(
         '<line x1="%.1f" y1="%d" x2="%.1f" y2="%d" stroke="{{aviso}}" stroke-width="0.8" stroke-dasharray="2,1.5" opacity="0.85"/>
-         <text x="%.1f" y="%d" text-anchor="middle" font-size="5" font-weight="700" fill="{{aviso-fuerte}}">HOY</text>',
+         <text x="%.1f" y="%d" text-anchor="middle" font-size="5" font-weight="700" fill="{{aviso-fuerte}}">[[t:tablas.reporte.pulso.hoy]]</text>',
         xmid, padT, xmid, h - padB, xmid, padT - 2L) else ""
       x_lbl <- sprintf(
         '<text x="%.1f" y="%d" text-anchor="middle" font-size="5.5" fill="{{texto-2}}">%s</text>',
-        xmid, h - padB + 9L, format(d$date, "%a %d"))
+        xmid, h - padB + 9L, paste(tr(paste0("tablas.flujo.dia.", as.POSIXlt(d$date)$wday %% 7L + (as.POSIXlt(d$date)$wday == 0L) * 7L)), format(d$date, "%d")))
       paste(hoy_m, in_r, out_r, x_lbl, sep = "\n")
     }, character(1)), collapse = "\n")
 
@@ -1136,11 +1160,11 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     lx <- w - padR - 118L; ly <- padT - 2L
     legend <- sprintf(
       '<rect x="%d" y="%d" width="7" height="5" fill="%s" opacity="0.85" rx="1"/>
-       <text x="%d" y="%d" font-size="5" fill="{{texto}}" dominant-baseline="middle">Cobros</text>
+       <text x="%d" y="%d" font-size="5" fill="{{texto}}" dominant-baseline="middle">[[t:tablas.reporte.pulso.leyenda_cobros]]</text>
        <rect x="%d" y="%d" width="7" height="5" fill="%s" opacity="0.72" rx="1"/>
-       <text x="%d" y="%d" font-size="5" fill="{{texto}}" dominant-baseline="middle">Pagos</text>
+       <text x="%d" y="%d" font-size="5" fill="{{texto}}" dominant-baseline="middle">[[t:tablas.reporte.pulso.leyenda_pagos]]</text>
        <line x1="%d" y1="%d" x2="%d" y2="%d" stroke="%s" stroke-width="1.4"/>
-       <text x="%d" y="%d" font-size="5" fill="{{texto}}" dominant-baseline="middle">Acum.</text>',
+       <text x="%d" y="%d" font-size="5" fill="{{texto}}" dominant-baseline="middle">[[t:tablas.reporte.pulso.leyenda_acum]]</text>',
       lx,       ly,     inflow_color,
       lx + 9L,  ly + 3L,
       lx + 45L, ly,     outflow_color,
@@ -1178,7 +1202,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           <span class="pulse-item-amt" style="color:{{leg-exito-059669}};">+%s</span></div>',
           he(r$Parte %||% "\u2014"), fmt(r$.a, currency))
       }, character(1)), collapse = "\n")
-    else '<div class="pulse-item"><span class="pulse-item-name" style="color:{{texto-tenue}};font-style:italic;">Sin cobros programados</span></div>'
+    else '<div class="pulse-item"><span class="pulse-item-name" style="color:{{texto-tenue}};font-style:italic;">[[t:tablas.reporte.pulso.sin_cobros]]</span></div>'
 
     # Critical payable rows (with urgency badge)
     out_rows <- if (nrow(pd$focus_ap) > 0)
@@ -1199,33 +1223,33 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           <span class="pulse-item-amt" style="color:{{peligro}};">&minus;%s</span></div>',
           he(r$Parte %||% "\u2014"), badge, fmt(r$.a, currency))
       }, character(1)), collapse = "\n")
-    else '<div class="pulse-item"><span class="pulse-item-name" style="color:{{texto-tenue}};font-style:italic;">Sin pagos programados</span></div>'
+    else '<div class="pulse-item"><span class="pulse-item-name" style="color:{{texto-tenue}};font-style:italic;">[[t:tablas.reporte.pulso.sin_pagos]]</span></div>'
 
     sprintf('
   <div class="pulse-currency-block">
     <span class="pulse-currency-label %s">%s</span>
     <div class="pulse-kpi-row">
       <div class="pulse-kpi pulse-kpi-in">
-        <div class="pulse-kpi-lbl">&#9650; Cobros esperados</div>
+        <div class="pulse-kpi-lbl">&#9650; [[t:tablas.reporte.pulso.kpi_cobros]]</div>
         <div class="pulse-kpi-val">%s</div>
       </div>
       <div class="pulse-kpi pulse-kpi-out">
-        <div class="pulse-kpi-lbl">&#9660; Pagos programados</div>
+        <div class="pulse-kpi-lbl">&#9660; [[t:tablas.reporte.pulso.kpi_pagos]]</div>
         <div class="pulse-kpi-val">%s</div>
       </div>
       <div class="pulse-kpi %s">
-        <div class="pulse-kpi-lbl">&#9654; Posici&oacute;n neta</div>
+        <div class="pulse-kpi-lbl">&#9654; [[t:tablas.reporte.pulso.kpi_neto]]</div>
         <div class="pulse-kpi-val">%s</div>
       </div>
     </div>
     <div class="pulse-chart-wrap">%s</div>
     <div class="pulse-bottom">
       <div class="pulse-panel">
-        <div class="pulse-panel-hdr pulse-panel-in-hdr">TOP COBROS &mdash; %s</div>
+        <div class="pulse-panel-hdr pulse-panel-in-hdr">[[t:tablas.reporte.pulso.top_cobros]] &mdash; %s</div>
         %s
       </div>
       <div class="pulse-panel">
-        <div class="pulse-panel-hdr pulse-panel-out-hdr">PAGOS CR&Iacute;TICOS &mdash; %s</div>
+        <div class="pulse-panel-hdr pulse-panel-out-hdr">[[t:tablas.reporte.pulso.pagos_criticos]] &mdash; %s</div>
         %s
       </div>
     </div>
@@ -1241,9 +1265,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 
   # ── One page per week ──────────────────────────────────────────────────────
   build_page <- function(wk, is_current_week, page_num) {
-    wk_label   <- paste0(format(wk$wk_start, "%d %b"), " \u2014 ",
-                         format(wk$wk_end, "%d %b %Y"))
-    week_title <- if (is_current_week) "Semana Actual" else "Semana Pr\u00f3xima"
+    wk_label   <- paste0(.rpt_fecha(wk$wk_start, anio = FALSE), " \u2014 ", .rpt_fecha(wk$wk_end))
+    week_title <- tr(if (is_current_week) "tablas.reporte.pulso.semana_actual" else "tablas.reporte.pulso.semana_proxima")
 
     other_note <- .reporte_nota_monedas(wk$other_currencies, wk$shown)
 
@@ -1251,18 +1274,18 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 <div class="page">
   <div class="rpt-header">
     <div>
-      <div class="rpt-title">Daily Forward Cash Flow Pulse &mdash; %s</div>
-      <div class="rpt-sub">S&iacute;ntesis AP/AR &bull; %s</div>
+      <div class="rpt-title">[[t:tablas.reporte.doc.pulso]] &mdash; %s</div>
+      <div class="rpt-sub">[[t:tablas.reporte.doc.sintesis]] &bull; %s</div>
     </div>
     <div class="rpt-meta">
       <div class="rpt-brand">
         <div class="rpt-brand-text">
-          <div class="rpt-brand-label">Company</div>
+          <div class="rpt-brand-label">[[t:tablas.reporte.doc.empresa]]</div>
           <div class="rpt-brand-name">HopDesk</div>
         </div>
         <div class="rpt-logo">H</div>
       </div>
-      <div class="rpt-gen">Generado: %s &nbsp;&bull;&nbsp; CONFIDENCIAL</div>
+      <div class="rpt-gen">[[t:tablas.reporte.doc.generado]]: %s &nbsp;&bull;&nbsp; [[t:tablas.reporte.doc.confidencial]]</div>
     </div>
   </div>
   <div class="page-body">
@@ -1271,9 +1294,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   </div>
   </div>
   <div class="rpt-footer">
-    <span>HopDesk &mdash; Reporte financiero</span>
+    <span>HopDesk &mdash; [[t:tablas.reporte.doc.titulo]]</span>
     <span>%s</span>
-    <span>P&aacute;g. %d &mdash; CONFIDENCIAL</span>
+    <span>[[t:tablas.reporte.doc.pag]] %d &mdash; [[t:tablas.reporte.doc.confidencial]]</span>
   </div>
 </div>',
       he(week_title), he(wk_label), he(gen_label),
@@ -1311,7 +1334,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   he   <- htmltools::htmlEscape
   fmt  <- function(x, m) monto_moneda(abs(x), m, codigo = FALSE)   # the currency is beside it (T55b)
   fmts <- function(x, m) monto_moneda(x, m, codigo = FALSE)   # signed, the true minus sign (T55b)
-  period_label <- paste0(format(desde, "%d %b %Y"), " \u2014 ", format(hasta, "%d %b %Y"))
+  period_label <- paste0(.rpt_fecha(desde), " \u2014 ", .rpt_fecha(hasta))
   gen_label    <- format(generated, "%d/%m/%Y %H:%M")
 
   col_pos <- "{{leg-exito-059669}}"; col_neg <- "{{peligro}}"
@@ -1328,20 +1351,14 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 
   # Movement type display labels
   tipo_label <- function(tipo) {
-    lbl <- switch(tolower(trimws(tipo %||% "")),
-      "spei_in"       = "SPEI IN",
-      "spei_out"      = "SPEI OUT",
-      "nomina"        = "N\u00f3mina",
-      "traspaso"      = "Traspaso",
-      "cambio"        = "Cambio",
-      "pos"           = "POS",
-      "domiciliacion" = "Domiciliaci\u00f3n",
-      "domiciliaci\u00f3n" = "Domiciliaci\u00f3n",
-      "plazo"         = "Plazo",
-      "otro"          = "Otro",
-      tools::toTitleCase(trimws(tipo %||% "Otro"))
-    )
-    lbl
+    # The movement types' names from the dictionary (TEMA 4b); an unknown
+    # type shows as it comes, title-cased.
+    k <- tolower(trimws(tipo %||% ""))
+    if (identical(k, "domiciliaci\u00f3n")) k <- "domiciliacion"
+    if (k %in% c("spei_in", "spei_out", "nomina", "traspaso", "cambio", "pos", "domiciliacion", "plazo", "otro"))
+      return(tr(paste0("tablas.reporte.doc.tipo.", k)))
+    if (!nzchar(k)) return(tr("tablas.reporte.doc.tipo.otro"))
+    tools::toTitleCase(trimws(tipo))
   }
 
   # ── Sparkline helpers ────────────────────────────────────────────────────────
@@ -1523,7 +1540,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     sprintf('      <div class="tot-box mon%d">
         <div class="tot-top-row">
           <div class="tot-left">
-            <div class="tot-label">Total Balance %s</div>
+            <div class="tot-label">[[t:tablas.reporte.doc.saldo_total]] %s</div>
             <div class="tot-amount">%s</div>
           </div>
           <div class="tot-delta">%s</div>
@@ -1575,11 +1592,11 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       <div class="acct-spark">%s</div>
       <div class="acct-stats">
         <div class="acct-stat">
-          <span class="acct-stat-lbl">Ingresos</span>
+          <span class="acct-stat-lbl">[[t:tablas.reporte.doc.ingresos]]</span>
           <span class="acct-stat-val" style="color:{{leg-exito-059669}};">+%s</span>
         </div>
         <div class="acct-stat">
-          <span class="acct-stat-lbl">Egresos</span>
+          <span class="acct-stat-lbl">[[t:tablas.reporte.doc.egresos]]</span>
           <span class="acct-stat-val" style="color:{{peligro}};">&minus;%s</span>
         </div>
       </div>
@@ -1654,8 +1671,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       <table class="mov-table">
         <thead>
           <tr>
-            <th>Fecha</th><th>Descripci&oacute;n</th><th>Cuenta</th>
-            <th style="text-align:right">Importe</th>
+            <th>[[t:tablas.reporte.doc.col.fecha]]</th><th>[[t:tablas.reporte.doc.col.descripcion]]</th><th>[[t:tablas.reporte.doc.col.cuenta]]</th>
+            <th style="text-align:right">[[t:tablas.reporte.doc.col.importe]]</th>
           </tr>
         </thead>
         <tbody>%s</tbody>
@@ -1671,7 +1688,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 
       if (nzchar(trimws(split_body))) {
         group_top_html <- sprintf('
-    <div class="sec-title">Top Movimientos del Grupo &mdash; %s</div>
+    <div class="sec-title">[[t:tablas.reporte.doc.top_grupo]] &mdash; %s</div>
     <div class="group-split">%s
     </div>',
           he(period_label), split_body
@@ -1732,7 +1749,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           </tr>',
           he(format(m$fecha, "%d/%m")),
           he(lbl), he(tipo_label(m$tipo)),
-          dcol, dcol, dir,
+          dcol, dcol, he(tr(if (dir == "OUT") "tablas.reporte.doc.sentido.sale" else "tablas.reporte.doc.sentido.entra")),
           dcol, dsgn, he(fmt(m$amount, mono))
         )
       }, character(1)), collapse = "\n")
@@ -1751,11 +1768,11 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           <div class="mov-card-spark">%s</div>
           <div class="mov-card-footer">
             <div class="mov-card-stat">
-              <span class="mov-card-lbl">Ingresos</span>
+              <span class="mov-card-lbl">[[t:tablas.reporte.doc.ingresos]]</span>
               <span class="mov-card-val" style="color:{{leg-exito-059669}};">+%s</span>
             </div>
             <div class="mov-card-stat">
-              <span class="mov-card-lbl">Egresos</span>
+              <span class="mov-card-lbl">[[t:tablas.reporte.doc.egresos]]</span>
               <span class="mov-card-val" style="color:{{peligro}};">&minus;%s</span>
             </div>
           </div>
@@ -1764,8 +1781,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           <table class="mov-table">
             <thead>
               <tr>
-                <th>Fecha</th><th>Descripci&oacute;n</th><th>Tipo</th>
-                <th>Dir.</th><th style="text-align:right">Importe</th>
+                <th>[[t:tablas.reporte.doc.col.fecha]]</th><th>[[t:tablas.reporte.doc.col.descripcion]]</th><th>[[t:tablas.reporte.doc.col.tipo]]</th>
+                <th>[[t:tablas.reporte.doc.col.sentido]]</th><th style="text-align:right">[[t:tablas.reporte.doc.col.importe]]</th>
               </tr>
             </thead>
             <tbody>%s</tbody>
@@ -1990,30 +2007,30 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 <div class="page">
   <div class="rpt-header">
     <div>
-      <div class="rpt-title">Financial Summary Report &mdash; %s</div>
+      <div class="rpt-title">[[t:tablas.reporte.doc.resumen]] &mdash; %s</div>
       <div class="rpt-sub">%s</div>
     </div>
     <div class="rpt-meta">
       <div class="rpt-brand">
         <div class="rpt-brand-text">
-          <div class="rpt-brand-label">Company</div>
+          <div class="rpt-brand-label">[[t:tablas.reporte.doc.empresa]]</div>
           <div class="rpt-brand-name">HopDesk</div>
         </div>
         <div class="rpt-logo">H</div>
       </div>
-      <div class="rpt-gen">Generado: %s &nbsp;&bull;&nbsp; CONFIDENCIAL</div>
+      <div class="rpt-gen">[[t:tablas.reporte.doc.generado]]: %s &nbsp;&bull;&nbsp; [[t:tablas.reporte.doc.confidencial]]</div>
     </div>
   </div>
   <div class="page-body">
   <div class="section">
-    <div class="sec-title">Top Movimientos por Cuenta &mdash; %s</div>
+    <div class="sec-title">[[t:tablas.reporte.doc.top_cuenta]] &mdash; %s</div>
     %s
   </div>
   </div>
   <div class="rpt-footer">
-    <span>HopDesk &mdash; Reporte financiero</span>
+    <span>HopDesk &mdash; [[t:tablas.reporte.doc.titulo]]</span>
     <span>%s</span>
-    <span>P&aacute;g. 2 &mdash; CONFIDENCIAL</span>
+    <span>[[t:tablas.reporte.doc.pag]] 2 &mdash; [[t:tablas.reporte.doc.confidencial]]</span>
   </div>
 </div>',
     he(period_label), he(period_label), he(gen_label),
@@ -2023,11 +2040,11 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 
   # ── Assemble full HTML ───────────────────────────────────────────────────────
   html_out <- sprintf('<!DOCTYPE html>
-<html lang="es">
+<html lang="[[idioma]]">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Reporte financiero &mdash; HopDesk</title>
+<title>[[t:tablas.reporte.doc.titulo]] &mdash; HopDesk</title>
 <style>%s</style>
 </head>
 <body>
@@ -2036,18 +2053,18 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   <!-- ── HEADER ─────────────────────────────────────────────────────── -->
   <div class="rpt-header">
     <div>
-      <div class="rpt-title">Financial Summary Report &mdash; %s</div>
+      <div class="rpt-title">[[t:tablas.reporte.doc.resumen]] &mdash; %s</div>
       <div class="rpt-sub">%s</div>
     </div>
     <div class="rpt-meta">
       <div class="rpt-brand">
         <div class="rpt-brand-text">
-          <div class="rpt-brand-label">Company</div>
+          <div class="rpt-brand-label">[[t:tablas.reporte.doc.empresa]]</div>
           <div class="rpt-brand-name">HopDesk</div>
         </div>
         <div class="rpt-logo">H</div>
       </div>
-      <div class="rpt-gen">Generado: %s &nbsp;&bull;&nbsp; CONFIDENCIAL</div>
+      <div class="rpt-gen">[[t:tablas.reporte.doc.generado]]: %s &nbsp;&bull;&nbsp; [[t:tablas.reporte.doc.confidencial]]</div>
     </div>
   </div>
 
@@ -2055,13 +2072,13 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   <div class="section">
 
     <!-- ── POSICIÓN GLOBAL ─────────────────────────────────────────── -->
-    <div class="sec-title" style="margin-top:4px;">Posici&oacute;n Global</div>
+    <div class="sec-title" style="margin-top:4px;">[[t:tablas.reporte.doc.posicion_global]]</div>
     <div class="totals-row">
 %s
     </div>%s
 
     <!-- ── SALDOS POR CUENTA ───────────────────────────────────────── -->
-    <div class="sec-title">Saldos por Cuenta</div>
+    <div class="sec-title">[[t:tablas.reporte.doc.saldos_cuenta]]</div>
     <div class="%s">%s</div>
 
     <!-- ── TOP MOVIMIENTOS DEL GRUPO ──────────────────────────────── -->
@@ -2071,9 +2088,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   </div>
 
   <div class="rpt-footer">
-    <span>HopDesk &mdash; Reporte financiero</span>
+    <span>HopDesk &mdash; [[t:tablas.reporte.doc.titulo]]</span>
     <span>%s</span>
-    <span>P&aacute;g. 1 &mdash; CONFIDENCIAL</span>
+    <span>[[t:tablas.reporte.doc.pag]] 1 &mdash; [[t:tablas.reporte.doc.confidencial]]</span>
   </div>
 </div>
 
@@ -2097,5 +2114,6 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     # pages 3-4: cash flow pulse (current week + next week)
     pulse_pages
   )
-  .rpt_pintar(.brand_inject(html_out, cmap, group_name), tema)   # TEMA 4b: the colours by role
+  # TEMA 4b: the words from the dictionary, the brand, the colours by role
+  .rpt_pintar(.brand_inject(.rpt_textos(html_out), cmap, group_name), tema)
 }

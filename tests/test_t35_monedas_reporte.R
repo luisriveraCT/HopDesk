@@ -54,6 +54,25 @@ a$html <- norm_col(a$html); ref <- norm_col(ref)
 for (k in c("tot-box mxn", "tot-box usd", ".tot-box.mxn{", ".tot-box.usd{", "group-col-mxn",
             "group-col-usd", "pulse-mxn-label", "pulse-usd-label"))
   ref <- gsub(k, sub("usd", "mon2", sub("mxn", "mon1", k, fixed = TRUE), fixed = TRUE), ref, fixed = TRUE)
+# [CAMBIA TEMA 4b] The report's words come from the dictionary (Spanish here):
+# its English titles, labels and IN/OUT in Spanish, the accents as UTF-8
+# instead of entities, one "Reporte financiero", the months from comun.mes.*
+# ("nov", not the server locale's "Nov") and the chart's days from
+# tablas.flujo.dia.* ("L 16", not "Mon 16"). The reference is translated by
+# exactly this list; any other change still fails A1.
+for (e in list(c("&oacute;", "ó"), c("&aacute;", "á"), c("&iacute;", "í"), c("&Iacute;", "Í"),
+               c("Reporte Financiero", "Reporte financiero"), c("Financial Summary Report", "Resumen financiero"),
+               c(">Company<", ">Empresa<"), c("NG Finances", "NG Finanzas"), c("Total Balance ", "Saldo total "),
+               c(">Dir.<", ">Sentido<"), c(">SPEI IN<", ">SPEI recibido<"), c(">SPEI OUT<", ">SPEI enviado<"),
+               c(">IN<", ">Abono<"), c(">OUT<", ">Cargo<"),
+               c("Daily Forward Cash Flow Pulse", "Pulso diario de flujo de efectivo"),
+               c("Síntesis AP/AR", "Síntesis CxP/CxC")))
+  ref <- gsub(e[1], e[2], ref, fixed = TRUE)
+for (m in 1:12)
+  ref <- gsub(paste0("([0-9]{2}) ", month.abb[m], "\\b"), paste0("\\1 ", tr(paste0("comun.mes.", m), idioma = "es")), ref, perl = TRUE)
+dias_en <- c("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+for (k in 1:7)
+  ref <- gsub(paste0(">", dias_en[k], " ([0-9]{2})<"), paste0(">", tr(paste0("tablas.flujo.dia.", k), idioma = "es"), " \\1<"), ref, perl = TRUE)
 # [CAMBIA T55b] The amounts are monto_moneda()'s now ("282,000.00 MXN",
 # "−2,300.00", "&minus;14,500.00", the axis "25K"), and each Pulse chart has
 # its currency as the axis title. The rest is still a5c696a's, byte for byte:
@@ -85,6 +104,9 @@ ok("A1b: no \"$\" before a figure anywhere in the report; each Pulse chart title
 ok("A3: NG's pulse still names EUR in its note, with 'se muestran solo MXN y USD'",
    tiene(a$html, "Monedas adicionales detectadas: EUR — se muestran solo MXN y USD."))
 
+# [CAMBIA TEMA 4b] The box's title comes from the dictionary ("Saldo total" in Spanish).
+TB <- function(m) paste(tr("tablas.reporte.doc.saldo_total"), m)
+
 # ── B. A COP client with COP, USD and EUR ───────────────────────────────────
 cop <- ng
 cop$cuentas$Moneda <- c("COP", "USD", "USD", "EUR")   # COP base; USD 2 accounts, EUR 1
@@ -92,10 +114,10 @@ cop$sap$AR$Moneda  <- c("COP", "USD", "COP", "COP", "USD", "EUR")
 cop$sap$AP$Moneda  <- c("COP", "USD", "COP", "USD", "EUR")
 b <- reporte_correr(cop$cuentas, cop$movs, cop$sap, base = "COP")
 ok("B1: the boxes are COP (first, blue) and USD (second, green)",
-   tiene(b$html, '<div class="tot-box mon1">', "Total Balance COP", '<div class="tot-box mon2">', "Total Balance USD") &&
-     regexpr("Total Balance COP", b$html) < regexpr("Total Balance USD", b$html))
+   tiene(b$html, '<div class="tot-box mon1">', TB("COP"), '<div class="tot-box mon2">', TB("USD")) &&
+     regexpr(TB("COP"), b$html) < regexpr(TB("USD"), b$html))
 ok("B2: no box for EUR, and none for MXN (the client has none)",
-   nada(b$html, "Total Balance EUR", "Total Balance MXN", "tot-box mxn", "tot-box usd"))
+   nada(b$html, TB("EUR"), TB("MXN"), "tot-box mxn", "tot-box usd"))
 ok("B3: page 1 names EUR in the note: 'se muestran solo COP y USD'",
    tiene(b$html, "Monedas adicionales detectadas: EUR — se muestran solo COP y USD."))
 ok("B4: the EUR account still gets its card (every account shows)", tiene(b$html, "NRS USD — EUR"))
@@ -115,7 +137,7 @@ mx$sap$AR <- mx$sap$AR[mx$sap$AR$Moneda == "MXN", ]
 mx$sap$AP <- mx$sap$AP[mx$sap$AP$Moneda == "MXN", ]
 c_ <- reporte_correr(mx$cuentas, mx$movs, mx$sap, base = "MXN")
 ok("C1: one box, MXN; no 'Total Balance USD' at $0.00", cuenta('<div class="tot-box mon', c_$html) == 1L &&
-     tiene(c_$html, "Total Balance MXN") && nada(c_$html, "Total Balance USD"))
+     tiene(c_$html, TB("MXN")) && nada(c_$html, TB("USD")))
 ok("C2: no note, and the pulse has only the MXN block", nada(c_$html, "Monedas adicionales") &&
      cuenta('<span class="pulse-currency-label', c_$html) == 2L && nada(c_$html, 'pulse-mon2-label">'))
 ok("C3: the settings summary has Total MXN and no Total USD", tiene(c_$resumen, "Total MXN") && nada(c_$resumen, "Total USD"))

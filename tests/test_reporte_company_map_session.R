@@ -28,6 +28,8 @@ for (e in parse("R/reporte_module.R"))
   if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(as.character(e[[2]]), ".brand_inject"))
     eval(e, env)
 env$`%||%` <- `%||%`
+# TEMA 4b: the brand's words come from the dictionary ("{ini} Finanzas", "Reporte financiero").
+suppressMessages(source("R/i18n.R"))
 
 # The template's neutral brand (it used to be a fixed "NG Finances / Networks Group").
 template <- paste(
@@ -45,15 +47,15 @@ for (global in list(c(), c(HDX = "Otra Empresa"))) {
 
   h <- brand(session_map, "Grupo Acme Uno")
   ok(sprintf("the session's group name brands the report (global holds %s)", etiqueta),
-     grepl("Grupo Acme Uno &mdash; Reporte Financiero", h, fixed = TRUE) &&
-       grepl("Reporte Financiero &mdash; Grupo Acme Uno", h, fixed = TRUE) &&
-       grepl("GAU Finances", h, fixed = TRUE) && grepl('class="rpt-logo">G<', h, fixed = TRUE))
+     grepl("Grupo Acme Uno &mdash; Reporte financiero", h, fixed = TRUE) &&
+       grepl("Reporte financiero &mdash; Grupo Acme Uno", h, fixed = TRUE) &&
+       grepl("GAU Finanzas", h, fixed = TRUE) && grepl('class="rpt-logo">G<', h, fixed = TRUE))
   ok(sprintf("the report never carries %s", etiqueta), nzchar(h) && !grepl("Otra|HDX", h))
 
   h <- brand(session_map, "")
   ok(sprintf("without a group name, the session's first company stands in (global holds %s)", etiqueta),
-     grepl("Networks Realtors &mdash; Reporte Financiero", h, fixed = TRUE) &&
-       grepl("NRS Finances", h, fixed = TRUE) && !grepl("Otra|HDX", h))
+     grepl("Networks Realtors &mdash; Reporte financiero", h, fixed = TRUE) &&
+       grepl("NRS Finanzas", h, fixed = TRUE) && !grepl("Otra|HDX", h))
 
   h <- brand(c(), "")
   ok(sprintf("with no group and no companies the report keeps the neutral HopDesk brand (global holds %s)", etiqueta),
@@ -61,9 +63,9 @@ for (global in list(c(), c(HDX = "Otra Empresa"))) {
 }
 rm("COMPANY_MAP", envir = .GlobalEnv)
 
-ok("Networks Group still brands as NG Finances / N",
+ok("Networks Group still brands as NG Finanzas / N (NG Finances in English)",
    { h <- brand(session_map, "Networks Group")
-     grepl("NG Finances", h, fixed = TRUE) && grepl('class="rpt-logo">N<', h, fixed = TRUE) })
+     grepl("NG Finanzas", h, fixed = TRUE) && identical(tr("tablas.reporte.doc.marca_finanzas", ini = "NG", idioma = "en"), "NG Finances") && grepl('class="rpt-logo">N<', h, fixed = TRUE) })
 
 # Every .build_report_html() call passes the session's map and group name.
 calls <- list()
