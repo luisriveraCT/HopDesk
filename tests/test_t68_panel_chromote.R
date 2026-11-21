@@ -52,7 +52,10 @@ arrancar <- function(ancho, alto, nivel = "", staff = "") {
 }
 abrir_panel <- function() {
   clic(".pan-feed-ajustes")
-  espera("document.querySelectorAll('.modal #pan-avisos_de-hdt thead th.hdt-cas-th').length > 0 && document.querySelectorAll('.modal #pan-avisos_de-hdt tr.hdt-grupo').length > 0", 30)
+  listo <- espera("document.querySelectorAll('.modal #pan-avisos_de-hdt thead th.hdt-cas-th').length > 0 && document.querySelectorAll('.modal #pan-avisos_de-hdt tr.hdt-grupo').length > 0", 30)
+  # The modal fades in: a click before it is fully shown can land on nothing.
+  listo && espera("(function(){ var m = document.querySelector('.modal.show'); return !!m && getComputedStyle(m).opacity === '1'; })()", 10) &&
+    { Sys.sleep(0.4); TRUE }
 }
 titulos <- function() jsonlite::fromJSON(ev("JSON.stringify([].map.call(document.querySelectorAll('.modal #pan-avisos_de-hdt thead th.hdt-cas-th'), function(th){ return th.querySelector('span:not(.hdt-cas-n)').textContent; }))"))
 registro <- function() { t <- ev("document.getElementById('registro').textContent"); if (nzchar(t)) jsonlite::fromJSON(t, simplifyVector = FALSE) else NULL }
@@ -84,6 +87,7 @@ for (tam in list(c(1293L, 632L), c(1772L, 866L))) {
     foto(paste0("A2_busqueda_", et))
     clic(".modal #pan-ad_guardar")
     ok(sprintf("A %s: Guardar closes the panel", et), espera("!document.querySelector('.modal.show')", 15))
+    espera("/avisos_de/.test(document.getElementById('registro').textContent)", 10)   # the save's message
     r <- registro()
     req <- r$avisos_de$canales$req
     ok(sprintf("A %s: avisos_de saved: req nadie + the Planta Norte people (%d)", et, length(req$cambia)),
@@ -100,8 +104,10 @@ tryCatch({
   ok("B: only Requisiciones and Altas, never the treasury columns", identical(titulos(), c("Requisiciones", "Altas")))
   foto("B_compras")
   clic(".modal #pan-ad_todos"); Sys.sleep(0.8)
+  foto("B_tras_todos")
   clic(".modal #pan-ad_guardar")
   espera("!document.querySelector('.modal.show')", 15)
+  espera("/avisos_de/.test(document.getElementById('registro').textContent)", 10)   # the save's message
   r <- registro()
   ok("B: what it saves has no treasury channel", identical(r$avisos_de$canales$req$base, "todos") &&
        identical(r$avisos_de$canales$bancos$base, "nadie") && identical(r$avisos_de$canales$confirmar_pago$base, "nadie") &&
@@ -120,9 +126,10 @@ tryCatch({
   clic(".modal #pan-ad_ninguno"); Sys.sleep(0.8)
   clic(".modal #pan-ad_guardar")
   espera("!document.querySelector('.modal.show')", 15)
+  espera("/avisos_de_clientes/.test(document.getElementById('registro').textContent)", 10)   # the save's message
   r <- registro()
   ok("C: Guardar writes in the staff's home (hopdesk), under avisos_de_clientes$dev",
-     identical(r$casa_donde, "hopdesk") && is.list(r$avisos_de_clientes$dev) && is.null(r$avisos_de) &&
+     identical(r$casa_donde, "hopdesk") && is.list(r$avisos_de_clientes$dev) && is.null(r[["avisos_de"]]) &&   # [[ ]]: $ would partially match avisos_de_clientes
        identical(r$avisos_de_clientes$dev$canales$bancos$base, "nadie"))
 }, error = function(e) ok(paste("C: no error:", conditionMessage(e)), FALSE))
 limpiar()

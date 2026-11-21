@@ -437,8 +437,12 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       if (is.null(leido)) { shiny::showNotification(tr("panorama.req_avisos.error_leer"), type = "error"); return() }
       ad$canales <- canales; ad$ver <- "todas"; ad$agrupar <- "nivel"; ad$yo <- leido$yo %||% NA_character_
       ad_poner(leido$filas)
-      shiny::showModal(shiny::modalDialog(
-        title = tr("panorama.avisos_de.titulo"), size = "l", easyClose = TRUE,
+      # hd_modal(): the window for a table (almost the whole window; the grid
+      # in window mode grows to its bottom and never pushes the footer out).
+      shiny::showModal(hd_modal(
+        titulo = tr("panorama.avisos_de.titulo"),
+        pie = shiny::tagList(shiny::modalButton(tr("comun.cancelar")),
+          shiny::actionButton(ns("ad_guardar"), tr("comun.guardar"), class = "btn btn-primary")),
         shiny::div(class = "pan-avisos-de",
           if (!staff) shiny::checkboxInput(ns("ad_mio"), tr("panorama.avisos_de.mio"), value = isTRUE(leido$pref$mio), width = "100%"),
           shiny::p(class = "text-muted small mb-2", tr(if (staff) "panorama.avisos_de.staff_nota" else "panorama.avisos_de.mio_ayuda")),
@@ -454,9 +458,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
               choiceValues = c("nivel", "puesto", "ninguno"),
               choiceNames = list(tr("panorama.avisos_de.por_nivel"), tr("panorama.avisos_de.por_puesto"),
                                  tr("panorama.avisos_de.sin_agrupar")))),
-          shiny::div(class = "pan-avisos-de-tabla", hd_table_ui(ns("avisos_de"), alto = "ventana"))),
-        footer = shiny::tagList(shiny::modalButton(tr("comun.cancelar")),
-          shiny::actionButton(ns("ad_guardar"), tr("comun.guardar"), class = "btn btn-primary"))))
+          shiny::div(class = "pan-avisos-de-tabla", hd_table_ui(ns("avisos_de"), alto = "ventana")))))
     }, ignoreInit = TRUE)
 
     ad_todas <- function(valor) {

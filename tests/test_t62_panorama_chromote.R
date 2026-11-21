@@ -57,7 +57,7 @@ tryCatch({
   ok("the ⚙ is in the feed's header", isTRUE(ev("!!document.querySelector('.pan-feed-cabeza .pan-feed-ajustes')")))
   clic(".pan-feed-cabeza .pan-feed-ajustes")
   ok("it opens 'De quién recibo avisos' with its grid",
-     espera("!!document.querySelector('.modal #pan-avisos_de-hdt') && /De quién recibo avisos/.test(document.querySelector('.modal .modal-title').textContent)"))
+     espera("!!document.querySelector('.modal #pan-avisos_de-hdt') && /De quién recibo avisos/.test(document.querySelector('.modal .hd-modal-titulo').textContent)"))
   foto("t62_mis_avisos")
 }, error = function(e) ok(paste("no error running the checks:", conditionMessage(e)), FALSE))
 limpiar()
