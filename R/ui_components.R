@@ -272,8 +272,8 @@ app_styles <- function() {
 
     /* ── Control bar — 3-zone grid ──────────────────────────────────────── */
     .control-bar {
-      border-bottom: 1px solid #dce3ef;
-      background: #fff;
+      border-bottom: 1px solid var(--hd-leg-borde-dce3ef);
+      background: var(--hd-superficie);
       position: sticky;
       top: 0;
       z-index: 100;
@@ -298,7 +298,7 @@ app_styles <- function() {
       position: absolute;
       right: 0; top: 0; bottom: 0;
       width: 28px;
-      background: linear-gradient(to right, transparent, #fff);
+      background: linear-gradient(to right, transparent, var(--hd-superficie));
       pointer-events: none;
       z-index: 2;
     }
@@ -318,8 +318,8 @@ app_styles <- function() {
       display: flex;
       align-items: center;
       gap: 8px;
-      background: #f4f7fc;
-      border: 1px solid #dde4f0;
+      background: var(--hd-superficie-2);
+      border: 1px solid var(--hd-leg-borde-dde4f0);
       border-radius: 9px;
       padding: 4px 12px;
       justify-self: center;
@@ -337,8 +337,8 @@ app_styles <- function() {
       padding: 3px 9px !important;
       font-size: 0.82rem !important;
       line-height: 1.3 !important;
-      background: #fff !important;
-      border-color: #d0d9ec !important;
+      background: var(--hd-superficie) !important;
+      border-color: var(--hd-leg-borde-fuerte-d0d9ec) !important;
     }
     .cb-field .form-select { padding-right: 26px !important; }
     /* Month input matches currency height */
@@ -367,10 +367,10 @@ app_styles <- function() {
       display: inline-flex; align-items: center;
       padding: 3px 12px;
       font-size: 0.78rem; font-weight: 500;
-      border: 1px solid #c5d0e6;
+      border: 1px solid var(--hd-leg-borde-fuerte-c5d0e6);
       border-radius: 20px;
-      background: #fff;
-      color: #4a5568;
+      background: var(--hd-superficie);
+      color: var(--hd-leg-texto-2-4a5568);
       cursor: pointer;
       transition: background 0.13s, border-color 0.13s, color 0.13s;
       white-space: nowrap;
@@ -378,20 +378,20 @@ app_styles <- function() {
       user-select: none;
     }
     .emp-toggle-btn:hover {
-      background: #f0f4ff;
-      border-color: #0A58CA;
-      color: #0A58CA;
+      background: var(--hd-hover);
+      border-color: var(--hd-primario);
+      color: var(--hd-primario);
     }
     .emp-toggle-btn.active {
-      background: #e8f0fe;
-      border-color: #0A58CA;
-      color: #0A58CA;
+      background: var(--hd-primario-suave);
+      border-color: var(--hd-primario);
+      color: var(--hd-primario);
       font-weight: 600;
     }
     .emp-toggle-btn.active.snapshot {
-      background: #fff3e0;
-      border-color: #e67e22;
-      color: #e67e22;
+      background: var(--hd-leg-aviso-fuerte-p14-fff3e0);
+      border-color: var(--hd-leg-aviso-fuerte-e67e22);
+      color: var(--hd-leg-aviso-fuerte-e67e22);
       font-weight: 600;
     }
 
@@ -613,14 +613,14 @@ app_styles <- function() {
       transform-origin: center;
     }
     #btn_refresh.refreshing {
-      border-color: #0d6efd !important;
-      color: #0d6efd !important;
-      background: rgba(13,110,253,0.06) !important;
+      border-color: var(--hd-leg-primario-0d6efd) !important;
+      color: var(--hd-leg-primario-0d6efd) !important;
+      background: color-mix(in srgb, var(--hd-leg-primario-0d6efd) 6%, transparent) !important;
     }
     #btn_refresh.refresh-done {
-      border-color: #198754 !important;
-      color: #198754 !important;
-      background: rgba(25,135,84,0.07) !important;
+      border-color: var(--hd-exito) !important;
+      color: var(--hd-exito) !important;
+      background: color-mix(in srgb, var(--hd-exito) 7%, transparent) !important;
     }
     /* ── Top-of-page progress bar (NProgress-style) ─────────────────────── */
     #app-refresh-bar {
@@ -628,7 +628,7 @@ app_styles <- function() {
       height: 2px; width: 0%;
       opacity: 0; z-index: 10000;
       pointer-events: none;
-      background: linear-gradient(90deg, #0d6efd, #0dcaf0);
+      background: linear-gradient(90deg, var(--hd-leg-primario-0d6efd), var(--hd-leg-info-0dcaf0));
       border-radius: 0 1px 1px 0;
     }
     #app-refresh-bar.hop-loading {
@@ -637,7 +637,7 @@ app_styles <- function() {
     }
     #app-refresh-bar.hop-done {
       opacity: 1; width: 100% !important;
-      background: #198754;
+      background: var(--hd-exito);
       transition: width .3s ease, background .2s ease;
     }
     #app-refresh-bar.hop-fade {
@@ -648,10 +648,10 @@ app_styles <- function() {
     /* ── Loading overlay ─────────────────────────────────────────────────── */
     .sap-loading-overlay {
       position: absolute; inset: 0;
-      background: rgba(255,255,255,0.85);
+      background: color-mix(in srgb, var(--hd-superficie) 85%, transparent);
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
-      z-index: 20; font-size: 1.1rem; color: #0A58CA; gap: 12px;
+      z-index: 20; font-size: 1.1rem; color: var(--hd-primario); gap: 12px;
     }
 
     /* ════════════════════════════════════════════════════════════════════════
@@ -665,7 +665,7 @@ app_styles <- function() {
       margin-bottom: 10px; flex-wrap: wrap;
     }
     .cal-title-left { display: flex; align-items: center; gap: 10px; }
-    .cal-title-hint { font-size: 0.78rem; color: #888; white-space: nowrap; }
+    .cal-title-hint { font-size: 0.78rem; color: var(--hd-leg-texto-2-888888); white-space: nowrap; }
     /* Cobros / Pagos toggle */
     .cal-ledger-toggle {
       display: inline-flex; border-radius: 8px; overflow: hidden;
@@ -929,8 +929,8 @@ app_styles <- function() {
     .ph-container { overflow: hidden; }
 
     .ph-summary-bar {
-      background: #fff;
-      border-bottom: 1px solid #dee2e6;
+      background: var(--hd-superficie);
+      border-bottom: 1px solid var(--hd-leg-borde-dee2e6);
       flex-shrink: 0;
     }
 
@@ -953,21 +953,21 @@ app_styles <- function() {
     }
 
     .ph-balance-row {
-      background: #f8f9fa;
-      border: 1px solid #dee2e6;
+      background: var(--hd-superficie-2);
+      border: 1px solid var(--hd-leg-borde-dee2e6);
     }
 
     .ph-balance-calc {
       min-width: 180px;
       padding-left: 1rem;
-      border-left: 2px solid #dee2e6;
+      border-left: 2px solid var(--hd-leg-borde-dee2e6);
     }
 
     /* ── Agenda de Hoy — supplier catalog match coloring ─────────────────── */
 
-    tr.ph-row-ok      { background-color: rgba(25, 135, 84,  0.06) !important; }
-    tr.ph-row-partial { background-color: rgba(255, 193, 7,  0.10) !important; }
-    tr.ph-row-nomatch { background-color: rgba(220, 53,  69, 0.07) !important; }
+    tr.ph-row-ok      { background-color: color-mix(in srgb, var(--hd-exito) 6%, transparent) !important; }
+    tr.ph-row-partial { background-color: color-mix(in srgb, var(--hd-leg-aviso-ffc107) 10%, transparent) !important; }
+    tr.ph-row-nomatch { background-color: color-mix(in srgb, var(--hd-leg-peligro-dc3545) 7%, transparent) !important; }
     tr.ph-row-confirmed td { text-decoration: line-through; opacity: 0.55; }
 
     .ph-dot {
@@ -978,9 +978,9 @@ app_styles <- function() {
       vertical-align: middle;
       flex-shrink: 0;
     }
-    .ph-dot-ok      { background-color: #198754; }
-    .ph-dot-partial { background-color: #ffc107; }
-    .ph-dot-nomatch { background-color: #dc3545; }
+    .ph-dot-ok      { background-color: var(--hd-exito); }
+    .ph-dot-partial { background-color: var(--hd-leg-aviso-ffc107); }
+    .ph-dot-nomatch { background-color: var(--hd-leg-peligro-dc3545); }
 
     .ph-alias-badge {
       font-size: 0.68rem;
@@ -997,9 +997,9 @@ app_styles <- function() {
       border-radius: 50%;
       flex-shrink: 0;
     }
-    .ph-ok      { background-color: #198754; }
-    .ph-partial { background-color: #ffc107; }
-    .ph-nomatch { background-color: #dc3545; }
+    .ph-ok      { background-color: var(--hd-exito); }
+    .ph-partial { background-color: var(--hd-leg-aviso-ffc107); }
+    .ph-nomatch { background-color: var(--hd-leg-peligro-dc3545); }
 
     /* ── Agenda de Hoy — company tab badges ─────────────────────────────── */
 
@@ -1030,12 +1030,12 @@ app_styles <- function() {
     /* MXN = terracotta, USD = navy — same palette as Bancos card borders */
     .ph-ctr-mxn {
       background: #C0674A;
-      color: #fff;
+      color: var(--hd-texto-inverso);
     }
 
     .ph-ctr-usd {
       background: #185FA5;
-      color: #fff;
+      color: var(--hd-texto-inverso);
     }
 
     .ph-ctr-cur {
@@ -1046,7 +1046,7 @@ app_styles <- function() {
 
     .ph-ctr-other {
       background: #5a6373;
-      color: #fff;
+      color: var(--hd-texto-inverso);
     }
 
     /* active tab: slightly deeper shade to keep contrast on lighter button bg */
@@ -1065,9 +1065,9 @@ app_styles <- function() {
     }
     .settings-sidebar .btn.active,
     .settings-sidebar .btn:focus {
-      background-color: #e7f0ff;
-      border-color: #0A58CA;
-      color: #0A58CA;
+      background-color: var(--hd-primario-suave);
+      border-color: var(--hd-primario);
+      color: var(--hd-primario);
     }
 
     /* No scroll of its own (T09): the window scrolls a long panel, and the
@@ -1108,7 +1108,7 @@ app_styles <- function() {
     .prov-mapeo summary { cursor: pointer; }
     .prov-resumen-opciones .form-group { margin-bottom: 0; }
 
-    .catalogo-form { border-color: #dee2e6 !important; }
+    .catalogo-form { border-color: var(--hd-leg-borde-dee2e6) !important; }
 
     #cat_alias_counter { display: block; margin-top: 2px; }
 
@@ -1120,8 +1120,8 @@ app_styles <- function() {
 
     /* ── Panel Tiers ── */
     .tiers-header {
-      background: linear-gradient(120deg, #0d1b3e 0%, #1b3d7a 100%);
-      color: #fff;
+      background: linear-gradient(120deg, var(--hd-leg-oscuro-fondo-0d1b3e) 0%, var(--hd-leg-oscuro-borde-1b3d7a) 100%);
+      color: var(--hd-leg-oscuro-texto-ffffff);
       padding: 20px 28px 16px;
       border-radius: 10px;
       margin-bottom: 20px;
@@ -1134,8 +1134,8 @@ app_styles <- function() {
       font-weight: 800;
       letter-spacing: 1.5px;
       text-transform: uppercase;
-      background: rgba(255,255,255,0.15);
-      border: 1px solid rgba(255,255,255,0.3);
+      background: color-mix(in srgb, var(--hd-leg-oscuro-texto-ffffff) 15%, transparent);
+      border: 1px solid color-mix(in srgb, var(--hd-leg-oscuro-texto-ffffff) 30%, transparent);
       padding: 3px 10px;
       border-radius: 20px;
     }
@@ -1144,12 +1144,12 @@ app_styles <- function() {
       align-items: center;
       justify-content: space-between;
       padding: 7px 12px;
-      border-bottom: 1px solid #f0f0f0;
+      border-bottom: 1px solid var(--hd-leg-borde-f0f0f0);
       font-size: 0.88rem;
     }
     .tiers-perm-row:last-child { border-bottom: none; }
-    .tiers-perm-default { color: #9ca3af; font-size: 0.75rem; }
-    .tiers-perm-override { color: #0a58ca; font-weight: 600; font-size: 0.75rem; }
+    .tiers-perm-default { color: var(--hd-texto-tenue); font-size: 0.75rem; }
+    .tiers-perm-override { color: var(--hd-primario); font-weight: 600; font-size: 0.75rem; }
 
     /* Config. de Tiers cards — collapse shiny wrapper margins so rows stay compact */
     .tiers-cfg-body .form-group { margin-bottom: 0 !important; }
@@ -1157,9 +1157,9 @@ app_styles <- function() {
 
     /* ── Pasivos provisions ──────────────────────────────────────────────── */
     .pasivos-provision {
-      border: 2px dashed #6b7280;
+      border: 2px dashed var(--hd-texto-2);
       opacity: 0.78;
-      background-color: #f9fafb;
+      background-color: var(--hd-superficie-2);
       position: relative;
     }
     .pasivos-provision::before {
@@ -1167,9 +1167,9 @@ app_styles <- function() {
       position: absolute;
       top: 2px; left: 4px;
       font-size: 10px; font-weight: 700;
-      color: #6b7280;
+      color: var(--hd-texto-2);
       background: white;
-      border: 1px solid #6b7280;
+      border: 1px solid var(--hd-texto-2);
       border-radius: 50%;
       width: 14px; height: 14px;
       text-align: center; line-height: 12px;

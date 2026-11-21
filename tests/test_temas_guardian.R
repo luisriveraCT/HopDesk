@@ -82,7 +82,7 @@ archivos <- c("app.R",
   "R/tier_registry.R" = 8L,
   "R/tiers_module.R" = 36L,
   "R/treasury_map_module.R" = 4L,    # stage 4: only the 4 transparent #00000000 of vis.js (exempt)
-  "R/ui_components.R" = 70L,          # TEMA-P1 (-2), TEMA 2b (-5), stage 4: Calendario (-125), Notas (-35)
+  "R/ui_components.R" = 6L,           # stage 4: only the currency pills .ph-ctr-* (rest + active), the palette Bancos keeps (exempt)
   "www/hdtable.css" = 23L,
   "www/overlay_init.js" = 15L,
   "www/panorama.css" = 4L,
@@ -235,7 +235,7 @@ ok("the generated CSS puts the default theme on :root",
 # A migration (stage 4) may add legacy tokens, but only by removing at least
 # as many hand-written colours: raise .TOPE_LEGADO and lower .TRINQUETE in
 # the same commit. Their sum never grows. Then the legacy only shrinks.
-.TOPE_LEGADO   <- 136L   # stage 4: cashflow_preview.css (70 -> 0) +22, pasivos_table_styles.R (39 -> 4) +13; TEMA-P1: pasivos' dead CSS gone, -13; treasury_map_module.R (76 -> 4) +37; bancos_module.R (62 -> 11) +18; cashflow_export_module.R (203 -> 0) +18, its tags to etq-* -2; ui_components.R Calendario (-125) +36, Notas (-35) +9
+.TOPE_LEGADO   <- 145L   # stage 4: cashflow_preview.css (70 -> 0) +22, pasivos_table_styles.R (39 -> 4) +13; TEMA-P1: pasivos' dead CSS gone, -13; treasury_map_module.R (76 -> 4) +37; bancos_module.R (62 -> 11) +18; cashflow_export_module.R (203 -> 0) +18, its tags to etq-* -2; ui_components.R Calendario (-125) +36, Notas (-35) +9; the rest (-64) +9
 .TOTAL_INICIAL <- 1338L   # sum(.TRINQUETE) + .TOPE_LEGADO on e2d3882 + TEMA stage 1
 leg <- tema$.HD_LEGADO
 ok(sprintf("legacy tokens: %d (ratchet %d)", length(leg), .TOPE_LEGADO), length(leg) <= .TOPE_LEGADO)
