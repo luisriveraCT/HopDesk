@@ -10,6 +10,9 @@
 # Screenshots (T70_FOTOS) for the report.
 # Run from the repo root:  Rscript tests/test_t70_asistente_chromote.R
 # =============================================================================
+cat("=== test_t70_asistente_chromote ===
+
+")
 .pass <- 0L; .fail <- 0L
 ok <- function(label, cond) {
   if (isTRUE(cond)) { cat(" PASS:", label, "\n"); .pass <<- .pass + 1L }
@@ -51,7 +54,6 @@ caja_visible <- function() isTRUE(ev("(function(){ var c = document.querySelecto
 # run against dev once typed into one). Checked before every screenshot.
 sin_login <- function(donde) ok(sprintf("%s: no login form on screen", donde),
   !isTRUE(ev("!!document.getElementById('auth-user_id') || !!document.querySelector('input[type=password]')")))
-hasta_terminos <- function() {
 fecha_js <- function(id, f) ev(sprintf("(function(){ var i = $('#%s input'); var dp = i.bsDatepicker ? 'bsDatepicker' : 'datepicker';
   i[dp]('update', '%s'); i.trigger('change'); return i.val(); })()", id, f))
 texto <- function(sel) ev(sprintf("(function(){ var e = document.querySelector(%s); return e ? e.innerText : ''; })()", jsonlite::toJSON(sel, auto_unbox = TRUE)))
@@ -89,8 +91,11 @@ tryCatch({
   ok("Revisión: 'Nota' with the note", grepl("Nota", s, fixed = TRUE) && grepl("Pagar por transferencia a la cuenta 1234", s, fixed = TRUE))
   Sys.sleep(1.5)
   fechas <- jsonlite::fromJSON(ev("JSON.stringify([].map.call(document.querySelectorAll('.modal [id$=-hdt] tbody tr'), function(r){ return r.innerText; }))"))
-  ff <- suppressWarnings(as.Date(regmatches(fechas, regexpr("[0-9]{2}/[0-9]{2}/[0-9]{4}", fechas)), "%d/%m/%Y"))
-  ok(sprintf("Revisión: the preview has rows (%d) and none after the end", length(ff)), length(ff) > 0L && all(ff <= as.Date(fin)))
+  # the engine's date format: "1 dic 2026"
+  meses <- c(ene = 1, feb = 2, mar = 3, abr = 4, may = 5, jun = 6, jul = 7, ago = 8, sep = 9, oct = 10, nov = 11, dic = 12)
+  m <- regmatches(fechas, regexec("^[[:space:]]*([0-9]{1,2}) ([a-z]{3})[a-z.]* ([0-9]{4})", fechas))
+  ff <- as.Date(vapply(m, function(x) if (length(x) == 4L) sprintf("%s-%02d-%02d", x[4], meses[[x[3]]], as.integer(x[2])) else NA_character_, character(1)))
+  ok(sprintf("Revisión: the preview has rows (%d) and none after the end", length(ff)), length(ff) > 0L && !anyNA(ff) && all(ff <= as.Date(fin)))
   foto("T70_D_revision")
 }, error = function(e) ok(paste("no error running the checks:", conditionMessage(e)), FALSE))
 limpiar()
