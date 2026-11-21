@@ -41,6 +41,12 @@ BASE <- normalizePath(BASE, winslash = "/"); RAMA <- normalizePath(RAMA, winslas
 SALIDA <- Sys.getenv("TEMA_SALIDA", file.path(tempdir(), "tema_clasico"))
 dir.create(SALIDA, showWarnings = FALSE, recursive = TRUE)
 LIMITE <- as.numeric(Sys.getenv("ARR_LIMITE", "300"))
+# Each tab is measured only once no visible output is still recalculating
+# (2026-11-20: the dev took 30-60 s to draw Agenda de Hoy, master and
+# branch alike, and a 7 s wait compared a half-drawn tab). Generous cap.
+ESPERA_DATOS <- as.numeric(Sys.getenv("TEMA_ESPERA_DATOS", "180"))
+RECALCULANDO_JS <- "Array.prototype.filter.call(document.querySelectorAll('.recalculating'),
+  function(e){ return e.offsetParent !== null; }).length"
 # Colours (tests/helpers/tema_comparar_estilos.R): the same within ΔE76
 # TEMA_DE_MAX (2 by default, Coordinador 2026-11-20; 0 = strict) and alpha
 # 0.01. Each colour that moved but passes is a warning, listed at the end.
@@ -193,6 +199,11 @@ recorrer <- function(raiz, etiqueta, quien) {
     ev(sprintf("document.querySelector(\".nav-link[data-value='%s']\").click(); true", v))
     Sys.sleep(1); menu(FALSE)
     Sys.sleep(7)   # data drawn (R takes its time on a busy machine)
+    quieta <- poll_until(function() identical(tryCatch(as.integer(ev(RECALCULANDO_JS)), error = function(x) NA_integer_), 0L),
+                         timeout_s = ESPERA_DATOS, interval_s = 1)
+    if (!ok(sprintf("[%s · %s] %s: nothing still recalculating before measuring (cap %d s)", etiqueta, quien,
+                    PESTANAS[[v]], as.integer(ESPERA_DATOS)), quieta)) next
+    Sys.sleep(2)   # what the last output drew settles
     ev("window.scrollTo(0, 0); document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
     Sys.sleep(1)
     res[[v]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
