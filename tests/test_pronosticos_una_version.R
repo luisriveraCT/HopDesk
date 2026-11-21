@@ -46,6 +46,7 @@ ok("R/forecasting_service.R is gone", !file.exists("R/forecasting_service.R"))
 source("tests/helpers/aislar_global.R")
 arrancar <- function(como) callr::r(function(raiz, como, FN, sin_red) {
   setwd(raiz); options(keep.source = FALSE)
+  options(hopdesk.sin_s3 = TRUE)   # T74: R options do not reach callr children; no S3 on purpose
   Sys.unsetenv("HOPDESK_PRODUCTION")
   if (como == "shinyapps") {
     # shiny:::shinyAppDir_appR, as shinyapps.io (and runApp) starts it.

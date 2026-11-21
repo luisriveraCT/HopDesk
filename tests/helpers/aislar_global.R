@@ -41,6 +41,11 @@ local({
              no_proxy = "127.0.0.1,localhost", NO_PROXY = "127.0.0.1,localhost")
   Sys.unsetenv(c("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"))
   Sys.setenv(HOPDESK_SIN_COPIA_DEV = "1")
+  # T74: global.R refuses to start without its S3 variables; a clean worktree
+  # has no .Renviron (git ignores it). This process loads global.R with no S3
+  # on purpose, so it says so: .check_env_vars() then only warns. An R
+  # option, not an env var -- a host's variables can never switch it on.
+  options(hopdesk.sin_s3 = TRUE)
 })
 
 aislar_global_sin_red <- function() {

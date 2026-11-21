@@ -603,25 +603,28 @@ S3_KEYS <- list(
   tiers_config                    = "tiers_config.rds"
 )
 
-# Validate required env vars and configure AWS credentials at startup.
-# CLIENT_ID drives all credential lookups — see R/persistence.R for full convention.
+# Validate required env vars at startup. CLIENT_ID drives all credential
+# lookups — see R/persistence.R for full convention.
+# T74: fails CLOSED. On a host where the variables are typed in by hand
+# (Connect Cloud: they do not travel in .Renviron), one forgotten variable
+# used to give an app that opened "empty" with only a warning in the log;
+# now it refuses to start (rule 16). The message names what is missing,
+# never a value. A harness or script that loads this file without S3 on
+# purpose says so with options(hopdesk.sin_s3 = TRUE): it then only warns.
+HD_ENV_REQUERIDAS <- c("CLIENT_ID", "S3_BUCKET", "AWS_ACCESS_KEY_ID",
+                       "AWS_SECRET_ACCESS_KEY", "AWS_DEFAULT_REGION")
 .check_env_vars <- function() {
-  # CLIENT_ID must be present — it is the only deployment-specific variable
-  if (!nzchar(Sys.getenv("CLIENT_ID"))) {
-    warning("CLIENT_ID is not set. S3 persistence will not work.\n",
-            "Add CLIENT_ID=<slug> to your .Renviron (e.g. CLIENT_ID=networks).",
-            call. = FALSE)
+  missing <- HD_ENV_REQUERIDAS[!nzchar(Sys.getenv(HD_ENV_REQUERIDAS))]
+  if (!length(missing)) return(invisible(TRUE))
+  if (isTRUE(getOption("hopdesk.sin_s3"))) {
+    warning("Missing env vars (options(hopdesk.sin_s3 = TRUE), so only a warning): ",
+            paste(missing, collapse = ", "), "\nS3 persistence will not work.", call. = FALSE)
     return(invisible(FALSE))
   }
-
-  required <- c("S3_BUCKET", "AWS_ACCESS_KEY_ID",
-                "AWS_SECRET_ACCESS_KEY", "AWS_DEFAULT_REGION")
-  missing  <- required[!nzchar(Sys.getenv(required))]
-  if (length(missing))
-    warning("Missing env vars: ", paste(missing, collapse = ", "),
-            "\nS3 persistence will not work.", call. = FALSE)
-
-  invisible(TRUE)
+  stop("HopDesk will not start: missing env vars: ", paste(missing, collapse = ", "),
+       ".\nSet them in .Renviron or in the host's variables (Connect Cloud: Settings > Variables).",
+       "\nA test or script that runs without S3 on purpose sets options(hopdesk.sin_s3 = TRUE) first.",
+       call. = FALSE)
 }
 .check_env_vars()
 

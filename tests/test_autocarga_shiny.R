@@ -15,6 +15,7 @@ test_that("R/ carga en el orden alfabético de shiny::loadSupport", {
   # It inherits this one's environment (its own lock, no network).
   r <- callr::r(function(raiz, sin_red) {
     Sys.unsetenv("HOPDESK_PRODUCTION")
+    options(hopdesk.sin_s3 = TRUE)   # T74: R options do not reach callr children; no S3 on purpose
     tryCatch({
       avisos <- character()
       withCallingHandlers(
