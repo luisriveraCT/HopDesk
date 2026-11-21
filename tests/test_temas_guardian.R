@@ -82,7 +82,7 @@ archivos <- c("app.R",
   "R/tier_registry.R" = 8L,
   "R/tiers_module.R" = 36L,
   "R/treasury_map_module.R" = 4L,    # stage 4: only the 4 transparent #00000000 of vis.js (exempt)
-  "R/ui_components.R" = 230L,         # TEMA-P1 (-2), then TEMA 2b: the top bar to barra-texto (-5)
+  "R/ui_components.R" = 105L,         # TEMA-P1 (-2), TEMA 2b (-5), stage 4: Calendario (-125)
   "www/hdtable.css" = 23L,
   "www/overlay_init.js" = 15L,
   "www/panorama.css" = 4L,
@@ -175,7 +175,9 @@ contraste <- tema$tema_contraste
   c("cobro", "superficie"), c("pago", "superficie"), c("provision", "superficie"),
   c("texto", "seleccion"), c("texto", "hover"),
   c("etq-a-texto", "etq-a-pastilla"), c("etq-b-texto", "etq-b-pastilla"),
-  c("etq-c-texto", "etq-c-pastilla")
+  c("etq-c-texto", "etq-c-pastilla"),
+  c("modo-pago", "superficie"), c("modo-pago", "modo-pago-suave"),
+  c("primario-texto", "modo-pago")
 )
 # Clásico pairs that fail today (its values are what the app has): they may
 # not get worse, and a migration that fixes one removes it from here.
@@ -233,7 +235,7 @@ ok("the generated CSS puts the default theme on :root",
 # A migration (stage 4) may add legacy tokens, but only by removing at least
 # as many hand-written colours: raise .TOPE_LEGADO and lower .TRINQUETE in
 # the same commit. Their sum never grows. Then the legacy only shrinks.
-.TOPE_LEGADO   <- 93L   # stage 4: cashflow_preview.css (70 -> 0) +22, pasivos_table_styles.R (39 -> 4) +13; TEMA-P1: pasivos' dead CSS gone, -13; treasury_map_module.R (76 -> 4) +37; bancos_module.R (62 -> 11) +18; cashflow_export_module.R (203 -> 0) +18, its tags to etq-* -2
+.TOPE_LEGADO   <- 127L   # stage 4: cashflow_preview.css (70 -> 0) +22, pasivos_table_styles.R (39 -> 4) +13; TEMA-P1: pasivos' dead CSS gone, -13; treasury_map_module.R (76 -> 4) +37; bancos_module.R (62 -> 11) +18; cashflow_export_module.R (203 -> 0) +18, its tags to etq-* -2; ui_components.R Calendario (-125) +36
 .TOTAL_INICIAL <- 1338L   # sum(.TRINQUETE) + .TOPE_LEGADO on e2d3882 + TEMA stage 1
 leg <- tema$.HD_LEGADO
 ok(sprintf("legacy tokens: %d (ratchet %d)", length(leg), .TOPE_LEGADO), length(leg) <= .TOPE_LEGADO)

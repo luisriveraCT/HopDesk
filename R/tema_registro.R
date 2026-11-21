@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 9L
+HD_TEMAS_CSS_VERSION <- 10L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -127,6 +127,11 @@ HD_TEMAS <- list(
       info               = "#0A58CA", `info-suave`    = "#E8F0FE",
       cobro              = "#1F5FD1",   # the table engine's (--hdt-cobro)
       pago               = "#15804A",   # the table engine's (--hdt-pago)
+      # The Calendario's Pagos mode (Cobros is primario): today's brown.
+      `modo-pago`        = "#7B4F2E",
+      `modo-pago-suave`  = "#F5EDE6",
+      `modo-pago-borde`  = "#EBD9CE",
+      `modo-pago-dato`   = "#D4A98C",
       provision          = "#7C3AED",   # 8
       seleccion          = "#D8E5FF",   # the table engine's (--hdt-sel)
       hover              = "#F0F4FF",   # the table engine's (--hdt-hover)
@@ -181,6 +186,11 @@ HD_TEMAS <- list(
       info               = "#1E5B63", `info-suave`    = "#E2EEEF",
       cobro              = "#24508F",
       pago               = "#2F6B4F",
+      # The Calendario's Pagos mode: Panorama's ambar (pago is green here, = exito).
+      `modo-pago`        = "#9A4524",   # ambar-fg
+      `modo-pago-suave`  = "#F7E9E1",   # ambar-bg
+      `modo-pago-borde`  = "#E8CBBB",   # ambar-bd
+      `modo-pago-dato`   = "#D9B19C",
       provision          = "#6B3358",   # lila-fg
       seleccion          = "#E3E8F0",
       hover              = "#F3F1EA",
@@ -228,34 +238,52 @@ HD_TEMAS <- list(
   `acento-p35-fed7aa` = "#FED7AA",
   `acento-p8-fff7ed` = "#FFF7ED",
   `aviso-e0a100` = "#E0A100",
+  `aviso-f0a05a` = "#F0A05A",
   `aviso-fde047` = "#FDE047",
+  `aviso-ffc107` = "#FFC107",
   `aviso-fuerte-fd7e14` = "#FD7E14",
+  `aviso-fuerte-p6-fff8f0` = "#FFF8F0",
   `aviso-suave-fef9c3` = "#FEF9C3",
   `aviso-texto-664d03` = "#664D03",
+  `aviso-texto-7a3d00` = "#7A3D00",
   `aviso-texto-7a5c00` = "#7A5C00",
   `aviso-texto-854d0e` = "#854D0E",
   `aviso-texto-997404` = "#997404",
+  `borde-d0dff7` = "#D0DFF7",
+  `borde-d6e0f0` = "#D6E0F0",
   `borde-dde4ed` = "#DDE4ED",
+  `borde-dde7f7` = "#DDE7F7",
   `borde-dee2e6` = "#DEE2E6",
   `borde-e0e0e0` = "#E0E0E0",
   `borde-e8ecf2` = "#E8ECF2",
   `borde-f3f4f6` = "#F3F4F6",
   `borde-fuerte-adb5bd` = "#ADB5BD",
   `borde-fuerte-b0c6de` = "#B0C6DE",
+  `borde-fuerte-b8ccde` = "#B8CCDE",
+  `borde-fuerte-d0d9ec` = "#D0D9EC",
   `borde-fuerte-d1d5db` = "#D1D5DB",
   `encabezado-1a2e5a` = "#1A2E5A",
   `encabezado-borde-0f1e3d` = "#0F1E3D",
   `encabezado-hover-2563a8` = "#2563A8",
   `encabezado-hover-4a6fa5` = "#4A6FA5",
+  `etq-a-fila-fff5f5` = "#FFF5F5",
   `etq-a-texto-c62828` = "#C62828",
+  `etq-a-texto-p68-e57373` = "#E57373",
+  `etq-b-fila-fff3ec` = "#FFF3EC",
   `etq-b-texto-e65100` = "#E65100",
+  `etq-b-texto-p79-e8874a` = "#E8874A",
+  `etq-c-fila-fffbf0` = "#FFFBF0",
+  `etq-c-texto-p78-f0c040` = "#F0C040",
   `exito-047857` = "#047857",
   `exito-059669` = "#059669",
   `exito-10b981` = "#10B981",
+  `exito-p46-a3d9b3` = "#A3D9B3",
   `exito-suave-6ee7b7` = "#6EE7B7",
   `exito-suave-d1fae5` = "#D1FAE5",
+  `exito-suave-e9f7ef` = "#E9F7EF",
   `exito-texto-064e3b` = "#064E3B",
   `exito-texto-0f5132` = "#0F5132",
+  `exito-texto-155724` = "#155724",
   `exito-texto-1a5c2e` = "#1A5C2E",
   `exito-texto-1b3a2a` = "#1B3A2A",
   `exito-texto-2d6a4f` = "#2D6A4F",
@@ -263,6 +291,11 @@ HD_TEMAS <- list(
   `foco-color-1e3a5f` = "#1E3A5F",
   `foco-color-4a88c7` = "#4A88C7",
   `hover-f0f4fa` = "#F0F4FA",
+  `info-suave-e8f4fd` = "#E8F4FD",
+  `modo-pago-p19-ede0d6` = "#EDE0D6",
+  `modo-pago-p20-f0e0d5` = "#F0E0D5",
+  `modo-pago-p4-fdf8f5` = "#FDF8F5",
+  `modo-pago-p7-fdf5ee` = "#FDF5EE",
   `oscuro-borde-1e2733` = "#1E2733",
   `oscuro-borde-2e4a6e` = "#2E4A6E",
   `oscuro-borde-3a5a80` = "#3A5A80",
@@ -286,14 +319,20 @@ HD_TEMAS <- list(
   `peligro-texto-881337` = "#881337",
   `peligro-texto-991b1b` = "#991B1B",
   `peligro-texto-dc3545` = "#DC3545",
+  `primario-1a6cc4` = "#1A6CC4",
   `primario-6366f1` = "#6366F1",
+  `primario-hover-0344a8` = "#0344A8",
+  `primario-p42-9db8e8` = "#9DB8E8",
   `primario-suave-d6e4f0` = "#D6E4F0",
   `primario-suave-d8e6f5` = "#D8E6F5",
   `sombra-000000-0351f6` = "0 -4px 10px rgba(0,0,0,.12)",
   `sombra-000000-0504d0` = "0 1px 4px rgba(0,0,0,.05)",
   `sombra-000000-17659d` = "0 2px 6px rgba(0,0,0,0.06)",
   `sombra-000000-44cce5` = "0 4px 20px rgba(0,0,0,0.45)",
+  `sombra-000000-e7d0fb` = "0 3px 10px rgba(0,0,0,0.10)",
+  `sombra-0a2864-404c10` = "0 6px 24px rgba(10,40,100,0.13)",
   `superficie-2-e2e8f0` = "#E2E8F0",
+  `superficie-2-f1f3f5` = "#F1F3F5",
   `texto-000000` = "#000000",
   `texto-0d1b2a` = "#0D1B2A",
   `texto-0d2240` = "#0D2240",
@@ -304,17 +343,22 @@ HD_TEMAS <- list(
   `texto-2-374b5f` = "#374B5F",
   `texto-2-475569` = "#475569",
   `texto-2-495057` = "#495057",
+  `texto-2-555555` = "#555555",
   `texto-2-606060` = "#606060",
   `texto-2-64748b` = "#64748B",
   `texto-2-6c757d` = "#6C757D",
+  `texto-2-6c8ebf` = "#6C8EBF",
+  `texto-2-888888` = "#888888",
   `texto-212529` = "#212529",
   `texto-222222` = "#222222",
+  `texto-2c3e50` = "#2C3E50",
   `texto-333333` = "#333333",
   `texto-444444` = "#444444",
   `texto-555555` = "#555555",
   `texto-tenue-888888` = "#888888",
   `texto-tenue-94a3b8` = "#94A3B8",
   `texto-tenue-999999` = "#999999",
+  `texto-tenue-9ba8b5` = "#9BA8B5",
   `texto-tenue-aaaaaa` = "#AAAAAA"
 )
 

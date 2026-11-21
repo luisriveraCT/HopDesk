@@ -113,6 +113,10 @@
   --hd-info-suave: #E8F0FE;
   --hd-cobro: #1F5FD1;
   --hd-pago: #15804A;
+  --hd-modo-pago: #7B4F2E;
+  --hd-modo-pago-suave: #F5EDE6;
+  --hd-modo-pago-borde: #EBD9CE;
+  --hd-modo-pago-dato: #D4A98C;
   --hd-provision: #7C3AED;
   --hd-seleccion: #D8E5FF;
   --hd-hover: #F0F4FF;
@@ -172,6 +176,10 @@
   --hd-info-suave: #E2EEEF;
   --hd-cobro: #24508F;
   --hd-pago: #2F6B4F;
+  --hd-modo-pago: #9A4524;
+  --hd-modo-pago-suave: #F7E9E1;
+  --hd-modo-pago-borde: #E8CBBB;
+  --hd-modo-pago-dato: #D9B19C;
   --hd-provision: #6B3358;
   --hd-seleccion: #E3E8F0;
   --hd-hover: #F3F1EA;
