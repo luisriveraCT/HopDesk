@@ -972,6 +972,7 @@ req_avisos_destinatarios <- function(usuarios, config, prefs, interesados, autor
       base <- as.character(unlist(k$base))[1]
       if (length(base) != 1L || is.na(base) || !base %in% c("todos", "nadie")) base <- "nadie"
       cambia <- unique(trimws(as.character(unlist(k$cambia))))
+      cambia <- cambia[!is.na(cambia) & nzchar(cambia)]
       # Base "todos" and an author without account_code (codigos_de empty):
       # everyone gets it, as T62's "todas" did.
       de_otros <- if (identical(base, "todos")) !length(codigos_de) || any(!codigos_de %in% cambia)

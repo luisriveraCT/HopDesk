@@ -211,6 +211,36 @@ test_that("4: an avisos_de saved WITHOUT the req channel: its default is 'nadie'
   expect_identical(d, "dani")             # caro: no req channel and mio FALSE; dani: hers (mio by default)
 })
 
+test_that("4: guardian -- req_avisos_destinatarios() reads avisos_de exactly as avisos_de_normalizar() does", {
+  # The defaults live in two places (requisiciones_persistence.R reads on its
+  # own so its loaders don't need panorama_datos.R): for every shape, who gets
+  # it must match normalize()$mio and $canales$req.
+  formas <- list(
+    vacio         = list(),
+    mio_false     = list(mio = FALSE),
+    sin_canales   = list(v = 1, mio = TRUE, canales = list()),
+    req_sin_base  = list(canales = list(req = list(cambia = list("A1")))),
+    base_invalida = list(canales = list(req = list(base = "algunos", cambia = list("A1")))),
+    cambia_uno    = list(mio = FALSE, canales = list(req = list(base = "nadie", cambia = list("A1")))),
+    cambia_vacio  = list(mio = FALSE, canales = list(req = list(base = "nadie", cambia = list("", "A1")))),
+    todos_menos   = list(mio = FALSE, canales = list(req = list(base = "todos", cambia = list("A1")))),
+    todos         = list(canales = list(req = list(base = "todos", cambia = list()))))
+  espera <- function(f, interesado, codigos) {
+    n <- avisos_de_normalizar(f); k <- n$canales$req
+    otros <- if (identical(k$base, "todos")) !length(codigos) || any(!codigos %in% k$cambia) else any(codigos %in% k$cambia)
+    (isTRUE(n$mio) && interesado) || isTRUE(otros)
+  }
+  sin <- U; sin$account_code[sin$username == "ana"] <- NA
+  for (nombre in names(formas)) for (interesado in c(TRUE, FALSE)) for (con_codigo in c(TRUE, FALSE)) {
+    usuarios <- if (con_codigo) U else sin
+    prefs <- prefs_df(caro = list(avisos_de = formas[[nombre]]))
+    got <- "caro" %in% req_avisos_destinatarios(usuarios, NULL, prefs, interesados = if (interesado) "caro" else character(),
+                                                autor = "ana", de_quien = "ana")
+    exp <- espera(formas[[nombre]], interesado, if (con_codigo) "A1" else character())
+    expect_identical(got, exp, info = sprintf("%s, interesado=%s, autor con codigo=%s", nombre, interesado, con_codigo))
+  }
+})
+
 test_that("4: base 'todos' and an author without account_code: everyone gets it (as T62's 'todas')", {
   sin <- U; sin$account_code[sin$username == "ana"] <- NA
   prefs <- prefs_df(caro = list(avisos_de = list(v = 1, mio = FALSE, canales = list(req = list(base = "todos", cambia = list("C1"))))))
