@@ -243,7 +243,9 @@ recorrer <- function(raiz, etiqueta, quien) {
   }
   # TEMA stage 4 (ui_components.R): the Calendario's Pagos mode and the open
   # notes panel are styles no tab shows by default. Both must open: a view
-  # that silently fails to open would compare nothing.
+  # that silently fails to open would compare nothing. The notes panel and its
+  # floating button are position: fixed, whose offsetParent is always null:
+  # visibility is getClientRects() there.
   if ("CAL" %in% names(res)) {
     menu(TRUE); Sys.sleep(0.5)
     ev("document.querySelector(\".nav-link[data-value='CAL']\").click(); true")
@@ -263,10 +265,10 @@ recorrer <- function(raiz, etiqueta, quien) {
       captura_marca(etiqueta, sprintf("%s_%s_CAL_AP", etiqueta, quien))
     }
     abre <- isTRUE(tryCatch(ev("(function(){ var b = Array.from(document.querySelectorAll('.notes-bar-btn'))
-      .filter(function(x){ return x.offsetParent !== null; })[0]; if (!b) return false; b.click(); return true; })()"),
+      .filter(function(x){ return x.getClientRects().length > 0; })[0]; if (!b) return false; b.click(); return true; })()"),
       error = function(x) FALSE))
     notas <- abre && poll_until(function() isTRUE(tryCatch(ev("(function(){ var w = document.querySelector('#notes_panel .notes-panel-wrapper');
-      return !!w && w.offsetParent !== null; })()"), error = function(x) FALSE)), timeout_s = 60, interval_s = 1)
+      return !!w && w.getClientRects().length > 0; })()"), error = function(x) FALSE)), timeout_s = 60, interval_s = 1)
     if (ok(sprintf("[%s · %s] Notas: the notes panel opens", etiqueta, quien), notas)) {
       Sys.sleep(2)
       ev("document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
