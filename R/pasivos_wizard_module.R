@@ -403,6 +403,9 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
     # provisions came out empty.
     .wiz_log(if (wiz$mode == "create") "liability.created" else "liability.edited",
              paste0("no provisions generated: ", err_detail))
+    # A liability created with 0 provisions is still a liability created:
+    # the team hears it like any other (the Coordinador, T72). Never throws.
+    if (wiz$mode == "create") avisos_actividad(shared$effective_client_id(), "crear_pasivo", user, list(cuerpo = liab_row$nombre %||% liab_row$empresa))
     shiny::showNotification(
       tr("tablas.pasivos.error_generar", detalle = err_detail),
       type = "error", duration = 15

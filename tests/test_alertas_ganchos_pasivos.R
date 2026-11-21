@@ -53,15 +53,15 @@ ok("S pasivos_table_module: one crear_provision hook, inside ppm_save, after `if
 
 pw <- readLines("R/pasivos_wizard_module.R", warn = FALSE, encoding = "UTF-8"); g <- ganchos("R/pasivos_wizard_module.R")
 aud <- grep('"liability.created" else "liability.edited"', pw, fixed = TRUE)
-ok("S wizard: two crear_pasivo hooks, only on create",
-   nrow(g) == 2L && all(g$accion == "crear_pasivo") && all(grepl('if (wiz$mode == "create")', pw[g$linea], fixed = TRUE)))
+ok("S wizard: three crear_pasivo hooks (0 provisions, provisions failed, full success; T72), only on create",
+   nrow(g) == 3L && all(g$accion == "crear_pasivo") && all(grepl('if (wiz$mode == "create")', pw[g$linea], fixed = TRUE)))
 # T72 added a third such audit (no provisions generated, the liability is
 # saved): each hook still comes right after its OWN audit -- the nearest one
 # above it -- and the second hook's audit lies after the first hook.
 propia <- function(l) { a <- aud[aud < l]; if (length(a)) max(a) else NA_integer_ }
-ok("S wizard: each one after its own liability.created audit (provisions failed, and full success)",
-   length(aud) >= 2L && nrow(g) == 2L && !anyNA(vapply(g$linea, propia, 1L)) &&
-     propia(g$linea[2]) > g$linea[1])
+ok("S wizard: each one after its own liability.created audit (0 provisions, provisions failed, full success)",
+   length(aud) == 3L && nrow(g) == 3L && !anyNA(vapply(g$linea, propia, 1L)) &&
+     propia(g$linea[2]) > g$linea[1] && propia(g$linea[3]) > g$linea[2])
 
 # ── B: when they fire ──────────────────────────────────────────────────────
 G <- new.env()
@@ -160,6 +160,16 @@ ok("B7 the wizard edits a liability: no aviso", isTRUE(G$res$ok) && !length(G$ho
 asistente(falla_provs = TRUE)
 ok("B8 created, but its provisions failed: the liability is saved, so it is announced once (P5)",
    identical(acciones(), "crear_pasivo"))
+generar_real <- pasivos_generate_provisions
+pasivos_generate_provisions <- function(...) .schema_pasivos_provision()
+asistente()
+pasivos_generate_provisions <- generar_real
+ok("B9 created with 0 provisions (T72): still a liability created, announced once",
+   isTRUE(G$res$ok) && identical(acciones(), "crear_pasivo") && identical(G$hooks[[1]]$params$cuerpo, "Renta oficina"))
+pasivos_generate_provisions <- function(...) .schema_pasivos_provision()
+asistente(mode = "edit")
+pasivos_generate_provisions <- generar_real
+ok("B9 an edit with 0 provisions: no aviso (only creating announces)", !length(G$hooks))
 
 s3_memoria_restaurar()
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
