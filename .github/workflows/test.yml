@@ -110,6 +110,28 @@ jobs:
           PASS_RE='^[[:space:]]*(PASS|\[PASS\])'
           FAIL_RE='^[[:space:]]*(FAIL|\[FAIL\]|ERROR|\[ERROR\])'
 
+          # Public annotations (T76b). The step summary cannot be read through
+          # GitHub's public API; annotations can, so a session without gh or a
+          # token can see what failed. They may be read by anyone: each one
+          # carries only check LABELS -- never the expected/got lines, the
+          # message after an [ERROR]'s " — ", or a bare "ERROR: <message>"
+          # line (a condition message can hold data). GitHub keeps at most 10
+          # error annotations per step, so it is one per failing runner, with
+          # up to 10 labels of ~200 characters, one per line (%0A).
+          ANN_RE='^[[:space:]]*(FAIL|\[FAIL\]|\[ERROR\])'
+          anotar() {   # $1 runner, $2 log, $3 exit status, $4 failing checks
+            local msg="" n=0 etiqueta linea
+            while IFS= read -r linea; do
+              etiqueta=$(printf '%s' "$linea" | sed -E 's/^[[:space:]]*(\[FAIL\]|\[ERROR\]|FAIL:?)[[:space:]]*//; s/ — .*$//')
+              etiqueta=${etiqueta:0:200}
+              etiqueta=${etiqueta//'%'/'%25'}
+              msg="${msg}${msg:+%0A}${etiqueta}"
+              n=$((n + 1))
+            done < <(grep -E "$ANN_RE" "$2" | head -n 10)
+            [ "$n" -eq 0 ] && msg="no FAIL line: the runner stopped before printing a result"
+            echo "::error title=$1 (exit $3%2C $4 failing)::$msg"   # %2C: a comma, escaped in a property
+          }
+
           OVERALL_STATUS=0
           # Failure detail blocks are buffered separately and appended AFTER the
           # full table below — writing them inline between table rows would
@@ -149,6 +171,7 @@ jobs:
             echo "| $name | $result | $pass_n | $fail_n |" >> "$GITHUB_STEP_SUMMARY"
 
             if [ "$status" -ne 0 ]; then
+              anotar "$name" "$log" "$status" "$fail_n"
               {
                 echo ""
                 echo "<details><summary>❌ <code>$name</code> — exit $status, $fail_n failing check(s)</summary>"
