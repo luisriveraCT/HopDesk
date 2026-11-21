@@ -19,7 +19,7 @@ cargar("R/persistence.R", "confirmaciones_vigentes")
 F_PIVOT  <- Sys.getenv("PIVOT_R",  "R/pasivos_table_pivot.R")
 F_STYLES <- Sys.getenv("STYLES_R", "R/pasivos_table_styles.R")
 F_TMOD   <- Sys.getenv("TMOD_R",   "R/pasivos_table_module.R")
-for (f in c("R/monedas.R", "R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
+for (f in c("R/monedas.R", "R/zona.R", "R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/pasivos_schemas.R", F_PIVOT, F_STYLES)) source(f)
 source("tests/helpers/pasivos_datos_prueba.R")
 

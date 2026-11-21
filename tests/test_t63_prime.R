@@ -15,7 +15,7 @@ for (f in c("R/pasivos_schemas.R", "R/bancos_persistence.R", "R/pasivos_persiste
             "R/pasivos_capabilities.R", "R/pasivos_audit.R", "R/forecasting_resolve.R",
             "R/policy_engine.R", "R/pasivos_engine.R", "R/pasivos_observers.R",
             "R/pasivos_wizard_validate.R", "R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R",
-            "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R", "R/pasivos_wizard_module.R",
+            "R/monedas.R", "R/zona.R", "R/hd_columnas.R", "R/hd_table.R", "R/pasivos_wizard_module.R",
             "R/pasivos_wizard_steps.R", "R/pasivos_rates.R"))
   suppressMessages(source(f))
 source("tests/helpers/hd_numero.R")   # T66: hd_numero_input()

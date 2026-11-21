@@ -32,7 +32,7 @@ extract <- function(file, names, env) {
 env <- new.env()
 # The Abono modal is hd_modal() + hd_table_ui() with tr() texts since T25:
 # the dictionary and the table engine, in the same environment.
-for (f in c("R/i18n.R", "R/monedas.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R"))
+for (f in c("R/i18n.R", "R/monedas.R", "R/zona.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R"))
   sys.source(f, envir = env)
 env$.i18n_dir <- file.path(getwd(), "www", "i18n")
 extract("R/bancos_module.R",         c(".cmap_lookup", ".company_name"), env)

@@ -14,7 +14,7 @@
 library(testthat)
 suppressPackageStartupMessages({ library(shiny) })
 `%||%` <- function(a, b) if (!is.null(a) && !all(is.na(a))) a else b
-for (f in c("R/i18n.R", "R/monedas.R", "R/pasivos_schemas.R", "R/pasivos_wizard_validate.R", "R/pasivos_wizard_steps.R")) suppressMessages(source(f))
+for (f in c("R/i18n.R", "R/monedas.R", "R/zona.R", "R/pasivos_schemas.R", "R/pasivos_wizard_validate.R", "R/pasivos_wizard_steps.R")) suppressMessages(source(f))
 source("tests/helpers/hd_numero.R")   # T66: hd_numero_input()
 html <- function(x) paste(as.character(x), collapse = "")
 base <- list(categoria = "financiero", flavor = "credito_simple", principal_original = 608763.35, tasa_tipo = "fija",

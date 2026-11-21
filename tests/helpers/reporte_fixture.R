@@ -22,7 +22,7 @@ Sys.Date <- function() REPORTE_HOY
 `%||%` <- function(a, b) if (is.null(a)) b else a
 # hd_columnas.R: the Pulse's axis uses the engine's compact format (T55b);
 # the amounts are monto_moneda()'s (monedas.R), so no fmt_money() here.
-for (f in c("R/i18n.R", "R/monedas.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R",
+for (f in c("R/i18n.R", "R/monedas.R", "R/zona.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R",
             "R/empresas_identidad.R", "R/data_pipeline.R", "R/reporte_module.R"))
   if (file.exists(f)) source(f, local = FALSE)
 .i18n_dir <- file.path(getwd(), "www", "i18n")

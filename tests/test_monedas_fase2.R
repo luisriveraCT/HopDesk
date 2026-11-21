@@ -22,7 +22,7 @@ cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALS
   if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
     eval(e, envir = globalenv())
 cargar("R/persistence.R", c("tag_label", ".normalize"))
-for (f in c("R/i18n.R", "R/monedas.R", "R/fx_banxico.R", "R/fx_tipos.R", "R/hd_registro.R", "R/hd_piezas.R",
+for (f in c("R/i18n.R", "R/monedas.R", "R/zona.R", "R/fx_banxico.R", "R/fx_tipos.R", "R/hd_registro.R", "R/hd_piezas.R",
             "R/hd_columnas.R", "R/hd_table.R", "R/cashflow_export_module.R", "R/cashflow_preview_module.R")) source(f)
 cargar("R/ui_components.R", c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_numero_texto", "hd_numero_deps",
                               "hd_numero_input", "hd_numero_update", "hd_numero_revisar"))   # T66
