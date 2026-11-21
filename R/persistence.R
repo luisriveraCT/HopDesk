@@ -381,28 +381,150 @@ modificar_hd_admin <- function(key, schema_fn, cambio)
 # does not list (ctas_*, CM12): strict read, cambio(fresco), .s3_write; the
 # schema only adds missing columns, none is dropped. permitir_reduccion is
 # for a change that removes rows on purpose (listed in the net's guardian).
-modificar_tabla_completa <- function(key, client_id, schema_fn, cambio, permitir_reduccion = FALSE) {
+modificar_tabla_completa <- function(key, client_id, schema_fn, cambio, permitir_reduccion = FALSE, evento = NULL) {
   if (is.null(client_id) || !nzchar(client_id)) stop("modificar_tabla_completa: sin client_id", call. = FALSE)
+  # T72-B: what changed, by id, for the log (vectorized). Defined HERE, inside
+  # the function, on purpose: tests and fixtures take this function alone
+  # (cargar() by pieces, the T69b lesson). Up to 50 rows and 300 characters a
+  # value in the detail; the counts are always whole. A column whose name
+  # looks like a secret is only "(cambió)", never copied; usuarios,
+  # username_index, pending_invites and erp_connections give counts only.
+  .t72_diferencia <- function(key, antes, despues) {
+    if (grepl("usuarios\\.rds$|username_index|pending_invites|erp_connections", key)) return(NULL)
+    if (!is.data.frame(antes) || !is.data.frame(despues) || !"id" %in% names(antes) || !"id" %in% names(despues))
+      return(NULL)
+    secreta <- function(cl) grepl("password|hash|pwd|token|secret|api_key|clave", cl, ignore.case = TRUE)
+    corta <- function(v, cl) {
+      if (secreta(cl)) return("(cambi\u00f3)")
+      if (is.null(v) || !length(v)) return(NULL)
+      if (is.list(v)) v <- v[[1]]
+      if (inherits(v, "POSIXct")) return(format(v, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"))
+      if (inherits(v, "Date")) return(format(v))
+      if (is.character(v) && length(v) == 1L && !is.na(v) && nchar(v) > 300L) return(paste0(substr(v, 1L, 300L), "\u2026"))
+      v
+    }
+    ids_a <- as.character(antes$id); ids_d <- as.character(despues$id)
+    nuevas   <- which(!ids_d %in% ids_a)
+    quitadas <- ids_a[!ids_a %in% ids_d]
+    id_c <- which(ids_d %in% ids_a); ia <- match(ids_d[id_c], ids_a)
+    cols <- setdiff(intersect(names(despues), names(antes)), "id")
+    cambia <- matrix(FALSE, length(id_c), length(cols), dimnames = list(NULL, cols))
+    for (cl in cols) {
+      a <- antes[[cl]][ia]; b <- despues[[cl]][id_c]
+      cambia[, cl] <- if (is.list(a) || is.list(b)) !mapply(identical, a, b, USE.NAMES = FALSE) else {
+        na_a <- is.na(a); na_b <- is.na(b)
+        # In their own type when both share it (fast); as text otherwise.
+        if (!identical(class(a), class(b)) || is.factor(a)) { a <- as.character(a); b <- as.character(b) }
+        (na_a != na_b) | (!na_a & !na_b & a != b)
+      }
+    }
+    filas_c <- which(rowSums(cambia) > 0L)
+    cambiadas <- list()
+    for (r in utils::head(filas_c, 50L)) {
+      d <- list()
+      for (cl in cols[cambia[r, ]])
+        d[[cl]] <- list(antes = corta(antes[[cl]][ia[r]], cl), despues = corta(despues[[cl]][id_c[r]], cl))
+      cambiadas[[ids_d[id_c[r]]]] <- d
+    }
+    fila <- function(i) { x <- as.list(despues[i, , drop = FALSE]); stats::setNames(lapply(names(x), function(cl) corta(x[[cl]], cl)), names(x)) }
+    list(n = c(nuevas = length(nuevas), cambiadas = length(filas_c), quitadas = length(quitadas)),
+         nuevas = lapply(utils::head(nuevas, 50L), fila), cambiadas = cambiadas,
+         quitadas = utils::head(quitadas, 50L))
+  }
   fresco <- .hd_admin_completar(.s3_leer_para_escribir(key, client_id), schema_fn)
   nuevo  <- cambio(fresco)
   if (identical(nuevo, fresco)) return(invisible(fresco))
-  if (isTRUE(permitir_reduccion)) .s3_write(nuevo, key, client_id = client_id, permitir_reduccion = TRUE)
-  else .s3_write(nuevo, key, client_id = client_id)
+  # T72-B: with an event, what changed goes with it -- one log entry, written
+  # by .s3_write() only after the upload worked (a refused write logs none).
+  # Without one, the call is exactly the one before T72-B (a test's own
+  # .s3_write() stand-in, with no `evento`, keeps working).
+  if (is.null(evento)) {
+    if (isTRUE(permitir_reduccion)) .s3_write(nuevo, key, client_id = client_id, permitir_reduccion = TRUE)
+    else .s3_write(nuevo, key, client_id = client_id)
+  } else {
+    evento$.diferencia <- tryCatch(.t72_diferencia(key, fresco, nuevo), error = function(e) NULL)
+    if (isTRUE(permitir_reduccion)) .s3_write(nuevo, key, client_id = client_id, permitir_reduccion = TRUE, evento = evento)
+    else .s3_write(nuevo, key, client_id = client_id, evento = evento)
+  }
   invisible(nuevo)
 }
 
 # Change a table starting from what S3 holds right now, never from a
 # session's copy: strict read, cambio(fresco), write. The generic form of
 # modificar_bancos_confirmados(). Returns the table written.
-modificar_tabla <- function(key, client_id, schema, cambio, permitir_reduccion = FALSE) {
+modificar_tabla <- function(key, client_id, schema, cambio, permitir_reduccion = FALSE, evento = NULL) {
   if (is.null(client_id) || !nzchar(client_id)) stop("modificar_tabla: sin client_id", call. = FALSE)
+  # T72-B: what changed, by id, for the log (vectorized). Defined HERE, inside
+  # the function, on purpose: tests and fixtures take this function alone
+  # (cargar() by pieces, the T69b lesson). Up to 50 rows and 300 characters a
+  # value in the detail; the counts are always whole. A column whose name
+  # looks like a secret is only "(cambió)", never copied; usuarios,
+  # username_index, pending_invites and erp_connections give counts only.
+  .t72_diferencia <- function(key, antes, despues) {
+    if (grepl("usuarios\\.rds$|username_index|pending_invites|erp_connections", key)) return(NULL)
+    if (!is.data.frame(antes) || !is.data.frame(despues) || !"id" %in% names(antes) || !"id" %in% names(despues))
+      return(NULL)
+    secreta <- function(cl) grepl("password|hash|pwd|token|secret|api_key|clave", cl, ignore.case = TRUE)
+    corta <- function(v, cl) {
+      if (secreta(cl)) return("(cambi\u00f3)")
+      if (is.null(v) || !length(v)) return(NULL)
+      if (is.list(v)) v <- v[[1]]
+      if (inherits(v, "POSIXct")) return(format(v, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"))
+      if (inherits(v, "Date")) return(format(v))
+      if (is.character(v) && length(v) == 1L && !is.na(v) && nchar(v) > 300L) return(paste0(substr(v, 1L, 300L), "\u2026"))
+      v
+    }
+    ids_a <- as.character(antes$id); ids_d <- as.character(despues$id)
+    nuevas   <- which(!ids_d %in% ids_a)
+    quitadas <- ids_a[!ids_a %in% ids_d]
+    id_c <- which(ids_d %in% ids_a); ia <- match(ids_d[id_c], ids_a)
+    cols <- setdiff(intersect(names(despues), names(antes)), "id")
+    cambia <- matrix(FALSE, length(id_c), length(cols), dimnames = list(NULL, cols))
+    for (cl in cols) {
+      a <- antes[[cl]][ia]; b <- despues[[cl]][id_c]
+      cambia[, cl] <- if (is.list(a) || is.list(b)) !mapply(identical, a, b, USE.NAMES = FALSE) else {
+        na_a <- is.na(a); na_b <- is.na(b)
+        # In their own type when both share it (fast); as text otherwise.
+        if (!identical(class(a), class(b)) || is.factor(a)) { a <- as.character(a); b <- as.character(b) }
+        (na_a != na_b) | (!na_a & !na_b & a != b)
+      }
+    }
+    filas_c <- which(rowSums(cambia) > 0L)
+    cambiadas <- list()
+    for (r in utils::head(filas_c, 50L)) {
+      d <- list()
+      for (cl in cols[cambia[r, ]])
+        d[[cl]] <- list(antes = corta(antes[[cl]][ia[r]], cl), despues = corta(despues[[cl]][id_c[r]], cl))
+      cambiadas[[ids_d[id_c[r]]]] <- d
+    }
+    fila <- function(i) { x <- as.list(despues[i, , drop = FALSE]); stats::setNames(lapply(names(x), function(cl) corta(x[[cl]], cl)), names(x)) }
+    list(n = c(nuevas = length(nuevas), cambiadas = length(filas_c), quitadas = length(quitadas)),
+         nuevas = lapply(utils::head(nuevas, 50L), fila), cambiadas = cambiadas,
+         quitadas = utils::head(quitadas, 50L))
+  }
   fresco <- leer_tabla_para_escribir(key, client_id, schema)
   nuevo  <- .normalize(cambio(fresco), schema)
   if (isTRUE(all.equal(nuevo, fresco, check.attributes = FALSE))) return(invisible(fresco))
-  if (isTRUE(permitir_reduccion)) .s3_write(nuevo, key, client_id = client_id, permitir_reduccion = TRUE)
-  else .s3_write(nuevo, key, client_id = client_id)
+  # T72-B: with an event, what changed goes with it -- one log entry, written
+  # by .s3_write() only after the upload worked (a refused write logs none).
+  # Without one, the call is exactly the one before T72-B (a test's own
+  # .s3_write() stand-in, with no `evento`, keeps working).
+  if (is.null(evento)) {
+    if (isTRUE(permitir_reduccion)) .s3_write(nuevo, key, client_id = client_id, permitir_reduccion = TRUE)
+    else .s3_write(nuevo, key, client_id = client_id)
+  } else {
+    evento$.diferencia <- tryCatch(.t72_diferencia(key, fresco, nuevo), error = function(e) NULL)
+    if (isTRUE(permitir_reduccion)) .s3_write(nuevo, key, client_id = client_id, permitir_reduccion = TRUE, evento = evento)
+    else .s3_write(nuevo, key, client_id = client_id, evento = evento)
+  }
   invisible(nuevo)
 }
+
+# T72-B: the event of a write made with no person behind it (the emails job,
+# Banxico's rates, the forecasts, the offline queue's replay): the user is
+# "sistema:<origen>", the module the origen.
+evento_sistema <- function(origen, accion, descripcion = NULL)
+  list(usuario = paste0("sistema:", origen), modulo = origen, accion = accion, descripcion = descripcion)
 
 # Validates AWS credentials are present at startup. aws.s3 reads AWS_* vars
 # automatically — this function just warns early if they are missing.
@@ -608,7 +730,7 @@ unregister_username <- function(username) {
   result$value
 }
 
-.s3_write <- function(obj, key, client_id = NULL, permitir_reduccion = FALSE) {
+.s3_write <- function(obj, key, client_id = NULL, permitir_reduccion = FALSE, evento = NULL) {
   message(sprintf("[S3_WRITE] ── start key='%s'", key))
 
   if (!is.character(key) || !nzchar(key))
@@ -684,6 +806,8 @@ unregister_username <- function(username) {
     }
   }
 
+  n_antes <- .s3_filas_vigente(full_key)   # T72-B: rows before, for the log (the count the net keeps)
+
   # ── Step 2: upload via s3saveRDS (high-level API, handles key normalisation) ──
   message(sprintf("[S3_WRITE] calling s3saveRDS: object='%s' bucket='%s'", full_key, bucket))
   tryCatch({
@@ -733,6 +857,54 @@ unregister_username <- function(username) {
     rm(list = key, envir = .s3_preload_cache)
   if (exists(full_key, envir = .s3_preload_cache, inherits = FALSE))
     rm(list = full_key, envir = .s3_preload_cache)
+
+  # ── Step 4 (T72-B): the log is born here, after the upload worked ─────────
+  # One app_audit entry per write (log_action() only queues in memory; the
+  # queue never writes through .s3_write(), so no recursion). With an event:
+  # who, what, and the table's rows before/after (and, from modificar_tabla,
+  # what changed). Without one: a "sin_evento" entry with its origin -- the
+  # nearest app functions in sys.calls(), by NAME only (never the arguments).
+  # Not logged: the log itself, sync_versions, backups, and preferencias.rds
+  # (its writer logs what matters, ultima_visita never: PREFS_SIN_LOG).
+  # Never makes a save fail; with no log_action() (the emails job) it is skipped.
+  # Defined HERE, inside .s3_write(), on purpose (cargar() by pieces, T69b).
+  .t72_registrar <- function() {
+    if (grepl("(^|/)(app_audit|sync_versions)|_backup_|preferencias\\.rds$", key)) return(invisible(FALSE))
+    if (isTRUE(getOption("hopdesk.t72_registrando", FALSE))) return(invisible(FALSE))
+    if (!exists("log_action", mode = "function")) return(invisible(FALSE))
+    viejo <- options(hopdesk.t72_registrando = TRUE); on.exit(options(viejo), add = TRUE)
+    cid <- sub("^([^/]+)/.*$", "\\1", full_key)
+    n_desp <- if (is.data.frame(obj)) nrow(obj) else NA_integer_
+    filas <- sprintf("%s -> %s", if (is.na(n_antes)) "?" else n_antes, if (is.na(n_desp)) "?" else n_desp)
+    meta <- list(tabla = key, filas_antes = n_antes, filas_despues = n_desp)
+    if (is.null(evento)) {
+      nombre <- function(cl) { f <- cl[[1]]
+        if (is.name(f)) as.character(f)
+        else if (is.call(f) && length(f) == 3L && as.character(f[[1]]) %in% c("::", ":::")) as.character(f[[3]])
+        else "" }
+      fuera <- c("", ".s3_write", ".s3_write_with", "modificar_tabla", "modificar_tabla_completa", ".t72_registrar",
+                 "tryCatch", "tryCatchList", "tryCatchOne", "doTryCatch", "withCallingHandlers", "suppressMessages",
+                 "suppressWarnings", "force", "eval", "evalq", "isolate", "withReactiveDomain", "do.call", "FUN",
+                 "lapply", "vapply", "sapply", "Map", "mapply", "local", "withVisible", "handler", "invisible")
+      pila <- vapply(sys.calls(), nombre, "")
+      pila <- rev(pila[!pila %in% fuera])
+      origen <- substr(paste(utils::head(unique(pila), 4L), collapse = " < "), 1L, 160L)
+      meta$origen <- origen
+      log_action(user = "sistema", module = "registro", action = "sin_evento",
+                 description = sprintf("tabla=%s filas %s origen=%s", key, filas, if (nzchar(origen)) origen else "?"),
+                 target_id = key, metadata = meta, client_id = cid, viewer_home_client_id = cid)
+    } else {
+      if (!is.null(evento$.diferencia)) meta$diferencia <- evento$.diferencia
+      desc <- evento$descripcion %||% ""
+      log_action(user = evento$usuario %||% "unknown", module = evento$modulo %||% "registro",
+                 action = evento$accion %||% "guardar",
+                 description = trimws(sprintf("%s [tabla=%s filas %s]", desc, key, filas)),
+                 target_id = evento$target_id %||% key, metadata = meta,
+                 client_id = cid, viewer_home_client_id = evento$home %||% cid)
+    }
+    invisible(TRUE)
+  }
+  tryCatch(.t72_registrar(), error = function(e) message("[T72] write not logged: ", conditionMessage(e)))
 
   message(sprintf("[S3_WRITE] ── complete key='%s'", key))
   invisible(TRUE)
