@@ -29,7 +29,7 @@ list(
     "R/interco_module.R" = 1L,
     "R/ledger_module.R" = 1L,
     "R/manual_entry_handlers.R" = 0L,
-    "R/notes_handlers.R" = 3L,
+    "R/notes_handlers.R" = 0L,
     "R/pagar_hoy_module.R" = 1L,
     "R/panorama_datos.R" = 5L,
     "R/pasivos_engine.R" = 0L,
@@ -53,7 +53,7 @@ list(
     "R/treasury_map_module.R" = 2L,
     "R/ui_components.R" = 0L,
     "R/vencidos_module.R" = 2L,
-    "app.R" = 6L),
+    "app.R" = 3L),
   as_date_ahora = c(
     "R/panorama_module.R" = 1L,
     "R/panorama_publicar_module.R" = 2L),

@@ -29,7 +29,7 @@ notes_handlers <- function(input, output, session, shared,
 
   # ── Month filter — all ledgers visible together ────────────────────────────
   .notes_month <- function() {
-    ms        <- input$month_sel %||% Sys.Date()
+    ms        <- input$month_sel %||% hoy_usuario()
     df        <- notes_df()
     if (is.null(df) || !is.data.frame(df)) df <- .schema_notes()
     info      <- shared$current_user_info()
@@ -58,7 +58,7 @@ notes_handlers <- function(input, output, session, shared,
         div(class = "notes-panel-scroll",
           div(class = "notes-panel-header",
             tags$strong(class = "small text-primary", "Notas — ",
-                        mes_es(input$month_sel %||% Sys.Date())),
+                        mes_es(input$month_sel %||% hoy_usuario())),
             actionButton("add_note", tagList(icon("plus"), " Agregar"),
                          class = "btn btn-sm btn-primary")
           ),
@@ -125,7 +125,7 @@ notes_handlers <- function(input, output, session, shared,
     info   <- shared$current_user_info()
 
     if (is.null(nid)) {
-      ms <- input$month_sel %||% Sys.Date()
+      ms <- input$month_sel %||% hoy_usuario()
       df <- dplyr::bind_rows(df, tibble::tibble(
         ledger      = ledger,
         year        = lubridate::year(ms),

@@ -1705,8 +1705,8 @@ server <- function(input, output, session) {
     ic_map_target          = ic_map_target,
     currency_choices  = currency_choices,
     month_val         = list(
-      AR = reactive(input$month_sel %||% Sys.Date()),
-      AP = reactive(input$month_sel %||% Sys.Date())
+      AR = reactive(input$month_sel %||% hoy_usuario()),
+      AP = reactive(input$month_sel %||% hoy_usuario())
     ),
     currency = list(
       AR = reactive(input$cur_ar),
@@ -3109,7 +3109,7 @@ server <- function(input, output, session) {
 
   output$month_ui <- renderUI({
     shinyWidgets::airMonthpickerInput("month_sel", NULL,
-                                      value = Sys.Date(), autoClose = TRUE,
+                                      value = hoy_usuario(), autoClose = TRUE,
                                       addon = "none")
   })
 
