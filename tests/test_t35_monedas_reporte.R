@@ -40,6 +40,17 @@ nada  <- function(x, ...) !any(vapply(c(...), function(p) grepl(p, x, fixed = TR
 ng <- reporte_ng()
 a  <- reporte_correr(ng$cuentas, ng$movs, ng$sap)
 ref <- leer("tests/fixtures/t35/ng_reporte_a5c696a.html")
+# [CAMBIA TEMA 4b] The report's colours come from the theme registry: written
+# another way ("#FFFFFF" for "#fff", tema_mezcla()'s "rgba(30, 58, 95, 0.08)")
+# and, where a colour was within ΔE 2 of its role, the role's. This test is
+# about the report's structure, words and amounts, so both sides compare with
+# every colour replaced by one mark; tests/test_tema_reporte_igual.R checks
+# the colours themselves, one by one.
+norm_col <- function(x) {
+  x <- gsub("rgba?\\([^)]*\\)", "§color", x, perl = TRUE)
+  gsub("(?<![&\\w])#(?:[0-9A-Fa-f]{8}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})(?![0-9A-Za-z_-])", "§color", x, perl = TRUE)
+}
+a$html <- norm_col(a$html); ref <- norm_col(ref)
 for (k in c("tot-box mxn", "tot-box usd", ".tot-box.mxn{", ".tot-box.usd{", "group-col-mxn",
             "group-col-usd", "pulse-mxn-label", "pulse-usd-label"))
   ref <- gsub(k, sub("usd", "mon2", sub("mxn", "mon1", k, fixed = TRUE), fixed = TRUE), ref, fixed = TRUE)
@@ -52,7 +63,7 @@ for (k in c("tot-box mxn", "tot-box usd", ".tot-box.mxn{", ".tot-box.usd{", "gro
 tokens <- function(s) { s <- gsub("(<[^>]+>)", "\n\\1\n", s); s <- trimws(unlist(strsplit(s, "\n"))); s[nzchar(s)] }
 monto_viejo <- "^[+-]?\\$-?[0-9][0-9,]*(\\.[0-9]+)?k?$"
 monto_nuevo <- paste0("^(\\+|", intToUtf8(0x2212L), "|&minus;)?[0-9][0-9,]*(\\.[0-9]+)?[KM]?( [A-Z]{3})?$")
-TITULO_EJE  <- '<text x="2" y="6.0" font-size="5.5" font-weight="600" fill="#6b7280">'
+TITULO_EJE  <- norm_col('<text x="2" y="6.0" font-size="5.5" font-weight="600" fill="#6b7280">')
 solo_montos <- function(nuevo, viejo) {
   n <- tokens(enc2utf8(nuevo)); v <- tokens(enc2utf8(viejo))
   k <- which(n == TITULO_EJE)                                 # the axis titles: <text>, its code, </text>

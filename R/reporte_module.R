@@ -30,33 +30,33 @@ reporteUI <- function(id) {
     # ── CSS ──────────────────────────────────────────────────────────────────
     tags$style(HTML("
       .rpt-fab-main {
-        width:44px;height:44px;border-radius:50%;background:#f5f0e8;
+        width:44px;height:44px;border-radius:50%;background:var(--hd-leg-superficie-f5f0e8);
         border:none;cursor:pointer;display:flex;align-items:center;
-        justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,0.20);
-        color:#374151;transition:transform .15s ease,box-shadow .15s ease;
+        justify-content:center;box-shadow:var(--hd-leg-sombra-000000-12d688);
+        color:var(--hd-texto);transition:transform .15s ease,box-shadow .15s ease;
         flex-shrink:0;
       }
-      .rpt-fab-main:hover { transform:scale(1.08); box-shadow:0 4px 16px rgba(0,0,0,0.26); }
+      .rpt-fab-main:hover { transform:scale(1.08); box-shadow:var(--hd-leg-sombra-000000-453bbb); }
       .rpt-fab-bubble {
-        width:38px;height:38px;border-radius:50%;background:#f5f0e8;
+        width:38px;height:38px;border-radius:50%;background:var(--hd-leg-superficie-f5f0e8);
         border:none;cursor:pointer;display:none;align-items:center;
-        justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.16);
-        color:#374151;transition:transform .15s ease;flex-shrink:0;
+        justify-content:center;box-shadow:var(--hd-leg-sombra-000000-0d67d2);
+        color:var(--hd-texto);transition:transform .15s ease;flex-shrink:0;
       }
       .rpt-fab-bubble:hover { transform:scale(1.1); }
       .rpt-settings-panel {
         position:fixed;top:0;right:-340px;width:320px;height:100vh;
-        background:#fff;z-index:10020;
-        box-shadow:-4px 0 24px rgba(0,0,0,0.13);
+        background:var(--hd-superficie);z-index:10020;
+        box-shadow:var(--hd-leg-sombra-000000-8810b0);
         transition:right .28s cubic-bezier(.4,0,.2,1);
-        overflow-y:auto;border-left:1px solid #e5e7eb;
+        overflow-y:auto;border-left:1px solid var(--hd-borde);
       }
     ")),
 
     # ── Full-screen report iframe wrapper ────────────────────────────────────
     div(
       id    = ns("rpt_main_wrap"),
-      style = "position:fixed;inset:0;background:#fff;z-index:500;overflow:hidden;display:none;",
+      style = "position:fixed;inset:0;background:var(--hd-superficie);z-index:500;overflow:hidden;display:none;",
       uiOutput(ns("report_viewer"))
     ),
 
@@ -77,9 +77,9 @@ reporteUI <- function(id) {
       tags$div(
         id    = ns("zoom_label"),
         style = paste0(
-          "display:none;font-size:.68rem;font-weight:700;color:#374151;",
-          "background:#f5f0e8;border-radius:10px;padding:2px 8px;",
-          "box-shadow:0 1px 4px rgba(0,0,0,.12);text-align:center;",
+          "display:none;font-size:.68rem;font-weight:700;color:var(--hd-texto);",
+          "background:var(--hd-leg-superficie-f5f0e8);border-radius:10px;padding:2px 8px;",
+          "box-shadow:var(--hd-leg-sombra-000000-e70fe4);text-align:center;",
           "min-width:38px;line-height:1.6;cursor:default;user-select:none;"
         ),
         "100%"
@@ -121,11 +121,11 @@ reporteUI <- function(id) {
 
       # Header
       div(
-        style = "display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #f0f0f0;position:sticky;top:0;background:#fff;z-index:1;",
+        style = "display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--hd-leg-borde-f0f0f0);position:sticky;top:0;background:var(--hd-superficie);z-index:1;",
         tags$span(style = "font-weight:600;font-size:.95rem;", "Configuración del reporte"),
         tags$button(
           id    = ns("rpt_settings_close"),
-          style = "background:none;border:none;cursor:pointer;font-size:22px;color:#6b7280;padding:0 4px;line-height:1;",
+          style = "background:none;border:none;cursor:pointer;font-size:22px;color:var(--hd-texto-2);padding:0 4px;line-height:1;",
           HTML("&#215;")
         )
       ),
@@ -134,7 +134,7 @@ reporteUI <- function(id) {
       div(
         style = "padding:20px;",
 
-        tags$p(style = "font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin-bottom:8px;",
+        tags$p(style = "font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--hd-texto-2);margin-bottom:8px;",
                "Período"),
         tags$label("Desde", class = "form-label small"),
         dateInput(ns("fecha_desde"), NULL, value = floor_date_month(),
@@ -145,7 +145,7 @@ reporteUI <- function(id) {
 
         tags$hr(class = "my-3"),
 
-        tags$p(style = "font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;margin-bottom:8px;",
+        tags$p(style = "font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--hd-texto-2);margin-bottom:8px;",
                "Empresas"),
         uiOutput(ns("empresa_checks")),
 
@@ -168,7 +168,7 @@ reporteUI <- function(id) {
                          class = "btn btn-sm btn-outline-secondary flex-fill")
         ),
 
-        tags$p(style = "font-size:.73rem;color:#9ca3af;margin-top:12px;margin-bottom:0;",
+        tags$p(style = "font-size:.73rem;color:var(--hd-texto-tenue);margin-top:12px;margin-bottom:0;",
                tags$em("PDF requiere Chrome/Edge y ", tags$code("pagedown"), "."))
       )
     ),
@@ -777,7 +777,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         pulse <- compute_pulse()
         .build_report_html(bals, movs, desde, hasta, Sys.time(), pulse = pulse,
                            cmap = shared$company_map(), group_name = shared$group_name(),
-                           monedas = monedas_en_datos(bals$moneda, moneda_base()))
+                           monedas = monedas_en_datos(bals$moneda, moneda_base()),
+                           tema = tema_de_sesion())
       })
     })
 
@@ -856,7 +857,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           .build_report_html(bals_sel, movs_sel, desde, hasta, Sys.time(),
                              pulse = pulse_data,
                              cmap = isolate(shared$company_map()),
-                             group_name = isolate(shared$group_name())),
+                             group_name = isolate(shared$group_name()),
+                             tema = tema_de_sesion()),
           file, useBytes = FALSE
         )
 
@@ -893,7 +895,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           generated   = Sys.time(),
           pulse       = pulse_data,
           cmap        = isolate(shared$company_map()),
-          group_name  = isolate(shared$group_name())
+          group_name  = isolate(shared$group_name()),
+          tema        = tema_de_sesion()
         )
 
         tmp_html <- tempfile(fileext = ".html")
@@ -1012,6 +1015,23 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   html
 }
 
+# The report's colours (TEMA stage 4b). The report is a standalone HTML (the
+# tab's iframe, the HTML and PDF downloads): it cannot read the app's
+# --hd-* variables, so its strings carry a placeholder per colour, {{rol}} or
+# {{rol@pct}} (the role at pct % over transparent), and .rpt_pintar() turns
+# them into the theme's values from the registry (R/tema_registro.R) once the
+# page is assembled. Under Clásico every colour is today's (legacy tokens).
+.rpt_pintar <- function(html, tema = NULL) {
+  tema <- tema %||% HD_TEMA_OMISION
+  marcas <- unique(regmatches(html, gregexpr("\\{\\{[a-z0-9-]+(@[0-9]+)?\\}\\}", html))[[1]])
+  for (mk in marcas) {
+    p <- strsplit(substr(mk, 3L, nchar(mk) - 2L), "@", fixed = TRUE)[[1]]
+    v <- if (length(p) == 2L) tema_mezcla(p[1], as.integer(p[2]), tema) else tema_color(p[1], tema)
+    html <- gsub(mk, v, html, fixed = TRUE)
+  }
+  html
+}
+
 # =============================================================================
 # .build_pulse_pages() — pages 3 & 4: current week + next week AP/AR pulse
 # =============================================================================
@@ -1023,8 +1043,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   he <- htmltools::htmlEscape
   mostradas <- if (length(mostradas) >= 2L)
     tr("tablas.reporte.monedas_y", a = mostradas[1], b = mostradas[2]) else paste(mostradas, collapse = "")
-  sprintf('<div style="font-size:8px;color:#92400e;background:#fffbeb;
-        border:1px solid #fde68a;border-radius:6px;padding:4px 10px;margin-bottom:10px;">
+  sprintf('<div style="font-size:8px;color:{{leg-aviso-texto-92400e}};background:{{leg-aviso-suave-fffbeb}};
+        border:1px solid {{leg-aviso-suave-fde68a}};border-radius:6px;padding:4px 10px;margin-bottom:10px;">
         &#9888; %s</div>',
     he(tr("tablas.reporte.monedas_extra", otras = paste(otras, collapse = ", "), mostradas = mostradas)))
 }
@@ -1038,9 +1058,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 
   # ── SVG daily bar chart ────────────────────────────────────────────────────
   make_pulse_chart <- function(daily, today_date = NULL,
-                                inflow_color  = "#0d9f8a",
-                                outflow_color = "#92400e",
-                                net_color     = "#f59e0b",
+                                inflow_color  = "{{leg-exito-0d9f8a}}",
+                                outflow_color = "{{leg-aviso-texto-92400e}}",
+                                net_color     = "{{aviso}}",
                                 w = 436L, h = 88L, moneda = "") {
     padL <- 38L; padR <- 6L; padT <- 9L; padB <- 22L
     pw   <- w - padL - padR
@@ -1063,13 +1083,13 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     grid_svg <- paste(vapply(c(max_val, 0, -max_val), function(v) {
       yp <- sc_net(v)
       sprintf(
-        '<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="#e5e7eb" stroke-width="0.5"/>
-         <text x="%d" y="%.1f" text-anchor="end" font-size="5.5" fill="#9ca3af" dominant-baseline="middle">%s</text>',
+        '<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="{{borde}}" stroke-width="0.5"/>
+         <text x="%d" y="%.1f" text-anchor="end" font-size="5.5" fill="{{texto-tenue}}" dominant-baseline="middle">%s</text>',
         padL, yp, w - padR, yp, padL - 2L, yp, fmt_k(v))
     }, character(1)), collapse = "\n")
     # The axis title: the block's currency, top left, apart from the values (T55b).
     if (nzchar(moneda)) grid_svg <- paste0(grid_svg, sprintf(
-      '\n<text x="2" y="%.1f" font-size="5.5" font-weight="600" fill="#6b7280">%s</text>',
+      '\n<text x="2" y="%.1f" font-size="5.5" font-weight="600" fill="{{texto-2}}">%s</text>',
       padT - 3, htmltools::htmlEscape(moneda)))
 
     grp_w <- pw / n
@@ -1090,11 +1110,11 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         '<rect x="%.1f" y="%.1f" width="%d" height="%.1f" fill="%s" opacity="0.72" rx="1.5"/>',
         xmid + 1, y0, bw, out_h, outflow_color) else ""
       hoy_m <- if (is_hoy) sprintf(
-        '<line x1="%.1f" y1="%d" x2="%.1f" y2="%d" stroke="#f59e0b" stroke-width="0.8" stroke-dasharray="2,1.5" opacity="0.85"/>
-         <text x="%.1f" y="%d" text-anchor="middle" font-size="5" font-weight="700" fill="#d97706">HOY</text>',
+        '<line x1="%.1f" y1="%d" x2="%.1f" y2="%d" stroke="{{aviso}}" stroke-width="0.8" stroke-dasharray="2,1.5" opacity="0.85"/>
+         <text x="%.1f" y="%d" text-anchor="middle" font-size="5" font-weight="700" fill="{{aviso-fuerte}}">HOY</text>',
         xmid, padT, xmid, h - padB, xmid, padT - 2L) else ""
       x_lbl <- sprintf(
-        '<text x="%.1f" y="%d" text-anchor="middle" font-size="5.5" fill="#6b7280">%s</text>',
+        '<text x="%.1f" y="%d" text-anchor="middle" font-size="5.5" fill="{{texto-2}}">%s</text>',
         xmid, h - padB + 9L, format(d$date, "%a %d"))
       paste(hoy_m, in_r, out_r, x_lbl, sep = "\n")
     }, character(1)), collapse = "\n")
@@ -1109,18 +1129,18 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 
     # Zero line
     zero <- sprintf(
-      '<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="#374151" stroke-width="0.6" opacity="0.3"/>',
+      '<line x1="%d" y1="%.1f" x2="%d" y2="%.1f" stroke="{{texto}}" stroke-width="0.6" opacity="0.3"/>',
       padL, y0, w - padR, y0)
 
     # Legend (upper-right)
     lx <- w - padR - 118L; ly <- padT - 2L
     legend <- sprintf(
       '<rect x="%d" y="%d" width="7" height="5" fill="%s" opacity="0.85" rx="1"/>
-       <text x="%d" y="%d" font-size="5" fill="#374151" dominant-baseline="middle">Cobros</text>
+       <text x="%d" y="%d" font-size="5" fill="{{texto}}" dominant-baseline="middle">Cobros</text>
        <rect x="%d" y="%d" width="7" height="5" fill="%s" opacity="0.72" rx="1"/>
-       <text x="%d" y="%d" font-size="5" fill="#374151" dominant-baseline="middle">Pagos</text>
+       <text x="%d" y="%d" font-size="5" fill="{{texto}}" dominant-baseline="middle">Pagos</text>
        <line x1="%d" y1="%d" x2="%d" y2="%d" stroke="%s" stroke-width="1.4"/>
-       <text x="%d" y="%d" font-size="5" fill="#374151" dominant-baseline="middle">Acum.</text>',
+       <text x="%d" y="%d" font-size="5" fill="{{texto}}" dominant-baseline="middle">Acum.</text>',
       lx,       ly,     inflow_color,
       lx + 9L,  ly + 3L,
       lx + 45L, ly,     outflow_color,
@@ -1140,7 +1160,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     currency  <- pd$currency
     net_total <- pd$inflow_total - pd$outflow_total
     lbl_class <- if (pos == 1L) "pulse-mon1-label" else "pulse-mon2-label"
-    in_col    <- if (pos == 1L) "#0d9f8a" else "#0ea5e9"
+    in_col    <- if (pos == 1L) "{{leg-exito-0d9f8a}}" else "{{leg-info-0ea5e9}}"
     net_class <- if (net_total >= 0) "pulse-kpi-net-pos" else "pulse-kpi-net-neg"
 
     chart <- make_pulse_chart(
@@ -1155,10 +1175,10 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         r <- pd$focus_ar[j, ]
         sprintf('<div class="pulse-item">
           <span class="pulse-item-name">%s</span>
-          <span class="pulse-item-amt" style="color:#059669;">+%s</span></div>',
+          <span class="pulse-item-amt" style="color:{{leg-exito-059669}};">+%s</span></div>',
           he(r$Parte %||% "\u2014"), fmt(r$.a, currency))
       }, character(1)), collapse = "\n")
-    else '<div class="pulse-item"><span class="pulse-item-name" style="color:#9ca3af;font-style:italic;">Sin cobros programados</span></div>'
+    else '<div class="pulse-item"><span class="pulse-item-name" style="color:{{texto-tenue}};font-style:italic;">Sin cobros programados</span></div>'
 
     # Critical payable rows (with urgency badge)
     out_rows <- if (nrow(pd$focus_ap) > 0)
@@ -1174,10 +1194,10 @@ reporteServer <- function(id, shared, active_tab = NULL) {
         else ""
         sprintf('<div class="pulse-item">
           <span class="pulse-item-name">%s</span>%s
-          <span class="pulse-item-amt" style="color:#dc2626;">&minus;%s</span></div>',
+          <span class="pulse-item-amt" style="color:{{peligro}};">&minus;%s</span></div>',
           he(r$Parte %||% "\u2014"), badge, fmt(r$.a, currency))
       }, character(1)), collapse = "\n")
-    else '<div class="pulse-item"><span class="pulse-item-name" style="color:#9ca3af;font-style:italic;">Sin pagos programados</span></div>'
+    else '<div class="pulse-item"><span class="pulse-item-name" style="color:{{texto-tenue}};font-style:italic;">Sin pagos programados</span></div>'
 
     sprintf('
   <div class="pulse-currency-block">
@@ -1276,7 +1296,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 # =============================================================================
 .build_report_html <- function(balances, movimientos = NULL, desde, hasta, generated,
                                 pulse = NULL, cmap = c(), group_name = "",
-                                monedas = monedas_en_datos(balances$moneda, MONEDA_BASE_OMISION)) {
+                                monedas = monedas_en_datos(balances$moneda, MONEDA_BASE_OMISION),
+                                tema = NULL) {
 
   # monedas: the accounts' currencies, the base first (monedas_en_datos()).
   # The page holds two total boxes and two movement columns: the first two
@@ -1291,17 +1312,17 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   period_label <- paste0(format(desde, "%d %b %Y"), " \u2014 ", format(hasta, "%d %b %Y"))
   gen_label    <- format(generated, "%d/%m/%Y %H:%M")
 
-  col_pos <- "#059669"; col_neg <- "#dc2626"
-  col_in  <- "#059669"; col_out <- "#dc2626"
+  col_pos <- "{{leg-exito-059669}}"; col_neg <- "{{peligro}}"
+  col_in  <- "{{leg-exito-059669}}"; col_out <- "{{peligro}}"
   # Colors by place, not by code: the first currency (the base) blue, the
   # second green, any other the grey fallback below.
   por_lugar     <- function(...) stats::setNames(as.list(c(...)[seq_along(mostradas)]), mostradas)
-  moneda_colors <- por_lugar("#1e3a5f", "#0d6b5e")
-  moneda_light  <- por_lugar("#dbeafe", "#d1fae5")
-  moneda_text   <- por_lugar("#1e40af", "#065f46")
+  moneda_colors <- por_lugar("{{encabezado}}", "{{leg-exito-texto-0d6b5e}}")
+  moneda_light  <- por_lugar("{{leg-primario-suave-dbeafe}}", "{{leg-exito-suave-d1fae5}}")
+  moneda_text   <- por_lugar("{{leg-primario-1e40af}}", "{{exito-texto}}")
   fondo_tarjeta <- function(mono)
-    if (identical(mono, monedas[1])) "linear-gradient(160deg,#e2eafc 0%,#eef3ff 35%,#f8faff 100%)"
-    else                             "linear-gradient(160deg,#d9f0e8 0%,#e8f7f2 35%,#f4fdf9 100%)"
+    if (identical(mono, monedas[1])) "linear-gradient(160deg,{{leg-primario-suave-e2eafc}} 0%,{{primario-suave}} 35%,{{superficie-2}} 100%)"
+    else                             "linear-gradient(160deg,{{leg-exito-suave-d9f0e8}} 0%,{{leg-exito-suave-e8f7f2}} 35%,{{leg-exito-suave-f4fdf9}} 100%)"
 
   # Movement type display labels
   tipo_label <- function(tipo) {
@@ -1462,9 +1483,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     pct   <- (cur - prev) / abs(prev) * 100
     sign  <- if (pct >= 0) "+" else ""
     arrow <- if (pct >= 0) "&#x2197;" else "&#x2198;"
-    col   <- if (pct >= 0) "#6ee7b7" else "#fca5a5"
+    col   <- if (pct >= 0) "{{leg-exito-suave-6ee7b7}}" else "{{leg-peligro-suave-fca5a5}}"
     sprintf('<span style="font-size:9px;font-weight:600;color:%s;
-      background:rgba(255,255,255,0.12);border-radius:20px;
+      background:{{encabezado-texto@12}};border-radius:20px;
       padding:2px 8px;white-space:nowrap;">%s %s%.1f%%</span>',
       col, arrow, sign, pct)
   }
@@ -1476,7 +1497,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     rows <- rows[order(-abs(rows$saldo)), ]
     paste(vapply(seq_len(nrow(rows)), function(i) {
       r   <- rows[i, ]
-      col <- if (r$saldo < 0) "#fca5a5" else "rgba(255,255,255,0.75)"
+      col <- if (r$saldo < 0) "{{leg-peligro-suave-fca5a5}}" else "{{encabezado-texto@75}}"
       amt <- if (r$saldo < 0)
         fmts(r$saldo, currency)
       else
@@ -1510,7 +1531,7 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       </div>',
       pos, he(currency), he(monto_moneda(total, currency)),
       delta_html(total, total - neto_periodo(currency)),
-      make_balance_bars(global_series(currency), c("#7eb3f5", "#6ee7c4")[pos], 220, 44),
+      make_balance_bars(global_series(currency), c("{{leg-oscuro-texto-2-7eb3f5}}", "{{leg-oscuro-exito-6ee7c4}}")[pos], 220, 44),
       make_acct_breakdown(currency))
   }
   cajas_html <- paste(vapply(seq_along(mostradas), function(k) caja_total(mostradas[k], k),
@@ -1521,12 +1542,12 @@ reporteServer <- function(id, shared, active_tab = NULL) {
   cards_html <- paste(vapply(seq_len(nrow(balances_sorted)), function(i) {
     row    <- balances_sorted[i, ]
     mono   <- row$moneda
-    col    <- moneda_colors[[mono]] %||% "#374151"
+    col    <- moneda_colors[[mono]] %||% "{{texto}}"
     is_neg <- row$saldo < 0
     sv     <- spark_for_account(row$cuenta_id, row$saldo_inicial %||% 0)
     svg    <- make_area_spark(sv, if (is_neg) col_neg else col)
-    badge_bg  <- moneda_light[[mono]] %||% "#f3f4f6"
-    badge_col <- moneda_text[[mono]]  %||% "#374151"
+    badge_bg  <- moneda_light[[mono]] %||% "{{leg-borde-f3f4f6}}"
+    badge_col <- moneda_text[[mono]]  %||% "{{texto}}"
     card_bg   <- fondo_tarjeta(mono)
     brd_col   <- if (is_neg) col_neg else col
     # Period inflows/outflows for this account
@@ -1553,11 +1574,11 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       <div class="acct-stats">
         <div class="acct-stat">
           <span class="acct-stat-lbl">Ingresos</span>
-          <span class="acct-stat-val" style="color:#059669;">+%s</span>
+          <span class="acct-stat-val" style="color:{{leg-exito-059669}};">+%s</span>
         </div>
         <div class="acct-stat">
           <span class="acct-stat-lbl">Egresos</span>
-          <span class="acct-stat-val" style="color:#dc2626;">&minus;%s</span>
+          <span class="acct-stat-val" style="color:{{peligro}};">&minus;%s</span>
         </div>
       </div>
     </div>',
@@ -1682,9 +1703,9 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       tot_cargo <- sum(mv$cargo, na.rm = TRUE)
       tot_abono <- sum(mv$abono, na.rm = TRUE)
       mono  <- row$moneda
-      col   <- moneda_colors[[mono]] %||% "#374151"
-      badge_bg  <- moneda_light[[mono]]  %||% "#f3f4f6"
-      badge_col <- moneda_text[[mono]]   %||% "#374151"
+      col   <- moneda_colors[[mono]] %||% "{{texto}}"
+      badge_bg  <- moneda_light[[mono]]  %||% "{{leg-borde-f3f4f6}}"
+      badge_col <- moneda_text[[mono]]   %||% "{{texto}}"
       si  <- row$saldo_inicial %||% 0
       sv  <- spark_for_account(cid, si)
       svg <- make_line_spark(sv, col, w = 122L, h = 26L)
@@ -1729,11 +1750,11 @@ reporteServer <- function(id, shared, active_tab = NULL) {
           <div class="mov-card-footer">
             <div class="mov-card-stat">
               <span class="mov-card-lbl">Ingresos</span>
-              <span class="mov-card-val" style="color:#059669;">+%s</span>
+              <span class="mov-card-val" style="color:{{leg-exito-059669}};">+%s</span>
             </div>
             <div class="mov-card-stat">
               <span class="mov-card-lbl">Egresos</span>
-              <span class="mov-card-val" style="color:#dc2626;">&minus;%s</span>
+              <span class="mov-card-val" style="color:{{peligro}};">&minus;%s</span>
             </div>
           </div>
         </div>
@@ -1767,30 +1788,30 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
     *{box-sizing:border-box;margin:0;padding:0;}
     html{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    body{font-family:"Inter",system-ui,sans-serif;font-size:11px;color:#1a1a2e;
-         background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;
+    body{font-family:"Inter",system-ui,sans-serif;font-size:11px;color:{{leg-texto-1a1a2e}};
+         background:{{superficie}};-webkit-print-color-adjust:exact;print-color-adjust:exact;
          margin:0;padding:0;}
-    .page{width:8.5in;min-height:11in;background:#fff;padding:0;margin:0;
+    .page{width:8.5in;min-height:11in;background:{{superficie}};padding:0;margin:0;
           break-after:page;
           display:flex;flex-direction:column;}
     .page:last-child{break-after:avoid;}
     .page-body{flex:1;}
     /* ── Header ── */
     .rpt-header{
-      background:linear-gradient(120deg,#0d1b3e 0%,#1b3d7a 55%,#163368 100%);
+      background:linear-gradient(120deg,{{leg-encabezado-0d1b3e}} 0%,{{leg-encabezado-1b3d7a}} 55%,{{leg-encabezado-163368}} 100%);
       -webkit-print-color-adjust:exact;print-color-adjust:exact;
-      color:#fff;padding:26px 40px 22px;
+      color:{{encabezado-texto}};padding:26px 40px 22px;
       display:flex;justify-content:space-between;align-items:center;
-      border-bottom:3px solid #2a5298;
+      border-bottom:3px solid {{leg-encabezado-borde-2a5298}};
       break-after:avoid;break-inside:avoid;}
     .rpt-title{font-size:14px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;
       white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .rpt-sub{font-size:10px;opacity:0.6;margin-top:4px;letter-spacing:0.2px;}
     .rpt-meta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;}
     .rpt-brand{display:flex;align-items:center;gap:8px;}
-    .rpt-logo{width:32px;height:32px;border-radius:6px;background:rgba(255,255,255,0.15);
-      border:1.5px solid rgba(255,255,255,0.3);display:flex;align-items:center;
-      justify-content:center;font-size:14px;font-weight:800;color:#fff;
+    .rpt-logo{width:32px;height:32px;border-radius:6px;background:{{encabezado-texto@15}};
+      border:1.5px solid {{encabezado-texto@30}};display:flex;align-items:center;
+      justify-content:center;font-size:14px;font-weight:800;color:{{encabezado-texto}};
       letter-spacing:-0.5px;flex-shrink:0;}
     .rpt-brand-text{text-align:right;}
     .rpt-brand-label{font-size:7.5px;opacity:0.5;text-transform:uppercase;
@@ -1800,17 +1821,17 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     /* ── Section ── */
     .section{padding:14px 40px 16px;}
     .sec-title{font-size:9px;font-weight:700;letter-spacing:1.4px;
-      text-transform:uppercase;color:#6b7280;
-      border-bottom:1px solid #e5e7eb;padding-bottom:6px;margin-bottom:12px;
+      text-transform:uppercase;color:{{texto-2}};
+      border-bottom:1px solid {{borde}};padding-bottom:6px;margin-bottom:12px;
       break-after:avoid;}
     /* ── Global totals ── */
     .totals-row{display:flex;gap:14px;margin-bottom:16px;}
-    .tot-box{flex:1;border-radius:12px;padding:20px 24px 16px;color:#fff;
+    .tot-box{flex:1;border-radius:12px;padding:20px 24px 16px;color:{{encabezado-texto}};
       position:relative;overflow:hidden;
       display:flex;flex-direction:column;gap:0;min-height:140px;}
-    .tot-box.mon1{background:linear-gradient(135deg,#0d1b3e 0%,#1e4080 100%);
+    .tot-box.mon1{background:linear-gradient(135deg,{{leg-encabezado-0d1b3e}} 0%,{{leg-encabezado-hover-1e4080}} 100%);
       -webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    .tot-box.mon2{background:linear-gradient(135deg,#064e3b 0%,#0d9f8a 100%);
+    .tot-box.mon2{background:linear-gradient(135deg,{{leg-exito-texto-064e3b}} 0%,{{leg-exito-0d9f8a}} 100%);
       -webkit-print-color-adjust:exact;print-color-adjust:exact;}
     .tot-top-row{display:flex;justify-content:space-between;align-items:flex-start;
       margin-bottom:4px;}
@@ -1821,42 +1842,42 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     .tot-amount{font-size:28px;font-weight:700;letter-spacing:-0.5px;
       font-variant-numeric:tabular-nums;}
     .tot-spark{opacity:0.9;margin-top:12px;line-height:0;}
-    .tot-breakdown{margin-top:8px;border-top:1px solid rgba(255,255,255,0.12);
+    .tot-breakdown{margin-top:8px;border-top:1px solid {{encabezado-texto@12}};
       padding-top:8px;}
     /* ── Account cards ── */
     .cards-grid{display:grid;gap:10px;margin-bottom:18px;}
     .cards-3col{grid-template-columns:repeat(3,1fr);}
     .cards-4col{grid-template-columns:repeat(4,1fr);}
-    .acct-card{border:1px solid #dde4f0;border-radius:10px;padding:10px 12px 9px;
-      box-shadow:0 2px 8px rgba(30,58,95,0.08);display:flex;flex-direction:column;}
+    .acct-card{border:1px solid {{leg-borde-dde4f0}};border-radius:10px;padding:10px 12px 9px;
+      box-shadow:0 2px 8px {{encabezado@8}};display:flex;flex-direction:column;}
     .acct-top{display:flex;justify-content:space-between;align-items:center;
       margin-bottom:5px;}
-    .acct-emp{font-size:9px;font-weight:700;color:#374151;
+    .acct-emp{font-size:9px;font-weight:700;color:{{texto}};
       text-transform:uppercase;letter-spacing:0.5px;}
     .acct-badge{font-size:7.5px;font-weight:600;padding:1px 7px;border-radius:20px;}
     .acct-bal{font-size:13.5px;font-weight:700;margin-bottom:1px;
       font-variant-numeric:tabular-nums;}
-    .acct-alias{font-size:7.5px;color:#9ca3af;margin-bottom:3px;}
-    .acct-bank{font-size:8px;color:#94a3b8;margin-bottom:6px;
+    .acct-alias{font-size:7.5px;color:{{texto-tenue}};margin-bottom:3px;}
+    .acct-bank{font-size:8px;color:{{leg-texto-tenue-94a3b8}};margin-bottom:6px;
       overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .acct-stats{display:flex;gap:10px;margin-top:6px;
-      border-top:1px solid #e4eaf4;padding-top:6px;}
+      border-top:1px solid {{leg-borde-e4eaf4}};padding-top:6px;}
     .acct-stat{flex:1;}
-    .acct-stat-lbl{font-size:7px;color:#9ca3af;text-transform:uppercase;
+    .acct-stat-lbl{font-size:7px;color:{{texto-tenue}};text-transform:uppercase;
       letter-spacing:0.4px;display:block;}
     .acct-stat-val{font-size:8.5px;font-weight:600;font-variant-numeric:tabular-nums;}
     .acct-spark{line-height:0;margin-top:4px;flex:1;}
     /* ── Group split: two-column MXN / USD tables ── */
     .group-split{display:flex;gap:12px;align-items:flex-start;}
-    .group-split-col{flex:1;border:1px solid #e8ecf4;border-radius:10px;overflow:hidden;
-      box-shadow:0 1px 6px rgba(30,58,95,0.05);}
+    .group-split-col{flex:1;border:1px solid {{leg-borde-e8ecf4}};border-radius:10px;overflow:hidden;
+      box-shadow:0 1px 6px {{encabezado@5}};}
     .group-col-hdr{font-size:8.5px;font-weight:700;letter-spacing:1px;
       text-transform:uppercase;padding:6px 12px;
       -webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    .group-col-mon1{background:#e2eafc;color:#1e3a5f;}
-    .group-col-mon2{background:#d9f0e8;color:#0d6b5e;}
-    .ctx-badge{font-size:8px;font-weight:700;color:#374151;
-      background:#f1f5f9;padding:1px 5px;border-radius:3px;}
+    .group-col-mon1{background:{{leg-primario-suave-e2eafc}};color:{{encabezado}};}
+    .group-col-mon2{background:{{leg-exito-suave-d9f0e8}};color:{{leg-exito-texto-0d6b5e}};}
+    .ctx-badge{font-size:8px;font-weight:700;color:{{texto}};
+      background:{{superficie-2}};padding:1px 5px;border-radius:3px;}
     /* ── Group split table: fixed layout so IMPORTE column is never clipped ── */
     .group-split-col .mov-table{table-layout:fixed;}
     .group-split-col .mov-table th,
@@ -1866,55 +1887,55 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     .group-split-col .mov-amt{width:38%;text-overflow:clip;overflow:visible;}
     /* ── Per-account movement blocks (page 2) ── */
     .mov-block{margin-bottom:14px;break-inside:avoid;page-break-inside:avoid;}
-    .mov-block-inner{display:flex;gap:0;border:1px solid #e8ecf4;border-radius:10px;
-      overflow:hidden;box-shadow:0 1px 4px rgba(30,58,95,0.05);}
+    .mov-block-inner{display:flex;gap:0;border:1px solid {{leg-borde-e8ecf4}};border-radius:10px;
+      overflow:hidden;box-shadow:0 1px 4px {{encabezado@5}};}
     .mov-card{width:152px;flex-shrink:0;padding:12px 12px 10px;display:flex;
-      flex-direction:column;border-right:1px solid #e8ecf4;
+      flex-direction:column;border-right:1px solid {{leg-borde-e8ecf4}};
       -webkit-print-color-adjust:exact;print-color-adjust:exact;}
     .mov-card-top{display:flex;align-items:center;justify-content:space-between;
       margin-bottom:4px;}
-    .mov-emp{font-size:9px;font-weight:700;color:#1e293b;text-transform:uppercase;
+    .mov-emp{font-size:9px;font-weight:700;color:{{leg-texto-1e293b}};text-transform:uppercase;
       letter-spacing:0.4px;}
-    .mov-card-alias{font-size:8px;color:#94a3b8;margin-bottom:6px;}
+    .mov-card-alias{font-size:8px;color:{{leg-texto-tenue-94a3b8}};margin-bottom:6px;}
     .mov-card-bal{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;
       margin-bottom:4px;}
     .mov-card-spark{line-height:0;margin:6px 0;overflow:hidden;}
-    .mov-card-footer{border-top:1px solid #e4eaf4;padding-top:6px;
+    .mov-card-footer{border-top:1px solid {{leg-borde-e4eaf4}};padding-top:6px;
       display:flex;flex-direction:column;gap:4px;margin-top:auto;}
     .mov-card-stat{display:flex;justify-content:space-between;align-items:center;}
-    .mov-card-lbl{font-size:7px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.4px;}
+    .mov-card-lbl{font-size:7px;color:{{leg-texto-tenue-94a3b8}};text-transform:uppercase;letter-spacing:0.4px;}
     .mov-card-val{font-size:8.5px;font-weight:600;font-variant-numeric:tabular-nums;}
     .mov-block-tbl{flex:1;overflow:hidden;}
     .badge-mono{font-size:7.5px;font-weight:600;padding:1px 6px;border-radius:20px;
       white-space:nowrap;}
     .mov-table{width:100%;border-collapse:collapse;font-size:9.5px;}
-    .mov-table th{text-align:left;font-weight:600;color:#6b7280;font-size:8px;
+    .mov-table th{text-align:left;font-weight:600;color:{{texto-2}};font-size:8px;
       text-transform:uppercase;letter-spacing:0.5px;padding:5px 12px;
-      background:#f9fafb;border-bottom:1px solid #e5e7eb;}
-    .mov-table td{padding:5.5px 12px;border-bottom:1px solid #f3f4f6;color:#374151;}
+      background:{{superficie-2}};border-bottom:1px solid {{borde}};}
+    .mov-table td{padding:5.5px 12px;border-bottom:1px solid {{leg-borde-f3f4f6}};color:{{texto}};}
     .mov-table tr:last-child td{border-bottom:none;}
-    .mov-table tr:nth-child(even) td{background:#fafbfd;}
-    .mov-date{color:#6b7280;white-space:nowrap;width:44px;}
+    .mov-table tr:nth-child(even) td{background:{{superficie-2}};}
+    .mov-date{color:{{texto-2}};white-space:nowrap;width:44px;}
     .mov-desc{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-    .mov-tipo{color:#94a3b8;font-size:8px;text-transform:capitalize;width:68px;}
+    .mov-tipo{color:{{leg-texto-tenue-94a3b8}};font-size:8px;text-transform:capitalize;width:68px;}
     .mov-dir{width:40px;}
     .dir-badge{font-size:7.5px;font-weight:700;padding:1px 5px;border-radius:3px;
       letter-spacing:0.3px;}
     .mov-amt{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;
       white-space:nowrap;}
     /* ── Footer ── */
-    .rpt-footer{background:#f8fafc;border-top:1px solid #e5e7eb;
+    .rpt-footer{background:{{superficie-2}};border-top:1px solid {{borde}};
       padding:8px 40px;display:flex;justify-content:space-between;align-items:center;
-      font-size:8px;color:#9ca3af;margin-top:auto;}
+      font-size:8px;color:{{texto-tenue}};margin-top:auto;}
     @page{size:8.5in 11in;margin:0;}
     @media print{
       .page{break-after:page;}
       .page:last-child{break-after:avoid;}
     }
     @media screen{
-      html,body{background:#cdd3e0;}
+      html,body{background:{{leg-borde-fuerte-cdd3e0}};}
       body{display:flex;flex-direction:column;align-items:center;padding:24px 0 40px;}
-      .page{box-shadow:0 3px 20px rgba(0,0,0,0.22);margin-bottom:20px;zoom:0.9;}
+      .page{box-shadow:0 3px 20px {{leg-texto-000000@22}};margin-bottom:20px;zoom:0.9;}
     }
     /* ── Cash Flow Pulse (pages 3-4) ── */
     .pulse-section{padding:10px 40px 12px;}
@@ -1923,40 +1944,40 @@ reporteServer <- function(id, shared, active_tab = NULL) {
       text-transform:uppercase;padding:2px 10px;border-radius:4px;
       display:inline-block;margin-bottom:8px;
       -webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    .pulse-mon1-label{background:#dbeafe;color:#1e3a5f;}
-    .pulse-mon2-label{background:#d1fae5;color:#065f46;}
+    .pulse-mon1-label{background:{{leg-primario-suave-dbeafe}};color:{{encabezado}};}
+    .pulse-mon2-label{background:{{leg-exito-suave-d1fae5}};color:{{exito-texto}};}
     .pulse-kpi-row{display:flex;gap:8px;margin-bottom:8px;}
-    .pulse-kpi{flex:1;border-radius:8px;padding:9px 13px;color:#fff;
+    .pulse-kpi{flex:1;border-radius:8px;padding:9px 13px;color:{{encabezado-texto}};
       -webkit-print-color-adjust:exact;print-color-adjust:exact;}
     .pulse-kpi-lbl{font-size:7px;font-weight:600;text-transform:uppercase;
       letter-spacing:0.8px;opacity:0.75;margin-bottom:3px;}
     .pulse-kpi-val{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;}
-    .pulse-kpi-in{background:linear-gradient(135deg,#064e3b 0%,#0d9f8a 100%);}
-    .pulse-kpi-out{background:linear-gradient(135deg,#78350f 0%,#b45309 100%);}
-    .pulse-kpi-net-pos{background:linear-gradient(135deg,#0d1b3e 0%,#1e4080 100%);}
-    .pulse-kpi-net-neg{background:linear-gradient(135deg,#7f1d1d 0%,#dc2626 100%);}
-    .pulse-chart-wrap{border:1px solid #e8ecf4;border-radius:8px;padding:8px 10px;
-      margin-bottom:8px;background:#fafbff;}
+    .pulse-kpi-in{background:linear-gradient(135deg,{{leg-exito-texto-064e3b}} 0%,{{leg-exito-0d9f8a}} 100%);}
+    .pulse-kpi-out{background:linear-gradient(135deg,{{leg-aviso-texto-78350f}} 0%,{{leg-aviso-fuerte-b45309}} 100%);}
+    .pulse-kpi-net-pos{background:linear-gradient(135deg,{{leg-encabezado-0d1b3e}} 0%,{{leg-encabezado-hover-1e4080}} 100%);}
+    .pulse-kpi-net-neg{background:linear-gradient(135deg,{{leg-peligro-texto-7f1d1d}} 0%,{{peligro}} 100%);}
+    .pulse-chart-wrap{border:1px solid {{leg-borde-e8ecf4}};border-radius:8px;padding:8px 10px;
+      margin-bottom:8px;background:{{superficie-2}};}
     .pulse-bottom{display:flex;gap:8px;}
-    .pulse-panel{flex:1;border:1px solid #e8ecf4;border-radius:8px;overflow:hidden;}
+    .pulse-panel{flex:1;border:1px solid {{leg-borde-e8ecf4}};border-radius:8px;overflow:hidden;}
     .pulse-panel-hdr{font-size:7px;font-weight:700;letter-spacing:0.8px;
       text-transform:uppercase;padding:4px 10px;
       -webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    .pulse-panel-in-hdr{background:#d1fae5;color:#065f46;}
-    .pulse-panel-out-hdr{background:#fee2e2;color:#7f1d1d;}
+    .pulse-panel-in-hdr{background:{{leg-exito-suave-d1fae5}};color:{{exito-texto}};}
+    .pulse-panel-out-hdr{background:{{peligro-suave}};color:{{leg-peligro-texto-7f1d1d}};}
     .pulse-item{display:flex;align-items:center;padding:4px 10px;
-      border-bottom:1px solid #f3f4f6;}
+      border-bottom:1px solid {{leg-borde-f3f4f6}};}
     .pulse-item:last-child{border-bottom:none;}
-    .pulse-item-name{flex:1;font-size:8px;font-weight:600;color:#1e293b;
+    .pulse-item-name{flex:1;font-size:8px;font-weight:600;color:{{leg-texto-1e293b}};
       overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .pulse-item-amt{font-size:8.5px;font-weight:700;font-variant-numeric:tabular-nums;
       margin-left:6px;white-space:nowrap;}
     .pulse-badge{font-size:6px;font-weight:700;padding:1px 4px;border-radius:3px;
       margin-left:4px;white-space:nowrap;
       -webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    .pulse-badge-urg{background:#dc2626;color:#fff;}
-    .pulse-badge-imp{background:#d97706;color:#fff;}
-    .pulse-badge-both{background:#7c3aed;color:#fff;}
+    .pulse-badge-urg{background:{{peligro}};color:{{encabezado-texto}};}
+    .pulse-badge-imp{background:{{aviso-fuerte}};color:{{encabezado-texto}};}
+    .pulse-badge-both{background:{{provision}};color:{{encabezado-texto}};}
   '
 
   # ── Pulse pages (current week + next week) ───────────────────────────────────
@@ -2074,5 +2095,5 @@ reporteServer <- function(id, shared, active_tab = NULL) {
     # pages 3-4: cash flow pulse (current week + next week)
     pulse_pages
   )
-  .brand_inject(html_out, cmap, group_name)
+  .rpt_pintar(.brand_inject(html_out, cmap, group_name), tema)   # TEMA 4b: the colours by role
 }

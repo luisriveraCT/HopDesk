@@ -22,7 +22,8 @@ Sys.Date <- function() REPORTE_HOY
 `%||%` <- function(a, b) if (is.null(a)) b else a
 # hd_columnas.R: the Pulse's axis uses the engine's compact format (T55b);
 # the amounts are monto_moneda()'s (monedas.R), so no fmt_money() here.
-for (f in c("R/i18n.R", "R/monedas.R", "R/zona.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R",
+# R/tema_registro.R: the report's colours are theme roles (TEMA 4b).
+for (f in c("R/tema_registro.R", "R/i18n.R", "R/monedas.R", "R/zona.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R",
             "R/empresas_identidad.R", "R/data_pipeline.R", "R/reporte_module.R"))
   if (file.exists(f)) source(f, local = FALSE)
 .i18n_dir <- file.path(getwd(), "www", "i18n")
@@ -71,12 +72,15 @@ reporte_ng <- function(hoy = REPORTE_HOY) {
   list(cuentas = cuentas, movs = movs, sap = list(AR = ar, AP = ap))
 }
 
-reporte_correr <- function(cuentas, movs, sap, base = NULL) {
+# etiquetas: a tags_db (ledger, Empresa, Moneda, Documento, tag) for the pulse's
+# badges; tema: the session's theme (session$userData$hd_tema, what
+# tema_de_sesion() reads), NULL = the default (TEMA 4b).
+reporte_correr <- function(cuentas, movs, sap, base = NULL, etiquetas = NULL, tema = NULL) {
   shared <- list(
     ctas_cuentas = reactive(cuentas),
     bancos_movimientos = reactive(movs),
     sap_data = reactive(sap),
-    tags_db = reactive(NULL),
+    tags_db = reactive(etiquetas),   # not named `tags`: that would hide htmltools' tags
     bancos_confirmados = reactive(NULL),
     papelera_rv = reactive(NULL),
     company_map = reactive(c(NG = "Networks Group", NRS = "Networks Realtors")),
@@ -87,6 +91,7 @@ reporte_correr <- function(cuentas, movs, sap, base = NULL) {
   if (!is.null(base)) shared$moneda_base_cliente <- reactive(list(moneda = base, origen = "ajuste"))
   out <- NULL
   testServer(reporteServer, args = list(shared = shared), {
+    if (!is.null(tema)) session$userData$hd_tema <- function() tema
     session$setInputs(chk_emp_NG = TRUE, chk_emp_NRS = TRUE)
     html <- report_html()
     resumen <- as.character(output$preview_summary$html)
