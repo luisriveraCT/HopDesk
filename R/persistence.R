@@ -393,7 +393,7 @@ modificar_tabla_completa <- function(key, client_id, schema_fn, cambio, permitir
     if (grepl("usuarios\\.rds$|username_index|pending_invites|erp_connections", key)) return(NULL)
     if (!is.data.frame(antes) || !is.data.frame(despues) || !"id" %in% names(antes) || !"id" %in% names(despues))
       return(NULL)
-    secreta <- function(cl) grepl("password|hash|pwd|token|secret|api_key|clave", cl, ignore.case = TRUE)
+    secreta <- function(cl) grepl("password|passw|contrase|credencial|llave|private|hash|pwd|token|secret|api_key|clave", cl, ignore.case = TRUE)
     corta <- function(v, cl) {
       if (secreta(cl)) return("(cambi\u00f3)")
       if (is.null(v) || !length(v)) return(NULL)
@@ -411,7 +411,7 @@ modificar_tabla_completa <- function(key, client_id, schema_fn, cambio, permitir
     cambia <- matrix(FALSE, length(id_c), length(cols), dimnames = list(NULL, cols))
     for (cl in cols) {
       a <- antes[[cl]][ia]; b <- despues[[cl]][id_c]
-      cambia[, cl] <- if (is.list(a) || is.list(b)) !mapply(identical, a, b, USE.NAMES = FALSE) else {
+      cambia[, cl] <- if (is.list(a) || is.list(b)) !vapply(seq_along(a), function(i) identical(a[[i]], b[[i]]), logical(1)) else {
         na_a <- is.na(a); na_b <- is.na(b)
         # In their own type when both share it (fast); as text otherwise.
         if (!identical(class(a), class(b)) || is.factor(a)) { a <- as.character(a); b <- as.character(b) }
@@ -464,7 +464,7 @@ modificar_tabla <- function(key, client_id, schema, cambio, permitir_reduccion =
     if (grepl("usuarios\\.rds$|username_index|pending_invites|erp_connections", key)) return(NULL)
     if (!is.data.frame(antes) || !is.data.frame(despues) || !"id" %in% names(antes) || !"id" %in% names(despues))
       return(NULL)
-    secreta <- function(cl) grepl("password|hash|pwd|token|secret|api_key|clave", cl, ignore.case = TRUE)
+    secreta <- function(cl) grepl("password|passw|contrase|credencial|llave|private|hash|pwd|token|secret|api_key|clave", cl, ignore.case = TRUE)
     corta <- function(v, cl) {
       if (secreta(cl)) return("(cambi\u00f3)")
       if (is.null(v) || !length(v)) return(NULL)
@@ -482,7 +482,7 @@ modificar_tabla <- function(key, client_id, schema, cambio, permitir_reduccion =
     cambia <- matrix(FALSE, length(id_c), length(cols), dimnames = list(NULL, cols))
     for (cl in cols) {
       a <- antes[[cl]][ia]; b <- despues[[cl]][id_c]
-      cambia[, cl] <- if (is.list(a) || is.list(b)) !mapply(identical, a, b, USE.NAMES = FALSE) else {
+      cambia[, cl] <- if (is.list(a) || is.list(b)) !vapply(seq_along(a), function(i) identical(a[[i]], b[[i]]), logical(1)) else {
         na_a <- is.na(a); na_b <- is.na(b)
         # In their own type when both share it (fast); as text otherwise.
         if (!identical(class(a), class(b)) || is.factor(a)) { a <- as.character(a); b <- as.character(b) }

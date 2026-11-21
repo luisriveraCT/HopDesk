@@ -17,7 +17,10 @@
 #   6  not logged: app_audit*, sync_versions, *_backup_*, preferencias.rds;
 #   7  no log_action() (the emails job): the write goes on;
 #   8  no recursion: a log_action() that writes logs nothing more;
-#   9  evento_sistema(); 10  the difference of 50 000 rows takes < 200 ms.
+#   9  evento_sistema(); 10  the difference of 50 000 rows takes < 200 ms;
+#  11  the integrador's fixes: (A) a list column with 0 ids in common does
+#      not lose the difference; (B) contrase/credencial/llave/private/passw
+#      are secret; (C) the two copies of .t72_diferencia stay identical.
 # Run from project root:  Rscript tests/test_t72b_evento.R
 # Contraprueba: on e554ec3 there is no `evento` argument: 1-3, 5, 6 fail.
 # =============================================================================
@@ -164,6 +167,34 @@ ms <- min(vapply(1:3, function(i) system.time(dd <<- dif("bancos_movimientos.rds
 cat(sprintf("   (50 000 rows: %.0f ms)\n", ms))
 ok(sprintf("10 the difference of 50 000 rows (500 changed, 10 removed, 1 new) takes < 200 ms (%.0f ms)", ms),
    !is.null(dif) && ms < 200 && identical(unname(dd$n), c(1L, 500L, 10L)))
+
+# ── 11. The integrador's fixes (A, B, C) ───────────────────────────────────
+dif_de <- function(f) { d <- NULL
+  for (e1 in as.list(body(f)))
+    if (is.call(e1) && identical(e1[[1]], as.name("<-")) && identical(e1[[2]], as.name(".t72_diferencia"))) d <- e1[[3]]
+  d }
+d_mt <- dif_de(modificar_tabla); d_mtc <- dif_de(modificar_tabla_completa)
+ok("11C the two copies of .t72_diferencia (modificar_tabla / _completa) are identical",
+   !is.null(d_mt) && !is.null(d_mtc) && identical(deparse(d_mt), deparse(d_mtc)))
+# A: a list column with NO ids in common -- mapply() gave list() and !list() threw: the whole difference was lost.
+la <- tibble(id = c("a1", "a2"), datos = list(list(x = 1), list(x = 2)))
+lb <- tibble(id = "b1", datos = list(list(x = 3)))
+d0 <- tryCatch(dif("t72_prueba.rds", la, lb), error = function(e) NULL)
+ok("11A list column, 0 rows in common: the difference is there (1 new, 0 changed, 2 removed)",
+   !is.null(d0) && identical(unname(d0$n), c(1L, 0L, 2L)))
+lc <- tibble(id = c("a1", "a2"), datos = list(list(x = 1), list(x = 20)))
+d1 <- tryCatch(dif("t72_prueba.rds", la, lc), error = function(e) NULL)
+ok("11A list column with rows in common: only the row that changed counts",
+   !is.null(d1) && identical(unname(d1$n), c(0L, 1L, 0L)) && identical(names(d1$cambiadas), "a2"))
+# B: more names that look like a secret.
+sa <- tibble(id = "s1", contrasena = "C-VIEJA", credencial_sap = "CR-VIEJA", llave_api = "LL-VIEJA",
+             private_key = "PK-VIEJA", passwd = "PW-VIEJA", nombre = "x")
+sb <- sa; for (cl in setdiff(names(sb), c("id", "nombre"))) sb[[cl]] <- paste0(sb[[cl]], "-NUEVA-SECRETA")
+sb <- bind_rows(sb, tibble(id = "s2", contrasena = "C-FILA-NUEVA", credencial_sap = "CR-FILA-NUEVA", llave_api = "LL-FILA-NUEVA",
+                           private_key = "PK-FILA-NUEVA", passwd = "PW-FILA-NUEVA", nombre = "y"))
+ds <- tryCatch(dif("t72_prueba.rds", sa, sb), error = function(e) NULL)
+ok("11B contrase / credencial / llave / private / passw columns are only \"(cambió)\", never copied",
+   !is.null(ds) && !grepl("VIEJA|NUEVA", texto(ds)) && length(ds$cambiadas$s1) == 5L)
 
 s3_memoria_restaurar()
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
