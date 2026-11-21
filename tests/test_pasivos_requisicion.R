@@ -32,7 +32,7 @@ cargar("R/pasivos_observers.R", "isTRUE_safe")
 cargar("R/pasivos_capabilities.R", c("PASIVOS_CAPABILITIES", "pasivos_autoriza"))
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/pasivos_schemas.R", "R/pasivos_table_pivot.R", "R/pasivos_table_styles.R",
-            "R/pasivos_table_module.R", "R/pasivos_list_module.R")) suppressMessages(source(f))
+            "R/pasivos_table_module.R", "R/pasivos_list_module.R", "R/pasivos_deuda.R")) suppressMessages(source(f))
 source("tests/helpers/hd_numero.R")   # T66: hd_numero_input()
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 source("tests/helpers/pasivos_datos_prueba.R")

@@ -66,6 +66,12 @@ pasivos_table_module_ui <- function(id) {
         pasivos_list_module_ui(ns("list"))
       ),
 
+      # ── Costo de la deuda sub-tab (T78) ──────────────────────────────────
+      shiny::tabPanel(
+        tr("tablas.pasivos.tab.deuda"), value = "deuda",
+        pasivos_deuda_ui(ns("deuda"))
+      ),
+
       # ── Papelera sub-tab (T18) ───────────────────────────────────────────
       shiny::tabPanel(
         tr("tablas.pasivos.tab.papelera"), value = "papelera",
@@ -101,6 +107,7 @@ pasivos_table_module_server <- function(id, shared) {
     # ── Start the list sub-module ───────────────────────────────────────────
     pasivos_list_module_server("list", shared)
     pasivos_papelera_server("papelera", shared)
+    pasivos_deuda_server("deuda", shared, base)   # T78
 
     # ── Action: + Provisión manual ──────────────────────────────────────────
     # E3b: what to call with the saved provision's id when the modal was
