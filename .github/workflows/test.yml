@@ -38,6 +38,13 @@ jobs:
           r-version: '4.5.2'
           use-public-rspm: true
 
+      # magick links against ImageMagick's Magick++: installed explicitly
+      # rather than trusting pak's system-requirements lookup (T76).
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmagick++-dev
+
       # Uses pak (via r-lib/actions/setup-r-dependencies) instead of a plain
       # install.packages() step — plain install.packages() left aws.s3
       # uninstalled with no non-zero exit code (a per-package source-compile
@@ -45,6 +52,8 @@ jobs:
       # every runner at library(aws.s3) load time. pak resolves Linux binaries
       # from Posit Package Manager and auto-installs any missing system
       # libraries, and fails the step loudly if a package truly can't install.
+      # magick (requisiciones attachments, R/adjuntos_s3.R) and filelock (the
+      # single-instance lock, R/global.R) are loaded at run time (T76).
       - name: Install R package dependencies
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
@@ -73,6 +82,8 @@ jobs:
             any::tibble
             any::stringi
             any::scrypt
+            any::magick
+            any::filelock
 
       - name: Run test suite
         id: run_tests
