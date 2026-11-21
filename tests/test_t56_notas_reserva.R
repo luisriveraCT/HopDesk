@@ -106,7 +106,13 @@ for (f in c("R/tiers_module.R", "R/empresas_module.R")) {
      grepl('class = "p-3 hd-scroll-pestana",[^\n]*\n\\s*style = "overflow-y: auto; max-height: calc\\(100vh - var\\(--hd-barra-alto\\) - 17px\\);"', x))
 }
 ok("no other rule styles .hd-scroll-pestana, and that one only its ::after (nothing competes with the inline scroll)",
-   sum(grepl("hd-scroll-pestana", sel, fixed = TRUE)) == 1L && ".hd-scroll-pestana::after" %in% sel_lista(gsub("\\s+", " ", sel[k])))
+   {
+     # T67 adds one rule that only sets overscroll-behavior-y (no height or
+     # overflow): it cannot compete with the inline scroll, so it does not count.
+     con <- grepl("hd-scroll-pestana", sel, fixed = TRUE)
+     solo_overscroll <- grepl("^\\s*overscroll-behavior(-y)?\\s*:\\s*[a-z]+\\s*;?\\s*$", body, perl = TRUE)
+     sum(con & !solo_overscroll) == 1L && ".hd-scroll-pestana::after" %in% sel_lista(gsub("\\s+", " ", sel[k]))
+   })
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
