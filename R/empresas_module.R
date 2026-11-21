@@ -75,6 +75,45 @@ logo_grupo_img <- function(logo_raw, logo_ext = "png", alto = 32) {
   nuevo
 }
 
+# The fields an edit changed (CM40): each value from the form that differs
+# from the row the panel was drawn with (`fila`), as it would be saved.
+# Guardar applies only these onto S3's current row: the whole row of the
+# session's copy used to win, and a copy loaded before another session's
+# rename wrote the old initials back (every table already under the new ones).
+.empresa_campos_editados <- function(fila, valores) {
+  igual <- function(a, b) identical(if (length(a) && !is.na(a)) as.character(a) else "",
+                                    if (length(b) && !is.na(b)) as.character(b) else "")
+  alt <- function(x) tryCatch(as.character(jsonlite::toJSON(as.character(jsonlite::fromJSON(x %||% "[]")),
+                                                            auto_unbox = FALSE)),
+                              error = function(e) "[]")
+  antes <- list(razon_social = trimws(fila$razon_social %||% ""),
+                nombre_corto = trimws(fila$nombre_corto %||% ""),
+                rfc          = toupper(trimws(fila$rfc %||% "")),
+                activa       = isTRUE(fila$activa),
+                nombres_alt  = alt(fila$nombres_alt))
+  valores$nombres_alt <- alt(valores$nombres_alt)
+  valores[vapply(names(valores), function(k) !igual(valores[[k]], antes[[k]]), logical(1))]
+}
+
+# ajustar(nuevo, fresco) for an edit (CM40): the company's row is S3's
+# current one with the edited fields set -- and, for a rename OLD -> NEW,
+# the initials and its earlier ones (CM29) computed on S3's row, not the
+# copy's. A company no longer in empresas.rds stops it, nothing written.
+.empresa_aplicar_campos <- function(id, cambios, old_ini = NULL, new_ini = NULL) function(nuevo, fresco) {
+  i <- which(as.character(nuevo$id) == id); f <- which(as.character(fresco$id) == id)
+  if (length(i) != 1L || length(f) != 1L)
+    stop("[EMP] the company is no longer in empresas.rds; nothing was saved", call. = FALSE)
+  fila <- fresco[f, , drop = FALSE]
+  for (k in names(cambios)) fila[[k]] <- cambios[[k]]
+  if (!is.null(new_ini) && !identical(old_ini, new_ini)) {
+    fila$initials <- new_ini
+    fila$iniciales_anteriores <- .iniciales_anteriores_tras(fila$iniciales_anteriores, old_ini, new_ini)
+  }
+  fila$updated_at <- as.character(Sys.time())
+  nuevo[i, names(fila)] <- fila
+  nuevo
+}
+
 # ── UI ────────────────────────────────────────────────────────────────────────
 
 empresasUI <- function(id) {
@@ -253,7 +292,13 @@ empresasUI <- function(id) {
       fluidRow(
         column(4,
           textInput(ns("edit_initials"), "Iniciales",
-                    value = row$initials, width = "100%")
+                    value = row$initials, width = "100%"),
+          # The initials this form was drawn with (CM40), sent from the same
+          # page as edit_initials: a rename is "edit_initials differs from
+          # these", never from the session's copy, which another session's
+          # rename may have reloaded before the page is drawn again.
+          div(style = "display:none",
+              textInput(ns("edit_ini_apertura"), NULL, value = row$initials))
         ),
         column(8,
           div(class = "mt-4 pt-1",
@@ -532,9 +577,13 @@ empresasServer <- function(id, shared) {
       empresas[as.character(empresas$id) == id, , drop = FALSE]
     }
 
+    # The row the edit panel was drawn with (CM40): Guardar applies only the
+    # fields that differ from it, onto S3's current row.
+    fila_form <- reactiveVal(NULL)
     output$edit_panel_ui <- renderUI({
       row <- .empresa_por_id(selected_id())
       req(nrow(row) == 1)
+      fila_form(row)
       .empresas_edit_panel_ui(ns, row)
     })
 
@@ -543,7 +592,15 @@ empresasServer <- function(id, shared) {
       row    <- .empresa_por_id(sel_id)
       req(nrow(row) == 1)
 
-      old_ini <- trimws(row$initials)
+      # CM40: what the form showed, not the session's copy now. A rename is
+      # edit_initials differing from the initials the page was drawn with
+      # (sent from the page); the other fields are compared with the row the
+      # panel was drawn with. Without the page's value (an older page), the
+      # drawn row, then the copy.
+      form <- isolate(fila_form())
+      if (is.null(form) || !identical(as.character(form$id), as.character(sel_id))) form <- row
+      apertura <- trimws(input$edit_ini_apertura %||% "")
+      old_ini <- if (nzchar(apertura)) apertura else trimws(form$initials)
       new_ini <- toupper(trimws(input$edit_initials %||% ""))
 
       if (!nzchar(new_ini) || !grepl("^[A-Z0-9]+$", new_ini)) {
@@ -557,6 +614,14 @@ empresasServer <- function(id, shared) {
 
       # Cascade-rename across all related S3 tables when initials change
       if (new_ini != old_ini) {
+        # The company was renamed by another session since this form was
+        # drawn: renaming it from initials it no longer has would run the
+        # cascade on the wrong ones (CM40).
+        if (!identical(toupper(trimws(row$initials)), toupper(old_ini))) {
+          showNotification(tr("tablas.empresas.aviso.renombrada_otra_sesion", iniciales = trimws(row$initials)),
+                           type = "error", duration = 8)
+          return()
+        }
         others <- all_e[-full_idx, , drop = FALSE]
         if (new_ini %in% toupper(trimws(others$initials[!is.na(others$initials)]))) {
           showNotification(tr("tablas.empresas.aviso.iniciales_otra"), type = "error")
@@ -600,23 +665,21 @@ empresasServer <- function(id, shared) {
             viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
           ), error = function(e) message("[EMP rename] log: ", conditionMessage(e)))
         if (inherits(cascade, "error")) return()
-        all_e[full_idx, "initials"] <- new_ini
-        if (!"iniciales_anteriores" %in% names(all_e)) all_e$iniciales_anteriores <- NA_character_
-        all_e[full_idx, "iniciales_anteriores"] <-
-          .iniciales_anteriores_tras(all_e$iniciales_anteriores[full_idx], old_ini, new_ini)   # CM29
       }
 
       alt_lines <- trimws(strsplit(input$edit_nombres_alt %||% "", "\n")[[1]])
       alt_lines <- alt_lines[nzchar(alt_lines)]
 
-      all_e[full_idx, "razon_social"] <- trimws(input$edit_razon_social %||% "")
-      all_e[full_idx, "nombre_corto"] <- trimws(input$edit_nombre_corto %||% "")
-      all_e[full_idx, "rfc"]          <- toupper(trimws(input$edit_rfc  %||% ""))
-      all_e[full_idx, "activa"]       <- isTRUE(input$edit_activa)
-      all_e[full_idx, "nombres_alt"]  <- as.character(jsonlite::toJSON(alt_lines, auto_unbox = FALSE))
-      all_e[full_idx, "updated_at"]   <- as.character(Sys.time())
-
-      saved <- tryCatch({ .save_and_broadcast(all_e); TRUE },
+      # CM40: only the fields this form changed, set on S3's current row (the
+      # initials, for a rename, with their earlier ones computed there too).
+      cambios <- .empresa_campos_editados(form, list(
+        razon_social = trimws(input$edit_razon_social %||% ""),
+        nombre_corto = trimws(input$edit_nombre_corto %||% ""),
+        rfc          = toupper(trimws(input$edit_rfc  %||% "")),
+        activa       = isTRUE(input$edit_activa),
+        nombres_alt  = as.character(jsonlite::toJSON(alt_lines, auto_unbox = FALSE))))
+      saved <- tryCatch({ .save_and_broadcast(all_e, ajustar = .empresa_aplicar_campos(
+                            sel_id, cambios, old_ini, if (new_ini != old_ini) new_ini)); TRUE },
                         error = function(e) { message("[EMP] edit failed: ", e$message); FALSE })
       if (!saved) {
         showNotification(tr("tablas.empresas.aviso.cambios_no_guardados"),

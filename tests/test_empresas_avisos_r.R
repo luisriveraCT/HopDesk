@@ -29,7 +29,7 @@ ok(sprintf("ningún aviso de empresas_module.R con texto fijo (quedan %d)", leng
 # ── 2. The keys exist in es and en ──────────────────────────────────────────
 claves <- avisos_claves(F, PRE)
 ok(sprintf("las %d claves %s* existen en es y en", length(claves), PRE),
-   length(claves) == 29L && all(vapply(claves, clave_en_es_y_en, logical(1))))
+   length(claves) == 30L && all(vapply(claves, clave_en_es_y_en, logical(1))))
 
 # ── 3. The Spanish reads exactly as before ──────────────────────────────────
 es <- function(k, ...) tr(paste0(PRE, k), ..., idioma = "es")
@@ -75,7 +75,11 @@ iguales <- list(
   # CM39: new, not a former fixed text -- its exact wording, pinned here
   list(es("iniciales_recien_dadas", iniciales = initials),
        paste0("Otra sesión acaba de dar de alta una empresa con las iniciales ", initials,
-              ". No se guardó nada; elige otras iniciales.")))
+              ". No se guardó nada; elige otras iniciales.")),
+  # CM40: new, not a former fixed text -- its exact wording, pinned here
+  list(es("renombrada_otra_sesion", iniciales = initials),
+       paste0("Otra sesión ya cambió las iniciales de esta empresa a ", initials,
+              ". No se guardó nada; revisa el formulario y vuelve a guardar.")))
 dif <- Filter(function(p) !identical(p[[1]], p[[2]]), iguales)
 ok(sprintf("el español de los %d avisos es idéntico al de antes", length(iguales)),
    { for (p in dif) message("  ahora: ", p[[1]], "\n  antes: ", p[[2]]); !length(dif) && length(iguales) == length(claves) })
