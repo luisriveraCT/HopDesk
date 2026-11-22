@@ -370,46 +370,50 @@ pasivos_generate_schedule <- function(liability, today = hoy_en(), client_id = p
   if (is.na(spread_bps)) spread_bps <- 0
   monto_gracia_custom <- as.numeric(liability$monto_gracia %||% NA_real_)  # NA = auto
 
-  # ── Variable-rate helpers ──────────────────────────────────────────────────
-  .get_period_rate <- function(k, fecha_k) {
-    if (startsWith(tasa_tipo, "variable_")) {
-      metric_map <- c(
-        variable_sofr   = "sofr",
-        variable_tiie28 = "tiie28",
-        variable_prime  = "prime",
-        variable_otro   = "otro"
-      )
-      metric <- metric_map[[tasa_tipo]]
-      if (is.null(metric)) metric <- sub("^variable_", "", tasa_tipo)
-      est <- tryCatch(forecasting_get_estimate(metric, fecha_k, client_id = client_id), error = function(e) NA_real_)
-      if (is.na(est)) {
-        NA_real_  # caller accumulates warning
-      } else {
-        (1 + (est + spread_bps / 100) / 100)^(1 / ppy) - 1
-      }
-    } else {
-      (1 + tasa / 100)^(1 / ppy) - 1
+  # ── A period's rates ───────────────────────────────────────────────────────
+  # list(r, f): r is the rate per period the level (French) payment is worked
+  # out with; f is what the balance pays as interest in this period.
+  #   fija: the captured rate is effective annual, r = f = (1 + t)^(1/m) - 1
+  #     (unchanged; Luis decides on the fixed ones apart).
+  #   variable (SOFR / TIIE28 / Prime): the market quotes NOMINAL annual,
+  #     simple interest Act/360: t = index + spread in points (bps / 100);
+  #     f = t * days of the period / 360, r = t / m. The index is the one in
+  #     force on the payment date (client's estimates); none -> the rate
+  #     captured on the day, the same convention.
+  es_variable <- startsWith(tasa_tipo, "variable_")
+  variable_na_warned <- FALSE
+  .tasas_periodo <- function(fecha_k, fecha_prev) {
+    if (!es_variable) {
+      r <- (1 + tasa / 100)^(1 / ppy) - 1
+      return(list(r = r, f = r))
     }
+    est <- tryCatch(forecasting_get_estimate(pasivos_metrica_tasa(tasa_tipo), fecha_k, client_id = client_id),
+                    error = function(e) NA_real_)
+    if (is.na(est)) {
+      if (!variable_na_warned) {
+        warning("[pasivos] variable rate NA for some periods — falling back to tasa_actual")
+        variable_na_warned <<- TRUE
+      }
+      est <- tasa
+    }
+    t <- (est + spread_bps / 100) / 100
+    dias <- as.numeric(as.Date(fecha_k) - as.Date(fecha_prev))
+    list(r = t / ppy, f = t * dias / 360)
   }
 
   # ── Build regular schedule ─────────────────────────────────────────────────
   saldo <- principal
   sched <- vector("list", n)
-  variable_na_warned <- FALSE
+  fecha_prev <- base
 
   for (k in seq_len(n)) {
     fecha_k <- .add_payment_period(base, k, frecuencia, dia_pago,
                                     dia_semana_pago = dia_pago,
                                     mes_pago        = mes_pago_val)
-    r_k     <- .get_period_rate(k, fecha_k)
-
-    if (is.na(r_k)) {
-      if (!variable_na_warned) {
-        warning("[pasivos] variable rate NA for some periods — falling back to tasa_actual")
-        variable_na_warned <- TRUE
-      }
-      r_k <- (1 + (tasa + spread_bps / 100) / 100)^(1 / ppy) - 1
-    }
+    tp      <- .tasas_periodo(fecha_k, fecha_prev)
+    r_k     <- tp$r
+    f_k     <- tp$f
+    fecha_prev <- fecha_k
 
     if (k <= pg) {
       # ── Grace period ─────────────────────────────────────────────────────────
@@ -418,7 +422,7 @@ pasivos_generate_schedule <- function(liability, today = hoy_en(), client_id = p
       int_k  <- if (!is.na(monto_gracia_custom) && monto_gracia_custom >= 0)
                   monto_gracia_custom
                 else
-                  saldo * r_k
+                  saldo * f_k
       fees_k   <- 0
       origin_k <- "grace"
     } else {
@@ -433,16 +437,16 @@ pasivos_generate_schedule <- function(liability, today = hoy_en(), client_id = p
         } else {
           pmt <- saldo * r_k * (1 + r_k)^rem / ((1 + r_k)^rem - 1)
         }
-        int_k  <- saldo * r_k
+        int_k  <- saldo * f_k
         cap_k  <- pmt - int_k
         fees_k <- 0
       } else if (identical(metodo, "alemana")) {
         cap_k  <- principal / n_amort
-        int_k  <- saldo * r_k
+        int_k  <- saldo * f_k
         fees_k <- 0
       } else if (identical(metodo, "americana")) {
         cap_k  <- if (k_a == n_amort) saldo else 0
-        int_k  <- principal * r_k
+        int_k  <- principal * f_k
         fees_k <- 0
       } else {
         stop("[pasivos] unknown metodo_amortizacion: ", metodo)
@@ -490,12 +494,13 @@ pasivos_generate_schedule <- function(liability, today = hoy_en(), client_id = p
         # Re-state future grace rows against the declared saldo
         for (idx in grace_future_idx) {
           fecha_k <- sched_df$fecha[idx]
-          r_k     <- .get_period_rate(sched_df$periodo[idx], fecha_k)
-          if (is.na(r_k)) r_k <- (1 + tasa / 100)^(1 / ppy) - 1
+          fecha_prev <- if (sched_df$periodo[idx] <= 1L) base else
+                          sched_df$fecha[sched_df$periodo == sched_df$periodo[idx] - 1L][1]
+          f_k     <- .tasas_periodo(fecha_k, fecha_prev)$f
           int_k   <- if (!is.na(monto_gracia_custom) && monto_gracia_custom >= 0)
                        monto_gracia_custom
                      else
-                       s_rem * r_k
+                       s_rem * f_k
           sched_df$capital[idx]      <- 0
           sched_df$interes[idx]      <- int_k
           sched_df$total[idx]        <- int_k + sched_df$fees[idx]
@@ -507,21 +512,24 @@ pasivos_generate_schedule <- function(liability, today = hoy_en(), client_id = p
         for (i in seq_along(amort_future_idx)) {
           idx     <- amort_future_idx[i]
           fecha_k <- sched_df$fecha[idx]
-          r_k     <- .get_period_rate(sched_df$periodo[idx], fecha_k)
-          if (is.na(r_k)) r_k <- (1 + tasa / 100)^(1 / ppy) - 1
+          fecha_prev <- if (sched_df$periodo[idx] <= 1L) base else
+                          sched_df$fecha[sched_df$periodo == sched_df$periodo[idx] - 1L][1]
+          tp      <- .tasas_periodo(fecha_k, fecha_prev)
+          r_k     <- tp$r
+          f_k     <- tp$f
 
           if (identical(metodo, "francesa")) {
             rem <- n_rem_amort - i + 1L
             if (r_k == 0) pmt <- s_rem / rem else
               pmt <- s_rem * r_k * (1 + r_k)^rem / ((1 + r_k)^rem - 1)
-            int_k <- s_rem * r_k
+            int_k <- s_rem * f_k
             cap_k <- pmt - int_k
           } else if (identical(metodo, "alemana")) {
             cap_k <- saldo_declarado / n_rem_amort
-            int_k <- s_rem * r_k
+            int_k <- s_rem * f_k
           } else {  # americana
             cap_k <- if (i == n_rem_amort) s_rem else 0
-            int_k <- saldo_declarado * r_k
+            int_k <- saldo_declarado * f_k
           }
           if (i == n_rem_amort) cap_k <- s_rem
           s_post <- max(0, s_rem - cap_k)
@@ -702,6 +710,30 @@ pasivos_costeo <- function(liability, hoy = hoy_en(), client_id = pasivos_client
 # The session's client (session$userData$hd_cliente(), set in app.R), or
 # NULL outside a session (scripts, the emails job): the default client_id of
 # the engine's estimate reads. Per session, never a global.
+# The estimates' metric of a variable tasa_tipo ("variable_sofr" -> "sofr").
+pasivos_metrica_tasa <- function(tasa_tipo) {
+  m <- c(variable_sofr = "sofr", variable_tiie28 = "tiie28", variable_prime = "prime", variable_otro = "otro")
+  tasa_tipo <- as.character(tasa_tipo %||% "")
+  if (tasa_tipo %in% names(m)) unname(m[[tasa_tipo]]) else sub("^variable_", "", tasa_tipo)
+}
+
+# A variable rate in force on `fecha`, nominal annual in % (index + spread),
+# and whether it is the index (TRUE) or the rate captured on the day (FALSE).
+# NULL for a fixed rate.
+pasivos_tasa_variable_vigente <- function(liability, fecha = hoy_en(), client_id = pasivos_cliente_sesion()) {
+  tipo <- as.character(liability$tasa_tipo[1] %||% "fija")
+  if (!startsWith(tipo, "variable_")) return(NULL)
+  est <- tryCatch(forecasting_get_estimate(pasivos_metrica_tasa(tipo), as.Date(fecha), client_id = client_id),
+                  error = function(e) NA_real_)
+  spread <- suppressWarnings(as.numeric(liability$tasa_spread[1] %||% 0)); if (is.na(spread)) spread <- 0
+  base <- if (is.na(est)) suppressWarnings(as.numeric(liability$tasa_actual[1])) else est
+  list(nominal = base + spread / 100, del_indice = !is.na(est))
+}
+
+# The effective annual rate (EAR, %) of a nominal annual rate in % paid m
+# times a year, simple interest Act/360: (1 + t * 365/360 / m)^m - 1.
+pasivos_ear_act360 <- function(nominal, m) 100 * ((1 + nominal / 100 * 365 / 360 / m)^m - 1)
+
 pasivos_cliente_sesion <- function(session = shiny::getDefaultReactiveDomain()) {
   cid <- tryCatch(shiny::isolate(session$userData$hd_cliente()), error = function(e) NULL)
   if (is.character(cid) && length(cid) == 1L && !is.na(cid) && nzchar(cid)) cid else NULL
@@ -1271,90 +1303,9 @@ pasivos_provision_revive <- function(provision_id, user, client_id = NULL) {
   invisible(row)
 }
 
-# ── §2.6 Modifier composition ──────────────────────────────────────────────────
-
-.metric_for_modifier_type <- function(type, provision) {
-  cot <- provision$cotizado_en %||% NA_character_
-  pag <- provision$moneda_pago %||% NA_character_
-  switch(type,
-    fx_rate              = paste0("fx_", tolower(cot), "_", tolower(pag)),
-    interest_rate_sofr   = "sofr",
-    interest_rate_tiie28 = "tiie28",
-    inflation_index      = "inflation",
-    custom_multiplier    = NA_character_,
-    NA_character_
-  )
-}
-
-pasivos_apply_modifiers <- function(provision, all_modifiers, fecha = NULL) {
-  if (is.null(fecha) || is.na(fecha))
-    fecha <- provision$fecha_efectiva
-
-  # Skip all modifiers if top-level amount_pago_override is set
-  has_top_override <- !is.na(provision$amount_pago_override)
-  if (has_top_override) return(provision)
-
-  # Filter to applicable modifiers (enabled + scope matches)
-  prov_id   <- provision$id
-  liab_id   <- provision$liability_id
-
-  mods <- all_modifiers[
-    !is.na(all_modifiers$enabled) & all_modifiers$enabled &
-      (
-        all_modifiers$scope_type == "global" |
-          (all_modifiers$scope_type == "liability" & !is.na(all_modifiers$scope_id) &
-             all_modifiers$scope_id == liab_id) |
-          (all_modifiers$scope_type == "provision"  & !is.na(all_modifiers$scope_id) &
-             all_modifiers$scope_id == prov_id)
-      ),
-    , drop = FALSE
-  ]
-
-  if (!nrow(mods)) return(provision)
-
-  # Sort by created_at
-  mods <- mods[order(mods$created_at), , drop = FALSE]
-
-  for (i in seq_len(nrow(mods))) {
-    mod <- mods[i, , drop = FALSE]
-
-    # Get effective value
-    value <- if (!is.na(mod$frozen_value)) {
-      mod$frozen_value
-    } else if (!is.na(mod$estimate_method)) {
-      metric <- .metric_for_modifier_type(mod$type, provision)
-      if (is.na(metric)) NA_real_ else
-        tryCatch(
-          forecasting_get_estimate(metric, fecha, method = mod$estimate_method),
-          error = function(e) NA_real_
-        )
-    } else {
-      NA_real_
-    }
-
-    if (is.na(value)) next
-
-    tgt <- mod$target_field
-    typ <- mod$type
-
-    if (typ %in% c("fx_rate", "inflation_index", "custom_multiplier")) {
-      if (tgt %in% names(provision)) provision[[tgt]] <- provision[[tgt]] * value
-
-    } else if (typ %in% c("interest_rate_sofr", "interest_rate_tiie28")) {
-      # Recompute componente_interes using new rate; recalculate amount_pago
-      # value is annual rate in %; period rate uses /12 (monthly assumption).
-      # TODO: pass liability frecuencia_pago here to make modifiers frequency-aware.
-      r <- value / 12 / 100
-      # Need saldo (capital) — use componente_capital as proxy
-      cap <- provision$componente_capital
-      if (!is.na(cap)) {
-        provision$componente_interes <- cap * r
-        provision$amount_pago <- provision$componente_capital +
-          provision$componente_interes +
-          (provision$componente_fees %||% 0)
-      }
-    }
-  }
-
-  provision
-}
+# ── §2.6 Modifiers ─────────────────────────────────────────────────────────────
+# pasivos_apply_modifiers() and .metric_for_modifier_type() were removed
+# (2026-11-21, tasas variables): nothing called them, and their
+# interest_rate_* branch used valor/12 on the period's capital, not on the
+# balance. A variable rate is the schedule's job (.tasas_periodo() above).
+# The pasivos_modifiers table and its loaders stay; nothing writes it.

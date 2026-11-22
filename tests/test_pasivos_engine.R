@@ -828,97 +828,14 @@ final_p3 <- final_p3[final_p3$id == "p3", ]
 .chk(final_p3$reverted_count, 2L, "G6: reverted_count=2 after two revives")
 
 # =============================================================================
-# Group 7 — Modifiers
+# Group 7 — Modifiers: removed (2026-11-21, tasas variables)
 # =============================================================================
-cat("── 7. Modifiers ─────────────────────────────────────────────────────────\n")
-.reset_mock()
-
-.make_mod <- function(id, scope_type = "global", scope_id = NA_character_,
-                       type = "fx_rate", target_field = "amount_pago",
-                       frozen_value = NA_real_, estimate_method = NA_character_,
-                       enabled = TRUE,
-                       created_at = as.POSIXct("2026-01-01")) {
-  tibble::tibble(
-    id = id, scope_type = scope_type, scope_id = scope_id,
-    type = type, target_field = target_field,
-    estimate_method = estimate_method, frozen_value = frozen_value,
-    enabled = enabled, display_label = id,
-    created_by = "dev", created_at = created_at,
-    updated_at = created_at
-  )
-}
-
-base_prov <- list(
-  id = "prov_x", liability_id = "l1",
-  moneda_pago = "MXN", cotizado_en = "USD",
-  fecha_efectiva = as.Date("2026-06-15"),
-  amount_pago = 1000, amount_cotizado = 50,
-  fx_rate_used = 19.5,
-  componente_capital = 800, componente_interes = 150,
-  componente_fees = 50, componente_iva = NA_real_,
-  amount_pago_override = NA_real_,
-  amount_cotizado_override = NA_real_,
-  fecha_efectiva_override = as.Date(NA)
-)
-
-# 7a single fx_rate multiplier frozen=19.5
-mods_fx <- .make_mod("m1", frozen_value = 19.5)
-res_fx <- pasivos_apply_modifiers(as.list(base_prov), mods_fx)
-.chk(res_fx$amount_pago, 1000 * 19.5, "G7: fx_rate modifier multiplies amount_pago")
-
-# 7b two modifiers (FX × inflation), multiplicative
-mods_2 <- dplyr::bind_rows(
-  .make_mod("m_fx",  frozen_value = 1.05, type = "fx_rate",
-            target_field = "amount_pago",
-            created_at = as.POSIXct("2026-01-01")),
-  .make_mod("m_inf", frozen_value = 1.03, type = "inflation_index",
-            target_field = "amount_pago",
-            created_at = as.POSIXct("2026-01-02"))
-)
-res_2 <- pasivos_apply_modifiers(as.list(base_prov), mods_2)
-expected_2 <- 1000 * 1.05 * 1.03
-.chk_true(abs(res_2$amount_pago - expected_2) < 0.01, "G7: two multiplicative modifiers compose")
-
-# 7c disabled modifier → ignored
-mods_dis <- .make_mod("m_off", frozen_value = 99, enabled = FALSE)
-res_dis <- pasivos_apply_modifiers(as.list(base_prov), mods_dis)
-.chk(res_dis$amount_pago, 1000, "G7: disabled modifier ignored")
-
-# 7d modifier scoped to different liability_id → ignored
-mods_scope <- .make_mod("m_other", scope_type = "liability", scope_id = "other_l",
-                          frozen_value = 99)
-res_scope <- pasivos_apply_modifiers(as.list(base_prov), mods_scope)
-.chk(res_scope$amount_pago, 1000, "G7: wrong liability scope → ignored")
-
-# 7e provision-scoped modifier matching this provision → applied
-mods_ps <- .make_mod("m_ps", scope_type = "provision", scope_id = "prov_x",
-                       frozen_value = 2)
-res_ps <- pasivos_apply_modifiers(as.list(base_prov), mods_ps)
-.chk(res_ps$amount_pago, 1000 * 2, "G7: provision-scoped modifier applied")
-
-# 7f frozen value beats live estimate
-forecasting_set_estimate("fx_usd_mxn", as.Date("2026-06-15"), 25.0)
-mods_frozen <- .make_mod("m_fz", frozen_value = 19.5, estimate_method = "spot",
-                           type = "fx_rate", target_field = "amount_pago")
-res_fz <- pasivos_apply_modifiers(as.list(base_prov), mods_frozen)
-.chk(res_fz$amount_pago, 1000 * 19.5, "G7: frozen value beats live estimate")
-
-# 7g interest_rate_sofr modifier recomputes interes and amount_pago
-mods_ir <- .make_mod("m_ir", type = "interest_rate_sofr",
-                       target_field = "componente_interes",
-                       frozen_value = 5.5)  # 5.5% pa → 5.5/12/100 per period
-res_ir <- pasivos_apply_modifiers(as.list(base_prov), mods_ir)
-expected_int <- base_prov$componente_capital * (5.5 / 12 / 100)
-.chk_true(abs(res_ir$componente_interes - expected_int) < 0.001,
-          "G7: interest_rate_sofr recomputes interes")
-.chk_true(abs(res_ir$amount_pago - (base_prov$componente_capital + expected_int + base_prov$componente_fees)) < 0.001,
-          "G7: amount_pago recomputed from new interes")
-
-# 7h provision with amount_pago_override → all modifiers skipped
-prov_ov <- base_prov
-prov_ov$amount_pago_override <- 5000
-res_ov <- pasivos_apply_modifiers(as.list(prov_ov), mods_fx)
-.chk(res_ov$amount_pago, 1000, "G7: amount_pago_override → modifiers skipped, value unchanged")
+cat("── 7. Modifiers (removed) ───────────────────────────────────────────────\n")
+# pasivos_apply_modifiers() had no caller in the app and computed a variable
+# rate's interest as valor/12 on the period's capital. It must not come back
+# without a caller: a variable rate is the schedule's (tests/test_tasas_variables.R).
+.chk(exists("pasivos_apply_modifiers"), FALSE, "G7: pasivos_apply_modifiers() is gone")
+.chk(exists(".metric_for_modifier_type"), FALSE, "G7: .metric_for_modifier_type() is gone")
 
 # =============================================================================
 # Group 8 — Hygiene
