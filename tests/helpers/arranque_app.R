@@ -112,6 +112,14 @@ utils::assignInNamespace("s3read_using", function(FUN, ..., object, bucket = NUL
 # ARR_TRACE (T69b): Shiny writes every message it sends ("send") to this
 # process's log, to tell "never written" from "lost on the way".
 if (nzchar(Sys.getenv("ARR_TRACE"))) options(shiny.trace = Sys.getenv("ARR_TRACE"))
+# ARR_TRAZA_SETWD (T74 F1): every setwd() in THIS process goes to the log
+# with the directory, the one it leaves and the callers, to find what leaves
+# the session's working directory in the R temp folder.
+if (nzchar(Sys.getenv("ARR_TRAZA_SETWD")))
+  trace("setwd", where = baseenv(), print = FALSE, tracer = quote(message(
+    "[SETWD] ", getwd(), " -> ", dir, " | ",
+    paste(utils::head(rev(vapply(sys.calls(), function(cl) paste(deparse(cl[[1]], nlines = 1L), collapse = ""), "")), 9)[-(1:3)],
+          collapse = " < "))))
 app <- source(file.path(raiz, "app.R"))$value   # app.R expects the global env (S3_KEYS, ...)
 cubeta <- tryCatch(.s3_bucket(), error = function(e) Sys.getenv("S3_BUCKET"))
 if (!identical(cubeta, "antiguedad-rds-dev"))
