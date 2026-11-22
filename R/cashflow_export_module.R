@@ -2838,12 +2838,19 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
       tema          = tema_de_sesion()   # TEMA 4b: the worker has no session
     ), snap_path)
 
-    app_dir <- normalizePath(getwd())
+    # The root taken when global.R loaded, never getwd() now: during a session
+    # the working directory has been the R temp folder, and the child then
+    # could not find R/i18n.R (T74 F1). A moved working directory is logged,
+    # to find who moves it.
+    app_dir <- get0("HD_APP_DIR", envir = globalenv(), ifnotfound = normalizePath(getwd(), winslash = "/"))
+    if (!identical(normalizePath(getwd(), winslash = "/"), app_dir))
+      message("[EXCEL] the working directory is not the app root: ", getwd(), " (root: ", app_dir, ")")
     job <- callr::r_bg(
       func     = .cf_excel_worker,
       args     = list(snapshot_path = snap_path,
                       output_path   = out_path,
                       app_dir       = app_dir),
+      wd       = app_dir,
       supervise = TRUE
     )
 

@@ -76,5 +76,33 @@ for (idioma in c("es", "en")) {
        is.character(d[[k]]) && nzchar(d[[k]]) && !grepl("\\{error\\}|callr|stderr|status", d[[k]]))
 }
 
+cat("\nG. the child finds the app's files even when the session's working directory moved\n")
+# The real cause on 2026-11-22: inside the app getwd() was the R temp folder,
+# so app_dir = getwd() sent the child there ("cannot source .../Rtmp*/R/i18n.R").
+raiz <- normalizePath(getwd(), winslash = "/")
+for (x in parse(src, keep.source = FALSE))
+  if (is.call(x) && identical(x[[1]], as.name("<-")) && identical(x[[2]], as.name(".cf_excel_worker")))
+    assign(".cf_excel_worker", eval(x[[3]]), envir = globalenv())
+correr_worker <- function(app_dir, wd) {
+  j <- callr::r_bg(.cf_excel_worker, args = list(snapshot_path = tempfile(), output_path = tempfile(), app_dir = app_dir),
+                   wd = wd, supervise = TRUE)
+  j$wait(120000); .cf_excel_resultado(j, tempfile())$detalle
+}
+viejo <- setwd(tempdir())   # the session's working directory, moved
+d_bien <- correr_worker(raiz, raiz)
+d_mal  <- correr_worker(normalizePath(getwd(), winslash = "/"), getwd())
+setwd(viejo)
+ok("G1 with the app root it sources every file and stops only at the (missing) snapshot",
+   !grepl("cannot source", d_bien, fixed = TRUE) && grepl("cannot open", d_bien, fixed = TRUE))
+ok("G2 counter-case: with getwd() moved to the temp folder it cannot source R/i18n.R (the bug)",
+   grepl("cannot source", d_mal, fixed = TRUE) && grepl("i18n.R", d_mal, fixed = TRUE))
+ok("G3 the launcher sends HD_APP_DIR (not getwd()) as app_dir and as the child's wd",
+   grepl('get0("HD_APP_DIR"', src_txt, fixed = TRUE) && grepl("wd       = app_dir,", src_txt, fixed = TRUE) &&
+     !grepl("app_dir <- normalizePath(getwd())", src_txt, fixed = TRUE))
+g <- readLines("R/global.R", warn = FALSE)
+ok("G4 global.R takes HD_APP_DIR before its first source(\"R/...\")",
+   length(grep("^HD_APP_DIR <- normalizePath\\(getwd\\(\\)", g)) == 1L &&
+     grep("^HD_APP_DIR <- ", g)[1] < grep('^\\s*source\\("R/', g)[1])
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

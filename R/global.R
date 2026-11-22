@@ -4,6 +4,14 @@
 # No reactives, no server logic, no side effects beyond data loading.
 # =============================================================================
 
+# The app's root, taken ONCE while this file loads -- it loads with the root
+# as the working directory (its own source("R/...") calls rely on that). Code
+# that runs later must use this, never getwd(): during a session the working
+# directory has been seen in the R session's temp folder (T74 F1, 2026-11-22:
+# the Flujo Excel's child then could not find R/i18n.R, locally and on the
+# new host). Taken again on every load: a re-launch may be another checkout.
+HD_APP_DIR <- normalizePath(getwd(), winslash = "/")
+
 # Load project .Renviron before anything else — ensures CLIENT_ID, S3_BUCKET, and
 # AWS_* vars are set even when R is started outside the project directory.
 if (file.exists(".Renviron")) readRenviron(".Renviron")
