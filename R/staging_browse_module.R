@@ -35,7 +35,7 @@ show_combined_entry_modal <- function(ledger, sap_data, session,
       actionButton("me_save",   "Guardar",  class = "btn btn-primary"),
       if (ledger == "AP")
         actionButton("me_save_as_provision", "Guardar como provisión",
-                     style = "background-color:#7c3aed;color:white;border:none;")
+                     style = "background-color:var(--hd-provision);color:var(--hd-texto-inverso);border:none;")
       else NULL
     ),
 

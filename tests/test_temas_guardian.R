@@ -78,7 +78,7 @@ archivos <- c("app.R",
   "R/requisiciones_persistence.R" = 1L,
   "R/settings/settings_hub.R" = 3L,
   "R/settings/settings_policies.R" = 0L,     # TEMA 4: the policy calendar simulator is var(--hd-*)
-  "R/staging_browse_module.R" = 1L,
+  "R/staging_browse_module.R" = 0L,          # TEMA 4: dead .sb_css gone, the provision button is var(--hd-provision)
   "R/tier_registry.R" = 8L,
   "R/tiers_module.R" = 34L,
   "R/treasury_map_module.R" = 4L,    # stage 4: only the 4 transparent #00000000 of vis.js (exempt)
