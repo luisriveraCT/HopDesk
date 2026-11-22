@@ -56,6 +56,11 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
   fuente("hd_columnas.R")
   # The theme registry: the workbook's colours are roles (TEMA 4b).
   fuente("tema_registro.R")
+  # etiquetas_por_factura() (the tags column), and the hoy_en() it calls.
+  # Every function the report reaches must be loaded here: this process has
+  # nothing else (tests/test_cashflow_excel_resultado.R, part H, walks them).
+  fuente("zona.R")
+  fuente("data_pipeline.R")
   fuente("cashflow_export_module.R")
 
   sn <- readRDS(snapshot_path)

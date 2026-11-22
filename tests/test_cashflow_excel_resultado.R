@@ -104,5 +104,33 @@ ok("G4 global.R takes HD_APP_DIR before its first source(\"R/...\")",
    length(grep("^HD_APP_DIR <- normalizePath\\(getwd\\(\\)", g)) == 1L &&
      grep("^HD_APP_DIR <- ", g)[1] < grep('^\\s*source\\("R/', g)[1])
 
+cat("\nH. every function the report reaches is loaded in the child\n")
+# The second cause (2026-11-22): 'could not find function "etiquetas_por_factura"'
+# -- R/data_pipeline.R was not among the worker's files. The worker's own list
+# (its fuente("...") calls) is loaded as the child does, and every function
+# reachable from the two entry points must exist there or in a package.
+cuerpo <- deparse(body(.cf_excel_worker), width.cutoff = 500L)
+archivos <- regmatches(cuerpo, regexpr('(?<=fuente\\(")[^"]+(?="\\))', cuerpo, perl = TRUE))
+pk <- c("dplyr", "lubridate", "openxlsx", "stringr", "purrr", "scales", "tidyr")
+faltan <- callr::r(function(raiz, archivos, pk) {
+  suppressPackageStartupMessages(for (p in pk) library(p, character.only = TRUE, warn.conflicts = FALSE))
+  e <- new.env(parent = globalenv())
+  e$`%||%` <- function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
+  for (f in archivos) { source(file.path(raiz, "R", f), local = e); if (f == "i18n.R") e$.i18n_dir <- file.path(raiz, "www", "i18n") }
+  visto <- character(); faltan <- character(); cola <- c("build_cashflow_export_data", "generate_cashflow_excel_wb")
+  while (length(cola)) {
+    fn <- cola[1]; cola <- cola[-1]; if (fn %in% visto) next; visto <- c(visto, fn)
+    f <- get0(fn, envir = e, mode = "function")
+    if (is.null(f)) { faltan <- c(faltan, fn); next }
+    if (!identical(environment(f), e)) next
+    cola <- c(cola, setdiff(codetools::findGlobals(f, merge = FALSE)$functions, visto))
+  }
+  sort(unique(faltan))
+}, args = list(raiz = raiz, archivos = archivos, pk = pk))
+ok(sprintf("H1 the worker loads %d files (%s)", length(archivos), paste(archivos, collapse = ", ")),
+   all(c("data_pipeline.R", "zona.R", "cashflow_export_module.R") %in% archivos))
+ok(sprintf("H2 no function the report reaches is missing in the child (%s)",
+           if (length(faltan)) paste(faltan, collapse = ", ") else "none"), !length(faltan))
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
