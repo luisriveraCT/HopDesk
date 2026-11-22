@@ -168,23 +168,53 @@ if (Sys.getenv("HOPDESK_PRODUCTION") == "1") {
   readRenviron(".Renviron.local")
   message("[ENV] Local dev override active from .Renviron.local -- using bucket '",
           Sys.getenv("S3_BUCKET"), "', NOT production.")
-  # Test harnesses and one-off scripts load this file whole without being a
-  # real start of the app (tests/helpers/aislar_global.R, arranque_app.R,
-  # scripts/set_user_email.R): they set HOPDESK_SIN_COPIA_DEV=1 so the copy
-  # below does not overwrite dev's accounts (CM24). Exactly "1"; never set it
-  # in .Renviron/.Renviron.local or a deploy.
-  if (identical(Sys.getenv("HOPDESK_SIN_COPIA_DEV"), "1")) {
-    message("[DEV SYNC] omitida (HOPDESK_SIN_COPIA_DEV=1)")
-  } else tryCatch(
+  # The copy itself no longer runs here: loading this file is not starting
+  # the app (tests, scripts, autoload checks all load it). It runs from
+  # shinyApp(onStart = .hopdesk_copia_dev_al_arrancar) in app.R -- only
+  # runApp() fires that -- and only if this flag says so (DEVSYNC paso 0,
+  # 2026-11-21). HOPDESK_SIN_COPIA_DEV=1 stays as a second brake for
+  # harnesses that DO runApp() the real app (arranque_app.R; CM24).
+  .hopdesk_copia_dev_pendiente <- TRUE
+} else {
+  .hopdesk_copia_dev_pendiente <- FALSE
+}
+
+# Run by app.R's shinyApp(onStart = ...) -- i.e. only when a server really
+# starts -- the prod -> dev copy of accounts and companies, then drops the
+# production credentials it was given from memory (they used to stay in
+# .GlobalEnv for the whole process). Never on a hosted deploy, even one
+# pointed at dev: HOPDESK_HOST=connect_cloud, or a Posit host (shinyapps.io /
+# Connect set R_CONFIG_ACTIVE). Never throws. Returns TRUE if it copied.
+.hopdesk_copia_dev_al_arrancar <- function() {
+  vars_prod <- c(".hopdesk_prod_bucket_before_override", ".hopdesk_prod_aws_key_before_override",
+                 ".hopdesk_prod_aws_secret_before_override", ".hopdesk_prod_aws_region_before_override")
+  donde <- parent.env(environment())   # where this file was loaded (.GlobalEnv in the app)
+  on.exit(suppressWarnings(rm(list = vars_prod, envir = donde)), add = TRUE)
+  host   <- tolower(trimws(Sys.getenv("HOPDESK_HOST")))
+  config <- Sys.getenv("R_CONFIG_ACTIVE")
+  motivo <- if (!isTRUE(get0(".hopdesk_copia_dev_pendiente", envir = donde, inherits = FALSE)))
+    "not a local dev start (production, or no .Renviron.local)"
+  else if (identical(host, "connect_cloud")) "HOPDESK_HOST=connect_cloud"
+  else if (nzchar(config) && !identical(config, "default")) "hosted deploy (R_CONFIG_ACTIVE set)"
+  else if (identical(Sys.getenv("HOPDESK_SIN_COPIA_DEV"), "1")) "HOPDESK_SIN_COPIA_DEV=1"
+  else NULL
+  assign(".hopdesk_copia_dev_pendiente", FALSE, envir = donde)
+  if (!is.null(motivo)) {
+    message("[DEV SYNC] omitida (", motivo, ")")
+    return(invisible(FALSE))
+  }
+  prod <- mget(vars_prod, envir = donde, ifnotfound = list(NULL, NULL, NULL, NULL))
+  tryCatch({
     .hopdesk_sync_dev_users_from_prod(
-      .hopdesk_prod_bucket_before_override, Sys.getenv("S3_BUCKET"),
-      prod_aws_key    = .hopdesk_prod_aws_key_before_override,
-      prod_aws_secret = .hopdesk_prod_aws_secret_before_override,
-      prod_aws_region = .hopdesk_prod_aws_region_before_override
-    ),
-    error = function(e) message("[DEV SYNC] Failed (non-fatal, dev bucket may be missing/stale accounts): ",
-                                conditionMessage(e))
-  )
+      prod[[1]], Sys.getenv("S3_BUCKET"),
+      prod_aws_key    = prod[[2]],
+      prod_aws_secret = prod[[3]],
+      prod_aws_region = prod[[4]])
+    invisible(TRUE)
+  }, error = function(e) {
+    message("[DEV SYNC] Failed (non-fatal, dev bucket may be missing/stale accounts): ", conditionMessage(e))
+    invisible(FALSE)
+  })
 }
 
 # The process's clock, in one line of the startup log (CM27, 2026-11-17):

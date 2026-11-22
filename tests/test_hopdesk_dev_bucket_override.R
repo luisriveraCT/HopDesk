@@ -66,9 +66,14 @@ es_def_copia <- vapply(override_exprs, function(e)
 .chk_true(sum(es_def_copia) == 1L, "located the copy's definition inside the override block")
 .orig_sin_copia <- Sys.getenv("HOPDESK_SIN_COPIA_DEV", unset = NA)
 
-run_case <- function(fake_dir, hopdesk_production, sin_copia = NULL) {
+run_case <- function(fake_dir, hopdesk_production, sin_copia = NULL, host = NULL, config = NULL) {
   old_wd <- getwd()
   on.exit(setwd(old_wd), add = TRUE)
+  old_host <- Sys.getenv("HOPDESK_HOST", unset = NA); old_cfg <- Sys.getenv("R_CONFIG_ACTIVE", unset = NA)
+  on.exit({ if (is.na(old_host)) Sys.unsetenv("HOPDESK_HOST") else Sys.setenv(HOPDESK_HOST = old_host)
+            if (is.na(old_cfg)) Sys.unsetenv("R_CONFIG_ACTIVE") else Sys.setenv(R_CONFIG_ACTIVE = old_cfg) }, add = TRUE)
+  if (is.null(host)) Sys.unsetenv("HOPDESK_HOST") else Sys.setenv(HOPDESK_HOST = host)
+  if (is.null(config)) Sys.unsetenv("R_CONFIG_ACTIVE") else Sys.setenv(R_CONFIG_ACTIVE = config)
   setwd(fake_dir)
   if (is.null(hopdesk_production)) Sys.unsetenv("HOPDESK_PRODUCTION")
   else Sys.setenv(HOPDESK_PRODUCTION = hopdesk_production)
@@ -79,7 +84,17 @@ run_case <- function(fake_dir, hopdesk_production, sin_copia = NULL) {
   .hopdesk_sync_dev_users_from_prod <- function(...) { copias <<- copias + 1L; invisible(TRUE) }
   msgs <- capture.output(for (e in override_exprs[!es_def_copia]) eval(e, envir = environment()),
                          type = "message")
-  list(bucket = Sys.getenv("S3_BUCKET"), messages = msgs, copias = copias)
+  # DEVSYNC paso 0: loading the file never copies; the copy runs from
+  # app.R's shinyApp(onStart = .hopdesk_copia_dev_al_arrancar), called here
+  # the way runApp() would.
+  copias_carga <- copias
+  msgs <- c(msgs, capture.output(.hopdesk_copia_dev_al_arrancar(), type = "message"))
+  aqui <- environment()
+  quedan_prod <- any(vapply(c(".hopdesk_prod_bucket_before_override", ".hopdesk_prod_aws_key_before_override",
+                              ".hopdesk_prod_aws_secret_before_override", ".hopdesk_prod_aws_region_before_override"),
+                            function(v) exists(v, envir = aqui, inherits = FALSE), logical(1)))
+  list(bucket = Sys.getenv("S3_BUCKET"), messages = msgs, copias = copias,
+       copias_carga = copias_carga, quedan_prod = quedan_prod)
 }
 
 test_dir <- tempfile("hopdesk_env_test_")
@@ -98,6 +113,29 @@ tryCatch({
   .chk_true(any(grepl("Local dev override active", r1$messages)),
             "a visible [ENV] message announces the dev override is active")
   .chk(1L, r1$copias, "a real local start copies the accounts from prod to dev once")
+
+  cat("\n-- DEVSYNC paso 0: only a server start copies, never a plain load; never on a hosted deploy --\n")
+  .chk(0L, r1$copias_carga, "loading global.R alone (source, tests, scripts) never copies")
+  .chk_true(!r1$quedan_prod, "after the start hook, the production credentials are no longer in memory")
+  r1e <- run_case(test_dir, NULL, host = "connect_cloud")
+  .chk(0L, r1e$copias, "HOPDESK_HOST=connect_cloud never copies, even pointed at dev")
+  .chk_true(any(grepl("[DEV SYNC] omitida (HOPDESK_HOST=connect_cloud)", r1e$messages, fixed = TRUE)),
+            "it says why (connect_cloud)")
+  .chk_true(!r1e$quedan_prod, "and still drops the production credentials")
+  r1f <- run_case(test_dir, NULL, config = "rsconnect")
+  .chk(0L, r1f$copias, "a Posit-hosted deploy (R_CONFIG_ACTIVE set) never copies")
+  r1g <- run_case(test_dir, NULL, config = "shinyapps")
+  .chk(0L, r1g$copias, "shinyapps.io (R_CONFIG_ACTIVE=shinyapps) never copies")
+  r1h <- run_case(test_dir, NULL, config = "default")
+  .chk(1L, r1h$copias, "R_CONFIG_ACTIVE=default is a local start: it copies")
+  app_txt <- paste(readLines("app.R", warn = FALSE), collapse = "\n")
+  .chk_true(grepl("shinyApp(ui, server, onStart = .hopdesk_copia_dev_al_arrancar)", app_txt, fixed = TRUE),
+            "app.R runs the copy from shinyApp(onStart = ...), i.e. only on runApp()")
+  es_def_fn <- vapply(override_exprs, function(e) is.call(e) && identical(e[[1]], as.name("<-")) &&
+                        is.call(e[[3]]) && identical(e[[3]][[1]], as.name("function")), logical(1))
+  llama <- vapply(override_exprs[!es_def_fn], function(e)
+    any(grepl(".hopdesk_sync_dev_users_from_prod(", deparse(e, width.cutoff = 500L), fixed = TRUE)), logical(1))
+  .chk_true(!any(llama), "no top-level statement of global.R calls the copy (only the start hook does)")
 
   cat("\n-- CM24: a test harness or script (HOPDESK_SIN_COPIA_DEV=1) skips that copy, nothing else --\n")
   r1b <- run_case(test_dir, NULL, sin_copia = "1")

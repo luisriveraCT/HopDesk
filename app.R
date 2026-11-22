@@ -3541,4 +3541,7 @@ server <- function(input, output, session) {
                   (proc.time() - .t_session)[["elapsed"]], .sn))
 }
 
-shinyApp(ui, server)
+# onStart fires only when a server really starts (runApp), never on a plain
+# source() of this file: that is where the local prod -> dev account copy
+# runs (R/global.R, .hopdesk_copia_dev_al_arrancar; DEVSYNC paso 0).
+shinyApp(ui, server, onStart = .hopdesk_copia_dev_al_arrancar)
