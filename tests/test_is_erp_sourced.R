@@ -15,10 +15,13 @@
 #   3. Behavioral regression with a SECOND, non-"sap" synthetic ERP-like
 #      source value, proving the two migrated masking computations
 #      (the Quitar SAP-confirmed guard, and the confirm handler's
-#      sap_fact_ids/man_fact_ids split) still treat "sap" correctly and do
-#      NOT accidentally start treating other non-manual/provision values as
-#      ERP-safe just because they're not literally "sap" — is_erp_sourced()
-#      is deliberately narrow (only "sap" or NA), not "anything unknown."
+#      sap_fact_ids/man_fact_ids split) treat every ERP source alike.
+#
+# CM43: the rule is the multi-ERP one of 2026-09-14 (2364f4c, R/global.R
+# above is_erp_sourced()): ERP-sourced = NA or anything that is not
+# "manual"/"provision", so a second connector's erp_type (e.g.
+# "sap_b1_service_layer", "quickbooks") is recognized with no code to touch.
+# This file still asserted the earlier, narrow rule (only "sap"/NA).
 # =============================================================================
 
 cat("── Stage 2: is_erp_sourced() helper ─────────────────────────────────────\n")
@@ -41,8 +44,10 @@ cat("── Stage 2: is_erp_sourced() helper ───────────�
   .chk(is_erp_sourced("sap"),         TRUE,  "'sap' is ERP-sourced")
   .chk(is_erp_sourced("manual"),      FALSE, "'manual' is not ERP-sourced")
   .chk(is_erp_sourced("provision"),   FALSE, "'provision' is not ERP-sourced")
-  .chk(is_erp_sourced("quickbooks"),  FALSE,
-       "an unrecognized value is NOT treated as ERP-sourced (only 'sap'/NA are)")
+  .chk(is_erp_sourced("quickbooks"),  TRUE,
+       "another connector's source ('quickbooks') is ERP-sourced (multi-ERP rule, 2026-09-14)")
+  .chk(is_erp_sourced("sap_b1_service_layer"), TRUE,
+       "SAP_B1_ERP_TYPE ('sap_b1_service_layer') is ERP-sourced")
   .chk(is_erp_sourced(c("sap", NA, "manual", "provision")),
        c(TRUE, TRUE, FALSE, FALSE),
        "vectorized input works elementwise")
@@ -81,23 +86,20 @@ cat("── Stage 2: is_erp_sourced() helper ───────────�
 
 # ── 3. Behavioral regression with a synthetic non-"sap" source ──────────────
 {
-  # Simulates the Quitar SAP-confirmed guard (pagar_hoy_module.R:1160-1162 /
-  # 1221-1223): a confirmed row from a hypothetical future non-SAP ERP must
-  # NOT be treated as ERP-safe by this helper alone -- until that ERP is
-  # actually onboarded and its own source value is added wherever the
-  # product decides ERP sources are enumerated. is_erp_sourced() itself only
-  # ever recognizes "sap"/NA; this test guards against it silently widening.
+  # Simulates the Quitar ERP-confirmed guard (pagar_hoy_module.R): a
+  # confirmed row from ANY ERP (another connector included) is ERP-safe;
+  # a confirmed manual row is not (multi-ERP rule, 2026-09-14).
   rows <- data.frame(
-    status = c("confirmed", "confirmed", "confirmed"),
-    source = c("sap", "quickbooks", NA_character_),
+    status = c("confirmed", "confirmed", "confirmed", "confirmed"),
+    source = c("sap", "quickbooks", NA_character_, "manual"),
     stringsAsFactors = FALSE
   )
   sap_conf <- rows[!is.na(rows$status) & rows$status == "confirmed" &
                    is_erp_sourced(rows$source), , drop = FALSE]
-  .chk(nrow(sap_conf), 2L,
-       "Quitar guard: matches the 'sap' row and the NA row, not the synthetic 'quickbooks' row")
-  .chk(sort(sap_conf$source %||% "NA"), sort(c("sap", NA_character_)) %||% "NA",
-       "Quitar guard: the two matched rows are exactly sap + NA")
+  .chk(nrow(sap_conf), 3L,
+       "Quitar guard: matches the 'sap', 'quickbooks' and NA rows, not the 'manual' one")
+  .chk(sort(ifelse(is.na(sap_conf$source), "NA", sap_conf$source)), c("NA", "quickbooks", "sap"),
+       "Quitar guard: the matched rows are exactly sap + quickbooks + NA")
 
   # Simulates the confirm handler's sap_fact_ids/man_fact_ids split
   # (pagar_hoy_module.R:1391-1398 / 1594-1601).
