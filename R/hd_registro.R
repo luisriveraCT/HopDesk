@@ -190,11 +190,14 @@ hd_registro <- list(
   # T17b (Luis, P4; coordinator 2026-11-04: here, not on the design page):
   # the provisions behind one cell of Pasivos · Tabla that adds up several.
   # T78: Pasivos · Costo de la deuda. One row per liability, in sections by
-  # currency and group; and the next 12 months' debt service by month.
-  deuda_pasivos = list(nombre = "Pasivos · Costo de la deuda", clase = "D", archivo = "pasivos_deuda.R",
+  # currency and group; and the next 12 months' debt service by month. The
+  # code is in pasivos_deuda.R; archivo is the tab's module (the sub-tab is
+  # in pasivos_table_module.R), which HD_PESTANA_ARCHIVOS maps to Pasivos:
+  # with another name a tier with its own tabs would never get the data.
+  deuda_pasivos = list(nombre = "Pasivos · Costo de la deuda", clase = "D", archivo = "pasivos_table_module.R",
     agregar = c("agrupar"), quitar = character(),
     notas = c("Agregar: Secciones por moneda y por grupo (Financiamientos / Tarjetas): nunca se suman monedas.")),
-  servicio_deuda = list(nombre = "Pasivos · Servicio de la deuda (12 meses)", clase = "F", archivo = "pasivos_deuda.R",
+  servicio_deuda = list(nombre = "Pasivos · Servicio de la deuda (12 meses)", clase = "F", archivo = "pasivos_table_module.R",
     agregar = character(), quitar = c("excel"),
     notas = c("Las mismas piezas que el Flujo (columna fija, sumas por columna, montos compactos); Capital e Interés por moneda, la fila de la moneda es el total.")),
   provisiones_celda = list(nombre = "Provisiones de una celda (Pasivos)", clase = "E", archivo = "pasivos_table_module.R",

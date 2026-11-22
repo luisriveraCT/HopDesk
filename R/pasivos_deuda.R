@@ -249,7 +249,7 @@ pasivos_deuda_server <- function(id, shared, base = function() MONEDA_BASE_OMISI
         pasivos_deuda(NULL, NULL, as.Date(NA))
       })
     })
-    pct <- function(x) if (is.na(x)) "—" else paste0(formatC(x, format = "f", digits = 2, big.mark = ","), " %")
+    pct <- function(x) if (is.na(x)) "—" else paste0(formatC(x, format = "f", digits = 2), " %")
 
     output$tarjetas <- shiny::renderUI({
       r <- datos()$resumen
