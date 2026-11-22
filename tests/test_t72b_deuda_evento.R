@@ -25,9 +25,40 @@ ok <- function(label, expr) {
 }
 ESCRITORAS <- c("modificar_tabla", "modificar_tabla_completa", ".s3_write", ".s3_write_with")
 
+# T72-C: a WRAPPER is a function with an `evento` formal that calls a writer
+# (modificar_hd_admin, save_forecasting_metrics, ...): it is a writer itself.
+# Its own inner calls are not debt (it passes the event on, or none); its
+# callers that do not pass evento= are. Found to a fixed point (a wrapper of
+# a wrapper), over every file at once.
+envoltorios <- function(lista_exprs, base = ESCRITORAS) {
+  defs <- list()
+  juntar <- function(e) {
+    if (!is.call(e)) return(invisible())
+    if ((identical(e[[1]], as.name("<-")) || identical(e[[1]], as.name("="))) && length(e) == 3L &&
+        is.name(e[[2]]) && is.call(e[[3]]) && identical(e[[3]][[1]], as.name("function")) &&
+        "evento" %in% names(e[[3]][[2]]))
+      defs[[length(defs) + 1L]] <<- list(nombre = as.character(e[[2]]), cuerpo = e[[3]][[3]])
+    for (k in seq_along(e)[-1]) { a <- e[[k]]; if (!missing(a) && is.call(a)) juntar(a) }
+  }
+  for (ex in lista_exprs) for (e in ex) juntar(e)
+  llama <- function(e, nombres) {
+    if (!is.call(e)) return(FALSE)
+    if (is.name(e[[1]]) && as.character(e[[1]]) %in% nombres) return(TRUE)
+    for (k in seq_along(e)[-1]) { a <- e[[k]]; if (!missing(a) && is.call(a) && llama(a, nombres)) return(TRUE) }
+    FALSE
+  }
+  esc <- base
+  repeat {
+    nuevos <- unique(vapply(Filter(function(d) !d$nombre %in% esc && llama(d$cuerpo, esc), defs), `[[`, "", "nombre"))
+    if (!length(nuevos)) break
+    esc <- c(esc, nuevos)
+  }
+  esc
+}
+
 # Calls to a writer without evento=, by the nearest named function around it
 # (x <- function ...); an anonymous function keeps the name it is inside.
-escanear <- function(exprs, archivo) {
+escanear <- function(exprs, archivo, escritoras = ESCRITORAS) {
   out <- character()
   andar <- function(e, funcion) {
     if (!is.call(e)) return(invisible())
@@ -37,8 +68,8 @@ escanear <- function(exprs, archivo) {
       andar(e[[3]][[3]], as.character(e[[2]])); return(invisible())
     }
     if (identical(f, as.name("function"))) { if (length(e) >= 3L) andar(e[[3]], funcion); return(invisible()) }
-    if (is.name(f) && as.character(f) %in% ESCRITORAS && !"evento" %in% names(as.list(e)) &&
-        !(archivo == "R/persistence.R" && funcion %in% ESCRITORAS))   # the writers' own internals
+    if (is.name(f) && as.character(f) %in% escritoras && !"evento" %in% names(as.list(e)) &&
+        !funcion %in% escritoras)   # a writer's (or wrapper's) own inner calls
       out <<- c(out, paste0(archivo, "::", funcion))
     for (k in seq_along(e)[-1]) { a <- e[[k]]; if (!missing(a) && is.call(a)) andar(a, funcion) }
   }
@@ -46,7 +77,9 @@ escanear <- function(exprs, archivo) {
   out
 }
 archivos <- c("app.R", list.files("R", "\\.R$", recursive = TRUE, full.names = TRUE))
-sitios <- unlist(lapply(archivos, function(a) escanear(parse(a, keep.source = FALSE, encoding = "UTF-8"), a)))
+codigo <- lapply(archivos, function(a) parse(a, keep.source = FALSE, encoding = "UTF-8"))
+ESCRITORAS_TODAS <- envoltorios(codigo)
+sitios <- unlist(Map(function(ex, a) escanear(ex, a, ESCRITORAS_TODAS), codigo, archivos))
 hoy <- table(sitios); hoy <- stats::setNames(as.integer(hoy), names(hoy))
 
 # The list, read from R/persistence.R without loading the app.
@@ -76,7 +109,19 @@ plantado <- parse(text = c(
 p <- escanear(plantado, "R/plantado.R")
 ok("4 the scan is not blind: it finds a planted write without an event (also inside an observer), never one with evento=",
    identical(sort(p), c("R/plantado.R::f_nueva", "R/plantado.R::f_obs")))
-cat(sprintf("   (%d calls without evento= in %d functions)\n", sum(hoy), length(hoy)))
+# T72-C: a new wrapper that passes evento on, whose caller does not pass it.
+plantado2 <- parse(text = c(
+  "w_nueva   <- function(x, evento = NULL) .s3_write(x, 'k.rds', client_id = 'acme', evento = evento)",
+  "w_doble   <- function(x, evento = NULL) w_nueva(x, evento = evento)",
+  "llamador  <- function() w_nueva(1)",
+  "llamador2 <- function() w_doble(1)",
+  "con_ev    <- function() w_doble(1, evento = ev)"), keep.source = FALSE)
+esc2 <- envoltorios(list(plantado2))
+p2 <- escanear(plantado2, "R/plantado.R", esc2)
+ok("4b a wrapper (evento formal, calls a writer; also a wrapper of a wrapper) is a writer: its caller without evento= is found, the wrapper itself is not",
+   all(c("w_nueva", "w_doble") %in% esc2) && identical(sort(p2), c("R/plantado.R::llamador", "R/plantado.R::llamador2")))
+cat(sprintf("   (%d calls without evento= in %d functions; %d writers counting the wrappers)\n",
+            sum(hoy), length(hoy), length(ESCRITORAS_TODAS)))
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 if (.fail > 0L) quit(status = 1L)
