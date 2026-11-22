@@ -153,10 +153,12 @@ pr_txt   <- .read("R/persistence.R")
 
 .chk_true(grepl("source             = SAP_B1_ERP_TYPE,", dp_txt, fixed = TRUE),
           "data_pipeline.R's main SAP homologation output tags rows with SAP_B1_ERP_TYPE")
-.chk_true(grepl("has_sap_override = source == SAP_B1_ERP_TYPE", dp_txt, fixed = TRUE),
-          "data_pipeline.R's SAP-specific override feature checks against SAP_B1_ERP_TYPE")
-.chk_true(grepl('pap_this[["source"]] == SAP_B1_ERP_TYPE', dp_txt, fixed = TRUE),
-          "data_pipeline.R's papelera SAP-ghost detection checks against SAP_B1_ERP_TYPE")
+# CM44: every stored-source check goes through es_fuente_sap() ("sap" or
+# SAP_B1_ERP_TYPE); `== SAP_B1_ERP_TYPE` alone missed pre-2026-09-14 rows.
+.chk_true(grepl("has_sap_override = es_fuente_sap(source)", dp_txt, fixed = TRUE),
+          "data_pipeline.R's SAP-specific override feature checks with es_fuente_sap()")
+.chk_true(grepl('pap_this[es_fuente_sap(pap_this[["source"]]),', dp_txt, fixed = TRUE),
+          "data_pipeline.R's papelera SAP-ghost detection checks with es_fuente_sap() (old 'sap' rows too)")
 # T13: Intercompany and the Mapa IC build their Agenda rows with
 # agenda_filas_factura(), which tags them SAP_B1_ERP_TYPE unless the row says.
 .chk_true(grepl('src  <- as.character(col("source", SAP_B1_ERP_TYPE))', pr_txt, fixed = TRUE),
@@ -173,9 +175,9 @@ pr_txt   <- .read("R/persistence.R")
           "search_module.R's shared stage handler uses SAP_B1_ERP_TYPE")
 # Since T12b the Papelera is hd_table "papelera": its Origen badge is "sap"
 # for both values (and an NA source defaults to SAP_B1_ERP_TYPE).
-.chk_true(grepl('origen <- ifelse(src %in% c("sap", SAP_B1_ERP_TYPE), "sap"', bm_txt, fixed = TRUE),
+.chk_true(grepl('origen <- ifelse(es_fuente_sap(src), "sap"', bm_txt, fixed = TRUE),
           "bancos_module.R's source badge recognizes the new SAP_B1_ERP_TYPE value")
-.chk_true(grepl('src %in% c("sap", SAP_B1_ERP_TYPE)', bm_txt, fixed = TRUE) &&
+.chk_true(grepl('es_fuente_sap(src)', bm_txt, fixed = TRUE) &&
             grepl('sap       = list(texto = "SAP"', bm_txt, fixed = TRUE),
           "bancos_module.R's source badge STILL recognizes the historical literal \"sap\" -- old papelera records must keep rendering correctly")
 .chk_true(grepl('"sap_b1_service_layer" = "SAP"', vm_txt, fixed = TRUE),

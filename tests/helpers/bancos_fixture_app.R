@@ -31,7 +31,7 @@ cargar <- function(archivo, nombres) {
     if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
       eval(e, envir = globalenv())
 }
-cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
+cargar("R/erp_connector_registry.R", c("SAP_B1_ERP_TYPE", "es_fuente_sap"))   # CM44
 cargar("R/global.R", c("fmt_money", "is_erp_sourced"))
 # montos_por_moneda(): deleting movements, one total per currency (T55b).
 cargar("R/ui_components.R", c("app_styles", "montos_por_moneda"))

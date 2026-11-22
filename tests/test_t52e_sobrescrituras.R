@@ -28,6 +28,9 @@ for (e in parse("R/global.R"))
       as.character(e[[2]]) %in% c(".cache_get", ".cache_set", ".cache_scoped_key", "is_erp_sourced"))
     eval(e, globalenv())
 SAP_B1_ERP_TYPE <- "sap_b1_service_layer"
+# CM44: the override and papelera checks call es_fuente_sap(); the real one.
+for (e in parse("R/erp_connector_registry.R", keep.source = FALSE))
+  if (is.call(e) && identical(as.character(e[[2]]), "es_fuente_sap")) eval(e, globalenv())
 suppressPackageStartupMessages({ library(dplyr); library(tidyr) })
 source("R/zona.R"); source("R/monedas.R"); source("R/empresas_identidad.R")
 source("R/data_pipeline.R"); source("R/policy_engine.R")
