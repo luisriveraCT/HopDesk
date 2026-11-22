@@ -1,20 +1,22 @@
 # =============================================================================
 # tests/test_tema_cliente_chromote.R
-# TEMA stage 5a in the real app (dev bucket), end to end, through the real
-# screens only:
-#   1  the client user signs in: its client has no theme -> Clásico;
-#   2  HopDesk staff jumps into that client: still Clásico; in Ajustes ›
-#      Grupo › Empresas the selector offers Marca to staff (marked "HopDesk
-#      only"); staff picks Marca and saves -> the page turns Marca at once;
-#   3  the client user signs in again: Marca after loading, and at the
-#      SECOND sign-in Marca from the first paint (no Clásico flash: the head
-#      script read localStorage); a screenshot of every tab in Marca;
-#   4  two sessions at once: staff back home (its own client: Clásico) while
-#      the client's session stays Marca -- nothing shared between sessions;
-#   5  staff jumps in again and puts back the theme the client had (always,
-#      even after a failure: a client left in Marca in dev is reported).
-# Writes ONE thing, in dev: group_config.rds's `tema` of the test client,
-# and puts back what it found. Screenshots to TEMA_SALIDA.
+# TEMA stage 5a in the real app (tests/helpers/arranque_app.R: dev bucket,
+# and NOTHING is written -- its write functions are no-ops), end to end:
+#   Run A (the client has no theme)
+#     1  the client user signs in: Clásico;
+#     2  HopDesk staff (the test staff account read as principal in this
+#        process, ARR_FORZAR_NIVEL, so it may jump) jumps into that client:
+#        still Clásico; Ajustes › Grupo › Empresas offers Marca to staff
+#        (marked "HopDesk only"); Guardar with Marca turns the page Marca at
+#        once (the write itself is omitted by the harness); back home: Clásico.
+#   Run B (the client's group_config read with tema = "marca" in this process,
+#        ARR_FORZAR_TEMA: what a saved Marca looks like, nothing written)
+#     3  the client signs in: Marca; at the SECOND sign-in Marca from the first
+#        paint (no Clásico in between); a screenshot of every tab in Marca;
+#     4  two sessions at once: staff at home is Clásico while the client's
+#        session is Marca; staff jumping into the client sees Marca, and
+#        Clásico again back home.
+# Screenshots to TEMA_SALIDA.
 # Run from project root (credentials in .Renviron / .Renviron.local):
 #   TEMA_SALIDA=<folder> Rscript --vanilla tests/test_tema_cliente_chromote.R
 # =============================================================================
@@ -29,7 +31,7 @@ if (!all(nzchar(unlist(usuarios)))) { cat("SKIP: faltan las credenciales de prue
 SALIDA <- Sys.getenv("TEMA_SALIDA", file.path(tempdir(), "tema_cliente"))
 dir.create(SALIDA, showWarnings = FALSE, recursive = TRUE)
 LIMITE <- as.numeric(Sys.getenv("ARR_LIMITE", "300"))
-MARINO <- "#13213A"   # Marca's primario (R/tema_registro.R)
+MARINO <- "#13213A"; AZUL <- "#0A58CA"   # Marca's and Clásico's primario (R/tema_registro.R)
 
 .pass <- 0L; .fail <- 0L
 ok <- function(label, expr) {
@@ -38,11 +40,19 @@ ok <- function(label, expr) {
   else                { cat(" FAIL:", label, "\n"); .fail <<- .fail + 1L }
   invisible(isTRUE(result))
 }
+fin <- function() {
+  cerrar_todo()
+  cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
+  quit(status = if (.fail > 0L) 1L else 0L)
+}
 source("tests/helpers/live_app_harness.R")
 repo <- normalizePath(".", winslash = "/")
 PORT <- 39040L
 app <- NULL; pes <- list()
-cerrar_todo <- function() { for (k in names(pes)) try(pes[[k]]$close(), silent = TRUE); stop_bg_app(app) }
+cerrar_todo <- function() {
+  for (k in names(pes)) try(pes[[k]]$close(), silent = TRUE)
+  pes <<- list(); stop_bg_app(app); app <<- NULL
+}
 
 ev <- function(b, js) {
   r <- b$Runtime$evaluate(js, returnByValue = TRUE)
@@ -69,6 +79,19 @@ captura <- function(b, nombre) tryCatch({
   writeBin(jsonlite::base64_dec(s$data), file.path(SALIDA, paste0(nombre, ".png")))
 }, error = function(e) message("  (captura ", nombre, ": ", conditionMessage(e), ")"))
 
+# The test staff account reads as principal (it may jump to any client); the
+# username goes to the app process through the environment, never printed.
+arrancar <- function(tema_forzado = "", cliente = "") {
+  cerrar_todo()
+  codigo <- sprintf(paste0('Sys.setenv(ARR_MODO = "normal", ARR_RAIZ = "%s", ARR_FORZAR_NIVEL = "principal", ',
+                           'ARR_FORZAR_USUARIO = Sys.getenv("HOPDESK_TEST_USER"), ',
+                           'ARR_FORZAR_TEMA = "%s", ARR_FORZAR_TEMA_CLIENTE = "%s"); ',
+                           'setwd("%s"); source("tests/helpers/arranque_app.R")$value'),
+                    repo, tema_forzado, cliente, repo)
+  app <<- tryCatch(start_bg_app(codigo, PORT, timeout_s = 300, www = file.path(repo, "www")),
+                   error = function(e) { message(conditionMessage(e)); NULL })
+  !is.null(app)
+}
 nueva <- function(nombre) {
   try(pes[[nombre]]$close(), silent = TRUE)
   b <- new_chromote_session()
@@ -82,7 +105,7 @@ entrar <- function(b, quien) {
   for (k in 1:2) if (!inherits(tryCatch(b$Page$navigate(sprintf("http://127.0.0.1:%d", PORT), wait_ = TRUE, timeout_ = 120),
                                         error = function(e) e), "error")) break
   if (!poll_until(function() isTRUE(tryCatch(ev(b, "!!document.getElementById('auth-user_id')"), error = function(e) FALSE)),
-                  timeout_s = 60)) return(FALSE)
+                  timeout_s = 120)) return(FALSE)
   Sys.sleep(1)
   u <- usuarios[[quien]]
   ev(b, sprintf("(function(){ var u = document.getElementById('auth-user_id'), p = document.getElementById('auth-user_pwd');
@@ -105,91 +128,71 @@ abrir_empresas <- function(b) {
   poll_until(function() isTRUE(tryCatch(ev(b, "!!document.querySelector(\"#emp-tema_input input[type=radio]\")"),
                                         error = function(e) FALSE)), timeout_s = 120, interval_s = 1)
 }
-tema_elegido <- function(b) ev(b, "(function(){ var r = document.querySelector(\"#emp-tema_input input[type=radio]:checked\");
-  return r ? r.value : null; })()")
 guardar_tema <- function(b, valor) {
   ev(b, sprintf("(function(){ var r = document.querySelector(\"#emp-tema_input input[type=radio][value='%s']\");
     if (!r) return false; r.click(); $(r).trigger('change'); return true; })()", valor)) &&
     { Sys.sleep(1); ev(b, "document.getElementById('emp-btn_save_group_config').click(); true"); Sys.sleep(4); TRUE }
 }
 
-# ── Start ────────────────────────────────────────────────────────────────────
-app <- tryCatch(start_bg_app(sprintf('Sys.setenv(ARR_MODO = "normal", ARR_RAIZ = "%s"); setwd("%s"); source("tests/helpers/arranque_app.R")$value',
-                                     repo, repo), PORT, timeout_s = 300, www = file.path(repo, "www")),
-                error = function(e) { message(conditionMessage(e)); NULL })
-if (!ok("the real app starts on dev", !is.null(app))) { cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n"); quit(status = 1L) }
-
-# ── 1. The client, no theme yet ──────────────────────────────────────────────
+# ── Run A: the client has no theme ───────────────────────────────────────────
+if (!ok("A the real app starts on dev (staff read as principal)", arrancar())) fin()
 bc <- nueva("cliente")
-if (!ok("1 the client user signs in", entrar(bc, "cliente"))) { cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n"); quit(status = 1L) }
+if (!ok("1 the client user signs in", entrar(bc, "cliente"))) fin()
 CID <- cliente_visto(bc)
-ok(sprintf("1 the server told the page its client (%s) and the theme: Clásico", if (nzchar(CID)) "leído" else "vacío"),
-   nzchar(CID) && identical(tema_de(bc), "clasico") && identical(primario(bc), "#0A58CA"))
+ok("1 the server told the page its client and the theme: Clásico",
+   nzchar(CID) && identical(tema_de(bc), "clasico") && identical(primario(bc), AZUL))
 try(bc$close(), silent = TRUE); pes$cliente <- NULL
 
-# ── 2. Staff puts Marca on it ────────────────────────────────────────────────
 bs <- nueva("staff")
-ORIGINAL <- NULL; PUESTO <- FALSE
-restaurar <- function() {
-  if (!PUESTO) return(invisible(TRUE))
-  b <- nueva("restaura")
-  hecho <- entrar(b, "prueba") && saltar(b, CID) && abrir_empresas(b) && guardar_tema(b, ORIGINAL %||% "") &&
-    poll_until(function() identical(tema_de(b), if (nzchar(ORIGINAL %||% "")) ORIGINAL else "clasico"), timeout_s = 30)
-  ok(sprintf("5 the client's theme is back to what it had (%s)", if (nzchar(ORIGINAL %||% "")) ORIGINAL else "automático"), hecho)
-  if (!hecho) cat("      | ATENCIÓN: el cliente de prueba quedó con Marca en dev; ponerlo en Automático desde Empresas.\n")
-  PUESTO <<- !hecho
-  invisible(hecho)
-}
-# on.exit does not run in Rscript: steps 2-4 in a tryCatch, restaurar() always after.
-tryCatch({
 if (ok("2 staff signs in", entrar(bs, "prueba"))) {
   CASA <- cliente_visto(bs)
   ok("2 staff at home: Clásico", identical(tema_de(bs), "clasico") && nzchar(CASA) && !identical(CASA, CID))
-  if (ok("2 staff jumps into the client: still Clásico", saltar(bs, CID) && identical(tema_de(bs), "clasico"))) {
-    if (ok("2 Empresas shows the theme selector", abrir_empresas(bs))) {
-      ORIGINAL <- tema_elegido(bs) %||% ""
-      ok("2 staff sees Marca in the selector, marked as HopDesk only",
-         isTRUE(ev(bs, "(function(){ var r = document.querySelector(\"#emp-tema_input input[value='marca']\");
-           return !!r && !!r.closest('.radio, .form-check, label').parentElement.querySelector('.badge'); })()")))
-      captura(bs, "staff_empresas_selector")
-      PUESTO <- guardar_tema(bs, "marca")
-      ok("2 saved: the staff page turns Marca at once (attribute and tokens)",
-         PUESTO && poll_until(function() identical(tema_de(bs), "marca"), timeout_s = 30) && identical(primario(bs), MARINO))
-      captura(bs, "staff_en_cliente_marca")
-    }
+  if (ok("2 staff jumps into the client: still Clásico", saltar(bs, CID) && identical(tema_de(bs), "clasico")) &&
+      ok("2 Empresas shows the theme selector", abrir_empresas(bs))) {
+    ok("2 nothing chosen yet: 'Automático' is selected",
+       identical(ev(bs, "(function(){ var r = document.querySelector(\"#emp-tema_input input[type=radio]:checked\");
+         return r ? r.value : null; })()"), ""))
+    ok("2 staff sees Marca in the selector, marked as HopDesk only",
+       isTRUE(ev(bs, "(function(){ var r = document.querySelector(\"#emp-tema_input input[value='marca']\");
+         return !!r && !!r.closest('label').parentElement.querySelector('.badge'); })()")))
+    captura(bs, "staff_empresas_selector")
+    ok("2 Guardar with Marca: the staff page turns Marca at once (attribute and tokens)",
+       guardar_tema(bs, "marca") && poll_until(function() identical(tema_de(bs), "marca"), timeout_s = 30) &&
+         identical(primario(bs), MARINO))
+    captura(bs, "staff_en_cliente_marca")
+    ok("2 back home: Clásico", saltar(bs, CASA) && identical(tema_de(bs), "clasico"))
   }
 }
 
-# ── 3. The client sees Marca; the second sign-in paints Marca first ─────────
-if (PUESTO) {
-  bc <- nueva("cliente")
-  ok("3 the client signs in: Marca once loaded", entrar(bc, "cliente") && identical(tema_de(bc), "marca") &&
-       identical(primario(bc), MARINO))
-  cat("      | first sign-in, every value of data-hd-tema:", paste(traza(bc), collapse = " → "), "\n")
-  ok("3 second sign-in: Marca from the first paint (no Clásico in between)",
-     entrar(bc, "cliente") && length(traza(bc)) > 0L && all(traza(bc) == "marca"))
-  cat("      | second sign-in:", paste(traza(bc), collapse = " → "), "\n")
-  # Every tab in Marca, for Luis.
-  pestanas <- unlist(tryCatch(ev(bc, "Array.from(document.querySelectorAll('.nav-link[data-value]'))
-    .map(function(a){ return a.getAttribute('data-value'); })"), error = function(e) list()))
-  for (v in setdiff(pestanas, c("GRUPO"))) {
-    hecho <- isTRUE(tryCatch(ev(bc, sprintf("(function(){ var a = document.querySelector(\".nav-link[data-value='%s']\");
-      if (!a) return false; bootstrap.Tab.getOrCreateInstance(a).show(); return true; })()", v)), error = function(e) FALSE))
-    if (!hecho) next
-    Sys.sleep(8); ev(bc, "window.scrollTo(0, 0); true")
-    captura(bc, paste0("cliente_marca_", v))
-  }
-  ok("3 still Marca after visiting every tab", identical(tema_de(bc), "marca"))
-
-  # ── 4. Two sessions at once ────────────────────────────────────────────────
-  if (!is.null(pes$staff) && saltar(bs, CASA))
-    ok("4 at the same time: staff back home is Clásico, the client's session stays Marca",
-       identical(tema_de(bs), "clasico") && identical(tema_de(bc), "marca"))
-  else ok("4 staff goes back home", FALSE)
+# ── Run B: the client's group_config reads with tema = "marca" ──────────────
+if (!nzchar(CID) || !ok("B the real app starts again, the client's theme read as Marca", arrancar("marca", CID))) fin()
+bc <- nueva("cliente")
+ok("3 the client signs in: Marca once loaded", entrar(bc, "cliente") && identical(tema_de(bc), "marca") &&
+     identical(primario(bc), MARINO))
+cat("      | first sign-in, every value of data-hd-tema:", paste(traza(bc), collapse = " → "), "\n")
+ok("3 second sign-in: Marca from the first paint (no Clásico in between)",
+   entrar(bc, "cliente") && length(traza(bc)) > 0L && all(traza(bc) == "marca"))
+cat("      | second sign-in:", paste(traza(bc), collapse = " → "), "\n")
+pestanas <- unlist(tryCatch(ev(bc, "Array.from(document.querySelectorAll('.nav-link[data-value]'))
+  .map(function(a){ return a.getAttribute('data-value'); })"), error = function(e) list()))
+for (v in setdiff(pestanas, "GRUPO")) {
+  hecho <- isTRUE(tryCatch(ev(bc, sprintf("(function(){ var a = document.querySelector(\".nav-link[data-value='%s']\");
+    if (!a) return false; bootstrap.Tab.getOrCreateInstance(a).show(); return true; })()", v)), error = function(e) FALSE))
+  if (!hecho) next
+  Sys.sleep(8); ev(bc, "window.scrollTo(0, 0); true")
+  captura(bc, paste0("cliente_marca_", v))
 }
-}, error = function(e) ok(paste("steps 2-4 ran to the end:", conditionMessage(e)), FALSE))
+ok("3 still Marca after visiting every tab", identical(tema_de(bc), "marca"))
 
-restaurar()
-cerrar_todo(); app <- NULL; pes <- list()
-cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
-if (.fail > 0L) quit(status = 1L)
+bs <- nueva("staff")
+if (ok("4 staff signs in while the client's session is open", entrar(bs, "prueba"))) {
+  CASA <- cliente_visto(bs)
+  ok("4 at the same time: staff at home is Clásico, the client's session stays Marca",
+     identical(tema_de(bs), "clasico") && identical(tema_de(bc), "marca"))
+  ok("4 staff jumping into the client sees Marca", saltar(bs, CID) && identical(tema_de(bs), "marca") &&
+       identical(primario(bs), MARINO))
+  captura(bs, "staff_salto_cliente_marca")
+  ok("4 back home: Clásico again, the client's session still Marca",
+     saltar(bs, CASA) && identical(tema_de(bs), "clasico") && identical(tema_de(bc), "marca"))
+}
+fin()

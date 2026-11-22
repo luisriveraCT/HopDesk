@@ -76,6 +76,20 @@ DEV <- "antiguedad-rds-dev"
       permitida <- grepl("^hd-admin/", object) || grepl("/(usuarios|tiers_config)[.]rds$", object)
       if (!permitida) stop("NoSuchKey (ARR_MODO = vacio): ", object)
     }
+    # ARR_FORZAR_TEMA + ARR_FORZAR_TEMA_CLIENTE (TEMA 5a): in THIS process only,
+    # that client's group_config.rds reads with that theme (a missing file
+    # reads as just the theme), so a client in Marca can be tried without
+    # writing it to dev. Nothing is written.
+    tema_f <- Sys.getenv("ARR_FORZAR_TEMA"); cli_f <- Sys.getenv("ARR_FORZAR_TEMA_CLIENTE")
+    if (identical(nombre, "s3readRDS") && nzchar(tema_f) && nzchar(cli_f) &&
+        grepl(paste0("(^|/)", cli_f, "/group_config[.]rds$"), object)) {
+      r <- tryCatch(if (is.null(bucket)) real(object = object, ...) else real(object = object, bucket = bucket, ...),
+                    error = function(e) list())
+      if (!is.list(r)) r <- list()
+      r$tema <- tema_f
+      message("[ARRANQUE] tema forzado a ", tema_f, " para ", object)
+      return(r)
+    }
     r <- if (is.null(bucket)) real(object = object, ...) else real(object = object, bucket = bucket, ...)
     # ARR_FORZAR_NIVEL + ARR_FORZAR_USUARIO (T69): in THIS process only, that
     # account reads as that tier (e.g. the client test user as "compras"),
