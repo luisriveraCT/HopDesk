@@ -4415,7 +4415,7 @@ tiersServer <- function(id, shared) {
       # T72-B: a named function, so the write layer finds it in the call stack
       # (T72_DEUDA_EVENTO) and does not alarm; no evento= yet -- the hand
       # log_action below carries the before/after the viewer's diff reads.
-      .tiers_guardar_inline <- function(config, cid) .s3_write(config, S3_KEYS$tiers_config, client_id = cid)
+      .tiers_guardar_inline <- function(full_config, cid) .s3_write(full_config, S3_KEYS$tiers_config, client_id = cid)
       tryCatch({
         .tiers_guardar_inline(full_config, cid)
         tier_config_rv(full_config)
