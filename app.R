@@ -236,7 +236,7 @@ ui <- bslib::page_navbar(
           name = lkpIni[raw] || lkpIni['C' + raw] || lkpIni['P' + raw] || '';
         }
         lbl.textContent = name;
-        lbl.style.color = name ? '#0d6efd' : '#aaa';
+        lbl.style.color = name ? 'var(--hd-leg-primario-0d6efd)' : 'var(--hd-leg-texto-tenue-aaaaaa)';
       }
 
       // Live-update label as user types
@@ -2096,18 +2096,18 @@ server <- function(input, output, session) {
       tags$span(
         toupper(cid),
         style = "font-size:.65rem; font-weight:700; letter-spacing:1px; text-transform:uppercase;
-                 background:#e65100; border:1px solid rgba(255,255,255,.35);
+                 background:var(--hd-leg-aviso-fuerte-e65100); border:1px solid color-mix(in srgb, var(--hd-barra-texto) 35%, transparent);
                  padding:2px 7px; border-radius:20px; margin-left:4px;"
       )
     else NULL
 
     tags$span(
-      style = "display:flex; align-items:center; gap:6px; margin:4px 4px 4px 0; font-size:.8rem; opacity:.9; color:#fff;",
+      style = "display:flex; align-items:center; gap:6px; margin:4px 4px 4px 0; font-size:.8rem; opacity:.9; color:var(--hd-barra-texto);",
       icon("user-circle"),
       tags$span(name),
       tags$span(nivel_nombre(tier), style = sprintf(
         "font-size:.65rem; font-weight:700; letter-spacing:1px; text-transform:uppercase;
-         background:%s; border:1px solid rgba(255,255,255,.35); padding:2px 7px; border-radius:20px;",
+         background:%s; border:1px solid color-mix(in srgb, var(--hd-barra-texto) 35%%, transparent); padding:2px 7px; border-radius:20px;",
         tier_color
       )),
       client_pill,
@@ -3427,7 +3427,7 @@ server <- function(input, output, session) {
       ap_ic_rfcs <- ap_ic_rfcs[nzchar(ap_ic_rfcs)]
 
       div(class = "prov-suggest-box",
-        style = "border:1px solid #dee2e6; border-radius:6px; margin-top:-8px; margin-bottom:8px; overflow:hidden;",
+        style = "border:1px solid var(--hd-leg-borde-dee2e6); border-radius:6px; margin-top:-8px; margin-bottom:8px; overflow:hidden;",
         lapply(seq_len(nrow(matches)), function(i) {
           m         <- matches[i, ]
           score_pct <- paste0(min(m$.score, 100L), "%")
@@ -3442,11 +3442,11 @@ server <- function(input, output, session) {
           tags$div(
             class       = "prov-suggest-item d-flex align-items-center gap-2 px-3 py-2",
             style       = if (is_ic_sug)
-              "cursor:pointer; border-bottom:1px solid #f0f0f0; background:#f0f4ff; transition:background 0.1s;"
+              "cursor:pointer; border-bottom:1px solid var(--hd-leg-borde-f0f0f0); background:var(--hd-hover); transition:background 0.1s;"
             else
-              "cursor:pointer; border-bottom:1px solid #f0f0f0; transition:background 0.1s;",
-            onmouseover = "this.style.background='#e8eef8'",
-            onmouseout  = if (is_ic_sug) "this.style.background='#f0f4ff'"
+              "cursor:pointer; border-bottom:1px solid var(--hd-leg-borde-f0f0f0); transition:background 0.1s;",
+            onmouseover = "this.style.background='var(--hd-leg-hover-e8eef8)'",
+            onmouseout  = if (is_ic_sug) "this.style.background='var(--hd-hover)'"
                           else           "this.style.background=''",
             onclick     = paste0(
               "Shiny.setInputValue('me_prov_pick', ", payload, ", {priority:'event'})"
@@ -3454,13 +3454,13 @@ server <- function(input, output, session) {
             tags$span(class = "fw-semibold flex-grow-1 small", m$nombre %||% ""),
             if (is_ic_sug) tags$span(
               class = "badge",
-              style = "background:#0d6efd; color:#fff; font-size:0.65em; white-space:nowrap;",
+              style = "background:var(--hd-leg-primario-0d6efd); color:var(--hd-primario-texto); font-size:0.65em; white-space:nowrap;",
               "Intercompany"
             ) else NULL,
             tags$span(class = "text-muted small", m$alias %||% ""),
             tags$span(
               class = "badge ms-auto",
-              style = "background:#e9ecef; color:#495057; font-size:0.7em;",
+              style = "background:var(--hd-leg-superficie-2-e9ecef); color:var(--hd-leg-texto-2-495057); font-size:0.7em;",
               score_pct
             )
           )
@@ -3489,7 +3489,7 @@ server <- function(input, output, session) {
       if (!length(matches)) return(NULL)
 
       div(class = "prov-suggest-box",
-        style = "border:1px solid #dee2e6; border-radius:6px; margin-top:-8px; margin-bottom:8px; overflow:hidden;",
+        style = "border:1px solid var(--hd-leg-borde-dee2e6); border-radius:6px; margin-top:-8px; margin-bottom:8px; overflow:hidden;",
         lapply(matches, function(nombre) {
           payload <- jsonlite::toJSON(
             list(nombre = nombre, alias = "", moneda = ""),
@@ -3497,8 +3497,8 @@ server <- function(input, output, session) {
           )
           tags$div(
             class       = "prov-suggest-item d-flex align-items-center gap-2 px-3 py-2",
-            style       = "cursor:pointer; border-bottom:1px solid #f0f0f0; transition:background 0.1s;",
-            onmouseover = "this.style.background='#e8eef8'",
+            style       = "cursor:pointer; border-bottom:1px solid var(--hd-leg-borde-f0f0f0); transition:background 0.1s;",
+            onmouseover = "this.style.background='var(--hd-leg-hover-e8eef8)'",
             onmouseout  = "this.style.background=''",
             onclick     = paste0(
               "Shiny.setInputValue('me_prov_pick', ", payload, ", {priority:'event'})"
