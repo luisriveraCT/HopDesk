@@ -123,7 +123,10 @@ ronda <- function(w, h) {
   desplazar(x = 0, y = 0)
 
   # ── dinero_compacto ──
-  ok(paste(et, "M11: 4,495,962 shows as $4.5M"), identical(celda("r0001", "d001")$texto, "$4.5M"))
+  # Amounts since T55 (monto_moneda()): no "$", the true minus sign (U+2212),
+  # and the currency code after the number only where the table shows it
+  # nowhere else (m groups by Moneda: no code; c and p: " MXN", row 1).
+  ok(paste(et, "M11: 4,495,962 shows as 4.5M (no \"$\", T55)"), identical(celda("r0001", "d001")$texto, "4.5M"))
   z <- celda("r0006", "d001")   # (6 + 1) %% 7 == 0: a zero
   ok(sprintf("%s M12: a zero paints nothing (\"%s\")", et, z$texto), identical(z$texto, ""))
   p <- ev(sprintf("(function(){ var t = HDT.fila('%s', 'r0001'), ths = document.querySelectorAll('#%s thead th'), k = -1;
@@ -134,21 +137,21 @@ ronda <- function(w, h) {
   raton(c(p[[1]] - 30, p[[2]])); raton(p)
   ok(paste(et, "M13: the bubble on a compact cell shows the full amount"),
      poll_until(function() identical(ev("(function(){ var t = document.querySelector('.hdt-tip'); return t && !t.hidden ? t.querySelector('.hdt-tip-texto').textContent : null; })()"),
-                                     "$4,495,962.00"), timeout_s = 5))
+                                     "4,495,962.00"), timeout_s = 5))
   ok(paste(et, "M14: and its copy button copies the raw number"),
      identical(ev("document.querySelector('.hdt-tip').copia"), "4495962"))
   ok(paste(et, "M14b: with the bubble, the compact cell has no title of its own"),
      !nzchar(ev(sprintf("HDT.fila('%s', 'r0001').querySelector('td.hdt-tc-signo').title", M))))
   raton(c(5, 5)); desplazar(x = 0, y = 0)
   ok(paste(et, "M14c: a compact table without the bubble (no copiar_celda) shows the full amount on hover (title)"),
-     identical(ev("HDT.fila('c-hdt', 'r0001').children[1].title"), "$4,495,962.00") &&
-       identical(ev("HDT.fila('c-hdt', 'r0001').children[1].textContent"), "$4.5M"))
+     identical(ev("HDT.fila('c-hdt', 'r0001').children[1].title"), "4,495,962.00") &&
+       identical(ev("HDT.fila('c-hdt', 'r0001').children[1].textContent"), "4.5M MXN"))
 
   # ── tono_celda ──
   pos <- celda("r0001", "d001"); neg <- celda("r0004", "d001")   # (4 + 1) %% 5 == 0: negative
   ok(sprintf("%s M15: a positive amount is green (%s), a negative one red (%s)", et, pos$color, neg$color),
      grepl("hdt-tc-signo", pos$clases) && grepl("hdt-tc-exito", pos$clases) && pos$color == "rgb(21, 128, 74)" &&
-       grepl("hdt-tc-peligro", neg$clases) && neg$color == "rgb(194, 43, 43)" && startsWith(neg$texto, "-$"))
+       grepl("hdt-tc-peligro", neg$clases) && neg$color == "rgb(194, 43, 43)" && startsWith(neg$texto, "−"))
   ok(sprintf("%s M16: the sign colours only the text (no tint: %s)", et, pos$fondo), identical(pos$fondo, "rgba(0, 0, 0, 0)"))
   est <- celda("r0001", "Estado"); est2 <- celda("r0005", "Estado")   # Estado: aviso, ..., "rojo" (not in the list)
   ok(sprintf("%s M17: a state tints the cell (aviso: %s on %s)", et, est$color, est$fondo),
@@ -177,7 +180,14 @@ ronda <- function(w, h) {
   ok(paste(et, "M22: the plain table has nothing new: no fixed, toned, shaded cells, and full amounts"),
      isTRUE(ev(sprintf("(function(){ var r = document.querySelector('#%s');
        return !r.classList.contains('hdt-con-fijas') && !r.querySelector('.hdt-fija, .hdt-fija-cb, .hdt-destacar, [class*=\"hdt-tc-\"]') &&
-         !r.querySelector('td[style*=\"--hdt-fija\"], td[title]') && /^-?\\$[\\d,]+\\.\\d\\d$/.test(HDT.fila('%s', 'r0001').children[2].textContent); })()", P, P))))
+         !r.querySelector('td[style*=\"--hdt-fija\"], td[title]') && /^\\u2212?[\\d,]+\\.\\d\\d MXN$/.test(HDT.fila('%s', 'r0001').children[2].textContent); })()", P, P))))
+  # Counter-check (T55): no amount in any of the three tables carries "$" or
+  # the ASCII hyphen as its minus -- a formatter that brings them back fails
+  # here even if the cells above still read right.
+  ok(paste(et, "M23: no \"$\" and no ASCII minus in any amount cell (T55)"),
+     isTRUE(ev(sprintf("(function(){ var tds = Array.prototype.slice.call(document.querySelectorAll('#%s tbody td, #%s tbody td, #c-hdt tbody td'));
+       var montos = tds.filter(function (td) { return /\\d/.test(td.textContent) && /[\\d,]+(\\.\\d+)?[KM]?( [A-Z]{3})?$/.test(td.textContent.trim()); });
+       return montos.length > 20 && !montos.some(function (td) { return /\\$|^-\\d/.test(td.textContent.trim()); }); })()", M, P))))
 }
 
 ronda(1293, 632)
