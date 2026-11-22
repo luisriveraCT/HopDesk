@@ -291,12 +291,17 @@ recorrer <- function(raiz, etiqueta, quien) {
     Sys.sleep(1); menu(FALSE)
     Sys.sleep(3)
     ev("window.scrollTo(0, 0); document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
-    hay <- isTRUE(tryCatch(ev("(function(){ var td = Array.from(document.querySelectorAll('.hdt-tabla tbody td'))
-      .filter(function(x){ return x.getClientRects().length > 0 && x.textContent.trim() !== '' && !x.querySelector('button'); })[0];
-      if (!td) return false; var r = td.getBoundingClientRect();
-      td.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.left + 4, clientY: r.top + 4 }));
-      return true; })()"), error = function(x) FALSE))
-    if (!hay) next
+    # A real pointer (CDP), as test_hd_matriz_chromote does: a synthetic
+    # mousemove on the cell never opened the bubble (2026-11-21, master too).
+    p <- tryCatch(ev("(function(){ var td = Array.from(document.querySelectorAll('.hdt-tabla tbody td'))
+      .filter(function(x){ return x.getClientRects().length > 0 && x.textContent.trim() !== '' && !x.querySelector('button, input'); })[0];
+      if (!td) return null; td.scrollIntoView({block: 'center', inline: 'nearest'});
+      var r = td.getBoundingClientRect(); return [r.left + Math.min(12, r.width / 2), r.top + r.height / 2]; })()"),
+      error = function(x) NULL)
+    if (is.null(p) || length(p) < 2L) next
+    Sys.sleep(0.5)
+    invisible(b$Input$dispatchMouseEvent(type = "mouseMoved", x = p[[1]] + 30, y = p[[2]], button = "none", buttons = 0L))
+    invisible(b$Input$dispatchMouseEvent(type = "mouseMoved", x = p[[1]], y = p[[2]], button = "none", buttons = 0L))
     burbuja <- poll_until(function() isTRUE(tryCatch(ev("(function(){ var t = document.querySelector('.hdt-tip');
       return !!t && !t.hidden && t.getClientRects().length > 0; })()"), error = function(x) FALSE)), timeout_s = 10, interval_s = 0.5)
     if (burbuja) break
