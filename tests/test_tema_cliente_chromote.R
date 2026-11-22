@@ -78,7 +78,9 @@ nueva <- function(nombre) {
   b
 }
 entrar <- function(b, quien) {
-  invisible(b$Page$navigate(sprintf("http://127.0.0.1:%d", PORT), wait_ = TRUE))
+  # dev's R may still be busy with the previous session: a long wait, one retry.
+  for (k in 1:2) if (!inherits(tryCatch(b$Page$navigate(sprintf("http://127.0.0.1:%d", PORT), wait_ = TRUE, timeout_ = 120),
+                                        error = function(e) e), "error")) break
   if (!poll_until(function() isTRUE(tryCatch(ev(b, "!!document.getElementById('auth-user_id')"), error = function(e) FALSE)),
                   timeout_s = 60)) return(FALSE)
   Sys.sleep(1)
@@ -164,7 +166,6 @@ if (PUESTO) {
   ok("3 the client signs in: Marca once loaded", entrar(bc, "cliente") && identical(tema_de(bc), "marca") &&
        identical(primario(bc), MARINO))
   cat("      | first sign-in, every value of data-hd-tema:", paste(traza(bc), collapse = " → "), "\n")
-  invisible(bc$Page$reload(wait_ = TRUE))
   ok("3 second sign-in: Marca from the first paint (no Clásico in between)",
      entrar(bc, "cliente") && length(traza(bc)) > 0L && all(traza(bc) == "marca"))
   cat("      | second sign-in:", paste(traza(bc), collapse = " → "), "\n")
