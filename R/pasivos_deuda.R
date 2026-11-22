@@ -51,7 +51,7 @@ pasivos_deuda_grupo <- function(l) {
 # saldo, ear, nominal, m, costo_efectivo, plazo_meses, prox_fecha, prox_monto,
 # int12, cap12, impuestos12). NULL when it is not interest-bearing debt or owes
 # nothing.
-pasivos_deuda_pasivo <- function(l, provs = NULL, hoy = hoy_en()) {
+pasivos_deuda_pasivo <- function(l, provs = NULL, hoy = hoy_en(), client_id = pasivos_cliente_sesion()) {
   hoy <- as.Date(hoy)
   grupo <- pasivos_deuda_grupo(l)
   if (is.na(grupo)) return(NULL)
@@ -81,7 +81,7 @@ pasivos_deuda_pasivo <- function(l, provs = NULL, hoy = hoy_en()) {
   }
 
   # financiamiento
-  s <- pasivos_generate_schedule(l, today = hoy)
+  s <- pasivos_generate_schedule(l, today = hoy, client_id = client_id)
   if (!nrow(s)) return(NULL)
   mo <- as.character(l$cotizado_en[1] %||% NA_character_)
   if (is.na(mo) || !nzchar(mo)) mo <- as.character(l$moneda_pago[1] %||% NA_character_)
@@ -116,7 +116,7 @@ pasivos_deuda_pasivo <- function(l, provs = NULL, hoy = hoy_en()) {
 
 # Every liability's row, the summary per currency and the next 12 months'
 # debt service. liabs/provs: the session's tables.
-pasivos_deuda <- function(liabs, provs = NULL, hoy = hoy_en()) {
+pasivos_deuda <- function(liabs, provs = NULL, hoy = hoy_en(), client_id = pasivos_cliente_sesion()) {
   hoy <- as.Date(hoy)
   vacio_p <- data.frame(id = character(), nombre = character(), acreedor = character(), grupo = character(),
     tipo = character(), moneda = character(), saldo = numeric(), ear = numeric(), nominal = numeric(), m = integer(),
@@ -125,22 +125,22 @@ pasivos_deuda <- function(liabs, provs = NULL, hoy = hoy_en()) {
   filas <- if (is.data.frame(liabs) && nrow(liabs)) {
     vivos <- liabs[liabs$estado %in% "active", , drop = FALSE]
     l <- lapply(seq_len(nrow(vivos)), function(i)
-      .deuda_intento(pasivos_deuda_pasivo(vivos[i, , drop = FALSE], provs, hoy), vivos[i, , drop = FALSE]))
+      .deuda_intento(pasivos_deuda_pasivo(vivos[i, , drop = FALSE], provs, hoy, client_id), vivos[i, , drop = FALSE]))
     l <- Filter(Negate(is.null), l)
     if (length(l)) do.call(rbind, l) else vacio_p
   } else vacio_p
-  list(pasivos = filas, resumen = pasivos_deuda_resumen(filas), servicio = pasivos_deuda_servicio(liabs, provs, hoy),
-       regulares = pasivos_deuda_regulares(liabs, hoy))
+  list(pasivos = filas, resumen = pasivos_deuda_resumen(filas), servicio = pasivos_deuda_servicio(liabs, provs, hoy, client_id),
+       regulares = pasivos_deuda_regulares(liabs, hoy, client_id))
 }
 
 # Regular payments are not debt: only their cost per year by currency (T77's
 # pasivos_costeo), for one line below. anual NA = unknown (a payment with no
 # amount yet), never 0.
-pasivos_deuda_regulares <- function(liabs, hoy = hoy_en()) {
+pasivos_deuda_regulares <- function(liabs, hoy = hoy_en(), client_id = pasivos_cliente_sesion()) {
   vacio <- data.frame(moneda = character(), anual = numeric(), stringsAsFactors = FALSE)
   if (!is.data.frame(liabs) || !nrow(liabs)) return(vacio)
   k <- which(liabs$estado %in% "active" & liabs$categoria %in% "regular")
-  f <- lapply(k, function(i) .deuda_intento(pasivos_costeo(liabs[i, , drop = FALSE], hoy)$filas, liabs[i, , drop = FALSE]))
+  f <- lapply(k, function(i) .deuda_intento(pasivos_costeo(liabs[i, , drop = FALSE], hoy, client_id)$filas, liabs[i, , drop = FALSE]))
   f <- do.call(rbind, Filter(function(x) is.data.frame(x) && nrow(x), f))
   if (is.null(f)) return(vacio)
   do.call(rbind, lapply(sort(unique(f$moneda)), function(mo) {
@@ -169,7 +169,7 @@ pasivos_deuda_resumen <- function(filas) {
 # The next 12 months' debt service, per currency: rows Capital and Interés
 # (grouped by currency, the group's row is the total), columns b1..b12 by
 # month and Total. Tarjetas add their pending provisions as capital.
-pasivos_deuda_servicio <- function(liabs, provs = NULL, hoy = hoy_en()) {
+pasivos_deuda_servicio <- function(liabs, provs = NULL, hoy = hoy_en(), client_id = pasivos_cliente_sesion()) {
   hoy <- as.Date(hoy)
   vacio <- data.frame(id = character(), Moneda = character(), Concepto = character(), stringsAsFactors = FALSE)
   for (j in 1:12) vacio[[paste0("b", j)]] <- numeric()
@@ -182,7 +182,7 @@ pasivos_deuda_servicio <- function(liabs, provs = NULL, hoy = hoy_en()) {
     l <- liabs[i, , drop = FALSE]; g <- pasivos_deuda_grupo(l)
     if (is.na(g)) next
     if (identical(g, "financiamiento")) {
-      s <- .deuda_intento(pasivos_generate_schedule(l, today = hoy), l)
+      s <- .deuda_intento(pasivos_generate_schedule(l, today = hoy, client_id = client_id), l)
       if (is.null(s) || !nrow(s)) next
       mo <- as.character(l$cotizado_en[1] %||% NA_character_)
       if (is.na(mo) || !nzchar(mo)) mo <- as.character(l$moneda_pago[1] %||% NA_character_)
@@ -244,7 +244,8 @@ pasivos_deuda_server <- function(id, shared, base = function() MONEDA_BASE_OMISI
         liabs <- liabs[liabs$empresa %in% allowed, , drop = FALSE]
       # A failure leaves the panel empty and says why (never the session:
       # Pasivos' other sub-tabs keep working).
-      tryCatch(pasivos_deuda(liabs, provs, hoy_en()), error = function(e) {
+      cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
+      tryCatch(pasivos_deuda(liabs, provs, hoy_en(), cid), error = function(e) {
         message("[pasivos_deuda] ", conditionMessage(e))
         pasivos_deuda(NULL, NULL, as.Date(NA))
       })

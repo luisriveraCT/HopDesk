@@ -389,6 +389,7 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
     pasivos_generate_provisions(
       liability              = liab_row,
       window_start           = hoy_cliente(shared),   # T75b: the client's day
+      client_id              = tryCatch(shared$effective_client_id(), error = function(e) NULL),
       window_end             = NULL,
       policies_for_liability = list(),
       holidays_cache         = holidays

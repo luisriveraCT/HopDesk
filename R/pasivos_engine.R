@@ -324,7 +324,12 @@ pasivos_impuestos_pago <- function(impuestos, total, interes = 0) {
 
 # today: the client's day (T75b, CM27). Sys.Date() was the server's: on UTC,
 # from 18:00 in Mexico a payment due today already counted as historico.
-pasivos_generate_schedule <- function(liability, today = hoy_en()) {
+# client_id: whose estimates (SOFR / TIIE28 / Prime) a variable rate reads.
+# Without it the read had no tenant: on the shared deployment .s3_key()
+# refused it, so a variable rate never followed its index and stayed at
+# the rate captured on the day (prod, 2026-11-21: SOFR captured at
+# 3.55-3.62, the day's 3.91). Default: the session's client.
+pasivos_generate_schedule <- function(liability, today = hoy_en(), client_id = pasivos_cliente_sesion()) {
   today  <- as.Date(today)
   cat_ok <- !is.null(liability$categoria) && !is.na(liability$categoria) &&
     liability$categoria == "financiero"
@@ -376,7 +381,7 @@ pasivos_generate_schedule <- function(liability, today = hoy_en()) {
       )
       metric <- metric_map[[tasa_tipo]]
       if (is.null(metric)) metric <- sub("^variable_", "", tasa_tipo)
-      est <- tryCatch(forecasting_get_estimate(metric, fecha_k), error = function(e) NA_real_)
+      est <- tryCatch(forecasting_get_estimate(metric, fecha_k, client_id = client_id), error = function(e) NA_real_)
       if (is.na(est)) {
         NA_real_  # caller accumulates warning
       } else {
@@ -642,7 +647,7 @@ pasivos_provisiones_tras_fin <- function(existing, liability) {
 # Returns list(categoria, filas = data.frame(moneda, intereses, cargos,
 # impuestos, total, anual, mes)); NA where it does not apply (total without
 # an end date; intereses/cargos/impuestos for regular and tarjeta).
-pasivos_costeo <- function(liability, hoy = hoy_en()) {
+pasivos_costeo <- function(liability, hoy = hoy_en(), client_id = pasivos_cliente_sesion()) {
   hoy <- as.Date(hoy)
   un_ano <- seq(hoy, by = "1 year", length.out = 2L)[2]
   cat <- as.character(liability$categoria[1] %||% "")
@@ -651,7 +656,7 @@ pasivos_costeo <- function(liability, hoy = hoy_en()) {
   por_moneda <- function(m, f) { if (!length(m)) return(numeric()); vapply(split(f, m), sum, numeric(1)) }
 
   if (identical(cat, "financiero")) {
-    s <- pasivos_generate_schedule(liability, today = hoy)
+    s <- pasivos_generate_schedule(liability, today = hoy, client_id = client_id)
     if (!nrow(s)) return(list(categoria = cat, filas = vacio))
     base_m <- as.character(liability$cotizado_en[1] %||% NA_character_)
     if (is.na(base_m) || !nzchar(base_m)) base_m <- as.character(liability$moneda_pago[1] %||% NA_character_)
@@ -674,7 +679,7 @@ pasivos_costeo <- function(liability, hoy = hoy_en()) {
 
   if (cat %in% c("regular", "tarjeta")) {
     fin <- pasivos_fecha_fin(liability)
-    p <- pasivos_generate_provisions(liability, window_start = hoy,
+    p <- pasivos_generate_provisions(liability, window_start = hoy, client_id = client_id,
                                      window_end = if (!is.na(fin)) max(fin, un_ano) else un_ano)
     if (!nrow(p)) return(list(categoria = cat, filas = vacio))
     m <- as.character(p$moneda_pago); m[is.na(m)] <- as.character(liability$moneda_pago[1] %||% NA_character_)
@@ -694,6 +699,14 @@ pasivos_costeo <- function(liability, hoy = hoy_en()) {
   list(categoria = cat, filas = vacio)
 }
 
+# The session's client (session$userData$hd_cliente(), set in app.R), or
+# NULL outside a session (scripts, the emails job): the default client_id of
+# the engine's estimate reads. Per session, never a global.
+pasivos_cliente_sesion <- function(session = shiny::getDefaultReactiveDomain()) {
+  cid <- tryCatch(shiny::isolate(session$userData$hd_cliente()), error = function(e) NULL)
+  if (is.character(cid) && length(cid) == 1L && !is.na(cid) && nzchar(cid)) cid else NULL
+}
+
 # ── §2.3 Provision generation ──────────────────────────────────────────────────
 
 # window_start / today: the client's day by default (T75b, CM27); `today`
@@ -704,7 +717,8 @@ pasivos_generate_provisions <- function(liability,
                                          window_end   = NULL,
                                          policies_for_liability = list(),
                                          holidays_cache = list(),
-                                         today = window_start) {
+                                         today = window_start,
+                                         client_id = pasivos_cliente_sesion()) {
   window_start <- as.Date(window_start)
   cat <- liability$categoria
 
@@ -731,7 +745,7 @@ pasivos_generate_provisions <- function(liability,
 
   # ── Build raw date+amount stream ─────────────────────────────────────────
   if (identical(cat, "financiero")) {
-    sched <- pasivos_generate_schedule(liability, today = today)
+    sched <- pasivos_generate_schedule(liability, today = today, client_id = client_id)
     # Filter to non-historico rows in window
     stream <- sched[!sched$historico &
                       sched$fecha >= window_start &

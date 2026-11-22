@@ -139,12 +139,13 @@ pasivos_list_module_server <- function(id, shared) {
       # currency's part is in the Revisión's breakdown).
       # The column is always there, an empty list included (the table starts on
       # NULL sources: test_hd_table_arranque_null).
+      cid <- tryCatch(shared$effective_client_id(), error = function(e) NULL)   # the variable rates' index
       if (is.data.frame(filas))
         filas$costo_anual <- vapply(seq_len(nrow(filas)), function(i) {
           l <- liabs[!is.na(liabs$id) & liabs$id == filas$id[i], , drop = FALSE]
           # A paused liability has no payments ahead: no cost per year.
           if (!nrow(l) || !identical(as.character(l$estado[1]), "active")) return(NA_real_)
-          c <- tryCatch(pasivos_costeo(l), error = function(e) NULL)
+          c <- tryCatch(pasivos_costeo(l, client_id = cid), error = function(e) NULL)
           if (is.null(c) || !nrow(c$filas)) return(NA_real_)
           v <- c$filas$anual[c$filas$moneda %in% filas$moneda_pago[i]]
           if (length(v)) v[1] else NA_real_
