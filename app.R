@@ -482,7 +482,7 @@ ui <- bslib::page_navbar(
       tags$div(
         style = paste0("font-size:0.67rem; color:#283f58; letter-spacing:0.28em; ",
                        "text-transform:uppercase; margin-top:4px; margin-bottom:16px;"),
-        "Treasury Intelligence Platform"
+        tr("niveles.correo.lema")   # the same tagline the emails carry (tema/correos)
       ),
 
     if (is.null(subtitle)) NULL else tags$div(
