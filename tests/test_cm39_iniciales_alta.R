@@ -42,6 +42,7 @@ load_erp_connections <- function(...) .schema_erp_connections()
 rename_empresa_initials <- function(...) invisible(character())
 LOGS <- list(); AVISOS <- character(); TIPOS <- character(); BUMPS <- 0L
 log_action <- function(..., action = NULL, metadata = NULL, description = NULL) {
+  if (identical(action, "sin_evento")) return(invisible(NULL))   # T72 B: the write layer's own entry (test_t72b_evento)
   LOGS[[length(LOGS) + 1L]] <<- list(action = action %||% "?", metadata = metadata, description = description)
   invisible(NULL)
 }

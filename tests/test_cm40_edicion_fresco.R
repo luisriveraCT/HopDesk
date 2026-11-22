@@ -47,7 +47,7 @@ rename_empresa_initials <- function(old_ini, new_ini, client_id = NULL) {
   CASCADAS <<- c(CASCADAS, paste0(old_ini, "->", new_ini)); invisible(character())
 }
 LOGS <- character(); AVISOS <- character(); TIPOS <- character()
-log_action <- function(..., action = NULL) { LOGS <<- c(LOGS, action %||% "?"); invisible(NULL) }
+log_action <- function(..., action = NULL) { if (identical(action, "sin_evento")) return(invisible(NULL)); LOGS <<- c(LOGS, action %||% "?"); invisible(NULL) }   # T72 B: sin_evento is the write layer's (test_t72b_evento)
 showNotification <- function(ui, ..., type = "default") {
   AVISOS <<- c(AVISOS, as.character(ui)); TIPOS <<- c(TIPOS, type); invisible(NULL)
 }

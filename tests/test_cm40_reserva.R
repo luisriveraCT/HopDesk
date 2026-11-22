@@ -51,7 +51,7 @@ sap_creds_source <- function(...) NULL
 load_erp_connections <- function(...) .schema_erp_connections()
 bump_sync_version <- function(...) invisible(NULL)
 LOGS <- character(); AVISOS <- character()
-log_action <- function(..., action = NULL) { LOGS <<- c(LOGS, action %||% "?"); invisible(NULL) }
+log_action <- function(..., action = NULL) { if (identical(action, "sin_evento")) return(invisible(NULL)); LOGS <<- c(LOGS, action %||% "?"); invisible(NULL) }   # T72 B: sin_evento is the write layer's (test_t72b_evento)
 showNotification <- function(ui, ..., type = "default") { AVISOS <<- c(AVISOS, as.character(ui)); invisible(NULL) }
 limpiar <- function() { LOGS <<- character(); AVISOS <<- character() }
 
