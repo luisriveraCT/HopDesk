@@ -65,8 +65,8 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
     fx_rates      = sn$fx_rates,
     idioma        = sn$lang_primary %||% "es"
   )
-  if (is.null(export_data))
-    stop("Sin datos disponibles para el período seleccionado.")
+  if (is.null(export_data))   # "[SIN_DATOS]": .cf_excel_resultado() tells the user in plain words
+    stop("[SIN_DATOS] Sin datos disponibles para el período seleccionado.")
 
   wb <- e$generate_cashflow_excel_wb(
     export_data    = export_data,
@@ -84,6 +84,24 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
 
   openxlsx::saveWorkbook(wb, output_path, overwrite = TRUE)
   output_path
+}
+
+# What a finished Excel child (callr::r_bg) left (T74 F1, 2026-11-22). A
+# child whose function throws still EXITS WITH STATUS 0 and leaves stderr
+# empty: the error travels in job$get_result(). Reading only stderr is what
+# made every failure "Error desconocido", on shinyapps.io too, with nothing in
+# any log. Returns list(estado = "done" | "error", aviso = <tr() key for the
+# user, plain words>, detalle = <technical message, for the server log only>).
+.cf_excel_resultado <- function(job, out_path) {
+  detalle <- tryCatch({ job$get_result(); "" }, error = function(e) conditionMessage(e))
+  if (!nzchar(detalle) && file.exists(out_path))
+    return(list(estado = "done", aviso = NULL, detalle = ""))
+  if (!nzchar(detalle)) detalle <- tryCatch(trimws(job$read_all_error_text()), error = function(e) "")
+  if (!nzchar(detalle)) detalle <- sprintf("exit status %s, no file, no message",
+                                           tryCatch(job$get_exit_status(), error = function(e) "?"))
+  aviso <- if (grepl("[SIN_DATOS]", detalle, fixed = TRUE)) "tablas.flujo.aviso.excel_sin_datos"
+           else "tablas.flujo.aviso.excel_fallo"
+  list(estado = "error", aviso = aviso, detalle = detalle)
 }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -2836,19 +2854,19 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
     elapsed <- as.numeric(difftime(Sys.time(), .xl_start(), units = "secs"))
 
     if (!job$is_alive()) {
-      status <- tryCatch(job$get_exit_status(), error = function(e) -1L)
-      if (identical(status, 0L) && file.exists(info$out_path)) {
+      res <- .cf_excel_resultado(job, info$out_path)
+      if (identical(res$estado, "done")) {
         .xl_file(info$out_path)
         .xl_state("done")
         showNotification(
           tagList(icon("file-excel"), " Excel listo — haga clic en 'Descargar' para guardarlo."),
           type = "message", duration = 12)
       } else {
-        err <- tryCatch(trimws(job$read_all_error_text()), error = function(e) "")
-        if (!nzchar(err)) err <- tr("tablas.flujo.aviso.error_desconocido")
+        # The technical detail goes to the server log only; the user reads
+        # what happened in plain words (T74 F1).
+        message("[EXCEL] the Flujo Excel export failed: ", res$detalle)
         .xl_state("error")
-        showNotification(tr("tablas.flujo.aviso.error_excel", error = err),
-                         type = "error", duration = 12)
+        showNotification(tr(res$aviso), type = "error", duration = 12)
       }
       if (file.exists(info$snap_path)) unlink(info$snap_path)
       .xl_job(NULL)

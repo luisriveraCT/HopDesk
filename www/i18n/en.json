@@ -857,6 +857,8 @@
   "tablas.flujo.aviso.error_word": "Error generating Word: {error}",
   "tablas.flujo.aviso.error_excel": "Error generating Excel: {error}",
   "tablas.flujo.aviso.error_desconocido": "Unknown error generating the file.",
+  "tablas.flujo.aviso.excel_fallo": "The Excel could not be generated. Try again in a moment; if it happens again, export to PDF and let HopDesk know (the details were logged).",
+  "tablas.flujo.aviso.excel_sin_datos": "There is no data for the chosen period, so no Excel was generated. Widen the dates or change the companies.",
   "tablas.flujo.aviso.tiempo_agotado": "The process took over 5 minutes and was cancelled. Narrow the date range and try again.",
   "tablas.flujo.aviso.cancelada": "Export cancelled.",
   "tablas.flujo.aviso.error_html": "Error generating HTML: {error}",
