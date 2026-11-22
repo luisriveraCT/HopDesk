@@ -10,7 +10,11 @@
 #   - every colour is paired with the base's, in order: same count and each
 #     pair within ΔE 2 (CIE76), so Clásico looks the same;
 #   - nothing is left unpainted ({{rol}}), under Clásico or Marca;
-#   - tema = NULL is Clásico, and under Marca the header band is Marca's.
+#   - tema = NULL is Clásico, and under Marca the header band is Marca's;
+#   - the words come from the dictionary (niveles.correo.*): in Spanish the
+#     mails are the base's byte for byte, in English no fixed Spanish is left,
+#     and the subjects, the in-app notices and the service's state follow the
+#     language too.
 #
 #   TEMA_BASE=<checkout before the mails' 4b> Rscript --vanilla tests/test_tema_correos_iguales.R
 # Without TEMA_BASE only the branch's own checks run.
@@ -28,8 +32,9 @@ if (nzchar(BASE)) BASE <- normalizePath(BASE, winslash = "/")
 
 # The seven mails of one checkout, in a clean process. `tema` is only passed
 # when given (the base's functions have no such argument).
-correos <- function(raiz, tema = NULL) callr::r(function(raiz, tema) {
+correos <- function(raiz, tema = NULL, idioma = "es") callr::r(function(raiz, tema, idioma) {
   setwd(raiz)
+  options(hopdesk.idioma = idioma)
   `%||%` <- function(a, b) if (is.null(a)) b else a
   assign("%||%", `%||%`, envir = globalenv())
   for (f in c("R/i18n.R", "R/tema_registro.R", "R/email_service.R"))
@@ -47,7 +52,7 @@ correos <- function(raiz, tema = NULL) callr::r(function(raiz, tema) {
     solicitud   = llama("email_user_request_html", "Acme", 10L, 10L, "ti@acme.mx"),
     sube        = llama("email_limit_change_html", "Acme", 10L, 15L, "Luis"),
     baja        = llama("email_limit_change_html", "Acme", 15L, 10L, "Luis", deactivated = c("ana", "beto")))
-}, args = list(raiz = raiz, tema = tema))
+}, args = list(raiz = raiz, tema = tema, idioma = idioma))
 
 RX <- "(?<![&\\w])#(?:[0-9A-Fa-f]{8}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})(?![0-9A-Za-z_-])|rgba?\\([^)]*\\)"
 enmascarar <- function(html) gsub(RX, "§color", html, perl = TRUE)
@@ -77,6 +82,43 @@ ok("under Marca the warning, the limit and the request follow Marca's aviso, pel
    grepl(reg$tema_color("aviso", "marca"), marca$aviso, fixed = TRUE) &&
    grepl(reg$tema_color("peligro", "marca"), marca$tope, fixed = TRUE) &&
    grepl(reg$tema_color("primario", "marca"), marca$solicitud, fixed = TRUE))
+
+# The words (niveles.correo.*): in English, no Spanish left hand-written; the
+# subjects, the in-app notices and the service's state follow the language too.
+ingles <- correos(RAMA, idioma = "en")
+ESPANOL <- c("Hola", "contraseña", "Contraseña", "usuarios", "Usuarios", "Límite", "límite", "Mensaje automático",
+             "cuenta", "enlace", "Si el botón", "Lugares", "Modificado", "Solicitud", "Aviso", "aumentado", "reducido",
+             "Cuentas desactivadas", "auditoría", "Guarda este mensaje")
+ok("in English the 9 mails keep no fixed Spanish text",
+   !any(vapply(ingles, function(h) any(vapply(ESPANOL, grepl, logical(1), x = h, fixed = TRUE)), logical(1))))
+ok("in English the mails say Hello / Activate my account / Users",
+   grepl("Hello Ana", ingles$invitacion, fixed = TRUE) && grepl("Activate my account", ingles$invitacion, fixed = TRUE) &&
+   grepl("Active users", ingles$aviso, fixed = TRUE))
+ok("a name with markup is escaped in the limit mails (it went in raw before)",
+   !grepl("<b>", callr::r(function(raiz) {
+     setwd(raiz); assign("%||%", function(a, b) if (is.null(a)) b else a, envir = globalenv())
+     for (f in c("R/i18n.R", "R/tema_registro.R", "R/email_service.R")) sys.source(f, envir = globalenv())
+     email_user_limit_warning_html("<b>Acme</b>", 8L, 10L)
+   }, args = list(raiz = RAMA)), fixed = TRUE))
+textos <- function(idioma) callr::r(function(raiz, idioma) {
+  setwd(raiz); options(hopdesk.idioma = idioma)
+  assign("%||%", function(a, b) if (is.null(a)) b else a, envir = globalenv())
+  for (f in c("R/i18n.R", "R/tema_registro.R", "R/email_service.R")) sys.source(f, envir = globalenv())
+  Sys.setenv(RESEND_API_KEY = "")
+  c(estado = email_service_status()$label,
+    uno = tr_n("niveles.correo.asunto.aviso", 1, cliente = "Acme"),
+    dos = tr_n("niveles.correo.asunto.aviso", 2, cliente = "Acme"),
+    cambio = tr("niveles.correo.asunto.cambio", cliente = "Acme", antes = 10L, despues = 15L),
+    error = email_error_of(structure(FALSE, error = "")))
+}, args = list(raiz = RAMA, idioma = idioma))
+tes <- textos("es"); ten <- textos("en")
+ok("the service's state, the subjects and the error follow the language (es / en)",
+   identical(unname(tes), c("Correo sin configurar", "[HopDesk] Aviso de capacidad — Acme (queda 1 lugar)",
+                            "[HopDesk] Aviso de capacidad — Acme (quedan 2 lugares)",
+                            "[HopDesk] Límite modificado — Acme (10 → 15)", "error desconocido")) &&
+   identical(unname(ten), c("Email not configured", "[HopDesk] Capacity notice — Acme (1 seat left)",
+                            "[HopDesk] Capacity notice — Acme (2 seats left)",
+                            "[HopDesk] Limit changed — Acme (10 → 15)", "unknown error")))
 
 if (nzchar(BASE)) {
   base <- correos(BASE)
