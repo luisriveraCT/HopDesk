@@ -54,6 +54,14 @@ source("tests/helpers/tema_comparar_estilos.R")
 DE_MAX <- as.numeric(Sys.getenv("TEMA_DE_MAX", "2"))
 if (is.na(DE_MAX) || DE_MAX < 0) stop("TEMA_DE_MAX must be a number >= 0")
 AVISOS <- list()
+# Views that had nothing to open on (dev data, the user's tabs): not a pass,
+# not a fail -- listed at the end so they never go unnoticed (Coordinador).
+NO_CUBIERTAS <- character()
+no_cubierta <- function(etiqueta, quien, vista, por_que) {
+  linea <- sprintf("[%s · %s] %s: %s", etiqueta, quien, vista, por_que)
+  cat("      | NOT COVERED", linea, "\n")
+  NO_CUBIERTAS <<- c(NO_CUBIERTAS, linea)
+}
 
 .pass <- 0L; .fail <- 0L
 ok <- function(label, expr) {
@@ -284,8 +292,10 @@ recorrer <- function(raiz, etiqueta, quien) {
   # outside every .hdt, and shows only after a pointer rests on a cell; no tab
   # shows it by default. The first tab with a table cell that has text: a
   # mousemove there, and the bubble must open (hdtable.js waits 350 ms).
+  # No candidate cell at all (no such tab, or no row with text: the dev data)
+  # is NOT COVERED, listed at the end; a cell with no bubble is a FAIL.
   candidatas <- intersect(c("VEN", "PSV", "PH", "BNC"), names(res))
-  burbuja <- FALSE
+  burbuja <- FALSE; hubo_celda <- FALSE
   for (v in candidatas) {
     menu(TRUE); Sys.sleep(0.5)
     ev(sprintf("document.querySelector(\".nav-link[data-value='%s']\").click(); true", v))
@@ -300,6 +310,7 @@ recorrer <- function(raiz, etiqueta, quien) {
       var r = td.getBoundingClientRect(); return [r.left + Math.min(12, r.width / 2), r.top + r.height / 2]; })()"),
       error = function(x) NULL)
     if (is.null(p) || length(p) < 2L) next
+    hubo_celda <- TRUE
     Sys.sleep(0.5)
     invisible(b$Input$dispatchMouseEvent(type = "mouseMoved", x = p[[1]] + 30, y = p[[2]], button = "none", buttons = 0L))
     invisible(b$Input$dispatchMouseEvent(type = "mouseMoved", x = p[[1]], y = p[[2]], button = "none", buttons = 0L))
@@ -307,8 +318,10 @@ recorrer <- function(raiz, etiqueta, quien) {
       return !!t && !t.hidden && t.getClientRects().length > 0; })()"), error = function(x) FALSE)), timeout_s = 10, interval_s = 0.5)
     if (burbuja) break
   }
-  if (ok(sprintf("[%s · %s] Burbuja de valor: it opens over a table cell (%s)", etiqueta, quien,
-                 paste(candidatas, collapse = ",")), burbuja)) {
+  if (!hubo_celda) no_cubierta(etiqueta, quien, "Burbuja de valor",
+                               sprintf("no table cell with text in %s", if (length(candidatas)) paste(candidatas, collapse = ",") else "any tab (none of VEN, PSV, PH, BNC)"))
+  if (hubo_celda && ok(sprintf("[%s · %s] Burbuja de valor: it opens over a table cell (%s)", etiqueta, quien,
+                               paste(candidatas, collapse = ",")), burbuja)) {
     res[["BURBUJA"]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
     captura(sprintf("%s_%s_BURBUJA", etiqueta, quien))
     captura_marca(etiqueta, sprintf("%s_%s_BURBUJA", etiqueta, quien))
@@ -354,7 +367,7 @@ recorrer <- function(raiz, etiqueta, quien) {
       return r.textContent.replace(/\\s+/g, ' ').trim().slice(0, 80); })()"), error = function(x) "")
     abierta <- nzchar(fila) && poll_until(function() isTRUE(tryCatch(ev("(function(){ var f = document.querySelector('.modal.show .hdreq-folio');
       return !!f && f.getClientRects().length > 0; })()"), error = function(x) FALSE)), timeout_s = 30, interval_s = 1)
-    if (!nzchar(fila)) cat(sprintf("      | [%s · %s] Requisición abierta: NOT COVERED, no request rows in dev\n", etiqueta, quien))
+    if (!nzchar(fila)) no_cubierta(etiqueta, quien, "Requisición abierta", "no request rows in dev")
     if (nzchar(fila) && ok(sprintf("[%s · %s] Requisición abierta: the detail opens (%s)", etiqueta, quien, fila), abierta)) {
       vistas_det <- c(evidencia = "REQ_EVID", comentarios = "REQ_COM")
       for (pest in names(vistas_det)) {
@@ -421,5 +434,8 @@ if (length(AVISOS)) {
 }
 cat(sprintf("\nAvisos de color: %d (lista en %s)\n", length(AVISOS), file.path(SALIDA, "avisos_color.csv")))
 cat(sprintf("\nCapturas y estilos: %s\n", SALIDA))
+cat(sprintf("\nVistas NO CUBIERTAS: %d%s\n", length(NO_CUBIERTAS),
+            if (length(NO_CUBIERTAS)) " (nothing measured there: say so in the report)" else ""))
+for (x in NO_CUBIERTAS) cat("  NOT COVERED", x, "\n")
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)
