@@ -7,6 +7,8 @@
 #     app.R or tests/ (checked here too), and the modal has no <style> of it.
 #   - "Guardar como provisión" paints with roles: var(--hd-provision) and
 #     var(--hd-texto-inverso); in Clásico they are its old #7c3aed and white.
+#   - Its words come from the dictionary (tablas.abono.*): in Spanish the
+#     modal is the base's word for word, in English no fixed Spanish is left.
 # The base and the branch build the modal for AR and AP (showModal() captured)
 # in clean processes; the branch's var(--hd-*) are resolved with Clásico.
 #
@@ -71,6 +73,10 @@ ok("the branch builds the modal for AR and AP, with no <style> block", length(ra
 ok("\"Guardar como provisión\" paints with var(--hd-provision) and var(--hd-texto-inverso), only in AP",
    grepl("background-color:var(--hd-provision);color:var(--hd-texto-inverso);", rama[["AP"]], fixed = TRUE) &&
    !grepl("me_save_as_provision", rama[["AR"]], fixed = TRUE))
+ingles <- modal(RAMA, "en")
+ok("in English the modal keeps none of its fixed Spanish (Cobro, Pago, Cancelar, Guardar, provisión)",
+   !any(vapply(c("Cobro — CxC", "Pago — CxP", ">Cancelar<", ">Guardar<", "Guardar como provisión"),
+               function(s) any(grepl(s, ingles, fixed = TRUE)), logical(1))))
 
 if (nzchar(BASE)) {
   base <- modal(BASE)

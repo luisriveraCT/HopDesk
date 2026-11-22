@@ -24,17 +24,17 @@ show_combined_entry_modal <- function(ledger, sap_data, session,
   # from appearing as choices; picking a stale name would cause the manual entry to be
   # silently filtered out by the empresa toggle in the calendar.
   empresas  <- sort(unique(c(empresa_vals)))
-  lbl_title <- if (ledger == "AR") "Cobro — CxC" else "Pago — CxP"
+  lbl_title <- tr(if (ledger == "AR") "tablas.abono.manual.titulo_ar" else "tablas.abono.manual.titulo_ap")
 
   showModal(modalDialog(
     title     = lbl_title,
     size      = "l",
     easyClose = TRUE,
     footer    = tagList(
-      actionButton("me_cancel", "Cancelar", class = "btn btn-secondary"),
-      actionButton("me_save",   "Guardar",  class = "btn btn-primary"),
+      actionButton("me_cancel", tr("comun.cancelar"), class = "btn btn-secondary"),
+      actionButton("me_save",   tr("comun.guardar"),  class = "btn btn-primary"),
       if (ledger == "AP")
-        actionButton("me_save_as_provision", "Guardar como provisión",
+        actionButton("me_save_as_provision", tr("tablas.abono.manual.guardar_provision"),
                      style = "background-color:var(--hd-provision);color:var(--hd-texto-inverso);border:none;")
       else NULL
     ),
