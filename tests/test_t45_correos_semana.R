@@ -44,6 +44,7 @@ suppressMessages({
 source("R/panorama_datos.R")
 source("R/ui_components.R")
 source("R/avisos_umbrales.R")
+source("R/tema_registro.R")   # CORREO_COLORES comes from the theme registry (TEMA 4b)
 source("R/avisos_correos.R")
 source("R/avisos_datos.R")
 source("R/avisos_logros.R")

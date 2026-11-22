@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 14L
+HD_TEMAS_CSS_VERSION <- 15L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -59,6 +59,12 @@ HD_TEMAS_CSS_VERSION <- 14L
   `olivo-bg`    = "#EEF0E2", `olivo-bd`  = "#DADFC6", `olivo-tag`  = "#E2E6CF", `olivo-fg`  = "#56602F",
   sube          = "#E6A383",
   baja          = "#A9C3D6",
+  # The weekly mails' own tones (R/avisos_correos.R, CORREO_COLORES): Marca's,
+  # used only there (the week's chart, the sand and review boxes, the lines).
+  lino          = "#EDEBE4", `lino-bd`   = "#E4E1D8", `lino-riel`  = "#ECE9E1",
+  arena         = "#EFE6D2", `arena-fg`  = "#6B5320", `arena-osc`  = "#E6D6AC",
+  `niebla-osc`  = "#9AA6BA", `ambar-osc` = "#7C3519", bruma        = "#D7DCE5",
+  `pizarra-clara` = "#5B6A86", `marino-claro` = "#2A3A58",
   serif         = "'Fraunces', Georgia, 'Times New Roman', serif",
   sans          = "'Lato', system-ui, -apple-system, 'Segoe UI', sans-serif"
 )
@@ -201,7 +207,7 @@ HD_TEMAS <- list(
       radio            = "24px",
       sombra           = "0 1px 2px rgba(19, 33, 58, 0.06), 0 8px 24px rgba(19, 33, 58, 0.06)",
       foco             = "0 0 0 3px rgba(201, 174, 110, 0.55)",
-      `foco-color`     = "#8A6D2C"   # gold that a 1-2 px outline can show (oro is 2.15:1)
+      `foco-color`     = "#8A6D2C"   # gold a 1-2 px outline can carry; oro is 2.15:1
     )
   )
 )

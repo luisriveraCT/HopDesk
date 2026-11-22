@@ -58,7 +58,7 @@ archivos <- c("app.R",
   "R/audit_log_viewer_module.R" = 17L,
   "R/audit_sticky_ui.R" = 4L,
   "R/auth_reset.R" = 3L,
-  "R/avisos_correos.R" = 32L,
+  "R/avisos_correos.R" = 0L,                 # TEMA 4b: CORREO_COLORES from the registry (Marca roles + the mails' palette tones)
   "R/bancos_module.R" = 11L,          # TEMA-Bancos: dead CSS (-50), then the migration: only the 11 currency colours (data, exempt)
   "R/cashflow_export_module.R" = 0L,           # TEMA 4b: the documents' colours are roles (.cf_doc_colores)
   "R/cashflow_preview_module.R" = 6L,

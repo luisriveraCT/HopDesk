@@ -37,6 +37,17 @@
   --hd-olivo-fg: #56602F;
   --hd-sube: #E6A383;
   --hd-baja: #A9C3D6;
+  --hd-lino: #EDEBE4;
+  --hd-lino-bd: #E4E1D8;
+  --hd-lino-riel: #ECE9E1;
+  --hd-arena: #EFE6D2;
+  --hd-arena-fg: #6B5320;
+  --hd-arena-osc: #E6D6AC;
+  --hd-niebla-osc: #9AA6BA;
+  --hd-ambar-osc: #7C3519;
+  --hd-bruma: #D7DCE5;
+  --hd-pizarra-clara: #5B6A86;
+  --hd-marino-claro: #2A3A58;
   --hd-serif: 'Fraunces', Georgia, 'Times New Roman', serif;
   --hd-sans: 'Lato', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }

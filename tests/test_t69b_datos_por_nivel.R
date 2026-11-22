@@ -32,7 +32,7 @@ ok <- function(label, expr) {
 }
 .i18n_dir <- file.path(getwd(), "www", "i18n")
 for (f in c("R/i18n.R", "R/monedas.R", "R/agenda_filas.R", "R/panorama_datos.R", "R/ui_components.R",
-            "R/tier_registry.R", "R/permisos.R", "R/avisos_umbrales.R", "R/avisos_correos.R"))
+            "R/tier_registry.R", "R/permisos.R", "R/avisos_umbrales.R", "R/tema_registro.R", "R/avisos_correos.R"))
   source(f)
 COMPRAS <- "compras"
 TOTAL <- names(TIER_REGISTRY)[vapply(TIER_REGISTRY, function(e) is.null(e$pestanas) && !isTRUE(e$interno), logical(1))][1]

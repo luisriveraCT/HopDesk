@@ -16,6 +16,7 @@ source("R/ui_components.R")   # monto_moneda(), sap_al_texto() (T46)
 source("R/tier_registry.R")
 source("R/permisos.R")
 source("R/avisos_umbrales.R")
+source("R/tema_registro.R")   # CORREO_COLORES comes from the theme registry (TEMA 4b)
 source("R/avisos_correos.R")
 
 .pass <- 0L; .fail <- 0L

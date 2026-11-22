@@ -24,13 +24,23 @@
 # Never prints: the job runs in a public repo's logs (see avisos_job.R).
 # =============================================================================
 
-CORREO_COLORES  <- list(
-  fondo = "#EDEBE4", papel = "#FFFFFF", tinta = "#1A2233", gris = "#5A6474",
-  marino = "#13213A", dorado = "#C9AE6E", dorado_osc = "#B0924F", linea = "#E4E1D8",
-  linea_tabla = "#EFECE4", pie = "#F7F6F2", arena = "#EFE6D2", arena_tinta = "#6B5320",
-  gris_claro = "#9AA6BA", cobre = "#9A4524", revision = "#F7E9E1", revision_tinta = "#7C3519",
-  verde = "#2F6B4F", logro = "#FBF6EA", logro_borde = "#E9DBB7", logro_tinta = "#8A6D2C",
-  riel = "#ECE9E1", reprog = "#8B97AD", por_vencer = "#D7DCE5", cambio = "#D9D3C4", liquidado_ar = "#E6D6AC", liquidado_ap = "#5B6A86")
+# The mails' colours come from the theme registry (R/tema_registro.R), in
+# Marca for every client until TEMA stage 5 (then: the client's theme). Each
+# field is a role, or a tone of the brand's palette that only these mails use.
+CORREO_TEMA <- "marca"
+.CORREO_ROLES <- c(
+  fondo = "lino", papel = "superficie", tinta = "texto", gris = "texto-2",
+  marino = "primario", dorado = "acento", dorado_osc = "oro-osc", linea = "lino-bd",
+  linea_tabla = "superficie-2", pie = "fondo", arena = "arena", arena_tinta = "arena-fg",
+  gris_claro = "niebla-osc", cobre = "aviso-texto", revision = "aviso-suave", revision_tinta = "ambar-osc",
+  verde = "exito", logro_tinta = "acento-texto", riel = "lino-riel", reprog = "texto-tenue",
+  por_vencer = "bruma", cambio = "borde", liquidado_ar = "arena-osc", liquidado_ap = "pizarra-clara",
+  linea_oscura = "marino-claro")
+.correo_colores <- function(tema = CORREO_TEMA)
+  as.list(vapply(.CORREO_ROLES, tema_color, character(1), tema = tema))
+# Lazy: shiny sources R/ in alphabetical order, so tema_color() (R/tema_registro.R)
+# does not exist yet when this file loads; the list is built on first use.
+delayedAssign("CORREO_COLORES", .correo_colores())
 .CORREO_EMAIL_RE <- "^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$"
 
 # ── Destinatarios ────────────────────────────────────────────────────────────
@@ -150,7 +160,7 @@ correo_revision <- function(alertas, idioma = "es") {
 # fixed table through an <!--[if mso]> wrapper. Two cards side by side are
 # inline-blocks that stack on a phone without media queries.
 
-.cr_C <- CORREO_COLORES
+delayedAssign(".cr_C", CORREO_COLORES)
 .cr_SERIF <- "Fraunces,Georgia,serif"
 .cr_SANS  <- "Lato,Arial,sans-serif"
 
@@ -175,7 +185,7 @@ correo_revision <- function(alertas, idioma = "es") {
   '<div style="font-size:11px;font-weight:900;letter-spacing:.22em;color:', .cr_C$dorado, '">', eyebrow, '</div>',
   .cr_esp(4), '<div style="font-size:13px;color:', .cr_C$gris_claro, '">', meta, '</div>',
   .cr_esp(12),
-  '<div style="font-family:', .cr_SERIF, ';font-weight:500;font-size:27px;line-height:1.2;color:#FFFFFF">', titulo, '</div>',
+  '<div style="font-family:', .cr_SERIF, ';font-weight:500;font-size:27px;line-height:1.2;color:', .cr_C$papel, '">', titulo, '</div>',
   if (nzchar(linea)) paste0(.cr_esp(10), '<div style="font-size:14px;line-height:1.5;color:', .cr_C$gris_claro, '">', linea, '</div>'),
   '</td></tr>')
 
@@ -281,7 +291,7 @@ correo_revision <- function(alertas, idioma = "es") {
 .cr_boton_y_pie <- function(url, datos_sap, idioma) paste0(
   '<tr><td align="center" style="padding:24px 28px 28px">',
   '<a href="', .cr_e(url), '" style="display:inline-block;padding:15px 32px;border-radius:999px;background:', .cr_C$marino,
-  ';color:#FFFFFF;font-weight:900;font-size:15px;text-decoration:none">', .cr_t("avisos.correo.boton", idioma),
+  ';color:', .cr_C$papel, ';font-weight:900;font-size:15px;text-decoration:none">', .cr_t("avisos.correo.boton", idioma),
   ' <span style="color:', .cr_C$dorado, '">&rarr;</span></a></td></tr>',
   '<tr><td style="background:', .cr_C$pie, ';border-top:1px solid ', .cr_C$linea, ';padding:16px 28px;font-size:12px;line-height:1.5;color:', .cr_C$gris, '">',
   .cr_e(.cr_sap(datos_sap, idioma)), '<br>', .cr_t("avisos.correo.pie.monedas", idioma), ' ',
@@ -446,12 +456,12 @@ correo_lunes_html <- function(d, dest) {
              .cr_t("semana.tarjeta.por_cobrar.excluye_ver", idioma,
                    destino = tr("semana.tarjeta.cartera_vencida.etiqueta", idioma = idioma)))), "arena")
   pasivos_linea <- if (as.integer(d$pasivos_n %||% 0L) > 0) paste0(
-    .cr_esp(8), '<div style="font-size:13px;color:#FFFFFF;border-top:1px solid #2A3A58;padding-top:8px">',
+    .cr_esp(8), '<div style="font-size:13px;color:', .cr_C$papel, ';border-top:1px solid ', .cr_C$linea_oscura, ';padding-top:8px">',
     .cr_tn("semana.tarjeta.por_pagar.pasivos", as.integer(d$pasivos_n), idioma), ' &middot; ',
     paste(vapply(.cr_orden(d$pasivos, base), function(m) .cr_m(d$pasivos[[m]], m), character(1)), collapse = " &middot; "),
     '</div>') else ""
   t_pagar <- .cr_tarjeta(.cr_t("semana.tarjeta.por_pagar.etiqueta", idioma),
-    .cr_renglones(pagos, base, "#FFFFFF", aprox = d$pagos_aprox %||% character()),
+    .cr_renglones(pagos, base, .cr_C$papel, aprox = d$pagos_aprox %||% character()),
     paste0(.cr_t("semana.tarjeta.por_pagar.explica", idioma, rango = rango), ' &middot; ',
            .cr_tn("semana.tarjeta.por_pagar.n", as.integer(d$pagos_n %||% 0L), idioma)),
     "marino", extra = pasivos_linea)
@@ -735,7 +745,7 @@ correo_viernes_html <- function(d, dest) {
     .cr_renglones(s$cobros %||% numeric(), base, .cr_C$marino, 20),
     .cr_tn("semana.tarjeta.por_cobrar.n", as.integer(s$cobros_n %||% 0L), idioma), "arena")
   sig_pagar <- .cr_tarjeta(.cr_t("semana.tarjeta.por_pagar.etiqueta_siguiente", idioma),
-    .cr_renglones(s$pagos %||% numeric(), base, "#FFFFFF", 20),
+    .cr_renglones(s$pagos %||% numeric(), base, .cr_C$papel, 20),
     .cr_tn("semana.tarjeta.por_pagar.n", as.integer(s$pagos_n %||% 0L), idioma), "marino")
   sig_neto <- .cr_tarjeta(.cr_t("semana.tarjeta.neto.etiqueta_proyectado", idioma),
     .cr_renglones(.cr_neto(s$cobros %||% numeric(), s$pagos %||% numeric(), base), base, NULL, 20, signo = TRUE, colorear = TRUE),

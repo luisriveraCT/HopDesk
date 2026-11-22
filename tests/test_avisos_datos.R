@@ -35,6 +35,7 @@ source("R/panorama_datos.R")
 source("R/ui_components.R")   # monto_moneda(), sap_al_texto() (T46)
 suppressMessages({ source("R/fx_banxico.R"); source("R/fx_tipos.R") })
 source("R/avisos_umbrales.R")
+source("R/tema_registro.R")   # CORREO_COLORES comes from the theme registry (TEMA 4b)
 source("R/avisos_correos.R")
 source("R/avisos_datos.R")
 

@@ -27,7 +27,7 @@ cat("=== test_t39_monedas_cierre ===\n\n")
 suppressPackageStartupMessages({ library(shiny); library(dplyr) })
 `%||%` <- function(a, b) if (is.null(a)) b else a
 for (f in c("R/i18n.R", "R/monedas.R", "R/zona.R", "R/ui_components.R", "R/manual_entry_handlers.R",
-            "R/agenda_filas.R", "R/panorama_datos.R", "R/avisos_correos.R"))
+            "R/agenda_filas.R", "R/panorama_datos.R", "R/tema_registro.R", "R/avisos_correos.R"))
   source(f)
 cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALSE))
   if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)

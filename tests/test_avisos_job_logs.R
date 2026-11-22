@@ -31,7 +31,7 @@ salidas <- trimws(job[grepl(IMPRIME, job)])
 ok(sprintf("avisos_job.R solo imprime el log (%s)", paste(salidas, collapse = " | ")),
    setequal(salidas, c('error = function(e) { cat("job_no_arranco=1\\n"); quit(status = 1L) })',
                        'cat(lineas, sep = "\\n")')))
-for (f in c("R/avisos_umbrales.R", "R/avisos_correos.R", "R/avisos_datos.R", "R/avisos_logros.R")) {
+for (f in c("R/avisos_umbrales.R", "R/tema_registro.R", "R/avisos_correos.R", "R/avisos_datos.R", "R/avisos_logros.R")) {
   x <- codigo(f)
   ok(sprintf("%s no imprime nada", f), !any(grepl(IMPRIME, x)))
 }
