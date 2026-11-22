@@ -19,7 +19,7 @@
 # Run from project root:  Rscript tests/test_pasivos_requisicion.R
 # =============================================================================
 cat("=== test_pasivos_requisicion ===\n\n")
-suppressPackageStartupMessages({ library(shiny); library(dplyr); library(tibble) })
+suppressPackageStartupMessages({ library(shiny); library(dplyr); library(tibble); library(lubridate) })   # lubridate: the engine (T78)
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
 cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALSE))
   if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
@@ -32,7 +32,9 @@ cargar("R/pasivos_observers.R", "isTRUE_safe")
 cargar("R/pasivos_capabilities.R", c("PASIVOS_CAPABILITIES", "pasivos_autoriza"))
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/pasivos_schemas.R", "R/pasivos_table_pivot.R", "R/pasivos_table_styles.R",
-            "R/pasivos_table_module.R", "R/pasivos_list_module.R", "R/pasivos_deuda.R")) suppressMessages(source(f))
+            "R/pasivos_table_module.R", "R/pasivos_list_module.R",
+            # T78: Costo de la deuda: the engine
+            "R/forecasting_resolve.R", "R/policy_engine.R", "R/pasivos_engine.R", "R/pasivos_deuda.R")) suppressMessages(source(f))
 source("tests/helpers/hd_numero.R")   # T66: hd_numero_input()
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 source("tests/helpers/pasivos_datos_prueba.R")

@@ -60,10 +60,12 @@ test_that("A: a French loan, by hand: rates, balance, 12 months, next payment; X
 })
 
 # An IRR with its own bisection on the same dated flows (not .deuda_xirr()).
+# The borrower's flows start positive (the principal), so their NPV rises
+# with the rate: below the root it is negative.
 tir_a_mano <- function(fechas, flujos) {
   t <- as.numeric(fechas - min(fechas)) / 365
   lo <- 0; hi <- 1
-  for (i in 1:200) { mid <- (lo + hi) / 2; if (sum(flujos / (1 + mid)^t) > 0) lo <- mid else hi <- mid }
+  for (i in 1:200) { mid <- (lo + hi) / 2; if (sum(flujos / (1 + mid)^t) < 0) lo <- mid else hi <- mid }
   mid
 }
 

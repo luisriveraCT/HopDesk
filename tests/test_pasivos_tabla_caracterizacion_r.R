@@ -15,7 +15,7 @@
 #
 # Run from the repo root: Rscript tests/test_pasivos_tabla_caracterizacion_r.R
 # =============================================================================
-suppressPackageStartupMessages({ library(testthat); library(shiny); library(dplyr); library(tibble) })
+suppressPackageStartupMessages({ library(testthat); library(shiny); library(dplyr); library(tibble); library(lubridate) })   # lubridate: the engine (T78)
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
 cargar <- function(archivo, nombres) for (e in parse(archivo, keep.source = FALSE))
   if (is.call(e) && as.character(e[[1]]) %in% c("<-", "=") && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres)
@@ -26,7 +26,9 @@ cargar("R/persistence.R", "confirmaciones_vigentes")
 cargar("R/pasivos_observers.R", "isTRUE_safe")
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/pasivos_schemas.R", "R/pasivos_table_pivot.R", "R/pasivos_table_styles.R",
-            "R/pasivos_table_module.R", "R/pasivos_list_module.R", "R/pasivos_deuda.R")) source(f)
+            "R/pasivos_table_module.R", "R/pasivos_list_module.R",
+            # T78: Costo de la deuda: hoy_en() and the engine
+            "R/zona.R", "R/forecasting_resolve.R", "R/policy_engine.R", "R/pasivos_engine.R", "R/pasivos_deuda.R")) source(f)
 assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 source("tests/helpers/pasivos_datos_prueba.R")
 source("tests/helpers/pasivos_tabla_adaptador.R")

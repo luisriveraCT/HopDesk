@@ -28,6 +28,13 @@ pasivos_deuda_grupo <- function(l) {
   NA_character_
 }
 
+# One liability that can't be worked out (incomplete terms, a missing
+# function) is left out and says so in the log, never silently.
+.deuda_intento <- function(expr, l) tryCatch(expr, error = function(e) {
+  message("[pasivos_deuda] ", as.character(l$id[1] %||% "?"), ": ", conditionMessage(e))
+  NULL
+})
+
 # XIRR: the effective annual rate r with sum(flujo / (1 + r)^(dias/365)) = 0.
 # NA when the flows have no sign change or no root is found.
 .deuda_xirr <- function(fechas, flujos) {
@@ -118,7 +125,7 @@ pasivos_deuda <- function(liabs, provs = NULL, hoy = hoy_en()) {
   filas <- if (is.data.frame(liabs) && nrow(liabs)) {
     vivos <- liabs[liabs$estado %in% "active", , drop = FALSE]
     l <- lapply(seq_len(nrow(vivos)), function(i)
-      tryCatch(pasivos_deuda_pasivo(vivos[i, , drop = FALSE], provs, hoy), error = function(e) NULL))
+      .deuda_intento(pasivos_deuda_pasivo(vivos[i, , drop = FALSE], provs, hoy), vivos[i, , drop = FALSE]))
     l <- Filter(Negate(is.null), l)
     if (length(l)) do.call(rbind, l) else vacio_p
   } else vacio_p
@@ -133,7 +140,7 @@ pasivos_deuda_regulares <- function(liabs, hoy = hoy_en()) {
   vacio <- data.frame(moneda = character(), anual = numeric(), stringsAsFactors = FALSE)
   if (!is.data.frame(liabs) || !nrow(liabs)) return(vacio)
   k <- which(liabs$estado %in% "active" & liabs$categoria %in% "regular")
-  f <- lapply(k, function(i) tryCatch(pasivos_costeo(liabs[i, , drop = FALSE], hoy)$filas, error = function(e) NULL))
+  f <- lapply(k, function(i) .deuda_intento(pasivos_costeo(liabs[i, , drop = FALSE], hoy)$filas, liabs[i, , drop = FALSE]))
   f <- do.call(rbind, Filter(function(x) is.data.frame(x) && nrow(x), f))
   if (is.null(f)) return(vacio)
   do.call(rbind, lapply(sort(unique(f$moneda)), function(mo) {
@@ -175,7 +182,7 @@ pasivos_deuda_servicio <- function(liabs, provs = NULL, hoy = hoy_en()) {
     l <- liabs[i, , drop = FALSE]; g <- pasivos_deuda_grupo(l)
     if (is.na(g)) next
     if (identical(g, "financiamiento")) {
-      s <- tryCatch(pasivos_generate_schedule(l, today = hoy), error = function(e) NULL)
+      s <- .deuda_intento(pasivos_generate_schedule(l, today = hoy), l)
       if (is.null(s) || !nrow(s)) next
       mo <- as.character(l$cotizado_en[1] %||% NA_character_)
       if (is.na(mo) || !nzchar(mo)) mo <- as.character(l$moneda_pago[1] %||% NA_character_)
