@@ -103,6 +103,7 @@ jobs:
             "tests/_run_s3.R"
             "tests/_run_tag.R"
             "tests/_run_testthat.R"
+            "tests/_run_confirmed_logic.R"
           )
 
           # Lines matching this are individual named checks (not the file-level
