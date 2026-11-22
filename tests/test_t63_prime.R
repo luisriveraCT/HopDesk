@@ -56,8 +56,12 @@ test_that("el motor pide la métrica 'prime' a Forecasting, y sin ella usa tasa_
   expect_true(all(pedidas == "prime") && length(pedidas) > 0)
   assign("forecasting_get_estimate", function(metric, fecha, ...) NA_real_, envir = globalenv())
   s_na <- suppressWarnings(pasivos_generate_schedule(credito))
-  fija <- credito; fija$tasa_tipo <- "fija"; fija$tasa_actual <- 7.5 + 2   # tasa_actual + 200 bps
-  s_fija <- pasivos_generate_schedule(fija)
-  expect_equal(s_na$interes, s_fija$interes)
+  # Without the index: tasa_actual + 200 bps = 9.5 % nominal annual, Act/360
+  # with the period's real days (tasas variables, 2026-11-21: it used to be
+  # taken as an effective rate, the same as a fixed one).
+  dias1 <- as.numeric(s_na$fecha[1] - as.Date(credito$fecha_inicio))
+  expect_equal(s_na$interes[1], 120000 * 0.095 * dias1 / 360, tolerance = 1e-6)
+  dias2 <- as.numeric(s_na$fecha[2] - s_na$fecha[1])
+  expect_equal(s_na$interes[2], s_na$saldo_post[1] * 0.095 * dias2 / 360, tolerance = 1e-6)
   expect_true(s_fc$interes[1] > s_na$interes[1])            # 8 % + 200 bps > 7.5 % + 200 bps
 })
