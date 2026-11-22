@@ -321,14 +321,17 @@ forecastingServer <- function(id, shared) {
         id = "fc_refresh_all", duration = NULL, type = "message"
       )
       total <- 0L
+      fallidas <- 0L   # T74: a failed fetch-and-store used to count as 0 and vanish
       for (mid in active_metrics$metric_id) {
         total <- total + tryCatch(
           fcs_fetch_and_store(mid, date_from = Sys.Date() - 30L,
                               triggered_by = "manual_ui", user = user),
-          error = function(e) 0L
+          error = function(e) { fallidas <<- fallidas + 1L; 0L }
         )
       }
       shiny::removeNotification("fc_refresh_all")
+      if (fallidas > 0L)
+        shiny::showNotification(tr("comun.error_guardar"), type = "error", duration = NULL)
       shiny::showNotification(
         tr("tablas.pronosticos.aviso.observaciones_total", n = as.character(total), m = as.character(nrow(active_metrics))),
         type = "message", duration = 4

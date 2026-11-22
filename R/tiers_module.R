@@ -1511,7 +1511,11 @@ tiersServer <- function(id, shared) {
       }
       tryCatch(
         unregister_username(target_user),
-        error = function(e) message("[TIERS] username_index unregister failed: ", e$message)
+        error = function(e) {
+          message("[TIERS] username_index unregister failed: ", e$message)
+          # T74: the account is deactivated, but its username stays taken.
+          showNotification(tr("comun.error_guardar"), type = "warning", duration = NULL)
+        }
       )
       tryCatch(
         update_client_user_count(current_client_id()),
@@ -1945,12 +1949,18 @@ tiersServer <- function(id, shared) {
       max     <- as.integer(row$max_users[1])
       contact <- row$contact_email[1] %||% ""
 
-      append_hd_notification(
+      # T74: it returns FALSE when the write fails; the user used to read
+      # "sent" anyway.
+      enviada <- append_hd_notification(
         type         = "user_request",
         client_id    = cid,
         message_text = sprintf("'%s' solicita más usuarios (%d/%d).", dname, cur, max),
         metadata     = list(current_users = cur, max_users = max, contact_email = contact)
       )
+      if (!isTRUE(enviada)) {
+        showNotification(tr("niveles.solicitudes.aviso.error_guardar"), type = "error", duration = NULL)
+        return()
+      }
 
       # Email to all HopDesk staff with can_manage_invites
       tryCatch({

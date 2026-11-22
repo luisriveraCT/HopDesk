@@ -254,7 +254,12 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
     pap <- add_to_papelera(pap, det, ledger = "AP", deleted_by = user)
     save_papelera(pap, client_id = cid)
     if (!is.null(shared$papelera_rv)) shared$papelera_rv(pap)
-  }, error = function(e) message("[wizard] T70 papelera write failed: ", conditionMessage(e)))
+  }, error = function(e) {
+    message("[wizard] T70 papelera write failed: ", conditionMessage(e))
+    # T74: seen by the user, not only the server log.
+    tryCatch(shiny::showNotification(tr("comun.error_guardar"), type = "error", duration = NULL),
+             error = function(e2) NULL)
+  })
   for (i in seq_len(nrow(filas)))
     tryCatch(pasivos_log_audit(
       action_type = "provision.deleted",

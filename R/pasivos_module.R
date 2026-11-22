@@ -229,8 +229,17 @@ pasivos_provision_de_borrado <- function(prov, client_id) {
   manual_base <- manual_df   # CM09: only the new row is applied on S3 as it is now
   manual_df <- dplyr::bind_rows(manual_df, new_manual)
   shared$manual_inv(manual_df)
-  tryCatch(save_manual(manual_df, client_id = shared$effective_client_id(), base = manual_base), error = function(e)
-    warning("[pasivos] save_manual failed: ", conditionMessage(e)))
+  # T74: a failed save used to be a warning() and the conversion went on
+  # over a row that was never written. Now it stops here, the screen goes
+  # back to what S3 holds, and the caller shows the error.
+  fallo_manual <- tryCatch({ save_manual(manual_df, client_id = shared$effective_client_id(), base = manual_base); NULL },
+                           error = function(e) e)
+  if (!is.null(fallo_manual)) {
+    warning("[pasivos] save_manual failed: ", conditionMessage(fallo_manual))
+    shared$manual_inv(manual_base)
+    return(list(ok = FALSE, msg = tr("comun.error_guardar"),
+                manual_id = NA_character_, pagar_hoy_id = NA_character_))
+  }
 
   # 2. Optional: stage to pagar_hoy
   # Re-derive the staged row from the manual_inv row that now actually exists
@@ -254,8 +263,18 @@ pasivos_provision_de_borrado <- function(prov, client_id) {
       keys = c("ledger", "Empresa", "Moneda", "Documento")
     )
     shared$pagar_hoy_db(ph_df)
-    tryCatch(save_pagar_hoy(ph_df, user, client_id = shared$effective_client_id(), base = ph_base), error = function(e)
-      warning("[pasivos] save_pagar_hoy failed: ", conditionMessage(e)))
+    # T74: the manual row is already saved, so the conversion goes on; only
+    # the Agenda step failed -- it is undone on screen and the user is told
+    # (it used to be a warning() only).
+    fallo_ph <- tryCatch({ save_pagar_hoy(ph_df, user, client_id = shared$effective_client_id(), base = ph_base); NULL },
+                         error = function(e) e)
+    if (!is.null(fallo_ph)) {
+      warning("[pasivos] save_pagar_hoy failed: ", conditionMessage(fallo_ph))
+      shared$pagar_hoy_db(ph_base)
+      new_pagar_hoy_id <- NA_character_
+      shiny::showNotification(tr("tablas.agenda.error_guardar", error = conditionMessage(fallo_ph)),
+                              type = "error", duration = NULL)
+    }
   }
 
   # 3. Flip provision state via engine (writes audit log)
@@ -439,8 +458,10 @@ setup_pasivos_module <- function(input, output, session, shared) {
                                      ledger = "AP", deleted_by = user)
       save_papelera(papelera_df, client_id = shared$effective_client_id())
       if (!is.null(shared$papelera_rv)) shared$papelera_rv(papelera_df)
-    }, error = function(e)
-      message("[pasivos] papelera write failed: ", conditionMessage(e)))
+    }, error = function(e) {
+      message("[pasivos] papelera write failed: ", conditionMessage(e))
+      shiny::showNotification(tr("comun.error_guardar"), type = "error", duration = NULL)   # T74
+    })
 
     tryCatch(pasivos_log_audit(
       action_type = "provision.deleted",
@@ -1065,7 +1086,10 @@ setup_pasivos_module <- function(input, output, session, shared) {
           if (!is.null(shared$bancos_movimientos)) shared$bancos_movimientos(movs)
           bump_sync_version("bancos_movimientos_db", client_id = cid)
         }
-      }, error = function(e) message("[pasivos] delete converted, movimientos: ", conditionMessage(e)))
+      }, error = function(e) {
+        message("[pasivos] delete converted, movimientos: ", conditionMessage(e))
+        shiny::showNotification(tr("comun.error_guardar"), type = "error", duration = NULL)   # T74
+      })
     }
 
     # 3. Soft-delete provision
@@ -1099,7 +1123,10 @@ setup_pasivos_module <- function(input, output, session, shared) {
       pap <- add_to_papelera(pap, pap_detail, ledger = "AP", deleted_by = user)
       save_papelera(pap, client_id = shared$effective_client_id())
       if (!is.null(shared$papelera_rv)) shared$papelera_rv(pap)
-    }, error = function(e) message("[pasivos] papelera write failed: ", e$message))
+    }, error = function(e) {
+      message("[pasivos] papelera write failed: ", e$message)
+      shiny::showNotification(tr("comun.error_guardar"), type = "error", duration = NULL)   # T74
+    })
 
     tryCatch(pasivos_log_audit(
       action_type = "provision.deleted",

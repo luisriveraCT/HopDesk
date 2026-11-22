@@ -1550,13 +1550,18 @@ pagarHoyServer <- function(id, shared) {
               # one S3 round trip per provision instead of one for the
               # whole batch, but this list is a handful of rows at most and
               # correctness/auditability wins over that.
+              # T74: a failed revive used to vanish (error = NULL); with no
+              # offline queue on Connect Cloud the user must see it.
+              revive_fallo <- FALSE
               for (pid in unique(provs$id[idx_p])) {
                 tryCatch(
                   pasivos_provision_revive(pid, user = shared$current_user(),
                                             client_id = shared$effective_client_id()),
-                  error = function(e) NULL
+                  error = function(e) revive_fallo <<- TRUE
                 )
               }
+              if (revive_fallo)
+                showNotification(tr("comun.error_guardar"), type = "error", duration = NULL)
               provs_fresh <- tryCatch(
                 load_pasivos_provisions(client_id = shared$effective_client_id()),
                 error = function(e) NULL)

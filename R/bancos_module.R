@@ -2362,10 +2362,12 @@ bancosServer <- function(id, shared) {
       # still pays it.
       pid <- conf$provision_id[idx_c] %||% NA_character_
       if (!is.na(pid) && nzchar(pid) && !any(confirmaciones_vigentes(conf)$provision_id %in% pid)) {
-        tryCatch(pasivos_provision_revive(
-          pid, user = tryCatch(shared$current_user(), error = function(e) "system"),
-          client_id = shared$effective_client_id()),
-          error = function(e) message("[bancos] provision revive failed: ", conditionMessage(e)))
+        # T74: through .bnc_guardar, so a failure is seen (it used to be a
+        # message() only) and logged as _fallido.
+        .bnc_guardar("provision_revivir", "Revivir la provisión al borrar su confirmación",
+                     function() pasivos_provision_revive(
+                       pid, user = tryCatch(shared$current_user(), error = function(e) "system"),
+                       client_id = shared$effective_client_id()))
         tryCatch({
           shared$suppress_ledger_prov_refresh(TRUE)
           shared$pasivos_provisions_db(load_pasivos_provisions(client_id = shared$effective_client_id()))
@@ -2531,10 +2533,11 @@ bancosServer <- function(id, shared) {
       if (!is.na(pid) && nzchar(pid)) {
         vivas <- confirmaciones_vigentes(conf)
         if (!any(vivas$provision_id %in% pid))
-          tryCatch(pasivos_provision_item_reversed(
-            pid, user = tryCatch(shared$current_user(), error = function(e) "system"),
-            client_id = shared$effective_client_id()),
-            error = function(e) message("[bancos] provision revert failed: ", conditionMessage(e)))
+          # T74: through .bnc_guardar, so a failure is seen and logged.
+          .bnc_guardar("provision_revertir", "Regresar la provisión al deshacer la confirmación",
+                       function() pasivos_provision_item_reversed(
+                         pid, user = tryCatch(shared$current_user(), error = function(e) "system"),
+                         client_id = shared$effective_client_id()))
         tryCatch({
           shared$suppress_ledger_prov_refresh(TRUE)
           shared$pasivos_provisions_db(load_pasivos_provisions(client_id = shared$effective_client_id()))

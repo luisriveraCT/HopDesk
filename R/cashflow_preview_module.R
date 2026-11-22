@@ -711,7 +711,11 @@ cashflowPreviewServer <- function(id, shared) {
               # failed save is logged: this session still uses the rate.
               tryCatch(fx_escrito_guardar(cliente(), tryCatch(shared$current_user(), error = function(e) NULL),
                                           cur_, base_ef(), r),
-                       error = function(e) message("[cashflow_preview] tipo escrito no guardado: ", conditionMessage(e)))
+                       error = function(e) {
+                         message("[cashflow_preview] tipo escrito no guardado: ", conditionMessage(e))
+                         # T74: told, like its twin in Exportar; this session still uses the rate.
+                         showNotification(tr("tablas.flujo.fx.no_guardado"), type = "warning", duration = 6)
+                       })
             }
           }, ignoreInit = TRUE)
         })

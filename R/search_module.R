@@ -471,11 +471,19 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
 
     if (nrow(prov_rows)) {
       pids_cancel <- unique(prov_rows$provision_id)
+      # T74: a failed cancel used to vanish (error = NULL) and the provision
+      # was still shown "closed" and counted below. Only the ones that saved
+      # are marked and counted; the rest get the error.
+      pids_fallo <- character(0)
       for (pid in pids_cancel) {
         tryCatch(pasivos_provision_cancel(provision_id = pid, user = current_user,
                                           client_id = shared$effective_client_id()),
-                 error = function(e) NULL)
+                 error = function(e) pids_fallo <<- c(pids_fallo, pid))
       }
+      if (length(pids_fallo))
+        showNotification(tr("comun.error_guardar"), type = "error", duration = NULL)
+      pids_cancel <- setdiff(pids_cancel, pids_fallo)
+      prov_rows <- prov_rows[prov_rows$provision_id %in% pids_cancel, , drop = FALSE]
       provs_db <- tryCatch(shared$pasivos_provisions_db(), error = function(e) NULL)
       tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
       if (!is.null(provs_db) && "id" %in% names(provs_db)) {
@@ -486,8 +494,9 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
       } else {
         tryCatch({ shared$pasivos_provisions_db(load_pasivos_provisions()) }, error = function(e) NULL)
       }
-      showNotification(tr("tablas.lupa.aviso.provisiones_cerradas", n = as.character(nrow(prov_rows))),
-                       type = "message", duration = 3)
+      if (nrow(prov_rows))
+        showNotification(tr("tablas.lupa.aviso.provisiones_cerradas", n = as.character(nrow(prov_rows))),
+                         type = "message", duration = 3)
     }
 
     # BUG (found 2026-09-03, same class already fixed for

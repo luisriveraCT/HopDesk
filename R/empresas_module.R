@@ -1381,7 +1381,11 @@ empresasServer <- function(id, shared) {
           all_df[idx, "last_test_message"] <- result$message %||% ""
           all_df
         })
-      }, error = function(e) message("[EMP ERP] test-result save failed: ", e$message))
+      }, error = function(e) {
+        message("[EMP ERP] test-result save failed: ", e$message)
+        # T74: the test ran; only storing its result failed -- say so.
+        showNotification(tr("comun.error_guardar"), type = "warning", duration = NULL)
+      })
 
       showNotification(result$message %||% (if (isTRUE(result$ok)) "OK" else "Error"),
                        type = if (isTRUE(result$ok)) "message" else "error", duration = 6)

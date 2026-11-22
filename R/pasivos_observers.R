@@ -100,6 +100,8 @@ setup_pasivos_observers <- function(input, output, session, shared) {
           ),
           error = function(e) {
             warning("[pasivos] failed to mark provision confirmed: ", conditionMessage(e))
+            # T74: seen by the user, not only the server log.
+            shiny::showNotification(tr("comun.error_guardar"), type = "error", duration = NULL)
           }
         )
       }
