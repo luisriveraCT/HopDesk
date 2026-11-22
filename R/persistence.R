@@ -374,8 +374,12 @@ leer_hd_admin <- function(key, schema_fn)
 
 # Returns the table written (or S3's, unchanged, when cambio changed nothing).
 # A failed read or write stop()s: callers say so and change nothing else.
-modificar_hd_admin <- function(key, schema_fn, cambio)
-  modificar_tabla_completa(key, .HD_ADMIN_CID, schema_fn, cambio)
+# evento (T72-C): passed on to modificar_tabla_completa(); without it the call
+# is exactly the one before.
+modificar_hd_admin <- function(key, schema_fn, cambio, evento = NULL) {
+  if (is.null(evento)) modificar_tabla_completa(key, .HD_ADMIN_CID, schema_fn, cambio)
+  else modificar_tabla_completa(key, .HD_ADMIN_CID, schema_fn, cambio, evento = evento)
+}
 
 # modificar_tabla() for any client's table that may carry columns its schema
 # does not list (ctas_*, CM12): strict read, cambio(fresco), .s3_write; the
@@ -533,7 +537,11 @@ evento_sistema <- function(origen, accion, descripcion = NULL)
 # module that passes its evento= lowers its count in the same commit. The
 # alarm in .s3_write reads it: a write without an event whose call stack has
 # none of these functions is outside the known debt (a dynamic path).
+# T72-C: wrappers that pass `evento` on (modificar_hd_admin, the forecasting
+# save_*/modificar_*) are writers: their callers without evento= are listed
+# instead of them (tests/test_t72b_deuda_evento.R, envoltorios()).
 T72_DEUDA_EVENTO <- c(
+  "R/auth_reset.R::.reset_modificar" = 1L,
   "R/avisos.R::.s3_modificar" = 1L,
   "R/avisos_alertas_module.R::alertas_guardar" = 1L,
   "R/avisos_archivo.R::avisos_archivar" = 2L,
@@ -545,17 +553,16 @@ T72_DEUDA_EVENTO <- c(
   "R/bancos_persistence.R::save_bancos_confirmados" = 1L,
   "R/bancos_persistence.R::save_bancos_cuentas" = 1L,
   "R/bancos_persistence.R::save_bancos_movimientos" = 2L,
+  "R/email_service.R::modificar_email_queue" = 1L,
   "R/empresas_module.R::.save_and_broadcast" = 1L,
   "R/empresas_module.R::confirmar_renombre_empresa" = 1L,
   "R/empresas_module.R::reservar_renombre_empresa" = 1L,
+  "R/forecasting_module.R::.guardar_subs" = 1L,
   "R/forecasting_persistence.R::append_forecasting_fetch_log" = 1L,
   "R/forecasting_persistence.R::save_forecasting_indicators" = 1L,
   "R/forecasting_persistence.R::save_forecasting_manual_curves" = 1L,
-  "R/forecasting_persistence.R::save_forecasting_methods" = 1L,
-  "R/forecasting_persistence.R::save_forecasting_metrics" = 1L,
   "R/forecasting_persistence.R::save_forecasting_series_observations" = 1L,
-  "R/forecasting_persistence.R::save_forecasting_sources" = 1L,
-  "R/forecasting_persistence.R::save_forecasting_subscriptions" = 1L,
+  "R/fx_banxico.R::.fx_divisas_bajar" = 1L,
   "R/fx_tipos.R::fx_escrito_guardar" = 1L,
   "R/pasivos_module.R::pasivos_admin_purge_closed" = 1L,
   "R/pasivos_persistence.R::save_pasivos_audit" = 1L,
@@ -568,14 +575,21 @@ T72_DEUDA_EVENTO <- c(
   "R/persistence.R::load_empresas" = 1L,
   "R/persistence.R::load_grupos" = 1L,
   "R/persistence.R::modificar_abonos" = 1L,
+  "R/persistence.R::modificar_client_registry" = 1L,
+  "R/persistence.R::modificar_client_requests" = 1L,
   "R/persistence.R::modificar_contacts" = 1L,
+  "R/persistence.R::modificar_emergency_lock" = 1L,
   "R/persistence.R::modificar_group_config" = 1L,
-  "R/persistence.R::modificar_hd_admin" = 1L,
+  "R/persistence.R::modificar_hd_notifications" = 1L,
+  "R/persistence.R::modificar_hop_grants" = 1L,
+  "R/persistence.R::modificar_hop_requests" = 1L,
   "R/persistence.R::modificar_parte_alias_map" = 1L,
   "R/persistence.R::modificar_partner_policies" = 1L,
+  "R/persistence.R::modificar_pending_invites" = 1L,
   "R/persistence.R::modificar_policy_catalog" = 1L,
   "R/persistence.R::modificar_policy_moves" = 1L,
   "R/persistence.R::purgar_invitaciones_vencidas" = 1L,
+  "R/persistence.R::register_username" = 1L,
   "R/persistence.R::rename_empresa_initials" = 7L,
   "R/persistence.R::save_agenda_sync_config" = 1L,
   "R/persistence.R::save_conciliacion" = 1L,
@@ -597,12 +611,14 @@ T72_DEUDA_EVENTO <- c(
   "R/persistence.R::save_sap_overrides" = 2L,
   "R/persistence.R::save_sap_snapshot" = 3L,
   "R/persistence.R::save_tags" = 2L,
+  "R/persistence.R::unregister_username" = 1L,
   "R/requisiciones_persistence.R::.req_modificar" = 1L,
   "R/settings/settings_companies.R::.auto_aplicar_politicas" = 1L,
   "R/settings/settings_helpers.R::modificar_ctas_bancos" = 1L,
   "R/settings/settings_helpers.R::modificar_ctas_cuentas" = 1L,
   "R/sync_bus.R::bump_sync_version" = 1L,
-  "R/tiers_module.R::.tiers_guardar_inline" = 1L   # its observer's inline write, named so the stack finds it (integrador, 2026-11-21)
+  "R/tiers_module.R::.tiers_guardar_inline" = 1L,   # its observer's inline write, named so the stack finds it (integrador, 2026-11-21)
+  "R/usuarios_cuentas.R::reservar_usuario" = 1L
 )
 
 # Validates AWS credentials are present at startup. aws.s3 reads AWS_* vars

@@ -69,7 +69,12 @@ fx_fix_esperado <- function(ahora = Sys.time()) {
                        obtenido_en = format(ahora, tz = "UTC", "%Y-%m-%dT%H:%M:%SZ"), stringsAsFactors = FALSE)
   nuevas <- nuevas[!is.na(nuevas$fecha) & !is.na(nuevas$valor) & nuevas$valor > 0 & nuevas$fecha <= hoy, , drop = FALSE]
   if (!nrow(nuevas)) return(NULL)
-  tryCatch(modificar_hd_admin(FX_FIX_LLAVE, .schema_fx_fix, function(df) {
+  # T72-C: a system write, logged as such -- the date, never a rate. Only when
+  # a date is added: modificar_hd_admin() skips an unchanged table, so a
+  # second call the same day neither writes nor logs.
+  ev <- if (exists("evento_sistema", mode = "function"))
+    evento_sistema("banxico", "fx_fix", sprintf("FIX de Banxico hasta el %s", format(max(nuevas$fecha))))
+  tryCatch(modificar_hd_admin(FX_FIX_LLAVE, .schema_fx_fix, evento = ev, function(df) {
     df$fecha <- as.Date(df$fecha)
     faltan <- nuevas[!nuevas$fecha %in% df$fecha, , drop = FALSE]
     if (!nrow(faltan)) return(df)

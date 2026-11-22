@@ -55,7 +55,7 @@ load_forecasting_metrics <- function(client_id = NULL) {
 # The client's metrics catalog changed on S3 as it is now (T63): strict
 # re-read right before writing (a failed read stop()s: nothing is written),
 # `cambio` applied to that fresh copy, and written only if it changed.
-modificar_forecasting_metrics <- function(client_id, cambio) {
+modificar_forecasting_metrics <- function(client_id, cambio, evento = NULL) {
   if (is.null(client_id) || !nzchar(client_id))
     stop("modificar_forecasting_metrics: sin client_id", call. = FALSE)
   raw <- .s3_leer_para_escribir(S3_KEYS$forecasting_metrics, client_id)
@@ -64,15 +64,19 @@ modificar_forecasting_metrics <- function(client_id, cambio) {
                                                            "fallback_source_ids"), "fetch_params")
   nuevo <- cambio(fresco)
   if (identical(nuevo, fresco)) return(invisible(fresco))
-  save_forecasting_metrics(nuevo, client_id = client_id)
+  if (is.null(evento)) save_forecasting_metrics(nuevo, client_id = client_id)
+  else save_forecasting_metrics(nuevo, client_id = client_id, evento = evento)
   invisible(nuevo)
 }
 
-save_forecasting_metrics <- function(df, client_id = NULL) {
+# evento (T72-C): the write's log entry (evento_sistema() for the seed); without
+# it the .s3_write() call is exactly the one before.
+save_forecasting_metrics <- function(df, client_id = NULL, evento = NULL) {
   packed <- .fcp_pack_list_col(df, "fallback_source_ids")
   packed <- .fcp_pack_list_col(packed, "fetch_params")
   packed <- .normalize(packed, .schema_forecasting_metrics)
-  .s3_write(packed, S3_KEYS$forecasting_metrics, client_id = client_id)
+  if (is.null(evento)) .s3_write(packed, S3_KEYS$forecasting_metrics, client_id = client_id)
+  else .s3_write(packed, S3_KEYS$forecasting_metrics, client_id = client_id, evento = evento)
   if (exists("bump_sync_version", mode = "function")) bump_sync_version("forecasting_metrics_db", client_id = client_id)
   invisible(NULL)
 }
@@ -85,8 +89,9 @@ load_forecasting_sources <- function() {
   .normalize(raw, .schema_forecasting_sources)
 }
 
-save_forecasting_sources <- function(df) {
-  .s3_write(.normalize(df, .schema_forecasting_sources), S3_KEYS$forecasting_sources)
+save_forecasting_sources <- function(df, evento = NULL) {
+  if (is.null(evento)) .s3_write(.normalize(df, .schema_forecasting_sources), S3_KEYS$forecasting_sources)
+  else .s3_write(.normalize(df, .schema_forecasting_sources), S3_KEYS$forecasting_sources, evento = evento)
   invisible(NULL)
 }
 
@@ -99,9 +104,10 @@ load_forecasting_methods <- function() {
   .fcp_unpack_list_col(raw, "params_schema")
 }
 
-save_forecasting_methods <- function(df) {
+save_forecasting_methods <- function(df, evento = NULL) {
   packed <- .fcp_pack_list_col(df, "params_schema")
-  .s3_write(.normalize(packed, .schema_forecasting_methods), S3_KEYS$forecasting_methods)
+  if (is.null(evento)) .s3_write(.normalize(packed, .schema_forecasting_methods), S3_KEYS$forecasting_methods)
+  else .s3_write(.normalize(packed, .schema_forecasting_methods), S3_KEYS$forecasting_methods, evento = evento)
   invisible(NULL)
 }
 
@@ -129,10 +135,12 @@ load_forecasting_subscriptions <- function(client_id = NULL) {
   .fcp_unpack_list_col(raw, "method_params")
 }
 
-save_forecasting_subscriptions <- function(df, client_id = NULL) {
+save_forecasting_subscriptions <- function(df, client_id = NULL, evento = NULL) {
   packed <- .fcp_pack_list_col(df, "method_params")
-  .s3_write(.normalize(packed, .schema_forecasting_subscriptions),
-            S3_KEYS$forecasting_subscriptions, client_id = client_id)
+  if (is.null(evento)) .s3_write(.normalize(packed, .schema_forecasting_subscriptions),
+                                 S3_KEYS$forecasting_subscriptions, client_id = client_id)
+  else .s3_write(.normalize(packed, .schema_forecasting_subscriptions),
+                 S3_KEYS$forecasting_subscriptions, client_id = client_id, evento = evento)
   if (exists("bump_sync_version", mode = "function")) bump_sync_version("forecasting_subscriptions_db", client_id = client_id)
   invisible(NULL)
 }
@@ -144,7 +152,7 @@ save_forecasting_subscriptions <- function(df, client_id = NULL) {
 # fine to show, but its writers saved on it: creating one global subscription
 # with the read down rewrote them all, and the start-up seed took a failed
 # read for "no subscriptions" and wrote the defaults over the real ones.
-modificar_forecasting_subscriptions <- function(client_id, cambio) {
+modificar_forecasting_subscriptions <- function(client_id, cambio, evento = NULL) {
   if (is.null(client_id) || !nzchar(client_id))
     stop("modificar_forecasting_subscriptions: sin client_id", call. = FALSE)
   raw <- .s3_leer_para_escribir(S3_KEYS$forecasting_subscriptions, client_id)
@@ -152,7 +160,8 @@ modificar_forecasting_subscriptions <- function(client_id, cambio) {
             else .fcp_unpack_list_col(.normalize(raw, .schema_forecasting_subscriptions), "method_params")
   nuevo <- cambio(fresco)
   if (identical(nuevo, fresco)) return(invisible(fresco))
-  save_forecasting_subscriptions(nuevo, client_id = client_id)
+  if (is.null(evento)) save_forecasting_subscriptions(nuevo, client_id = client_id)
+  else save_forecasting_subscriptions(nuevo, client_id = client_id, evento = evento)
   invisible(nuevo)
 }
 

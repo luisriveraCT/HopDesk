@@ -139,7 +139,11 @@
 forecasting_completar_catalogo <- function(client_id) {
   semilla <- .seed_forecasting_metrics()
   nuevas <- NULL
-  modificar_forecasting_metrics(client_id, function(m) {
+  # T72-C: a system write, logged as such; the metric_ids added go in the
+  # entry's difference. An unchanged catalog is not written, nor logged.
+  ev <- if (exists("evento_sistema", mode = "function"))
+    evento_sistema("forecasting", "sembrar_catalogo", "Catálogo de pronósticos: se agregaron métricas nuevas de la siembra")
+  modificar_forecasting_metrics(client_id, evento = ev, function(m) {
     if (!nrow(m)) return(m)          # an empty catalog is seeded whole above, never here
     falta <- semilla[!semilla$metric_id %in% m$metric_id, , drop = FALSE]
     if (!nrow(falta)) return(m)
@@ -147,7 +151,7 @@ forecasting_completar_catalogo <- function(client_id) {
     dplyr::bind_rows(m, falta)
   })
   if (is.null(nuevas)) return(character())
-  modificar_forecasting_subscriptions(client_id, function(subs) {
+  modificar_forecasting_subscriptions(client_id, evento = ev, function(subs) {
     tiene <- subs$metric_id[subs$consumer_type %in% "global_default"]
     falta <- nuevas[!nuevas$metric_id %in% tiene, , drop = FALSE]
     if (!nrow(subs) || !nrow(falta)) return(subs)
@@ -165,37 +169,36 @@ forecasting_completar_catalogo <- function(client_id) {
 # methods / indicators below stay deployment-level on purpose -- they are
 # static definitions shared by every tenant, not per-client data.
 forecasting_seed_if_empty <- function(client_id = NULL) {
-  seeded <- character()
+  # T72-C: each write is a system event (it used to be one hand-written
+  # "seed_catalog" entry after them all); nothing written, nothing logged.
+  ev <- function(que) if (exists("evento_sistema", mode = "function"))
+    evento_sistema("forecasting", "sembrar_catalogo", paste("Catálogo de pronósticos:", que))
 
   metrics_db <- load_forecasting_metrics(client_id = client_id)
   if (!nrow(metrics_db)) {
     message("[forecasting] seeding metrics catalog")
-    save_forecasting_metrics(.seed_forecasting_metrics(), client_id = client_id)
+    save_forecasting_metrics(.seed_forecasting_metrics(), client_id = client_id, evento = ev("métricas iniciales"))
     metrics_db <- load_forecasting_metrics(client_id = client_id)
-    seeded <- c(seeded, "metrics")
   }
 
   sources_db <- load_forecasting_sources()
   if (!nrow(sources_db)) {
     message("[forecasting] seeding sources catalog")
-    save_forecasting_sources(.seed_forecasting_sources())
-    seeded <- c(seeded, "sources")
+    save_forecasting_sources(.seed_forecasting_sources(), evento = ev("fuentes iniciales"))
   }
 
   methods_db <- load_forecasting_methods()
   if (!nrow(methods_db)) {
     message("[forecasting] seeding methods catalog")
-    save_forecasting_methods(.seed_forecasting_methods())
-    seeded <- c(seeded, "methods")
+    save_forecasting_methods(.seed_forecasting_methods(), evento = ev("métodos iniciales"))
   }
 
   # Seeded only on a table read as really empty (T26): a failed read stop()s
   # here -- it used to look empty and the defaults were written over the
   # client's subscriptions.
-  modificar_forecasting_subscriptions(client_id, function(subs_db) {
+  modificar_forecasting_subscriptions(client_id, evento = ev("suscripciones iniciales"), function(subs_db) {
     if (nrow(subs_db)) return(subs_db)
     message("[forecasting] seeding global-default subscriptions")
-    seeded <<- c(seeded, "subscriptions")
     .seed_forecasting_global_subscriptions(metrics_db)
   })
 
@@ -204,25 +207,9 @@ forecasting_seed_if_empty <- function(client_id = NULL) {
   # subscription. Only added: a metric already there -- the user's edits
   # too -- is never changed or removed. Strict re-read right before each
   # write; a failed read writes nothing. Idempotent.
-  nuevas <- tryCatch(forecasting_completar_catalogo(client_id), error = function(e) {
+  tryCatch(forecasting_completar_catalogo(client_id), error = function(e) {
     message("[forecasting] no se pudo completar el catálogo"); character()
   })
-  if (length(nuevas)) seeded <- c(seeded, paste0("metrics+", paste(nuevas, collapse = ",")))
-
-  if (length(seeded)) {
-    tryCatch(
-      log_action(
-        user        = "system",
-        module      = "forecasting",
-        action      = "seed_catalog",
-        description = sprintf("Catálogos de forecasting inicializados: %s", paste(seeded, collapse = ", ")),
-        metadata    = list(seeded = seeded),
-        client_id             = client_id,
-        viewer_home_client_id = client_id
-      ),
-      error = function(e) NULL
-    )
-  }
 
   invisible(NULL)
 }

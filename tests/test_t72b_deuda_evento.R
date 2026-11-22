@@ -120,6 +120,9 @@ esc2 <- envoltorios(list(plantado2))
 p2 <- escanear(plantado2, "R/plantado.R", esc2)
 ok("4b a wrapper (evento formal, calls a writer; also a wrapper of a wrapper) is a writer: its caller without evento= is found, the wrapper itself is not",
    all(c("w_nueva", "w_doble") %in% esc2) && identical(sort(p2), c("R/plantado.R::llamador", "R/plantado.R::llamador2")))
+ok("4c the real wrappers are seen: modificar_hd_admin and the forecasting ones",
+   all(c("modificar_hd_admin", "save_forecasting_metrics", "save_forecasting_subscriptions", "save_forecasting_sources",
+         "save_forecasting_methods", "modificar_forecasting_metrics", "modificar_forecasting_subscriptions") %in% ESCRITORAS_TODAS))
 cat(sprintf("   (%d calls without evento= in %d functions; %d writers counting the wrappers)\n",
             sum(hoy), length(hoy), length(ESCRITORAS_TODAS)))
 

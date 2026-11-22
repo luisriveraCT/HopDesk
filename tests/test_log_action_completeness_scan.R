@@ -276,7 +276,7 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     # Generic forecasting persistence writers (forecasting_persistence.R) --
     # each caller already logs with its own user-facing context:
     #   save_forecasting_metrics/save_forecasting_subscriptions are called
-    #   from forecasting_seed_if_empty (action="seed_catalog", user="system")
+    #   from forecasting_seed_if_empty (T72-C: each write is an evento_sistema("forecasting", "sembrar_catalogo"))
     #   and forecasting_module.R's sub_save/global_sub_save handlers
     #   (action="editar_suscripcion"/"crear_suscripcion_global").
     #   save_forecasting_series_observations is called from
@@ -296,12 +296,16 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     # and modificar_pasivos_estimates() (T26, pasivos_persistence.R): the
     # fresh-read-then-write wrappers around save_forecasting_subscriptions()
     # and save_pasivos_estimates(). Their callers log their own action:
-    # forecasting_seed_if_empty ("seed_catalog"), forecasting_module.R's
+    # forecasting_seed_if_empty (evento_sistema, T72-C), forecasting_module.R's
     # .guardar_subs callers (sub_save, global_sub_save, plus the *_fallido
     # row on a failed write), and forecasting_set_estimate /
     # forecasting_freeze_metric / forecasting_unfreeze_metric
     # (pasivos_log_audit).
     "modificar_forecasting_subscriptions", "modificar_pasivos_estimates",
+    # forecasting_seed_if_empty (T72-C): no log_action() of its own any more --
+    # each of its writes passes evento_sistema("forecasting", "sembrar_catalogo")
+    # and the write layer logs it (tests/test_t72c_sistema.R).
+    "forecasting_seed_if_empty",
     # Found 2026-09-03: .apply_move/.clear_moves (R/ledger_module.R) no
     # longer call log_action() directly in their own body -- they now pass a
     # log_info list into .save_moves_deferred() (already a KNOWN_FINE_HELPERS
