@@ -1742,6 +1742,21 @@ server <- function(input, output, session) {
   # Read by moneda_base_sesion() (R/ui_components.R), for code that has no `shared`.
   session$userData$moneda_base <- function() shared$moneda_base_cliente()$moneda
 
+  # TEMA stage 5: the theme of the client being viewed. group_config_rv() is
+  # reloaded on every jump and return (and holds the empty schema when the
+  # read failed), so this follows effective_client_id() with no read of its
+  # own; anything unknown or missing is the default. Only this session's
+  # userData: nothing is shared between sessions. tema_de_sesion() (Word,
+  # PDF, Excel, SVG) reads the same reactive.
+  hd_tema <- reactive(tema_resolver(cliente = group_config_rv()$tema))
+  session$userData$hd_tema <- hd_tema
+  # The page's <html data-hd-tema>: R/tema_registro.R's head script applies
+  # it (closed list) and remembers it per client for the next first paint.
+  observe({
+    session$sendCustomMessage("hdTema", list(tema = hd_tema(),
+                                             cliente = effective_client_id() %||% ""))
+  })
+
   # ── Cash Flow Preview toggle ─────────────────────────────────────────────────
   observeEvent(input$btn_preview_open, {
     cf_preview_open(!cf_preview_open())
