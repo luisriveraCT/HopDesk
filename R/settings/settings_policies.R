@@ -393,8 +393,10 @@
   m1_date <- lubridate::floor_date(today, "month") + months(as.integer(offset))
   m2_date <- m1_date + months(1L)
 
-  meses <- c("Ene","Feb","Mar","Abr","May","Jun",
-             "Jul","Ago","Sep","Oct","Nov","Dic")
+  # Month names from the dictionary (comun.mes.N), with a capital in the bar.
+  meses <- vapply(1:12, function(m) {
+    x <- tr(paste0("comun.mes.", m)); paste0(toupper(substr(x, 1L, 1L)), substring(x, 2L))
+  }, character(1))
 
   m1_lbl <- sprintf("%s %04d", meses[lubridate::month(m1_date)], lubridate::year(m1_date))
   m2_lbl <- sprintf("%s %04d", meses[lubridate::month(m2_date)], lubridate::year(m2_date))
@@ -429,7 +431,8 @@
     lead   <- lubridate::wday(first) - 1L
     lbl    <- sprintf("%s %04d", meses[as.integer(mo)], as.integer(yr))
 
-    hdr <- lapply(c("D","L","M","M","J","V","S"), function(h)
+    # Sunday first; the app's day initials (tablas.flujo.dia.N, 7 = Sunday).
+    hdr <- lapply(vapply(c(7L, 1:6), function(n) tr(paste0("tablas.flujo.dia.", n)), character(1)), function(h)
       tags$span(h, style =
         "font-size:8px;color:var(--hd-leg-texto-4b5563);font-weight:600;line-height:1;"
       )
@@ -511,8 +514,6 @@
     hols     <- sort(unique(as.Date(unlist(hcache, use.names = FALSE))))
     hols     <- hols[!is.na(hols)]
     cur_yr   <- as.integer(format(Sys.Date(), "%Y"))
-    meses_ab <- c("ene","feb","mar","abr","may","jun",
-                  "jul","ago","sep","oct","nov","dic")
 
     # Index of the first current-year holiday (for auto-scroll)
     first_cur_idx <- which(lubridate::year(hols) == cur_yr)[1L]
@@ -524,8 +525,8 @@
       d      <- hols[[i]]
       yr     <- lubridate::year(d)
       is_cur <- yr == cur_yr
-      lbl    <- sprintf("%d de %s %04d",
-                        lubridate::day(d), meses_ab[lubridate::month(d)], yr)
+      lbl    <- tr("tablas.ajustes.politicas.festivo_fecha", dia = as.character(lubridate::day(d)),
+                   mes = tr(paste0("comun.mes.", lubridate::month(d))), anio = sprintf("%04d", yr))
       row_sty <- paste0(
         "font-size:9px;padding:2px 0;white-space:nowrap;",
         if (is_cur) "color:var(--hd-leg-texto-1e293b);font-weight:700;" else "color:var(--hd-texto-2);"
@@ -550,7 +551,7 @@
             "background:color-mix(in srgb, var(--hd-leg-primario-2563eb) 5%, transparent);",
             "max-height:160px;overflow-y:auto;min-width:130px;"),
         div(style = paste0(lbl_base, "color:var(--hd-leg-primario-1d4ed8);margin-bottom:6px;"),
-            "Festivos"),
+            tr("tablas.ajustes.politicas.festivos")),
         tagList(rows)
       ),
       if (nzchar(scroll_js)) tags$script(HTML(scroll_js)) else NULL
@@ -564,7 +565,7 @@
           "align-items:center;margin-bottom:8px;"),
       tags$span(
         style = "font-size:9px;color:var(--hd-leg-texto-tenue-94a3b8);font-style:italic;",
-        "Seleccione días para simular cambios."
+        tr("tablas.ajustes.politicas.simular_pista")
       ),
       div(style = "display:flex;align-items:center;gap:10px;",
         tags$button(style = btn_sty,
@@ -589,7 +590,7 @@
       # Input pair
       div(style = input_pair,
         div(style = "display:flex;flex-direction:column;align-items:center;",
-          tags$span(style = paste0(lbl_base, "color:var(--hd-leg-acento-texto-6d28d9);"), "Selección"),
+          tags$span(style = paste0(lbl_base, "color:var(--hd-leg-acento-texto-6d28d9);"), tr("tablas.ajustes.politicas.seleccion")),
           div(style = "display:flex;gap:14px;", in_m1, in_m2)
         )
       ),
@@ -598,7 +599,7 @@
       # Output pair
       div(style = output_pair,
         div(style = "display:flex;flex-direction:column;align-items:center;",
-          tags$span(style = paste0(lbl_base, "color:var(--hd-leg-primario-1d4ed8);"), "Proyección"),
+          tags$span(style = paste0(lbl_base, "color:var(--hd-leg-primario-1d4ed8);"), tr("tablas.ajustes.politicas.proyeccion")),
           div(style = "display:flex;gap:14px;", out_m1, out_m2)
         )
       ),

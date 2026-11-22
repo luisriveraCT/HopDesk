@@ -10,7 +10,11 @@
 #   - every colour is paired with the base's, in order, within ΔE 2 (CIE76);
 #     a base rgba() tint is flattened over white (the panel's surface), and a
 #     glow (box-shadow) must be the same text;
-#   - every var(--hd-*) the branch writes exists in both themes.
+#   - every var(--hd-*) the branch writes exists in both themes;
+#   - the words come from the dictionary (tablas.ajustes.politicas.*,
+#     comun.mes.*, tablas.flujo.dia.*): in English no fixed Spanish is left;
+#     in Spanish the only change is Wednesday's initial, "X" as in the rest
+#     of the app instead of a second "M".
 #
 #   TEMA_BASE=<checkout before this change> Rscript --vanilla tests/test_tema_politicas_igual.R
 # Without TEMA_BASE only the branch's own checks run.
@@ -89,12 +93,31 @@ marca <- vapply(rama, resolver, "", tk = TK$marca)
 ok("under Marca the selected days take Marca's acento and the projected ones its primario",
    grepl(TK$marca[["acento"]], marca[["festivos"]], fixed = TRUE) && grepl(TK$marca[["primario"]], marca[["festivos"]], fixed = TRUE))
 
+# The words (tablas.ajustes.politicas.*, comun.mes.*, tablas.flujo.dia.*).
+ingles <- simulador(RAMA, idioma = "en")
+ESPANOL <- c("Festivos", "Seleccione", "Selección", "Proyección", " de ene", " de dic", ">Ene ", ">Dic ")
+ok("in English the simulator keeps no fixed Spanish text",
+   !any(vapply(ESPANOL, function(s) any(grepl(s, ingles, fixed = TRUE)), logical(1))))
+ok("in English: Holidays, Selection, Projection, the hint, and Sunday-first initials S M T W T F S",
+   all(vapply(c("Holidays", "Selection", "Projection", "Select days to simulate changes."),
+              function(s) grepl(s, ingles[["festivos"]], fixed = TRUE), logical(1))) &&
+   grepl(paste0(">", c("S", "M", "T", "W", "T", "F", "S"), "</span>", collapse = "[^>]*"), ingles[["semana"]]))
+ok("in Spanish the header is D L M X J V S and a holiday reads \"25 de dic YYYY\"",
+   grepl(paste0(">", c("D", "L", "M", "X", "J", "V", "S"), "</span>", collapse = "[^>]*"), rama[["semana"]]) &&
+   grepl(sprintf("25 de dic %s", format(Sys.Date(), "%Y")), rama[["festivos"]], fixed = TRUE))
+
 if (nzchar(BASE)) {
   base <- simulador(BASE)
   clas <- vapply(rama, resolver, "", tk = TK$clasico)
+  # The one word that changes on purpose: the day initials come from the
+  # app's dictionary (tablas.flujo.dia.N), where Wednesday is "X", not a
+  # second "M". The base's header (D L M M J V S) is translated before comparing.
+  base_trad <- gsub("(>M</span>\\s*<span[^>]*>)M</span>", "\\1X</span>", base, perl = TRUE)
+  ok("the only text change in Spanish: Wednesday's initial M -> X, once per month shown (4 + 4)",
+     sum(lengths(regmatches(base, gregexpr("(>M</span>\\s*<span[^>]*>)M</span>", base, perl = TRUE)))) == 8L)
   for (k in names(base)) {
-    ok(sprintf("%s: with the colours masked, the base's HTML byte for byte", k),
-       identical(enmascarar(base[[k]]), enmascarar(clas[[k]])))
+    ok(sprintf("%s: with the colours masked, the base's HTML byte for byte (Wednesday's initial translated)", k),
+       identical(enmascarar(base_trad[[k]]), enmascarar(clas[[k]])))
     cb <- colores(base[[k]]); cr <- colores(clas[[k]])
     malos <- 0L; maxde <- 0
     if (length(cb) != length(cr)) malos <- 1L else for (j in seq_along(cb)) {
