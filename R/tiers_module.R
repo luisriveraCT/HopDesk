@@ -3097,8 +3097,10 @@ tiersServer <- function(id, shared) {
         if (is.na(nm) || !nzchar(nm)) me else nm
       }, error = function(e) "")
 
+      # TEMA stage 5: the invited client's theme (its default until it chooses).
       html_body <- email_invite_html(dname_in, client_name, invite_url,
-                                     inviter_name = inviter_name)
+                                     inviter_name = inviter_name,
+                                     tema = tema_de_cliente(client_in))
       sent <- send_email(to      = email_in,
                          subject = paste0("Invitación a HopDesk — ", client_name),
                          html    = html_body)

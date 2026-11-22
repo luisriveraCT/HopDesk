@@ -1077,8 +1077,10 @@ server <- function(input, output, session) {
       tryCatch(
         send_email(to      = invite$email,
                    subject = tr("cuentas.activacion.asunto_bienvenida"),
+                   # TEMA stage 5: the new user's client's theme.
                    html    = email_welcome_html(res$nombre, username,
-                                                client_label, app_url)),
+                                                client_label, app_url,
+                                                tema = tema_de_cliente(invite$client_id))),
         error = function(e) message("[INVITE] welcome email failed: ", e$message)
       )
 
