@@ -15,7 +15,8 @@
 #   4  the brake: once per client per hour, in memory; two clients, two
 #      alarms; after an hour, again;
 #   5  the text names the client, the table and the origin (function names
-#      only), never a value.
+#      only), never a value;
+#   6  tiersServer's inline write (.tiers_guardar_inline) does not alarm.
 # On the in-memory S3 (tests/helpers/s3_memoria.R).
 # Run from project root:  Rscript tests/test_t72b_alarma.R
 # Contraprueba: on 9a1711e (commit 1: no list, no alarm) 0 and 1 fail and it
@@ -105,6 +106,34 @@ txt <- if (length(L$al)) paste(L$al[[1]]$aviso$titulo, L$al[[1]]$aviso$cuerpo) e
 ok("5 the text names the client, the table and the origin (desde_funcion)",
    grepl("cliente=acme", txt, fixed = TRUE) && grepl("tabla=t72_otra.rds", txt, fixed = TRUE) && grepl("desde_funcion", txt, fixed = TRUE))
 ok("5 ... and never a value", nzchar(txt) && !grepl("VALOR-SECRETO", txt, fixed = TRUE))
+
+# ── 6. tiersServer's inline write (integrador, 2026-11-21) ─────────────────
+# The observer saving a tier's config wrote inline: tiersServer is not in the
+# stack when an observer runs, so it alarmed every time (a known false
+# alarm). It is now .tiers_guardar_inline(), local to the observer and in the
+# list. The REAL definition, taken from R/tiers_module.R, called from an
+# anonymous function like the observer's handler.
+def <- NULL
+andar <- function(e) {
+  if (!is.call(e)) return(invisible())
+  if (identical(e[[1]], as.name("<-")) && identical(e[[2]], as.name(".tiers_guardar_inline"))) def <<- e[[3]]
+  for (k in seq_along(e)[-1]) { a <- e[[k]]; if (!missing(a) && is.call(a)) andar(a) }
+}
+for (e in parse("R/tiers_module.R", keep.source = FALSE, encoding = "UTF-8")) andar(e)
+ok("6 R/tiers_module.R defines .tiers_guardar_inline, and it is in T72_DEUDA_EVENTO",
+   !is.null(def) && "R/tiers_module.R::.tiers_guardar_inline" %in% names(T72_DEUDA_EVENTO))
+if (!exists("S3_KEYS")) S3_KEYS <- list()
+if (is.null(S3_KEYS$tiers_config)) S3_KEYS$tiers_config <- "tiers_config.rds"
+manejador <- function() {   # stands for the observer: tiersServer is not in the stack
+  .tiers_guardar_inline <- eval(def)
+  (function() .tiers_guardar_inline(list(finance = list(a = TRUE)), "acme"))()
+}
+limpiar(); quieto(manejador())
+ok("6 saving a tier's config: saved, logged as sin_evento, NO alarm",
+   !is.null(def) && guardado("acme", S3_KEYS$tiers_config) && length(L$log) == 1L && L$log[[1]]$action == "sin_evento" && !length(L$al))
+inline <- function() (function() .s3_write(list(finance = list(a = TRUE)), S3_KEYS$tiers_config, client_id = "acme"))()
+limpiar(); quieto(inline())
+ok("6 contraprueba: the same write inline (as before) alarms", length(L$al) == 1L)
 
 s3_memoria_restaurar()
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")

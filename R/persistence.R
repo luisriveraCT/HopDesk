@@ -602,7 +602,7 @@ T72_DEUDA_EVENTO <- c(
   "R/settings/settings_helpers.R::modificar_ctas_bancos" = 1L,
   "R/settings/settings_helpers.R::modificar_ctas_cuentas" = 1L,
   "R/sync_bus.R::bump_sync_version" = 1L,
-  "R/tiers_module.R::tiersServer" = 1L
+  "R/tiers_module.R::.tiers_guardar_inline" = 1L   # its observer's inline write, named so the stack finds it (integrador, 2026-11-21)
 )
 
 # Validates AWS credentials are present at startup. aws.s3 reads AWS_* vars
