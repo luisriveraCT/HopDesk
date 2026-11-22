@@ -423,12 +423,8 @@ invite_activation_url <- function(token, session = NULL) {
 # clients do not understand var(), so the colour is resolved here, in R).
 # `tema` NULL is the default theme: mail follows the CLIENT's theme, never a
 # user's preference, and until clients have one (TEMA stage 5) that is Clásico.
-.email_pintar <- function(html, tema = NULL) {
-  tema <- tema %||% HD_TEMA_OMISION
-  marcas <- unique(regmatches(html, gregexpr("\\{\\{[a-z0-9-]+\\}\\}", html))[[1]])
-  for (mk in marcas) html <- gsub(mk, tema_color(substr(mk, 3L, nchar(mk) - 2L), tema), html, fixed = TRUE)
-  html
-}
+# The one copy of that lives in the registry: tema_pintar().
+.email_pintar <- function(html, tema = NULL) tema_pintar(html, tema)
 
 # Dictionary text for a mail (niveles.correo.*): the values are escaped before
 # they go in, so a name can never inject markup, and **this** is set in bold.

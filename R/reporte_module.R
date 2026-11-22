@@ -1045,16 +1045,8 @@ reporteServer <- function(id, shared, active_tab = NULL) {
 # {{rol@pct}} (the role at pct % over transparent), and .rpt_pintar() turns
 # them into the theme's values from the registry (R/tema_registro.R) once the
 # page is assembled. Under Clásico every colour is today's (legacy tokens).
-.rpt_pintar <- function(html, tema = NULL) {
-  tema <- tema %||% HD_TEMA_OMISION
-  marcas <- unique(regmatches(html, gregexpr("\\{\\{[a-z0-9-]+(@[0-9]+)?\\}\\}", html))[[1]])
-  for (mk in marcas) {
-    p <- strsplit(substr(mk, 3L, nchar(mk) - 2L), "@", fixed = TRUE)[[1]]
-    v <- if (length(p) == 2L) tema_mezcla(p[1], as.integer(p[2]), tema) else tema_color(p[1], tema)
-    html <- gsub(mk, v, html, fixed = TRUE)
-  }
-  html
-}
+# The one copy of that lives in the registry: tema_pintar().
+.rpt_pintar <- function(html, tema = NULL) tema_pintar(html, tema)
 
 # =============================================================================
 # .build_pulse_pages() — pages 3 & 4: current week + next week AP/AR pulse
