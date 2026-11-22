@@ -291,9 +291,13 @@ tiersUI <- function(id) {
     g <- PERMISOS[[k]]$grupo %||% ""
     if (g %in% PERMISOS_GRUPOS) g else "sin_grupo"
   }, character(1))
-  perm_rows <- lapply(intersect(c(PERMISOS_GRUPOS, "sin_grupo"), grupo_de), function(g) {
+  grupos_dibujados <- intersect(c(PERMISOS_GRUPOS, "sin_grupo"), grupo_de)
+  # T79b: each group title has an id the "Ir a:" links jump to. Not "perm_*":
+  # that prefix is the checkboxes' (the save reads input$perm_<key>).
+  id_grupo <- function(g) ns(paste0("editor_permisos_grupo_", g))
+  perm_rows <- lapply(grupos_dibujados, function(g) {
     tagList(
-      div(class = "tiers-perm-grupo", `data-grupo` = g,
+      div(class = "tiers-perm-grupo", `data-grupo` = g, id = id_grupo(g),
           style = paste("padding:6px 12px; font-size:.7rem; font-weight:700;",
                         "text-transform:uppercase; letter-spacing:.6px;",
                         "color:var(--hd-texto-2); background:var(--hd-superficie-2);",
@@ -332,13 +336,19 @@ tiersUI <- function(id) {
     ),
     div(
       class = "card-body p-3",
-      # T79: the permissions sit below the user's data; a short link jumps there.
-      div(class = "text-end mb-1",
-          tags$a(href = "#", class = "small tiers-ir-permisos",
-                 onclick = sprintf(
-                   "document.getElementById('%s')?.scrollIntoView({behavior:'smooth',block:'start'});return false;",
-                   ns("editor_permisos_seccion")),
-                 icon("arrow-down", class = "fa-xs"), " ", tr("permisos.ir_a_permisos"))),
+      # T79b: the permissions sit below the user's data; one link per group
+      # DRAWN above (so a client never gets "Internos", an empty group no link)
+      # jumps straight to its title. Wraps onto more lines when narrow.
+      div(class = "tiers-ir-grupos d-flex flex-wrap align-items-center justify-content-end small mb-1",
+          style = "column-gap:.6rem; row-gap:.15rem;",
+          tags$span(class = "text-muted", icon("arrow-down", class = "fa-xs"), " ", tr("permisos.ir_a")),
+          lapply(grupos_dibujados, function(g)
+            tags$a(href = "#", class = "tiers-ir-grupo", `data-grupo` = g,
+                   style = "white-space:nowrap;",
+                   onclick = sprintf(
+                     "document.getElementById('%s')?.scrollIntoView({behavior:'smooth',block:'start'});return false;",
+                     id_grupo(g)),
+                   tr(paste0("permisos.grupo_corto.", g))))),
       tags$h6(class = "fw-semibold mb-2 small text-muted text-uppercase", "Datos del usuario"),
       # T31: the user name is shown, not edited (no input: the server never
       # reads one). Job title and e-mail are edited here, next to the name.

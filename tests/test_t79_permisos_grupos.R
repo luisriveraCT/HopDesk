@@ -29,17 +29,21 @@ html <- function(tier, staff)
   as.character(.tiers_perm_editor_ui(ns, fila(tier), viewer_tier = nivel_tope(),
                                      registry = NULL, viewer_is_staff = staff))
 todos <- function(x, re) regmatches(x, gregexpr(re, x, perl = TRUE))[[1]]
-grupos_de   <- function(h) sub('.*data-grupo="([a-z_]+)".*', "\\1", todos(h, 'data-grupo="[a-z_]+"'))
+# Group TITLES only (T79b: the "Ir a:" links carry data-grupo too).
+RE_TITULO <- 'class="tiers-perm-grupo" data-grupo="[a-z_]+"'
+RE_ENLACE <- 'class="tiers-ir-grupo" data-grupo="[a-z_]+"'
+grupo_en    <- function(x) sub('.*data-grupo="([a-z_]+)".*', "\\1", x)
+grupos_de   <- function(h) grupo_en(todos(h, RE_TITULO))
+enlaces_de  <- function(h) grupo_en(todos(h, RE_ENLACE))
 cajas_de    <- function(h) sub('^id="t-perm_', "", sub('"$', "", todos(h, 'id="t-perm_[a-z_]+"')))
 # The group each row falls under: walk the HTML in order.
 grupo_de_clave <- function(h, k) {
   pos_k <- regexpr(paste0('id="t-perm_', k, '"'), h, fixed = TRUE)
   if (pos_k < 0) return(NA_character_)
-  m <- gregexpr('data-grupo="[a-z_]+"', h, perl = TRUE)[[1]]
+  m <- gregexpr(RE_TITULO, h, perl = TRUE)[[1]]
   antes <- m[m < pos_k]
   if (!length(antes)) return(NA_character_)
-  g <- regmatches(h, list(m))[[1]][length(antes)]
-  sub('data-grupo="([a-z_]+)"', "\\1", g)
+  grupo_en(regmatches(h, list(m))[[1]][length(antes)])
 }
 
 test_that("same keys and same checkbox ids as before grouping, as staff and as a client", {
@@ -94,11 +98,35 @@ test_that("a key outside PERMISOS_GRUPOS falls into 'sin_grupo' (Otros), last, a
   }
 })
 
-test_that("'Ir a permisos' points at the permissions section, and the badges are translated", {
+test_that("T79b: one 'Ir a:' link per group title drawn, same order, each to an id that exists", {
+  for (staff in c(TRUE, FALSE)) for (t in niveles_todos()) {
+    h <- html(t, staff)
+    expect_identical(enlaces_de(h), grupos_de(h), info = paste(t, staff))
+    if (!staff) expect_false("interno" %in% enlaces_de(h), info = t)
+    for (g in enlaces_de(h)) {
+      id <- paste0("t-editor_permisos_grupo_", g)
+      expect_true(grepl(sprintf('id="%s"', id), h, fixed = TRUE), info = g)
+      # The onclick's quotes come out HTML-escaped (&#39;).
+      expect_true(grepl(sprintf("getElementById(&#39;%s&#39;)?.scrollIntoView", id), h, fixed = TRUE), info = g)
+      expect_true(grepl(tr(paste0("permisos.grupo_corto.", g)), h, fixed = TRUE), info = g)
+    }
+    # The new ids never take the checkboxes' prefix.
+    expect_false(grepl('id="t-perm_editor', h, fixed = TRUE))
+  }
+})
+
+test_that("T79b: an unknown group gets its 'Otros' link too", {
+  viejo <- PERMISOS
+  on.exit(PERMISOS <<- viejo, add = TRUE)
+  PERMISOS[["can_prueba_t79"]] <<- list(grupo = "sin_grupo_t79")
+  h <- html(nivel_tope(), FALSE)
+  expect_identical(tail(enlaces_de(h), 1), "sin_grupo")
+  expect_identical(enlaces_de(h), grupos_de(h))
+})
+
+test_that("the panel card keeps its id, and the badges are translated", {
   h <- html(nivel_tope(), TRUE)
   expect_true(grepl('id="t-editor_permisos_seccion"', h, fixed = TRUE))
-  # The onclick's quotes come out HTML-escaped (&#39;).
-  expect_true(grepl("getElementById(&#39;t-editor_permisos_seccion&#39;)?.scrollIntoView", h, fixed = TRUE))
   expect_true(grepl('id="t-editor_permisos_card"', h, fixed = TRUE))
   for (x in c("default (tier)", ">override<", "obligatorio — principal", "Modifícalo directamente"))
     expect_false(grepl(x, h, fixed = TRUE), info = x)
