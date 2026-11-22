@@ -64,8 +64,12 @@ on.exit(unlink(test_dir, recursive = TRUE), add = TRUE)
 # =============================================================================
 cat("\n-- Part A: fresh acquire succeeds, records pid/host/client/bucket --\n")
 
+# os_type = "windows" in Parts A-D: off Windows the real function returns
+# NULL on purpose (Part E), so without it these parts would test nothing on
+# the CI's Linux runner. filelock itself works the same on Linux (T76c).
 lock1 <- .hopdesk_acquire_instance_lock(lock_dir_base = test_dir,
-                                        client_id = "test-client", s3_bucket = "test-bucket")
+                                        client_id = "test-client", s3_bucket = "test-bucket",
+                                        os_type = "windows")
 .chk_true(!is.null(lock1), "first acquire against an empty temp dir succeeds")
 
 info_path <- file.path(test_dir, "HopDesk", "instance_test-client_test-bucket.lock.info")
@@ -85,7 +89,8 @@ info_txt <- readLines(info_path, warn = FALSE)
 cat("\n-- Part B: re-acquiring the SAME key from the SAME process (repeated 'Run App') does not hang --\n")
 
 lock2 <- .hopdesk_acquire_instance_lock(lock_dir_base = test_dir,
-                                        client_id = "test-client", s3_bucket = "test-bucket")
+                                        client_id = "test-client", s3_bucket = "test-bucket",
+                                        os_type = "windows")
 .chk_true(!is.null(lock2), "re-acquiring the same lock from the same process succeeds (no self-deadlock)")
 
 # =============================================================================
@@ -95,7 +100,8 @@ lock2 <- .hopdesk_acquire_instance_lock(lock_dir_base = test_dir,
 cat("\n-- Part C: a different client_id/s3_bucket key is a completely independent lock --\n")
 
 lock3 <- .hopdesk_acquire_instance_lock(lock_dir_base = test_dir,
-                                        client_id = "other-client", s3_bucket = "other-bucket")
+                                        client_id = "other-client", s3_bucket = "other-bucket",
+                                        os_type = "windows")
 .chk_true(!is.null(lock3), "a different client_id/s3_bucket pair acquires independently, unaffected by lock1/lock2")
 tryCatch(filelock::unlock(lock3), error = function(e) NULL)
 
@@ -141,7 +147,8 @@ if (!ready) {
 } else {
   result <- tryCatch({
     .hopdesk_acquire_instance_lock(lock_dir_base = test_dir,
-                                   client_id = "conflict-client", s3_bucket = "conflict-bucket")
+                                   client_id = "conflict-client", s3_bucket = "conflict-bucket",
+                                   os_type = "windows")
     "ACQUIRED"
   }, error = function(e) conditionMessage(e))
 
