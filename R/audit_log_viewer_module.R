@@ -1005,6 +1005,9 @@ auditLogViewerServer <- function(id, shared, mode,
       if (identical(mode, "own_client") && !viewer_is_staff()) {
         hide <- !is.na(df$module) & df$module == .JUMP_BOOKKEEPING_MODULE &
                 !is.na(df$action) & df$action %in% .JUMP_BOOKKEEPING_ACTIONS
+        # T72-B: a write that came with no event ("sin_evento", R/persistence.R)
+        # is staff's to chase, never a client's activity.
+        hide <- hide | (!is.na(df$module) & df$module == "registro" & !is.na(df$action) & df$action == "sin_evento")
         df <- df[!hide, , drop = FALSE]
       }
       df

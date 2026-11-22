@@ -526,6 +526,85 @@ modificar_tabla <- function(key, client_id, schema, cambio, permitir_reduccion =
 evento_sistema <- function(origen, accion, descripcion = NULL)
   list(usuario = paste0("sistema:", origen), modulo = origen, accion = accion, descripcion = descripcion)
 
+# T72-B commit 2: the write sites that still save WITHOUT evento=, frozen:
+# "archivo::funcion" = calls to modificar_tabla / modificar_tabla_completa /
+# .s3_write / .s3_write_with without `evento =` (app.R and R/). It can only go
+# down (tests/test_t72b_deuda_evento.R): new code is born with an event, and a
+# module that passes its evento= lowers its count in the same commit. The
+# alarm in .s3_write reads it: a write without an event whose call stack has
+# none of these functions is outside the known debt (a dynamic path).
+T72_DEUDA_EVENTO <- c(
+  "R/avisos.R::.s3_modificar" = 1L,
+  "R/avisos_alertas_module.R::alertas_guardar" = 1L,
+  "R/avisos_archivo.R::avisos_archivar" = 2L,
+  "R/avisos_datos.R::correo_historial_guardar" = 1L,
+  "R/avisos_datos.R::correo_partidas_guardar" = 1L,
+  "R/avisos_datos.R::correo_semana_guardar" = 1L,
+  "R/avisos_umbrales.R::umbral_serie_guardar" = 1L,
+  "R/bancos_persistence.R::modificar_bancos_papelera" = 1L,
+  "R/bancos_persistence.R::save_bancos_confirmados" = 1L,
+  "R/bancos_persistence.R::save_bancos_cuentas" = 1L,
+  "R/bancos_persistence.R::save_bancos_movimientos" = 2L,
+  "R/empresas_module.R::.save_and_broadcast" = 1L,
+  "R/empresas_module.R::confirmar_renombre_empresa" = 1L,
+  "R/empresas_module.R::reservar_renombre_empresa" = 1L,
+  "R/forecasting_persistence.R::append_forecasting_fetch_log" = 1L,
+  "R/forecasting_persistence.R::save_forecasting_indicators" = 1L,
+  "R/forecasting_persistence.R::save_forecasting_manual_curves" = 1L,
+  "R/forecasting_persistence.R::save_forecasting_methods" = 1L,
+  "R/forecasting_persistence.R::save_forecasting_metrics" = 1L,
+  "R/forecasting_persistence.R::save_forecasting_series_observations" = 1L,
+  "R/forecasting_persistence.R::save_forecasting_sources" = 1L,
+  "R/forecasting_persistence.R::save_forecasting_subscriptions" = 1L,
+  "R/fx_tipos.R::fx_escrito_guardar" = 1L,
+  "R/pasivos_module.R::pasivos_admin_purge_closed" = 1L,
+  "R/pasivos_persistence.R::save_pasivos_audit" = 1L,
+  "R/pasivos_persistence.R::save_pasivos_card_expenses" = 1L,
+  "R/pasivos_persistence.R::save_pasivos_estimates" = 1L,
+  "R/pasivos_persistence.R::save_pasivos_liabilities" = 1L,
+  "R/pasivos_persistence.R::save_pasivos_modifiers" = 1L,
+  "R/pasivos_persistence.R::save_pasivos_provisions" = 3L,
+  "R/persistence.R::.proveedores_guardar" = 2L,
+  "R/persistence.R::load_empresas" = 1L,
+  "R/persistence.R::load_grupos" = 1L,
+  "R/persistence.R::modificar_abonos" = 1L,
+  "R/persistence.R::modificar_contacts" = 1L,
+  "R/persistence.R::modificar_group_config" = 1L,
+  "R/persistence.R::modificar_hd_admin" = 1L,
+  "R/persistence.R::modificar_parte_alias_map" = 1L,
+  "R/persistence.R::modificar_partner_policies" = 1L,
+  "R/persistence.R::modificar_policy_catalog" = 1L,
+  "R/persistence.R::modificar_policy_moves" = 1L,
+  "R/persistence.R::purgar_invitaciones_vencidas" = 1L,
+  "R/persistence.R::rename_empresa_initials" = 7L,
+  "R/persistence.R::save_agenda_sync_config" = 1L,
+  "R/persistence.R::save_conciliacion" = 1L,
+  "R/persistence.R::save_empresas" = 1L,
+  "R/persistence.R::save_erp_connections" = 1L,
+  "R/persistence.R::save_grupos" = 1L,
+  "R/persistence.R::save_holiday_overrides" = 1L,
+  "R/persistence.R::save_interco" = 1L,
+  "R/persistence.R::save_interco_v2" = 1L,
+  "R/persistence.R::save_manual" = 2L,
+  "R/persistence.R::save_moves" = 1L,
+  "R/persistence.R::save_notes" = 2L,
+  "R/persistence.R::save_pagar_hoy" = 3L,
+  "R/persistence.R::save_pagar_hoy_sync" = 1L,
+  "R/persistence.R::save_pagar_hoy_user" = 1L,
+  "R/persistence.R::save_papelera" = 2L,
+  "R/persistence.R::save_policy_moves" = 1L,
+  "R/persistence.R::save_saldos_apertura_user" = 1L,
+  "R/persistence.R::save_sap_overrides" = 2L,
+  "R/persistence.R::save_sap_snapshot" = 3L,
+  "R/persistence.R::save_tags" = 2L,
+  "R/requisiciones_persistence.R::.req_modificar" = 1L,
+  "R/settings/settings_companies.R::.auto_aplicar_politicas" = 1L,
+  "R/settings/settings_helpers.R::modificar_ctas_bancos" = 1L,
+  "R/settings/settings_helpers.R::modificar_ctas_cuentas" = 1L,
+  "R/sync_bus.R::bump_sync_version" = 1L,
+  "R/tiers_module.R::tiersServer" = 1L
+)
+
 # Validates AWS credentials are present at startup. aws.s3 reads AWS_* vars
 # automatically — this function just warns early if they are missing.
 # Future per-client IAM migration: accept optional client_id and load a
@@ -893,6 +972,29 @@ unregister_username <- function(username) {
       log_action(user = "sistema", module = "registro", action = "sin_evento",
                  description = sprintf("tabla=%s filas %s origen=%s", key, filas, if (nzchar(origen)) origen else "?"),
                  target_id = key, metadata = meta, client_id = cid, viewer_home_client_id = cid)
+      # Commit 2: staff hear of a write OUTSIDE the known debt (no function of
+      # T72_DEUDA_EVENTO in the whole stack: a path the static guard can't
+      # see), once per client per hour -- in memory first, so S3 is not read
+      # on every write, then avisos_agregar's own ventana_min. Its write runs
+      # under the reentry option above: it logs nothing and never alarms. No
+      # list or no avisos_agregar (the emails job, a test by pieces): no alarm.
+      deuda <- get0("T72_DEUDA_EVENTO", ifnotfound = NULL)
+      if (!is.null(deuda) && exists("avisos_agregar", mode = "function") && exists("niveles_staff", mode = "function") &&
+          exists("tr", mode = "function") && !any(pila %in% unique(sub("^.*::", "", names(deuda))))) {
+        frenos <- getOption("hopdesk.t72_alarmas", list())
+        ultima <- frenos[[cid]]
+        if (is.null(ultima) || difftime(Sys.time(), ultima, units = "mins") >= 60) {
+          frenos[[cid]] <- Sys.time(); options(hopdesk.t72_alarmas = frenos)
+          tryCatch(avisos_agregar("hd-admin", list(
+            tipo = "automatico", severidad = "atencion", niveles = niveles_staff(),
+            titulo = tr("comun.actividad.alerta.sin_evento_titulo"),
+            cuerpo = tr("comun.actividad.alerta.sin_evento", cliente = cid, tabla = key,
+                        origen = if (nzchar(origen)) origen else "?"),
+            clave = paste("t72", "sin_evento", cid, sep = ":"),
+            ventana_min = 60)),
+            error = function(e) message("[T72] alarm failed (", cid, "): ", conditionMessage(e)))
+        }
+      }
     } else {
       if (!is.null(evento$.diferencia)) meta$diferencia <- evento$.diferencia
       desc <- evento$descripcion %||% ""

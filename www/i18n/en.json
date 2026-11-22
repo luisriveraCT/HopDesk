@@ -2188,6 +2188,8 @@
   "comun.actividad.alerta.titulo": "Activity: the log could not be saved",
   "comun.actividad.alerta.rescatadas": "{n} entries could not be added to the activity log of {cliente}. They were saved separately ({archivo}) and still show in Activity. Check the storage connection.",
   "comun.actividad.alerta.perdidas": "{n} entries of the activity log of {cliente} were lost: they could not be saved even separately. Check the storage connection and the server log.",
+  "comun.actividad.alerta.sin_evento_titulo": "Activity: a save with no record",
+  "comun.actividad.alerta.sin_evento": "{tabla} of {cliente} was saved through a path that does not say who or what changed ({origen}), and it is not one of the known ones. It shows in Activity as \"sin_evento\". That path needs its event.",
   "requisiciones.log.crear_requisicion": "Requisition {detalle} created",
   "requisiciones.log.editar_requisicion": "Requisition edited ({detalle})",
   "requisiciones.log.mover_requisiciones": "{n} requisition(s) moved to another folder",
