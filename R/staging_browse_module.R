@@ -16,33 +16,6 @@
 #       hd_table "abono_parcial" (T25). Returns invisible(list(facturas, tabla)).
 # =============================================================================
 
-# ── Internal CSS (shared by manual entry and abono modals) ────────────────────
-.sb_css <- "
-.sb-tbl  { font-size: 0.875em; }
-.sb-row  { display: flex; align-items: flex-start; gap: 8px;
-           padding: 5px 2px; border-bottom: 1px solid #e9ecef; }
-.sb-row:last-child { border-bottom: none; }
-.sb-hdr  { font-size: 0.72em; text-transform: uppercase; color: #6c757d;
-           font-weight: 600; padding-bottom: 4px;
-           border-bottom: 2px solid #dee2e6; }
-.sb-check    { width: 18px; height: 18px; flex-shrink: 0; margin-top: 3px;
-               cursor: pointer; }
-.sb-empresa  { width: 52px;  flex-shrink: 0; color: #6c757d; }
-.sb-parte    { flex: 1; min-width: 0; }
-.sb-parte-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sb-doc      { font-size: 0.8em; color: #6c757d; }
-.sb-fecha    { width: 68px; flex-shrink: 0; text-align: center; color: #495057; }
-.sb-saldo    { width: 100px; flex-shrink: 0; text-align: right; color: #495057; }
-.sb-amt-wrap { width: 115px; flex-shrink: 0; }
-.sb-amt      { width: 100%; text-align: right; }
-.sb-amt.sb-warn { border-color: #ffc107 !important; background: #fffbf0 !important; }
-.sb-warn-msg { font-size: 0.72em; color: #856404; margin-top: 2px; display: none; }
-.sb-amt.sb-warn ~ .sb-warn-msg { display: block; }
-.sb-amt:disabled { background: #f8f9fa !important; color: #adb5bd; }
-.sb-empty { color: #6c757d; font-style: italic; padding: 20px 0;
-            text-align: center; }
-"
-
 # ── Show the manual entry modal ───────────────────────────────────────────────
 show_combined_entry_modal <- function(ledger, sap_data, session,
                                       empresa_vals = character(0)) {
@@ -65,8 +38,6 @@ show_combined_entry_modal <- function(ledger, sap_data, session,
                      style = "background-color:#7c3aed;color:white;border:none;")
       else NULL
     ),
-
-    tags$style(HTML(.sb_css)),
 
     manual_entry_tab_content(ledger, empresas, monedas = .monedas_del_libro(sap_data, ledger),
                              base = moneda_base_sesion(session))
