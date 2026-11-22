@@ -80,7 +80,7 @@ archivos <- c("app.R",
   "R/settings/settings_policies.R" = 20L,
   "R/staging_browse_module.R" = 14L,
   "R/tier_registry.R" = 8L,
-  "R/tiers_module.R" = 36L,
+  "R/tiers_module.R" = 34L,
   "R/treasury_map_module.R" = 4L,    # stage 4: only the 4 transparent #00000000 of vis.js (exempt)
   "R/ui_components.R" = 6L,           # stage 4: only the currency pills .ph-ctr-* (rest + active), the palette Bancos keeps (exempt)
   "www/overlay_init.js" = 15L,
