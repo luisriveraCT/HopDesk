@@ -45,10 +45,49 @@ test_that("FRED: .fetch_prime() pide la serie DPRIME", {
   expect_true(grepl("series_id=DPRIME", pedida$url, fixed = TRUE))
 })
 
-test_that("FRED: .fetch_prime() devuelve la última observación y su fecha", {
-  con_fred_simulado()
-  r <- .fetch_prime(api_key = "k")
-  expect_identical(r$today, 7.5); expect_identical(r$date_today, as.Date("2026-11-18"))
+# T76e: on the CI (Linux) this check failed while "sin error" passed: there
+# are valid observations, but not these. One test_that per property, so the
+# public annotation (test names only, never values) says which one breaks.
+# The first ones look at the steps .fetch_fred_tasa() takes with the mocked
+# response, before the function itself.
+JSON_FRED <- '{"observations":[{"date":"2026-11-18","value":"7.50"},{"date":"2026-11-17","value":"7.50"},{"date":"2026-11-14","value":"."}]}'
+respuesta_fred <- function()
+  structure(list(status_code = 200L, content = charToRaw(JSON_FRED), headers = list(`content-type` = "application/json")),
+            class = "response")
+
+test_that("FRED paso: httr::content() devuelve el JSON simulado tal cual", {
+  expect_identical(httr::content(respuesta_fred(), as = "text", encoding = "UTF-8"), JSON_FRED)
+})
+test_that("FRED paso: jsonlite lee 3 observaciones como data frame", {
+  obs <- jsonlite::fromJSON(JSON_FRED, simplifyDataFrame = TRUE)$observations
+  expect_true(is.data.frame(obs)); expect_identical(nrow(obs), 3L)
+})
+test_that("FRED paso: las fechas del JSON se leen como Date sin NA", {
+  obs <- jsonlite::fromJSON(JSON_FRED, simplifyDataFrame = TRUE)$observations
+  expect_false(anyNA(as.Date(obs$date)))
+})
+test_that("FRED paso: los valores '7.50' se leen como número 7.5", {
+  obs <- jsonlite::fromJSON(JSON_FRED, simplifyDataFrame = TRUE)$observations
+  expect_identical(suppressWarnings(as.numeric(obs$value))[1:2], c(7.5, 7.5))
+})
+test_that("FRED: today no es NA", {
+  con_fred_simulado(); expect_false(is.na(.fetch_prime(api_key = "k")$today))
+})
+test_that("FRED: today es numérico", {
+  con_fred_simulado(); expect_true(is.numeric(.fetch_prime(api_key = "k")$today))
+})
+test_that("FRED: today vale 7.5", {
+  con_fred_simulado(); expect_identical(.fetch_prime(api_key = "k")$today, 7.5)
+})
+test_that("FRED: date_today es Date y no es NA", {
+  con_fred_simulado(); d <- .fetch_prime(api_key = "k")$date_today
+  expect_s3_class(d, "Date"); expect_false(is.na(d))
+})
+test_that("FRED: date_today es la observación más reciente (2026-11-18)", {
+  con_fred_simulado(); expect_identical(.fetch_prime(api_key = "k")$date_today, as.Date("2026-11-18"))
+})
+test_that("FRED: date_yesterday es la anterior (2026-11-17)", {
+  con_fred_simulado(); expect_identical(.fetch_prime(api_key = "k")$date_yesterday, as.Date("2026-11-17"))
 })
 
 test_that("FRED: sin error con una respuesta válida, y SOFR pide su propia serie", {
