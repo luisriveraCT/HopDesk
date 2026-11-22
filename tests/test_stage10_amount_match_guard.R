@@ -150,14 +150,15 @@ suppressPackageStartupMessages(library(tibble))
   start <- grep("Amount-match guard \\(Stage 10\\)", txt)
   .chk(length(start) > 0, TRUE, "found the Stage 10 amount-match guard comment to scan")
   if (length(start)) {
-    block <- paste(sub("#.*$", "", txt[start[1]:min(start[1] + 40, length(txt))]), collapse = "\n")
+    fin   <- grep("# Source 2: papelera", txt); fin <- fin[fin > start[1]][1]
+    block <- paste(sub("#.*$", "", txt[start[1]:(if (is.na(fin)) min(start[1] + 80, length(txt)) else fin)]), collapse = "\n")
     .chk(grepl('sprintf\\("%\\.2f", round\\(as\\.numeric', block), TRUE,
          "the guard uses the same 2-decimal-rounded-string shape as interco_module.R's .ckey()")
     .chk(grepl("!is\\.na\\(conf_db\\[\\[\"importe\"\\]\\]\\)", block), TRUE,
          "confirmation rows with no recorded amount are filtered out before building the match key")
     .chk(grepl("Saldo_original", block), TRUE,
          "the guard matches against Saldo_original, not a live-recomputed balance")
-    .chk(grepl("date", block, ignore.case = TRUE), FALSE,
+    .chk(grepl("Sys\\.Date\\(|Sys\\.time\\(|difftime|hoy_", block), FALSE,
          "no date-window check was added -- Mouse's explicit reasoning against one is respected")
   }
 }

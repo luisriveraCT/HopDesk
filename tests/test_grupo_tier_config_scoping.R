@@ -106,10 +106,17 @@ if (length(write_start)) {
      grepl("metadata\\s*=\\s*list\\(tier = tk, before = before_tk, after = full_config\\[\\[tk\\]\\]\\)", block))
   ok("the log_action() call is inside the SUCCESS branch of the save tryCatch (a failed save is not logged as if it succeeded)",
      {
-       lines    <- strsplit(block, "\n")[[1]]
-       write_ln <- which(grepl("\\.s3_write\\(", lines))[1]
-       log_ln   <- which(grepl("log_action\\(", lines))[1]
-       err_ln   <- which(grepl("error = function\\(e\\)", lines))
+       # CM43: since T72-B the write is a named helper (.tiers_guardar_inline)
+       # defined above the tryCatch, and the success branch has its own small
+       # tryCatch()s. So: the real CALL of the write, then log_action(), then
+       # the OUTER handler, "}, error = function(e)" -- read past `block`,
+       # which ends inside log_action().
+       lines    <- tm_txt[write_start[1]:length(tm_txt)]
+       write_ln <- which(grepl("\\.tiers_guardar_inline\\(full_config", lines) &
+                         !grepl("<- function", lines, fixed = TRUE))[1]
+       log_ln   <- which(grepl("log_action\\(", lines))
+       log_ln   <- log_ln[log_ln > write_ln][1]
+       err_ln   <- which(grepl("^\\s*\\}, error = function\\(e\\)", lines))
        err_ln   <- err_ln[err_ln > write_ln][1]
        !is.na(write_ln) && !is.na(log_ln) && !is.na(err_ln) &&
          log_ln > write_ln && log_ln < err_ln

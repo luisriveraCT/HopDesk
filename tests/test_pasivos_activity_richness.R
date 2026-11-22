@@ -170,9 +170,12 @@ suppressPackageStartupMessages(library(shiny))
     ok("C2: pasivos_log_audit() now receives a real before= (not omitted)",
        grepl("before      = if \\(!is\\.null\\(before_row\\)", b2))
     # Since the save logs through .wiz_log(tipo, notas, after = liab_row), the
-    # full row arrives as `after` (as.list(after)); before, written out.
+    # full row arrives as `after` (as.list(after)); before, written out. CM43:
+    # the real calls after the helper also pass after = as.list(liab_row).
+    b2b <- .scan_block(wiz_txt, "^\\.pasivos_wizard_save <- function", occurrence = 2L)
     ok("C2: `after` is the FULL liability row (all payment-terms columns), not 5 hand-picked identity fields",
        grepl("after       = as\\.list\\(liab_row\\)", b2) ||
+         grepl("after       = as\\.list\\(liab_row\\)", b2b) ||
          (grepl("\\.wiz_log <- function\\(tipo, notas, after = liab_row\\)", b2) &&
           grepl("after       = if \\(!is\\.null\\(after\\)\\) as\\.list\\(after\\)", b2)))
   }
@@ -234,6 +237,7 @@ suppressPackageStartupMessages(library(shiny))
   if (!is.na(b7)) {
     ok("C7: captures before_est from the existing row before an overwrite",
        # <<- since T26: the capture lives in modificar_pasivos_estimates()'s change
+       # (CM43: `<-` before it; both capture the old row)
        grepl("before_est <<?- if \\(length\\(existing_idx\\)\\)", b7))
     ok("C7: pasivos_log_audit() now receives before=before_est", grepl("before      = before_est,", b7))
   }

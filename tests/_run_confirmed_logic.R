@@ -44,6 +44,14 @@ suppressPackageStartupMessages({
 .extract_fn("R/bancos_persistence.R", "add_to_bancos_papelera")
 .extract_fn("R/bancos_persistence.R", "restore_from_bancos_papelera")
 .extract_fn("R/data_pipeline.R", "stage_manual_row_to_agenda")
+# CM43: the ERP type constant the extracted pipeline functions read
+# (build_export_combined_df, compute_confirmed_flags...): without it five
+# files errored with "object 'SAP_B1_ERP_TYPE' not found".
+.extract_fn("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
+.extract_fn("R/erp_connector_registry.R", "es_fuente_sap")   # CM44: papelera ghosts
+# A2: compute_confirmed_flags() and the export filter read only the live
+# confirmations (not deleted, not recovered).
+.extract_fn("R/persistence.R", "confirmaciones_vigentes")
 
 .pass <- 0L
 .fail <- 0L
@@ -72,7 +80,8 @@ cat("====================================================\n\n")
 .run_module("tests/test_stage5_provision_confirm_undo.R")
 .run_module("tests/test_stage6_agenda_derivation.R")
 .run_module("tests/test_provision_no_direct_agenda.R")
-.run_module("tests/test_vencidos_confirm_bar_fixed_position.R")
+# CM43: test_vencidos_confirm_bar_fixed_position.R was deleted in 71774bf
+# (Vencidos moved onto the table engine, 2026-10-30).
 .run_module("tests/test_vencidos_search_audit_logging.R")
 .run_module("tests/test_sync_bus_coverage.R")
 .run_module("tests/test_auth_keep_token.R")

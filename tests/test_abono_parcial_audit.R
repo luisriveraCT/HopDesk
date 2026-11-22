@@ -116,17 +116,18 @@ suppressPackageStartupMessages({
 
 # ── 2. Static scan: AR table now has the same ABONO badge as AP ────────────
 {
+  # CM43: since T25 the Agenda's AR and AP are hd_table; the badge is a
+  # col_insignia("Tipo") with an "abono" entry in BOTH column lists, fed by
+  # tipo_item == "abono" (the old tbl_ar_ render and abono_pfx are gone).
   txt <- readLines("R/pagar_hoy_module.R", warn = FALSE)
-  start <- grep('output\\[\\[paste0\\("tbl_ar_", emp\\)\\]\\]', txt)
-  .chk(length(start) > 0, TRUE, "found the AR table render to scan")
-  if (length(start)) {
-    block <- paste(sub("#.*$", "", txt[start[1]:min(start[1] + 40, length(txt))]), collapse = "\n")
-    .chk(grepl('abono_pfx', block), TRUE,
-         "AR table now computes an abono_pfx badge, matching the AP table's existing pattern")
-    .chk(grepl('tipo_item.*==\\s*"abono"', block), TRUE,
-         "the AR badge is driven by tipo_item == \"abono\", the same field AP uses")
-    .chk(grepl('Cliente\\s*=\\s*paste0\\(abono_pfx', block), TRUE,
-         "the badge is actually prepended to the Cliente cell, not just computed and discarded")
+  ar  <- grep("\\.ph_columnas_ar <- list\\(", txt)
+  .chk(length(ar) > 0, TRUE, "found the AR table's columns (.ph_columnas_ar) to scan")
+  if (length(ar)) {
+    block <- paste(txt[ar[1]:min(ar[1] + 8, length(txt))], collapse = "\n")
+    .chk(grepl('col_insignia\\("Tipo"', block) && grepl('abono\\s*=\\s*list\\(texto = "tablas\\.agenda\\.abono"', block), TRUE,
+         "AR table has the ABONO badge (col_insignia Tipo, abono), the same as AP")
+    .chk(any(grepl('Tipo\\s*=\\s*ifelse\\(!is\\.na\\(ann\\$tipo_item\\) & ann\\$tipo_item == "abono", "abono", ""\\)', txt)), TRUE,
+         "the badge is driven by tipo_item == \"abono\", the same field AP uses")
   }
 }
 
