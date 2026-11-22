@@ -42,14 +42,21 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
   # The dictionary and the tag map the report's words come from (tr(),
   # HD_ETIQUETAS): this process only has what it sources. Without them the
   # Excel export stopped at the first tag ("object 'HD_ETIQUETAS' not found").
-  source(file.path(app_dir, "R", "i18n.R"), local = e)
+  # A file that cannot be read says WHICH one, from where (T74 F1: the
+  # parent only ever saw "cannot open the connection").
+  fuente <- function(f) {
+    p <- file.path(app_dir, "R", f)
+    if (!file.exists(p)) stop(sprintf("cannot source %s (app_dir='%s', child wd='%s')", p, app_dir, getwd()))
+    source(p, local = e)
+  }
+  fuente("i18n.R")
   e$.i18n_dir <- file.path(app_dir, "www", "i18n")
   # monto_moneda(), which .cf_fmt() and the engine's money columns call (T55b).
-  source(file.path(app_dir, "R", "monedas.R"), local = e)
-  source(file.path(app_dir, "R", "hd_columnas.R"), local = e)
+  fuente("monedas.R")
+  fuente("hd_columnas.R")
   # The theme registry: the workbook's colours are roles (TEMA 4b).
-  source(file.path(app_dir, "R", "tema_registro.R"), local = e)
-  source(file.path(app_dir, "R", "cashflow_export_module.R"), local = e)
+  fuente("tema_registro.R")
+  fuente("cashflow_export_module.R")
 
   sn <- readRDS(snapshot_path)
 
@@ -93,7 +100,12 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
 # any log. Returns list(estado = "done" | "error", aviso = <tr() key for the
 # user, plain words>, detalle = <technical message, for the server log only>).
 .cf_excel_resultado <- function(job, out_path) {
-  detalle <- tryCatch({ job$get_result(); "" }, error = function(e) conditionMessage(e))
+  # callr wraps the child's error ("! in callr subprocess. / Caused by error
+  # in ...: ! <message>"): the real message is in $parent. One line, for the log.
+  detalle <- tryCatch({ job$get_result(); "" }, error = function(e) {
+    m <- if (inherits(e$parent, "condition")) conditionMessage(e$parent) else conditionMessage(e)
+    trimws(gsub("\\s*\n\\s*", " ", m))
+  })
   if (!nzchar(detalle) && file.exists(out_path))
     return(list(estado = "done", aviso = NULL, detalle = ""))
   if (!nzchar(detalle)) detalle <- tryCatch(trimws(job$read_all_error_text()), error = function(e) "")
