@@ -459,7 +459,9 @@ for (quien in quienes) {
   rama <- recorrer(RAMA, "rama", quien)
   saveRDS(list(base = base, rama = rama), file.path(SALIDA, sprintf("estilos_%s.rds", quien)))
   if ("PAN" %in% names(rama) || length(rama) > 1L) {
-    h <- rama[[setdiff(names(rama), "ENTRAR")[1]]][["__html__"]]
+    # The first view INSIDE the app: the access pages (sign-in, activation,
+    # forgot) carry only the acceso-* sheet, no theme attribute (app.R).
+    h <- rama[[setdiff(names(rama), c("ENTRAR", "ACT_INVALIDA", "OLVIDE"))[1]]][["__html__"]]
     ok(sprintf("[rama · %s] <html data-hd-tema=\"clasico\"> and the tokens load (--hd-primario = %s)", quien, h$primario %||% ""),
        identical(h$tema, "clasico") && toupper(h$primario %||% "") == "#0A58CA")
   }
