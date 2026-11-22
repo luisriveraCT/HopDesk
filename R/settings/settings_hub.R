@@ -175,7 +175,7 @@ settings_observers <- function(input, output, session, shared) {
                   tags$small(
                     id    = paste0("ic_lbl_", l, "_", ini, "_", new_n),
                     class = "d-block fst-italic",
-                    style = "margin-top:-10px; font-size:0.7em; min-height:0.85em; padding-left:3px; color:#aaa;",
+                    style = "margin-top:-10px; font-size:0.7em; min-height:0.85em; padding-left:3px; color:var(--hd-leg-texto-tenue-aaaaaa);",
                     ""
                   )
                 )
@@ -363,7 +363,7 @@ settings_observers <- function(input, output, session, shared) {
                 class = "d-block fst-italic",
                 style = paste0("margin-top:-10px; font-size:0.7em; min-height:0.85em;",
                                " padding-left:3px;",
-                               if (nzchar(lbl_text)) " color:#0d6efd;" else " color:#aaa;"),
+                               if (nzchar(lbl_text)) " color:var(--hd-leg-primario-0d6efd);" else " color:var(--hd-leg-texto-tenue-aaaaaa);"),
                 lbl_text
               )
             )

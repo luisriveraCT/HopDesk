@@ -192,7 +192,7 @@ cashflowPreviewUI <- function(id) {
         label = NULL,
         class = "btn btn-link cf-back-arrow p-0 me-1",
         title = tr("tablas.flujo.volver"),
-        style = "color:#1E3A5F; font-size:1.15rem; line-height:1; flex-shrink:0;"
+        style = "color:var(--hd-encabezado); font-size:1.15rem; line-height:1; flex-shrink:0;"
       ),
 
       # Date range — button trigger + hidden input for Shiny binding.
@@ -208,7 +208,7 @@ cashflowPreviewUI <- function(id) {
           type  = "button",
           class = "form-control cf-date-btn",
           style = paste0("width:140px;text-align:left;cursor:pointer;",
-                         "padding:4px 8px;background:#fff;font-size:inherit;color:inherit;"),
+                         "padding:4px 8px;background:var(--hd-superficie);font-size:inherit;color:inherit;"),
           .cf_range_label(.cf_default_from(), .cf_default_to())
         ),
 
@@ -569,11 +569,11 @@ cashflowPreviewServer <- function(id, shared) {
 
       div(
         class = "cf-fx-section d-flex align-items-center flex-wrap gap-3 px-3 py-2",
-        style = "border-bottom:1px solid #e5e9ef; background:#f8fafc; font-size:0.82rem;",
+        style = "border-bottom:1px solid var(--hd-borde); background:var(--hd-superficie-2); font-size:0.82rem;",
 
         # Base currency selector
         div(class = "d-flex align-items-center gap-1",
-          tags$small(tr("tablas.flujo.base"), style = "color:#5a7596; white-space:nowrap;"),
+          tags$small(tr("tablas.flujo.base"), style = "color:var(--hd-leg-texto-2-5a7596); white-space:nowrap;"),
           selectInput(ns("base_cur"), label = NULL,
                       choices  = base_choices,
                       selected = base_sel,
@@ -588,7 +588,7 @@ cashflowPreviewServer <- function(id, shared) {
           org  <- tipos$origen[i]
 
           div(class = "d-flex align-items-center gap-1 cf-fx-row",
-            tags$small(cur, style = "color:#5a7596; font-weight:600; min-width:28px;"),
+            tags$small(cur, style = "color:var(--hd-leg-texto-2-5a7596); font-weight:600; min-width:28px;"),
 
             # Live / date toggle button
             # TODO(forecasting-fx): when Forecasting exposes FX series, replace

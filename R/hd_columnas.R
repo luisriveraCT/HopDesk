@@ -458,15 +458,16 @@ col_casilla <- function(campo, titulo = NULL, opcional = FALSE, visible = TRUE) 
 # the row's background (by tone, in www/hdtable.css) and the order. The
 # stored values never change (urgent / both / important); Luis renamed what
 # people see to A, B and C so the name doesn't mean anything by itself.
-# tinta / pastilla / fondo: the same colours as the tone in hdtable.css, for
-# what is painted outside the engine (the Calendario and its DT tables).
+# tinta / pastilla / fondo: the tag's theme roles (etq-a/b/c-*, the same as the
+# tone in hdtable.css), for what is painted outside the engine (the Calendario
+# and its DT tables); var(), so only for the app, never a standalone document.
 HD_ETIQUETAS <- list(
   urgent    = list(texto = "tablas.etiquetas.a", tono = "rojo",     peso = 1L,
-                   tinta = "#b42318", pastilla = "#ffe1de", fondo = "#fff0f0"),
+                   tinta = "var(--hd-etq-a-texto)", pastilla = "var(--hd-etq-a-pastilla)", fondo = "var(--hd-etq-a-fila)"),
   both      = list(texto = "tablas.etiquetas.b", tono = "naranja",  peso = 2L,
-                   tinta = "#b54708", pastilla = "#ffe8d1", fondo = "#fff3e6"),
+                   tinta = "var(--hd-etq-b-texto)", pastilla = "var(--hd-etq-b-pastilla)", fondo = "var(--hd-etq-b-fila)"),
   important = list(texto = "tablas.etiquetas.c", tono = "amarillo", peso = 3L,
-                   tinta = "#8a6100", pastilla = "#fff1b8", fondo = "#fffbe6")
+                   tinta = "var(--hd-etq-c-texto)", pastilla = "var(--hd-etq-c-pastilla)", fondo = "var(--hd-etq-c-fila)")
 )
 
 # Outside the engine. The tag of an invoice from its stored tags (urgent

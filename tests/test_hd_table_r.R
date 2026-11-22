@@ -155,13 +155,19 @@ test_that("tags outside the engine read HD_ETIQUETAS: key, A/B/C, pill, DT backg
   expect_identical(vapply(list("urgent", c("urgent", "important"), "important", character(0)), e$tag_label, ""),
                    c("A", "B", "C", ""))
   p <- as.character(hd_etiqueta_pastilla("urgent"))
-  expect_match(p, "color:#b42318;background:#ffe1de;", fixed = TRUE)
+  # TEMA 5b: the tags paint with the etq-a/b/c-* commons; under Clásico they
+  # are the old #b42318 / #ffe1de / #fff0f0 ... exactly.
+  expect_match(p, "color:var(--hd-etq-a-texto);background:var(--hd-etq-a-pastilla);", fixed = TRUE)
+  reg <- new.env(); sys.source("R/tema_registro.R", envir = reg)
+  expect_identical(vapply(c("etq-a-texto", "etq-a-pastilla", "etq-a-fila", "etq-b-fila", "etq-c-fila"),
+                          reg$tema_color, "", tema = "clasico", USE.NAMES = FALSE),
+                   c("#B42318", "#FFE1DE", "#FFF0F0", "#FFF3E6", "#FFFBE6"))
   expect_match(p, ">A</span>", fixed = TRUE)
   expect_identical(as.character(hd_etiqueta_pastilla("B")), as.character(hd_etiqueta_pastilla("both")))
   expect_null(hd_etiqueta_pastilla(""))
   dt <- hd_etiquetas_dt()
   expect_identical(dt$etiquetas, c("A", "B", "C", ""))
-  expect_identical(dt$fondos, c("#fff0f0", "#fff3e6", "#fffbe6", "transparent"))
+  expect_identical(dt$fondos, c("var(--hd-etq-a-fila)", "var(--hd-etq-b-fila)", "var(--hd-etq-c-fila)", "transparent"))
 })
 
 test_that("titles: dictionary key or plain text", {

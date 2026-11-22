@@ -246,8 +246,8 @@ empresasUI <- function(id) {
               div(
                 id = ns("create_form_wrap"),
                 class = "card-body border-bottom",
-                style = "background:#f8f9ff;",
-                tags$h6(class = "fw-semibold mb-3", style = "color:#0a58ca;",
+                style = "background:var(--hd-superficie-2);",
+                tags$h6(class = "fw-semibold mb-3", style = "color:var(--hd-primario);",
                         tagList(icon("circle-plus"), " Nueva empresa")),
                 fluidRow(
                   column(3,
@@ -327,12 +327,12 @@ empresasUI <- function(id) {
     class = "card border-0 shadow-sm",
     div(
       class = "card-header py-3",
-      style = "background: linear-gradient(120deg,#1a1a2e 0%,#16213e 100%); color:#fff; border-radius:8px 8px 0 0;",
+      style = "background: linear-gradient(120deg,var(--hd-leg-oscuro-fondo-2-1a1a2e) 0%,var(--hd-leg-oscuro-fondo-16213e) 100%); color:var(--hd-texto-inverso); border-radius:8px 8px 0 0;",
       div(
         class = "d-flex align-items-center gap-3",
         div(
           class = "rounded-circle d-flex align-items-center justify-content-center flex-shrink-0",
-          style = "width:42px; height:42px; background:rgba(255,255,255,.15); font-size:1.1rem;",
+          style = "width:42px; height:42px; background:color-mix(in srgb, var(--hd-texto-inverso) 15%, transparent); font-size:1.1rem;",
           icon("building-pen")
         ),
         div(
@@ -344,7 +344,7 @@ empresasUI <- function(id) {
           div(
             class = "d-flex align-items-center gap-2 mt-1",
             tags$span(
-              style = "font-size:.65rem; font-weight:700; letter-spacing:1px; text-transform:uppercase; background:#0a58ca; border:1px solid rgba(255,255,255,.3); padding:2px 8px; border-radius:20px;",
+              style = "font-size:.65rem; font-weight:700; letter-spacing:1px; text-transform:uppercase; background:var(--hd-primario); border:1px solid color-mix(in srgb, var(--hd-texto-inverso) 30%, transparent); padding:2px 8px; border-radius:20px;",
               row$initials
             ),
             tags$span(style = "font-size:.75rem; opacity:.6;", row$account_code %||% "")

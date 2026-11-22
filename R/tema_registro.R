@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 18L
+HD_TEMAS_CSS_VERSION <- 19L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -373,8 +373,10 @@ HD_TEMAS <- list(
   `oscuro-exito-6ee7c4` = "#6EE7C4",
   `oscuro-fondo-0d1117` = "#0D1117",
   `oscuro-fondo-0d1b3e` = "#0D1B3E",
+  `oscuro-fondo-16213e` = "#16213E",
   `oscuro-fondo-1c2e42` = "#1C2E42",
   `oscuro-fondo-2-0d1e30` = "#0D1E30",
+  `oscuro-fondo-2-1a1a2e` = "#1A1A2E",
   `oscuro-peligro-ff8080` = "#FF8080",
   `oscuro-peligro-ff8a8a` = "#FF8A8A",
   `oscuro-texto-2-484f58` = "#484F58",
@@ -454,6 +456,7 @@ HD_TEMAS <- list(
   `texto-2-4a5b6b` = "#4A5B6B",
   `texto-2-555555` = "#555555",
   `texto-2-5a6377` = "#5A6377",
+  `texto-2-5a7596` = "#5A7596",
   `texto-2-606060` = "#606060",
   `texto-2-64748b` = "#64748B",
   `texto-2-666666` = "#666666",
