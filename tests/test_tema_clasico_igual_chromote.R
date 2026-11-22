@@ -486,11 +486,15 @@ for (quien in quienes) {
     # 2026-11-20): past the sign-in page, a visible login form fails, and
     # every comparison needs more than 20 elements measured.
     login <- function(e) any(grepl("#auth-user_id", names(e), fixed = TRUE))
+    # The two access pages above secure_app are small by design (the
+    # invalid-link card has 20 elements) and were only measured once their
+    # card and title showed: more than 10 there; more than 20 everywhere else.
+    min_elementos <- if (v %in% c("ACT_INVALIDA", "OLVIDE")) 10L else 20L
     if (v != "ENTRAR")
       ok(sprintf("[%s] %s: no sign-in form in master or branch", quien, nombre), !login(eb) && !login(er))
     if (!ok(sprintf("[%s] %s: %d elements compared, same computed style within ΔE %g (only in master %d, only in branch %d)",
                     quien, nombre, length(comunes), DE_MAX, length(setdiff(names(eb), comunes)), length(setdiff(names(er), comunes))),
-            length(difs) == 0L && length(comunes) > 20L))
+            length(difs) == 0L && length(comunes) > min_elementos))
       cat(paste0("      | ", utils::head(difs, 12)), sep = "\n")
   }
   faltan_v <- setdiff(names(base), names(rama))
