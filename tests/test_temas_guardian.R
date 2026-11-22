@@ -124,7 +124,7 @@ roles <- lapply(tema$HD_TEMAS, function(t) names(t$tokens))
 ok("every theme defines the same roles",
    all(vapply(roles, function(r) setequal(r, roles[[1]]), logical(1))))
 ok("every theme has a dictionary key for its name",
-   all(vapply(tema$HD_TEMAS, function(t) grepl("^tema\\.", t$nombre %||% ""), logical(1))))
+   all(vapply(tema$HD_TEMAS, function(t) grepl("^comun\\.tema\\.", t$nombre %||% ""), logical(1))))
 todas <- c(names(tema$.HD_PALETA), names(tema$.HD_COMUNES), roles[[1]],
            if (length(tema$.HD_LEGADO)) paste0("leg-", names(tema$.HD_LEGADO)))
 ok("no token is defined twice (paleta / comunes / roles)", !anyDuplicated(todas))
@@ -242,7 +242,8 @@ ok("app.R source()s R/tema_registro.R before its first hd_bs_theme() / tema_head
 cab <- htmltools::renderTags(tema$tema_head())$head
 ok("tema_head(): the tokens and the attribute go in <head>, with the default theme",
    grepl("hd_temas.css?v=", cab, fixed = TRUE) &&
-     grepl(sprintf("setAttribute('data-hd-tema','%s')", tema$HD_TEMA_OMISION), cab, fixed = TRUE))
+     grepl(sprintf(",D='%s',", tema$HD_TEMA_OMISION), cab, fixed = TRUE) &&
+     grepl("h.setAttribute('data-hd-tema',t);", cab, fixed = TRUE))
 ok("the generated CSS puts the default theme on :root",
    any(grepl(sprintf('^:root, \\[data-hd-tema="%s"\\] \\{$', tema$HD_TEMA_OMISION), leer("www/hd_temas.css"))))
 
@@ -545,6 +546,36 @@ ok("the sign-in page (secure_app's tags_top) links hd_temas.css, where acceso-* 
 
 ok("the activation / forgot / reset page (.invite_page_shell) links hd_temas.css, where acceso-* live",
    any(grepl("href = paste0(\"hd_temas.css?v=\", HD_TEMAS_CSS_VERSION)", entre("^\\.invite_page_shell <- function", "^}"), fixed = TRUE)))
+
+# ── The client's theme (TEMA stage 5) ───────────────────────────────────────
+# The browser only ever applies a theme of the registry: the head script's
+# closed list is HD_TEMAS's names, and anything else is the default.
+js <- tema$.tema_js()
+lista_js <- regmatches(js, regexpr("var L=\\[[^]]*\\]", js))
+ok("the head script's closed list is exactly the registry's themes",
+   length(lista_js) == 1L &&
+     setequal(strsplit(gsub("var L=\\[|\\]|'", "", lista_js), ",")[[1]], names(tema$HD_TEMAS)))
+ok("the head script falls back to the default for anything not in the list, and stores per client",
+   grepl("function ok(t){return L.indexOf(t)>=0?t:D;}", js, fixed = TRUE) &&
+     grepl("'hd-tema:'+m.cliente", js, fixed = TRUE) && grepl("addCustomMessageHandler('hdTema'", js, fixed = TRUE))
+ok("every theme says whether it is offered (ofrecer TRUE/FALSE); the default one is",
+   all(vapply(tema$HD_TEMAS, function(t) is.logical(t$ofrecer) && length(t$ofrecer) == 1L && !is.na(t$ofrecer), logical(1))) &&
+     isTRUE(tema$HD_TEMAS[[tema$HD_TEMA_OMISION]]$ofrecer))
+# A theme other than Clásico (whose legacy tokens keep today's look) may be
+# offered to clients only once no client screen paints a hand-written colour:
+# those would stay in Clásico under it. Currency palettes (data) are not here.
+.ARCHIVOS_CLIENTE <- c("R/global.R", "R/tiers_module.R", "www/overlay_init.js", "R/empresas_module.R",
+                       "R/hd_columnas.R", "R/cashflow_preview_module.R",
+                       list.files("R/settings", pattern = "^settings_.*\\.R$", full.names = TRUE))
+quedan <- vapply(.ARCHIVOS_CLIENTE, colores_a_mano, integer(1))
+ofrecidos <- setdiff(names(tema$HD_TEMAS)[vapply(tema$HD_TEMAS, function(t) isTRUE(t$ofrecer), logical(1))], "clasico")
+ok(sprintf("a theme is offered to clients only with 0 hand-written colours on client screens (%d left; offered: %s)",
+           sum(quedan), if (length(ofrecidos)) paste(ofrecidos, collapse = ", ") else "none"),
+   all(file.exists(.ARCHIVOS_CLIENTE)) && (!length(ofrecidos) || sum(quedan) == 0L) ||
+     { message("  left: ", paste(sprintf("%s %d", names(quedan)[quedan > 0], quedan[quedan > 0]), collapse = ", ")); FALSE })
+ok("temas_ofrecidos(): clients get the offered ones, staff every theme",
+   setequal(tema$temas_ofrecidos(FALSE), names(tema$HD_TEMAS)[vapply(tema$HD_TEMAS, function(t) isTRUE(t$ofrecer), logical(1))]) &&
+     setequal(tema$temas_ofrecidos(TRUE), names(tema$HD_TEMAS)))
 
 cat(sprintf("\n=== %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

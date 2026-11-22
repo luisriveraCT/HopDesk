@@ -99,7 +99,8 @@ HD_TEMAS_CSS_VERSION <- 18L
 
 HD_TEMAS <- list(
   clasico = list(
-    nombre = "tema.clasico",
+    nombre = "comun.tema.clasico",
+    ofrecer = TRUE,   # a client may choose it (TEMA stage 5; see temas_ofrecidos())
     puente = FALSE,   # Bootstrap keeps flatly's colours: Clásico is today's look
     tokens = list(
       # Values: the most used of each group, TEMA_inventario.md §3 (n).
@@ -162,7 +163,11 @@ HD_TEMAS <- list(
     )
   ),
   marca = list(
-    nombre = "tema.marca",
+    nombre = "comun.tema.marca",
+    # FALSE until every client screen paints it (stage 5b): only HopDesk staff
+    # see it in the selector, to try it on a test client. The guardian keeps it
+    # FALSE while client files still have hand-written colours.
+    ofrecer = FALSE,
     puente = TRUE,    # www/hd_tema_bootstrap.css maps Bootstrap onto these roles
     tokens = list(
       fondo              = "#F7F6F2",   # papel
@@ -566,13 +571,36 @@ tema_resolver <- function(usuario = NULL, cliente = NULL) {
   HD_TEMA_OMISION
 }
 
+# The themes a client may choose (ofrecer = TRUE); HopDesk staff see every
+# theme, to try one on a test client before it is offered (TEMA stage 5).
+temas_ofrecidos <- function(es_staff = FALSE) {
+  if (isTRUE(es_staff)) return(names(HD_TEMAS))
+  names(HD_TEMAS)[vapply(HD_TEMAS, function(t) isTRUE(t$ofrecer), logical(1))]
+}
+
 # The theme of a Shiny session, for colours drawn in R (SVG in data: URIs,
-# vis.js, Word...). TEMA stage 3 puts a reactiveVal in
-# session$userData$hd_tema; read inside a render, a change of theme redraws.
-# Until then, and outside a session, the default theme.
+# vis.js, Word...). The server puts a reactive in session$userData$hd_tema:
+# the theme of the client being viewed (app.R, TEMA stage 5); read inside a
+# render, a change of theme redraws. Outside a reactive context (a download's
+# content) it is read isolated. No session, or no reactive: the default.
 tema_de_sesion <- function(session = shiny::getDefaultReactiveDomain()) {
   rv <- if (is.null(session)) NULL else session$userData$hd_tema
-  tema_resolver(if (is.function(rv)) rv() else NULL)
+  if (!is.function(rv)) return(tema_resolver(NULL))
+  v <- tryCatch(rv(), error = function(e)
+    tryCatch(shiny::isolate(rv()), error = function(e2) NULL))
+  tema_resolver(v)
+}
+
+# A client's theme, read from its group_config.rds when called (never when
+# this file loads: rule 29). For what runs outside the client's session (the
+# emails). Any failure -- no file, a failed read, no load_group_config() in a
+# test by pieces -- is the default theme: a theme never stops anything.
+tema_de_cliente <- function(client_id) {
+  if (is.null(client_id) || !nzchar(client_id %||% "")) return(tema_resolver(NULL))
+  leer <- get0("load_group_config", mode = "function")
+  if (is.null(leer)) return(tema_resolver(NULL))
+  cfg <- tryCatch(leer(client_id = client_id), error = function(e) NULL)
+  tema_resolver(cliente = if (is.list(cfg)) cfg$tema else NULL)
 }
 
 # Every --hd-* value of a theme, resolved: paleta + comunes + its roles +
@@ -895,11 +923,34 @@ hd_bs_theme <- function() {
                   primary = HD_TEMAS$clasico$tokens$primario)
 }
 
+# The browser side of the theme (TEMA stage 5), one line of JavaScript:
+#  - first paint: the default theme, or the one this browser last saw for
+#    the last client it showed (localStorage "hd-tema:<client>"), if it is
+#    in the closed list. Only a convenience: no storage (private window,
+#    blocked) paints the default and the server corrects it;
+#  - the server's "hdTema" message ({tema, cliente}) sets the attribute and
+#    remembers it per client. Anything not in the list is the default.
+.tema_js <- function() {
+  lista <- paste0("['", paste(names(HD_TEMAS), collapse = "','"), "']")
+  paste0(
+    "(function(){var L=", lista, ",D='", HD_TEMA_OMISION, "',h=document.documentElement;",
+    "function ok(t){return L.indexOf(t)>=0?t:D;}",
+    "var t=D;try{var c=localStorage.getItem('hd-tema-cliente');",
+    "if(c)t=ok(localStorage.getItem('hd-tema:'+c));}catch(e){}",
+    "h.setAttribute('data-hd-tema',t);",
+    "function reg(){if(!(window.Shiny&&Shiny.addCustomMessageHandler))return false;",
+    "Shiny.addCustomMessageHandler('hdTema',function(m){var v=ok(m&&m.tema);",
+    "h.setAttribute('data-hd-tema',v);",
+    "try{if(m&&m.cliente){localStorage.setItem('hd-tema:'+m.cliente,v);",
+    "localStorage.setItem('hd-tema-cliente',m.cliente);}}catch(e){}});return true;}",
+    "if(!reg())document.addEventListener('DOMContentLoaded',reg);})();")
+}
+
 # Goes in a page's header: the generated tokens and the theme attribute.
 # tags$head() is hoisted into <head>, so the attribute is set while the page
-# parses, before anything paints, and no server message is involved: nothing
-# here can hold up the start. The CSS does not depend on it either (:root
-# carries the default theme).
+# parses, before anything paints, and no server message is needed for it:
+# nothing here can hold up the start. The CSS does not depend on it either
+# (:root carries the default theme). The server's message changes it later.
 tema_head <- function() {
   htmltools::tags$head(
     htmltools::tags$link(rel = "stylesheet", type = "text/css",
@@ -909,7 +960,6 @@ tema_head <- function() {
     # The Bootstrap bridge: rules only under themes with puente = TRUE.
     htmltools::tags$link(rel = "stylesheet", type = "text/css",
                          href = paste0("hd_tema_bootstrap.css?v=", HD_TEMAS_CSS_VERSION)),
-    htmltools::tags$script(htmltools::HTML(paste0(
-      "document.documentElement.setAttribute('data-hd-tema','", HD_TEMA_OMISION, "');")))
+    htmltools::tags$script(htmltools::HTML(.tema_js()))
   )
 }
