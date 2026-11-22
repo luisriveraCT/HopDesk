@@ -753,8 +753,10 @@ hd_filas <- function(datos, columnas, id_col = "id") {
     out$nivel <- I(pmin(nv, 1L))
   }
   # filas_resumen (T17c): a summary row is a result, so a 0 in a compact
-  # column with cero = "vacio" still reads "$0" (a position of $0 is not an
-  # absence), and the sign's tone is theirs alone: the data rows of such a
+  # column with cero = "vacio" still reads "0" (a position of 0 is not an
+  # absence), its full amount as monto_moneda() writes it in the column's
+  # own currency field, as valores() does (T55: no "$", the catalog's
+  # decimals), and the sign's tone is theirs alone: the data rows of such a
   # table are flows of one direction (the Flujo's Pagos are positive amounts
   # going out), green would say the wrong thing.
   if (!is.null(out$resumen)) {
@@ -765,7 +767,11 @@ hd_filas <- function(datos, columnas, id_col = "id") {
         cero <- es_res & !is.na(v$orden) & v$orden == 0
         if (any(cero)) {
           v$mostrar <- I(replace(unclass(v$mostrar), cero, .hd_dinero_compacto(0)))
-          v$completo <- I(replace(unclass(v$completo), cero, "$0.00"))
+          m <- datos[[col$moneda %||% ""]]
+          mon0 <- if (is.null(m)) rep(NA_character_, sum(cero)) else as.character(m)[cero]
+          dec0 <- moneda_decimales(toupper(trimws(mon0))); dec0[is.na(dec0)] <- 2L
+          v$completo <- I(replace(unclass(v$completo), cero,
+                                  monto_moneda(rep(0, sum(cero)), mon0, decimales = dec0, codigo = FALSE)))
         }
       }
       if (identical(col$tono, "signo") && !is.null(v$tono)) v$tono <- I(replace(unclass(v$tono), !es_res, ""))

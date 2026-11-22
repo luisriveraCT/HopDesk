@@ -65,6 +65,25 @@ test_that(".resumen travels only when the data has it; anything but a-z and _ is
   expect_null(hd_filas(D[, setdiff(names(D), ".resumen")], COLS)$resumen)
 })
 
+test_that("a summary row's 0 in a compact column reads 0, its full amount without \"$\" (T55)", {
+  d <- D; d$c2[4] <- 0                      # "neto" of c2: a summary row worth 0
+  d$Moneda[5] <- "JPY"; d$c2[5] <- 0        # "acumulada": 0 in a currency with no decimals
+  c2 <- hd_filas(d, COLS)$celdas[[4]]
+  expect_identical(unclass(c2$mostrar)[4:5], rep(.hd_dinero_compacto(0), 2))
+  expect_identical(unclass(c2$completo)[4:5], c(monto_moneda(0, "MXN", decimales = 2L, codigo = FALSE),
+                                                monto_moneda(0, "JPY", decimales = 0L, codigo = FALSE)))
+  expect_identical(unclass(c2$completo)[4:5], c("0.00", "0"))
+  # Counter-check: no "$" anywhere in the column, and a DATA row's 0 stays
+  # empty (cero = "vacio": an absence there, not a result).
+  expect_false(any(grepl("$", c(unclass(c2$mostrar), unclass(c2$completo)), fixed = TRUE)))
+  expect_identical(c(unclass(c2$mostrar)[1], unclass(c2$completo)[1]), c("", ""))
+  # The column's own currency field rules, as in valores() (E2): the table's
+  # Moneda says MXN, this column's Mon2 says JPY, so its 0 has no decimals.
+  d2 <- d; d2$Moneda[4] <- "MXN"; d2$Mon2 <- "JPY"
+  cols2 <- COLS; cols2[[4]] <- col_dinero("c2", moneda = "Mon2", formato = "compacto", cero = "vacio")
+  expect_identical(unclass(hd_filas(d2, cols2)$celdas[[4]]$completo)[4], "0")
+})
+
 # ── sumas_columnas ──────────────────────────────────────────────────────────
 test_that("a compact column says so in its metadata (its group sums read the same); a plain one doesn't", {
   m <- hd_columnas_meta(COLS)
