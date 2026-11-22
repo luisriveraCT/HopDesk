@@ -1016,7 +1016,9 @@ unregister_username <- function(username) {
       desc <- evento$descripcion %||% ""
       log_action(user = evento$usuario %||% "unknown", module = evento$modulo %||% "registro",
                  action = evento$accion %||% "guardar",
-                 description = trimws(sprintf("%s [tabla=%s filas %s]", desc, key, filas)),
+                 # T72-D: the event's own words only; the table and the counts
+                 # are in metadata, which only staff see in the detail.
+                 description = trimws(desc),
                  target_id = evento$target_id %||% key, metadata = meta,
                  client_id = cid, viewer_home_client_id = evento$home %||% cid)
     }

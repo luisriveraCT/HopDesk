@@ -1009,6 +1009,25 @@ auditLogViewerServer <- function(id, shared, mode,
         # is staff's to chase, never a client's activity.
         hide <- hide | (!is.na(df$module) & df$module == "registro" & !is.na(df$action) & df$action == "sin_evento")
         df <- df[!hide, , drop = FALSE]
+        # T72-D: the write layer's technical detail is staff's too. An entry
+        # with its mark (tabla + filas_antes + filas_despues in metadata) loses
+        # those keys, diferencia and origen -- the detail and the PDF read this
+        # same table -- and an old " [tabla=...]" suffix at the END of a
+        # description is cut. A module's own metadata is left as it is.
+        if (nrow(df) && "metadata" %in% names(df)) {
+          js <- as.character(df$metadata)
+          marca <- !is.na(js) & grepl('"tabla"', js, fixed = TRUE) &
+                   grepl('"filas_antes"', js, fixed = TRUE) & grepl('"filas_despues"', js, fixed = TRUE)
+          if (any(marca)) df$metadata[marca] <- vapply(js[marca], function(x) {
+            m <- tryCatch(jsonlite::fromJSON(x, simplifyVector = FALSE), error = function(e) NULL)
+            if (!is.list(m) || is.null(names(m))) return(x)
+            m <- m[setdiff(names(m), c("tabla", "filas_antes", "filas_despues", "diferencia", "origen"))]
+            if (!length(m)) return(NA_character_)
+            as.character(jsonlite::toJSON(m, auto_unbox = TRUE, null = "null"))
+          }, "", USE.NAMES = FALSE)
+        }
+        if (nrow(df) && "description" %in% names(df))
+          df$description <- sub(" \\[tabla=[^]]*\\]$", "", df$description)
       }
       df
     })

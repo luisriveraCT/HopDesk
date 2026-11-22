@@ -62,9 +62,10 @@ e <- L$x
 ok("1 one entry, with the event's user, module, action and the client / home",
    length(e) == 1L && e[[1]]$user == "ana" && e[[1]]$module == "pruebas" && e[[1]]$action == "editar" &&
      e[[1]]$client_id == CID && e[[1]]$home == "hogar")
-ok("1 the description keeps the event's and adds the table and its rows (3 -> 4)",
-   length(e) == 1L && grepl("Editó una fila", e[[1]]$description, fixed = TRUE) &&
-     grepl("tabla=t72_prueba.rds filas 3 -> 4", e[[1]]$description, fixed = TRUE))
+ok("1 the description is the event's own; the table and its rows (3 -> 4) are in metadata (T72-D)",
+   length(e) == 1L && identical(e[[1]]$description, "Editó una fila") &&
+     identical(e[[1]]$metadata$tabla, "t72_prueba.rds") && identical(e[[1]]$metadata$filas_antes, 3L) &&
+     identical(e[[1]]$metadata$filas_despues, 4L))
 d <- if (length(e)) e[[1]]$metadata$diferencia else NULL
 ok("1 what changed: 1 new (r9), 1 changed (r2: monto 20 -> 99), 0 removed",
    !is.null(d) && identical(unname(d$n), c(1L, 1L, 0L)) && identical(d$cambiadas$r2$monto, list(antes = 20, despues = 99)) &&
@@ -79,7 +80,8 @@ for (k in c("usuarios.rds", "pending_invites.rds", "erp_connections.rds")) {
   sembrar(k, tabla())
   quieto(modificar_tabla(k, CID, esquema, cambio, evento = EV))
   ok(sprintf("2 %s: counts only (rows 3 -> 4), no difference", k),
-     length(L$x) == 1L && is.null(L$x[[1]]$metadata$diferencia) && grepl("filas 3 -> 4", L$x[[1]]$description, fixed = TRUE) &&
+     length(L$x) == 1L && is.null(L$x[[1]]$metadata$diferencia) &&
+       identical(L$x[[1]]$metadata$filas_antes, 3L) && identical(L$x[[1]]$metadata$filas_despues, 4L) &&
        !grepl("HASH-|TOKEN-", texto(L$x)))
 }
 

@@ -56,7 +56,7 @@ cat("   texts of the seed (what a client's Actividad shows):\n")
 for (e in L$x) cat("     ", e$client_id %||% "?", "|", e$user, "|", e$action, "|", e$description, "\n")
 semilla_desc <- vapply(L$x, `[[`, "", "description")
 ok("2 the seed's texts name the catalog parts only (no client data)",
-   all(grepl("^Catálogo de pronósticos: (métricas|fuentes|métodos|suscripciones) iniciales \\[tabla=", semilla_desc)))
+   all(grepl("^Catálogo de pronósticos: (métricas|fuentes|métodos|suscripciones) iniciales$", semilla_desc)))
 n1 <- .mem_escrituras; L$x <- list()
 quieto(forecasting_seed_if_empty(client_id = CID))
 ok("4 seed, a second time with nothing new: no write, no entry", .mem_escrituras == n1 && !length(L$x))
@@ -74,9 +74,9 @@ ok("completar: PRIME added; metrics and subscriptions written as 2 sistema:forec
 # save_forecasting_* write with .s3_write() directly: the entry carries the
 # table and its row counts (13 -> 14), not a difference by id (T72-B: a
 # direct .s3_write has no table before it in hand).
-ok("2 completar: a fixed text with the table and its counts, no client data",
-   all(grepl("^Catálogo de pronósticos: se agregaron métricas nuevas de la siembra \\[tabla=forecasting_(metrics|subscriptions)\\.rds filas 13 -> 14\\]$",
-             vapply(L$x, `[[`, "", "description"))))
+ok("2 completar: a fixed text, no client data; the table and its counts (13 -> 14) are in metadata (T72-D)",
+   all(vapply(L$x, `[[`, "", "description") == "Catálogo de pronósticos: se agregaron métricas nuevas de la siembra") &&
+     all(vapply(L$x, function(e) identical(e$metadata$filas_antes, 13L) && identical(e$metadata$filas_despues, 14L), TRUE)))
 cat("   texts of completar:\n"); for (e in L$x) cat("     ", e$client_id, "|", e$user, "|", e$description, "\n")
 n1 <- .mem_escrituras; L$x <- list()
 nuevas2 <- quieto(forecasting_completar_catalogo(CID))
