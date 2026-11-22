@@ -188,6 +188,7 @@
   --hd-leg-superficie-2-eef1f5: var(--hd-superficie-2);
   --hd-leg-superficie-2-eef1f8: var(--hd-superficie-2);
   --hd-leg-superficie-2-f1f3f5: var(--hd-superficie-2);
+  --hd-leg-superficie-2-f2f2f2: var(--hd-superficie-2);
   --hd-leg-superficie-f5f0e8: var(--hd-superficie);
   --hd-leg-texto-000000: var(--hd-texto);
   --hd-leg-texto-07090d: var(--hd-texto);
@@ -411,6 +412,7 @@
   --hd-leg-superficie-2-eef1f5: #EEF1F5;
   --hd-leg-superficie-2-eef1f8: #EEF1F8;
   --hd-leg-superficie-2-f1f3f5: #F1F3F5;
+  --hd-leg-superficie-2-f2f2f2: #F2F2F2;
   --hd-leg-superficie-f5f0e8: #F5F0E8;
   --hd-leg-texto-000000: #000000;
   --hd-leg-texto-07090d: #07090D;

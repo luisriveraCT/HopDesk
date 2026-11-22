@@ -67,7 +67,7 @@ archivos <- c("app.R",
   "R/global.R" = 16L,
   "R/hd_columnas.R" = 9L,
   "R/ledger_module.R" = 3L,
-  "R/pagos_audit_viewer_module.R" = 7L,
+  "R/pagos_audit_viewer_module.R" = 0L,       # TEMA 4: the receipt paints in R ({{rol}}, tema_pintar)
   "R/pasivos_table_module.R" = 3L,
   "R/pasivos_table_styles.R" = 4L,    # stage 4: only the currency badges (.PASIVOS_CUR_COLORES), with TEMA 4b
   "R/pasivos_wizard_module.R" = 2L,
@@ -250,7 +250,7 @@ ok("the generated CSS puts the default theme on :root",
 # A migration (stage 4) may add legacy tokens, but only by removing at least
 # as many hand-written colours: raise .TOPE_LEGADO and lower .TRINQUETE in
 # the same commit. Their sum never grows. Then the legacy only shrinks.
-.TOPE_LEGADO   <- 219L   # stage 4: cashflow_preview.css (70 -> 0) +22, pasivos_table_styles.R (39 -> 4) +13; TEMA-P1: pasivos' dead CSS gone, -13; treasury_map_module.R (76 -> 4) +37; bancos_module.R (62 -> 11) +18; cashflow_export_module.R (203 -> 0) +18, its tags to etq-* -2; ui_components.R Calendario (-125) +36, Notas (-35) +9; the rest (-64) +9; reporte_module.R (157 -> 0) +31; hdtable.css palette and bubble (23 -> 12) +18; the rest (12 -> 0) +5; requisiciones.css (28 -> 0) +1; email_service.R (79 -> 0) +9; settings_policies.R (20 -> 0) +8; app.R (99 -> 0) +2
+.TOPE_LEGADO   <- 220L   # stage 4: cashflow_preview.css (70 -> 0) +22, pasivos_table_styles.R (39 -> 4) +13; TEMA-P1: pasivos' dead CSS gone, -13; treasury_map_module.R (76 -> 4) +37; bancos_module.R (62 -> 11) +18; cashflow_export_module.R (203 -> 0) +18, its tags to etq-* -2; ui_components.R Calendario (-125) +36, Notas (-35) +9; the rest (-64) +9; reporte_module.R (157 -> 0) +31; hdtable.css palette and bubble (23 -> 12) +18; the rest (12 -> 0) +5; requisiciones.css (28 -> 0) +1; email_service.R (79 -> 0) +9; settings_policies.R (20 -> 0) +8; app.R (99 -> 0) +2; pagos_audit_viewer_module.R (7 -> 0) +1
 .TOTAL_INICIAL <- 1338L   # sum(.TRINQUETE) + .TOPE_LEGADO on e2d3882 + TEMA stage 1
 leg <- tema$.HD_LEGADO
 ok(sprintf("legacy tokens: %d (ratchet %d)", length(leg), .TOPE_LEGADO), length(leg) <= .TOPE_LEGADO)

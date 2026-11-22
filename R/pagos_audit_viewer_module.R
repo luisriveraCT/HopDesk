@@ -298,7 +298,7 @@ pagosAuditViewerServer <- function(id, shared) {
         row <- selected_record()
         if (is.null(row) || !nrow(row)) { writeLines("Sin datos.", file); return() }
 
-        html_content <- .build_pago_receipt_html(row)
+        html_content <- .build_pago_receipt_html(row, tema = tema_de_sesion())
         tmp_html <- tempfile(fileext = ".html")
         on.exit(unlink(tmp_html), add = TRUE)
         writeLines(html_content, tmp_html, useBytes = FALSE)
@@ -427,7 +427,7 @@ pagosAuditViewerServer <- function(id, shared) {
 # unmasked detail modal to reach, not a shortcut around the masking. Every
 # other tipo (2026-08-26 extension) shows its detalle key/value pairs
 # instead of a beneficiary table.
-.build_pago_receipt_html <- function(row) {
+.build_pago_receipt_html <- function(row, tema = NULL) {
   # See the identical is.na()-explicit check (and its comment) in the detail
   # modal's observeEvent above -- kept in sync deliberately, not %||%-based.
   is_pago <- is.na(row$tipo[1]) || identical(row$tipo[1], "pago_ppl")
@@ -444,7 +444,7 @@ pagosAuditViewerServer <- function(id, shared) {
         monto_moneda(ben$importe[i], row$moneda[1] %||% NA_character_, codigo = FALSE),
         htmltools::htmlEscape(ben$concepto[i] %||% "")
       ), character(1)), collapse = "\n")
-    ) else "<p style='color:#888;'>Sin beneficiarios registrados.</p>"
+    ) else "<p style='color:{{leg-texto-2-888888}};'>Sin beneficiarios registrados.</p>"
     total_html <- sprintf('<div class="total">Total: %s (%d pago(s))</div>',
                           monto_moneda(row$total[1] %||% NA, row$moneda[1] %||% NA_character_),
                           as.integer(row$n_pagos[1] %||% 0L))
@@ -459,7 +459,7 @@ pagosAuditViewerServer <- function(id, shared) {
         htmltools::htmlEscape(k),
         htmltools::htmlEscape(paste(unlist(det[[k]]), collapse = ", "))
       ), character(1)), collapse = "\n"), "</tbody></table>")
-    else "<p style='color:#888;'>Sin detalle adicional registrado.</p>"
+    else "<p style='color:{{leg-texto-2-888888}};'>Sin detalle adicional registrado.</p>"
     total_html <- if (!is.na(row$total[1] %||% NA_real_))
       sprintf('<div class="total">Total: %s</div>',
              monto_moneda(row$total[1], row$moneda[1] %||% NA_character_)) else ""
@@ -467,18 +467,18 @@ pagosAuditViewerServer <- function(id, shared) {
     title_txt <- "Recibo de archivo generado"
   }
 
-  sprintf('
+  tema_pintar(sprintf('
 <!DOCTYPE html><html><head><meta charset="utf-8">
 <style>
-  body { font-family: Arial, sans-serif; color: #222; padding: 24px; }
+  body { font-family: Arial, sans-serif; color: {{leg-texto-222222}}; padding: 24px; }
   h1 { font-size: 18px; margin-bottom: 4px; }
-  .meta { font-size: 12px; color: #444; margin-bottom: 16px; }
+  .meta { font-size: 12px; color: {{leg-texto-444444}}; margin-bottom: 16px; }
   .meta div { margin-bottom: 2px; }
   table { width: 100%%; border-collapse: collapse; font-size: 11px; }
-  th, td { border: 1px solid #ccc; padding: 6px 8px; }
-  th { background: #f2f2f2; text-align: left; }
+  th, td { border: 1px solid {{borde-fuerte}}; padding: 6px 8px; }
+  th { background: {{leg-superficie-2-f2f2f2}}; text-align: left; }
   .total { text-align: right; font-weight: bold; margin-top: 10px; font-size: 13px; }
-  .footer { margin-top: 24px; font-size: 10px; color: #888; }
+  .footer { margin-top: 24px; font-size: 10px; color: {{leg-texto-2-888888}}; }
 </style></head><body>
   <h1>%s</h1>
   <div class="meta">
@@ -505,7 +505,7 @@ pagosAuditViewerServer <- function(id, shared) {
     htmltools::htmlEscape(row$id[1] %||% ""),
     body_html,
     total_html
-  )
+  ), tema)
 }
 
 # =============================================================================

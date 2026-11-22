@@ -17,6 +17,7 @@ ok <- function(label, expr) {
   if (isTRUE(r)) { cat(" PASS:", label, "\n"); .pass <<- .pass + 1L } else { cat(" FAIL:", label, "\n"); .fail <<- .fail + 1L }
 }
 source("R/monedas.R"); source("R/i18n.R")
+source("R/tema_registro.R")   # the receipt paints with tema_pintar() (TEMA 4)
 .i18n_dir <- file.path(getwd(), "www", "i18n")
 todas <- function(archivo) {   # every function a file defines, only the definitions
   for (e in parse(archivo, keep.source = FALSE, encoding = "UTF-8"))

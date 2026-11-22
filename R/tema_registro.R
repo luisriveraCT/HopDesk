@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 17L
+HD_TEMAS_CSS_VERSION <- 18L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -430,6 +430,7 @@ HD_TEMAS <- list(
   `superficie-2-eef1f5` = "#EEF1F5",
   `superficie-2-eef1f8` = "#EEF1F8",
   `superficie-2-f1f3f5` = "#F1F3F5",
+  `superficie-2-f2f2f2` = "#F2F2F2",
   `superficie-f5f0e8` = "#F5F0E8",
   `texto-000000` = "#000000",
   `texto-07090d` = "#07090D",
@@ -586,6 +587,21 @@ tema_tokens <- function(tema = HD_TEMA_OMISION) {
 
 # "<rol>-p<N>" (no legacy prefix): the role at N % over the surface,
 # flattened; what a retired tint leaves in R code.
+# A standalone document (a mail, the report's iframe, a receipt, a PDF) cannot
+# use var(--hd-*): its colours are {{rol}} or {{rol@pct}} markers that this
+# turns into the theme's values (tema_color() / tema_mezcla()). `tema` NULL is
+# the default theme. One copy for every document that paints in R.
+tema_pintar <- function(html, tema = NULL) {
+  tema <- tema %||% HD_TEMA_OMISION
+  marcas <- unique(regmatches(html, gregexpr("\\{\\{[a-z0-9-]+(@[0-9]+)?\\}\\}", html))[[1]])
+  for (mk in marcas) {
+    p <- strsplit(substr(mk, 3L, nchar(mk) - 2L), "@", fixed = TRUE)[[1]]
+    v <- if (length(p) == 2L) tema_mezcla(p[1], as.integer(p[2]), tema) else tema_color(p[1], tema)
+    html <- gsub(mk, v, html, fixed = TRUE)
+  }
+  html
+}
+
 tema_color <- function(rol, tema = HD_TEMA_OMISION) {
   tk <- tema_tokens(tema)
   v <- tk[[rol]]
