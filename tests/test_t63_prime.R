@@ -26,18 +26,40 @@ credito <- list(categoria = "financiero", flavor = "credito_simple", nombre = "C
                 plazo_meses = 12L, frecuencia_pago = "mensual", dia_pago = 15L, periodo_gracia = 0L,
                 metodo_amortizacion = "francesa")
 
-test_that("FRED: .fetch_prime() pide la serie DPRIME y devuelve las dos últimas observaciones", {
-  pedida <- NULL
+# T76d: what used to be one test_that, split in four with their own names and
+# the same expectations, so the CI's public annotation (test names only) says
+# which one fails on Linux. httr::GET is mocked for the calling test; the URL
+# it was asked for lands in the returned environment's $url.
+con_fred_simulado <- function(env = parent.frame()) {
+  pedida <- new.env()
   json <- '{"observations":[{"date":"2026-11-18","value":"7.50"},{"date":"2026-11-17","value":"7.50"},{"date":"2026-11-14","value":"."}]}'
-  local_mocked_bindings(GET = function(url, ...) { pedida <<- url
+  local_mocked_bindings(GET = function(url, ...) { pedida$url <- url
     structure(list(status_code = 200L, content = charToRaw(json), headers = list(`content-type` = "application/json")),
-              class = "response") }, .package = "httr")
+              class = "response") }, .package = "httr", .env = env)
+  pedida
+}
+
+test_that("FRED: .fetch_prime() pide la serie DPRIME", {
+  pedida <- con_fred_simulado()
   r <- .fetch_prime(api_key = "k")
-  expect_true(grepl("series_id=DPRIME", pedida, fixed = TRUE))
+  expect_true(grepl("series_id=DPRIME", pedida$url, fixed = TRUE))
+})
+
+test_that("FRED: .fetch_prime() devuelve la última observación y su fecha", {
+  con_fred_simulado()
+  r <- .fetch_prime(api_key = "k")
   expect_identical(r$today, 7.5); expect_identical(r$date_today, as.Date("2026-11-18"))
+})
+
+test_that("FRED: sin error con una respuesta válida, y SOFR pide su propia serie", {
+  pedida <- con_fred_simulado()
+  r <- .fetch_prime(api_key = "k")
   expect_null(r$error)
   r2 <- .fetch_sofr(api_key = "k")                     # SOFR still asks for its own series
-  expect_true(grepl("series_id=SOFR&", pedida, fixed = TRUE))
+  expect_true(grepl("series_id=SOFR&", pedida$url, fixed = TRUE))
+})
+
+test_that("FRED: sin API key avisa que no está configurado", {
   expect_identical(.fetch_prime(api_key = "")$error, "FRED_API_KEY no configurado")
 })
 
