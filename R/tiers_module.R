@@ -232,25 +232,25 @@ tiersUI <- function(id) {
   bloqueados   <- permisos_bloqueados(tier)
   tier_es_tope <- nivel_es_tope(tier)
 
-  perm_rows <- lapply(perm_visible_keys(viewer_is_staff), function(k) {
+  perm_fila <- function(k) {
     is_locked <- k %in% bloqueados
     is_override <- k %in% names(overrides)
     current_val <- if (is_locked) TRUE else isTRUE(current_perms[[k]])
 
     badge <- if (is_locked && tier_es_tope) {
-      tags$span(class = "tiers-perm-override", style = "color:#7b1fa2;",
-                icon("lock", class = "fa-xs"), " obligatorio — principal")
+      tags$span(class = "tiers-perm-override", style = "color:var(--hd-lila-fg);",
+                icon("lock", class = "fa-xs"), " ", tr("permisos.insignia.obligatorio_principal"))
     } else if (is_locked) {
-      tags$span(class = "tiers-perm-override", style = "color:#198754;",
-                icon("lock", class = "fa-xs"), " obligatorio")
+      tags$span(class = "tiers-perm-override", style = "color:var(--hd-exito-texto);",
+                icon("lock", class = "fa-xs"), " ", tr("permisos.insignia.obligatorio"))
     } else if (is_override) {
-      tags$span(class = "tiers-perm-override", "override")
+      tags$span(class = "tiers-perm-override", tr("permisos.insignia.personalizado"))
     } else {
-      tags$span(class = "tiers-perm-default", "default (tier)")
+      tags$span(class = "tiers-perm-default", tr("permisos.insignia.por_nivel"))
     }
 
     tooltip_text <- if (is_locked && tier_es_tope)
-      "Este permiso está bloqueado para cuentas principal. Modifícalo directamente en S3 para cambiarlo."
+      tr("permisos.insignia.bloqueado_principal")
     else
       NULL
 
@@ -273,11 +273,32 @@ tiersUI <- function(id) {
             tags$span(permiso_nombre(k),
                       class = if (is_locked) "small fw-semibold" else "small")),
         badge)
+  }
+
+  # T79: one block per permission group, with its title. Grouped AFTER
+  # perm_visible_keys(): a client never sees an internal key, and a group left
+  # empty (e.g. "interno" for a client) is not drawn. A key whose group is not
+  # in PERMISOS_GRUPOS falls into "sin_grupo" ("Otros"), last: none disappears.
+  claves   <- perm_visible_keys(viewer_is_staff)
+  grupo_de <- vapply(claves, function(k) {
+    g <- PERMISOS[[k]]$grupo %||% ""
+    if (g %in% PERMISOS_GRUPOS) g else "sin_grupo"
+  }, character(1))
+  perm_rows <- lapply(intersect(c(PERMISOS_GRUPOS, "sin_grupo"), grupo_de), function(g) {
+    tagList(
+      div(class = "tiers-perm-grupo", `data-grupo` = g,
+          style = paste("padding:6px 12px; font-size:.7rem; font-weight:700;",
+                        "text-transform:uppercase; letter-spacing:.6px;",
+                        "color:var(--hd-texto-2); background:var(--hd-superficie-2);",
+                        "border-bottom:1px solid var(--hd-borde);"),
+          tr(paste0("permisos.grupo.", g))),
+      lapply(claves[grupo_de == g], perm_fila))
   })
 
   display_name <- row$display_name %||% row$username %||% "Usuario"
 
   div(
+    id = ns("editor_permisos_card"),   # T79: "editar" scrolls here
     class = "card border-0 shadow-sm",
     div(
       class = "card-header py-3",
@@ -304,6 +325,13 @@ tiersUI <- function(id) {
     ),
     div(
       class = "card-body p-3",
+      # T79: the permissions sit below the user's data; a short link jumps there.
+      div(class = "text-end mb-1",
+          tags$a(href = "#", class = "small tiers-ir-permisos",
+                 onclick = sprintf(
+                   "document.getElementById('%s')?.scrollIntoView({behavior:'smooth',block:'start'});return false;",
+                   ns("editor_permisos_seccion")),
+                 icon("arrow-down", class = "fa-xs"), " ", tr("permisos.ir_a_permisos"))),
       tags$h6(class = "fw-semibold mb-2 small text-muted text-uppercase", "Datos del usuario"),
       # T31: the user name is shown, not edited (no input: the server never
       # reads one). Job title and e-mail are edited here, next to the name.
@@ -333,7 +361,8 @@ tiersUI <- function(id) {
           tags$label("Tier", class = "form-label small fw-semibold mb-1"),
           selectInput(ns("edit_tier"), NULL,
                       choices = tier_choices, selected = tier, width = "100%")),
-      tags$h6(class = "fw-semibold mb-2 small text-muted text-uppercase", "Permisos granulares"),
+      tags$h6(id = ns("editor_permisos_seccion"),
+              class = "fw-semibold mb-2 small text-muted text-uppercase", "Permisos granulares"),
       div(class = "border rounded", perm_rows),
 
       # ── Allowed clients (principal editing hopdesk/principal with can_jump_clients) ──
@@ -1544,7 +1573,15 @@ tiersServer <- function(id, shared) {
     # The username being edited, never a row position.
     selected_user <- reactiveVal(NULL)
 
-    observeEvent(usuarios_t$editar(), { selected_user(usuarios_t$editar()$id) })
+    observeEvent(usuarios_t$editar(), {
+      selected_user(usuarios_t$editar()$id)
+      # T79: bring the panel into view (the user may have scrolled down the
+      # table to click "editar"). renderUI may not have drawn it yet: retry
+      # for ~3 s, and do nothing if it never appears.
+      shinyjs::runjs(sprintf(
+        "(function(n){var f=function(){var e=document.getElementById('%s');if(e){e.scrollIntoView({behavior:'smooth',block:'start'});}else if(n-->0){setTimeout(f,100);}};f();})(30);",
+        ns("editor_permisos_card")))
+    })
     observeEvent(input$btn_cancel_perms, { selected_user(NULL) })
 
     output$perm_editor_ui <- renderUI({
