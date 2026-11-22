@@ -183,13 +183,18 @@ flujo_pdf <- function(et) {
 flujo_excel <- function(et) {
   n <- length(registro())
   ev("document.querySelector(\".nav-link[data-value='CAL']\").click(); true")
-  if (!esperar_visible(".cf-preview-toggle-btn", 90)) return(invisible(ok(paste(et, "Excel: the preview arrow"), FALSE)))
-  clic(".cf-preview-toggle-btn")
-  if (!esperar_visible("#cfp-btn_export", 60)) return(invisible(ok(paste(et, "Excel: the preview opens"), FALSE)))
+  # Right after the PDF the preview is still open (its arrow hidden): open it
+  # only when its Exportar button is not already there.
+  if (!esperar_visible("#cfp-btn_export", 5)) {
+    if (!esperar_visible(".cf-preview-toggle-btn", 90)) return(invisible(ok(paste(et, "Excel: the preview arrow"), FALSE)))
+    clic(".cf-preview-toggle-btn")
+    if (!esperar_visible("#cfp-btn_export", 60)) return(invisible(ok(paste(et, "Excel: the preview opens"), FALSE)))
+  }
+  Sys.sleep(2)   # the PDF's export window is closing; its hidden copy is still in the page
   clic("#cfp-btn_export")
-  if (!poll_until(function() isTRUE(tryCatch(ev("!!document.getElementById('export_format')"), error = function(x) FALSE)),
+  if (!poll_until(function() isTRUE(tryCatch(ev("!!document.querySelector('.modal.show #export_format')"), error = function(x) FALSE)),
                   timeout_s = 30, interval_s = 1)) return(invisible(ok(paste(et, "Excel: the export window"), FALSE)))
-  ev("(function(){ var s = document.getElementById('export_format');
+  ev("(function(){ var s = document.querySelector('.modal.show #export_format');
        if (s.selectize) s.selectize.setValue('xlsx'); else $(s).val('xlsx').trigger('change'); return true; })()")
   if (!ok(paste(et, "Excel: choosing Excel shows its Exportar button"), esperar_visible("#btn_trigger_xlsx", 30))) return()
   clic("#btn_trigger_xlsx")
