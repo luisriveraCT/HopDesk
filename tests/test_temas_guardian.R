@@ -54,7 +54,7 @@ archivos <- c("app.R",
 # ── 1. Ratchet ───────────────────────────────────────────────────────────────
 # Counts on master e2d3882 (app.R already without its three bs_theme copies).
 .TRINQUETE <- c(
-  "app.R" = 99L,
+  "app.R" = 47L,                  # stage 4: the sign-in page to acceso-* (common tokens)
   "R/audit_log_viewer_module.R" = 17L,
   "R/audit_sticky_ui.R" = 4L,
   "R/auth_reset.R" = 3L,
@@ -187,6 +187,8 @@ contraste <- tema$tema_contraste
   c("etq-c-texto", "etq-c-pastilla"),
   c("modo-pago", "superficie"), c("modo-pago", "modo-pago-suave"),
   c("primario-texto", "modo-pago"),
+  # The access pages (common: the same pair in every theme): field text, the button.
+  c("acceso-texto", "acceso-campo"), c("acceso-fondo", "acceso-oro"),
   # The table engine (www/hdtable.css): neutral badge, the dark summary band,
   # white on the danger button and on the "rows copied" notice.
   c("texto-2", "superficie-2"), c("oscuro-texto", "encabezado"),
@@ -227,9 +229,9 @@ ok("hd_bs_theme() is identical() to the theme app.R wrote three times",
              bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA")))
 app <- leer("app.R")
 app_codigo <- sub("#.*$", "", app)   # comments may name the functions
-ok("app.R: no bs_theme() of its own, hd_bs_theme() three times, tema_head() once",
+ok("app.R: no bs_theme() of its own, hd_bs_theme() three times, tema_head() in the ui and the sign-in page",
    !any(grepl("bs_theme\\(", sub("hd_bs_theme\\(", "", app_codigo))) &&
-     sum(grepl("hd_bs_theme\\(\\)", app_codigo)) == 3L && sum(grepl("tema_head\\(\\)", app_codigo)) == 1L)
+     sum(grepl("hd_bs_theme\\(\\)", app_codigo)) == 3L && sum(grepl("tema_head\\(\\)", app_codigo)) == 2L)
 # app.R does not rely on shinyapps' autoload: it source()s each file of R/
 # (T15 and local runs source app.R directly). 2026-11-19: the branch passed
 # test_autocarga_shiny and still failed to start in T15 ("could not find
@@ -524,6 +526,23 @@ otras <- Filter(raiz_hd, setdiff(list.files("www", "\\.css$", recursive = TRUE, 
 ok(sprintf("no other sheet defines --hd-* on :root or [data-hd-tema] (%s)", paste(otras, collapse = ", ")),
    length(otras) == 0L)
 ok("the :root check sees a generated sheet (it is not blind)", raiz_hd("www/hd_temas.css"))
+
+# ── The access pages' tokens (TEMA stage 4, app.R; integrador's conditions) ──
+# HopDesk's brand before anyone is known: common tokens (one value in every
+# theme), frozen at today's hex; the sign-in page and the activation page load
+# them with tema_head() (the app's ui, with its own, comes only after sign-in).
+.ACCESO_HOY <- list(`acceso-fondo` = "#07090D", `acceso-tarjeta` = "#0C1520", `acceso-tarjeta-2` = "#0B1420", `acceso-campo` = "#0F1B29", `acceso-campo-foco` = "#122030", `acceso-campo-texto` = "#2A3D52", `acceso-oro` = "#B49444", `acceso-oro-hover` = "#CBA84E", `acceso-texto` = "#D8E4F0", `acceso-texto-foco` = "#E8F0FA", `acceso-texto-2` = "#7A99B8", `acceso-lead` = "#9FB6CC", `acceso-etiqueta` = "#3D5878", `acceso-etiqueta-2` = "#6B8299", `acceso-nota` = "#51708D", `acceso-lema` = "#283F58", `acceso-pie` = "#1B2E40", `acceso-error` = "#E8837A",
+  `acceso-sombra` = "0 40px 100px rgba(0,0,0,0.72), 0 0 0 1px rgba(180,148,68,0.05)")
+ok("acceso-*: all of them are common tokens, none a theme role (one value in every theme)",
+   all(names(.ACCESO_HOY) %in% names(tema$.HD_COMUNES)) &&
+     !any(grepl("^acceso-", unlist(lapply(tema$HD_TEMAS, function(t) names(t$tokens))))) &&
+     setequal(grep("^acceso-", names(tema$.HD_COMUNES), value = TRUE), names(.ACCESO_HOY)))
+ok("acceso-*: each value is today's (frozen)",
+   identical(lapply(names(.ACCESO_HOY), function(n) toupper(tema$.HD_COMUNES[[n]])), lapply(.ACCESO_HOY, toupper) |> unname()))
+app_txt <- leer("app.R")
+entre <- function(desde, hasta) { i <- grep(desde, app_txt)[1]; j <- i - 1L + grep(hasta, app_txt[i:length(app_txt)])[1]; app_txt[i:j] }
+ok("the sign-in page (secure_app's tags_top) loads the tokens with tema_head()",
+   any(grepl("^\\s*tema_head\\(\\)", entre("tags_top = tagList\\(", "head_auth = "))))
 
 cat(sprintf("\n=== %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 16L
+HD_TEMAS_CSS_VERSION <- 17L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -76,6 +76,16 @@ HD_TEMAS_CSS_VERSION <- 16L
   `etq-a-texto` = "#B42318", `etq-a-pastilla` = "#FFE1DE", `etq-a-fila` = "#FFF0F0",
   `etq-b-texto` = "#B54708", `etq-b-pastilla` = "#FFE8D1", `etq-b-fila` = "#FFF3E6",
   `etq-c-texto` = "#8A6100", `etq-c-pastilla` = "#FFF1B8", `etq-c-fila` = "#FFFBE6",
+  # The access pages (sign-in, activation, forgot/reset password, app.R):
+  # HopDesk's own brand, shown before anyone is known, so ONE value in every
+  # theme -- today's (TEMA stage 4, app.R). The guardian freezes them.
+  `acceso-fondo` = "#07090D", `acceso-tarjeta` = "#0C1520", `acceso-tarjeta-2` = "#0B1420",
+  `acceso-campo` = "#0F1B29", `acceso-campo-foco` = "#122030", `acceso-campo-texto` = "#2A3D52",
+  `acceso-oro` = "#B49444", `acceso-oro-hover` = "#CBA84E", `acceso-texto` = "#D8E4F0",
+  `acceso-texto-foco` = "#E8F0FA", `acceso-texto-2` = "#7A99B8", `acceso-lead` = "#9FB6CC",
+  `acceso-etiqueta` = "#3D5878", `acceso-etiqueta-2` = "#6B8299", `acceso-nota` = "#51708D",
+  `acceso-lema` = "#283F58", `acceso-pie` = "#1B2E40", `acceso-error` = "#E8837A",
+  `acceso-sombra` = "0 40px 100px rgba(0,0,0,0.72), 0 0 0 1px rgba(180,148,68,0.05)",
   # Type scale: absorbs today's 46 font sizes (TEMA_inventario.md §5).
   `txt-xs` = "11px", `txt-sm` = "12px", `txt-md` = "13px",
   `txt-base` = "14px", `txt-lg` = "16px", `txt-xl` = "20px",

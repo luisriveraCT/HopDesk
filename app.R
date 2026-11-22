@@ -441,52 +441,52 @@ ui <- bslib::page_navbar(
       HTML('
         <svg width="52" height="52" viewBox="0 0 60 60" fill="none"
              xmlns="http://www.w3.org/2000/svg"
-             style="display:block; margin:0 auto 10px; opacity:0.92;">
+             style="display:block; margin:0 auto 10px; opacity:0.92; color:var(--hd-acceso-oro);">
           <!-- outer dashed ring -->
-          <circle cx="30" cy="30" r="26" stroke="#b49444" stroke-width="0.7"
+          <circle cx="30" cy="30" r="26" stroke="currentColor" stroke-width="0.7"
                   stroke-dasharray="3.2 2.6" opacity="0.6"/>
           <!-- inner ring -->
-          <circle cx="30" cy="30" r="18" stroke="#b49444" stroke-width="0.45"
+          <circle cx="30" cy="30" r="18" stroke="currentColor" stroke-width="0.45"
                   opacity="0.28"/>
           <!-- cardinal crosshair lines -->
-          <line x1="30" y1="2"  x2="30" y2="9"  stroke="#b49444" stroke-width="1.1"/>
-          <line x1="30" y1="51" x2="30" y2="58" stroke="#b49444" stroke-width="1.1"/>
-          <line x1="2"  y1="30" x2="9"  y2="30" stroke="#b49444" stroke-width="1.1"/>
-          <line x1="51" y1="30" x2="58" y2="30" stroke="#b49444" stroke-width="1.1"/>
+          <line x1="30" y1="2"  x2="30" y2="9"  stroke="currentColor" stroke-width="1.1"/>
+          <line x1="30" y1="51" x2="30" y2="58" stroke="currentColor" stroke-width="1.1"/>
+          <line x1="2"  y1="30" x2="9"  y2="30" stroke="currentColor" stroke-width="1.1"/>
+          <line x1="51" y1="30" x2="58" y2="30" stroke="currentColor" stroke-width="1.1"/>
           <!-- 45-degree secondary marks -->
-          <line x1="10" y1="10" x2="14.5" y2="14.5" stroke="#b49444"
+          <line x1="10" y1="10" x2="14.5" y2="14.5" stroke="currentColor"
                 stroke-width="0.6" opacity="0.4"/>
-          <line x1="45.5" y1="45.5" x2="50" y2="50" stroke="#b49444"
+          <line x1="45.5" y1="45.5" x2="50" y2="50" stroke="currentColor"
                 stroke-width="0.6" opacity="0.4"/>
-          <line x1="50" y1="10" x2="45.5" y2="14.5" stroke="#b49444"
+          <line x1="50" y1="10" x2="45.5" y2="14.5" stroke="currentColor"
                 stroke-width="0.6" opacity="0.4"/>
-          <line x1="10" y1="50" x2="14.5" y2="45.5" stroke="#b49444"
+          <line x1="10" y1="50" x2="14.5" y2="45.5" stroke="currentColor"
                 stroke-width="0.6" opacity="0.4"/>
           <!-- center diamond -->
           <rect x="26.5" y="26.5" width="7" height="7"
                 transform="rotate(45 30 30)"
-                stroke="#b49444" stroke-width="0.75"
-                fill="rgba(180,148,68,0.09)"/>
+                stroke="currentColor" stroke-width="0.75"
+                style="fill:color-mix(in srgb, currentColor 9%, transparent)"/>
           <!-- center dot -->
-          <circle cx="30" cy="30" r="1.7" fill="#b49444"/>
+          <circle cx="30" cy="30" r="1.7" fill="currentColor"/>
         </svg>
       '),
 
       # Brand name
       tags$div(
         style = paste0("font-size:1.55rem; font-weight:700; letter-spacing:0.22em; ",
-                       "color:#b49444; text-transform:uppercase;"),
+                       "color:var(--hd-acceso-oro); text-transform:uppercase;"),
         "HopDesk"
       ),
       # Tagline
       tags$div(
-        style = paste0("font-size:0.67rem; color:#283f58; letter-spacing:0.28em; ",
+        style = paste0("font-size:0.67rem; color:var(--hd-acceso-lema); letter-spacing:0.28em; ",
                        "text-transform:uppercase; margin-top:4px; margin-bottom:16px;"),
         tr("niveles.correo.lema")   # the same tagline the emails carry (tema/correos)
       ),
 
     if (is.null(subtitle)) NULL else tags$div(
-      style = paste0("font-size:1.2rem; font-weight:300; color:#7a99b8; ",
+      style = paste0("font-size:1.2rem; font-weight:300; color:var(--hd-acceso-texto-2); ",
                      "letter-spacing:0.04em; margin-bottom:2px;"),
       subtitle
     )
@@ -520,19 +520,20 @@ secured_ui <- shinymanager::secure_app(
   }),
   language = "es",
   tags_top = tagList(
+    tema_head(),   # TEMA: the acceso-* tokens (the login carries no app ui yet)
     tags$style(HTML("
       /* ── HopDesk login skin ─────────────────────────────────── */
 
       /* Page background: near-black with faint angular grid */
       body {
-        background: #07090d !important;
+        background: var(--hd-acceso-fondo) !important;
       }
       body::before {
         content: '';
         position: fixed; inset: 0; z-index: 0; pointer-events: none;
         background-image:
-          linear-gradient(rgba(180,148,68,0.032) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(180,148,68,0.032) 1px, transparent 1px);
+          linear-gradient(color-mix(in srgb, var(--hd-acceso-oro) 3.2%, transparent) 1px, transparent 1px),
+          linear-gradient(90deg, color-mix(in srgb, var(--hd-acceso-oro) 3.2%, transparent) 1px, transparent 1px);
         background-size: 56px 56px;
       }
 
@@ -548,17 +549,16 @@ secured_ui <- shinymanager::secure_app(
       #shinymanager-content .panel,
       #shinymanager-content .card,
       .shinymanager-panel {
-        background: #0c1520 !important;
-        border: 1px solid rgba(180,148,68,0.2) !important;
+        background: var(--hd-acceso-tarjeta) !important;
+        border: 1px solid color-mix(in srgb, var(--hd-acceso-oro) 20%, transparent) !important;
         border-radius: 3px !important;
-        box-shadow: 0 40px 100px rgba(0,0,0,0.72),
-                    0 0 0 1px rgba(180,148,68,0.05) !important;
+        box-shadow: var(--hd-acceso-sombra) !important;
         position: relative; z-index: 1;
       }
 
       /* Labels */
       #shinymanager-content label {
-        color: #3d5878 !important;
+        color: var(--hd-acceso-etiqueta) !important;
         font-size: 0.7rem !important;
         letter-spacing: 0.14em !important;
         text-transform: uppercase !important;
@@ -566,25 +566,25 @@ secured_ui <- shinymanager::secure_app(
 
       /* Text inputs */
       #shinymanager-content .form-control {
-        background: #0f1b29 !important;
-        border: 1px solid rgba(180,148,68,0.2) !important;
-        color: #d8e4f0 !important;
+        background: var(--hd-acceso-campo) !important;
+        border: 1px solid color-mix(in srgb, var(--hd-acceso-oro) 20%, transparent) !important;
+        color: var(--hd-acceso-texto) !important;
         border-radius: 2px !important;
         font-size: 0.9rem !important;
         padding: 9px 12px !important;
       }
       #shinymanager-content .form-control:focus {
-        border-color: rgba(180,148,68,0.55) !important;
-        box-shadow: 0 0 0 3px rgba(180,148,68,0.07) !important;
-        background: #122030 !important;
-        color: #e8f0fa !important;
+        border-color: color-mix(in srgb, var(--hd-acceso-oro) 55%, transparent) !important;
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--hd-acceso-oro) 7%, transparent) !important;
+        background: var(--hd-acceso-campo-foco) !important;
+        color: var(--hd-acceso-texto-foco) !important;
       }
 
       /* Login button */
       #shinymanager-content .btn-primary {
-        background: #b49444 !important;
-        border-color: #b49444 !important;
-        color: #07090d !important;
+        background: var(--hd-acceso-oro) !important;
+        border-color: var(--hd-acceso-oro) !important;
+        color: var(--hd-acceso-fondo) !important;
         font-weight: 700 !important;
         letter-spacing: 0.15em !important;
         border-radius: 2px !important;
@@ -595,13 +595,13 @@ secured_ui <- shinymanager::secure_app(
         margin-top: 6px !important;
       }
       #shinymanager-content .btn-primary:hover {
-        background: #cba84e !important;
-        border-color: #cba84e !important;
+        background: var(--hd-acceso-oro-hover) !important;
+        border-color: var(--hd-acceso-oro-hover) !important;
       }
 
       /* Divider */
       #shinymanager-content hr {
-        border-color: rgba(180,148,68,0.1) !important;
+        border-color: color-mix(in srgb, var(--hd-acceso-oro) 10%, transparent) !important;
         margin-top: 12px !important;
         margin-bottom: 8px !important;
       }
@@ -639,9 +639,9 @@ secured_ui <- shinymanager::secure_app(
   tags_bottom = tagList(
     # T31: "forgot password" opens its own page above secure_app (?olvide=1).
     tags$p(style = "text-align:center; font-size:0.8rem; padding-top:6px;",
-           tags$a(href = "?olvide=1", style = "color:#b49444;", tr("cuentas.olvide.enlace"))),
+           tags$a(href = "?olvide=1", style = "color:var(--hd-acceso-oro);", tr("cuentas.olvide.enlace"))),
     tags$p(
-      style = paste0("text-align:center; color:#1b2e40; font-size:0.7rem; ",
+      style = paste0("text-align:center; color:var(--hd-acceso-pie); font-size:0.7rem; ",
                      "padding-top:10px; letter-spacing:0.08em;"),
       paste0("\u00a9 ", format(Sys.Date(), "%Y"), " HopDesk")
     )
@@ -667,32 +667,32 @@ secured_ui <- shinymanager::secure_app(
       font-size: 0.7rem !important;
       letter-spacing: 0.12em !important;
       text-transform: uppercase !important;
-      color: #6b8299 !important;
+      color: var(--hd-acceso-etiqueta-2) !important;
       font-weight: 400 !important;
       margin-bottom: 4px !important;
     }
 
     /* Text inputs */
     .panel-auth .form-control {
-      border: 1px solid rgba(180,148,68,0.3) !important;
+      border: 1px solid color-mix(in srgb, var(--hd-acceso-oro) 30%, transparent) !important;
       border-radius: 2px !important;
-      background: rgba(180,148,68,0.025) !important;
-      color: #2a3d52 !important;
+      background: color-mix(in srgb, var(--hd-acceso-oro) 2.5%, transparent) !important;
+      color: var(--hd-acceso-campo-texto) !important;
       padding: 9px 12px !important;
       box-shadow: none !important;
     }
     .panel-auth .form-control:focus {
-      border-color: #b49444 !important;
-      box-shadow: 0 0 0 3px rgba(180,148,68,0.1) !important;
-      background: rgba(180,148,68,0.05) !important;
+      border-color: var(--hd-acceso-oro) !important;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--hd-acceso-oro) 10%, transparent) !important;
+      background: color-mix(in srgb, var(--hd-acceso-oro) 5%, transparent) !important;
       outline: none !important;
     }
 
     /* Login button */
     .panel-auth .btn-primary {
-      background: #b49444 !important;
-      border-color: #b49444 !important;
-      color: #fff !important;
+      background: var(--hd-acceso-oro) !important;
+      border-color: var(--hd-acceso-oro) !important;
+      color: var(--hd-blanco) !important;
       font-weight: 600 !important;
       letter-spacing: 0.14em !important;
       border-radius: 2px !important;
@@ -703,13 +703,13 @@ secured_ui <- shinymanager::secure_app(
       margin-top: 4px !important;
     }
     .panel-auth .btn-primary:hover {
-      background: #cba84e !important;
-      border-color: #cba84e !important;
+      background: var(--hd-acceso-oro-hover) !important;
+      border-color: var(--hd-acceso-oro-hover) !important;
     }
 
     /* Divider */
     .panel-auth hr {
-      border-color: rgba(180,148,68,0.18) !important;
+      border-color: color-mix(in srgb, var(--hd-acceso-oro) 18%, transparent) !important;
       margin-top: 14px !important;
       margin-bottom: 8px !important;
     }
