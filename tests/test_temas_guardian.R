@@ -54,7 +54,7 @@ archivos <- c("app.R",
 # ── 1. Ratchet ───────────────────────────────────────────────────────────────
 # Counts on master e2d3882 (app.R already without its three bs_theme copies).
 .TRINQUETE <- c(
-  "app.R" = 47L,                  # stage 4: the sign-in page to acceso-* (common tokens)
+  "app.R" = 19L,                  # stage 4: sign-in and activation pages to acceso-* (common tokens)
   "R/audit_log_viewer_module.R" = 17L,
   "R/audit_sticky_ui.R" = 4L,
   "R/auth_reset.R" = 3L,
@@ -229,9 +229,9 @@ ok("hd_bs_theme() is identical() to the theme app.R wrote three times",
              bslib::bs_theme(version = 5, bootswatch = "flatly", primary = "#0A58CA")))
 app <- leer("app.R")
 app_codigo <- sub("#.*$", "", app)   # comments may name the functions
-ok("app.R: no bs_theme() of its own, hd_bs_theme() three times, tema_head() in the ui and the sign-in page",
+ok("app.R: no bs_theme() of its own, hd_bs_theme() three times, tema_head() in the ui, the sign-in page and the activation page",
    !any(grepl("bs_theme\\(", sub("hd_bs_theme\\(", "", app_codigo))) &&
-     sum(grepl("hd_bs_theme\\(\\)", app_codigo)) == 3L && sum(grepl("tema_head\\(\\)", app_codigo)) == 2L)
+     sum(grepl("hd_bs_theme\\(\\)", app_codigo)) == 3L && sum(grepl("tema_head\\(\\)", app_codigo)) == 3L)
 # app.R does not rely on shinyapps' autoload: it source()s each file of R/
 # (T15 and local runs source app.R directly). 2026-11-19: the branch passed
 # test_autocarga_shiny and still failed to start in T15 ("could not find
@@ -543,6 +543,9 @@ app_txt <- leer("app.R")
 entre <- function(desde, hasta) { i <- grep(desde, app_txt)[1]; j <- i - 1L + grep(hasta, app_txt[i:length(app_txt)])[1]; app_txt[i:j] }
 ok("the sign-in page (secure_app's tags_top) loads the tokens with tema_head()",
    any(grepl("^\\s*tema_head\\(\\)", entre("tags_top = tagList\\(", "head_auth = "))))
+
+ok("the activation / forgot / reset page (.invite_page_shell) loads the tokens with tema_head()",
+   any(grepl("^\\s*tema_head\\(\\)", entre("^\\.invite_page_shell <- function", "^}"))))
 
 cat(sprintf("\n=== %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

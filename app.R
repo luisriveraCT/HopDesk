@@ -738,56 +738,57 @@ secured_ui <- shinymanager::secure_app(
 .invite_page_shell <- function(titulo = tr("cuentas.activacion.titulo_pagina")) {
   fluidPage(
     theme = hd_bs_theme(),
+    tema_head(),   # TEMA: the acceso-* tokens (this page is above secure_app)
     tags$head(
       tags$title(titulo),
       # The address carries a one-time token (?invite=, ?reset=): no
       # Referer leaves this page, and it loads nothing from a third party.
       tags$meta(name = "referrer", content = "no-referrer"),
       tags$style(HTML("
-        body { background:#07090d !important; color:#d8e4f0; }
-        .hd-activate-err { color:#e8837a; font-size:0.78rem; margin:-8px 0 10px; }
+        body { background:var(--hd-acceso-fondo) !important; color:var(--hd-acceso-texto); }
+        .hd-activate-err { color:var(--hd-acceso-error); font-size:0.78rem; margin:-8px 0 10px; }
         .hd-activate-wrap {
           max-width: 420px; margin: 0 auto; padding: 54px 20px 40px;
         }
         .hd-activate-card {
-          background:#0b1420; border:1px solid rgba(180,148,68,0.18);
+          background:var(--hd-acceso-tarjeta-2); border:1px solid color-mix(in srgb, var(--hd-acceso-oro) 18%, transparent);
           border-radius:3px; padding:26px 24px 22px;
         }
         .hd-activate-card label {
-          color:#7a99b8 !important; font-size:0.72rem !important;
+          color:var(--hd-acceso-texto-2) !important; font-size:0.72rem !important;
           letter-spacing:0.12em !important; text-transform:uppercase !important;
           font-weight:600 !important;
         }
         .hd-activate-card .form-control {
-          background:#0f1b29 !important; border:1px solid rgba(180,148,68,0.2) !important;
-          color:#d8e4f0 !important; border-radius:2px !important;
+          background:var(--hd-acceso-campo) !important; border:1px solid color-mix(in srgb, var(--hd-acceso-oro) 20%, transparent) !important;
+          color:var(--hd-acceso-texto) !important; border-radius:2px !important;
           font-size:0.9rem !important; padding:9px 12px !important;
         }
         .hd-activate-card .form-control:focus {
-          border-color:rgba(180,148,68,0.55) !important;
-          box-shadow:0 0 0 3px rgba(180,148,68,0.07) !important;
-          background:#122030 !important;
+          border-color:color-mix(in srgb, var(--hd-acceso-oro) 55%, transparent) !important;
+          box-shadow:0 0 0 3px color-mix(in srgb, var(--hd-acceso-oro) 7%, transparent) !important;
+          background:var(--hd-acceso-campo-foco) !important;
         }
         .hd-activate-card .btn-primary {
-          background:#b49444 !important; border-color:#b49444 !important;
-          color:#07090d !important; font-weight:700 !important;
+          background:var(--hd-acceso-oro) !important; border-color:var(--hd-acceso-oro) !important;
+          color:var(--hd-acceso-fondo) !important; font-weight:700 !important;
           letter-spacing:0.15em !important; border-radius:2px !important;
           text-transform:uppercase !important; font-size:0.76rem !important;
           padding:11px !important; width:100% !important; margin-top:6px !important;
         }
         .hd-activate-card .btn-primary:hover {
-          background:#cba84e !important; border-color:#cba84e !important;
+          background:var(--hd-acceso-oro-hover) !important; border-color:var(--hd-acceso-oro-hover) !important;
         }
-        .hd-activate-note { color:#51708d; font-size:0.78rem; }
-        .hd-activate-lead { color:#9fb6cc; font-size:0.92rem; }
+        .hd-activate-note { color:var(--hd-acceso-nota); font-size:0.78rem; }
+        .hd-activate-lead { color:var(--hd-acceso-lead); font-size:0.92rem; }
         .hd-activate-user {
-          background:#0f1b29; border:1px solid rgba(180,148,68,0.35);
-          border-radius:2px; color:#cba84e; font-weight:700;
+          background:var(--hd-acceso-campo); border:1px solid color-mix(in srgb, var(--hd-acceso-oro) 35%, transparent);
+          border-radius:2px; color:var(--hd-acceso-oro-hover); font-weight:700;
           letter-spacing:0.08em; padding:12px; text-align:center;
           font-size:1.15rem; margin:14px 0;
         }
         .hd-activate-foot {
-          text-align:center; color:#1b2e40; font-size:0.7rem;
+          text-align:center; color:var(--hd-acceso-pie); font-size:0.7rem;
           padding-top:16px; letter-spacing:0.08em;
         }
       "))
@@ -876,7 +877,7 @@ server <- function(input, output, session) {
   # (later::later), so its time tells nothing either: reset_solicitar()
   # (R/auth_reset.R) does the lookup, the limits, the mail, log and alerts.
   olvide_hecho <- reactiveVal(FALSE)
-  .titulo_acceso <- function(clave) tags$h5(style = "color:#b49444; letter-spacing:0.04em;", tr(clave))
+  .titulo_acceso <- function(clave) tags$h5(style = "color:var(--hd-acceso-oro); letter-spacing:0.04em;", tr(clave))
   .volver_login <- function()
     tags$p(class = "hd-activate-note mt-3", tags$a(href = "./", tr("cuentas.olvide.volver")))
   .sin_token_en_barra <- function()
@@ -950,7 +951,7 @@ server <- function(input, output, session) {
     done <- invite_done_rv()
     if (!is.null(done)) {
       return(tagList(
-        tags$h5(style = "color:#b49444; letter-spacing:0.04em;", tr("cuentas.activacion.titulo_hecho")),
+        tags$h5(style = "color:var(--hd-acceso-oro); letter-spacing:0.04em;", tr("cuentas.activacion.titulo_hecho")),
         tags$p(class = "hd-activate-lead",
                tr("cuentas.activacion.anota_usuario"), tags$strong(tr("cuentas.activacion.no_es_correo"))),
         tags$div(class = "hd-activate-user", done$username),
@@ -964,7 +965,7 @@ server <- function(input, output, session) {
     invite <- tryCatch(resolve_invite(token), error = function(e) NULL)
     if (is.null(invite)) {
       return(tagList(
-        tags$h5(style = "color:#b49444; letter-spacing:0.04em;", tr("cuentas.activacion.invalido_titulo")),
+        tags$h5(style = "color:var(--hd-acceso-oro); letter-spacing:0.04em;", tr("cuentas.activacion.invalido_titulo")),
         tags$p(class = "hd-activate-lead", tr("cuentas.activacion.invalido_texto")),
         tags$p(class = "hd-activate-note", tr("cuentas.activacion.invalido_nota")),
         tags$a(href = app_public_url(session), class = "btn btn-primary mt-2", tr("cuentas.activacion.ir"))
@@ -982,14 +983,14 @@ server <- function(input, output, session) {
     # be changed. Under each field, its own error (invite_err_<campo>).
     campo_err <- function(campo) uiOutput(paste0("invite_err_", campo))
     tagList(
-      tags$h5(style = "color:#b49444; letter-spacing:0.04em;", tr("cuentas.activacion.titulo")),
+      tags$h5(style = "color:var(--hd-acceso-oro); letter-spacing:0.04em;", tr("cuentas.activacion.titulo")),
       # One text node, not tags$strong(x) followed by ".": Shiny puts a space
       # between children. Name and client are typed by people: tr_negritas()
       # escapes every piece.
       tags$p(class = "hd-activate-lead",
              tr_negritas("cuentas.activacion.saludo", nombre = invite$display_name, cliente = client_label)),
       tags$p(class = "hd-activate-note", tr("cuentas.activacion.cuenta", correo = invite$email)),
-      tags$hr(style = "border-color:rgba(180,148,68,0.15);"),
+      tags$hr(style = "border-color:color-mix(in srgb, var(--hd-acceso-oro) 15%, transparent);"),
       textInput("invite_nombre", tr("cuentas.activacion.nombre"), value = invite$display_name %||% ""),
       campo_err("nombre"),
       textInput("invite_puesto", tr("cuentas.activacion.puesto")),

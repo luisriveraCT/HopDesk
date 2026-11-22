@@ -54,6 +54,9 @@ source("tests/helpers/tema_comparar_estilos.R")
 DE_MAX <- as.numeric(Sys.getenv("TEMA_DE_MAX", "2"))
 if (is.na(DE_MAX) || DE_MAX < 0) stop("TEMA_DE_MAX must be a number >= 0")
 AVISOS <- list()
+TIEMPOS <- list()   # sign-in page timings per run (TEMA stage 4, app.R)
+# A rise of the sign-in page's median paint over this many ms is a FAIL.
+LOGIN_MS_MAX <- as.numeric(Sys.getenv("TEMA_LOGIN_MS_MAX", "100"))
 # Views that had nothing to open on (dev data, the user's tabs): not a pass,
 # not a fail -- listed at the end so they never go unnoticed (Coordinador).
 NO_CUBIERTAS <- character()
@@ -170,6 +173,39 @@ recorrer <- function(raiz, etiqueta, quien) {
   Sys.sleep(2)
   res[["ENTRAR"]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
   captura(sprintf("%s_%s_ENTRAR", etiqueta, quien))
+  # TEMA stage 4 (app.R): the sign-in page must not get slower (Coordinador:
+  # report a rise over ~100 ms). Five reloads, the median of first contentful
+  # paint and of the moment the user field exists, per run; compared at the end.
+  t_fcp <- t_campo <- numeric()
+  for (k in 1:5) {
+    invisible(b$Page$reload(ignoreCache = FALSE, wait_ = TRUE))
+    poll_until(function() isTRUE(tryCatch(ev("!!document.getElementById('auth-user_id')"), error = function(e) FALSE)), timeout_s = 60, interval_s = 0.1)
+    m <- tryCatch(ev("(function(){ var p = performance.getEntriesByName('first-contentful-paint')[0];
+      var n = performance.getEntriesByType('navigation')[0];
+      return [p ? p.startTime : -1, n ? n.domContentLoadedEventEnd : -1]; })()"), error = function(e) list(-1, -1))
+    t_fcp <- c(t_fcp, as.numeric(m[[1]])); t_campo <- c(t_campo, as.numeric(m[[2]]))
+  }
+  TIEMPOS[[length(TIEMPOS) + 1L]] <<- data.frame(corrida = etiqueta, usuario = quien,
+                                                fcp = stats::median(t_fcp), dom = stats::median(t_campo))
+  cat(sprintf("      | [%s · %s] sign-in page: first contentful paint %.0f ms, DOM ready %.0f ms (median of 5)\n",
+              etiqueta, quien, stats::median(t_fcp), stats::median(t_campo)))
+  # TEMA stage 4 (app.R): the activation and forgot-password pages live above
+  # secure_app; opened with a fake token and the blank form, nothing submitted.
+  for (vp in list(c("ACT_INVALIDA", "?invite=tema-token-falso-0000"), c("OLVIDE", "?olvide=1"))) {
+    invisible(b$Page$navigate(sprintf("http://127.0.0.1:%d/%s", PORT, vp[[2]]), wait_ = TRUE))
+    abre <- poll_until(function() isTRUE(tryCatch(ev("(function(){ var c = document.querySelector('.hd-activate-card');
+      return !!c && c.getClientRects().length > 0 && !!c.querySelector('h5'); })()"), error = function(e) FALSE)), timeout_s = 60)
+    if (ok(sprintf("[%s · %s] %s: the page opens", etiqueta, quien, vp[[1]]), abre)) {
+      Sys.sleep(2)
+      res[[vp[[1]]]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
+      captura(sprintf("%s_%s_%s", etiqueta, quien, vp[[1]]))
+      captura_marca(etiqueta, sprintf("%s_%s_%s", etiqueta, quien, vp[[1]]))
+    }
+  }
+  invisible(b$Page$navigate(sprintf("http://127.0.0.1:%d", PORT), wait_ = TRUE))
+  poll_until(function() isTRUE(tryCatch(ev("!!document.getElementById('auth-user_id')"), error = function(e) FALSE)), timeout_s = 60)
+  Sys.sleep(1)
+  captura_marca(etiqueta, sprintf("%s_%s_ENTRAR", etiqueta, quien))
   u <- usuarios[[quien]]
   ev(sprintf("(function(){ var u = document.getElementById('auth-user_id'), p = document.getElementById('auth-user_pwd');
      u.value = %s; p.value = %s; $(u).trigger('change'); $(p).trigger('change'); return true; })()",
@@ -433,6 +469,7 @@ for (quien in quienes) {
     comunes <- intersect(names(eb), names(er))
     difs <- character()
     nombre <- switch(v, ENTRAR = "sign-in page", FLUJO = "Flujo (vista previa)",
+                     ACT_INVALIDA = "Activación (enlace inválido)", OLVIDE = "Olvidé mi contraseña",
                      CAL_AP = "Calendario · Pagos", NOTAS = "Notas abiertas", BURBUJA = "Burbuja de valor",
                      REQ_NUEVA = "Nueva requisición", REQ_EVID = "Requisición abierta · Evidencia",
                      REQ_COM = "Requisición abierta · Comentarios", POL = "Ajustes · Políticas (simulador)",
@@ -470,6 +507,15 @@ if (length(AVISOS)) {
 }
 cat(sprintf("\nAvisos de color: %d (lista en %s)\n", length(AVISOS), file.path(SALIDA, "avisos_color.csv")))
 cat(sprintf("\nCapturas y estilos: %s\n", SALIDA))
+if (length(TIEMPOS)) {
+  tt <- do.call(rbind, TIEMPOS)
+  for (u in unique(tt$usuario)) {
+    m <- tt[tt$usuario == u & tt$corrida == "master", ]; r <- tt[tt$usuario == u & tt$corrida == "rama", ]
+    if (nrow(m) && nrow(r) && m$fcp > 0 && r$fcp > 0)
+      ok(sprintf("[%s] sign-in page paint: master %.0f ms, branch %.0f ms (rise %+.0f ms, cap %g)", u, m$fcp, r$fcp,
+                 r$fcp - m$fcp, LOGIN_MS_MAX), r$fcp - m$fcp <= LOGIN_MS_MAX)
+  }
+}
 cat(sprintf("\nVistas NO CUBIERTAS: %d%s\n", length(NO_CUBIERTAS),
             if (length(NO_CUBIERTAS)) " (nothing measured there: say so in the report)" else ""))
 for (x in NO_CUBIERTAS) cat("  NOT COVERED", x, "\n")
