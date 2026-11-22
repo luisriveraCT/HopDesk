@@ -441,34 +441,34 @@ ui <- bslib::page_navbar(
       HTML('
         <svg width="52" height="52" viewBox="0 0 60 60" fill="none"
              xmlns="http://www.w3.org/2000/svg"
-             style="display:block; margin:0 auto 10px; opacity:0.92; color:var(--hd-acceso-oro);">
+             style="display:block; margin:0 auto 10px; opacity:0.92;">
           <!-- outer dashed ring -->
-          <circle cx="30" cy="30" r="26" stroke="currentColor" stroke-width="0.7"
+          <circle cx="30" cy="30" r="26" style="stroke:var(--hd-acceso-oro)" stroke-width="0.7"
                   stroke-dasharray="3.2 2.6" opacity="0.6"/>
           <!-- inner ring -->
-          <circle cx="30" cy="30" r="18" stroke="currentColor" stroke-width="0.45"
+          <circle cx="30" cy="30" r="18" style="stroke:var(--hd-acceso-oro)" stroke-width="0.45"
                   opacity="0.28"/>
           <!-- cardinal crosshair lines -->
-          <line x1="30" y1="2"  x2="30" y2="9"  stroke="currentColor" stroke-width="1.1"/>
-          <line x1="30" y1="51" x2="30" y2="58" stroke="currentColor" stroke-width="1.1"/>
-          <line x1="2"  y1="30" x2="9"  y2="30" stroke="currentColor" stroke-width="1.1"/>
-          <line x1="51" y1="30" x2="58" y2="30" stroke="currentColor" stroke-width="1.1"/>
+          <line x1="30" y1="2"  x2="30" y2="9"  style="stroke:var(--hd-acceso-oro)" stroke-width="1.1"/>
+          <line x1="30" y1="51" x2="30" y2="58" style="stroke:var(--hd-acceso-oro)" stroke-width="1.1"/>
+          <line x1="2"  y1="30" x2="9"  y2="30" style="stroke:var(--hd-acceso-oro)" stroke-width="1.1"/>
+          <line x1="51" y1="30" x2="58" y2="30" style="stroke:var(--hd-acceso-oro)" stroke-width="1.1"/>
           <!-- 45-degree secondary marks -->
-          <line x1="10" y1="10" x2="14.5" y2="14.5" stroke="currentColor"
+          <line x1="10" y1="10" x2="14.5" y2="14.5" style="stroke:var(--hd-acceso-oro)"
                 stroke-width="0.6" opacity="0.4"/>
-          <line x1="45.5" y1="45.5" x2="50" y2="50" stroke="currentColor"
+          <line x1="45.5" y1="45.5" x2="50" y2="50" style="stroke:var(--hd-acceso-oro)"
                 stroke-width="0.6" opacity="0.4"/>
-          <line x1="50" y1="10" x2="45.5" y2="14.5" stroke="currentColor"
+          <line x1="50" y1="10" x2="45.5" y2="14.5" style="stroke:var(--hd-acceso-oro)"
                 stroke-width="0.6" opacity="0.4"/>
-          <line x1="10" y1="50" x2="14.5" y2="45.5" stroke="currentColor"
+          <line x1="10" y1="50" x2="14.5" y2="45.5" style="stroke:var(--hd-acceso-oro)"
                 stroke-width="0.6" opacity="0.4"/>
           <!-- center diamond -->
           <rect x="26.5" y="26.5" width="7" height="7"
                 transform="rotate(45 30 30)"
-                stroke="currentColor" stroke-width="0.75"
-                style="fill:color-mix(in srgb, currentColor 9%, transparent)"/>
+                stroke-width="0.75"
+                style="stroke:var(--hd-acceso-oro); fill:color-mix(in srgb, var(--hd-acceso-oro) 9%, transparent)"/>
           <!-- center dot -->
-          <circle cx="30" cy="30" r="1.7" fill="currentColor"/>
+          <circle cx="30" cy="30" r="1.7" style="fill:var(--hd-acceso-oro)"/>
         </svg>
       '),
 
