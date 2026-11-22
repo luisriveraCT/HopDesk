@@ -60,6 +60,9 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
   # Every function the report reaches must be loaded here: this process has
   # nothing else (tests/test_cashflow_excel_resultado.R, part H, walks them).
   fuente("zona.R")
+  # SAP_B1_ERP_TYPE and es_fuente_sap(), which compute_confirmed_flags()
+  # (data_pipeline.R) calls on the papelera's sources (CM44).
+  fuente("erp_connector_registry.R")
   fuente("data_pipeline.R")
   fuente("cashflow_export_module.R")
 
