@@ -286,17 +286,19 @@ pasivos_deuda_server <- function(id, shared, base = function() MONEDA_BASE_OMISI
         Plazo = p$plazo_meses, ProxFecha = p$prox_fecha, ProxMonto = p$prox_monto, Int12 = p$int12,
         stringsAsFactors = FALSE)
     })
-    hd_table_server("tabla", tabla = "deuda_pasivos", datos = filas_tabla,
+    # Nominal and Plazo are optional (shown from the columns menu): with them
+    # the table doesn't fit Luis's 1293 px window (T78, measured in Chrome).
+    hd_table_server("tabla", tabla = "deuda_pasivos", datos = filas_tabla, piezas = "columnas_opc",
       secciones = list(list(campo = "Moneda", orden = function() base()), list(campo = "Grupo")),
       columnas = list(
         col_texto("Acreedor", "tablas.pasivos.deuda.col.acreedor"),
         col_texto("Pasivo", "tablas.pasivos.deuda.col.pasivo"),
         col_texto("Tipo", "tablas.pasivos.deuda.col.tipo"),
         col_dinero("Saldo", "tablas.pasivos.deuda.col.saldo", moneda = "Moneda"),
-        col_numero("Nominal", "tablas.pasivos.deuda.col.nominal", decimales = 2L),
+        col_numero("Nominal", "tablas.pasivos.deuda.col.nominal", decimales = 2L, opcional = TRUE, visible = FALSE),
         col_numero("EAR", "tablas.pasivos.deuda.col.ear", decimales = 2L),
         col_numero("Efectivo", "tablas.pasivos.deuda.col.efectivo", decimales = 2L),
-        col_numero("Plazo", "tablas.pasivos.deuda.col.plazo"),
+        col_numero("Plazo", "tablas.pasivos.deuda.col.plazo", opcional = TRUE, visible = FALSE),
         col_fecha("ProxFecha", "tablas.pasivos.deuda.col.prox_fecha"),
         col_dinero("ProxMonto", "tablas.pasivos.deuda.col.prox_monto", moneda = "Moneda", sumar = FALSE),
         col_dinero("Int12", "tablas.pasivos.deuda.col.int12", moneda = "Moneda")),

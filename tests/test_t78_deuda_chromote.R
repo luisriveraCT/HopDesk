@@ -52,17 +52,24 @@ for (tam in list(c(1293L, 632L), c(1772L, 866L))) {
     ev("document.querySelector('a[data-value=\"deuda\"]').click()")
     ok(sprintf("%s: the table is up (the two loans)", et),
        espera("[].filter.call(document.querySelectorAll('#pt-deuda-tabla-hdt tbody tr'), function(tr){ return /BBVA|Volvo/.test(tr.innerText); }).length >= 2", 60))
+    espera("document.querySelectorAll('.pasivos-deuda-tarjeta').length >= 2", 30)
     tarjetas <- jsonlite::fromJSON(ev("JSON.stringify([].map.call(document.querySelectorAll('.pasivos-deuda-tarjeta > div:first-child'), function(x){ return x.innerText.trim(); }))"))
     ok(sprintf("%s: one card per currency, never added (%s)", et, paste(tarjetas, collapse = ",")),
        all(c("MXN", "USD") %in% tarjetas) && !anyDuplicated(tarjetas))
     cabs <- jsonlite::fromJSON(ev("JSON.stringify([].map.call(document.querySelectorAll('#pt-deuda-tabla-hdt thead th'), function(t){ return t.innerText.trim(); }))"))
-    ok(sprintf("%s: the columns say which rate is which", et), all(c("EAR %", "Costo efectivo %", "Nominal % (m pagos/año)") %in% cabs))
+    ok(sprintf("%s: the columns say which rate is which; Nominal and Plazo are optional, hidden", et),
+       all(c("EAR %", "Costo efectivo %") %in% cabs) && !any(c("Nominal % (m pagos/año)", "Plazo (meses)") %in% cabs))
     ear <- celda("#pt-deuda-tabla-hdt", "BBVA", "EAR %"); efe <- celda("#pt-deuda-tabla-hdt", "BBVA", "Costo efectivo %")
     ok(sprintf("%s: the MXN loan: EAR 12.00 (%s), its fee puts the effective cost above it (%s)", et, ear, efe),
        identical(ear, "12.00") && isTRUE(suppressWarnings(as.numeric(efe)) > 12))
     ok(sprintf("%s: the USD lease: EAR 8.00", et), identical(celda("#pt-deuda-tabla-hdt", "Volvo", "EAR %"), "8.00"))
-    ok(sprintf("%s: the service: Capital and Interés", et),
-       espera("(function(){ var t = document.querySelector('#pt-deuda-servicio-hdt'); return !!t && /Capital/.test(t.innerText) && /Inter/.test(t.innerText); })()", 30))
+    ev("(function(){ var t = document.querySelector('#pt-deuda-servicio-hdt'); if (t) t.scrollIntoView(); })()")
+    ok(sprintf("%s: the service starts with one row per currency (its 12 months' total)", et),
+       espera("(function(){ var t = document.querySelector('#pt-deuda-servicio-hdt'); return !!t && /MXN/.test(t.innerText) && /USD/.test(t.innerText); })()", 60))
+    ev("(function(){ var b = document.querySelector('#pt-deuda-servicio-hdt .hdt-grupos-todos'); if (b) b.click(); })()")
+    ok(sprintf("%s: expanded (the ▶▶ button): Capital and Interés", et),
+       espera("(function(){ var t = document.querySelector('#pt-deuda-servicio-hdt'); return !!t && /Capital/.test(t.innerText) && /Inter/.test(t.innerText); })()", 60))
+    foto(paste0("deuda_servicio_", et))
     ok(sprintf("%s: the footer says which rate was captured", et),
        isTRUE(ev("/efectiva anual \\(EAR\\)/.test(document.querySelector('.pasivos-deuda').innerText)")))
     ok(sprintf("%s: nothing scrolls sideways (page, table, service)", et),
