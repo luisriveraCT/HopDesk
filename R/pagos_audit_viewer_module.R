@@ -33,12 +33,15 @@
 # Module-file scope (not inside pagosAuditViewerServer) -- both the server's
 # own table/modal rendering AND the standalone .build_pago_receipt_html()
 # function below need it, and the latter is not part of the module closure.
-.TIPO_LABELS <- c(pago_ppl = "Pago", reporte_word = "Reporte Word",
-                  reporte_excel = "Reporte Excel", reporte_pdf = "Reporte PDF",
-                  bancos_libro_excel      = "Libro de Bancos (Excel)")
+# Its own name: R/bancos_module.R has a .TIPO_LABELS (the bank movements'
+# types) and app.R sources this file after global.R sources Bancos, so a
+# shared name made Bancos read these labels (tests/test_tipo_labels_bancos.R).
+.PAGOS_TIPO_LABELS <- c(pago_ppl = "Pago", reporte_word = "Reporte Word",
+                        reporte_excel = "Reporte Excel", reporte_pdf = "Reporte PDF",
+                        bancos_libro_excel      = "Libro de Bancos (Excel)")
 .tipo_label <- function(tipo) {
   t <- as.character(tipo)
-  out <- unname(.TIPO_LABELS[t])
+  out <- unname(.PAGOS_TIPO_LABELS[t])
   ifelse(is.na(out), ifelse(is.na(t) | !nzchar(t), "", t), out)
 }
 

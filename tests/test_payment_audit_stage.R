@@ -674,7 +674,7 @@ banc_txt <- readLines("R/bancos_module.R", warn = FALSE)
 for (t in c("bancos_libro_excel")) {
   .chk(nzchar(.tipo_label(t)), TRUE, sprintf(".tipo_label('%s') has a real (non-empty) display label", t))
 }
-.chk(is.na(unname(.TIPO_LABELS["reporte_financiero_html"])), TRUE,
-     "the now-dead reporte_financiero_html tipo label was removed from .TIPO_LABELS, not left dangling")
+.chk(is.na(unname(.PAGOS_TIPO_LABELS["reporte_financiero_html"])), TRUE,
+     "the now-dead reporte_financiero_html tipo label was removed from .PAGOS_TIPO_LABELS, not left dangling")
 
 cat(sprintf("\n  Subtotal: %d passed, %d failed\n", .pass, .fail))

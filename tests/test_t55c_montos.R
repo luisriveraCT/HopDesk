@@ -23,7 +23,7 @@ todas <- function(archivo) {   # every function a file defines, only the definit
     if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) && is.call(e[[3]]) &&
         identical(e[[3]][[1]], as.name("function"))) eval(e, globalenv())
 }
-constantes <- function(archivo) {   # its top-level constants too (.TIPO_LABELS)
+constantes <- function(archivo) {   # its top-level constants too (.PAGOS_TIPO_LABELS)
   for (e in parse(archivo, keep.source = FALSE, encoding = "UTF-8"))
     if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) && !is.call(e[[3]]) ||
         (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) && is.call(e[[3]]) && identical(e[[3]][[1]], as.name("c"))))
