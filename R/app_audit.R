@@ -311,6 +311,26 @@ save_app_audit <- function(log_df, client_id = NULL) {
   invisible(ok)
 }
 
+# T74 (sleep proposal, common part): flush every client's pending rows NOW,
+# not on the 2 s timer -- called when a session ends, so the day's last
+# entries (the logout itself) never depend on a later:: callback in a
+# process the host may put to sleep 5-8 min after the last visit (measured
+# on Connect Cloud, 2026-11-21). A client already in retry backoff is left
+# to its own chain (flushing it here too would burn its retries twice as
+# fast). A failure falls into the usual path: retries, then the T72 rescue.
+# Never throws. Returns the client ids it flushed.
+.audit_flush_ahora <- function() {
+  hechos <- character(0)
+  for (cid in ls(.audit_pending)) {
+    pend <- .audit_pending[[cid]]
+    if (is.null(pend) || !NROW(pend)) next
+    if (!is.null(.audit_retry_count[[cid]])) next
+    tryCatch({ .audit_flush_pending(cid); hechos <- c(hechos, cid) },
+             error = function(e) message("[APP_AUDIT] flush on session end failed (", cid, "): ", conditionMessage(e)))
+  }
+  invisible(hechos)
+}
+
 # When a batch cannot be appended after the retries (T72): it is written to
 # a key of its own, <cid>/app_audit_pendiente_<utc>_<rand>.rds -- a plain
 # write, nothing read first -- which read_audit_log() already picks up (same

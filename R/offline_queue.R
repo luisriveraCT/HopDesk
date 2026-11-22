@@ -260,6 +260,16 @@
                                 acting_home_client_id = NA_character_,
                                 permitir_reduccion = FALSE,
                                 session_id = .queue_session_actual()) {
+  # T74 (sleep proposal, common part): on a host whose disk is wiped every
+  # time the app sleeps (Connect Cloud: measured 2026-11-21, R_user_dir does
+  # not survive), a staged entry would never be replayed -- so nothing is
+  # staged there and the write's own error is the whole story. Checked
+  # inline, not through a helper, so a test that takes this function alone
+  # still sees it.
+  if (identical(tolower(trimws(Sys.getenv("HOPDESK_HOST"))), "connect_cloud")) {
+    message("[offline_queue] disabled on this host (HOPDESK_HOST=connect_cloud): write not queued")
+    return(FALSE)
+  }
   tryCatch({
     if (!.queue_valid_client_id(client_id)) return(FALSE)
     slug <- .queue_slug(client_id)

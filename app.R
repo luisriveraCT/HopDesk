@@ -1251,7 +1251,12 @@ server <- function(input, output, session) {
   # Covers a tab close / inactivity timeout / browser crash -- any session
   # end that never routed through the "Salir" button's own call to
   # .log_logout_once() above.
-  session$onSessionEnded(function() { .log_logout_once() })
+  # T74: then write the activity log right away -- the host may sleep the
+  # process minutes after the last session, and later:: dies with it.
+  session$onSessionEnded(function() {
+    .log_logout_once()
+    tryCatch(.audit_flush_ahora(), error = function(e) NULL)
+  })
 
   # ── Emergency lock: terminate active sessions of locked accounts ─────────────
   # Runs once on session init. If the just-authenticated user appears in the
