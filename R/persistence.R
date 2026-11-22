@@ -579,7 +579,6 @@ T72_DEUDA_EVENTO <- c(
   "R/persistence.R::modificar_client_requests" = 1L,
   "R/persistence.R::modificar_contacts" = 1L,
   "R/persistence.R::modificar_emergency_lock" = 1L,
-  "R/persistence.R::modificar_group_config" = 1L,
   "R/persistence.R::modificar_hd_notifications" = 1L,
   "R/persistence.R::modificar_hop_grants" = 1L,
   "R/persistence.R::modificar_hop_requests" = 1L,
@@ -2776,7 +2775,11 @@ save_grupos <- function(df, client_id = NULL) {
 .schema_group_config <- function() {
   # moneda_base: the client's presentation currency (R/monedas.R); NA until
   # someone chooses it in Ajustes generales.
-  list(group_name = "", logo_raw = NULL, logo_ext = "png", moneda_base = NA_character_)
+  # tema: the client's theme (TEMA stage 5, R/tema_registro.R); NA = the
+  # system's default. Read through tema_resolver(): anything unknown is the
+  # default too, and nothing is written for it.
+  list(group_name = "", logo_raw = NULL, logo_ext = "png", moneda_base = NA_character_,
+       tema = NA_character_)
 }
 
 load_group_config <- function(client_id = NULL) {
@@ -2804,7 +2807,7 @@ load_group_config <- function(client_id = NULL) {
 # or logo both survive. The logo is one unit, raw bytes and extension
 # together: never one session's bytes with another's extension. Fields this
 # form does not know (a later stage's) are S3's.
-.GROUP_CONFIG_UNIDADES <- list("group_name", "moneda_base", c("logo_raw", "logo_ext"))
+.GROUP_CONFIG_UNIDADES <- list("group_name", "moneda_base", "tema", c("logo_raw", "logo_ext"))
 .group_config_rebase <- function(nuevo, base, fresco) {
   nuevo <- .group_config_completar(nuevo); base <- .group_config_completar(base)
   out   <- .group_config_completar(fresco)
@@ -2821,13 +2824,29 @@ load_group_config <- function(client_id = NULL) {
 # config written (or S3's, unchanged). The only way to write
 # group_config.rds: save_group_config() wrote a session's whole copy over
 # other sessions' changes.
-modificar_group_config <- function(cambio, client_id) {
+# `evento` (T72): who saved and why. The fields that changed go with it, the
+# logo as "changed" (never its bytes); .s3_write() logs one entry, only after
+# the upload worked. NULL logs the write as before T72.
+modificar_group_config <- function(cambio, client_id, evento = NULL) {
   if (is.null(client_id) || !nzchar(client_id)) stop("modificar_group_config: sin client_id", call. = FALSE)
   fresco <- .group_config_completar(.s3_leer_para_escribir(S3_KEYS$group_config, client_id))
   nuevo  <- .group_config_completar(cambio(fresco))
   if (identical(nuevo, fresco)) return(invisible(fresco))
-  .s3_write(nuevo, S3_KEYS$group_config, client_id = client_id)
+  if (!is.null(evento)) evento$.diferencia <- .group_config_diferencia(fresco, nuevo)
+  .s3_write(nuevo, S3_KEYS$group_config, client_id = client_id, evento = evento)
   invisible(nuevo)
+}
+
+# What a group_config save changed, unit by unit: list(<campo> = list(antes,
+# despues)); the logo only says that it changed (its bytes stay out of the log).
+.group_config_diferencia <- function(antes, despues) {
+  out <- list()
+  for (u in .GROUP_CONFIG_UNIDADES) {
+    if (identical(lapply(u, function(c) antes[[c]]), lapply(u, function(c) despues[[c]]))) next
+    if ("logo_raw" %in% u) { out$logo <- list(antes = !is.null(antes$logo_raw), despues = "cambiado"); next }
+    out[[u]] <- list(antes = antes[[u]] %||% NA, despues = despues[[u]] %||% NA)
+  }
+  out
 }
 
 # ── Renaming a company's initials (CM26, 2026-11-17) ─────────────────────────
