@@ -34,6 +34,7 @@ for (e in parse("R/auth.R", keep.source = FALSE))
                                   ".usuarios_existe", "usuarios_vivos_nivel", "usuarios_niveles_perdidos",
                                   "hash_password", "verify_password"))
     eval(e, globalenv())
+source("R/tema_registro.R")   # the mails resolve their colours with tema_color() (TEMA 4b)
 suppressMessages(source("R/email_service.R"))
 source("R/usuarios_cuentas.R")
 source(Sys.getenv("RESET_R", "R/auth_reset.R"))

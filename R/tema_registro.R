@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 13L
+HD_TEMAS_CSS_VERSION <- 14L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -284,6 +284,7 @@ HD_TEMAS <- list(
   `borde-fuerte-cdd3e0` = "#CDD3E0",
   `borde-fuerte-d0d9ec` = "#D0D9EC",
   `borde-fuerte-d1d5db` = "#D1D5DB",
+  `encabezado-07090d` = "#07090D",
   `encabezado-0d1b3e` = "#0D1B3E",
   `encabezado-163368` = "#163368",
   `encabezado-1a2e5a` = "#1A2E5A",
@@ -308,6 +309,7 @@ HD_TEMAS <- list(
   `exito-059669` = "#059669",
   `exito-0d9f8a` = "#0D9F8A",
   `exito-10b981` = "#10B981",
+  `exito-16a34a` = "#16A34A",
   `exito-p46-a3d9b3` = "#A3D9B3",
   `exito-suave-6ee7b7` = "#6EE7B7",
   `exito-suave-d1fae5` = "#D1FAE5",
@@ -350,6 +352,7 @@ HD_TEMAS <- list(
   `oscuro-peligro-ff8080` = "#FF8080",
   `oscuro-peligro-ff8a8a` = "#FF8A8A",
   `oscuro-texto-2-484f58` = "#484F58",
+  `oscuro-texto-2-6b8299` = "#6B8299",
   `oscuro-texto-2-7b9ab8` = "#7B9AB8",
   `oscuro-texto-2-7eb3f5` = "#7EB3F5",
   `oscuro-texto-2-8b949e` = "#8B949E",
@@ -399,10 +402,12 @@ HD_TEMAS <- list(
   `sombra-0a2864-404c10` = "0 6px 24px rgba(10,40,100,0.13)",
   `superficie-2-e2e8f0` = "#E2E8F0",
   `superficie-2-e9ecef` = "#E9ECEF",
+  `superficie-2-eef1f5` = "#EEF1F5",
   `superficie-2-eef1f8` = "#EEF1F8",
   `superficie-2-f1f3f5` = "#F1F3F5",
   `superficie-f5f0e8` = "#F5F0E8",
   `texto-000000` = "#000000",
+  `texto-07090d` = "#07090D",
   `texto-0d1b2a` = "#0D1B2A",
   `texto-0d2240` = "#0D2240",
   `texto-111827` = "#111827",
@@ -415,15 +420,19 @@ HD_TEMAS <- list(
   `texto-2-475569` = "#475569",
   `texto-2-495057` = "#495057",
   `texto-2-4a5568` = "#4A5568",
+  `texto-2-4a5b6b` = "#4A5B6B",
   `texto-2-555555` = "#555555",
   `texto-2-5a6377` = "#5A6377",
   `texto-2-606060` = "#606060",
   `texto-2-64748b` = "#64748B",
+  `texto-2-666666` = "#666666",
   `texto-2-6c757d` = "#6C757D",
   `texto-2-6c8ebf` = "#6C8EBF",
+  `texto-2-7b8794` = "#7B8794",
   `texto-2-888888` = "#888888",
   `texto-212529` = "#212529",
   `texto-222222` = "#222222",
+  `texto-23303d` = "#23303D",
   `texto-2c3e50` = "#2C3E50",
   `texto-333333` = "#333333",
   `texto-444444` = "#444444",

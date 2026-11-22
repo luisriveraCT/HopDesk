@@ -164,6 +164,7 @@ tryCatch({
   source("R/bancos_persistence.R", local = FALSE)
   source("R/audit_sticky_ui.R", local = FALSE)
   source("R/audit_log_viewer_module.R", local = FALSE)
+  source("R/tema_registro.R",  local = FALSE)   # .email_pintar(): the mails resolve their colours with tema_color()
   source("R/email_service.R",  local = FALSE)
   source("R/secrets_encryption.R",     local = FALSE)
   source("R/erp_connector_registry.R", local = FALSE)

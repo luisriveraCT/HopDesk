@@ -407,11 +407,13 @@ invite_activation_url <- function(token, session = NULL) {
 #   * Tables for layout. `display:flex` is not reliable in Outlook's Word
 #     rendering engine, and neither is the `font:` shorthand, which is why
 #     font-family/size/weight are always written out separately.
-#   * Colours are the app's: #07090d near-black, #b49444 gold. The invitee
-#     lands on the activation page seconds after clicking, and a pink email
-#     leading to a black-and-gold page reads as two different products.
-#     (The tagline's #283f58 from the login screen is deliberately dim against
-#     that page's grid; at email sizes it is illegible, so it is lightened.)
+#   * Colours are theme roles: every colour is a {{rol}} marker that
+#     .email_pintar() resolves with the registry (R/tema_registro.R) when the
+#     mail is built -- mail clients do not understand var(). Under Clásico they
+#     are today's near-black and gold, so the invitee who lands on the
+#     activation page seconds after clicking sees one product, not two. (The
+#     login's tagline colour is deliberately dim against that page's grid; at
+#     email sizes it is illegible, so the mail's is lighter.)
 
 # htmltools would do this, but these templates are also exercised by tests that
 # source R/ without shiny attached, and an invitee's display name is attacker-
@@ -428,13 +430,24 @@ invite_activation_url <- function(token, session = NULL) {
 
 .EMAIL_SANS <- "font-family:Helvetica,Arial,sans-serif;"
 
+# Turns every {{rol}} marker of a finished mail into the theme's hex (mail
+# clients do not understand var(), so the colour is resolved here, in R).
+# `tema` NULL is the default theme: mail follows the CLIENT's theme, never a
+# user's preference, and until clients have one (TEMA stage 5) that is Clásico.
+.email_pintar <- function(html, tema = NULL) {
+  tema <- tema %||% HD_TEMA_OMISION
+  marcas <- unique(regmatches(html, gregexpr("\\{\\{[a-z0-9-]+\\}\\}", html))[[1]])
+  for (mk in marcas) html <- gsub(mk, tema_color(substr(mk, 3L, nchar(mk) - 2L), tema), html, fixed = TRUE)
+  html
+}
+
 # A call to action. bgcolor= as well as background: because Outlook ignores the
 # CSS one; the padding lives on the <a> so the whole block is clickable.
 .email_button <- function(url, label) {
   sprintf(
     '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:28px 0 20px;">
-      <tr><td align="center" bgcolor="#b49444" style="background:#b49444;border-radius:4px;">
-        <a href="%s" style="display:inline-block;padding:14px 32px;%sfont-size:14px;font-weight:bold;letter-spacing:0.08em;color:#07090d;text-decoration:none;">%s</a>
+      <tr><td align="center" bgcolor="{{acento}}" style="background:{{acento}};border-radius:4px;">
+        <a href="%s" style="display:inline-block;padding:14px 32px;%sfont-size:14px;font-weight:bold;letter-spacing:0.08em;color:{{leg-texto-07090d}};text-decoration:none;">%s</a>
       </td></tr>
     </table>',
     .email_esc(url), .EMAIL_SANS, .email_esc(label))
@@ -446,38 +459,38 @@ invite_activation_url <- function(token, session = NULL) {
 # un-anchored keeps .html_to_text() from emitting "url: url" twice.
 .email_fallback_url <- function(url) {
   sprintf(
-    '<p style="margin:0 0 4px;%sfont-size:12px;color:#7b8794;">Si el botón no funciona, copia esta dirección en tu navegador:</p>
-     <p style="margin:0 0 8px;%sfont-size:12px;color:#4a5b6b;word-break:break-all;">%s</p>',
+    '<p style="margin:0 0 4px;%sfont-size:12px;color:{{leg-texto-2-7b8794}};">Si el botón no funciona, copia esta dirección en tu navegador:</p>
+     <p style="margin:0 0 8px;%sfont-size:12px;color:{{leg-texto-2-4a5b6b}};word-break:break-all;">%s</p>',
     .EMAIL_SANS, .EMAIL_SANS, .email_esc(url))
 }
 
 # `preheader` is the grey line the inbox list shows next to the subject. Left
 # out, the client grabs the first words of the body instead.
-.email_shell <- function(body, preheader = "", footer = "") {
-  sprintf(
-    '<div style="margin:0;padding:0;background:#f4f6f8;">
-  <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#f4f6f8;">%s</div>
-  <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f6f8;">
+.email_shell <- function(body, preheader = "", footer = "", tema = NULL) {
+  .email_pintar(sprintf(
+    '<div style="margin:0;padding:0;background:{{superficie-2}};">
+  <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:{{superficie-2}};">%s</div>
+  <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0" style="background:{{superficie-2}};">
     <tr><td align="center" style="padding:28px 12px;">
       <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;margin:0 auto;border-collapse:collapse;">
 
-        <tr><td align="center" bgcolor="#07090d" style="background:#07090d;padding:32px 28px 24px;">
-          <div style="%sfont-size:22px;font-weight:bold;letter-spacing:0.22em;color:#b49444;text-transform:uppercase;">HopDesk</div>
-          <div style="%sfont-size:9px;letter-spacing:0.26em;color:#6b8299;text-transform:uppercase;padding-top:7px;">Treasury Intelligence Platform</div>
+        <tr><td align="center" bgcolor="{{leg-encabezado-07090d}}" style="background:{{leg-encabezado-07090d}};padding:32px 28px 24px;">
+          <div style="%sfont-size:22px;font-weight:bold;letter-spacing:0.22em;color:{{acento}};text-transform:uppercase;">HopDesk</div>
+          <div style="%sfont-size:9px;letter-spacing:0.26em;color:{{leg-oscuro-texto-2-6b8299}};text-transform:uppercase;padding-top:7px;">Treasury Intelligence Platform</div>
         </td></tr>
 
-        <tr><td bgcolor="#b49444" style="background:#b49444;height:3px;line-height:3px;font-size:0;">&nbsp;</td></tr>
+        <tr><td bgcolor="{{acento}}" style="background:{{acento}};height:3px;line-height:3px;font-size:0;">&nbsp;</td></tr>
 
-        <tr><td bgcolor="#ffffff" style="background:#ffffff;padding:34px 32px 28px;%sfont-size:15px;line-height:1.62;color:#23303d;">%s</td></tr>
+        <tr><td bgcolor="{{superficie}}" style="background:{{superficie}};padding:34px 32px 28px;%sfont-size:15px;line-height:1.62;color:{{leg-texto-23303d}};">%s</td></tr>
 
-        <tr><td bgcolor="#eef1f5" style="background:#eef1f5;padding:18px 32px;%sfont-size:11px;line-height:1.7;color:#7b8794;">%s</td></tr>
+        <tr><td bgcolor="{{leg-superficie-2-eef1f5}}" style="background:{{leg-superficie-2-eef1f5}};padding:18px 32px;%sfont-size:11px;line-height:1.7;color:{{leg-texto-2-7b8794}};">%s</td></tr>
 
       </table>
     </td></tr>
   </table>
 </div>',
     .email_esc(preheader), .EMAIL_SANS, .EMAIL_SANS, .EMAIL_SANS, body,
-    .EMAIL_SANS, footer)
+    .EMAIL_SANS, footer), tema)
 }
 
 .email_footer_default <- function(extra = "") {
@@ -491,7 +504,7 @@ invite_activation_url <- function(token, session = NULL) {
 # emailing me". Empty when the inviter could not be resolved, in which case
 # the sentence simply drops the name instead of inventing one.
 email_invite_html <- function(display_name, client_name, invite_url,
-                              expires_hours = 48, inviter_name = "") {
+                              expires_hours = 48, inviter_name = "", tema = NULL) {
   who <- trimws(inviter_name %||% "")
   opening <- if (nzchar(who))
     sprintf("<strong>%s</strong> te invitó a unirte al equipo de <strong>%s</strong> en HopDesk.",
@@ -501,13 +514,13 @@ email_invite_html <- function(display_name, client_name, invite_url,
             .email_esc(client_name))
 
   body <- sprintf(
-    '<p style="margin:0 0 14px;font-size:19px;font-weight:bold;color:#07090d;">Hola %s,</p>
+    '<p style="margin:0 0 14px;font-size:19px;font-weight:bold;color:{{leg-texto-07090d}};">Hola %s,</p>
      <p style="margin:0 0 14px;">%s</p>
      <p style="margin:0 0 14px;">HopDesk es la plataforma de inteligencia en tesorería donde %s concentra su operación financiera: antigüedad de saldos, bancos, pagos y flujo proyectado, con la información del ERP ya conciliada y al día.</p>
      <p style="margin:0 0 4px;">Para entrar sólo tienes que elegir una contraseña. En esa misma página aparece tu <strong>nombre de usuario</strong>: anótalo, no es tu correo.</p>
      %s
      %s
-     <p style="margin:18px 0 0;font-size:13px;color:#7b8794;">El enlace caduca en %d horas y sólo puede usarse una vez.</p>',
+     <p style="margin:18px 0 0;font-size:13px;color:{{leg-texto-2-7b8794}};">El enlace caduca en %d horas y sólo puede usarse una vez.</p>',
     .email_esc(display_name), opening, .email_esc(client_name),
     .email_button(invite_url, "Activar mi cuenta"),
     .email_fallback_url(invite_url),
@@ -515,6 +528,7 @@ email_invite_html <- function(display_name, client_name, invite_url,
 
   .email_shell(
     body,
+    tema = tema,
     preheader = sprintf("Activa tu cuenta y elige tu contraseña. El enlace caduca en %d horas.",
                         as.integer(expires_hours)),
     footer = .email_footer_default(
@@ -525,21 +539,21 @@ email_invite_html <- function(display_name, client_name, invite_url,
 # display name at activation time (app.R), so the invitee has no way to know
 # it in advance — without this mail it only ever appeared in a transient
 # showNotification that vanishes after 6 seconds.
-email_welcome_html <- function(display_name, username, client_name, app_url) {
+email_welcome_html <- function(display_name, username, client_name, app_url, tema = NULL) {
   body <- sprintf(
-    '<p style="margin:0 0 14px;font-size:19px;font-weight:bold;color:#07090d;">Listo, %s. Tu cuenta está activa.</p>
+    '<p style="margin:0 0 14px;font-size:19px;font-weight:bold;color:{{leg-texto-07090d}};">Listo, %s. Tu cuenta está activa.</p>
      <p style="margin:0 0 18px;">Ya formas parte del equipo de <strong>%s</strong> en HopDesk. Estos son tus datos de acceso:</p>
      <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:0 0 6px;">
        <tr>
-         <td bgcolor="#f7f9fb" style="background:#f7f9fb;border:1px solid #e3e8ee;padding:12px 14px;%sfont-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#7b8794;width:38%%;">Usuario</td>
-         <td bgcolor="#f7f9fb" style="background:#f7f9fb;border:1px solid #e3e8ee;padding:12px 14px;font-family:Consolas,Menlo,monospace;font-size:16px;font-weight:bold;letter-spacing:0.04em;color:#07090d;">%s</td>
+         <td bgcolor="{{superficie-2}}" style="background:{{superficie-2}};border:1px solid {{borde}};padding:12px 14px;%sfont-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:{{leg-texto-2-7b8794}};width:38%%;">Usuario</td>
+         <td bgcolor="{{superficie-2}}" style="background:{{superficie-2}};border:1px solid {{borde}};padding:12px 14px;font-family:Consolas,Menlo,monospace;font-size:16px;font-weight:bold;letter-spacing:0.04em;color:{{leg-texto-07090d}};">%s</td>
        </tr>
        <tr>
-         <td style="border:1px solid #e3e8ee;padding:12px 14px;%sfont-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#7b8794;">Contraseña</td>
-         <td style="border:1px solid #e3e8ee;padding:12px 14px;%sfont-size:14px;color:#4a5b6b;">La que acabas de crear</td>
+         <td style="border:1px solid {{borde}};padding:12px 14px;%sfont-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:{{leg-texto-2-7b8794}};">Contraseña</td>
+         <td style="border:1px solid {{borde}};padding:12px 14px;%sfont-size:14px;color:{{leg-texto-2-4a5b6b}};">La que acabas de crear</td>
        </tr>
      </table>
-     <p style="margin:0;font-size:13px;color:#4a5b6b;">Tu nombre de usuario <strong>no es tu correo</strong>. Guarda este mensaje.</p>
+     <p style="margin:0;font-size:13px;color:{{leg-texto-2-4a5b6b}};">Tu nombre de usuario <strong>no es tu correo</strong>. Guarda este mensaje.</p>
      %s',
     .email_esc(display_name), .email_esc(client_name),
     .EMAIL_SANS, .email_esc(username), .EMAIL_SANS, .EMAIL_SANS,
@@ -547,17 +561,18 @@ email_welcome_html <- function(display_name, username, client_name, app_url) {
 
   .email_shell(
     body,
+    tema = tema,
     preheader = sprintf("Tu usuario es %s. Guárdalo: no es tu correo.", username),
     footer = .email_footer_default())
 }
 
-email_password_reset_html <- function(display_name, reset_url, expires_hours = 2) {
+email_password_reset_html <- function(display_name, reset_url, expires_hours = 2, tema = NULL) {
   body <- sprintf(
-    '<p style="margin:0 0 14px;font-size:19px;font-weight:bold;color:#07090d;">Hola %s,</p>
+    '<p style="margin:0 0 14px;font-size:19px;font-weight:bold;color:{{leg-texto-07090d}};">Hola %s,</p>
      <p style="margin:0 0 6px;">Recibimos una solicitud para restablecer tu contraseña de HopDesk.</p>
      %s
      %s
-     <p style="margin:18px 0 0;font-size:13px;color:#7b8794;">El enlace caduca en %d horas y sólo puede usarse una vez.</p>',
+     <p style="margin:18px 0 0;font-size:13px;color:{{leg-texto-2-7b8794}};">El enlace caduca en %d horas y sólo puede usarse una vez.</p>',
     .email_esc(display_name),
     .email_button(reset_url, "Elegir una contraseña nueva"),
     .email_fallback_url(reset_url),
@@ -565,80 +580,81 @@ email_password_reset_html <- function(display_name, reset_url, expires_hours = 2
 
   .email_shell(
     body,
+    tema = tema,
     preheader = sprintf("Restablece tu contraseña. El enlace caduca en %d horas.",
                         as.integer(expires_hours)),
     footer = .email_footer_default(
       "Si no fuiste tú, ignora este mensaje: tu contraseña actual sigue funcionando y nadie puede cambiarla sin este enlace."))
 }
 
-email_user_limit_warning_html <- function(client_name, current_users, max_users) {
+email_user_limit_warning_html <- function(client_name, current_users, max_users, tema = NULL) {
   remaining <- max_users - current_users
-  sprintf('
+  .email_pintar(sprintf('
 <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px">
-  <h2 style="color:#f59e0b">&#9888; Aviso de capacidad — HopDesk</h2>
+  <h2 style="color:{{aviso}}">&#9888; Aviso de capacidad — HopDesk</h2>
   <p>El cliente <strong>%s</strong> está acercándose a su límite de usuarios.</p>
   <table style="border-collapse:collapse;width:100%%;margin:16px 0">
     <tr>
-      <td style="padding:8px;border:1px solid #e5e7eb;color:#6b7280">Usuarios activos</td>
-      <td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">%d</td>
+      <td style="padding:8px;border:1px solid {{borde}};color:{{texto-2}}">Usuarios activos</td>
+      <td style="padding:8px;border:1px solid {{borde}};font-weight:bold">%d</td>
     </tr>
     <tr>
-      <td style="padding:8px;border:1px solid #e5e7eb;color:#6b7280">Límite</td>
-      <td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">%d</td>
+      <td style="padding:8px;border:1px solid {{borde}};color:{{texto-2}}">Límite</td>
+      <td style="padding:8px;border:1px solid {{borde}};font-weight:bold">%d</td>
     </tr>
     <tr>
-      <td style="padding:8px;border:1px solid #e5e7eb;color:#6b7280">Lugares disponibles</td>
-      <td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold;color:#f59e0b">%d</td>
+      <td style="padding:8px;border:1px solid {{borde}};color:{{texto-2}}">Lugares disponibles</td>
+      <td style="padding:8px;border:1px solid {{borde}};font-weight:bold;color:{{aviso}}">%d</td>
     </tr>
   </table>
-  <p style="color:#666;font-size:13px">
+  <p style="color:{{leg-texto-2-666666}};font-size:13px">
     Si necesitas ampliar el límite, contacta al administrador de HopDesk.
   </p>
 </div>
-', client_name, current_users, max_users, remaining)
+', client_name, current_users, max_users, remaining), tema)
 }
 
-email_user_limit_reached_html <- function(client_name, current_users, max_users) {
-  sprintf('
+email_user_limit_reached_html <- function(client_name, current_users, max_users, tema = NULL) {
+  .email_pintar(sprintf('
 <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px">
-  <h2 style="color:#dc2626">&#128274; Límite de usuarios alcanzado — HopDesk</h2>
+  <h2 style="color:{{peligro}}">&#128274; Límite de usuarios alcanzado — HopDesk</h2>
   <p>El cliente <strong>%s</strong> ha alcanzado su límite máximo de usuarios.</p>
   <table style="border-collapse:collapse;width:100%%;margin:16px 0">
     <tr>
-      <td style="padding:8px;border:1px solid #e5e7eb;color:#6b7280">Usuarios activos</td>
-      <td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">%d / %d</td>
+      <td style="padding:8px;border:1px solid {{borde}};color:{{texto-2}}">Usuarios activos</td>
+      <td style="padding:8px;border:1px solid {{borde}};font-weight:bold">%d / %d</td>
     </tr>
   </table>
   <p>No se podrán crear nuevas cuentas hasta que se amplíe el límite o se desactiven usuarios existentes.</p>
-  <p style="color:#666;font-size:13px">
+  <p style="color:{{leg-texto-2-666666}};font-size:13px">
     El cliente verá un botón de "Solicitar usuarios" para notificar al equipo HopDesk.
   </p>
 </div>
-', client_name, current_users, max_users)
+', client_name, current_users, max_users), tema)
 }
 
-email_user_request_html <- function(client_name, current_users, max_users, contact_email) {
-  sprintf('
+email_user_request_html <- function(client_name, current_users, max_users, contact_email, tema = NULL) {
+  .email_pintar(sprintf('
 <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px">
-  <h2 style="color:#0a58ca">&#128101; Solicitud de más usuarios — HopDesk</h2>
+  <h2 style="color:{{primario}}">&#128101; Solicitud de más usuarios — HopDesk</h2>
   <p>El cliente <strong>%s</strong> ha solicitado más capacidad de usuarios.</p>
   <table style="border-collapse:collapse;width:100%%;margin:16px 0">
     <tr>
-      <td style="padding:8px;border:1px solid #e5e7eb;color:#6b7280">Usuarios activos</td>
-      <td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">%d / %d</td>
+      <td style="padding:8px;border:1px solid {{borde}};color:{{texto-2}}">Usuarios activos</td>
+      <td style="padding:8px;border:1px solid {{borde}};font-weight:bold">%d / %d</td>
     </tr>
     <tr>
-      <td style="padding:8px;border:1px solid #e5e7eb;color:#6b7280">Contacto del cliente</td>
-      <td style="padding:8px;border:1px solid #e5e7eb">
+      <td style="padding:8px;border:1px solid {{borde}};color:{{texto-2}}">Contacto del cliente</td>
+      <td style="padding:8px;border:1px solid {{borde}}">
         <a href="mailto:%s">%s</a>
       </td>
     </tr>
   </table>
-  <p style="color:#666;font-size:13px">
+  <p style="color:{{leg-texto-2-666666}};font-size:13px">
     Para atender esta solicitud, aumenta el límite de usuarios en el panel de Clientes de HopDesk.
   </p>
 </div>
-', client_name, current_users, max_users, contact_email, contact_email)
+', client_name, current_users, max_users, contact_email, contact_email), tema)
 }
 
 # ── notify_user_limit() ───────────────────────────────────────────────────────
@@ -691,39 +707,39 @@ notify_user_limit <- function(client_id) {
 }
 
 email_limit_change_html <- function(client_name, old_limit, new_limit,
-                                    changed_by, deactivated = character(0)) {
+                                    changed_by, deactivated = character(0), tema = NULL) {
   direction <- if (new_limit > old_limit) "aumentado" else "reducido"
-  color     <- if (new_limit > old_limit) "#16a34a" else "#dc2626"
+  color     <- if (new_limit > old_limit) "{{leg-exito-16a34a}}" else "{{peligro}}"
   deact_section <- if (length(deactivated)) {
     paste0(
       '<p><strong>Cuentas desactivadas como parte del cambio:</strong></p>',
-      '<ul style="color:#6b7280;font-size:13px">',
+      '<ul style="color:{{texto-2}};font-size:13px">',
       paste0('<li>', deactivated, '</li>', collapse = ""),
       '</ul>'
     )
   } else ""
-  sprintf('
+  .email_pintar(sprintf('
 <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px">
   <h2 style="color:%s">&#128101; Cambio de límite de usuarios — HopDesk</h2>
   <p>El límite de usuarios para <strong>%s</strong> ha sido %s.</p>
   <table style="border-collapse:collapse;width:100%%;margin:16px 0">
     <tr>
-      <td style="padding:8px;border:1px solid #e5e7eb;color:#6b7280">Límite anterior</td>
-      <td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold">%d usuarios</td>
+      <td style="padding:8px;border:1px solid {{borde}};color:{{texto-2}}">Límite anterior</td>
+      <td style="padding:8px;border:1px solid {{borde}};font-weight:bold">%d usuarios</td>
     </tr>
     <tr>
-      <td style="padding:8px;border:1px solid #e5e7eb;color:#6b7280">Límite nuevo</td>
-      <td style="padding:8px;border:1px solid #e5e7eb;font-weight:bold;color:%s">%d usuarios</td>
+      <td style="padding:8px;border:1px solid {{borde}};color:{{texto-2}}">Límite nuevo</td>
+      <td style="padding:8px;border:1px solid {{borde}};font-weight:bold;color:%s">%d usuarios</td>
     </tr>
     <tr>
-      <td style="padding:8px;border:1px solid #e5e7eb;color:#6b7280">Modificado por</td>
-      <td style="padding:8px;border:1px solid #e5e7eb">%s</td>
+      <td style="padding:8px;border:1px solid {{borde}};color:{{texto-2}}">Modificado por</td>
+      <td style="padding:8px;border:1px solid {{borde}}">%s</td>
     </tr>
   </table>
   %s
-  <p style="color:#666;font-size:13px">Este es un aviso automático de auditoría.</p>
+  <p style="color:{{leg-texto-2-666666}};font-size:13px">Este es un aviso automático de auditoría.</p>
 </div>
-', color, client_name, direction, old_limit, color, new_limit, changed_by, deact_section)
+', color, client_name, direction, old_limit, color, new_limit, changed_by, deact_section), tema)
 }
 
 # ── notify_limit_change_to_principals() ───────────────────────────────────────

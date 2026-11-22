@@ -93,7 +93,9 @@ local({
          paste0(nm, ": sin <svg> (Gmail lo elimina)"))
     .chk(grepl("<img", x, fixed = TRUE), FALSE,
          paste0(nm, ": sin <img> (las imágenes vienen bloqueadas por defecto)"))
-    .chk(grepl("#b49444", x, fixed = TRUE) && grepl("#07090d", x, fixed = TRUE), TRUE,
+    # The app's colours come from the theme registry since TEMA 4b (Clásico:
+    # the gold #B49444 and the near-black #07090D, upper case from the registry).
+    .chk(grepl(tema_color("acento"), x, fixed = TRUE) && grepl(tema_color("leg-encabezado-07090d"), x, fixed = TRUE), TRUE,
          paste0(nm, ": usa los colores de la app"))
     .chk(grepl("#c2185b", x, fixed = TRUE), FALSE,
          paste0(nm, ": ya no usa el rosa que no casaba con la página de activación"))
