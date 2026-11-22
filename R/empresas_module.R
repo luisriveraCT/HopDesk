@@ -1535,6 +1535,33 @@ empresasServer <- function(id, shared) {
                 )
               )
             },
+            # TEMA stage 5: the client's theme, for every user of it (screen and
+            # reports). Clients see the offered themes; HopDesk staff all of
+            # them. The one it has now always shows, so saving never drops it.
+            {
+              actual  <- if (tema_valido(cfg$tema)) tolower(trimws(cfg$tema)) else ""
+              ofrec   <- temas_ofrecidos(erp_is_staff())
+              valores <- c("", union(ofrec, if (nzchar(actual)) actual))
+              muestra <- function(t) tags$span(class = "d-inline-flex gap-1 me-2 align-middle",
+                lapply(c("barra-fondo", "primario", "fondo", "acento"), function(r)
+                  tags$span(class = "d-inline-block rounded-circle border",
+                            style = sprintf("width:14px;height:14px;background:%s;", tema_color(r, t)))))
+              nombres <- lapply(valores, function(t) {
+                if (!nzchar(t)) return(tagList(muestra(HD_TEMA_OMISION),
+                  tr("tablas.empresas.tema.omision", tema = tr(HD_TEMAS[[HD_TEMA_OMISION]]$nombre))))
+                tagList(muestra(t), tr(HD_TEMAS[[t]]$nombre),
+                        if (!isTRUE(HD_TEMAS[[t]]$ofrecer))
+                          tags$span(class = "badge text-bg-light border ms-2 small", tr("tablas.empresas.tema.solo_staff")))
+              })
+              fluidRow(
+                column(8,
+                  tags$label(tr("tablas.empresas.tema.titulo"), class = "form-label small fw-semibold"),
+                  tags$p(class = "text-muted small mb-1", tr("tablas.empresas.tema.ayuda")),
+                  radioButtons(ns("tema_input"), NULL, choiceNames = nombres, choiceValues = valores,
+                               selected = actual, width = "100%")
+                )
+              )
+            },
             actionButton(ns("btn_save_group_config"),
                          tagList(icon("floppy-disk"), " Guardar configuración"),
                          class = "btn btn-sm btn-primary mt-2")
@@ -1544,6 +1571,8 @@ empresasServer <- function(id, shared) {
     })
 
     observeEvent(input$btn_save_group_config, {
+      # The card is drawn only with the permission; the save checks it again.
+      if (!puede(shared$usuario(), "can_manage_group_branding")) return()
       name <- trimws(input$group_name_input %||% "")
       if (!nzchar(name)) {
         showNotification(tr("tablas.empresas.aviso.grupo_nombre_vacio"), type = "warning")
@@ -1568,6 +1597,21 @@ empresasServer <- function(id, shared) {
       }
       cfg$moneda_base <- if (nzchar(mb)) mb else NA_character_
 
+      # TEMA stage 5: "" = the system's default (NA); anything else must be in
+      # the registry AND offered to this person -- or be the one the client
+      # already has. Never trust the browser's value. No input (the card was
+      # not drawn): the theme stays as it is.
+      if (!is.null(input$tema_input)) {
+        t <- tolower(trimws(input$tema_input))
+        actual <- if (tema_valido(base$tema)) tolower(trimws(base$tema)) else NA_character_
+        if (nzchar(t) && (!tema_valido(t) ||
+                          !(t %in% temas_ofrecidos(erp_is_staff()) || identical(t, actual)))) {
+          showNotification(tr("tablas.empresas.tema.invalido"), type = "error")
+          return()
+        }
+        cfg$tema <- if (nzchar(t)) t else NA_character_
+      }
+
       logo_file <- input$group_logo_upload
       if (!is.null(logo_file) && file.exists(logo_file$datapath)) {
         ext <- tolower(tools::file_ext(logo_file$name))
@@ -1586,21 +1630,20 @@ empresasServer <- function(id, shared) {
       }
 
       tryCatch({
+        # T72: the write logs itself (one entry, what changed field by field,
+        # the client written and the viewer's home), only once S3 has it.
+        evento <- list(
+          usuario     = tryCatch(shared$current_user(), error = function(e) "system"),
+          modulo      = "empresas",
+          accion      = "guardar_config_grupo",
+          descripcion = paste0("Configuración del grupo actualizada: nombre='", name, "'",
+                               if (!is.null(logo_file)) ", logo actualizado" else ""),
+          home        = tryCatch(shared$home_client_id(), error = function(e) NULL))
         guardado <- modificar_group_config(function(fresco) .group_config_rebase(cfg, base, fresco),
-                                           client_id = shared$effective_client_id())
+                                           client_id = shared$effective_client_id(), evento = evento)
         shared$group_config(guardado)   # what S3 holds now, other sessions' changes included
         showNotification(tr("tablas.empresas.aviso.grupo_guardado"),
                          type = "message", duration = 4)
-        log_action(
-          user        = tryCatch(shared$current_user(), error = function(e) "system"),
-          module      = "empresas",
-          action      = "guardar_config_grupo",
-          description = paste0("Configuración del grupo actualizada: nombre='", name, "'",
-                               if (!is.null(logo_file)) ", logo actualizado" else ""),
-          metadata    = list(group_name = name, logo_updated = !is.null(logo_file)),
-          client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-          viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-        )
       }, error = function(e) {
         showNotification(tr("tablas.empresas.aviso.error_guardar", error = conditionMessage(e)),
                          type = "error", duration = 6)

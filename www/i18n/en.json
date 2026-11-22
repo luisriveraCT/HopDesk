@@ -2286,5 +2286,12 @@
   "requisiciones.log.agregar_tabla_evidencia": "Table pasted as a requisition's evidence",
   "requisiciones.log.papelera_evidencia": "Evidence sent to the trash",
   "requisiciones.log.restaurar_evidencia": "Evidence restored from the trash",
-  "avisos.log.preferencias": "Preferences changed: {claves}"
+  "avisos.log.preferencias": "Preferences changed: {claves}",
+  "comun.tema.clasico": "Classic",
+  "comun.tema.marca": "Brand",
+  "tablas.empresas.tema.titulo": "Company theme",
+  "tablas.empresas.tema.ayuda": "The colours and type every user of this company sees, on screen and in its reports.",
+  "tablas.empresas.tema.omision": "Automatic (today: {tema})",
+  "tablas.empresas.tema.solo_staff": "HopDesk only: not offered to clients yet",
+  "tablas.empresas.tema.invalido": "That theme is not available for this company; nothing was saved."
 }

@@ -2286,5 +2286,12 @@
   "requisiciones.log.agregar_tabla_evidencia": "Tabla pegada como evidencia de una requisición",
   "requisiciones.log.papelera_evidencia": "Evidencia enviada a la papelera",
   "requisiciones.log.restaurar_evidencia": "Evidencia restaurada de la papelera",
-  "avisos.log.preferencias": "Preferencias cambiadas: {claves}"
+  "avisos.log.preferencias": "Preferencias cambiadas: {claves}",
+  "comun.tema.clasico": "Clásico",
+  "comun.tema.marca": "Marca",
+  "tablas.empresas.tema.titulo": "Tema de la empresa",
+  "tablas.empresas.tema.ayuda": "Los colores y la tipografía que ven todos los usuarios de esta empresa, en pantalla y en sus reportes.",
+  "tablas.empresas.tema.omision": "Automático (hoy: {tema})",
+  "tablas.empresas.tema.solo_staff": "Solo HopDesk: aún no se ofrece a clientes",
+  "tablas.empresas.tema.invalido": "Ese tema no está disponible para esta empresa; no se guardó nada."
 }
