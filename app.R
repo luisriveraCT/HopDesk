@@ -520,7 +520,7 @@ secured_ui <- shinymanager::secure_app(
   }),
   language = "es",
   tags_top = tagList(
-    tema_head(),   # TEMA: the acceso-* tokens (the login carries no app ui yet)
+    tags$link(rel = "stylesheet", type = "text/css", href = paste0("hd_temas.css?v=", HD_TEMAS_CSS_VERSION)),   # TEMA: acceso-* (one sheet, not tema_head(): the login waits on nothing more)
     tags$style(HTML("
       /* ── HopDesk login skin ─────────────────────────────────── */
 
@@ -738,7 +738,7 @@ secured_ui <- shinymanager::secure_app(
 .invite_page_shell <- function(titulo = tr("cuentas.activacion.titulo_pagina")) {
   fluidPage(
     theme = hd_bs_theme(),
-    tema_head(),   # TEMA: the acceso-* tokens (this page is above secure_app)
+    tags$link(rel = "stylesheet", type = "text/css", href = paste0("hd_temas.css?v=", HD_TEMAS_CSS_VERSION)),   # TEMA: acceso-* (one sheet; this page is above secure_app)
     tags$head(
       tags$title(titulo),
       # The address carries a one-time token (?invite=, ?reset=): no
