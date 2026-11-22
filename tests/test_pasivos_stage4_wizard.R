@@ -4,41 +4,12 @@
 # Run from project root:  source("tests/test_pasivos_stage4_wizard.R")
 # =============================================================================
 
-suppressPackageStartupMessages({
-  library(dplyr); library(tibble); library(lubridate)
-  library(jsonlite); library(uuid)
-})
-
-source("R/persistence.R")
-source("R/pasivos_schemas.R")
-
-if (!exists("S3_KEYS")) {
-  S3_KEYS <- list(
-    pasivos_liabilities   = "pasivos_liabilities.rds",
-    pasivos_provisions    = "pasivos_provisions.rds",
-    pasivos_modifiers     = "pasivos_modifiers.rds",
-    pasivos_estimates     = "pasivos_estimates.rds",
-    pasivos_card_expenses = "pasivos_card_expenses.rds",
-    pasivos_audit         = "pasivos_audit.rds",
-    bancos_cuentas        = "bancos_cuentas.rds",
-    bancos_movimientos    = "bancos_movimientos.rds",
-    bancos_confirmados    = "bancos_confirmados.rds",
-    policy_catalog        = "policy_catalog.rds",
-    partner_policies      = "partner_policies.rds",
-    policy_moves          = "policy_moves.rds",
-    holiday_overrides     = "holiday_overrides.rds"
-  )
-}
-
+# The common Pasivos harness (tests/helpers/pasivos_arnes.R): the real
+# persistence over an in-memory S3, one tenant (.mock_store is its store),
+# and the Pasivos files. It replaced the old loading block and S3 mock.
+source("tests/helpers/pasivos_arnes.R")
+# this test's own %||% (kept as it was)
 `%||%` <- function(a, b) if (!is.null(a) && !all(is.na(a))) a else b
-
-source("R/bancos_persistence.R")
-source("R/pasivos_persistence.R")
-source("R/pasivos_capabilities.R")
-source("R/pasivos_audit.R")
-source("R/forecasting_resolve.R")
-source("R/policy_engine.R")
-source("R/pasivos_engine.R")
 suppressMessages(source("R/i18n.R"))   # the validators' messages come from the dictionary
 source("R/pasivos_wizard_validate.R")
 source("R/pasivos_wizard_module.R")
@@ -61,12 +32,8 @@ source("tests/helpers/hd_numero.R")   # T66: hd_numero_input()
 }
 
 # S3 mock
-.mock_store    <- new.env(parent = emptyenv())
-.s3_read  <- function(key) .mock_store[[key]]
-.s3_write <- function(obj, key) { .mock_store[[key]] <- obj; invisible(TRUE) }
-.reset_mock <- function() rm(list = ls(.mock_store), envir = .mock_store)
+# (.mock_store and .reset_mock() come from the harness.)
 
-# ── Helper: minimal draft ──────────────────────────────────────────────────────
 .draft <- function(...) {
   base <- list(
     categoria = "regular", flavor = NA_character_,
@@ -262,7 +229,9 @@ d_var_otro <- .draft(
 v_var <- pasivos_wizard_validate_terminos(d_var_otro)
 .chk_true(length(v_var$errors) > 0,
           "W2: validate_terminos rejects tasa_tipo variable_otro")
-.chk_true(grepl("tasa_tipo", paste(v_var$errors, collapse = " ")),
+# The error is the field's (errors$tasa_tipo); its text is the dictionary's
+# since the wizard's messages went to i18n (adaa8e5), no longer the field name.
+.chk_true("tasa_tipo" %in% names(v_var$errors),
           "W2: validate_terminos error mentions tasa_tipo")
 
 # Stage 4.5: engine still accepts variable_otro for existing liabilities

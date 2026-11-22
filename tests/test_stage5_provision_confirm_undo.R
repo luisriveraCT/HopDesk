@@ -10,6 +10,10 @@
 # placeholder reappears, and never needs an Agenda footprint).
 # =============================================================================
 
+# Alone (not under tests/_run_confirmed_logic.R): the common Pasivos harness
+# gives what the runner prepares (.extract_fn, the persistence, the files).
+if (!exists(".extract_fn")) source("tests/helpers/pasivos_arnes.R")
+
 cat("── Stage 5: provision-derived confirm/undo ──────────────────────────────\n")
 
 .pass <- 0L

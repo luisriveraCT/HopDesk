@@ -54,6 +54,17 @@ log_action <- function(...) invisible(TRUE)        # the Actividad log (R/app_au
 # A test that tests permissions sources R/permisos.R itself, which replaces it.
 puede <- function(usuario, permiso, ...) TRUE
 
+# What tests/_run_confirmed_logic.R gives the tests that run under it: one
+# top-level function of an R/ file, by name.
+.extract_fn <- function(file, fn_name) {
+  for (e in parse(file, keep.source = FALSE))
+    if (is.call(e) && length(e) >= 2 && identical(e[[1]], as.name("<-")) && identical(e[[2]], as.name(fn_name))) {
+      assign(fn_name, eval(e[[3]], envir = globalenv()), envir = globalenv())
+      return(invisible(TRUE))
+    }
+  stop(sprintf("%s not found in %s", fn_name, file))
+}
+
 # ── The two hygiene guardians, one rule each (engine G3/G8, stage2 7.1/7.2) ──
 # cotizado_en: the files that may read it. The first four were the
 # guardian's; the rest read it on purpose since, and none converts an amount

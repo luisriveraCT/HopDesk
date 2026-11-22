@@ -28,6 +28,10 @@
 # global shiny/AWS setup, so this file loads what it needs itself).
 # =============================================================================
 
+# Alone (not under tests/_run_confirmed_logic.R): the common Pasivos harness
+# gives what the runner prepares (.extract_fn, the persistence, the files).
+if (!exists(".extract_fn")) source("tests/helpers/pasivos_arnes.R")
+
 cat("=== test_pasivos_activity_richness ===\n\n")
 
 .pass <- 0L; .fail <- 0L
@@ -165,8 +169,12 @@ suppressPackageStartupMessages(library(shiny))
        grepl('before_row <<- fresco\\[', b2) && grepl('if \\(wiz\\$mode == "edit"\\)', b2))
     ok("C2: pasivos_log_audit() now receives a real before= (not omitted)",
        grepl("before      = if \\(!is\\.null\\(before_row\\)", b2))
+    # Since the save logs through .wiz_log(tipo, notas, after = liab_row), the
+    # full row arrives as `after` (as.list(after)); before, written out.
     ok("C2: `after` is the FULL liability row (all payment-terms columns), not 5 hand-picked identity fields",
-       grepl("after       = as\\.list\\(liab_row\\)", b2))
+       grepl("after       = as\\.list\\(liab_row\\)", b2) ||
+         (grepl("\\.wiz_log <- function\\(tipo, notas, after = liab_row\\)", b2) &&
+          grepl("after       = if \\(!is\\.null\\(after\\)\\) as\\.list\\(after\\)", b2)))
   }
 
   # C3: liability pause/resume (liability.edited) -- was notes-only.
@@ -225,7 +233,8 @@ suppressPackageStartupMessages(library(shiny))
   ok("C7 estimate.changed: found forecasting_set_estimate() to scan", !is.na(b7))
   if (!is.na(b7)) {
     ok("C7: captures before_est from the existing row before an overwrite",
-       grepl("before_est <- if \\(length\\(existing_idx\\)\\)", b7))
+       # <<- since T26: the capture lives in modificar_pasivos_estimates()'s change
+       grepl("before_est <<?- if \\(length\\(existing_idx\\)\\)", b7))
     ok("C7: pasivos_log_audit() now receives before=before_est", grepl("before      = before_est,", b7))
   }
 }

@@ -4,39 +4,12 @@
 # Run from project root:  source("tests/test_pasivos_stage4_cell_editor.R")
 # =============================================================================
 
-suppressPackageStartupMessages({
-  library(dplyr); library(tibble); library(uuid)
-})
-
-source("R/persistence.R")
-source("R/pasivos_schemas.R")
-
-if (!exists("S3_KEYS")) {
-  S3_KEYS <- list(
-    pasivos_liabilities   = "pasivos_liabilities.rds",
-    pasivos_provisions    = "pasivos_provisions.rds",
-    pasivos_modifiers     = "pasivos_modifiers.rds",
-    pasivos_estimates     = "pasivos_estimates.rds",
-    pasivos_card_expenses = "pasivos_card_expenses.rds",
-    pasivos_audit         = "pasivos_audit.rds",
-    bancos_cuentas        = "bancos_cuentas.rds",
-    bancos_movimientos    = "bancos_movimientos.rds",
-    bancos_confirmados    = "bancos_confirmados.rds",
-    policy_catalog        = "policy_catalog.rds",
-    partner_policies      = "partner_policies.rds",
-    policy_moves          = "policy_moves.rds",
-    holiday_overrides     = "holiday_overrides.rds"
-  )
-}
+# The common Pasivos harness (tests/helpers/pasivos_arnes.R): the real
+# persistence over an in-memory S3, one tenant (.mock_store is its store),
+# and the Pasivos files. It replaced the old loading block and S3 mock.
+source("tests/helpers/pasivos_arnes.R")
+# this test's own %||% (kept as it was)
 `%||%` <- function(a, b) if (!is.null(a) && !all(is.na(a))) a else b
-
-source("R/bancos_persistence.R")
-source("R/pasivos_persistence.R")
-source("R/pasivos_capabilities.R")
-source("R/pasivos_audit.R")
-source("R/forecasting_resolve.R")
-source("R/policy_engine.R")
-source("R/pasivos_engine.R")
 
 .pass <- 0L; .fail <- 0L
 .chk <- function(actual, expected, label) {
@@ -48,12 +21,8 @@ source("R/pasivos_engine.R")
 }
 .chk_true <- function(expr, label) .chk(isTRUE(expr), TRUE, label)
 
-.mock_store <- new.env(parent = emptyenv())
-.s3_read  <- function(key) .mock_store[[key]]
-.s3_write <- function(obj, key) { .mock_store[[key]] <- obj; invisible(TRUE) }
-.reset_mock <- function() rm(list = ls(.mock_store), envir = .mock_store)
+# (.mock_store and .reset_mock() come from the harness.)
 
-# ── Synthetic provision ────────────────────────────────────────────────────────
 .make_prov <- function(id = uuid::UUIDgenerate(), ...) {
   base <- tibble::tibble(
     id = id, liability_id = "l1", origin = "rule",
