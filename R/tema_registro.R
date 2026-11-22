@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 15L
+HD_TEMAS_CSS_VERSION <- 16L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -240,9 +240,11 @@ HD_TEMAS <- list(
 # is what the retiring script leaves in R code.
 .HD_LEGADO <- list(
   `acento-00c4a7` = "#00C4A7",
+  `acento-7c3aed` = "#7C3AED",
   `acento-f97316` = "#F97316",
   `acento-p35-fed7aa` = "#FED7AA",
   `acento-p8-fff7ed` = "#FFF7ED",
+  `acento-texto-6d28d9` = "#6D28D9",
   `aviso-e0a100` = "#E0A100",
   `aviso-e8b86a` = "#E8B86A",
   `aviso-f0a05a` = "#F0A05A",
@@ -287,6 +289,7 @@ HD_TEMAS <- list(
   `borde-fuerte-b0c6de` = "#B0C6DE",
   `borde-fuerte-b8ccde` = "#B8CCDE",
   `borde-fuerte-c5d0e6` = "#C5D0E6",
+  `borde-fuerte-cbd5e1` = "#CBD5E1",
   `borde-fuerte-cdd3e0` = "#CDD3E0",
   `borde-fuerte-d0d9ec` = "#D0D9EC",
   `borde-fuerte-d1d5db` = "#D1D5DB",
@@ -381,8 +384,10 @@ HD_TEMAS <- list(
   `peligro-texto-dc3545` = "#DC3545",
   `primario-0d6efd` = "#0D6EFD",
   `primario-1a6cc4` = "#1A6CC4",
+  `primario-1d4ed8` = "#1D4ED8",
   `primario-1e40af` = "#1E40AF",
   `primario-2456d6` = "#2456D6",
+  `primario-2563eb` = "#2563EB",
   `primario-6366f1` = "#6366F1",
   `primario-hover-0344a8` = "#0344A8",
   `primario-p42-9db8e8` = "#9DB8E8",
@@ -406,6 +411,8 @@ HD_TEMAS <- list(
   `sombra-000000-e70fe4` = "0 1px 4px rgba(0,0,0,.12)",
   `sombra-000000-e7d0fb` = "0 3px 10px rgba(0,0,0,0.10)",
   `sombra-0a2864-404c10` = "0 6px 24px rgba(10,40,100,0.13)",
+  `sombra-2563eb-091a02` = "0 0 6px 3px rgba(37,99,235,0.75)",
+  `sombra-7c3aed-bcc0b2` = "0 0 6px 3px rgba(124,58,237,0.75)",
   `superficie-2-e2e8f0` = "#E2E8F0",
   `superficie-2-e9ecef` = "#E9ECEF",
   `superficie-2-eef1f5` = "#EEF1F5",
@@ -442,6 +449,7 @@ HD_TEMAS <- list(
   `texto-2c3e50` = "#2C3E50",
   `texto-333333` = "#333333",
   `texto-444444` = "#444444",
+  `texto-4b5563` = "#4B5563",
   `texto-555555` = "#555555",
   `texto-tenue-888888` = "#888888",
   `texto-tenue-94a3b8` = "#94A3B8",

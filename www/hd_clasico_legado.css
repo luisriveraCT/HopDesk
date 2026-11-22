@@ -8,9 +8,11 @@
 /* Every theme: the role */
 :root {
   --hd-leg-acento-00c4a7: var(--hd-acento);
+  --hd-leg-acento-7c3aed: var(--hd-acento);
   --hd-leg-acento-f97316: var(--hd-acento);
   --hd-leg-acento-p35-fed7aa: color-mix(in srgb, var(--hd-acento) 35%, var(--hd-superficie));
   --hd-leg-acento-p8-fff7ed: color-mix(in srgb, var(--hd-acento) 8%, var(--hd-superficie));
+  --hd-leg-acento-texto-6d28d9: var(--hd-acento-texto);
   --hd-leg-aviso-e0a100: var(--hd-aviso);
   --hd-leg-aviso-e8b86a: var(--hd-aviso);
   --hd-leg-aviso-f0a05a: var(--hd-aviso);
@@ -55,6 +57,7 @@
   --hd-leg-borde-fuerte-b0c6de: var(--hd-borde-fuerte);
   --hd-leg-borde-fuerte-b8ccde: var(--hd-borde-fuerte);
   --hd-leg-borde-fuerte-c5d0e6: var(--hd-borde-fuerte);
+  --hd-leg-borde-fuerte-cbd5e1: var(--hd-borde-fuerte);
   --hd-leg-borde-fuerte-cdd3e0: var(--hd-borde-fuerte);
   --hd-leg-borde-fuerte-d0d9ec: var(--hd-borde-fuerte);
   --hd-leg-borde-fuerte-d1d5db: var(--hd-borde-fuerte);
@@ -149,8 +152,10 @@
   --hd-leg-peligro-texto-dc3545: var(--hd-peligro-texto);
   --hd-leg-primario-0d6efd: var(--hd-primario);
   --hd-leg-primario-1a6cc4: var(--hd-primario);
+  --hd-leg-primario-1d4ed8: var(--hd-primario);
   --hd-leg-primario-1e40af: var(--hd-primario);
   --hd-leg-primario-2456d6: var(--hd-primario);
+  --hd-leg-primario-2563eb: var(--hd-primario);
   --hd-leg-primario-6366f1: var(--hd-primario);
   --hd-leg-primario-hover-0344a8: var(--hd-primario-hover);
   --hd-leg-primario-p42-9db8e8: color-mix(in srgb, var(--hd-primario) 42%, var(--hd-superficie));
@@ -174,6 +179,8 @@
   --hd-leg-sombra-000000-e70fe4: var(--hd-sombra);
   --hd-leg-sombra-000000-e7d0fb: var(--hd-sombra);
   --hd-leg-sombra-0a2864-404c10: var(--hd-sombra);
+  --hd-leg-sombra-2563eb-091a02: var(--hd-sombra);
+  --hd-leg-sombra-7c3aed-bcc0b2: var(--hd-sombra);
   --hd-leg-superficie-2-e2e8f0: var(--hd-superficie-2);
   --hd-leg-superficie-2-e9ecef: var(--hd-superficie-2);
   --hd-leg-superficie-2-eef1f5: var(--hd-superficie-2);
@@ -210,6 +217,7 @@
   --hd-leg-texto-2c3e50: var(--hd-texto);
   --hd-leg-texto-333333: var(--hd-texto);
   --hd-leg-texto-444444: var(--hd-texto);
+  --hd-leg-texto-4b5563: var(--hd-texto);
   --hd-leg-texto-555555: var(--hd-texto);
   --hd-leg-texto-tenue-888888: var(--hd-texto-tenue);
   --hd-leg-texto-tenue-94a3b8: var(--hd-texto-tenue);
@@ -221,9 +229,11 @@
 /* Clasico: today's exact value */
 [data-hd-tema="clasico"], :root:not([data-hd-tema]) {
   --hd-leg-acento-00c4a7: #00C4A7;
+  --hd-leg-acento-7c3aed: #7C3AED;
   --hd-leg-acento-f97316: #F97316;
   --hd-leg-acento-p35-fed7aa: #FED7AA;
   --hd-leg-acento-p8-fff7ed: #FFF7ED;
+  --hd-leg-acento-texto-6d28d9: #6D28D9;
   --hd-leg-aviso-e0a100: #E0A100;
   --hd-leg-aviso-e8b86a: #E8B86A;
   --hd-leg-aviso-f0a05a: #F0A05A;
@@ -268,6 +278,7 @@
   --hd-leg-borde-fuerte-b0c6de: #B0C6DE;
   --hd-leg-borde-fuerte-b8ccde: #B8CCDE;
   --hd-leg-borde-fuerte-c5d0e6: #C5D0E6;
+  --hd-leg-borde-fuerte-cbd5e1: #CBD5E1;
   --hd-leg-borde-fuerte-cdd3e0: #CDD3E0;
   --hd-leg-borde-fuerte-d0d9ec: #D0D9EC;
   --hd-leg-borde-fuerte-d1d5db: #D1D5DB;
@@ -362,8 +373,10 @@
   --hd-leg-peligro-texto-dc3545: #DC3545;
   --hd-leg-primario-0d6efd: #0D6EFD;
   --hd-leg-primario-1a6cc4: #1A6CC4;
+  --hd-leg-primario-1d4ed8: #1D4ED8;
   --hd-leg-primario-1e40af: #1E40AF;
   --hd-leg-primario-2456d6: #2456D6;
+  --hd-leg-primario-2563eb: #2563EB;
   --hd-leg-primario-6366f1: #6366F1;
   --hd-leg-primario-hover-0344a8: #0344A8;
   --hd-leg-primario-p42-9db8e8: #9DB8E8;
@@ -387,6 +400,8 @@
   --hd-leg-sombra-000000-e70fe4: 0 1px 4px rgba(0,0,0,.12);
   --hd-leg-sombra-000000-e7d0fb: 0 3px 10px rgba(0,0,0,0.10);
   --hd-leg-sombra-0a2864-404c10: 0 6px 24px rgba(10,40,100,0.13);
+  --hd-leg-sombra-2563eb-091a02: 0 0 6px 3px rgba(37,99,235,0.75);
+  --hd-leg-sombra-7c3aed-bcc0b2: 0 0 6px 3px rgba(124,58,237,0.75);
   --hd-leg-superficie-2-e2e8f0: #E2E8F0;
   --hd-leg-superficie-2-e9ecef: #E9ECEF;
   --hd-leg-superficie-2-eef1f5: #EEF1F5;
@@ -423,6 +438,7 @@
   --hd-leg-texto-2c3e50: #2C3E50;
   --hd-leg-texto-333333: #333333;
   --hd-leg-texto-444444: #444444;
+  --hd-leg-texto-4b5563: #4B5563;
   --hd-leg-texto-555555: #555555;
   --hd-leg-texto-tenue-888888: #888888;
   --hd-leg-texto-tenue-94a3b8: #94A3B8;

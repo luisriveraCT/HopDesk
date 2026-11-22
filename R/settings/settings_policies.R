@@ -431,7 +431,7 @@
 
     hdr <- lapply(c("D","L","M","M","J","V","S"), function(h)
       tags$span(h, style =
-        "font-size:8px;color:#4b5563;font-weight:600;line-height:1;"
+        "font-size:8px;color:var(--hd-leg-texto-4b5563);font-weight:600;line-height:1;"
       )
     )
 
@@ -449,11 +449,11 @@
         is_sel  <- ds %in% sel
         is_proj <- ds %in% proj
         glow <- if (is_input && is_sel)
-          "background:#7c3aed;box-shadow:0 0 6px 3px rgba(124,58,237,0.75);"
+          "background:var(--hd-leg-acento-7c3aed);box-shadow:var(--hd-leg-sombra-7c3aed-bcc0b2);"
         else if (!is_input && is_proj)
-          "background:#2563eb;box-shadow:0 0 6px 3px rgba(37,99,235,0.75);"
+          "background:var(--hd-leg-primario-2563eb);box-shadow:var(--hd-leg-sombra-2563eb-091a02);"
         else
-          "background:#cbd5e1;"
+          "background:var(--hd-leg-borde-fuerte-cbd5e1);"
         sty <- paste0(
           "width:", DOT, ";height:", DOT, ";border-radius:50%;",
           "display:block;",
@@ -473,7 +473,7 @@
     })
 
     div(style = paste0("width:", MONTH_W, ";"),
-      div(style = paste0("font-size:9px;color:#1e293b;font-weight:700;",
+      div(style = paste0("font-size:9px;color:var(--hd-leg-texto-1e293b);font-weight:700;",
                          "text-align:center;margin-bottom:5px;"), lbl),
       div(style = GRID_STY, tagList(hdr)),
       div(style = GRID_STY, tagList(dots))
@@ -489,13 +489,13 @@
   out_m2 <- .cal_month(m2y, m2m, selected,  projected, FALSE)
 
   btn_sty <- paste0(
-    "background:none;border:1px solid #d1d5db;border-radius:5px;",
+    "background:none;border:1px solid var(--hd-leg-borde-fuerte-d1d5db);border-radius:5px;",
     "padding:3px 10px;font-size:15px;font-weight:bold;cursor:pointer;",
-    "color:#1e293b;line-height:1.3;"
+    "color:var(--hd-leg-texto-1e293b);line-height:1.3;"
   )
   pair_base   <- "display:flex;gap:14px;padding:10px 14px;border-radius:10px;"
-  input_pair  <- paste0(pair_base, "background:rgba(124,58,237,.07);")
-  output_pair <- paste0(pair_base, "background:rgba(37,99,235,.07);")
+  input_pair  <- paste0(pair_base, "background:color-mix(in srgb, var(--hd-leg-acento-7c3aed) 7%, transparent);")
+  output_pair <- paste0(pair_base, "background:color-mix(in srgb, var(--hd-leg-primario-2563eb) 7%, transparent);")
   lbl_base <- paste0(
     "font-size:8px;font-weight:700;text-transform:uppercase;",
     "letter-spacing:.08em;margin-bottom:6px;text-align:center;"
@@ -503,7 +503,7 @@
   arrow_sty <- paste0(
     "display:flex;align-items:center;justify-content:center;",
     "padding:0 4px;font-size:28px;font-weight:300;",
-    "color:#94a3b8;line-height:1;align-self:center;"
+    "color:var(--hd-leg-texto-tenue-94a3b8);line-height:1;align-self:center;"
   )
 
   # ── Holiday list (skip_holidays only) ────────────────────────────────────
@@ -528,7 +528,7 @@
                         lubridate::day(d), meses_ab[lubridate::month(d)], yr)
       row_sty <- paste0(
         "font-size:9px;padding:2px 0;white-space:nowrap;",
-        if (is_cur) "color:#1e293b;font-weight:700;" else "color:#6b7280;"
+        if (is_cur) "color:var(--hd-leg-texto-1e293b);font-weight:700;" else "color:var(--hd-texto-2);"
       )
       div(style = row_sty,
           HTML(paste0(
@@ -547,9 +547,9 @@
           style = paste0(
             "display:flex;flex-direction:column;align-self:stretch;",
             "padding:10px 12px;border-radius:10px;",
-            "background:rgba(37,99,235,.05);",
+            "background:color-mix(in srgb, var(--hd-leg-primario-2563eb) 5%, transparent);",
             "max-height:160px;overflow-y:auto;min-width:130px;"),
-        div(style = paste0(lbl_base, "color:#1d4ed8;margin-bottom:6px;"),
+        div(style = paste0(lbl_base, "color:var(--hd-leg-primario-1d4ed8);margin-bottom:6px;"),
             "Festivos"),
         tagList(rows)
       ),
@@ -563,7 +563,7 @@
           "display:grid;grid-template-columns:1fr auto 1fr;",
           "align-items:center;margin-bottom:8px;"),
       tags$span(
-        style = "font-size:9px;color:#94a3b8;font-style:italic;",
+        style = "font-size:9px;color:var(--hd-leg-texto-tenue-94a3b8);font-style:italic;",
         "Seleccione días para simular cambios."
       ),
       div(style = "display:flex;align-items:center;gap:10px;",
@@ -573,7 +573,7 @@
           HTML("&#8249;")
         ),
         tags$span(
-          style = "font-size:11px;color:#1e293b;font-weight:600;min-width:150px;text-align:center;",
+          style = "font-size:11px;color:var(--hd-leg-texto-1e293b);font-weight:600;min-width:150px;text-align:center;",
           sprintf("%s → %s", m1_lbl, m2_lbl)
         ),
         tags$button(style = btn_sty,
@@ -589,7 +589,7 @@
       # Input pair
       div(style = input_pair,
         div(style = "display:flex;flex-direction:column;align-items:center;",
-          tags$span(style = paste0(lbl_base, "color:#6d28d9;"), "Selección"),
+          tags$span(style = paste0(lbl_base, "color:var(--hd-leg-acento-texto-6d28d9);"), "Selección"),
           div(style = "display:flex;gap:14px;", in_m1, in_m2)
         )
       ),
@@ -598,7 +598,7 @@
       # Output pair
       div(style = output_pair,
         div(style = "display:flex;flex-direction:column;align-items:center;",
-          tags$span(style = paste0(lbl_base, "color:#1d4ed8;"), "Proyección"),
+          tags$span(style = paste0(lbl_base, "color:var(--hd-leg-primario-1d4ed8);"), "Proyección"),
           div(style = "display:flex;gap:14px;", out_m1, out_m2)
         )
       ),
