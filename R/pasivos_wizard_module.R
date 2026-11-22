@@ -1562,7 +1562,8 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     cot_amt <- input$pwiz_amount_cotizado %||% NA_real_
     if (is.na(cot_amt)) return()
     res <- tryCatch(
-      pasivos_recompute_pago_from_cotizado(cot_amt, cot_en, mon_pag, Sys.Date()),
+      pasivos_recompute_pago_from_cotizado(cot_amt, cot_en, mon_pag, Sys.Date(),
+                                           client_id = tryCatch(shared$effective_client_id(), error = function(e) NULL)),
       error = function(e) list(amount_pago = NA_real_, fx_rate_used = NA_real_)
     )
     if (!is.na(res$amount_pago)) {

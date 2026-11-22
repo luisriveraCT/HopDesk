@@ -22,11 +22,14 @@ pasivos_pago_amount <- function(row) {
   row$amount_pago
 }
 
-# Recompute moneda_pago amount from cotizado_en via the active FX modifier.
-# Returns list(amount_pago = numeric, fx_rate_used = numeric).
+# Recompute moneda_pago amount from cotizado_en via the client's fx_*
+# estimate. Returns list(amount_pago = numeric, fx_rate_used = numeric).
+# client_id: whose estimates (default: the session's client). Without it the
+# read had no tenant, as the variable rates had (tasas variables, 2026-11-21).
 pasivos_recompute_pago_from_cotizado <- function(amount_cotizado, cotizado_en,
                                                   moneda_pago, fecha,
-                                                  modifiers = list()) {
+                                                  modifiers = list(),
+                                                  client_id = pasivos_cliente_sesion()) {
   no_conversion <- is.null(cotizado_en) || is.na(cotizado_en) ||
     !nzchar(cotizado_en) || identical(cotizado_en, moneda_pago)
   if (no_conversion) {
@@ -34,7 +37,7 @@ pasivos_recompute_pago_from_cotizado <- function(amount_cotizado, cotizado_en,
   }
   metric <- paste0("fx_", tolower(cotizado_en), "_", tolower(moneda_pago))
   rate <- tryCatch(
-    forecasting_get_estimate(metric, fecha),
+    forecasting_get_estimate(metric, fecha, client_id = client_id),
     error = function(e) NA_real_
   )
   if (is.na(rate)) {
@@ -817,7 +820,7 @@ pasivos_generate_provisions <- function(liability,
         cot_en <- liability$cotizado_en
         cot_en <- if (is.null(cot_en) || length(cot_en) == 0) NA_character_ else cot_en
         fx_res  <- pasivos_recompute_pago_from_cotizado(
-          amt_cot, cot_en, row_moneda_pago, fecha_ef
+          amt_cot, cot_en, row_moneda_pago, fecha_ef, client_id = client_id
         )
       }
 
@@ -915,7 +918,7 @@ pasivos_generate_provisions <- function(liability,
       } else { "" }
 
       fx_res <- pasivos_recompute_pago_from_cotizado(
-        amt_default, cot_en, liability$moneda_pago, fecha_ef
+        amt_default, cot_en, liability$moneda_pago, fecha_ef, client_id = client_id
       )
       # T63: taxes on the whole payment (no interest here), in its currency.
       imp_k <- NA_real_
