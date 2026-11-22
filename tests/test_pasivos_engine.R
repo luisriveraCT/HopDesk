@@ -5,42 +5,10 @@
 # No live S3 credentials required — S3 mocked with in-memory stubs.
 # =============================================================================
 
-suppressPackageStartupMessages({
-  library(dplyr)
-  library(tibble)
-  library(lubridate)
-  library(jsonlite)
-  library(uuid)
-})
-
-source("R/persistence.R")
-source("R/pasivos_schemas.R")
-
-if (!exists("S3_KEYS")) {
-  S3_KEYS <- list(
-    pasivos_liabilities   = "pasivos_liabilities.rds",
-    pasivos_provisions    = "pasivos_provisions.rds",
-    pasivos_modifiers     = "pasivos_modifiers.rds",
-    pasivos_estimates     = "pasivos_estimates.rds",
-    pasivos_card_expenses = "pasivos_card_expenses.rds",
-    pasivos_audit         = "pasivos_audit.rds",
-    bancos_cuentas        = "bancos_cuentas.rds",
-    bancos_movimientos    = "bancos_movimientos.rds",
-    bancos_confirmados    = "bancos_confirmados.rds",
-    policy_catalog        = "policy_catalog.rds",
-    partner_policies      = "partner_policies.rds",
-    policy_moves          = "policy_moves.rds",
-    holiday_overrides     = "holiday_overrides.rds"
-  )
-}
-
-source("R/bancos_persistence.R")
-source("R/pasivos_persistence.R")
-source("R/pasivos_capabilities.R")
-source("R/pasivos_audit.R")
-source("R/forecasting_resolve.R")
-source("R/policy_engine.R")
-source("R/pasivos_engine.R")
+# The common Pasivos harness (tests/helpers/pasivos_arnes.R): the real
+# persistence over an in-memory S3, one tenant (.mock_store is its store),
+# and the Pasivos files. It replaced the old loading block and S3 mock.
+source("tests/helpers/pasivos_arnes.R")
 
 # ── Test runner ────────────────────────────────────────────────────────────────
 .pass <- 0L; .fail <- 0L
@@ -68,12 +36,7 @@ source("R/pasivos_engine.R")
 }
 
 # ── S3 mock ────────────────────────────────────────────────────────────────────
-.mock_store    <- new.env(parent = emptyenv())
-.real_s3_read  <- .s3_read
-.real_s3_write <- .s3_write
-.s3_read  <- function(key) .mock_store[[key]]
-.s3_write <- function(obj, key) { .mock_store[[key]] <- obj; invisible(TRUE) }
-.reset_mock <- function() rm(list = ls(.mock_store), envir = .mock_store)
+# (.mock_store and .reset_mock() come from the harness.)
 
 # ── Synthetic liability builder ────────────────────────────────────────────────
 .make_liability <- function(...) {
@@ -255,9 +218,9 @@ total_capital <- sum(reg_rows$capital)
 
 # 2b Variable-rate francesa — period payments not constant
 .reset_mock()
-forecasting_set_estimate("sofr", as.Date("2026-01-01"), 5.0)
-forecasting_set_estimate("sofr", as.Date("2027-01-01"), 5.5)
-forecasting_set_estimate("sofr", as.Date("2028-01-01"), 6.0)
+forecasting_set_estimate("sofr", as.Date("2026-01-01"), 5.0, client_id = PASIVOS_CID)
+forecasting_set_estimate("sofr", as.Date("2027-01-01"), 5.5, client_id = PASIVOS_CID)
+forecasting_set_estimate("sofr", as.Date("2028-01-01"), 6.0, client_id = PASIVOS_CID)
 lia_var <- .make_financiero(principal = 1000000, tasa = 5, n = 36,
                               fecha_inicio = as.Date("2026-05-01"),
                               fecha_vence  = as.Date("2029-05-01"),
@@ -354,17 +317,19 @@ reg_last <- sched_ress[sched_ress$origin == "regular", ]
 .chk(res_row$total, 50000,         "G2: residual monto correct")
 .chk(res_row$fecha, reg_last$fecha[nrow(reg_last)], "G2: residual on same date as last regular")
 
-# 2h Residual add_later_date
+# 2h Residual on a date of its own: the app calls it "separate" (the wizard's
+# "Pago aparte en otra fecha"). This test said "add_later_date", a name no
+# version of R/ ever used (git log -S, 2026-11-22; CM02).
 lia_resd <- .make_financiero(
   principal = 1000000, tasa = 10, n = 12,
   fecha_inicio = as.Date("2026-06-01"),
   fecha_vence  = as.Date("2027-06-01"),
   dia_pago = 1L, metodo = "francesa",
-  residual = list(list(behavior = "add_later_date", monto = 50000, fecha = "2028-01-01"))
+  residual = list(list(behavior = "separate", monto = 50000, fecha = "2028-01-01"))
 )
 sched_resd <- pasivos_generate_schedule(lia_resd, today = as.Date("2026-05-01"))
 res_row_d <- sched_resd[sched_resd$origin == "residual", ]
-.chk(res_row_d$fecha, as.Date("2028-01-01"), "G2: add_later_date residual fecha correct")
+.chk(res_row_d$fecha, as.Date("2028-01-01"), "G2: separate residual fecha correct")
 
 # 2i Imported schedule wins
 imp_sched <- tibble::tibble(
@@ -527,7 +492,7 @@ res_eq <- pasivos_recompute_pago_from_cotizado(1000, "MXN", "MXN", Sys.Date())
 .chk(res_eq$amount_pago, 1000, "G3: recompute same currency → unchanged")
 
 # recompute with USD→MXN, FX=19.50
-forecasting_set_estimate("fx_usd_mxn", Sys.Date(), 19.50)
+forecasting_set_estimate("fx_usd_mxn", Sys.Date(), 19.50, client_id = PASIVOS_CID)
 res_fx <- pasivos_recompute_pago_from_cotizado(100, "USD", "MXN", Sys.Date())
 .chk(res_fx$amount_pago,  1950, "G3: recompute USD→MXN = 100*19.5=1950")
 .chk(res_fx$fx_rate_used, 19.5, "G3: fx_rate_used = 19.5")
@@ -545,8 +510,7 @@ res_na_fx <- suppressWarnings(
 
 # Static analysis: no cotizado_en reads outside allowlist
 cat("  [static] scanning R/ for cotizado_en outside allowlist...\n")
-allowlist <- c("pasivos_engine.R", "pasivos_schemas.R", "pasivos_persistence.R",
-               "pasivos_module.R")
+allowlist <- PASIVOS_COTIZADO_PERMITIDOS   # the harness: the four of before + the ones read on purpose since
 r_files <- list.files("R", pattern = "\\.R$", full.names = TRUE)
 violations <- character(0)
 for (f in r_files) {
@@ -586,7 +550,7 @@ provs_reg <- pasivos_generate_provisions(
 
 # 4b Regular with cotizado_en=USD
 .reset_mock()
-forecasting_set_estimate("fx_usd_mxn", as.Date("2026-05-01"), 19.50)
+forecasting_set_estimate("fx_usd_mxn", as.Date("2026-05-01"), 19.50, client_id = PASIVOS_CID)
 lia_usd <- .make_liability(
   moneda_pago = "MXN", cotizado_en = "USD",
   amount_default = NA_real_, amount_default_cot = 100,
@@ -847,14 +811,9 @@ pasivos_files <- list.files("R", pattern = "^pasivos", full.names = TRUE)
 itrue_violations <- character(0)
 for (f in pasivos_files) {
   lines <- readLines(f, warn = FALSE)
-  hits  <- grep("isTRUE\\(", lines)
-  for (h in hits) {
-    line_txt <- trimws(lines[h])
-    # Flag any isTRUE applied to a data frame column access ($ pattern)
-    if (grepl("isTRUE\\(.*\\$", line_txt)) {
-      itrue_violations <- c(itrue_violations, sprintf("%s:%d: %s", f, h, line_txt))
-    }
-  }
+  # isTRUE() on a data frame column: the harness's rule (pasivos_isTRUE_columna)
+  hits  <- which(lines %in% pasivos_isTRUE_columna(lines))
+  for (h in hits) itrue_violations <- c(itrue_violations, sprintf("%s:%d: %s", f, h, trimws(lines[h])))
 }
 if (length(itrue_violations) == 0L) {
   cat("  PASS  G8: no isTRUE(df$col) patterns found in pasivos files\n")
@@ -891,5 +850,4 @@ cat(sprintf(
 ))
 if (.fail > 0L) stop(sprintf("%d test(s) failed.", .fail))
 
-.s3_read  <- .real_s3_read
-.s3_write <- .real_s3_write
+s3_memoria_restaurar()

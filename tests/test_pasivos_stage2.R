@@ -20,58 +20,10 @@ if (length(script_file) && nchar(script_file)) {
   setwd(normalizePath("..", mustWork = FALSE))
 }
 
-suppressPackageStartupMessages({
-  library(dplyr)
-  library(tibble)
-  library(lubridate)
-  library(jsonlite)
-  library(uuid)
-})
-
-# %||% operator (lives in global.R, not in persistence.R)
-`%||%` <- function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
-
-source("R/persistence.R")
-source("R/pasivos_schemas.R")
-
-if (!exists("S3_KEYS")) {
-  S3_KEYS <- list(
-    pasivos_liabilities   = "pasivos_liabilities.rds",
-    pasivos_provisions    = "pasivos_provisions.rds",
-    pasivos_modifiers     = "pasivos_modifiers.rds",
-    pasivos_estimates     = "pasivos_estimates.rds",
-    pasivos_card_expenses = "pasivos_card_expenses.rds",
-    pasivos_audit         = "pasivos_audit.rds",
-    bancos_cuentas        = "bancos_cuentas.rds",
-    bancos_movimientos    = "bancos_movimientos.rds",
-    bancos_confirmados    = "bancos_confirmados.rds",
-    policy_catalog        = "policy_catalog.rds",
-    partner_policies      = "partner_policies.rds",
-    policy_moves          = "policy_moves.rds",
-    holiday_overrides     = "holiday_overrides.rds"
-  )
-}
-
-# ── S3 mock — must be defined BEFORE sourcing pasivos_persistence.R ──────────
-.mock_store <- new.env(parent = emptyenv())
-
-.s3_read <- function(key) {
-  obj <- .mock_store[[key]]
-  if (is.null(obj)) stop("key not found: ", key)
-  obj
-}
-.s3_write <- function(obj, key) {
-  .mock_store[[key]] <- obj
-  invisible(obj)
-}
-
-source("R/bancos_persistence.R")
-source("R/pasivos_persistence.R")
-source("R/pasivos_capabilities.R")
-source("R/pasivos_audit.R")
-source("R/forecasting_resolve.R")
-source("R/policy_engine.R")
-source("R/pasivos_engine.R")
+# The common Pasivos harness (tests/helpers/pasivos_arnes.R): the real
+# persistence over an in-memory S3, one tenant (.mock_store is its store),
+# and the Pasivos files. It replaced the old loading block and S3 mock.
+source("tests/helpers/pasivos_arnes.R")
 source("R/pasivos_calendar_glue.R")
 
 # ── Test helpers ──────────────────────────────────────────────────────────────
@@ -97,7 +49,8 @@ source("R/pasivos_calendar_glue.R")
   .mock_store[["pasivos_provisions.rds"]]  <- .schema_pasivos_provision()
   .mock_store[["pasivos_liabilities.rds"]] <- .schema_pasivos_liability()
   .mock_store[["pasivos_estimates.rds"]]   <- .schema_pasivos_estimates()
-  .mock_store[["pasivos_audit.rds"]]       <- .schema_pasivos_audit()
+  # (no empty pasivos_audit.rds: the app never creates one, it is born with
+  #  its first entry; an existing empty one is refused as a failed read, CM05/CM06)
 }
 
 .make_liability <- function(id = "lib1") {
@@ -512,9 +465,9 @@ cat("\n=== Group 7: Hygiene ===\n")
   isTRUE_hits <- character()
   for (f in pasivos_files) {
     lines <- readLines(f, warn = FALSE)
-    hits  <- grep("isTRUE\\(", lines, value = TRUE)
-    # Exclude safe scalar uses and comments
-    hits  <- hits[!grepl("isTRUE_safe|isTRUE\\(all\\.equal|isTRUE\\(identical|^\\s*#", hits)]
+    # isTRUE() on a data frame column: the harness's rule (pasivos_isTRUE_columna;
+    # this used to flag every isTRUE(), also on scalars, against its own label)
+    hits  <- pasivos_isTRUE_columna(lines)
     if (length(hits)) isTRUE_hits <- c(isTRUE_hits, paste0(f, ": ", hits))
   }
   .chk_true("7.1 no bare isTRUE(df$col) in pasivos_*.R",
@@ -525,8 +478,7 @@ cat("\n=== Group 7: Hygiene ===\n")
   }
 
   # cotizado_en direct access audit — must never appear outside allowlist
-  allowlist <- c("R/pasivos_engine.R", "R/pasivos_schemas.R",
-                 "R/pasivos_persistence.R", "R/pasivos_module.R")
+  allowlist <- file.path("R", PASIVOS_COTIZADO_PERMITIDOS)   # the harness: the four of before + the ones read on purpose since
   all_r  <- list.files("R", pattern = "\\.R$", full.names = TRUE)
   cot_hits <- character()
   for (f in all_r) {

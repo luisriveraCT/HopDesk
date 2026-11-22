@@ -5,44 +5,10 @@
 # Requires no live S3 credentials — S3 is mocked with in-memory stubs.
 # =============================================================================
 
-library(dplyr)
-library(tibble)
-library(lubridate)
-library(jsonlite)
-library(uuid)
-
-# Source only the files under test (no Shiny, no full app startup).
-# persistence.R is required for .normalize() and schema helpers.
-source("R/persistence.R")
-source("R/pasivos_schemas.R")
-
-# S3_KEYS is normally defined in global.R (sourced at app startup).
-# The test stubs only the keys actually used by the pasivos files.
-if (!exists("S3_KEYS")) {
-  S3_KEYS <- list(
-    pasivos_liabilities   = "pasivos_liabilities.rds",
-    pasivos_provisions    = "pasivos_provisions.rds",
-    pasivos_modifiers     = "pasivos_modifiers.rds",
-    pasivos_estimates     = "pasivos_estimates.rds",
-    pasivos_card_expenses = "pasivos_card_expenses.rds",
-    pasivos_audit         = "pasivos_audit.rds",
-    # needed by bancos_persistence.R (group 3)
-    bancos_cuentas        = "bancos_cuentas.rds",
-    bancos_movimientos    = "bancos_movimientos.rds",
-    bancos_confirmados    = "bancos_confirmados.rds",
-    # also needed by test_policy_engine.R (group 7)
-    policy_catalog        = "policy_catalog.rds",
-    partner_policies      = "partner_policies.rds",
-    policy_moves          = "policy_moves.rds",
-    holiday_overrides     = "holiday_overrides.rds"
-  )
-}
-
-source("R/bancos_persistence.R")   # for .schema_bancos_confirmados in group 3
-source("R/pasivos_persistence.R")
-source("R/pasivos_capabilities.R")
-source("R/pasivos_audit.R")
-source("R/forecasting_resolve.R")
+# The common Pasivos harness (tests/helpers/pasivos_arnes.R): the real
+# persistence over an in-memory S3, one tenant (.mock_store is its store),
+# and the Pasivos files. It replaced the old loading block and S3 mock.
+source("tests/helpers/pasivos_arnes.R")
 
 # ── Test runner helpers ───────────────────────────────────────────────────────
 .pass <- 0L
@@ -74,17 +40,8 @@ source("R/forecasting_resolve.R")
 
 # ── S3 mock ───────────────────────────────────────────────────────────────────
 # Replace .s3_read / .s3_write with in-memory stubs so tests run offline.
-.mock_store     <- new.env(parent = emptyenv())
-.real_s3_read   <- .s3_read
-.real_s3_write  <- .s3_write
+# (.mock_store and .reset_mock() come from the harness.)
 
-.s3_read  <- function(key) .mock_store[[key]]
-.s3_write <- function(obj, key) { .mock_store[[key]] <- obj; invisible(TRUE) }
-
-# Clean the mock store between test groups
-.reset_mock <- function() rm(list = ls(.mock_store), envir = .mock_store)
-
-# ── 1. Schema round-trip ──────────────────────────────────────────────────────
 cat("── 1. Schema round-trip ─────────────────────────────────────────────────\n")
 
 .chk_schema <- function(schema_fn, expected_cols, label) {
@@ -496,8 +453,8 @@ cat("── 6. Forecasting stub ────────────────
      "forecasting: NA on empty store")
 
 # Seed two dates
-forecasting_set_estimate("fx_usd_mxn", as.Date("2026-05-01"), 18.5, user = "dev")
-forecasting_set_estimate("fx_usd_mxn", as.Date("2026-06-01"), 18.7, user = "dev")
+forecasting_set_estimate("fx_usd_mxn", as.Date("2026-05-01"), 18.5, user = "dev", client_id = PASIVOS_CID)
+forecasting_set_estimate("fx_usd_mxn", as.Date("2026-06-01"), 18.7, user = "dev", client_id = PASIVOS_CID)
 
 # Exact date match
 .chk(forecasting_get_estimate("fx_usd_mxn", as.Date("2026-05-01")), 18.5,
@@ -518,19 +475,19 @@ forecasting_set_estimate("fx_usd_mxn", as.Date("2026-06-01"), 18.7, user = "dev"
      "forecasting: NA for unknown metric")
 
 # Frozen value overrides everything
-forecasting_freeze_metric("fx_usd_mxn", 99.9, user = "dev")
+forecasting_freeze_metric("fx_usd_mxn", 99.9, user = "dev", client_id = PASIVOS_CID)
 .chk(forecasting_get_estimate("fx_usd_mxn", as.Date("2026-05-01")), 99.9,
      "forecasting: frozen value overrides exact-date match")
 .chk(forecasting_get_estimate("fx_usd_mxn", as.Date("2025-01-01")), 99.9,
      "forecasting: frozen value overrides past-fallback")
 
 # Unfreeze restores normal lookup
-forecasting_unfreeze_metric("fx_usd_mxn", user = "dev")
+forecasting_unfreeze_metric("fx_usd_mxn", user = "dev", client_id = PASIVOS_CID)
 .chk(forecasting_get_estimate("fx_usd_mxn", as.Date("2026-05-01")), 18.5,
      "forecasting: after unfreeze, exact-date match restored")
 
 # Upsert: set_estimate on existing (metric, fecha) updates in place
-forecasting_set_estimate("fx_usd_mxn", as.Date("2026-05-01"), 19.0, user = "dev")
+forecasting_set_estimate("fx_usd_mxn", as.Date("2026-05-01"), 19.0, user = "dev", client_id = PASIVOS_CID)
 est_after <- load_pasivos_estimates()
 may_rows <- est_after[est_after$metric == "fx_usd_mxn" &
                         !is.na(est_after$fecha) &
@@ -571,5 +528,4 @@ cat(sprintf(
 if (.fail > 0L) stop(sprintf("%d test(s) failed — see output above.", .fail))
 
 # ── Restore real S3 functions ─────────────────────────────────────────────────
-.s3_read  <- .real_s3_read
-.s3_write <- .real_s3_write
+s3_memoria_restaurar()
