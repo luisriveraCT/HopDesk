@@ -1193,7 +1193,7 @@ ledgerModuleServer <- function(id, config, shared) {
       # logic into its own "else SAP_B1_ERP_TYPE" fallback above — never NA by here.
       # Matches both the historical literal "sap" and today's SAP_B1_ERP_TYPE
       # value, since either can appear depending on when a row was created.
-      sap_mask     <- key_sources %in% c("sap", SAP_B1_ERP_TYPE)
+      sap_mask     <- es_fuente_sap(key_sources)   # CM44
       non_sap_keys <- keys[!sap_mask, , drop = FALSE]
 
       # SAP items: send to papelera — they become ghosts (confirmed=TRUE),

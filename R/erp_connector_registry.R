@@ -33,6 +33,15 @@
 # SAP-specific by name, not yet a generic ERP-override mechanism).
 SAP_B1_ERP_TYPE <- "sap_b1_service_layer"
 
+# CM44: "this row came from SAP", for every check on a stored row. Rows
+# written before 2364f4c (2026-09-14) -- papelera archives, pagar_hoy,
+# overrides -- still say the bare "sap"; rows written since say
+# SAP_B1_ERP_TYPE. Comparing `== SAP_B1_ERP_TYPE` alone missed the old ones:
+# a SAP invoice trashed before 09-14 stopped being a papelera ghost and came
+# back as open. Vectorized; NA/blank is not SAP here (callers that default
+# NA to SAP do so before calling).
+es_fuente_sap <- function(source) !is.na(source) & as.character(source) %in% c("sap", SAP_B1_ERP_TYPE)
+
 ERP_CONNECTOR_REGISTRY <- setNames(list(
   list(
     label = "SAP Business One — Service Layer",

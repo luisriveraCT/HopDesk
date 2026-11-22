@@ -2617,7 +2617,7 @@ bancosServer <- function(id, shared) {
       cal <- tryCatch(shared$papelera_rv(), error = function(e) NULL)
       if (!is.null(cal) && nrow(cal)) {
         src <- dplyr::coalesce(dplyr::na_if(as.character(cal$source), ""), SAP_B1_ERP_TYPE)
-        origen <- ifelse(src %in% c("sap", SAP_B1_ERP_TYPE), "sap", ifelse(src %in% c("manual", "provision"), src, "erp"))
+        origen <- ifelse(es_fuente_sap(src), "sap", ifelse(src %in% c("manual", "provision"), src, "erp"))
         ids <- make.unique(dplyr::coalesce(as.character(cal$event_id), as.character(cal$id), as.character(seq_len(nrow(cal)))))
         filas$cal <- .bnc_pap_filas("cal", ids, origen, dplyr::coalesce(as.Date(cal$FechaEff), as.Date(cal$deleted_at)),
                                     cal$Empresa, dplyr::coalesce(cal$Parte, cal$Empresa), cal$Importe, cal$Moneda,

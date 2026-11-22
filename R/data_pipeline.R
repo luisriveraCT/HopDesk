@@ -664,7 +664,7 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
   # ── Apply SAP field overrides (Parte, Codigo, Factura, Notas) ───────────────
   # Overrides paint on top of SAP data for UI display only.
   # The underlying sap_data() snapshot and dedup keys are never touched.
-  # Deliberately literal source == SAP_B1_ERP_TYPE below, not
+  # Deliberately es_fuente_sap(source) below (CM44: "sap" or SAP_B1_ERP_TYPE), not
   # is_erp_sourced(): this whole feature (table, columns, settings UI) is
   # SAP-specific by name, not a generic ERP-override mechanism yet —
   # generalizing it is a bigger, separate decision than this stage's "don't
@@ -688,21 +688,21 @@ build_ledger_df <- function(raw_df, ledger, empresa, moves_df, manual_df = NULL,
       for (cc in cols) result[[cc]] <- ov_filt[[cc]][i]
       result <- result |>
         dplyr::mutate(
-          has_sap_override = source == SAP_B1_ERP_TYPE & (
+          has_sap_override = es_fuente_sap(source) & (
             !is.na(Parte_override) | !is.na(Codigo_override) |
             !is.na(Factura_override) | !is.na(Notas_override) |
             !is.na(Moneda_override) | !is.na(Importe_override)),
-          Parte   = dplyr::if_else(source == SAP_B1_ERP_TYPE & !is.na(Parte_override),
+          Parte   = dplyr::if_else(es_fuente_sap(source) & !is.na(Parte_override),
                                    Parte_override,   Parte),
-          Codigo  = dplyr::if_else(source == SAP_B1_ERP_TYPE & !is.na(Codigo_override),
+          Codigo  = dplyr::if_else(es_fuente_sap(source) & !is.na(Codigo_override),
                                    Codigo_override,  Codigo),
-          Factura = dplyr::if_else(source == SAP_B1_ERP_TYPE & !is.na(Factura_override),
+          Factura = dplyr::if_else(es_fuente_sap(source) & !is.na(Factura_override),
                                    Factura_override, Factura),
-          notas   = dplyr::if_else(source == SAP_B1_ERP_TYPE & !is.na(Notas_override),
+          notas   = dplyr::if_else(es_fuente_sap(source) & !is.na(Notas_override),
                                    Notas_override,   notas),
-          Moneda  = dplyr::if_else(source == SAP_B1_ERP_TYPE & !is.na(Moneda_override),
+          Moneda  = dplyr::if_else(es_fuente_sap(source) & !is.na(Moneda_override),
                                    Moneda_override,  Moneda),
-          Importe = dplyr::if_else(source == SAP_B1_ERP_TYPE & !is.na(Importe_override),
+          Importe = dplyr::if_else(es_fuente_sap(source) & !is.na(Importe_override),
                                    dplyr::if_else(Importe < 0,
                                                   -abs(Importe_override),
                                                   abs(Importe_override)),
@@ -1088,8 +1088,9 @@ compute_confirmed_flags <- function(df, ledger, bancos_confirmados_df, papelera_
       # SAP_B1_ERP_TYPE rather than generic (matching the override feature's
       # own reasoning above) -- revisit once a second ERP's ghost-visibility
       # behavior is actually decided, don't assume it should match SAP's.
-      sap_pap <- pap_this[!is.na(pap_this[["source"]]) &
-                            pap_this[["source"]] == SAP_B1_ERP_TYPE,
+      # CM44: es_fuente_sap() -- archives written before 2364f4c (2026-09-14)
+      # say the bare "sap"; `== SAP_B1_ERP_TYPE` alone stopped ghosting them.
+      sap_pap <- pap_this[es_fuente_sap(pap_this[["source"]]),
                           c("Empresa","Moneda","Documento"), drop = FALSE]
       if (nrow(sap_pap)) {
         match_key <- paste(df[["Empresa"]], df[["Moneda"]], df[["Documento"]])
