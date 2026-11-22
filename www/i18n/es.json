@@ -2024,6 +2024,7 @@
   "cuentas.olvide.boton": "Enviar enlace",
   "cuentas.olvide.respuesta": "Si el correo pertenece a una cuenta activa, te enviamos un enlace. Revisa tu bandeja (y spam). El enlace dura 60 minutos.",
   "cuentas.olvide.volver": "← Volver a iniciar sesión",
+  "cuentas.entrar.subtitulo": "Acceda a su cuenta",
   "comun.monedas.base.titulo": "Moneda de presentación",
   "comun.monedas.base.ayuda": "Los reportes y totales se presentan en esta moneda. Las demás aparecen según tus datos.",
   "comun.monedas.base.omision_opcion": "Por omisión ({moneda})",

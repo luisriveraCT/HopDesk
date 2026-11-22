@@ -2024,6 +2024,7 @@
   "cuentas.olvide.boton": "Send link",
   "cuentas.olvide.respuesta": "If the e-mail belongs to an active account, we sent you a link. Check your inbox (and spam). The link lasts 60 minutes.",
   "cuentas.olvide.volver": "← Back to sign in",
+  "cuentas.entrar.subtitulo": "Sign in to your account",
   "comun.monedas.base.titulo": "Presentation currency",
   "comun.monedas.base.ayuda": "Reports and totals are shown in this currency. The others appear according to your data.",
   "comun.monedas.base.omision_opcion": "Default ({moneda})",
