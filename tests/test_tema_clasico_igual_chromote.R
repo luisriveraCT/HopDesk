@@ -340,8 +340,11 @@ recorrer <- function(raiz, etiqueta, quien) {
     ev("window.scrollTo(0, 0); document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
     # A real pointer (CDP), as test_hd_matriz_chromote does: a synthetic
     # mousemove on the cell never opened the bubble (2026-11-21, master too).
+    # TEMA-P6 (E2): a DATA cell. hdtable.js opens the bubble only where td._c
+    # is set; the currency band row (tr.hdt-grupo) has none, by design.
     p <- tryCatch(ev("(function(){ var td = Array.from(document.querySelectorAll('.hdt-tabla tbody td'))
-      .filter(function(x){ return x.getClientRects().length > 0 && x.textContent.trim() !== '' && !x.querySelector('button, input'); })[0];
+      .filter(function(x){ return x.getClientRects().length > 0 && x.textContent.trim() !== '' && !x.querySelector('button, input') &&
+        x._c != null && !x.closest('tr.hdt-grupo'); })[0];
       if (!td) return null; td.scrollIntoView({block: 'center', inline: 'nearest'});
       var r = td.getBoundingClientRect(); return [r.left + Math.min(12, r.width / 2), r.top + r.height / 2]; })()"),
       error = function(x) NULL)
