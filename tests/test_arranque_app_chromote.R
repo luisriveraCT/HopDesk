@@ -15,7 +15,11 @@
 #   - every main tab (and Ajustes) opens with no new error in that output;
 #   - client user, normal mode: the Flujo de caja preview opens from the
 #     Calendario, and its PDF export downloads with full amounts ("1,234,567",
-#     never "1.2M") and visible zeros ("0") -- the .cf_fmt clash of 3e93b92.
+#     never "1.2M") and visible zeros ("0") -- the .cf_fmt clash of 3e93b92;
+#     and its Excel export (a callr::r_bg child, T74 F1): the workbook is
+#     built and downloads as a zip ("PK"). Nothing else tested the Excel;
+#     it failed on Connect Cloud with "Error desconocido". On a failure the
+#     app's "[EXCEL]" log line (when the branch has it) is shown.
 #
 # Credentials come from the environment (.Renviron.local), never the repo;
 # the passwords are never printed:
@@ -173,6 +177,48 @@ flujo_pdf <- function(et) {
   if (nzchar(Sys.getenv("ARR_REGISTRO"))) file.copy(pdf, file.path(Sys.getenv("ARR_REGISTRO"), "arranque_flujo.pdf"), overwrite = TRUE)
 }
 
+# Calendario -> Flujo de caja preview -> Exportar -> Excel: the workbook is
+# built in a callr::r_bg child; "Seguir esperando" is clicked if the 60 s
+# dialog shows; the ready link is fetched and must be a zip ("PK").
+flujo_excel <- function(et) {
+  n <- length(registro())
+  ev("document.querySelector(\".nav-link[data-value='CAL']\").click(); true")
+  if (!esperar_visible(".cf-preview-toggle-btn", 90)) return(invisible(ok(paste(et, "Excel: the preview arrow"), FALSE)))
+  clic(".cf-preview-toggle-btn")
+  if (!esperar_visible("#cfp-btn_export", 60)) return(invisible(ok(paste(et, "Excel: the preview opens"), FALSE)))
+  clic("#cfp-btn_export")
+  if (!poll_until(function() isTRUE(tryCatch(ev("!!document.getElementById('export_format')"), error = function(x) FALSE)),
+                  timeout_s = 30, interval_s = 1)) return(invisible(ok(paste(et, "Excel: the export window"), FALSE)))
+  ev("(function(){ var s = document.getElementById('export_format');
+       if (s.selectize) s.selectize.setValue('xlsx'); else $(s).val('xlsx').trigger('change'); return true; })()")
+  if (!ok(paste(et, "Excel: choosing Excel shows its Exportar button"), esperar_visible("#btn_trigger_xlsx", 30))) return()
+  clic("#btn_trigger_xlsx")
+  listo_js <- "((document.getElementById('btn_download_excel_ready') || {}).href || '').indexOf('/download/') >= 0"
+  error_js <- "Array.from(document.querySelectorAll('#shiny-notification-panel .shiny-notification-error')).map(function(e){ return (e.textContent||'').trim(); }).join(' | ')"
+  t0 <- Sys.time()
+  listo <- poll_until(function() {
+    if (isTRUE(tryCatch(ev("(function(){ var a = document.getElementById('btn_xl_continue'); return !!a && a.offsetParent !== null; })()"), error = function(x) FALSE)))
+      clic("#btn_xl_continue")
+    isTRUE(tryCatch(ev(listo_js), error = function(x) FALSE)) || nzchar(tryCatch(ev(error_js), error = function(x) "") %||% "")
+  }, timeout_s = 320, interval_s = 2) && isTRUE(tryCatch(ev(listo_js), error = function(x) FALSE))
+  t_gen <- as.numeric(Sys.time() - t0, units = "secs")
+  if (!ok(sprintf("%s Excel: the workbook is built (%.0f s)", et, t_gen), listo)) {
+    mostrar(tryCatch(ev(error_js), error = function(x) "?"))
+    mostrar(grep("\\[EXCEL\\]", registro(), value = TRUE))   # the child's real error, when the app logs it
+    mostrar(errores(n)); ev("$('.modal').modal('hide'); true"); return()
+  }
+  r <- tryCatch(b$Runtime$evaluate(
+    "(function(){ var a = document.getElementById('btn_download_excel_ready');
+       return fetch(a.href, {credentials: 'same-origin'}).then(function(r){ return r.arrayBuffer().then(function(buf){
+         var u = new Uint8Array(buf.slice(0, 4)); return JSON.stringify({status: r.status, size: buf.byteLength, head: String.fromCharCode.apply(null, u)}); }); }); })()",
+    awaitPromise = TRUE, returnByValue = TRUE, timeout_ = 120), error = function(x) NULL)
+  res <- tryCatch(jsonlite::fromJSON(r$result$value), error = function(x) NULL)
+  ok(sprintf("%s Excel: it downloads as a workbook (HTTP %s, %s bytes)", et, res$status %||% "?", res$size %||% "?"),
+     identical(as.integer(res$status), 200L) && startsWith(res$head %||% "", "PK"))
+  e <- errores(n); ok(paste(et, "Excel: no new error exporting"), conectado() && !length(e)); mostrar(e)
+  ev("$('.modal').modal('hide'); true")
+}
+
 for (modo in modos) for (quien in quienes) {
   et <- sprintf("[%s · %s]", modo, quien)
   cat(sprintf("\n── %s ──\n", et))
@@ -257,7 +303,7 @@ for (modo in modos) for (quien in quienes) {
     cat("      | pestañas en la página:", tryCatch(ev("Array.from(document.querySelectorAll('.nav-link[data-value]')).map(function(a){
       var s = getComputedStyle(a); return a.getAttribute('data-value') + '(' + s.display + ',' + (a.offsetParent ? 'en' : 'sin') + ' offsetParent)'; }).join(' ')"),
       error = function(x) "?"), "\n")
-  if (identical(quien, "cliente") && identical(modo, "normal")) flujo_pdf(et)
+  if (identical(quien, "cliente") && identical(modo, "normal")) { flujo_pdf(et); flujo_excel(et) }
   if (isTRUE(tryCatch(ev("!!document.getElementById('btn_settings')"), error = function(x) FALSE))) {
     n <- length(registro())
     ev("document.getElementById('btn_settings').click(); true"); Sys.sleep(4)
