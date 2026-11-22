@@ -816,8 +816,9 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
       tasa_periodo_rev <- round(((1 + tasa_anual/100)^(1/ppy_rev) - 1) * 100, 3)
       if (!identical(tipo_t, "fija")) {
         ref_lbl <- switch(tipo_t, variable_sofr = "SOFR", variable_prime = "PRIME", "TIIE28")
-        sprintf("%s %.3f%% + %.0f bps sobretasa = %.3f%% anual (%.3f%% %s)",
-                ref_lbl, tasa_base, spread_bps, tasa_anual, tasa_periodo_rev, periodo_nombre)
+        tr("tablas.pasivos.tasa_var.revision", indice = ref_lbl, base = sprintf("%.3f", tasa_base),
+           pb = sprintf("%.0f", spread_bps), nominal = sprintf("%.3f", tasa_anual),
+           ear = sprintf("%.3f", pasivos_ear_act360(tasa_anual, ppy_rev)))
       } else {
         sprintf("%.3f%% anual (%.3f%% %s)", tasa_anual, tasa_periodo_rev, periodo_nombre)
       }
@@ -894,21 +895,16 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
 # tarjeta: the first 12 provisions, as before. NULL when the draft cannot be
 # turned into a liability yet.
 pasivos_vista_amortizacion <- function(draft) {
-  # For preview, lock variable rates to the current fetched value (tasa_actual + spread)
-  # so the table isn't poisoned by stale forecasting-store data.
-  preview_draft <- draft
-  if (startsWith(draft$tasa_tipo %||% "fija", "variable_") &&
-      !is.na(draft$tasa_actual %||% NA_real_)) {
-    preview_draft$tasa_actual <- (draft$tasa_actual %||% 0) + (draft$tasa_spread %||% 0) / 100
-    preview_draft$tasa_tipo   <- "fija"
-    preview_draft$tasa_spread <- 0
-  }
+  # A variable rate takes the value just fetched (tasa_actual + spread), not
+  # the estimates' store, and stays variable: nominal annual, Act/360 (it used
+  # to be turned into a fixed one, which the engine takes as effective).
   liab_row <- tryCatch(
-    pasivos_wizard_draft_to_liability(preview_draft, mode = "create", user = "preview"),
+    pasivos_wizard_draft_to_liability(draft, mode = "create", user = "preview"),
     error = function(e) NULL
   )
   if (is.null(liab_row)) return(NULL)
-  sched <- tryCatch(pasivos_generate_schedule(liab_row, today = hoy_cliente()), error = function(e) NULL)
+  sched <- tryCatch(pasivos_generate_schedule(liab_row, today = hoy_cliente(), usar_indice = FALSE),
+                    error = function(e) NULL)
   if (is.null(sched) || !nrow(sched)) return(NULL)
   futuras <- sched[!isTRUE_safe(sched$historico), , drop = FALSE]
   filas <- data.frame(
@@ -1160,8 +1156,6 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     spread_bps <- as.numeric(input$pwiz_tasa_spread %||% 0)
     if (is.na(spread_bps)) spread_bps <- 0
     tipo_lbl   <- switch(tipo, variable_tiie28 = "TIIE 28", variable_prime = "PRIME", "SOFR")
-    p_nombre   <- switch(freq, mensual="mensual", anual="anual",
-                         semanal="semanal", diaria="diaria", "período")
 
     if (!is.list(rates) || !length(rates))
       return(shiny::div(class = "text-muted small mt-1", "Obteniendo tasa de referencia…"))
@@ -1178,14 +1172,13 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     .rate_row <- function(base, date_val, row_dia) {
       if (is.null(base) || is.na(base)) return(NULL)
       total_ann <- base + spread_bps / 100
-      r_per     <- (1 + total_ann / 100)^(1 / ppy) - 1
       is_sel    <- identical(row_dia, dia)
       shiny::div(
         class = paste0("mb-1", if (is_sel) " fw-semibold" else " text-muted"),
         if (is_sel) shiny::tags$span(class = "me-1", "►") else NULL,
         shiny::tags$strong(sprintf("%s %s: ", tipo_lbl, format(date_val, "%d/%m/%Y"))),
-        sprintf("%.3f%% + %.0f bps = %.3f%% anual → %.6f%% %s (EAR)",
-                base, spread_bps, total_ann, r_per * 100, p_nombre)
+        tr("tablas.pasivos.tasa_var.fila", base = sprintf("%.3f", base), pb = sprintf("%.0f", spread_bps),
+           nominal = sprintf("%.3f", total_ann), ear = sprintf("%.3f", pasivos_ear_act360(total_ann, ppy)))
       )
     }
 

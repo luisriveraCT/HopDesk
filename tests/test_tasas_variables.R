@@ -15,7 +15,7 @@ library(testthat)
 suppressPackageStartupMessages({ library(shiny); library(dplyr); library(tibble); library(lubridate); library(uuid) })
 `%||%` <- function(a, b) if (!is.null(a) && !all(is.na(a))) a else b
 for (f in c("R/monedas.R", "R/i18n.R", "R/zona.R", "R/pasivos_schemas.R", "R/forecasting_resolve.R", "R/policy_engine.R",
-            "R/pasivos_engine.R", "R/pasivos_wizard_validate.R", "R/pasivos_wizard_module.R"))
+            "R/pasivos_engine.R", "R/pasivos_wizard_validate.R", "R/pasivos_wizard_module.R", "R/pasivos_deuda.R"))
   suppressMessages(source(f))
 
 # In-memory estimates per client; NULL client -> as on the shared deployment
@@ -147,4 +147,27 @@ test_that("the dead modifier is gone (it computed valor/12 on the period's capit
   expect_false(exists(".metric_for_modifier_type"))
   src <- paste(readLines("R/pasivos_engine.R", warn = FALSE, encoding = "UTF-8"), collapse = "\n")
   expect_false(grepl(".get_period_rate", src, fixed = TRUE))
+})
+
+test_that("the wizard's preview: the rate just fetched, variable, Act/360 (no longer turned into a fixed one)", {
+  isTRUE_safe <<- function(x) !is.na(x) & x
+  hoy_cliente <<- function(...) HOY
+  d <- list(categoria = "financiero", flavor = "credito_simple", nombre = "x", empresa = "NG", parte = "B",
+            moneda_pago = "MXN", principal_original = 1e7, tasa_tipo = "variable_tiie28", tasa_actual = 9, tasa_spread = 250,
+            plazo_meses = 36L, frecuencia_pago = "mensual", dia_pago = 5L, fecha_inicio = as.Date("2026-12-05"),
+            metodo_amortizacion = "francesa", periodo_gracia = 0L)
+  v <- pasivos_vista_amortizacion(d)
+  expect_equal(v$interes[1], 1e7 * 0.115 * 31 / 360, tolerance = 1e-6)
+  expect_equal(tr("tablas.pasivos.tasa_var.fila", base = "9.000", pb = "250", nominal = "11.500", ear = "12.304"),
+               "9.000 % + 250 pb = 11.500 % nominal anual, base Actual/360 (EAR 12.304 %)")
+})
+
+test_that("T78: a variable rate shows its nominal (index + spread) and its Act/360 EAR; the XIRR agrees", {
+  f <- suppressWarnings(pasivos_deuda_pasivo(tiie(), hoy = as.Date("2026-12-01"), client_id = "a"))
+  expect_equal(f$nominal, 11.5)
+  expect_equal(round(f$ear, 2), 12.30)
+  expect_equal(f$costo_efectivo, f$ear, tolerance = 0.15)        # dated flows, months of 28-31 days
+  # a fixed one, as in the T78
+  g <- pasivos_deuda_pasivo(tiie(tasa_tipo = "fija", tasa_actual = 12, tasa_spread = 0), hoy = as.Date("2026-12-01"), client_id = "a")
+  expect_equal(g$ear, 12); expect_equal(round(g$nominal, 4), 11.3866)
 })

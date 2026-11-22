@@ -329,7 +329,10 @@ pasivos_impuestos_pago <- function(impuestos, total, interes = 0) {
 # refused it, so a variable rate never followed its index and stayed at
 # the rate captured on the day (prod, 2026-11-21: SOFR captured at
 # 3.55-3.62, the day's 3.91). Default: the session's client.
-pasivos_generate_schedule <- function(liability, today = hoy_en(), client_id = pasivos_cliente_sesion()) {
+# usar_indice = FALSE: a variable rate takes tasa_actual (the wizard's
+# preview: the rate just fetched), same convention, no estimates read.
+pasivos_generate_schedule <- function(liability, today = hoy_en(), client_id = pasivos_cliente_sesion(),
+                                      usar_indice = TRUE) {
   today  <- as.Date(today)
   cat_ok <- !is.null(liability$categoria) && !is.na(liability$categoria) &&
     liability$categoria == "financiero"
@@ -387,8 +390,9 @@ pasivos_generate_schedule <- function(liability, today = hoy_en(), client_id = p
       r <- (1 + tasa / 100)^(1 / ppy) - 1
       return(list(r = r, f = r))
     }
-    est <- tryCatch(forecasting_get_estimate(pasivos_metrica_tasa(tasa_tipo), fecha_k, client_id = client_id),
-                    error = function(e) NA_real_)
+    est <- if (!isTRUE(usar_indice)) tasa else
+      tryCatch(forecasting_get_estimate(pasivos_metrica_tasa(tasa_tipo), fecha_k, client_id = client_id),
+               error = function(e) NA_real_)
     if (is.na(est)) {
       if (!variable_na_warned) {
         warning("[pasivos] variable rate NA for some periods — falling back to tasa_actual")

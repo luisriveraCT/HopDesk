@@ -93,10 +93,17 @@ pasivos_deuda_pasivo <- function(l, provs = NULL, hoy = hoy_en(), client_id = pa
   f <- as.Date(s$fecha)
   saldo <- sum(num(s$capital[fut]))
   m <- .periods_per_year(as.character(l$frecuencia_pago[1] %||% "mensual"))
-  ear <- suppressWarnings(as.numeric(l$tasa_actual[1]))
-  if (!startsWith(as.character(l$tasa_tipo[1] %||% "fija"), "fija"))
-    ear <- ear + num(l$tasa_spread[1]) / 100
-  nominal <- if (is.na(ear)) NA_real_ else m * ((1 + ear / 100)^(1 / m) - 1) * 100
+  # Fixed: the captured rate is effective (EAR), the nominal is derived.
+  # Variable: index in force + spread is nominal annual Act/360 (as quoted),
+  # the EAR is derived, (1 + t * 365/360 / m)^m - 1.
+  v <- pasivos_tasa_variable_vigente(l, hoy, client_id)
+  if (is.null(v)) {
+    ear <- suppressWarnings(as.numeric(l$tasa_actual[1]))
+    nominal <- if (is.na(ear)) NA_real_ else m * ((1 + ear / 100)^(1 / m) - 1) * 100
+  } else {
+    nominal <- v$nominal
+    ear <- if (is.na(nominal)) NA_real_ else pasivos_ear_act360(nominal, m)
+  }
   en12 <- fut & f < un_ano
   imp <- if ("impuestos" %in% names(s)) num(s$impuestos) else rep(0, nrow(s))
   # XIRR in the schedule's currency: + principal on the start date, - opening
