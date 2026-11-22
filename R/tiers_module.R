@@ -264,8 +264,15 @@ tiersUI <- function(id) {
       else
         locked_cb
     } else {
-      checkboxInput(ns(paste0("perm_", k)), label = NULL, value = current_val)
+      # T79: shiny's input container is 300px wide with a bottom margin; that
+      # pushed the name to the right and made each row ~56px. Auto width, no
+      # margin: the name sits next to its box. Same id.
+      htmltools::tagAppendAttributes(
+        checkboxInput(ns(paste0("perm_", k)), label = NULL, value = current_val, width = "auto"),
+        style = "margin-bottom:0;")
     }
+    # The badge stays on one line ("Por nivel", not "Por / nivel").
+    badge <- htmltools::tagAppendAttributes(badge, style = "white-space:nowrap;")
 
     div(class = "tiers-perm-row",
         div(class = "d-flex align-items-center gap-2 flex-grow-1",
