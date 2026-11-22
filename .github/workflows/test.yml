@@ -29,8 +29,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # Full history: several tests compare against an older commit's code
+      # with `git show <hash>:R/...`; a depth-1 clone lacks it (T76c).
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
