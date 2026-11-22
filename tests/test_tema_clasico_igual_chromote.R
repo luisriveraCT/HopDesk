@@ -448,9 +448,61 @@ recorrer <- function(raiz, etiqueta, quien) {
         captura(sprintf("%s_%s_POL", etiqueta, quien))
         captura_marca(etiqueta, sprintf("%s_%s_POL", etiqueta, quien))
       }
+      # TEMA 5b (settings_hub.R): the IC partners' labels (ic_lbl_*) in the
+      # same Configuración modal → Intercompany. They live in an accordion
+      # that opens closed (one panel per company): the first panel is opened.
+      # No company in the accordion is NOT COVERED. Nothing is saved.
+      panel <- clic("(function(){ var b = document.getElementById('stg_btn_interco');
+          if (!b || b.getClientRects().length === 0) return false; b.click(); return true; })()") &&
+        poll_until(function() isTRUE(tryCatch(ev("(function(){ var a = document.getElementById('ic_empresa_accordion');
+          return !!a && a.getClientRects().length > 0; })()"), error = function(x) FALSE)), timeout_s = 60, interval_s = 1)
+      hay_empresa <- panel && isTRUE(tryCatch(ev("(function(){ var b = document.querySelector('#ic_empresa_accordion .accordion-button');
+          if (!b) return false; if (b.classList.contains('collapsed')) b.click(); return true; })()"), error = function(x) FALSE))
+      if (panel && !hay_empresa) no_cubierta(etiqueta, quien, "Ajustes · Intercompany", "no company in the IC accordion")
+      ic <- hay_empresa &&
+        poll_until(function() isTRUE(tryCatch(ev("(function(){ return Array.from(document.querySelectorAll('[id^=\"ic_lbl_\"]'))
+          .some(function(x){ return x.getClientRects().length > 0; }); })()"), error = function(x) FALSE)), timeout_s = 30, interval_s = 1) &&
+        poll_until(function() identical(tryCatch(as.integer(ev(RECALCULANDO_JS)), error = function(x) NA_integer_), 0L),
+                   timeout_s = ESPERA_DATOS, interval_s = 1)
+      if ((!panel || hay_empresa) &&
+          ok(sprintf("[%s · %s] Ajustes · Intercompany: the first company opens and its partners' labels show", etiqueta, quien), ic)) {
+        Sys.sleep(2)
+        ev("document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
+        Sys.sleep(1)
+        res[["AJ_IC"]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
+        captura(sprintf("%s_%s_AJ_IC", etiqueta, quien))
+        captura_marca(etiqueta, sprintf("%s_%s_AJ_IC", etiqueta, quien))
+      }
       ev("(function(){ var b = document.querySelector('.modal.show .hd-modal-cerrar'); if (b) b.click(); return true; })()")
       poll_until(function() identical(tryCatch(as.integer(ev("document.querySelectorAll('.modal.show').length")),
                                                error = function(x) NA_integer_), 0L), timeout_s = 15, interval_s = 0.5)
+    }
+  }
+  # TEMA 5b (empresas_module.R): Grupo → Empresas is an item of the Grupo
+  # dropdown, hidden until the menu opens, so the tab loop never sees it.
+  # A user with no Grupo menu reports it NOT COVERED.
+  grupo <- isTRUE(tryCatch(ev("(function(){ return !!document.querySelector(\".nav-link[data-value='GRUPO'], .dropdown-toggle[data-value='GRUPO']\"); })()"),
+                           error = function(x) FALSE))
+  if (!grupo) no_cubierta(etiqueta, quien, "Grupo · Empresas", "no Grupo menu for this user")
+  if (grupo) {
+    menu(TRUE); Sys.sleep(0.5)
+    abre <- isTRUE(tryCatch(ev("(function(){
+        var t = document.querySelector(\".nav-link[data-value='GRUPO'], .dropdown-toggle[data-value='GRUPO']\");
+        if (t && !(t.getAttribute('aria-expanded') === 'true')) t.click();
+        return true; })()"), error = function(x) FALSE)) &&
+      poll_until(function() isTRUE(tryCatch(ev("(function(){ var a = document.querySelector(\"[data-value='EMP']\");
+        if (!a || a.getClientRects().length === 0) return false; a.click(); return true; })()"), error = function(x) FALSE)),
+        timeout_s = 20, interval_s = 0.5) &&
+      poll_until(function() identical(tryCatch(as.integer(ev(RECALCULANDO_JS)), error = function(x) NA_integer_), 0L),
+                 timeout_s = ESPERA_DATOS, interval_s = 1)
+    menu(FALSE)
+    if (ok(sprintf("[%s · %s] Grupo · Empresas: the page opens from the Grupo menu", etiqueta, quien), abre)) {
+      Sys.sleep(3)
+      ev("window.scrollTo(0, 0); document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
+      Sys.sleep(1)
+      res[["EMP"]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
+      captura(sprintf("%s_%s_EMP", etiqueta, quien))
+      captura_marca(etiqueta, sprintf("%s_%s_EMP", etiqueta, quien))
     }
   }
   res
@@ -477,7 +529,7 @@ for (quien in quienes) {
                      ACT_INVALIDA = "Activación (enlace inválido)", OLVIDE = "Olvidé mi contraseña",
                      CAL_AP = "Calendario · Pagos", NOTAS = "Notas abiertas", BURBUJA = "Burbuja de valor",
                      REQ_NUEVA = "Nueva requisición", REQ_EVID = "Requisición abierta · Evidencia",
-                     REQ_COM = "Requisición abierta · Comentarios", POL = "Ajustes · Políticas (simulador)",
+                     REQ_COM = "Requisición abierta · Comentarios", POL = "Ajustes · Políticas (simulador)", AJ_IC = "Ajustes · Intercompany", EMP = "Grupo · Empresas",
                      PESTANAS[[v]])
     for (k in comunes) for (p in names(eb[[k]])) {
       r <- tema_comparar_valor(p, eb[[k]][[p]], er[[k]][[p]], de_max = DE_MAX, alfa_max = 0.01)
