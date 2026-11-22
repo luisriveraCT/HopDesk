@@ -378,6 +378,42 @@ recorrer <- function(raiz, etiqueta, quien) {
       cerrar_modal()
     }
   }
+  # TEMA stage 4 (settings_policies.R): the payment policies' calendar
+  # simulator lives in Configuración (the gear, btn_settings) → Políticas de
+  # Pago → "Nueva política"; nothing is written until Guardar, which is never
+  # pressed. A click on a day shows the selected and projected glows. A user
+  # with no gear reports itself not covered, never "the same".
+  if ("CAL" %in% names(res)) {
+    menu(TRUE); Sys.sleep(0.5)
+    ev("document.querySelector(\".nav-link[data-value='CAL']\").click(); true")
+    Sys.sleep(1); menu(FALSE); Sys.sleep(2)
+    clic <- function(js) poll_until(function() isTRUE(tryCatch(ev(js), error = function(x) FALSE)), timeout_s = 60, interval_s = 1)
+    engrane <- isTRUE(tryCatch(ev("(function(){ var b = document.getElementById('btn_settings');
+      return !!b && b.getClientRects().length > 0; })()"), error = function(x) FALSE))
+    if (!engrane) no_cubierta(etiqueta, quien, "Ajustes · Políticas", "no settings button (btn_settings) for this user")
+    if (engrane) {
+      pol <- clic("(function(){ var b = document.getElementById('btn_settings'); b.click(); return true; })()") &&
+        clic("(function(){ var b = document.getElementById('stg_btn_policies');
+          if (!b || b.getClientRects().length === 0) return false; b.click(); return true; })()") &&
+        clic("(function(){ var b = document.getElementById('pol_btn_new');
+          if (!b || b.getClientRects().length === 0) return false; b.click(); return true; })()") &&
+        clic("(function(){ var d = Array.from(document.querySelectorAll('#pol_preview_ui span[onclick*=\"pol_cal_click\"]'))
+          .filter(function(x){ return x.getClientRects().length > 0; })[3]; if (!d) return false; d.click(); return true; })()") &&
+        poll_until(function() identical(tryCatch(as.integer(ev(RECALCULANDO_JS)), error = function(x) NA_integer_), 0L),
+                   timeout_s = ESPERA_DATOS, interval_s = 1)
+      if (ok(sprintf("[%s · %s] Ajustes · Políticas: the simulator opens and shows a selected day", etiqueta, quien), pol)) {
+        Sys.sleep(3)
+        ev("document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
+        Sys.sleep(1)
+        res[["POL"]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
+        captura(sprintf("%s_%s_POL", etiqueta, quien))
+        captura_marca(etiqueta, sprintf("%s_%s_POL", etiqueta, quien))
+      }
+      ev("(function(){ var b = document.querySelector('.modal.show .hd-modal-cerrar'); if (b) b.click(); return true; })()")
+      poll_until(function() identical(tryCatch(as.integer(ev("document.querySelectorAll('.modal.show').length")),
+                                               error = function(x) NA_integer_), 0L), timeout_s = 15, interval_s = 0.5)
+    }
+  }
   res
 }
 
@@ -399,7 +435,7 @@ for (quien in quienes) {
     nombre <- switch(v, ENTRAR = "sign-in page", FLUJO = "Flujo (vista previa)",
                      CAL_AP = "Calendario · Pagos", NOTAS = "Notas abiertas", BURBUJA = "Burbuja de valor",
                      REQ_NUEVA = "Nueva requisición", REQ_EVID = "Requisición abierta · Evidencia",
-                     REQ_COM = "Requisición abierta · Comentarios",
+                     REQ_COM = "Requisición abierta · Comentarios", POL = "Ajustes · Políticas (simulador)",
                      PESTANAS[[v]])
     for (k in comunes) for (p in names(eb[[k]])) {
       r <- tema_comparar_valor(p, eb[[k]][[p]], er[[k]][[p]], de_max = DE_MAX, alfa_max = 0.01)
