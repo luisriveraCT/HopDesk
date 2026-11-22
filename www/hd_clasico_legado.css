@@ -172,6 +172,7 @@
   --hd-leg-sombra-000000-e7d0fb: var(--hd-sombra);
   --hd-leg-sombra-0a2864-404c10: var(--hd-sombra);
   --hd-leg-superficie-2-e2e8f0: var(--hd-superficie-2);
+  --hd-leg-superficie-2-e9ecef: var(--hd-superficie-2);
   --hd-leg-superficie-2-eef1f8: var(--hd-superficie-2);
   --hd-leg-superficie-2-f1f3f5: var(--hd-superficie-2);
   --hd-leg-superficie-f5f0e8: var(--hd-superficie);
@@ -375,6 +376,7 @@
   --hd-leg-sombra-000000-e7d0fb: 0 3px 10px rgba(0,0,0,0.10);
   --hd-leg-sombra-0a2864-404c10: 0 6px 24px rgba(10,40,100,0.13);
   --hd-leg-superficie-2-e2e8f0: #E2E8F0;
+  --hd-leg-superficie-2-e9ecef: #E9ECEF;
   --hd-leg-superficie-2-eef1f8: #EEF1F8;
   --hd-leg-superficie-2-f1f3f5: #F1F3F5;
   --hd-leg-superficie-f5f0e8: #F5F0E8;

@@ -1,5 +1,5 @@
 /* Requisiciones (front E): layout around the hd_table tables.
-   The app's look (Bootstrap 5 Flatly, primary #0A58CA); nothing here styles
+   The app's look (theme roles, R/tema_registro.R); nothing here styles
    the tables themselves (www/hdtable.css does). No horizontal page scroll:
    every block can shrink (min-width: 0) and wraps below 768 px. */
 
@@ -75,13 +75,13 @@
 .hdreq-modal-dos { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
 .hdreq-det-cuerpo { padding-top: 10px; }
 .hdreq-det-pie { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
-.hdreq-folio { font-variant-numeric: tabular-nums; color: var(--bs-secondary-color, #6c757d); font-weight: 600; }
+.hdreq-folio { font-variant-numeric: tabular-nums; color: var(--bs-secondary-color); font-weight: 600; }
 .hdreq-sel-carpeta .shiny-input-container { margin: 0; }
 
 /* Evidence */
-.hdreq-zona { border: 1.5px dashed #adb5bd; border-radius: 8px; padding: 8px 10px 0; outline: none; }
-.hdreq-zona:focus, .hdreq-zona.hdreq-arrastrando { border-color: #0A58CA; background: rgba(10, 88, 202, .04); }
-.hdreq-zona-texto { font-size: .82rem; color: var(--bs-secondary-color, #6c757d); margin-bottom: 4px; }
+.hdreq-zona { border: 1.5px dashed var(--hd-leg-borde-fuerte-adb5bd); border-radius: 8px; padding: 8px 10px 0; outline: none; }
+.hdreq-zona:focus, .hdreq-zona.hdreq-arrastrando { border-color: var(--hd-primario); background: color-mix(in srgb, var(--hd-primario) 4%, transparent); }
+.hdreq-zona-texto { font-size: .82rem; color: var(--bs-secondary-color); margin-bottom: 4px; }
 .hdreq-zona .shiny-input-container { margin-bottom: 6px; }
 .hdreq-pegado { margin-top: 8px; }
 .hdreq-pegado-cab { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
@@ -89,24 +89,24 @@
 .hdreq-ev-lista { list-style: none; padding: 0; margin: 8px 0 0; font-size: .85rem; }
 .hdreq-ev-lista li { display: flex; gap: 8px; align-items: center; padding: 2px 0; }
 .hdreq-ev-tipo { flex: 0 0 auto; font-size: .7rem; font-weight: 700; padding: 1px 5px; border-radius: 4px;
-  background: #e9ecef; color: #495057; }
+  background: var(--hd-leg-superficie-2-e9ecef); color: var(--hd-leg-texto-2-495057); }
 .hdreq-ev-nombre { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hdreq-ev-tam { flex: 0 0 auto; font-size: .75rem; color: var(--bs-secondary-color, #6c757d); }
+.hdreq-ev-tam { flex: 0 0 auto; font-size: .75rem; color: var(--bs-secondary-color); }
 .hdreq-ev-galeria { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .hdreq-ev-item { position: relative; }
-.hdreq-mini { border: 1px solid #dee2e6; border-radius: 6px; padding: 2px; background: #fff; width: 120px; height: 90px;
+.hdreq-mini { border: 1px solid var(--hd-leg-borde-dee2e6); border-radius: 6px; padding: 2px; background: var(--hd-superficie); width: 120px; height: 90px;
   display: flex; align-items: center; justify-content: center; }
 .hdreq-mini img { max-width: 100%; max-height: 100%; }
-.hdreq-doc { display: flex; align-items: center; gap: 6px; border: 1px solid #dee2e6; border-radius: 6px; background: #fff;
+.hdreq-doc { display: flex; align-items: center; gap: 6px; border: 1px solid var(--hd-leg-borde-dee2e6); border-radius: 6px; background: var(--hd-superficie);
   padding: 4px 8px; max-width: 260px; height: 36px; font-size: .82rem; }
-.hdreq-quitar { position: absolute; top: -6px; right: -6px; background: #fff !important; border-radius: 50%;
-  width: 18px; height: 18px; font-size: .7rem; line-height: 18px; text-decoration: none; box-shadow: 0 0 0 1px #dee2e6; }
+.hdreq-quitar { position: absolute; top: -6px; right: -6px; background: var(--hd-superficie) !important; border-radius: 50%;
+  width: 18px; height: 18px; font-size: .7rem; line-height: 18px; text-decoration: none; box-shadow: 0 0 0 1px var(--hd-leg-borde-dee2e6); }
 .hdreq-visor { margin-bottom: 10px; }
-.hdreq-visor-img { max-width: 100%; max-height: 55vh; border: 1px solid #dee2e6; border-radius: 6px; }
+.hdreq-visor-img { max-width: 100%; max-height: 55vh; border: 1px solid var(--hd-leg-borde-dee2e6); border-radius: 6px; }
 
 /* Comments and history */
 .hdreq-comentarios, .hdreq-historial { list-style: none; padding: 0; margin: 0 0 8px; max-height: 40vh; overflow-y: auto; }
-.hdreq-comentarios li { padding: 6px 0; border-bottom: 1px solid #f1f3f5; font-size: .88rem; }
+.hdreq-comentarios li { padding: 6px 0; border-bottom: 1px solid var(--hd-leg-superficie-2-f1f3f5); font-size: .88rem; }
 .hdreq-com-cab { font-size: .8rem; }
 .hdreq-com-texto { white-space: pre-wrap; overflow-wrap: anywhere; }
 .hdreq-historial li { font-size: .82rem; padding: 2px 0; }

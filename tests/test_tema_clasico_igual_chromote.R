@@ -82,7 +82,8 @@ carga_terminada <- function() dentro() && isTRUE(tryCatch(ev(
      return !o || o.style.display === 'none' || o.classList.contains('hld-fadeout'); })()"), error = function(e) FALSE))
 
 PESTANAS <- c(PAN = "Panorama", CAL = "Calendario", VEN = "Vencidos", PH = "Agenda de Hoy", BNC = "Bancos",
-              IC = "Intercompany", PSV = "Pasivos", FC = "Pronósticos", RPT = "Reporte", GRUPO = "Grupo")
+              IC = "Intercompany", PSV = "Pasivos", FC = "Pronósticos", RPT = "Reporte", GRUPO = "Grupo",
+              REQ = "Requisiciones")
 
 # Every visible element: a stable key (its path of tag#id.class:nth-of-type)
 # and the style properties a theme can touch.
@@ -312,6 +313,58 @@ recorrer <- function(raiz, etiqueta, quien) {
     captura(sprintf("%s_%s_BURBUJA", etiqueta, quien))
     captura_marca(etiqueta, sprintf("%s_%s_BURBUJA", etiqueta, quien))
   }
+  # TEMA stage 4 (requisiciones.css): the evidence zone lives in the new-request
+  # form, and the folio, thumbnails, type badges and comments in a request's
+  # detail; no tab shows them by default. "Requisición abierta" prefers the
+  # dev request "PRUEBA TEMA…" (integrador, 2026-11-21) and says which row it
+  # opened; with no rows it reports itself not covered, never "the same".
+  if ("REQ" %in% names(res)) {
+    cerrar_modal <- function() {
+      ev("(function(){ var b = document.querySelector('.modal.show .hd-modal-cerrar'); if (b) b.click(); return true; })()")
+      poll_until(function() identical(tryCatch(as.integer(ev("document.querySelectorAll('.modal.show').length")),
+                                               error = function(x) NA_integer_), 0L), timeout_s = 15, interval_s = 0.5)
+      Sys.sleep(1)
+    }
+    medir_req <- function(clave) {
+      Sys.sleep(2)
+      ev("document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
+      Sys.sleep(1)
+      res[[clave]] <<- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
+      captura(sprintf("%s_%s_%s", etiqueta, quien, clave))
+      captura_marca(etiqueta, sprintf("%s_%s_%s", etiqueta, quien, clave))
+    }
+    menu(TRUE); Sys.sleep(0.5)
+    ev("document.querySelector(\".nav-link[data-value='REQ']\").click(); true")
+    Sys.sleep(1); menu(FALSE)
+    Sys.sleep(5)
+    nueva <- isTRUE(tryCatch(ev("(function(){ var b = document.getElementById('req-nueva');
+      if (!b || b.getClientRects().length === 0) return false; b.click(); return true; })()"), error = function(x) FALSE)) &&
+      poll_until(function() isTRUE(tryCatch(ev("(function(){ var z = document.querySelector('.modal.show .hdreq-zona');
+        return !!z && z.getClientRects().length > 0; })()"), error = function(x) FALSE)), timeout_s = 30, interval_s = 1)
+    if (ok(sprintf("[%s · %s] Nueva requisición: the form opens with its evidence zone", etiqueta, quien), nueva)) {
+      medir_req("REQ_NUEVA")
+      cerrar_modal()
+    }
+    fila <- tryCatch(ev("(function(){
+      var trs = Array.from(document.querySelectorAll('.hdreq .hdt-tabla tbody tr'))
+        .filter(function(r){ return r.getClientRects().length > 0 && r.querySelector('button[data-accion]'); });
+      var r = trs.filter(function(x){ return x.textContent.indexOf('PRUEBA TEMA') >= 0; })[0] || trs[0];
+      if (!r) return '';
+      (r.querySelector('button[data-accion=\"adjuntos\"]') || r.querySelector('button[data-accion=\"detalle\"]')).click();
+      return r.textContent.replace(/\\s+/g, ' ').trim().slice(0, 80); })()"), error = function(x) "")
+    abierta <- nzchar(fila) && poll_until(function() isTRUE(tryCatch(ev("(function(){ var f = document.querySelector('.modal.show .hdreq-folio');
+      return !!f && f.getClientRects().length > 0; })()"), error = function(x) FALSE)), timeout_s = 30, interval_s = 1)
+    if (!nzchar(fila)) cat(sprintf("      | [%s · %s] Requisición abierta: NOT COVERED, no request rows in dev\n", etiqueta, quien))
+    if (nzchar(fila) && ok(sprintf("[%s · %s] Requisición abierta: the detail opens (%s)", etiqueta, quien, fila), abierta)) {
+      vistas_det <- c(evidencia = "REQ_EVID", comentarios = "REQ_COM")
+      for (pest in names(vistas_det)) {
+        ev(sprintf("(function(){ var a = document.querySelector(\".modal.show .nav-link[data-value='%s']\"); if (a) a.click(); return true; })()", pest))
+        Sys.sleep(3)
+        medir_req(vistas_det[[pest]])
+      }
+      cerrar_modal()
+    }
+  }
   res
 }
 
@@ -332,6 +385,8 @@ for (quien in quienes) {
     difs <- character()
     nombre <- switch(v, ENTRAR = "sign-in page", FLUJO = "Flujo (vista previa)",
                      CAL_AP = "Calendario · Pagos", NOTAS = "Notas abiertas", BURBUJA = "Burbuja de valor",
+                     REQ_NUEVA = "Nueva requisición", REQ_EVID = "Requisición abierta · Evidencia",
+                     REQ_COM = "Requisición abierta · Comentarios",
                      PESTANAS[[v]])
     for (k in comunes) for (p in names(eb[[k]])) {
       r <- tema_comparar_valor(p, eb[[k]][[p]], er[[k]][[p]], de_max = DE_MAX, alfa_max = 0.01)
