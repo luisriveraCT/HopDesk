@@ -36,13 +36,17 @@
 # Its own name: R/bancos_module.R has a .TIPO_LABELS (the bank movements'
 # types) and app.R sources this file after global.R sources Bancos, so a
 # shared name made Bancos read these labels (tests/test_tipo_labels_bancos.R).
-.PAGOS_TIPO_LABELS <- c(pago_ppl = "Pago", reporte_word = "Reporte Word",
-                        reporte_excel = "Reporte Excel", reporte_pdf = "Reporte PDF",
-                        bancos_libro_excel      = "Libro de Bancos (Excel)")
+# Each known type's label is a dictionary key (tablas.archivos_pago.tipo.*).
+.PAGOS_TIPO_LABELS <- c(pago_ppl = "tablas.archivos_pago.tipo.pago_ppl",
+                        reporte_word = "tablas.archivos_pago.tipo.reporte_word",
+                        reporte_excel = "tablas.archivos_pago.tipo.reporte_excel",
+                        reporte_pdf = "tablas.archivos_pago.tipo.reporte_pdf",
+                        bancos_libro_excel = "tablas.archivos_pago.tipo.bancos_libro_excel")
 .tipo_label <- function(tipo) {
   t <- as.character(tipo)
-  out <- unname(.PAGOS_TIPO_LABELS[t])
-  ifelse(is.na(out), ifelse(is.na(t) | !nzchar(t), "", t), out)
+  clave <- unname(.PAGOS_TIPO_LABELS[t])
+  vapply(seq_along(t), function(i)
+    if (!is.na(clave[i])) tr(clave[i]) else if (is.na(t[i]) || !nzchar(t[i])) "" else t[i], character(1))
 }
 
 pagosAuditViewerUI <- function(id) {
@@ -431,11 +435,13 @@ pagosAuditViewerServer <- function(id, shared) {
   # See the identical is.na()-explicit check (and its comment) in the detail
   # modal's observeEvent above -- kept in sync deliberately, not %||%-based.
   is_pago <- is.na(row$tipo[1]) || identical(row$tipo[1], "pago_ppl")
+  T <- function(k, ...) tr(paste0("tablas.archivos_pago.recibo.", k), ...)
 
   if (is_pago) {
     ben <- parse_pago_beneficiarios(row$beneficiarios[1])
     body_html <- if (nrow(ben)) sprintf(
-      '<table><thead><tr><th>Beneficiario</th><th>CLABE</th><th>Banco</th><th style="text-align:right;">Importe</th><th>Concepto</th></tr></thead><tbody>%s</tbody></table>',
+      '<table><thead><tr><th>%s</th><th>%s</th><th>%s</th><th style="text-align:right;">%s</th><th>%s</th></tr></thead><tbody>%s</tbody></table>',
+      T("col.beneficiario"), T("col.clabe"), T("col.banco"), T("col.importe"), T("col.concepto"),
       paste(vapply(seq_len(nrow(ben)), function(i) sprintf(
         "<tr><td>%s</td><td>%s</td><td>%s</td><td style='text-align:right;'>%s</td><td>%s</td></tr>",
         htmltools::htmlEscape(ben$alias[i] %||% ""),
@@ -444,13 +450,13 @@ pagosAuditViewerServer <- function(id, shared) {
         monto_moneda(ben$importe[i], row$moneda[1] %||% NA_character_, codigo = FALSE),
         htmltools::htmlEscape(ben$concepto[i] %||% "")
       ), character(1)), collapse = "\n")
-    ) else "<p style='color:{{leg-texto-2-888888}};'>Sin beneficiarios registrados.</p>"
-    total_html <- sprintf('<div class="total">Total: %s (%d pago(s))</div>',
-                          monto_moneda(row$total[1] %||% NA, row$moneda[1] %||% NA_character_),
-                          as.integer(row$n_pagos[1] %||% 0L))
-    extra_meta <- sprintf('<div><strong>Cuenta origen:</strong> %s</div>',
+    ) else paste0("<p style='color:{{leg-texto-2-888888}};'>", T("sin_beneficiarios"), "</p>")
+    total_html <- sprintf('<div class="total">%s</div>',
+                          tr_n("tablas.archivos_pago.recibo.total_pagos", as.integer(row$n_pagos[1] %||% 0L),
+                               total = monto_moneda(row$total[1] %||% NA, row$moneda[1] %||% NA_character_)))
+    extra_meta <- sprintf('<div><strong>%s</strong> %s</div>', T("cuenta_origen"),
                           htmltools::htmlEscape(row$cuenta_origen[1] %||% ""))
-    title_txt <- "Recibo de archivo de pagos"
+    title_txt <- T("titulo_pagos")
   } else {
     det <- parse_pago_detalle(row$detalle[1])
     body_html <- if (length(det))
@@ -459,16 +465,16 @@ pagosAuditViewerServer <- function(id, shared) {
         htmltools::htmlEscape(k),
         htmltools::htmlEscape(paste(unlist(det[[k]]), collapse = ", "))
       ), character(1)), collapse = "\n"), "</tbody></table>")
-    else "<p style='color:{{leg-texto-2-888888}};'>Sin detalle adicional registrado.</p>"
+    else paste0("<p style='color:{{leg-texto-2-888888}};'>", T("sin_detalle"), "</p>")
     total_html <- if (!is.na(row$total[1] %||% NA_real_))
-      sprintf('<div class="total">Total: %s</div>',
-             monto_moneda(row$total[1], row$moneda[1] %||% NA_character_)) else ""
+      sprintf('<div class="total">%s</div>',
+             T("total", total = monto_moneda(row$total[1], row$moneda[1] %||% NA_character_))) else ""
     extra_meta <- ""
-    title_txt <- "Recibo de archivo generado"
+    title_txt <- T("titulo_archivo")
   }
 
   tema_pintar(sprintf('
-<!DOCTYPE html><html><head><meta charset="utf-8">
+<!DOCTYPE html><html lang="%s"><head><meta charset="utf-8">
 <style>
   body { font-family: Arial, sans-serif; color: {{leg-texto-222222}}; padding: 24px; }
   h1 { font-size: 18px; margin-bottom: 4px; }
@@ -482,29 +488,31 @@ pagosAuditViewerServer <- function(id, shared) {
 </style></head><body>
   <h1>%s</h1>
   <div class="meta">
-    <div><strong>Generado por:</strong> %s</div>
-    <div><strong>Fecha:</strong> %s</div>
-    <div><strong>Tipo:</strong> %s</div>
-    <div><strong>Empresa:</strong> %s (%s)</div>
+    <div><strong>%s</strong> %s</div>
+    <div><strong>%s</strong> %s</div>
+    <div><strong>%s</strong> %s</div>
+    <div><strong>%s</strong> %s (%s)</div>
     %s
-    <div><strong>Archivo:</strong> %s</div>
-    <div><strong>ID de registro:</strong> %s</div>
+    <div><strong>%s</strong> %s</div>
+    <div><strong>%s</strong> %s</div>
   </div>
   %s
   %s
-  <div class="footer">Generado automáticamente por HopDesk a partir de un registro permanente e inmutable. Este recibo refleja exactamente lo que quedó registrado al momento de generar el archivo.</div>
+  <div class="footer">%s</div>
 </body></html>',
+    hd_idioma(),
     title_txt,
-    htmltools::htmlEscape(row$user[1] %||% ""),
-    format(as.POSIXct(row$ts[1]), "%d/%m/%Y %H:%M:%S"),
-    htmltools::htmlEscape(.tipo_label(row$tipo[1] %||% "pago_ppl")),
-    htmltools::htmlEscape(row$empresa[1] %||% ""),
+    T("generado_por"), htmltools::htmlEscape(row$user[1] %||% ""),
+    T("fecha"), format(as.POSIXct(row$ts[1]), "%d/%m/%Y %H:%M:%S"),
+    T("tipo"), htmltools::htmlEscape(.tipo_label(row$tipo[1] %||% "pago_ppl")),
+    T("empresa"), htmltools::htmlEscape(row$empresa[1] %||% ""),
     htmltools::htmlEscape(row$moneda[1] %||% ""),
     extra_meta,
-    htmltools::htmlEscape(row$archivo[1] %||% ""),
-    htmltools::htmlEscape(row$id[1] %||% ""),
+    T("archivo"), htmltools::htmlEscape(row$archivo[1] %||% ""),
+    T("id_registro"), htmltools::htmlEscape(row$id[1] %||% ""),
     body_html,
-    total_html
+    total_html,
+    T("pie")
   ), tema)
 }
 

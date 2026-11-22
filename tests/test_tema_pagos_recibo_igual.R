@@ -8,7 +8,10 @@
 # process, and:
 #   - with the colours masked, every receipt is the base's, byte for byte;
 #   - every colour is paired with the base's, in order, within ΔE 2 (CIE76);
-#   - nothing is left unpainted; tema = NULL is Clásico; Marca follows.
+#   - nothing is left unpainted; tema = NULL is Clásico; Marca follows;
+#   - the words come from the dictionary (tablas.archivos_pago.recibo.* and
+#     .tipo.*): in English no fixed Spanish is left; in Spanish the only
+#     changes are "(N pago(s))" -> "(N pago)"/"(N pagos)" and <html lang>.
 #
 #   TEMA_BASE=<checkout before this change> Rscript --vanilla tests/test_tema_pagos_recibo_igual.R
 # Without TEMA_BASE only the branch's own checks run.
@@ -80,11 +83,34 @@ ok("the empty receipts keep their gray note (no beneficiaries / no detail)",
    grepl(reg$tema_color("leg-texto-2-888888"), rama[["pago_vacio"]], fixed = TRUE) &&
    grepl(reg$tema_color("leg-texto-2-888888"), rama[["otro_vacio"]], fixed = TRUE))
 
+# The words (tablas.archivos_pago.recibo.*, tablas.archivos_pago.tipo.*).
+ingles <- recibos(RAMA, idioma = "en")
+ESPANOL <- c("Recibo de archivo", "Generado por", "Fecha:", "Tipo:", "Empresa:", "Archivo:", "ID de registro",
+             "Beneficiario", "<th>Banco</th>", "Importe", "Concepto", "Cuenta origen", "Sin beneficiarios", "Sin detalle",
+             " pago)", " pagos)", "Generado automáticamente", ">Pago<", "lang=\"es\"")
+ok("in English the receipts keep no fixed Spanish text",
+   !any(vapply(ESPANOL, function(s) any(grepl(s, ingles, fixed = TRUE)), logical(1))))
+ok("in English: the payment file receipt, its columns, \"(2 payments)\" and <html lang=\"en\">",
+   all(vapply(c("Payment file receipt", "Beneficiary", "Amount", "(2 payments)", "<html lang=\"en\">", "Source account:"),
+              function(s) grepl(s, ingles[["pago"]], fixed = TRUE), logical(1))))
+
 if (nzchar(BASE)) {
   base <- recibos(BASE)
+  # The text changes on purpose: "(N pago(s))" says one or the other, and the
+  # page says its language (<html lang="es">). Applied to the base before comparing.
+  traducir <- function(h) {
+    h <- sub("<html>", "<html lang=\"es\">", h, fixed = TRUE)
+    m <- regmatches(h, regexpr("\\(([0-9]+) pago\\(s\\)\\)", h))
+    if (length(m)) { n <- as.integer(sub("^\\(([0-9]+).*$", "\\1", m))
+      h <- sub(m, sprintf("(%d %s)", n, if (n == 1L) "pago" else "pagos"), h, fixed = TRUE) }
+    h
+  }
+  base_trad <- vapply(base, traducir, "")
+  ok("the base's only text changes are \"pago(s)\" (the two pago_ppl receipts' total) and <html lang>",
+     sum(grepl("pago(s)", base, fixed = TRUE)) == 2L && all(grepl("<html>", base, fixed = TRUE)))
   for (k in names(base)) {
-    ok(sprintf("%s: with the colours masked, the base's receipt byte for byte", k),
-       identical(enmascarar(base[[k]]), enmascarar(rama[[k]])))
+    ok(sprintf("%s: with the colours masked, the base's receipt byte for byte (\"pago(s)\" and lang translated)", k),
+       identical(enmascarar(base_trad[[k]]), enmascarar(rama[[k]])))
     cb <- colores(base[[k]]); cr <- colores(rama[[k]])
     d <- if (length(cb) == length(cr)) mapply(de, cb, cr) else Inf
     ok(sprintf("%s: %d colours paired in order, each within ΔE 2 (max %.2f)", k, length(cr), max(c(0, d))),

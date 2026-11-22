@@ -75,7 +75,10 @@ quienes <- Filter(defs, c("app.R", list.files("R", pattern = "\\.R$", recursive 
 ok(sprintf("3: only R/bancos_module.R defines .TIPO_LABELS at top level (%s)", paste(quienes, collapse = ", ")),
    identical(unname(quienes), "R/bancos_module.R"))
 ok("2: .tipo_label() reads the payment files' labels (\"pago_ppl\" -> \"Pago\")", {
-  e2 <- new.env(); `%||%` <- function(a, b) if (is.null(a)) b else a
+  # .tipo_label() names each type through the dictionary (tr(), R/i18n.R).
+  i18 <- new.env(); assign("%||%", function(a, b) if (is.null(a)) b else a, envir = i18)
+  sys.source("R/i18n.R", envir = i18)
+  e2 <- new.env(parent = i18)
   for (x in parse("R/pagos_audit_viewer_module.R", keep.source = FALSE, encoding = "UTF-8"))
     if (is.call(x) && identical(x[[1]], as.name("<-")) && is.name(x[[2]]) &&
         as.character(x[[2]]) %in% c(CONSTANTES, ".tipo_label")) eval(x, e2)
