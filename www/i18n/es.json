@@ -972,6 +972,7 @@
   "tablas.empresas.aviso.renombrada_otra_sesion": "Otra sesión ya cambió las iniciales de esta empresa a {iniciales}. No se guardó nada; revisa el formulario y vuelve a guardar.",
   "tablas.empresas.nombre_corto_fijo": "El nombre corto no se cambia: con él se guardan las confirmaciones, los movimientos, los abonos y las correcciones de cada factura. Si de verdad hay que cambiarlo, pídelo a HopDesk.",
   "tablas.empresas.aviso.nombre_corto_fijo": "El nombre corto ya no se puede cambiar: lo usan las confirmaciones, los movimientos y los abonos guardados. No se guardó nada.",
+  "tablas.empresas.aviso.nombre_corto_existe": "Ya hay una empresa con el nombre corto {nombre} (sin contar mayúsculas ni espacios). Dos empresas con el mismo nombre corto mezclarían sus facturas. No se guardó nada; elige otro.",
   "tablas.empresas.aviso.iniciales_de_antes": "Otra empresa usó antes esas iniciales. Elige otras, para que lo guardado con ellas no se confunda.",
   "tablas.empresas.aviso.error_cascada": "Error actualizando tablas relacionadas: {error}",
   "tablas.empresas.aviso.cambios_no_guardados": "No se pudieron guardar los cambios. Intenta de nuevo.",

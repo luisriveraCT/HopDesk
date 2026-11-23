@@ -55,9 +55,26 @@ logo_grupo_img <- function(logo_raw, logo_ext = "png", alto = 32) {
 .empresa_rechazo <- function(clase, ...)
   stop(structure(class = c(clase, "empresa_rechazada", "error", "condition"),
                  c(list(message = clase, call = NULL), list(...))))
-.validar_alta_empresa <- function(initials) function(fresco) {
+# CM48a: the nombre_corto IS the Empresa of every SAP invoice, and nine
+# tables match on it (CM47). Two companies sharing one would cross their
+# confirmations, overrides, moves and abonos. Compared without case or
+# spaces, against EVERY row -- a deleted company's stored rows still carry
+# its name, and a new company with it would inherit them.
+.nombre_corto_llave <- function(x) {
+  x <- as.character(x); x[is.na(x)] <- ""
+  tolower(gsub("[[:space:]]+", "", x))
+}
+.nombre_corto_ocupado <- function(empresas, nombre) {
+  !is.null(empresas) && nrow(empresas) && "nombre_corto" %in% names(empresas) &&
+    nzchar(.nombre_corto_llave(nombre)) &&
+    .nombre_corto_llave(nombre) %in% .nombre_corto_llave(empresas$nombre_corto)
+}
+
+.validar_alta_empresa <- function(initials, nombre_corto = NULL) function(fresco) {
   if (nrow(fresco) && initials %in% toupper(trimws(fresco$initials)))
     .empresa_rechazo("empresa_iniciales_repetidas")
+  if (!is.null(nombre_corto) && .nombre_corto_ocupado(fresco, nombre_corto))   # CM48a
+    .empresa_rechazo("empresa_nombre_corto_repetido", nombre_corto = nombre_corto)
   if (initials %in% .iniciales_de_antes_ajenas(fresco))   # CM29
     .empresa_rechazo("empresa_iniciales_de_antes")
   if (initials %in% .reservas_renombre(fresco))            # CM40: a rename in progress holds them
@@ -580,6 +597,12 @@ empresasServer <- function(id, shared) {
       if (initials %in% .iniciales_de_antes_ajenas(all_e)) {   # CM29
         showNotification(tr("tablas.empresas.aviso.iniciales_de_antes"), type = "error"); return()
       }
+      # CM48a: the name the company will carry (razón social when left empty).
+      nombre_final <- if (nzchar(nombre_corto)) nombre_corto else razon_social
+      if (.nombre_corto_ocupado(all_e, nombre_final)) {
+        showNotification(tr("tablas.empresas.aviso.nombre_corto_existe", nombre = nombre_final),
+                         type = "error", duration = 8); return()
+      }
 
       alt_lines <- trimws(strsplit(input$new_nombres_alt %||% "", "\n")[[1]])
       alt_lines <- alt_lines[nzchar(alt_lines)]
@@ -589,7 +612,7 @@ empresasServer <- function(id, shared) {
         account_code = .next_empresa_code(all_e),
         initials     = initials,
         razon_social = razon_social,
-        nombre_corto = if (nzchar(nombre_corto)) nombre_corto else razon_social,
+        nombre_corto = nombre_final,
         nombres_alt  = as.character(jsonlite::toJSON(alt_lines, auto_unbox = FALSE)),
         rfc          = rfc,
         activa       = isTRUE(input$new_activa),
@@ -607,16 +630,22 @@ empresasServer <- function(id, shared) {
       # the session already shows that other company.
       guardado <- NULL
       saved <- tryCatch({
-        guardado <- .save_and_broadcast(updated, validar = .validar_alta_empresa(initials),
+        guardado <- .save_and_broadcast(updated, validar = .validar_alta_empresa(initials, nombre_final),
                                         ajustar = .codigo_libre_empresa(new_row$id))
         "ok"
       },
                         empresa_iniciales_repetidas = function(e) "repetidas",
                         empresa_iniciales_de_antes  = function(e) "de_antes",
                         empresa_iniciales_reservadas = function(e) "reservadas",
+                        empresa_nombre_corto_repetido = function(e) "nombre_repetido",
                         error = function(e) { message("[EMP] create failed: ", e$message); "error" })
       if (saved == "repetidas") {
         showNotification(tr("tablas.empresas.aviso.iniciales_recien_dadas", iniciales = initials),
+                         type = "error", duration = 8)
+        return()
+      }
+      if (saved == "nombre_repetido") {   # CM48a: another session just took the name
+        showNotification(tr("tablas.empresas.aviso.nombre_corto_existe", nombre = nombre_final),
                          type = "error", duration = 8)
         return()
       }
