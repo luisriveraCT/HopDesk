@@ -197,11 +197,17 @@ ok("4e no session: the default", identical(tema_de_sesion(NULL), HD_TEMA_OMISION
 # message went out with the empty schema's default before the client's
 # group_config was read. It waits for both loads now.
 cuerpo <- paste(app, collapse = "\n")
-ok("4f the hdTema message waits until this client's group_config was read (Phase 2 and the jump bump it)",
+# The read moved from Phase 2 to its own "Phase 1b" observer (priority -0.5,
+# before the SAP dispatch at -1): the bump still comes right after this
+# client's group_config read, and unconditionally (a failed read bumps too).
+ok("4f the hdTema message waits until this client's group_config was read (Phase 1b and the jump bump it)",
    grepl("req(tema_cargado() > 0L)", cuerpo, fixed = TRUE) &&
      grepl("cliente = isolate(effective_client_id())", cuerpo, fixed = TRUE) &&
-     grepl("if \\(!is\\.null\\(cfg\\)\\) group_config_rv\\(cfg\\)\\s*\\n\\s*\\}\\)\\s*\\n\\s*tema_cargado\\(isolate\\(tema_cargado\\(\\)\\) \\+ 1L\\)", cuerpo) &&
+     grepl("if \\(!is\\.null\\(cfg\\)\\) group_config_rv\\(cfg\\)\\s*\\n\\s*tema_cargado\\(tema_cargado\\(\\) \\+ 1L\\)", cuerpo) &&
      grepl("vacio = \\.schema_group_config\\(\\)\\)\\s*\\n\\s*tema_cargado\\(isolate\\(tema_cargado\\(\\)\\) \\+ 1L\\)", cuerpo))
+ok("4g Phase 1b reads group_config before the SAP dispatch (priority -0.5), and Phase 2 no longer does",
+   grepl("load_group_config\\(client_id = cid_g\\)[\\s\\S]*?\\}, priority = -0\\.5\\)", cuerpo, perl = TRUE) &&
+     !grepl("load_group_config(client_id = cid_lo)", cuerpo, fixed = TRUE))
 
 s3_memoria_restaurar()
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
