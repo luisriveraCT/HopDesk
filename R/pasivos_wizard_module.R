@@ -232,6 +232,28 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
   rep
 }
 
+# The wizard's reconciliation, never losing a row. When
+# pasivos_reconcile_provisions() failed, the save used to keep NONE of this
+# liability's provisions and insert every generated one: it dropped the paid,
+# converted and hand-edited rows from S3 (found 2026-11-22, PV-1). Now they
+# stay exactly as they are, nothing is inserted, and the user hears it
+# (saving again retries). `...` goes to pasivos_reconcile_provisions().
+pasivos_reconciliar_o_conservar <- function(existing_for_this, generated, ...) {
+  tryCatch(
+    pasivos_reconcile_provisions(existing_for_this, generated, ...),
+    error = function(e) {
+      message("[wizard] pasivos_reconcile_provisions failed: ", conditionMessage(e))
+      tryCatch(shiny::showNotification(tr("tablas.pasivos.error_generar", detalle = conditionMessage(e)),
+                                       type = "error", duration = 15), error = function(e2) NULL)
+      list(keep = existing_for_this,
+           update = existing_for_this[0L, , drop = FALSE],
+           insert = generated[0L, , drop = FALSE],
+           conflicts = existing_for_this[0L, , drop = FALSE],
+           error = conditionMessage(e))
+    }
+  )
+}
+
 # ── Save handler ───────────────────────────────────────────────────────────────
 # T70: after the save, each provision the end date removed goes to the
 # Papelera (as a provision deleted by hand) and is logged as provision.deleted.
@@ -429,13 +451,8 @@ pasivos_conflictos_reemplazo <- function(conflicts, generated) {
   reco_mode <- if (wiz$mode == "create") "extend" else "regenerate"
   # T71: a provision with the liability's previous note takes the new one
   nota_anterior <- if (!is.null(before_row) && nrow(before_row)) pasivos_nota_de(before_row) else NA_character_
-  result <- tryCatch(
-    pasivos_reconcile_provisions(existing_for_this, generated, mode = reco_mode, nota_anterior = nota_anterior),
-    error = function(e) list(keep = .schema_pasivos_provision(),
-                              update = .schema_pasivos_provision(),
-                              insert = generated,
-                              conflicts = .schema_pasivos_provision())
-  )
+  result <- pasivos_reconciliar_o_conservar(
+    existing_for_this, generated, mode = reco_mode, nota_anterior = nota_anterior)
 
   # Apply: keep + conflicts + update + insert. A conflict (a provision edited
   # by hand that the new terms would change) stays exactly as it is until the
