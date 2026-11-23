@@ -1786,6 +1786,11 @@ pagarHoyServer <- function(id, shared) {
 
       observeEvent(input[[paste0("do_confirm_ap_", emp)]], {
         if (!puede_o_avisa(shared, "can_confirm_payments")) return()
+        # T72-F: every write of this action leaves a staff-only "/parte" trace once
+        # it worked; the client's one row stays the log_action below (and its
+        # _incompleto), word for word.
+        .parte_ap <- evento_parte_de("confirmar_pago", "pagar_hoy", shared$current_user(),
+                                    tryCatch(shared$home_client_id(), error = function(e) NULL))
         s_emp    <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
         cur      <- moneda_sel(emp)
         s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
@@ -1855,7 +1860,7 @@ pagarHoyServer <- function(id, shared) {
           # that fails, stop here: the items stay in Agenda, unconfirmed,
           # instead of leaving Agenda with no confirmation saved.
           conf_db <- tryCatch(
-            modificar_bancos_confirmados(shared$effective_client_id(), function(c) dplyr::bind_rows(c, nuevas)),
+            modificar_bancos_confirmados(shared$effective_client_id(), function(c) dplyr::bind_rows(c, nuevas), evento = .parte_ap),
             error = function(e) { message("[pagar_hoy] confirm AP: ", conditionMessage(e)); NULL })
           if (is.null(conf_db)) {
             showNotification(tr("comun.reintentar"), type = "error", duration = 8)
@@ -1893,7 +1898,7 @@ pagarHoyServer <- function(id, shared) {
         # Actividad shows the inconsistency instead of nothing at all.
         save_result <- save_pagar_hoy_with_retry(ph, shared$current_user(),
                                                   client_id = shared$effective_client_id(),
-                                                  base = ph_base)
+                                                  base = ph_base, evento = .parte_ap)
         if (!isTRUE(save_result$ok)) {
           showNotification(
             tr("tablas.agenda.aviso.confirmada_agenda_no", n = as.character(save_result$attempts)),
@@ -1951,7 +1956,7 @@ pagarHoyServer <- function(id, shared) {
           # changes only once it is saved.
           tryCatch({
             shared$abonos_db(modificar_abonos(function(ab) upsert_abono(ab, ab_new),
-                                              client_id = shared$effective_client_id()))
+                                              client_id = shared$effective_client_id(), evento = .parte_ap))
             bump_sync_version("abonos_db", client_id = shared$effective_client_id())
           }, error = function(e) showNotification(
                      tr("tablas.agenda.aviso.error_abono", error = e$message), type = "warning"))
@@ -2016,7 +2021,7 @@ pagarHoyServer <- function(id, shared) {
 
               if (length(archived_mi_ids)) {
                 shared$papelera_rv(pap)
-                tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
+                tryCatch(save_papelera(pap, client_id = shared$effective_client_id(), evento = .parte_ap),
                          error = function(e) {
                            showNotification(tr("tablas.agenda.aviso.error_archivar_manual", error = e$message), type = "warning")
                            tryCatch(log_action(
@@ -2026,12 +2031,12 @@ pagarHoyServer <- function(id, shared) {
                              viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e2) NULL)),
                              error = function(e2) NULL)
                          })
-                conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces),
+                conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces, evento = .parte_ap),
                                      error = function(e) { message("[pagar_hoy] archive link: ", conditionMessage(e)); NULL })
                 if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
                 mi <- mi[!mi[["id"]] %in% archived_mi_ids, , drop = FALSE]
                 shared$manual_inv(mi)
-                tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base),
+                tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ap),
                          error = function(e) showNotification(
                            tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message), type = "warning"))
               }
@@ -2064,7 +2069,7 @@ pagarHoyServer <- function(id, shared) {
                   }
                 }
                 shared$papelera_rv(pap)
-                tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
+                tryCatch(save_papelera(pap, client_id = shared$effective_client_id(), evento = .parte_ap),
                          error = function(e) {
                            showNotification(tr("tablas.agenda.aviso.error_archivar_manual", error = e$message), type = "warning")
                            tryCatch(log_action(
@@ -2074,13 +2079,13 @@ pagarHoyServer <- function(id, shared) {
                              viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e2) NULL)),
                              error = function(e2) NULL)
                          })
-                conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces),
+                conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces, evento = .parte_ap),
                                      error = function(e) { message("[pagar_hoy] archive link: ", conditionMessage(e)); NULL })
                 if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
 
                 mi_updated <- mi[!mi[["id"]] %in% manual_ids, , drop = FALSE]
                 shared$manual_inv(mi_updated)
-                tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi_base),
+                tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ap),
                          error = function(e) showNotification(
                            tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message), type = "warning"))
               }
@@ -2179,6 +2184,11 @@ pagarHoyServer <- function(id, shared) {
 
       observeEvent(input[[paste0("do_confirm_ar_", emp)]], {
         if (!puede_o_avisa(shared, "can_confirm_payments")) return()
+        # T72-F: every write of this action leaves a staff-only "/parte" trace once
+        # it worked; the client's one row stays the log_action below (and its
+        # _incompleto), word for word.
+        .parte_ar <- evento_parte_de("confirmar_cobro", "pagar_hoy", shared$current_user(),
+                                    tryCatch(shared$home_client_id(), error = function(e) NULL))
         s_emp    <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
         cur      <- moneda_sel(emp)
         s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
@@ -2244,7 +2254,7 @@ pagarHoyServer <- function(id, shared) {
           # Same as the AP confirm: appended to S3's current table; on a
           # failed read nothing is confirmed and the items stay in Agenda.
           conf_db <- tryCatch(
-            modificar_bancos_confirmados(shared$effective_client_id(), function(c) dplyr::bind_rows(c, nuevas)),
+            modificar_bancos_confirmados(shared$effective_client_id(), function(c) dplyr::bind_rows(c, nuevas), evento = .parte_ar),
             error = function(e) { message("[pagar_hoy] confirm AR: ", conditionMessage(e)); NULL })
           if (is.null(conf_db)) {
             showNotification(tr("comun.reintentar"), type = "error", duration = 8)
@@ -2267,7 +2277,7 @@ pagarHoyServer <- function(id, shared) {
         # its comment for the full incident) -- fixed identically here.
         save_result <- save_pagar_hoy_with_retry(ph, shared$current_user(),
                                                   client_id = shared$effective_client_id(),
-                                                  base = ph_base)
+                                                  base = ph_base, evento = .parte_ar)
         if (!isTRUE(save_result$ok)) {
           showNotification(
             tr("tablas.agenda.aviso.confirmada_agenda_no", n = as.character(save_result$attempts)),
@@ -2316,7 +2326,7 @@ pagarHoyServer <- function(id, shared) {
           # changes only once it is saved.
           tryCatch({
             shared$abonos_db(modificar_abonos(function(ab) upsert_abono(ab, ab_new),
-                                              client_id = shared$effective_client_id()))
+                                              client_id = shared$effective_client_id(), evento = .parte_ar))
             bump_sync_version("abonos_db", client_id = shared$effective_client_id())
           }, error = function(e) showNotification(
                      tr("tablas.agenda.aviso.error_abono", error = e$message), type = "warning"))
@@ -2381,7 +2391,7 @@ pagarHoyServer <- function(id, shared) {
 
               if (length(archived_mi_ids)) {
                 shared$papelera_rv(pap)
-                tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
+                tryCatch(save_papelera(pap, client_id = shared$effective_client_id(), evento = .parte_ar),
                          error = function(e) {
                            showNotification(tr("tablas.agenda.aviso.error_archivar_manual", error = e$message), type = "warning")
                            tryCatch(log_action(
@@ -2391,12 +2401,12 @@ pagarHoyServer <- function(id, shared) {
                              viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e2) NULL)),
                              error = function(e2) NULL)
                          })
-                conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces),
+                conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces, evento = .parte_ar),
                                      error = function(e) { message("[pagar_hoy] archive link: ", conditionMessage(e)); NULL })
                 if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
                 mi <- mi[!mi[["id"]] %in% archived_mi_ids, , drop = FALSE]
                 shared$manual_inv(mi)
-                tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base),
+                tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ar),
                          error = function(e) showNotification(
                            tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message), type = "warning"))
               }
@@ -2429,7 +2439,7 @@ pagarHoyServer <- function(id, shared) {
                   }
                 }
                 shared$papelera_rv(pap)
-                tryCatch(save_papelera(pap, client_id = shared$effective_client_id()),
+                tryCatch(save_papelera(pap, client_id = shared$effective_client_id(), evento = .parte_ar),
                          error = function(e) {
                            showNotification(tr("tablas.agenda.aviso.error_archivar_manual", error = e$message), type = "warning")
                            tryCatch(log_action(
@@ -2439,13 +2449,13 @@ pagarHoyServer <- function(id, shared) {
                              viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e2) NULL)),
                              error = function(e2) NULL)
                          })
-                conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces),
+                conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces, evento = .parte_ar),
                                      error = function(e) { message("[pagar_hoy] archive link: ", conditionMessage(e)); NULL })
                 if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
 
                 mi_updated <- mi[!mi[["id"]] %in% manual_ids, , drop = FALSE]
                 shared$manual_inv(mi_updated)
-                tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi_base),
+                tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ar),
                          error = function(e) showNotification(
                            tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message), type = "warning"))
               }

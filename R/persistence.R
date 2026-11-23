@@ -550,6 +550,7 @@ evento_parte_de <- function(accion, modulo = NULL, usuario = NULL, home = NULL)
 # save_*/modificar_*) are writers: their callers without evento= are listed
 # instead of them (tests/test_t72b_deuda_evento.R, envoltorios()).
 T72_DEUDA_EVENTO <- c(
+  "app.R::server" = 5L,
   "R/auth_reset.R::.reset_modificar" = 1L,
   "R/avisos.R::.s3_modificar" = 1L,
   "R/avisos_alertas_module.R::alertas_guardar" = 1L,
@@ -558,7 +559,8 @@ T72_DEUDA_EVENTO <- c(
   "R/avisos_datos.R::correo_partidas_guardar" = 1L,
   "R/avisos_datos.R::correo_semana_guardar" = 1L,
   "R/avisos_umbrales.R::umbral_serie_guardar" = 1L,
-  "R/bancos_persistence.R::enlazar_archivo_confirmaciones" = 1L,
+  "R/bancos_module.R::.bnc_deshacer_abono" = 1L,
+  "R/bancos_module.R::.bnc_deshacer_confirmacion" = 2L,
   "R/email_service.R::modificar_email_queue" = 1L,
   "R/empresas_module.R::.save_and_broadcast" = 1L,
   "R/empresas_module.R::confirmar_renombre_empresa" = 1L,
@@ -570,19 +572,26 @@ T72_DEUDA_EVENTO <- c(
   "R/forecasting_persistence.R::save_forecasting_series_observations" = 1L,
   "R/fx_banxico.R::.fx_divisas_bajar" = 1L,
   "R/fx_tipos.R::fx_escrito_guardar" = 1L,
-  "R/pagar_hoy_module.R::pagarHoyServer" = 2L,
+  "R/interco_module.R::.ic_send_rows" = 1L,
+  "R/ledger_module.R::.borrar_no_sap" = 2L,
+  "R/ledger_module.R::.dia_agregar" = 1L,
+  "R/ledger_module.R::.dia_eliminar" = 1L,
+  "R/ledger_module.R::.dia_quitar" = 1L,
+  "R/ledger_module.R::.sync_staged" = 1L,
+  "R/pagar_hoy_module.R::pagarHoyServer" = 4L,
+  "R/pasivos_module.R::.pasivos_perform_conversion" = 2L,
   "R/pasivos_module.R::pasivos_admin_purge_closed" = 1L,
-  "R/pasivos_module.R::setup_pasivos_module" = 2L,
+  "R/pasivos_module.R::setup_pasivos_module" = 8L,
   "R/pasivos_persistence.R::save_pasivos_audit" = 1L,
   "R/pasivos_persistence.R::save_pasivos_card_expenses" = 1L,
   "R/pasivos_persistence.R::save_pasivos_estimates" = 1L,
   "R/pasivos_persistence.R::save_pasivos_liabilities" = 1L,
   "R/pasivos_persistence.R::save_pasivos_modifiers" = 1L,
   "R/pasivos_persistence.R::save_pasivos_provisions" = 3L,
+  "R/pasivos_wizard_module.R::.pasivos_fin_a_papelera" = 1L,
   "R/persistence.R::.proveedores_guardar" = 2L,
   "R/persistence.R::load_empresas" = 1L,
   "R/persistence.R::load_grupos" = 1L,
-  "R/persistence.R::modificar_abonos" = 1L,
   "R/persistence.R::modificar_client_registry" = 1L,
   "R/persistence.R::modificar_client_requests" = 1L,
   "R/persistence.R::modificar_contacts" = 1L,
@@ -606,13 +615,10 @@ T72_DEUDA_EVENTO <- c(
   "R/persistence.R::save_holiday_overrides" = 1L,
   "R/persistence.R::save_interco" = 1L,
   "R/persistence.R::save_interco_v2" = 1L,
-  "R/persistence.R::save_manual" = 2L,
   "R/persistence.R::save_moves" = 1L,
   "R/persistence.R::save_notes" = 2L,
-  "R/persistence.R::save_pagar_hoy" = 3L,
   "R/persistence.R::save_pagar_hoy_sync" = 1L,
   "R/persistence.R::save_pagar_hoy_user" = 1L,
-  "R/persistence.R::save_papelera" = 2L,
   "R/persistence.R::save_policy_moves" = 1L,
   "R/persistence.R::save_saldos_apertura_user" = 1L,
   "R/persistence.R::save_sap_overrides" = 2L,
@@ -620,11 +626,14 @@ T72_DEUDA_EVENTO <- c(
   "R/persistence.R::save_tags" = 2L,
   "R/persistence.R::unregister_username" = 1L,
   "R/requisiciones_persistence.R::.req_modificar" = 1L,
+  "R/search_module.R::handle_invoice_action" = 3L,
   "R/settings/settings_companies.R::.auto_aplicar_politicas" = 1L,
   "R/settings/settings_helpers.R::modificar_ctas_bancos" = 1L,
   "R/settings/settings_helpers.R::modificar_ctas_cuentas" = 1L,
+  "R/staging_browse_module.R::setup_abono_browse" = 1L,
   "R/sync_bus.R::bump_sync_version" = 1L,
   "R/tiers_module.R::.tiers_guardar_inline" = 1L,   # its observer's inline write, named so the stack finds it (integrador, 2026-11-21)
+  "R/treasury_map_module.R::treasuryMapServer" = 1L,
   "R/usuarios_cuentas.R::reservar_usuario" = 1L
 )
 
@@ -1543,14 +1552,15 @@ load_manual <- function(client_id = NULL) {
 # action added, changed or removed are applied on S3's table as it is now
 # (rebase_por_id), so a manual item another session saved meanwhile is not
 # dropped (CM09). Without it, `df` replaces the whole table, as before.
-save_manual <- function(df, client_id = NULL, base = NULL) {
-  norm <- if (!is.null(base) && !is.null(client_id) && nzchar(client_id))
-    modificar_tabla(S3_KEYS$manual, client_id, .schema_manual,
-                    function(fresco) rebase_por_id(.normalize(df, .schema_manual),
-                                                   .normalize(base, .schema_manual), fresco, "id"))
-  else {
+save_manual <- function(df, client_id = NULL, base = NULL, evento = NULL) {
+  cambio <- function(fresco) rebase_por_id(.normalize(df, .schema_manual), .normalize(base, .schema_manual), fresco, "id")
+  norm <- if (!is.null(base) && !is.null(client_id) && nzchar(client_id)) {
+    if (is.null(evento)) modificar_tabla(S3_KEYS$manual, client_id, .schema_manual, cambio)
+    else modificar_tabla(S3_KEYS$manual, client_id, .schema_manual, cambio, evento = evento)
+  } else {
     norm <- .normalize(df, .schema_manual)
-    .s3_write(norm, S3_KEYS$manual, client_id = client_id)
+    if (is.null(evento)) .s3_write(norm, S3_KEYS$manual, client_id = client_id)
+    else .s3_write(norm, S3_KEYS$manual, client_id = client_id, evento = evento)
     norm
   }
   if (exists(".cache_set", mode = "function")) .cache_set("manual", norm, client_id)
@@ -1639,18 +1649,21 @@ load_papelera <- function(client_id = NULL) {
 # stale copy can no longer drop another session's archive events -- and the
 # write net (CM09) would refuse that shrink anyway, failing the action.
 .papelera_llave <- function(df) ifelse(is.na(df$event_id) | !nzchar(df$event_id %||% ""), paste0("id:", df$id), df$event_id)
-save_papelera <- function(df, client_id = NULL) {
+save_papelera <- function(df, client_id = NULL, evento = NULL) {
   if (!is.null(client_id) && nzchar(client_id)) {
-    norm <- modificar_tabla(S3_KEYS$papelera, client_id, .schema_papelera, function(fresco) {
+    cambio <- function(fresco) {
       mio <- .normalize(df, .schema_papelera)
       dplyr::bind_rows(fresco, mio[!.papelera_llave(mio) %in% .papelera_llave(fresco), , drop = FALSE])
-    })
+    }
+    norm <- if (is.null(evento)) modificar_tabla(S3_KEYS$papelera, client_id, .schema_papelera, cambio)
+            else modificar_tabla(S3_KEYS$papelera, client_id, .schema_papelera, cambio, evento = evento)
     if (exists(".cache_set", mode = "function")) .cache_set("papelera", norm, client_id)
     if (exists("bump_sync_version", mode = "function")) bump_sync_version("papelera_rv", client_id = client_id)
     return(invisible(norm))
   }
   norm <- .normalize(df, .schema_papelera)
-  .s3_write(norm, S3_KEYS$papelera, client_id = client_id)
+  if (is.null(evento)) .s3_write(norm, S3_KEYS$papelera, client_id = client_id)
+  else .s3_write(norm, S3_KEYS$papelera, client_id = client_id, evento = evento)
   if (exists(".cache_set", mode = "function")) .cache_set("papelera", norm, client_id)
   if (exists("bump_sync_version", mode = "function")) bump_sync_version("papelera_rv", client_id = client_id)
 }
@@ -2058,7 +2071,9 @@ rebase_pagar_hoy <- function(nuevo, base, fresco) {
 # `base`: the table this session derived `df` from (usually its
 # pagar_hoy_db()). With it the write is rebased on S3's current content;
 # without it the write replaces the file (old behaviour, last writer wins).
-save_pagar_hoy <- function(df, username = NULL, client_id = NULL, base = NULL) {
+# evento (T72-F): the write's log entry (evento_parte_de() from Confirmar); without it
+# every .s3_write() below is exactly the one before.
+save_pagar_hoy <- function(df, username = NULL, client_id = NULL, base = NULL, evento = NULL) {
   sync_on <- agenda_sync_activa(client_id)
   if (!is.null(base)) {
     fresco <- .pagar_hoy_vivo(sync_on, username, client_id)
@@ -2066,15 +2081,18 @@ save_pagar_hoy <- function(df, username = NULL, client_id = NULL, base = NULL) {
   }
   norm <- .normalize(df, .schema_pagar_hoy)
   if (sync_on) {
-    .s3_write(norm, S3_KEYS$pagar_hoy_sync, client_id = client_id)
+    if (is.null(evento)) .s3_write(norm, S3_KEYS$pagar_hoy_sync, client_id = client_id)
+    else .s3_write(norm, S3_KEYS$pagar_hoy_sync, client_id = client_id, evento = evento)
     if (exists("bump_sync_version", mode = "function")) bump_sync_version("pagar_hoy_db", client_id = client_id)
   } else if (!is.null(username) && nzchar(username %||% "")) {
-    .s3_write(norm, s3_key_pagar_hoy_user(username), client_id = client_id)
+    if (is.null(evento)) .s3_write(norm, s3_key_pagar_hoy_user(username), client_id = client_id)
+    else .s3_write(norm, s3_key_pagar_hoy_user(username), client_id = client_id, evento = evento)
     if (exists("bump_sync_version", mode = "function"))
       bump_sync_version("pagar_hoy_db", client_id = client_id)
   } else {
     # Legacy fallback: shared file (backward compat for callers without a username)
-    .s3_write(norm, S3_KEYS$pagar_hoy, client_id = client_id)
+    if (is.null(evento)) .s3_write(norm, S3_KEYS$pagar_hoy, client_id = client_id)
+    else .s3_write(norm, S3_KEYS$pagar_hoy, client_id = client_id, evento = evento)
     if (exists(".cache_set", mode = "function")) .cache_set("pagar_hoy", norm, client_id)
   }
   invisible(norm)   # what was written (after the rebase): callers show this
@@ -2104,16 +2122,20 @@ save_pagar_hoy <- function(df, username = NULL, client_id = NULL, base = NULL) {
 # of that same trade-off, not a new architectural risk, and it targets exactly
 # the short-blip case a "wifi isn't always great" report describes.
 save_pagar_hoy_with_retry <- function(df, username = NULL, client_id = NULL,
-                                      max_attempts = 3, retry_delay = 0.5, base = NULL) {
+                                      max_attempts = 3, retry_delay = 0.5, base = NULL, evento = NULL) {
   last_err <- NULL
   for (attempt in seq_len(max_attempts)) {
     escrito <- NULL
     ok <- tryCatch({
       # `base` only when given: a call without it stays the exact call it was.
-      escrito <- if (is.null(base))
+      # T72-F: an attempt that fails writes nothing, so it logs nothing; only
+      # the attempt that wrote leaves the event's entry.
+      escrito <- if (is.null(base) && is.null(evento))
         save_pagar_hoy(df, username = username, client_id = client_id)
-      else
+      else if (is.null(evento))
         save_pagar_hoy(df, username = username, client_id = client_id, base = base)
+      else
+        save_pagar_hoy(df, username = username, client_id = client_id, base = base, evento = evento)
       TRUE
     }, error = function(e) { last_err <<- e; FALSE })
     if (ok) return(list(ok = TRUE, error = NULL, attempts = attempt, data = escrito))
@@ -3174,8 +3196,9 @@ load_abonos <- function(client_id = NULL) {
 # dropped. They used to save the session's filtered copy: a second session's
 # abono, or any row of another status, was lost. Returns the screens' view of
 # the table written (cached), for shared$abonos_db.
-modificar_abonos <- function(cambio, client_id) {
-  escrita <- modificar_tabla_completa(S3_KEYS$abonos, client_id, .schema_abonos, cambio)
+modificar_abonos <- function(cambio, client_id, evento = NULL) {
+  escrita <- if (is.null(evento)) modificar_tabla_completa(S3_KEYS$abonos, client_id, .schema_abonos, cambio)
+             else modificar_tabla_completa(S3_KEYS$abonos, client_id, .schema_abonos, cambio, evento = evento)
   vista <- .abonos_vista(escrita)
   if (exists(".cache_set", mode = "function")) .cache_set("abonos", vista, client_id)
   vista

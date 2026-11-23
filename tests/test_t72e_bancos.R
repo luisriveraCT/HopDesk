@@ -181,6 +181,9 @@ andar <- function(e, archivo, funcion) {
   if (!is.null(names(a)) && "accion" %in% names(a) && is.character(a[["accion"]])) filas[[length(filas) + 1L]] <<- c("evento", archivo, funcion, a[["accion"]])
   if (f == "log_action" && !is.null(names(a)) && "action" %in% names(a) && is.character(a[["action"]]))
     filas[[length(filas) + 1L]] <<- c("evento", archivo, funcion, a[["action"]])
+  # log_action(user, module, action, ...) by position (the Agenda's Confirmar, T72-F)
+  if (f == "log_action" && length(a) >= 4L && (is.null(names(a)) || !nzchar(names(a)[4])) && is.character(a[[4]]))
+    filas[[length(filas) + 1L]] <<- c("evento", archivo, funcion, a[[4]])
   for (k in seq_along(e)[-1]) { b <- e[[k]]; if (!missing(b) && is.call(b)) andar(b, archivo, funcion) }
 }
 for (f in list.files("R", "\\.R$", full.names = TRUE, recursive = TRUE)) for (e in parse(f, keep.source = FALSE, encoding = "UTF-8")) andar(e, f, "<top>")

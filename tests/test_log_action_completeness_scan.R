@@ -410,6 +410,16 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
 # once the save worked). Looked for inside function literals too: Bancos
 # passes its save as function() save_...(..., evento = ev) to .bnc_guardar().
 .t72_env <- new.env()   # formal: TRUE while scanning a function whose formals include `evento`
+# partes: the names a scanned body binds to evento_parte_de(...) (Confirmar's
+# .parte_ap <- evento_parte_de(...), T72-F): passing one is a /parte, not a log.
+.t72_partes <- function(e) {
+  out <- character()
+  if (!is.call(e)) return(out)
+  if (as.character(e[[1]])[1] %in% c("<-", "=") && length(e) == 3L && is.name(e[[2]]) && is.call(e[[3]]) &&
+      identical(.t72_nombre(e[[3]]), "evento_parte_de")) out <- as.character(e[[2]])
+  for (i in seq_along(as.list(e))[-1]) if (is.call(e[[i]])) out <- c(out, .t72_partes(e[[i]]))
+  unique(out)
+}
 .t72_con_evento <- function(e) {
   if (!is.call(e)) return(FALSE)
   a <- as.list(e)
@@ -417,6 +427,7 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     v <- a[["evento"]]
     real <- !(is.null(v) || identical(v, quote(NULL)) ||
               (identical(v, quote(evento)) && isTRUE(.t72_env$formal)) ||   # a wrapper's pass-through of its own formal
+              (is.name(v) && as.character(v) %in% .t72_env$partes) ||          # a name bound to evento_parte_de() (T72-F)
               (is.call(v) && identical(.t72_nombre(v), "evento_parte_de")))
     if (real) return(TRUE)
   }
@@ -480,6 +491,7 @@ escanear_camino <- function(f) {
     if (!is.call(e)) return()
     if (.t72_nombre(e) == "observeEvent" && length(e) >= 3) {
       .t72_env$formal <- FALSE   # a handler has no formals: `evento = evento` there is a local event
+      .t72_env$partes <- .t72_partes(e[[3]])
       h <- .t72_cuerpo(e[[3]], ln)
       if (length(h)) out[[length(out) + 1L]] <<- data.frame(file = f, label = paste(deparse(e[[2]])[1]),
                                                             huecos = paste(h, collapse = ","), stringsAsFactors = FALSE)
@@ -494,6 +506,7 @@ escanear_camino <- function(f) {
       nm <- as.character(e[[2]])
       if (!grepl(.BASE_T72, nm) && !nm %in% .HELPERS_T72 && !.t72_contiene(e[[3]][[3]], nombres = "observeEvent")) {
         .t72_env$formal <- "evento" %in% names(e[[3]][[2]])
+        .t72_env$partes <- .t72_partes(e[[3]][[3]])
         h <- .t72_cuerpo(e[[3]][[3]], ln)
         if (length(h)) out[[length(out) + 1L]] <- data.frame(file = f, label = nm, huecos = paste(h, collapse = ","),
                                                              stringsAsFactors = FALSE)
@@ -539,6 +552,9 @@ escanear_camino <- function(f) {
   ok("T72-E camino: evento = evento where `evento` is a local event (not a formal) logs -> no hole (Empresas' Guardar)", !nrow(r))
   r <- fx(c('h <- function(input) {', '  observeEvent(input$b, {', '    evento <- list(accion = "a")', '    modificar_algo(function(f) f, client_id = cid, evento = evento)', '  })', '}'))
   ok("T72-E camino: the same inside a handler -> no hole", !nrow(r))
+  r <- fx(c('h <- function(input) {', '  observeEvent(input$b, {', '    .p <- evento_parte_de("a")',
+            '    save_algo(x, evento = .p)', '    save_otra(x, evento = .p)', '  })', '}'))
+  ok("T72-F camino: a name bound to evento_parte_de() (Confirmar's .parte_ap) is not a log -> a hole", nrow(r) == 1L)
   r <- fx(c('h <- function(x) {', '  save_algo(x)', '  if (x$a) log_action(user = "u")', '  bump_sync_version("t")', '}'))
   ok("T72-E camino: a log in ONE branch, then bump_sync_version -> still a hole (only a real event survives a bump)", nrow(r) == 1L)
   lg <- function(lineas) { f <- tempfile(fileext = ".R"); writeLines(lineas, f); r <- scan_log_action_completeness(f); unlink(f); r }

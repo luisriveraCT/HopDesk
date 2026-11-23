@@ -201,15 +201,17 @@ modificar_bancos_confirmados <- function(client_id, cambio, evento = NULL) {
 # Link confirmations to the papelera event that archived their item, on S3's
 # current table. `enlaces`: list of list(ids = agenda_item_id(s), event =
 # event_id); the newest unlinked row among `ids` gets the event, as before.
-enlazar_archivo_confirmaciones <- function(client_id, enlaces) {
+enlazar_archivo_confirmaciones <- function(client_id, enlaces, evento = NULL) {
   if (!length(enlaces)) return(NULL)
-  modificar_bancos_confirmados(client_id, function(c) {
+  cambio <- function(c) {
     for (e in enlaces) {
       cidx <- which(c$agenda_item_id %in% e$ids & is.na(c$archive_event_id))
       if (length(cidx)) c$archive_event_id[cidx[length(cidx)]] <- e$event
     }
     c
-  })
+  }
+  if (is.null(evento)) modificar_bancos_confirmados(client_id, cambio)
+  else modificar_bancos_confirmados(client_id, cambio, evento = evento)
 }
 
 # Undo a confirmation, recording the recovery as its own permanent row

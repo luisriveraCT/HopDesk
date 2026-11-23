@@ -35,7 +35,7 @@ cargar <- function(archivo, nombres) {
 cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 cargar("R/global.R", c("fmt_money", "is_erp_sourced"))
 cargar("R/data_pipeline.R", ".politica_doc_unica")   # T52g: the Referencia of each row's own invoice
-cargar("R/persistence.R", "unstage_pagar_hoy")
+cargar("R/persistence.R", c("unstage_pagar_hoy", "evento_parte_de"))   # T72-F: Confirmar's /parte events
 cargar("R/bancos_persistence.R", "autor_registrable")   # CM35: Confirmar records who (confirmado_por)
 cargar("R/ui_components.R", "app_styles")
 cargar("R/ui_components.R", c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_numero_texto", "hd_numero_deps",
@@ -62,7 +62,7 @@ stubs <- list(
   safe_load_pagar_hoy = function(...) shiny::isolate(AGENDA()),
   save_pagar_hoy_with_retry = function(...) list(ok = TRUE, attempts = 1L),
   save_pagar_hoy = function(...) invisible(TRUE),
-  modificar_bancos_confirmados = function(cid, f) {
+  modificar_bancos_confirmados = function(cid, f, evento = NULL) {
     nuevas <- f(tibble::tibble())
     .anota(sprintf("confirmados AP: %s", paste(nuevas$agenda_item_id, collapse = ",")))
     nuevas
@@ -80,7 +80,7 @@ stubs <- list(
     .anota(sprintf("abonos: %s", paste(nuevo$Documento, collapse = ",")))
     dplyr::bind_rows(db, nuevo)
   },
-  modificar_abonos = function(cambio, client_id) cambio(tibble::tibble())
+  modificar_abonos = function(cambio, client_id, evento = NULL) cambio(tibble::tibble())
 )
 for (n in names(stubs)) assign(n, stubs[[n]], envir = globalenv())
 
