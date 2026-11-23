@@ -595,6 +595,24 @@ bancosUI <- function(id) {
 # =============================================================================
 # bancosServer
 # =============================================================================
+# CM49: Tipo of a Calendario papelera row. AR -> cobro, AP -> pago. Rows the
+# Search modal wrote before ce8f4fa (2026-07-15) say ledger "MIXED": their
+# own ledger is looked for in original_data (the archived row), and when it
+# is not there the Tipo stays empty -- not "pago", which was wrong for every
+# trashed cobro among them.
+.bnc_pap_tipo <- function(ledger, original_data = NULL) {
+  ledger <- toupper(trimws(as.character(ledger)))
+  if (!is.null(original_data) && length(original_data) == length(ledger)) {
+    mixto <- which(!(ledger %in% c("AR", "AP")))
+    for (i in mixto) {
+      o <- original_data[[i]]
+      l <- if (is.list(o) && !is.null(o[["ledger"]])) toupper(trimws(as.character(o[["ledger"]][1]))) else NA_character_
+      if (!is.na(l) && l %in% c("AR", "AP")) ledger[i] <- l
+    }
+  }
+  ifelse(ledger %in% "AR", "cobro", ifelse(ledger %in% "AP", "pago", NA_character_))
+}
+
 bancosServer <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -2621,7 +2639,7 @@ bancosServer <- function(id, shared) {
         ids <- make.unique(dplyr::coalesce(as.character(cal$event_id), as.character(cal$id), as.character(seq_len(nrow(cal)))))
         filas$cal <- .bnc_pap_filas("cal", ids, origen, dplyr::coalesce(as.Date(cal$FechaEff), as.Date(cal$deleted_at)),
                                     cal$Empresa, dplyr::coalesce(cal$Parte, cal$Empresa), cal$Importe, cal$Moneda,
-                                    ifelse(cal$ledger %in% "AR", "cobro", "pago"), cal$Documento, cal$deleted_at)
+                                    .bnc_pap_tipo(cal$ledger, cal$original_data), cal$Documento, cal$deleted_at)
       }
       do.call(rbind, unname(filas))
     })
