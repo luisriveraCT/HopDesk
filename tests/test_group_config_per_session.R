@@ -58,8 +58,11 @@ ok("group_config_rv starts as the empty schema, not another client's config",
    length(inits) == 1L && identical(inits[[1]], quote(reactiveVal(.schema_group_config()))))
 ok("app.R never calls load_group_config() without a client_id",
    length(calls) >= 1L && all(vapply(calls, function(cl) "client_id" %in% names(cl), logical(1))))
-ok("Phase 2 loads the session's own client's group config",
-   any(vapply(calls, function(cl) identical(cl$client_id, as.name("cid_lo")), logical(1))))
+# TEMA 5 (2026-11-23): the read moved from Phase 2 (cid_lo) to the Phase 1b
+# observer (cid_g), so the client's theme does not wait behind the SAP
+# dispatch. Same tenant: the home client resolved at sign-in.
+ok("Phase 1b loads the session's own client's group config",
+   any(vapply(calls, function(cl) identical(cl$client_id, as.name("cid_g")), logical(1))))
 ok("the context-switch observer still reloads it on a jump",
    any(grepl(".ctx_load(load_group_config,", readLines("app.R", warn = FALSE), fixed = TRUE) |
        # CM38: on a jump it is read strictly first
