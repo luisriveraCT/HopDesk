@@ -31,6 +31,18 @@ ok("i18n_head_parcial() puts only the prefix's keys, merged into window.HD_I18N"
    grepl("window.HD_I18N=Object.assign(window.HD_I18N||{},", html, fixed = TRUE) &&
      identical(sort(names(dic)), carga(es)) && length(dic) < 100L)
 
+# A text holding "</script>" must not end the page's <script> (integrador).
+real <- .i18n_cache[["es"]]
+.i18n_cache[["es"]] <- c(real, list(cuentas.carga.prueba = "fin</script><b>x</b>"))
+html_mal <- as.character(i18n_head_parcial("cuentas.carga."))
+.i18n_cache[["es"]] <- real
+cuerpo <- sub("^<script>(.*)</script>$", "\\1", html_mal)
+ok("a text with </script> is escaped (<\\/): the script tag ends only once",
+   lengths(regmatches(html_mal, gregexpr("</script>", html_mal, fixed = TRUE))) == 1L &&
+     grepl("fin<\\/script><b>x<\\/b>", cuerpo, fixed = TRUE) &&
+     identical(jsonlite::fromJSON(sub("^.*Object\\.assign\\(window\\.HD_I18N\\|\\|\\{\\},(.*)\\);$", "\\1", cuerpo),
+                                  simplifyVector = FALSE)$cuentas.carga.prueba, "fin</script><b>x</b>"))
+
 app <- readLines("app.R", warn = FALSE, encoding = "UTF-8")
 i <- grep('i18n_head_parcial("cuentas.carga.")', app, fixed = TRUE)
 j <- grep('tags$script(src = "overlay_init.js?v=', app, fixed = TRUE)

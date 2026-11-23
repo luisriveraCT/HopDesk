@@ -76,8 +76,11 @@ tr_n <- function(clave, n, ..., idioma = hd_idioma()) {
 i18n_head_parcial <- function(prefijo, idioma = hd_idioma()) {
   dic <- utils::modifyList(i18n_dict("es"), i18n_dict(idioma))
   dic <- dic[startsWith(names(dic), prefijo)]
+  # "</" escaped: a text holding "</script>" would end the <script> early
+  # (jsonlite does not escape it; "<\/" is the same string to JavaScript).
+  json <- gsub("</", "<\\/", as.character(jsonlite::toJSON(dic, auto_unbox = TRUE)), fixed = TRUE)
   htmltools::tags$script(htmltools::HTML(paste0(
-    "window.HD_I18N=Object.assign(window.HD_I18N||{},", jsonlite::toJSON(dic, auto_unbox = TRUE), ");")))
+    "window.HD_I18N=Object.assign(window.HD_I18N||{},", json, ");")))
 }
 
 i18n_head <- function(idioma = hd_idioma()) {
