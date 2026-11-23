@@ -85,9 +85,11 @@ i18n_head_parcial <- function(prefijo, idioma = hd_idioma()) {
 
 i18n_head <- function(idioma = hd_idioma()) {
   dic <- utils::modifyList(i18n_dict("es"), i18n_dict(idioma))
+  # "</" escaped, as in i18n_head_parcial(): a text holding "</script>" would
+  # end the <script> early.
+  json <- gsub("</", "<\\/", as.character(jsonlite::toJSON(dic, auto_unbox = TRUE)), fixed = TRUE)
   htmltools::tagList(
-    htmltools::tags$script(htmltools::HTML(paste0(
-      "window.HD_I18N=", jsonlite::toJSON(dic, auto_unbox = TRUE), ";"))),
+    htmltools::tags$script(htmltools::HTML(paste0("window.HD_I18N=", json, ";"))),
     htmltools::tags$script(src = "i18n.js?v=1")
   )
 }

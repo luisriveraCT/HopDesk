@@ -43,6 +43,16 @@ ok("a text with </script> is escaped (<\\/): the script tag ends only once",
      identical(jsonlite::fromJSON(sub("^.*Object\\.assign\\(window\\.HD_I18N\\|\\|\\{\\},(.*)\\);$", "\\1", cuerpo),
                                   simplifyVector = FALSE)$cuentas.carga.prueba, "fin</script><b>x</b>"))
 
+# The same for the whole dictionary (i18n_head(), every page inside the app).
+.i18n_cache[["es"]] <- c(real, list(comun.prueba.cierre = "fin</script><b>x</b>"))
+html_todo <- as.character(i18n_head())
+.i18n_cache[["es"]] <- real
+primero <- sub("^.*?<script>(.*?)</script>.*$", "\\1", html_todo)
+ok("i18n_head(): a text with </script> is escaped too, and the dictionary still reads back",
+   lengths(regmatches(html_todo, gregexpr("</script>", html_todo, fixed = TRUE))) == 2L &&
+     identical(jsonlite::fromJSON(sub("^window\\.HD_I18N=(.*);$", "\\1", primero),
+                                  simplifyVector = FALSE)$comun.prueba.cierre, "fin</script><b>x</b>"))
+
 app <- readLines("app.R", warn = FALSE, encoding = "UTF-8")
 i <- grep('i18n_head_parcial("cuentas.carga.")', app, fixed = TRUE)
 j <- grep('tags$script(src = "overlay_init.js?v=', app, fixed = TRUE)
