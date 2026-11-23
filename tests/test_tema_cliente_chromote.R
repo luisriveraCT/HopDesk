@@ -149,7 +149,19 @@ abrir_empresas <- function(b) {
 guardar_tema <- function(b, valor) {
   ev(b, sprintf("(function(){ var r = document.querySelector(\"#emp-tema_input input[type=radio][value='%s']\");
     if (!r) return false; r.click(); $(r).trigger('change'); return true; })()", valor)) &&
-    { Sys.sleep(1); ev(b, "document.getElementById('emp-btn_save_group_config').click(); true"); Sys.sleep(4); TRUE }
+    { Sys.sleep(1)
+      cat("      | radio checked before Guardar:", tryCatch(ev(b, "(function(){ var r = document.querySelector(\"#emp-tema_input input[type=radio]:checked\");
+        return r ? (r.value === '' ? '(automático)' : r.value) : '(ninguno)'; })()"), error = function(e) "?"), "\n")
+      ev(b, "document.getElementById('emp-btn_save_group_config').click(); true")
+      # What the app answered: its notification (the save path's only voice).
+      aviso <- ""
+      poll_until(function() {
+        aviso <<- tryCatch(ev(b, "Array.from(document.querySelectorAll('.shiny-notification-content'))
+          .map(function(n){ return n.textContent.trim(); }).join(' | ')"), error = function(e) "")
+        nzchar(aviso) }, timeout_s = 20, interval_s = 0.5)
+      cat("      | notification after Guardar:", if (nzchar(aviso)) aviso else "(none in 20 s)", "\n")
+      captura(b, "staff_tras_guardar")
+      TRUE }
 }
 
 # ── Run A: the client has no theme ───────────────────────────────────────────
