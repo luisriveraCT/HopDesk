@@ -24,20 +24,56 @@
 # Never prints: the job runs in a public repo's logs (see avisos_job.R).
 # =============================================================================
 
-# The mails' colours come from the theme registry (R/tema_registro.R), in
-# Marca for every client until TEMA stage 5 (then: the client's theme). Each
-# field is a role, or a tone of the brand's palette that only these mails use.
+# The mails' colours come from the theme registry (R/tema_registro.R), in the
+# theme the client CHOSE (TEMA stage 5a); a client that chose none gets Marca,
+# as every client did before (Luis approved the weekly mail in Marca). Each
+# field is a role per theme. Marca's column is the 4b one, untouched; Clásico's
+# reads each side as its own family -- collections the gold (acento), payments
+# the navy (primario), lighter where the mail is lighter ("<rol>-pN": the role at
+# N % over the surface) -- never a warning colour (the Diseñador, 2026-11-22).
+# A theme with no column of its own takes Marca's.
 CORREO_TEMA <- "marca"
-.CORREO_ROLES <- c(
-  fondo = "lino", papel = "superficie", tinta = "texto", gris = "texto-2",
-  marino = "primario", dorado = "acento", dorado_osc = "oro-osc", linea = "lino-bd",
-  linea_tabla = "superficie-2", pie = "fondo", arena = "arena", arena_tinta = "arena-fg",
-  gris_claro = "niebla-osc", cobre = "aviso-texto", revision = "aviso-suave", revision_tinta = "ambar-osc",
-  verde = "exito", logro_tinta = "acento-texto", riel = "lino-riel", reprog = "texto-tenue",
-  por_vencer = "bruma", cambio = "borde", liquidado_ar = "arena-osc", liquidado_ap = "pizarra-clara",
-  linea_oscura = "marino-claro")
-.correo_colores <- function(tema = CORREO_TEMA)
-  as.list(vapply(.CORREO_ROLES, tema_color, character(1), tema = tema))
+.CORREO_ROLES <- list(
+  marca = c(
+    fondo = "lino", papel = "superficie", tinta = "texto", gris = "texto-2",
+    marino = "primario", dorado = "acento", dorado_osc = "oro-osc", linea = "lino-bd",
+    linea_tabla = "superficie-2", pie = "fondo", arena = "arena", arena_tinta = "arena-fg",
+    gris_claro = "niebla-osc", cobre = "aviso-texto", revision = "aviso-suave", revision_tinta = "ambar-osc",
+    verde = "exito", logro_tinta = "acento-texto", riel = "lino-riel", reprog = "texto-tenue",
+    por_vencer = "bruma", cambio = "borde", liquidado_ar = "arena-osc", liquidado_ap = "pizarra-clara",
+    linea_oscura = "marino-claro"),
+  clasico = c(
+    fondo = "superficie-2", papel = "superficie", tinta = "texto", gris = "texto-2",
+    marino = "primario", dorado = "acento", dorado_osc = "acento-texto", linea = "borde",
+    linea_tabla = "superficie-2", pie = "fondo", arena = "acento-p12", arena_tinta = "acento-texto",
+    gris_claro = "primario-suave", cobre = "aviso-texto", revision = "aviso-suave", revision_tinta = "aviso-texto",
+    verde = "exito", logro_tinta = "acento-texto", riel = "superficie-2", reprog = "texto-tenue",
+    por_vencer = "borde-fuerte", cambio = "borde", liquidado_ar = "acento-p45", liquidado_ap = "primario-p40",
+    linea_oscura = "primario-hover"))
+.correo_colores <- function(tema = CORREO_TEMA) {
+  # A theme the registry does not know is Marca, whole: tema_color() would
+  # read it as the default theme and mix it with Marca's column (the Diseñador).
+  if (!isTRUE(tema_valido(tema))) tema <- CORREO_TEMA
+  tema <- tolower(trimws(tema))
+  roles <- .CORREO_ROLES[[tema]] %||% .CORREO_ROLES[[CORREO_TEMA]]
+  as.list(vapply(roles, tema_color, character(1), tema = tema))
+}
+# The weekly mail's theme for a client: the one it chose (tema_elegido_cliente(),
+# R/tema_registro.R, reading group_config), else Marca. Read once per client per
+# run (the job is one process: the cache lives as long as the run), and a read
+# that fails is Marca -- the theme never stops a mail. Always the cid the job
+# passes, never CLIENT_ID from the environment.
+.correo_tema_cache <- new.env(parent = emptyenv())
+correo_tema <- function(cid) {
+  if (is.null(cid) || !nzchar(cid %||% "")) return(CORREO_TEMA)
+  if (!is.null(.correo_tema_cache[[cid]])) return(.correo_tema_cache[[cid]])
+  elegir <- get0("tema_elegido_cliente", mode = "function")
+  t <- if (is.null(elegir)) NULL else tryCatch(elegir(cid), error = function(e) NULL)
+  t <- if (is.character(t) && length(t) == 1L && nzchar(t)) t else CORREO_TEMA
+  assign(cid, t, envir = .correo_tema_cache)
+  t
+}
+correo_tema_olvidar <- function() rm(list = ls(.correo_tema_cache), envir = .correo_tema_cache)
 # Lazy: shiny sources R/ in alphabetical order, so tema_color() (R/tema_registro.R)
 # does not exist yet when this file loads; the list is built on first use.
 delayedAssign("CORREO_COLORES", .correo_colores())
@@ -161,6 +197,15 @@ correo_revision <- function(alertas, idioma = "es") {
 # inline-blocks that stack on a phone without media queries.
 
 delayedAssign(".cr_C", CORREO_COLORES)
+# One mail's palette: .cr_C (what every helper below reads) is the mail's theme
+# while it is built, and back to the default after (also on error).
+.correo_con_tema <- function(tema, construir) {
+  env <- environment(sys.function())
+  previo <- get(".cr_C", envir = env)
+  assign(".cr_C", .correo_colores(tema %||% CORREO_TEMA), envir = env)
+  on.exit(assign(".cr_C", previo, envir = env), add = TRUE)
+  construir()
+}
 .cr_SERIF <- "Fraunces,Georgia,serif"
 .cr_SANS  <- "Lato,Arial,sans-serif"
 
@@ -421,7 +466,9 @@ correo_lunes_asunto <- function(d, idioma)
   stats::setNames(vapply(m, function(x) .cr_valor(cobros, x) - .cr_valor(pagos, x), numeric(1)), m)
 }
 
-correo_lunes_html <- function(d, dest) {
+# d$tema: the client's theme (the job puts correo_tema(cid) there); none = Marca.
+correo_lunes_html <- function(d, dest) .correo_con_tema(d$tema, function() .correo_lunes_cuerpo(d, dest))
+.correo_lunes_cuerpo <- function(d, dest) {
   idioma <- dest$idioma %||% "es"; cxc <- isTRUE(dest$ver_cxc)
   base <- d$moneda_base %||% MONEDA_BASE_OMISION
   lunes <- as.Date(d$lunes); viernes <- lunes + 4L
@@ -646,7 +693,8 @@ CORREO_MAX_LISTA <- 10L   # per side; the rest is "y N más" (Luis, T45d)
                      estilo = paste0("border-bottom:1px solid ", .cr_C$linea_tabla)), "0 28px 4px")
 }
 
-correo_viernes_html <- function(d, dest) {
+correo_viernes_html <- function(d, dest) .correo_con_tema(d$tema, function() .correo_viernes_cuerpo(d, dest))
+.correo_viernes_cuerpo <- function(d, dest) {
   idioma <- dest$idioma %||% "es"; cxc <- isTRUE(dest$ver_cxc)
   base <- d$moneda_base %||% MONEDA_BASE_OMISION
   viernes <- as.Date(d$viernes); lunes <- viernes - 4L

@@ -180,8 +180,10 @@ job_lunes <- function(cid, hoy, ahora, prueba, url) {
   if (is.null(dests)) return(job_contar("omitido_destinatarios"))
   job_contar("destinatarios", nrow(dests))
   avisos_df <- .normalizar(.avisos_leer_para_escribir(cid), .schema_avisos)
+  tema <- correo_tema(cid)   # the theme the client chose, else Marca (TEMA 5a); never stored
   job_enviar(cid, "lunes", hoy, dests, function(dest) {
     di <- d; di$tambien <- correo_tambien(avisos_df, dest, cid)
+    di$tema <- tema
     list(asunto = correo_lunes_asunto(di, dest$idioma), html = correo_lunes_html(di, dest))
   }, prueba)
   job_contar("clientes_ok")
@@ -212,6 +214,7 @@ job_viernes <- function(cid, hoy, ahora, prueba, url) {
     ok_p <- !is.null(partidas) && guardar(function() correo_partidas_guardar(cid, dv$partidas_fila, dv$lunes))
     if (!ok_h || !ok_p) job_contar("historial_fallido")
   }
+  dv$tema <- correo_tema(cid)   # after the histories are kept: the theme is never stored (TEMA 5a)
   dests <- job_destinatarios(cid)
   if (is.null(dests)) return(job_contar("omitido_destinatarios"))
   job_contar("destinatarios", nrow(dests))
