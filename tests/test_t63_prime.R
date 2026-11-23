@@ -55,8 +55,27 @@ respuesta_fred <- function()
   structure(list(status_code = 200L, content = charToRaw(JSON_FRED), headers = list(`content-type` = "application/json")),
             class = "response")
 
-test_that("FRED paso: httr::content() devuelve el JSON simulado tal cual", {
-  expect_identical(httr::content(respuesta_fred(), as = "text", encoding = "UTF-8"), JSON_FRED)
+# T76f: on the CI (Linux) this step ERRORS. Its message goes into the test's
+# NAME (the public annotation carries names only): class and the first ~200
+# characters. Approved by the Coordinador for THIS synthetic call only (no one's
+# data). " :: ", not " — ": the annotation cuts what follows an em dash.
+diag_content <- tryCatch(list(ok = TRUE, valor = httr::content(respuesta_fred(), as = "text", encoding = "UTF-8")),
+                         error = function(e) list(ok = FALSE, clase = class(e)[1],
+                                                  msg = substr(gsub("[\r\n%]+", " ", conditionMessage(e)), 1, 200)))
+if (isTRUE(diag_content$ok)) {
+  test_that("FRED paso: httr::content() devuelve el JSON simulado tal cual", {
+    expect_identical(diag_content$valor, JSON_FRED)
+  })
+} else {
+  test_that(paste0("FRED paso: httr::content() falla :: ", diag_content$clase, " :: ", diag_content$msg), {
+    fail("httr::content() raised an error on the mocked response")
+  })
+}
+test_that("FRED paso: rawToChar del contenido simulado da el JSON", {
+  expect_identical(rawToChar(respuesta_fred()$content), JSON_FRED)
+})
+test_that("FRED paso: iconv a UTF-8 deja el JSON igual", {
+  expect_identical(iconv(rawToChar(respuesta_fred()$content), from = "UTF-8", to = "UTF-8"), JSON_FRED)
 })
 test_that("FRED paso: jsonlite lee 3 observaciones como data frame", {
   obs <- jsonlite::fromJSON(JSON_FRED, simplifyDataFrame = TRUE)$observations

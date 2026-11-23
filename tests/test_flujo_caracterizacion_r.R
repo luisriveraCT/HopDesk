@@ -38,7 +38,10 @@ assign(".i18n_dir", file.path(getwd(), "www", "i18n"), envir = globalenv())
 source("tests/helpers/flujo_datos_prueba.R")
 source("tests/helpers/flujo_adaptador_motor.R")
 
-LUNES <- lubridate::floor_date(Sys.Date(), "week", week_start = 1)
+# The app's own default week (the USER's day, hoy_usuario(), CM27), not the
+# server's Sys.Date(): on the CI (UTC) a Sunday evening in Mexico is already
+# Monday, a week apart, and F18 failed (T76f).
+LUNES <- .cf_default_from()
 D <- flujo_datos_prueba(LUNES)
 datos <- function(desde = LUNES, hasta = LUNES + 6L, agrupacion = "auto", modo = "separate", base = "MXN", fx = c())
   build_cashflow_export_data(D$df, D$tags, D$empresas, desde, hasta, agrupacion, modo, base, fx)
