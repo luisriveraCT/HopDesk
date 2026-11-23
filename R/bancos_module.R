@@ -1116,6 +1116,16 @@ bancosServer <- function(id, shared) {
       ), error = function(e) NULL)
       FALSE
     }
+    # T72-E: a Bancos action's log entry rides with its first write: who, the
+    # action, its words and its own metadata (the viewer's bancos_movimientos
+    # / bancos_manual_edit detail reads it). The write layer writes it once
+    # the save worked -- it replaces the hand log_action that came after.
+    # A second write of the same action passes evento_parte_de(accion, ...).
+    .bnc_quien <- function() tryCatch(shared$current_user(), error = function(e) "system")
+    .bnc_casa  <- function() tryCatch(shared$home_client_id(), error = function(e) NULL)
+    .bnc_evento <- function(accion, descripcion, metadata = NULL, target_id = NULL, usuario = .bnc_quien())
+      list(usuario = usuario, modulo = "bancos", accion = accion, descripcion = descripcion,
+           metadata = metadata, target_id = target_id, home = .bnc_casa())
 
     # ── Eliminar batch ────────────────────────────────────────────────────────
     # The Libro's bar sends the marked ids; the confirmation lists the ones
@@ -1202,8 +1212,12 @@ bancosServer <- function(id, shared) {
       movs$eliminado_at[idx] <- Sys.time()
       # Saved first: if S3 refuses, nothing changes in the session, the
       # confirmation stays open and nothing says it was deleted (T12a).
+      n <- length(idx)
+      ev <- .bnc_evento("eliminar_movimientos", paste0(n, " movimiento(s) enviado(s) a papelera"),
+                        c(list(n = n), .bancos_audit_rows_summary(del_rows)), usuario = actor)
       if (!.bnc_guardar("eliminar_movimientos", sprintf("Eliminar %d movimiento(s)", length(idx)),
-                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base))) return()
+                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base,
+                                                           evento = ev))) return()
       # Only now are these ids done with: a failed save keeps them, so the
       # same confirmation can try again.
       elim_ids_rv(NULL)
@@ -1223,23 +1237,14 @@ bancosServer <- function(id, shared) {
                    sprintf("Archivar %d movimiento(s) eliminados en la papelera de Bancos", nrow(del_rows)),
                    function() {
                      modificar_bancos_papelera(function(bpap) add_to_bancos_papelera(bpap, del_rows, actor = actor),
-                                               client_id = shared$effective_client_id())
+                                               client_id = shared$effective_client_id(),
+                                               evento = evento_parte_de("eliminar_movimientos", "bancos", actor, .bnc_casa()))
                    }, aviso = "tablas.bancos.error_archivar")
 
       removeModal()
-      n <- length(idx)
       showNotification(
         tr_n("tablas.bancos.aviso.eliminados", as.character(n)),
         type = "message", duration = 3
-      )
-      log_action(
-        user        = actor,
-        module      = "bancos",
-        action      = "eliminar_movimientos",
-        description = paste0(n, " movimiento(s) enviado(s) a papelera"),
-        metadata    = c(list(n = n), .bancos_audit_rows_summary(del_rows)),
-        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
       )
       # Clear JS selection
       session$sendCustomMessage(paste0(id, "-clear_selection"), TRUE)
@@ -1410,14 +1415,6 @@ bancosServer <- function(id, shared) {
 
       # Saved first (rule 8, T12a): on failure nothing changes in the
       # session and nothing says it worked.
-      if (!.bnc_guardar("guardar_movimiento_manual", paste0(if (is_edit) "Editar" else "Agregar", " movimiento manual"),
-                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base))) return()
-      shared$bancos_movimientos(movs)
-      bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
-      removeModal()
-      showNotification(if (is_edit) tr("tablas.bancos.aviso.movimiento_actualizado") else tr("tablas.bancos.aviso.movimiento_guardado"),
-                       type = "message", duration = 2)
-
       log_desc <- sprintf("Movimiento manual %s: %s %s por $%s",
                           if (is_edit) "editado" else "agregado",
                           .TIPO_LABELS[[tipo_sel]] %||% tipo_sel,
@@ -1432,16 +1429,16 @@ bancosServer <- function(id, shared) {
         list(cuenta_id = target_row$cuenta_id[1], tipo = tipo_sel,
              cargo = target_row$cargo[1], abono = target_row$abono[1])
       }
-      log_action(
-        user        = tryCatch(shared$current_user(), error = function(e) "system"),
-        module      = "bancos",
-        action      = if (is_edit) "editar_movimiento_manual" else "agregar_movimiento_manual",
-        description = log_desc,
-        target_id   = target_row$id[1],
-        metadata    = log_meta,
-        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-      )
+      ev <- .bnc_evento(if (is_edit) "editar_movimiento_manual" else "agregar_movimiento_manual",
+                        log_desc, log_meta, target_id = target_row$id[1])
+      if (!.bnc_guardar("guardar_movimiento_manual", paste0(if (is_edit) "Editar" else "Agregar", " movimiento manual"),
+                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base,
+                                                           evento = ev))) return()
+      shared$bancos_movimientos(movs)
+      bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
+      removeModal()
+      showNotification(if (is_edit) tr("tablas.bancos.aviso.movimiento_actualizado") else tr("tablas.bancos.aviso.movimiento_guardado"),
+                       type = "message", duration = 2)
       if (!is_edit) avisos_actividad(shared$effective_client_id(), "movimiento_manual", shared$current_user(), list(cuerpo = log_desc))
       editing_mov_id(NULL)
     }, ignoreInit = TRUE)
@@ -1616,30 +1613,23 @@ bancosServer <- function(id, shared) {
 
       # Saved first (rule 8, T12a): on failure nothing changes in the
       # session and nothing says it worked.
+      n_kept <- actual_n - n_deduped
+      msg <- tr_n("tablas.bancos.aviso.reasignados", as.character(n_kept), destino = dest_label)
+      if (n_deduped > 0)
+        msg <- paste0(msg, tr_n("tablas.bancos.aviso.reasignados_duplicados", as.character(n_deduped)))
+      ev <- .bnc_evento("reasignar_sesion", msg,
+                        c(list(sesion_key = sesion_key, new_cuenta_id = new_cid, n_kept = n_kept, n_deduped = n_deduped),
+                          .bancos_audit_rows_summary(reasig_rows)))
       if (!.bnc_guardar("reasignar_cuenta", paste0("Reasignar ", actual_n, " movimiento(s) a ", dest_label),
-                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base))) return()
+                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base,
+                                                           evento = ev))) return()
       reasig_confirm_data_rv(NULL)   # only now: a failed save keeps the confirmation's data
       shared$bancos_movimientos(movs)
       bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
       removeModal()
       session$sendCustomMessage("bnc_collapse_reasignar",
         list(target = ns("reasignar_panel")))
-      n_kept <- actual_n - n_deduped
-      msg <- tr_n("tablas.bancos.aviso.reasignados", as.character(n_kept), destino = dest_label)
-      if (n_deduped > 0)
-        msg <- paste0(msg, tr_n("tablas.bancos.aviso.reasignados_duplicados", as.character(n_deduped)))
       showNotification(msg, type = "message", duration = 5)
-      log_action(
-        user        = tryCatch(shared$current_user(), error = function(e) "system"),
-        module      = "bancos",
-        action      = "reasignar_sesion",
-        description = msg,
-        metadata    = c(list(sesion_key = sesion_key, new_cuenta_id = new_cid,
-                             n_kept = n_kept, n_deduped = n_deduped),
-                        .bancos_audit_rows_summary(reasig_rows)),
-        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-      )
     }, ignoreInit = TRUE)
 
     # ── Eliminar sesión de importación ────────────────────────────────────────
@@ -1723,8 +1713,11 @@ bancosServer <- function(id, shared) {
       movs$eliminado_por[mask] <- user
       # Saved first (rule 8, T12a): on failure nothing changes in the
       # session and nothing says it worked.
+      ev <- .bnc_evento("eliminar_sesion", paste0(actual_n, " movimiento(s) de sesión eliminados"),
+                        c(list(n = actual_n, sesion_key = sesion_key), .bancos_audit_rows_summary(sesion_rows)), usuario = user)
       if (!.bnc_guardar("eliminar_sesion", paste0("Eliminar los ", actual_n, " movimiento(s) de una sesión de importación"),
-                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base))) return()
+                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base,
+                                                           evento = ev))) return()
       shared$bancos_movimientos(movs)
       bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
       delete_sesion_confirm_rv(NULL)
@@ -1734,16 +1727,6 @@ bancosServer <- function(id, shared) {
       showNotification(
         tr_n("tablas.bancos.aviso.a_papelera", as.character(actual_n)),
         type = "message", duration = 5)
-      log_action(
-        user        = user,
-        module      = "bancos",
-        action      = "eliminar_sesion",
-        description = paste0(actual_n, " movimiento(s) de sesión eliminados"),
-        metadata    = c(list(n = actual_n, sesion_key = sesion_key),
-                        .bancos_audit_rows_summary(sesion_rows)),
-        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-      )
     }, ignoreInit = TRUE)
 
     # ── Tab 2: Import TXT ─────────────────────────────────────────────────────
@@ -2023,28 +2006,21 @@ bancosServer <- function(id, shared) {
       movs_new <- dplyr::bind_rows(existentes, nuevos)
       # Saved first (rule 8, T12a): on failure nothing changes in the
       # session and nothing says it worked.
-      if (!.bnc_guardar("importar_movimientos", paste0("Importar ", nrow(nuevos), " movimiento(s)"),
-                        function() save_bancos_movimientos(movs_new, client_id = shared$effective_client_id(), base = movs_base))) return()
-      shared$bancos_movimientos(movs_new)
-      bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
-
       n_auto  <- sum(nuevos$conciliado, na.rm = TRUE)
       msg     <- tr("tablas.bancos.aviso.importados", n = as.character(nrow(nuevos)))
       if (n_auto > 0)
         msg <- paste0(msg, " ", tr("tablas.bancos.aviso.conciliados_auto", n = as.character(n_auto)))
+      ev <- .bnc_evento("importar_movimientos", msg,
+                        c(list(cuenta_id = cid_final, n_importados = nrow(nuevos), n_auto_conciliado = n_auto),
+                          .bancos_audit_rows_summary(nuevos)))
+      if (!.bnc_guardar("importar_movimientos", paste0("Importar ", nrow(nuevos), " movimiento(s)"),
+                        function() save_bancos_movimientos(movs_new, client_id = shared$effective_client_id(), base = movs_base,
+                                                           evento = ev))) return()
+      shared$bancos_movimientos(movs_new)
+      bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
 
       showNotification(msg, type = "message", duration = 4)
       parsed_preview(NULL)  # clear preview
-      log_action(
-        user        = tryCatch(shared$current_user(), error = function(e) "system"),
-        module      = "bancos",
-        action      = "importar_movimientos",
-        description = msg,
-        metadata    = c(list(cuenta_id = cid_final, n_importados = nrow(nuevos), n_auto_conciliado = n_auto),
-                        .bancos_audit_rows_summary(nuevos)),
-        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-      )
       avisos_actividad(shared$effective_client_id(), "importar_bancos", shared$current_user(), list(cuerpo = msg))
     }, ignoreInit = TRUE)
 
@@ -2203,8 +2179,15 @@ bancosServer <- function(id, shared) {
       movs$eliminado_at[idx] <- as.POSIXct(NA)
       # Saved first (rule 8, T12a): on failure nothing changes in the
       # session and nothing says it worked.
+      ev <- .bnc_evento("deshacer_eliminar_movimiento_manual",
+                        paste0("Movimiento manual restaurado: ", htmltools::htmlEscape(movs$parte[idx[1]] %||% "")),
+                        list(fecha = as.character(movs$fecha[idx[1]]), parte = movs$parte[idx[1]] %||% "",
+                             concepto = movs$concepto[idx[1]] %||% "", cargo = movs$cargo[idx[1]] %||% 0,
+                             abono = movs$abono[idx[1]] %||% 0),
+                        target_id = mov_id)
       if (!.bnc_guardar("deshacer_eliminar_movimiento_manual", "Restaurar un movimiento manual eliminado",
-                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base))) return()
+                        function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base,
+                                                           evento = ev))) return()
       shared$bancos_movimientos(movs)
       bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
 
@@ -2227,22 +2210,11 @@ bancosServer <- function(id, shared) {
                                          actor = tryCatch(shared$current_user(), error = function(e) "system")),
                                        error = function(e) NULL)
                        if (is.null(res)) bpap else res$papelera_df
-                     }, client_id = shared$effective_client_id())
+                     }, client_id = shared$effective_client_id(),
+                     evento = evento_parte_de("deshacer_eliminar_movimiento_manual", "bancos", .bnc_quien(), .bnc_casa()))
                    }, aviso = "tablas.bancos.error_archivar_restauracion")
 
       showNotification(tr("tablas.bancos.aviso.restaurado"), type = "message", duration = 3)
-      log_action(
-        user        = tryCatch(shared$current_user(), error = function(e) "system"),
-        module      = "bancos",
-        action      = "deshacer_eliminar_movimiento_manual",
-        description = paste0("Movimiento manual restaurado: ", htmltools::htmlEscape(movs$parte[idx[1]] %||% "")),
-        target_id   = mov_id,
-        metadata    = list(fecha = as.character(movs$fecha[idx[1]]), parte = movs$parte[idx[1]] %||% "",
-                           concepto = movs$concepto[idx[1]] %||% "", cargo = movs$cargo[idx[1]] %||% 0,
-                           abono = movs$abono[idx[1]] %||% 0),
-        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-      )
     }
 
     # \u2500\u2500 Deshacer abono \u2014 void it, restoring the invoice's balance \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -2357,7 +2329,8 @@ bancosServer <- function(id, shared) {
           # notice, no log, nothing else changed. The confirmation is
           # untouched, so deleting it again retries the whole thing.
           if (!.bnc_guardar("eliminar_confirmacion_movimiento", "Eliminar el movimiento de una confirmación",
-                            function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base))) {
+                            function() save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base,
+                                                               evento = evento_parte_de("eliminar_confirmacion", "bancos", .bnc_quien(), .bnc_casa())))) {
             removeModal(); return()
           }
           shared$bancos_movimientos(movs)
@@ -2367,8 +2340,14 @@ bancosServer <- function(id, shared) {
 
       # Same for the confirmation; its movement, if any, is already hidden
       # and stays so (a retry marks it again, idempotent).
+      ev <- .bnc_evento("eliminar_confirmacion", "Confirmación bancaria movida a papelera",
+                        list(empresa = conf$empresa[idx_c] %||% "", parte = conf$parte[idx_c] %||% "",
+                             documento = conf$documento[idx_c] %||% "", importe = conf$importe[idx_c] %||% 0,
+                             fecha = as.character(conf$fecha[idx_c] %||% NA), tipo = conf$tipo[idx_c] %||% ""),
+                        target_id = conf_id)
       if (!.bnc_guardar("eliminar_confirmacion", "Mover una confirmación a la papelera",
-                        function() save_bancos_confirmados(conf, client_id = shared$effective_client_id(), base = conf_base))) {
+                        function() save_bancos_confirmados(conf, client_id = shared$effective_client_id(), base = conf_base,
+                                                           evento = ev))) {
         removeModal(); return()
       }
       shared$bancos_confirmados(conf)
@@ -2394,18 +2373,6 @@ bancosServer <- function(id, shared) {
 
       removeModal()
       showNotification(tr("tablas.bancos.aviso.confirmacion_papelera"), type = "message", duration = 2)
-      log_action(
-        user        = tryCatch(shared$current_user(), error = function(e) "system"),
-        module      = "bancos",
-        action      = "eliminar_confirmacion",
-        description = "Confirmaci\u00f3n bancaria movida a papelera",
-        target_id   = conf_id,
-        metadata    = list(empresa = conf$empresa[idx_c] %||% "", parte = conf$parte[idx_c] %||% "",
-                           documento = conf$documento[idx_c] %||% "", importe = conf$importe[idx_c] %||% 0,
-                           fecha = as.character(conf$fecha[idx_c] %||% NA), tipo = conf$tipo[idx_c] %||% ""),
-        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-      )
     }, ignoreInit = TRUE)
 
     # ── Deshacer confirmación — restore to calendar as pending ───────────────
@@ -2434,7 +2401,11 @@ bancosServer <- function(id, shared) {
           movs$eliminado_at[idx_m] <- Sys.time()
           shared$bancos_movimientos(movs)
           tryCatch({
-            save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base)
+            # T72-E: its words come after the item's recovery (the date it goes
+            # back to), so this action's one row stays the log_action below;
+            # its two Bancos writes leave staff-only "/parte" traces.
+            save_bancos_movimientos(movs, client_id = shared$effective_client_id(), base = movs_base,
+                                    evento = evento_parte_de("revertir_confirmacion", "bancos", .bnc_quien(), .bnc_casa()))
             bump_sync_version("bancos_movimientos_db", client_id = shared$effective_client_id())
           }, error = function(e)
             showNotification(tr("tablas.bancos.aviso.error_guardar"), type = "warning")
@@ -2459,7 +2430,8 @@ bancosServer <- function(id, shared) {
       actor_rc <- tryCatch(shared$current_user(), error = function(e) "user")
       new_conf <- tryCatch(
         modificar_bancos_confirmados(shared$effective_client_id(),
-          function(fresco) recover_confirmacion(fresco, conf_id, actor = actor_rc)),
+          function(fresco) recover_confirmacion(fresco, conf_id, actor = actor_rc),
+          evento = evento_parte_de("revertir_confirmacion", "bancos", actor_rc, .bnc_casa())),
         error = function(e) {
           if (grepl("already recovered", conditionMessage(e), fixed = TRUE)) {
             message("[bancos] recover_confirmacion failed (likely an already-recovered double-click): ",

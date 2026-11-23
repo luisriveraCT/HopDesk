@@ -121,10 +121,6 @@ load_bancos_cuentas <- function(client_id = NULL) {
   df
 }
 
-save_bancos_cuentas <- function(df, client_id = NULL) {
-  .s3_write(.normalize(df, .schema_bancos_cuentas), S3_KEYS$bancos_cuentas, client_id = client_id)
-}
-
 # ── bancos_movimientos ────────────────────────────────────────────────────────
 
 #' @param include_deleted If FALSE (default), filter out rows where eliminado=TRUE.
@@ -145,15 +141,21 @@ load_bancos_movimientos <- function(include_deleted = FALSE, client_id = NULL) {
 # With it, only the rows the action added or changed are applied, on S3's
 # table as it is now (rebase_por_id); rows other sessions added or changed
 # meanwhile survive. Without it, the whole table is written (old behaviour).
-save_bancos_movimientos <- function(df, client_id = NULL, base = NULL) {
-  if (!is.null(base) && !is.null(client_id) && nzchar(client_id))
+# evento (T72-E): the action's log entry, written by the write layer once the
+# save worked; without it the calls below are exactly the ones before.
+save_bancos_movimientos <- function(df, client_id = NULL, base = NULL, evento = NULL) {
+  if (!is.null(base) && !is.null(client_id) && nzchar(client_id)) {
     # Both normalised first: a column whose type changed in the session copy
     # (e.g. a time put into an all-NA logical) must not mark every row changed.
-    return(invisible(modificar_tabla(S3_KEYS$bancos_movimientos, client_id, .schema_bancos_movimientos,
-                                     function(fresco) rebase_por_id(.normalize(df, .schema_bancos_movimientos),
-                                                                    .normalize(base, .schema_bancos_movimientos),
-                                                                    fresco, "id"))))
-  .s3_write(.normalize(df, .schema_bancos_movimientos), S3_KEYS$bancos_movimientos, client_id = client_id)
+    cambio <- function(fresco) rebase_por_id(.normalize(df, .schema_bancos_movimientos),
+                                             .normalize(base, .schema_bancos_movimientos), fresco, "id")
+    if (is.null(evento))
+      return(invisible(modificar_tabla(S3_KEYS$bancos_movimientos, client_id, .schema_bancos_movimientos, cambio)))
+    return(invisible(modificar_tabla(S3_KEYS$bancos_movimientos, client_id, .schema_bancos_movimientos, cambio,
+                                     evento = evento)))
+  }
+  if (is.null(evento)) .s3_write(.normalize(df, .schema_bancos_movimientos), S3_KEYS$bancos_movimientos, client_id = client_id)
+  else .s3_write(.normalize(df, .schema_bancos_movimientos), S3_KEYS$bancos_movimientos, client_id = client_id, evento = evento)
 }
 
 # ── bancos_confirmados ────────────────────────────────────────────────────────
@@ -169,13 +171,15 @@ load_bancos_confirmados <- function(client_id = NULL) {
 # the confirmations in six places (CM10/C5): an Agenda confirmation or an
 # undo written by another session meanwhile was dropped -- and since this
 # table only grows, the write net (CM09) would now refuse that save instead.
-save_bancos_confirmados <- function(df, client_id = NULL, base = NULL) {
-  if (!is.null(base) && !is.null(client_id) && nzchar(client_id))
-    return(invisible(modificar_bancos_confirmados(client_id,
-                       function(fresco) rebase_por_id(.normalize(df, .schema_bancos_confirmados),
-                                                      .normalize(base, .schema_bancos_confirmados),
-                                                      fresco, "confirmacion_id"))))
-  .s3_write(.normalize(df, .schema_bancos_confirmados), S3_KEYS$bancos_confirmados, client_id = client_id)
+save_bancos_confirmados <- function(df, client_id = NULL, base = NULL, evento = NULL) {
+  if (!is.null(base) && !is.null(client_id) && nzchar(client_id)) {
+    cambio <- function(fresco) rebase_por_id(.normalize(df, .schema_bancos_confirmados),
+                                             .normalize(base, .schema_bancos_confirmados), fresco, "confirmacion_id")
+    if (is.null(evento)) return(invisible(modificar_bancos_confirmados(client_id, cambio)))
+    return(invisible(modificar_bancos_confirmados(client_id, cambio, evento = evento)))
+  }
+  if (is.null(evento)) .s3_write(.normalize(df, .schema_bancos_confirmados), S3_KEYS$bancos_confirmados, client_id = client_id)
+  else .s3_write(.normalize(df, .schema_bancos_confirmados), S3_KEYS$bancos_confirmados, client_id = client_id, evento = evento)
 }
 
 # Change bancos_confirmados starting from what S3 holds right now, never from
@@ -183,13 +187,14 @@ save_bancos_confirmados <- function(df, client_id = NULL, base = NULL) {
 # table and saved all of it, dropping any confirmation or undo another
 # session wrote meanwhile (found 2026-11-01). `cambio(conf)` returns the new
 # table, which is saved and returned. A failed read stop()s: nothing saved.
-modificar_bancos_confirmados <- function(client_id, cambio) {
+modificar_bancos_confirmados <- function(client_id, cambio, evento = NULL) {
   if (is.null(client_id) || !nzchar(client_id)) stop("modificar_bancos_confirmados: sin client_id")
   fresco <- .normalize(.s3_leer_para_escribir(S3_KEYS$bancos_confirmados, client_id),
                        .schema_bancos_confirmados)
   fresco$eliminado <- fresco$eliminado %in% TRUE
   nuevo <- cambio(fresco)
-  save_bancos_confirmados(nuevo, client_id = client_id)
+  if (is.null(evento)) save_bancos_confirmados(nuevo, client_id = client_id)
+  else save_bancos_confirmados(nuevo, client_id = client_id, evento = evento)
   invisible(.normalize(nuevo, .schema_bancos_confirmados))
 }
 
@@ -323,8 +328,10 @@ load_bancos_papelera <- function(client_id = NULL) {
 # cambio(papelera) -> papelera, on S3's current table (CM19): strict read,
 # never from a copy. Archiving and restoring only add events, so the table
 # only grows (.S3_SOLO_CRECEN).
-modificar_bancos_papelera <- function(cambio, client_id)
-  modificar_tabla(S3_KEYS$bancos_papelera, client_id, .schema_bancos_papelera, cambio)
+modificar_bancos_papelera <- function(cambio, client_id, evento = NULL) {
+  if (is.null(evento)) modificar_tabla(S3_KEYS$bancos_papelera, client_id, .schema_bancos_papelera, cambio)
+  else modificar_tabla(S3_KEYS$bancos_papelera, client_id, .schema_bancos_papelera, cambio, evento = evento)
+}
 
 # Archive one or more just-deleted bancos_movimientos rows as their own
 # permanent "archived" event. mov_rows is a plain data.frame/tibble slice of

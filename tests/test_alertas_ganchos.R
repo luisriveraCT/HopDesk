@@ -72,23 +72,28 @@ bn   <- readLines(F_BN, warn = FALSE, encoding = "UTF-8")
 gb   <- ganchos(F_BN)
 ok(nrow(gb) == 2L && setequal(gb$accion, c("importar_bancos", "movimiento_manual")),
    "S bancos: 2 ganchos (importar y movimiento manual)")
-# Import: after its success log, inside the same observer; the save comes
-# first and returns on failure (.bnc_guardar).
-li <- grep('action      = "importar_movimientos",', bn, fixed = TRUE)
+# Import: its log rides with its save since T72-E (.bnc_evento(), written by
+# the write layer once the save worked); .bnc_guardar returns on failure, and
+# the hook comes after, inside the same observer.
+li <- grep('ev <- .bnc_evento("importar_movimientos"', bn, fixed = TRUE)
 gi <- gb$linea[gb$accion == "importar_bancos"]
 gu <- grep('if (!.bnc_guardar("importar_movimientos"', bn, fixed = TRUE)
-ok(length(li) == 1L && length(gi) == 1L && gi > li && gi - li <= 12L && grepl("}, ignoreInit = TRUE)", bn[gi + 1L], fixed = TRUE),
-   "S importar: después de su log, al final del observer: un aviso por clic")
-ok(length(gu) == 1L && gu < li && grepl("return()", paste(bn[gu:(gu + 1L)], collapse = " "), fixed = TRUE),
-   "S importar: si guardar falla, sale antes del gancho")
-# Manual: only a new movement (an edit does not alert), after the success log.
-lm <- grep('action      = if (is_edit) "editar_movimiento_manual" else "agregar_movimiento_manual",', bn, fixed = TRUE)
+ok(length(li) == 1L && length(gu) == 1L && length(gi) == 1L && li < gu && gi > gu && gi - gu <= 12L &&
+     grepl("}, ignoreInit = TRUE)", bn[gi + 1L], fixed = TRUE),
+   "S importar: después de su guardado con evento, al final del observer: un aviso por clic")
+ok(length(gu) == 1L && grepl("evento = ev", paste(bn[gu:(gu + 2L)], collapse = " "), fixed = TRUE) &&
+     grepl("return()", paste(bn[gu:(gu + 2L)], collapse = " "), fixed = TRUE),
+   "S importar: el guardado lleva su evento, y si falla sale antes del gancho")
+# Manual: only a new movement (an edit does not alert), after its save.
+lm <- grep('ev <- .bnc_evento(if (is_edit) "editar_movimiento_manual" else "agregar_movimiento_manual",', bn, fixed = TRUE)
 gm <- gb$linea[gb$accion == "movimiento_manual"]
 gg <- grep('if (!.bnc_guardar("guardar_movimiento_manual"', bn, fixed = TRUE)
-ok(length(lm) == 1L && length(gm) == 1L && gm > lm && gm - lm <= 12L && grepl("if (!is_edit) avisos_actividad(", bn[gm], fixed = TRUE),
-   "S movimiento manual: después de su log y solo si es nuevo (editar no avisa)")
-ok(length(gg) == 1L && gg < lm && grepl("return()", paste(bn[gg:(gg + 1L)], collapse = " "), fixed = TRUE),
-   "S movimiento manual: si guardar falla, sale antes del gancho")
+ok(length(lm) == 1L && length(gg) == 1L && length(gm) == 1L && lm < gg && gm > gg && gm - gg <= 12L &&
+     grepl("if (!is_edit) avisos_actividad(", bn[gm], fixed = TRUE),
+   "S movimiento manual: después de su guardado con evento y solo si es nuevo (editar no avisa)")
+ok(length(gg) == 1L && grepl("evento = ev", paste(bn[gg:(gg + 2L)], collapse = " "), fixed = TRUE) &&
+     grepl("return()", paste(bn[gg:(gg + 2L)], collapse = " "), fixed = TRUE),
+   "S movimiento manual: el guardado lleva su evento, y si falla sale antes del gancho")
 
 # ── S: app.R, Agregar Item (me_save, insert mode) ────────────────────────────
 F_APP <- Sys.getenv("ALERTAS_APP_R", "app.R")

@@ -552,7 +552,6 @@ DEUDA_CAMINO <- c(
     "R/avisos_datos.R :: correo_historial_guardar",
     "R/avisos_datos.R :: correo_partidas_guardar",
     "R/avisos_umbrales.R :: umbral_serie_guardar",
-    "R/bancos_module.R :: input$do_delete_conf_confirm",
     "R/bancos_persistence.R :: enlazar_archivo_confirmaciones",
     "R/cashflow_export_module.R :: generate_cashflow_html_doc",
     "R/email_service.R :: .email_queue_marcar",
