@@ -245,6 +245,31 @@ pasivos_expand_recurrence <- function(recurrence_type, recurrence_params, from, 
   )
 }
 
+# PV-1 (2026-11-22): the dates of a regular / tarjeta liability counted from
+# its fecha_inicio, up to `hasta`: occurrence k is the k-th date on or after
+# the start, whatever day it is generated. They used to be counted from the
+# day they were generated (window_start), so the same date had another index
+# on another day, and editing the liability later moved its pending
+# provisions to other months and left months without one (the reconciler
+# matches by index). Empty without a fecha_inicio or a recurrence.
+pasivos_recurrencia_fechas <- function(liability, hasta) {
+  vacio <- as.Date(character(0))
+  ini   <- suppressWarnings(as.Date((liability$fecha_inicio %||% NA)[1]))
+  hasta <- suppressWarnings(as.Date(hasta))
+  tipo  <- (liability$recurrence_type %||% NA_character_)[1]
+  if (is.na(ini) || length(hasta) != 1L || is.na(hasta) || hasta < ini || is.na(tipo) || !nzchar(tipo))
+    return(vacio)
+  params <- liability$recurrence_params[[1]] %||% list()
+  n <- 64L
+  repeat {
+    d <- pasivos_expand_recurrence(tipo, params, ini, n)
+    d <- d[!is.na(d)]
+    if (!length(d) || length(d) < n || max(d) > hasta || n >= 50000L) break
+    n <- n * 4L
+  }
+  d[d <= hasta]
+}
+
 # ── §2.2 Amortization schedule generator ──────────────────────────────────────
 
 # Add k months to base date, snapping to dia_pago, clamping to month-end.
@@ -885,16 +910,31 @@ pasivos_generate_provisions <- function(liability,
   } else {
     # regular or tarjeta
     # Expand enough recurrence dates to cover the window
-    n_approx <- as.integer(ceiling(as.numeric(window_end - window_start) / 14)) + 60L
-    dates <- tryCatch(
-      pasivos_expand_recurrence(
-        liability$recurrence_type,
-        liability$recurrence_params[[1]] %||% list(),
-        window_start, n_approx
-      ),
-      error = function(e) as.Date(character(0))
-    )
-    dates <- dates[dates >= window_start & dates <= window_end]
+    # PV-1: with a fecha_inicio, each date's index is its place counted from
+    # the start (pasivos_recurrencia_fechas()): the same date keeps the same
+    # index whatever day it is generated, and nothing is generated before the
+    # start. Without one (older liabilities), as before: counted from
+    # window_start.
+    ini <- suppressWarnings(as.Date((liability$fecha_inicio %||% NA)[1]))
+    if (!is.na(ini)) {
+      todas <- tryCatch(pasivos_recurrencia_fechas(liability, window_end),
+                        error = function(e) as.Date(character(0)))
+      en_ventana <- todas >= window_start & todas <= window_end
+      dates   <- todas[en_ventana]
+      indices <- which(en_ventana)
+    } else {
+      n_approx <- as.integer(ceiling(as.numeric(window_end - window_start) / 14)) + 60L
+      dates <- tryCatch(
+        pasivos_expand_recurrence(
+          liability$recurrence_type,
+          liability$recurrence_params[[1]] %||% list(),
+          window_start, n_approx
+        ),
+        error = function(e) as.Date(character(0))
+      )
+      dates   <- dates[dates >= window_start & dates <= window_end]
+      indices <- seq_along(dates)
+    }
     if (!length(dates)) return(schema)
 
     cot_en <- liability$cotizado_en
@@ -939,7 +979,7 @@ pasivos_generate_provisions <- function(liability,
         id                   = uuid::UUIDgenerate(),
         liability_id         = liability$id,
         origin               = "rule",
-        occurrence_index     = as.integer(i),
+        occurrence_index     = as.integer(indices[i]),
         estado               = "provisional",
         fecha_calculada      = fecha_calc,
         fecha_efectiva       = fecha_ef,
@@ -1008,12 +1048,81 @@ pasivos_generate_provisions <- function(liability,
   !(!is.na(a) && identical(trimws(n), trimws(a)))
 }
 
-pasivos_reconcile_provisions <- function(existing, generated, mode = "regenerate", nota_anterior = NULL) {
+# PV-1: the index each existing row of a regular / tarjeta liability is
+# matched by: its date's place in the recurrence counted from fecha_inicio
+# (the same count pasivos_generate_provisions() gives the generated rows).
+# The stored index can be the old one, counted from the day the row was
+# generated; the date is what is trusted. `antes` are the terms the rows were
+# generated with (the liability before an edit), `despues` the new ones: the
+# k-th date of the old terms becomes the k-th of the new (as a financial
+# liability's period k). A date off the recurrence takes the nearest one
+# within half the shortest gap; farther, none (NA: never matched, kept as it
+# is). Without a fecha_inicio (older liabilities) the generated rows are
+# counted from the day they are generated: a row takes the index of the
+# generated row with its very date. Two rows on one place: the one that is no
+# longer pending, then the nearest, keeps it. Rows of other liabilities keep
+# theirs.
+.pasivos_claves_recurrencia <- function(existing, antes, despues, generated) {
+  clave <- existing$occurrence_index
+  mia <- !is.na(existing$liability_id) & existing$liability_id == despues$id[1]
+  if (!any(mia)) return(clave)
+  f <- suppressWarnings(as.Date(existing$fecha_calculada))
+  sin_f <- is.na(f)
+  f[sin_f] <- suppressWarnings(as.Date(existing$fecha_efectiva[sin_f]))
+  nueva <- rep(NA_integer_, nrow(existing))
+  dist  <- rep(Inf, nrow(existing))
+  ini_a <- suppressWarnings(as.Date((antes$fecha_inicio %||% NA)[1]))
+  ini_d <- suppressWarnings(as.Date((despues$fecha_inicio %||% NA)[1]))
+  if (!is.na(ini_a) && !is.na(ini_d)) {
+    hasta <- if (any(mia & !is.na(f))) max(f[mia & !is.na(f)]) + 31 else ini_a
+    ref <- tryCatch(pasivos_recurrencia_fechas(antes, hasta), error = function(e) as.Date(character(0)))
+    if (length(ref)) {
+      tol <- if (length(ref) > 1L) max(1, floor(min(as.numeric(diff(ref))) / 2)) else 3
+      for (j in which(mia & !is.na(f))) {
+        d <- abs(as.numeric(ref - f[j]))
+        k <- which.min(d)
+        if (d[k] < tol) { nueva[j] <- k; dist[j] <- d[k] }
+      }
+    }
+  } else if (!is.null(generated) && nrow(generated)) {
+    m <- match(f, suppressWarnings(as.Date(generated$fecha_calculada)))
+    ok <- mia & !is.na(m)
+    nueva[ok] <- as.integer(generated$occurrence_index[m[ok]])
+    dist[ok]  <- 0
+  }
+  orden <- order(existing$estado %in% "provisional", dist)
+  repetida <- rep(FALSE, nrow(existing))
+  repetida[orden] <- duplicated(nueva[orden], incomparables = NA)
+  nueva[repetida] <- NA_integer_
+  clave[mia] <- nueva[mia]
+  clave
+}
+
+# `liability` (PV-1): the liability the rows belong to, with its new terms,
+# and `liability_antes` the terms they were generated with (the liability
+# before an edit; by default the same). For a regular / tarjeta one the rows
+# are matched by date (.pasivos_claves_recurrencia()), so a month with no
+# provision gets one again, none is duplicated, and a pending one is never
+# moved to another month. Without it, by the stored index, as before.
+pasivos_reconcile_provisions <- function(existing, generated, mode = "regenerate", nota_anterior = NULL,
+                                         liability = NULL, liability_antes = liability) {
   empty <- existing[0L, , drop = FALSE]
 
   if (!nrow(existing)) {
     return(list(keep = empty, update = empty, insert = generated,
                 conflicts = empty))
+  }
+
+  # PV-1: matched by the date's place; the rows this call keeps go back with
+  # their stored index (a paid or converted row is not rewritten), the ones it
+  # changes (update, conflicts) take the absolute one.
+  indice_guardado <- NULL
+  if (!is.null(liability) && NROW(liability) &&
+      isTRUE(liability$categoria[1] %in% c("regular", "tarjeta"))) {
+    indice_guardado <- stats::setNames(existing$occurrence_index, existing$id)
+    existing$occurrence_index <- .pasivos_claves_recurrencia(
+      existing, if (!is.null(liability_antes) && NROW(liability_antes)) liability_antes else liability,
+      liability, generated)
   }
 
   # Orphans always go to keep
@@ -1137,6 +1246,11 @@ pasivos_reconcile_provisions <- function(existing, generated, mode = "regenerate
     # Rows in generated not in existing (any estado) → insert
     insert_rows <- dplyr::bind_rows(insert_rows,
                                     generated[!.occ(generated) %in% ya_existe, , drop = FALSE])
+  }
+
+  if (!is.null(indice_guardado) && nrow(keep_rows)) {
+    k <- keep_rows$id %in% names(indice_guardado)
+    keep_rows$occurrence_index[k] <- unname(indice_guardado[keep_rows$id[k]])
   }
 
   list(keep = keep_rows, update = update_rows,

@@ -451,8 +451,12 @@ pasivos_reconciliar_o_conservar <- function(existing_for_this, generated, ...) {
   reco_mode <- if (wiz$mode == "create") "extend" else "regenerate"
   # T71: a provision with the liability's previous note takes the new one
   nota_anterior <- if (!is.null(before_row) && nrow(before_row)) pasivos_nota_de(before_row) else NA_character_
+  # PV-1: a regular / tarjeta liability's rows are matched by date, from the
+  # terms they were generated with (before_row) to the new ones.
   result <- pasivos_reconciliar_o_conservar(
-    existing_for_this, generated, mode = reco_mode, nota_anterior = nota_anterior)
+    existing_for_this, generated, mode = reco_mode, nota_anterior = nota_anterior,
+    liability = liab_row,
+    liability_antes = if (!is.null(before_row) && nrow(before_row)) before_row else liab_row)
 
   # Apply: keep + conflicts + update + insert. A conflict (a provision edited
   # by hand that the new terms would change) stays exactly as it is until the
