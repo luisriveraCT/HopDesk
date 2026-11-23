@@ -173,7 +173,9 @@ source("R/data_pipeline.R")
     block <- paste(sub("#.*$", "", txt[start[1]:min(start[1] + 25, length(txt))]), collapse = "\n")
     .chk(grepl('df\\[\\["id"\\]\\] %in% valid_ids', block), TRUE,
          "the anti-join now matches by id (UUID), not by Empresa/Moneda/Documento")
-    .chk(grepl('source"\\]\\] == "manual"', block), TRUE,
+    # CM46: the manual scope (and "recovered") lives in ids_manuales_archivados()
+    # (data_pipeline.R), tested in tests/test_cm46_manual_recuperado.R.
+    .chk(grepl('source"\\]\\] == "manual"', block) || grepl("ids_manuales_archivados\\(", block), TRUE,
          "the anti-join is still scoped to manual-sourced papelera entries only")
     .chk(grepl("anti_join\\(df, pap", block), FALSE,
          "the old dplyr::anti_join() by (Empresa, Moneda, Documento) is actually gone")
