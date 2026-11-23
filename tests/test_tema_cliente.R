@@ -182,6 +182,15 @@ ok("4d a jump to a Marca client turns it to Marca; a failed read (empty schema) 
    identical(vistos$antes, HD_TEMA_OMISION) && identical(vistos$salto, "marca") &&
      identical(vistos$fallo, HD_TEMA_OMISION) && identical(vistos$vuelta, HD_TEMA_OMISION))
 ok("4e no session: the default", identical(tema_de_sesion(NULL), HD_TEMA_OMISION))
+# Chrome (2026-11-22) saw marca -> clasico -> marca at a second sign-in: the
+# message went out with the empty schema's default before the client's
+# group_config was read. It waits for both loads now.
+cuerpo <- paste(app, collapse = "\n")
+ok("4f the hdTema message waits until this client's group_config was read (Phase 2 and the jump bump it)",
+   grepl("req(tema_cargado() > 0L)", cuerpo, fixed = TRUE) &&
+     grepl("cliente = isolate(effective_client_id())", cuerpo, fixed = TRUE) &&
+     grepl("if \\(!is\\.null\\(cfg\\)\\) group_config_rv\\(cfg\\)\\s*\\n\\s*\\}\\)\\s*\\n\\s*tema_cargado\\(isolate\\(tema_cargado\\(\\)\\) \\+ 1L\\)", cuerpo) &&
+     grepl("vacio = \\.schema_group_config\\(\\)\\)\\s*\\n\\s*tema_cargado\\(isolate\\(tema_cargado\\(\\)\\) \\+ 1L\\)", cuerpo))
 
 s3_memoria_restaurar()
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))

@@ -1754,9 +1754,16 @@ server <- function(input, output, session) {
   session$userData$hd_tema <- hd_tema
   # The page's <html data-hd-tema>: R/tema_registro.R's head script applies
   # it (closed list) and remembers it per client for the next first paint.
+  # Sent only once THIS client's group_config has been read (Phase 2 at sign-
+  # in, the context switch on a jump: each bumps tema_cargado): before that
+  # group_config_rv() holds the empty schema, and sending its default would
+  # flash Clásico over the Marca the head script already painted. The client
+  # is read isolated, so a jump sends nothing until its own config is in.
+  tema_cargado <- reactiveVal(0L)
   observe({
+    req(tema_cargado() > 0L)
     session$sendCustomMessage("hdTema", list(tema = hd_tema(),
-                                             cliente = effective_client_id() %||% ""))
+                                             cliente = isolate(effective_client_id()) %||% ""))
   })
 
   # ── Cash Flow Preview toggle ─────────────────────────────────────────────────
@@ -2662,6 +2669,7 @@ server <- function(input, output, session) {
         cfg <- tryCatch(load_group_config(client_id = cid_lo), error = function(e) NULL)
         if (!is.null(cfg)) group_config_rv(cfg)
       })
+      tema_cargado(isolate(tema_cargado()) + 1L)   # TEMA 5: this client's theme is known now
       message(sprintf("[LOAD]   group_config     %.1fs", (proc.time() - t1)[["elapsed"]]))
 
       # Populate global cache so save_*() callbacks update it. Every call
@@ -2815,6 +2823,7 @@ server <- function(input, output, session) {
     })
     .ctx_load(.estricto(S3_KEYS$group_config, load_group_config), group_config_rv,   "group_config",
               vacio = .schema_group_config())
+    tema_cargado(isolate(tema_cargado()) + 1L)   # TEMA 5: the new client's theme is known now
 
     # Load SAP snapshots from jumped client — always overwrite so jumping to an
     # empty client clears the calendar (no guard: NULL = no data for this client).
