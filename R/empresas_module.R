@@ -140,6 +140,17 @@ confirmar_renombre_empresa <- function(id, old_ini, new_ini, client_id) {
 # Guardar applies only these onto S3's current row: the whole row of the
 # session's copy used to win, and a copy loaded before another session's
 # rename wrote the old initials back (every table already under the new ones).
+# CM47: the nombre_corto IS the Empresa of every SAP invoice (sap_api.R,
+# company_map_rv()), and nine tables store it to match against it
+# (bancos_confirmados, papelera, pagar_hoy, moves, policy_moves, tags,
+# sap_overrides, abonos, manual_inv). No cascade follows an edit, so changing
+# it reopened confirmations and lost moves, overrides and abonos. It is set
+# at creation and fixed afterwards; this tells whether a save would change it.
+.nombre_corto_cambia <- function(fila, valor) {
+  valor <- if (length(valor) && !is.na(valor[1])) trimws(as.character(valor[1])) else ""
+  "nombre_corto" %in% names(.empresa_campos_editados(fila, list(nombre_corto = valor)))
+}
+
 .empresa_campos_editados <- function(fila, valores) {
   igual <- function(a, b) identical(if (length(a) && !is.na(a)) as.character(a) else "",
                                     if (length(b) && !is.na(b)) as.character(b) else "")
@@ -341,8 +352,10 @@ empresasUI <- function(id) {
 
       fluidRow(
         column(7,
-          textInput(ns("edit_nombre_corto"), "Nombre corto",
-                    value = row$nombre_corto %||% "", width = "100%")
+          # CM47: fixed once the company exists (see .nombre_corto_cambia()).
+          shinyjs::disabled(textInput(ns("edit_nombre_corto"), "Nombre corto",
+                                      value = row$nombre_corto %||% "", width = "100%")),
+          tags$small(class = "text-muted d-block mb-2", tr("tablas.empresas.nombre_corto_fijo"))
         ),
         column(5,
           textInput(ns("edit_rfc"), "RFC",
@@ -830,6 +843,12 @@ empresasServer <- function(id, shared) {
       # drawn row, then the copy.
       form <- isolate(fila_form())
       if (is.null(form) || !identical(as.character(form$id), as.character(sel_id))) form <- row
+      # CM47: the server refuses a nombre_corto change whatever the page sent,
+      # BEFORE any rename cascade runs (no half-done edit).
+      if (.nombre_corto_cambia(form, trimws(input$edit_nombre_corto %||% form$nombre_corto %||% ""))) {
+        showNotification(tr("tablas.empresas.aviso.nombre_corto_fijo"), type = "error")
+        return()
+      }
       apertura <- trimws(input$edit_ini_apertura %||% "")
       old_ini <- if (nzchar(apertura)) apertura else trimws(form$initials)
       new_ini <- toupper(trimws(input$edit_initials %||% ""))
@@ -875,7 +894,7 @@ empresasServer <- function(id, shared) {
       # initials, for a rename, with their earlier ones computed there too).
       cambios <- .empresa_campos_editados(form, list(
         razon_social = trimws(input$edit_razon_social %||% ""),
-        nombre_corto = trimws(input$edit_nombre_corto %||% ""),
+        nombre_corto = trimws(input$edit_nombre_corto %||% form$nombre_corto %||% ""),
         rfc          = toupper(trimws(input$edit_rfc  %||% "")),
         activa       = isTRUE(input$edit_activa),
         nombres_alt  = as.character(jsonlite::toJSON(alt_lines, auto_unbox = FALSE))))

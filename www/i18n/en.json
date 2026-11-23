@@ -970,6 +970,8 @@
   "tablas.empresas.aviso.iniciales_otra": "Another company with those initials already exists.",
   "tablas.empresas.aviso.iniciales_recien_dadas": "Another session just added a company with the initials {iniciales}. Nothing was saved; choose other initials.",
   "tablas.empresas.aviso.renombrada_otra_sesion": "Another session already changed this company's initials to {iniciales}. Nothing was saved; check the form and save again.",
+  "tablas.empresas.nombre_corto_fijo": "The short name does not change: confirmations, moves, partial payments and corrections of every invoice are stored with it. If it really has to change, ask support.",
+  "tablas.empresas.aviso.nombre_corto_fijo": "The short name can no longer be changed: saved confirmations, moves and partial payments use it. Nothing was saved.",
   "tablas.empresas.aviso.iniciales_de_antes": "Another company used those initials before. Choose others, so what was saved under them is not mixed up.",
   "tablas.empresas.aviso.error_cascada": "Error updating related tables: {error}",
   "tablas.empresas.aviso.cambios_no_guardados": "The changes could not be saved. Try again.",
