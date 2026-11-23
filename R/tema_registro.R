@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 19L
+HD_TEMAS_CSS_VERSION <- 20L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -86,6 +86,12 @@ HD_TEMAS_CSS_VERSION <- 19L
   `acceso-etiqueta` = "#3D5878", `acceso-etiqueta-2` = "#6B8299", `acceso-nota` = "#51708D",
   `acceso-lema` = "#283F58", `acceso-pie` = "#1B2E40", `acceso-error` = "#E8837A",
   `acceso-sombra` = "0 40px 100px rgba(0,0,0,0.72), 0 0 0 1px rgba(180,148,68,0.05)",
+  # The loading overlay (www/overlay_init.js), between sign-in and the app:
+  # HopDesk's cream and gold, the same in every theme (it shows before the
+  # client's theme has arrived), frozen at today's hex like the rest of acceso-*.
+  `acceso-carga-fondo` = "#F8F6F1", `acceso-carga-oro` = "#B8963E", `acceso-carga-oro-claro` = "#D4AF55",
+  `acceso-carga-lema` = "#A09070", `acceso-carga-texto` = "#3A3630", `acceso-carga-texto-2` = "#9A8E7E",
+  `acceso-carga-riel` = "#E4DDD0", `acceso-carga-pct` = "#B0A090",
   # Type scale: absorbs today's 46 font sizes (TEMA_inventario.md §5).
   `txt-xs` = "11px", `txt-sm` = "12px", `txt-md` = "13px",
   `txt-base` = "14px", `txt-lg` = "16px", `txt-xl` = "20px",

@@ -82,6 +82,14 @@
   --hd-acceso-pie: #1B2E40;
   --hd-acceso-error: #E8837A;
   --hd-acceso-sombra: 0 40px 100px rgba(0,0,0,0.72), 0 0 0 1px rgba(180,148,68,0.05);
+  --hd-acceso-carga-fondo: #F8F6F1;
+  --hd-acceso-carga-oro: #B8963E;
+  --hd-acceso-carga-oro-claro: #D4AF55;
+  --hd-acceso-carga-lema: #A09070;
+  --hd-acceso-carga-texto: #3A3630;
+  --hd-acceso-carga-texto-2: #9A8E7E;
+  --hd-acceso-carga-riel: #E4DDD0;
+  --hd-acceso-carga-pct: #B0A090;
   --hd-txt-xs: 11px;
   --hd-txt-sm: 12px;
   --hd-txt-md: 13px;

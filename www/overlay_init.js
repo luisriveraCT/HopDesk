@@ -20,7 +20,7 @@ $(function() {
     var _hldCss = document.createElement('style');
     _hldCss.id  = 'hld-css';
     _hldCss.textContent = [
-      '#hopdesk-loading{position:fixed;inset:0;background:#f8f6f1;z-index:99999;',
+      '#hopdesk-loading{position:fixed;inset:0;background:var(--hd-acceso-carga-fondo);z-index:99999;',
       'display:flex;flex-direction:column;align-items:center;justify-content:center;',
       'transition:opacity .9s ease;}',
       '#hopdesk-loading.hld-fadeout{opacity:0;pointer-events:none;}',
@@ -30,18 +30,18 @@ $(function() {
       '@keyframes hld-pulse{0%,100%{opacity:.72;transform:scale(1);}',
       '50%{opacity:1;transform:scale(1.06);}}',
       '.hld-brand-name{font-size:2rem;font-weight:800;letter-spacing:.3em;',
-      'color:#b8963e;text-transform:uppercase;}',
-      '.hld-brand-tagline{font-size:.68rem;letter-spacing:.35em;color:#a09070;',
+      'color:var(--hd-acceso-carga-oro);text-transform:uppercase;}',
+      '.hld-brand-tagline{font-size:.68rem;letter-spacing:.35em;color:var(--hd-acceso-carga-lema);',
       'text-transform:uppercase;margin-top:5px;}',
       '.hld-msgs{text-align:center;margin-bottom:34px;min-height:54px;}',
-      '#hld-msg{font-size:1rem;font-weight:500;color:#3a3630;transition:opacity .35s ease;}',
-      '#hld-msgsub{font-size:.82rem;font-style:italic;color:#9a8e7e;',
+      '#hld-msg{font-size:1rem;font-weight:500;color:var(--hd-acceso-carga-texto);transition:opacity .35s ease;}',
+      '#hld-msgsub{font-size:.82rem;font-style:italic;color:var(--hd-acceso-carga-texto-2);',
       'margin-top:5px;transition:opacity .35s ease;}',
       '.hld-bar-wrap{width:340px;max-width:82vw;}',
-      '.hld-bar-track{height:3px;background:#e4ddd0;border-radius:2px;overflow:hidden;}',
-      '#hld-bar{height:100%;width:8%;background:linear-gradient(90deg,#b8963e,#d4af55);',
+      '.hld-bar-track{height:3px;background:var(--hd-acceso-carga-riel);border-radius:2px;overflow:hidden;}',
+      '#hld-bar{height:100%;width:8%;background:linear-gradient(90deg,var(--hd-acceso-carga-oro),var(--hd-acceso-carga-oro-claro));',
       'border-radius:2px;transition:width .9s cubic-bezier(.4,0,.2,1);}',
-      '#hld-pct{font-size:.7rem;color:#b0a090;text-align:right;margin-top:7px;letter-spacing:.04em;}',
+      '#hld-pct{font-size:.7rem;color:var(--hd-acceso-carga-pct);text-align:right;margin-top:7px;letter-spacing:.04em;}',
       '#ar-calendar.shiny-output-recalculating,',
       '#ap-calendar.shiny-output-recalculating{opacity:1!important;}'
     ].join('');
@@ -57,12 +57,12 @@ $(function() {
     H.ov.innerHTML =
       '<div class="hld-logo-area">' +
         '<svg class="hld-icon-svg" viewBox="0 0 60 60" fill="none">' +
-          '<line x1="30" y1="2"  x2="30" y2="14" stroke="#b8963e" stroke-width="1.2"/>' +
-          '<line x1="30" y1="46" x2="30" y2="58" stroke="#b8963e" stroke-width="1.2"/>' +
-          '<line x1="2"  y1="30" x2="14" y2="30" stroke="#b8963e" stroke-width="1.2"/>' +
-          '<line x1="46" y1="30" x2="58" y2="30" stroke="#b8963e" stroke-width="1.2"/>' +
-          '<path d="M30 16 L44 30 L30 44 L16 30 Z" stroke="#b8963e" stroke-width="1.2" fill="none"/>' +
-          '<circle cx="30" cy="30" r="2.5" fill="#b8963e"/>' +
+          '<line x1="30" y1="2"  x2="30" y2="14" style="stroke:var(--hd-acceso-carga-oro)" stroke-width="1.2"/>' +
+          '<line x1="30" y1="46" x2="30" y2="58" style="stroke:var(--hd-acceso-carga-oro)" stroke-width="1.2"/>' +
+          '<line x1="2"  y1="30" x2="14" y2="30" style="stroke:var(--hd-acceso-carga-oro)" stroke-width="1.2"/>' +
+          '<line x1="46" y1="30" x2="58" y2="30" style="stroke:var(--hd-acceso-carga-oro)" stroke-width="1.2"/>' +
+          '<path d="M30 16 L44 30 L30 44 L16 30 Z" style="stroke:var(--hd-acceso-carga-oro)" stroke-width="1.2" fill="none"/>' +
+          '<circle cx="30" cy="30" r="2.5" style="fill:var(--hd-acceso-carga-oro)"/>' +
         '</svg>' +
         '<div class="hld-brand-name">HOPDESK</div>' +
         '<div class="hld-brand-tagline">TREASURY INTELLIGENCE PLATFORM</div>' +

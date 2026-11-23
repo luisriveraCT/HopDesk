@@ -82,7 +82,6 @@ archivos <- c("app.R",
   "R/tiers_module.R" = 34L,
   "R/treasury_map_module.R" = 4L,    # stage 4: only the 4 transparent #00000000 of vis.js (exempt)
   "R/ui_components.R" = 6L,           # stage 4: only the currency pills .ph-ctr-* (rest + active), the palette Bancos keeps (exempt)
-  "www/overlay_init.js" = 15L,
   "www/panorama.css" = 4L
 )
 
@@ -188,6 +187,7 @@ contraste <- tema$tema_contraste
   c("primario-texto", "modo-pago"),
   # The access pages (common: the same pair in every theme): field text, the button.
   c("acceso-texto", "acceso-campo"), c("acceso-fondo", "acceso-oro"),
+  c("acceso-carga-texto", "acceso-carga-fondo"),
   # The table engine (www/hdtable.css): neutral badge, the dark summary band,
   # white on the danger button and on the "rows copied" notice.
   c("texto-2", "superficie-2"), c("oscuro-texto", "encabezado"),
@@ -532,7 +532,9 @@ ok("the :root check sees a generated sheet (it is not blind)", raiz_hd("www/hd_t
 # theme), frozen at today's hex; the sign-in page and the activation page load
 # them with tema_head() (the app's ui, with its own, comes only after sign-in).
 .ACCESO_HOY <- list(`acceso-fondo` = "#07090D", `acceso-tarjeta` = "#0C1520", `acceso-tarjeta-2` = "#0B1420", `acceso-campo` = "#0F1B29", `acceso-campo-foco` = "#122030", `acceso-campo-texto` = "#2A3D52", `acceso-oro` = "#B49444", `acceso-oro-hover` = "#CBA84E", `acceso-texto` = "#D8E4F0", `acceso-texto-foco` = "#E8F0FA", `acceso-texto-2` = "#7A99B8", `acceso-lead` = "#9FB6CC", `acceso-etiqueta` = "#3D5878", `acceso-etiqueta-2` = "#6B8299", `acceso-nota` = "#51708D", `acceso-lema` = "#283F58", `acceso-pie` = "#1B2E40", `acceso-error` = "#E8837A",
-  `acceso-sombra` = "0 40px 100px rgba(0,0,0,0.72), 0 0 0 1px rgba(180,148,68,0.05)")
+  `acceso-sombra` = "0 40px 100px rgba(0,0,0,0.72), 0 0 0 1px rgba(180,148,68,0.05)",
+  # The loading overlay (www/overlay_init.js), TEMA stage 5b.
+  `acceso-carga-fondo` = "#F8F6F1", `acceso-carga-oro` = "#B8963E", `acceso-carga-oro-claro` = "#D4AF55", `acceso-carga-lema` = "#A09070", `acceso-carga-texto` = "#3A3630", `acceso-carga-texto-2` = "#9A8E7E", `acceso-carga-riel` = "#E4DDD0", `acceso-carga-pct` = "#B0A090")
 ok("acceso-*: all of them are common tokens, none a theme role (one value in every theme)",
    all(names(.ACCESO_HOY) %in% names(tema$.HD_COMUNES)) &&
      !any(grepl("^acceso-", unlist(lapply(tema$HD_TEMAS, function(t) names(t$tokens))))) &&
@@ -576,6 +578,12 @@ ok(sprintf("a theme is offered to clients only with 0 hand-written colours on cl
 ok("temas_ofrecidos(): clients get the offered ones, staff every theme",
    setequal(tema$temas_ofrecidos(FALSE), names(tema$HD_TEMAS)[vapply(tema$HD_TEMAS, function(t) isTRUE(t$ofrecer), logical(1))]) &&
      setequal(tema$temas_ofrecidos(TRUE), names(tema$HD_TEMAS)))
+
+# The loading overlay shows before the client's theme arrives: HopDesk's own
+# colours only (acceso-*), never a theme role that would change under Marca.
+ov <- unique(unlist(regmatches(leer("www/overlay_init.js"), gregexpr("var\\(--hd-[a-z0-9-]+\\)", leer("www/overlay_init.js")))))
+ok(sprintf("www/overlay_init.js paints only acceso-* tokens (%d)", length(ov)),
+   length(ov) >= 8L && all(grepl("^var\\(--hd-acceso-", ov)))
 
 cat(sprintf("\n=== %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

@@ -632,7 +632,7 @@ secured_ui <- shinymanager::secure_app(
     ")),
 
     # ── Loading overlay (www/overlay_init.js) ────────────────────────────────
-    tags$script(src = "overlay_init.js?v=6"),
+    tags$script(src = "overlay_init.js?v=7"),
 
     .hopdesk_brandmark(tr("cuentas.entrar.subtitulo"))
   ),
