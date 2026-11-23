@@ -223,8 +223,10 @@ empty_bpap <- .schema_bancos_papelera() |> dplyr::slice(0)
               "F4: calls add_to_bancos_papelera()")
     .chk_true(grepl("modificar_bancos_papelera\\(", block),
               "F5: calls modificar_bancos_papelera() (the archive is persisted on S3's current table, CM19)")
-    .chk_true(grepl("log_action\\(", block),
-              "F6 (regression guard): still calls log_action() -- Issue C's fix didn't remove Stage 6's existing logging")
+    # T72-E: the log rides with the movements' save (.bnc_evento()); the
+    # archive write is its evento_parte_de() (tests/test_t72e_bancos.R).
+    .chk_true(grepl("log_action\\(|\\.bnc_evento\\(\"eliminar_movimientos\"", block),
+              "F6 (regression guard): still logs (since T72-E through its save's event) -- Issue C's fix didn't remove Stage 6's existing logging")
     .chk_true(grepl("movs\\$eliminado\\[idx\\]\\s*<-\\s*TRUE", block),
               "F7 (regression guard): still flips the eliminado flag -- the archive write is additive, not a replacement")
   }

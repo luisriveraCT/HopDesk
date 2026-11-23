@@ -82,12 +82,14 @@ full <- paste(txt, collapse = "\n")
     end <- grep("^    \\}, ignoreInit = TRUE\\)$", txt)
     end <- end[end > start[1]][1]
     block <- paste(txt[start[1]:end], collapse = "\n")
-    ok("do_add_manual calls log_action() (previously missing entirely)",
-       grepl("log_action\\(", block))
+    # T72-E: the log rides with the save's event (.bnc_evento(), module
+    # "bancos", home from .bnc_casa(); checked once at the end).
+    ok("do_add_manual logs (log_action, or its save's .bnc_evento since T72-E) (previously missing entirely)",
+       grepl("log_action\\(|\\.bnc_evento\\(", block))
     ok("do_add_manual's log_action call passes client_id= (scoping regression guard)",
        grepl("client_id\\s*=", block))
-    ok("do_add_manual's log_action call passes viewer_home_client_id= (scoping regression guard)",
-       grepl("viewer_home_client_id\\s*=", block))
+    ok("do_add_manual's log passes viewer_home_client_id= (scoping regression guard; .bnc_evento carries it)",
+       grepl("viewer_home_client_id\\s*=|\\.bnc_evento\\(", block))
     ok("do_add_manual still calls bump_sync_version(\"bancos_movimientos_db\") (regression guard -- Stage 1 fix intact)",
        grepl('bump_sync_version\\("bancos_movimientos_db"[,)]', block))   # CM16: now with client_id
   }
@@ -201,12 +203,12 @@ full <- paste(txt, collapse = "\n")
        grepl("movs\\$eliminado_at\\[idx\\]\\s*<-\\s*as\\.POSIXct\\(NA\\)", block))
     ok("undo_mov_delete calls bump_sync_version (so the restore propagates live, consistent with Stage 1/2 of this effort)",
        grepl('bump_sync_version\\("bancos_movimientos_db"[,)]', block))   # CM16: now with client_id
-    ok("undo_mov_delete calls log_action (every correction action is auditable, per the general logging mandate)",
-       grepl("log_action\\(", block))
+    ok("undo_mov_delete logs (log_action, or its save's .bnc_evento since T72-E) (every correction action is auditable)",
+       grepl("log_action\\(|\\.bnc_evento\\(", block))
     ok("undo_mov_delete's log_action call passes client_id= (scoping regression guard)",
        grepl("client_id\\s*=", block))
-    ok("undo_mov_delete's log_action call passes viewer_home_client_id= (scoping regression guard)",
-       grepl("viewer_home_client_id\\s*=", block))
+    ok("undo_mov_delete's log passes viewer_home_client_id= (scoping regression guard; .bnc_evento carries it)",
+       grepl("viewer_home_client_id\\s*=|\\.bnc_evento\\(", block))
     ok("undo_mov_delete guards against a not-found id (req(mov_id) + length(idx) check, doesn't crash on a stale/garbage id)",
        grepl("req\\(mov_id\\)", block) && grepl("if \\(!length\\(idx\\)\\) return\\(\\)", block))
   }
@@ -218,6 +220,12 @@ full <- paste(txt, collapse = "\n")
 {
   ok("R/bancos_module.R is in the log_action scoping guard's file list (tests/test_saas_log_action_scoping.R)",
      any(grepl('"R/bancos_module\\.R"', readLines("tests/test_saas_log_action_scoping.R", warn = FALSE))))
+  # T72-E: Bancos' event carries the viewer's home (the write layer passes it
+  # as viewer_home_client_id) and the client is the save's own client_id.
+  bm <- paste(readLines("R/bancos_module.R", warn = FALSE), collapse = "\n")
+  ok(".bnc_evento() carries home = .bnc_casa(), and .bnc_casa() reads shared$home_client_id() (T72-E scoping)",
+     grepl(".bnc_evento <- function(", bm, fixed = TRUE) && grepl("metadata = metadata, target_id = target_id, home = .bnc_casa())", bm, fixed = TRUE) &&
+       grepl(".bnc_casa  <- function() tryCatch(shared$home_client_id()", bm, fixed = TRUE))
 }
 
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")

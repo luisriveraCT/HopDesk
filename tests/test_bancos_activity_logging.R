@@ -245,12 +245,30 @@ llamadas_log <- function(archivo) {
   out
 }
 bancos_calls <- Filter(function(cl) identical(cl$module, "bancos"), llamadas_log("R/bancos_module.R"))
-.chk(length(bancos_calls), 11L, paste("found all 11 log_action(module=\"bancos\", ...) call sites (CM09 added",
-                                      "recuperar_papelera_fallo_guardado; 820e5b9 the failed save's <accion>_fallido)"))
+# T72-E: 7 of the 11 actions log through their save's event now
+# (.bnc_evento(accion, descripcion, metadata, ...), always module "bancos";
+# the write layer writes the entry once the save worked). The other 4 stay
+# log_action: the _fallido, deshacer_abono, recuperar_papelera_fallo_guardado
+# and revertir_confirmacion (its words come after the item's recovery).
+llamadas_evento <- function(archivo) {
+  out <- list()
+  buscar <- function(e) {
+    if (!is.call(e)) return(invisible())
+    if (identical(e[[1]], as.name(".bnc_evento"))) out[[length(out) + 1L]] <<- e
+    for (k in seq_along(e)[-1]) tryCatch(buscar(e[[k]]), error = function(err) NULL)
+  }
+  for (e in parse(archivo, keep.source = FALSE)) buscar(e)
+  out
+}
+evento_calls <- llamadas_evento("R/bancos_module.R")
+.chk(c(length(bancos_calls), length(evento_calls)), c(4L, 7L),
+     paste("found all 11 Bancos log sites: 4 log_action(module=\"bancos\", ...) (the _fallido, deshacer_abono,",
+           "recuperar_papelera_fallo_guardado, revertir_confirmacion) and 7 .bnc_evento() (T72-E)"))
 
 n_with_metadata <- sum(vapply(bancos_calls, function(cl) "metadata" %in% names(cl) && !is.null(cl$metadata),
-                              logical(1)))
-.chk(n_with_metadata, 11L, "every one of the 11 bancos log_action() calls passes a metadata argument (the _fallido too, CM41)")
+                              logical(1))) +
+  sum(vapply(evento_calls, function(cl) length(cl) >= 4L || "metadata" %in% names(cl), logical(1)))   # (accion, descripcion, metadata, ...)
+.chk(n_with_metadata, 11L, "every one of the 11 Bancos log sites passes a metadata argument (the _fallido too, CM41; .bnc_evento's third)")
 
 for (marker in c(".bancos_audit_rows_summary(del_rows)", ".bancos_audit_rows_summary(reasig_rows)",
                  ".bancos_audit_rows_summary(sesion_rows)", ".bancos_audit_rows_summary(nuevos)")) {
