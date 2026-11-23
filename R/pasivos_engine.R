@@ -1118,6 +1118,12 @@ pasivos_reconcile_provisions <- function(existing, generated, mode = "regenerate
                                           "manual_inv_id", "pagar_hoy_id",
                                           "bancos_conf_id", "reverted_count",
                                           "last_edited_by", "last_edited_at"))) {
+          # The hand edits themselves (*_override) are the person's, never the
+          # engine's: a generated row has them NA, and copying it erased every
+          # amount or date edited by hand on the liability's pending
+          # provisions whenever the wizard saved without changing that field
+          # (renaming it was enough; found 2026-11-22, PV-1).
+          if (grepl("_override$", fld)) next
           ov_col <- .override_col(fld)
           # Skip if this field is protected by a non-NA override
           if (!is.na(ov_col) && ov_col %in% names(row_ex) && !is.na(row_ex[[ov_col]])) next
