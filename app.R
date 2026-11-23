@@ -632,6 +632,7 @@ secured_ui <- shinymanager::secure_app(
     ")),
 
     # ── Loading overlay (www/overlay_init.js) ────────────────────────────────
+    i18n_head_parcial("cuentas.carga."),   # its texts: the sign-in page has no whole dictionary
     tags$script(src = "overlay_init.js?v=7"),
 
     .hopdesk_brandmark(tr("cuentas.entrar.subtitulo"))

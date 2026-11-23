@@ -69,6 +69,17 @@ tr_n <- function(clave, n, ..., idioma = hd_idioma()) {
 
 # Dictionary for the browser: the active language merged over Spanish, so a
 # missing translation still shows Spanish instead of a raw key.
+# Only the keys under `prefijo`, for a page that does not carry the whole
+# dictionary (the sign-in page: the loading overlay's texts, cuentas.carga.*,
+# www/overlay_init.js). Merged into window.HD_I18N, which i18n_head() later
+# replaces with the whole one.
+i18n_head_parcial <- function(prefijo, idioma = hd_idioma()) {
+  dic <- utils::modifyList(i18n_dict("es"), i18n_dict(idioma))
+  dic <- dic[startsWith(names(dic), prefijo)]
+  htmltools::tags$script(htmltools::HTML(paste0(
+    "window.HD_I18N=Object.assign(window.HD_I18N||{},", jsonlite::toJSON(dic, auto_unbox = TRUE), ");")))
+}
+
 i18n_head <- function(idioma = hd_idioma()) {
   dic <- utils::modifyList(i18n_dict("es"), i18n_dict(idioma))
   htmltools::tagList(

@@ -15,6 +15,14 @@ $(function() {
   }
   var H = window._hld;
 
+  /* 1b -- Texts: the dictionary (cuentas.carga.*). The sign-in page carries
+     only these keys (i18n_head_parcial() in app.R), without www/i18n.js:
+     a plain lookup when hdT() is not there. A missing key shows the key. */
+  var hdT = window.hdT || function(k) {
+    var d = window.HD_I18N || {};
+    return d[k] != null ? d[k] : k;
+  };
+
   /* 2 -- Inject CSS once (idempotent) */
   if (!document.getElementById('hld-css')) {
     var _hldCss = document.createElement('style');
@@ -65,7 +73,7 @@ $(function() {
           '<circle cx="30" cy="30" r="2.5" style="fill:var(--hd-acceso-carga-oro)"/>' +
         '</svg>' +
         '<div class="hld-brand-name">HOPDESK</div>' +
-        '<div class="hld-brand-tagline">TREASURY INTELLIGENCE PLATFORM</div>' +
+        '<div class="hld-brand-tagline">' + hdT('cuentas.carga.lema') + '</div>' +
       '</div>' +
       '<div class="hld-msgs">' +
         '<div id="hld-msg"></div>' +
@@ -80,26 +88,15 @@ $(function() {
     H.ov = _existing;
   }
 
-  /* 4 -- Message pool */
-  var _ALL = [
-    { h: 'Conectando con los servidores…',          s: 'El servidor estaba dormido. Lo despertamos con mucho cariño.' },
-    { h: 'Negociando con el ERP…',                  s: 'Diciéndole "por favor" al ERP. La educación no cuesta nada.' },
-    { h: 'Descargando facturas del año pasado…', s: 'Y del antepasado, por si las dudas.' },
-    { h: 'Calculando quién nos debe qué…', s: 'Spoiler: siempre son más de los que esperamos.' },
-    { h: 'Sincronizando vencimientos…',              s: 'Sus facturas, ordenadas por fecha y nivel de angustia.' },
-    { h: 'Revisando políticas de pago…',        s: 'Política #1: cobrar antes de pagar. La cumplimos a veces.' },
-    { h: 'Cargando la agenda de pagos…',             s: '¿Ya le pagaron al proveedor del 304? (No. Nunca.)' },
-    { h: 'Verificando tipo de cambio…',              s: 'El peso está bien, gracias por preguntar.' },
-    { h: 'Aplicando overrides manuales…',            s: 'Respetando sus decisiones ejecutivas, sin juzgar.' },
-    { h: 'Contando los días de vencimiento…',  s: 'Son más de diez. Necesitamos más dedos.' },
-    { h: 'Revisando el historial de “como quedamos”…', s: 'Archivo muy pesado. Muchos, muchos correos.' },
-    { h: 'Alineando los astros fiscales…',           s: 'El IVA en retención y el SAT en mantenimiento.' },
-    { h: 'Calculando el flujo de efectivo…',         s: 'Hay flujo. No necesariamente en la dirección correcta.' },
-    { h: 'Revisando intercompañías…',     s: 'Todos se deben entre sí. Es una tradición corporativa.' },
-    { h: 'Cargando el forecast del trimestre…',      s: 'Optimista en el presupuesto, realista en la ejecución.' },
-    { h: 'Buscando la factura de marzo…',            s: 'Siempre aparece justo después del corte.' },
-    { h: 'Cargando proveedores activos…',            s: 'Algunos llevan más tiempo en el catálogo que el café en la cocineta.' }
-  ];
+  /* 4 -- Message pool: cuentas.carga.mensaje.NN.{titulo,detalle}, from 01
+     while the dictionary has them. */
+  var _ALL = [];
+  for (var _i = 1; _i < 100; _i++) {
+    var _k = 'cuentas.carga.mensaje.' + (_i < 10 ? '0' : '') + _i;
+    if ((window.HD_I18N || {})[_k + '.titulo'] == null) break;
+    _ALL.push({ h: hdT(_k + '.titulo'), s: hdT(_k + '.detalle') });
+  }
+  if (!_ALL.length) _ALL = [{ h: '', s: '' }];
   function _shuffle(a) {
     var b = a.slice();
     for (var i = b.length - 1; i > 0; i--) {
@@ -213,8 +210,8 @@ $(function() {
       if (h) h.style.opacity = '0';
       if (s) s.style.opacity = '0';
       setTimeout(function() {
-        if (h) { h.textContent = '¡HopDesk listo para el rescate!'; h.style.opacity = '1'; }
-        if (s) { s.textContent = 'Sus números, a su servicio.';      s.style.opacity = '1'; }
+        if (h) { h.textContent = hdT('cuentas.carga.listo.titulo');  h.style.opacity = '1'; }
+        if (s) { s.textContent = hdT('cuentas.carga.listo.detalle'); s.style.opacity = '1'; }
         /* Hard fallback -- calFadeNow should arrive well before 30 s */
         setTimeout(function() {
           if (!H.ov.classList.contains('hld-fadeout')) {
