@@ -206,6 +206,21 @@ recorrer <- function(raiz, etiqueta, quien) {
   poll_until(function() isTRUE(tryCatch(ev("!!document.getElementById('auth-user_id')"), error = function(e) FALSE)), timeout_s = 60)
   Sys.sleep(1)
   captura_marca(etiqueta, sprintf("%s_%s_ENTRAR", etiqueta, quien))
+  # TEMA 5b: the loading overlay (www/overlay_init.js) is built hidden on the
+  # sign-in page and shown on the click. Shown here as it is (no message yet),
+  # its pulse and fades frozen (the icon's opacity would differ by the
+  # instant), measured, hidden again before signing in.
+  if (isTRUE(tryCatch(ev("(function(){ var o = document.getElementById('hopdesk-loading'); if (!o) return false;
+        var c = document.createElement('style'); c.id = 'tema-carga-quieta';
+        c.textContent = '#hopdesk-loading, #hopdesk-loading * { animation: none !important; transition: none !important; }';
+        document.head.appendChild(c); o.style.display = 'flex'; return true; })()"), error = function(e) FALSE))) {
+    Sys.sleep(1.5)
+    res[["CARGA"]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
+    captura(sprintf("%s_%s_CARGA", etiqueta, quien))
+    captura_marca(etiqueta, sprintf("%s_%s_CARGA", etiqueta, quien))
+    ev("(function(){ document.getElementById('hopdesk-loading').style.display = 'none';
+        var c = document.getElementById('tema-carga-quieta'); if (c) c.remove(); return true; })()")
+  } else no_cubierta(etiqueta, quien, "Pantalla de carga", "no #hopdesk-loading on the sign-in page")
   u <- usuarios[[quien]]
   ev(sprintf("(function(){ var u = document.getElementById('auth-user_id'), p = document.getElementById('auth-user_pwd');
      u.value = %s; p.value = %s; $(u).trigger('change'); $(p).trigger('change'); return true; })()",
@@ -516,7 +531,7 @@ for (quien in quienes) {
   if ("PAN" %in% names(rama) || length(rama) > 1L) {
     # The first view INSIDE the app: the access pages (sign-in, activation,
     # forgot) carry only the acceso-* sheet, no theme attribute (app.R).
-    h <- rama[[setdiff(names(rama), c("ENTRAR", "ACT_INVALIDA", "OLVIDE"))[1]]][["__html__"]]
+    h <- rama[[setdiff(names(rama), c("ENTRAR", "CARGA", "ACT_INVALIDA", "OLVIDE"))[1]]][["__html__"]]
     ok(sprintf("[rama · %s] <html data-hd-tema=\"clasico\"> and the tokens load (--hd-primario = %s)", quien, h$primario %||% ""),
        identical(h$tema, "clasico") && toupper(h$primario %||% "") == "#0A58CA")
   }
@@ -525,7 +540,7 @@ for (quien in quienes) {
     eb[["__html__"]] <- NULL; er[["__html__"]] <- NULL
     comunes <- intersect(names(eb), names(er))
     difs <- character()
-    nombre <- switch(v, ENTRAR = "sign-in page", FLUJO = "Flujo (vista previa)",
+    nombre <- switch(v, ENTRAR = "sign-in page", CARGA = "Pantalla de carga", FLUJO = "Flujo (vista previa)",
                      ACT_INVALIDA = "Activación (enlace inválido)", OLVIDE = "Olvidé mi contraseña",
                      CAL_AP = "Calendario · Pagos", NOTAS = "Notas abiertas", BURBUJA = "Burbuja de valor",
                      REQ_NUEVA = "Nueva requisición", REQ_EVID = "Requisición abierta · Evidencia",
@@ -547,7 +562,8 @@ for (quien in quienes) {
     # invalid-link card has 20 elements) and were only measured once their
     # card and title showed: more than 10 there; more than 20 everywhere else.
     min_elementos <- if (v %in% c("ACT_INVALIDA", "OLVIDE")) 10L else 20L
-    if (v != "ENTRAR")
+    # The loading overlay is measured over the sign-in page, form included.
+    if (!v %in% c("ENTRAR", "CARGA"))
       ok(sprintf("[%s] %s: no sign-in form in master or branch", quien, nombre), !login(eb) && !login(er))
     if (!ok(sprintf("[%s] %s: %d elements compared, same computed style within ΔE %g (only in master %d, only in branch %d)",
                     quien, nombre, length(comunes), DE_MAX, length(setdiff(names(eb), comunes)), length(setdiff(names(er), comunes))),
