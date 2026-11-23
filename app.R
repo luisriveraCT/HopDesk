@@ -2363,6 +2363,30 @@ server <- function(input, output, session) {
     })
   })
 
+  # ── Phase 1b: the client's group_config, right after Phase 1 ─────────────────
+  # Name, logo, base currency and theme. Phase 2 (priority -2) runs after the
+  # SAP dispatch (-1), which can take a minute or more: read there, a client
+  # with its own theme saw Clásico all that time (measured ~70 s in dev). One
+  # small read, at -0.5: after Phase 1 and the first renders (so the first
+  # screen is not later), before the SAP dispatch. Once per session; the
+  # context-switch observer reloads it on a jump, as before. Same tenant rule
+  # as Phase 1/2: the home client resolved at sign-in, never CLIENT_ID.
+  .grupo_cargado <- FALSE
+  observe({
+    if (.grupo_cargado) return()
+    req(.phase1_done())
+    cid_g <- tolower(tryCatch(home_client_id(), error = function(e) NULL) %||% "")
+    req(nzchar(cid_g))
+    .grupo_cargado <<- TRUE
+    isolate({
+      t1 <- proc.time()
+      cfg <- tryCatch(load_group_config(client_id = cid_g), error = function(e) NULL)
+      if (!is.null(cfg)) group_config_rv(cfg)
+      tema_cargado(tema_cargado() + 1L)   # TEMA 5: this client's theme is known now
+      message(sprintf("[LOAD] Phase 1b group_config %.1fs [cid=%s]", (proc.time() - t1)[["elapsed"]], cid_g))
+    })
+  }, priority = -0.5)
+
   # ── Phase 2: aux data loader (low-priority) ───────────────────────────────────
   # Triggered by .phase1_done(). Runs at priority=-2 so CUR_CHOICES (p1),
   # calendar renderUIs (p0), and SAP dispatch (p-1) all execute first.
@@ -2662,15 +2686,9 @@ server <- function(input, output, session) {
       })
       message(sprintf("[LOAD]   empresas         %.1fs", (proc.time() - t1)[["elapsed"]]))
 
-      # Same as empresas: the context-switch observer skips the initial login,
-      # so the session's own group name and logo are loaded here.
-      t1 <- proc.time()
-      local({
-        cfg <- tryCatch(load_group_config(client_id = cid_lo), error = function(e) NULL)
-        if (!is.null(cfg)) group_config_rv(cfg)
-      })
-      tema_cargado(isolate(tema_cargado()) + 1L)   # TEMA 5: this client's theme is known now
-      message(sprintf("[LOAD]   group_config     %.1fs", (proc.time() - t1)[["elapsed"]]))
+      # group_config (name, logo, base currency, theme) is no longer read here:
+      # the observer right after Phase 1 does it, so the client's theme does
+      # not wait behind the SAP dispatch (TEMA 5).
 
       # Populate global cache so save_*() callbacks update it. Every call
       # passes cid_lo explicitly -- these keys are now client_id-scoped (see
