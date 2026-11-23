@@ -81,7 +81,10 @@ ev <- function(b, js) {
 TRAZA_JS <- "window.__temas = [];
   new MutationObserver(function(){ var h = document.documentElement, t = h && h.getAttribute('data-hd-tema');
     if (t && window.__temas[window.__temas.length - 1] !== t) window.__temas.push(t); })
-  .observe(document, {attributes: true, subtree: true, attributeFilter: ['data-hd-tema']});"
+  .observe(document, {attributes: true, subtree: true, attributeFilter: ['data-hd-tema']});
+  window.__hdTemaMsgs = [];
+  document.addEventListener('DOMContentLoaded', function(){ if (window.jQuery) jQuery(document).on('shiny:message', function(e){
+    var c = e.message && e.message.custom; if (c && c.hdTema) window.__hdTemaMsgs.push(c.hdTema); }); });"
 tema_de <- function(b) tryCatch(ev(b, "document.documentElement.getAttribute('data-hd-tema') || ''"), error = function(e) "?")
 primario <- function(b) tryCatch(toupper(ev(b, "getComputedStyle(document.documentElement).getPropertyValue('--hd-primario').trim()")),
                                  error = function(e) "?")
@@ -131,13 +134,24 @@ entrar <- function(b, quien) {
      jsonlite::toJSON(u[["user"]], auto_unbox = TRUE), jsonlite::toJSON(u[["pass"]], auto_unbox = TRUE)))
   Sys.sleep(0.5)
   ev(b, "document.getElementById('auth-go_auth').click(); true")
-  poll_until(function() cargada(b), timeout_s = LIMITE, interval_s = 1) && { Sys.sleep(5); TRUE }
+  if (!poll_until(function() cargada(b), timeout_s = LIMITE, interval_s = 1)) return(FALSE)
+  # The server's theme message comes once the client's group_config is read
+  # (Phase 2, after the overlay is gone).
+  t0 <- Sys.time()
+  llego <- poll_until(function() mensajes(b) > 0L, timeout_s = LIMITE, interval_s = 0.5)
+  cat(sprintf("      | %s: the theme message came %.1f s after the page loaded\n", quien,
+              as.numeric(difftime(Sys.time(), t0, units = "secs"))))
+  Sys.sleep(2)
+  llego
 }
+mensajes <- function(b) as.integer(tryCatch(ev(b, "(window.__hdTemaMsgs || []).length"), error = function(e) 0L))
 saltar <- function(b, cid) {
+  n0 <- mensajes(b)
   ev(b, sprintf("Shiny.setInputValue('trs-modal_ctx_select', %s, {priority: 'event'});
                  Shiny.setInputValue('trs-modal_ctx_confirm', Math.random(), {priority: 'event'}); true",
                 jsonlite::toJSON(cid, auto_unbox = TRUE)))
-  poll_until(function() identical(cliente_visto(b), cid), timeout_s = LIMITE, interval_s = 1) && { Sys.sleep(8); TRUE }
+  nzchar(cid) && poll_until(function() mensajes(b) > n0 && identical(cliente_visto(b), cid), timeout_s = LIMITE, interval_s = 1) &&
+    { Sys.sleep(3); TRUE }
 }
 # Ajustes › Grupo › Empresas, until the theme selector is drawn.
 abrir_empresas <- function(b) {
@@ -147,6 +161,8 @@ abrir_empresas <- function(b) {
                                         error = function(e) FALSE)), timeout_s = 120, interval_s = 1)
 }
 guardar_tema <- function(b, valor) {
+  ev(b, "(function(){ var i = document.getElementById('emp-group_name_input');
+    if (i && !i.value.trim()) { i.value = 'Grupo de prueba'; $(i).trigger('change'); } return true; })()")
   ev(b, sprintf("(function(){ var r = document.querySelector(\"#emp-tema_input input[type=radio][value='%s']\");
     if (!r) return false; r.click(); $(r).trigger('change'); return true; })()", valor)) &&
     { Sys.sleep(1)
