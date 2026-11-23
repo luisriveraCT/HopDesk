@@ -62,6 +62,7 @@ fila("forecasting", "sembrar_catalogo", "Catálogo de pronósticos: se agregaron
      list(tabla = "forecasting_metrics.rds", filas_antes = 13L, filas_despues = 14L, origen = "forecasting_completar_catalogo",
           diferencia = list(n = c(nuevas = 1L, cambiadas = 0L, quitadas = 0L)), n_metricas = 1L))
 fila("evidencias", "agregar_tabla_evidencia", "Agregó una tabla", list(tabla = "Cotización", n = 3L, duration_seconds = 42L), user = "ana", hace = 5)
+fila("bancos", "eliminar_movimientos/parte", "", list(tabla = "bancos_papelera.rds", filas_antes = 0L, filas_despues = 1L), user = "luis", hace = 4)   # T72-E
 invisible(.audit_flush_pending("networks"))
 
 ver <- function(is_staff) {
@@ -92,6 +93,8 @@ ok("2 a module's own entry with no T72 mark is untouched (its own \"tabla\" key 
 
 st <- ver(TRUE)
 m_st <- tryCatch(meta_de(st$fil, "sembrar_catalogo"), error = function(e) NULL)
+ok("2 T72-E: a client does not see an action's second write (\"<accion>/parte\")", is.data.frame(cl$fil) && !any(grepl("/parte$", cl$fil$action)))
+ok("3 T72-E: staff sees it", is.data.frame(st$fil) && "eliminar_movimientos/parte" %in% st$fil$action)
 ok("3 staff sees the T72 keys and the description as written",
    all(c("tabla", "filas_antes", "filas_despues", "origen") %in% names(m_st %||% list())) &&
      grepl("[tabla=forecasting_metrics.rds filas 13 -> 14]", st$fil$description[st$fil$action == "sembrar_catalogo"], fixed = TRUE))

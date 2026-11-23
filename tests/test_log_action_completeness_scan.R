@@ -41,14 +41,17 @@ scan_log_action_completeness <- function(file) {
 
   results <- list()
   MUTATE_PAT <- "\\bsave_[A-Za-z0-9_.]*\\s*\\(|\\bbump_sync_version\\s*\\("
-  LOG_PAT    <- "\\blog_action\\s*\\(|\\bpasivos_log_audit\\s*\\("
+  # T72-E: a write that passes a real event (not NULL, not evento_parte_de())
+  # is logged by the write layer once it worked.
+  # A wrapper's pass-through (`evento = evento`) is not a log: its callers are.
+  LOG_PAT    <- "\\blog_action\\s*\\(|\\bpasivos_log_audit\\s*\\(|\\bevento\\s*=(?!=|\\s*(NULL\\b|evento_parte_de\\b|evento\\b))"
 
   .record <- function(call_expr, kind, label) {
     sref <- attr(call_expr, "srcref")
     txt  <- if (!is.null(sref)) paste(as.character(sref), collapse = "\n")
             else paste(deparse(call_expr), collapse = "\n")
     mutates <- grepl(MUTATE_PAT, txt)
-    logs    <- grepl(LOG_PAT, txt)
+    logs    <- grepl(LOG_PAT, txt, perl = TRUE)
     line    <- if (!is.null(sref)) sref[1] else NA_integer_
     results[[length(results) + 1L]] <<- data.frame(
       file = file, line = line, label = label, kind = kind,
@@ -302,10 +305,6 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     # forecasting_freeze_metric / forecasting_unfreeze_metric
     # (pasivos_log_audit).
     "modificar_forecasting_subscriptions", "modificar_pasivos_estimates",
-    # forecasting_seed_if_empty (T72-C): no log_action() of its own any more --
-    # each of its writes passes evento_sistema("forecasting", "sembrar_catalogo")
-    # and the write layer logs it (tests/test_t72c_sistema.R).
-    "forecasting_seed_if_empty",
     # Found 2026-09-03: .apply_move/.clear_moves (R/ledger_module.R) no
     # longer call log_action() directly in their own body -- they now pass a
     # log_info list into .save_moves_deferred() (already a KNOWN_FINE_HELPERS
@@ -406,20 +405,33 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
   for (i in seq_along(as.list(e))) if (is.call(e[[i]]) && .t72_contiene(e[[i]], pat, nombres)) return(TRUE)
   FALSE
 }
-# A write that passes `evento =` logs itself: .s3_write() writes one app_audit
-# entry once the upload worked (T72-B). It counts as the log of its path.
+# T72-E: a call with `evento = <a real event>` (not NULL, not
+# evento_parte_de(...)) writes AND logs in one step (the write layer logs it
+# once the save worked). Looked for inside function literals too: Bancos
+# passes its save as function() save_...(..., evento = ev) to .bnc_guardar().
 .t72_con_evento <- function(e) {
-  if (!is.call(e) || identical(e[[1]], as.name("function"))) return(FALSE)
-  if (grepl(.ESCRITURA_T72, .t72_nombre(e)) && "evento" %in% names(as.list(e))) return(TRUE)
-  for (i in seq_along(as.list(e))) if (is.call(e[[i]]) && .t72_con_evento(e[[i]])) return(TRUE)
+  if (!is.call(e)) return(FALSE)
+  a <- as.list(e)
+  if (!is.null(names(a)) && "evento" %in% names(a)) {
+    v <- a[["evento"]]
+    real <- !(is.null(v) || identical(v, quote(NULL)) || identical(v, quote(evento)) ||   # a wrapper's pass-through
+              (is.call(v) && identical(.t72_nombre(v), "evento_parte_de")))
+    if (real) return(TRUE)
+  }
+  for (i in seq_along(a)[-1]) if (is.call(e[[i]]) && .t72_con_evento(e[[i]])) return(TRUE)
   FALSE
 }
+# bump_sync_version alone (a cache counter, not the user's data) after the
+# action was logged does not make it "written" again.
+.t72_solo_bump <- function(st) .t72_contiene(st, nombres = "bump_sync_version") &&
+  !.t72_contiene(st, "^(save_[A-Za-z0-9_.]+|modificar_[A-Za-z0-9_.]+|modificar_tabla|\\.req_modificar|\\.s3_write|\\.s3_modificar|prefs_guardar)$")
 .t72_bloque <- function(x) {
   if (is.call(x) && identical(x[[1]], as.name("{"))) {
     b <- as.list(x)[-1]; sr <- attr(x, "srcref"); if (!is.null(sr)) attr(b, "srcref") <- sr[-1]; b
   } else list(x)
 }
-# estado: "limpio" | "escrito" | "registrado" | "fin"; huecos: lines.
+# estado: "limpio" | "escrito" | "registrado" | "evento" (a write that passed a
+# real event: written and logged at once, T72-E) | "fin"; huecos: lines.
 .t72_camino <- function(sts, estado, ln0) {
   huecos <- integer()
   for (k in seq_along(sts)) {
@@ -429,14 +441,15 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     n <- .t72_nombre(st)
     if (n == "{") { r <- .t72_camino(.t72_bloque(st), estado, ln); huecos <- c(huecos, r$huecos); estado <- r$estado; if (estado == "fin") break; next }
     if (n == "if") {
-      if (.t72_contiene(st[[2]], .ESCRITURA_T72)) estado <- "escrito"
+      if (.t72_con_evento(st[[2]])) estado <- "evento"
+      else if (.t72_contiene(st[[2]], .ESCRITURA_T72)) estado <- "escrito"
       fin <- character()
       for (rama in list(st[[3]], if (length(st) >= 4) st[[4]] else NULL)) {
         if (is.null(rama)) { fin <- c(fin, estado); next }
         r <- .t72_camino(.t72_bloque(rama), estado, ln); huecos <- c(huecos, r$huecos); fin <- c(fin, r$estado)
       }
       vivos <- fin[fin != "fin"]
-      estado <- if (!length(vivos)) "fin" else if (any(vivos == "escrito")) "escrito" else if (any(vivos == "registrado")) "registrado" else vivos[1]
+      estado <- if (!length(vivos)) "fin" else if (any(vivos == "escrito")) "escrito" else if (any(vivos == "registrado")) "registrado" else if (any(vivos == "evento")) "evento" else vivos[1]
       if (estado == "fin") break
       next
     }
@@ -445,7 +458,9 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
       if (estado == "escrito") huecos <- c(huecos, ln)
       estado <- "fin"; break
     }
-    if (.t72_contiene(st, nombres = .REGISTRO_T72) || .t72_con_evento(st)) estado <- "registrado"
+    if (.t72_contiene(st, nombres = .REGISTRO_T72)) estado <- "registrado"
+    else if (.t72_con_evento(st)) estado <- "evento"
+    else if (estado == "evento" && .t72_solo_bump(st)) estado <- "evento"
     else if (.t72_contiene(st, .ESCRITURA_T72)) estado <- "escrito"
   }
   list(estado = estado, huecos = huecos)
@@ -508,6 +523,21 @@ escanear_camino <- function(f) {
   ok("T72 camino: the same write without evento= and no log -> a hole", nrow(r) == 1L)
   r <- fx(c('save_algo <- function(x) .s3_write(x, "k", client_id = "c")'))
   ok("T72 camino: a base writer itself is not checked (its callers log)", !nrow(r))
+  # T72-E: a write that passes a real event is written AND logged at once.
+  r <- fx(c('h <- function(x) {', '  ev <- list(accion = "a")',
+            '  if (!guardar("a", "d", function() save_algo(x, evento = ev))) return()', '  bump_sync_version("t")', '}'))
+  ok("T72-E camino: a save with evento= (even inside the function a guard runs), then bump_sync_version -> no hole", !nrow(r))
+  r <- fx(c('h <- function(x) {', '  save_algo(x, evento = evento_parte_de("a"))', '  bump_sync_version("t")', '}'))
+  ok("T72-E camino: evento_parte_de() is not the action's log -> a hole", nrow(r) == 1L)
+  r <- fx(c('h <- function(x, evento = NULL) {', '  save_otra(x, evento = evento)', '}'))
+  ok("T72-E camino: a pass-through (evento = evento) is not a log -> a hole", nrow(r) == 1L)
+  r <- fx(c('h <- function(x) {', '  save_algo(x)', '  if (x$a) log_action(user = "u")', '  bump_sync_version("t")', '}'))
+  ok("T72-E camino: a log in ONE branch, then bump_sync_version -> still a hole (only a real event survives a bump)", nrow(r) == 1L)
+  lg <- function(lineas) { f <- tempfile(fileext = ".R"); writeLines(lineas, f); r <- scan_log_action_completeness(f); unlink(f); r }
+  r <- lg(c('srv <- function(input, output, session) {', '  observeEvent(input$a, save_algo(1, evento = ev))',
+            '  observeEvent(input$b, save_algo(1, evento = NULL))', '  observeEvent(input$c, save_algo(1, evento = evento))', '}'))
+  ok("T72-E text scan: evento = <a real event> logs; evento = NULL and evento = evento do not",
+     identical(r$logs[r$kind == "observeEvent"], c(TRUE, FALSE, FALSE)))
 }
 
 DEUDA_CAMINO <- c(

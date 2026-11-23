@@ -530,6 +530,15 @@ modificar_tabla <- function(key, client_id, schema, cambio, permitir_reduccion =
 evento_sistema <- function(origen, accion, descripcion = NULL)
   list(usuario = paste0("sistema:", origen), modulo = origen, accion = accion, descripcion = descripcion)
 
+# T72-E: the event of the SECOND write of one user action (Eliminar writes the
+# movements, then the papelera): it leaves a staff-only "<accion>/parte" entry
+# with the table and its counts, hidden from clients like sin_evento (T72-D),
+# and never alarms; the client sees the action's one row, its first write's.
+# tests/test_t72e_bancos.R checks every evento_parte_de("X") sits in the same
+# function as an event with accion = "X".
+evento_parte_de <- function(accion, modulo = NULL, usuario = NULL, home = NULL)
+  list(.parte_de = accion, modulo = modulo, usuario = usuario, home = home)
+
 # T72-B commit 2: the write sites that still save WITHOUT evento=, frozen:
 # "archivo::funcion" = calls to modificar_tabla / modificar_tabla_completa /
 # .s3_write / .s3_write_with without `evento =` (app.R and R/). It can only go
@@ -971,6 +980,16 @@ unregister_username <- function(username) {
     n_desp <- if (is.data.frame(obj)) nrow(obj) else NA_integer_
     filas <- sprintf("%s -> %s", if (is.na(n_antes)) "?" else n_antes, if (is.na(n_desp)) "?" else n_desp)
     meta <- list(tabla = key, filas_antes = n_antes, filas_despues = n_desp)
+    # T72-E: the second write of one action (evento_parte_de()): a staff-only
+    # trace, "<accion>/parte", with the table and the counts. The action's
+    # one row for the client is its first write's event. Never alarms.
+    if (!is.null(evento$.parte_de)) {
+      if (!is.null(evento$.diferencia)) meta$diferencia <- evento$.diferencia
+      log_action(user = evento$usuario %||% "sistema", module = evento$modulo %||% "registro",
+                 action = paste0(evento$.parte_de, "/parte"), description = "",
+                 target_id = key, metadata = meta, client_id = cid, viewer_home_client_id = evento$home %||% cid)
+      return(invisible(TRUE))
+    }
     if (is.null(evento)) {
       nombre <- function(cl) { f <- cl[[1]]
         if (is.name(f)) as.character(f)
@@ -1012,6 +1031,16 @@ unregister_username <- function(username) {
       }
     } else {
       if (!is.null(evento$.diferencia)) meta$diferencia <- evento$.diferencia
+      # T72-E: the module's own metadata (Bancos' rows summary, a before/after)
+      # rides with the event, so its viewer's bespoke detail still draws. The
+      # write layer's keys always win; a module key with one of their names
+      # is dropped, said in the log (T72-D hides those from clients).
+      if (is.list(evento$metadata) && length(evento$metadata) && !is.null(names(evento$metadata))) {
+        propia <- evento$metadata
+        choca <- intersect(names(propia), c("tabla", "filas_antes", "filas_despues", "diferencia", "origen"))
+        if (length(choca)) message("[T72] evento$metadata trae claves de la capa de escritura, descartadas: ", paste(choca, collapse = ", "))
+        meta <- c(propia[setdiff(names(propia), choca)], meta)
+      }
       desc <- evento$descripcion %||% ""
       log_action(user = evento$usuario %||% "unknown", module = evento$modulo %||% "registro",
                  action = evento$accion %||% "guardar",

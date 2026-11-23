@@ -1008,6 +1008,9 @@ auditLogViewerServer <- function(id, shared, mode,
         # T72-B: a write that came with no event ("sin_evento", R/persistence.R)
         # is staff's to chase, never a client's activity.
         hide <- hide | (!is.na(df$module) & df$module == "registro" & !is.na(df$action) & df$action == "sin_evento")
+        # T72-E: the second write of an action ("<accion>/parte") is staff's
+        # trace; the client sees the action's one row.
+        hide <- hide | (!is.na(df$action) & grepl("/parte$", df$action))
         df <- df[!hide, , drop = FALSE]
         # T72-D: the write layer's technical detail is staff's too. An entry
         # with its mark (tabla + filas_antes + filas_despues in metadata) loses
