@@ -406,6 +406,14 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
   for (i in seq_along(as.list(e))) if (is.call(e[[i]]) && .t72_contiene(e[[i]], pat, nombres)) return(TRUE)
   FALSE
 }
+# A write that passes `evento =` logs itself: .s3_write() writes one app_audit
+# entry once the upload worked (T72-B). It counts as the log of its path.
+.t72_con_evento <- function(e) {
+  if (!is.call(e) || identical(e[[1]], as.name("function"))) return(FALSE)
+  if (grepl(.ESCRITURA_T72, .t72_nombre(e)) && "evento" %in% names(as.list(e))) return(TRUE)
+  for (i in seq_along(as.list(e))) if (is.call(e[[i]]) && .t72_con_evento(e[[i]])) return(TRUE)
+  FALSE
+}
 .t72_bloque <- function(x) {
   if (is.call(x) && identical(x[[1]], as.name("{"))) {
     b <- as.list(x)[-1]; sr <- attr(x, "srcref"); if (!is.null(sr)) attr(b, "srcref") <- sr[-1]; b
@@ -437,7 +445,7 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
       if (estado == "escrito") huecos <- c(huecos, ln)
       estado <- "fin"; break
     }
-    if (.t72_contiene(st, nombres = .REGISTRO_T72)) estado <- "registrado"
+    if (.t72_contiene(st, nombres = .REGISTRO_T72) || .t72_con_evento(st)) estado <- "registrado"
     else if (.t72_contiene(st, .ESCRITURA_T72)) estado <- "escrito"
   }
   list(estado = estado, huecos = huecos)
@@ -494,6 +502,10 @@ escanear_camino <- function(f) {
   ok("T72 camino: a log in both branches -> no hole", !nrow(r))
   r <- fx(c('h <- function(x) {', '  if (x) return(NULL)', '  tryCatch({ save_algo(x); log_action(user = "u") }, error = function(e) NULL)', '}'))
   ok("T72 camino: a return before any write is fine", !nrow(r))
+  r <- fx(c('h <- function(x) {', '  tryCatch({', '    g <- modificar_algo(function(f) f, client_id = cid, evento = ev)', '    showNotification("ok")', '  }, error = function(e) NULL)', '}'))
+  ok("T72 camino: a write that passes evento= logs itself (the write layer, T72-B) -> no hole", !nrow(r))
+  r <- fx(c('h <- function(x) {', '  modificar_algo(function(f) f, client_id = cid)', '}'))
+  ok("T72 camino: the same write without evento= and no log -> a hole", nrow(r) == 1L)
   r <- fx(c('save_algo <- function(x) .s3_write(x, "k", client_id = "c")'))
   ok("T72 camino: a base writer itself is not checked (its callers log)", !nrow(r))
 }
@@ -515,11 +527,8 @@ DEUDA_CAMINO <- c(
     "R/cashflow_export_module.R :: generate_cashflow_html_doc",
     "R/email_service.R :: .email_queue_marcar",
     "R/email_service.R :: .enqueue_email",
-    "R/forecasting_metric_registry.R :: forecasting_completar_catalogo",
-    "R/forecasting_metric_registry.R :: forecasting_seed_if_empty",
     "R/forecasting_persistence.R :: append_forecasting_fetch_log",
     "R/forecasting_sources.R :: fcs_fetch_and_store",
-    "R/fx_banxico.R :: .fx_fix_bajar",
     "R/fx_banxico.R :: .fx_divisas_bajar",
     "R/fx_tipos.R :: fx_escrito_guardar",
     "R/ledger_module.R :: .sap_ov_guardar",
