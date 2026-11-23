@@ -54,6 +54,17 @@ ok("1f no client: the default", identical(tema_de_cliente(NULL), HD_TEMA_OMISION
      identical(tema_de_cliente(""), HD_TEMA_OMISION))
 ok("1g each client its own (no file for beta: the default)",
    identical(tema_de_cliente(CID), "marca") && identical(tema_de_cliente(OTRO), HD_TEMA_OMISION))
+# tema_elegido_cliente(): "chose Clásico" is not "chose nothing" (the weekly mails).
+poner(c(semilla, list(tema = "clasico")))
+elegido_clasico <- tema_elegido_cliente(CID)
+poner(semilla); sin_elegir <- tema_elegido_cliente(CID)
+poner(c(semilla, list(tema = "neon"))); desconocido <- tema_elegido_cliente(CID)
+poner(c(semilla, list(tema = " Marca "))); con_espacios <- tema_elegido_cliente(CID)
+.mem_falla <- llave(CID); fallida <- tema_elegido_cliente(CID); .mem_falla <- character()
+ok("1h tema_elegido_cliente(): the chosen one ('clasico' too), NULL when none, unknown or the read failed",
+   identical(elegido_clasico, "clasico") && is.null(sin_elegir) && is.null(desconocido) &&
+     identical(con_espacios, "marca") && is.null(fallida) && is.null(tema_elegido_cliente("")))
+poner(c(semilla, list(tema = "marca")))
 
 # ── 2. Writing ───────────────────────────────────────────────────────────────
 guardar <- function(nuevo, base, evento = NULL)

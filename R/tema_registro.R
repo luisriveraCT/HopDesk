@@ -595,12 +595,19 @@ tema_de_sesion <- function(session = shiny::getDefaultReactiveDomain()) {
 # this file loads: rule 29). For what runs outside the client's session (the
 # emails). Any failure -- no file, a failed read, no load_group_config() in a
 # test by pieces -- is the default theme: a theme never stops anything.
-tema_de_cliente <- function(client_id) {
-  if (is.null(client_id) || !nzchar(client_id %||% "")) return(tema_resolver(NULL))
+tema_de_cliente <- function(client_id) tema_resolver(cliente = tema_elegido_cliente(client_id))
+
+# The theme a client CHOSE: its group_config's `tema` when it is one of the
+# registry's, else NULL (never chose, unknown, or the read failed). For what
+# must tell "chose Clásico" from "chose nothing": the weekly mails keep Marca
+# for a client that never chose (D2, TEMA 5a).
+tema_elegido_cliente <- function(client_id) {
+  if (is.null(client_id) || !nzchar(client_id %||% "")) return(NULL)
   leer <- get0("load_group_config", mode = "function")
-  if (is.null(leer)) return(tema_resolver(NULL))
+  if (is.null(leer)) return(NULL)
   cfg <- tryCatch(leer(client_id = client_id), error = function(e) NULL)
-  tema_resolver(cliente = if (is.list(cfg)) cfg$tema else NULL)
+  t <- if (is.list(cfg)) cfg$tema else NULL
+  if (tema_valido(t)) tolower(trimws(t)) else NULL
 }
 
 # Every --hd-* value of a theme, resolved: paleta + comunes + its roles +
