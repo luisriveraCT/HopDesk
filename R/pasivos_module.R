@@ -304,6 +304,16 @@ pasivos_provision_de_borrado <- function(prov, client_id) {
 # ── Server observers ──────────────────────────────────────────────────────────
 
 # Call once from app.R server.
+# PV-2: TRUE when a session of `nivel` may run the provisions refresh: it may
+# read both Pasivos tables (T69b, nivel_reactivo_permitido()). Compras, an
+# unknown tier or no tier: FALSE.
+pasivos_refresco_permitido <- function(nivel) {
+  if (is.null(nivel) || !length(nivel) || is.na(nivel[1]) || !nzchar(nivel[1])) return(FALSE)
+  isTRUE(tryCatch(nivel_reactivo_permitido(nivel[1], "pasivos_liabilities_db") &&
+                    nivel_reactivo_permitido(nivel[1], "pasivos_provisions_db"),
+                  error = function(e) FALSE))
+}
+
 setup_pasivos_module <- function(input, output, session, shared) {
 
   # The client's base currency (T33), read without a dependency: what a
@@ -315,6 +325,29 @@ setup_pasivos_module <- function(input, output, session, shared) {
   monedas_primero <- function() monedas_en_datos(
     shiny::isolate(tryCatch(c(shared$pasivos_liabilities_db()$moneda_pago, shared$pasivos_provisions_db()$moneda_pago),
                             error = function(e) character())), base_moneda())
+
+  # PV-2: the provisions brought up to date once a day per client (variable
+  # rates with the index in force, recurring ones to their horizon), when the
+  # session's client is known. A failure is logged and changes nothing.
+  # Only in a session whose effective tier may read Pasivos
+  # (pasivos_refresco_permitido): for Compras the T69b gate gives Pasivos'
+  # data empty, and nothing here may ever start from that. An unknown tier
+  # (not resolved yet) does not run it; it is asked again when the tier
+  # changes. (A shared without effective_client_id -- a test's, a piece's --
+  # never trips it: the client is then NULL and nothing runs.)
+  cliente_sesion <- function() tryCatch(shared$effective_client_id(), error = function(e) NULL)
+  nivel_sesion   <- function() tryCatch(as.character(session$userData$hd_nivel_efectivo())[1], error = function(e) NULL)
+  shiny::observeEvent(list(cliente_sesion(), nivel_sesion()), ignoreNULL = FALSE, {
+    cid <- cliente_sesion()
+    if (is.null(cid) || !nzchar(cid)) return()
+    if (!pasivos_refresco_permitido(nivel_sesion())) return()
+    res <- tryCatch(pasivos_refrescar_provisiones(cid, hoy = hoy_cliente(shared)),
+                    error = function(e) { message("[pasivos] refresco ", cid, " failed: ", conditionMessage(e)); NULL })
+    if (!is.null(res) && identical(res$hecho, TRUE) && !is.null(res$cambios) && nrow(res$cambios) && !is.null(res$tabla)) {
+      shared$pasivos_provisions_db(res$tabla)
+      tryCatch(bump_sync_version("pasivos_provisions_db", client_id = cid), error = function(e) NULL)
+    }
+  })
 
   rv <- shiny::reactiveValues(
     pending_provision_id = NULL,

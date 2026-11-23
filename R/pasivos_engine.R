@@ -1436,3 +1436,145 @@ pasivos_provision_revive <- function(provision_id, user, client_id = NULL) {
 # interest_rate_* branch used valor/12 on the period's capital, not on the
 # balance. A variable rate is the schedule's job (.tasas_periodo() above).
 # The pasivos_modifiers table and its loaders stay; nothing writes it.
+
+
+# ── PV-2: provisiones vivas (2026-11-22) ───────────────────────────────────────
+# The stored provisions were only generated when the wizard saved, and then
+# froze: a variable-rate liability kept the index of the day it was saved,
+# and a recurring one with no end stopped two years after it. Once a day per
+# client (pasivos_module.R, when the session's client is known) they are
+# brought up to date:
+#   - variable rate (financiero, variable_*, no imported table): the pending
+#     future provisions take the index in force, when one of them moves more
+#     than 0.5 % or 1 unit (not rewritten for cents);
+#   - regular / tarjeta: the dates from today to the horizon with no provision
+#     get one (the two years ahead, and the months an old edit left empty,
+#     PV-1). Nothing else of theirs changes (amounts, FX: as saved).
+# Never touched: paid, converted or confirmed provisions, the ones edited by
+# hand, the past, other liabilities, paused or deleted liabilities, fixed-rate
+# ones. One write, modificar_tabla() over S3 as it is now: two sessions at once
+# do not duplicate (the second finds nothing to do).
+PASIVOS_REFRESCO_UMBRAL <- c(relativo = 0.005, absoluto = 1)
+
+# TRUE for the provisions edited by hand (any *_override set).
+.pasivos_con_override <- function(p) {
+  if (is.null(p) || !nrow(p)) return(logical(0))
+  cols <- vapply(.PROVISION_OVERRIDEABLE_FIELDS, .override_col, character(1))
+  cols <- intersect(cols[!is.na(cols)], names(p))
+  if (!length(cols)) return(rep(FALSE, nrow(p)))
+  Reduce(`|`, lapply(cols, function(cl) !is.na(p[[cl]])))
+}
+
+# Pure: the provisions table brought up to date, and what changed (one row
+# per liability: motivo "tasa" | "horizonte", actualizadas, nuevas).
+pasivos_refresco_calcular <- function(liabs, provs, hoy, client_id) {
+  hoy <- as.Date(hoy)
+  cambios <- data.frame(liability_id = character(), nombre = character(), motivo = character(),
+                        actualizadas = integer(), nuevas = integer(), stringsAsFactors = FALSE)
+  if (is.null(liabs) || !nrow(liabs) || is.null(provs)) return(list(tabla = provs, cambios = cambios))
+  activos <- liabs[liabs$estado %in% "active", , drop = FALSE]
+  tabla <- provs
+  for (i in seq_len(nrow(activos))) {
+    L <- activos[i, , drop = FALSE]
+    categoria <- L$categoria[1]
+    importada <- "schedule_imported" %in% names(L) && length(L$schedule_imported[[1]]) > 0
+    variable <- identical(categoria, "financiero") && !importada &&
+      isTRUE(startsWith(as.character(L$tasa_tipo[1] %||% ""), "variable_"))
+    recurrente <- isTRUE(categoria %in% c("regular", "tarjeta"))
+    if (!variable && !recurrente) next
+    existentes <- tabla[!is.na(tabla$liability_id) & tabla$liability_id == L$id, , drop = FALSE]
+    g <- tryCatch(pasivos_generate_provisions(L, window_start = hoy, client_id = client_id),
+                  error = function(e) { message("[pasivos] refresco ", L$id, ": ", conditionMessage(e)); NULL })
+    if (is.null(g) || !nrow(g)) next
+    r <- tryCatch(pasivos_reconcile_provisions(existentes, g, mode = "regenerate", liability = L),
+                  error = function(e) { message("[pasivos] refresco ", L$id, ": ", conditionMessage(e)); NULL })
+    if (is.null(r)) next
+    nuevas <- r$insert
+    nuevas <- nuevas[!is.na(nuevas$fecha_efectiva) & as.Date(nuevas$fecha_efectiva) >= hoy, , drop = FALSE]
+    actualizadas <- existentes[0L, , drop = FALSE]
+    if (variable && nrow(r$update)) {
+      u <- r$update[r$update$estado %in% "provisional" & !.pasivos_con_override(r$update) &
+                      !is.na(r$update$fecha_efectiva) & as.Date(r$update$fecha_efectiva) >= hoy, , drop = FALSE]
+      antes <- existentes[match(u$id, existentes$id), , drop = FALSE]
+      viejo <- suppressWarnings(as.numeric(antes$amount_pago))
+      d <- abs(suppressWarnings(as.numeric(u$amount_pago)) - viejo)
+      umbral <- pmax(PASIVOS_REFRESCO_UMBRAL[["relativo"]] * abs(viejo), PASIVOS_REFRESCO_UMBRAL[["absoluto"]])
+      if (any(!is.na(d) & !is.na(umbral) & d > umbral)) actualizadas <- u
+    }
+    if (!nrow(nuevas) && !nrow(actualizadas)) next
+    if (nrow(actualizadas)) {
+      k <- match(actualizadas$id, tabla$id)
+      for (cl in intersect(names(tabla), names(actualizadas))) tabla[[cl]][k] <- actualizadas[[cl]]
+    }
+    if (nrow(nuevas)) tabla <- dplyr::bind_rows(tabla, nuevas)
+    cambios <- rbind(cambios, data.frame(
+      liability_id = L$id, nombre = as.character(L$nombre[1] %||% NA_character_),
+      motivo = if (variable) "tasa" else "horizonte",
+      actualizadas = nrow(actualizadas), nuevas = nrow(nuevas), stringsAsFactors = FALSE))
+  }
+  list(tabla = tabla, cambios = cambios)
+}
+
+# The day each client was last brought up to date, in this process. Keyed by
+# client (never one global value for every session). A new process refreshes
+# again once: harmless, the write is idempotent (nothing to do = no write).
+# On S3 it would be a logged write per client every day (T72) to save only
+# the computation.
+.PASIVOS_REFRESCO_HECHO <- new.env(parent = emptyenv())
+
+# Brings the client's provisions up to date once a day. Reads the
+# liabilities and the provisions strictly (a failed read stops it: never
+# taken as "nothing there"); with nothing to change it returns before any
+# write. Otherwise it writes with modificar_tabla() over S3 as it is now (the
+# change is computed again on that copy: another session's write meanwhile
+# is kept, and one that already did it leaves nothing to do), and each
+# liability brought up to date gets its line in the Pasivos history
+# (pasivos_log_audit, which also reaches Actividad).
+# Returns list(hecho, cambios, tabla): `tabla` is what S3 holds after it
+# (NULL when nothing was written).
+pasivos_refrescar_provisiones <- function(client_id, hoy = hoy_en(), forzar = FALSE) {
+  if (is.null(client_id) || !nzchar(client_id))
+    stop("pasivos_refrescar_provisiones: sin client_id", call. = FALSE)
+  hoy <- as.Date(hoy)
+  cid <- tolower(trimws(client_id))
+  if (!isTRUE(forzar) && identical(.PASIVOS_REFRESCO_HECHO[[cid]], hoy))
+    return(list(hecho = FALSE, cambios = NULL, tabla = NULL))
+  liabs <- leer_tabla_para_escribir(S3_KEYS$pasivos_liabilities, client_id, .schema_pasivos_liability)
+  provs <- leer_tabla_para_escribir(S3_KEYS$pasivos_provisions, client_id, .schema_pasivos_provision)
+  previo <- pasivos_refresco_calcular(liabs, provs, hoy, client_id)
+  if (!nrow(previo$cambios)) {
+    assign(cid, hoy, envir = .PASIVOS_REFRESCO_HECHO)
+    return(list(hecho = TRUE, cambios = previo$cambios, tabla = NULL))
+  }
+  cambios <- previo$cambios
+  tabla <- modificar_tabla(
+    S3_KEYS$pasivos_provisions, client_id, .schema_pasivos_provision,
+    function(fresco) {
+      r <- pasivos_refresco_calcular(liabs, fresco, hoy, client_id)
+      cambios <<- r$cambios
+      if (!nrow(r$cambios)) return(fresco)
+      iniciales_vigentes(r$tabla, "pasivos_provisions", client_id)   # CM29, as every provisions save
+    },
+    evento = evento_sistema("pasivos_refresco", "provisiones_refrescadas",
+                            tr("tablas.pasivos.refresco.evento")))
+  assign(cid, hoy, envir = .PASIVOS_REFRESCO_HECHO)
+  # One history line per liability brought up to date (none when another
+  # session had already done it: `cambios` is then empty).
+  for (i in seq_len(nrow(cambios))) {
+    tryCatch(pasivos_log_audit(
+      action_type = if (identical(cambios$motivo[i], "tasa")) "provision.edited" else "provision.generated",
+      user        = "sistema:pasivos_refresco",
+      target_kind = "liability",
+      target_id   = cambios$liability_id[i],
+      after       = list(motivo = cambios$motivo[i], actualizadas = cambios$actualizadas[i],
+                         nuevas = cambios$nuevas[i]),
+      notes       = tr("tablas.pasivos.refresco.evento"),
+      client_id   = client_id),
+      error = function(e) message("[pasivos] refresco: history line failed: ", conditionMessage(e)))
+  }
+  if (nrow(cambios))
+    message(sprintf("[pasivos] refresco %s: %s", client_id,
+                    paste(sprintf("%s (%s: %d al día, %d nuevas)", cambios$nombre, cambios$motivo,
+                                  cambios$actualizadas, cambios$nuevas), collapse = "; ")))
+  list(hecho = TRUE, cambios = cambios, tabla = if (nrow(cambios)) tabla else NULL)
+}

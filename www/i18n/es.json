@@ -1411,6 +1411,7 @@
   "tablas.pasivos.error_construir": "Error al construir el pasivo: {detalle}",
   "tablas.pasivos.sin_filas_generadas": "Sin filas generadas (revisa consola)",
   "tablas.pasivos.error_generar": "Pasivo guardado. Error generando provisiones: {detalle}",
+  "tablas.pasivos.refresco.evento": "Provisiones al día: tasas variables con el índice vigente y pagos recurrentes completos",
   "tablas.pasivos.guardado_conflictos": "Pasivo guardado. {n} provisiones requieren tu confirmación.",
   "tablas.pasivos.guardado_generadas": "Pasivo guardado. {n} provisiones generadas.",
   "tablas.pasivos.sin_permiso_crear": "Sin permiso para crear pasivos.",

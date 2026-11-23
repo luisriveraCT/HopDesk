@@ -1411,6 +1411,7 @@
   "tablas.pasivos.error_construir": "Error building the liability: {detalle}",
   "tablas.pasivos.sin_filas_generadas": "No rows generated (check the console)",
   "tablas.pasivos.error_generar": "Liability saved. Error generating provisions: {detalle}",
+  "tablas.pasivos.refresco.evento": "Provisions brought up to date: variable rates with the index in force and recurring payments filled in",
   "tablas.pasivos.guardado_conflictos": "Liability saved. {n} provisions need your confirmation.",
   "tablas.pasivos.guardado_generadas": "Liability saved. {n} provisions generated.",
   "tablas.pasivos.sin_permiso_crear": "You don't have permission to create liabilities.",
