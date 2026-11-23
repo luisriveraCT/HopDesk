@@ -74,6 +74,7 @@ saltar <- function(falla_carga = character(), falla_estricta = character(), fall
   ent$sap_data <- rv_falso(list(AR = tabla("A"), AP = tabla("A")))
   ent$sap_snapshot_info <- rv_falso(NULL)
   ent$ctx_no_cargadas <- rv_falso(c("de_un_salto_anterior"))
+  ent$tema_cargado <- rv_falso(0L)   # TEMA 5a: the jump says the new client's theme is known
   for (f in CARGADORES) local({
     nombre <- f
     assign(nombre, function(client_id = NULL, ...) {
