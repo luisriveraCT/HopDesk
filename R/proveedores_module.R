@@ -145,6 +145,21 @@ proveedoresUI <- function(id) {
 }
 
 # ── Server ────────────────────────────────────────────────────────────────────
+# CM49: a vendor's currency as the catalog's ISO code. Vendors saved before
+# 9baa492 (2026-11-17) hold the form's old words, "Pesos"/"Dólares": the
+# table showed them raw and its currency filter split them from MXN/USD.
+# ppl_moneda_palabra() reads the bank words (Pesos, Dólares, DLLS, M.N.)
+# the PPL already reads; anything else goes through moneda_normalizar()
+# (MXP/MXV -> MXN). Empty stays empty. Display only: nothing is rewritten.
+.prov_moneda_mostrar <- function(x) {
+  x <- as.character(x)
+  vacia <- is.na(x) | !nzchar(trimws(x))
+  palabra <- ppl_moneda_palabra(x)
+  out <- ifelse(is.na(palabra), moneda_normalizar(x), palabra)
+  out[vacia] <- ""
+  out
+}
+
 proveedoresServer <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -291,7 +306,7 @@ proveedoresServer <- function(id, shared) {
         banco        = col("banco"),
         no_cuenta    = col("no_cuenta"),
         rfc          = col("rfc"),
-        moneda       = col("moneda"),
+        moneda       = .prov_moneda_mostrar(col("moneda")),   # CM49
         empresas     = ifelse(!is.na(empresas) & nzchar(empresas), empresas, ifelse(is.na(emp_vieja), "", emp_vieja)),
         activo_hasta = ifelse(indef, tr("tablas.proveedores.indefinido"), ah),
         # Only an expired date shows a badge, as before ("EXPIRADO ...").
