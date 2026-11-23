@@ -222,19 +222,12 @@ ledgerModuleServer <- function(id, config, shared) {
       # deleted item is hidden. New manual items with the same
       # Empresa/Moneda/Documento but a fresh UUID remain visible.
       # SAP items are handled separately by Source 3 (confirmed=TRUE ghost).
-      if (!is.null(papelera) && nrow(papelera)) {
-        pap_this_m <- papelera[papelera[["ledger"]] == ledger |
-                                 papelera[["ledger"]] == "MIXED", , drop = FALSE]
-        if (nrow(pap_this_m) && "source" %in% names(pap_this_m)) {
-          man_pap <- pap_this_m[!is.na(pap_this_m[["source"]]) &
-                                  pap_this_m[["source"]] == "manual", , drop = FALSE]
-          if (nrow(man_pap) && "id" %in% names(df)) {
-            valid_ids <- man_pap[["id"]][!is.na(man_pap[["id"]]) &
-                                          nzchar(man_pap[["id"]] %||% "")]
-            if (length(valid_ids))
-              df <- df[is.na(df[["id"]]) | !(df[["id"]] %in% valid_ids), , drop = FALSE]
-          }
-        }
+      # CM46: ids_manuales_archivados() (data_pipeline.R) skips archived
+      # events a "recovered" row reversed -- an undone confirmation shows again.
+      if ("id" %in% names(df)) {
+        valid_ids <- ids_manuales_archivados(papelera, ledger)
+        if (length(valid_ids))
+          df <- df[is.na(df[["id"]]) | !(df[["id"]] %in% valid_ids), , drop = FALSE]
       }
 
       if (length(emp) && "Empresa" %in% names(df)) {

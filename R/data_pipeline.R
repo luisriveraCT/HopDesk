@@ -990,6 +990,29 @@ to_calendar_data <- function(df, amount_col = "Saldo vencido") {
 # bancos_confirmados_df/papelera_df: plain data frames, not reactives --
 # callers resolve their own shared$xxx() and pass the result in, keeping this
 # file's "no reactives, no S3" contract (see file header) intact.
+# CM46: the ids of MANUAL invoices the papelera still holds as archived, for
+# a ledger ("AR"/"AP"; "MIXED" rows count for both). An archived event that a
+# later "recovered" row reverses (restore_from_papelera(): reverses_event_id)
+# no longer hides its invoice: undoing a manual confirmation brings the
+# invoice back to manual_inv with its SAME id, and the old anti-join kept it
+# hidden from the Calendario and the Flujo while it was pending again.
+# Archived again later (a new event) hides it again. Rows from before the
+# papelera had actions (action NA) count as archived, as before.
+ids_manuales_archivados <- function(papelera_df, ledger) {
+  if (is.null(papelera_df) || !nrow(papelera_df) || !"source" %in% names(papelera_df)) return(character())
+  p <- papelera_df[papelera_df[["ledger"]] %in% c(ledger, "MIXED") &
+                     papelera_df[["source"]] %in% "manual", , drop = FALSE]
+  if (!nrow(p)) return(character())
+  accion <- if ("action" %in% names(p)) as.character(p[["action"]]) else rep(NA_character_, nrow(p))
+  revertidos <- if ("reverses_event_id" %in% names(p)) p[["reverses_event_id"]][accion %in% "recovered"] else character()
+  revertidos <- revertidos[!is.na(revertidos)]
+  arch <- p[!(accion %in% "recovered"), , drop = FALSE]
+  if ("event_id" %in% names(arch) && length(revertidos))
+    arch <- arch[is.na(arch[["event_id"]]) | !(arch[["event_id"]] %in% revertidos), , drop = FALSE]
+  ids <- as.character(arch[["id"]])
+  unique(ids[!is.na(ids) & nzchar(ids)])
+}
+
 compute_confirmed_flags <- function(df, ledger, bancos_confirmados_df, papelera_df) {
   tipo_val <- if (ledger == "AR") "cobro" else "pago"
   if (!"confirmed" %in% names(df)) df[["confirmed"]] <- FALSE

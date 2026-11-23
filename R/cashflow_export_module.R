@@ -417,13 +417,10 @@ build_export_combined_df <- function(shared, ic_mode_val) {
   # Stage 10 exists to prevent.
   papelera <- tryCatch(shared$papelera_rv(), error = function(e) NULL)
   if (!is.null(papelera) && nrow(papelera)) {
+    # CM46: the same anti-join as the Calendario, respecting "recovered".
     .rm_pap <- function(df, led) {
-      if (is.null(df) || !nrow(df)) return(df)
-      pap_this <- papelera[papelera$ledger == led | papelera$ledger == "MIXED", , drop = FALSE]
-      if (!nrow(pap_this) || !"source" %in% names(pap_this)) return(df)
-      man_pap <- pap_this[!is.na(pap_this[["source"]]) & pap_this[["source"]] == "manual", , drop = FALSE]
-      if (!nrow(man_pap) || !"id" %in% names(df)) return(df)
-      valid_ids <- man_pap[["id"]][!is.na(man_pap[["id"]]) & nzchar(man_pap[["id"]] %||% "")]
+      if (is.null(df) || !nrow(df) || !"id" %in% names(df)) return(df)
+      valid_ids <- ids_manuales_archivados(papelera, led)
       if (!length(valid_ids)) return(df)
       df[is.na(df[["id"]]) | !(df[["id"]] %in% valid_ids), , drop = FALSE]
     }
