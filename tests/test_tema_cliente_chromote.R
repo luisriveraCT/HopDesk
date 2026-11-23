@@ -49,9 +49,27 @@ source("tests/helpers/live_app_harness.R")
 repo <- normalizePath(".", winslash = "/")
 PORT <- 39040L
 app <- NULL; pes <- list()
+CORRIDA <- 0L
+guardar_log <- function() if (!is.null(app)) tryCatch({
+  x <- readLines(app$proc$get_error_file(), warn = FALSE, encoding = "UTF-8")
+  quien <- tolower(unlist(lapply(usuarios, `[[`, "user")))
+  x <- x[grepl("group_config|tema forzado|\\[CTX\\]|escritura omitida|S3_WRITE|Error|error|WARN", x) &
+         !Reduce(`|`, lapply(quien, function(u) grepl(u, tolower(x), fixed = TRUE)))]
+  writeLines(x, file.path(SALIDA, sprintf("app_log_corrida_%d.txt", CORRIDA)), useBytes = TRUE)
+}, error = function(e) message("  (log: ", conditionMessage(e), ")"))
 cerrar_todo <- function() {
+  guardar_log()
   for (k in names(pes)) try(pes[[k]]$close(), silent = TRUE)
   pes <<- list(); stop_bg_app(app); app <<- NULL
+}
+# group_config loads late (Phase 2 at sign-in, last of a jump's reads): wait
+# for the theme, and say how long it took.
+espera_tema <- function(b, valor, etiqueta, tope = 120) {
+  t0 <- Sys.time()
+  llego <- poll_until(function() identical(tema_de(b), valor), timeout_s = tope, interval_s = 0.5)
+  cat(sprintf("      | %s: %s after %.1f s\n", etiqueta, if (llego) valor else paste("still", tema_de(b)),
+              as.numeric(difftime(Sys.time(), t0, units = "secs"))))
+  llego
 }
 
 ev <- function(b, js) {
@@ -61,9 +79,9 @@ ev <- function(b, js) {
 }
 # Every value <html data-hd-tema> takes on a document, from its very start.
 TRAZA_JS <- "window.__temas = [];
-  new MutationObserver(function(){ var t = document.documentElement.getAttribute('data-hd-tema');
+  new MutationObserver(function(){ var h = document.documentElement, t = h && h.getAttribute('data-hd-tema');
     if (t && window.__temas[window.__temas.length - 1] !== t) window.__temas.push(t); })
-  .observe(document.documentElement, {attributes: true, attributeFilter: ['data-hd-tema']});"
+  .observe(document, {attributes: true, subtree: true, attributeFilter: ['data-hd-tema']});"
 tema_de <- function(b) tryCatch(ev(b, "document.documentElement.getAttribute('data-hd-tema') || ''"), error = function(e) "?")
 primario <- function(b) tryCatch(toupper(ev(b, "getComputedStyle(document.documentElement).getPropertyValue('--hd-primario').trim()")),
                                  error = function(e) "?")
@@ -82,7 +100,7 @@ captura <- function(b, nombre) tryCatch({
 # The test staff account reads as principal (it may jump to any client); the
 # username goes to the app process through the environment, never printed.
 arrancar <- function(tema_forzado = "", cliente = "") {
-  cerrar_todo()
+  cerrar_todo(); CORRIDA <<- CORRIDA + 1L
   codigo <- sprintf(paste0('Sys.setenv(ARR_MODO = "normal", ARR_RAIZ = "%s", ARR_FORZAR_NIVEL = "principal", ',
                            'ARR_FORZAR_USUARIO = Sys.getenv("HOPDESK_TEST_USER"), ',
                            'ARR_FORZAR_TEMA = "%s", ARR_FORZAR_TEMA_CLIENTE = "%s"); ',
@@ -157,7 +175,7 @@ if (ok("2 staff signs in", entrar(bs, "prueba"))) {
          return !!r && !!r.closest('label').parentElement.querySelector('.badge'); })()")))
     captura(bs, "staff_empresas_selector")
     ok("2 Guardar with Marca: the staff page turns Marca at once (attribute and tokens)",
-       guardar_tema(bs, "marca") && poll_until(function() identical(tema_de(bs), "marca"), timeout_s = 30) &&
+       guardar_tema(bs, "marca") && espera_tema(bs, "marca", "after Guardar, staff") &&
          identical(primario(bs), MARINO))
     captura(bs, "staff_en_cliente_marca")
     ok("2 back home: Clásico", saltar(bs, CASA) && identical(tema_de(bs), "clasico"))
@@ -167,11 +185,12 @@ if (ok("2 staff signs in", entrar(bs, "prueba"))) {
 # ── Run B: the client's group_config reads with tema = "marca" ──────────────
 if (!nzchar(CID) || !ok("B the real app starts again, the client's theme read as Marca", arrancar("marca", CID))) fin()
 bc <- nueva("cliente")
-ok("3 the client signs in: Marca once loaded", entrar(bc, "cliente") && identical(tema_de(bc), "marca") &&
+ok("3 the client signs in: Marca once loaded", entrar(bc, "cliente") && espera_tema(bc, "marca", "first sign-in, client") &&
      identical(primario(bc), MARINO))
 cat("      | first sign-in, every value of data-hd-tema:", paste(traza(bc), collapse = " → "), "\n")
 ok("3 second sign-in: Marca from the first paint (no Clásico in between)",
-   entrar(bc, "cliente") && length(traza(bc)) > 0L && all(traza(bc) == "marca"))
+   entrar(bc, "cliente") && espera_tema(bc, "marca", "second sign-in, client") &&
+     length(traza(bc)) > 0L && all(traza(bc) == "marca"))
 cat("      | second sign-in:", paste(traza(bc), collapse = " → "), "\n")
 pestanas <- unlist(tryCatch(ev(bc, "Array.from(document.querySelectorAll('.nav-link[data-value]'))
   .map(function(a){ return a.getAttribute('data-value'); })"), error = function(e) list()))
@@ -189,7 +208,7 @@ if (ok("4 staff signs in while the client's session is open", entrar(bs, "prueba
   CASA <- cliente_visto(bs)
   ok("4 at the same time: staff at home is Clásico, the client's session stays Marca",
      identical(tema_de(bs), "clasico") && identical(tema_de(bc), "marca"))
-  ok("4 staff jumping into the client sees Marca", saltar(bs, CID) && identical(tema_de(bs), "marca") &&
+  ok("4 staff jumping into the client sees Marca", saltar(bs, CID) && espera_tema(bs, "marca", "jump, staff") &&
        identical(primario(bs), MARINO))
   captura(bs, "staff_salto_cliente_marca")
   ok("4 back home: Clásico again, the client's session still Marca",
