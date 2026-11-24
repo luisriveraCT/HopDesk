@@ -38,7 +38,8 @@ A <- tomar("R/auth.R", c("avisar_senal", "SENAL_USUARIOS", "SENAL_INVITACIONES",
 bumps <- character()
 A$bump_sync_version <- function(name, client_id = NULL) { bumps <<- c(bumps, paste(name, client_id)); invisible(TRUE) }
 A$.SYNC_REGISTRY <- list(usuarios_db = list(), invitaciones_db = list())
-r <- A$avisar_senal("usuarios_db", c("Acme", "acme ", NA, "", "hd-admin"))
+r <- tryCatch(A$avisar_senal("usuarios_db", c("Acme", "acme ", NA, "", "hd-admin")),
+              error = function(e) NULL)   # master has no avisar_senal: the checks fail, the test goes on
 ok("A1 one bump per distinct client (normalized), none for NA/empty",
    isTRUE(r) && identical(bumps, c("usuarios_db acme", "usuarios_db hd-admin")))
 bumps <- character()
@@ -89,7 +90,8 @@ P$.HD_ADMIN_CID <- "hd-admin"; P$.schema_pending_invites <- function() inv(chara
 guardado <- NULL; senales <- list()
 P$modificar_hd_admin <- function(key, schema_fn, cambio, evento = NULL) { guardado <<- cambio(antes); guardado }
 P$avisar_senal <- function(nombre, clientes) { senales[[length(senales) + 1L]] <<- list(nombre, clientes); invisible(TRUE) }
-r <- P$modificar_pending_invites(function(x) { x$status[x$token == "t2"] <- "accepted"; x })
+r <- tryCatch(P$modificar_pending_invites(function(x) { x$status[x$token == "t2"] <- "accepted"; x }),
+              error = function(e) NULL)
 ok("D1 the change is written as before and its result returned",
    identical(r, guardado) && identical(guardado$status, c("pending", "accepted", "pending")))
 ok("D2 one signal: invitaciones_db to hd-admin and the accepted invitation's client",
