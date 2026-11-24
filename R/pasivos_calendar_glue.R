@@ -74,65 +74,91 @@ pasivos_provisions_as_ledger_rows <- function(provisions, liabilities, ledger = 
     if (!nrow(prov)) return(.empty_provision_ledger_rows())
   }
 
-  rows <- lapply(seq_len(nrow(prov)), function(i) {
-    p   <- prov[i, , drop = FALSE]
-    lid <- p$liability_id[1]
+  # T88-2: whole columns at once (it built one tibble per provision: 900
+  # provisions took 5.6 s and froze the R process for every session). The
+  # result is identical() to the row-by-row version it replaces, NA and
+  # types included (tests/test_t88_provisiones_vector.R keeps that version
+  # as its oracle). Each rule below says which line of it it reproduces.
+  n   <- nrow(prov)
+  col <- function(df, nm) if (nm %in% names(df)) df[[nm]] else NULL
+  # p$x[1] %||% NA, as character: a missing column or NA gives NA.
+  texto <- function(x) if (is.null(x)) rep(NA_character_, n) else as.character(x)
 
-    liability <- if (!is.na(lid) && nzchar(lid %||% "") && !is.null(liabs)) {
-      liabs[liabs$id == lid, , drop = FALSE]
-    } else {
-      NULL
-    }
+  # The liability: liabs[liabs$id == lid, ][1, ]. A comparison against an NA
+  # id is NA, and that subset puts an all-NA row there: the first row taken
+  # is the first exact match OR the first NA id, whichever comes first, and
+  # an NA id's row gives NA for every field (not the provision's empresa).
+  lid    <- prov$liability_id
+  busca  <- !is.na(lid) & nzchar(ifelse(is.na(lid), "", lid)) & !is.null(liabs)
+  pos    <- rep(NA_integer_, n)
+  es_na  <- rep(FALSE, n)
+  if (!is.null(liabs) && any(busca)) {
+    ids      <- as.character(liabs$id)
+    exacta   <- match(lid[busca], ids)
+    primer_na <- if (anyNA(ids)) which(is.na(ids))[1] else NA_integer_
+    elegida  <- if (is.na(primer_na)) exacta else pmin(exacta, primer_na, na.rm = TRUE)
+    pos[busca]   <- elegida
+    es_na[busca] <- !is.na(elegida) & !is.na(primer_na) & elegida == primer_na
+  }
+  hay_liab <- !is.na(pos)
+  de_liab <- function(nm) {
+    v <- col(liabs, nm)
+    out <- rep(NA_character_, n)
+    if (!is.null(v)) out[hay_liab] <- as.character(v[pos[hay_liab]])
+    out[es_na] <- NA_character_
+    out
+  }
+  empresa <- ifelse(hay_liab, de_liab("empresa"), texto(col(prov, "empresa")))
+  pasivos_categoria    <- de_liab("categoria")
+  pasivos_subcategoria <- de_liab("subcategoria")
 
-    empresa              <- if (!is.null(liability) && nrow(liability)) liability$empresa[1]     else p$empresa[1]
-    pasivos_categoria    <- if (!is.null(liability) && nrow(liability)) liability$categoria[1]   else NA_character_
-    pasivos_subcategoria <- if (!is.null(liability) && nrow(liability)) liability$subcategoria[1] else NA_character_
+  # pasivos_pago_amount(p): the override when it is not NA, else amount_pago;
+  # an error (no override column) gave NA.
+  ov    <- col(prov, "amount_pago_override")
+  saldo <- if (is.null(ov)) rep(NA_real_, n) else as.numeric(ifelse(!is.na(ov), ov, prov$amount_pago))
+  # pasivos_pago_currency(p): moneda_pago, or NA where it is missing/NA/"" (it stop()ed).
+  mp  <- col(prov, "moneda_pago")
+  mon <- if (is.null(mp)) rep(NA_character_, n) else {
+    m <- as.character(mp); m[is.na(m) | !nzchar(ifelse(is.na(m), "", m))] <- NA_character_; m }
+  # fx_monto_aprox() is vectorized already; without R/fx_banxico.R, nothing.
+  ax <- if (exists("fx_monto_aprox", mode = "function"))
+    fx_monto_aprox(prov$amount_cotizado, prov$cotizado_en, prov$moneda_pago, prov$amount_pago_override, fx)
+  else list(aprox = rep(FALSE, n), importe_aprox = rep(NA_real_, n))
 
-    saldo     <- tryCatch(pasivos_pago_amount(p),    error = function(e) NA_real_)
-    # Without R/fx_banxico.R loaded (some tests), nothing is approximated.
-    ax        <- if (exists("fx_monto_aprox", mode = "function")) fx_monto_aprox(p$amount_cotizado[1], p$cotizado_en[1], p$moneda_pago[1],
-                                p$amount_pago_override[1], fx) else list(aprox = FALSE, importe_aprox = NA_real_)
-    mon       <- tryCatch(pasivos_pago_currency(p),  error = function(e) NA_character_)
-    fecha_ef  <- as.Date(p$fecha_efectiva[1])
-    fecha_ca  <- as.Date(p$fecha_calculada[1])
+  # A fee provision or one without a real Documento: the synthetic key.
+  origin  <- texto(col(prov, "origin"))
+  is_fee  <- !is.na(origin) & origin == "initial_fee"
+  doc_val <- texto(col(prov, "documento"))
+  sintet  <- is_fee | is.na(doc_val) | !nzchar(ifelse(is.na(doc_val), "", doc_val))
+  doc_val[sintet] <- paste0("PROV_", prov$id[sintet])
 
-    is_fee  <- identical(as.character(p$origin[1]), "initial_fee")
-    doc_val <- as.character(p$documento[1] %||% NA_character_)
-    # Fee provisions and provisions without a real Documento get a synthetic key
-    # so they are never aggregated with each other or with SAP items in the calendar.
-    if (is_fee || is.na(doc_val) || !nzchar(doc_val)) {
-      doc_val <- paste0("PROV_", p$id[1])
-    }
-
-    tibble::tibble(
-      Empresa                = as.character(empresa     %||% NA_character_),
-      Parte                  = as.character(p$parte[1]  %||% NA_character_),
-      Codigo                 = as.character(p$codigo_parte[1] %||% NA_character_),
-      `Saldo vencido`        = as.numeric(saldo),
-      Importe                = as.numeric(saldo),
-      `Fecha de vencimiento` = fecha_ef,
-      FechaVenc_Original     = fecha_ca,
-      FechaEff               = fecha_ef,
-      # FechaVenc_Proyectada intentionally omitted — left_join(ledger_moves) adds it as NA
-      Tipo                   = "AP",
-      source                 = "provision",
-      Documento              = doc_val,
-      Factura                = as.character(p$referencia[1]  %||% NA_character_),
-      Moneda                 = as.character(mon),
-      notas                  = as.character(p$notas[1]       %||% NA_character_),
-      confirmed              = FALSE,
-      has_sap_override       = FALSE,
-      Movida                 = "Falso",
-      provision_id           = as.character(p$id[1]),
-      liability_id           = as.character(p$liability_id[1] %||% NA_character_),
-      pasivos_categoria      = as.character(pasivos_categoria    %||% NA_character_),
-      pasivos_subcategoria   = as.character(pasivos_subcategoria %||% NA_character_),
-      importe_aprox          = ax$importe_aprox,
-      aprox                  = ax$aprox
-    )
-  })
-
-  dplyr::bind_rows(rows)
+  fecha_ef <- as.Date(prov$fecha_efectiva)
+  tibble::tibble(
+    Empresa                = as.character(empresa),
+    Parte                  = texto(col(prov, "parte")),
+    Codigo                 = texto(col(prov, "codigo_parte")),
+    `Saldo vencido`        = saldo,
+    Importe                = saldo,
+    `Fecha de vencimiento` = fecha_ef,
+    FechaVenc_Original     = as.Date(prov$fecha_calculada),
+    FechaEff               = fecha_ef,
+    # FechaVenc_Proyectada intentionally omitted — left_join(ledger_moves) adds it as NA
+    Tipo                   = rep("AP", n),
+    source                 = rep("provision", n),
+    Documento              = doc_val,
+    Factura                = texto(col(prov, "referencia")),
+    Moneda                 = mon,
+    notas                  = texto(col(prov, "notas")),
+    confirmed              = rep(FALSE, n),
+    has_sap_override       = rep(FALSE, n),
+    Movida                 = rep("Falso", n),
+    provision_id           = as.character(prov$id),
+    liability_id           = texto(lid),
+    pasivos_categoria      = pasivos_categoria,
+    pasivos_subcategoria   = pasivos_subcategoria,
+    importe_aprox          = rep_len(as.numeric(ax$importe_aprox), n),
+    aprox                  = rep_len(as.logical(ax$aprox), n)
+  )
 }
 
 # Remove provision rows from a ledger rows data frame.
