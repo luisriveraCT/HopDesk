@@ -64,7 +64,7 @@ archivos <- c("app.R",
   "R/email_service.R" = 0L,                  # TEMA 4b: the mails' colours are roles ({{rol}}, .email_pintar)
   "R/empresas_module.R" = 0L,                 # TEMA 5b: Empresas' cards, var(--hd-*)
   "R/forecasting_module.R" = 2L,
-  "R/global.R" = 2L,                 # TEMA 6-1: CALENDAR_THEME (dead code, 14) gone
+  "R/global.R" = 0L,                 # TEMA 6-1: CALENDAR_THEME (dead code, 14) gone; the currency pill by color-mix (2)
   "R/hd_columnas.R" = 0L,                     # TEMA 5b: the tags are the etq-a/b/c-* commons, var(--hd-*)
   "R/ledger_module.R" = 0L,          # TEMA 6-2: the invoice search box to roles
   "R/pagos_audit_viewer_module.R" = 0L,       # TEMA 4: the receipt paints in R ({{rol}}, tema_pintar)

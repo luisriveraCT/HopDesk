@@ -860,15 +860,11 @@ calendar_html <- function(
   ms    <- as.Date(floor_date(as.Date(month_start), "month"))
   me    <- as.Date(ceiling_date(ms, "month") - days(1))
   cur      <- toupper(trimws(currency))
-  # Currency-specific color for the badge
-  cur_col  <- tryCatch(.currency_color(cur), error = function(e) "#5F5E5A")
-  cur_tint <- local({
-    h <- gsub("^#", "", cur_col)
-    r <- strtoi(substr(h, 1, 2), 16L)
-    g <- strtoi(substr(h, 3, 4), 16L)
-    b <- strtoi(substr(h, 5, 6), 16L)
-    sprintf("rgba(%d,%d,%d,0.13)", r, g, b)
-  })
+  # Currency-specific color for the badge: the one helper (R/bancos_module.R,
+  # sourced above; its fallback is the "other currency" grey), and its tint
+  # by color-mix: the same colour at 13 % alpha as before (TEMA 6-1).
+  cur_col  <- .currency_color(cur)
+  cur_tint <- sprintf("color-mix(in srgb, %s 13%%, transparent)", cur_col)
   today <- Sys.Date()
   # T55: the amounts in whole units as monto_moneda() writes them, the
   # currency's code from `currency` (the selector above names it, so a row
