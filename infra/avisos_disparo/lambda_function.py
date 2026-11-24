@@ -6,14 +6,15 @@ EventBridge Scheduler, in Mexico time, invokes this function; it starts
 .github/workflows/avisos.yml by workflow_dispatch, which GitHub runs in
 seconds.
 
-Event: {"modo": "lunes" | "viernes" | "archivo", "alertar": false}
+Event: {"modo": "lunes" | "viernes" | "archivo"}
   - It looks for this week's runs of the workflow whose name is
     "avisos <modo> real" (the workflow's run-name).
   - One finished with success: the email already went out; nothing to do.
   - One is queued or running: wait for it; nothing to do.
   - Otherwise: dispatch with modo and prueba=false.
-  - alertar=true (the 17:00/17:50 check): when there is no success, it also
-    publishes an alert to the SNS topic, then dispatches (a last try).
+  The 17:00 (Monday) and 17:50 (Friday) schedules are the same call: a last
+  try. There is no email alert (T80b, Luis): when the email has not gone
+  out, HopDesk itself says so in Panorama (R/avisos_correo_vigia.R).
 Starting it more than once is safe: the job never resends (its
 correos_enviados.rds) and skips a client whose email already reached
 everyone (job_ya_salio).
@@ -25,7 +26,6 @@ Environment:
   TOKEN_PARAM   name of the SSM SecureString holding a fine-grained GitHub
                 token (this repo only, Actions read and write). This code
                 reads it and never logs or returns it.
-  SNS_TOPIC_ARN the alert topic (only needed for alertar)
 
 An error raises, so the Scheduler's retry policy tries again.
 The log carries the mode, counts and the decision only.
@@ -100,23 +100,11 @@ def leer_token(nombre):
     return r["Parameter"]["Value"]
 
 
-def alertar(topic_arn, modo, ahora):
-    import boto3
-    dia = ahora.astimezone(MX).strftime("%Y-%m-%d %H:%M")
-    boto3.client("sns").publish(
-        TopicArn=topic_arn,
-        Subject="HopDesk: el correo de %s no ha salido" % modo,
-        Message=("A las %s (hora de México) no hay una corrida real exitosa del correo de %s esta semana.\n"
-                 "Ya se pidió un último intento. Revisa la pestaña Actions del repositorio, "
-                 "workflow 'Avisos semanales (D)'.") % (dia, modo))
-
-
 def lambda_handler(event, context, ahora=None, deps=None):
-    """deps (tests only): dict with leer_token, corridas, disparar, alertar."""
+    """deps (tests only): dict with leer_token, corridas, disparar."""
     modo = (event or {}).get("modo")
     if modo not in MODOS:
         raise ValueError("modo debe ser lunes, viernes o archivo")
-    con_alerta = bool((event or {}).get("alertar", False))
     ahora = ahora or datetime.now(timezone.utc)
     d = deps or {}
     repo, workflow = os.environ["REPO"], os.environ.get("WORKFLOW", "avisos.yml")
@@ -125,12 +113,8 @@ def lambda_handler(event, context, ahora=None, deps=None):
     token = d.get("leer_token", leer_token)(os.environ["TOKEN_PARAM"])
     corridas = d.get("corridas", corridas_de_la_semana)(token, repo, workflow, inicio_semana_utc(ahora))
     decision = decidir(corridas, modo)
-    alerta = False
-    if decision != "listo" and con_alerta:
-        d.get("alertar", alertar)(os.environ["SNS_TOPIC_ARN"], modo, ahora)
-        alerta = True
     if decision == "disparar":
         d.get("disparar", disparar)(token, repo, workflow, ref, modo)
-    resultado = {"modo": modo, "decision": decision, "alerta": alerta, "corridas_semana": len(corridas)}
+    resultado = {"modo": modo, "decision": decision, "corridas_semana": len(corridas)}
     print(json.dumps(resultado))
     return resultado

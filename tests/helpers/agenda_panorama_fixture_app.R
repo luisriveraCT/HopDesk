@@ -10,7 +10,7 @@
 # =============================================================================
 raiz <- normalizePath(".", winslash = "/")
 invisible(source(file.path(raiz, "tests/helpers/agenda_fixture_app.R"), local = FALSE))
-for (f in c("R/tier_registry.R", "R/permisos.R", "R/avisos.R", "R/avisos_alertas_module.R",
+for (f in c("R/tier_registry.R", "R/permisos.R", "R/avisos.R", "R/avisos_alertas_module.R", "R/avisos_correo_vigia.R",
             "R/panorama_datos.R", "R/panorama_publicar_module.R", "R/panorama_module.R"))
   suppressMessages(sys.source(file.path(raiz, f), envir = globalenv()))
 # The fixture's stubs again (some files above define the real ones), and

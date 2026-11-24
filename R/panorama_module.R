@@ -66,9 +66,14 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       reloj(); version()
       c <- cid(); u <- usr()
       if (is.null(c) || !nzchar(c) || is.null(u)) return(NULL)
-      tryCatch(avisos_visibles(c, u), error = function(e) {
+      v <- tryCatch(avisos_visibles(c, u), error = function(e) {
         message("[panorama] avisos_visibles falló: ", conditionMessage(e)); NULL
       })
+      # T80b: the weekly email not gone out, computed on read (R/avisos_correo_vigia.R).
+      staff <- isTRUE(tryCatch(shared$current_user_info()$is_staff, error = function(e) FALSE))
+      vig <- tryCatch(avisos_visibles(c, u, df = correo_vigia_avisos(c, u, staff = staff)), error = function(e) NULL)
+      if (!is.null(v) && !is.null(vig) && nrow(vig)) v <- dplyr::bind_rows(vig, v)
+      v
     })
 
     # Last visit: read once per session, the first time the tab opens, and

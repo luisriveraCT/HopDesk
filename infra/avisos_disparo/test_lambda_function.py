@@ -15,14 +15,13 @@ TOKEN = "ghp_falso_nunca_impreso"
 
 class Falsos:
     def __init__(self, corridas):
-        self.corridas_v, self.disparos, self.alertas, self.pedido = corridas, [], [], None
+        self.corridas_v, self.disparos, self.pedido = corridas, [], None
 
     def deps(self):
         return {
             "leer_token": lambda nombre: TOKEN,
             "corridas": self._corridas,
             "disparar": lambda tok, repo, wf, ref, modo: self.disparos.append((tok, repo, wf, ref, modo)),
-            "alertar": lambda arn, modo, ahora: self.alertas.append((arn, modo)),
         }
 
     def _corridas(self, tok, repo, wf, desde):
@@ -39,13 +38,12 @@ def correr(evento, corridas, ahora=datetime(2026, 11, 23, 14, 0, tzinfo=timezone
 class T80Disparo(unittest.TestCase):
     def setUp(self):
         os.environ.update(REPO="dueno/repo", WORKFLOW="avisos.yml", REF="master",
-                          TOKEN_PARAM="/hopdesk/avisos/github_token", SNS_TOPIC_ARN="arn:sns:falso")
+                          TOKEN_PARAM="/hopdesk/avisos/github_token")
 
     def test_sin_corridas_dispara_con_prueba_false_en_master(self):
         r, f = correr({"modo": "lunes"}, [])
         self.assertEqual(r["decision"], "disparar")
         self.assertEqual(f.disparos, [(TOKEN, "dueno/repo", "avisos.yml", "master", "lunes")])
-        self.assertEqual(f.alertas, [])
 
     def test_una_real_exitosa_de_la_semana_no_dispara(self):
         r, f = correr({"modo": "lunes"}, [{"name": "avisos lunes real", "status": "completed", "conclusion": "success"}])
@@ -66,23 +64,15 @@ class T80Disparo(unittest.TestCase):
         self.assertEqual(r["decision"], "en_curso")
         self.assertEqual(f.disparos, [])
 
-    def test_alerta_si_no_salio_y_ultimo_intento(self):
+    def test_sin_alerta_por_correo(self):
+        # T80b: no SNS; the 17:00/17:50 call is a plain last try, and an
+        # old "alertar" key changes nothing.
         r, f = correr({"modo": "lunes", "alertar": True}, [])
-        self.assertTrue(r["alerta"])
-        self.assertEqual(f.alertas, [("arn:sns:falso", "lunes")])
+        self.assertEqual(r["decision"], "disparar")
+        self.assertNotIn("alerta", r)
         self.assertEqual(len(f.disparos), 1)
-
-    def test_alerta_no_suena_si_ya_salio(self):
-        r, f = correr({"modo": "lunes", "alertar": True},
-                      [{"name": "avisos lunes real", "status": "completed", "conclusion": "success"}])
-        self.assertFalse(r["alerta"])
-        self.assertEqual(f.alertas, [])
-
-    def test_alerta_suena_con_una_en_curso_pero_no_dispara(self):
-        r, f = correr({"modo": "viernes", "alertar": True},
-                      [{"name": "avisos viernes real", "status": "queued", "conclusion": None}])
-        self.assertTrue(r["alerta"])
-        self.assertEqual(f.disparos, [])
+        fuente = open(lf.__file__, encoding="utf-8").read()
+        self.assertNotIn("sns", fuente.lower())
 
     def test_modo_invalido_falla(self):
         with self.assertRaises(ValueError):

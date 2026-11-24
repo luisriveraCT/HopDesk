@@ -32,6 +32,11 @@ PERMISOS <- list(
   # invitation accepted). By tier dev and admin; per user for anyone else.
   # Read by avisar_cuenta_nueva() (R/usuarios_cuentas.R).
   can_receive_account_notices    = list(grupo = "grupo"),
+  # T80b: told in Panorama when the client's weekly email has not gone out
+  # (Monday from 17:00, Friday from 17:50 Mexico). By tier dev and admin,
+  # HopDesk staff; per user for anyone else. Read by correo_vigia_avisos()
+  # (R/avisos_correo_vigia.R).
+  can_receive_email_job_notices  = list(grupo = "grupo"),
   can_configure_erp              = list(grupo = "grupo"),
   # The IC registry only: Admin edits it without the ERP connection's secrets.
   can_manage_interco             = list(grupo = "grupo"),

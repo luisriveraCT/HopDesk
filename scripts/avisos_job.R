@@ -40,7 +40,8 @@ AVISOS_JOB_ARCHIVOS <- c(
   "R/empresas_identidad.R", "R/data_pipeline.R", "R/pasivos_engine.R", "R/pasivos_schemas.R", "R/pasivos_calendar_glue.R",
   "R/pasivos_persistence.R", "R/bancos_persistence.R", "R/cashflow_export_module.R", "R/fx_banxico.R",
   "R/fx_tipos.R", "R/email_service.R", "R/avisos.R", "R/agenda_filas.R", "R/panorama_datos.R", "R/ui_components.R",
-  "R/avisos_umbrales.R", "R/avisos_correos.R", "R/avisos_datos.R", "R/avisos_logros.R", "R/avisos_archivo.R")
+  "R/avisos_umbrales.R", "R/avisos_correos.R", "R/avisos_datos.R", "R/avisos_logros.R", "R/avisos_archivo.R",
+  "R/avisos_correo_vigia.R")
 
 # The only things the log may count.
 JOB_EVENTOS <- c(
@@ -250,6 +251,42 @@ job_archivo <- function(cid, ahora) {
   job_contar("clientes_ok")
 }
 
+# ── T80b: what came of each real run (R/avisos_correo_vigia.R) ────────────────
+# Panorama alerts when a client has no row for this week and mode (the job
+# never got to it), or when the row says the run failed. Worked out from the
+# log counts the client's run added (`antes` -> `despues`), so every early
+# exit of job_lunes()/job_viernes() is covered without touching them.
+# A skipped client whose email already reached everyone (ya_corrido, T80)
+# is "enviado" all the same: if the row of the run that sent it could not be
+# written, this one fixes it. Every send failed = "sin_envio" (it did not go
+# out); some failed = "con_fallas" (it went out incomplete).
+job_corrida_resultado <- function(antes, despues, ok) {
+  if (!isTRUE(ok)) return("error")
+  d <- despues - antes
+  if (d[["ya_corrido"]] > 0L) return("enviado")
+  if (d[["fallido"]] > 0L) return(if (d[["enviado"]] + d[["ya_enviado"]] > 0L) "con_fallas" else "sin_envio")
+  omit <- names(d)[startsWith(names(d), "omitido_") & d > 0L]
+  if (length(omit)) return(omit[1])
+  if (d[["destinatarios"]] == 0L) return("sin_destinatarios")
+  "enviado"
+}
+
+# One row per client, week and mode; a later run of the same week replaces
+# it. Never stops the job: a row that cannot be written leaves the alert on
+# ("no row"), which is the safe side. Written only in real mode.
+job_corrida_guardar <- function(cid, modo, fecha, resultado, d) {
+  semana <- correo_vigia_semana(fecha)
+  fila <- tibble::tibble(semana = semana, modo = modo, resultado = resultado,
+                         destinatarios = as.integer(d[["destinatarios"]]),
+                         enviados = as.integer(d[["enviado"]] + d[["ya_enviado"]]),
+                         fallidos = as.integer(d[["fallido"]]),
+                         hora = as.POSIXct(Sys.time(), tz = "UTC"))
+  tryCatch(modificar_tabla(CORREO_VIGIA_KEY, cid, .schema_correo_corridas, function(df)
+             dplyr::bind_rows(df[!(df$semana %in% semana & df$modo %in% modo), , drop = FALSE], fila)),
+           error = function(e) NULL)
+  invisible(NULL)
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 # Runs the job silently and returns the log lines. stop()s only when the run
@@ -267,11 +304,15 @@ job_correr <- function(modo = Sys.getenv("AVISOS_MODO"), prueba = !identical(tol
   utils::capture.output(callar({
     clientes <- job_clientes()
     job_contar("clientes", length(clientes))
-    for (cid in clientes)
-      tryCatch(switch(modo, lunes = job_lunes(cid, hoy, ahora, prueba, url),
-                            viernes = job_viernes(cid, hoy, ahora, prueba, url),
-                            archivo = job_archivo(cid, ahora)),
-               error = function(e) job_error(cid, modo, e))
+    for (cid in clientes) {
+      antes <- .job$cuenta
+      ok <- tryCatch({ switch(modo, lunes = job_lunes(cid, hoy, ahora, prueba, url),
+                                    viernes = job_viernes(cid, hoy, ahora, prueba, url),
+                                    archivo = job_archivo(cid, ahora)); TRUE },
+                     error = function(e) { job_error(cid, modo, e); FALSE })
+      if (modo %in% c("lunes", "viernes") && !isTRUE(prueba))
+        job_corrida_guardar(cid, modo, hoy, job_corrida_resultado(antes, .job$cuenta, ok), .job$cuenta - antes)
+    }
   }), type = "output")
   job_log()
 }

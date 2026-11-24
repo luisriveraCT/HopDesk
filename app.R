@@ -52,6 +52,7 @@ source("R/requisiciones_module.R")
 # and the screen. T15 sources app.R directly, so a module missing here is a
 # start-up failure there even when shinyapps' autoload would have found it.
 source("R/avisos_alertas_module.R")
+source("R/avisos_correo_vigia.R")   # T80b: the weekly email not gone out, in Panorama
 # Banxico FIX (USD/MXN): Panorama's Cinta, Exportar, the Pasivos wizard and the
 # approximate USD amounts. Without this line T15 would not see it, and every
 # caller (each wraps it in tryCatch) would quietly show nothing.

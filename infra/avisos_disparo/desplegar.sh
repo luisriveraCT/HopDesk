@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
-# infra/avisos_disparo/desplegar.sh (T80): the AWS trigger of the weekly
-# email. EventBridge Scheduler (Mexico time) -> Lambda hopdesk-avisos-disparo
-# -> workflow_dispatch of .github/workflows/avisos.yml.
+# infra/avisos_disparo/desplegar.sh (T80, T80b): the AWS trigger of the
+# weekly email. EventBridge Scheduler (Mexico time) -> Lambda
+# hopdesk-avisos-disparo -> workflow_dispatch of .github/workflows/avisos.yml.
 #
-#   bash infra/avisos_disparo/desplegar.sh --param <ssm name> --correo <alert email>            # preview
-#   bash infra/avisos_disparo/desplegar.sh --param <ssm name> --correo <alert email> --aplicar  # writes
+#   bash infra/avisos_disparo/desplegar.sh --param <ssm name>             # preview
+#   bash infra/avisos_disparo/desplegar.sh --param <ssm name> --aplicar   # writes
 #
 # Without --aplicar it only reads (describe/get) and prints what it would
 # create or update. With --aplicar it does it. Running it again changes only
@@ -18,11 +18,11 @@
 #     aws ssm put-parameter --type SecureString --name /hopdesk/avisos/github_token --value "$(read -rs t; echo "$t")"
 # The script checks that the parameter exists without decrypting it.
 #
+# No email alert (T80b, Luis): when the email has not gone out, HopDesk
+# says so in Panorama (R/avisos_correo_vigia.R). No SNS here.
+#
 # Creates (region us-east-1 by default, AWS_REGION to change it):
-#   - SNS topic hopdesk-avisos-alerta + the email subscription (the recipient
-#     confirms it once from the email AWS sends)
-#   - IAM role hopdesk-avisos-disparo-lambda: logs, read THAT parameter,
-#     publish to THAT topic
+#   - IAM role hopdesk-avisos-disparo-lambda: logs, read THAT parameter
 #   - Lambda hopdesk-avisos-disparo (python3.12, lambda_function.py)
 #   - IAM role hopdesk-avisos-disparo-scheduler: invoke THAT Lambda
 #   - Schedule group hopdesk-avisos and its 11 schedules (below)
@@ -30,16 +30,15 @@
 # =============================================================================
 set -euo pipefail
 
-PARAM=""; CORREO=""; APLICAR=0
+PARAM=""; APLICAR=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --param)   PARAM="${2:-}"; shift 2 ;;
-    --correo)  CORREO="${2:-}"; shift 2 ;;
     --aplicar) APLICAR=1; shift ;;
     *) echo "argumento desconocido: $1" >&2; exit 2 ;;
   esac
 done
-[ -n "$PARAM" ] && [ -n "$CORREO" ] || { echo "uso: $0 --param <nombre ssm> --correo <correo de la alerta> [--aplicar]" >&2; exit 2; }
+[ -n "$PARAM" ] || { echo "uso: $0 --param <nombre ssm> [--aplicar]" >&2; exit 2; }
 case "$PARAM" in /*) ;; *) echo "--param es el NOMBRE del parámetro (empieza con /), nunca el token" >&2; exit 2 ;; esac
 
 REGION="${AWS_REGION:-us-east-1}"
@@ -47,22 +46,22 @@ REPO="luisriveraCT/HopDesk"; WORKFLOW="avisos.yml"; REF="master"
 FUNCION="hopdesk-avisos-disparo"
 ROL_LAMBDA="hopdesk-avisos-disparo-lambda"
 ROL_SCHED="hopdesk-avisos-disparo-scheduler"
-TEMA="hopdesk-avisos-alerta"
 GRUPO="hopdesk-avisos"
 ZONA="America/Mexico_City"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
-# name|cron (Mexico time)|event
+# name|cron (Mexico time)|event. The 17:00 Monday and 17:50 Friday ones are
+# the last try (same call: it does nothing if the email already went out).
 HORARIOS=(
   "lunes-0800|cron(0 8 ? * MON *)|{\"modo\":\"lunes\"}"
   "lunes-0900|cron(0 9 ? * MON *)|{\"modo\":\"lunes\"}"
   "lunes-1100|cron(0 11 ? * MON *)|{\"modo\":\"lunes\"}"
-  "lunes-alerta-1700|cron(0 17 ? * MON *)|{\"modo\":\"lunes\",\"alertar\":true}"
+  "lunes-ultimo-1700|cron(0 17 ? * MON *)|{\"modo\":\"lunes\"}"
   "viernes-1700|cron(0 17 ? * FRI *)|{\"modo\":\"viernes\"}"
   "viernes-1720|cron(20 17 ? * FRI *)|{\"modo\":\"viernes\"}"
   "viernes-1740|cron(40 17 ? * FRI *)|{\"modo\":\"viernes\"}"
-  "viernes-alerta-1750|cron(50 17 ? * FRI *)|{\"modo\":\"viernes\",\"alertar\":true}"
+  "viernes-ultimo-1750|cron(50 17 ? * FRI *)|{\"modo\":\"viernes\"}"
   "archivo-0030|cron(30 0 ? * SAT *)|{\"modo\":\"archivo\"}"
   "archivo-0300|cron(0 3 ? * SAT *)|{\"modo\":\"archivo\"}"
   "archivo-0600|cron(0 6 ? * SAT *)|{\"modo\":\"archivo\"}"
@@ -87,34 +86,25 @@ if [ "$TIPO" != "SecureString" ]; then
 fi
 PARAM_ARN="arn:aws:ssm:$REGION:$CUENTA:parameter${PARAM}"
 
-# ── 1. SNS topic + email ────────────────────────────────────────────────────
-TEMA_ARN="arn:aws:sns:$REGION:$CUENTA:$TEMA"
-if existe aws_ sns get-topic-attributes --topic-arn "$TEMA_ARN"; then echo "  YA EXISTE: tema $TEMA"
-else hacer "crear tema SNS $TEMA" aws_ sns create-topic --name "$TEMA"; fi
-SUSCRITO="$(aws_ sns list-subscriptions-by-topic --topic-arn "$TEMA_ARN" --query "Subscriptions[?Protocol=='email' && Endpoint=='$CORREO'] | length(@)" --output text 2>/dev/null || echo 0)"
-if [ "$SUSCRITO" != "0" ]; then echo "  YA EXISTE: suscripción de correo de la alerta"
-else hacer "suscribir el correo de la alerta (llega un correo para confirmar)" aws_ sns subscribe --topic-arn "$TEMA_ARN" --protocol email --notification-endpoint "$CORREO"; fi
-
-# ── 2. The Lambda's role ────────────────────────────────────────────────────
+# ── 1. The Lambda's role ────────────────────────────────────────────────────
 cat > "$TMP/confia_lambda.json" <<'JSON'
 {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}
 JSON
 cat > "$TMP/permisos_lambda.json" <<JSON
 {"Version":"2012-10-17","Statement":[
- {"Effect":"Allow","Action":"ssm:GetParameter","Resource":"$PARAM_ARN"},
- {"Effect":"Allow","Action":"sns:Publish","Resource":"$TEMA_ARN"}]}
+ {"Effect":"Allow","Action":"ssm:GetParameter","Resource":"$PARAM_ARN"}]}
 JSON
 if existe aws_ iam get-role --role-name "$ROL_LAMBDA"; then echo "  YA EXISTE: rol $ROL_LAMBDA"
 else hacer "crear rol $ROL_LAMBDA" aws_ iam create-role --role-name "$ROL_LAMBDA" --assume-role-policy-document "file://$TMP/confia_lambda.json"; fi
-hacer "poner la política del rol $ROL_LAMBDA (leer $PARAM, publicar en $TEMA)" \
+hacer "poner la política del rol $ROL_LAMBDA (leer $PARAM)" \
   aws_ iam put-role-policy --role-name "$ROL_LAMBDA" --policy-name disparo --policy-document "file://$TMP/permisos_lambda.json"
 hacer "adjuntar AWSLambdaBasicExecutionRole (logs)" \
   aws_ iam attach-role-policy --role-name "$ROL_LAMBDA" --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
-# ── 3. The Lambda ───────────────────────────────────────────────────────────
+# ── 2. The Lambda ───────────────────────────────────────────────────────────
 python -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1],'w'); z.write(sys.argv[2],'lambda_function.py'); z.close()" \
   "$TMP/funcion.zip" "$DIR/lambda_function.py"
-ENTORNO="Variables={REPO=$REPO,WORKFLOW=$WORKFLOW,REF=$REF,TOKEN_PARAM=$PARAM,SNS_TOPIC_ARN=$TEMA_ARN}"
+ENTORNO="Variables={REPO=$REPO,WORKFLOW=$WORKFLOW,REF=$REF,TOKEN_PARAM=$PARAM}"
 FUNCION_ARN="arn:aws:lambda:$REGION:$CUENTA:function:$FUNCION"
 if existe aws_ lambda get-function --function-name "$FUNCION"; then
   echo "  YA EXISTE: Lambda $FUNCION"
@@ -129,7 +119,7 @@ else
     --role "arn:aws:iam::$CUENTA:role/$ROL_LAMBDA" --zip-file "fileb://$TMP/funcion.zip" --environment "$ENTORNO"
 fi
 
-# ── 4. The Scheduler's role ─────────────────────────────────────────────────
+# ── 3. The Scheduler's role ─────────────────────────────────────────────────
 cat > "$TMP/confia_sched.json" <<JSON
 {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"scheduler.amazonaws.com"},"Action":"sts:AssumeRole",
  "Condition":{"StringEquals":{"aws:SourceAccount":"$CUENTA"}}}]}
@@ -142,7 +132,7 @@ else hacer "crear rol $ROL_SCHED" aws_ iam create-role --role-name "$ROL_SCHED" 
 hacer "poner la política del rol $ROL_SCHED (invocar $FUNCION)" \
   aws_ iam put-role-policy --role-name "$ROL_SCHED" --policy-name invocar --policy-document "file://$TMP/permisos_sched.json"
 
-# ── 5. Schedule group and schedules ─────────────────────────────────────────
+# ── 4. Schedule group and schedules ─────────────────────────────────────────
 if existe aws_ scheduler get-schedule-group --name "$GRUPO"; then echo "  YA EXISTE: grupo $GRUPO"
 else hacer "crear grupo de horarios $GRUPO" aws_ scheduler create-schedule-group --name "$GRUPO"; fi
 for h in "${HORARIOS[@]}"; do
