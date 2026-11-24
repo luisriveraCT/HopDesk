@@ -404,6 +404,174 @@ format_session_duration <- function(secs) {
 # stand-in" anti-pattern §3 warns against elsewhere. Fixed 2026-07-16 while
 # testing Stage 4 (found via a client dev user's invoice-move entries leaking
 # into Bitácora Global / Hopdesk's own log).
+# ── T87: the wall between HopDesk staff and a client, in what is WRITTEN ─────
+# A client's log lives in that client's S3 folder: whatever a row holds there
+# is the client's, shown or not. When staff act inside a client, the client's
+# copy of a row is written by class (Luis, 2026-11-24, T87_paso2_catalogo.md);
+# hd-admin always keeps the whole row (real user, full action and metadata,
+# plus actor_code):
+#   S  the staff's own action          -> nothing in the client's folder
+#   N  the subscription (seats)        -> a "hopdesk" row in neutral words
+#   A  the staff's entry/exit          -> a signed row in neutral words
+#   C  anything a client user can do   -> the row, signed "hd-staff:<code>"
+#                                         with the first name, the user name
+#                                         nowhere in it
+# Every action is C unless listed here. tests/test_t87_catalogo.R fails on an
+# action written anywhere that is not classified (S/N/A here, or its frozen
+# list of known C ones). "<accion>/parte" and "sin_evento" are the write
+# layer's own traces: S. "<accion>_fallido" takes its action's class.
+ACCIONES_STAFF <- list(
+  client_access           = list(clase = "S"),
+  ver_como                = list(clase = "S"),
+  ctx_load_fallido        = list(clase = "S"),
+  hop_access_requested    = list(clase = "S"),
+  hop_access_approved     = list(clase = "S"),
+  hop_access_denied       = list(clase = "S"),
+  hop_access_revoked      = list(clase = "S"),
+  hop_access_direct_grant = list(clase = "S"),
+  agregar_contacto        = list(clase = "S"),
+  desactivar_contacto     = list(clase = "S"),
+  solicitud_nuevo_cliente = list(clase = "S"),
+  aprobacion_cliente      = list(clase = "S"),
+  rechazo_cliente         = list(clase = "S"),
+  emergency_lock          = list(clase = "S"),
+  emergency_unlock        = list(clase = "S"),
+  reintentar_cola_email   = list(clase = "S"),
+  reintentar_email        = list(clase = "S"),
+  consulta_bitacora       = list(clase = "S"),
+  sin_evento              = list(clase = "S"),
+  cambio_limite_usuarios  = list(clase = "N", texto = "actividad.neutral.cambio_limite",
+                                 params = function(m) list(antes = m$old_max_users %||% m$old_limit %||% "?",
+                                                           despues = m$new_max_users %||% m$new_limit %||% "?"),
+                                 deja = c("old_max_users", "new_max_users")),
+  user_deactivated_by_limit_reduction = list(clase = "N", texto = "actividad.neutral.cuenta_desactivada",
+                                 params = function(m) list(nombre = m$nombre %||% m$cuenta %||% "?"),
+                                 deja = c("nombre")),
+  acceso_staff_entrada    = list(clase = "A", texto = "actividad.acceso.entrada"),
+  acceso_staff_salida     = list(clase = "A", texto = "actividad.acceso.salida"))
+
+# A staff jump, entry and exit (T87): `anterior` is the client being LEFT
+# (the jump's previous value), `nuevo` the one entered (NULL/"" = home). The
+# exit is logged for the client left, with its reason ("volver", "cambio",
+# "cierre", "revocado", "vencido"); the entry for the client entered. Each
+# goes whole to hd-admin and as a neutral signed row to that client (class A).
+# Never throws.
+t87_registrar_salto <- function(anterior, nuevo, user, home, motivo = NULL) {
+  limpio <- function(x) { x <- tolower(trimws(as.character(x %||% "")[1])); if (is.na(x)) "" else x }
+  a <- limpio(anterior); n <- limpio(nuevo)
+  if (identical(a, n)) return(invisible(FALSE))
+  tryCatch({
+    if (nzchar(a)) {
+      m <- motivo %||% (if (nzchar(n)) "cambio" else "volver")
+      log_action(user = user, module = "clientes", action = "acceso_staff_salida",
+                 description = sprintf("Staff left '%s' (%s)", a, m), target_id = a,
+                 metadata = list(motivo = m, hacia = if (nzchar(n)) n else NA_character_),
+                 client_id = a, viewer_home_client_id = home)
+    }
+    if (nzchar(n))
+      log_action(user = user, module = "clientes", action = "acceso_staff_entrada",
+                 description = sprintf("Staff entered '%s'", n), target_id = n,
+                 metadata = list(desde = if (nzchar(a)) a else NA_character_),
+                 client_id = n, viewer_home_client_id = home)
+  }, error = function(e) message("[T87] jump not logged: ", conditionMessage(e)))
+  invisible(TRUE)
+}
+
+# The class of an action: S, N, A or C (unlisted).
+t87_clase_accion <- function(action) {
+  a <- as.character(action %||% "")[1]
+  if (is.na(a)) return("C")
+  if (grepl("/parte$", a)) return("S")
+  base <- sub("_fallido$", "", a)
+  ACCIONES_STAFF[[a]]$clase %||% ACCIONES_STAFF[[base]]$clase %||% "C"
+}
+
+# Staff accounts live only in hd-admin (auth.R splits them by tier with
+# niveles_staff()): a row is "staff inside a client" when the actor's home is
+# hd-admin and the row goes to another client. The home is what the caller
+# passed, or this session's own home (app.R: session$userData$hd_cliente_casa)
+# when a write by event came without one -- so no staff write passes as a
+# client user's, and every one reaches hd-admin.
+.T87_CASA_STAFF <- "hd-admin"
+.t87_casa_sesion <- function() {
+  s <- tryCatch(shiny::getDefaultReactiveDomain(), error = function(e) NULL)
+  if (is.null(s)) return(NULL)
+  f <- tryCatch(s$userData$hd_cliente_casa, error = function(e) NULL)
+  if (!is.function(f)) return(NULL)
+  h <- tryCatch(tolower(trimws(shiny::isolate(f()))), error = function(e) NULL)
+  if (length(h) == 1L && !is.na(h) && nzchar(h)) h else NULL
+}
+
+# The staff directory: user -> account_code and display name, from
+# hd-admin/usuarios.rds, read at most every 2 minutes per process (an account
+# created or renamed shows within that). A read that fails gives nothing: the
+# client's row is then plain "hd-staff", never the user name.
+.T87_DIRECTORIO <- new.env(parent = emptyenv())
+.T87_DIRECTORIO_TTL <- 120
+t87_directorio_invalidar <- function() rm(list = ls(.T87_DIRECTORIO), envir = .T87_DIRECTORIO)
+.t87_directorio <- function() {
+  if (!is.null(.T87_DIRECTORIO$df) && !is.null(.T87_DIRECTORIO$leido) &&
+      as.numeric(difftime(Sys.time(), .T87_DIRECTORIO$leido, units = "secs")) < .T87_DIRECTORIO_TTL)
+    return(.T87_DIRECTORIO$df)
+  df <- tryCatch(suppressMessages(auth_load_usuarios(client_id = .T87_CASA_STAFF)), error = function(e) NULL)
+  if (!is.data.frame(df)) return(NULL)
+  .T87_DIRECTORIO$df <- df; .T87_DIRECTORIO$leido <- Sys.time()
+  df
+}
+# list(code, primer, nombre) of a staff user; NAs when unknown.
+t87_staff_firma <- function(user) {
+  vacio <- list(code = NA_character_, primer = NA_character_, nombre = NA_character_)
+  u <- tolower(trimws(as.character(user %||% "")[1]))
+  if (is.na(u) || !nzchar(u)) return(vacio)
+  df <- .t87_directorio()
+  if (is.null(df) || !nrow(df) || !"username" %in% names(df)) return(vacio)
+  i <- which(tolower(trimws(as.character(df$username))) == u)[1]
+  if (is.na(i)) return(vacio)
+  nombre <- trimws(as.character(df$display_name[i] %||% NA_character_))
+  primer <- if (is.na(nombre) || !nzchar(nombre)) NA_character_ else strsplit(nombre, "[[:space:]]+")[[1]][1]
+  code <- as.character(df$account_code[i] %||% NA_character_)
+  list(code = if (is.na(code) || !nzchar(code)) NA_character_ else code, primer = primer,
+       nombre = if (is.na(nombre) || !nzchar(nombre)) NA_character_ else nombre)
+}
+
+# The user field of a staff row in a client's folder: "hd-staff:<code>", or
+# "hd-staff" when the account is not known. Read back by the client's view.
+t87_usuario_staff <- function(firma) if (is.na(firma$code)) "hd-staff" else paste0("hd-staff:", firma$code)
+
+# Every text of the client's row with the staff's user name and full name
+# put out of it (fixed text, never a pattern).
+.t87_limpiar <- function(x, user, firma) {
+  if (is.null(x) || !length(x)) return(x)
+  x <- as.character(x)
+  reemplazo <- if (is.na(firma$primer)) "HD Staff" else firma$primer
+  for (q in unique(stats::na.omit(c(firma$nombre, user))))
+    if (nzchar(q)) x <- gsub(q, reemplazo, x, fixed = TRUE)
+  x
+}
+
+# The client's copy of a staff row of class N, A or C (S never gets here).
+.t87_fila_cliente <- function(fila, clase, user, metadata, firma) {
+  def <- ACCIONES_STAFF[[fila$action]] %||% ACCIONES_STAFF[[sub("_fallido$", "", fila$action)]]
+  m <- as.list(metadata %||% list())
+  m$home_client <- NULL
+  if (identical(clase, "N")) {
+    params <- tryCatch(def$params(m), error = function(e) list())
+    fila$user        <- "hopdesk"
+    fila$description <- tryCatch(do.call(tr, c(list(def$texto), params, list(idioma = "es"))), error = function(e) "")
+    m <- c(m[intersect(names(m), def$deja %||% character())], list(texto_clave = def$texto))
+  } else {
+    fila$user <- t87_usuario_staff(firma)
+    if (identical(clase, "A"))
+      fila$description <- tryCatch(tr(def$texto, idioma = "es"), error = function(e) "")
+    m$actor_primer <- if (is.na(firma$primer)) NULL else firma$primer
+  }
+  fila$description <- .t87_limpiar(fila$description, user, firma)
+  fila$target_id   <- .t87_limpiar(fila$target_id, user, firma)
+  json <- tryCatch(as.character(jsonlite::toJSON(m, auto_unbox = TRUE, na = "null")), error = function(e) "{}")
+  fila$metadata    <- .t87_limpiar(json, user, firma)
+  fila
+}
+
 log_action <- function(user,
                        module,
                        action,
@@ -424,11 +592,23 @@ log_action <- function(user,
   # evaluates to `if (NA)` and throws — log_action() must never throw.
   if (is.na(cid))      cid      <- ""
   if (is.na(home_cid)) home_cid <- ""
+  # T87: a write by event can come without the actor's home; the session
+  # knows it (staff's home is hd-admin).
+  casa_sesion <- .t87_casa_sesion()
+  if (identical(casa_sesion, .T87_CASA_STAFF) && nzchar(cid) && cid != .T87_CASA_STAFF)
+    home_cid <- .T87_CASA_STAFF
+  staff_dentro <- identical(home_cid, .T87_CASA_STAFF) && nzchar(cid) && cid != home_cid
+  firma <- if (staff_dentro) tryCatch(t87_staff_firma(user), error = function(e)
+    list(code = NA_character_, primer = NA_character_, nombre = NA_character_)) else NULL
 
   # When staff acts in a client context, stamp home_client in metadata so the
   # audit record is clearly marked as an outsider write, not a client-user write.
+  metadata_propia <- metadata
   if (nzchar(home_cid) && home_cid != cid) {
     metadata <- c(as.list(metadata %||% list()), list(home_client = home_cid))
+    # T87: hd-admin's copy names the account behind the row (Principal reads
+    # code <-> full name there).
+    if (staff_dentro && !is.na(firma$code)) metadata$actor_code <- firma$code
   }
 
   new_row <- tibble::tibble(
@@ -454,6 +634,21 @@ log_action <- function(user,
                              error = function(e) "{}")
                   else "{}")
   )
+
+  # T87: staff inside a client -- hd-admin keeps the whole row; the client's
+  # folder gets its row by class (nothing for S).
+  if (staff_dentro) {
+    .audit_queue(home_cid, new_row)
+    clase <- t87_clase_accion(action)
+    if (!identical(clase, "S")) {
+      fila_cliente <- tryCatch(.t87_fila_cliente(new_row, clase, as.character(user %||% ""), metadata_propia, firma),
+                               error = function(e) {
+                                 message("[T87] client row not written (", action, "): ", conditionMessage(e))
+                                 NULL })
+      if (!is.null(fila_cliente)) .audit_queue(cid, fila_cliente)
+    }
+    return(invisible(new_row))
+  }
 
   .audit_queue(cid, new_row)
 

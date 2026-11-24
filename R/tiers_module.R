@@ -2687,6 +2687,8 @@ tiersServer <- function(id, shared) {
                        "' desactivada por reducción de límite en '", cid, "'"),
                      target_id   = usuarios_new$account_code[to_deact_idx[i]],
                      s3_key      = paste0(cid, "/usuarios.rds"),
+                     # T87: the client's neutral line names the account.
+                     metadata    = list(nombre = usuarios_new$display_name[to_deact_idx[i]] %||% usuarios_new$username[to_deact_idx[i]]),
                      client_id             = cid,
                      viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
         }
@@ -3400,6 +3402,7 @@ tiersServer <- function(id, shared) {
           type = "error", duration = 8
         )
         hop_grace_start(NULL)
+        session$userData$hd_salida_motivo <- "revocado"   # T87: why the staff left
         shared$jump_client_id(NULL)
         return()
       }
@@ -3420,6 +3423,7 @@ tiersServer <- function(id, shared) {
             type = "error", duration = 8
           )
           hop_grace_start(NULL)
+          session$userData$hd_salida_motivo <- "vencido"   # T87: why the staff left
           shared$jump_client_id(NULL)
         }
       }

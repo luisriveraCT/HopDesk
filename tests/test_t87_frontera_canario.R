@@ -50,8 +50,6 @@ DEUDA <- c(
   "1.1"         = "A1: Actividad muestra al staff (usuario, home_client: hd-admin)",
   "1.2"         = "A1: lo del staff no sale firmado '<primer nombre> · HD Staff'",
   "1.3"         = "A1: la entrada/salida del staff está escondida o no existe",
-  "1.4"         = "catálogo S/C: acciones propias del staff en el log del cliente",
-  "1.6"         = "C-neutral: la suscripción sale con el usuario del staff",
   "1.7"         = "A1: el detalle vuelca la metadata (home_client: hd-admin)",
   "1.8"         = "M2: Invitaciones nombra RESEND_API_KEY / .Renviron / runbook",
   "2.1"         = "M1: el diccionario completo va en la página",
@@ -123,9 +121,12 @@ canario_hace <- function() {
   log_action(CANARIO$user, "clientes", "client_access",
              sprintf("Staff switched active context to '%s'", "acme"), target_id = "acme",
              client_id = "hd-admin", viewer_home_client_id = "hd-admin")
-  log_action(CANARIO$user, "clientes", "external_access",
-             "HopDesk staff accessed this client's data (session context switch)", target_id = "acme",
-             client_id = "acme", viewer_home_client_id = "hd-admin")
+  # The jump's entry, as app.R writes it (T87 paso 2: t87_registrar_salto;
+  # before it, the hidden external_access row).
+  if (exists("t87_registrar_salto")) t87_registrar_salto(NULL, "acme", CANARIO$user, "hd-admin")
+  else log_action(CANARIO$user, "clientes", "external_access",
+                  "HopDesk staff accessed this client's data (session context switch)", target_id = "acme",
+                  client_id = "acme", viewer_home_client_id = "hd-admin")
   # C: something an acme user can do too.
   log_action(CANARIO$user, "notes", "eliminar_nota", "Nota eliminada: Cierre de noviembre",
              target_id = "nota-1", metadata = list(ledger = "AR"),
@@ -144,13 +145,17 @@ canario_hace <- function() {
   # C-neutral: the subscription (Luis): seen by the client, signed by nobody.
   log_action(CANARIO$user, "tiers", "cambio_limite_usuarios",
              sprintf("Límite cambiado de %d a %d por %s", 5L, 4L, CANARIO$user), target_id = "acme",
-             metadata = list(old_limit = 5L, new_limit = 4L),
+             metadata = list(old_max_users = 5L, new_max_users = 4L, changed_by = CANARIO$user,
+                             deactivated_count = 1L),
              client_id = "acme", viewer_home_client_id = "hd-admin")
   log_action(CANARIO$user, "tiers", "user_deactivated_by_limit_reduction",
              paste0("Cuenta 'caro' desactivada por reducción de límite (", CANARIO$user, ")"),
-             target_id = "caro", client_id = "acme", viewer_home_client_id = "hd-admin")
-  log_action(CANARIO$user, "clientes", "client_exit", "Staff left 'acme'", target_id = "acme",
-             client_id = "hd-admin", viewer_home_client_id = "hd-admin")
+             target_id = "caro", metadata = list(nombre = "Caro Díaz"),
+             client_id = "acme", viewer_home_client_id = "hd-admin")
+  # The jump's exit, back home.
+  if (exists("t87_registrar_salto")) t87_registrar_salto("acme", NULL, CANARIO$user, "hd-admin")
+  else log_action(CANARIO$user, "clientes", "client_exit", "Staff left 'acme'", target_id = "acme",
+                  client_id = "hd-admin", viewer_home_client_id = "hd-admin")
   invisible(.audit_flush_ahora())
 }
 canario_hace()

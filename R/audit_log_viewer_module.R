@@ -1003,6 +1003,31 @@ auditLogViewerServer <- function(id, shared, mode,
     .JUMP_BOOKKEEPING_MODULE  <- "clientes"
     .JUMP_BOOKKEEPING_ACTIONS <- c("client_access", "external_access")
 
+    # T87: Bitácora Global's reads are in the staff log -- which log was read,
+    # by whom, at most once per client per minute (consulta_bitacora is S:
+    # log_action() writes it to hd-admin only, never to the client read).
+    if (identical(mode, "multi_client")) {
+      .consultas <- new.env(parent = emptyenv())
+      observeEvent(fetched(), {
+        df  <- fetched()
+        cid <- tryCatch(requested_client_id(), error = function(e) NULL)
+        if (inherits(df, "error") || is.null(df) || is.null(cid) || !nzchar(cid)) return()
+        ultima <- .consultas[[cid]]
+        if (!is.null(ultima) && as.numeric(difftime(Sys.time(), ultima, units = "secs")) < 60) return()
+        .consultas[[cid]] <- Sys.time()
+        tryCatch(log_action(
+          user        = tryCatch(shared$current_user(), error = function(e) NULL) %||% "unknown",
+          module      = "auditoria",
+          action      = "consulta_bitacora",
+          description = sprintf("Bitácora consultada: %s", cid),
+          target_id   = cid,
+          metadata    = list(filas = nrow(df)),
+          client_id             = cid,
+          viewer_home_client_id = viewer_home_cid()),
+          error = function(e) message("[T87] consulta_bitacora not logged: ", conditionMessage(e)))
+      }, ignoreInit = FALSE)
+    }
+
     visible_fetched <- reactive({
       df <- fetched()
       if (inherits(df, "error") || is.null(df) || !nrow(df)) return(df)

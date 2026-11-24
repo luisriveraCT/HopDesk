@@ -1241,6 +1241,9 @@ server <- function(input, output, session) {
     user     <- session$userData$login_user
     cid      <- session$userData$login_client_id %||% Sys.getenv("CLIENT_ID")
     if (is.null(user) || !nzchar(user)) return(invisible(NULL))
+    # T87: a session that ends inside a client leaves it (reason "cierre").
+    dentro <- tryCatch(isolate(jump_client_id()), error = function(e) NULL)
+    if (!is.null(dentro)) t87_registrar_salto(dentro, NULL, user = user, home = cid, motivo = "cierre")
     dur_secs <- if (!is.null(login_ts))
       as.numeric(difftime(Sys.time(), login_ts, units = "secs")) else NA_real_
     log_action(user, "auth", "logout",
@@ -2761,6 +2764,7 @@ server <- function(input, output, session) {
   # prefix. This observer runs AFTER Phase 2 (priority -3). Never fires for a
   # client session (jump_client_id() is never settable by a non-staff session
   # — enforced in tiers_module.R's context switcher).
+  .salto_anterior <- NULL   # T87: the client a jump leaves
   observeEvent(jump_client_id(), {
     jcid          <- jump_client_id()
     effective_cid <- effective_client_id()
@@ -2924,15 +2928,15 @@ server <- function(input, output, session) {
                  s3_key      = NA_character_,
                  client_id   = "hd-admin",
                  viewer_home_client_id = home_client_id())
-      log_action(user        = current_user() %||% "unknown",
-                 module      = "clientes",
-                 action      = "external_access",
-                 description = "HopDesk staff accessed this client's data (session context switch)",
-                 target_id   = effective_cid,
-                 s3_key      = NA_character_,
-                 client_id   = effective_cid,
-                 viewer_home_client_id = home_client_id())
     }
+    # T87: the exit of the client LEFT (the previous jump value, never the new
+    # one) and the entry of the one entered, each whole in hd-admin and as a
+    # neutral signed row in that client. The reason of a forced exit (access
+    # revoked, grace over) is left in userData by whoever forced it.
+    t87_registrar_salto(.salto_anterior, jcid, user = current_user() %||% "unknown",
+                        home = home_client_id(), motivo = session$userData$hd_salida_motivo)
+    .salto_anterior <<- jcid
+    session$userData$hd_salida_motivo <- NULL
 
     message(sprintf("[CTX] Context switch to '%s' complete", effective_cid))
   }, ignoreInit = TRUE, ignoreNULL = FALSE, priority = -3)

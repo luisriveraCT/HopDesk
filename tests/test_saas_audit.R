@@ -85,13 +85,24 @@ log2 <- mock_s3readRDS("networks/app_audit.rds", "mock-bucket")
 mock_s3saveRDS(.APP_AUDIT_SCHEMA(), "hd-admin/app_audit.rds", "mock-bucket")
 Sys.setenv(CLIENT_ID = "hd-admin")
 
+# T87: an action a client user could also do (C) is dual-written -- the
+# client's copy signed, hd-admin's whole. A staff-own action (S, here
+# client_access) goes to hd-admin ONLY (tests/test_t87_catalogo.R).
+log_action(
+  user        = "mouse",
+  module      = "bancos",
+  action      = "confirmar_pago",
+  description = "staff confirmed a payment in networks",
+  s3_key      = NA_character_,
+  client_id   = "networks"   # writing to networks log while CLIENT_ID=hd-admin
+)
 log_action(
   user        = "mouse",
   module      = "clientes",
   action      = "client_access",
   description = "staff accessed networks",
   s3_key      = NA_character_,
-  client_id   = "networks"   # writing to networks log while CLIENT_ID=hd-admin
+  client_id   = "networks"
 )
 .audit_flush_pending("networks")
 .audit_flush_pending("hd-admin")
@@ -103,12 +114,16 @@ home_log <- tryCatch(mock_s3readRDS("hd-admin/app_audit.rds",  "mock-bucket"), e
 .chk(!is.null(net_log)  && nrow(net_log)  >= 1L, TRUE, "dual-write: entry in target client log")
 .chk(!is.null(home_log) && nrow(home_log) >= 1L, TRUE, "dual-write: entry in home log")
 .chk(
-  any(net_log$action  == "client_access"),
-  TRUE, "target log has client_access entry"
+  any(net_log$action  == "confirmar_pago"),
+  TRUE, "target log has the client-level action"
 )
 .chk(
-  any(home_log$action == "client_access"),
-  TRUE, "home log has client_access entry"
+  any(home_log$action == "confirmar_pago") && any(home_log$action == "client_access"),
+  TRUE, "home log has both"
+)
+.chk(
+  any(net_log$action == "client_access"),
+  FALSE, "T87: the staff-own action never reaches the client's log"
 )
 
 Sys.setenv(CLIENT_ID = "networks")   # restore
