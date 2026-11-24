@@ -221,8 +221,13 @@ recorrer <- function(raiz, etiqueta, quien) {
   # TEMA 5b: the loading overlay (www/overlay_init.js) is built hidden on the
   # sign-in page and shown on the click. Shown here as it is (no message yet),
   # its pulse and fades frozen (the icon's opacity would differ by the
-  # instant), measured, hidden again before signing in.
+  # instant), measured, hidden again before signing in. The sign-in field
+  # under it may or may not have the focus yet at that instant (it flipped
+  # between runs and users): the focused element is blurred before measuring
+  # and gets its focus back when the overlay hides, so ENTRAR is unchanged.
   if (isTRUE(tryCatch(ev("(function(){ var o = document.getElementById('hopdesk-loading'); if (!o) return false;
+        window.__temaFoco = document.activeElement;
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
         var c = document.createElement('style'); c.id = 'tema-carga-quieta';
         c.textContent = '#hopdesk-loading, #hopdesk-loading * { animation: none !important; transition: none !important; }';
         document.head.appendChild(c); o.style.display = 'flex'; return true; })()"), error = function(e) FALSE))) {
@@ -231,7 +236,8 @@ recorrer <- function(raiz, etiqueta, quien) {
     captura(sprintf("%s_%s_CARGA", etiqueta, quien))
     captura_marca(etiqueta, sprintf("%s_%s_CARGA", etiqueta, quien))
     ev("(function(){ document.getElementById('hopdesk-loading').style.display = 'none';
-        var c = document.getElementById('tema-carga-quieta'); if (c) c.remove(); return true; })()")
+        var c = document.getElementById('tema-carga-quieta'); if (c) c.remove();
+        var f = window.__temaFoco; if (f && f !== document.body && f.focus) f.focus(); return true; })()")
   } else no_cubierta(etiqueta, quien, "Pantalla de carga", "no #hopdesk-loading on the sign-in page")
   u <- usuarios[[quien]]
   ev(sprintf("(function(){ var u = document.getElementById('auth-user_id'), p = document.getElementById('auth-user_pwd');
