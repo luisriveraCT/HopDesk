@@ -298,6 +298,7 @@ HD_TEMAS <- list(
   `borde-d6e0f0` = "#D6E0F0",
   `borde-dce1ec` = "#DCE1EC",
   `borde-dce3ef` = "#DCE3EF",
+  `borde-dddddd` = "#DDDDDD",
   `borde-dde4ed` = "#DDE4ED",
   `borde-dde4f0` = "#DDE4F0",
   `borde-dde7f7` = "#DDE7F7",

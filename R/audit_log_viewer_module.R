@@ -624,31 +624,35 @@
 # even being installed; only the downloadHandler wiring below needs those.
 # =============================================================================
 
+# TEMA 6-3: the colours are {{rol}} marks that tema_pintar() resolves for the
+# theme of the session that exports (Clásico keeps today's values through its
+# legacy tokens). Both PDFs (Actividad and Archivos de pago) paint it with
+# tema_pintar(.AUDIT_PDF_CSS, tema).
 .AUDIT_PDF_CSS <- "
   @page { size: A4 portrait; margin: 1.5cm 1.4cm; }
-  body { font-family: Arial, Calibri, sans-serif; font-size: 9pt; margin: 0; color:#222; }
+  body { font-family: Arial, Calibri, sans-serif; font-size: 9pt; margin: 0; color:{{leg-texto-222222}}; }
   .pb { page-break-before: always; }
   .cover { text-align:center; padding: 60px 50px 30px; }
-  .cover .wordmark { font-size:30pt; font-weight:bold; letter-spacing:2px; color:#1E3A5F; }
-  .cover h1 { font-size:16pt; color:#1E3A5F; font-weight:bold; margin:6px 0 4px; }
-  .cover h2 { font-size:11pt; color:#444; font-weight:normal; margin:0 0 20px; }
+  .cover .wordmark { font-size:30pt; font-weight:bold; letter-spacing:2px; color:{{encabezado}}; }
+  .cover h1 { font-size:16pt; color:{{encabezado}}; font-weight:bold; margin:6px 0 4px; }
+  .cover h2 { font-size:11pt; color:{{leg-texto-444444}}; font-weight:normal; margin:0 0 20px; }
   .meta-tbl { width:100%; border-collapse:collapse; font-size:9pt; margin:16px auto; max-width:520px; }
-  .meta-tbl td { padding:3px 8px; border-bottom:1px solid #E0E0E0; }
-  .meta-tbl .k { text-align:right; font-weight:bold; color:#333; width:42%; }
+  .meta-tbl td { padding:3px 8px; border-bottom:1px solid {{leg-borde-e0e0e0}}; }
+  .meta-tbl .k { text-align:right; font-weight:bold; color:{{leg-texto-333333}}; width:42%; }
   .meta-tbl .v { text-align:left; }
-  .conf { font-size:8pt; font-style:italic; color:#888; margin-top:24px; }
-  .sec-hdr { background:#1E3A5F; color:#fff; font-weight:bold; font-size:10pt; padding:5px 10px; margin: 16px 0 6px; }
+  .conf { font-size:8pt; font-style:italic; color:{{leg-texto-tenue-888888}}; margin-top:24px; }
+  .sec-hdr { background:{{encabezado}}; color:{{encabezado-texto}}; font-weight:bold; font-size:10pt; padding:5px 10px; margin: 16px 0 6px; }
   table.audit-tbl { width:100%; border-collapse:collapse; font-size:8pt; margin-bottom:10px; table-layout:fixed; }
-  table.audit-tbl th, table.audit-tbl td { border:1px solid #ccc; padding:3px 5px; text-align:left;
+  table.audit-tbl th, table.audit-tbl td { border:1px solid {{borde-fuerte}}; padding:3px 5px; text-align:left;
                                            word-wrap:break-word; overflow-wrap:break-word; }
-  table.audit-tbl th { background:#f2f2f2; }
-  .entry-card { border:1px solid #ddd; border-radius:3px; padding:6px 8px; margin-bottom:6px; font-size:8.5pt; }
-  .entry-card .ehdr { font-weight:bold; color:#1E3A5F; margin-bottom:2px; }
+  table.audit-tbl th { background:{{leg-superficie-2-f2f2f2}}; }
+  .entry-card { border:1px solid {{leg-borde-dddddd}}; border-radius:3px; padding:6px 8px; margin-bottom:6px; font-size:8.5pt; }
+  .entry-card .ehdr { font-weight:bold; color:{{encabezado}}; margin-bottom:2px; }
   .entry-card .edesc { margin-bottom:4px; }
   .entry-card table { width:100%; border-collapse:collapse; font-size:8pt; margin-top:2px; }
-  .entry-card table th, .entry-card table td { border:1px solid #ddd; padding:2px 4px; }
-  .no-data { text-align:center; font-style:italic; color:#888; padding:10px; }
-  .footer-note { font-size:7.5pt; color:#888; margin-top:6px; }
+  .entry-card table th, .entry-card table td { border:1px solid {{leg-borde-dddddd}}; padding:2px 4px; }
+  .no-data { text-align:center; font-style:italic; color:{{leg-texto-tenue-888888}}; padding:10px; }
+  .footer-note { font-size:7.5pt; color:{{leg-texto-tenue-888888}}; margin-top:6px; }
 "
 
 # Per-módulo entry counts, in alphabetical módulo order -- a stable,
@@ -688,7 +692,7 @@
 # target_id/metadata/client_id) -- NOT the display-formatted data.frame.
 # meta_info: list(generated_by, date_from, date_to, modulo_filter,
 #   accion_filter, usuario_filter, client_label, mode).
-generate_audit_log_html_doc <- function(export_df, meta_info = list()) {
+generate_audit_log_html_doc <- function(export_df, meta_info = list(), tema = NULL) {
   df <- export_df
   if (is.null(df) || !is.data.frame(df)) df <- .APP_AUDIT_SCHEMA()
   df <- df[order(
@@ -768,7 +772,7 @@ generate_audit_log_html_doc <- function(export_df, meta_info = list()) {
     tags$head(
       tags$meta(charset = "UTF-8"),
       tags$title("Registro Oficial de Actividad — HopDesk"),
-      tags$style(HTML(.AUDIT_PDF_CSS))
+      tags$style(HTML(tema_pintar(.AUDIT_PDF_CSS, tema)))
     ),
     tags$body(cover, sections)
   )
@@ -1133,7 +1137,7 @@ auditLogViewerServer <- function(id, shared, mode,
                   # a button/badge -- literally just the message text.
                   shinyjs::hidden(
                     tags$span(id = ns("live_toggle_msg"),
-                              style = "font-size:0.8rem; color:#6c757d;")
+                              style = "font-size:0.8rem; color:var(--hd-leg-texto-2-6c757d);")
                   ))
             )
           ),
@@ -1274,7 +1278,7 @@ auditLogViewerServer <- function(id, shared, mode,
             accion_filter  = input$audit_accion_sel,
             usuario_filter = usuario_sel(),
             client_label   = client_label
-          )),
+          ), tema = tema_de_sesion()),   # TEMA 6-3: the exporting session's theme
           error = function(e) {
             showNotification(tr("tablas.actividad.aviso.error_documento", error = conditionMessage(e)),
                              type = "error", duration = 10); NULL

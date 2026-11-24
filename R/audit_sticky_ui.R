@@ -42,10 +42,10 @@
     position: sticky;
     top: 0;
     z-index: 200;
-    background: #fff;
+    background: var(--hd-superficie);
     padding: 0.5rem 0 0.75rem;
     margin-bottom: 0.25rem;
-    border-bottom: 1px solid #dee2e6;
+    border-bottom: 1px solid var(--hd-leg-borde-dee2e6);
   }
   .audit-sticky-table .dataTables_filter label {
     margin-bottom: 0;
@@ -70,11 +70,11 @@
     top: 50%;
     transform: translateY(-50%);
     font-size: 12px;
-    /* App's own primary accent (R/ui_components.R's #0d6efd), muted -- a
+    /* The app's old primary accent, muted (TEMA 6-3: a theme role) -- a
        real Font Awesome glyph via JS (see ensureAuditSearchIcon()), not an
        emoji, matching every other icon in the app (icon('rotate'),
        icon('file-pdf'), ...). */
-    color: rgba(13, 110, 253, 0.55);
+    color: color-mix(in srgb, var(--hd-leg-primario-0d6efd) 55%, transparent);
     pointer-events: none;
   }
 "

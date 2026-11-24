@@ -370,7 +370,7 @@ pagosAuditViewerServer <- function(id, shared) {
             empresa_filter  = input$pagos_emp_sel,
             usuario_filter  = usuario_sel(),
             client_label    = effective_cid()
-          )),
+          ), tema = tema_de_sesion()),   # TEMA 6-3: the exporting session's theme
           error = function(e) {
             showNotification(tr("tablas.archivos_pago.aviso.error_documento", error = conditionMessage(e)),
                              type = "error", duration = 10); NULL
@@ -589,7 +589,7 @@ pagosAuditViewerServer <- function(id, shared) {
 # generate_audit_log_html_doc()). export_df: raw pagos_generados rows
 # (id/ts/user/client_id/empresa/moneda/cuenta_origen/banco_origen/n_pagos/
 # total/beneficiarios/source/archivo/tipo/detalle).
-generate_pagos_audit_html_doc <- function(export_df, meta_info = list()) {
+generate_pagos_audit_html_doc <- function(export_df, meta_info = list(), tema = NULL) {
   df <- export_df
   if (is.null(df) || !is.data.frame(df)) df <- .schema_pagos_generados()
   df <- df[order(df$ts, decreasing = TRUE), , drop = FALSE]
@@ -672,7 +672,7 @@ generate_pagos_audit_html_doc <- function(export_df, meta_info = list()) {
     tags$head(
       tags$meta(charset = "UTF-8"),
       tags$title("Registro Oficial de Archivos de Pago — HopDesk"),
-      tags$style(HTML(.AUDIT_PDF_CSS))
+      tags$style(HTML(tema_pintar(.AUDIT_PDF_CSS, tema)))
     ),
     tags$body(cover, sections)
   )
