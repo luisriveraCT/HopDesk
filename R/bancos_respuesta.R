@@ -180,3 +180,130 @@ btr_registro <- function(pagos) {
   r <- .btr_normalizar(pagos$registro)
   ifelse(r %in% c("correcto", "editado", "agregado"), r, NA_character_)
 }
+
+# ── T93 · Matching ───────────────────────────────────────────────────────────
+# Accounts compared as numbers written with digits: no leading zeros (the
+# report writes the origin with 11 digits, pagos_generados may keep 12; a
+# BanBajío account is 12 in the report, zero-padded to 18 in the PPL).
+.btr_cuenta <- function(x) { x <- gsub("[^0-9]", "", as.character(x)); x[is.na(x)] <- ""; sub("^0+", "", x) }
+.btr_mismo_importe <- function(a, b) !is.na(a) & !is.na(b) & abs(as.numeric(a) - as.numeric(b)) < 0.005
+
+# The report's Divisa ("MN", "USD", "Dólares"...) as an ISO code, through the
+# one list of a Mexican bank's currency words (ppl_moneda_palabra); a code of
+# the catalog stays as is; anything else NA (never guessed).
+btr_moneda <- function(divisa) {
+  d <- toupper(trimws(as.character(divisa)))
+  m <- ppl_moneda_palabra(d)
+  ifelse(is.na(m) & vapply(d, function(x) isTRUE(moneda_valida(x)), logical(1)), d, m)
+}
+
+# Which generated file (pagos_generados, tipo "pago_ppl") is this batch?
+#   1  by name: the report's file name is the one HopDesk gave it;
+#   2  else by content: same origin account, generated up to 7 days before
+#      the batch's date, and every payment the report says came from the
+#      file (Registro Correcto/Editado) has a beneficiary with the same
+#      destination account and amount (an "Editado" may have changed its
+#      amount: only its account is asked for).
+# Exactly one candidate -> its row number in `generados`; else NA (path B).
+btr_lote_generado <- function(lote, pagos, generados) {
+  if (!is.data.frame(generados) || !nrow(generados)) return(NA_integer_)
+  g <- which(generados$tipo %in% "pago_ppl")
+  if (!length(g)) return(NA_integer_)
+  arch <- tolower(trimws(as.character(lote$archivo %||% "")))
+  quita_ext <- function(x) sub("[.]txt$", "", tolower(trimws(as.character(x))))
+  if (nzchar(arch)) {
+    por_nombre <- g[quita_ext(generados$archivo[g]) == quita_ext(arch)]
+    if (length(por_nombre) == 1L) return(por_nombre)
+    if (length(por_nombre) > 1L) g <- por_nombre       # same name twice: let the content decide
+  }
+  fecha <- lote$fecha %||% as.Date(NA)
+  if (!is.na(fecha)) {
+    dias <- as.numeric(fecha - as.Date(as.POSIXct(generados$ts[g])))
+    g <- g[!is.na(dias) & dias >= 0 & dias <= 7]
+  }
+  if (nrow(pagos)) {
+    origen <- unique(.btr_cuenta(pagos$cuenta_origen))
+    g <- g[.btr_cuenta(generados$cuenta_origen[g]) %in% origen]
+  }
+  reg <- btr_registro(pagos)
+  del_archivo <- pagos[reg %in% c("correcto", "editado"), , drop = FALSE]
+  if (!nrow(del_archivo)) return(NA_integer_)
+  cabe <- vapply(g, function(k) {
+    b <- parse_pago_beneficiarios(generados$beneficiarios[k])
+    if (!nrow(b)) return(FALSE)
+    cb <- .btr_cuenta(b$clabe)
+    all(vapply(seq_len(nrow(del_archivo)), function(i) {
+      misma <- cb == .btr_cuenta(del_archivo$cuenta_destino[i])
+      if (identical(btr_registro(del_archivo[i, , drop = FALSE]), "editado")) any(misma)
+      else any(misma & .btr_mismo_importe(b$importe, del_archivo$importe[i]))
+    }, logical(1)))
+  }, logical(1))
+  g <- g[cabe]
+  if (length(g) == 1L) g else NA_integer_
+}
+
+# Path A: each payment of the report against the beneficiaries of ITS file
+# (the JSON of pagos_generados, parse_pago_beneficiarios()). A beneficiary is
+# used once. Key: destination account + amount + alias; the concepto breaks
+# a tie. Returns, per payment of `pagos`:
+#   beneficiario  its row in `beneficiarios` (NA when none or not unique)
+#   estado        "confirmar"    Aplicado + Correcto + a unique match: the
+#                                only one HopDesk may confirm alone
+#                 "editado"      changed in BajíoNet: shown, never alone
+#                 "agregado"     not in HopDesk's file: shown, never alone
+#                 "no_aplicado"  rejected / cancelled / returned: stays in
+#                                the Agenda with the bank's message
+#                 "sin_casar"    Correcto + Aplicado but no unique match
+btr_casar_a <- function(pagos, beneficiarios) {
+  n <- nrow(pagos)
+  out <- data.frame(beneficiario = rep(NA_integer_, n), estado = rep("sin_casar", n), stringsAsFactors = FALSE)
+  if (!n) return(out)
+  est <- btr_estado(pagos); reg <- btr_registro(pagos)
+  b <- if (is.data.frame(beneficiarios)) beneficiarios else data.frame()
+  usado <- rep(FALSE, nrow(b))
+  cb <- .btr_cuenta(b$clabe %||% character()); ab <- toupper(trimws(as.character(b$alias %||% character())))
+  for (i in seq_len(n)) {
+    if (identical(reg[i], "agregado")) { out$estado[i] <- "agregado"; next }
+    cand <- which(!usado & cb == .btr_cuenta(pagos$cuenta_destino[i]) &
+                    ab == toupper(trimws(pagos$alias[i])) &
+                    (identical(reg[i], "editado") | .btr_mismo_importe(b$importe, pagos$importe[i])))
+    if (length(cand) > 1L) {
+      desempate <- cand[trimws(as.character(b$concepto[cand])) == trimws(pagos$concepto[i])]
+      if (length(desempate) == 1L) cand <- desempate
+    }
+    if (length(cand) == 1L) { out$beneficiario[i] <- cand; usado[cand] <- TRUE }
+    out$estado[i] <- if (est[i] != "aplicado") "no_aplicado"
+                     else if (identical(reg[i], "editado")) "editado"
+                     else if (length(cand) == 1L) "confirmar"
+                     else "sin_casar"
+  }
+  out
+}
+
+# Path B (a batch HopDesk did not generate): for each applied payment, the
+# open Agenda rows of the same supplier BY ITS REGISTERED ACCOUNT, the exact
+# amount and the same currency. `agenda`: pending AP rows as the Agenda
+# annotates them (id, Moneda, Importe, clabe_dest). Never confirms anything:
+#   estado  "sugerido"   one candidate (the user ticks it)
+#           "varias"     more than one (the user picks one or none)
+#           "sin_casar"  none -- the payment is shown for a manual decision
+#           "no_aplicado" not applied: nothing pending of it in HopDesk
+#   candidatos  list column: the Agenda ids of each payment's candidates.
+btr_sugerir_b <- function(pagos, agenda) {
+  n <- nrow(pagos)
+  out <- data.frame(estado = rep("sin_casar", n), stringsAsFactors = FALSE)
+  out$candidatos <- replicate(n, character(0), simplify = FALSE)
+  if (!n) return(out)
+  est <- btr_estado(pagos); mon <- btr_moneda(pagos$divisa)
+  a <- if (is.data.frame(agenda)) agenda else data.frame()
+  ca <- .btr_cuenta(a$clabe_dest %||% character())
+  for (i in seq_len(n)) {
+    if (est[i] != "aplicado") { out$estado[i] <- "no_aplicado"; next }
+    k <- which(nzchar(ca) & ca == .btr_cuenta(pagos$cuenta_destino[i]) &
+                 .btr_mismo_importe(a$Importe, pagos$importe[i]) &
+                 !is.na(mon[i]) & toupper(as.character(a$Moneda)) == mon[i])
+    out$candidatos[[i]] <- as.character(a$id[k])
+    out$estado[i] <- if (length(k) == 1L) "sugerido" else if (length(k) > 1L) "varias" else "sin_casar"
+  }
+  out
+}
