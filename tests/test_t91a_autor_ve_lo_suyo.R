@@ -75,6 +75,9 @@ avisos_agregar(CID, list(tipo = "automatico", titulo = "Nota de staff", cuerpo =
 ok("la nota pública de un staff (audiencia: niveles de cliente): su autor staff la ve, propia",
    { x <- avisos_visibles(CID, usr("mouse", STAFF), propios = TRUE)
      any(x$clave %in% "nota|n1" & x$propia %in% TRUE) })
+ok("…y Luis (dev, en su audiencia) la ve, pero NO marcada como suya: solo lo de su autor es 'Tuya'",
+   { x <- avisos_visibles(CID, LUIS, propios = TRUE)
+     any(x$clave %in% "nota|n1") && !any(x$clave %in% "nota|n1" & x$propia %in% TRUE) })
 avisos_agregar("beta", list(tipo = "publicado", clase = "comunicado", titulo = "En beta", cuerpo = "",
                             severidad = "info", niveles = c(FIN)), por = "luis")
 ok("lo que publicó en otro cliente no aparece en este (cada cliente su avisos.rds)",
