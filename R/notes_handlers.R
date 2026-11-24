@@ -10,6 +10,19 @@ notes_handlers <- function(input, output, session, shared,
   active_note_id  <- reactiveVal(NULL)
   active_note_lgr <- reactiveVal(NULL)
 
+  # T91a: may this session's user edit / delete this note? Its author
+  # (nota_es_autor()); deleting someone else's needs can_moderate_panorama.
+  # Checked on the server at every step: the browser only hides the icons.
+  .nota_puede <- function(row, accion = c("editar", "borrar")) {
+    accion <- match.arg(accion)
+    info <- tryCatch(shared$current_user_info(), error = function(e) list())
+    autor <- nota_es_autor(row, info$account_code %||% "", tryCatch(current_user(), error = function(e) ""))
+    ok <- autor || (identical(accion, "borrar") &&
+                      isTRUE(tryCatch(puede(shared$usuario(), "can_moderate_panorama"), error = function(e) FALSE)))
+    if (!ok) showNotification(tr("notas.solo_autor"), type = "warning", duration = 6)
+    ok
+  }
+
   .last_notes_refresh <- local(Sys.time() - 60)
 
   .ensure_notes_fresh <- function(forzar = FALSE) {
@@ -151,6 +164,7 @@ notes_handlers <- function(input, output, session, shared,
       ))
     } else {
       idx <- which(df$id == nid)
+      if (length(idx) && !.nota_puede(df[idx[1], ], "editar")) return(invisible(NULL))   # T91a, again at the write
       era_publica <- length(idx) > 0L && notas_es_publica(df$visibility[idx[1]])
       if (length(idx)) {
         df$title[idx]      <- input$note_title_input %||% "(Sin título)"
@@ -225,6 +239,9 @@ notes_handlers <- function(input, output, session, shared,
             df  <- notes_df()
             row <- df[df$id == nid, , drop = FALSE]
             if (!nrow(row)) return()
+            # T91a: only its author edits it, checked here (the pencil is only
+            # hidden in the browser; an input can be sent by hand).
+            if (!.nota_puede(row[1, ], "editar")) return()
             .show_note_modal(row = row[1, ])
           }, ignoreInit = TRUE),
 
@@ -233,6 +250,7 @@ notes_handlers <- function(input, output, session, shared,
             df  <- notes_df()
             row <- df[df$id == nid, , drop = FALSE]
             if (!nrow(row)) return()
+            if (!.nota_puede(row[1, ], "borrar")) return()   # T91a: author or moderator
             active_note_id(nid)
             active_note_lgr(row$ledger[1] %||% "AR")
             showModal(modalDialog(
@@ -253,6 +271,7 @@ notes_handlers <- function(input, output, session, shared,
   observeEvent(input$note_delete_confirm, {
     nid <- active_note_id(); req(nid)
     deleted_row <- notes_df()[notes_df()$id == nid, , drop = FALSE]
+    if (nrow(deleted_row) && !.nota_puede(deleted_row[1, ], "borrar")) return()   # T91a, again at the write
     df_base <- notes_df()
     df <- dplyr::filter(df_base, .data$id != !!nid)
     notes_df(df)
@@ -294,6 +313,19 @@ notes_handlers <- function(input, output, session, shared,
 
 # ── T81: public notes as Panorama avisos ─────────────────────────────────────
 # NA visibility reads as public (see .schema_notes).
+# T91a: is the user (account code, display name) the author of note `row`?
+# The same rule the notes panel used only to hide its icons
+# (ui_components.R), minus its "both without an account code" case, which
+# made anyone without a code the author of every note without one: the code
+# when both have it, else the display name when both have it, else no.
+nota_es_autor <- function(row, user_code = "", user_name = "") {
+  limpio <- function(x) { x <- as.character(x %||% "")[1]; if (is.na(x)) "" else trimws(x) }
+  nc <- limpio(row$author_code); uc <- limpio(user_code)
+  if (nzchar(nc) && nzchar(uc)) return(identical(nc, uc))
+  na <- limpio(row$author); un <- limpio(user_name)
+  nzchar(na) && nzchar(un) && !identical(un, "unknown") && identical(na, un)
+}
+
 notas_es_publica <- function(visibility) {
   v <- as.character(visibility %||% NA_character_)[1]
   is.na(v) || identical(v, "public")

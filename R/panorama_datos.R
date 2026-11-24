@@ -448,10 +448,24 @@ panorama_feed <- function(vis, ultima_visita = NULL, usuario = NULL) {
 panorama_mis_solicitudes <- function(vis, usuario) {
   u <- tolower(usuario %||% "")
   if (is.null(vis) || !nrow(vis) || !nzchar(u)) return(vis[0, , drop = FALSE])
-  es <- avisos_clase(vis) %in% "solicitud" & vis$tipo %in% "personal" &
+  # T91a: only what was asked OF this user ("Para mí"); what they asked
+  # others comes back marked propia and goes to panorama_solicitudes_pedidas().
+  propia <- if ("propia" %in% names(vis)) vis$propia %in% TRUE else rep(FALSE, nrow(vis))
+  es <- avisos_clase(vis) %in% "solicitud" & vis$tipo %in% "personal" & !propia &
     !vapply(vis$hechos, function(h) u %in% .pan_hechos(h), logical(1))
   s <- vis[es, , drop = FALSE]
   s[order(s$vence, na.last = TRUE), , drop = FALSE]
+}
+
+# T91a "Que pedí": the solicitudes this user asked of others, one row per
+# solicitud with how many recipients already marked it done
+# (avisos_visibles(propios = TRUE): sol_atendidas / sol_total). Open ones
+# first, then by deadline.
+panorama_solicitudes_pedidas <- function(vis) {
+  if (is.null(vis) || !nrow(vis) || !"propia" %in% names(vis)) return(vis[0, , drop = FALSE])
+  s <- vis[vis$propia %in% TRUE & vis$tipo %in% "personal" & avisos_clase(vis) %in% "solicitud", , drop = FALSE]
+  if (!nrow(s)) return(s)
+  s[order(s$sol_atendidas >= s$sol_total, s$vence, na.last = TRUE), , drop = FALSE]
 }
 
 # Destacados: published comunicados, recordatorios and reconocimientos; the

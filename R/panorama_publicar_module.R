@@ -69,6 +69,18 @@ panoramaPublicarUI <- function(id) {
       shiny::div(class = "pan-tarjeta", hd_table_ui(ns("tabla")))))
 }
 
+# T91a: of the Publicadas rows a user asked to take down (`filas`, with the
+# author in `por`), the ones they may: their own always; someone else's only
+# with can_moderate_panorama. Pure, so the server's rule is tested without a
+# browser. list(filas = the allowed rows, rechazadas = how many were not).
+publicadas_retirables <- function(filas, usuario) {
+  if (is.null(filas) || !nrow(filas)) return(list(filas = filas, rechazadas = 0L))
+  ajenas <- !(tolower(trimws(filas$por)) %in% tolower(trimws(usuario$user %||% "")))
+  if (!any(ajenas) || isTRUE(tryCatch(puede(usuario, "can_moderate_panorama"), error = function(e) FALSE)))
+    return(list(filas = filas, rechazadas = 0L))
+  list(filas = filas[!ajenas, , drop = FALSE], rechazadas = sum(ajenas))
+}
+
 panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), al_volver = function() NULL,
                                    al_publicar = function() NULL, tz = shiny::reactive("America/Mexico_City")) {
   shiny::moduleServer(id, function(input, output, session) {
@@ -261,7 +273,10 @@ panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), 
       c <- cid(); if (is.null(c)) return(vacia)
       # A failed read stop()s: the table shows its "could not load" notice,
       # never an empty list that looks like nothing is published.
-      panorama_publicadas(avisos_leer(c))
+      # T91a: one's own publications; everyone's only with can_moderate_panorama.
+      p <- panorama_publicadas(avisos_leer(c))
+      if (isTRUE(tryCatch(puede(usr(), "can_moderate_panorama"), error = function(e) FALSE))) p
+      else p[tolower(trimws(p$por)) %in% tolower(usr()$user %||% ""), , drop = FALSE]
     })
     output$n_vigentes <- shiny::renderText(tryCatch(nrow(publicadas()), error = function(e) ""))
     tipo_mapa <- list(
@@ -289,6 +304,13 @@ panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), 
       c <- cid(); u <- usr(); if (is.null(c) || is.null(u)) return()
       d <- publicadas()
       filas <- d[d$id %in% a$ids, , drop = FALSE]
+      if (!nrow(filas)) return()
+      # T91a, checked on the server row by row (the ids come from the
+      # browser): someone else's publication only with can_moderate_panorama.
+      r <- publicadas_retirables(filas, u)
+      if (r$rechazadas > 0L)
+        shiny::showNotification(tr("panorama.publicar.solo_propias"), type = "warning", duration = 6)
+      filas <- r$filas
       if (!nrow(filas)) return()
       ids <- unlist(strsplit(filas$ids, ",", fixed = TRUE))
       res <- tryCatch({ for (i in ids) avisos_retirar(c, i, u$user); TRUE }, error = function(e) e)

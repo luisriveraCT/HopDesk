@@ -37,6 +37,11 @@ PERMISOS <- list(
   # HopDesk staff; per user for anyone else. Read by correo_vigia_avisos()
   # (R/avisos_correo_vigia.R).
   can_receive_email_job_notices  = list(grupo = "grupo"),
+  # T91a: take down (Desactivar) a Panorama publication someone ELSE made;
+  # one's own needs nothing. Never edit another's text. By tier dev and
+  # admin, HopDesk staff. Read by the Publicadas observer
+  # (R/panorama_publicar_module.R) and the note delete (R/notes_handlers.R).
+  can_moderate_panorama          = list(grupo = "grupo"),
   can_configure_erp              = list(grupo = "grupo"),
   # The IC registry only: Admin edits it without the ERP connection's secrets.
   can_manage_interco             = list(grupo = "grupo"),

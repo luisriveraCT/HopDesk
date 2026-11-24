@@ -66,7 +66,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       reloj(); version()
       c <- cid(); u <- usr()
       if (is.null(c) || !nzchar(c) || is.null(u)) return(NULL)
-      v <- tryCatch(avisos_visibles(c, u), error = function(e) {
+      v <- tryCatch(avisos_visibles(c, u, propios = TRUE), error = function(e) {   # T91a: and what they published
         message("[panorama] avisos_visibles falló: ", conditionMessage(e)); NULL
       })
       # T80b: the weekly email not gone out, computed on read (R/avisos_correo_vigia.R).
@@ -115,6 +115,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       if (is.null(v) || is.null(u)) return(NULL)
       panorama_mis_solicitudes(v, u$user)
     })
+    pedidas <- shiny::reactive(panorama_solicitudes_pedidas(visibles()))   # T91a "Que pedí"
 
     # ── Data already in the session ───────────────────────────────────────────
     pagos  <- shiny::reactive(panorama_pagos_hoy(tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), hoy(),
@@ -219,6 +220,8 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
     # ── Clima de hoy ──────────────────────────────────────────────────────────
     output$clima <- shiny::renderUI({
       f <- feed(); ms <- mis_sol(); p <- pagos()
+      # T91a: what the user published is shown, never counted as theirs to attend.
+      if ("propia" %in% names(f)) f <- f[!(f$propia %in% TRUE), , drop = FALSE]
       cl <- panorama_clima(f, n_solicitudes = if (is.null(ms)) 0L else nrow(ms),
                            n_pagos_hoy = sum(p$n), sap = sap())
       icono <- switch(cl$clima, despejado = "sun", medio = "cloud-sun", nublado = "cloud", neblina = "smog")
@@ -325,11 +328,18 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
     })
 
     # ── Mis solicitudes ───────────────────────────────────────────────────────
+    # T91a: two parts, "Para mí" (asked of me: with Hecho) and "Que pedí" (what
+    # I asked others: who to, and how many already marked it done; no Hecho,
+    # that is the recipient's). Each part only when it has something; the
+    # card only when either has.
     output$solicitudes <- shiny::renderUI({
-      s <- mis_sol(); if (is.null(s) || !nrow(s)) return(NULL)
+      s <- mis_sol(); q <- pedidas()
+      hay_s <- !is.null(s) && nrow(s) > 0L; hay_q <- !is.null(q) && nrow(q) > 0L
+      if (!hay_s && !hay_q) return(NULL)
       shiny::div(class = "pan-tarjeta pan-solicitudes pan-tono-lila",
         shiny::div(class = "pan-etiqueta", tr("panorama.solicitudes.titulo")),
-        lapply(seq_len(min(nrow(s), 3L)), function(i) {
+        if (hay_s) shiny::div(class = "pan-solicitudes-parte", tr("panorama.solicitudes.para_mi")),
+        if (hay_s) lapply(seq_len(min(nrow(s), 3L)), function(i) {
           a <- s[i, ]
           shiny::div(class = "pan-solicitud",
             shiny::div(
@@ -342,6 +352,20 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
               onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})",
                                 ns("hecho"), htmltools::htmlEscape(a$id, attribute = TRUE)),
               tr("panorama.solicitudes.hecho")))
+        }),
+        if (hay_q) shiny::div(class = "pan-solicitudes-parte", tr("panorama.solicitudes.que_pedi")),
+        if (hay_q) lapply(seq_len(min(nrow(q), 3L)), function(i) {
+          a <- q[i, ]
+          para <- paste(.de_json(a$usuarios), collapse = ", ")
+          estado <- if (isTRUE(a$sol_atendidas >= a$sol_total)) tr("panorama.solicitudes.atendida",
+                        n = as.character(a$sol_atendidas), total = as.character(a$sol_total))
+                    else if (isTRUE(a$sol_atendidas > 0L)) tr("panorama.solicitudes.atendida",
+                        n = as.character(a$sol_atendidas), total = as.character(a$sol_total))
+                    else tr("panorama.solicitudes.pendiente")
+          shiny::div(class = "pan-solicitud pan-solicitud--mia",
+            shiny::div(
+              shiny::div(class = "pan-solicitud-titulo", a$titulo),
+              shiny::div(class = "pan-meta", paste(tr("panorama.solicitudes.para", para = para), estado, sep = " · "))))
         }))
     })
 
@@ -406,7 +430,16 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
             # still Comunicados).
             etiqueta <- if (a$tipo_feed == "com" && isTRUE(a$clase_ok %in% c("recordatorio", "reconocimiento")))
               paste0("panorama.clase.", a$clase_ok) else paste0("panorama.feed.tipo.", a$tipo_feed)
-            meta <- c(tr(etiqueta),
+            # T91a: what the user published says so ("Tuya"); their own
+            # solicitud, how it stands with its recipients.
+            propia <- isTRUE(a$propia %in% TRUE)
+            estado_sol <- if (propia && !is.na(a$sol_total %||% NA))
+              (if (isTRUE(a$sol_atendidas >= a$sol_total)) tr("panorama.solicitudes.atendida",
+                   n = as.character(a$sol_atendidas), total = as.character(a$sol_total))
+               else if (isTRUE(a$sol_atendidas > 0L)) tr("panorama.solicitudes.atendida",
+                   n = as.character(a$sol_atendidas), total = as.character(a$sol_total))
+               else tr("panorama.solicitudes.pendiente"))
+            meta <- c(if (propia) tr("panorama.feed.tuya"), tr(etiqueta), estado_sol,
                       if (nzchar(a$cuerpo %||% "")) a$cuerpo,
                       if ((a$contador %||% 1L) > 1L) tr("panorama.feed.veces", n = as.character(a$contador)))
             if (grepl("^nota\\|", a$clave %||% "")) icono <- "note-sticky"   # T81

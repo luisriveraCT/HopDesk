@@ -128,7 +128,19 @@ avisos_leer <- function(client_id) {
 
 # What `usuario` (list(user, tier, permisos), see usuario_sesion() in app.R)
 # may see. Filtered here, on the server, never in the browser.
-avisos_visibles <- function(client_id, usuario, df = NULL) {
+#
+# T91a, propios = TRUE (Panorama): the author ALSO sees what they published
+# -- a publication (tipo "publicado"), a solicitud (clave "sol:<id>|<user>":
+# one personal aviso per recipient, never to the author) and a public note
+# (clave "nota|<id>") -- even when their tier or name is not in its
+# audience: Luis asked "tesoreria" for something and could not see it. Only
+# what a person published, never the automatic ones written in their name
+# (activity: "Ana confirmó un pago"). Only in this client's avisos.rds: what
+# staff published in another client is not here. Those rows come with
+# propia = TRUE; a solicitud comes once per group with how many recipients
+# marked it done (sol_atendidas / sol_total). The weekly email does not ask
+# for them (propios = FALSE): someone's own posts are not their news.
+avisos_visibles <- function(client_id, usuario, df = NULL, propios = FALSE) {
   df <- df %||% avisos_leer(client_id)
   if (!nrow(df) || is.null(usuario)) return(df[0, ])
   user <- tolower(usuario$user %||% "")
@@ -140,7 +152,37 @@ avisos_visibles <- function(client_id, usuario, df = NULL) {
     p <- df$permiso[i]
     is.na(p) || !nzchar(p) || puede(usuario, p)
   }, logical(1))
-  df[.vigente(df) & ve, , drop = FALSE]
+  vig <- .vigente(df)
+  out <- df[vig & ve, , drop = FALSE]
+  if (!isTRUE(propios)) return(out)
+  out$propia <- rep(FALSE, nrow(out)); out$sol_atendidas <- NA_integer_; out$sol_total <- NA_integer_
+  mio <- vig & nzchar(user) & tolower(trimws(df$creado_por %||% "")) %in% user
+  clave <- df$clave %||% rep(NA_character_, nrow(df))
+  es_pub  <- mio & df$tipo %in% "publicado"
+  es_nota <- mio & startsWith(ifelse(is.na(clave), "", clave), "nota|")
+  es_sol  <- mio & df$tipo %in% "personal" & startsWith(ifelse(is.na(clave), "", clave), "sol:")
+  # Already in `out` (their tier was in the audience): mark them as theirs.
+  out$propia[out$id %in% df$id[es_pub | es_nota]] <- TRUE
+  extra <- df[(es_pub | es_nota) & !(df$id %in% out$id), , drop = FALSE]
+  if (nrow(extra)) {
+    extra$propia <- TRUE; extra$sol_atendidas <- NA_integer_; extra$sol_total <- NA_integer_
+    out <- rbind(out, extra)
+  }
+  if (any(es_sol)) {
+    s <- df[es_sol, , drop = FALSE]
+    grupo <- sub("[|].*$", "", s$clave)
+    filas <- lapply(split(seq_len(nrow(s)), grupo), function(k) {
+      g <- s[k, , drop = FALSE]
+      hecho <- vapply(seq_len(nrow(g)), function(j)
+        any(tolower(.de_json(g$usuarios[j])) %in% tolower(.de_json(g$hechos[j]))), logical(1))
+      r <- g[1, , drop = FALSE]
+      r$usuarios <- .json(unique(unlist(lapply(g$usuarios, .de_json))))
+      r$propia <- TRUE; r$sol_atendidas <- as.integer(sum(hecho)); r$sol_total <- as.integer(nrow(g))
+      r
+    })
+    out <- rbind(out[!(out$id %in% s$id), , drop = FALSE], do.call(rbind, filas))
+  }
+  out
 }
 
 # `aviso`: list(tipo, titulo, cuerpo, severidad, niveles, usuarios, permiso,
