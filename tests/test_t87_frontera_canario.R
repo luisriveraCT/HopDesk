@@ -99,11 +99,11 @@ CANARIO <- list(user = "zz_canario_staff", nombre = "Zelda Kanaryx Qwertzil", co
   usuario("fede", "finance", "acme", "Fede Finanzas")))
 suppressWarnings(rm(list = intersect(ls(.mem), "acme/app_audit.rds"), envir = .mem))
 # The activity log is read by listing its chunks (read_audit_log()); the
-# fixture lists nothing. Here the listing is the in-memory store's own keys.
-utils::assignInNamespace("get_bucket", function(bucket, prefix = "", ...) {
-  k <- ls(.mem); k <- k[startsWith(k, prefix)]
-  lapply(k, function(x) list(Key = x))
-}, "aws.s3")
+# fixture lists nothing. tests/helpers/s3_memoria.R's own fakes (get_bucket
+# lists the in-memory keys; nothing reaches the network) are put back with
+# its own function -- never a swap of aws.s3 by this test
+# (test_s3_parches_guardian).
+s3_memoria_reinstalar()
 # The real delivery status (the fixture stubs it), with no key configured:
 # what a client Dev sees when the service is not live.
 for (e in parse("R/email_service.R", keep.source = FALSE))
