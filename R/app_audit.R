@@ -534,6 +534,19 @@ t87_staff_firma <- function(user) {
        nombre = if (is.na(nombre) || !nzchar(nombre)) NA_character_ else nombre)
 }
 
+# list(code, primer, nombre) of a staff account by its code (a client row
+# signed "hd-staff:<code>"); NAs when unknown.
+t87_staff_por_codigo <- function(code) {
+  vacio <- list(code = NA_character_, primer = NA_character_, nombre = NA_character_)
+  c0 <- trimws(as.character(code %||% "")[1])
+  if (is.na(c0) || !nzchar(c0)) return(vacio)
+  df <- .t87_directorio()
+  if (is.null(df) || !nrow(df) || !"account_code" %in% names(df)) return(vacio)
+  i <- which(as.character(df$account_code) == c0)[1]
+  if (is.na(i)) return(vacio)
+  t87_staff_firma(df$username[i])
+}
+
 # The user field of a staff row in a client's folder: "hd-staff:<code>", or
 # "hd-staff" when the account is not known. Read back by the client's view.
 t87_usuario_staff <- function(firma) if (is.na(firma$code)) "hd-staff" else paste0("hd-staff:", firma$code)

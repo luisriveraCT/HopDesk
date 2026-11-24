@@ -47,15 +47,12 @@ suppressPackageStartupMessages({ library(shiny); library(jsonlite) })
 # fixes it. The list only goes down (as T72's DEUDA_CAMINO); a new case is
 # never added to it.
 DEUDA <- c(
-  "1.1"         = "A1: Actividad muestra al staff (usuario, home_client: hd-admin)",
-  "1.2"         = "A1: lo del staff no sale firmado '<primer nombre> · HD Staff'",
-  "1.3"         = "A1: la entrada/salida del staff está escondida o no existe",
-  "1.7"         = "A1: el detalle vuelca la metadata (home_client: hd-admin)",
+  "1.1"         = "M1: el diccionario completo (nombres de permisos internos) va en la página",
   "1.8"         = "M2: Invitaciones nombra RESEND_API_KEY / .Renviron / runbook",
   "2.1"         = "M1: el diccionario completo va en la página",
   "3.1 admin"   = "M5: la pestaña Usuarios se construye para todos",
   "3.2 admin"   = "M5: el rechazo nombra el permiso que falta",
-  "3.3 admin"   = "M1 (diccionario) y un home_client en lo enviado: rastro del staff en la sesión",
+  "3.3 admin"   = "M1 (diccionario)",
   "3.1 finance" = "M5",
   "3.2 finance" = "M5",
   "3.3 finance" = "M1")
@@ -226,7 +223,11 @@ leer_output <- function(session, nombre, espera = 5) {
   while (!listo && Sys.time() < fin) later::run_now(0.05)
   if (!listo) .paso(paste("  output", nombre, "no se resolvió"))
   v <- val
-  if (is.list(v) && !is.null(v$val)) v$val else v
+  v <- if (is.list(v) && !is.null(v$val)) v$val else v
+  # A download (downloadHandler) never sends its value to the browser: only
+  # its link. Its value here is the handler's own code -- not measured.
+  if (is.list(v) && is.function(v$filename)) return(NULL)
+  v
 }
 .paso <- function(x) if (nzchar(Sys.getenv("T87_DEPURAR"))) message("[t87] ", format(Sys.time(), "%H:%M:%S"), " ", x)
 # One session of acme's `user` (tier from the fixture's users), all captured.

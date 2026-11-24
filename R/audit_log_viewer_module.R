@@ -800,6 +800,133 @@ generate_audit_log_html_doc <- function(export_df, meta_info = list(), tema = NU
 # viewer did not show them (T72). The wall clock is read again in the
 # browser's zone (input$client_tz, R/ui_components.R); with no zone known it
 # stays as it came.
+# ── T87 paso 3: what a client reads of its own log ──────────────────────────
+# The client's view of its Actividad (table, detail and PDF read the same
+# rows), by WHITELIST: a row the staff wrote shows only if its action is one a
+# client user can do (C), the subscription (N) or the staff's access (A) --
+# never S. A staff row shows "<first name> · HD Staff" (comun.staff.etiqueta),
+# never a user name, a code or hd-admin; the subscription "HopDesk". The
+# staff's entry and exit become ONE line, "Tuvo acceso del <desde> al
+# <hasta>", in the browser's zone with the zone written (CM27). Rows written
+# before T87 (the staff's user name, home_client in metadata, the hidden
+# external_access) are shown the same way, at read: nothing stored is
+# rewritten. Metadata keeps the module's own keys, without the log's internal
+# ones (home_client, actor_code, actor_primer).
+.T87_META_INTERNA <- c("home_client", "actor_code", "actor_primer")
+.t87_leer_meta <- function(x) {
+  m <- tryCatch(jsonlite::fromJSON(x %||% "{}", simplifyVector = FALSE), error = function(e) NULL)
+  if (is.list(m)) m else list()
+}
+.t87_meta_json <- function(m) {
+  m <- m[setdiff(names(m) %||% character(), .T87_META_INTERNA)]
+  if (!length(m)) return("{}")
+  tryCatch(as.character(jsonlite::toJSON(m, auto_unbox = TRUE, null = "null", na = "null")), error = function(e) "{}")
+}
+.t87_firma_texto <- function(primer) {
+  et <- tr("comun.staff.etiqueta")
+  if (is.null(primer) || is.na(primer) || !nzchar(primer)) et else paste0(primer, " \u00b7 ", et)
+}
+.t87_cuando <- function(t, tz) {
+  t <- lubridate::with_tz(as.POSIXct(t), tz)
+  paste(col_fecha_hora("t")$valores(t)$mostrar, format(t, "%Z"))
+}
+
+actividad_para_cliente <- function(df, tz = ZONA_OMISION) {
+  if (!is.data.frame(df) || !nrow(df)) return(df)
+  if (!is.character(tz) || length(tz) != 1L || is.na(tz) || !tz %in% OlsonNames()) tz <- ZONA_OMISION
+  user <- as.character(df$user); user[is.na(user)] <- ""
+  meta <- lapply(as.character(df$metadata), .t87_leer_meta)
+  casa <- vapply(meta, function(m) as.character(m$home_client %||% NA_character_)[1], "")
+  nuevo <- startsWith(user, "hd-staff")
+  viejo <- !nuevo & user != "hopdesk" & !is.na(casa) & nzchar(casa)
+  staff <- nuevo | viejo
+  accion <- as.character(df$action)
+  clase <- vapply(accion, t87_clase_accion, "", USE.NAMES = FALSE)
+  clase[accion == "external_access"] <- "A"          # the old hidden entry
+  # Whitelist: a staff row shows only if it is not S.
+  queda <- !(staff & clase == "S")
+  # The staff's first name: stored on the row (T87), or from the directory.
+  firma <- lapply(seq_len(nrow(df)), function(i) {
+    if (!staff[i]) return(NULL)
+    if (nuevo[i]) {
+      p <- as.character(meta[[i]]$actor_primer %||% NA_character_)[1]
+      if (is.na(p)) {
+        f <- t87_staff_por_codigo(sub("^hd-staff:?", "", user[i]))
+        p <- f$primer
+      }
+      return(list(code = NA_character_, primer = p, nombre = NA_character_))
+    }
+    tryCatch(t87_staff_firma(user[i]), error = function(e)
+      list(code = NA_character_, primer = NA_character_, nombre = NA_character_))
+  })
+  out <- df
+  for (i in which(staff)) {
+    f <- firma[[i]]
+    out$user[i] <- .t87_firma_texto(f$primer)
+    if (viejo[i]) {
+      out$description[i] <- .t87_limpiar(out$description[i], user[i], f)
+      out$target_id[i]   <- .t87_limpiar(out$target_id[i], user[i], f)
+    }
+    out$metadata[i] <- .t87_limpiar(.t87_meta_json(meta[[i]]), user[i], f)
+  }
+  hop <- user == "hopdesk"
+  out$user[hop] <- tr("comun.staff.hopdesk")
+  out$metadata[hop] <- vapply(meta[hop], .t87_meta_json, "")
+  # The staff's entry and exit: one line each visit.
+  acceso <- staff & clase == "A"
+  quitar <- !queda
+  if (any(acceso)) {
+    clave <- ifelse(nuevo, user, paste0("u:", user))
+    ts <- as.POSIXct(df$ts)
+    idx <- which(acceso)
+    idx <- idx[order(clave[idx], ts[idx])]
+    usada <- rep(FALSE, nrow(df))
+    for (k in idx) {
+      if (usada[k]) next
+      es_entrada <- accion[k] %in% c("acceso_staff_entrada", "external_access")
+      if (es_entrada) {
+        sig <- idx[clave[idx] == clave[k] & ts[idx] >= ts[k] & !usada[idx] & idx != k]
+        sal <- sig[accion[sig] == "acceso_staff_salida"]
+        ent <- sig[accion[sig] %in% c("acceso_staff_entrada", "external_access")]
+        # The exit counts only before this actor's next entry (integer(0)[TRUE]
+        # would be NA, so only filter when both exist).
+        if (length(ent) && length(sal)) sal <- sal[ts[sal] <= min(ts[ent])]
+        out$action[k] <- "acceso_staff"
+        if (length(sal)) {
+          s <- sal[1]; usada[s] <- TRUE; quitar[s] <- TRUE
+          out$description[k] <- tr("tablas.actividad.acceso.periodo",
+                                   desde = .t87_cuando(ts[k], tz), hasta = .t87_cuando(ts[s], tz))
+        } else {
+          out$description[k] <- tr("tablas.actividad.acceso.abierto", desde = .t87_cuando(ts[k], tz))
+        }
+        out$metadata[k] <- "{}"
+      } else {
+        out$action[k] <- "acceso_staff"
+        out$description[k] <- tr("tablas.actividad.acceso.hasta", hasta = .t87_cuando(ts[k], tz))
+        out$metadata[k] <- "{}"
+      }
+      usada[k] <- TRUE
+    }
+  }
+  out[!quitar, , drop = FALSE]
+}
+
+# Staff reading a log (Bitácora Global, or a client's Actividad inside a
+# jump): a client row signed "hd-staff:<code>" shows the account behind it,
+# "<code> · <full name>" -- the evidence Principal asked for. hd-admin's own
+# rows already carry the real user and actor_code.
+actividad_para_staff <- function(df) {
+  if (!is.data.frame(df) || !nrow(df)) return(df)
+  user <- as.character(df$user); user[is.na(user)] <- ""
+  firmadas <- which(startsWith(user, "hd-staff:"))
+  for (i in firmadas) {
+    code <- sub("^hd-staff:", "", user[i])
+    f <- tryCatch(t87_staff_por_codigo(code), error = function(e) list(nombre = NA_character_))
+    df$user[i] <- if (is.na(f$nombre)) user[i] else paste0(code, " \u00b7 ", f$nombre)
+  }
+  df
+}
+
 .audit_hora_navegador <- function(x, tz = NULL) {
   x <- as.POSIXct(x)
   if (is.null(tz) || length(tz) != 1L || is.na(tz) || !nzchar(tz) || !tz %in% OlsonNames())
@@ -1001,7 +1128,7 @@ auditLogViewerServer <- function(id, shared, mode,
     # own Actividad shows substantive changes only. Staff/principal (and
     # Bitácora Global, always multi_client) still see every row.
     .JUMP_BOOKKEEPING_MODULE  <- "clientes"
-    .JUMP_BOOKKEEPING_ACTIONS <- c("client_access", "external_access")
+    .JUMP_BOOKKEEPING_ACTIONS <- c("client_access")   # T87: external_access is the access line now
 
     # T87: Bitácora Global's reads are in the staff log -- which log was read,
     # by whom, at most once per client per minute (consulta_bitacora is S:
@@ -1060,6 +1187,11 @@ auditLogViewerServer <- function(id, shared, mode,
         }
         if (nrow(df) && "description" %in% names(df))
           df$description <- sub(" \\[tabla=[^]]*\\]$", "", df$description)
+        # T87 paso 3: what the staff did, by whitelist and signed by first name.
+        df <- actividad_para_cliente(df, tz = zona_navegador(session))
+      } else if (viewer_is_staff()) {
+        # T87 paso 3: staff see the account behind a signed client row.
+        df <- actividad_para_staff(df)
       }
       df
     })
