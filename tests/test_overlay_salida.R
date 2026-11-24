@@ -167,7 +167,7 @@ ok("3e2 a hidden output (display:none up to the tab) does not count, either way;
    grepl("for (var r = 0; r < rec.length; r++) if (!_oculto(rec[r], pane)) return false;", js_txt, fixed = TRUE) &&
      grepl("if (!_oculto(outs[j], pane) && (outs[j].children.length", js_txt, fixed = TRUE) &&
      grepl("if (getComputedStyle(h).display === 'none') return true;", js_txt, fixed = TRUE) &&
-     !grepl(".offsetParent", js_txt, fixed = TRUE))
+     !grepl("_visible(", js_txt, fixed = TRUE))
 ok("3f  every sessionStorage touch is inside a try (3 of them)",
    lengths(regmatches(js_txt, gregexpr("try \\{ (v = JSON\\.parse\\()?window\\.sessionStorage\\.", js_txt))) == 3L &&
      lengths(regmatches(js_txt, gregexpr("sessionStorage\\.", js_txt))) == 3L)
