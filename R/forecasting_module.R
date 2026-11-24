@@ -204,11 +204,15 @@ forecastingServer <- function(id, shared) {
       m_row <- m_row[m_row$metric_id == metric_id, , drop = FALSE]
       title <- if (nrow(m_row)) m_row$label[1] else metric_id
 
+      # TEMA 6-4: a base-R plot is a picture (no CSS), so its colour comes
+      # from the registry for the session's theme; Clásico keeps today's blue
+      # through its legacy token, Marca paints its primario.
+      linea <- tema_color("leg-primario-0d6efd", tema_de_sesion())
       plot(obs_daily$fecha, obs_daily$value,
-           type = "l", col = "#0d6efd", lwd = 1.5,
+           type = "l", col = linea, lwd = 1.5,
            xlab = "", ylab = m_row$unit[1] %||% "",
            main = title)
-      points(obs_daily$fecha, obs_daily$value, pch = 20, cex = 0.6, col = "#0d6efd")
+      points(obs_daily$fecha, obs_daily$value, pch = 20, cex = 0.6, col = linea)
     })
 
     # ── Series summary card ───────────────────────────────────────────────────

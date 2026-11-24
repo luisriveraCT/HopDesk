@@ -63,7 +63,7 @@ archivos <- c("app.R",
   "R/cashflow_preview_module.R" = 0L,         # TEMA 5b: the Flujo preview's toolbar, var(--hd-*)
   "R/email_service.R" = 0L,                  # TEMA 4b: the mails' colours are roles ({{rol}}, .email_pintar)
   "R/empresas_module.R" = 0L,                 # TEMA 5b: Empresas' cards, var(--hd-*)
-  "R/forecasting_module.R" = 2L,
+  "R/forecasting_module.R" = 0L,     # TEMA 6-4: the chart by tema_color()
   "R/global.R" = 0L,                 # TEMA 6-1: CALENDAR_THEME (dead code, 14) gone; the currency pill by color-mix (2)
   "R/hd_columnas.R" = 0L,                     # TEMA 5b: the tags are the etq-a/b/c-* commons, var(--hd-*)
   "R/ledger_module.R" = 0L,          # TEMA 6-2: the invoice search box to roles
