@@ -77,6 +77,29 @@ hacer() {   # hacer "<what>" cmd...: runs only with --aplicar
   local que="$1"; shift
   if [ "$APLICAR" = 1 ]; then echo "  HACIENDO: $que"; "$@" >/dev/null; else echo "  HARÍA:    $que"; fi
 }
+# A schedule right after its role was created: IAM takes a few seconds to
+# let EventBridge Scheduler assume a new role, and until then create-schedule
+# says "ValidationException: The execution role you provide must allow AWS
+# EventBridge Scheduler to assume the role" (Luis's first --aplicar,
+# 2026-11-24). That one message is retried every DESPLEGAR_ESPERA_S seconds
+# (10) up to 6 times (a minute); any other error stops at once, as before.
+ESPERA_ROL="${DESPLEGAR_ESPERA_S:-10}"
+hacer_horario() {   # like hacer, retrying only the role-not-yet-assumable error
+  local que="$1"; shift
+  if [ "$APLICAR" != 1 ]; then echo "  HARÍA:    $que"; return 0; fi
+  echo "  HACIENDO: $que"
+  local intento=0 salida
+  until salida="$("$@" 2>&1 >/dev/null)"; do
+    if printf '%s' "$salida" | grep -q "assume the role" && [ "$intento" -lt 6 ]; then
+      intento=$((intento + 1))
+      echo "  ESPERANDO: el rol del Scheduler todavía no se puede asumir (IAM propagando); reintento $intento/6 en ${ESPERA_ROL} s"
+      sleep "$ESPERA_ROL"
+    else
+      printf '%s\n' "$salida" >&2
+      return 1
+    fi
+  done
+}
 
 echo "== Modo: $([ "$APLICAR" = 1 ] && echo APLICAR || echo 'VISTA PREVIA (no escribe nada)') · región $REGION"
 CUENTA="$(aws_ sts get-caller-identity --query Account --output text)"
@@ -147,12 +170,12 @@ for h in "${HORARIOS[@]}"; do
   args=(--name "$nombre" --group-name "$GRUPO" --schedule-expression "$expr" --schedule-expression-timezone "$ZONA"
         --flexible-time-window Mode=OFF --target "file://$TMP/objetivo_$nombre.json" --state ENABLED)
   if existe aws_ scheduler get-schedule --name "$nombre" --group-name "$GRUPO"; then
-    hacer "actualizar horario $nombre · $expr $ZONA · $evento" aws_ scheduler update-schedule "${args[@]}"
+    hacer_horario "actualizar horario $nombre · $expr $ZONA · $evento" aws_ scheduler update-schedule "${args[@]}"
   else
-    hacer "crear horario $nombre · $expr $ZONA · $evento" aws_ scheduler create-schedule "${args[@]}"
+    hacer_horario "crear horario $nombre · $expr $ZONA · $evento" aws_ scheduler create-schedule "${args[@]}"
   fi
 done
 
 echo "== Listo ($([ "$APLICAR" = 1 ] && echo aplicado || echo 'vista previa: nada se escribió'))."
-echo "   Prueba sin esperar al lunes (dispara de verdad solo si esta semana no salió):"
-echo "   aws lambda invoke --function-name $FUNCION --payload '{\"modo\":\"archivo\"}' --cli-binary-format raw-in-base64-out salida.json"
+echo "   Prueba (lunes: si ya salió esta semana dice \"listo\"; si no, dispara y el job no reenvía nada):"
+echo "   aws lambda invoke --function-name $FUNCION --payload '{\"modo\":\"lunes\"}' --cli-binary-format raw-in-base64-out salida.json"

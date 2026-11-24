@@ -16,6 +16,17 @@ args="$*"
 case "$args" in
   *"sts get-caller-identity"*) echo 111122223333 ;;
   *"ssm describe-parameters"*) echo SecureString ;;
+  *"scheduler create-schedule --name"*)
+    # FAKE_FALLA_ASUMIR=n: the first n say what IAM says while a new role
+    # propagates; FAKE_OTRO_ERROR=1: any other error.
+    n=$(cat "$FAKE_LOG.asumir" 2>/dev/null || echo 0)
+    if [ "$n" -lt "${FAKE_FALLA_ASUMIR:-0}" ]; then
+      echo $((n + 1)) > "$FAKE_LOG.asumir"
+      echo "An error occurred (ValidationException) when calling the CreateSchedule operation: The execution role you provide must allow AWS EventBridge Scheduler to assume the role." >&2
+      exit 254
+    fi
+    if [ "${FAKE_OTRO_ERROR:-0}" = 1 ]; then echo "An error occurred (AccessDeniedException): no" >&2; exit 254; fi
+    exit 0 ;;
   *" get-"*) [ "${FAKE_EXISTE:-0}" = 1 ] && exit 0 || exit 254 ;;
   *) exit 0 ;;
 esac
@@ -57,6 +68,21 @@ ok "segunda vez sobre lo que ya existe: sale 0 y no crea nada" \
   "[ $st = 0 ] && ! grep -qE ' create-(role|function|schedule-group|schedule )' $FAKE_LOG"
 ok "segunda vez: actualiza código y los 11 horarios" \
   "grep -q 'update-function-code' $FAKE_LOG && [ \"\$(grep -c 'scheduler update-schedule' $FAKE_LOG)\" = 11 ]"
+
+# T80c: a just-created Scheduler role is not assumable for a few seconds.
+: > "$FAKE_LOG"; rm -f "$FAKE_LOG.asumir"
+FAKE_FALLA_ASUMIR=2 DESPLEGAR_ESPERA_S=0 bash "$DIR/desplegar.sh" --param /hopdesk/avisos/github_token --aplicar > "$T/out4" 2>&1; st=$?
+ok "T80c: el rol todavía no se puede asumir 2 veces: espera, reintenta y crea los 11 horarios" \
+  "[ $st = 0 ] && [ \"\$(grep -c 'ESPERANDO: el rol del Scheduler' $T/out4)\" = 2 ] && [ \"\$(grep -c 'scheduler create-schedule --name' $FAKE_LOG)\" = 13 ]"
+: > "$FAKE_LOG"; rm -f "$FAKE_LOG.asumir"
+FAKE_FALLA_ASUMIR=99 DESPLEGAR_ESPERA_S=0 bash "$DIR/desplegar.sh" --param /hopdesk/avisos/github_token --aplicar > "$T/out5" 2>&1; st=$?
+ok "T80c: si nunca se puede asumir, se rinde tras 6 reintentos, muestra el error y sale distinto de 0" \
+  "[ $st != 0 ] && [ \"\$(grep -c 'ESPERANDO: el rol del Scheduler' $T/out5)\" = 6 ] && grep -q 'assume the role' $T/out5"
+: > "$FAKE_LOG"; rm -f "$FAKE_LOG.asumir"
+FAKE_OTRO_ERROR=1 DESPLEGAR_ESPERA_S=0 bash "$DIR/desplegar.sh" --param /hopdesk/avisos/github_token --aplicar > "$T/out6" 2>&1; st=$?
+ok "T80c: otro error no se reintenta: para al primero y lo muestra" \
+  "[ $st != 0 ] && ! grep -q 'ESPERANDO' $T/out6 && grep -q 'AccessDeniedException' $T/out6 && [ \"\$(grep -c 'scheduler create-schedule --name' $FAKE_LOG)\" = 1 ]"
+ok "T80c: la vista previa nunca espera ni reintenta" "! grep -q 'ESPERANDO' $T/out1"
 
 bash "$DIR/desplegar.sh" --param ghp_algo > /dev/null 2>&1; st=$?
 ok "un --param que no es nombre (/...) se rechaza" "[ $st = 2 ]"
