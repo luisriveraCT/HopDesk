@@ -567,8 +567,9 @@ recorrer <- function(raiz, etiqueta, quien) {
           timeout_s = 60, interval_s = 1)
       if (!editor) no_cubierta(etiqueta, quien, "Usuarios · editor de permisos", "no ✎ on the first account, or its card never drew")
       else medir_t61("TIERS_ED")
-      for (pan in c(invites = "TIERS_INV", notifications = "TIERS_NOT", tier_config = "TIERS_CFG")) {
-        sub <- names(pan)
+      PANELES_T61 <- c(invites = "TIERS_INV", notifications = "TIERS_NOT", tier_config = "TIERS_CFG")
+      for (sub in names(PANELES_T61)) {
+        pan <- PANELES_T61[sub]
         abre_sub <- isTRUE(tryCatch(ev(sprintf("(function(){ var a = document.querySelector(\"a[data-value='%s']\");
             if (!a || a.getClientRects().length === 0) return false; bootstrap.Tab.getOrCreateInstance(a).show(); return true; })()", sub)),
             error = function(x) FALSE)) &&
