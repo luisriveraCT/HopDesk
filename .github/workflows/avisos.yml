@@ -1,21 +1,30 @@
 name: Avisos semanales (D)
+# T80: the run's name says its mode and whether it sent for real. The AWS
+# trigger (infra/avisos_disparo/) reads it from the public API to know that
+# this week's email already went out.
+run-name: avisos ${{ github.event_name == 'schedule' && (contains(fromJSON('["17 14 * * 1","47 15 * * 1","23 18 * * 1"]'), github.event.schedule) && 'lunes' || contains(fromJSON('["17 23 * * 5","41 23 * * 5"]'), github.event.schedule) && 'viernes' || contains(fromJSON('["37 5 * * 6","13 9 * * 6"]'), github.event.schedule) && 'archivo' || 'desconocido') || inputs.modo }} ${{ (github.event_name == 'schedule' || inputs.prueba == false) && 'real' || 'prueba' }}
 
 # The weekly Panorama emails and the monthly archive (scripts/avisos_job.R).
 #
-# Two ways to start (the schedule since the first real Monday was reviewed
-# and approved, 2026-11-17):
-#   - on schedule (UTC; Mexico has no daylight saving time since 2022):
-#       lunes    Monday 8:00 Mexico      cron "0 14 * * 1"
-#       viernes  Friday 17:00 Mexico     cron "0 23 * * 5"
-#       archivo  Saturday 5:30 UTC       cron "30 5 * * 6"
-#     A scheduled run has no inputs: its mode comes from the cron that
-#     started it, and it SENDS (it is the real weekly email). GitHub may
-#     start a scheduled run late, or skip it under load.
+# Three ways to start:
+#   - the main one (T80): AWS EventBridge Scheduler, Mexico time, starts it
+#     by workflow_dispatch with prueba=false at the email's hour and twice
+#     after (infra/avisos_disparo/). GitHub's cron came 4.7 to 11.5 hours
+#     late (2026-11-20..23); a dispatched run starts in seconds.
+#   - on schedule, as a backup if AWS fails (UTC; Mexico has no daylight
+#     saving time since 2022), off the busy :00/:30 minutes:
+#       lunes    Monday 8:17, 9:47, 12:23 Mexico    "17 14 * * 1" "47 15 * * 1" "23 18 * * 1"
+#       viernes  Friday 17:17, 17:41 Mexico         "17 23 * * 5" "41 23 * * 5"
+#       archivo  Friday 23:37, Saturday 3:13 Mexico "37 5 * * 6"  "13 9 * * 6"
+#     A scheduled run has no inputs: its mode comes from the list holding
+#     the cron that started it, and it SENDS (it is the real weekly email).
+#     GitHub may start a scheduled run late, or skip it under load.
 #   - by hand (workflow_dispatch), where test mode is the default:
 #     "prueba" sends nothing and leaves each email's HTML in
 #     <cliente>/avisos/prueba/ for review.
-# The job never resends what it already sent (correos_enviados.rds), so a
-# manual run on the same day as a scheduled one does not duplicate it.
+# Starting it many times is the design: the job never resends what it
+# already sent (correos_enviados.rds), and a client whose real email of the
+# week already reached everyone is skipped whole (job_ya_salio, T80).
 #
 # THE LOG IS PUBLIC. The job prints only "evento=<count>" lines. Nothing here
 # echoes a variable, and inputs reach the script through env, never pasted
@@ -25,9 +34,13 @@ name: Avisos semanales (D)
 
 on:
   schedule:
-    - cron: "0 14 * * 1"
-    - cron: "0 23 * * 5"
-    - cron: "30 5 * * 6"
+    - cron: "17 14 * * 1"
+    - cron: "47 15 * * 1"
+    - cron: "23 18 * * 1"
+    - cron: "17 23 * * 5"
+    - cron: "41 23 * * 5"
+    - cron: "37 5 * * 6"
+    - cron: "13 9 * * 6"
   workflow_dispatch:
     inputs:
       modo:
@@ -96,9 +109,9 @@ jobs:
 
       - name: Run the job
         env:
-          # By hand: the inputs. On schedule: the mode of the cron that
-          # started it, and a real send (prueba false).
-          AVISOS_MODO: ${{ github.event_name == 'schedule' && (github.event.schedule == '0 14 * * 1' && 'lunes' || github.event.schedule == '0 23 * * 5' && 'viernes' || github.event.schedule == '30 5 * * 6' && 'archivo' || 'desconocido') || inputs.modo }}
+          # By hand or by the AWS trigger: the inputs. On schedule: the mode
+          # of the list holding the cron that started it, and a real send.
+          AVISOS_MODO: ${{ github.event_name == 'schedule' && (contains(fromJSON('["17 14 * * 1","47 15 * * 1","23 18 * * 1"]'), github.event.schedule) && 'lunes' || contains(fromJSON('["17 23 * * 5","41 23 * * 5"]'), github.event.schedule) && 'viernes' || contains(fromJSON('["37 5 * * 6","13 9 * * 6"]'), github.event.schedule) && 'archivo' || 'desconocido') || inputs.modo }}
           AVISOS_PRUEBA: ${{ github.event_name == 'schedule' && 'false' || inputs.prueba }}
           AVISOS_FECHA: ${{ inputs.fecha }}
           S3_BUCKET: antiguedad-rds-prod
