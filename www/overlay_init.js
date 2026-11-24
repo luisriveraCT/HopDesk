@@ -119,7 +119,7 @@
       _iniciar();
     } catch (e) {
       /* Whatever broke, the page must not stay covered. */
-      if (window.console) console.error('[overlay] ', e);
+      window._hldError = String((e && e.stack) || e); if (window.console) console.error('[overlay] ', e);
       window._hldSoltar('error');
     }
   });
@@ -326,7 +326,7 @@
           var v = window.hldSalida.decidir(H.salida, Date.now());
           if (v !== 'esperar') _quitar(v);
         } catch (e) {
-          if (window.console) console.error('[overlay] ', e);
+          window._hldError = String((e && e.stack) || e); if (window.console) console.error('[overlay] ', e);
           window._hldSoltar('error');
         }
       }, 250);
@@ -376,10 +376,14 @@
       _wireBtn();
     }
 
+    /* Shiny (1.11) refuses a handler that does not take exactly one argument
+       ("handler must be a function that takes one argument"): every handler
+       below takes one, used or not. */
+
     /* 7 -- showOverlay: the server says the app's session is starting. With
        the mark the overlay is already up; without it (no sessionStorage, an
        F5 on the app) it comes up here. */
-    Shiny.addCustomMessageHandler('showOverlay', function() {
+    Shiny.addCustomMessageHandler('showOverlay', function(m) {
       if (H.failObs) { H.failObs.disconnect(); H.failObs = null; }
       if (H.salida.motivo) return;   /* already gone for this page: never back */
       H.done = false;
@@ -417,6 +421,6 @@
     document.addEventListener('hop-cal-ready', function(e) {
       if (e.detail && e.detail.ledger === 'AR') H.arReadyAt = Date.now();
     });
-    Shiny.addCustomMessageHandler('calFadeNow', function() { _quitar('calFadeNow'); });
+    Shiny.addCustomMessageHandler('calFadeNow', function(m) { _quitar('calFadeNow'); });
   }
 })();

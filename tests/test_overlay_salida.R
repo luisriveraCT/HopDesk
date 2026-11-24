@@ -172,6 +172,12 @@ ok("3i  once gone, showOverlay and loadingProgress never bring the overlay back 
    lengths(regmatches(js_txt, gregexpr("if \\(H\\.salida\\.motivo\\) return;", js_txt))) == 2L)
 ok("3j  the app page watches from the start (the 120 s cap even without the 100 %)",
    grepl("if (_esApp) _vigilarSalida();", js_txt, fixed = TRUE))
+# Shiny 1.11 throws "handler must be a function that takes one argument" at
+# registration: on the app page that uncovered it at once (Chrome, T88-1b),
+# and on the sign-in page it had left loadingProgress and calFadeNow unset.
+manejadores <- regmatches(js_txt, gregexpr("addCustomMessageHandler\\(\\s*'[^']+'\\s*,\\s*function\\s*\\([^)]*\\)", js_txt))[[1]]
+ok(sprintf("3k  every Shiny message handler takes exactly one argument (%d handlers)", length(manejadores)),
+   length(manejadores) == 3L && all(grepl("function\\s*\\(\\s*[A-Za-z_$][A-Za-z0-9_$]*\\s*\\)$", manejadores)))
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
