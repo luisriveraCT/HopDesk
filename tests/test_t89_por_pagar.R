@@ -157,5 +157,27 @@ ok(sprintf("con la zona %s (su día ya no es el de UTC), 'Por pagar hoy' cuenta 
    !is.na(ZONA) && tiene(hz, "321.00 MXN") && tiene(hz, "Facturas de proveedores que vencen hoy · 1 factura") &&
      if (dia_zona > dia_utc) tiene(hz, "No incluye 654.00 MXN ya vencidos") else !tiene(hz, "654.00 MXN"))
 
+cat("\n-- el globo de Vencidos (y del ☰) --\n")
+H <- as.Date("2026-11-24")
+g <- data.frame(Ledger = c("AR", "AR", "AR", "AP", "AP", "AP", "AR"),
+                Fecha = H - c(1, 7, 8, 0, 3, 3, 2), confirmed = c(FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, NA),
+                stringsAsFactors = FALSE)
+ok("cuenta lo vencido de hace 1 a 7 días, sin confirmar: 4 (no hoy, no hace 8, no la confirmada)",
+   identical(vencidos_globo(g, H)$n, 4L))
+ok("solo los libros que ve el nivel (compras: CxP)", identical(vencidos_globo(g, H, "AP")$n, 1L))
+ok("sin libros (nivel desconocido), nada", identical(vencidos_globo(g, H, character())$n, 0L))
+ok("más de 99 dice 99+; 0 no muestra nada (texto '0', count 0)", {
+  mucho <- data.frame(Ledger = "AR", Fecha = rep(H - 2, 150), confirmed = FALSE)
+  identical(vencidos_globo(mucho, H)$texto, "99+") && identical(vencidos_globo(mucho, H)$n, 150L) &&
+    identical(vencidos_globo(NULL, H)$n, 0L)
+})
+ok("el día es el del usuario: con su día un día adelante, lo de ayer UTC es su antier",
+   identical(vencidos_globo(g, H + 1)$n, vencidos_globo(g[g$Fecha >= H - 6, ], H + 1)$n))
+ok("Vencidos le pasa al globo el día del usuario (hoy_usuario) y los libros del nivel (nivel_ve_libro)", {
+  x <- sub("#.*$", "", readLines("R/vencidos_module.R", warn = FALSE, encoding = "UTF-8"))
+  any(grepl("vencidos_globo(vencidos_df(), hoy_usuario(session), libros)", x, fixed = TRUE)) &&
+    any(grepl("nivel_ve_libro(tier, l)", x, fixed = TRUE))
+})
+
 cat(sprintf("\nTOTAL: %d passed, %d failed\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

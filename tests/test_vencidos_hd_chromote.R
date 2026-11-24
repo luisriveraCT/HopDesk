@@ -115,7 +115,11 @@ ok("D4: a row with no company gets it from the same document and ledger (NTS)",
    identical(ev(sprintf("Array.from(document.querySelectorAll('#%s tbody tr')).filter(function(tr){ return tr.textContent.indexOf('F-1001-B') >= 0; })[0].children[1].textContent", A)), "NTS"))
 ok("D5: the counter says 13 overdue invoices (the paid one doesn't count)",
    identical(contador(), "13 facturas vencidas o con vencimiento hoy"))
-ok("D7: the tab's badge says 13", identical(ev("document.getElementById('ven_tab_badge').textContent"), "13"))
+# T89: the badge counts what went overdue in the last 7 days (1 to 7 days
+# ago), not confirmed: AR 5, 5, 1, 2 and AP 3, 3, 7, 6 (the IC row and the
+# paid one are out; 0, 9, 12, 20 and 30 days fall outside the window).
+ok("D7: the tab's badge says 8 (overdue in the last 7 days, T89)",
+   identical(ev("document.getElementById('ven_tab_badge').textContent"), "8"))
 
 # ── S · sections and subtotals ─────────────────────────────────────────────
 ok("S1: sections by currency (MXN first), then Cobros / Pagos",

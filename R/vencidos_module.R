@@ -336,6 +336,24 @@ facturas_tabla_ui <- function(id, alto = "auto") {
   shiny::tagList(hd_table_ui(shiny::NS(id)("t"), alto = alto), facturas_convertir_js())
 }
 
+# T89: the Vencidos bubble (the tab's badge, which the ☰ copies). How many
+# invoices went overdue in the user's last `dias` days -- effective date
+# from hoy - dias to yesterday -- and are still there (no new date, which
+# would move them out of that window, and not confirmed), in the `libros`
+# the tier sees. Above 99 it says "99+"; 0 hides it. The window is one
+# constant (Luis may still ask for "today" or no bubble).
+VENCIDOS_GLOBO_DIAS <- 7L
+vencidos_globo <- function(df, hoy, libros = c("AR", "AP"), dias = VENCIDOS_GLOBO_DIAS) {
+  n <- 0L
+  if (!is.null(df) && is.data.frame(df) && nrow(df) && length(libros)) {
+    f <- as.Date(df[["Fecha"]] %||% df[["FechaEff"]])
+    confirmado <- if ("confirmed" %in% names(df)) df[["confirmed"]] %in% TRUE else rep(FALSE, nrow(df))
+    libro <- if ("Ledger" %in% names(df)) df[["Ledger"]] else rep(NA_character_, nrow(df))
+    n <- sum(!is.na(f) & f >= hoy - dias & f < hoy & !confirmado & libro %in% libros)
+  }
+  list(n = as.integer(n), texto = if (n > 99L) "99+" else as.character(n))
+}
+
 # Raw SAP rows behind the overdue invoices (due today or earlier), for
 # "Ver datos SAP": all of them, as the lupa shows its whole month.
 vencidos_crudos <- function(shared) {
@@ -367,7 +385,7 @@ vencidosUI <- function(id) {
         Shiny.addCustomMessageHandler('vencidosBadge', function (msg) {
           var el = document.getElementById('ven_tab_badge');
           if (!el) return;
-          if (msg.count > 0) { el.textContent = msg.count; el.style.display = ''; }
+          if (msg.count > 0) { el.textContent = msg.texto || msg.count; el.style.display = ''; }
           else el.style.display = 'none';
         });
       });"))
@@ -457,17 +475,16 @@ vencidosServer <- function(id, shared, accion_factura = handle_invoice_action) {
     # independent (and weaker — no case/whitespace normalization, and the
     # bancos_confirmados key was missing Moneda entirely) version, which could
     # silently drift from what the calendar itself shows.
+    # T89: not every open overdue invoice any more (2,393 at Networks: years
+    # of book, never something to act on in a day) but what went overdue in
+    # the user's last VENCIDOS_GLOBO_DIAS days and still has no new date nor
+    # a confirmation, only of the ledgers the tier sees (vencidos_globo()).
     observe({
-      df <- vencidos_df()
-      if (is.null(df) || !nrow(df)) {
-        session$sendCustomMessage("vencidosBadge", list(count = 0L)); return()
-      }
-      confirmed <- if ("confirmed" %in% names(df))
-        !is.na(df[["confirmed"]]) & df[["confirmed"]]
-      else
-        rep(FALSE, nrow(df))
-      # Manual confirmed disappear; SAP confirmed become ghosts — both excluded from badge.
-      session$sendCustomMessage("vencidosBadge", list(count = sum(!confirmed)))
+      tier <- if (is.function(shared$tier_efectivo)) tryCatch(shared$tier_efectivo(), error = function(e) NA_character_)
+              else NULL   # a test app without tiers: both ledgers
+      libros <- if (is.null(tier)) c("AR", "AP") else Filter(function(l) nivel_ve_libro(tier, l), c("AR", "AP"))
+      g <- vencidos_globo(vencidos_df(), hoy_usuario(session), libros)
+      session$sendCustomMessage("vencidosBadge", list(count = g$n, texto = g$texto))
     })
 
     # ── The table's data ───────────────────────────────────────────────────

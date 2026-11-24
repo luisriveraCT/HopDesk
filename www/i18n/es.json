@@ -333,7 +333,7 @@
   "comun.dia.7": "domingo",
   "comun.menu.abrir": "Abrir el menú",
   "comun.menu.cerrar": "Cerrar el menú",
-  "comun.menu.vencidos": "{n} facturas vencidas",
+  "comun.menu.vencidos": "{n} vencieron en los últimos 7 días sin fecha nueva",
   "comun.sap.al": "Datos de SAP al {fecha}",
   "comun.sap.sin_datos": "Datos de SAP todavía sin cargar",
   "comun.calendario.total": "Total",

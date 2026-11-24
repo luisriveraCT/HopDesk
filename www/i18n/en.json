@@ -333,7 +333,7 @@
   "comun.dia.7": "Sunday",
   "comun.menu.abrir": "Open the menu",
   "comun.menu.cerrar": "Close the menu",
-  "comun.menu.vencidos": "{n} past-due invoices",
+  "comun.menu.vencidos": "{n} went past due in the last 7 days with no new date",
   "comun.sap.al": "SAP data as of {fecha}",
   "comun.sap.sin_datos": "SAP data not loaded yet",
   "comun.calendario.total": "Total",
