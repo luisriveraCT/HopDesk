@@ -1596,7 +1596,7 @@ pagarHoyServer <- function(id, shared) {
                   mi <- mi[!mi$id %in% manual_ids, , drop = FALSE]
                   shared$manual_inv(mi)
                   # Rule 8: this failure used to vanish (error = NULL).
-                  tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base),
+                  tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base, quita = manual_ids),
                            error = function(e) {
                              showNotification(tr("comun.error_guardar"), type = "error", duration = NULL)
                              tryCatch(log_action(
@@ -2001,6 +2001,7 @@ pagarHoyServer <- function(id, shared) {
           mi <- tryCatch(load_manual(client_id = shared$effective_client_id()),
                          error = function(e) NULL) %||% shared$manual_inv()
           mi_base <- mi   # before any archive below changes it: the saves' rebase base (CM09)
+          archived_mi_ids <- character(0)   # T85: the provisions' save names these too (if the first save failed)
           if (!is.null(mi) && nrow(mi) && "id" %in% names(mi)) {
             plain_manual <- factura_rows[
               !is_erp_sourced(factura_rows$source) & is.na(factura_rows$provision_id),
@@ -2057,7 +2058,7 @@ pagarHoyServer <- function(id, shared) {
                 if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
                 mi <- mi[!mi[["id"]] %in% archived_mi_ids, , drop = FALSE]
                 shared$manual_inv(mi)
-                tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ap),
+                tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ap, quita = archived_mi_ids),
                          error = function(e) .ph_fallido("guardar_manual", "confirmar_pago", emp, e,
                                                          tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message)))
               }
@@ -2106,7 +2107,7 @@ pagarHoyServer <- function(id, shared) {
 
                 mi_updated <- mi[!mi[["id"]] %in% manual_ids, , drop = FALSE]
                 shared$manual_inv(mi_updated)
-                tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ap),
+                tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ap, quita = c(manual_ids, archived_mi_ids)),
                          error = function(e) .ph_fallido("guardar_manual", "confirmar_pago", emp, e,
                                                          tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message)))
               }
@@ -2376,6 +2377,7 @@ pagarHoyServer <- function(id, shared) {
           mi <- tryCatch(load_manual(client_id = shared$effective_client_id()),
                          error = function(e) NULL) %||% shared$manual_inv()
           mi_base <- mi   # before any archive below changes it: the saves' rebase base (CM09)
+          archived_mi_ids <- character(0)   # T85: the provisions' save names these too (if the first save failed)
           if (!is.null(mi) && nrow(mi) && "id" %in% names(mi)) {
             plain_manual <- factura_rows[
               !is_erp_sourced(factura_rows$source) & is.na(factura_rows$provision_id),
@@ -2432,7 +2434,7 @@ pagarHoyServer <- function(id, shared) {
                 if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
                 mi <- mi[!mi[["id"]] %in% archived_mi_ids, , drop = FALSE]
                 shared$manual_inv(mi)
-                tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ar),
+                tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ar, quita = archived_mi_ids),
                          error = function(e) .ph_fallido("guardar_manual", "confirmar_cobro", emp, e,
                                                          tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message)))
               }
@@ -2481,7 +2483,7 @@ pagarHoyServer <- function(id, shared) {
 
                 mi_updated <- mi[!mi[["id"]] %in% manual_ids, , drop = FALSE]
                 shared$manual_inv(mi_updated)
-                tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ar),
+                tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ar, quita = c(manual_ids, archived_mi_ids)),
                          error = function(e) .ph_fallido("guardar_manual", "confirmar_cobro", emp, e,
                                                          tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message)))
               }

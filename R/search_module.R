@@ -537,7 +537,7 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
         m_base <- m   # what the deletes start from (CM09: applied on S3 as it is now)
         for (mid in manual_rows$inv_id) m <- delete_manual(m, mid)
         manual_result <- s3_save_with_retry(function()
-          save_manual(m, client_id = shared$effective_client_id(), base = m_base))
+          save_manual(m, client_id = shared$effective_client_id(), base = m_base, quita = manual_rows$inv_id))   # T85
         if (isTRUE(manual_result$ok)) {
           shared$manual_inv(m)
         } else {

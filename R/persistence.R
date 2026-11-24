@@ -1552,11 +1552,30 @@ load_manual <- function(client_id = NULL) {
 # action added, changed or removed are applied on S3's table as it is now
 # (rebase_por_id), so a manual item another session saved meanwhile is not
 # dropped (CM09). Without it, `df` replaces the whole table, as before.
-save_manual <- function(df, client_id = NULL, base = NULL, evento = NULL) {
-  cambio <- function(fresco) rebase_por_id(.normalize(df, .schema_manual), .normalize(base, .schema_manual), fresco, "id")
+# quita (T85): the ids this action removes on purpose (Confirmar, a delete, a
+# provision reverted). The write net ([S3_RED], CM09) refused a save that
+# empties manual_invoices or takes more than half of it, so confirming the
+# last manual invoice (or most of them) left it there -- able to count again.
+# With quita, the rows that leave S3's current table must ALL be in quita
+# (else stop(), as the net would), and then the shrink is allowed: exactly the
+# rows the action named. Without quita the net is whole, as before. Only with
+# `base` (the rebase is what makes "the rows that leave" this action's).
+save_manual <- function(df, client_id = NULL, base = NULL, evento = NULL, quita = NULL) {
+  quita <- unique(as.character(quita[!is.na(quita)]))
+  cambio <- function(fresco) {
+    nuevo <- rebase_por_id(.normalize(df, .schema_manual), .normalize(base, .schema_manual), fresco, "id")
+    if (length(quita)) {
+      ajenas <- setdiff(setdiff(as.character(fresco$id), as.character(nuevo$id)), quita)
+      if (length(ajenas))
+        stop("[S3_RED] refusing to write: manual_invoices.rds would lose rows this action did not name: ",
+             paste(utils::head(ajenas, 5L), collapse = ", "), call. = FALSE)
+    }
+    nuevo
+  }
+  reducir <- length(quita) > 0L
   norm <- if (!is.null(base) && !is.null(client_id) && nzchar(client_id)) {
-    if (is.null(evento)) modificar_tabla(S3_KEYS$manual, client_id, .schema_manual, cambio)
-    else modificar_tabla(S3_KEYS$manual, client_id, .schema_manual, cambio, evento = evento)
+    if (is.null(evento)) modificar_tabla(S3_KEYS$manual, client_id, .schema_manual, cambio, permitir_reduccion = reducir)
+    else modificar_tabla(S3_KEYS$manual, client_id, .schema_manual, cambio, permitir_reduccion = reducir, evento = evento)
   } else {
     norm <- .normalize(df, .schema_manual)
     if (is.null(evento)) .s3_write(norm, S3_KEYS$manual, client_id = client_id)

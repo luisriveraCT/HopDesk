@@ -934,7 +934,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       mi_details <- mi[!is.na(mi$id) & mi$id == manual_inv_id, , drop = FALSE]
       if (!nrow(mi_details)) mi_details <- NULL
       mi_new <- mi[!(!is.na(mi$id) & mi$id == manual_inv_id), , drop = FALSE]
-      tryCatch(save_manual(mi_new, client_id = shared$effective_client_id(), base = mi), error = function(e)
+      tryCatch(save_manual(mi_new, client_id = shared$effective_client_id(), base = mi, quita = manual_inv_id), error = function(e)
         shiny::showNotification(tr("tablas.pasivos.aviso.error_manual_inv", error = e$message), type = "warning"))
       if (!is.null(shared$manual_inv)) shared$manual_inv(mi_new)
     }
@@ -1037,7 +1037,7 @@ setup_pasivos_module <- function(input, output, session, shared) {
       mi_details <- mi[!is.na(mi$id) & mi$id == manual_inv_id, , drop = FALSE]
       if (!nrow(mi_details)) mi_details <- NULL
       mi_new <- mi[!(!is.na(mi$id) & mi$id == manual_inv_id), , drop = FALSE]
-      tryCatch(save_manual(mi_new, client_id = shared$effective_client_id(), base = mi), error = function(e)
+      tryCatch(save_manual(mi_new, client_id = shared$effective_client_id(), base = mi, quita = manual_inv_id), error = function(e)
         shiny::showNotification(tr("tablas.pasivos.aviso.error_manual_inv", error = e$message), type = "warning"))
       if (!is.null(shared$manual_inv)) shared$manual_inv(mi_new)
     }

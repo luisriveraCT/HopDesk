@@ -1354,7 +1354,7 @@ ledgerModuleServer <- function(id, config, shared) {
           m <- delete_manual(m, mid)
         }
         manual_result <- s3_save_with_retry(function()
-          save_manual(m, client_id = shared$effective_client_id(), base = m_base))
+          save_manual(m, client_id = shared$effective_client_id(), base = m_base, quita = manual_keys[["id"]]))   # T85
         if (isTRUE(manual_result$ok)) {
           shared$manual_inv(m)
         } else {
