@@ -326,7 +326,7 @@ tiersUI <- function(id) {
           tags$h5(class = "mb-0 fw-bold", style = "font-size:1.05rem;", display_name),
           div(class = "d-flex align-items-center gap-2 mt-1",
               tags$span(
-                style = sprintf("font-size:.65rem; font-weight:700; letter-spacing:1px; text-transform:uppercase; background:%s; border:1px solid color-mix(in srgb, var(--hd-texto-inverso) 30%, transparent); padding:2px 8px; border-radius:20px;",
+                style = sprintf("font-size:.65rem; font-weight:700; letter-spacing:1px; text-transform:uppercase; background:%s; border:1px solid color-mix(in srgb, var(--hd-texto-inverso) 30%%, transparent); padding:2px 8px; border-radius:20px;",
                                 .tier_color(tier)),
                 nivel_nombre(tier)),
               tags$span(style = "font-size:.75rem; opacity:.6;",

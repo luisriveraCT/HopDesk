@@ -45,5 +45,32 @@ ok("2: MXN, USD and a currency with no colour (the grey fallback) keep today's c
      identical(tinte("MXN"), "color-mix(in srgb, #C0674A 13%, transparent)") &&
      identical(tinte("XYZ"), "color-mix(in srgb, #5F5E5A 13%, transparent)"))
 
+# ── 3. A color-mix percentage inside sprintf() is written %% ────────────────
+# color-mix(... 30%, ...) in a sprintf() format is an invalid format: the
+# permissions editor's header failed to draw that way on the first try of
+# T6-1 (seen in the browser test). Every literal sprintf() format in the
+# app is evaluated with dummy arguments, and none may carry a bare N%.
+archivos_r <- c("app.R", list.files("R", pattern = "\\.R$", recursive = TRUE, full.names = TRUE))
+malos <- character()
+for (f in archivos_r) {
+  for (ex in tryCatch(parse(f, keep.source = FALSE), error = function(e) list())) {
+    llamadas <- list(); recorre <- function(x) {
+      if (is.call(x)) {
+        if (identical(x[[1]], as.name("sprintf")) && length(x) >= 2L && is.character(x[[2]])) llamadas[[length(llamadas) + 1L]] <<- x[[2]]
+        for (y in as.list(x)[-1]) if (!missing(y)) recorre(y)
+      }
+    }
+    recorre(ex)
+    for (fmt in llamadas) if (grepl("color-mix", fmt, fixed = TRUE) && grepl("[0-9]%[^%]|[0-9]%$", gsub("%%", "", fmt)))
+      malos <- c(malos, sprintf("%s: %s", f, substr(fmt, 1, 80)))
+  }
+}
+ok(sprintf("3: no sprintf() format with color-mix has a bare N%% (%d files parsed%s)", length(archivos_r),
+           if (length(malos)) paste0("; ", paste(malos, collapse = " | ")) else ""), !length(malos))
+t <- readLines("R/tiers_module.R", warn = FALSE, encoding = "UTF-8")
+i <- grep("letter-spacing:1px; text-transform:uppercase; background:%s; border:1px solid color-mix", t, fixed = TRUE)
+ok("3: the permissions editor's tier pill builds (its sprintf() runs)",
+   length(i) == 1L && grepl("30%, transparent)", sprintf(regmatches(t[i], regexpr('"[^"]+"', t[i])) |> (\(s) substr(s, 2, nchar(s) - 1))(), "#0D1B3E"), fixed = TRUE))
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
