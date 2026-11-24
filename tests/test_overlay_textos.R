@@ -55,9 +55,15 @@ ok("i18n_head(): a text with </script> is escaped too, and the dictionary still 
 
 app <- readLines("app.R", warn = FALSE, encoding = "UTF-8")
 i <- grep('i18n_head_parcial("cuentas.carga.")', app, fixed = TRUE)
-j <- grep('tags$script(src = "overlay_init.js?v=', app, fixed = TRUE)
+# The sign-in page's copy (T88-1b: the app page has its own, in <head>, with
+# the whole dictionary already there).
+j <- grep('^ *tags\\$script\\(src = "overlay_init\\.js\\?v=[0-9]+"\\),', app)
 ok("app.R gives the sign-in page the overlay's texts before the overlay's script",
    length(i) == 1L && length(j) == 1L && i < j)
+k <- grep('tags$head(tags$script(src = "overlay_init.js?v=', app, fixed = TRUE)
+ok("T88-1b: the app page loads the overlay once, in <head>, marked data-pagina = \"app\", same version as the sign-in page",
+   length(k) == 1L && grepl("`data-pagina` = \"app\"", app[k], fixed = TRUE) &&
+     identical(sub('.*overlay_init\\.js\\?v=([0-9]+).*', "\\1", app[k]), sub('.*overlay_init\\.js\\?v=([0-9]+).*', "\\1", app[j])))
 
 ov <- readLines("www/overlay_init.js", warn = FALSE, encoding = "UTF-8")
 ok("overlay_init.js has no hand-written Spanish left (no accented letters or ¡ ¿)",
