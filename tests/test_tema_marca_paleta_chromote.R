@@ -204,10 +204,15 @@ MEDIR_JS <- "(function(){
   }
   return {n: n, colores: Object.keys(out).map(function(k){ return out[k]; })};
 })()"
+# rgb()/rgba() in 0-255, or color(srgb r g b / a) in 0-1: what Chrome returns
+# for a color-mix (read as 0-255 it would turn every mix into black).
 rgba <- function(val) {
-  v <- as.numeric(regmatches(val, gregexpr("[0-9.]+", val))[[1]])
+  v <- as.numeric(regmatches(val, gregexpr("[0-9]*\\.?[0-9]+(e-?[0-9]+)?", val))[[1]])
   if (length(v) < 3L) return(NULL)
-  list(hex = sprintf("#%02X%02X%02X", round(v[1]), round(v[2]), round(v[3])), alfa = if (length(v) >= 4L) v[4] else 1)
+  if (startsWith(trimws(val), "color(srgb")) v[1:3] <- v[1:3] * 255
+  else if (!startsWith(trimws(val), "rgb")) return(NULL)
+  list(hex = sprintf("#%02X%02X%02X", as.integer(round(min(255, v[1]))), as.integer(round(min(255, v[2]))), as.integer(round(min(255, v[3])))),
+       alfa = if (length(v) >= 4L) v[4] else 1)
 }
 
 pestanas <- unlist(tryCatch(ev("Array.from(document.querySelectorAll(\"a[data-bs-toggle='tab'][data-value]\"))
