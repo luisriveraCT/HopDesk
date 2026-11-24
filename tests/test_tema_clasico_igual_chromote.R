@@ -185,6 +185,9 @@ recorrer <- function(raiz, etiqueta, quien) {
   for (k in 1:5) {
     invisible(b$Page$reload(ignoreCache = FALSE, wait_ = TRUE))
     poll_until(function() isTRUE(tryCatch(ev("!!document.getElementById('auth-user_id')"), error = function(e) FALSE)), timeout_s = 60, interval_s = 0.1)
+    # The field exists before the first paint is recorded: wait for its entry.
+    poll_until(function() isTRUE(tryCatch(ev("performance.getEntriesByName('first-contentful-paint').length > 0"),
+                                          error = function(e) FALSE)), timeout_s = 15, interval_s = 0.1)
     m <- tryCatch(ev("(function(){ var p = performance.getEntriesByName('first-contentful-paint')[0];
       var n = performance.getEntriesByType('navigation')[0];
       return [p ? p.startTime : -1, n ? n.domContentLoadedEventEnd : -1, n ? n.responseEnd : -1]; })()"),
@@ -194,9 +197,10 @@ recorrer <- function(raiz, etiqueta, quien) {
   }
   TIEMPOS[[length(TIEMPOS) + 1L]] <<- data.frame(corrida = etiqueta, usuario = quien,
                                                 fcp = stats::median(t_fcp), dom = stats::median(t_campo),
-                                                nav = if (any(!is.na(t_nav))) stats::median(t_nav, na.rm = TRUE) else NA_real_)
-  cat(sprintf("      | [%s · %s] sign-in page: browser's part (FCP - responseEnd) %.0f ms; total first contentful paint %.0f ms, DOM ready %.0f ms (median of 5)\n",
-              etiqueta, quien, utils::tail(TIEMPOS, 1)[[1]]$nav, stats::median(t_fcp), stats::median(t_campo)))
+                                                nav = if (any(!is.na(t_nav))) stats::median(t_nav, na.rm = TRUE) else NA_real_,
+                                                n_nav = sum(!is.na(t_nav)))
+  cat(sprintf("      | [%s · %s] sign-in page: browser's part (FCP - responseEnd) %.0f ms (%d of 5 loads with a paint); total first contentful paint %.0f ms, DOM ready %.0f ms (median of 5)\n",
+              etiqueta, quien, utils::tail(TIEMPOS, 1)[[1]]$nav, sum(!is.na(t_nav)), stats::median(t_fcp), stats::median(t_campo)))
   # TEMA stage 4 (app.R): the activation and forgot-password pages live above
   # secure_app; opened with a fake token and the blank form, nothing submitted.
   for (vp in list(c("ACT_INVALIDA", "?invite=tema-token-falso-0000"), c("OLVIDE", "?olvide=1"))) {
@@ -606,7 +610,7 @@ if (length(TIEMPOS)) {
                   u, m$fcp, r$fcp, r$fcp - m$fcp))
     ok(sprintf("[%s] sign-in page, browser's part (FCP - responseEnd): master %.0f ms, branch %.0f ms (rise %+.0f ms, cap %g)",
                u, m$nav, r$nav, r$nav - m$nav, LOGIN_MS_MAX),
-       !is.na(m$nav) && !is.na(r$nav) && r$nav - m$nav <= LOGIN_MS_MAX)
+       m$n_nav >= 3L && r$n_nav >= 3L && r$nav - m$nav <= LOGIN_MS_MAX)
   }
 }
 cat(sprintf("\nVistas NO CUBIERTAS: %d%s\n", length(NO_CUBIERTAS),
