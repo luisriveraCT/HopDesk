@@ -10,8 +10,10 @@
 # of every visible element compared with the EXACT set of colours Marca can
 # paint (no "near enough" lines between colours: a cool Bootstrap grey would
 # pass as a tint of something):
-#   - Marca's block of the generated www/hd_temas.css (roles, commons, the
-#     legacy tokens' tints), the Bootstrap bridge (www/hd_tema_bootstrap.css,
+#   - Marca's block of the generated www/hd_temas.css (roles, the
+#     legacy tokens' tints), the commons (.HD_COMUNES: the same in every
+#     theme, e.g. the tags' etq-*; not acceso-*, only the sign-in pages paint
+#     those), the Bootstrap bridge (www/hd_tema_bootstrap.css,
 #     Marca only), the brand sheet www/hd_marca.css and www/panorama.css;
 #   - every opaque color-mix(in srgb, var(--hd-a) N%, var(--hd-b) | white)
 #     the code writes, worked out under Marca;
@@ -81,7 +83,7 @@ mezclas <- vapply(mx, function(s) tryCatch({
   ca <- grDevices::col2rgb(a)[, 1]; cb <- grDevices::col2rgb(b)[, 1]; w <- as.numeric(m[3]) / 100
   v <- round(ca * w + cb * (1 - w)); sprintf("#%02X%02X%02X", v[1], v[2], v[3])
 }, error = function(e) NA_character_), "")
-PALETA <- unique(c(colores_de(css[i0:i1]), colores_de(leer("www/hd_tema_bootstrap.css")),
+PALETA <- unique(c(colores_de(css[i0:i1]), colores_de(unlist(tema$.HD_COMUNES[!startsWith(names(tema$.HD_COMUNES), "acceso-")])), colores_de(leer("www/hd_tema_bootstrap.css")),
                    colores_de(leer("www/hd_marca.css")), colores_de(leer("www/panorama.css")),
                    na.omit(mezclas), "#FFFFFF"))
 DATOS <- unique(c(
