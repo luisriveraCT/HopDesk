@@ -532,6 +532,53 @@ recorrer <- function(raiz, etiqueta, quien) {
       captura_marca(etiqueta, sprintf("%s_%s_EMP", etiqueta, quien))
     }
   }
+  # TEMA 6-1 (tiers_module.R): Grupo → Usuarios, the permissions editor of
+  # the first account (✎ scrolls to its card), and the panels this user sees
+  # (Invitaciones; Notificaciones and Niveles for staff / Dev). A panel the
+  # user does not have is NOT COVERED for that user.
+  if (grupo) {
+    menu(TRUE); Sys.sleep(0.5)
+    usuarios <- isTRUE(tryCatch(ev("(function(){
+        var t = document.querySelector(\".nav-link[data-value='GRUPO'], .dropdown-toggle[data-value='GRUPO']\");
+        if (t && !(t.getAttribute('aria-expanded') === 'true')) t.click();
+        return true; })()"), error = function(x) FALSE)) &&
+      poll_until(function() isTRUE(tryCatch(ev("(function(){ var a = document.querySelector(\"[data-value='TIERS']\");
+        if (!a || a.getClientRects().length === 0) return false; a.click(); return true; })()"), error = function(x) FALSE)),
+        timeout_s = 20, interval_s = 0.5) &&
+      poll_until(function() identical(tryCatch(as.integer(ev(RECALCULANDO_JS)), error = function(x) NA_integer_), 0L),
+                 timeout_s = ESPERA_DATOS, interval_s = 1)
+    menu(FALSE)
+    if (!usuarios) no_cubierta(etiqueta, quien, "Grupo · Usuarios", "no Usuarios item in the Grupo menu for this user")
+    medir_t61 <- function(clave) {
+      Sys.sleep(3)
+      ev("document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
+      Sys.sleep(1)
+      res[[clave]] <<- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
+      captura(sprintf("%s_%s_%s", etiqueta, quien, clave))
+      captura_marca(etiqueta, sprintf("%s_%s_%s", etiqueta, quien, clave))
+    }
+    if (usuarios && ok(sprintf("[%s · %s] Grupo · Usuarios: the page opens from the Grupo menu", etiqueta, quien), TRUE)) {
+      ev("window.scrollTo(0, 0); true")
+      medir_t61("TIERS")
+      editor <- isTRUE(tryCatch(ev("(function(){ var b = document.querySelector(\"#trs-usuarios-tabla-hdt button[data-accion='editar']\");
+          if (!b) return false; b.click(); return true; })()"), error = function(x) FALSE)) &&
+        poll_until(function() isTRUE(tryCatch(ev("(function(){ var c = document.getElementById('trs-editor_permisos_card');
+          return !!c && c.getClientRects().length > 0 && !!c.querySelector('.tiers-perm-grupo'); })()"), error = function(x) FALSE)),
+          timeout_s = 60, interval_s = 1)
+      if (!editor) no_cubierta(etiqueta, quien, "Usuarios · editor de permisos", "no ✎ on the first account, or its card never drew")
+      else medir_t61("TIERS_ED")
+      for (pan in c(invites = "TIERS_INV", notifications = "TIERS_NOT", tier_config = "TIERS_CFG")) {
+        sub <- names(pan)
+        abre_sub <- isTRUE(tryCatch(ev(sprintf("(function(){ var a = document.querySelector(\"a[data-value='%s']\");
+            if (!a || a.getClientRects().length === 0) return false; bootstrap.Tab.getOrCreateInstance(a).show(); return true; })()", sub)),
+            error = function(x) FALSE)) &&
+          poll_until(function() identical(tryCatch(as.integer(ev(RECALCULANDO_JS)), error = function(x) NA_integer_), 0L),
+                     timeout_s = ESPERA_DATOS, interval_s = 1)
+        if (!abre_sub) no_cubierta(etiqueta, quien, sprintf("Usuarios · %s", sub), "this user has no such panel")
+        else { ev("window.scrollTo(0, 0); true"); medir_t61(pan[[1]]) }
+      }
+    }
+  }
   res
 }
 
@@ -561,6 +608,8 @@ for (quien in quienes) {
                      CAL_AP = "Calendario · Pagos", NOTAS = "Notas abiertas", BURBUJA = "Burbuja de valor",
                      REQ_NUEVA = "Nueva requisición", REQ_EVID = "Requisición abierta · Evidencia",
                      REQ_COM = "Requisición abierta · Comentarios", POL = "Ajustes · Políticas (simulador)", AJ_IC = "Ajustes · Intercompany", EMP = "Grupo · Empresas",
+                     TIERS = "Grupo · Usuarios", TIERS_ED = "Usuarios · editor de permisos", TIERS_INV = "Usuarios · Invitaciones",
+                     TIERS_NOT = "Usuarios · Notificaciones", TIERS_CFG = "Usuarios · Niveles",
                      PESTANAS[[v]])
     for (k in comunes) for (p in names(eb[[k]])) {
       r <- tema_comparar_valor(p, eb[[k]][[p]], er[[k]][[p]], de_max = DE_MAX, alfa_max = 0.01)
