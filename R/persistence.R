@@ -113,6 +113,14 @@
 # transient network error by parsing aws.s3's error object -- this
 # codebase has never needed to do that reliably, and guessing at its
 # exact error shape risks a different, subtler bug.
+# T88-3: a key S3 CONFIRMS does not exist (s3_objeto_existe() FALSE: a 404,
+# never a 403 or a network error -- those are NA) is not retried: three GETs
+# and a second of sleep for a file that is not there cost ~1.1 s per missing
+# key on every sign-in. The answer is the same ok = FALSE as before (A2: a
+# failed read is never an empty table; "does not exist" only where S3 says
+# so), plus no_existe = TRUE so the caller does not ask S3 a second time.
+# Anything else -- a 403, a timeout, an object that exists but failed to
+# read -- retries exactly as before.
 .s3_read_raw_with_retry <- function(full_key, bucket,
                                      max_attempts = 3, retry_delay = 0.5) {
   last_err <- NULL
@@ -126,9 +134,12 @@
       TRUE
     }, error = function(e) { last_err <<- e; FALSE })
     if (ok) return(list(ok = TRUE, value = out, error = NULL, attempts = attempt))
+    if (attempt == 1L && exists("s3_objeto_existe", mode = "function") &&   # absent in a fixture by pieces: retry as before
+        identical(s3_objeto_existe(full_key, bucket), FALSE))
+      return(list(ok = FALSE, value = NULL, error = last_err, attempts = 1L, no_existe = TRUE))
     if (attempt < max_attempts) Sys.sleep(retry_delay)
   }
-  list(ok = FALSE, value = NULL, error = last_err, attempts = max_attempts)
+  list(ok = FALSE, value = NULL, error = last_err, attempts = max_attempts, no_existe = FALSE)
 }
 
 # .s3_read_with(): like .s3_read() but accepts an explicit client_id override.
@@ -146,7 +157,8 @@
   if (.s3_missing_cache_hit(full_key)) return(NULL)
   result <- .s3_read_raw_with_retry(full_key, bucket)
   if (!isTRUE(result$ok)) {
-    .s3_missing_si_no_existe(full_key, bucket)
+    if (isTRUE(result$no_existe)) .s3_missing_cache_set(full_key)   # T88-3: S3 already said 404
+    else .s3_missing_si_no_existe(full_key, bucket)
     return(NULL)
   }
   .s3_filas_registrar(full_key, result$value)
@@ -835,7 +847,8 @@ unregister_username <- function(username) {
   # .s3_read_with()) for why this retries before marking the key missing.
   result <- .s3_read_raw_with_retry(full_key, bucket)
   if (!isTRUE(result$ok)) {
-    .s3_missing_si_no_existe(full_key, bucket)
+    if (isTRUE(result$no_existe)) .s3_missing_cache_set(full_key)   # T88-3: S3 already said 404
+    else .s3_missing_si_no_existe(full_key, bucket)
     return(NULL)
   }
   .s3_filas_registrar(full_key, result$value)
