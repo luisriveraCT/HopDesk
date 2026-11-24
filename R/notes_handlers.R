@@ -19,7 +19,7 @@ notes_handlers <- function(input, output, session, shared,
     autor <- nota_es_autor(row, info$account_code %||% "", tryCatch(current_user(), error = function(e) ""))
     ok <- autor || (identical(accion, "borrar") &&
                       isTRUE(tryCatch(puede(shared$usuario(), "can_moderate_panorama"), error = function(e) FALSE)))
-    if (!ok) showNotification(tr("notas.solo_autor"), type = "warning", duration = 6)
+    if (!ok) showNotification(tr("tablas.notas.aviso.solo_autor"), type = "warning", duration = 6)
     ok
   }
 

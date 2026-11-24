@@ -1950,7 +1950,7 @@
   "panorama.feed.vacio": "Nada nuevo por ahora.",
   "panorama.feed.nuevo": "Nuevo",
   "panorama.feed.tuya": "Tuya",
-  "notas.solo_autor": "Solo quien escribió la nota puede editarla; borrarla, también quien modera Panorama.",
+  "tablas.notas.aviso.solo_autor": "Solo quien escribió la nota puede editarla; borrarla, también quien modera Panorama.",
   "panorama.equipo.titulo": "Tu equipo hoy",
   "panorama.equipo.vacio": "Todavía no hay actividad del equipo hoy.",
   "panorama.equipo.linea.uno": "{personas}: {n} movimiento registrado hoy en HopDesk.",
