@@ -30,6 +30,11 @@ falla <- function(expr) inherits(tryCatch({ force(expr); NULL }, error = functio
 
 CID   <- "acme"
 LUNES <- as.Date("2026-11-16")   # a Monday
+# T86: the avisos' clock, pinned to that Monday. Its avisos expire on Sunday
+# 2026-11-22; with the real clock, from 2026-11-23 on they were already
+# expired, so the second publish no longer merged by clave and nobody saw
+# them (22/3 from that day, with no commit involved).
+.ahora <- function() as.POSIXct("2026-11-16 15:00:00", tz = "UTC")
 
 # A series for one empresa: the % past due on consecutive Mondays ending on
 # LUNES, over an open balance of 1,000 and `facturas` open invoices.
