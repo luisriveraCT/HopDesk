@@ -3633,8 +3633,31 @@ read_pending_invites <- function() {
 }
 
 # cambio(invites) -> invites, on S3's current table (CM13).
-modificar_pending_invites <- function(cambio)
-  modificar_hd_admin("pending_invites.rds", .schema_pending_invites, cambio)
+# T83: once written, open Invitaciones tabs re-read: staff's (hd-admin) and
+# those of each client whose invitations changed.
+modificar_pending_invites <- function(cambio) {
+  tocados <- character()
+  r <- modificar_hd_admin("pending_invites.rds", .schema_pending_invites, function(inv) {
+    nuevo <- cambio(inv)
+    tocados <<- .invitaciones_clientes_tocados(inv, nuevo)
+    nuevo
+  })
+  if (exists("avisar_senal", mode = "function")) avisar_senal("invitaciones_db", c(.HD_ADMIN_CID, tocados))
+  r
+}
+# The client_ids of the invitations added, removed or changed between two
+# versions of pending_invites (by token; any column).
+.invitaciones_clientes_tocados <- function(antes, despues) {
+  clave <- function(df) if (is.data.frame(df) && nrow(df) && "token" %in% names(df))
+    stats::setNames(apply(df, 1L, paste, collapse = "\r"), df$token) else character()
+  cid <- function(df, tok) if (length(tok)) as.character(df$client_id[match(tok, df$token)]) else character()
+  a <- clave(antes); d <- clave(despues)
+  fuera  <- setdiff(names(a), names(d))
+  dentro <- setdiff(names(d), names(a))
+  comun  <- intersect(names(a), names(d))
+  cambia <- comun[a[comun] != d[comun]]
+  unique(c(cid(antes, c(fuera, cambia)), cid(despues, c(dentro, cambia))))
+}
 
 create_invite <- function(email, display_name, client_id, tier, invited_by,
                           expires_hours = 48) {
@@ -3706,6 +3729,8 @@ purgar_invitaciones_vencidas <- function(clientes = NULL, ahora = Sys.time()) {
     borradas <<- c(table(ifelse(is.na(inv$client_id[sale]), "", inv$client_id[sale])))
     inv[!sale, , drop = FALSE]
   }, permitir_reduccion = TRUE)   # T57: only the expired invitations leave
+  if (length(borradas) && exists("avisar_senal", mode = "function"))   # T83
+    avisar_senal("invitaciones_db", c(.HD_ADMIN_CID, names(borradas)))
   borradas
 }
 

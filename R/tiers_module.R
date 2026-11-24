@@ -1254,9 +1254,13 @@ tiersServer <- function(id, shared) {
 
     # ── Usuarios data ─────────────────────────────────────────────────────────
     .usuarios_local <- reactiveVal(NULL)
+    # T83: bumped when another session changed this client's accounts (an
+    # activation, a reset, an edit): the list is read again from S3.
+    .usuarios_releer <- reactiveVal(0L)
 
     # Full list (unfiltered) — used for saves to avoid data loss
     all_usuarios_rv <- reactive({
+      .usuarios_releer()
       ovr <- .usuarios_local()
       if (!is.null(ovr)) return(ovr)
       req(req_authorized())
@@ -1601,6 +1605,26 @@ tiersServer <- function(id, shared) {
         ns("editor_permisos_card")))
     })
     observeEvent(input$btn_cancel_perms, { selected_user(NULL) })
+
+    # T83: the accounts changed in another session (shared$usuarios_db, the
+    # sync bus's signal; auth_save_usuarios() sends it). The list is read
+    # again -- but not while a permission editor is open (it is drawn from the
+    # list: re-reading would redraw it and lose what is being ticked): then
+    # once it closes (saved or cancelled). The saves rebase on S3's current
+    # table anyway (CM15), so waiting never loses anyone's change.
+    .usuarios_senal <- if (is.function(shared$usuarios_db)) shared$usuarios_db else function() 0
+    .usuarios_releer_pendiente <- reactiveVal(FALSE)
+    .usuarios_releer_ya <- function() {
+      .usuarios_releer_pendiente(FALSE)
+      .usuarios_local(NULL)
+      .usuarios_releer(isolate(.usuarios_releer()) + 1L)
+    }
+    observeEvent(.usuarios_senal(), {
+      if (!is.null(selected_user())) .usuarios_releer_pendiente(TRUE) else .usuarios_releer_ya()
+    }, ignoreInit = TRUE)
+    observe({
+      if (is.null(selected_user()) && isTRUE(.usuarios_releer_pendiente())) isolate(.usuarios_releer_ya())
+    })
 
     output$perm_editor_ui <- renderUI({
       usuarios <- usuarios_rv()
@@ -2868,6 +2892,11 @@ tiersServer <- function(id, shared) {
 
     # ── Invitaciones tab ─────────────────────────────────────────────────────
     invites_refresh <- reactiveVal(0L)
+    # T83: an invitation created, revoked, purged or accepted in another
+    # session (shared$invitaciones_db, sent by modificar_pending_invites() and
+    # the purge) refreshes Invitaciones and the queue, as ↻ does.
+    .invitaciones_senal <- if (is.function(shared$invitaciones_db)) shared$invitaciones_db else function() 0
+    observeEvent(.invitaciones_senal(), invites_refresh(isolate(invites_refresh()) + 1L), ignoreInit = TRUE)
 
     output$invites_section <- renderUI({
       # dev can invite its own client's teammates — a client's own IT dept

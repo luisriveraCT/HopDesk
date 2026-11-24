@@ -1697,6 +1697,10 @@ server <- function(input, output, session) {
     jump_client_id      = jump_client_id,
     effective_client_id = effective_client_id,
     hop_grants_db     = hop_grants_db,
+    # T83: signals only (a number that changes), not tables: Usuarios and
+    # Invitaciones re-read their own lists when another session changed them.
+    usuarios_db       = reactiveVal(0),
+    invitaciones_db   = reactiveVal(0),
     visible_initials  = visible_initials,
     company_map       = company_map_rv,
     ctas_cuentas           = ctas_cuentas,
@@ -1894,6 +1898,14 @@ server <- function(input, output, session) {
   # to another client's context; without this wrapper that call would error).
   register_synced("hop_grants_db", .HOP_GRANTS_KEY,
                   function(client_id = NULL) load_hop_grants())
+  # T83: the client's accounts (auth_save_usuarios) and the invitations
+  # (pending_invites.rds) as SIGNALS: the loader reads nothing, it only hands
+  # a new number so Usuarios / Invitaciones re-read their own lists (strict,
+  # their own client). Their s3_key is no table's on purpose: a registered
+  # table's failed .s3_write is staged by the offline queue (R/offline_queue.R),
+  # and usuarios / pending_invites must never be replayed from a local copy.
+  register_synced("usuarios_db",     SENAL_USUARIOS,     function(client_id = NULL) as.numeric(Sys.time()))
+  register_synced("invitaciones_db", SENAL_INVITACIONES, function(client_id = NULL) as.numeric(Sys.time()))
 
   setup_sync_bus(session, shared, poll_ms = 8000,
                  active_client_rv = effective_client_id)

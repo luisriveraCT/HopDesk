@@ -466,7 +466,30 @@ auth_save_usuarios <- function(df, client_id = NULL, alta_inicial = FALSE, base 
   }
   aws.s3::s3saveRDS(df, object = key, bucket = .s3_bucket())
   auth_invalidate_credentials()
+  if (exists("avisar_senal", mode = "function")) avisar_senal("usuarios_db", cid)   # T83: open Usuarios tabs re-read
   invisible(TRUE)
+}
+
+# ── T83: signals for lists that are not sync-bus tables ─────────────────────
+# Usuarios (usuarios.rds, saved above with its own s3saveRDS) and Invitaciones
+# (hd-admin/pending_invites.rds) were read once per session: an account
+# activated or changed in another session never showed until a reload.
+# avisar_senal() bumps the sync bus's version for `nombre` in each client's
+# stamp (a session polls its own client's, staff at home hd-admin's); the
+# app registers the two names with no table of their own (app.R). Never makes
+# the save fail; outside the app (the emails job, a test by pieces, nothing
+# registered) it does nothing.
+SENAL_USUARIOS     <- "senal:usuarios"
+SENAL_INVITACIONES <- "senal:invitaciones"
+avisar_senal <- function(nombre, clientes) {
+  if (!exists("bump_sync_version", mode = "function")) return(invisible(FALSE))
+  if (!nombre %in% names(get0(".SYNC_REGISTRY", ifnotfound = list()))) return(invisible(FALSE))
+  clientes <- unique(tolower(trimws(as.character(clientes))))
+  clientes <- clientes[!is.na(clientes) & nzchar(clientes)]
+  for (cid in clientes)
+    tryCatch(bump_sync_version(nombre, client_id = cid),
+             error = function(e) message("[T83] signal ", nombre, " not sent (", cid, "): ", conditionMessage(e)))
+  invisible(length(clientes) > 0L)
 }
 
 # auth_resolve_perms() lives in R/permisos.R (registry-driven).
