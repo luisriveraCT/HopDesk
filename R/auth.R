@@ -437,9 +437,14 @@ usuarios_niveles_perdidos <- function(antes, despues) {
 # changes (rows added, changed or removed against base, by username) are
 # applied on S3's current table, so another session's accounts saved since
 # are kept (lost update, CM15). The checks below then run on that result.
-auth_save_usuarios <- function(df, client_id = NULL, alta_inicial = FALSE, base = NULL) {
+# evento (T72-G): the action's log row, written by the write layer once the
+# write worked (.t72_entrada, as .s3_write does); without it the write leaves
+# its sin_evento entry. The write itself (s3saveRDS, its strict read, the
+# rebase and the locks) is the one of always.
+auth_save_usuarios <- function(df, client_id = NULL, alta_inicial = FALSE, base = NULL, evento = NULL) {
   cid <- tolower(trimws(client_id %||% Sys.getenv("CLIENT_ID")))
   key <- paste0(cid, "/usuarios.rds")
+  actual <- NULL
   if (!isTRUE(alta_inicial)) {
     if (!is.data.frame(df) || !nrow(df))
       stop("[AUTH] refusing to save an empty user table for ", cid,
@@ -465,6 +470,10 @@ auth_save_usuarios <- function(df, client_id = NULL, alta_inicial = FALSE, base 
     }
   }
   aws.s3::s3saveRDS(df, object = key, bucket = .s3_bucket())
+  if (exists(".t72_entrada", mode = "function"))
+    tryCatch(.t72_entrada("usuarios.rds", key, df, if (is.data.frame(actual)) nrow(actual) else NA_integer_,
+                          evento = evento),
+             error = function(e) message("[T72] write not logged: ", conditionMessage(e)))
   auth_invalidate_credentials()
   if (exists("avisar_senal", mode = "function")) avisar_senal("usuarios_db", cid)   # T83: open Usuarios tabs re-read
   invisible(TRUE)

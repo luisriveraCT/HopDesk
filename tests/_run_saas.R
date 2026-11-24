@@ -210,9 +210,14 @@ tryCatch({
              error = function(e) auth_schema_usuarios())
   }
   # base / alta_inicial are accepted like the real one (CM15) and ignored here.
-  auth_save_usuarios <- function(df, client_id = NULL, alta_inicial = FALSE, base = NULL) {
+  # evento (T72-G): as the real one, the write layer's entry once it wrote --
+  # the action's row (crear_usuario, activacion_usuario) comes from it.
+  auth_save_usuarios <- function(df, client_id = NULL, alta_inicial = FALSE, base = NULL, evento = NULL) {
     cid <- client_id %||% Sys.getenv("CLIENT_ID")
     mock_s3saveRDS(df, paste0(tolower(cid), "/usuarios.rds"), "mock-bucket")
+    if (exists(".t72_entrada", mode = "function"))
+      tryCatch(.t72_entrada("usuarios.rds", paste0(tolower(cid), "/usuarios.rds"), df, NA_integer_, evento = evento),
+               error = function(e) message("[T72] write not logged: ", conditionMessage(e)))
     invisible(TRUE)
   }
 

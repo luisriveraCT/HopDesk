@@ -152,10 +152,12 @@ reservar_usuario <- function(username, client_id, account_code, ocupados = chara
 # back if the save fails -- one path for the activation and for Usuarios'
 # "Nueva cuenta". `ocupados`: see reservar_usuario(); the client's own user
 # names are added here. Errors as reservar_usuario() and auth_save_usuarios().
-guardar_cuenta_nueva <- function(usuarios, fila, client_id, ocupados = character()) {
+# evento (T72-G): the account's log row, passed to auth_save_usuarios().
+guardar_cuenta_nueva <- function(usuarios, fila, client_id, ocupados = character(), evento = NULL) {
   u <- reservar_usuario(fila$username, client_id, fila$account_code,
                         ocupados = c(as.character(usuarios$username), ocupados))
-  tryCatch(auth_save_usuarios(.hd_admin_agregar(usuarios, fila), client_id = client_id, base = usuarios),
+  tryCatch(auth_save_usuarios(.hd_admin_agregar(usuarios, fila), client_id = client_id, base = usuarios,
+                              evento = evento),
            error = function(e) {
              tryCatch(unregister_username(u), error = function(e2)
                message("[UINDEX] could not give back '", u, "': ", conditionMessage(e2)))
@@ -203,7 +205,12 @@ activar_invitacion <- function(invite, campos) {
   # invitation. It is given back if the account is not saved.
   if (!.tomar_invitacion(invite$token))
     return(list(ok = FALSE, errores = list(invitacion = "cuentas.activacion.enlace_ya_no")))
-  r <- tryCatch(guardar_cuenta_nueva(usuarios, fila, cid, ocupados = .usuarios_en_credenciales()),
+  # T72-G: the activation's row (it was app.R's log_action, same words)
+  # rides with the account's save: written once the account is saved.
+  ev_alta <- list(accion = "activacion_usuario", modulo = "auth", usuario = fila$username, home = cid,
+                  descripcion = tr("cuentas.activacion.log", usuario = fila$username),
+                  target_id = fila$account_code)
+  r <- tryCatch(guardar_cuenta_nueva(usuarios, fila, cid, ocupados = .usuarios_en_credenciales(), evento = ev_alta),
                 usuario_ocupado = function(e) e,
                 error = function(e) { .devolver_invitacion(invite$token); stop(e) })
   if (inherits(r, "usuario_ocupado")) {

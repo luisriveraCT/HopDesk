@@ -1054,11 +1054,8 @@ server <- function(input, output, session) {
         output$invite_pw_error <- renderUI(tags$p(class = "text-danger small mt-1", tr(res$errores$invitacion)))
       if (!isTRUE(res$ok)) return()
       username <- res$username
-      tryCatch(log_action(user = username, module = "auth", action = "activacion_usuario",
-                          description = tr("cuentas.activacion.log", usuario = username),
-                          target_id = res$account_code, client_id = invite$client_id,
-                          viewer_home_client_id = invite$client_id),
-               error = function(e) message("[INVITE] log failed: ", conditionMessage(e)))
+      # Its log row (activacion_usuario) was written with the account's save
+      # (activar_invitacion -> auth_save_usuarios(evento =), T72-G).
       avisar_cuenta_nueva(invite$client_id, res$cuenta, por = username, via = "invitacion")   # T82
       update_client_user_count(invite$client_id)
       tryCatch(notify_user_limit(invite$client_id),

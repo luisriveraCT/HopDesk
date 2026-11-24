@@ -23,7 +23,9 @@ ok <- function(label, expr) {
   if (isTRUE(result)) { cat(" PASS:", label, "\n"); .pass <<- .pass + 1L }
   else                { cat(" FAIL:", label, "\n"); .fail <<- .fail + 1L }
 }
-ESCRITORAS <- c("modificar_tabla", "modificar_tabla_completa", ".s3_write", ".s3_write_with")
+# .t72_entrada (T72-G): auth_save_usuarios() writes with its own s3saveRDS and
+# logs through it, so it and its wrappers are writers too.
+ESCRITORAS <- c("modificar_tabla", "modificar_tabla_completa", ".s3_write", ".s3_write_with", ".t72_entrada")
 
 # T72-C: a WRAPPER is a function with an `evento` formal that calls a writer
 # (modificar_hd_admin, save_forecasting_metrics, ...): it is a writer itself.

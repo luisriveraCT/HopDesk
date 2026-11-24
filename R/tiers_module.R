@@ -1412,8 +1412,16 @@ tiersServer <- function(id, shared) {
       # back if the save fails (guardar_cuenta_nueva). The check above is a
       # courtesy; this is the one that counts, read inside the change.
       updated <- .hd_admin_agregar(all_u, new_row)
+      # T72-G: its log row (the log_action that came after, same words and
+      # metadata) rides with the save.
+      ev_alta <- list(accion = "crear_usuario", modulo = "usuarios",
+                      usuario = shared$current_user(),
+                      home = tryCatch(shared$home_client_id(), error = function(e) NULL),
+                      descripcion = paste0("Cuenta '", username, "' creada (tier: ", tier, ")"),
+                      target_id = new_row$account_code,
+                      metadata = list(tier = tier, display_name = display_name))
       saved <- tryCatch({ guardar_cuenta_nueva(all_u, new_row, current_client_id(),
-                                               ocupados = .usuarios_en_credenciales()); "ok" },
+                                               ocupados = .usuarios_en_credenciales(), evento = ev_alta); "ok" },
                         usuario_ocupado = function(e) "ocupado",
                         error = function(e) { message("[TIERS] create user save failed: ", e$message); "error" })
       if (identical(saved, "ocupado")) {
@@ -1440,17 +1448,6 @@ tiersServer <- function(id, shared) {
       updateTextInput(session, "new_puesto",        value = "")
       showNotification(tr("niveles.usuarios.aviso.creada", usuario = username, codigo = as.character(new_row$account_code)),
                        type = "message", duration = 3)
-      log_action(
-        user        = shared$current_user(),
-        module      = "usuarios",
-        action      = "crear_usuario",
-        description = paste0("Cuenta '", username, "' creada (tier: ", tier, ")"),
-        target_id   = new_row$account_code,
-        s3_key      = paste0(current_client_id(), "/usuarios.rds"),
-        client_id             = current_client_id(),
-        viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL),
-        metadata    = list(tier = tier, display_name = display_name)
-      )
       avisar_cuenta_nueva(current_client_id(), new_row, por = shared$current_user(), via = "alta")   # T82
       activity_refresh(activity_refresh() + 1L)
     })

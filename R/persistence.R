@@ -550,8 +550,9 @@ evento_parte_de <- function(accion, modulo = NULL, usuario = NULL, home = NULL)
 # save_*/modificar_*) are writers: their callers without evento= are listed
 # instead of them (tests/test_t72b_deuda_evento.R, envoltorios()).
 T72_DEUDA_EVENTO <- c(
-  "app.R::server" = 5L,
+  "app.R::server" = 6L,
   "R/auth_reset.R::.reset_modificar" = 1L,
+  "R/auth_reset.R::reset_aplicar" = 1L,
   "R/avisos.R::.s3_modificar" = 1L,
   "R/avisos_alertas_module.R::alertas_guardar" = 1L,
   "R/avisos_archivo.R::avisos_archivar" = 2L,
@@ -632,6 +633,7 @@ T72_DEUDA_EVENTO <- c(
   "R/staging_browse_module.R::setup_abono_browse" = 1L,
   "R/sync_bus.R::bump_sync_version" = 1L,
   "R/tiers_module.R::.tiers_guardar_inline" = 1L,   # its observer's inline write, named so the stack finds it (integrador, 2026-11-21)
+  "R/tiers_module.R::tiersServer" = 5L,
   "R/treasury_map_module.R::treasuryMapServer" = 1L,
   "R/usuarios_cuentas.R::reservar_usuario" = 1L
 )
@@ -840,6 +842,102 @@ unregister_username <- function(username) {
   result$value
 }
 
+# ── T72: the write layer's log entry (Step 4 of .s3_write) ──────────────────
+# One app_audit entry per write (log_action() only queues in memory; the
+# queue never writes through .s3_write(), so no recursion). With an event:
+# who, what, and the table's rows before/after (and, from modificar_tabla,
+# what changed). Without one: a "sin_evento" entry with its origin -- the
+# nearest app functions in sys.calls(), by NAME only (never the arguments).
+# Not logged: the log itself, sync_versions, backups, and preferencias.rds
+# (its writer logs what matters, ultima_visita never: PREFS_SIN_LOG).
+# Never makes a save fail; with no log_action() (the emails job) it is skipped.
+# key: the table's key (usuarios.rds); full_key: <client>/<key>; n_antes:
+# its rows before, NA if unknown. T72-G: a top-level function so that
+# auth_save_usuarios() -- its own s3saveRDS, outside .s3_write() -- logs the
+# same entry; fixtures that load .s3_write() by pieces load it too.
+.t72_entrada <- function(key, full_key, obj, n_antes, evento) {
+  if (grepl("(^|/)(app_audit|sync_versions)|_backup_|preferencias\\.rds$", key)) return(invisible(FALSE))
+  if (isTRUE(getOption("hopdesk.t72_registrando", FALSE))) return(invisible(FALSE))
+  if (!exists("log_action", mode = "function")) return(invisible(FALSE))
+  viejo <- options(hopdesk.t72_registrando = TRUE); on.exit(options(viejo), add = TRUE)
+  cid <- sub("^([^/]+)/.*$", "\\1", full_key)
+  n_desp <- if (is.data.frame(obj)) nrow(obj) else NA_integer_
+  filas <- sprintf("%s -> %s", if (is.na(n_antes)) "?" else n_antes, if (is.na(n_desp)) "?" else n_desp)
+  meta <- list(tabla = key, filas_antes = n_antes, filas_despues = n_desp)
+  # T72-E: the second write of one action (evento_parte_de()): a staff-only
+  # trace, "<accion>/parte", with the table and the counts. The action's
+  # one row for the client is its first write's event. Never alarms.
+  if (!is.null(evento$.parte_de)) {
+    if (!is.null(evento$.diferencia)) meta$diferencia <- evento$.diferencia
+    log_action(user = evento$usuario %||% "sistema", module = evento$modulo %||% "registro",
+               action = paste0(evento$.parte_de, "/parte"), description = "",
+               target_id = key, metadata = meta, client_id = cid, viewer_home_client_id = evento$home %||% cid)
+    return(invisible(TRUE))
+  }
+  if (is.null(evento)) {
+    nombre <- function(cl) { f <- cl[[1]]
+      if (is.name(f)) as.character(f)
+      else if (is.call(f) && length(f) == 3L && as.character(f[[1]]) %in% c("::", ":::")) as.character(f[[3]])
+      else "" }
+    fuera <- c("", ".s3_write", ".s3_write_with", "modificar_tabla", "modificar_tabla_completa", ".t72_registrar", ".t72_entrada",
+               "tryCatch", "tryCatchList", "tryCatchOne", "doTryCatch", "withCallingHandlers", "suppressMessages",
+               "suppressWarnings", "force", "eval", "evalq", "isolate", "withReactiveDomain", "do.call", "FUN",
+               "lapply", "vapply", "sapply", "Map", "mapply", "local", "withVisible", "handler", "invisible")
+    pila <- vapply(sys.calls(), nombre, "")
+    pila <- rev(pila[!pila %in% fuera])
+    origen <- substr(paste(utils::head(unique(pila), 4L), collapse = " < "), 1L, 160L)
+    meta$origen <- origen
+    log_action(user = "sistema", module = "registro", action = "sin_evento",
+               description = sprintf("tabla=%s filas %s origen=%s", key, filas, if (nzchar(origen)) origen else "?"),
+               target_id = key, metadata = meta, client_id = cid, viewer_home_client_id = cid)
+    # Commit 2: staff hear of a write OUTSIDE the known debt (no function of
+    # T72_DEUDA_EVENTO in the whole stack: a path the static guard can't
+    # see), once per client per hour -- in memory first, so S3 is not read
+    # on every write, then avisos_agregar's own ventana_min. Its write runs
+    # under the reentry option above: it logs nothing and never alarms. No
+    # list or no avisos_agregar (the emails job, a test by pieces): no alarm.
+    deuda <- get0("T72_DEUDA_EVENTO", ifnotfound = NULL)
+    if (!is.null(deuda) && exists("avisos_agregar", mode = "function") && exists("niveles_staff", mode = "function") &&
+        exists("tr", mode = "function") && !any(pila %in% unique(sub("^.*::", "", names(deuda))))) {
+      frenos <- getOption("hopdesk.t72_alarmas", list())
+      ultima <- frenos[[cid]]
+      if (is.null(ultima) || difftime(Sys.time(), ultima, units = "mins") >= 60) {
+        frenos[[cid]] <- Sys.time(); options(hopdesk.t72_alarmas = frenos)
+        tryCatch(avisos_agregar("hd-admin", list(
+          tipo = "automatico", severidad = "atencion", niveles = niveles_staff(),
+          titulo = tr("comun.actividad.alerta.sin_evento_titulo"),
+          cuerpo = tr("comun.actividad.alerta.sin_evento", cliente = cid, tabla = key,
+                      origen = if (nzchar(origen)) origen else "?"),
+          clave = paste("t72", "sin_evento", cid, sep = ":"),
+          ventana_min = 60)),
+          error = function(e) message("[T72] alarm failed (", cid, "): ", conditionMessage(e)))
+      }
+    }
+  } else {
+    if (!is.null(evento$.diferencia)) meta$diferencia <- evento$.diferencia
+    # T72-E: the module's own metadata (Bancos' rows summary, a before/after)
+    # rides with the event, so its viewer's bespoke detail still draws. The
+    # write layer's keys always win; a module key with one of their names
+    # is dropped, said in the log (T72-D hides those from clients).
+    if (is.list(evento$metadata) && length(evento$metadata) && !is.null(names(evento$metadata))) {
+      propia <- evento$metadata
+      choca <- intersect(names(propia), c("tabla", "filas_antes", "filas_despues", "diferencia", "origen"))
+      if (length(choca)) message("[T72] evento$metadata trae claves de la capa de escritura, descartadas: ", paste(choca, collapse = ", "))
+      meta <- c(propia[setdiff(names(propia), choca)], meta)
+    }
+    desc <- evento$descripcion %||% ""
+    log_action(user = evento$usuario %||% "unknown", module = evento$modulo %||% "registro",
+               action = evento$accion %||% "guardar",
+               # T72-D: the event's own words only; the table and the counts
+               # are in metadata, which only staff see in the detail.
+               description = trimws(desc),
+               target_id = evento$target_id %||% key, metadata = meta,
+               client_id = cid, viewer_home_client_id = evento$home %||% cid)
+  }
+  invisible(TRUE)
+}
+
+
 .s3_write <- function(obj, key, client_id = NULL, permitir_reduccion = FALSE, evento = NULL) {
   message(sprintf("[S3_WRITE] ── start key='%s'", key))
 
@@ -969,96 +1067,10 @@ unregister_username <- function(username) {
     rm(list = full_key, envir = .s3_preload_cache)
 
   # ── Step 4 (T72-B): the log is born here, after the upload worked ─────────
-  # One app_audit entry per write (log_action() only queues in memory; the
-  # queue never writes through .s3_write(), so no recursion). With an event:
-  # who, what, and the table's rows before/after (and, from modificar_tabla,
-  # what changed). Without one: a "sin_evento" entry with its origin -- the
-  # nearest app functions in sys.calls(), by NAME only (never the arguments).
-  # Not logged: the log itself, sync_versions, backups, and preferencias.rds
-  # (its writer logs what matters, ultima_visita never: PREFS_SIN_LOG).
-  # Never makes a save fail; with no log_action() (the emails job) it is skipped.
-  # Defined HERE, inside .s3_write(), on purpose (cargar() by pieces, T69b).
-  .t72_registrar <- function() {
-    if (grepl("(^|/)(app_audit|sync_versions)|_backup_|preferencias\\.rds$", key)) return(invisible(FALSE))
-    if (isTRUE(getOption("hopdesk.t72_registrando", FALSE))) return(invisible(FALSE))
-    if (!exists("log_action", mode = "function")) return(invisible(FALSE))
-    viejo <- options(hopdesk.t72_registrando = TRUE); on.exit(options(viejo), add = TRUE)
-    cid <- sub("^([^/]+)/.*$", "\\1", full_key)
-    n_desp <- if (is.data.frame(obj)) nrow(obj) else NA_integer_
-    filas <- sprintf("%s -> %s", if (is.na(n_antes)) "?" else n_antes, if (is.na(n_desp)) "?" else n_desp)
-    meta <- list(tabla = key, filas_antes = n_antes, filas_despues = n_desp)
-    # T72-E: the second write of one action (evento_parte_de()): a staff-only
-    # trace, "<accion>/parte", with the table and the counts. The action's
-    # one row for the client is its first write's event. Never alarms.
-    if (!is.null(evento$.parte_de)) {
-      if (!is.null(evento$.diferencia)) meta$diferencia <- evento$.diferencia
-      log_action(user = evento$usuario %||% "sistema", module = evento$modulo %||% "registro",
-                 action = paste0(evento$.parte_de, "/parte"), description = "",
-                 target_id = key, metadata = meta, client_id = cid, viewer_home_client_id = evento$home %||% cid)
-      return(invisible(TRUE))
-    }
-    if (is.null(evento)) {
-      nombre <- function(cl) { f <- cl[[1]]
-        if (is.name(f)) as.character(f)
-        else if (is.call(f) && length(f) == 3L && as.character(f[[1]]) %in% c("::", ":::")) as.character(f[[3]])
-        else "" }
-      fuera <- c("", ".s3_write", ".s3_write_with", "modificar_tabla", "modificar_tabla_completa", ".t72_registrar",
-                 "tryCatch", "tryCatchList", "tryCatchOne", "doTryCatch", "withCallingHandlers", "suppressMessages",
-                 "suppressWarnings", "force", "eval", "evalq", "isolate", "withReactiveDomain", "do.call", "FUN",
-                 "lapply", "vapply", "sapply", "Map", "mapply", "local", "withVisible", "handler", "invisible")
-      pila <- vapply(sys.calls(), nombre, "")
-      pila <- rev(pila[!pila %in% fuera])
-      origen <- substr(paste(utils::head(unique(pila), 4L), collapse = " < "), 1L, 160L)
-      meta$origen <- origen
-      log_action(user = "sistema", module = "registro", action = "sin_evento",
-                 description = sprintf("tabla=%s filas %s origen=%s", key, filas, if (nzchar(origen)) origen else "?"),
-                 target_id = key, metadata = meta, client_id = cid, viewer_home_client_id = cid)
-      # Commit 2: staff hear of a write OUTSIDE the known debt (no function of
-      # T72_DEUDA_EVENTO in the whole stack: a path the static guard can't
-      # see), once per client per hour -- in memory first, so S3 is not read
-      # on every write, then avisos_agregar's own ventana_min. Its write runs
-      # under the reentry option above: it logs nothing and never alarms. No
-      # list or no avisos_agregar (the emails job, a test by pieces): no alarm.
-      deuda <- get0("T72_DEUDA_EVENTO", ifnotfound = NULL)
-      if (!is.null(deuda) && exists("avisos_agregar", mode = "function") && exists("niveles_staff", mode = "function") &&
-          exists("tr", mode = "function") && !any(pila %in% unique(sub("^.*::", "", names(deuda))))) {
-        frenos <- getOption("hopdesk.t72_alarmas", list())
-        ultima <- frenos[[cid]]
-        if (is.null(ultima) || difftime(Sys.time(), ultima, units = "mins") >= 60) {
-          frenos[[cid]] <- Sys.time(); options(hopdesk.t72_alarmas = frenos)
-          tryCatch(avisos_agregar("hd-admin", list(
-            tipo = "automatico", severidad = "atencion", niveles = niveles_staff(),
-            titulo = tr("comun.actividad.alerta.sin_evento_titulo"),
-            cuerpo = tr("comun.actividad.alerta.sin_evento", cliente = cid, tabla = key,
-                        origen = if (nzchar(origen)) origen else "?"),
-            clave = paste("t72", "sin_evento", cid, sep = ":"),
-            ventana_min = 60)),
-            error = function(e) message("[T72] alarm failed (", cid, "): ", conditionMessage(e)))
-        }
-      }
-    } else {
-      if (!is.null(evento$.diferencia)) meta$diferencia <- evento$.diferencia
-      # T72-E: the module's own metadata (Bancos' rows summary, a before/after)
-      # rides with the event, so its viewer's bespoke detail still draws. The
-      # write layer's keys always win; a module key with one of their names
-      # is dropped, said in the log (T72-D hides those from clients).
-      if (is.list(evento$metadata) && length(evento$metadata) && !is.null(names(evento$metadata))) {
-        propia <- evento$metadata
-        choca <- intersect(names(propia), c("tabla", "filas_antes", "filas_despues", "diferencia", "origen"))
-        if (length(choca)) message("[T72] evento$metadata trae claves de la capa de escritura, descartadas: ", paste(choca, collapse = ", "))
-        meta <- c(propia[setdiff(names(propia), choca)], meta)
-      }
-      desc <- evento$descripcion %||% ""
-      log_action(user = evento$usuario %||% "unknown", module = evento$modulo %||% "registro",
-                 action = evento$accion %||% "guardar",
-                 # T72-D: the event's own words only; the table and the counts
-                 # are in metadata, which only staff see in the detail.
-                 description = trimws(desc),
-                 target_id = evento$target_id %||% key, metadata = meta,
-                 client_id = cid, viewer_home_client_id = evento$home %||% cid)
-    }
-    invisible(TRUE)
-  }
+  # .t72_entrada() (above): the event's row, or sin_evento with its origin.
+  # Without it (a fixture that took .s3_write() alone) nothing is logged.
+  .t72_registrar <- function()
+    if (exists(".t72_entrada", mode = "function")) .t72_entrada(key, full_key, obj, n_antes, evento = evento) else invisible(FALSE)
   tryCatch(.t72_registrar(), error = function(e) message("[T72] write not logged: ", conditionMessage(e)))
 
   message(sprintf("[S3_WRITE] ── complete key='%s'", key))

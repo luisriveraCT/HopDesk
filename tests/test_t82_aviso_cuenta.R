@@ -100,7 +100,7 @@ hash_password <- function(x) "HASH-SECRETO"
 modificar_pending_invites <- function(cambio) { .inv <<- cambio(.inv); invisible(.inv) }
 reservar_usuario <- function(username, ...) username
 .hd_admin_agregar <- function(df, fila) dplyr::bind_rows(df, fila)
-auth_save_usuarios <- function(df, client_id, base = NULL) assign(paste0(client_id, "/usuarios.rds"), df, envir = .mem)
+auth_save_usuarios <- function(df, client_id, base = NULL, evento = NULL) assign(paste0(client_id, "/usuarios.rds"), df, envir = .mem)
 .usuarios_en_credenciales <- function() character()
 res <- activar_invitacion(list(client_id = CID, tier = "analysis", email = "x@y.mx", token = "tk"),
   list(nombre = "Pau Pérez", puesto = "Analista", usuario = "paup", contrasena = "Una-clave-larga-9", confirmar = "Una-clave-larga-9"))
@@ -117,12 +117,20 @@ ok("5.4 no es nuevo para quien se acaba de unir", !any(f$nuevo[f$clave %in% past
 cat("\n== 6. Los dos caminos lo llaman ==\n")
 app  <- readLines("app.R", warn = FALSE, encoding = "UTF-8")
 tm   <- readLines("R/tiers_module.R", warn = FALSE, encoding = "UTF-8")
-i_log <- grep('action = "activacion_usuario"', app, fixed = TRUE)
+# T72-G: each log row now rides with the account's save (its event), so
+# "after its log" = after the save that wrote it worked.
+uc   <- readLines("R/usuarios_cuentas.R", warn = FALSE, encoding = "UTF-8")
+i_ev  <- grep('accion = "activacion_usuario"', uc, fixed = TRUE)
+i_gu  <- grep("guardar_cuenta_nueva(usuarios, fila, cid, ocupados = .usuarios_en_credenciales(), evento = ev_alta)", uc, fixed = TRUE)
+i_ok  <- grep("if (!isTRUE(res$ok)) return()", app, fixed = TRUE)
 i_av  <- grep("avisar_cuenta_nueva(invite$client_id, res$cuenta", app, fixed = TRUE)
-ok("6.1 la activación lo llama, después de su log", length(i_log) == 1L && length(i_av) == 1L && i_av > i_log && i_av - i_log < 8L)
-j_log <- grep('action      = "crear_usuario"', tm, fixed = TRUE)
+ok("6.1 la activación lo llama, después de su log", length(i_ev) == 1L && length(i_gu) == 1L && i_gu > i_ev &&
+     length(i_ok) == 1L && length(i_av) == 1L && i_av > i_ok && i_av - i_ok < 8L)
+j_ev  <- grep('ev_alta <- list(accion = "crear_usuario"', tm, fixed = TRUE)
+j_gu  <- grep("ocupados = .usuarios_en_credenciales(), evento = ev_alta); \"ok\" }", tm, fixed = TRUE)
 j_av  <- grep('avisar_cuenta_nueva(current_client_id(), new_row', tm, fixed = TRUE)
-ok("6.2 Usuarios lo llama, después de su log", length(j_log) == 1L && length(j_av) == 1L && j_av > j_log && j_av - j_log < 12L)
+ok("6.2 Usuarios lo llama, después de su log", length(j_ev) == 1L && length(j_gu) == 1L && j_gu > j_ev &&
+     length(j_av) == 1L && j_av > j_gu)
 
 cat(sprintf("\nT82 aviso de cuenta nueva: %d PASS / %d FAIL\n", pass, fail))
 if (fail > 0L) quit(status = 1L)
