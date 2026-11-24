@@ -125,8 +125,11 @@ test_that("a gate that fails counts as no (never sends, never stops the session)
 codigo <- function(f) sub("#.*$", "", readLines(f, warn = FALSE, encoding = "UTF-8"))
 app <- codigo(Sys.getenv("HD_APP_R", "app.R"))
 test_that("app.R sets the gates from the effective tier", {
-  expect_true(any(grepl("session$userData$hd_tabla_permitida <- function(tabla) nivel_tabla_permitida(tier_efectivo(), tabla)",
+  # T87-M6: the table gate is the tier's plus the screen's permission, on
+  # usuario_sesion() -- whose tier IS tier_efectivo() (test_t87_m6_tablas_permiso).
+  expect_true(any(grepl("session$userData$hd_tabla_permitida <- function(tabla) nivel_tabla_permitida_usuario(usuario_sesion(), tabla)",
                         app, fixed = TRUE)))
+  expect_true(any(grepl("^\\s*tier\\s*<-\\s*tier_efectivo\\(\\)", app)))   # inside usuario_sesion()
   expect_true(any(grepl("session$userData$hd_pestana_permitida <- function(tab) nivel_pestana_permitida(tier_efectivo(), tab)",
                         app, fixed = TRUE)))
 })
