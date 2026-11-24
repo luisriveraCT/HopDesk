@@ -298,6 +298,19 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
   # log entry at all -- this shared handler never logged any action at all).
   # Split by ledger since a single call here can span AR and AP at once,
   # unlike Calendario's own handlers which only ever act on one ledger.
+  # T72-G: the same entries as .log_ledger_action(), one per ledger, for
+  # .save_moves_deferred(log_info =): written once the deferred write
+  # worked, or as <action>_fallo_guardado if it never did.
+  .ledger_log_info <- function(keys_df, action, describe) {
+    cid      <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
+    home_cid <- tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    lapply(unique(keys_df$ledger), function(lg) {
+      sub <- keys_df[keys_df$ledger == lg, , drop = FALSE]
+      list(user = current_user, module = paste0("ledger_", lg), action = action, description = describe(sub),
+           target_id = paste(sub[["Documento"]][seq_len(min(5, nrow(sub)))], collapse = ", "),
+           metadata = list(n = nrow(sub)), client_id = cid, viewer_home_client_id = home_cid)
+    })
+  }
   .log_ledger_action <- function(keys_df, action, describe) {
     cid      <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
     home_cid <- tryCatch(shared$home_client_id(),      error = function(e) NULL)
@@ -434,12 +447,12 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
     # without it this session's whole copy was written, erasing a date
     # another session moved after this one loaded.
     .save_moves_deferred(updated, client_id = shared$effective_client_id(), session = session,
-                         rebase = function(fresh) mudanzas_mover(fresh, new_rows, facturas))
+                         rebase = function(fresh) mudanzas_mover(fresh, new_rows, facturas),
+                         log_info = .ledger_log_info(keys_df, "mover_fecha", function(sub)
+                           sprintf("%d factura(s) movida(s) a %s", nrow(sub), format(new_date, "%d/%m/%Y"))))
     showNotification(
       tr("tablas.lupa.aviso.movidas", n = as.character(nrow(keys_df)), fecha = format(new_date, "%d/%m/%Y")),
       type = "message", duration = 2)
-    .log_ledger_action(keys_df, "mover_fecha", function(sub)
-      sprintf("%d factura(s) movida(s) a %s", nrow(sub), format(new_date, "%d/%m/%Y")))
 
   } else if (action == "restore") {
     # Remove move records for the selected invoices so they revert to their
@@ -457,12 +470,12 @@ handle_invoice_action <- function(payload, shared, session = NULL) {
     # Rebased on S3 as it is now (CM28), as the Calendario's .clear_moves():
     # only these invoices' rows leave, every other session's stay.
     .save_moves_deferred(updated, client_id = shared$effective_client_id(), session = session,
-                         rebase = function(fresh) mudanzas_restaurar(fresh, restore_keys, facturas))
+                         rebase = function(fresh) mudanzas_restaurar(fresh, restore_keys, facturas),
+                         log_info = .ledger_log_info(keys_df, "restaurar_fecha", function(sub)
+                           sprintf("%d factura(s) restaurada(s) a su fecha original", nrow(sub))))
     showNotification(
       tr("tablas.lupa.aviso.restauradas", n = as.character(nrow(keys_df))),
       type = "message", duration = 2)
-    .log_ledger_action(keys_df, "restaurar_fecha", function(sub)
-      sprintf("%d factura(s) restaurada(s) a su fecha original", nrow(sub)))
 
   } else if (action == "delete") {
     # Provisions use lifecycle close, not papelera

@@ -191,8 +191,11 @@ tag_label_es <- function(new_tags) {
   ok("found the move branch to scan", length(start) > 0 && length(end) > 0)
   if (length(start) && length(end)) {
     move_block <- paste(txt[start[1]:end[1]], collapse = "\n")
-    ok("the move branch calls .log_ledger_action(..., \"mover_fecha\", ...)",
-       grepl('\\.log_ledger_action\\(keys_df,\\s*"mover_fecha"', move_block))
+    # T72-G: the same per-ledger entries now go to .save_moves_deferred(log_info =),
+    # written once the deferred write worked (or as mover_fecha_fallo_guardado).
+    ok("the move branch logs \"mover_fecha\" per ledger after the write (.ledger_log_info into log_info)",
+       grepl('log_info\\s*=\\s*\\.ledger_log_info\\(keys_df,\\s*"mover_fecha"', move_block) &&
+         !grepl('\\.log_ledger_action\\(keys_df,\\s*"mover_fecha"', move_block))
   }
 
   start2 <- grep('} else if \\(action == "restore"\\)', txt)
@@ -200,8 +203,11 @@ tag_label_es <- function(new_tags) {
   ok("found the restore branch to scan", length(start2) > 0 && length(end2) > 0)
   if (length(start2) && length(end2)) {
     restore_block <- paste(txt[start2[1]:end2[1]], collapse = "\n")
-    ok("the restore branch calls .log_ledger_action(..., \"restaurar_fecha\", ...)",
-       grepl('\\.log_ledger_action\\(keys_df,\\s*"restaurar_fecha"', restore_block))
+    # T72-G: the same per-ledger entries now go to .save_moves_deferred(log_info =),
+    # written once the deferred write worked (or as restaurar_fecha_fallo_guardado).
+    ok("the restore branch logs \"restaurar_fecha\" per ledger after the write (.ledger_log_info into log_info)",
+       grepl('log_info\\s*=\\s*\\.ledger_log_info\\(keys_df,\\s*"restaurar_fecha"', restore_block) &&
+         !grepl('\\.log_ledger_action\\(keys_df,\\s*"restaurar_fecha"', restore_block))
   }
 
   start3 <- grep('} else if \\(action == "delete"\\)', txt)

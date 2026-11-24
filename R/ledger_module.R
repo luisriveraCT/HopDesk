@@ -1751,8 +1751,21 @@ ledgerModuleServer <- function(id, config, shared) {
       facturas_mov  <- politica_facturas(tryCatch(shared$sap_data(), error = function(e) list()))
       updated_moves <- mudanzas_mover(shared$moves_db(), new_move, facturas_mov)
       shared$moves_db(updated_moves)
+      # T72-G: the date's deferred write leaves a staff-only /parte once it
+      # worked, or editar_factura_sap_fallo_guardado if it never did; the
+      # edit's one row is the editar_factura_sap below, as always.
       .save_moves_deferred(updated_moves, client_id = shared$effective_client_id(), session = session,
-                           rebase = function(fresh) mudanzas_mover(fresh, new_move, facturas_mov))
+                           rebase = function(fresh) mudanzas_mover(fresh, new_move, facturas_mov),
+                           log_info = list(
+                             user        = tryCatch(shared$current_user(), error = function(e) "system"),
+                             module      = paste0("ledger_", ledger),
+                             action      = "editar_factura_sap/parte",
+                             description = paste0("Factura ", row[["Documento"]], ": fecha ",
+                                                  format(new_date, "%d/%m/%Y")),
+                             target_id   = row[["Documento"]],
+                             metadata    = list(empresa = row[["Empresa"]], tabla = S3_KEYS$moves),
+                             client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+                             viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)))
 
       # --- field overrides (sap_overrides) ---
       # Only when a field changed (T52f): moving the date alone stores none.
@@ -2092,16 +2105,23 @@ dia_filas_agenda <- function(a_mano, fuente, usuario, ledger, confirmaciones) {
                                  rebase = NULL) {
   force(client_id); force(session); force(log_info); force(rebase)   # evaluate NOW, before later() captures them
 
+  # log_info: one log entry (the arguments of log_action), or several (T72-G: the Lupa logs one
+  # per ledger), written once the write worked -- or, if it never did, as
+  # <action>_fallo_guardado. A staff-only "<accion>/parte" entry (the date
+  # part of an edit whose own row is logged elsewhere) fails as
+  # <accion>_fallo_guardado, which the client sees.
   .log_outcome <- function(failed, err_msg = NULL) {
     if (is.null(log_info)) return(invisible(NULL))
-    info <- log_info
-    if (failed) {
-      info$action      <- paste0(info$action, "_fallo_guardado")
-      info$description <- paste0("FALLO AL GUARDAR (no se aplico realmente): ",
-                                 info$description, " -- error S3: ", err_msg)
+    entradas <- if (!is.null(log_info$action)) list(log_info) else log_info
+    for (info in entradas) {
+      if (failed) {
+        info$action      <- paste0(sub("/parte$", "", info$action), "_fallo_guardado")
+        info$description <- paste0("FALLO AL GUARDAR (no se aplico realmente): ",
+                                   info$description, " -- error S3: ", err_msg)
+      }
+      tryCatch(do.call(log_action, info), error = function(e)
+        message("[LEDGER] log_action failed (", info$action, "): ", e$message))
     }
-    tryCatch(do.call(log_action, info), error = function(e)
-      message("[LEDGER] log_action failed (", info$action, "): ", e$message))
   }
 
   .attempt <- function(retries_left) {
