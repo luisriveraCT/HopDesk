@@ -14,8 +14,11 @@
 #   2. nothing approximate: a name that only CONTAINS a company's is not;
 #   3. the RFC decides when the row has one (confirms or vetoes);
 #   4. a generic normalized name (one word under 5 letters) never marks alone;
-#   5. with a registry, or without `empresas`, the output is identical() to
-#      the pre-T47 function (Coordinador: "donde hay registro, manda");
+#   5. without `empresas`, the output is identical() to the pre-T47
+#      function; with a registry AND empresas (T90, which replaced
+#      "donde hay registro, manda"): exactly the pre-T47 output minus the
+#      rows the companies' identity calls IC -- the registry still decides
+#      everything else, the identity only adds marks;
 #   6. every caller passes the session's empresas.
 #
 # Run from project root:  Rscript tests/test_t47_ic_nombre.R
@@ -101,11 +104,12 @@ ok("4b: 'only' devuelve exactamente las IC", setequal(f(mode = "only"),
 cat("\n-- identical() con el filtro de antes --\n")
 casos <- list(list(codes = "P5", rfcs = character()), list(codes = character(), rfcs = "NLO010101AAA"),
               list(codes = c("P1", "P2"), rfcs = "NTR020202BBB"))
-ok("5: con registro (códigos y/o RFCs), la salida es identical() a la de antes, aun pasando empresas",
+ok("5: con registro y empresas (T90): exactamente lo de antes MENOS lo que la identidad llama IC; nada más cambia",
    all(vapply(casos, function(k) {
      a <- antes(df, "exclude", "Código de proveedor", k$codes, k$rfcs, CMAP)
      b <- suppressMessages(apply_ic_filter(df, "exclude", "Código de proveedor", k$codes, k$rfcs, CMAP, empresas = EMP))
-     identical(a, b)
+     ident <- ic_por_identidad(a$Parte, if ("RFC" %in% names(a)) a$RFC else NULL, empresas_identidad(EMP))
+     identical(b$Parte, a$Parte[!ident]) && identical(names(b), names(a))
    }, logical(1))))
 ok("5b: sin empresas (NULL), identical() a la de antes, en exclude, only e include",
    all(vapply(c("exclude", "only", "include"), function(m)
