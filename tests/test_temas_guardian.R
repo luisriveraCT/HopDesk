@@ -82,7 +82,7 @@ archivos <- c("app.R",
   "R/tiers_module.R" = 0L,           # TEMA 6-1: the 34 to roles
   "R/treasury_map_module.R" = 4L,    # stage 4: only the 4 transparent #00000000 of vis.js (exempt)
   "R/ui_components.R" = 6L,           # stage 4: only the currency pills .ph-ctr-* (rest + active), the palette Bancos keeps (exempt)
-  "www/panorama.css" = 4L
+  "www/panorama.css" = 0L            # TEMA 6-5: its four to the brand variables
 )
 
 # ── 2. Exempt files, each with its reason ────────────────────────────────────
@@ -205,6 +205,16 @@ contraste <- tema$tema_contraste
                       # TEMA 6-7: Clásico's texto-tenue (#9CA3AF, 2.4-2.5) stays as it is: Clásico
                       # looks like today; a fix is a debt for later, with Luis's leave. Marca's passes.
                       "texto-tenue/superficie", "texto-tenue/fondo", "texto-tenue/superficie-2")
+# Debt outside the themes (TEMA 6-7, the Diseñador's decision): the weekly
+# mail's "reprogramado" keeps Marca's old texto-tenue (palette niebla-tenue)
+# so nobody's mail changes without a decision. It is below AA on the mail's
+# paper; raising it (to Marca's texto-tenue #5F6D87) is Luis's to decide.
+# This check fails the day it changes, so the debt is closed on purpose.
+.DEUDA_CORREO <- list(par = c("niebla-tenue", "blanco"), hoy = 2.95)
+r_deuda <- local({ pal <- tema$.HD_PALETA; tema$tema_contraste(pal[[.DEUDA_CORREO$par[1]]], pal[[.DEUDA_CORREO$par[2]]]) })
+ok(sprintf("debt, listed: the weekly mail's reprogramado (%s on %s) = %.2f, below AA until Luis decides",
+           .DEUDA_CORREO$par[1], .DEUDA_CORREO$par[2], r_deuda),
+   abs(r_deuda - .DEUDA_CORREO$hoy) < 0.01)
 ok("every listed Clásico exception is a pair this test checks",
    all(.CLASICO_BAJO_AA %in% vapply(.PARES, paste, character(1), collapse = "/")))
 for (t in names(tema$HD_TEMAS)) {
@@ -573,17 +583,30 @@ ok("every theme says whether it is offered (ofrecer TRUE/FALSE); the default one
    all(vapply(tema$HD_TEMAS, function(t) is.logical(t$ofrecer) && length(t$ofrecer) == 1L && !is.na(t$ofrecer), logical(1))) &&
      isTRUE(tema$HD_TEMAS[[tema$HD_TEMA_OMISION]]$ofrecer))
 # A theme other than Clásico (whose legacy tokens keep today's look) may be
-# offered to clients only once no client screen paints a hand-written colour:
-# those would stay in Clásico under it. Currency palettes (data) are not here.
-.ARCHIVOS_CLIENTE <- c("R/global.R", "R/tiers_module.R", "www/overlay_init.js", "R/empresas_module.R",
-                       "R/hd_columnas.R", "R/cashflow_preview_module.R",
-                       list.files("R/settings", pattern = "^settings_.*\\.R$", full.names = TRUE))
-quedan <- vapply(.ARCHIVOS_CLIENTE, colores_a_mano, integer(1))
+# offered to clients only once NO file of the app paints a hand-written
+# colour (TEMA 6-5: every file, not a short list of "client screens": T6-0
+# found client screens that list missed). Those would stay in Clásico under
+# it. The only colours allowed to stay are DATA, declared here one by one
+# with their reason: each keeps its count in .TRINQUETE, and is never a look.
+.DATOS <- c(
+  "R/bancos_module.R"             = "the currency palette (.CURRENCY_COLORS + the other-currency grey): the same in every theme",
+  "R/pasivos_table_styles.R"      = "Pasivos' currency badges (.PASIVOS_CUR_COLORES)",
+  "R/ui_components.R"             = "the currency pills .ph-ctr-* (Bancos' palette)",
+  "R/tier_registry.R"             = "each tier's identity colour (its badge), the same in every theme",
+  "R/requisiciones_persistence.R" = "a folder's default colour; the user picks the others",
+  "R/treasury_map_module.R"       = "vis.js's transparent #00000000 (no colour at all)")
+ok("every data file is in the ratchet with its count, and says why",
+   all(names(.DATOS) %in% names(.TRINQUETE)) && all(nzchar(trimws(.DATOS))) && all(file.exists(names(.DATOS))))
+ok("a data file holds nothing but its data: its count is what it is today, never more",
+   all(vapply(names(.DATOS), colores_a_mano, integer(1)) <= .TRINQUETE[names(.DATOS)]))
+quedan <- vapply(setdiff(archivos, c(names(.EXENTOS), names(.DATOS))), colores_a_mano, integer(1))
+quedan <- quedan[quedan > 0L]
 ofrecidos <- setdiff(names(tema$HD_TEMAS)[vapply(tema$HD_TEMAS, function(t) isTRUE(t$ofrecer), logical(1))], "clasico")
-ok(sprintf("a theme is offered to clients only with 0 hand-written colours on client screens (%d left; offered: %s)",
+cat(sprintf("      | hand-written colours left outside data: %d (%s)\n", sum(quedan),
+            if (length(quedan)) paste(sprintf("%s %d", names(quedan), quedan), collapse = ", ") else "none"))
+ok(sprintf("a theme is offered to clients only with 0 hand-written colours in the whole app but data (%d left; offered: %s)",
            sum(quedan), if (length(ofrecidos)) paste(ofrecidos, collapse = ", ") else "none"),
-   all(file.exists(.ARCHIVOS_CLIENTE)) && (!length(ofrecidos) || sum(quedan) == 0L) ||
-     { message("  left: ", paste(sprintf("%s %d", names(quedan)[quedan > 0], quedan[quedan > 0]), collapse = ", ")); FALSE })
+   !length(ofrecidos) || sum(quedan) == 0L)
 ok("temas_ofrecidos(): clients get the offered ones, staff every theme",
    setequal(tema$temas_ofrecidos(FALSE), names(tema$HD_TEMAS)[vapply(tema$HD_TEMAS, function(t) isTRUE(t$ofrecer), logical(1))]) &&
      setequal(tema$temas_ofrecidos(TRUE), names(tema$HD_TEMAS)))

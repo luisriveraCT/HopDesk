@@ -59,6 +59,7 @@ HD_TEMAS_CSS_VERSION <- 22L
   `lila-bg`     = "#F3E8EE", `lila-bd`   = "#E6CFDC", `lila-tag`   = "#EBD8E3", `lila-fg`   = "#6B3358",
   `olivo-bg`    = "#EEF0E2", `olivo-bd`  = "#DADFC6", `olivo-tag`  = "#E2E6CF", `olivo-fg`  = "#56602F",
   sube          = "#E6A383",
+  `sube-tinta`  = "#2A0F04",   # text on sube (Panorama's strong badge and urgent tag); TEMA 6-5
   baja          = "#A9C3D6",
   # The weekly mails' own tones (R/avisos_correos.R, CORREO_COLORES): Marca's,
   # used only there (the week's chart, the sand and review boxes, the lines).

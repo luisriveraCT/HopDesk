@@ -152,7 +152,7 @@
 .hd-panorama .pan-clima--neblina .pan-clima-icono { color: var(--hd-niebla); }
 .hd-panorama .pan-clima-nombre { font-family: var(--hd-serif); font-size: 28px; line-height: 1.1; }
 .hd-panorama .pan-clima-cuenta { font-size: 13px; color: var(--hd-niebla); margin-top: 2px; }
-.hd-panorama .pan-clima-linea { margin: 14px 0 10px; font-size: 14px; color: rgba(255, 255, 255, 0.85); }
+.hd-panorama .pan-clima-linea { margin: 14px 0 10px; font-size: 14px; color: color-mix(in srgb, var(--hd-blanco) 85%, transparent); }
 .hd-panorama .pan-clima-razones { margin: 0; padding-left: 18px; font-size: 13px; color: var(--hd-niebla); }
 .hd-panorama .pan-clima-razones li::marker { color: var(--hd-oro); }
 
@@ -182,7 +182,7 @@
 .hd-panorama .pan-puntos { display: flex; gap: 6px; justify-content: center; margin-top: 12px; }
 .hd-panorama .pan-punto-nav {
   width: 8px; height: 8px; padding: 0; border: 0; border-radius: var(--hd-pildora);
-  background: rgba(19, 33, 58, 0.28); cursor: pointer;
+  background: color-mix(in srgb, var(--hd-marino) 28%, transparent); cursor: pointer;
 }
 .hd-panorama .pan-punto-nav.activo { width: 22px; background: var(--hd-marino); }
 
@@ -321,7 +321,7 @@
   padding: 4px 8px; border-radius: 6px;
   background: var(--hd-oro-velo); color: var(--hd-oro-claro);
 }
-.hd-panorama .pan-cinta-badge--fuerte { background: var(--hd-sube); color: #2A0F04; }
+.hd-panorama .pan-cinta-badge--fuerte { background: var(--hd-sube); color: var(--hd-sube-tinta); }
 .hd-panorama .pan-cinta-delta { font-weight: 900; }
 .hd-panorama .pan-cinta-delta.sube { color: var(--hd-sube); }
 .hd-panorama .pan-cinta-delta.baja { color: var(--hd-baja); }
@@ -412,7 +412,7 @@ body:has(.tab-pane.active .hd-panorama .pan-cinta) .notes-bar-btn:not(.notes-ope
 .hd-panorama .pan-tipo--recordatorio .pan-tag   { background: var(--hd-ambar-tag);  color: var(--hd-ambar-fg); }
 .hd-panorama .pan-tipo--solicitud .pan-tag      { background: var(--hd-lila-tag);   color: var(--hd-lila-fg); }
 .hd-panorama .pan-tipo--reconocimiento .pan-tag { background: var(--hd-olivo-tag);  color: var(--hd-olivo-fg); }
-.hd-panorama .pan-tipo--urgente .pan-tag        { background: var(--hd-sube);       color: #2A0F04; }
+.hd-panorama .pan-tipo--urgente .pan-tag        { background: var(--hd-sube);       color: var(--hd-sube-tinta); }
 .hd-panorama .pan-niveles { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
 .hd-panorama .pan-nivel {
   min-height: 60px; padding: 6px 4px; border-radius: var(--hd-radio-sm);
