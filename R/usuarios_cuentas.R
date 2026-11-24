@@ -210,7 +210,9 @@ activar_invitacion <- function(invite, campos) {
     .devolver_invitacion(invite$token)
     return(list(ok = FALSE, errores = list(usuario = "cuentas.error.usuario_ocupado")))
   }
-  list(ok = TRUE, username = fila$username, nombre = fila$display_name, account_code = fila$account_code)
+  list(ok = TRUE, username = fila$username, nombre = fila$display_name, account_code = fila$account_code,
+       # T82: what avisar_cuenta_nueva() says (never the hash).
+       cuenta = fila[, c("username", "display_name", "tier", "puesto", "account_code", "activo")])
 }
 
 # pending -> accepted on S3's current table; FALSE if it was not pending.
@@ -248,4 +250,57 @@ tr_negritas <- function(clave, ...) {
     txt <- gsub(marcas[[i]], gsub("\\", "\\\\", pieza, fixed = TRUE), txt, fixed = TRUE)
   }
   htmltools::HTML(txt)
+}
+
+# ── T82: someone joined the client ──────────────────────────────────────────
+# One automatic aviso in Panorama, for whoever holds
+# can_receive_account_notices (dev and admin by default; per user for anyone
+# else), after the account is saved: Usuarios' "Nueva cuenta" (via = "alta",
+# `por` = who created it) or an invitation accepted (via = "invitacion",
+# `por` = the invitee). clave cuenta|<account_code>, repetir = FALSE: the same
+# account never tells anyone twice. An account created inactive has not
+# joined yet: nothing. It never throws: the account already exists, and an
+# aviso that fails must not look like a failed account.
+avisar_cuenta_nueva <- function(client_id, fila, por = "", via = c("alta", "invitacion")) {
+  via <- match.arg(via)
+  tryCatch({
+    if (isFALSE(as.logical(fila$activo[1]))) return(invisible(NULL))
+    nuevo <- tolower(trimws(as.character(fila$username[1])))
+    if (!cuentas_alguien_recibe_aviso(client_id, nuevo)) return(invisible(NULL))
+    nombre <- as.character(fila$display_name[1] %||% "")
+    if (is.na(nombre) || !nzchar(nombre)) nombre <- nuevo
+    puesto <- as.character(fila$puesto[1] %||% "")
+    if (is.na(puesto)) puesto <- ""
+    quien  <- if (identical(via, "invitacion")) tr("avisos.cuenta.via_invitacion")
+              else tr("avisos.cuenta.via_alta", por = por %||% "")
+    invisible(avisos_agregar(client_id, list(
+      tipo      = "automatico",
+      titulo    = tr("avisos.cuenta.nueva", nombre = nombre, nivel = nivel_nombre(fila$tier[1])),
+      cuerpo    = paste(c(if (nzchar(puesto)) puesto, quien), collapse = " · "),
+      severidad = "info",
+      permiso   = "can_receive_account_notices",
+      clave     = paste0("cuenta|", fila$account_code[1]),
+      repetir   = FALSE),
+      por = if (nzchar(por %||% "")) por else nuevo))
+  }, error = function(e) {
+    message("[CUENTAS] T82: the new account's aviso failed: ", conditionMessage(e))
+    invisible(NULL)
+  })
+}
+
+# Does any live user of the client, other than the new one, hold
+# can_receive_account_notices (their tier as the client configured it, plus
+# their own overrides)? A failed read answers TRUE: the aviso goes out all
+# the same and the delivery filters by permission (as alertas_preparar).
+cuentas_alguien_recibe_aviso <- function(client_id, nuevo = "") {
+  tryCatch({
+    usuarios <- .s3_leer_para_escribir(S3_KEYS$usuarios, client_id)
+    config   <- .s3_leer_para_escribir(S3_KEYS$tiers_config, client_id)
+    lectores <- avisos_de_lectores(usuarios, if (is.list(config)) config else NULL)
+    any(vapply(lectores, function(u)
+      !identical(u$user, nuevo) && puede(u, "can_receive_account_notices"), logical(1)))
+  }, error = function(e) {
+    message("[CUENTAS] T82: users unreadable, the aviso goes out anyway: ", conditionMessage(e))
+    TRUE
+  })
 }

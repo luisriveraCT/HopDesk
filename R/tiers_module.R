@@ -1447,6 +1447,7 @@ tiersServer <- function(id, shared) {
         viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL),
         metadata    = list(tier = tier, display_name = display_name)
       )
+      avisar_cuenta_nueva(current_client_id(), new_row, por = shared$current_user(), via = "alta")   # T82
       activity_refresh(activity_refresh() + 1L)
     })
 

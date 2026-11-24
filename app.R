@@ -1059,6 +1059,7 @@ server <- function(input, output, session) {
                           target_id = res$account_code, client_id = invite$client_id,
                           viewer_home_client_id = invite$client_id),
                error = function(e) message("[INVITE] log failed: ", conditionMessage(e)))
+      avisar_cuenta_nueva(invite$client_id, res$cuenta, por = username, via = "invitacion")   # T82
       update_client_user_count(invite$client_id)
       tryCatch(notify_user_limit(invite$client_id),
                error = function(e) message("[INVITE] notify_user_limit failed: ", e$message))

@@ -28,6 +28,10 @@ PERMISOS <- list(
   can_view_tiers                 = list(grupo = "grupo"),
   can_manage_empresas            = list(grupo = "grupo"),
   can_manage_invites             = list(grupo = "grupo"),
+  # T82: told in Panorama when someone joins the client (a new account or an
+  # invitation accepted). By tier dev and admin; per user for anyone else.
+  # Read by avisar_cuenta_nueva() (R/usuarios_cuentas.R).
+  can_receive_account_notices    = list(grupo = "grupo"),
   can_configure_erp              = list(grupo = "grupo"),
   # The IC registry only: Admin edits it without the ERP connection's secrets.
   can_manage_interco             = list(grupo = "grupo"),
