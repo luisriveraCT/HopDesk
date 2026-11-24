@@ -34,8 +34,9 @@ ok("un lunes real deja 'enviado' por cliente, con sus conteos", {
     a$destinatarios == 2L && a$enviados == 2L && a$fallidos == 0L && identical(b$resultado, "enviado")
 })
 ok("el cliente archivado no tiene fila", is.null(cor("zeta")))
-ok("repetirlo (ya_corrido) deja una sola fila, 'enviado'", {
-  invisible(lunes()); nrow(cor("acme")) == 1L && cor("acme")$resultado == "enviado"
+ok("repetirlo (ya_corrido) deja una sola fila, 'enviado', y no escribe nada (T80)", {
+  esc <- .mem_escrituras; invisible(lunes())
+  nrow(cor("acme")) == 1L && cor("acme")$resultado == "enviado" && .mem_escrituras == esc
 })
 ok("si la fila se perdió, el ya_corrido la repone", {
   rm(list = k("acme"), envir = .mem); invisible(lunes())

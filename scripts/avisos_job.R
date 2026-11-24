@@ -281,9 +281,14 @@ job_corrida_guardar <- function(cid, modo, fecha, resultado, d) {
                          enviados = as.integer(d[["enviado"]] + d[["ya_enviado"]]),
                          fallidos = as.integer(d[["fallido"]]),
                          hora = as.POSIXct(Sys.time(), tz = "UTC"))
-  tryCatch(modificar_tabla(CORREO_VIGIA_KEY, cid, .schema_correo_corridas, function(df)
-             dplyr::bind_rows(df[!(df$semana %in% semana & df$modo %in% modo), , drop = FALSE], fila)),
-           error = function(e) NULL)
+  # The week's row already says the same: leave the table as it is, and
+  # modificar_tabla() writes nothing -- a ya_corrido skip stays a run that
+  # writes nothing (T80), and only a lost or different row is written.
+  tryCatch(modificar_tabla(CORREO_VIGIA_KEY, cid, .schema_correo_corridas, function(df) {
+             esta <- df$semana %in% semana & df$modo %in% modo
+             if (any(esta) && all(df$resultado[esta] %in% resultado)) return(df)
+             dplyr::bind_rows(df[!esta, , drop = FALSE], fila)
+           }), error = function(e) NULL)
   invisible(NULL)
 }
 
