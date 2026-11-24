@@ -590,7 +590,6 @@ DEUDA_CAMINO <- c(
     "R/fx_tipos.R :: fx_escrito_guardar",
     "R/ledger_module.R :: .sap_ov_guardar",
     "R/ledger_module.R :: .sync_staged",
-    "R/notes_handlers.R :: input$note_delete_confirm",
     "R/offline_queue.R :: .queue_replay_entry",
     "R/pagar_hoy_module.R :: input[[paste0(\"do_confirm_ap_\", emp)]]",
     "R/pagar_hoy_module.R :: input[[paste0(\"do_confirm_ar_\", emp)]]",

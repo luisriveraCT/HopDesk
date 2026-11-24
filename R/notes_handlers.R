@@ -161,7 +161,20 @@ notes_handlers <- function(input, output, session, shared,
     }
 
     notes_df(df)
-    guardado <- tryCatch({ save_notes(df, client_id = shared$effective_client_id(), base = df_base); TRUE },
+    # T72-G: the save carries the action's one log row (the write layer
+    # writes it once the save worked). A personal note is its author's: its
+    # row says only that one was created or edited, never its title.
+    nota_id <- nid %||% df$id[nrow(df)]
+    titulo  <- input$note_title_input %||% "(Sin título)"
+    nueva   <- is.null(nid)
+    clave   <- paste0("tablas.notas.log.", if (nueva) "creada" else "editada",
+                      if (notas_es_publica(visibility)) "" else "_personal")
+    ev_nota <- list(accion = if (nueva) "crear_nota" else "editar_nota", modulo = "notes",
+                    usuario = tryCatch(current_user(), error = function(e) "system"),
+                    home = tryCatch(shared$home_client_id(), error = function(e) NULL),
+                    descripcion = tr(clave, titulo = titulo), target_id = nota_id,
+                    metadata = list(ledger = ledger, visibilidad = visibility))
+    guardado <- tryCatch({ save_notes(df, client_id = shared$effective_client_id(), base = df_base, evento = ev_nota); TRUE },
                          error = function(e) { message("[NOTES] save failed: ", conditionMessage(e)); FALSE })
     if (!guardado) {
       notes_df(df_base)
@@ -243,7 +256,15 @@ notes_handlers <- function(input, output, session, shared,
     df_base <- notes_df()
     df <- dplyr::filter(df_base, .data$id != !!nid)
     notes_df(df)
-    guardado <- tryCatch({ save_notes(df, client_id = shared$effective_client_id(), base = df_base); TRUE },
+    # T72-G: its log row (the same words and metadata as the log_action it
+    # replaces) rides with the save.
+    ev_nota <- list(accion = "eliminar_nota", modulo = "notes",
+                    usuario = tryCatch(current_user(), error = function(e) "system"),
+                    home = tryCatch(shared$home_client_id(), error = function(e) NULL),
+                    descripcion = paste0("Nota eliminada: ", if (nrow(deleted_row)) deleted_row$title[1] else nid),
+                    target_id = nid,
+                    metadata = list(ledger = if (nrow(deleted_row)) deleted_row$ledger[1] else NA_character_))
+    guardado <- tryCatch({ save_notes(df, client_id = shared$effective_client_id(), base = df_base, evento = ev_nota); TRUE },
                          error = function(e) { message("[NOTES] save failed: ", conditionMessage(e)); FALSE })
     if (!guardado) {
       notes_df(df_base)
@@ -258,16 +279,6 @@ notes_handlers <- function(input, output, session, shared,
     # T81: nobody is sent to a note that is gone.
     notas_aviso_retirar(shared$effective_client_id(), nid,
                         por = tryCatch(current_user(), error = function(e) ""))
-    log_action(
-      user        = tryCatch(current_user(), error = function(e) "system"),
-      module      = "notes",
-      action      = "eliminar_nota",
-      description = paste0("Nota eliminada: ", if (nrow(deleted_row)) deleted_row$title[1] else nid),
-      target_id   = nid,
-      metadata    = list(ledger = if (nrow(deleted_row)) deleted_row$ledger[1] else NA_character_),
-      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-    )
   }, ignoreInit = TRUE)
 
   observeEvent(input$note_delete_cancel, {

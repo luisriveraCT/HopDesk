@@ -44,7 +44,7 @@ ok <- function(label, cond) {
 
 # ── What notes_handlers calls around the save ────────────────────────────────
 .notas_s3 <- NULL
-save_notes <- function(df, client_id, base = NULL) { .notas_s3 <<- df; invisible(TRUE) }
+save_notes <- function(df, client_id, base = NULL, evento = NULL) { .notas_s3 <<- df; invisible(TRUE) }   # evento: T72-G
 load_notes <- function(client_id) .notas_s3 %||% .schema_notes()
 .schema_notes <- function() tibble(ledger = character(), year = integer(), month = integer(),
   id = character(), title = character(), body = character(), author = character(),

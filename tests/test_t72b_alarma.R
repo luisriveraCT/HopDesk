@@ -56,7 +56,7 @@ ok("1 a write outside the debt: one alarm, to hd-admin, niveles_staff(), clave t
    length(L$al) == 1L && identical(a$client_id, "hd-admin") && identical(a$aviso$niveles, niveles_staff()) &&
      identical(a$aviso$clave, "t72:sin_evento:acme") && identical(a$aviso$ventana_min, 60) && identical(a$aviso$tipo, "automatico"))
 ok("1 ... and the write is done and logged as sin_evento", guardado() && length(L$log) == 1L && L$log[[1]]$action == "sin_evento")
-conocida <- sub("^.*::", "", names(T72_DEUDA_EVENTO)[grepl("::save_notes$", names(T72_DEUDA_EVENTO))])
+conocida <- sub("^.*::", "", names(T72_DEUDA_EVENTO)[grepl("::save_moves$", names(T72_DEUDA_EVENTO))])   # save_moves: T72-G took save_notes out of the list
 limpiar()
 assign(conocida, function() escribe(), envir = globalenv())   # a function of the list, in the stack
 eval(as.call(list(as.name(conocida))))   # called by its name, as the app does

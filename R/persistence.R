@@ -394,7 +394,7 @@ modificar_tabla_completa <- function(key, client_id, schema_fn, cambio, permitir
   # looks like a secret is only "(cambió)", never copied; usuarios,
   # username_index, pending_invites and erp_connections give counts only.
   .t72_diferencia <- function(key, antes, despues) {
-    if (grepl("usuarios\\.rds$|username_index|pending_invites|erp_connections", key)) return(NULL)
+    if (grepl("usuarios\\.rds$|username_index|pending_invites|erp_connections|calendar_notes", key)) return(NULL)   # calendar_notes: T72-G, a personal note is its author's
     if (!is.data.frame(antes) || !is.data.frame(despues) || !"id" %in% names(antes) || !"id" %in% names(despues))
       return(NULL)
     secreta <- function(cl) grepl("password|passw|contrase|credencial|llave|private|hash|pwd|token|secret|api_key|clave", cl, ignore.case = TRUE)
@@ -465,7 +465,7 @@ modificar_tabla <- function(key, client_id, schema, cambio, permitir_reduccion =
   # looks like a secret is only "(cambió)", never copied; usuarios,
   # username_index, pending_invites and erp_connections give counts only.
   .t72_diferencia <- function(key, antes, despues) {
-    if (grepl("usuarios\\.rds$|username_index|pending_invites|erp_connections", key)) return(NULL)
+    if (grepl("usuarios\\.rds$|username_index|pending_invites|erp_connections|calendar_notes", key)) return(NULL)   # calendar_notes: T72-G, a personal note is its author's
     if (!is.data.frame(antes) || !is.data.frame(despues) || !"id" %in% names(antes) || !"id" %in% names(despues))
       return(NULL)
     secreta <- function(cl) grepl("password|passw|contrase|credencial|llave|private|hash|pwd|token|secret|api_key|clave", cl, ignore.case = TRUE)
@@ -616,7 +616,6 @@ T72_DEUDA_EVENTO <- c(
   "R/persistence.R::save_interco" = 1L,
   "R/persistence.R::save_interco_v2" = 1L,
   "R/persistence.R::save_moves" = 1L,
-  "R/persistence.R::save_notes" = 2L,
   "R/persistence.R::save_pagar_hoy_sync" = 1L,
   "R/persistence.R::save_pagar_hoy_user" = 1L,
   "R/persistence.R::save_policy_moves" = 1L,
@@ -1446,12 +1445,17 @@ load_notes <- function(client_id = NULL) {
 
 # `base`: as in save_manual() -- the session copy `df` was built from; with
 # it only this action's notes are applied on S3's table as it is now (CM09).
-save_notes <- function(df, client_id = NULL, base = NULL) {
+# evento (T72-G): the action's log entry (crear/editar/eliminar_nota); without
+# it each write is exactly the one before.
+save_notes <- function(df, client_id = NULL, base = NULL, evento = NULL) {
   norm <- .normalize(df, .schema_notes)
-  if (!is.null(base) && !is.null(client_id) && nzchar(client_id))
-    norm <- modificar_tabla(S3_KEYS$notes, client_id, .schema_notes, function(fresco)
-      rebase_por_id(norm, .normalize(base, .schema_notes), fresco, "id"))
-  else .s3_write(norm, S3_KEYS$notes, client_id = client_id)
+  if (!is.null(base) && !is.null(client_id) && nzchar(client_id)) {
+    cambio <- function(fresco) rebase_por_id(norm, .normalize(base, .schema_notes), fresco, "id")
+    norm <- if (is.null(evento)) modificar_tabla(S3_KEYS$notes, client_id, .schema_notes, cambio)
+            else modificar_tabla(S3_KEYS$notes, client_id, .schema_notes, cambio, evento = evento)
+  }
+  else if (is.null(evento)) .s3_write(norm, S3_KEYS$notes, client_id = client_id)
+  else .s3_write(norm, S3_KEYS$notes, client_id = client_id, evento = evento)
   if (exists(".cache_set", mode = "function")) .cache_set("notes", norm, client_id)
   invisible(norm)
 }
