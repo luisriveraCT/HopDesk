@@ -166,6 +166,9 @@ contraste <- tema$tema_contraste
 .PARES <- list(
   c("texto", "fondo"), c("texto", "superficie"), c("texto", "superficie-2"),
   c("texto-2", "superficie"), c("texto-2", "fondo"),
+  # TEMA 6-7: texto-tenue carries information (notes' dates, route amounts,
+  # footnotes): readable on every surface.
+  c("texto-tenue", "superficie"), c("texto-tenue", "fondo"), c("texto-tenue", "superficie-2"),
   c("primario-texto", "primario"), c("primario-texto", "primario-hover"),
   c("texto-inverso", "barra-fondo"), c("barra-texto", "barra-fondo"),
   c("encabezado-texto", "encabezado"), c("enlace", "superficie"),
@@ -198,7 +201,10 @@ contraste <- tema$tema_contraste
 # not get worse, and a migration that fixes one removes it from here.
 # Text on a soft fill uses exito-texto / peligro-texto, which pass (the fills
 # alone, #198754 on #D1E7DD at 3.49, are not text pairs). Can only shrink.
-.CLASICO_BAJO_AA <- c("oscuro-peligro/oscuro-fondo")   # 4.15: Bancos' red on its dark band today (TEMA_e4_mapas2 Q3)
+.CLASICO_BAJO_AA <- c("oscuro-peligro/oscuro-fondo",   # 4.15: Bancos' red on its dark band today (TEMA_e4_mapas2 Q3)
+                      # TEMA 6-7: Clásico's texto-tenue (#9CA3AF, 2.4-2.5) stays as it is: Clásico
+                      # looks like today; a fix is a debt for later, with Luis's leave. Marca's passes.
+                      "texto-tenue/superficie", "texto-tenue/fondo", "texto-tenue/superficie-2")
 ok("every listed Clásico exception is a pair this test checks",
    all(.CLASICO_BAJO_AA %in% vapply(.PARES, paste, character(1), collapse = "/")))
 for (t in names(tema$HD_TEMAS)) {

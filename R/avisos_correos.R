@@ -39,7 +39,7 @@ CORREO_TEMA <- "marca"
     marino = "primario", dorado = "acento", dorado_osc = "oro-osc", linea = "lino-bd",
     linea_tabla = "superficie-2", pie = "fondo", arena = "arena", arena_tinta = "arena-fg",
     gris_claro = "niebla-osc", cobre = "aviso-texto", revision = "aviso-suave", revision_tinta = "ambar-osc",
-    verde = "exito", logro_tinta = "acento-texto", riel = "lino-riel", reprog = "texto-tenue",
+    verde = "exito", logro_tinta = "acento-texto", riel = "lino-riel", reprog = "niebla-tenue",   # TEMA 6-7: today's tone
     por_vencer = "bruma", cambio = "borde", liquidado_ar = "arena-osc", liquidado_ap = "pizarra-clara",
     linea_oscura = "marino-claro"),
   clasico = c(

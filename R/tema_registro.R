@@ -45,6 +45,7 @@ HD_TEMAS_CSS_VERSION <- 22L
   pizarra       = "#3B4558",
   gris          = "#5A6474",
   niebla        = "#B7C2D4",
+  `niebla-tenue` = "#8B97AD",   # TEMA 6-7: Marca's old texto-tenue, kept for the weekly mail's "reprogramado" (it does not change)
   linea         = "#E3E8F0",
   papel         = "#F7F6F2",
   crema         = "#F3F1EA",
@@ -183,7 +184,7 @@ HD_TEMAS <- list(
       `borde-fuerte`     = "#B7C2D4",   # niebla
       texto              = "#1A2233",   # tinta
       `texto-2`          = "#5A6474",   # gris
-      `texto-tenue`      = "#8B97AD",
+      `texto-tenue`      = "#5F6D87",   # TEMA 6-7: text that carries information, >= 4.5 on every surface (was #8B97AD, 2.6-2.95)
       `texto-inverso`    = "#FFFFFF",
       primario           = "#13213A",   # marino
       `primario-hover`   = "#24365A",
