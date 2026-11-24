@@ -7,14 +7,22 @@
 # group_config read as tema = "marca" in this process (ARR_FORZAR_TEMA), the
 # client test user signed in, every tab shown in turn (nested tabs too), and
 # the computed color / background-color / border colours / SVG fill and stroke
-# of every visible element compared with Marca's palette:
-#   - every hex of Marca's roles and the commons (R/tema_registro.R), the
-#     brand sheet www/hd_marca.css and Panorama (www/panorama.css);
+# of every visible element compared with the EXACT set of colours Marca can
+# paint (no "near enough" lines between colours: a cool Bootstrap grey would
+# pass as a tint of something):
+#   - Marca's block of the generated www/hd_temas.css (roles, commons, the
+#     legacy tokens' tints), the Bootstrap bridge (www/hd_tema_bootstrap.css,
+#     Marca only), the brand sheet www/hd_marca.css and www/panorama.css;
+#   - every opaque color-mix(in srgb, var(--hd-a) N%, var(--hd-b) | white)
+#     the code writes, worked out under Marca;
 #   - a colour with alpha whose rgb is one of those (color-mix with
-#     transparent), or an opaque colour on the line between two of them
-#     (a tint "<rol>-pN" flattened over a surface);
-#   - the data palettes, which are data, not the look: currencies (Bancos,
-#     Pasivos, the currency pills), the tiers' colours, the folders'.
+#     transparent);
+#   - the currency palettes (Bancos, Pasivos, the currency pills) and the
+#     folders' colours: data, not the look. The tiers' colours are NOT
+#     excused (two of them are Bootstrap's own blue and grey): a tier badge
+#     shows up in the list and the report says so.
+# The classifier has a control at the start: Bootstrap and Clásico colours
+# must come out as outside Marca, or the run stops.
 # Whatever is left is a colour Marca does not paint: listed per tab with its
 # property and a few elements, and written to TEMA_SALIDA/fuera_de_marca.tsv.
 # One check per tab ("0 colours outside Marca"); while TEMA 6 is open the
@@ -32,7 +40,7 @@ if (!all(nzchar(usuario))) { cat("SKIP: faltan las credenciales de prueba.\n"); 
 SALIDA <- Sys.getenv("TEMA_SALIDA", file.path(tempdir(), "tema_marca_paleta"))
 dir.create(SALIDA, showWarnings = FALSE, recursive = TRUE)
 LIMITE <- as.numeric(Sys.getenv("ARR_LIMITE", "300"))
-TOL    <- 3     # ΔE (CIE76) to a palette colour, or to the line between two
+TOL    <- 2.5   # ΔE (CIE76) to a colour Marca paints
 MARINO <- "#13213A"
 
 .pass <- 0L; .fail <- 0L
@@ -43,52 +51,62 @@ ok <- function(label, expr) {
   invisible(isTRUE(result))
 }
 
-# ── Marca's palette, from the registry and the brand sheets ──────────────────
+# ── Marca's palette: the colours Marca can paint ─────────────────────────────
 tema <- new.env(); sys.source("R/tema_registro.R", envir = tema)
+leer <- function(f) readLines(f, warn = FALSE, encoding = "UTF-8")
 RE_HEX6 <- "#[0-9A-Fa-f]{6}\\b"
-hex_de <- function(x) toupper(unique(unlist(regmatches(x, gregexpr(RE_HEX6, x, perl = TRUE)))))
-lineas <- function(f, patron) { x <- readLines(f, warn = FALSE, encoding = "UTF-8"); x[grepl(patron, x, perl = TRUE)] }
-valores <- unlist(c(tema$HD_TEMAS$marca$tokens, tema$.HD_COMUNES), use.names = FALSE)
-PALETA <- unique(c(hex_de(valores), "#FFFFFF",
-                   hex_de(readLines("www/hd_marca.css", warn = FALSE)), hex_de(readLines("www/panorama.css", warn = FALSE))))
-# rgba() inside the brand values (shadows aside, colours like rgba(19,33,58,.28))
-rgba_txt <- unlist(regmatches(c(valores, readLines("www/panorama.css", warn = FALSE)),
-                              gregexpr("rgba?\\(\\s*\\d+\\s*,\\s*\\d+\\s*,\\s*\\d+", c(valores, readLines("www/panorama.css", warn = FALSE)))))
-if (length(rgba_txt)) PALETA <- unique(c(PALETA, vapply(regmatches(rgba_txt, gregexpr("\\d+", rgba_txt)), function(v)
-  sprintf("#%02X%02X%02X", as.integer(v[1]), as.integer(v[2]), as.integer(v[3])), "")))
+RE_RGB  <- "rgba?\\(\\s*\\d+\\s*,\\s*\\d+\\s*,\\s*\\d+"
+colores_de <- function(x) {
+  h <- toupper(unlist(regmatches(x, gregexpr(RE_HEX6, x, perl = TRUE))))
+  r <- unlist(regmatches(x, gregexpr(RE_RGB, x, perl = TRUE)))
+  # "--x-rgb: 19, 33, 58" (Bootstrap's triplets)
+  tr <- unlist(regmatches(x, gregexpr("-rgb\\s*:\\s*\\d+\\s*,\\s*\\d+\\s*,\\s*\\d+", x, perl = TRUE)))
+  a_hex <- function(s) vapply(regmatches(s, gregexpr("\\d+", s)), function(v)
+    sprintf("#%02X%02X%02X", as.integer(v[1]), as.integer(v[2]), as.integer(v[3])), "")
+  unique(c(h, if (length(r)) a_hex(r), if (length(tr)) a_hex(sub("^-rgb\\s*:", "", tr))))
+}
+lineas <- function(f, patron) { x <- leer(f); x[grepl(patron, x, perl = TRUE)] }
+# The Marca block of the generated sheet.
+css <- leer("www/hd_temas.css")
+i0 <- grep('^\\[data-hd-tema="marca"\\] \\{', css); i1 <- i0 + which(grepl("^\\}", css[(i0 + 1L):length(css)]))[1]
+stopifnot(length(i0) == 1L, !is.na(i1))
+# Opaque mixes the code writes, under Marca.
+codigo <- unlist(lapply(c("app.R", list.files(c("R", "www"), pattern = "\\.(R|css|js)$", recursive = TRUE, full.names = TRUE)), leer))
+mx <- unique(unlist(regmatches(codigo, gregexpr("color-mix\\(in srgb, var\\(--hd-[a-z0-9-]+\\) [0-9.]+%, (var\\(--hd-[a-z0-9-]+\\)|white)\\)", codigo))))
+rol_de <- function(v) { v <- sub("^leg-", "", v); p <- tema$tema_legado_partes(v); if (!is.null(p)) p$rol else v }
+mezclas <- vapply(mx, function(s) tryCatch({
+  m <- regmatches(s, regexec("var\\(--hd-([a-z0-9-]+)\\) ([0-9.]+)%, (var\\(--hd-([a-z0-9-]+)\\)|white)", s))[[1]]
+  a <- tema$tema_color(if (startsWith(m[2], "leg-")) rol_de(m[2]) else m[2], "marca")
+  b <- if (m[4] == "white") "#FFFFFF" else tema$tema_color(if (startsWith(m[5], "leg-")) rol_de(m[5]) else m[5], "marca")
+  ca <- grDevices::col2rgb(a)[, 1]; cb <- grDevices::col2rgb(b)[, 1]; w <- as.numeric(m[3]) / 100
+  v <- round(ca * w + cb * (1 - w)); sprintf("#%02X%02X%02X", v[1], v[2], v[3])
+}, error = function(e) NA_character_), "")
+PALETA <- unique(c(colores_de(css[i0:i1]), colores_de(leer("www/hd_tema_bootstrap.css")),
+                   colores_de(leer("www/hd_marca.css")), colores_de(leer("www/panorama.css")),
+                   na.omit(mezclas), "#FFFFFF"))
 DATOS <- unique(c(
-  hex_de(lineas("R/bancos_module.R", "^\\s*[A-Z]{3}\\s*=\\s*\"#|#5F5E5A")),
-  hex_de(lineas("R/pasivos_table_styles.R", "^\\.PASIVOS_CUR_")),
-  hex_de(lineas("R/ui_components.R", "ph-ctr|^\\s*background: #[0-9A-Fa-f]{6};$")),
-  hex_de(lineas("R/tier_registry.R", "color\\s*=")),
-  hex_de(readLines("R/requisiciones_persistence.R", warn = FALSE))))
-cat(sprintf("      | Marca's palette: %d colours; data palettes: %d\n", length(PALETA), length(DATOS)))
+  colores_de(lineas("R/bancos_module.R", "^\\s*[A-Z]{3}\\s*=\\s*\"#|#5F5E5A")),
+  colores_de(lineas("R/pasivos_table_styles.R", "^\\.PASIVOS_CUR_")),
+  colores_de(lineas("R/ui_components.R", "ph-ctr|^\\s*background: #[0-9A-Fa-f]{6};$")),
+  colores_de(leer("R/requisiciones_persistence.R"))))
+cat(sprintf("      | Marca paints %d colours (%d of them opaque mixes from the code); data palettes: %d\n",
+            length(PALETA), sum(!is.na(mezclas)), length(DATOS)))
 
 lab <- function(hex) grDevices::convertColor(t(grDevices::col2rgb(hex)) / 255, from = "sRGB", to = "Lab")
 P_LAB <- lab(PALETA); D_LAB <- lab(DATOS)
-# A tint "<rol>-pN" is the role flattened over a surface: the line from each
-# palette colour to one of Marca's surfaces (or its dark band, for the light
-# tints over it). Never the line between any two colours: that would pass
-# almost anything.
-BASES <- lab(toupper(vapply(c("superficie", "fondo", "superficie-2", "primario", "oscuro-fondo"),
-                            function(r) tema$HD_TEMAS$marca$tokens[[r]], "")))
-dist_seg <- function(x, A) {
-  best <- min(sqrt(colSums((t(A) - x)^2)))
-  for (j in seq_len(nrow(BASES))) {
-    d  <- t(A) - BASES[j, ]                                   # 3 x n: base -> colour
-    w  <- x - BASES[j, ]
-    tt <- pmin(1, pmax(0, colSums(d * w) / pmax(colSums(d^2), 1e-9)))
-    p  <- BASES[j, ] + d * rep(tt, each = 3L)
-    best <- min(best, sqrt(colSums((p - x)^2)))
-  }
-  best
-}
+cerca <- function(x, A) min(sqrt(colSums((t(A) - x)^2)))
 clasifica <- function(hex, alfa) {
   x <- lab(hex)[1, ]
-  if (min(sqrt(colSums((t(D_LAB) - x)^2))) <= TOL) return("dato")
-  if (alfa < 1) return(if (min(sqrt(colSums((t(P_LAB) - x)^2))) <= TOL) "marca" else "fuera")
-  if (dist_seg(x, P_LAB) <= TOL) "marca" else "fuera"
+  if (cerca(x, P_LAB) <= TOL) return("marca")
+  if (cerca(x, D_LAB) <= TOL) return("dato")
+  "fuera"
 }
+# Control: Bootstrap's and Clásico's own colours are outside Marca.
+CONTROL <- c("#0D6EFD", "#0A58CA", "#6C757D", "#ECF0F1", "#DEE2E6", "#212529", "#198754", "#F0F4FF")
+fuera_ctl <- vapply(CONTROL, function(h) identical(clasifica(h, 1), "fuera"), logical(1))
+if (!ok(sprintf("control: Bootstrap / Clásico colours come out as outside Marca (%s)",
+                paste(sprintf("%s %s", CONTROL, ifelse(fuera_ctl, "fuera", "PASA")), collapse = ", ")), all(fuera_ctl))) {
+  cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail)); quit(status = 1L) }
 
 # ── The real app ─────────────────────────────────────────────────────────────
 source("tests/helpers/live_app_harness.R")
@@ -119,16 +137,22 @@ app <- tryCatch(start_bg_app(codigo, PORT, timeout_s = 300, www = file.path(repo
                 error = function(e) { message(conditionMessage(e)); NULL })
 if (!ok("the real app starts on dev, every client read as Marca", !is.null(app))) fin()
 
-b <- new_chromote_session()
-invisible(b$Emulation$setDeviceMetricsOverride(width = 1293L, height = 632L, deviceScaleFactor = 1, mobile = FALSE))
-for (k in 1:2) if (!inherits(tryCatch(b$Page$navigate(sprintf("http://127.0.0.1:%d", PORT), wait_ = TRUE, timeout_ = 120),
-                                      error = function(e) e), "error")) break
-poll_until(function() isTRUE(tryCatch(ev("!!document.getElementById('auth-user_id')"), error = function(e) FALSE)), timeout_s = 120)
-Sys.sleep(1)
-ev(sprintf("(function(){ var u = document.getElementById('auth-user_id'), p = document.getElementById('auth-user_pwd');
-   u.value = %s; p.value = %s; $(u).trigger('change'); $(p).trigger('change'); return true; })()",
-   jsonlite::toJSON(usuario[["user"]], auto_unbox = TRUE), jsonlite::toJSON(usuario[["pass"]], auto_unbox = TRUE)))
-Sys.sleep(0.5); ev("document.getElementById('auth-go_auth').click(); true")
+# A new browser session, signed in as the client (also after a tab closed it).
+sesion <- function() {
+  try(b$close(), silent = TRUE)
+  b <<- new_chromote_session()
+  invisible(b$Emulation$setDeviceMetricsOverride(width = 1293L, height = 632L, deviceScaleFactor = 1, mobile = FALSE))
+  for (k in 1:2) if (!inherits(tryCatch(b$Page$navigate(sprintf("http://127.0.0.1:%d", PORT), wait_ = TRUE, timeout_ = 120),
+                                        error = function(e) e), "error")) break
+  poll_until(function() isTRUE(tryCatch(ev("!!document.getElementById('auth-user_id')"), error = function(e) FALSE)), timeout_s = 120)
+  Sys.sleep(1)
+  ev(sprintf("(function(){ var u = document.getElementById('auth-user_id'), p = document.getElementById('auth-user_pwd');
+     u.value = %s; p.value = %s; $(u).trigger('change'); $(p).trigger('change'); return true; })()",
+     jsonlite::toJSON(usuario[["user"]], auto_unbox = TRUE), jsonlite::toJSON(usuario[["pass"]], auto_unbox = TRUE)))
+  Sys.sleep(0.5); ev("document.getElementById('auth-go_auth').click(); true")
+  poll_until(cargada, timeout_s = LIMITE, interval_s = 1) &&
+    poll_until(function() identical(tema_de(), "marca"), timeout_s = LIMITE, interval_s = 0.5)
+}
 cargada <- function() isTRUE(tryCatch(ev(
   "(function(){ var f = document.getElementById('auth-user_id'), o = document.getElementById('hopdesk-loading');
      return (!f || f.offsetParent === null) && !!document.querySelector('.nav-link[data-value]') &&
@@ -136,10 +160,8 @@ cargada <- function() isTRUE(tryCatch(ev(
 tema_de <- function() tryCatch(ev("document.documentElement.getAttribute('data-hd-tema') || ''"), error = function(e) "?")
 primario <- function() tryCatch(toupper(ev("getComputedStyle(document.documentElement).getPropertyValue('--hd-primario').trim()")),
                                 error = function(e) "?")
-if (!ok("the client user signs in", poll_until(cargada, timeout_s = LIMITE, interval_s = 1))) fin()
-if (!ok("the page turns Marca (attribute and primario)",
-        poll_until(function() identical(tema_de(), "marca"), timeout_s = LIMITE, interval_s = 0.5) &&
-          identical(primario(), MARINO))) fin()
+if (!ok("the client user signs in and the page turns Marca (attribute and primario)",
+        sesion() && identical(primario(), MARINO))) fin()
 if (!ok("no sign-in form left", !isTRUE(ev("(function(){ var f = document.getElementById('auth-user_id'); return !!f && f.offsetParent !== null; })()")))) fin()
 Sys.sleep(3)
 
@@ -193,12 +215,20 @@ pestanas <- unlist(tryCatch(ev("Array.from(document.querySelectorAll(\"a[data-bs
 pestanas <- unique(pestanas[nzchar(pestanas)])
 cat(sprintf("      | %d tabs (nested ones too): %s\n", length(pestanas), paste(pestanas, collapse = ", ")))
 filas <- list()
+SIN_CUBRIR <- character()
 for (v in pestanas) {
   if (!isTRUE(tryCatch(ev(sprintf("(%s)(%s)", MOSTRAR_JS, jsonlite::toJSON(v, auto_unbox = TRUE))), error = function(e) FALSE))) next
   Sys.sleep(3)
   poll_until(function() isTRUE(tryCatch(ev("document.querySelectorAll('.recalculating').length === 0"), error = function(e) TRUE)),
              timeout_s = 90, interval_s = 1)
-  Sys.sleep(3); ev("window.scrollTo(0, 0); true")
+  Sys.sleep(3)
+  # A tab whose page closes the browser session: NOT COVERED, then a new session.
+  if (inherits(tryCatch(ev("window.scrollTo(0, 0); true"), error = function(e) e), "error")) {
+    cat(sprintf("      | NOT COVERED %s: the browser session closed on this tab; a new one goes on\n", v))
+    SIN_CUBRIR <- c(SIN_CUBRIR, v)
+    if (!ok(sprintf("a new session after %s signs in again in Marca", v), sesion())) fin()
+    next
+  }
   tryCatch({ s <- b$Page$captureScreenshot(format = "png")
              writeBin(jsonlite::base64_dec(s$data), file.path(SALIDA, paste0("marca_", v, ".png"))) }, error = function(e) NULL)
   m <- tryCatch(ev(MEDIR_JS), error = function(e) NULL)
@@ -221,5 +251,6 @@ todo <- if (length(filas)) do.call(rbind, filas) else
   data.frame(pestana = character(), propiedad = character(), color = character(), alfa = numeric(), n = integer(), ejemplos = character())
 write.table(todo, file.path(SALIDA, "fuera_de_marca.tsv"), sep = "\t", row.names = FALSE, quote = FALSE, fileEncoding = "UTF-8")
 cat(sprintf("      | %d (tab, property, colour) outside Marca; detail in %s\n", nrow(todo), file.path(SALIDA, "fuera_de_marca.tsv")))
+if (length(SIN_CUBRIR)) cat(sprintf("Vistas NO CUBIERTAS: %d (%s)\n", length(SIN_CUBRIR), paste(SIN_CUBRIR, collapse = ", ")))
 ok("still Marca after every tab", identical(tema_de(), "marca"))
 fin()
