@@ -1548,8 +1548,14 @@ tiersServer <- function(id, shared) {
         all_u[row_idx, "deleted_at"] <- as.character(Sys.time())
         all_u[row_idx, "activo"]     <- FALSE
       }
+      # T72-H: its log row (the log_action that came after, same words and
+      # metadata) rides with the save.
+      ev_baja <- list(accion = "eliminar_usuario", modulo = "usuarios", usuario = shared$current_user(),
+                      home = tryCatch(shared$home_client_id(), error = function(e) NULL),
+                      descripcion = paste0("Cuenta '", target_user, "' eliminada (tier: ", target_tier, ")"),
+                      target_id = target_user, metadata = list(tier = target_tier))
       saved <- tryCatch({ auth_save_usuarios(all_u, client_id = current_client_id(),
-                                             base = all_usuarios_rv()); TRUE },
+                                             base = all_usuarios_rv(), evento = ev_baja); TRUE },
                         error = function(e) { message("[TIERS] delete save failed: ", e$message); FALSE })
       if (!saved) {
         showNotification(tr("niveles.usuarios.aviso.cambio_no_guardado"),
@@ -1574,17 +1580,6 @@ tiersServer <- function(id, shared) {
       selected_user(NULL)
       showNotification(tr("niveles.usuarios.aviso.desactivada", usuario = target_user),
                        type = "message", duration = 4)
-      log_action(
-        user        = shared$current_user(),
-        module      = "usuarios",
-        action      = "eliminar_usuario",
-        description = paste0("Cuenta '", target_user, "' eliminada (tier: ", target_tier, ")"),
-        target_id   = target_user,
-        s3_key      = paste0(current_client_id(), "/usuarios.rds"),
-        client_id             = current_client_id(),
-        viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL),
-        metadata    = list(tier = target_tier)
-      )
       activity_refresh(activity_refresh() + 1L)
     })
 
@@ -1753,8 +1748,15 @@ tiersServer <- function(id, shared) {
           return()
         }
 
+        # T72-H: its log row rides with the save -- written only if it saved
+        # (it used to be written after the block, saved or not).
+        ev_edicion <- list(accion = "editar_usuario", modulo = "usuarios", usuario = shared$current_user(),
+                           home = tryCatch(shared$home_client_id(), error = function(e) NULL),
+                           descripcion = paste0("Permisos/tier de '", target_user, "' actualizados"),
+                           target_id = target_user,
+                           metadata = list(tier = new_tier, overrides_count = length(overrides)))
         saved <- tryCatch({ auth_save_usuarios(all_u, client_id = current_client_id(),
-                                               base = all_usuarios_rv()); TRUE },
+                                               base = all_usuarios_rv(), evento = ev_edicion); TRUE },
                           error = function(e) { message("[TIERS] save perms failed: ", e$message); FALSE })
         if (!saved) {
           showNotification(tr("niveles.usuarios.aviso.permisos_no_guardados"),
@@ -1767,17 +1769,6 @@ tiersServer <- function(id, shared) {
 
       selected_user(NULL)
       showNotification(tr("niveles.usuarios.aviso.cambios_guardados"), type = "message", duration = 2)
-      log_action(
-        user        = shared$current_user(),
-        module      = "usuarios",
-        action      = "editar_usuario",
-        description = paste0("Permisos/tier de '", target_user, "' actualizados"),
-        target_id   = target_user,
-        s3_key      = paste0(current_client_id(), "/usuarios.rds"),
-        client_id             = current_client_id(),
-        viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL),
-        metadata    = list(tier = new_tier, overrides_count = length(overrides))
-      )
       activity_refresh(activity_refresh() + 1L)
     })
 
@@ -2634,25 +2625,16 @@ tiersServer <- function(id, shared) {
             type = "error", duration = 6)
           return()
         }
+        # T72-H: a staff-only trace of this write (the change's rows are
+        # cambio_limite_usuarios and the per-user ones below, after step B).
+        parte_limite <- evento_parte_de("cambio_limite_usuarios", "clientes", reviewer,
+                                        tryCatch(shared$home_client_id(), error = function(e) NULL))
         ok_users <- tryCatch({
-          auth_save_usuarios(usuarios_new, client_id = cid, base = usuarios_orig); TRUE
+          auth_save_usuarios(usuarios_new, client_id = cid, base = usuarios_orig, evento = parte_limite); TRUE
         }, error = function(e) { message("[CLIENTS] deact save failed: ", e$message); FALSE })
         if (!ok_users) {
           showNotification(tr("niveles.clientes.aviso.error_desactivar"),
                            type = "error"); return()
-        }
-        # Per-user audit entries
-        for (i in seq_along(to_deact_idx)) {
-          log_action(user        = reviewer,
-                     module      = "clientes",
-                     action      = "user_deactivated_by_limit_reduction",
-                     description = paste0("Cuenta '",
-                       usuarios_new$username[to_deact_idx[i]],
-                       "' desactivada por reducción de límite en '", cid, "'"),
-                     target_id   = usuarios_new$account_code[to_deact_idx[i]],
-                     s3_key      = paste0(cid, "/usuarios.rds"),
-                     client_id             = cid,
-                     viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
         }
       }
 
@@ -2670,9 +2652,15 @@ tiersServer <- function(id, shared) {
           registry
         }); TRUE
       }, error = function(e) { message("[CLIENTS] reg save failed: ", e$message); FALSE })
+      # T72-H: a rollback says so in the log (it used to be only a console
+      # message), and no account is logged as deactivated.
+      ev_revertido <- list(accion = "cambio_limite_revertido", modulo = "clientes", usuario = reviewer,
+                           home = tryCatch(shared$home_client_id(), error = function(e) NULL),
+                           descripcion = tr("niveles.clientes.log.limite_revertido", cliente = cid),
+                           target_id = cid)
       if (ok_reg && !reg_found) {
         if (isTRUE(p$needs_deact)) {
-          tryCatch(auth_save_usuarios(usuarios_orig, client_id = cid, base = usuarios_new),
+          tryCatch(auth_save_usuarios(usuarios_orig, client_id = cid, base = usuarios_new, evento = ev_revertido),
                    error = function(e) message("[CLIENTS] rollback failed: ", e$message))
         }
         showNotification(tr("niveles.clientes.aviso.no_encontrado"), type = "error"); return()
@@ -2680,11 +2668,28 @@ tiersServer <- function(id, shared) {
       if (!ok_reg) {
         # Rollback Step A: restore original usuarios
         if (isTRUE(p$needs_deact)) {
-          tryCatch(auth_save_usuarios(usuarios_orig, client_id = cid, base = usuarios_new),
+          tryCatch(auth_save_usuarios(usuarios_orig, client_id = cid, base = usuarios_new, evento = ev_revertido),
                    error = function(e) message("[CLIENTS] rollback failed: ", e$message))
         }
         showNotification(tr("niveles.clientes.aviso.error_revertido"),
                          type = "error"); return()
+      }
+
+      # Per-user audit entries (T72-H: only now, once step B held -- a
+      # rollback above leaves none; their words are the ones of always).
+      if (isTRUE(p$needs_deact)) {
+        for (i in seq_along(to_deact_idx)) {
+          log_action(user        = reviewer,
+                     module      = "clientes",
+                     action      = "user_deactivated_by_limit_reduction",
+                     description = paste0("Cuenta '",
+                       usuarios_new$username[to_deact_idx[i]],
+                       "' desactivada por reducción de límite en '", cid, "'"),
+                     target_id   = usuarios_new$account_code[to_deact_idx[i]],
+                     s3_key      = paste0(cid, "/usuarios.rds"),
+                     client_id             = cid,
+                     viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL))
+        }
       }
 
       # ── Step C: recompute current_users ───────────────────────────────────

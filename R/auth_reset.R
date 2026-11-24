@@ -329,13 +329,17 @@ reset_aplicar <- function(token, contrasena, confirmar, ahora = Sys.time()) {
       nuevo$password_hash[j] <- hash_password(contrasena)
       nuevo$password_changed_at[j] <- .reset_iso(ahora)
       nuevo$requires_password_change[j] <- FALSE
-      auth_save_usuarios(nuevo, client_id = cid, base = usuarios)
+      # T72-H: .reset_log("contrasena_cambiada")'s row, now with the save.
+      ev_reset <- list(accion = "reset_contrasena_cambiada", modulo = "auth",
+                       usuario = if (is.na(fila$username)) "anonimo" else fila$username,
+                       home = cid, descripcion = tr("cuentas.reset.log.contrasena_cambiada"),
+                       target_id = fila$username, metadata = list())
+      auth_save_usuarios(nuevo, client_id = cid, base = usuarios, evento = ev_reset)
       "ok"
     }
   }, error = function(e) { message("[RESET] password not saved (", cid, "): ", conditionMessage(e)); "error" })
   if (identical(guardado, "sin_cuenta")) return(list(ok = FALSE, error = "cuentas.reset.enlace_invalido"))
   if (!identical(guardado, "ok")) { devolver(); return(list(ok = FALSE, error = "comun.reintentar")) }
-  .reset_log("contrasena_cambiada", fila$username, cid)
   # Staff and the client's Dev see it (low severity); a HopDesk account
   # (hd-admin) is never told to a client: .reset_alertar() checks client_id.
   # A client folder holds no staff accounts (reset_cuentas_por_correo()).

@@ -2034,6 +2034,8 @@
   "cuentas.reset.log.envio_fallido": "No se pudo enviar el enlace de cambio de contraseña",
   "cuentas.reset.log.enlace_invalido": "Se abrió un enlace de cambio de contraseña que no sirve",
   "cuentas.reset.log.contrasena_cambiada": "Contraseña cambiada con el enlace",
+  "cuentas.log.contrasena_obligatoria": "Contraseña cambiada al primer ingreso",
+  "niveles.clientes.log.limite_revertido": "Cambio de límite de '{cliente}' revertido: las cuentas siguen activas",
   "cuentas.reset.alerta.sin_url.titulo": "Cambio de contraseña: falta la dirección de la app",
   "cuentas.reset.alerta.sin_url.cuerpo": "Alguien pidió cambiar su contraseña y no se envió el enlace porque HOPDESK_APP_URL no está configurada.",
   "cuentas.reset.alerta.lectura.titulo": "Cambio de contraseña: no se pudo leer un archivo",

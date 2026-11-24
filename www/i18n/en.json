@@ -2034,6 +2034,8 @@
   "cuentas.reset.log.envio_fallido": "The password reset link could not be sent",
   "cuentas.reset.log.enlace_invalido": "A password reset link that does not work was opened",
   "cuentas.reset.log.contrasena_cambiada": "Password changed with the link",
+  "cuentas.log.contrasena_obligatoria": "Password changed at first sign-in",
+  "niveles.clientes.log.limite_revertido": "User limit change for '{cliente}' rolled back: the accounts stay active",
   "cuentas.reset.alerta.sin_url.titulo": "Password reset: the app address is missing",
   "cuentas.reset.alerta.sin_url.cuerpo": "Someone asked to reset their password and no link was sent because HOPDESK_APP_URL is not set.",
   "cuentas.reset.alerta.lectura.titulo": "Password reset: a file could not be read",

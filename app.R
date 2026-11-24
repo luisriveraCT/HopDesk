@@ -1376,7 +1376,13 @@ server <- function(input, output, session) {
     usuarios$requires_password_change[idx] <- FALSE
     usuarios$password_changed_at[idx]      <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
     tryCatch({
-      auth_save_usuarios(usuarios, client_id = info$client_id, base = base_usuarios)
+      # T72-H: the change leaves its row (it left none): who and that it was
+      # changed -- never the password, its hash or anything from them.
+      auth_save_usuarios(usuarios, client_id = info$client_id, base = base_usuarios,
+                         evento = list(accion = "cambio_contrasena_obligatorio", modulo = "auth",
+                                       usuario = info$user, home = info$client_id,
+                                       descripcion = tr("cuentas.log.contrasena_obligatoria"),
+                                       target_id = info$user))
       removeModal()
       showNotification(tr("niveles.usuarios.aviso.contrasena_actualizada"), type = "message", duration = 4)
     }, error = function(e) {

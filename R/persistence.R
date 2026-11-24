@@ -562,9 +562,8 @@ evento_parte_de <- function(accion, modulo = NULL, usuario = NULL, home = NULL)
 # save_*/modificar_*) are writers: their callers without evento= are listed
 # instead of them (tests/test_t72b_deuda_evento.R, envoltorios()).
 T72_DEUDA_EVENTO <- c(
-  "app.R::server" = 6L,
+  "app.R::server" = 5L,
   "R/auth_reset.R::.reset_modificar" = 1L,
-  "R/auth_reset.R::reset_aplicar" = 1L,
   "R/avisos.R::.s3_modificar" = 1L,
   "R/avisos_alertas_module.R::alertas_guardar" = 1L,
   "R/avisos_archivo.R::avisos_archivar" = 2L,
@@ -645,7 +644,6 @@ T72_DEUDA_EVENTO <- c(
   "R/staging_browse_module.R::setup_abono_browse" = 1L,
   "R/sync_bus.R::bump_sync_version" = 1L,
   "R/tiers_module.R::.tiers_guardar_inline" = 1L,   # its observer's inline write, named so the stack finds it (integrador, 2026-11-21)
-  "R/tiers_module.R::tiersServer" = 5L,
   "R/treasury_map_module.R::treasuryMapServer" = 1L,
   "R/usuarios_cuentas.R::reservar_usuario" = 1L
 )
