@@ -54,13 +54,13 @@ ok("viernes: antes de las 17:50 solo el lunes; desde las 17:50 también el viern
 ok("enviado no alerta; la fila de otra semana no cuenta",
    !nrow(correo_vigia(fila("lunes", "enviado"), LUN_1700)) &&
      nrow(correo_vigia(fila("lunes", "enviado", semana = "2026-W47"), LUN_1700)) == 1L)
-ok("omitido por diseño no alerta: sin SAP, SAP viejo, sin lunes, sin destinatarios",
-   all(vapply(c("omitido_sin_sap", "omitido_sap_viejo", "omitido_sin_lunes", "sin_destinatarios"),
+ok("omitido por diseño no alerta: el cliente sin SAP, sin lunes, sin destinatarios",
+   all(vapply(c("omitido_sin_sap", "omitido_sin_lunes", "sin_destinatarios"),
               function(r) !nrow(correo_vigia(fila("lunes", r), LUN_1700)), logical(1))))
-ok("con_fallas = 'salió incompleto'; sin_envio, error y una lectura fallida = 'no salió'", {
+ok("con_fallas = 'salió incompleto'; sin_envio, error, lectura fallida y SAP viejo = 'no salió'", {
   e <- function(r) correo_vigia(fila("lunes", r), LUN_1700)$estado
   identical(e("con_fallas"), "incompleto") &&
-    all(vapply(c("sin_envio", "error", "omitido_lectura", "omitido_calculo", "omitido_destinatarios"),
+    all(vapply(c("sin_envio", "error", "omitido_lectura", "omitido_calculo", "omitido_destinatarios", "omitido_sap_viejo"),
                function(r) identical(e(r), "no_salio"), logical(1)))
 })
 ok("decide la corrida más reciente de la semana (una tardía que sí salió apaga el aviso)", {

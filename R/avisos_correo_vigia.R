@@ -7,9 +7,12 @@
 # week's Sunday, shows an aviso when the row is MISSING (the job never ran
 # for the client: the alert cannot depend on the job running), when the run
 # had failed sends, or when it skipped the client for an unexpected reason
-# (an error, a failed read). A skip by design -- no SAP data or stale SAP
-# data, no Monday for Friday, nobody subscribed -- never alerts (NRS has no
-# SAP: it would carry an aviso forever).
+# (an error, a failed read, stale SAP data: Luis wants to know that same
+# day). A skip by design never alerts: the client has no SAP snapshot at
+# all (AR or AP missing -- a client without an ERP would carry an aviso
+# forever), no Monday for Friday, nobody subscribed. The job skips whole
+# clients, never one empresa: an empresa without SAP data inside a client
+# (PL in networks) or one left in SAP (NOS) does not skip the client.
 #
 # The aviso is computed when read and never stored: nothing is written from
 # a screen, and it disappears on its own once the run arrives, late or not.
@@ -36,7 +39,7 @@ CORREO_VIGIA_MODOS <- list(lunes   = list(dia = 1L, hora = 17L, minuto = 0L),
 # Results that never alert: the email went out, or the job skipped the
 # client by design.
 CORREO_VIGIA_SIN_ALERTA <- c("enviado", "sin_destinatarios",
-                             "omitido_sin_sap", "omitido_sap_viejo", "omitido_sin_lunes")
+                             "omitido_sin_sap", "omitido_sin_lunes")
 
 .schema_correo_corridas <- function() tibble::tibble(
   semana        = character(),   # ISO week of the run's Mexico day, "2026-W48"
