@@ -86,12 +86,20 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       c <- cid(); u <- usr()
       if (is.null(c) || !nzchar(c) || is.null(u) || !nzchar(u$user %||% "")) return()
       visita_leida <<- TRUE
+      # The previous visit is read FIRST: it is what "new since your last
+      # visit" means in this session. Only then is the new one written --
+      # after the first screen is drawn (T88-3: the write is off the sign-in
+      # path), with the time of this visit, taken now.
       p <- tryCatch(prefs_leer(c, u$user), error = function(e) NULL)
       visita(p$ultima_visita)
       info <- tryCatch(shared$current_user_info(), error = function(e) NULL)
-      if (!isTRUE(info$is_staff))
-        tryCatch(prefs_guardar(c, u$user, list(ultima_visita = format(Sys.time(), tz = "UTC", usetz = TRUE))),
-                 error = function(e) message("[panorama] prefs_guardar falló: ", conditionMessage(e)))
+      if (!isTRUE(info$is_staff)) {
+        ahora_visita <- format(Sys.time(), tz = "UTC", usetz = TRUE)
+        session$onFlushed(function()
+          tryCatch(prefs_guardar(c, u$user, list(ultima_visita = ahora_visita)),
+                   error = function(e) message("[panorama] prefs_guardar falló: ", conditionMessage(e))),
+          once = TRUE)
+      }
     })
 
     feed <- shiny::reactive({
