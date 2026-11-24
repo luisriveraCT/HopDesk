@@ -538,6 +538,10 @@ for (quien in quienes) {
   for (v in intersect(names(base), names(rama))) {
     eb <- base[[v]]; er <- rama[[v]]
     eb[["__html__"]] <- NULL; er[["__html__"]] <- NULL
+    # Shiny puts .shiny-busy on <html> while it works: one side measured busy
+    # and the other not would share no key at all (the overlay was skipped so).
+    sin_busy <- function(x) { names(x) <- gsub("\\.shiny-busy", "", names(x)); x }
+    eb <- sin_busy(eb); er <- sin_busy(er)
     comunes <- intersect(names(eb), names(er))
     difs <- character()
     nombre <- switch(v, ENTRAR = "sign-in page", CARGA = "Pantalla de carga", FLUJO = "Flujo (vista previa)",
