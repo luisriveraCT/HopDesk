@@ -72,7 +72,10 @@ ok("2: a read that fails never stops a mail: every recipient still gets one",
    identical(fx_cuenta(l, "enviado"), length(fx_enviados)) && length(de("acme")) > 0L && length(de("beta")) > 0L)
 ok("2: ...and that client's mail is Marca", grepl(MARCA[["fondo"]], html_de("acme"), ignore.case = TRUE))
 tema_elegido_cliente <- original
-ok("2: no cid or an empty one is Marca", identical(correo_tema(NULL), "marca") && identical(correo_tema(""), "marca"))
+# TEMA 6-9 (one rule for every mail): a mail with no client is Clásico; the
+# weekly job always passes a client's cid, so its mails stay as they were.
+ok("2: no cid or an empty one is Clásico (a mail with no client)",
+   identical(correo_tema(NULL), "clasico") && identical(correo_tema(""), "clasico"))
 
 # ── 3: Friday keeps the same histories with and without a theme ─────────────
 guardado <- function() {

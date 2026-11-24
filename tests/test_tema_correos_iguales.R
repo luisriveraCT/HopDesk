@@ -78,8 +78,11 @@ ok("tema = NULL is Clásico (the default theme): the same mails", identical(rama
 ok("under Marca the header band is Marca's (leg-encabezado-07090d -> encabezado)",
    grepl(sprintf('bgcolor="%s"', reg$tema_color("encabezado", "marca")), marca$invitacion, fixed = TRUE) &&
    !identical(marca$invitacion, rama$invitacion))
-ok("under Marca the warning, the limit and the request follow Marca's aviso, peligro and primario",
-   grepl(reg$tema_color("aviso", "marca"), marca$aviso, fixed = TRUE) &&
+# TEMA 6-9: the warning's heading and count are text: aviso-texto (readable),
+# not the aviso fill (3.02 on white); Clásico keeps #F59E0B (legacy token).
+ok("under Marca the warning, the limit and the request follow Marca's aviso-texto, peligro and primario",
+   grepl(reg$tema_color("aviso-texto", "marca"), marca$aviso, fixed = TRUE) &&
+   !grepl(reg$tema_color("aviso", "marca"), marca$aviso, fixed = TRUE) &&
    grepl(reg$tema_color("peligro", "marca"), marca$tope, fixed = TRUE) &&
    grepl(reg$tema_color("primario", "marca"), marca$solicitud, fixed = TRUE))
 

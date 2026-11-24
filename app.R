@@ -125,8 +125,8 @@ ui <- bslib::page_navbar(
     # T88-1b: the loading overlay on the app page too, in <head> so it paints before the first frame (www/overlay_init.js)
     tags$head(tags$script(src = "overlay_init.js?v=9", `data-pagina` = "app")),
     # Brand tokens (navy, gold, Fraunces) and Panorama, each under its root class.
-    tags$link(rel = "stylesheet", type = "text/css", href = "hd_marca.css?v=1"),
-    tags$link(rel = "stylesheet", type = "text/css", href = "panorama.css?v=1"),
+    tags$link(rel = "stylesheet", type = "text/css", href = "hd_marca.css?v=2"),   # TEMA 6-5: --hd-sube-tinta
+    tags$link(rel = "stylesheet", type = "text/css", href = "panorama.css?v=2"),   # TEMA 6-5: colours by variable
     tags$script(src = "panorama.js?v=1"),
     # Hide shinymanager's default floating session/logout widget (uses .mfb-* classes)
     tags$style(HTML("[id*=shinymanager],[class*=shinymanager],[class*=mfb-]{display:none!important}")),
@@ -1082,7 +1082,7 @@ server <- function(input, output, session) {
                    # TEMA stage 5: the new user's client's theme.
                    html    = email_welcome_html(res$nombre, username,
                                                 client_label, app_url,
-                                                tema = tema_de_cliente(invite$client_id))),
+                                                tema = correo_tema(invite$client_id))),   # TEMA 6-9
         error = function(e) message("[INVITE] welcome email failed: ", e$message)
       )
 

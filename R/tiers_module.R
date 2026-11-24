@@ -2036,7 +2036,7 @@ tiersServer <- function(id, shared) {
         # the request never reached anyone. See hd_staff_emails_with_perm().
         staff_emails <- hd_staff_emails_with_perm("can_manage_invites")
         if (length(staff_emails)) {
-          html <- email_user_request_html(dname, cur, max, contact)
+          html <- email_user_request_html(dname, cur, max, contact, tema = correo_tema(cid))   # TEMA 6-9
           subj <- sprintf("[HopDesk] Solicitud de más usuarios — %s", dname)
           for (addr in staff_emails) send_email(addr, subj, html)
         }
@@ -3134,7 +3134,7 @@ tiersServer <- function(id, shared) {
       # TEMA stage 5: the invited client's theme (its default until it chooses).
       html_body <- email_invite_html(dname_in, client_name, invite_url,
                                      inviter_name = inviter_name,
-                                     tema = tema_de_cliente(client_in))
+                                     tema = correo_tema(client_in))   # TEMA 6-9: one rule for every mail
       sent <- send_email(to      = email_in,
                          subject = paste0("Invitación a HopDesk — ", client_name),
                          html    = html_body)

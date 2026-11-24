@@ -58,22 +58,10 @@ CORREO_TEMA <- "marca"
   roles <- .CORREO_ROLES[[tema]] %||% .CORREO_ROLES[[CORREO_TEMA]]
   as.list(vapply(roles, tema_color, character(1), tema = tema))
 }
-# The weekly mail's theme for a client: the one it chose (tema_elegido_cliente(),
-# R/tema_registro.R, reading group_config), else Marca. Read once per client per
-# run (the job is one process: the cache lives as long as the run), and a read
-# that fails is Marca -- the theme never stops a mail. Always the cid the job
-# passes, never CLIENT_ID from the environment.
-.correo_tema_cache <- new.env(parent = emptyenv())
-correo_tema <- function(cid) {
-  if (is.null(cid) || !nzchar(cid %||% "")) return(CORREO_TEMA)
-  if (!is.null(.correo_tema_cache[[cid]])) return(.correo_tema_cache[[cid]])
-  elegir <- get0("tema_elegido_cliente", mode = "function")
-  t <- if (is.null(elegir)) NULL else tryCatch(elegir(cid), error = function(e) NULL)
-  t <- if (is.character(t) && length(t) == 1L && nzchar(t)) t else CORREO_TEMA
-  assign(cid, t, envir = .correo_tema_cache)
-  t
-}
-correo_tema_olvidar <- function() rm(list = ls(.correo_tema_cache), envir = .correo_tema_cache)
+# The weekly mail's theme for a client: correo_tema(cid), in R/tema_registro.R
+# since TEMA 6-9 (one rule for every mail): the one it chose, else Marca; read
+# once per client per run (5-minute cache), a failed read is Marca. Always the
+# cid the job passes, never CLIENT_ID from the environment.
 # Lazy: shiny sources R/ in alphabetical order, so tema_color() (R/tema_registro.R)
 # does not exist yet when this file loads; the list is built on first use.
 delayedAssign("CORREO_COLORES", .correo_colores())

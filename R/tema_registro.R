@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 22L
+HD_TEMAS_CSS_VERSION <- 23L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -296,6 +296,7 @@ HD_TEMAS <- list(
   `aviso-texto-92400e` = "#92400E",
   `aviso-texto-997404` = "#997404",
   `aviso-texto-9a5600` = "#9A5600",
+  `aviso-texto-f59e0b` = "#F59E0B",
   `borde-d0dff7` = "#D0DFF7",
   `borde-d6e0f0` = "#D6E0F0",
   `borde-dce1ec` = "#DCE1EC",
@@ -628,6 +629,51 @@ tema_elegido_cliente <- function(client_id) {
   cfg <- tryCatch(leer(client_id = client_id), error = function(e) NULL)
   t <- if (is.list(cfg)) cfg$tema else NULL
   if (tema_valido(t)) tolower(trimws(t)) else NULL
+}
+
+# The theme of a mail about a client (TEMA 6-9): ONE rule for every mail with
+# a known client -- the weekly mails, the invitation, the welcome, the reset,
+# the user-limit notices, a user request, a limit change (a mail to HopDesk
+# staff about a client too): the theme the client chose, else Marca (the
+# brand). A mail with no client, or about HopDesk itself (hd-admin, staff),
+# is Clásico, and never another client's theme.
+# Read when called, never when this file loads (rule 29: get0, as
+# tema_elegido_cliente() does). A read that fails, or a theme the registry
+# does not know, is Marca: a theme never stops a mail.
+# Cache by cid for `ttl` seconds (5 minutes): the job's run reads each client
+# once; the app, which lives for days, sees a client's new theme within 5
+# minutes, never a stale one until a restart. correo_tema_olvidar() empties it.
+.correo_tema_cache_env <- function() {
+  e <- get0(".hd_correo_tema_cache", envir = globalenv(), inherits = FALSE)
+  if (!is.environment(e)) {
+    e <- new.env(parent = emptyenv())
+    assign(".hd_correo_tema_cache", e, envir = globalenv())
+  }
+  e
+}
+correo_tema <- function(cid, ttl = 300, ahora = Sys.time()) {
+  if (is.null(cid) || length(cid) != 1L || is.na(cid) || !nzchar(trimws(cid))) return(HD_TEMA_OMISION)
+  cid <- trimws(cid)
+  if (identical(cid, get0(".HD_ADMIN_CID", ifnotfound = "hd-admin"))) return(HD_TEMA_OMISION)
+  cache <- .correo_tema_cache_env()
+  hay <- cache[[cid]]
+  if (is.list(hay) && as.numeric(difftime(ahora, hay$t, units = "secs")) < ttl) return(hay$v)
+  elegir <- get0("tema_elegido_cliente", mode = "function")
+  t <- if (is.null(elegir)) NULL else tryCatch(elegir(cid), error = function(e) NULL)
+  v <- if (is.character(t) && length(t) == 1L && isTRUE(tema_valido(t))) tolower(trimws(t)) else "marca"
+  assign(cid, list(v = v, t = ahora), envir = cache)
+  v
+}
+correo_tema_olvidar <- function() {
+  e <- .correo_tema_cache_env()
+  rm(list = ls(e, all.names = TRUE), envir = e)
+}
+# A mail that lists accounts (the reset): the client's theme when every account
+# is of one client, else Clásico (never one client's theme in another's mail).
+correo_tema_de <- function(cids) {
+  cids <- unique(trimws(as.character(cids[!is.na(cids)])))
+  cids <- cids[nzchar(cids)]
+  if (length(cids) == 1L) correo_tema(cids) else HD_TEMA_OMISION
 }
 
 # Every --hd-* value of a theme, resolved: paleta + comunes + its roles +

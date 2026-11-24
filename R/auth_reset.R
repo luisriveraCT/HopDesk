@@ -140,22 +140,22 @@ reset_cuentas_por_correo <- function(correo) {
 # ── The mail ─────────────────────────────────────────────────────────────────
 # cuentas: data.frame(username, cliente, url). One button per account; the
 # user name almost hidden (usuario_ocultar(): "l…s"), as Luis asked.
-email_reset_html <- function(cuentas, minutos = RESET_MINUTOS) {
+email_reset_html <- function(cuentas, minutos = RESET_MINUTOS, tema = NULL) {
   bloques <- vapply(seq_len(nrow(cuentas)), function(i) paste0(
-    '<p style="margin:14px 0 4px;font-size:14px;color:#07090d;">',
+    '<p style="margin:14px 0 4px;font-size:14px;color:{{leg-texto-07090d}};">',
     .email_esc(tr("cuentas.olvide.correo.cuenta", usuario = usuario_ocultar(cuentas$username[i]),
                   cliente = cuentas$cliente[i])), "</p>",
     .email_button(cuentas$url[i], tr("cuentas.olvide.correo.boton")),
     .email_fallback_url(cuentas$url[i])), character(1))
   body <- paste0(
-    '<p style="margin:0 0 14px;font-size:19px;font-weight:bold;color:#07090d;">',
+    '<p style="margin:0 0 14px;font-size:19px;font-weight:bold;color:{{leg-texto-07090d}};">',
     .email_esc(tr("cuentas.olvide.correo.hola")), "</p>",
     '<p style="margin:0 0 6px;">', .email_esc(tr("cuentas.olvide.correo.intro")), "</p>",
     paste(bloques, collapse = ""),
-    '<p style="margin:18px 0 0;font-size:13px;color:#7b8794;">',
+    '<p style="margin:18px 0 0;font-size:13px;color:{{leg-texto-2-7b8794}};">',
     .email_esc(tr("cuentas.olvide.correo.caduca", minutos = as.character(minutos))), "</p>")
   .email_shell(body, preheader = tr("cuentas.olvide.correo.caduca", minutos = as.character(minutos)),
-               footer = .email_footer_default(tr("cuentas.olvide.correo.no_fuiste")))
+               footer = .email_footer_default(tr("cuentas.olvide.correo.no_fuiste")), tema = tema)
 }
 
 # ── Request ──────────────────────────────────────────────────────────────────
@@ -248,7 +248,8 @@ reset_solicitar <- function(correo, ahora = Sys.time(), base_url = app_public_ur
   env <- vivas[con_token, , drop = FALSE]
   env$url <- paste0(base_url, "/?reset=", tokens[con_token])
   enviado <- tryCatch(isTRUE(send_email(to = c0, subject = tr("cuentas.olvide.correo.asunto"),
-                                        html = email_reset_html(env), queue_on_fail = FALSE)),
+                                        html = email_reset_html(env, tema = correo_tema_de(env$client_id)),   # TEMA 6-9
+                                        queue_on_fail = FALSE)),
                       error = function(e) { message("[RESET] send failed: ", conditionMessage(e)); FALSE })
   for (i in seq_len(nrow(env)))
     .reset_log(if (enviado) "enviado" else "envio_fallido", env$username[i], env$client_id[i], list(correo = corto))

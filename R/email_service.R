@@ -592,7 +592,7 @@ email_user_limit_warning_html <- function(client_name, current_users, max_users,
   remaining <- max_users - current_users
   .email_pintar(sprintf('
 <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px">
-  <h2 style="color:{{aviso}}">&#9888; %s</h2>
+  <h2 style="color:{{leg-aviso-texto-f59e0b}}">&#9888; %s</h2>
   <p>%s</p>
   <table style="border-collapse:collapse;width:100%%;margin:16px 0">
     <tr>
@@ -605,7 +605,7 @@ email_user_limit_warning_html <- function(client_name, current_users, max_users,
     </tr>
     <tr>
       <td style="padding:8px;border:1px solid {{borde}};color:{{texto-2}}">%s</td>
-      <td style="padding:8px;border:1px solid {{borde}};font-weight:bold;color:{{aviso}}">%d</td>
+      <td style="padding:8px;border:1px solid {{borde}};font-weight:bold;color:{{leg-aviso-texto-f59e0b}}">%d</td>
     </tr>
   </table>
   <p style="color:{{leg-texto-2-666666}};font-size:13px">
@@ -696,10 +696,11 @@ notify_user_limit <- function(client_id) {
     if (!length(recipients)) return(invisible(TRUE))
 
     html_fn <- if (rem <= 0) email_user_limit_reached_html else email_user_limit_warning_html
+    tema_c  <- correo_tema(client_id)   # TEMA 6-9: the client's theme
     html    <- if (rem <= 0)
-      email_user_limit_reached_html(dname, cur, max)
+      email_user_limit_reached_html(dname, cur, max, tema = tema_c)
     else
-      email_user_limit_warning_html(dname, cur, max)
+      email_user_limit_warning_html(dname, cur, max, tema = tema_c)
 
     subject <- if (rem <= 0)
       tr("niveles.correo.asunto.tope", cliente = dname)
@@ -785,7 +786,8 @@ notify_limit_change_to_principals <- function(client_id, client_name,
     if (!nrow(principals)) return(invisible(FALSE))
 
     html <- email_limit_change_html(client_name, old_limit, new_limit,
-                                    changed_by, deactivated)
+                                    changed_by, deactivated,
+                                    tema = correo_tema(client_id))   # TEMA 6-9: about that client
     subj <- tr("niveles.correo.asunto.cambio", cliente = client_name,
                antes = as.integer(old_limit), despues = as.integer(new_limit))
     for (addr in principals$email) send_email(addr, subj, html)
