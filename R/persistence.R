@@ -3709,12 +3709,13 @@ purgar_invitaciones_vencidas <- function(clientes = NULL, ahora = Sys.time()) {
   borradas
 }
 
-resolve_invite <- function(token) {
+# ahora: the clock, as purgar_invitaciones_vencidas() takes it (a test pins it).
+resolve_invite <- function(token, ahora = Sys.time()) {
   invites <- read_pending_invites()
   idx <- which(invites$token == token & invites$status == "pending")
   if (!length(idx)) return(NULL)
   row <- invites[idx[1], ]
-  vencida <- invitacion_vencida(row$expires_at)
+  vencida <- invitacion_vencida(row$expires_at, ahora)
   if (is.na(vencida)) {
     # No token nor email in the log (T57): only that the date is unreadable.
     message("[INVITE] ", row$client_id %||% "?", ": an invitation has an unreadable expiry; its link is refused")

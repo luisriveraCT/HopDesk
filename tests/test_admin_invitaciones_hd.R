@@ -97,12 +97,12 @@ ok("T57: invitacion_vencida() is TRUE / FALSE / NA, vectorized",
 # the link): now it refuses without an error and marks nothing.
 sembrar(VEN)
 ok("T57: resolve_invite, unreadable date: NULL, no error, not marked",
-   { r <- tryCatch(suppressMessages(resolve_invite("t-rara")), error = function(e) "error")
+   { r <- tryCatch(suppressMessages(resolve_invite("t-rara", ahora = AHORA)), error = function(e) "error")
      is.null(r) && identical(get(KEY, envir = .mem)$status[get(KEY, envir = .mem)$token == "t-rara"], "pending") })
 ok("T57: resolve_invite, expired: NULL and marked expired",
-   is.null(suppressMessages(resolve_invite("t-vieja"))) &&
+   is.null(suppressMessages(resolve_invite("t-vieja", ahora = AHORA))) &&
      identical(get(KEY, envir = .mem)$status[get(KEY, envir = .mem)$token == "t-vieja"], "expired"))
-ok("T57: resolve_invite, valid: the invitation", identical(suppressMessages(resolve_invite("t-viva"))$email, "viva@acme.mx"))
+ok("T57: resolve_invite, valid: the invitation", identical(suppressMessages(resolve_invite("t-viva", ahora = AHORA))$email, "viva@acme.mx"))
 # ── 1c. Deleting the expired ones (T57, Luis: "que se borre") ───────────────
 PUR <- rbind(VEN[VEN$token %in% c("t-vieja", "t-viva", "t-rara", "t-na"), ],
              inv("t-marcada", "m@acme.mx", "acme", status = "expired", expires_at = "2026-10-01T00:00:00Z"),
